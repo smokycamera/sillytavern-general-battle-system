@@ -2,7 +2,7 @@ import { battleIdOf, makeNarrativeBatch, reportRoundCount, type Battle, type Bat
 import { escapeHtml as esc } from './battle-presentation.js';
 import { applySettlementPrompt, type PromptSettings } from './prompt-settings.js';
 import type { DeliveryReceipt } from './tavern.js';
-const deliveryWords = {sent:'已发送',inserted:'已插入，尚未生成',copied:'已复制，需手动发送',failed:'发送失败',unknown:'结果未知',sending:'发送中，待核对'};
+const deliveryWords = {sent:'已发送',inserted:'已放入聊天，等待手动发送',copied:'已复制，需手动发送',failed:'发送失败',unknown:'结果未知',sending:'发送中，待核对'};
 export function renderReportWorkspace(b: Battle | null, reports: BattleReport[], selectedId: string | undefined, deliveries: BattleDeliveries, renderLog: (b: Battle) => string,
   controls: {native?:boolean;restartReason?:string;restartPreview?:{id:string;revision:number};canUndo?:boolean;deletedCurrent?:boolean;start?:BattleReport['start'];promptSettings?:PromptSettings} = {}): string {
   const report=b?reports.find(r=>r.id===battleIdOf(b)):reports.find(r=>r.id===selectedId)??reports.at(-1);
@@ -17,8 +17,8 @@ export function renderReportWorkspace(b: Battle | null, reports: BattleReport[],
   const finished=dispatch?.receipts.epilogue?.status==='sent';
   const title=(r:BattleReport,i:number)=>`第${i+1}场${r.id.startsWith('mass:')?'会战':'交战'}${reportRoundCount(r)?' · '+reportRoundCount(r)+'回合':''}`;
   const retry = (receipt: DeliveryReceipt, key?: string, label?: string) => controls.native && receipt.deliveryId && ['inserted','unknown','sending'].includes(receipt.status)
-    ? `<button data-action="delivery-generate" data-battle="${esc(id)}" data-delivery="${esc(receipt.deliveryId)}" ${key ? `data-key="${esc(key)}"` : `data-label="${esc(label ?? '')}"`}>仅重试生成，不重发战报</button>` : '';
-  return `<section class="report-workspace"><h2>${over?'战报与叙述':'当前战况'}</h2><p class="sub">战报独立保存，收兵后仍可发送。增量战况只从上次确认发送的位置继续。</p>${!b?`<label>历史战报<select data-role="report-select">${reports.map((r,i)=>`<option value="${esc(r.id)}" ${r.id===report?.id?'selected':''}>${esc(title(r,i))}</option>`).join('')}</select></label>`:''}
+    ? `<button data-action="delivery-generate" data-battle="${esc(id)}" data-delivery="${esc(receipt.deliveryId)}" ${key ? `data-key="${esc(key)}"` : `data-label="${esc(label ?? '')}"`}>${receipt.generation === 'not-started' ? '发送给 AI' : '仅重试生成，不重发战报'}</button>` : '';
+  return `<section class="report-workspace"><h2>${over?'战报与叙述':'当前战况'}</h2><p class="sub">战报独立保存，收兵后仍可发送。原生模式点击战报只添加用户消息，再点击“发送给 AI”或酒馆发送按钮才生成回复。增量战况只从上次确认发送的位置继续。</p>${!b?`<label>历史战报<select data-role="report-select">${reports.map((r,i)=>`<option value="${esc(r.id)}" ${r.id===report?.id?'selected':''}>${esc(title(r,i))}</option>`).join('')}</select></label>`:''}
     ${report?'<span class="tag">'+(report.supersededBy?'已被重战替代，仅供对照':'已归档')+'</span>':''}${controls.deletedCurrent?'<p>本场归档报告已删除；当前战场过程仍保留到收兵。</p>':''}
     ${report?`<div class="row report-manage-actions"><button data-action="report-restart" data-id="${esc(report.id)}" ${controls.restartReason?'disabled':''}>重新战斗</button><button class="danger" data-action="report-delete" data-id="${esc(report.id)}">删除战报</button></div>${controls.restartReason?'<p class="sub">'+esc(controls.restartReason)+'</p>':''}<p class="sub">删除只清理报告，不撤销已入账的经验、伤亡或聊天消息。</p>`:''}${undo}
     ${controls.restartPreview&&report?`<div class="report-restart-preview"><p>恢复本场开战前的阵容、生命、经验与物品数量，保留原地图和开局随机状态。重战结束后以新战果为准，原报告保留作对照；已经发送到聊天的内容不会自动撤回。</p><div class="row"><button class="primary" data-action="report-restart-confirm" data-id="${esc(report.id)}" data-revision="${controls.restartPreview.revision}">确认恢复原局并重战</button><button data-action="report-restart-cancel">取消</button></div></div>`:''}

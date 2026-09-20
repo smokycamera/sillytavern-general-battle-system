@@ -40,3 +40,8 @@
 }
 @media(prefers-reduced-motion:reduce){.trace-active{animation:none;opacity:.7}.trace-pulse{animation:none}.battle-damage-float{animation:none;translate:none;}}
 .member-health-panel{display:grid;gap:6px;padding:10px;margin:8px 0;border:1px solid var(--line);border-radius:6px;background:var(--card);font-size:12px;overflow-wrap:anywhere}.member-health-panel>div{display:flex;gap:6px;flex-wrap:wrap}.member-health-group{display:inline-block;padding:4px 6px;border:1px solid var(--line);border-radius:4px}.member-health-panel>span,.member-health-panel small{color:var(--dim)}.cannon-ammo{display:flex;align-items:center;flex-wrap:wrap;gap:6px;max-width:100%}.cannon-ammo select{max-width:100%}.power-anchor{line-height:1.6}
+
+/* Keep navigation usable and signal durable writes without freezing the page. */
+body[aria-busy="true"] { cursor: progress; }
+body[aria-busy="true"] .app-state::before { content: '保存中…'; font-size: 12px; color: var(--accent, #cdbb86); }
+button, [data-action] { touch-action: manipulation; }

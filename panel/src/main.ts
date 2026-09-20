@@ -278,14 +278,14 @@ window.addEventListener('pagehide', () => fullAuto.stop());
 let battleSaveFailed = false;
 let uiBusy = false;
 async function panelTask(task: () => Promise<void>, allowPending = false): Promise<void> {
-  if (uiBusy) return;
+  if (uiBusy) { toast('正在保存上一项操作，请稍候…'); return; }
   if (!allowPending && runtime.canWrite && !runtime.canWrite()) { toast('当前档案尚未就绪，请先核实保存或重新读取。'); return; }
   const identity = adapter.identity(), namespace = adapter.namespace();
-  uiBusy = true; document.body.inert = true; document.body.setAttribute('aria-busy', 'true');
+  uiBusy = true; document.body.setAttribute('aria-busy', 'true');
   try { await task(); }
   catch (error) { restore(); toast(error instanceof Error ? error.message : String(error)); render(); }
   finally {
-    uiBusy = false; document.body.inert = false; document.body.removeAttribute('aria-busy');
+    uiBusy = false; document.body.removeAttribute('aria-busy');
     if (identity !== adapter.identity() || namespace !== adapter.namespace()) { restore(); render(); }
   }
 }
@@ -1737,7 +1737,7 @@ function buildContextInject(): string {
   return lines.join('\n');
 }
 
-/** 把结算/状态文本以 user 楼层发送给 AI：点按钮触发，AI 直接看到并回应（替代旧的无感注入） */
+/** 战报先作为 user 消息插入；原生模式只有用户另行点击发送才生成回复。 */
 async function sendToAi(text: string, label: string, reportId?: string, batch?: NarrativeBatch): Promise<void> {
   const historical=state.reports.find(r=>r.id===(reportId??batch?.battleId));
   if(historical?.supersededBy)text='【已被重战替代的历史战报：仅供对照，不代表当前战果】\n'+text;
@@ -1760,7 +1760,7 @@ async function sendToAi(text: string, label: string, reportId?: string, batch?: 
     if (report) report.deliveries[label] = { status: 'failed', detail: '发送前保存失败' };
     toast('未保存，尚未发送；请先重试保存'); return;
   }
-  const receipt = await adapter.sendAsUser(text, { deliveryId }).catch((error): DeliveryReceipt => ({status:'failed',detail:String(error),deliveryId}));
+  const receipt = await adapter.sendAsUser(text, { deliveryId, ...(runtime.native ? { generate: false } : {}) }).catch((error): DeliveryReceipt => ({status:'failed',detail:String(error),deliveryId}));
   if (identity !== adapter.identity() || namespace !== adapter.namespace()) return;
   // 等待宿主期间，正文通知可能已通过restore替换全部UI副本；按稳定id更新当前战报。
   const currentReport = report && (state.reports.find((r) => r.id === report.id) ?? (state.deletedReport?.report.id===report.id?state.deletedReport.report:undefined));
@@ -1768,7 +1768,7 @@ async function sendToAi(text: string, label: string, reportId?: string, batch?: 
   if (batch) finishNarrativeDelivery(state.reportDeliveries, batch, receipt);
   const saved = (await persist());
   const words: Record<DeliveryReceipt['status'], string> = {
-    sent: '已发送给 AI', inserted: '已插入聊天，尚未触发生成', copied: '已复制，需手动粘贴发送',
+    sent: '已发送给 AI', inserted: '已作为用户消息放入聊天；请手动点击发送' , copied: '已复制，需手动粘贴发送',
     unknown: '投递结果未知，请核对聊天后处理', failed: '发送失败，可重试', sending: '发送中',
   };
   render();
@@ -1933,11 +1933,20 @@ function renderLogEntries(b: SmallBattle | MassBattle): string {
 async function handleAction(e: Event): Promise<void> {
   const el = (e.target as HTMLElement).closest('[data-action]') as HTMLElement | null;
   if (!el) return;
+  const act = el.dataset.action!;
+  // Navigation never joins the durable-write queue or alters its failure flag.
+  if (act === 'workspace-tab') {
+    const tab = el.dataset.tab;
+    if (WORKSPACES.some(([id]) => id === tab)) { workspaceTab = tab as WorkspaceTab; showWorkspace(workspaceTab); render('none'); }
+    return;
+  }
+  if (act === 'theme-toggle') { const theme = document.body.dataset.theme === 'light' ? 'dark' : 'light'; document.body.dataset.theme = theme; runtime.setTheme?.(theme); return; }
+  if (act === 'grid-pan') { document.querySelector('.grid-camera')?.scrollBy({ left: Number(el.dataset.dx) * 180, behavior: 'auto' }); return; }
+  if (act === 'grid-focus') { battleCamera.focus(document.querySelector<HTMLElement>('.grid-cell.selected') ?? undefined); return; }
+  if (act === 'modal-stop') return;
   if ((await inventoryPanel.handleAction(el))) return;
   battleSaveFailed = false;
-  const act = el.dataset.action!;
   if (act === 'save-retry') { await actions[act]?.(el); render(); return; }
-  if (act === 'modal-stop') return;
   if(['report-delete','report-restore','report-restart','report-restart-cancel','report-restart-confirm'].includes(act)) {
     try {
       if(act==='report-restart') {
@@ -1994,11 +2003,6 @@ async function handleAction(e: Event): Promise<void> {
     if (history) { history.open = true; history.scrollIntoView({ block: 'nearest' }); }
     return;
   }
-  if (act === 'workspace-tab') {
-    const tab = el.dataset.tab;
-    if (WORKSPACES.some(([id]) => id === tab)) { workspaceTab = tab as WorkspaceTab; showWorkspace(workspaceTab); render('none'); }
-    return;
-  }
   if (['gen-add', 'gen-toggle', 'storage-edit', 'storage-preview', 'manage-cancel-edit', 'builder-skill-add', 'builder-skill-remove', 'builder-cancel-preview', 'builder-confirm'].includes(act)) {
     try { if (act === 'builder-confirm') (await commitBuilder()); else (await actions[act]?.(el)); } catch (error) { toast(error instanceof Error ? error.message : String(error)); }
     render(); return;
@@ -2012,11 +2016,11 @@ async function handleAction(e: Event): Promise<void> {
     return;
   }
   // 相机/主题是纯视图操作，不保存、不重新渲染，也不触发自动回合。
-  if (act === 'theme-toggle') { const theme = document.body.dataset.theme === 'light' ? 'dark' : 'light'; document.body.dataset.theme = theme; runtime.setTheme?.(theme); return; }
-  if (act === 'grid-pan') { document.querySelector('.grid-camera')?.scrollBy({ left: Number(el.dataset.dx) * 180, behavior: 'auto' }); return; }
-  if (act === 'grid-focus') { battleCamera.focus(document.querySelector<HTMLElement>('.grid-cell.selected') ?? undefined); return; }
   if (act === 'battle-replay' || act === 'battle-highlight') { replayBattleTrace(act === 'battle-highlight' ? Number(el.dataset.event) : undefined); return; }
   if (act === 'grid-command-focus') { document.querySelector('.grid-command')?.scrollIntoView({ block: 'start' }); return; }
+  if (act.startsWith('out-') || act === 'delivery-generate') {
+    await actions[act]?.(el); return;
+  }
   const actionBattle = currentBattle();
   try {
     (await executeAndSave(async () => {
@@ -3066,6 +3070,7 @@ async function afterSmallAction(endTurn = true): Promise<void> {
 document.addEventListener('click', e => {
   const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
   if (!action) return;
+  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'modal-stop'].includes(action)) { void handleAction(e); return; }
   const viewOnly = ['save-retry', 'workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-inspect-unit', 'grid-cell', 'grid-mode', 'narrative-review', 'log-detail', 'unit-detail', 'role-detail', 'modal-stop', 'migration-export'].includes(action);
   void panelTask(() => handleAction(e), viewOnly);
 });

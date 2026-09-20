@@ -77,6 +77,10 @@ export class NativeStore {
           ...(options.legacyHandoff ? { handoff: { target: 'helper', sourceHash: await payloadHash(options.legacyHandoff.panel) } } : {}),
         };
       } catch (error) { return this.result('failed', session, operationId, error); }
+      if (!sameSession(session, this.host.session()) || !sameSession(session, this.active)) return this.result('conflict', session, operationId, '准备候选期间聊天已切换');
+      // Repeated UI flushes must not rewrite an identical archive. The persisted
+      // head was independently checked above, so this still detects outside edits.
+      if (!options.operationId && previous && candidate.payloadHash === previous.payloadHash && !options.clear && !options.replace && !options.migration && !options.messageTags?.length && !options.legacyHandoff && !options.resumeHandoff) return this.result('confirmed', session, operationId);
       const record: RecoveryRecord = { session, candidate, expected: previous ? { generation: previous.generation, revision: previous.revision, payloadHash: previous.payloadHash } : null,
         previous: structuredClone(previous),
         ...(options.messageTags?.length ? { messageTags: structuredClone(options.messageTags) } : {}) };
@@ -104,7 +108,7 @@ export class NativeStore {
         if (saved ? !expected || saved.generation !== expected.generation || saved.revision !== expected.revision || saved.payloadHash !== expected.payloadHash : !!expected) return this.result('conflict', session, id, '宿主档案已更新或清理，旧候选不能覆盖');
       } catch (error) { return this.result('pending', session, id, error); }
       if (!sameSession(session, this.host.session())) return this.result('conflict', session, id, '读回期间聊天已切换');
-      return this.persist(record, session);
+      return this.persist(record, session, true);
     });
   }
   discardPending(): Promise<{ discarded: boolean; receipt?: PersistReceipt }> {
@@ -130,7 +134,7 @@ export class NativeStore {
       return { discarded: true };
     });
   }
-  private async persist(record: RecoveryRecord, session: HostSession): Promise<PersistReceipt> {
+  private async persist(record: RecoveryRecord, session: HostSession, fullSave = false): Promise<PersistReceipt> {
     const id = record.candidate.lastOperationId;
     const metadata = this.host.metadata();
     if (!metadata || !sameSession(session, this.host.session())) return this.result('conflict', session, id, '保存目标不再是原聊天');
@@ -153,7 +157,7 @@ export class NativeStore {
     try {
       // Source tags live on chat[] messages, not in chat metadata. In particular,
       // Tauri's saveMetadata intentionally leaves the message body untouched.
-      if (record.messageTags?.length) {
+      if (record.messageTags?.length || fullSave && this.host.saveChat) {
         if (!this.host.saveChat) throw Error('宿主没有提供聊天完整保存接口');
         await this.host.saveChat();
       } else {
@@ -163,7 +167,18 @@ export class NativeStore {
     // Even a throwing save may have reached the host. Verify before retrying it.
     try {
       const saved = envelopeFrom((await this.host.readPersisted(session.scope)).tavernBattle);
-      if (matches(saved, record.candidate) && await payloadHash(saved!.payload) === record.candidate.payloadHash && await this.effectsVerified(session, record)) return this.confirm(record, session);
+      if (matches(saved, record.candidate)) {
+        if (await payloadHash(saved!.payload) !== record.candidate.payloadHash) error ??= '读回内容与候选校验值不一致';
+        else if (await this.effectsVerified(session, record)) return this.confirm(record, session);
+        else error ??= '档案已写入，但来源消息标记或回退副本尚未落盘';
+      } else {
+        // Some hosts expose a metadata saver that returns without writing. Only
+        // fall back when disk is still the exact previous head; never overwrite
+        // a competing save or bypass an explicit host error.
+        const unchanged = record.previous ? matches(saved, record.previous) && await payloadHash(saved!.payload) === record.previous.payloadHash : !saved;
+        if (!error && unchanged && !fullSave && !record.messageTags?.length && this.host.saveChat && sameSession(session, this.host.session()) && sameSession(session, this.active)) return this.persist(record, session, true);
+        error ??= unchanged ? '宿主保存接口返回后，持久档案仍停留在上一版本' : '读回的档案身份或版本与本次候选不同';
+      }
     } catch (value) { error = value; }
     return this.result('pending', session, id, error ?? '宿主尚未独立确认此次保存');
   }

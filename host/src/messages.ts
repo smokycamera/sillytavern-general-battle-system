@@ -40,7 +40,7 @@ export class NativeMessages {
         ctx.addOneMessage(message);
         if (events.USER_MESSAGE_RENDERED) await ctx.eventSource.emit(events.USER_MESSAGE_RENDERED, index);
       } catch (error) { return { status: 'inserted', detail: '消息已保存，显示更新未完成：' + String(error) }; }
-      if (options.generate === false || !sameSession(session, this.host.session()) || this.host.isGenerating()) return { status: 'inserted', messageDurable: true, generation: 'not-started' };
+      if (options.generate !== true || !sameSession(session, this.host.session()) || this.host.isGenerating()) return { status: 'inserted', messageDurable: true, generation: 'not-started' };
       return this.generateReply(session, message);
     };
     const promise = this.queue.then(run, run).then(receipt => ({ ...receipt, deliveryId })); this.queue = promise.catch(() => undefined); return promise;
