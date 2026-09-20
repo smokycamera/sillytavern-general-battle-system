@@ -9,6 +9,9 @@ import path from 'node:path';
 const root = process.cwd();
 const directory = path.join(root, 'artifacts/review/all-smokes');
 mkdirSync(directory, { recursive: true });
+// Historical scripts write JSON summaries here but do not all create the directory.
+// Creating an output directory does not replace any fixture or relax assertions.
+mkdirSync(path.join(root, 'artifacts/sim'), { recursive: true });
 const timeoutMs = Number(process.env.TB_SMOKE_TIMEOUT_MS ?? 75000);
 if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000) throw Error('Invalid TB_SMOKE_TIMEOUT_MS');
 const files = readdirSync('scripts').filter(name => name.endsWith('-smoke.mjs') && !['native-extension-smoke.mjs', 'real-sillytavern-smoke.mjs'].includes(name)).sort();
