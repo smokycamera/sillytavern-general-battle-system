@@ -259,7 +259,7 @@ describe('距离、移动与骑射', () => {
     b.start();
     const res = b.attack('arc-1', 'wolf-1', { bypassTurn: true });
     expect(res.atkDetail).not.toContain('武器不善近战');
-    expect(b.log.some((l) => l.text.includes('［副武器］'))).toBe(true);
+    expect(b.log.some((l) => l.text.includes('［短剑］'))).toBe(true);
 
     const { archer: bare, wolf: foe } = line();
     bare.pos = 2; foe.pos = 2;
