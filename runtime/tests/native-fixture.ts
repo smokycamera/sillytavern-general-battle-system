@@ -20,15 +20,17 @@ export function nativeFixture() {
   const chats = new Map<string, HostMessage[]>();
   const local = new Map<string, string>();
   const storage = { getItem: (key: string) => local.get(key) ?? null, setItem: (key: string, value: string) => { local.set(key, value); }, removeItem: (key: string) => { local.delete(key); } } as Storage;
-  const saveNormally = async () => { disk.set(context.chatId!, structuredClone(context.chatMetadata!)); chats.set(context.chatId!, structuredClone(context.chat!)); };
-  let save = saveNormally;
-  context.saveMetadata = () => save();
+  const saveMetadataNormally = async () => { disk.set(context.chatId!, structuredClone(context.chatMetadata!)); };
+  const saveNormally = async () => { await saveMetadataNormally(); chats.set(context.chatId!, structuredClone(context.chat!)); };
+  let save: typeof saveNormally | undefined;
+  context.saveMetadata = () => save ? save() : saveMetadataNormally();
+  context.saveChat = () => save ? save() : saveNormally();
   const host = new NativeHost({ SillyTavern: { getContext: () => context } }, 'fixture-user', async (_url, init) => {
     const request = JSON.parse(init!.body as string) as { file_name: string };
     return new Response(JSON.stringify([{ chat_metadata: disk.get(request.file_name) ?? {} }, ...(chats.get(request.file_name) ?? [])]));
   }, storage);
   const journal = new MemoryJournal(); const store = new NativeStore(host, journal); const service = new BattleService(host, store);
-  return { host, store, journal, service, context, disk, chats, local, storage, handlers, saveNormally, setSave: (next: typeof save) => { save = next; },
+  return { host, store, journal, service, context, disk, chats, local, storage, handlers, saveNormally, setSave: (next: typeof saveNormally) => { save = next; },
     switchTo: (id: string) => { context.chatId = id; context.chatMetadata = structuredClone(disk.get(id) ?? {}); context.chat = structuredClone(chats.get(id) ?? []); },
     emit: async (key: string, ...args: unknown[]) => { await context.eventSource!.emit!(key, ...args); },
   };

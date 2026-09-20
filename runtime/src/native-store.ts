@@ -150,7 +150,16 @@ export class NativeStore {
     }
     metadata.tavernBattle = structuredClone(record.candidate);
     let error: unknown;
-    try { await this.host.saveMetadata(); } catch (value) { error = value; }
+    try {
+      // Source tags live on chat[] messages, not in chat metadata. In particular,
+      // Tauri's saveMetadata intentionally leaves the message body untouched.
+      if (record.messageTags?.length) {
+        if (!this.host.saveChat) throw Error('宿主没有提供聊天完整保存接口');
+        await this.host.saveChat();
+      } else {
+        await this.host.saveMetadata();
+      }
+    } catch (value) { error = value; }
     // Even a throwing save may have reached the host. Verify before retrying it.
     try {
       const saved = envelopeFrom((await this.host.readPersisted(session.scope)).tavernBattle);

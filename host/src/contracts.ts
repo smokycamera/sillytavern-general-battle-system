@@ -33,7 +33,10 @@ export interface MetadataPort {
   session(): HostSession | undefined;
   metadata(): Record<string, unknown> | undefined;
   hasLegacyRuntime(): boolean;
+  /** Persists chat metadata only; never assume message mutations are included. */
   saveMetadata(): Promise<void>;
+  /** Persists both metadata and messages through the host's serialized save queue. */
+  saveChat?(): Promise<void>;
   readPersisted(scope: ChatScope): Promise<Record<string, unknown>>;
   applyMessageTags?(session: HostSession, tags: MessageTag[]): Promise<void>;
   verifyMessageTags?(scope: ChatScope, tags: MessageTag[]): Promise<boolean>;
