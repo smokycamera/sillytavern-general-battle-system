@@ -2,9 +2,10 @@ name: Native extension review
 
 on:
   push:
-    branches: [fix/native-save-verification-review]
+    branches: [main, 'fix/**']
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,7 +17,7 @@ concurrency:
 jobs:
   validate:
     if: >-
-      github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'build: refresh native bundle')
+      github.event_name != 'push' || github.ref == 'refs/heads/main' || !startsWith(github.event.head_commit.message, 'build: refresh native bundle')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
