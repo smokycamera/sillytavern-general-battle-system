@@ -1,0 +1,78 @@
+name: Native extension review
+
+on:
+  push:
+    branches: [fix/native-save-verification-review]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Type check
+        id: types
+        continue-on-error: true
+        run: npm run typecheck
+      - name: Complete unit and integration suite
+        id: tests
+        continue-on-error: true
+        run: npm test
+      - name: Frozen baseline and migration compatibility
+        id: compatibility
+        continue-on-error: true
+        run: npm run verify:compatibility
+      - name: Build installable native extension
+        id: build
+        continue-on-error: true
+        run: npm run build:extension
+      - name: Install Chromium
+        if: steps.build.outcome == 'success'
+        run: |
+          npx playwright-core install --with-deps chromium
+          node --input-type=module -e "import { chromium } from 'playwright-core'; import { appendFileSync } from 'node:fs'; appendFileSync(process.env.GITHUB_ENV, 'TB_BROWSER=' + chromium.executablePath() + '\n')"
+      - name: Native browser end-to-end smoke
+        id: smoke
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        run: npm run smoke:extension
+      - name: Preserve reports and installable build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-review-${{ github.sha }}
+          path: |
+            artifacts/
+            release/native-candidate/
+            dist/
+            manifest.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Validation summary
+        if: always()
+        env:
+          TYPES: ${{ steps.types.outcome }}
+          TESTS: ${{ steps.tests.outcome }}
+          COMPATIBILITY: ${{ steps.compatibility.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          SMOKE: ${{ steps.smoke.outcome }}
+        run: |
+          printf '| Check | Result |\n| --- | --- |\n| Type check | %s |\n| Full test suite | %s |\n| Baseline compatibility | %s |\n| Native build | %s |\n| Browser smoke | %s |\n' "$TYPES" "$TESTS" "$COMPATIBILITY" "$BUILD" "$SMOKE" >> "$GITHUB_STEP_SUMMARY"
+          test "$TYPES" = success && test "$TESTS" = success && test "$COMPATIBILITY" = success && test "$BUILD" = success && test "$SMOKE" = success
