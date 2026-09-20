@@ -14,7 +14,11 @@ mkdirSync(directory, { recursive: true });
 for (const output of ['artifacts/sim', 'engine/sim/out', 'panel/smoke-shots']) {
   mkdirSync(path.join(root, output), { recursive: true });
 }
-const timeoutMs = Number(process.env.TB_SMOKE_TIMEOUT_MS ?? 75000);
+// The long loader scenario takes ~40s locally and exceeded 75s while four
+// Chromium processes competed on CI. Keep per-assertion timeouts unchanged.
+const timeoutMs = Number(process.env.TB_SMOKE_TIMEOUT_MS ?? 120000);
+const concurrency = Number(process.env.TB_SMOKE_CONCURRENCY ?? 2);
+if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 4) throw Error('Invalid TB_SMOKE_CONCURRENCY');
 if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000) throw Error('Invalid TB_SMOKE_TIMEOUT_MS');
 const files = readdirSync('scripts').filter(name => name.endsWith('-smoke.mjs') && !['native-extension-smoke.mjs', 'real-sillytavern-smoke.mjs'].includes(name)).sort();
 const results = [];
@@ -47,7 +51,7 @@ async function run(script) {
   results.push(entry);
 }
 let cursor = 0;
-await Promise.all(Array.from({ length: Math.min(4, files.length) }, async () => {
+await Promise.all(Array.from({ length: Math.min(concurrency, files.length) }, async () => {
   while (cursor < files.length) { const script = files[cursor++]; await run(script); }
 }));
 results.sort((a, b) => a.script.localeCompare(b.script));
