@@ -43,6 +43,7 @@ async function run(script) {
   const entry = { script: 'scripts/' + script, ...result, durationMs: Date.now() - started, log: path.relative(root, logPath),
     ...(result.status === 'passed' ? {} : { diagnosticTail: text.slice(-3000) }) };
   console.log(entry.status.toUpperCase(), entry.script, entry.durationMs + 'ms');
+  if (entry.diagnosticTail) console.error(entry.diagnosticTail);
   results.push(entry);
 }
 let cursor = 0;
