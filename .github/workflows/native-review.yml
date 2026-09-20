@@ -34,7 +34,15 @@ jobs:
       - name: Complete unit and integration suite
         id: tests
         continue-on-error: true
-        run: npm test
+        run: mkdir -p artifacts/review && npm test -- --reporter=default --reporter=json --outputFile=artifacts/review/full-tests.json
+      - name: Native host and persistence regression suite
+        id: native
+        continue-on-error: true
+        run: npm run test:extension -- --reporter=default --reporter=json --outputFile=artifacts/review/native-tests.json
+      - name: Dependency audit (including development tools)
+        id: audit
+        continue-on-error: true
+        run: npm audit --json > artifacts/review/npm-audit.json
       - name: Frozen baseline and migration compatibility
         id: compatibility
         continue-on-error: true
@@ -53,6 +61,25 @@ jobs:
         if: steps.build.outcome == 'success'
         continue-on-error: true
         run: npm run smoke:extension
+      - name: Capture reproducible review workspace
+        if: always()
+        run: |
+          mkdir -p artifacts/review
+          git archive HEAD | gzip > artifacts/review/source.tar.gz
+          tar -czf artifacts/review/node_modules.tar.gz node_modules
+      - name: Record individual outcomes
+        if: always()
+        env:
+          TYPES: ${{ steps.types.outcome }}
+          TESTS: ${{ steps.tests.outcome }}
+          NATIVE: ${{ steps.native.outcome }}
+          AUDIT: ${{ steps.audit.outcome }}
+          COMPATIBILITY: ${{ steps.compatibility.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          SMOKE: ${{ steps.smoke.outcome }}
+        run: |
+          node --input-type=module -e "import fs from 'node:fs'; const keys=['TYPES','TESTS','NATIVE','AUDIT','COMPATIBILITY','BUILD','SMOKE']; fs.writeFileSync('artifacts/review/outcomes.json', JSON.stringify({commit:process.env.GITHUB_SHA,checks:Object.fromEntries(keys.map(k=>[k,process.env[k]]))},null,2));"
+          printf '| Check | Result |\n| --- | --- |\n| Type check | %s |\n| Full test suite | %s |\n| Native regressions | %s |\n| Dependency audit | %s |\n| Baseline compatibility | %s |\n| Native build | %s |\n| Browser smoke | %s |\n' "$TYPES" "$TESTS" "$NATIVE" "$AUDIT" "$COMPATIBILITY" "$BUILD" "$SMOKE" >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve reports and installable build
         if: always()
         uses: actions/upload-artifact@v4
@@ -65,14 +92,13 @@ jobs:
             manifest.json
           if-no-files-found: warn
           retention-days: 14
-      - name: Validation summary
+      - name: Full validation gate
         if: always()
         env:
           TYPES: ${{ steps.types.outcome }}
           TESTS: ${{ steps.tests.outcome }}
+          NATIVE: ${{ steps.native.outcome }}
           COMPATIBILITY: ${{ steps.compatibility.outcome }}
           BUILD: ${{ steps.build.outcome }}
           SMOKE: ${{ steps.smoke.outcome }}
-        run: |
-          printf '| Check | Result |\n| --- | --- |\n| Type check | %s |\n| Full test suite | %s |\n| Baseline compatibility | %s |\n| Native build | %s |\n| Browser smoke | %s |\n' "$TYPES" "$TESTS" "$COMPATIBILITY" "$BUILD" "$SMOKE" >> "$GITHUB_STEP_SUMMARY"
-          test "$TYPES" = success && test "$TESTS" = success && test "$COMPATIBILITY" = success && test "$BUILD" = success && test "$SMOKE" = success
+        run: test "$TYPES" = success && test "$TESTS" = success && test "$NATIVE" = success && test "$COMPATIBILITY" = success && test "$BUILD" = success && test "$SMOKE" = success
