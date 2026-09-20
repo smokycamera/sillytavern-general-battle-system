@@ -1,7 +1,7 @@
 {
-  "checkedAt": "2026-09-20T12:05:23.931Z",
-  "sourceCommit": "0475d933253f0ea60f89159071da96254928e892",
-  "runUrl": "https://github.com/smokycamera/sillytavern-general-battle-system/actions/runs/35509456666",
+  "checkedAt": "2026-09-20T12:12:07.703Z",
+  "sourceCommit": "6cbaf6ffecd335fab96b9e6b5eecf21a58a34803",
+  "runUrl": "https://github.com/smokycamera/sillytavern-general-battle-system/actions/runs/35509766955",
   "checks": {
     "TYPES": "success",
     "TESTS": "failure",
@@ -55,7 +55,7 @@
   "newFailures": [],
   "nativeBrowser": [
     {
-      "time": "2026-09-20T12:03:13.617Z",
+      "time": "2026-09-20T12:09:53.256Z",
       "status": "passed",
       "metadataMode": "metadata-only",
       "results": [
@@ -91,7 +91,7 @@
       "realHost": false
     },
     {
-      "time": "2026-09-20T12:03:22.999Z",
+      "time": "2026-09-20T12:10:03.568Z",
       "status": "passed",
       "metadataMode": "legacy-full",
       "results": [
@@ -128,39 +128,37 @@
     }
   ],
   "historicalSmokes": {
-    "checkedAt": "2026-09-20T12:05:21.391Z",
-    "sourceCommit": "0475d933253f0ea60f89159071da96254928e892",
+    "checkedAt": "2026-09-20T12:12:05.142Z",
+    "sourceCommit": "6cbaf6ffecd335fab96b9e6b5eecf21a58a34803",
     "realHost": false,
     "scope": "All historical *-smoke.mjs entry points with their default arguments; native and real-host checks are separate.",
     "total": 25,
-    "passed": 5,
-    "failed": 20,
+    "passed": 10,
+    "failed": 15,
     "timedOut": 0,
     "results": [
       {
         "script": "scripts/ai-guard-smoke.mjs",
-        "status": "failed",
-        "exitCode": 1,
+        "status": "passed",
+        "exitCode": 0,
         "signal": null,
-        "durationMs": 13198,
-        "log": "artifacts/review/all-smokes/ai-guard-smoke.log",
-        "diagnosticTail": "node:fs:2430\n    return binding.writeFileUtf8(\n                   ^\n\nError: ENOENT: no such file or directory, open 'engine/sim/out/ai-guard-browser.json'\n    at writeFileSync (node:fs:2430:20)\n    at file:///home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/ai-guard-smoke.mjs:35:33 {\n  errno: -2,\n  code: 'ENOENT',\n  syscall: 'open',\n  path: 'engine/sim/out/ai-guard-browser.json'\n}\n\nNode.js v22.23.2\n"
+        "durationMs": 13949,
+        "log": "artifacts/review/all-smokes/ai-guard-smoke.log"
       },
       {
         "script": "scripts/armor-traits-smoke.mjs",
-        "status": "failed",
-        "exitCode": 1,
+        "status": "passed",
+        "exitCode": 0,
         "signal": null,
-        "durationMs": 13826,
-        "log": "artifacts/review/all-smokes/armor-traits-smoke.log",
-        "diagnosticTail": "node:fs:2430\n    return binding.writeFileUtf8(\n                   ^\n\nError: ENOENT: no such file or directory, open 'engine/sim/out/armor-traits-browser.json'\n    at writeFileSync (node:fs:2430:20)\n    at file:///home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/armor-traits-smoke.mjs:50:33 {\n  errno: -2,\n  code: 'ENOENT',\n  syscall: 'open',\n  path: 'engine/sim/out/armor-traits-browser.json'\n}\n\nNode.js v22.23.2\n"
+        "durationMs": 14480,
+        "log": "artifacts/review/all-smokes/armor-traits-smoke.log"
       },
       {
         "script": "scripts/auto-battle-smoke.mjs",
         "status": "passed",
         "exitCode": 0,
         "signal": null,
-        "durationMs": 31766,
+        "durationMs": 33244,
         "log": "artifacts/review/all-smokes/auto-battle-smoke.log"
       },
       {
@@ -168,7 +166,7 @@
         "status": "passed",
         "exitCode": 0,
         "signal": null,
-        "durationMs": 10285,
+        "durationMs": 10535,
         "log": "artifacts/review/all-smokes/battle-setup-smoke.log"
       },
       {
@@ -176,7 +174,7 @@
         "status": "failed",
         "exitCode": 1,
         "signal": null,
-        "durationMs": 5247,
+        "durationMs": 5976,
         "log": "artifacts/review/all-smokes/combat-v3-smoke.log",
         "diagnosticTail": "node:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ 'v4-overflow-d20'\n- 'v4-d20'\n      ^\n\n    at file:///home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/combat-v3-smoke.mjs:21:9 {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: 'v4-overflow-d20',\n  expected: 'v4-d20',\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.2\n"
       },
@@ -185,7 +183,7 @@
         "status": "failed",
         "exitCode": 1,
         "signal": null,
-        "durationMs": 8863,
+        "durationMs": 9717,
         "log": "artifacts/review/all-smokes/combat-v4-smoke.log",
         "diagnosticTail": "node:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: The input did not match the regular expression /总生命 1200\\/1200/. Input:\n\n'确认加入队伍\\n' +\n  '十二辆自定义生命车辆\\n' +\n  '\\n' +\n  '12100/12100 人数 · 训练3 · 成员耐久 172\\n' +\n  '\\n' +\n  '剑 · 无甲\\n' +\n  '\\n' +\n  '总生命 2081200/2081200 · 12100辆 172/172生命\\n' +\n  '\\n' +\n  '单次命中均值4.5生命 · 穿透2 · 剑术攻守：触及1格／1阵距，命中+1、对近战武器防御+1；缴械或失能时不能格挡\\n' +\n  '\\n' +\n  '负载 1/24 · 防护 动能0 / 热能0 / 奥术0 · 装甲等效耐久×1\\n' +\n  '\\n' +\n  '确认加入队伍\\n' +\n  '返回调整'\n\n    at file:///home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/combat-v4-smoke.mjs:20:60 {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: '确认加入队伍\\n' +\n    '十二辆自定义生命车辆\\n' +\n    '\\n' +\n    '12100/12100 人数 · 训练3 · 成员耐久 172\\n' +\n    '\\n' +\n    '剑 · 无甲\\n' +\n    '\\n' +\n    '总生命 2081200/2081200 · 12100辆 172/172生命\\n' +\n    '\\n' +\n    '单次命中均值4.5生命 · 穿透2 · 剑术攻守：触及1格／1阵距，命中+1、对近战武器防御+1；缴械或失能时不能格挡\\n' +\n    '\\n' +\n    '负载 1/24 · 防护 动能0 / 热能0 / 奥术0 · 装甲等效耐久×1\\n' +\n    '\\n' +\n    '确认加入队伍\\n' +\n    '返回调整',\n  expected: /总生命 1200\\/1200/,\n  operator: 'match',\n  diff: 'simple'\n}\n\nNode.js v22.23.2\n"
       },
@@ -194,7 +192,7 @@
         "status": "failed",
         "exitCode": 1,
         "signal": null,
-        "durationMs": 5503,
+        "durationMs": 5801,
         "log": "artifacts/review/all-smokes/continuity-smoke.log",
         "diagnosticTail": "node:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  [\n    70,\n    560,\n    5,\n+   7475\n-   6500\n  ]\n\n    at file:///home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/continuity-smoke.mjs:42:10 {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: [ 70, 560, 5, 7475 ],\n  expected: [ 70, 560, 5, 6500 ],\n  operator: 'deepStrictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.2\n"
       },
@@ -203,7 +201,7 @@
         "status": "failed",
         "exitCode": 1,
         "signal": null,
-        "durationMs": 56537,
+        "durationMs": 57869,
         "log": "artifacts/review/all-smokes/formation-smoke.log",
         "diagnosticTail": "✓ 随队技能排令不扣费→自动军令保留草案→可见执行入口→支援扣费/召唤/五阶段保存\n✓ 320/dark：18阵位、触控≥44px、无页面横溢出、视图操作不改战果\n✓ 320/light：18阵位、触控≥44px、无页面横溢出、视图操作不改战果\n✓ 390/dark：18阵位、触控≥44px、无页面横溢出、视图操作不改战果\n✓ 390/light：18阵位、触控≥44px、无页面横溢出、视图操作不改战果\n✓ 736/dark：18阵位、触控≥44px、无页面横溢出、视图操作不改战果\n✓ 736/light：18阵位、触控≥44px、无页面横溢出、视图操作不改战果\n✓ 1024/dark：18阵位、触控≥44px、无页面横溢出、视图操作不改战果\n✓ 1024/light：18阵位、触控≥44px、无页面横溢出、视图操作不改战果\nnode:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nlocator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('#panel').contentFrame().locator('[data-action=\"mass-start\"]')\n\n    at /home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/formation-smoke.mjs:129:49 {\n  log: [\n    `  - waiting for locator('#panel').contentFrame().locator('[data-action=\"mass-start\"]')`\n  ],\n  name: 'TimeoutError'\n}\n\nNode.js v22.23.2\n"
       },
@@ -212,7 +210,7 @@
         "status": "failed",
         "exitCode": 1,
         "signal": null,
-        "durationMs": 8774,
+        "durationMs": 9426,
         "log": "artifacts/review/all-smokes/generic-skills-smoke.log",
         "diagnosticTail": "node:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n    category: 'buff',\n    channel: 'arcane',\n    cooldown: 3,\n+   cooldownGroup: 'skill-mechanism:generic:buff:area:heal',\n-   cooldownGroup: 'generic:buff',\n    cost: {\n      amount: 4,\n      resource: 'SP'\n    },\n    definitionId: 'generic:buff:area:heal',\n    delivery: 'magic',\n+   desc: 'buff范围治疗；强度与装备/目标条件共同决定结果，不同机制独立冷却，同机制改名不刷新。',\n+   effectVersion: 'skill-v4.1',\n-   desc: 'buff范围治疗；强度与装备/目标条件共同决定结果，同类别共享冷却。',\n-   effectVersion: 'skill-v2.4',\n    effects: [\n      {\n+       amount: 1120,\n-       amount: 7,\n        op: 'heal'\n      }\n    ],\n    id: 'caster:skill:%E6%98%A5%E9%A3%8E%E6%8B%82%E9%9D%A2',\n    name: '回春之风',\n\n    at file:///home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/generic-skills-smoke.mjs:91:10 {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: {\n    id: 'caster:skill:%E6%98%A5%E9%A3%8E%E6%8B%82%E9%9D%A2',\n    definitionId: 'generic:buff:area:heal',\n    name: '回春之风',\n    sourceId: 'caster',\n    cooldownGroup: 'skill-mechanism:generic:buff:area:heal',\n    category: 'buff',\n    recipe: {\n      category: 'buff',\n      area: true,\n      modifiers: [ 'heal' ],\n      version: 'skill-formula-v1',\n      power: 7\n    },\n    effectVersion: 'skill-v4.1',\n    power: 7,\n    effects: [ { op: 'heal', amount: 1120 } ],\n    shape: 'burst',\n    channel: 'arcane',\n    penetration: 4,\n    delivery: 'magic',\n    cost: { resource: 'SP', amount: 4 },\n    cooldown: 3,\n    target: 'ally',\n    range: { min: 0, max: 4, metric: 'grid', allowEngaged: true },\n    desc: 'buff范围治疗；强度与装备/目标条件共同决定结果，不同机制独立冷却，同机制改名不刷新。'\n  },\n  expected: {\n    id: 'caster:skill:%E6%98%A5%E9%A3%8E%E6%8B%82%E9%9D%A2',\n    definitionId: 'generic:buff:area:heal',\n    name: '回春之风',\n    sourceId: 'caster',\n    cooldownGroup: 'generic:buff',\n    category: 'buff',\n    recipe: {\n      category: 'buff',\n      area: true,\n      modifiers: [ 'heal' ],\n      version: 'skill-formula-v1',\n      power: 7\n    },\n    effectVersion: 'skill-v2.4',\n    power: 7,\n    effects: [ { op: 'heal', amount: 7 } ],\n    shape: 'burst',\n    channel: 'arcane',\n    penetration: 4,\n    delivery: 'magic',\n    cost: { resource: 'SP', amount: 4 },\n    cooldown: 3,\n    target: 'ally',\n    range: { min: 0, max: 4, metric: 'grid', allowEngaged: true },\n    desc: 'buff范围治疗；强度与装备/目标条件共同决定结果，同类别共享冷却。'\n  },\n  operator: 'deepStrictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.2\n"
       },
@@ -221,7 +219,7 @@
         "status": "failed",
         "exitCode": 1,
         "signal": null,
-        "durationMs": 10317,
+        "durationMs": 10857,
         "log": "artifacts/review/all-smokes/grid-smoke.log",
         "diagnosticTail": "node:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nlocator.click: Error: strict mode violation: locator('[data-action=\"grid-move\"]') resolved to 3 elements:\n    1) <button data-actor=\"a\" class=\"primary\" data-action=\"grid-move\">确认移动 · 1点</button> aka getByRole('button', { name: '确认移动 · 1点' })\n    2) <button data-actor=\"a\" class=\"primary\" data-target=\"b\" title=\"执行已预览的移动\" data-mode=\"weapon\" data-action=\"grid-move\">执行移动</button> aka getByRole('button', { name: '执行移动' })\n    3) <button data-actor=\"a\" class=\"primary\" data-target=\"b\" title=\"执行已预览的移动\" data-mode=\"weapon\" data-action=\"grid-move\">执行移动</button> aka getByText('执行移动').nth(1)\n\nCall log:\n  - waiting for locator('#panel').contentFrame().locator('[data-action=\"grid-move\"]')\n\n    at /home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/grid-smoke.mjs:46:118 {\n  log: [\n    `  - waiting for locator('#panel').contentFrame().locator('[data-action=\"grid-move\"]')`\n  ]\n}\n\nNode.js v22.23.2\n"
       },
@@ -230,7 +228,7 @@
         "status": "failed",
         "exitCode": 1,
         "signal": null,
-        "durationMs": 14583,
+        "durationMs": 14891,
         "log": "artifacts/review/all-smokes/inventory-smoke.log",
         "diagnosticTail": "失败时界面： 阵\n战阵\n\n你的队伍，你的战场\n\n准备就绪\n明暗\n战场\n队伍\n配装\n战报\n设置\n下一场交战\n队伍已集结\n\n参战单位数量适合战术地图，保留具体移动与目标操作。确认队伍后即可开始。\n\n歼灭战：击溃或消灭敌方全部作战单位，没有占点胜利。\n\n1\n我方单位\n1\n已知敌方\n战术\n野战\n 非致命战斗（双方伤害只会造成濒死）\n开始交战\n查看队伍\n整理配装\n任务设置 · 野战 / 歼灭\n试装车组\n生命 18/40\nnode:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nlocator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for locator('#panel').contentFrame().locator('#inventory-panel')\n\n    at /home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/inventory-smoke.mjs:38:14 {\n  log: [\n    \"  - waiting for locator('#panel').contentFrame().locator('#inventory-panel')\"\n  ],\n  name: 'TimeoutError'\n}\n\nNode.js v22.23.2\n"
       },
@@ -239,24 +237,23 @@
         "status": "passed",
         "exitCode": 0,
         "signal": null,
-        "durationMs": 69606,
+        "durationMs": 71669,
         "log": "artifacts/review/all-smokes/loader-smoke.log"
       },
       {
         "script": "scripts/melee-v4-smoke.mjs",
-        "status": "failed",
-        "exitCode": 1,
+        "status": "passed",
+        "exitCode": 0,
         "signal": null,
-        "durationMs": 11663,
-        "log": "artifacts/review/all-smokes/melee-v4-smoke.log",
-        "diagnosticTail": "node:fs:2430\n    return binding.writeFileUtf8(\n                   ^\n\nError: ENOENT: no such file or directory, open 'engine/sim/out/melee-v4-browser.json'\n    at writeFileSync (node:fs:2430:20)\n    at file:///home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/melee-v4-smoke.mjs:41:33 {\n  errno: -2,\n  code: 'ENOENT',\n  syscall: 'open',\n  path: 'engine/sim/out/melee-v4-browser.json'\n}\n\nNode.js v22.23.2\n"
+        "durationMs": 12036,
+        "log": "artifacts/review/all-smokes/melee-v4-smoke.log"
       },
       {
         "script": "scripts/migration-smoke.mjs",
         "status": "passed",
         "exitCode": 0,
         "signal": null,
-        "durationMs": 8972,
+        "durationMs": 9162,
         "log": "artifacts/review/all-smokes/migration-smoke.log"
       },
       {
@@ -264,7 +261,7 @@
         "status": "failed",
         "exitCode": 1,
         "signal": null,
-        "durationMs": 35876,
+        "durationMs": 36013,
         "log": "artifacts/review/all-smokes/narrative-hardening-smoke.log",
         "diagnosticTail": "node:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\npage.waitForFunction: Timeout 30000ms exceeded.\n    at /home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/narrative-hardening-smoke.mjs:53:14 {\n  log: [],\n  name: 'TimeoutError'\n}\n\nNode.js v22.23.2\n"
       },
@@ -273,7 +270,7 @@
         "status": "failed",
         "exitCode": 1,
         "signal": null,
-        "durationMs": 3191,
+        "durationMs": 3308,
         "log": "artifacts/review/all-smokes/p3c-smoke.log",
         "diagnosticTail": "node:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nlocator.click: Error: strict mode violation: locator('[data-action=\"grid-move\"]') resolved to 3 elements:\n    1) <button data-actor=\"a\" class=\"primary\" data-action=\"grid-move\">确认移动 · 1点</button> aka getByRole('button', { name: '确认移动 · 1点' })\n    2) <button data-actor=\"a\" class=\"primary\" data-target=\"b\" title=\"执行已预览的移动\" data-mode=\"weapon\" data-action=\"grid-move\">执行移动</button> aka getByRole('button', { name: '执行移动' })\n    3) <button data-actor=\"a\" class=\"primary\" data-target=\"b\" title=\"执行已预览的移动\" data-mode=\"weapon\" data-action=\"grid-move\">执行移动</button> aka getByText('执行移动').nth(1)\n\nCall log:\n  - waiting for locator('#panel').contentFrame().locator('[data-action=\"grid-move\"]')\n\n    at /home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/p3c-smoke.mjs:25:118 {\n  log: [\n    `  - waiting for locator('#panel').contentFrame().locator('[data-action=\"grid-move\"]')`\n  ]\n}\n\nNode.js v22.23.2\n"
       },
@@ -282,7 +279,7 @@
         "status": "failed",
         "exitCode": 1,
         "signal": null,
-        "durationMs": 10846,
+        "durationMs": 10523,
         "log": "artifacts/review/all-smokes/p4-builder-smoke.log",
         "diagnosticTail": "✓ 正式新建：默认方案→明确车体/稳定/副武器/专项甲/技能→重复预览不建档→确认一次写入\nnode:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\nfalse !== true\n\n    at file:///home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/p4-builder-smoke.mjs:53:98 {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.2\n"
       },
@@ -291,7 +288,7 @@
         "status": "failed",
         "exitCode": 1,
         "signal": null,
-        "durationMs": 3867,
+        "durationMs": 3553,
         "log": "artifacts/review/all-smokes/p4-feedback-smoke.log",
         "diagnosticTail": "node:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nlocator.click: Error: strict mode violation: locator('[data-action=\"grid-execute\"]') resolved to 3 elements:\n    1) <button data-actor=\"a\" class=\"primary\" data-target=\"b\" data-action=\"grid-execute\" data-mode=\"unit:a:bp-firestorm\">确认烈焰风暴</button> aka getByRole('button', { name: '确认烈焰风暴' })\n    2) <button data-actor=\"a\" class=\"primary\" data-target=\"b\" title=\"执行已预览的攻击或技能\" data-action=\"grid-execute\" data-mode=\"unit:a:bp-firestorm\">执行命令</button> aka getByRole('button', { name: '执行命令' })\n    3) <button data-actor=\"a\" class=\"primary\" data-target=\"b\" title=\"执行已预览的攻击或技能\" data-action=\"grid-execute\" data-mode=\"unit:a:bp-firestorm\">执行命令</button> aka getByText('执行命令').nth(1)\n\nCall log:\n  - waiting for locator('#panel').contentFrame().locator('[data-action=\"grid-execute\"]')\n\n    at /home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/p4-feedback-smoke.mjs:25:51 {\n  log: [\n    `  - waiting for locator('#panel').contentFrame().locator('[data-action=\"grid-execute\"]')`\n  ]\n}\n\nNode.js v22.23.2\n"
       },
@@ -300,7 +297,7 @@
         "status": "failed",
         "exitCode": 1,
         "signal": null,
-        "durationMs": 3072,
+        "durationMs": 3162,
         "log": "artifacts/review/all-smokes/p4-tactical-smoke.log",
         "diagnosticTail": "node:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: The input did not match the regular expression /连续守住2轮/. Input:\n\n'D5 · 开阔地\\n进入花费1移动\\n\\n没有额外地形防护。\\n\\n铁甲守卫 · 80/100生命'\n\n    at file:///home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/p4-tactical-smoke.mjs:24:10 {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: 'D5 · 开阔地\\n进入花费1移动\\n\\n没有额外地形防护。\\n\\n铁甲守卫 · 80/100生命',\n  expected: /连续守住2轮/,\n  operator: 'match',\n  diff: 'simple'\n}\n\nNode.js v22.23.2\n"
       },
@@ -309,7 +306,7 @@
         "status": "passed",
         "exitCode": 0,
         "signal": null,
-        "durationMs": 9605,
+        "durationMs": 10088,
         "log": "artifacts/review/all-smokes/p4-workspace-smoke.log"
       },
       {
@@ -317,45 +314,43 @@
         "status": "failed",
         "exitCode": 1,
         "signal": null,
-        "durationMs": 7100,
+        "durationMs": 7261,
         "log": "artifacts/review/all-smokes/report-epilogue-smoke.log",
-        "diagnosticTail": "node:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n... Skipped lines\n\n  '【战阵·战斗终章】歼灭战，共1轮；停战/僵持\\n' +\n    '【本场规则】非致命：双方生命归零只会濒死失能，不视为死亡；编队减员为可救伤兵。\\n' +\n    '【开局单位状态与血量】\\n' +\n    '我方 重战验证队：现员400/500人，总生命15600/19500；400人 39/39生命，可行动，可救伤兵50，治疗不会补回其余缺员\\n' +\n    '敌方 敌方守备队：现员500/500人，总生命19500/19500；500人 39/39生命，可行动\\n' +\n...\n    '敌方守备队 → 重战验证队：累计造成334生命损失\\n' +\n-   '【叙述任务】\\n' +\n    '根据战斗情况描写战斗过程，不得出现血量，骰子点数等词'\n\n    at file:///home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/report-epilogue-smoke.mjs:35:9 {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: '【战阵·战斗终章】歼灭战，共1轮；停战/僵持\\n' +\n    '【本场规则】非致命：双方生命归零只会濒死失能，不视为死亡；编队减员为可救伤兵。\\n' +\n    '【开局单位状态与血量】\\n' +\n    '我方 重战验证队：现员400/500人，总生命15600/19500；400人 39/39生命，可行动，可救伤兵50，治疗不会补回其余缺员\\n' +\n    '敌方 敌方守备队：现员500/500人，总生命19500/19500；500人 39/39生命，可行动\\n' +\n    '【结束单位状态与血量】\\n' +\n    '我方 重战验证队：现员400/500人，总生命15266/19500；387人 39/39生命；1人 31/39生命；5人 15/39生命；1人 14/39生命；2人 11/39生命；1人 10/39生命；3人 7/39生命，可行动，可救伤兵50，治疗不会补回其余缺员\\n' +\n    '敌方 敌方守备队：现员500/500人，总生命19500/19500；500人 39/39生命，可行动\\n' +\n    '【伤害来源】\\n' +\n    '敌方守备队 → 重战验证队：累计造成334生命损失\\n' +\n    '根据战斗情况描写战斗过程，不得出现血量，骰子点数等词',\n  expected: '【战阵·战斗终章】歼灭战，共1轮；停战/僵持\\n' +\n    '【本场规则】非致命：双方生命归零只会濒死失能，不视为死亡；编队减员为可救伤兵。\\n' +\n    '【开局单位状态与血量】\\n' +\n    '我方 重战验证队：现员400/500人，总生命15600/19500；400人 39/39生命，可行动，可救伤兵50，治疗不会补回其余缺员\\n' +\n    '敌方 敌方守备队：现员500/500人，总生命19500/19500；500人 39/39生命，可行动\\n' +\n    '【结束单位状态与血量】\\n' +\n    '我方 重战验证队：现员400/500人，总生命15266/19500；387人 39/39生命；1人 31/39生命；5人 15/39生命；1人 14/39生命；2人 11/39生命；1人 10/39生命；3人 7/39生命，可行动，可救伤兵50，治疗不会补回其余缺员\\n' +\n    '敌方 敌方守备队：现员500/500人，总生命19500/19500；500人 39/39生命，可行动\\n' +\n    '【伤害来源】\\n' +\n    '敌方守备队 → 重战验证队：累计造成334生命损失\\n' +\n    '【叙述任务】\\n' +\n    '根据战斗情况描写战斗过程，不得出现血量，骰子点数等词',\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.2\n"
+        "diagnosticTail": "node:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n... Skipped lines\n\n  '【战阵·战斗终章】歼灭战，共1轮；停战/僵持\\n' +\n    '【本场规则】非致命：双方生命归零只会濒死失能，不视为死亡；编队减员为可救伤兵。\\n' +\n    '【开局单位状态与血量】\\n' +\n    '我方 重战验证队：现员400/500人，总生命15600/19500；400人 39/39生命，可行动，可救伤兵50，治疗不会补回其余缺员\\n' +\n    '敌方 敌方守备队：现员500/500人，总生命19500/19500；500人 39/39生命，可行动\\n' +\n...\n    '没有记录到可核实的伤害。\\n' +\n-   '【叙述任务】\\n' +\n    '根据战斗情况描写战斗过程，不得出现血量，骰子点数等词'\n\n    at file:///home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/report-epilogue-smoke.mjs:35:9 {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: '【战阵·战斗终章】歼灭战，共1轮；停战/僵持\\n' +\n    '【本场规则】非致命：双方生命归零只会濒死失能，不视为死亡；编队减员为可救伤兵。\\n' +\n    '【开局单位状态与血量】\\n' +\n    '我方 重战验证队：现员400/500人，总生命15600/19500；400人 39/39生命，可行动，可救伤兵50，治疗不会补回其余缺员\\n' +\n    '敌方 敌方守备队：现员500/500人，总生命19500/19500；500人 39/39生命，可行动\\n' +\n    '【结束单位状态与血量】\\n' +\n    '我方 重战验证队：现员400/500人，总生命15600/19500；400人 39/39生命，可行动，可救伤兵50，治疗不会补回其余缺员\\n' +\n    '敌方 敌方守备队：现员500/500人，总生命19500/19500；500人 39/39生命，可行动\\n' +\n    '【伤害来源】\\n' +\n    '没有记录到可核实的伤害。\\n' +\n    '根据战斗情况描写战斗过程，不得出现血量，骰子点数等词',\n  expected: '【战阵·战斗终章】歼灭战，共1轮；停战/僵持\\n' +\n    '【本场规则】非致命：双方生命归零只会濒死失能，不视为死亡；编队减员为可救伤兵。\\n' +\n    '【开局单位状态与血量】\\n' +\n    '我方 重战验证队：现员400/500人，总生命15600/19500；400人 39/39生命，可行动，可救伤兵50，治疗不会补回其余缺员\\n' +\n    '敌方 敌方守备队：现员500/500人，总生命19500/19500；500人 39/39生命，可行动\\n' +\n    '【结束单位状态与血量】\\n' +\n    '我方 重战验证队：现员400/500人，总生命15600/19500；400人 39/39生命，可行动，可救伤兵50，治疗不会补回其余缺员\\n' +\n    '敌方 敌方守备队：现员500/500人，总生命19500/19500；500人 39/39生命，可行动\\n' +\n    '【伤害来源】\\n' +\n    '没有记录到可核实的伤害。\\n' +\n    '【叙述任务】\\n' +\n    '根据战斗情况描写战斗过程，不得出现血量，骰子点数等词',\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.2\n"
       },
       {
         "script": "scripts/report-history-smoke.mjs",
-        "status": "failed",
-        "exitCode": 1,
+        "status": "passed",
+        "exitCode": 0,
         "signal": null,
-        "durationMs": 22621,
-        "log": "artifacts/review/all-smokes/report-history-smoke.log",
-        "diagnosticTail": "node:fs:2430\n    return binding.writeFileUtf8(\n                   ^\n\nError: ENOENT: no such file or directory, open 'engine/sim/out/report-history-20260915-browser.json'\n    at writeFileSync (node:fs:2430:20)\n    at file:///home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/report-history-smoke.mjs:70:30 {\n  errno: -2,\n  code: 'ENOENT',\n  syscall: 'open',\n  path: 'engine/sim/out/report-history-20260915-browser.json'\n}\n\nNode.js v22.23.2\n"
+        "durationMs": 23286,
+        "log": "artifacts/review/all-smokes/report-history-smoke.log"
       },
       {
         "script": "scripts/review-delivery-smoke.mjs",
         "status": "failed",
         "exitCode": 1,
         "signal": null,
-        "durationMs": 6103,
+        "durationMs": 6171,
         "log": "artifacts/review/all-smokes/review-delivery-smoke.log",
-        "diagnosticTail": "node:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: 旧聊天的异步回执不能写入新聊天\n+ actual - expected\n\n+ {\n+   panel: {\n+     __tbSaveRevision: 1789905893218,\n+     autoAllyOrders: true,\n+     autoApprove: true,\n+     autoSettleXp: true,\n+     autoTurn: false,\n+     battle: null,\n+     collapsed: {},\n+     committedOutcomeIds: [],\n+     deletedReportIds: [],\n+     encounterIds: [],\n+     factRevision: 0,\n+     field: '',\n+     idSeq: 1,\n+     inventory: [],\n+     lastBattleUnitIds: [],\n+     lastScanAt: 0,\n+     lighting: 'day',\n+     manageOpen: false,\n+     mapLayout: 'standard',\n+     mode: 'small',\n+     nonLethal: false,\n+     objectiveMode: 'auto',\n+     orderDraft: {},\n+     orderMemory: {},\n+     pending: [],\n+     processedRaws: [],\n+     proposals: [],\n+     reportDeliveries: {},\n+     reports: [],\n+     rosterIds: [],\n+     saveScope: 'chat',\n+     schemaVersion: 2,\n+     siegeAttacker: 'ally',\n+     smallTarget: '',\n+     snapOpen: true,\n+     storage: [],\n+     storySync: false,\n+     unitMigrationBackup: [],\n+     unitMigrationWarnings: [],\n+     unitsOpen: true,\n+     xpSettled: false\n+   }\n+ }\n- {}\n\n    at file:///home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/review-delivery-smoke.mjs:65:10 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: {\n    panel: {\n      schemaVersion: 2,\n      reports: [],\n      reportDeliveries: {},\n      deletedReportIds: [],\n      rosterIds: [],\n      idSeq: 1,\n      autoTurn: false,\n      saveScope: 'chat',\n      autoApprove: true,\n      pending: [],\n      inventory: [],\n      lastBattleUnitIds: [],\n      mode: 'small',\n      field: '',\n      lighting: 'day',\n      smallTarget: '',\n      mapLayout: 'standard',\n      objectiveMode: 'auto',\n      siegeAttacker: 'ally',\n      xpSettled: false,\n      manageOpen: false,\n      processedRaws: [],\n      orderMemory: {},\n      lastScanAt: 0,\n      autoSettleXp: true,\n      nonLethal: false,\n      autoAllyOrders: true,\n      unitsOpen: true,\n      encounterIds: [],\n      storage: [],\n      orderDraft: {},\n      collapsed: {},\n      snapOpen: true,\n      committedOutcomeIds: [],\n      unitMigrationWarnings: [],\n      unitMigrationBackup: [],\n      battle: null,\n      proposals: [],\n      storySync: false,\n      factRevision: 0,\n      __tbSaveRevision: 1789905893218\n    }\n  },\n  expected: {},\n  operator: 'deepStrictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.2\n"
+        "diagnosticTail": "node:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: 旧聊天的异步回执不能写入新聊天\n+ actual - expected\n\n+ {\n+   panel: {\n+     __tbSaveRevision: 1789906296638,\n+     autoAllyOrders: true,\n+     autoApprove: true,\n+     autoSettleXp: true,\n+     autoTurn: false,\n+     battle: null,\n+     collapsed: {},\n+     committedOutcomeIds: [],\n+     deletedReportIds: [],\n+     encounterIds: [],\n+     factRevision: 0,\n+     field: '',\n+     idSeq: 1,\n+     inventory: [],\n+     lastBattleUnitIds: [],\n+     lastScanAt: 0,\n+     lighting: 'day',\n+     manageOpen: false,\n+     mapLayout: 'standard',\n+     mode: 'small',\n+     nonLethal: false,\n+     objectiveMode: 'auto',\n+     orderDraft: {},\n+     orderMemory: {},\n+     pending: [],\n+     processedRaws: [],\n+     proposals: [],\n+     reportDeliveries: {},\n+     reports: [],\n+     rosterIds: [],\n+     saveScope: 'chat',\n+     schemaVersion: 2,\n+     siegeAttacker: 'ally',\n+     smallTarget: '',\n+     snapOpen: true,\n+     storage: [],\n+     storySync: false,\n+     unitMigrationBackup: [],\n+     unitMigrationWarnings: [],\n+     unitsOpen: true,\n+     xpSettled: false\n+   }\n+ }\n- {}\n\n    at file:///home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/review-delivery-smoke.mjs:65:10 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: {\n    panel: {\n      schemaVersion: 2,\n      reports: [],\n      reportDeliveries: {},\n      deletedReportIds: [],\n      rosterIds: [],\n      idSeq: 1,\n      autoTurn: false,\n      saveScope: 'chat',\n      autoApprove: true,\n      pending: [],\n      inventory: [],\n      lastBattleUnitIds: [],\n      mode: 'small',\n      field: '',\n      lighting: 'day',\n      smallTarget: '',\n      mapLayout: 'standard',\n      objectiveMode: 'auto',\n      siegeAttacker: 'ally',\n      xpSettled: false,\n      manageOpen: false,\n      processedRaws: [],\n      orderMemory: {},\n      lastScanAt: 0,\n      autoSettleXp: true,\n      nonLethal: false,\n      autoAllyOrders: true,\n      unitsOpen: true,\n      encounterIds: [],\n      storage: [],\n      orderDraft: {},\n      collapsed: {},\n      snapOpen: true,\n      committedOutcomeIds: [],\n      unitMigrationWarnings: [],\n      unitMigrationBackup: [],\n      battle: null,\n      proposals: [],\n      storySync: false,\n      factRevision: 0,\n      __tbSaveRevision: 1789906296638\n    }\n  },\n  expected: {},\n  operator: 'deepStrictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.2\n"
       },
       {
         "script": "scripts/roster-repair-smoke.mjs",
         "status": "failed",
         "exitCode": 1,
         "signal": null,
-        "durationMs": 32256,
+        "durationMs": 32570,
         "log": "artifacts/review/all-smokes/roster-repair-smoke.log",
         "diagnosticTail": "node:internal/modules/run_main:123\n    triggerUncaughtException(\n    ^\n\nlocator.evaluate: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('#panel').contentFrame().locator('[data-action=\"manage-toggle\"]')\n\n    at load (/home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/roster-repair-smoke.mjs:25:263)\n    at async file:///home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/roster-repair-smoke.mjs:26:3 {\n  log: [\n    `  - waiting for locator('#panel').contentFrame().locator('[data-action=\"manage-toggle\"]')`\n  ],\n  name: 'TimeoutError'\n}\n\nNode.js v22.23.2\n"
       },
       {
         "script": "scripts/sidearm-map-smoke.mjs",
-        "status": "failed",
-        "exitCode": 1,
+        "status": "passed",
+        "exitCode": 0,
         "signal": null,
-        "durationMs": 14182,
-        "log": "artifacts/review/all-smokes/sidearm-map-smoke.log",
-        "diagnosticTail": "node:fs:2430\n    return binding.writeFileUtf8(\n                   ^\n\nError: ENOENT: no such file or directory, open 'engine/sim/out/sidearm-map-20260915-browser.json'\n    at writeFileSync (node:fs:2430:20)\n    at file:///home/runner/work/sillytavern-general-battle-system/sillytavern-general-battle-system/scripts/sidearm-map-smoke.mjs:80:2 {\n  errno: -2,\n  code: 'ENOENT',\n  syscall: 'open',\n  path: 'engine/sim/out/sidearm-map-20260915-browser.json'\n}\n\nNode.js v22.23.2\n"
+        "durationMs": 14575,
+        "log": "artifacts/review/all-smokes/sidearm-map-smoke.log"
       }
     ]
   },
