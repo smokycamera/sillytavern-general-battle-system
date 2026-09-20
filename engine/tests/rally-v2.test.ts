@@ -35,11 +35,11 @@ describe('有界惊退与重整', () => {
     roll = 20; for (let n = 0; n < 6 && a.status === 'routing'; n++) battle.endTurn(); expect(a.status).toBe('ready');
     roll = 1; for (let n = 0; n < 9 && !battle.isOver(); n++) battle.endTurn(); expect(a.status).toBe('ready');
   });
-  it('两次重整失败后离场，不能无限占用轮次或恢复伤亡', () => {
+  it('三次重整失败后离场，不能无限占用轮次或恢复伤亡', () => {
     const a = unit('a'), backup = unit('backup'), source = unit('source', 'enemy'); a.morale = 10;
     const battle = new MassBattle({ combatants: [a, backup, source], rules: V2_TW, traitRegistry: registry, seed: 'rout', rng: { seed: 'rout', next: () => 0, d: () => 1 } }); battle.start();
-    for (let n = 0; n < 3; n++) { for (const u of battle.combatants.filter((u) => u.status === 'ready')) battle.issue({ unitId: u.id, type: 'hold' }); battle.resolveRound(battle.round); }
-    expect(a.status).toBe('fled'); expect(a.hp).toBe(500);
+    for (let n = 0; n < 4; n++) { for (const u of battle.combatants.filter((u) => u.status === 'ready')) battle.issue({ unitId: u.id, type: 'hold' }); battle.resolveRound(battle.round); }
+    expect(a.status).toBe('fled'); expect(a.moraleState!.attempts).toBe(3); expect(a.hp).toBe(500);
   });
   it('永久/祝福同源恐怖去重，不溃免惊退，顽固提高实际抵抗结果，到期或撤销即时失效', () => {
     for (const counter of ['none', 'stubborn', 'steadfast']) {
@@ -72,7 +72,8 @@ describe('有界惊退与重整', () => {
     expect(a.status).toBe('routing');
     for (const node of FORMATION_NODES.filter((n) => ['ally:中军:front', 'ally:中军:rear', 'ally:中军:reserve', 'ally:左翼:rear', 'ally:右翼:rear'].includes(n.id))) for (let i = 0; i < 3; i++) { const u = unit('block-' + node.id + i); setFormation(u, node); battle.combatants.push(u); }
     roll = 20; next(); expect(a.status).toBe('routing'); expect(a.moraleState!.attempts).toBe(1);
-    next(); expect(a.status).toBe('fled'); expect(a.moraleState!.attempts).toBe(2); expect(a.hp).toBe(500);
+    next(); expect(a.status).toBe('routing'); expect(a.moraleState!.attempts).toBe(2);
+    next(); expect(a.status).toBe('fled'); expect(a.moraleState!.attempts).toBe(3); expect(a.hp).toBe(500);
   });
   it('同阶段恐怖来源先后溃退不改变另一单位的惊退结果', () => {
     const run = (reverse: boolean) => {
