@@ -504,7 +504,7 @@ export class SmallBattle {
   braceDescription(actorId: string): string {
     const unit = this.byId(actorId);
     return '面向最近可见威胁，正面防御提高2；移动或下次激活结束姿态。'
-      + (unit.combatModel === MEMBER_HEALTH_MODEL && unit.shield ? '地面前排平时即遮挡直射；持盾固守额外保护同格队友，魔法、空中射击、曲射火炮等间接火力及侧射可绕过盾卫的额外保护。' : '持盾/长柄专长按装备前提生效。');
+      + (unit.combatModel === MEMBER_HEALTH_MODEL && unit.shield ? '地面前排平时即遮挡直射，弓弩和法杖可越过友军但仍受敌军遮挡；持盾固守额外保护同格队友，独立魔法技能、空中射击、曲射火炮等间接火力及侧射可绕过盾卫的额外保护。' : '持盾/长柄专长按装备前提生效。');
   }
   brace(actorId: string): void {
     const reason = this.braceReason(actorId); if (reason) throw new Error(reason);

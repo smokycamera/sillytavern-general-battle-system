@@ -6,6 +6,10 @@ export function isRangedWeapon(weapon?: Weapon): boolean { return !!weapon?.tags
 export function isCannonWeapon(weapon?: Weapon): boolean {
   return ['cannon', 'indirect-cannon'].includes(weapon?.recipe?.mechanism ?? weapon?.tags?.find(tag => tag.startsWith('mechanism:'))?.slice(10) ?? '');
 }
+/** 弓弩与法杖可越过友方占位；不授予穿墙或越过敌军的间接火力性质。 */
+export function ignoresFriendlyScreen(weapon?: Weapon): boolean {
+  return ['bow', 'magic'].includes(weapon?.recipe?.mechanism ?? weapon?.tags?.find(tag => tag.startsWith('mechanism:'))?.slice(10) ?? '');
+}
 /** 主槽保留旧存档键；副槽独立计时，按 id 比较兼容预览中的武器副本。 */
 export function weaponReloadKey(unit: Pick<Combatant, 'id' | 'sidearm'>, weapon?: Weapon): string {
   return weapon && unit.sidearm?.id === weapon.id ? JSON.stringify([unit.id, 'sidearm']) : unit.id;

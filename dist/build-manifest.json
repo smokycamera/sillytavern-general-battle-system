@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "0.2.0-rc.3",
-  "builtAt": "2026-09-20T16:15:11.110Z",
-  "sourceFingerprint": "e07b5f4b6423e60de5d1e178aaea121fbfa29a179d16724c86fabcf21a8e1434",
+  "version": "0.2.0-rc.4",
+  "builtAt": "2026-09-20T16:21:56.309Z",
+  "sourceFingerprint": "2069f9025255121bf72b2272356bd01d6754ae9ad0ad6d5922a1267d32ae4edb",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -31,14 +31,14 @@
       "sha256": "2f4066457de763befec64fcddadd0165a39e37f498d88fea0496484d8ea99a07"
     },
     {
-      "path": "dist/assets/panel-D3r1x3yd.js",
+      "path": "dist/assets/panel-CYMF0t_m.js",
       "bytes": 250560,
-      "sha256": "b427126d05788b8cab1912a0da7c79cacb69736d9252b17533a75b50bae6ad2d"
+      "sha256": "072890abc91c763028f718bc7f175b79d7188ce924a99dcf746301202f21f554"
     },
     {
-      "path": "dist/assets/preferences-Dt0JJaXA.js",
-      "bytes": 480541,
-      "sha256": "868790668b5a06c1ecf74929297a5d4792435d72ad0ae8431f14ec1319ec1e5f"
+      "path": "dist/assets/preferences-6JfkKlcR.js",
+      "bytes": 481103,
+      "sha256": "b85c25c9e3b8cb54587de4af420423f8f77b9c6649238767e7ef37abd57dc0b6"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -47,8 +47,8 @@
     },
     {
       "path": "assets/worldbook/!通用战斗系统约束.json",
-      "bytes": 18491,
-      "sha256": "e9da4cafe7aa3c9d066358e1b3fde983be605146f77a446c43a6a0aa8b7918bb"
+      "bytes": 18718,
+      "sha256": "9a37ce8c112dee67d236b2b8876d36bd6a3ca3a9d3df4fae330b568eb2adcd81"
     },
     {
       "path": "docs/extension-migration-assessment-20260919.md",
@@ -78,7 +78,7 @@
     {
       "path": "dist/index.js",
       "bytes": 70056,
-      "sha256": "ce51ee7b17e691d98494a5ac6613b03b0e084196ef0ae77b180ecac72b18ad44"
+      "sha256": "e36bf1be022ba04e76d94c72b2262737c3217d45d9333e251197d2a3e9273a27"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -88,12 +88,12 @@
     {
       "path": "manifest.json",
       "bytes": 173,
-      "sha256": "fd2b2d0daf3d0b4c2214781ff76947132c240ab3e0eb9aac14dbc62d625650c6"
+      "sha256": "19f4accaaac1db56d1e9a1d104c63689e74c76e723aedc3245a62eb4fc7d576c"
     },
     {
       "path": "dist/panel/index.html",
       "bytes": 43276,
-      "sha256": "ab82ba2471172f07c33b7fd6b7f150a02281978dcef8ab2837270a2b953fb3ef"
+      "sha256": "6554009fd61212efcc636a21dfba18cf4097f9f86745b2c1c4d76a9a3a5b783f"
     },
     {
       "path": "release/current-baseline.json",

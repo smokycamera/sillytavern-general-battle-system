@@ -63,14 +63,14 @@ export const WEAPON_CLASSES: Record<string, WeaponClassProfile> = {
   sword: { id: 'sword', name: '剑', profile: { id: 'cls-sword', name: '剑', dmgMult: 1.0, apShare: 1.0, range: 0, desc: MELEE_PROFILES.sword!.description } },
   axe: { id: 'axe', name: '斧', profile: { id: 'cls-axe', name: '斧', dmgMult: 1.15, apShare: 1.1, range: 0, desc: MELEE_PROFILES.axe!.description } },
   spear: { id: 'spear', name: '长兵器', profile: { id: 'cls-spear', name: '长兵器', dmgMult: 1.05, apShare: 1.15, range: 1, desc: MELEE_PROFILES.spear!.description } },
-  bow: { id: 'bow', name: '弓弩', profile: { id: 'cls-bow', name: '弓弩', dmgMult: 1.0, apShare: 1.0, range: 4, minRange: 1, pointBlankPolicy: 'forbid', desc: '远程射击' } },
+  bow: { id: 'bow', name: '弓弩', profile: { id: 'cls-bow', name: '弓弩', dmgMult: 1.0, apShare: 1.0, range: 4, minRange: 1, pointBlankPolicy: 'forbid', desc: '远程射击：可越过友军，不能越过墙体或存活敌方前排' } },
   firearm: { id: 'firearm', name: '火枪', profile: { id: 'cls-firearm', name: '火枪', dmgMult: 1.5, apShare: 1.05, range: 4, minRange: 0, pointBlankPolicy: 'penalty', pointBlankPenalty: -2, reload: 1, desc: '单发火枪：高单发威力、穿透额外+1，射后装填一回合' } },
   rifle: { id: 'rifle', name: '步枪', profile: { id: 'cls-rifle', name: '步枪', dmgMult: 1.2, apShare: 1.1, range: 4, minRange: 0, pointBlankPolicy: 'penalty', pointBlankPenalty: -2, attacks: 2, desc: '自动步枪：每回合两段速射' } },
   autocannon: { id: 'autocannon', name: '机炮', profile: { id: 'cls-autocannon', name: '机炮', dmgMult: 1.4, apShare: 1.15, range: 5, minRange: 0, pointBlankPolicy: 'penalty', pointBlankPenalty: -3, attacks: 3, desc: '直射连续点射：三段分摊火力预算，穿透额外+2，擅长连续火力和装甲交战；重型投送需要炮组或大型/载具平台' } },
   cannon: { id: 'cannon', name: '直射火炮', profile: { id: 'cls-cannon', name: '直射火炮', dmgMult: 1.6, apShare: 1.2, range: 5, minRange: 0, pointBlankPolicy: 'penalty', pointBlankPenalty: -3, reload: 1, desc: '直射重火力：受地形与单位视线遮挡，隔回合一发' } },
   'indirect-cannon': { id: 'indirect-cannon', name: '曲射火炮', profile: { id: 'cls-indirect-cannon', name: '曲射火炮', dmgMult: 1.6, apShare: 1.2, range: 5, minRange: 2, pointBlankPolicy: 'forbid', indirect: true, reload: 1, desc: '间接重火力：可越过遮挡，需己方观察者；最小射程2，隔回合一发' } },
   energy: { id: 'energy', name: '能量武器', profile: { id: 'cls-energy', name: '能量武器', dmgMult: 1.3, apShare: 1.2, range: 4, minRange: 0, pointBlankPolicy: 'penalty', pointBlankPenalty: -2, attacks: 2, desc: '等离子/激光：护甲破甲优势' } },
-  magic: { id: 'magic', name: '法杖', profile: { id: 'cls-magic', name: '法杖', dmgMult: 0.9, apShare: 1.3, range: 4, minRange: 0, pointBlankPolicy: 'allow', desc: '魔弹：部分无视护甲' } },
+  magic: { id: 'magic', name: '法杖', profile: { id: 'cls-magic', name: '法杖', dmgMult: 0.9, apShare: 1.3, range: 4, minRange: 0, pointBlankPolicy: 'allow', desc: '魔弹：部分无视护甲；可越过友军，不能越过墙体或存活敌方前排' } },
   blunt: { id: 'blunt', name: '钝器', profile: { id: 'cls-blunt', name: '钝器', dmgMult: 1.1, apShare: 1.2, range: 0, desc: MELEE_PROFILES.blunt!.description } },
 };
 
