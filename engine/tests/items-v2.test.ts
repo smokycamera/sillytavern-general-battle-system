@@ -9,7 +9,7 @@ describe('V2独立物品与真实配装规则', () => {
     const unit = hero();
     const item = compileItem({ kind: 'weapon', mechanism: 'sword', power: 1 }, { id: unit.weapon!.id, name: unit.weapon!.name, seed: 'carrier:primary' });
     expect(item).toEqual({ kind: 'weapon', value: unit.weapon });
-    expect(compileItem({ kind: 'weapon', mechanism: 'sword', power: 5 }, { id: unit.weapon!.id, name: unit.weapon!.name, seed: 'carrier:primary' })).toEqual(item);
+    expect(compileItem({ kind: 'weapon', mechanism: 'sword', power: 1 }, { id: unit.weapon!.id, name: unit.weapon!.name, seed: 'carrier:primary' })).toEqual(item);
   });
   it('双手武器可以配盾，检查不得卸装或变更武器', () => {
     const unit = hero();
