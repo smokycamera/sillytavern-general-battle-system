@@ -35,12 +35,12 @@ describe('V2 机制生成回归', () => {
     expect(resolveStack(mods, 'atk', { ranged: true }).flatTotal).toBe(2);
     expect(resolveStack(mods, 'dmg', { ranged: true }).multTotal).toBe(1.2);
   });
-  it('已学不等于准备；无盾/无召唤来源不可用，共享冷却不受改名影响', () => {
+  it('五技能槽允许三项全部准备；无盾/无召唤来源不可用，共享冷却不受改名影响', () => {
     const unit = make({ weaponClass: 'sword', abilityBlueprints: ['bp-iron-guard', 'bp-mending', 'bp-call-reinforce'] });
     expect(unit.abilities).toHaveLength(3);
-    expect(unit.preparedAbilityIds).toHaveLength(2);
+    expect(unit.preparedAbilityIds).toHaveLength(3);
     expect(abilityUsabilityReason(unit, unit.abilities[0]!)).toContain('盾牌');
-    expect(abilityUsabilityReason(unit, unit.abilities[2]!)).toContain('尚未准备');
+    expect(abilityUsabilityReason(unit, unit.abilities[2]!)).toContain('reserve 不足');
     const heal = unit.abilities[1]!;
     unit.abilityState = [{ abilityId: heal.cooldownGroup!, cdLeft: 2, used: 1 }];
     expect(abilityUsabilityReason(unit, { ...heal, name: '另一个中文名' })).toContain('冷却');

@@ -44,9 +44,10 @@ describe('会战飞行空域与地面任务', () => {
   });
   it('控制致命坠落归属施法者，重复阶段不能重复记经验', () => {
     const a = unit('a', 'ally'), b = unit('b', 'enemy', ['flying']); b.hp = 40;
+    const expectedCasualtyXp = b.hp * b.xpValue!;
     a.abilities = [{ id: 'ground', name: '震慑', target: 'enemy', range: { metric: 'grid', min: 0, max: 5 }, effects: [{ op: 'condition', conditionId: 'stunned', dur: 2 }] }]; a.preparedAbilityIds = ['ground'];
     const battle0 = new MassBattle({ rules: V2_TW, combatants: [a, b], seed: 'fall-xp' }); battle0.start(); battle0.useAbility(a.id, 'ground', b.id); holdEnemies(battle0); battle0.resolveRound(1);
-    expect(b.hp).toBe(0); expect(b.status).toBe('dead'); expect(battle0.xpByUnit.get(a.id)).toBe(b.xpValue); const xp = battle0.xpGained;
+    expect(b.hp).toBe(0); expect(b.status).toBe('dead'); expect(battle0.xpByUnit.get(a.id)).toBe(expectedCasualtyXp); const xp = battle0.xpGained;
     expect(() => battle0.resolveRound(1)).toThrow(); expect(battle0.xpGained).toBe(xp);
   });
   it('空中溃逃和正常撤离不等于失能，不凭空追加坠落伤亡', () => {

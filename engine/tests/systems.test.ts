@@ -96,14 +96,15 @@ describe('副武器（weapon2 显式声明）', () => {
     expect(dual.sidearm!.level).toBe(3);
   });
 
-  it('副武器拒收远程原型：弓弩类回退皮肤默认近战位', () => {
+  it('副武器允许显式远程原型，不再强制回退近战位', () => {
     const u = gen({
       name: '奇怪的射手', scale: 'hero', archetype: 'ranged', side: 'ally',
       sidearmClass: 'bow', sidearmLevel: 3, sidearmName: '副手弩',
     });
-    // 名字保留 AI 的叫法，数值按时代默认近战位（长剑 range 0）
+    // 显式副手弓弩保留其真实远程规格；副槽不再强制限定近战武器。
     expect(u.sidearm!.name).toBe('副手弩');
-    expect(u.sidearm!.range).toBe(0);
+    expect(u.sidearm!.range).toBe(4);
+    expect(u.sidearm!.tags).toContain('ranged');
   });
 
   it('weaponOverride 让结算用副武器骰子与等级（免近战罚）', () => {
@@ -137,7 +138,7 @@ describe('军团近战副武器切换', () => {
     expect(mb.issue({ unitId: withSide.id, type: 'attack', targetId: foe.id }).ok).toBe(true);
     expect(mb.issue({ unitId: noSide.id, type: 'attack', targetId: foe.id }).ok).toBe(true);
     mb.resolveRound();
-    const sideEntry = mb.log.find((l) => l.text.includes('近战·副武器'));
+    const sideEntry = mb.log.find((l) => l.resolution?.attackerId === withSide.id && l.text.includes('近战·短剑'));
     expect(sideEntry).toBeTruthy();
     expect(sideEntry!.resolution!.atkDetail).not.toContain('武器不善近战');
     // 无副武器的弓连近战吃罚（日志里同回合另一条 attack）
@@ -265,8 +266,8 @@ describe('速射与装填', () => {
     const sb = new SmallBattle({ combatants: [a, b], seed: 'burst', rules: SYSTEM_PACKS.modern!.small, traitRegistry: reg });
     sb.start();
     sb.attack(a.id, b.id, { bypassTurn: true });
-    expect(sb.log.some((l) => l.text.includes('［1/2］'))).toBe(true);
-    expect(sb.log.some((l) => l.text.includes('［2/2］'))).toBe(true);
+    expect(sb.log.some((l) => l.text.includes('·1/2］'))).toBe(true);
+    expect(sb.log.some((l) => l.text.includes('·2/2］'))).toBe(true);
   });
 
   it('重炮发射后进入装填，装填中不能攻击', () => {

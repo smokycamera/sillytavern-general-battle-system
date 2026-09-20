@@ -13,7 +13,8 @@ function fixture(kind: string) {
     : { name: '束缚术士', abilityBlueprints: [{ id: 'bp-binding', level: 10 }, { id: 'bp-arcane-bolt', level: 4 }] });
   const b = unit('b', kind === 'control' ? { level: 1, traits: ['flying'] } : kind === 'vehicle' ? { body: 'vehicle' } : kind === 'area' ? { scale: 'company' } : {});
   const mass = kind === 'vehicle';
-  if (mass) for (const u of [a, b]) u.tags = ['zone:中军', 'rank:reserve'];
+  // Opposite reserve lines plus one wing: distance 6 requires a short move for range-5 artillery.
+  if (mass) { a.tags = ['zone:左翼', 'rank:reserve']; b.tags = ['zone:中军', 'rank:reserve']; }
   const storage = [a, b].map(unitRecordFromCombatant);
   const field = standardField(); field.tiles.fill('open');
   const battle = mass ? new MassBattle({ combatants: [a, b], seed: 'p3c-browser', rules: V2_TW, traitRegistry: registry, commanderId: 'a' })

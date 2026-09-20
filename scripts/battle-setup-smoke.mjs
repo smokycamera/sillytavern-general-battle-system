@@ -51,7 +51,7 @@ try {
       (Math.abs(b % 7 - actor.pos % 7) + Math.abs(Math.floor(b / 7) - Math.floor(actor.pos / 7))))[0];
     assert.notEqual(destination, undefined);
     await p.locator('.grid-cell[data-cell="' + destination + '"]').click();
-    await p.locator('[data-action="grid-move"]').click();
+    await p.locator('.move-preview [data-action="grid-move"]').click();
     const moved = await page.evaluate(() => window.readPanel().battle.snap);
     assert.equal(moved.combatants.find((u) => u.id === actor.id).pos, destination);
     assert.ok(moved.movementSpent.find(([id]) => id === actor.id)[1] > 0);

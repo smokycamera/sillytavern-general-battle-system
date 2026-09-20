@@ -9,13 +9,13 @@ describe('V2个体与编队，不以杂兵称呼划分能力', () => {
     const oldName = make({ scale: 'mook' }), formation = make({ scale: 'company' });
     expect(oldName.scale).toBe('company'); expect(oldName.base).toEqual(formation.base); expect(oldName.weapon).toEqual(formation.weapon);
     const awards = battleXpAwards([oldName], new Map([[oldName.id, 999]]), { won: true });
-    expect(awards[0]!.total).toBe(999);
+    expect(awards[0]).toMatchObject({ kills: 999, participation: 150, rawTotal: 1149, startMembers: 20, survivingMembers: 13, survivalRatio: 0.65, total: 37.3425 });
     const beforeWeapon = structuredClone(oldName.weapon); applyXp(oldName, 9999, registry);
     expect(oldName.level).toBeGreaterThan(3); expect(oldName.hp).toBe(13); expect(oldName.base.hpMax).toBe(20); expect(oldName.weapon).toEqual(beforeWeapon);
   });
   it('旧V2 mook也按正常编队取得战果经验；legacy读取保持原行为', () => {
     const old = make(); old.scale = 'mook';
-    expect(battleXpAwards([old], new Map([[old.id, 99]]), { won: true })[0]!.total).toBe(99);
+    expect(battleXpAwards([old], new Map([[old.id, 99]]), { won: true })[0]).toMatchObject({ rawTotal: 114, startMembers: 20, survivingMembers: 13, total: 3.705 });
     delete old.rulesVersion;
     expect(battleXpAwards([old], new Map([[old.id, 99]]), { won: true })).toEqual([]);
   });

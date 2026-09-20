@@ -2045,7 +2045,7 @@ async function commitBuilder(): Promise<void> {
   requireArchiveWritable(); captureForm();
   const preview = builderPreview, draft = preview?.record ? builderEditDraft : state.form;
   if (!preview || preview.namespace !== adapter.namespace() || !draft || preview.signature !== JSON.stringify(draft)) throw Error('配置已变，请重新预览');
-  const original = { storage: state.storage, roster: state.roster, mode: state.mode, protagonistId: state.protagonistId, commanderId: state.commanderId };
+  const original = { manageOpen: state.manageOpen, storage: state.storage, roster: state.roster, mode: state.mode, protagonistId: state.protagonistId, commanderId: state.commanderId };
   if (preview.record) {
     const current = state.storage.find((r) => r.id === preview.record!.id);
     if (!current || current.revision !== preview.previousRevision) throw Error('档案已更新，请重新预览');
@@ -3211,7 +3211,15 @@ async function handleChange(e: Event): Promise<void> {
     (await persist());
   }
 }
-document.addEventListener('change', e => { void panelTask(() => handleChange(e)); });
+document.addEventListener('change', e => {
+  // Text/number drafts are captured on input. Making the document inert during
+  // their blur/change steals focus from the next field before typing begins.
+  if (e.target instanceof HTMLInputElement && e.target.type !== 'checkbox') {
+    if (e.target.closest('[data-builder-form]')) return;
+    if (inventoryPanel.handleChange(e.target)) return;
+  }
+  void panelTask(() => handleChange(e));
+});
 
 // 聊天/角色卡切换：重新同步存档（事件 + 轮询双保险都在适配层内处理）
 const stopControllerView = controller.listen((_saved: NarrativeSave, receipt?: SaveReceipt) => {

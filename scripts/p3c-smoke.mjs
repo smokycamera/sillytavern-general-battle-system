@@ -22,25 +22,27 @@ try {
   let snap;
   if (!process.argv.includes('--vehicle-only') && !process.argv.includes('--area-only')) {
   await load(fixtures.rider); await p.locator('.grid-board').waitFor();
-  await p.locator('[data-action="grid-cell"][data-cell="52"]').click(); await p.locator('[data-action="grid-move"]').click();
+  await p.locator('[data-action="grid-cell"][data-cell="52"]').click(); await p.locator('.move-preview [data-action="grid-move"]').click();
+  await p.locator('.command-modes button').filter({hasText:'攻击'}).click();
   await p.locator('[data-role="grid-target"]').selectOption('b'); const before = await read();
-  await p.locator('[data-action="grid-execute"]').click(); snap = await read();
+  await p.locator('.command-finish [data-action="grid-execute"]').click(); snap = await read();
   assert.equal(snap.combatants.find((u) => u.id === 'a').pos, 52); assert.ok(snap.actedThisTurn.includes('a'));
   assert.ok(snap.log.some((l) => l.resolution?.attackerId === 'a' && !l.resolution.atkDetail.includes('移动射击')));
   assert.notDeepEqual(snap, before); console.log('✓ 正式小战骑射：真坐骑移动→射击预览→同一主行动，免移动射击惩罚');
 
-  await load(fixtures.physical); await p.locator('[data-role="grid-mode"]').selectOption(fixtures.physical.battle.snap.combatants[0].abilities[0].id);
+  await load(fixtures.physical); await p.locator('.command-modes button').filter({hasText:'技能'}).click(); await p.locator('[data-role="grid-mode"]').selectOption(fixtures.physical.battle.snap.combatants[0].abilities[0].id);
+  await p.locator('[data-detail-id="grid-calculation"] > summary').click();
   assert.match(await p.locator('.action-preview').innerText(), /使用近战副剑/);
-  await p.locator('[data-action="grid-execute"]').click(); snap = await read();
+  await p.locator('.command-finish [data-action="grid-execute"]').click(); snap = await read();
   const hit = snap.log.find((l) => l.resolution?.attackerId === 'a').resolution;
-  assert.equal(hit.channel, 'kinetic'); assert.equal(hit.participants, 6); assert.ok(snap.actedThisTurn.includes('a'));
+  assert.equal(hit.channel, 'kinetic'); assert.equal(hit.participants, 8); assert.ok(snap.actedThisTurn.includes('a'));
   console.log('✓ 正式物理技能：实际副剑预览→有限展开/真实通道→共享行动保存');
 
-  await load(fixtures.control); await p.locator('[data-role="grid-mode"]').selectOption(fixtures.control.battle.snap.combatants[0].abilities[0].id);
+  await load(fixtures.control); await p.locator('.command-modes button').filter({hasText:'技能'}).click(); await p.locator('[data-role="grid-mode"]').selectOption(fixtures.control.battle.snap.combatants[0].abilities[0].id);
   const preview = await p.locator('.action-preview').innerText(); assert.match(preview, /束缚|定身/); assert.match(preview, /迫降概率/);
   await page.setViewportSize({ width: 390, height: 844 }); await p.locator('.grid-command').evaluate((el) => el.scrollIntoView({ block: 'center' }));
   await page.screenshot({ path: 'panel/smoke-shots/p3c-control-preview-390.png' });
-  const start = await read(); await p.locator('[data-action="grid-execute"]').click(); snap = await read();
+  const start = await read(); await p.locator('.command-finish [data-action="grid-execute"]').click(); snap = await read();
   assert.ok(snap.actedThisTurn.includes('a')); assert.ok(snap.combatants.find((u) => u.id === 'a').resources.SP < start.combatants.find((u) => u.id === 'a').resources.SP);
   const controlled = snap.combatants.find((u) => u.id === 'b');
   assert.ok(controlled.conditions.some((c) => c.id === 'restrained')); assert.equal(controlled.airborne, false);
@@ -55,18 +57,18 @@ try {
   assert.match(await p.locator('.formation-preview').innerText(), /稳定|行进|短移/);
   await p.locator('[data-action="formation-issue"]').click();
   await p.locator('[data-action="mass-resolve"]').click(); snap = await read();
-  const vehicle = snap.combatants.find((u) => u.id === 'a'); assert.ok(vehicle.formationPosition === 'ally:中军:rear' || vehicle.tags.includes('rank:rear'), JSON.stringify({ unit: { tags: vehicle.tags, position: vehicle.formationPosition }, orders: snap.orders, log: snap.log })); assert.equal(vehicle.weapon.recipe.stabilized, true);
+  const vehicle = snap.combatants.find((u) => u.id === 'a'); assert.ok(vehicle.formationPosition === 'ally:左翼:rear', JSON.stringify({ unit: { tags: vehicle.tags, position: vehicle.formationPosition }, orders: snap.orders, log: snap.log })); assert.equal(vehicle.weapon.recipe.stabilized, true);
   assert.equal(vehicle.armor.recipe.protectionProfile, 'thermal'); assert.equal(vehicle.mount, undefined); assert.equal(snap.reloadCd.find(([id]) => id === 'a')[1], 1);
   assert.equal(snap.log.filter((l) => l.resolution?.attackerId === 'a').length, 1);
   await load({ ...fixtures.vehicle, battle: { kind: 'mass', snap } }); assert.deepEqual(await read(), snap);
   console.log('✓ 正式车辆：同任务短移开炮→装填/专项装甲保存→重开，无骑乘身份');
   }
   if (!process.argv.includes('--vehicle-only')) {
-    await load(fixtures.area); await p.locator('[data-role="grid-mode"]').selectOption(fixtures.area.battle.snap.combatants[0].abilities[0].id);
+    await load(fixtures.area); await p.locator('.command-modes button').filter({hasText:'技能'}).click(); await p.locator('[data-role="grid-mode"]').selectOption(fixtures.area.battle.snap.combatants[0].abilities[0].id);
     assert.match(await p.locator('.action-preview').innerText(), /至多4名成员暴露/);
     await page.setViewportSize({ width: 390, height: 844 }); await p.locator('.action-preview').evaluate((el) => el.scrollIntoView({ block: 'center' }));
     await page.screenshot({ path: 'panel/smoke-shots/p3c-area-preview-390.png' });
-    await p.locator('[data-action="grid-execute"]').click(); snap = await read();
+    await p.locator('.command-finish [data-action="grid-execute"]').click(); snap = await read();
     assert.ok(snap.combatants.find((u) => u.id === 'b').hp < 500); assert.ok(snap.actedThisTurn.includes('a'));
     await load({ ...fixtures.area, battle: { kind: 'small', snap } }); assert.deepEqual(await read(), snap);
     console.log('✓ 正式范围法术：群体暴露和疏散说明→真实伤亡/同一行动→冻结配方重开');

@@ -124,6 +124,15 @@ try {
   await checkLayout();
   }
   const forward = structuredClone(fixture); forward.battle = null;
+  // Current mode selection uses entity count, not company headcount: >16 starts mass combat.
+  for (let n = 0; forward.storage.length < 17; n++) {
+    const extra = structuredClone(forward.storage.find(u => u.id === (n % 2 ? 'a' : 'enemy')));
+    extra.id = extra.snapshot.id = 'formation-extra-' + n;
+    extra.zone = n % 4 < 2 ? '左翼' : '右翼'; extra.rank = n < 8 ? 'front' : 'rear';
+    for (const slot of ['weapon', 'armor']) if (extra.snapshot[slot]) extra.snapshot[slot].id = extra.id + ':' + slot;
+    extra.snapshot.tags = extra.snapshot.tags.filter(t => !t.startsWith('zone:') && !t.startsWith('rank:'));
+    forward.storage.push(extra); forward.rosterIds.push(extra.id);
+  }
   const reserve = forward.storage.find((u) => u.id === 'reserve'); reserve.traits.push('vanguard'); reserve.snapshot.traits.push('vanguard');
   await page.evaluate(({ save, html }) => { window.loadFixture(save); document.querySelector('#panel').srcdoc = html; }, { save: forward, html });
   await p.locator('[data-action="mass-start"]').click(); await p.locator('.formation-grid').waitFor();
@@ -148,7 +157,7 @@ try {
   await p.locator('body').evaluate(() => { const original = Storage.prototype.setItem; Storage.prototype.setItem = function (...args) { if (window.parent.failSave) throw Error('test quota'); return original.apply(this, args); }; }); await page.evaluate(() => { window.failSave = true; });
   await p.locator('.mass-controls [data-action="mass-resolve"]').click(); assert.equal(await page.evaluate(() => JSON.stringify(window.readBattle())), beforeDive); assert.match(await p.locator('[data-role="save-status"]').innerText(), /未保存/);
   await page.evaluate(() => { window.failSave = false; }); await p.locator('.mass-controls [data-action="mass-resolve"]').click();
-  flying = await page.evaluate(() => window.readBattle()); assert.equal(flying.combatants.find((u) => u.id === 'a').airborne, false); assert.equal(flying.combatants.find((u) => u.id === 'a').fatigue, 3);
+  flying = await page.evaluate(() => window.readBattle()); assert.equal(flying.combatants.find((u) => u.id === 'a').airborne, false); assert.equal(flying.combatants.find((u) => u.id === 'a').fatigue, 1.5);
   assert.ok(flying.log.some((e) => e.resolution?.attackerId === 'a'));
   await page.evaluate((html) => { document.querySelector('#panel').srcdoc = html; }, html); await p.locator('.formation-grid').waitFor(); assert.equal(await page.evaluate(() => JSON.stringify(window.readBattle())), JSON.stringify(flying));
   console.log('✓ 会战飞行：正式军令跨过前线→后排空域与阵营可见→扑击预览→整轮保存失败回退→重试落地攻击/疲劳→重开');
@@ -185,7 +194,7 @@ try {
   await p.locator('.mass-controls [data-action="mass-resolve"]').click(); assert.equal(await page.evaluate(() => JSON.stringify(window.readBattle())), panicBefore);
   await page.evaluate(() => { window.failSave = false; }); await p.locator('.mass-controls [data-action="mass-resolve"]').click(); const routed = await page.evaluate(() => window.readBattle());
   assert.equal(routed.combatants.find((u) => u.id === 'a').status, 'routing'); assert.deepEqual(routed.combatants.find((u) => u.id === 'a').moraleState.terrorSeen, ['enemy']);
-  assert.equal(routed.combatants.find((u) => u.id === 'hero').hp, 100); assert.doesNotMatch(await p.locator('body').innerText(), /主帅倒下/); await selectActor('a'); assert.match(await p.locator('.formation-status').innerText(), /剩余2次机会/);
+  assert.equal(routed.combatants.find((u) => u.id === 'hero').hp, 100); assert.doesNotMatch(await p.locator('body').innerText(), /主帅倒下/); await selectActor('a'); assert.match(await p.locator('.formation-status').innerText(), /剩余3次机会/);
   await page.setViewportSize({ width: 390, height: 844 }); await p.locator('.formation-command').evaluate((el) => el.scrollIntoView({ block: 'center' })); await page.screenshot({ path: 'panel/smoke-shots/mass-rally-pending-390.png' });
   await page.evaluate((html) => { document.querySelector('#panel').srcdoc = html; }, html); await p.locator('.formation-grid').waitFor(); assert.equal(await page.evaluate(() => JSON.stringify(window.readBattle())), JSON.stringify(routed));
   await p.locator('.mass-controls [data-action="mass-resolve"]').click(); const rallied = await page.evaluate(() => window.readBattle());

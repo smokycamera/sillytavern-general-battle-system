@@ -170,11 +170,11 @@ describe('AI 建议标签解析', () => {
     expect(plain.weapon2Name).toBeUndefined();
   });
 
-  it('世界书格式与战报演出常驻，六个完整短例均通过正式解析，80人不展开为80张卡', () => {
+  it('世界书格式与战报演出常驻，七个完整短例均通过正式解析，80人不展开为80张卡', () => {
     const entries = Object.values(wbJson.entries);
-    expect(entries.filter((e) => e.constant).map((e) => e.uid)).toEqual([0, 2]);
+    expect(entries.filter((e) => e.constant).map((e) => e.uid)).toEqual([0, 1, 5, 8]);
     const blocks = entries.flatMap((e) => e.content.match(/<tb>(?:\s*<[a-z_]+\s[^<>]*\/>\s*)+<\/tb>/g) ?? []);
-    expect(blocks).toHaveLength(6);
+    expect(blocks).toHaveLength(7);
     const events = blocks.flatMap((block) => { const result = parseProtocol(block); expect(result.errors).toEqual([]); return result.events; });
     expect(events.find((e) => e.kind === 'unit-update')).toMatchObject({ hp: 500 });
     expect(events.find((e) => e.kind === 'spawn')).toMatchObject({ scale: 'company', hpMax: 80, count: 1, weaponClass: 'rifle', weaponLevel: 5 });

@@ -18,7 +18,7 @@ try{
  const p=page.frameLocator('#panel');
  const load=async save=>{await page.evaluate(({save,html})=>{window.loadFixture(save);document.querySelector('#panel').srcdoc=html;},{save,html});};
  const prepared=structuredClone(small);delete prepared.battle;await load(prepared);await p.locator('[data-action="small-start"]').click();await p.locator('.grid-board').waitFor();
- assert.equal(await page.evaluate(()=>window.readPanel().battle.snap.rulesId),'v4-d20');checks.push('面板新开小战采用V4；以下旧V3快照保持原规则');
+ assert.equal(await page.evaluate(()=>window.readPanel().battle.snap.rulesId),'v4-overflow-d20');checks.push('面板新开小战采用V4；以下旧V3快照保持原规则');
  for(const [mode,save] of [['small',small],['mass',mass]]){
   await load(save);await p.locator(mode==='mass'?'.formation-grid':'.grid-board').waitFor();
   if(mode==='small'){

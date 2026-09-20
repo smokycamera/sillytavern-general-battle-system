@@ -1599,15 +1599,23 @@ export class SmallBattle {
       plans.push({ score: positionScore(path) + preview.expectedDamage + (preview.expectedDamage >= memberHealth(target) ? 4 : 0), offensive: preview.expectedDamage > 0, path, targetId: target.id, kind: 'charge' });
     }
     const tactic = unit.side === 'ally' ? this.allyTactic : 'balanced';
+    // 逃脱任务的防守方若已经占住出口，不应为了普通位置评分主动让路。
+    // 仍保留原地攻击/固守/警戒；若出口上的动作全部非法，再回退到普通候选。
+    const defendsEscape = objective.kind === 'escape'
+      && this.combatants.some(other => other.id === objective.unitId && other.side !== unit.side);
     // 单纯自保不能推进战斗：存在有效进攻时，仅保留固守的队友掩护收益。
     // 无法还击或玩家明确选择固守时，仍允许靠姿态减轻当前威胁。
     if (tactic !== 'defensive' && plans.some(plan => plan.offensive)) for (const plan of plans) plan.score -= plan.selfDefenseScore ?? 0;
     if (tactic === 'aggressive') for (const plan of plans) if (['weapon','charge'].includes(plan.kind)) plan.score += plan.kind === 'charge' ? 3 : 1.5;
     // 固守只影响自动决策；护送对象抵达出口仍优先，手动命令不受限制。
     const eligible = tactic === 'defensive' && !(objective.kind === 'escape' && objective.unitId === unitId) ? plans.filter(plan => plan.path.cost === 0) : plans;
+    const anchored = defendsEscape && unit.pos === objective.cell
+      ? eligible.filter(plan => plan.path.cells.at(-1) === objective.cell)
+      : [];
+    const candidates = anchored.length ? anchored : eligible.length ? eligible : plans;
     const completesEscort = (plan: typeof plans[number]) => objective.kind === 'escape' && objective.unitId === unitId
       && plan.path.cells.at(-1) === objective.cell && (!isAirborne(unit) || plan.kind === 'land');
-    const best = (eligible.length ? eligible : plans).sort((a, b) => Number(completesEscort(b)) - Number(completesEscort(a))
+    const best = candidates.sort((a, b) => Number(completesEscort(b)) - Number(completesEscort(a))
       || b.score - a.score || a.path.cost - b.path.cost || (a.targetId ?? '').localeCompare(b.targetId ?? ''))[0];
     if (best) {
       if (best.path.cost > 0 && best.kind !== 'charge') {

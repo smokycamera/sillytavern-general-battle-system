@@ -62,7 +62,10 @@ try {
   await page.waitForFunction(() => window.__sendCount === 2);
   await page.evaluate(() => { window.__ctx.chatId = 'b'; window.__emit('CHAT_CHANGED'); window.__finishSend(true); });
   await panel.locator('[data-action="out-card"]').waitFor({ state: 'detached' });
-  assert.deepEqual(await page.evaluate(() => window.__stores.b), {}, '旧聊天的异步回执不能写入新聊天');
+  const other = await page.evaluate(() => window.__stores.b.panel);
+  assert.deepEqual(other.reports, [], '旧聊天的异步回执不能写入新聊天');
+  assert.deepEqual(other.reportDeliveries, {});
+  assert.deepEqual(other.storage, []);
   assert.deepEqual(errors, []);
   console.log('PASS：所选战报身份、控制器通知后的发送回执、重复发送拦截、跨聊天回执隔离（正式分发包，模拟宿主）。');
 } finally {

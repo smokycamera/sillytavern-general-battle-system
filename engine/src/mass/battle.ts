@@ -801,10 +801,17 @@ export class MassBattle {
       if (gain > 0) candidates.push({ order: { unitId: u.id, type: 'hold' }, score: gain });
     }
     if (hasFlightAbility(u) || isAirborne(u) || isRangedWeapon(u.weapon) || isRangedWeapon(u.sidearm)) {
+      const pinnedRanged = isRangedWeapon(u.weapon) && foes.some(target => {
+        const volley: Order = { unitId: u.id, type: 'volley', targetId: target.id };
+        return this.v2OrderReason(volley, planning)?.includes('牵制');
+      });
       for (const type of ['rank-forward', 'rank-back', 'shift-left', 'shift-right'] as const) {
         const order: Order = { unitId: u.id, type }; if (this.v2OrderReason(order, planning)) continue;
         const destination = this.maneuverDestination(order, planning);
-        candidates.push({ order, score: futureValue({ ...u, formationPosition: destination.id, fatigue: fatigueAfter(u, 1) }) * 0.6 - 0.5 });
+        const fire = futureValue({ ...u, formationPosition: destination.id, fatigue: fatigueAfter(u, 1) });
+        // 被贴身压制的远程单位应优先脱离到后排重新建立射界；横移作为后排被堵时的次选。
+        const disengage = pinnedRanged && fire > 0 ? (type === 'rank-back' ? 2 : type.startsWith('shift-') ? 1 : 0) : 0;
+        candidates.push({ order, score: fire * 0.6 - 0.5 + disengage });
       }
       const transition: Order = { unitId: u.id, type: isAirborne(u) ? 'land' : 'takeoff' };
       if (!this.v2OrderReason(transition, planning)) {
