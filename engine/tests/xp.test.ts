@@ -66,11 +66,11 @@ describe('战后经验分配', () => {
     e1.xpValue = 200;
     const awards = battleXpAwards([dead, fled, e1], new Map([['甲', 80]]), { won: false });
     const byId = new Map(awards.map((a) => [a.unitId, a]));
-    // pool = round(200×0.05)=10 → 幸存者乙拿 10；甲保留击杀 80
+    // 参战池来自本阵营本战实际记名战功：round(80×0.05)=4；乙拿4，甲保留击杀80
     expect(byId.get('甲')!.kills).toBe(80);
     expect(byId.get('甲')!.participation).toBe(0);
     expect(byId.get('甲')!.total).toBe(80);
-    expect(byId.get('乙')!.total).toBe(10);
+    expect(byId.get('乙')!.total).toBe(4);
   });
 
   it('连队与英雄同样成长；杂兵群不参与', () => {
@@ -81,11 +81,11 @@ describe('战后经验分配', () => {
     e1.xpValue = 200;
     const awards = battleXpAwards([comp, mook, e1], new Map([['连', 50]]), { won: true });
     expect(awards.map((a) => a.unitId)).toEqual(['连']);
-    // pool = round(200×0.15)=30 → 唯一幸存者连队拿 30，加击杀 50
-    expect(awards[0]!.total).toBe(80);
+    // 参战池来自本阵营实际战功：round(50×0.15)=8 → 50+8=58
+    expect(awards[0]!.total).toBe(58);
   });
 
-  it('濒死/溃逃且零击杀的单位不入账，撤离者算参战', () => {
+  it('濒死零击杀不入账；撤离者即使零击杀也可分到本阵营已有战功的参战份额', () => {
     const a1 = hero('甲');
     a1.status = 'dying';
     const a2 = hero('乙');
@@ -93,9 +93,10 @@ describe('战后经验分配', () => {
     const e1 = hero('丙', 'enemy');
     e1.status = 'dead';
     e1.xpValue = 200;
-    const awards = battleXpAwards([a1, a2, e1], new Map(), { won: true });
-    expect(awards.map((a) => a.unitId)).toEqual(['乙']);
-    expect(awards[0]!.participation).toBe(Math.floor(Math.round(200 * 0.15) / 1));
+    const awards = battleXpAwards([a1, a2, e1], new Map([['甲', 200]]), { won: true });
+    expect(awards.map((a) => a.unitId)).toEqual(['甲', '乙']);
+    expect(awards.find((a) => a.unitId === '甲')!.participation).toBe(0);
+    expect(awards.find((a) => a.unitId === '乙')!.participation).toBe(Math.floor(Math.round(200 * 0.15) / 1));
   });
 });
 
