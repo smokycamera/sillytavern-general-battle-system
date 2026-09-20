@@ -5,16 +5,20 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 
 const root = path.resolve('release/native-candidate');
-const artifacts = path.resolve('artifacts/native-extension-smoke'); mkdirSync(artifacts, { recursive: true });
+const metadataMode = process.env.TB_METADATA_MODE ?? 'metadata-only';
+assert.ok(['metadata-only', 'legacy-full'].includes(metadataMode), 'Unknown metadata save mode');
+const artifacts = path.resolve('artifacts/native-extension-smoke', metadataMode); mkdirSync(artifacts, { recursive: true });
 const disk = new Map(); const results = []; const errors = [];
 const fixture = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><textarea id="send_textarea">未发送的玩家草稿 | /send {{macro}}</textarea><input id="pending-file" value="fixture-attachment.txt"><main id="chat"></main><script>
-window.handlers = new Map(); window.__failure=false; window.__delay=0; window.__generations=0; window.__prompts={};
+window.handlers = new Map(); window.__failure=false; window.__delay=0; window.__generations=0; window.__prompts={};window.__metadataSaves=0;window.__fullSaves=0;
+window.persistFixture=async full=>{const snapshot={id:context.chatId,metadata:structuredClone(context.chatMetadata),...(full?{chat:structuredClone(context.chat)}:{})};if(window.__delay)await new Promise(r=>setTimeout(r,window.__delay));if(!window.__failure){const response=await fetch(full?'/fixture/save':'/fixture/metadata',{method:'POST',body:JSON.stringify(snapshot)});if(!response.ok)throw Error('Fixture save failed: '+response.status)}};
 window.context={ characterId:'0', characters:[{avatar:'fixture.png',name:'Fixture'}],chatId:'a',name1:'Tester',chat:[],chatMetadata:{},extensionSettings:{},
 eventTypes:Object.fromEntries(['GENERATION_STARTED','GENERATION_AFTER_COMMANDS','GENERATION_ENDED','GENERATION_STOPPED','MESSAGE_RECEIVED','MESSAGE_EDITED','MESSAGE_SWIPED','MESSAGE_DELETED','MESSAGE_SENT','USER_MESSAGE_RENDERED','CHAT_CHANGED'].map(x=>[x,x])),
 eventSource:{on(k,cb){const a=handlers.get(k)||new Set();a.add(cb);handlers.set(k,a)},removeListener(k,cb){handlers.get(k)?.delete(cb)},async emit(k,...args){for(const cb of handlers.get(k)||[])await cb(...args)}},
 getRequestHeaders:()=>({'Content-Type':'application/json'}),saveSettingsDebounced(){},
-async saveMetadata(){const snapshot={id:context.chatId,metadata:structuredClone(context.chatMetadata),chat:structuredClone(context.chat)};if(window.__delay)await new Promise(r=>setTimeout(r,window.__delay));if(!window.__failure)await fetch('/fixture/save',{method:'POST',body:JSON.stringify(snapshot)})},
-setExtensionPrompt(id,value){__prompts[id]=value},addOneMessage(message){const p=document.createElement('p');p.textContent=message.mes;document.getElementById('chat').append(p)},async generate(type,options){window.__generations++;window.__generationType=type;if(type==='normal'){document.getElementById('send_textarea').value='';document.getElementById('pending-file').value=''}await context.eventSource.emit('GENERATION_STARTED',type,options,false);await context.eventSource.emit('GENERATION_AFTER_COMMANDS',type,options,false);context.chat.push({is_user:false,mes:'合成宿主的完整叙述回复',swipe_id:0,gen_finished:'complete'});await context.saveMetadata();await context.eventSource.emit('MESSAGE_RECEIVED',context.chat.length-1);await context.eventSource.emit('GENERATION_ENDED',context.chat.length-1)}};
+async saveMetadata(){window.__metadataSaves++;await persistFixture(${metadataMode === 'legacy-full'})},
+async saveChat(){window.__fullSaves++;await persistFixture(true)},
+setExtensionPrompt(id,value){__prompts[id]=value},addOneMessage(message){const p=document.createElement('p');p.textContent=message.mes;document.getElementById('chat').append(p)},async generate(type,options){window.__generations++;window.__generationType=type;if(type==='normal'){document.getElementById('send_textarea').value='';document.getElementById('pending-file').value=''}await context.eventSource.emit('GENERATION_STARTED',type,options,false);await context.eventSource.emit('GENERATION_AFTER_COMMANDS',type,options,false);context.chat.push({is_user:false,mes:'合成宿主的完整叙述回复',swipe_id:0,gen_finished:'complete'});await context.saveChat();await context.eventSource.emit('MESSAGE_RECEIVED',context.chat.length-1);await context.eventSource.emit('GENERATION_ENDED',context.chat.length-1)}};
 window.SillyTavern={getContext:()=>context};
 window.switchChat=async id=>{const response=await fetch('/api/chats/get',{method:'POST',body:JSON.stringify({file_name:id})});const data=await response.json();context.chatId=id;context.chatMetadata=data[0]?.chat_metadata||{};context.chat=data.slice(1);await context.eventSource.emit('CHAT_CHANGED')};
 awaitReady();async function awaitReady(){await switchChat('a');await import('/extension/index.js');}
@@ -27,6 +31,7 @@ const server = http.createServer(async (req,res) => {
       const chunks=[];for await(const chunk of req)chunks.push(chunk);const data=JSON.parse(Buffer.concat(chunks).toString('utf8'));
       res.setHeader('Content-Type','application/json');
       if(req.url==='/fixture/save'){disk.set(data.id,structuredClone(data));res.end('{}');return;}
+      if(req.url==='/fixture/metadata'){disk.set(data.id,{...(disk.get(data.id)??{chat:[]}),id:data.id,metadata:structuredClone(data.metadata)});res.end('{}');return;}
       if(req.url==='/api/chats/get'){const state=disk.get(data.file_name);res.end(JSON.stringify([{chat_metadata:state?.metadata??{}},...(state?.chat??[])]));return;}
     }
     const relative=decodeURIComponent(new URL(req.url,'http://localhost').pathname).replace(/^\/extension\//,'');
@@ -36,7 +41,7 @@ const server = http.createServer(async (req,res) => {
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const url=`http://127.0.0.1:${server.address().port}/`;
-const browser=await chromium.launch({executablePath:process.env.TB_BROWSER??'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+const browser=await chromium.launch({...(process.env.TB_BROWSER?{executablePath:process.env.TB_BROWSER}:{}),headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1000}});
 page.on('pageerror',error=>errors.push(String(error)));
 const check=(name,condition)=>{assert.ok(condition,name);results.push(name);console.log('PASS '+name)};
@@ -46,10 +51,25 @@ const idle=async frame=>frame.locator('body:not([aria-busy="true"])').waitFor();
 try {
   await page.goto(url);await ready();
   check('启动无需助手且尚未创建面板',await page.evaluate(()=>!window.TavernHelper&&!document.querySelector('iframe')));
+  check('纯档案初始化不触发完整聊天保存',await page.evaluate(()=>__metadataSaves>0&&__fullSaves===0));
   await page.locator('#tavern-battle-native-entry').click();
   const frame=page.frameLocator('#tavern-battle-native-panel iframe');await frame.locator('#app h1').waitFor();
   check('独立静态面板已加载',await frame.locator('[data-action="workspace-tab"]').count()>0);
-  await page.evaluate(async()=>{context.chat.push({is_user:false,mes:'<tb><spawn name="原生卫兵" side="ally" scale="hero"/><spawn name="原生敌军" side="enemy" scale="hero"/></tb>',swipe_id:0,gen_finished:'complete'});await context.saveMetadata();await __tavernBattleNative.service.scan();});
+  // Reproduce an existing rc.1 journal: envelope saved, message source tag not saved.
+  const partial = await page.evaluate(async()=>{
+    context.chat.push({is_user:false,mes:'<tb><spawn name="原生卫兵" side="ally" scale="hero"/><spawn name="原生敌军" side="enemy" scale="hero"/></tb>',swipe_id:0,gen_finished:'complete'});
+    await context.saveChat();
+    const full=context.saveChat;
+    context.saveChat=()=>persistFixture(false);
+    try { await __tavernBattleNative.service.scan(); }
+    finally { context.saveChat=full; }
+    return {phase:__tavernBattleNative.service.status().phase,candidate:__tavernBattleNative.service.store.pendingOperation()?.candidate};
+  });
+  check('复现旧候选部分落盘而消息标签缺失',partial.phase==='pending'&&disk.get('a').metadata.tavernBattle.lastOperationId===partial.candidate.lastOperationId&&!disk.get('a').chat[0].extra?.tavernBattleSourceId);
+  await page.reload();await page.waitForFunction(()=>window.__tavernBattleNative?.service.status().phase==='pending');
+  await page.locator('#tavern-battle-native-entry').click();await page.getByRole('button',{name:'核实并重试保存',exact:true}).click();await ready();
+  check('旧 pending 刷新后以原操作身份完整保存并解锁',await page.evaluate(id=>!__tavernBattleNative.service.store.hasPending()&&__tavernBattleNative.service.store.envelope().lastOperationId===id,partial.candidate.lastOperationId));
+  check('来源消息标签经过服务端独立读回确认',typeof disk.get('a').chat[0].extra?.tavernBattleSourceId==='string');
   await frame.locator('[data-action="workspace-tab"][data-tab="units"]').first().click();await idle(frame);
   await frame.locator('[data-action="narrative-approve"]').click();await page.waitForFunction(()=>window.__tavernBattleNative.service.snapshot().storage?.length===2);await idle(frame);
   check('正文候选经面板确认建档并部署',(await state()).rosterIds.length===2);
@@ -72,7 +92,6 @@ try {
   check('小战结算与战报归档只入账一次',(await state()).reports?.length===1&&(await state()).committedOutcomeIds?.length===1);
   await frame.locator('[data-action="out-epilogue"]').first().click();await idle(frame);
   check('面板战报触发回复且保留草稿附件',await page.evaluate(()=>__generationType==='regenerate'&&__generations===1&&document.getElementById('send_textarea').value.includes('玩家草稿')&&document.getElementById('pending-file').value==='fixture-attachment.txt'&&Object.values(__tavernBattleNative.service.snapshot().reportDeliveries)[0].receipts.epilogue.status==='sent'));
-  // A recoverable write is tested through the same service used by the view.
   const before=await state();
   const pending=await page.evaluate(async()=>{window.__failure=true;const receipt=await __tavernBattleNative.service.setPromptSettings({sections:{facts:{template:'待确认事实 {{content}}'}}});return {receipt,candidate:__tavernBattleNative.service.store.pendingOperation().candidate};});
   check('保存接口吞错时保持原事实并进入待核实',pending.receipt.status==='pending'&&JSON.stringify(await state())===JSON.stringify(before));
@@ -81,8 +100,9 @@ try {
   check('刷新后恢复同一候选，不重算业务',await page.evaluate(id=>__tavernBattleNative.service.store.envelope().lastOperationId===id,pending.candidate.lastOperationId));
   const delivered=await page.evaluate(async()=>{const a=document.getElementById('send_textarea').value,b=document.getElementById('pending-file').value;const runtime=__tavernBattleNative;const first=await runtime.messages.send('战报 | /send {{literal}}',{deliveryId:'smoke-delivery',generate:false});await runtime.messages.send('战报 | /send {{literal}}',{deliveryId:'smoke-delivery',generate:false});return {first,count:context.chat.filter(x=>x.extra?.tavernBattleDeliveryId==='smoke-delivery').length,draft:a===document.getElementById('send_textarea').value,attachment:b===document.getElementById('pending-file').value,generations:__generations}});
   check('战报去重且不消费草稿附件',delivered.first.status==='inserted'&&delivered.count===1&&delivered.draft&&delivered.attachment&&delivered.generations===0);
+  check('插件插入的战报确实保存到服务端',disk.get('a').chat.filter(x=>x.extra?.tavernBattleDeliveryId==='smoke-delivery').length===1);
   await page.evaluate(()=>switchChat('b'));await ready();check('切聊天得到独立空档',!(await state()).storage?.length&&!(await state()).battle);
-  await page.evaluate(async()=>{context.chat.push({is_user:false,mes:'<tb><spawn name="原生连队" side="ally" scale="company" hpMax="40" count="9"/><spawn name="敌方连队" side="enemy" scale="company" hpMax="40" count="9"/></tb>',swipe_id:0,gen_finished:'complete'});await context.saveMetadata();await __tavernBattleNative.service.scan();});
+  await page.evaluate(async()=>{context.chat.push({is_user:false,mes:'<tb><spawn name="原生连队" side="ally" scale="company" hpMax="40" count="9"/><spawn name="敌方连队" side="enemy" scale="company" hpMax="40" count="9"/></tb>',swipe_id:0,gen_finished:'complete'});await context.saveChat();await __tavernBattleNative.service.scan();});
   await frame.locator('[data-action="workspace-tab"][data-tab="units"]').first().click();await idle(frame);
   await frame.locator('[data-action="narrative-approve"]').click();await page.waitForFunction(()=>__tavernBattleNative.service.snapshot().storage?.length===18);await idle(frame);
   await frame.locator('[data-action="workspace-tab"][data-tab="battle"]').first().click();await idle(frame);
@@ -115,5 +135,16 @@ try {
   await page.evaluate(()=>__tavernBattleNative.dispose());
   check('停用清除入口面板、注入和监听',await page.evaluate(()=>!document.getElementById('tavern-battle-native-entry')&&!document.querySelector('iframe')&&[...handlers.values()].every(s=>s.size===0)&&!__prompts['tavern-battle-native:context']));
   check('无未处理页面异常',errors.length===0);
-} catch(error) { const diagnosis=await page.evaluate(async()=>{const s=__tavernBattleNative.service;return {status:s.status().receipt,pending:s.store.pendingOperation(),disk:await s.host.readPersisted(s.host.session().scope)}});writeFileSync(path.join(artifacts,'settlement-save.json'),JSON.stringify(diagnosis,null,2));console.error(error);console.error('PAGE ERRORS',errors);console.error('STATUS',await page.evaluate(()=>({phase:window.__tavernBattleNative?.service.status().phase,error:window.__tavernBattleNative?.service.status().error,receipt:window.__tavernBattleNative?.service.status().receipt,pending:window.__tavernBattleNative?.service.store.pendingOperation()?.candidate.lastOperationId,head:window.__tavernBattleNative?.service.store.head(),text:document.querySelector('.tb-status')?.textContent})));await page.screenshot({path:path.join(artifacts,'failure.png')});process.exitCode=1; }
-finally {writeFileSync(path.join(artifacts,'report.json'),JSON.stringify({time:new Date().toISOString(),status:process.exitCode?'failed':'passed',results,errors,realHost:false},null,2)+'\n');await browser.close();await new Promise(resolve=>server.close(resolve));}
+} catch(error) {
+  console.error(error);process.exitCode=1;
+  try {
+    const diagnosis=await page.evaluate(async()=>{const s=window.__tavernBattleNative?.service;if(!s)return {error:'Native runtime unavailable'};return {status:s.status().receipt,pending:s.store.pendingOperation(),disk:await s.host.readPersisted(s.host.session().scope)}});
+    writeFileSync(path.join(artifacts,'settlement-save.json'),JSON.stringify(diagnosis,null,2));
+    console.error('PAGE ERRORS',errors);
+    console.error('STATUS',await page.evaluate(()=>({phase:window.__tavernBattleNative?.service.status().phase,error:window.__tavernBattleNative?.service.status().error,receipt:window.__tavernBattleNative?.service.status().receipt,text:document.querySelector('.tb-status')?.textContent})));
+    await page.screenshot({path:path.join(artifacts,'failure.png')});
+  } catch(diagnosticError) { console.error('Diagnostic capture failed',diagnosticError); }
+} finally {
+  writeFileSync(path.join(artifacts,'report.json'),JSON.stringify({time:new Date().toISOString(),status:process.exitCode?'failed':'passed',metadataMode,results,errors,realHost:false},null,2)+'\n');
+  await browser.close();await new Promise(resolve=>server.close(resolve));
+}

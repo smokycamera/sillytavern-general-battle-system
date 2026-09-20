@@ -1,10 +1,30 @@
 {
   "format": "tavern-battle-native-build",
   "version": "0.2.0-rc.1",
-  "builtAt": "2026-09-20T11:02:10.738Z",
-  "sourceFingerprint": "d48fc6d4096ccb8976daa63fbbea57c7fc2e6be2302942785e469bb4004f43d8",
+  "builtAt": "2026-09-20T12:09:19.726Z",
+  "sourceFingerprint": "86eedad1aaa37114234e881f270dbc353ff73999d1da7bfb1b134e4de18860df",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
+    {
+      "path": "COMMERCIAL-LICENSE.md",
+      "bytes": 758,
+      "sha256": "bae3de53ef94b0f7df53e294185aa3551e669726e12fb7726e6bcb843b5393cc"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 3749,
+      "sha256": "1daa20477fb37b106fb8f3be18e6835ccfd6f01fc7f83faccc6897f7f156181d"
+    },
+    {
+      "path": "README.md",
+      "bytes": 656,
+      "sha256": "b8e42ee2a69b46dcce8bac1de376b13fb0f484e42e47ad5e61f13324081403e7"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "bytes": 1179,
+      "sha256": "d9df73c3b55697d4fd7a3929838b8eda35b893abc35cf76a77bc80c0aca061b4"
+    },
     {
       "path": "dist/assets/panel-Csqzv1jF.css",
       "bytes": 7442,
@@ -29,11 +49,6 @@
       "path": "assets/worldbook/!通用战斗系统约束.json",
       "bytes": 32797,
       "sha256": "53f0a77d92ee3f5143ca60204c200f3fc4e59b3ed5b5ff04874bc3ee9c0252a7"
-    },
-    {
-      "path": "COMMERCIAL-LICENSE.md",
-      "bytes": 758,
-      "sha256": "bae3de53ef94b0f7df53e294185aa3551e669726e12fb7726e6bcb843b5393cc"
     },
     {
       "path": "docs/extension-migration-assessment-20260919.md",
@@ -62,13 +77,8 @@
     },
     {
       "path": "dist/index.js",
-      "bytes": 66591,
-      "sha256": "b81d40f9bd71a8e4164275fcfc7c6d6a952611d5487574129d5502a24f82a407"
-    },
-    {
-      "path": "LICENSE",
-      "bytes": 3749,
-      "sha256": "1daa20477fb37b106fb8f3be18e6835ccfd6f01fc7f83faccc6897f7f156181d"
+      "bytes": 66989,
+      "sha256": "4617c2ac8b7a03e71d4fe2043ac1e8bd5b2349e1bff56f3dd9b5915a1338918e"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -86,19 +96,9 @@
       "sha256": "1b3f6c1a8f7fe67817748baa1be641c99b80b8543e3f8c6342afd874c4ddf261"
     },
     {
-      "path": "README.md",
-      "bytes": 6635,
-      "sha256": "60d8a67880172af5f8674b98d4f63cbfe64d50f5dfd9b56369029f6874dc6aba"
-    },
-    {
       "path": "release/current-baseline.json",
       "bytes": 2532,
       "sha256": "8dfb3599bec3e692d47ebf6fd631647326cf5fdeab8c592637c0463aa614e8c5"
-    },
-    {
-      "path": "THIRD_PARTY_NOTICES.md",
-      "bytes": 1179,
-      "sha256": "d9df73c3b55697d4fd7a3929838b8eda35b893abc35cf76a77bc80c0aca061b4"
     }
   ],
   "validation": {

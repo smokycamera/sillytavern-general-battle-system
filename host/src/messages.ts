@@ -23,9 +23,10 @@ export class NativeMessages {
             : { status: 'unknown', detail: '此前插入的消息仍未确认保存，不重复发送' };
         } catch (error) { return { status: 'unknown', detail: String(error) }; }
       }
+      if (!ctx.saveChat) return { status: 'failed', detail: '宿主没有提供聊天完整保存接口，未插入消息' };
       const message: HostMessage = { name: ctx.name1 ?? 'User', is_user: true, is_system: false, mes: text, send_date: new Date().toISOString(), extra: { tavernBattleDeliveryId: deliveryId } };
       chat.push(message); if (ctx.chatMetadata) ctx.chatMetadata.tainted = true;
-      try { await this.host.saveMetadata(); } catch { /* The independent read below decides whether delivery occurred. */ }
+      try { await this.host.saveChat(); } catch { /* The independent read below decides whether delivery occurred. */ }
       try {
         const saved = await this.host.readChat(session.scope);
         if (!saved.some(item => item.extra?.tavernBattleDeliveryId === deliveryId && item.mes === text && item.is_user === true)) return { status: 'unknown', detail: '消息已插入内存，宿主尚未确认保存；不要重复发送' };

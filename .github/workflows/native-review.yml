@@ -1,0 +1,167 @@
+name: Native extension review
+
+on:
+  push:
+    branches: [fix/native-save-verification-review]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: >-
+      github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'build: refresh native bundle')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      package_ready: ${{ steps.record.outputs.package_ready }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Type check
+        id: types
+        continue-on-error: true
+        run: npm run typecheck
+      - name: Complete unit and integration suite
+        id: tests
+        continue-on-error: true
+        run: mkdir -p artifacts/review && npm test -- --reporter=default --reporter=json --outputFile=artifacts/review/full-tests.json
+      - name: Native host and persistence regression suite
+        id: native
+        continue-on-error: true
+        run: npm run test:extension -- --reporter=default --reporter=json --outputFile=artifacts/review/native-tests.json
+      - name: Audit development and production dependencies separately
+        id: audit
+        continue-on-error: true
+        run: |
+          result=0
+          npm audit --json > artifacts/review/npm-audit.json || result=$?
+          npm audit --omit=dev --json > artifacts/review/npm-audit-production.json || result=$?
+          exit "$result"
+      - name: Frozen baseline and migration compatibility
+        id: compatibility
+        continue-on-error: true
+        run: npm run verify:compatibility
+      - name: Build installable native extension
+        id: build
+        continue-on-error: true
+        run: npm run build:extension
+      - name: Install Chromium
+        if: steps.build.outcome == 'success'
+        run: |
+          npx playwright-core install --with-deps chromium
+          node --input-type=module -e "import { chromium } from 'playwright-core'; import { appendFileSync } from 'node:fs'; appendFileSync(process.env.GITHUB_ENV, 'TB_BROWSER=' + chromium.executablePath() + '\n')"
+      - name: Native browser smoke under both host save contracts
+        id: smoke
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        run: |
+          result=0
+          npm run smoke:extension || result=$?
+          TB_METADATA_MODE=legacy-full npm run smoke:extension || result=$?
+          exit "$result"
+      - name: Build historical panel and resident loader
+        id: legacy_build
+        continue-on-error: true
+        run: npm run build:panel && npx --no-install vite build --config panel/controller.vite.config.ts && node scripts/pack-loader.mjs
+      - name: All historical browser smoke entry points
+        id: extended
+        if: steps.legacy_build.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/review-all-smokes.mjs
+      - name: Capture reproducible review workspace
+        if: always()
+        run: |
+          mkdir -p artifacts/review
+          git archive HEAD | gzip > artifacts/review/source.tar.gz
+          tar -czf artifacts/review/node_modules.tar.gz node_modules
+      - name: Record outcomes and compare baseline failures
+        id: record
+        if: always()
+        env:
+          TYPES: ${{ steps.types.outcome }}
+          TESTS: ${{ steps.tests.outcome }}
+          NATIVE: ${{ steps.native.outcome }}
+          AUDIT: ${{ steps.audit.outcome }}
+          COMPATIBILITY: ${{ steps.compatibility.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          SMOKE: ${{ steps.smoke.outcome }}
+          LEGACY_BUILD: ${{ steps.legacy_build.outcome }}
+          EXTENDED: ${{ steps.extended.outcome }}
+          REAL_HOST: not-run
+        run: node scripts/review-summary.mjs
+      - name: Preserve reports and installable build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-review-${{ github.sha }}
+          path: |
+            artifacts/
+            release/native-candidate/
+            dist/
+            manifest.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Full validation gate (known failures remain visible)
+        if: always()
+        env:
+          TYPES: ${{ steps.types.outcome }}
+          TESTS: ${{ steps.tests.outcome }}
+          NATIVE: ${{ steps.native.outcome }}
+          COMPATIBILITY: ${{ steps.compatibility.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          SMOKE: ${{ steps.smoke.outcome }}
+          EXTENDED: ${{ steps.extended.outcome }}
+        run: test "$TYPES" = success && test "$TESTS" = success && test "$NATIVE" = success && test "$COMPATIBILITY" = success && test "$BUILD" = success && test "$SMOKE" = success && test "$EXTENDED" = success
+
+  package-review-branch:
+    needs: validate
+    if: always() && needs.validate.outputs.package_ready == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/fix/native-save-verification-review'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-review-${{ github.sha }}
+          path: ${{ runner.temp }}/native-review-build
+      - name: Commit only the verified native bundle and explicit review report
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+          REVIEW_BRANCH: fix/native-save-verification-review
+          BUILD_DIR: ${{ runner.temp }}/native-review-build
+        run: |
+          actual=$(git ls-remote origin "refs/heads/$REVIEW_BRANCH" | cut -f1)
+          if [ "$actual" != "$EXPECTED_HEAD" ]; then
+            echo 'The branch changed during validation; refusing to overwrite it.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          rm -rf dist
+          cp -a "$BUILD_DIR/dist" dist
+          cp "$BUILD_DIR/manifest.json" manifest.json
+          mkdir -p docs
+          cp "$BUILD_DIR/artifacts/review/summary.json" docs/native-save-review-results.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- dist manifest.json docs/native-save-review-results.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'build: refresh native bundle and explicit review results'
+          git push origin "HEAD:refs/heads/$REVIEW_BRANCH"

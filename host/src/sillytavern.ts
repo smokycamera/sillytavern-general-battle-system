@@ -19,6 +19,7 @@ export interface HostContext {
   eventTypes?: Record<string, string>; event_types?: Record<string, string>;
   eventSource?: { on(event: string, callback: (...args: unknown[]) => void): void; off?(event: string, callback: (...args: unknown[]) => void): void; removeListener?(event: string, callback: (...args: unknown[]) => void): void; emit?(event: string, ...args: unknown[]): Promise<unknown> | unknown };
   saveMetadata?(): Promise<unknown>;
+  saveChat?(): Promise<unknown>;
   getRequestHeaders?(): Record<string, string>;
   setExtensionPrompt?(id: string, content: string, position: number, depth: number, scan: boolean, role: number): void;
   addOneMessage?(message: HostMessage): void;
@@ -122,9 +123,15 @@ export class NativeHost implements MetadataPort {
   generationSettled(session: HostSession): void { if (sameSession(session, this.session())) this.generating = false; }
   hasLegacyRuntime(): boolean { return !!this.host.__tavernBattleController; }
   async saveMetadata(): Promise<void> {
-    const save = this.context().saveMetadata;
-    if (!save) throw Error('宿主没有提供聊天保存接口');
-    await save();
+    const context = this.context();
+    if (!context.saveMetadata) throw Error('宿主没有提供聊天元数据保存接口');
+    await context.saveMetadata();
+  }
+  /** Message changes require the full host save; metadata-only fallback would lose them. */
+  async saveChat(): Promise<void> {
+    const context = this.context();
+    if (!context.saveChat) throw Error('宿主没有提供聊天完整保存接口');
+    await context.saveChat();
   }
   async readPersisted(scope: ChatScope): Promise<Record<string, unknown>> {
     const data = await this.readChat(scope);
