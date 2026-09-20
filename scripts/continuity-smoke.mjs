@@ -39,7 +39,7 @@ try {
   await page.evaluate(() => { window.testFail = false; });
   await panel.locator('[data-action="xp-settle"]').click();
   let r = await record();
-  assert.deepEqual([r.hp, r.base.hpMax, r.level, r.xp], [70, 560, 5, 6500]);
+  assert.deepEqual([r.hp, r.base.hpMax, r.level, r.xp], [70, 560, 5, 7475]);
   assert.deepEqual(r.snapshot.weapon, equipment);
   console.log('✓ 真实面板：保存失败保留未提交战果；重试 C05 70/560 + L5 + 冻结武器');
   await panel.locator('.workspace-nav [data-tab="units"]').click();
@@ -55,7 +55,7 @@ try {
   await panel.locator('[data-action="out-card"]').click();
   assert.equal((await record()).hp, 500); assert.equal((await record()).revision, revision);
   await panel.locator('.workspace-nav [data-tab="battle"]').click();
-  await panel.locator('[data-action="battle-close"]').click();
+  await panel.locator('.battle-exit [data-action="battle-close"]').click();
   await panel.locator('.workspace-nav [data-tab="reports"]').click();
   assert.equal((await record()).hp, 500);
   assert.equal(await panel.locator('[data-action="out-card"]').count(), 1);

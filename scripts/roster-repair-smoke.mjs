@@ -22,7 +22,7 @@ const browser = await chromium.launch({ executablePath: 'C:/Program Files (x86)/
 try {
   const page = await browser.newPage(), errors = []; page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(`http://127.0.0.1:${server.address().port}`);
-  const load = async () => { await page.evaluate((html) => { document.querySelector('#panel').srcdoc = html; }, html); await page.frameLocator('#panel').locator('.app-header').waitFor(); await page.frameLocator('#panel').locator('[data-action="manage-toggle"]').evaluate((button) => { if (button.textContent === '展开') button.click(); }); };
+  const load = async () => { await page.evaluate((html) => { document.querySelector('#panel').srcdoc = html; }, html); await page.frameLocator('#panel').locator('.app-header').waitFor(); await page.frameLocator('#panel').locator('.workspace-nav [data-tab="units"]').click(); await page.frameLocator('#panel').locator('[data-action="manage-toggle"]').evaluate((button) => { if (button.textContent === '展开') button.click(); }); };
   await load();
   await page.evaluate(() => { window.emit('GENERATION_AFTER_COMMANDS'); window.emit('MESSAGE_RECEIVED', 1); window.emit('GENERATION_ENDED', 1); });
   await page.waitForFunction(() => window.readSave()?.proposals?.some((p) => p.status === 'pending'));

@@ -35,6 +35,7 @@ try {
   }, { fixture, html, sequence: resume?.sequence ?? 0 });
   const panel = page.frameLocator('#panel');
   const root = panel.locator('#inventory-panel');
+  await panel.locator('.workspace-nav [data-tab="inventory"]').click();
   await root.waitFor({ state: 'attached' });
   const tab = (name) => panel.locator('.workspace-nav [data-tab="' + name + '"]').click();
   const reveal = async (locator) => {
@@ -72,7 +73,7 @@ try {
   await confirm();
   current = await save(); const gun = current.inventory.find((i) => i.name === '测试大炮');
   assert.ok(gun?.mechanics); assert.equal(gun.qty, 1);
-  await itemRow('测试大炮').locator('[data-action="inventory-equip"][data-slot="primary"]').click();
+  await reveal(itemRow('测试大炮').locator('[data-action="inventory-equip"][data-slot="primary"]')); await itemRow('测试大炮').locator('[data-action="inventory-equip"][data-slot="primary"]').click();
   await confirm();
   current = await save();
   assert.equal(current.storage.find((r) => r.id === 'a').snapshot.weapon.id, gun.id);
@@ -91,11 +92,12 @@ try {
   await itemRow('附魔大炮').locator('[data-action="inventory-unequip"]').click(); await confirm();
   await root.locator('[data-role="inventory-unit"]').selectOption('b');
   await itemRow('附魔大炮').locator('[data-action="inventory-assign"]').click(); await confirm();
-  await itemRow('附魔大炮').locator('[data-action="inventory-equip"][data-slot="primary"]').click(); await confirm();
+  await reveal(itemRow('附魔大炮').locator('[data-action="inventory-equip"][data-slot="primary"]')); await itemRow('附魔大炮').locator('[data-action="inventory-equip"][data-slot="primary"]').click(); await confirm();
   current = await save();
   assert.equal(current.storage.find((r) => r.id === 'a').snapshot.weapon, undefined);
   assert.deepEqual(current.storage.find((r) => r.id === 'b').snapshot.weapon, upgraded.mechanics.value);
-  await page.evaluate(() => window.openPanel()); await root.waitFor({ state: 'attached' }); await tab('inventory');
+  await page.evaluate(() => window.openPanel()); await panel.locator('.workspace-nav [data-tab="inventory"]').click();
+  await root.waitFor({ state: 'attached' }); await tab('inventory');
   assert.deepEqual((await save()).storage.find((r) => r.id === 'b').snapshot.weapon, upgraded.mechanics.value);
   console.log('✓ 正式面板：附魔/重铸保留实物与历史，卸下→转移→重新装备→重开保持精确实例');
   await root.locator('[data-role="inventory-unit"]').selectOption('a');
@@ -148,7 +150,8 @@ try {
   await itemRow('恢复剂').locator('[data-action="inventory-assign"]').click(); await confirm();
   await tab('units');
   if (!(await panel.locator('[data-action="storage-into"][data-id="b"]').count())) await panel.locator('[data-action="manage-toggle"]').click();
-  await panel.locator('[data-action="storage-into"][data-id="b"]').click();
+  if (await panel.locator('[data-action="storage-into"][data-id="b"]').isEnabled()) await panel.locator('[data-action="storage-into"][data-id="b"]').click();
+  assert.ok((await save()).rosterIds.includes('b'));
   await tab('battle');
   await panel.locator('[data-action="small-start"]').click();
   const active = (snapshot) => snapshot.battle.snap.turnOrder[snapshot.battle.snap.turnIndex];
@@ -162,30 +165,32 @@ try {
   await page.screenshot({ path: 'panel/smoke-shots/inventory-battle-390-preview.png' });
   const beforeBattleUse = await save();
   await page.evaluate(() => { window.testFail = true; });
-  await panel.locator('[data-action="grid-execute"]').click();
+  await panel.locator('.command-finish [data-action="grid-execute"]').click();
   assert.deepEqual(await save(), beforeBattleUse, 'battle save failure must roll back snapshot and stock together');
   assert.match(await panel.locator('[data-role="save-status"]').innerText(), /未保存/);
   await page.evaluate(() => { window.testFail = false; });
   await mode('item:' + dose.id);
   await panel.locator('[data-role="grid-target"]').selectOption('a');
-  await panel.locator('[data-action="grid-execute"]').click();
+  await panel.locator('.command-finish [data-action="grid-execute"]').click();
   current = await save();
   assert.equal(current.inventory.find((i) => i.id === dose.id).qty, 0);
   assert.equal(current.battle.snap.combatants.find((u) => u.id === 'a').hp, beforeBattleUse.battle.snap.combatants.find((u) => u.id === 'a').hp + 7);
   assert.ok(current.battle.snap.actedThisTurn.includes('a'));
-  assert.equal(await panel.locator('[data-action="grid-execute"]').isDisabled(), true);
+  assert.equal(await panel.locator('.command-finish [data-action="grid-execute"]').isDisabled(), true);
   const afterBattleUse = current;
-  await page.evaluate(() => window.openPanel()); await root.waitFor({ state: 'attached' });
+  await page.evaluate(() => window.openPanel()); await panel.locator('.workspace-nav [data-tab="inventory"]').click();
+  await root.waitFor({ state: 'attached' });
   assert.deepEqual((await save()).battle, afterBattleUse.battle);
   assert.equal((await save()).inventory.find((i) => i.id === dose.id).qty, 0);
   console.log('✓ 正式战场：携行→预览→保存失败撤回→重试，一次治疗/扣量/主行动，重开不补回');
+  await tab('battle');
   let manualShot = false;
   for (let n = 0; n < 100 && !(await panel.locator('[data-action="battle-close"]').count()); n++) {
     if (active(await save()) === 'b') {
       await mode('weapon');
       if (await panel.locator('[data-role="grid-target"] option[value="e"]').count()) await panel.locator('[data-role="grid-target"]').selectOption('e');
       // 自动行动会在移动后立即开火，无法证明玩家的确认路径；这里实际点格移动再确认攻击。
-      for (let move = 0; move < 3 && !(await panel.locator('[data-action="grid-execute"]').isEnabled()); move++) {
+      for (let move = 0; move < 3 && !(await panel.locator('.command-finish [data-action="grid-execute"]').isEnabled()); move++) {
         const snapshot = (await save()).battle.snap, actor = snapshot.combatants.find((u) => u.id === 'b'), target = snapshot.combatants.find((u) => u.id === 'e');
         const spotted = !!(await panel.locator('[data-role="grid-target"] option[value="e"]').count());
         const destination = spotted ? target.pos : snapshot.battlefield.objective.cell;
@@ -199,14 +204,14 @@ try {
         const cell = cells.sort((a, b) => score(a) - score(b) || a - b)[0];
         if (cell === undefined) break;
         await panel.locator(`[data-action="grid-cell"][data-cell="${cell}"]`).click();
-        if (!(await panel.locator('[data-action="grid-move"]').isEnabled())) break;
-        await panel.locator('[data-action="grid-move"]').click();
+        if (!(await panel.locator('.move-preview [data-action="grid-move"]').isEnabled())) break;
+        await panel.locator('.move-preview [data-action="grid-move"]').click();
         await mode('weapon');
         if (await panel.locator('[data-role="grid-target"] option[value="e"]').count()) await panel.locator('[data-role="grid-target"]').selectOption('e');
       }
       await mode('weapon');
-      if (await panel.locator('[data-action="grid-execute"]').isEnabled()) {
-        await panel.locator('[data-action="grid-execute"]').click(); manualShot = true;
+      if (await panel.locator('.command-finish [data-action="grid-execute"]').isEnabled()) {
+        await panel.locator('.command-finish [data-action="grid-execute"]').click(); manualShot = true;
         if (await panel.locator('[data-action="battle-close"]').count()) break;
       }
     }
@@ -215,9 +220,14 @@ try {
   current = await save();
   assert.equal(manualShot, true, 'player must fire the actual reforged cannon: ' + JSON.stringify(current.battle.snap.log.slice(-8)));
   const shot = current.battle.snap.log.find((l) => l.resolution?.attackerId === 'b' && l.resolution.channel === 'arcane');
-  assert.ok(shot, 'reforged attack evidence: ' + JSON.stringify(current.battle.snap.log.slice(-12))); assert.equal(shot.resolution.penetration, upgraded.mechanics.value.penetration);
-  assert.equal(shot.resolution.baseRoll.expr, upgraded.mechanics.value.baseDice);
-  await panel.locator('[data-action="battle-close"]').click();
+  assert.ok(shot, 'reforged attack evidence: ' + JSON.stringify(current.battle.snap.log.slice(-12))); const firedWeapon = current.battle.snap.combatants.find(u => u.id === 'b').weapon;
+  assert.equal(firedWeapon.id, upgraded.mechanics.value.id);
+  assert.equal(firedWeapon.recipe.power, 8);
+  assert.equal(firedWeapon.channel, 'arcane');
+  // V4 projects the frozen L8 cannon through the current anchor (2 * 8 + 2).
+  assert.equal(shot.resolution.penetration, 18);
+  assert.equal(shot.resolution.baseRoll.expr, '8d6');
+  await panel.locator('.battle-exit [data-action="battle-close"]').click();
   current = await save();
   assert.equal(current.inventory.find((i) => i.id === dose.id).qty, 0);
   assert.equal(current.storage.find((r) => r.id === 'a').snapshot.abilities.some((s) => s.itemSourceId), false);
@@ -225,7 +235,8 @@ try {
   await tab('units');
   if (!await panel.locator('[data-action="storage-into"][data-id="e2"]').count()) await panel.locator('[data-action="manage-toggle"]').click();
   await panel.locator('[data-action="storage-into"][data-id="e2"]').click();
-  await panel.locator('[data-action="storage-into"][data-id="b"]').click();
+  if (await panel.locator('[data-action="storage-into"][data-id="b"]').isEnabled()) await panel.locator('[data-action="storage-into"][data-id="b"]').click();
+  assert.ok((await save()).rosterIds.includes('b'));
   await tab('battle');
   await panel.locator('[data-action="small-start"]').click();
   current = await save();

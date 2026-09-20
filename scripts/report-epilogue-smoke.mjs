@@ -32,7 +32,7 @@ try{
  assert.ok(report.epilogue.includes('现员400/500人'));assert.equal(report.epilogue.includes('没有开局快照'),false);
  await p.locator('.report-send-actions [data-action="out-epilogue"]').click();
  await p.locator('.report-send-actions [data-action="out-epilogue"][disabled]').waitFor();
- assert.equal(await page.evaluate(()=>window.sent.at(-1)),report.epilogue);
+ assert.equal(await page.evaluate(()=>window.sent.at(-1)),report.epilogue.replace('【叙述任务】\n',''));
  await p.locator('.report-send-actions [data-action="out-digest"]').click();
  await page.waitForFunction(()=>window.sent.length===2);
  assert.ok((await page.evaluate(()=>window.sent.at(-1))).includes('【战阵·'));checks.push('战场结束栏和战报页按钮相邻可见，实际模拟发送终章包含开局/结束/伤害来源，逐轮按钮可用');

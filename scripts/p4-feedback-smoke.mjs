@@ -22,8 +22,8 @@ try {
   const p = page.frameLocator('#panel'); await p.locator('.grid-board').waitFor();
   await p.locator('.command-modes button').filter({ hasText: '技能' }).click();
   await p.locator('.grid-cell[data-cell="31"]').click();
-  await p.locator('[data-action="grid-execute"]').click();
-  assert.match(await p.locator('.round-feedback').innerText(), /守点步兵.*损失4人/s);
+  await p.locator('.command-finish [data-action="grid-execute"]').click();
+  assert.match(await p.locator('.round-feedback').innerText(), /守点步兵.*损失6人/s);
   await p.locator('[data-action="grid-endturn"]').click();
   assert.match(await p.locator('.activation-feedback').innerText(), /铁甲守卫/); // 结束我方后，宿主流程自动完成敌方激活。
   await p.locator('.round-feedback summary').click();
@@ -32,14 +32,14 @@ try {
   await page.evaluate((html) => { document.querySelector('#panel').srcdoc = html; }, html);
   await p.locator('.round-feedback').waitFor();
   assert.equal(await page.evaluate(() => JSON.stringify(window.readSave().battle.snap)), saved);
-  assert.match(await p.locator('.round-feedback').innerText(), /损失4人/);
+  assert.match(await p.locator('.round-feedback').innerText(), /损失6人/);
   for (let n = 0; n < 8 && await page.evaluate(() => window.readSave().battle.snap.round < 2); n++) {
     if (await p.locator('[data-action="grid-endturn"]').isEnabled()) await p.locator('[data-action="grid-endturn"]').click();
     else await p.locator('[data-action="grid-auto"]').click();
   }
   const rounds = await page.evaluate(() => window.readSave().battle.snap.feedback);
   assert.equal(rounds.previous.round, 1);
-  assert.ok(rounds.previous.changes.find((u) => u.id === 'd').lost >= 4);
+  assert.ok(rounds.previous.changes.find((u) => u.id === 'd').lost >= 6);
   const beforeViews = await page.evaluate(() => ({ save: JSON.stringify(window.readSave()), writes: window.writes }));
   mkdirSync('panel/smoke-shots', { recursive: true });
   for (const width of [320, 390, 736, 1024]) for (const theme of ['dark', 'light']) {
@@ -58,8 +58,8 @@ try {
     await p.locator('.round-feedback').scrollIntoViewIfNeeded();
     await page.screenshot({ path: 'panel/smoke-shots/p4-feedback-' + width + '-' + theme + '.png' });
   }
-  await p.locator('.grid-cell[data-cell="31"]').focus();
-  await p.locator('.grid-cell[data-cell="31"]').press('Enter');
+  await p.locator('.grid-cell[data-cell="24"]').focus();
+  await p.locator('.grid-cell[data-cell="24"]').press('Enter');
   assert.match(await p.locator('.map-inspector').innerText(), /任务目标/);
   assert.deepEqual(await page.evaluate(() => ({ save: JSON.stringify(window.readSave()), writes: window.writes })), beforeViews);
   assert.deepEqual(errors, []);

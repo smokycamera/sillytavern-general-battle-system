@@ -15,7 +15,7 @@ export function tacticalFixture() {
     make('e', { name: '未发现的伏兵', traits: ['stalk'] }),
   ];
   const storage = units.map((u) => unitRecordFromCombatant(u)), field = standardField();
-  field.objective = { kind: 'control', cell: 24, rounds: 2, limit: 60 };
+  field.objective = { kind: 'control', cell: 24, rounds: 2, limit: 60, attackingSide: 'ally' };
   field.tiles[44] = 'forest'; field.tiles[46] = 'hill';
   const b = new SmallBattle({ combatants: units, battlefield: field, rules: V2_D20, seed: 'p4-tactical', traitRegistry: registry });
   b.start(); b.turnOrder = ['a', 'b', 'c', 'd', 'e']; b.turnIndex = 0;

@@ -29,7 +29,7 @@ const sourceFingerprint=createHash('sha256').update(sourceFiles.sort().map(file=
 const manifest = { format: 'tavern-battle-native-build', version, builtAt: new Date().toISOString(), sourceFingerprint,
   baselineSha256: JSON.parse(readFileSync('release/current-baseline.json', 'utf8')).sourceSha256,
   files: files.filter(file => !file.endsWith('build-manifest.json')).map(file => ({ path: path.relative(output, file).replaceAll('\\', '/'), bytes: readFileSync(file).length, sha256: hash(file) })),
-  validation: { dependencyAudit: 'passed', status: 'release-candidate', report: 'docs/native-extension-validation.md' } };
+  validation: { dependencyAudit: 'not-run-by-build', status: 'release-candidate', report: 'docs/native-extension-validation.md' } };
 writeFileSync(path.join(output, 'build-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 // The repository itself is directly installable by the host extension manager.
 const dist=path.resolve('dist');
@@ -44,4 +44,4 @@ const repositoryManifest={...manifest,layout:'paths relative to repository root'
   return file.path==='manifest.json'?{path:file.path,bytes:readFileSync(file.path).length,sha256:hash(file.path)}:{...file,path:runtime?'dist/'+file.path:file.path};
 })};
 writeFileSync(path.join(dist,'build-manifest.json'),JSON.stringify(repositoryManifest,null,2)+'\n');
-console.log(`Native package: ${manifest.files.length} files; dependency audit passed.`);
+console.log(`Native package: ${manifest.files.length} files; dependency audit is a separate check.`);

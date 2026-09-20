@@ -50,10 +50,11 @@ try {
   await page.evaluate((save) => window.loadSave(save), small); await reopen(); await p.locator('.battle-preparation').waitFor();
   assert.ok((await page.evaluate(() => window.__injections.filter((a) => a[1]))).every((a) => a[2] === 1 && a[3] === 0 && a[4] === false));
   await page.evaluate(() => window.generate('<tb>' + '<spawn name="士兵" side="enemy" scale="hero" count="20"/>'.repeat(4) + '</tb>'));
-  await page.waitForFunction(() => window.readPanel().proposals?.at(-1)?.status === 'rejected');
+  await page.waitForFunction(() => window.readPanel().proposals?.at(-1)?.status === 'unresolved');
   assert.equal((await page.evaluate(() => window.readPanel())).storage.length, 1);
-  assert.match(await page.evaluate(() => window.__injections.at(-1)[1]), /本批新建单位超过32/);
-  assert.match(await p.locator('.narrative-alert').innerText(), /未应用.*32/);
+  assert.match(await page.evaluate(() => window.readPanel().proposals.at(-1).reason), /本批新建单位超过32/);
+  assert.doesNotMatch(await page.evaluate(() => window.__injections.at(-1)[1]), /上次候选未应用/);
+  assert.match(await p.locator('.narrative-alert').innerText(), /超过32/);
   await p.locator('[data-action="narrative-review"]').click();
   assert.equal(await p.locator('.narrative-history').evaluate((el) => el.open), true);
   await page.evaluate(() => window.generate('<tb><spawn name="守备连" side="enemy" scale="company" hpMax="80" weapon="步枪L5"/></tb>'));

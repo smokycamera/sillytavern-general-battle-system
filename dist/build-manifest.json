@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "0.2.0-rc.1",
-  "builtAt": "2026-09-20T12:09:19.726Z",
-  "sourceFingerprint": "86eedad1aaa37114234e881f270dbc353ff73999d1da7bfb1b134e4de18860df",
+  "builtAt": "2026-09-20T14:36:24.548Z",
+  "sourceFingerprint": "03ad0fde5d6fd4d08e28d373dca17da397bb56c93964eff5863f712e23088970",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -17,8 +17,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 656,
-      "sha256": "b8e42ee2a69b46dcce8bac1de376b13fb0f484e42e47ad5e61f13324081403e7"
+      "bytes": 676,
+      "sha256": "605960c6d676e04d5010989b60746221288e8ba50662d929dbaf0b449c2426d2"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -31,14 +31,14 @@
       "sha256": "96aaedb0608cff522511fd3c0a7b153b0b9968bdded84f7252317a345b6bf0e9"
     },
     {
-      "path": "dist/assets/panel-DsmZbUCU.js",
-      "bytes": 249961,
-      "sha256": "ddd07eadaef1fd8e5963cece599c390d756259491d1fc825021fb921f1357061"
+      "path": "dist/assets/panel-DFbO-enz.js",
+      "bytes": 250121,
+      "sha256": "b81e002962d10bb0a519be219ea3daacbd321d65598d2f948bfe674effef13d1"
     },
     {
-      "path": "dist/assets/preferences-CAm74eB8.js",
-      "bytes": 490378,
-      "sha256": "7b8a85d96ef81e19981992127e77f4332d85406d3cdefad0ebdca0728e4ebf37"
+      "path": "dist/assets/preferences-CfHcJdln.js",
+      "bytes": 490755,
+      "sha256": "26088ac7582eb62941802d5eea462006ff44cf1ec774b92723a4ace5b5017d2a"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -78,7 +78,7 @@
     {
       "path": "dist/index.js",
       "bytes": 66989,
-      "sha256": "4617c2ac8b7a03e71d4fe2043ac1e8bd5b2349e1bff56f3dd9b5915a1338918e"
+      "sha256": "095d20ca801894e522494ab1898589e13ee13dea1057166387cee1405b039f9c"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -93,7 +93,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 43276,
-      "sha256": "1b3f6c1a8f7fe67817748baa1be641c99b80b8543e3f8c6342afd874c4ddf261"
+      "sha256": "dd3a832f9e794fed8eaae9deac04cfde4c247d13a41f9773c2474315e54c0c38"
     },
     {
       "path": "release/current-baseline.json",
@@ -102,7 +102,7 @@
     }
   ],
   "validation": {
-    "dependencyAudit": "passed",
+    "dependencyAudit": "not-run-by-build",
     "status": "release-candidate",
     "report": "docs/native-extension-validation.md"
   },

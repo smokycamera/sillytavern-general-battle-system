@@ -19,7 +19,7 @@ try{
  await p.locator('[data-detail-id="gen-body"] > summary').click();await p.locator('[data-role="gen-body"]').selectOption('vehicle');await p.locator('[data-role="gen-hpMax"]').fill('12');await p.locator('[data-role="gen-memberHp"]').fill('100');
  await p.locator('[data-action="gen-add"]').click();assert.match(await p.locator('[data-role="builder-preview"]').innerText(),/总生命 1200\/1200/);await p.locator('[data-action="builder-confirm"]').click();
  const created=(await read()).storage.find(u=>u.name==='十二辆自定义生命车辆');assert.equal(created.snapshot.formation.memberHp,100);assert.deepEqual(created.snapshot.formation.health,[{hp:100,count:12}]);checks.push('实际新建界面保存12辆、每辆100生命，预览与归档均为1200总生命');
- await load(cases[0][1].before);await p.locator('[data-action="small-start"]').click();await p.locator('.grid-board').waitFor();assert.equal((await read()).battle.snap.rulesId,'v4-d20');checks.push('实际新开战使用V4，并保留预先受伤的成员生命');
+ await load(cases[0][1].before);await p.locator('[data-action="small-start"]').click();await p.locator('.grid-board').waitFor();assert.equal((await read()).battle.snap.rulesId,'v4-overflow-d20');checks.push('实际新开战使用V4，并保留预先受伤的成员生命');
  for(const [mode,data] of cases){
   await load(data.active);await p.locator(mode==='small'?'.grid-board':'.formation-grid').waitFor();
   if(mode==='small'){await p.locator('.command-modes button').filter({hasText:'攻击'}).click();await p.locator('[data-role="grid-target"]').selectOption('D');}
@@ -38,7 +38,7 @@ try{
   const saved=await read(),report=saved.reports.at(-1);assert.ok(report.epilogue.includes('生命损失'));assert.ok(report.epilogue.includes('73/100生命'));assert.deepEqual(saved.storage.find(u=>u.id==='D').snapshot.formation.health,target.formation.health);
   await p.locator('.workspace-nav [data-tab="reports"]').click();await p.locator('[data-detail-id="report-send-preview"] > summary').click();assert.match(await p.locator('.report-preview').innerText(),/总生命/);
   assert.ok(await p.locator('html').evaluate(el=>el.scrollWidth-innerWidth<=1));await p.locator('.report-preview').evaluate(el=>el.scrollIntoView({block:'center'}));await page.screenshot({path:`panel/smoke-shots/combat-v4-${mode}-390.png`});
-  await p.locator('.report-send-actions [data-action="out-epilogue"]').click();await p.locator('.report-send-actions [data-action="out-epilogue"][disabled]').waitFor();assert.equal(await page.evaluate(()=>window.sent.at(-1)),report.epilogue);
+  await p.locator('.report-send-actions [data-action="out-epilogue"]').click();await p.locator('.report-send-actions [data-action="out-epilogue"][disabled]').waitFor();assert.equal(await page.evaluate(()=>window.sent.at(-1)),report.epilogue.replace('【叙述任务】\n',''));
   await p.locator('[data-action="report-restart"]').click();await p.locator('[data-action="report-restart-confirm"]').click();await p.locator(mode==='small'?'.grid-board':'.formation-grid').waitFor();
   const restarted=await read();assert.deepEqual(restarted.battle.snap.combatants.find(u=>u.id==='C').formation.health,[{hp:73,count:1},{hp:100,count:11}]);assert.equal(restarted.battle.snap.combatants.find(u=>u.id==='D').hp,12);
   checks.push(mode+'切换弹种改变穿透且地图不重建；真实射击伤损正确归档、刷新保留；终章发送生命事实，重战恢复开局受伤车辆；390宽度无横溢出');
