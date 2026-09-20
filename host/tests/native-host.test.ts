@@ -11,7 +11,8 @@ function fixture() {
     getRequestHeaders: () => ({ 'Content-Type': 'application/json' }), setExtensionPrompt: vi.fn(), addOneMessage: vi.fn(), generate: vi.fn(async () => {}),
   };
   let disk: unknown[] = [];
-  context.saveMetadata = vi.fn(async () => { disk = structuredClone([{ chat_metadata: context.chatMetadata }, ...context.chat!]); });
+  context.saveMetadata = vi.fn(async () => { disk = [{ chat_metadata: structuredClone(context.chatMetadata) }, ...disk.slice(1)]; });
+  context.saveChat = vi.fn(async () => { disk = structuredClone([{ chat_metadata: context.chatMetadata }, ...context.chat!]); });
   const request = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(url === '/api/users/me' ? { handle: 'tester' } : disk), { status: 200, headers: { 'Content-Type': 'application/json' } }));
   const window = { SillyTavern: { getContext: () => context } };
   return { context, window, request, handlers, host: new NativeHost(window, 'tester', request as typeof fetch) };
@@ -61,6 +62,8 @@ it('消息按结构化文本保存，只插入一次并单次调用生成', asyn
   expect(f.context.generate).toHaveBeenCalledTimes(1);
   expect(f.context.generate).toHaveBeenCalledWith('regenerate', { automatic_trigger: true });
   expect(f.context.addOneMessage).toHaveBeenCalledTimes(1);
+  expect(f.context.saveChat).toHaveBeenCalledTimes(1);
+  expect(f.context.saveMetadata).not.toHaveBeenCalled();
 });
 it('默认生成入口会处理草稿，因此只在末条为投递用户消息时使用安全重生成路径', async () => {
   const f = fixture(); const port = new NativeMessages(f.host); let draft = '/send 玩家草稿', attachment = 'pending-file';
@@ -80,6 +83,12 @@ it('生成失败保持已插入状态；保存未确认不能触发生成', asyn
   const f = fixture(); const port = new NativeMessages(f.host);
   f.context.generate = vi.fn(async () => { throw Error('offline'); });
   expect((await port.send('one')).status).toBe('inserted');
-  f.context.saveMetadata = vi.fn(async () => {});
+  f.context.saveChat = vi.fn(async () => {});
   expect((await port.send('two')).status).toBe('unknown'); expect(f.context.generate).toHaveBeenCalledTimes(1);
+});
+it('缺少完整聊天保存接口时不插入消息，不降级为 metadata 保存', async () => {
+  const f = fixture(); f.context.saveChat = undefined;
+  const receipt = await new NativeMessages(f.host).send('不能丢失的战报');
+  expect(receipt.status).toBe('failed'); expect(f.context.chat).toHaveLength(0);
+  expect(f.context.saveMetadata).not.toHaveBeenCalled(); expect(f.context.generate).not.toHaveBeenCalled();
 });
