@@ -3,6 +3,22 @@ import { tacticalFixture } from '../../scripts/p4-tactical-fixture.js';
 import { renderTacticalBattle, selectTacticalElement, tacticalSelection, type TacticalView } from './tactical-view.js';
 
 describe('战术地图查看与确认', () => {
+  it('同一次点选与渲染只查一次动作；换行动者或后续渲染重新查询', () => {
+    const { b } = tacticalFixture(), view: TacticalView = { mode: 'weapon', selectedId: 'a' };
+    const spy = vi.spyOn(b, 'getActionOptions');
+    const query = selectTacticalElement(b, view, { cell: 31 });
+    const reused = renderTacticalBattle(b, view, false, query);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(renderTacticalBattle(b, view)).toBe(reused);
+    expect(spy).toHaveBeenCalledTimes(2);
+    view.selectedId = 'c'; renderTacticalBattle(b, view, false, query);
+    expect(spy).toHaveBeenLastCalledWith('c');
+    view.selectedId = 'a'; b.byId('a').conditions.push({ id: 'stunned', dur: 2 });
+    renderTacticalBattle(b, view);
+    expect(spy).toHaveBeenCalledTimes(4);
+    expect(spy).toHaveBeenLastCalledWith('a');
+    spy.mockRestore();
+  });
   it('点选与渲染不改事实；敌军不成为查询者，治疗可点友军，同格友军可预览移动', () => {
     const { b } = tacticalFixture(), view: TacticalView = { mode: 'weapon', selectedId: 'a' };
     const before = JSON.stringify(b.toSnapshot()), query = vi.spyOn(b, 'getActionOptions');

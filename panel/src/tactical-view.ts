@@ -11,41 +11,43 @@ import { movementLabel } from '../../engine/src/tactics.js';
 import { spCapacity } from '../../engine/src/resources.js';
 
 export interface TacticalView { selectedId?: string; targetId?: string; cell?: number; inspectedCell?: number; mode: string }
+/** 仅在一次同步点选→渲染中复用；不能跨动作或异步保存缓存。 */
+export interface TacticalQuery { battle: SmallBattle; actor: Combatant; options: ActionOption[] }
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const terrainNames: Record<Terrain, string> = { open: '开阔地', cover: '掩体', wall: '墙体', rough: '崎岖地', forest: '森林', hill: '山地' };
 const present = (u: Combatant) => !['dead', 'fled'].includes(u.status);
 
 /** 查看敌军不切换到敌军观测口径；所有动作始终属于我方单位。 */
-export function tacticalSelection(battle: SmallBattle, view: TacticalView) {
+export function tacticalSelection(battle: SmallBattle, view: TacticalView, query?: TacticalQuery) {
   const visible = battle.visibleCombatants('ally').filter(present);
   const actor = visible.find((u) => u.id === view.selectedId && u.side === 'ally')
     ?? visible.find((u) => u.id === battle.active?.id && u.side === 'ally')
     ?? visible.find((u) => u.side === 'ally' && u.status === 'ready');
-  const allOptions = actor ? battle.getActionOptions(actor.id) : [];
+  const allOptions = actor ? query?.battle === battle && query.actor === actor ? query.options : battle.getActionOptions(actor.id) : [];
   const options = allOptions.filter((o) => ['weapon', 'ability', 'charge'].includes(o.kind));
   const option = options.find((o) => o.id === view.mode) ?? options.find((o) => o.id === 'weapon');
   const target = option?.targets?.find((t) => t.targetId === view.targetId)
     ?? option?.targets?.find((t) => t.enabled) ?? option?.targets?.[0];
   const canControl = !!actor && actor.id === battle.active?.id && actor.status === 'ready' && !battle.isOver();
-  return { visible, actor, allOptions, options, option, target, canControl };
+  return { visible, actor, allOptions, options, option, target, canControl, query: actor ? { battle, actor, options: allOptions } : undefined };
 }
 
 /** 只改短暂选择，不提交存档、动作或随机数。友方治疗目标优先于切换行动者。
  *  敌我不共格是阻挡设计：点选敌人格即视为选定攻击目标，不做移动落点。 */
-export function selectTacticalElement(battle: SmallBattle, view: TacticalView, input: { cell?: number; unitId?: string; mode?: string; actor?: boolean }): void {
+export function selectTacticalElement(battle: SmallBattle, view: TacticalView, input: { cell?: number; unitId?: string; mode?: string; actor?: boolean }): TacticalQuery | undefined {
   const field = battle.battlefield;
   if (!field) return;
   if (input.mode !== undefined) { view.mode = input.mode; view.cell = undefined; view.targetId = undefined; return; }
   const selection = tacticalSelection(battle, view);
   const cell = input.cell ?? selection.visible.find((u) => u.id === input.unitId)?.pos;
-  if (cell === undefined || !inBounds(field, cell)) return;
+  if (cell === undefined || !inBounds(field, cell)) return selection.query;
   view.inspectedCell = cell; view.cell = undefined;
   const occupants = selection.visible.filter((u) => u.pos === cell);
   const unit = input.unitId ? occupants.find((u) => u.id === input.unitId)
     : occupants.find((u) => selection.option?.targets?.some((t) => t.targetId === u.id)) ?? occupants[0];
   if (view.mode === 'move' && !input.actor && (!input.unitId || unit?.status === 'dying')
     && !occupants.some(u => u.side !== (selection.actor?.side ?? 'ally') && u.hp > 0 && u.status !== 'dying')) {
-    view.cell = cell; view.targetId = undefined; return;
+    view.cell = cell; view.targetId = undefined; return selection.query;
   }
   if (unit) {
     if (!input.actor && selection.option?.targets?.some((t) => t.targetId === unit.id)) {
@@ -57,6 +59,7 @@ export function selectTacticalElement(battle: SmallBattle, view: TacticalView, i
   } else {
     view.cell = cell; view.mode = 'move';
   }
+  return selection.query;
 }
 
 function terrainDescription(terrain: Terrain, actor?: Combatant): string {
@@ -121,8 +124,8 @@ function actionPreview(battle: SmallBattle, preview: ActionPreview | undefined, 
   </div>`;
 }
 
-export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, autoTurn = false): string {
-  const field = battle.battlefield!, s = tacticalSelection(battle, view);
+export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, autoTurn = false, query?: TacticalQuery): string {
+  const field = battle.battlefield!, s = tacticalSelection(battle, view, query);
   const { visible, actor, options, option, target, canControl } = s;
   const active = visible.find((u) => u.id === battle.active?.id), over = battle.isOver();
   const events = over ? battle.log : battle.visibleLog('ally');

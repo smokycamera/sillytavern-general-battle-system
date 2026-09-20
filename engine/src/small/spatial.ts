@@ -87,6 +87,26 @@ export function findGridPath(field: BattlefieldSpec, start: number, goal: number
   }
   return undefined;
 }
+/** 一次有界Dijkstra得到所有可达格，沿用单目标寻路的平局规则与路径。 */
+export function reachableGridPaths(field: BattlefieldSpec, start: number, budget: number, allowed: (cell: number) => boolean,
+  costOf = (cell: number) => tileCost(field, cell)): GridPath[] {
+  if (!inBounds(field, start) || budget < 0) return [];
+  const costs = new Map([[start, 0]]), previous = new Map<number, number>(), open = new Set([start]);
+  while (open.size) {
+    const current = [...open].sort((a, b) => costs.get(a)! - costs.get(b)! || a - b)[0]!;
+    open.delete(current);
+    for (const next of neighbors(field, current)) {
+      if (!allowed(next)) continue;
+      const cost = costs.get(current)! + costOf(next);
+      if (cost > budget || cost >= (costs.get(next) ?? Infinity)) continue;
+      costs.set(next, cost); previous.set(next, current); open.add(next);
+    }
+  }
+  return [...costs.keys()].sort((a, b) => a - b).map(goal => {
+    const cells = [goal]; while (cells[0] !== start) cells.unshift(previous.get(cells[0]!)!);
+    return { cells, cost: costs.get(goal)! };
+  });
+}
 /** 反向多源Dijkstra：一次计算各格到合法目标格的实际移动成本，供AI绕障碍。 */
 export function gridCostsToGoals(field: BattlefieldSpec, goals: number[], allowed: (cell: number) => boolean,
   costOf = (cell: number) => tileCost(field, cell)): Map<number, number> {

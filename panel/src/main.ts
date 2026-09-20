@@ -62,7 +62,7 @@ import { itemSpecificationLabel } from './item-spec.js';
 import { WORKSPACES, workspaceNavigation, workspacePage, showWorkspace, type WorkspaceTab } from './workspace-view.js';
 import { renderFormationBattle } from './formation-view.js';
 import { formationSelection, selectFormationUnit, setFormationChoice, orderDraft, type FormationView, type OrderDrafts } from './formation-orders.js';
-import { renderTacticalBattle, selectTacticalElement, type TacticalView } from './tactical-view.js';
+import { renderTacticalBattle, selectTacticalElement, type TacticalView, type TacticalQuery } from './tactical-view.js';
 import {
   PANEL_SAVE_SCHEMA_VERSION,
   battleOutcomeId,
@@ -277,14 +277,21 @@ const fullAuto = new AutoBattleLoop();
 window.addEventListener('pagehide', () => fullAuto.stop());
 let battleSaveFailed = false;
 let uiBusy = false;
-async function panelTask(task: () => Promise<void>, allowPending = false): Promise<void> {
+async function panelTask(task: () => Promise<void>, allowPending = false, feedback?: HTMLElement): Promise<void> {
   if (uiBusy) { toast('正在保存上一项操作，请稍候…'); return; }
   if (!allowPending && runtime.canWrite && !runtime.canWrite()) { toast('当前档案尚未就绪，请先核实保存或重新读取。'); return; }
   const identity = adapter.identity(), namespace = adapter.namespace();
   uiBusy = true; document.body.setAttribute('aria-busy', 'true');
-  try { await task(); }
+  feedback?.setAttribute('data-processing', 'true');
+  try {
+    // Let the pressed state paint before synchronous battle/AI calculations.
+    if (feedback && !document.hidden) await new Promise<void>(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+    if (identity !== adapter.identity() || namespace !== adapter.namespace()) return;
+    await task();
+  }
   catch (error) { restore(); toast(error instanceof Error ? error.message : String(error)); render(); }
   finally {
+    feedback?.removeAttribute('data-processing');
     uiBusy = false; document.body.removeAttribute('aria-busy');
     if (identity !== adapter.identity() || namespace !== adapter.namespace()) { restore(); render(); }
   }
@@ -775,7 +782,7 @@ const dirtyWorkspaces = new Set<WorkspaceTab>(WORKSPACES.map(([id]) => id));
 const battleCamera = new BattleCamera();
 let renderedNamespace: string | undefined;
 let lastTraceKey = '';
-function render(scope: RenderScope = 'all'): void {
+function render(scope: RenderScope = 'all', tacticalQuery?: TacticalQuery): void {
   const app = $('#app'), winScroll = window.scrollY;
   const contextChanged = renderedNamespace !== workspaceNamespace;
   if (contextChanged) { renderedNamespace = workspaceNamespace; dirtyWorkspaces.clear(); WORKSPACES.forEach(([id]) => dirtyWorkspaces.add(id)); battleCamera.reset(); lastTraceKey = ''; app.replaceChildren(); }
@@ -800,7 +807,7 @@ function render(scope: RenderScope = 'all'): void {
   if (dirtyWorkspaces.has(workspaceTab) && !(scope === 'battle' && !['battle','reports'].includes(workspaceTab))) {
     let content = '';
     if (workspaceTab === 'battle') {
-      const battleContent = state.small?.battlefield ? renderTacticalBattle(state.small, tacticalView, state.autoTurn) : b ? state.mass ? renderMass() : renderSmall() : renderBattlePreparation();
+      const battleContent = state.small?.battlefield ? renderTacticalBattle(state.small, tacticalView, state.autoTurn, tacticalQuery) : b ? state.mass ? renderMass() : renderSmall() : renderBattlePreparation();
       content = (b ? renderBattleToolbar(b) : '') + (b?.isOver() ? renderBattleExit(b) : '') + battleContent + renderXp();
     } else if (workspaceTab === 'units') content = renderNarrativeProposals() + renderConfig() + renderRole() + renderManage() + renderUnitConversion() + (state.pending.length ? renderPending() : '');
     else if (workspaceTab === 'inventory') content = inventoryPanel.render();
@@ -1989,7 +1996,7 @@ async function handleAction(e: Event): Promise<void> {
           if (editable && selected.actor && move) state.orderDraft[selected.actor.id] = orderDraft(move.order);
         }
       }
-      if (JSON.stringify(state.orderDraft) !== before) (await persist());
+      if (JSON.stringify(state.orderDraft) !== before) { render('view'); (await persist()); }
     } catch (error) { toast(error instanceof Error ? error.message : String(error)); }
     render('view'); return;
   }
@@ -2009,9 +2016,9 @@ async function handleAction(e: Event): Promise<void> {
   }
   if (['grid-cell', 'grid-inspect-unit', 'grid-mode'].includes(act)) {
     if (state.small?.battlefield) {
-      selectTacticalElement(state.small, tacticalView, act === 'grid-cell' ? { cell: Number(el.dataset.cell) }
+      const query = selectTacticalElement(state.small, tacticalView, act === 'grid-cell' ? { cell: Number(el.dataset.cell) }
         : act === 'grid-mode' ? { mode: el.dataset.mode } : { unitId: el.dataset.unit });
-      render('view');
+      render('view', query);
     }
     return;
   }
@@ -3072,7 +3079,8 @@ document.addEventListener('click', e => {
   if (!action) return;
   if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'modal-stop'].includes(action)) { void handleAction(e); return; }
   const viewOnly = ['save-retry', 'workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-inspect-unit', 'grid-cell', 'grid-mode', 'narrative-review', 'log-detail', 'unit-detail', 'role-detail', 'modal-stop', 'migration-export'].includes(action);
-  void panelTask(() => handleAction(e), viewOnly);
+  const feedback = !viewOnly && /^(grid-|small-|mass-|formation-)/.test(action) ? (e.target as HTMLElement).closest<HTMLElement>('[data-action]') ?? undefined : undefined;
+  void panelTask(() => handleAction(e), viewOnly, feedback);
 });
 let cameraPointer: {x:number;y:number} | undefined;
 document.addEventListener('pointerdown', event => { cameraPointer = event.target instanceof Element && event.target.closest('.grid-camera, .formation-map-camera') ? {x:event.clientX,y:event.clientY} : undefined; }, {passive:true});
@@ -3128,17 +3136,14 @@ async function handleChange(e: Event): Promise<void> {
     try {
       if (role === 'formation-order') setFormationChoice(state.mass, formationView, state.orderDraft, (el as HTMLSelectElement).value);
       else selectFormationUnit(state.mass, formationView, state.orderDraft, (el as HTMLSelectElement).value, true);
-      (await persist());
+      render('view'); (await persist());
     } catch (error) { toast(error instanceof Error ? error.message : String(error)); }
     render('view'); return;
   }
   if (role === 'grid-unit' || role === 'grid-mode' || role === 'grid-target') {
-    if (state.small?.battlefield) {
-      if (role === 'grid-unit') selectTacticalElement(state.small, tacticalView, { unitId: (el as HTMLSelectElement).value, actor: true });
-      if (role === 'grid-mode') selectTacticalElement(state.small, tacticalView, { mode: (el as HTMLSelectElement).value });
-      if (role === 'grid-target') selectTacticalElement(state.small, tacticalView, { unitId: (el as HTMLSelectElement).value });
-    }
-    render('view');
+    const query = state.small?.battlefield ? selectTacticalElement(state.small, tacticalView,
+      role === 'grid-mode' ? { mode: (el as HTMLSelectElement).value } : { unitId: (el as HTMLSelectElement).value, actor: role === 'grid-unit' }) : undefined;
+    render('view', query);
   } else if (role === 'ability-confirm-target' && state.abilityDialog) {
     state.abilityDialog.suggestedTargetId = (el as HTMLSelectElement).value; render();
   } else if (role === 'story-sync') {

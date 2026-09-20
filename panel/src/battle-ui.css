@@ -43,5 +43,7 @@
 
 /* Keep navigation usable and signal durable writes without freezing the page. */
 body[aria-busy="true"] { cursor: progress; }
-body[aria-busy="true"] .app-state::before { content: '保存中…'; font-size: 12px; color: var(--accent, #cdbb86); }
+body[aria-busy="true"] .app-state::before { content: '处理中…'; font-size: 12px; color: var(--accent, #cdbb86); }
 button, [data-action] { touch-action: manipulation; }
+
+button[data-processing="true"] { outline: 2px solid var(--accent, #cdbb86); opacity: .72; }

@@ -139,6 +139,7 @@ export class BattleService {
     const receipt = await this.store.commit(version.revision, before => compactNarrativeSources(update(before)), { operationId: options.operationId, clear: options.clear, messageTags: options.messageTags });
     if (!this.disposed && sameSession(version.session, this.store.session()) && sameSession(version.session, this.host.session())) {
       this.receipt = receipt;
+      if (receipt.status === 'confirmed') this.error = undefined;
       this.phase = this.store.pendingOperation() ? 'pending' : this.migration ? 'review' : 'ready';
       if (receipt.status === 'confirmed') this.project();
       this.notify();
@@ -151,6 +152,13 @@ export class BattleService {
       this.receipt = receipt; this.phase = this.store.pendingOperation() ? 'pending' : this.migration ? 'review' : 'ready';
       if (receipt.status === 'confirmed') { this.migration = reviewMigration(this.snapshot()); this.phase = this.migration ? 'review' : 'ready'; this.project(); }
       this.notify();
+    }
+    if (receipt.code === 'source-changed' && sameSession(session, this.host.session()) && this.canWrite()) {
+      this.binding = undefined;
+      await this.scan();
+      // Return the new scan's receipt (and its own operation ID), so the panel
+      // does not overwrite successful recovery with the obsolete conflict.
+      if (sameSession(session, this.host.session()) && sameSession(session, this.store.session()) && this.receipt) return this.receipt;
     }
     return receipt;
   }
@@ -248,7 +256,7 @@ export class BattleService {
   }
   scan(messageId?: number): Promise<void> {
     const session = this.store.session(); const binding = structuredClone(this.binding);
-    const run = async () => {
+    const run = async (refreshed = false): Promise<void> => {
       if (this.disposed || this.phase !== 'ready' || this.host.isGenerating() || !sameSession(session, this.host.session()) || !sameSession(session, this.store.session())) return;
       const index = messageId ?? (this.host.context().chat?.length ?? 0) - 1;
       const message = this.host.message(index); const namespace = this.host.namespace();
@@ -256,7 +264,7 @@ export class BattleService {
       const tag = prepareMessageTag(this.host.context().chat!, index);
       const originalId = message.messageId; message.messageId = tag.id;
       this.capabilities.messageIdentity = !!message.messageId && !!message.swipeId;
-      const before = this.snapshot(); let expected = binding ? { ...binding, messageId: binding.messageId === originalId ? tag.id : binding.messageId } : undefined;
+      const before = this.snapshot(); let expected = binding && !refreshed ? { ...binding, messageId: binding.messageId === originalId ? tag.id : binding.messageId } : undefined;
       if (!(expected?.complete && expected.messageId === message.messageId) && message.complete && this.capabilities.messageIdentity) expected = { ...captureGeneration(before, namespace, crypto.randomUUID()), complete: true, manualOnly: true, messageId: message.messageId };
       if (expected?.complete && this.capabilities.messageIdentity) message.generationId = expected.id;
       const proposal = proposalFromMessage(message, expected); if (!proposal) return;
@@ -273,9 +281,12 @@ export class BattleService {
         try { candidate = prepareNarrativeTransaction(candidate, proposal, namespace) as typeof candidate; }
         catch (error) { proposal.reason = String(error); proposal.status = /过期|聊天|分支|战内|未结算/.test(proposal.reason) ? 'stale' : 'unresolved'; }
       }
-      await this.transact(() => candidate, { messageTags: [tag] });
+      const receipt = await this.transact(() => candidate, { messageTags: [tag] });
+      // Re-read at most once, as a manual preview. Never reapply automatic facts
+      // from a generation whose source changed while its candidate was prepared.
+      if (receipt.code === 'source-changed' && !refreshed) await run(true);
     };
-    const next = this.scanQueue.then(run, run).catch(error => { if (!this.disposed && sameSession(session, this.store.session())) { this.error = String(error); this.notify(); } });
+    const next = this.scanQueue.then(() => run(), () => run()).catch(error => { if (!this.disposed && sameSession(session, this.store.session())) { this.error = String(error); this.notify(); } });
     this.scanQueue = next; return next;
   }
   async rebind(id: string): Promise<void> {

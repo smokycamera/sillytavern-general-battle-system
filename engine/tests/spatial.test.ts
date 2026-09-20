@@ -1,8 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { canOccupy, deployOnGrid, findGridPath, gridDistance, lineOfSight, standardField } from '../src/small/spatial.js';
+import { canOccupy, deployOnGrid, findGridPath, gridDistance, lineOfSight, reachableGridPaths, standardField, tileCost } from '../src/small/spatial.js';
 import { generatedField } from '../src/small/field-generator.js';
 import { makeCombatant } from '../src/small/battle.js';
 describe('二维空间查询', () => {
+  it('一次查询的可达格、成本与平局路径和逐格查询一致，包括地形、占位和飞行', () => {
+    const field = standardField(7, 13, ['forest']);
+    field.tiles[50] = 'hill';
+    const actor = makeCombatant({ id: 'a', name: '甲', side: 'ally', pos: 72 });
+    const units = [actor,
+      makeCombatant({ id: 'b', name: '乙', side: 'ally', pos: 71, body: 'vehicle' }),
+      makeCombatant({ id: 'c', name: '丙', side: 'enemy', pos: 65 })];
+    for (const airborne of [false, true]) for (const budget of [0, 1, 3, 7, 20]) {
+      actor.airborne = airborne;
+      const allowed = (cell: number) => canOccupy(field, units, actor, cell);
+      const cost = (cell: number) => tileCost(field, cell, actor);
+      const expected = field.tiles.map((_, cell) => findGridPath(field, actor.pos!, cell, allowed, cost))
+        .filter(path => path && path.cost <= budget);
+      expect(reachableGridPaths(field, actor.pos!, budget, allowed, cost)).toEqual(expected);
+    }
+    expect(reachableGridPaths(field, -1, 3, () => true)).toEqual([]);
+    expect(reachableGridPaths(field, 72, -1, () => true)).toEqual([]);
+  });
   it('地图63格，寻路绕过硬遮挡，困难格单独计成本', () => {
     const field = standardField();
     expect(field.tiles).toHaveLength(63);
