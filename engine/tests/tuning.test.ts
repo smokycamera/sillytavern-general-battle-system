@@ -50,7 +50,7 @@ describe('濒死单位不再是沙包', () => {
       b.attack(foe.id, ally.id, { bypassTurn: true });
     }
     expect(ally.status).toBe('dead');
-    expect(b.log.some((l) => l.text.includes('伤重不治'))).toBe(true);
+    expect(b.log.some((l) => l.kind === 'death' && l.text.includes('阵亡'))).toBe(true);
     expect(b.winner()).toBe('enemy');
   });
 });
