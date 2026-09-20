@@ -125,7 +125,12 @@ try {
   await frame.locator('[data-action="workspace-tab"][data-tab="battle"]').first().click();await idle(frame);
   await frame.locator('[data-action="mass-start"]').first().click();await idle(frame);
   const massRound=(await state()).battle.snap.round;
-  await frame.locator('[data-action="mass-resolve"]').first().click();await idle(frame);
+  const commandSaves = await page.evaluate(()=>{__delay=600;return __metadataSaves+__fullSaves});
+  await frame.locator('[data-action="mass-resolve"]').first().click();
+  check('战斗命令保存期间立即显示处理中',await frame.locator('body[aria-busy="true"]').count()===1&&await frame.locator('[data-action="mass-resolve"][data-processing="true"]').count()===1);
+  await frame.locator('[data-action="mass-resolve"]').first().evaluate(el=>el.click());
+  await idle(frame);await page.evaluate(()=>{__delay=0});
+  check('命令处理中重复点击不会重复执行或保存',await page.evaluate(n=>__metadataSaves+__fullSaves===n+1,commandSaves));
   check('会战通过面板执行一轮并保存',(await state()).battle.kind==='mass'&&(await state()).battle.snap.round>massRound);
   await frame.locator('[data-detail-id="battle-options"]').evaluate(element=>{element.open=true});
   await frame.locator('[data-action="battle-finish"][data-reason="ceasefire"]').click();await idle(frame);
@@ -147,6 +152,32 @@ try {
   await (await chooserPromise).setFiles({name:'native-roundtrip.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(exported))});
   await page.getByRole('button',{name:'确认导入文件并替换当前档案',exact:true}).click();await page.getByRole('button',{name:'确认导入文件并替换当前档案',exact:true}).waitFor({state:'detached'});await ready();
   check('管理界面文件导入恢复完整报告且更换代次',await page.evaluate(old=>__tavernBattleNative.service.snapshot().reports.length===1&&__tavernBattleNative.service.store.envelope().generation!==old,exported.envelope.generation));
+  await page.evaluate(()=>switchChat('source-race'));await ready();
+  const scanRace = await page.evaluate(async()=>{
+    const service=__tavernBattleNative.service, host=service.host, original=host.applyMessageTags.bind(host);
+    context.chat.push({is_user:false,mes:'<tb><spawn name="收尾前" side="ally" scale="hero"/></tb>',swipe_id:0,gen_finished:'first-time'});
+    await context.saveChat();let changed=false;
+    host.applyMessageTags=async(session,tags)=>{if(!changed){changed=true;context.chat[0].mes='<tb><spawn name="最终完整回复" side="ally" scale="hero"/></tb>';}return original(session,tags)};
+    try { await service.scan(); } finally { host.applyMessageTags=original; }
+    return {ready:service.canWrite(),pending:service.store.hasPending(),proposals:service.snapshot().proposals,storage:service.snapshot().storage};
+  });
+  check('来源在自动扫描保存前收尾后直接重扫，不锁住档案',scanRace.ready&&!scanRace.pending&&scanRace.proposals.length===1&&scanRace.proposals[0].source.text.includes('最终完整回复'));
+  check('重扫仅建立人工候选，不执行失效候选的事实',scanRace.proposals[0].expected.manualOnly===true&&!scanRace.storage?.length);
+  const oldSourcePending=await page.evaluate(async()=>{
+    const service=__tavernBattleNative.service,host=service.host,original=host.applyMessageTags.bind(host);
+    context.chat.push({is_user:false,mes:'<tb><spawn name="旧候选回复" side="ally" scale="hero"/></tb>',swipe_id:0,gen_finished:'first-time'});await context.saveChat();
+    // Emulate rc.4 retaining a pre-write source conflict in the recovery journal.
+    host.applyMessageTags=async()=>{throw Error('来源消息已编辑、移动或删除，请重新扫描')};
+    try { await service.scan(); } finally { host.applyMessageTags=original; }
+    const pending=service.store.hasPending();context.chat[1].mes='<tb><spawn name="重试后的最新回复" side="ally" scale="hero"/></tb>';await context.saveChat();return pending;
+  });
+  check('复现rc.4来源已变化但候选未落盘的恢复记录',oldSourcePending);
+  await page.reload();await ready();await page.evaluate(()=>switchChat('source-race'));await page.waitForFunction(()=>window.__tavernBattleNative?.service.status().phase==='pending');
+  await page.locator('#tavern-battle-native-entry').click();
+  await page.getByRole('button',{name:'核实并重试保存',exact:true}).click();await ready();
+  await page.waitForFunction(()=>__tavernBattleNative.service.snapshot().proposals?.some(p=>p.source.text.includes('重试后的最新回复')));
+  await page.evaluate(()=>__tavernBattleNative.service.scan());
+  check('旧来源冲突只需点击重试即可解锁并重扫，重复扫描不重复候选',await page.evaluate(()=>{const s=__tavernBattleNative.service;return !s.store.hasPending()&&s.snapshot().proposals.length===2&&!s.snapshot().storage?.length}));
   await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(artifacts,'mobile.png')});
   check('390px窗口不横向溢出',await page.evaluate(()=>document.getElementById('tavern-battle-native-panel').getBoundingClientRect().width<=390));
   await page.evaluate(()=>__tavernBattleNative.close());

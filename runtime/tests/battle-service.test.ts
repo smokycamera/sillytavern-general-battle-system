@@ -68,9 +68,9 @@ it('批准候选在恢复日志落盘期间遇到来源编辑，不发布已经�
   vi.spyOn(f.journal, 'put').mockImplementation(async (...args) => {
     await put(...args); f.context.chat![0]!.mes = '<tb><spawn name="编辑后的正文" side="ally" scale="hero"/></tb>';
   });
-  expect((await f.service.approve(proposal.id)).status).toBe('pending');
+  expect(await f.service.approve(proposal.id)).toMatchObject({ status: 'conflict', code: 'source-changed' });
   expect(f.service.snapshot().storage).toBeUndefined();
-  await f.service.discardPending(); expect(f.service.canWrite()).toBe(true);
+  expect(f.store.hasPending()).toBe(false); expect(f.service.canWrite()).toBe(true);
 });
 it('删去前方楼层后消息身份保持不变；删除待审消息则拒绝批准', async () => {
   const f = await setup();

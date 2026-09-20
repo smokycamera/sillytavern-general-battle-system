@@ -1,3 +1,4 @@
+import { SourceMessageChangedError } from '../../host/src/message-identity.js';
 import type { HostSession, MetadataPort, NativeEnvelope, PersistReceipt, RecoveryJournal, RecoveryRecord, MessageTag, LegacyHandoff } from '../../host/src/contracts.js';
 import { sameSession } from '../../host/src/contracts.js';
 import type { NarrativeSave } from '../../panel/src/narrative-state.js';
@@ -114,25 +115,26 @@ export class NativeStore {
   discardPending(): Promise<{ discarded: boolean; receipt?: PersistReceipt }> {
     const session = this.active;
     if (!session) return Promise.reject(Error('尚未载入原生存档'));
-    return this.enqueue(async () => {
-      const record = this.pending; if (!record) return { discarded: false };
-      if (record.legacyHandoff) throw Error('回退交接候选不能直接丢弃，请继续核实完成交接');
-      if (!sameSession(session, this.host.session()) || !sameSession(session, this.active) || this.host.hasLegacyRuntime()) throw Error('聊天已切换或旧脚本仍在运行');
-      const metadata = await this.host.readPersisted(session.scope); const saved = envelopeFrom(metadata.tavernBattle);
-      if (saved && await payloadHash(saved.payload) !== saved.payloadHash) throw Error('宿主数据校验失败');
-      if (matches(saved, record.candidate)) {
-        if (await this.effectsVerified(session, record)) return { discarded: false, receipt: await this.confirm(record, session) };
-        throw Error('候选已部分落盘，不能当作未保存操作丢弃');
-      }
-      if (record.previous ? !matches(saved, record.previous) : !!saved) throw Error('宿主已存在其他进度，请重新读取后核对');
-      if (!sameSession(session, this.host.session()) || !sameSession(session, this.active)) throw Error('核实时聊天已切换');
-      await this.journal.remove(session.scope.key, record.candidate.lastOperationId);
-      if (!sameSession(session, this.host.session()) || !sameSession(session, this.active)) return { discarded: true };
-      const currentMetadata = this.host.metadata();
-      if (currentMetadata) { if (saved) currentMetadata.tavernBattle = structuredClone(saved); else delete currentMetadata.tavernBattle; }
-      this.current = saved; this.pending = undefined;
-      return { discarded: true };
-    });
+    return this.enqueue(() => this.discardRecord(session));
+  }
+  private async discardRecord(session: HostSession): Promise<{ discarded: boolean; receipt?: PersistReceipt }> {
+    const record = this.pending; if (!record) return { discarded: false };
+    if (record.legacyHandoff) throw Error('回退交接候选不能直接丢弃，请继续核实完成交接');
+    if (!sameSession(session, this.host.session()) || !sameSession(session, this.active) || this.host.hasLegacyRuntime()) throw Error('聊天已切换或旧脚本仍在运行');
+    const metadata = await this.host.readPersisted(session.scope); const saved = envelopeFrom(metadata.tavernBattle);
+    if (saved && await payloadHash(saved.payload) !== saved.payloadHash) throw Error('宿主数据校验失败');
+    if (matches(saved, record.candidate)) {
+      if (await this.effectsVerified(session, record)) return { discarded: false, receipt: await this.confirm(record, session) };
+      throw Error('候选已部分落盘，不能当作未保存操作丢弃');
+    }
+    if (record.previous ? !matches(saved, record.previous) : !!saved) throw Error('宿主已存在其他进度，请重新读取后核对');
+    if (!sameSession(session, this.host.session()) || !sameSession(session, this.active)) throw Error('核实时聊天已切换');
+    await this.journal.remove(session.scope.key, record.candidate.lastOperationId);
+    if (!sameSession(session, this.host.session()) || !sameSession(session, this.active)) return { discarded: true };
+    const currentMetadata = this.host.metadata();
+    if (currentMetadata) { if (saved) currentMetadata.tavernBattle = structuredClone(saved); else delete currentMetadata.tavernBattle; }
+    this.current = saved; this.pending = undefined;
+    return { discarded: true };
   }
   private async persist(record: RecoveryRecord, session: HostSession, fullSave = false): Promise<PersistReceipt> {
     const id = record.candidate.lastOperationId;
@@ -149,7 +151,18 @@ export class NativeStore {
       try {
         if (!this.host.applyMessageTags) throw Error('宿主不支持持久消息身份');
         await this.host.applyMessageTags(session, record.messageTags);
-      } catch (error) { return this.result('pending', session, id, error); }
+      } catch (error) {
+        if (error instanceof SourceMessageChangedError && !record.legacyHandoff) {
+          // A source conflict is not an unknown write. Drop only after an independent
+          // read proves disk is still the previous head; partial/competing saves stay pending.
+          try {
+            const discarded = await this.discardRecord(session);
+            if (discarded.receipt) return discarded.receipt;
+            if (discarded.discarded) return { ...this.result('conflict', session, id, '来源已变化；已核实旧候选未落盘，请重新扫描'), code: 'source-changed' };
+          } catch (verification) { return this.result('pending', session, id, verification); }
+        }
+        return this.result('pending', session, id, error);
+      }
       if (!sameSession(session, this.host.session())) return this.result('conflict', session, id, '消息绑定期间聊天已切换');
     }
     metadata.tavernBattle = structuredClone(record.candidate);

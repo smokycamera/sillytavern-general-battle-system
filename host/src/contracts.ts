@@ -26,6 +26,7 @@ export interface NativeEnvelope {
 export interface PersistReceipt {
   status: 'confirmed' | 'pending' | 'conflict' | 'failed';
   operationId: string;
+  code?: 'source-changed';
   session: HostSession;
   error?: string;
 }

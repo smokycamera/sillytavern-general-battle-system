@@ -40,7 +40,7 @@ import { bracePose, movementPoints, settleFatigue } from '../tactics.js';
 import { isAirborne, sameLayer, flightCapabilityReason, flightMaintenanceReason, fallDamage, validateFlightState } from '../aerial.js';
 import { environmentTags } from '../environment.js';
 import { traitRegistry as defaultTraitRegistry } from '../data/traits.js';
-import { meleeLineBlocker, canOccupy, cellLabel, deployOnGrid, findGridPath, gridCostsToGoals, gridDistance, lineOfSight, unitLineOfSight, neighbors, tileCost, validateField, type BattlefieldSpec, type GridPath } from './spatial.js';
+import { meleeLineBlocker, canOccupy, cellLabel, deployOnGrid, findGridPath, reachableGridPaths, gridCostsToGoals, gridDistance, lineOfSight, unitLineOfSight, neighbors, tileCost, validateField, type BattlefieldSpec, type GridPath } from './spatial.js';
 import { canSpot, observedUnits, observeEvent, observedLog, revealUnit, revealContacts, settleConcealment, canReconceal, validateConcealment, type ObservationContext } from '../observation.js';
 import {
   abilityTargetReason,
@@ -409,8 +409,7 @@ export class SmallBattle {
     const actor = this.byId(actorId);
     if (actor.status !== 'ready' || (this.started && !this.isTurnOf(actorId))) return [];
     const known = this.visibleCombatants(actor.side);
-    return field.tiles.map((_, cell) => findGridPath(field, actor.pos!, cell, (n) => canOccupy(field, known, actor, n), (n) => tileCost(field, n, actor)))
-      .filter((p): p is GridPath => !!p && p.cost <= this.movementLeft(actorId));
+    return reachableGridPaths(field, actor.pos!, this.movementLeft(actorId), (n) => canOccupy(field, known, actor, n), (n) => tileCost(field, n, actor));
   }
   private sightReason(actor: Combatant, target: Combatant, indirect = false): string | undefined {
     if (this.rules.resolutionVersion === 'v2') {

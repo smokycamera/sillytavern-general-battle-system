@@ -1,6 +1,6 @@
 import { sameSession, type ChatScope, type HostSession, type MetadataPort, type MessageTag, type LegacyHandoff } from './contracts.js';
 import { namespaceOf, type MessageEnvelope } from '../../panel/src/narrative-state.js';
-import { findMessageBySourceId, messageFingerprint, sourceId } from './message-identity.js';
+import { findMessageBySourceId, matchesMessageFingerprint, SourceMessageChangedError, sourceId } from './message-identity.js';
 import { serialized } from './json.js';
 
 export interface HostMessage {
@@ -96,7 +96,7 @@ export class NativeHost implements MetadataPort {
       const identified = chat.flatMap((message, index) => sourceId(message) === tag.id ? [index] : []);
       if (identified.length > 1) throw Error('消息身份重复，不能自动选择来源');
       const index = identified[0] ?? tag.index; const message = chat[index];
-      if (!message || messageFingerprint(message) !== tag.fingerprint || sourceId(message) && sourceId(message) !== tag.id) throw Error('来源消息已编辑、移动或删除，请重新扫描');
+      if (!message || !matchesMessageFingerprint(message, tag.fingerprint) || sourceId(message) && sourceId(message) !== tag.id) throw new SourceMessageChangedError();
       return { message, tag };
     });
     for (const { message, tag } of targets) { message.extra ??= {}; message.extra.tavernBattleSourceId = tag.id; }
