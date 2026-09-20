@@ -1,10 +1,10 @@
 import { generateUnit, SmallBattle, standardField, traitRegistry, V4_D20 } from '../engine/src/index.js';
 import { unitRecordFromCombatant } from '../panel/src/unit-state.js';
 import { prepareInventoryState } from '../panel/src/inventory-state.js';
-const registry = traitRegistry(), cannon = process.argv.includes('--cannon'), airborne = process.argv.includes('--airborne');
+const registry = traitRegistry(), indirect = process.argv.includes('--indirect-cannon'), cannon = indirect || process.argv.includes('--cannon'), airborne = process.argv.includes('--airborne');
 const units = [
   { id: 'G', name: '敌方盾卫', side: 'enemy' as const, weaponClass: 'sword', shield: true, traits: ['shield-wall'] },
-  { id: 'A', name: cannon ? '我方火炮' : '我方步枪手', side: 'ally' as const, weaponClass: cannon ? 'cannon' : 'rifle', shield: false, traits: [] },
+  { id: 'A', name: cannon ? '我方火炮' : '我方步枪手', side: 'ally' as const, weaponClass: indirect ? 'indirect-cannon' : cannon ? 'cannon' : 'rifle', shield: false, traits: [] },
   { id: 'R', name: '盾后弓手', side: 'enemy' as const, weaponClass: 'bow', shield: false, traits: [] },
 ].map(spec => {
   const unit = generateUnit({ rulesVersion: 'v2', name: spec.name, side: spec.side, scale: 'hero', level: 4, hpMax: 500,

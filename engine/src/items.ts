@@ -76,7 +76,7 @@ export function equipmentReason(unit: Pick<Combatant, 'body' | 'scale' | 'weapon
   if (!body) return '不支持的身体/平台';
   for (const weapon of [unit.weapon, unit.sidearm]) {
     if (weapon?.recipe?.stabilized && unit.body !== 'vehicle') return '稳定车载武器需要实际车辆平台，不能由步行或骑乘单位装备';
-    if (['cannon', 'autocannon'].includes(weapon?.recipe?.mechanism ?? '') && unit.scale === 'hero' && (unit.body ?? 'human') === 'human') return '重型投送需要炮组或明确载具/大型平台';
+    if (['cannon', 'indirect-cannon', 'autocannon'].includes(weapon?.recipe?.mechanism ?? '') && unit.scale === 'hero' && (unit.body ?? 'human') === 'human') return '重型投送需要炮组或明确载具/大型平台';
   }
   const load = (unit.weapon?.load ?? 0) + (unit.sidearm?.load ?? 0) + (unit.armor?.load ?? 0) + (unit.shield?.load ?? 0);
   return load > body.capacity ? `负载 ${load} 超过身体容量 ${body.capacity}` : undefined;

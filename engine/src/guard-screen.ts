@@ -1,6 +1,6 @@
 import type { Combatant, ConditionDef, Weapon } from './types.js';
 import { isAirborne } from './aerial.js';
-import { isCannonWeapon, isRangedWeapon } from './loadout.js';
+import { isRangedWeapon, ignoresFriendlyScreen } from './loadout.js';
 import { MEMBER_HEALTH_MODEL } from './member-health.js';
 import { formationNode } from './mass/formation.js';
 import { postureActive } from './tactics.js';
@@ -20,8 +20,6 @@ export function shieldGuardActive(unit: Combatant, defs: Map<string, ConditionDe
 export function shieldScreen(attacker: Combatant, target: Combatant, weapon: Weapon | undefined,
   units: Combatant[], space: GuardSpace, defs: Map<string, ConditionDef>): Combatant | undefined {
   if (attacker.side === target.side || !isRangedWeapon(weapon) || weapon?.indirect || isAirborne(attacker) || isAirborne(target)) return undefined;
-  const mechanism = weapon?.recipe?.mechanism ?? weapon?.tags?.find(tag => tag.startsWith('mechanism:'))?.slice(10);
-  if (mechanism === 'cannon' || mechanism === 'magic') return undefined;
   const from = coordinates(attacker, space), to = coordinates(target, space);
   const dx = to.x - from.x, dy = to.y - from.y, lengthSquared = dx * dx + dy * dy;
   if (!lengthSquared) return undefined;
@@ -49,15 +47,17 @@ export function shieldScreenReason(guard: Combatant): string {
   return `目标受${guard.name}持盾固守遮挡；先攻击或压制盾卫，或换射角、使用间接火力`;
 }
 
-/** V4普通直射按真实占位遮挡；火炮豁免单位遮挡，地形视线由攻击入口检查。 */
+/** V4直射按真实占位遮挡；弓弩/法杖越过友军，曲射越过单位，地形视线由攻击入口检查。 */
 export function rangedScreen(attacker: Combatant, target: Combatant, weapon: Weapon | undefined,
   units: Combatant[], space: GuardSpace, defs: Map<string, ConditionDef>): Combatant | undefined {
-  if (attacker.combatModel !== MEMBER_HEALTH_MODEL || !isRangedWeapon(weapon) || weapon?.indirect || isCannonWeapon(weapon)
+  if (attacker.combatModel !== MEMBER_HEALTH_MODEL || !isRangedWeapon(weapon) || weapon?.indirect
     || isAirborne(attacker) || isAirborne(target)) return undefined;
   const from = coordinates(attacker, space), to = coordinates(target, space);
   const dx = to.x - from.x, dy = to.y - from.y, lengthSquared = dx * dx + dy * dy;
   if (!lengthSquared) return undefined;
+  const bypassFriends = ignoresFriendlyScreen(weapon);
   const blockers = units.filter(unit => {
+    if (bypassFriends && unit.side === attacker.side) return false;
     if (unit.id === attacker.id || unit.id === target.id || isAirborne(unit) || unit.hp <= 0 || !['ready', 'routing'].includes(unit.status)) return false;
     const at = coordinates(unit, space), x = at.x - from.x, y = at.y - from.y;
     const along = x * dx + y * dy, cross = x * dy - y * dx;

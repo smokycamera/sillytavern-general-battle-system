@@ -27,3 +27,15 @@ it('统一编辑保留冻结装备与技能账本，只有指定槽重编译，�
   const managed = { ...named, equipmentManaged: true }; expect(() => editUnitBuild(managed, gear, registry)).toThrow(/配装工作区/);
   const empty = structuredClone(record); delete empty.snapshot!.weapon; const noGear = editUnitBuild(empty, unitDraftFromRecord(empty), registry); expect(noGear.snapshot!.weapon).toBeUndefined();
 });
+it('旧曲射炮在编辑表单中明确显示曲射，改等级后保留投送方式与多方向强化', () => {
+  const draft = newUnitDraft(); draft.name = '旧炮'; draft.body = 'vehicle'; draft.primary.body = draft.armor.body = 'vehicle';
+  draft.primary.mechanism = 'cannon'; draft.primary.bonuses = { damage: 10, accuracy: 10, penetration: 10 };
+  const unit = buildUnit(draft, registry, 'legacy-artillery'); unit.weapon!.indirect = true;
+  const record = unitRecordFromCombatant(unit), edit = unitDraftFromRecord(record);
+  expect(edit.primary.mechanism).toBe('indirect-cannon');
+  const unchanged = editUnitBuild(record, edit, registry);
+  expect(unchanged.snapshot!.weapon).toEqual(unit.weapon);
+  edit.primary.power = '6';
+  const upgraded = editUnitBuild(record, edit, registry);
+  expect(upgraded.snapshot!.weapon).toMatchObject({ indirect: true, recipe: { mechanism: 'indirect-cannon', power: 6, bonuses: { damage: 10, accuracy: 10, penetration: 10 } } });
+});

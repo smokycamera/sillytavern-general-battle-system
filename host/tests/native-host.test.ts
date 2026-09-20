@@ -56,8 +56,8 @@ it('消息按结构化文本保存，只插入一次并单次调用生成', asyn
   const f = fixture(); const port = new NativeMessages(f.host);
   f.context.generate = vi.fn(async () => { f.context.chat!.push({ is_user: false, mes: '已叙述', gen_finished: 'done' }); });
   const text = '战报 | /send {{macro}} "保留原文"';
-  expect((await port.send(text, { deliveryId: 'd' })).status).toBe('sent');
-  expect((await port.send(text, { deliveryId: 'd' })).status).toBe('inserted');
+  expect((await port.send(text, { deliveryId: 'd', generate: true })).status).toBe('sent');
+  expect((await port.send(text, { deliveryId: 'd', generate: true })).status).toBe('inserted');
   expect(f.context.chat!.filter(message => message.is_user)).toHaveLength(1); expect(f.context.chat![0]!.mes).toBe(text);
   expect(f.context.generate).toHaveBeenCalledTimes(1);
   expect(f.context.generate).toHaveBeenCalledWith('regenerate', { automatic_trigger: true });
@@ -68,13 +68,13 @@ it('消息按结构化文本保存，只插入一次并单次调用生成', asyn
 it('默认生成入口会处理草稿，因此只在末条为投递用户消息时使用安全重生成路径', async () => {
   const f = fixture(); const port = new NativeMessages(f.host); let draft = '/send 玩家草稿', attachment = 'pending-file';
   f.context.generate = vi.fn(async type => { if (type === 'normal') { draft = ''; attachment = ''; } f.context.chat!.push({ is_user: false, mes: '回复', gen_finished: 'done' }); });
-  expect((await port.send('战报', { deliveryId: 'retry-generation' })).status).toBe('sent');
+  expect((await port.send('战报', { deliveryId: 'retry-generation', generate: true })).status).toBe('sent');
   expect(draft).toBe('/send 玩家草稿'); expect(attachment).toBe('pending-file');
   expect((await port.retryGeneration('retry-generation')).status).toBe('inserted'); expect(f.context.generate).toHaveBeenCalledTimes(1);
 });
 it('宿主生成静默返回或失败时不会报告已发送；仅重试生成不新增用户消息', async () => {
   const f = fixture(); const port = new NativeMessages(f.host);
-  expect((await port.send('战报', { deliveryId: 'one' })).status).toBe('inserted');
+  expect((await port.send('战报', { deliveryId: 'one', generate: true })).status).toBe('inserted');
   f.context.generate = vi.fn(async () => { f.context.chat!.push({ is_user: false, mes: '重试完成', gen_finished: 'done' }); });
   expect((await port.retryGeneration('one')).status).toBe('sent');
   expect(f.context.chat!.filter(message => message.is_user)).toHaveLength(1);
@@ -82,13 +82,26 @@ it('宿主生成静默返回或失败时不会报告已发送；仅重试生成�
 it('生成失败保持已插入状态；保存未确认不能触发生成', async () => {
   const f = fixture(); const port = new NativeMessages(f.host);
   f.context.generate = vi.fn(async () => { throw Error('offline'); });
-  expect((await port.send('one')).status).toBe('inserted');
+  expect((await port.send('one', { generate: true })).status).toBe('inserted');
   f.context.saveChat = vi.fn(async () => {});
-  expect((await port.send('two')).status).toBe('unknown'); expect(f.context.generate).toHaveBeenCalledTimes(1);
+  expect((await port.send('two', { generate: true })).status).toBe('unknown'); expect(f.context.generate).toHaveBeenCalledTimes(1);
 });
 it('缺少完整聊天保存接口时不插入消息，不降级为 metadata 保存', async () => {
   const f = fixture(); f.context.saveChat = undefined;
   const receipt = await new NativeMessages(f.host).send('不能丢失的战报');
   expect(receipt.status).toBe('failed'); expect(f.context.chat).toHaveLength(0);
   expect(f.context.saveMetadata).not.toHaveBeenCalled(); expect(f.context.generate).not.toHaveBeenCalled();
+});
+
+it('reports default to a durable user message with no generation until explicitly requested', async () => {
+  const f = fixture(); const port = new NativeMessages(f.host);
+  const receipt = await port.send('手动发送战报', { deliveryId: 'manual' });
+  expect(receipt).toMatchObject({ status: 'inserted', messageDurable: true, generation: 'not-started' });
+  expect(f.context.chat).toHaveLength(1);
+  expect(f.context.generate).not.toHaveBeenCalled();
+  await port.send('手动发送战报', { deliveryId: 'manual' });
+  expect(f.context.chat).toHaveLength(1);
+  f.context.generate = vi.fn(async () => { f.context.chat!.push({ is_user: false, mes: '回复', gen_finished: 'done' }); });
+  expect((await port.retryGeneration('manual')).status).toBe('sent');
+  expect(f.context.generate).toHaveBeenCalledTimes(1);
 });

@@ -157,13 +157,15 @@ describe('AI反馈：资源、自保、失败改选、搜索与治疗协同', ()
 });
 
 describe('常态直射遮挡与多盾协同', () => {
-  it.each(['weapon', 'ability'] as const)('小队火炮%s越过双方前排及盾卫，仍受墙体视线与装填约束', action => {
+  it.each(['weapon', 'ability'] as const)('小队直射火炮%s受双方前排、盾卫、墙体视线与装填约束', action => {
     const actor = make('actor', 'ally', { body: 'vehicle', weaponClass: 'cannon' }), friendly = make('friendly', 'ally');
     const guard = make('guard', 'enemy', { shield: true }), rear = make('rear', 'enemy');
     const battle = grid([actor, friendly, guard, rear]); actor.pos = 52; friendly.pos = 45; guard.pos = 31; rear.pos = 24;
     guard.tacticalPose = bracePose(guard, actor, 'small', 7);
     const ability = skill(actor, 'generic:physical-single:ranged', { range: { min: 0, max: 10, metric: 'grid', allowEngaged: true } });
     const target = () => battle.getActionOptions(actor.id).find(option => option.id === (action === 'weapon' ? 'weapon' : ability.id))?.targets?.find(target => target.targetId === rear.id);
+    expect(target()?.enabled).toBe(false);
+    friendly.pos = 46; guard.pos = 32;
     expect(target()?.enabled).toBe(true);
     battle.battlefield!.tiles[38] = 'wall'; expect(target()?.enabled).not.toBe(true);
     battle.battlefield!.tiles[38] = 'open';
@@ -172,8 +174,8 @@ describe('常态直射遮挡与多盾协同', () => {
     expect(battle.log.some(entry => (entry.resolutions ?? (entry.resolution ? [entry.resolution] : [])).some(result => result.attackerId === actor.id && result.defenderId === rear.id))).toBe(true);
     expect(battle.reloadCd.get(actor.id)).toBeGreaterThan(0);
   });
-  it.each(['weapon', 'ability'] as const)('会战预备阵位火炮%s可越过己方前排和敌方盾卫攻击后排', action => {
-    const actor = company('actor', 'ally', { body: 'vehicle', weaponClass: 'cannon' }), friendly = company('friendly', 'ally');
+  it.each(['weapon', 'ability'] as const)('会战预备阵位曲射火炮%s可越过己方前排和敌方盾卫攻击后排', action => {
+    const actor = company('actor', 'ally', { body: 'vehicle', weaponClass: 'indirect-cannon' }), friendly = company('friendly', 'ally');
     const guard = company('guard', 'enemy', { shield: true }), rear = company('rear', 'enemy');
     const battle = mass([actor, friendly, guard, rear]);
     actor.formationPosition = 'ally:中军:reserve'; friendly.formationPosition = 'ally:中军:front';

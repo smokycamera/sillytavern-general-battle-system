@@ -6,7 +6,7 @@ import { applyHealthLoss, applyDamagePlan, type MemberDamagePlan } from './recov
 import { MEMBER_HEALTH_MODEL, hasMemberHealth, memberHealth, damageMemberGroups } from './member-health.js';
 import { combatWeapon, anchoredProtection,penetrationThrough,armorPowerScale } from './power-anchors.js';
 import { meleeProfile } from './melee.js';
-import { meleeWeapon } from './loadout.js';
+import { meleeWeapon, isCannonWeapon } from './loadout.js';
 /**
  * 伤害管线：命中判定 + 分段伤害。
  *
@@ -254,7 +254,7 @@ function outcomeScale(opts: Omit<AttackOpts, 'rng'>): { participants: number; mu
   if(opts.rules.combatModel===MEMBER_HEALTH_MODEL){
     const a=opts.attacker,d=opts.defender,ranged=opts.ranged??isRangedCapable(a),weapon=combatWeapon(opts.weaponOverride??a.weapon,a,d,opts.rules.weaponOverflow);
     const count=a.scale==='hero'?1:a.body==='vehicle'?personnel(a):Math.min(personnel(a),opts.participants??engagementWidth(a,d,ranged,undefined,opts.fieldTags)*Math.max(1,personnel(a)/COHORT_REFERENCE));
-    const crew=a.scale!=='hero'&&(a.body??'human')==='human'&&!opts.abilityDamage?.delivery?.startsWith('magic')?(weapon?.recipe?.mechanism==='cannon'?4:weapon?.recipe?.mechanism==='autocannon'?3:1):1;
+    const crew=a.scale!=='hero'&&(a.body??'human')==='human'&&!opts.abilityDamage?.delivery?.startsWith('magic')?(isCannonWeapon(weapon)?4:weapon?.recipe?.mechanism==='autocannon'?3:1):1;
     const participants=Math.max(0,count/crew)*(!ranged&&looseFormation(a)?0.5:1);
     const area=hasMemberHealth(d)&&opts.abilityDamage&&!opts.abilityDamage.weaponBased&&opts.abilityDamage.shape==='burst'?Math.min(d.hp,opts.abilityDamage.areaExposure??4):1;
     return {participants,multiplier:participants*area*(opts.packetShare??1)};
@@ -433,7 +433,7 @@ export function resolveAttack(opts: AttackOpts): AttackResolution {
     ...(rules.combatModel===MEMBER_HEALTH_MODEL?{damageModel:'member-health' as const,membersBefore:defender.hp,membersAfter:defender.hp}:{}),
     defenderStatus: defender.status,
     text: '',
-    ...(rules.combatModel===MEMBER_HEALTH_MODEL&&weapon?.recipe?.mechanism==='cannon'?{ammunition:weapon.ammunition}:{}),
+    ...(rules.combatModel===MEMBER_HEALTH_MODEL&&isCannonWeapon(weapon)?{ammunition:weapon?.ammunition}:{}),
   };
 
   if (!hit) {

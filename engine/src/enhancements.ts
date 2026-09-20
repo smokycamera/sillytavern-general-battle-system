@@ -17,12 +17,9 @@ const allowed: Record<BonusKind, BonusStat[]> = {
 export function validateEnhancements(value: Enhancements | undefined, kind: BonusKind): void {
   if (value === undefined) return;
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('强化配置损坏');
-  let total = 0;
   for (const [key, points] of Object.entries(value)) {
     if (!allowed[kind].includes(key as BonusStat) || !Number.isInteger(points) || points < 1 || points > 10) throw Error(`${kind}不支持此强化方向或点数：${key}`);
-    total += points;
   }
-  if (total > 10) throw Error('同一单位／装备／技能的强化点合计最多10');
 }
 export function parseEnhancementSuffix(text: string, kind: BonusKind): { text: string; bonuses?: Enhancements } {
   const match = text.trim().match(/^(.*?[lL]\s*\d{1,2})((?:\+.*)?)$/);

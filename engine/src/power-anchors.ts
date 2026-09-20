@@ -1,3 +1,4 @@
+import { isCannonWeapon, isRangedWeapon } from './loadout.js';
 import { bonusMultiplier, bonusSteps } from './enhancements.js';
 import type {Armor,Combatant,DamageChannel,Weapon} from './types.js';
 import {curveAt} from './data/curves.js';
@@ -36,12 +37,12 @@ export function anchoredWeapon(weapon:Weapon|undefined,ammo:'he'|'ap'='he'):Weap
   if(!mechanism)return weapon;
   const power=weapon.recipe?.power??weapon.level??5,curve=curveAt(power),old=diceAvg(curve.dmgBase)+(curve.dmgAp?diceAvg(curve.dmgAp):0);
   const melee=meleeProfile(weapon);
-  const ratio=powerBudget(power)/old*(mechanism==='cannon'?3:mechanism==='autocannon'?1.5:1)*(melee?.damageScale??1);
+  const ratio=powerBudget(power)/old*(isCannonWeapon(weapon)?3:mechanism==='autocannon'?1.5:1)*(melee?.damageScale??1);
   const base=diceAvg(weapon.baseDice)+(weapon.apDice?diceAvg(weapon.apDice):0),scaled=scaledPowerDice(base*ratio*bonusMultiplier(weapon.recipe?.bonuses, 'damage'));
-  const artillery=mechanism==='cannon',explosive=artillery&&ammo==='he'&&power>=3;
+  const artillery=isCannonWeapon(weapon),explosive=artillery&&ammo==='he'&&power>=3;
   const splash=explosive?(power>=10?1e9:power>=9?256:power>=8?12:power>=7?6:power>=5?4:2):mechanism==='demolition'?6:0;
   return {...weapon,powerModel:'anchors-v1',ammunition:ammo,baseDice:scaled.dice,apDice:undefined,damageScale:scaled.scale,
-    penetration:2*power+(['cannon','autocannon','demolition'].includes(mechanism)?2:['firearm','rifle','energy'].includes(mechanism)?1:0)+(melee?.penetration??0)+(artillery&&ammo==='ap'?2:0)+bonusSteps(weapon.recipe?.bonuses,'penetration',5),
+    penetration:2*power+(['cannon','indirect-cannon','autocannon','demolition'].includes(mechanism)?2:['firearm','rifle','energy'].includes(mechanism)?1:0)+(melee?.penetration??0)+(artillery&&ammo==='ap'?2:0)+bonusSteps(weapon.recipe?.bonuses,'penetration',5),
     splashTargets:splash,splashFactor:mechanism==='demolition'?0.6:0.4};
 }
 export function anchoredProtection(unit:Pick<Combatant,'armor'|'body'>,channel:DamageChannel):number {
@@ -65,7 +66,7 @@ export function armorPowerScale(unit:Pick<Combatant,'armor'|'shield'>):number {
 /** 没有手动指定时，火炮按公开目标防护和人数选择有效毁伤较高的弹种。 */
 export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Combatant,weaponOverflow=false):Weapon|undefined {
   if(!weapon||weapon.powerModel==='anchors-v1')return weapon;
-  if(actor.cannonAmmo||weapon.recipe?.mechanism!=='cannon')return anchoredWeapon(weapon,actor.cannonAmmo);
+  if(actor.cannonAmmo||!isCannonWeapon(weapon))return anchoredWeapon(weapon,actor.cannonAmmo);
   const he=anchoredWeapon(weapon,'he')!,ap=anchoredWeapon(weapon,'ap')!;
   const score=(w:Weapon)=>{
     const raw=diceAvg(w.baseDice)*(w.damageScale??1)*penetrationThrough(w.penetration??0,anchoredProtection(target,w.channel??'kinetic'))/armorPowerScale(target);
@@ -85,5 +86,5 @@ export function anchoredWeaponLabel(weapon:Weapon|undefined):string {
   const w=anchoredWeapon(weapon);if(!w)return '—';
   const raw=(diceAvg(w.baseDice)+(w.apDice?diceAvg(w.apDice):0))*(w.damageScale??1);
   const melee=meleeProfile(w);
-  return `单次命中均值${Number(raw.toFixed(1))}生命 · 穿透${w.penetration??0}${(w.attacks??1)>1?` · ${w.attacks}段`:''}${w.splashTargets?` · 爆炸${w.splashTargets>=1e9?'覆盖目标编队':'另及'+w.splashTargets+'名额'}`:''}${melee?` · ${melee.description}`:''}`;
+  return `${isRangedWeapon(w) ? (w.indirect ? '曲射' : '直射') + (isCannonWeapon(w) ? '火炮' : '') + ' · ' : ''}单次命中均值${Number(raw.toFixed(1))}生命 · 穿透${w.penetration??0}${(w.attacks??1)>1?` · ${w.attacks}段`:''}${w.splashTargets?` · 爆炸${w.splashTargets>=1e9?'覆盖目标编队':'另及'+w.splashTargets+'名额'}`:''}${melee?` · ${melee.description}`:''}`;
 }

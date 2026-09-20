@@ -85,7 +85,7 @@ export type Suggestion =
       weapon?: string;
       /** 武器显示名：weapon="名字:种类L等级" 的名字段（旧格式无名字段时不落此键） */
       weaponName?: string;
-      /** 从 weapon 解析出的武器分类（剑/长兵器/弓弩/火枪/步枪/火炮/能量武器/法杖/钝器） */
+      /** 从 weapon 解析出的武器分类（剑/长兵器/弓弩/火枪/步枪/直射火炮/曲射火炮/能量武器/法杖/钝器） */
       weaponClass?: string;
       /** 从 weapon 解析出的武器等级 L1~L10（与单位等级解耦） */
       weaponLevel?: number;
@@ -222,7 +222,9 @@ export function weaponClassKey(name: string): string | undefined {
     { cls: 'bow', kws: ['弓', '弩', '长弓', '短弓', '弓箭', '复合弓'] },
     { cls: 'firearm', kws: ['火枪', '燧发枪', '火绳枪', '火铳', '滑膛枪', '铳'] },
     { cls: 'rifle', kws: ['步枪', '机枪', '突击步枪', '卡宾', '狙击枪', 'hk416', 'hk-416', 'ak', '自动枪', '枪'] },
-    { cls: 'cannon', kws: ['炮', '火炮', '舰炮', '野战炮', '坦克炮', '榴弹炮', '迫击炮'] },
+    { cls: 'autocannon', kws: ['机炮', '机关炮', '自动炮', 'autocannon', 'auto cannon'] },
+    { cls: 'indirect-cannon', kws: ['曲射', '间接火炮', '榴弹炮', '迫击炮', '投石机', '抛石机', 'howitzer', 'mortar'] },
+    { cls: 'cannon', kws: ['炮', '火炮', '舰炮', '野战炮', '坦克炮'] },
     { cls: 'energy', kws: ['等离子', '激光', '轨道炮', '脉冲', '能量', '光剑', '电浆', '粒子'] },
     { cls: 'magic', kws: ['法杖', '魔杖', '魔法', '法术', '权杖'] },
     { cls: 'blunt', kws: ['棍', '棒', '锤', '钝器', '钉头锤'] },

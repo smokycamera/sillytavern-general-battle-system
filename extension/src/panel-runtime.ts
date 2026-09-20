@@ -11,7 +11,7 @@ export interface NativeRuntime { service: BattleService; messages: NativeMessage
 export function legacyReceipt(receipt: PersistReceipt): SaveReceipt {
   const confirmed = receipt.status === 'confirmed';
   return { status: confirmed ? 'saved' : 'failed', host: confirmed, local: confirmed || receipt.status === 'pending', nativeStatus: receipt.status,
-    ...(confirmed ? {} : { error: receipt.status === 'pending' ? '保存结果待核实，已保留本次候选；请使用“核实并重试保存”。' : receipt.error ?? '当前操作未保存' }) };
+    ...(confirmed ? {} : { error: receipt.status === 'pending' ? '保存结果待核实，已保留本次候选；请使用“核实并重试保存”。' + (receipt.error ? ' 原因：' + receipt.error : '') : receipt.error ?? '当前操作未保存' }) };
 }
 export function createPanelRuntime(): PanelRuntime {
   const runtime = (window.parent as unknown as { __tavernBattleNative?: NativeRuntime }).__tavernBattleNative;

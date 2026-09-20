@@ -93,7 +93,7 @@ async function start() {
       panel.showStatus(`当前聊天发现旧战阵存档：${info?.units ?? 0} 个单位、${info?.inventory ?? 0} 项库存、${info?.reports ?? 0} 份战报${info?.battle ? '，含进行中的战斗' : ''}。采用前会保存原档备份。${details ? '\n需要核对的调整：' + details : ''}`, [
         { label: '导出原档备份', run: exportCurrent }, { label: '采用当前聊天旧档', run: () => adopt('import') }, { label: '从空档开始', run: () => adopt('empty') },
       ], true);
-    } else if (state.phase === 'pending') panel.showStatus('上一笔保存尚待核实，已保留候选并暂停后续操作。', [{ label: '核实并重试保存', run: async () => { const receipt = await current.retry(); if (receipt.status === 'confirmed') await current.load(); } },
+    } else if (state.phase === 'pending') panel.showStatus('上一笔保存尚待核实，已保留候选并暂停后续操作。' + (state.receipt?.error ? '\n原因：' + state.receipt.error : ''), [{ label: '核实并重试保存', run: async () => { const receipt = await current.retry(); if (receipt.status === 'confirmed') await current.load(); } },
       ...(!store.pendingOperation()?.legacyHandoff ? [{ label: '放弃未落盘候选', run: async () => { await current.discardPending(); } }] : []),
       { label: '导出已确认档案', run: exportCurrent }]);
     else if (state.phase === 'handoff') panel.showStatus('最新进度已确认写入旧脚本的当前聊天存档和镜像，原生写入已停止。可以停用原生扩展后启用旧战阵脚本；再次使用原生版时先停用旧脚本，再预览迁回。', [{ label: '导出完整原生存档', run: exportCurrent }, { label: '预览迁回原生', run: async () => showChange(await management.previewResume()) }], true);

@@ -99,3 +99,43 @@ describe('metadata-only host contract', () => {
     expect(f.fullSave).toHaveBeenCalledTimes(1);
   });
 });
+
+it('falls back to verified full save when metadata saver silently leaves disk unchanged', async () => {
+  const f = metadataOnlyFixture(); await f.store.load();
+  f.context.saveMetadata = vi.fn(async () => {});
+  const receipt = await f.store.commit(0, () => ({ factRevision: 9 }));
+  expect(receipt.status).toBe('confirmed');
+  expect(f.fullSave).toHaveBeenCalledTimes(1);
+  expect(f.disk.get('a')!.tavernBattle).toMatchObject({ payload: { factRevision: 9 } });
+});
+it('manual retry of an old metadata failure uses a full save without recomputing the candidate', async () => {
+  const f = metadataOnlyFixture(); await f.store.load();
+  f.context.saveMetadata = vi.fn(async () => { throw Error('metadata unavailable'); });
+  const update = vi.fn(() => ({ factRevision: 4 }));
+  expect((await f.store.commit(0, update)).status).toBe('pending');
+  expect(f.fullSave).not.toHaveBeenCalled();
+  await f.store.load();
+  expect((await f.store.retry()).status).toBe('confirmed');
+  expect(update).toHaveBeenCalledTimes(1);
+  expect(f.fullSave).toHaveBeenCalledTimes(1);
+});
+it('identical panel flushes verify the head but do not rewrite or increment the revision', async () => {
+  const f = metadataOnlyFixture(); await f.store.load();
+  await f.store.commit(0, () => ({ factRevision: 1 }));
+  expect((await f.store.commit(1, before => before)).status).toBe('confirmed');
+  expect(f.store.head()!.revision).toBe(1);
+  expect(f.metadataSave).toHaveBeenCalledTimes(1);
+});
+
+it('does not fall back over a competing persisted head', async () => {
+  const f = metadataOnlyFixture(); await f.store.load();
+  await f.store.commit(0, () => ({ factRevision: 1 }));
+  f.context.saveMetadata = async () => {
+    const newer = f.store.envelope()!; newer.revision += 10;
+    f.disk.set('a', { tavernBattle: newer });
+  };
+  expect((await f.store.commit(1, () => ({ factRevision: 2 }))).status).toBe('pending');
+  expect(f.fullSave).not.toHaveBeenCalled();
+  expect((await f.store.retry()).status).toBe('conflict');
+  expect(f.fullSave).not.toHaveBeenCalled();
+});
