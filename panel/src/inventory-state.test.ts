@@ -98,10 +98,10 @@ describe('物品与档案的原子事务', () => {
   it('换装冲突不能把被替换武器或盾牌提前移出槽位', () => {
     const save = initial();
     save.inventory!.push(createInventoryItem('shield', '圆盾', { kind: 'shield', power: 3 }, 'shield'));
-    save.inventory!.push(createInventoryItem('rifle', '步枪', { kind: 'weapon', mechanism: 'rifle', power: 3 }, 'rifle'));
+    save.inventory!.push(createInventoryItem('cannon', '重炮', { kind: 'weapon', mechanism: 'cannon', power: 3 }, 'cannon'));
     const next = prepareInventoryTransaction(save, { id: 'shield-on', expectedRevision: 1, kind: 'equip', itemId: 'shield', unitId: 'a', slot: 'shield' });
     const before = structuredClone(next);
-    expect(() => prepareInventoryTransaction(next, { id: 'conflict', expectedRevision: next.factRevision!, kind: 'equip', itemId: 'rifle', unitId: 'a', slot: 'primary' })).toThrow(/双手.*盾/);
+    expect(() => prepareInventoryTransaction(next, { id: 'conflict', expectedRevision: next.factRevision!, kind: 'equip', itemId: 'cannon', unitId: 'a', slot: 'primary' })).toThrow(/炮组|平台/);
     expect(next).toEqual(before);
   });
   it('重铸保持实物身份与改造历史，已装备投影更新，训练和生命不变', () => {
