@@ -1,0 +1,40 @@
+{
+  "name": "tavern-battle",
+  "version": "0.2.0-rc.1",
+  "description": "战阵 —— SillyTavern / TauriTavern 原生回合制战斗扩展",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "build:extension": "vite build --config extension/vite.config.ts && node scripts/package-extension.mjs",
+    "test:extension": "vitest run host/tests runtime/tests panel/src/auto-battle.test.ts panel/src/report-history.test.ts panel/src/report-epilogue.test.ts",
+    "verify:compatibility": "vite-node scripts/verify-recovered-scenarios.ts && vite-node scripts/verify-native-compatibility.ts",
+    "smoke:extension": "node scripts/native-extension-smoke.mjs",
+    "verify:extension": "npm run typecheck && npm run test:extension && npm run verify:compatibility && npm run build:extension && npm run smoke:extension",
+    "prebuild:panel": "node scripts/check-source-baseline.mjs",
+    "build:panel": "vite build panel",
+    "build:worldbook": "vite-node scripts/build-worldbook.ts",
+    "prebuild:dist": "node scripts/check-source-baseline.mjs",
+    "build:dist": "npm run build:worldbook && vite build panel && vite build --config panel/controller.vite.config.ts && node scripts/pack-loader.mjs",
+    "build:aligned": "vite build panel --outDir ../release/source-aligned-candidate && vite build --config panel/controller.vite.config.ts --outDir release/source-aligned-candidate && node scripts/pack-loader.mjs --candidate",
+    "verify:baseline": "node scripts/verify-recovered-baseline.mjs && vite-node scripts/verify-recovered-scenarios.ts",
+    "smoke:loader": "node scripts/loader-smoke.mjs",
+    "smoke:continuity": "node scripts/continuity-smoke.mjs",
+    "smoke:grid": "node scripts/grid-smoke.mjs",
+    "smoke:formation": "node scripts/formation-smoke.mjs",
+    "smoke:migration": "node scripts/migration-smoke.mjs",
+    "smoke:inventory": "node scripts/inventory-smoke.mjs",
+    "sim:v2": "vite-node scripts/calibrate-v2.ts",
+    "verify": "npm run test && npm run typecheck && npm run build:dist"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.62.1",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vitest": "^2.1.0"
+  }
+}

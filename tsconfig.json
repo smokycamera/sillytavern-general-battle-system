@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "types": ["vitest/globals"],
+    "baseUrl": ".",
+    "paths": {
+      "@engine/*": ["engine/src/*"]
+    }
+  },
+  "include": ["engine/src/**/*.ts", "engine/tests/**/*.ts", "panel/src/**/*.ts", "host/**/*.ts", "runtime/**/*.ts", "extension/src/**/*.ts"]
+}

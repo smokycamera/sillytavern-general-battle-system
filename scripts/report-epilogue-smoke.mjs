@@ -1,0 +1,45 @@
+import {chromium} from 'playwright-core';
+import {readFileSync,writeFileSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
+import http from 'node:http';
+import assert from 'node:assert/strict';
+const fixture=JSON.parse(execFileSync(process.execPath,['node_modules/vite-node/vite-node.mjs','scripts/report-history-fixture.ts'],{encoding:'utf8'}));
+const html=readFileSync('panel/dist/index.html','utf8'),checks=[],errors=[];
+const server=http.createServer((_req,res)=>{res.setHeader('content-type','text/html;charset=utf-8');res.end(`<!doctype html><script>
+const vars={};window.sent=[];window.TavernHelper={getVariables:()=>vars,insertOrAssignVariables:value=>Object.assign(vars,value),sendMessageAsUser:async text=>{window.sent.push(text);return true;}};
+window.SillyTavern={getContext:()=>({chatId:'epilogue-smoke',characterId:0,characters:[{avatar:'fixture.png'}]})};
+window.loadFixture=save=>{vars.panel=save;localStorage.clear();};window.readPanel=()=>vars.panel;
+</script><iframe id="panel" style="border:0;position:fixed;inset:0;width:100%;height:100%"></iframe>`);});
+await new Promise(r=>server.listen(0,'127.0.0.1',r));
+const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+try{
+ const page=await browser.newPage({viewport:{width:390,height:844}});page.on('pageerror',e=>errors.push(e.message));await page.goto(`http://127.0.0.1:${server.address().port}`);
+ const p=page.frameLocator('#panel'),read=()=>page.evaluate(()=>window.readPanel());
+ const reload=async()=>{await page.evaluate(html=>{document.querySelector('#panel').srcdoc=html;},html);};
+ await page.evaluate(save=>window.loadFixture(save),fixture.before);await reload();
+ assert.equal(await p.locator('[data-role="non-lethal"]').isChecked(),false);await p.locator('[data-role="non-lethal"]').check();
+ assert.equal((await read()).nonLethal,true);await reload();assert.equal(await p.locator('[data-role="non-lethal"]').isChecked(),true);
+ await p.locator('[data-action="small-start"]').click();await p.locator('.grid-board').waitFor();
+ assert.equal((await read()).battle.snap.nonLethal,true);assert.equal((await read()).activeBattleStart.snapshot.nonLethal,true);
+ assert.match(await p.locator('.battle-toolbar').innerText(),/本场：非致命/);checks.push('非致命默认关闭，勾选刷新保留，新战和开局快照均保存规则');
+ await p.locator('[data-detail-id="battle-options"] > summary').click();await p.locator('[data-action="battle-finish"][data-reason="ceasefire"]').click();
+ const adjacent=await p.locator('.battle-exit [data-action="out-epilogue"]').evaluate(el=>el.nextElementSibling?.getAttribute('data-action'));
+ assert.equal(adjacent,'out-digest');assert.equal(await p.locator('.battle-exit [data-action="out-digest"]').isVisible(),true);
+ await p.locator('.workspace-nav [data-tab="reports"]').click();
+ assert.equal(await p.locator('.report-send-actions [data-action="out-digest"]').isVisible(),true);
+ assert.equal(await p.locator('.report-send-actions [data-action="out-digest"]').evaluate(el=>!!el.closest('details')),false);
+ const saved=await read(),report=saved.reports.at(-1);for(const word of ['【开局单位状态与血量】','【结束单位状态与血量】','【伤害来源】','非致命'])assert.ok(report.epilogue.includes(word));
+ assert.ok(report.epilogue.includes('现员400/500人'));assert.equal(report.epilogue.includes('没有开局快照'),false);
+ await p.locator('.report-send-actions [data-action="out-epilogue"]').click();
+ await p.locator('.report-send-actions [data-action="out-epilogue"][disabled]').waitFor();
+ assert.equal(await page.evaluate(()=>window.sent.at(-1)),report.epilogue);
+ await p.locator('.report-send-actions [data-action="out-digest"]').click();
+ await page.waitForFunction(()=>window.sent.length===2);
+ assert.ok((await page.evaluate(()=>window.sent.at(-1))).includes('【战阵·'));checks.push('战场结束栏和战报页按钮相邻可见，实际模拟发送终章包含开局/结束/伤害来源，逐轮按钮可用');
+ assert.ok(await p.locator('html').evaluate(el=>el.scrollWidth-innerWidth<=1));await page.screenshot({path:'panel/smoke-shots/report-epilogue-390.png'});
+ await p.locator('.workspace-nav [data-tab="battle"]').click();await p.locator('[data-action="battle-close"]').click();
+ await p.locator('.workspace-nav [data-tab="reports"]').click();assert.equal((await read()).reports.at(-1).epilogue,report.epilogue);
+ await p.locator('[data-action="report-restart"]').click();await p.locator('[data-action="report-restart-confirm"]').click();await p.locator('.grid-board').waitFor();
+ assert.equal((await read()).battle.snap.nonLethal,true);checks.push('390宽度无横溢出，收兵保留终章，原局重战继承非致命规则');
+ assert.deepEqual(errors,[]);writeFileSync('engine/sim/out/report-epilogue-20260915-browser.json',JSON.stringify({checks,errors},null,2));console.log(JSON.stringify({checks,errors}));
+}finally{await browser.close();await new Promise(r=>server.close(r));}

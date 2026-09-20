@@ -1,0 +1,110 @@
+{
+  "format": "tavern-battle-native-build",
+  "version": "0.2.0-rc.1",
+  "builtAt": "2026-09-20T11:02:10.738Z",
+  "sourceFingerprint": "d48fc6d4096ccb8976daa63fbbea57c7fc2e6be2302942785e469bb4004f43d8",
+  "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
+  "files": [
+    {
+      "path": "dist/assets/panel-Csqzv1jF.css",
+      "bytes": 7442,
+      "sha256": "96aaedb0608cff522511fd3c0a7b153b0b9968bdded84f7252317a345b6bf0e9"
+    },
+    {
+      "path": "dist/assets/panel-DsmZbUCU.js",
+      "bytes": 249961,
+      "sha256": "ddd07eadaef1fd8e5963cece599c390d756259491d1fc825021fb921f1357061"
+    },
+    {
+      "path": "dist/assets/preferences-CAm74eB8.js",
+      "bytes": 490378,
+      "sha256": "7b8a85d96ef81e19981992127e77f4332d85406d3cdefad0ebdca0728e4ebf37"
+    },
+    {
+      "path": "assets/regex/tavern-battle-collapse.json",
+      "bytes": 476,
+      "sha256": "3a11e6c4923e35729fc4d7d3bc46917bcd967d21b981cdf612419777f7bdbdc4"
+    },
+    {
+      "path": "assets/worldbook/!通用战斗系统约束.json",
+      "bytes": 32797,
+      "sha256": "53f0a77d92ee3f5143ca60204c200f3fc4e59b3ed5b5ff04874bc3ee9c0252a7"
+    },
+    {
+      "path": "COMMERCIAL-LICENSE.md",
+      "bytes": 758,
+      "sha256": "bae3de53ef94b0f7df53e294185aa3551e669726e12fb7726e6bcb843b5393cc"
+    },
+    {
+      "path": "docs/extension-migration-assessment-20260919.md",
+      "bytes": 10268,
+      "sha256": "290adc8cd5a613d8a843da785921b5f8035c7daf7c567b74906958e78161f4e2"
+    },
+    {
+      "path": "docs/native-extension-migration-plan-20260919.md",
+      "bytes": 30974,
+      "sha256": "d9e05372125dc6a1527273e08512f1a231ba753b141fe9787151ccbebc602008"
+    },
+    {
+      "path": "docs/native-extension-validation.md",
+      "bytes": 3722,
+      "sha256": "e35a0868e56efc57d8945d111e9950addafbb50a12fb26b52b083519f7b2b4c9"
+    },
+    {
+      "path": "docs/script-baseline-20260919.md",
+      "bytes": 3744,
+      "sha256": "e68f6c58483cacd0d24f26e42138b519f2bb44bb83f3e73e86873d0d284fb076"
+    },
+    {
+      "path": "docs/validation-results.json",
+      "bytes": 6751,
+      "sha256": "1b19c421a1932b325f82dcea89fa67331d171d2392c5f76a59d860de719c16e0"
+    },
+    {
+      "path": "dist/index.js",
+      "bytes": 66591,
+      "sha256": "b81d40f9bd71a8e4164275fcfc7c6d6a952611d5487574129d5502a24f82a407"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 3749,
+      "sha256": "1daa20477fb37b106fb8f3be18e6835ccfd6f01fc7f83faccc6897f7f156181d"
+    },
+    {
+      "path": "licenses/Vite-LICENSE.md",
+      "bytes": 162419,
+      "sha256": "04d9940b3b8b372bff74437c3b153eda8a89642669c4209a4f67135eb3132bc9"
+    },
+    {
+      "path": "manifest.json",
+      "bytes": 173,
+      "sha256": "e45768961ea0ee890a1775b35e85b00ab8ec85b220e680bba387c4d66063f5ff"
+    },
+    {
+      "path": "dist/panel/index.html",
+      "bytes": 43276,
+      "sha256": "1b3f6c1a8f7fe67817748baa1be641c99b80b8543e3f8c6342afd874c4ddf261"
+    },
+    {
+      "path": "README.md",
+      "bytes": 6635,
+      "sha256": "60d8a67880172af5f8674b98d4f63cbfe64d50f5dfd9b56369029f6874dc6aba"
+    },
+    {
+      "path": "release/current-baseline.json",
+      "bytes": 2532,
+      "sha256": "8dfb3599bec3e692d47ebf6fd631647326cf5fdeab8c592637c0463aa614e8c5"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "bytes": 1179,
+      "sha256": "d9df73c3b55697d4fd7a3929838b8eda35b893abc35cf76a77bc80c0aca061b4"
+    }
+  ],
+  "validation": {
+    "dependencyAudit": "passed",
+    "status": "release-candidate",
+    "report": "docs/native-extension-validation.md"
+  },
+  "layout": "paths relative to repository root"
+}

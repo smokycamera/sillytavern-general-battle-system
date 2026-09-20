@@ -1,0 +1,760 @@
+[
+  {
+    "label": "controller",
+    "entries": [
+      {
+        "file": "panel/src/controller-entry.ts",
+        "id": 0
+      },
+      {
+        "file": "panel/src/narrative-controller.ts",
+        "id": 1
+      },
+      {
+        "file": "panel/src/tavern.ts",
+        "id": 82
+      },
+      {
+        "file": "panel/src/prompt-settings.ts",
+        "id": 2
+      },
+      {
+        "file": "engine/src/data/skill-mechanisms.ts",
+        "id": 7
+      },
+      {
+        "file": "engine/src/resources.ts",
+        "id": 9
+      },
+      {
+        "file": "engine/src/xp.ts",
+        "id": 10
+      },
+      {
+        "file": "engine/src/member-health.ts",
+        "id": 15
+      },
+      {
+        "file": "panel/src/report-history.ts",
+        "id": 19
+      },
+      {
+        "file": "panel/src/battle-items.ts",
+        "id": 73
+      },
+      {
+        "file": "panel/src/trait-state.ts",
+        "id": 74
+      },
+      {
+        "file": "engine/src/index.ts",
+        "id": 67
+      },
+      {
+        "file": "panel/src/migration-review.ts",
+        "id": 75
+      },
+      {
+        "file": "panel/src/inventory-state.ts",
+        "id": 72
+      },
+      {
+        "file": "engine/src/small/spatial.ts",
+        "id": 55
+      },
+      {
+        "file": "panel/src/narrative-state.ts",
+        "id": 76
+      },
+      {
+        "file": "panel/src/protocol.ts",
+        "id": 77
+      },
+      {
+        "file": "panel/src/storage-codec.ts",
+        "id": 83
+      },
+      {
+        "file": "panel/src/narrative-prompt.ts",
+        "id": 3
+      },
+      {
+        "file": "engine/src/inject/narrative-task.ts",
+        "id": 6
+      },
+      {
+        "file": "engine/src/data/traits.ts",
+        "id": 8
+      },
+      {
+        "file": "engine/src/enhancements.ts",
+        "id": 11
+      },
+      {
+        "file": "engine/src/health-limits.ts",
+        "id": 12
+      },
+      {
+        "file": "engine/src/body.ts",
+        "id": 14
+      },
+      {
+        "file": "engine/src/data/curves.ts",
+        "id": 13
+      },
+      {
+        "file": "engine/src/trait-sources.ts",
+        "id": 16
+      },
+      {
+        "file": "engine/src/unit-scale.ts",
+        "id": 18
+      },
+      {
+        "file": "engine/src/small/battle.ts",
+        "id": 20
+      },
+      {
+        "file": "engine/src/mass/battle.ts",
+        "id": 64
+      },
+      {
+        "file": "panel/src/unit-state.ts",
+        "id": 66
+      },
+      {
+        "file": "engine/src/skill-learning.ts",
+        "id": 68
+      },
+      {
+        "file": "engine/src/skill-attack.ts",
+        "id": 59
+      },
+      {
+        "file": "engine/src/skill-effects.ts",
+        "id": 57
+      },
+      {
+        "file": "engine/src/afflictions.ts",
+        "id": 58
+      },
+      {
+        "file": "engine/src/types.ts",
+        "id": 69
+      },
+      {
+        "file": "engine/src/items.ts",
+        "id": 50
+      },
+      {
+        "file": "engine/src/loadout.ts",
+        "id": 41
+      },
+      {
+        "file": "engine/src/recovery.ts",
+        "id": 51
+      },
+      {
+        "file": "engine/src/morale.ts",
+        "id": 52
+      },
+      {
+        "file": "engine/src/tactics.ts",
+        "id": 43
+      },
+      {
+        "file": "engine/src/environment.ts",
+        "id": 56
+      },
+      {
+        "file": "engine/src/rng.ts",
+        "id": 36
+      },
+      {
+        "file": "engine/src/dice.ts",
+        "id": 26
+      },
+      {
+        "file": "engine/src/bonus.ts",
+        "id": 53
+      },
+      {
+        "file": "engine/src/damage.ts",
+        "id": 60
+      },
+      {
+        "file": "engine/src/actions.ts",
+        "id": 61
+      },
+      {
+        "file": "engine/src/conditions.ts",
+        "id": 17
+      },
+      {
+        "file": "engine/src/rules.ts",
+        "id": 62
+      },
+      {
+        "file": "engine/src/small/field-generator.ts",
+        "id": 70
+      },
+      {
+        "file": "engine/src/observation.ts",
+        "id": 54
+      },
+      {
+        "file": "engine/src/aerial.ts",
+        "id": 40
+      },
+      {
+        "file": "engine/src/mass/formation.ts",
+        "id": 42
+      },
+      {
+        "file": "engine/src/gen/generator.ts",
+        "id": 46
+      },
+      {
+        "file": "engine/src/data/skins.ts",
+        "id": 47
+      },
+      {
+        "file": "engine/src/data/weapons.ts",
+        "id": 25
+      },
+      {
+        "file": "engine/src/data/armors.ts",
+        "id": 35
+      },
+      {
+        "file": "engine/src/data/abilities.ts",
+        "id": 48
+      },
+      {
+        "file": "engine/src/data/ability-blueprints.ts",
+        "id": 30
+      },
+      {
+        "file": "engine/src/skill-catalog.ts",
+        "id": 29
+      },
+      {
+        "file": "engine/src/gen/generic-skills.ts",
+        "id": 32
+      },
+      {
+        "file": "engine/src/inject/format.ts",
+        "id": 71
+      },
+      {
+        "file": "engine/src/battle-feedback.ts",
+        "id": 63
+      },
+      {
+        "file": "engine/src/mass/feedback.ts",
+        "id": 65
+      },
+      {
+        "file": "engine/src/small/weapon-range.ts",
+        "id": 38
+      },
+      {
+        "file": "engine/src/small/skill-range.ts",
+        "id": 37
+      },
+      {
+        "file": "engine/src/combat-model.ts",
+        "id": 23
+      },
+      {
+        "file": "engine/src/power-anchors.ts",
+        "id": 28
+      },
+      {
+        "file": "engine/src/skill-upgrade.ts",
+        "id": 24
+      },
+      {
+        "file": "engine/src/gen/equipment.ts",
+        "id": 34
+      },
+      {
+        "file": "panel/src/narrative-limits.ts",
+        "id": 5
+      },
+      {
+        "file": "panel/src/unit-set.ts",
+        "id": 81
+      },
+      {
+        "file": "panel/src/tags.ts",
+        "id": 78
+      },
+      {
+        "file": "panel/src/protocol-syntax.ts",
+        "id": 79
+      },
+      {
+        "file": "assets/worldbook/!通用战斗系统约束.json",
+        "id": 4
+      },
+      {
+        "file": "engine/src/casualty-xp.ts",
+        "id": 21
+      },
+      {
+        "file": "engine/src/probability.ts",
+        "id": 22
+      },
+      {
+        "file": "engine/src/tactical-preference.ts",
+        "id": 33
+      },
+      {
+        "file": "engine/src/guard-screen.ts",
+        "id": 39
+      },
+      {
+        "file": "engine/src/exposure.ts",
+        "id": 44
+      },
+      {
+        "file": "engine/src/skill-runtime.ts",
+        "id": 45
+      },
+      {
+        "file": "engine/src/melee.ts",
+        "id": 27
+      },
+      {
+        "file": "engine/src/gen/mechanism.ts",
+        "id": 49
+      },
+      {
+        "file": "engine/src/gen/abilities.ts",
+        "id": 31
+      },
+      {
+        "file": "panel/src/item-spec.ts",
+        "id": 80
+      }
+    ]
+  },
+  {
+    "label": "panel",
+    "entries": [
+      {
+        "file": "panel/src/main.ts",
+        "id": 0
+      },
+      {
+        "file": "engine/src/enhancements.ts",
+        "id": 1
+      },
+      {
+        "file": "panel/src/report-view.ts",
+        "id": 2
+      },
+      {
+        "file": "panel/src/report-history.ts",
+        "id": 72
+      },
+      {
+        "file": "engine/src/combat-model.ts",
+        "id": 20
+      },
+      {
+        "file": "engine/src/member-health.ts",
+        "id": 22
+      },
+      {
+        "file": "engine/src/power-anchors.ts",
+        "id": 24
+      },
+      {
+        "file": "panel/src/combat-model-view.ts",
+        "id": 75
+      },
+      {
+        "file": "engine/src/skill-upgrade.ts",
+        "id": 23
+      },
+      {
+        "file": "panel/src/battle-ui.css",
+        "id": 77
+      },
+      {
+        "file": "panel/src/view-dom.ts",
+        "id": 78
+      },
+      {
+        "file": "panel/src/battle-execution.ts",
+        "id": 79
+      },
+      {
+        "file": "engine/src/tactical-preference.ts",
+        "id": 56
+      },
+      {
+        "file": "panel/src/battle-reports.ts",
+        "id": 3
+      },
+      {
+        "file": "panel/src/battle-presentation.ts",
+        "id": 67
+      },
+      {
+        "file": "panel/src/prompt-settings.ts",
+        "id": 68
+      },
+      {
+        "file": "panel/src/narrative-controller.ts",
+        "id": 80
+      },
+      {
+        "file": "engine/src/gen/equipment.ts",
+        "id": 34
+      },
+      {
+        "file": "engine/src/small/weapon-range.ts",
+        "id": 58
+      },
+      {
+        "file": "engine/src/melee.ts",
+        "id": 10
+      },
+      {
+        "file": "engine/src/tactics.ts",
+        "id": 39
+      },
+      {
+        "file": "engine/src/resources.ts",
+        "id": 27
+      },
+      {
+        "file": "panel/src/narrative-state.ts",
+        "id": 84
+      },
+      {
+        "file": "panel/src/auto-battle.ts",
+        "id": 90
+      },
+      {
+        "file": "panel/src/unit-builder.ts",
+        "id": 91
+      },
+      {
+        "file": "panel/src/narrative-limits.ts",
+        "id": 71
+      },
+      {
+        "file": "panel/src/battle-setup.ts",
+        "id": 92
+      },
+      {
+        "file": "panel/src/unit-form.ts",
+        "id": 93
+      },
+      {
+        "file": "engine/src/index.ts",
+        "id": 4
+      },
+      {
+        "file": "panel/src/tavern.ts",
+        "id": 94
+      },
+      {
+        "file": "panel/src/inventory-state.ts",
+        "id": 74
+      },
+      {
+        "file": "panel/src/battle-items.ts",
+        "id": 81
+      },
+      {
+        "file": "panel/src/inventory-view.ts",
+        "id": 96
+      },
+      {
+        "file": "panel/src/item-spec.ts",
+        "id": 88
+      },
+      {
+        "file": "panel/src/workspace-view.ts",
+        "id": 97
+      },
+      {
+        "file": "panel/src/formation-view.ts",
+        "id": 98
+      },
+      {
+        "file": "panel/src/formation-orders.ts",
+        "id": 100
+      },
+      {
+        "file": "panel/src/tactical-view.ts",
+        "id": 101
+      },
+      {
+        "file": "panel/src/unit-state.ts",
+        "id": 73
+      },
+      {
+        "file": "engine/src/small/battle.ts",
+        "id": 54
+      },
+      {
+        "file": "engine/src/mass/battle.ts",
+        "id": 62
+      },
+      {
+        "file": "engine/src/data/traits.ts",
+        "id": 13
+      },
+      {
+        "file": "engine/src/body.ts",
+        "id": 18
+      },
+      {
+        "file": "engine/src/health-limits.ts",
+        "id": 21
+      },
+      {
+        "file": "engine/src/data/curves.ts",
+        "id": 7
+      },
+      {
+        "file": "engine/src/data/weapons.ts",
+        "id": 8
+      },
+      {
+        "file": "panel/src/equipment-form.ts",
+        "id": 76
+      },
+      {
+        "file": "engine/src/skill-catalog.ts",
+        "id": 11
+      },
+      {
+        "file": "engine/src/observation.ts",
+        "id": 42
+      },
+      {
+        "file": "engine/src/inject/format.ts",
+        "id": 64
+      },
+      {
+        "file": "engine/src/inject/narrative-task.ts",
+        "id": 65
+      },
+      {
+        "file": "panel/src/narrative-prompt.ts",
+        "id": 69
+      },
+      {
+        "file": "engine/src/data/skill-mechanisms.ts",
+        "id": 12
+      },
+      {
+        "file": "engine/src/xp.ts",
+        "id": 66
+      },
+      {
+        "file": "panel/src/trait-state.ts",
+        "id": 82
+      },
+      {
+        "file": "panel/src/migration-review.ts",
+        "id": 83
+      },
+      {
+        "file": "engine/src/small/spatial.ts",
+        "id": 43
+      },
+      {
+        "file": "panel/src/protocol.ts",
+        "id": 85
+      },
+      {
+        "file": "engine/src/data/armors.ts",
+        "id": 30
+      },
+      {
+        "file": "engine/src/rng.ts",
+        "id": 32
+      },
+      {
+        "file": "engine/src/trait-sources.ts",
+        "id": 17
+      },
+      {
+        "file": "engine/src/aerial.ts",
+        "id": 40
+      },
+      {
+        "file": "engine/src/mass/formation.ts",
+        "id": 41
+      },
+      {
+        "file": "panel/src/unit-set.ts",
+        "id": 89
+      },
+      {
+        "file": "engine/src/rules.ts",
+        "id": 53
+      },
+      {
+        "file": "engine/src/small/skill-range.ts",
+        "id": 57
+      },
+      {
+        "file": "engine/src/actions.ts",
+        "id": 51
+      },
+      {
+        "file": "engine/src/skill-learning.ts",
+        "id": 5
+      },
+      {
+        "file": "engine/src/skill-attack.ts",
+        "id": 25
+      },
+      {
+        "file": "engine/src/skill-effects.ts",
+        "id": 46
+      },
+      {
+        "file": "engine/src/afflictions.ts",
+        "id": 47
+      },
+      {
+        "file": "engine/src/types.ts",
+        "id": 48
+      },
+      {
+        "file": "engine/src/items.ts",
+        "id": 35
+      },
+      {
+        "file": "engine/src/loadout.ts",
+        "id": 16
+      },
+      {
+        "file": "engine/src/recovery.ts",
+        "id": 36
+      },
+      {
+        "file": "engine/src/morale.ts",
+        "id": 37
+      },
+      {
+        "file": "engine/src/environment.ts",
+        "id": 44
+      },
+      {
+        "file": "engine/src/unit-scale.ts",
+        "id": 49
+      },
+      {
+        "file": "engine/src/dice.ts",
+        "id": 9
+      },
+      {
+        "file": "engine/src/bonus.ts",
+        "id": 38
+      },
+      {
+        "file": "engine/src/damage.ts",
+        "id": 50
+      },
+      {
+        "file": "engine/src/conditions.ts",
+        "id": 19
+      },
+      {
+        "file": "engine/src/small/field-generator.ts",
+        "id": 61
+      },
+      {
+        "file": "engine/src/gen/generator.ts",
+        "id": 28
+      },
+      {
+        "file": "engine/src/data/skins.ts",
+        "id": 29
+      },
+      {
+        "file": "engine/src/data/abilities.ts",
+        "id": 31
+      },
+      {
+        "file": "engine/src/data/ability-blueprints.ts",
+        "id": 6
+      },
+      {
+        "file": "engine/src/gen/generic-skills.ts",
+        "id": 15
+      },
+      {
+        "file": "engine/src/battle-feedback.ts",
+        "id": 60
+      },
+      {
+        "file": "engine/src/mass/feedback.ts",
+        "id": 63
+      },
+      {
+        "file": "panel/src/storage-codec.ts",
+        "id": 95
+      },
+      {
+        "file": "panel/src/formation-feedback.ts",
+        "id": 99
+      },
+      {
+        "file": "engine/src/exposure.ts",
+        "id": 45
+      },
+      {
+        "file": "panel/src/round-feedback.ts",
+        "id": 102
+      },
+      {
+        "file": "engine/src/casualty-xp.ts",
+        "id": 55
+      },
+      {
+        "file": "engine/src/probability.ts",
+        "id": 52
+      },
+      {
+        "file": "engine/src/guard-screen.ts",
+        "id": 59
+      },
+      {
+        "file": "engine/src/skill-runtime.ts",
+        "id": 26
+      },
+      {
+        "file": "engine/src/gen/abilities.ts",
+        "id": 14
+      },
+      {
+        "file": "assets/worldbook/!通用战斗系统约束.json",
+        "id": 70
+      },
+      {
+        "file": "panel/src/tags.ts",
+        "id": 86
+      },
+      {
+        "file": "panel/src/protocol-syntax.ts",
+        "id": 87
+      },
+      {
+        "file": "engine/src/gen/mechanism.ts",
+        "id": 33
+      }
+    ]
+  }
+]

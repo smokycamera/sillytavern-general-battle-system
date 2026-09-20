@@ -1,0 +1,36 @@
+import { chromium } from 'playwright-core';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import http from 'node:http';
+import assert from 'node:assert/strict';
+const fixture = (...flags) => JSON.parse(execFileSync(process.execPath, ['node_modules/vite-node/vite-node.mjs', 'scripts/ai-guard-fixture.ts', ...flags], { encoding: 'utf8' }));
+const blocked = fixture('--unbraced'), cannon = fixture('--cannon'), airborne = fixture('--airborne', '--unbraced'), html = readFileSync('panel/dist/index.html', 'utf8'), errors = [], checks = [];
+const server = http.createServer((_req, res) => {
+  res.setHeader('content-type', 'text/html;charset=utf-8');
+  res.end(`<!doctype html><script>const vars={};window.TavernHelper={getVariables:()=>vars,insertOrAssignVariables:v=>Object.assign(vars,v)};window.SillyTavern={getContext:()=>({chatId:'guard-smoke',characterId:0,characters:[{avatar:'fixture.png'}]})};window.loadFixture=save=>{vars.panel=save;localStorage.clear();};window.readPanel=()=>vars.panel;</script><iframe id="panel" style="position:fixed;inset:0;width:100%;height:100%;border:0"></iframe>`);
+});
+await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+const browser = await chromium.launch({ executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', headless: true });
+try {
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } }); page.on('pageerror', error => errors.push(error.message));
+  await page.goto(`http://127.0.0.1:${server.address().port}`);
+  const frame = page.frameLocator('#panel');
+  const load = async save => { await page.evaluate(({ save, html }) => { window.loadFixture(save); document.querySelector('#panel').srcdoc = html; }, { save, html }); await frame.locator('.grid-board').waitFor(); };
+  const selectRear = async () => { await frame.locator('.command-modes button').filter({ hasText: '攻击' }).click(); await frame.locator('[data-role="grid-target"]').selectOption('R'); };
+  await load(blocked); await selectRear();
+  const command = frame.locator('.grid-command'), execute = frame.locator('.command-finish [data-action="grid-execute"]');
+  assert.match(await command.innerText(), /直射被.*遮挡/); assert.equal(await execute.isEnabled(), false);
+  assert.ok(await frame.locator('html').evaluate(element => element.scrollWidth - innerWidth <= 1));
+  await command.evaluate(element => element.scrollIntoView({ block: 'start' })); await page.screenshot({ path: 'panel/smoke-shots/ai-guard-blocked-390.png' });
+  checks.push('390宽度下未固守的前排也显示直射遮挡，执行按钮不可用，无横向溢出');
+  await load(cannon); await selectRear(); assert.equal(await execute.isEnabled(), true);
+  await execute.click(); const cannonSaved = await page.evaluate(() => window.readPanel());
+  assert.ok(cannonSaved.battle.snap.log.some(entry => entry.resolution?.attackerId === 'A' && entry.resolution?.defenderId === 'R'));
+  checks.push('火炮可越过地面前排及固守盾卫，实际攻击与存档记录目标一致');
+  await load(airborne); await selectRear(); assert.equal(await execute.isEnabled(), true);
+  await execute.click(); const saved = await page.evaluate(() => window.readPanel());
+  assert.ok(saved.battle.snap.log.some(entry => entry.resolution?.attackerId === 'A' && entry.resolution?.defenderId === 'R'));
+  checks.push('空中射手可越过地面前排攻击后排，结算与存档记录目标一致');
+  await page.close();
+  assert.deepEqual(errors, []); writeFileSync('engine/sim/out/ai-guard-browser.json', JSON.stringify({ checks, errors }, null, 2)); console.log(JSON.stringify({ checks, errors }));
+} finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

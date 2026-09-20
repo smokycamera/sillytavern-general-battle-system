@@ -1,0 +1,17 @@
+[
+  {
+    "id": "tb-collapse-01",
+    "scriptName": "战阵·建议标签折叠（仅显示）",
+    "findRegex": "/<tb>\\s*([\\s\\S]*?)\\s*<\\/tb>[ \\t]*\\n?/g",
+    "replaceString": "<details><summary>📋 战阵建议标签</summary>\n$1\n</details>",
+    "trimStrings": [],
+    "placement": [2],
+    "disabled": false,
+    "markdownOnly": true,
+    "promptOnly": false,
+    "runOnEdit": true,
+    "substituteRegex": false,
+    "minDepth": null,
+    "maxDepth": null
+  }
+]

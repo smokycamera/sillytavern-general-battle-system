@@ -1,0 +1,2 @@
+# Preserve the exact imported baseline and reproducible source/build fingerprints.
+* -text

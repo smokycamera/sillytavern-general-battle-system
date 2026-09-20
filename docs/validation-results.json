@@ -1,0 +1,130 @@
+{
+  "version": "0.2.0-rc.1",
+  "verifiedAt": "2026-09-20T10:57:25.016Z",
+  "targetedTests": {
+    "passed": 54,
+    "failed": 0
+  },
+  "fullSuite": {
+    "passed": 689,
+    "failed": 22,
+    "newFailures": 0
+  },
+  "knownBaselineFailures": [
+    " FAIL  engine/tests/ai-v2.test.ts > V2 AI与手动动作一致 > 协同载具主动让出己方护送出口，护送对象能实际抵达；敌方仍可守出口",
+    " FAIL  engine/tests/ai-v2.test.ts > V2 AI与手动动作一致 > 被牵制的普通弓手会先退到合法射界，后排守军也能迎击已落地的入侵者",
+    " FAIL  engine/tests/generation-v2.test.ts > V2 机制生成回归 > 已学不等于准备；无盾/无召唤来源不可用，共享冷却不受改名影响",
+    " FAIL  engine/tests/items-v2.test.ts > V2独立物品与真实配装规则 > 独立武器与单位生成复用同一公式、槽位种子和冻结结果",
+    " FAIL  engine/tests/mass-flight-v2.test.ts > 会战飞行空域与地面任务 > 控制致命坠落归属施法者，重复阶段不能重复记经验",
+    " FAIL  engine/tests/rally-v2.test.ts > 有界惊退与重整 > 两次重整失败后离场，不能无限占用轮次或恢复伤亡",
+    " FAIL  engine/tests/rally-v2.test.ts > 有界惊退与重整 > 已经消耗的重整机会不能因阵位拥挤而刷新，成功检定仍需合法落位",
+    " FAIL  engine/tests/scales-v2.test.ts > V2个体与编队，不以杂兵称呼划分能力 > mook只作为旧别名，生成相同编队和冻结装备，人数与训练明确且可成长",
+    " FAIL  engine/tests/scales-v2.test.ts > V2个体与编队，不以杂兵称呼划分能力 > 旧V2 mook也按正常编队取得战果经验；legacy读取保持原行为",
+    " FAIL  engine/tests/small.test.ts > 距离、移动与骑射 > 贴身时远程单位换近战副武器还击；无副武器仍无法武器攻击",
+    " FAIL  engine/tests/systems.test.ts > 军团近战副武器切换 > 远程单位下 attack 指令：有副武器按「近战·副武器」免罚结算，无副武器吃 -2",
+    " FAIL  engine/tests/systems.test.ts > 副武器（weapon2 显式声明） > 副武器拒收远程原型：弓弩类回退皮肤默认近战位",
+    " FAIL  engine/tests/systems.test.ts > 速射与装填 > 速射武器一次攻击结算两段（日志带 1/2、2/2 前缀）",
+    " FAIL  engine/tests/tuning.test.ts > 濒死单位不再是沙包 > 濒死单位再受一击彻底离场（补刀）",
+    " FAIL  engine/tests/xp.test.ts > 战后经验分配 > 杀敌后阵亡：击杀经验保留（只无参战/指挥），杀敌后战败不再颗粒无收",
+    " FAIL  engine/tests/xp.test.ts > 战后经验分配 > 濒死/溃逃且零击杀的单位不入账，撤离者算参战",
+    " FAIL  engine/tests/xp.test.ts > 战后经验分配 > 连队与英雄同样成长；杂兵群不参与",
+    " FAIL  panel/src/inventory-state.test.ts > 物品与档案的原子事务 > 换装冲突不能把被替换武器或盾牌提前移出槽位",
+    " FAIL  panel/src/member-health-state.test.ts > 成员生命的本地档案与重战 > 高阶范围技能和机炮配方可以持久化，不因新规格记录被拒绝",
+    " FAIL  panel/src/narrative-state.test.ts > 正文原子事务 > 正文短技能和明确预备份额生成可恢复执行配方，坏控制参数拒绝",
+    " FAIL  panel/src/protocol.test.ts > 80人按一支编队表达；大量单位、错误count和超长事件整批拒绝，规范短例均可解析",
+    " FAIL  panel/src/tags.test.ts > AI 建议标签解析 > 世界书格式与战报演出常驻，六个完整短例均通过正式解析，80人不展开为80张卡"
+  ],
+  "browser": {
+    "time": "2026-09-20T10:46:58.820Z",
+    "status": "passed",
+    "results": [
+      "启动无需助手且尚未创建面板",
+      "独立静态面板已加载",
+      "正文候选经面板确认建档并部署",
+      "100次开关保持单个面板和固定监听数",
+      "关闭重开保留表单草稿",
+      "原生面板可以开始并保存小战",
+      "收起面板后全自动暂停",
+      "小战结算与战报归档只入账一次",
+      "面板战报触发回复且保留草稿附件",
+      "保存接口吞错时保持原事实并进入待核实",
+      "刷新后恢复同一候选，不重算业务",
+      "战报去重且不消费草稿附件",
+      "切聊天得到独立空档",
+      "会战通过面板执行一轮并保存",
+      "会战结算和报告保留",
+      "管理界面回退最新会战进度并停止原生写入",
+      "管理界面重新迁回保留进度",
+      "清空有墓碑，旧变量仍在也不恢复",
+      "管理界面文件导入恢复完整报告且更换代次",
+      "390px窗口不横向溢出",
+      "停用清除入口面板、注入和监听",
+      "无未处理页面异常"
+    ],
+    "errors": [],
+    "realHost": false
+  },
+  "sillytavern": {
+    "time": "2026-09-20T11:00:11.222Z",
+    "status": "passed",
+    "host": "SillyTavern 1.19.0",
+    "commit": "06bde939fb1e9c4c8d8641d810f0a916b5bce127",
+    "realHost": true,
+    "results": [
+      "真实 SillyTavern 在无助手环境初始化",
+      "真实聊天保存与独立读回一致",
+      "真实宿主加载独立面板",
+      "真实输入框已有待发草稿",
+      "真实生成完成且没有重复插入战报",
+      "真实宿主生成保留输入框草稿和待发附件",
+      "真实生成结果持久保存",
+      "请求确实经过本地模型接口"
+    ],
+    "errors": [],
+    "modelRequests": [
+      "/v1/models",
+      "/v1/models",
+      "/v1/chat/completions"
+    ]
+  },
+  "tauritavern": {
+    "version": "2.1.0",
+    "checks": {
+      "attachmentPreserved": true,
+      "draftPreserved": true,
+      "generatedReplySaved": true,
+      "generationCompleted": true,
+      "helperAbsent": true,
+      "initialized": true,
+      "nativeLabel": true,
+      "panelLoaded": true,
+      "persistedVersion": true,
+      "revisionAdvanced": true,
+      "sameFrame": true,
+      "seedReceipt": "confirmed",
+      "serviceConfirmed": true,
+      "singleDelivery": true,
+      "singleFrame": true
+    },
+    "delivery": {
+      "generation": "completed",
+      "status": "sent"
+    },
+    "stage": "passed",
+    "time": "2026-09-20T10:54:41.789Z"
+  },
+  "compatibility": {
+    "checkedAt": "2026-09-20T10:42:08.945Z",
+    "status": "passed",
+    "cases": [
+      "small-latest-progress-restores-in-frozen-release",
+      "mass-latest-progress-restores-in-frozen-release",
+      "cleared-save-remains-empty-in-frozen-release"
+    ]
+  },
+  "cleanBuild": {
+    "passed": true,
+    "runtimeByteExact": true,
+    "sourceFingerprint": "d48fc6d4096ccb8976daa63fbbea57c7fc2e6be2302942785e469bb4004f43d8"
+  }
+}

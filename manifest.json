@@ -1,0 +1,8 @@
+{
+  "display_name": "战阵 · 原生扩展",
+  "loading_order": 90,
+  "js": "dist/index.js",
+  "author": "smokycamera",
+  "version": "0.2.0-rc.1",
+  "auto_update": false
+}

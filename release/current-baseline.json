@@ -1,0 +1,58 @@
+{
+  "label": "战阵 V4 · 全量审计修订 20260918 · 战报武器本名",
+  "importedAt": "2026-09-19T08:13:09.420Z",
+  "kind": "user-supplied-artifact",
+  "sourceStatus": "aligned",
+  "scriptId": "a4c1f7d2-9b3e-4f6a-8d15-2e7c9b40a613",
+  "sourceFile": "tavern-battle-script.json (user-supplied)",
+  "sourceSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
+  "sourceFingerprint": null,
+  "backup": "release/backups/before-user-script-20260919",
+  "outputs": [
+    {
+      "path": "panel/dist/tavern-battle-script.json",
+      "bytes": 2471657,
+      "sha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57"
+    },
+    {
+      "path": "panel/dist/index.html",
+      "bytes": 1398415,
+      "sha256": "aa7af393c3124441f430db14ee3154a454d31178ff8844e4499113d3f5f5abe4"
+    },
+    {
+      "path": "panel/dist/controller.js",
+      "bytes": 981583,
+      "sha256": "857e6d779d5cfa43e8e646d19ba65510edc21a38c2bf3e7f466ab147931580a9"
+    }
+  ],
+  "notes": [
+    "The supplied JSON is the current authoritative release and was copied byte-for-byte.",
+    "Panel HTML and resident controller were extracted without executing or modifying the supplied runtime.",
+    "Workspace TypeScript has been reconciled against the supplied artifact. Original distribution bytes remain preserved; the independently rebuilt candidate passes loader smoke validation.",
+    "Empty script data is an export property; this import does not clear live chat variables or local storage."
+  ],
+  "validation": {
+    "json": true,
+    "loaderSyntax": true,
+    "controllerSyntax": true,
+    "inlineScriptSafe": true,
+    "realHost": "not-tested",
+    "byteExact": true,
+    "buildOverwriteGuard": "passed: npm build:dist and direct packer refuse stale source; artifact hashes unchanged",
+    "loaderWrapper": "passed T1-T7 in initial full run",
+    "workflow": {
+      "status": "passed T8-T11 after updating two outdated assertions",
+      "checks": 45,
+      "log": "artifacts/latest-baseline-check/workflow-smoke.log"
+    }
+  },
+  "sourceAlignment": {
+    "completedAt": "2026-09-20T08:58:18.142Z",
+    "proof": "artifacts/migration-m0/parity.json",
+    "scenarios": "artifacts/migration-m0/scenarios.json",
+    "legacyTestComparison": "artifacts/migration-m0/legacy-tests.json",
+    "candidate": "release/source-aligned-candidate/tavern-battle-script.json",
+    "candidateSmoke": "artifacts/migration-m0/candidate-smoke.log",
+    "original": "release/baselines/user-20260918/tavern-battle-script.json"
+  }
+}
