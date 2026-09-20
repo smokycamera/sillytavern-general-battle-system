@@ -44,7 +44,7 @@ describe('正文原子事务', () => {
     const restored = materializeUnitRecord(JSON.parse(JSON.stringify(record)), reg);
     expect(restored.resources.reserve).toBe(1); expect(restored.abilities[0]!.effects[0]).toMatchObject({ op: 'condition', conditionId: 'restrained', saveDC: 12 });
     expect(restored.abilities[1]!.effects[0]).toMatchObject({ op: 'dispel', count: 2 }); expect(restored.abilities[2]!.fixedPower).toBe(true);
-    expect(restored.preparedAbilityIds).toHaveLength(2); expect(restored.abilities).toHaveLength(3);
+    expect(restored.preparedAbilityIds).toHaveLength(3); expect(restored.abilities).toHaveLength(3);
     const bad = JSON.parse(JSON.stringify(record)); bad.snapshot.abilities[0].effects[0].saveDC = 'bad';
     expect(() => materializeUnitRecord(bad, reg)).toThrow(/参数损坏/);
   });
