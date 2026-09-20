@@ -1,3 +1,4 @@
+import { isCannonWeapon } from '../../engine/src/loadout.js';
 import { parseEnhancementSuffix, enhancementLabel, type Enhancements } from '../../engine/src/enhancements.js';
 import { WEAPON_CLASSES, type BodyKind, type ItemMechanics, type ItemSpecification } from '../../engine/src/index.js';
 import {POWER_ANCHORS} from '../../engine/src/power-anchors.js';
@@ -10,7 +11,7 @@ export function selectField(role: string, value: string, choices: [string, strin
 }
 export function equipmentDraft(kind = 'weapon', body = 'human', mechanics?: ItemMechanics, name = ''): EquipmentDraft {
   const r = mechanics?.kind === 'consumable' ? mechanics.recipe : mechanics?.value.recipe;
-  return { bonuses: r?.bonuses, name, kind: mechanics?.kind ?? kind, mechanism: r?.mechanism ?? (kind === 'consumable' ? 'heal' : 'sword'), power: String(r?.power ?? (kind === 'shield' ? 3 : 5)), quality: String(r?.quality ?? 3), body: r?.size ?? body, tier: mechanics?.kind === 'armor' ? String(mechanics.value.tier) : '1', enchantment: r?.enchantment ?? '', stabilized: !!r?.stabilized, profile: r?.protectionProfile ?? 'balanced' };
+  return { bonuses: r?.bonuses, name, kind: mechanics?.kind ?? kind, mechanism: (mechanics?.kind === 'weapon' && isCannonWeapon(mechanics.value) && mechanics.value.indirect ? 'indirect-cannon' : r?.mechanism) ?? (kind === 'consumable' ? 'heal' : 'sword'), power: String(r?.power ?? (kind === 'shield' ? 3 : 5)), quality: String(r?.quality ?? 3), body: r?.size ?? body, tier: mechanics?.kind === 'armor' ? String(mechanics.value.tier) : '1', enchantment: r?.enchantment ?? '', stabilized: !!r?.stabilized, profile: r?.protectionProfile ?? 'balanced' };
 }
 export function equipmentSpecification(d: EquipmentDraft): ItemSpecification {
   const base = { bonuses: d.bonuses, power: Number(d.power), quality: Number(d.quality), body: d.body as BodyKind };

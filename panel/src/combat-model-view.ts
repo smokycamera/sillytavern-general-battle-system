@@ -1,3 +1,4 @@
+import { isCannonWeapon } from '../../engine/src/loadout.js';
 import type { ActionPreview } from '../../engine/src/actions.js';
 import type {Combatant} from '../../engine/src/types.js';
 import {hasMemberHealth,memberHealth,memberHealthMax,memberNoun} from '../../engine/src/member-health.js';
@@ -13,6 +14,6 @@ export function memberHealthPanel(unit:Combatant):string {
   return `<div class="member-health-panel" data-member-health="${esc(unit.id)}"><b>${label}生命 · ${unit.hp}/${unit.base.hpMax}${noun}</b><span>总生命 ${memberHealth(unit)}/${memberHealthMax(unit)}</span><div>${rows.slice(0,8).join('')||'<span>全部失能</span>'}</div>${rows.length>8?`<details><summary>另${rows.length-8}组伤损</summary>${rows.slice(8).join('')}</details>`:''}${unit.recoverableWounded?`<small>可救回 ${unit.recoverableWounded}${noun}</small>`:''}</div>`;
 }
 export function cannonAmmoControl(unit:Combatant|undefined,disabled=false):string {
-  if(!unit||unit.combatModel!=='cohort-v2'||![unit.weapon,unit.sidearm].some(w=>w?.recipe?.mechanism==='cannon'))return '';
+  if(!unit||unit.combatModel!=='cohort-v2'||![unit.weapon,unit.sidearm].some(isCannonWeapon))return '';
   return `<label class="cannon-ammo">${esc(unit.name)} · 火炮弹种<select data-role="cannon-ammo" data-unit="${esc(unit.id)}" ${disabled?'disabled':''}><option value="auto" ${!unit.cannonAmmo?'selected':''}>自动按目标选弹</option><option value="he" ${unit.cannonAmmo==='he'?'selected':''}>榴弹 · 直击与爆炸</option><option value="ap" ${unit.cannonAmmo==='ap'?'selected':''}>穿甲弹 · 穿透+2，无爆炸</option></select></label>`;
 }

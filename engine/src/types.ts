@@ -407,7 +407,7 @@ export interface GenerateInput {
   weaponId?: string;
   /** 自由文本武器名（正文对应用）：覆盖显示名，数值按默认位公式生成 */
   weaponName?: string;
-  /** AI 武器分类（剑/斧/长兵器/弓弩/火枪/步枪/火炮/能量武器/法杖/钝器）：决定武器性质（破甲/射程/速射） */
+  /** AI 武器分类（剑/斧/长兵器/弓弩/火枪/步枪/直射火炮/曲射火炮/能量武器/法杖/钝器）：决定武器性质（破甲/射程/速射） */
   weaponClass?: string;
   /** AI 武器等级 L1~L10：决定该武器自身的强度曲线（与单位等级解耦） */
   weaponBonuses?: Enhancements;

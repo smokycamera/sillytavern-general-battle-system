@@ -504,7 +504,7 @@ export class SmallBattle {
   braceDescription(actorId: string): string {
     const unit = this.byId(actorId);
     return '面向最近可见威胁，正面防御提高2；移动或下次激活结束姿态。'
-      + (unit.combatModel === MEMBER_HEALTH_MODEL && unit.shield ? '地面前排平时即遮挡直射；持盾固守额外保护同格队友，火炮、魔法、空中射击、间接火力及侧射可绕过盾卫的额外保护。' : '持盾/长柄专长按装备前提生效。');
+      + (unit.combatModel === MEMBER_HEALTH_MODEL && unit.shield ? '地面前排平时即遮挡直射；持盾固守额外保护同格队友，魔法、空中射击、曲射火炮等间接火力及侧射可绕过盾卫的额外保护。' : '持盾/长柄专长按装备前提生效。');
   }
   brace(actorId: string): void {
     const reason = this.braceReason(actorId); if (reason) throw new Error(reason);
@@ -1076,7 +1076,7 @@ export class SmallBattle {
   private skillTargetReason(actor: Combatant, ability: Combatant['abilities'][number], target: Combatant): string | undefined {
     ability = this.battlefield ? gridAbility(ability) : ability;
     const reason = abilityTargetReason({ actor, ability, target, distance: this.dist(actor, target) })
-      ?? (this.battlefield ? this.sightReason(actor, target) : undefined);
+      ?? (this.battlefield && !ability.weaponUse ? this.sightReason(actor, target) : undefined);
     if (reason) return reason;
     if (this.battlefield && target.status === 'dying' && ability.effects.some(e => e.op === 'heal')
       && !canOccupy(this.battlefield, this.visibleCombatants(actor.side), target, target.pos!)) return '濒死单位所在格没有起身空间，请先让出救援位置';
@@ -1120,8 +1120,6 @@ export class SmallBattle {
     if (usabilityReason) return { ok: false, reason: usabilityReason, resolutions: [], log: '' };
     const targetReason = chosenTarget ? this.skillTargetReason(actor, ability, chosenTarget) : abilityTargetReason({ actor, ability });
     if (targetReason) return { ok: false, reason: targetReason, resolutions: [], log: '' };
-    const sight = this.battlefield && chosenTarget ? this.sightReason(actor, chosenTarget) : undefined;
-    if (sight) return { ok: false, reason: sight, resolutions: [], log: '' };
     const summonError = this.summonReason(actor, ability);
     if (summonError) return { ok: false, reason: summonError, resolutions: [], log: '' };
     const summons: Combatant[] = [];

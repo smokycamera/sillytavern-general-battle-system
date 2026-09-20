@@ -1,7 +1,6 @@
 import type { Combatant } from '../types.js';
 import { activeTraitIds } from '../trait-sources.js';
 import { hasFlightAbility, isAirborne, sameLayer } from '../aerial.js';
-import { isCannonWeapon } from '../loadout.js';
 /** 普通个体在会战依附编队；真实独立平台与飞行单位保留独立位置。 */
 export function needsFormationHost(unit: Combatant): boolean {
   return unit.scale === 'hero' && (unit.body ?? 'human') === 'human' && unit.status === 'ready' && !hasFlightAbility(unit);
@@ -92,7 +91,7 @@ export function formationShotReason(actor: Combatant, target: Combatant, units: 
   if (isAirborne(actor) || isAirborne(target)) return undefined;
   if (weapon.pointBlankPolicy === 'forbid' && units.some((u) => u.side !== actor.side && u.status === 'ready' && sameLayer(actor, u) && formationDistance(actor, u) <= 1)) return '被相邻敌人牵制，该武器不能抵近射击';
   const blocks = units.some((u) => u.id !== actor.id && u.status === 'ready' && u.side === actor.side && formationNode(u).wing === from.wing && formationNode(u).rank === 'front');
-  if (from.rank === 'reserve' && from.wing === to.wing && blocks && !weapon.indirect && !isCannonWeapon(weapon)) return '前线遮挡预备队直射';
+  if (from.rank === 'reserve' && from.wing === to.wing && blocks && !weapon.indirect) return '前线遮挡预备队直射';
   if (weapon.indirect && blocks && !units.some((u) => u.side === actor.side && u.status === 'ready' && formationNode(u).rank === 'front' && Math.abs(formationNode(u).x - to.x) <= 1)) return '间接火力缺少前线观察者';
   return undefined;
 }

@@ -1,3 +1,4 @@
+import { isCannonWeapon } from '../../engine/src/loadout.js';
 import { SmallBattle, FORMATION_NODES, type Combatant, type BattleLogEntry } from '../../engine/src/index.js';
 import { publicBattleEvents, battleIdOf, type Battle } from './battle-reports.js';
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
@@ -50,6 +51,6 @@ export function traceOverlay(b: Battle): string {
 }
 const symbols: Record<string,string>={infantry:'M5 5L19 19M19 5L5 19',ranged:'M4 16L18 5M13 5H20V12M4 16L9 20',vehicle:'M4 12H20V18H4ZM10 12V8H16V12M16 8H22M6 21H18',cavalry:'M5 20L9 8L15 4L19 8L15 12L17 20M9 8L5 5',magic:'M6 20L17 5M15 3L17 5L21 5L19 8L19 12L16 10L12 11L13 7Z',artillery:'M3 11L19 5L21 9L7 15M9 15L15 20M7 17A3 3 0 1 0 7 23A3 3 0 1 0 7 17'};
 export function unitSymbol(u: Combatant): string {
-  const kind=u.body==='vehicle'?'vehicle':u.mount?'cavalry':u.weapon?.recipe?.mechanism==='cannon'||u.weapon?.recipe?.mechanism==='autocannon'?'artillery':u.weapon?.recipe?.mechanism==='staff'?'magic':u.weapon?.tags?.includes('ranged')?'ranged':'infantry';
+  const kind=u.body==='vehicle'?'vehicle':u.mount?'cavalry':isCannonWeapon(u.weapon)||u.weapon?.recipe?.mechanism==='autocannon'?'artillery':u.weapon?.recipe?.mechanism==='staff'?'magic':u.weapon?.tags?.includes('ranged')?'ranged':'infantry';
   return `<svg class="unit-symbol" viewBox="0 0 24 24" aria-hidden="true"><path d="${symbols[kind]}"/></svg>`;
 }

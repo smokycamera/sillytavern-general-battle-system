@@ -1,10 +1,12 @@
 import { chromium } from 'playwright-core';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import http from 'node:http';
 import assert from 'node:assert/strict';
+mkdirSync('engine/sim/out', { recursive: true });
+mkdirSync('panel/smoke-shots', { recursive: true });
 const fixture = (...flags) => JSON.parse(execFileSync(process.execPath, ['node_modules/vite-node/vite-node.mjs', 'scripts/ai-guard-fixture.ts', ...flags], { encoding: 'utf8' }));
-const blocked = fixture('--unbraced'), cannon = fixture('--cannon'), airborne = fixture('--airborne', '--unbraced'), html = readFileSync('panel/dist/index.html', 'utf8'), errors = [], checks = [];
+const blocked = fixture('--unbraced'), cannon = fixture('--cannon'), indirect = fixture('--indirect-cannon'), airborne = fixture('--airborne', '--unbraced'), html = readFileSync('panel/dist/index.html', 'utf8'), errors = [], checks = [];
 const server = http.createServer((_req, res) => {
   res.setHeader('content-type', 'text/html;charset=utf-8');
   res.end(`<!doctype html><script>const vars={};window.TavernHelper={getVariables:()=>vars,insertOrAssignVariables:v=>Object.assign(vars,v)};window.SillyTavern={getContext:()=>({chatId:'guard-smoke',characterId:0,characters:[{avatar:'fixture.png'}]})};window.loadFixture=save=>{vars.panel=save;localStorage.clear();};window.readPanel=()=>vars.panel;</script><iframe id="panel" style="position:fixed;inset:0;width:100%;height:100%;border:0"></iframe>`);
@@ -23,10 +25,13 @@ try {
   assert.ok(await frame.locator('html').evaluate(element => element.scrollWidth - innerWidth <= 1));
   await command.evaluate(element => element.scrollIntoView({ block: 'start' })); await page.screenshot({ path: 'panel/smoke-shots/ai-guard-blocked-390.png' });
   checks.push('390宽度下未固守的前排也显示直射遮挡，执行按钮不可用，无横向溢出');
-  await load(cannon); await selectRear(); assert.equal(await execute.isEnabled(), true);
+  await load(cannon); await selectRear(); assert.equal(await execute.isEnabled(), false);
+  assert.match(await command.innerText(), /直射被.*遮挡/);
+  checks.push('直射火炮受前排及盾卫LOS遮挡，执行按钮不可用');
+  await load(indirect); await selectRear(); assert.equal(await execute.isEnabled(), true);
   await execute.click(); const cannonSaved = await page.evaluate(() => window.readPanel());
   assert.ok(cannonSaved.battle.snap.log.some(entry => entry.resolution?.attackerId === 'A' && entry.resolution?.defenderId === 'R'));
-  checks.push('火炮可越过地面前排及固守盾卫，实际攻击与存档记录目标一致');
+  checks.push('曲射火炮可越过地面前排及固守盾卫，实际攻击与存档记录目标一致');
   await load(airborne); await selectRear(); assert.equal(await execute.isEnabled(), true);
   await execute.click(); const saved = await page.evaluate(() => window.readPanel());
   assert.ok(saved.battle.snap.log.some(entry => entry.resolution?.attackerId === 'A' && entry.resolution?.defenderId === 'R'));

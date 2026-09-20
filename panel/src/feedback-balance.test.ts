@@ -49,17 +49,17 @@ describe('反馈数值校准',()=>{
     const wounded=unit('A','hero',1,{health:10});wounded.hp=5;applyXp(wounded,900,registry);expect(wounded.hp).toBe(5);expect(wounded.base.hpMax).toBeGreaterThan(30);
   });
   it('正文强化贯穿建档、学习与保存，非法点数不会静默变成普通装备',()=>{
-    const parsed=parseProtocol('<tb>\n<spawn name="A" side="ally" scale="hero" level="L1+2生命" weapon="枪:步枪L5+6精度+4伤害" armor="重甲L5+10防护" skills="火花:魔法单体L1+10"/>\n</tb>');
+    const parsed=parseProtocol('<tb>\n<spawn name="A" side="ally" scale="hero" level="L1+2生命" weapon="枪:步枪L5+10精度+10伤害+10穿透" armor="重甲L5+10防护" skills="火花:魔法单体L1+10伤害+10精度"/>\n</tb>');
     expect(parsed.errors).toEqual([]);const event=parsed.events[0]!;expect(event.kind).toBe('spawn');if(event.kind!=='spawn')return;
     const source:MessageEnvelope={characterId:'c',chatId:'t',branchId:'b',messageId:'1',swipeId:'0',role:'assistant',complete:true,generationId:'g',text:parsed.canonical};
     const ns=namespaceOf(source),binding=captureGeneration({},ns,'g');binding.complete=true;
     const save=prepareNarrativeTransaction({},proposalFromMessage(source,binding)!,ns,true);
     const u=materializeUnitRecord(save.storage![0]!,registry);prepareCombatModel(u,V4_D20);upgradeCombatSkills(u);
     const restored=materializeUnitRecord(unitRecordFromCombatant(u),registry);
-    expect(restored.weapon!.recipe!.bonuses).toEqual({accuracy:6,damage:4});expect(restored.bonuses).toEqual({health:2});expect(restored.abilities[0]!.bonuses).toEqual({power:10});
+    expect(restored.weapon!.recipe!.bonuses).toEqual({accuracy:10,damage:10,penetration:10});expect(restored.bonuses).toEqual({health:2});expect(restored.abilities[0]!.bonuses).toEqual({damage:10,accuracy:10});
     const id=skillDefinitionId('魔法单体')!;
     const changed=learnAbilities(restored,[{id,name:'火花',level:1,bonuses:{accuracy:10}}]);expect(changed.abilities[0]!.bonuses).toEqual({accuracy:10});
-    for(const spec of ['步枪L1+11','步枪L1+6伤害+5精度','步枪L1+3未知'])expect(parseProtocol(`<tb><spawn name="B" side="enemy" scale="hero" weapon="${spec}"/></tb>`).errors.length).toBeGreaterThan(0);
+    for(const spec of ['步枪L1+11','步枪L1+3未知'])expect(parseProtocol(`<tb><spawn name="B" side="enemy" scale="hero" weapon="${spec}"/></tb>`).errors.length).toBeGreaterThan(0);
   });
   it('技能各档增长、同级强化倍率与回能守恒，学习不复叠强化',()=>{
     for(let p=1;p<=10;p++){

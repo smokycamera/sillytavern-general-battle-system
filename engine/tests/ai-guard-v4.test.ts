@@ -100,17 +100,17 @@ describe('V4移动、选目标与盾卫保护', () => {
     expect(shotAt(restored, shooter.id, rear.id).enabled).toBe(false);
     expect(battle.useAbility(shooter.id, shooter.abilities[1]!.id, rear.id).ok).toBe(true);
   });
-  it('常态遮挡可被火炮、侧射、间接火力和空中绕过；卸盾、失能不移除地面占位，旧V2规则保留', () => {
-    for (const change of ['flank', 'indirect', 'cannon', 'magic', 'unshield', 'stun', 'move', 'air']) {
+  it('常态遮挡限制直射火炮，可被侧射、曲射火炮和空中绕过；卸盾、失能不移除地面占位，旧V2规则保留', () => {
+    for (const change of ['flank', 'indirect', 'cannon', 'indirect-cannon', 'magic', 'unshield', 'stun', 'move', 'air']) {
       const { battle, guard, rear, shooter } = shieldGrid(); battle.brace(guard.id);
       if (change === 'move') battle.moveTo(guard.id, 32);
       if (change === 'flank') shooter.pos = 14;
       if (change === 'indirect') shooter.weapon!.indirect = true;
-      if (change === 'cannon' || change === 'magic') shooter.weapon = make('bypass', 'enemy', { weaponClass: change }).weapon;
+      if (change === 'cannon' || change === 'indirect-cannon' || change === 'magic') shooter.weapon = make('bypass', 'enemy', { weaponClass: change }).weapon;
       if (change === 'unshield') delete guard.shield;
       if (change === 'stun') guard.conditions.push({ id: 'stunned', dur: 2 });
       if (change === 'air') { shooter.traits.push('flying'); shooter.airborne = true; }
-      battle.endTurn(); expect(shotAt(battle, shooter.id, rear.id).enabled, change).toBe(['flank', 'indirect', 'cannon', 'move', 'air'].includes(change));
+      battle.endTurn(); expect(shotAt(battle, shooter.id, rear.id).enabled, change).toBe(['flank', 'indirect', 'indirect-cannon', 'move', 'air'].includes(change));
     }
     const { battle, guard, rear, shooter } = shieldGrid(); battle.brace(guard.id); rear.pos = guard.pos; rear.shield = guard.shield;
     rear.tacticalPose = bracePose(rear, shooter, 'small', 7); battle.endTurn();

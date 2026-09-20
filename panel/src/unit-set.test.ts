@@ -27,9 +27,10 @@ describe('正文战外全字段事务（定向验证）',()=>{
     expect(parsed.errors).toEqual([]);expect(parsed.events[0]).toMatchObject({kind:'unit-set',data:{xp:12.5,level:4,status:'ready',hp:20}});
     const save=setup(),dead=transact(save,{status:'dead',retired:true}).next();
     expect(dead.storage![0]).toMatchObject({id:'u1',hp:0,status:'dead',retired:true});expect(dead.rosterIds).toEqual([]);
-    const alive=transact(dead,{name:'复苏者',side:'enemy',status:'ready',hp:80,hpMax:120,level:4,xp:1234.5,xpProgress:80.25,base:{atk:9,def:15,spd:4},bonuses:{accuracy:3},resources:{SP:2},fatigue:1},'<deploy id="u1"/>','revive').next();
+    const alive=transact(dead,{name:'复苏者',side:'enemy',status:'ready',hp:80,hpMax:120,level:4,xp:1234.5,xpProgress:80.25,base:{atk:9,def:15,spd:4},bonuses:{accuracy:10,damage:10},resources:{SP:2},fatigue:1},'<deploy id="u1"/>','revive').next();
     const unit=restored(alive);
     expect(unit).toMatchObject({id:'u1',status:'ready',hp:80,level:4,xp:1234.5,resources:{SP:2},fatigue:1,base:{hpMax:120,atk:9,def:15,spd:4}});
+    expect(unit.bonuses).toEqual({accuracy:10,damage:10});
     expect(xpProgress(unit)?.current).toBe(80.25);expect(alive.storage![0]!.retired).toBeUndefined();expect(alive.rosterIds).toEqual(['u1']);
     expect(restored(transact(alive,{xp:0,bonuses:{}},'','reset').next()).xp).toBe(0);
     const dying=transact(alive,{status:'dying'},'','down').next();
@@ -54,9 +55,9 @@ describe('正文战外全字段事务（定向验证）',()=>{
     expect(unit).toMatchObject({hp:3,base:{hpMax:5},formation:{members:3,capacity:5,memberHp:100,health:[{hp:30,count:1},{hp:100,count:2}]},recoverableWounded:1,resources:{reserve:2},abilities:[]});
     expect(unit.weapon).toBeUndefined();expect(unit.armor).toBeUndefined();expect(next.inventory!.every(i=>!i.equippedTo)).toBe(true);
   });
-  it('保留生命、等级、强化上限，战内/过期/重放和混合坏批次均不能落库',()=>{
+  it('保留生命、等级、单项强化上限，战内/过期/重放和混合坏批次均不能落库',()=>{
     const save=setup(),before=structuredClone(save);
-    for(const patch of [{hpMax:1001},{level:11},{bonuses:{damage:6,accuracy:5}},{resources:{SP:999}},{id:'other'}])expect(()=>transact(save,patch).next()).toThrow();
+    for(const patch of [{hpMax:1001},{level:11},{bonuses:{damage:11,accuracy:5}},{resources:{SP:999}},{id:'other'}])expect(()=>transact(save,patch).next()).toThrow();
     const tx=transact(save,{xp:25});
     expect(()=>prepareNarrativeTransaction({...save,battle:{kind:'small',snap:{seed:'active'}}},tx.proposal,tx.ns)).toThrow(/战内/);
     const next=tx.next();expect(()=>prepareNarrativeTransaction(next,tx.proposal,tx.ns)).toThrow(/过期|已经/);

@@ -1,6 +1,6 @@
 import type { Combatant, ConditionDef, Weapon } from './types.js';
 import { isAirborne } from './aerial.js';
-import { isCannonWeapon, isRangedWeapon } from './loadout.js';
+import { isRangedWeapon } from './loadout.js';
 import { MEMBER_HEALTH_MODEL } from './member-health.js';
 import { formationNode } from './mass/formation.js';
 import { postureActive } from './tactics.js';
@@ -21,7 +21,7 @@ export function shieldScreen(attacker: Combatant, target: Combatant, weapon: Wea
   units: Combatant[], space: GuardSpace, defs: Map<string, ConditionDef>): Combatant | undefined {
   if (attacker.side === target.side || !isRangedWeapon(weapon) || weapon?.indirect || isAirborne(attacker) || isAirborne(target)) return undefined;
   const mechanism = weapon?.recipe?.mechanism ?? weapon?.tags?.find(tag => tag.startsWith('mechanism:'))?.slice(10);
-  if (mechanism === 'cannon' || mechanism === 'magic') return undefined;
+  if (mechanism === 'magic') return undefined;
   const from = coordinates(attacker, space), to = coordinates(target, space);
   const dx = to.x - from.x, dy = to.y - from.y, lengthSquared = dx * dx + dy * dy;
   if (!lengthSquared) return undefined;
@@ -49,10 +49,10 @@ export function shieldScreenReason(guard: Combatant): string {
   return `目标受${guard.name}持盾固守遮挡；先攻击或压制盾卫，或换射角、使用间接火力`;
 }
 
-/** V4普通直射按真实占位遮挡；火炮豁免单位遮挡，地形视线由攻击入口检查。 */
+/** V4普通直射和直射火炮按真实占位遮挡；仅曲射豁免，地形视线由攻击入口检查。 */
 export function rangedScreen(attacker: Combatant, target: Combatant, weapon: Weapon | undefined,
   units: Combatant[], space: GuardSpace, defs: Map<string, ConditionDef>): Combatant | undefined {
-  if (attacker.combatModel !== MEMBER_HEALTH_MODEL || !isRangedWeapon(weapon) || weapon?.indirect || isCannonWeapon(weapon)
+  if (attacker.combatModel !== MEMBER_HEALTH_MODEL || !isRangedWeapon(weapon) || weapon?.indirect
     || isAirborne(attacker) || isAirborne(target)) return undefined;
   const from = coordinates(attacker, space), to = coordinates(target, space);
   const dx = to.x - from.x, dy = to.y - from.y, lengthSquared = dx * dx + dy * dy;
