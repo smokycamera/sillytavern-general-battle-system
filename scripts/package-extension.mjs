@@ -10,7 +10,7 @@ copyFileSync('release/current-baseline.json', path.join(output, 'release/current
 for (const directory of ['assets', 'licenses', 'docs']) {
   if (directory === 'docs') {
     mkdirSync(path.join(output, directory), { recursive: true });
-    for (const name of ['native-extension-validation.md', 'validation-results.json', 'extension-migration-assessment-20260919.md', 'native-extension-migration-plan-20260919.md', 'script-baseline-20260919.md', 'jev-integration.md', 'jev-cors-validation.md', 'jev-command-validation-20260922.md', 'jev-context-validation-20260922.md']) copyFileSync(path.join(directory, name), path.join(output, directory, name));
+    for (const name of ['native-extension-validation.md', 'validation-results.json', 'extension-migration-assessment-20260919.md', 'native-extension-migration-plan-20260919.md', 'script-baseline-20260919.md', 'jev-integration.md', 'jev-cors-validation.md', 'jev-retry-validation.md', 'jev-command-validation-20260922.md', 'jev-context-validation-20260922.md']) copyFileSync(path.join(directory, name), path.join(output, directory, name));
   } else cpSync(directory, path.join(output, directory), { recursive: true });
 }
 mkdirSync(path.join(output, 'scripts'), { recursive: true });

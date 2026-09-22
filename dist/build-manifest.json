@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "0.2.0-rc.10",
-  "builtAt": "2026-09-22T11:23:21.840Z",
-  "sourceFingerprint": "57f00227d0c2b806434e97ae972fcfef41d38ddd77800b4b3fa0c339b28d9cfb",
+  "version": "0.2.0-rc.11",
+  "builtAt": "2026-09-22T12:08:00.797Z",
+  "sourceFingerprint": "df4a982bf2b5c5b731bec617b7e60d6422066406665028e700ce8a7a7ca7cc67",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -17,13 +17,13 @@
     },
     {
       "path": "README.md",
-      "bytes": 1822,
-      "sha256": "b7c0da010351e2eea0f24930b2c5241cd74d7b382c21018a48c77d7738c41cc8"
+      "bytes": 1965,
+      "sha256": "20a2c6fb2f611499e9abe20a2d279470d6bee384443a52563afc2b2f1c4aa3b2"
     },
     {
       "path": "README.zh-CN.md",
-      "bytes": 1477,
-      "sha256": "b23ffa3c909b56f5c886c82006a7ac7717c76c60fa39da323767c5976b74687a"
+      "bytes": 1608,
+      "sha256": "616510bfdf4aca60b80a28a409be9e95d0caf4bf6c8eaf5dde7af97ceb7825b7"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -36,9 +36,9 @@
       "sha256": "d8e150b9ba2a9668681edf533c5ebfa2a0c588c1ef4fdbff02e2b456b28f93f9"
     },
     {
-      "path": "dist/assets/panel-BT6dd9E8.js",
-      "bytes": 371015,
-      "sha256": "a9fb102913c6c02e7cdd0766c5609323e07e23a751524fba921a13dce879520a"
+      "path": "dist/assets/panel-C4DGUojZ.js",
+      "bytes": 375145,
+      "sha256": "91e243de99369e7e906ca38c193070547a4a9a8e70f6b62cd6ed8dab93ae734f"
     },
     {
       "path": "dist/assets/preferences-CUmQPgwV.js",
@@ -77,8 +77,13 @@
     },
     {
       "path": "docs/jev-integration.md",
-      "bytes": 11115,
-      "sha256": "cc0f4c2103a008d6c05fd1f35639a8d93f58c02db09d86dc45013493c0ab5d25"
+      "bytes": 12367,
+      "sha256": "73c29dd96aa8046ebec7116bc9660f8bdefff7a6d54076bebfb84b3d31835bea"
+    },
+    {
+      "path": "docs/jev-retry-validation.md",
+      "bytes": 2971,
+      "sha256": "cf8b53f8909ce6879bb1e027c59704eb9a265492822ebf6befed738afef88c0f"
     },
     {
       "path": "docs/native-extension-migration-plan-20260919.md",
@@ -103,7 +108,7 @@
     {
       "path": "dist/index.js",
       "bytes": 70901,
-      "sha256": "a82f7a37ecb009f33739b0e5e61e64552cee800f0058141279ab5a4eb8812e69"
+      "sha256": "3dc2f3c71fc7d8afdec54a4df42db23f337bf214da4be6d305e634284db574b8"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -113,12 +118,12 @@
     {
       "path": "manifest.json",
       "bytes": 174,
-      "sha256": "9cc952b030d286896804f9814ab5c08fa4c250df61463c6366db07dd63b525c3"
+      "sha256": "2535c435e0003a1e55eeee642616ccd95a5759e9d3867f844458d22e7bcaf012"
     },
     {
       "path": "dist/panel/index.html",
       "bytes": 43276,
-      "sha256": "af70613fffbb6321880a480786bfc4e043b26cf85b0ae6658814db9891b79922"
+      "sha256": "aa00d1edec20deea4eff6a67f94ee9f856e023f25f09d38ceb4fc9225f02a804"
     },
     {
       "path": "release/current-baseline.json",

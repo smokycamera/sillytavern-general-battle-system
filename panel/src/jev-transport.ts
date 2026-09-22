@@ -101,5 +101,5 @@ export function jevNetworkError(connection: JevConnection): string {
     return 'TypeSafe 浏览器连接失败，可能是 CORS 或网络问题。TauriTavern 请使用“自建转发”：运行 npm run jev:relay，转发地址填 http://127.0.0.1:4318（须在运行酒馆的设备上启动）';
   return connection.transport === 'direct' || !host
     ? '无法直连模型服务，请检查网络与 CORS；服务不支持跨域时请选择宿主转发或自建转发'
-    : '酒馆转发连接失败，请检查宿主网络与代理配置；本次没有自动重试模型请求';
+    : '酒馆转发连接失败，请检查宿主网络与代理配置';
 }

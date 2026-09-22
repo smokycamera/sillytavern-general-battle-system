@@ -4,7 +4,7 @@ import { JevCommandController } from './jev-command.js';
 
 const connection: JevConnection = { protocol: 'typesafe', url: JEV_API_URL, token: 'test-key', model: 'jev-preview' };
 const response = (body: unknown) => new Response(JSON.stringify(body));
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 describe('remote JEV connections', () => {
   it.each(['https://api.typesafe.ai', JEV_API_URL + '/', JEV_API_URL + '/models', JEV_API_URL + '/systemone'])('normalizes %s without duplicating API suffixes', url => {
     expect(apiEndpoint({ ...connection, url }, 'models')).toBe(JEV_API_URL + '/models');
@@ -68,5 +68,44 @@ describe('remote JEV connections', () => {
     expect(await new JevCommandController(request).test(connection)).toContain('尚未调用决策');
     expect(request).toHaveBeenCalledTimes(1);
     expect(request.mock.calls[0]?.[0]).toBe(JEV_API_URL + '/models');
+  });
+  it('real inference test exposes immediate POST rejection even when model discovery succeeds', async () => {
+    vi.useFakeTimers();
+    const urls: string[] = [];
+    const request: typeof fetch = async url => {
+      urls.push(String(url));
+      return String(url).endsWith('/models') ? response({ models: ['jev-latest'] })
+        : new Response('test-key private-response-body', { status: 401 });
+    };
+    const controller = new JevCommandController(request);
+    expect(await controller.test(connection)).toContain('连接正常');
+    const pending = controller.testInference(connection);
+    await vi.advanceTimersByTimeAsync(9999);
+    expect(controller.busy).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    const result = await pending;
+    expect(result).toContain('HTTP 401');
+    expect(result).toContain('重试 10 次');
+    expect(result).not.toMatch(/test-key|private-response-body/);
+    expect(urls.filter(url => url.endsWith('/systemone'))).toHaveLength(11);
+  });
+  it.each(['typesafe', 'openai', 'bridge'] as const)('validates a tiny real %s inference without chat or battle data', async protocol => {
+    const request = vi.fn<typeof fetch>(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      expect(String(init?.body)).not.toContain('test-chat');
+      if (protocol === 'typesafe') {
+        expect(body.questions.lighting.type).toBe('choice');
+        return response({ model: 'jev-latest', answers: { lighting: { type: 'choice', choice: 'day', confidence: 0.9 } } });
+      }
+      const answer = { model: 'test-model', selections: { lighting: { value: 'day', confidence: 0.9 } } };
+      return response(protocol === 'bridge' ? answer : { choices: [{ message: { content: JSON.stringify(answer) } }] });
+    });
+    expect(await new JevCommandController(request).testInference({ ...connection, protocol })).toContain('推理测试通过');
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+  it('does not echo malformed model JSON into diagnostic text', async () => {
+    await expect(directJevRequest({ ...connection, protocol: 'openai' }, 'evaluate', { candidates: [{ id: 'attack' }] },
+      new AbortController().signal, async () => response({ choices: [{ message: { content: 'test-key private narrative' } }] })))
+      .rejects.toThrow('模型未返回有效决策 JSON');
   });
 });
