@@ -1,9 +1,13 @@
-import { connectionUrl, fetchJevModels, directJevRequest, jevJsonRequest, type JevConnection } from './jev-connection.js';
+import { connectionUrl, fetchJevModels, directJevRequest, jevJsonRequest, JevConnectionError, type JevConnection } from './jev-connection.js';
+import { JevTransportError } from './jev-transport.js';
+import { retryJev, waitForJev, JevRequestTimeoutError, JevRetriesExhausted, JEV_MAX_RETRIES, JEV_RETRY_DELAY_MS, JEV_REQUEST_BUDGET_MS } from './jev-retry.js';
 export { connectionUrl, readJevConnection, saveJevConnection, type JevConnection } from './jev-connection.js';
 import { SmallBattle, MassBattle, type Order } from "../../engine/src/index.js";
 import {
   CommandRuntime,
   validateCheckpoint,
+  validateContextSelectionAnswer,
+  validateNarrativeContext,
   defaultEvaluator,
   NetworkExecutor,
   defaultOperators,
@@ -119,6 +123,13 @@ function tavernTaskExecutor(): TaskExecutor {
   };
 }
 
+function failureReason(error: unknown): string {
+  if (error instanceof JevRetriesExhausted) error = error.cause;
+  // Only local diagnostic text is safe to persist; never echo remote bodies or parser errors.
+  return error instanceof JevConnectionError || error instanceof JevTransportError || error instanceof JevRequestTimeoutError
+    ? error.message : '模型请求或返回格式无效，请检查连接与协议';
+}
+
 export class JevCommandController {
   private aborter?: AbortController;
   private cooldownUntil = 0;
@@ -132,29 +143,42 @@ export class JevCommandController {
   cancel(): void {
     this.aborter?.abort();
   }
+  private retry<T>(operation: (signal: AbortSignal) => Promise<T>, signal: AbortSignal, check: () => void, onStatus?: () => void): Promise<T> {
+    const detail = this.detail;
+    return retryJev(operation, {
+      signal, check,
+      onRetry: retry => {
+        this.detail = `JEV 正在重试 ${retry}/${JEV_MAX_RETRIES}，1 秒后发起请求，可随时暂停`;
+        onStatus?.();
+      },
+    }).then(value => {
+      this.detail = detail;
+      onStatus?.();
+      return value;
+    });
+  }
   private async resolveContext(
     input: EncounterContextInput,
     connection: JevConnection,
     signal: AbortSignal,
     beforeRequest: () => void = () => {},
+    check: () => void = () => signal.throwIfAborted(),
+    onStatus?: () => void,
   ): Promise<JevEncounterContext> {
     const { base, request } = encounterRequest(input);
     if (!request) return base;
     try {
       beforeRequest();
-      const answer = await this.post<
-        import("../../vendor/jev-core/src/index.js").ContextSelectionAnswer
-      >(
-        connection,
-        "select-context",
-        request,
-        AbortSignal.any([signal, AbortSignal.timeout(10000)]),
-      );
-      return applyEncounterSelection(input, base, request, answer);
+      return await this.retry(async attemptSignal => {
+        const answer = await this.post<import("../../vendor/jev-core/src/index.js").ContextSelectionAnswer>(
+          connection, "select-context", request, attemptSignal,
+        );
+        return applyEncounterSelection(input, base, request, answer);
+      }, signal, check, onStatus);
     } catch (error) {
+      check();
       if (signal.aborted) throw error;
-      base.detail =
-        "上下文判定暂不可用，沿用已有配置；可检查 JEV 服务版本与连接";
+      base.detail = `上下文判定暂不可用（已自动重试 ${JEV_MAX_RETRIES} 次）：${failureReason(error)}；沿用已有配置`;
       return base;
     }
   }
@@ -175,6 +199,11 @@ export class JevCommandController {
         input,
         connection,
         aborter.signal,
+        undefined,
+        () => {
+          if (aborter.signal.aborted || !options.valid()) throw Error("JEV 准备已取消，尚未开始战斗");
+        },
+        options.onStatus,
       );
       if (aborter.signal.aborted || !options.valid())
         throw Error("JEV 准备已取消，尚未开始战斗");
@@ -209,6 +238,32 @@ export class JevCommandController {
 
   async models(connection: JevConnection): Promise<string[]> {
     return fetchJevModels(connection, this.request);
+  }
+  /** A tiny real inference checks permissions and response format without sending chat/battle data. */
+  async testInference(connection: JevConnection, onStatus?: () => void): Promise<string> {
+    this.cancel();
+    const aborter = new AbortController();
+    this.aborter = aborter;
+    this.busy = true;
+    this.detail = "JEV 正在测试模型推理，可随时暂停";
+    onStatus?.();
+    const request = {
+      messages: [], state: { weather: "day" },
+      fields: [{ id: "lighting", question: "Select the stated lighting.", options: { day: "Day", night: "Night" } }],
+    };
+    try {
+      await this.retry(async signal => {
+        const answer = await this.post<import("../../vendor/jev-core/src/index.js").ContextSelectionAnswer>(connection, "select-context", request, signal);
+        try { validateContextSelectionAnswer(answer, request); }
+        catch { throw new JevConnectionError("模型返回无效选择，请检查所选协议和模型"); }
+      }, aborter.signal, () => aborter.signal.throwIfAborted(), onStatus);
+      return "模型推理测试通过，已验证实际 POST 请求和返回格式";
+    } catch (error) {
+      if (aborter.signal.aborted) return "已取消模型推理测试";
+      return `模型推理测试失败（已自动重试 ${JEV_MAX_RETRIES} 次）：${failureReason(error)}`;
+    } finally {
+      if (this.aborter === aborter) { this.busy = false; this.aborter = undefined; }
+    }
   }
   async test(connection: JevConnection): Promise<string> {
     if (connection.protocol && connection.protocol !== 'bridge') {
@@ -287,40 +342,50 @@ export class JevCommandController {
     }
     let modelFailed = false,
       calls = 0;
+    let modelFailure = "";
+    let contextFailure = "";
     const provider: DecisionProvider = {
       id: "jev-bridge",
       evaluate: async (request: DecisionRequest, signal) => {
         check();
-        if (++calls > 10 || Date.now() < this.cooldownUntil) {
-          modelFailed = true;
-          throw Error("JEV 调用预算或冷却中");
-        }
+        if (modelFailed) throw Error("本轮模型重试已结束");
+        // A logical-call cap is not a connection failure. Zero confidence preserves local scores.
+        if (++calls > 10) return {
+          model: "local-budget", confidence: 0,
+          scores: Object.fromEntries(request.candidates.map(c => [c.id, 0.5])),
+        };
         try {
-          const answer = await this.post<DecisionAnswer>(
-            connection,
-            "evaluate",
-            request,
-            AbortSignal.any([signal, aborter.signal]),
-          );
-          if (
-            !answer ||
-            typeof answer.model !== "string" ||
-            !Number.isFinite(answer.confidence) ||
-            answer.confidence < 0 ||
-            answer.confidence > 1 ||
-            request.candidates.some(
-              (c) =>
-                !Number.isFinite(answer.scores?.[c.id]) ||
-                answer.scores[c.id]! < 0 ||
-                answer.scores[c.id]! > 1,
+          const answer = await this.retry(async attemptSignal => {
+            const answer = await this.post<DecisionAnswer>(
+              connection,
+              "evaluate",
+              request,
+              attemptSignal,
+            );
+            if (
+              !answer ||
+              typeof answer.model !== "string" ||
+              !Number.isFinite(answer.confidence) ||
+              answer.confidence < 0 ||
+              answer.confidence > 1 ||
+              request.candidates.some(
+                (c) =>
+                  !Number.isFinite(answer.scores?.[c.id]) ||
+                  answer.scores[c.id]! < 0 ||
+                  answer.scores[c.id]! > 1,
+              )
             )
-          )
-            throw Error("JEV 返回无效评分");
+              throw new JevConnectionError("JEV 返回无效评分");
+            return answer;
+          }, AbortSignal.any([signal, aborter.signal]), check, options.onStatus);
+          this.cooldownUntil = 0;
           return answer;
         } catch (error) {
+          check();
           if (!aborter.signal.aborted) {
             modelFailed = true;
-            this.cooldownUntil = Date.now() + 30000;
+            modelFailure = failureReason(error);
+            this.cooldownUntil = Date.now() + JEV_RETRY_DELAY_MS;
           }
           throw error;
         }
@@ -329,13 +394,20 @@ export class JevCommandController {
     const extractor: TextExtractor = {
       extract: async (messages, observation, signal) => {
         check();
-        if (++calls > 10) return [];
-        return this.post(
-          connection,
-          "context",
-          { messages, observation },
-          AbortSignal.any([signal, aborter.signal]),
-        );
+        if (contextFailure || ++calls > 10) return [];
+        try {
+          return await this.retry(async attemptSignal => {
+            const answer = await this.post<Awaited<ReturnType<TextExtractor['extract']>>>(
+              connection, "context", { messages, observation }, attemptSignal,
+            );
+            try { return validateNarrativeContext(answer, observation); }
+            catch { throw new JevConnectionError("模型返回无效正文目标"); }
+          }, AbortSignal.any([signal, aborter.signal]), check, options.onStatus);
+        } catch (error) {
+          check();
+          contextFailure = `正文目标提取暂不可用（已自动重试 ${JEV_MAX_RETRIES} 次）：${failureReason(error)}`;
+          return [];
+        }
       },
     };
     const configureDrafts = (b: MassBattle) => {
@@ -350,6 +422,14 @@ export class JevCommandController {
       this.detail = "JEV 正在规划，可随时暂停";
       options.onStatus?.();
       check();
+      if (Date.now() < this.cooldownUntil) {
+        this.detail = "JEV 将在 1 秒内重新连接，可随时暂停";
+        options.onStatus?.();
+        await waitForJev(this.cooldownUntil - Date.now(), aborter.signal);
+        check();
+        this.detail = "JEV 正在规划，可随时暂停";
+        options.onStatus?.();
+      }
       if (
         settings.context?.enemy === "auto" ||
         settings.context?.enemy === "manual"
@@ -388,12 +468,13 @@ export class JevCommandController {
           () => {
             calls++;
           },
+          check,
+          options.onStatus,
         );
         check();
       }
       if (candidate instanceof MassBattle && !options.manualScan)
         configureDrafts(candidate);
-      if (Date.now() < this.cooldownUntil) modelFailed = true;
       const sides: ("ally" | "enemy")[] =
         candidate instanceof SmallBattle
           ? candidate.active?.side === "neutral" || !candidate.active
@@ -446,8 +527,9 @@ export class JevCommandController {
           extractor,
           policy: {
             narrativeContext: settings.narrative,
-            requestTimeoutMs: 10000,
-            decisionBudgetMs: 12000,
+            requestTimeoutMs: JEV_REQUEST_BUDGET_MS,
+            // Up to two decisions plus optional narrative extraction, each with its own retries.
+            decisionBudgetMs: 3 * JEV_REQUEST_BUDGET_MS + 1000,
             retries: 0,
             maxModelCallsPerDecision: 2,
             modelActionMode: "local",
@@ -533,7 +615,7 @@ export class JevCommandController {
         saved.version++;
         if (candidate instanceof MassBattle && !options.manualScan)
           configureDrafts(candidate);
-        saved.detail = "JEV 暂不可用，已回退原有自动 AI（30 秒后重试）";
+        saved.detail = `JEV 暂不可用（已自动重试 ${JEV_MAX_RETRIES} 次）：${modelFailure}；已回退原有自动 AI（1 秒后可重试）`;
       }
       if (!options.manualScan) {
         if (candidate instanceof SmallBattle) {
@@ -552,6 +634,7 @@ export class JevCommandController {
         }
       }
       check();
+      if (contextFailure) saved.detail += `；${contextFailure}`;
       this.detail = saved.detail || "JEV 行动完成";
       saved.detail = this.detail;
       saved.version++;

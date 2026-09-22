@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import {
   SmallBattle,
   MassBattle,
@@ -88,6 +88,61 @@ const options = () => ({
   valid: () => true,
 });
 const connection = { url: "http://127.0.0.1:4317", token: "service-token" };
+afterEach(() => vi.useRealTimers());
+describe("JEV planning latency and recovery", () => {
+  it("keeps the outer decision alive through ten timed-out attempts and a successful last retry", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const controller = new JevCommandController(async (url, init) => {
+      if (++calls <= 10) return new Promise<Response>(() => {});
+      return model(url, init);
+    });
+    const pending = controller.prepare(small(), undefined, defaultJevSettings(), connection, options());
+    await vi.runAllTimersAsync();
+    const result = await pending;
+    expect(calls).toBeGreaterThanOrEqual(11);
+    expect(result.state.detail).not.toContain("回退");
+    expect(result.state.sides.ally?.lastModelSelection?.confidence).toBe(0.9);
+  });
+  it("accepts an 11-second model answer without silently discarding its scores", async () => {
+    vi.useFakeTimers();
+    const seen: number[] = [];
+    const controller = new JevCommandController(async (url, init) => {
+      seen.push(Date.now());
+      await new Promise(resolve => setTimeout(resolve, 11000));
+      return model(url, init);
+    });
+    const pending = controller.prepare(small(), undefined, defaultJevSettings(), connection, options());
+    await vi.runAllTimersAsync();
+    const result = await pending;
+    expect(result.state.detail).not.toContain("回退");
+    expect(seen.length).toBeGreaterThan(0);
+    expect(result.state.sides.ally?.lastModelSelection?.confidence).toBe(0.9);
+    expect(result.state.sides.ally?.plan.tasks.length).toBeGreaterThan(0);
+  });
+  it("waits one second between ten retries, then accepts the last retry without a failure banner", async () => {
+    vi.useFakeTimers();
+    const seen: number[] = [], statuses: string[] = [];
+    const controller = new JevCommandController(async (url, init) => {
+      seen.push(Date.now());
+      if (seen.length <= 10) return new Response("{}", { status: 503 });
+      return model(url, init);
+    });
+    const battle = small(), before = battle.toSnapshot();
+    const pending = controller.prepare(battle, undefined, defaultJevSettings(), connection, {
+      ...options(), onStatus: () => statuses.push(controller.detail),
+    });
+    await vi.runAllTimersAsync();
+    const result = await pending;
+    expect(seen.length).toBeGreaterThanOrEqual(11);
+    expect(seen.slice(1, 11).map((at, i) => at - seen[i]!)).toEqual(Array(10).fill(1000));
+    expect(statuses.some(s => s.includes("10/10"))).toBe(true);
+    expect(statuses.join(" ")).not.toMatch(/暂不可用|回退/);
+    expect(result.state.detail).not.toContain("回退");
+    expect(battle.toSnapshot()).toEqual(before);
+    expect((result.battle as SmallBattle).active?.id).toBe("b");
+  });
+});
 describe("optional JEV command integration", () => {
   it("old saves default to original AI and connection inputs cannot embed credentials", () => {
     expect(normalizeJevSettings().mode).toBe("builtin");
@@ -175,7 +230,9 @@ describe("optional JEV command integration", () => {
     );
     expect(result.state.sides.enemy?.plan.tasks.length).toBeGreaterThan(0);
   });
-  it("server failure falls back to the existing AI without changing the input", async () => {
+  it("server failure falls back only after ten retries and reconnects after one second", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
     const b = small(),
       before = JSON.stringify(b.toSnapshot());
     const expected = SmallBattle.fromSnapshot(JSON.parse(before), {
@@ -183,20 +240,40 @@ describe("optional JEV command integration", () => {
     });
     expected.autoAction(expected.active!.id);
     const controller = new JevCommandController(async () => {
-      throw Error("offline");
+      calls++;
+      return new Response("service-token private-server-content", { status: 503 });
     });
-    const result = await controller.prepare(
+    const pending = controller.prepare(
       b,
       undefined,
       { ...defaultJevSettings(), mode: "jev" },
       connection,
       options(),
     );
+    await vi.advanceTimersByTimeAsync(9999);
+    expect(calls).toBe(10);
+    expect(controller.busy).toBe(true);
+    expect(controller.detail).not.toContain("暂不可用");
+    await vi.advanceTimersByTimeAsync(1);
+    const result = await pending;
+    expect(calls).toBe(11);
+    expect(result.state.detail).toContain("重试 10 次");
+    expect(result.state.detail).toContain("HTTP 503");
+    expect(result.state.detail).toContain("1 秒");
+    expect(JSON.stringify(result.state)).not.toMatch(/service-token|private-server-content/);
     expect(result.state.detail).toContain("回退原有");
     expect(JSON.stringify(b.toSnapshot())).toBe(before);
     expect(JSON.stringify(result.battle.toSnapshot())).toBe(
       JSON.stringify(expected.toSnapshot()),
     );
+    const next = controller.prepare(result.battle, result.state, defaultJevSettings(), connection, options());
+    await vi.advanceTimersByTimeAsync(999);
+    expect(calls).toBe(11);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(calls).toBe(12);
+    await vi.runAllTimersAsync();
+    await next;
+    expect(calls).toBe(22);
   });
   it("pause aborts a waiting provider and cannot apply its late response", async () => {
     const b = small(),
@@ -248,8 +325,12 @@ describe("optional JEV command integration", () => {
   it("manual context scanning cannot submit pending mass drafts or advance the round", async () => {
     const b = mass(),
       controller = new JevCommandController(
-        async () =>
-          new Response(JSON.stringify({ goals: [], environment: ["night"] })),
+        async (_url, init) => {
+          const request = JSON.parse(String(init?.body));
+          return new Response(JSON.stringify(request.fields ? {
+            model: "fake-jev", selections: Object.fromEntries(request.fields.map((f: { id: string }) => [f.id, { value: "unknown", confidence: 0 }])),
+          } : { goals: [], environment: ["night"] }));
+        },
       );
     const settings = { ...defaultJevSettings(), mode: "jev" as const };
     settings.narrative.mode = "manual";
@@ -274,6 +355,7 @@ describe("optional JEV command integration", () => {
     ]);
   });
   it("invalid model answers fall back without committing a partial JEV candidate", async () => {
+    vi.useFakeTimers();
     const b = small(),
       controller = new JevCommandController(
         async () =>
@@ -281,13 +363,15 @@ describe("optional JEV command integration", () => {
             JSON.stringify({ confidence: 1, model: "bad", scores: {} }),
           ),
       );
-    const result = await controller.prepare(
+    const pending = controller.prepare(
       b,
       undefined,
       { ...defaultJevSettings(), mode: "jev" },
       connection,
       options(),
     );
+    await vi.runAllTimersAsync();
+    const result = await pending;
     expect(result.state.detail).toContain("回退原有");
     expect(result.state.sides).toEqual({});
   });

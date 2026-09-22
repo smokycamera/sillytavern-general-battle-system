@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
+afterEach(() => vi.useRealTimers());
 import {
   generateUnit,
   traitRegistry,
@@ -263,10 +264,12 @@ describe("contextual battle preparation", () => {
     const offline = new JevCommandController(
       async () => new Response("{}", { status: 404 }),
     );
-    expect(
-      (await offline.prepareEncounter(input, connection, { valid: () => true }))
-        .detail,
-    ).toContain("暂不可用");
+    vi.useFakeTimers();
+    const unavailable = offline.prepareEncounter(input, connection, { valid: () => true });
+    await vi.runAllTimersAsync();
+    expect((await unavailable).detail).toContain("暂不可用");
+    expect((await unavailable).detail).toContain("重试 10 次");
+    vi.useRealTimers();
     let started!: () => void;
     const waiting = new Promise<void>((r) => (started = r));
     const pending = new JevCommandController(async (_url, init) => {
