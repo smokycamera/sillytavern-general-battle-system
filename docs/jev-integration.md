@@ -1,22 +1,73 @@
 # 可选 JEV 指挥模式
 
-当前发布版本为 **0.2.0-rc.9**，内置 JEV **0.2.3**。原有自动 AI 保留为默认；新安装与旧存档不会自动切换到 JEV。
+当前发布版本为 **0.2.0-rc.10**，内置 JEV **0.2.3**。原有自动 AI 保留为默认；新安装与旧存档不会自动切换到 JEV。
 
 ## 更新与连接
 
 在酒馆扩展管理中更新本插件并刷新页面。在“设置 → JEV 指挥”选择连接方式：
 
-- **TypeSafe / JEV 直连（新安装默认）**：地址 `https://api.typesafe.ai/v1`，填写 TypeSafe API Key，点击“拉取模型”，在列表中选择模型，再保存连接。默认模型 ID 为 `jev-latest`。模型列表请求 `/models`，评分与开战选择请求 `/systemone`。
+- **TypeSafe / JEV API（新安装默认）**：地址 `https://api.typesafe.ai/v1`，填写 TypeSafe API Key，点击“拉取模型”，在列表中选择模型，再保存连接。默认模型 ID 为 `jev-latest`。模型列表请求 `/models`，评分与开战选择请求 `/systemone`。
 - **OpenAI 兼容接口**：填写第三方 API 基础地址与其 API Key，拉取并选择模型。决策使用所选模型的 `/chat/completions`，服务需要支持 JSON 输出。仅模型列表可拉取不代表决策协议一定兼容。
 - **本地桥接（旧版）**：已有连接自动保留此模式，地址与 JEV_SERVICE_TOKEN 沿用旧配置；模型仍由桥接服务的 `.env` 配置。桥接服务需支持 JEV 0.2.3 接口。
 
-地址可以填写基础路径、完整 `/models`、`/systemone` 或 `/chat/completions` 地址；自定义路径前缀会保留。远程服务使用 HTTPS，并须允许来自酒馆的浏览器跨域请求（CORS）。不支持模型列表的服务可以手动填写模型 ID，点击“仅保存连接”。“保存连接并测试”在直连模式只检查模型列表，不发起付费决策请求。
+地址可以填写基础路径、完整 `/models`、`/systemone` 或 `/chat/completions` 地址；自定义路径前缀会保留。远程 API 使用 HTTPS。rc.10 的请求通道默认“自动”；使用宿主或自建转发时，上游不需要支持浏览器跨域。仅“浏览器直连”仍要求上游允许 CORS。不支持模型列表的服务可以手动填写模型 ID，点击“仅保存连接”。“保存连接并测试”在远程 API 模式只检查模型列表，不发起付费决策请求。
 
 API Key 只保存在当前浏览器会话；重新开启浏览器后可能需要重填。地址、协议、模型 ID 保留在当前浏览器，不写入聊天存档。已有旧桥接配置不会被自动覆盖；切换官方直连时请同时修改协议、地址和密钥。
 
 官方接口依据：[模型列表](https://docs.typesafe.ai/models)、[决策接口](https://docs.typesafe.ai/api)。
 
 在准备界面或战场工具栏选择“JEV 指挥”。现有单次自动行动、敌方自动行动、全自动战斗与会战结算入口沿用。可随时暂停、收起面板或切回“原有自动 AI”；切换不会重掷正在进行的战斗。V1 旧规则继续使用原 AI。
+
+## 跨域连接（rc.10）
+
+rc.9 在面板 iframe 中直接请求远程 API；服务不支持 CORS 时，模型列表、连接测试和实际决策都会失败。rc.10 将这些请求与旧桥接请求统一交给连接通道，不会在一次推理失败后自动重发。
+
+| 环境 / 协议 | 推荐请求通道 | 需要的设置 |
+|---|---|---|
+| SillyTavern / TypeSafe 或 OpenAI | 自动 / 酒馆宿主转发 | 在宿主 `config.yaml` 设置 `enableCorsProxy: true`，重启酒馆 |
+| TauriTavern / OpenAI 兼容 | 自动 / 酒馆宿主转发 | 使用宿主已有 custom 后端，无需通用 CORS 代理 |
+| TauriTavern / TypeSafe，服务不支持 CORS | 自建转发 | 在同一设备启动下面的转发程序，填写转发地址 |
+| 已支持 CORS 的 API / 独立面板 | 浏览器直连 | 上游允许当前页面的 Origin 和 Authorization 请求头 |
+| 旧本地 JEV bridge | 自动 | 保持原直连；也可显式选择转发 |
+
+TauriTavern 当前没有可转发任意 TypeSafe 请求的 `/proxy/` 接口；单纯换成父窗口 `fetch` 也不能消除浏览器跨域限制。插件不会虚构此能力，也不会关闭 WebView 安全策略。其 OpenAI 后端通过每次请求传递自定义 API 地址和 Key，不更改酒馆主模型连接设置。
+
+### 本机转发启动方法
+
+在安装有 **Node.js 22 或更新版本**的设备上，进入本插件目录运行：
+
+```sh
+node scripts/jev-cors-relay.mjs
+```
+
+从 GitHub 克隆的仓库也可用 `npm run jev:relay`；此程序仅使用 Node 内置模块，无需 `npm install`。Android 上可在 Termux 中运行；转发进程需要保持运行。电脑上的 `127.0.0.1` 与手机上的不是同一台设备。
+
+然后在插件填写：
+
+- 连接方式：`TypeSafe / JEV API`。
+- API 地址：`https://api.typesafe.ai/v1`，完整 `/systemone` 地址也可以。
+- API Key：原来的服务商密钥。
+- 请求通道：`自建转发`。
+- 转发地址：`http://127.0.0.1:4318`。
+- 点击“拉取模型”，选择后“保存连接并测试”。
+
+转发默认仅监听 `127.0.0.1:4318`，目标固定为 TypeSafe 官方 API。允许的页面来源默认包括 `http://localhost:8000`、`http://127.0.0.1:8000`、`tauri://localhost`、`http://tauri.localhost` 和 `https://tauri.localhost`。如酒馆端口或域名不同，请配置其**准确来源**，例如 bash / Termux：
+
+```sh
+JEV_RELAY_ORIGINS='http://127.0.0.1:8080,https://your-tavern.example' node scripts/jev-cors-relay.mjs
+```
+
+其他 API 的上游基础路径必须与插件匹配，例如：
+
+```sh
+JEV_RELAY_UPSTREAM='https://your-api.example/v1' node scripts/jev-cors-relay.mjs
+```
+
+PowerShell 对应写法：先执行 `$env:JEV_RELAY_UPSTREAM='https://your-api.example/v1'`，再运行上述 `node` 命令。`JEV_RELAY_PORT` 可修改监听端口。旧 bridge 上游应填写原桥接基础地址，不附加 `/v1`。
+
+程序只接受配置上游的模型、决策和桥接端点；拒绝其他来源与任意目标，不跟随上游重定向，不转发酒馆 Cookie 或 CSRF。它不写入 API Key、请求正文或返回正文日志。自建转发会接收你填写的 API Key，应使用自己控制的服务。若通过自己的 HTTPS 反向代理跨设备访问，请将代理的上游 Host 设置为本机地址，并保留 Origin；不要开放给不可信来源。
+
+浏览器直连失败仍可能是网络、TLS 或 CSP，单凭“Failed to fetch”不能确诊 CORS。宿主代理未开启、CSRF 过期、API 401/403、超时、无效 JSON 将分别提示；代理返回的正文不会原样显示，以免回显密钥。SillyTavern 使用 Basic Auth 或额外反向代理认证时，若服务商 Authorization 与宿主认证冲突，可改用上述自建转发。
 
 ## 同一次请求选择敌方与场景
 
@@ -62,4 +113,4 @@ JEV 0.2.3 仅增加通用“宿主提供问题与候选值”的选择接口、�
 
 rc.7 已有的无接触搜索、移动目标绑定、全组距离选敌、有限历史和置信度加权继续保留。模型接收本阵营最近 24 条 JEV 操作与回执，并非整场完整战报；普通行动仍在本地执行。
 
-本轮验证见 [rc.8 定向验收](jev-context-validation-20260922.md)，上一轮广泛战斗验证见 [rc.7 指挥验收](jev-command-validation-20260922.md)。本轮未重复全量战斗测试或对用户实际聊天运行测试。
+本轮连接验证见 [rc.10 跨域验收](jev-cors-validation.md)。开战上下文验证见 [rc.8 定向验收](jev-context-validation-20260922.md)，上一轮广泛战斗验证见 [rc.7 指挥验收](jev-command-validation-20260922.md)。本轮未重复全量战斗测试或对用户实际聊天运行测试。

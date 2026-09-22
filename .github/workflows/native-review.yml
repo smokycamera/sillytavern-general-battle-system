@@ -43,7 +43,7 @@ jobs:
       - name: Native host and persistence regression suite
         id: native
         continue-on-error: true
-        run: npm run test:extension -- --reporter=default --reporter=json --outputFile=artifacts/review/native-tests.json
+        run: npm run test:extension -- --reporter=default --reporter=json --outputFile=artifacts/review/native-tests.json && npm run test:jev-relay
       - name: Audit development and production dependencies separately
         id: audit
         continue-on-error: true

@@ -1,4 +1,4 @@
-import { connectionUrl, fetchJevModels, directJevRequest, type JevConnection } from './jev-connection.js';
+import { connectionUrl, fetchJevModels, directJevRequest, jevJsonRequest, type JevConnection } from './jev-connection.js';
 export { connectionUrl, readJevConnection, saveJevConnection, type JevConnection } from './jev-connection.js';
 import { SmallBattle, MassBattle, type Order } from "../../engine/src/index.js";
 import {
@@ -194,23 +194,19 @@ export class JevCommandController {
   ): Promise<T> {
     if (connection.protocol && connection.protocol !== "bridge")
       return await directJevRequest(connection, path, body, signal, this.request) as T;
-    const response = await this.request(
+    return await jevJsonRequest(connection, this.request,
       connectionUrl(connection.url) + "/api/bridge/" + path,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(connection.token
-            ? { Authorization: "Bearer " + connection.token }
-            : {}),
+          ...(connection.token ? { Authorization: "Bearer " + connection.token } : {}),
         },
-        body: JSON.stringify(body),
-        signal,
+        body: JSON.stringify(body), signal,
       },
-    );
-    if (!response.ok) throw Error("JEV 服务返回 " + response.status);
-    return (await response.json()) as T;
+    ) as T;
   }
+
   async models(connection: JevConnection): Promise<string[]> {
     return fetchJevModels(connection, this.request);
   }
@@ -219,17 +215,13 @@ export class JevCommandController {
       const models = await this.models(connection);
       return `连接正常，获取到 ${models.length} 个模型（尚未调用决策）`;
     }
-    const response = await this.request(
+    const meta = await jevJsonRequest(connection, this.request,
       connectionUrl(connection.url) + "/api/meta",
       {
-        headers: connection.token
-          ? { Authorization: "Bearer " + connection.token }
-          : {},
+        headers: connection.token ? { Authorization: "Bearer " + connection.token } : {},
         signal: AbortSignal.timeout(5000),
       },
     );
-    if (!response.ok) throw Error("连接失败：HTTP " + response.status);
-    const meta = await response.json();
     if (meta.bridge?.protocol !== 1)
       throw Error("请更新 JEV 服务以支持酒馆接入");
     return meta.provider === "local"

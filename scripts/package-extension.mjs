@@ -10,9 +10,11 @@ copyFileSync('release/current-baseline.json', path.join(output, 'release/current
 for (const directory of ['assets', 'licenses', 'docs']) {
   if (directory === 'docs') {
     mkdirSync(path.join(output, directory), { recursive: true });
-    for (const name of ['native-extension-validation.md', 'validation-results.json', 'extension-migration-assessment-20260919.md', 'native-extension-migration-plan-20260919.md', 'script-baseline-20260919.md', 'jev-integration.md', 'jev-command-validation-20260922.md', 'jev-context-validation-20260922.md']) copyFileSync(path.join(directory, name), path.join(output, directory, name));
+    for (const name of ['native-extension-validation.md', 'validation-results.json', 'extension-migration-assessment-20260919.md', 'native-extension-migration-plan-20260919.md', 'script-baseline-20260919.md', 'jev-integration.md', 'jev-cors-validation.md', 'jev-command-validation-20260922.md', 'jev-context-validation-20260922.md']) copyFileSync(path.join(directory, name), path.join(output, directory, name));
   } else cpSync(directory, path.join(output, directory), { recursive: true });
 }
+mkdirSync(path.join(output, 'scripts'), { recursive: true });
+copyFileSync('scripts/jev-cors-relay.mjs', path.join(output, 'scripts/jev-cors-relay.mjs'));
 const files = [];
 function visit(dir) { for (const name of readdirSync(dir, { withFileTypes: true })) { const file = path.join(dir, name.name); if (name.isDirectory()) visit(file); else files.push(file); } }
 visit(output);
@@ -24,7 +26,7 @@ const hash = file => createHash('sha256').update(readFileSync(file)).digest('hex
 const sourceFiles=[];
 const collect=dir=>{for(const entry of readdirSync(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory())collect(file);else sourceFiles.push(file)}};
 for (const dir of ['engine/src', 'panel/src', 'host/src', 'runtime/src', 'extension', 'assets', 'vendor/jev-core']) collect(dir);
-sourceFiles.push('panel/index.html','package.json','package-lock.json','scripts/package-extension.mjs');
+sourceFiles.push('panel/index.html','package.json','package-lock.json','scripts/package-extension.mjs','scripts/jev-cors-relay.mjs');
 const sourceFingerprint=createHash('sha256').update(sourceFiles.sort().map(file=>`${file.replaceAll('\\','/')}\0${hash(file)}`).join('\n')).digest('hex');
 const manifest = { format: 'tavern-battle-native-build', version, builtAt: new Date().toISOString(), sourceFingerprint,
   baselineSha256: JSON.parse(readFileSync('release/current-baseline.json', 'utf8')).sourceSha256,
