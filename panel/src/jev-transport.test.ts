@@ -60,8 +60,8 @@ describe('JEV host and relay transport', () => {
     expect(direct.mock.calls[0]).toMatchObject(['https://api.typesafe.ai/v1/models', { credentials: 'omit', redirect: 'error' }]);
     expect(new Headers(direct.mock.calls[0]?.[1]?.headers).has('x-csrf-token')).toBe(false);
   });
-  it('uses the configured private relay for both GET and POST, including auto migration', async () => {
-    const proxy = vi.fn<typeof fetch>(); host(proxy, true);
+  it('uses the configured private relay for both GET and POST, including non-Tauri auto migration', async () => {
+    const proxy = vi.fn<typeof fetch>(); host(proxy, false);
     const relay = vi.fn<typeof fetch>(async url => String(url).endsWith('models') ? models() : scores());
     const c = { ...connection, relayUrl: 'http://127.0.0.1:4318/' };
     await fetchJevModels(c, relay);
@@ -72,6 +72,27 @@ describe('JEV host and relay transport', () => {
     ]);
     expect(relay.mock.calls.every(([, init]) => init?.credentials === 'omit')).toBe(true);
     expect(proxy).not.toHaveBeenCalled();
+  });
+  it('does not let a stale relay URL hijack Tauri auto mode', async () => {
+    const proxy = vi.fn<typeof fetch>(async url => String(url).endsWith('/status') ? json({ data: [{ id: 'custom-model' }] }) : json({}));
+    host(proxy, true);
+
+    const typeSafeDirect = vi.fn<typeof fetch>(async url => {
+      expect(String(url)).toBe('https://api.typesafe.ai/v1/models');
+      return models();
+    });
+    await fetchJevModels({ ...connection, transport: 'auto', relayUrl: 'http://127.0.0.1:4318' }, typeSafeDirect);
+    expect(typeSafeDirect).toHaveBeenCalledTimes(1);
+    expect(proxy).not.toHaveBeenCalled();
+
+    const openAiDirect = vi.fn<typeof fetch>();
+    const openAi: JevConnection = {
+      ...connection, protocol: 'openai', url: 'https://gateway.example/v1',
+      model: 'custom-model', transport: 'auto', relayUrl: 'http://127.0.0.1:4318',
+    };
+    expect(await fetchJevModels(openAi, openAiDirect)).toEqual(['custom-model']);
+    expect(proxy.mock.calls[0]?.[0]).toBe('/api/backends/chat-completions/status');
+    expect(openAiDirect).not.toHaveBeenCalled();
   });
   it('uses Tauri custom backend for OpenAI models, context selection and decisions', async () => {
     const proxy = vi.fn<typeof fetch>(async url => String(url).endsWith('/status') ? json({ data: [{ id: 'custom-model' }] })
