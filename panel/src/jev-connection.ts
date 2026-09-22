@@ -42,7 +42,7 @@ export function readJevConnection(): JevConnection {
     const relayUrl = localStorage.getItem('tb:jev:relay-url');
     return {
       url: connectionUrl(storedUrl || JEV_API_URL),
-      token: sessionStorage.getItem('tb:jev:token') ?? '',
+      token: localStorage.getItem('tb:jev:token') ?? sessionStorage.getItem('tb:jev:token') ?? '',
       protocol: protocol === 'typesafe' || protocol === 'openai' || protocol === 'bridge'
         ? protocol : storedUrl ? 'bridge' : 'typesafe',
       model: localStorage.getItem('tb:jev:model') || 'jev-latest',
@@ -61,7 +61,7 @@ export function saveJevConnection(connection: JevConnection): void {
   localStorage.setItem('tb:jev:model', connection.model?.trim() ?? '');
   if (connection.transport) localStorage.setItem('tb:jev:transport', connection.transport);
   localStorage.setItem('tb:jev:relay-url', relay);
-  sessionStorage.setItem('tb:jev:token', connection.token.trim());
+  localStorage.setItem('tb:jev:token', connection.token.trim());
 }
 function headers(connection: JevConnection): Record<string, string> {
   return { 'Content-Type': 'application/json', ...(connection.token.trim() ? { Authorization: 'Bearer ' + connection.token.trim() } : {}) };
