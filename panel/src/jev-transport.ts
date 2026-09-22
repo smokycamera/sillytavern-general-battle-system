@@ -16,13 +16,18 @@ interface HostWindow {
 function findHost(): HostWindow | undefined {
   if (typeof window === 'undefined') return;
   let candidate = window as unknown as HostWindow;
+  let fallback: HostWindow | undefined;
   for (let depth = 0; depth < 8; depth++) {
     try {
-      if (candidate.SillyTavern?.getContext) return candidate;
-      if (!candidate.parent || candidate.parent === candidate) return;
+      // A same-origin panel iframe may expose SillyTavern itself while the Tauri ABI
+      // exists only on an ancestor. Prefer the Tauri owner instead of stopping early.
+      if (candidate.__TAURITAVERN__ || candidate.__TAURI_RUNNING__) return candidate;
+      if (!fallback && candidate.SillyTavern?.getContext) fallback = candidate;
+      if (!candidate.parent || candidate.parent === candidate) return fallback;
       candidate = candidate.parent;
-    } catch { return; } // A cross-origin parent is not an authorized host channel.
+    } catch { return fallback; } // A cross-origin parent is not an authorized host channel.
   }
+  return fallback;
 }
 
 function hostHeaders(host: HostWindow): Record<string, string> {
@@ -59,7 +64,7 @@ export async function jevRequest(connection: JevConnection, url: string, init: R
     // TauriTavern has no generic /proxy/. Its custom OpenAI backend is supported.
     if (connection.protocol !== 'openai') {
       if (mode === 'auto') return request(url, { ...init, credentials: 'omit', redirect: 'error' });
-      throw new JevTransportError('TauriTavern 暂无 TypeSafe 通用代理。请选择“自建转发”，运行插件附带的 npm run jev:relay；OpenAI 兼容协议可直接使用宿主转发');
+      throw new JevTransportError('TauriTavern 当前没有可供扩展调用的 TypeSafe 通用原生 HTTP 通道。手机端不要运行 npm relay；OpenAI 兼容接口会自动走 TT 原生后端，TypeSafe 请使用支持 CORS 的服务或外部 HTTPS 转发');
     }
     const target = new URL(url);
     const models = target.pathname.endsWith('/models');
@@ -98,7 +103,7 @@ export function jevNetworkError(connection: JevConnection): string {
   if (connection.transport === 'relay' || (connection.transport !== 'direct' && connection.transport !== 'host' && connection.relayUrl?.trim()))
     return '无法连接自建转发，请确认转发程序已启动、地址正确，并已允许当前酒馆来源';
   if (host && (host.__TAURITAVERN__ || host.__TAURI_RUNNING__) && connection.protocol === 'typesafe')
-    return 'TypeSafe 浏览器连接失败，可能是 CORS 或网络问题。TauriTavern 请使用“自建转发”：运行 npm run jev:relay，转发地址填 http://127.0.0.1:4318（须在运行酒馆的设备上启动）';
+    return 'TypeSafe 浏览器连接失败，可能是 CORS 或网络问题。TauriTavern 当前没有可供扩展调用的 TypeSafe 通用原生 HTTP 通道；手机端不要运行 npm relay。OpenAI 兼容接口会自动走 TT 原生后端；TypeSafe 需服务端允许 CORS 或使用外部 HTTPS 转发';
   return connection.transport === 'direct' || !host
     ? '无法直连模型服务，请检查网络与 CORS；服务不支持跨域时请选择宿主转发或自建转发'
     : '酒馆转发连接失败，请检查宿主网络与代理配置';
