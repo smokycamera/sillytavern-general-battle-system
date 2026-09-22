@@ -1,3 +1,4 @@
+import { ABILITY_LABELS, STYLE_PRESETS, encounterSummary, encounterRequest, type JevEncounterContext } from './jev-context.js';
 import { enhancementLabel, trainingEdge, trainingDamage } from '../../engine/src/enhancements.js';
 import { renderReportWorkspace } from './report-view.js';
 import { captureBattleArchive, captureBattleStart, reportRestartReason, type BattleStart, type DeletedReport } from './report-history.js';
@@ -279,6 +280,7 @@ const state: AppState = {
 
 const fullAuto = new AutoBattleLoop();
 const jevCommand = new JevCommandController();
+function recentJevMessages() { return (runtime.recentNarrative?.()??[]).filter(m=>m.completed); }
 function stopAutomation(): void { fullAuto.stop(); jevCommand.cancel(); }
 window.addEventListener('pagehide', stopAutomation);
 let battleSaveFailed = false;
@@ -419,6 +421,7 @@ function restore(): void {
   state.mapLayout = saved?.mapLayout === 'indoor' ? 'indoor' : 'standard';
   state.objectiveMode = normalizeObjectiveMode(saved?.objectiveMode);
   state.siegeAttacker = saved?.siegeAttacker === 'enemy' ? 'enemy' : 'ally';
+  if(saved?.jevSettings && !saved.jevSettings.context && (state.mapLayout==='indoor'||state.objectiveMode!=='auto'))state.jevSettings.context.scene='manual';
   if (!saved) {
     // 新聊天没有存档时必须清空上个聊天的事实与战斗，不能沿用旧内存。
     state.roster = []; state.storage = []; state.small = null; state.mass = null;
@@ -626,6 +629,7 @@ function hpPct(u: Combatant): number {
 
 /** 新战根据实际规模与参战形式推荐；进行中的战斗由effectiveMode保持。 */
 function autoScaleMode(): 'small' | 'mass' {
+  if(state.jevSettings.context.battleMode!=='auto')return state.jevSettings.context.battleMode;
   return recommendBattleMode(state.roster).mode;
 }
 
@@ -668,10 +672,11 @@ function prepareRosterForBattle(): void {
  */
 async function applyJev(b: SmallBattle | MassBattle, manualScan = false): Promise<void> {
   const namespace = adapter.namespace(), context = controller.inventoryContext(), revision = state.factRevision;
+  const messages=recentJevMessages(), messagesKey=JSON.stringify(messages);
   const result = await jevCommand.prepare(b, state.jevBattle, state.jevSettings, readJevConnection(), {
     battleId: battleIdOf(b), namespace: namespace ?? adapter.identity(), manualScan, summonUnit,
-    valid: () => currentBattle() === b && adapter.namespace() === namespace && controller.inventoryContext() === context && state.factRevision === revision && (!runtime.canWrite || runtime.canWrite()),
-    messages: runtime.recentNarrative?.() ?? [],
+    valid: () => currentBattle() === b && adapter.namespace() === namespace && controller.inventoryContext() === context && state.factRevision === revision && JSON.stringify(recentJevMessages())===messagesKey && (!runtime.canWrite || runtime.canWrite()),
+    messages,
     drafts: b instanceof MassBattle ? Object.entries(state.orderDraft).map(([unitId, draft]) => ({ unitId, ...draft })) : undefined,
     automatic: b instanceof MassBattle ? massAutoCommand() : undefined,
     onStatus: () => render('battle'),
@@ -860,11 +865,11 @@ function renderBattleToolbar(b: SmallBattle | MassBattle): string {
   return `<div class="battle-toolbar"><span class="tag">本场：${b.nonLethal?'非致命':'致命'}</span>${cannonAmmoControl(actor,b.isOver()||actor?.side!=='ally')}${renderJevMode(b)}<label class="battle-auto"><input type="checkbox" aria-label="全自动战斗（含主控）" data-role="full-auto-battle" ${fullAuto.running ? 'checked' : ''} ${b.isOver() ? 'disabled' : ''}>${fullAuto.running ? '自动推进中 · 点击暂停' : '全自动战斗（含主控）'}</label><label>自动策略 <select data-role="battle-tactic" ${b.isOver() || b.rules.resolutionVersion !== 'v2' ? 'disabled' : ''}>${Object.entries(TACTICAL_PREFERENCES).map(([id,name]) => `<option value="${esc(id)}" ${b.allyTactic === id ? 'selected' : ''}>${name}</option>`).join('')}</select></label>${!b.isOver() ? '<details data-detail-id="battle-options"><summary>更多</summary><button data-action="battle-finish" data-reason="ceasefire">停止交战并结算</button><button class="danger" data-action="battle-finish" data-reason="surrender">投降并结算</button></details>' : ''}</div>`;
 }
 function renderJevMode(b?: SmallBattle | MassBattle): string {
-  return `<label>自动 AI <select data-role="jev-mode" ${b?.isOver() ? 'disabled' : ''}><option value="builtin" ${state.jevSettings.mode === 'builtin' ? 'selected' : ''}>原有自动 AI</option><option value="jev" ${state.jevSettings.mode === 'jev' ? 'selected' : ''}>JEV 指挥</option></select></label>${state.jevSettings.mode === 'jev' ? `<span role="status" data-role="jev-status">${esc(jevCommand.busy ? jevCommand.detail : state.jevBattle?.detail ?? '就绪 · 自动执行时使用 JEV')}</span>${jevCommand.busy ? '<button data-action="jev-stop">暂停 JEV</button>' : ''}` : ''}`;
+  return `<label>自动 AI <select data-role="jev-mode" ${b?.isOver() ? 'disabled' : ''}><option value="builtin" ${state.jevSettings.mode === 'builtin' ? 'selected' : ''}>原有自动 AI</option><option value="jev" ${state.jevSettings.mode === 'jev' ? 'selected' : ''}>JEV 指挥</option></select></label>${state.jevSettings.mode === 'jev' ? `<span role="status" data-role="jev-status">${esc(jevCommand.busy ? jevCommand.detail : state.jevBattle?.detail ?? '就绪 · 自动执行时使用 JEV')}</span>${jevCommand.busy ? '<button data-action="jev-stop">暂停 JEV</button>' : ''}` : ''}${state.jevSettings.mode==='jev'&&state.jevBattle?.context?`<span class="sub">${esc(encounterSummary(state.jevBattle.context))}</span>`:''}`;
 }
 function renderJevSettings(): string {
   const c = readJevConnection(), settings = state.jevSettings;
-  return `<section><h2>JEV 指挥</h2>${renderJevMode()}<p>原有自动 AI 默认启用。JEV 负责计划和行动选择，酒馆引擎负责规则与结算；服务不可用时自动回退原有 AI。</p><div class="row"><label>服务地址 <input data-role="jev-url" type="url" value="${esc(c.url)}" placeholder="http://127.0.0.1:4317"></label><label>本机服务令牌 <input data-role="jev-token" type="password" autocomplete="off" value="${esc(c.token)}"></label><button data-action="jev-connect">保存连接并测试</button></div><p class="sub">此处填写 JEV_SERVICE_TOKEN；模型 API 密钥保存在 JEV 服务的 .env 中。服务令牌仅保留在当前浏览器会话，不写入聊天存档。</p><div class="row"><label>指挥水平 <select data-role="jev-ability">${Object.entries({novice:'新手',regular:'常规',skilled:'熟练',expert:'专家',master:'大师'}).map(([id,name]) => `<option value="${id}" ${settings.ability===id?'selected':''}>${name}</option>`).join('')}</select></label><label>正文上下文 <select data-role="jev-narrative">${Object.entries({off:'关闭',auto:'自动读取完成正文',manual:'仅手动扫描'}).map(([id,name])=>`<option value="${id}" ${settings.narrative.mode===id?'selected':''}>${name}</option>`).join('')}</select></label><label>最近消息数 <input type="number" min="0" max="100" data-role="jev-window" value="${settings.narrative.windowSize}"></label><button data-action="jev-scan" ${!currentBattle()||settings.narrative.mode==='off'?'disabled':''}>扫描当前正文</button></div><p class="sub">正文提取需要服务端配置 TEXT_API_URL、TEXT_API_KEY、TEXT_MODEL。开启后，选定范围的完成消息发送到该服务，只补充目标与环境提示。</p></section>`;
+  return `<section><h2>JEV 指挥</h2>${renderJevMode()}<p>原有自动 AI 默认启用。JEV 负责计划和行动选择，酒馆引擎负责规则与结算；服务不可用时自动回退原有 AI。</p><div class="row"><label>服务地址 <input data-role="jev-url" type="url" value="${esc(c.url)}" placeholder="http://127.0.0.1:4317"></label><label>本机服务令牌 <input data-role="jev-token" type="password" autocomplete="off" value="${esc(c.token)}"></label><button data-action="jev-connect">保存连接并测试</button></div><p class="sub">此处填写 JEV_SERVICE_TOKEN；模型 API 密钥保存在 JEV 服务的 .env 中。服务令牌仅保留在当前浏览器会话，不写入聊天存档。</p><div class="row"><label>我方指挥水平 <select data-role="jev-ability">${Object.entries({novice:'新手',regular:'常规',skilled:'熟练',expert:'专家',master:'大师'}).map(([id,name]) => `<option value="${id}" ${settings.ability===id?'selected':''}>${name}</option>`).join('')}</select></label><label>正文目标提取 <select data-role="jev-narrative">${Object.entries({off:'关闭',auto:'自动读取完成正文',manual:'仅手动扫描'}).map(([id,name])=>`<option value="${id}" ${settings.narrative.mode===id?'selected':''}>${name}</option>`).join('')}</select></label><label>最近消息数 <input type="number" min="0" max="100" data-role="jev-window" value="${settings.narrative.windowSize}"></label><button data-action="jev-scan" ${!currentBattle()||settings.narrative.mode==='off'?'disabled':''}>扫描当前正文</button></div><div class="row"><label>敌方指挥<select data-role="jev-enemy-mode"><option value="auto" ${settings.context.enemy==='auto'?'selected':''}>根据上下文</option><option value="manual" ${settings.context.enemy==='manual'?'selected':''}>手动指定</option></select></label><label>敌方能力／缺省档位<select data-role="jev-enemy-ability">${Object.entries(ABILITY_LABELS).map(([id,label])=>`<option value="${id}" ${settings.context.enemyAbility===id?'selected':''}>${label}</option>`).join('')}</select></label><label>敌方风格／缺省偏好<select data-role="jev-enemy-style">${Object.entries(STYLE_PRESETS).map(([id,p])=>`<option value="${id}" ${settings.context.enemyStyle===id?'selected':''}>${p.label}</option>`).join('')}</select></label></div><div class="row"><label>战场与任务<select data-role="jev-scene" ${currentBattle()?'disabled':''}><option value="auto" ${settings.context.scene==='auto'?'selected':''}>开战时根据上下文</option><option value="manual" ${settings.context.scene==='manual'?'selected':''}>沿用手动设置</option></select></label><label>战斗形式<select data-role="jev-battle-mode" ${currentBattle()?'disabled':''}><option value="auto" ${settings.context.battleMode==='auto'?'selected':''}>按上下文与编制</option><option value="small" ${settings.context.battleMode==='small'?'selected':''}>小战地图</option><option value="mass" ${settings.context.battleMode==='mass'?'selected':''}>编队会战</option></select></label></div><p class="sub">JEV 开战判定读取上方消息范围，一次选择敌方能力、风格、地形、昼夜、地图与任务，不需要另配文本模型。缺少依据时沿用缺省值；战斗中地图和胜负规则固定，仅在新正文明确更换或改变指挥者时更新敌方配置。</p>${state.jevBattle?.context?`<p>${esc(encounterSummary(state.jevBattle.context))}</p><p class="sub">${esc(state.jevBattle.context.detail)}</p>`:''}<p class="sub">正文提取需要服务端配置 TEXT_API_URL、TEXT_API_KEY、TEXT_MODEL。开启后，选定范围的完成消息发送到该服务，只补充目标与环境提示。</p></section>`;
 }
 function renderBattleExit(b: SmallBattle | MassBattle): string {
   const archived = state.committedOutcomeIds.includes(battleIdOf(b)), deleted=state.deletedReportIds?.includes(battleIdOf(b));
@@ -909,8 +914,8 @@ function renderBattlePreparation(): string {
     ${mode === 'small' ? `<p class="mission-summary">${esc(missionSummary)}</p>` : ''}
     <div class="preparation-stats"><div><strong>${allies.length}</strong><span>我方单位</span></div><div><strong>${enemies.length}</strong><span>已知敌方</span></div><div><strong>${mode === 'mass' ? '会战' : '战术'}</strong><span>${esc(fieldLabel(plannedFieldTags()) || '野战')}</span></div></div>
     <label class="battle-auto"><input type="checkbox" data-role="non-lethal" ${state.nonLethal?'checked':''}> 非致命战斗（双方伤害只会造成濒死）</label>
-    <div class="row"><button class="primary" data-action="${mode === 'mass' ? 'mass-start' : 'small-start'}" ${ready ? '' : 'disabled'}>开始交战</button><button data-action="workspace-tab" data-tab="units">${ready ? '查看队伍' : '集结队伍'}</button><button data-action="workspace-tab" data-tab="inventory">整理配装</button></div>
-    ${mode === 'small' && state.roster.every((u) => u.rulesVersion === 'v2') ? `<details class="preparation-options" data-detail-id="preparation-options"><summary>任务设置 · ${state.mapLayout === 'indoor' ? '室内' : '野战'} / ${state.objectiveMode === 'escort' ? '护送' : state.objectiveMode === 'intercept' ? '拦截' : state.objectiveMode === 'siege' ? '攻城' : state.objectiveMode === 'annihilation' ? '歼灭' : plannedFieldTags().includes('siege') ? '攻城' : '歼灭'}</summary><div class="row"><label>地图<select data-role="map-layout"><option value="standard" ${state.mapLayout !== 'indoor' ? 'selected' : ''}>标准野战</option><option value="indoor" ${state.mapLayout === 'indoor' ? 'selected' : ''}>紧凑室内</option></select></label><label>目标<select data-role="objective-mode"><option value="auto" ${state.objectiveMode === 'auto' ? 'selected' : ''}>按环境：野战歼灭／攻城夺点</option><option value="annihilation" ${state.objectiveMode === 'annihilation' ? 'selected' : ''}>歼灭战</option><option value="siege" ${state.objectiveMode === 'siege' ? 'selected' : ''}>攻城战</option><option value="escort" ${state.objectiveMode === 'escort' ? 'selected' : ''}>我方护送</option><option value="intercept" ${state.objectiveMode === 'intercept' ? 'selected' : ''}>拦截敌方护送</option></select></label><label>攻城角色<select data-role="siege-attacker"><option value="ally" ${state.siegeAttacker === 'ally' ? 'selected' : ''}>我方进攻</option><option value="enemy" ${state.siegeAttacker === 'enemy' ? 'selected' : ''}>我方防守</option></select></label></div><p>野战默认歼灭；攻城胜利点在守方纵深，攻方连续控制5个完整回合获胜，守方坚持到60回合获胜。我方护送沿用主控或首个我方单位；拦截以首个敌方单位为护送对象。双方规则相同：抵达出口则护送方胜，目标被消灭、撤离或逾期未抵达则拦截方胜。</p></details>` : ''}
+    <div class="row">${renderJevMode()}</div>${state.jevSettings.mode==='jev'&&state.jevSettings.context.scene==='auto'?'<p class="sub">下方为缺省设置；开战时将根据最近完成的正文选择场景与任务，依据不足时保留缺省值。</p>':''}<div class="row"><button class="primary" data-action="${mode === 'mass' ? 'mass-start' : 'small-start'}" ${ready ? '' : 'disabled'}>开始交战</button><button data-action="workspace-tab" data-tab="units">${ready ? '查看队伍' : '集结队伍'}</button><button data-action="workspace-tab" data-tab="inventory">整理配装</button></div>
+    ${state.roster.every((u) => u.rulesVersion === 'v2') ? `<details class="preparation-options" data-detail-id="preparation-options"><summary>任务设置 · ${state.mapLayout === 'indoor' ? '室内' : '野战'} / ${state.objectiveMode === 'escort' ? '护送' : state.objectiveMode === 'intercept' ? '拦截' : state.objectiveMode === 'siege' ? '攻城' : state.objectiveMode === 'annihilation' ? '歼灭' : plannedFieldTags().includes('siege') ? '攻城' : '歼灭'}</summary><div class="row"><label>地形<select data-role="context-field">${Object.entries(FIELD_LABELS).filter(([id])=>id!=='night').map(([id,label])=>`<option value="${id}" ${(state.field||'plains')===id?'selected':''}>${label}</option>`).join('')}</select></label><label>光照<select data-role="context-lighting"><option value="day" ${state.lighting==='day'?'selected':''}>日间</option><option value="night" ${state.lighting==='night'?'selected':''}>夜间</option></select></label><label>地图<select data-role="map-layout"><option value="standard" ${state.mapLayout !== 'indoor' ? 'selected' : ''}>标准野战</option><option value="indoor" ${state.mapLayout === 'indoor' ? 'selected' : ''}>紧凑室内</option></select></label><label>目标<select data-role="objective-mode"><option value="auto" ${state.objectiveMode === 'auto' ? 'selected' : ''}>按环境：野战歼灭／攻城夺点</option><option value="annihilation" ${state.objectiveMode === 'annihilation' ? 'selected' : ''}>歼灭战</option><option value="siege" ${state.objectiveMode === 'siege' ? 'selected' : ''}>攻城战</option><option value="escort" ${state.objectiveMode === 'escort' ? 'selected' : ''}>我方护送</option><option value="intercept" ${state.objectiveMode === 'intercept' ? 'selected' : ''}>拦截敌方护送</option></select></label><label>攻城角色<select data-role="siege-attacker"><option value="ally" ${state.siegeAttacker === 'ally' ? 'selected' : ''}>我方进攻</option><option value="enemy" ${state.siegeAttacker === 'enemy' ? 'selected' : ''}>我方防守</option></select></label></div><p>野战默认歼灭；攻城胜利点在守方纵深，攻方连续控制5个完整回合获胜，守方坚持到60回合获胜。我方护送沿用主控或首个我方单位；拦截以首个敌方单位为护送对象。双方规则相同：抵达出口则护送方胜，目标被消灭、撤离或逾期未抵达则拦截方胜。</p></details>` : ''}
     ${allies.length ? `<div class="preparation-roster">${allies.slice(0, 8).map((u) => `<span><b>${esc(u.name)}</b><small>${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}/${u.base.hpMax}</small></span>`).join('')}${allies.length > 8 ? `<span>另有${allies.length - 8}支单位</span>` : ''}</div>` : ''}
   </section>`;
 }
@@ -2072,10 +2077,10 @@ async function handleAction(e: Event): Promise<void> {
     if (controller.migrationReview() && !act.startsWith('migration-') && !['log-detail', 'unit-detail', 'units-toggle', 'sec-toggle', 'modal-stop'].includes(act)) throw new Error('先核对迁移预览；预览期间不会改写原档或推进战斗');
     (await actions[act]?.(el));
     if (battleSaveFailed) { const receipt = state.saveReceipt; restore(); state.saveReceipt = receipt; render(); return; }
-    if (['grid-endturn', 'grid-mobile-endturn', 'grid-auto', 'small-start'].includes(act) && state.small?.battlefield) {
+    if (['grid-endturn', 'grid-mobile-endturn', 'grid-auto', 'small-start', 'mass-start'].includes(act) && state.small?.battlefield) {
       (await runAuto()); tacticalView.selectedId = state.small.active?.id; tacticalView.cell = undefined;
     }
-    if (!state.small?.battlefield && ['small-start', 'small-attack', 'small-sidearm', 'small-charge', 'small-move', 'small-retreat', 'small-auto-act', 'small-endturn', 'ability-confirm'].includes(act)) (await runAuto());
+    if (!state.small?.battlefield && ['small-start', 'mass-start', 'small-attack', 'small-sidearm', 'small-charge', 'small-move', 'small-retreat', 'small-auto-act', 'small-endturn', 'ability-confirm'].includes(act)) (await runAuto());
     if (state.small?.battlefield && state.small.isOver()) (await onBattleEnded());
     }, async () => battleSaveFailed ? false : (await persist()), () => { if (actionBattle) restore(); }));
   } catch (err) {
@@ -2383,6 +2388,93 @@ async function resolveMassRound(expectedRound: number, expectedSeed?: string): P
       }
       (await onBattleEnded());
     }
+}
+
+
+async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void> {
+  prepareRosterForBattle();
+  if (!rosterHasBothSides()) throw Error('开战前必须同时有我方与敌方单位');
+  let context:JevEncounterContext|undefined;
+  const v2=state.roster.every(u=>u.rulesVersion==='v2');
+  if(state.jevSettings.mode==='jev' && v2) {
+    const namespace=adapter.namespace(), identity=adapter.identity(), revision=state.factRevision,
+      generation=controller.inventoryContext(), settingsKey=JSON.stringify(state.jevSettings), rosterKey=JSON.stringify(state.roster);
+    const messages=recentJevMessages(), messagesKey=JSON.stringify(messages);
+    context=await jevCommand.prepareEncounter({roster:state.roster,
+      setup:{mode:requestedMode,field:state.field||'plains',lighting:state.lighting,mapLayout:state.mapLayout,objectiveMode:state.objectiveMode,siegeAttacker:state.siegeAttacker},
+      settings:state.jevSettings.context,messages,windowSize:state.jevSettings.narrative.windowSize,roles:state.jevSettings.narrative.roles,phase:'preparation'},readJevConnection(),{
+      valid:()=>!currentBattle() && adapter.namespace()===namespace && adapter.identity()===identity && state.factRevision===revision
+        && controller.inventoryContext()===generation && JSON.stringify(state.jevSettings)===settingsKey && JSON.stringify(state.roster)===rosterKey
+        && JSON.stringify(recentJevMessages())===messagesKey && (!runtime.canWrite||runtime.canWrite()),
+      onStatus:()=>render('battle'),
+    });
+    state.mode=context.mode;state.field=context.field;state.lighting=context.lighting;state.mapLayout=context.mapLayout;
+    state.objectiveMode=context.objectiveMode;state.siegeAttacker=context.siegeAttacker;
+  }
+  let mode=context?.mode??(state.jevSettings.context.battleMode==='auto'?requestedMode:state.jevSettings.context.battleMode);
+  if(!context&&v2) {
+    const manual=encounterRequest({roster:state.roster,setup:{mode,field:state.field||'plains',lighting:state.lighting,mapLayout:state.mapLayout,objectiveMode:state.objectiveMode,siegeAttacker:state.siegeAttacker},
+      settings:{...state.jevSettings.context,enemy:'manual',scene:'manual'},messages:[],windowSize:0,roles:[],phase:'preparation'}).base;
+    mode=manual.mode;state.mapLayout=manual.mapLayout;
+  }
+  if(mode==='mass')await startMassBattle(context);else await startSmallBattle(context);
+}
+
+async function startSmallBattle(context?:JevEncounterContext):Promise<void> {
+    const before=captureBattleArchive({...controller.snapshot(),storage:state.storage,inventory:state.inventory,rosterIds:state.roster.map(u=>u.id),protagonistId:state.protagonistId,commanderId:state.commanderId,encounterIds:[...state.encounterIds],lastBattleUnitIds:state.lastBattleUnitIds});
+    if (!rosterHasBothSides()) throw new Error('开战前必须同时有我方与敌方单位');
+    const seed = randomSeed();
+    const tags = state.objectiveMode === 'siege' ? [...new Set([...plannedFieldTags(), 'siege'])] : plannedFieldTags();
+    let battlefield = state.mapLayout === 'indoor' ? generatedField(seed, 5, 7, tags) : generatedField(seed, 7, 13, tags);
+    if (state.roster.every((u) => u.rulesVersion === 'v2')) battlefield = prepareBattleObjective(battlefield, state.roster, state.objectiveMode, state.protagonistId, state.siegeAttacker);
+    const small = new SmallBattle({
+      nonLethal:state.nonLethal,
+      ...(state.roster.every((u) => u.rulesVersion === 'v2') ? { battlefield } : {}),
+      rules: state.roster.every((u) => u.rulesVersion === 'v2') ? V4_OVERFLOW_D20 : LITE_D20,
+      combatants: JSON.parse(JSON.stringify(state.roster)), seed: state.roster.every((u) => u.rulesVersion === 'v2') ? seed : undefined, traitRegistry: reg,
+      summonUnit,
+      field: { tags: state.roster.every((u) => u.rulesVersion === 'v2') ? tags : state.field ? [state.field] : [] },
+    });
+    small.start();
+    state.activeBattleStart=captureBattleStart(small,before);state.selectedReportId=undefined;
+    state.small = small;
+    state.mass = null;
+    state.jevBattle = context ? {battleId:battleIdOf(small),version:0,sides:{},detail:encounterSummary(context),context} : undefined;
+    state.xpSettled = false;
+    state.smallTarget = '';
+    tacticalView.selectedId = state.small.active?.id; tacticalView.cell = undefined;
+    (await persist());
+}
+
+async function startMassBattle(context?:JevEncounterContext):Promise<void> {
+    const before=captureBattleArchive({...controller.snapshot(),storage:state.storage,inventory:state.inventory,rosterIds:state.roster.map(u=>u.id),protagonistId:state.protagonistId,commanderId:state.commanderId,encounterIds:[...state.encounterIds],lastBattleUnitIds:state.lastBattleUnitIds});
+    if (!rosterHasBothSides()) throw new Error('开战前必须同时有我方与敌方单位');
+    const clones: Combatant[] = state.roster.every((u) => u.rulesVersion === 'v2') ? prepareMassRoster(state.roster) : structuredClone(state.roster);
+    const zoneNames = ['左翼', '中军', '右翼'];
+    if (clones.some((u) => u.rulesVersion !== 'v2')) for (const side of ['ally', 'enemy'] as const) {
+      const sideUnits = clones.filter((c) => c.side === side);
+      sideUnits.forEach((c, i) => {
+        const z = formationZone(c) ?? zoneNames[Math.floor(i * zoneNames.length / Math.max(1, sideUnits.length))]!;
+        c.tags = [...c.tags.filter((t) => !t.startsWith('zone:') && !t.startsWith('rank:')), 'zone:' + z, 'rank:' + (formationRank(c) ?? defaultRank(c))];
+      });
+    }
+    const mass = new MassBattle({
+      nonLethal:state.nonLethal,
+      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V4_OVERFLOW_TW } : {}),
+      combatants: clones,
+      traitRegistry: reg,
+      commanderId: state.commanderId,
+      zones: zoneNames,
+      summonUnit,
+      field: { tags: state.roster.every((u) => u.rulesVersion === 'v2') ? plannedFieldTags() : state.field ? [state.field] : [] },
+    });
+    mass.start();
+    state.activeBattleStart=captureBattleStart(mass,before);state.selectedReportId=undefined;
+    state.mass = mass;
+    state.small = null;
+    state.jevBattle = context ? {battleId:battleIdOf(mass),version:0,sides:{},detail:encounterSummary(context),context} : undefined;
+    state.xpSettled = false;
+    (await persist());
 }
 
 const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
@@ -2793,31 +2885,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     state.commanderId = state.commanderId === id ? undefined : id;
     (await persist());
   },
-  'small-start': async () => {
-    prepareRosterForBattle();
-    const before=captureBattleArchive({...controller.snapshot(),storage:state.storage,inventory:state.inventory,rosterIds:state.roster.map(u=>u.id),protagonistId:state.protagonistId,commanderId:state.commanderId,encounterIds:[...state.encounterIds],lastBattleUnitIds:state.lastBattleUnitIds});
-    if (!rosterHasBothSides()) throw new Error('开战前必须同时有我方与敌方单位');
-    const seed = randomSeed();
-    const tags = state.objectiveMode === 'siege' ? [...new Set([...plannedFieldTags(), 'siege'])] : plannedFieldTags();
-    let battlefield = state.mapLayout === 'indoor' ? generatedField(seed, 5, 7, tags) : generatedField(seed, 7, 13, tags);
-    if (state.roster.every((u) => u.rulesVersion === 'v2')) battlefield = prepareBattleObjective(battlefield, state.roster, state.objectiveMode, state.protagonistId, state.siegeAttacker);
-    const small = new SmallBattle({
-      nonLethal:state.nonLethal,
-      ...(state.roster.every((u) => u.rulesVersion === 'v2') ? { battlefield } : {}),
-      rules: state.roster.every((u) => u.rulesVersion === 'v2') ? V4_OVERFLOW_D20 : LITE_D20,
-      combatants: JSON.parse(JSON.stringify(state.roster)), seed: state.roster.every((u) => u.rulesVersion === 'v2') ? seed : undefined, traitRegistry: reg,
-      summonUnit,
-      field: { tags: state.roster.every((u) => u.rulesVersion === 'v2') ? tags : state.field ? [state.field] : [] },
-    });
-    small.start();
-    state.activeBattleStart=captureBattleStart(small,before);state.selectedReportId=undefined;
-    state.small = small;
-    state.mass = null;
-    state.xpSettled = false;
-    state.smallTarget = '';
-    tacticalView.selectedId = state.small.active?.id; tacticalView.cell = undefined;
-    (await persist());
-  },
+  'small-start': async () => startContextualBattle('small'),
   'small-attack': async () => {
     const b = state.small!;
     if (!b.active) throw new Error('没有行动者');
@@ -2877,36 +2945,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     state.small!.endTurn();
     (await persist());
   },
-  'mass-start': async () => {
-    prepareRosterForBattle();
-    const before=captureBattleArchive({...controller.snapshot(),storage:state.storage,inventory:state.inventory,rosterIds:state.roster.map(u=>u.id),protagonistId:state.protagonistId,commanderId:state.commanderId,encounterIds:[...state.encounterIds],lastBattleUnitIds:state.lastBattleUnitIds});
-    if (!rosterHasBothSides()) throw new Error('开战前必须同时有我方与敌方单位');
-    const clones: Combatant[] = state.roster.every((u) => u.rulesVersion === 'v2') ? prepareMassRoster(state.roster) : structuredClone(state.roster);
-    const zoneNames = ['左翼', '中军', '右翼'];
-    if (clones.some((u) => u.rulesVersion !== 'v2')) for (const side of ['ally', 'enemy'] as const) {
-      const sideUnits = clones.filter((c) => c.side === side);
-      sideUnits.forEach((c, i) => {
-        const z = formationZone(c) ?? zoneNames[Math.floor(i * zoneNames.length / Math.max(1, sideUnits.length))]!;
-        c.tags = [...c.tags.filter((t) => !t.startsWith('zone:') && !t.startsWith('rank:')), 'zone:' + z, 'rank:' + (formationRank(c) ?? defaultRank(c))];
-      });
-    }
-    const mass = new MassBattle({
-      nonLethal:state.nonLethal,
-      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V4_OVERFLOW_TW } : {}),
-      combatants: clones,
-      traitRegistry: reg,
-      commanderId: state.commanderId,
-      zones: zoneNames,
-      summonUnit,
-      field: { tags: state.roster.every((u) => u.rulesVersion === 'v2') ? plannedFieldTags() : state.field ? [state.field] : [] },
-    });
-    mass.start();
-    state.activeBattleStart=captureBattleStart(mass,before);state.selectedReportId=undefined;
-    state.mass = mass;
-    state.small = null;
-    state.xpSettled = false;
-    (await persist());
-  },
+  'mass-start': async () => startContextualBattle('mass'),
   'mass-attach': async () => {
     const b = state.mass!;
     if (!state.protagonistId) throw new Error('未设主控');
@@ -3147,6 +3186,14 @@ async function handleChange(e: Event): Promise<void> {
   if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'jev-ability') {
     state.jevSettings = normalizeJevSettings({...state.jevSettings, ability: e.target.value as JevSettings['ability']}); await persist(); return;
   }
+  if (e.target instanceof HTMLSelectElement && ['jev-enemy-mode','jev-enemy-ability','jev-enemy-style','jev-scene','jev-battle-mode'].includes(e.target.dataset.role??'')) {
+    const key=({'jev-enemy-mode':'enemy','jev-enemy-ability':'enemyAbility','jev-enemy-style':'enemyStyle','jev-scene':'scene','jev-battle-mode':'battleMode'} as Record<string,string>)[e.target.dataset.role!]!;
+    if(currentBattle()&&['scene','battleMode'].includes(key))return;
+    stopAutomation();state.jevSettings=normalizeJevSettings({...state.jevSettings,context:{...state.jevSettings.context,[key]:e.target.value}});
+    if(!currentBattle())state.mode=autoScaleMode();
+    if(state.jevBattle?.context)state.jevBattle.context.messageKey='';
+    await persist();render();return;
+  }
   if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'jev-narrative') {
     state.jevSettings.narrative.mode = e.target.value as 'auto' | 'manual' | 'off'; await persist(); return;
   }
@@ -3214,6 +3261,7 @@ async function handleChange(e: Event): Promise<void> {
     state.mode = (el as HTMLSelectElement).value as 'small' | 'mass';
     render();
   } else if (role === 'siege-attacker') {
+    state.jevSettings.context.scene='manual';
     state.siegeAttacker = (el as HTMLSelectElement).value === 'enemy' ? 'enemy' : 'ally'; (await persist()); render();
   } else if (role === 'full-auto-battle') {
     try { if ((el as HTMLInputElement).checked) { battleSaveFailed = false; startFullAuto(); } else fullAuto.stop(); }
@@ -3236,9 +3284,15 @@ async function handleChange(e: Event): Promise<void> {
     state.autoAllyOrders = (el as HTMLInputElement).checked;
     (await persist());
     render();
+  } else if (role === 'context-field' || role === 'context-lighting') {
+    if(currentBattle())return;state.jevSettings.context.scene='manual';
+    const value=(el as HTMLSelectElement).value;
+    if(role==='context-field')state.field=Object.hasOwn(FIELD_LABELS,value)&&value!=='night'?value:'plains';else state.lighting=value==='night'?'night':'day';
+    await persist();render();
   } else if (role === 'map-layout' || role === 'objective-mode') {
     if (currentBattle()) return;
     const value = (el as HTMLSelectElement).value;
+    state.jevSettings.context.scene='manual';
     if (role === 'map-layout') state.mapLayout = value === 'indoor' ? 'indoor' : 'standard';
     else state.objectiveMode = normalizeObjectiveMode(value);
     (await persist());

@@ -17,5 +17,7 @@ export interface PanelRuntime {
 export function createPanelRuntime(): PanelRuntime {
   const adapter = createAdapter();
   const resident = (window.parent as unknown as { __tavernBattleController?: NarrativeController }).__tavernBattleController;
-  return { adapter, controller: resident ?? new NarrativeController(adapter), resident: !!resident, native: false };
+  return { adapter, controller: resident ?? new NarrativeController(adapter), resident: !!resident, native: false,
+    recentNarrative: () => { const text=adapter.recentPromptText?.()??'';return text?[{id:'legacy-recent',role:'assistant',text,completed:true}]:[]; },
+  };
 }
