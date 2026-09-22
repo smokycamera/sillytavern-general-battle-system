@@ -94,6 +94,24 @@ describe('JEV host and relay transport', () => {
     expect(JSON.parse(body.custom_include_body)).toMatchObject({ response_format: { type: 'json_object' }, messages: expect.any(Array) });
     expect(direct).not.toHaveBeenCalled();
   });
+  it('prefers an ancestor Tauri host when the panel iframe also exposes SillyTavern', async () => {
+    const proxy = vi.fn<typeof fetch>(async url => String(url).endsWith('/status') ? json({ data: [{ id: 'custom-model' }] }) : json({}));
+    const parent = {
+      location: { href: 'tauri://localhost/' }, fetch: proxy, __TAURITAVERN__: {},
+      SillyTavern: { getContext: () => ({ getRequestHeaders: () => ({ 'X-CSRF-Token': 'csrf-parent' }) }) },
+    };
+    const iframeFetch = vi.fn<typeof fetch>();
+    vi.stubGlobal('window', {
+      location: { href: 'tauri://localhost/panel/' }, fetch: iframeFetch, parent,
+      SillyTavern: { getContext: () => ({ getRequestHeaders: () => ({ 'X-CSRF-Token': 'csrf-iframe' }) }) },
+    });
+    const direct = vi.fn<typeof fetch>();
+    const c: JevConnection = { ...connection, protocol: 'openai', model: 'custom-model', url: 'https://gateway.example/v1' };
+    expect(await fetchJevModels(c, direct)).toEqual(['custom-model']);
+    expect(proxy.mock.calls[0]?.[0]).toBe('/api/backends/chat-completions/status');
+    expect(iframeFetch).not.toHaveBeenCalled();
+    expect(direct).not.toHaveBeenCalled();
+  });
   it('overrides a Tauri host saved key even when the plugin has no key', async () => {
     const proxy = vi.fn<typeof fetch>(async () => models()); host(proxy, true);
     await fetchJevModels({ ...connection, protocol: 'openai', url: 'https://gateway.example/v1', token: '' });
@@ -101,7 +119,7 @@ describe('JEV host and relay transport', () => {
   });
   it('gives actionable Tauri TypeSafe CORS help and never invents a host endpoint', async () => {
     const proxy = vi.fn<typeof fetch>(); host(proxy, true);
-    await expect(fetchJevModels(connection, async () => { throw new TypeError('Failed to fetch'); })).rejects.toThrow('npm run jev:relay');
+    await expect(fetchJevModels(connection, async () => { throw new TypeError('Failed to fetch'); })).rejects.toThrow('手机端不要运行 npm relay');
     await expect(fetchJevModels({ ...connection, transport: 'host' })).rejects.toThrow('暂无 TypeSafe');
     expect(proxy).not.toHaveBeenCalled();
   });
