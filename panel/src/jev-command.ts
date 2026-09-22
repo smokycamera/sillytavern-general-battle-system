@@ -16,11 +16,20 @@ import {
   type TextExtractor,
 } from "../../vendor/jev-core/src/index.js";
 import { TavernJevAdapter } from "./jev-adapter.js";
+import {
+  encounterRequest,
+  applyEncounterSelection,
+  normalizeContextSettings,
+  type EncounterContextInput,
+  type JevContextSettings,
+  type JevEncounterContext,
+} from "./jev-context.js";
 
 export interface JevSettings {
   mode: "builtin" | "jev";
   ability: "novice" | "regular" | "skilled" | "expert" | "master";
   narrative: NarrativeContextPolicy;
+  context: JevContextSettings;
 }
 export interface JevBattleState {
   battleId: string;
@@ -28,6 +37,7 @@ export interface JevBattleState {
   sides: Partial<Record<"ally" | "enemy", Checkpoint>>;
   detail: string;
   hostStamp?: string;
+  context?: JevEncounterContext;
 }
 /** Change detector only; the actual commit guard uses the host revision and chat generation. */
 function battleStamp(battle: SmallBattle | MassBattle): string {
@@ -47,6 +57,7 @@ export interface JevConnection {
 export const defaultJevSettings = (): JevSettings => ({
   mode: "builtin",
   ability: "skilled",
+  context: normalizeContextSettings(),
   narrative: {
     windowSize: 6,
     roles: ["assistant"],
@@ -66,6 +77,10 @@ export function normalizeJevSettings(
     )
       ? value!.ability!
       : defaults.ability,
+    context: normalizeContextSettings(
+      value?.context,
+      value?.ability ?? defaults.ability,
+    ),
     narrative:
       n &&
       ["auto", "manual", "off"].includes(n.mode) &&
@@ -152,6 +167,60 @@ export class JevCommandController {
   cancel(): void {
     this.aborter?.abort();
   }
+  private async resolveContext(
+    input: EncounterContextInput,
+    connection: JevConnection,
+    signal: AbortSignal,
+    beforeRequest: () => void = () => {},
+  ): Promise<JevEncounterContext> {
+    const { base, request } = encounterRequest(input);
+    if (!request) return base;
+    try {
+      beforeRequest();
+      const answer = await this.post<
+        import("../../vendor/jev-core/src/index.js").ContextSelectionAnswer
+      >(
+        connection,
+        "select-context",
+        request,
+        AbortSignal.any([signal, AbortSignal.timeout(10000)]),
+      );
+      return applyEncounterSelection(input, base, request, answer);
+    } catch (error) {
+      if (signal.aborted) throw error;
+      base.detail =
+        "上下文判定暂不可用，沿用已有配置；可检查 JEV 服务版本与连接";
+      return base;
+    }
+  }
+  async prepareEncounter(
+    input: EncounterContextInput,
+    connection: JevConnection,
+    options: { valid(): boolean; onStatus?(): void },
+  ): Promise<JevEncounterContext> {
+    this.cancel();
+    const aborter = new AbortController();
+    this.aborter = aborter;
+    this.busy = true;
+    this.detail = "JEV 正在选择敌方指挥与战场，可随时暂停";
+    options.onStatus?.();
+    try {
+      if (!options.valid()) throw Error("准备信息已改变，请重新开始");
+      const result = await this.resolveContext(
+        input,
+        connection,
+        aborter.signal,
+      );
+      if (aborter.signal.aborted || !options.valid())
+        throw Error("JEV 准备已取消，尚未开始战斗");
+      return result;
+    } finally {
+      if (this.aborter === aborter) {
+        this.aborter = undefined;
+        this.busy = false;
+      }
+    }
+  }
   private async post<T>(
     connection: JevConnection,
     path: string,
@@ -192,6 +261,9 @@ export class JevCommandController {
     return meta.provider === "local"
       ? "服务可达，尚未配置 JEV 模型密钥"
       : "JEV 服务连接正常" +
+          (meta.bridge.selection
+            ? "，开战上下文选择可用"
+            : "，请更新服务以启用开战上下文选择") +
           (meta.bridge.context ? "，正文提取可用" : "，正文提取尚未配置");
   }
   /** A cancelled/stale candidate never touches the caller's battle or checkpoint. */
@@ -312,6 +384,47 @@ export class JevCommandController {
       this.detail = "JEV 正在规划，可随时暂停";
       options.onStatus?.();
       check();
+      if (
+        settings.context?.enemy === "auto" ||
+        settings.context?.enemy === "manual"
+      ) {
+        const tags = candidate.fieldTags;
+        saved.context = await this.resolveContext(
+          {
+            roster: candidate.combatants,
+            settings: settings.context,
+            setup: saved.context ?? {
+              mode: candidate instanceof SmallBattle ? "small" : "mass",
+              field:
+                tags.find((t) =>
+                  ["plains", "urban", "siege", "forest", "mountain"].includes(
+                    t,
+                  ),
+                ) ?? "plains",
+              lighting: tags.includes("night") ? "night" : "day",
+              mapLayout:
+                candidate instanceof SmallBattle &&
+                candidate.battlefield?.width === 5
+                  ? "indoor"
+                  : "standard",
+              objectiveMode: "auto",
+              siegeAttacker: "ally",
+            },
+            messages: options.messages ?? [],
+            windowSize: settings.narrative.windowSize,
+            roles: settings.narrative.roles,
+            phase: "battle",
+            previous: saved.context,
+            force: options.manualScan,
+          },
+          connection,
+          aborter.signal,
+          () => {
+            calls++;
+          },
+        );
+        check();
+      }
       if (candidate instanceof MassBattle && !options.manualScan)
         configureDrafts(candidate);
       if (Date.now() < this.cooldownUntil) modelFailed = true;
@@ -332,12 +445,16 @@ export class JevCommandController {
         );
         const observation = await adapter.observe();
         const commanders = adapter.commanders(
-          settings.ability,
+          side === "enemy"
+            ? (saved.context?.enemy.ability ?? settings.ability)
+            : settings.ability,
           side === "ally" && battle.allyTactic === "defensive"
             ? { hold: 85, risk: 20 }
             : side === "ally" && battle.allyTactic === "aggressive"
               ? { initiative: 85, risk: 80 }
-              : {},
+              : side === "enemy"
+                ? (saved.context?.enemy.style ?? {})
+                : {},
         );
         if (!commanders[0]?.unitIds.length) continue;
         let checkpoint = saved.sides[side] ?? null;
