@@ -128,7 +128,7 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
   const field = battle.battlefield!, s = tacticalSelection(battle, view, query);
   const { visible, actor, options, option, target, canControl } = s;
   const active = visible.find((u) => u.id === battle.active?.id), over = battle.isOver();
-  const activeLabel = active?.name ?? (battle.active?.side === 'enemy' ? '敌方隐藏单位（AI行动中）' : '未定位单位');
+  const activeLabel = active?.name ?? (battle.active?.side === 'enemy' ? '敌方隐藏单位' : '未定位单位');
   const events = over ? battle.log : battle.visibleLog('ally');
   const mode = view.mode === 'move' || view.mode === 'guard' ? view.mode : option?.id ?? 'weapon';
   const movement = actor && view.cell !== undefined ? battle.pathPreview(actor.id, view.cell) : undefined;
