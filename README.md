@@ -1,12 +1,16 @@
-当前版本：**0.2.0-rc.6**。
+# SillyTavern General Battle System
 
-面向 SillyTavern / TauriTavern 的原生前端战斗扩展。包含小型战斗与会战、单位档案、装备与库存、技能效果、战果成长、战报归档，以及聊天正文事件的预览和确认。
+**English** | [简体中文](README.zh-CN.md)
 
-## 安装
+Current version: **0.2.0-rc.6**.
 
-1. 在酒馆的 扩展 → 安装扩展 中填写 `https://github.com/smokycamera/sillytavern-general-battle-system`，安装后刷新页面。
-2. 酒馆世界书中导入并启用 [!通用战斗系统约束.json](assets/worldbook/!通用战斗系统约束.json)。
+A native frontend battle extension for SillyTavern / TauriTavern. It supports small-scale battles and larger engagements, unit profiles, equipment and inventory, skill effects, post-battle progression, battle-report archives, and preview/confirmation of battle events extracted from chat content.
 
-原有自动 AI 默认保留。可在设置页配置 JEV 服务，在战场工具栏选择“JEV 指挥”；详见 [接入与使用说明](docs/jev-integration.md)。
+## Installation
 
-依赖各自适用原许可证，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。问题反馈请使用本仓库 Issues，并附宿主版本、扩展版本和复现步骤。
+1. In SillyTavern, open **Extensions → Install Extension**, enter `https://github.com/smokycamera/sillytavern-general-battle-system`, install it, and refresh the page.
+2. Import and enable [!通用战斗系统约束.json](assets/worldbook/!通用战斗系统约束.json) in your World Info / lorebook.
+
+The existing automatic AI remains available as the default. You can configure a JEV service in the settings page and select **JEV Command** from the battlefield toolbar. See the [JEV integration and usage guide](docs/jev-integration.md) for details.
+
+Third-party dependencies remain under their original licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Please report issues through this repository's Issues page and include the host version, extension version, and reproduction steps.
