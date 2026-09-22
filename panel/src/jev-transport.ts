@@ -42,7 +42,9 @@ export async function jevRequest(connection: JevConnection, url: string, init: R
   const mode = connection.transport ?? 'auto';
   const bridge = !connection.protocol || connection.protocol === 'bridge';
   const transport = mode === 'auto'
-    ? connection.relayUrl?.trim() ? 'relay' : host && !bridge ? 'host' : 'direct'
+    ? tauri
+      ? connection.protocol === 'openai' ? 'host' : 'direct'
+      : connection.relayUrl?.trim() ? 'relay' : host && !bridge ? 'host' : 'direct'
     : mode;
   init.signal?.throwIfAborted();
 
@@ -100,7 +102,9 @@ export async function jevRequest(connection: JevConnection, url: string, init: R
 
 export function jevNetworkError(connection: JevConnection): string {
   const host = findHost();
-  if (connection.transport === 'relay' || (connection.transport !== 'direct' && connection.transport !== 'host' && connection.relayUrl?.trim()))
+  const tauri = !!(host?.__TAURITAVERN__ || host?.__TAURI_RUNNING__);
+  const mode = connection.transport ?? 'auto';
+  if (mode === 'relay' || (!tauri && mode === 'auto' && connection.relayUrl?.trim()))
     return '无法连接自建转发，请确认转发程序已启动、地址正确，并已允许当前酒馆来源';
   if (host && (host.__TAURITAVERN__ || host.__TAURI_RUNNING__) && connection.protocol === 'typesafe')
     return 'TypeSafe 浏览器连接失败，可能是 CORS 或网络问题。TauriTavern 当前没有可供扩展调用的 TypeSafe 通用原生 HTTP 通道；手机端不要运行 npm relay。OpenAI 兼容接口会自动走 TT 原生后端；TypeSafe 需服务端允许 CORS 或使用外部 HTTPS 转发';
