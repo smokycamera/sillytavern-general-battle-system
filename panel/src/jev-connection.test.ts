@@ -1,10 +1,45 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiEndpoint, directJevRequest, fetchJevModels, JEV_API_URL, readJevConnection, saveJevConnection, type JevConnection } from './jev-connection.js';
+import { apiEndpoint, directJevRequest, fetchJevModels, jevJsonRequest, JEV_API_URL, readJevConnection, saveJevConnection, type JevConnection } from './jev-connection.js';
 import { JevCommandController } from './jev-command.js';
 
 const connection: JevConnection = { protocol: 'typesafe', url: JEV_API_URL, token: 'test-key', model: 'jev-preview' };
 const response = (body: unknown) => new Response(JSON.stringify(body));
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+describe('protocol matching and backend HTTP diagnostics', () => {
+  it.each(['typesafe', 'openai'] as const)('continues to support third-party %s services regardless of model name', async protocol => {
+    const c = { ...connection, url: 'https://gateway.example/custom/v2/models/', protocol, model: 'jev-latest' };
+    const request = vi.fn<typeof fetch>(async () => response({ models: ['jev-latest'] }));
+    expect(await fetchJevModels(c, request)).toEqual(['jev-latest']);
+    expect(request.mock.calls[0]?.[0]).toBe('https://gateway.example/custom/v2/models');
+  });
+  it('rejects the official TypeSafe URL in OpenAI mode before a misleading successful model listing', async () => {
+    const request = vi.fn<typeof fetch>(async () => response({ models: ['jev-latest'] }));
+    await expect(fetchJevModels({ ...connection, protocol: 'openai' }, request)).rejects.toThrow('TypeSafe / JEV API');
+    expect(request).not.toHaveBeenCalled();
+  });
+  it('does not save a mismatched official connection or its key', () => {
+    const local = vi.fn(), session = vi.fn();
+    vi.stubGlobal('localStorage', { setItem: local });
+    vi.stubGlobal('sessionStorage', { setItem: session });
+    expect(() => saveJevConnection({ ...connection, protocol: 'openai' })).toThrow('/systemone');
+    expect(local).not.toHaveBeenCalled();
+    expect(session).not.toHaveBeenCalled();
+  });
+  it.each([200, 500, 502])('preserves the upstream 404 wrapped in host HTTP %s without echoing remote content', async status => {
+    const c: JevConnection = { ...connection, url: 'https://gateway.example/v1', protocol: 'openai' };
+    const request: typeof fetch = async () => new Response(JSON.stringify({ error: {
+      message: 'Failed to generate chat completion: Internal error: Custom OpenAI endpoint failed with status 404: {"detail":"Not Found","secret":"test-key"}',
+    } }), { status });
+    const error = await jevJsonRequest(c, request, apiEndpoint(c, 'chat/completions'), {}).catch(e => e as Error);
+    expect(error.message).toContain('HTTP 404');
+    expect(error.message).toContain('/chat/completions');
+    expect(error.message).not.toMatch(/test-key|Not Found|secret/);
+  });
+  it('keeps a plain non-JSON HTTP failure actionable', async () => {
+    await expect(fetchJevModels(connection, async () => new Response('private-response-body', { status: 404 })))
+      .rejects.toThrow('HTTP 404');
+  });
+});
 describe('remote JEV connections', () => {
   it.each(['https://api.typesafe.ai', JEV_API_URL + '/', JEV_API_URL + '/models', JEV_API_URL + '/systemone'])('normalizes %s without duplicating API suffixes', url => {
     expect(apiEndpoint({ ...connection, url }, 'models')).toBe(JEV_API_URL + '/models');
@@ -100,11 +135,11 @@ describe('remote JEV connections', () => {
       const answer = { model: 'test-model', selections: { lighting: { value: 'day', confidence: 0.9 } } };
       return response(protocol === 'bridge' ? answer : { choices: [{ message: { content: JSON.stringify(answer) } }] });
     });
-    expect(await new JevCommandController(request).testInference({ ...connection, protocol })).toContain('推理测试通过');
+    expect(await new JevCommandController(request).testInference({ ...connection, protocol, url: protocol === 'typesafe' ? JEV_API_URL : 'https://gateway.example/v1' })).toContain('推理测试通过');
     expect(request).toHaveBeenCalledTimes(1);
   });
   it('does not echo malformed model JSON into diagnostic text', async () => {
-    await expect(directJevRequest({ ...connection, protocol: 'openai' }, 'evaluate', { candidates: [{ id: 'attack' }] },
+    await expect(directJevRequest({ ...connection, protocol: 'openai', url: 'https://gateway.example/v1' }, 'evaluate', { candidates: [{ id: 'attack' }] },
       new AbortController().signal, async () => response({ choices: [{ message: { content: 'test-key private narrative' } }] })))
       .rejects.toThrow('模型未返回有效决策 JSON');
   });

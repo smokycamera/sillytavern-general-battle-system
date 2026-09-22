@@ -96,8 +96,8 @@ describe('JEV host and relay transport', () => {
   });
   it('overrides a Tauri host saved key even when the plugin has no key', async () => {
     const proxy = vi.fn<typeof fetch>(async () => models()); host(proxy, true);
-    await fetchJevModels({ ...connection, protocol: 'openai', token: '' });
-    expect(JSON.parse(String(proxy.mock.calls[0]?.[1]?.body))).toMatchObject({ custom_url: '', reverse_proxy: 'https://api.typesafe.ai/v1', proxy_password: '' });
+    await fetchJevModels({ ...connection, protocol: 'openai', url: 'https://gateway.example/v1', token: '' });
+    expect(JSON.parse(String(proxy.mock.calls[0]?.[1]?.body))).toMatchObject({ custom_url: '', reverse_proxy: 'https://gateway.example/v1', proxy_password: '' });
   });
   it('gives actionable Tauri TypeSafe CORS help and never invents a host endpoint', async () => {
     const proxy = vi.fn<typeof fetch>(); host(proxy, true);

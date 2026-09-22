@@ -21,7 +21,14 @@ export function connectionUrl(value: string): string {
     throw new JevConnectionError('远程 JEV 服务请使用 HTTPS');
   return url.href.replace(/\/+$/, '');
 }
+/** The official JEV service uses typed questions, not OpenAI chat completions. */
+export function validateJevProtocol(connection: JevConnection): void {
+  const url = new URL(connectionUrl(connection.url));
+  if (url.hostname.toLowerCase().replace(/\.$/, '') === 'api.typesafe.ai' && connection.protocol !== 'typesafe')
+    throw new JevConnectionError('TypeSafe 官方 JEV 使用 /v1/systemone；连接方式请选择“TypeSafe / JEV API”，不能使用 OpenAI 兼容接口或旧桥接。跨域问题请通过请求通道解决，不要切换 API 协议');
+}
 export function apiEndpoint(connection: JevConnection, path: string): string {
+  validateJevProtocol(connection);
   const url = new URL(connectionUrl(connection.url));
   url.pathname = url.pathname.replace(/\/(?:systemone|chat\/completions|models)$/, '').replace(/\/+$/, '');
   if (url.pathname === '/') url.pathname = '/v1';
@@ -45,6 +52,7 @@ export function readJevConnection(): JevConnection {
   } catch { return { url: JEV_API_URL, token: '', protocol: 'typesafe', model: 'jev-latest' }; }
 }
 export function saveJevConnection(connection: JevConnection): void {
+  validateJevProtocol(connection);
   const url = connectionUrl(connection.url);
   const relay = connection.relayUrl?.trim() ? connectionUrl(connection.relayUrl) : '';
   if (connection.transport === 'relay' && !relay) throw new JevConnectionError('请填写自建转发地址');
@@ -58,7 +66,39 @@ export function saveJevConnection(connection: JevConnection): void {
 function headers(connection: JevConnection): Record<string, string> {
   return { 'Content-Type': 'application/json', ...(connection.token.trim() ? { Authorization: 'Bearer ' + connection.token.trim() } : {}) };
 }
+/** Tauri's quiet endpoint can wrap a provider's 404 in its own HTTP 502 (or 200). */
+function backendHttpStatus(value: unknown, depth = 0): number | undefined {
+  if (depth > 3) return;
+  if (typeof value === 'string') {
+    const match = /endpoint failed with status ([45]\d{2})\b/i.exec(value.slice(0, 4096));
+    return match ? Number(match[1]) : undefined;
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+  const record = value as Record<string, unknown>;
+  for (const key of ['status', 'status_code']) {
+    const status = record[key];
+    if (typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 599) return status;
+  }
+  for (const key of ['error', 'message', 'detail']) {
+    const status = backendHttpStatus(record[key], depth + 1);
+    if (status !== undefined) return status;
+  }
+}
+function httpError(status: number, url: string, hostStatus?: number): JevConnectionError {
+  const hints: Record<number, string> = {
+    401: '请检查 API Key', 403: '请检查 API Key 和权限',
+    404: '请核对 API 基础路径、连接协议和模型 ID', 422: '请求格式不兼容，请检查所选协议和模型',
+    429: '服务限流或额度不足', 502: '上游或转发服务不可达',
+    503: '模型服务暂时不可用', 504: '上游或转发请求超时', 529: '模型服务过载',
+  };
+  // Display only known endpoint labels; user URLs and remote response text may contain secrets.
+  const endpoint = url.endsWith('/chat/completions') ? 'OpenAI 聊天接口 /chat/completions'
+    : url.endsWith('/systemone') ? 'TypeSafe JEV 接口 /systemone'
+      : url.endsWith('/models') ? '模型列表接口 /models' : '桥接接口';
+  return new JevConnectionError(`模型上游返回 HTTP ${status}${hostStatus !== undefined && hostStatus !== status ? `（宿主 HTTP ${hostStatus}）` : ''}，当前请求 ${endpoint}${hints[status] ? '；' + hints[status] : ''}`);
+}
 export async function jevJsonRequest(connection: JevConnection, request: typeof fetch, url: string, init: RequestInit): Promise<any> {
+  validateJevProtocol(connection);
   let response: Response;
   try { response = await jevRequest(connection, url, init, request); }
   catch (error) {
@@ -69,17 +109,17 @@ export async function jevJsonRequest(connection: JevConnection, request: typeof 
     if (error instanceof JevTransportError) throw error;
     throw new JevConnectionError(jevNetworkError(connection));
   }
-  if (!response.ok) {
-    const hints: Record<number, string> = {
-      401: '请检查 API Key', 403: '请检查 API Key 和权限',
-      404: '请检查 API 地址、协议和模型 ID', 422: '请求格式不兼容，请检查所选协议和模型',
-      429: '服务限流或额度不足', 502: '上游或转发服务不可达',
-      503: '模型服务暂时不可用', 504: '上游或转发请求超时', 529: '模型服务过载',
-    };
-    throw new JevConnectionError('模型服务返回 HTTP ' + response.status + (hints[response.status] ? '，' + hints[response.status] : ''));
-  }
   let body: any;
-  try { body = await response.json(); } catch { throw new JevConnectionError('模型服务未返回有效 JSON，请检查 API 地址和转发设置'); }
+  try { body = await response.json(); }
+  catch {
+    if (!response.ok) throw httpError(response.status, url);
+    throw new JevConnectionError('模型服务未返回有效 JSON，请检查 API 地址和转发设置');
+  }
+  if (!response.ok || body?.error) {
+    const upstream = backendHttpStatus(body);
+    if (upstream !== undefined) throw httpError(upstream, url, response.status);
+    if (!response.ok) throw httpError(response.status, url);
+  }
   if (body?.error) throw new JevConnectionError('模型服务或宿主返回错误，请检查 API 地址、Key、权限和模型兼容性');
   return body;
 }

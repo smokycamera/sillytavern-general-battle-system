@@ -1,6 +1,6 @@
 # 可选 JEV 指挥模式
 
-当前发布版本为 **0.2.0-rc.11**，内置 JEV **0.2.3**。原有自动 AI 保留为默认；新安装与旧存档不会自动切换到 JEV。
+当前发布版本为 **0.2.0-rc.12**，内置 JEV **0.2.3**。原有自动 AI 保留为默认；新安装与旧存档不会自动切换到 JEV。
 
 ## 更新与连接
 
@@ -17,6 +17,16 @@ API Key 只保存在当前浏览器会话；重新开启浏览器后可能需要
 官方接口依据：[模型列表](https://docs.typesafe.ai/models)、[决策接口](https://docs.typesafe.ai/api)。
 
 在准备界面或战场工具栏选择“JEV 指挥”。现有单次自动行动、敌方自动行动、全自动战斗与会战结算入口沿用。可随时暂停、收起面板或切回“原有自动 AI”；切换不会重掷正在进行的战斗。V1 旧规则继续使用原 AI。
+
+## Custom OpenAI 404（rc.12）
+
+如果看到 `Custom OpenAI endpoint failed with status 404: {"detail":"Not Found"}`，说明宿主已向 OpenAI 兼容端点发起请求并收到 404。应核对协议与 API 基础路径；这条错误本身不是浏览器 CORS 拒绝或模型响应超时。
+
+- 如果使用 `https://api.typesafe.ai/v1`：连接方式必须选 **TypeSafe / JEV API**，模型可填 `jev-latest`。JEV 评分使用 `/systemone`，不能为了使用宿主转发改成 OpenAI 兼容协议。rc.12 在保存和请求前明确阻止此误配，避免 GET 模型列表可达却使 POST 决策必然走错协议。
+- TauriTavern 的官方 TypeSafe 连接：遇到 CORS 时保留 TypeSafe 协议，按下文启动自建转发，再将请求通道设为“自建转发”、转发地址设为 `http://127.0.0.1:4318`。仅填写该地址不会启动转发程序。
+- 如果使用第三方 OpenAI 兼容服务：保留 OpenAI 协议，按服务文档填写 API 基础路径。插件也接受完整 `/chat/completions` 地址，并保留自定义前缀；不能只凭 404 推断每家服务都应该额外添加 `/v1`。
+
+Tauri 的 quiet 后端可能把上游 404 包装为宿主 HTTP 502；旧版只显示外层错误。rc.12 会显示“模型上游返回 HTTP 404（宿主 HTTP 502）”及当前请求的接口类别，方便区分。仅显示状态码和本地提示，不回显上游正文或完整 URL。原有 1 秒间隔、10 次自动重试规则保留。
 
 ## 跨域连接（rc.10）
 
@@ -117,4 +127,4 @@ JEV 0.2.3 仅增加通用“宿主提供问题与候选值”的选择接口、�
 
 rc.7 已有的无接触搜索、移动目标绑定、全组距离选敌、有限历史和置信度加权继续保留。模型接收本阵营最近 24 条 JEV 操作与回执，并非整场完整战报；普通行动仍在本地执行。
 
-本轮验证见 [rc.11 重试与诊断验收](jev-retry-validation.md)，前一轮连接验证见 [rc.10 跨域验收](jev-cors-validation.md)。开战上下文验证见 [rc.8 定向验收](jev-context-validation-20260922.md)，上一轮广泛战斗验证见 [rc.7 指挥验收](jev-command-validation-20260922.md)。本轮未重复全量战斗测试或对用户实际聊天运行测试。
+本轮验证见 [rc.12 协议与 404 验收](jev-endpoint-validation.md)，重试验证见 [rc.11 重试与诊断验收](jev-retry-validation.md)，前一轮连接验证见 [rc.10 跨域验收](jev-cors-validation.md)。开战上下文验证见 [rc.8 定向验收](jev-context-validation-20260922.md)，上一轮广泛战斗验证见 [rc.7 指挥验收](jev-command-validation-20260922.md)。本轮未重复全量战斗测试或对用户实际聊天运行测试。
