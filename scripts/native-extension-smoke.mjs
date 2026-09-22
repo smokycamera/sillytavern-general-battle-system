@@ -9,6 +9,7 @@ const metadataMode = process.env.TB_METADATA_MODE ?? 'metadata-only';
 assert.ok(['metadata-only', 'legacy-full'].includes(metadataMode), 'Unknown metadata save mode');
 const artifacts = path.resolve('artifacts/native-extension-smoke', metadataMode); mkdirSync(artifacts, { recursive: true });
 const disk = new Map(); const results = []; const errors = [];
+let jevDelay = 0; let jevRequests = 0;
 const fixture = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><textarea id="send_textarea">未发送的玩家草稿 | /send {{macro}}</textarea><input id="pending-file" value="fixture-attachment.txt"><main id="chat"></main><script>
 window.handlers = new Map(); window.__failure=false; window.__delay=0; window.__generations=0; window.__prompts={};window.__metadataSaves=0;window.__fullSaves=0;
 window.persistFixture=async full=>{const snapshot={id:context.chatId,metadata:structuredClone(context.chatMetadata),...(full?{chat:structuredClone(context.chat)}:{})};if(window.__delay)await new Promise(r=>setTimeout(r,window.__delay));if(!window.__failure){const response=await fetch(full?'/fixture/save':'/fixture/metadata',{method:'POST',body:JSON.stringify(snapshot)});if(!response.ok)throw Error('Fixture save failed: '+response.status)}};
@@ -30,6 +31,8 @@ const server = http.createServer(async (req,res) => {
     if (req.method === 'POST') {
       const chunks=[];for await(const chunk of req)chunks.push(chunk);const data=JSON.parse(Buffer.concat(chunks).toString('utf8'));
       res.setHeader('Content-Type','application/json');
+      if(req.url==='/jev/api/bridge/evaluate') { jevRequests++; if(jevDelay) await new Promise(resolve=>setTimeout(resolve,jevDelay));res.end(JSON.stringify({model:'browser-test-jev',confidence:0.9,scores:Object.fromEntries(data.candidates.map(c=>[c.id,0.5]))}));return; }
+      if(req.url==='/jev/api/bridge/context') {res.end(JSON.stringify({goals:[],battleType:'skirmish'}));return;}
       if(req.url==='/fixture/save'){disk.set(data.id,structuredClone(data));res.end('{}');return;}
       if(req.url==='/fixture/metadata'){disk.set(data.id,{...(disk.get(data.id)??{chat:[]}),id:data.id,metadata:structuredClone(data.metadata)});res.end('{}');return;}
       if(req.url==='/api/chats/get'){const state=disk.get(data.file_name);res.end(JSON.stringify([{chat_metadata:state?.metadata??{}},...(state?.chat??[])]));return;}
@@ -43,6 +46,9 @@ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const url=`http://127.0.0.1:${server.address().port}/`;
 const browser=await chromium.launch({...(process.env.TB_BROWSER?{executablePath:process.env.TB_BROWSER}:{}),headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1000}});
+const jevNetwork=[];
+page.on('requestfailed',request=>{if(request.url().includes('/api/bridge/'))jevNetwork.push({url:request.url(),error:request.failure()?.errorText});});
+page.on('response',response=>{if(response.url().includes('/api/bridge/'))jevNetwork.push({url:response.url(),status:response.status()});});
 page.on('pageerror',error=>errors.push(String(error)));
 const check=(name,condition)=>{assert.ok(condition,name);results.push(name);console.log('PASS '+name)};
 const ready=()=>page.waitForFunction(()=>window.__tavernBattleNative?.service.status().phase==='ready');
@@ -96,6 +102,27 @@ try {
   await frame.locator('[data-action="workspace-tab"][data-tab="battle"]').first().click();
   await frame.locator('[data-action="small-start"]').first().click();await page.waitForFunction(()=>!!window.__tavernBattleNative.service.snapshot().battle);await idle(frame);
   check('原生面板可以开始并保存小战',(await state()).battle.kind==='small');
+  const battleMode=frame.locator('[data-workspace="battle"] [data-role="jev-mode"]');
+  check('旧档默认使用原有自动 AI',await battleMode.inputValue()==='builtin');
+  const panelFrame=page.frames().find(f=>f.url().includes('/panel/index.html'));
+  await panelFrame.evaluate(service=>{localStorage.setItem('tb:jev:url',service);sessionStorage.setItem('tb:jev:token','smoke-token')},url+'jev');
+  await battleMode.selectOption('jev');await idle(frame);
+  const beforeJev=JSON.stringify((await state()).battle);
+  jevDelay=2000; await frame.locator('[data-role="full-auto-battle"]').check();
+  for(let i=0;i<200&&!jevRequests;i++)await new Promise(resolve=>setTimeout(resolve,25));
+  if(!jevRequests)console.error('JEV network diagnostics',jevNetwork);
+  check('JEV模式向服务发送真实战场候选',jevRequests>0);
+  await frame.locator('[data-role="full-auto-battle"]').uncheck();await idle(frame);
+  check('等待模型时可立即暂停且不提交半次动作',JSON.stringify((await state()).battle)===beforeJev);
+  jevDelay=0;
+  await frame.locator('[data-role="full-auto-battle"]').check();
+  await page.waitForFunction(()=>Object.values(__tavernBattleNative.service.snapshot().jevBattle?.sides??{}).some(cp=>cp.metrics.actions>0));
+  await frame.locator('[data-role="full-auto-battle"]').uncheck();await idle(frame);
+  const planned=await state();
+  check('JEV计划和动作回执随战斗一起持久化',Object.values(planned.jevBattle.sides).some(cp=>cp.receipts.length>0&&!cp.pending)&&!JSON.stringify(planned).includes('smoke-token'));
+  await page.screenshot({path:path.join(artifacts,'jev-desktop.png')});
+  await battleMode.selectOption('builtin');await idle(frame);
+  check('可切回原有自动 AI',(await state()).jevSettings.mode==='builtin');
   await frame.locator('[data-role="full-auto-battle"]').check();await idle(frame);
   await page.waitForTimeout(850);await page.evaluate(()=>__tavernBattleNative.close());await page.waitForTimeout(500);
   const paused=await state();await page.waitForTimeout(800);check('收起面板后全自动暂停',JSON.stringify((await state()).battle)===JSON.stringify(paused.battle));

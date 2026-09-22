@@ -2,6 +2,8 @@
 
 Tavern Battle's custom noncommercial license applies only to material the project has the right to license. Third-party components retain their own licenses.
 
+- **JEV command core**: the source copy in `vendor/jev-core` is distributed under the same Tavern Battle Noncommercial License 1.0 with the author's authorization. Its exact source revision, license and file hashes are recorded in `vendor/jev-core/source.json`. Game-specific adapters stay outside this copy.
+
 - **Vite** (MIT): the production build includes its generated module preload helpers. The complete Vite license distribution, including its bundled dependency notices, is preserved in `licenses/Vite-LICENSE.md`.
 - **TypeScript** (Apache-2.0), **Vitest** (MIT), **Playwright Core** (Apache-2.0), **vite-plugin-singlefile** (MIT): development, build or validation tools. Their packages and license files are provided by npm according to `package-lock.json`; the extension does not bundle their test or compiler implementations.
 - **SillyTavern**, **TauriTavern** and **TavernHelper / JS-Slash-Runner** are separate host or companion projects. Their application code is not distributed as part of the native extension. The names identify interoperability and tested environments; they do not imply affiliation or endorsement.

@@ -1,44 +1,24 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "0.2.0-rc.5",
-  "builtAt": "2026-09-20T17:14:13.717Z",
-  "sourceFingerprint": "72c68df456f9816639bd222f9603348d85e82e08c7423e2a2ff80c524ca946ca",
+  "version": "0.2.0-rc.6",
+  "builtAt": "2026-09-22T06:22:02.087Z",
+  "sourceFingerprint": "87ac0d23d1b376e3f1624baacd0c0e0edc44d7df17352e3ce3a75215a54481c8",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
-    {
-      "path": "COMMERCIAL-LICENSE.md",
-      "bytes": 758,
-      "sha256": "bae3de53ef94b0f7df53e294185aa3551e669726e12fb7726e6bcb843b5393cc"
-    },
-    {
-      "path": "LICENSE",
-      "bytes": 3749,
-      "sha256": "1daa20477fb37b106fb8f3be18e6835ccfd6f01fc7f83faccc6897f7f156181d"
-    },
-    {
-      "path": "README.md",
-      "bytes": 676,
-      "sha256": "605960c6d676e04d5010989b60746221288e8ba50662d929dbaf0b449c2426d2"
-    },
-    {
-      "path": "THIRD_PARTY_NOTICES.md",
-      "bytes": 1179,
-      "sha256": "d9df73c3b55697d4fd7a3929838b8eda35b893abc35cf76a77bc80c0aca061b4"
-    },
     {
       "path": "dist/assets/panel-BAWJMYI4.css",
       "bytes": 7714,
       "sha256": "d8e150b9ba2a9668681edf533c5ebfa2a0c588c1ef4fdbff02e2b456b28f93f9"
     },
     {
-      "path": "dist/assets/panel-DWFCLOff.js",
-      "bytes": 250971,
-      "sha256": "9ff9eced3098b66e4b29e2676e1ec44ef8a17b3107c26a27407dcb134ca26cfb"
+      "path": "dist/assets/panel-BusiZ3dX.js",
+      "bytes": 336885,
+      "sha256": "0903c7ffb8c768548b9cfde07a0362588f91a998c7c7b0d81b511d3a62d6b379"
     },
     {
-      "path": "dist/assets/preferences-ho3Sy3e1.js",
-      "bytes": 481497,
-      "sha256": "a70d07c1f0502aa0ef53047b895aa3d74bf2e538d483651492493f2b95ec8ff6"
+      "path": "dist/assets/preferences-D06eQWRj.js",
+      "bytes": 481508,
+      "sha256": "fe4c4dbfc536242ab34c41d11c3f770fd708728e4624bf0b41bc1c5b0c9c226f"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -51,9 +31,19 @@
       "sha256": "9a37ce8c112dee67d236b2b8876d36bd6a3ca3a9d3df4fae330b568eb2adcd81"
     },
     {
+      "path": "COMMERCIAL-LICENSE.md",
+      "bytes": 758,
+      "sha256": "bae3de53ef94b0f7df53e294185aa3551e669726e12fb7726e6bcb843b5393cc"
+    },
+    {
       "path": "docs/extension-migration-assessment-20260919.md",
       "bytes": 10268,
       "sha256": "290adc8cd5a613d8a843da785921b5f8035c7daf7c567b74906958e78161f4e2"
+    },
+    {
+      "path": "docs/jev-integration.md",
+      "bytes": 3404,
+      "sha256": "db7da9c1b31680034c065706e12851eb387f83b1322e92b34b286905b5e9269e"
     },
     {
       "path": "docs/native-extension-migration-plan-20260919.md",
@@ -78,7 +68,12 @@
     {
       "path": "dist/index.js",
       "bytes": 70900,
-      "sha256": "aceb9cb4a6d005d2049925abcceaf332f585a2049d7447906feb9a7f08cd82c9"
+      "sha256": "e2ff61b0d35b469daa09adb8d576dfc3718e22614777870a6cae85a5beede11d"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 3749,
+      "sha256": "1daa20477fb37b106fb8f3be18e6835ccfd6f01fc7f83faccc6897f7f156181d"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -88,17 +83,27 @@
     {
       "path": "manifest.json",
       "bytes": 173,
-      "sha256": "dfb4aa382922e8546761b619d678c23d6901c7682fae7a474691f581485afe4c"
+      "sha256": "deb3344dd5cce5b4f2c1d4169a9607d0f62dad46aee8b63029f766da75299c31"
     },
     {
       "path": "dist/panel/index.html",
       "bytes": 43276,
-      "sha256": "656537363c2eab13180dd9fd297ba3b1cd7512c5bc4b7d0a85df2185afb106a2"
+      "sha256": "2c5cacdec32fd33736a6ff06888bf2b10c5e5bc3439a12cc196acef0982b0d2a"
+    },
+    {
+      "path": "README.md",
+      "bytes": 879,
+      "sha256": "78cda87566a24d4b40894c6f7f7e720e2e50155c3cfa4ef68cd3fc671c972850"
     },
     {
       "path": "release/current-baseline.json",
       "bytes": 2532,
       "sha256": "8dfb3599bec3e692d47ebf6fd631647326cf5fdeab8c592637c0463aa614e8c5"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "bytes": 1489,
+      "sha256": "72a745421875fa61d43571ff0db127f427babc3599317d7c566fba794fa748e6"
     }
   ],
   "validation": {

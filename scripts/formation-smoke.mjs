@@ -25,27 +25,28 @@ try {
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   await page.evaluate((html) => { document.querySelector('#panel').srcdoc = html; }, html);
-  const p = page.frameLocator('#panel'); await p.locator('.formation-grid').waitFor();
+  const p = page.frameLocator('#panel');
+  const idle = () => p.locator('body:not([aria-busy="true"])').waitFor(); await p.locator('.formation-grid').waitFor();
   async function openDetails(selector) {
     const d = p.locator(selector);
-    if (!await d.evaluate((el) => el.open)) await d.locator(':scope > summary').click();
+    if (!await d.evaluate((el) => el.open)) await d.locator(':scope > summary').click(); await idle();
   }
   async function selectActor(id) {
     await openDetails('.formation-order-list');
-    await p.locator('[data-action="formation-select-actor"][data-id="' + id + '"]').click();
+    await p.locator('[data-action="formation-select-actor"][data-id="' + id + '"]').click(); await idle();
   }
   async function choose(id, type) {
     await selectActor(id); await openDetails('.formation-adjust');
-    await p.locator('[data-role="formation-order"]').selectOption(type);
+    await p.locator('[data-role="formation-order"]').selectOption(type); await idle();
   }
-  async function target(id) { await openDetails('.formation-adjust'); await p.locator('[data-role="formation-target"]').selectOption(id); }
+  async function target(id) { await openDetails('.formation-adjust'); await p.locator('[data-role="formation-target"]').selectOption(id); await idle(); }
   async function ability(id, label) {
     await selectActor(id); await openDetails('.formation-adjust');
     const value = await p.locator('[data-role="formation-order"] option').evaluateAll((options, label) => options.find((o) => o.textContent.includes(label))?.value, label);
     assert.ok(value, '实际技能存在：' + label);
-    await p.locator('[data-role="formation-order"]').selectOption(value);
+    await p.locator('[data-role="formation-order"]').selectOption(value); await idle();
   }
-  async function issue() { await p.locator('[data-action="formation-issue"]').click(); }
+  async function issue() { await p.locator('[data-action="formation-issue"]').click(); await idle(); }
   async function task(id) { await selectActor(id); return p.locator('[data-role="formation-order"]').inputValue(); }
   async function checkLayout() {
   const stable = await page.evaluate(() => JSON.stringify(window.readBattle())); mkdirSync('panel/smoke-shots', { recursive: true });
@@ -57,7 +58,7 @@ try {
         hit: [...el.querySelectorAll('button')].every((b) => b.getBoundingClientRect().height >= 44 && b.getBoundingClientRect().width >= 44) }));
       assert.equal(layout.count, 18); assert.ok(layout.hit); assert.ok(layout.overflow <= 1, JSON.stringify({ width, ...layout }));
       if (await p.locator('.formation-mobile-summary').isVisible()) {
-        await p.locator('.formation-mobile-summary').click();
+        await p.locator('.formation-mobile-summary').click(); await idle();
         const command = await p.locator('.formation-actor').boundingBox(), dock = await p.locator('.mass-controls').boundingBox();
         if (theme === 'dark' && width <= 390) await page.screenshot({ path: 'panel/smoke-shots/formation-command-' + width + '.png' });
         assert.ok(command.y >= -1 && command.y + command.height <= dock.y, '当前任务入口可返回可见编队信息：' + JSON.stringify({ width, command, dock }));
@@ -71,19 +72,19 @@ try {
   }
   if (process.argv.includes('--layout-only')) {
     const facts = await page.evaluate(() => JSON.stringify(window.readBattle()));
-    await p.locator('[data-action="formation-unit"][data-id="reserve"]').click();
+    await p.locator('[data-action="formation-unit"][data-id="reserve"]').click(); await idle();
     assert.match(await p.locator('.formation-actor').innerText(), /预备步队/);
     await p.locator('[data-action="formation-cell"][data-node="ally:中军:rear"]').focus();
     await p.locator('[data-action="formation-cell"][data-node="ally:中军:rear"]').press('Enter');
     assert.equal(await page.evaluate(() => window.readPanel().orderDraft.reserve.type), 'rank-forward');
     assert.equal(await p.locator('[data-formation="ally:中军:rear"].destination').count(), 1);
-    await p.locator('[data-action="formation-cancel"]').click();
+    await p.locator('[data-action="formation-cancel"]').click(); await idle();
     await choose('a', 'volley');
-    await p.locator('[data-action="formation-unit"][data-id="enemy"]').click();
+    await p.locator('[data-action="formation-unit"][data-id="enemy"]').click(); await idle();
     assert.equal(await page.evaluate(() => window.readPanel().orderDraft.a.targetId), 'enemy');
     assert.equal(await p.locator('[data-id="enemy"].targeted').count(), 1);
     assert.match(await p.locator('.formation-preview').innerText(), /命中/);
-    await p.locator('[data-action="formation-cancel"]').click();
+    await p.locator('[data-action="formation-cancel"]').click(); await idle();
     assert.equal(await page.evaluate(() => JSON.stringify(window.readBattle())), facts);
     await p.locator('.formation-adjust').evaluate((el) => { el.open = false; });
     console.log('✓ 地图点队、键盘选阵位、机动草案与落点、点敌选目标、取消均不推进战斗/RNG');
@@ -101,12 +102,12 @@ try {
   assert.equal(snap.orders.find((o) => o.unitId === 'a').type, 'ability');
   assert.equal(snap.combatants.find((u) => u.id === 'hero').resources.reserve, 1);
   await choose('reserve', 'hold');
-  await p.locator('.mass-controls [data-action="formation-fill"]').click();
+  await p.locator('.mass-controls [data-action="formation-fill"]').click(); await idle();
   assert.equal(await task('reserve'), 'hold');
   assert.equal(await p.locator('[data-action="mass-resolve"]').count(), 1);
   const control = await p.locator('[data-action="mass-resolve"]').boundingBox();
   assert.ok(control.y >= 0 && control.y + control.height <= 844, '自动军令后执行按钮仍可见');
-  await p.locator('[data-action="mass-resolve"]').click();
+  await p.locator('[data-action="mass-resolve"]').click(); await idle();
   snap = await page.evaluate(() => window.readBattle());
   assert.equal(snap.round, 2); assert.equal(snap.combatants.find((u) => u.id === 'hero').resources.reserve, 0);
   assert.ok(snap.combatants.some((u) => u.summonerId === 'hero'));
@@ -114,7 +115,7 @@ try {
   assert.equal(snap.lastPhases.length, 5);
   assert.equal(await task('reserve'), 'hold');
   const inspecting = await page.evaluate(() => JSON.stringify(window.readBattle()));
-  await p.locator('[data-action="formation-unit"][data-id="enemy"]').click();
+  await p.locator('[data-action="formation-unit"][data-id="enemy"]').click(); await idle();
   assert.equal(await task('reserve'), 'hold', '查看敌人不会把继承的休整改成攻击');
   assert.equal(await page.evaluate(() => JSON.stringify(window.readBattle())), inspecting);
   assert.match(await p.locator('.mass-round-feedback').innerText(), /第1轮已执行/);
@@ -135,7 +136,7 @@ try {
   }
   const reserve = forward.storage.find((u) => u.id === 'reserve'); reserve.traits.push('vanguard'); reserve.snapshot.traits.push('vanguard');
   await page.evaluate(({ save, html }) => { window.loadFixture(save); document.querySelector('#panel').srcdoc = html; }, { save: forward, html });
-  await p.locator('[data-action="mass-start"]').click(); await p.locator('.formation-grid').waitFor();
+  await p.locator('[data-action="mass-start"]').click(); await idle(); await p.locator('.formation-grid').waitFor();
   const deployed = await page.evaluate(() => window.readBattle());
   assert.ok(deployed.combatants.find((u) => u.id === 'reserve').tags.includes('rank:rear'));
   assert.equal(deployed.combatants.find((u) => u.id === 'reserve').vanguardOrigin, 'ally:中军:reserve');
@@ -147,7 +148,7 @@ try {
   await page.evaluate(({ save, html }) => { window.loadFixture(save); document.querySelector('#panel').srcdoc = html; }, { save: flightFixture, html }); await p.locator('.formation-grid').waitFor();
   await choose('a', 'rank-forward');
   assert.match(await p.locator('.formation-preview').innerText(), /敌方中军支援空域/);
-  await issue(); await p.locator('.mass-controls [data-action="mass-resolve"]').click();
+  await issue(); await p.locator('.mass-controls [data-action="mass-resolve"]').click(); await idle();
   let flying = await page.evaluate(() => window.readBattle()); assert.equal(flying.combatants.find((u) => u.id === 'a').formationPosition, 'enemy:中军:rear'); assert.equal(flying.combatants.find((u) => u.id === 'a').airborne, true);
   assert.match(await p.locator('[data-formation="enemy:中军:rear"]').innerText(), /我 ·.*空中/s);
   await page.setViewportSize({ width: 390, height: 844 }); await p.locator('.formation-grid').evaluate((el) => el.scrollIntoView({ block: 'start' })); await page.screenshot({ path: 'panel/smoke-shots/mass-flight-cross-390.png' });
@@ -155,8 +156,8 @@ try {
   assert.match(await p.locator('.formation-preview').innerText(), /先降落/);
   await issue(); const beforeDive = await page.evaluate(() => JSON.stringify(window.readBattle()));
   await p.locator('body').evaluate(() => { const original = Storage.prototype.setItem; Storage.prototype.setItem = function (...args) { if (window.parent.failSave) throw Error('test quota'); return original.apply(this, args); }; }); await page.evaluate(() => { window.failSave = true; });
-  await p.locator('.mass-controls [data-action="mass-resolve"]').click(); assert.equal(await page.evaluate(() => JSON.stringify(window.readBattle())), beforeDive); assert.match(await p.locator('[data-role="save-status"]').innerText(), /未保存/);
-  await page.evaluate(() => { window.failSave = false; }); await p.locator('.mass-controls [data-action="mass-resolve"]').click();
+  await p.locator('.mass-controls [data-action="mass-resolve"]').click(); await idle(); assert.equal(await page.evaluate(() => JSON.stringify(window.readBattle())), beforeDive); assert.match(await p.locator('[data-role="save-status"]').innerText(), /未保存/);
+  await page.evaluate(() => { window.failSave = false; }); await p.locator('.mass-controls [data-action="mass-resolve"]').click(); await idle();
   flying = await page.evaluate(() => window.readBattle()); assert.equal(flying.combatants.find((u) => u.id === 'a').airborne, false); assert.equal(flying.combatants.find((u) => u.id === 'a').fatigue, 1.5);
   assert.ok(flying.log.some((e) => e.resolution?.attackerId === 'a'));
   await page.evaluate((html) => { document.querySelector('#panel').srcdoc = html; }, html); await p.locator('.formation-grid').waitFor(); assert.equal(await page.evaluate(() => JSON.stringify(window.readBattle())), JSON.stringify(flying));
@@ -169,8 +170,8 @@ try {
   await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: 'panel/smoke-shots/mass-recovery-preview-390.png' });
   await issue(); const recoveryBefore = await page.evaluate(() => JSON.stringify(window.readPanel()));
   await p.locator('body').evaluate(() => { const original = Storage.prototype.setItem; Storage.prototype.setItem = function (...args) { if (window.parent.failSave) throw Error('test quota'); return original.apply(this, args); }; }); await page.evaluate(() => { window.failSave = true; });
-  await p.locator('.mass-controls [data-action="mass-resolve"]').click(); assert.equal(await page.evaluate(() => JSON.stringify(window.readPanel())), recoveryBefore);
-  await page.evaluate(() => { window.failSave = false; }); await p.locator('.mass-controls [data-action="mass-resolve"]').click();
+  await p.locator('.mass-controls [data-action="mass-resolve"]').click(); await idle(); assert.equal(await page.evaluate(() => JSON.stringify(window.readPanel())), recoveryBefore);
+  await page.evaluate(() => { window.failSave = false; }); await p.locator('.mass-controls [data-action="mass-resolve"]').click(); await idle();
   const recovered = await page.evaluate(() => window.readBattle()), recoveredUnit = recovered.combatants.find((u) => u.id === 'a');
   assert.equal(recoveredUnit.hp, 90); assert.equal(recoveredUnit.recoverableWounded, 0); assert.equal(recovered.combatants.find((u) => u.id === 'hero').resources['item:mass-dose'], 1);
   assert.ok(recovered.log.some((l) => l.text.includes('再生 +3')));
@@ -182,7 +183,7 @@ try {
   await page.evaluate(({ save, html }) => { window.loadFixture(save); document.querySelector('#panel').srcdoc = html; }, { save: moraleCase, html }); await p.locator('.formation-grid').waitFor();
   await selectActor('a'); assert.match(await p.locator('.formation-status').innerText(), /恐惧压力8.*攻击降低1/);
   await choose('a', 'volley'); await target('enemy'); await issue();
-  await choose('reserve', 'rank-forward'); await issue(); await p.locator('.mass-controls [data-action="mass-resolve"]').click();
+  await choose('reserve', 'rank-forward'); await issue(); await p.locator('.mass-controls [data-action="mass-resolve"]').click(); await idle();
   const supported = await page.evaluate(() => window.readBattle()); const shot = supported.log.find((l) => l.resolution?.attackerId === 'a').resolution;
   const firingUnit = supported.combatants.find((u) => u.id === 'a');
   assert.equal(shot.netAtk, firingUnit.base.atk + firingUnit.weapon.pointBlankPenalty); assert.match(shot.atkDetail, /抵近射击/);
@@ -191,13 +192,13 @@ try {
   await page.evaluate(({ save, html }) => { window.loadFixture(save); document.querySelector('#panel').srcdoc = html; }, { save: panicFixture, html }); await p.locator('.formation-grid').waitFor();
   const panicBefore = await page.evaluate(() => JSON.stringify(window.readBattle()));
   await p.locator('body').evaluate(() => { const original = Storage.prototype.setItem; Storage.prototype.setItem = function (...args) { if (window.parent.failSave) throw Error('test quota'); return original.apply(this, args); }; }); await page.evaluate(() => { window.failSave = true; });
-  await p.locator('.mass-controls [data-action="mass-resolve"]').click(); assert.equal(await page.evaluate(() => JSON.stringify(window.readBattle())), panicBefore);
-  await page.evaluate(() => { window.failSave = false; }); await p.locator('.mass-controls [data-action="mass-resolve"]').click(); const routed = await page.evaluate(() => window.readBattle());
+  await p.locator('.mass-controls [data-action="mass-resolve"]').click(); await idle(); assert.equal(await page.evaluate(() => JSON.stringify(window.readBattle())), panicBefore);
+  await page.evaluate(() => { window.failSave = false; }); await p.locator('.mass-controls [data-action="mass-resolve"]').click(); await idle(); const routed = await page.evaluate(() => window.readBattle());
   assert.equal(routed.combatants.find((u) => u.id === 'a').status, 'routing'); assert.deepEqual(routed.combatants.find((u) => u.id === 'a').moraleState.terrorSeen, ['enemy']);
   assert.equal(routed.combatants.find((u) => u.id === 'hero').hp, 100); assert.doesNotMatch(await p.locator('body').innerText(), /主帅倒下/); await selectActor('a'); assert.match(await p.locator('.formation-status').innerText(), /剩余3次机会/);
   await page.setViewportSize({ width: 390, height: 844 }); await p.locator('.formation-command').evaluate((el) => el.scrollIntoView({ block: 'center' })); await page.screenshot({ path: 'panel/smoke-shots/mass-rally-pending-390.png' });
   await page.evaluate((html) => { document.querySelector('#panel').srcdoc = html; }, html); await p.locator('.formation-grid').waitFor(); assert.equal(await page.evaluate(() => JSON.stringify(window.readBattle())), JSON.stringify(routed));
-  await p.locator('.mass-controls [data-action="mass-resolve"]').click(); const rallied = await page.evaluate(() => window.readBattle());
+  await p.locator('.mass-controls [data-action="mass-resolve"]').click(); await idle(); const rallied = await page.evaluate(() => window.readBattle());
   assert.equal(rallied.combatants.find((u) => u.id === 'a').status, 'ready'); assert.equal(rallied.combatants.find((u) => u.id === 'a').moraleState.attempts, 1); assert.equal(rallied.commanderLost, false);
   console.log('✓ 会战惊退：双写失败回退触发/RNG→重试只触发一次→随队未阵亡/剩余机会可见→重开→下一整轮重整并恢复指挥');
   }
