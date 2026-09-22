@@ -170,15 +170,15 @@ describe('JEV host and relay transport', () => {
     const aborter = new AbortController(); aborter.abort(new DOMException('Timeout', 'TimeoutError'));
     await expect(jevJsonRequest(connection, vi.fn(), 'https://api.typesafe.ai/v1/models', { signal: aborter.signal })).rejects.toThrow('超时');
   });
-  it('persists transport settings separately from the session-only key and preserves rc.9 choices', () => {
+  it('persists transport settings and API key locally while preserving rc.9 choices', () => {
     const local = new Map<string, string>([['tb:jev:url', connection.url], ['tb:jev:protocol', 'typesafe']]), session = new Map<string, string>();
     for (const [name, data] of [['localStorage', local], ['sessionStorage', session]] as const)
       vi.stubGlobal(name, { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => data.set(key, value) });
     expect(readJevConnection()).toMatchObject({ protocol: 'typesafe', url: connection.url });
     const c: JevConnection = { ...connection, transport: 'relay', relayUrl: 'http://127.0.0.1:4318' };
     saveJevConnection(c); expect(readJevConnection()).toEqual(c);
-    expect([...local.values()]).not.toContain(connection.token);
-    session.clear(); expect(readJevConnection().token).toBe('');
+    expect(local.get('tb:jev:token')).toBe(connection.token);
+    session.clear(); expect(readJevConnection().token).toBe(connection.token);
   });
   it.each(['http://public.example', 'https://key@relay.example', 'https://relay.example?key=test', 'file:///tmp/relay'])('rejects invalid relay %s before network access', async relayUrl => {
     const request = vi.fn<typeof fetch>();
