@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "0.2.0-rc.5",
-  "builtAt": "2026-09-22T05:39:32.854Z",
-  "sourceFingerprint": "d432374c6482043b97ad56daff879c01443569b3bfaee546bdf31a12a3d88c42",
+  "version": "0.2.0-rc.6",
+  "builtAt": "2026-09-22T06:21:09.367Z",
+  "sourceFingerprint": "87ac0d23d1b376e3f1624baacd0c0e0edc44d7df17352e3ce3a75215a54481c8",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -11,9 +11,9 @@
       "sha256": "d8e150b9ba2a9668681edf533c5ebfa2a0c588c1ef4fdbff02e2b456b28f93f9"
     },
     {
-      "path": "dist/assets/panel-jj-jJGRd.js",
-      "bytes": 336539,
-      "sha256": "59e2de9b766486aa0c4f299c7c61808e2d7cc257fccd8faeb08424940fa1704c"
+      "path": "dist/assets/panel-BusiZ3dX.js",
+      "bytes": 336885,
+      "sha256": "0903c7ffb8c768548b9cfde07a0362588f91a998c7c7b0d81b511d3a62d6b379"
     },
     {
       "path": "dist/assets/preferences-D06eQWRj.js",
@@ -42,8 +42,8 @@
     },
     {
       "path": "docs/jev-integration.md",
-      "bytes": 2819,
-      "sha256": "13083c2ee925ac84eaa904002cac3d968e6e3c9c69cefc223aa8e46aa51c1c35"
+      "bytes": 3404,
+      "sha256": "db7da9c1b31680034c065706e12851eb387f83b1322e92b34b286905b5e9269e"
     },
     {
       "path": "docs/native-extension-migration-plan-20260919.md",
@@ -68,7 +68,7 @@
     {
       "path": "dist/index.js",
       "bytes": 70900,
-      "sha256": "03aba46cd27f8671980cbfedf9b47898faf53a5b7b0c049cb60c4efbb1364dc8"
+      "sha256": "e2ff61b0d35b469daa09adb8d576dfc3718e22614777870a6cae85a5beede11d"
     },
     {
       "path": "LICENSE",
@@ -83,17 +83,17 @@
     {
       "path": "manifest.json",
       "bytes": 173,
-      "sha256": "dfb4aa382922e8546761b619d678c23d6901c7682fae7a474691f581485afe4c"
+      "sha256": "deb3344dd5cce5b4f2c1d4169a9607d0f62dad46aee8b63029f766da75299c31"
     },
     {
       "path": "dist/panel/index.html",
       "bytes": 43276,
-      "sha256": "e2ca91fcc9cb28c2b80284632eef004df30f861de6019ab94dd1da34e1fa8742"
+      "sha256": "2c5cacdec32fd33736a6ff06888bf2b10c5e5bc3439a12cc196acef0982b0d2a"
     },
     {
       "path": "README.md",
-      "bytes": 825,
-      "sha256": "5a56c6c6bf44ca780d132d063f56c81fdcaaebcacf69f5201e8ae9084b7620b9"
+      "bytes": 859,
+      "sha256": "42312fda06b07755aa87b83552a194905f4ddd7ff8af45f5b1e0ad9d72f32e05"
     },
     {
       "path": "release/current-baseline.json",
@@ -102,8 +102,8 @@
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
-      "bytes": 1179,
-      "sha256": "d9df73c3b55697d4fd7a3929838b8eda35b893abc35cf76a77bc80c0aca061b4"
+      "bytes": 1489,
+      "sha256": "72a745421875fa61d43571ff0db127f427babc3599317d7c566fba794fa748e6"
     }
   ],
   "validation": {
