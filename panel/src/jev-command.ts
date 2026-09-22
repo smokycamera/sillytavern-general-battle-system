@@ -430,6 +430,18 @@ export class JevCommandController {
         saved.version = adapter.stateVersion;
         const tactic = checkpoint.plan.tasks.find((t) => t.level === "tactics");
         saved.detail = `${side === "ally" ? "我方" : "敌方"}：${tactic ? runtime.doctrines.get(tactic.doctrineId).label : "等待行动"}`;
+        const selection = checkpoint.lastModelSelection;
+        if (tactic?.target?.kind === "search") saved.detail += "（搜索接触中）";
+        else if (
+          selection?.purpose === "doctrine" &&
+          selection.selectedId === tactic?.doctrineId
+        )
+          saved.detail +=
+            selection.confidence === 0
+              ? "（本地规划）"
+              : selection.selectedId === selection.localId
+                ? "（模型维持方案）"
+                : "（模型调整方案）";
       }
       check();
       if (modelFailed) {

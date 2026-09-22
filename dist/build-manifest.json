@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "0.2.0-rc.6",
-  "builtAt": "2026-09-22T06:22:02.087Z",
-  "sourceFingerprint": "87ac0d23d1b376e3f1624baacd0c0e0edc44d7df17352e3ce3a75215a54481c8",
+  "version": "0.2.0-rc.7",
+  "builtAt": "2026-09-22T07:29:48.143Z",
+  "sourceFingerprint": "420f449a3ee9a54246e74253aaa85bb077ce6b368b9c13247ca55d611b4e11b8",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -11,9 +11,9 @@
       "sha256": "d8e150b9ba2a9668681edf533c5ebfa2a0c588c1ef4fdbff02e2b456b28f93f9"
     },
     {
-      "path": "dist/assets/panel-BusiZ3dX.js",
-      "bytes": 336885,
-      "sha256": "0903c7ffb8c768548b9cfde07a0362588f91a998c7c7b0d81b511d3a62d6b379"
+      "path": "dist/assets/panel-ZEyKqH-b.js",
+      "bytes": 341957,
+      "sha256": "95583079f748ea73f1019d8dddee0ca3dd0d79f30413c11646e75bb758b96ef2"
     },
     {
       "path": "dist/assets/preferences-D06eQWRj.js",
@@ -42,8 +42,8 @@
     },
     {
       "path": "docs/jev-integration.md",
-      "bytes": 3404,
-      "sha256": "db7da9c1b31680034c065706e12851eb387f83b1322e92b34b286905b5e9269e"
+      "bytes": 4333,
+      "sha256": "43679d6935fc3f2f8df5996f1f357e815f7055879f6acfd19f89e1c76db99074"
     },
     {
       "path": "docs/native-extension-migration-plan-20260919.md",
@@ -68,7 +68,7 @@
     {
       "path": "dist/index.js",
       "bytes": 70900,
-      "sha256": "e2ff61b0d35b469daa09adb8d576dfc3718e22614777870a6cae85a5beede11d"
+      "sha256": "58e14ab5c37e5bbaabf16e9ce9613668a7131f1f1ccb4d5a6a5947b09623b602"
     },
     {
       "path": "LICENSE",
@@ -83,17 +83,17 @@
     {
       "path": "manifest.json",
       "bytes": 173,
-      "sha256": "deb3344dd5cce5b4f2c1d4169a9607d0f62dad46aee8b63029f766da75299c31"
+      "sha256": "fc34daa4fd75f5095d9b69c0b99fffb39e00abfa15e0cea8d399e5523af42824"
     },
     {
       "path": "dist/panel/index.html",
       "bytes": 43276,
-      "sha256": "2c5cacdec32fd33736a6ff06888bf2b10c5e5bc3439a12cc196acef0982b0d2a"
+      "sha256": "352a35418e4f5d091d45ce26a0d189f4ea6ffdfdf8da590f2b714e2e6dc0213c"
     },
     {
       "path": "README.md",
-      "bytes": 879,
-      "sha256": "78cda87566a24d4b40894c6f7f7e720e2e50155c3cfa4ef68cd3fc671c972850"
+      "bytes": 1238,
+      "sha256": "f707f2fac7071d0faf8e1930aca380fde292a18b223db75e001a43be64bba5a3"
     },
     {
       "path": "release/current-baseline.json",
