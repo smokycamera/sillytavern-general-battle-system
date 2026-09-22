@@ -1,6 +1,6 @@
 import { connectionUrl, fetchJevModels, directJevRequest, jevJsonRequest, JevConnectionError, type JevConnection } from './jev-connection.js';
 import { JevTransportError } from './jev-transport.js';
-import { retryJev, waitForJev, JevRequestTimeoutError, JevRetriesExhausted, JEV_MAX_RETRIES, JEV_RETRY_DELAY_MS, JEV_REQUEST_BUDGET_MS, JEV_ATTEMPT_TIMEOUT_MS } from './jev-retry.js';
+import { retryJev, waitForJev, JevRequestTimeoutError, JevRetriesExhausted, JEV_MAX_RETRIES, JEV_RETRY_DELAY_MS, JEV_REQUEST_BUDGET_MS } from './jev-retry.js';
 export { connectionUrl, readJevConnection, saveJevConnection, type JevConnection } from './jev-connection.js';
 import { SmallBattle, MassBattle, type Order } from "../../engine/src/index.js";
 import {
@@ -527,11 +527,9 @@ export class JevCommandController {
           extractor,
           policy: {
             narrativeContext: settings.narrative,
-            // Live combat must never wait through the full 10 x 30s retry envelope.
-            // One model call gets roughly one normal attempt; if it still cannot answer,
-            // the JEV core falls back to its local bounded planner and the turn advances.
-            requestTimeoutMs: JEV_ATTEMPT_TIMEOUT_MS + 1000,
-            decisionBudgetMs: 2 * (JEV_ATTEMPT_TIMEOUT_MS + 1000) + 1000,
+            requestTimeoutMs: JEV_REQUEST_BUDGET_MS,
+            // Up to two decisions plus optional narrative extraction, each with its own retries.
+            decisionBudgetMs: 3 * JEV_REQUEST_BUDGET_MS + 1000,
             retries: 0,
             maxModelCallsPerDecision: 2,
             modelActionMode: "local",
