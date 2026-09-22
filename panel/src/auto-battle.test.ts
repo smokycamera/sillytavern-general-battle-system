@@ -1,8 +1,27 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { AutoBattleLoop } from './auto-battle.js';
+import { AutoBattleLoop, ensureAutomaticActivationProgress } from './auto-battle.js';
 import { extendSmallRoundLimit, prepareBattleObjective } from './battle-setup.js';
 import { generateUnit, generatedField, standardField, SmallBattle, V2_D20 } from '../../engine/src/index.js';
 afterEach(() => vi.useRealTimers());
+
+it('自动 AI 返回但行动者未变化时强制完成该激活', () => {
+  const active = { id: 'enemy' };
+  const autoAction = vi.fn();
+  const endTurn = vi.fn(() => { battle.active = { id: 'ally' }; });
+  const battle = { active, isOver: () => false, autoAction, endTurn };
+  expect(ensureAutomaticActivationProgress(battle, 'enemy')).toBe(true);
+  expect(autoAction).toHaveBeenCalledWith('enemy');
+  expect(endTurn).toHaveBeenCalledTimes(1);
+  expect(battle.active?.id).toBe('ally');
+});
+
+it('自动 AI 已经推进到下一行动者时不重复行动', () => {
+  const autoAction = vi.fn(), endTurn = vi.fn();
+  const battle = { active: { id: 'ally' }, isOver: () => false, autoAction, endTurn };
+  expect(ensureAutomaticActivationProgress(battle, 'enemy')).toBe(false);
+  expect(autoAction).not.toHaveBeenCalled();
+  expect(endTurn).not.toHaveBeenCalled();
+});
 
 it('异步保存未结束前不开始下一步，关闭重开不会接续旧回调', async () => {
   vi.useFakeTimers(); const loop = new AutoBattleLoop(); let release!: (value: boolean) => void;
