@@ -98,6 +98,25 @@ describe('remote JEV connections', () => {
     expect(request.mock.calls[0]?.[0]).toBe('https://gateway.example/v1/chat/completions');
     expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body)).model).toBe('custom-model');
   });
+  it('falls back when an OpenAI-compatible model rejects response_format and accepts fenced/content-part JSON', async () => {
+    const calls: Array<Record<string, any>> = [];
+    const request = vi.fn<typeof fetch>(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      calls.push(body);
+      if (calls.length === 1) return new Response(JSON.stringify({ error: 'unsupported response_format' }), { status: 400 });
+      return response({ model: 'ordinary-llm', choices: [{ message: { content: [
+        { type: 'text', text: '```json\n{"scores":{"attack":0.75},"confidence":0.8}\n```' },
+      ] } }] });
+    });
+    const result = await directJevRequest(
+      { ...connection, protocol: 'openai', model: 'ordinary-llm', url: 'https://gateway.example/v1' },
+      'evaluate', { candidates: [{ id: 'attack' }] }, new AbortController().signal, request,
+    );
+    expect(result).toMatchObject({ model: 'ordinary-llm', scores: { attack: 0.75 }, confidence: 0.8 });
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.response_format).toEqual({ type: 'json_object' });
+    expect(calls[1]?.response_format).toBeUndefined();
+  });
   it('connection test only lists models and does not bill an inference request', async () => {
     const request = vi.fn<typeof fetch>(async () => response({ models: [{ name: 'jev-latest' }] }));
     expect(await new JevCommandController(request).test(connection)).toContain('尚未调用决策');
