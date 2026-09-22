@@ -1,0 +1,23 @@
+{
+  "repository": "https://github.com/smokycamera/jev-general-tactic-system",
+  "commit": "5e8e56b4ed76ba18e5defb0e316206cb727ce37d",
+  "files": {
+    "capabilities.ts": "d57b0609429bc12e0e4d38d67738cc2339eb92a0f8756d27129ce3013c7eab78",
+    "doctrines.ts": "da69b5fa180acc3e2eb348abf8220f2f95eb5097dfe18aacfa423eab1ce24ed1",
+    "execution-types.ts": "32c661fb8666ab278748cb7bef37422dbc17eb9a25ae0afb78e64d50efe2e163",
+    "execution.ts": "d6414b29144b7bb5ef5f6428659f7b5d3867f5bf4f295793dd83a7e391e60d38",
+    "goals.ts": "fb6c1a12923a136fedd2189cc7a409310b1c28d9a2d38791ecd1d4e388d952fa",
+    "htn.ts": "79af34a6e921e1846901979248f06295e5ccb53746498a7c5f9e32339cbe172f",
+    "index.ts": "ba8c360f76fd278189bdd2ebe2002b9288f98dce9aa1dfe2f8c8e1fe4ac44b0a",
+    "operators.ts": "da8b2f5fceb22eebf0830d0b0ec99e276bb1082a3c8e295698deded8b5c7afc9",
+    "planning.ts": "7e656476adf3626e742523f79e16478d22ab1f274b1006adcfb7e7a028331989",
+    "registry.ts": "f8edf20d45c9f450217197c8db04b07a4178eaee743982815a1db795bc1b8ae5",
+    "runtime.ts": "705849441016371b31c4e3a928938a1c24fdec1966cb692aae03708809466c73",
+    "scoring.ts": "11c4420e67e046a52831671450a9f0982661d057858e06e4739dab5d9c8c18ca",
+    "store.ts": "e7b9bd88fdf8444d57ef59ba3cfdd7f2bef318b9a7294d3fe03c28d4e6c52335",
+    "styles.ts": "eda891653c3f0854fe968644172a7b9e6207228cbf40e35350e29c1a63dd072b",
+    "tactics.ts": "8c40b37b6ca8ef042813959cb8c5364ee0a14a4480cc5b8357d2dadf3172fb2f",
+    "types.ts": "6e79b7681a071d98efa7c30e5d2c9545f385c4dc60d7eba87766250fde02618c",
+    "util.ts": "ded60462eec66b1405d84f61f649c51ab7aebd41939d237649e828c1418fd8c9"
+  }
+}

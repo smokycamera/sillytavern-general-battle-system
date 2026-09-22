@@ -3,6 +3,7 @@ import { createAdapter, type SaveReceipt, type TavernAdapter, type DeliveryRecei
 import type { PanelController } from './controller-port.js';
 
 export interface PanelRuntime {
+  recentNarrative?: () => import('../../vendor/jev-core/src/types.js').NarrativeMessage[];
   adapter: TavernAdapter;
   controller: PanelController;
   resident: boolean;

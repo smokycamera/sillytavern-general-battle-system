@@ -2,7 +2,9 @@
 
 ## 安装
 
-1. 在酒馆的 扩展 → 安装扩展 中填写 `https://github.com/smokycamera/sillytavern-general-battle-system`，安装后刷新页面。
+1. 在酒馆的 扩展 → 安装扩展 中填写 `https://github.com/smokycamera/tavern-battle`，安装后刷新页面。
 2. 酒馆世界书中导入并启用 [!通用战斗系统约束.json](assets/worldbook/!通用战斗系统约束.json)。
+
+原有自动 AI 默认保留。可在设置页配置 JEV 服务，在战场工具栏选择“JEV 指挥”；详见 [接入与使用说明](docs/jev-integration.md)。
 
 依赖各自适用原许可证，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。问题反馈请使用本仓库 Issues，并附宿主版本、扩展版本和复现步骤。

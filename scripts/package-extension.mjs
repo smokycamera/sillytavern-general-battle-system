@@ -10,7 +10,7 @@ copyFileSync('release/current-baseline.json', path.join(output, 'release/current
 for (const directory of ['assets', 'licenses', 'docs']) {
   if (directory === 'docs') {
     mkdirSync(path.join(output, directory), { recursive: true });
-    for (const name of ['native-extension-validation.md', 'validation-results.json', 'extension-migration-assessment-20260919.md', 'native-extension-migration-plan-20260919.md', 'script-baseline-20260919.md']) copyFileSync(path.join(directory, name), path.join(output, directory, name));
+    for (const name of ['native-extension-validation.md', 'validation-results.json', 'extension-migration-assessment-20260919.md', 'native-extension-migration-plan-20260919.md', 'script-baseline-20260919.md', 'jev-integration.md']) copyFileSync(path.join(directory, name), path.join(output, directory, name));
   } else cpSync(directory, path.join(output, directory), { recursive: true });
 }
 const files = [];
@@ -23,7 +23,7 @@ for (const file of files.filter(file => /\.(js|html)$/.test(file))) {
 const hash = file => createHash('sha256').update(readFileSync(file)).digest('hex');
 const sourceFiles=[];
 const collect=dir=>{for(const entry of readdirSync(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory())collect(file);else sourceFiles.push(file)}};
-for (const dir of ['engine/src', 'panel/src', 'host/src', 'runtime/src', 'extension', 'assets']) collect(dir);
+for (const dir of ['engine/src', 'panel/src', 'host/src', 'runtime/src', 'extension', 'assets', 'vendor/jev-core']) collect(dir);
 sourceFiles.push('panel/index.html','package.json','package-lock.json','scripts/package-extension.mjs');
 const sourceFingerprint=createHash('sha256').update(sourceFiles.sort().map(file=>`${file.replaceAll('\\','/')}\0${hash(file)}`).join('\n')).digest('hex');
 const manifest = { format: 'tavern-battle-native-build', version, builtAt: new Date().toISOString(), sourceFingerprint,

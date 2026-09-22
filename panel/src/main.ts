@@ -22,6 +22,7 @@ import { spCapacity } from '../../engine/src/resources.js';
 import { PROMPT_SECTIONS, applySettlementPrompt, promptSelected, selectPromptEntries, renderPromptSettings, type PromptSectionId } from './prompt-settings.js';
 import { narrativeDeploymentIds } from './narrative-state.js';
 import { AutoBattleLoop } from './auto-battle.js';
+import { JevCommandController, defaultJevSettings, normalizeJevSettings, readJevConnection, saveJevConnection, type JevSettings, type JevBattleState } from './jev-command.js';
 import { newUnitDraft, unitDraftFromRecord, buildUnit, editUnitBuild, type UnitDraft } from './unit-builder.js';
 import { MAX_SCENE_UNITS } from './narrative-limits.js';
 import { recommendBattleMode, extendSmallRoundLimit, upgradeDefaultObjective, normalizeObjectiveMode, prepareBattleObjective, battleCapacityIssue, prepareMassRoster, type BattleObjectiveMode } from './battle-setup.js';
@@ -133,6 +134,8 @@ interface AbilityDialogState {
 
 
 interface AppState {
+  jevSettings: JevSettings;
+  jevBattle?: JevBattleState;
   factRevision: number;
   proposals: NarrativeProposal[];
   storySync: boolean;
@@ -225,6 +228,7 @@ interface AppState {
 }
 
 const state: AppState = {
+  jevSettings: defaultJevSettings(),
   factRevision: 0,
   proposals: [],
   storySync: false,
@@ -274,7 +278,9 @@ const state: AppState = {
 };
 
 const fullAuto = new AutoBattleLoop();
-window.addEventListener('pagehide', () => fullAuto.stop());
+const jevCommand = new JevCommandController();
+function stopAutomation(): void { fullAuto.stop(); jevCommand.cancel(); }
+window.addEventListener('pagehide', stopAutomation);
 let battleSaveFailed = false;
 let uiBusy = false;
 async function panelTask(task: () => Promise<void>, allowPending = false, feedback?: HTMLElement): Promise<void> {
@@ -307,6 +313,7 @@ async function persist(): Promise<boolean> {
   }
   const write = (await controller.persistPanel({
       schemaVersion: PANEL_SAVE_SCHEMA_VERSION,
+      jevSettings: state.jevSettings, jevBattle: state.jevBattle,
       reports: state.reports, reportDeliveries: state.reportDeliveries,
       selectedReportId: state.selectedReportId,
       activeBattleStart: state.activeBattleStart, deletedReport: state.deletedReport, deletedReportIds: state.deletedReportIds,
@@ -355,6 +362,8 @@ function battlePersist(): { kind: 'small' | 'mass'; snap: Record<string, unknown
 }
 
 interface SavedPanel {
+  jevSettings?: JevSettings;
+  jevBattle?: JevBattleState;
   activeBattleStart?: BattleStart;
   deletedReport?: DeletedReport;
   deletedReportIds?: string[];
@@ -389,7 +398,7 @@ interface SavedPanel {
 }
 
 function restore(): void {
-  fullAuto.stop();
+  stopAutomation();
   reportRestartPreview=undefined;
   if (workspaceNamespace !== adapter.namespace()) {
     narrativeDrafts.clear(); promptDrafts.clear();
@@ -402,6 +411,8 @@ function restore(): void {
   const snapshot = controller.snapshot();
   const saved = Object.keys(snapshot).length ? snapshot as SavedPanel : undefined;
   state.factRevision = saved?.factRevision ?? 0;
+  state.jevSettings = normalizeJevSettings(saved?.jevSettings);
+  state.jevBattle = saved?.jevBattle;
   state.proposals = saved?.proposals ?? [];
   state.storySync = saved?.storySync ?? false;
   state.nonLethal = saved?.nonLethal === true;
@@ -655,6 +666,24 @@ function prepareRosterForBattle(): void {
  * 友方仅在开了「自动行动」且当前不是主控时由引擎代打；否则停下让玩家手动。
  * （autoTurn 关闭时：敌方仍自动、我方全手动。）
  */
+async function applyJev(b: SmallBattle | MassBattle, manualScan = false): Promise<void> {
+  const namespace = adapter.namespace(), context = controller.inventoryContext(), revision = state.factRevision;
+  const result = await jevCommand.prepare(b, state.jevBattle, state.jevSettings, readJevConnection(), {
+    battleId: battleIdOf(b), namespace: namespace ?? adapter.identity(), manualScan, summonUnit,
+    valid: () => currentBattle() === b && adapter.namespace() === namespace && controller.inventoryContext() === context && state.factRevision === revision && (!runtime.canWrite || runtime.canWrite()),
+    messages: runtime.recentNarrative?.() ?? [],
+    drafts: b instanceof MassBattle ? Object.entries(state.orderDraft).map(([unitId, draft]) => ({ unitId, ...draft })) : undefined,
+    automatic: b instanceof MassBattle ? massAutoCommand() : undefined,
+    onStatus: () => render('battle'),
+  });
+  Object.assign(b, result.battle);
+  state.jevBattle = result.state;
+}
+async function autoSmall(b: SmallBattle): Promise<void> {
+  if (!b.active) return;
+  if (state.jevSettings.mode === 'jev' && b.rules.resolutionVersion === 'v2') await applyJev(b);
+  else b.autoAction(b.active.id);
+}
 async function runAuto(): Promise<void> {
   if (fullAuto.running) return;
   const b = state.small;
@@ -671,7 +700,7 @@ async function runAuto(): Promise<void> {
       // 友方：仅在开了「自动行动」时自动；否则停下（玩家扮演我方）
       if (!enemyTurn && !state.autoTurn) break;
       if (a.status !== 'ready') { b.endTurn(); continue; }
-      b.autoAction(a.id);
+      await autoSmall(b);
     }
   }
   // 战斗结束统一收口：无论结束路径（自动清场/手动收尾/🤖自动行动/撤离）都补结束日志并触发入账+注入。
@@ -694,7 +723,7 @@ function startFullAuto(): void {
   fullAuto.start(async () => {
     if (uiBusy) return true;
     if (runtime.canWrite && !runtime.canWrite()) return false;
-    uiBusy = true; document.body.inert = true;
+    uiBusy = true; document.body.setAttribute('aria-busy', 'true');
     try {
     if (currentBattle() !== battle || context !== controller.inventoryContext() || workspaceNamespace !== adapter.namespace()
       || controller.migrationReview() || battleSaveFailed || battle.isOver()) return false;
@@ -702,7 +731,7 @@ function startFullAuto(): void {
     battleSaveFailed = false;
     if (battle instanceof SmallBattle) {
       if (!battle.active) return false;
-      battle.autoAction(battle.active.id);
+      await autoSmall(battle);
       tacticalView.selectedId = battle.active?.id; tacticalView.cell = undefined;
     } else {
       // 复用手动执行的草案校验、自动补令、阶段结算和失败回滚。
@@ -717,7 +746,7 @@ function startFullAuto(): void {
     if (battle.isOver()) render('battle');
     if (!battle.isOver() && progress === `${battle.round}:${battle instanceof SmallBattle ? battle.turnIndex : ''}`) throw Error('自动行动没有推进回合，已暂停，可手动处理');
     return !battle.isOver();
-    } finally { uiBusy = false; document.body.inert = false; }
+    } finally { uiBusy = false; document.body.removeAttribute('aria-busy'); if (!fullAuto.running) render('battle'); }
   }, () => render('battle'), (error) => {
     // 异常时撤回到已保存战场，避免保留只执行了一半的行动。
     restore(); toast('全自动已暂停：' + (error instanceof Error ? error.message : String(error)));
@@ -828,7 +857,14 @@ function render(scope: RenderScope = 'all', tacticalQuery?: TacticalQuery): void
 }
 function renderBattleToolbar(b: SmallBattle | MassBattle): string {
   const actor=b instanceof SmallBattle?b.active:b.combatants.find(u=>u.id===formationView.selectedId)??b.combatants.find(u=>u.side==='ally'&&u.status==='ready'&&!b.isAttached(u.id));
-  return `<div class="battle-toolbar"><span class="tag">本场：${b.nonLethal?'非致命':'致命'}</span>${cannonAmmoControl(actor,b.isOver()||actor?.side!=='ally')}<label class="battle-auto"><input type="checkbox" aria-label="全自动战斗（含主控）" data-role="full-auto-battle" ${fullAuto.running ? 'checked' : ''} ${b.isOver() ? 'disabled' : ''}>${fullAuto.running ? '自动推进中 · 点击暂停' : '全自动战斗（含主控）'}</label><label>自动策略 <select data-role="battle-tactic" ${b.isOver() || b.rules.resolutionVersion !== 'v2' ? 'disabled' : ''}>${Object.entries(TACTICAL_PREFERENCES).map(([id,name]) => `<option value="${esc(id)}" ${b.allyTactic === id ? 'selected' : ''}>${name}</option>`).join('')}</select></label>${!b.isOver() ? '<details data-detail-id="battle-options"><summary>更多</summary><button data-action="battle-finish" data-reason="ceasefire">停止交战并结算</button><button class="danger" data-action="battle-finish" data-reason="surrender">投降并结算</button></details>' : ''}</div>`;
+  return `<div class="battle-toolbar"><span class="tag">本场：${b.nonLethal?'非致命':'致命'}</span>${cannonAmmoControl(actor,b.isOver()||actor?.side!=='ally')}${renderJevMode(b)}<label class="battle-auto"><input type="checkbox" aria-label="全自动战斗（含主控）" data-role="full-auto-battle" ${fullAuto.running ? 'checked' : ''} ${b.isOver() ? 'disabled' : ''}>${fullAuto.running ? '自动推进中 · 点击暂停' : '全自动战斗（含主控）'}</label><label>自动策略 <select data-role="battle-tactic" ${b.isOver() || b.rules.resolutionVersion !== 'v2' ? 'disabled' : ''}>${Object.entries(TACTICAL_PREFERENCES).map(([id,name]) => `<option value="${esc(id)}" ${b.allyTactic === id ? 'selected' : ''}>${name}</option>`).join('')}</select></label>${!b.isOver() ? '<details data-detail-id="battle-options"><summary>更多</summary><button data-action="battle-finish" data-reason="ceasefire">停止交战并结算</button><button class="danger" data-action="battle-finish" data-reason="surrender">投降并结算</button></details>' : ''}</div>`;
+}
+function renderJevMode(b?: SmallBattle | MassBattle): string {
+  return `<label>自动 AI <select data-role="jev-mode" ${b?.isOver() ? 'disabled' : ''}><option value="builtin" ${state.jevSettings.mode === 'builtin' ? 'selected' : ''}>原有自动 AI</option><option value="jev" ${state.jevSettings.mode === 'jev' ? 'selected' : ''}>JEV 指挥</option></select></label>${state.jevSettings.mode === 'jev' ? `<span role="status" data-role="jev-status">${esc(jevCommand.busy ? jevCommand.detail : state.jevBattle?.detail ?? '就绪 · 自动执行时使用 JEV')}</span>${jevCommand.busy ? '<button data-action="jev-stop">暂停 JEV</button>' : ''}` : ''}`;
+}
+function renderJevSettings(): string {
+  const c = readJevConnection(), settings = state.jevSettings;
+  return `<section><h2>JEV 指挥</h2>${renderJevMode()}<p>原有自动 AI 默认启用。JEV 负责计划和行动选择，酒馆引擎负责规则与结算；服务不可用时自动回退原有 AI。</p><div class="row"><label>服务地址 <input data-role="jev-url" type="url" value="${esc(c.url)}" placeholder="http://127.0.0.1:4317"></label><label>本机服务令牌 <input data-role="jev-token" type="password" autocomplete="off" value="${esc(c.token)}"></label><button data-action="jev-connect">保存连接并测试</button></div><p class="sub">此处填写 JEV_SERVICE_TOKEN；模型 API 密钥保存在 JEV 服务的 .env 中。服务令牌仅保留在当前浏览器会话，不写入聊天存档。</p><div class="row"><label>指挥水平 <select data-role="jev-ability">${Object.entries({novice:'新手',regular:'常规',skilled:'熟练',expert:'专家',master:'大师'}).map(([id,name]) => `<option value="${id}" ${settings.ability===id?'selected':''}>${name}</option>`).join('')}</select></label><label>正文上下文 <select data-role="jev-narrative">${Object.entries({off:'关闭',auto:'自动读取完成正文',manual:'仅手动扫描'}).map(([id,name])=>`<option value="${id}" ${settings.narrative.mode===id?'selected':''}>${name}</option>`).join('')}</select></label><label>最近消息数 <input type="number" min="0" max="100" data-role="jev-window" value="${settings.narrative.windowSize}"></label><button data-action="jev-scan" ${!currentBattle()||settings.narrative.mode==='off'?'disabled':''}>扫描当前正文</button></div><p class="sub">正文提取需要服务端配置 TEXT_API_URL、TEXT_API_KEY、TEXT_MODEL。开启后，选定范围的完成消息发送到该服务，只补充目标与环境提示。</p></section>`;
 }
 function renderBattleExit(b: SmallBattle | MassBattle): string {
   const archived = state.committedOutcomeIds.includes(battleIdOf(b)), deleted=state.deletedReportIds?.includes(battleIdOf(b));
@@ -880,7 +916,7 @@ function renderBattlePreparation(): string {
 }
 function renderWorkspaceSettings(): string {
   const saved = controller.snapshot();
-  return `${promptScopeControls(saved.promptSettings, narrativeProjectionDetails(saved, adapter.recentPromptText?.() ?? ''), (saved.storage ?? []).filter(visibleUnitRecord))}${renderPromptSettings(saved.promptSettings, promptDrafts)}<section><h2>显示与操作</h2><p>战场形式由参战队伍确定，环境沿用剧情声明。</p><button data-action="theme-toggle">切换深浅主题</button></section>
+  return `${renderJevSettings()}${promptScopeControls(saved.promptSettings, narrativeProjectionDetails(saved, adapter.recentPromptText?.() ?? ''), (saved.storage ?? []).filter(visibleUnitRecord))}${renderPromptSettings(saved.promptSettings, promptDrafts)}<section><h2>显示与操作</h2><p>战场形式由参战队伍确定，环境沿用剧情声明。</p><button data-action="theme-toggle">切换深浅主题</button></section>
     <section><h2>保存与恢复</h2><p>${state.saveReceipt?.status === 'local-only' ? '目前仅确认本地副本，宿主尚未确认保存。' : '单位档案和战报随当前聊天保存。保存失败时会在顶部显示。'}</p><button data-action="save-retry">核实并重试保存</button>${controller.migrationReview() ? '' : renderMigrationReview()}</section>
     <details class="workspace-diagnostics"><summary>技术信息</summary><p>V4 全量审计版 20260918 · ${runtime.native ? '原生扩展迁移候选' : adapter.inTavern ? '酒馆助手' : '本地模式'}。</p><p>引擎在本地结算；公式版本、种子和逐骰记录保留在对应详情。${controller.capabilities.injection ? '事实注入可用。' : '当前宿主未提供事实注入。'}</p></details>`;
 }
@@ -1941,6 +1977,8 @@ async function handleAction(e: Event): Promise<void> {
   const el = (e.target as HTMLElement).closest('[data-action]') as HTMLElement | null;
   if (!el) return;
   const act = el.dataset.action!;
+  if (act === 'jev-stop') { stopAutomation(); toast('已暂停 JEV 指挥'); render('battle'); return; }
+  if (act === 'jev-connect') { try { await actions[act]!(el); } catch (error) { toast(String(error)); } return; }
   // Navigation never joins the durable-write queue or alters its failure flag.
   if (act === 'workspace-tab') {
     const tab = el.dataset.tab;
@@ -2313,7 +2351,8 @@ async function resolveMassRound(expectedRound: number, expectedSeed?: string): P
     if (b.rules.resolutionVersion === 'v2') {
       const snapshot = structuredClone(b.toSnapshot()), drafts = structuredClone(state.orderDraft);
       try {
-        executeMassPlan(b, drafts, massAutoCommand(), expectedRound);
+        if (state.jevSettings.mode === 'jev') await applyJev(b);
+        else executeMassPlan(b, drafts, massAutoCommand(), expectedRound);
         state.orderDraft = {};
       } catch (error) {
         state.mass = MassBattle.fromSnapshot(snapshot, { traitRegistry: reg, summonUnit }); state.orderDraft = drafts;
@@ -2347,6 +2386,12 @@ async function resolveMassRound(expectedRound: number, expectedSeed?: string): P
 }
 
 const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
+  'jev-stop': () => { stopAutomation(); toast('已暂停 JEV 指挥'); render('battle'); },
+  'jev-connect': async () => {
+    const connection = { url: document.querySelector<HTMLInputElement>('[data-role="jev-url"]')!.value, token: document.querySelector<HTMLInputElement>('[data-role="jev-token"]')!.value };
+    saveJevConnection(connection); toast(await jevCommand.test(connection));
+  },
+  'jev-scan': async () => { const b = currentBattle(); if (!b || b.isOver()) throw Error('请先开始战斗'); await applyJev(b, true); await persist(); render('battle'); },
   'delivery-generate': async el => {
     if (!runtime.retryGeneration || !el.dataset.delivery) throw Error('当前宿主没有独立重试生成接口');
     const receipt = await runtime.retryGeneration(el.dataset.delivery);
@@ -2427,7 +2472,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   'grid-retreat': () => { state.small!.retreat(state.small!.active!.id); },
   'grid-endturn': () => { state.small!.endTurn(); },
   'grid-mobile-endturn': () => { state.small!.endTurn(); },
-  'grid-auto': () => { state.small!.autoAction(state.small!.active!.id); },
+  'grid-auto': async () => { await autoSmall(state.small!); },
   'narrative-scan': () => { void controller.scan(); },
   'prompt-save': async (el) => {
     const id = el.dataset.section as PromptSectionId; if (!PROMPT_SECTIONS.some((s) => s.id === id)) return;
@@ -2825,7 +2870,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     const a = b.active;
     if (!a) throw new Error('没有行动者');
     if (a.status !== 'ready') throw new Error(`${a.name} 无法行动（${a.status}）`);
-    b.autoAction(a.id); // 内部完成行动并结束回合
+    await autoSmall(b);
     (await persist());
   },
   'small-endturn': async () => {
@@ -2872,7 +2917,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   },
   'battle-finish': async (el) => {
     const b = currentBattle(); if (!b) return;
-    fullAuto.stop();
+    stopAutomation();
     b.finishBattle(el.dataset.reason === 'surrender' ? 'surrender' : 'ceasefire');
     state.abilityDialog = null; state.orderDraft = {};
     (await onBattleEnded()); (await persist());
@@ -3077,7 +3122,7 @@ async function afterSmallAction(endTurn = true): Promise<void> {
 document.addEventListener('click', e => {
   const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
   if (!action) return;
-  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'modal-stop'].includes(action)) { void handleAction(e); return; }
+  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'modal-stop', 'jev-stop'].includes(action)) { void handleAction(e); return; }
   const viewOnly = ['save-retry', 'workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-inspect-unit', 'grid-cell', 'grid-mode', 'narrative-review', 'log-detail', 'unit-detail', 'role-detail', 'modal-stop', 'migration-export'].includes(action);
   const feedback = !viewOnly && /^(grid-|small-|mass-|formation-)/.test(action) ? (e.target as HTMLElement).closest<HTMLElement>('[data-action]') ?? undefined : undefined;
   void panelTask(() => handleAction(e), viewOnly, feedback);
@@ -3095,6 +3140,20 @@ document.addEventListener('input', (e) => {
   if (e.target.closest('[data-builder-form]') && !(e.target instanceof HTMLSelectElement) && !(e.target instanceof HTMLInputElement && e.target.type === 'checkbox')) { captureForm(); builderPreview = undefined; document.querySelectorAll('[data-role="builder-preview"]').forEach((el) => el.remove()); }
 });
 async function handleChange(e: Event): Promise<void> {
+  if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'jev-mode') {
+    stopAutomation(); state.jevSettings.mode = e.target.value === 'jev' ? 'jev' : 'builtin'; state.jevBattle = undefined;
+    await persist(); render('battle'); return;
+  }
+  if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'jev-ability') {
+    state.jevSettings = normalizeJevSettings({...state.jevSettings, ability: e.target.value as JevSettings['ability']}); await persist(); return;
+  }
+  if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'jev-narrative') {
+    state.jevSettings.narrative.mode = e.target.value as 'auto' | 'manual' | 'off'; await persist(); return;
+  }
+  if (e.target instanceof HTMLInputElement && e.target.dataset.role === 'jev-window') {
+    const windowSize = Number(e.target.value); if (!Number.isInteger(windowSize) || windowSize < 0 || windowSize > 100) throw Error('正文窗口需为 0–100 条');
+    state.jevSettings.narrative.windowSize = windowSize; await persist(); return;
+  }
   if(e.target instanceof HTMLSelectElement&&e.target.dataset.role==='cannon-ammo'){
     const b=currentBattle(),unit=b?.combatants.find(u=>u.id===(e.target as HTMLSelectElement).dataset.unit);
     if(!b||b.isOver()||!unit||unit.side!=='ally'||!['auto','he','ap'].includes(e.target.value))return;
@@ -3222,6 +3281,9 @@ async function handleChange(e: Event): Promise<void> {
   }
 }
 document.addEventListener('change', e => {
+  if (e.target instanceof HTMLInputElement && e.target.dataset.role === 'full-auto-battle' && !e.target.checked) {
+    stopAutomation(); render('battle'); return;
+  }
   // Text/number drafts are captured on input. Making the document inert during
   // their blur/change steals focus from the next field before typing begins.
   if (e.target instanceof HTMLInputElement && e.target.type !== 'checkbox') {
@@ -3241,7 +3303,7 @@ const stopControllerView = controller.listen((_saved: NarrativeSave, receipt?: S
 window.addEventListener('pagehide', stopControllerView);
 window.addEventListener('message', (event: MessageEvent) => {
   if (event.source === window.parent && event.origin === location.origin && event.data?.type === 'tb:panel-hidden') {
-    const wasRunning = fullAuto.running; fullAuto.stop(); if (wasRunning) render('battle');
+    const wasRunning = fullAuto.running; stopAutomation(); if (wasRunning) render('battle');
   }
 });
 let formationResizeFrame = 0;

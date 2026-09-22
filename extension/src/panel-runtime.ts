@@ -56,6 +56,10 @@ export function createPanelRuntime(): PanelRuntime {
     recentPromptText: () => host.recentPromptText(), sendAsUser: (text, options) => messages.send(text, options),
   };
   return { adapter, controller, resident: true, native: true,
+    recentNarrative: () => {
+      const count = host.context().chat?.length ?? 0;
+      return Array.from({length: Math.min(count, 100)}, (_, i) => host.message(count - Math.min(count, 100) + i)).flatMap(m => m ? [{ id: m.messageId + ':' + m.swipeId, role: m.role, text: m.text, completed: m.complete }] : []);
+    },
     getTheme: () => display.read().theme ?? 'dark', setTheme: theme => display.write({ theme }),
     retryGeneration: deliveryId => messages.retryGeneration(deliveryId),
     canWrite: () => service.canWrite(),
