@@ -128,6 +128,7 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
   const field = battle.battlefield!, s = tacticalSelection(battle, view, query);
   const { visible, actor, options, option, target, canControl } = s;
   const active = visible.find((u) => u.id === battle.active?.id), over = battle.isOver();
+  const activeLabel = active?.name ?? (battle.active?.side === 'enemy' ? '敌方隐藏单位（AI行动中）' : '未定位单位');
   const events = over ? battle.log : battle.visibleLog('ally');
   const mode = view.mode === 'move' || view.mode === 'guard' ? view.mode : option?.id ?? 'weapon';
   const movement = actor && view.cell !== undefined ? battle.pathPreview(actor.id, view.cell) : undefined;
@@ -168,13 +169,13 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
   const commandTitle = mode === 'move' ? (view.cell === undefined ? '选择移动落点' : '移动 → ' + cellLabel(field, view.cell)) : mode === 'guard' ? '选择固守或警戒' : (option?.label ?? '行动') + (targetUnit ? ' → ' + targetUnit.name : '');
   const commandDetail = !executeReady ? (!canControl ? '当前不可下令' : mode === 'move' ? movement?.reason ?? '请选择可达落点' : target?.reason ?? option?.reason ?? '请在下方选择守备') : mode === 'move' ? movement?.path ? '花费' + movement.path.cost + '移动 · 保留主行动' : movement?.reason ?? '点击可达地块' : preview?.healing !== undefined ? '预计恢复' + preview.healing : preview?.expectedDamage !== undefined ? '命中' + Math.round((preview.hitChance ?? 0) * 100) + '% · 预计损失' + preview.expectedDamage.toFixed(1) + (preview.damageModel==='member-health'||targetUnit?.scale === 'hero' ? '生命' : '人') + ' · 主行动1' : preview?.resource ? '消耗' + preview.resource.cost + preview.resource.name : reasonText();
   function reasonText(): string { return canControl ? '请查看行动预览' : '当前不可下令'; }
-  const reason = !canControl ? '当前行动者为' + (active?.name ?? '未定位的敌方单位') + '，可先查看战场。' : target?.reason ?? option?.reason;
+  const reason = !canControl ? '当前行动者为' + activeLabel + '，可先查看战场。' : target?.reason ?? option?.reason;
   const movePanel = `<div class="move-preview">${movement ? movement.path ? '到' + cellLabel(field, view.cell!) + ' · 花费' + movement.path.cost + '移动，余' + (battle.movementLeft(actor!.id) - movement.path.cost) : esc(movement.reason ?? '') : '点击蓝边可达格，空格、队友格或濒死单位所在格均可预览移动；濒死单位不占容量，存活敌军仍阻路。'}
     ${movement?.path && movement.path.cost > 0 ? '<div class="sub">' + (movement.risks.length ? movement.risks.map(esc).join('；') : '已知敌军没有可触发的移动反应。') + '</div>' : ''}
     <button class="primary" data-action="grid-move" data-actor="${esc(actor?.id ?? '')}" ${canControl && movement?.path && movement.path.cost > 0 ? '' : 'disabled'}>确认移动${movement?.path ? ' · ' + movement.path.cost + '点' : ''}</button></div>`;
   return `<section class="tactical-workspace" data-ended="${over}">
     <div class="tactical-heading"><div><span class="sub">战术交战${battle.fieldTags.includes('night') ? ' · 夜间' : ''}</span><h2>${goal}</h2></div><button class="objective-status" ${mission.kind === 'annihilation' ? 'disabled' : 'data-action="grid-cell" data-cell="' + mission.cell + '"'}>第${battle.round}/${field.objective.limit}轮${mission.kind === 'control' ? '<small>攻方占领 ' + battle.controlRounds[mission.attackingSide ?? 'ally'] + '/' + mission.rounds + '</small>' : ''}</button></div>
-    ${over ? '<div class="banner">' + (battle.winner() === 'ally' ? '任务胜利' : battle.winner() === 'enemy' ? '任务失败' : '任务结束：僵持') + '</div>' : '<div class="turn-indicator">当前行动 <b>' + esc(active?.name ?? '未定位的敌方单位') + '</b></div>'}
+    ${over ? '<div class="banner">' + (battle.winner() === 'ally' ? '任务胜利' : battle.winner() === 'enemy' ? '任务失败' : '任务结束：僵持') + '</div>' : '<div class="turn-indicator">当前行动 <b>' + esc(activeLabel) + '</b></div>'}
     ${renderBattleHighlights(battle)}
     <div class="tactical-columns"><div class="tactical-map-column">
       <div class="camera-tools"><span class="map-legend">${mode === 'move' ? '蓝边可移动 · 金线为路径' : mode === 'guard' ? '选择固守或警戒' : '浅底为射程参考 · 亮边为可选目标'}</span><button data-action="grid-focus">定位我方</button></div>
