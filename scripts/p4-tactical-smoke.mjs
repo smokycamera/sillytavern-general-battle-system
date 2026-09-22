@@ -18,21 +18,22 @@ try {
     window.SillyTavern = { getContext: () => ({ chatId: 'tactical-ui-test' }) };
     const frame = document.createElement('iframe'); frame.id = 'panel'; frame.style = 'position:fixed;inset:0;border:0;width:100%;height:100%'; frame.srcdoc = html; document.body.append(frame);
   }, { fixture, html });
-  const p = page.frameLocator('#panel'); await p.locator('.grid-board').waitFor();
+  const p = page.frameLocator('#panel');
+  const idle = () => p.locator('body:not([aria-busy="true"])').waitFor(); await p.locator('.grid-board').waitFor();
   const before = await page.evaluate(() => ({ save: JSON.stringify(window.readSave()), writes: window.writes }));
-  await p.locator('.grid-cell[data-cell="24"]').click();
+  await p.locator('.grid-cell[data-cell="24"]').click(); await idle();
   assert.match(await p.locator('.map-inspector').innerText(), /连续守住2个完整回合/);
-  await p.locator('.grid-cell[data-cell="31"]').click();
+  await p.locator('.grid-cell[data-cell="31"]').click(); await idle();
   assert.match(await p.locator('.penetration-preview').innerText(), /无法穿透/);
   assert.equal(await p.locator('.command-actor h3').innerText(), '前锋术士');
-  await p.locator('.grid-cell[data-cell="29"]').click();
+  await p.locator('.grid-cell[data-cell="29"]').click(); await idle();
   assert.match(await p.locator('.map-inspector').innerText(), /地面不可通行/);
   assert.equal(await p.locator('.move-preview [data-action="grid-move"]').isDisabled(), true);
-  await p.locator('.command-modes button').filter({ hasText: '技能' }).click();
+  await p.locator('.command-modes button').filter({ hasText: '技能' }).click(); await idle();
   const fire = fixture.battle.snap.combatants.find((u) => u.id === 'a').abilities.find((a) => a.definitionId === 'bp-firestorm');
   const heal = fixture.battle.snap.combatants.find((u) => u.id === 'a').abilities.find((a) => a.definitionId === 'bp-mending');
-  await p.locator('[data-role="grid-mode"]').selectOption(fire.id);
-  await p.locator('.grid-cell[data-cell="31"]').click();
+  await p.locator('[data-role="grid-mode"]').selectOption(fire.id); await idle();
+  await p.locator('.grid-cell[data-cell="31"]').click(); await idle();
   assert.equal(await p.locator('.grid-cell.area-hit').count(), 2);
   assert.match(await p.locator('.area-preview').innerText(), /铁甲守卫、守点步兵/);
   assert.equal(await p.locator('.tactical-workspace').innerText().then((t) => t.includes('未发现的伏兵')), false);
@@ -48,20 +49,20 @@ try {
   }
   if (process.argv.includes('--visual-only')) { assert.deepEqual(errors, []); console.log('✓ 更新后的逐目标范围预览与390深色/1024浅色画面通过；未重复治疗和保存流程'); }
   else {
-  await p.locator('[data-role="grid-mode"]').selectOption(heal.id);
-  await p.locator('.grid-cell[data-cell="44"]').click();
+  await p.locator('[data-role="grid-mode"]').selectOption(heal.id); await idle();
+  await p.locator('.grid-cell[data-cell="44"]').click(); await idle();
   assert.equal(await p.locator('[data-role="grid-target"]').inputValue(), 'c');
   assert.match(await p.locator('.action-preview').innerText(), /预计恢复/);
   assert.equal(await p.locator('.command-actor h3').innerText(), '前锋术士');
   assert.deepEqual(await page.evaluate(() => ({ save: JSON.stringify(window.readSave()), writes: window.writes })), before);
-  await p.locator('.command-finish [data-action="grid-execute"]').click();
+  await p.locator('.command-finish [data-action="grid-execute"]').click(); await idle();
   const healed = await page.evaluate(() => window.readSave().battle.snap);
   assert.ok(healed.combatants.find((u) => u.id === 'c').hp > 40);
   assert.ok(healed.actedThisTurn.includes('a'));
-  await p.locator('.command-modes button').filter({ hasText: '移动' }).click();
-  await p.locator('.grid-cell[data-cell="44"]').click();
+  await p.locator('.command-modes button').filter({ hasText: '移动' }).click(); await idle();
+  await p.locator('.grid-cell[data-cell="44"]').click(); await idle();
   assert.match(await p.locator('.move-preview').innerText(), /花费2移动/);
-  await p.locator('.move-preview [data-action="grid-move"]').click();
+  await p.locator('.move-preview [data-action="grid-move"]').click(); await idle();
   const moved = await page.evaluate(() => window.readSave().battle.snap);
   assert.equal(moved.combatants.find((u) => u.id === 'a').pos, 44);
   assert.equal(moved.movementSpent.find(([id]) => id === 'a')[1], 2);
