@@ -29,18 +29,3 @@ export class AutoBattleLoop {
     this.timer = setTimeout(tick, 250);
   }
 }
-
-export interface AutoActivationBattle {
-  active?: { id: string } | null;
-  isOver(): boolean;
-  autoAction(unitId: string): void;
-  endTurn(): void;
-}
-
-/** Guarantee that an automatic activation cannot return control while the same actor is still active. */
-export function ensureAutomaticActivationProgress(battle: AutoActivationBattle, actorId: string): boolean {
-  if (battle.isOver() || battle.active?.id !== actorId) return false;
-  battle.autoAction(actorId);
-  if (!battle.isOver() && battle.active?.id === actorId) battle.endTurn();
-  return true;
-}
