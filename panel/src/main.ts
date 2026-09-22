@@ -23,7 +23,7 @@ import { movementLabel } from '../../engine/src/tactics.js';
 import { spCapacity } from '../../engine/src/resources.js';
 import { PROMPT_SECTIONS, applySettlementPrompt, promptSelected, selectPromptEntries, renderPromptSettings, type PromptSectionId } from './prompt-settings.js';
 import { narrativeDeploymentIds } from './narrative-state.js';
-import { AutoBattleLoop } from './auto-battle.js';
+import { AutoBattleLoop, ensureAutomaticActivationProgress } from './auto-battle.js';
 import { JevCommandController, defaultJevSettings, normalizeJevSettings, readJevConnection, saveJevConnection, type JevSettings, type JevBattleState } from './jev-command.js';
 import { newUnitDraft, unitDraftFromRecord, buildUnit, editUnitBuild, type UnitDraft } from './unit-builder.js';
 import { MAX_SCENE_UNITS } from './narrative-limits.js';
@@ -692,10 +692,7 @@ async function autoSmall(b: SmallBattle): Promise<void> {
   else b.autoAction(actorId);
   // Every automatic activation must make observable turn progress. A planner may legally
   // stop after movement/waiting; do not leave an enemy turn stranded in the UI.
-  if (!b.isOver() && b.active?.id === actorId) {
-    b.autoAction(actorId);
-    if (!b.isOver() && b.active?.id === actorId) b.endTurn();
-  }
+  ensureAutomaticActivationProgress(b, actorId);
 }
 async function runAuto(): Promise<void> {
   if (fullAuto.running) return;
@@ -3227,7 +3224,10 @@ async function handleChange(e: Event): Promise<void> {
     await persist();
     // Switching AI mode is also a recovery action: if the battle is currently waiting
     // on an automatic enemy activation, resume it immediately instead of only repainting.
-    if (state.small && !state.small.isOver() && state.small.active?.side === 'enemy') await runAuto();
+    if (state.small && !state.small.isOver() && state.small.active?.side === 'enemy') {
+      await runAuto();
+      await persist();
+    }
     render('battle'); return;
   }
   if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'jev-ability') {
