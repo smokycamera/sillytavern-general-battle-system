@@ -307,3 +307,22 @@ describe("optional JEV command integration", () => {
     expect(commands.some((a) => a.targetId === "b")).toBe(false);
   });
 });
+
+describe('direct remote models execute battle decisions', () => {
+  it.each(['typesafe', 'openai'] as const)('uses selected %s model without a local bridge', async protocol => {
+    const calls: { url: string; body: any }[] = [];
+    const controller = new JevCommandController(async (url, init) => {
+      const body = JSON.parse(String(init?.body));
+      calls.push({ url: String(url), body });
+      if (protocol === 'typesafe') return new Response(JSON.stringify({ model: 'selected-model', answers: Object.fromEntries(Object.entries(body.questions).map(([id, q]: [string, any]) => [id, q.type === 'score' ? { type: 'score', score: 2, confidence: 0.9 } : { type: 'noul', noul: 0.2 }])) }));
+      const state = JSON.parse(body.messages[1].content);
+      return new Response(JSON.stringify({ model: 'selected-model', choices: [{ message: { content: JSON.stringify({ confidence: 0.9, scores: Object.fromEntries(state.candidates.map((c: any) => [c.id, 0.6])) }) } }] }));
+    });
+    const battle = small(), before = battle.toSnapshot();
+    const result = await controller.prepare(battle, undefined, defaultJevSettings(), { protocol, url: 'https://models.example/v1', token: 'test-key', model: 'selected-model' }, options());
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every(c => c.body.model === 'selected-model' && c.url === 'https://models.example/v1/' + (protocol === 'typesafe' ? 'systemone' : 'chat/completions'))).toBe(true);
+    expect(result.state.detail).not.toContain('回退');
+    expect(battle.toSnapshot()).toEqual(before);
+  });
+});

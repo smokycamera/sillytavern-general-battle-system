@@ -1,3 +1,5 @@
+import { connectionUrl, fetchJevModels, directJevRequest, type JevConnection } from './jev-connection.js';
+export { connectionUrl, readJevConnection, saveJevConnection, type JevConnection } from './jev-connection.js';
 import { SmallBattle, MassBattle, type Order } from "../../engine/src/index.js";
 import {
   CommandRuntime,
@@ -50,10 +52,6 @@ function battleStamp(battle: SmallBattle | MassBattle): string {
   }
   return `${text.length}:${a >>> 0}:${b >>> 0}`;
 }
-export interface JevConnection {
-  url: string;
-  token: string;
-}
 export const defaultJevSettings = (): JevSettings => ({
   mode: "builtin",
   ability: "skilled",
@@ -96,39 +94,6 @@ export function normalizeJevSettings(
         ? structuredClone(n)
         : defaults.narrative,
   };
-}
-export function connectionUrl(value: string): string {
-  const url = new URL(value.trim());
-  if (
-    !["http:", "https:"].includes(url.protocol) ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash
-  )
-    throw Error("请输入完整的 HTTP 服务地址");
-  if (
-    url.protocol === "http:" &&
-    !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
-  )
-    throw Error("远程 JEV 服务请使用 HTTPS");
-  return url.href.replace(/\/$/, "");
-}
-export function readJevConnection(): JevConnection {
-  try {
-    return {
-      url: connectionUrl(
-        localStorage.getItem("tb:jev:url") ?? "http://127.0.0.1:4317",
-      ),
-      token: sessionStorage.getItem("tb:jev:token") ?? "",
-    };
-  } catch {
-    return { url: "http://127.0.0.1:4317", token: "" };
-  }
-}
-export function saveJevConnection(connection: JevConnection): void {
-  localStorage.setItem("tb:jev:url", connectionUrl(connection.url));
-  sessionStorage.setItem("tb:jev:token", connection.token.trim());
 }
 class CandidateStore implements PlanStore {
   constructor(private current: Checkpoint | null) {}
@@ -227,6 +192,8 @@ export class JevCommandController {
     body: unknown,
     signal: AbortSignal,
   ): Promise<T> {
+    if (connection.protocol && connection.protocol !== "bridge")
+      return await directJevRequest(connection, path, body, signal, this.request) as T;
     const response = await this.request(
       connectionUrl(connection.url) + "/api/bridge/" + path,
       {
@@ -244,7 +211,14 @@ export class JevCommandController {
     if (!response.ok) throw Error("JEV 服务返回 " + response.status);
     return (await response.json()) as T;
   }
+  async models(connection: JevConnection): Promise<string[]> {
+    return fetchJevModels(connection, this.request);
+  }
   async test(connection: JevConnection): Promise<string> {
+    if (connection.protocol && connection.protocol !== 'bridge') {
+      const models = await this.models(connection);
+      return `连接正常，获取到 ${models.length} 个模型（尚未调用决策）`;
+    }
     const response = await this.request(
       connectionUrl(connection.url) + "/api/meta",
       {
