@@ -1,3 +1,4 @@
+import { JEV_API_URL, type JevConnection } from './jev-connection.js';
 import { ABILITY_LABELS, STYLE_PRESETS, encounterSummary, encounterRequest, type JevEncounterContext } from './jev-context.js';
 import { enhancementLabel, trainingEdge, trainingDamage } from '../../engine/src/enhancements.js';
 import { renderReportWorkspace } from './report-view.js';
@@ -864,12 +865,16 @@ function renderBattleToolbar(b: SmallBattle | MassBattle): string {
   const actor=b instanceof SmallBattle?b.active:b.combatants.find(u=>u.id===formationView.selectedId)??b.combatants.find(u=>u.side==='ally'&&u.status==='ready'&&!b.isAttached(u.id));
   return `<div class="battle-toolbar"><span class="tag">本场：${b.nonLethal?'非致命':'致命'}</span>${cannonAmmoControl(actor,b.isOver()||actor?.side!=='ally')}${renderJevMode(b)}<label class="battle-auto"><input type="checkbox" aria-label="全自动战斗（含主控）" data-role="full-auto-battle" ${fullAuto.running ? 'checked' : ''} ${b.isOver() ? 'disabled' : ''}>${fullAuto.running ? '自动推进中 · 点击暂停' : '全自动战斗（含主控）'}</label><label>自动策略 <select data-role="battle-tactic" ${b.isOver() || b.rules.resolutionVersion !== 'v2' ? 'disabled' : ''}>${Object.entries(TACTICAL_PREFERENCES).map(([id,name]) => `<option value="${esc(id)}" ${b.allyTactic === id ? 'selected' : ''}>${name}</option>`).join('')}</select></label>${!b.isOver() ? '<details data-detail-id="battle-options"><summary>更多</summary><button data-action="battle-finish" data-reason="ceasefire">停止交战并结算</button><button class="danger" data-action="battle-finish" data-reason="surrender">投降并结算</button></details>' : ''}</div>`;
 }
+function jevConnectionForm(): JevConnection {
+  const value = (role: string) => document.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-role="${role}"]`)!.value;
+  return { url: value('jev-url'), token: value('jev-token'), model: value('jev-model'), protocol: value('jev-protocol') as JevConnection['protocol'] };
+}
 function renderJevMode(b?: SmallBattle | MassBattle): string {
   return `<label>自动 AI <select data-role="jev-mode" ${b?.isOver() ? 'disabled' : ''}><option value="builtin" ${state.jevSettings.mode === 'builtin' ? 'selected' : ''}>原有自动 AI</option><option value="jev" ${state.jevSettings.mode === 'jev' ? 'selected' : ''}>JEV 指挥</option></select></label>${state.jevSettings.mode === 'jev' ? `<span role="status" data-role="jev-status">${esc(jevCommand.busy ? jevCommand.detail : state.jevBattle?.detail ?? '就绪 · 自动执行时使用 JEV')}</span>${jevCommand.busy ? '<button data-action="jev-stop">暂停 JEV</button>' : ''}` : ''}${state.jevSettings.mode==='jev'&&state.jevBattle?.context?`<span class="sub">${esc(encounterSummary(state.jevBattle.context))}</span>`:''}`;
 }
 function renderJevSettings(): string {
   const c = readJevConnection(), settings = state.jevSettings;
-  return `<section><h2>JEV 指挥</h2>${renderJevMode()}<p>原有自动 AI 默认启用。JEV 负责计划和行动选择，酒馆引擎负责规则与结算；服务不可用时自动回退原有 AI。</p><div class="row"><label>服务地址 <input data-role="jev-url" type="url" value="${esc(c.url)}" placeholder="http://127.0.0.1:4317"></label><label>本机服务令牌 <input data-role="jev-token" type="password" autocomplete="off" value="${esc(c.token)}"></label><button data-action="jev-connect">保存连接并测试</button></div><p class="sub">此处填写 JEV_SERVICE_TOKEN；模型 API 密钥保存在 JEV 服务的 .env 中。服务令牌仅保留在当前浏览器会话，不写入聊天存档。</p><div class="row"><label>我方指挥水平 <select data-role="jev-ability">${Object.entries({novice:'新手',regular:'常规',skilled:'熟练',expert:'专家',master:'大师'}).map(([id,name]) => `<option value="${id}" ${settings.ability===id?'selected':''}>${name}</option>`).join('')}</select></label><label>正文目标提取 <select data-role="jev-narrative">${Object.entries({off:'关闭',auto:'自动读取完成正文',manual:'仅手动扫描'}).map(([id,name])=>`<option value="${id}" ${settings.narrative.mode===id?'selected':''}>${name}</option>`).join('')}</select></label><label>最近消息数 <input type="number" min="0" max="100" data-role="jev-window" value="${settings.narrative.windowSize}"></label><button data-action="jev-scan" ${!currentBattle()||settings.narrative.mode==='off'?'disabled':''}>扫描当前正文</button></div><div class="row"><label>敌方指挥<select data-role="jev-enemy-mode"><option value="auto" ${settings.context.enemy==='auto'?'selected':''}>根据上下文</option><option value="manual" ${settings.context.enemy==='manual'?'selected':''}>手动指定</option></select></label><label>敌方能力／缺省档位<select data-role="jev-enemy-ability">${Object.entries(ABILITY_LABELS).map(([id,label])=>`<option value="${id}" ${settings.context.enemyAbility===id?'selected':''}>${label}</option>`).join('')}</select></label><label>敌方风格／缺省偏好<select data-role="jev-enemy-style">${Object.entries(STYLE_PRESETS).map(([id,p])=>`<option value="${id}" ${settings.context.enemyStyle===id?'selected':''}>${p.label}</option>`).join('')}</select></label></div><div class="row"><label>战场与任务<select data-role="jev-scene" ${currentBattle()?'disabled':''}><option value="auto" ${settings.context.scene==='auto'?'selected':''}>开战时根据上下文</option><option value="manual" ${settings.context.scene==='manual'?'selected':''}>沿用手动设置</option></select></label><label>战斗形式<select data-role="jev-battle-mode" ${currentBattle()?'disabled':''}><option value="auto" ${settings.context.battleMode==='auto'?'selected':''}>按上下文与编制</option><option value="small" ${settings.context.battleMode==='small'?'selected':''}>小战地图</option><option value="mass" ${settings.context.battleMode==='mass'?'selected':''}>编队会战</option></select></label></div><p class="sub">JEV 开战判定读取上方消息范围，一次选择敌方能力、风格、地形、昼夜、地图与任务，不需要另配文本模型。缺少依据时沿用缺省值；战斗中地图和胜负规则固定，仅在新正文明确更换或改变指挥者时更新敌方配置。</p>${state.jevBattle?.context?`<p>${esc(encounterSummary(state.jevBattle.context))}</p><p class="sub">${esc(state.jevBattle.context.detail)}</p>`:''}<p class="sub">正文提取需要服务端配置 TEXT_API_URL、TEXT_API_KEY、TEXT_MODEL。开启后，选定范围的完成消息发送到该服务，只补充目标与环境提示。</p></section>`;
+  return `<section><h2>JEV 指挥</h2>${renderJevMode()}<p>原有自动 AI 默认启用。JEV 负责计划和行动选择，酒馆引擎负责规则与结算；服务不可用时自动回退原有 AI。</p><div class="row"><label>连接方式 <select data-role="jev-protocol"><option value="typesafe" ${c.protocol==='typesafe'?'selected':''}>TypeSafe / JEV 直连</option><option value="openai" ${c.protocol==='openai'?'selected':''}>OpenAI 兼容接口</option><option value="bridge" ${c.protocol==='bridge'?'selected':''}>本地桥接（旧版）</option></select></label><label>API 地址 <input data-role="jev-url" type="url" value="${esc(c.url)}" placeholder="${JEV_API_URL}"></label><label>API Key／桥接令牌 <input data-role="jev-token" type="password" autocomplete="off" value="${esc(c.token)}"></label></div><div class="row"><button data-action="jev-models">拉取模型</button><label>模型列表 <select data-role="jev-model-list"><option value="">拉取后选择模型</option>${c.model?`<option value="${esc(c.model)}" selected>${esc(c.model)}</option>`:''}</select></label><label>模型 ID <input data-role="jev-model" value="${esc(c.model??'')}" placeholder="jev-latest"></label><button data-action="jev-connect">保存连接并测试</button><button data-action="jev-save">仅保存连接</button></div><p class="sub">默认直连 TypeSafe 官方 API。第三方服务请选择其支持的协议，填写地址与 API Key 后拉取并选择模型；也可手动填写模型 ID。密钥只保留在当前浏览器会话，不写入聊天存档。服务须允许浏览器跨域访问（CORS）。旧版本地桥接仍使用 JEV_SERVICE_TOKEN，模型由服务端配置。</p><div class="row"><label>我方指挥水平 <select data-role="jev-ability">${Object.entries({novice:'新手',regular:'常规',skilled:'熟练',expert:'专家',master:'大师'}).map(([id,name]) => `<option value="${id}" ${settings.ability===id?'selected':''}>${name}</option>`).join('')}</select></label><label>正文目标提取 <select data-role="jev-narrative">${Object.entries({off:'关闭',auto:'自动读取完成正文',manual:'仅手动扫描'}).map(([id,name])=>`<option value="${id}" ${settings.narrative.mode===id?'selected':''}>${name}</option>`).join('')}</select></label><label>最近消息数 <input type="number" min="0" max="100" data-role="jev-window" value="${settings.narrative.windowSize}"></label><button data-action="jev-scan" ${!currentBattle()||settings.narrative.mode==='off'?'disabled':''}>扫描当前正文</button></div><div class="row"><label>敌方指挥<select data-role="jev-enemy-mode"><option value="auto" ${settings.context.enemy==='auto'?'selected':''}>根据上下文</option><option value="manual" ${settings.context.enemy==='manual'?'selected':''}>手动指定</option></select></label><label>敌方能力／缺省档位<select data-role="jev-enemy-ability">${Object.entries(ABILITY_LABELS).map(([id,label])=>`<option value="${id}" ${settings.context.enemyAbility===id?'selected':''}>${label}</option>`).join('')}</select></label><label>敌方风格／缺省偏好<select data-role="jev-enemy-style">${Object.entries(STYLE_PRESETS).map(([id,p])=>`<option value="${id}" ${settings.context.enemyStyle===id?'selected':''}>${p.label}</option>`).join('')}</select></label></div><div class="row"><label>战场与任务<select data-role="jev-scene" ${currentBattle()?'disabled':''}><option value="auto" ${settings.context.scene==='auto'?'selected':''}>开战时根据上下文</option><option value="manual" ${settings.context.scene==='manual'?'selected':''}>沿用手动设置</option></select></label><label>战斗形式<select data-role="jev-battle-mode" ${currentBattle()?'disabled':''}><option value="auto" ${settings.context.battleMode==='auto'?'selected':''}>按上下文与编制</option><option value="small" ${settings.context.battleMode==='small'?'selected':''}>小战地图</option><option value="mass" ${settings.context.battleMode==='mass'?'selected':''}>编队会战</option></select></label></div><p class="sub">JEV 开战判定读取上方消息范围，一次选择敌方能力、风格、地形、昼夜、地图与任务，不需要另配文本模型。缺少依据时沿用缺省值；战斗中地图和胜负规则固定，仅在新正文明确更换或改变指挥者时更新敌方配置。</p>${state.jevBattle?.context?`<p>${esc(encounterSummary(state.jevBattle.context))}</p><p class="sub">${esc(state.jevBattle.context.detail)}</p>`:''}<p class="sub">TypeSafe 直连可选择开战场景与指挥，但不支持自由文本目标提取；该功能请使用 OpenAI 兼容接口，或在本地桥接服务配置 TEXT_API_URL、TEXT_API_KEY、TEXT_MODEL。开启后，所选完成消息将发送到配置的服务。</p></section>`;
 }
 function renderBattleExit(b: SmallBattle | MassBattle): string {
   const archived = state.committedOutcomeIds.includes(battleIdOf(b)), deleted=state.deletedReportIds?.includes(battleIdOf(b));
@@ -1983,7 +1988,7 @@ async function handleAction(e: Event): Promise<void> {
   if (!el) return;
   const act = el.dataset.action!;
   if (act === 'jev-stop') { stopAutomation(); toast('已暂停 JEV 指挥'); render('battle'); return; }
-  if (act === 'jev-connect') { try { await actions[act]!(el); } catch (error) { toast(String(error)); } return; }
+  if (['jev-connect', 'jev-models', 'jev-save'].includes(act)) { try { await actions[act]!(el); } catch (error) { toast(String(error)); } return; }
   // Navigation never joins the durable-write queue or alters its failure flag.
   if (act === 'workspace-tab') {
     const tab = el.dataset.tab;
@@ -2479,9 +2484,22 @@ async function startMassBattle(context?:JevEncounterContext):Promise<void> {
 
 const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   'jev-stop': () => { stopAutomation(); toast('已暂停 JEV 指挥'); render('battle'); },
+  'jev-save': () => { stopAutomation(); saveJevConnection(jevConnectionForm()); toast('已保存连接与模型'); },
   'jev-connect': async () => {
-    const connection = { url: document.querySelector<HTMLInputElement>('[data-role="jev-url"]')!.value, token: document.querySelector<HTMLInputElement>('[data-role="jev-token"]')!.value };
-    saveJevConnection(connection); toast(await jevCommand.test(connection));
+    const connection = jevConnectionForm();
+    stopAutomation(); saveJevConnection(connection); toast(await jevCommand.test(connection));
+  },
+  'jev-models': async (button) => {
+    const connection = jevConnectionForm(), key = JSON.stringify(connection);
+    const select = document.querySelector<HTMLSelectElement>('[data-role="jev-model-list"]')!;
+    button.setAttribute('disabled', '');
+    try {
+      const models = await jevCommand.models(connection);
+      if (!select.isConnected || JSON.stringify(jevConnectionForm()) !== key) { toast('连接已改变，请重新拉取模型'); return; }
+      select.replaceChildren(new Option('请选择模型', ''), ...models.map(id => new Option(id, id)));
+      if (models.includes(connection.model ?? '')) select.value = connection.model!;
+      toast(`已拉取 ${models.length} 个模型，请选择后保存`);
+    } finally { button.removeAttribute('disabled'); }
   },
   'jev-scan': async () => { const b = currentBattle(); if (!b || b.isOver()) throw Error('请先开始战斗'); await applyJev(b, true); await persist(); render('battle'); },
   'delivery-generate': async el => {
@@ -3161,7 +3179,7 @@ async function afterSmallAction(endTurn = true): Promise<void> {
 document.addEventListener('click', e => {
   const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
   if (!action) return;
-  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'modal-stop', 'jev-stop'].includes(action)) { void handleAction(e); return; }
+  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'modal-stop', 'jev-stop', 'jev-models', 'jev-connect', 'jev-save'].includes(action)) { void handleAction(e); return; }
   const viewOnly = ['save-retry', 'workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-inspect-unit', 'grid-cell', 'grid-mode', 'narrative-review', 'log-detail', 'unit-detail', 'role-detail', 'modal-stop', 'migration-export'].includes(action);
   const feedback = !viewOnly && /^(grid-|small-|mass-|formation-)/.test(action) ? (e.target as HTMLElement).closest<HTMLElement>('[data-action]') ?? undefined : undefined;
   void panelTask(() => handleAction(e), viewOnly, feedback);
@@ -3173,12 +3191,23 @@ document.addEventListener('pointerup', () => { cameraPointer=undefined; }, {pass
 document.addEventListener('wheel', event => { if (event.target instanceof Element && event.target.closest('[data-workspace="battle"]')) battleCamera.browse(); }, {passive:true});
 document.addEventListener('input', (e) => {
   if (!(e.target instanceof Element)) return;
+  if (e.target instanceof HTMLInputElement && ['jev-url', 'jev-token'].includes(e.target.dataset.role ?? '')) { document.querySelector<HTMLSelectElement>('[data-role="jev-model-list"]')?.replaceChildren(new Option('拉取后选择模型', '')); return; }
   if (e.target instanceof HTMLTextAreaElement && e.target.dataset.role === 'prompt-template') { promptDrafts.set(e.target.dataset.section!, e.target.value); return; }
   if (e.target instanceof HTMLTextAreaElement && e.target.dataset.role === 'narrative-draft') { narrativeDrafts.set(e.target.dataset.id!, e.target.value); return; }
   inventoryPanel.capture(e.target);
   if (e.target.closest('[data-builder-form]') && !(e.target instanceof HTMLSelectElement) && !(e.target instanceof HTMLInputElement && e.target.type === 'checkbox')) { captureForm(); builderPreview = undefined; document.querySelectorAll('[data-role="builder-preview"]').forEach((el) => el.remove()); }
 });
 async function handleChange(e: Event): Promise<void> {
+  if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'jev-model-list') {
+    const input = document.querySelector<HTMLInputElement>('[data-role="jev-model"]');
+    if (input && e.target.value) input.value = e.target.value;
+    return;
+  }
+  if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'jev-protocol') {
+    const select = document.querySelector<HTMLSelectElement>('[data-role="jev-model-list"]');
+    select?.replaceChildren(new Option('拉取后选择模型', ''));
+    return;
+  }
   if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'jev-mode') {
     stopAutomation(); state.jevSettings.mode = e.target.value === 'jev' ? 'jev' : 'builtin'; state.jevBattle = undefined;
     await persist(); render('battle'); return;

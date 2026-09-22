@@ -1,19 +1,44 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "0.2.0-rc.8",
-  "builtAt": "2026-09-22T08:41:21.982Z",
-  "sourceFingerprint": "29104ef3b9ac517372395d36f07966445004d575f51686e870ba77f6d69fab66",
+  "version": "0.2.0-rc.9",
+  "builtAt": "2026-09-22T09:28:25.171Z",
+  "sourceFingerprint": "79cc330c607659fefcbc0533f422fb86e2823bba32fe43a99ef9f4b628a77223",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
+    {
+      "path": "COMMERCIAL-LICENSE.md",
+      "bytes": 758,
+      "sha256": "bae3de53ef94b0f7df53e294185aa3551e669726e12fb7726e6bcb843b5393cc"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 3749,
+      "sha256": "1daa20477fb37b106fb8f3be18e6835ccfd6f01fc7f83faccc6897f7f156181d"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1629,
+      "sha256": "2056cd18a9c7cac09fab4bca228330012f88dd79884c6481c9816c41993997a9"
+    },
+    {
+      "path": "README.zh-CN.md",
+      "bytes": 1282,
+      "sha256": "9dd0fd07d17f361a9a73ae609ee007de71e004a77c27df31d5ab512f959d54ab"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "bytes": 1489,
+      "sha256": "72a745421875fa61d43571ff0db127f427babc3599317d7c566fba794fa748e6"
+    },
     {
       "path": "dist/assets/panel-BAWJMYI4.css",
       "bytes": 7714,
       "sha256": "d8e150b9ba2a9668681edf533c5ebfa2a0c588c1ef4fdbff02e2b456b28f93f9"
     },
     {
-      "path": "dist/assets/panel-CpbG-9yg.js",
-      "bytes": 358198,
-      "sha256": "e19c7f87f6516a1df96a5c2aef976f729a4a607292d8cfe6c5bbd9d9de2c6b39"
+      "path": "dist/assets/panel-DZYgHIQ5.js",
+      "bytes": 366084,
+      "sha256": "85cea8b40a18452fe08595945ebf118e709bc3e6e06728c1c3a18b67b257dde0"
     },
     {
       "path": "dist/assets/preferences-CUmQPgwV.js",
@@ -29,11 +54,6 @@
       "path": "assets/worldbook/!通用战斗系统约束.json",
       "bytes": 18718,
       "sha256": "9a37ce8c112dee67d236b2b8876d36bd6a3ca3a9d3df4fae330b568eb2adcd81"
-    },
-    {
-      "path": "COMMERCIAL-LICENSE.md",
-      "bytes": 758,
-      "sha256": "bae3de53ef94b0f7df53e294185aa3551e669726e12fb7726e6bcb843b5393cc"
     },
     {
       "path": "docs/extension-migration-assessment-20260919.md",
@@ -52,8 +72,8 @@
     },
     {
       "path": "docs/jev-integration.md",
-      "bytes": 5996,
-      "sha256": "f83a06cf84c405e6f1ec8d62e3e6abb84ba4ed3e9fe0c02883fe975751318609"
+      "bytes": 7192,
+      "sha256": "67ac467bc471397bc955586dbfe92bef803c58a8808317030ca5126cf3c1d882"
     },
     {
       "path": "docs/native-extension-migration-plan-20260919.md",
@@ -78,12 +98,7 @@
     {
       "path": "dist/index.js",
       "bytes": 70900,
-      "sha256": "b25c4a4d531106b91296e5d7c5eb834d0d85202e41cd99c46d174f3da3a57f61"
-    },
-    {
-      "path": "LICENSE",
-      "bytes": 3749,
-      "sha256": "1daa20477fb37b106fb8f3be18e6835ccfd6f01fc7f83faccc6897f7f156181d"
+      "sha256": "ce3bd05dd5b2077cf9f66312772910a5c6fd71f5d29fcc4ac94ec97eeaf69f3c"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -93,32 +108,17 @@
     {
       "path": "manifest.json",
       "bytes": 173,
-      "sha256": "17084beebc29c8fc7e1f3e05a6701d18dfa5016ec743cf97c75d364ca7a80148"
+      "sha256": "7d85f35320533f30423de7c6d672d19197154acdebe1f1fed7762fe7ba4f39f8"
     },
     {
       "path": "dist/panel/index.html",
       "bytes": 43276,
-      "sha256": "fc88c417dc108c35d9cf2e1dc7a397ebb2f524843b1c242330fd44e5d41c84ce"
-    },
-    {
-      "path": "README.md",
-      "bytes": 1454,
-      "sha256": "39e3acb3a491bbfc6b0d77bbcb2938eacfd8c601e605a884e44b3f2b82fbf48d"
-    },
-    {
-      "path": "README.zh-CN.md",
-      "bytes": 1147,
-      "sha256": "59bbfc502c9c3ab6e6784abd01149b466ce6b1e2e00e9090fe4d099622116c2b"
+      "sha256": "fbe6e42fc3fccb2170cc6e6de59173a729db9da9b06243518fe87f5628010cc3"
     },
     {
       "path": "release/current-baseline.json",
       "bytes": 2532,
       "sha256": "8dfb3599bec3e692d47ebf6fd631647326cf5fdeab8c592637c0463aa614e8c5"
-    },
-    {
-      "path": "THIRD_PARTY_NOTICES.md",
-      "bytes": 1489,
-      "sha256": "72a745421875fa61d43571ff0db127f427babc3599317d7c566fba794fa748e6"
     }
   ],
   "validation": {

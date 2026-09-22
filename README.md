@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **0.2.0-rc.8**.
+Current version: **0.2.0-rc.9**.
 
 A native frontend battle extension for SillyTavern / TauriTavern. It supports small-scale battles and larger engagements, unit profiles, equipment and inventory, skill effects, post-battle progression, battle-report archives, and preview/confirmation of battle events extracted from chat content.
 
@@ -11,7 +11,7 @@ A native frontend battle extension for SillyTavern / TauriTavern. It supports sm
 1. In SillyTavern, open **Extensions → Install Extension**, enter `https://github.com/smokycamera/sillytavern-general-battle-system`, install it, and refresh the page.
 2. Import and enable [!通用战斗系统约束.json](assets/worldbook/!通用战斗系统约束.json) in your World Info / lorebook.
 
-rc.8 can select enemy command capability/style and the supported battlefield/mission setup from recent completed narrative in one JEV batch, with manual overrides. Update the companion JEV service to 0.2.3 as well.
+rc.8 can select enemy command capability/style and the supported battlefield/mission setup from recent completed narrative in one JEV batch, with manual overrides. rc.9 adds direct TypeSafe/JEV and OpenAI-compatible API connections with model discovery and selection; the default API base is `https://api.typesafe.ai/v1`. Existing local bridge connections remain supported (service 0.2.3).
 
 The existing automatic AI remains available as the default. You can configure a JEV service in the settings page and select **JEV Command** from the battlefield toolbar. See the [JEV integration and usage guide](docs/jev-integration.md) for details.
 
