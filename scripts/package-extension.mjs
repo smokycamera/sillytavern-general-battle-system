@@ -4,13 +4,13 @@ import { createHash } from 'node:crypto';
 const output = path.resolve('release/native-candidate');
 const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
 copyFileSync('extension/manifest.json', path.join(output, 'manifest.json'));
-for (const file of ['README.md', 'LICENSE', 'COMMERCIAL-LICENSE.md', 'THIRD_PARTY_NOTICES.md']) copyFileSync(file, path.join(output, file));
+for (const file of ['README.md', 'README.zh-CN.md', 'LICENSE', 'COMMERCIAL-LICENSE.md', 'THIRD_PARTY_NOTICES.md']) copyFileSync(file, path.join(output, file));
 mkdirSync(path.join(output, 'release'), { recursive: true });
 copyFileSync('release/current-baseline.json', path.join(output, 'release/current-baseline.json'));
 for (const directory of ['assets', 'licenses', 'docs']) {
   if (directory === 'docs') {
     mkdirSync(path.join(output, directory), { recursive: true });
-    for (const name of ['native-extension-validation.md', 'validation-results.json', 'extension-migration-assessment-20260919.md', 'native-extension-migration-plan-20260919.md', 'script-baseline-20260919.md', 'jev-integration.md']) copyFileSync(path.join(directory, name), path.join(output, directory, name));
+    for (const name of ['native-extension-validation.md', 'validation-results.json', 'extension-migration-assessment-20260919.md', 'native-extension-migration-plan-20260919.md', 'script-baseline-20260919.md', 'jev-integration.md', 'jev-command-validation-20260922.md']) copyFileSync(path.join(directory, name), path.join(output, directory, name));
   } else cpSync(directory, path.join(output, directory), { recursive: true });
 }
 const files = [];

@@ -1,6 +1,8 @@
 import {
   SmallBattle,
   MassBattle,
+  memberHealth,
+  memberHealthMax,
   type Combatant,
   type Order,
 } from "../../engine/src/index.js";
@@ -114,8 +116,8 @@ export class TavernJevAdapter implements BattleAdapter {
       name: u.name,
       side: u.side,
       location: this.location(u),
-      hp: u.hp,
-      maxHp: u.base.hpMax,
+      hp: memberHealth(u),
+      maxHp: memberHealthMax(u),
       attack: u.weapon ? diceAvg(u.weapon.baseDice) : 1,
       range:
         small && field
@@ -181,6 +183,7 @@ export class TavernJevAdapter implements BattleAdapter {
         fullyObservable: false,
         mechanisms: {
           movement: true,
+          flanking: small ? !!field && field.width > 1 : true,
           "ranged-fire": units.some((u) => u.range > 1),
           ammo: false,
           morale: true,
@@ -222,16 +225,17 @@ export class TavernJevAdapter implements BattleAdapter {
       ? Math.min(30, ...known.map((u) => distance(u, destination)))
       : before;
     return {
-      damage: (preview?.expectedDamage ?? 0) / Math.max(1, target?.hp ?? 1),
+      damage:
+        (preview?.expectedDamage ?? 0) /
+        Math.max(1, target ? memberHealth(target) : 1),
       support:
-        (preview?.healing ?? 0) /
-        Math.max(1, target?.base.hpMax ?? unit.base.hpMax),
+        (preview?.healing ?? 0) / Math.max(1, memberHealthMax(target ?? unit)),
       initiative: Math.max(0, before - after) / 3,
       retreat: Math.max(0, after - before) / 3,
       objective: destination ? Math.max(0, before - after) / 6 : 0,
       risk:
         (preview?.fallChance ?? 0) +
-        (preview?.fallDamage ?? 0) / Math.max(1, unit.hp),
+        (preview?.fallDamage ?? 0) / Math.max(1, memberHealth(unit)),
       fire: preview?.expectedDamage ? 1 : 0,
       hold: 0,
     };
