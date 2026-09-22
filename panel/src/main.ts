@@ -686,9 +686,16 @@ async function applyJev(b: SmallBattle | MassBattle, manualScan = false): Promis
   state.jevBattle = result.state;
 }
 async function autoSmall(b: SmallBattle): Promise<void> {
-  if (!b.active) return;
+  const actorId = b.active?.id;
+  if (!actorId) return;
   if (state.jevSettings.mode === 'jev' && b.rules.resolutionVersion === 'v2') await applyJev(b);
-  else b.autoAction(b.active.id);
+  else b.autoAction(actorId);
+  // Every automatic activation must make observable turn progress. A planner may legally
+  // stop after movement/waiting; do not leave an enemy turn stranded in the UI.
+  if (!b.isOver() && b.active?.id === actorId) {
+    b.autoAction(actorId);
+    if (!b.isOver() && b.active?.id === actorId) b.endTurn();
+  }
 }
 async function runAuto(): Promise<void> {
   if (fullAuto.running) return;
@@ -3217,7 +3224,11 @@ async function handleChange(e: Event): Promise<void> {
   }
   if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'jev-mode') {
     stopAutomation(); state.jevSettings.mode = e.target.value === 'jev' ? 'jev' : 'builtin'; state.jevBattle = undefined;
-    await persist(); render('battle'); return;
+    await persist();
+    // Switching AI mode is also a recovery action: if the battle is currently waiting
+    // on an automatic enemy activation, resume it immediately instead of only repainting.
+    if (state.small && !state.small.isOver() && state.small.active?.side === 'enemy') await runAuto();
+    render('battle'); return;
   }
   if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'jev-ability') {
     state.jevSettings = normalizeJevSettings({...state.jevSettings, ability: e.target.value as JevSettings['ability']}); await persist(); return;
