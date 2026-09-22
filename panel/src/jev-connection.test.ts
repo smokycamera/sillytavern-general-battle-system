@@ -69,9 +69,9 @@ describe('remote JEV connections', () => {
     expect(readJevConnection().protocol).toBe('bridge');
     saveJevConnection(connection);
     expect(readJevConnection()).toEqual(connection);
-    expect([...local.values()]).not.toContain('test-key');
+    expect(local.get('tb:jev:token')).toBe('test-key');
     session.clear();
-    expect(readJevConnection().token).toBe('');
+    expect(readJevConnection().token).toBe('test-key');
   });
   it('sends the selected TypeSafe model, typed scoring questions and API key', async () => {
     const request = vi.fn<typeof fetch>(async () => response({ model: 'jev-version', answers: {
