@@ -9,7 +9,7 @@ rc.9 的 TypeSafe/OpenAI 远程连接在面板 iframe 内直接 fetch。上游�
 - 新增统一请求通道：自动、酒馆宿主转发、自建转发、浏览器直连。rc.9 原协议、地址和模型保留；未设置请求通道时使用自动。旧 bridge 默认保持直连。
 - SillyTavern 调用拥有面板的同源父窗口 `/proxy/`，保留宿主会话与 CSRF。代理未启用时明确提示 `enableCorsProxy: true` 并重启，CSRF 过期另作提示。
 - TauriTavern 的 OpenAI 兼容协议使用其 custom 后端，通过 `reverse_proxy` + `proxy_password` 传入地址与本次 Key，`custom_url` 留空，避免读取宿主已有 CUSTOM 密钥。非流式推理为 quiet 请求；模型、JSON 输出格式和消息通过请求体传递。没有修改宿主模型设置。
-- TauriTavern 无通用 TypeSafe `/proxy/`；自动模式仍允许已支持 CORS 的服务直连。失败后明确引导启动附带的本机转发，不声称仅更新插件就能赋予宿主不存在的网络能力。
+- TauriTavern 的 OpenAI 兼容连接使用宿主原生 Rust 后端，不依赖浏览器 CORS。面板 iframe 即使自身暴露 SillyTavern 对象，也会继续向上寻找真正的 Tauri 宿主，避免误走 `/proxy/` 或浏览器直连。TauriTavern 当前仍没有可供第三方扩展调用的通用 TypeSafe 原生 HTTP 通道；手机端不再提示运行本地 npm relay。
 - `scripts/jev-cors-relay.mjs` 使用 Node 内置模块，默认只监听回环地址；固定一个上游、限制 Origin 和端点、不跟随重定向、不转发 Cookie/CSRF，不记录密钥和请求正文。原生安装包也包含此文件。
 - 模型拉取、连接测试、TypeSafe/OpenAI 决策、上下文选择、正文目标提取和旧 bridge 都使用同一传输入口。推理失败不自动换通道重发，取消信号透传，超时独立提示。
 
@@ -27,4 +27,4 @@ rc.9 的 TypeSafe/OpenAI 远程连接在面板 iframe 内直接 fetch。上游�
 - 浏览器测试未执行：环境中没有 Chromium，Playwright 的浏览器下载返回无效/截断压缩包，无法启动。因此上述模拟宿主测试不等同于真实 Tauri WebView 或 Android 实测。
 - 未使用真实 API Key 调用 TypeSafe 或第三方服务；未操作用户聊天、存档或宿主配置。没有重复全量战斗平衡性测试。
 
-用户操作见 [连接与转发设置](jev-integration.md#跨域连接rc10)。SillyTavern 宿主代理需要宿主配置开关；TauriTavern TypeSafe 跨域需要运行本机转发进程。不同版本的 TauriTavern 后端差异仍需在实际安装环境确认。
+用户操作见 [连接与转发设置](jev-integration.md#跨域连接rc10)。SillyTavern 宿主代理需要宿主配置开关；TauriTavern 的 OpenAI 兼容连接应直接使用宿主原生后端。TypeSafe 若服务端不允许 CORS，则仍需要外部 HTTPS 转发或等待 TT 提供通用原生 HTTP ABI。不同版本的 TauriTavern 后端差异仍需在实际安装环境确认。
