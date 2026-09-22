@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "0.2.0-rc.7",
-  "builtAt": "2026-09-22T07:29:48.143Z",
-  "sourceFingerprint": "420f449a3ee9a54246e74253aaa85bb077ce6b368b9c13247ca55d611b4e11b8",
+  "builtAt": "2026-09-22T07:45:17.529Z",
+  "sourceFingerprint": "2335beffd5c609bed4dad79c14f40a8aee0249376738407717cd6c3985c2692a",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -39,6 +39,11 @@
       "path": "docs/extension-migration-assessment-20260919.md",
       "bytes": 10268,
       "sha256": "290adc8cd5a613d8a843da785921b5f8035c7daf7c567b74906958e78161f4e2"
+    },
+    {
+      "path": "docs/jev-command-validation-20260922.md",
+      "bytes": 4690,
+      "sha256": "75f3d5cec55c146094d47461758e1fea6e53a93935c79754533329b4d5b20741"
     },
     {
       "path": "docs/jev-integration.md",
@@ -94,6 +99,11 @@
       "path": "README.md",
       "bytes": 1238,
       "sha256": "f707f2fac7071d0faf8e1930aca380fde292a18b223db75e001a43be64bba5a3"
+    },
+    {
+      "path": "README.zh-CN.md",
+      "bytes": 973,
+      "sha256": "3e0e91930f56d2b7984c666d55b2727a640f850b8a219f15637285e87f79e145"
     },
     {
       "path": "release/current-baseline.json",
