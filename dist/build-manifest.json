@@ -1,7 +1,7 @@
 {
   "format": "tavern-battle-native-build",
   "version": "0.2.0-rc.6",
-  "builtAt": "2026-09-22T06:21:09.367Z",
+  "builtAt": "2026-09-22T06:22:02.087Z",
   "sourceFingerprint": "87ac0d23d1b376e3f1624baacd0c0e0edc44d7df17352e3ce3a75215a54481c8",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
@@ -92,8 +92,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 859,
-      "sha256": "42312fda06b07755aa87b83552a194905f4ddd7ff8af45f5b1e0ad9d72f32e05"
+      "bytes": 879,
+      "sha256": "78cda87566a24d4b40894c6f7f7e720e2e50155c3cfa4ef68cd3fc671c972850"
     },
     {
       "path": "release/current-baseline.json",
