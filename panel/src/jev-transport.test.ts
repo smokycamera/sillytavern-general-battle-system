@@ -141,7 +141,7 @@ describe('JEV host and relay transport', () => {
   it('gives actionable Tauri TypeSafe CORS help and never invents a host endpoint', async () => {
     const proxy = vi.fn<typeof fetch>(); host(proxy, true);
     await expect(fetchJevModels(connection, async () => { throw new TypeError('Failed to fetch'); })).rejects.toThrow('手机端不要运行 npm relay');
-    await expect(fetchJevModels({ ...connection, transport: 'host' })).rejects.toThrow('暂无 TypeSafe');
+    await expect(fetchJevModels({ ...connection, transport: 'host' })).rejects.toThrow('TypeSafe 通用原生 HTTP 通道');
     expect(proxy).not.toHaveBeenCalled();
   });
   it('preserves legacy bridge defaults and routes explicitly selected relays for metadata and decisions', async () => {

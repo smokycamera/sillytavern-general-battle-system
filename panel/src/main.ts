@@ -281,8 +281,9 @@ const state: AppState = {
 
 const fullAuto = new AutoBattleLoop();
 const jevCommand = new JevCommandController();
+let enemyResumeRequested = false;
 function recentJevMessages() { return (runtime.recentNarrative?.()??[]).filter(m=>m.completed); }
-function stopAutomation(): void { fullAuto.stop(); jevCommand.cancel(); }
+function stopAutomation(): void { fullAuto.stop(); jevCommand.cancel(); enemyResumeRequested = false; }
 window.addEventListener('pagehide', stopAutomation);
 let battleSaveFailed = false;
 let uiBusy = false;
@@ -303,6 +304,7 @@ async function panelTask(task: () => Promise<void>, allowPending = false, feedba
     feedback?.removeAttribute('data-processing');
     uiBusy = false; document.body.removeAttribute('aria-busy');
     if (identity !== adapter.identity() || namespace !== adapter.namespace()) { restore(); render(); }
+    if (enemyResumeRequested) void resumeEnemyTurnIfNeeded();
   }
 }
 async function persist(): Promise<boolean> {
@@ -401,7 +403,9 @@ interface SavedPanel {
 }
 
 function restore(): void {
+  const resumeRequested = enemyResumeRequested;
   stopAutomation();
+  enemyResumeRequested = resumeRequested;
   reportRestartPreview=undefined;
   if (workspaceNamespace !== adapter.namespace()) {
     narrativeDrafts.clear(); promptDrafts.clear();
@@ -696,7 +700,7 @@ async function runAuto(): Promise<void> {
   if (!b) return;
   if (!b.isOver()) {
     let guard = 0;
-    while (!b.isOver() && b.active && guard++ < 200) {
+    while (state.small === b && !b.isOver() && b.active && guard++ < 200) {
       const a = b.active;
       const isProto = a.id === state.protagonistId;
       // 玩家主控：停下等操作
@@ -705,10 +709,14 @@ async function runAuto(): Promise<void> {
       const enemyTurn = a.side === 'enemy';
       // 友方：仅在开了「自动行动」时自动；否则停下（玩家扮演我方）
       if (!enemyTurn && !state.autoTurn) break;
-      if (a.status !== 'ready') { b.endTurn(); continue; }
-      await autoSmall(b);
+      if (a.status !== 'ready') b.endTurn();
+      else await autoSmall(b);
+      // Each completed activation is durable before the next remote decision.
+      if (state.small !== b || !(await persist())) return;
     }
   }
+  if (state.small !== b) return;
+  tacticalView.selectedId = b.active?.id; tacticalView.cell = undefined;
   // 战斗结束统一收口：无论结束路径（自动清场/手动收尾/🤖自动行动/撤离）都补结束日志并触发入账+注入。
   // 各步骤幂等（battle-end 日志判重 / xpSettled），每次 render 重复调用无副作用。
   if (b.isOver()) {
@@ -720,20 +728,18 @@ async function runAuto(): Promise<void> {
   }
 }
 
-let enemyResumeBusy = false;
 async function resumeEnemyTurnIfNeeded(): Promise<void> {
+  // A restored view can arrive while the old request is unwinding. Coalesce that
+  // wake-up behind the same UI task lock instead of losing it or cancelling a peer.
+  enemyResumeRequested = true;
+  if (uiBusy || fullAuto.running) return;
+  enemyResumeRequested = false;
   const b = state.small;
-  if (enemyResumeBusy || fullAuto.running || !b || b.isOver() || b.active?.side !== 'enemy') return;
-  enemyResumeBusy = true;
-  try {
+  if (!b || b.isOver() || b.active?.side !== 'enemy' || battleSaveFailed || (runtime.canWrite && !runtime.canWrite())) return;
+  await panelTask(async () => {
     await runAuto();
-    if (state.small === b && !battleSaveFailed) await persist();
-  } catch (error) {
-    toast('敌方自动回合恢复失败：' + (error instanceof Error ? error.message : String(error)));
-  } finally {
-    enemyResumeBusy = false;
     render('battle');
-  }
+  });
 }
 
 /** 全自动只在当前面板/战斗有效，恢复或切聊天后需重新开启。 */
@@ -768,7 +774,11 @@ function startFullAuto(): void {
     if (battle.isOver()) render('battle');
     if (!battle.isOver() && progress === `${battle.round}:${battle instanceof SmallBattle ? battle.turnIndex : ''}`) throw Error('自动行动没有推进回合，已暂停，可手动处理');
     return !battle.isOver();
-    } finally { uiBusy = false; document.body.removeAttribute('aria-busy'); if (!fullAuto.running) render('battle'); }
+    } finally {
+      uiBusy = false; document.body.removeAttribute('aria-busy');
+      if (!fullAuto.running) render('battle');
+      if (enemyResumeRequested) void resumeEnemyTurnIfNeeded();
+    }
   }, () => render('battle'), (error) => {
     // 异常时撤回到已保存战场，避免保留只执行了一半的行动。
     restore(); toast('全自动已暂停：' + (error instanceof Error ? error.message : String(error)));
@@ -2100,9 +2110,14 @@ async function handleAction(e: Event): Promise<void> {
     (await actions[act]?.(el));
     if (battleSaveFailed) { const receipt = state.saveReceipt; restore(); state.saveReceipt = receipt; render(); return; }
     if (['grid-endturn', 'grid-mobile-endturn', 'grid-auto', 'small-start', 'mass-start'].includes(act) && state.small?.battlefield) {
+      // Ending the player's turn must survive a cancelled/failed JEV request.
+      if (!(await persist())) return;
       (await runAuto()); tacticalView.selectedId = state.small.active?.id; tacticalView.cell = undefined;
     }
-    if (!state.small?.battlefield && ['small-start', 'mass-start', 'small-attack', 'small-sidearm', 'small-charge', 'small-move', 'small-retreat', 'small-auto-act', 'small-endturn', 'ability-confirm'].includes(act)) (await runAuto());
+    if (!state.small?.battlefield && ['small-start', 'mass-start', 'small-attack', 'small-sidearm', 'small-charge', 'small-move', 'small-retreat', 'small-auto-act', 'small-endturn', 'ability-confirm'].includes(act)) {
+      if (!(await persist())) return;
+      (await runAuto());
+    }
     if (state.small?.battlefield && state.small.isOver()) (await onBattleEnded());
     }, async () => battleSaveFailed ? false : (await persist()), () => { if (actionBattle) restore(); }));
   } catch (err) {
@@ -3402,7 +3417,10 @@ document.addEventListener('change', e => {
 // 聊天/角色卡切换：重新同步存档（事件 + 轮询双保险都在适配层内处理）
 const stopControllerView = controller.listen((_saved: NarrativeSave, receipt?: SaveReceipt) => {
   restore();
-  if (receipt) state.saveReceipt = receipt;
+  if (receipt) {
+    state.saveReceipt = receipt;
+    if (receipt.status !== 'failed') battleSaveFailed = false;
+  }
   state.lastInvalid = [];
   render();
   void resumeEnemyTurnIfNeeded();

@@ -1,6 +1,7 @@
 import { copyFileSync, cpSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { nativeSourceFingerprint } from './native-build-fingerprint.mjs';
 const output = path.resolve('release/native-candidate');
 const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
 copyFileSync('extension/manifest.json', path.join(output, 'manifest.json'));
@@ -23,11 +24,7 @@ for (const file of files.filter(file => /\.(js|html)$/.test(file))) {
   if (/TavernHelper|executeSlashCommands|JS-Slash-Runner|https?:\/\/[^\s"'`<>]+\.js/.test(text)) throw Error('原生运行包含有助手或远程脚本依赖: ' + file);
 }
 const hash = file => createHash('sha256').update(readFileSync(file)).digest('hex');
-const sourceFiles=[];
-const collect=dir=>{for(const entry of readdirSync(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory())collect(file);else sourceFiles.push(file)}};
-for (const dir of ['engine/src', 'panel/src', 'host/src', 'runtime/src', 'extension', 'assets', 'vendor/jev-core']) collect(dir);
-sourceFiles.push('panel/index.html','package.json','package-lock.json','scripts/package-extension.mjs','scripts/jev-cors-relay.mjs');
-const sourceFingerprint=createHash('sha256').update(sourceFiles.sort().map(file=>`${file.replaceAll('\\','/')}\0${hash(file)}`).join('\n')).digest('hex');
+const sourceFingerprint = nativeSourceFingerprint();
 const manifest = { format: 'tavern-battle-native-build', version, builtAt: new Date().toISOString(), sourceFingerprint,
   baselineSha256: JSON.parse(readFileSync('release/current-baseline.json', 'utf8')).sourceSha256,
   files: files.filter(file => !file.endsWith('build-manifest.json')).map(file => ({ path: path.relative(output, file).replaceAll('\\', '/'), bytes: readFileSync(file).length, sha256: hash(file) })),
