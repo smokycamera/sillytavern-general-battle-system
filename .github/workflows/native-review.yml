@@ -32,6 +32,8 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
+      - name: Verify committed installable files match source
+        run: npm run verify:dist
       - name: Type check
         id: types
         continue-on-error: true
