@@ -63,6 +63,8 @@ export function createPanelRuntime(): PanelRuntime {
     getTheme: () => display.read().theme ?? 'dark', setTheme: theme => display.write({ theme }),
     retryGeneration: deliveryId => messages.retryGeneration(deliveryId),
     canWrite: () => service.canWrite(),
+    writeBlockReason: () => service.writeBlockReason(),
+    reloadArchive: () => service.load(),
     retrySave: async () => service.store.pendingOperation() ? convert(service.retry()) : (await controller.persistPanel(service.snapshot(), service.snapshot().factRevision ?? 0)).receipt,
   };
 }

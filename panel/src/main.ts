@@ -291,7 +291,7 @@ let battleSaveFailed = false;
 let uiBusy = false;
 async function panelTask(task: () => Promise<void>, allowPending = false, feedback?: HTMLElement): Promise<void> {
   if (uiBusy) { toast('正在保存上一项操作，请稍候…'); return; }
-  if (!allowPending && runtime.canWrite && !runtime.canWrite()) { toast('当前档案尚未就绪，请先核实保存或重新读取。'); return; }
+  if (!allowPending && runtime.canWrite && !runtime.canWrite()) { toast(runtime.writeBlockReason?.() ?? '当前档案尚未就绪，请先核实保存或重新读取。'); render('view'); return; }
   const identity = adapter.identity(), namespace = adapter.namespace();
   uiBusy = true; document.body.setAttribute('aria-busy', 'true');
   feedback?.setAttribute('data-processing', 'true');
@@ -837,8 +837,9 @@ function render(scope: RenderScope = 'all', tacticalQuery?: TacticalQuery): void
   const nav = app.querySelector<HTMLElement>('#workspace-navigation')!;
   const navHtml = workspaceNavigation(workspaceTab, pendingCount);
   if (nav.innerHTML !== navHtml) nav.innerHTML = navHtml;
-  const saveMessage = state.saveReceipt?.status === 'failed' ? '未保存：' + esc(state.saveReceipt.error ?? '存储不可用') : state.saveReceipt?.status === 'local-only' ? '已保存本地 · 酒馆待确认' : state.saveReceipt ? '已保存' : '准备就绪';
-  const statusHtml = `<span data-role="save-status" class="${state.saveReceipt?.status === 'failed' ? 'save-failed' : ''}">${saveMessage}</span>${state.saveReceipt?.status === 'failed' ? '<button data-action="save-retry">重试保存</button>' : ''}<button data-action="theme-toggle" aria-label="切换深浅主题">明暗</button>`;
+  const blocked = runtime.writeBlockReason?.();
+  const saveMessage = blocked ? esc(blocked) : state.saveReceipt?.status === 'failed' ? '未保存：' + esc(state.saveReceipt.error ?? '存储不可用') : state.saveReceipt?.status === 'local-only' ? '已保存本地 · 酒馆待确认' : state.saveReceipt ? '已保存' : '准备就绪';
+  const statusHtml = `<span data-role="save-status" class="${blocked || state.saveReceipt?.status === 'failed' ? 'save-failed' : ''}">${saveMessage}</span>${state.saveReceipt?.status === 'failed' ? '<button data-action="save-retry">重试保存</button>' : ''}${blocked && runtime.reloadArchive ? '<button data-action="archive-reload">重新读取档案</button>' : ''}<button data-action="theme-toggle" aria-label="切换深浅主题">明暗</button>`;
   const status = app.querySelector('.app-state')!; if(status.innerHTML !== statusHtml)status.innerHTML=statusHtml;
   const latest = state.proposals.at(-1), failure = latest && ['rejected','stale','unresolved'].includes(latest.status) ? latest.reason : undefined;
   const notices = app.querySelector<HTMLElement>('#workspace-notices')!;
@@ -2080,6 +2081,9 @@ async function handleAction(e: Event): Promise<void> {
   if (act.startsWith('out-') || act === 'delivery-generate') {
     await actions[act]?.(el); return;
   }
+  if (act === 'archive-reload') {
+    await runtime.reloadArchive?.(); render(); return;
+  }
   if (act === 'narrative-scan' || act === 'pending-scan') {
     if (controller.migrationReview()) throw Error('请先核对并接受迁移预览，再扫描回复');
     await scanLastMessage({ manual: true });
@@ -3184,7 +3188,9 @@ document.addEventListener('click', e => {
   const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
   if (!action) return;
   if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'modal-stop', 'llm-stop', 'llm-models'].includes(action)) { void handleAction(e); return; }
-  const viewOnly = ['save-retry', 'workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-inspect-unit', 'grid-cell', 'grid-mode', 'narrative-review', 'log-detail', 'unit-detail', 'role-detail', 'modal-stop', 'migration-export'].includes(action);
+  // Scan/reload validate the refreshed service themselves; they must remain
+  // reachable when a host metadata refresh invalidates the old panel session.
+  const viewOnly = ['save-retry', 'archive-reload', 'narrative-scan', 'pending-scan', 'workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-inspect-unit', 'grid-cell', 'grid-mode', 'narrative-review', 'log-detail', 'unit-detail', 'role-detail', 'modal-stop', 'migration-export'].includes(action);
   const feedback = !viewOnly && /^(grid-|small-|mass-|formation-)/.test(action) ? (e.target as HTMLElement).closest<HTMLElement>('[data-action]') ?? undefined : undefined;
   void panelTask(() => handleAction(e), viewOnly, feedback);
 });
