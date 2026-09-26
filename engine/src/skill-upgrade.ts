@@ -1,4 +1,4 @@
-import { bonusMultiplier, bonusSteps } from './enhancements.js';
+import { bonusMultiplier, bonusSteps, bonusRating } from './enhancements.js';
 import type { Combatant } from './types.js';
 import { curveAt } from './data/curves.js';
 import { diceAvg, rebuildDice } from './data/weapons.js';
@@ -10,20 +10,15 @@ export function upgradeCombatSkills(unit: Combatant): void {
   const modern=unit.combatModel==='cohort-v2';
   for(const a of unit.abilities){
     const generic=a.definitionId?.startsWith('generic:')??false;
-    const version=modern?(generic?'skill-v4.2':'skill-v4.1'):'skill-v3.0';
+    const version=modern?'skill-v4.3':'skill-v3.0';
     if(a.customized||a.itemSourceId||a.fixedPower||a.effectVersion===version)continue;
     const previousGroup=a.cooldownGroup??a.id;
-    if(modern&&generic&&a.recipe?.version!=='skill-formula-v2') {
+    if(modern&&a.definitionId&&skillDefinitionKnown(a.definitionId)) {
       const rebuilt=compileSkill({id:a.definitionId!,name:a.name,bonuses:a.bonuses,instanceId:a.id},a.power??5,unit.id);
       // 从原始配方重建一次，避免旧战斗倍率/强化再次相乘；身份和支付账本不重置。
-      const sourceId=a.sourceId;
-      Object.assign(a,rebuilt,{sourceId});
+      const sourceId=a.sourceId,id=a.id;
+      Object.assign(a,rebuilt,{sourceId,id});
       delete a.damageScale;
-    }
-    if(modern && a.effectVersion==='skill-v4.0' && a.definitionId && skillDefinitionKnown(a.definitionId)) {
-      const rebuilt=compileSkill({id:a.definitionId,name:a.name,bonuses:a.bonuses},a.power??5,unit.id);
-      // 只更新公式，保留实例身份与已支付的冷却/次数；从基础配方重建防止重复叠加。
-      a.effects=rebuilt.effects; a.range=rebuilt.range; a.cost=rebuilt.cost; a.penetration=rebuilt.penetration;
     }
     const power=a.power??5, curve=curveAt(power), base=modern?powerBudget(power):diceAvg(curve.dmgBase)+(curve.dmgAp?diceAvg(curve.dmgAp):0);
     const damaging=a.effects.some(e=>e.op==='damage'), area=a.shape==='burst';
@@ -31,7 +26,7 @@ export function upgradeCombatSkills(unit: Combatant): void {
     const controls=a.effects.filter(e=>!['damage'].includes(e.op)).length;
     if(damaging){
       const share=(area?1.05:2.2)*Math.pow(.9,Math.min(3,controls));
-      const scaled=scaledPowerDice(base*share*bonusMultiplier(a.bonuses,'damage'));
+      const scaled=scaledPowerDice(base*share*bonusMultiplier(a.bonuses,'damage',a.damageBasis?undefined:a.channel??'kinetic'));
       a.effects=a.effects.map(e=>e.op==='damage'?{...e,baseDice:modern?scaled.dice:rebuildDice(base*share,6),apDice:undefined}:e);
       if(modern)a.damageScale=scaled.scale;
       if(a.damageBasis)a.weaponDamageMult=share*bonusMultiplier(a.bonuses,'damage');
@@ -40,12 +35,12 @@ export function upgradeCombatSkills(unit: Combatant): void {
       if(a.cost?.resource==='SP')a.cost.amount=Math.min(5,(area?3:2)+Math.ceil(controls/2));
     }
     if(modern) {
-      a.penetration=(a.penetration??0)+bonusSteps(a.bonuses,'penetration',5);
-      if(a.range && a.range.max>1) a.range.max+=bonusSteps(a.bonuses,'range',5);
+      a.penetration=Math.max(0,(a.penetration??0)+bonusRating(a.bonuses,'penetration',a.channel??'kinetic'));
+      if(a.range && a.range.max>1) a.range.max=Math.max(a.range.min,1,a.range.max+bonusSteps(a.bonuses,'range',5));
       a.effects=a.effects.map(e=>{
-        if(e.op==='condition')return {...e,...(e.saveDC!==undefined?{saveDC:Math.min(30,e.saveDC+bonusSteps(a.bonuses,'accuracy'))}:{}),dur:e.dur+(['stunned','restrained','disarmed','silenced'].includes(e.conditionId)?0:bonusSteps(a.bonuses,'duration',5)),magnitude:Math.min(1.5,(e.magnitude??1)*bonusMultiplier(a.bonuses,'power'))};
-        if(e.op==='trait')return {...e,dur:e.dur+bonusSteps(a.bonuses,'duration',5)};
-        if(e.op==='resource')return {...e,amount:e.amount+Math.sign(e.amount)*bonusSteps(a.bonuses,'resource',5)};
+        if(e.op==='condition')return {...e,...(e.saveDC!==undefined?{saveDC:Math.max(1,Math.min(30,e.saveDC+bonusSteps(a.bonuses,'accuracy')))}:{}),dur:Math.max(1,e.dur+(['stunned','restrained','disarmed','silenced'].includes(e.conditionId)?Math.min(0,bonusSteps(a.bonuses,'duration',5)):bonusSteps(a.bonuses,'duration',5))),magnitude:Math.min(1.5,(e.magnitude??1)*bonusMultiplier(a.bonuses,'power'))};
+        if(e.op==='trait')return {...e,dur:Math.max(1,e.dur+bonusSteps(a.bonuses,'duration',5))};
+        if(e.op==='resource')return {...e,amount:Math.sign(e.amount)*Math.max(0,Math.abs(e.amount)+bonusSteps(a.bonuses,'resource',5))};
         if(e.op==='morale')return {...e,amount:Math.round(e.amount*bonusMultiplier(a.bonuses,'morale'))};
         return e;
       });

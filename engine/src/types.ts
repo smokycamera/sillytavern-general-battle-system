@@ -135,7 +135,7 @@ export interface Ability {
   /** 显式编辑的效果与数值不被入场公式重建。 */
   customized?: boolean;
   bonuses?: Enhancements;
-    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2';
+    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3';
     damageScale?: number;
   recipe?: import('./data/skill-mechanisms.js').SkillRecipe;
   weaponUse?: 'auto' | 'melee' | 'ranged';

@@ -1,5 +1,5 @@
 import { isCannonWeapon } from '../../engine/src/loadout.js';
-import { parseEnhancementSuffix, enhancementLabel, type Enhancements } from '../../engine/src/enhancements.js';
+import { parseEnhancementSuffix, enhancementLabel, ENHANCEMENT_STATS, BONUS_NAMES, type BonusKind, type Enhancements } from '../../engine/src/enhancements.js';
 import { WEAPON_CLASSES, type BodyKind, type ItemMechanics, type ItemSpecification } from '../../engine/src/index.js';
 import {POWER_ANCHORS} from '../../engine/src/power-anchors.js';
 import { ACCESSORY_NAMES, CONSUMABLE_NAMES, type AccessoryKind, type ConsumableKind } from '../../engine/src/items.js';
@@ -29,6 +29,12 @@ export function captureEquipment(prefix: string, current: EquipmentDraft): Equip
     const el = document.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-role="${prefix}-${key}"]`); if (el) next[key] = el.value;
   }
   const stable = document.querySelector<HTMLInputElement>(`[data-role="${prefix}-stabilized"]`); if (stable) next.stabilized = stable.checked;
+  const bonuses = document.querySelector<HTMLInputElement>(`[data-role="${prefix}-bonuses"]`);
+  if(bonuses){
+    const value=bonuses.value.trim(),parsed=parseEnhancementSuffix('L1'+value,next.kind as BonusKind);
+    if(value&&parsed.text!=='L1')throw Error('属性修正请写成+3伤害-2精度');
+    next.bonuses=parsed.bonuses??{};
+  }
   return next;
 }
 /** 新建、编辑与库存共用中文字段和实际配方；高级数值默认收起。 */
@@ -38,11 +44,12 @@ export function equipmentFields(prefix: string, d: EquipmentDraft, opts: { disab
   const weapons = Object.values(WEAPON_CLASSES).map((w): [string, string] => [w.id, w.name]);
   return `<div class="equipment-fields"><label>名称<input data-role="${prefix}-name" value="${htmlText(d.name)}" placeholder="留空采用类型名称" ${ro}></label>
     ${d.kind === 'weapon' ? `<label>武器${select('mechanism', weapons)}</label><p class="sub">${htmlText(WEAPON_CLASSES[d.mechanism]?.profile.desc ?? '')}</p>` : d.kind === 'armor' ? `<label>护甲${select('tier', armorChoices)}</label>` : d.kind === 'consumable' ? `<label>用途${select('mechanism', Object.entries(CONSUMABLE_NAMES))}</label>` : d.kind === 'accessory' ? `<label>用途${select('mechanism', Object.entries(ACCESSORY_NAMES))}</label><p class="sub">每个单位最多佩戴两件不同用途的配件，卸下后不再提供能力。</p>` : ''}
-    <label>规格${htmlText(enhancementLabel(d.bonuses))}<input data-role="${prefix}-power" type="number" min="1" max="10" value="${htmlText(d.power)}" ${disabled ? 'readonly' : ''}></label></div>
+    <label>规格<input data-role="${prefix}-power" type="number" min="1" max="10" value="${htmlText(d.power)}" ${disabled ? 'readonly' : ''}></label></div>
     ${d.kind==='weapon'?`<p class="sub power-anchor">L${htmlText(d.power)} · ${htmlText(POWER_ANCHORS[Number(d.power)-1]?.name??'请选择1–10')}：${htmlText(POWER_ANCHORS[Number(d.power)-1]?.example??'')}</p>`:''}
     <details class="equipment-advanced" data-detail-id="${prefix}-advanced"><summary>特殊配置与品质</summary><div class="equipment-fields">
+    ${d.kind!=='accessory'?`<label>属性修正（每项−10至+10）<input data-role="${prefix}-bonuses" value="${htmlText(enhancementLabel(d.bonuses))}" placeholder="如+3伤害-2精度；留空清除" ${disabled?'readonly':''}></label><p class="sub">${htmlText((ENHANCEMENT_STATS[d.kind as BonusKind]??[]).map(k=>BONUS_NAMES[k]).join('、'))}。单通道修正只影响该通道；穿透与防护每点0.2档。</p>`:''}
     <label>品质<input data-role="${prefix}-quality" type="number" min="1" max="5" value="${htmlText(d.quality)}" ${disabled ? 'readonly' : ''}></label><label>装备体量${select('body', bodyChoices)}</label>
     ${d.kind === 'weapon' ? `<label>伤害转化${select('enchantment', [['', '保持原伤害类型'], ['thermal', '热能转化'], ['arcane', '奥术转化']])}</label><label class="check-field"><input data-role="${prefix}-stabilized" type="checkbox" ${d.stabilized ? 'checked' : ''} ${lock}>车载行进稳定</label>` : ''}
     ${d.kind === 'armor' ? `<label>防护侧重${select('profile', [['balanced', '综合防护'], ['kinetic', '侧重动能'], ['thermal', '侧重热能'], ['arcane', '侧重奥术']])}</label>` : ''}
-    </div>${d.kind === 'weapon' ? '<p class="sub">稳定装置需要真实车辆平台，保留装填并让出部分火力。</p>' : d.kind === 'armor' ? '<p class="sub">加强一种防护会降低其他防护，总防护强度不变。</p>' : ''}</details>`;
+    </div>${d.kind === 'weapon' ? '<p class="sub">稳定装置需要真实车辆平台，保留装填并让出部分火力。</p>' : d.kind === 'armor' ? '<p class="sub">防护侧重会从其他通道转移防护；上方单通道属性修正独立增减，不转移其他通道。</p>' : ''}</details>`;
 }

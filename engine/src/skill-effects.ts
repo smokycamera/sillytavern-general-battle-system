@@ -11,6 +11,7 @@ import { isCohort } from './combat-model.js';
 import { positionedUnit, revealUnit, type ObservationContext } from './observation.js';
 import { canOccupy, cellLabel } from './small/spatial.js';
 import { formationNode, FORMATION_NODES, formationCanOccupy } from './mass/formation.js';
+import { actionPotential, incomingPotential, tacticalStateValue } from './skill-tactics.js';
 
 type ConditionEffect = Extract<EffectOp, { op: 'condition' }>;
 type PushEffect = Extract<EffectOp, { op: 'push' }>;
@@ -133,21 +134,50 @@ export function skillEffectLines(context: ObservationContext, actor: Combatant, 
     return [];
   });
 }
-export function skillEffectValue(context: ObservationContext, actor: Combatant, target: Combatant, ability: Ability, hitChance = 1): number {
+export function skillEffectValue(context: ObservationContext, actor: Combatant, target: Combatant, ability: Ability, hitChance = 1, damageChance = hitChance): number {
   const resources = { ...target.resources };
   if (target.id === actor.id && ability.cost) resources[ability.cost.resource] = Math.max(0, (resources[ability.cost.resource] ?? 0) - ability.cost.amount);
+  const polarity = target.side === actor.side ? 1 : -1;
+  // 对同一目标一起估值。眩晕已阻止的攻击，不再重复计作缴械/沉默收益。
+  // 至多保留16种成功组合；极端自定义多状态技能舍弃低概率分支，保守估值。
+  let controlValue = 0;
+  const controls = ability.effects.filter((e): e is ConditionEffect => e.op === 'condition');
+  if (target.combatModel !== 'cohort-v2') controlValue = controls.reduce((sum, effect) => sum + conditionChance(target, effect) * (effect.onDamage ? damageChance : effect.onHit ? hitChance : 1) * (['restrained','stunned'].includes(effect.conditionId) ? 5 : 2) * (effect.potency ?? 1), 0);
+  else if (controls.length) for (const horizon of [0, 1]) {
+    if (horizon && controls.every(e => e.dur <= 1)) continue;
+    const initial = { ...target, conditions: target.conditions.map(c => ({ ...c, dur: c.dur - horizon })).filter(c => c.dur > 0) };
+    const before = tacticalStateValue(context, initial);
+    let branches = [{ unit: initial, probability: 1 }];
+    for (const effect of controls.filter(e => e.dur > horizon)) {
+      branches = branches.flatMap(branch => {
+        const chance = conditionChance(branch.unit, effect) * (effect.onDamage ? damageChance : effect.onHit ? hitChance : 1);
+        if (!chance) return [branch];
+        const future = { ...branch.unit, conditions: branch.unit.conditions.map(c => ({ ...c })) };
+        applySkillCondition(future, { id: effect.conditionId, dur: effect.dur - horizon, potency: effect.potency, magnitude: effect.magnitude,
+          ...(isCohort(target) && target.scale !== 'hero' && definitions.get(effect.conditionId)?.dot ? { affectedMembers: conditionExposure(actor, target, effect.shape === 'burst') } : {}) });
+        return [{ unit: branch.unit, probability: branch.probability * (1 - chance) }, { unit: future, probability: branch.probability * chance }].filter(b => b.probability > 0);
+      }).sort((a, b) => b.probability - a.probability).slice(0, 16);
+    }
+    controlValue += branches.reduce((sum, b) => sum + b.probability * (tacticalStateValue(context, b.unit) - before), 0) * polarity * (horizon ? 0.5 : 1);
+  }
   return ability.effects.reduce((sum, effect) => {
     if (effect.op === 'zone') { const friendly=target.side===actor.side; return sum+(effect.kind==='smoke'?2:effect.kind==='healing'?(friendly?Math.min(recoveryCapacity(target),4+effect.power*3):0):friendly?-8:4+effect.power); }
-    if (effect.op === 'barrier') return sum + Math.max(0, effect.amount - (target.barrier?.remaining ?? 0)) * 0.6;
+    if (effect.op === 'barrier') return sum + Math.min(Math.max(0, effect.amount - (target.barrier?.remaining ?? 0)), incomingPotential(context, target)) * polarity;
     if (effect.op === 'trait') return sum + (skillTraitReason(target, effect) ? 0 : 3 + Math.min(3, effect.dur / 3));
     if (effect.op === 'resource') {
+      const before = { ...target, resources: { ...resources } };
       const change = skillResourceChange({ ...target, resources }, effect);
       resources[effect.resource] = (resources[effect.resource] ?? 0) + change;
-      return sum + change * (target.side === actor.side ? 1 : -1) * 1.5;
+      const unlocked = change ? actionPotential(context, { ...target, resources: { ...resources } }) - actionPotential(context, before) : 0;
+      return sum + (change * 1.5 + unlocked * 0.75) * polarity;
     }
-    if (effect.op === 'condition') return sum + conditionChance(target, effect) * (effect.onHit ? hitChance : 1) * (effect.conditionId === 'restrained' || effect.conditionId === 'stunned' ? 5 : 2) * (effect.potency ?? 1);
     if (effect.op === 'push') return sum + (pushPreview(context, actor, target, effect).reason ? 0 : 3 * (effect.onHit ? hitChance : 1));
-    if (effect.op === 'dispel') return sum + dispelCandidates(target, effect).length * 4;
+    if (effect.op === 'dispel') {
+      const chosen = dispelCandidates(target, effect); if (!chosen.length) return sum;
+      const future = { ...target, conditions: target.conditions.map(c => ({ ...c })), traitSources: target.traitSources?.map(s => ({ ...s })) };
+      applyDispel(future, chosen);
+      return sum + (tacticalStateValue(context, future) - tacticalStateValue(context, target)) * polarity;
+    }
     return sum;
-  }, 0);
+  }, controlValue);
 }

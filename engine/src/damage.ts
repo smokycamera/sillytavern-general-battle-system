@@ -148,7 +148,7 @@ export function isRangedCapable(u: Combatant): boolean {
   return u.archetype === 'ranged' || !!(u.weapon?.tags?.includes('ranged'));
 }
 
-/** 阶梯穿透系数；与骰子和人数分离。同级55%，每差1档降一档，差2档仍有12%保底（甲有缝隙），≥3档差才无生命伤害。 */
+/** 连续穿透系数；保留整数档锚点，小数差值在相邻档间线性插值。 */
 export function penetrationFactor(power: number, resistance: number): number {
   return penetrationThrough(power,resistance);
 }
@@ -245,7 +245,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
       expectedCasualties:hasMemberHealth(opts.defender)?casualties/96:undefined,damageChance:positive/96,penetrationFactor:factor,exact:false,
       variance:Math.max(0,squares/96-mean*mean),minDamage:0,maxDamage:maximum};
   }
-  const rawMultiplier=modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level)*bonusMultiplier(opts.attacker.bonuses,'damage');
+  const rawMultiplier=modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level)*bonusMultiplier(opts.attacker.bonuses,'damage',opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
   const moments=(times:number)=>{
     const key=JSON.stringify([source?.baseDice,source?.apDice,rawMultiplier,times,weight,opts.defender.hp,opts.defender.barrier?.remaining,opts.defender.formation,ctx.weapon?.splashTargets,ctx.weapon?.splashFactor,opts.abilityDamage?.weaponBased,!!opts.abilityDamage,opts.rules.weaponOverflow]);
     const cached=memberPreviewCache.get(key);if(cached)return cached;
@@ -498,7 +498,7 @@ export function resolveAttack(opts: AttackOpts): AttackResolution {
 
   const scale = outcomeScale(opts);
   const modern=rules.combatModel===MEMBER_HEALTH_MODEL;
-  const sourceScale=modern?(opts.abilityDamage?opts.abilityDamage.damageScale??1:weapon?.damageScale??1)/(penetration?.armorScale??1)*trainingDamage(attacker.level)*bonusMultiplier(attacker.bonuses,'damage'):1;
+  const sourceScale=modern?(opts.abilityDamage?opts.abilityDamage.damageScale??1:weapon?.damageScale??1)/(penetration?.armorScale??1)*trainingDamage(attacker.level)*bonusMultiplier(attacker.bonuses,'damage',penetration?.channel??'kinetic'):1;
   const targets=modern?roundDamage(scale.multiplier,rng):0;
   let final = Math.round((baseAfterDR + apTotal) * dmgMult * wardMult * scale.multiplier);
   if (v2) final = roundDamage(v2DamageAmount(baseRaw, apRoll?.total ?? 0, penetration!.factor, dmgMult * wardMult * (modern?targets*sourceScale:scale.multiplier)), rng);

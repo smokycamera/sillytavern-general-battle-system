@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "0.2.0-rc.13",
-  "builtAt": "2026-09-26T07:58:25.525Z",
-  "sourceFingerprint": "99eafa7602f350f682bff33ffd2d05a46735d5c6258da94dd7cfae82eba0a918",
+  "builtAt": "2026-09-26T09:33:42.569Z",
+  "sourceFingerprint": "fcc7032d53ca9bdaf3cd5c2180d2b786e309504f28074cf894be4a5288a9e5bd",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -36,14 +36,14 @@
       "sha256": "d8e150b9ba2a9668681edf533c5ebfa2a0c588c1ef4fdbff02e2b456b28f93f9"
     },
     {
-      "path": "dist/assets/panel-Bkxuy9YD.js",
-      "bytes": 386174,
-      "sha256": "fb4ed5dbe47d23b3618ceafbed179275fce99b2b14c672c54194ed5bb5dba183"
+      "path": "dist/assets/panel-H3AXYruB.js",
+      "bytes": 386782,
+      "sha256": "4a0362e7228661aa3874650544e53058eb7b81b460376f7751ae8642a44333b7"
     },
     {
-      "path": "dist/assets/preferences-DwlN_cuc.js",
-      "bytes": 507694,
-      "sha256": "26cd8a6990691912a469ee4049e52f9b9dd27ee68c1949bf9083bab63fccbb78"
+      "path": "dist/assets/preferences-3J_qQOF9.js",
+      "bytes": 515981,
+      "sha256": "b2e407dd1afa622fb242121be2c07248bb991c7b5eca6bb6b34cc235364a9c15"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -52,8 +52,8 @@
     },
     {
       "path": "assets/worldbook/!通用战斗系统约束.json",
-      "bytes": 22544,
-      "sha256": "e8b05350f22a63a9874107df47f05632fa8e96ffca2e4d50b8b566bccf3fdb15"
+      "bytes": 23792,
+      "sha256": "d16f946b8cc52ce733bc05b411365585994b709cf156aa29a50f9a3aa077217d"
     },
     {
       "path": "docs/extension-migration-assessment-20260919.md",
@@ -113,7 +113,7 @@
     {
       "path": "dist/index.js",
       "bytes": 71380,
-      "sha256": "9b82688709b01ba6306ceaa35ca9fa604ebffab902d50a382fae98cfc3c1025c"
+      "sha256": "b1c40beab1882a2745d47b5439ebab2d2352488d72194ee3f29fa716130bf25a"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -128,7 +128,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 48820,
-      "sha256": "837e3cf2fdc1181aa00799638175d42d25a3cc2aa0c0106188ed19f5c49464cc"
+      "sha256": "7319901b974e7ed839e3a112152ae7432f81be42dfec1af807806a3f0bce6576"
     },
     {
       "path": "release/current-baseline.json",

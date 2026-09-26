@@ -22,6 +22,15 @@ function transact(save:NarrativeSave,data:Record<string,unknown>,extra='',mid='s
 function restored(save:NarrativeSave) { return materializeUnitRecord(prepareInventoryState(JSON.parse(JSON.stringify(save))).storage![0]!,reg); }
 
 describe('正文战外全字段事务（定向验证）',()=>{
+  it('unit_set接受小数通道值和负强化，单通道赋值保留其他通道，非法负防护原子回滚',()=>{
+    const save=setup(),before=structuredClone(save);
+    const unit=restored(transact(save,{bonuses:{damage:-3},weapon:{spec:'步枪L3-2伤害',values:{penetration:2.5}},armor:{spec:'轻甲L3+1热能防护',values:{protection:{kinetic:1.5,thermal:2.2,arcane:0}}},skills:[{spec:{id:'bp-arcane-bolt',level:3},values:{penetration:1.5}}]}).next());
+    expect(anchoredWeapon(unit.weapon)!.penetration).toBe(2.5);expect(anchoredProtection(unit,'kinetic')).toBe(1.5);expect(unit.abilities[0]!.penetration).toBe(1.5);expect(unit.bonuses?.damage).toBe(-3);
+    const partial=restored(transact(save,{armor:{values:{protection:{kinetic:1.5}}}}).next());
+    expect(partial.armor!.protection).toEqual({...save.storage![0]!.snapshot!.armor!.protection,kinetic:1.5});
+    expect(()=>transact(save,{armor:{values:{protection:{kinetic:-1,thermal:0,arcane:0}}}}).next()).toThrow();
+    expect(save).toEqual(before);
+  });
   it('常用属性解析、明确死亡/复活、敌军XP绝对值与本级进度持久化',()=>{
     const parsed=parseProtocol('<tb><unit_set id="u1" xp="12.5" level="4" state="ready" hp="20"/></tb>');
     expect(parsed.errors).toEqual([]);expect(parsed.events[0]).toMatchObject({kind:'unit-set',data:{xp:12.5,level:4,status:'ready',hp:20}});
