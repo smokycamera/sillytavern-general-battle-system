@@ -2,6 +2,13 @@ import { sameSession, type ChatScope, type HostSession, type MetadataPort, type 
 import { namespaceOf, type MessageEnvelope } from '../../panel/src/narrative-state.js';
 import { findMessageBySourceId, matchesMessageFingerprint, SourceMessageChangedError, sourceId } from './message-identity.js';
 import { serialized } from './json.js';
+import type { FormattingContext } from './battle-message-format.js';
+
+export interface MessageFormatter {
+  stage?: { AFTER_REGEX?: string; AFTER_MARKDOWN?: string };
+  order?: { LATE?: number };
+  addHook(hook: (text: string, context: FormattingContext) => string, options: { stage: string; order: number }): void;
+}
 
 export interface HostMessage {
   name?: string; is_user?: boolean; is_system?: boolean; mes?: string; send_date?: string | number;
@@ -10,6 +17,7 @@ export interface HostMessage {
   [key: string]: unknown;
 }
 export interface HostContext {
+  messageFormatter?: MessageFormatter;
   characterId?: number | string; chatId?: string; branchId?: string; groupId?: string | number | false | null;
   name1?: string; name2?: string;
   characters?: { avatar?: string; name?: string; chat?: string }[];

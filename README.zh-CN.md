@@ -2,7 +2,7 @@
 
 [English](README.md) | **简体中文**
 
-当前版本：**1.0.1**。
+当前版本：**1.0.2**。
 
 许可证：**GPL-3.0-only**。允许依 GPL-3.0 商业使用、修改和分发；分发时须遵守其对应源代码提供等要求。详见 [LICENSE](LICENSE) 和[许可说明](LICENSE-NOTES.md)。
 
@@ -12,6 +12,8 @@
 
 1. 在酒馆的“扩展 → 安装扩展”中填写 `https://github.com/smokycamera/sillytavern-general-battle-system`，安装后刷新页面。
 2. 在酒馆世界书中导入并启用 [!通用战斗系统约束.json](assets/worldbook/!通用战斗系统约束.json)。
+
+AI 正文中的完整 `<tb>` 事件块会自动显示为“📋 战阵事件 · N项”，点击即可展开查看和复制，无需另装转义或折叠正则。原始消息、扫描与发送给模型的上下文不变。已安装的旧版 `<tb>` 隐藏/折叠正则可以停用；更新扩展后刷新页面即可。见[显示说明](docs/native-event-display.md)。
 
 普通 LLM 可在开战前读取所选层数上下文，选择双方指挥能力、风格、战斗类型与战场。API URL、Key、模型列表及模型选择独立保存，不随聊天或角色卡改变；无需配置转发地址或途径。详见[使用说明](docs/jev-integration.md)。
 
