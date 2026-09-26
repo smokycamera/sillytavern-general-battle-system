@@ -51,7 +51,7 @@ import {
   type Category, type Ability, categoryLabel, CATEGORY_LABELS,
   smallStateSummary, massStateSummary, settlementCard, unitCardLine,
   battleIntroSummary, battleAftermathSummary, roundDigest, isRangedCapable,
-  STANDARD_CONDITIONS, standardConditionMap,
+  STANDARD_CONDITIONS, standardConditionMap, skillConditionDescription,
   activeTraitIds, equipmentTraitIds, traitDescription, traitSourceActive, traitStatAdjustments,
   scaleLabel, postureLabel, fatigueAfter, environmentTags,
   WEAPON_LIBRARY, ARMOR_LIBRARY, WEAPON_CLASSES, calibrateWeaponRange,
@@ -872,7 +872,7 @@ function render(scope: RenderScope = 'all', tacticalQuery?: TacticalQuery): void
 }
 function renderBattleToolbar(b: SmallBattle | MassBattle): string {
   const actor=b instanceof SmallBattle?b.active:b.combatants.find(u=>u.id===formationView.selectedId)??b.combatants.find(u=>u.side==='ally'&&u.status==='ready'&&!b.isAttached(u.id));
-  return `<div class="battle-toolbar"><span class="tag">本场：${b.nonLethal?'非致命':'致命'}</span>${cannonAmmoControl(actor,b.isOver()||actor?.side!=='ally')}${renderContextStatus()}<label class="battle-auto"><input type="checkbox" aria-label="全自动战斗（含主控）" data-role="full-auto-battle" ${fullAuto.running ? 'checked' : ''} ${b.isOver() ? 'disabled' : ''}>${fullAuto.running ? '自动推进中 · 点击暂停' : '全自动战斗（含主控）'}</label><label>自动策略 <select data-role="battle-tactic" ${b.isOver() || b.rules.resolutionVersion !== 'v2' ? 'disabled' : ''}>${Object.entries(TACTICAL_PREFERENCES).map(([id,name]) => `<option value="${esc(id)}" ${b.allyTactic === id ? 'selected' : ''}>${name}</option>`).join('')}</select></label>${!b.isOver() ? '<details data-detail-id="battle-options"><summary>更多</summary><button data-action="battle-finish" data-reason="ceasefire">停止交战并结算</button><button class="danger" data-action="battle-finish" data-reason="surrender">投降并结算</button></details>' : ''}</div>`;
+  return `<div class="battle-toolbar"><span class="tag">本场：${b.nonLethal?'非致命':'致命'}</span>${cannonAmmoControl(actor,b.isOver()||actor?.side!=='ally')}${renderContextStatus()}<label class="battle-auto"><input type="checkbox" aria-label="全自动战斗（含主控）" data-role="full-auto-battle" ${fullAuto.running ? 'checked' : ''} ${b.isOver() ? 'disabled' : ''}>${fullAuto.running ? '自动推进中 · 点击暂停' : '全自动战斗（含主控）'}</label><label>自动策略 <select data-role="battle-tactic" ${b.isOver() || b.rules.resolutionVersion !== 'v2' ? 'disabled' : ''}>${Object.entries(TACTICAL_PREFERENCES).map(([id,name]) => `<option value="${esc(id)}" ${b.allyTactic === id ? 'selected' : ''}>${name}</option>`).join('')}</select></label>${!b.isOver() ? '<div class="battle-finish-actions"><button data-action="battle-finish" data-reason="ceasefire">停止交战并结算</button><button class="danger" data-action="battle-finish" data-reason="surrender">投降并结算</button></div>' : ''}</div>`;
 }
 function renderContextStatus(): string {
   return llmContext.busy ? '<p role="status">正在读取上下文并选择开战配置… <button data-action="llm-stop">取消读取</button></p>'
@@ -1065,7 +1065,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   // 技能
   if (u.abilities.length) {
     rows.push(`<b class="detail-label">技能</b>`);
-    rows.push(`<div class="detail-list">${u.abilities.map((a) => `<div><b>${esc(a.name)}</b> L${a.power??5}${esc(enhancementLabel(a.bonuses))}${a.desc && (u.rulesVersion !== 'v2' || a.effectVersion) ? ` <span class="dim">${esc(a.desc)}</span>` : ''}${u.rulesVersion === 'v2' ? '<span class="dim"> · 已学 · ' + esc(abilityUsabilityReason(u, a) ?? '已准备可用') + (a.cost ? ' · ' + esc(resourceLabel(a.cost.resource)) + ' ' + a.cost.amount : '') + '</span>' : ''}</div>`).join('')}</div>`);
+    rows.push(`<div class="detail-list">${u.abilities.map((a) => `<div><b>${esc(a.name)}</b> L${a.power??5}${esc(enhancementLabel(a.bonuses))}${a.desc && (u.rulesVersion !== 'v2' || a.effectVersion) ? ` <span class="dim">${esc(a.desc)}</span>` : ''}<div class="sub">${abilityEffectLabel(a, u).map(esc).join('；')}</div>${u.rulesVersion === 'v2' ? '<span class="dim"> · 已学 · ' + esc(abilityUsabilityReason(u, a) ?? '已准备可用') + (a.cost ? ' · ' + esc(resourceLabel(a.cost.resource)) + ' ' + a.cost.amount : '') + '</span>' : ''}</div>`).join('')}</div>`);
   }
   if (u.barrier) rows.push('<p class="sub">屏障剩余 '+u.barrier.remaining+' 点，可继续吸收伤害；剩余 '+u.barrier.duration+' 轮</p>');
   if (u.weapon?.recipe?.stabilized) rows.push('<div class="sub">车载行进稳定 · 移动射击免罚 · 仍须装填且可能遭近战借机</div>');
@@ -1498,7 +1498,7 @@ function abilityTargetLabel(a: Ability): string {
   return { enemy: '敌方单位', ally: '友方单位', self: '自己', zone: '战区' }[a.target] ?? a.target;
 }
 
-function abilityEffectLabel(a: Ability): string[] {
+function abilityEffectLabel(a: Ability, target: Combatant): string[] {
   return a.effects.map((e) => {
     switch (e.op) {
       case 'damage': if (a.damageBasis) return `${a.damageBasis === 'shield' ? '以实际盾牌' : a.weaponUse ? '以实际选用武器' : '以当前近战武器'}结算，受技能强度和装备威力共同限制${e.shape === 'burst' ? '，范围内分配可用上限' : ''}`; return `伤害：普通 ${e.baseDice}${e.apDice ? ` + 破甲 ${e.apDice}` : ''}${e.shape === 'burst' ? '（范围）' : ''}`;
@@ -1506,7 +1506,7 @@ function abilityEffectLabel(a: Ability): string[] {
       case 'zone': return `在指定位置形成持续区域，半径${e.radius}格，持续${e.dur}轮`;
       case 'barrier': return `屏障吸收${e.amount}点伤害，持续${e.dur}轮`;
       case 'heal': return `恢复生命或可救伤兵：${e.amount ?? e.dice}，以实际可恢复量为上限`;
-      case 'condition': return `${e.onDamage ? '造成损伤后' : e.onHit ? '命中后' : ''}施加${standardConditionMap().get(e.conditionId)?.name ?? e.conditionId}${e.potency ? '，效果强度' + e.potency : ''}${e.magnitude !== undefined ? '，效力' + Math.round(e.magnitude * 100) + '%' : ''}，持续 ${e.dur} 次状态结算${e.saveDC ? '，目标可以抵抗' : ''}`;
+      case 'condition': return `${e.onDamage ? '造成损伤后' : e.onHit ? '命中后' : ''}施加${standardConditionMap().get(e.conditionId)?.name ?? e.conditionId}：${skillConditionDescription(e, target)}${e.magnitude !== undefined ? '，效力' + Math.round(e.magnitude * 100) + '%' : ''}，持续 ${e.dur} 次状态结算${e.saveDC ? '，目标可以抵抗' : ''}`;
       case 'push': return `${e.onHit ? '命中后' : ''}尝试${e.direction === 'towards' ? '拉近' : '推开'}目标一格，受体量、稳固姿态和落点限制`;
       case 'dispel': return `最多解除${e.count}项${e.polarity === 'negative' ? '负面' : '有益'}效果；实物和已发生伤亡保持`;
       case 'resource': return `${resourceLabel(e.resource)}变化： ${e.amount >= 0 ? '+' : ''}${e.amount}`;
@@ -1579,7 +1579,7 @@ function renderAbilityDialog(): string {
       <h2>${confirmation}：${esc(ability.name)}</h2>
       ${ability.desc && (actor.rulesVersion !== 'v2' || ability.effectVersion) ? `<div class="sub">${esc(ability.desc)}</div>` : ''}
       <div class="row"><span class="tag">使用者：${esc(unitLabel(actor))}</span><span class="tag">目标：${abilityTargetLabel(ability)}</span><span class="tag">射程：${range}</span>${ability.itemSourceId ? '' : `<span class="tag">冷却：${runtime?.cdLeft ?? 0}/${ability.cooldown ?? 0}</span>`}</div>
-      <div class="effect-list">${abilityEffectLabel(ability).map((x) => `<div>▸ ${esc(x)}</div>`).join('')}</div>
+      <div class="effect-list">${abilityEffectLabel(ability, recoveryTarget ?? actor).map((x) => `<div>▸ ${esc(x)}</div>`).join('')}</div>
       <div class="row"><b>选择目标</b>${targetSelect}</div>
       ${damagePreview}${recoveryPreview}${moralePreview}${effectPreview?.effects?.length ? '<div class="effect-preview">' + effectPreview.effects.map(esc).join('<br>') + '</div>' : ''}
       <div class="sub">资源：${esc(resource)}｜${uses}${unavailable ? `｜不可用：${esc(unavailable)}` : ''}${massV2 ? '｜支援阶段执行时扣费，占用所属编队唯一主任务' : ''}</div>

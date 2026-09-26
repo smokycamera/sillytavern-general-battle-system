@@ -22,7 +22,7 @@ try{
  await p.locator('[data-action="small-start"]').click();await p.locator('.grid-board').waitFor();
  assert.equal((await read()).battle.snap.nonLethal,true);assert.equal((await read()).activeBattleStart.snapshot.nonLethal,true);
  assert.match(await p.locator('.battle-toolbar').innerText(),/本场：非致命/);checks.push('非致命默认关闭，勾选刷新保留，新战和开局快照均保存规则');
- await p.locator('[data-detail-id="battle-options"] > summary').click();await p.locator('[data-action="battle-finish"][data-reason="ceasefire"]').click();
+ await p.locator('[data-action="battle-finish"][data-reason="ceasefire"]').click();
  const adjacent=await p.locator('.battle-exit [data-action="out-epilogue"]').evaluate(el=>el.nextElementSibling?.getAttribute('data-action'));
  assert.equal(adjacent,'out-digest');assert.equal(await p.locator('.battle-exit [data-action="out-digest"]').isVisible(),true);
  await p.locator('.workspace-nav [data-tab="reports"]').click();

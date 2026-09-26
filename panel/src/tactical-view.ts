@@ -5,7 +5,7 @@ import { participationText,memberHealthPanel } from './combat-model-view.js';
 import {hasMemberHealth} from '../../engine/src/member-health.js';
 import { difficultEngagementDescription } from '../../engine/src/exposure.js';
 import { renderBattleHighlights, traceOverlay, traceLocations, unitSymbol } from './battle-presentation.js';
-import { weaponReloadKey, cellLabel, gridDistance, tileCost, inBounds, moraleLabel, isAirborne, activeTraitIds, postureLabel, concealmentLabel, standardConditionMap, type SmallBattle, type ActionOption, type ActionPreview, type Combatant, type Terrain } from '../../engine/src/index.js';
+import { weaponReloadKey, cellLabel, gridDistance, tileCost, inBounds, moraleLabel, isAirborne, activeTraitIds, postureLabel, concealmentLabel, standardConditionMap, type SmallBattle, type ActionOption, type ActionPreview, type Combatant, type Terrain, TERRAIN_NAMES } from '../../engine/src/index.js';
 
 import { renderRoundFeedback } from './round-feedback.js';
 import { movementLabel } from '../../engine/src/tactics.js';
@@ -15,7 +15,7 @@ export interface TacticalView { selectedId?: string; targetId?: string; cell?: n
 /** 仅在一次同步点选→渲染中复用；不能跨动作或异步保存缓存。 */
 export interface TacticalQuery { battle: SmallBattle; actor: Combatant; options: ActionOption[] }
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const terrainNames: Record<Terrain, string> = { open: '开阔地', cover: '掩体', wall: '墙体', rough: '崎岖地', forest: '森林', hill: '山地' };
+const terrainNames = TERRAIN_NAMES;
 const present = (u: Combatant) => !['dead', 'fled'].includes(u.status);
 
 /** 查看敌军不切换到敌军观测口径；所有动作始终属于我方单位。 */
@@ -197,11 +197,12 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
         ${actionPreview(battle, target?.preview ?? option?.preview, option, target?.targetId)}
         ${reason ? '<div class="grid-reason">' + esc(reason) + '</div>' : ''}
         <button class="primary" data-action="grid-execute" data-actor="${esc(actor?.id ?? '')}" data-mode="${esc(option?.id ?? 'weapon')}" data-target="${esc(target?.targetId ?? '')}" ${actionReady ? '' : 'disabled'}>确认${esc(option?.label ?? '行动')}</button>`}
-      <details class="command-more" data-detail-id="grid-more"><summary>更多操作与单位</summary>
+      <details class="command-more" data-detail-id="grid-more"><summary>更多操作与单位（包含飞行、压制、撤离、移交单独单位操作权等）</summary>
         <label>查看我方单位<select data-role="grid-unit">${visible.filter((u) => u.side === 'ally').map((u) => '<option value="' + esc(u.id) + '" ' + (u.id === actor?.id ? 'selected' : '') + '>' + esc(u.name) + (u.id === battle.active?.id ? ' · 当前' : '') + '</option>').join('')}</select></label>
         ${actor && (isAirborne(actor) || activeTraitIds(actor).includes('flying')) ? `<button data-action="grid-flight" data-actor="${esc(actor.id)}" data-airborne="${!isAirborne(actor)}" ${!canControl || battle.flightReason(actor.id, !isAirborne(actor)) ? 'disabled' : ''}>${isAirborne(actor) ? '降落' : '起飞'} · 移动1</button><p>${esc(battle.flightReason(actor.id, !isAirborne(actor)) ?? '起飞离开接敌可能触发借机；扑击会先降落。')}</p>` : ''}
-        <button data-action="grid-suppress" data-target="${esc(target?.targetId ?? '')}" ${canControl && actor && !battle.suppressReason(actor.id, target?.targetId) ? '' : 'disabled'}>压制目标 · 战技点1</button><p>${esc(actor ? battle.suppressReason(actor.id, target?.targetId) ?? '消耗主行动，削弱目标攻击并限制其反应。' : '')}</p>
+        <button data-action="grid-suppress" data-target="${esc(target?.targetId ?? '')}" ${canControl && actor && !battle.suppressReason(actor.id, target?.targetId) ? '' : 'disabled'}>压制目标 · 战技点1</button><p class="suppression-description">消耗1次主行动和1点战技点，需要合法射击目标；不造成生命伤害。目标攻击命中 -2，停用借机与警戒反应、取消现有警戒，且不能固守或冲锋；持续到目标完成2次行动结算。</p>${actor && battle.suppressReason(actor.id, target?.targetId) ? '<p class="grid-reason">' + esc(battle.suppressReason(actor.id, target?.targetId)!) + '</p>' : ''}
         <button data-action="grid-retreat" ${canControl && actor && s.allOptions.find((o) => o.id === 'retreat')?.enabled ? '' : 'disabled'}>从边缘撤离</button><p>我方撤离点：地图最下排标“撤”的格子；敌方从最上排撤离。脱离敌人至少2格并保留主行动后可撤离。${esc(s.allOptions.find((o) => o.id === 'retreat')?.reason ?? '')}</p>
+        <button data-action="grid-auto" ${canControl ? '' : 'disabled'}>移交当前单位本次行动给AI</button><p>由AI代打当前单位的这次行动，后续回合仍按原控制设置执行。</p>
         <label><input type="checkbox" data-role="auto-turn" ${autoTurn ? 'checked' : ''}>自动非主控单位</label>
         <p>射程底色只表示距离；目标亮边和禁用原因同时考虑视线、接敌、装备、状态与行动成本。暗区可能存在未发现的敌军。</p>
       </details>

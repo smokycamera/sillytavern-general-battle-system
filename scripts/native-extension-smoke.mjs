@@ -118,7 +118,6 @@ try {
   const paused=await state();await page.waitForTimeout(800);check('收起面板后全自动暂停',JSON.stringify((await state()).battle)===JSON.stringify(paused.battle));
   await page.evaluate(()=>__tavernBattleNative.open());
   await page.screenshot({path:path.join(artifacts,'desktop.png')});
-  await frame.locator('[data-detail-id="battle-options"]').evaluate(element=>{element.open=true});
   await frame.locator('[data-action="battle-finish"][data-reason="ceasefire"]').click();await idle(frame);
   check('小战结算与战报归档只入账一次',(await state()).reports?.length===1&&(await state()).committedOutcomeIds?.length===1);
   await frame.locator('[data-action="out-epilogue"]').first().click();await idle(frame);
@@ -149,7 +148,6 @@ try {
   await idle(frame);await page.evaluate(()=>{__delay=0});
   check('命令处理中重复点击不会重复执行或保存',await page.evaluate(n=>__metadataSaves+__fullSaves===n+1,commandSaves));
   check('会战通过面板执行一轮并保存',(await state()).battle.kind==='mass'&&(await state()).battle.snap.round>massRound);
-  await frame.locator('[data-detail-id="battle-options"]').evaluate(element=>{element.open=true});
   await frame.locator('[data-action="battle-finish"][data-reason="ceasefire"]').click();await idle(frame);
   check('会战结算和报告保留',(await state()).reports.length===1&&(await state()).committedOutcomeIds.length===1);
   const exported=await page.evaluate(()=>({format:'tavern-battle-export',version:1,envelope:__tavernBattleNative.service.store.envelope()}));
