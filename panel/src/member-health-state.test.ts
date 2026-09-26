@@ -40,6 +40,6 @@ describe('成员生命的本地档案与重战',()=>{
   expect(inventory.inventory).toHaveLength(1);
   // 通用机制名称通过正式解析生成，检查升级后的范围参数能够通过档案验证。
   const caster=buildUnit(d,registry,'caster'),loaded=materializeUnitRecord(unitRecordFromCombatant(caster),registry);
-  expect(loaded.abilities[0]!.effectVersion).toBe('skill-v4.1');expect(loaded.abilities[0]!.areaExposure).toBe(128);
+  expect(loaded.abilities[0]!.effectVersion).toBe('skill-v4.2');expect(loaded.abilities[0]!.areaExposure).toBe(128);
  });
 });

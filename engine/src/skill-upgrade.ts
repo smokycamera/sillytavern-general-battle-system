@@ -4,11 +4,22 @@ import { curveAt } from './data/curves.js';
 import { diceAvg, rebuildDice } from './data/weapons.js';
 import {powerBudget,scaledPowerDice} from './power-anchors.js';
 import { compileSkill, skillDefinitionKnown } from './skill-catalog.js';
+import { balanceGenericSkill, genericEffectCount } from './skill-balance.js';
 /** V3只在新规则入场时升级；原技能身份、P与已支付的账本都保留。 */
 export function upgradeCombatSkills(unit: Combatant): void {
   const modern=unit.combatModel==='cohort-v2';
   for(const a of unit.abilities){
-    if(a.customized||a.itemSourceId||a.fixedPower||a.effectVersion===(modern?'skill-v4.1':'skill-v3.0'))continue;
+    const generic=a.definitionId?.startsWith('generic:')??false;
+    const version=modern?(generic?'skill-v4.2':'skill-v4.1'):'skill-v3.0';
+    if(a.customized||a.itemSourceId||a.fixedPower||a.effectVersion===version)continue;
+    const previousGroup=a.cooldownGroup??a.id;
+    if(modern&&generic&&a.recipe?.version!=='skill-formula-v2') {
+      const rebuilt=compileSkill({id:a.definitionId!,name:a.name,bonuses:a.bonuses,instanceId:a.id},a.power??5,unit.id);
+      // 从原始配方重建一次，避免旧战斗倍率/强化再次相乘；身份和支付账本不重置。
+      const sourceId=a.sourceId;
+      Object.assign(a,rebuilt,{sourceId});
+      delete a.damageScale;
+    }
     if(modern && a.effectVersion==='skill-v4.0' && a.definitionId && skillDefinitionKnown(a.definitionId)) {
       const rebuilt=compileSkill({id:a.definitionId,name:a.name,bonuses:a.bonuses},a.power??5,unit.id);
       // 只更新公式，保留实例身份与已支付的冷却/次数；从基础配方重建防止重复叠加。
@@ -41,8 +52,9 @@ export function upgradeCombatSkills(unit: Combatant): void {
       const restored=a.effects.find(e=>e.op==='resource'&&e.resource==='SP'&&e.amount>0);
       if(restored?.op==='resource'&&a.cost?.resource==='SP')a.cost.amount=Math.max(a.cost.amount,restored.amount*(area?2:1));
     }
-    if(modern)a.effects=a.effects.map(e=>e.op==='heal'?{op:'heal',amount:Math.max(1,Math.round(base*(area?0.8:1.5)*bonusMultiplier(a.bonuses,'healing')))}:e);
-    const oldGroup=a.cooldownGroup??a.id;
+    if(modern)a.effects=a.effects.map(e=>e.op==='heal'?{op:'heal',amount:Math.max(1,Math.round(base*(area?0.8:1.5)*bonusMultiplier(a.bonuses,'healing')/(generic?genericEffectCount(a):1)))}:e);
+    if(modern)balanceGenericSkill(a);
+    const oldGroup=previousGroup;
     a.cooldownGroup='skill-mechanism:'+(a.definitionId??a.id);
     const old=unit.abilityState.find(s=>s.abilityId===oldGroup);
     if (old) {
@@ -50,7 +62,7 @@ export function upgradeCombatSkills(unit: Combatant): void {
       if (current) { current.cdLeft = Math.max(current.cdLeft, old.cdLeft); current.used = Math.max(current.used, old.used); }
       else unit.abilityState.push({ ...old, abilityId: a.cooldownGroup });
     }
-    a.effectVersion=modern?'skill-v4.1':'skill-v3.0';
+    a.effectVersion=version;
     a.desc=(a.desc??'').replace('同类别共享冷却','不同种效果独立冷却，同种效果改名不刷新').replace('至多两名近身合法目标分担范围攻击可用上限','至多两名近身合法目标分别承受范围攻击');
   }
 }

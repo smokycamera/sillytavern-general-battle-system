@@ -2,6 +2,7 @@ import type { Ability, EffectOp } from '../types.js';
 import { curveAt } from '../data/curves.js';
 import { diceAvg, rebuildDice } from '../data/weapons.js';
 import { skillMechanismFromId, skillMechanismName, SKILL_MODIFIERS } from '../data/skill-mechanisms.js';
+import { balanceGenericSkill } from '../skill-balance.js';
 
 /** 由类别、效果原语和独立P生成；不经过命名蓝图，也不从自定义名猜机制。 */
 export function compileGenericSkill(id: string, power: number, ownerId: string, name?: string): Ability {
@@ -23,7 +24,7 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
   for (const key of selected) {
     const modifier = SKILL_MODIFIERS.find((m) => m.id === key)!;
     if (modifier.condition) effects.push({ op: 'condition', conditionId: modifier.condition, dur: ['stunned', 'restrained', 'disarmed', 'silenced'].includes(modifier.condition) ? 1 : duration,
-      magnitude, ...(mechanism.category !== 'buff' ? { saveDC } : {}), ...(damage || damagingDebuff ? { onHit: true, ...(['poisoned', 'bleeding', 'burning'].includes(modifier.condition) ? { onDamage: true } : {}) } : {}), shape: area ? 'burst' : 'single' });
+      magnitude, ...(mechanism.category !== 'buff' ? { saveDC: saveDC - 2 * Math.max(0, selected.length - 1) - (key === 'stun' ? 2 : 0) } : {}), ...(damage || damagingDebuff ? { onHit: true, ...(['poisoned', 'bleeding', 'burning'].includes(modifier.condition) ? { onDamage: true } : {}) } : {}), shape: area ? 'burst' : 'single' });
     else if (modifier.trait) effects.push({ op: 'trait', traitId: modifier.trait, dur: 1 + power, shape: area ? 'burst' : 'single' });
     else if (key === 'heal') effects.push({ op: 'heal', amount: Math.max(1, Math.round(curve.hp * 0.25 / Math.max(1, selected.length) / (area ? 2 : 1))) });
     else if (key === 'barrier') effects.push({ op: 'barrier', amount: Math.max(1, Math.round((8 + power * 5) / Math.max(1, selected.length) / (area ? 2 : 1))), dur: 3 });
@@ -36,10 +37,10 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
   }
   const ability: Ability = { id: `${ownerId}:skill:${encodeURIComponent(name?.trim() || skillMechanismName(mechanism))}`, definitionId: id,
     name: name?.trim() || skillMechanismName(mechanism), sourceId: ownerId, cooldownGroup: 'generic:' + mechanism.category,
-    category: mechanism.category, recipe: { ...mechanism, version: 'skill-formula-v1', power }, effectVersion: 'skill-v2.4', power,
+    category: mechanism.category, recipe: { ...mechanism, version: 'skill-formula-v2', power }, effectVersion: 'skill-v2.4', power,
     effects, shape: area ? 'burst' : 'single', channel: physical ? 'kinetic' : mechanism.modifiers.includes('thermal') ? 'thermal' : 'arcane', penetration: 1 + Math.floor(power / 2),
     delivery: magic || !damage && !mechanism.modifiers.includes('martial') ? 'magic' : undefined,
-    cost: { resource: 'SP', amount: Math.min(6, (area ? 3 : 2) + Math.ceil(selected.length / 2)) }, cooldown: area || selected.some((m) => ['stun', 'root', 'disarm', 'silence'].includes(m)) ? 3 : 2,
+    cost: { resource: 'SP', amount: Math.min(6, (area ? 3 : 2) + selected.length) }, cooldown: area || selected.includes('stun') ? 3 : 2,
     target: mechanism.category === 'buff' ? 'ally' : 'enemy',
     range: { min: 0, max: 2 + Math.floor(power / 3), metric: 'grid', allowEngaged: true },
     desc: skillMechanismName(mechanism) + '；强度与装备/目标条件共同决定结果，同类别共享冷却。' };
@@ -52,5 +53,7 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
   if (selected.includes('restore')) { ability.cost = { resource: 'SP', amount: (1 + Math.ceil(power / 3)) * (area ? 2 : 1) }; ability.usesPerBattle = 2; }
   if (selected.includes('burn')) ability.channel = 'thermal';
   if (selected.includes('summon')) { ability.cost = { resource: 'SP', amount: 4 }; ability.target = 'self'; ability.range = { min: 0, max: 0, metric: 'self', allowEngaged: true }; ability.usesPerBattle = 1; }
+  if (!area && !damage && selected.length === 1 && ['root','disarm','silence'].includes(selected[0]!)) ability.cost!.amount = 2;
+  balanceGenericSkill(ability);
   return ability;
 }

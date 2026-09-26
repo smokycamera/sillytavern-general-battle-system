@@ -14,9 +14,9 @@ export function ignoresFriendlyScreen(weapon?: Weapon): boolean {
 export function weaponReloadKey(unit: Pick<Combatant, 'id' | 'sidearm'>, weapon?: Weapon): string {
   return weapon && unit.sidearm?.id === weapon.id ? JSON.stringify([unit.id, 'sidearm']) : unit.id;
 }
-/** 旧 v2 火枪缺省装填一回合；显式 reload=0 仍受尊重。 */
+/** 缺省火枪装填/投掷取用一回合；显式 reload=0 的自定义装备仍受尊重。 */
 export function weaponReloadTurns(weapon?: Weapon): number {
-  return weapon?.reload ?? (weapon?.recipe?.mechanism === 'firearm' ? 1 : 0);
+  return weapon?.reload ?? (['firearm','throwing'].includes(weapon?.recipe?.mechanism??'') ? 1 : 0);
 }
 /** 近战只能来自真实近战武器，副槽不等于近战，也不能把炮管当剑。 */
 export function meleeWeapon(unit: Pick<Combatant, 'weapon' | 'sidearm'>): Weapon | undefined {
