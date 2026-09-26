@@ -46,7 +46,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     && unitInPromptScope(settings, r.id, roster.has(r.id), relevant(r))
     && (!battleOpen || combatants.some((u) => u.id === r.id) || relevant(r) || settings?.pinnedUnitIds?.includes(r.id))).sort((a, b) => Number(relevant(b)) - Number(relevant(a)) || Number(roster.has(b.id)) - Number(roster.has(a.id)) || (b.revision ?? 1) - (a.revision ?? 1));
   lines.push(`本场${limited ? '已知' : ''}参战${allRecords.filter((r) => roster.has(r.id)).length}张单位卡；编队人数另计，旧档仓库数量不等于参战数量。`);
-  lines.push(`环境：${battleOpen ? (save.battle?.snap.fieldTags as string[] | undefined)?.join('/') ?? 'plains' : (save.field || 'plains') + (save.lighting === 'night' && save.field !== 'night' ? '/night' : '')}；本场场景以快照为准。`);
+  lines.push(`环境：${battleOpen ? (save.battle?.snap.fieldTags as string[] | undefined)?.join('/') ?? 'plains' : (save.field || 'plains') + (save.lighting === 'night' && save.field !== 'night' ? '/night' : '')}；本场场景以存档记录为准。`);
   if (battleOpen && field) {
     const goal = field.objective;
     const owner = goal.kind === 'escape' ? combatants.find((u) => u.id === goal.unitId)?.side : undefined;
@@ -54,7 +54,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     blocks.mission.push(goal.kind === 'annihilation' ? '任务：歼灭战，使敌方全部失去作战能力获胜，无占点胜利。' : goal.kind === 'control' ? `任务：${goal.attackingSide ? (goal.attackingSide === 'ally' ? '我方进攻、敌方防守' : '我方防守、敌方进攻') + '；仅攻方可占点获胜，守方坚持至期限获胜' : '双方争夺'}，占领当轮不计，连续控制${goal.rounds}个完整回合可胜；当前进展${promptJson(save.battle?.snap.controlRounds ?? {})}。`
       : `任务：${owner === 'enemy' ? '我方拦截敌方护送' : '我方护送、敌方拦截'}；对象${visible.has(goal.unitId) ? promptJson(goal.unitId) : '尚未观测'}，地面抵达则护送方胜；${goal.defenderWins ? '消灭、撤离或逾期则拦截方胜' : '旧规则逾期僵持'}。`);
   }
-  if (limited) blocks.mission.push('仅列我方与当前已观测敌军；未列出的敌军位置、兵力与行动未知，不补写隐藏事实。');
+  if (limited) blocks.mission.push('仅列我方与当前已观测敌军；未列出的敌军位置、兵力与行动未知，不补写隐藏战斗记录。');
   for (const record of records) {
     const live = combatants.find((c) => c.id === record.id);
     const unit = live ?? record.snapshot;
@@ -69,7 +69,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
       ...(unit&&hasMemberHealth(unit)?{memberHpMax:unit.formation!.memberHp,totalLife:memberHealth(unit),totalLifeMax:memberHealthMax(unit),memberHealth:unit.formation!.health}:{}),
       ...(live && live.rulesVersion === 'v2' && moraleLabel({ ...observation, units: combatants.filter((u) => visible.has(u.id)) }, live) ? { morale: moraleLabel({ ...observation, units: combatants.filter((u) => visible.has(u.id)) }, live) } : {}),
       ...(woundedLabel(live ?? record) ? { recovery: woundedLabel(live ?? record) } : {}),
-      state: record.retired ? '已解散，不可调取' : ({ ready: '可行动', dying: '倒地失去战斗力（尚未死亡，不代表持续濒死；恢复以最新生命和状态为准）', dead: '死亡', routing: '溃退中，尚未离场', fled: '已撤离战场' }[live?.status ?? record.status ?? 'ready']),
+      state: record.retired ? '已解散，不可选择' : ({ ready: '可行动', dying: '倒地失去战斗力（尚未死亡，不代表持续濒死；恢复以最新生命和状态为准）', dead: '死亡', routing: '溃退中，尚未离场', fled: '已撤离战场' }[live?.status ?? record.status ?? 'ready']),
       ...(physical?.airborne !== undefined ? { layer: isAirborne(physical) ? '空中' : '地面' } : {}),
       ...(live && concealmentLabel(observation, live) ? { concealment: concealmentLabel(observation, live) } : {}),
       ...(unit?.tacticalPose ? { posture: postureLabel(unit, standardConditionMap()) } : {}),
@@ -330,10 +330,10 @@ export class NarrativeController {
   }
   approve(id: string): SaveReceipt {
     const proposal = this.state.proposals?.find((p) => p.id === id);
-    if (!proposal) throw new Error('候选不存在');
+    if (!proposal) throw new Error('待确认内容不存在');
     if (proposal.status === 'failed') proposal.status = 'pending';
-    if (proposal.status !== 'pending') throw new Error('候选未处于可提交状态');
-    if (!this.namespace) throw new Error('宿主缺少聊天/角色身份，不能安全提交');
+    if (proposal.status !== 'pending') throw new Error('待确认内容未处于可提交状态');
+    if (!this.namespace) throw new Error('酒馆缺少聊天/角色身份，不能安全提交');
     try { return this.write(prepareNarrativeTransaction(this.state, proposal, this.namespace, true)); }
     catch (error) {
       this.write({ ...this.state, proposals: this.state.proposals?.map((p) => p.id === id ? { ...p, status: 'unresolved', reason: String(error) } : p) });
@@ -356,7 +356,7 @@ export class NarrativeController {
   /** 手动重新预览缺绑定的完整消息：生成一个绑定当前事实的候选，不直接执行。 */
   async rebind(id: string): Promise<void> {
     const old = this.state.proposals?.find((p) => p.id === id);
-    if (!old || !this.namespace || !['legacy', 'stale'].includes(old.status)) throw new Error('缺少可重新预览的候选或可靠身份');
+    if (!old || !this.namespace || !['legacy', 'stale'].includes(old.status)) throw new Error('缺少可重新预览的待确认内容或可靠身份');
     if (old.corrected) {
       const receipt = this.correctProposal(id, old.source.text);
       if (receipt.status === 'failed') throw new Error(receipt.error ?? '草稿未保存');

@@ -7,9 +7,13 @@ import { importedModule, importedHelper } from './imported-baseline-oracle.mjs';
 
 const old = importedModule('engine/src/index.ts') as typeof current;
 const plain = (value: unknown) => JSON.parse(JSON.stringify(value));
+// 新字段只为屏障保留生命上限裁剪前的伤害。旧场景仍逐项比较命中、实际伤害、状态、随机源和存档；不忽略其他差异。
+const baselineDamagePlans = (value: unknown) => JSON.parse(JSON.stringify(value, function(key, entry) {
+  return (key === 'incomingDirect' || key === 'incomingSplash') && typeof this.direct === 'number' && typeof this.targets === 'number' ? undefined : entry;
+}));
 const scenarios: string[] = [];
 function equal(name: string, run: (engine: typeof current) => unknown) {
-  assert.deepEqual(plain(run(current)), plain(run(old)), name); scenarios.push(name);
+  assert.deepEqual(baselineDamagePlans(run(current)), baselineDamagePlans(run(old)), name); scenarios.push(name);
 }
 const specs = ['bp-binding', 'bp-shield-bash', 'bp-force-wave', 'bp-purify', 'bp-unravel', 'bp-call-reinforce'];
 for (const scale of ['hero', 'company'] as const) equal(`generation-${scale}-five-slots`, engine => {
@@ -44,7 +48,7 @@ const oldState = importedModule('panel/src/unit-state.ts');
 const base = current.generateUnit({ name: '坏档核对', side: 'ally', scale: 'hero', rulesVersion: 'v2', level: 2 }, { seed: 'invalid-fixture', registry: current.traitRegistry(), noVariance: true }).unit;
 for (const patch of [{ hp: NaN }, { hp: '4' }, { status: 'invalid' }, { resources: { SP: -1 } }, { conditions: [{ id: 'stun', dur: -1 }] }]) {
   const error = (fn: (value: unknown) => unknown) => { try { fn({ ...structuredClone(base), ...patch }); return 'accepted'; } catch (value) { return String(value); } };
-  const actual = error(combatantFromUnknown); assert.notEqual(actual, 'accepted'); assert.equal(actual, error(oldState.combatantFromUnknown));
+  const actual = error(combatantFromUnknown); assert.notEqual(actual, 'accepted'); assert.equal(actual, error(oldState.combatantFromUnknown).replaceAll('快照','存档记录'));
 }
 scenarios.push('invalid-save-rejection-five-cases');
 const oldName = importedHelper('tbWeaponShortName');

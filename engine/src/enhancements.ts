@@ -6,12 +6,13 @@ export const BONUS_NAMES = {
 } as const;
 export type BonusStat = keyof typeof BONUS_NAMES;
 export type Enhancements = Partial<Record<BonusStat, number>>;
-export type BonusKind = 'unit' | 'weapon' | 'armor' | 'shield' | 'consumable' | 'skill';
+export type BonusKind = 'unit' | 'weapon' | 'armor' | 'shield' | 'consumable' | 'accessory' | 'skill';
 const allowed: Record<BonusKind, BonusStat[]> = {
   unit: ['power', 'damage', 'accuracy', 'defense', 'health', 'speed', 'morale'],
   weapon: ['power', 'damage', 'accuracy', 'penetration', 'range'],
   armor: ['power', 'defense', 'protection'], shield: ['power', 'defense', 'protection'],
   consumable: ['power', 'healing'],
+  accessory: [],
   skill: ['power', 'damage', 'accuracy', 'penetration', 'range', 'healing', 'duration', 'resource', 'morale'],
 };
 export function validateEnhancements(value: Enhancements | undefined, kind: BonusKind): void {

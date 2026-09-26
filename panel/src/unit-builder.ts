@@ -39,7 +39,7 @@ function identityInput(d: UnitDraft): GenerateInput {
     hpMax: d.hpMax.trim() ? (d.scale === 'hero' ? capSingleLife(integer(d.hpMax, 1, Number.MAX_SAFE_INTEGER, '生命上限')) : integer(d.hpMax, 1, 1e9, '编制上限')) : d.scale === 'company' ? 50 : undefined,
     hp: d.hp.trim() ? (d.scale === 'hero' ? capSingleLife(integer(d.hp, 0, Number.MAX_SAFE_INTEGER, '当前生命')) : integer(d.hp, 0, 1e9, '当前人数')) : undefined,
     reserves: integer(d.reserves, 0, 2, '预备份额'),
-    abilityBlueprints: d.skills.filter((s) => s.id).map((s) => ({ id: s.id, instanceId: s.instanceId, name: s.name.trim() || undefined, ...(ABILITY_BLUEPRINTS[s.id]?.fixedPower ? {} : { level: integer(s.power, 1, 10, '技能规格') }) })) };
+    abilityBlueprints: d.skills.filter((s) => s.id).map((s) => ({ id: s.id, instanceId: s.instanceId, name: s.name.trim() || undefined, ...(ABILITY_BLUEPRINTS[s.id]?.fixedPower ? {} : { level: integer(s.power, 1, 10, '技能等级') }) })) };
 }
 const mechanics = (u: Combatant, slot: 'primary' | 'sidearm' | 'armor' | 'shieldGear'): ItemMechanics | undefined => slot === 'primary' ? u.weapon && { kind: 'weapon', value: u.weapon } : slot === 'sidearm' ? u.sidearm && { kind: 'weapon', value: u.sidearm } : slot === 'armor' ? u.armor && { kind: 'armor', value: u.armor } : u.shield && { kind: 'shield', value: u.shield };
 function setGear(u: Combatant, d: UnitDraft, oldDraft?: UnitDraft): void {
@@ -75,7 +75,7 @@ export function buildUnit(d: UnitDraft, registry: Map<string, Trait>, seed: stri
 }
 /** 只编译变更的配方；名称、体型和训练显示不重掷其他实物。 */
 export function editUnitBuild(previous: UnitRecord, d: UnitDraft, registry: Map<string, Trait>): UnitRecord {
-  if (previous.snapshot?.rulesVersion !== 'v2' || previous.retired || previous.status === 'dead') throw Error('该档案需要转制或为只读历史');
+  if (previous.snapshot?.rulesVersion !== 'v2' || previous.retired || previous.status === 'dead') throw Error('该档案需要更新规则或为只读历史');
   const oldDraft = unitDraftFromRecord(previous), input = identityInput(d);
   if (input.hp !== undefined && input.hp > (input.hpMax ?? previous.base.hpMax)) throw Error('当前生命/人数不能超过上限');
   if (input.scale !== previous.scale) throw Error('已有档案不能通过编辑改变生命/人数语义');
@@ -93,7 +93,7 @@ export function editUnitBuild(previous: UnitRecord, d: UnitDraft, registry: Map<
   else { const reason = equipmentReason(unit); if (reason) throw Error(reason); }
   if (unit.genAudit) Object.assign(unit.genAudit.input, { body: unit.body, mount: unit.mount, speedTier: unit.speedTier, reserves: unit.resources.reserve });
   normalizeBakedTraitStats(unit, registry);
-  const specs = d.skills.filter((s) => s.id).map((s) => ({ id: s.id, instanceId: s.instanceId, name: s.name, ...(oldDraft.skills.find((old) => old.instanceId === s.instanceId || !s.instanceId && old.id === s.id)?.power === s.power || ABILITY_BLUEPRINTS[s.id]?.fixedPower ? {} : { level: integer(s.power, 1, 10, '技能规格') }) }));
+  const specs = d.skills.filter((s) => s.id).map((s) => ({ id: s.id, instanceId: s.instanceId, name: s.name, ...(oldDraft.skills.find((old) => old.instanceId === s.instanceId || !s.instanceId && old.id === s.id)?.power === s.power || ABILITY_BLUEPRINTS[s.id]?.fixedPower ? {} : { level: integer(s.power, 1, 10, '技能等级') }) }));
   let prepared = learnAbilities(unit, specs, { replace: true });
   if (!d.autoPrepare) {
     const ids = d.skills.filter(s => s.prepared).map(s => prepared.abilities.find(a => s.instanceId ? a.id === s.instanceId

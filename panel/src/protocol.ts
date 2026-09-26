@@ -48,11 +48,11 @@ export function parseProtocol(text: string): ProtocolBatch {
   const scanned = scanProtocolTags(text, known), warnings = scanned.warnings, errors: string[] = [];
   const events: Suggestion[] = [], seen = new Map<string, number>();
   const scanLimit = MAX_PROTOCOL_EVENTS * 8;
-  if (scanned.tags.length > scanLimit) errors.push('候选标签过多，请先减少重复内容；尚未入账');
+  if (scanned.tags.length > scanLimit) errors.push('待确认内容标签过多，请先减少重复内容；尚未入账');
   if (scanned.tags.reduce((n, tag) => n + tag.raw.length, 0) > MAX_PROTOCOL_CHARS) errors.push('事件内容超过' + MAX_PROTOCOL_CHARS + '字符，先精简事件草稿；正文长度不受此限制');
   for (const tag of scanned.tags.slice(0, scanLimit)) {
     try {
-      if (!known.has(tag.name)) throw new Error('暂不支持事件 ' + tag.name + '，请补成已支持的机制；引擎战果无需正文重复发放');
+      if (!known.has(tag.name)) throw new Error('暂不支持事件 ' + tag.name + '，请补成已支持的效果；引擎战果无需正文重复发放');
       if (!tag.complete) throw new Error(tag.name + ' 事件被截断，属性值尚不完整');
       const attrs = normalizedAttributes(tag, ATTRIBUTES[tag.name]!, warnings);
       if ((tag.name === 'spawn' || tag.name === 'bless') && attrs.traits) {
@@ -111,8 +111,8 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
   if (!integer('hp', 0, lifeInputMax) || !integer('hpMax', 1, lifeInputMax) || (attrs.level !== undefined && !/^[lL]?(?:10|[1-9])(?:\+.*)?$/.test(attrs.level)) || !integer('qty', 1, 9999)) throw new Error(`${kind} 数值必须是范围内的完整整数`);
   if (kind === 'unit_update' && (!attrs.id?.trim() || (attrs.hp === undefined && attrs.hpMax === undefined))) throw new Error('unit_update 需要 id 与 hp/hpMax');
   if (kind === 'give') {
-    if (attrs.type !== undefined && !['weapon', 'armor', 'consumable', 'material', 'quest', 'misc'].includes(attrs.type)) throw new Error('未知物品种类');
-    if (attrs.spec === undefined && ['body', 'quality', 'enchant', 'stabilized', 'protection'].some((key) => attrs[key] !== undefined)) throw new Error('机械物品需要明确spec，不能只靠名称或附魔提示猜测');
+    if (attrs.type !== undefined && !['weapon', 'armor', 'consumable', 'accessory', 'material', 'quest', 'misc'].includes(attrs.type)) throw new Error('未知物品种类');
+    if (attrs.spec === undefined && ['body', 'quality', 'enchant', 'stabilized', 'protection'].some((key) => attrs[key] !== undefined)) throw new Error('有效果的物品需要明确spec，不能只靠名称或附魔提示猜测');
   }
   if (kind === 'spawn') {
     if(attrs.level)parseEnhancementSuffix('L'+attrs.level.replace(/^[lL]/,''),'unit');
@@ -142,7 +142,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
       if (!attrs[key]) continue;
       const spec = parseEnhancementSuffix(attrs[key]!.split(/[:：·｜|/／]/).at(-1)!, 'weapon').text.replace(/[lL]\s*\d+$/, '').trim();
       const mechanism = resolveWeaponClass(spec);
-      if (!mechanism) throw new Error(`${attrs.name}的${key}“${attrs[key]}”缺少支持的机制；请写“自定义名:剑L7”或“激光枪:能量武器L3”，副武器用weapon2`);
+      if (!mechanism) throw new Error(`${attrs.name}的${key}“${attrs[key]}”缺少支持的效果；请写“自定义名:剑L7”或“激光枪:能量武器L3”，副武器用weapon2`);
     }
   }
   const normalized = serializeEvent(kind, attrs);
@@ -158,7 +158,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     if (!integer('speed', 1, 5)) throw new Error('速度档位需要1–5整数');
     event.speedTier = attrs.speed === undefined ? undefined : Number(attrs.speed);
     if (attrs.stabilized !== undefined && !['true', 'false'].includes(attrs.stabilized)) throw new Error('stabilized 必须是 true/false');
-    if (attrs.protection !== undefined && !['balanced', 'kinetic', 'thermal', 'arcane'].includes(attrs.protection)) throw new Error('未知防护构型');
+    if (attrs.protection !== undefined && !['balanced', 'kinetic', 'thermal', 'arcane'].includes(attrs.protection)) throw new Error('未知防护类型');
     if (!integer('reserves', 0, 2)) throw new Error('预备份额需要0–2整数');
     event.reserves = attrs.reserves === undefined ? undefined : Number(attrs.reserves);
     event.weaponStabilized = attrs.stabilized === 'true';

@@ -112,7 +112,7 @@ export class SaveManagement {
   private async backup(change: Change): Promise<void> {
     const metadata = await this.host.readPersisted(change.session.scope);
     const persisted = envelopeFrom(metadata.tavernBattle);
-    if (!matches(persisted, change.previous) || !persisted || await payloadHash(persisted.payload) !== persisted.payloadHash) throw Error('宿主档案已变化，请重新预览');
+    if (!matches(persisted, change.previous) || !persisted || await payloadHash(persisted.payload) !== persisted.payloadHash) throw Error('酒馆档案已变化，请重新预览');
     const source = change.previous.payload ?? {}; const key = JSON.stringify(['native-before-change', change.session.scope.key, change.previous.generation, change.previous.revision]);
     const backup: SourceBackup = { session: change.session, source, sourceHash: await payloadHash(source), createdAt: new Date().toISOString(), envelope: change.previous,
       ...(change.handoff ? { legacyVariables: structuredClone(metadata.variables), legacyMirror: { key: change.handoff.mirrorKey, value: this.host.legacyStorage?.getItem(change.handoff.mirrorKey) ?? null } } : {}) };

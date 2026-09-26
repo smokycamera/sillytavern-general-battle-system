@@ -12,7 +12,7 @@ export class NativeMessages {
     const run = async (): Promise<DeliveryReceipt> => {
       if (!session || !sameSession(session, this.host.session()) || this.host.hasLegacyRuntime() || !this.canSend()) return { status: 'failed', detail: '发送目标已切换、档案保存尚待核实或旧战阵脚本仍在运行' };
       const ctx = this.host.context(); const chat = ctx.chat;
-      if (!chat || !ctx.addOneMessage || !ctx.eventSource?.emit) return { status: 'failed', detail: '宿主缺少消息插入或渲染接口' };
+      if (!chat || !ctx.addOneMessage || !ctx.eventSource?.emit) return { status: 'failed', detail: '酒馆缺少消息插入或渲染接口' };
       const existing = chat.find(message => message.extra?.tavernBattleDeliveryId === deliveryId);
       if (existing) {
         if (existing.mes !== text) return { status: 'failed', detail: '投递身份已用于不同内容' };
@@ -23,13 +23,13 @@ export class NativeMessages {
             : { status: 'unknown', detail: '此前插入的消息仍未确认保存，不重复发送' };
         } catch (error) { return { status: 'unknown', detail: String(error) }; }
       }
-      if (!ctx.saveChat) return { status: 'failed', detail: '宿主没有提供聊天完整保存接口，未插入消息' };
+      if (!ctx.saveChat) return { status: 'failed', detail: '酒馆没有提供聊天完整保存接口，未插入消息' };
       const message: HostMessage = { name: ctx.name1 ?? 'User', is_user: true, is_system: false, mes: text, send_date: new Date().toISOString(), extra: { tavernBattleDeliveryId: deliveryId } };
       chat.push(message); if (ctx.chatMetadata) ctx.chatMetadata.tainted = true;
       try { await this.host.saveChat(); } catch { /* The independent read below decides whether delivery occurred. */ }
       try {
         const saved = await this.host.readChat(session.scope);
-        if (!saved.some(item => item.extra?.tavernBattleDeliveryId === deliveryId && item.mes === text && item.is_user === true)) return { status: 'unknown', detail: '消息已插入内存，宿主尚未确认保存；不要重复发送' };
+        if (!saved.some(item => item.extra?.tavernBattleDeliveryId === deliveryId && item.mes === text && item.is_user === true)) return { status: 'unknown', detail: '消息已插入内存，酒馆尚未确认保存；不要重复发送' };
       } catch (error) { return { status: 'unknown', detail: String(error) }; }
       if (!sameSession(session, this.host.session())) return { status: 'inserted', detail: '消息已保存在原聊天；切聊天后未触发生成' };
       try {
@@ -62,7 +62,7 @@ export class NativeMessages {
   private async generateReply(session: HostSession, message: HostMessage): Promise<DeliveryReceipt> {
     const ctx = this.host.context(); const chat = ctx.chat;
     if (!sameSession(session, this.host.session()) || this.host.hasLegacyRuntime() || this.host.isGenerating() || !this.canSend()) return { status: 'inserted', messageDurable: true, generation: 'not-started', detail: '当前正在生成、档案待核实或聊天已切换，未重复触发生成' };
-    if (!ctx.generate || chat?.at(-1) !== message || !message.is_user) return { status: 'inserted', messageDurable: true, generation: 'not-started', detail: '聊天已有后续内容或生成接口不可用，请在宿主中核对后重生成' };
+    if (!ctx.generate || chat?.at(-1) !== message || !message.is_user) return { status: 'inserted', messageDurable: true, generation: 'not-started', detail: '聊天已有后续内容或生成接口不可用，请在酒馆中核对后重生成' };
     let started = false, stopped = false;
     const subscriptions = [this.host.subscribe('GENERATION_STARTED', (_type, _options, dry) => { if (dry !== true) started = true; }),
       this.host.subscribe('GENERATION_STOPPED', () => { stopped = true; }), this.host.subscribe('GENERATION_ENDED', () => {})];

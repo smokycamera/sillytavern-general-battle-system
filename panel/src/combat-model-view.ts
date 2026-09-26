@@ -5,7 +5,7 @@ import {hasMemberHealth,memberHealth,memberHealthMax,memberNoun} from '../../eng
 import {htmlText as esc} from './equipment-form.js';
 export function participationText(preview?: ActionPreview): string {
   if(preview?.participants===undefined)return '';
-  return `有效投送 ${Number(preview.participants.toFixed(1))} 份${preview.memberHp!==undefined?' · 目标单位最大生命 '+preview.memberHp:''}${preview.expectedCasualties!==undefined?' · 预计减员 '+preview.expectedCasualties.toFixed(1):''}${preview.weaponOverflow?' · 武器余伤在目标编队内传递':''}${(preview.aggregationSamples??1)>1?' · 分 '+preview.aggregationSamples+' 组判定，命中率为每组概率':''}`;
+  return `有效攻击 ${Number(preview.participants.toFixed(1))} 份${preview.memberHp!==undefined?' · 目标单位最大生命 '+preview.memberHp:''}${preview.expectedCasualties!==undefined?' · 预计减员 '+preview.expectedCasualties.toFixed(1):''}${preview.weaponOverflow?' · 武器余伤在目标编队内传递':''}${(preview.aggregationSamples??1)>1?' · 分 '+preview.aggregationSamples+' 组判定，命中率为每组概率':''}`;
 }
 export function memberHealthPanel(unit:Combatant):string {
   if(!hasMemberHealth(unit))return '';

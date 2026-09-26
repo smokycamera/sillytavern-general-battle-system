@@ -244,10 +244,11 @@ export function abilityUsabilityReason(actor: Combatant, ability: Ability): stri
   if (ability.unavailableReason) return ability.unavailableReason;
   if (actor.rulesVersion === 'v2') {
     if (ability.weaponUse && !skillWeapon(actor, ability)) return ability.weaponUse === 'ranged' ? '需要实际远程武器' : '需要实际可用武器';
-    if (ability.damageBasis && actor.conditions.some((c) => c.dur > 0 && standardConditionMap().get(c.id)?.preventAttack)) return '缴械状态不能使用武器技法';
+    if (ability.damageBasis && skillWeapon(actor,ability)?.recipe?.mechanism !== 'natural' && actor.conditions.some((c) => c.dur > 0 && standardConditionMap().get(c.id)?.preventAttack)) return '缴械状态不能使用武器技法';
     if (ability.delivery === 'magic' && actor.conditions.some((c) => c.dur > 0 && standardConditionMap().get(c.id)?.preventMagic)) return '沉默状态不能施放魔法技能';
     if (ability.itemSourceId && !actor.carriedItems?.some((i) => i.id === ability.itemSourceId)) return '携行物品来源已失效';
-    if (!ability.itemSourceId && !actor.preparedAbilityIds?.includes(ability.id)) return '已学但尚未准备';
+    if (ability.equipmentSourceId && !Object.values(actor.accessories ?? {}).some(item => item?.id === ability.equipmentSourceId)) return '提供这项能力的配件已卸下';
+    if (!ability.itemSourceId && !ability.equipmentSourceId && !actor.preparedAbilityIds?.includes(ability.id)) return '已学但尚未准备';
     if (ability.requires === 'shield' && !actor.shield) return '需要实际盾牌';
     if (ability.requires === 'melee' && !meleeWeapon(actor)) return '需要近战武器';
   }
@@ -273,6 +274,9 @@ export function abilityTargetReason(input: {
 }): string | undefined {
   const { actor, ability } = input;
   const target = ability.target === 'self' ? actor : input.target ?? (ability.target === 'ally' ? actor : undefined);
+  if (target && ability.targetBody && target.body !== ability.targetBody) return '维修用品只能修理车辆';
+  if (target && ability.effects.length && ability.effects.every(e => e.op === 'barrier' && (target.barrier?.remaining ?? 0) >= e.amount && (target.barrier?.duration ?? 0) >= e.dur
+    || e.op === 'resource' && !skillResourceChange(target, e))) return '目标已经有足够的屏障或精力';
   if (target && ability.weaponUse) {
     const weapon = skillWeapon(actor, ability, input.distance);
     if (!weapon) return '没有符合技法的武器';

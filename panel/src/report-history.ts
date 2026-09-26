@@ -53,7 +53,7 @@ export function stampNewBattleReports(previous: NarrativeSave, next: NarrativeSa
 }
 
 export function reportRestartReason(save: NarrativeSave, report: BattleReport): string | undefined {
-  if(!report.start || report.start.version!==1)return '这份旧战报没有开局快照；新版开战后保存的战报支持原局重战';
+  if(!report.start || report.start.version!==1)return '这份旧战报没有开局存档记录；新版开战后保存的战报支持原局重战';
   if(report.supersededBy)return '这份战果已被重战替代，请选择最近一次战报';
   if((save.committedOutcomeIds??[]).at(-1)!==report.id)return '仅可重打最近一场已结算战斗';
   if(save.battle && `${save.battle.kind}:${String(save.battle.snap.seed)}`!==report.id)return '请先结束并收兵当前战斗';
@@ -85,7 +85,7 @@ export function prepareReportRestart(save: NarrativeSave, id: string, expectedRe
   const reason=reportRestartReason(save,report);if(reason)throw Error(reason);
   const start=structuredClone(report.start!);
   if(start.battleId!==id || `${start.kind}:${String(start.snapshot.seed)}`!==id || start.snapshot.round!==1 || start.snapshot.started!==true
-    || !Array.isArray(start.before?.storage) || !Array.isArray(start.before?.inventory) || !Array.isArray(start.before?.rosterIds))throw Error('开局快照不完整，无法重战');
+    || !Array.isArray(start.before?.storage) || !Array.isArray(start.before?.inventory) || !Array.isArray(start.before?.rosterIds))throw Error('开局存档记录不完整，无法重战');
   const newId=start.kind+':'+seed;
   if(!seed || newId===id || (save.committedOutcomeIds??[]).includes(newId) || (save.reports??[]).some(r=>r.id===newId))throw Error('重战身份重复');
   const records=start.before.storage,ids=new Set(records.map(r=>r.id));
@@ -96,7 +96,7 @@ export function prepareReportRestart(save: NarrativeSave, id: string, expectedRe
   start.snapshot.seed=seed;
   // 加载完整引擎快照验证阵位、人数与规则；原开局RNG状态和实际装备均保留。
   const battle=start.kind==='small'?SmallBattle.fromSnapshot(structuredClone(start.snapshot)):MassBattle.fromSnapshot(structuredClone(start.snapshot));
-  if(battle.isOver())throw Error('开局快照已结束，不能作为重战起点');
+  if(battle.isOver())throw Error('开局存档记录已结束，不能作为重战起点');
   if(battle.combatants.some(u=>!ids.has(u.id)||!start.before.rosterIds.includes(u.id)||u.recordRevision!==undefined&&u.recordRevision!==(records.find(r=>r.id===u.id)!.revision??1)))throw Error('开局单位与战前档案不一致');
   start.snapshot=structuredClone(battle.toSnapshot());start.battleId=newId;start.replacesReportId=id;
   const next: NarrativeSave={...structuredClone(save),...structuredClone(start.before),

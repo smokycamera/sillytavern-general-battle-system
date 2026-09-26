@@ -39,7 +39,7 @@ export function bindLegacySources(save: NarrativeSave, host: NativeHost): { save
       proposal.source.messageId = tag.id; proposal.sourceKey = stableKey;
       if (proposal.expected?.messageId) proposal.expected.messageId = tag.id;
       // A legacy pending preview must be reread against its actual current source.
-      if (proposal.status === 'pending' || proposal.status === 'failed') { proposal.status = 'stale'; proposal.reason = '原生迁移后请重新核对来源与事实版本'; }
+      if (proposal.status === 'pending' || proposal.status === 'failed') { proposal.status = 'stale'; proposal.reason = '原生迁移后请重新核对来源与战斗记录版本'; }
     }
   }
   if (candidate.committedNarrativeSources || committed.size) candidate.committedNarrativeSources = [...committed];

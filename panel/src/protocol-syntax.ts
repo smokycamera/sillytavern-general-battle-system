@@ -98,7 +98,7 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
     let value: string;
     if (escapedQuote) {
       const end = rest.toLowerCase().indexOf(escapedQuote.toLowerCase(), escapedQuote.length);
-      if (end < 0) throw new Error(tag.name + ' 的 ' + originalKey + ' 转义引号未闭合');
+      if (end < 0) throw new Error(tag.name + ' 的 ' + originalKey + ' 安全显示引号未闭合');
       value = rest.slice(escapedQuote.length, end); rest = rest.slice(end + escapedQuote.length);
     } else if (quote && pair[quote]) {
       const end = rest.indexOf(pair[quote]!, 1);

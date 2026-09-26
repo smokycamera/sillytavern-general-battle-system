@@ -1,4 +1,5 @@
 import { bonusMultiplier, bonusSteps, trainingEdge, trainingDamage } from './enhancements.js';
+import { barrierAmount } from './barrier.js';
 import { weaponConditions, poisonHint, poisonValue } from './afflictions.js';
 import { looseFormation } from './tactics.js';
 import { effectiveProtection } from './body.js';
@@ -19,7 +20,7 @@ import { meleeWeapon, isCannonWeapon } from './loadout.js';
 
 import type { Combatant, RulePack, Weapon } from './types.js';
 import type { ConditionDef } from './types.js';
-import type { Rng } from './rng.js';
+import { SeededRng, type Rng } from './rng.js';
 import { rollDice, rollDicePortion, type DiceRollDetail } from './dice.js';
 import { collectMods, resolveStack, describeStack, hasFlag, type Modifier, type StackResult } from './bonus.js';
 import { averageDice, estimateHitChance } from './actions.js';
@@ -29,6 +30,8 @@ import { traitPenetrationBonus } from './trait-sources.js';
 import { COHORT_MODEL, COHORT_REFERENCE, personnel, memberDurability } from './combat-model.js';
 
 export interface AttackResolution {
+  barrierAbsorbed?: number;
+  unshieldedDamage?: number;
   armorScale?:number;
   ammunition?:'he'|'ap';
   damageModel?: 'member-health';
@@ -207,10 +210,14 @@ function memberPlan(opts:Omit<AttackOpts,'rng'>,direct:number,targets:number):Me
   const extra=hasMemberHealth(opts.defender)&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)?Math.min(opts.defender.hp,weapon?.splashTargets??0):0;
   const members=hasMemberHealth(opts.defender),directTargets=members?Math.min(opts.defender.hp,targets):targets>0?1:0,splashTargets=Math.min(opts.defender.hp,targets*extra),max=members?opts.defender.formation!.memberHp:opts.defender.base.hpMax;
   const overflow=members&&!!opts.rules.weaponOverflow&&(!opts.abilityDamage||!!opts.abilityDamage.weaponBased);
-  return {direct:overflow&&directTargets>0?direct:Math.min(direct,max*directTargets),targets:directTargets,...(overflow?{overflow:true}:{}),
-    ...(extra&&targets?{splash:Math.min(max*splashTargets,Math.round(direct*extra*(weapon?.splashFactor??0))),splashTargets}:{})};
+  const cappedDirect=overflow&&directTargets>0?direct:Math.min(direct,max*directTargets);
+  const incomingSplash=Math.round(direct*extra*(weapon?.splashFactor??0)),splash=Math.min(max*splashTargets,incomingSplash);
+  return {direct:cappedDirect,targets:directTargets,...(overflow?{overflow:true}:{}),
+    ...(direct>cappedDirect?{incomingDirect:direct}:{}),
+    ...(extra&&targets?{splash,splashTargets,...(incomingSplash>splash?{incomingSplash}:{})}:{})};
 }
 function previewMemberPlan(unit:Combatant,plan:MemberDamagePlan):{damage:number;casualties:number} {
+  if (unit.barrier) { const copy = structuredClone(unit), before = copy.hp; const loss = applyDamagePlan(copy, plan); return { damage: loss.direct + loss.splash, casualties: hasMemberHealth(unit) ? before - copy.hp : 0 }; }
   if(!hasMemberHealth(unit))return {damage:Math.min(unit.hp,plan.direct),casualties:0};
   const copy={...unit,formation:{...unit.formation!,health:unit.formation!.health!.map(g=>({...g}))}};
   const direct=damageMemberGroups(copy,plan.direct,plan.targets,plan.overflow);
@@ -225,9 +232,22 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
     hit=0;for(let n=1;n<=20;n++){const p=opts.advantage==='adv'?(2*n-1)/400:opts.advantage==='dis'?(41-2*n)/400:1/20;if(n>1&&(n>=opts.rules.critMin||n+ctx.netAtk>=ctx.targetDef))hit+=p;if(n>=opts.rules.critMin)critical+=p;}
   }
   const samples=cohortSamples(opts),weight=outcomeScale({...opts,packetShare:1/samples}).multiplier,count=(opts.abilityDamage?1:ctx.weapon?.attacks??1)*samples;
+  // 连续攻击共用剩余屏障。固定种子的小样本估计只操作副本，不消耗实战随机数。
+  if (opts.defender.barrier && count > 1) {
+    let sum=0,squares=0,positive=0,casualties=0,maximum=0;
+    for(let i=0;i<96;i++) {
+      const defender=structuredClone(opts.defender),attacker=structuredClone(opts.attacker),rng=new SeededRng('barrier-preview:'+i),before=memberHealth(defender),members=defender.hp;
+      for(let n=0;n<(opts.abilityDamage?1:ctx.weapon?.attacks??1)&&defender.hp>0;n++)resolveAttack({...opts,attacker,defender,rng});
+      const loss=before-memberHealth(defender);sum+=loss;squares+=loss*loss;positive+=Number(loss>0);casualties+=members-defender.hp;maximum=Math.max(maximum,loss);
+    }
+    const mean=sum/96;
+    return {...diagnostics,damageModel:'member-health' as const,hitChance:hit,anyHitChance:1-(1-hit)**count,expectedDamage:mean,
+      expectedCasualties:hasMemberHealth(opts.defender)?casualties/96:undefined,damageChance:positive/96,penetrationFactor:factor,exact:false,
+      variance:Math.max(0,squares/96-mean*mean),minDamage:0,maxDamage:maximum};
+  }
   const rawMultiplier=modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level)*bonusMultiplier(opts.attacker.bonuses,'damage');
   const moments=(times:number)=>{
-    const key=JSON.stringify([source?.baseDice,source?.apDice,rawMultiplier,times,weight,opts.defender.hp,opts.defender.formation,ctx.weapon?.splashTargets,ctx.weapon?.splashFactor,opts.abilityDamage?.weaponBased,!!opts.abilityDamage,opts.rules.weaponOverflow]);
+    const key=JSON.stringify([source?.baseDice,source?.apDice,rawMultiplier,times,weight,opts.defender.hp,opts.defender.barrier?.remaining,opts.defender.formation,ctx.weapon?.splashTargets,ctx.weapon?.splashFactor,opts.abilityDamage?.weaponBased,!!opts.abilityDamage,opts.rules.weaponOverflow]);
     const cached=memberPreviewCache.get(key);if(cached)return cached;
     const base=diceDistribution(source?.baseDice,times),ap=diceDistribution(source?.apDice,times);
     const result={mean:0,second:0,positive:0,casualties:0,max:0};
@@ -301,7 +321,7 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
   // 实际投送距离共用于预览、普通攻击、警戒与武器技能；独立法术不借用武器修正。
   if (rules.resolutionVersion === 'v2' && ranged && (!opts.abilityDamage || opts.abilityDamage.weaponBased)
     && weapon?.tags?.includes('blast') && (opts.distance ?? 0) >= 2) {
-    extraMods.push({ source: 'stance', name: '爆破远距投送', kind: 'atk', type: 'flat', value: -2 });
+    extraMods.push({ source: 'stance', name: '爆破远距攻击', kind: 'atk', type: 'flat', value: -2 });
   }
   if (
     !ranged &&
@@ -357,13 +377,15 @@ export function recordAppliedDamage(result: AttackResolution, loss: number): voi
 
 /** 会战延后提交仍执行原始命中方案，按此刻各成员的剩余生命裁剪。 */
 export function applyResolutionDamage(target:Combatant,result:AttackResolution):number {
+  const shieldBefore = barrierAmount(target);
   if(result.damageModel!=='member-health'){
-    result.hpBefore=target.hp;const loss=applyHealthLoss(target,result.finalDamage);result.hpAfter=target.hp;return loss;
+    result.hpBefore=target.hp;const loss=applyHealthLoss(target,result.unshieldedDamage ?? result.finalDamage);result.hpAfter=target.hp;if(shieldBefore)result.barrierAbsorbed=shieldBefore-barrierAmount(target);else delete result.barrierAbsorbed;return loss;
   }
   result.hpBefore=memberHealth(target);result.membersBefore=target.hp;
   let direct=0,splash=0,overflow=0;
   for(const [i,plan] of (result.damagePlans??[]).entries()){const loss=applyDamagePlan(target,plan);direct+=loss.direct;splash+=loss.splash;overflow+=loss.overflow;if(result.packetRolls?.[i])result.packetRolls[i]!.damage=loss.direct+loss.splash;}
   result.directDamage=direct;result.splashDamage=splash;result.overflowDamage=overflow;result.hpAfter=memberHealth(target);result.membersAfter=target.hp;
+  if(shieldBefore)result.barrierAbsorbed=shieldBefore-barrierAmount(target);else delete result.barrierAbsorbed;
   recordAppliedDamage(result,result.hpBefore-result.hpAfter);return result.finalDamage;
 }
 
@@ -376,13 +398,14 @@ export function resolveAttack(opts: AttackOpts): AttackResolution {
     if(parts.length){
       const representative=parts.find(r=>r.hit)??parts.at(-1)!,result:AttackResolution={...representative,attackRoll:undefined,baseRoll:undefined,apRoll:undefined,hpBefore:before,hpAfter:health(),hit:parts.some(r=>r.hit),crit:parts.some(r=>r.crit),finalDamage:before-health(),
         ...(opts.rules.combatModel===MEMBER_HEALTH_MODEL?{membersBefore,membersAfter:opts.defender.hp,damagePlans:parts.flatMap(r=>r.damagePlans??[{direct:0,targets:0}]),directDamage:parts.reduce((n,r)=>n+(r.directDamage??0),0),splashDamage:parts.reduce((n,r)=>n+(r.splashDamage??0),0),overflowDamage:parts.reduce((n,r)=>n+(r.overflowDamage??0),0)}:{}),
-        participants:outcomeScale(opts).participants,packetCount:parts.length,packetHits:parts.filter(r=>r.hit).length,
+        ...(parts.some(r=>r.barrierAbsorbed)?{barrierAbsorbed:parts.reduce((n,r)=>n+(r.barrierAbsorbed??0),0)}:{}),participants:outcomeScale(opts).participants,packetCount:parts.length,packetHits:parts.filter(r=>r.hit).length,
         packetRolls:parts.map(r=>({hit:r.hit,crit:r.crit,damage:r.finalDamage,attack:r.attackRoll?.total,base:r.baseRoll?.total,ap:r.apRoll?.total})),
         onHitConditions:parts.find(r=>r.onHitConditions?.length)?.onHitConditions};
       result.text=formatResolution(result,opts.defender);return result;
     }
   }
   const { attacker, defender, rng, rules } = opts;
+  const shieldBefore = barrierAmount(defender);
   const { ranged, weapon, atkMods, defMods, ctxAtk, ctxDef, atkStack, netAtk, targetDef } = attackContext(opts);
 
   // ---- 命中判定 ----
@@ -496,8 +519,8 @@ export function resolveAttack(opts: AttackOpts): AttackResolution {
   res.wardMult = wardMult;
   res.finalDamage = final;
   if(modern){res.damagePlans=[memberPlan(opts,final,targets)];applyResolutionDamage(defender,res);}
-  else {const actualLoss = applyHealthLoss(defender, final, v2);if (rules.combatModel===COHORT_MODEL) res.finalDamage = actualLoss;res.hpAfter = defender.hp;}
-  if (v2 && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) { const conditions = weaponConditions(attacker, defender, weapon, final, opts.traitRegistry); if (conditions.length) res.onHitConditions = conditions; }
+  else {const actualLoss = applyHealthLoss(defender, final, v2);if (rules.combatModel===COHORT_MODEL || shieldBefore) res.finalDamage = actualLoss;res.hpAfter = defender.hp;if(shieldBefore){res.unshieldedDamage=final;res.barrierAbsorbed=shieldBefore-barrierAmount(defender);}}
+  if (v2 && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) { const conditions = weaponConditions(attacker, defender, weapon, res.finalDamage, opts.traitRegistry); if (conditions.length) res.onHitConditions = conditions; }
 
   res.text = formatResolution(res, defender);
   return res;
@@ -519,7 +542,7 @@ function apShareOf(unit: Combatant, ranged: boolean, registry?: Map<string, impo
 
 /** 生成可读结算行（结算卡与审计共用同一文本源） */
 export function formatResolution(r: AttackResolution, defender: Combatant): string {
-  if(r.damageModel==='member-health')return `${r.attackerName} → ${r.defenderName}：${r.ammunition?r.ammunition==='he'?'榴弹·':'穿甲弹·':''}${r.hit?(r.crit?'暴击':'命中'):'未中'}${r.packetCount?`（${r.packetHits}/${r.packetCount}组命中）`:''}，生命损失${r.finalDamage}（${r.hpBefore}→${r.hpAfter}）${defender.scale!=='hero'?`，减员${(r.membersBefore??defender.hp)-(r.membersAfter??defender.hp)}${defender.body==='vehicle'?'辆':'人'}`:''}${r.overflowDamage?`，其中溢出${r.overflowDamage}`:''}${r.splashDamage?`，其中爆炸${r.splashDamage}`:''}${r.penetrationFactor===0?'；未穿透':''}`;
+  if(r.damageModel==='member-health')return `${r.attackerName} → ${r.defenderName}：${r.ammunition?r.ammunition==='he'?'榴弹·':'穿甲弹·':''}${r.hit?(r.crit?'暴击':'命中'):'未中'}${r.packetCount?`（${r.packetHits}/${r.packetCount}组命中）`:''}，生命损失${r.finalDamage}（${r.hpBefore}→${r.hpAfter}）${r.barrierAbsorbed?`，屏障吸收${r.barrierAbsorbed}`:''}${defender.scale!=='hero'?`，减员${(r.membersBefore??defender.hp)-(r.membersAfter??defender.hp)}${defender.body==='vehicle'?'辆':'人'}`:''}${r.overflowDamage?`，其中溢出${r.overflowDamage}`:''}${r.splashDamage?`，其中爆炸${r.splashDamage}`:''}${r.penetrationFactor===0?'；未穿透':''}`;
   if(r.packetCount)return `${r.attackerName} → ${r.defenderName}：聚合${r.packetCount}组/${r.packetHits}组命中${r.crit?'（含暴击）':''}，损失${r.finalDamage}${defender.scale==='hero'?'生命':'人'}（${r.hpBefore}→${r.hpAfter}）${r.penetrationFactor===0?'；未穿透':''}`;
   const parts: string[] = [];
   const head = `${r.attackerName} → ${r.defenderName}`;

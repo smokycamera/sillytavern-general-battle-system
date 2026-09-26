@@ -20,6 +20,7 @@ import { calibrateAutocannon, calibrateWeaponHands } from '../../engine/src/gen/
 import { gridWeaponRange } from '../../engine/src/small/weapon-range.js';
 import { formationWeaponRange } from '../../engine/src/melee.js';
 import { movementLabel } from '../../engine/src/tactics.js';
+const resourceLabel = (key: string) => key === 'SP' ? '精力' : key === 'reserve' ? '预备兵力' : key.startsWith('item:') ? '消耗品' : key;
 import { spCapacity } from '../../engine/src/resources.js';
 import { PROMPT_SECTIONS, applySettlementPrompt, promptSelected, selectPromptEntries, renderPromptSettings, type PromptSectionId } from './prompt-settings.js';
 import { narrativeDeploymentIds } from './narrative-state.js';
@@ -91,6 +92,7 @@ gw.__tavernBattlePanelMain = true;
 
 const runtime = createPanelRuntime();
 const { adapter, controller, resident } = runtime;
+document.body.dataset.native = String(!!runtime.native);
 if (runtime.getTheme) document.body.dataset.theme = runtime.getTheme();
 const inventoryPanel = new InventoryPanel(controller, visibleUnitRecord);
 if (!resident) window.addEventListener('pagehide', () => controller.dispose());
@@ -855,7 +857,7 @@ function render(scope: RenderScope = 'all', tacticalQuery?: TacticalQuery): void
   const nav = app.querySelector<HTMLElement>('#workspace-navigation')!;
   const navHtml = workspaceNavigation(workspaceTab, pendingCount);
   if (nav.innerHTML !== navHtml) nav.innerHTML = navHtml;
-  const saveMessage = state.saveReceipt?.status === 'failed' ? '未保存：' + esc(state.saveReceipt.error ?? '存储不可用') : state.saveReceipt?.status === 'local-only' ? '已保存本地 · 宿主待确认' : state.saveReceipt ? '已保存' : '准备就绪';
+  const saveMessage = state.saveReceipt?.status === 'failed' ? '未保存：' + esc(state.saveReceipt.error ?? '存储不可用') : state.saveReceipt?.status === 'local-only' ? '已保存本地 · 酒馆待确认' : state.saveReceipt ? '已保存' : '准备就绪';
   const statusHtml = `<span data-role="save-status" class="${state.saveReceipt?.status === 'failed' ? 'save-failed' : ''}">${saveMessage}</span>${state.saveReceipt?.status === 'failed' ? '<button data-action="save-retry">重试保存</button>' : ''}<button data-action="theme-toggle" aria-label="切换深浅主题">明暗</button>`;
   const status = app.querySelector('.app-state')!; if(status.innerHTML !== statusHtml)status.innerHTML=statusHtml;
   const latest = state.proposals.at(-1), failure = latest && ['rejected','stale','unresolved'].includes(latest.status) ? latest.reason : undefined;
@@ -901,7 +903,7 @@ function renderJevMode(b?: SmallBattle | MassBattle): string {
 let jevConnectionDiagnostic = "";
 function renderJevSettings(): string {
   const c = readJevConnection(), settings = state.jevSettings;
-  return `<section><h2>JEV 指挥</h2>${renderJevMode()}<p>原有自动 AI 默认启用。JEV 负责计划和行动选择，酒馆引擎负责规则与结算；服务不可用时自动回退原有 AI。</p><div class="row"><label>连接方式 <select data-role="jev-protocol"><option value="typesafe" ${c.protocol==='typesafe'?'selected':''}>TypeSafe / JEV API</option><option value="openai" ${c.protocol==='openai'?'selected':''}>OpenAI 兼容接口</option><option value="bridge" ${c.protocol==='bridge'?'selected':''}>本地桥接（旧版）</option></select></label><label>请求通道 <select data-role="jev-transport">${Object.entries({auto:"自动（推荐）",host:"酒馆宿主转发",relay:"自建转发",direct:"浏览器直连"}).map(([id,label])=>`<option value="${id}" ${(c.transport??"auto")===id?"selected":""}>${label}</option>`).join("")}</select></label><label>转发地址（自建时填写）<input data-role="jev-relay" type="url" value="${esc(c.relayUrl??'')}" placeholder="http://127.0.0.1:4318"></label><label>API 地址 <input data-role="jev-url" type="url" value="${esc(c.url)}" placeholder="${JEV_API_URL}"></label><label>API Key／桥接令牌 <input data-role="jev-token" type="password" autocomplete="off" value="${esc(c.token)}"></label></div><div class="row"><button data-action="jev-models">拉取模型</button><label>模型列表 <select data-role="jev-model-list"><option value="">拉取后选择模型</option>${c.model?`<option value="${esc(c.model)}" selected>${esc(c.model)}</option>`:''}</select></label><label>模型 ID <input data-role="jev-model" value="${esc(c.model??'')}" placeholder="jev-latest"></label><button data-action="jev-connect">保存连接并测试</button><button data-action="jev-save">仅保存连接</button><button data-action="jev-inference" ${jevCommand.busy?'disabled':''}>测试模型推理（调用 API）</button></div><p role="status">${esc(jevCommand.busy ? jevCommand.detail : jevConnectionDiagnostic)}</p>${jevCommand.busy?'<button data-action="jev-stop">暂停 JEV</button>':''}<p class="sub">“保存连接并测试”只检查模型列表。“测试模型推理”会发送简短示例，不发送聊天或战场数据，可能产生 API 费用。</p><p class="sub">默认使用 TypeSafe 官方 API，连接方式应选“TypeSafe / JEV API”。“OpenAI 兼容接口”只用于支持聊天接口的服务，切换协议不能解决跨域。自动通道优先使用酒馆宿主转发；填写自建转发地址后优先使用该地址。第三方服务请选择其支持的协议，填写地址与 API Key 后拉取并选择模型；也可手动填写模型 ID。API Key 保存在本机浏览器存储中，不写入聊天存档；同源扩展可访问，请只在可信客户端保存。SillyTavern 宿主转发需要开启 enableCorsProxy 并重启。TauriTavern 的 OpenAI 兼容接口会自动使用 TT 原生后端，手机用户只需填写 API 地址和 API Key，无需 npm、Termux 或本机 relay。TypeSafe 官方 /systemone 不是 OpenAI 聊天协议；当前 TT 未向第三方扩展开放通用原生 HTTP，因此只有服务本身允许 CORS 时才能直连，否则需要自己控制的外部 HTTPS 转发。转发服务会接收 API Key，请勿使用不可信的公共代理。浏览器直连仍需要服务支持 CORS。旧版本地桥接仍使用 JEV_SERVICE_TOKEN，模型由服务端配置。</p><div class="row"><label>我方指挥水平 <select data-role="jev-ability">${Object.entries({novice:'新手',regular:'常规',skilled:'熟练',expert:'专家',master:'大师'}).map(([id,name]) => `<option value="${id}" ${settings.ability===id?'selected':''}>${name}</option>`).join('')}</select></label><label>正文目标提取 <select data-role="jev-narrative">${Object.entries({off:'关闭',auto:'自动读取完成正文',manual:'仅手动扫描'}).map(([id,name])=>`<option value="${id}" ${settings.narrative.mode===id?'selected':''}>${name}</option>`).join('')}</select></label><label>最近消息数 <input type="number" min="0" max="100" data-role="jev-window" value="${settings.narrative.windowSize}"></label><button data-action="jev-scan" ${!currentBattle()||settings.narrative.mode==='off'?'disabled':''}>扫描当前正文</button></div><div class="row"><label>敌方指挥<select data-role="jev-enemy-mode"><option value="auto" ${settings.context.enemy==='auto'?'selected':''}>根据上下文</option><option value="manual" ${settings.context.enemy==='manual'?'selected':''}>手动指定</option></select></label><label>敌方能力／缺省档位<select data-role="jev-enemy-ability">${Object.entries(ABILITY_LABELS).map(([id,label])=>`<option value="${id}" ${settings.context.enemyAbility===id?'selected':''}>${label}</option>`).join('')}</select></label><label>敌方风格／缺省偏好<select data-role="jev-enemy-style">${Object.entries(STYLE_PRESETS).map(([id,p])=>`<option value="${id}" ${settings.context.enemyStyle===id?'selected':''}>${p.label}</option>`).join('')}</select></label></div><div class="row"><label>战场与任务<select data-role="jev-scene" ${currentBattle()?'disabled':''}><option value="auto" ${settings.context.scene==='auto'?'selected':''}>开战时根据上下文</option><option value="manual" ${settings.context.scene==='manual'?'selected':''}>沿用手动设置</option></select></label><label>战斗形式<select data-role="jev-battle-mode" ${currentBattle()?'disabled':''}><option value="auto" ${settings.context.battleMode==='auto'?'selected':''}>按上下文与编制</option><option value="small" ${settings.context.battleMode==='small'?'selected':''}>小战地图</option><option value="mass" ${settings.context.battleMode==='mass'?'selected':''}>编队会战</option></select></label></div><p class="sub">JEV 开战判定读取上方消息范围，一次选择敌方能力、风格、地形、昼夜、地图与任务，不需要另配文本模型。缺少依据时沿用缺省值；战斗中地图和胜负规则固定，仅在新正文明确更换或改变指挥者时更新敌方配置。</p>${state.jevBattle?.context?`<p>${esc(encounterSummary(state.jevBattle.context))}</p><p class="sub">${esc(state.jevBattle.context.detail)}</p>`:''}<p class="sub">TypeSafe 直连可选择开战场景与指挥，但不支持自由文本目标提取；该功能请使用 OpenAI 兼容接口，或在本地桥接服务配置 TEXT_API_URL、TEXT_API_KEY、TEXT_MODEL。开启后，所选完成消息将发送到配置的服务。</p></section>`;
+  return `<section><h2>JEV 指挥</h2>${renderJevMode()}<p>原有自动 AI 默认启用。JEV 负责计划和行动选择，插件负责计算战斗结果；服务不可用时自动回退原有 AI。</p><div class="row"><label>连接方式 <select data-role="jev-protocol"><option value="typesafe" ${c.protocol==='typesafe'?'selected':''}>TypeSafe / JEV API</option><option value="openai" ${c.protocol==='openai'?'selected':''}>OpenAI 兼容接口</option><option value="bridge" ${c.protocol==='bridge'?'selected':''}>本地服务（旧版）</option></select></label><label>连接途径 <select data-role="jev-transport">${Object.entries({auto:"自动（推荐）",host:"酒馆转发",relay:"自建转发",direct:"浏览器直连"}).map(([id,label])=>`<option value="${id}" ${(c.transport??"auto")===id?"selected":""}>${label}</option>`).join("")}</select></label><label>转发地址（自建时填写）<input data-role="jev-relay" type="url" value="${esc(c.relayUrl??'')}" placeholder="http://127.0.0.1:4318"></label><label>服务地址 <input data-role="jev-url" type="url" value="${esc(c.url)}" placeholder="${JEV_API_URL}"></label><label>服务密钥或访问令牌 <input data-role="jev-token" type="password" autocomplete="off" value="${esc(c.token)}"></label></div><div class="row"><button data-action="jev-models">获取模型</button><label>模型列表 <select data-role="jev-model-list"><option value="">获取后选择模型</option>${c.model?`<option value="${esc(c.model)}" selected>${esc(c.model)}</option>`:''}</select></label><label>模型名称 <input data-role="jev-model" value="${esc(c.model??'')}" placeholder="jev-latest"></label><button data-action="jev-connect">保存连接并测试</button><button data-action="jev-save">仅保存连接</button><button data-action="jev-inference" ${jevCommand.busy?'disabled':''}>测试模型回复</button></div><p role="status">${esc(jevCommand.busy ? jevCommand.detail : jevConnectionDiagnostic)}</p>${jevCommand.busy?'<button data-action="jev-stop">暂停 JEV</button>':''}<p class="sub">“保存连接并测试”只检查模型列表。“测试模型回复”会发送简短示例，不发送聊天或战场数据，可能产生服务费用。</p><details><summary>连接帮助与密钥保存</summary><p>使用 JEV 官方服务时选择 TypeSafe；使用支持 OpenAI 的服务时选择对应选项。填写服务地址和密钥，然后获取模型列表。连接途径保持“自动”即可；只有自己运行了转发服务时才需要填写转发地址。</p><p>密钥只保存在本机浏览器中，不写入聊天存档。转发服务会收到密钥，请使用自己信任的服务。</p><p>TauriTavern 可直接转发 OpenAI 兼容服务的请求，手机无需另装命令行程序。SillyTavern 若提示转发未开启，需要在配置文件 config.yaml 中开启 enableCorsProxy 并重启。JEV 官方服务使用不同的连接方式；无法直连时需要自建转发，切换为 OpenAI 并不能解决。</p><p>旧版本地服务需要填写其访问令牌，模型由该服务配置。</p></details><div class="row"><label>我方指挥水平 <select data-role="jev-ability">${Object.entries({novice:'新手',regular:'常规',skilled:'熟练',expert:'专家',master:'大师'}).map(([id,name]) => `<option value="${id}" ${settings.ability===id?'selected':''}>${name}</option>`).join('')}</select></label><label>正文目标提取 <select data-role="jev-narrative">${Object.entries({off:'关闭',auto:'自动读取完成正文',manual:'仅手动扫描'}).map(([id,name])=>`<option value="${id}" ${settings.narrative.mode===id?'selected':''}>${name}</option>`).join('')}</select></label><label>最近消息数 <input type="number" min="0" max="100" data-role="jev-window" value="${settings.narrative.windowSize}"></label><button data-action="jev-scan" ${!currentBattle()||settings.narrative.mode==='off'?'disabled':''}>扫描当前正文</button></div><div class="row"><label>敌方指挥<select data-role="jev-enemy-mode"><option value="auto" ${settings.context.enemy==='auto'?'selected':''}>根据上下文</option><option value="manual" ${settings.context.enemy==='manual'?'selected':''}>手动指定</option></select></label><label>敌方能力／默认档位<select data-role="jev-enemy-ability">${Object.entries(ABILITY_LABELS).map(([id,label])=>`<option value="${id}" ${settings.context.enemyAbility===id?'selected':''}>${label}</option>`).join('')}</select></label><label>敌方风格／默认偏好<select data-role="jev-enemy-style">${Object.entries(STYLE_PRESETS).map(([id,p])=>`<option value="${id}" ${settings.context.enemyStyle===id?'selected':''}>${p.label}</option>`).join('')}</select></label></div><div class="row"><label>战场与任务<select data-role="jev-scene" ${currentBattle()?'disabled':''}><option value="auto" ${settings.context.scene==='auto'?'selected':''}>开战时根据上下文</option><option value="manual" ${settings.context.scene==='manual'?'selected':''}>沿用手动设置</option></select></label><label>战斗形式<select data-role="jev-battle-mode" ${currentBattle()?'disabled':''}><option value="auto" ${settings.context.battleMode==='auto'?'selected':''}>按上下文与编制</option><option value="small" ${settings.context.battleMode==='small'?'selected':''}>小战地图</option><option value="mass" ${settings.context.battleMode==='mass'?'selected':''}>编队会战</option></select></label></div><p class="sub">JEV 开战判定读取上方消息范围，一次选择敌方能力、风格、地形、昼夜、地图与任务，不需要另配文本模型。缺少依据时沿用默认值；战斗中地图和胜负规则固定，仅在新正文明确更换或改变指挥者时更新敌方配置。</p>${state.jevBattle?.context?`<p>${esc(encounterSummary(state.jevBattle.context))}</p><p class="sub">${esc(state.jevBattle.context.detail)}</p>`:''}<p class="sub">JEV 专用连接可以选择开战场景与指挥方式。如需从剧情中提取自由描述的目标，请连接支持文本生成的服务。启用后，会把选定的剧情片段交给该服务分析。</p></section>`;
 }
 function renderBattleExit(b: SmallBattle | MassBattle): string {
   const archived = state.committedOutcomeIds.includes(battleIdOf(b)), deleted=state.deletedReportIds?.includes(battleIdOf(b));
@@ -946,7 +948,7 @@ function renderBattlePreparation(): string {
     ${mode === 'small' ? `<p class="mission-summary">${esc(missionSummary)}</p>` : ''}
     <div class="preparation-stats"><div><strong>${allies.length}</strong><span>我方单位</span></div><div><strong>${enemies.length}</strong><span>已知敌方</span></div><div><strong>${mode === 'mass' ? '会战' : '战术'}</strong><span>${esc(fieldLabel(plannedFieldTags()) || '野战')}</span></div></div>
     <label class="battle-auto"><input type="checkbox" data-role="non-lethal" ${state.nonLethal?'checked':''}> 非致命战斗（双方伤害只会造成濒死）</label>
-    <div class="row">${renderJevMode()}</div>${state.jevSettings.mode==='jev'&&state.jevSettings.context.scene==='auto'?'<p class="sub">下方为缺省设置；开战时将根据最近完成的正文选择场景与任务，依据不足时保留缺省值。</p>':''}<div class="row"><button class="primary" data-action="${mode === 'mass' ? 'mass-start' : 'small-start'}" ${ready ? '' : 'disabled'}>开始交战</button><button data-action="workspace-tab" data-tab="units">${ready ? '查看队伍' : '集结队伍'}</button><button data-action="workspace-tab" data-tab="inventory">整理配装</button></div>
+    <div class="row">${renderJevMode()}</div>${state.jevSettings.mode==='jev'&&state.jevSettings.context.scene==='auto'?'<p class="sub">下方为默认设置；开战时将根据最近完成的正文选择场景与任务，依据不足时保留默认值。</p>':''}<div class="row"><button class="primary" data-action="${mode === 'mass' ? 'mass-start' : 'small-start'}" ${ready ? '' : 'disabled'}>开始交战</button><button data-action="workspace-tab" data-tab="units">${ready ? '查看队伍' : '集结队伍'}</button><button data-action="workspace-tab" data-tab="inventory">整理配装</button></div>
     ${state.roster.every((u) => u.rulesVersion === 'v2') ? `<details class="preparation-options" data-detail-id="preparation-options"><summary>任务设置 · ${state.mapLayout === 'indoor' ? '室内' : '野战'} / ${state.objectiveMode === 'escort' ? '护送' : state.objectiveMode === 'intercept' ? '拦截' : state.objectiveMode === 'siege' ? '攻城' : state.objectiveMode === 'annihilation' ? '歼灭' : plannedFieldTags().includes('siege') ? '攻城' : '歼灭'}</summary><div class="row"><label>地形<select data-role="context-field">${Object.entries(FIELD_LABELS).filter(([id])=>id!=='night').map(([id,label])=>`<option value="${id}" ${(state.field||'plains')===id?'selected':''}>${label}</option>`).join('')}</select></label><label>光照<select data-role="context-lighting"><option value="day" ${state.lighting==='day'?'selected':''}>日间</option><option value="night" ${state.lighting==='night'?'selected':''}>夜间</option></select></label><label>地图<select data-role="map-layout"><option value="standard" ${state.mapLayout !== 'indoor' ? 'selected' : ''}>标准野战</option><option value="indoor" ${state.mapLayout === 'indoor' ? 'selected' : ''}>紧凑室内</option></select></label><label>目标<select data-role="objective-mode"><option value="auto" ${state.objectiveMode === 'auto' ? 'selected' : ''}>按环境：野战歼灭／攻城夺点</option><option value="annihilation" ${state.objectiveMode === 'annihilation' ? 'selected' : ''}>歼灭战</option><option value="siege" ${state.objectiveMode === 'siege' ? 'selected' : ''}>攻城战</option><option value="escort" ${state.objectiveMode === 'escort' ? 'selected' : ''}>我方护送</option><option value="intercept" ${state.objectiveMode === 'intercept' ? 'selected' : ''}>拦截敌方护送</option></select></label><label>攻城角色<select data-role="siege-attacker"><option value="ally" ${state.siegeAttacker === 'ally' ? 'selected' : ''}>我方进攻</option><option value="enemy" ${state.siegeAttacker === 'enemy' ? 'selected' : ''}>我方防守</option></select></label></div><p>野战默认歼灭；攻城胜利点在守方纵深，攻方连续控制5个完整回合获胜，守方坚持到60回合获胜。我方护送沿用主控或首个我方单位；拦截以首个敌方单位为护送对象。双方规则相同：抵达出口则护送方胜，目标被消灭、撤离或逾期未抵达则拦截方胜。</p></details>` : ''}
     ${allies.length ? `<div class="preparation-roster">${allies.slice(0, 8).map((u) => `<span><b>${esc(u.name)}</b><small>${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}/${u.base.hpMax}</small></span>`).join('')}${allies.length > 8 ? `<span>另有${allies.length - 8}支单位</span>` : ''}</div>` : ''}
   </section>`;
@@ -954,8 +956,8 @@ function renderBattlePreparation(): string {
 function renderWorkspaceSettings(): string {
   const saved = controller.snapshot();
   return `${renderJevSettings()}${promptScopeControls(saved.promptSettings, narrativeProjectionDetails(saved, adapter.recentPromptText?.() ?? ''), (saved.storage ?? []).filter(visibleUnitRecord))}${renderPromptSettings(saved.promptSettings, promptDrafts)}<section><h2>显示与操作</h2><p>战场形式由参战队伍确定，环境沿用剧情声明。</p><button data-action="theme-toggle">切换深浅主题</button></section>
-    <section><h2>保存与恢复</h2><p>${state.saveReceipt?.status === 'local-only' ? '目前仅确认本地副本，宿主尚未确认保存。' : '单位档案和战报随当前聊天保存。保存失败时会在顶部显示。'}</p><button data-action="save-retry">核实并重试保存</button>${controller.migrationReview() ? '' : renderMigrationReview()}</section>
-    <details class="workspace-diagnostics"><summary>技术信息</summary><p>V4 全量审计版 20260918 · ${runtime.native ? '原生扩展迁移候选' : adapter.inTavern ? '酒馆助手' : '本地模式'}。</p><p>引擎在本地结算；公式版本、种子和逐骰记录保留在对应详情。${controller.capabilities.injection ? '事实注入可用。' : '当前宿主未提供事实注入。'}</p></details>`;
+    <section><h2>保存与恢复</h2><p>${state.saveReceipt?.status === 'local-only' ? '目前仅确认本地副本，酒馆尚未确认保存。' : '单位档案和战报随当前聊天保存。保存失败时会在顶部显示。'}</p><button data-action="save-retry">核实并重试保存</button>${controller.migrationReview() ? '' : renderMigrationReview()}</section>
+    <details class="workspace-diagnostics"><summary>版本与运行信息</summary><p>战斗结果由本设备计算。伤害、命中和状态的详细过程可在战报中查看。</p><p>${controller.capabilities.injection ? '已支持在续写剧情时参考当前战斗进度。' : '当前酒馆暂不支持自动提供剧情参考。'}</p></details>`;
 }
 function renderMigrationReview(): string {
   const review = controller.migrationReview();
@@ -964,20 +966,20 @@ function renderMigrationReview(): string {
     ${review.changes.map((change) => `<div class="sub">${esc(change)}</div>`).join('')}
     <div class="row"><button data-action="migration-export">下载原档备份</button><button class="primary" data-action="migration-accept">接受此预览并保存备份</button></div></section>`;
   const backups = controller.snapshot().migrationBackups;
-  return Array.isArray(backups) && backups.length ? `<details><summary>迁移备份与恢复</summary><p>恢复会替换当前聊天的战阵事实，回到最近一次迁移前。请先下载当前存档。</p><button data-action="migration-export">下载当前完整存档</button><button data-action="migration-restore">恢复最近迁移前备份</button></details>` : '';
+  return Array.isArray(backups) && backups.length ? `<details><summary>迁移备份与恢复</summary><p>恢复会替换当前聊天的战阵战斗记录，回到最近一次迁移前。请先下载当前存档。</p><button data-action="migration-export">下载当前完整存档</button><button data-action="migration-restore">恢复最近迁移前备份</button></details>` : '';
 }
 
 function renderUnitConversion(): string {
   if (!unitConversion || unitConversion.namespace !== adapter.namespace()) return '';
   const { before, after } = unitConversion;
   const old = before.snapshot, next = after.snapshot!;
-  return `<section data-role="unit-conversion"><h2>${esc(before.name)} · V2转制预览</h2><p>身份 ${esc(before.id)}、${before.scale === 'hero' ? '生命' : '人数'} ${before.hp}/${before.base.hpMax}、训练${before.level}、XP${before.xp ?? 0}保持。转制会按下列机制重建装备，原档一并保留。</p>
-    <table><tr><th>字段</th><th>原档</th><th>V2候选</th></tr>
+  return `<section data-role="unit-conversion"><h2>${esc(before.name)} · V2更新规则预览</h2><p>身份 ${esc(before.id)}、${before.scale === 'hero' ? '生命' : '人数'} ${before.hp}/${before.base.hpMax}、训练${before.level}、经验${before.xp ?? 0}保持。更新规则会按下列效果重建装备，原档一并保留。</p>
+    <table><tr><th>字段</th><th>原档</th><th>V2待确认内容</th></tr>
     <tr><td>武器</td><td>${esc(old?.weapon?.baseDice ?? '旧默认')} ${esc(old?.weapon?.apDice ?? '')}</td><td>${esc(next.weapon!.recipe!.mechanism)} P${next.weapon!.level} / ${esc(next.weapon!.baseDice)} / 穿透${next.weapon!.penetration}</td></tr>
-    <tr><td>防护</td><td>旧构型${old?.armor?.tier ?? before.armorTier ?? 0}</td><td>P${next.armor!.level} / 动能${next.armor!.protection!.kinetic} 热能${next.armor!.protection!.thermal} 奥术${next.armor!.protection!.arcane}</td></tr>
+    <tr><td>防护</td><td>旧类型${old?.armor?.tier ?? before.armorTier ?? 0}</td><td>P${next.armor!.level} / 动能${next.armor!.protection!.kinetic} 热能${next.armor!.protection!.thermal} 奥术${next.armor!.protection!.arcane}</td></tr>
     <tr><td>属性</td><td>攻${before.base.atk} 防${before.base.def}</td><td>攻${after.base.atk} 防${after.base.def}</td></tr></table>
     <div class="sub">${next.generationWarnings?.map(esc).join('；') ?? ''}</div>
-    <div class="row"><button data-action="unit-conversion-export">下载此单位原档</button><button class="primary" data-action="unit-conversion-commit">确认上述转制</button><button data-action="unit-conversion-cancel">取消</button></div></section>`;
+    <div class="row"><button data-action="unit-conversion-export">下载此单位原档</button><button class="primary" data-action="unit-conversion-commit">确认上述更新规则</button><button data-action="unit-conversion-cancel">取消</button></div></section>`;
 }
 
 function renderConfig(): string {
@@ -1015,7 +1017,7 @@ function unitHtml(u: Combatant, index: number, inBattle: boolean): string {
   const prog = u.rulesVersion === 'v2' || u.scale !== 'mook' ? xpProgress(u) : null;
   let xpTxt = '';
   if ((u.rulesVersion === 'v2' || u.scale !== 'mook') && u.xp !== undefined && !inBattle) {
-    xpTxt = prog ? `｜本级XP ${xpLabel(prog.current)}/${prog.next}` : `｜累计XP ${xpLabel(u.xp ?? 0)}（满级）`;
+    xpTxt = prog ? `｜本级经验 ${xpLabel(prog.current)}/${prog.next}` : `｜累计经验 ${xpLabel(u.xp ?? 0)}（满级）`;
   }
   const rosterCtl = !inBattle
     ? `<details class="unit-tools"><summary>单位操作</summary><div class="row">
@@ -1026,7 +1028,7 @@ function unitHtml(u: Combatant, index: number, inBattle: boolean): string {
   const expanded = state.expandedUnits.has(u.id);
   return `<div class="${cls}" data-unit="${esc(u.id)}">
     <div class="nm">${marks}${esc(u.name)}${seq ? `<span class="seq">#${seq}</span>` : ''}${encTag}${statusWord}</div>
-    <div class="st">${!inBattle && u.rulesVersion === 'v2' ? `${scaleLabel(u)} · 训练${u.level}${esc(enhancementLabel(u.bonuses))} · ${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}/${u.base.hpMax}` : `Lv${u.level}${u.archetype ? '·' + archName(u.archetype, true) : ''}｜${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}/${u.base.hpMax}${morale}${fat}${engage}${pos}${isAirborne(physical) ? ' · 空中' : ''}${xpTxt}`}</div>
+    <div class="st">${!inBattle && u.rulesVersion === 'v2' ? `${scaleLabel(u)} · 训练${u.level}${esc(enhancementLabel(u.bonuses))} · ${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}/${u.base.hpMax}` : `等级${u.level}${u.archetype ? '·' + archName(u.archetype, true) : ''}｜${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}/${u.base.hpMax}${morale}${fat}${engage}${pos}${isAirborne(physical) ? ' · 空中' : ''}${xpTxt}`}</div>
     ${hasMemberHealth(u)?`<div class="sub">${esc(strengthDescription(u))}</div>`:''}${woundedLabel(u) ? `<div class="sub">${esc(woundedLabel(u))}</div>` : ''}
     <div class="hpbar"><i style="width:${hpPct(u)}%"></i></div>
     ${prog ? `<div class="xpbar" title="本级经验 ${xpLabel(prog.current)}/${prog.next} · 累计${xpLabel(u.xp ?? 0)}"><i style="width:${Math.min(100, Math.round((prog.current / prog.next) * 100))}%"></i></div>` : ''}
@@ -1066,7 +1068,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   }
   if (u.armor) {
     if (u.armor.protection) {
-      rows.push(`<div class="eq"><b>通道防护</b> L${u.armor.level??5}${esc(enhancementLabel(u.armor.recipe?.bonuses))} · 动能${protection('kinetic')} / 热能${protection('thermal')} / 奥术${protection('arcane')}${modern?' · 装甲等效耐久×'+Number(armorPowerScale(u).toFixed(2)):''} · 负载${u.armor.load ?? 0}</div>`);
+      rows.push(`<div class="eq"><b>通道防护</b> L${u.armor.level??5}${esc(enhancementLabel(u.armor.recipe?.bonuses))} · 动能${protection('kinetic')} / 热能${protection('thermal')} / 奥术${protection('arcane')}${modern?' · 装甲等效耐久×'+Number(armorPowerScale(u).toFixed(2)):''} · 负重${u.armor.load ?? 0}</div>`);
     } else {
     const tierNames = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
     // 实际减伤 = (基础档+特质档修正，封顶4档) 表值 × 护甲效率，最终封顶 90%
@@ -1090,16 +1092,17 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   // 技能
   if (u.abilities.length) {
     rows.push(`<b class="detail-label">技能</b>`);
-    rows.push(`<div class="detail-list">${u.abilities.map((a) => `<div><b>${esc(a.name)}</b> L${a.power??5}${esc(enhancementLabel(a.bonuses))}${a.desc && (u.rulesVersion !== 'v2' || a.effectVersion) ? ` <span class="dim">${esc(a.desc)}</span>` : ''}${u.rulesVersion === 'v2' ? '<span class="dim"> · 已学 · ' + esc(abilityUsabilityReason(u, a) ?? '已准备可用') + (a.cost ? ' · ' + esc(a.cost.resource) + ' ' + a.cost.amount : '') + '</span>' : ''}</div>`).join('')}</div>`);
+    rows.push(`<div class="detail-list">${u.abilities.map((a) => `<div><b>${esc(a.name)}</b> L${a.power??5}${esc(enhancementLabel(a.bonuses))}${a.desc && (u.rulesVersion !== 'v2' || a.effectVersion) ? ` <span class="dim">${esc(a.desc)}</span>` : ''}${u.rulesVersion === 'v2' ? '<span class="dim"> · 已学 · ' + esc(abilityUsabilityReason(u, a) ?? '已准备可用') + (a.cost ? ' · ' + esc(resourceLabel(a.cost.resource)) + ' ' + a.cost.amount : '') + '</span>' : ''}</div>`).join('')}</div>`);
   }
+  if (u.barrier) rows.push('<p class="sub">屏障剩余 '+u.barrier.remaining+' 点，可继续吸收伤害；剩余 '+u.barrier.duration+' 轮</p>');
   if (u.weapon?.recipe?.stabilized) rows.push('<div class="sub">车载行进稳定 · 移动射击免罚 · 仍须装填且可能遭近战借机</div>');
-  if (u.rulesVersion === 'v2' && u.body && u.body !== 'human') rows.push(`<div class="sub">${({ large: '大型身体', giant: '巨型身体', vehicle: '车辆平台' })[u.body]} · 有效防护 ${protection('kinetic')}/${protection('thermal')}/${protection('arcane')}（动能/热能/奥术） · 负载容量${BODY[u.body].capacity}</div>`);
+  if (u.rulesVersion === 'v2' && u.body && u.body !== 'human') rows.push(`<div class="sub">${({ large: '大型身体', giant: '巨型身体', vehicle: '车辆平台' })[u.body]} · 有效防护 ${protection('kinetic')}/${protection('thermal')}/${protection('arcane')}（动能/热能/奥术） · 负重容量${BODY[u.body].capacity}</div>`);
   if (looseFormation(u)) rows.push('<div class="sub">疏散队形 · 未接敌时范围暴露减半 · 近战展开减半、防御降低1；固守后收拢</div>');
-  if (u.rulesVersion === 'v2') rows.push('<div class="sub">移动 ' + movementLabel(u, plannedFieldTags()) + ' · 基础速度' + (u.speedTier ?? BODY[u.body ?? 'human'].movement) + '档 · SP ' + (u.resources.SP ?? 0) + '/' + spCapacity(u) + '</div>');
+  if (u.rulesVersion === 'v2') rows.push('<div class="sub">移动 ' + movementLabel(u, plannedFieldTags()) + ' · 基础速度' + (u.speedTier ?? BODY[u.body ?? 'human'].movement) + '档 · 精力 ' + (u.resources.SP ?? 0) + '/' + spCapacity(u) + '</div>');
   if(u.combatModel&&u.scale!=='hero')rows.push('<p class="sub">人数与成员耐久分别结算。参战规模随现员增长，地形与阵位限制展开；减员后火力同步下降。</p>');
   if(u.combatModel&&u.scale==='hero'&&u.moraleState?.damagePenalty)rows.push('<p class="sub">累计受创压力 '+u.moraleState.damagePenalty+'，影响本场士气；不溃能力免疫惊退。</p>');
   if (u.mount) rows.push('<div class="sub">骑乘 · 占格更大 · 机动提高 · 不增加人员或生命</div>');
-  if (u.weapon?.recipe) rows.push(`<details><summary>装备配方</summary><div class="sub">训练T${u.level} · 规格P${u.weapon.recipe.power}${esc(enhancementLabel(u.weapon.recipe.bonuses))} · 身体${u.body} · 品质Q${u.weapon.recipe.quality} · ${esc(u.weapon.recipe.mechanism)} · 穿透${u.weapon.penetration} · 装备id ${esc(u.weapon.id)}</div></details>`);
+  if (u.weapon?.recipe) rows.push(`<details><summary>装备属性</summary><div class="sub">训练${u.level} · 装备等级${u.weapon.recipe.power}${esc(enhancementLabel(u.weapon.recipe.bonuses))} · 体型${({human:'普通人形',large:'大型生物',giant:'巨型生物',vehicle:'车辆'})[u.body??'human']} · 品质${u.weapon.recipe.quality} · ${esc(WEAPON_CLASSES[u.weapon.recipe.mechanism]?.name ?? u.weapon.recipe.mechanism)} · 穿透${u.weapon.penetration} · 物品编号 ${esc(u.weapon.id)}</div></details>`);
   if (u.generationWarnings?.length) rows.push(`<details><summary>生成说明</summary><div class="sub">${u.generationWarnings.map(esc).join('；')}</div></details>`);
 
   // 特质
@@ -1110,7 +1113,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   if (activeTraitIds(u).length) {
     const names = activeTraitIds(u).map((id) => reg.get(id)?.name ?? id).join('、');
     rows.push(`<div class="eq"><b>特质</b> ${esc(names)}</div>`);
-    rows.push(`<details><summary>特质机制</summary>${activeTraitIds(u).map((id) => { const trait = reg.get(id); return `<div>${esc(trait?.name ?? id)}：${esc(trait ? traitDescription(trait, u) : '未知定义')}</div>`; }).join('')}</details>`);
+    rows.push(`<details><summary>特质效果</summary>${activeTraitIds(u).map((id) => { const trait = reg.get(id); return `<div>${esc(trait?.name ?? id)}：${esc(trait ? traitDescription(trait, u) : '未知定义')}</div>`; }).join('')}</details>`);
   }
   if (u.traitSources?.length) {
     rows.push(`<div class="trait-sources" data-role="trait-sources">${u.traitSources.map((source) => {
@@ -1137,7 +1140,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
 
   // 生成审计
   if (u.genAudit) {
-    rows.push(`<details><summary>生成审计</summary><div class="eq dim"><b>种子</b> <code>${esc(u.genAudit.seed)}</code>${u.genAudit.deltas && Object.keys(u.genAudit.deltas).length ? `｜浮动：${esc(JSON.stringify(u.genAudit.deltas))}` : ''}</div></details>`);
+    rows.push(`<details><summary>生成计算依据</summary><div class="eq dim"><b>随机记录号</b> <code>${esc(u.genAudit.seed)}</code>${u.genAudit.deltas && Object.keys(u.genAudit.deltas).length ? `｜浮动：${esc(JSON.stringify(u.genAudit.deltas))}` : ''}</div></details>`);
   }
   return rows.join('');
 }
@@ -1154,7 +1157,7 @@ function renderSmallMap(b: SmallBattle): string {
         const sideCls = u.side === 'ally' ? 'ally' : 'enemy';
         const activeCls = b.active?.id === u.id ? ' map-active' : '';
         const seq = unitSeq(u);
-        return `<span class="map-unit ${sideCls}${activeCls}" data-unit="${esc(u.id)}" title="${esc(unitLabel(u))}｜HP ${u.hp}/${u.base.hpMax}">${esc(u.name.slice(0, 3))}${seq ? '#' + seq : ''}</span>`;
+        return `<span class="map-unit ${sideCls}${activeCls}" data-unit="${esc(u.id)}" title="${esc(unitLabel(u))}｜生命 ${u.hp}/${u.base.hpMax}">${esc(u.name.slice(0, 3))}${seq ? '#' + seq : ''}</span>`;
       })
       .join(' ');
     const band = cellLabels[pos];
@@ -1217,7 +1220,7 @@ function roundSnapshotHtml(b: SmallBattle | MassBattle): string {
       geo = `距敌${bandLabel(d)}：`;
     }
     const morale = u.morale !== undefined ? ` 士气${u.morale}` : '';
-    const hp = mass ? ` 兵力${u.hp}/${u.base.hpMax}` : ` HP${u.hp}/${u.base.hpMax}`;
+    const hp = mass ? ` 兵力${u.hp}/${u.base.hpMax}` : ` 生命${u.hp}/${u.base.hpMax}`;
     const conds = u.conditions.length ? ` [${u.conditions.map((c) => c.id).join(',')}]` : '';
     const fatigue = u.fatigue >= 2 ? ` 疲劳${u.fatigue}` : '';
     return `<div class="snapshot-line"><b>${marks}${esc(u.name)}</b> <span class="dim">${geo}${u.side === 'ally' ? '我' : '敌'}${engage}${hp}${morale}${fatigue}${conds}${status}</span></div>`;
@@ -1261,9 +1264,9 @@ function renderManage(): string {
     const line = `<div class="manage-row">
         <span class="tag ${r.side}">${r.side === 'ally' ? '我方' : '敌方'}</span>
         <b>${esc(r.name)}</b><label><input type="checkbox" data-role="prompt-unit" data-id="${esc(r.id)}" ${promptSelected(promptSettings, 'unit', r.id) ? 'checked' : ''}>发送给AI</label>
-        <span class="dim">${scaleLabel({ scale: r.scale, rulesVersion: r.snapshot?.rulesVersion })}Lv${r.level}${r.scale !== 'mook' || r.snapshot?.rulesVersion === 'v2' ? `·XP${r.xp ?? 0}` : ''}·${archName(r.archetype ?? 'infantry', true)}·攻${r.base.atk}防${r.base.def}速${r.base.spd}·${r.scale === 'hero' ? '生命' : '人数'}${r.hp}/${r.base.hpMax}${r.morale !== undefined ? `·士气${r.morale}/${r.base.moraleMax}` : ''}${r.status && r.status !== 'ready' ? `·${r.status}` : ''}${r.zone ? `·${r.zone}/${r.rank === 'rear' ? '后排' : r.rank === 'reserve' ? '预备队' : '前排'}` : ''}</span>
+        <span class="dim">${scaleLabel({ scale: r.scale, rulesVersion: r.snapshot?.rulesVersion })}等级${r.level}${r.scale !== 'mook' || r.snapshot?.rulesVersion === 'v2' ? `·经验${r.xp ?? 0}` : ''}·${archName(r.archetype ?? 'infantry', true)}·攻${r.base.atk}防${r.base.def}速${r.base.spd}·${r.scale === 'hero' ? '生命' : '人数'}${r.hp}/${r.base.hpMax}${r.morale !== undefined ? `·士气${r.morale}/${r.base.moraleMax}` : ''}${r.status && r.status !== 'ready' ? `·${r.status}` : ''}${r.zone ? `·${r.zone}/${r.rank === 'rear' ? '后排' : r.rank === 'reserve' ? '预备队' : '前排'}` : ''}</span>
         <button data-action="storage-edit" data-id="${esc(r.id)}" ${isEditingSome && !editing ? 'disabled' : ''}>${editing ? '编辑中' : '编辑'}</button>
-        ${r.snapshot?.rulesVersion !== 'v2' ? `<button data-action="unit-conversion-preview" data-id="${esc(r.id)}">预览V2转制</button>` : r.history?.at(-1)?.sourceId === 'mechanism-v2-conversion' ? `<button data-action="unit-conversion-undo" data-id="${esc(r.id)}">撤销刚才转制</button>` : ''}
+        ${r.snapshot?.rulesVersion !== 'v2' ? `<button data-action="unit-conversion-preview" data-id="${esc(r.id)}">预览V2更新规则</button>` : r.history?.at(-1)?.sourceId === 'mechanism-v2-conversion' ? `<button data-action="unit-conversion-undo" data-id="${esc(r.id)}">撤销刚才更新规则</button>` : ''}
         <span class="sub">${r.scale === 'hero' ? '生命' : '人数'}/${r.scale === 'hero' ? '生命上限' : '编制上限'}${woundedLabel(r) ? ' · ' + esc(woundedLabel(r)) : ''} · 档案版本 ${r.revision ?? 1} · 历史 ${r.history?.length ?? 0} 条${r.retired ? ' · 已解散' : ''}</span>
         <button data-action="storage-into" data-id="${esc(r.id)}" ${state.roster.some((u) => u.id === r.id) || r.retired || r.hp <= 0 || r.status === 'dying' ? 'disabled' : ''} title="加入本场参战队伍">${state.roster.some((u) => u.id === r.id) ? '已参战' : '→参战队伍'}</button>
         <button data-action="storage-del" data-id="${esc(r.id)}" class="danger" title="删除档案及参战引用，同时删除已装备的主武器、副武器、护甲和盾牌">直接删除（含已装备）</button>
@@ -1289,7 +1292,7 @@ function renderManage(): string {
           <select data-role="s-arch">${(['infantry', 'ranged', 'mobile'] as const).map((a) => `<option value="${esc(a)}" ${r.archetype === a ? 'selected' : ''}>${archName(a)}</option>`).join('')}</select>
           <label>等级</label><input type="number" data-role="s-level" min="1" max="10" value="${esc(r.level)}" style="width:52px">
           <label>刻度</label>
-          <select data-role="s-scale"><option value="hero" ${r.scale === 'hero' ? 'selected' : ''}>个体</option>${r.scale === 'mook' ? '<option value="mook" selected>编队（旧规则，待转制）</option>' : ''}<option value="company" ${r.scale === 'company' ? 'selected' : ''}>编队</option></select>
+          <select data-role="s-scale"><option value="hero" ${r.scale === 'hero' ? 'selected' : ''}>个体</option>${r.scale === 'mook' ? '<option value="mook" selected>编队（旧规则，待更新规则）</option>' : ''}<option value="company" ${r.scale === 'company' ? 'selected' : ''}>编队</option></select>
         </div>
         <div class="row">
           <label>攻</label><input type="number" data-role="s-atk" value="${esc(r.base.atk)}" style="width:52px">
@@ -1306,12 +1309,12 @@ function renderManage(): string {
           <label>武器名</label><input type="text" data-role="s-weapon" value="${esc(r.weaponName ?? '')}" ${r.equipmentManaged ? 'readonly' : ''} placeholder="任意名字" style="width:90px">
           <label>武器类</label>
           <select data-role="s-wclass" ${r.equipmentManaged ? 'disabled' : ''}><option value="">（自动）</option>${(Object.keys(WEAPON_CLASSES) as string[]).map((k) => `<option value="${esc(k)}" ${r.weaponClass === k ? 'selected' : ''}>${k}</option>`).join('')}</select>
-          <label>武Lv</label><input type="number" data-role="s-wlv" min="1" max="10" value="${r.weaponLevel ?? ''}" ${r.equipmentManaged ? 'readonly' : ''} placeholder="按等级" style="width:48px">
+          <label>武等级</label><input type="number" data-role="s-wlv" min="1" max="10" value="${r.weaponLevel ?? ''}" ${r.equipmentManaged ? 'readonly' : ''} placeholder="按等级" style="width:48px">
         </div>
         <div class="row">
           <label>护甲</label>
           <select data-role="s-armor" ${r.equipmentManaged ? 'disabled' : ''}>${tierNames.map((t, i) => `<option value="${esc(i)}" ${r.armorTier === i ? 'selected' : ''}>${t}</option>`).join('')}<option value="" ${r.armorTier === undefined ? 'selected' : ''}>（自动）</option></select>
-          <label>甲Lv</label><input type="number" data-role="s-alv" min="1" max="10" value="${r.armorLevel ?? ''}" ${r.equipmentManaged ? 'readonly' : ''} placeholder="按等级" style="width:48px">
+          <label>甲等级</label><input type="number" data-role="s-alv" min="1" max="10" value="${r.armorLevel ?? ''}" ${r.equipmentManaged ? 'readonly' : ''} placeholder="按等级" style="width:48px">
         </div>
         ${r.equipmentManaged ? '<p class="sub">装备已由实物库存管理；在「配装与库存」更换或改造，可预览变化并保留原物品记录。</p>' : ''}
         <div class="eq dim">技能（类别·名·等级）：</div>
@@ -1324,14 +1327,14 @@ function renderManage(): string {
         <div class="row">
           <button class="primary" data-action="storage-save" data-id="${esc(r.id)}">保存</button>
           <button data-action="manage-cancel-edit">取消</button>
-          <span class="sub">改的是储存器档案；点「→编制」才作为上场单位。</span>
+          <span class="sub">改的是档案库档案；点「→编制」才作为上场单位。</span>
         </div>
       </div>`;
   };
 
   const storageBlock = storedRecords.length
-    ? `<div class="manage-list">${storedRecords.map((r) => storageRow(r)).join('') || '<span class="sub">储存器为空——战斗中出现且未死的单位会自动存入</span>'}</div>`
-    : '<span class="sub">储存器为空——战斗中出现且未死的单位会自动存入</span>';
+    ? `<div class="manage-list">${storedRecords.map((r) => storageRow(r)).join('') || '<span class="sub">档案库为空——战斗中出现且未死的单位会自动存入</span>'}</div>`
+    : '<span class="sub">档案库为空——战斗中出现且未死的单位会自动存入</span>';
 
   // ---------- 上场编制（roster）----------
   const rosterRow = (u: Combatant, i: number): string => {
@@ -1340,26 +1343,26 @@ function renderManage(): string {
     return `<div class="manage-row">
         <span class="tag ${u.side}">${u.side === 'ally' ? '我方' : '敌方'}</span>
         <b>${marks}${esc(u.name)}${seq ? ` <span class="seq">#${seq}</span>` : ''}</b>
-        <span class="dim">${scaleLabel(u)}Lv${u.level}·${u.scale === 'hero' ? '生命' : '人数'}${u.hp}/${u.base.hpMax}</span>
+        <span class="dim">${scaleLabel(u)}等级${u.level}·${u.scale === 'hero' ? '生命' : '人数'}${u.hp}/${u.base.hpMax}</span>
         ${u.scale === 'company' ? `<label>战区<select data-role="deploy-zone" data-unit="${esc(u.id)}" ${currentBattle() ? 'disabled' : ''}><option value="">自动</option>${(['左翼', '中军', '右翼'] as const).map((z) => `<option value="${esc(z)}" ${formationZone(u) === z ? 'selected' : ''}>${z}</option>`).join('')}</select></label><label>阵列<select data-role="deploy-rank" data-unit="${esc(u.id)}" ${currentBattle() ? 'disabled' : ''}>${([['front', '前排'], ['rear', '后排'], ['reserve', '预备队']] as const).map(([v, n]) => `<option value="${esc(v)}" ${(formationRank(u) ?? defaultRank(u)) === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>` : ''}
         <button data-action="roster-del" data-i="${i}" class="danger">删除</button>
       </div>`;
   };
   const rosterBlock = state.roster.length
     ? `<div class="manage-list">${state.roster.filter(visibleUnitRecord).map(rosterRow).join('')}</div>`
-    : '<span class="sub">编制为空——在「① 编制」生成，或从下方储存器点「→编制」加入。</span>';
+    : '<span class="sub">编制为空——在「① 编制」生成，或从下方档案库点「→编制」加入。</span>';
 
   return `<section>
-    <div class="row" style="justify-content:space-between"><h2 style="margin:0">🧭 编制与储存器 <small class="sub">编制=上场单位；储存器=历史存活档案库（可编辑）</small></h2>
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">全部单位档案 <small class="sub">选择参战单位，或查看与编辑历史档案</small></h2>
     <button data-action="manage-toggle">${state.manageOpen ? '收起' : '展开'}</button></div>
     ${migrationWarning}
     ${state.manageOpen ? `<div>
-      <div style="margin-top:6px"><b style="color:var(--dim)">已知编制（${state.roster.filter(visibleUnitRecord).length}）</b></div>
-      ${rosterBlock}
-      <div style="margin-top:12px"><b style="color:var(--dim)">编制储存器（${storedRecords.length}）</b><div class="row"><button data-action="prompt-select-units" data-selected="true">发送全选</button><button data-action="prompt-select-units" data-selected="false">发送全不选</button><span class="sub">仅控制动态单位清单，不改变参战队伍；新单位默认选中。</span></div>
+      <div style="margin-top:6px"><b style="color:var(--dim)">当前参战（${state.roster.filter(visibleUnitRecord).length}）</b></div>
+      <details><summary>调整当前参战名单</summary>${rosterBlock}</details>
+      <div style="margin-top:12px"><b style="color:var(--dim)">全部档案（${storedRecords.length}）</b><div class="row"><button data-action="prompt-select-units" data-selected="true">发送全选</button><button data-action="prompt-select-units" data-selected="false">发送全不选</button><span class="sub">仅控制单位参考清单，不改变参战队伍；新单位默认选中。</span></div>
         <span class="sub">同一 id 保留装备、战损和经验；阵亡/解散留档，召唤不自动建档。分遣拆分尚不支持。</span></div>
       ${storageBlock}
-    </div>` : '<span class="sub">点「展开」管理上场编制与储存器档案。</span>'}
+    </div>` : '<span class="sub">点「展开」管理当前参战名单和全部单位档案。</span>'}
   </section>`;
 }
 
@@ -1376,7 +1379,7 @@ function renderRole(): string {
   if (hero.rulesVersion === 'v2') {
     const current = currentBattle()?.combatants.find((u) => u.id === hero.id) ?? hero;
     const progress = xpProgress(hero), opened = state.expandedUnits.has('role:' + hero.id);
-    return `<section class="role-overview"><h2>主控近况 <small>${esc(hero.name)}</small></h2><p>${current.scale === 'hero' ? '生命' : '人数'} ${current.hp}/${current.base.hpMax} · 训练${hero.level}${progress ? ' · 本级经验' + xpLabel(progress.current) + '/' + progress.next : ''} · 累计XP ${xpLabel(hero.xp ?? 0)}</p><div class="row"><button data-action="role-detail" data-id="${esc(hero.id)}">${opened ? '收起详情' : '装备与状态'}</button><button data-action="role-inject">发送当前近况</button></div>${opened ? '<div class="role-details">' + unitDetailHtml(current, battleFieldTags()) + '</div>' : ''}</section>`;
+    return `<section class="role-overview"><h2>主角近况 <small>${esc(hero.name)}</small></h2><p>${current.scale === 'hero' ? '生命' : '人数'} ${current.hp}/${current.base.hpMax} · 训练${hero.level}${progress ? ' · 本级经验' + xpLabel(progress.current) + '/' + progress.next : ''} · 累计经验 ${xpLabel(hero.xp ?? 0)}</p><div class="row"><button data-action="role-detail" data-id="${esc(hero.id)}">${opened ? '收起详情' : '装备与状态'}</button><button data-action="role-inject">发送当前近况</button></div>${opened ? '<div class="role-details">' + unitDetailHtml(current, battleFieldTags()) + '</div>' : ''}</section>`;
   }
   const prog = xpProgress(hero);
   const xpLine = prog
@@ -1397,7 +1400,7 @@ function renderRole(): string {
     <h2>👤 角色 <small class="sub">主控 · ${esc(hero.name)}</small></h2>
     <div class="role-card">
       <div class="row" style="gap:12px">
-        <div><span class="dim">等级</span> <b>Lv${hero.level}</b></div>
+        <div><span class="dim">等级</span> <b>等级${hero.level}</b></div>
         <div><span class="dim">${xpLine}</span></div>
       </div>
       <div class="stat-grid">
@@ -1434,7 +1437,7 @@ function logDetailHtml(e: BattleLogEntry): string {
   lines.push(`<span class="dim">净攻${r.netAtk}｜目标防${r.targetDef}${r.drPercent ? `｜护甲减伤${r.drPercent}%` : ''}${r.dmgMult !== 1 ? `｜攻倍×${r.dmgMult}` : ''}${r.wardMult !== 1 ? `｜守护×${r.wardMult}` : ''}</span>`);
   if (r.baseRoll) lines.push(`<span class="dim">普通段 ${r.baseRoll.rolls.join('+')}${r.baseRoll.flat ? '+' + r.baseRoll.flat : ''} → 减伤后 ${r.baseAfterDR}</span>`);
   if (r.apRoll || r.apTotal > 0) lines.push(`<span class="dim">破甲段 ${r.apTotal}</span>`);
-  lines.push(`<b>最终伤害 ${r.finalDamage}</b> → ${esc(r.defenderName)} HP ${r.hpBefore}→${r.hpAfter}`);
+  lines.push(`<b>最终伤害 ${r.finalDamage}</b> → ${esc(r.defenderName)} 生命 ${r.hpBefore}→${r.hpAfter}`);
   return lines.join('<br>');
 }
 
@@ -1473,7 +1476,7 @@ function renderSmall(): string {
       : sidearm?.enabled
         ? `｜主武器不可：${primary?.reason ?? '不可用'}；副武器可用`
         : `｜不可攻击：${primary?.reason ?? sidearm?.reason ?? '没有合法武器'}`;
-    return `<option value="${esc(f.id)}" ${selectedTargetId === f.id ? 'selected' : ''}>${esc(unitLabel(f, `（Lv${f.level}·HP${f.hp}/${f.base.hpMax}）`))}（距${b.dist(act!, f)}${esc(availability)}）</option>`;
+    return `<option value="${esc(f.id)}" ${selectedTargetId === f.id ? 'selected' : ''}>${esc(unitLabel(f, `（等级${f.level}·生命${f.hp}/${f.base.hpMax}）`))}（距${b.dist(act!, f)}${esc(availability)}）</option>`;
   }).join('');
   const abilityBtns = (act?.abilities ?? [])
     .map((a) => {
@@ -1525,13 +1528,15 @@ function abilityTargetLabel(a: Ability): string {
 function abilityEffectLabel(a: Ability): string[] {
   return a.effects.map((e) => {
     switch (e.op) {
-      case 'damage': if (a.damageBasis) return `${a.damageBasis === 'shield' ? '以实际盾牌' : a.weaponUse ? '以实际选用武器' : '以当前近战武器'}结算，受技能强度和装备预算共同限制${e.shape === 'burst' ? '，范围内分配预算' : ''}`; return `伤害：普通 ${e.baseDice}${e.apDice ? ` + 破甲 ${e.apDice}` : ''}${e.shape === 'burst' ? '（范围）' : ''}`;
+      case 'damage': if (a.damageBasis) return `${a.damageBasis === 'shield' ? '以实际盾牌' : a.weaponUse ? '以实际选用武器' : '以当前近战武器'}结算，受技能强度和装备威力共同限制${e.shape === 'burst' ? '，范围内分配可用上限' : ''}`; return `伤害：普通 ${e.baseDice}${e.apDice ? ` + 破甲 ${e.apDice}` : ''}${e.shape === 'burst' ? '（范围）' : ''}`;
       case 'trait': return `${reg.get(e.traitId)?.name ?? e.traitId}持续至多${e.dur}轮，战斗归档时结束`;
+      case 'zone': return `在指定位置形成持续区域，半径${e.radius}格，持续${e.dur}轮`;
+      case 'barrier': return `屏障吸收${e.amount}点伤害，持续${e.dur}轮`;
       case 'heal': return `恢复生命或可救伤兵：${e.amount ?? e.dice}，以实际可恢复量为上限`;
       case 'condition': return `${e.onDamage ? '造成损伤后' : e.onHit ? '命中后' : ''}施加${standardConditionMap().get(e.conditionId)?.name ?? e.conditionId}${e.potency ? '，效果强度' + e.potency : ''}${e.magnitude !== undefined ? '，效力' + Math.round(e.magnitude * 100) + '%' : ''}，持续 ${e.dur} 次状态结算${e.saveDC ? '，目标可以抵抗' : ''}`;
       case 'push': return `${e.onHit ? '命中后' : ''}尝试${e.direction === 'towards' ? '拉近' : '推开'}目标一格，受体量、稳固姿态和落点限制`;
       case 'dispel': return `最多解除${e.count}项${e.polarity === 'negative' ? '负面' : '有益'}效果；实物和已发生伤亡保持`;
-      case 'resource': return `资源变化：${e.resource} ${e.amount >= 0 ? '+' : ''}${e.amount}`;
+      case 'resource': return `${resourceLabel(e.resource)}变化： ${e.amount >= 0 ? '+' : ''}${e.amount}`;
       case 'morale': return `士气 ${e.amount >= 0 ? '+' : ''}${e.amount}`;
       case 'summon': return /^conjured:(10|[1-9])$/.test(e.templateId) ? `召唤临时造物 L${e.templateId.split(':')[1]} ×${e.count}，下一轮行动` : `召唤：${e.templateId} ×${e.count}`;
     }
@@ -1577,10 +1582,10 @@ function renderAbilityDialog(): string {
     : targets.length
       ? `<select data-role="ability-confirm-target">${targets.map((u) => {
           const distance = d.battle === 'small' ? `·距${(b as SmallBattle).dist(actor, u)}` : `·${(b as MassBattle).zoneOf(u)}/${(b as MassBattle).rankOf(u) === 'front' ? '前排' : (b as MassBattle).rankOf(u) === 'rear' ? '后排' : '预备队'}`;
-          return `<option value="${esc(u.id)}" ${u.id === selected ? 'selected' : ''}>${esc(unitLabel(u, `（HP${u.hp}/${u.base.hpMax}${distance}）`))}</option>`;
+          return `<option value="${esc(u.id)}" ${u.id === selected ? 'selected' : ''}>${esc(unitLabel(u, `（生命${u.hp}/${u.base.hpMax}${distance}）`))}</option>`;
         }).join('')}</select>`
       : '<span class="tag">无需选择</span>';
-  const resource = ability.cost ? `${ability.itemSourceId ? '物品剩余/消耗' : ability.cost.resource} ${actor.resources[ability.cost.resource] ?? 0}/${ability.cost.amount}` : '无消耗';
+  const resource = ability.cost ? `${ability.itemSourceId ? '物品剩余/消耗' : resourceLabel(ability.cost.resource)} ${actor.resources[ability.cost.resource] ?? 0}/${ability.cost.amount}` : '无消耗';
   const massV2 = isMassBattle(b) && b.rules.resolutionVersion === 'v2';
   const unavailable = massV2 ? b.abilityOrderReason(actor.id, ability.id, selected) : smallOption?.reason;
   const recoveryTarget = targets.find((u) => u.id === selected);
@@ -1660,7 +1665,7 @@ function renderMass(): string {
       const selType = draft?.type ?? existing?.type ?? mem?.type;
       const selTarget = draft?.targetId ?? existing?.targetId ?? mem?.targetId;
       const foeOpts = targetable
-        .map((f) => `<option value="${esc(f.id)}" ${selTarget === f.id ? 'selected' : ''}>${esc(unitLabel(f, `（Lv${f.level}·兵${f.hp}/${f.base.hpMax}）`))}</option>`)
+        .map((f) => `<option value="${esc(f.id)}" ${selTarget === f.id ? 'selected' : ''}>${esc(unitLabel(f, `（等级${f.level}·兵${f.hp}/${f.base.hpMax}）`))}</option>`)
         .join('');
       // 军团技能按钮（支援阶段手动释放）：目标取本行的军令目标下拉；冷却/次数尽灰禁
       const skillSources = [u, ...(v2 ? b.combatants.filter((h) => h.id === b.attached.get(u.id)) : [])];
@@ -1701,7 +1706,7 @@ function renderMass(): string {
     ${renderMassMap(b)}
     ${renderUnitsBlock(units, allyCount, enemyCount)}
     ${roundSnapshotHtml(b)}
-    ${v2 ? '<div class="sub">阵位所有权固定；距离按图中相邻阵位计算。随队人物的技能使用宿主主任务；区域伤害最多覆盖相邻2支编队。</div>' : distanceLegendHtml(true)}
+    ${v2 ? '<div class="sub">阵位所有权固定；距离按图中相邻阵位计算。随队人物的技能占用所在编队的主要行动；区域伤害最多覆盖相邻2支编队。</div>' : distanceLegendHtml(true)}
     ${over
       ? `<div class="row"><button class="primary" data-action="battle-close">收兵并清理战场</button>
           <span class="sub">战果先保存，阵亡保留历史档案；收兵后仍可发送归档战报。</span></div>`
@@ -1768,7 +1773,7 @@ function renderXp(): string {
   });
   if (!awards.length) return '';
   const rows = awards
-    .map((a) => `<div class="orderline"><b>${a.side === 'enemy' ? '敌方' : '我方'} · ${esc(a.name)}</b> 原始击杀${a.kills} + 参战${a.participation}${a.command ? ` + 指挥${a.command}` : ''}${a.startMembers !== undefined ? `<br>合计${a.rawTotal} ÷ ${a.populationBasis === 'capacity' ? '旧战编制基数' : '开战实到'}${a.startMembers} × 存活比例${xpLabel((a.survivalRatio ?? 0) * 100)}%（${a.survivingMembers}/${a.startMembers}）` : ''} = <span class="cp">${xpLabel(a.total)} 成长XP</span></div>`)
+    .map((a) => `<div class="orderline"><b>${a.side === 'enemy' ? '敌方' : '我方'} · ${esc(a.name)}</b> 原始击杀${a.kills} + 参战${a.participation}${a.command ? ` + 指挥${a.command}` : ''}${a.startMembers !== undefined ? `<br>合计${a.rawTotal} ÷ ${a.populationBasis === 'capacity' ? '旧战编制基数' : '开战实到'}${a.startMembers} × 存活比例${xpLabel((a.survivalRatio ?? 0) * 100)}%（${a.survivingMembers}/${a.startMembers}）` : ''} = <span class="cp">${xpLabel(a.total)} 成长经验</span></div>`)
     .join('');
   return `<section>
     <h2>③ 经验结算</h2>
@@ -1790,7 +1795,7 @@ function buildContextInject(): string {
     if (hero.weapon) eq.push(`武器：${hero.weapon.name}(${hero.weapon.baseDice}${hero.weapon.apDice ? '+破甲' + hero.weapon.apDice : ''})`);
     if (hero.armor) eq.push(`护甲：${hero.armor.name}(${hero.armor.tier}档)`);
     if (hero.trinkets?.length) eq.push(`饰品：${hero.trinkets.map((t) => t.name).join('、')}`);
-    lines.push(`【战阵·角色状态】name=${hero.name}（Lv${hero.level}）`);
+    lines.push(`【战阵·角色状态】name=${hero.name}（等级${hero.level}）`);
     lines.push(`属性：攻${hero.base.atk}/防${hero.base.def}/速${hero.base.spd}/生命${hero.hp}/${hero.base.hpMax}｜经验 ${xpS}`);
     if (eq.length) lines.push(`装备：${eq.join('；')}`);
     if (hero.traits.length) lines.push(`特质：${hero.traits.map((id) => reg.get(id)?.name ?? id).join('、')}`);
@@ -1809,7 +1814,7 @@ function buildContextInject(): string {
     for (const u of alive) {
       const side = u.side === 'ally' ? '我' : u.side === 'enemy' ? '敌' : '中立';
       const mark = u.id === state.protagonistId ? '【主控】' : '';
-      lines.push(`- ${mark}${u.name}（${side}·${scaleLabel(u)}Lv${u.level}）${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}/${u.base.hpMax}${woundedLabel(u) ? '｜' + woundedLabel(u) : ''}${u.status !== 'ready' ? '｜' + u.status : ''}`);
+      lines.push(`- ${mark}${u.name}（${side}·${scaleLabel(u)}等级${u.level}）${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}/${u.base.hpMax}${woundedLabel(u) ? '｜' + woundedLabel(u) : ''}${u.status !== 'ready' ? '｜' + u.status : ''}`);
     }
   } else {
     lines.push('【战场存活单位】无');
@@ -1869,7 +1874,7 @@ function renderPending(): string {
     <h2>④ 旧协议待审记录</h2>
     <div class="row">
       <button data-action="pending-scan">扫描最新回复</button>
-      <span class="sub">旧存档候选仅供人工核查；新回复统一走下方剧情档案同步。</span>
+      <span class="sub">旧存档待确认内容仅供人工核查；新回复统一走下方剧情档案同步。</span>
     </div>
     ${items || '<span class="sub">没有旧协议待审记录</span>'}
     ${invalid}
@@ -1899,14 +1904,14 @@ function renderNarrativeProposals(): string {
     <details><summary>查看事件块</summary><pre>${esc(p.source.text)}</pre></details>${narrativeEditor(p)}</div>`;
   return `<section class="narrative-sync">${unresolved.length ? '<h2>剧情带来的变化 <small>' + unresolved.length + '项待处理</small></h2>' : '<details data-detail-id="narrative-settings"><summary>剧情同步 · ' + (state.storySync ? '自动同步已启用' : '手动确认') + ' · 没有待处理变更</summary>'}
     <label><input type="checkbox" data-role="story-sync" ${state.storySync ? 'checked' : ''}>自动同步明确的战外单位修改与部署</label>
-    <div class="sub">${controller.capabilities.beforeGeneration && controller.capabilities.generationEnded ? '关闭面板后仍保持联动。新单位、物品与能力先在这里确认。' : '当前宿主未连接完整生成事件，请手动扫描并核对变更。'}${controller.capabilities.injection ? '' : '当前宿主未提供事实注入。'}</div>
+    <div class="sub">${controller.capabilities.beforeGeneration && controller.capabilities.generationEnded ? '关闭面板后仍保持联动。新单位、物品与能力先在这里确认。' : '当前酒馆未连接完整生成事件，请手动扫描并核对变更。'}${controller.capabilities.injection ? '' : '当前酒馆暂不支持自动提供战斗记录。'}</div>
     ${unresolved.length ? unresolved.map(proposal).join('') : '<p class="sub">没有待处理变更。</p>'}
     <details class="narrative-history" data-detail-id="narrative-history"><summary>同步记录与手动扫描</summary><div class="row"><button data-action="narrative-scan">扫描最新完整回复</button><button data-action="narrative-delete">清理已处理记录</button></div><p class="sub">删除记录不撤销已同步档案。事件修正后可重新扫描。</p>${history.map(proposal).join('')}</details>${unresolved.length ? '' : '</details>'}
   </section>`;
 }
 
 function suggestionLabel(s: Suggestion): string {
-  return { take: '减少物品', learn: '学习技能', give: '掉落', reforge: '装备改造', bless: '明确祝福', unbless: '撤销祝福', affect: '增减益', unaffect: '解除效果', status: '状态', xp: '经验', field: '环境', spawn: '遭遇', deploy: '调取编制', 'unit-update': '编制更新', 'unit-set': '完整单位修改' }[s.kind];
+  return { take: '减少物品', learn: '学习技能', give: '掉落', reforge: '装备改造', bless: '明确祝福', unbless: '撤销祝福', affect: '增减益', unaffect: '解除效果', status: '状态', xp: '经验', field: '环境', spawn: '遭遇', deploy: '选择编制', 'unit-update': '编制更新', 'unit-set': '完整单位修改' }[s.kind];
 }
 
 function suggestionDesc(s: Suggestion): string {
@@ -1914,14 +1919,14 @@ function suggestionDesc(s: Suggestion): string {
   switch (s.kind) {
     case 'take': return `减少物品「${s.id}」×${s.qty}${s.note ? '——' + s.note : ''}`;
     case 'give': return `获得物品「${s.item}」×${s.qty}${s.spec ? ' · ' + itemSpecificationLabel(s.spec) : ' · 叙事记录'}${s.note ? `——${s.note}` : ''}`;
-    case 'learn': return `${unitName(s.id)} 学习或更新：${s.skills.map((skill) => (skill.name ?? ABILITY_BLUEPRINTS[skill.blueprintId]?.name ?? skill.blueprintId) + (skill.level === undefined ? '' : ' L' + skill.level)).join('、')}；其余实例保留`;
+    case 'learn': return `${unitName(s.id)} 学习或更新：${s.skills.map((skill) => (skill.name ?? ABILITY_BLUEPRINTS[skill.blueprintId]?.name ?? skill.blueprintId) + (skill.level === undefined ? '' : ' L' + skill.level)).join('、')}；其余记录保留`;
     case 'reforge': return `改造「${s.name ?? state.inventory.find((i) => i.id === s.id)?.name ?? '指定装备'}」为 ${itemSpecificationLabel(s.spec)}`;
     case 'bless': return `${unitName(s.id)} 获得「${s.name}」：${s.traitIds.map((id) => reg.get(id)?.name ?? id).join('、')} · ${s.duration.kind === 'permanent' ? '永久' : s.duration.count + (s.duration.kind === 'rounds' ? '个战斗整轮' : '场战斗')}`;
     case 'unbless': return `${unitName(s.id)} 撤销指定祝福来源（保留永久特质）`;
     case 'affect': return `${unitName(s.id)} 获得「${s.name}」：${s.conditionIds.map((id) => standardConditionMap().get(id)?.name ?? id).join('、')} · ${s.duration.kind === 'permanent' ? '永久' : s.duration.count + (s.duration.kind === 'rounds' ? '个战斗整轮' : '场战斗')}`;
     case 'unaffect': return `${unitName(s.id)} 解除指定效果来源（保留其他来源与永久特质）`;
     case 'status': return `${unitName(s.target)} 获得状态【${standardConditionMap().get(s.conditionId)?.name ?? s.conditionId}】${s.dur} 回合`;
-    case 'xp': return `剧情经验 +${s.amount} XP${s.reason ? `（${s.reason}）` : ''}`;
+    case 'xp': return `剧情经验 +${s.amount} 经验${s.reason ? `（${s.reason}）` : ''}`;
     case 'field': return `战场环境设为「${FIELD_LABELS[s.env] ?? s.env}${s.light === 'night' && s.env !== 'night' ? ' / 夜间' : ''}」（开战时生效）${s.note ? `——${s.note}` : ''}`;
     case 'deploy': return `让${unitName(s.id, s.name)}参战`;
     case 'unit-set': return `${unitName(s.id)}：${JSON.stringify(s.data)}${s.reason ? `（${s.reason}）` : ''}`;
@@ -2132,7 +2137,7 @@ function val(sel: string): string {
 }
 
 async function commitBuilder(): Promise<void> {
-  if (controller.migrationReview()) throw Error('请先核对迁移预览，当前不能写入新档案');
+  if (controller.migrationReview()) throw Error('请先核对迁移预览，当前不能保存新档案');
   requireArchiveWritable(); captureForm();
   const preview = builderPreview, draft = preview?.record ? builderEditDraft : state.form;
   if (!preview || preview.namespace !== adapter.namespace() || !draft || preview.signature !== JSON.stringify(draft)) throw Error('配置已变，请重新预览');
@@ -2206,7 +2211,7 @@ function markProcessed(raw: string): void {
 
 /** 批准一条建议并落地 */
 async function approveSuggestion(s: Suggestion): Promise<void> {
-  if (['bless', 'unbless', 'affect', 'unaffect', 'reforge', 'learn'].includes(s.kind) || s.kind === 'give' && s.spec) throw new Error('机械物品、改造和增减益请通过剧情档案同步整批审查，旧无来源记录不能直接执行');
+  if (['bless', 'unbless', 'affect', 'unaffect', 'reforge', 'learn'].includes(s.kind) || s.kind === 'give' && s.spec) throw new Error('有效果的物品、改造和增减益请通过剧情档案同步整批审查，旧无来源记录不能直接执行');
   switch (s.kind) {
     case 'give': {
       const existing = state.inventory.find((it) => it.name === s.item && it.lootType === s.lootType && it.note === s.note && !it.assignedTo);
@@ -2244,7 +2249,7 @@ async function approveSuggestion(s: Suggestion): Promise<void> {
       const record = unitRecordFromCombatant(target, previous, { transient: !!previous?.transient });
       if (storageIndex >= 0) state.storage[storageIndex] = record;
       else state.storage.push(record);
-      toast(r.levelsGained > 0 ? `${target.name} +${s.amount} XP，升级 Lv${r.fromLevel}→Lv${r.toLevel}！` : `${target.name} +${s.amount} XP`);
+      toast(r.levelsGained > 0 ? `${target.name} +${s.amount} 经验，升级 等级${r.fromLevel}→等级${r.toLevel}！` : `${target.name} +${s.amount} 经验`);
       break;
     }
     case 'field': {
@@ -2257,9 +2262,9 @@ async function approveSuggestion(s: Suggestion): Promise<void> {
     }
     case 'deploy': {
       const r = storageRecordByRef(s.id, s.name);
-      if (!r) throw new Error(`储存器中找不到 id=${s.id} 的单位`);
+      if (!r) throw new Error(`档案库中找不到 id=${s.id} 的单位`);
       const added = deployStorageRecord(r);
-      toast(added ? `已调取 ${r.name}（${r.hp}/${r.base.hpMax}）进入上场编制` : `${r.name} 已在上场编制中，无需重复调取`);
+      toast(added ? `已选择 ${r.name}（${r.hp}/${r.base.hpMax}）进入上场编制` : `${r.name} 已在上场编制中，无需重复选择`);
       break;
     }
     case 'unit-update': {
@@ -2378,12 +2383,12 @@ async function settleXp(allowUnfinished = false): Promise<void> {
   // XP 与战损已经由同一提交入口写回，杜绝旧 roster 覆盖新 XP。
   if (!(await persist())) {
     Object.assign(state, before);
-    throw new Error('战果未保存，档案提交已撤回；战斗快照仍在，可重试');
+    throw new Error('战果未保存，档案提交已撤回；战斗存档记录仍在，可重试');
   }
-  const levelUps = result.levelUps.map((u) => `${u.name} Lv${u.from}→Lv${u.to}`);
+  const levelUps = result.levelUps.map((u) => `${u.name} 等级${u.from}→等级${u.to}`);
   const sideXp = (side: 'ally' | 'enemy') => xpLabel(awards.filter(a => a.side === side).reduce((sum, a) => sum + a.total, 0));
   toast(result.applied
-    ? `双方成长经验已入账：我方+${sideXp('ally')}／敌方+${sideXp('enemy')} XP${levelUps.length ? `｜🎉 升级：${levelUps.join('、')}` : ''}`
+    ? `双方成长经验已入账：我方+${sideXp('ally')}／敌方+${sideXp('enemy')} 经验${levelUps.length ? `｜🎉 升级：${levelUps.join('、')}` : ''}`
     : '本场经验已入账，没有重复结算');
 }
 
@@ -2541,7 +2546,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   },
   'jev-scan': async () => { const b = currentBattle(); if (!b || b.isOver()) throw Error('请先开始战斗'); await applyJev(b, true); await persist(); render('battle'); },
   'delivery-generate': async el => {
-    if (!runtime.retryGeneration || !el.dataset.delivery) throw Error('当前宿主没有独立重试生成接口');
+    if (!runtime.retryGeneration || !el.dataset.delivery) throw Error('当前酒馆没有独立重试生成接口');
     const receipt = await runtime.retryGeneration(el.dataset.delivery);
     if (el.dataset.key) finishNarrativeDelivery(state.reportDeliveries, { battleId: el.dataset.battle!, key: el.dataset.key }, receipt);
     else if (el.dataset.label) { const report = state.reports.find(item => item.id === el.dataset.battle); if (report) report.deliveries[el.dataset.label] = receipt; }
@@ -2566,13 +2571,13 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   },
   'unit-conversion-commit': async () => {
     requireArchiveWritable(); const review = unitConversion;
-    if (!review || review.namespace !== adapter.namespace()) throw new Error('转制预览已经过期');
+    if (!review || review.namespace !== adapter.namespace()) throw new Error('更新规则预览已经过期');
     const original = state.storage.find((r) => r.id === review.before.id);
-    if (!original || JSON.stringify(original) !== JSON.stringify(review.before)) throw new Error('单位已有新事实，请重新预览');
+    if (!original || JSON.stringify(original) !== JSON.stringify(review.before)) throw new Error('单位已有新战斗记录，请重新预览');
     const before = { storage: state.storage, roster: state.roster };
     state.storage = state.storage.map((r) => r.id === original.id ? review.after : r);
     state.roster = state.roster.map((u) => u.id === original.id ? materializeUnitRecord(review.after, reg) : u);
-    if (!(await persist())) { Object.assign(state, before); throw new Error('保存失败，转制未提交'); }
+    if (!(await persist())) { Object.assign(state, before); throw new Error('保存失败，更新规则未提交'); }
     unitConversion = undefined;
   },
   'unit-conversion-undo': async (el) => {
@@ -2640,8 +2645,8 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     if (receipt.status === 'failed') throw Error(receipt.error);
   },
   'prompt-select-items': async (el) => {
-    const save = controller.snapshot(); const items = prepareInventoryState(save).inventory ?? [];
-    const receipt = (await controller.setPromptSettings(selectPromptEntries(save.promptSettings, 'item', items.filter((i) => !i.assignedTo || state.storage.some((r) => r.id === i.assignedTo && visibleUnitRecord(r))).map((i) => i.id), el.dataset.selected === 'true')));
+    const save = controller.snapshot();
+    const receipt = (await controller.setPromptSettings(selectPromptEntries(save.promptSettings, 'item', inventoryPanel.visibleItemIds(), el.dataset.selected === 'true')));
     if (receipt.status === 'failed') throw Error(receipt.error);
   },
   'narrative-restore-roster': async (el) => { const receipt = (await controller.restoreDeployment(el.dataset.id!)); if (receipt.status === 'failed') throw Error(receipt.error ?? '参战名单未保存'); },
@@ -2753,7 +2758,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     const id = el.dataset.id!;
     const storageIndex = state.storage.findIndex((x) => x.id === id);
     const previous = state.storage[storageIndex];
-    if (!previous) throw new Error('储存器条目不存在');
+    if (!previous) throw new Error('档案库条目不存在');
     const r = structuredClone(state.editingDraft ?? previous);
     if (r.revision !== previous.revision) throw new Error('编辑期间档案已更新，请重新打开编辑');
     r.name = val('s-name0')?.trim() || r.name;
@@ -2884,8 +2889,8 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   },
   'builder-skill-add': (el) => {
     captureForm(); const d = el.dataset.builder === 'gen' ? state.form : builderEditDraft; if (!d) return;
-    const name = Array.from({ length: 100 }, (_, i) => '技能' + (i + 1)).find((name) => !d.skills.some((s) => s.name === name))!;
-    d.skills.push({ id: 'generic:physical-single', name, power: '5', prepared: false }); builderPreview = undefined;
+    const baseName = el.dataset.name ?? '技能'; const name = !d.skills.some(s=>s.name===baseName) ? baseName : Array.from({length:100},(_,i)=>baseName+(i+1)).find(name=>!d.skills.some(s=>s.name===name))!;
+    d.skills.push({ id: el.dataset.mechanism ?? 'generic:physical-single', name, power: '5', prepared: false }); builderPreview = undefined;
   },
   'builder-skill-remove': (el) => {
     captureForm(); const d = el.dataset.builder === 'gen' ? state.form : builderEditDraft; if (d) d.skills.splice(Number(el.dataset.index), 1); builderPreview = undefined;
@@ -3229,7 +3234,7 @@ document.addEventListener('pointerup', () => { cameraPointer=undefined; }, {pass
 document.addEventListener('wheel', event => { if (event.target instanceof Element && event.target.closest('[data-workspace="battle"]')) battleCamera.browse(); }, {passive:true});
 document.addEventListener('input', (e) => {
   if (!(e.target instanceof Element)) return;
-  if (e.target instanceof HTMLInputElement && ['jev-url', 'jev-token', 'jev-relay'].includes(e.target.dataset.role ?? '')) { document.querySelector<HTMLSelectElement>('[data-role="jev-model-list"]')?.replaceChildren(new Option('拉取后选择模型', '')); return; }
+  if (e.target instanceof HTMLInputElement && ['jev-url', 'jev-token', 'jev-relay'].includes(e.target.dataset.role ?? '')) { document.querySelector<HTMLSelectElement>('[data-role="jev-model-list"]')?.replaceChildren(new Option('获取后选择模型', '')); return; }
   if (e.target instanceof HTMLTextAreaElement && e.target.dataset.role === 'prompt-template') { promptDrafts.set(e.target.dataset.section!, e.target.value); return; }
   if (e.target instanceof HTMLTextAreaElement && e.target.dataset.role === 'narrative-draft') { narrativeDrafts.set(e.target.dataset.id!, e.target.value); return; }
   inventoryPanel.capture(e.target);
@@ -3243,7 +3248,7 @@ async function handleChange(e: Event): Promise<void> {
   }
   if (e.target instanceof HTMLSelectElement && ['jev-protocol', 'jev-transport'].includes(e.target.dataset.role ?? '')) {
     const select = document.querySelector<HTMLSelectElement>('[data-role="jev-model-list"]');
-    select?.replaceChildren(new Option('拉取后选择模型', ''));
+    select?.replaceChildren(new Option('获取后选择模型', ''));
     return;
   }
   if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'jev-mode') {
@@ -3467,3 +3472,14 @@ render();
 void resumeEnemyTurnIfNeeded();
 // 面板（重）打开：补扫关闭期间完成的生成（无标记或标记不比上次扫描新则不动）
 catchUpScan();
+
+document.addEventListener('keydown', event => {
+  const dialog = document.querySelector<HTMLElement>('.inventory-editor'); if (!dialog) return;
+  if (event.key === 'Escape') { event.preventDefault(); void inventoryPanel.handleAction(dialog.querySelector<HTMLElement>('[data-action="inventory-close-draft"]')!); return; }
+  if (event.key !== 'Tab') return;
+  const controls = [...dialog.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),summary,[tabindex="0"]')].filter(el => el.getClientRects().length);
+  if (!controls.length) return;
+  const first = controls[0]!, last = controls.at(-1)!;
+  if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
+});

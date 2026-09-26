@@ -240,7 +240,7 @@ export function encounterRequest(input: EncounterContextInput): {
             tags: u.tags,
           })),
         constraints:
-          "只选择配置，不改变单位属性、人数、伤亡或战斗事实。战斗中仅明确指挥官更换、能力或性格状态变化才更新敌方配置；常规战况、战法描述不算变化。",
+          "只选择配置，不改变单位属性、人数、伤亡或战斗战斗记录。战斗中仅明确指挥官更换、能力或性格状态变化才更新敌方配置；常规战况、战法描述不算变化。",
       }),
     ),
     fields: [],

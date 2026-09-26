@@ -32,6 +32,7 @@ const server = http.createServer(async (req,res) => {
       const chunks=[];for await(const chunk of req)chunks.push(chunk);const data=JSON.parse(Buffer.concat(chunks).toString('utf8'));
       res.setHeader('Content-Type','application/json');
       if(req.url==='/jev/api/bridge/evaluate') { jevRequests++; if(jevDelay) await new Promise(resolve=>setTimeout(resolve,jevDelay));res.end(JSON.stringify({model:'browser-test-jev',confidence:0.9,scores:Object.fromEntries(data.candidates.map(c=>[c.id,0.5]))}));return; }
+      if(req.url==='/jev/api/bridge/select-context') {res.end(JSON.stringify({model:'browser-test-jev',selections:Object.fromEntries(data.fields.map(f=>[f.id,{value:Object.keys(f.options)[0],confidence:0}]))}));return;}
       if(req.url==='/jev/api/bridge/context') {res.end(JSON.stringify({goals:[],battleType:'skirmish'}));return;}
       if(req.url==='/fixture/save'){disk.set(data.id,structuredClone(data));res.end('{}');return;}
       if(req.url==='/fixture/metadata'){disk.set(data.id,{...(disk.get(data.id)??{chat:[]}),id:data.id,metadata:structuredClone(data.metadata)});res.end('{}');return;}
@@ -204,6 +205,7 @@ try {
   await page.getByRole('button',{name:'核实并重试保存',exact:true}).click();await ready();
   await page.waitForFunction(()=>__tavernBattleNative.service.snapshot().proposals?.some(p=>p.source.text.includes('重试后的最新回复')));
   await page.evaluate(()=>__tavernBattleNative.service.scan());
+  await page.waitForFunction(()=>{const s=__tavernBattleNative.service;return context.chatId==='source-race'&&s.status().phase==='ready'&&!s.store.hasPending()&&s.snapshot().proposals?.length===2;});
   check('旧来源冲突只需点击重试即可解锁并重扫，重复扫描不重复候选',await page.evaluate(()=>{const s=__tavernBattleNative.service;return !s.store.hasPending()&&s.snapshot().proposals.length===2&&!s.snapshot().storage?.length}));
   await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(artifacts,'mobile.png')});
   check('390px窗口不横向溢出',await page.evaluate(()=>document.getElementById('tavern-battle-native-panel').getBoundingClientRect().width<=390));
@@ -228,7 +230,7 @@ try {
     const diagnosis=await page.evaluate(async()=>{const s=window.__tavernBattleNative?.service;if(!s)return {error:'Native runtime unavailable'};return {status:s.status().receipt,pending:s.store.pendingOperation(),disk:await s.host.readPersisted(s.host.session().scope)}});
     writeFileSync(path.join(artifacts,'settlement-save.json'),JSON.stringify(diagnosis,null,2));
     console.error('PAGE ERRORS',errors);
-    console.error('STATUS',await page.evaluate(()=>({phase:window.__tavernBattleNative?.service.status().phase,error:window.__tavernBattleNative?.service.status().error,receipt:window.__tavernBattleNative?.service.status().receipt,text:document.querySelector('.tb-status')?.textContent})));
+    console.error('STATUS',await page.evaluate(()=>({chatId:context.chatId,session:window.__tavernBattleNative?.service.store.session(),snapshot:window.__tavernBattleNative?.service.snapshot(),phase:window.__tavernBattleNative?.service.status().phase,error:window.__tavernBattleNative?.service.status().error,receipt:window.__tavernBattleNative?.service.status().receipt,text:document.querySelector('.tb-status')?.textContent})));
     await page.screenshot({path:path.join(artifacts,'failure.png')});
   } catch(diagnosticError) { console.error('Diagnostic capture failed',diagnosticError); }
 } finally {

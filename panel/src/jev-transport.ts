@@ -59,7 +59,7 @@ export async function jevRequest(connection: JevConnection, url: string, init: R
     });
   }
   if (transport === 'direct') return request(url, { ...init, credentials: 'omit', redirect: 'error' });
-  if (!host) throw new JevTransportError('未找到同源酒馆宿主，请从酒馆扩展入口打开面板，或选择自建转发');
+  if (!host) throw new JevTransportError('未找到同源酒馆，请从酒馆扩展入口打开面板，或选择自建转发');
 
   const headers = hostHeaders(host);
   if (tauri) {
@@ -70,7 +70,7 @@ export async function jevRequest(connection: JevConnection, url: string, init: R
     }
     const target = new URL(url);
     const models = target.pathname.endsWith('/models');
-    if (!models && !target.pathname.endsWith('/chat/completions')) throw new JevTransportError('宿主转发不支持此模型端点');
+    if (!models && !target.pathname.endsWith('/chat/completions')) throw new JevTransportError('酒馆转发不支持此模型端点');
     target.pathname = target.pathname.replace(/\/(?:models|chat\/completions)$/, '');
     const payload = models ? {} : JSON.parse(String(init.body));
     const body = {
@@ -109,6 +109,6 @@ export function jevNetworkError(connection: JevConnection): string {
   if (host && (host.__TAURITAVERN__ || host.__TAURI_RUNNING__) && connection.protocol === 'typesafe')
     return 'TypeSafe 浏览器连接失败，可能是 CORS 或网络问题。TauriTavern 当前没有可供扩展调用的 TypeSafe 通用原生 HTTP 通道；手机端不要运行 npm relay。OpenAI 兼容接口会自动走 TT 原生后端；TypeSafe 需服务端允许 CORS 或使用外部 HTTPS 转发';
   return connection.transport === 'direct' || !host
-    ? '无法直连模型服务，请检查网络与 CORS；服务不支持跨域时请选择宿主转发或自建转发'
-    : '酒馆转发连接失败，请检查宿主网络与代理配置';
+    ? '无法直连模型服务，请检查网络与 CORS；服务不支持跨域时请选择酒馆转发或自建转发'
+    : '酒馆转发连接失败，请检查酒馆网络与代理配置';
 }

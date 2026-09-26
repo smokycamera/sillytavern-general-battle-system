@@ -70,7 +70,7 @@ try {
   assert.deepEqual(caster.abilities[0], original);
   const heal = caster.abilities.find((a) => a.name === '春风拂面'); assert.equal(heal.recipe.category, 'buff'); assert.equal(heal.power, 7);
   assert.ok(caster.preparedAbilityIds.includes(heal.id));
-  if (!fromEdit) assert.match(await page.evaluate(() => window.prompts.at(-1)[1]), /buff范围治疗/);
+  if (!fromEdit) assert.match(await page.evaluate(() => window.prompts.at(-1)[1]), /增益范围治疗/);
   mkdirSync('artifacts', { recursive: true });
   writeFileSync('artifacts/generic-skills-learned.json', JSON.stringify(await page.evaluate(() => window.readPanel())));
   await tab('units');
@@ -81,11 +81,11 @@ try {
   }
   await editor.click(); await p.locator('[data-builder-form="edit"]').waitFor();
   await p.locator('[data-detail-id="edit-skills"] > summary').click();
-  assert.equal(await p.locator('[data-role="edit-skill"]').nth(1).inputValue(), 'buff范围治疗');
+  assert.equal(await p.locator('[data-role="edit-skill"]').nth(1).inputValue(), '增益范围治疗');
   await p.locator('[data-role="edit-skill-name"]').nth(1).fill('回春之风');
   await p.locator('[data-role="edit-skill-name"]').nth(1).blur();
   await p.locator('[data-action="storage-preview"]').click();
-  assert.match(await p.locator('[data-role="builder-preview"]').innerText(), /buff范围治疗.*L7/);
+  assert.match(await p.locator('[data-role="builder-preview"]').innerText(), /增益范围治疗.*L7/);
   await p.locator('[data-action="builder-confirm"]').click();
   caster = (await page.evaluate(() => window.readPanel())).storage.find((r) => r.id === 'caster').snapshot;
   const renamed = caster.abilities.find((a) => a.id === heal.id);

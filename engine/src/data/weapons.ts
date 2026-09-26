@@ -58,15 +58,18 @@ export interface WeaponClassProfile {
 }
 
 export const WEAPON_CLASSES: Record<string, WeaponClassProfile> = {
+  throwing: { id:'throwing',name:'投掷冷兵器',profile:{id:'cls-throwing',name:'投掷冷兵器',dmgMult:1,apShare:.8,range:3,pointBlankPolicy:'allow',desc:'标枪、飞刀等短距单手投掷；可抵近使用，共用一次主要行动'} },
+  'heavy-rifle': { id:'heavy-rifle',name:'单发重步枪',profile:{id:'cls-heavy-rifle',name:'单发重步枪',dmgMult:1.6,apShare:1.2,range:5,minRange:1,reload:1,pointBlankPolicy:'penalty',pointBlankPenalty:-3,desc:'高威力单发，穿透比普通步枪高1；射后装填一回合，抵近命中降低3'} },
+  natural: { id:'natural',name:'天生武器',profile:{id:'cls-natural',name:'天生武器',dmgMult:.8,apShare:.8,range:0,desc:'拳脚、爪牙等身体攻击，不占双手与负重，不受缴械影响；失能时仍不能行动'} },
   'light-ranged': { id: 'light-ranged', name: '轻型投射', profile: { id: 'cls-light-ranged', name: '轻型投射', dmgMult: 0.8, apShare: 0.8, range: 2, minRange: 0, pointBlankPolicy: 'penalty', pointBlankPenalty: -2, desc: '单手轻型投射：短射程，可作为副武器，占同一主行动' } },
-  demolition: { id: 'demolition', name: '爆破装置', profile: { id: 'cls-demolition', name: '爆破装置', dmgMult: 1.6, apShare: 1.2, range: 2, minRange: 0, pointBlankPolicy: 'allow', reload: 1, blast: true, desc: '短距爆破：距离1正常、距离2命中−2；英雄一份、编队最多两份投送，每份最多六名成员暴露；较强穿透，使用后准备一回合，不跨单位溅射' } },
+  demolition: { id: 'demolition', name: '爆破装置', profile: { id: 'cls-demolition', name: '爆破装置', dmgMult: 1.6, apShare: 1.2, range: 2, minRange: 0, pointBlankPolicy: 'allow', reload: 1, blast: true, desc: '短距爆破：距离1正常、距离2命中−2；英雄一份、编队最多两份攻击，每份最多六名成员暴露；较强穿透，使用后准备一回合，不跨单位溅射' } },
   sword: { id: 'sword', name: '剑', profile: { id: 'cls-sword', name: '剑', dmgMult: 1.0, apShare: 1.0, range: 0, desc: MELEE_PROFILES.sword!.description } },
   axe: { id: 'axe', name: '斧', profile: { id: 'cls-axe', name: '斧', dmgMult: 1.15, apShare: 1.1, range: 0, desc: MELEE_PROFILES.axe!.description } },
   spear: { id: 'spear', name: '长兵器', profile: { id: 'cls-spear', name: '长兵器', dmgMult: 1.05, apShare: 1.15, range: 1, desc: MELEE_PROFILES.spear!.description } },
   bow: { id: 'bow', name: '弓弩', profile: { id: 'cls-bow', name: '弓弩', dmgMult: 1.0, apShare: 1.0, range: 4, minRange: 1, pointBlankPolicy: 'forbid', desc: '远程射击：可越过友军，不能越过墙体或存活敌方前排' } },
   firearm: { id: 'firearm', name: '火枪', profile: { id: 'cls-firearm', name: '火枪', dmgMult: 1.5, apShare: 1.05, range: 4, minRange: 0, pointBlankPolicy: 'penalty', pointBlankPenalty: -2, reload: 1, desc: '单发火枪：高单发威力、穿透额外+1，射后装填一回合' } },
   rifle: { id: 'rifle', name: '步枪', profile: { id: 'cls-rifle', name: '步枪', dmgMult: 1.2, apShare: 1.1, range: 4, minRange: 0, pointBlankPolicy: 'penalty', pointBlankPenalty: -2, attacks: 2, desc: '自动步枪：每回合两段速射' } },
-  autocannon: { id: 'autocannon', name: '机炮', profile: { id: 'cls-autocannon', name: '机炮', dmgMult: 1.4, apShare: 1.15, range: 5, minRange: 0, pointBlankPolicy: 'penalty', pointBlankPenalty: -3, attacks: 3, desc: '直射连续点射：三段分摊火力预算，穿透额外+2，擅长连续火力和装甲交战；重型投送需要炮组或大型/载具平台' } },
+  autocannon: { id: 'autocannon', name: '机炮', profile: { id: 'cls-autocannon', name: '机炮', dmgMult: 1.4, apShare: 1.15, range: 5, minRange: 0, pointBlankPolicy: 'penalty', pointBlankPenalty: -3, attacks: 3, desc: '直射连续点射：三段分摊火力，穿透额外+2，擅长连续火力和装甲交战；重型攻击需要炮组或大型/载具平台' } },
   cannon: { id: 'cannon', name: '直射火炮', profile: { id: 'cls-cannon', name: '直射火炮', dmgMult: 1.6, apShare: 1.2, range: 5, minRange: 0, pointBlankPolicy: 'penalty', pointBlankPenalty: -3, reload: 1, desc: '直射重火力：受地形与单位视线遮挡，隔回合一发' } },
   'indirect-cannon': { id: 'indirect-cannon', name: '曲射火炮', profile: { id: 'cls-indirect-cannon', name: '曲射火炮', dmgMult: 1.6, apShare: 1.2, range: 5, minRange: 2, pointBlankPolicy: 'forbid', indirect: true, reload: 1, desc: '间接重火力：可越过遮挡，需己方观察者；最小射程2，隔回合一发' } },
   energy: { id: 'energy', name: '能量武器', profile: { id: 'cls-energy', name: '能量武器', dmgMult: 1.3, apShare: 1.2, range: 4, minRange: 0, pointBlankPolicy: 'penalty', pointBlankPenalty: -2, attacks: 2, desc: '等离子/激光：护甲破甲优势' } },
@@ -76,19 +79,22 @@ export const WEAPON_CLASSES: Record<string, WeaponClassProfile> = {
 
 /** 新正文的明确同义词。只选择既有机制，不附送名称暗示的额外效果。 */
 export const WEAPON_CLASS_ALIASES: Record<string, string[]> = {
+  throwing:['投掷武器','标枪','飞刀','投矛','投斧','throwing weapon'],
+  'heavy-rifle':['重步枪','单发步枪','反器材步枪','重型单发步枪','heavy rifle'],
+  natural:['拳脚','爪牙','徒手','獠牙','利爪','自然武器','natural weapon'],
   demolition: ['爆破', '炸药', '炸药包', '爆破包', '火药桶', '矿用火药桶', '炸药桶', 'powder keg', 'explosive', 'explosives'],
-  sword: ['刀', '长剑', '短剑', '巨剑', '双手剑', '战刃', '鞭剑', '军刀', '马刀', '武士刀', '链锯剑', '单分子刀', 'saber', 'blade'],
+  sword: ['近战武器', '短刀', '匕首', '短匕', '刀', '长剑', '短剑', '巨剑', '双手剑', '战刃', '鞭剑', '军刀', '马刀', '武士刀', '链锯剑', '单分子刀', 'saber', 'blade'],
   axe: ['战斧', '巨斧', '手斧', '双手斧', '双手巨斧'],
-  spear: ['矛', '长矛', '长枪', '枪矛', '戟', '长戟', '长柄', '骑枪', '长杆武器', 'pike', 'lance'],
-  bow: ['弓', '弩', '长弓', '短弓', '弓箭', '复合弓', '十字弩', 'crossbow'],
-  'light-ranged': ['手枪', '手弩', '短铳', '左轮手枪', 'pistol', 'hand crossbow'],
+  spear: ['长柄武器', '矛', '长矛', '长枪', '枪矛', '戟', '长戟', '长柄', '骑枪', '长杆武器', 'pike', 'lance'],
+  bow: ['投射武器', '弓', '弩', '长弓', '短弓', '弓箭', '复合弓', '十字弩', 'crossbow'],
+  'light-ranged': ['投石索', '手枪', '手弩', '短铳', '左轮手枪', 'pistol', 'hand crossbow'],
   firearm: ['燧发枪', '火绳枪', '火铳', '滑膛枪', '前装枪', 'musket'],
-  rifle: ['机枪', '突击步枪', '自动步枪', '卡宾枪', '狙击枪', '爆弹枪', '冲锋枪', '车载机枪', 'assault rifle', 'machine gun'],
+  rifle: ['枪械', '轻型枪械', '霰弹枪', '散弹枪', '机枪', '突击步枪', '自动步枪', '卡宾枪', '狙击枪', '爆弹枪', '冲锋枪', '车载机枪', 'assault rifle', 'machine gun'],
   autocannon: ['自动炮', '车载机炮', '转管机炮', '机关炮', 'autocannon', 'auto cannon'],
   'indirect-cannon': ['曲射炮', '间接火炮', '间接火力', '榴弹炮', '迫击炮', '投石机', '抛石机', 'howitzer', 'mortar'],
-  cannon: ['火炮', '直射炮', '炮', '大炮', '坦克炮', '舰炮', '加农炮', '轨道炮', '电磁炮', '直射火炮', 'railgun'],
+  cannon: ['重型枪炮', '火炮', '直射炮', '炮', '大炮', '坦克炮', '舰炮', '加农炮', '轨道炮', '电磁炮', '直射火炮', 'railgun'],
   energy: ['激光枪', '激光步枪', '激光', '等离子枪', '等离子步枪', '电浆枪', '粒子枪', '脉冲枪', '能量枪', '光束枪', 'lasgun', 'laser rifle', 'plasma gun'],
-  magic: ['魔杖', '魔法杖', '施法法杖', 'staff', 'wand'],
+  magic: ['法器', '施法器具', '魔杖', '魔法杖', '施法法杖', 'staff', 'wand'],
   blunt: ['棍', '棒', '锤', '战锤', '钉头锤', '狼牙棒', '权杖', 'mace', 'hammer'],
 };
 export function resolveWeaponClass(name: string): string | undefined {

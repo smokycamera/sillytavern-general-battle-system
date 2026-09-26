@@ -1,49 +1,24 @@
 {
   "format": "tavern-battle-native-build",
   "version": "0.2.0-rc.13",
-  "builtAt": "2026-09-23T11:43:12.938Z",
-  "sourceFingerprint": "41c265b2ae83bf6c555894cc6e5f5c8a9e22d613112405c0606e7906487f81a7",
+  "builtAt": "2026-09-26T03:48:15.031Z",
+  "sourceFingerprint": "dd8a5de8f66b9e37a1f0106333cb019c2217776131cd09590ff8b96b8646381f",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
-    {
-      "path": "COMMERCIAL-LICENSE.md",
-      "bytes": 758,
-      "sha256": "bae3de53ef94b0f7df53e294185aa3551e669726e12fb7726e6bcb843b5393cc"
-    },
-    {
-      "path": "LICENSE",
-      "bytes": 3749,
-      "sha256": "1daa20477fb37b106fb8f3be18e6835ccfd6f01fc7f83faccc6897f7f156181d"
-    },
-    {
-      "path": "README.md",
-      "bytes": 2076,
-      "sha256": "10a1c984e394cad61628cf05404831a77303876d0a619946744c9a9b975d3640"
-    },
-    {
-      "path": "README.zh-CN.md",
-      "bytes": 1719,
-      "sha256": "2d93d1967cf0ade8adc6c4aeda300b3412a5ca128528a1aa83d581b44a0a57d7"
-    },
-    {
-      "path": "THIRD_PARTY_NOTICES.md",
-      "bytes": 1489,
-      "sha256": "72a745421875fa61d43571ff0db127f427babc3599317d7c566fba794fa748e6"
-    },
     {
       "path": "dist/assets/panel-BAWJMYI4.css",
       "bytes": 7714,
       "sha256": "d8e150b9ba2a9668681edf533c5ebfa2a0c588c1ef4fdbff02e2b456b28f93f9"
     },
     {
-      "path": "dist/assets/panel-CruL0F4S.js",
-      "bytes": 378013,
-      "sha256": "6a2bae7ac46452c3c56498474df4849dcef2ee9f945eb3e50c4e27da4771a88f"
+      "path": "dist/assets/panel-C7sm-wfc.js",
+      "bytes": 386174,
+      "sha256": "6744b10c5d9c9e87992a919ab08e809210633ecfa704b3f1d8050e028b4aa33d"
     },
     {
-      "path": "dist/assets/preferences-CUmQPgwV.js",
-      "bytes": 481998,
-      "sha256": "9f34ce014f2ac26daf4c1201c9c7d57e0ee2dbe15dafcb90da5141de77cde51c"
+      "path": "dist/assets/preferences-CYob3RuE.js",
+      "bytes": 506326,
+      "sha256": "23651f5c66c82922579d4a5daffc2b79d21800313f206a5d58682efd83648998"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -52,8 +27,13 @@
     },
     {
       "path": "assets/worldbook/!通用战斗系统约束.json",
-      "bytes": 18718,
-      "sha256": "9a37ce8c112dee67d236b2b8876d36bd6a3ca3a9d3df4fae330b568eb2adcd81"
+      "bytes": 22544,
+      "sha256": "e8b05350f22a63a9874107df47f05632fa8e96ffca2e4d50b8b566bccf3fdb15"
+    },
+    {
+      "path": "COMMERCIAL-LICENSE.md",
+      "bytes": 758,
+      "sha256": "bae3de53ef94b0f7df53e294185aa3551e669726e12fb7726e6bcb843b5393cc"
     },
     {
       "path": "docs/extension-migration-assessment-20260919.md",
@@ -112,8 +92,13 @@
     },
     {
       "path": "dist/index.js",
-      "bytes": 70901,
-      "sha256": "6c8f9ffc09dc41e44bd07d8481fd9915d03f0c4b8bf9ab910e79e9d374379742"
+      "bytes": 71380,
+      "sha256": "18fa47e2d45ca5b38e727af6b42d06ce40ffb893b4b4a2d9a1ee681edccfcb49"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 3749,
+      "sha256": "1daa20477fb37b106fb8f3be18e6835ccfd6f01fc7f83faccc6897f7f156181d"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -127,8 +112,18 @@
     },
     {
       "path": "dist/panel/index.html",
-      "bytes": 43276,
-      "sha256": "41c538d7d6d495365c6810d5f59659b6499ea03c0ce99757742b58f6c537a08e"
+      "bytes": 48820,
+      "sha256": "a0b76e6fac33e5ce6757c13ea12937eb1b08481e30c15f4d4f2eb780415e77b8"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2076,
+      "sha256": "10a1c984e394cad61628cf05404831a77303876d0a619946744c9a9b975d3640"
+    },
+    {
+      "path": "README.zh-CN.md",
+      "bytes": 1719,
+      "sha256": "2d93d1967cf0ade8adc6c4aeda300b3412a5ca128528a1aa83d581b44a0a57d7"
     },
     {
       "path": "release/current-baseline.json",
@@ -139,6 +134,11 @@
       "path": "scripts/jev-cors-relay.mjs",
       "bytes": 5754,
       "sha256": "c7fb9094f869607e10a45fb46335de4545e14043034f1b56fef937115fca50ca"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "bytes": 1489,
+      "sha256": "72a745421875fa61d43571ff0db127f427babc3599317d7c566fba794fa748e6"
     }
   ],
   "validation": {

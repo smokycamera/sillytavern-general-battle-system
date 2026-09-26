@@ -77,7 +77,7 @@ function gearValue(input: unknown, previous: ItemMechanics | undefined, slot: Eq
   if (config.spec !== undefined) {
     let spec: ItemSpecification, name: string | undefined;
     if (typeof config.spec === 'string') {
-      const parts = config.spec.split(/[:：]/); if (parts.length > 2) throw Error('装备规格使用名称:机制L等级');
+      const parts = config.spec.split(/[:：]/); if (parts.length > 2) throw Error('装备规格使用名称:效果L等级');
       if (parts.length === 2) name = parts.shift()!;
       spec = parseItemSpecification(parts[0]!);
     } else {
@@ -92,7 +92,7 @@ function gearValue(input: unknown, previous: ItemMechanics | undefined, slot: Eq
     if (spec.kind === 'armor') number(spec.tier, '护甲档位', 0, 4, true);
     if (spec.kind === 'weapon' && spec.stabilized !== undefined && typeof spec.stabilized !== 'boolean') throw Error('稳定装置须为布尔值');
     if (spec.kind === 'weapon' && spec.enchantment !== undefined) enumeration(spec.enchantment, ['none','thermal','arcane'], '附魔');
-    if (spec.kind === 'armor' && spec.profile !== undefined) enumeration(spec.profile, ['balanced','kinetic','thermal','arcane'], '防护构型');
+    if (spec.kind === 'armor' && spec.profile !== undefined) enumeration(spec.profile, ['balanced','kinetic','thermal','arcane'], '防护类型');
     const old = previous && previous.kind !== 'consumable' ? previous.value : undefined;
     mechanics = compileItem({ ...spec, body: spec.body ?? unit.body, quality: spec.quality ?? old?.recipe?.quality }, { id, name: name ?? (old && 'name' in old ? old.name : undefined) ?? slot, seed: old?.recipe?.seed ?? seed, creatingUnit: true });
   }
@@ -122,7 +122,7 @@ function gearValue(input: unknown, previous: ItemMechanics | undefined, slot: Eq
 const skillFields = ['name','desc','category','power','bonuses','weaponUse','areaExposure','damageBasis','delivery','weaponDamageMult','shape','fixedPower','requires','unavailableReason','channel','penetration','cost','cooldown','usesPerBattle','range','target','effects','damageScale'];
 function skillValues(unit: Combatant, input: unknown): Ability[] {
   const entries = typeof input === 'string' ? input ? input.split(/[,，、;；]/) : [] : input;
-  if (!Array.isArray(entries)) throw Error('skills须为规格列表，abilities须为完整实例列表');
+  if (!Array.isArray(entries)) throw Error('skills须为规格列表，abilities须为完整记录列表');
   return entries.map((entry, index) => {
     const config = typeof entry === 'string' ? { spec: entry } : requireObject(entry, '技能');
     keys(config, ['id','spec','values'], '技能');
@@ -132,9 +132,9 @@ function skillValues(unit: Combatant, input: unknown): Ability[] {
     if (config.spec !== undefined) {
       const parsed = typeof config.spec === 'string' ? parseAbilitySpec(config.spec) : [];
       const spec = typeof config.spec === 'string' ? parsed.length === 1 ? { id: parsed[0]!.blueprintId, level: parsed[0]!.level, name: parsed[0]!.name, bonuses: parsed[0]!.bonuses } : undefined : requireObject(config.spec, '技能spec');
-      if (!spec) throw Error('无法识别技能规格');
+      if (!spec) throw Error('无法识别技能等级');
       keys(spec, ['id','level','name','bonuses'], '技能spec');
-      const definition = skillDefinitionId(String(spec.id)); if (!definition) throw Error('未知技能机制');
+      const definition = skillDefinitionId(String(spec.id)); if (!definition) throw Error('未知技能效果');
       const power = spec.level ?? ability?.power ?? 5; number(power, '技能等级', 1, 10, true);
       const old = ability;
       ability = compileSkill({ id: definition, name: spec.name as string | undefined, bonuses: spec.bonuses as Enhancements | undefined }, power, unit.id);
@@ -160,7 +160,7 @@ function skillValues(unit: Combatant, input: unknown): Ability[] {
   });
 }
 function validateAbility(a: Ability): void {
-  if (typeof a.id !== 'string' || !a.id.trim()) throw Error('技能需要实例id');
+  if (typeof a.id !== 'string' || !a.id.trim()) throw Error('技能需要记录id');
   if (typeof a.name !== 'string' || !a.name.trim()) throw Error('技能需要名称');
   if (a.power !== undefined) number(a.power, '技能等级', 1, 10, true);
   validateEnhancements(a.bonuses, 'skill'); enumeration(a.target, ['enemy','ally','self','zone'], '技能目标');
@@ -309,7 +309,7 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   if (data.skills !== undefined && data.abilities !== undefined) throw Error('skills与abilities不能同时指定');
   if (data.skills !== undefined) unit.abilities = skillValues(unit,data.skills);
   if (data.abilities !== undefined) {
-    if (!Array.isArray(data.abilities)) throw Error('abilities须为完整技能实例数组');
+    if (!Array.isArray(data.abilities)) throw Error('abilities须为完整技能记录数组');
     unit.abilities = structuredClone(data.abilities) as Ability[];
     for(const a of unit.abilities) { keys(requireObject(a,'ability'),['id','definitionId','sourceId','cooldownGroup','recipe','effectVersion','customized',...skillFields],'ability'); a.customized=true; validateAbility(a); }
   }

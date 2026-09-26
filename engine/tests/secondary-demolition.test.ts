@@ -86,7 +86,7 @@ it('两模式旧爆破近距不再受罚、远距减2，预览与实际命中修
     const near = at(false), far = at(true);
     expect(near.attackModifiers ?? '').not.toContain('抵近射击');
     expect(far.attackScore).toBe(near.attackScore! - 2);
-    expect(far.attackModifiers).toContain('爆破远距投送');
+    expect(far.attackModifiers).toContain('爆破远距攻击');
     expect(far.hitChance).toBeLessThan(near.hitChance!);
     if (x instanceof SmallBattle) expect(x.attack(a.id, b.id).netAtk).toBe(far.attackScore);
     else {

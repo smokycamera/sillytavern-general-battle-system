@@ -12,7 +12,7 @@ export const MELEE_PROFILES: Record<string, {
   spear: { reach: 2, accuracy: 0, penetration: 0, damageScale: 1, closePenalty: -2,
     description: '长柄支援：触及2格／2阵距；距离0–1命中−2，可越过友军，不能越过墙体或存活敌方前线掩护' },
   blunt: { reach: 1, accuracy: -1, penetration: 2, damageScale: 0.8,
-    description: '钝器破甲：触及1格／1阵距，穿透+2、命中−1；原始伤害预算×0.8，专攻重甲' },
+    description: '钝器破甲：触及1格／1阵距，穿透+2、命中−1；原始伤害上限×0.8，专攻重甲' },
 };
 
 export function meleeProfile(weapon?: Weapon) {

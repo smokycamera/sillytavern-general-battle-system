@@ -110,9 +110,9 @@ export class NativeHost implements MetadataPort {
     if (!metadata || !sameSession(session, this.session()) || this.hasLegacyRuntime()) throw Error('回退目标已变或旧脚本仍在运行');
     if (handoff.mirrorKey !== `tavern-battle:chat:chat:${session.scope.chatId}:panel` || !this.legacyStorage) throw Error('无法确认旧镜像键或本地存储不可用');
     const variables = metadata.variables;
-    if (variables !== undefined && (!variables || typeof variables !== 'object' || Array.isArray(variables))) throw Error('旧变量容器损坏，不能回退写入');
+    if (variables !== undefined && (!variables || typeof variables !== 'object' || Array.isArray(variables))) throw Error('旧变量容器损坏，不能回退保存');
     this.legacyStorage.setItem(handoff.mirrorKey, handoff.mirrorValue);
-    if (this.legacyStorage.getItem(handoff.mirrorKey) !== handoff.mirrorValue) throw Error('旧镜像写入未确认');
+    if (this.legacyStorage.getItem(handoff.mirrorKey) !== handoff.mirrorValue) throw Error('旧镜像保存未确认');
     metadata.variables = { ...variables as Record<string, unknown> | undefined, panel: structuredClone(handoff.panel) };
   }
   async verifyLegacyHandoff(scope: ChatScope, handoff: LegacyHandoff): Promise<boolean> {
@@ -124,25 +124,25 @@ export class NativeHost implements MetadataPort {
   hasLegacyRuntime(): boolean { return !!this.host.__tavernBattleController; }
   async saveMetadata(): Promise<void> {
     const context = this.context();
-    if (!context.saveMetadata) throw Error('宿主没有提供聊天元数据保存接口');
+    if (!context.saveMetadata) throw Error('酒馆没有提供聊天附加记录保存接口');
     await context.saveMetadata();
   }
   /** Message changes require the full host save; metadata-only fallback would lose them. */
   async saveChat(): Promise<void> {
     const context = this.context();
-    if (!context.saveChat) throw Error('宿主没有提供聊天完整保存接口');
+    if (!context.saveChat) throw Error('酒馆没有提供聊天完整保存接口');
     await context.saveChat();
   }
   async readPersisted(scope: ChatScope): Promise<Record<string, unknown>> {
     const data = await this.readChat(scope);
     if (!data.length) return {};
     const header = data[0] as { chat_metadata?: unknown };
-    if (!header || typeof header !== 'object' || !header.chat_metadata || typeof header.chat_metadata !== 'object' || Array.isArray(header.chat_metadata)) throw Error('聊天元数据头缺失，不能确认保存');
+    if (!header || typeof header !== 'object' || !header.chat_metadata || typeof header.chat_metadata !== 'object' || Array.isArray(header.chat_metadata)) throw Error('聊天附加记录头缺失，不能确认保存');
     return header.chat_metadata as Record<string, unknown>;
   }
   async readChat(scope: ChatScope): Promise<HostMessage[]> {
     const headers = this.context().getRequestHeaders?.();
-    if (!headers) throw Error('宿主没有提供持久化读回接口所需的请求头');
+    if (!headers) throw Error('酒馆没有提供保存读回接口所需的请求头');
     const request = this.request;
     const response = await request('/api/chats/get', {
       method: 'POST', headers, cache: 'no-store',
@@ -150,7 +150,7 @@ export class NativeHost implements MetadataPort {
     });
     if (!response.ok) throw Error(`读取聊天持久状态失败（${response.status}）`);
     const data: unknown = await response.json();
-    if (!Array.isArray(data)) throw Error('宿主返回了无法识别的聊天数据');
+    if (!Array.isArray(data)) throw Error('酒馆返回了无法识别的聊天数据');
     return data as HostMessage[];
   }
   subscribe(kind: string, callback: (...args: unknown[]) => void): { available: boolean; stop(): void } {
@@ -189,7 +189,7 @@ export async function createNativeHost(host: HostWindow, request: typeof fetch =
   // rather than guessing a shared fallback handle for a malformed API response.
   if (host.__TAURI_RUNNING__ === true || host.__TAURITAVERN__) {
     const user = await loadUser();
-    if (user.accountsEnabled && !user.currentUser?.handle) throw Error('宿主账户尚未初始化');
+    if (user.accountsEnabled && !user.currentUser?.handle) throw Error('酒馆账户尚未初始化');
     const handle = user.getCurrentUserHandle?.();
     if (typeof handle !== 'string' || !handle) throw Error('TauriTavern 未提供可靠用户标识');
     return new NativeHost(host, handle, request);
@@ -198,6 +198,6 @@ export async function createNativeHost(host: HostWindow, request: typeof fetch =
   if (!response.ok) throw Error('无法确定当前酒馆用户，不能建立存档作用域');
   const user: unknown = await response.json();
   const handle = user && typeof user === 'object' ? (user as { handle?: unknown }).handle : undefined;
-  if (typeof handle !== 'string' || !handle) throw Error('宿主未返回可靠用户标识');
+  if (typeof handle !== 'string' || !handle) throw Error('酒馆未返回可靠用户标识');
   return new NativeHost(host, handle, request);
 }

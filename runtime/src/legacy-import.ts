@@ -27,8 +27,8 @@ export function legacySource(metadata: Record<string, unknown>): NarrativeSave |
   const value = variables.panel;
   if (value === undefined) return undefined;
   if (!object(value)) throw Error('当前聊天的旧战阵存档不是对象，需要人工核对');
-  if (value.schemaVersion !== undefined && value.schemaVersion !== 1 && value.schemaVersion !== 2) throw Error('旧战阵存档版本未知，不能自动降级');
-  if (value.factRevision !== undefined && (!Number.isSafeInteger(value.factRevision) || Number(value.factRevision) < 0)) throw Error('旧档事实版本损坏');
+  if (value.schemaVersion !== undefined && value.schemaVersion !== 1 && value.schemaVersion !== 2) throw Error('旧战阵存档版本未知，不能自动改用备用方式');
+  if (value.factRevision !== undefined && (!Number.isSafeInteger(value.factRevision) || Number(value.factRevision) < 0)) throw Error('旧档战斗记录版本损坏');
   // Invalid arrays and units are handled by the existing explicit review, never silently repaired here.
   return structuredClone(value) as NarrativeSave;
 }
@@ -72,7 +72,7 @@ export class LegacyImporter {
       const key = JSON.stringify([session.scope.key, preview.sourceHash]);
       await this.backups.put(key, { session, source: preview.source, sourceHash: preview.sourceHash, createdAt: new Date().toISOString() });
       const backup = await this.backups.get(key);
-      if (!backup || await payloadHash(backup.source) !== preview.sourceHash) throw Error('迁移原档备份尚未确认，未写入原生存档');
+      if (!backup || await payloadHash(backup.source) !== preview.sourceHash) throw Error('迁移原档备份尚未确认，未保存原生存档');
     }
     if (!sameSession(session, this.host.session())) throw Error('备份期间聊天已切换');
     const migration: NativeEnvelope['migration'] = { source: choice === 'empty' || preview.kind === 'empty' ? 'empty' : 'helper-chat', sourceHash: preview.sourceHash, legacyNamespace: preview.legacyNamespace };

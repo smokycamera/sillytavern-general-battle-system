@@ -2,6 +2,9 @@ import { validateEnhancements, type Enhancements } from '../../engine/src/enhanc
 import { calibrateAutocannon, calibrateWeaponHands } from '../../engine/src/gen/equipment.js';
 import {hasMemberHealth} from '../../engine/src/member-health.js';
 import {applyRecovery} from '../../engine/src/recovery.js';
+import { ACCESSORY_NAMES, CONSUMABLE_NAMES, syncAccessoryAbilities } from '../../engine/src/items.js';
+import { skillResourceChange } from '../../engine/src/skill-runtime.js';
+import { applyDispel, dispelCandidates } from '../../engine/src/skill-effects.js';
 /** 库存实物为装备权威；UnitRecord.snapshot 中的装备是供战斗使用的冻结投影。 */
 import { calibrateWeaponRange, compileItem, equipmentReason, healingAmount, traitRegistry, parseDice,
   type Combatant, type EquipmentSlot, type ItemMechanics, type ItemSpecification } from '../../engine/src/index.js';
@@ -32,7 +35,7 @@ export type InventoryAction =
   | { kind: 'unequip'; unitId: string; slot: EquipmentSlot }
   | { kind: 'use'; itemId: string; unitId: string };
 export type InventoryIntent = InventoryAction & { id: string; expectedRevision: number };
-const slots: EquipmentSlot[] = ['primary', 'sidearm', 'armor', 'shield'];
+const slots: EquipmentSlot[] = ['primary', 'sidearm', 'armor', 'shield', 'accessory1', 'accessory2'];
 const clone = <T>(value: T): T => structuredClone(value);
 /** 验证冻结数据的结构，不按当前公式重算旧实例。 */
 export function validateInventoryItem(value: unknown): asserts value is InventoryItem {
@@ -45,21 +48,31 @@ export function validateInventoryItem(value: unknown): asserts value is Inventor
     return;
   }
   const m = value.mechanics;
-  if (!object(m) || !['weapon', 'armor', 'shield', 'consumable'].includes(String(m.kind))) throw new Error('物品执行机制未知或损坏');
+  if (!object(m) || !['weapon', 'armor', 'shield', 'consumable', 'accessory'].includes(String(m.kind))) throw new Error('物品执行效果未知或损坏');
   const recipe = m.kind === 'consumable' ? m.recipe : object(m.value) ? m.value.recipe : undefined;
-  if (object(recipe) && (recipe.stabilized !== undefined && typeof recipe.stabilized !== 'boolean' || recipe.protectionProfile !== undefined && !['balanced', 'kinetic', 'thermal', 'arcane'].includes(String(recipe.protectionProfile)))) throw new Error('武器稳定或防护构型记录损坏');
+  if (object(recipe) && (recipe.stabilized !== undefined && typeof recipe.stabilized !== 'boolean' || recipe.protectionProfile !== undefined && !['balanced', 'kinetic', 'thermal', 'arcane'].includes(String(recipe.protectionProfile)))) throw new Error('武器稳定或防护类型记录损坏');
   if (recipe !== undefined && (!object(recipe) || !['mechanism-v2.1', 'mechanism-v2.2', 'mechanism-v2.3','mechanism-v2.3+autocannon-v2'].includes(String(recipe.version))
     || !Number.isInteger(recipe.power) || Number(recipe.power) < 1 || Number(recipe.power) > 10
     || !Number.isInteger(recipe.quality) || Number(recipe.quality) < 1 || Number(recipe.quality) > 5
-    || !['human', 'large', 'vehicle', 'giant'].includes(String(recipe.size)) || typeof recipe.seed !== 'string' || !recipe.seed)) throw new Error('冻结配方损坏或版本未知');
-  if(object(recipe))validateEnhancements(recipe.bonuses as Enhancements | undefined, m.kind as 'weapon'|'armor'|'shield'|'consumable');
+    || !['human', 'large', 'vehicle', 'giant'].includes(String(recipe.size)) || typeof recipe.seed !== 'string' || !recipe.seed)) throw new Error('已保存的属性损坏或版本未知');
+  if(object(recipe))validateEnhancements(recipe.bonuses as Enhancements | undefined, m.kind as 'weapon'|'armor'|'shield'|'consumable'|'accessory');
   if (m.kind === 'consumable') {
-    if (Number(value.qty) > 9999 || !recipe || !object(m.effect) || m.effect.op !== 'heal' || !Number.isSafeInteger(m.effect.amount) || Number(m.effect.amount) <= 0
-      || value.equippedTo !== undefined) throw new Error('消耗品效果或装备关系损坏');
+    if (Number(value.qty) > 9999 || !object(recipe) || !Object.hasOwn(CONSUMABLE_NAMES, String(recipe.mechanism)) || !object(m.effect) || value.equippedTo !== undefined) throw new Error('消耗品效果或装备关系损坏');
+    const effect = m.effect, mechanism = recipe.mechanism;
+    const expected = { heal: 'heal', repair: 'heal', restore: 'resource', cleanse: 'dispel', empower: 'condition', barrier: 'barrier', grenade: 'damage' }[String(mechanism)];
+    if (effect.op !== expected || ['heal','resource','barrier'].includes(String(effect.op)) && (!Number.isSafeInteger(effect.amount) || Number(effect.amount) <= 0)) throw Error('消耗品用途与效果不一致');
+    if (effect.op === 'resource' && (effect.resource !== 'SP' || effect.maximum !== 'training') || effect.op === 'dispel' && (effect.polarity !== 'negative' || ![1,2].includes(Number(effect.count)))
+      || effect.op === 'condition' && (effect.conditionId !== 'empowered' || !Number.isInteger(effect.dur) || Number(effect.dur) < 1 || Number(effect.dur) > 99)
+      || effect.op === 'barrier' && (!Number.isInteger(effect.dur) || Number(effect.dur) < 1 || Number(effect.dur) > 99)) throw Error('消耗品效果参数不正确');
+    if (effect.op === 'damage') { if (typeof effect.baseDice !== 'string' || effect.shape !== 'burst') throw Error('投掷物伤害不正确'); parseDice(effect.baseDice); }
   } else {
     const gear = m.value;
-    if (!object(gear) || gear.id !== value.id || Number(value.qty) > 1) throw new Error('装备实例身份/数量冲突');
-    if (m.kind === 'weapon') {
+    if (!object(gear) || gear.id !== value.id || Number(value.qty) > 1) throw new Error('装备唯一编号/数量冲突');
+    if (m.kind === 'accessory') {
+      if (!object(gear.recipe) || typeof gear.recipe.mechanism !== 'string' || !Object.hasOwn(ACCESSORY_NAMES, gear.recipe.mechanism.replace(/^accessory:/, ''))) throw Error('配件用途不正确');
+      const expected = compileItem({ kind: 'accessory', mechanism: gear.recipe.mechanism.replace(/^accessory:/, '') as keyof typeof ACCESSORY_NAMES, power: Number(gear.recipe.power), quality: Number(gear.recipe.quality), body: gear.recipe.size as Combatant['body'] }, { id: String(value.id), name: String(value.name), seed: String(gear.recipe.seed) });
+      if (expected.kind !== 'accessory' || fingerprint(gear) !== fingerprint(expected.value)) throw Error('配件提供的能力与记录不一致');
+    } else if (m.kind === 'weapon') {
       if (typeof gear.baseDice !== 'string') throw new Error('武器缺少伤害规格'); parseDice(gear.baseDice);
       if (gear.apDice !== undefined) { if (typeof gear.apDice !== 'string') throw new Error('武器破甲骰损坏'); parseDice(gear.apDice); }
       if (gear.channel !== undefined && !['kinetic', 'thermal', 'arcane'].includes(String(gear.channel))) throw new Error('武器伤害通道未知');
@@ -68,7 +81,7 @@ export function validateInventoryItem(value: unknown): asserts value is Inventor
       if (![0, 1, 2, 3, 4].includes(Number(gear.tier))) throw new Error('护甲档位损坏');
       if (gear.protection !== undefined && (!object(gear.protection) || ['kinetic', 'thermal', 'arcane'].some((c) => !Number.isFinite((gear.protection as Record<string, unknown>)[c]) || Number((gear.protection as Record<string, unknown>)[c]) < 0))) throw new Error('护甲通道防护损坏');
     }
-    if (gear.load !== undefined && (!Number.isFinite(gear.load) || Number(gear.load) < 0)) throw new Error('装备负载损坏');
+    if (gear.load !== undefined && (!Number.isFinite(gear.load) || Number(gear.load) < 0)) throw new Error('装备负重损坏');
   }
   if (value.equippedTo !== undefined && (!object(value.equippedTo) || typeof value.equippedTo.unitId !== 'string'
     || !slots.includes(value.equippedTo.slot as EquipmentSlot) || value.qty !== 1)) throw new Error('装备槽位损坏');
@@ -93,10 +106,11 @@ function gearAt(unit: Combatant, slot: EquipmentSlot): ItemMechanics | undefined
     case 'sidearm': return unit.sidearm ? { kind: 'weapon', value: unit.sidearm } : undefined;
     case 'armor': return unit.armor ? { kind: 'armor', value: unit.armor } : undefined;
     case 'shield': return unit.shield ? { kind: 'shield', value: unit.shield } : undefined;
+    case 'accessory1': case 'accessory2': return unit.accessories?.[slot] ? { kind: 'accessory', value: unit.accessories[slot]! } : undefined;
   }
 }
-function fits(mechanics: ItemMechanics, slot: EquipmentSlot): boolean {
-  return (slot === 'primary' || slot === 'sidearm') ? mechanics.kind === 'weapon' : mechanics.kind === slot;
+export function fitsEquipmentSlot(mechanics: ItemMechanics, slot: EquipmentSlot): boolean {
+  return slot === 'accessory1' || slot === 'accessory2' ? mechanics.kind === 'accessory' : (slot === 'primary' || slot === 'sidearm') ? mechanics.kind === 'weapon' : mechanics.kind === slot;
 }
 
 /** 首次接入只登记已有V2精确实例，绝不按名称生成或重掷旧装备。 */
@@ -109,7 +123,7 @@ export function prepareInventoryState(save: InventorySave, adoptExisting = true)
     validateInventoryItem(item);
     if (!item.id || ids.has(item.id) || !Number.isSafeInteger(item.qty) || item.qty < 0) throw new Error('库存身份或数量损坏，需要先核对原档');
     ids.add(item.id);
-    if (item.mechanics && item.mechanics.kind !== 'consumable' && (item.qty > 1 || item.mechanics.value.id !== item.id)) throw new Error('装备实例身份/数量冲突');
+    if (item.mechanics && item.mechanics.kind !== 'consumable' && (item.qty > 1 || item.mechanics.value.id !== item.id)) throw new Error('装备唯一编号/数量冲突');
   }
   for (const record of next.storage) {
     if (!adoptExisting || record.equipmentManaged || record.snapshot?.rulesVersion !== 'v2') continue;
@@ -118,7 +132,7 @@ export function prepareInventoryState(save: InventorySave, adoptExisting = true)
       if (!mechanics || mechanics.kind === 'consumable') continue;
       const gear = mechanics.value;
       let item = next.inventory.find((entry) => entry.id === gear.id);
-      if (item && (fingerprint(item.mechanics) !== fingerprint(mechanics) || item.equippedTo && (item.equippedTo.unitId !== record.id || item.equippedTo.slot !== slot))) throw new Error('已有装备实例重复或内容冲突，不能猜测合并');
+      if (item && (fingerprint(item.mechanics) !== fingerprint(mechanics) || item.equippedTo && (item.equippedTo.unitId !== record.id || item.equippedTo.slot !== slot))) throw new Error('已有装备记录重复或内容冲突，不能猜测合并');
       if (!item) {
         item = { id: gear.id, name: 'name' in gear && gear.name ? gear.name : '盾牌', qty: 1,
           lootType: mechanics.kind === 'weapon' ? 'weapon' : 'armor', mechanics: clone(mechanics), revision: 1 };
@@ -134,7 +148,7 @@ export function prepareInventoryState(save: InventorySave, adoptExisting = true)
     const { unitId, slot } = item.equippedTo;
     const key = JSON.stringify([unitId, slot]);
     if (!next.storage.some((r) => r.id === unitId && r.equipmentManaged) || occupied.has(key) || !slots.includes(slot)
-      || !item.mechanics || !fits(item.mechanics, slot) || item.assignedTo !== unitId || item.qty !== 1) throw new Error('装备槽位或持有者关系损坏');
+      || !item.mechanics || !fitsEquipmentSlot(item.mechanics, slot) || item.assignedTo !== unitId || item.qty !== 1) throw new Error('装备槽位或持有者关系损坏');
     occupied.add(key);
   }
   for (const record of next.storage) if (record.equipmentManaged) projectEquipment(record, next.inventory);
@@ -143,8 +157,8 @@ export function prepareInventoryState(save: InventorySave, adoptExisting = true)
 
 function projectEquipment(record: UnitRecord, inventory: InventoryItem[]): void {
   const unit = record.snapshot;
-  if (!unit) throw new Error('装备投影缺少单位精确快照');
-  delete unit.weapon; delete unit.sidearm; delete unit.armor; delete unit.shield;
+  if (!unit) throw new Error('装备显示记录缺少单位精确存档记录');
+  delete unit.weapon; delete unit.sidearm; delete unit.armor; delete unit.shield; delete unit.accessories;
   for (const item of inventory.filter((i) => i.equippedTo?.unitId === record.id)) {
     const mechanics = item.mechanics!;
     if (mechanics.kind === 'weapon') {
@@ -152,7 +166,9 @@ function projectEquipment(record: UnitRecord, inventory: InventoryItem[]): void 
       else unit.sidearm = clone(mechanics.value);
     } else if (mechanics.kind === 'armor') unit.armor = clone(mechanics.value);
     else if (mechanics.kind === 'shield') unit.shield = clone(mechanics.value);
+    else if (mechanics.kind === 'accessory') (unit.accessories ??= {})[item.equippedTo!.slot as 'accessory1' | 'accessory2'] = clone(mechanics.value);
   }
+  syncAccessoryAbilities(unit);
   const fields = {
     weaponId: undefined, weaponName: unit.weapon?.name, weaponClass: unit.weapon?.recipe?.mechanism, weaponLevel: unit.weapon?.level,
     sidearmId: undefined, sidearmName: unit.sidearm?.name, sidearmClass: unit.sidearm?.recipe?.mechanism, sidearmLevel: unit.sidearm?.level,
@@ -177,14 +193,14 @@ export function assertInventoryPanelWrite(previous: InventorySave, next: Invento
     const incoming = nextItems.find((i) => i.id === item.id);
     if (fingerprint(incoming) !== fingerprint(item)) throw new Error('装备与物品数量/归属须通过库存事务修改');
   }
-  if (nextItems.some((i) => i.mechanics && !previousItems.some((old) => old.id === i.id && old.mechanics))) throw new Error('新机械物品须先预览并通过库存事务入库');
+  if (nextItems.some((i) => i.mechanics && !previousItems.some((old) => old.id === i.id && old.mechanics))) throw new Error('新有效果的物品须先预览并通过库存事务入库');
   for (const old of previous.storage ?? []) if (old.equipmentManaged && !next.storage?.some((r) => r.id === old.id && r.equipmentManaged)) throw new Error('不能移除装备档案的库存绑定');
   if (!(next.storage ?? []).some((r) => r.equipmentManaged)) return;
   const projected = prepareInventoryState(next);
   for (const record of next.storage ?? []) {
     if (!record.equipmentManaged || !record.snapshot) continue;
     const expected = projected.storage!.find((r) => r.id === record.id)!.snapshot!;
-    for (const slot of slots) if (fingerprint(gearAt(record.snapshot, slot)) !== fingerprint(gearAt(expected, slot))) throw new Error('单位装备投影与库存不一致，请通过换装事务修改');
+    for (const slot of slots) if (fingerprint(gearAt(record.snapshot, slot)) !== fingerprint(gearAt(expected, slot))) throw new Error('单位装备显示记录与库存不一致，请通过换装事务修改');
   }
 }
 
@@ -221,7 +237,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       if (!Number.isSafeInteger(action.qty) || action.qty < 1 || action.qty > item.qty) throw new Error('移除数量超出库存');
       item.qty -= action.qty;
     } else if (action.kind === 'define') {
-      if (item.mechanics) throw new Error('物品已有机械规格，请使用改造入口');
+      if (item.mechanics) throw new Error('物品已有物品属性，请使用改造入口');
       const newId = item.qty === 1 ? item.id : `defined:${id}`;
       if (newId !== item.id && inventory.some((i) => i.id === newId)) throw new Error('补全物品身份已存在');
       const defined = { ...createInventoryItem(newId, item.name, action.spec, id), note: item.note, assignedTo: item.assignedTo, sourceItemId: item.id };
@@ -231,6 +247,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       if (!item.mechanics || item.mechanics.kind === 'consumable') throw new Error('此物品没有可改造的装备规格');
       if (item.mechanics.kind !== action.spec.kind) throw new Error('重铸不能把不同种类实物互相替换');
       const oldRecipe = item.mechanics.value.recipe;
+      if (action.spec.kind === 'weapon' && (oldRecipe?.mechanism === 'natural') !== (action.spec.mechanism === 'natural')) throw Error('天生武器不能改造成外部装备，普通武器也不能改成身体的一部分');
       const spec = { ...action.spec, bonuses: action.spec.bonuses ?? oldRecipe?.bonuses, quality: action.spec.quality ?? oldRecipe?.quality, body: action.spec.body ?? oldRecipe?.size };
       if (spec.kind === 'weapon' && spec.stabilized === undefined) spec.stabilized = oldRecipe?.stabilized;
       if (spec.kind === 'armor' && spec.profile === undefined) spec.profile = oldRecipe?.protectionProfile;
@@ -247,6 +264,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
         next.storage = next.storage!.map((r) => r.id === record.id ? unitRecordFromCombatant({ ...record.snapshot!, hp: record.hp, recoverableWounded: record.recoverableWounded, status: record.status ?? 'ready' }, record, { sourceId: id }) : r);
       }
     } else if (action.kind === 'assign') {
+      if (item.mechanics?.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural' && item.assignedTo && item.assignedTo !== action.unitId) throw Error('天生武器属于单位身体，不能交给其他人或放进公共库存');
       if (item.equippedTo) throw new Error('请先卸下已装备的物品，再转移归属');
       if (action.unitId) recordById(next, action.unitId);
       item.assignedTo = action.unitId;
@@ -255,8 +273,8 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       if (record.retired || record.status === 'dead') throw new Error('阵亡或解散目标不能装备/使用物品');
       if (item.assignedTo && item.assignedTo !== record.id) throw new Error(item.equippedTo ? '物品已装备，请先卸下并转移' : '物品属于其他单位，请先分配');
       if (action.kind === 'equip') {
-        if (!record.equipmentManaged || !record.snapshot) throw new Error('请先预览转制为V2再使用新配装');
-        if (!item.mechanics || !fits(item.mechanics, action.slot)) throw new Error('缺少可装备规格或槽位不匹配');
+        if (!record.equipmentManaged || !record.snapshot) throw new Error('请先预览更新规则为V2再使用新配装');
+        if (!item.mechanics || !fitsEquipmentSlot(item.mechanics, action.slot)) throw new Error('缺少可装备规格或槽位不匹配');
         if (item.equippedTo) throw new Error('物品已装备，请先卸下');
         for (const old of inventory) if (old.equippedTo?.unitId === record.id && old.equippedTo.slot === action.slot) delete old.equippedTo;
         item.assignedTo = record.id; item.equippedTo = { unitId: record.id, slot: action.slot };
@@ -265,12 +283,22 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
         if (reason) throw new Error(reason);
         next.storage = next.storage!.map((r) => r.id === record.id ? unitRecordFromCombatant({ ...record.snapshot!, hp: record.hp, recoverableWounded: record.recoverableWounded, status: record.status ?? 'ready' }, record, { sourceId: id }) : r);
       } else {
-        if (item.mechanics?.kind !== 'consumable' || item.mechanics.effect.op !== 'heal') throw new Error('物品没有可执行治疗规格，叙事说明不会自动产生效果');
+        if (item.mechanics?.kind !== 'consumable') throw new Error('这件物品没有可使用的效果');
         const target={...record,...record.snapshot!,hp:record.hp,recoverableWounded:record.recoverableWounded,status:record.status??'ready' as const};
-        const amount = healingAmount(target, item.mechanics.effect.amount);
+        const effect = item.mechanics.effect;
+        if (item.mechanics.recipe.mechanism === 'repair' && target.body !== 'vehicle') throw Error('维修包只能修理车辆');
+        if (effect.op === 'resource' || effect.op === 'dispel') {
+          if (effect.op === 'resource') { const amount = skillResourceChange(target, effect); if (!amount) throw Error('精力已满，无需使用'); target.resources[effect.resource] = (target.resources[effect.resource] ?? 0) + amount; }
+          else { const chosen = dispelCandidates(target, effect); if (!chosen.length) throw Error('没有需要清除的不利状态'); applyDispel(target, chosen); }
+          next.storage = next.storage!.map(r => r.id === record.id ? unitRecordFromCombatant(target, r, { kind: 'update', sourceId: id }) : r);
+          item.qty--;
+        } else {
+        if (effect.op !== 'heal' || effect.amount === undefined) throw Error('这种用品需要在战斗中选择行动使用');
+        const amount = healingAmount(target, effect.amount);
         if(hasMemberHealth(target)){applyRecovery(target,amount);next.storage=next.storage!.map(r=>r.id===record.id?unitRecordFromCombatant(target,r,{kind:'update',sourceId:id}):r);}
         else next.storage = next.storage!.map((r) => r.id === record.id ? updateUnitRecord(r, { hp: r.hp + amount }, traitRegistry(), id) : r);
         item.qty--;
+        }
       }
     }
   }
@@ -302,7 +330,7 @@ export function deleteUnitArchive(save: InventorySave, unitId: string): Inventor
   const next = prepareInventoryState(save);
   next.storage = next.storage!.filter((r) => r.id !== unitId);
   next.rosterIds = (next.rosterIds ?? []).filter((id) => id !== unitId);
-  next.inventory = next.inventory!.filter((item) => item.equippedTo?.unitId !== unitId);
+  next.inventory = next.inventory!.filter((item) => item.equippedTo?.unitId !== unitId && !(item.assignedTo===unitId && item.mechanics?.kind==='weapon' && item.mechanics.value.recipe?.mechanism==='natural'));
   for (const item of next.inventory ?? []) {
     if (item.assignedTo === unitId) delete item.assignedTo;
   }

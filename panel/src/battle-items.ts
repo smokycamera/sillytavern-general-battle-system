@@ -7,6 +7,7 @@ export function prepareBattleItems(units: Combatant[], save: InventorySave): Com
     item.assignedTo === unit.id && item.qty > 0 && item.mechanics?.kind === 'consumable'
       ? [{ id: item.id, name: item.name, quantity: item.qty, revision: item.revision ?? 1, mechanics: item.mechanics }] : [])));
 }
+function actionDefinition(action: ReturnType<typeof carriedItemAbility>) { const {name:_name,desc:_desc,category:_category,...definition}=action;return JSON.stringify(definition); }
 function ledger(save: InventorySave): Map<string, { item: CarriedItem; actorId: string; left: number }> {
   const result = new Map<string, { item: CarriedItem; actorId: string; left: number }>();
   const units = save.battle?.snap.combatants as Combatant[] | undefined;
@@ -16,7 +17,7 @@ function ledger(save: InventorySave): Map<string, { item: CarriedItem; actorId: 
       const actual = actor.abilities.find((a) => a.itemSourceId === item.id);
       const used = actor.abilityState.find((s) => s.abilityId === action.id)?.used ?? 0;
       if (result.has(item.id) || !Number.isSafeInteger(left) || left! < 0 || left! > item.quantity
-        || used !== item.quantity - left! || JSON.stringify(actual) !== JSON.stringify(action)) throw new Error('战内物品来源/次数或行动定义损坏');
+        || used !== item.quantity - left! || (!actual || actionDefinition(actual) !== actionDefinition(action))) throw new Error('战内物品来源/次数或行动定义损坏');
       result.set(item.id, { item, actorId: actor.id, left: left! });
     }
     if (actor.abilities.some((a) => a.itemSourceId && !actor.carriedItems?.some((i) => i.id === a.itemSourceId))) throw new Error('物品行动缺少实物来源');
@@ -31,7 +32,7 @@ export function prepareBattleItemWrite(previous: InventorySave, next: InventoryS
   if (sameBattle && (previous.committedOutcomeIds ?? []).includes(`${next.battle.kind}:${String(next.battle.snap.seed)}`)) return next;
   const old = sameBattle ? ledger(previous) : new Map<string, { item: CarriedItem; actorId: string; left: number }>();
   const current = ledger(next), output = structuredClone(next);
-  if (sameBattle && [...old.keys()].some((id) => !current.has(id))) throw new Error('进行中战斗不能移除物品来源账本');
+  if (sameBattle && [...old.keys()].some((id) => !current.has(id))) throw new Error('进行中战斗不能移除物品来源记录');
   for (const [id, entry] of current) {
     const before = old.get(id), item = (previous.inventory ?? []).find((i) => i.id === id);
     if (sameBattle && !before || before && (before.actorId !== entry.actorId || JSON.stringify(before.item) !== JSON.stringify(entry.item))) throw new Error('进行中战斗不能补发或修改携行物品');

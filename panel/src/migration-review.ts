@@ -1,7 +1,7 @@
 import { SmallBattle, MassBattle, traitRegistry, rulesById, validateTraitSource, validateTacticalPose, validateTacticalEffort, validateConcealment, validateFlightState, validateWounded, validateMoraleState, validateVanguardOrigin, validateFormationPosition, normalizeV2Scale, type Combatant } from '../../engine/src/index.js';
 import { combatantFromUnknown, migratePanelUnits } from './unit-state.js';
 import type { NarrativeSave } from './narrative-state.js';
-import { prepareInventoryState, validateInventoryItem } from './inventory-state.js';
+import { prepareInventoryState, validateInventoryItem, fitsEquipmentSlot } from './inventory-state.js';
 import { prepareBattleItemWrite } from './battle-items.js';
 
 export interface MigrationReview { original: NarrativeSave; candidate: NarrativeSave; changes: string[]; quarantined: number }
@@ -21,9 +21,9 @@ function validateBattle(save: NarrativeSave): void {
     validateConcealment(u.tacticalRevealed);
     validateFlightState(u.airborne); validateMoraleState(u.moraleState); validateWounded(u);
     validateFormationPosition(u.formationPosition);
-    if (kind === 'small' && u.formationPosition !== undefined) throw new Error('实际会战阵位不能放入小战快照');
+    if (kind === 'small' && u.formationPosition !== undefined) throw new Error('实际会战阵位不能放入小战存档记录');
     validateVanguardOrigin(u.vanguardOrigin, u.side);
-    if (kind === 'small' && u.vanguardOrigin !== undefined) throw new Error('会战先锋来源不能放入小战快照');
+    if (kind === 'small' && u.vanguardOrigin !== undefined) throw new Error('会战先锋来源不能放入小战存档记录');
     if (u.tacticalPose !== undefined) {
       validateTacticalPose(u.tacticalPose);
       const field = snap.battlefield as { width?: number } | undefined;
@@ -35,10 +35,10 @@ function validateBattle(save: NarrativeSave): void {
     }
     if (!Array.isArray(u.abilities) || !Array.isArray(u.tags) || !Array.isArray(u.conditions) || !u.resources) throw new Error('战斗单位状态缺失');
   }
-  if (rules.resolutionVersion === 'v2' && (!Number.isInteger(snap.rngState) || units.some((u) => u.rulesVersion !== 'v2'))) throw new Error('V2快照缺少可恢复随机状态或混入旧规则单位');
+  if (rules.resolutionVersion === 'v2' && (!Number.isInteger(snap.rngState) || units.some((u) => u.rulesVersion !== 'v2'))) throw new Error('V2存档记录缺少可恢复随机状态或混入旧规则单位');
   if (kind === 'small') {
     const b = SmallBattle.fromSnapshot(structuredClone(snap));
-    if (b.turnOrder.some((id) => !ids.has(id))) throw new Error('激活顺序引用缺失单位');
+    if (b.turnOrder.some((id) => !ids.has(id))) throw new Error('行动顺序引用缺失单位');
     if (b.battlefield && units.some((u) => !Number.isInteger(u.pos) || u.pos! < 0 || u.pos! >= b.battlefield!.tiles.length)) throw new Error('地图坐标损坏');
   } else MassBattle.fromSnapshot(structuredClone(snap));
 }
@@ -70,7 +70,7 @@ export function reviewMigration(raw: NarrativeSave): MigrationReview | undefined
       if (item.equippedTo) {
         const { unitId, slot } = item.equippedTo;
         if (item.assignedTo !== unitId || !units.records.some((r) => r.id === unitId && r.equipmentManaged)
-          || !item.mechanics || item.mechanics.kind !== ((slot === 'primary' || slot === 'sidearm') ? 'weapon' : slot)) throw new Error('装备关系与持有者/槽位不一致');
+          || !item.mechanics || !fitsEquipmentSlot(item.mechanics,slot)) throw new Error('装备关系与持有者/槽位不一致');
         if (items.some((other, n) => n !== index && other?.equippedTo?.unitId === unitId && other.equippedTo.slot === slot)) throw new Error('同一槽位有多件实物，不能猜测保留');
       }
       return true;
@@ -96,7 +96,7 @@ export function reviewMigration(raw: NarrativeSave): MigrationReview | undefined
     changes.push('战斗已隔离：' + String(error));
     candidate.battle = null; quarantined++;
   }
-  if (oldMookIds.size) changes.push(`旧V2刻度归为编队（${oldMookIds.size}个身份）；保留人数、训练、冻结实例与战斗随机进度，恢复正常成长`);
+  if (oldMookIds.size) changes.push(`旧V2刻度归为编队（${oldMookIds.size}个身份）；保留人数、训练、已保存的物品与战斗随机进度，恢复正常成长`);
   if (candidate.battle && badItems.length) {
     try {
       const combatants = candidate.battle.snap.combatants as Combatant[];

@@ -1,4 +1,5 @@
 import type { Combatant, ConditionDef, Trait } from './types.js';
+import { absorbBarrier } from './barrier.js';
 import { activeConditionIds, activeTraitIds } from './trait-sources.js';
 import { standardConditionMap } from './conditions.js';
 import { traitRegistry } from './data/traits.js';
@@ -8,14 +9,14 @@ import {hasMemberHealth,memberHealth,damageMemberGroups,memberRecoveryCapacity,h
 
 type Health = Pick<Combatant, 'hp' | 'base' | 'scale'> & Partial<Pick<Combatant, 'status' | 'rulesVersion' | 'recoverableWounded' | 'combatModel' | 'formation'>>;
 
-export interface MemberDamagePlan { direct:number; targets:number; overflow?:boolean; splash?:number; splashTargets?:number }
+export interface MemberDamagePlan { direct:number; targets:number; overflow?:boolean; splash?:number; splashTargets?:number; incomingDirect?:number; incomingSplash?:number }
 /** V4以真实生命结算；旧版继续使用人数换算，不改写进行中的旧战斗。 */
 export function applyCombatDamage(unit:Combatant,amount:number,targets=1):number {
   return applyMemberDamage(unit,amount,targets).health;
 }
 function applyMemberDamage(unit:Combatant,amount:number,targets:number,overflow=false):{health:number;overflow:number} {
   if(!hasMemberHealth(unit))return {health:applyHealthLoss(unit,amount),overflow:0};
-  const result=damageMemberGroups(unit,amount,targets,overflow);
+  const result=damageMemberGroups(unit,targets > 0 ? absorbBarrier(unit,amount) : 0,targets,overflow);
   if(result.health)moraleOnDamage(unit,result.health);
   if(result.casualties){
     const wounded=result.casualties+(unit.formation!.woundedRemainder??0);
@@ -25,8 +26,8 @@ function applyMemberDamage(unit:Combatant,amount:number,targets:number,overflow=
   return result;
 }
 export function applyDamagePlan(unit:Combatant,plan:MemberDamagePlan):{direct:number;splash:number;overflow:number} {
-  const direct=applyMemberDamage(unit,plan.direct,plan.targets,plan.overflow);
-  const splash=plan.splash&&plan.splashTargets?applyCombatDamage(unit,plan.splash,plan.splashTargets):0;
+  const direct=applyMemberDamage(unit,unit.barrier ? plan.incomingDirect ?? plan.direct : plan.direct,plan.targets,plan.overflow);
+  const splash=plan.splash&&plan.splashTargets?applyCombatDamage(unit,unit.barrier ? plan.incomingSplash ?? plan.splash : plan.splash,plan.splashTargets):0;
   return {direct:direct.health,splash,overflow:direct.overflow};
 }
 
@@ -42,7 +43,7 @@ export function validateWounded(unit: Health): void {
 
 /** 实际损失唯一记账入口；V3跨分组累计半数伤兵余量，避免连发逐次取整丢失。 */
 export function applyHealthLoss(unit: Combatant, amount: number, v2 = unit.rulesVersion === 'v2'): number {
-  const loss = Math.min(unit.hp, Math.max(0, Math.round(amount)));
+  const loss = Math.min(unit.hp, absorbBarrier(unit, amount));
   setStrength(unit, unit.hp - loss);
   if (v2) moraleOnDamage(unit, loss);
   if (v2 && unit.scale !== 'hero' && loss > 0) {

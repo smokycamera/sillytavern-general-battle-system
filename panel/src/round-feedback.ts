@@ -39,10 +39,10 @@ export function renderRoundFeedback(battle: SmallBattle): string {
   const significant = rows.filter((u) => u.statuses.length || u.lost || u.recovered || u.gained.length || u.ended.length);
   const lead = (significant.length ? significant : rows.filter(u => u.sight || u.fromCell !== u.toCell)).slice(0, 2);
   return `<aside class="round-feedback" aria-label="已知回合变化"><div class="feedback-heading"><b>第${selected.round}轮${selected.round < battle.round ? '已结束' : '变化'}</b><span>${esc(headline(selected))}</span></div>
-    ${completed && (completed.changes.some(meaningful) || completed.objective) ? '<div class="activation-feedback">上一激活 · ' + esc(completed.actorName ?? '未定位单位') + '：' + esc(headline(completed)) + '</div>' : ''}
+    ${completed && (completed.changes.some(meaningful) || completed.objective) ? '<div class="activation-feedback">上一行动 · ' + esc(completed.actorName ?? '未定位单位') + '：' + esc(headline(completed)) + '</div>' : ''}
     <ul class="feedback-lead">${lead.map((u) => detail(battle, u)).join('')}</ul>
     <details data-detail-id="round-feedback"><summary>查看${rows.length}个单位的变化${rounds.length > 1 ? '与上一轮' : ''}</summary>
-      ${completed ? '<h4>上一激活 · ' + esc(completed.actorName ?? '未定位单位') + '</h4><ul>' + completed.changes.filter(meaningful).map((u) => detail(battle, u)).join('') + '</ul>' : ''}
+      ${completed ? '<h4>上一行动 · ' + esc(completed.actorName ?? '未定位单位') + '</h4><ul>' + completed.changes.filter(meaningful).map((u) => detail(battle, u)).join('') + '</ul>' : ''}
       ${rounds.map((r) => '<h4>第' + r.round + '轮</h4><ul>' + r.changes.filter(meaningful).map((u) => detail(battle, u)).join('') + '</ul>').join('')}
       <p>只汇总观测到的变化；生命和人数分开累计。脱离视野期间的行动与战损不作推测。</p>
     </details></aside>`;

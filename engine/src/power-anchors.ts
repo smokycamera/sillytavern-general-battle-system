@@ -15,7 +15,7 @@ export const POWER_ANCHORS=[
  {level:4,name:'工业军用级',budget:60,example:'后装线膛步枪、初级魔导武器、30mm级机炮、近现代火炮、四环魔法'},
  {level:5,name:'现代军用级',budget:150,example:'现代步枪、动力冷兵器、40mm级机炮、现代火炮、成熟魔导武器、五环魔法'},
  {level:6,name:'重型／近未来级',budget:420,example:'反器材步枪、重型魔导武器、高分子冷兵器、50–60mm机炮、重型火炮、轻型电磁炮、六环魔法'},
- {level:7,name:'未来级',budget:1400,example:'单兵电磁武器、史诗魔导武器、大口径高速机炮、重型电磁机炮、超重型火炮、七环魔法'},
+ {level:7,name:'未来级',budget:1400,example:'单兵电磁武器、史诗魔导武器、大计算方式高速机炮、重型电磁机炮、超重型火炮、七环魔法'},
  {level:8,name:'传奇级',budget:6000,example:'重型电磁、单兵等离子、传奇魔剑、力场武器、高能激光机炮、轨道炮、太空战舰主炮、八环魔法'},
  {level:9,name:'战役兵器／半神器级',budget:40000,example:'反物质、相位武器、半神器、行星炮、九环魔法'},
  {level:10,name:'神器级',budget:400000,example:'神器、概念、因果、空间切断、法则、位面级武器'},
@@ -42,7 +42,7 @@ export function anchoredWeapon(weapon:Weapon|undefined,ammo:'he'|'ap'='he'):Weap
   const artillery=isCannonWeapon(weapon),explosive=artillery&&ammo==='he'&&power>=3;
   const splash=explosive?(power>=10?1e9:power>=9?256:power>=8?12:power>=7?6:power>=5?4:2):mechanism==='demolition'?6:0;
   return {...weapon,powerModel:'anchors-v1',ammunition:ammo,baseDice:scaled.dice,apDice:undefined,damageScale:scaled.scale,
-    penetration:2*power+(['cannon','indirect-cannon','autocannon','demolition'].includes(mechanism)?2:['firearm','rifle','energy'].includes(mechanism)?1:0)+(melee?.penetration??0)+(artillery&&ammo==='ap'?2:0)+bonusSteps(weapon.recipe?.bonuses,'penetration',5),
+    penetration:2*power+(['cannon','indirect-cannon','autocannon','demolition'].includes(mechanism)?2:mechanism==='heavy-rifle'?2:['firearm','rifle','energy'].includes(mechanism)?1:0)+(melee?.penetration??0)+(artillery&&ammo==='ap'?2:0)+bonusSteps(weapon.recipe?.bonuses,'penetration',5),
     splashTargets:splash,splashFactor:mechanism==='demolition'?0.6:0.4};
 }
 export function anchoredProtection(unit:Pick<Combatant,'armor'|'body'>,channel:DamageChannel):number {

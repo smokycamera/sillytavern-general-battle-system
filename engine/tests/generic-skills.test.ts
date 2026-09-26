@@ -44,7 +44,7 @@ describe('通用六类技能配方', () => {
         expect(restored.abilities[0]!.effects).toEqual(a.effects);
       }
     }
-    expect([...covered].sort()).toEqual(['condition', 'damage', 'dispel', 'heal', 'morale', 'push', 'resource', 'summon', 'trait']);
+    expect([...covered].sort()).toEqual(['barrier', 'condition', 'damage', 'dispel', 'heal', 'morale', 'push', 'resource', 'summon', 'trait', 'zone']);
     expect([...conditions].sort()).toEqual(STANDARD_CONDITIONS.map((c) => c.id).sort());
     expect([...traits].sort()).toEqual(TRAITS.filter((t) => t.v2SourceReady).map((t) => t.id).sort());
     for (const text of ['物理单体近战+射击', '魔法范围热能+奥术', 'buff范围召唤', 'debuff不存在']) expect(parseSkillMechanism(text)).toBeUndefined();

@@ -30,7 +30,7 @@ import { CATEGORY_LABELS } from '../../engine/src/data/ability-blueprints.js';
 import { WEAPON_CLASSES, resolveWeaponClass, ABILITY_BLUEPRINTS, DEFAULT_BLUEPRINTS, categoryLabel, type Category, resolveTraitId, standardConditionMap, validateTraitSource, type TraitDuration, type BodyKind, type ItemSpecification } from '../../engine/src/index.js';
 import { parseItemSpecification } from './item-spec.js';
 
-export type LootType = 'weapon' | 'armor' | 'consumable' | 'material' | 'quest' | 'misc';
+export type LootType = 'weapon' | 'armor' | 'consumable' | 'accessory' | 'material' | 'quest' | 'misc';
 
 export type Suggestion =
   | { kind: 'unit-set'; id: string; data: Record<string, unknown>; reason?: string; raw: string }
@@ -471,7 +471,7 @@ export function parseSuggestionTags(text: string): ParseResult {
           invalid.push(raw);
           break;
         }
-        const lootTypes: LootType[] = ['weapon', 'armor', 'consumable', 'material', 'quest', 'misc'];
+        const lootTypes: LootType[] = ['weapon', 'armor', 'consumable', 'accessory', 'material', 'quest', 'misc'];
         const lootType = lootTypes.includes((a.type ?? '') as LootType) ? (a.type as LootType) : 'misc';
         let spec: ItemSpecification | undefined;
         try { if (a.spec !== undefined) spec = parseItemSpecification(a.spec, a); }

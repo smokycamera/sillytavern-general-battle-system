@@ -8,7 +8,7 @@ export async function payloadHash(value: unknown): Promise<string> {
 }
 export function envelopeFrom(value: unknown): NativeEnvelope | undefined {
   if (value === undefined) return undefined;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('原生存档容器损坏');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('原生存档文件损坏');
   const envelope = value as NativeEnvelope;
   if (envelope.format !== 'tavern-battle-native' || envelope.containerVersion !== 1) throw Error('原生存档版本不受支持，只能导出或使用兼容版本');
   if (![envelope.documentId, envelope.generation, envelope.lastOperationId].every(value => typeof value === 'string' && value.length > 0) || !Number.isSafeInteger(envelope.revision) || envelope.revision < 1 || !/^[0-9a-f]{64}$/.test(envelope.payloadHash)) throw Error('原生存档身份或版本损坏');

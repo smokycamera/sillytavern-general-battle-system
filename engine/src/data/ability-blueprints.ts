@@ -210,7 +210,7 @@ export function abilityFromBlueprint(
   return {
     ability: {
       id: bp.id,
-      ...(bp.v2Only ? { unavailableReason: '该技能机制需要V2规则' } : {}),
+      ...(bp.v2Only ? { unavailableReason: '该技能效果需要V2规则' } : {}),
       name: opts.name?.trim() || bp.name,
       desc: bp.desc,
       category: bp.category,

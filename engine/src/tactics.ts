@@ -40,7 +40,7 @@ export function fatigueAfter(unit: Combatant, exertion: number): number {
   return Math.max(0, Math.min(4, unit.fatigue + (exertion > 0 ? exertion * 0.5 * resistance : -1)));
 }
 export function validateTacticalEffort(value: unknown): void {
-  if (value !== undefined && (!Number.isSafeInteger(value) || Number(value) < 0 || Number(value) > 2)) throw new Error('待结疲劳账本损坏');
+  if (value !== undefined && (!Number.isSafeInteger(value) || Number(value) < 0 || Number(value) > 2)) throw new Error('待结疲劳记录损坏');
 }
 export function validateTacticalPose(pose: TacticalPose): void {
   if (!pose || pose.kind !== 'brace' || !['small', 'mass'].includes(pose.mode)

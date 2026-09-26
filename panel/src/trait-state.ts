@@ -14,7 +14,7 @@ export function assertTraitSourcePanelWrite(previous: NarrativeSave, next: Narra
     const combatant = committing && (battle!.snap.combatants as Combatant[] | undefined)?.find((u) => u.id === record.id);
     if (!combatant) throw new Error('祝福、增减益及装备来源须经来源事务修改，不能被普通编辑覆盖');
     const final = structuredClone(combatant); expireTraitSources(final, 'battles');
-    if (JSON.stringify(final.traitSources ?? []) !== JSON.stringify(incoming)) throw new Error('战果来源期限与引擎快照不一致');
+    if (JSON.stringify(final.traitSources ?? []) !== JSON.stringify(incoming)) throw new Error('战果来源期限与引擎存档记录不一致');
   }
 }
 export function prepareBlessingRevocation(save: NarrativeSave, unitId: string, sourceId: string): NarrativeSave {

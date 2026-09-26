@@ -34,7 +34,7 @@ export const MASS_TW: RulePack = {
   hitMode: 'tw',
 };
 
-export const V2_D20: RulePack = { ...LITE_D20, id: 'v2-d20', name: 'V2 机制对抗', resolutionVersion: 'v2', counterMatrix: { infantry: {}, ranged: {}, mobile: {} } };
+export const V2_D20: RulePack = { ...LITE_D20, id: 'v2-d20', name: 'V2 效果对抗', resolutionVersion: 'v2', counterMatrix: { infantry: {}, ranged: {}, mobile: {} } };
 export const V2_TW: RulePack = { ...MASS_TW, id: 'v2-tw', name: 'V2 会战对抗', resolutionVersion: 'v2', counterMatrix: { infantry: {}, ranged: {}, mobile: {} } };
 export const V3_D20: RulePack = {...V2_D20,id:'v3-d20',name:'V3 个体与编队战术',combatModel:'cohort-v1'};
 export const V3_TW: RulePack = {...V2_TW,id:'v3-tw',name:'V3 聚合会战',combatModel:'cohort-v1'};

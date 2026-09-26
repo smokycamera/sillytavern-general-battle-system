@@ -13,6 +13,7 @@ export function preferences(host: HostWindow): { read(): DisplayPreferences; wri
       const old = context.extensionSettings.tavernBattle;
       context.extensionSettings.tavernBattle = { ...(old && typeof old === 'object' ? old : {}), ...value };
       context.saveSettingsDebounced?.();
+      if(value.theme) (host as unknown as Window).document?.getElementById('tavern-battle-native-panel')?.setAttribute('data-theme', value.theme);
     },
   };
 }
