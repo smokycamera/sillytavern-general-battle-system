@@ -30,10 +30,12 @@ export class LlmContextController {
     const { base, request } = encounterRequest(contextInput);
     if (!request) return { ...base, detail: '所选范围没有可读取的已完成正文，沿用准备设置' };
     request.fields = request.fields.filter(f => f.id !== 'enemy_ability' && !f.id.startsWith('style_'));
+    // Preparation needs a concrete choice even when the narrative only provides indirect clues.
+    for (const field of request.fields) delete field.options.unknown;
     for (const side of ['ally', 'enemy']) {
       const who = side === 'ally' ? '我方实际指挥官（主控不一定是指挥官）' : '敌方实际指挥官';
-      request.fields.push({ id: side + '_ability', question: `根据正文判断${who}的指挥经验与协同能力，不能用战斗等级、人数或胜负代替。`, options: { unknown: '没有明确依据，沿用原有自动决策', ...ABILITY_LABELS } });
-      request.fields.push({ id: side + '_style', question: `根据明确设定或反复体现的倾向，选择${who}的指挥风格。`, options: { unknown: '没有明确依据，沿用原有自动决策', ...Object.fromEntries(Object.entries(STYLE_PRESETS).map(([k, v]) => [k, v.label])) } });
+      request.fields.push({ id: side + '_ability', question: `结合正文中的身份、经历、组织与行动表现，自行判断${who}最合适的指挥能力；优先明确设定，信息不足时合理推断，不把战斗等级、人数或胜负直接等同于指挥能力。`, options: { ...ABILITY_LABELS } });
+      request.fields.push({ id: side + '_style', question: `结合设定、行为倾向、当前任务与处境，自行选择${who}最合适的指挥风格；没有明确性格标签时根据上下文合理推断。`, options: Object.fromEntries(Object.entries(STYLE_PRESETS).map(([k, v]) => [k, v.label])) });
     }
     const aborter = new AbortController(); this.aborter = aborter; this.busy = true;
     const timer = setTimeout(() => aborter.abort(), 45000);
@@ -42,16 +44,13 @@ export class LlmContextController {
       check();
       const answer = await directJevRequest(connection, 'select-context', request, aborter.signal, this.request) as ContextSelectionAnswer;
       check();
-      // Validate before inspecting/filtering; incomplete or invented choices fail closed.
+      // Validate supported choices; confidence describes uncertainty, not a fallback threshold.
       const result: LlmEncounterContext = applyEncounterSelection(contextInput, base, request, answer);
-      const conservative = structuredClone(answer);
-      for (const selection of Object.values(conservative.selections)) if (selection.confidence < .6) selection.value = 'unknown';
-      Object.assign(result, applyEncounterSelection(contextInput, base, request, conservative));
       result.commanders = {};
       for (const side of ['ally', 'enemy'] as const) {
-        const ability = conservative.selections[side + '_ability']!.value;
-        const style = conservative.selections[side + '_style']!.value;
-        if (ability !== 'unknown' || style !== 'unknown') result.commanders[side] = { ability: ability === 'unknown' ? 'skilled' : ability, style: style === 'unknown' ? 'balanced' : style } as CommanderProfile;
+        const ability = answer.selections[side + '_ability']!.value;
+        const style = answer.selections[side + '_style']!.value;
+        result.commanders[side] = { ability, style } as CommanderProfile;
       }
       if (result.commanders.enemy) result.enemy = { ability: result.commanders.enemy.ability, style: { ...STYLE_PRESETS[result.commanders.enemy.style].style }, source: 'context' };
       return result;

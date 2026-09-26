@@ -25,8 +25,8 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
     if (String(url).endsWith('/status')) return new Response(JSON.stringify({data:[{id:'model-one'},{id:'model-two'}]}));
     if (delayed) await new Promise<void>(resolve => { release = resolve; });
     const payload = JSON.parse(String(init?.body)), body = JSON.parse(payload.messages[1].content);
-    const values:Record<string,string> = {field:'forest',lighting:'night',battle_mode:'small',objective:'annihilation',enemy_ability:'expert',enemy_style:'cautious',ally_ability:'master',ally_style:'aggressive'};
-    return new Response(JSON.stringify({model:'remote-alias',choices:[{message:{content:JSON.stringify({selections:Object.fromEntries(body.fields.map((v:{id:string})=>[v.id,{value:values[v.id]??'unknown',confidence:.9}]))})}}]}));
+    const values:Record<string,string> = {field:'forest',lighting:'night',battle_mode:'small',map_layout:'standard',objective:'annihilation',siege_attacker:'ally',enemy_ability:'expert',enemy_style:'cautious',ally_ability:'master',ally_style:'aggressive'};
+    return new Response(JSON.stringify({model:'remote-alias',choices:[{message:{content:JSON.stringify({selections:Object.fromEntries(body.fields.map((v:{id:string})=>[v.id,{value:values[v.id],confidence:.2}]))})}}]}));
   });
   vi.stubGlobal('fetch', request);
   document.body.innerHTML = '<div id="app"></div><div id="toast"></div>';
