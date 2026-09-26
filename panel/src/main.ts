@@ -2640,8 +2640,8 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     if (receipt.status === 'failed') throw Error(receipt.error);
   },
   'prompt-select-items': async (el) => {
-    const save = controller.snapshot(); const items = prepareInventoryState(save).inventory ?? [];
-    const receipt = (await controller.setPromptSettings(selectPromptEntries(save.promptSettings, 'item', items.filter((i) => !i.assignedTo || state.storage.some((r) => r.id === i.assignedTo && visibleUnitRecord(r))).map((i) => i.id), el.dataset.selected === 'true')));
+    const save = controller.snapshot();
+    const receipt = (await controller.setPromptSettings(selectPromptEntries(save.promptSettings, 'item', inventoryPanel.visibleItemIds(), el.dataset.selected === 'true')));
     if (receipt.status === 'failed') throw Error(receipt.error);
   },
   'narrative-restore-roster': async (el) => { const receipt = (await controller.restoreDeployment(el.dataset.id!)); if (receipt.status === 'failed') throw Error(receipt.error ?? '参战名单未保存'); },

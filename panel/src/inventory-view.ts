@@ -93,7 +93,7 @@ export class InventoryPanel {
   private draft?: Draft;
   private preview?: InventoryPreview;
   private error?: string;
-  private selectedUnit = '';
+  private selectedUnit: string | undefined;
   private context = '';
   constructor(private controller: PanelController, private canView: (record: UnitRecord) => boolean = () => true) {}
   private view(): InventorySave {
@@ -101,6 +101,14 @@ export class InventoryPanel {
     const storage = save.storage?.filter(this.canView);
     return { ...save, storage, inventory: save.inventory?.filter((item) => !item.assignedTo || storage?.some((u) => u.id === item.assignedTo)) };
   }
+  private currentItems(save: InventorySave): InventoryItem[] {
+    return (save.inventory ?? []).filter((item) => item.qty > 0 && (!item.assignedTo || item.assignedTo === this.selectedUnit))
+      .sort((a, b) => {
+        const rank = (item: InventoryItem) => item.equippedTo ? 0 : item.assignedTo ? 1 : 2;
+        return rank(a) - rank(b);
+      });
+  }
+  visibleItemIds(): string[] { return this.currentItems(this.view()).map((item) => item.id); }
   private draw(): void {
     const root = document.getElementById('inventory-panel');
     if (root) {
@@ -117,7 +125,10 @@ export class InventoryPanel {
   handleChange(target: Element): boolean {
     if (!target.closest('#inventory-panel')) return false;
     this.capture(target);
-    if ((target as HTMLElement).dataset.role === 'inventory-unit') this.selectedUnit = (target as HTMLSelectElement).value;
+    if ((target as HTMLElement).dataset.role === 'inventory-unit') {
+      this.selectedUnit = (target as HTMLSelectElement).value;
+      if (this.draft?.itemId && !this.currentItems(this.view()).some(item => item.id === this.draft?.itemId)) this.draft = undefined;
+    }
     this.preview = undefined; this.error = undefined;
     const role = (target as HTMLElement).dataset.role;
     if (role === 'inventory-kind' || role === 'inventory-unit') this.draw();
@@ -158,9 +169,10 @@ export class InventoryPanel {
         if (!item) throw new Error('物品不存在');
         let intent: InventoryAction;
         if (action === 'inventory-assign') intent = { kind: 'assign', itemId: item.id, unitId: this.selectedUnit || undefined };
-        else if (action === 'inventory-equip') intent = { kind: 'equip', itemId: item.id, unitId: this.selectedUnit, slot: element.dataset.slot as 'primary' | 'sidearm' | 'armor' | 'shield' };
+        else if (action === 'inventory-unassign') intent = { kind: 'assign', itemId: item.id };
+        else if (action === 'inventory-equip') intent = { kind: 'equip', itemId: item.id, unitId: this.selectedUnit ?? '', slot: element.dataset.slot as 'primary' | 'sidearm' | 'armor' | 'shield' };
         else if (action === 'inventory-unequip') intent = { kind: 'unequip', unitId: item.equippedTo!.unitId, slot: item.equippedTo!.slot };
-        else if (action === 'inventory-use') intent = { kind: 'use', itemId: item.id, unitId: this.selectedUnit };
+        else if (action === 'inventory-use') intent = { kind: 'use', itemId: item.id, unitId: this.selectedUnit ?? '' };
         else if (action === 'inventory-discard') intent = { kind: 'discard', itemId: item.id, qty: 1 };
         else if (action === 'inventory-delete') intent = { kind: 'discard', itemId: item.id, qty: item.qty };
         else throw new Error('未知库存操作');
@@ -173,24 +185,26 @@ export class InventoryPanel {
   }
   render(): string {
     const context = this.controller.inventoryContext();
-    if (this.context !== context) { this.context = context; this.draft = undefined; this.preview = undefined; this.error = undefined; this.selectedUnit = ''; }
+    if (this.context !== context) { this.context = context; this.draft = undefined; this.preview = undefined; this.error = undefined; this.selectedUnit = undefined; }
     let save: InventorySave;
     try { save = this.view(); }
     catch (error) { return `<section id="inventory-panel"><h2>配装与库存</h2><p class="grid-reason">${esc(error)}</p></section>`; }
     const records = save.storage ?? [];
-    if (!records.some((r) => r.id === this.selectedUnit)) this.selectedUnit = records.find((r) => r.side === 'ally' && !r.retired)?.id ?? '';
-    const items = (save.inventory ?? []).filter((i) => i.qty > 0);
+    if (this.selectedUnit === undefined || this.selectedUnit !== '' && !records.some((r) => r.id === this.selectedUnit)) this.selectedUnit = records.find((r) => r.side === 'ally' && !r.retired)?.id ?? '';
+    const items = this.currentItems(save);
+    const current = records.find((r) => r.id === this.selectedUnit);
     const locked = !!save.battle && !(save.committedOutcomeIds ?? []).includes(`${save.battle.kind}:${String(save.battle.snap.seed)}`);
     const d = this.draft;
     const select = (role: string, value: string, choices: [string, string][], disabled = false) => `<select data-role="inventory-${role}" ${disabled ? 'disabled' : ''}>${choices.map(([id, name]) => `<option value="${esc(id)}" ${id === value ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select>`;
     return `<section id="inventory-panel"><h2>配装与库存 <small class="sub">${items.length}条实物与记录</small></h2>
-      <div class="row"><label>操作对象 ${select('unit', this.selectedUnit, [['', '未分配'], ...records.map((r): [string, string] => [r.id, `${r.name} · ${r.side === 'ally' ? '我方' : '敌方'} · ${r.hp}/${r.base.hpMax}`])])}</label><button data-action="inventory-new" ${locked ? 'disabled' : ''}>新增物品</button></div><div class="row"><button data-action="prompt-select-items" data-selected="true">发送全选</button><button data-action="prompt-select-items" data-selected="false">发送全不选</button><span class="sub">控制动态物品清单，新物品默认选中。</span></div>
+      <div class="row"><label>操作对象 ${select('unit', this.selectedUnit, [['', '无主物品'], ...records.map((r): [string, string] => [r.id, `${r.name} · ${r.side === 'ally' ? '我方' : '敌方'} · ${r.hp}/${r.base.hpMax}`])])}</label><button data-action="inventory-new" ${locked ? 'disabled' : ''}>新增物品</button></div>
+      ${current ? `<div class="loadout-current"><h3>${esc(current.name)} · 当前配装</h3><p>${esc(gearText(current))}</p></div>` : ''}
+      <div class="row"><button data-action="prompt-select-items" data-selected="true">发送全选</button><button data-action="prompt-select-items" data-selected="false">发送全不选</button><span class="sub">仅调整当前显示物品的发送状态，新物品默认选中。</span></div>
       <p class="sub">${locked ? '战内配装已锁定，消耗品在战场“行动”中使用，占用主行动或所属编队主任务。' : '战前把消耗品分配给携行者，开战后才会出现物品行动。未分配物品留在公共库存。'}</p>
       ${d ? `<div class="inventory-form"><h3>${d.mode === 'reforge' ? '改造装备' : d.mode === 'define' ? '为1件旧记录补全规格' : '生成新物品'}</h3><div class="inventory-fields"><label>种类${select('kind', d.kind, [['weapon', '武器'], ['armor', '护甲'], ['shield', '盾牌'], ['consumable', '治疗用品']], d.mode === 'reforge')}</label>${d.kind === 'consumable' && d.mode === 'create' ? `<label>数量<input data-role="inventory-qty" type="number" min="1" max="9999" value="${esc(d.qty)}"></label>` : ''}</div>
         ${equipmentFields('inventory', d, { nameReadonly: d.mode === 'define' })}
         <div class="row"><button data-action="inventory-preview-draft">预览结果</button><button data-action="inventory-close-draft">收起</button></div></div>` : ''}
       <div data-role="inventory-feedback" aria-live="polite">${this.error ? `<p class="grid-reason">${esc(this.error)}</p>` : ''}${this.preview ? previewHtml(this.preview) : ''}</div>
-      ${records.find((r) => r.id === this.selectedUnit) ? `<div class="loadout-current"><h3>当前配装</h3><p>${esc(gearText(records.find((r) => r.id === this.selectedUnit)))}</p></div>` : ''}
       <div class="inventory-list">${items.map((item) => {
         const owner = records.find((r) => r.id === item.assignedTo)?.name ?? '未分配';
         const equipped = item.equippedTo, m = item.mechanics;
@@ -208,7 +222,7 @@ export class InventoryPanel {
           ${m?.kind === 'consumable' ? `<button data-action="inventory-use" ${itemData} ${locked || !selected ? 'disabled' : ''}>使用1件</button>` : ''}
           ${m && m.kind !== 'consumable' ? `<button data-action="inventory-edit" ${itemData} ${disabled}>改造</button>` : !m ? `<button data-action="inventory-define" ${itemData} ${disabled}>补全规格</button>` : ''}
           <button data-action="inventory-delete" ${itemData} title="${equipped ? '先卸下再删除' : '删除整条记录（含全部数量），确认前有预览'}" ${locked || equipped ? 'disabled' : ''}>删除</button>
-          </div><details class="inventory-more"><summary>更多操作</summary><div class="row">${!equipped ? gearOptions.filter((o) => o.slot !== recommended?.slot).map((o) => `<button data-action="inventory-equip" ${itemData} data-slot="${o.slot}" title="${esc(o.reason ?? '')}" ${locked || !selected || o.reason ? 'disabled' : ''}>装备为${slotNames[o.slot]}</button>`).join('') + (item.qty > 1 ? `<button data-action="inventory-discard" ${itemData} ${disabled}>移除1件</button>` : '') : ''}</div></details>
+          </div><details class="inventory-more"><summary>更多操作</summary><div class="row">${!equipped ? gearOptions.filter((o) => o.slot !== recommended?.slot).map((o) => `<button data-action="inventory-equip" ${itemData} data-slot="${o.slot}" title="${esc(o.reason ?? '')}" ${locked || !selected || o.reason ? 'disabled' : ''}>装备为${slotNames[o.slot]}</button>`).join('') + (item.assignedTo ? `<button data-action="inventory-unassign" ${itemData} ${disabled}>放回公共库存</button>` : '') + (item.qty > 1 ? `<button data-action="inventory-discard" ${itemData} ${disabled}>移除1件</button>` : '') : ''}</div></details>
           ${item.note || item.history?.length ? `<details><summary>来源与改造记录</summary>${item.note ? `<p>${esc(item.note)}</p>` : ''}${item.history?.map((h) => `<p>第${h.revision}版 ${esc(h.name)} · ${esc(itemDescription({ ...item, mechanics: h.mechanics }))}</p>`).join('') ?? ''}</details>` : ''}</article>`;
       }).join('') || '<p class="sub">暂无库存，可生成物品或由正文事件获得。</p>'}</div></section>`;
   }
