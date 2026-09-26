@@ -33,7 +33,7 @@ const license = readFileSync(path.join(source, "LICENSE"), "utf8").replaceAll(
   "\n",
 );
 if (license !== readFileSync("LICENSE", "utf8").replaceAll("\r\n", "\n"))
-  throw Error("JEV and Tavern Battle must use the same license");
+  throw Error("JEV and General Battle System must use the same license");
 writeFileSync(path.join(output, "LICENSE"), license);
 writeFileSync(
   path.join(output, "source.json"),
@@ -44,7 +44,7 @@ writeFileSync(
       version: JSON.parse(
         readFileSync(path.join(source, "packages/core/package.json"), "utf8"),
       ).version,
-      license: "Tavern Battle Noncommercial License 1.0",
+      license: JSON.parse(readFileSync("package.json", "utf8")).license,
       licenseSha256: createHash("sha256").update(license).digest("hex"),
       files,
     },

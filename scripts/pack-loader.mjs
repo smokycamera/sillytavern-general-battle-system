@@ -26,7 +26,7 @@ const OUT_PATH = resolve(root, distDir, 'tavern-battle-script.json');
 
 /** 固定脚本 id：版本更新后重复导入会被识别为同一脚本，避免越积越多 */
 const SCRIPT_ID = 'a4c1f7d2-9b3e-4f6a-8d15-2e7c9b40a613';
-const BTN_NAME = '战阵面板';
+const BTN_NAME = '通用战斗系统v1.0';
 
 const html = readFileSync(HTML_PATH, 'utf8');
 if (!/<html/i.test(html) || html.length < 10000) {

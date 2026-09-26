@@ -2,8 +2,8 @@
   "repository": "https://github.com/smokycamera/jev-general-tactic-system",
   "commit": "d1b121cfffd580896af95b892696f36e94e5f6d6",
   "version": "0.2.3",
-  "license": "Tavern Battle Noncommercial License 1.0",
-  "licenseSha256": "1daa20477fb37b106fb8f3be18e6835ccfd6f01fc7f83faccc6897f7f156181d",
+  "license": "GPL-3.0-only",
+  "licenseSha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
   "files": {
     "capabilities.ts": "d57b0609429bc12e0e4d38d67738cc2339eb92a0f8756d27129ce3013c7eab78",
     "context-selection.ts": "18c8c1bef6a759616d87fa65bcf91cb4d1a69b87b202206172d052f47c2d7758",
@@ -25,5 +25,8 @@
     "targeting.ts": "42d7b323131e35fb3eefbc2de00cb2effd3a65a79b2e26b98cb86a3e7e6ca24b",
     "types.ts": "23ca10be4263a6c0a9f3555893bb511334688fc153ce39020db126a3a15fe060",
     "util.ts": "ded60462eec66b1405d84f61f649c51ab7aebd41939d237649e828c1418fd8c9"
-  }
+  },
+  "upstreamLicense": "Tavern Battle Noncommercial License 1.0",
+  "upstreamLicenseSha256": "1daa20477fb37b106fb8f3be18e6835ccfd6f01fc7f83faccc6897f7f156181d",
+  "licenseNote": "This vendored copy is relicensed under GPL-3.0-only by copyright holder smokycamera. The recorded upstream commit and source-file hashes are unchanged; this does not change the license of the separate upstream repository."
 }

@@ -17,12 +17,12 @@ export class PanelHost {
   private onVisibility = () => { if (document.hidden) this.pause(); };
   constructor(private panelUrl: string, private display?: { read(): DisplayPreferences; write(value: DisplayPreferences): void }) {
     this.root = document.createElement('section'); this.root.id = 'tavern-battle-native-panel'; this.root.hidden = true;
-    this.root.setAttribute('role', 'dialog'); this.root.setAttribute('aria-label', '战阵');
+    this.root.setAttribute('role', 'dialog'); this.root.setAttribute('aria-label', manifest.display_name);
     const style = document.createElement('style');
     this.root.style.boxSizing = 'border-box';
     this.root.style.resize = 'both'; this.root.style.minWidth = '320px'; this.root.style.minHeight = '260px';
     style.textContent = `#tavern-battle-native-panel[data-theme=light]{background:#fffdf8;color:#292f2c;border-color:#8a938c}#tavern-battle-native-panel[data-theme=light] header{background:#f3f0e8;color:#292f2c}#tavern-battle-native-panel[data-theme=light] button{background:#fffdf8;color:#292f2c;border-color:#8a938c}#tavern-battle-native-panel{position:fixed;right:16px;top:5vh;width:min(1120px,calc(100vw - 32px));height:90vh;z-index:10000;background:#151b1e;border:1px solid #8e8064;border-radius:12px;color:#e5e6e1;box-shadow:0 12px 70px #0009;display:flex;flex-direction:column;overflow:hidden}#tavern-battle-native-panel[hidden]{display:none}#tavern-battle-native-panel header{display:flex;align-items:center;gap:12px;padding:10px 14px;background:#252e33;font:14px 'Microsoft YaHei',sans-serif}#tavern-battle-native-panel header strong{flex:1}#tavern-battle-native-panel button,#tavern-battle-native-entry{min-height:40px;border:1px solid #8e8064;border-radius:8px;background:#252e33;color:#e5e6e1;padding:6px 14px;cursor:pointer}#tavern-battle-native-panel main{flex:1;min-height:0;overflow:auto}#tavern-battle-native-panel iframe{border:0;width:100%;height:100%;display:block}#tavern-battle-native-panel .tb-status{padding:14px 20px;font:14px/1.7 'Microsoft YaHei',sans-serif}#tavern-battle-native-panel .tb-status:empty{display:none}#tavern-battle-native-entry{box-sizing:border-box;width:52px;height:52px;min-width:52px;padding:0;border-radius:50%;display:grid;place-items:center;touch-action:none;user-select:none;-webkit-user-select:none;position:fixed;right:18px;bottom:75px;z-index:9999;box-shadow:0 3px 16px #0007;background:#3b443b}#tavern-battle-native-entry[hidden]{display:none}#tavern-battle-native-entry svg{width:30px;height:30px;pointer-events:none}#tavern-battle-native-panel .tb-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}@media(max-width:600px){#tavern-battle-native-panel{inset:0;width:100%;height:100dvh;border-radius:0}#tavern-battle-native-panel header{padding:8px}#tavern-battle-native-entry{right:10px;bottom:80px}}`;
-    const header = document.createElement('header'); const title = document.createElement('strong'); title.textContent = '战阵 · ' + manifest.version;
+    const header = document.createElement('header'); const title = document.createElement('strong'); title.textContent = manifest.display_name;
     header.style.cursor = 'move';
     header.addEventListener('pointerdown', event => {
       if (event.button !== 0 || (event.target as Element).closest('button') || innerWidth <= 600) return;
@@ -44,7 +44,7 @@ export class PanelHost {
     const close = document.createElement('button'); close.textContent = '收起'; close.addEventListener('click', () => this.close());
     header.append(title, management, close); this.status = document.createElement('div'); this.status.className = 'tb-status';
     this.content = document.createElement('main'); this.root.append(style, header, this.status, this.content);
-    this.entry = document.createElement('button'); this.entry.id = 'tavern-battle-native-entry'; this.entry.setAttribute('aria-label', '打开战阵'); this.entry.title = '打开战阵 · 可拖动';
+    this.entry = document.createElement('button'); this.entry.id = 'tavern-battle-native-entry'; this.entry.setAttribute('aria-label', '打开' + manifest.display_name); this.entry.title = '打开' + manifest.display_name + ' · 可拖动';
     this.entry.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 3H21v6.5L7 20l-3-3L14.5 3Z"/><path d="m3 14 7 7M5 19l-2 2M3 3h6.5L21 17l-4 4L3 9.5V3Z"/><path d="m14 21 7-7m-2 5 2 2M3 3l7 7m4 4 4 4M21 3l-7 7"/></svg>';
     this.entry.addEventListener('click', event => { if (this.suppressEntryClick && event.detail !== 0) { this.suppressEntryClick = false; return; } this.open(); });
     this.entry.addEventListener('pointerdown', event => {
@@ -76,7 +76,7 @@ export class PanelHost {
   showPanel(): void {
     this.ready = true;
     this.content.hidden = false;
-    if (!this.root.hidden && !this.frame) { this.frame = document.createElement('iframe'); this.frame.title = '战阵面板'; this.frame.src = this.panelUrl; this.content.append(this.frame); }
+    if (!this.root.hidden && !this.frame) { this.frame = document.createElement('iframe'); this.frame.title = manifest.display_name; this.frame.src = this.panelUrl; this.content.append(this.frame); }
   }
   showStatus(text: string, actions: { label: string; run(): Promise<void> | void }[] = [], hidePanel = false): void {
     this.status.replaceChildren(); this.content.hidden = hidePanel;

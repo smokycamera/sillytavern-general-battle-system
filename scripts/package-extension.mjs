@@ -5,7 +5,7 @@ import { nativeSourceFingerprint } from './native-build-fingerprint.mjs';
 const output = path.resolve('release/native-candidate');
 const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
 copyFileSync('extension/manifest.json', path.join(output, 'manifest.json'));
-for (const file of ['README.md', 'README.zh-CN.md', 'LICENSE', 'COMMERCIAL-LICENSE.md', 'THIRD_PARTY_NOTICES.md']) copyFileSync(file, path.join(output, file));
+for (const file of ['README.md', 'README.zh-CN.md', 'LICENSE', 'LICENSE-NOTES.md', 'THIRD_PARTY_NOTICES.md']) copyFileSync(file, path.join(output, file));
 mkdirSync(path.join(output, 'release'), { recursive: true });
 copyFileSync('release/current-baseline.json', path.join(output, 'release/current-baseline.json'));
 for (const directory of ['assets', 'licenses', 'docs']) {

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>战阵 · 回合制战斗面板</title>
+  <title>通用战斗系统v1.0</title>
   <style>
     :root {
       --bg: #151b1e; --panel: #1d2428; --card: #252e33; --line: #3a454c;
@@ -250,7 +250,7 @@
     .app-header { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:22px 28px; border-bottom:1px solid var(--line); background:var(--panel); }
     .app-brand { display:flex; align-items:center; gap:12px; }
     .brand-emblem { width:43px; height:43px; display:grid; place-items:center; border:1px solid var(--gold); border-radius:12px 3px; color:var(--gold); font:25px Georgia,'Microsoft YaHei',serif; }
-    .app-brand h1 { font-size:23px; letter-spacing:4px; color:var(--txt); font-weight:600; }
+    .app-brand h1 { font-size:23px; letter-spacing:1px; color:var(--txt); font-weight:600; }
     .app-brand p { color:var(--dim); font-size:11px; letter-spacing:1px; }
     .app-state { display:flex; align-items:center; justify-content:flex-end; gap:10px; color:var(--dim); font-size:12px; min-width:0; }
     .app-state [data-role=save-status] { overflow-wrap:anywhere; }
@@ -287,7 +287,7 @@
     @media(max-width:600px) {
       .app-header { padding:14px 14px; gap:8px; }
       .brand-emblem { width:35px; height:38px; font-size:23px; }
-      .app-brand { gap:8px; }.app-brand h1 { font-size:20px; }.app-brand p { display:none; }
+      .app-brand { gap:8px; min-width:0; }.app-brand h1 { font-size:18px; overflow-wrap:anywhere; }.app-brand p { display:none; }
       .app-state { font-size:10px; gap:6px; max-width:55%; }.app-state button { min-height:44px; padding:5px 8px; }
       .workspace-nav { padding:6px 10px; gap:2px; }.workspace-nav button { font-size:13px; padding:5px 2px; }
       .workspace-main { padding:12px 10px; }.workspace-page > section { padding:14px; border-radius:10px; }
@@ -539,7 +539,7 @@ body[data-native="true"] .app-brand h1 { font-size:15px; letter-spacing:1px; }
 
 .control-presets { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:12px 0 6px; }.control-presets > span { flex-basis:100%; color:var(--dim); font-size:12px; }.control-presets button { min-height:36px; }.grid-zone { position:absolute;bottom:2px;left:2px;right:2px;font-size:10px;background:var(--panel);color:var(--gold);border:1px solid var(--gold);border-radius:3px; }.zone-label { display:inline-block;color:var(--gold);font-size:12px;padding:3px 5px; }
 </style>
-  <script type="module" crossorigin src="../assets/panel-yHxGIzND.js"></script>
+  <script type="module" crossorigin src="../assets/panel-BM554HSh.js"></script>
   <link rel="modulepreload" crossorigin href="../assets/preferences-xhmIJWu9.js">
   <link rel="stylesheet" crossorigin href="../assets/panel-BAWJMYI4.css">
 </head>

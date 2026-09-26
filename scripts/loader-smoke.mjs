@@ -119,7 +119,7 @@ console.log('T2 面板在 srcdoc iframe 中启动并连上「酒馆」');
 const panel = page.frameLocator('#' + WIN_ID + ' iframe');
 await panel.locator('h1').waitFor({ timeout: 8000 });
 const h1 = await panel.locator('h1').textContent();
-check('面板启动（标题渲染）', /战阵/.test(h1 || ''), `h1="${h1}"`);
+check('面板启动（标题渲染）', /通用战斗系统v1\.0/.test(h1 || ''), `h1="${h1}"`);
 await panel.locator('.workspace-nav [data-tab="settings"]').click();
 check('经 window.parent.TavernHelper 识别为酒馆助手环境', /已支持在续写剧情时参考当前战斗进度/.test(await panel.locator('.workspace-diagnostics').textContent()));
 await panel.locator('.workspace-nav [data-tab="units"]').click();
@@ -144,7 +144,7 @@ check('脚本按钮事件重开窗口', (await page.locator('#' + WIN_ID).count(
 check('重开后清除关闭标记', (await page.evaluate(() => sessionStorage.getItem('tavern-battle-panel:manually-closed'))) === null);
 check('窗口打开时悬浮球隐藏', !(await page.locator('#tavern-battle-panel-ball').isVisible()));
 await panel.locator('h1').waitFor({ timeout: 8000 });
-check('重开后面板重新渲染', /战阵/.test((await panel.locator('h1').textContent()) || ''));
+check('重开后面板重新渲染', /通用战斗系统v1\.0/.test((await panel.locator('h1').textContent()) || ''));
 
 console.log('T4 手动关闭后，脚本重载不强开');
 await page.locator('#' + WIN_ID + ' .tb-x').click();
@@ -239,7 +239,7 @@ const mwin = await mpage.locator('#' + WIN_ID).boundingBox();
 check('点球后面板全屏（≈视口尺寸、贴边）', Math.abs(mwin.width - 390) < 2 && Math.abs(mwin.height - 844) < 2 && mwin.x === 0 && mwin.y === 0, JSON.stringify(mwin));
 const mpanel = mpage.frameLocator('#' + WIN_ID + ' iframe');
 await mpanel.locator('h1').waitFor({ timeout: 8000 });
-check('手机全屏内面板启动', /战阵/.test((await mpanel.locator('h1').textContent()) || ''));
+check('手机全屏内面板启动', /通用战斗系统v1\.0/.test((await mpanel.locator('h1').textContent()) || ''));
 const mobileHint = await mpage.locator('#' + WIN_ID + ' .tb-hint').textContent();
 check('手机端提示为收起话术', /收起为悬浮球/.test(mobileHint || ''), `hint="${mobileHint}"`);
 await mpage.locator('#' + WIN_ID + ' .tb-x').click();

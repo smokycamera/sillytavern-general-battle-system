@@ -1,8 +1,10 @@
-# SillyTavern General Battle System
+# 通用战斗系统v1.0
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **0.2.0-rc.13**.
+Current version: **1.0.0**.
+
+License: **GPL-3.0-only**. Commercial use, modification and distribution are permitted under GPL version 3, including its corresponding-source obligations when conveying covered software. See [LICENSE](LICENSE) and [license notes](LICENSE-NOTES.md).
 
 A native frontend battle extension for SillyTavern / TauriTavern. It supports small-scale battles and larger engagements, unit profiles, equipment and inventory, skill effects, post-battle progression, battle-report archives, and preview/confirmation of battle events extracted from chat content.
 

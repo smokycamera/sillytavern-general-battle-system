@@ -1,8 +1,8 @@
 {
-  "display_name": "战阵 · 原生扩展",
+  "display_name": "通用战斗系统v1.0",
   "loading_order": 90,
   "js": "index.js",
   "author": "smokycamera",
-  "version": "0.2.0-rc.15",
+  "version": "1.0.0",
   "auto_update": false
 }
