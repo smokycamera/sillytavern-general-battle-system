@@ -60,8 +60,8 @@ export class NativeStore {
       const previous = this.current;
       try {
         const persisted = envelopeFrom((await this.host.readPersisted(session.scope)).tavernBattle);
-        if (previous ? !matches(persisted, previous) : !!persisted) return this.result('conflict', session, operationId, '宿主持久状态已更新，请重新载入');
-        if (persisted && await payloadHash(persisted.payload) !== persisted.payloadHash) return this.result('conflict', session, operationId, '宿主数据校验失败');
+        if (previous ? !matches(persisted, previous) : !!persisted) return this.result('conflict', session, operationId, '酒馆持久状态已更新，请重新载入');
+        if (persisted && await payloadHash(persisted.payload) !== persisted.payloadHash) return this.result('conflict', session, operationId, '酒馆数据校验失败');
       } catch (error) { return this.result('failed', session, operationId, error); }
       if (!sameSession(session, this.host.session()) || !sameSession(session, this.active)) return this.result('conflict', session, operationId, '核对版本期间聊天已切换');
       let candidate: NativeEnvelope;
@@ -78,7 +78,7 @@ export class NativeStore {
           ...(options.legacyHandoff ? { handoff: { target: 'helper', sourceHash: await payloadHash(options.legacyHandoff.panel) } } : {}),
         };
       } catch (error) { return this.result('failed', session, operationId, error); }
-      if (!sameSession(session, this.host.session()) || !sameSession(session, this.active)) return this.result('conflict', session, operationId, '准备候选期间聊天已切换');
+      if (!sameSession(session, this.host.session()) || !sameSession(session, this.active)) return this.result('conflict', session, operationId, '准备待确认内容期间聊天已切换');
       // Repeated UI flushes must not rewrite an identical archive. The persisted
       // head was independently checked above, so this still detects outside edits.
       if (!options.operationId && previous && candidate.payloadHash === previous.payloadHash && !options.clear && !options.replace && !options.migration && !options.messageTags?.length && !options.legacyHandoff && !options.resumeHandoff) return this.result('confirmed', session, operationId);
@@ -88,7 +88,7 @@ export class NativeStore {
       if (options.legacyHandoff) record.legacyHandoff = structuredClone(options.legacyHandoff);
       try { await this.journal.put(session.scope.key, record); }
       catch (error) { return this.result('failed', session, operationId, error); }
-      if (!sameSession(session, this.host.session()) || !sameSession(session, this.active)) return this.result('conflict', session, operationId, '保存前聊天已切换，候选保留在原聊天恢复记录中');
+      if (!sameSession(session, this.host.session()) || !sameSession(session, this.active)) return this.result('conflict', session, operationId, '保存前聊天已切换，待确认内容保留在原聊天恢复记录中');
       this.pending = record;
       return this.persist(record, session);
     });
@@ -103,10 +103,10 @@ export class NativeStore {
       if (!sameSession(session, this.active) || !sameSession(session, this.host.session()) || session.scope.key !== record.session.scope.key || this.host.hasLegacyRuntime()) return this.result('conflict', session, id, '恢复目标已变或旧脚本正在运行');
       try {
         const saved = envelopeFrom((await this.host.readPersisted(session.scope)).tavernBattle);
-        if (saved && await payloadHash(saved.payload) !== saved.payloadHash) return this.result('conflict', session, id, '宿主数据校验失败');
+        if (saved && await payloadHash(saved.payload) !== saved.payloadHash) return this.result('conflict', session, id, '酒馆数据校验失败');
         if (matches(saved, record.candidate)) return await this.effectsVerified(session, record) ? this.confirm(record, session) : this.persist(record, session);
         const expected = record.expected;
-        if (saved ? !expected || saved.generation !== expected.generation || saved.revision !== expected.revision || saved.payloadHash !== expected.payloadHash : !!expected) return this.result('conflict', session, id, '宿主档案已更新或清理，旧候选不能覆盖');
+        if (saved ? !expected || saved.generation !== expected.generation || saved.revision !== expected.revision || saved.payloadHash !== expected.payloadHash : !!expected) return this.result('conflict', session, id, '酒馆档案已更新或清理，旧待确认内容不能覆盖');
       } catch (error) { return this.result('pending', session, id, error); }
       if (!sameSession(session, this.host.session())) return this.result('conflict', session, id, '读回期间聊天已切换');
       return this.persist(record, session, true);
@@ -119,15 +119,15 @@ export class NativeStore {
   }
   private async discardRecord(session: HostSession): Promise<{ discarded: boolean; receipt?: PersistReceipt }> {
     const record = this.pending; if (!record) return { discarded: false };
-    if (record.legacyHandoff) throw Error('回退交接候选不能直接丢弃，请继续核实完成交接');
+    if (record.legacyHandoff) throw Error('回退交接待确认内容不能直接丢弃，请继续核实完成交接');
     if (!sameSession(session, this.host.session()) || !sameSession(session, this.active) || this.host.hasLegacyRuntime()) throw Error('聊天已切换或旧脚本仍在运行');
     const metadata = await this.host.readPersisted(session.scope); const saved = envelopeFrom(metadata.tavernBattle);
-    if (saved && await payloadHash(saved.payload) !== saved.payloadHash) throw Error('宿主数据校验失败');
+    if (saved && await payloadHash(saved.payload) !== saved.payloadHash) throw Error('酒馆数据校验失败');
     if (matches(saved, record.candidate)) {
       if (await this.effectsVerified(session, record)) return { discarded: false, receipt: await this.confirm(record, session) };
-      throw Error('候选已部分落盘，不能当作未保存操作丢弃');
+      throw Error('待确认内容已部分落盘，不能当作未保存操作丢弃');
     }
-    if (record.previous ? !matches(saved, record.previous) : !!saved) throw Error('宿主已存在其他进度，请重新读取后核对');
+    if (record.previous ? !matches(saved, record.previous) : !!saved) throw Error('酒馆已存在其他进度，请重新读取后核对');
     if (!sameSession(session, this.host.session()) || !sameSession(session, this.active)) throw Error('核实时聊天已切换');
     await this.journal.remove(session.scope.key, record.candidate.lastOperationId);
     if (!sameSession(session, this.host.session()) || !sameSession(session, this.active)) return { discarded: true };
@@ -142,14 +142,14 @@ export class NativeStore {
     if (!metadata || !sameSession(session, this.host.session())) return this.result('conflict', session, id, '保存目标不再是原聊天');
     if (record.legacyHandoff) {
       try {
-        if (!this.host.applyLegacyHandoff) throw Error('宿主不支持兼容回退');
+        if (!this.host.applyLegacyHandoff) throw Error('酒馆不支持兼容回退');
         await this.host.applyLegacyHandoff(session, record.legacyHandoff);
       } catch (error) { return this.result('pending', session, id, error); }
       if (!sameSession(session, this.host.session())) return this.result('conflict', session, id, '回退准备期间聊天已切换');
     }
     if (record.messageTags?.length) {
       try {
-        if (!this.host.applyMessageTags) throw Error('宿主不支持持久消息身份');
+        if (!this.host.applyMessageTags) throw Error('酒馆不支持持久消息身份');
         await this.host.applyMessageTags(session, record.messageTags);
       } catch (error) {
         if (error instanceof SourceMessageChangedError && !record.legacyHandoff) {
@@ -158,7 +158,7 @@ export class NativeStore {
           try {
             const discarded = await this.discardRecord(session);
             if (discarded.receipt) return discarded.receipt;
-            if (discarded.discarded) return { ...this.result('conflict', session, id, '来源已变化；已核实旧候选未落盘，请重新扫描'), code: 'source-changed' };
+            if (discarded.discarded) return { ...this.result('conflict', session, id, '来源已变化；已核实旧待确认内容未落盘，请重新扫描'), code: 'source-changed' };
           } catch (verification) { return this.result('pending', session, id, verification); }
         }
         return this.result('pending', session, id, error);
@@ -171,7 +171,7 @@ export class NativeStore {
       // Source tags live on chat[] messages, not in chat metadata. In particular,
       // Tauri's saveMetadata intentionally leaves the message body untouched.
       if (record.messageTags?.length || fullSave && this.host.saveChat) {
-        if (!this.host.saveChat) throw Error('宿主没有提供聊天完整保存接口');
+        if (!this.host.saveChat) throw Error('酒馆没有提供聊天完整保存接口');
         await this.host.saveChat();
       } else {
         await this.host.saveMetadata();
@@ -181,19 +181,19 @@ export class NativeStore {
     try {
       const saved = envelopeFrom((await this.host.readPersisted(session.scope)).tavernBattle);
       if (matches(saved, record.candidate)) {
-        if (await payloadHash(saved!.payload) !== record.candidate.payloadHash) error ??= '读回内容与候选校验值不一致';
+        if (await payloadHash(saved!.payload) !== record.candidate.payloadHash) error ??= '读回内容与待确认内容校验值不一致';
         else if (await this.effectsVerified(session, record)) return this.confirm(record, session);
-        else error ??= '档案已写入，但来源消息标记或回退副本尚未落盘';
+        else error ??= '档案已保存，但来源消息标记或回退副本尚未落盘';
       } else {
         // Some hosts expose a metadata saver that returns without writing. Only
         // fall back when disk is still the exact previous head; never overwrite
         // a competing save or bypass an explicit host error.
         const unchanged = record.previous ? matches(saved, record.previous) && await payloadHash(saved!.payload) === record.previous.payloadHash : !saved;
         if (!error && unchanged && !fullSave && !record.messageTags?.length && this.host.saveChat && sameSession(session, this.host.session()) && sameSession(session, this.active)) return this.persist(record, session, true);
-        error ??= unchanged ? '宿主保存接口返回后，持久档案仍停留在上一版本' : '读回的档案身份或版本与本次候选不同';
+        error ??= unchanged ? '酒馆保存接口返回后，持久档案仍停留在上一版本' : '读回的档案身份或版本与本次待确认内容不同';
       }
     } catch (value) { error = value; }
-    return this.result('pending', session, id, error ?? '宿主尚未独立确认此次保存');
+    return this.result('pending', session, id, error ?? '酒馆尚未独立确认此次保存');
   }
   private async confirm(record: RecoveryRecord, session: HostSession): Promise<PersistReceipt> {
     if (sameSession(session, this.active) && sameSession(session, this.host.session())) {

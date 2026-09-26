@@ -1,3 +1,4 @@
+import { smokeBlocks } from './area-effects.js';
 import type { BattleLogEntry, Combatant, ConditionDef, Side } from './types.js';
 import { standardConditionMap } from './conditions.js';
 const defaultConditions = standardConditionMap();
@@ -37,7 +38,7 @@ export function canSpot(context: ObservationContext, observer: Combatant, target
   if (observer.status !== 'ready') return false;
   const from = positionedUnit(context, observer), to = positionedUnit(context, target);
   const field = context.battlefield;
-  if (field && !unitLineOfSight(field, from, to)) return false;
+  if (field && !unitLineOfSight(field, from, to) || smokeBlocks(context,from,to)) return false;
   const distance = distanceBetween(context, observer, target), subject = hostOf(context, target) ?? target;
   if (canConceal(context, subject) && !subject.tacticalRevealed && distance > (context.mode === 'small' ? 2 : 1)) return false;
   if (!context.fieldTags.includes('night')) return true;
@@ -68,7 +69,7 @@ export function settleConcealment(context: ObservationContext, unit: Combatant, 
 }
 export function concealmentLabel(context: ObservationContext, unit: Combatant): string | undefined {
   if (!activeTraitIds(unit).includes('stalk') || unit.rulesVersion !== 'v2') return undefined;
-  if (hostOf(context, unit)) return '随队隐蔽随宿主';
+  if (hostOf(context, unit)) return '随队隐蔽以所在编队为准';
   if (unit.tacticalRevealed) return canReconceal(context, unit) ? '已暴露，原地休整可重新潜伏' : '已暴露，需要掩护并脱离近敌';
   return canConceal(context, unit) ? '潜伏中，近距离仍会被侦察' : '潜伏受压制或失能影响';
 }

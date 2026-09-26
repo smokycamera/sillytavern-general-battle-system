@@ -32,6 +32,7 @@ const server = http.createServer(async (req,res) => {
       const chunks=[];for await(const chunk of req)chunks.push(chunk);const data=JSON.parse(Buffer.concat(chunks).toString('utf8'));
       res.setHeader('Content-Type','application/json');
       if(req.url==='/jev/api/bridge/evaluate') { jevRequests++; if(jevDelay) await new Promise(resolve=>setTimeout(resolve,jevDelay));res.end(JSON.stringify({model:'browser-test-jev',confidence:0.9,scores:Object.fromEntries(data.candidates.map(c=>[c.id,0.5]))}));return; }
+      if(req.url==='/jev/api/bridge/select-context') {res.end(JSON.stringify({model:'browser-test-jev',selections:Object.fromEntries(data.fields.map(f=>[f.id,{value:Object.keys(f.options)[0],confidence:0}]))}));return;}
       if(req.url==='/jev/api/bridge/context') {res.end(JSON.stringify({goals:[],battleType:'skirmish'}));return;}
       if(req.url==='/fixture/save'){disk.set(data.id,structuredClone(data));res.end('{}');return;}
       if(req.url==='/fixture/metadata'){disk.set(data.id,{...(disk.get(data.id)??{chat:[]}),id:data.id,metadata:structuredClone(data.metadata)});res.end('{}');return;}

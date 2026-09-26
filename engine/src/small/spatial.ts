@@ -41,7 +41,7 @@ export function standardField(width = 7, height = 9, tags: string[] = []): Battl
 export function validateField(field: BattlefieldSpec): void {
   if (field.version !== 2 || ![[7, 9], [5, 7], [7, 11], [7, 13]].some(([w, h]) => field.width === w && field.height === h)) throw new Error('支持7×13标准地图、旧7×11/7×9存档或5×7室内地图');
   if (field.tiles.length !== field.width * field.height || field.tiles.some((t) => !['open', 'cover', 'wall', 'rough', 'forest', 'hill'].includes(t))) throw new Error('地形数据不完整');
-  if (field.environment !== undefined && (!Array.isArray(field.environment) || field.environment.some((t) => typeof t !== 'string'))) throw new Error('环境元数据损坏');
+  if (field.environment !== undefined && (!Array.isArray(field.environment) || field.environment.some((t) => typeof t !== 'string'))) throw new Error('环境附加记录损坏');
   if (!inBounds(field, field.objective.cell) || field.tiles[field.objective.cell] === 'wall') throw new Error('目标必须是合法可通行格');
   if (field.objective.kind === 'escape' && field.objective.defenderWins !== undefined && typeof field.objective.defenderWins !== 'boolean') throw new Error('护送判胜规则损坏');
 }

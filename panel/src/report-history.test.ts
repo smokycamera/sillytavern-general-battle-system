@@ -59,7 +59,7 @@ describe('战报删除与原局重战',()=>{
  });
  it('没有快照的旧战报可删除但不能伪造重战，损坏或重复开局编号拒绝写入',()=>{
   const {next,start}=finished();const old=structuredClone(next);delete old.reports![0]!.start;
-  expect(reportRestartReason(old,old.reports![0]!)).toMatch(/没有开局快照/);expect(prepareReportDeletion(old,start.battleId).reports).toEqual([]);
+  expect(reportRestartReason(old,old.reports![0]!)).toMatch(/没有开局存档记录/);expect(prepareReportDeletion(old,start.battleId).reports).toEqual([]);
   const broken=structuredClone(next);broken.reports![0]!.start!.snapshot.round=3;
   expect(()=>prepareReportRestart(broken,start.battleId,2,'retry')).toThrow(/开局/);
   const missing=structuredClone(next);missing.reports![0]!.start!.before.storage=[];

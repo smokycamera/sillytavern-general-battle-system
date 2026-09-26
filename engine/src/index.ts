@@ -54,3 +54,7 @@ export * from './combat-model.js';
 export * from './member-health.js';
 export * from './power-anchors.js';
 export * from './skill-upgrade.js';
+
+export * from './barrier.js';
+
+export * from './area-effects.js';

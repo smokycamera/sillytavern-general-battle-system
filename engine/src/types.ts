@@ -48,7 +48,7 @@ export interface Weapon {
   recipe?: ItemRecipe;
   channel?: DamageChannel;
   penetration?: number;
-  hands?: 1 | 2;
+  hands?: 0 | 1 | 2;
   load?: number;
   id: string;
   name: string;
@@ -116,6 +116,8 @@ export interface RangeSpec {
 }
 
 export type EffectOp =
+  | { op: 'barrier'; amount: number; dur: number }
+  | { op: 'zone'; kind: 'fire' | 'poison' | 'smoke' | 'healing' | 'trap'; power: number; dur: number; radius: number }
   | { op: 'damage'; baseDice: string; apDice?: string; tag?: string; shape?: 'single' | 'burst' }
   | ({ op: 'heal' } & ({ dice: string; amount?: never } | { amount: number; dice?: never }))
   | { op: 'condition'; conditionId: string; dur: number; potency?: number; magnitude?: number; saveDC?: number; onHit?: boolean; onDamage?: boolean; shape?: 'single' | 'burst' }
@@ -127,6 +129,9 @@ export type EffectOp =
   | { op: 'summon'; templateId: string; count: number };
 
 export interface Ability {
+  area?: { shape: 'cone' | 'line' | 'ring' | 'chain' | 'circle'; radius: number; maxTargets: number };
+  equipmentSourceId?: string;
+  targetBody?: 'vehicle';
   /** 显式编辑的效果与数值不被入场公式重建。 */
   customized?: boolean;
   bonuses?: Enhancements;
@@ -260,6 +265,9 @@ export interface ActiveCondition {
 export type UnitStatus = 'ready' | 'dying' | 'dead' | 'routing' | 'fled';
 
 export interface Combatant {
+  battleZones?: import('./area-effects.js').BattleZone[];
+  barrier?: { remaining: number; duration: number; sourceId?: string };
+  accessories?: Partial<Record<'accessory1' | 'accessory2', import('./items.js').AccessoryItem>>;
   /** 战外明确设置的初始状态；战果归档后恢复通常的出场重置规则。 */
   storyState?: { resources?: boolean; abilityState?: boolean; fatigue?: boolean };
   bonuses?: Enhancements;

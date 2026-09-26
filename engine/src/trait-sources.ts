@@ -22,18 +22,18 @@ export function validateTraitSource(source: TraitSource, registry = traitRegistr
     || new Set(source.traitIds).size !== source.traitIds.length || source.traitIds.some((id) => !registry.has(id))) throw new Error('特质来源身份或内容损坏');
   const conditions = standardConditionMap(), ids = source.conditionIds ?? [];
   if (!Array.isArray(ids) || new Set(ids).size !== ids.length || ids.some((id) => !conditions.get(id)?.v2SourceReady)
-    || source.traitIds.length + ids.length === 0 || source.kind === 'blessing' && ids.length > 0 || source.kind === 'effect' && source.traitIds.length > 0) throw new Error('效果来源为空或包含未贯通的状态');
+    || source.traitIds.length + ids.length === 0 || source.kind === 'blessing' && ids.length > 0 || source.kind === 'effect' && source.traitIds.length > 0) throw new Error('效果来源为空或包含未完成的状态');
   if (!source.duration || !['permanent', 'rounds', 'battles'].includes(source.duration.kind)) throw new Error('特质来源期限未知');
   if (source.revoked !== undefined && typeof source.revoked !== 'boolean' || source.duration.kind === 'permanent' && source.remaining !== undefined) throw new Error('特质来源生命周期字段损坏');
   if (source.duration.kind !== 'permanent' && (!Number.isSafeInteger(source.duration.count) || source.duration.count < 1 || source.duration.count > 99
     || !Number.isSafeInteger(source.remaining) || source.remaining! < 0 || source.remaining! > source.duration.count)) throw new Error('特质来源剩余期限损坏');
-  if (source.kind === 'equipment' && !source.equipmentId) throw new Error('装备授予缺少实物身份');
+  if (source.kind === 'equipment' && !source.equipmentId) throw new Error('装备授予缺少物品编号');
   if (source.traitIds.some((id) => ['large', 'titan'].includes(id))) throw new Error('身体特质由明确体型自动生效，不能用祝福凭空改变身体与生命');
-  if (source.traitIds.some((id) => !registry.get(id)?.v2SourceReady)) throw new Error('该特质的外部来源执行链尚未完成，不能只授予名字');
+  if (source.traitIds.some((id) => !registry.get(id)?.v2SourceReady)) throw new Error('该特质的外部来源处理过程尚未完成，不能只授予名字');
   if (source.traitIds.some((id) => id !== 'elite' && registry.get(id)?.effects.some((e) => e.kind === 'stat' && e.stat === 'hpMax'))) throw new Error('体量/生命上限特质需要明确身体与上限事务，不能用临时来源暗改上限');
 }
 export function grantTraitSource(unit: Combatant, input: TraitSourceInput, registry = traitRegistry()): void {
-  if (unit.rulesVersion !== 'v2') throw new Error('特质来源需要先转制为V2');
+  if (unit.rulesVersion !== 'v2') throw new Error('特质来源需要先更新规则为V2');
   const source: TraitSource = { ...structuredClone(input), traitIds: [...new Set(input.traitIds)],
     ...(input.conditionIds ? { conditionIds: [...new Set(input.conditionIds)] } : {}),
     ...(input.duration.kind !== 'permanent' ? { remaining: input.duration.count } : {}) };
@@ -66,7 +66,7 @@ export function equipmentTraitIds(unit: Pick<Combatant, 'rulesVersion' | 'armor'
   return id ? [id] : [];
 }
 export function activeTraitIds(unit: Combatant): string[] {
-  return [...new Set([...unit.traits, ...physicalTraitIds(unit), ...equipmentTraitIds(unit), ...(unit.rulesVersion === 'v2' ? unit.traitSources?.filter((s) => traitSourceActive(unit, s)).flatMap((s) => s.traitIds) ?? [] : [])])];
+  return [...new Set([...unit.traits, ...physicalTraitIds(unit), ...equipmentTraitIds(unit), ...Object.values(unit.accessories ?? {}).flatMap(item => item?.traitId ? [item.traitId] : []), ...(unit.rulesVersion === 'v2' ? unit.traitSources?.filter((s) => traitSourceActive(unit, s)).flatMap((s) => s.traitIds) ?? [] : [])])];
 }
 export function activeConditionIds(unit: Combatant): string[] {
   return [...new Set([...unit.conditions.filter((c) => c.dur > 0).map((c) => c.id),

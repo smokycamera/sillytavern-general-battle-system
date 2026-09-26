@@ -57,7 +57,7 @@ describe('终章事实与致命开关',()=>{
   for(const target of ['D','E']){const loss=result.resolutions.filter(r=>r.defenderId===target).reduce((n,r)=>n+r.hpBefore-r.hpAfter,0);expect(loss).toBeGreaterThan(0);expect(text).toContain(`A → ${target}：累计造成${loss}生命损失`);}
   const report:BattleReport={id:battleIdOf(b),card:'',digest:'',summary:'',deliveries:{},epilogue:text,start};
   expect(makeNarrativeBatch(undefined,JSON.parse(JSON.stringify(report)),{},'epilogue').text).toBe(text);
-  expect(battleEpilogue(b)).toContain('没有开局快照');expect(text).not.toContain('没有开局快照');
+  expect(battleEpilogue(b)).toContain('没有开局存档记录');expect(text).not.toContain('没有开局存档记录');
  });
  it('旧致命战场的零血濒死结清为阵亡，非致命编队的部分减员全部可救',()=>{
   const b=battle('small',false,[unit('A'),unit('D')]);b.byId('D').hp=0;b.byId('D').status='dying';

@@ -3,7 +3,7 @@ import { TRAITS } from './traits.js';
 export const SKILL_CATEGORIES = [
   { id: 'physical-single', name: '物理单体' }, { id: 'physical-area', name: '物理范围' },
   { id: 'magic-single', name: '魔法单体' }, { id: 'magic-area', name: '魔法范围' },
-  { id: 'buff', name: 'buff' }, { id: 'debuff', name: 'debuff' },
+  { id: 'buff', name: '增益' }, { id: 'debuff', name: '减益' },
 ] as const;
 export type SkillCategory = typeof SKILL_CATEGORIES[number]['id'];
 export const SKILL_CATEGORY_ALIASES: Record<SkillCategory, string[]> = {
@@ -11,7 +11,7 @@ export const SKILL_CATEGORY_ALIASES: Record<SkillCategory, string[]> = {
   'physical-area': ['范围物理', '物理范围伤害', '范围物理伤害', '物理群攻', '物理群体', 'physical aoe', 'physical-area'],
   'magic-single': ['单体魔法', '单体法术', '法术单体', '魔法单体伤害', '法术单攻', 'magic single', 'magic-single'],
   'magic-area': ['范围魔法', '范围法术', '法术范围', '魔法范围伤害', '魔法群攻', '法术群攻', 'magic aoe', 'magic-area'],
-  buff: ['增益', '增益技能', '强化', '强化技能'], debuff: ['减益', '减益技能', '负面', '负面状态'],
+  buff: ['buff', '增益', '增益技能', '强化', '强化技能'], debuff: ['debuff', '减益', '减益技能', '负面', '负面状态'],
 };
 export const SKILL_MODIFIER_ALIASES: Record<string, string[]> = {
   melee: ['近身', '近战技法'], ranged: ['远射', '远程射击'], shield: ['盾击'], projectile: ['动能投射', '远程投射'],
@@ -41,6 +41,11 @@ export const SKILL_MODIFIERS: SkillModifier[] = [
   { id: 'haste', name: '加速', allowed: 'buff', condition: 'hasted' },
   { id: 'confidence', name: '振奋', allowed: 'buff', condition: 'confident' },
   { id: 'heal', name: '治疗', allowed: 'buff' }, { id: 'cleanse', name: '净化', allowed: 'buff' },
+  { id: 'cone', name: '扇形', allowed: 'damage' }, { id: 'line', name: '直线', allowed: 'damage' },
+  { id: 'ring', name: '环形', allowed: 'damage' }, { id: 'chain', name: '连锁', allowed: 'damage' },
+  { id: 'zone-fire', name: '火墙', allowed: 'magic' }, { id: 'zone-poison', name: '毒雾', allowed: 'magic' },
+  { id: 'zone-trap', name: '陷阱', allowed: 'hostile' }, { id: 'zone-smoke', name: '烟幕', allowed: 'buff' }, { id: 'zone-healing', name: '治疗区域', allowed: 'buff' },
+  { id: 'barrier', name: '屏障', allowed: 'buff' },
   { id: 'restore', name: '回能', allowed: 'buff' }, { id: 'summon', name: '召唤', allowed: 'buff' },
   { id: 'morale-up', name: '士气', allowed: 'buff' },
   { id: 'weaken', name: '虚弱', allowed: 'hostile', condition: 'weakened' },
@@ -82,11 +87,18 @@ export function skillMechanismFromId(id: string): SkillMechanism | undefined {
   const modifiers = parts[0]?.split('+') ?? [], allowed = allowedSkillModifiers(category);
   if (modifiers.length > 3 || new Set(modifiers).size !== modifiers.length || modifiers.some((id) => !allowed.some((m) => m.id === id))) return undefined;
   if (['melee', 'ranged', 'shield', 'projectile'].filter((id) => modifiers.includes(id)).length > 1 || ['thermal', 'arcane'].every((id) => modifiers.includes(id))) return undefined;
+  if (modifiers.some(id => id.startsWith('zone-')) && modifiers.length !== 1) return undefined;
+  if (modifiers.filter(id => ['cone','line','ring','chain'].includes(id)).length > 1) return undefined;
   if (modifiers.includes('summon') && (area || modifiers.length > 1)) return undefined;
   return { category, area, modifiers };
 }
 /** 通用机制直接解析；自定义名称不进入机制推断，不匹配预制技能名。 */
 export function parseSkillMechanism(text: string): SkillMechanism | undefined {
+  const controls:Record<string,string> = {眩晕:'stun',定身:'root',沉默:'silence',缴械:'disarm',减速:'slow',惊惧:'fear',击退:'push',拉拽:'pull'};
+  const simple:Record<string,[SkillCategory,string]> = {屏障:['buff','barrier'],治疗:['buff','heal'],净化:['buff','cleanse'],回能:['buff','restore'],火墙:['magic-area','zone-fire'],毒雾:['magic-area','zone-poison'],烟幕:['buff','zone-smoke'],治疗区域:['buff','zone-healing'],陷阱:['debuff','zone-trap']};
+  const short = text.trim().replace(/^控制[：:]?/, '');
+  if(simple[short]) { const [category,id]=simple[short]!;return {category,area:category.endsWith('area'),modifiers:[id]}; }
+  if(controls[short]) return {category:'debuff',area:false,modifiers:[controls[short]!]};
   let source = text.trim().replace(/^(?:范围|群体)(buff|debuff|增益|减益)/i, '$1范围');
   const prefix = SKILL_CATEGORIES.flatMap((c) => [c.name, ...SKILL_CATEGORY_ALIASES[c.id]].map((name) => ({ id: c.id, name })))
     .sort((a, b) => b.name.length - a.name.length).find((c) => source.toLowerCase().startsWith(c.name.toLowerCase()));

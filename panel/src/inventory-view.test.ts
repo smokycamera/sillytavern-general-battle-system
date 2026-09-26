@@ -48,7 +48,7 @@ it('shows only the selected unit and public items, with equipped gear before its
   const f = mount(), before = structuredClone(f.save());
   const equippedA = f.save().inventory!.filter(i => i.equippedTo?.unitId === 'a').map(i => i.id);
   expect(f.ids()).toEqual([...equippedA, 'a-bag', 'public']);
-  expect(document.querySelector('#inventory-panel h2')?.textContent).toContain(`${equippedA.length + 2}条`);
+  expect(document.querySelector('#inventory-panel h2')?.textContent).toContain(`${equippedA.length + 2}种物品`);
   expect(document.querySelector('.loadout-current')!.compareDocumentPosition(document.querySelector('[data-action="prompt-select-items"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   f.choose('b');
   expect(f.ids()).toEqual([...f.save().inventory!.filter(i => i.equippedTo?.unitId === 'b').map(i => i.id), 'b-bag', 'public']);

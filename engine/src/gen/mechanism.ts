@@ -30,7 +30,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   validateMount(raw);
   const body = raw.body ?? 'human';
   if (!BODY[body]) throw new Error('不支持的身体/平台');
-  const quality = integer(raw.quality ?? 3, 1, 5, '品质Q');
+  const quality = integer(raw.quality ?? 3, 1, 5, '品质');
   validateEnhancements(raw.bonuses, 'unit');
   const training = integer(raw.level, 1, 10, '训练T');
   const arch = raw.archetype ?? 'infantry';
@@ -39,8 +39,8 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   const warnings: string[] = [];
   if (oldScale) warnings.push('旧刻度输入已归为编队，保留指定人数、装备和训练');
   if (raw.era) warnings.push('旧 era 只保留为迁移信息，未参与 V2 数值');
-  if (raw.weaponName && !raw.weaponClass && !raw.weaponId) warnings.push('武器仅指定名称：使用显示的默认机制，未按名称推断特殊能力');
-  if (raw.armorName && raw.armorTier === undefined && !raw.armorId) warnings.push('护甲仅指定名称：默认轻甲构型，特殊防护需明确规格');
+  if (raw.weaponName && !raw.weaponClass && !raw.weaponId) warnings.push('武器仅指定名称：使用显示的默认效果，未按名称推断特殊能力');
+  if (raw.armorName && raw.armorTier === undefined && !raw.armorId) warnings.push('护甲仅指定名称：默认轻甲类型，特殊防护需明确规格');
   const weaponFor = (slot: 'primary' | 'sidearm'): Weapon | undefined => {
     const weaponId = slot === 'primary' ? raw.weaponId : raw.sidearmId;
     const classId = slot === 'primary' ? raw.weaponClass : raw.sidearmClass;
@@ -84,7 +84,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   }
   if (!group) base.hpMax = capSingleLife(base.hpMax);
   const currentHp = raw.hp === undefined ? base.hpMax : Math.min(hp, base.hpMax);
-  if (raw.abilityIds?.length) throw new Error('旧固定技能需先迁移为明确机制配方，不能直接进入 V2');
+  if (raw.abilityIds?.length) throw new Error('旧固定技能需先迁移为明确效果配方，不能直接进入 V2');
   const abilities: Ability[] = []; const abilityAudit: { blueprintId: string; power: number }[] = [];
   for (const spec of raw.abilityBlueprints ?? []) {
     const definitionId = typeof spec === 'string' ? spec : spec.id;

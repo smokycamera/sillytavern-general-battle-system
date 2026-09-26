@@ -21,7 +21,7 @@ export function poisonDamage(unit: Combatant, roll: number): number {
 }
 export function poisonDeliveryReason(target: Combatant, weapon?: Weapon): string | undefined {
   if (!poisonFactor(target)) return '封闭车体不受生物毒性影响';
-  if (weapon?.channel !== 'kinetic' || !['sword', 'axe', 'spear', 'bow', 'light-ranged', 'blunt'].includes(weapon?.recipe?.mechanism ?? '')) return '毒击需要接触武器或适用投射，热能、奥术和重炮不携带涂毒';
+  if (weapon?.channel !== 'kinetic' || !['sword', 'axe', 'spear', 'throwing', 'natural', 'bow', 'light-ranged', 'blunt'].includes(weapon?.recipe?.mechanism ?? '')) return '毒击需要接触武器或适用投射，热能、奥术和重炮不携带涂毒';
   return undefined;
 }
 export function weaponConditions(attacker: Combatant, target: Combatant, weapon: Weapon | undefined, damage: number, registry?: Map<string, Trait>): ActiveCondition[] {

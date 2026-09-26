@@ -1,3 +1,4 @@
+import { FORMATION_NODES, zoneTarget } from '../../engine/src/index.js';
 import { formationNode, isAirborne, hasFlightAbility, type MassBattle, type Order, type OrderType, type Combatant } from '../../engine/src/index.js';
 
 export type OrderDraft = Omit<Order, 'unitId' | 'automatic'>;
@@ -26,7 +27,7 @@ export function formationChoices(b: MassBattle, host: Combatant): FormationChoic
   if (hasFlightAbility(host) || isAirborne(host)) types.push(isAirborne(host) ? 'land' : 'takeoff');
   const choices = types.map((type) => make({ unitId: host.id, type }, orderLabels[type], ['attack', 'volley', 'charge'].includes(type) ? enemies : [undefined]));
   for (const source of [host, ...visible.filter((u) => u.id === b.attached.get(host.id))]) for (const ability of source.abilities) {
-    const targets = ability.target === 'self' ? [source] : ability.target === 'ally'
+    const targets = ability.target === 'zone' ? FORMATION_NODES.map(node=>zoneTarget(b.observationContext(),source,'zone:'+node.id)) : ability.target === 'self' ? [source] : ability.target === 'ally'
       ? visible.filter((u) => u.side === host.side && !['dead', 'fled'].includes(u.status))
       : ability.target === 'enemy' ? enemies : [undefined];
     choices.push(make({ unitId: host.id, type: 'ability', abilityActorId: source.id, abilityId: ability.id },

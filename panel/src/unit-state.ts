@@ -1,3 +1,6 @@
+import { validateAreas } from '../../engine/src/area-effects.js';
+import { validateBarrier } from '../../engine/src/barrier.js';
+import { validateAccessories } from '../../engine/src/items.js';
 import { validateEnhancements, type Enhancements } from '../../engine/src/enhancements.js';
 import { synchronizePersonnel, validateCombatModel } from '../../engine/src/combat-model.js';
 import { capSingleLife, limitCombatantLife } from '../../engine/src/health-limits.js';
@@ -217,7 +220,7 @@ function recordFromUnknown(value: unknown): UnitRecord {
   if (typeof value.scale !== 'string' || !['hero', 'mook', 'company'].includes(value.scale)) throw new Error('scale 非法');
   validateEnhancements(value.bonuses as Enhancements | undefined,'unit');
   validateBase(value.base);
-  validateRuntimeMetadata(value);
+  validateRuntimeMetadata(value); validateBarrier(value.barrier as Combatant['barrier']); validateAreas(value as unknown as Combatant);
   if (value.hp !== undefined && (!Number.isSafeInteger(value.hp) || Number(value.hp) < 0 || Number(value.hp) > value.base.hpMax)) throw new Error('hp 越界，禁止猜测补满或截断');
   const snapshot = value.snapshot ? combatantFromUnknown(value.snapshot) : undefined;
   return normalizeUnitRecord({
@@ -236,6 +239,7 @@ export function combatantFromUnknown(value: unknown): Combatant {
   if (typeof value.scale !== 'string' || !['hero', 'mook', 'company'].includes(value.scale)) throw new Error('scale 非法');
   validateBase(value.base);
   validateRuntimeMetadata(value);
+  validateBarrier(value.barrier as Combatant['barrier']); validateAreas(value as unknown as Combatant); validateAccessories(value as unknown as Combatant);
   for (const slot of ['weapon', 'sidearm']) {
     const item = value[slot]; if (item === undefined) continue;
     if (!isRecordObject(item) || typeof item.name !== 'string' || typeof item.baseDice !== 'string') throw new Error(slot + ' 结构损坏');
@@ -251,11 +255,14 @@ export function combatantFromUnknown(value: unknown): Combatant {
       if (!isRecordObject(a.recipe) || a.recipe.version !== 'skill-formula-v1' || !Number.isInteger(a.recipe.power) || Number(a.recipe.power) < 1 || Number(a.recipe.power) > 10 || a.recipe.power !== a.power
         || typeof a.definitionId !== 'string' || !skillMechanismFromId(a.definitionId) || JSON.stringify(skillMechanismFromId(a.definitionId)) !== JSON.stringify({ category: a.recipe.category, area: a.recipe.area, modifiers: a.recipe.modifiers })) throw new Error('通用技能配方损坏');
     }
+    if (a.area !== undefined && (!isRecordObject(a.area) || !['cone','line','ring','chain','circle'].includes(String(a.area.shape)) || !Number.isInteger(a.area.radius) || Number(a.area.radius)<1 || Number(a.area.radius)>3 || !Number.isInteger(a.area.maxTargets) || Number(a.area.maxTargets)<1 || Number(a.area.maxTargets)>8)) throw Error('技能范围不正确');
     if (a.areaExposure !== undefined && (!Number.isInteger(a.areaExposure) || Number(a.areaExposure) < 1 || Number(a.areaExposure) > (['skill-v4.0','skill-v4.1'].includes(String(a.effectVersion))?1e9:4) || a.shape !== 'burst' || a.damageBasis !== undefined)) throw new Error('技能范围暴露参数损坏');
     if (a.damageBasis !== undefined && !['weapon', 'shield'].includes(String(a.damageBasis)) || a.weaponDamageMult !== undefined && (!Number.isFinite(a.weaponDamageMult) || Number(a.weaponDamageMult) <= 0 || Number(a.weaponDamageMult) > (['skill-v3.0','skill-v4.0','skill-v4.1'].includes(String(a.effectVersion)) ? 4 : 2)) || a.delivery !== undefined && !['melee', 'ranged', 'magic'].includes(String(a.delivery))) throw new Error('技能装备基准损坏');
-    if(a.damageScale!==undefined&&(!Number.isFinite(a.damageScale)||Number(a.damageScale)<=0||Number(a.damageScale)>1e6))throw Error('技能规格倍率损坏');
+    if(a.damageScale!==undefined&&(!Number.isFinite(a.damageScale)||Number(a.damageScale)<=0||Number(a.damageScale)>1e6))throw Error('技能等级倍率损坏');
     for (const effect of a.effects) {
-      if (!isRecordObject(effect) || !['damage', 'heal', 'condition', 'trait', 'push', 'dispel', 'resource', 'morale', 'summon'].includes(String(effect.op))) throw new Error('技能包含未支持的执行器');
+      if (isRecordObject(effect) && effect.op === 'zone' && (!['fire','poison','smoke','healing','trap'].includes(String(effect.kind)) || !Number.isInteger(effect.power) || Number(effect.power)<1 || Number(effect.power)>10 || !Number.isInteger(effect.dur) || Number(effect.dur)<1 || Number(effect.dur)>99 || !Number.isInteger(effect.radius) || Number(effect.radius)<0 || Number(effect.radius)>3)) throw Error('持续区域的范围或时间不正确');
+      if (isRecordObject(effect) && effect.op === 'barrier') validateBarrier({ remaining: effect.amount as number, duration: effect.dur as number });
+      if (!isRecordObject(effect) || !['damage', 'heal', 'condition', 'trait', 'push', 'dispel', 'resource', 'morale', 'summon', 'barrier', 'zone'].includes(String(effect.op))) throw new Error('技能包含未支持的效果处理');
       if (effect.magnitude !== undefined && (!Number.isFinite(effect.magnitude) || Number(effect.magnitude) < 0.25 || Number(effect.magnitude) > 1.5) || effect.onDamage !== undefined && typeof effect.onDamage !== 'boolean') throw new Error('技能效力或损伤前提损坏');
       if (effect.op === 'trait' && (!traitRegistry().get(String(effect.traitId))?.v2SourceReady || !Number.isInteger(effect.dur) || Number(effect.dur) < 1 || Number(effect.dur) > 99)) throw new Error('技能授予来源损坏');
       if (effect.direction !== undefined && !['away', 'towards'].includes(String(effect.direction)) || effect.maximum !== undefined && effect.maximum !== 'training') throw new Error('技能位移或资源边界损坏');
@@ -272,7 +279,7 @@ export function combatantFromUnknown(value: unknown): Combatant {
     }
   }
   const hp = value.hp === undefined ? value.base.hpMax : value.hp;
-  if (typeof hp !== 'number' || !Number.isSafeInteger(hp) || hp < 0 || hp > value.base.hpMax) throw new Error('战斗快照生命/人数越界');
+  if (typeof hp !== 'number' || !Number.isSafeInteger(hp) || hp < 0 || hp > value.base.hpMax) throw new Error('战斗存档记录生命/人数越界');
   return {
     ...(clone(value) as unknown as Combatant),
     level: Number.isFinite(value.level) ? Math.max(1, Math.round(Number(value.level))) : 1,
@@ -342,7 +349,7 @@ export function migratePanelUnits(opts: {
       try {
         roster.push(materializeUnitRecord(record, opts.registry, { era: opts.era }));
       } catch (error) {
-        warnings.push('id=' + rawId + ' 无法实体化：' + (error instanceof Error ? error.message : String(error)));
+        warnings.push('id=' + rawId + ' 无法还原：' + (error instanceof Error ? error.message : String(error)));
         backup.push(record);
       }
     }
@@ -408,7 +415,7 @@ export function unitRecordFromCombatant(
   previous?: UnitRecord,
   opts: { transient?: boolean; kind?: UnitHistoryEntry['kind']; sourceId?: string } = {},
 ): UnitRecord {
-  c = stripCarriedItems(c);
+  c = stripCarriedItems(c); delete c.barrier; delete c.battleZones;
   if(opts.kind==='battle')delete c.storyState;
   limitCombatantLife(c);
   delete c.nonLethal;delete c.cannonAmmo;
@@ -546,12 +553,12 @@ export function unitRecordToGenerateInput(r: UnitRecord, era = 'medieval'): Gene
 
 /** 转制只生成可审查副本；不改源记录、不自动扩编或补满。 */
 export function previewUnitConversion(record: UnitRecord, registry: Map<string, Trait>): UnitRecord {
-  if (record.snapshot?.rulesVersion === 'v2') throw new Error('该单位已使用V2机制');
-  if (record.traits.some((id) => ['large', 'titan', 'flying'].includes(id))) throw new Error('旧体量/飞行标签不能猜测转换，请先明确身体机制');
+  if (record.snapshot?.rulesVersion === 'v2') throw new Error('该单位已使用V2效果');
+  if (record.traits.some((id) => ['large', 'titan', 'flying'].includes(id))) throw new Error('旧体量/飞行标签不能猜测转换，请先明确身体效果');
   const input = unitRecordToGenerateInput(record);
   const source = record.snapshot;
   const weaponId = input.weaponId ?? source?.genAudit?.weapon?.profileId;
-  if (!weaponId && !input.weaponClass) throw new Error('旧武器缺少明确机制来源，请先编辑武器类型再转制');
+  if (!weaponId && !input.weaponClass) throw new Error('旧武器缺少明确效果来源，请先编辑武器类型再更新规则');
   if (source?.abilities.some((a) => !a.definitionId?.startsWith('bp-') && !a.id.startsWith('bp-'))) throw new Error('旧固定技能缺少明确配方，请先在编辑中替换为已支持的技能');
   const unit = generateUnit({ ...input, rulesVersion: 'v2', era: undefined,
     weaponId,
@@ -571,7 +578,7 @@ export function previewUnitConversion(record: UnitRecord, registry: Map<string, 
 
 /** 仅撤销刚执行的转制；发生新战损/补员/成长后禁止旧备份覆盖新事实。 */
 export function undoUnitConversion(record: UnitRecord): UnitRecord {
-  if (!record.legacyRecord || record.history?.at(-1)?.sourceId !== 'mechanism-v2-conversion') throw new Error('转制后已有新事实，不能用旧备份覆盖；原档仍可导出核查');
+  if (!record.legacyRecord || record.history?.at(-1)?.sourceId !== 'mechanism-v2-conversion') throw new Error('更新规则后已有新战斗记录，不能用旧备份覆盖；原档仍可导出核查');
   const original = clone(record.legacyRecord); original.revision = (record.revision ?? 1) + 1;
   original.history = [...clone(record.history ?? []), { revision: original.revision, kind: 'edit', sourceId: 'undo-v2-conversion', hp: original.hp, hpMax: original.base.hpMax, level: original.level, xp: original.xp ?? 0, status: original.status }];
   return original;

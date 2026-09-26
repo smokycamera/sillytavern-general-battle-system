@@ -51,6 +51,6 @@ export function upgradeCombatSkills(unit: Combatant): void {
       else unit.abilityState.push({ ...old, abilityId: a.cooldownGroup });
     }
     a.effectVersion=modern?'skill-v4.1':'skill-v3.0';
-    a.desc=(a.desc??'').replace('同类别共享冷却','不同机制独立冷却，同机制改名不刷新').replace('至多两名近身合法目标分担范围攻击预算','至多两名近身合法目标分别承受范围攻击');
+    a.desc=(a.desc??'').replace('同类别共享冷却','不同种效果独立冷却，同种效果改名不刷新').replace('至多两名近身合法目标分担范围攻击可用上限','至多两名近身合法目标分别承受范围攻击');
   }
 }

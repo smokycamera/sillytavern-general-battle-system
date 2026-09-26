@@ -72,7 +72,7 @@ describe('存档迁移预览与回退', () => {
     const undone = undoUnitConversion(converted);
     expect(undone.snapshot?.weapon).toEqual(original.snapshot?.weapon); expect(undone.hp).toBe(70);
     const replenished = updateUnitRecord(converted, { hp: 500 }, registry);
-    expect(() => undoUnitConversion(replenished)).toThrow('新事实'); expect(replenished.hp).toBe(500);
+    expect(() => undoUnitConversion(replenished)).toThrow('新战斗记录'); expect(replenished.hp).toBe(500);
   });
   it('旧容器预览不改原值，70/560和冻结装备保留，备份可重建同一候选', () => {
     const u = legacyUnit(); u.hp = 70; u.base.hpMax = 560;

@@ -9,7 +9,7 @@ export const STANDARD_CONDITIONS: ConditionDef[] = [
   { id: 'empowered', name: '强击', desc: '提高已能造成的伤害，不绕过防护', mods: [{ source: 'condition', name: '强击', kind: 'dmg', type: 'mult', value: 1.2 }] },
   { id: 'inaccurate', name: '失准', desc: '攻击命中下降', mods: [{ source: 'condition', name: '失准', kind: 'atk', type: 'flat', value: -2 }] },
   { id: 'exposed', name: '破绽', desc: '防御下降，不更改实物护甲', mods: [{ source: 'condition', name: '破绽', kind: 'def', type: 'flat', value: -2 }] },
-  { id: 'silenced', name: '沉默', desc: '不能施放魔法投送技能，武器动作仍可使用', preventMagic: true },
+  { id: 'silenced', name: '沉默', desc: '不能使用魔法技能；普通武器动作仍可使用', preventMagic: true },
   { id: 'burning', name: '燃烧', desc: '受到持续灼伤；技能需先穿透并造成实际损伤才能点燃', dot: { dice: '1d4', label: '灼伤' } },
   { id: 'restrained', name: '定身', desc: '不能移动、起飞或冲锋，防御降低1；仍可使用合法攻击和技能', preventMove: true, mods: [{ source: 'condition', name: '定身', kind: 'def', type: 'flat', value: -1 }] },
   {
@@ -34,7 +34,7 @@ export const STANDARD_CONDITIONS: ConditionDef[] = [
   {
     id: 'disarmed',
     name: '缴械',
-    desc: '无法进行武器攻击',
+    desc: '不能使用手持武器攻击；拳脚和爪牙等天生武器仍可用',
     preventAttack: true,
   },
   {

@@ -42,6 +42,6 @@ export function compileAbility(bp: AbilityBlueprint, power: number, ownerId: str
   }
   if (bp.id === 'bp-hex-bolt') ability.desc = '奥术损伤并尝试施加诅咒；目标可抵抗，不附带吸血';
   if (bp.id === 'bp-frost-nova') ability.desc = '至多两名合法可见目标受到热能变化伤害，并分别尝试施加减速';
-  if (bp.id === 'bp-whirlwind') ability.desc = '至多两名近身合法目标分担范围攻击预算';
+  if (bp.id === 'bp-whirlwind') ability.desc = '至多两名近身合法目标分担范围攻击可用上限';
   return ability;
 }

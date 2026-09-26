@@ -130,10 +130,10 @@ function spawnInput(event: Extract<Suggestion, { kind: 'spawn' }>): GenerateInpu
 /** 整包准备与校验；调用方持久化成功后才替换当前事实。 */
 export function prepareNarrativeTransaction(save: NarrativeSave, proposal: NarrativeProposal, namespace: string, manual = false): NarrativeSave {
   if (proposal.status === 'unresolved') throw new Error('还有待补全的事件，请先修正草稿或明确仅保留已识别部分');
-  if (proposal.status !== 'pending') throw new Error('候选未处于可提交状态');
+  if (proposal.status !== 'pending') throw new Error('待确认内容未处于可提交状态');
   if (!proposal.events.length) throw new Error('没有可入账的事件');
   const expected = proposal.expected;
-  if (!expected || expected.namespace !== namespace || expected.factRevision !== (save.factRevision ?? 0)) throw new Error('候选已过期或属于其他聊天/分支');
+  if (!expected || expected.namespace !== namespace || expected.factRevision !== (save.factRevision ?? 0)) throw new Error('待确认内容已过期或属于其他聊天/分支');
   if (!proposal.source.complete || proposal.source.role !== 'assistant') throw new Error('只接受完整 assistant 正文');
   if (save.battle) {
     const id = `${save.battle.kind}:${String(save.battle.snap.seed)}`;

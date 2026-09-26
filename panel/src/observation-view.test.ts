@@ -14,7 +14,7 @@ describe('真实观测的全部文本出口', () => {
   it('敌方激活也不通过地图、候选、当前行动、先攻或部署日志泄漏隐藏单位', () => {
     const { battle } = fixture(); const before = JSON.stringify(battle.toSnapshot());
     const html = renderTacticalBattle(battle, { mode: 'weapon', selectedId: battle.active!.id });
-    expect(html).not.toContain('秘密敌军'); expect(html).toContain('未定位的敌方单位'); expect(html).toContain('unobserved');
+    expect(html).not.toContain('秘密敌军'); expect(html).toContain('尚未发现的敌方单位'); expect(html).toContain('unobserved');
     expect(smallStateSummary(battle)).not.toContain('秘密敌军'); expect(battleIntroSummary(battle)).not.toContain('秘密敌军');
     expect(JSON.stringify(battle.toSnapshot())).toBe(before);
   });

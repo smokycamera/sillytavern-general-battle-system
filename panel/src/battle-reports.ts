@@ -68,7 +68,7 @@ export function battleEpilogue(b: Battle, start?: BattleReport['start']): string
   const mission = goal ? goal.kind === 'annihilation' ? '歼灭战' : goal.kind === 'control' ? '攻城夺点' : '护送/拦截' : '军团会战';
   return [`【战阵·战斗终章】${mission}，共${completedBattleRounds(b)}轮；${b.isOver() ? b.winner()==='ally'?'我方胜利':b.winner()==='enemy'?'我方失利':'停战/僵持':'尚未结束'}`,
     `【本场规则】${b.nonLethal?'非致命：双方生命归零只会濒死失能，不视为死亡；编队减员为可救伤兵。':'致命：生命归零按阵亡结算。'}`,
-    '【开局单位状态与血量】',...(opening?.length?opening.map(u=>epilogueUnit(b,u)):['这场旧战斗没有开局快照，开局状态与血量未记录，不推测。']),
+    '【开局单位状态与血量】',...(opening?.length?opening.map(u=>epilogueUnit(b,u)):['这场旧战斗没有开局存档记录，开局状态与血量未记录，不推测。']),
     '【结束单位状态与血量】',...visible.map(u=>epilogueUnit(b,u)),
     '【伤害来源】',...(damage.length?damage:['没有记录到可核实的伤害。']),
     NARRATIVE_TASK].join('\n');

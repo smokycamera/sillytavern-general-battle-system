@@ -32,21 +32,21 @@ function integer(value: number, min: number, max: number, name: string): number 
 export function equipmentRecipe(mechanism: string, power: number, context: EquipmentContext): ItemRecipe {
   const size = context.body ?? 'human';
   if (!BODY[size]) throw new Error('不支持的身体/平台');
-  if (!context.id || !context.seed) throw new Error('物品缺少实例身份或种子');
-  validateEnhancements(context.bonuses, mechanism.startsWith('armor:') ? 'armor' : mechanism === 'heal' ? 'consumable' : mechanism === 'shield' ? 'shield' : 'weapon');
-  return { bonuses: context.bonuses, version: FORMULA_VERSION, mechanism, power: integer(power, 1, 10, '规格P'), size,
-    quality: integer(context.quality ?? 3, 1, 5, '品质Q'), seed: context.seed };
+  if (!context.id || !context.seed) throw new Error('物品缺少唯一编号或随机记录号');
+  validateEnhancements(context.bonuses, mechanism.startsWith('accessory:') ? 'accessory' : mechanism.startsWith('armor:') ? 'armor' : mechanism === 'heal' ? 'consumable' : mechanism === 'shield' ? 'shield' : 'weapon');
+  return { bonuses: context.bonuses, version: FORMULA_VERSION, mechanism, power: integer(power, 1, 10, '装备等级'), size,
+    quality: integer(context.quality ?? 3, 1, 5, '品质'), seed: context.seed };
 }
 export function compileWeapon(spec: { mechanism?: string; weaponId?: string; power?: number; bonuses?: Enhancements; stabilized?: boolean; enchantment?: 'none' | 'thermal' | 'arcane' }, context: EquipmentContext): Weapon {
   if (spec.weaponId && !WEAPON_ALIASES[spec.weaponId]) throw new Error('未知武器 id，不能猜测回退');
   const mechanism = spec.mechanism ?? (spec.weaponId ? WEAPON_ALIASES[spec.weaponId] : undefined);
-  if (!mechanism || !WEAPON_CLASSES[mechanism]) throw new Error('未知武器机制');
-  if (spec.weaponId && spec.mechanism && WEAPON_ALIASES[spec.weaponId] !== spec.mechanism) throw new Error('武器 id 与机制冲突');
+  if (!mechanism || !WEAPON_CLASSES[mechanism]) throw new Error('未知武器类型');
+  if (spec.weaponId && spec.mechanism && WEAPON_ALIASES[spec.weaponId] !== spec.mechanism) throw new Error('武器 id 与效果冲突');
   const profile = spec.weaponId ? WEAPON_LIBRARY[spec.weaponId]! : WEAPON_CLASSES[mechanism]!.profile;
   const recipe = equipmentRecipe(mechanism, spec.power ?? 5, { ...context, bonuses: spec.bonuses ?? context.bonuses });
   if (mechanism === 'autocannon') recipe.version += '+autocannon-v2';
   if (spec.enchantment !== undefined && spec.enchantment !== 'none') {
-    if (!['thermal', 'arcane'].includes(spec.enchantment)) throw new Error('不支持的武器附魔机制');
+    if (!['thermal', 'arcane'].includes(spec.enchantment)) throw new Error('不支持的武器附魔效果');
     recipe.enchantment = spec.enchantment;
   }
   const powerCurve = curveAt(recipe.power), ranged = profile.range > 1;
@@ -62,11 +62,11 @@ export function compileWeapon(spec: { mechanism?: string; weaponId?: string; pow
   return { id: context.id, name: context.name?.trim() || profile.name,
     baseDice: rebuildDice(budget / attacks, budget / attacks < 3.5 ? 2 : 6), recipe,
     channel: recipe.enchantment ?? (mechanism === 'energy' ? 'thermal' : mechanism === 'magic' ? 'arcane' : 'kinetic'),
-    penetration: 1 + Math.floor(recipe.power / 2) + (['cannon', 'indirect-cannon', 'demolition', 'autocannon'].includes(mechanism) ? 2 : ['firearm', 'rifle', 'energy'].includes(mechanism) ? 1 : 0),
+    penetration: 1 + Math.floor(recipe.power / 2) + (['cannon', 'indirect-cannon', 'demolition', 'autocannon'].includes(mechanism) ? 2 : mechanism === 'heavy-rifle' ? 2 : ['firearm', 'rifle', 'energy'].includes(mechanism) ? 1 : 0),
     range: profile.range + (ranged ? bonusSteps(recipe.bonuses, 'range', 5) : 0), minRange: profile.minRange ?? 0,
     pointBlankPolicy: profile.pointBlankPolicy ?? 'allow', pointBlankPenalty: profile.pointBlankPenalty,
     indirect: profile.indirect, attacks, reload: profile.reload, level: recipe.power,
-    hands: mechanism === 'light-ranged' ? 1 : ranged ? 2 : 1, load: mechanism === 'light-ranged' ? 1 : ['cannon', 'indirect-cannon', 'autocannon'].includes(mechanism) ? 6 : ranged ? 2 : 1,
+    hands: mechanism === 'natural' ? 0 : ['light-ranged','throwing'].includes(mechanism) ? 1 : ranged ? 2 : 1, load: mechanism === 'natural' ? 0 : ['light-ranged','throwing'].includes(mechanism) ? 1 : ['cannon', 'indirect-cannon', 'autocannon'].includes(mechanism) ? 6 : ranged ? 2 : 1,
     tags: [...(ranged ? ['ranged'] : []), ...(profile.blast ? ['blast'] : []), 'mechanism:' + mechanism] };
 }
 /** 旧长兵器改为单手；保留明确自定义值，不重掷装备。 */
@@ -85,13 +85,13 @@ export function calibrateAutocannon(weapon?: Weapon): void {
 export function compileArmor(spec: { tier?: Armor['tier']; armorId?: string; power?: number; bonuses?: Enhancements; profile?: 'balanced' | DamageChannel }, context: EquipmentContext): Armor {
   if (spec.armorId && ARMOR_ALIASES[spec.armorId] === undefined) throw new Error('未知护甲 id');
   const tier = spec.tier ?? (spec.armorId ? ARMOR_ALIASES[spec.armorId]! : 1);
-  integer(tier, 0, 4, '防护构型');
-  if (spec.armorId && spec.tier !== undefined && ARMOR_ALIASES[spec.armorId] !== spec.tier) throw new Error('护甲 id 与构型冲突');
+  integer(tier, 0, 4, '防护类型');
+  if (spec.armorId && spec.tier !== undefined && ARMOR_ALIASES[spec.armorId] !== spec.tier) throw new Error('护甲 id 与类型冲突');
   const recipe = equipmentRecipe('armor:' + tier, spec.power ?? 5, { ...context, bonuses: spec.bonuses ?? context.bonuses });
   const resistance = tier === 0 ? 0 : tier + Math.floor((recipe.power - 1) / 3);
   const protection = { kinetic: resistance, thermal: Math.max(0, resistance - 1), arcane: Math.max(0, resistance - 2) };
   const focus = spec.profile ?? 'balanced';
-  if (!['balanced', 'kinetic', 'thermal', 'arcane'].includes(focus)) throw new Error('未知防护构型');
+  if (!['balanced', 'kinetic', 'thermal', 'arcane'].includes(focus)) throw new Error('未知防护类型');
   recipe.protectionProfile = focus;
   if (focus !== 'balanced') {
     // 同预算转移至专用通道；提高专项防护必须支付其他通道防护。

@@ -28,7 +28,7 @@ describe('V2独立物品与真实配装规则', () => {
     unit.body = 'vehicle'; expect(equipmentReason(unit)).toBeUndefined();
   });
   it('机械规格未知时拒绝，不按物品名字猜测；治疗不会招募兵员', () => {
-    expect(() => compileItem({ kind: 'weapon', mechanism: 'arbitrary-god-gun', power: 5 }, { id: 'x', name: '普通剑', seed: 'x' })).toThrow(/机制/);
+    expect(() => compileItem({ kind: 'weapon', mechanism: 'arbitrary-god-gun', power: 5 }, { id: 'x', name: '普通剑', seed: 'x' })).toThrow(/类型/);
     const unit = hero(); unit.hp = 1;
     expect(healingAmount(unit, 999)).toBe(unit.base.hpMax - 1);
     unit.hp = unit.base.hpMax; expect(() => healingAmount(unit, 5)).toThrow(/已满/);

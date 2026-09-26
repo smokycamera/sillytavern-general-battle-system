@@ -368,9 +368,9 @@ export function createAdapter(): TavernAdapter {
           }
           // Promise返回值不等于失败：部分宿主先同步更新变量，再异步落盘。
           host = JSON.stringify(th.getVariables({ type: scope })?.[key]) === serialized;
-          if (!host) errors.push('宿主未确认写入');
+          if (!host) errors.push('酒馆未确认保存');
         } catch (error) {
-          errors.push(`宿主保存失败：${String(error)}`);
+          errors.push(`酒馆保存失败：${String(error)}`);
         }
       }
       try {
@@ -384,7 +384,7 @@ export function createAdapter(): TavernAdapter {
         }
         const stored = localStorage.getItem(targetKey);
         local = stored !== null && decodeSave(stored) === serialized;
-        if (!local) errors.push('本地存储未确认写入');
+        if (!local) errors.push('本地存储未确认保存');
       } catch (error) {
         errors.push(`本地保存失败：${String(error)}`);
       }
@@ -397,7 +397,7 @@ export function createAdapter(): TavernAdapter {
         try {
           if (typeof th.sendMessageAsUser === 'function') {
             const result: unknown = await th.sendMessageAsUser(text);
-            return result === false ? { status: 'failed', detail: '宿主拒绝发送' } : { status: 'sent' };
+            return result === false ? { status: 'failed', detail: '酒馆拒绝发送' } : { status: 'sent' };
           }
         } catch (error) {
           // 调用可能已经送达；不能再点 DOM 或创建第二条消息。用户草稿始终不被触碰。

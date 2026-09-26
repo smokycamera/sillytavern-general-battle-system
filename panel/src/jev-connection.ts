@@ -95,7 +95,7 @@ function httpError(status: number, url: string, hostStatus?: number): JevConnect
   const endpoint = url.endsWith('/chat/completions') ? 'OpenAI 聊天接口 /chat/completions'
     : url.endsWith('/systemone') ? 'TypeSafe JEV 接口 /systemone'
       : url.endsWith('/models') ? '模型列表接口 /models' : '桥接接口';
-  return new JevConnectionError(`模型上游返回 HTTP ${status}${hostStatus !== undefined && hostStatus !== status ? `（宿主 HTTP ${hostStatus}）` : ''}，当前请求 ${endpoint}${hints[status] ? '；' + hints[status] : ''}`);
+  return new JevConnectionError(`模型上游返回 HTTP ${status}${hostStatus !== undefined && hostStatus !== status ? `（酒馆 HTTP ${hostStatus}）` : ''}，当前请求 ${endpoint}${hints[status] ? '；' + hints[status] : ''}`);
 }
 export async function jevJsonRequest(connection: JevConnection, request: typeof fetch, url: string, init: RequestInit): Promise<any> {
   validateJevProtocol(connection);
@@ -120,7 +120,7 @@ export async function jevJsonRequest(connection: JevConnection, request: typeof 
     if (upstream !== undefined) throw httpError(upstream, url, response.status);
     if (!response.ok) throw httpError(response.status, url);
   }
-  if (body?.error) throw new JevConnectionError('模型服务或宿主返回错误，请检查 API 地址、Key、权限和模型兼容性');
+  if (body?.error) throw new JevConnectionError('模型服务或酒馆返回错误，请检查 API 地址、Key、权限和模型兼容性');
   return body;
 }
 export async function fetchJevModels(connection: JevConnection, request: typeof fetch = (url, init) => fetch(url, init)): Promise<string[]> {
@@ -194,8 +194,8 @@ export async function directJevRequest(connection: JevConnection, path: string, 
   const questions: Record<string, unknown> = {};
   if (path === 'evaluate') {
     (body as DecisionRequest).candidates.forEach((_, i) => {
-      questions['benefit_' + i] = { type: 'score', instructions: `仅根据已知游戏状态，候选 candidates[${i}] 对其自带 goal（没有时使用请求 goal）的游戏任务有多大帮助？候选可以是包含前置步骤的整段计划。`, criteria: ['无帮助或妨碍', '小幅帮助', '明显推进', '直接达成目标'] };
-      questions['risk_' + i] = { type: 'noul', instructions: `候选 candidates[${i}] 是否会使己方游戏单位暴露于 observation 中已经可见的强敌？不要假设未观测敌人。` };
+      questions['benefit_' + i] = { type: 'score', instructions: `仅根据已知游戏状态，待确认内容 candidates[${i}] 对其自带 goal（没有时使用请求 goal）的游戏任务有多大帮助？待确认内容可以是包含前置步骤的整段计划。`, criteria: ['无帮助或妨碍', '小幅帮助', '明显推进', '直接达成目标'] };
+      questions['risk_' + i] = { type: 'noul', instructions: `待确认内容 candidates[${i}] 是否会使己方游戏单位暴露于 observation 中已经可见的强敌？不要假设未观测敌人。` };
     });
   } else if (path === 'select-context') {
     (body as ContextSelectionRequest).fields.forEach(field => {

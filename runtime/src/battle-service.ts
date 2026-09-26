@@ -211,7 +211,7 @@ export class BattleService {
     const tags = index === undefined ? [] : [prepareMessageTag(chat, index)];
     return this.transact(before => {
       const proposal = before.proposals?.find(p => p.id === id);
-      if (!proposal || !namespace || !['pending', 'failed'].includes(proposal.status)) throw Error('候选不可提交');
+      if (!proposal || !namespace || !['pending', 'failed'].includes(proposal.status)) throw Error('待确认内容不可提交');
       const current = this.host.messageBySource(proposal.source.messageId);
       if (!current || !current.complete || namespaceOf(current) !== namespace || current.swipeId !== proposal.source.swipeId || protocolExcerpt(current.text) !== (proposal.originalText ?? proposal.source.text)) throw Error('来源消息已改变或删除，请重新扫描');
       if (sourceCommitted(before, proposal.sourceKey)) throw Error('此消息已入账，不能重复执行');
@@ -291,7 +291,7 @@ export class BattleService {
   }
   async rebind(id: string): Promise<void> {
     const before = this.snapshot(); const old = before.proposals?.find(p => p.id === id); const namespace = this.host.namespace();
-    if (!old || !namespace || !['legacy', 'stale'].includes(old.status)) throw Error('缺少可重新预览的候选');
+    if (!old || !namespace || !['legacy', 'stale'].includes(old.status)) throw Error('缺少可重新预览的待确认内容');
     if (old.corrected) { const receipt = await this.correctProposal(id, old.source.text); if (receipt.status !== 'confirmed') throw Error(receipt.error ?? '草稿尚未保存'); return; }
     const current = this.host.messageBySource(old.source.messageId);
     if (!current || current.role !== 'assistant' || !current.complete || namespaceOf(current) !== namespace || protocolExcerpt(current.text) !== old.source.text || current.swipeId !== old.source.swipeId) throw Error('原消息已变化，需要重新扫描');
@@ -299,7 +299,7 @@ export class BattleService {
     const binding = captureGeneration(before, namespace, crypto.randomUUID()); binding.complete = true; binding.manualOnly = true;
     current.generationId = binding.id; const proposal = proposalFromMessage(current, binding)!;
     const receipt = await this.transact(state => ({ ...state, proposals: [...(state.proposals ?? []).map((p): NarrativeProposal => p.id === old.id ? { ...p, status: 'stale' } : p), proposal] }));
-    if (receipt.status !== 'confirmed') throw Error(receipt.error ?? '候选尚未保存');
+    if (receipt.status !== 'confirmed') throw Error(receipt.error ?? '待确认内容尚未保存');
   }
   dispose(): void {
     if (this.disposed) return;

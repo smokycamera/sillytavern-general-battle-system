@@ -166,7 +166,7 @@ describe('JEV host and relay transport', () => {
     expect(proxy).toHaveBeenCalledTimes(1);
   });
   it('handles HTTP-200 host errors and timeout separately without echoing secrets', async () => {
-    await expect(fetchJevModels(connection, async () => json({ error: 'upstream-key' }))).rejects.toThrow('宿主返回错误');
+    await expect(fetchJevModels(connection, async () => json({ error: 'upstream-key' }))).rejects.toThrow('酒馆返回错误');
     const aborter = new AbortController(); aborter.abort(new DOMException('Timeout', 'TimeoutError'));
     await expect(jevJsonRequest(connection, vi.fn(), 'https://api.typesafe.ai/v1/models', { signal: aborter.signal })).rejects.toThrow('超时');
   });
