@@ -42,7 +42,7 @@ export function createPanelRuntime(): PanelRuntime {
     deleteUnit: id => convert(service.deleteUnit(id)), restoreDeployment: id => convert(service.restoreDeployment(id)), approve: id => convert(service.approve(id)),
     correctProposal: (id, text) => convert(service.correctProposal(id, text)), reject: id => convert(service.reject(id)), deleteRecords: ids => convert(service.deleteRecords(ids)),
     acceptMigration: () => convert(service.acceptMigration()), restoreMigrationBackup: () => convert(service.restoreMigrationBackup()),
-    beginGeneration: () => service.beginGeneration(), scan: id => service.scan(id), rebind: id => service.rebind(id), dispose() {},
+    beginGeneration: () => service.beginGeneration(), scan: (id, options) => service.scan(id, options), rebind: id => service.rebind(id), dispose() {},
   };
   const adapter: TavernAdapter = {
     inTavern: true, identity: () => host.session()?.scope.key ?? '', namespace: () => host.namespace(),

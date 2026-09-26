@@ -13,7 +13,7 @@ import { reviewMigration, type MigrationReview } from './migration-review.js';
 import { assertInventoryPanelWrite, calibrateSavedWeaponRanges, deleteUnitArchive, prepareInventoryState, prepareInventoryTransaction, type InventoryAction, type InventoryIntent, type InventorySave } from './inventory-state.js';
 import { cellLabel, type BattlefieldSpec } from '../../engine/src/small/spatial.js';
 import {
-  captureGeneration, factsOf, restoreNarrativeDeployment, messageSourceKey, namespaceOf, prepareNarrativeTransaction, proposalFromMessage,
+  captureGeneration, shouldRefreshNarrativeProposal, factsOf, restoreNarrativeDeployment, messageSourceKey, namespaceOf, prepareNarrativeTransaction, proposalFromMessage,
   compactNarrativeSources, deleteNarrativeRecords, narrativeReceiptKey,
   type GenerationBinding, type NarrativeSave, type NarrativeProposal,
 } from './narrative-state.js';
@@ -132,7 +132,7 @@ export class NarrativeController {
   private listeners = new Set<Listener>();
   private active = true;
   private reading = false;
-  private queuedScan?: { epoch: number; messageId?: number };
+  private queuedScan?: { epoch: number; messageId?: number; manual?: boolean };
   private lastReceipt?: SaveReceipt;
   private migration?: MigrationReview;
   readonly capabilities = { beforeGeneration: false, generationEnded: false, messageIdentity: false, injection: false };
@@ -277,10 +277,10 @@ export class NarrativeController {
     this.binding = this.namespace ? captureGeneration(this.state, this.namespace, crypto.randomUUID()) : undefined;
     this.project();
   }
-  async scan(messageId?: number): Promise<void> {
+  async scan(messageId?: number, options: { manual?: boolean } = {}): Promise<void> {
     if (!this.active || this.migration || this.adapter.isGenerating()) return;
     // 宿主读取可能跨越下一次生成完成；保留最新信号，不能因旧读取占用而丢掉最终正文。
-    if (this.reading) { this.queuedScan = { epoch: this.epoch, messageId }; return; }
+    if (this.reading) { this.queuedScan = { epoch: this.epoch, messageId, manual: options.manual }; return; }
     this.reading = true;
     const epoch = this.epoch; const binding = this.binding ? structuredClone(this.binding) : undefined;
     try {
@@ -288,8 +288,8 @@ export class NarrativeController {
       if (!envelope || !this.active || epoch !== this.epoch || binding?.id !== this.binding?.id || binding?.complete !== this.binding?.complete || binding?.messageId !== this.binding?.messageId || this.identity !== this.adapter.identity() || this.namespace !== this.adapter.namespace()) return;
       if (envelope.role !== 'assistant') return;
       this.capabilities.messageIdentity = !!envelope.messageId && !!envelope.swipeId && !!this.namespace;
-      let expected = binding;
-      const matchesGeneration = binding?.complete && binding.messageId === envelope.messageId;
+      let expected = options.manual ? undefined : binding;
+      const matchesGeneration = !options.manual && binding?.complete && binding.messageId === envelope.messageId;
       if (!matchesGeneration && envelope.complete && this.capabilities.messageIdentity && namespaceOf(envelope) === this.namespace) {
         expected = { ...captureGeneration(this.state, this.namespace!, crypto.randomUUID()), complete: true, manualOnly: true, messageId: envelope.messageId };
       }
@@ -300,10 +300,9 @@ export class NarrativeController {
       const existing = (this.state.proposals ?? []).filter((p) => p.sourceKey === proposal.sourceKey);
       const same = existing.find((p) => (p.canonical === proposal.canonical || p.status === 'committed' && parseProtocol(p.source.text).canonical === proposal.canonical) && p.source.swipeId === envelope.swipeId && (!!proposal.canonical || p.source.text === proposal.source.text));
       // 初读缺少完成信号时保留的候选，在可靠性补齐后原位升级，不能被正文去重吞掉。
-      const upgrade = same && ((same.status === 'legacy' || same.status === 'unresolved' && same.reason?.startsWith('已识别')) && proposal.status === 'pending'
-        || same.status === 'pending' && same.expected?.manualOnly && proposal.status === 'pending' && !proposal.expected?.manualOnly);
+      const upgrade = shouldRefreshNarrativeProposal(same, proposal, options.manual);
       if (same && !upgrade) return;
-      if (upgrade) proposal.id = same.id;
+      if (upgrade) proposal.id = same!.id;
       if (existing.some((p) => p.status === 'committed')) { proposal.status = 'stale'; proposal.reason = '此消息已同步；修改不会重复创建单位。可恢复原批次参战单位，新增内容请使用新消息'; }
       const proposals = (this.state.proposals ?? []).filter((p) => !upgrade || p.id !== same!.id).map((p): NarrativeProposal => p.sourceKey === proposal.sourceKey && ['pending', 'legacy', 'failed', 'unresolved'].includes(p.status) ? { ...p, status: 'stale', reason: '已被新消息修订替代' } : p);
       const candidate = { ...this.state, proposals: [...proposals, proposal] };
@@ -319,7 +318,7 @@ export class NarrativeController {
     } finally {
       this.reading = false;
       const queued = this.queuedScan; this.queuedScan = undefined;
-      if (queued?.epoch === this.epoch) await this.scan(queued.messageId);
+      if (queued?.epoch === this.epoch) await this.scan(queued.messageId, { manual: queued.manual });
     }
   }
   deleteUnit(id: string): SaveReceipt { return this.write(deleteUnitArchive(this.state, id)); }

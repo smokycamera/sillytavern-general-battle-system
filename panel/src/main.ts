@@ -283,9 +283,9 @@ const state: AppState = {
 const fullAuto = new AutoBattleLoop();
 const llmContext = new LlmContextController();
 let llmDiagnostic = "";
-let enemyResumeRequested = false;
+let smallResumeRequested = false;
 function recentContextMessages() { return (runtime.recentNarrative?.()??[]).filter(m=>m.completed); }
-function stopAutomation(): void { fullAuto.stop(); llmContext.cancel(); enemyResumeRequested = false; }
+function stopAutomation(): void { fullAuto.stop(); llmContext.cancel(); smallResumeRequested = false; }
 window.addEventListener('pagehide', stopAutomation);
 let battleSaveFailed = false;
 let uiBusy = false;
@@ -306,7 +306,7 @@ async function panelTask(task: () => Promise<void>, allowPending = false, feedba
     feedback?.removeAttribute('data-processing');
     uiBusy = false; document.body.removeAttribute('aria-busy');
     if (identity !== adapter.identity() || namespace !== adapter.namespace()) { restore(); render(); }
-    if (enemyResumeRequested) void resumeEnemyTurnIfNeeded();
+    if (smallResumeRequested) void resumeSmallTurnIfNeeded();
   }
 }
 async function persist(): Promise<boolean> {
@@ -404,9 +404,9 @@ interface SavedPanel {
 }
 
 function restore(): void {
-  const resumeRequested = enemyResumeRequested;
+  const resumeRequested = smallResumeRequested;
   stopAutomation();
-  enemyResumeRequested = resumeRequested;
+  smallResumeRequested = resumeRequested;
   reportRestartPreview=undefined;
   if (workspaceNamespace !== adapter.namespace()) {
     narrativeDrafts.clear(); promptDrafts.clear();
@@ -674,8 +674,9 @@ function prepareRosterForBattle(): void {
  * （autoTurn 关闭时：敌方仍自动、我方全手动。）
  */
 async function autoSmall(b: SmallBattle): Promise<void> {
-  if (!b.active) return;
-  b.autoAction(b.active.id);
+  if (!b.active || b.isOver()) return;
+  if (b.active.status !== 'ready') b.endTurn();
+  else b.autoAction(b.active.id);
 }
 async function runAuto(): Promise<void> {
   if (fullAuto.running) return;
@@ -685,15 +686,12 @@ async function runAuto(): Promise<void> {
     let guard = 0;
     while (state.small === b && !b.isOver() && b.active && guard++ < 200) {
       const a = b.active;
-      const isProto = a.id === state.protagonistId;
-      // 玩家主控：停下等操作
-      if (isProto) break;
-      // 敌方：始终自动
-      const enemyTurn = a.side === 'enemy';
-      // 友方：仅在开了「自动行动」时自动；否则停下（玩家扮演我方）
-      if (!enemyTurn && !state.autoTurn) break;
-      if (a.status !== 'ready') b.endTurn();
-      else await autoSmall(b);
+      // 反应击杀/失能必须先交还行动权，不能等待已倒下的玩家单位。
+      if (a.status === 'ready') {
+        if (a.id === state.protagonistId) break;
+        if (a.side !== 'enemy' && !state.autoTurn) break;
+      }
+      await autoSmall(b);
       // Each completed activation is durable before the next remote decision.
       if (state.small !== b || !(await persist())) return;
     }
@@ -711,14 +709,15 @@ async function runAuto(): Promise<void> {
   }
 }
 
-async function resumeEnemyTurnIfNeeded(): Promise<void> {
+async function resumeSmallTurnIfNeeded(): Promise<void> {
   // A restored view can arrive while the old request is unwinding. Coalesce that
   // wake-up behind the same UI task lock instead of losing it or cancelling a peer.
-  enemyResumeRequested = true;
+  smallResumeRequested = true;
   if (uiBusy || fullAuto.running) return;
-  enemyResumeRequested = false;
+  smallResumeRequested = false;
   const b = state.small;
-  if (!b || b.isOver() || b.active?.side !== 'enemy' || battleSaveFailed || (runtime.canWrite && !runtime.canWrite())) return;
+  if (!b || b.isOver() || !b.active || (b.active.status === 'ready' && b.active.side !== 'enemy')
+    || battleSaveFailed || (runtime.canWrite && !runtime.canWrite())) return;
   await panelTask(async () => {
     await runAuto();
     render('battle');
@@ -760,7 +759,7 @@ function startFullAuto(): void {
     } finally {
       uiBusy = false; document.body.removeAttribute('aria-busy');
       if (!fullAuto.running) render('battle');
-      if (enemyResumeRequested) void resumeEnemyTurnIfNeeded();
+      if (smallResumeRequested) void resumeSmallTurnIfNeeded();
     }
   }, () => render('battle'), (error) => {
     // 异常时撤回到已保存战场，避免保留只执行了一半的行动。
@@ -2081,14 +2080,20 @@ async function handleAction(e: Event): Promise<void> {
   if (act.startsWith('out-') || act === 'delivery-generate') {
     await actions[act]?.(el); return;
   }
+  if (act === 'narrative-scan' || act === 'pending-scan') {
+    if (controller.migrationReview()) throw Error('请先核对并接受迁移预览，再扫描回复');
+    await scanLastMessage({ manual: true });
+    render(); return;
+  }
   const actionBattle = currentBattle();
   try {
     (await executeAndSave(async () => {
     if (controller.migrationReview() && !act.startsWith('migration-') && !['log-detail', 'unit-detail', 'units-toggle', 'sec-toggle', 'modal-stop'].includes(act)) throw new Error('先核对迁移预览；预览期间不会改写原档或推进战斗');
     (await actions[act]?.(el));
     if (battleSaveFailed) { const receipt = state.saveReceipt; restore(); state.saveReceipt = receipt; render(); return; }
-    if (['grid-endturn', 'grid-mobile-endturn', 'grid-auto', 'small-start', 'mass-start'].includes(act) && state.small?.battlefield) {
-      // Ending the player's turn must survive a cancelled/failed JEV request.
+    if (state.small?.battlefield && (['grid-endturn', 'grid-mobile-endturn', 'grid-auto', 'small-start', 'mass-start'].includes(act)
+      || state.small.active && state.small.active.status !== 'ready')) {
+      // 先保存动作及反应结果，再跳过失能行动者并执行后续自动回合。
       if (!(await persist())) return;
       (await runAuto()); tacticalView.selectedId = state.small.active?.id; tacticalView.cell = undefined;
     }
@@ -2167,10 +2172,9 @@ function catchUpScan(): void {
   });
 }
 
-/** 扫描最新 AI 回复，解析建议标签并入队（去重：待审中 + 已处理过的都不再进）。
- *  自动批准开启时直接批准落库。返回是否有变化（调用方据此决定是否刷新界面）。 */
+/** 自动扫描沿用生成绑定；手动重扫刷新待处理回复，已提交来源继续去重。 */
 async function scanLastMessage(opts: { manual?: boolean } = {}): Promise<boolean> {
-  await controller.scan();
+  await controller.scan(undefined, opts);
   if (opts.manual) toast('已按完整协议与消息来源扫描；结果见剧情档案同步');
   return true;
 }
@@ -2587,7 +2591,6 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   'grid-endturn': () => { state.small!.endTurn(); },
   'grid-mobile-endturn': () => { state.small!.endTurn(); },
   'grid-auto': async () => { await autoSmall(state.small!); },
-  'narrative-scan': () => { void controller.scan(); },
   'prompt-save': async (el) => {
     const id = el.dataset.section as PromptSectionId; if (!PROMPT_SECTIONS.some((s) => s.id === id)) return;
     const settings = controller.snapshot().promptSettings ?? {};
@@ -3107,9 +3110,6 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   'xp-settle': async () => {
     (await settleXp());
   },
-  'pending-scan': () => {
-    void scanLastMessage({ manual: true }).then(() => render());
-  },
   'pending-approve': async (el) => {
     const s = state.pending[parseInt(el.dataset.i!, 10)];
     if (!s) return;
@@ -3379,7 +3379,7 @@ const stopControllerView = controller.listen((_saved: NarrativeSave, receipt?: S
   }
   state.lastInvalid = [];
   render();
-  void resumeEnemyTurnIfNeeded();
+  void resumeSmallTurnIfNeeded();
 });
 window.addEventListener('pagehide', stopControllerView);
 window.addEventListener('message', (event: MessageEvent) => {
@@ -3420,7 +3420,7 @@ window.addEventListener('message', (e: MessageEvent) => {
 
 restore();
 render();
-void resumeEnemyTurnIfNeeded();
+void resumeSmallTurnIfNeeded();
 // 面板（重）打开：补扫关闭期间完成的生成（无标记或标记不比上次扫描新则不动）
 catchUpScan();
 

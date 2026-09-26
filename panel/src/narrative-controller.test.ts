@@ -112,6 +112,20 @@ describe('常驻宿主生命周期与故障', () => {
     expect(controller.snapshot().storage![0]!.hp).toBe(500);
 
   });
+  it('手动重扫刷新过期候选的事实版本，不清档也不自动提交', async () => {
+    const { controller, message } = setup();
+    message('<tb><unit_update id="a" hp="500"/></tb>'); await controller.scan();
+    const old = controller.snapshot().proposals![0]!;
+    const before = controller.snapshot();
+    controller.persistPanel({ ...before, field: 'forest' }, before.factRevision!);
+    await controller.scan(undefined, { manual: true });
+    const refreshed = controller.snapshot().proposals![0]!;
+    expect(refreshed.id).toBe(old.id); expect(refreshed.expected?.factRevision).toBe(controller.snapshot().factRevision);
+    expect(refreshed.expected?.manualOnly).toBe(true); expect(controller.snapshot().storage![0]!.hp).toBe(70);
+    expect(controller.approve(refreshed.id).status).toBe('saved');
+    await controller.scan(undefined, { manual: true });
+    expect(controller.snapshot().proposals).toHaveLength(1); expect(controller.snapshot().field).toBe('forest');
+  });
   it.each(['no-received', 'no-ended-id', 'ended-first'])('兼容生命周期缺参数与顺序差异（%s）', async (mode) => {
     const { controller, message, emit } = setup(); emit('GENERATION_AFTER_COMMANDS');
     message('<tb><unit_update id="a" hp="500"/></tb>');

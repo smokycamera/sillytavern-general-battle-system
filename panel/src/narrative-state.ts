@@ -111,6 +111,14 @@ export function proposalFromMessage(source: MessageEnvelope, expected?: Generati
   };
 }
 
+/** 相同正文仍可因消息完成或手动重扫获得新的事实绑定；已入账/拒绝不重开。 */
+export function shouldRefreshNarrativeProposal(previous: NarrativeProposal | undefined, next: NarrativeProposal, manual = false): boolean {
+  if (!previous || next.status !== 'pending') return false;
+  if (manual && ['legacy', 'pending', 'stale', 'failed', 'unresolved'].includes(previous.status)) return true;
+  return previous.status === 'legacy' || previous.status === 'unresolved' && !!previous.reason?.startsWith('已识别')
+    || previous.status === 'pending' && !!previous.expected?.manualOnly && !next.expected?.manualOnly;
+}
+
 function spawnInput(event: Extract<Suggestion, { kind: 'spawn' }>): GenerateInput {
   const registry = traitRegistry();
   // 兼容更新前已保存的候选：未知特质不会令建档再次失败。
