@@ -117,7 +117,7 @@ export interface RangeSpec {
 
 export type EffectOp =
   | { op: 'barrier'; amount: number; dur: number }
-  | { op: 'zone'; kind: 'fire' | 'poison' | 'smoke' | 'healing' | 'trap'; power: number; dur: number; radius: number; amount?: number; penetration?: number }
+  | { op: 'zone'; kind: 'fire' | 'poison' | 'smoke' | 'healing' | 'trap'; power: number; dur: number; radius: number; amount?: number; penetration?: number; effects?: ZonePayload[] }
   | { op: 'damage'; baseDice: string; apDice?: string; tag?: string; shape?: 'single' | 'burst' }
   | ({ op: 'heal' } & ({ dice: string; amount?: never } | { amount: number; dice?: never }))
   | { op: 'condition'; conditionId: string; dur: number; potency?: number; magnitude?: number; saveDC?: number; onHit?: boolean; onDamage?: boolean; shape?: 'single' | 'burst' }
@@ -127,6 +127,9 @@ export type EffectOp =
   | { op: 'resource'; resource: string; amount: number; maximum?: 'training' }
   | { op: 'morale'; amount: number }
   | { op: 'summon'; templateId: string; count: number };
+
+/** 区域携带实际效果；不递归生成区域或每轮无限召唤。召唤仍在施放时执行。 */
+export type ZonePayload = Exclude<EffectOp, { op: 'zone' | 'damage' | 'summon' }>;
 
 export interface Ability {
   area?: { shape: 'cone' | 'line' | 'ring' | 'chain' | 'circle'; radius: number; maxTargets: number };

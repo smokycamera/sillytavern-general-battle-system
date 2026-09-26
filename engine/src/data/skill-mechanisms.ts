@@ -74,9 +74,14 @@ export function allowedSkillModifiers(category: SkillCategory): SkillModifier[] 
   return SKILL_MODIFIERS.filter((m) => m.allowed === 'support' ? !damage : m.allowed === 'buff' ? category === 'buff' : m.allowed === 'hostile' ? category !== 'buff'
     : m.allowed === 'physical' ? physical : m.allowed === 'magic' ? magic : damage);
 }
+/** 结构参数仍只有一个槽位；冲突时采用最后声明，效果词本身全部保留。 */
+function normalizeModifiers(input: string[]): string[] {
+  const groups=[['melee','ranged','shield','projectile'],['thermal','arcane'],['cone','line','ring','chain']];
+  return [...new Set(input)].filter(id=>!groups.some(group=>group.includes(id)&&[...input].reverse().find(value=>group.includes(value))!==id));
+}
 export function skillMechanismId(mechanism: SkillMechanism): string {
   return 'generic:' + mechanism.category + (mechanism.area && !mechanism.category.endsWith('area') ? ':area' : '')
-    + (mechanism.modifiers.length ? ':' + [...mechanism.modifiers].sort().join('+') : '');
+    + (mechanism.modifiers.length ? ':' + normalizeModifiers(mechanism.modifiers).sort().join('+') : '');
 }
 export function skillMechanismFromId(id: string): SkillMechanism | undefined {
   if (!id.startsWith('generic:')) return undefined;
@@ -84,12 +89,8 @@ export function skillMechanismFromId(id: string): SkillMechanism | undefined {
   if (!SKILL_CATEGORIES.some((c) => c.id === category)) return undefined;
   const area = category.endsWith('area') || parts[0] === 'area'; if (parts[0] === 'area') parts.shift();
   if (parts.length > 1) return undefined;
-  const modifiers = parts[0]?.split('+') ?? [], allowed = allowedSkillModifiers(category);
-  if (modifiers.length > 3 || new Set(modifiers).size !== modifiers.length || modifiers.some((id) => !allowed.some((m) => m.id === id))) return undefined;
-  if (['melee', 'ranged', 'shield', 'projectile'].filter((id) => modifiers.includes(id)).length > 1 || ['thermal', 'arcane'].every((id) => modifiers.includes(id))) return undefined;
-  if (modifiers.some(id => id.startsWith('zone-')) && modifiers.length !== 1) return undefined;
-  if (modifiers.filter(id => ['cone','line','ring','chain'].includes(id)).length > 1) return undefined;
-  if (modifiers.includes('summon') && (area || modifiers.length > 1)) return undefined;
+  const modifiers = normalizeModifiers(parts[0]?.split('+') ?? []);
+  if (modifiers.some((id) => !SKILL_MODIFIERS.some((m) => m.id === id))) return undefined;
   return { category, area, modifiers };
 }
 /** 通用机制直接解析；自定义名称不进入机制推断，不匹配预制技能名。 */
@@ -100,6 +101,12 @@ export function parseSkillMechanism(text: string): SkillMechanism | undefined {
   if(simple[short]) { const [category,id]=simple[short]!;return {category,area:category.endsWith('area'),modifiers:[id]}; }
   if(controls[short]) return {category:'debuff',area:false,modifiers:[controls[short]!]};
   let source = text.trim().replace(/^(?:范围|群体)(buff|debuff|增益|减益)/i, '$1范围');
+  const shorthand = Object.keys(simple).find(name => source.startsWith(name + '+'));
+  if (shorthand) source = SKILL_CATEGORIES.find(c => c.id === simple[shorthand]![0])!.name + '+' + source;
+  else {
+    const control = Object.keys(controls).find(name => source.startsWith(name + '+'));
+    if (control) source = 'debuff+' + source;
+  }
   const prefix = SKILL_CATEGORIES.flatMap((c) => [c.name, ...SKILL_CATEGORY_ALIASES[c.id]].map((name) => ({ id: c.id, name })))
     .sort((a, b) => b.name.length - a.name.length).find((c) => source.toLowerCase().startsWith(c.name.toLowerCase()));
   if (!prefix) return undefined;
@@ -107,7 +114,8 @@ export function parseSkillMechanism(text: string): SkillMechanism | undefined {
   source = source.slice(prefix.name.length).trim();
   const areaWord = source.match(/^(?:群体范围|范围|群体)/)?.[0];
   const area = category.endsWith('area') || !!areaWord; if (areaWord) source = source.slice(areaWord.length);
-  const modifiers: string[] = [], choices = allowedSkillModifiers(category).flatMap((m) => [m.name, ...(SKILL_MODIFIER_ALIASES[m.id] ?? []), ...(m.trait ? [m.name.slice(2)] : [])].map((name) => ({ id: m.id, name }))).sort((a, b) => b.name.length - a.name.length);
+  const preferred=allowedSkillModifiers(category);
+  const modifiers: string[] = [], choices = [...preferred,...SKILL_MODIFIERS.filter(m=>!preferred.includes(m))].flatMap((m) => [m.name, ...(SKILL_MODIFIER_ALIASES[m.id] ?? []), ...(m.trait ? [m.name.slice(2)] : [])].map((name) => ({ id: m.id, name }))).sort((a, b) => b.name.length - a.name.length);
   while (source) {
     source = source.replace(/^[+\s]+/, ''); if (!source) break;
     const modifier = choices.find((m) => source.startsWith(m.name)); if (!modifier) return undefined;

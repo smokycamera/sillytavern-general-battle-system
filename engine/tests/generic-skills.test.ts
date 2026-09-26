@@ -69,7 +69,11 @@ describe('通用六类技能配方', () => {
     expect([...covered].sort()).toEqual(['barrier', 'condition', 'damage', 'dispel', 'heal', 'morale', 'push', 'resource', 'summon', 'trait', 'zone']);
     expect([...conditions].sort()).toEqual(STANDARD_CONDITIONS.map((c) => c.id).sort());
     expect([...traits].sort()).toEqual(TRAITS.filter((t) => t.v2SourceReady).map((t) => t.id).sort());
-    for (const text of ['物理单体近战+射击', '魔法范围热能+奥术', 'buff范围召唤', 'debuff不存在']) expect(parseSkillMechanism(text)).toBeUndefined();
+    expect(parseSkillMechanism('物理单体近战+射击')!.modifiers).toEqual(['ranged']);
+    expect(parseSkillMechanism('魔法范围热能+奥术')!.modifiers).toEqual(['arcane']);
+    expect(parseSkillMechanism('魔法范围扇形+直线')!.modifiers).toEqual(['line']);
+    expect(parseSkillMechanism('魔法范围治疗+中毒+减速')!.modifiers).toEqual(['heal','poison','slow']);
+    expect(parseSkillMechanism('debuff不存在')).toBeUndefined();
     expect(parseProtocol('<tb><learn id="a" skills="破空:物理单体L99"/></tb>').events).toEqual([]);
     expect(parseProtocol('<tb><learn id="a" skills="烈焰风暴:buff不存在L5"/></tb>').events).toEqual([]);
   });

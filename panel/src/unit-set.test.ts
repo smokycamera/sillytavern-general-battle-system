@@ -14,7 +14,10 @@ function setup(scale:'hero'|'company'='hero'):NarrativeSave {
   return {storage:[unitRecordFromCombatant(unit)],rosterIds:['u1'],factRevision:1,storySync:true};
 }
 function transact(save:NarrativeSave,data:Record<string,unknown>,extra='',mid='set') {
-  const source:MessageEnvelope={characterId:'c',chatId:'chat',branchId:'b',messageId:mid,swipeId:'0',generationId:mid,role:'assistant',complete:true,text:`<tb>\n${serializeEvent('unit_set',{id:'u1',data:JSON.stringify(data)})}\n${extra}\n</tb>`};
+  return transactText(save,`<tb>\n${serializeEvent('unit_set',{id:'u1',data:JSON.stringify(data)})}\n${extra}\n</tb>`,mid);
+}
+function transactText(save:NarrativeSave,text:string,mid='set') {
+  const source:MessageEnvelope={characterId:'c',chatId:'chat',branchId:'b',messageId:mid,swipeId:'0',generationId:mid,role:'assistant',complete:true,text};
   const ns=namespaceOf(source),binding=captureGeneration(save,ns,mid);binding.complete=true;
   const proposal=proposalFromMessage(source,binding)!;
   return {next:()=>prepareNarrativeTransaction(save,proposal,ns),proposal,ns};
@@ -22,6 +25,29 @@ function transact(save:NarrativeSave,data:Record<string,unknown>,extra='',mid='s
 function restored(save:NarrativeSave) { return materializeUnitRecord(prepareInventoryState(JSON.parse(JSON.stringify(save))).storage![0]!,reg); }
 
 describe('正文战外全字段事务（定向验证）',()=>{
+  it('已死亡编队可通过天生武器、负护甲强化和毒雾技能转化，持久化后保留零占手',()=>{
+    const save=transact(setup('company'),{status:'dead'},'','death').next();
+    const before=structuredClone(save);
+    const text='<tb><unit_set id="u1" name="憎恶军团" side="ally" scale="company" level="2" hp="40" hpMax="40" state="ready" body="human" speed="2" weapon="腐骨利爪:天生武器L3+3伤害" armor="缝合尸甲:中甲L3+4强度-2防御" skills="腐毒撕扯:物理单体+近战+中毒L3,尸瘴喷涌:毒雾+中毒+减速L3+3持续" traits="不溃,毒击,恐惧" note="由覆灭的沼毒巫团转化而成，失去原有意志，保留腐毒残质" reason="将已确认死亡的沼毒巫团转化为憎恶军团"/></tb>';
+    expect(parseProtocol(text).errors).toEqual([]);
+    const next=transactText(save,text,'transform').next(),unit=restored(next);
+    expect(unit).toMatchObject({name:'憎恶军团',side:'ally',scale:'company',level:2,hp:40,status:'ready',speedTier:2,base:{hpMax:40},weapon:{name:'腐骨利爪',hands:0,load:0,recipe:{mechanism:'natural',bonuses:{damage:3}}}});
+    expect(unit.armor!.recipe!.bonuses).toMatchObject({power:4,defense:-2});
+    expect(unit.abilities.map(a=>a.name)).toEqual(['腐毒撕扯','尸瘴喷涌']);
+    expect(unit.abilities[1]!.bonuses).toMatchObject({duration:3});
+    expect(unit.abilities[1]!.effects[0]).toMatchObject({op:'zone',kind:'poison',effects:expect.arrayContaining([{op:'condition',conditionId:'poisoned',dur:3,magnitude:expect.any(Number),saveDC:7,onDamage:true,shape:'burst'},expect.objectContaining({conditionId:'slowed'})])});
+    expect(next.inventory!.find(i=>i.id===unit.weapon!.id)!.mechanics).toMatchObject({kind:'weapon',value:{hands:0}});
+    expect(save).toEqual(before);
+  });
+  it.each([0,1,2])('主副武器接受引擎支持的占手值 %s',hands=>{
+    const unit=restored(transact(setup(),{weapon:{values:{hands}},sidearm:{spec:'爪:天生武器L3',values:{hands}}}).next());
+    expect(unit.weapon!.hands).toBe(hands);expect(unit.sidearm!.hands).toBe(hands);
+  });
+  it.each([-1,3,1.5,'0'])('无效占手值 %s 仍拒绝且不改存档',hands=>{
+    const save=setup(),before=structuredClone(save);
+    for(const slot of ['weapon','sidearm'])expect(()=>transact(save,{[slot]:{spec:'爪:天生武器L3',values:{hands}}}).next()).toThrow(/hands/);
+    expect(save).toEqual(before);
+  });
   it('unit_set接受小数通道值和负强化，单通道赋值保留其他通道，非法负防护原子回滚',()=>{
     const save=setup(),before=structuredClone(save);
     const unit=restored(transact(save,{bonuses:{damage:-3},weapon:{spec:'步枪L3-2伤害',values:{penetration:2.5}},armor:{spec:'轻甲L3+1热能防护',values:{protection:{kinetic:1.5,thermal:2.2,arcane:0}}},skills:[{spec:{id:'bp-arcane-bolt',level:3},values:{penetration:1.5}}]}).next());

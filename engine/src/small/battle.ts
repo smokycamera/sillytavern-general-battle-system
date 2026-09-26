@@ -1944,7 +1944,8 @@ export class SmallBattle {
 
   /** 死亡与经验入账 */
   private settleAreaEffects(boundary=false): void {
-    for (const result of settleZones(this.observationContext(),this.round,boundary)) {
+    for (const result of settleZones(this.observationContext(),this.round,boundary,this.rng)) {
+      if(result.control&&result.source)this.flightCauses.set(result.target.id,result.source.id);
       this.recordEvent({round:this.round,kind:'condition',participants:[result.target.id,...(result.source?[result.source.id]:[])],text:result.text});
       this.checkDeath(result.target,result.source); this.checkInjury(result.target,result.damage);
     }

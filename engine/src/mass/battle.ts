@@ -559,7 +559,7 @@ export class MassBattle {
   }
   private captureFeedback(): void { if (this.feedback) this.feedback.capture(this.pendingReport!.round, this.feedbackUnits()); }
   private finishPhase(phase: MassPhase): void {
-    for(const result of settleZones(this.observationContext(),this.round,phase==='重整')) { this.recordEvent({round:this.round,kind:'condition',participants:[result.target.id],text:result.text}); this.defeatUnit(result.target,result.source); }
+    for(const result of settleZones(this.observationContext(),this.round,phase==='重整',this.rng)) { if(result.control&&result.source)this.flightCauses.set(result.target.id,result.source.id); this.recordEvent({round:this.round,kind:'condition',participants:[result.target.id],text:result.text}); this.defeatUnit(result.target,result.source); }
     if (!this.feedback || !this.pendingReport) return;
     this.captureFeedback(); this.feedback.finishActivation();
     const summary = this.feedback.activation();

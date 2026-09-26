@@ -112,7 +112,8 @@ function gearValue(input: unknown, previous: ItemMechanics | undefined, slot: Eq
   for (const key of ['damageScale','drScale','powerScale']) if (gear[key] !== undefined) number(gear[key], key, Number.MIN_VALUE);
   if (gear.splashFactor !== undefined) number(gear.splashFactor, 'splashFactor', 0, 1);
   if (gear.pointBlankPenalty !== undefined) number(gear.pointBlankPenalty, 'pointBlankPenalty');
-  if (gear.hands !== undefined) number(gear.hands, 'hands', 1, 2, true);
+  // 与 Weapon.hands 和装备编译器一致：天生武器不占手（0）。
+  if (gear.hands !== undefined) number(gear.hands, 'hands', 0, 2, true);
   if (gear.indirect !== undefined && typeof gear.indirect !== 'boolean') throw Error('indirect须为布尔值');
   if (gear.pointBlankPolicy !== undefined) enumeration(gear.pointBlankPolicy, ['allow','penalty','forbid'], '贴身策略');
   if (gear.ammunition !== undefined) enumeration(gear.ammunition, ['he','ap'], '弹种');
@@ -134,7 +135,7 @@ function skillValues(unit: Combatant, input: unknown): Ability[] {
     if (config.spec !== undefined) {
       const parsed = typeof config.spec === 'string' ? parseAbilitySpec(config.spec) : [];
       const spec = typeof config.spec === 'string' ? parsed.length === 1 ? { id: parsed[0]!.blueprintId, level: parsed[0]!.level, name: parsed[0]!.name, bonuses: parsed[0]!.bonuses } : undefined : requireObject(config.spec, '技能spec');
-      if (!spec) throw Error('无法识别技能等级');
+      if (!spec) throw Error(`无法识别技能规格「${String(config.spec)}」，请检查机制组合及等级（L1–L10）`);
       keys(spec, ['id','level','name','bonuses'], '技能spec');
       const definition = skillDefinitionId(String(spec.id)); if (!definition) throw Error('未知技能效果');
       const power = spec.level ?? ability?.power ?? 5; number(power, '技能等级', 1, 10, true);

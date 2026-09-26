@@ -7,10 +7,16 @@ import { poisonFactor } from './afflictions.js';
 import { unitLineOfSight } from './small/spatial.js';
 import { activeTraitIds } from './trait-sources.js';
 import { zoneAmount, zonePenetration, validateZoneStrength } from './zone-skills.js';
+import { prepareCondition, applySkillCondition, applySkillTrait, applyPush, dispelCandidates, applyDispel } from './skill-effects.js';
+import { SeededRng, type Rng } from './rng.js';
+import { grantBarrier } from './barrier.js';
+import { skillResourceChange } from './skill-runtime.js';
+import { changeMorale } from './morale.js';
+import { rollDice } from './dice.js';
 
 type Point = { x: number; y: number };
 type ZoneEffect = Extract<EffectOp, { op: 'zone' }>;
-export interface BattleZone extends Point { id: string; ownerId: string; side: Combatant['side']; kind: ZoneEffect['kind']; power: number; amount?: number; penetration?: number; radius: number; remaining: number; createdRound: number; lastRound: number; affected: string[]; mode: 'small' | 'mass' }
+export interface BattleZone extends Point { id: string; ownerId: string; side: Combatant['side']; kind: ZoneEffect['kind']; power: number; amount?: number; penetration?: number; effects?: ZoneEffect['effects']; radius: number; remaining: number; createdRound: number; lastRound: number; affected: string[]; mode: 'small' | 'mass' }
 export const ZONE_NAMES = { fire: '燃烧区域', poison: '毒雾', smoke: '烟幕', healing: '治疗区域', trap: '陷阱' } as const;
 export const AREA_NAMES = { cone: '扇形', line: '直线', ring: '环形', chain: '连锁', circle: '圆形' } as const;
 export function areaPosition(context: ObservationContext, unit: Combatant): Point {
@@ -68,6 +74,7 @@ export function zoneTarget(context: ObservationContext, actor: Combatant, id?: s
 export function placeZone(context: ObservationContext, actor: Combatant, target: Combatant, effect: ZoneEffect, round: number, abilityId: string): BattleZone {
   const point=areaPosition(context,target), id=actor.id+':'+abilityId+':'+effect.kind;
   const zone:BattleZone={...point,id,ownerId:actor.id,side:actor.side,kind:effect.kind,power:effect.power,amount:zoneAmount(effect),penetration:zonePenetration(effect),radius:effect.radius,remaining:effect.dur,createdRound:round,lastRound:round,affected:[],mode:context.mode};
+  if (effect.effects?.length) zone.effects=structuredClone(effect.effects);
   actor.battleZones=(actor.battleZones??[]).filter(old=>old.id!==id);
   actor.battleZones.push(zone); return zone;
 }
@@ -81,33 +88,60 @@ export function smokeBlocks(context: ObservationContext, from: Combatant, to: Co
     return Math.hypot(z.x-a.x-t*dx,z.y-a.y-t*dy)<=z.radius+.35;
   });
 }
-export interface ZoneOutcome { target: Combatant; source?: Combatant; damage: number; text: string }
+export interface ZoneOutcome { target: Combatant; source?: Combatant; damage: number; text: string; control?: boolean }
 /** 同一区域每个单位每轮至多触发一次；离开再进入或读档不会重复触发。 */
-export function settleZones(context: ObservationContext, round: number, boundary=false): ZoneOutcome[] {
+export function settleZones(context: ObservationContext, round: number, boundary=false, rng?: Rng): ZoneOutcome[] {
   const results:ZoneOutcome[]=[];
   for(const owner of context.units) {
     for(const zone of owner.battleZones??[]) {
       if(zone.mode!==context.mode || zone.remaining<=0)continue;
       if(zone.lastRound!==round){zone.lastRound=round;zone.affected=[];}
-      if(zone.kind!=='smoke')for(const target of context.units) {
+      if(zone.kind!=='smoke' || zone.effects?.length)for(const target of context.units) {
         if(target.hp<=0 || ['dead','fled'].includes(target.status) || target.airborne || zone.affected.includes(target.id) || distance(zone,areaPosition(context,target))>zone.radius)continue;
-        if(zone.kind==='healing' ? target.side!==zone.side : zone.kind==='trap' && target.side===zone.side)continue;
+        if(zone.kind==='healing' || zone.kind==='smoke' ? target.side!==zone.side : zone.kind==='trap' && target.side===zone.side)continue;
         if(context.battlefield) {
           const anchor={...target,pos:zone.y*context.battlefield.width+zone.x,airborne:false};
           if(!unitLineOfSight(context.battlefield,anchor,target))continue;
         }
         zone.affected.push(target.id);
-        const amount=zoneAmount(zone);
+        const amount=zoneAmount(zone); let damage=0;
         if(zone.kind==='healing') {
           const healed=applyRecovery(target,Math.min(recoveryCapacity(target),amount));
           if(healed)results.push({target,source:owner,damage:0,text:target.name+'在治疗区域恢复'+healed+'点生命'});
-        } else {
+        } else if(zone.kind!=='smoke') {
           const count=target.scale==='hero'?1:Math.min(target.hp,4);
           const factor=zone.kind==='poison'?poisonFactor(target):penetrationThrough(zonePenetration(zone),anchoredProtection(target,zone.kind==='fire'?'thermal':'kinetic'));
-          const damage=applyCombatDamage(target,Math.round(amount*factor*count),count);
+          damage=applyCombatDamage(target,Math.round(amount*factor*count),count);
           results.push({target,source:owner,damage,text:target.name+'受到'+ZONE_NAMES[zone.kind]+'影响，损失'+damage+'点生命'});
-          if(zone.kind==='trap'){zone.remaining=0;break;}
         }
+        const random=rng??new SeededRng(`${zone.id}:${zone.createdRound}:${round}:${target.id}`);
+        for(const effect of zone.effects??[]) {
+          if(target.hp<=0)break;
+          if ('onDamage' in effect && effect.onDamage && !damage) continue;
+          let text='',control=false;
+          if(effect.op==='condition') {
+            const outcome=prepareCondition(owner,target,effect,random);
+            // 区域每次最多暴露四名成员；不能把区域中毒扩大成整支编队中毒。
+            if(outcome.condition?.affectedMembers!==undefined)outcome.condition.affectedMembers=Math.min(target.hp,4);
+            applySkillCondition(target,outcome.condition);text=outcome.text;control=!!outcome.condition;
+          } else if(effect.op==='barrier') {
+            grantBarrier(target,effect.amount,effect.dur,owner.id);text=target.name+'在区域内获得屏障';
+          } else if(effect.op==='heal') {
+            const healed=applyRecovery(target,Math.min(recoveryCapacity(target),effect.amount??rollDice(effect.dice!,random).total));text=target.name+'在区域内恢复'+healed+'点生命';
+          } else if(effect.op==='resource') {
+            const change=skillResourceChange(target,effect);target.resources[effect.resource]=(target.resources[effect.resource]??0)+change;text=target.name+' '+effect.resource+(change>=0?'+':'')+change;
+          } else if(effect.op==='morale') {
+            const change=changeMorale(target,effect.amount);text=target.name+' 士气'+(change>=0?'+':'')+change;
+          } else if(effect.op==='dispel') {
+            const chosen=dispelCandidates(target,effect);applyDispel(target,chosen);control=chosen.length>0;text=target.name+(chosen.length?' 解除'+chosen.map(c=>c.name).join('、'):' 没有可解除的效果');
+          } else if(effect.op==='push') {
+            const moved=applyPush(context,owner,target,effect);text=target.name+'：'+(moved.reason??(effect.direction==='towards'?'拉至':'推至')+moved.label);
+          } else if(effect.op==='trait') {
+            text=applySkillTrait(owner,target,{id:zone.id,name:ZONE_NAMES[zone.kind],target:'zone',effects:[]},effect,zone.id+':'+round);
+          }
+          if(text)results.push({target,source:owner,damage:0,text,control});
+        }
+        if(zone.kind==='trap'){zone.remaining=0;break;}
       }
       if(boundary && zone.createdRound<round)zone.remaining--;
     }

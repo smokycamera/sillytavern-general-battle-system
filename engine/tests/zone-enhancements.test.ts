@@ -10,6 +10,7 @@ import { memberHealth } from '../src/member-health.js';
 import { combatantFromUnknown } from '../../panel/src/unit-state.js';
 import { parseProtocol } from '../../panel/src/protocol.js';
 import type { Enhancements } from '../src/enhancements.js';
+import { parseSkillMechanism, skillMechanismId } from '../src/data/skill-mechanisms.js';
 
 const ids = { fire: 'generic:magic-area:zone-fire', poison: 'generic:magic-area:zone-poison', smoke: 'generic:buff:zone-smoke', healing: 'generic:buff:zone-healing', trap: 'generic:debuff:zone-trap' };
 type Kind = keyof typeof ids;
@@ -30,6 +31,47 @@ function battle(mode: 'small' | 'mass', units: Combatant[]) {
 }
 
 describe('持续区域的有符号技能修正', () => {
+  it('区域简写支持多个机制、重复词条去重、超过三个词条及多区域不丢效果', () => {
+    const mechanism=parseSkillMechanism('毒雾+中毒+减速+定身+沉默+中毒')!;
+    expect(mechanism.modifiers).toHaveLength(5);
+    const ability=compileSkill({id:skillMechanismId(mechanism),bonuses:{duration:3}},3,'a');
+    const zone=ability.effects[0] as Extract<EffectOp,{op:'zone'}>;
+    expect(zone.effects?.map(e=>e.op==='condition'?e.conditionId:e.op).sort()).toEqual(['poisoned','restrained','silenced','slowed']);
+    const owner=unit('a');owner.abilities=[ability];expect(()=>combatantFromUnknown(JSON.parse(JSON.stringify(owner)))).not.toThrow();
+    const mixed=compileSkill(skillMechanismId(parseSkillMechanism('火墙+毒雾+减速')!),3,'a');
+    expect(mixed.effects.map(e=>e.op==='zone'?e.kind:e.op)).toEqual(['fire','poison']);
+    for(const effect of mixed.effects)expect(effect).toMatchObject({effects:[expect.objectContaining({conditionId:'slowed'})]});
+    expect(zoneEffectDescription(zone)).toContain('中毒');expect(zoneEffectDescription(zone)).toContain('减速');
+  });
+  for(const mode of ['small','mass'] as const)it(`${mode}：组合区域实际施放、附加状态、免疫及读档去重`,()=>{
+    const a=unit('a','ally',mode==='mass'),e=unit('e','enemy',mode==='mass');
+    const ability=compileSkill({id:skillMechanismId(parseSkillMechanism('毒雾+中毒+减速')!),bonuses:{duration:3}},3,'a');
+    a.abilities=[ability];a.preparedAbilityIds=[ability.id];
+    const b=battle(mode,[a,e]);b.rng.d=()=>1;
+    const target=b instanceof SmallBattle?'cell:'+e.pos:'zone:enemy:中军:front';
+    expect(b.useAbility(a.id,ability.id,target).ok).toBe(true);
+    if(b instanceof MassBattle){b.issue({unitId:e.id,type:'hold'});b.resolveRound();}
+    expect(e.conditions.map(c=>c.id)).toEqual(expect.arrayContaining(['poisoned','slowed']));
+    if(mode==='mass')expect(e.conditions.find(c=>c.id==='poisoned')!.affectedMembers).toBeLessThanOrEqual(4);
+    const restored=b instanceof SmallBattle?SmallBattle.fromSnapshot(JSON.parse(JSON.stringify(b.toSnapshot()))):MassBattle.fromSnapshot(JSON.parse(JSON.stringify(b.toSnapshot())));
+    expect(restored.byId('a').battleZones![0]!.effects).toEqual(a.battleZones![0]!.effects);
+    const saved=JSON.stringify(restored.byId('e'));settleZones(restored.observationContext(),a.battleZones![0]!.lastRound);
+    expect(JSON.stringify(restored.byId('e'))).toBe(saved);
+    const vehicle=unit('vehicle','enemy',mode==='mass');vehicle.body='vehicle';vehicle.pos=e.pos;vehicle.formationPosition=e.formationPosition;
+    const context={...b.observationContext(),units:[a,vehicle]};a.battleZones=[];
+    placeZone(context,a,vehicle,ability.effects[0] as Extract<EffectOp,{op:'zone'}>,1,ability.id);
+    settleZones(context,1,false,{seed:'fixed',next:()=>0,d:()=>1});
+    expect(vehicle.conditions.map(c=>c.id)).not.toContain('poisoned');expect(vehicle.conditions.map(c=>c.id)).toContain('slowed');
+  });
+  it('治疗区域可附加屏障、净化与回能；每轮一次，坏存档仍拒绝',()=>{
+    const a=unit('a'),e=unit('e','enemy');a.pos=1;e.pos=2;a.hp=50;a.resources.SP=0;a.conditions=[{id:'poisoned',dur:3}];
+    const context={units:[a,e],mode:'small' as const,fieldTags:[]};
+    const ability=compileSkill(skillMechanismId(parseSkillMechanism('治疗区域+屏障+净化+回能')!),3,'a');
+    const zone=placeZone(context,a,a,ability.effects[0] as Extract<EffectOp,{op:'zone'}>,1,ability.id);
+    settleZones(context,1);expect(a.hp).toBeGreaterThan(50);expect(a.barrier!.remaining).toBeGreaterThan(0);expect(a.resources.SP).toBeGreaterThan(0);expect(a.conditions).toEqual([]);expect(e.barrier).toBeUndefined();
+    const once=JSON.stringify(a);settleZones(context,1);expect(JSON.stringify(a)).toBe(once);
+    zone.effects=[{op:'condition',conditionId:'poisoned',dur:0}];expect(()=>validateAreas(a)).toThrow();
+  });
   it('五类区域各自使用合适的修正，保留等级与覆盖半径', () => {
     for (const kind of kinds) {
       const base = effect(kind), plus = effect(kind, { power: 5, damage: 5, healing: 5, duration: 5, range: 5 });

@@ -1,4 +1,4 @@
-import type { Ability, EffectOp } from '../types.js';
+import type { Ability, EffectOp, ZonePayload } from '../types.js';
 import { curveAt } from '../data/curves.js';
 import { diceAvg, rebuildDice } from '../data/weapons.js';
 import { skillMechanismFromId, skillMechanismName, SKILL_MODIFIERS } from '../data/skill-mechanisms.js';
@@ -11,11 +11,11 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
   if (!Number.isSafeInteger(power) || power < 1 || power > 10) throw new Error('技能等级必须为1–10整数');
   const physical = mechanism.category.startsWith('physical'), magic = mechanism.category.startsWith('magic'), damage = physical || magic;
   const geometry = mechanism.modifiers.find(id => ['cone','line','ring','chain'].includes(id)) as NonNullable<Ability['area']>['shape'] | undefined;
-  const zoneKind = mechanism.modifiers.find(id => id.startsWith('zone-'))?.slice(5) as Extract<EffectOp,{op:'zone'}>['kind'] | undefined;
+  const zoneKinds = mechanism.modifiers.filter(id => id.startsWith('zone-')).map(id => id.slice(5)) as Extract<EffectOp,{op:'zone'}>['kind'][];
   const area = mechanism.area || !!geometry, curve = curveAt(power), effects: EffectOp[] = [];
   const modifiers = mechanism.modifiers.filter((m) => !['melee', 'ranged', 'shield', 'projectile', 'thermal', 'arcane', 'martial', 'cone', 'line', 'ring', 'chain'].includes(m));
   const selected = modifiers.length ? modifiers : damage ? [] : mechanism.category === 'buff' ? ['attack', 'defense'] : ['weaken'];
-  const magnitude = (5 + power) / 10 / Math.max(1, Math.sqrt(selected.length));
+  const magnitude = Math.max(.25, (5 + power) / 10 / Math.max(1, Math.sqrt(selected.length)));
   const duration = 1 + Math.floor((power + 1) / 3), saveDC = 8 + power;
   const damagingDebuff = !damage && selected.some((id) => ['burn', 'poison', 'bleed'].includes(id));
   const share = (area ? 0.7 : 1.6) * Math.pow(0.8, selected.length);
@@ -24,7 +24,7 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
   for (const key of selected) {
     const modifier = SKILL_MODIFIERS.find((m) => m.id === key)!;
     if (modifier.condition) effects.push({ op: 'condition', conditionId: modifier.condition, dur: ['stunned', 'restrained', 'disarmed', 'silenced'].includes(modifier.condition) ? 1 : duration,
-      magnitude, ...(mechanism.category !== 'buff' ? { saveDC: saveDC - 2 * Math.max(0, selected.length - 1) - (key === 'stun' ? 2 : 0) } : {}), ...(damage || damagingDebuff ? { onHit: true, ...(['poisoned', 'bleeding', 'burning'].includes(modifier.condition) ? { onDamage: true } : {}) } : {}), shape: area ? 'burst' : 'single' });
+      magnitude, ...(modifier.allowed === 'hostile' ? { saveDC: Math.max(1, saveDC - 2 * Math.max(0, selected.length - 1) - (key === 'stun' ? 2 : 0)) } : {}), ...(damage || damagingDebuff ? { onHit: true, ...(['poisoned', 'bleeding', 'burning'].includes(modifier.condition) ? { onDamage: true } : {}) } : {}), shape: area ? 'burst' : 'single' });
     else if (modifier.trait) effects.push({ op: 'trait', traitId: modifier.trait, dur: 1 + power, shape: area ? 'burst' : 'single' });
     else if (key === 'heal') effects.push({ op: 'heal', amount: Math.max(1, Math.round(curve.hp * 0.25 / Math.max(1, selected.length) / (area ? 2 : 1))) });
     else if (key === 'barrier') effects.push({ op: 'barrier', amount: Math.max(1, Math.round((8 + power * 5) / Math.max(1, selected.length) / (area ? 2 : 1))), dur: 3 });
@@ -45,14 +45,26 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
     range: { min: 0, max: 2 + Math.floor(power / 3), metric: 'grid', allowEngaged: true },
     desc: skillMechanismName(mechanism) + '；强度与装备/目标条件共同决定结果，同类别共享冷却。' };
   if (geometry) ability.area = { shape: geometry, radius: 2, maxTargets: 3 };
-  if (zoneKind) { ability.effects = [{ op: 'zone', kind: zoneKind, power, radius: zoneKind === 'trap' ? 0 : 1, dur: 3 }]; ability.target = 'zone'; ability.shape = 'burst'; ability.cost = { resource: 'SP', amount: 3 }; ability.cooldown = 3; ability.customized = true; }
-  if (physical) { ability.damageBasis = 'weapon'; ability.requires = 'weapon'; ability.weaponUse = mechanism.modifiers.includes('melee') ? 'melee' : mechanism.modifiers.includes('ranged') ? 'ranged' : 'auto'; ability.weaponDamageMult = share; }
-  if (mechanism.modifiers.includes('shield')) { ability.damageBasis = 'shield'; ability.requires = 'shield'; delete ability.weaponUse; ability.delivery = 'melee'; ability.range!.max = 1; }
-  if (mechanism.modifiers.includes('projectile')) { delete ability.damageBasis; delete ability.requires; delete ability.weaponUse; delete ability.weaponDamageMult; ability.delivery = 'ranged'; if (area) ability.areaExposure = 4; }
-  if (magic && area) ability.areaExposure = 4;
+  if (zoneKinds.length) {
+    const payload = effects.filter((e): e is ZonePayload => !['damage','summon'].includes(e.op)).map(e => {
+      // 区域接触即触发；流血/燃烧/中毒仍须造成损伤，不能穿过免疫白送状态。
+      const copy = { ...e }; if ('onHit' in copy) delete copy.onHit; return copy;
+    });
+    ability.effects = zoneKinds.map(kind => ({ op: 'zone', kind, power, radius: kind === 'trap' ? 0 : 1, dur: 3,
+      ...(payload.length ? { effects: structuredClone(payload) } : {}) }));
+    ability.effects.push(...effects.filter(e => e.op === 'summon'));
+    ability.target = 'zone'; ability.shape = 'burst'; ability.cost = { resource: 'SP', amount: Math.min(6,2+selected.length) }; ability.cooldown = 3; ability.customized = true;
+  }
+  if (physical && !zoneKinds.length) { ability.damageBasis = 'weapon'; ability.requires = 'weapon'; ability.weaponUse = mechanism.modifiers.includes('melee') ? 'melee' : mechanism.modifiers.includes('ranged') ? 'ranged' : 'auto'; ability.weaponDamageMult = share; }
+  if (!zoneKinds.length && mechanism.modifiers.includes('shield')) { ability.damageBasis = 'shield'; ability.requires = 'shield'; delete ability.weaponUse; ability.delivery = 'melee'; ability.range!.max = 1; }
+  if (!zoneKinds.length && mechanism.modifiers.includes('projectile')) { delete ability.damageBasis; delete ability.requires; delete ability.weaponUse; delete ability.weaponDamageMult; ability.delivery = 'ranged'; if (area) ability.areaExposure = 4; }
+  if (magic && area && !ability.damageBasis) ability.areaExposure = 4;
   if (selected.includes('restore')) { ability.cost = { resource: 'SP', amount: (1 + Math.ceil(power / 3)) * (area ? 2 : 1) }; ability.usesPerBattle = 2; }
   if (selected.includes('burn')) ability.channel = 'thermal';
-  if (selected.includes('summon')) { ability.cost = { resource: 'SP', amount: 4 }; ability.target = 'self'; ability.range = { min: 0, max: 0, metric: 'self', allowEngaged: true }; ability.usesPerBattle = 1; }
+  if (selected.includes('summon')) {
+    ability.cost = { resource: 'SP', amount: Math.max(4,ability.cost!.amount) }; ability.usesPerBattle = 1;
+    if (selected.length === 1) { ability.target = 'self'; ability.range = { min: 0, max: 0, metric: 'self', allowEngaged: true }; }
+  }
   if (!area && !damage && selected.length === 1 && ['root','disarm','silence'].includes(selected[0]!)) ability.cost!.amount = 2;
   balanceGenericSkill(ability);
   return ability;
