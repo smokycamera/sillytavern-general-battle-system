@@ -1,7 +1,7 @@
 /** 正文战外绝对赋值。所有修改先在副本校验，装备实物与档案一起提交。 */
 import type { Ability, Combatant, EquipmentSlot, ItemMechanics, ItemSpecification } from '../../engine/src/index.js';
 import { compileItem, equipmentReason, resolveTraitId, traitRegistry, standardConditionMap, parseDice, generateUnit, type GenerateInput } from '../../engine/src/index.js';
-import { validateEnhancements, type Enhancements } from '../../engine/src/enhancements.js';
+import { validateEnhancements, validateChannelProtection, type Enhancements } from '../../engine/src/enhancements.js';
 import { anchoredWeapon } from '../../engine/src/power-anchors.js';
 import { MAX_PREPARED_SKILLS, compileSkill, resolvePreparedSkills, skillDefinitionId } from '../../engine/src/skill-catalog.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
@@ -106,7 +106,9 @@ function gearValue(input: unknown, previous: ItemMechanics | undefined, slot: Eq
     if (mechanics.kind === 'armor' && values.protection !== undefined) mechanics.value.protectionOverride = values.protection !== null;
   }
   const gear = mechanics.value as unknown as ObjectData;
-  for (const key of ['penetration','load','range','minRange','reload','attacks','splashTargets']) if (gear[key] !== undefined) number(gear[key], key, 0, Number.MAX_SAFE_INTEGER, true);
+  for (const key of ['load','range','minRange','reload','attacks','splashTargets']) if (gear[key] !== undefined) number(gear[key], key, 0, Number.MAX_SAFE_INTEGER, true);
+  if(gear.penetration!==undefined)number(gear.penetration,'穿透',0);
+  if(gear.protection!==undefined)validateChannelProtection(gear.protection);
   for (const key of ['damageScale','drScale','powerScale']) if (gear[key] !== undefined) number(gear[key], key, Number.MIN_VALUE);
   if (gear.splashFactor !== undefined) number(gear.splashFactor, 'splashFactor', 0, 1);
   if (gear.pointBlankPenalty !== undefined) number(gear.pointBlankPenalty, 'pointBlankPenalty');
@@ -168,7 +170,8 @@ function validateAbility(a: Ability): void {
   if (a.shape !== undefined) enumeration(a.shape, ['single','burst'], '技能范围');
   if (a.requires !== undefined) enumeration(a.requires, ['shield','melee','weapon','reserve','corpse'], '技能前提');
   if (a.fixedPower !== undefined && typeof a.fixedPower !== 'boolean') throw Error('fixedPower须为布尔值');
-  for (const [key,value] of Object.entries({ cooldown:a.cooldown, usesPerBattle:a.usesPerBattle, penetration:a.penetration })) if (value !== undefined) number(value, key, 0, Number.MAX_SAFE_INTEGER, true);
+  for (const [key,value] of Object.entries({ cooldown:a.cooldown, usesPerBattle:a.usesPerBattle })) if (value !== undefined) number(value, key, 0, Number.MAX_SAFE_INTEGER, true);
+  if(a.penetration!==undefined)number(a.penetration,'技能穿透',0);
   if (a.cost) { keys(requireObject(a.cost, 'cost'), ['resource','amount'], 'cost'); if (typeof a.cost.resource !== 'string' || !a.cost.resource) throw Error('缺少消耗资源'); number(a.cost.amount, 'cost.amount', 0); }
   if (a.range) { keys(requireObject(a.range, 'range'), ['min','max','metric','requiresLineOfSight','allowEngaged'], 'range'); number(a.range.min,'range.min',0,Number.MAX_SAFE_INTEGER,true); number(a.range.max,'range.max',a.range.min,Number.MAX_SAFE_INTEGER,true); enumeration(a.range.metric,['grid','zone','global','self'],'距离模型'); for (const key of ['requiresLineOfSight','allowEngaged'] as const) if(a.range[key]!==undefined&&typeof a.range[key]!=='boolean')throw Error(key+'须为布尔值'); }
   if (!Array.isArray(a.effects)) throw Error('effects须为数组');

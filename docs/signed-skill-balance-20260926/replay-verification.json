@@ -1,0 +1,30 @@
+{
+  "verified": 24,
+  "completeLogsMatch": true,
+  "ids": [
+    "signed-skill-regression:skill-policy-480:c180-s0-forward-auto",
+    "signed-skill-regression:worldview-2000:c050-s1-reverse",
+    "signed-skill-regression:worldview-2000:c124-s3-forward",
+    "signed-skill-regression:worldview-2000:c198-s4-reverse",
+    "signed-skill-regression:skill-policy-480:c181-s0-forward-auto",
+    "signed-skill-regression:worldview-2000:c051-s1-reverse",
+    "signed-skill-regression:worldview-2000:c125-s3-forward",
+    "signed-skill-regression:worldview-2000:c199-s4-reverse",
+    "support-candidate-v2:barrier-threat-small-0-forward",
+    "support-candidate-v2:fear-fragile-small-1-reverse",
+    "support-candidate-v2:root-chase-small-3-forward",
+    "support-candidate-v2:stun-threat-small-4-reverse",
+    "support-candidate-v2:barrier-threat-mass-0-forward",
+    "support-candidate-v2:fear-fragile-mass-1-reverse",
+    "support-candidate-v2:root-chase-mass-3-forward",
+    "support-candidate-v2:stun-threat-mass-4-reverse",
+    "control-teams-candidate:combo-team-small-0-forward",
+    "control-teams-candidate:stun-team-small-4-reverse",
+    "control-teams-candidate:combo-team-mass-0-forward",
+    "control-teams-candidate:stun-team-mass-4-reverse",
+    "signed-channel-battles:arcane-Damage--10-small-0-forward",
+    "signed-channel-battles:thermal-Protection-10-small-2-reverse",
+    "signed-channel-battles:arcane-Damage--10-mass-0-forward",
+    "signed-channel-battles:thermal-Protection-10-mass-2-reverse"
+  ]
+}

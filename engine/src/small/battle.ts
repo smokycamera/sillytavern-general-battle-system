@@ -394,7 +394,7 @@ export class SmallBattle {
   activationFeedback() { return this.feedback?.activation(); }
   roundFeedback(): RoundFeedback[] { return this.feedback?.rounds() ?? []; }
   visibleLog(side: Side): BattleLogEntry[] { return this.rules.resolutionVersion === 'v2' ? observedLog(this.log, side) : this.log; }
-  observationContext(units = this.combatants): ObservationContext { return { units, mode: 'small', fieldTags: this.fieldTags, conditions: this.conditions, battlefield: this.battlefield }; }
+  observationContext(units = this.combatants): ObservationContext { return { units, mode: 'small', fieldTags: this.fieldTags, conditions: this.conditions, battlefield: this.battlefield, rules: this.rules, traitRegistry: this.traitRegistry, reload: this.reloadCd }; }
   visibleCombatants(side: Combatant['side']): Combatant[] {
     return this.rules.resolutionVersion === 'v2' ? observedUnits(this.observationContext(), side) : this.combatants;
   }
@@ -1529,6 +1529,7 @@ export class SmallBattle {
     };
     for (const path of this.reachableCells(unitId)) {
       const actor = { ...unit, pos: path.cells.at(-1)! };
+      const skillContext = { ...this.observationContext(), units: knownUnits.map(u => u.id === actor.id ? actor : u) };
       // 协同单位在通路旁支援，不用自身占位堵住己方护送对象；敌方仍可拦截。
       if (escortCorridor.has(actor.pos)) continue;
       const baseScore = positionScore(path);
@@ -1568,11 +1569,6 @@ export class SmallBattle {
             const preview = controlPreviews.get(affected.id)!;
             return needsDamage ? preview.damageChance ?? (preview.expectedDamage > 0 ? preview.hitChance : 0) : preview.anyHitChance ?? preview.hitChance;
           };
-          const applied = ability.effects.filter((e): e is Extract<EffectOp, { op: 'condition' }> => e.op === 'condition' && conditionChance(target, e) > 0);
-          if (applied.length && target.side === actor.side) {
-            const protectedTarget = { ...target, conditions: [...target.conditions, ...applied.map((e) => ({ id: e.conditionId, dur: e.dur, potency: e.potency, magnitude: e.magnitude }))] };
-            benefit += incomingReduction(target, protectedTarget) * Math.min(2, Math.max(...applied.map((e) => e.dur)));
-          }
           for (const effect of ability.effects) {
             if (effect.op === 'damage') for (const affected of this.abilityDamageTargets(actor, target, ability, effect.shape === 'burst')) {
               const preview = this.previewAttackWithEnvironment({ attacker: actor, defender: affected, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(actor, affected, ability, effect, path.cost > 0) });
@@ -1580,12 +1576,13 @@ export class SmallBattle {
             }
             if (effect.op === 'heal') for (const affected of this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst')) benefit += Math.min(recoveryCapacity(affected), healingYield(actor,affected,effect.amount ?? diceAvg(effect.dice!),!!ability.itemSourceId));
             if (effect.op === 'summon') benefit += 8;
-            if (effect.op === 'zone' || effect.op === 'barrier' || effect.op === 'condition' || effect.op === 'push' || effect.op === 'dispel' || effect.op === 'trait') for (const affected of this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst')) benefit += skillEffectValue({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, actor, affected, { ...ability, effects: [effect] }, controlChance(affected, effect.op === 'condition' && !!effect.onDamage));
+            if (effect.op === 'zone' || effect.op === 'barrier' || effect.op === 'push' || effect.op === 'dispel' || effect.op === 'trait') for (const affected of this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst')) benefit += skillEffectValue(skillContext, actor, affected, { ...ability, effects: [effect] }, controlChance(affected, false));
             if (effect.op === 'morale') for (const affected of this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst')) benefit += moraleChangePreview({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, affected, effect.amount, this.rules.morale.breakAt, this.traitRegistry, ability.effects.flatMap((e) => e.op === 'condition' ? [{ id: e.conditionId, dur: e.dur }] : [])).value * (affected.side === actor.side ? 1 : -1);
           }
+          for (const affected of this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst')) benefit += skillEffectValue(skillContext, actor, affected, { ...ability, effects: ability.effects.filter(e => e.op === 'condition') }, controlChance(affected, false), controlChance(affected, true)) * Math.max(0, 1 - (controlPreviews.get(affected.id)?.expectedDamage ?? 0) / Math.max(1, memberHealth(affected)));
           const landing = this.abilityFlightPreview(actor, target, ability);
           if (landing) benefit += Math.min(target.hp, landing.fallDamage) * (landing.fallChance ?? 1);
-          for (const affected of ability.recipe || ability.itemSourceId || ability.equipmentSourceId ? this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst') : [actor]) benefit += skillEffectValue({ ...this.observationContext(), units: knownUnits }, actor, affected, { ...ability, effects: ability.effects.filter(e => e.op === 'resource') });
+          for (const affected of ability.recipe || ability.itemSourceId || ability.equipmentSourceId ? this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst') : [actor]) benefit += skillEffectValue(skillContext, actor, affected, { ...ability, effects: ability.effects.filter(e => e.op === 'resource') });
           const cost = skillResourceCost(ability);
           if (benefit > cost) plans.push({ score: baseScore + benefit - cost, offensive: target.side !== actor.side, path, targetId: target.id, abilityId: ability.id, kind: 'ability' });
         }

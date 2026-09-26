@@ -1,0 +1,3737 @@
+{
+  "baseline": "86d719dc4931a77d99ddd0ee19638d81c0eaefb2",
+  "new_battles": 3364,
+  "candidate_battles": 2964,
+  "baseline_battles": 400,
+  "frozen_replay_battles": 2240,
+  "paired_support_snapshots_equal_except_formula_version": true,
+  "support": [
+    {
+      "scenario": "barrier-threat",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "A": 8,
+          "B": 2
+        },
+        "cast_battles": 10,
+        "cast_total": 18,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 4.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "A": 8,
+          "B": 2
+        },
+        "cast_battles": 10,
+        "cast_total": 16,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 4.0
+      }
+    },
+    {
+      "scenario": "barrier-threat",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "A": 6,
+          "draw": 4
+        },
+        "cast_battles": 10,
+        "cast_total": 10,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 3.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "A": 6,
+          "draw": 4
+        },
+        "cast_battles": 10,
+        "cast_total": 10,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 3.0
+      }
+    },
+    {
+      "scenario": "barrier-threat",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "A": 14,
+          "draw": 4,
+          "B": 2
+        },
+        "cast_battles": 20,
+        "cast_total": 28,
+        "cast_rate_wilson95_percent": [
+          83.89,
+          100.0
+        ],
+        "median_rounds": 3.5
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "A": 14,
+          "draw": 4,
+          "B": 2
+        },
+        "cast_battles": 20,
+        "cast_total": 26,
+        "cast_rate_wilson95_percent": [
+          83.89,
+          100.0
+        ],
+        "median_rounds": 3.5
+      }
+    },
+    {
+      "scenario": "cleanse-stun",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 8,
+          "A": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 5.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 6,
+          "A": 4
+        },
+        "cast_battles": 10,
+        "cast_total": 14,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 4.0
+      }
+    },
+    {
+      "scenario": "cleanse-stun",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 8,
+          "A": 2
+        },
+        "cast_battles": 10,
+        "cast_total": 10,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 6.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 8,
+          "A": 2
+        },
+        "cast_battles": 10,
+        "cast_total": 10,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "scenario": "cleanse-stun",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "B": 16,
+          "A": 4
+        },
+        "cast_battles": 10,
+        "cast_total": 10,
+        "cast_rate_wilson95_percent": [
+          29.93,
+          70.07
+        ],
+        "median_rounds": 6.0
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "B": 14,
+          "A": 6
+        },
+        "cast_battles": 20,
+        "cast_total": 24,
+        "cast_rate_wilson95_percent": [
+          83.89,
+          100.0
+        ],
+        "median_rounds": 4.5
+      }
+    },
+    {
+      "scenario": "combined-controls",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 3.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 10,
+        "cast_total": 10,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 5.0
+      }
+    },
+    {
+      "scenario": "combined-controls",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 6.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 10,
+        "cast_total": 10,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "scenario": "combined-controls",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "B": 20
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 5.0
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "B": 20
+        },
+        "cast_battles": 20,
+        "cast_total": 20,
+        "cast_rate_wilson95_percent": [
+          83.89,
+          100.0
+        ],
+        "median_rounds": 5.0
+      }
+    },
+    {
+      "scenario": "combo-team",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 8,
+          "A": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 7.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 7,
+          "A": 3
+        },
+        "cast_battles": 10,
+        "cast_total": 14,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "scenario": "combo-team",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "draw": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 40.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "draw": 10
+        },
+        "cast_battles": 10,
+        "cast_total": 10,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 40.0
+      }
+    },
+    {
+      "scenario": "combo-team",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "draw": 10,
+          "B": 8,
+          "A": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 24.0
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "draw": 10,
+          "B": 7,
+          "A": 3
+        },
+        "cast_battles": 20,
+        "cast_total": 24,
+        "cast_rate_wilson95_percent": [
+          83.89,
+          100.0
+        ],
+        "median_rounds": 24.0
+      }
+    },
+    {
+      "scenario": "disarm-natural",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 5.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 5.0
+      }
+    },
+    {
+      "scenario": "disarm-natural",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 6.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "scenario": "disarm-natural",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "B": 20
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 5.5
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "B": 20
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 5.5
+      }
+    },
+    {
+      "scenario": "disarm-team",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 7.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "A": 8,
+          "B": 2
+        },
+        "cast_battles": 10,
+        "cast_total": 20,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "scenario": "disarm-team",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "draw": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 40.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "draw": 10
+        },
+        "cast_battles": 10,
+        "cast_total": 10,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 40.0
+      }
+    },
+    {
+      "scenario": "disarm-team",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "draw": 10,
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 25.5
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "draw": 10,
+          "A": 8,
+          "B": 2
+        },
+        "cast_battles": 20,
+        "cast_total": 30,
+        "cast_rate_wilson95_percent": [
+          83.89,
+          100.0
+        ],
+        "median_rounds": 23.5
+      }
+    },
+    {
+      "scenario": "disarm-weapon",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 4.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 10,
+        "cast_total": 28,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 8.0
+      }
+    },
+    {
+      "scenario": "disarm-weapon",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 6.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 10,
+        "cast_total": 10,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "scenario": "disarm-weapon",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "B": 20
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 5.0
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "B": 20
+        },
+        "cast_battles": 20,
+        "cast_total": 38,
+        "cast_rate_wilson95_percent": [
+          83.89,
+          100.0
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "scenario": "fear-fragile",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 4.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 4,
+          "A": 6
+        },
+        "cast_battles": 10,
+        "cast_total": 12,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 4.0
+      }
+    },
+    {
+      "scenario": "fear-fragile",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 6.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 5,
+          "draw": 1,
+          "A": 4
+        },
+        "cast_battles": 10,
+        "cast_total": 16,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 5.0
+      }
+    },
+    {
+      "scenario": "fear-fragile",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "B": 20
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 5.0
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "B": 9,
+          "draw": 1,
+          "A": 10
+        },
+        "cast_battles": 20,
+        "cast_total": 28,
+        "cast_rate_wilson95_percent": [
+          83.89,
+          100.0
+        ],
+        "median_rounds": 5.0
+      }
+    },
+    {
+      "scenario": "fear-steadfast",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 4.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 4.0
+      }
+    },
+    {
+      "scenario": "fear-steadfast",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 5.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 5.0
+      }
+    },
+    {
+      "scenario": "fear-steadfast",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "B": 20
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 5.0
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "B": 20
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 5.0
+      }
+    },
+    {
+      "scenario": "heal-full",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "A": 2,
+          "B": 8
+        },
+        "cast_battles": 10,
+        "cast_total": 16,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 8.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "A": 2,
+          "B": 8
+        },
+        "cast_battles": 10,
+        "cast_total": 16,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 8.0
+      }
+    },
+    {
+      "scenario": "heal-full",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "A": 6,
+          "B": 4
+        },
+        "cast_battles": 6,
+        "cast_total": 6,
+        "cast_rate_wilson95_percent": [
+          31.27,
+          83.18
+        ],
+        "median_rounds": 6.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "A": 6,
+          "B": 4
+        },
+        "cast_battles": 6,
+        "cast_total": 6,
+        "cast_rate_wilson95_percent": [
+          31.27,
+          83.18
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "scenario": "heal-full",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "A": 8,
+          "B": 12
+        },
+        "cast_battles": 16,
+        "cast_total": 22,
+        "cast_rate_wilson95_percent": [
+          58.4,
+          91.93
+        ],
+        "median_rounds": 6.0
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "A": 8,
+          "B": 12
+        },
+        "cast_battles": 16,
+        "cast_total": 22,
+        "cast_rate_wilson95_percent": [
+          58.4,
+          91.93
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "scenario": "heal-wound",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 6,
+          "A": 4
+        },
+        "cast_battles": 10,
+        "cast_total": 16,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 6.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 6,
+          "A": 4
+        },
+        "cast_battles": 10,
+        "cast_total": 16,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "scenario": "heal-wound",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "A": 6,
+          "B": 4
+        },
+        "cast_battles": 10,
+        "cast_total": 10,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 3.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "A": 6,
+          "B": 4
+        },
+        "cast_battles": 10,
+        "cast_total": 10,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 3.0
+      }
+    },
+    {
+      "scenario": "heal-wound",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "A": 10,
+          "B": 10
+        },
+        "cast_battles": 20,
+        "cast_total": 26,
+        "cast_rate_wilson95_percent": [
+          83.89,
+          100.0
+        ],
+        "median_rounds": 4.5
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "A": 10,
+          "B": 10
+        },
+        "cast_battles": 20,
+        "cast_total": 26,
+        "cast_rate_wilson95_percent": [
+          83.89,
+          100.0
+        ],
+        "median_rounds": 4.5
+      }
+    },
+    {
+      "scenario": "restore-caster",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 6,
+          "A": 4
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 7.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "A": 2,
+          "B": 8
+        },
+        "cast_battles": 10,
+        "cast_total": 16,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "scenario": "restore-caster",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "A": 2,
+          "B": 8
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 6.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "A": 2,
+          "B": 8
+        },
+        "cast_battles": 2,
+        "cast_total": 2,
+        "cast_rate_wilson95_percent": [
+          5.67,
+          50.98
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "scenario": "restore-caster",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "A": 6,
+          "B": 14
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 6.0
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "A": 4,
+          "B": 16
+        },
+        "cast_battles": 12,
+        "cast_total": 18,
+        "cast_rate_wilson95_percent": [
+          38.66,
+          78.12
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "scenario": "root-chase",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 10,
+        "cast_total": 22,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 7.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 10,
+        "cast_total": 18,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 4.0
+      }
+    },
+    {
+      "scenario": "root-chase",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 10,
+        "cast_total": 10,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 6.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "scenario": "root-chase",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "B": 20
+        },
+        "cast_battles": 20,
+        "cast_total": 32,
+        "cast_rate_wilson95_percent": [
+          83.89,
+          100.0
+        ],
+        "median_rounds": 6.0
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "B": 20
+        },
+        "cast_battles": 10,
+        "cast_total": 18,
+        "cast_rate_wilson95_percent": [
+          29.93,
+          70.07
+        ],
+        "median_rounds": 5.0
+      }
+    },
+    {
+      "scenario": "shield-strike",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 6,
+          "A": 4
+        },
+        "cast_battles": 10,
+        "cast_total": 20,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 10.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 6,
+          "A": 4
+        },
+        "cast_battles": 10,
+        "cast_total": 20,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 10.0
+      }
+    },
+    {
+      "scenario": "shield-strike",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 4,
+          "A": 6
+        },
+        "cast_battles": 10,
+        "cast_total": 10,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 6.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 4,
+          "A": 6
+        },
+        "cast_battles": 10,
+        "cast_total": 10,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "scenario": "shield-strike",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "B": 10,
+          "A": 10
+        },
+        "cast_battles": 20,
+        "cast_total": 30,
+        "cast_rate_wilson95_percent": [
+          83.89,
+          100.0
+        ],
+        "median_rounds": 6.0
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "B": 10,
+          "A": 10
+        },
+        "cast_battles": 20,
+        "cast_total": 30,
+        "cast_rate_wilson95_percent": [
+          83.89,
+          100.0
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "scenario": "silence-caster",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 1.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 10,
+        "cast_total": 12,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 2.0
+      }
+    },
+    {
+      "scenario": "silence-caster",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 6,
+          "draw": 4
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 11.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 8,
+          "draw": 2
+        },
+        "cast_battles": 10,
+        "cast_total": 20,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 9.0
+      }
+    },
+    {
+      "scenario": "silence-caster",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "B": 16,
+          "draw": 4
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 6.5
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "B": 18,
+          "draw": 2
+        },
+        "cast_battles": 20,
+        "cast_total": 32,
+        "cast_rate_wilson95_percent": [
+          83.89,
+          100.0
+        ],
+        "median_rounds": 6.5
+      }
+    },
+    {
+      "scenario": "silence-empty",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "draw": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 60.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "draw": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 60.0
+      }
+    },
+    {
+      "scenario": "silence-empty",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "draw": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 40.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "draw": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 40.0
+      }
+    },
+    {
+      "scenario": "silence-empty",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "draw": 20
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 50.0
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "draw": 20
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 50.0
+      }
+    },
+    {
+      "scenario": "silence-team",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "A": 8,
+          "B": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 5.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 4,
+          "A": 6
+        },
+        "cast_battles": 10,
+        "cast_total": 12,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 4.0
+      }
+    },
+    {
+      "scenario": "silence-team",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "A": 6,
+          "draw": 2,
+          "B": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 14.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "A": 6,
+          "B": 2,
+          "draw": 2
+        },
+        "cast_battles": 10,
+        "cast_total": 18,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 15.0
+      }
+    },
+    {
+      "scenario": "silence-team",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "A": 14,
+          "draw": 2,
+          "B": 4
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 8.5
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "A": 12,
+          "B": 6,
+          "draw": 2
+        },
+        "cast_battles": 20,
+        "cast_total": 30,
+        "cast_rate_wilson95_percent": [
+          83.89,
+          100.0
+        ],
+        "median_rounds": 10.5
+      }
+    },
+    {
+      "scenario": "silence-weapon",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 5.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 5.0
+      }
+    },
+    {
+      "scenario": "silence-weapon",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 4.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 4.0
+      }
+    },
+    {
+      "scenario": "silence-weapon",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "B": 20
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 5.0
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "B": 20
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 5.0
+      }
+    },
+    {
+      "scenario": "stun-team",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 7.5
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 6,
+          "A": 4
+        },
+        "cast_battles": 10,
+        "cast_total": 22,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 7.0
+      }
+    },
+    {
+      "scenario": "stun-team",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "draw": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 40.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "draw": 10
+        },
+        "cast_battles": 10,
+        "cast_total": 10,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 40.0
+      }
+    },
+    {
+      "scenario": "stun-team",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "draw": 10,
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 26.0
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "draw": 10,
+          "B": 6,
+          "A": 4
+        },
+        "cast_battles": 20,
+        "cast_total": 32,
+        "cast_rate_wilson95_percent": [
+          83.89,
+          100.0
+        ],
+        "median_rounds": 25.5
+      }
+    },
+    {
+      "scenario": "stun-threat",
+      "mode": "small",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 5.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 10,
+        "cast_total": 16,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 4.0
+      }
+    },
+    {
+      "scenario": "stun-threat",
+      "mode": "mass",
+      "before": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          27.75
+        ],
+        "median_rounds": 6.0
+      },
+      "after": {
+        "n": 10,
+        "wins": {
+          "B": 10
+        },
+        "cast_battles": 10,
+        "cast_total": 10,
+        "cast_rate_wilson95_percent": [
+          72.25,
+          100.0
+        ],
+        "median_rounds": 5.0
+      }
+    },
+    {
+      "scenario": "stun-threat",
+      "mode": "both",
+      "before": {
+        "n": 20,
+        "wins": {
+          "B": 20
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          16.11
+        ],
+        "median_rounds": 5.5
+      },
+      "after": {
+        "n": 20,
+        "wins": {
+          "B": 20
+        },
+        "cast_battles": 20,
+        "cast_total": 26,
+        "cast_rate_wilson95_percent": [
+          83.89,
+          100.0
+        ],
+        "median_rounds": 5.0
+      }
+    }
+  ],
+  "worldview": [
+    {
+      "family": "cross-equal",
+      "mode": "small",
+      "n": 300,
+      "changed_winner": 46,
+      "draw_before": 4,
+      "draw_after": 8,
+      "median_rounds_before": 7.0,
+      "median_rounds_after": 7.0
+    },
+    {
+      "family": "cross-equal",
+      "mode": "mass",
+      "n": 300,
+      "changed_winner": 30,
+      "draw_before": 41,
+      "draw_after": 45,
+      "median_rounds_before": 13.0,
+      "median_rounds_after": 11.5
+    },
+    {
+      "family": "cross-native",
+      "mode": "small",
+      "n": 150,
+      "changed_winner": 1,
+      "draw_before": 0,
+      "draw_after": 0,
+      "median_rounds_before": 3.0,
+      "median_rounds_after": 3.0
+    },
+    {
+      "family": "cross-native",
+      "mode": "mass",
+      "n": 150,
+      "changed_winner": 4,
+      "draw_before": 4,
+      "draw_after": 0,
+      "median_rounds_before": 5.0,
+      "median_rounds_after": 5.0
+    },
+    {
+      "family": "mechanics",
+      "mode": "small",
+      "n": 250,
+      "changed_winner": 1,
+      "draw_before": 0,
+      "draw_after": 0,
+      "median_rounds_before": 4.0,
+      "median_rounds_after": 4.0
+    },
+    {
+      "family": "mechanics",
+      "mode": "mass",
+      "n": 250,
+      "changed_winner": 8,
+      "draw_before": 16,
+      "draw_after": 14,
+      "median_rounds_before": 20.0,
+      "median_rounds_after": 20.0
+    },
+    {
+      "family": "same-world",
+      "mode": "small",
+      "n": 300,
+      "changed_winner": 62,
+      "draw_before": 12,
+      "draw_after": 9,
+      "median_rounds_before": 9.0,
+      "median_rounds_after": 9.0
+    },
+    {
+      "family": "same-world",
+      "mode": "mass",
+      "n": 300,
+      "changed_winner": 20,
+      "draw_before": 75,
+      "draw_after": 75,
+      "median_rounds_before": 12.0,
+      "median_rounds_after": 13.0
+    }
+  ],
+  "original_policy_cells": [
+    {
+      "cell": "c180",
+      "name": "纯眩晕/定身",
+      "mode": "small",
+      "n": 20,
+      "before_casts": 0,
+      "after_casts": 0,
+      "before_cast_battles": 0,
+      "after_cast_battles": 0,
+      "draw_before": 0,
+      "draw_after": 0
+    },
+    {
+      "cell": "c181",
+      "name": "纯眩晕/定身",
+      "mode": "mass",
+      "n": 20,
+      "before_casts": 0,
+      "after_casts": 0,
+      "before_cast_battles": 0,
+      "after_cast_battles": 0,
+      "draw_before": 2,
+      "draw_after": 2
+    },
+    {
+      "cell": "c182",
+      "name": "缴械/沉默",
+      "mode": "small",
+      "n": 20,
+      "before_casts": 0,
+      "after_casts": 0,
+      "before_cast_battles": 0,
+      "after_cast_battles": 0,
+      "draw_before": 0,
+      "draw_after": 0
+    },
+    {
+      "cell": "c183",
+      "name": "缴械/沉默",
+      "mode": "mass",
+      "n": 20,
+      "before_casts": 0,
+      "after_casts": 0,
+      "before_cast_battles": 0,
+      "after_cast_battles": 0,
+      "draw_before": 2,
+      "draw_after": 2
+    },
+    {
+      "cell": "c184",
+      "name": "纯眩晕/复合控制",
+      "mode": "small",
+      "n": 20,
+      "before_casts": 0,
+      "after_casts": 0,
+      "before_cast_battles": 0,
+      "after_cast_battles": 0,
+      "draw_before": 0,
+      "draw_after": 0
+    },
+    {
+      "cell": "c185",
+      "name": "纯眩晕/复合控制",
+      "mode": "mass",
+      "n": 20,
+      "before_casts": 0,
+      "after_casts": 0,
+      "before_cast_battles": 0,
+      "after_cast_battles": 0,
+      "draw_before": 0,
+      "draw_after": 0
+    },
+    {
+      "cell": "c186",
+      "name": "纯治疗/治疗屏障",
+      "mode": "small",
+      "n": 20,
+      "before_casts": 59,
+      "after_casts": 54,
+      "before_cast_battles": 20,
+      "after_cast_battles": 20,
+      "draw_before": 0,
+      "draw_after": 0
+    },
+    {
+      "cell": "c187",
+      "name": "纯治疗/治疗屏障",
+      "mode": "mass",
+      "n": 20,
+      "before_casts": 240,
+      "after_casts": 240,
+      "before_cast_battles": 20,
+      "after_cast_battles": 20,
+      "draw_before": 0,
+      "draw_after": 0
+    },
+    {
+      "cell": "c188",
+      "name": "伤害技能/普攻",
+      "mode": "small",
+      "n": 20,
+      "before_casts": 32,
+      "after_casts": 32,
+      "before_cast_battles": 20,
+      "after_cast_battles": 20,
+      "draw_before": 0,
+      "draw_after": 0
+    },
+    {
+      "cell": "c189",
+      "name": "伤害技能/普攻",
+      "mode": "mass",
+      "n": 20,
+      "before_casts": 80,
+      "after_casts": 80,
+      "before_cast_battles": 20,
+      "after_cast_battles": 20,
+      "draw_before": 2,
+      "draw_after": 2
+    },
+    {
+      "cell": "c190",
+      "name": "盾击/近战技能",
+      "mode": "small",
+      "n": 20,
+      "before_casts": 46,
+      "after_casts": 46,
+      "before_cast_battles": 20,
+      "after_cast_battles": 20,
+      "draw_before": 0,
+      "draw_after": 0
+    },
+    {
+      "cell": "c191",
+      "name": "盾击/近战技能",
+      "mode": "mass",
+      "n": 20,
+      "before_casts": 160,
+      "after_casts": 160,
+      "before_cast_battles": 20,
+      "after_cast_battles": 20,
+      "draw_before": 2,
+      "draw_after": 2
+    }
+  ],
+  "signed_channels": [
+    {
+      "channel": "kinetic",
+      "stat": "Damage",
+      "points": -10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 4.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Damage",
+      "points": -10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 25.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Damage",
+      "points": -10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "B": 12
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 13.5
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Damage",
+      "points": 0,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 4,
+          "A": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 3.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Damage",
+      "points": 0,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 4,
+          "A": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 28.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Damage",
+      "points": 0,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "B": 8,
+          "A": 4
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 15.5
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Damage",
+      "points": 10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 2.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Damage",
+      "points": 10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 15.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Damage",
+      "points": 10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "A": 12
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 8.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Penetration",
+      "points": -10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 5.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Penetration",
+      "points": -10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 24.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Penetration",
+      "points": -10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "B": 12
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 14.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Penetration",
+      "points": 0,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 4,
+          "B": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 3.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Penetration",
+      "points": 0,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 2,
+          "B": 4
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 26.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Penetration",
+      "points": 0,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "A": 6,
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 13.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Penetration",
+      "points": 10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 3.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Penetration",
+      "points": 10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 11.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Penetration",
+      "points": 10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "A": 12
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 6.5
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Protection",
+      "points": -10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 2.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Protection",
+      "points": -10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 11.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Protection",
+      "points": -10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "B": 12
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Protection",
+      "points": 0,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 4,
+          "A": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 3.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Protection",
+      "points": 0,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 4,
+          "A": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 24.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Protection",
+      "points": 0,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "B": 8,
+          "A": 4
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 12.5
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Protection",
+      "points": 10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 5.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Protection",
+      "points": 10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 24.0
+      }
+    },
+    {
+      "channel": "kinetic",
+      "stat": "Protection",
+      "points": 10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "A": 12
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 13.5
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Damage",
+      "points": -10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 8.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Damage",
+      "points": -10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "draw": 4,
+          "B": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 40.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Damage",
+      "points": -10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "B": 8,
+          "draw": 4
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 23.5
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Damage",
+      "points": 0,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 4,
+          "B": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 5.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Damage",
+      "points": 0,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "draw": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 40.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Damage",
+      "points": 0,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "A": 4,
+          "B": 2,
+          "draw": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 22.5
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Damage",
+      "points": 10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 3.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Damage",
+      "points": 10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 27.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Damage",
+      "points": 10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "A": 12
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 14.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Penetration",
+      "points": -10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 9.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Penetration",
+      "points": -10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "draw": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 40.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Penetration",
+      "points": -10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "B": 6,
+          "draw": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 24.5
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Penetration",
+      "points": 0,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 4,
+          "B": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 7.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Penetration",
+      "points": 0,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "draw": 4,
+          "A": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 40.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Penetration",
+      "points": 0,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "A": 6,
+          "B": 2,
+          "draw": 4
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 23.5
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Penetration",
+      "points": 10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 3.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Penetration",
+      "points": 10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 12.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Penetration",
+      "points": 10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "A": 12
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 5.5
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Protection",
+      "points": -10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 2.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Protection",
+      "points": -10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 11.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Protection",
+      "points": -10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "B": 12
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 5.5
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Protection",
+      "points": 0,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 4,
+          "B": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Protection",
+      "points": 0,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "draw": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 40.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Protection",
+      "points": 0,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "A": 4,
+          "B": 2,
+          "draw": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 23.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Protection",
+      "points": 10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 8.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Protection",
+      "points": 10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "draw": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 40.0
+      }
+    },
+    {
+      "channel": "thermal",
+      "stat": "Protection",
+      "points": 10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "A": 6,
+          "draw": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 24.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Damage",
+      "points": -10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 4.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Damage",
+      "points": -10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 26.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Damage",
+      "points": -10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "B": 12
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 14.5
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Damage",
+      "points": 0,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 2,
+          "B": 4
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 3.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Damage",
+      "points": 0,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 30.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Damage",
+      "points": 0,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "A": 8,
+          "B": 4
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 15.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Damage",
+      "points": 10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 4,
+          "B": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 3.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Damage",
+      "points": 10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 14.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Damage",
+      "points": 10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "A": 10,
+          "B": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 7.5
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Penetration",
+      "points": -10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 4.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Penetration",
+      "points": -10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 24.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Penetration",
+      "points": -10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "B": 12
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 15.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Penetration",
+      "points": 0,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 2,
+          "B": 4
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 4.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Penetration",
+      "points": 0,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 4,
+          "B": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 36.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Penetration",
+      "points": 0,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "A": 6,
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 14.5
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Penetration",
+      "points": 10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 2.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Penetration",
+      "points": 10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 9.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Penetration",
+      "points": 10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "A": 12
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 5.5
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Protection",
+      "points": -10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 2,
+          "B": 4
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 2.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Protection",
+      "points": -10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 10.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Protection",
+      "points": -10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "A": 2,
+          "B": 10
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 6.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Protection",
+      "points": 0,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 4,
+          "B": 2
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 3.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Protection",
+      "points": 0,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "B": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 22.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Protection",
+      "points": 0,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "A": 4,
+          "B": 8
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 13.5
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Protection",
+      "points": 10,
+      "mode": "small",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 3.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Protection",
+      "points": 10,
+      "mode": "mass",
+      "metrics": {
+        "n": 6,
+        "wins": {
+          "A": 6
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          39.03
+        ],
+        "median_rounds": 23.0
+      }
+    },
+    {
+      "channel": "arcane",
+      "stat": "Protection",
+      "points": 10,
+      "mode": "both",
+      "metrics": {
+        "n": 12,
+        "wins": {
+          "A": 12
+        },
+        "cast_battles": 0,
+        "cast_total": 0,
+        "cast_rate_wilson95_percent": [
+          0.0,
+          24.25
+        ],
+        "median_rounds": 14.5
+      }
+    }
+  ],
+  "logs": [
+    {
+      "path": "engine/sim/out/signed-skill-regression/logs-0.jsonl.gz",
+      "bytes": 4108732,
+      "sha256": "66cd53246890c6ac27f5e65f5ea527db3730fbceeac2c5e23fe1b3ef39c199d2"
+    },
+    {
+      "path": "engine/sim/out/signed-skill-regression/logs-1.jsonl.gz",
+      "bytes": 4128131,
+      "sha256": "b019ef2a616727d58fd43c74065f61258bce48f48163f90b9fa34a14d4dcd673"
+    },
+    {
+      "path": "engine/sim/out/signed-skill-regression/logs-2.jsonl.gz",
+      "bytes": 4097163,
+      "sha256": "5d92cbe002d41c65f920f04783d782b2afef50195a6d4570f6b3ee2e3d441cb3"
+    },
+    {
+      "path": "engine/sim/out/signed-skill-regression/logs-3.jsonl.gz",
+      "bytes": 4074448,
+      "sha256": "56078b8239acc7e466839b0b06e1689c83278fa51dece549ffad061b248573e9"
+    },
+    {
+      "path": "engine/sim/out/support-baseline-v2/logs.jsonl.gz",
+      "bytes": 991433,
+      "sha256": "de6636a4724ed3d10cff83872bbc4450ec0a9a3bc7dfe9c557ccf4c9f6e085b4"
+    },
+    {
+      "path": "engine/sim/out/support-candidate-v2/logs.jsonl.gz",
+      "bytes": 989613,
+      "sha256": "2600fe3cf2bad0a4e6c25ae23b9b61111c50992ec7df9ac78ef716052bc7ba73"
+    },
+    {
+      "path": "engine/sim/out/control-teams-baseline/logs.jsonl.gz",
+      "bytes": 463281,
+      "sha256": "1ee940e99253c997586d7944a4cbb3f3bddd04ff36faaf8a480d71080400403c"
+    },
+    {
+      "path": "engine/sim/out/control-teams-candidate/logs.jsonl.gz",
+      "bytes": 459319,
+      "sha256": "d6ceabecb6ef4d7586ee0707ba73b8fad0e5c910bcf9b06cce8bd3c2cbfaed9d"
+    },
+    {
+      "path": "engine/sim/out/signed-channel-battles/logs.jsonl.gz",
+      "bytes": 1597057,
+      "sha256": "f889e2a4507b219f1c84b83fae13a61390fde4bf4d66036aeca0d3f5001a5300"
+    }
+  ],
+  "limits": [
+    "Worldview cells are templates, not equal-cost armies.",
+    "A draw at the turn cap is censored, not evidence of balance.",
+    "Five paired seeds per side per support mode; mirrored observations are correlated. Wilson intervals are descriptive, not independent-trial significance.",
+    "AI uses a bounded one-action/two-status-boundary estimate, not optimal multi-turn play."
+  ]
+}

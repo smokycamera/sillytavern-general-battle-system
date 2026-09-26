@@ -570,7 +570,7 @@ export class MassBattle {
   }
   roundReport(): MassRoundReport | undefined { return this.lastReport ? structuredClone(this.lastReport) : undefined; }
   visibleLog(side: Side): BattleLogEntry[] { return this.rules.resolutionVersion === 'v2' ? observedLog(this.log, side) : this.log; }
-  observationContext(units = this.combatants): ObservationContext { return { units, mode: 'mass', fieldTags: this.fieldTags, conditions: this.conditions, attached: this.attached }; }
+  observationContext(units = this.combatants): ObservationContext { return { units, mode: 'mass', fieldTags: this.fieldTags, conditions: this.conditions, attached: this.attached, rules: this.rules, traitRegistry: this.traitRegistry, reload: this.reloadCd }; }
   visibleCombatants(side: Side, units = this.combatants): Combatant[] {
     return this.rules.resolutionVersion === 'v2' ? observedUnits(this.observationContext(units), side) : units;
   }
@@ -739,6 +739,7 @@ export class MassBattle {
         reservedHealing.set(affected.id, Math.min(recoveryCapacity(affected), (reservedHealing.get(affected.id) ?? 0) + amount));
       }
     }
+    const skillContext = this.observationContext(planning);
     const sources = allowAbilities ? [u, ...planning.filter((hero) => hero.id === this.attached.get(u.id))].map((actor) => this.effectiveUnit(actor, planning)) : [];
     for (const actor of sources) for (const ability of actor.abilities) {
       const targets = ability.target === 'zone' ? planning.filter(u=>u.status==='ready') : ability.target === 'self' ? [actor] : ability.target === 'ally' ? planning.filter((u) => u.side === side
@@ -767,7 +768,7 @@ export class MassBattle {
             score += amount; plannedHealing.set(affected.id, reserved + amount);
           }
           if (effect.op === 'morale') for (const affected of this.supportTargets(actor, ability, target, planning)) score += moraleChangePreview({ ...this.observationContext(planning), units: planning }, affected, effect.amount, this.rules.morale.breakAt, this.traitRegistry, ability.effects.flatMap((e) => e.op === 'condition' ? [{ id: e.conditionId, dur: e.dur }] : [])).value * (affected.side === actor.side ? 1 : -1);
-          if (effect.op === 'zone' || effect.op === 'barrier' || effect.op === 'condition' || effect.op === 'push' || effect.op === 'dispel' || effect.op === 'trait') for (const affected of this.supportTargets(actor, ability, target, planning)) score += skillEffectValue({ ...this.observationContext(planning), units: planning }, actor, affected, { ...ability, effects: [effect] }, controlChance(affected, effect.op === 'condition' && !!effect.onDamage));
+          if (effect.op === 'zone' || effect.op === 'barrier' || effect.op === 'push' || effect.op === 'dispel' || effect.op === 'trait') for (const affected of this.supportTargets(actor, ability, target, planning)) score += skillEffectValue(skillContext, actor, affected, { ...ability, effects: [effect] }, controlChance(affected, false));
           if (effect.op === 'summon') {
             const node = FORMATION_NODES.find((n) => n.side === actor.side && n.wing === formationNode(actor).wing && n.rank === 'reserve')!;
             const occupied = planning.filter((c) => c.status === 'ready' && !this.isAttached(c.id) && formationNode(c).id === node.id).length;
@@ -775,8 +776,9 @@ export class MassBattle {
             if (occupied + effect.count <= 3 && owned + effect.count <= 2) score += 8 * effect.count;
           }
         }
+        for (const affected of this.supportTargets(actor, ability, target, planning)) score += skillEffectValue(skillContext, actor, affected, { ...ability, effects: ability.effects.filter(e => e.op === 'condition') }, controlChance(affected, false), controlChance(affected, true)) * Math.max(0, 1 - (controlPreviews.get(affected.id)?.expectedDamage ?? 0) / Math.max(1, memberHealth(affected)));
         const falling = this.abilityFlightPreview(actor, target, ability, planning); if (falling) score += falling.fallDamage * (falling.fallChance ?? 1);
-        for (const affected of this.supportTargets(actor, ability, target, planning)) score += skillEffectValue(this.observationContext(planning), actor, affected, { ...ability, effects: ability.effects.filter(e => e.op === 'resource') });
+        for (const affected of this.supportTargets(actor, ability, target, planning)) score += skillEffectValue(skillContext, actor, affected, { ...ability, effects: ability.effects.filter(e => e.op === 'resource') });
         score -= skillResourceCost(ability);
         if (score > 0) candidates.push({ order, score: score - 0.25 });
       }

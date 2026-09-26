@@ -63,7 +63,7 @@ export function compileWeapon(spec: { mechanism?: string; weaponId?: string; pow
     baseDice: rebuildDice(budget / attacks, budget / attacks < 3.5 ? 2 : 6), recipe,
     channel: recipe.enchantment ?? (mechanism === 'energy' ? 'thermal' : mechanism === 'magic' ? 'arcane' : 'kinetic'),
     penetration: 1 + Math.floor(recipe.power / 2) + (['cannon', 'indirect-cannon', 'demolition', 'autocannon'].includes(mechanism) ? 2 : mechanism === 'heavy-rifle' ? 2 : ['firearm', 'rifle', 'energy'].includes(mechanism) ? 1 : 0),
-    range: profile.range + (ranged ? bonusSteps(recipe.bonuses, 'range', 5) : 0), minRange: profile.minRange ?? 0,
+    range: Math.max(profile.minRange??0,ranged?1:profile.range,profile.range + (ranged ? bonusSteps(recipe.bonuses, 'range', 5) : 0)), minRange: profile.minRange ?? 0,
     pointBlankPolicy: profile.pointBlankPolicy ?? 'allow', pointBlankPenalty: profile.pointBlankPenalty,
     indirect: profile.indirect, attacks, reload: profile.reload, level: recipe.power,
     hands: mechanism === 'natural' ? 0 : ['light-ranged','throwing'].includes(mechanism) ? 1 : ranged ? 2 : 1, load: mechanism === 'natural' ? 0 : ['light-ranged','throwing'].includes(mechanism) ? 1 : ['cannon', 'indirect-cannon', 'autocannon'].includes(mechanism) ? 6 : ranged ? 2 : 1,

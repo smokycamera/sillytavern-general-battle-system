@@ -10,7 +10,7 @@ export function itemSpecificationLabel(spec: ItemSpecification): string {
 
 /** 正文仅提供机制与规格；属性、骰子、身份、种子与版本仍由插件计算。 */
 export function parseItemSpecification(text: string, attrs: { type?: string; quality?: string; body?: string; enchant?: string; stabilized?: string; protection?: string } = {}): ItemSpecification {
-  const label = text.trim().replace(/[lL]\s*\d{1,2}(?:\+.*)?$/, ''), consumable = Object.entries(CONSUMABLE_NAMES).find(([id, name]) => label === id || label === name)?.[0], accessory = Object.entries(ACCESSORY_NAMES).find(([id, name]) => label === id || label === name)?.[0];
+  const label = text.trim().replace(/[lL]\s*\d{1,2}(?:[+-].*)?$/, ''), consumable = Object.entries(CONSUMABLE_NAMES).find(([id, name]) => label === id || label === name)?.[0], accessory = Object.entries(ACCESSORY_NAMES).find(([id, name]) => label === id || label === name)?.[0];
   const kind = accessory ? 'accessory' : consumable ? 'consumable' : /^(?:无甲|轻甲|中甲|重甲|超重甲)/.test(text) ? 'armor' : /^(?:盾|shield)/.test(text) ? 'shield' : /^(?:治疗|heal)/.test(text) ? 'consumable' : 'weapon';
   const parsed = parseEnhancementSuffix(text,kind);
   const match = parsed.text.trim().match(/^([^:：|]+?)[lL](\d{1,2})$/);

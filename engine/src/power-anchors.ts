@@ -1,5 +1,5 @@
 import { isCannonWeapon, isRangedWeapon } from './loadout.js';
-import { bonusMultiplier, bonusSteps } from './enhancements.js';
+import { bonusMultiplier, bonusRating, bonusPoints, channelPoints } from './enhancements.js';
 import type {Armor,Combatant,DamageChannel,Weapon} from './types.js';
 import {curveAt} from './data/curves.js';
 import {diceAvg} from './data/weapons.js';
@@ -22,7 +22,11 @@ export const POWER_ANCHORS=[
 ] as const;
 export const powerBudget=(power:number)=>POWER_ANCHORS[Math.max(0,Math.min(9,Math.round(power)-1))]!.budget;
 export function penetrationThrough(power:number,resistance:number):number {
-  const gap=power-resistance;return gap>=1?1:gap===0?.55:gap===-1?.3:gap===-2?.12:0;
+  if(!Number.isFinite(power)||!Number.isFinite(resistance)||power<0||resistance<0)throw Error('穿透与防护须为非负有限数');
+  const gap=power-resistance;
+  if(gap>=1)return 1;if(gap<=-3)return 0;
+  const anchors=[0,.12,.3,.55,1],lower=Math.floor(gap),index=lower+3;
+  return anchors[index]!+(anchors[index+1]!-anchors[index]!)*(gap-lower);
 }
 /** 至多8粒骰；高规格通过倍率增长，暴击仍能放大整个伤害预算。 */
 export function scaledPowerDice(mean:number):{dice:string;scale:number} {
@@ -38,30 +42,33 @@ export function anchoredWeapon(weapon:Weapon|undefined,ammo:'he'|'ap'='he'):Weap
   const power=weapon.recipe?.power??weapon.level??5,curve=curveAt(power),old=diceAvg(curve.dmgBase)+(curve.dmgAp?diceAvg(curve.dmgAp):0);
   const melee=meleeProfile(weapon);
   const ratio=powerBudget(power)/old*(isCannonWeapon(weapon)?3:mechanism==='autocannon'?1.5:1)*(melee?.damageScale??1);
-  const base=diceAvg(weapon.baseDice)+(weapon.apDice?diceAvg(weapon.apDice):0),scaled=scaledPowerDice(base*ratio*bonusMultiplier(weapon.recipe?.bonuses, 'damage'));
+  const base=diceAvg(weapon.baseDice)+(weapon.apDice?diceAvg(weapon.apDice):0),scaled=scaledPowerDice(base*ratio*bonusMultiplier(weapon.recipe?.bonuses, 'damage',weapon.channel??'kinetic'));
   const artillery=isCannonWeapon(weapon),explosive=artillery&&ammo==='he'&&power>=3;
   const splash=explosive?(power>=10?1e9:power>=9?256:power>=8?12:power>=7?6:power>=5?4:2):mechanism==='demolition'?6:0;
   return {...weapon,powerModel:'anchors-v1',ammunition:ammo,baseDice:scaled.dice,apDice:undefined,damageScale:scaled.scale,
-    penetration:2*power+(['cannon','indirect-cannon','autocannon','demolition'].includes(mechanism)?2:mechanism==='heavy-rifle'?2:['firearm','rifle','energy'].includes(mechanism)?1:0)+(melee?.penetration??0)+(artillery&&ammo==='ap'?2:0)+bonusSteps(weapon.recipe?.bonuses,'penetration',5),
+    penetration:Math.max(0,2*power+(['cannon','indirect-cannon','autocannon','demolition'].includes(mechanism)?2:mechanism==='heavy-rifle'?2:['firearm','rifle','energy'].includes(mechanism)?1:0)+(melee?.penetration??0)+(artillery&&ammo==='ap'?2:0)+bonusRating(weapon.recipe?.bonuses,'penetration',weapon.channel??'kinetic')),
     splashTargets:splash,splashFactor:mechanism==='demolition'?0.6:0.4};
 }
-export function anchoredProtection(unit:Pick<Combatant,'armor'|'body'>,channel:DamageChannel):number {
-  const armor=unit.armor;if(!armor)return BODY[unit.body??'human'].protection[channel];
+export function anchoredProtection(unit:Pick<Combatant,'armor'|'body'|'shield'>,channel:DamageChannel):number {
+  const armor=unit.armor,innate=BODY[unit.body??'human'].protection[channel];
+  const armorBonus=armor?.tier?armor.recipe?.bonuses:undefined,shieldBonus=unit.shield?.recipe?.bonuses;
+  const adjustment=bonusRating({protection:bonusPoints(armorBonus,'protection')+channelPoints(armorBonus,'protection',channel)+bonusPoints(shieldBonus,'protection')+channelPoints(shieldBonus,'protection',channel)},'protection');
+  if(!armor)return Math.max(innate,adjustment);
   if(armor.protectionOverride&&armor.protection)return Math.max(BODY[unit.body??'human'].protection[channel],armor.protection[channel]);
   const power=armor.recipe?.power??armor.level??5,tier=armor.tier;
-  const base=tier===0?0:Math.max(0,2*power+tier-2+bonusSteps(armor.recipe?.bonuses,'protection',5));
+  const base=tier===0?0:Math.max(0,2*power+tier-2);
   const protection={kinetic:base,thermal:Math.max(0,base-1),arcane:Math.max(0,base-2)};
   const focus=armor.recipe?.protectionProfile;
   if(focus&&focus!=='balanced'){
     let left=2;for(const key of (['kinetic','thermal','arcane'] as const).filter(k=>k!==focus).sort((a,b)=>protection[b]-protection[a])){const n=Math.min(protection[key],left);protection[key]-=n;protection[focus]+=n;left-=n;}
   }
-  return Math.max(BODY[unit.body??'human'].protection[channel],protection[channel]);
+  return Math.max(innate,protection[channel]+adjustment);
 }
 /** 高阶材料/护场提供等效耐久；24为固定同代交战基准，避免提高攻击曲线后同档全部秒杀。 */
 export function armorPowerScale(unit:Pick<Combatant,'armor'|'shield'>):number {
-  const armor=unit.armor?.powerScale??(unit.armor&&unit.armor.tier>0?Math.max(1,powerBudget(unit.armor.recipe?.power??unit.armor.level??5)/24)*bonusMultiplier(unit.armor.recipe?.bonuses,'protection'):1);
+  const armor=unit.armor?.powerScale??(unit.armor&&unit.armor.tier>0?Math.max(1,powerBudget(unit.armor.recipe?.power??unit.armor.level??5)/24)*bonusMultiplier(unit.armor.recipe?.bonuses,'power'):1);
   const shield=unit.shield?.powerScale??(unit.shield ? Math.max(1,powerBudget(unit.shield.recipe?.power??3)/48) : 1);
-  return Math.max(armor,shield)*bonusMultiplier(unit.shield?.recipe?.bonuses,'protection');
+  return Math.max(armor,unit.shield?shield:0)*bonusMultiplier(unit.shield?.recipe?.bonuses,'power');
 }
 /** 没有手动指定时，火炮按公开目标防护和人数选择有效毁伤较高的弹种。 */
 export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Combatant,weaponOverflow=false):Weapon|undefined {

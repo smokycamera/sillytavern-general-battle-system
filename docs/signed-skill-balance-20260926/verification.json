@@ -1,0 +1,36 @@
+{
+  "baseline": "86d719dc4931a77d99ddd0ee19638d81c0eaefb2",
+  "engineSourceSha256": "24faf54578c5a65cfe27ca659e170bc323c4e2166918defdcff2286edac1138e",
+  "nativeSourceFingerprint": "fcc7032d53ca9bdaf3cd5c2180d2b786e309504f28074cf894be4a5288a9e5bd",
+  "tests": {
+    "full_suite": {
+      "files": 114,
+      "passed": 890,
+      "failed": 0,
+      "log": "signed-full-tests2.log"
+    },
+    "additional_transaction_case": {
+      "file": "panel/src/unit-set.test.ts",
+      "passed": 5,
+      "new_cases_beyond_full_suite": 1,
+      "log": "signed-unit-set-final.log"
+    },
+    "unique_current_tests_passed": 891
+  },
+  "typecheck": "passed",
+  "compatibility": "passed: recovered scenarios and native save compatibility",
+  "build_dist": "passed",
+  "build_extension": "passed",
+  "verify_dist": "passed: 27 packaged files",
+  "git_diff_check": "passed",
+  "native_browser_smoke": {
+    "status": "blocked",
+    "reason": "Playwright Chromium executable unavailable; installation returned a truncated archive. No real-host/browser acceptance claimed."
+  },
+  "actual_battle_records": 3364,
+  "candidate_battles": 2964,
+  "baseline_battles": 400,
+  "paired_initial_snapshots": 400,
+  "unique_rows_and_matching_logs": "passed",
+  "deterministic_replays": 24
+}

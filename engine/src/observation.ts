@@ -16,6 +16,9 @@ export interface ObservationContext {
   battlefield?: BattlefieldSpec;
   attached?: Map<string, string>;
   conditions?: Pick<ReadonlyMap<string, ConditionDef>, 'get'>;
+  rules?: import('./types.js').RulePack;
+  traitRegistry?: Map<string, import('./types.js').Trait>;
+  reload?: ReadonlyMap<string, number>;
 }
 function hostOf(context: ObservationContext, unit: Combatant): Combatant | undefined {
   const hostId = [...(context.attached ?? [])].find(([, hero]) => hero === unit.id)?.[0];

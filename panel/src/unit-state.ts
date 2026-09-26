@@ -1,7 +1,7 @@
 import { validateAreas } from '../../engine/src/area-effects.js';
 import { validateBarrier } from '../../engine/src/barrier.js';
 import { validateAccessories } from '../../engine/src/items.js';
-import { validateEnhancements, type Enhancements } from '../../engine/src/enhancements.js';
+import { validateEnhancements, validateChannelProtection, type Enhancements } from '../../engine/src/enhancements.js';
 import { synchronizePersonnel, validateCombatModel } from '../../engine/src/combat-model.js';
 import { capSingleLife, limitCombatantLife } from '../../engine/src/health-limits.js';
 import { spCapacity } from '../../engine/src/resources.js';
@@ -232,6 +232,11 @@ function recordFromUnknown(value: unknown): UnitRecord {
 
 export function combatantFromUnknown(value: unknown): Combatant {
   if (!isRecordObject(value)) throw new Error('不是对象');
+  validateEnhancements(value.bonuses as Enhancements|undefined,'unit');
+  for(const slot of ['armor','shield'] as const){const item=value[slot];if(isRecordObject(item)){
+    if(isRecordObject(item.recipe))validateEnhancements(item.recipe.bonuses as Enhancements|undefined,slot);
+    if(slot==='armor'&&item.protection!==undefined)validateChannelProtection(item.protection);
+  }}
   validateCombatModel(value as unknown as Combatant);
   if (typeof value.id !== 'string' || !value.id) throw new Error('缺少 id');
   if (typeof value.name !== 'string' || !value.name) throw new Error('缺少 name');
@@ -244,20 +249,22 @@ export function combatantFromUnknown(value: unknown): Combatant {
     const item = value[slot]; if (item === undefined) continue;
     if (!isRecordObject(item) || typeof item.name !== 'string' || typeof item.baseDice !== 'string') throw new Error(slot + ' 结构损坏');
     if(isRecordObject(item.recipe))validateEnhancements(item.recipe.bonuses as Enhancements | undefined,'weapon');
+    if(item.penetration!==undefined&&(typeof item.penetration!=='number'||!Number.isFinite(item.penetration)||item.penetration<0))throw Error('武器穿透须为非负有限数');
     parseDice(item.baseDice);
     if (item.apDice !== undefined) { if (typeof item.apDice !== 'string') throw new Error(slot + ' 破甲骰损坏'); parseDice(item.apDice); }
   }
   if (Array.isArray(value.abilities)) for (const a of value.abilities) {
     if (!isRecordObject(a) || typeof a.id !== 'string' || typeof a.name !== 'string' || !Array.isArray(a.effects)) throw new Error('技能结构损坏');
     validateEnhancements(a.bonuses as Enhancements | undefined,'skill');
+    if(a.penetration!==undefined&&(typeof a.penetration!=='number'||!Number.isFinite(a.penetration)||a.penetration<0))throw Error('技能穿透须为非负有限数');
     if (a.weaponUse !== undefined && (!['auto', 'melee', 'ranged'].includes(String(a.weaponUse)) || a.damageBasis !== 'weapon')) throw new Error('技能选用武器记录损坏');
     if (a.recipe !== undefined) {
       if (!isRecordObject(a.recipe) || !['skill-formula-v1','skill-formula-v2'].includes(String(a.recipe.version)) || !Number.isInteger(a.recipe.power) || Number(a.recipe.power) < 1 || Number(a.recipe.power) > 10 || a.recipe.power !== a.power
         || typeof a.definitionId !== 'string' || !skillMechanismFromId(a.definitionId) || JSON.stringify(skillMechanismFromId(a.definitionId)) !== JSON.stringify({ category: a.recipe.category, area: a.recipe.area, modifiers: a.recipe.modifiers })) throw new Error('通用技能配方损坏');
     }
     if (a.area !== undefined && (!isRecordObject(a.area) || !['cone','line','ring','chain','circle'].includes(String(a.area.shape)) || !Number.isInteger(a.area.radius) || Number(a.area.radius)<1 || Number(a.area.radius)>3 || !Number.isInteger(a.area.maxTargets) || Number(a.area.maxTargets)<1 || Number(a.area.maxTargets)>8)) throw Error('技能范围不正确');
-    if (a.areaExposure !== undefined && (!Number.isInteger(a.areaExposure) || Number(a.areaExposure) < 1 || Number(a.areaExposure) > (['skill-v4.0','skill-v4.1','skill-v4.2'].includes(String(a.effectVersion))?1e9:4) || a.shape !== 'burst' || a.damageBasis !== undefined)) throw new Error('技能范围暴露参数损坏');
-    if (a.damageBasis !== undefined && !['weapon', 'shield'].includes(String(a.damageBasis)) || a.weaponDamageMult !== undefined && (!Number.isFinite(a.weaponDamageMult) || Number(a.weaponDamageMult) <= 0 || Number(a.weaponDamageMult) > (['skill-v3.0','skill-v4.0','skill-v4.1','skill-v4.2'].includes(String(a.effectVersion)) ? 4 : 2)) || a.delivery !== undefined && !['melee', 'ranged', 'magic'].includes(String(a.delivery))) throw new Error('技能装备基准损坏');
+    if (a.areaExposure !== undefined && (!Number.isInteger(a.areaExposure) || Number(a.areaExposure) < 1 || Number(a.areaExposure) > (['skill-v4.0','skill-v4.1','skill-v4.2','skill-v4.3'].includes(String(a.effectVersion))?1e9:4) || a.shape !== 'burst' || a.damageBasis !== undefined)) throw new Error('技能范围暴露参数损坏');
+    if (a.damageBasis !== undefined && !['weapon', 'shield'].includes(String(a.damageBasis)) || a.weaponDamageMult !== undefined && (!Number.isFinite(a.weaponDamageMult) || Number(a.weaponDamageMult) <= 0 || Number(a.weaponDamageMult) > (['skill-v3.0','skill-v4.0','skill-v4.1','skill-v4.2','skill-v4.3'].includes(String(a.effectVersion)) ? 4 : 2)) || a.delivery !== undefined && !['melee', 'ranged', 'magic'].includes(String(a.delivery))) throw new Error('技能装备基准损坏');
     if(a.damageScale!==undefined&&(!Number.isFinite(a.damageScale)||Number(a.damageScale)<=0||Number(a.damageScale)>1e6))throw Error('技能等级倍率损坏');
     for (const effect of a.effects) {
       if (isRecordObject(effect) && effect.op === 'zone' && (!['fire','poison','smoke','healing','trap'].includes(String(effect.kind)) || !Number.isInteger(effect.power) || Number(effect.power)<1 || Number(effect.power)>10 || !Number.isInteger(effect.dur) || Number(effect.dur)<1 || Number(effect.dur)>99 || !Number.isInteger(effect.radius) || Number(effect.radius)<0 || Number(effect.radius)>3)) throw Error('持续区域的范围或时间不正确');

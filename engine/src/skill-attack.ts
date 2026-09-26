@@ -1,4 +1,4 @@
-import { bonusSteps } from './enhancements.js';
+import { bonusSteps, bonusRating, bonusMultiplier } from './enhancements.js';
 import { isCohort } from './combat-model.js';
 import { skillWeapon } from './skill-runtime.js';
 import { isRangedWeapon } from './loadout.js';
@@ -36,14 +36,17 @@ export function skillAttack(context: ObservationContext, actor: Combatant, targe
   if (!weapon) return { abilityDamage: { accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect, baseDice: '1d2-2', apDice: undefined, penetration: 0, channel: 'kinetic', weaponBased: true }, ranged: false, participants: 0 };
   if(actor.combatModel==='cohort-v2')weapon=combatWeapon(weapon,actor,target,rules?.weaponOverflow)!;
   const skillBudget = diceAvg(effect.baseDice) + (effect.apDice ? diceAvg(effect.apDice) : 0);
-  const equipmentBudget = (diceAvg(weapon.baseDice) + (weapon.apDice ? diceAvg(weapon.apDice) : 0)) * (weapon.damageScale??1) * Math.min(3, weapon.attacks ?? 1) * (ability.weaponDamageMult ?? 1);
+  const channel=weapon.channel??'kinetic';
+  // 武技在实际武器通道上应用专项修正；避免公式升级时猜测通道或重复叠加通用强化。
+  const channelScale=bonusMultiplier(ability.bonuses,'damage',channel)/bonusMultiplier(ability.bonuses,'damage');
+  const equipmentBudget = (diceAvg(weapon.baseDice) + (weapon.apDice ? diceAvg(weapon.apDice) : 0)) * (weapon.damageScale??1) * Math.min(3, weapon.attacks ?? 1) * (ability.weaponDamageMult ?? 1) * channelScale;
   const field = context.battlefield;
   const width = engagementWidth(actor, target, isRangedWeapon(weapon), field, context.fieldTags);
   const attached = new Set(context.attached?.values() ?? []);
   const cohort = context.units.filter((u) => !attached.has(u.id) && sameLayer(actor, u) && (context.mode === 'mass' ? formationNode(actor).id === formationNode(u).id : u.pos === actor.pos));
   const budget=isCohort(actor)?equipmentBudget*Math.min(1,powerBudget(ability.power??5)/powerBudget(weapon.level??5)):Math.min(skillBudget,equipmentBudget),scaled=scaledPowerDice(budget);
   return { weaponOverride: weapon, ranged: isRangedWeapon(weapon), participants: sharedParticipants(actor, cohort, width, target),
-    abilityDamage: { accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect, baseDice:actor.combatModel==='cohort-v2'?scaled.dice:cappedDice(budget),damageScale:actor.combatModel==='cohort-v2'?scaled.scale:undefined,apDice: undefined, channel: weapon.channel ?? 'kinetic', penetration: (weapon.penetration ?? 1 + Math.floor((weapon.level ?? 5) / 2)) + bonusSteps(ability.bonuses,'penetration',5), weaponBased: true } };
+    abilityDamage: { accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect, baseDice:actor.combatModel==='cohort-v2'?scaled.dice:cappedDice(budget),damageScale:actor.combatModel==='cohort-v2'?scaled.scale:undefined,apDice: undefined, channel, penetration: Math.max(0,(weapon.penetration ?? 1 + Math.floor((weapon.level ?? 5) / 2)) + bonusRating(ability.bonuses,'penetration',channel)), weaponBased: true } };
 }
 /** 低预算不能被最少一枚d6抬高；向下选取可表达且不超过预算的均值。 */
 function cappedDice(budget: number): string {
