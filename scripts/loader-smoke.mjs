@@ -121,7 +121,7 @@ await panel.locator('h1').waitFor({ timeout: 8000 });
 const h1 = await panel.locator('h1').textContent();
 check('面板启动（标题渲染）', /战阵/.test(h1 || ''), `h1="${h1}"`);
 await panel.locator('.workspace-nav [data-tab="settings"]').click();
-check('经 window.parent.TavernHelper 识别为酒馆助手环境', /酒馆助手/.test(await panel.locator('.workspace-diagnostics').textContent()));
+check('经 window.parent.TavernHelper 识别为酒馆助手环境', /已支持在续写剧情时参考当前战斗进度/.test(await panel.locator('.workspace-diagnostics').textContent()));
 await panel.locator('.workspace-nav [data-tab="units"]').click();
 const genOk = await (async () => {
   await panel.locator('[data-action="gen-toggle"]').click(); // 展开造怪器二阶面板

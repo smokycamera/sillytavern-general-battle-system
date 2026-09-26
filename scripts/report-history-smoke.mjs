@@ -63,7 +63,7 @@ try{
  await load(closed);await tab('reports');await p.locator('[data-action="report-delete"]').click();
  let deleted=await read();assert.equal(deleted.reports.length,0);assert.deepEqual(deleted.committedOutcomeIds,closed.committedOutcomeIds);assert.deepEqual(deleted.storage,closed.storage);assert.deepEqual(deleted.inventory,closed.inventory);
  await page.evaluate(html=>{document.querySelector('#panel').srcdoc=html;},html);await tab('reports');await p.locator('[data-action="report-restore"]').click();assert.equal((await read()).reports[0].id,closed.reports[0].id);
- const old=structuredClone(closed);delete old.reports[0].start;await load(old);await tab('reports');assert.equal(await p.locator('[data-action="report-restart"]').isDisabled(),true);assert.match(await p.locator('.report-workspace').innerText(),/没有开局快照/);
+ const old=structuredClone(closed);delete old.reports[0].start;await load(old);await tab('reports');assert.equal(await p.locator('[data-action="report-restart"]').isDisabled(),true);assert.match(await p.locator('.report-workspace').innerText(),/没有开局存档记录/);
  await p.locator('[data-action="report-delete"]').click();assert.equal((await read()).reports.length,0);
  const advanced=structuredClone(closed);advanced.storage[0].hp--;await load(advanced);await tab('reports');assert.equal(await p.locator('[data-action="report-restart"]').isDisabled(),true);assert.match(await p.locator('.report-workspace').innerText(),/已经变化/);
  checks.push('删除→刷新→撤销保留报告与入账记录；旧报告可删除，缺快照或已有后续变化时重战不可用');

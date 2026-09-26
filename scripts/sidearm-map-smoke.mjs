@@ -69,7 +69,7 @@ try{
   checks.push({mode,viewportWidths:[390,1024],events:probe.positions.length,mapNodesRemoved:probe.removed,scrollPreserved:true,focusPreserved:true,battleUnchanged:true});
  }
  await load(inventory);await p.locator('.workspace-nav [data-tab="inventory"]').click();
- await p.locator('.inventory-card').filter({hasText:'试改副武器'}).locator('[data-action="inventory-edit"]').click();
+ await p.locator('.inventory-card').filter({hasText:'试改副武器'}).locator('.inventory-more > summary').click(); await p.locator('.inventory-card').filter({hasText:'试改副武器'}).locator('[data-action="inventory-edit"]').click();
  await p.locator('[data-role="inventory-mechanism"]').selectOption('cannon');await p.locator('[data-role="inventory-power"]').fill('6');
  await p.locator('[data-action="inventory-preview-draft"]').click();await p.locator('[data-action="inventory-confirm"]').click();
  const saved=await page.evaluate(()=>window.readPanel()),after=saved.storage.find(r=>r.id==='a').snapshot.sidearm;

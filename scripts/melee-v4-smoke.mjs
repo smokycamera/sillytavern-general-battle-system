@@ -37,6 +37,8 @@ try {
     checks.push({ mode, reach: 2, penetration: result.penetration, factor: result.penetrationFactor, actualDamage: result.finalDamage, snapshotPreserved: true, mobileOverflow: false });
   }
   await p.locator('.workspace-nav [data-tab="inventory"]').click();
-  const text = await p.locator('body').innerText(); assert.match(text, /长柄支援/); assert.match(text, /剑术攻守/); assert.match(text, /格子射程2／会战2阵距/);
+  await p.locator('[data-role="inventory-unit"]').selectOption('A'); await p.locator('.item-rules > summary').first().click();
+  const text = await p.locator('body').innerText(); assert.match(text, /长柄支援/); assert.match(text, /格子射程2／会战2阵距/);
+  await p.locator('[data-role="inventory-unit"]').selectOption('D'); await p.locator('.item-rules > summary').first().click(); assert.match(await p.locator('body').innerText(), /剑术攻守/);
   assert.deepEqual(errors, []); writeFileSync('engine/sim/out/melee-v4-browser.json', JSON.stringify({ checks, errors }, null, 2) + '\n'); console.log(JSON.stringify({ checks, errors }, null, 2));
 } finally { await browser.close(); await new Promise(r => server.close(r)); }

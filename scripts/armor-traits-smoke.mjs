@@ -26,7 +26,7 @@ try {
   assert.match(await root.locator('[data-role="inventory-preview"]').innerText(), /装备自动特质：重甲/); await confirm();
   let current = await save(), actor = current.storage.find(r => r.id === 'a');
   assert.equal(actor.snapshot.armor.tier, 3); assert.deepEqual(actor.traits, []); assert.equal(actor.hp, 37); checks.push('未勾选特质，实际换装预览自动提供重甲');
-  await plate.locator('[data-action="inventory-edit"]').click(); await root.locator('[data-role="inventory-tier"]').selectOption('4');
+  await plate.locator('.inventory-more > summary').click(); await plate.locator('[data-action="inventory-edit"]').click(); await root.locator('[data-role="inventory-tier"]').selectOption('4');
   await root.locator('[data-action="inventory-preview-draft"]').click(); assert.match(await root.locator('[data-role="inventory-preview"]').innerText(), /装备自动特质：超重装甲/); await confirm();
   current = await save(); actor = current.storage.find(r => r.id === 'a'); assert.equal(actor.snapshot.armor.tier, 4); assert.deepEqual(actor.traits, []);
   assert.ok(await p.locator('html').evaluate(el => el.scrollWidth - innerWidth <= 1));

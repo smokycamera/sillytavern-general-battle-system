@@ -79,7 +79,7 @@ try {
   assert.equal(current.storage.find((r) => r.id === 'a').snapshot.weapon.id, gun.id);
   assert.equal(current.storage.find((r) => r.id === 'a').hp, 18);
   console.log('✓ 正式面板：重复预览不入库/重掷，生成大炮→实际换装，保持生命与训练');
-  await itemRow('测试大炮').locator('[data-action="inventory-edit"]').click();
+  await reveal(itemRow('测试大炮').locator('[data-action="inventory-edit"]')); await itemRow('测试大炮').locator('[data-action="inventory-edit"]').click();
   await root.locator('[data-role="inventory-name"]').fill('附魔大炮');
   await root.locator('[data-role="inventory-power"]').fill('8');
   await reveal(root.locator('[data-role="inventory-enchantment"]'));
@@ -90,6 +90,7 @@ try {
   assert.equal(upgraded.revision, 2); assert.equal(upgraded.mechanics.value.channel, 'arcane');
   assert.deepEqual(upgraded.history[0].mechanics, gun.mechanics);
   await itemRow('附魔大炮').locator('[data-action="inventory-unequip"]').click(); await confirm();
+  await reveal(itemRow('附魔大炮').locator('[data-action="inventory-unassign"]')); await itemRow('附魔大炮').locator('[data-action="inventory-unassign"]').click(); await confirm();
   await root.locator('[data-role="inventory-unit"]').selectOption('b');
   await itemRow('附魔大炮').locator('[data-action="inventory-assign"]').click(); await confirm();
   await reveal(itemRow('附魔大炮').locator('[data-action="inventory-equip"][data-slot="primary"]')); await itemRow('附魔大炮').locator('[data-action="inventory-equip"][data-slot="primary"]').click(); await confirm();

@@ -26,7 +26,7 @@ try{
   }else{
    await p.locator('.formation-adjust > summary').click();await p.locator('[data-role="formation-order"]').selectOption('volley');await p.locator('[data-role="formation-target"]').selectOption('D');
   }
-  const command=p.locator(mode==='mass'?'.formation-command':'.grid-command');assert.match(await command.innerText(),/现员 500\/500 · 成员耐久 10/);assert.match(await command.innerText(),/有效投送 .*分 8 组判定/);
+  const command=p.locator(mode==='mass'?'.formation-command':'.grid-command');assert.match(await command.innerText(),/现员 500\/500 · 成员耐久 10/);assert.match(await command.innerText(),/有效攻击 .*分 8 组判定/);
   const stable=await page.evaluate(()=>JSON.stringify(window.readPanel().battle.snap));
   for(const width of [390,1024]){
    await page.setViewportSize({width,height:844});await command.evaluate(el=>el.scrollIntoView({block:'start'}));
@@ -37,6 +37,7 @@ try{
   await page.setViewportSize({width:1024,height:844});
   if(mode==='mass'){await p.locator('[data-action="formation-issue"]').click();await p.locator('.mass-controls [data-action="mass-resolve"]').click();}
   else await p.locator('.command-finish [data-action="grid-execute"]').click();
+  await page.waitForFunction(()=>window.readPanel().battle?.snap.log.some(e=>e.resolution?.packetCount===8));
   const after=await page.evaluate(()=>window.readPanel().battle.snap);
   assert.ok(after.log.some(e=>e.resolution?.packetCount===8));for(const u of after.combatants)assert.equal(u.formation.members,u.hp);
   await page.evaluate(html=>{document.querySelector('#panel').srcdoc=html;},html);await p.locator(mode==='mass'?'.formation-grid':'.grid-board').waitFor();

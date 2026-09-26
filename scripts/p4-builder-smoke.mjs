@@ -27,7 +27,7 @@ try {
   assert.equal(await p.locator('[data-role="gen-primary-body"]').inputValue(), 'vehicle'); await p.locator('[data-role="gen-primary-stabilized"]').check();
   await p.locator('[data-role="gen-sidearmEnabled"]').check(); await p.locator('[data-role="gen-sidearm-mechanism"]').selectOption('light-ranged');
   await p.locator('[data-detail-id="gen-armor-advanced"] > summary').click(); await p.locator('[data-role="gen-armor-profile"]').selectOption('thermal');
-  await p.locator('[data-detail-id="gen-skills"] > summary').click(); await p.locator('[data-action="builder-skill-add"][data-builder="gen"]').click();
+  await p.locator('[data-detail-id="gen-skills"] > summary').click(); await p.locator('[data-action="builder-skill-add"][data-builder="gen"]:not([data-mechanism])').click();
   const unchanged = await page.evaluate(() => JSON.stringify(window.readSave()));
   await p.locator('[data-action="gen-add"]').click(); await p.locator('[data-role="builder-preview"]').waitFor();
   assert.equal(await page.evaluate(() => JSON.stringify(window.readSave())), unchanged);
@@ -57,7 +57,7 @@ try {
   console.log('✓ 正式编辑：同一表单预览70/560→双写失败保留原档与预览→直接重试，装备精确不变');
   await p.locator('.workspace-nav [data-tab="inventory"]').click(); await p.locator('[data-role="inventory-unit"]').selectOption(id);
   const item = await p.locator(`[data-inventory-id="${frozen.id}"]`).count() ? frozen.id : await page.evaluate((id) => window.readSave().inventory?.find((i) => i.equippedTo?.unitId === id && i.equippedTo.slot === 'primary')?.id, id);
-  assert.ok(item); await p.locator(`[data-inventory-id="${item}"] [data-action="inventory-edit"]`).click();
+  assert.ok(item); await p.locator(`[data-inventory-id="${item}"] .inventory-more > summary`).click(); await p.locator(`[data-inventory-id="${item}"] [data-action="inventory-edit"]`).click();
   await p.locator('[data-detail-id="inventory-advanced"] > summary').click(); assert.equal(await p.locator('[data-role="inventory-stabilized"]').isChecked(), true);
   await p.locator('[data-role="inventory-enchantment"]').selectOption('arcane'); await p.locator('[data-action="inventory-preview-draft"]').click(); await p.locator('[data-action="inventory-confirm"]').click();
   record = await page.evaluate((id) => window.readSave().storage.find((r) => r.id === id), id);
