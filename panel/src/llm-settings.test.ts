@@ -5,10 +5,19 @@ afterEach(()=>vi.unstubAllGlobals());
 function storage(){const data=new Map<string,string>();vi.stubGlobal('localStorage',{getItem:(k:string)=>data.get(k)??null,setItem:(k:string,v:string)=>data.set(k,v)});vi.stubGlobal('sessionStorage',{getItem:()=>null});return data;}
 describe('global ordinary LLM settings',()=>{
   it('round trips credentials and model list without using a chat/card key or legacy route',()=>{
-    const data=storage(),s={...readLlmSettings(),url:'https://gateway.example/v1',token:'test-key',model:'chosen',models:['chosen','other'],enabled:true,windowSize:18};
+    const data=storage(),s={...readLlmSettings(),url:'https://gateway.example/v1',token:'test-key',model:'chosen',models:['chosen','other'],enabled:true,selectBattleScale:false,windowSize:18};
     saveLlmSettings(s);expect(readLlmSettings()).toEqual(s);expect([...data.keys()]).toEqual([LLM_SETTINGS_KEY]);
     expect(llmConnection(s)).toEqual({url:s.url,token:s.token,model:s.model,protocol:'openai',transport:'auto'});
     const html=renderLlmSettings(s);expect(html).toContain('<option value="jev" disabled>jev指挥功能(未完成，勿选)</option>');expect(html).not.toMatch(/data-role="jev-|转发地址|连接途径/);
+  });
+  it('preserves previous scale selection by default and disables the control outside LLM mode',()=>{
+    const data=storage();
+    expect(readLlmSettings().selectBattleScale).toBe(true);
+    data.set(LLM_SETTINGS_KEY,JSON.stringify({enabled:true,model:'previous-model'}));
+    const settings=readLlmSettings();
+    expect(settings).toMatchObject({selectBattleScale:true,model:'previous-model'});
+    expect(renderLlmSettings(settings)).toMatch(/data-role="llm-battle-scale"[^>]*checked/);
+    expect(renderLlmSettings({...settings,enabled:false})).toMatch(/data-role="llm-battle-scale"[^>]*disabled/);
   });
   it('migrates a legacy OpenAI connection once while retaining the original and ignoring a stale relay',()=>{
     const data=storage();for(const[k,v]of Object.entries({protocol:'openai',url:'https://gateway.example/v1',token:'old-key',model:'old-model','relay-url':'http://127.0.0.1:4318'}))data.set('tb:jev:'+k,v);
