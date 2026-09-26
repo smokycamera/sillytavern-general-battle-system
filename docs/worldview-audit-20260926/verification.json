@@ -1,0 +1,52 @@
+{
+  "replayedMatches": 16,
+  "comparedFields": [
+    "initialFixtureHash",
+    "logSha256",
+    "initial",
+    "final",
+    "usage",
+    "result",
+    "round",
+    "steps",
+    "eventCounts",
+    "combatMetrics"
+  ],
+  "differences": [],
+  "ids": [
+    "c000-s0-forward",
+    "c000-s0-reverse",
+    "c001-s0-forward",
+    "c001-s0-reverse",
+    "c020-s0-forward",
+    "c020-s0-reverse",
+    "c021-s0-forward",
+    "c021-s0-reverse",
+    "c122-s0-forward",
+    "c122-s0-reverse",
+    "c123-s0-forward",
+    "c123-s0-reverse",
+    "c188-s0-forward",
+    "c188-s0-reverse",
+    "c189-s0-forward",
+    "c189-s0-reverse"
+  ],
+  "matrixUniqueMatches": 2000,
+  "logRecords": {
+    "worldview-2000": 2000,
+    "skill-policy-480": 480,
+    "armor-control-320": 320
+  },
+  "auditScriptsTypecheck": "passed",
+  "dataPackage": {
+    "name": "battle-audit-2800-data.zip",
+    "bytes": 19018921,
+    "sha256": "fe90004070e3c29e6e6c98281effb68532211e0a8348b5fad0c491ecc53a86e3"
+  },
+  "scriptTypecheckCommand": "tsc --noEmit --module esnext --moduleResolution bundler --target ES2022 --skipLibCheck --strict --types node scripts/sim-worldview-matrix.ts scripts/sim-skill-policy-audit.ts scripts/sim-armor-counterfactual.ts",
+  "validatedSeedPairs": {
+    "main": 1000,
+    "policy": 240,
+    "armor": 160
+  }
+}
