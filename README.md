@@ -11,8 +11,8 @@ A native frontend battle extension for SillyTavern / TauriTavern. It supports sm
 1. In SillyTavern, open **Extensions → Install Extension**, enter `https://github.com/smokycamera/sillytavern-general-battle-system`, install it, and refresh the page.
 2. Import and enable [!通用战斗系统约束.json](assets/worldbook/!通用战斗系统约束.json) in your World Info / lorebook.
 
-rc.8 can select enemy command capability/style and the supported battlefield/mission setup from recent completed narrative in one JEV batch, with manual overrides. rc.9 adds direct TypeSafe/JEV and OpenAI-compatible API connections with model discovery and selection; the default API base is `https://api.typesafe.ai/v1`. Existing local bridge connections remain supported (service 0.2.3). rc.10 adds host-side transport for SillyTavern and TauriTavern OpenAI APIs, plus a bundled local relay for TypeSafe on TauriTavern. rc.11 retries failed planning requests ten times at one-second intervals, removes the 30-second cooldown and adds a real inference diagnostic. rc.12 rejects the official TypeSafe URL in OpenAI mode and preserves upstream HTTP errors wrapped by the host. See [CORS setup](docs/jev-integration.md#跨域连接rc10).
+An ordinary OpenAI-compatible LLM can read the selected number of recent messages before battle to choose commander profiles and the supported battle/scene setup. API URL, key, model list and selection persist independently of chats and characters. No relay URL or route selection is required. See the [usage guide](docs/jev-integration.md).
 
-The existing automatic AI remains available as the default. You can configure a JEV service in the settings page and select **JEV Command** from the battlefield toolbar. See the [JEV integration and usage guide](docs/jev-integration.md) for details.
+JEV Command controls are withdrawn. Settings retain a disabled unfinished-feature notice; automatic turns use the built-in AI.
 
 Third-party dependencies remain under their original licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Please report issues through this repository's Issues page and include the host version, extension version, and reproduction steps.

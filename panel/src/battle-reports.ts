@@ -85,7 +85,7 @@ export function makeNarrativeBatch(b: Battle | undefined, report: BattleReport |
   if(!events.length)throw Error('没有新的可叙述事件');
   let round=-1;const lines:string[]=[];
   for(const e of events){if(e.round!==round){round=e.round;lines.push(`【第${round}轮】`);}lines.push('▸ '+e.text);}
-  return {battleId:id,kind,key:`delta:${from}:${to}`,from,to,text:['【战阵·未发送战况】',...lines,b?knownBattleState(b):report!.summary.split('【叙述任务】')[0]!.trimEnd(),NARRATIVE_TASK].join('\n')};
+  return {battleId:id,kind,key:`delta:${from}:${to}`,from,to,text:['【战阵·新增战况】',...lines,b?knownBattleState(b):report!.summary.split('【叙述任务】')[0]!.trimEnd(),NARRATIVE_TASK].join('\n')};
 }
 export function beginNarrativeDelivery(deliveries: BattleDeliveries, batch: NarrativeBatch): void {
   const state=deliveries[batch.battleId]??={cursor:0,receipts:{}};

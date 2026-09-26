@@ -1,3 +1,4 @@
+import { commanderScores, normalizeCommanderProfiles, type CommanderProfiles } from '../commander-profile.js';
 import { validateAccessories } from '../items.js';
 import { areaTargets, zoneTarget, placeZone, settleZones, validateAreas, ZONE_NAMES } from '../area-effects.js';
 import { tbWeaponShortName } from '../weapon-name.js';
@@ -122,6 +123,7 @@ function halveDice(expr: string): string {
 export class SmallBattle {
   readonly nonLethal: boolean;
   allyTactic: TacticalPreference = 'balanced';
+  commanderProfiles: CommanderProfiles = {};
   readonly battlefield?: BattlefieldSpec;
   movementSpent = new Map<string, number>();
   reactionSpent = new Set<string>();
@@ -1615,8 +1617,14 @@ export class SmallBattle {
     const candidates = anchored.length ? anchored : eligible.length ? eligible : plans;
     const completesEscort = (plan: typeof plans[number]) => objective.kind === 'escape' && objective.unitId === unitId
       && plan.path.cells.at(-1) === objective.cell && (!isAirborne(unit) || plan.kind === 'land');
+    const commandScores = commanderScores(candidates.map(plan => ({
+      key: JSON.stringify([plan.kind, plan.path.cells, plan.targetId, plan.abilityId, plan.weaponMode]), score: plan.score,
+      attack: !!plan.offensive, ranged: plan.kind === 'weapon' ? isRangedWeapon(plan.weaponMode === 'sidearm' ? unit.sidearm : unit.weapon) : plan.kind === 'ability' && (unit.abilities.find(a => a.id === plan.abilityId)?.range?.max ?? 0) > 1,
+      move: plan.path.cost > 0, defend: plan.kind === 'brace' || plan.kind === 'hold',
+    })), this.commanderProfiles[unit.side === 'ally' ? 'ally' : 'enemy'], `${this.seed}:${this.round}:${unitId}`);
+    const ranked = new Map(candidates.map((plan, i) => [plan, commandScores[i]!]));
     const best = candidates.sort((a, b) => Number(completesEscort(b)) - Number(completesEscort(a))
-      || b.score - a.score || a.path.cost - b.path.cost || (a.targetId ?? '').localeCompare(b.targetId ?? ''))[0];
+      || ranked.get(b)! - ranked.get(a)! || a.path.cost - b.path.cost || (a.targetId ?? '').localeCompare(b.targetId ?? ''))[0];
     if (best) {
       if (best.path.cost > 0 && best.kind !== 'charge') {
         this.moveTo(unitId, best.path.cells.at(-1)!);
@@ -2057,7 +2065,7 @@ export class SmallBattle {
    *  含种子随机状态：种子源战斗恢复后掷骰序列与快照时刻一致（审计回放）。 */
   toSnapshot(): Record<string, unknown> {
     return {
-      v: 1, allyTactic: this.allyTactic, nonLethal: this.nonLethal,
+      v: 1, allyTactic: this.allyTactic, commanderProfiles: this.commanderProfiles, nonLethal: this.nonLethal,
       battlefield: this.battlefield,
       searchCoverage: this.searchCoverage,
       ...(this.feedback ? { feedback: this.feedback.snapshot() } : {}),
@@ -2111,6 +2119,7 @@ export class SmallBattle {
       field: { tags: snap.fieldTags ?? snap.battlefield?.environment ?? [] },
     });
     b.allyTactic = normalizeTactic(snap.allyTactic);
+    b.commanderProfiles = normalizeCommanderProfiles(snap.commanderProfiles);
     b.round = snap.round ?? 1;
     b.searchCoverage = structuredClone(snap.searchCoverage ?? {});
     b.movementSpent = new Map(snap.movementSpent ?? []); b.reactionSpent = new Set(snap.reactionSpent ?? []);
