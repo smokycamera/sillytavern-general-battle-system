@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "1.0.2",
-  "builtAt": "2026-09-26T17:53:30.409Z",
-  "sourceFingerprint": "b382e573ab4a3b6f404c574cc4749c4499e296acf038862c105a4442e0efbbee",
+  "version": "1.0.3",
+  "builtAt": "2026-09-26T18:07:11.159Z",
+  "sourceFingerprint": "5547bb21152d43132325db9ae5335d03c110d38515ad370dd350a5c2095b1669",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -18,12 +18,12 @@
     {
       "path": "README.md",
       "bytes": 2078,
-      "sha256": "452dd82d75a7c9b15201a04f75792d97100a1a3c3ab409eae6d9e624d5a75bf9"
+      "sha256": "a56972a58e01579555a642495ec528994bfba2166370f71a91041177e09048f8"
     },
     {
       "path": "README.zh-CN.md",
       "bytes": 1791,
-      "sha256": "1e958743f2bb935555fe1ebd31e4e29b0890a6b163db03e5bbcc86e2ef4dc78b"
+      "sha256": "89e9ad260d4ad3d9900d2180768a42ec54ddb9c6fc324f5f0e841fb204ebbd25"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -97,8 +97,8 @@
     },
     {
       "path": "docs/native-event-display.md",
-      "bytes": 2905,
-      "sha256": "8dfafff5301bbfefbd8a95aceb8ca8e83ac649c0e4754cfbb521584b84d6246b"
+      "bytes": 3100,
+      "sha256": "c45c218b36f1780a1c84f1c560e6642b789de77bfe3e547c1b59d2251848851a"
     },
     {
       "path": "docs/native-extension-migration-plan-20260919.md",
@@ -122,8 +122,8 @@
     },
     {
       "path": "dist/index.js",
-      "bytes": 78315,
-      "sha256": "1619cd15aee25fb747b3831983eaf640db42d5235211d6b53b8604e6639578bb"
+      "bytes": 79398,
+      "sha256": "bde50d9e02e130fd36d53ccfe66cc4985f07e2ea04d08a3bf6485c011a500a06"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -133,7 +133,7 @@
     {
       "path": "manifest.json",
       "bytes": 168,
-      "sha256": "cac55f763f73734b373e0d43b817d91ad92c0cf0801c67171538fe1ccd7cc1c8"
+      "sha256": "263212fcc61a7637b54d18172fbafe8eaf73b44807df30df2dd15aa343b1d12d"
     },
     {
       "path": "dist/panel/index.html",

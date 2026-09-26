@@ -38,6 +38,43 @@ function replaceVisibleBlock(root: HTMLElement, block: BattleDisplayBlock, detai
   return false;
 }
 
+/** 标签被净化后仍可能留下几十个换行；用原文两侧正文定位，只替换纯空白区域。 */
+function replaceBlankBlock(root: HTMLElement, raw: string, block: BattleDisplayBlock, details: HTMLDetailsElement): boolean {
+  if (block.text.replace(/<[^>]*>/g, '').trim()) return false;
+  const compact = (text: string) => text.replace(/\s/g, '');
+  const before = compact(raw.slice(0, block.start).trimEnd().split('\n').at(-1) ?? '').slice(-80);
+  const after = compact(raw.slice(block.end).trimStart().split('\n')[0] ?? '').slice(0, 80);
+  const points: { node: Text; offset: number }[] = [];
+  const walker = root.ownerDocument.createTreeWalker(root, 4 /* SHOW_TEXT */);
+  let content = '', node: Node | null;
+  while ((node = walker.nextNode())) {
+    if (node.parentElement?.closest('details, pre, code, textarea, script, style, iframe')) continue;
+    const text = node as Text;
+    for (let offset = 0; offset < text.length; offset++) if (!/\s/.test(text.data[offset]!)) {
+      content += text.data[offset]; points.push({ node: text, offset });
+    }
+  }
+  const start = before ? content.lastIndexOf(before) : 0;
+  if (start < 0) return false;
+  const endOfBefore = start + before.length;
+  const end = after ? content.indexOf(after, endOfBefore) : content.length;
+  // 两侧之间还有可见文字时不能当作空白清理。
+  if (end < 0 || end !== endOfBefore) return false;
+  const range = root.ownerDocument.createRange();
+  const left = before ? points[endOfBefore - 1] : undefined, right = after ? points[end] : undefined;
+  if (left) range.setStart(left.node, left.offset + 1); else range.setStart(root, 0);
+  if (right) range.setEnd(right.node, right.offset); else range.setEnd(root, root.childNodes.length);
+  const isBlank = (part: Node): boolean => {
+    if (part.nodeType === 3) return !part.textContent?.trim();
+    if (part.nodeType !== 1 && part.nodeType !== 11) return false;
+    if (part.nodeType === 1 && (!['P', 'BR'].includes((part as Element).tagName) || (part as Element).attributes.length)) return false;
+    return [...part.childNodes].every(isBlank);
+  };
+  // 不越过状态栏、图片、iframe、带样式容器或其他扩展节点。
+  if (range.collapsed || !isBlank(range.cloneContents())) return false;
+  range.deleteContents(); range.insertNode(details); return true;
+}
+
 /** 新酒馆用格式化钩子；无该接口的宿主与已渲染历史楼层使用局部 DOM 显示补全。 */
 export function installBattleMessageDisplay(host: NativeHost, window: DisplayWindow, document: Document): () => void {
   let active = true;
@@ -95,7 +132,7 @@ export function installBattleMessageDisplay(host: NativeHost, window: DisplayWin
       const card = detailsElement(document, block); card.open = open[index] ?? false;
       const rawTag = [...root.querySelectorAll('tb')].find(el => !el.closest('details, pre, code'));
       if (rawTag) rawTag.replaceWith(card);
-      else if (!replaceVisibleBlock(root, block, card)) root.append(card);
+      else if (!replaceVisibleBlock(root, block, card) && !replaceBlankBlock(root, raw, block, card)) root.append(card);
       cards.push(card); rendered.push(card);
     }
     cache.set(root, { raw, cards, rendered });

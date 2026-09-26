@@ -104,6 +104,34 @@ describe('原生战阵事件显示', () => {
     expect(document.querySelectorAll('details')).toHaveLength(2);
     expect(document.querySelector('[mesid="1"] details')).toBeNull(); expect(document.querySelector('[mesid="2"] details')).toBeNull();
   });
+  it('清除被吞掉的 15 项事件留下的换行，尾部与正文中间都原位折叠', async () => {
+    const events = '<tb>\n' + Array.from({ length: 15 }, (_, i) => `<deploy id="u${i}"/>`).join('\n') + '\n</tb>';
+    for (const middle of [false, true]) for (const wrapped of [false, true]) {
+      const f = fixture();
+      f.context.chat![0]!.mes = '风又紧了。\n\n' + events + (middle ? '\n\n后文。' : '');
+      const blanks = '<br>\n'.repeat(16);
+      f.root().innerHTML = wrapped ? '<p>风又紧了。</p>\n<p>' + blanks + '</p>' : '<p>风又紧了。' + blanks + '</p>';
+      if (middle) f.root().insertAdjacentHTML('beforeend', '<p>后文。</p>');
+      const paragraph = f.root().querySelector('p');
+      const stop = f.install(); await flush();
+      expect(f.root().querySelector('summary')!.textContent).toBe('📋 战阵事件 · 15项');
+      expect(f.root().querySelector('code')!.textContent).toBe(events);
+      expect(f.root().querySelectorAll('br')).toHaveLength(0);
+      expect(f.root().querySelector('p')).toBe(paragraph);
+      expect(f.root().textContent!.replace(f.root().querySelector('details')!.textContent!, '')).toBe('风又紧了。' + (middle ? '后文。' : ''));
+      if (middle) expect(f.root().lastElementChild!.textContent).toBe('后文。');
+      expect(f.context.saveChat).not.toHaveBeenCalled(); stop();
+    }
+  });
+  it('只清理已定位事件的空白，不删除正文中的空行、附件或其他扩展容器', async () => {
+    const f = fixture(); f.context.chat![0]!.mes = '前文。\n\n' + block;
+    f.root().innerHTML = '<p>保留的空行<br><br></p><p>前文。</p><div style="height:100px"></div><iframe title="状态栏"></iframe><br><br>';
+    const frame = f.root().querySelector('iframe'), spacer = f.root().querySelector('div');
+    f.install(); await flush();
+    expect(f.root().querySelectorAll('br')).toHaveLength(4);
+    expect(f.root().querySelector('iframe')).toBe(frame); expect(f.root().querySelector('div')).toBe(spacer);
+    expect(f.root().querySelector('code')!.textContent).toBe(block);
+  });
   it('流式结束才折叠完整块，编辑、swipe、换聊天和宿主重绘后同步', async () => {
     const f = fixture(); f.context.chat![0]!.mes = '<tb><deploy id="'; f.install(); await flush(); expect(f.root().querySelector('details')).toBeNull();
     f.context.chat![0]!.mes = '<tb><deploy id="a"/></tb>'; f.emit('GENERATION_ENDED'); await flush();
