@@ -1,0 +1,3022 @@
+{
+  "baselineCommit": "e669688498d5be5ac5f850c6e4fa7cbb738118b1",
+  "checks": {
+    "weapons": 6200,
+    "armor": 200,
+    "skills": 300,
+    "items": 140
+  },
+  "matrixMethod": "T5, deterministic generated equipment, P1–10; 4 V4 rule packs incl. overflow, hero/company(100), 5 armor tiers. Fixed firing positions, no movement/cover/skills. Per-action analytical previews; multi-hit/cohort results are approximations, NOT match win rates. sustained=damage/(reload+1), no sidearm during reload. Armor 4 profiles. Skill T5 human target, heavy armor, actual V4 upgrade.",
+  "weaponsP3AndP5": {
+    "before": [
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "throwing",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 19.633137193156735,
+        "sustained": 19.633137193156735,
+        "penetration": 6,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "heavy-rifle",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 22.92545665952367,
+        "sustained": 11.462728329761836,
+        "penetration": 8,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "natural",
+        "distance": 1,
+        "hit": 0.5499999999999999,
+        "damage": 15.910002905648781,
+        "sustained": 15.910002905648781,
+        "penetration": 6,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "light-ranged",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 15.910002905648781,
+        "sustained": 15.910002905648781,
+        "penetration": 6,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "demolition",
+        "distance": 2,
+        "hit": 0.44999999999999996,
+        "damage": 18.760365327536682,
+        "sustained": 9.380182663768341,
+        "penetration": 8,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "sword",
+        "distance": 1,
+        "hit": 0.6,
+        "damage": 21.386453467488828,
+        "sustained": 21.386453467488828,
+        "penetration": 6,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "axe",
+        "distance": 1,
+        "hit": 0.49999999999999994,
+        "damage": 19.117426367292893,
+        "sustained": 19.117426367292893,
+        "penetration": 7,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "spear",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 19.633137193156735,
+        "sustained": 19.633137193156735,
+        "penetration": 6,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "bow",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 19.633137193156735,
+        "sustained": 19.633137193156735,
+        "penetration": 6,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "firearm",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 22.8610140470395,
+        "sustained": 11.43050702351975,
+        "penetration": 7,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "rifle",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 25.757988189759498,
+        "sustained": 25.757988189759498,
+        "penetration": 7,
+        "factor": 1,
+        "exact": false
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "energy",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 25.757988189759498,
+        "sustained": 25.757988189759498,
+        "penetration": 7,
+        "factor": 1,
+        "exact": false
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "magic",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 17.86059556858364,
+        "sustained": 17.86059556858364,
+        "penetration": 6,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "blunt",
+        "distance": 1,
+        "hit": 0.49999999999999994,
+        "damage": 16.28450834796723,
+        "sustained": 16.28450834796723,
+        "penetration": 8,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "throwing",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 6.393599999999996,
+        "sustained": 6.393599999999996,
+        "penetration": 6,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "heavy-rifle",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 22.92545665952367,
+        "sustained": 11.462728329761836,
+        "penetration": 8,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "natural",
+        "distance": 1,
+        "hit": 0.5499999999999999,
+        "damage": 4.972799999999999,
+        "sustained": 4.972799999999999,
+        "penetration": 6,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "light-ranged",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 4.972799999999999,
+        "sustained": 4.972799999999999,
+        "penetration": 6,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "demolition",
+        "distance": 2,
+        "hit": 0.44999999999999996,
+        "damage": 18.760365327536682,
+        "sustained": 9.380182663768341,
+        "penetration": 8,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "sword",
+        "distance": 1,
+        "hit": 0.6,
+        "damage": 6.926399999999996,
+        "sustained": 6.926399999999996,
+        "penetration": 6,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "axe",
+        "distance": 1,
+        "hit": 0.49999999999999994,
+        "damage": 11.793660761546416,
+        "sustained": 11.793660761546416,
+        "penetration": 7,
+        "factor": 0.55,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "spear",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 6.393599999999996,
+        "sustained": 6.393599999999996,
+        "penetration": 6,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "bow",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 6.393599999999996,
+        "sustained": 6.393599999999996,
+        "penetration": 6,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "firearm",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 16.747643884524678,
+        "sustained": 8.373821942262339,
+        "penetration": 7,
+        "factor": 0.55,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "rifle",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 14.326399999999996,
+        "sustained": 14.326399999999996,
+        "penetration": 7,
+        "factor": 0.55,
+        "exact": false
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "energy",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 25.757988189759498,
+        "sustained": 25.757988189759498,
+        "penetration": 7,
+        "factor": 1,
+        "exact": false
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "magic",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 17.86059556858364,
+        "sustained": 17.86059556858364,
+        "penetration": 6,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "blunt",
+        "distance": 1,
+        "hit": 0.49999999999999994,
+        "damage": 16.28450834796723,
+        "sustained": 16.28450834796723,
+        "penetration": 8,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "throwing",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 23.099999999999987,
+        "sustained": 23.099999999999987,
+        "penetration": 10,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "heavy-rifle",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 23.100000000000005,
+        "sustained": 11.550000000000002,
+        "penetration": 12,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "natural",
+        "distance": 1,
+        "hit": 0.5499999999999999,
+        "damage": 23.099999999999998,
+        "sustained": 23.099999999999998,
+        "penetration": 10,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "light-ranged",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 23.099999999999998,
+        "sustained": 23.099999999999998,
+        "penetration": 10,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "demolition",
+        "distance": 2,
+        "hit": 0.44999999999999996,
+        "damage": 18.900000000000006,
+        "sustained": 9.450000000000003,
+        "penetration": 12,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "sword",
+        "distance": 1,
+        "hit": 0.6,
+        "damage": 25.19999999999999,
+        "sustained": 25.19999999999999,
+        "penetration": 10,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "axe",
+        "distance": 1,
+        "hit": 0.49999999999999994,
+        "damage": 20.999999999999993,
+        "sustained": 20.999999999999993,
+        "penetration": 11,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "spear",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 23.099999999999994,
+        "sustained": 23.099999999999994,
+        "penetration": 10,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "bow",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 23.099999999999987,
+        "sustained": 23.099999999999987,
+        "penetration": 10,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "firearm",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 23.09999999999999,
+        "sustained": 11.549999999999995,
+        "penetration": 11,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "rifle",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 42,
+        "sustained": 42,
+        "penetration": 11,
+        "factor": 1,
+        "exact": false
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "energy",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 42,
+        "sustained": 42,
+        "penetration": 11,
+        "factor": 1,
+        "exact": false
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "magic",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 23.099999999999994,
+        "sustained": 23.099999999999994,
+        "penetration": 10,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "blunt",
+        "distance": 1,
+        "hit": 0.49999999999999994,
+        "damage": 21.000000000000004,
+        "sustained": 21.000000000000004,
+        "penetration": 12,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "throwing",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 6.393599999999996,
+        "sustained": 6.393599999999996,
+        "penetration": 10,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "heavy-rifle",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 22.98664021078626,
+        "sustained": 11.49332010539313,
+        "penetration": 12,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "natural",
+        "distance": 1,
+        "hit": 0.5499999999999999,
+        "damage": 4.972799999999999,
+        "sustained": 4.972799999999999,
+        "penetration": 10,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "light-ranged",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 4.972799999999999,
+        "sustained": 4.972799999999999,
+        "penetration": 10,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "demolition",
+        "distance": 2,
+        "hit": 0.44999999999999996,
+        "damage": 18.809312168609424,
+        "sustained": 9.404656084304712,
+        "penetration": 12,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "sword",
+        "distance": 1,
+        "hit": 0.6,
+        "damage": 6.926399999999996,
+        "sustained": 6.926399999999996,
+        "penetration": 10,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "axe",
+        "distance": 1,
+        "hit": 0.49999999999999994,
+        "damage": 12.482833740354858,
+        "sustained": 12.482833740354858,
+        "penetration": 11,
+        "factor": 0.55,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "spear",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 6.630399999999997,
+        "sustained": 6.630399999999997,
+        "penetration": 10,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "bow",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 6.393599999999996,
+        "sustained": 6.393599999999996,
+        "penetration": 10,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "firearm",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 16.927017411407345,
+        "sustained": 8.463508705703672,
+        "penetration": 11,
+        "factor": 0.55,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "rifle",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 13.89226666666666,
+        "sustained": 13.89226666666666,
+        "penetration": 11,
+        "factor": 0.55,
+        "exact": false
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "energy",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 27.82471308658738,
+        "sustained": 27.82471308658738,
+        "penetration": 11,
+        "factor": 1,
+        "exact": false
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "magic",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 18.48251707823396,
+        "sustained": 18.48251707823396,
+        "penetration": 10,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "blunt",
+        "distance": 1,
+        "hit": 0.49999999999999994,
+        "damage": 16.28450834796723,
+        "sustained": 16.28450834796723,
+        "penetration": 12,
+        "factor": 1,
+        "exact": true
+      }
+    ],
+    "after": [
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "throwing",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 19.633137193156735,
+        "sustained": 9.816568596578367,
+        "penetration": 6,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "heavy-rifle",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 22.92545665952367,
+        "sustained": 11.462728329761836,
+        "penetration": 8,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "natural",
+        "distance": 1,
+        "hit": 0.5499999999999999,
+        "damage": 15.910002905648781,
+        "sustained": 15.910002905648781,
+        "penetration": 6,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "light-ranged",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 15.910002905648781,
+        "sustained": 15.910002905648781,
+        "penetration": 6,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "demolition",
+        "distance": 2,
+        "hit": 0.44999999999999996,
+        "damage": 18.760365327536682,
+        "sustained": 9.380182663768341,
+        "penetration": 8,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "sword",
+        "distance": 1,
+        "hit": 0.6,
+        "damage": 21.386453467488828,
+        "sustained": 21.386453467488828,
+        "penetration": 6,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "axe",
+        "distance": 1,
+        "hit": 0.49999999999999994,
+        "damage": 19.117426367292893,
+        "sustained": 19.117426367292893,
+        "penetration": 7,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "spear",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 19.633137193156735,
+        "sustained": 19.633137193156735,
+        "penetration": 6,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "bow",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 19.633137193156735,
+        "sustained": 19.633137193156735,
+        "penetration": 6,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "firearm",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 22.8610140470395,
+        "sustained": 11.43050702351975,
+        "penetration": 7,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "rifle",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 25.757988189759498,
+        "sustained": 25.757988189759498,
+        "penetration": 7,
+        "factor": 1,
+        "exact": false
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "energy",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 25.757988189759498,
+        "sustained": 25.757988189759498,
+        "penetration": 7,
+        "factor": 1,
+        "exact": false
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "magic",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 17.86059556858364,
+        "sustained": 17.86059556858364,
+        "penetration": 6,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 0,
+        "mechanism": "blunt",
+        "distance": 1,
+        "hit": 0.49999999999999994,
+        "damage": 16.28450834796723,
+        "sustained": 16.28450834796723,
+        "penetration": 8,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "throwing",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 6.393599999999996,
+        "sustained": 3.196799999999998,
+        "penetration": 6,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "heavy-rifle",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 22.92545665952367,
+        "sustained": 11.462728329761836,
+        "penetration": 8,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "natural",
+        "distance": 1,
+        "hit": 0.5499999999999999,
+        "damage": 4.972799999999999,
+        "sustained": 4.972799999999999,
+        "penetration": 6,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "light-ranged",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 4.972799999999999,
+        "sustained": 4.972799999999999,
+        "penetration": 6,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "demolition",
+        "distance": 2,
+        "hit": 0.44999999999999996,
+        "damage": 18.760365327536682,
+        "sustained": 9.380182663768341,
+        "penetration": 8,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "sword",
+        "distance": 1,
+        "hit": 0.6,
+        "damage": 6.926399999999996,
+        "sustained": 6.926399999999996,
+        "penetration": 6,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "axe",
+        "distance": 1,
+        "hit": 0.49999999999999994,
+        "damage": 11.793660761546416,
+        "sustained": 11.793660761546416,
+        "penetration": 7,
+        "factor": 0.55,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "spear",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 6.393599999999996,
+        "sustained": 6.393599999999996,
+        "penetration": 6,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "bow",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 6.393599999999996,
+        "sustained": 6.393599999999996,
+        "penetration": 6,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "firearm",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 16.747643884524678,
+        "sustained": 8.373821942262339,
+        "penetration": 7,
+        "factor": 0.55,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "rifle",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 14.326399999999996,
+        "sustained": 14.326399999999996,
+        "penetration": 7,
+        "factor": 0.55,
+        "exact": false
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "energy",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 25.757988189759498,
+        "sustained": 25.757988189759498,
+        "penetration": 7,
+        "factor": 1,
+        "exact": false
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "magic",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 17.86059556858364,
+        "sustained": 17.86059556858364,
+        "penetration": 6,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 3,
+        "tier": 3,
+        "mechanism": "blunt",
+        "distance": 1,
+        "hit": 0.49999999999999994,
+        "damage": 16.28450834796723,
+        "sustained": 16.28450834796723,
+        "penetration": 8,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "throwing",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 23.099999999999987,
+        "sustained": 11.549999999999994,
+        "penetration": 10,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "heavy-rifle",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 23.100000000000005,
+        "sustained": 11.550000000000002,
+        "penetration": 12,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "natural",
+        "distance": 1,
+        "hit": 0.5499999999999999,
+        "damage": 23.099999999999998,
+        "sustained": 23.099999999999998,
+        "penetration": 10,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "light-ranged",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 23.099999999999998,
+        "sustained": 23.099999999999998,
+        "penetration": 10,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "demolition",
+        "distance": 2,
+        "hit": 0.44999999999999996,
+        "damage": 18.900000000000006,
+        "sustained": 9.450000000000003,
+        "penetration": 12,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "sword",
+        "distance": 1,
+        "hit": 0.6,
+        "damage": 25.19999999999999,
+        "sustained": 25.19999999999999,
+        "penetration": 10,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "axe",
+        "distance": 1,
+        "hit": 0.49999999999999994,
+        "damage": 20.999999999999993,
+        "sustained": 20.999999999999993,
+        "penetration": 11,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "spear",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 23.099999999999994,
+        "sustained": 23.099999999999994,
+        "penetration": 10,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "bow",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 23.099999999999987,
+        "sustained": 23.099999999999987,
+        "penetration": 10,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "firearm",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 23.09999999999999,
+        "sustained": 11.549999999999995,
+        "penetration": 11,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "rifle",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 42,
+        "sustained": 42,
+        "penetration": 11,
+        "factor": 1,
+        "exact": false
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "energy",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 42,
+        "sustained": 42,
+        "penetration": 11,
+        "factor": 1,
+        "exact": false
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "magic",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 23.099999999999994,
+        "sustained": 23.099999999999994,
+        "penetration": 10,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 0,
+        "mechanism": "blunt",
+        "distance": 1,
+        "hit": 0.49999999999999994,
+        "damage": 21.000000000000004,
+        "sustained": 21.000000000000004,
+        "penetration": 12,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "throwing",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 6.393599999999996,
+        "sustained": 3.196799999999998,
+        "penetration": 10,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "heavy-rifle",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 22.98664021078626,
+        "sustained": 11.49332010539313,
+        "penetration": 12,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "natural",
+        "distance": 1,
+        "hit": 0.5499999999999999,
+        "damage": 4.972799999999999,
+        "sustained": 4.972799999999999,
+        "penetration": 10,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "light-ranged",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 4.972799999999999,
+        "sustained": 4.972799999999999,
+        "penetration": 10,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "demolition",
+        "distance": 2,
+        "hit": 0.44999999999999996,
+        "damage": 18.809312168609424,
+        "sustained": 9.404656084304712,
+        "penetration": 12,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "sword",
+        "distance": 1,
+        "hit": 0.6,
+        "damage": 6.926399999999996,
+        "sustained": 6.926399999999996,
+        "penetration": 10,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "axe",
+        "distance": 1,
+        "hit": 0.49999999999999994,
+        "damage": 12.482833740354858,
+        "sustained": 12.482833740354858,
+        "penetration": 11,
+        "factor": 0.55,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "spear",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 6.630399999999997,
+        "sustained": 6.630399999999997,
+        "penetration": 10,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "bow",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 6.393599999999996,
+        "sustained": 6.393599999999996,
+        "penetration": 10,
+        "factor": 0.3,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "firearm",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 16.927017411407345,
+        "sustained": 8.463508705703672,
+        "penetration": 11,
+        "factor": 0.55,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "rifle",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 13.89226666666666,
+        "sustained": 13.89226666666666,
+        "penetration": 11,
+        "factor": 0.55,
+        "exact": false
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "energy",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 27.82471308658738,
+        "sustained": 27.82471308658738,
+        "penetration": 11,
+        "factor": 1,
+        "exact": false
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "magic",
+        "distance": 2,
+        "hit": 0.5499999999999999,
+        "damage": 18.48251707823396,
+        "sustained": 18.48251707823396,
+        "penetration": 10,
+        "factor": 1,
+        "exact": true
+      },
+      {
+        "mode": "v4-d20",
+        "scale": "hero",
+        "power": 5,
+        "tier": 3,
+        "mechanism": "blunt",
+        "distance": 1,
+        "hit": 0.49999999999999994,
+        "damage": 16.28450834796723,
+        "sustained": 16.28450834796723,
+        "penetration": 12,
+        "factor": 1,
+        "exact": true
+      }
+    ]
+  },
+  "skillsP5": {
+    "before": [
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:debuff:stun",
+        "cost": 3,
+        "cooldown": 3,
+        "effects": [
+          {
+            "op": "condition",
+            "conditionId": "stunned",
+            "dur": 1,
+            "magnitude": 1,
+            "saveDC": 13,
+            "shape": "single"
+          }
+        ],
+        "control": [
+          {
+            "id": "stunned",
+            "chance": 0.5
+          }
+        ]
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:debuff:root",
+        "cost": 3,
+        "cooldown": 3,
+        "effects": [
+          {
+            "op": "condition",
+            "conditionId": "restrained",
+            "dur": 1,
+            "magnitude": 1,
+            "saveDC": 13,
+            "shape": "single"
+          }
+        ],
+        "control": [
+          {
+            "id": "restrained",
+            "chance": 0.5
+          }
+        ]
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:debuff:silence",
+        "cost": 3,
+        "cooldown": 3,
+        "effects": [
+          {
+            "op": "condition",
+            "conditionId": "silenced",
+            "dur": 1,
+            "magnitude": 1,
+            "saveDC": 13,
+            "shape": "single"
+          }
+        ],
+        "control": [
+          {
+            "id": "silenced",
+            "chance": 0.5
+          }
+        ]
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:debuff:disarm",
+        "cost": 3,
+        "cooldown": 3,
+        "effects": [
+          {
+            "op": "condition",
+            "conditionId": "disarmed",
+            "dur": 1,
+            "magnitude": 1,
+            "saveDC": 13,
+            "shape": "single"
+          }
+        ],
+        "control": [
+          {
+            "id": "disarmed",
+            "chance": 0.5
+          }
+        ]
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:debuff:slow",
+        "cost": 3,
+        "cooldown": 2,
+        "effects": [
+          {
+            "op": "condition",
+            "conditionId": "slowed",
+            "dur": 3,
+            "magnitude": 1,
+            "saveDC": 13,
+            "shape": "single"
+          }
+        ],
+        "control": [
+          {
+            "id": "slowed",
+            "chance": 0.5
+          }
+        ]
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:debuff:stun+root",
+        "cost": 3,
+        "cooldown": 3,
+        "effects": [
+          {
+            "op": "condition",
+            "conditionId": "stunned",
+            "dur": 1,
+            "magnitude": 0.7071067811865475,
+            "saveDC": 13,
+            "shape": "single"
+          },
+          {
+            "op": "condition",
+            "conditionId": "restrained",
+            "dur": 1,
+            "magnitude": 0.7071067811865475,
+            "saveDC": 13,
+            "shape": "single"
+          }
+        ],
+        "control": [
+          {
+            "id": "stunned",
+            "chance": 0.5
+          },
+          {
+            "id": "restrained",
+            "chance": 0.5
+          }
+        ]
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:magic-single",
+        "cost": 2,
+        "cooldown": 1,
+        "damage": 23.095588708031208,
+        "effects": [
+          {
+            "op": "damage",
+            "baseDice": "8d6",
+            "shape": "single"
+          }
+        ],
+        "control": []
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:magic-single:stun",
+        "cost": 3,
+        "cooldown": 1,
+        "damage": 23.084759149029946,
+        "effects": [
+          {
+            "op": "damage",
+            "baseDice": "8d6",
+            "shape": "single"
+          },
+          {
+            "op": "condition",
+            "conditionId": "stunned",
+            "dur": 1,
+            "magnitude": 1,
+            "saveDC": 13,
+            "onHit": true,
+            "shape": "single"
+          }
+        ],
+        "control": [
+          {
+            "id": "stunned",
+            "chance": 0.5
+          }
+        ]
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:physical-single",
+        "cost": 2,
+        "cooldown": 1,
+        "damage": 13.790344307344117,
+        "effects": [
+          {
+            "op": "damage",
+            "baseDice": "8d6",
+            "shape": "single"
+          }
+        ],
+        "control": []
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:physical-single:shield",
+        "cost": 2,
+        "cooldown": 1,
+        "damage": 0,
+        "effects": [
+          {
+            "op": "damage",
+            "baseDice": "8d6",
+            "shape": "single"
+          }
+        ],
+        "control": []
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:buff:heal",
+        "cost": 3,
+        "cooldown": 2,
+        "effects": [
+          {
+            "op": "heal",
+            "amount": 225
+          }
+        ],
+        "control": []
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:buff:heal+barrier",
+        "cost": 3,
+        "cooldown": 2,
+        "effects": [
+          {
+            "op": "heal",
+            "amount": 225
+          },
+          {
+            "op": "barrier",
+            "amount": 17,
+            "dur": 3
+          }
+        ],
+        "control": []
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:buff:heal+restore",
+        "cost": 3,
+        "cooldown": 2,
+        "effects": [
+          {
+            "op": "heal",
+            "amount": 225
+          },
+          {
+            "op": "resource",
+            "resource": "SP",
+            "amount": 3,
+            "maximum": "training"
+          }
+        ],
+        "control": [],
+        "selfResourceNet": 0
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:buff:barrier",
+        "cost": 3,
+        "cooldown": 2,
+        "effects": [
+          {
+            "op": "barrier",
+            "amount": 33,
+            "dur": 3
+          }
+        ],
+        "control": []
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:buff:restore",
+        "cost": 3,
+        "cooldown": 2,
+        "effects": [
+          {
+            "op": "resource",
+            "resource": "SP",
+            "amount": 3,
+            "maximum": "training"
+          }
+        ],
+        "control": [],
+        "selfResourceNet": 0
+      }
+    ],
+    "after": [
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:debuff:stun",
+        "cost": 4,
+        "cooldown": 3,
+        "effects": [
+          {
+            "op": "condition",
+            "conditionId": "stunned",
+            "dur": 1,
+            "magnitude": 1,
+            "saveDC": 11,
+            "shape": "single"
+          }
+        ],
+        "control": [
+          {
+            "id": "stunned",
+            "chance": 0.4
+          }
+        ]
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:debuff:root",
+        "cost": 2,
+        "cooldown": 2,
+        "effects": [
+          {
+            "op": "condition",
+            "conditionId": "restrained",
+            "dur": 1,
+            "magnitude": 1,
+            "saveDC": 13,
+            "shape": "single"
+          }
+        ],
+        "control": [
+          {
+            "id": "restrained",
+            "chance": 0.5
+          }
+        ]
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:debuff:silence",
+        "cost": 2,
+        "cooldown": 2,
+        "effects": [
+          {
+            "op": "condition",
+            "conditionId": "silenced",
+            "dur": 1,
+            "magnitude": 1,
+            "saveDC": 13,
+            "shape": "single"
+          }
+        ],
+        "control": [
+          {
+            "id": "silenced",
+            "chance": 0.5
+          }
+        ]
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:debuff:disarm",
+        "cost": 2,
+        "cooldown": 2,
+        "effects": [
+          {
+            "op": "condition",
+            "conditionId": "disarmed",
+            "dur": 1,
+            "magnitude": 1,
+            "saveDC": 13,
+            "shape": "single"
+          }
+        ],
+        "control": [
+          {
+            "id": "disarmed",
+            "chance": 0.5
+          }
+        ]
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:debuff:slow",
+        "cost": 3,
+        "cooldown": 2,
+        "effects": [
+          {
+            "op": "condition",
+            "conditionId": "slowed",
+            "dur": 3,
+            "magnitude": 1,
+            "saveDC": 13,
+            "shape": "single"
+          }
+        ],
+        "control": [
+          {
+            "id": "slowed",
+            "chance": 0.5
+          }
+        ]
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:debuff:stun+root",
+        "cost": 5,
+        "cooldown": 3,
+        "effects": [
+          {
+            "op": "condition",
+            "conditionId": "stunned",
+            "dur": 1,
+            "magnitude": 0.7071067811865475,
+            "saveDC": 9,
+            "shape": "single"
+          },
+          {
+            "op": "condition",
+            "conditionId": "restrained",
+            "dur": 1,
+            "magnitude": 0.7071067811865475,
+            "saveDC": 11,
+            "shape": "single"
+          }
+        ],
+        "control": [
+          {
+            "id": "stunned",
+            "chance": 0.3
+          },
+          {
+            "id": "restrained",
+            "chance": 0.4
+          }
+        ]
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:magic-single",
+        "cost": 2,
+        "cooldown": 1,
+        "damage": 23.095588708031208,
+        "effects": [
+          {
+            "op": "damage",
+            "baseDice": "8d6",
+            "shape": "single"
+          }
+        ],
+        "control": []
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:magic-single:stun",
+        "cost": 4,
+        "cooldown": 3,
+        "damage": 23.084759149029946,
+        "effects": [
+          {
+            "op": "damage",
+            "baseDice": "8d6",
+            "shape": "single"
+          },
+          {
+            "op": "condition",
+            "conditionId": "stunned",
+            "dur": 1,
+            "magnitude": 1,
+            "saveDC": 11,
+            "onHit": true,
+            "shape": "single"
+          }
+        ],
+        "control": [
+          {
+            "id": "stunned",
+            "chance": 0.4
+          }
+        ]
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:physical-single",
+        "cost": 2,
+        "cooldown": 1,
+        "damage": 13.790344307344117,
+        "effects": [
+          {
+            "op": "damage",
+            "baseDice": "8d6",
+            "shape": "single"
+          }
+        ],
+        "control": []
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:physical-single:shield",
+        "cost": 2,
+        "cooldown": 1,
+        "damage": 9.54732512905456,
+        "effects": [
+          {
+            "op": "damage",
+            "baseDice": "8d6",
+            "shape": "single"
+          }
+        ],
+        "control": []
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:buff:heal",
+        "cost": 3,
+        "cooldown": 2,
+        "effects": [
+          {
+            "op": "heal",
+            "amount": 225
+          }
+        ],
+        "control": []
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:buff:heal+barrier",
+        "cost": 4,
+        "cooldown": 2,
+        "effects": [
+          {
+            "op": "heal",
+            "amount": 113
+          },
+          {
+            "op": "barrier",
+            "amount": 17,
+            "dur": 3
+          }
+        ],
+        "control": []
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:buff:heal+restore",
+        "cost": 5,
+        "cooldown": 2,
+        "effects": [
+          {
+            "op": "heal",
+            "amount": 113
+          },
+          {
+            "op": "resource",
+            "resource": "SP",
+            "amount": 3,
+            "maximum": "training"
+          }
+        ],
+        "control": [],
+        "selfResourceNet": -2
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:buff:barrier",
+        "cost": 3,
+        "cooldown": 2,
+        "effects": [
+          {
+            "op": "barrier",
+            "amount": 33,
+            "dur": 3
+          }
+        ],
+        "control": []
+      },
+      {
+        "mode": "v4-d20",
+        "power": 5,
+        "id": "generic:buff:restore",
+        "cost": 3,
+        "cooldown": 2,
+        "effects": [
+          {
+            "op": "resource",
+            "resource": "SP",
+            "amount": 3,
+            "maximum": "training"
+          }
+        ],
+        "control": [],
+        "selfResourceNet": 0
+      }
+    ]
+  },
+  "itemsP3": [
+    {
+      "kind": "consumable",
+      "mechanism": "heal",
+      "power": 3,
+      "mechanics": {
+        "kind": "consumable",
+        "recipe": {
+          "version": "mechanism-v2.3",
+          "mechanism": "heal",
+          "power": 3,
+          "size": "human",
+          "quality": 3,
+          "seed": "balance"
+        },
+        "effect": {
+          "op": "heal",
+          "amount": 7
+        }
+      }
+    },
+    {
+      "kind": "consumable",
+      "mechanism": "restore",
+      "power": 3,
+      "mechanics": {
+        "kind": "consumable",
+        "recipe": {
+          "version": "mechanism-v2.3",
+          "mechanism": "restore",
+          "power": 3,
+          "size": "human",
+          "quality": 3,
+          "seed": "balance"
+        },
+        "effect": {
+          "op": "resource",
+          "resource": "SP",
+          "amount": 4,
+          "maximum": "training"
+        }
+      }
+    },
+    {
+      "kind": "consumable",
+      "mechanism": "cleanse",
+      "power": 3,
+      "mechanics": {
+        "kind": "consumable",
+        "recipe": {
+          "version": "mechanism-v2.3",
+          "mechanism": "cleanse",
+          "power": 3,
+          "size": "human",
+          "quality": 3,
+          "seed": "balance"
+        },
+        "effect": {
+          "op": "dispel",
+          "polarity": "negative",
+          "count": 1
+        }
+      }
+    },
+    {
+      "kind": "consumable",
+      "mechanism": "empower",
+      "power": 3,
+      "mechanics": {
+        "kind": "consumable",
+        "recipe": {
+          "version": "mechanism-v2.3",
+          "mechanism": "empower",
+          "power": 3,
+          "size": "human",
+          "quality": 3,
+          "seed": "balance"
+        },
+        "effect": {
+          "op": "condition",
+          "conditionId": "empowered",
+          "dur": 3,
+          "magnitude": 1
+        }
+      }
+    },
+    {
+      "kind": "consumable",
+      "mechanism": "barrier",
+      "power": 3,
+      "mechanics": {
+        "kind": "consumable",
+        "recipe": {
+          "version": "mechanism-v2.3",
+          "mechanism": "barrier",
+          "power": 3,
+          "size": "human",
+          "quality": 3,
+          "seed": "balance"
+        },
+        "effect": {
+          "op": "barrier",
+          "amount": 14,
+          "dur": 3
+        }
+      }
+    },
+    {
+      "kind": "consumable",
+      "mechanism": "grenade",
+      "power": 3,
+      "mechanics": {
+        "kind": "consumable",
+        "recipe": {
+          "version": "mechanism-v2.3",
+          "mechanism": "grenade",
+          "power": 3,
+          "size": "human",
+          "quality": 3,
+          "seed": "balance"
+        },
+        "effect": {
+          "op": "damage",
+          "baseDice": "2d6",
+          "shape": "burst"
+        }
+      }
+    },
+    {
+      "kind": "consumable",
+      "mechanism": "repair",
+      "power": 3,
+      "mechanics": {
+        "kind": "consumable",
+        "recipe": {
+          "version": "mechanism-v2.3",
+          "mechanism": "repair",
+          "power": 3,
+          "size": "human",
+          "quality": 3,
+          "seed": "balance"
+        },
+        "effect": {
+          "op": "heal",
+          "amount": 7
+        }
+      }
+    },
+    {
+      "kind": "accessory",
+      "mechanism": "guardian",
+      "power": 3,
+      "mechanics": {
+        "kind": "accessory",
+        "value": {
+          "id": "guardian",
+          "name": "守护护符",
+          "load": 1,
+          "recipe": {
+            "version": "mechanism-v2.3",
+            "mechanism": "accessory:guardian",
+            "power": 3,
+            "size": "human",
+            "quality": 3,
+            "seed": "balance"
+          },
+          "traitId": "guardian"
+        }
+      }
+    },
+    {
+      "kind": "accessory",
+      "mechanism": "night",
+      "power": 3,
+      "mechanics": {
+        "kind": "accessory",
+        "value": {
+          "id": "night",
+          "name": "夜视镜",
+          "load": 1,
+          "recipe": {
+            "version": "mechanism-v2.3",
+            "mechanism": "accessory:night",
+            "power": 3,
+            "size": "human",
+            "quality": 3,
+            "seed": "balance"
+          },
+          "traitId": "night-fighter"
+        }
+      }
+    },
+    {
+      "kind": "accessory",
+      "mechanism": "woodland",
+      "power": 3,
+      "mechanics": {
+        "kind": "accessory",
+        "value": {
+          "id": "woodland",
+          "name": "林行靴",
+          "load": 1,
+          "recipe": {
+            "version": "mechanism-v2.3",
+            "mechanism": "accessory:woodland",
+            "power": 3,
+            "size": "human",
+            "quality": 3,
+            "seed": "balance"
+          },
+          "traitId": "forest-lore"
+        }
+      }
+    },
+    {
+      "kind": "accessory",
+      "mechanism": "endurance",
+      "power": 3,
+      "mechanics": {
+        "kind": "accessory",
+        "value": {
+          "id": "endurance",
+          "name": "耐力护符",
+          "load": 1,
+          "recipe": {
+            "version": "mechanism-v2.3",
+            "mechanism": "accessory:endurance",
+            "power": 3,
+            "size": "human",
+            "quality": 3,
+            "seed": "balance"
+          },
+          "traitId": "fatigue-trained"
+        }
+      }
+    },
+    {
+      "kind": "accessory",
+      "mechanism": "healing",
+      "power": 3,
+      "mechanics": {
+        "kind": "accessory",
+        "value": {
+          "id": "healing",
+          "name": "治疗护符",
+          "load": 1,
+          "recipe": {
+            "version": "mechanism-v2.3",
+            "mechanism": "accessory:healing",
+            "power": 3,
+            "size": "human",
+            "quality": 3,
+            "seed": "balance"
+          },
+          "ability": {
+            "id": "equipment:healing",
+            "equipmentSourceId": "healing",
+            "name": "治疗护符",
+            "customized": true,
+            "category": "装备能力",
+            "target": "ally",
+            "delivery": "magic",
+            "power": 3,
+            "desc": "装备时可用，每场战斗最多使用两次，每次消耗2点精力。",
+            "cost": {
+              "resource": "SP",
+              "amount": 2
+            },
+            "usesPerBattle": 2,
+            "range": {
+              "min": 0,
+              "max": 3,
+              "metric": "grid",
+              "allowEngaged": true,
+              "requiresLineOfSight": true
+            },
+            "effects": [
+              {
+                "op": "heal",
+                "amount": 13
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "kind": "accessory",
+      "mechanism": "barrier",
+      "power": 3,
+      "mechanics": {
+        "kind": "accessory",
+        "value": {
+          "id": "barrier",
+          "name": "屏障护符",
+          "load": 1,
+          "recipe": {
+            "version": "mechanism-v2.3",
+            "mechanism": "accessory:barrier",
+            "power": 3,
+            "size": "human",
+            "quality": 3,
+            "seed": "balance"
+          },
+          "ability": {
+            "id": "equipment:barrier",
+            "equipmentSourceId": "barrier",
+            "name": "屏障护符",
+            "customized": true,
+            "category": "装备能力",
+            "target": "ally",
+            "delivery": "magic",
+            "power": 3,
+            "desc": "装备时可用，每场战斗最多使用两次，每次消耗2点精力。",
+            "cost": {
+              "resource": "SP",
+              "amount": 2
+            },
+            "usesPerBattle": 2,
+            "range": {
+              "min": 0,
+              "max": 3,
+              "metric": "grid",
+              "allowEngaged": true,
+              "requiresLineOfSight": true
+            },
+            "effects": [
+              {
+                "op": "barrier",
+                "amount": 18,
+                "dur": 3
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "kind": "accessory",
+      "mechanism": "cleansing",
+      "power": 3,
+      "mechanics": {
+        "kind": "accessory",
+        "value": {
+          "id": "cleansing",
+          "name": "净化护符",
+          "load": 1,
+          "recipe": {
+            "version": "mechanism-v2.3",
+            "mechanism": "accessory:cleansing",
+            "power": 3,
+            "size": "human",
+            "quality": 3,
+            "seed": "balance"
+          },
+          "ability": {
+            "id": "equipment:cleansing",
+            "equipmentSourceId": "cleansing",
+            "name": "净化护符",
+            "customized": true,
+            "category": "装备能力",
+            "target": "ally",
+            "delivery": "magic",
+            "power": 3,
+            "desc": "装备时可用，每场战斗最多使用两次，每次消耗2点精力。",
+            "cost": {
+              "resource": "SP",
+              "amount": 2
+            },
+            "usesPerBattle": 2,
+            "range": {
+              "min": 0,
+              "max": 3,
+              "metric": "grid",
+              "allowEngaged": true,
+              "requiresLineOfSight": true
+            },
+            "effects": [
+              {
+                "op": "dispel",
+                "polarity": "negative",
+                "count": 1
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "matches": {
+    "method": "800 seeded real AI battles; 20 seeds × side swap × 10 matchups × small/mass. Training5, equipment3, equal armor, hero42hp/company100 members, open terrain, close 2-cell start (small)/opposing frontline (mass), no skills, morale100, max30 rounds. Default local AI, not JEV. These are scenario-specific samples, not universal win rates. Censored games are separated from actual draws in this summary.",
+    "rows": [
+      {
+        "mode": "small",
+        "scenario": "剑 vs 钝器 / 无甲",
+        "games": 40,
+        "aWins": 22,
+        "bWins": 18,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 1.95
+      },
+      {
+        "mode": "small",
+        "scenario": "剑 vs 钝器 / 重甲",
+        "games": 40,
+        "aWins": 6,
+        "bWins": 34,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 2.975
+      },
+      {
+        "mode": "small",
+        "scenario": "剑 vs 斧 / 无甲",
+        "games": 40,
+        "aWins": 19,
+        "bWins": 21,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 1.725
+      },
+      {
+        "mode": "small",
+        "scenario": "剑 vs 斧 / 重甲",
+        "games": 40,
+        "aWins": 10,
+        "bWins": 30,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 3.575
+      },
+      {
+        "mode": "small",
+        "scenario": "剑 vs 长柄 / 中甲",
+        "games": 40,
+        "aWins": 22,
+        "bWins": 18,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 2.85
+      },
+      {
+        "mode": "small",
+        "scenario": "轻型投射 vs 投掷 / 中甲",
+        "games": 40,
+        "aWins": 26,
+        "bWins": 14,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 4.8
+      },
+      {
+        "mode": "small",
+        "scenario": "步枪 vs 单发重步枪 / 中甲",
+        "games": 40,
+        "aWins": 23,
+        "bWins": 17,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 1.65
+      },
+      {
+        "mode": "small",
+        "scenario": "步枪 vs 单发重步枪 / 超重甲",
+        "games": 40,
+        "aWins": 9,
+        "bWins": 31,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 4.6
+      },
+      {
+        "mode": "small",
+        "scenario": "步枪 vs 能量 / 动能特化重甲",
+        "games": 40,
+        "aWins": 0,
+        "bWins": 40,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 2.05
+      },
+      {
+        "mode": "small",
+        "scenario": "步枪 vs 能量 / 热能特化重甲",
+        "games": 40,
+        "aWins": 40,
+        "bWins": 0,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 2.05
+      },
+      {
+        "mode": "mass",
+        "scenario": "剑 vs 钝器 / 无甲",
+        "games": 40,
+        "aWins": 37,
+        "bWins": 0,
+        "draws": 0,
+        "timeouts": 3,
+        "meanRounds": 26.4
+      },
+      {
+        "mode": "mass",
+        "scenario": "剑 vs 钝器 / 重甲",
+        "games": 40,
+        "aWins": 0,
+        "bWins": 0,
+        "draws": 0,
+        "timeouts": 40,
+        "meanRounds": 31
+      },
+      {
+        "mode": "mass",
+        "scenario": "剑 vs 斧 / 无甲",
+        "games": 40,
+        "aWins": 33,
+        "bWins": 0,
+        "draws": 0,
+        "timeouts": 7,
+        "meanRounds": 28
+      },
+      {
+        "mode": "mass",
+        "scenario": "剑 vs 斧 / 重甲",
+        "games": 40,
+        "aWins": 0,
+        "bWins": 0,
+        "draws": 0,
+        "timeouts": 40,
+        "meanRounds": 31
+      },
+      {
+        "mode": "mass",
+        "scenario": "剑 vs 长柄 / 中甲",
+        "games": 40,
+        "aWins": 0,
+        "bWins": 0,
+        "draws": 0,
+        "timeouts": 40,
+        "meanRounds": 31
+      },
+      {
+        "mode": "mass",
+        "scenario": "轻型投射 vs 投掷 / 中甲",
+        "games": 40,
+        "aWins": 0,
+        "bWins": 0,
+        "draws": 0,
+        "timeouts": 40,
+        "meanRounds": 31
+      },
+      {
+        "mode": "mass",
+        "scenario": "步枪 vs 单发重步枪 / 中甲",
+        "games": 40,
+        "aWins": 20,
+        "bWins": 3,
+        "draws": 0,
+        "timeouts": 17,
+        "meanRounds": 29.125
+      },
+      {
+        "mode": "mass",
+        "scenario": "步枪 vs 单发重步枪 / 超重甲",
+        "games": 40,
+        "aWins": 0,
+        "bWins": 0,
+        "draws": 0,
+        "timeouts": 40,
+        "meanRounds": 31
+      },
+      {
+        "mode": "mass",
+        "scenario": "步枪 vs 能量 / 动能特化重甲",
+        "games": 40,
+        "aWins": 0,
+        "bWins": 34,
+        "draws": 0,
+        "timeouts": 6,
+        "meanRounds": 28.375
+      },
+      {
+        "mode": "mass",
+        "scenario": "步枪 vs 能量 / 热能特化重甲",
+        "games": 40,
+        "aWins": 27,
+        "bWins": 0,
+        "draws": 0,
+        "timeouts": 13,
+        "meanRounds": 29.55
+      }
+    ]
+  },
+  "extended40RoundCap": {
+    "method": "20 seeded real AI battles; 1 seeds × side swap × 10 matchups × mass. Training5, equipment3, equal armor, hero42hp/company100 members, open terrain, close 2-cell start (small)/opposing frontline (mass), no skills, morale100, max120 rounds. Default local AI, not JEV. These are scenario-specific samples, not universal win rates. Mass engine enforces its default 40-round limit, even with an external cutoff of 120.",
+    "rows": [
+      {
+        "mode": "mass",
+        "scenario": "剑 vs 钝器 / 无甲",
+        "games": 2,
+        "aWins": 2,
+        "bWins": 0,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 24
+      },
+      {
+        "mode": "mass",
+        "scenario": "剑 vs 钝器 / 重甲",
+        "games": 2,
+        "aWins": 0,
+        "bWins": 0,
+        "draws": 2,
+        "timeouts": 0,
+        "meanRounds": 41
+      },
+      {
+        "mode": "mass",
+        "scenario": "剑 vs 斧 / 无甲",
+        "games": 2,
+        "aWins": 2,
+        "bWins": 0,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 24.5
+      },
+      {
+        "mode": "mass",
+        "scenario": "剑 vs 斧 / 重甲",
+        "games": 2,
+        "aWins": 0,
+        "bWins": 0,
+        "draws": 2,
+        "timeouts": 0,
+        "meanRounds": 41
+      },
+      {
+        "mode": "mass",
+        "scenario": "剑 vs 长柄 / 中甲",
+        "games": 2,
+        "aWins": 1,
+        "bWins": 0,
+        "draws": 1,
+        "timeouts": 0,
+        "meanRounds": 41
+      },
+      {
+        "mode": "mass",
+        "scenario": "轻型投射 vs 投掷 / 中甲",
+        "games": 2,
+        "aWins": 0,
+        "bWins": 0,
+        "draws": 2,
+        "timeouts": 0,
+        "meanRounds": 41
+      },
+      {
+        "mode": "mass",
+        "scenario": "步枪 vs 单发重步枪 / 中甲",
+        "games": 2,
+        "aWins": 1,
+        "bWins": 1,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 35.5
+      },
+      {
+        "mode": "mass",
+        "scenario": "步枪 vs 单发重步枪 / 超重甲",
+        "games": 2,
+        "aWins": 0,
+        "bWins": 0,
+        "draws": 2,
+        "timeouts": 0,
+        "meanRounds": 41
+      },
+      {
+        "mode": "mass",
+        "scenario": "步枪 vs 能量 / 动能特化重甲",
+        "games": 2,
+        "aWins": 0,
+        "bWins": 2,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 31
+      },
+      {
+        "mode": "mass",
+        "scenario": "步枪 vs 能量 / 热能特化重甲",
+        "games": 2,
+        "aWins": 2,
+        "bWins": 0,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 32.5
+      }
+    ]
+  },
+  "defaultMorale": {
+    "method": "20 seeded real AI battles; 1 seeds × side swap × 10 matchups × mass. Training5, equipment3, equal armor, hero42hp/company100 members, open terrain, close 2-cell start (small)/opposing frontline (mass), no skills, morale=default, external cutoff 40 rounds (mass engine also enforces its default 40-round limit). Default local AI, not JEV. These are scenario-specific samples, not universal win rates.",
+    "rows": [
+      {
+        "mode": "mass",
+        "scenario": "剑 vs 钝器 / 无甲",
+        "games": 2,
+        "aWins": 2,
+        "bWins": 0,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 15.5
+      },
+      {
+        "mode": "mass",
+        "scenario": "剑 vs 钝器 / 重甲",
+        "games": 2,
+        "aWins": 0,
+        "bWins": 2,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 31.5
+      },
+      {
+        "mode": "mass",
+        "scenario": "剑 vs 斧 / 无甲",
+        "games": 2,
+        "aWins": 2,
+        "bWins": 0,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 17
+      },
+      {
+        "mode": "mass",
+        "scenario": "剑 vs 斧 / 重甲",
+        "games": 2,
+        "aWins": 0,
+        "bWins": 0,
+        "draws": 2,
+        "timeouts": 0,
+        "meanRounds": 41
+      },
+      {
+        "mode": "mass",
+        "scenario": "剑 vs 长柄 / 中甲",
+        "games": 2,
+        "aWins": 2,
+        "bWins": 0,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 26.5
+      },
+      {
+        "mode": "mass",
+        "scenario": "轻型投射 vs 投掷 / 中甲",
+        "games": 2,
+        "aWins": 0,
+        "bWins": 1,
+        "draws": 1,
+        "timeouts": 0,
+        "meanRounds": 38
+      },
+      {
+        "mode": "mass",
+        "scenario": "步枪 vs 单发重步枪 / 中甲",
+        "games": 2,
+        "aWins": 2,
+        "bWins": 0,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 19.5
+      },
+      {
+        "mode": "mass",
+        "scenario": "步枪 vs 单发重步枪 / 超重甲",
+        "games": 2,
+        "aWins": 0,
+        "bWins": 2,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 28
+      },
+      {
+        "mode": "mass",
+        "scenario": "步枪 vs 能量 / 动能特化重甲",
+        "games": 2,
+        "aWins": 0,
+        "bWins": 2,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 18.5
+      },
+      {
+        "mode": "mass",
+        "scenario": "步枪 vs 能量 / 热能特化重甲",
+        "games": 2,
+        "aWins": 2,
+        "bWins": 0,
+        "draws": 0,
+        "timeouts": 0,
+        "meanRounds": 18.5
+      }
+    ]
+  }
+}

@@ -27,7 +27,7 @@ export const SKILL_MODIFIER_ALIASES: Record<string, string[]> = {
   dispel: ['解除增益', '驱除增益'], drain: ['消耗能量', '能量削减'], push: ['推开', '推离'], pull: ['拉近', '牵引'],
 };
 export interface SkillMechanism { category: SkillCategory; area: boolean; modifiers: string[] }
-export interface SkillRecipe extends SkillMechanism { version: 'skill-formula-v1'; power: number }
+export interface SkillRecipe extends SkillMechanism { version: 'skill-formula-v1' | 'skill-formula-v2'; power: number }
 export interface SkillModifier { id: string; name: string; allowed: 'damage' | 'physical' | 'magic' | 'buff' | 'hostile' | 'support'; condition?: string; trait?: string }
 export const SKILL_MODIFIERS: SkillModifier[] = [
   { id: 'melee', name: '近战', allowed: 'physical' }, { id: 'ranged', name: '射击', allowed: 'physical' },

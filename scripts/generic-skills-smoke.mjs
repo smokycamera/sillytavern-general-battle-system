@@ -92,7 +92,7 @@ try {
   assert.equal(renamed.name, '回春之风');
   assert.deepEqual(renamed.recipe, heal.recipe);
   assert.equal(renamed.power, heal.power);
-  assert.equal(renamed.effectVersion, 'skill-v4.1');
+  assert.equal(renamed.effectVersion, 'skill-v4.2');
   assert.equal(renamed.cooldownGroup, 'skill-mechanism:' + heal.definitionId);
   assert.equal(renamed.effects.find(e => e.op === 'heal').amount, 1120);
   await tab('battle'); await p.locator('[data-action="small-start"]').click(); await p.locator('.grid-board').waitFor();
