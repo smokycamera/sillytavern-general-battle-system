@@ -4,7 +4,7 @@ import type { Ability, ActiveCondition, Combatant, EffectOp } from './types.js';
 import type { Rng } from './rng.js';
 import { activeTraitIds, bodyRank, traitSourceActive, grantTraitSource, traitPrerequisiteReason } from './trait-sources.js';
 import { traitRegistry } from './data/traits.js';
-import { skillResourceChange } from './skill-runtime.js';
+import { skillResourceChange, summonProfile } from './skill-runtime.js';
 import { standardConditionMap } from './conditions.js';
 import { conditionMods } from './bonus.js';
 import { poisonFactor, conditionExposure } from './afflictions.js';
@@ -145,6 +145,10 @@ export function applySkillTrait(actor: Combatant, target: Combatant, ability: Ab
 }
 export function skillEffectLines(context: ObservationContext, actor: Combatant, target: Combatant, ability: Ability): string[] {
   return ability.effects.flatMap((effect) => {
+    if (effect.op === 'summon') {
+      const p = summonProfile(effect.templateId, context.mode, ability.bonuses);
+      return p ? [`${p.group ? `群体召唤：一支${p.members}名成员的编队` : '单体召唤：一个个体'}，等级L${p.power}；召唤武器L${p.power}，${p.range > 1 ? '远程' : '近战'}距离${p.range}；在施法者附近出现，下轮行动；群体分摊同级单体的生命和武器伤害预算`] : [];
+    }
     if (effect.op === 'zone') return [zoneEffectDescription(effect)];
     if (effect.op === 'barrier') return [`屏障最多吸收${effect.amount}点伤害，持续${effect.dur}轮；重复施放取较强保护`];
     if (effect.op === 'trait') return [skillTraitReason(target, effect) ?? `${traitRegistry().get(effect.traitId)?.name}持续${effect.dur}轮，战斗归档时结束`];

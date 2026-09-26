@@ -42,7 +42,7 @@ export function anchoredWeapon(weapon:Weapon|undefined,ammo:'he'|'ap'='he'):Weap
   const power=weapon.recipe?.power??weapon.level??5,curve=curveAt(power),old=diceAvg(curve.dmgBase)+(curve.dmgAp?diceAvg(curve.dmgAp):0);
   const melee=meleeProfile(weapon);
   const ratio=powerBudget(power)/old*(isCannonWeapon(weapon)?3:mechanism==='autocannon'?1.5:1)*(melee?.damageScale??1);
-  const base=diceAvg(weapon.baseDice)+(weapon.apDice?diceAvg(weapon.apDice):0),scaled=scaledPowerDice(base*ratio*bonusMultiplier(weapon.recipe?.bonuses, 'damage',weapon.channel??'kinetic'));
+  const base=diceAvg(weapon.baseDice)+(weapon.apDice?diceAvg(weapon.apDice):0),scaled=scaledPowerDice(base*ratio*bonusMultiplier(weapon.recipe?.bonuses, 'damage',weapon.channel??'kinetic')*(mechanism==='summon'?(weapon.damageScale??1):1));
   const artillery=isCannonWeapon(weapon),explosive=artillery&&ammo==='he'&&power>=3;
   const splash=explosive?(power>=10?1e9:power>=9?256:power>=8?12:power>=7?6:power>=5?4:2):mechanism==='demolition'?6:0;
   return {...weapon,powerModel:'anchors-v1',ammunition:ammo,baseDice:scaled.dice,apDice:undefined,damageScale:scaled.scale,

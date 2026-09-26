@@ -11,7 +11,7 @@ import { calibrateAutocannon, calibrateWeaponHands } from '../gen/equipment.js';
 import { rangedScreen, rangedScreenReason } from '../guard-screen.js';
 import { spCapacity } from '../resources.js';
 import type { EffectOp } from '../types.js';
-import { skillWeapon, skillResourceChange, skillResourceCost, conjureSkillUnit, conjuredTemplate } from '../skill-runtime.js';
+import { skillWeapon, skillResourceChange, skillResourceCost, conjureSkillUnit, conjuredTemplate, summonedMemberLife } from '../skill-runtime.js';
 import { applySkillTrait } from '../skill-effects.js';
 import { BattleFeedback, type FeedbackUnit } from '../battle-feedback.js';
 import { restoreMassReport, type MassRoundReport, type MassPhase } from './feedback.js';
@@ -1006,14 +1006,14 @@ export class MassBattle {
         const born: Combatant[] = [];
         let invalid = false;
         for (const effect of ability.effects) if (effect.op === 'summon') {
-          if (effect.count < 1 || effect.count > 2 || this.combatants.filter((u) => u.summonerId === actor.id && u.status === 'ready').length + effect.count > 2) { invalid = true; break; }
+          if (effect.count < 1 || effect.count > 2 || [...this.combatants, ...stagedBirths, ...born].filter((u) => u.summonerId === actor.id && u.status === 'ready').length + effect.count > 2) { invalid = true; break; }
           for (let n = 0; n < effect.count; n++) {
-            const id = `mass:${this.seed}:summon:${actor.id}:${this.round}:${n}`;
+            const id = `mass:${this.seed}:summon:${actor.id}:${this.round}:${born.length}`;
             let unit: Combatant | null | undefined;
-            try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'mass') ?? this.summonUnit?.(effect.templateId, actor.side, id); } catch { invalid = true; break; }
+            try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'mass', ability.bonuses) ?? this.summonUnit?.(effect.templateId, actor.side, id); } catch { invalid = true; break; }
             const node = FORMATION_NODES.find((node) => node.side === actor.side && node.wing === formationNode(actor).wing && node.rank === 'reserve')!;
-            if (!unit || unit.scale === 'hero' || [...this.combatants, ...stagedBirths, ...born].filter((u) => !this.isAttached(u.id) && u.status === 'ready' && formationNode(u).id === node.id).length >= 3) { invalid = true; break; }
-            prepareCombatModel(unit, this.rules); if(this.rules.combatModel)upgradeCombatSkills(unit);
+            if (!unit || [...this.combatants, ...stagedBirths, ...born].filter((u) => !this.isAttached(u.id) && u.status === 'ready' && formationNode(u).id === node.id).length >= 3) { invalid = true; break; }
+            prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit);
             unit.id = id; unit.summonerId = actor.id; unit.bornRound = this.round; setFormation(unit, node); born.push(unit);
           }
         }

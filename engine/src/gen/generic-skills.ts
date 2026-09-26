@@ -34,6 +34,7 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
     else if (key === 'push' || key === 'pull') effects.push({ op: 'push', force: Math.min(4, 1 + Math.floor((power - 1) / 3)), steps: 1, physical,
       direction: key === 'pull' ? 'towards' : 'away', ...(damage ? { onHit: true } : {}) });
     else if (key === 'summon') effects.push({ op: 'summon', templateId: 'conjured:' + power, count: 1 });
+    else if (key === 'summon-single' || key === 'summon-group') effects.push({ op: 'summon', templateId: `conjured:${key.slice(7)}:${power}`, count: 1 });
   }
   const ability: Ability = { id: `${ownerId}:skill:${encodeURIComponent(name?.trim() || skillMechanismName(mechanism))}`, definitionId: id,
     name: name?.trim() || skillMechanismName(mechanism), sourceId: ownerId, cooldownGroup: 'generic:' + mechanism.category,
@@ -61,9 +62,9 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
   if (magic && area && !ability.damageBasis) ability.areaExposure = 4;
   if (selected.includes('restore')) { ability.cost = { resource: 'SP', amount: (1 + Math.ceil(power / 3)) * (area ? 2 : 1) }; ability.usesPerBattle = 2; }
   if (selected.includes('burn')) ability.channel = 'thermal';
-  if (selected.includes('summon')) {
+  if (effects.some(e => e.op === 'summon')) {
     ability.cost = { resource: 'SP', amount: Math.max(4,ability.cost!.amount) }; ability.usesPerBattle = 1;
-    if (selected.length === 1) { ability.target = 'self'; ability.range = { min: 0, max: 0, metric: 'self', allowEngaged: true }; }
+    if (selected.length === 1 && !damage && !zoneKinds.length) { ability.target = 'self'; ability.range = { min: 0, max: 0, metric: 'self', allowEngaged: true }; }
   }
   if (!area && !damage && selected.length === 1 && ['root','disarm','silence'].includes(selected[0]!)) ability.cost!.amount = 2;
   balanceGenericSkill(ability);

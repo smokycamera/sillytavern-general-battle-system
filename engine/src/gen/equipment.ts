@@ -49,7 +49,8 @@ export function compileWeapon(spec: { mechanism?: string; weaponId?: string; pow
     if (!['thermal', 'arcane'].includes(spec.enchantment)) throw new Error('不支持的武器附魔效果');
     recipe.enchantment = spec.enchantment;
   }
-  const powerCurve = curveAt(recipe.power), ranged = profile.range > 1;
+  const summonRange = mechanism === 'summon' ? Math.max(1, 1 + (recipe.bonuses?.range ?? 0)) : undefined;
+  const powerCurve = curveAt(recipe.power), ranged = (summonRange ?? profile.range) > 1;
   if (spec.stabilized !== undefined && typeof spec.stabilized !== 'boolean') throw new Error('武器稳定配置损坏');
   if (spec.stabilized) {
     if (!context.creatingUnit && (recipe.size !== 'vehicle' || !ranged)) throw new Error('稳定装置需要实际载具规格的射击武器');
@@ -63,10 +64,10 @@ export function compileWeapon(spec: { mechanism?: string; weaponId?: string; pow
     baseDice: rebuildDice(budget / attacks, budget / attacks < 3.5 ? 2 : 6), recipe,
     channel: recipe.enchantment ?? (mechanism === 'energy' ? 'thermal' : mechanism === 'magic' ? 'arcane' : 'kinetic'),
     penetration: 1 + Math.floor(recipe.power / 2) + (['cannon', 'indirect-cannon', 'demolition', 'autocannon'].includes(mechanism) ? 2 : mechanism === 'heavy-rifle' ? 2 : ['firearm', 'rifle', 'energy'].includes(mechanism) ? 1 : 0),
-    range: Math.max(profile.minRange??0,ranged?1:profile.range,profile.range + (ranged ? bonusSteps(recipe.bonuses, 'range', 5) : 0)), minRange: profile.minRange ?? 0,
+    range: summonRange ?? Math.max(profile.minRange??0,ranged?1:profile.range,profile.range + (ranged ? bonusSteps(recipe.bonuses, 'range', 5) : 0)), minRange: profile.minRange ?? 0,
     pointBlankPolicy: profile.pointBlankPolicy ?? 'allow', pointBlankPenalty: profile.pointBlankPenalty,
     indirect: profile.indirect, attacks, reload: profile.reload, level: recipe.power,
-    hands: mechanism === 'natural' ? 0 : ['light-ranged','throwing'].includes(mechanism) ? 1 : ranged ? 2 : 1, load: mechanism === 'natural' ? 0 : ['light-ranged','throwing'].includes(mechanism) ? 1 : ['cannon', 'indirect-cannon', 'autocannon'].includes(mechanism) ? 6 : ranged ? 2 : 1,
+    hands: ['natural','summon'].includes(mechanism) ? 0 : ['light-ranged','throwing'].includes(mechanism) ? 1 : ranged ? 2 : 1, load: ['natural','summon'].includes(mechanism) ? 0 : ['light-ranged','throwing'].includes(mechanism) ? 1 : ['cannon', 'indirect-cannon', 'autocannon'].includes(mechanism) ? 6 : ranged ? 2 : 1,
     tags: [...(ranged ? ['ranged'] : []), ...(profile.blast ? ['blast'] : []), 'mechanism:' + mechanism] };
 }
 /** 旧长兵器改为单手；保留明确自定义值，不重掷装备。 */

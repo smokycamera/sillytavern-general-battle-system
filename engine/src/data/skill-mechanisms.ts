@@ -47,6 +47,7 @@ export const SKILL_MODIFIERS: SkillModifier[] = [
   { id: 'zone-trap', name: '陷阱', allowed: 'hostile' }, { id: 'zone-smoke', name: '烟幕', allowed: 'buff' }, { id: 'zone-healing', name: '治疗区域', allowed: 'buff' },
   { id: 'barrier', name: '屏障', allowed: 'buff' },
   { id: 'restore', name: '回能', allowed: 'buff' }, { id: 'summon', name: '召唤', allowed: 'buff' },
+  { id: 'summon-single', name: '单体召唤', allowed: 'buff' }, { id: 'summon-group', name: '群体召唤', allowed: 'buff' },
   { id: 'morale-up', name: '士气', allowed: 'buff' },
   { id: 'weaken', name: '虚弱', allowed: 'hostile', condition: 'weakened' },
   { id: 'accuracy-down', name: '攻击', allowed: 'hostile', condition: 'inaccurate' },
@@ -76,7 +77,7 @@ export function allowedSkillModifiers(category: SkillCategory): SkillModifier[] 
 }
 /** 结构参数仍只有一个槽位；冲突时采用最后声明，效果词本身全部保留。 */
 function normalizeModifiers(input: string[]): string[] {
-  const groups=[['melee','ranged','shield','projectile'],['thermal','arcane'],['cone','line','ring','chain']];
+  const groups=[['melee','ranged','shield','projectile'],['thermal','arcane'],['cone','line','ring','chain'],['summon','summon-single','summon-group']];
   return [...new Set(input)].filter(id=>!groups.some(group=>group.includes(id)&&[...input].reverse().find(value=>group.includes(value))!==id));
 }
 export function skillMechanismId(mechanism: SkillMechanism): string {
@@ -96,7 +97,7 @@ export function skillMechanismFromId(id: string): SkillMechanism | undefined {
 /** 通用机制直接解析；自定义名称不进入机制推断，不匹配预制技能名。 */
 export function parseSkillMechanism(text: string): SkillMechanism | undefined {
   const controls:Record<string,string> = {眩晕:'stun',定身:'root',沉默:'silence',缴械:'disarm',减速:'slow',惊惧:'fear',击退:'push',拉拽:'pull'};
-  const simple:Record<string,[SkillCategory,string]> = {屏障:['buff','barrier'],治疗:['buff','heal'],净化:['buff','cleanse'],回能:['buff','restore'],火墙:['magic-area','zone-fire'],毒雾:['magic-area','zone-poison'],烟幕:['buff','zone-smoke'],治疗区域:['buff','zone-healing'],陷阱:['debuff','zone-trap']};
+  const simple:Record<string,[SkillCategory,string]> = {单体召唤:['buff','summon-single'],群体召唤:['buff','summon-group'],召唤:['buff','summon'],屏障:['buff','barrier'],治疗:['buff','heal'],净化:['buff','cleanse'],回能:['buff','restore'],火墙:['magic-area','zone-fire'],毒雾:['magic-area','zone-poison'],烟幕:['buff','zone-smoke'],治疗区域:['buff','zone-healing'],陷阱:['debuff','zone-trap']};
   const short = text.trim().replace(/^控制[：:]?/, '');
   if(simple[short]) { const [category,id]=simple[short]!;return {category,area:category.endsWith('area'),modifiers:[id]}; }
   if(controls[short]) return {category:'debuff',area:false,modifiers:[controls[short]!]};
@@ -112,7 +113,7 @@ export function parseSkillMechanism(text: string): SkillMechanism | undefined {
   if (!prefix) return undefined;
   const category = prefix.id;
   source = source.slice(prefix.name.length).trim();
-  const areaWord = source.match(/^(?:群体范围|范围|群体)/)?.[0];
+  const areaWord = source.match(/^(?:群体范围|范围|群体(?!召唤))/)?.[0];
   const area = category.endsWith('area') || !!areaWord; if (areaWord) source = source.slice(areaWord.length);
   const preferred=allowedSkillModifiers(category);
   const modifiers: string[] = [], choices = [...preferred,...SKILL_MODIFIERS.filter(m=>!preferred.includes(m))].flatMap((m) => [m.name, ...(SKILL_MODIFIER_ALIASES[m.id] ?? []), ...(m.trait ? [m.name.slice(2)] : [])].map((name) => ({ id: m.id, name }))).sort((a, b) => b.name.length - a.name.length);

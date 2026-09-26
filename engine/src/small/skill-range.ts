@@ -7,5 +7,5 @@ export function gridAbility(ability: Ability): Ability {
   const named: Record<string, number> = { 'bp-arcane-bolt': 7, 'bp-hex-bolt': 7, 'bp-smite': 5, 'bp-firestorm': 6, 'bp-binding': 5 };
   const range = named[ability.definitionId ?? ability.id]
     ?? (ability.recipe?.category === 'magic-single' ? 7 : ability.recipe?.category === 'magic-area' ? 6 : undefined);
-  return range === undefined ? ability : { ...ability, range: { ...ability.range, max: Math.max(ability.range.max, range + bonusSteps(ability.bonuses,'range',5)) } };
+  return range === undefined ? ability : { ...ability, range: { ...ability.range, max: Math.max(ability.range.max, range + (ability.effects.some(e=>e.op==='summon') ? 0 : bonusSteps(ability.bonuses,'range',5))) } };
 }

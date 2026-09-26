@@ -13,7 +13,7 @@ import { gridAbility } from './skill-range.js';
 import { gridWeapon, gridWeaponRange } from './weapon-range.js';
 import { rangedScreen, rangedScreenReason } from '../guard-screen.js';
 import { engagementWidth } from '../exposure.js';
-import { skillWeapon, skillResourceChange, skillResourceCost, conjureSkillUnit, conjuredTemplate } from '../skill-runtime.js';
+import { skillWeapon, skillResourceChange, skillResourceCost, conjureSkillUnit, conjuredTemplate, summonedMemberLife } from '../skill-runtime.js';
 import { applySkillTrait, isPositiveCondition } from '../skill-effects.js';
 import { skillAttack } from '../skill-attack.js';
 import { prepareCondition, applySkillCondition, dispelCandidates, applyDispel, applyPush, pushPreview, skillEffectLines, skillEffectValue, conditionChance } from '../skill-effects.js';
@@ -1135,10 +1135,10 @@ export class SmallBattle {
         for (let i = 0; i < effect.count; i++) {
           const id = `${this.seed}:summon:${actor.id}:${ability.definitionId ?? ability.id}:${this.round}:${summons.length}`;
           let unit: Combatant | null | undefined;
-          try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'small') ?? this.summonUnit?.(effect.templateId, actor.side, id); }
+          try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'small', ability.bonuses) ?? this.summonUnit?.(effect.templateId, actor.side, id); }
           catch { return { ok: false, reason: '召唤模板生成失败，未扣费', resolutions: [], log: '' }; }
           if (!unit) return { ok: false, reason: '召唤模板不可用，未扣费', resolutions: [], log: '' };
-          prepareCombatModel(unit, this.rules); if(this.rules.combatModel)upgradeCombatSkills(unit);
+          prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit);
           unit.id = id; unit.summonerId = actor.id; unit.bornRound = this.round;
           const cell = neighbors(this.battlefield, actor.pos!).find((n) => canOccupy(this.battlefield!, [...this.combatants, ...summons], unit, n));
           if (cell === undefined || this.combatants.some((u) => u.id === unit.id)) return { ok: false, reason: '召唤落点或身份冲突，整次未扣费', resolutions: [], log: '' };

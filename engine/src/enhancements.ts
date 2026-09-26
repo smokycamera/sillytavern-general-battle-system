@@ -36,7 +36,7 @@ export function parseEnhancementSuffix(text: string, kind: BonusKind): { text: s
   const parts = [...match[2].matchAll(/([+-])(\d{1,2})([^\d+\-\s]*)/g)];
   if (parts.map(m=>m[0]).join('')!==match[2]) throw Error('强化使用L5+3伤害-2精度，每项-10至+10');
   for (const m of parts) {
-    const label = m[3] || '强度';
+    const label = m[3] === '距离' ? '射程' : m[3] || '强度';
     const key = Object.entries(BONUS_NAMES).find(([id, name]) => id === label || name === label)?.[0] as BonusStat | undefined;
     if (!key || bonuses[key] !== undefined) throw Error('强化方向未知或重复：' + label);
     bonuses[key] = Number(m[2]) * (m[1]==='-'?-1:1);

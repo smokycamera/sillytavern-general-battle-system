@@ -58,6 +58,7 @@ export interface WeaponClassProfile {
 }
 
 export const WEAPON_CLASSES: Record<string, WeaponClassProfile> = {
+  summon: { id: 'summon', name: '召唤武器', profile: { id: 'cls-summon', name: '召唤武器', dmgMult: 1, apShare: 1, range: 1, pointBlankPolicy: 'penalty', pointBlankPenalty: -2, desc: '召唤物统一攻击；不占手和负重，默认距离1，射程修正使距离超过1时按直射远程武器结算' } },
   throwing: { id:'throwing',name:'投掷冷兵器',profile:{id:'cls-throwing',name:'投掷冷兵器',dmgMult:1,apShare:.8,range:3,reload:1,pointBlankPolicy:'allow',desc:'标枪、飞刀等短距单手投掷；可抵近使用，投出后准备一回合；单发强于轻型投射，持续火力较低'} },
   'heavy-rifle': { id:'heavy-rifle',name:'单发重步枪',profile:{id:'cls-heavy-rifle',name:'单发重步枪',dmgMult:1.6,apShare:1.2,range:5,minRange:1,reload:1,pointBlankPolicy:'penalty',pointBlankPenalty:-3,desc:'高威力单发，穿透比普通步枪高1；射后装填一回合，抵近命中降低3'} },
   natural: { id:'natural',name:'天生武器',profile:{id:'cls-natural',name:'天生武器',dmgMult:.8,apShare:.8,range:0,desc:'拳脚、爪牙等身体攻击，不占双手与负重，不受缴械影响；失能时仍不能行动'} },

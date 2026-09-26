@@ -4,7 +4,7 @@ import { activeTraitIds } from '../trait-sources.js';
 import { hasFlightAbility, isAirborne, sameLayer } from '../aerial.js';
 /** 普通个体在会战依附编队；真实独立平台与飞行单位保留独立位置。 */
 export function needsFormationHost(unit: Combatant): boolean {
-  return unit.scale === 'hero' && (unit.body ?? 'human') === 'human' && unit.status === 'ready' && !hasFlightAbility(unit);
+  return unit.scale === 'hero' && !unit.summonerId && (unit.body ?? 'human') === 'human' && unit.status === 'ready' && !hasFlightAbility(unit);
 }
 export const WINGS = ['左翼', '中军', '右翼'] as const;
 export const RANKS = ['front', 'rear', 'reserve'] as const;

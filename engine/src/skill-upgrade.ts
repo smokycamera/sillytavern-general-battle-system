@@ -38,7 +38,7 @@ export function upgradeCombatSkills(unit: Combatant): void {
     }
     if(modern) {
       a.penetration=Math.max(0,(a.penetration??0)+bonusRating(a.bonuses,'penetration',a.channel??'kinetic'));
-      if(a.range && a.range.max>1) a.range.max=Math.max(a.range.min,1,a.range.max+bonusSteps(a.bonuses,'range',5));
+      if(a.range && a.range.max>1 && !a.effects.some(e=>e.op==='summon')) a.range.max=Math.max(a.range.min,1,a.range.max+bonusSteps(a.bonuses,'range',5));
       a.effects=a.effects.map(e=>{
         if(e.op==='condition')return {...e,...(e.saveDC!==undefined?{saveDC:Math.max(1,Math.min(30,e.saveDC+bonusSteps(a.bonuses,'accuracy')))}:{}),dur:Math.max(1,e.dur+(['stunned','restrained','disarmed','silenced'].includes(e.conditionId)?Math.min(0,bonusSteps(a.bonuses,'duration',5)):bonusSteps(a.bonuses,'duration',5))),magnitude:Math.min(1.5,(e.magnitude??1)*bonusMultiplier(a.bonuses,'power'))};
         if(e.op==='trait')return {...e,dur:Math.max(1,e.dur+bonusSteps(a.bonuses,'duration',5))};

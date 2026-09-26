@@ -68,7 +68,7 @@ export function upgradeZoneSkill(ability: Ability): boolean {
       return e;
     });
   }
-  if (ability.range) ability.range.max = Math.max(1, ability.range.min, ability.range.max + bonusSteps(bonuses, 'range', 5));
+  if (ability.range && !ability.effects.some(e=>e.op==='summon')) ability.range.max = Math.max(1, ability.range.min, ability.range.max + bonusSteps(bonuses, 'range', 5));
   delete ability.customized;
   ability.effectVersion = 'skill-zone-v1';
   return true;

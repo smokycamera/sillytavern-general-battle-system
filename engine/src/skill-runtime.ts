@@ -3,6 +3,9 @@ import type { Ability, Combatant, EffectOp, Weapon } from './types.js';
 import { isRangedWeapon } from './loadout.js';
 import { meleeWeapon } from './loadout.js';
 import { generateUnit } from './gen/generator.js';
+import { compileWeapon } from './gen/equipment.js';
+import { ENHANCEMENT_STATS, type Enhancements, type BonusStat } from './enhancements.js';
+import { nominalLife } from './combat-model.js';
 
 export function skillWeapon(actor: Combatant, ability: Ability, distance?: number): Weapon | undefined {
   if (ability.damageBasis !== 'weapon') return undefined;
@@ -22,12 +25,29 @@ export function skillResourceCost(ability: Ability): number {
   const restoresPayment = ability.effects.some(e => e.op === 'resource' && e.resource === cost.resource && e.amount > 0);
   return cost.amount * (restoresPayment ? 1.5 : 0.5);
 }
-export function conjuredTemplate(template: string): boolean { return /^conjured:(?:[1-9]|10)$/.test(template); }
-export function conjureSkillUnit(template: string, side: Combatant['side'], id: string, mode: 'small' | 'mass'): Combatant | undefined {
+export function conjuredTemplate(template: string): boolean { return /^conjured:(?:(?:single|group):)?(?:[1-9]|10)$/.test(template); }
+export function summonProfile(template: string, mode: 'small' | 'mass', bonuses?: Enhancements) {
   if (!conjuredTemplate(template)) return undefined;
-  const power = Number(template.split(':')[1]);
-  const unit = generateUnit({ rulesVersion: 'v2', name: '召唤造物', side, scale: mode === 'mass' ? 'company' : 'hero',
-    ...(mode === 'mass' ? { hpMax: 4 + power * 2 } : {}), level: power, weaponClass: 'sword', weaponLevel: power, armorTier: 1, armorLevel: power, traits: [] },
-    { seed: id, noVariance: true }).unit;
+  const parts = template.split(':'), power = Number(parts.at(-1));
+  // 旧模板保留按战场选择类型；新模板的类型不随战场改变。
+  const group = parts[1] === 'group' || parts.length === 2 && mode === 'mass';
+  return { power, group, members: group ? 4 + power * 2 : 1, range: Math.max(1, 1 + (bonuses?.range ?? 0)) };
+}
+/** 群体分摊同级单体的生命池；取整后的总生命不会因人数成倍增加。 */
+export function summonedMemberLife(unit: Combatant): number | undefined {
+  return unit.scale !== 'hero' && unit.weapon?.recipe?.mechanism === 'summon'
+    ? Math.max(1, Math.floor(nominalLife(unit) / unit.base.hpMax)) : undefined;
+}
+export function conjureSkillUnit(template: string, side: Combatant['side'], id: string, mode: 'small' | 'mass', bonuses?: Enhancements): Combatant | undefined {
+  const profile = summonProfile(template, mode, bonuses);
+  if (!profile) return undefined;
+  const { power, group, members } = profile;
+  const unit = generateUnit({ rulesVersion: 'v2', name: group ? '召唤群体' : '召唤个体', side, scale: group ? 'company' : 'hero',
+    ...(group ? { hpMax: members } : {}), level: power, weaponClass: 'summon', weaponLevel: power, armorTier: 1, armorLevel: power, traits: [],
+    bonuses: { health: bonuses?.power ?? 0, morale: bonuses?.morale ?? 0 } }, { seed: id, noVariance: true }).unit;
+  const weaponBonuses = Object.fromEntries(Object.entries(bonuses ?? {}).filter(([key]) => ENHANCEMENT_STATS.weapon.includes(key as BonusStat)));
+  unit.weapon = compileWeapon({ mechanism: 'summon', power, bonuses: weaponBonuses }, { id: `${id}:weapon`, seed: `${id}:weapon`, noVariance: true });
+  // 保留原始配方，在实际武器换算时只分摊一次，读档也不会再次缩小。
+  unit.weapon.damageScale = 1 / members; unit.weapon.customized = true;
   unit.id = id; return unit;
 }
