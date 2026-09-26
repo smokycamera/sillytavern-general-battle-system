@@ -1,3 +1,4 @@
+import { commanderScores, normalizeCommanderProfiles, type CommanderProfiles } from '../commander-profile.js';
 import { validateAccessories } from '../items.js';
 import { areaTargets, zoneTarget, placeZone, settleZones, validateAreas, ZONE_NAMES } from '../area-effects.js';
 import { tbWeaponShortName } from '../weapon-name.js';
@@ -115,6 +116,7 @@ export class MassBattle {
   readonly nonLethal: boolean;
   defeatedIds = new Set<string>();
   allyTactic: TacticalPreference = 'balanced';
+  commanderProfiles: CommanderProfiles = {};
   private flightCauses = new Map<string, string>();
   previousOrders = new Map<string, Order>();
   resolvedRounds = new Set<number>();
@@ -838,7 +840,15 @@ export class MassBattle {
     if (tactic === 'aggressive') for (const candidate of candidates) if (['attack','volley','charge'].includes(candidate.order.type)) candidate.score += candidate.order.type === 'charge' ? 3 : 1.5;
     const eligible = tactic === 'defensive' ? candidates.filter(c => { const p = this.orderPreview(c.order); return !p.approach && !p.destination && !p.vehicleMove && !p.withdrawal && !['charge','rank-forward','rank-back','shift-left','shift-right','takeoff','land'].includes(c.order.type); }) : candidates;
     if (tactic === 'defensive' && !eligible.some(c => c.score > 0)) return {unitId:u.id,type:this.v2OrderReason({unitId:u.id,type:'brace'},planning)?'hold':'brace',automatic:true};
-    const best = eligible.filter((c) => c.score > 0 && canReserve(c.order)).sort((a, b) => b.score - a.score || JSON.stringify(a.order).localeCompare(JSON.stringify(b.order)))[0];
+    const legal = eligible.filter(c => c.score > 0 && canReserve(c.order));
+    const commandScores = commanderScores(legal.map(c => ({
+      key: JSON.stringify(c.order), score: c.score,
+      attack: ['attack', 'volley', 'charge'].includes(c.order.type) || c.order.type === 'ability' && !!c.order.targetId && this.byId(c.order.targetId).side !== side,
+      ranged: c.order.type === 'volley' || c.order.type === 'ability' && (sources.find(a => a.id === (c.order.abilityActorId ?? c.order.unitId))?.abilities.find(a => a.id === c.order.abilityId)?.range?.max ?? 0) > 1, move: !!destinationOf(c.order) || c.order.type === 'charge',
+      defend: c.order.type === 'brace' || c.order.type === 'hold',
+    })), this.commanderProfiles[side === 'ally' ? 'ally' : 'enemy'], `${this.seed}:${this.round}:${u.id}`);
+    const ranked = new Map(legal.map((c, i) => [c, commandScores[i]!]));
+    const best = legal.sort((a, b) => ranked.get(b)! - ranked.get(a)! || JSON.stringify(a.order).localeCompare(JSON.stringify(b.order)))[0];
     let order: Order = best?.order ?? { unitId: u.id, type: formationNode(u).rank !== 'front' ? 'rank-forward' : 'brace' };
     if (!best && !foes.length && formationNode(u).rank === 'front') {
       // 沿三翼巡视，不读取未发现敌军的位置，也不永远在中军空等。
@@ -2042,7 +2052,7 @@ export class MassBattle {
    *  含种子随机状态：种子源战斗恢复后掷骰序列与快照时刻一致（审计回放）。 */
   toSnapshot(): Record<string, unknown> {
     return {
-      v: 1, allyTactic: this.allyTactic, nonLethal: this.nonLethal, defeatedIds: [...this.defeatedIds],
+      v: 1, allyTactic: this.allyTactic, commanderProfiles: this.commanderProfiles, nonLethal: this.nonLethal, defeatedIds: [...this.defeatedIds],
       previousOrders: [...this.previousOrders], resolvedRounds: [...this.resolvedRounds], exposedHeroes: [...this.exposedHeroes],
       lastPhases: this.lastPhases, frontControl: this.frontControl, ...(this.lastReport ? { roundReport: structuredClone(this.lastReport) } : {}),
       combatants: this.combatants,
@@ -2099,6 +2109,7 @@ export class MassBattle {
       field: { tags: snap.fieldTags ?? [] },
     });
     b.allyTactic = normalizeTactic(snap.allyTactic);
+    b.commanderProfiles = normalizeCommanderProfiles(snap.commanderProfiles);
     b.round = snap.round ?? 1;
     b.previousOrders = new Map(snap.previousOrders ?? []); b.resolvedRounds = new Set(snap.resolvedRounds ?? []); b.exposedHeroes = new Set(snap.exposedHeroes ?? []);
     b.lastPhases = snap.lastPhases ?? []; b.frontControl = snap.frontControl ?? {};

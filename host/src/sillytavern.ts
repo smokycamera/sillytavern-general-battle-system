@@ -81,7 +81,7 @@ export class NativeHost implements MetadataPort {
       characterId: session.scope.avatar, chatId: session.scope.chatId, branchId: context.branchId ?? session.scope.chatId,
       messageId: sourceId(message) ?? String(index), swipeId: Number.isSafeInteger(swipe) && swipe! >= 0 ? String(swipe) : '',
       role: message.is_system ? 'system' : message.is_user ? 'user' : 'assistant', text: message.mes,
-      complete: !this.generating && !!message.gen_finished && !message.extra?.error && message.is_hidden !== true,
+      complete: !this.generating && (!!message.is_user || !!message.gen_finished) && !message.extra?.error && message.is_hidden !== true,
     };
   }
   recentPromptText(): string { return this.context().chat?.slice(-4).map(message => message.mes ?? '').join('\n') ?? ''; }

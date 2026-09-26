@@ -105,3 +105,9 @@ it('reports default to a durable user message with no generation until explicitl
   expect((await port.retryGeneration('manual')).status).toBe('sent');
   expect(f.context.generate).toHaveBeenCalledTimes(1);
 });
+
+it('completed narrative includes sent user messages without generation metadata, excluding hidden/error/unfinished messages', () => {
+  const f=fixture();
+  f.context.chat=[{is_user:true,mes:'User'}, {is_user:false,mes:'Still streaming'}, {is_user:false,mes:'Completed',gen_finished:'done'}, {is_user:true,mes:'Hidden',is_hidden:true}];
+  expect([0,1,2,3].map(i=>f.host.message(i)?.complete)).toEqual([true,false,true,false]);
+});
