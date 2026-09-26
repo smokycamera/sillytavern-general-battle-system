@@ -1,4 +1,5 @@
 import { validateAreas } from '../../engine/src/area-effects.js';
+import { validateZoneStrength } from '../../engine/src/zone-skills.js';
 import { validateBarrier } from '../../engine/src/barrier.js';
 import { validateAccessories } from '../../engine/src/items.js';
 import { validateEnhancements, validateChannelProtection, type Enhancements } from '../../engine/src/enhancements.js';
@@ -268,6 +269,7 @@ export function combatantFromUnknown(value: unknown): Combatant {
     if(a.damageScale!==undefined&&(!Number.isFinite(a.damageScale)||Number(a.damageScale)<=0||Number(a.damageScale)>1e6))throw Error('技能等级倍率损坏');
     for (const effect of a.effects) {
       if (isRecordObject(effect) && effect.op === 'zone' && (!['fire','poison','smoke','healing','trap'].includes(String(effect.kind)) || !Number.isInteger(effect.power) || Number(effect.power)<1 || Number(effect.power)>10 || !Number.isInteger(effect.dur) || Number(effect.dur)<1 || Number(effect.dur)>99 || !Number.isInteger(effect.radius) || Number(effect.radius)<0 || Number(effect.radius)>3)) throw Error('持续区域的范围或时间不正确');
+      if (isRecordObject(effect) && effect.op === 'zone') validateZoneStrength(effect);
       if (isRecordObject(effect) && effect.op === 'barrier') validateBarrier({ remaining: effect.amount as number, duration: effect.dur as number });
       if (!isRecordObject(effect) || !['damage', 'heal', 'condition', 'trait', 'push', 'dispel', 'resource', 'morale', 'summon', 'barrier', 'zone'].includes(String(effect.op))) throw new Error('技能包含未支持的效果处理');
       if (effect.magnitude !== undefined && (!Number.isFinite(effect.magnitude) || Number(effect.magnitude) < 0.25 || Number(effect.magnitude) > 1.5) || effect.onDamage !== undefined && typeof effect.onDamage !== 'boolean') throw new Error('技能效力或损伤前提损坏');

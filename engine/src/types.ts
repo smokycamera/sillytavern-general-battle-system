@@ -117,7 +117,7 @@ export interface RangeSpec {
 
 export type EffectOp =
   | { op: 'barrier'; amount: number; dur: number }
-  | { op: 'zone'; kind: 'fire' | 'poison' | 'smoke' | 'healing' | 'trap'; power: number; dur: number; radius: number }
+  | { op: 'zone'; kind: 'fire' | 'poison' | 'smoke' | 'healing' | 'trap'; power: number; dur: number; radius: number; amount?: number; penetration?: number }
   | { op: 'damage'; baseDice: string; apDice?: string; tag?: string; shape?: 'single' | 'burst' }
   | ({ op: 'heal' } & ({ dice: string; amount?: never } | { amount: number; dice?: never }))
   | { op: 'condition'; conditionId: string; dur: number; potency?: number; magnitude?: number; saveDC?: number; onHit?: boolean; onDamage?: boolean; shape?: 'single' | 'burst' }
@@ -135,7 +135,7 @@ export interface Ability {
   /** 显式编辑的效果与数值不被入场公式重建。 */
   customized?: boolean;
   bonuses?: Enhancements;
-    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3';
+    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3' | 'skill-zone-v1';
     damageScale?: number;
   recipe?: import('./data/skill-mechanisms.js').SkillRecipe;
   weaponUse?: 'auto' | 'melee' | 'ranged';

@@ -1,5 +1,5 @@
 import { recoveryCapacity } from './recovery.js';
-import { ZONE_NAMES } from './area-effects.js';
+import { zoneAmount, zoneEffectDescription } from './zone-skills.js';
 import type { Ability, ActiveCondition, Combatant, EffectOp } from './types.js';
 import type { Rng } from './rng.js';
 import { activeTraitIds, bodyRank, traitSourceActive, grantTraitSource, traitPrerequisiteReason } from './trait-sources.js';
@@ -145,7 +145,7 @@ export function applySkillTrait(actor: Combatant, target: Combatant, ability: Ab
 }
 export function skillEffectLines(context: ObservationContext, actor: Combatant, target: Combatant, ability: Ability): string[] {
   return ability.effects.flatMap((effect) => {
-    if (effect.op === 'zone') return [ZONE_NAMES[effect.kind]+'持续'+effect.dur+'轮，每个单位每轮最多受影响一次；火焰和毒雾也会伤害友军'];
+    if (effect.op === 'zone') return [zoneEffectDescription(effect)];
     if (effect.op === 'barrier') return [`屏障最多吸收${effect.amount}点伤害，持续${effect.dur}轮；重复施放取较强保护`];
     if (effect.op === 'trait') return [skillTraitReason(target, effect) ?? `${traitRegistry().get(effect.traitId)?.name}持续${effect.dur}轮，战斗归档时结束`];
     if (effect.op === 'resource') return [`${effect.resource==='SP'?'精力':effect.resource}变化${skillResourceChange(target, effect)}，受当前资源与上限约束`];
@@ -183,7 +183,7 @@ export function skillEffectValue(context: ObservationContext, actor: Combatant, 
     controlValue += branches.reduce((sum, b) => sum + b.probability * (tacticalStateValue(context, b.unit) - before), 0) * polarity * (horizon ? 0.5 : 1);
   }
   return ability.effects.reduce((sum, effect) => {
-    if (effect.op === 'zone') { const friendly=target.side===actor.side; return sum+(effect.kind==='smoke'?2:effect.kind==='healing'?(friendly?Math.min(recoveryCapacity(target),4+effect.power*3):0):friendly?-8:4+effect.power); }
+    if (effect.op === 'zone') { const friendly=target.side===actor.side; return sum+(effect.kind==='smoke'?2*effect.dur/3:effect.kind==='healing'?(friendly?Math.min(recoveryCapacity(target),zoneAmount(effect)):0):friendly?effect.kind==='trap'?0:-8:(4+effect.power)*zoneAmount(effect)/(4+effect.power*3)); }
     if (effect.op === 'barrier') return sum + Math.min(Math.max(0, effect.amount - (target.barrier?.remaining ?? 0)), incomingPotential(context, target)) * polarity;
     if (effect.op === 'trait') return sum + (skillTraitReason(target, effect) ? 0 : 3 + Math.min(3, effect.dur / 3));
     if (effect.op === 'resource') {

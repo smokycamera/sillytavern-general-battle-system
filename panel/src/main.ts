@@ -10,6 +10,7 @@ import {hasMemberHealth,memberHealth,memberHealthMax} from '../../engine/src/mem
 import {anchoredWeapon,anchoredWeaponLabel,anchoredProtection,armorPowerScale} from '../../engine/src/power-anchors.js';
 import {memberHealthPanel,cannonAmmoControl} from './combat-model-view.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
+import { zoneEffectDescription } from '../../engine/src/zone-skills.js';
 import './battle-ui.css';
 import { updateRegion, BattleCamera } from './view-dom.js';
 import { executeMassPlan, executeAndSaveAsync as executeAndSave } from './battle-execution.js';
@@ -1503,7 +1504,7 @@ function abilityEffectLabel(a: Ability, target: Combatant): string[] {
     switch (e.op) {
       case 'damage': if (a.damageBasis) return `${a.damageBasis === 'shield' ? '以实际盾牌' : a.weaponUse ? '以实际选用武器' : '以当前近战武器'}结算，受技能强度和装备威力共同限制${e.shape === 'burst' ? '，范围内分配可用上限' : ''}`; return `伤害：普通 ${e.baseDice}${e.apDice ? ` + 破甲 ${e.apDice}` : ''}${e.shape === 'burst' ? '（范围）' : ''}`;
       case 'trait': return `${reg.get(e.traitId)?.name ?? e.traitId}持续至多${e.dur}轮，战斗归档时结束`;
-      case 'zone': return `在指定位置形成持续区域，半径${e.radius}格，持续${e.dur}轮`;
+      case 'zone': return zoneEffectDescription(e);
       case 'barrier': return `屏障吸收${e.amount}点伤害，持续${e.dur}轮`;
       case 'heal': return `恢复生命或可救伤兵：${e.amount ?? e.dice}，以实际可恢复量为上限`;
       case 'condition': return `${e.onDamage ? '造成损伤后' : e.onHit ? '命中后' : ''}施加${standardConditionMap().get(e.conditionId)?.name ?? e.conditionId}：${skillConditionDescription(e, target)}${e.magnitude !== undefined ? '，效力' + Math.round(e.magnitude * 100) + '%' : ''}，持续 ${e.dur} 次状态结算${e.saveDC ? '，目标可以抵抗' : ''}`;

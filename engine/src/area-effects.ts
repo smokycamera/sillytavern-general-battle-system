@@ -6,10 +6,11 @@ import { anchoredProtection, penetrationThrough } from './power-anchors.js';
 import { poisonFactor } from './afflictions.js';
 import { unitLineOfSight } from './small/spatial.js';
 import { activeTraitIds } from './trait-sources.js';
+import { zoneAmount, zonePenetration, validateZoneStrength } from './zone-skills.js';
 
 type Point = { x: number; y: number };
 type ZoneEffect = Extract<EffectOp, { op: 'zone' }>;
-export interface BattleZone extends Point { id: string; ownerId: string; side: Combatant['side']; kind: ZoneEffect['kind']; power: number; radius: number; remaining: number; createdRound: number; lastRound: number; affected: string[]; mode: 'small' | 'mass' }
+export interface BattleZone extends Point { id: string; ownerId: string; side: Combatant['side']; kind: ZoneEffect['kind']; power: number; amount?: number; penetration?: number; radius: number; remaining: number; createdRound: number; lastRound: number; affected: string[]; mode: 'small' | 'mass' }
 export const ZONE_NAMES = { fire: '燃烧区域', poison: '毒雾', smoke: '烟幕', healing: '治疗区域', trap: '陷阱' } as const;
 export const AREA_NAMES = { cone: '扇形', line: '直线', ring: '环形', chain: '连锁', circle: '圆形' } as const;
 export function areaPosition(context: ObservationContext, unit: Combatant): Point {
@@ -66,7 +67,7 @@ export function zoneTarget(context: ObservationContext, actor: Combatant, id?: s
 }
 export function placeZone(context: ObservationContext, actor: Combatant, target: Combatant, effect: ZoneEffect, round: number, abilityId: string): BattleZone {
   const point=areaPosition(context,target), id=actor.id+':'+abilityId+':'+effect.kind;
-  const zone:BattleZone={...point,id,ownerId:actor.id,side:actor.side,kind:effect.kind,power:effect.power,radius:effect.radius,remaining:effect.dur,createdRound:round,lastRound:round,affected:[],mode:context.mode};
+  const zone:BattleZone={...point,id,ownerId:actor.id,side:actor.side,kind:effect.kind,power:effect.power,amount:zoneAmount(effect),penetration:zonePenetration(effect),radius:effect.radius,remaining:effect.dur,createdRound:round,lastRound:round,affected:[],mode:context.mode};
   actor.battleZones=(actor.battleZones??[]).filter(old=>old.id!==id);
   actor.battleZones.push(zone); return zone;
 }
@@ -96,13 +97,13 @@ export function settleZones(context: ObservationContext, round: number, boundary
           if(!unitLineOfSight(context.battlefield,anchor,target))continue;
         }
         zone.affected.push(target.id);
-        const amount=4+zone.power*3;
+        const amount=zoneAmount(zone);
         if(zone.kind==='healing') {
           const healed=applyRecovery(target,Math.min(recoveryCapacity(target),amount));
           if(healed)results.push({target,source:owner,damage:0,text:target.name+'在治疗区域恢复'+healed+'点生命'});
         } else {
           const count=target.scale==='hero'?1:Math.min(target.hp,4);
-          const factor=zone.kind==='poison'?poisonFactor(target):penetrationThrough(2*zone.power,anchoredProtection(target,zone.kind==='fire'?'thermal':'kinetic'));
+          const factor=zone.kind==='poison'?poisonFactor(target):penetrationThrough(zonePenetration(zone),anchoredProtection(target,zone.kind==='fire'?'thermal':'kinetic'));
           const damage=applyCombatDamage(target,Math.round(amount*factor*count),count);
           results.push({target,source:owner,damage,text:target.name+'受到'+ZONE_NAMES[zone.kind]+'影响，损失'+damage+'点生命'});
           if(zone.kind==='trap'){zone.remaining=0;break;}
@@ -120,6 +121,6 @@ export function validateAreas(unit: Combatant): void {
   const ids=new Set<string>();
   for(const zone of unit.battleZones??[]) {
     if(!zone || typeof zone.id!=='string' || !zone.id || ids.has(zone.id) || zone.side!==unit.side || zone.ownerId!==unit.id || !Object.hasOwn(ZONE_NAMES,zone.kind) || !['small','mass'].includes(zone.mode) || !Number.isSafeInteger(zone.x) || zone.x<0 || !Number.isSafeInteger(zone.y) || zone.y<0 || !Number.isInteger(zone.radius) || zone.radius<0 || zone.radius>3 || !Number.isInteger(zone.power) || zone.power<1 || zone.power>10 || !Number.isInteger(zone.remaining) || zone.remaining<1 || zone.remaining>99 || !Number.isSafeInteger(zone.createdRound) || zone.createdRound<1 || !Number.isSafeInteger(zone.lastRound) || zone.lastRound<zone.createdRound || !Array.isArray(zone.affected) || zone.affected.some(id=>typeof id!=='string') || new Set(zone.affected).size!==zone.affected.length)throw Error('持续区域的存档不完整');
-    ids.add(zone.id);
+    validateZoneStrength(zone); ids.add(zone.id);
   }
 }

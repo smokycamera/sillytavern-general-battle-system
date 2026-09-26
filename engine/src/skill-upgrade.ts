@@ -5,10 +5,12 @@ import { diceAvg, rebuildDice } from './data/weapons.js';
 import {powerBudget,scaledPowerDice} from './power-anchors.js';
 import { compileSkill, skillDefinitionKnown } from './skill-catalog.js';
 import { balanceGenericSkill, genericEffectCount } from './skill-balance.js';
+import { upgradeZoneSkill } from './zone-skills.js';
 /** V3只在新规则入场时升级；原技能身份、P与已支付的账本都保留。 */
 export function upgradeCombatSkills(unit: Combatant): void {
   const modern=unit.combatModel==='cohort-v2';
   for(const a of unit.abilities){
+    if (upgradeZoneSkill(a)) continue;
     const generic=a.definitionId?.startsWith('generic:')??false;
     const version=modern?'skill-v4.3':'skill-v3.0';
     if(a.customized||a.itemSourceId||a.fixedPower||a.effectVersion===version)continue;
