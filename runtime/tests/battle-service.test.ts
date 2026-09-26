@@ -60,6 +60,38 @@ it('启动后仅扫描完整历史消息会标记为人工预览，不自动入�
   await f.service.scan(); expect(f.service.snapshot().proposals?.[0]?.expected?.manualOnly).toBe(true);
   expect(f.service.snapshot().field).toBeUndefined();
 });
+it('手动重扫原位刷新过期回复，保留档案且已提交消息不重复入账', async () => {
+  const f = await setup();
+  const u = generateUnit({ name: '现有友军', side: 'ally', scale: 'hero', level: 3, traits: [] }, { seed: 'scan-refresh' }).unit;
+  u.id = 'a';
+  await f.service.transact(() => ({ schemaVersion: 2, storage: [unitRecordFromCombatant(u)], rosterIds: ['a'], storySync: true, factRevision: 1 }));
+  await f.emit('GENERATION_AFTER_COMMANDS', 'normal', {}, false);
+  await f.service.transact(before => ({ ...before, field: 'forest', factRevision: 2 }));
+  f.context.chat!.push({ mes: '<tb><unit_update id="a" hp="20"/></tb>', is_user: false, swipe_id: 0, gen_finished: 'done' });
+  await f.emit('MESSAGE_RECEIVED', 0); await f.emit('GENERATION_ENDED', 0); await f.service.scan(0);
+  const stale = f.service.snapshot().proposals![0]!;
+  expect(stale.status).toBe('stale');
+  await f.service.scan(undefined, { manual: true });
+  const refreshed = f.service.snapshot().proposals![0]!;
+  expect(refreshed.id).toBe(stale.id); expect(refreshed.status).toBe('pending');
+  expect(refreshed.expected).toMatchObject({ factRevision: 2, manualOnly: true });
+  expect(f.service.snapshot().storage![0]!.hp).toBe(u.hp);
+  expect((await f.service.approve(refreshed.id)).status).toBe('confirmed');
+  expect(f.service.snapshot().storage).toHaveLength(1); expect(f.service.snapshot().storage![0]!.hp).toBe(20);
+  expect(f.service.snapshot().field).toBe('forest');
+  await f.service.scan(undefined, { manual: true });
+  expect(f.service.snapshot().proposals).toHaveLength(1); expect(f.service.snapshot().storage).toHaveLength(1);
+});
+it('手动扫描定位最近完整 AI 回复，显式楼层保持精确且不扫描半截回复', async () => {
+  const f = await setup();
+  f.context.chat!.push({ mes: '<tb><spawn name="应识别的回复" side="ally" scale="hero"/></tb>', is_user: false, swipe_id: 0, gen_finished: 'done' },
+    { mes: '继续', is_user: true }, { mes: '<tb><spawn name="生成未完成" side="enemy" scale="hero"/></tb>', is_user: false, swipe_id: 0 });
+  await f.service.scan(1); expect(f.service.snapshot().proposals).toBeUndefined();
+  await f.service.scan(undefined, { manual: true });
+  expect(f.service.snapshot().proposals).toHaveLength(1);
+  expect(f.service.snapshot().proposals![0]!.source.text).toContain('应识别的回复');
+  expect(f.service.snapshot().proposals![0]!.status).toBe('pending');
+});
 it('批准候选在恢复日志落盘期间遇到来源编辑，不发布已经过时的事实', async () => {
   const f = await setup();
   f.context.chat!.push({ mes: '<tb><spawn name="旧正文" side="ally" scale="hero"/></tb>', is_user: false, swipe_id: 0, gen_finished: 'finished' });

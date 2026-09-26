@@ -6,7 +6,7 @@ import { assertInventoryPanelWrite, deleteUnitArchive, prepareInventoryTransacti
 import { assertTraitSourcePanelWrite, prepareBlessingRevocation } from '../../panel/src/trait-state.js';
 import { prepareBattleItemWrite } from '../../panel/src/battle-items.js';
 import { prepareReportDeletion, prepareReportRestore, prepareReportRestart, stampNewBattleReports } from '../../panel/src/report-history.js';
-import { factsOf, compactNarrativeSources, prepareNarrativeTransaction, restoreNarrativeDeployment, deleteNarrativeRecords, captureGeneration, namespaceOf, messageSourceKey, proposalFromMessage, narrativeReceiptKey, type NarrativeSave, type NarrativeProposal, type GenerationBinding } from '../../panel/src/narrative-state.js';
+import { factsOf, shouldRefreshNarrativeProposal, compactNarrativeSources, prepareNarrativeTransaction, restoreNarrativeDeployment, deleteNarrativeRecords, captureGeneration, namespaceOf, messageSourceKey, proposalFromMessage, narrativeReceiptKey, type NarrativeSave, type NarrativeProposal, type GenerationBinding } from '../../panel/src/narrative-state.js';
 import { narrativeProjection, type InventoryPreview } from '../../panel/src/narrative-controller.js';
 import { reviewMigration, type MigrationReview } from '../../panel/src/migration-review.js';
 import { parseProtocol, protocolExcerpt } from '../../panel/src/protocol.js';
@@ -254,26 +254,33 @@ export class BattleService {
     this.binding = namespace ? captureGeneration(this.snapshot(), namespace, crypto.randomUUID()) : undefined;
     this.project();
   }
-  scan(messageId?: number): Promise<void> {
+  scan(messageId?: number, options: { manual?: boolean } = {}): Promise<void> {
     const session = this.store.session(); const binding = structuredClone(this.binding);
     const run = async (refreshed = false): Promise<void> => {
       if (this.disposed || this.phase !== 'ready' || this.host.isGenerating() || !sameSession(session, this.host.session()) || !sameSession(session, this.store.session())) return;
-      const index = messageId ?? (this.host.context().chat?.length ?? 0) - 1;
+      let index = messageId ?? (this.host.context().chat?.length ?? 0) - 1;
+      if (messageId === undefined && options.manual) {
+        while (index >= 0) {
+          const candidate = this.host.message(index);
+          if (candidate?.role === 'assistant' && candidate.complete) break;
+          index--;
+        }
+      }
       const message = this.host.message(index); const namespace = this.host.namespace();
       if (!message || message.role !== 'assistant' || !namespace) return;
       const tag = prepareMessageTag(this.host.context().chat!, index);
       const originalId = message.messageId; message.messageId = tag.id;
       this.capabilities.messageIdentity = !!message.messageId && !!message.swipeId;
-      const before = this.snapshot(); let expected = binding && !refreshed ? { ...binding, messageId: binding.messageId === originalId ? tag.id : binding.messageId } : undefined;
+      const before = this.snapshot(); let expected = binding && !refreshed && !options.manual ? { ...binding, messageId: binding.messageId === originalId ? tag.id : binding.messageId } : undefined;
       if (!(expected?.complete && expected.messageId === message.messageId) && message.complete && this.capabilities.messageIdentity) expected = { ...captureGeneration(before, namespace, crypto.randomUUID()), complete: true, manualOnly: true, messageId: message.messageId };
       if (expected?.complete && this.capabilities.messageIdentity) message.generationId = expected.id;
       const proposal = proposalFromMessage(message, expected); if (!proposal) return;
       if (sourceCommitted(before, proposal.sourceKey) || before.deletedNarrativeReceipts?.includes(narrativeReceiptKey(proposal))) return;
       const existing = (before.proposals ?? []).filter(p => sameSource(p.sourceKey, proposal.sourceKey));
       const same = existing.find(p => (p.canonical === proposal.canonical || p.status === 'committed' && parseProtocol(p.source.text).canonical === proposal.canonical) && p.source.swipeId === message.swipeId && (!!proposal.canonical || p.source.text === proposal.source.text));
-      const upgrade = same && ((same.status === 'legacy' || same.status === 'unresolved' && same.reason?.startsWith('已识别')) && proposal.status === 'pending' || same.status === 'pending' && same.expected?.manualOnly && proposal.status === 'pending' && !proposal.expected?.manualOnly);
+      const upgrade = shouldRefreshNarrativeProposal(same, proposal, options.manual);
       if (same && !upgrade) return;
-      if (upgrade) proposal.id = same.id;
+      if (upgrade) proposal.id = same!.id;
       if (existing.some(p => p.status === 'committed')) { proposal.status = 'stale'; proposal.reason = '此消息已同步，修改不会重复入账'; }
       const proposals = (before.proposals ?? []).filter(p => !upgrade || p.id !== same!.id).map((p): NarrativeProposal => p.sourceKey === proposal.sourceKey && ['pending', 'legacy', 'failed', 'unresolved'].includes(p.status) ? { ...p, status: 'stale', reason: '已被新消息修订替代' } : p);
       let candidate = { ...before, proposals: [...proposals, proposal] };
