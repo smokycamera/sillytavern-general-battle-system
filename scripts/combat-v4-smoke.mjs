@@ -34,7 +34,7 @@ try{
   const acted=await read(),target=acted.battle.snap.combatants.find(u=>u.id==='D'),after=target.formation.health.reduce((n,g)=>n+g.hp*g.count,0),resolutions=acted.battle.snap.log.filter(e=>e.resolution?.attackerId==='A').map(e=>e.resolution);
   assert.ok(after<initial);assert.equal(resolutions.reduce((n,r)=>n+r.finalDamage,0),initial-after);assert.ok(resolutions.some(r=>r.splashDamage>0));
   const snapshot=JSON.stringify(acted.battle.snap);await page.evaluate(html=>{document.querySelector('#panel').srcdoc=html;},html);await p.locator(mode==='small'?'.grid-board':'.formation-grid').waitFor();assert.equal(JSON.stringify((await read()).battle.snap),snapshot);
-  await p.locator('[data-detail-id="battle-options"] > summary').click();await p.locator('[data-action="battle-finish"][data-reason="ceasefire"]').click();
+  await p.locator('[data-action="battle-finish"][data-reason="ceasefire"]').click();
   const saved=await read(),report=saved.reports.at(-1);assert.ok(report.epilogue.includes('生命损失'));assert.ok(report.epilogue.includes('73/100生命'));assert.deepEqual(saved.storage.find(u=>u.id==='D').snapshot.formation.health,target.formation.health);
   await p.locator('.workspace-nav [data-tab="reports"]').click();await p.locator('[data-detail-id="report-send-preview"] > summary').click();assert.match(await p.locator('.report-preview').innerText(),/总生命/);
   assert.ok(await p.locator('html').evaluate(el=>el.scrollWidth-innerWidth<=1));await p.locator('.report-preview').evaluate(el=>el.scrollIntoView({block:'center'}));await page.screenshot({path:`panel/smoke-shots/combat-v4-${mode}-390.png`});

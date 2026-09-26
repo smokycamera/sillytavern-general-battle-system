@@ -7,6 +7,7 @@ import { isAirborne, sameLayer } from '../aerial.js';
 export const DEFAULT_SMALL_ROUND_LIMIT = 60;
 
 export type Terrain = 'open' | 'cover' | 'wall' | 'rough' | 'forest' | 'hill';
+export const TERRAIN_NAMES: Record<Terrain, string> = { open: '开阔地', cover: '掩体', wall: '墙体', rough: '崎岖地', forest: '森林', hill: '山地' };
 export interface BattlefieldSpec {
   environment?: string[];
   version: 2;
@@ -50,6 +51,11 @@ export function gridDistance(field: BattlefieldSpec, a: number, b: number): numb
   return Math.abs(a % field.width - b % field.width) + Math.abs(Math.floor(a / field.width) - Math.floor(b / field.width));
 }
 export function cellLabel(field: BattlefieldSpec, cell: number): string { return String.fromCharCode(65 + cell % field.width) + (Math.floor(cell / field.width) + 1); }
+/** 战报使用实际落点；飞越特殊地形时标清空中，避免误报地面掩护。 */
+export function terrainCellLabel(field: BattlefieldSpec, cell: number, actor?: Combatant): string {
+  const terrain = field.tiles[cell];
+  return cellLabel(field, cell) + (terrain && terrain !== 'open' ? '(' + TERRAIN_NAMES[terrain] + (actor && isAirborne(actor) ? '上空' : '') + ')' : '');
+}
 export function neighbors(field: BattlefieldSpec, cell: number): number[] {
   return [cell - field.width, cell - 1, cell + 1, cell + field.width].filter((n) => inBounds(field, n) && gridDistance(field, cell, n) === 1);
 }

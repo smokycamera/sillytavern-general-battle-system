@@ -6,10 +6,11 @@ import { activeTraitIds, bodyRank, traitSourceActive, grantTraitSource, traitPre
 import { traitRegistry } from './data/traits.js';
 import { skillResourceChange } from './skill-runtime.js';
 import { standardConditionMap } from './conditions.js';
+import { conditionMods } from './bonus.js';
 import { poisonFactor, conditionExposure } from './afflictions.js';
 import { isCohort } from './combat-model.js';
 import { positionedUnit, revealUnit, type ObservationContext } from './observation.js';
-import { canOccupy, cellLabel } from './small/spatial.js';
+import { canOccupy, terrainCellLabel } from './small/spatial.js';
 import { formationNode, FORMATION_NODES, formationCanOccupy } from './mass/formation.js';
 import { actionPotential, incomingPotential, tacticalStateValue } from './skill-tactics.js';
 
@@ -17,6 +18,27 @@ type ConditionEffect = Extract<EffectOp, { op: 'condition' }>;
 type PushEffect = Extract<EffectOp, { op: 'push' }>;
 type DispelEffect = Extract<EffectOp, { op: 'dispel' }>;
 const definitions = standardConditionMap();
+/** 与结算共用状态修正，避免把效力百分比误当成实际属性增幅。 */
+export function skillConditionDescription(effect: ConditionEffect, target: Combatant): string {
+  const def = definitions.get(effect.conditionId);
+  const immunity = conditionImmunity(target, effect.conditionId);
+  if (immunity) return immunity;
+  const mods = conditionMods([{ id: effect.conditionId, dur: effect.dur, potency: effect.potency, magnitude: effect.magnitude }], definitions, target);
+  const labels = { atk: '攻击命中', def: '防御', dmg: '造成伤害', ward: '受到伤害', spd: '先攻速度', morale: '有效士气' };
+  const details = mods.map(mod => {
+    const value = Number((mod.type === 'mult' ? (mod.value - 1) * 100 : mod.value).toFixed(2));
+    return labels[mod.kind] + (value >= 0 ? ' +' : ' ') + value + (mod.type === 'mult' ? '%' : '');
+  });
+  if (def?.preventMove) details.push('不能移动、起飞或冲锋');
+  if (def?.preventMagic) details.push('不能使用魔法技能');
+  if (def?.preventAttack) details.push('不能使用手持武器攻击，天生武器仍可用');
+  if (def?.skipTurn) details.push('跳过行动');
+  if (def?.dot) details.push('受到持续' + (def.dot.label ?? def.name) + '，按当前战斗规则结算');
+  if (effect.conditionId === 'hasted') details.push('移动点 +1（受移动上限限制），会战可提升纵深调动距离');
+  if (effect.conditionId === 'slowed') details.push('移动点 -1（最低1），会战不能冲锋');
+  if (['empowered', 'weakened', 'vulnerable', 'blessed'].includes(effect.conditionId)) details.push('仅修正可造成的伤害，不绕过防护');
+  return details.join('、') || def?.desc || effect.conditionId;
+}
 const positive = new Set(['empowered', 'inspired', 'blessed', 'encouraged', 'confident', 'hasted']);
 export function isPositiveCondition(id: string): boolean { return positive.has(id); }
 const negative = new Set(['inaccurate', 'exposed', 'poisoned', 'bleeding', 'burning', 'silenced', 'stunned', 'restrained', 'disarmed', 'fearful', 'slowed', 'cursed', 'demoralized', 'weakened', 'vulnerable', 'wounded']);
@@ -99,7 +121,7 @@ export function pushPreview(context: ObservationContext, actor: Combatant, targe
   if (!field) return { reason: '位移技能需要二维战场' };
   const x = to.x + step.x, y = to.y + step.y, cell = y * field.width + x;
   if (x < 0 || x >= field.width || y < 0 || y >= field.height || !canOccupy(field, context.units, unit, cell)) return { reason: '推离位置受阻，不产生碰撞伤害' };
-  return { cell, label: cellLabel(field, cell) };
+  return { cell, label: terrainCellLabel(field, cell, target) };
 }
 export function applyPush(context: ObservationContext, actor: Combatant, target: Combatant, effect: PushEffect): PushPreview {
   const result = pushPreview(context, actor, target, effect);
@@ -128,7 +150,7 @@ export function skillEffectLines(context: ObservationContext, actor: Combatant, 
     if (effect.op === 'trait') return [skillTraitReason(target, effect) ?? `${traitRegistry().get(effect.traitId)?.name}持续${effect.dur}轮，战斗归档时结束`];
     if (effect.op === 'resource') return [`${effect.resource==='SP'?'精力':effect.resource}变化${skillResourceChange(target, effect)}，受当前资源与上限约束`];
     if (effect.op === 'damage' && ability.areaExposure && target.scale !== 'hero') return [isCohort(actor)?'范围伤害按参战规模与成员耐久折算；疏散可减轻伤害':`每编队至多${Math.min(target.hp, ability.areaExposure)}名成员暴露；疏散可减轻范围伤害`];
-    if (effect.op === 'condition') return [`${effect.onDamage ? '造成损伤后' : effect.onHit ? '命中后' : ''}${definitions.get(effect.conditionId)?.name ?? effect.conditionId}${effect.potency ? '强度' + effect.potency : ''}${effect.magnitude !== undefined ? '效力' + Math.round(effect.magnitude * 100) + '%' : ''}：${Math.round(conditionChance(target, effect) * 100)}%${effect.saveDC !== undefined ? '生效机会' : ''}，${effect.dur}次状态结算`];
+    if (effect.op === 'condition') return [`${effect.onDamage ? '造成损伤后' : effect.onHit ? '命中后' : ''}${definitions.get(effect.conditionId)?.name ?? effect.conditionId}：${skillConditionDescription(effect, target)}；${Math.round(conditionChance(target, effect) * 100)}%生效机会，持续${effect.dur}次状态结算${effect.magnitude !== undefined ? '（效力' + Math.round(effect.magnitude * 100) + '%）' : ''}`];
     if (effect.op === 'push') { const pushed = pushPreview(context, actor, target, effect); return [(effect.onHit ? '命中后' : '') + (pushed.reason ?? (effect.direction === 'towards' ? '拉至' : '推至') + pushed.label)]; }
     if (effect.op === 'dispel') { const entries = dispelCandidates(target, effect); return [entries.length ? '解除' + entries.map((e) => e.name).join('、') : '没有可解除的效果']; }
     return [];

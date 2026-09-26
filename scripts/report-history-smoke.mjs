@@ -44,7 +44,7 @@ try{
   assert.deepEqual(replay.committedOutcomeIds,original.committedOutcomeIds);assert.equal(replay.reports[0].supersededBy,mode+':'+replay.battle.snap.seed);
   const snapshot=JSON.stringify(replay.battle);await page.evaluate(html=>{document.querySelector('#panel').srcdoc=html;},html);await p.locator(mode==='small'?'.grid-board':'.formation-grid').waitFor();assert.equal(JSON.stringify((await read()).battle),snapshot);
   checks.push(mode+'恢复原开局与物品，XP回到战前，使用新编号；刷新后重战状态保持');
-  await p.locator('[data-detail-id="battle-options"] > summary').click();
+
   await p.locator('[data-action="battle-finish"][data-reason="ceasefire"]').click();
   const settled=await read(),newId=mode+':'+settled.battle.snap.seed;
   assert.equal(settled.reports.length,2);assert.equal(settled.reports.find(r=>r.id===newId).start.replacesReportId,id);

@@ -44,7 +44,7 @@ import { bracePose, movementPoints, settleFatigue } from '../tactics.js';
 import { isAirborne, sameLayer, flightCapabilityReason, flightMaintenanceReason, fallDamage, validateFlightState } from '../aerial.js';
 import { environmentTags } from '../environment.js';
 import { traitRegistry as defaultTraitRegistry } from '../data/traits.js';
-import { meleeLineBlocker, canOccupy, cellLabel, deployOnGrid, findGridPath, reachableGridPaths, gridCostsToGoals, gridDistance, lineOfSight, unitLineOfSight, neighbors, tileCost, validateField, type BattlefieldSpec, type GridPath } from './spatial.js';
+import { meleeLineBlocker, canOccupy, cellLabel, terrainCellLabel, deployOnGrid, findGridPath, reachableGridPaths, gridCostsToGoals, gridDistance, lineOfSight, unitLineOfSight, neighbors, tileCost, validateField, type BattlefieldSpec, type GridPath } from './spatial.js';
 import { canSpot, observedUnits, observeEvent, observedLog, revealUnit, revealContacts, settleConcealment, canReconceal, validateConcealment, type ObservationContext } from '../observation.js';
 import {
   abilityTargetReason,
@@ -474,7 +474,7 @@ export class SmallBattle {
       if (this.rules.resolutionVersion === 'v2') revealContacts(this.observationContext());
       this.movementSpent.set(actorId, (this.movementSpent.get(actorId) ?? 0) + tileCost(field, next, actor));
       this.movedThisTurn.add(actorId);
-      this.recordEvent({ round: this.round, kind: 'move', participants: [actor.id], text: `${actor.name} ${cellLabel(field, previous)}→${cellLabel(field, next)}` });
+      this.recordEvent({ round: this.round, kind: 'move', participants: [actor.id], text: `${actor.name} ${cellLabel(field, previous)}→${terrainCellLabel(field, next, actor)}` });
       for (const foe of [...this.combatants].sort((a, b) => a.id.localeCompare(b.id))) {
         if (actor.status !== 'ready') break;
         if (foe.side === actor.side || foe.status !== 'ready' || foe.suppression || this.reactionSpent.has(foe.id) || foe.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack && meleeWeapon(foe)?.recipe?.mechanism !== 'natural')) continue;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateUnit, traitRegistry, SmallBattle, MassBattle, standardField, V2_D20, V2_TW, activeTraitIds,
   SKILL_CATEGORIES, STANDARD_CONDITIONS, TRAITS, allowedSkillModifiers, skillMechanismId, skillMechanismName, parseSkillMechanism, compileGenericSkill, learnAbilities,
-  type Combatant, type GenerateInput } from '../src/index.js';
+  conditionMods, standardConditionMap, skillConditionDescription, type Combatant, type GenerateInput } from '../src/index.js';
 import { parseProtocol } from '../../panel/src/protocol.js';
 import { parseAbilitySpec } from '../../panel/src/tags.js';
 import { materializeUnitRecord, unitRecordFromCombatant, commitBattleOutcome } from '../../panel/src/unit-state.js';
@@ -28,6 +28,28 @@ function mass(skills: string) {
   return { b, a: b.byId('a'), f: b.byId('f'), e: b.byId('e') };
 }
 describe('通用六类技能配方', () => {
+  it('增益预览列出按效力缩放的属性值，与小战/会战实际施加的修正一致', () => {
+    for (const setup of [grid, mass]) for (const [effect, text, value] of [
+      ['攻击', '攻击命中 +2.4', 2.4], ['防御', '防御 +2.4', 2.4],
+      ['伤害', '造成伤害 +24%', 1.24], ['守护', '受到伤害 -24%', 0.76],
+    ] as const) {
+      const { b, a, f } = setup(`增益:buff+${effect}L7`), ability = a.abilities[0]!;
+      const before = JSON.stringify(b.toSnapshot());
+      const preview = b instanceof SmallBattle
+        ? b.getActionOptions(a.id).find(o => o.id === ability.id)!.targets!.find(t => t.targetId === f.id)!.preview
+        : b.orderPreview({ unitId: a.id, type: 'ability', abilityId: ability.id, targetId: f.id });
+      expect(preview?.effects?.join('；')).toContain(text);
+      expect(JSON.stringify(b.toSnapshot())).toBe(before);
+      if (b instanceof SmallBattle) expect(b.useAbility(a.id, ability.id, f.id).ok).toBe(true);
+      else { expect(b.issue({ unitId: a.id, type: 'ability', abilityId: ability.id, targetId: f.id }).ok).toBe(true); b.resolveRound(); }
+      expect(conditionMods(f.conditions, standardConditionMap(), f)[0]!.value).toBeCloseTo(value);
+    }
+    const { a } = grid('复合增益:buff+攻击+防御L7');
+    const descriptions = a.abilities[0]!.effects.flatMap(e => e.op === 'condition' ? [skillConditionDescription(e, a)] : []);
+    expect(descriptions).toEqual(['攻击命中 +1.7', '防御 +1.7']);
+    expect(skillConditionDescription({ op: 'condition', conditionId: 'inspired', potency: 3, dur: 2 }, a)).toBe('攻击命中 +3');
+    expect(skillConditionDescription({ op: 'condition', conditionId: 'hasted', magnitude: 0.5, dur: 2 }, a)).toContain('先攻速度 +1、移动点 +1');
+  });
   it('六类直接编译全部登记效果，名称不决定数值，等级/矛盾机制严格校验', () => {
     const covered = new Set<string>(), conditions = new Set<string>(), traits = new Set<string>();
     for (const category of SKILL_CATEGORIES) for (const modifier of [undefined, ...allowedSkillModifiers(category.id)]) {
