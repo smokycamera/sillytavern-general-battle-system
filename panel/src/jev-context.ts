@@ -239,8 +239,9 @@ export function encounterRequest(input: EncounterContextInput): {
             scale: u.scale,
             tags: u.tags,
           })),
-        constraints:
-          "只选择配置，不改变单位属性、人数、伤亡或战斗战斗记录。战斗中仅明确指挥官更换、能力或性格状态变化才更新敌方配置；常规战况、战法描述不算变化。",
+        constraints: "只选择配置，不改变单位属性、人数、伤亡或战斗记录。" + (input.phase === "preparation"
+          ? "优先遵循明确设定；未直接说明的项目结合当前上下文合理推断，自行选择最贴合场景的配置，保持各项选择一致。"
+          : "战斗中仅明确指挥官更换、能力或性格状态变化才更新敌方配置；常规战况、战法描述不算变化。"),
       }),
     ),
     fields: [],
@@ -315,8 +316,8 @@ export function encounterRequest(input: EncounterContextInput): {
     });
     request.fields.push({
       id: "lighting",
-      question: "当前交战时段的光照是什么？未明确时不要推断夜战。",
-      options: { unknown, day: "白天/正常光照", night: "明确为夜间/夜战" },
+      question: "结合时间、光照和场景描写判断当前交战时段；未直接说明时根据上下文选择最合理的昼夜配置。",
+      options: { unknown, day: "白天/正常光照", night: "夜间/夜战" },
     });
     request.fields.push({
       id: "map_layout",
@@ -325,14 +326,14 @@ export function encounterRequest(input: EncounterContextInput): {
       options: {
         unknown,
         standard: "室外野战或街道，标准战术地图",
-        indoor: "明确在房间、室内建筑等紧凑空间",
+        indoor: "房间、室内建筑等紧凑空间",
       },
     });
     if (input.settings.battleMode !== "mass")
       request.fields.push({
         id: "objective",
         question:
-          "本场交战的主要胜利任务是什么？没有具体护送/城防目标时保留默认歼灭。",
+          "结合交战目的、行动方向和保护或争夺的对象，选择本场最合适的胜利任务；未直接命名任务时根据上下文判断。",
         options: {
           unknown,
           annihilation: "击败敌军/普通遭遇战",
@@ -344,7 +345,7 @@ export function encounterRequest(input: EncounterContextInput): {
     request.fields.push({
       id: "siege_attacker",
       question:
-        "如果是攻城夺点，哪一方进攻？以 ally 为玩家我方、enemy 为敌方。",
+        "如果是攻城夺点，结合行动方向与控制关系判断哪一方进攻；其他任务沿用 preparation.siegeAttacker。以 ally 为玩家我方、enemy 为敌方。",
       options: {
         unknown,
         ally: "我方攻城，敌方守城",
@@ -420,7 +421,9 @@ export function applyEncounterSelection(
   result.detail =
     input.phase === "battle" && !update
       ? "近期正文未明确改变指挥官，沿用本场配置"
-      : "已按当前上下文选择；依据不足的项目沿用原设置";
+      : Object.values(answer.selections).some(s => s.value === "unknown")
+        ? "已按当前上下文选择；未选定的项目沿用原设置"
+        : "已结合当前上下文选择配置";
   return finishSetup(result, input);
 }
 export function encounterSummary(context: JevEncounterContext): string {

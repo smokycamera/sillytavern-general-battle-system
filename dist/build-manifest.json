@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "0.2.0-rc.13",
-  "builtAt": "2026-09-26T10:23:07.102Z",
-  "sourceFingerprint": "adad840422fc43c29b35986f26c654ad3016b46d91d9ad1d68c7d048f6a8174a",
+  "builtAt": "2026-09-26T10:46:19.534Z",
+  "sourceFingerprint": "6e19ce80445a32789b69878836cd9e492c36a08f362c37fe0990b6976461e28f",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -36,9 +36,9 @@
       "sha256": "d8e150b9ba2a9668681edf533c5ebfa2a0c588c1ef4fdbff02e2b456b28f93f9"
     },
     {
-      "path": "dist/assets/panel-DNfQE5zJ.js",
-      "bytes": 290962,
-      "sha256": "432b20b99a65d7d44356652690cb868b9b7a3001ad1337d1b01fa656c025acdf"
+      "path": "dist/assets/panel-Cx2Ss9hG.js",
+      "bytes": 291638,
+      "sha256": "3911cccedfe28b358db7498d879d6616470d9534954742b01fc260fd8ee730ef"
     },
     {
       "path": "dist/assets/preferences-ByrbxqwF.js",
@@ -57,8 +57,8 @@
     },
     {
       "path": "assets/worldbook/lorebook system explain.md",
-      "bytes": 35427,
-      "sha256": "99a74f8e73307e8dfffeb5b9200d0f2cce62db5cb04fc024d4ae913fcc17cea2"
+      "bytes": 35527,
+      "sha256": "84b882f765471a3a04b065b322ab992ffe20e870eb551a1c92ad99ae217c3b2f"
     },
     {
       "path": "docs/extension-migration-assessment-20260919.md",
@@ -87,8 +87,8 @@
     },
     {
       "path": "docs/jev-integration.md",
-      "bytes": 1972,
-      "sha256": "5d1bfd87ef352f72bad75ed931e1ba428eb46556e446007793e46242133134df"
+      "bytes": 2208,
+      "sha256": "d8f41de3e4fb54965654c8599c8800d0ef690b752f6907ab5bf1cc2707a7a907"
     },
     {
       "path": "docs/jev-retry-validation.md",
@@ -133,7 +133,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 48820,
-      "sha256": "09a249190b553dcf648c1221e531cde9a1094ee6a701b1b392dc3c9a467553c1"
+      "sha256": "5df28517b17c407b54c88b1cc3f5cb643426bb3647fc2b6bc33038d767e39d74"
     },
     {
       "path": "release/current-baseline.json",
