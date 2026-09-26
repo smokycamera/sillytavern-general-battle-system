@@ -3353,6 +3353,14 @@ async function handleChange(e: Event): Promise<void> {
   }
 }
 document.addEventListener('change', e => {
+  if (e.target instanceof HTMLInputElement && e.target.dataset.role === 'llm-battle-scale') {
+    try {
+      const settings = readLlmSettings();
+      settings.selectBattleScale = e.target.checked;
+      saveLlmSettings(settings); llmContext.cancel(); llmDiagnostic = '已保存'; render('view');
+    } catch (error) { toast(error instanceof Error ? error.message : '保存失败'); }
+    return;
+  }
   if (e.target instanceof HTMLSelectElement && ['llm-mode', 'llm-model-list'].includes(e.target.dataset.role ?? '')) {
     try {
       const settings = readLlmSettings();

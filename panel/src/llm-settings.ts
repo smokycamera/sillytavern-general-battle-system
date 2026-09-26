@@ -2,6 +2,7 @@ import { connectionUrl, type JevConnection } from './jev-connection.js';
 
 export interface LlmSettings {
   enabled: boolean;
+  selectBattleScale: boolean;
   windowSize: number;
   url: string;
   token: string;
@@ -9,7 +10,7 @@ export interface LlmSettings {
   models: string[];
 }
 export const LLM_SETTINGS_KEY = 'tb:llm:settings:v1';
-const defaults = (): LlmSettings => ({ enabled: false, windowSize: 6, url: '', token: '', model: '', models: [] });
+const defaults = (): LlmSettings => ({ enabled: false, selectBattleScale: true, windowSize: 6, url: '', token: '', model: '', models: [] });
 
 /** Origin-wide preferences. Never serialize these credentials into a chat or character. */
 export function readLlmSettings(): LlmSettings {
@@ -19,6 +20,7 @@ export function readLlmSettings(): LlmSettings {
       const v = JSON.parse(raw);
       return {
         enabled: v.enabled === true,
+        selectBattleScale: v.selectBattleScale !== false,
         windowSize: Number.isInteger(v.windowSize) && v.windowSize >= 1 && v.windowSize <= 100 ? v.windowSize : 6,
         url: typeof v.url === 'string' ? v.url : '', token: typeof v.token === 'string' ? v.token : '',
         model: typeof v.model === 'string' ? v.model : '',

@@ -26,7 +26,8 @@ export class LlmContextController {
     if (!connection.model) throw Error('请先拉取并选择模型，或填写模型 ID');
     // One layer = one completed user/assistant message, in the host's chronological order.
     const messages = input.messages.map(m => ({ ...m, text: m.text.replace(/<(think|analysis|reasoning)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi, '').trim() }));
-    const contextInput = { ...input, messages, settings: normalizeContextSettings(), windowSize: settings.windowSize, roles: ['user', 'assistant'], phase: 'preparation' as const };
+    // Freeze the prepared scale when opted out, including scene-driven mode changes.
+    const contextInput = { ...input, messages, settings: normalizeContextSettings({ battleMode: settings.selectBattleScale === false ? input.setup.mode : 'auto' }), windowSize: settings.windowSize, roles: ['user', 'assistant'], phase: 'preparation' as const };
     const { base, request } = encounterRequest(contextInput);
     if (!request) return { ...base, detail: '所选范围没有可读取的已完成正文，沿用准备设置' };
     request.fields = request.fields.filter(f => f.id !== 'enemy_ability' && !f.id.startsWith('style_'));

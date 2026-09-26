@@ -60,7 +60,7 @@ it('advances after lethal player movement, restores stalled saves, and preserves
     { protagonistId: 'victim', llm: false, roundEnd: true },
     { protagonistId: 'victim', llm: true, nonLethal: true },
   ]) {
-    saveLlmSettings({ enabled: scenario.llm, windowSize: 6, url: 'https://gateway.example/v1', token: '', model: 'fixture', models: ['fixture'] });
+    saveLlmSettings({ enabled: scenario.llm, selectBattleScale: true, windowSize: 6, url: 'https://gateway.example/v1', token: '', model: 'fixture', models: ['fixture'] });
     const b = reactionBattle(scenario);
     if (scenario.llm) b.commanderProfiles = { enemy: { ability: 'expert', style: 'ambush' }, ally: { ability: 'master', style: 'aggressive' } };
     await load(b, scenario.protagonistId); await move();

@@ -50,6 +50,12 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   input('llm-url','https://gateway.example/v1');input('llm-token','private-fixture-key');input('llm-window','2');
   button('llm-models').click();await vi.waitFor(()=>expect(readLlmSettings().models).toHaveLength(2));
   select('llm-model-list','model-two');select('llm-mode','llm');
+  const scaleToggle=()=>document.querySelector<HTMLInputElement>('[data-role="llm-battle-scale"]')!;
+  expect(scaleToggle().checked).toBe(true);expect(scaleToggle().disabled).toBe(false);
+  scaleToggle().click();
+  expect(readLlmSettings().selectBattleScale).toBe(false);
+  select('llm-mode','manual');expect(scaleToggle().disabled).toBe(true);
+  select('llm-mode','llm');expect(scaleToggle().checked).toBe(false);
   const config=localStorage.getItem(LLM_SETTINGS_KEY);
   expect(readLlmSettings()).toMatchObject({model:'model-two',windowSize:2,enabled:true});
   expect(request.mock.calls[0]![0]).toBe('/api/backends/chat-completions/status');
@@ -58,6 +64,7 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   // Switch cards/chats, then delete the old card/chat. Global connection has no dependency on either.
   f.switchTo('b');f.context.characters!.push({avatar:'other.png',name:'Other'});f.context.characterId='1';await f.service.load();
   nav('settings');expect(localStorage.getItem(LLM_SETTINGS_KEY)).toBe(config);
+  expect(scaleToggle().checked).toBe(false);
   f.disk.delete('a');f.chats.delete('a');f.context.characters!.splice(0,1);f.context.characterId='0';await f.service.load();
   expect(localStorage.getItem(LLM_SETTINGS_KEY)).toBe(config);
   expect(document.querySelector<HTMLInputElement>('[data-role="llm-token"]')!.value).toBe('private-fixture-key');
@@ -72,6 +79,16 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   expect(JSON.stringify(f.service.snapshot())).not.toContain('private-fixture-key');
   const payload=JSON.parse(String(request.mock.calls.at(-1)![1]?.body));
   expect(payload.model).toBe('model-two');expect(JSON.parse(payload.messages[1].content).messages.map((m:{role:string})=>m.role)).toEqual(['user','assistant']);
+  expect(JSON.parse(payload.messages[1].content).fields.some((field:{id:string})=>field.id==='battle_mode')).toBe(false);
+
+  // Changing the scale preference while a request is pending invalidates its answer.
+  const beforeToggle=f.service.snapshot();await f.service.transact(()=>({...beforeToggle,battle:null,encounterContext:undefined}));
+  delayed=true;request.mockClear();button('small-start').click();await vi.waitFor(()=>expect(request).toHaveBeenCalled());
+  nav('settings');scaleToggle().click();release?.();await idle();
+  expect(f.service.snapshot().battle).toBeNull();
+  expect(readLlmSettings().selectBattleScale).toBe(true);
+  scaleToggle().click();expect(localStorage.getItem(LLM_SETTINGS_KEY)).toBe(config);
+  nav('battle');
 
   // Start a second preparation and switch chat before the model answers.
   const saved=f.service.snapshot();await f.service.transact(()=>({...saved,battle:null,encounterContext:undefined}));

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { generateUnit } from '../../engine/src/index.js';
 import { LlmContextController } from './llm-context.js';
 import type { LlmSettings } from './llm-settings.js';
-const settings: LlmSettings = {enabled:true,windowSize:2,url:'https://gateway.example/v1',token:'test-key',model:'chosen-model',models:['chosen-model']};
+const settings: LlmSettings = {enabled:true,selectBattleScale:true,windowSize:2,url:'https://gateway.example/v1',token:'test-key',model:'chosen-model',models:['chosen-model']};
 const input = () => ({
   roster: (['ally','enemy'] as const).map(side => generateUnit({name:side,side,scale:'company',hpMax:20,level:3,traits:[],rulesVersion:'v2'},{seed:side}).unit),
   setup: {mode:'mass' as const,field:'plains',lighting:'day' as const,mapLayout:'standard' as const,objectiveMode:'auto' as const,siegeAttacker:'ally' as const},
@@ -53,6 +53,23 @@ describe('ordinary LLM preparation',()=>{
     const request=model(),c=new LlmContextController(request);
     expect((await c.select({...input(),messages:[]},settings,()=>true)).detail).toContain('沿用');
     expect(request).not.toHaveBeenCalled();
+  });
+  it.each(['small','mass'] as const)('keeps the prepared %s scale when LLM scale selection is disabled',async mode=>{
+    const request=model({battle_mode:mode==='small'?'mass':'small',map_layout:'indoor',objective:'escort',field:'urban',lighting:'night',enemy_style:'cautious'});
+    const source={...input(),setup:{...input().setup,mode}};
+    const result=await new LlmContextController(request).select(source,{...settings,selectBattleScale:false},()=>true);
+    const body=JSON.parse(JSON.parse(String(request.mock.calls[0]![1]!.body)).messages[1].content);
+    expect(body.fields.some((f:{id:string})=>f.id==='battle_mode')).toBe(false);
+    expect(result).toMatchObject({mode,field:'urban',lighting:'night',commanders:{enemy:{style:'cautious'}}});
+    expect(result).toMatchObject(mode==='mass'?{mapLayout:'standard',objectiveMode:'annihilation'}:{mapLayout:'indoor',objectiveMode:'escort'});
+  });
+  it('lets the enabled LLM scale choice replace the prepared scale',async()=>{
+    const request=model({battle_mode:'mass'});
+    const source={...input(),setup:{...input().setup,mode:'small' as const}};
+    const result=await new LlmContextController(request).select(source,settings,()=>true);
+    expect(result.mode).toBe('mass');
+    const body=JSON.parse(JSON.parse(String(request.mock.calls[0]![1]!.body)).messages[1].content);
+    expect(body.fields.find((f:{id:string})=>f.id==='battle_mode').options).toHaveProperty('mass');
   });
   it('rejects invented or incomplete choices without applying a partial result',async()=>{
     await expect(new LlmContextController(model({field:'space'})).select(input(),settings,()=>true)).rejects.toThrow('尚未开战');
