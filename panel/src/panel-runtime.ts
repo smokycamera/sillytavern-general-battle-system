@@ -10,6 +10,8 @@ export interface PanelRuntime {
   native: boolean;
   retrySave?: () => Promise<SaveReceipt>;
   canWrite?: () => boolean;
+  writeBlockReason?: () => string | undefined;
+  reloadArchive?: () => Promise<void>;
   retryGeneration?: (deliveryId: string) => Promise<DeliveryReceipt>;
   getTheme?: () => 'dark' | 'light';
   setTheme?: (theme: 'dark' | 'light') => void;

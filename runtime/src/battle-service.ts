@@ -39,10 +39,23 @@ export class BattleService {
   private receivedId?: number;
   private generationEnded = false;
   private scanQueue: Promise<unknown> = Promise.resolve();
+  private loading?: { session?: HostSession; promise: Promise<void> };
   readonly capabilities = { beforeGeneration: false, generationEnded: false, messageIdentity: false, injection: false };
   constructor(readonly host: NativeHost, readonly store: NativeStore, private initialize?: () => Promise<boolean>) {}
   snapshot(): NarrativeSave { return this.store.snapshot(); }
   canWrite(): boolean { return ['ready', 'review'].includes(this.phase) && !this.store.hasPending() && sameSession(this.store.session(), this.host.session()) && !this.host.hasLegacyRuntime(); }
+  writeBlockReason(): string | undefined {
+    if (this.disposed) return '战阵服务已关闭，请重新打开战阵';
+    if (this.host.hasLegacyRuntime()) return '旧战阵脚本仍在运行，请停用旧脚本后重新打开';
+    if (!this.host.session()) return '当前聊天尚未载入，请先打开角色聊天';
+    if (this.phase === 'loading') return '正在读取当前聊天档案';
+    if (this.phase === 'error') return this.error ?? '档案读取失败，请重新读取档案';
+    if (!sameSession(this.store.session(), this.host.session())) return '聊天信息已刷新，请重新读取档案或重新扫描';
+    if (this.phase === 'pending' || this.store.hasPending()) return '上一笔保存尚待核实，请先核实并重试保存';
+    if (this.phase === 'import') return '发现旧战阵存档，请先选择采用旧档或从空档开始';
+    if (this.phase === 'handoff') return '档案已交回旧脚本，请先在存档管理中迁回原生版';
+    return undefined;
+  }
   status(): ServiceState { return { phase: this.phase, save: this.snapshot(), receipt: structuredClone(this.receipt), error: this.error }; }
   listen(listener: Listener): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
   private notify(): void { for (const listener of this.listeners) { try { listener(this.status()); } catch (error) { console.error('战阵视图更新失败', error); } } }
@@ -57,7 +70,15 @@ export class BattleService {
     return JSON.stringify([session?.scope.key, session?.epoch, this.store.head()?.generation]);
   }
   migrationReview(): MigrationReview | undefined { return structuredClone(this.migration); }
-  async load(): Promise<void> {
+  load(): Promise<void> {
+    const session = this.host.session();
+    if (this.loading && sameSession(session, this.loading.session)) return this.loading.promise;
+    const loading = { session, promise: this.loadCurrent() };
+    this.loading = loading;
+    void loading.promise.finally(() => { if (this.loading === loading) this.loading = undefined; });
+    return loading.promise;
+  }
+  private async loadCurrent(): Promise<void> {
     const epoch = ++this.loadEpoch;
     this.phase = 'loading'; this.error = undefined; this.receipt = undefined; this.migration = undefined;
     this.binding = undefined; this.receivedId = undefined; this.generationEnded = false;
@@ -255,9 +276,22 @@ export class BattleService {
     this.project();
   }
   scan(messageId?: number, options: { manual?: boolean } = {}): Promise<void> {
-    const session = this.store.session(); const binding = structuredClone(this.binding);
+    const session = this.host.session(); let binding = structuredClone(this.binding);
     const run = async (refreshed = false): Promise<void> => {
-      if (this.disposed || this.phase !== 'ready' || this.host.isGenerating() || !sameSession(session, this.host.session()) || !sameSession(session, this.store.session())) return;
+      if (this.disposed || this.host.isGenerating() || !sameSession(session, this.host.session())) return;
+      if (this.loading) await this.loading.promise;
+      if (!sameSession(session, this.host.session())) return;
+      // updateChatMetadata can replace the context without CHAT_CHANGED. Re-read
+      // this captured chat before making a new preview; never carry old bindings.
+      if (!sameSession(session, this.store.session()) || this.phase === 'error') {
+        binding = undefined;
+        await this.load();
+      }
+      if (!sameSession(session, this.host.session())) return;
+      if (this.phase !== 'ready' || !this.canWrite()) {
+        if (options.manual) throw Error(this.writeBlockReason() ?? '请先核对并接受迁移预览');
+        return;
+      }
       let index = messageId ?? (this.host.context().chat?.length ?? 0) - 1;
       if (messageId === undefined && options.manual) {
         while (index >= 0) {
@@ -293,7 +327,10 @@ export class BattleService {
       // from a generation whose source changed while its candidate was prepared.
       if (receipt.code === 'source-changed' && !refreshed) await run(true);
     };
-    const next = this.scanQueue.then(() => run(), () => run()).catch(error => { if (!this.disposed && sameSession(session, this.store.session())) { this.error = String(error); this.notify(); } });
+    const next = this.scanQueue.then(() => run(), () => run()).catch(error => {
+      if (!this.disposed && sameSession(session, this.store.session())) { this.error = String(error); this.notify(); }
+      if (options.manual) throw error;
+    });
     this.scanQueue = next; return next;
   }
   async rebind(id: string): Promise<void> {

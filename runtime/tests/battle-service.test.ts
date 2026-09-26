@@ -60,6 +60,43 @@ it('启动后仅扫描完整历史消息会标记为人工预览，不自动入�
   await f.service.scan(); expect(f.service.snapshot().proposals?.[0]?.expected?.manualOnly).toBe(true);
   expect(f.service.snapshot().field).toBeUndefined();
 });
+it.each(['manual', 'message-event'])('同聊天附加信息对象被宿主替换后可恢复扫描（%s），保留原档', async mode => {
+  const f = await setup();
+  await f.service.transact(() => ({ schemaVersion: 2, field: 'forest', storySync: true, rosterIds: [], storage: [] }));
+  const documentId = f.store.envelope()!.documentId, generation = f.store.envelope()!.generation;
+  // TauriTavern updateChatMetadata merges into a new object without CHAT_CHANGED.
+  f.context.chatMetadata = { ...f.context.chatMetadata, unrelatedExtension: { enabled: true } };
+  f.context.chat!.push({ mes: '<tb><spawn name="新回复单位" side="ally" scale="hero"/></tb>', is_user: false, swipe_id: 0, gen_finished: 'done' });
+  await f.saveNormally();
+  expect(f.service.status().phase).toBe('ready'); expect(f.service.canWrite()).toBe(false);
+  if (mode === 'manual') await f.service.scan(undefined, { manual: true });
+  else { await f.emit('MESSAGE_RECEIVED', 0); await f.service.scan(0); }
+  expect(f.service.canWrite()).toBe(true);
+  expect(f.service.snapshot().proposals).toHaveLength(1);
+  expect(f.service.snapshot().proposals![0]!.source.text).toContain('新回复单位');
+  expect(f.service.snapshot().proposals![0]!.expected?.manualOnly).toBe(true);
+  expect(f.service.snapshot().field).toBe('forest');
+  expect(f.store.envelope()).toMatchObject({ documentId, generation });
+  expect(f.context.chatMetadata.unrelatedExtension).toEqual({ enabled: true });
+});
+it('扫描恢复读取期间切换聊天，旧扫描不会提交到新聊天', async () => {
+  const f = await setup();
+  await f.service.transact(() => ({ schemaVersion: 2, field: 'forest' }));
+  f.context.chatMetadata = { ...f.context.chatMetadata };
+  f.context.chat!.push({ mes: '<tb><spawn name="旧聊天回复" side="ally" scale="hero"/></tb>', is_user: false, swipe_id: 0, gen_finished: 'done' });
+  await f.saveNormally();
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  const read = f.host.readPersisted.bind(f.host);
+  const reading = vi.spyOn(f.host, 'readPersisted').mockImplementationOnce(async scope => { await blocked; return read(scope); });
+  const scanning = f.service.scan(undefined, { manual: true });
+  await vi.waitFor(() => expect(reading).toHaveBeenCalled());
+  f.switchTo('b'); const loading = f.service.load(); release();
+  await Promise.all([scanning, loading]);
+  expect(f.service.canWrite()).toBe(true); expect(f.service.snapshot()).toEqual({}); expect(f.disk.has('b')).toBe(false);
+  reading.mockRestore(); f.switchTo('a'); await f.service.load();
+  expect(f.service.snapshot().field).toBe('forest'); expect(f.service.snapshot().proposals).toBeUndefined();
+});
 it('手动重扫原位刷新过期回复，保留档案且已提交消息不重复入账', async () => {
   const f = await setup();
   const u = generateUnit({ name: '现有友军', side: 'ally', scale: 'hero', level: 3, traits: [] }, { seed: 'scan-refresh' }).unit;
