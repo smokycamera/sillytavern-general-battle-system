@@ -26,7 +26,9 @@ const OUT_PATH = resolve(root, distDir, 'tavern-battle-script.json');
 
 /** 固定脚本 id：版本更新后重复导入会被识别为同一脚本，避免越积越多 */
 const SCRIPT_ID = 'a4c1f7d2-9b3e-4f6a-8d15-2e7c9b40a613';
-const BTN_NAME = '通用战斗系统v1.0';
+const metadata = JSON.parse(readFileSync(resolve(root, 'release/script-metadata.json'), 'utf8'));
+const BTN_NAME = metadata.button?.buttons?.[0]?.name;
+if (typeof BTN_NAME !== 'string' || !BTN_NAME.trim()) throw Error('Missing script button name');
 
 const html = readFileSync(HTML_PATH, 'utf8');
 if (!/<html/i.test(html) || html.length < 10000) {
@@ -76,7 +78,6 @@ if (/<\/script|<!--/i.test(loader)) {
 }
 new vm.Script(loader); // 语法校验：SyntaxError 直接抛出
 
-const metadata = JSON.parse(readFileSync(resolve(root, 'release/script-metadata.json'), 'utf8'));
 if (metadata.id !== SCRIPT_ID || metadata.type !== 'script' || Object.keys(metadata.data ?? {}).length || metadata.export_with?.data !== false) throw Error('Invalid release metadata');
 const script = { ...metadata, content: loader };
 

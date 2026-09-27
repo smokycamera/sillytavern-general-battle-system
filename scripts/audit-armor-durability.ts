@@ -7,15 +7,28 @@ import { diceAvg } from '../engine/src/data/weapons.js';
 import { memberHealth, memberHealthMax } from '../engine/src/member-health.js';
 import { upgradeCombatSkills } from '../engine/src/skill-upgrade.js';
 import type { Combatant, DamageChannel } from '../engine/src/types.js';
+import type { Enhancements } from '../engine/src/enhancements.js';
 
 // Sensitivity experiment only. Override existing fixture fields; never patch the engine.
 type Variant = 'current' | 'removed' | 'cap2' | 'v5';
 type Mode = 'small' | 'mass';
-type Spec = { weapon?: string; power: number; armor?: number; armorPower?: number; profile?: DamageChannel; shield?: number; skill?: 'heal' | 'barrier'; body?: 'vehicle' };
+type Spec = { weapon?: string; power: number; armor?: number; armorPower?: number; profile?: DamageChannel; shield?: number; skill?: string; skillPower?:number; skillBonuses?:Enhancements; weaponBonuses?:Enhancements; training?:number; body?: 'vehicle' };
 type Scenario = { id: string; name: string; a: Spec; b: Spec; mirror?: boolean };
 const rifle = (power: number, extra: Partial<Spec> = {}): Spec => ({ power, weapon: 'rifle', armor: 3, ...extra });
 const mirror = (id: string, name: string, a: Spec): Scenario => ({ id, name, a, b: { ...a }, mirror: true });
-const scenarios: Scenario[] = [
+const settingsAudit=process.argv.includes('--setting-skills');
+const allScenarios: Scenario[] = settingsAudit ? [
+  ...[[3,5],[5,8],[8,10]].map(([low,high])=>({id:`generation-${low}-${high}`,name:`L${low} / L${high} 步枪重甲跨代`,a:rifle(low!),b:rifle(high!)})),
+  {id:'training-gap',name:'T10/L5 / T1/L8，训练不能替代技术',a:rifle(5,{training:10}),b:rifle(8,{training:1})},
+  {id:'enhancement-gap',name:'L5 满伤害/强度/穿透修正 / L8 无修正',a:rifle(5,{weaponBonuses:{power:10,damage:10,penetration:10,accuracy:10}}),b:rifle(8)},
+  {id:'strategic-area',name:'L10 火炮载具 / L3 步枪重甲',a:rifle(10,{weapon:'cannon',body:'vehicle'}),b:rifle(3)},
+  {id:'spell-5',name:'L5 热能单体法术+步枪 / L5 步枪',a:rifle(5,{skill:'generic:magic-single:thermal'}),b:rifle(5)},
+  {id:'spell-8',name:'L8 奥术范围法术+步枪 / L8 步枪盾牌',a:rifle(8,{skill:'generic:magic-area:arcane'}),b:rifle(8,{shield:8})},
+  {id:'weapon-skill-gap',name:'L3 剑+L10 武技、L5重甲 / L5 步枪重甲',a:rifle(3,{weapon:'sword',armorPower:5,skill:'generic:physical-single:melee',skillPower:10}),b:rifle(5)},
+  {id:'summon-forms',name:'L5 单体召唤 / L5 群体召唤，均持步枪重甲',a:rifle(5,{skill:'generic:buff:summon-single',skillBonuses:{damage:5,range:5}}),b:rifle(5,{skill:'generic:buff:summon-group',skillBonuses:{damage:5,range:5}})},
+  {id:'mixed-support',name:'L5 治疗+屏障及强度/持续修正 / 单纯治疗',a:rifle(5,{skill:'generic:buff:barrier+heal',skillBonuses:{power:10,duration:5}}),b:rifle(5,{skill:'heal'})},
+  {id:'fire-zone',name:'L5 火墙及热能伤害修正+步枪 / L5 步枪',a:rifle(5,{skill:'generic:magic-area:zone-fire',skillBonuses:{thermalDamage:5}}),b:rifle(5)},
+] : [
   ...[3, 5, 8, 10].map(power => mirror('mirror-' + power, `L${power} 步枪重甲镜像`, rifle(power))),
   ...[5, 8].map(power => ({ id: 'light-none-' + power, name: `L${power} 轻甲 / 无甲`, a: rifle(power, { armor: 1 }), b: rifle(power, { armor: 0 }) })),
   ...[5, 8].map(power => ({ id: 'light-heavy-' + power, name: `L${power} 轻甲 / 重甲`, a: rifle(power, { armor: 1 }), b: rifle(power) })),
@@ -29,22 +42,27 @@ const scenarios: Scenario[] = [
 ];
 const registry = traitRegistry(), conditionDefs = standardConditionMap();
 const arg = (name: string, fallback: string) => process.argv.find(x => x.startsWith('--' + name + '='))?.slice(name.length + 3) ?? fallback;
-const seeds = Number(arg('seeds', '10')), roundLimit = 40;
+const selectedScenario=arg('scenario','');
+const scenarios=allScenarios.filter(s=>!selectedScenario||s.id===selectedScenario);
+assert(scenarios.length,'unknown scenario');
+// Use the production mass-battle deadline; extending it would test different rules.
+const seeds = Number(arg('seeds', '10')), roundLimit = 40 as const;
 const output = arg('output', 'docs/armor-durability-audit-20260927.json');
 assert(Number.isSafeInteger(seeds) && seeds >= 1 && seeds <= 100);
 const variants: Variant[] = process.argv.includes('--compare-v5') ? ['current','v5'] : ['current','removed','cap2'];
 const rulesFor=(mode:Mode,variant:Variant)=>variant==='v5'?(mode==='small'?V5_OVERFLOW_D20:V5_OVERFLOW_TW):(mode==='small'?V4_OVERFLOW_D20:V4_OVERFLOW_TW);
 const modes: Mode[] = ['small', 'mass'];
 function make(spec: Spec, side: 'ally' | 'enemy', mode: Mode, variant: Variant): Combatant {
-  const u = generateUnit({ name: side, side, rulesVersion: 'v2', scale: mode === 'small' ? 'hero' : 'company', level: 5,
+  const u = generateUnit({ name: side, side, rulesVersion: 'v2', scale: mode === 'small' ? 'hero' : 'company', level: spec.training??5,
     body: spec.body ?? 'human', hpMax: mode === 'small' ? (spec.body ? 252 : 42) : 100,
-    weaponClass: spec.weapon ?? 'rifle', weaponLevel: spec.power,
+    weaponClass: spec.weapon ?? 'rifle', weaponLevel: spec.power,weaponBonuses:spec.weaponBonuses,
     armorTier: (spec.armor ?? 3) as 0 | 1 | 2 | 3 | 4, armorLevel: spec.armorPower ?? spec.power, traits: [],
   }, { registry, seed: 'armor-audit-gear', noVariance: true }).unit;
   u.id = side;
   if (spec.profile) u.armor = compileArmor({ tier: u.armor!.tier, power: spec.armorPower ?? spec.power, profile: spec.profile }, { id: side + ':armor', seed: 'armor-audit-gear', body: spec.body ?? 'human', noVariance: true });
   if (spec.shield) u.shield = { id: side + ':shield', load: 2, recipe: { version: 'mechanism-v2.3', mechanism: 'shield', power: spec.shield, quality: 3, size: 'human', seed: 'armor-audit-gear' } };
-  u.abilities = spec.skill ? [compileGenericSkill('generic:buff:' + spec.skill, spec.power, u.id)] : [];
+  u.abilities = spec.skill ? [compileGenericSkill(spec.skill.startsWith('generic:')?spec.skill:'generic:buff:' + spec.skill, spec.skillPower??spec.power, u.id)] : [];
+  if(u.abilities[0])u.abilities[0].bonuses=spec.skillBonuses;
   u.preparedAbilityIds = u.abilities.map(a => a.id);
   u.tags.push('zone:中军', 'rank:front');
   prepareCombatModel(u, rulesFor(mode,variant), spec.body ? 252 : 42);
@@ -86,7 +104,7 @@ for (const scenario of scenarios) for (const mode of modes) for (const variant o
     const a = make(scenario.a, swap ? 'enemy' : 'ally', mode, variant), b = make(scenario.b, swap ? 'ally' : 'enemy', mode, variant);
     const units = swap ? [b,a] : [a,b], field = standardField(); field.tiles.fill('open');
     const opts = { combatants: units, seed: 'armor-audit:' + seed, traitRegistry: registry };
-    const battle = mode === 'small' ? new SmallBattle({ ...opts, battlefield: field, rules: rulesFor(mode,variant) }) : new MassBattle({ ...opts, rules: rulesFor(mode,variant), roundLimit: 40 });
+    const battle = mode === 'small' ? new SmallBattle({ ...opts, battlefield: field, rules: rulesFor(mode,variant) }) : new MassBattle({ ...opts, rules: rulesFor(mode,variant), roundLimit });
     const initial = [memberHealthMax(a), memberHealthMax(b)];
     battle.start();
     if (battle instanceof SmallBattle) { units[0]!.pos = 38; units[1]!.pos = 24; }
@@ -101,7 +119,7 @@ for (const scenario of scenarios) for (const mode of modes) for (const variant o
       if (firstDownRound === undefined && units.some(u => u.hp <= 0 || ['dead','downed'].includes(u.status))) firstDownRound = lastRound;
     }
     assert(steps < roundLimit * 12, 'battle failed to progress');
-    const liveBoth = units.every(u => u.status === 'ready' || u.status === 'routing');
+    const liveBoth = ['ally','enemy'].every(side=>battle.combatants.some(u=>u.side===side&&(u.status==='ready'||u.status==='routing')));
     const limited = liveBoth && (battle.round > roundLimit || !battle.isOver());
     const winner = limited ? 'limit' : battle.winner() === a.side ? 'a' : battle.winner() === b.side ? 'b' : 'draw';
     const resolutions = battle.log.flatMap(entry => entry.resolutions?.length ? entry.resolutions : entry.resolution ? [entry.resolution] : []);
@@ -124,8 +142,8 @@ const paired = modes.map(mode => ({ mode, comparisons: variants.slice(1).map(var
 }) }));
 mkdirSync(output.slice(0, output.lastIndexOf('/')), { recursive: true });
 writeFileSync(output, JSON.stringify({ source: variants.includes('v5') ? 'V5 candidate against main 3b276d8d46d8549e283aae38511735a5878e3d01' : 'main 3b276d8d46d8549e283aae38511735a5878e3d01 / v1.0.6', date: '2026-09-27', method: { games: games.length, scenarios: scenarios.length, modes, variants, seeds, sideSwaps: 2, roundLimit,
-  training: 5, heroHP: 42, vehicleHP: 252, companyMembers: 100, memberHP: '42 human / 252 vehicle', morale: 'generator default; damage and routing enabled',
+  training: settingsAudit?'5 unless scenario overrides; HP held fixed to isolate training':5, heroHP: 42, vehicleHP: 252, companyMembers: 100, memberHP: '42 human / 252 vehicle', morale: 'generator default; damage and routing enabled',
   field: 'open; small mode starts at cells 38/24, two cells apart; mass starts in central front rank',
-  limitations: [`${seeds} seed pairs per scenario/mode/variant; side swaps are paired, not independent samples`, 'Local AI decisions, no external LLM', 'Small=d20, mass=TW; overflow enabled', 'Unweighted scenario matrix, not a population estimate of player battles', 'cap2 is an arbitrary sensitivity bound, not a proposed calibrated production rule', 'removed/cap2 do not recalibrate other curves; v5 recalibrates single-target damage/healing and channel/shield protection', 'round-limit results are censored and counted separately from natural draws', 'First actor statistic applies only to small battles and includes movement before attacks', 'No terrain/cover/flanking scenarios; no poison/bleeding/zone-damage battles'] },
+  limitations: [`${seeds} seed pairs per scenario/mode/variant; side swaps are paired, not independent samples`, 'Local AI decisions, no external LLM', 'Small=d20, mass=TW; overflow enabled', 'Unweighted scenario matrix, not a population estimate of player battles', 'cap2 is an arbitrary sensitivity bound, not a proposed calibrated production rule', 'removed/cap2 do not recalibrate other curves; v5 recalibrates single-target damage/healing and channel/shield protection', 'round-limit results are censored and counted separately from natural draws', 'First actor statistic applies only to small battles and includes movement before attacks', settingsAudit?'Selected cross-generation and skill cases only; no terrain/cover/flanking, not exhaustive skill-combination balance':'No terrain/cover/flanking scenarios; no poison/bleeding/zone-damage battles'] },
   scenarios, anchorTable, probes, totals, paired, rows, games }, null, 2) + '\n');
 console.log(JSON.stringify({ output, games: games.length, elapsedSeconds: Math.round((Date.now()-started)/1000), totals }));

@@ -122,6 +122,7 @@ try {
   current = await save();
   assert.equal(current.inventory.find((i) => i.name === '恢复剂').qty, 1);
   assert.ok(current.storage.find((r) => r.id === 'a').hp > 18);
+  await itemRow('待鉴定旧剑').locator('.inventory-more > summary').click();
   await itemRow('待鉴定旧剑').locator('[data-action="inventory-define"]').click();
   await root.locator('[data-action="inventory-preview-draft"]').click(); await confirm();
   current = await save();
