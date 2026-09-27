@@ -2,7 +2,11 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **1.0.6**.
+Current version: **1.1.0**.
+
+New battles use V5 channel protection: single-target damage grows independently of penetration and area, armor no longer grants level-scaled effective health, shields give bounded cover, and healing uses the new wound scale. Existing battles retain their rules. Reimport the bundled lorebook to refresh its instructions. See [design and validation](docs/armor-v5-design.md).
+
+Export a save before upgrading if you may need to downgrade. The complete 1.0.6 build is preserved on a dedicated rollback branch; see [version rollback](docs/version-rollback.md).
 
 License: **GPL-3.0-only**. Commercial use, modification and distribution are permitted under GPL version 3, including its corresponding-source obligations when conveying covered software. See [LICENSE](LICENSE) and [license notes](LICENSE-NOTES.md).
 

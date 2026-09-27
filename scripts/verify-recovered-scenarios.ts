@@ -7,8 +7,10 @@ import { importedModule, importedHelper } from './imported-baseline-oracle.mjs';
 
 const old = importedModule('engine/src/index.ts') as typeof current;
 const plain = (value: unknown) => JSON.parse(JSON.stringify(value));
-// 新字段只为屏障保留生命上限裁剪前的伤害。旧场景仍逐项比较命中、实际伤害、状态、随机源和存档；不忽略其他差异。
+// 屏障诊断字段与空指挥官配置是冻结脚本之后新增的元数据。
+// 空配置不启用任何策略；非空配置以及命中、实际伤害、状态、随机源仍逐项比较。
 const baselineDamagePlans = (value: unknown) => JSON.parse(JSON.stringify(value, function(key, entry) {
+  if (key === 'commanderProfiles' && entry && Object.keys(entry).length === 0) return undefined;
   return (key === 'incomingDirect' || key === 'incomingSplash') && typeof this.direct === 'number' && typeof this.targets === 'number' ? undefined : entry;
 }));
 const scenarios: string[] = [];

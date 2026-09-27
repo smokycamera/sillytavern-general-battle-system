@@ -122,6 +122,7 @@ try {
   current = await save();
   assert.equal(current.inventory.find((i) => i.name === '恢复剂').qty, 1);
   assert.ok(current.storage.find((r) => r.id === 'a').hp > 18);
+  await itemRow('待鉴定旧剑').locator('.inventory-more > summary').click();
   await itemRow('待鉴定旧剑').locator('[data-action="inventory-define"]').click();
   await root.locator('[data-action="inventory-preview-draft"]').click(); await confirm();
   current = await save();
@@ -137,7 +138,9 @@ try {
     for (const theme of ['dark', 'light']) {
       await root.evaluate((_root, theme) => { document.body.dataset.theme = theme; }, theme);
       const layout = await root.evaluate((element) => ({ overflow: document.documentElement.scrollWidth > innerWidth + 1,
-        small: [...element.querySelectorAll('button,select,input')].filter((e) => e.getBoundingClientRect().width > 0 && e.getBoundingClientRect().height < 43.5).length }));
+        // The wrapping label is the checkbox's clickable target, not its 18px glyph.
+        small: [...element.querySelectorAll('button,select,input')].map(e => e.matches('input[type="checkbox"]') ? e.closest('label') ?? e : e)
+          .filter(e => e.getBoundingClientRect().width > 0 && e.getBoundingClientRect().height < 43.5).length }));
       assert.equal(layout.overflow, false, `overflow ${width}/${theme}`); assert.equal(layout.small, 0, `touch targets ${width}/${theme}`);
       // Element screenshots cannot expand a fixed-height iframe: capture real scrollable viewports.
       await root.evaluate((element) => element.scrollIntoView({ block: 'start' }));
@@ -185,6 +188,16 @@ try {
   assert.equal((await save()).inventory.find((i) => i.id === dose.id).qty, 0);
   console.log('✓ 正式战场：携行→预览→保存失败撤回→重试，一次治疗/扣量/主行动，重开不补回');
   await tab('battle');
+  // The healed vehicle starts directly in front of the cannon. Move it through
+  // the real UI; distance-only cannon movement cannot solve friendly occlusion.
+  const firingSetup = (await save()).battle.snap, gunner = firingSetup.combatants.find(u => u.id === 'b');
+  await panel.locator('.command-modes button').filter({ hasText: '移动' }).click();
+  const clearCells = await panel.locator('.grid-cell.reachable:not(.selected)').evaluateAll(elements => elements.map(e => Number(e.dataset.cell)));
+  const lateralDistance = cell => Math.abs(cell % firingSetup.battlefield.width - gunner.pos % firingSetup.battlefield.width);
+  const clearCell = clearCells.sort((a, b) => lateralDistance(b) - lateralDistance(a) || a - b)[0];
+  assert.ok(clearCell !== undefined && lateralDistance(clearCell) > 0, 'the front vehicle must have a legal position outside the cannon column');
+  await panel.locator(`[data-action="grid-cell"][data-cell="${clearCell}"]`).click();
+  await panel.locator('.move-preview [data-action="grid-move"]').click();
   let manualShot = false;
   for (let n = 0; n < 100 && !(await panel.locator('[data-action="battle-close"]').count()); n++) {
     if (active(await save()) === 'b') {

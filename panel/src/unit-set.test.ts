@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateUnit, traitRegistry, xpProgress, SmallBattle, V4_D20 } from '../../engine/src/index.js';
+import { generateUnit, traitRegistry, xpProgress, SmallBattle, V5_D20 } from '../../engine/src/index.js';
 import { anchoredWeapon, anchoredProtection, armorPowerScale } from '../../engine/src/power-anchors.js';
 import { materializeUnitRecord, unitRecordFromCombatant } from './unit-state.js';
 import { captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type NarrativeSave, type MessageEnvelope } from './narrative-state.js';
@@ -72,16 +72,16 @@ describe('正文战外全字段事务（定向验证）',()=>{
     expect(restored(transact(dying,{xp:20},'','down-xp').next()).status).toBe('dying');
     expect(save.storage![0]!.hp).toBe(60);
   });
-  it('装备库存与实际V4数值一致，定制技能入场后不被公式重建',()=>{
+  it('装备库存与当前规则数值一致，旧耐久覆盖仅保留记录，定制技能入场后不被公式重建',()=>{
     const save=setup(),oldWeapon=save.storage![0]!.snapshot!.weapon!.id;
     const next=transact(save,{body:'vehicle',weapon:{spec:{kind:'weapon',mechanism:'rifle',power:6,bonuses:{damage:5}},values:{baseDice:'2d6',damageScale:2,penetration:25,range:2}},armor:{spec:'重甲L9',values:{protection:{kinetic:3,thermal:2,arcane:1},powerScale:2}},skills:[{spec:{id:'bp-arcane-bolt',name:'雷击',level:4},values:{cooldown:5,damageScale:3,penetration:17,effects:[{op:'damage',baseDice:'2d6'}]}}]}).next();
     const unit=restored(next);
     expect(unit.weapon!.id).toBe(oldWeapon);expect(unit.weapon!.recipe!.bonuses).toEqual({damage:5});
     expect(next.inventory!.find(i=>i.id===oldWeapon)!.mechanics).toMatchObject({kind:'weapon',value:{baseDice:'2d6',damageScale:2,range:2}});
     expect(anchoredWeapon(unit.weapon)).toMatchObject({baseDice:'2d6',damageScale:2,penetration:25,range:2});
-    expect(anchoredProtection(unit,'kinetic')).toBe(3);expect(armorPowerScale(unit)).toBe(2);
+    expect(anchoredProtection(unit,'kinetic')).toBe(3);expect(unit.armor!.powerScale).toBe(2);expect(armorPowerScale(unit)).toBe(1);
     const skill=structuredClone(unit.abilities[0]);
-    new SmallBattle({combatants:[unit],rules:V4_D20,seed:'open-unit-battle',traitRegistry:reg});
+    new SmallBattle({combatants:[unit],rules:V5_D20,seed:'open-unit-battle',traitRegistry:reg});
     expect(unit.abilities[0]).toEqual(skill);expect(unit.preparedAbilityIds).toEqual([skill!.id]);expect(unit.weapon!.range).toBe(2);
   });
   it('编队人数、成员伤势、资源和清除字段可以精确保存',()=>{

@@ -42,9 +42,17 @@ export const V4_D20:RulePack={...V3_D20,id:'v4-d20',name:'V4 成员生命与武�
 export const V4_TW:RulePack={...V3_TW,id:'v4-tw',name:'V4 成员生命会战',combatModel:'cohort-v2'};
 export const V4_OVERFLOW_D20:RulePack={...V4_D20,id:'v4-overflow-d20',name:'V4 连队溢出伤害',weaponOverflow:true};
 export const V4_OVERFLOW_TW:RulePack={...V4_TW,id:'v4-overflow-tw',name:'V4 连队溢出会战',weaponOverflow:true};
+export const V5_D20:RulePack={...V4_D20,id:'v5-d20',name:'V5 通道防护与单体毁伤',damageModel:'wounds-v1'};
+export const V5_TW:RulePack={...V4_TW,id:'v5-tw',name:'V5 通道防护会战',damageModel:'wounds-v1'};
+export const V5_OVERFLOW_D20:RulePack={...V5_D20,id:'v5-overflow-d20',name:'V5 连队溢出伤害',weaponOverflow:true};
+export const V5_OVERFLOW_TW:RulePack={...V5_TW,id:'v5-overflow-tw',name:'V5 连队溢出会战',weaponOverflow:true};
 
 /** id → 规则包（战斗快照恢复用；面板只用默认两包） */
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V5_D20.id]:V5_D20,
+  [V5_TW.id]:V5_TW,
+  [V5_OVERFLOW_D20.id]:V5_OVERFLOW_D20,
+  [V5_OVERFLOW_TW.id]:V5_OVERFLOW_TW,
   [V4_OVERFLOW_D20.id]:V4_OVERFLOW_D20,
   [V4_OVERFLOW_TW.id]:V4_OVERFLOW_TW,
   [V4_D20.id]:V4_D20,
@@ -59,7 +67,7 @@ export const RULES_BY_ID: Record<string, RulePack> = {
 
 /** 按 id 取规则包；未知 id 回退小规模默认 */
 export function rulesById(id?: string): RulePack {
-  if (id && /^v[234]-/.test(id) && !RULES_BY_ID[id]) throw new Error(`不支持的规则版本 ${id}，不能静默回退`);
+  if (id && /^v\d+-/.test(id) && !RULES_BY_ID[id]) throw new Error(`不支持的规则版本 ${id}，不能静默回退`);
   return (id ? RULES_BY_ID[id] : undefined) ?? LITE_D20;
 }
 

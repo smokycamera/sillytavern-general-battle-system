@@ -92,9 +92,9 @@ try {
   assert.equal(renamed.name, '回春之风');
   assert.deepEqual(renamed.recipe, heal.recipe);
   assert.equal(renamed.power, heal.power);
-  assert.equal(renamed.effectVersion, 'skill-v4.3');
+  assert.equal(renamed.effectVersion, 'skill-v5.0');
   assert.equal(renamed.cooldownGroup, 'skill-mechanism:' + heal.definitionId);
-  assert.equal(renamed.effects.find(e => e.op === 'heal').amount, 1120);
+  assert.equal(renamed.effects.find(e => e.op === 'heal').amount, 27);
   await tab('battle'); await p.locator('[data-action="small-start"]').click(); await p.locator('.grid-board').waitFor();
   const before = await page.evaluate(() => window.readPanel().battle.snap);
   assert.equal(before.turnOrder[before.turnIndex], 'caster');

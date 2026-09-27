@@ -465,7 +465,7 @@ await page2.waitForTimeout(50);
 await battleStart();
 await reveal(dpanel.locator('[data-role="auto-turn"]')); await dpanel.locator('[data-role="auto-turn"]').check(); // 敌方自动，我方英雄手动结束回合即推进
 for (let i = 0; i < 200 && (await dpanel.locator('.banner').count()) === 0; i++) {
-  if (await dpanel.locator('[data-action="grid-auto"]').count()) { await dpanel.locator('[data-action="grid-auto"]').click(); continue; }
+  if (await dpanel.locator('.command-finish [data-action="grid-auto"]').count()) { await dpanel.locator('.command-finish [data-action="grid-auto"]').click(); continue; }
   const atk = await dpanel.locator('[data-action="small-attack"]').isEnabled();
   if (atk) {
     // 近战单位距目标≥1 时先前进再攻击（目标距离写在选项里）
@@ -524,7 +524,7 @@ await chooseProtagonist(secondProtagonist);
 await battleStart();
 await reveal(dpanel.locator('[data-role="auto-turn"]')); await dpanel.locator('[data-role="auto-turn"]').check();
 for (let i = 0; i < 200 && (await dpanel.locator('.banner').count()) === 0; i++) {
-  if (await dpanel.locator('[data-action="grid-auto"]').count()) { await dpanel.locator('[data-action="grid-auto"]').click(); continue; }
+  if (await dpanel.locator('.command-finish [data-action="grid-auto"]').count()) { await dpanel.locator('.command-finish [data-action="grid-auto"]').click(); continue; }
   const atk = await dpanel.locator('[data-action="small-attack"]').isEnabled();
   if (atk) {
     const opt = await dpanel.locator('[data-role="small-target"] option').first().textContent().catch(() => '');

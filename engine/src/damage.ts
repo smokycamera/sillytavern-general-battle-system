@@ -5,7 +5,7 @@ import { looseFormation } from './tactics.js';
 import { effectiveProtection } from './body.js';
 import { applyHealthLoss, applyDamagePlan, type MemberDamagePlan } from './recovery.js';
 import { MEMBER_HEALTH_MODEL, hasMemberHealth, memberHealth, damageMemberGroups } from './member-health.js';
-import { combatWeapon, anchoredProtection,penetrationThrough,armorPowerScale } from './power-anchors.js';
+import { combatWeapon, anchoredProtection,penetrationThrough,armorPowerScale,armorTransmission,shieldTransmission } from './power-anchors.js';
 import { meleeProfile } from './melee.js';
 import { meleeWeapon, isCannonWeapon } from './loadout.js';
 /**
@@ -33,6 +33,8 @@ export interface AttackResolution {
   barrierAbsorbed?: number;
   unshieldedDamage?: number;
   armorScale?:number;
+  armorFactor?:number;
+  shieldFactor?:number;
   ammunition?:'he'|'ap';
   damageModel?: 'member-health';
   membersBefore?:number;
@@ -152,14 +154,20 @@ export function isRangedCapable(u: Combatant): boolean {
 export function penetrationFactor(power: number, resistance: number): number {
   return penetrationThrough(power,resistance);
 }
-export function penetrationContext(opts: Pick<AttackOpts, 'attacker' | 'defender' | 'weaponOverride' | 'abilityDamage' | 'ranged'> & Partial<Pick<AttackOpts,'rules'>>) {
+export function penetrationContext(opts: Pick<AttackOpts, 'attacker' | 'defender' | 'weaponOverride' | 'abilityDamage' | 'ranged'> & Partial<Pick<AttackOpts,'rules'|'conditionDefs'>>) {
   const modern=opts.rules?.combatModel===MEMBER_HEALTH_MODEL;
-  const original=opts.weaponOverride ?? opts.attacker.weapon,weapon=modern?combatWeapon(original,opts.attacker,opts.defender,opts.rules?.weaponOverflow):original;
+  const original=opts.weaponOverride ?? opts.attacker.weapon,weapon=modern?combatWeapon(original,opts.attacker,opts.defender,opts.rules?.weaponOverflow,opts.rules?.damageModel):original;
   const channel = opts.abilityDamage?.channel ?? weapon?.channel ?? 'kinetic';
   const base = opts.abilityDamage?.penetration ?? weapon?.penetration ?? 1 + Math.floor((weapon?.level ?? 5) / 2);
   const penetration = base + (opts.abilityDamage && !opts.abilityDamage.weaponBased ? 0 : traitPenetrationBonus(opts.attacker, weapon, opts.ranged ?? !!weapon?.tags?.includes('ranged'), base));
-  const resistance = modern?anchoredProtection(opts.defender,channel):effectiveProtection(opts.defender, channel);
-  return { channel, penetration, resistance, factor: penetrationFactor(penetration, resistance),armorScale:modern?armorPowerScale(opts.defender):1 };
+  const target={...opts.defender,damageModel:opts.rules?.damageModel};
+  const resistance = modern?anchoredProtection(target,channel):effectiveProtection(target, channel);
+  const wounds=opts.rules?.damageModel==='wounds-v1';
+  const armorFactor=wounds?armorTransmission(target,channel,penetration):penetrationFactor(penetration,resistance);
+  const area=opts.abilityDamage ? opts.abilityDamage.shape==='burst'||!!opts.abilityDamage.weaponBased&&(!!weapon?.tags?.includes('blast')||!!weapon?.splashTargets) : !!weapon?.tags?.includes('blast')||!!weapon?.splashTargets;
+  const canBlock=!opts.defender.conditions.some(c=>c.dur>0&&(opts.conditionDefs?.get(c.id)?.skipTurn||opts.conditionDefs?.get(c.id)?.preventAttack));
+  const shieldFactor=wounds?shieldTransmission(target,channel,penetration,area,canBlock):1;
+  return { channel, penetration, resistance, factor:armorFactor*shieldFactor,armorScale:modern?armorPowerScale(target):1,...(wounds?{armorFactor,shieldFactor}:{}) };
 }
 
 /** 与执行共用属性栈与穿透。期望值不读取实战 RNG；骰子取整/暴击导致实际结果有波动。 */
@@ -172,7 +180,7 @@ export function previewAttack(opts: Omit<AttackOpts, 'rng'>): import('./actions.
   const ward = resolveStack(ctx.defMods, 'ward', ctx.ctxDef, { sameNameKeepsHighest: opts.rules.sameNameKeepsHighest, maxFlat: opts.rules.maxFlat });
   const protection = opts.rules.resolutionVersion === 'v2' ? penetrationContext(opts) : undefined;
   const factor = protection?.factor;
-  const diagnostics = { ...(opts.rules.combatModel ? {participants:outcomeScale(opts).participants,memberHp:opts.defender.scale!=='hero'?memberDurability(opts.defender):undefined,aggregationSamples:cohortSamples(opts)} : {}), ...(protection ? { channel: protection.channel, penetration: protection.penetration, resistance: protection.resistance,armorScale:protection.armorScale } : {}),
+  const diagnostics = { ...(opts.rules.combatModel ? {participants:outcomeScale(opts).participants,memberHp:opts.defender.scale!=='hero'?memberDurability(opts.defender):undefined,aggregationSamples:cohortSamples(opts)} : {}), ...(protection ? { channel: protection.channel, penetration: protection.penetration, resistance: protection.resistance,armorScale:protection.armorScale,armorFactor:protection.armorFactor,shieldFactor:protection.shieldFactor } : {}),
     weaponName: !opts.abilityDamage || opts.abilityDamage.weaponBased ? ctx.weapon?.name : undefined,
     attackScore: ctx.netAtk, defenseScore: ctx.targetDef, attackModifiers: describeStack(ctx.atkStack), defenseModifiers: describeStack(ctx.defStack) };
   const dr = factor === undefined ? Math.min(0.9, armorDR(opts.defender, opts.rules, opts.traitRegistry) + qualityGapDR(opts.attacker, opts.defender, ctx.weapon)) : 1 - factor;
@@ -206,7 +214,7 @@ export function previewAttack(opts: Omit<AttackOpts, 'rng'>): import('./actions.
 }
 
 function memberPlan(opts:Omit<AttackOpts,'rng'>,direct:number,targets:number):MemberDamagePlan {
-  const weapon=combatWeapon(opts.weaponOverride??opts.attacker.weapon,opts.attacker,opts.defender,opts.rules.weaponOverflow);
+  const weapon=combatWeapon(opts.weaponOverride??opts.attacker.weapon,opts.attacker,opts.defender,opts.rules.weaponOverflow,opts.rules.damageModel);
   const extra=hasMemberHealth(opts.defender)&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)?Math.min(opts.defender.hp,weapon?.splashTargets??0):0;
   const members=hasMemberHealth(opts.defender),directTargets=members?Math.min(opts.defender.hp,targets):targets>0?1:0,splashTargets=Math.min(opts.defender.hp,targets*extra),max=members?opts.defender.formation!.memberHp:opts.defender.base.hpMax;
   const overflow=members&&!!opts.rules.weaponOverflow&&(!opts.abilityDamage||!!opts.abilityDamage.weaponBased);
@@ -272,7 +280,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
 function outcomeScale(opts: Omit<AttackOpts, 'rng'>): { participants: number; multiplier: number } {
   if (opts.rules.resolutionVersion !== 'v2') return { participants: 1, multiplier: 1 };
   if(opts.rules.combatModel===MEMBER_HEALTH_MODEL){
-    const a=opts.attacker,d=opts.defender,ranged=opts.ranged??isRangedCapable(a),weapon=combatWeapon(opts.weaponOverride??a.weapon,a,d,opts.rules.weaponOverflow);
+    const a=opts.attacker,d=opts.defender,ranged=opts.ranged??isRangedCapable(a),weapon=combatWeapon(opts.weaponOverride??a.weapon,a,d,opts.rules.weaponOverflow,opts.rules.damageModel);
     const count=a.scale==='hero'?1:a.body==='vehicle'?personnel(a):Math.min(personnel(a),opts.participants??engagementWidth(a,d,ranged,undefined,opts.fieldTags)*Math.max(1,personnel(a)/COHORT_REFERENCE));
     const crew=a.scale!=='hero'&&(a.body??'human')==='human'&&!opts.abilityDamage?.delivery?.startsWith('magic')?(isCannonWeapon(weapon)?4:weapon?.recipe?.mechanism==='autocannon'?3:1):1;
     const participants=Math.max(0,count/crew)*(!ranged&&looseFormation(a)?0.5:1);
@@ -305,7 +313,7 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
   const ranged = opts.ranged ?? isRangedCapable(attacker);
   // 结算用武器：副武器近战切换时覆盖（骰子/等级/惩罚判定同源）
   const original=opts.weaponOverride ?? attacker.weapon;
-  const weapon = rules.combatModel===MEMBER_HEALTH_MODEL?combatWeapon(original,attacker,defender,rules.weaponOverflow):original;
+  const weapon = rules.combatModel===MEMBER_HEALTH_MODEL?combatWeapon(original,attacker,defender,rules.weaponOverflow,rules.damageModel):original;
 
   // 远程武器被迫近战（借机攻击/贴身挥击/军团近战阶段）：枪托弓杆终究不是称手兵器
   // 「远近双全」（no-melee-penalty 旗标）豁免——刺刀/弓杆近战有专门训练；
@@ -507,7 +515,7 @@ export function resolveAttack(opts: AttackOpts): AttackResolution {
   if (penetration) {
     res.channel = penetration.channel; res.penetration = penetration.penetration;
     res.resistance = penetration.resistance; res.penetrationFactor = penetration.factor;
-    if(modern)res.armorScale=penetration.armorScale;
+    if(modern){res.armorScale=penetration.armorScale;res.armorFactor=penetration.armorFactor;res.shieldFactor=penetration.shieldFactor;}
   }
 
   res.baseRoll = { ...baseRoll, total: baseRaw };

@@ -100,8 +100,8 @@ function gearValue(input: unknown, previous: ItemMechanics | undefined, slot: Eq
   if (config.values !== undefined) {
     const values = requireObject(config.values, '装备values');
     keys(values, mechanics.kind === 'weapon' ? weaponFields : mechanics.kind === 'armor' ? armorFields : shieldFields, '装备values');
-    // 明确的原始数值指的是V4实际值，不能在入场时被威力投影覆盖。
-    if (mechanics.kind === 'weapon') mechanics.value = { ...anchoredWeapon(mechanics.value)!, customized: true };
+    // 明确的原始数值指的是当前规则实际值，不能在入场时被威力投影覆盖。
+    if (mechanics.kind === 'weapon') mechanics.value = { ...anchoredWeapon(mechanics.value,undefined,'wounds-v1')!, customized: true };
     mechanics.value = merge(mechanics.value as unknown as ObjectData, values) as unknown as typeof mechanics.value;
     if (mechanics.kind === 'armor' && values.protection !== undefined) mechanics.value.protectionOverride = values.protection !== null;
   }
@@ -142,7 +142,7 @@ function skillValues(unit: Combatant, input: unknown): Ability[] {
       const old = ability;
       ability = compileSkill({ id: definition, name: spec.name as string | undefined, bonuses: spec.bonuses as Enhancements | undefined }, power, unit.id);
       ability.id = old?.id ?? `${unit.id}:story-skill:${index}:${ability.id}`;
-      const carrier = { ...unit, combatModel: 'cohort-v2' as const, abilities: [ability] }; upgradeCombatSkills(carrier);
+      const carrier = { ...unit, combatModel: 'cohort-v2' as const, damageModel:'wounds-v1' as const, abilities: [ability] }; upgradeCombatSkills(carrier);
     }
     if (!ability) throw Error('技能需要已有id或spec');
     if (config.values !== undefined) {
@@ -153,7 +153,7 @@ function skillValues(unit: Combatant, input: unknown): Ability[] {
         const old = ability;
         ability=compileSkill({id:old.definitionId!,name:old.name,bonuses:values.bonuses===null?{}:(values.bonuses??old.bonuses) as Enhancements|undefined},power,unit.id);
         ability.id=old.id;ability.cooldownGroup=old.cooldownGroup;
-        upgradeCombatSkills({...unit,combatModel:'cohort-v2',abilities:[ability]});
+        upgradeCombatSkills({...unit,combatModel:'cohort-v2',damageModel:'wounds-v1',abilities:[ability]});
       }
       ability = merge(ability as unknown as ObjectData, values) as unknown as Ability;
       ability.customized = true;
@@ -213,6 +213,7 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   if (!previous) throw Error('unit_set目标档案不存在');
   const registry = traitRegistry();
   let unit = materializeUnitRecord(previous, registry);
+  unit.damageModel='wounds-v1';
   const oldProgress = xpProgress(unit)?.current ?? 0;
   const data = structuredClone(patch);
   for (const [alias, key] of Object.entries({state:'status',speed:'speedTier',weapon2:'sidearm'})) if (data[alias] !== undefined) {

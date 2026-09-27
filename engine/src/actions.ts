@@ -46,6 +46,8 @@ export interface TargetOption {
 export interface ActionPreview {
   weaponOverflow?:boolean;
   armorScale?:number;
+  armorFactor?:number;
+  shieldFactor?:number;
   damageModel?:'member-health';
   expectedCasualties?:number;
   participants?: number;
