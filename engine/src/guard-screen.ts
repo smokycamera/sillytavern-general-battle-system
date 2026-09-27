@@ -4,6 +4,7 @@ import { isRangedWeapon, ignoresFriendlyScreen } from './loadout.js';
 import { MEMBER_HEALTH_MODEL } from './member-health.js';
 import { formationNode } from './mass/formation.js';
 import { postureActive } from './tactics.js';
+import { canShootOverAlly } from './body.js';
 
 export interface GuardSpace { mode: 'small' | 'mass'; width?: number }
 function coordinates(unit: Combatant, space: GuardSpace) {
@@ -47,7 +48,7 @@ export function shieldScreenReason(guard: Combatant): string {
   return `目标受${guard.name}持盾固守遮挡；先攻击或压制盾卫，或换射角、使用间接火力`;
 }
 
-/** V4直射按真实占位遮挡；弓弩/法杖越过友军，曲射越过单位，地形视线由攻击入口检查。 */
+/** V4直射可越过更小友军；弓弩/法杖越过友军，曲射越过单位，地形视线由攻击入口检查。 */
 export function rangedScreen(attacker: Combatant, target: Combatant, weapon: Weapon | undefined,
   units: Combatant[], space: GuardSpace, defs: Map<string, ConditionDef>): Combatant | undefined {
   if (attacker.combatModel !== MEMBER_HEALTH_MODEL || !isRangedWeapon(weapon) || weapon?.indirect
@@ -57,7 +58,7 @@ export function rangedScreen(attacker: Combatant, target: Combatant, weapon: Wea
   if (!lengthSquared) return undefined;
   const bypassFriends = ignoresFriendlyScreen(weapon);
   const blockers = units.filter(unit => {
-    if (bypassFriends && unit.side === attacker.side) return false;
+    if (bypassFriends && unit.side === attacker.side || canShootOverAlly(attacker, unit)) return false;
     if (unit.id === attacker.id || unit.id === target.id || isAirborne(unit) || unit.hp <= 0 || !['ready', 'routing'].includes(unit.status)) return false;
     const at = coordinates(unit, space), x = at.x - from.x, y = at.y - from.y;
     const along = x * dx + y * dy, cross = x * dy - y * dx;

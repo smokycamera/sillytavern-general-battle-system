@@ -61,12 +61,12 @@ describe('真实地形与环境适应', () => {
       expect(battle.rankOf(a)).toBe(adapted ? 'front' : 'rear');
     }
   });
-  it('守城工事仅在攻城场景固守正面生效，野战与离开姿态不能被动减伤', () => {
+  it('守城工事不要求攻城与固守，普通固守不重复叠加', () => {
     for (const siege of [false, true]) for (const braced of [false, true]) {
       const { a, battle } = grid(['fortification'], [siege ? 'siege' : 'plains']);
       if (braced) battle.brace('a'); battle.endTurn();
-      const result = battle.attack('b', 'a'); expect(result.wardMult).toBe(siege && braced ? 0.7 : 1);
-      expect(result.targetDef).toBe(a.base.def + (braced ? siege ? 3 : 2 : 0));
+      const result = battle.attack('b', 'a'); expect(result.wardMult).toBe(0.7);
+      expect(result.targetDef).toBe(a.base.def + 3);
     }
   });
   it('系统生成林山地形，快照保留环境，原野专长的移动收益只在野战生效', () => {

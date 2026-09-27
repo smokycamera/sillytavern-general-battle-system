@@ -267,7 +267,7 @@ export const TRAITS: Trait[] = [
   {
     id: 'fortification', name: '守城工事', desc: '攻城战（siege）：防御 +3，受到射击伤害 -30%——城墙与箭塔掩护',
     v2SourceReady: true,
-    v2Desc: '攻城环境下固守正面时，防御提高到3且远程伤害降低30%；移动、侧后袭、失能或野战不生效，与普通固守取强',
+    v2Desc: '防御提高3、受到远程伤害降低30%，不受战场、姿态、方向、体型或失能限制；与固守、盾墙的同类防护取强',
     effects: [
       { kind: 'fieldMod', field: 'siege', def: 3 },
       { kind: 'rangedGuardDR', percent: 30 },
@@ -305,7 +305,7 @@ export const TRAITS: Trait[] = [
   {
     id: 'mechanized', name: '机械化', desc: '载具输送：速度 +2、护甲 +1 档——步兵战车里的步兵',
     v2SourceReady: true,
-    v2Desc: '实际车辆的操作/机动专长：先攻提高2、机动提高1，装有护甲的车体防御提高1；没有车辆不生效，不能凭特质创造车体或装甲。重型火力/装甲降低基础机动，行进稳定仍由真实武器装置决定；随队人物不向所在编队复制专长',
+    v2Desc: '适用于任何身体与单位类型：先攻提高2、机动提高1，装有护甲时防御提高1；可与大型或巨型身体组合为机器人。行进稳定仍由实际武器装置决定，随队人物不向所在编队复制专长',
     effects: [
       { kind: 'stat', stat: 'spd', value: 2 },
       { kind: 'armorTier', value: 1 },

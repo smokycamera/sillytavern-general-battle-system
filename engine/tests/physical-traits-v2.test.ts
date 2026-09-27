@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generateUnit, traitRegistry, SmallBattle, MassBattle, standardField, V2_D20, V2_TW, activeTraitIds, grantTraitSource, expireTraitSources, applyXp, movementPoints, effectiveProtection, type GenerateInput, type Combatant } from '../src/index.js';
+import { traitStatAdjustments } from '../src/trait-sources.js';
 const registry = traitRegistry(), rng = { seed: 'hit', next: () => 0, d: (n: number) => Math.min(n, 10) };
 function unit(extra: Partial<GenerateInput> = {}, id = 'a') {
   const u = generateUnit({ name: id, side: id === 'a' ? 'ally' : 'enemy', scale: 'company', rulesVersion: 'v2', level: 3, hpMax: 80, weaponClass: 'light-ranged', weaponLevel: 1, armorTier: 0, traits: [], ...extra }, { seed: id, registry, noVariance: true }).unit; u.id = id; u.morale = u.base.moraleMax = 100; return u;
@@ -35,12 +36,25 @@ describe('身体、重装与训练特质同源', () => {
     expect(() => grantTraitSource(unit(), { id: 'size', name: '巨化', kind: 'blessing', traitIds: ['titan'], duration: { kind: 'permanent' } })).toThrow(/身体/);
     for (const mode of ['small', 'mass']) { const a = unit(), b = unit({ body: 'giant' }, 'b'); const result = fire(battle(mode, a, b), a, b); expect(result.drPercent).toBe(70); }
   });
-  it('精锐的默认个体体能、显式上限与编队人数分开；机械化收益需要实际车辆及装甲', () => {
+  it('精锐的默认个体体能、显式上限与编队人数分开；机械化适用人形与车辆，装甲另给防御', () => {
     const base = unit({ scale: 'hero', hpMax: undefined }), elite = unit({ scale: 'hero', hpMax: undefined, traits: ['elite'] }); expect(elite.base.hpMax - base.base.hpMax).toBe(8);
     const explicit = unit({ scale: 'hero', hp: 18, hpMax: 43, traits: ['elite'] }); expect(explicit.base.hpMax).toBe(43); expect(explicit.hp).toBe(18);
     const group = unit({ hp: 70, traits: ['elite'] }); grantTraitSource(group, { id: 'training', name: '精锐训练', kind: 'blessing', traitIds: ['elite'], duration: { kind: 'rounds', count: 1 } });
     expect(group.hp).toBe(70); expect(group.base.hpMax).toBe(80); expect(group.base.atk - unit().base.atk).toBe(2);
     const naked = unit({ traits: ['mechanized'] }), vehicle = unit({ body: 'vehicle', armorTier: 1, traits: ['mechanized'] }), car = unit({ body: 'vehicle', armorTier: 1 }), tank = unit({ body: 'vehicle', armorTier: 4, weaponClass: 'cannon' });
-    expect(naked.base.spd).toBe(unit().base.spd); expect(vehicle.base.spd - car.base.spd).toBe(2); expect(vehicle.base.def - car.base.def).toBe(1); expect(movementPoints(vehicle)).toBe(4); expect(movementPoints(tank)).toBe(2);
+    expect(naked.base.spd - unit().base.spd).toBe(2); expect(naked.base.def).toBe(unit().base.def); expect(vehicle.base.spd - car.base.spd).toBe(2); expect(vehicle.base.def - car.base.def).toBe(1); expect(movementPoints(vehicle)).toBe(4); expect(movementPoints(tank)).toBe(2);
+  });
+  it('所有身体与个体/编队均可机械化，巨型保留泰坦结构；临时来源到期撤销收益', () => {
+    for (const body of ['human', 'large', 'vehicle', 'giant'] as const) for (const scale of ['hero', 'company'] as const) {
+      const base = unit({ body, scale, armorTier: 1 }), robot = unit({ body, scale, armorTier: 1, traits: ['mechanized'] });
+      expect(robot.base.spd - base.base.spd).toBe(2); expect(robot.base.def - base.base.def).toBe(1);
+      expect(movementPoints(robot) - movementPoints(base)).toBe(1);
+      if (body === 'giant') expect(activeTraitIds(robot)).toEqual(expect.arrayContaining(['titan', 'mechanized']));
+      const state = JSON.stringify([base.body, base.hp, base.base.hpMax, base.weapon, base.armor]);
+      grantTraitSource(base, { id: 'mechanical', name: '机械化', kind: 'blessing', traitIds: ['mechanized'], duration: { kind: 'rounds', count: 1 } });
+      expect(traitStatAdjustments(base)).toMatchObject({ spd: 2, def: 1 }); expect(movementPoints(base)).toBe(movementPoints(robot));
+      expireTraitSources(base, 'rounds'); expect(traitStatAdjustments(base)).toEqual({});
+      expect(JSON.stringify([base.body, base.hp, base.base.hpMax, base.weapon, base.armor])).toBe(state);
+    }
   });
 });

@@ -19,7 +19,7 @@ export function movementPoints(unit: Combatant, tags: string[] = []): number {
   const ids = activeTraitIds(unit), conditions = activeConditionIds(unit);
   const vehicle = unit.body === 'vehicle';
   const light = ['human', 'large'].includes(unit.body ?? 'human') && (unit.armor?.tier ?? 0) <= 2;
-  const mobility = unit.mount === true || ids.includes('fast') || ids.includes('skirmisher') && light || ids.includes('mechanized') && vehicle || ids.includes('plains-runner') && tags.includes('plains') ? 1 : 0;
+  const mobility = unit.mount === true || ids.includes('fast') || ids.includes('skirmisher') && light || ids.includes('mechanized') || ids.includes('plains-runner') && tags.includes('plains') ? 1 : 0;
   const armor = !vehicle && (unit.armor?.tier ?? 0) >= 3 ? 1 : 0;
   const night = tags.includes('night') && !ids.includes('night-fighter') ? 1 : 0;
   return Math.max(1, Math.min(5, bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - armor - night - Math.floor(unit.fatigue / 2) - Number(humanEncumbered(unit))));
@@ -84,10 +84,6 @@ export function defensivePostureMods(unit: Combatant, ctx: ResolveContext, defs:
   const mods: Modifier[] = [{ source: 'stance', sourceId: 'brace:def', stackGroup: 'posture:def', name: '正面固守', kind: 'def', type: 'flat', value: 2 }];
   for (const id of activeTraitIds(unit)) {
     if (traitPrerequisiteReason(unit, id)) continue;
-    if (id === 'fortification' && ctx.fieldTags?.includes('siege')) {
-      mods.push({ source: 'stance', sourceId: 'fortification:def', stackGroup: 'posture:def', name: '守城工事', kind: 'def', type: 'flat', value: 3 });
-      if (ctx.ranged) mods.push({ source: 'stance', sourceId: 'fortification:ward', stackGroup: 'posture:ward', name: '守城工事', kind: 'ward', type: 'mult', value: 0.7 });
-    }
     const mult = id === 'shield-wall' && ctx.ranged ? 0.6 : id === 'pike-wall' && ctx.charge && !ctx.ranged ? 0.5 : undefined;
     if (mult !== undefined) mods.push({ source: 'stance', sourceId: id + ':posture', stackGroup: 'posture:ward', name: registry?.get(id)?.name ?? (id === 'pike-wall' ? '拒马' : '盾墙'), kind: 'ward', type: 'mult', value: mult });
   }
