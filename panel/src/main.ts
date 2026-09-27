@@ -1,3 +1,4 @@
+import { renderWorldbookSettings, captureWorldbookDraft, worldbookDraftPatch, type WorldbookDraft } from './worldbook-settings.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import { equipmentLoadLabel } from '../../engine/src/body.js';
 import { LlmContextController, llmContextSummary, type LlmEncounterContext } from './llm-context.js';
@@ -107,6 +108,8 @@ const formationView: FormationView = {};
 const narrativeDrafts = new Map<string, string>();
 const promptDrafts = new Map<string, string>();
 const worldbookDrafts = new Map<string, string>();
+const customWorldbookDrafts = new Map<string, WorldbookDraft>();
+let worldbookDeleting: string | undefined;
 let workspaceTab: WorkspaceTab = 'battle';
 let workspaceNamespace = adapter.namespace();
 let builderEditDraft: UnitDraft | undefined;
@@ -946,13 +949,7 @@ function renderBattlePreparation(): string {
 }
 function renderEmbeddedWorldbookSettings(): string {
   const view = runtime.getWorldbookSettings?.();
-  if (!view) return '';
-  return `<section><h2>内置世界书</h2>
-    <label><input type="checkbox" data-role="worldbook-enabled" ${view.enabled ? 'checked' : ''}> 启用内置世界书</label>
-    <p>默认启用四个常驻条目，无需关键词。开关与编辑内容全局保存，不随聊天或角色切换。位置、深度、角色和顺序沿用原文件；这里只编辑正文。启用后请自行停用外挂的同一套世界书，避免重复发送。</p>
-    ${view.injectionMode === 'depth' ? '<p>当前酒馆使用深度注入兼容模式：保留深度、角色及四条内部顺序，但与其他世界书的混排顺序可能不同。更新酒馆可使用原生世界书排序。</p>' : ''}
-    ${view.items.map(item => `<div class="prompt-setting"><label><strong>${esc(item.title)}</strong> <span class="sub">depth ${item.depth} · ${item.role === 0 ? 'system' : 'role '+item.role} · order ${item.order}</span></label><details data-detail-id="worldbook-editor-${esc(item.id)}"><summary>编辑条目</summary><textarea data-role="worldbook-template" data-entry="${esc(item.id)}" style="width:100%;min-height:12em">${esc(worldbookDrafts.get(item.id) ?? item.content)}</textarea><div class="row"><button data-action="worldbook-save" data-entry="${esc(item.id)}">保存编辑并立即生效</button><button data-action="worldbook-reset" data-entry="${esc(item.id)}">恢复内置默认文本</button></div></details></div>`).join('')}
-  </section>`;
+  return view ? renderWorldbookSettings(view, worldbookDrafts, customWorldbookDrafts, worldbookDeleting) : '';
 }
 function renderWorkspaceSettings(): string {
   const saved = controller.snapshot(), view = llmSettingsView();
@@ -2087,7 +2084,7 @@ async function handleAction(e: Event): Promise<void> {
     document.querySelector<HTMLElement>('[data-action="loadout-skills"]')?.focus({ preventScroll: true });
     return;
   }
-  if (act === 'worldbook-save' || act === 'worldbook-reset') {
+  if (act.startsWith('worldbook-')) {
     try { await actions[act]?.(el); } catch (error) { toast(error instanceof Error ? error.message : String(error)); }
     return;
   }
@@ -2691,13 +2688,36 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   'grid-endturn': () => { state.small!.endTurn(); },
   'grid-mobile-endturn': () => { state.small!.endTurn(); },
   'grid-auto': async () => { await autoSmall(state.small!); },
+  'worldbook-create': () => {
+    const view = runtime.setWorldbookSettings?.({ create: true });
+    if (!view) return;
+    const item = view.items.at(-1)!;
+    render('view');
+    const editor = document.querySelector<HTMLDetailsElement>(`[data-detail-id="worldbook-editor-${item.id}"]`);
+    if (editor) editor.open = true;
+    document.getElementById(`wb-${item.id}-title`)?.focus();
+  },
+  'worldbook-delete': (el) => { worldbookDeleting = el.dataset.entry; render('view'); },
+  'worldbook-delete-cancel': () => { worldbookDeleting = undefined; render('view'); },
+  'worldbook-delete-confirm': (el) => {
+    const id = el.dataset.entry;
+    if (!id || id !== worldbookDeleting || !runtime.setWorldbookSettings) return;
+    runtime.setWorldbookSettings({ custom: { id, delete: true } });
+    worldbookDrafts.delete(id); customWorldbookDrafts.delete(id); worldbookDeleting = undefined;
+    render('view');
+  },
   'worldbook-save': (el) => {
     if (!runtime.setWorldbookSettings || !runtime.getWorldbookSettings) return;
     const id = el.dataset.entry; if (!id) return;
     const textarea = Array.from(document.querySelectorAll<HTMLTextAreaElement>('[data-role="worldbook-template"]')).find(item => item.dataset.entry === id);
     if (!textarea) return;
-    runtime.setWorldbookSettings({ entry: { id, content: textarea.value } });
-    worldbookDrafts.delete(id); render('view'); toast('内置世界书已保存并立即生效');
+    const item = runtime.getWorldbookSettings().items.find(item => item.id === id);
+    if (item?.custom) {
+      const draft = captureWorldbookDraft(textarea.closest<HTMLElement>('[data-worldbook-entry]')!);
+      runtime.setWorldbookSettings({ custom: { id, patch: worldbookDraftPatch(draft, textarea.value) } });
+      customWorldbookDrafts.delete(id);
+    } else runtime.setWorldbookSettings({ entry: { id, content: textarea.value } });
+    worldbookDrafts.delete(id); render('view'); toast('已保存');
   },
   'worldbook-reset': (el) => {
     if (!runtime.setWorldbookSettings) return;
@@ -3297,7 +3317,7 @@ async function afterSmallAction(endTurn = true): Promise<void> {
 document.addEventListener('click', e => {
   const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
   if (!action) return;
-  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'modal-stop', 'llm-stop', 'llm-models', 'worldbook-save', 'worldbook-reset'].includes(action)) { void handleAction(e); return; }
+  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'modal-stop', 'llm-stop', 'llm-models'].includes(action) || action.startsWith('worldbook-')) { void handleAction(e); return; }
   // Scan/reload validate the refreshed service themselves; they must remain
   // reachable when a host metadata refresh invalidates the old panel session.
   const viewOnly = ['save-retry', 'archive-reload', 'narrative-scan', 'pending-scan', 'workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-inspect-unit', 'grid-cell', 'grid-mode', 'narrative-review', 'log-detail', 'unit-detail', 'role-detail', 'modal-stop', 'migration-export', 'loadout-skills', 'loadout-skills-close'].includes(action);
@@ -3326,6 +3346,10 @@ document.addEventListener('input', e => {
 document.addEventListener('input', (e) => {
   if (!(e.target instanceof Element)) return;
   if (e.target instanceof HTMLTextAreaElement && e.target.dataset.role === 'prompt-template') { promptDrafts.set(e.target.dataset.section!, e.target.value); return; }
+  if (e.target instanceof HTMLElement && e.target.dataset.role === 'worldbook-field') {
+    customWorldbookDrafts.set(e.target.dataset.entry!, captureWorldbookDraft(e.target.closest<HTMLElement>('[data-worldbook-entry]')!));
+    return;
+  }
   if (e.target instanceof HTMLTextAreaElement && e.target.dataset.role === 'worldbook-template') { worldbookDrafts.set(e.target.dataset.entry!, e.target.value); return; }
   if (e.target instanceof HTMLTextAreaElement && e.target.dataset.role === 'narrative-draft') { narrativeDrafts.set(e.target.dataset.id!, e.target.value); return; }
   inventoryPanel.capture(e.target);
@@ -3470,6 +3494,17 @@ async function handleChange(e: Event): Promise<void> {
   }
 }
 document.addEventListener('change', e => {
+  if (e.target instanceof HTMLElement && e.target.dataset.role === 'worldbook-field') {
+    customWorldbookDrafts.set(e.target.dataset.entry!, captureWorldbookDraft(e.target.closest<HTMLElement>('[data-worldbook-entry]')!));
+    if (e.target.dataset.field === 'constant') render('view');
+    return;
+  }
+  if (e.target instanceof HTMLInputElement && e.target.dataset.role === 'worldbook-entry-enabled') {
+    try { runtime.setWorldbookSettings?.({ custom: { id: e.target.dataset.entry!, patch: { enabled: e.target.checked } } }); render('view'); }
+    catch (error) { toast(error instanceof Error ? error.message : '保存失败'); render('view'); }
+    return;
+  }
+
   if (e.target instanceof HTMLInputElement && e.target.dataset.role === 'loadout-skill') {
     const id = e.target.dataset.id, draft = loadoutSkills;
     if (!id || !draft || uiBusy) return;
@@ -3480,7 +3515,7 @@ document.addEventListener('change', e => {
   }
   if (e.target instanceof HTMLInputElement && e.target.dataset.role === 'worldbook-enabled') {
     if (!runtime.setWorldbookSettings) return;
-    try { runtime.setWorldbookSettings({ enabled: e.target.checked }); worldbookDrafts.clear(); render('view'); }
+    try { runtime.setWorldbookSettings({ enabled: e.target.checked }); render('view'); }
     catch (error) { toast(error instanceof Error ? error.message : '世界书设置保存失败'); }
     return;
   }

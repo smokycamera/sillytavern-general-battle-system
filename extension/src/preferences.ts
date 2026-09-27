@@ -1,5 +1,5 @@
 import type { HostWindow } from '../../host/src/sillytavern.js';
-import type { EmbeddedWorldbookSettings } from './embedded-worldbook.js';
+import { normalizeEmbeddedWorldbookSettings, type EmbeddedWorldbookSettings } from './embedded-worldbook.js';
 
 export interface DisplayPreferences {
   theme?: 'dark' | 'light';
@@ -15,12 +15,7 @@ export function preferences(host: HostWindow): { read(): DisplayPreferences; wri
       if (!raw || typeof raw !== 'object') return {};
       const value = raw as DisplayPreferences; const geometry = value.geometry; const entryPosition = value.entryPosition;
       const rawWorldbook = value.worldbook && typeof value.worldbook === 'object' ? value.worldbook : undefined;
-      const worldbook = rawWorldbook ? {
-        enabled: rawWorldbook.enabled !== false,
-        entries: rawWorldbook.entries && typeof rawWorldbook.entries === 'object'
-          ? Object.fromEntries(Object.entries(rawWorldbook.entries).filter(([, content]) => typeof content === 'string'))
-          : {},
-      } : undefined;
+      const worldbook = rawWorldbook ? normalizeEmbeddedWorldbookSettings(rawWorldbook) : undefined;
       return {
         ...(entryPosition && Number.isFinite(entryPosition.left) && Number.isFinite(entryPosition.top) ? { entryPosition: { ...entryPosition } } : {}),
         theme: value.theme === 'light' ? 'light' : 'dark',

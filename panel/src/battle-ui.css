@@ -47,3 +47,16 @@ body[aria-busy="true"] .app-state::before { content: '处理中…'; font-size: 
 button, [data-action] { touch-action: manipulation; }
 
 button[data-processing="true"] { outline: 2px solid var(--accent, #cdbb86); opacity: .72; }
+
+/* Embedded lorebook editor */
+.worldbook-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.worldbook-heading h2{margin:0}
+.worldbook-heading{margin-bottom:16px}
+.worldbook-name,.worldbook-keys{display:block;margin:12px 0}
+.worldbook-name input,.worldbook-keys textarea{display:block;width:100%;box-sizing:border-box}
+.worldbook-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}
+.worldbook-fields label{display:flex;flex-direction:column;gap:4px;min-width:0}
+.worldbook-fields input,.worldbook-fields select{width:100%;min-width:0;box-sizing:border-box}
+.worldbook-keys[hidden]{display:none}
+.worldbook-settings .prompt-setting{margin-top:16px}
+.worldbook-settings .prompt-setting>.sub{display:block}
