@@ -8,11 +8,15 @@ import path from 'node:path';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { createHash } from 'node:crypto';
-import { embeddedWorldbookEntries, installEmbeddedWorldbook } from '../extension/src/embedded-worldbook.js';
+import { embeddedWorldbookEntries, installEmbeddedWorldbook, updateEmbeddedWorldbookSettings } from '../extension/src/embedded-worldbook.js';
 
 const directory = process.argv[2];
 assert.ok(directory, 'Pass the official host-source directory');
-const entries = embeddedWorldbookEntries();
+let settings = updateEmbeddedWorldbookSettings(undefined, { create: true });
+settings = updateEmbeddedWorldbookSettings(settings, { custom: { id: 'custom-1', patch: { content: 'BLUE_CUSTOM', depth: 1, order: 2, role: 2 } } });
+settings = updateEmbeddedWorldbookSettings(settings, { create: true });
+settings = updateEmbeddedWorldbookSettings(settings, { custom: { id: 'custom-2', patch: { content: 'GREEN_CUSTOM', constant: false, keys: ['城堡', 'Castle'], depth: 3, role: 1, order: 7 } } });
+const entries = embeddedWorldbookEntries(settings);
 const foreign = { ...entries[0]!, world: 'foreign', uid: 90, order: 2.5, depth: 1, comment: 'foreign rule', content: 'FOREIGN_RULE' };
 const results: object[] = [];
 for (const hostName of ['st', 'tt']) {
@@ -25,6 +29,14 @@ for (const hostName of ['st', 'tt']) {
     assert.ok(node, `${hostName}: ${name}`);
     return node.getText(parsed).replace(/^export\s+/, '');
   };
+  const bufferClass = parsed.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'WorldInfoBuffer');
+  assert.ok(bufferClass, 'Locate actual host keyword buffer');
+  let activationLoop: ts.Node | undefined;
+  const findLoop = (node: ts.Node) => {
+    if (ts.isForOfStatement(node) && node.expression.getText(parsed) === 'sortedEntries' && node.getText(parsed).includes('matchSecondaryKeys')) activationLoop = node;
+    ts.forEachChild(node, findLoop);
+  };
+  findLoop(parsed); assert.ok(activationLoop, 'Locate actual host activation loop');
   const start = source.indexOf('const WIBeforeEntries = []');
   const end = source.indexOf('const worldInfoBefore =', start);
   assert.ok(start > 0 && end > start, 'Locate actual host prompt-assembly block');
@@ -44,6 +56,10 @@ for (const hostName of ['st', 'tt']) {
     const sandbox = vm.createContext({
       structuredClone, console: { debug() {}, log() {}, error(error: unknown) { throw error; }, warn() {} },
       world_info_character_strategy: strategy,
+      MAX_SCAN_DEPTH: 1000, world_info_depth: 2, world_info_case_sensitive: false, world_info_match_whole_words: false,
+      world_info_recursive: false, scan_state: { NONE: 0, INITIAL: 1, RECURSION: 2, MIN_ACTIVATIONS: 3 },
+      substituteParams: (text: string) => text, parseRegexFromString: () => null,
+
       world_info_insertion_strategy: { evenly: 0, character_first: 1, global_first: 2 },
       sortFn: (a: { order: number }, b: { order: number }) => b.order - a.order,
       getGlobalLore: async () => structuredClone([foreign, ...(useEmbedded ? [] : entries)]),
@@ -63,7 +79,17 @@ for (const hostName of ['st', 'tt']) {
       const helper = readFileSync(path.join(directory, 'tt-world-info-entry-prepare.js'), 'utf8').replace('export function', 'function');
       vm.runInContext(helper + '\n' + functionText('collectWorldInfoEntries'), sandbox);
     }
-    vm.runInContext(functionText('getSortedEntries'), sandbox);
+    vm.runInContext(bufferClass.getText(parsed) + '\n' + functionText('getSortedEntries'), sandbox);
+    const activate = (values: object[], messages: string[]) => {
+      sandbox.sortedEntries = values; sandbox.messages = messages;
+      return vm.runInContext(`(() => {
+        const globalScanData = { trigger: 'normal' }, buffer = new WorldInfoBuffer(messages, globalScanData);
+        const failedProbabilityChecks = new Set(), allActivatedEntries = new Map(), activatedNow = new Set();
+        const timedEffects = { isEffectActive() { return false; } }, scanState = scan_state.INITIAL, currentRecursionDelayLevel = 0;
+        ${activationLoop!.getText(parsed)}
+        return Array.from(activatedNow);
+      })()`, sandbox) as object[];
+    };
     const sorted = async () => vm.runInContext('getSortedEntries()', sandbox) as Promise<object[]>;
     const prompt = (values: object[]) => {
       sandbox.allActivatedEntries = new Map(values.map((entry, index) => [index, entry]));
@@ -71,9 +97,17 @@ for (const hostName of ['st', 'tt']) {
     };
     const baseline = prompt(await sorted());
     useEmbedded = true;
-    let stop = installEmbeddedWorldbook(port);
+    let stop = installEmbeddedWorldbook(port, settings);
     assert.equal(stop.mode, 'native');
     assert.equal(prompt(await sorted()), baseline, `${hostName} strategy ${strategy}: original vs built-in prompt`);
+    const nativeEntries = await sorted();
+    const noMatch = prompt(activate(nativeEntries, ['旅店休息']));
+    assert.ok(noMatch.includes('BLUE_CUSTOM')); assert.ok(!noMatch.includes('GREEN_CUSTOM'));
+    for (const messages of [['前往城堡'], ['enter the CASTLE'], ['休息', '城堡守军']]) {
+      const active = activate(nativeEntries, messages);
+      assert.ok(prompt(active).includes('GREEN_CUSTOM'), `${hostName}: keyword activation`);
+    }
+    assert.ok(!prompt(activate(nativeEntries, ['休息', '酒馆', '城堡'])).includes('GREEN_CUSTOM'), 'Insertion depth does not change the host scan depth');
     stop(); assert.equal(installed, false);
     stop = installEmbeddedWorldbook(port, { entries: { '0': 'EDITED_RULE' } });
     assert.ok(prompt(await sorted()).includes('EDITED_RULE'));
@@ -82,10 +116,10 @@ for (const hostName of ['st', 'tt']) {
     assert.ok(!disabled.includes('<battle_contract>'));
     assert.ok(disabled.includes('FILTERED_RULE'));
     stop();
-    results.push({ host: hostName, strategy, originalEqualsEmbedded: true, edit: true, disable: true, cleanup: true });
+    results.push({ host: hostName, strategy, originalEqualsEmbedded: true, keywordMatchAndMiss: true, hostScanDepth: true, customRoles: true, edit: true, disable: true, cleanup: true });
   }
   const bytes = Buffer.from(source);
   const blob = createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
   console.log(`${hostName} world-info blob ${blob}: 3 strategy comparisons passed`);
 }
-console.log(JSON.stringify({ cases: results, limitations: 'Host functions executed with stubbed I/O and all four rules activated; no live ST/TT UI or budget-exhaustion simulation.' }, null, 2));
+console.log(JSON.stringify({ cases: results, limitations: 'Native sort, keyword buffer/activation loop and depth assembly executed with stubbed I/O, decorators and macro/regex helpers; no live ST/TT UI, recursion, or budget-exhaustion simulation.' }, null, 2));

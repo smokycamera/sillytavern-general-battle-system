@@ -2,6 +2,17 @@ import { NarrativeController } from './narrative-controller.js';
 import { createAdapter, type SaveReceipt, type TavernAdapter, type DeliveryReceipt } from './tavern.js';
 import type { PanelController } from './controller-port.js';
 
+export interface CustomWorldbookEntry {
+  id: string;
+  title: string;
+  content: string;
+  enabled: boolean;
+  constant: boolean;
+  keys: string[];
+  depth: number;
+  role: number;
+  order: number;
+}
 export interface WorldbookEditorItem {
   id: string;
   title: string;
@@ -10,9 +21,15 @@ export interface WorldbookEditorItem {
   depth: number;
   role: number;
   order: number;
+  custom?: CustomWorldbookEntry;
 }
 export interface WorldbookEditorState { enabled: boolean; items: WorldbookEditorItem[]; injectionMode?: 'native' | 'depth' }
-export interface WorldbookEditorUpdate { enabled?: boolean; entry?: { id: string; content?: string } }
+export interface WorldbookEditorUpdate {
+  enabled?: boolean;
+  entry?: { id: string; content?: string };
+  create?: boolean;
+  custom?: { id: string; patch?: Partial<Omit<CustomWorldbookEntry, 'id'>>; delete?: boolean };
+}
 
 export interface PanelRuntime {
   recentNarrative?: () => import('../../vendor/jev-core/src/types.js').NarrativeMessage[];
