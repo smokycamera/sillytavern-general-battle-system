@@ -46,7 +46,7 @@ import {
   generateUnit, traitCatalog, traitRegistry, resolveTraitId,
   SmallBattle, MassBattle, battleXpAwardsForBothSides, applyXp, xpProgress, xpLabel,
   armorDR, fieldModsFor, LITE_D20,
-  V5_D20, V5_OVERFLOW_D20, V5_OVERFLOW_TW, isAirborne, abilityUsabilityReason,
+  V5_D20, V6_D20, V6_OVERFLOW_D20, V6_OVERFLOW_TW, isAirborne, abilityUsabilityReason,
   generatedField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
   FORMATION_NODES, formationNode, concealmentLabel,
   type Combatant, type GenerateInput, type Order, type BattleLogEntry, type Side,
@@ -521,7 +521,7 @@ function restore(): void {
   }
   // 旧存档已结算标记也封口，不能因旧版缺少完整战果 id 而重写最新档案。
   const restoredBattle = currentBattle();
-  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareCombatModel(unit,V5_D20);upgradeCombatSkills(unit);}
+  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);}
   if (restoredBattle && state.xpSettled) {
     const id = battleOutcomeId(state.mass ? 'mass' : 'small', restoredBattle.seed);
     if (!state.committedOutcomeIds.includes(id)) state.committedOutcomeIds.push(id);
@@ -589,8 +589,8 @@ function defaultRank(u: Pick<Combatant, 'archetype'>): 'front' | 'rear' | 'reser
 
 async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {}): Promise<void> {
   // 特质去重：AI 标签/面板勾选可能重复给同一特质
-  const { unit } = generateUnit({ ...input, rulesVersion: 'v2', era: undefined, traits: [...new Set(input.traits)] }, { registry: reg });
-  prepareCombatModel(unit, V5_D20); upgradeCombatSkills(unit);
+  const { unit } = generateUnit({ ...input, rulesVersion: 'v2', damageModel: 'wounds-v2', era: undefined, traits: [...new Set(input.traits)] }, { registry: reg });
+  prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit);
   // id 去重
   state.idSeq++;
   state.roster.push(unit);
@@ -604,7 +604,7 @@ async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {})
 /** 储存器档案实体化为本场编制，保留稳定 id、当前兵力、状态和玩家编辑过的基础属性。 */
 function materializeStorageUnit(r0: RosterUnit): Combatant {
   const unit=materializeUnitRecord(r0, reg, { era: state.era });
-  if(unit.rulesVersion==='v2'){prepareCombatModel(unit,V5_D20);upgradeCombatSkills(unit);}
+  if(unit.rulesVersion==='v2'){prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);}
   return unit;
 }
 
@@ -941,8 +941,10 @@ function renderMigrationReview(): string {
     <p>可读取 ${review.candidate.storage?.length ?? 0} 个档案；隔离 ${review.quarantined} 项。已有装备、人数和进行中旧规则保留。接受后会连同完整原档备份一起保存。</p>
     ${review.changes.map((change) => `<div class="sub">${esc(change)}</div>`).join('')}
     <div class="row"><button data-action="migration-export">下载原档备份</button><button class="primary" data-action="migration-accept">接受此预览并保存备份</button></div></section>`;
+  const upgrade = !currentBattle() && state.storage.some(r=>r.snapshot?.rulesVersion==='v2'&&r.snapshot.damageModel!=='wounds-v2')
+    ? '<section><h3>统一规则升级</h3><p>新战斗采用V6统一生命、技能与编队展开。先查看各档案变化，确认后保存原档备份；进行中的旧战斗保持原规则。</p><button data-action="migration-balance">预览统一数值升级</button></section>' : '';
   const backups = controller.snapshot().migrationBackups;
-  return Array.isArray(backups) && backups.length ? `<details><summary>迁移备份与恢复</summary><p>恢复会替换当前聊天的战阵战斗记录，回到最近一次迁移前。请先下载当前存档。</p><button data-action="migration-export">下载当前完整存档</button><button data-action="migration-restore">恢复最近迁移前备份</button></details>` : '';
+  return upgrade + (Array.isArray(backups) && backups.length ? `<details><summary>迁移备份与恢复</summary><p>恢复会替换当前聊天的战阵战斗记录，回到最近一次迁移前。请先下载当前存档。</p><button data-action="migration-export">下载当前完整存档</button><button data-action="migration-restore">恢复最近迁移前备份</button></details>` : '');
 }
 
 function renderUnitConversion(): string {
@@ -2417,6 +2419,9 @@ async function resolveMassRound(expectedRound: number, expectedSeed?: string): P
 
 
 async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void> {
+  if (state.roster.some(u=>u.rulesVersion==='v2'&&u.damageModel!=='wounds-v2')) {
+    controller.reviewBalanceUpgrade(); restore(); render(); return;
+  }
   prepareRosterForBattle();
   if (!rosterHasBothSides()) throw Error('开战前必须同时有我方与敌方单位');
   let context:LlmEncounterContext|undefined;
@@ -2455,7 +2460,7 @@ async function startSmallBattle(context?:LlmEncounterContext):Promise<void> {
     const small = new SmallBattle({
       nonLethal:state.nonLethal,
       ...(state.roster.every((u) => u.rulesVersion === 'v2') ? { battlefield } : {}),
-      rules: state.roster.every((u) => u.rulesVersion === 'v2') ? V5_OVERFLOW_D20 : LITE_D20,
+      rules: state.roster.every((u) => u.rulesVersion === 'v2') ? V6_OVERFLOW_D20 : LITE_D20,
       combatants: JSON.parse(JSON.stringify(state.roster)), seed: state.roster.every((u) => u.rulesVersion === 'v2') ? seed : undefined, traitRegistry: reg,
       summonUnit,
       field: { tags: state.roster.every((u) => u.rulesVersion === 'v2') ? tags : state.field ? [state.field] : [] },
@@ -2486,7 +2491,7 @@ async function startMassBattle(context?:LlmEncounterContext):Promise<void> {
     }
     const mass = new MassBattle({
       nonLethal:state.nonLethal,
-      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V5_OVERFLOW_TW } : {}),
+      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V6_OVERFLOW_TW } : {}),
       combatants: clones,
       traitRegistry: reg,
       commanderId: state.commanderId,
@@ -2565,6 +2570,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     const link = document.createElement('a'); link.href = url; link.download = 'tavern-battle-backup-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
     link.click(); URL.revokeObjectURL(url);
   },
+  'migration-balance': () => { controller.reviewBalanceUpgrade(); restore(); render(); },
   'migration-accept': async () => { const receipt = (await controller.acceptMigration()); if (receipt.status === 'failed') throw new Error(receipt.error); restore(); state.saveReceipt = receipt; },
   'migration-restore': async () => { const receipt = (await controller.restoreMigrationBackup()); if (receipt.status === 'failed') throw new Error(receipt.error); restore(); state.saveReceipt = receipt; },
   'grid-flight': (el) => {

@@ -1,3 +1,4 @@
+import { singleLifeLimit } from '../../engine/src/health-limits.js';
 /** 正文战外绝对赋值。所有修改先在副本校验，装备实物与档案一起提交。 */
 import type { Ability, Combatant, EquipmentSlot, ItemMechanics, ItemSpecification } from '../../engine/src/index.js';
 import { compileItem, equipmentReason, resolveTraitId, traitRegistry, standardConditionMap, parseDice, generateUnit, type GenerateInput } from '../../engine/src/index.js';
@@ -101,7 +102,7 @@ function gearValue(input: unknown, previous: ItemMechanics | undefined, slot: Eq
     const values = requireObject(config.values, '装备values');
     keys(values, mechanics.kind === 'weapon' ? weaponFields : mechanics.kind === 'armor' ? armorFields : shieldFields, '装备values');
     // 明确的原始数值指的是当前规则实际值，不能在入场时被威力投影覆盖。
-    if (mechanics.kind === 'weapon') mechanics.value = { ...anchoredWeapon(mechanics.value,undefined,'wounds-v1')!, customized: true };
+    if (mechanics.kind === 'weapon') mechanics.value = { ...anchoredWeapon(mechanics.value,undefined,unit.damageModel ?? 'wounds-v1')!, customized: true };
     mechanics.value = merge(mechanics.value as unknown as ObjectData, values) as unknown as typeof mechanics.value;
     if (mechanics.kind === 'armor' && values.protection !== undefined) mechanics.value.protectionOverride = values.protection !== null;
   }
@@ -142,7 +143,7 @@ function skillValues(unit: Combatant, input: unknown): Ability[] {
       const old = ability;
       ability = compileSkill({ id: definition, name: spec.name as string | undefined, bonuses: spec.bonuses as Enhancements | undefined }, power, unit.id);
       ability.id = old?.id ?? `${unit.id}:story-skill:${index}:${ability.id}`;
-      const carrier = { ...unit, combatModel: 'cohort-v2' as const, damageModel:'wounds-v1' as const, abilities: [ability] }; upgradeCombatSkills(carrier);
+      const carrier = { ...unit, combatModel: 'cohort-v2' as const, damageModel:unit.damageModel ?? 'wounds-v1' as const, abilities: [ability] }; upgradeCombatSkills(carrier);
     }
     if (!ability) throw Error('技能需要已有id或spec');
     if (config.values !== undefined) {
@@ -153,7 +154,7 @@ function skillValues(unit: Combatant, input: unknown): Ability[] {
         const old = ability;
         ability=compileSkill({id:old.definitionId!,name:old.name,bonuses:values.bonuses===null?{}:(values.bonuses??old.bonuses) as Enhancements|undefined},power,unit.id);
         ability.id=old.id;ability.cooldownGroup=old.cooldownGroup;
-        upgradeCombatSkills({...unit,combatModel:'cohort-v2',damageModel:'wounds-v1',abilities:[ability]});
+        upgradeCombatSkills({...unit,combatModel:'cohort-v2',damageModel:unit.damageModel ?? 'wounds-v1',abilities:[ability]});
       }
       ability = merge(ability as unknown as ObjectData, values) as unknown as Ability;
       ability.customized = true;
@@ -192,12 +193,12 @@ function rebase(unit: Combatant, data: ObjectData): void {
   const baseline=(value: ObjectData) => {
     strings(value.traits,'traits');
     const traits=value.traits.map(name=>{const id=resolveTraitId(name,registry);if(!id)throw Error('未知特质：'+name);return id;});
-    const input={name:unit.name,side:unit.side,rulesVersion:'v2',scale:value.scale,body:value.body,archetype:value.archetype,level:value.level,bonuses:value.bonuses??undefined,traits,armorTier:0} as GenerateInput;
+    const input={name:unit.name,side:unit.side,rulesVersion:'v2',damageModel:unit.damageModel,scale:value.scale,body:value.body,archetype:value.archetype,level:value.level,bonuses:value.bonuses??undefined,traits,armorTier:0} as GenerateInput;
     return generateUnit(input,{seed:'unit-set-baseline',registry,noVariance:true}).unit;
   };
   const old=baseline(unit as unknown as ObjectData), changed=merge(unit as unknown as ObjectData,Object.fromEntries(['level','body','archetype','scale','bonuses','traits'].filter(key=>Object.hasOwn(data,key)).map(key=>[key,data[key]]))), next=baseline(changed);
   for(const key of ['atk','def','spd'] as const)unit.base[key]+=next.base[key]-old.base[key];
-  if(next.scale==='hero')unit.base.hpMax=Math.max(1,Math.min(1000,unit.base.hpMax+next.base.hpMax-old.base.hpMax));
+  if(next.scale==='hero')unit.base.hpMax=Math.max(1,Math.min(singleLifeLimit(unit.damageModel),unit.base.hpMax+next.base.hpMax-old.base.hpMax));
   if(next.scale==='company')unit.base.moraleMax=(unit.base.moraleMax??old.base.moraleMax??0)+(next.base.moraleMax??0)-(old.base.moraleMax??0);
   else {delete unit.base.moraleMax;delete unit.morale;}
   if(unit.formation)setMemberMaximum(unit,Math.max(1,Math.round(unit.formation.memberHp+nominalLife(next)-nominalLife(old))));
@@ -213,7 +214,7 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   if (!previous) throw Error('unit_set目标档案不存在');
   const registry = traitRegistry();
   let unit = materializeUnitRecord(previous, registry);
-  unit.damageModel='wounds-v1';
+  unit.damageModel??='wounds-v1';
   const oldProgress = xpProgress(unit)?.current ?? 0;
   const data = structuredClone(patch);
   for (const [alias, key] of Object.entries({state:'status',speed:'speedTier',weapon2:'sidearm'})) if (data[alias] !== undefined) {
@@ -243,7 +244,7 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   if (typeof unit.name !== 'string' || !unit.name.trim()) throw Error('单位名称不能为空');
   enumeration(unit.side,['ally','enemy','neutral'],'side'); enumeration(unit.scale,['hero','company'],'scale');
   enumeration(unit.archetype ?? 'infantry',['infantry','ranged','mobile'],'archetype'); enumeration(unit.body ?? 'human',['human','large','vehicle','giant'],'body');
-  number(unit.level,'训练等级',1,10,true); number(unit.base.hpMax,'hpMax',1,unit.scale==='hero'?1000:1e9,true);
+  number(unit.level,'训练等级',1,10,true); number(unit.base.hpMax,'hpMax',1,unit.scale==='hero'?singleLifeLimit(unit.damageModel):1e9,true);
   number(unit.hp,'hp',0,unit.base.hpMax,true);
   for (const key of ['atk','def','spd'] as const) number(unit.base[key],key);
   if (unit.base.moraleMax !== undefined) number(unit.base.moraleMax,'moraleMax',0);
@@ -279,14 +280,14 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   if (unit.scale === 'hero') { if (data.formation || data.memberHp !== undefined) throw Error('个体不使用formation/memberHp'); delete unit.formation; }
   else {
     unit.combatModel = 'cohort-v2';
-    unit.formation ??= { members:unit.hp,capacity:unit.base.hpMax,memberHp:Math.min(1000,nominalLife(unit)) };
+    unit.formation ??= { members:unit.hp,capacity:unit.base.hpMax,memberHp:Math.min(singleLifeLimit(unit.damageModel),nominalLife(unit)) };
     if (data.formation !== undefined) {
       const f = data.formation as ObjectData;
       if (f.members !== undefined) { if(data.hp!==undefined&&data.hp!==f.members)throw Error('formation.members与hp冲突'); number(f.members,'members',0,unit.base.hpMax,true); unit.hp=f.members; }
       if (f.capacity !== undefined) { if((data.base as ObjectData|undefined)?.hpMax!==undefined&&unit.base.hpMax!==f.capacity)throw Error('formation.capacity与hpMax冲突'); number(f.capacity,'capacity',1,1e9,true); unit.base.hpMax=f.capacity; }
     }
-    if (data.memberHp !== undefined) { number(data.memberHp,'memberHp',1,1000,true); setMemberMaximum(unit,data.memberHp); }
-    number(unit.formation.memberHp,'memberHp',1,1000,true);
+    if (data.memberHp !== undefined) { number(data.memberHp,'memberHp',1,singleLifeLimit(unit.damageModel),true); setMemberMaximum(unit,data.memberHp); }
+    number(unit.formation.memberHp,'memberHp',1,singleLifeLimit(unit.damageModel),true);
     if (!(data.formation as ObjectData|undefined)?.health) synchronizePersonnel(unit,true);
     else { unit.formation.members=unit.hp; unit.formation.capacity=unit.base.hpMax; }
   }

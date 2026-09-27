@@ -1,3 +1,4 @@
+import { startBattle } from './smoke-start-battle.mjs';
 import { chromium } from 'playwright-core';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -111,7 +112,7 @@ try {
   await p.locator('.preparation-options summary').click(); await idle();
   await p.locator('[data-role="map-layout"]').selectOption('indoor'); await idle();
   await p.locator('[data-role="objective-mode"]').selectOption('escort'); await idle();
-  await p.locator('[data-action="small-start"]').click(); await idle();
+  await startBattle(p, 'small'); await idle();
   await p.locator('.grid-board').waitFor();
   const indoor = await page.evaluate(() => window.readBattle().battlefield);
   assert.equal(indoor.width, 5); assert.equal(indoor.height, 7); assert.equal(indoor.objective.kind, 'escape'); assert.equal(indoor.objective.unitId, 'a');
@@ -119,7 +120,7 @@ try {
   console.log('✓ 正式开战入口选择5×7室内及护送主控，任务/地图进入战斗快照');
   for (const env of ['forest', 'mountain']) {
     await page.evaluate(({ save, html, env }) => { window.loadFixture({ ...save, battle: null, field: env, lighting: 'night', mapLayout: 'standard', objectiveMode: 'control' }); document.querySelector('#panel').srcdoc = html; }, { save: fixture, html, env });
-    await p.locator('[data-action="small-start"]').click(); await idle(); await p.locator('.grid-board').waitFor();
+    await startBattle(p, 'small'); await idle(); await p.locator('.grid-board').waitFor();
     const scene = await page.evaluate(() => window.readBattle());
     assert.ok(scene.fieldTags.includes(env) && scene.fieldTags.includes('night'));
     assert.ok(scene.battlefield.tiles.includes(env === 'forest' ? 'forest' : 'hill'));
@@ -183,7 +184,7 @@ try {
   const first = forward.storage.find((r) => r.id === 'a'); first.base.spd = 100; first.snapshot.base.spd = 100;
   for (const r of forward.storage.filter((r) => ['a', 'b'].includes(r.id))) { r.traits.push('vanguard'); r.snapshot.traits.push('vanguard'); }
   await page.evaluate(({ save, html }) => { window.loadFixture(save); document.querySelector('#panel').srcdoc = html; }, { save: forward, html });
-  await p.locator('[data-action="small-start"]').click(); await idle(); await p.locator('.grid-board').waitFor();
+  await startBattle(p, 'small'); await idle(); await p.locator('.grid-board').waitFor();
   const deployed = await page.evaluate(() => window.readBattle());
   assert.equal(Math.floor(deployed.combatants.find((u) => u.id === 'a').pos / deployed.battlefield.width), deployed.battlefield.height - 4); assert.equal(Math.floor(deployed.combatants.find((u) => u.id === 'b').pos / deployed.battlefield.width), 3);
   assert.equal(deployed.movementSpent.length, 0); assert.equal(deployed.actedThisTurn.length, 0);

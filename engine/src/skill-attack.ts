@@ -8,7 +8,7 @@ import type { Ability, Combatant, EffectOp, Weapon } from './types.js';
 import type { AttackOpts } from './damage.js';
 import type { ObservationContext } from './observation.js';
 import { meleeWeapon } from './loadout.js';
-import { BODY } from './body.js';
+import { BODY, bodyProfile } from './body.js';
 import { curveAt } from './data/curves.js';
 import { diceAvg, rebuildDice } from './data/weapons.js';
 import {combatWeapon,scaledPowerDice,combatPowerBudget} from './power-anchors.js';
@@ -30,8 +30,8 @@ export function skillAttack(context: ObservationContext, actor: Combatant, targe
   if (ability.damageBasis === 'weapon') weapon = skillWeapon(actor, ability, context.mode === 'mass' ? formationDistance(actor, target) : context.battlefield ? gridDistance(context.battlefield, actor.pos!, target.pos!) : Math.abs((actor.pos ?? 0) - (target.pos ?? 0)));
   else if (actor.shield) {
     const power = actor.shield.recipe?.power ?? 3, size = actor.shield.recipe?.size ?? actor.body ?? 'human';
-    weapon = { id: actor.shield.id, name: '盾牌打击', baseDice: rebuildDice(diceAvg(curveAt(power).dmgBase) * BODY[size].strength, 6), channel: 'kinetic', penetration: 1 + Math.floor(power / 4), range: 1, tags: [],
-      ...(actor.combatModel==='cohort-v2'?{level:power,recipe:actor.shield.recipe??{version:'mechanism-v2.3',mechanism:'shield',power,quality:3,size,seed:actor.shield.id}}:{}) };
+    weapon = { id: actor.shield.id, name: '盾牌打击', baseDice: rebuildDice(diceAvg(curveAt(power).dmgBase) * bodyProfile(size, actor.damageModel).strength, 6), channel: 'kinetic', penetration: 1 + Math.floor(power / 4), range: 1, tags: [],
+      ...(actor.combatModel==='cohort-v2'?{level:power,recipe:{...(actor.shield.recipe??{version:'mechanism-v2.3',mechanism:'shield',power,quality:3,size,seed:actor.shield.id}),...(actor.damageModel==='wounds-v2'?{balanceVersion:'unified-v1' as const}:{})}}:{}) };
   }
   if (!weapon) return { abilityDamage: { accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect, baseDice: '1d2-2', apDice: undefined, penetration: 0, channel: 'kinetic', weaponBased: true }, ranged: false, participants: 0 };
   if(actor.combatModel==='cohort-v2')weapon=combatWeapon(weapon,actor,target,rules?.weaponOverflow)!;

@@ -1,3 +1,4 @@
+import { startBattle } from './smoke-start-battle.mjs';
 import { chromium } from 'playwright-core';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, mkdirSync } from 'node:fs';
@@ -40,7 +41,7 @@ try {
   assert.equal((await page.evaluate(() => window.readPanel())).storage.length, 33);
   const valid = structuredClone(initial); valid.rosterIds = valid.rosterIds.slice(0, 32);
   await page.evaluate((save) => window.loadSave(save), valid); await reopen(); await p.locator('[data-action="mass-start"]').waitFor();
-  await p.locator('[data-action="mass-start"]').click(); await p.locator('.formation-grid').waitFor();
+  await startBattle(p, 'mass'); await p.locator('.formation-grid').waitFor();
   const battle = await page.evaluate(() => window.readPanel().battle.snap);
   assert.equal(battle.combatants.length, 32); assert.ok(battle.combatants.every((u) => u.hp === 80));
   await reopen(); await p.locator('.formation-grid').waitFor();

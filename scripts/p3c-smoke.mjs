@@ -16,7 +16,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1024, height: 844 } }); const errors = [];
   page.on('pageerror', (e) => errors.push(e.message)); page.setDefaultTimeout(8000);
   await page.goto(`http://127.0.0.1:${server.address().port}`); const p = page.frameLocator('#panel');
-  const read = () => page.evaluate(() => window.readPanel().battle.snap);
+  const read = async () => { await p.locator('body:not([aria-busy="true"])').waitFor(); return page.evaluate(() => window.readPanel().battle.snap); };
   const load = async (save) => { await page.evaluate(({ save, html }) => { window.loadFixture(save); document.querySelector('#panel').srcdoc = html; }, { save, html }); await p.locator('h1').waitFor(); };
   mkdirSync('panel/smoke-shots', { recursive: true });
   let snap;

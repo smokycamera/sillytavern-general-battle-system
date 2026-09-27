@@ -55,6 +55,7 @@ export function validateInventoryItem(value: unknown): asserts value is Inventor
     || !Number.isInteger(recipe.power) || Number(recipe.power) < 1 || Number(recipe.power) > 10
     || !Number.isInteger(recipe.quality) || Number(recipe.quality) < 1 || Number(recipe.quality) > 5
     || !['human', 'large', 'vehicle', 'giant'].includes(String(recipe.size)) || typeof recipe.seed !== 'string' || !recipe.seed)) throw new Error('已保存的属性损坏或版本未知');
+  if (object(recipe) && (recipe.balanceVersion !== undefined && recipe.balanceVersion !== 'unified-v1' || recipe.noVariance !== undefined && typeof recipe.noVariance !== 'boolean')) throw Error('装备数值版本损坏');
   if(object(recipe))validateEnhancements(recipe.bonuses as Enhancements | undefined, m.kind as 'weapon'|'armor'|'shield'|'consumable'|'accessory');
   if (m.kind === 'consumable') {
     if (Number(value.qty) > 9999 || !object(recipe) || !Object.hasOwn(CONSUMABLE_NAMES, String(recipe.mechanism)) || !object(m.effect) || value.equippedTo !== undefined) throw new Error('消耗品效果或装备关系损坏');
@@ -70,7 +71,7 @@ export function validateInventoryItem(value: unknown): asserts value is Inventor
     if (!object(gear) || gear.id !== value.id || Number(value.qty) > 1) throw new Error('装备唯一编号/数量冲突');
     if (m.kind === 'accessory') {
       if (!object(gear.recipe) || typeof gear.recipe.mechanism !== 'string' || !Object.hasOwn(ACCESSORY_NAMES, gear.recipe.mechanism.replace(/^accessory:/, ''))) throw Error('配件用途不正确');
-      const expected = compileItem({ kind: 'accessory', mechanism: gear.recipe.mechanism.replace(/^accessory:/, '') as keyof typeof ACCESSORY_NAMES, power: Number(gear.recipe.power), quality: Number(gear.recipe.quality), body: gear.recipe.size as Combatant['body'] }, { id: String(value.id), name: String(value.name), seed: String(gear.recipe.seed) });
+      const expected = compileItem({ kind: 'accessory', mechanism: gear.recipe.mechanism.replace(/^accessory:/, '') as keyof typeof ACCESSORY_NAMES, power: Number(gear.recipe.power), quality: Number(gear.recipe.quality), body: gear.recipe.size as Combatant['body'] }, { id: String(value.id), name: String(value.name), seed: String(gear.recipe.seed), damageModel: gear.recipe.balanceVersion === 'unified-v1' ? 'wounds-v2' : undefined });
       if (expected.kind !== 'accessory' || fingerprint(gear) !== fingerprint(expected.value)) throw Error('配件提供的能力与记录不一致');
     } else if (m.kind === 'weapon') {
       if (typeof gear.baseDice !== 'string') throw new Error('武器缺少伤害规格'); parseDice(gear.baseDice);
@@ -98,7 +99,7 @@ export function createInventoryItem(id: string, name: string, spec: ItemSpecific
   if (!id || !name.trim()) throw new Error('物品缺少身份或名称');
   if (!Number.isSafeInteger(qty) || qty < 1 || qty > 9999 || spec.kind !== 'consumable' && qty !== 1) throw new Error('装备必须逐件建档，消耗品数量为1–9999');
   return { id, name: name.trim(), qty, revision: 1, lootType: spec.kind === 'shield' ? 'armor' : spec.kind,
-    mechanics: compileItem(spec, { id, name, seed }) };
+    mechanics: compileItem(spec, { id, name, seed, damageModel:'wounds-v2' }) };
 }
 function gearAt(unit: Combatant, slot: EquipmentSlot): ItemMechanics | undefined {
   switch (slot) {
@@ -253,7 +254,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       if (spec.kind === 'armor' && spec.profile === undefined) spec.profile = oldRecipe?.protectionProfile;
       if (spec.kind === 'weapon' && spec.enchantment === undefined) spec.enchantment = oldRecipe?.enchantment ?? 'none';
       const name = action.name?.trim() || item.name;
-      const mechanics = compileItem(spec, { id: item.id, name, seed: oldRecipe?.seed ?? `reforge:${id}` });
+      const mechanics = compileItem(spec, { id: item.id, name, seed: oldRecipe?.seed ?? `reforge:${id}`, damageModel:'wounds-v2' });
       item.history = [...(item.history ?? []), { revision: item.revision ?? 1, name: item.name, mechanics: clone(item.mechanics), sourceId: id }];
       item.mechanics = mechanics; item.name = name; item.revision = (item.revision ?? 1) + 1;
       if (item.equippedTo) {

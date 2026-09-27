@@ -1,3 +1,4 @@
+import { V6_D20, V6_TW } from './rules.js';
 import type { Combatant, Weapon } from './types.js';
 import type { ObservationContext } from './observation.js';
 import { positionedUnit, canSpot } from './observation.js';
@@ -51,7 +52,7 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
   // 有界战术启发：保留原位及各近敌方向的最近合法落点，避免为每项状态重复穷举整张地图。
   const positions = [...new Set([origin.pos, ...foes.slice().sort((a,b)=>distance(context,origin,a)-distance(context,origin,b)||a.id.localeCompare(b.id)).slice(0,3)
     .map(foe=>reachable.slice().sort((a,b)=>distance(context,{...origin,pos:a},foe)-distance(context,{...origin,pos:b},foe)||(a??0)-(b??0))[0])])];
-  const rules = context.rules ?? (origin.damageModel==='wounds-v1'?(context.mode==='mass'?V5_TW:V5_D20):(context.mode === 'mass' ? V4_TW : V4_D20));
+  const rules = context.rules ?? (origin.damageModel==='wounds-v2'?(context.mode==='mass'?V6_TW:V6_D20):origin.damageModel==='wounds-v1'?(context.mode==='mass'?V5_TW:V5_D20):(context.mode === 'mass' ? V4_TW : V4_D20));
   const defs = new Map([...defaults].map(([id, def]) => [id, context.conditions?.get(id) ?? def]));
   let best = 0;
   for (const pos of positions) {

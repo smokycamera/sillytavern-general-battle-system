@@ -38,15 +38,15 @@ export function summonedMemberLife(unit: Combatant): number | undefined {
   return unit.scale !== 'hero' && unit.weapon?.recipe?.mechanism === 'summon'
     ? Math.max(1, Math.floor(nominalLife(unit) / unit.base.hpMax)) : undefined;
 }
-export function conjureSkillUnit(template: string, side: Combatant['side'], id: string, mode: 'small' | 'mass', bonuses?: Enhancements): Combatant | undefined {
+export function conjureSkillUnit(template: string, side: Combatant['side'], id: string, mode: 'small' | 'mass', bonuses?: Enhancements, damageModel?: Combatant['damageModel']): Combatant | undefined {
   const profile = summonProfile(template, mode, bonuses);
   if (!profile) return undefined;
   const { power, group, members } = profile;
-  const unit = generateUnit({ rulesVersion: 'v2', name: group ? '召唤群体' : '召唤个体', side, scale: group ? 'company' : 'hero',
+  const unit = generateUnit({ rulesVersion: 'v2', damageModel, name: group ? '召唤群体' : '召唤个体', side, scale: group ? 'company' : 'hero',
     ...(group ? { hpMax: members } : {}), level: power, weaponClass: 'summon', weaponLevel: power, armorTier: 1, armorLevel: power, traits: [],
     bonuses: { health: bonuses?.power ?? 0, morale: bonuses?.morale ?? 0 } }, { seed: id, noVariance: true }).unit;
   const weaponBonuses = Object.fromEntries(Object.entries(bonuses ?? {}).filter(([key]) => ENHANCEMENT_STATS.weapon.includes(key as BonusStat)));
-  unit.weapon = compileWeapon({ mechanism: 'summon', power, bonuses: weaponBonuses }, { id: `${id}:weapon`, seed: `${id}:weapon`, noVariance: true });
+  unit.weapon = compileWeapon({ mechanism: 'summon', power, bonuses: weaponBonuses }, { id: `${id}:weapon`, seed: `${id}:weapon`, noVariance: true, damageModel });
   // 保留原始配方，在实际武器换算时只分摊一次，读档也不会再次缩小。
   unit.weapon.damageScale = 1 / members; unit.weapon.customized = true;
   unit.id = id; return unit;

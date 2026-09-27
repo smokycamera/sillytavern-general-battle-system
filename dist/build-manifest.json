@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "1.1.2",
-  "builtAt": "2026-09-27T08:38:53.757Z",
-  "sourceFingerprint": "ae338359c4952b0757ed28596d21d244ec91c832d3d2c85ba993d0d2cd1b7438",
+  "version": "1.2.0",
+  "builtAt": "2026-09-27T09:53:41.564Z",
+  "sourceFingerprint": "28ee06b2982c0ec33a3263936824d7d10cf58786031e340899512d7d45c9a4ba",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -17,13 +17,13 @@
     },
     {
       "path": "README.md",
-      "bytes": 2709,
-      "sha256": "825dbd57ab0ea33a24485bfe73512ff88cc5c2ddc8746cbfe5455dbac3ff486d"
+      "bytes": 2769,
+      "sha256": "d8760e0f818116730846381b971c68d4f385a02bc02cb28ff1d6e00707cbb695"
     },
     {
       "path": "README.zh-CN.md",
-      "bytes": 2337,
-      "sha256": "58854135c4da4ee243151b3c8e37648ee1af738508dd84857958cc54d66d649e"
+      "bytes": 2448,
+      "sha256": "78f72b95463fd002860453932e7720997f52efca0bc22a76bf8c1915c997c570"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -36,14 +36,14 @@
       "sha256": "d8e150b9ba2a9668681edf533c5ebfa2a0c588c1ef4fdbff02e2b456b28f93f9"
     },
     {
-      "path": "dist/assets/panel-Bmg4Wm9s.js",
-      "bytes": 296253,
-      "sha256": "826f955b92dd1f99f110866963fed8b23bf4b9ffb8c7d2932711be2a0efd03f8"
+      "path": "dist/assets/panel-DVttDTy5.js",
+      "bytes": 297382,
+      "sha256": "e5bdca6f5dd06553ea499a035044ef1f88094799bf3ef93fc8c6725bc9ab9a7b"
     },
     {
-      "path": "dist/assets/preferences-qcBoiLX-.js",
-      "bytes": 536227,
-      "sha256": "3206886358b27bf536c2370e77210ed6ab48459078bd09164790fbc2edbb9018"
+      "path": "dist/assets/preferences-Nl46CP9H.js",
+      "bytes": 543076,
+      "sha256": "102e64af4187248d2c6ac105b0136df37826dfbb029e3a0d876afca19ff43c4a"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -52,13 +52,13 @@
     },
     {
       "path": "assets/worldbook/!通用战斗系统约束.json",
-      "bytes": 21943,
-      "sha256": "35c002d440730b82541532d24925b42db3279550940845e309d450c633432379"
+      "bytes": 23791,
+      "sha256": "94cba70726bd1f5116e0b6bfd5b902aa3aaca042dc655b2339db4c6aafb589e8"
     },
     {
       "path": "assets/worldbook/lorebook system explain.md",
-      "bytes": 41839,
-      "sha256": "cda2832fe7bf66a1baa4d6597693dd1517bb6ff3f3c4fbf6533a5eff5fcb2b05"
+      "bytes": 43131,
+      "sha256": "0683dd64054fa4ed66106c971532ecba9b94257f67381cbe0de0a62bc3b30313"
     },
     {
       "path": "docs/armor-v5-design.md",
@@ -121,19 +121,24 @@
       "sha256": "e68f6c58483cacd0d24f26e42138b519f2bb44bb83f3e73e86873d0d284fb076"
     },
     {
+      "path": "docs/unified-balance-v6.md",
+      "bytes": 7452,
+      "sha256": "2b7a2f4bbcce6ba148e1ccd5e6543386391584bfe467f060d543c706f4eedcdf"
+    },
+    {
       "path": "docs/validation-results.json",
       "bytes": 6751,
       "sha256": "1b19c421a1932b325f82dcea89fa67331d171d2392c5f76a59d860de719c16e0"
     },
     {
       "path": "docs/version-rollback.md",
-      "bytes": 2632,
-      "sha256": "98a0b554b2ec8a98c7caee40b86b686627536978526fc8c83ca39713a0d8272c"
+      "bytes": 3437,
+      "sha256": "1d15f782608437ca550601f514f584af5eeea6b36afdfa7eb60f928128e062ea"
     },
     {
       "path": "dist/index.js",
-      "bytes": 80779,
-      "sha256": "1cfbd70f648b1680aeba98e58da7dcb4424f3366dcbeec3648ffcdcf591b9a20"
+      "bytes": 82071,
+      "sha256": "bb60ba10ef6185b7b8f4c163b0b5e8a95250dd6967ead10b7d2e505cf039b489"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -143,12 +148,12 @@
     {
       "path": "manifest.json",
       "bytes": 168,
-      "sha256": "3dfc92d68c0792e34da2f3aba80eebd0e6de6da9b351dc6bbbb22c30a5997442"
+      "sha256": "dd04ebbb63f08256d4588b2e851e8c5d4b63fefd9b83e6485f6119f09d6d6654"
     },
     {
       "path": "dist/panel/index.html",
       "bytes": 48865,
-      "sha256": "c89207b8443ce21f264b23c52ef115b9ef5fc72fdd55b312f820027e8656a3ae"
+      "sha256": "6ebd94859bda6468a379fbf06e25b9bd3f0ac9a6789d04ccdc23acce8447b1c6"
     },
     {
       "path": "release/current-baseline.json",

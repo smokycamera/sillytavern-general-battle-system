@@ -1010,7 +1010,7 @@ export class MassBattle {
           for (let n = 0; n < effect.count; n++) {
             const id = `mass:${this.seed}:summon:${actor.id}:${this.round}:${born.length}`;
             let unit: Combatant | null | undefined;
-            try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'mass', ability.bonuses) ?? this.summonUnit?.(effect.templateId, actor.side, id); } catch { invalid = true; break; }
+            try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'mass', ability.bonuses, this.rules.damageModel) ?? this.summonUnit?.(effect.templateId, actor.side, id); } catch { invalid = true; break; }
             const node = FORMATION_NODES.find((node) => node.side === actor.side && node.wing === formationNode(actor).wing && node.rank === 'reserve')!;
             if (!unit || [...this.combatants, ...stagedBirths, ...born].filter((u) => !this.isAttached(u.id) && u.status === 'ready' && formationNode(u).id === node.id).length >= 3) { invalid = true; break; }
             prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit);

@@ -1,5 +1,5 @@
 import { randomId } from '../../host/src/browser-compat.js';
-import { enhancementLabel } from '../../engine/src/enhancements.js';
+import { enhancementLabel, bonusMultiplier } from '../../engine/src/enhancements.js';
 import { ACCESSORY_NAMES, CONSUMABLE_NAMES, type EquipmentSlot } from '../../engine/src/items.js';
 import { promptSelected, type PromptSettings } from './prompt-settings.js';
 import { gridWeaponRange } from '../../engine/src/small/weapon-range.js';
@@ -34,18 +34,18 @@ export function itemDescription(item: InventoryItem): string {
     if (e.op === 'dispel') return `清除至多${e.count}项不利状态`;
     if (e.op === 'barrier') return `屏障吸收${e.amount}点伤害，持续${e.dur}轮`;
     if (e.op === 'condition') return `提高伤害，持续${e.dur}轮`;
-    return `投掷炸弹造成${e.baseDice}伤害，影响目标及附近敌人`;
+    return `投掷炸弹基础伤害${e.baseDice}${m.recipe.balanceVersion==='unified-v1'?' ×'+bonusMultiplier(m.recipe.bonuses,'power'):''}；命中、防护与目标范围按战斗规则结算`;
   }
   if (m.kind === 'accessory') return m.value.traitId ? `装备后获得${traitRegistry().get(m.value.traitId)?.name ?? '特殊能力'}；卸下即失效` : m.value.ability?.desc ?? '装备后可使用附带能力';
   if (m.kind === 'shield') return `盾牌 L${m.value.recipe?.power??3}${enhancementLabel(m.value.recipe?.bonuses)} · 负重${m.value.load} · 通道防护${shieldProtection({shield:m.value},'kinetic')}/${shieldProtection({shield:m.value},'thermal')}/${shieldProtection({shield:m.value},'arcane')} · 掩护单体攻击，范围与充分穿透绕过 · 满足盾类技能前提`;
-  if (m.kind === 'armor') {const u={armor:m.value,body:m.value.recipe?.size,damageModel:'wounds-v1' as const},trait=armorTraitId(m.value.tier);return `动能${anchoredProtection(u,'kinetic')} / 热能${anchoredProtection(u,'thermal')} / 奥术${anchoredProtection(u,'arcane')} · ${armorEffectLabel(u)} · 负重${m.value.load ?? 0}${trait ? ' · 装备自动特质：' + (trait === 'super-heavy' ? '超重装甲（先攻−2，无额外防御）' : '重甲（先攻−1，无额外防御）') : ''}`;}
+  if (m.kind === 'armor') {const u={armor:m.value,body:m.value.recipe?.size,damageModel:'wounds-v2' as const},trait=armorTraitId(m.value.tier);return `动能${anchoredProtection(u,'kinetic')} / 热能${anchoredProtection(u,'thermal')} / 奥术${anchoredProtection(u,'arcane')} · ${armorEffectLabel(u)} · 负重${m.value.load ?? 0}${trait ? ' · 装备自动特质：' + (trait === 'super-heavy' ? '超重装甲（先攻−2，无额外防御）' : '重甲（先攻−1，无额外防御）') : ''}`;}
   const w = m.value;
-  return `L${w.level??5}${enhancementLabel(w.recipe?.bonuses)} · ${anchoredWeaponLabel(w,'wounds-v1')} · ${channelNames[w.channel ?? 'kinetic']} · 格子射程${gridWeaponRange(w)}／会战${formationWeaponRange(w)}阵距 · ${w.hands===0?'不占双手':(w.hands??1)+'手'} · 负重${w.load ?? 0}${w.reload ? ' · 装填' + w.reload : ''}${w.tags?.includes('blast') ? ' · 距离1正常，距离2命中−2' : ''}${w.recipe?.stabilized ? ' · 车载行进稳定，火力让出15%' : ''}`;
+  return `L${w.level??5}${enhancementLabel(w.recipe?.bonuses)} · ${anchoredWeaponLabel(w,'wounds-v2')} · ${channelNames[w.channel ?? 'kinetic']} · 格子射程${gridWeaponRange(w)}／会战${formationWeaponRange(w)}阵距 · ${w.hands===0?'不占双手':(w.hands??1)+'手'} · 负重${w.load ?? 0}${w.reload ? ' · 装填' + w.reload : ''}${w.tags?.includes('blast') ? ' · 距离1正常，距离2命中−2' : ''}${w.recipe?.stabilized ? ' · 车载行进稳定，火力让出15%' : ''}`;
 }
 function gearText(record: UnitRecord | undefined): string {
-  const u = record?.snapshot ? {...record.snapshot,damageModel:'wounds-v1' as const} : undefined;
+  const u = record?.snapshot ? record.snapshot : undefined;
   if (!u) return '无装备资料';
-  return [u.weapon ? `${u.weapon.name} ${anchoredWeaponLabel(u.weapon,'wounds-v1')}${u.weapon.recipe?.stabilized ? ' / 行进稳定' : ''}` : '主手空置',
+  return [u.weapon ? `${u.weapon.name} ${anchoredWeaponLabel(u.weapon,u.damageModel)}${u.weapon.recipe?.stabilized ? ' / 行进稳定' : ''}` : '主手空置',
     u.sidearm ? `副武器 ${u.sidearm.name}` : '',
     ...equipmentTraitIds(u).map(id => '装备自动特质：' + (id === 'super-heavy' ? '超重装甲（先攻−2，无额外防御）' : '重甲（先攻−1，无额外防御）')),
     `有效防护 ${anchoredProtection(u, 'kinetic')}/${anchoredProtection(u, 'thermal')}/${anchoredProtection(u, 'arcane')}（动能/热能/奥术） · ${armorEffectLabel(u)}`,
@@ -62,8 +62,8 @@ function gearComparison(before: UnitRecord | undefined, after: UnitRecord): stri
       ['格子射程', old ? gridWeaponRange(old) : '—', next ? gridWeaponRange(next) : '—'],
       ['会战阵距', old ? formationWeaponRange(old) : '—', next ? formationWeaponRange(next) : '—'],
       ['装填回合', old ? weaponReloadTurns(old) : '—', next ? weaponReloadTurns(next) : '—'],
-      ['穿透', anchoredWeapon(old,undefined,'wounds-v1')?.penetration ?? '—', anchoredWeapon(next,undefined,'wounds-v1')?.penetration ?? '—'],
-      ['命中杀伤',old?anchoredWeaponLabel(old,'wounds-v1'):'—',next?anchoredWeaponLabel(next,'wounds-v1'):'—'],
+      ['穿透', anchoredWeapon(old,undefined,before?.snapshot?.damageModel)?.penetration ?? '—', anchoredWeapon(next,undefined,after.snapshot?.damageModel)?.penetration ?? '—'],
+      ['命中杀伤',old?anchoredWeaponLabel(old,before?.snapshot?.damageModel):'—',next?anchoredWeaponLabel(next,after.snapshot?.damageModel):'—'],
     ]) rows.push(`<tr><td>${label} · ${name}</td><td>${esc(a)}</td><td>${esc(b)}</td></tr>`);
   }
   return rows.length ? `<table class="gear-comparison"><thead><tr><th>变化</th><th>当前</th><th>装备后</th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '';
@@ -235,9 +235,9 @@ export class InventoryPanel {
       const stats: [string, string][] = [];
       if (m?.kind === 'weapon') {
         const w = m.value;
-        stats.push(['伤害', anchoredWeaponLabel(w,'wounds-v1').split(' · ')[0]!.replace('单次命中均值', '平均')], ['穿透', String(anchoredWeapon(w,undefined,'wounds-v1')?.penetration ?? w.penetration ?? 0)], ['射程', save.mode === 'mass' ? formationWeaponRange(w) + '阵位' : gridWeaponRange(w) + '格'], ['负重', String(w.load ?? 0)]);
+        stats.push(['伤害', anchoredWeaponLabel(w,'wounds-v2').split(' · ')[0]!.replace('单次命中均值', '平均')], ['穿透', String(anchoredWeapon(w,undefined,'wounds-v2')?.penetration ?? w.penetration ?? 0)], ['射程', save.mode === 'mass' ? formationWeaponRange(w) + '阵位' : gridWeaponRange(w) + '格'], ['负重', String(w.load ?? 0)]);
       } else if (m?.kind === 'armor') {
-        const unit = { armor: m.value, body: m.value.recipe?.size, damageModel:'wounds-v1' as const };
+        const unit = { armor: m.value, body: m.value.recipe?.size, damageModel:'wounds-v2' as const };
         stats.push(['动能防护', String(anchoredProtection(unit, 'kinetic'))], ['热能防护', String(anchoredProtection(unit, 'thermal'))], ['奥术防护', String(anchoredProtection(unit, 'arcane'))], ['负重', String(m.value.load ?? 0)]);
       }
       const battleOnly = m?.kind === 'consumable' && !['heal', 'repair', 'restore', 'cleanse'].includes(m.recipe.mechanism);

@@ -1,5 +1,5 @@
 import { bonusMultiplier, bonusSteps, validateEnhancements, type Enhancements } from '../enhancements.js';
-import { BODY } from '../body.js';
+import { BODY, bodyProfile } from '../body.js';
 export { BODY } from '../body.js';
 /** 单位生成与独立库存物品共用的装备编译器。上下文的 seed 已包含稳定实例/槽位域。 */
 import type { Armor, BodyKind, DamageChannel, ItemRecipe, Weapon } from '../types.js';
@@ -24,6 +24,7 @@ export interface EquipmentContext {
   bonuses?: Enhancements; id: string; name?: string; seed: string; body?: BodyKind; quality?: number; noVariance?: boolean;
   /** 仅建档使用：接受明确声明的装备组合，不改变战斗使用规则。 */
   creatingUnit?: boolean;
+  damageModel?: import('../types.js').Combatant['damageModel'];
 }
 function integer(value: number, min: number, max: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < min || value > max) throw new Error(`${name}必须是${min}–${max}的整数`);
@@ -34,7 +35,7 @@ export function equipmentRecipe(mechanism: string, power: number, context: Equip
   if (!BODY[size]) throw new Error('不支持的身体/平台');
   if (!context.id || !context.seed) throw new Error('物品缺少唯一编号或随机记录号');
   validateEnhancements(context.bonuses, mechanism.startsWith('accessory:') ? 'accessory' : mechanism.startsWith('armor:') ? 'armor' : mechanism === 'heal' ? 'consumable' : mechanism === 'shield' ? 'shield' : 'weapon');
-  return { bonuses: context.bonuses, version: FORMULA_VERSION, mechanism, power: integer(power, 1, 10, '装备等级'), size,
+  return { ...(context.damageModel === 'wounds-v2' ? { balanceVersion: 'unified-v1' as const } : {}), ...(context.damageModel === 'wounds-v2' && context.noVariance ? { noVariance: true } : {}), bonuses: context.bonuses, version: FORMULA_VERSION, mechanism, power: integer(power, 1, 10, '装备等级'), size,
     quality: integer(context.quality ?? 3, 1, 5, '品质'), seed: context.seed };
 }
 export function compileWeapon(spec: { mechanism?: string; weaponId?: string; power?: number; bonuses?: Enhancements; stabilized?: boolean; enchantment?: 'none' | 'thermal' | 'arcane' }, context: EquipmentContext): Weapon {
@@ -58,7 +59,7 @@ export function compileWeapon(spec: { mechanism?: string; weaponId?: string; pow
   }
   const jitter = context.noVariance ? 1 : 0.97 + new SeededRng(recipe.seed).next() * 0.06;
   const budget = (diceAvg(powerCurve.dmgBase) + (powerCurve.dmgAp ? diceAvg(powerCurve.dmgAp) : 0))
-    * Math.min(1.6, profile.dmgMult) * (0.85 + recipe.quality * 0.05) * (ranged ? 1 : BODY[recipe.size].strength) * jitter * (recipe.stabilized ? 0.85 : 1);
+    * Math.min(1.6, profile.dmgMult) * (0.85 + recipe.quality * 0.05) * (ranged ? 1 : bodyProfile(recipe.size, context.damageModel).strength) * jitter * (recipe.stabilized ? 0.85 : 1);
   const attacks = Math.max(1, Math.min(3, profile.attacks ?? 1));
   return { id: context.id, name: context.name?.trim() || profile.name,
     baseDice: rebuildDice(budget / attacks, budget / attacks < 3.5 ? 2 : 6), recipe,

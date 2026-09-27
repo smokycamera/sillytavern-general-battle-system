@@ -37,7 +37,7 @@ export function resizeMemberHealth(unit:Combatant,members:number):void {
 }
 export function setMemberMaximum(unit:Combatant,max:number):void {
   if(!Number.isSafeInteger(max)||max<1)throw Error('成员最大生命必须为正整数');
-  max = capSingleLife(max);
+  max = capSingleLife(max, unit.damageModel);
   if(!unit.formation)return;
   unit.formation.memberHp=max;
   if(unit.formation.health)unit.formation.health=mergeHealth(unit.formation.health.map(g=>({hp:Math.min(g.hp,max),count:g.count})));

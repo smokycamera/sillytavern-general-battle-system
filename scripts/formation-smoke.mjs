@@ -1,3 +1,4 @@
+import { startBattle } from './smoke-start-battle.mjs';
 import { chromium } from 'playwright-core';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -136,7 +137,7 @@ try {
   }
   const reserve = forward.storage.find((u) => u.id === 'reserve'); reserve.traits.push('vanguard'); reserve.snapshot.traits.push('vanguard');
   await page.evaluate(({ save, html }) => { window.loadFixture(save); document.querySelector('#panel').srcdoc = html; }, { save: forward, html });
-  await p.locator('[data-action="mass-start"]').click(); await idle(); await p.locator('.formation-grid').waitFor();
+  await startBattle(p, 'mass'); await idle(); await p.locator('.formation-grid').waitFor();
   const deployed = await page.evaluate(() => window.readBattle());
   assert.ok(deployed.combatants.find((u) => u.id === 'reserve').tags.includes('rank:rear'));
   assert.equal(deployed.combatants.find((u) => u.id === 'reserve').vanguardOrigin, 'ally:中军:reserve');
@@ -166,7 +167,7 @@ try {
   await selectActor('a'); await openDetails('.formation-unit-details');
   assert.match(await p.locator('.formation-unit-details').innerText(), /可救伤兵10/);
   await ability('a', '随队恢复剂');
-  await target('a'); assert.match(await p.locator('.formation-preview').innerText(), /(?:可救伤兵|恢复).*7/);
+  await target('a'); assert.match(await p.locator('.formation-preview').innerText(), /(?:可救伤兵|恢复).*10/);
   await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: 'panel/smoke-shots/mass-recovery-preview-390.png' });
   await issue(); const recoveryBefore = await page.evaluate(() => JSON.stringify(window.readPanel()));
   await p.locator('body').evaluate(() => { const original = Storage.prototype.setItem; Storage.prototype.setItem = function (...args) { if (window.parent.failSave) throw Error('test quota'); return original.apply(this, args); }; }); await page.evaluate(() => { window.failSave = true; });
@@ -174,9 +175,10 @@ try {
   await page.evaluate(() => { window.failSave = false; }); await p.locator('.mass-controls [data-action="mass-resolve"]').click(); await idle();
   const recovered = await page.evaluate(() => window.readBattle()), recoveredUnit = recovered.combatants.find((u) => u.id === 'a');
   assert.equal(recoveredUnit.hp, 90); assert.equal(recoveredUnit.recoverableWounded, 0); assert.equal(recovered.combatants.find((u) => u.id === 'hero').resources['item:mass-dose'], 1);
-  assert.ok(recovered.log.some((l) => l.text.includes('再生 +3')));
+  assert.ok(recovered.log.some((l) => /恢复剂.*治疗 10/.test(l.text)));
+  assert.equal(recovered.log.some((l) => l.text.includes('再生 +')), false, '治疗已耗尽伤兵池，再生不能额外补员');
   await page.evaluate((html) => { document.querySelector('#panel').srcdoc = html; }, html); await p.locator('.formation-grid').waitFor(); assert.equal(await page.evaluate(() => JSON.stringify(window.readBattle())), JSON.stringify(recovered));
-  console.log('✓ 会战伤兵：独立伤兵显示→随队用药预览7→双写失败整轮撤回→治疗7加再生3守恒/同扣量→重开');
+  console.log('✓ 会战伤兵：独立伤兵显示→随队用药预览10→双写失败整轮撤回→治疗耗尽伤兵池后再生不多补/同扣量→重开');
   }
   const moraleCase = structuredClone(fixture), officer = moraleCase.battle.snap.combatants.find((u) => u.id === 'hero'), scary = moraleCase.battle.snap.combatants.find((u) => u.id === 'enemy');
   officer.traits.push('commander'); officer.tags = officer.tags.filter((t) => !t.startsWith('rank:')).concat('rank:reserve'); moraleCase.battle.snap.attached = [['reserve', 'hero']]; scary.traits.push('fear'); scary.weapon.baseDice = '1d2';

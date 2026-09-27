@@ -7,7 +7,7 @@ import { captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFr
 import { unitRecordFromCombatant, materializeUnitRecord } from './unit-state.js';
 import { prepareCombatModel } from '../../engine/src/combat-model.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
-import { V4_D20, traitRegistry } from '../../engine/src/index.js';
+import { V6_D20, traitRegistry } from '../../engine/src/index.js';
 
 it('表单可编辑、清除及保存单通道正负值，无效输入不静默清除',()=>{
   const draft=equipmentDraft('armor');draft.bonuses={protection:-3,thermalProtection:5};
@@ -30,7 +30,7 @@ it('正文建档、技能升级及保存读取完整保留负强化与小数人�
   const source:MessageEnvelope={characterId:'signed',chatId:'c',branchId:'b',messageId:'1',swipeId:'0',generationId:'g',role:'assistant',complete:true,text:parsed.canonical};
   const ns=namespaceOf(source),binding=captureGeneration({},ns,'g');binding.complete=true;
   const transaction=prepareNarrativeTransaction({},proposalFromMessage(source,binding)!,ns,true),registry=traitRegistry();
-  const unit=materializeUnitRecord(transaction.storage![0]!,registry);prepareCombatModel(unit,V4_D20);upgradeCombatSkills(unit);
+  const unit=materializeUnitRecord(transaction.storage![0]!,registry);prepareCombatModel(unit,V6_D20);upgradeCombatSkills(unit);
   unit.armor!.protectionOverride=true;unit.armor!.protection={kinetic:1.5,thermal:2.2,arcane:0};unit.abilities[0]!.penetration=2.5;
   const restored=materializeUnitRecord(unitRecordFromCombatant(unit),registry);
   expect(restored.bonuses).toEqual({health:-3,thermalDamage:2});

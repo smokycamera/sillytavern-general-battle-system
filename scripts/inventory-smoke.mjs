@@ -1,3 +1,4 @@
+import { startBattle } from './smoke-start-battle.mjs';
 import { chromium } from 'playwright-core';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -49,7 +50,7 @@ try {
   if (!process.argv.includes('--mass-only')) {
   await tab('inventory');
   await root.evaluate(() => { const original = Storage.prototype.setItem; Storage.prototype.setItem = function (...args) { if (window.parent.testFail) throw Error('test quota'); return original.apply(this, args); }; });
-  const save = () => page.evaluate(() => structuredClone(window.testVars.panel));
+  const save = async () => { await panel.locator('body:not([aria-busy="true"])').waitFor(); return page.evaluate(() => structuredClone(window.testVars.panel)); };
   const itemRow = (name) => root.locator('.inventory-card').filter({ has: panel.locator('b', { hasText: name }) });
   const confirm = async () => {
     assert.equal(await root.locator('[data-action="inventory-confirm"]').count(), 1, 'missing confirmation: ' + await root.locator('[data-role="inventory-feedback"]').innerText());
@@ -157,14 +158,18 @@ try {
   if (await panel.locator('[data-action="storage-into"][data-id="b"]').isEnabled()) await panel.locator('[data-action="storage-into"][data-id="b"]').click();
   assert.ok((await save()).rosterIds.includes('b'));
   await tab('battle');
-  await panel.locator('[data-action="small-start"]').click();
+  await startBattle(panel, 'small');
   const active = (snapshot) => snapshot.battle.snap.turnOrder[snapshot.battle.snap.turnIndex];
   for (let n = 0; active(await save()) !== 'a' && n < 12; n++) await panel.locator('[data-action="grid-endturn"]').click();
   assert.equal(active(await save()), 'a');
   const dose = (await save()).inventory.find((i) => i.name === '恢复剂');
   await mode('item:' + dose.id);
   await panel.locator('[data-role="grid-target"]').selectOption('a');
-  assert.match(await panel.locator('.action-preview').innerText(), /预计恢复\s*7生命/);
+  assert.equal(dose.mechanics.effect.amount, 13);
+  const recipient = (await save()).battle.snap.combatants.find((u) => u.id === 'a');
+  const expectedRecovery = Math.min(13, recipient.base.hpMax - recipient.hp);
+  assert.ok(expectedRecovery > 0);
+  assert.match(await panel.locator('.action-preview').innerText(), new RegExp('预计恢复\\s*' + expectedRecovery + '生命'));
   await panel.locator('.grid-command').evaluate((e) => e.scrollIntoView({ block: 'start' }));
   await page.screenshot({ path: 'panel/smoke-shots/inventory-battle-390-preview.png' });
   const beforeBattleUse = await save();
@@ -178,7 +183,7 @@ try {
   await panel.locator('.command-finish [data-action="grid-execute"]').click();
   current = await save();
   assert.equal(current.inventory.find((i) => i.id === dose.id).qty, 0);
-  assert.equal(current.battle.snap.combatants.find((u) => u.id === 'a').hp, beforeBattleUse.battle.snap.combatants.find((u) => u.id === 'a').hp + 7);
+  assert.equal(current.battle.snap.combatants.find((u) => u.id === 'a').hp, beforeBattleUse.battle.snap.combatants.find((u) => u.id === 'a').hp + expectedRecovery);
   assert.ok(current.battle.snap.actedThisTurn.includes('a'));
   assert.equal(await panel.locator('.command-finish [data-action="grid-execute"]').isDisabled(), true);
   const afterBattleUse = current;
@@ -252,14 +257,14 @@ try {
   if (await panel.locator('[data-action="storage-into"][data-id="b"]').isEnabled()) await panel.locator('[data-action="storage-into"][data-id="b"]').click();
   assert.ok((await save()).rosterIds.includes('b'));
   await tab('battle');
-  await panel.locator('[data-action="small-start"]').click();
+  await startBattle(panel, 'small');
   current = await save();
   assert.deepEqual(current.battle.snap.combatants.find((u) => u.id === 'b').weapon, upgraded.mechanics.value);
   assert.equal(current.battle.snap.combatants.some((u) => u.abilities.some((s) => s.itemSourceId === dose.id)), false);
   assert.deepEqual(errors, []);
   console.log('✓ 正式战场：改造炮实际手动开火/穿透与伤害骰→归档→下一战保持原炮，耗尽药剂不复生');
   }
-  const saveMass = () => page.evaluate(() => structuredClone(window.testVars.panel));
+  const saveMass = async () => { await panel.locator('body:not([aria-busy="true"])').waitFor(); return page.evaluate(() => structuredClone(window.testVars.panel)); };
   let massCurrent;
   await page.evaluate((fixture) => { window.testChat = 'inventory-mass-test'; window.testVars = { panel: fixture }; window.openPanel(); }, massFixture);
   await panel.locator('.formation-grid').waitFor();
@@ -280,12 +285,12 @@ try {
   await page.evaluate(() => { window.testFail = false; });
   await panel.locator('[data-action="mass-resolve"]').click();
   massCurrent = await saveMass();
-  assert.equal(massCurrent.inventory[0].qty, 1); assert.equal(massCurrent.battle.snap.combatants.find((u) => u.id === 'hero').hp, 17);
-  assert.ok(massCurrent.battle.snap.log.some((l) => /恢复剂.*治疗 7/.test(l.text)));
+  assert.equal(massCurrent.inventory[0].qty, 1); assert.equal(massCurrent.battle.snap.combatants.find((u) => u.id === 'hero').hp, 23);
+  assert.ok(massCurrent.battle.snap.log.some((l) => /恢复剂.*治疗 13/.test(l.text)));
   await page.evaluate(() => window.openPanel()); await panel.locator('.formation-grid').waitFor();
   assert.equal((await saveMass()).inventory[0].qty, 1);
   assert.deepEqual(errors, []);
-  console.log('✓ 正式军团面板：随队物品排令不扣量→主任务执行→保存失败整轮撤回→重试恢复7/扣1→重开保持');
+  console.log('✓ 正式军团面板：随队物品排令不扣量→主任务执行→保存失败整轮撤回→重试恢复13/扣1→重开保持');
   console.log(process.argv.includes('--mass-only') ? '✓ 仅复查受军团新入口影响的物品尾段' : process.argv.includes('--skip-layout') ? '✓ 后续流程通过；沿用先前八组库存布局检查，本次未重复截图' : '✓ 库存正式面板：4宽度×双主题，无页面横溢出，触控至少44px，无页面错误');
 } catch (error) {
   const frames = browser.contexts()[0]?.pages()[0]?.frames() ?? [];

@@ -3,16 +3,19 @@ import type { BattlefieldSpec } from './small/spatial.js';
 import { isAirborne } from './aerial.js';
 import { isCohort, personnel, COHORT_REFERENCE } from './combat-model.js';
 
-export const ENGAGEMENT_WIDTH = { ranged: 10, melee: 8, difficultPenalty: 2 } as const;
-export function difficultEngagementDescription(): string {
-  return `武器交战展开减少${ENGAGEMENT_WIDTH.difficultPenalty}人（远程${ENGAGEMENT_WIDTH.ranged}→${ENGAGEMENT_WIDTH.ranged - ENGAGEMENT_WIDTH.difficultPenalty}，近战${ENGAGEMENT_WIDTH.melee}→${ENGAGEMENT_WIDTH.melee - ENGAGEMENT_WIDTH.difficultPenalty}）`;
+export const LEGACY_ENGAGEMENT_WIDTH = { ranged: 10, melee: 8, difficultPenalty: 2 } as const;
+export const ENGAGEMENT_WIDTH = { ranged: 20, melee: 16, difficultPenalty: 4 } as const;
+export function difficultEngagementDescription(model: Combatant['damageModel'] = 'wounds-v2'): string {
+  const width = model === 'wounds-v2' ? ENGAGEMENT_WIDTH : LEGACY_ENGAGEMENT_WIDTH;
+  return `武器交战展开减少${width.difficultPenalty}人（远程${width.ranged}→${width.ranged - width.difficultPenalty}，近战${width.melee}→${width.melee - width.difficultPenalty}）`;
 }
 
 /** 普通攻击和武器技法共用展开规则，困难地形限制不能被技能入口绕过。 */
 export function engagementWidth(actor: Combatant, target: Combatant, ranged: boolean, field?: BattlefieldSpec, fieldTags: string[] = []): number {
   const constrained = [actor, target].some((u) => !isAirborne(u) && (field
     ? ['rough', 'forest', 'hill'].includes(field.tiles[u.pos!] ?? '') : fieldTags.some((tag) => tag === 'forest' || tag === 'mountain')));
-  return (ranged ? ENGAGEMENT_WIDTH.ranged : ENGAGEMENT_WIDTH.melee) - (constrained ? ENGAGEMENT_WIDTH.difficultPenalty : 0);
+  const width = actor.damageModel === 'wounds-v2' ? ENGAGEMENT_WIDTH : LEGACY_ENGAGEMENT_WIDTH;
+  return (ranged ? width.ranged : width.melee) - (constrained ? width.difficultPenalty : 0);
 }
 /** 同阵位共用展开；V3按现员比例分配，旧规则继续按稳定id轮流分配。 */
 export function sharedParticipants(actor: Combatant, cohort: Combatant[], width: number, target?: Combatant): number {

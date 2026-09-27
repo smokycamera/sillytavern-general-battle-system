@@ -1,3 +1,4 @@
+import { startBattle } from './smoke-start-battle.mjs';
 import { chromium } from 'playwright-core';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, mkdirSync } from 'node:fs';
@@ -67,7 +68,7 @@ try {
     await reopen(); await p.locator('[data-action="small-start"]').waitFor();
     await p.locator('.preparation-options > summary').click();
     assert.equal(await p.locator('[data-role="objective-mode"]').inputValue(), 'intercept');
-    await p.locator('[data-action="small-start"]').click(); await p.locator('.grid-camera').waitFor();
+    await startBattle(p, 'small'); await p.locator('.grid-camera').waitFor();
     const snap = await page.evaluate(() => window.readPanel().battle.snap);
     assert.equal(snap.battlefield.objective.kind, 'escape');
     assert.equal(snap.battlefield.objective.defenderWins, true);
@@ -84,7 +85,7 @@ try {
   } else {
   await reopen(); await p.locator('[data-action="small-start"]').waitFor();
   assert.match(await p.locator('.battle-preparation').innerText(), /适合战术地图/);
-  await p.locator('[data-action="small-start"]').click(); await p.locator('.grid-camera').waitFor();
+  await startBattle(p, 'small'); await p.locator('.grid-camera').waitFor();
   const first = await page.evaluate(() => window.readPanel().battle.snap);
   assert.equal(first.battlefield.width, 7); assert.ok(first.battlefield.tiles.includes('forest'));
   assert.ok(first.combatants.every((u) => u.scale === 'company' && u.base.hpMax === 5));
@@ -101,7 +102,7 @@ try {
   });
   many.rosterIds = many.storage.map((u) => u.id); many.protagonistId = 'unit-0';
   await page.evaluate((save) => window.loadSave(save), many); await reopen(); await p.locator('[data-action="mass-start"]').waitFor();
-  await p.locator('[data-action="mass-start"]').click(); await p.locator('.formation-grid').waitFor();
+  await startBattle(p, 'mass'); await p.locator('.formation-grid').waitFor();
   const mass = await page.evaluate(() => window.readPanel().battle);
   assert.equal(mass.kind, 'mass'); assert.equal(mass.snap.roundLimit, 40);
   console.log('✓ 5人小队与40对40都按小战→森林种子地图/重开精确保持→18支独立单位自动会战/本场40轮');

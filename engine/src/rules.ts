@@ -47,8 +47,15 @@ export const V5_TW:RulePack={...V4_TW,id:'v5-tw',name:'V5 通道防护会战',da
 export const V5_OVERFLOW_D20:RulePack={...V5_D20,id:'v5-overflow-d20',name:'V5 连队溢出伤害',weaponOverflow:true};
 export const V5_OVERFLOW_TW:RulePack={...V5_TW,id:'v5-overflow-tw',name:'V5 连队溢出会战',weaponOverflow:true};
 
+/** Unified life, frontage, wound budgets and bounded area coverage. Old ids stay frozen. */
+export const V6_D20:RulePack={...V5_D20,id:'v6-d20',name:'V6 统一生命与创伤',damageModel:'wounds-v2'};
+export const V6_TW:RulePack={...V5_TW,id:'v6-tw',name:'V6 统一生命会战',damageModel:'wounds-v2'};
+export const V6_OVERFLOW_D20:RulePack={...V6_D20,id:'v6-overflow-d20',name:'V6 统一生命与溢出',weaponOverflow:true};
+export const V6_OVERFLOW_TW:RulePack={...V6_TW,id:'v6-overflow-tw',name:'V6 统一生命溢出会战',weaponOverflow:true};
+
 /** id → 规则包（战斗快照恢复用；面板只用默认两包） */
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V6_D20.id]:V6_D20,[V6_TW.id]:V6_TW,[V6_OVERFLOW_D20.id]:V6_OVERFLOW_D20,[V6_OVERFLOW_TW.id]:V6_OVERFLOW_TW,
   [V5_D20.id]:V5_D20,
   [V5_TW.id]:V5_TW,
   [V5_OVERFLOW_D20.id]:V5_OVERFLOW_D20,

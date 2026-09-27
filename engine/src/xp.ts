@@ -1,7 +1,8 @@
+import { nominalLife } from './combat-model.js';
 import { bonusMultiplier, bonusSteps } from './enhancements.js';
 import { capSingleLife } from './health-limits.js';
 import { setMemberMaximum } from './member-health.js';
-import { BODY } from './body.js';
+import { BODY, bodyProfile } from './body.js';
 /**
  * 经验与成长：击杀记名 + 参战份额 + 指挥加成 → XP 账本 → 升级按曲线重算属性。
  * 面板在战斗结束后调用 battleXpAwards 展示明细，玩家确认后 applyXp 写回 roster。
@@ -152,7 +153,7 @@ export function xpProgress(unit: Combatant): { current: number; next: number } |
  * 群体编制不增长。英雄生命上限只增加前后曲线的差值，保留自定义偏移且不治疗。
  */
 function recomputeFromCurve(unit: Combatant, fromLevel: number, registry?: Map<string, Trait>): void {
-  const curve = curveAt(unit.level);
+  const curve = curveAt(unit.level, unit.damageModel);
   const arch = unit.archetype ?? 'infantry';
   const archMod = ARCHETYPE_MODS[arch];
   const scaleMod = SCALE_MODS[unit.rulesVersion === 'v2' ? v2Scale(unit.scale) : unit.scale];
@@ -170,14 +171,15 @@ function recomputeFromCurve(unit: Combatant, fromLevel: number, registry?: Map<s
   const atk = curve.atk + archMod.atk + scaleMod.atkAdj + (traitStats.atk ?? 0) + (deltas.atk ?? 0);
   const def = curve.def + archMod.def + scaleMod.defAdj + (traitStats.def ?? 0) + (deltas.def ?? 0);
   const spd = bonusSteps(unit.bonuses,'speed',5) + curve.spd + archMod.spd + (traitStats.spd ?? 0) + (deltas.spd ?? 0);
-  const bodyHp = unit.rulesVersion === 'v2' ? BODY[unit.body ?? 'human'].hp : scaleMod.hpMult;
+  const bodyHp = unit.rulesVersion === 'v2' ? bodyProfile(unit.body, unit.damageModel).hp : scaleMod.hpMult;
+  const unifiedGrowth = nominalLife(unit) - nominalLife({...unit, level:fromLevel});
   const hpMax = unit.scale === 'hero'
-    ? unit.base.hpMax + Math.round(curve.hp * bodyHp * bonusMultiplier(unit.bonuses,'health')) - Math.round(curveAt(fromLevel).hp * bodyHp * bonusMultiplier(unit.bonuses,'health'))
+    ? unit.base.hpMax + (unit.damageModel==='wounds-v2' ? unifiedGrowth : Math.round(curve.hp * bodyHp * bonusMultiplier(unit.bonuses,'health')) - Math.round(curveAt(fromLevel, unit.damageModel).hp * bodyHp * bonusMultiplier(unit.bonuses,'health')))
     : unit.base.hpMax;
 
-  unit.base = { ...unit.base, atk, def, spd, hpMax: unit.scale === 'hero' ? capSingleLife(hpMax) : hpMax };
+  unit.base = { ...unit.base, atk, def, spd, hpMax: unit.scale === 'hero' ? capSingleLife(hpMax, unit.damageModel) : hpMax };
   if(unit.formation) {
-    const growth=Math.round((curve.hp-curveAt(fromLevel).hp)*bodyHp*bonusMultiplier(unit.bonuses,'health'));
+    const growth=unit.damageModel==='wounds-v2'?unifiedGrowth:Math.round((curve.hp-curveAt(fromLevel, unit.damageModel).hp)*bodyHp*bonusMultiplier(unit.bonuses,'health'));
     setMemberMaximum(unit,unit.formation.memberHp+growth);
   }
   if (unit.base.moraleMax !== undefined) {

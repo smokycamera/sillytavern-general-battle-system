@@ -13,8 +13,8 @@ function hero(id = 'a', body: 'human' | 'vehicle' | 'giant' = 'vehicle', maximum
 const context = (unit: Combatant) => ({ units: [unit], mode: 'small' as const, fieldTags: [] });
 
 describe('单体生命硬上限与真实受创比例', () => {
-  it('上限覆盖最高默认844生命，10万生命输入截为1000，默认体型生命不抬高', () => {
-    expect(MAX_DEFAULT_SINGLE_LIFE).toBe(844); expect(SINGLE_LIFE_LIMIT).toBe(1000);
+  it('V6公开上限为2000，旧版生成与快照仍保留1000和844生命模板', () => {
+    expect(MAX_DEFAULT_SINGLE_LIFE).toBe(988); expect(SINGLE_LIFE_LIMIT).toBe(2000);
     for (const body of ['human', 'vehicle', 'giant'] as const) { const unit = hero('a', body, 100000); expect(unit.hp).toBe(1000); expect(unit.base.hpMax).toBe(1000); }
     const giant = generateUnit({ name: '最大模板', side: 'ally', scale: 'hero', body: 'giant', rulesVersion: 'v2', level: 10, traits: [] }, { registry, seed: 'max' }).unit;
     expect(giant.base.hpMax).toBe(844);

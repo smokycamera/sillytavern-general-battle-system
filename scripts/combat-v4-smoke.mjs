@@ -1,3 +1,4 @@
+import { startBattle } from './smoke-start-battle.mjs';
 import {chromium} from 'playwright-core';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
@@ -12,14 +13,14 @@ window.SillyTavern={getContext:()=>({chatId:'combat-v4-smoke',characterId:0,char
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
 try{
  const page=await browser.newPage({viewport:{width:390,height:844}});page.on('pageerror',e=>errors.push(e.message));await page.goto(`http://127.0.0.1:${server.address().port}`);
- const p=page.frameLocator('#panel'),read=()=>page.evaluate(()=>window.readPanel()),load=async save=>{await page.evaluate(({save,html})=>{window.loadFixture(save);document.querySelector('#panel').srcdoc=html;},{save,html});};
+ const p=page.frameLocator('#panel'),read=async()=>{await p.locator('body:not([aria-busy="true"])').waitFor();return page.evaluate(()=>window.readPanel());},load=async save=>{await page.evaluate(({save,html})=>{window.loadFixture(save);document.querySelector('#panel').srcdoc=html;},{save,html});};
  await load(cases[0][1].before);await p.locator('.workspace-nav [data-tab="units"]').click();
  if(!await p.locator('[data-role="gen-name"]').isVisible())await p.locator('[data-action="gen-toggle"]').click();
  await p.locator('[data-role="gen-name"]').fill('十二辆自定义生命车辆');await p.locator('[data-role="gen-scale"]').selectOption('company');
  await p.locator('[data-detail-id="gen-body"] > summary').click();await p.locator('[data-role="gen-body"]').selectOption('vehicle');await p.locator('[data-role="gen-hpMax"]').fill('12');await p.locator('[data-role="gen-memberHp"]').fill('100');
  await p.locator('[data-action="gen-add"]').click();assert.match(await p.locator('[data-role="builder-preview"]').innerText(),/总生命 1200\/1200/);await p.locator('[data-action="builder-confirm"]').click();
  const created=(await read()).storage.find(u=>u.name==='十二辆自定义生命车辆');assert.equal(created.snapshot.formation.memberHp,100);assert.deepEqual(created.snapshot.formation.health,[{hp:100,count:12}]);checks.push('实际新建界面保存12辆、每辆100生命，预览与归档均为1200总生命');
- await load(cases[0][1].before);await p.locator('[data-action="small-start"]').click();await p.locator('.grid-board').waitFor();assert.equal((await read()).battle.snap.rulesId,'v5-overflow-d20');checks.push('实际新开战使用V5，并保留预先受伤的成员生命');
+ await load(cases[0][1].before);await startBattle(p, 'small');await p.locator('.grid-board').waitFor();assert.equal((await read()).battle.snap.rulesId,'v6-overflow-d20');checks.push('实际新开战确认升级后使用V6，并保留预先受伤的成员生命');
  for(const [mode,data] of cases){
   await load(data.active);await p.locator(mode==='small'?'.grid-board':'.formation-grid').waitFor();
   if(mode==='small'){await p.locator('.command-modes button').filter({hasText:'攻击'}).click();await p.locator('[data-role="grid-target"]').selectOption('D');}

@@ -40,7 +40,7 @@ export interface Weapon {
   /** 正文明确设定的V4冻结数值，不参与旧装备自动校正。 */
   customized?: boolean;
   /** V4运行时规格投影；库存仍保存原始冻结配方。 */
-  powerModel?: 'anchors-v1' | 'wounds-v1';
+  powerModel?: 'anchors-v1' | 'wounds-v1' | 'wounds-v2';
   damageScale?: number;
   ammunition?: 'he' | 'ap';
   splashTargets?: number;
@@ -138,7 +138,7 @@ export interface Ability {
   /** 显式编辑的效果与数值不被入场公式重建。 */
   customized?: boolean;
   bonuses?: Enhancements;
-    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3' | 'skill-v5.0' | 'skill-zone-v1';
+    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3' | 'skill-v5.0' | 'skill-v6.0' | 'skill-zone-v1' | 'skill-zone-v2';
     damageScale?: number;
   recipe?: import('./data/skill-mechanisms.js').SkillRecipe;
   weaponUse?: 'auto' | 'melee' | 'ranged';
@@ -269,7 +269,7 @@ export type UnitStatus = 'ready' | 'dying' | 'dead' | 'routing' | 'fled';
 
 export interface Combatant {
   /** 由战斗规则投影；旧快照缺省使用旧伤害模型。 */
-  damageModel?: 'wounds-v1';
+  damageModel?: 'wounds-v1' | 'wounds-v2';
   battleZones?: import('./area-effects.js').BattleZone[];
   barrier?: { remaining: number; duration: number; sourceId?: string };
   accessories?: Partial<Record<'accessory1' | 'accessory2', import('./items.js').AccessoryItem>>;
@@ -385,6 +385,8 @@ export interface GenAudit {
 // ---------- 造怪器 ----------
 
 export interface GenerateInput {
+  /** Omitted for historical API compatibility; the current panel explicitly selects V6. */
+  damageModel?: Combatant['damageModel'];
   bonuses?: Enhancements;
   weaponStabilized?: boolean;
   sidearmStabilized?: boolean;
@@ -454,6 +456,9 @@ export type DamageChannel = 'kinetic' | 'thermal' | 'arcane';
 export type BodyKind = 'human' | 'large' | 'vehicle' | 'giant';
 /** 规范化且冻结的 T/P/S/Q/F 中装备职责；训练 T 不在装备配方中。 */
 export interface ItemRecipe {
+  /** Identifies the body-strength formula baked into this physical instance. */
+  balanceVersion?: 'unified-v1';
+  noVariance?: boolean;
   bonuses?: Enhancements;
   /** 真实车辆武器稳定装置；不由骑射或机械化专长授予。 */
   stabilized?: boolean;
@@ -504,7 +509,7 @@ export interface BattleLogEntry {
 
 export interface RulePack {
   /** V5 单体毁伤与通道防护；缺省沿用旧战斗的规格耐久。 */
-  damageModel?: 'wounds-v1';
+  damageModel?: 'wounds-v1' | 'wounds-v2';
   combatModel?: 'cohort-v1' | 'cohort-v2';
   /** 武器直击余伤100%在目标编队内传递；旧规则缺省关闭。 */
   weaponOverflow?: boolean;

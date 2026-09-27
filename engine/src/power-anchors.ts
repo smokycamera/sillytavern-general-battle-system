@@ -1,3 +1,5 @@
+import { isWoundModel, UNIFIED_WOUNDS, UNIFIED_SPLASH, powerIndex } from './balance.js';
+import { compileWeapon } from './gen/equipment.js';
 import { isCannonWeapon, isRangedWeapon } from './loadout.js';
 import { bonusMultiplier, bonusRating, bonusPoints, channelPoints } from './enhancements.js';
 import type {Armor,Combatant,DamageChannel,Weapon} from './types.js';
@@ -24,7 +26,7 @@ export const powerBudget=(power:number)=>POWER_ANCHORS[Math.max(0,Math.min(9,Mat
 /** 单体创伤预算独立于穿透/范围；身体生命不会因穿戴高阶装备而膨胀。 */
 export const WOUND_BUDGETS=[4.5,10,24,28,32,36,42,48,56,64] as const;
 export const woundBudget=(power:number)=>WOUND_BUDGETS[Math.max(0,Math.min(9,Math.round(power)-1))]!;
-export const combatPowerBudget=(power:number,model?:Combatant['damageModel'])=>model==='wounds-v1'?woundBudget(power):powerBudget(power);
+export const combatPowerBudget=(power:number,model?:Combatant['damageModel'])=>model==='wounds-v2'?UNIFIED_WOUNDS[powerIndex(power)]!:model==='wounds-v1'?woundBudget(power):powerBudget(power);
 export function penetrationThrough(power:number,resistance:number):number {
   if(!Number.isFinite(power)||!Number.isFinite(resistance)||power<0||resistance<0)throw Error('穿透与防护须为非负有限数');
   const gap=power-resistance;
@@ -38,15 +40,39 @@ export function scaledPowerDice(mean:number):{dice:string;scale:number} {
   const dice=mean<3.5?'1d2':'8d6',base=mean<3.5?1.5:28;
   return {dice,scale:mean/base};
 }
+/** Recompile known giant recipes with the saved seed; preserve hand-authored instances. */
+function projectWeaponStrength(weapon: Weapon, model?: Combatant['damageModel']): Weapon {
+  const recipe=weapon.recipe;
+  if (!recipe || recipe.size!=='giant' || isRangedWeapon(weapon) || weapon.customized) return weapon;
+  const from=recipe.balanceVersion==='unified-v1'?'wounds-v2':undefined;
+  if ((from==='wounds-v2') === (model==='wounds-v2')) return weapon;
+  const spec={mechanism:recipe.mechanism,power:recipe.power,bonuses:recipe.bonuses,stabilized:recipe.stabilized,enchantment:recipe.enchantment};
+  const context={id:weapon.id,name:weapon.name,seed:recipe.seed,body:recipe.size,quality:recipe.quality,creatingUnit:true};
+  // Historical noVariance was not serialized. Match the original dice without a new roll;
+  // if rounding makes both modes indistinguishable, prefer the normal seeded recipe.
+  for (const noVariance of recipe.noVariance===undefined?[false,true]:[recipe.noVariance]) {
+    const old=compileWeapon(spec,{...context,noVariance,damageModel:from});
+    if (old.baseDice===weapon.baseDice && !weapon.apDice) {
+      const next=compileWeapon(spec,{...context,noVariance,damageModel:model});
+      return {...weapon,baseDice:next.baseDice,recipe:{...recipe,...(model==='wounds-v2'?{balanceVersion:'unified-v1' as const}:{balanceVersion:undefined})}};
+    }
+  }
+  // An unrecognized old dice override remains authoritative, just like customized gear.
+  return weapon;
+}
 export function anchoredWeapon(weapon:Weapon|undefined,ammo:'he'|'ap'='he',model?:Combatant['damageModel']):Weapon|undefined {
   if(!weapon)return undefined;
-  const projection=model==='wounds-v1'?'wounds-v1':'anchors-v1';
+  const projection=isWoundModel(model)?model!:'anchors-v1';
   if(weapon.powerModel===projection||weapon.powerModel&&weapon.customized)return weapon;
   if(weapon.powerModel){
     const power=weapon.recipe?.power??weapon.level??5;
-    const ratio=combatPowerBudget(power,model)/combatPowerBudget(power,weapon.powerModel==='wounds-v1'?'wounds-v1':undefined);
-    return {...weapon,powerModel:projection,damageScale:(weapon.damageScale??1)*ratio};
+    const ratio=combatPowerBudget(power,model)/combatPowerBudget(power,weapon.powerModel==='anchors-v1'?undefined:weapon.powerModel);
+    const giantMelee=weapon.recipe?.size==='giant'&&!isRangedWeapon(weapon);
+    const strength=giantMelee?((model==='wounds-v2'?3:1.8)/(weapon.powerModel==='wounds-v2'?3:1.8)):1;
+    return {...weapon,powerModel:projection,damageScale:(weapon.damageScale??1)*ratio*strength,
+      ...(isCannonWeapon(weapon)&&ammo==='he'&&model==='wounds-v2'?{splashTargets:UNIFIED_SPLASH[powerIndex(power)]}:{})};
   }
+  weapon = projectWeaponStrength(weapon, model);
   const mechanism=weapon.recipe?.mechanism??weapon.tags?.find(t=>t.startsWith('mechanism:'))?.slice(10);
   if(!mechanism)return weapon;
   const power=weapon.recipe?.power??weapon.level??5,curve=curveAt(power),old=diceAvg(curve.dmgBase)+(curve.dmgAp?diceAvg(curve.dmgAp):0);
@@ -54,14 +80,14 @@ export function anchoredWeapon(weapon:Weapon|undefined,ammo:'he'|'ap'='he',model
   const ratio=combatPowerBudget(power,model)/old*(isCannonWeapon(weapon)?3:mechanism==='autocannon'?1.5:1)*(melee?.damageScale??1);
   const base=diceAvg(weapon.baseDice)+(weapon.apDice?diceAvg(weapon.apDice):0),scaled=scaledPowerDice(base*ratio*bonusMultiplier(weapon.recipe?.bonuses, 'damage',weapon.channel??'kinetic')*(mechanism==='summon'?(weapon.damageScale??1):1));
   const artillery=isCannonWeapon(weapon),explosive=artillery&&ammo==='he'&&power>=3;
-  const splash=explosive?(power>=10?1e9:power>=9?256:power>=8?12:power>=7?6:power>=5?4:2):mechanism==='demolition'?6:0;
+  const splash=explosive?(model==='wounds-v2'?UNIFIED_SPLASH[powerIndex(power)]:power>=10?1e9:power>=9?256:power>=8?12:power>=7?6:power>=5?4:2):mechanism==='demolition'?6:0;
   return {...weapon,powerModel:projection,ammunition:ammo,baseDice:scaled.dice,apDice:undefined,damageScale:scaled.scale,
     penetration:Math.max(0,2*power+(['cannon','indirect-cannon','autocannon','demolition'].includes(mechanism)?2:mechanism==='heavy-rifle'?2:['firearm','rifle','energy'].includes(mechanism)?1:0)+(melee?.penetration??0)+(artillery&&ammo==='ap'?2:0)+bonusRating(weapon.recipe?.bonuses,'penetration',weapon.channel??'kinetic')),
     splashTargets:splash,splashFactor:mechanism==='demolition'?0.6:0.4};
 }
 export function anchoredProtection(unit:Pick<Combatant,'armor'|'body'|'shield'|'damageModel'>,channel:DamageChannel):number {
   const armor=unit.armor,innate=BODY[unit.body??'human'].protection[channel];
-  const armorBonus=armor?.tier?armor.recipe?.bonuses:undefined,shieldBonus=unit.damageModel==='wounds-v1'?undefined:unit.shield?.recipe?.bonuses;
+  const armorBonus=armor?.tier?armor.recipe?.bonuses:undefined,shieldBonus=isWoundModel(unit.damageModel)?undefined:unit.shield?.recipe?.bonuses;
   const adjustment=bonusRating({protection:bonusPoints(armorBonus,'protection')+channelPoints(armorBonus,'protection',channel)+bonusPoints(shieldBonus,'protection')+channelPoints(shieldBonus,'protection',channel)},'protection');
   if(!armor)return Math.max(innate,adjustment);
   if(armor.protectionOverride&&armor.protection)return Math.max(BODY[unit.body??'human'].protection[channel],armor.protection[channel]);
@@ -76,7 +102,7 @@ export function anchoredProtection(unit:Pick<Combatant,'armor'|'body'|'shield'|'
 }
 /** 高阶材料/护场提供等效耐久；24为固定同代交战基准，避免提高攻击曲线后同档全部秒杀。 */
 export function armorPowerScale(unit:Pick<Combatant,'armor'|'shield'|'damageModel'>):number {
-  if(unit.damageModel==='wounds-v1')return 1;
+  if(isWoundModel(unit.damageModel))return 1;
   const armor=unit.armor?.powerScale??(unit.armor&&unit.armor.tier>0?Math.max(1,powerBudget(unit.armor.recipe?.power??unit.armor.level??5)/24)*bonusMultiplier(unit.armor.recipe?.bonuses,'power'):1);
   const shield=unit.shield?.powerScale??(unit.shield ? Math.max(1,powerBudget(unit.shield.recipe?.power??3)/48) : 1);
   return Math.max(armor,unit.shield?shield:0)*bonusMultiplier(unit.shield?.recipe?.bonuses,'power');
@@ -85,7 +111,7 @@ export function armorPowerScale(unit:Pick<Combatant,'armor'|'shield'|'damageMode
 export function armorTransmission(unit:Pick<Combatant,'armor'|'body'|'shield'|'damageModel'>,channel:DamageChannel,penetration:number):number {
   const through=penetrationThrough(penetration,anchoredProtection(unit,channel));
   const armorDominates=anchoredProtection({...unit,body:'human'},channel)>=BODY[unit.body??'human'].protection[channel];
-  return unit.damageModel==='wounds-v1'&&unit.armor?.tier&&armorDominates ? through**bonusMultiplier(unit.armor.recipe?.bonuses,'power') : through;
+  return isWoundModel(unit.damageModel)&&unit.armor?.tier&&armorDominates ? through**bonusMultiplier(unit.armor.recipe?.bonuses,'power') : through;
 }
 /** 盾牌有界覆盖按期望折算，不追加随机骰；范围/失能/充分穿透不会获得保护。 */
 export function shieldProtection(unit:Pick<Combatant,'shield'>,channel:DamageChannel):number {
@@ -99,7 +125,7 @@ export function shieldTransmission(unit:Pick<Combatant,'shield'|'status'>,channe
   return 1-coverage*(1-penetrationThrough(penetration,shieldProtection(unit,channel)));
 }
 export function armorEffectLabel(unit:Pick<Combatant,'armor'|'shield'|'damageModel'>):string {
-  return unit.damageModel==='wounds-v1'
+  return isWoundModel(unit.damageModel)
     ? `部分穿透吸能强度×${Number(bonusMultiplier(unit.armor?.tier?unit.armor.recipe?.bonuses:undefined,'power').toFixed(2))}；充分穿透后无额外减伤${unit.armor?.powerScale!==undefined||unit.shield?.powerScale!==undefined?'（旧耐久覆盖不参与新规则）':''}`
     : `装甲等效耐久×${Number(armorPowerScale(unit).toFixed(2))}（旧规则）`;
 }
@@ -123,8 +149,8 @@ export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Comb
   };
   return score(ap)>score(he)?ap:he;
 }
-export function anchoredWeaponLabel(weapon:Weapon|undefined,model?:Combatant['damageModel']):string {
-  const w=weapon?.powerModel?weapon:anchoredWeapon(weapon,undefined,model);if(!w)return '—';
+export function anchoredWeaponLabel(weapon:Weapon|undefined,model:Combatant['damageModel']=weapon?.powerModel==='wounds-v2'?'wounds-v2':weapon?.powerModel==='wounds-v1'?'wounds-v1':undefined):string {
+  const w=anchoredWeapon(weapon,undefined,model);if(!w)return '—';
   const raw=(diceAvg(w.baseDice)+(w.apDice?diceAvg(w.apDice):0))*(w.damageScale??1);
   const melee=meleeProfile(w);
   return `${isRangedWeapon(w) ? (w.indirect ? '曲射' : '直射') + (isCannonWeapon(w) ? '火炮' : '') + ' · ' : ''}单次命中均值${Number(raw.toFixed(1))}生命 · 穿透${w.penetration??0}${(w.attacks??1)>1?` · ${w.attacks}段`:''}${w.splashTargets?` · 爆炸${w.splashTargets>=1e9?'覆盖目标编队':'另及'+w.splashTargets+'名额'}`:''}${melee?` · ${melee.description}`:''}`;

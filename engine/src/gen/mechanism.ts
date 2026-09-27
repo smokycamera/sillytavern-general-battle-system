@@ -1,6 +1,7 @@
+import { bodyProfile } from '../body.js';
 import { bonusMultiplier, bonusSteps, validateEnhancements, type Enhancements } from '../enhancements.js';
 import { spCapacity } from '../resources.js';
-import { capSingleLife, SINGLE_LIFE_LIMIT } from '../health-limits.js';
+import { capSingleLife, singleLifeLimit } from '../health-limits.js';
 import { compileAbility } from './abilities.js';
 import { MAX_PREPARED_SKILLS, compileSkill, resolvePreparedSkills } from '../skill-catalog.js';
 import { validateMount } from '../loadout.js';
@@ -23,6 +24,7 @@ function integer(value: number, min: number, max: number, label: string): number
 }
 
 export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): GenResult {
+  if (raw.damageModel !== undefined && !['wounds-v1','wounds-v2'].includes(raw.damageModel)) throw Error('未知伤害模型');
   const oldScale = raw.scale === 'mook';
   if (oldScale) raw = { ...raw, scale: 'company', hpMax: raw.hpMax ?? 10 };
   const seed = opts.seed ?? randomSeed();
@@ -34,7 +36,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   validateEnhancements(raw.bonuses, 'unit');
   const training = integer(raw.level, 1, 10, '训练T');
   const arch = raw.archetype ?? 'infantry';
-  const curve = curveAt(training); const archMod = ARCHETYPE_MODS[arch];
+  const curve = curveAt(training, raw.damageModel); const archMod = ARCHETYPE_MODS[arch];
   const id = `unit:${encodeURIComponent(seed)}`;
   const warnings: string[] = [];
   if (oldScale) warnings.push('旧刻度输入已归为编队，保留指定人数、装备和训练');
@@ -48,7 +50,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
     if (slot === 'sidearm' && !weaponId && !classId && !name) return undefined;
     const mechanism = classId ?? (weaponId ? undefined : slot === 'sidearm' ? 'sword' : raw.loadout === 'ranged' || arch === 'ranged' ? 'bow' : 'sword');
     return compileWeapon({ mechanism, weaponId, bonuses: slot === 'primary' ? raw.weaponBonuses : raw.sidearmBonuses, power: (slot === 'primary' ? raw.weaponLevel : raw.sidearmLevel) ?? 1, stabilized: slot === 'primary' ? raw.weaponStabilized : raw.sidearmStabilized, enchantment: slot === 'primary' ? raw.weaponEnchantment : raw.sidearmEnchantment },
-      { id: `${id}:${slot}`, name, seed: seed + ':' + slot, body, quality, noVariance: opts.noVariance, creatingUnit: true });
+      { id: `${id}:${slot}`, name, seed: seed + ':' + slot, body, quality, noVariance: opts.noVariance, creatingUnit: true, damageModel: raw.damageModel });
   };
   const weapon = weaponFor('primary')!; const sidearm = weaponFor('sidearm');
   const hasArmor = raw.armorTier !== undefined || !!raw.armorId || !!raw.armorName?.trim();
@@ -57,10 +59,10 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   const conflict = equipmentReason({ body, scale: raw.scale, weapon, sidearm, armor, shield: raw.shield ? { id: `${id}:shield`, load: 2 } : undefined });
   if (conflict) warnings.push('建档已保留配装：' + conflict + '；实际使用由战斗规则判定');
   const group = raw.scale !== 'hero';
-  const requestedMax = integer(raw.hpMax ?? (group ? 50 : Math.round((curve.hp * BODY[body].hp + archMod.hp) * bonusMultiplier(raw.bonuses, 'health'))), 1, group ? 1e9 : Number.MAX_SAFE_INTEGER, group ? '编制上限' : '生命上限');
+  const requestedMax = integer(raw.hpMax ?? (group ? 50 : Math.round((curve.hp * bodyProfile(body, raw.damageModel).hp + archMod.hp) * bonusMultiplier(raw.bonuses, 'health'))), 1, group ? 1e9 : Number.MAX_SAFE_INTEGER, group ? '编制上限' : '生命上限');
   const requestedHp = integer(raw.hp ?? requestedMax, 0, requestedMax, '当前值');
-  const hpMax = group ? requestedMax : capSingleLife(requestedMax), hp = Math.min(requestedHp, hpMax);
-  if (hpMax !== requestedMax) warnings.push(`单体生命上限${requestedMax}超过硬上限，已限制为${SINGLE_LIFE_LIMIT}`);
+  const hpMax = group ? requestedMax : capSingleLife(requestedMax, raw.damageModel), hp = Math.min(requestedHp, hpMax);
+  if (hpMax !== requestedMax) warnings.push(`单体生命上限${requestedMax}超过硬上限，已限制为${singleLifeLimit(raw.damageModel)}`);
   const traits = [...new Set(raw.traits)];
   const base = { atk: curve.atk + archMod.atk, def: curve.def + archMod.def, spd: Math.max(1, curve.spd + archMod.spd + bonusSteps(raw.bonuses, 'speed', 5)), hpMax,
     ...(group ? { moraleMax: curve.morale + bonusSteps(raw.bonuses, 'morale') } : {}) };
@@ -82,7 +84,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
     }
     for (const tag of trait.grantsTags ?? []) if (!['large', 'titan', 'flying', 'spear', 'ranged-capable', 'mounted'].includes(tag)) tags.add(tag);
   }
-  if (!group) base.hpMax = capSingleLife(base.hpMax);
+  if (!group) base.hpMax = capSingleLife(base.hpMax, raw.damageModel);
   const currentHp = raw.hp === undefined ? base.hpMax : Math.min(hp, base.hpMax);
   if (raw.abilityIds?.length) throw new Error('旧固定技能需先迁移为明确效果配方，不能直接进入 V2');
   const abilities: Ability[] = []; const abilityAudit: { blueprintId: string; power: number }[] = [];
@@ -103,13 +105,13 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
     weaponLevel: weapon.level, sidearmLevel: sidearm?.level, armorTier: tier, armorLevel: armorPower, hpMax: base.hpMax, hp: currentHp, preparedAbilityIds: prepared,
     abilityBlueprints: (raw.abilityBlueprints ?? []).map((s) => typeof s === 'string' ? { id: s, level: 5 } : { ...s, level: s.level ?? 5 }) };
   const unit: Combatant = { id, name: raw.name, side: raw.side, scale: raw.scale, archetype: arch, level: training,
-    rulesVersion: 'v2', bonuses: raw.bonuses, body, ...(raw.speedTier !== undefined ? { speedTier: raw.speedTier } : {}), ...(raw.mount ? { mount: true } : {}), base, hp: currentHp, tags: [...tags], traits,
+    rulesVersion: 'v2', ...(raw.damageModel ? {damageModel:raw.damageModel} : {}), bonuses: raw.bonuses, body, ...(raw.speedTier !== undefined ? { speedTier: raw.speedTier } : {}), ...(raw.mount ? { mount: true } : {}), base, hp: currentHp, tags: [...tags], traits,
     weapon, sidearm, armor, shield: raw.shield ? { id: `${id}:shield`, load: 2 } : undefined,
     abilities, preparedAbilityIds: preparedIds,
     conditions: [], abilityState: [], resources: { SP: 6 + Math.floor(training / 2), reserve: integer(raw.reserves ?? 0, 0, 2, '随队预备份额') },
     morale: base.moraleMax, engagedWith: [], status: hp > 0 ? 'ready' : 'dead', fatigue: 0,
     xpValue: curve.xp, generationWarnings: warnings,
-    genAudit: { seed, deltas: {}, formulaVersion: FORMULA_VERSION, input, abilities: abilityAudit } };
+    genAudit: { seed, deltas: {}, formulaVersion: FORMULA_VERSION + (raw.damageModel === 'wounds-v2' ? '+unified-v1' : ''), input, abilities: abilityAudit } };
   unit.resources.SP = spCapacity(unit);
   normalizeBakedTraitStats(unit, registry);
   if (oldScale) unit.legacyScale = 'mook';

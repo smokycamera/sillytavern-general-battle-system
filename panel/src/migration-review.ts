@@ -1,3 +1,7 @@
+import { prepareCombatModel } from '../../engine/src/combat-model.js';
+import { V6_D20 } from '../../engine/src/rules.js';
+import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
+import { unitRecordFromCombatant, materializeUnitRecord } from './unit-state.js';
 import { SmallBattle, MassBattle, traitRegistry, rulesById, validateTraitSource, validateTacticalPose, validateTacticalEffort, validateConcealment, validateFlightState, validateWounded, validateMoraleState, validateVanguardOrigin, validateFormationPosition, normalizeV2Scale, type Combatant } from '../../engine/src/index.js';
 import { combatantFromUnknown, migratePanelUnits } from './unit-state.js';
 import type { NarrativeSave } from './narrative-state.js';
@@ -44,7 +48,7 @@ function validateBattle(save: NarrativeSave): void {
 }
 
 /** 纯预览：原始完整存档保留，运行中的旧规则不换版本，不重建已有装备。 */
-export function reviewMigration(raw: NarrativeSave): MigrationReview | undefined {
+export function reviewMigration(raw: NarrativeSave, unifiedBalance = false): MigrationReview | undefined {
   const original = structuredClone(raw);
   const units = migratePanelUnits({ schemaVersion: raw.schemaVersion, storage: raw.storage, roster: raw.roster, rosterIds: raw.rosterIds, registry: traitRegistry() });
   const changes = [...units.warnings];
@@ -108,6 +112,25 @@ export function reviewMigration(raw: NarrativeSave): MigrationReview | undefined
       prepareBattleItemWrite(candidate, candidate);
     }
     catch (error) { changes.push('受损库存关联战斗已隔离：' + String(error)); candidate.battle = null; quarantined++; }
+  }
+  if (unifiedBalance) {
+    if (raw.battle) throw Error('请先收兵归档；进行中的旧战斗继续使用原规则');
+    candidate.storage = (candidate.storage ?? []).map(record => {
+      const snapshot = record.snapshot;
+      if (!snapshot || snapshot.rulesVersion !== 'v2' || snapshot.damageModel === 'wounds-v2') return record;
+      // Apply authoritative record fields (including deployment preferences) before conversion.
+      // This is an archive migration, so preserve the saved resources and action ledger.
+      const unit = materializeUnitRecord(record, traitRegistry());
+      unit.resources = structuredClone(snapshot.resources);
+      unit.abilityState = structuredClone(snapshot.abilityState);
+      unit.fatigue = snapshot.fatigue;
+      const before = unit.scale === 'hero' ? unit.base.hpMax : unit.formation?.memberHp;
+      prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit);
+      const after = unit.scale === 'hero' ? unit.base.hpMax : unit.formation?.memberHp;
+      changes.push(`${unit.name}：升级V6，${unit.scale==='hero'?'生命上限':'成员生命'} ${before ?? '旧制'} → ${after}；保留身份、人数、伤损、资源与冷却，自定义上限保留`);
+      return unitRecordFromCombatant(unit, record, {kind:'edit', sourceId:'balance:unified-v1'});
+    });
+    if (changes.length) changes.push('新生命按原伤损点数换算，零生命不复活；较低新上限下存活者最低保留1生命。物品实例、旧战报与已保存战斗均不重掷；新战使用统一的武器与技能公式。');
   }
   if (!changes.length) return undefined;
   candidate.schemaVersion = 2;

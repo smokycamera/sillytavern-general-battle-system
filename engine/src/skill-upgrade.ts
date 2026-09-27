@@ -1,3 +1,4 @@
+import { isWoundModel, UNIFIED_AREA, powerIndex } from './balance.js';
 import { bonusMultiplier, bonusSteps, bonusRating } from './enhancements.js';
 import type { Combatant } from './types.js';
 import { curveAt } from './data/curves.js';
@@ -10,10 +11,10 @@ import { upgradeZoneSkill } from './zone-skills.js';
 export function upgradeCombatSkills(unit: Combatant): void {
   const modern=unit.combatModel==='cohort-v2';
   for(const a of unit.abilities){
-    if (upgradeZoneSkill(a)) continue;
+    if (upgradeZoneSkill(a,unit.damageModel)) continue;
     const generic=a.definitionId?.startsWith('generic:')??false;
-    const wounds=unit.damageModel==='wounds-v1';
-    const version=wounds?'skill-v5.0':modern?'skill-v4.3':'skill-v3.0';
+    const wounds=isWoundModel(unit.damageModel), unified=unit.damageModel==='wounds-v2';
+    const version=unified?'skill-v6.0':wounds?'skill-v5.0':modern?'skill-v4.3':'skill-v3.0';
     if(a.customized||a.itemSourceId||a.fixedPower||a.effectVersion===version)continue;
     const previousGroup=a.cooldownGroup??a.id;
     if(modern&&a.definitionId&&skillDefinitionKnown(a.definitionId)) {
@@ -25,10 +26,10 @@ export function upgradeCombatSkills(unit: Combatant): void {
     }
     const power=a.power??5, curve=curveAt(power), base=modern?combatPowerBudget(power,unit.damageModel):diceAvg(curve.dmgBase)+(curve.dmgAp?diceAvg(curve.dmgAp):0);
     const damaging=a.effects.some(e=>e.op==='damage'), area=a.shape==='burst';
-    if(modern&&area&&!a.damageBasis&&damaging)a.areaExposure=power>=10?1e9:power>=9?128:power>=8?16:power>=7?8:4;
+    if(modern&&area&&!a.damageBasis&&damaging)a.areaExposure=unified?UNIFIED_AREA[powerIndex(power)]:power>=10?1e9:power>=9?128:power>=8?16:power>=7?8:4;
     const controls=a.effects.filter(e=>!['damage'].includes(e.op)).length;
     if(damaging){
-      const share=(area?1.05:2.2)*Math.pow(.9,Math.min(3,controls));
+      const share=(area?1.05:unified&&!a.damageBasis?1.5:2.2)*Math.pow(.9,Math.min(3,controls));
       const scaled=scaledPowerDice(base*share*bonusMultiplier(a.bonuses,'damage',a.damageBasis?undefined:a.channel??'kinetic'));
       a.effects=a.effects.map(e=>e.op==='damage'?{...e,baseDice:modern?scaled.dice:rebuildDice(base*share,6),apDice:undefined}:e);
       if(modern)a.damageScale=scaled.scale;
@@ -42,7 +43,7 @@ export function upgradeCombatSkills(unit: Combatant): void {
       if(a.range && a.range.max>1 && !a.effects.some(e=>e.op==='summon')) a.range.max=Math.max(a.range.min,1,a.range.max+bonusSteps(a.bonuses,'range',5));
       a.effects=a.effects.map(e=>{
         if(wounds&&e.op==='barrier')return {...e,amount:Math.max(1,Math.round(e.amount*bonusMultiplier(a.bonuses,'power'))),dur:Math.max(1,Math.min(99,e.dur+bonusSteps(a.bonuses,'duration',5)))};
-        if(e.op==='condition')return {...e,...(e.saveDC!==undefined?{saveDC:Math.max(1,Math.min(30,e.saveDC+bonusSteps(a.bonuses,'accuracy')))}:{}),dur:Math.max(1,e.dur+(['stunned','restrained','disarmed','silenced'].includes(e.conditionId)?Math.min(0,bonusSteps(a.bonuses,'duration',5)):bonusSteps(a.bonuses,'duration',5))),magnitude:Math.min(1.5,(e.magnitude??1)*bonusMultiplier(a.bonuses,'power'))};
+        if(e.op==='condition')return {...e,...(e.saveDC!==undefined?{saveDC:Math.max(1,Math.min(30,e.saveDC+bonusSteps(a.bonuses,'accuracy')))}:{}),dur:Math.max(1,e.dur+(['stunned','restrained','disarmed','silenced'].includes(e.conditionId)?Math.min(0,bonusSteps(a.bonuses,'duration',5)):bonusSteps(a.bonuses,'duration',5))),magnitude:Math.max(unified?.25:0,Math.min(1.5,(e.magnitude??1)*bonusMultiplier(a.bonuses,'power')))};
         if(e.op==='trait')return {...e,dur:Math.max(1,e.dur+bonusSteps(a.bonuses,'duration',5))};
         if(e.op==='resource')return {...e,amount:Math.sign(e.amount)*Math.max(0,Math.abs(e.amount)+bonusSteps(a.bonuses,'resource',5))};
         if(e.op==='morale')return {...e,amount:Math.round(e.amount*bonusMultiplier(a.bonuses,'morale'))};

@@ -5,14 +5,14 @@ import { skillMechanismFromId, skillMechanismName, SKILL_MODIFIERS } from '../da
 import { balanceGenericSkill } from '../skill-balance.js';
 
 /** 由类别、效果原语和独立P生成；不经过命名蓝图，也不从自定义名猜机制。 */
-export function compileGenericSkill(id: string, power: number, ownerId: string, name?: string): Ability {
+export function compileGenericSkill(id: string, power: number, ownerId: string, name?: string, model?: import('../types.js').Combatant['damageModel']): Ability {
   const mechanism = skillMechanismFromId(id);
   if (!mechanism) throw new Error('未知或矛盾的技能效果');
   if (!Number.isSafeInteger(power) || power < 1 || power > 10) throw new Error('技能等级必须为1–10整数');
   const physical = mechanism.category.startsWith('physical'), magic = mechanism.category.startsWith('magic'), damage = physical || magic;
   const geometry = mechanism.modifiers.find(id => ['cone','line','ring','chain'].includes(id)) as NonNullable<Ability['area']>['shape'] | undefined;
   const zoneKinds = mechanism.modifiers.filter(id => id.startsWith('zone-')).map(id => id.slice(5)) as Extract<EffectOp,{op:'zone'}>['kind'][];
-  const area = mechanism.area || !!geometry, curve = curveAt(power), effects: EffectOp[] = [];
+  const area = mechanism.area || !!geometry, curve = curveAt(power, model), effects: EffectOp[] = [];
   const modifiers = mechanism.modifiers.filter((m) => !['melee', 'ranged', 'shield', 'projectile', 'thermal', 'arcane', 'martial', 'cone', 'line', 'ring', 'chain'].includes(m));
   const selected = modifiers.length ? modifiers : damage ? [] : mechanism.category === 'buff' ? ['attack', 'defense'] : ['weaken'];
   const magnitude = Math.max(.25, (5 + power) / 10 / Math.max(1, Math.sqrt(selected.length)));

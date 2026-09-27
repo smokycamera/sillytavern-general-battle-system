@@ -10,8 +10,8 @@ const message: MessageEnvelope = { characterId: 'test', chatId: 'life-cap', bran
 
 describe('生命上限贯穿正文、编辑与档案', () => {
   it('正文高生命自动截断并给出提示，编队人数保留原值', () => {
-    const parsed = parseProtocol(message.text); expect(parsed.errors).toEqual([]); expect(parsed.warnings.join('')).toContain('1000');
-    expect(parsed.events).toMatchObject([{ hp: 1000, hpMax: 1000 }, { hp: 1000, hpMax: 1000 }]);
+    const parsed = parseProtocol(message.text); expect(parsed.errors).toEqual([]); expect(parsed.warnings.join('')).toContain('2000');
+    expect(parsed.events).toMatchObject([{ hp: 2000, hpMax: 2000 }, { hp: 2000, hpMax: 2000 }]);
     expect(parseProtocol('<tb><spawn name="十万人" side="ally" scale="company" hpMax="100000"/></tb>').events[0]).toMatchObject({ hpMax: 100000 });
     expect(parseProtocol('<tb><spawn name="非法" side="ally" scale="hero" hpMax="-1"/></tb>').errors.length).toBeGreaterThan(0);
   });
@@ -22,7 +22,7 @@ describe('生命上限贯穿正文、编辑与档案', () => {
     // 模拟旧客户端已经保存的尚未应用草稿，绕过新版解析器仍需被生成器限制。
     for (const event of proposal.events) if (event.kind === 'spawn') { event.hp = 100000; event.hpMax = 100000; }
     const next = prepareNarrativeTransaction(save, proposal, namespace, true);
-    expect(next.storage).toHaveLength(2); expect(next.storage!.every(record => record.hp === 1000 && record.base.hpMax === 1000)).toBe(true);
+    expect(next.storage).toHaveLength(2); expect(next.storage!.every(record => record.hp === 2000 && record.base.hpMax === 2000)).toBe(true);
   });
   it('旧档加载同步外层和快照，保留较低伤势、零生命、单位版本与历史', () => {
     const unit = generateUnit({ rulesVersion: 'v2', name: '旧档', side: 'ally', scale: 'hero', level: 6, hpMax: 1000, traits: [] }, { registry, seed: 'old' }).unit;
@@ -37,10 +37,10 @@ describe('生命上限贯穿正文、编辑与档案', () => {
   it('单位更新与手动编辑统一限制生命；成员上限不影响人数', () => {
     const draft = newUnitDraft(); draft.name = '单体'; draft.hpMax = draft.hp = '100000';
     const unit = buildUnit(draft, registry, 'single'); const record = unitRecordFromCombatant(unit);
-    expect(unit.base.hpMax).toBe(1000); expect(updateUnitRecord(record, { hp: 100000, hpMax: 100000 }, registry).hp).toBe(1000);
-    const edit = unitDraftFromRecord(record); edit.hpMax = edit.hp = '100000'; expect(editUnitBuild(record, edit, registry).base.hpMax).toBe(1000);
+    expect(unit.base.hpMax).toBe(2000); expect(updateUnitRecord(record, { hp: 100000, hpMax: 100000 }, registry).hp).toBe(2000);
+    const edit = unitDraftFromRecord(record); edit.hpMax = edit.hp = '100000'; expect(editUnitBuild(record, edit, registry).base.hpMax).toBe(2000);
     draft.scale = 'company'; draft.hpMax = draft.hp = '100000'; draft.memberHp = '100000';
-    const company = buildUnit(draft, registry, 'company'); expect(company.hp).toBe(100000); expect(company.formation!.memberHp).toBe(1000);
-    const loaded = materializeUnitRecord(unitRecordFromCombatant(company), registry); expect(loaded.hp).toBe(100000); expect(loaded.formation!.memberHp).toBe(1000);
+    const company = buildUnit(draft, registry, 'company'); expect(company.hp).toBe(100000); expect(company.formation!.memberHp).toBe(2000);
+    const loaded = materializeUnitRecord(unitRecordFromCombatant(company), registry); expect(loaded.hp).toBe(100000); expect(loaded.formation!.memberHp).toBe(2000);
   });
 });
