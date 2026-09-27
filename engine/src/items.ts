@@ -1,5 +1,6 @@
 import { bonusMultiplier, validateEnhancements, type Enhancements } from './enhancements.js';
 import { recoveryCapacity } from './recovery.js';
+import { equipmentLoad } from './body.js';
 import {hasMemberHealth} from './member-health.js';
 import type { Ability, Armor, BodyKind, Combatant, EffectOp, ItemRecipe, Weapon } from './types.js';
 import { curveAt } from './data/curves.js';
@@ -119,11 +120,10 @@ export function equipmentReason(unit: Pick<Combatant, 'body' | 'scale' | 'weapon
   if (!body) return '不支持的身体/平台';
   for (const weapon of [unit.weapon, unit.sidearm]) {
     if (weapon?.recipe?.stabilized && unit.body !== 'vehicle') return '稳定车载武器需要实际车辆平台，不能由步行或骑乘单位装备';
-    if (['cannon', 'indirect-cannon', 'autocannon'].includes(weapon?.recipe?.mechanism ?? '') && unit.scale === 'hero' && (unit.body ?? 'human') === 'human') return '重型攻击需要炮组或明确载具/大型平台';
   }
   const accessories = Object.values(unit.accessories ?? {}).filter((item): item is AccessoryItem => !!item);
   if (new Set(accessories.map(item => item.recipe.mechanism)).size !== accessories.length) return '同类配件只能装备一件';
-  const load = (unit.weapon?.load ?? 0) + (unit.sidearm?.load ?? 0) + (unit.armor?.load ?? 0) + (unit.shield?.load ?? 0) + accessories.reduce((sum, item) => sum + item.load, 0);
+  const load = equipmentLoad(unit);
   return load > body.capacity ? `负重 ${load} 超过身体容量 ${body.capacity}` : undefined;
 }
 

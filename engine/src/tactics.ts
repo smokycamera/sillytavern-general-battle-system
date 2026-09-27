@@ -1,4 +1,4 @@
-import { bodyMovement } from './body.js';
+import { bodyMovement, humanEncumbered } from './body.js';
 import type { Combatant, ConditionDef, Trait } from './types.js';
 import type { Modifier, ResolveContext } from './bonus.js';
 import { activeTraitIds, activeConditionIds, traitPrerequisiteReason } from './trait-sources.js';
@@ -22,7 +22,7 @@ export function movementPoints(unit: Combatant, tags: string[] = []): number {
   const mobility = unit.mount === true || ids.includes('fast') || ids.includes('skirmisher') && light || ids.includes('mechanized') && vehicle || ids.includes('plains-runner') && tags.includes('plains') ? 1 : 0;
   const armor = !vehicle && (unit.armor?.tier ?? 0) >= 3 ? 1 : 0;
   const night = tags.includes('night') && !ids.includes('night-fighter') ? 1 : 0;
-  return Math.max(1, Math.min(5, bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - armor - night - Math.floor(unit.fatigue / 2)));
+  return Math.max(1, Math.min(5, bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - armor - night - Math.floor(unit.fatigue / 2) - Number(humanEncumbered(unit))));
 }
 export function formationMarchSteps(unit: Combatant, tags: string[] = []): number {
   if (isAirborne(unit)) return Math.max(1, Math.min(2, movementPoints(unit, tags) - 1));

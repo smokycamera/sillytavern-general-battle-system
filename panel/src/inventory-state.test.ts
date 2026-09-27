@@ -95,13 +95,25 @@ describe('物品与档案的原子事务', () => {
     expect(() => prepareInventoryTransaction(save, { id: 'story-use', expectedRevision: 1, kind: 'use', itemId: 'story', unitId: 'a' })).toThrow(/规格|效果|数量/);
     expect(save.inventory!.at(-1)!.qty).toBe(0);
   });
-  it('换装冲突不能把被替换武器或盾牌提前移出槽位', () => {
+  it.each(['cannon', 'indirect-cannon', 'autocannon'])('人形实际从库存装备%s，持久化保留human与原生命', mechanism => {
+    const save = initial(), before = structuredClone(save);
+    save.inventory!.push(createInventoryItem('heavy', '人形重火力', { kind: 'weapon', mechanism, power: 5 }, 'heavy'));
+    const next = prepareInventoryTransaction(save, { id: 'heavy-on', expectedRevision: 1, kind: 'equip', itemId: 'heavy', unitId: 'a', slot: 'primary' });
+    const saved = JSON.parse(JSON.stringify(next));
+    const actor = materializeUnitRecord(saved.storage[0], registry);
+    expect(actor.body ?? 'human').toBe('human');
+    expect(actor.weapon?.recipe?.mechanism).toBe(mechanism);
+    expect(actor.hp).toBe(before.storage![0]!.hp);
+    expect(next.inventory!.find(i => i.id === 'heavy')?.equippedTo).toEqual({ unitId: 'a', slot: 'primary' });
+    expect(save.storage).toEqual(before.storage);
+  });
+  it('车载稳定装置冲突不能把被替换武器或盾牌提前移出槽位', () => {
     const save = initial();
     save.inventory!.push(createInventoryItem('shield', '圆盾', { kind: 'shield', power: 3 }, 'shield'));
-    save.inventory!.push(createInventoryItem('cannon', '重炮', { kind: 'weapon', mechanism: 'cannon', power: 3 }, 'cannon'));
+    save.inventory!.push(createInventoryItem('cannon', '重炮', { kind: 'weapon', mechanism: 'cannon', power: 3, body: 'vehicle', stabilized: true }, 'cannon'));
     const next = prepareInventoryTransaction(save, { id: 'shield-on', expectedRevision: 1, kind: 'equip', itemId: 'shield', unitId: 'a', slot: 'shield' });
     const before = structuredClone(next);
-    expect(() => prepareInventoryTransaction(next, { id: 'conflict', expectedRevision: next.factRevision!, kind: 'equip', itemId: 'cannon', unitId: 'a', slot: 'primary' })).toThrow(/炮组|平台/);
+    expect(() => prepareInventoryTransaction(next, { id: 'conflict', expectedRevision: next.factRevision!, kind: 'equip', itemId: 'cannon', unitId: 'a', slot: 'primary' })).toThrow(/稳定车载武器需要实际车辆平台/);
     expect(next).toEqual(before);
   });
   it('重铸保持实物身份与改造历史，已装备投影更新，训练和生命不变', () => {

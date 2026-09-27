@@ -20,12 +20,14 @@ describe('V2独立物品与真实配装规则', () => {
     expect(equipmentReason(unit)).toBeUndefined();
     expect(unit).toEqual(before);
   });
-  it('库存中的重炮不能由普通单兵装备，炮组和明确平台有合法入口', () => {
-    const gun = compileItem({ kind: 'weapon', mechanism: 'cannon', power: 8 }, { id: 'gun', name: '重炮', seed: 'gun' });
+  it.each(['cannon', 'indirect-cannon', 'autocannon'])('库存中的%s可由人形单兵、炮组、大型与载具装备', (mechanism) => {
+    const gun = compileItem({ kind: 'weapon', mechanism, power: 8 }, { id: 'gun', name: '重炮', seed: 'gun' });
     if (gun.kind !== 'weapon') throw new Error('fixture');
     const unit = hero(); unit.weapon = gun.value;
-    expect(equipmentReason(unit)).toMatch(/炮组|平台/);
-    unit.body = 'vehicle'; expect(equipmentReason(unit)).toBeUndefined();
+    for (const body of ['human', 'large', 'giant', 'vehicle'] as const) for (const scale of ['hero', 'company'] as const) {
+      unit.body = body; unit.scale = scale;
+      expect(equipmentReason(unit)).toBeUndefined();
+    }
   });
   it('机械规格未知时拒绝，不按物品名字猜测；治疗不会招募兵员', () => {
     expect(() => compileItem({ kind: 'weapon', mechanism: 'arbitrary-god-gun', power: 5 }, { id: 'x', name: '普通剑', seed: 'x' })).toThrow(/类型/);
