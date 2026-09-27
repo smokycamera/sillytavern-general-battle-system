@@ -2,6 +2,18 @@ import { NarrativeController } from './narrative-controller.js';
 import { createAdapter, type SaveReceipt, type TavernAdapter, type DeliveryReceipt } from './tavern.js';
 import type { PanelController } from './controller-port.js';
 
+export interface WorldbookEditorItem {
+  id: string;
+  title: string;
+  content: string;
+  defaultContent: string;
+  depth: number;
+  role: number;
+  order: number;
+}
+export interface WorldbookEditorState { enabled: boolean; items: WorldbookEditorItem[] }
+export interface WorldbookEditorUpdate { enabled?: boolean; entry?: { id: string; content?: string } }
+
 export interface PanelRuntime {
   recentNarrative?: () => import('../../vendor/jev-core/src/types.js').NarrativeMessage[];
   adapter: TavernAdapter;
@@ -15,6 +27,8 @@ export interface PanelRuntime {
   retryGeneration?: (deliveryId: string) => Promise<DeliveryReceipt>;
   getTheme?: () => 'dark' | 'light';
   setTheme?: (theme: 'dark' | 'light') => void;
+  getWorldbookSettings?: () => WorldbookEditorState;
+  setWorldbookSettings?: (update: WorldbookEditorUpdate) => WorldbookEditorState;
 }
 export function createPanelRuntime(): PanelRuntime {
   const adapter = createAdapter();
