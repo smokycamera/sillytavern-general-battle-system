@@ -105,6 +105,7 @@ const tacticalView: TacticalView = { mode: 'weapon' };
 const formationView: FormationView = {};
 const narrativeDrafts = new Map<string, string>();
 const promptDrafts = new Map<string, string>();
+const worldbookDrafts = new Map<string, string>();
 let workspaceTab: WorkspaceTab = 'battle';
 let workspaceNamespace = adapter.namespace();
 let builderEditDraft: UnitDraft | undefined;
@@ -930,9 +931,18 @@ function renderBattlePreparation(): string {
     ${allies.length ? `<div class="preparation-roster">${allies.slice(0, 8).map((u) => `<span><b>${esc(u.name)}</b><small>${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}/${u.base.hpMax}</small></span>`).join('')}${allies.length > 8 ? `<span>另有${allies.length - 8}支单位</span>` : ''}</div>` : ''}
   </section>`;
 }
+function renderEmbeddedWorldbookSettings(): string {
+  const view = runtime.getWorldbookSettings?.();
+  if (!view) return '';
+  return `<section><h2>内置世界书</h2>
+    <label><input type="checkbox" data-role="worldbook-enabled" ${view.enabled ? 'checked' : ''}> 启用内置世界书</label>
+    <p>默认使用插件内置的四个常驻条目，不再依赖全局世界书或关键词触发。插入深度、角色与条目顺序被锁定，编辑这里只修改文本，因此不会把原来的位置语义改乱。</p>
+    ${view.items.map(item => `<div class="prompt-setting"><label><strong>${esc(item.title)}</strong> <span class="sub">depth ${item.depth} · ${item.role === 0 ? 'system' : 'role '+item.role} · order ${item.order}</span></label><details data-detail-id="worldbook-editor-${esc(item.id)}"><summary>编辑条目</summary><textarea data-role="worldbook-template" data-entry="${esc(item.id)}" style="width:100%;min-height:12em">${esc(worldbookDrafts.get(item.id) ?? item.content)}</textarea><div class="row"><button data-action="worldbook-save" data-entry="${esc(item.id)}">保存编辑并立即生效</button><button data-action="worldbook-reset" data-entry="${esc(item.id)}">恢复内置默认文本</button></div></details></div>`).join('')}
+  </section>`;
+}
 function renderWorkspaceSettings(): string {
   const saved = controller.snapshot(), view = llmSettingsView();
-  return `${renderLlmSettings(view.settings, view.error ?? llmDiagnostic)}${promptScopeControls(saved.promptSettings, narrativeProjectionDetails(saved, adapter.recentPromptText?.() ?? ''), (saved.storage ?? []).filter(visibleUnitRecord))}${renderPromptSettings(saved.promptSettings, promptDrafts)}<section><h2>显示与操作</h2><p>战场形式由参战队伍确定，环境沿用剧情声明。</p><button data-action="theme-toggle">切换深浅主题</button></section>
+  return `${renderLlmSettings(view.settings, view.error ?? llmDiagnostic)}${renderEmbeddedWorldbookSettings()}${promptScopeControls(saved.promptSettings, narrativeProjectionDetails(saved, adapter.recentPromptText?.() ?? ''), (saved.storage ?? []).filter(visibleUnitRecord))}${renderPromptSettings(saved.promptSettings, promptDrafts)}<section><h2>显示与操作</h2><p>战场形式由参战队伍确定，环境沿用剧情声明。</p><button data-action="theme-toggle">切换深浅主题</button></section>
     <section><h2>保存与恢复</h2><p>${state.saveReceipt?.status === 'local-only' ? '目前仅确认本地副本，酒馆尚未确认保存。' : '单位档案和战报随当前聊天保存。保存失败时会在顶部显示。'}</p><button data-action="save-retry">核实并重试保存</button>${controller.migrationReview() ? '' : renderMigrationReview()}</section>
     <details class="workspace-diagnostics"><summary>版本与运行信息</summary><p>战斗结果由本设备计算。伤害、命中和状态的详细过程可在战报中查看。</p><p>${controller.capabilities.injection ? '已支持在续写剧情时参考当前战斗进度。' : '当前酒馆暂不支持自动提供剧情参考。'}</p></details>`;
 }
@@ -2611,6 +2621,20 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   'grid-endturn': () => { state.small!.endTurn(); },
   'grid-mobile-endturn': () => { state.small!.endTurn(); },
   'grid-auto': async () => { await autoSmall(state.small!); },
+  'worldbook-save': (el) => {
+    if (!runtime.setWorldbookSettings || !runtime.getWorldbookSettings) return;
+    const id = el.dataset.entry; if (!id) return;
+    const textarea = document.querySelector<HTMLTextAreaElement>(`[data-role="worldbook-template"][data-entry="${CSS.escape(id)}"]`);
+    if (!textarea) return;
+    runtime.setWorldbookSettings({ entry: { id, content: textarea.value } });
+    worldbookDrafts.delete(id); render('view'); toast('内置世界书已保存并立即生效');
+  },
+  'worldbook-reset': (el) => {
+    if (!runtime.setWorldbookSettings) return;
+    const id = el.dataset.entry; if (!id) return;
+    runtime.setWorldbookSettings({ entry: { id } });
+    worldbookDrafts.delete(id); render('view'); toast('已恢复内置默认文本');
+  },
   'prompt-save': async (el) => {
     const id = el.dataset.section as PromptSectionId; if (!PROMPT_SECTIONS.some((s) => s.id === id)) return;
     const settings = controller.snapshot().promptSettings ?? {};
@@ -3203,7 +3227,7 @@ async function afterSmallAction(endTurn = true): Promise<void> {
 document.addEventListener('click', e => {
   const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
   if (!action) return;
-  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'modal-stop', 'llm-stop', 'llm-models'].includes(action)) { void handleAction(e); return; }
+  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'modal-stop', 'llm-stop', 'llm-models', 'worldbook-save', 'worldbook-reset'].includes(action)) { void handleAction(e); return; }
   // Scan/reload validate the refreshed service themselves; they must remain
   // reachable when a host metadata refresh invalidates the old panel session.
   const viewOnly = ['save-retry', 'archive-reload', 'narrative-scan', 'pending-scan', 'workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-inspect-unit', 'grid-cell', 'grid-mode', 'narrative-review', 'log-detail', 'unit-detail', 'role-detail', 'modal-stop', 'migration-export'].includes(action);
@@ -3232,6 +3256,7 @@ document.addEventListener('input', e => {
 document.addEventListener('input', (e) => {
   if (!(e.target instanceof Element)) return;
   if (e.target instanceof HTMLTextAreaElement && e.target.dataset.role === 'prompt-template') { promptDrafts.set(e.target.dataset.section!, e.target.value); return; }
+  if (e.target instanceof HTMLTextAreaElement && e.target.dataset.role === 'worldbook-template') { worldbookDrafts.set(e.target.dataset.entry!, e.target.value); return; }
   if (e.target instanceof HTMLTextAreaElement && e.target.dataset.role === 'narrative-draft') { narrativeDrafts.set(e.target.dataset.id!, e.target.value); return; }
   inventoryPanel.capture(e.target);
   if (e.target.closest('[data-builder-form]') && !(e.target instanceof HTMLSelectElement) && !(e.target instanceof HTMLInputElement && e.target.type === 'checkbox')) { captureForm(); builderPreview = undefined; document.querySelectorAll('[data-role="builder-preview"]').forEach((el) => el.remove()); }
@@ -3369,6 +3394,12 @@ async function handleChange(e: Event): Promise<void> {
   }
 }
 document.addEventListener('change', e => {
+  if (e.target instanceof HTMLInputElement && e.target.dataset.role === 'worldbook-enabled') {
+    if (!runtime.setWorldbookSettings) return;
+    try { runtime.setWorldbookSettings({ enabled: e.target.checked }); worldbookDrafts.clear(); render('view'); }
+    catch (error) { toast(error instanceof Error ? error.message : '世界书设置保存失败'); }
+    return;
+  }
   if (e.target instanceof HTMLInputElement && e.target.dataset.role === 'llm-battle-scale') {
     try {
       const settings = readLlmSettings();
