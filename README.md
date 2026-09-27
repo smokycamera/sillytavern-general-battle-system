@@ -2,11 +2,13 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **1.3.0**.
+Current version: **1.3.1**.
+
+All four entries are constant, with keywords removed and the user-provided text retained. Supported ST / TT hosts process them through the global World Info pipeline with the original position, depth, role, and order. Older hosts display a depth-fallback notice. See [embedded lorebook notes](docs/embedded-worldbook.md).
 
 Human carrying capacity is now 14, and large bodies carry 18. Humans at load 12 or above lose 1 movement and 2 initiative. Non-vehicle units may equip and fire autocannons and artillery; vehicle stabilization still requires a vehicle. Load penalties appear in equipment previews and unit details.
 
-New battles use V7 cross-grade damage while retaining the V6 life and pacing baseline: the 16T+4 life curve, giant melee strength, shared frontage, skill budgets and bounded area coverage. Signed modifiers, level growth, editing and save validation share the same limits. Archive upgrades show a preview and retain a full backup; ongoing old battles retain their rules. Reimport the bundled lorebook. See [V7 overmatch, overflow and validation](docs/overmatch-v7.md) and [V6 life formulas](docs/unified-balance-v6.md).
+New battles use V7 cross-grade damage while retaining the V6 life and pacing baseline: the 16T+4 life curve, giant melee strength, shared frontage, skill budgets and bounded area coverage. Signed modifiers, level growth, editing and save validation share the same limits. Archive upgrades show a preview and retain a full backup; ongoing old battles retain their rules. See [V7 overmatch, overflow and validation](docs/overmatch-v7.md) and [V6 life formulas](docs/unified-balance-v6.md).
 
 Export a save before upgrading if you may need to downgrade. The complete 1.0.6 build is preserved on a dedicated rollback branch; see [version rollback](docs/version-rollback.md).
 
@@ -17,7 +19,8 @@ A native frontend battle extension for SillyTavern / TauriTavern. It supports sm
 ## Installation
 
 1. In SillyTavern, open **Extensions → Install Extension**, enter `https://github.com/smokycamera/sillytavern-general-battle-system`, install it, and refresh the page.
-2. Import and enable [!通用战斗系统约束.json](assets/worldbook/!通用战斗系统约束.json) in your World Info / lorebook.
+2. The four lorebook entries are built in and enabled by default. Open **Battle panel → Settings → 内置世界书** to toggle, edit individual texts, or restore defaults. These settings persist across chats and characters.
+3. Disable the external copy yourself to avoid duplicate context. The plugin does not modify or disable external lorebooks.
 
 Complete `<tb>` blocks in assistant replies are automatically escaped and shown in a collapsible event panel. No separate display regex is required. Expand it to read or copy the original event text; saved messages, scanning and model context remain unchanged. Disable any old `<tb>` hiding/folding regex and refresh after updating. See [display notes](docs/native-event-display.md).
 

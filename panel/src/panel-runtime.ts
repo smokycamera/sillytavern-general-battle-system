@@ -11,7 +11,7 @@ export interface WorldbookEditorItem {
   role: number;
   order: number;
 }
-export interface WorldbookEditorState { enabled: boolean; items: WorldbookEditorItem[] }
+export interface WorldbookEditorState { enabled: boolean; items: WorldbookEditorItem[]; injectionMode?: 'native' | 'depth' }
 export interface WorldbookEditorUpdate { enabled?: boolean; entry?: { id: string; content?: string } }
 
 export interface PanelRuntime {

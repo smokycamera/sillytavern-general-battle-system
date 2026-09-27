@@ -13,7 +13,7 @@ export interface NativeRuntime {
   open(): void;
   close(): void;
   dispose(): void;
-  worldbook: { view(): WorldbookEditorState; update(update: WorldbookEditorUpdate): WorldbookEditorState };
+  worldbook?: { view(): WorldbookEditorState; update(update: WorldbookEditorUpdate): WorldbookEditorState };
 }
 export function legacyReceipt(receipt: PersistReceipt): SaveReceipt {
   const confirmed = receipt.status === 'confirmed';
@@ -69,8 +69,10 @@ export function createPanelRuntime(): PanelRuntime {
       return Array.from({length: Math.min(count, 100)}, (_, i) => host.message(count - Math.min(count, 100) + i)).flatMap(m => m ? [{ id: m.messageId + ':' + m.swipeId, role: m.role, text: m.text, completed: m.complete }] : []);
     },
     getTheme: () => display.read().theme ?? 'dark', setTheme: theme => display.write({ theme }),
-    getWorldbookSettings: () => runtime.worldbook.view(),
-    setWorldbookSettings: update => runtime.worldbook.update(update),
+    ...(runtime.worldbook ? {
+      getWorldbookSettings: () => runtime.worldbook!.view(),
+      setWorldbookSettings: (update: WorldbookEditorUpdate) => runtime.worldbook!.update(update),
+    } : {}),
     retryGeneration: deliveryId => messages.retryGeneration(deliveryId),
     canWrite: () => service.canWrite(),
     writeBlockReason: () => service.writeBlockReason(),

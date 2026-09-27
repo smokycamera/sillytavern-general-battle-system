@@ -49,9 +49,13 @@ async function startRuntime() {
   if (disposed) { unlock(); return; }
   const host = await createNativeHost(windowHost);
   if (disposed) { host.dispose(); unlock(); return; }
+  let worldbookMode: 'native' | 'depth' = 'native';
   const applyWorldbook = (worldbook = extensionPreferences.read().worldbook) => {
-    stopWorldbook(); stopWorldbook = installEmbeddedWorldbook(host, worldbook);
+    stopWorldbook();
+    const installed = installEmbeddedWorldbook(host, worldbook);
+    stopWorldbook = installed; worldbookMode = installed.mode;
   };
+  const worldbookView = () => ({ ...embeddedWorldbookSettingsView(extensionPreferences.read().worldbook), injectionMode: worldbookMode });
   applyWorldbook();
   stopDisplay = installBattleMessageDisplay(host, windowHost, document);
   const store = new NativeStore(host, new IndexedDbJournal());
@@ -72,12 +76,12 @@ async function startRuntime() {
     close: () => panel.close(),
     dispose,
     worldbook: {
-      view: () => embeddedWorldbookSettingsView(extensionPreferences.read().worldbook),
+      view: worldbookView,
       update: update => {
         const worldbook = updateEmbeddedWorldbookSettings(extensionPreferences.read().worldbook, update);
         extensionPreferences.write({ worldbook });
         applyWorldbook(worldbook);
-        return embeddedWorldbookSettingsView(worldbook);
+        return worldbookView();
       },
     },
   };
