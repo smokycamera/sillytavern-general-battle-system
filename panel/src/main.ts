@@ -1,3 +1,4 @@
+import { version } from '../../package.json';
 import { renderWorldbookSettings, captureWorldbookDraft, worldbookDraftPatch, type WorldbookDraft } from './worldbook-settings.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import { equipmentLoadLabel } from '../../engine/src/body.js';
@@ -96,6 +97,8 @@ if (gw.__tavernBattlePanelMain) {
   throw new Error('战阵面板已初始化，跳过重复加载');
 }
 gw.__tavernBattlePanelMain = true;
+const panelTitle = `通用战斗系统v${version}`;
+document.title = panelTitle;
 
 const runtime = createPanelRuntime();
 const { adapter, controller, resident } = runtime;
@@ -853,7 +856,7 @@ function render(scope: RenderScope = 'all', tacticalQuery?: TacticalQuery): void
   if (scope === 'all') WORKSPACES.forEach(([id]) => dirtyWorkspaces.add(id));
   else if (scope === 'battle') (['battle','reports','units','inventory','settings'] as WorkspaceTab[]).forEach(id => dirtyWorkspaces.add(id));
   else if (scope === 'view') dirtyWorkspaces.add(workspaceTab);
-  if (!app.querySelector('.workspace-main')) app.innerHTML = `<header class="app-header"><div class="app-brand"><span class="brand-emblem" aria-hidden="true">阵</span><div><h1>通用战斗系统v1.0</h1><p>你的队伍，你的战场</p></div></div><div class="app-state"></div></header><div id="workspace-navigation"></div><div id="workspace-notices"></div><main class="workspace-main">${WORKSPACES.map(([id]) => workspacePage(id, workspaceTab, '')).join('')}</main><div id="workspace-dialog"></div>`;
+  if (!app.querySelector('.workspace-main')) app.innerHTML = `<header class="app-header"><div class="app-brand"><span class="brand-emblem" aria-hidden="true">阵</span><div><h1>${esc(panelTitle)}</h1><p>你的队伍，你的战场</p></div></div><div class="app-state"></div></header><div id="workspace-navigation"></div><div id="workspace-notices"></div><main class="workspace-main">${WORKSPACES.map(([id]) => workspacePage(id, workspaceTab, '')).join('')}</main><div id="workspace-dialog"></div>`;
   const pendingCount = state.proposals.filter(p => ['pending','failed','unresolved'].includes(p.status)).length;
   const nav = app.querySelector<HTMLElement>('#workspace-navigation')!;
   const navHtml = workspaceNavigation(workspaceTab, pendingCount);

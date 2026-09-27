@@ -1,8 +1,8 @@
 {
-  "display_name": "通用战斗系统v1.0",
+  "display_name": "通用战斗系统",
   "loading_order": 90,
   "js": "index.js",
   "author": "smokycamera",
-  "version": "1.3.6",
+  "version": "1.3.7",
   "auto_update": false
 }
