@@ -77,7 +77,7 @@ export function buildEmbeddedWorldbook(value?: EmbeddedWorldbookSettings): Embed
     groups.set(key, group);
   }
 
-  return [...groups.values()].map(group => ({
+  return [...groups.values()].map<EmbeddedPrompt>(group => ({
     id: `tavern-battle-native:worldbook:depth-${group.depth}:role-${group.role}`,
     content: group.contents.filter(Boolean).join('\n'),
     position: IN_CHAT,
