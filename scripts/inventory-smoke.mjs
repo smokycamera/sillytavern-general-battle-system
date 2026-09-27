@@ -188,6 +188,16 @@ try {
   assert.equal((await save()).inventory.find((i) => i.id === dose.id).qty, 0);
   console.log('✓ 正式战场：携行→预览→保存失败撤回→重试，一次治疗/扣量/主行动，重开不补回');
   await tab('battle');
+  // The healed vehicle starts directly in front of the cannon. Move it through
+  // the real UI; distance-only cannon movement cannot solve friendly occlusion.
+  const firingSetup = (await save()).battle.snap, gunner = firingSetup.combatants.find(u => u.id === 'b');
+  await panel.locator('.command-modes button').filter({ hasText: '移动' }).click();
+  const clearCells = await panel.locator('.grid-cell.reachable:not(.selected)').evaluateAll(elements => elements.map(e => Number(e.dataset.cell)));
+  const lateralDistance = cell => Math.abs(cell % firingSetup.battlefield.width - gunner.pos % firingSetup.battlefield.width);
+  const clearCell = clearCells.sort((a, b) => lateralDistance(b) - lateralDistance(a) || a - b)[0];
+  assert.ok(clearCell !== undefined && lateralDistance(clearCell) > 0, 'the front vehicle must have a legal position outside the cannon column');
+  await panel.locator(`[data-action="grid-cell"][data-cell="${clearCell}"]`).click();
+  await panel.locator('.move-preview [data-action="grid-move"]').click();
   let manualShot = false;
   for (let n = 0; n < 100 && !(await panel.locator('[data-action="battle-close"]').count()); n++) {
     if (active(await save()) === 'b') {
