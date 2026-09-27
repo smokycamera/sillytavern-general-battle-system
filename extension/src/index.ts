@@ -49,8 +49,8 @@ async function startRuntime() {
   if (disposed) { unlock(); return; }
   const host = await createNativeHost(windowHost);
   if (disposed) { host.dispose(); unlock(); return; }
-  const applyWorldbook = () => {
-    stopWorldbook(); stopWorldbook = installEmbeddedWorldbook(host, extensionPreferences.read().worldbook);
+  const applyWorldbook = (worldbook = extensionPreferences.read().worldbook) => {
+    stopWorldbook(); stopWorldbook = installEmbeddedWorldbook(host, worldbook);
   };
   applyWorldbook();
   stopDisplay = installBattleMessageDisplay(host, windowHost, document);
@@ -76,7 +76,7 @@ async function startRuntime() {
       update: update => {
         const worldbook = updateEmbeddedWorldbookSettings(extensionPreferences.read().worldbook, update);
         extensionPreferences.write({ worldbook });
-        applyWorldbook();
+        applyWorldbook(worldbook);
         return embeddedWorldbookSettingsView(worldbook);
       },
     },
