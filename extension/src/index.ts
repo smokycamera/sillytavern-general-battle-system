@@ -10,12 +10,13 @@ import { SaveManagement, type SaveChangePreview } from '../../runtime/src/save-m
 import { preferences } from './preferences.js';
 import { installBattleMessageDisplay } from '../../host/src/battle-message-display.js';
 import { bindPageLifecycle } from '../../host/src/page-lifecycle.js';
-import { installEmbeddedWorldbook } from './embedded-worldbook.js';
+import { embeddedWorldbookSettingsView, installEmbeddedWorldbook, updateEmbeddedWorldbookSettings } from './embedded-worldbook.js';
 
 const windowHost = window as unknown as HostWindow & { __tavernBattleNative?: NativeRuntime };
 windowHost.__tavernBattleNative?.dispose();
 const panelPath = 'panel/index.html';
-const panel = new PanelHost(new URL(panelPath, import.meta.url).href, preferences(windowHost));
+const extensionPreferences = preferences(windowHost);
+const panel = new PanelHost(new URL(panelPath, import.meta.url).href, extensionPreferences);
 let disposed = false; let unlock = () => {}; let stop = () => {}; let stopDisplay = () => {}; let stopWorldbook = () => {}; let service: BattleService | undefined;
 let starting: Promise<void> | undefined; let stopLifecycle = () => {};
 const exportData = (name: string, value: unknown) => {
@@ -48,7 +49,10 @@ async function startRuntime() {
   if (disposed) { unlock(); return; }
   const host = await createNativeHost(windowHost);
   if (disposed) { host.dispose(); unlock(); return; }
-  stopWorldbook = installEmbeddedWorldbook(host);
+  const applyWorldbook = () => {
+    stopWorldbook(); stopWorldbook = installEmbeddedWorldbook(host, extensionPreferences.read().worldbook);
+  };
+  applyWorldbook();
   stopDisplay = installBattleMessageDisplay(host, windowHost, document);
   const store = new NativeStore(host, new IndexedDbJournal());
   const backups = new IndexedDbSourceBackups();
@@ -61,7 +65,22 @@ async function startRuntime() {
     return false;
   });
   const current = service;
-  windowHost.__tavernBattleNative = { service: current, messages: new NativeMessages(host, () => current.canWrite()), open: () => panel.open(), close: () => panel.close(), dispose };
+  windowHost.__tavernBattleNative = {
+    service: current,
+    messages: new NativeMessages(host, () => current.canWrite()),
+    open: () => panel.open(),
+    close: () => panel.close(),
+    dispose,
+    worldbook: {
+      view: () => embeddedWorldbookSettingsView(extensionPreferences.read().worldbook),
+      update: update => {
+        const worldbook = updateEmbeddedWorldbookSettings(extensionPreferences.read().worldbook, update);
+        extensionPreferences.write({ worldbook });
+        applyWorldbook();
+        return embeddedWorldbookSettingsView(worldbook);
+      },
+    },
+  };
   const reload = async () => { preview = undefined; await current.load(); };
   const exportCurrent = () => exportData('tavern-battle-native-backup.json', preview?.source && !store.envelope()
     ? { format: 'tavern-battle-export', version: 1, exportedAt: new Date().toISOString(), scope: host.session()?.scope, legacy: preview.source }
