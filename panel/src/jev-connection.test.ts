@@ -39,6 +39,9 @@ describe('protocol matching and backend HTTP diagnostics', () => {
     await expect(fetchJevModels(connection, async () => new Response('private-response-body', { status: 404 })))
       .rejects.toThrow('HTTP 404');
   });
+  it.each([['Bad Request', 400], ['Unauthorized', 401], ['Forbidden', 403], ['Not Found', 404], ['Unprocessable Entity', 422], ['Too Many Requests', 429], ['Bad Gateway', 502]])('recognizes ST wrapped %s without displaying raw error text', async (message, status) => {
+    await expect(fetchJevModels(connection, async () => response({ error: { message } }))).rejects.toThrow(`HTTP ${status}`);
+  });
 });
 describe('remote JEV connections', () => {
   it.each(['https://api.typesafe.ai', JEV_API_URL + '/', JEV_API_URL + '/models', JEV_API_URL + '/systemone'])('normalizes %s without duplicating API suffixes', url => {

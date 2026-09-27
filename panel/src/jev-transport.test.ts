@@ -115,6 +115,62 @@ describe('JEV host and relay transport', () => {
     expect(JSON.parse(body.custom_include_body)).toMatchObject({ response_format: { type: 'json_object' }, messages: expect.any(Array) });
     expect(direct).not.toHaveBeenCalled();
   });
+  it.each(['upstream-key', ''])('uses ST native routes with an explicit plugin credential (%s), without enabling /proxy/', async token => {
+    const proxy = vi.fn<typeof fetch>(async (url, init) => {
+      // ST merges custom headers after its saved CUSTOM credential, including empty values.
+      const body = JSON.parse(String(init?.body));
+      const upstreamHeaders = { Authorization: 'Bearer saved-host-key', ...JSON.parse(body.custom_include_headers) };
+      expect(upstreamHeaders.Authorization).toBe(token ? 'Bearer ' + token : '');
+      expect(JSON.stringify(upstreamHeaders)).not.toContain('saved-host-key');
+      if (String(url).endsWith('/status')) return json({ data: [{ id: 'custom-model' }] });
+      if (String(url).endsWith('/generate')) return json({ choices: [{ message: { content: '{"scores":{"attack":1},"confidence":1}' } }] });
+      return new Response('CORS proxy is disabled', { status: 404 });
+    });
+    host(proxy);
+    const direct = vi.fn<typeof fetch>();
+    const c: JevConnection = { ...connection, protocol: 'openai', model: 'custom-model', token, url: 'https://gateway.example/custom/v2/chat/completions' };
+    expect(await fetchJevModels(c, direct)).toEqual(['custom-model']);
+    await directJevRequest(c, 'select-context', { fields: [] }, new AbortController().signal, direct);
+    expect(proxy.mock.calls.map(([url]) => url)).toEqual(['/api/backends/chat-completions/status', '/api/backends/chat-completions/generate']);
+    for (const [, init] of proxy.mock.calls) {
+      const body = JSON.parse(String(init?.body));
+      expect(body).toMatchObject({ chat_completion_source: 'custom', custom_url: 'https://gateway.example/custom/v2' });
+      expect(body.reverse_proxy).toBeUndefined();
+      expect(init).toMatchObject({ credentials: 'same-origin', redirect: 'error', method: 'POST' });
+      expect(Object.fromEntries(new Headers(init?.headers))).toEqual({ 'content-type': 'application/json', 'x-csrf-token': 'csrf-test' });
+    }
+    const body = JSON.parse(String(proxy.mock.calls[1]?.[1]?.body));
+    expect(JSON.parse(body.custom_include_body)).toMatchObject({ model: 'custom-model', response_format: { type: 'json_object' }, messages: expect.any(Array) });
+    expect(direct).not.toHaveBeenCalled();
+  });
+  it('retries ST HTTP-200 Bad Request once without response_format, but never retries auth failures', async () => {
+    const proxy = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ error: { message: 'Bad Request' } }))
+      .mockResolvedValueOnce(json({ choices: [{ message: { content: '{"scores":{}}' } }] }))
+      .mockResolvedValueOnce(json({ error: { message: 'Unauthorized' } }));
+    host(proxy);
+    const c: JevConnection = { ...connection, protocol: 'openai', url: 'https://gateway.example/v1' };
+    await directJevRequest(c, 'evaluate', { candidates: [] }, new AbortController().signal, vi.fn());
+    const requests = proxy.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
+    expect(JSON.parse(requests[0].custom_include_body).response_format).toEqual({ type: 'json_object' });
+    expect(JSON.parse(requests[1].custom_include_body)).not.toHaveProperty('response_format');
+    await expect(directJevRequest(c, 'evaluate', { candidates: [] }, new AbortController().signal, vi.fn())).rejects.toThrow('HTTP 401');
+    expect(proxy).toHaveBeenCalledTimes(3);
+  });
+  it.each([false, true])('reports native session and missing-route failures without falling back or exposing response text (TT=%s)', async tauri => {
+    const proxy = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('Invalid CSRF token upstream-key', { status: 403 }))
+      .mockResolvedValueOnce(new Response('Cannot POST /api/backends/chat-completions/status upstream-key', { status: 404 }))
+      .mockResolvedValueOnce(json({ error: 'Not Found' }, 404));
+    host(proxy, tauri);
+    const direct = vi.fn<typeof fetch>();
+    const c: JevConnection = { ...connection, protocol: 'openai', url: 'https://gateway.example/v1' };
+    await expect(fetchJevModels(c, direct)).rejects.toThrow('刷新酒馆');
+    await expect(fetchJevModels(c, direct)).rejects.toThrow('缺少模型后端接口');
+    await expect(fetchJevModels(c, direct)).rejects.toThrow('HTTP 404');
+    expect(proxy).toHaveBeenCalledTimes(3);
+    expect(direct).not.toHaveBeenCalled();
+  });
   it('prefers an ancestor Tauri host when the panel iframe also exposes SillyTavern', async () => {
     const proxy = vi.fn<typeof fetch>(async url => String(url).endsWith('/status') ? json({ data: [{ id: 'custom-model' }] }) : json({}));
     const parent = {

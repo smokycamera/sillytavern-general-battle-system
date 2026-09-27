@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **1.0.5**.
+Current version: **1.0.6**.
 
 License: **GPL-3.0-only**. Commercial use, modification and distribution are permitted under GPL version 3, including its corresponding-source obligations when conveying covered software. See [LICENSE](LICENSE) and [license notes](LICENSE-NOTES.md).
 
@@ -15,7 +15,7 @@ A native frontend battle extension for SillyTavern / TauriTavern. It supports sm
 
 Complete `<tb>` blocks in assistant replies are automatically escaped and shown in a collapsible event panel. No separate display regex is required. Expand it to read or copy the original event text; saved messages, scanning and model context remain unchanged. Disable any old `<tb>` hiding/folding regex and refresh after updating. See [display notes](docs/native-event-display.md).
 
-An ordinary OpenAI-compatible LLM can read the selected number of recent messages before battle to choose commander profiles and the supported battle/scene setup. API URL, key, model list and selection persist independently of chats and characters. No relay URL or route selection is required. See the [usage guide](docs/jev-integration.md).
+An ordinary OpenAI-compatible LLM can read the selected number of recent messages before battle to choose commander profiles and the supported battle/scene setup. API URL, key, model list and selection persist independently of chats and characters. Native model backends are selected automatically for ST and TT; no relay URL or CORS proxy configuration is required. See the [usage guide](docs/jev-integration.md).
 
 JEV Command controls are withdrawn. Settings retain a disabled unfinished-feature notice; automatic turns use the built-in AI.
 

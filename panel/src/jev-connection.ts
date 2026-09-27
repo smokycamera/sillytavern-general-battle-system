@@ -66,12 +66,19 @@ export function saveJevConnection(connection: JevConnection): void {
 function headers(connection: JevConnection): Record<string, string> {
   return { 'Content-Type': 'application/json', ...(connection.token.trim() ? { Authorization: 'Bearer ' + connection.token.trim() } : {}) };
 }
-/** Tauri's quiet endpoint can wrap a provider's 404 in its own HTTP 502 (or 200). */
+/** TT wraps upstream statuses; ST can return HTTP 200 with only an HTTP reason phrase. */
 function backendHttpStatus(value: unknown, depth = 0): number | undefined {
   if (depth > 3) return;
   if (typeof value === 'string') {
     const match = /endpoint failed with status ([45]\d{2})\b/i.exec(value.slice(0, 4096));
-    return match ? Number(match[1]) : undefined;
+    if (match) return Number(match[1]);
+    // Match complete standard phrases only; never display arbitrary upstream text.
+    return new Map([
+      ['bad request', 400], ['unauthorized', 401], ['forbidden', 403], ['not found', 404],
+      ['request timeout', 408], ['payload too large', 413], ['unprocessable entity', 422],
+      ['unprocessable content', 422], ['too many requests', 429], ['internal server error', 500],
+      ['bad gateway', 502], ['service unavailable', 503], ['gateway timeout', 504],
+    ]).get(value.trim().toLowerCase());
   }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
   const record = value as Record<string, unknown>;

@@ -64,6 +64,7 @@ export class LlmContextController {
 }
 function llmFailure(error: unknown): string {
   if (!(error instanceof JevConnectionError || error instanceof JevTransportError)) return error instanceof Error && /请先填写 API|普通 LLM/.test(error.message) ? error.message : '模型请求或返回格式无效';
-  if (/转发|CORS|跨域/.test(error.message)) return '模型服务连接失败，请检查 API URL、网络及服务是否允许当前酒馆访问';
+  // These error classes already contain bounded, credential-free diagnostics.
+  // Preserve actionable host, timeout and CORS details instead of hiding the cause.
   return error.message;
 }
