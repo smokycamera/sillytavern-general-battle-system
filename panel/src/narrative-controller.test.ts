@@ -250,12 +250,12 @@ describe('常驻宿主生命周期与故障', () => {
     expect(controller.persistPanel(forged, saved.factRevision!).receipt.status).toBe('failed'); expect(controller.snapshot()).toEqual(saved);
     const result = commitBattleOutcome({ battleId: 'small:battle-items', committedIds: [], records: saved.storage!, roster: units, combatants: b.combatants, awards: [], registry: reg });
     expect(controller.persistPanel({ ...saved, storage: result.records, committedOutcomeIds: result.committedIds }, saved.factRevision!).receipt.status).not.toBe('failed');
-    const ended = controller.snapshot(); expect(ended.storage![0]!.hp).toBe(17);
+    const ended = controller.snapshot(); expect(ended.storage![0]!.hp).toBe(23);
     expect(ended.storage![0]!.snapshot!.abilities.some((a) => a.itemSourceId)).toBe(false);
     controller.inventoryAction({ id: 'post-battle-dose', kind: 'use', itemId: 'dose', unitId: 'ally', expectedRevision: ended.factRevision! });
     const later = controller.snapshot(); expect(later.inventory![0]!.qty).toBe(1);
     expect(controller.persistPanel(later, later.factRevision!).receipt.status).not.toBe('failed');
-    expect(controller.snapshot().storage![0]!.hp).toBe(24);
+    expect(controller.snapshot().storage![0]!.hp).toBe(36);
     const nextUnits = prepareBattleItems(later.storage!.map((r) => r.snapshot!), later);
     expect(nextUnits[0]!.resources['item:dose']).toBe(1);
     expect(nextUnits[1]!.resources['item:dose']).toBeUndefined();

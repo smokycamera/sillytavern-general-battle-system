@@ -1,3 +1,4 @@
+import { V6_D20 } from '../../engine/src/rules.js';
 import { describe, expect, it } from 'vitest';
 import { generateUnit, SmallBattle, MassBattle, V4_D20, V4_TW, traitRegistry, standardField, applyRecovery, battleXpAwards, applyXp, previewAttack, type Combatant } from '../../engine/src/index.js';
 import { powerBudget, anchoredWeapon, armorPowerScale } from '../../engine/src/power-anchors.js';
@@ -54,7 +55,7 @@ describe('反馈数值校准',()=>{
     const source:MessageEnvelope={characterId:'c',chatId:'t',branchId:'b',messageId:'1',swipeId:'0',role:'assistant',complete:true,generationId:'g',text:parsed.canonical};
     const ns=namespaceOf(source),binding=captureGeneration({},ns,'g');binding.complete=true;
     const save=prepareNarrativeTransaction({},proposalFromMessage(source,binding)!,ns,true);
-    const u=materializeUnitRecord(save.storage![0]!,registry);prepareCombatModel(u,V4_D20);upgradeCombatSkills(u);
+    const u=materializeUnitRecord(save.storage![0]!,registry);prepareCombatModel(u,V6_D20);upgradeCombatSkills(u);
     const restored=materializeUnitRecord(unitRecordFromCombatant(u),registry);
     expect(restored.weapon!.recipe!.bonuses).toEqual({accuracy:10,damage:10,penetration:10});expect(restored.bonuses).toEqual({health:2});expect(restored.abilities[0]!.bonuses).toEqual({damage:10,accuracy:10});
     const id=skillDefinitionId('魔法单体')!;

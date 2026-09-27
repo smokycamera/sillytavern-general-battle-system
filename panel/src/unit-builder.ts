@@ -3,25 +3,26 @@ import { prepareCombatModel,nominalLife } from '../../engine/src/combat-model.js
 import { capSingleLife } from '../../engine/src/health-limits.js';
 import {setMemberMaximum} from '../../engine/src/member-health.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
-import { V5_D20 } from '../../engine/src/rules.js';
+import { V5_D20, V6_D20 } from '../../engine/src/rules.js';
 import { BODY } from '../../engine/src/body.js';
 import { skillDefinitionKnown, skillDefinitionName } from '../../engine/src/skill-catalog.js';
 import { generateUnit, compileItem, equipmentReason, validateMount, learnAbilities, normalizeBakedTraitStats, ABILITY_BLUEPRINTS, abilityPower, type Combatant, type GenerateInput, type Trait, type ItemMechanics } from '../../engine/src/index.js';
 import { equipmentDraft, equipmentSpecification, type EquipmentDraft } from './equipment-form.js';
 import { editUnitRecord, unitRecordFromCombatant, type UnitRecord } from './unit-state.js';
 export interface UnitDraft {
+  damageModel?: Combatant['damageModel'];
   memberHp?:string;
   name: string; side: string; scale: string; level: string; body: string; speedTier: string; mount: boolean; hp: string; hpMax: string; note: string; reserves: string;
   primary: EquipmentDraft; sidearm: EquipmentDraft; armor: EquipmentDraft; shieldGear: EquipmentDraft; sidearmEnabled: boolean; shield: boolean;
   traits: string[]; skills: { id: string; name: string; power: string; prepared: boolean; instanceId?: string }[]; autoPrepare: boolean;
 }
 export function newUnitDraft(): UnitDraft {
-  return { name: '', side: 'ally', scale: 'hero', level: '3', body: 'human', speedTier: '', mount: false, hp: '', hpMax: '', memberHp:'',note: '', reserves: '0',
+  return { damageModel: 'wounds-v2', name: '', side: 'ally', scale: 'hero', level: '3', body: 'human', speedTier: '', mount: false, hp: '', hpMax: '', memberHp:'',note: '', reserves: '0',
     primary: { ...equipmentDraft(), power: '1' }, sidearm: { ...equipmentDraft(), power: '1' }, armor: { ...equipmentDraft('armor'), tier: '0', power: '1' }, shieldGear: equipmentDraft('shield'), sidearmEnabled: false, shield: false, traits: [], skills: [], autoPrepare: true };
 }
 export function unitDraftFromRecord(r: UnitRecord): UnitDraft {
   const u = r.snapshot!, body = u.body ?? 'human';
-  return { ...newUnitDraft(), name: r.name, side: r.side, scale: r.scale, level: String(r.level), body, speedTier: u.speedTier === undefined ? '' : String(u.speedTier), mount: !!u.mount, hp: String(r.hp), hpMax: String(r.base.hpMax),memberHp:String(u.formation?.memberHp??nominalLife(u)), note: r.note ?? '', reserves: String(u.resources.reserve ?? 0),
+  return { ...newUnitDraft(), damageModel: u.damageModel, name: r.name, side: r.side, scale: r.scale, level: String(r.level), body, speedTier: u.speedTier === undefined ? '' : String(u.speedTier), mount: !!u.mount, hp: String(r.hp), hpMax: String(r.base.hpMax),memberHp:String(u.formation?.memberHp??nominalLife(u)), note: r.note ?? '', reserves: String(u.resources.reserve ?? 0),
     primary: equipmentDraft('weapon', body, u.weapon ? { kind: 'weapon', value: u.weapon } : undefined, u.weapon?.name),
     sidearm: equipmentDraft('weapon', body, u.sidearm ? { kind: 'weapon', value: u.sidearm } : undefined, u.sidearm?.name),
     armor: equipmentDraft('armor', body, u.armor ? { kind: 'armor', value: u.armor } : undefined, u.armor?.name),
@@ -35,9 +36,9 @@ function integer(s: string, min: number, max: number, label: string): number {
 function identityInput(d: UnitDraft): GenerateInput {
   if (!d.name.trim()) throw Error('请填写单位名称');
   if (!['ally', 'enemy'].includes(d.side) || !['hero', 'company'].includes(d.scale)) throw Error('单位归属或人数形式无效');
-  return { name: d.name.trim(), side: d.side as 'ally' | 'enemy', scale: d.scale as 'hero' | 'company', level: integer(d.level, 1, 10, '训练'), rulesVersion: 'v2', traits: [...d.traits], body: d.body as GenerateInput['body'], mount: d.mount, speedTier: d.speedTier ? integer(d.speedTier, 1, 5, '速度档位') : undefined,
-    hpMax: d.hpMax.trim() ? (d.scale === 'hero' ? capSingleLife(integer(d.hpMax, 1, Number.MAX_SAFE_INTEGER, '生命上限')) : integer(d.hpMax, 1, 1e9, '编制上限')) : d.scale === 'company' ? 50 : undefined,
-    hp: d.hp.trim() ? (d.scale === 'hero' ? capSingleLife(integer(d.hp, 0, Number.MAX_SAFE_INTEGER, '当前生命')) : integer(d.hp, 0, 1e9, '当前人数')) : undefined,
+  return { name: d.name.trim(), side: d.side as 'ally' | 'enemy', scale: d.scale as 'hero' | 'company', level: integer(d.level, 1, 10, '训练'), rulesVersion: 'v2', damageModel: d.damageModel, traits: [...d.traits], body: d.body as GenerateInput['body'], mount: d.mount, speedTier: d.speedTier ? integer(d.speedTier, 1, 5, '速度档位') : undefined,
+    hpMax: d.hpMax.trim() ? (d.scale === 'hero' ? capSingleLife(integer(d.hpMax, 1, Number.MAX_SAFE_INTEGER, '生命上限'), d.damageModel) : integer(d.hpMax, 1, 1e9, '编制上限')) : d.scale === 'company' ? 50 : undefined,
+    hp: d.hp.trim() ? (d.scale === 'hero' ? capSingleLife(integer(d.hp, 0, Number.MAX_SAFE_INTEGER, '当前生命'), d.damageModel) : integer(d.hp, 0, 1e9, '当前人数')) : undefined,
     reserves: integer(d.reserves, 0, 2, '预备份额'),
     abilityBlueprints: d.skills.filter((s) => s.id).map((s) => ({ id: s.id, instanceId: s.instanceId, name: s.name.trim() || undefined, ...(ABILITY_BLUEPRINTS[s.id]?.fixedPower ? {} : { level: integer(s.power, 1, 10, '技能等级') }) })) };
 }
@@ -50,7 +51,7 @@ function setGear(u: Combatant, d: UnitDraft, oldDraft?: UnitDraft): void {
     if (!enabled) { if (slot === 'sidearm') delete u.sidearm; if (slot === 'shieldGear') delete u.shield; continue; }
     const unchanged = old && before && JSON.stringify({ ...before, name: '' }) === JSON.stringify({ ...draft, name: '' });
     const result = unchanged ? structuredClone(old) : compileItem(equipmentSpecification(draft), { id: old && old.kind !== 'consumable' ? old.value.id : u.id + ':' + (slot === 'shieldGear' ? 'shield' : slot), name: draft.name.trim() || undefined,
-      seed: old && old.kind !== 'consumable' ? old.value.recipe?.seed ?? (u.genAudit?.seed ?? u.id) + ':' + slot : (u.genAudit?.seed ?? u.id) + ':' + slot, creatingUnit: !oldDraft });
+      seed: old && old.kind !== 'consumable' ? old.value.recipe?.seed ?? (u.genAudit?.seed ?? u.id) + ':' + slot : (u.genAudit?.seed ?? u.id) + ':' + slot, creatingUnit: !oldDraft, damageModel: u.damageModel });
     if (result.kind === 'consumable') throw Error('配装槽不能装入消耗品');
     if (unchanged && draft.name.trim()) result.value.name = draft.name.trim();
     if (slot === 'primary' && result.kind === 'weapon') u.weapon = result.value;
@@ -70,7 +71,7 @@ export function buildUnit(d: UnitDraft, registry: Map<string, Trait>, seed: stri
   if (weapon.kind !== 'weapon' || armor.kind !== 'armor') throw Error('装备类型无效');
   let unit = generateUnit({ ...input, weaponClass: weapon.mechanism, weaponLevel: weapon.power, armorTier: armor.tier, armorLevel: armor.power, preparedAbilityIds: [] }, { seed, registry }).unit;
   setGear(unit, d); unit = learnAbilities(unit, [], { prepared: d.autoPrepare ? undefined : d.skills.filter((s) => s.prepared).map((s) => unit.abilities.find((a) => a.id === s.instanceId || a.definitionId === s.id && a.name === (s.name.trim() || skillDefinitionName(s.id)))?.id ?? s.id) });
-  prepareCombatModel(unit,V5_D20,(d.memberHp??'').trim()?capSingleLife(integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命')):undefined); upgradeCombatSkills(unit);
+  prepareCombatModel(unit,V6_D20,(d.memberHp??'').trim()?capSingleLife(integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命'), d.damageModel):undefined); upgradeCombatSkills(unit);
   unit.resources.SP = spCapacity(unit); normalizeBakedTraitStats(unit, registry); return unit;
 }
 /** 只编译变更的配方；名称、体型和训练显示不重掷其他实物。 */
@@ -86,7 +87,7 @@ export function editUnitBuild(previous: UnitRecord, d: UnitDraft, registry: Map<
   edited.traits = [...input.traits];
   const next = editUnitRecord(previous, edited, registry), unit = next.snapshot!;
   unit.body = input.body; unit.mount = input.mount; unit.speedTier = input.speedTier; validateMount(unit);
-  prepareCombatModel(unit,V5_D20);
+  prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);
   if(unit.formation&&(d.memberHp??'').trim())setMemberMaximum(unit,integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命'));
   unit.abilityState = structuredClone(previous.snapshot.abilityState); unit.resources = { ...previous.snapshot.resources, reserve: input.reserves ?? 0 };
   if (!previous.equipmentManaged) setGear(unit, d, oldDraft);

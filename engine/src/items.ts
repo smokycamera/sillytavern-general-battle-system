@@ -43,7 +43,7 @@ export function carriedItemAbility(item: CarriedItem): Ability {
       desc: `消耗1件${CONSUMABLE_NAMES[mechanism]}，占用本次主要行动`,
       cost: { resource: 'item:' + item.id, amount: 1 }, target: hostile ? 'enemy' : 'ally',
       range: { min: 0, max: hostile ? 3 : 1, metric: 'grid', allowEngaged: true, requiresLineOfSight: true },
-      ...(hostile ? { delivery: 'ranged' as const, channel: 'kinetic' as const, penetration: 2 * item.mechanics.recipe.power, shape: 'burst' as const } : {}),
+      ...(hostile ? { delivery: 'ranged' as const, channel: 'kinetic' as const, penetration: 2 * item.mechanics.recipe.power, shape: 'burst' as const, ...(item.mechanics.recipe.balanceVersion==='unified-v1'?{damageScale:bonusMultiplier(item.mechanics.recipe.bonuses,'power')}:{}) } : {}),
       ...(mechanism === 'repair' ? { targetBody: 'vehicle' as const } : {}), effects: [structuredClone(item.mechanics.effect)] };
   }
   const effect = item.mechanics.effect;
@@ -74,7 +74,7 @@ export function attachCarriedItems(unit: Combatant, items: CarriedItem[]): Comba
 }
 
 /** 物品编译不依赖持有者等级，也不生成临时人物；效果创建后冻结。 */
-export function compileItem(spec: ItemSpecification, identity: Pick<EquipmentContext, 'id' | 'name' | 'seed' | 'creatingUnit'>): ItemMechanics {
+export function compileItem(spec: ItemSpecification, identity: Pick<EquipmentContext, 'id' | 'name' | 'seed' | 'creatingUnit' | 'damageModel'>): ItemMechanics {
   validateEnhancements(spec.bonuses, spec.kind);
   const context = { ...identity, body: spec.body, quality: spec.quality, bonuses: spec.bonuses };
   switch (spec.kind) {
@@ -84,10 +84,12 @@ export function compileItem(spec: ItemSpecification, identity: Pick<EquipmentCon
     case 'consumable': {
       if (!Object.hasOwn(CONSUMABLE_NAMES, spec.mechanism)) throw new Error('不支持的消耗品用途');
       const recipe = equipmentRecipe('heal', spec.power, context); recipe.mechanism = spec.mechanism;
-      const amount = Math.max(1, Math.round(curveAt(recipe.power).hp * 0.25 * bonusMultiplier(recipe.bonuses, 'healing') * (0.85 + recipe.quality * 0.05)));
-      const effect: ConsumableEffect = spec.mechanism === 'restore' ? { op: 'resource', resource: 'SP', amount: 2 + Math.ceil(recipe.power / 2), maximum: 'training' }
+      const unified = identity.damageModel === 'wounds-v2';
+      const powerScale = unified ? bonusMultiplier(recipe.bonuses, 'power') : 1;
+      const amount = Math.max(1, Math.round(curveAt(recipe.power, identity.damageModel).hp * 0.25 * bonusMultiplier(recipe.bonuses, unified && !['heal','repair'].includes(spec.mechanism) ? 'power' : 'healing') * (0.85 + recipe.quality * 0.05)));
+      const effect: ConsumableEffect = spec.mechanism === 'restore' ? { op: 'resource', resource: 'SP', amount: Math.max(1,Math.round((2 + Math.ceil(recipe.power / 2))*powerScale)), maximum: 'training' }
         : spec.mechanism === 'cleanse' ? { op: 'dispel', polarity: 'negative', count: recipe.power >= 6 ? 2 : 1 }
-        : spec.mechanism === 'empower' ? { op: 'condition', conditionId: 'empowered', dur: 3, magnitude: 1 }
+        : spec.mechanism === 'empower' ? { op: 'condition', conditionId: 'empowered', dur: 3, magnitude: powerScale }
         : spec.mechanism === 'barrier' ? { op: 'barrier', amount: amount * 2, dur: 3 }
         : spec.mechanism === 'grenade' ? { op: 'damage', baseDice: `${Math.max(1, Math.ceil(recipe.power / 2))}d6`, shape: 'burst' }
         : { op: 'heal', amount };
@@ -146,7 +148,7 @@ export function validateAccessories(unit: Combatant): void {
   for(const item of Object.values(unit.accessories)) {
     if(!item || typeof item.id!=='string' || !item.id || typeof item.name!=='string' || !item.recipe || typeof item.recipe.mechanism!=='string' || !item.recipe.mechanism.startsWith('accessory:') || ids.has(item.id) || kinds.has(item.recipe.mechanism))throw Error('配件记录不完整或重复');
     ids.add(item.id);kinds.add(item.recipe.mechanism);
-    const r=item.recipe,expected=compileItem({kind:'accessory',mechanism:r.mechanism.slice(10) as AccessoryKind,power:r.power,quality:r.quality,body:r.size,bonuses:r.bonuses},{id:item.id,name:item.name,seed:r.seed});
+    const r=item.recipe,expected=compileItem({kind:'accessory',mechanism:r.mechanism.slice(10) as AccessoryKind,power:r.power,quality:r.quality,body:r.size,bonuses:r.bonuses},{id:item.id,name:item.name,seed:r.seed,damageModel:r.balanceVersion==='unified-v1'?'wounds-v2':undefined});
     if(expected.kind!=='accessory' || item.load!==expected.value.load || item.traitId!==expected.value.traitId || definition(item.ability)!==definition(expected.value.ability))throw Error('配件效果与物品类型不一致');
     const granted=unit.abilities?.filter(a=>a.equipmentSourceId===item.id)??[];
     if(granted.length!==(item.ability?1:0) || item.ability&&definition(granted[0])!==definition(item.ability))throw Error('装备能力与对应配件不一致');

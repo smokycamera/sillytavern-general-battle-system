@@ -182,6 +182,12 @@ export class NarrativeController {
   }
   snapshot(): NarrativeSave { return structuredClone(this.state); }
   migrationReview(): MigrationReview | undefined { return this.migration ? structuredClone(this.migration) : undefined; }
+  reviewBalanceUpgrade(): void {
+    if (this.migration) throw Error('请先处理当前迁移预览');
+    if (!this.active || this.identity !== this.adapter.identity() || this.namespace !== this.adapter.namespace()) throw Error('聊天已切换，请重新打开面板');
+    this.migration = reviewMigration(this.state, true);
+    if (this.migration) { this.state = structuredClone(this.migration.candidate); this.binding = undefined; this.epoch++; this.project(); this.notify(); }
+  }
   acceptMigration(): SaveReceipt {
     const review = this.migration;
     if (!review) throw new Error('没有待接受的迁移预览');

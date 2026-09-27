@@ -1,3 +1,5 @@
+import { UNIFIED_HP } from '../balance.js';
+import type { Combatant } from '../types.js';
 /**
  * 等级基准曲线：威胁等级 L1~L10 的标准数值区间。
  * 造怪器以此为骨架，再叠原型/刻度/特质修正与小范围随机浮动。
@@ -33,9 +35,10 @@ export const CURVES: CurveRow[] = [
   { level: 10, atk: 12, def: 20, spd: 5, hp: 84, dmgBase: '4d6+6', dmgAp: '3d6', xp: 3000, men: 140, morale: 87 },
 ];
 
-export function curveAt(level: number): CurveRow {
+export function curveAt(level: number, model?: Combatant['damageModel']): CurveRow {
   const l = Math.max(1, Math.min(10, Math.round(level)));
-  return CURVES[l - 1]!;
+  const row = CURVES[l - 1]!;
+  return model === 'wounds-v2' ? { ...row, hp: UNIFIED_HP[l - 1]! } : row;
 }
 
 /** 原型修正：数值倾向（冷热兵器时代通用，机制中立） */

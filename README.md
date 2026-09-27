@@ -2,9 +2,9 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **1.1.0**.
+Current version: **1.2.0**.
 
-New battles use V5 channel protection: single-target damage grows independently of penetration and area, armor no longer grants level-scaled effective health, shields give bounded cover, and healing uses the new wound scale. Existing battles retain their rules. Reimport the bundled lorebook to refresh its instructions. See [design and validation](docs/armor-v5-design.md).
+New battles use V6 unified life and combat pacing: the 16T+4 life curve, giant melee strength, shared frontage, skill budgets and bounded area coverage. Signed modifiers, level growth, editing and save validation share the same limits. Archive upgrades show a preview and retain a full backup; ongoing old battles retain their rules. Reimport the bundled lorebook. See [formulas, migration and validation](docs/unified-balance-v6.md).
 
 Export a save before upgrading if you may need to downgrade. The complete 1.0.6 build is preserved on a dedicated rollback branch; see [version rollback](docs/version-rollback.md).
 

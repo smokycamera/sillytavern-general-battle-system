@@ -255,6 +255,12 @@ export class BattleService {
   }
   reject(id: string): Promise<PersistReceipt> { return this.transact(before => ({ ...before, proposals: before.proposals?.map(p => p.id === id && p.status !== 'committed' ? { ...p, status: 'rejected' } : p) })); }
   deleteRecords(ids?: string[]): Promise<PersistReceipt> { return this.transact(before => deleteNarrativeRecords(before, ids)); }
+  reviewBalanceUpgrade(): void {
+    this.version();
+    if (this.phase !== 'ready' || this.migration || !sameSession(this.store.session(), this.host.session())) throw Error('请先核实保存或处理当前迁移预览');
+    this.migration = reviewMigration(this.snapshot(), true);
+    if (this.migration) { this.phase = 'review'; this.binding = undefined; this.project(); this.notify(); }
+  }
   async acceptMigration(): Promise<PersistReceipt> {
     const review = this.migration; if (!review) throw Error('没有待核对的迁移');
     const receipt = await this.transact(() => ({ ...review.candidate, migrationBackups: [...(Array.isArray(review.original.migrationBackups) ? review.original.migrationBackups : []), { createdAt: new Date().toISOString(), source: { ...review.original, migrationBackups: undefined } }] }), { allowReview: true });

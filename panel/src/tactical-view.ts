@@ -71,9 +71,9 @@ function terrainDescription(terrain: Terrain, actor?: Combatant): string {
     open: '没有额外地形防护。',
     cover: '地面单位被一格以外的武器攻击时，防御提高2。',
     wall: '阻挡地面通行与地面直射；空中单位可越过。',
-    rough: '地面移动花费2点，' + difficultEngagementDescription() + '。',
-    forest: '地面单位抵御一格以外的远射时防御提高2；' + difficultEngagementDescription() + '。',
-    hill: '地面单位面对不在山地的攻击者时防御提高1；' + difficultEngagementDescription() + '。',
+    rough: '地面移动花费2点，' + difficultEngagementDescription(actor?.damageModel) + '。',
+    forest: '地面单位抵御一格以外的远射时防御提高2；' + difficultEngagementDescription(actor?.damageModel) + '。',
+    hill: '地面单位面对不在山地的攻击者时防御提高1；' + difficultEngagementDescription(actor?.damageModel) + '。',
   }[terrain];
   const penalty = terrain === 'forest' || terrain === 'hill'
     ? traits.includes(terrain === 'forest' ? 'forest-lore' : 'mountain-born') ? '当前单位适应该地形，免额外移动与攻击惩罚。' : '未适应的地面单位在此攻击降低1。'

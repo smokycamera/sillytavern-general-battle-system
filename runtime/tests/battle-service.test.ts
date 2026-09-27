@@ -170,3 +170,17 @@ it('消息身份和入账同次保存；只保存元数据不能得到成功回�
   f.setSave(f.saveNormally); expect((await f.service.retry()).status).toBe('confirmed');
   expect(f.service.snapshot().proposals).toHaveLength(1);
 });
+
+it('统一数值先预览，宿主确认保存后才替换档案，并保留可恢复原档', async () => {
+  const f=await setup();
+  const unit=generateUnit({rulesVersion:'v2',name:'旧巨兽',side:'ally',scale:'hero',level:10,body:'giant',traits:[]},{seed:'balance-upgrade'}).unit;
+  unit.hp-=7;
+  await f.service.transact(()=>({schemaVersion:2,storage:[unitRecordFromCombatant(unit)],rosterIds:[unit.id]}));
+  const before=f.service.snapshot();f.service.reviewBalanceUpgrade();
+  expect(f.service.status().phase).toBe('review');expect(f.service.snapshot()).toEqual(before);
+  expect(f.service.migrationReview()!.candidate.storage![0]!.base.hpMax).toBe(988);
+  expect((await f.service.acceptMigration()).status).toBe('confirmed');
+  const upgraded=f.service.snapshot();expect(upgraded.storage![0]!.base.hpMax).toBe(988);expect(upgraded.storage![0]!.hp).toBe(981);
+  expect((upgraded.migrationBackups as {source:typeof before}[]).at(-1)?.source.storage).toEqual(before.storage);
+  expect((await f.service.restoreMigrationBackup()).status).toBe('confirmed');expect(f.service.snapshot().storage).toEqual(before.storage);
+});

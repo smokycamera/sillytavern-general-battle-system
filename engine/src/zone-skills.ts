@@ -1,4 +1,5 @@
-import type { Ability, EffectOp } from './types.js';
+import { compileGenericSkill } from './gen/generic-skills.js';
+import type { Ability, EffectOp, Combatant } from './types.js';
 import { bonusMultiplier, bonusRating, bonusSteps, bonusPoints } from './enhancements.js';
 import { standardConditionMap } from './conditions.js';
 import { traitRegistry } from './data/traits.js';
@@ -30,15 +31,22 @@ export function validateZoneStrength(zone: { amount?: unknown; penetration?: unk
 }
 
 /** 区域不经过普通伤害技能公式；从原配方升级一次，保留身份、冷却与已布置区域。 */
-export function upgradeZoneSkill(ability: Ability): boolean {
-  const zones = ability.effects.filter((e): e is ZoneEffect => e.op === 'zone');
+export function upgradeZoneSkill(ability: Ability, model?: Combatant['damageModel']): boolean {
+  const version = model === 'wounds-v2' ? 'skill-zone-v2' : 'skill-zone-v1';
+  let zones = ability.effects.filter((e): e is ZoneEffect => e.op === 'zone');
   if (!zones.length) return false;
   if (!ability.recipe || zones.some(effect => !ability.recipe!.modifiers.includes('zone-' + effect.kind))
-    || ability.itemSourceId || ability.fixedPower || ability.effectVersion === 'skill-zone-v1') return true;
+    || ability.itemSourceId || ability.fixedPower || ability.effectVersion === version) return true;
   // 旧编译器把所有区域都标成 customized；只接管仍与旧模板一致的实例。
   if (ability.customized && !(ability.effectVersion === 'skill-v2.4' && zones.every(effect => effect.power === ability.recipe!.power
     && effect.dur === 3 && effect.radius === (effect.kind === 'trap' ? 0 : 1) && effect.amount === undefined && effect.penetration === undefined)
     && ability.range?.metric === 'grid' && ability.range.min === 0 && ability.range.max === 2 + Math.floor(ability.recipe.power / 3))) return true;
+  if (model === 'wounds-v2' && ability.definitionId) {
+    // Rebuild the pristine recipe before applying modifiers, including nested healing payloads.
+    const rebuilt = compileGenericSkill(ability.definitionId, ability.power ?? ability.recipe.power, ability.sourceId ?? '', ability.name, model);
+    ability.effects = rebuilt.effects; ability.range = rebuilt.range;
+    zones = ability.effects.filter((e): e is ZoneEffect => e.op === 'zone');
+  }
   const bonuses = ability.bonuses;
   for (const effect of zones) {
     const channel = effect.kind === 'fire' ? 'thermal' : effect.kind === 'trap' ? 'kinetic' : undefined;
@@ -70,7 +78,7 @@ export function upgradeZoneSkill(ability: Ability): boolean {
   }
   if (ability.range && !ability.effects.some(e=>e.op==='summon')) ability.range.max = Math.max(1, ability.range.min, ability.range.max + bonusSteps(bonuses, 'range', 5));
   delete ability.customized;
-  ability.effectVersion = 'skill-zone-v1';
+  ability.effectVersion = version;
   return true;
 }
 

@@ -25,9 +25,10 @@ describe('伤兵持久化与后续更新', () => {
     const a = unit(); applyHealthLoss(a, 20); const record = unitRecordFromCombatant(a);
     const save = { storage: [record], inventory: [createInventoryItem('dose', '急救剂', { kind: 'consumable', mechanism: 'heal', power: 3 }, 'dose', 3)], factRevision: 1 };
     const next = prepareInventoryTransaction(save, { id: 'heal-one', kind: 'use', unitId: a.id, itemId: 'dose', expectedRevision: 1 });
-    expect(next.storage![0]).toMatchObject({ hp: 57, recoverableWounded: 3 }); expect(next.inventory![0]!.qty).toBe(2);
-    const final = prepareInventoryTransaction(next, { id: 'heal-two', kind: 'use', unitId: a.id, itemId: 'dose', expectedRevision: next.factRevision! });
-    expect(final.storage![0]).toMatchObject({ hp: 60, recoverableWounded: 0 }); expect(final.inventory![0]!.qty).toBe(1);
+    expect(next.storage![0]).toMatchObject({ hp: 60, recoverableWounded: 0 }); expect(next.inventory![0]!.qty).toBe(2);
+    const final = next;
+    expect(() => prepareInventoryTransaction(next, { id: 'heal-two', kind: 'use', unitId: a.id, itemId: 'dose', expectedRevision: next.factRevision! })).toThrow(/伤员|伤兵/);
+    expect(final.storage![0]).toMatchObject({ hp: 60, recoverableWounded: 0 }); expect(final.inventory![0]!.qty).toBe(2);
     expect(() => prepareInventoryTransaction(final, { id: 'heal-three', kind: 'use', unitId: a.id, itemId: 'dose', expectedRevision: final.factRevision! })).toThrow(/伤员|伤兵/);
     expect(prepareInventoryTransaction(final, { id: 'heal-one', kind: 'use', unitId: a.id, itemId: 'dose', expectedRevision: 1 })).toEqual(final);
     expect(narrativeProjection(save)).toContain('可救伤兵10'); expect(record.hp).toBe(50);

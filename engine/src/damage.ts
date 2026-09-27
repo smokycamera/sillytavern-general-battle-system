@@ -1,3 +1,4 @@
+import { isWoundModel } from './balance.js';
 import { bonusMultiplier, bonusSteps, trainingEdge, trainingDamage } from './enhancements.js';
 import { barrierAmount } from './barrier.js';
 import { weaponConditions, poisonHint, poisonValue } from './afflictions.js';
@@ -162,7 +163,7 @@ export function penetrationContext(opts: Pick<AttackOpts, 'attacker' | 'defender
   const penetration = base + (opts.abilityDamage && !opts.abilityDamage.weaponBased ? 0 : traitPenetrationBonus(opts.attacker, weapon, opts.ranged ?? !!weapon?.tags?.includes('ranged'), base));
   const target={...opts.defender,damageModel:opts.rules?.damageModel};
   const resistance = modern?anchoredProtection(target,channel):effectiveProtection(target, channel);
-  const wounds=opts.rules?.damageModel==='wounds-v1';
+  const wounds=isWoundModel(opts.rules?.damageModel);
   const armorFactor=wounds?armorTransmission(target,channel,penetration):penetrationFactor(penetration,resistance);
   const area=opts.abilityDamage ? opts.abilityDamage.shape==='burst'||!!opts.abilityDamage.weaponBased&&(!!weapon?.tags?.includes('blast')||!!weapon?.splashTargets) : !!weapon?.tags?.includes('blast')||!!weapon?.splashTargets;
   const canBlock=!opts.defender.conditions.some(c=>c.dur>0&&(opts.conditionDefs?.get(c.id)?.skipTurn||opts.conditionDefs?.get(c.id)?.preventAttack));
@@ -213,6 +214,12 @@ export function previewAttack(opts: Omit<AttackOpts, 'rng'>): import('./actions.
   return { ...diagnostics, ...(onHit ? { onHit, conditionValue: poisonValue(opts.attacker, opts.defender, ctx.weapon, total > 0 ? hitChance : 0) } : {}), hitChance, expectedDamage: total * dmg.multTotal * ward.multTotal * hitChance * (opts.abilityDamage ? 1 : ctx.weapon?.attacks ?? 1) * scale.multiplier, penetrationFactor: factor };
 }
 
+/** Independent burst budget is divided across exposed members within one target card. */
+function memberAreaBudget(opts: Omit<AttackOpts,'rng'>): number {
+  return opts.rules.damageModel === 'wounds-v2' && hasMemberHealth(opts.defender)
+    && opts.abilityDamage && !opts.abilityDamage.weaponBased && opts.abilityDamage.shape === 'burst'
+    ? 1 / Math.max(1, Math.min(opts.defender.hp, opts.abilityDamage.areaExposure ?? 4)) : 1;
+}
 function memberPlan(opts:Omit<AttackOpts,'rng'>,direct:number,targets:number):MemberDamagePlan {
   const weapon=combatWeapon(opts.weaponOverride??opts.attacker.weapon,opts.attacker,opts.defender,opts.rules.weaponOverflow,opts.rules.damageModel);
   const extra=hasMemberHealth(opts.defender)&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)?Math.min(opts.defender.hp,weapon?.splashTargets??0):0;
@@ -241,7 +248,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   }
   const samples=cohortSamples(opts),weight=outcomeScale({...opts,packetShare:1/samples}).multiplier,count=(opts.abilityDamage?1:ctx.weapon?.attacks??1)*samples;
   // 连续攻击共用剩余屏障。固定种子的小样本估计只操作副本，不消耗实战随机数。
-  if (opts.defender.barrier && count > 1) {
+  if ((opts.defender.barrier || opts.rules.damageModel === 'wounds-v2' && hasMemberHealth(opts.defender) && opts.abilityDamage && !opts.abilityDamage.weaponBased && opts.abilityDamage.shape === 'burst') && count > 1) {
     let sum=0,squares=0,positive=0,casualties=0,maximum=0;
     for(let i=0;i<96;i++) {
       const defender=structuredClone(opts.defender),attacker=structuredClone(opts.attacker),rng=new SeededRng('barrier-preview:'+i),before=memberHealth(defender),members=defender.hp;
@@ -253,7 +260,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
       expectedCasualties:hasMemberHealth(opts.defender)?casualties/96:undefined,damageChance:positive/96,penetrationFactor:factor,exact:false,
       variance:Math.max(0,squares/96-mean*mean),minDamage:0,maxDamage:maximum};
   }
-  const rawMultiplier=modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level)*bonusMultiplier(opts.attacker.bonuses,'damage',opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
+  const rawMultiplier=memberAreaBudget(opts)*modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level)*bonusMultiplier(opts.attacker.bonuses,'damage',opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
   const moments=(times:number)=>{
     const key=JSON.stringify([source?.baseDice,source?.apDice,rawMultiplier,times,weight,opts.defender.hp,opts.defender.barrier?.remaining,opts.defender.formation,ctx.weapon?.splashTargets,ctx.weapon?.splashFactor,opts.abilityDamage?.weaponBased,!!opts.abilityDamage,opts.rules.weaponOverflow]);
     const cached=memberPreviewCache.get(key);if(cached)return cached;
@@ -506,7 +513,7 @@ export function resolveAttack(opts: AttackOpts): AttackResolution {
 
   const scale = outcomeScale(opts);
   const modern=rules.combatModel===MEMBER_HEALTH_MODEL;
-  const sourceScale=modern?(opts.abilityDamage?opts.abilityDamage.damageScale??1:weapon?.damageScale??1)/(penetration?.armorScale??1)*trainingDamage(attacker.level)*bonusMultiplier(attacker.bonuses,'damage',penetration?.channel??'kinetic'):1;
+  const sourceScale=modern?memberAreaBudget(opts)*(opts.abilityDamage?opts.abilityDamage.damageScale??1:weapon?.damageScale??1)/(penetration?.armorScale??1)*trainingDamage(attacker.level)*bonusMultiplier(attacker.bonuses,'damage',penetration?.channel??'kinetic'):1;
   const targets=modern?roundDamage(scale.multiplier,rng):0;
   let final = Math.round((baseAfterDR + apTotal) * dmgMult * wardMult * scale.multiplier);
   if (v2) final = roundDamage(v2DamageAmount(baseRaw, apRoll?.total ?? 0, penetration!.factor, dmgMult * wardMult * (modern?targets*sourceScale:scale.multiplier)), rng);

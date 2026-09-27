@@ -71,6 +71,12 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   await f.service.transact(()=>({schemaVersion:2,storage:units.map(u=>unitRecordFromCombatant(u)),rosterIds:units.map(u=>u.id),autoTurn:false,protagonistId:'u0'}));
   f.context.chat!.push({is_user:true,mes:'在森林迎敌。'}, {is_user:false,mes:'夜间，双方指挥官各有专长。',gen_finished:'done'});
   nav('battle');button('small-start').click();await idle();
+  expect(f.service.snapshot().battle).toBeUndefined();
+  expect(f.service.snapshot().storage![0]!.snapshot!.damageModel).not.toBe('wounds-v2');
+  expect(button('migration-accept')).not.toBeNull();
+  button('migration-accept').click();await idle();
+  expect(f.service.snapshot().storage![0]!.snapshot!.damageModel).toBe('wounds-v2');
+  nav('battle');button('small-start').click();await idle();
   expect(f.service.snapshot().battle, document.querySelector('#toast')?.textContent ?? JSON.stringify(f.service.status())).toBeDefined();
   const selected=SmallBattle.fromSnapshot(f.service.snapshot().battle!.snap);
   expect(selected.commanderProfiles).toEqual({ally:{ability:'master',style:'aggressive'},enemy:{ability:'expert',style:'cautious'}});

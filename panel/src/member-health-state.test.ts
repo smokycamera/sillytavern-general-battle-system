@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {traitRegistry,applyCombatDamage,memberHealth,SmallBattle,V4_D20,standardField} from '../../engine/src/index.js';
+import {traitRegistry,applyCombatDamage,memberHealth,SmallBattle,V6_D20,standardField} from '../../engine/src/index.js';
 import {newUnitDraft,buildUnit,unitDraftFromRecord,editUnitBuild} from './unit-builder.js';
 import {unitRecordFromCombatant,materializeUnitRecord,commitBattleOutcome} from './unit-state.js';
 import {prepareInventoryState,createInventoryItem,prepareInventoryTransaction} from './inventory-state.js';
@@ -25,7 +25,7 @@ describe('成员生命的本地档案与重战',()=>{
  it('非零伤损进入终章和AI事实；提交与原局重战保留开局受伤成员',()=>{
   const a=vehicle(),d=vehicle('敌军','enemy');applyCombatDamage(a,27,1);
   const records=[a,d].map(u=>unitRecordFromCombatant(u)),before=prepareInventoryState({storage:records,rosterIds:records.map(r=>r.id),inventory:[],factRevision:1});
-  const b=new SmallBattle({combatants:[a,d],rules:V4_D20,battlefield:standardField(),seed:'health-replay',traitRegistry:registry});b.start();
+  const b=new SmallBattle({combatants:[a,d],rules:V6_D20,battlefield:standardField(),seed:'health-replay',traitRegistry:registry});b.start();
   const start=captureBattleStart(b,captureBattleArchive(before));applyCombatDamage(a,19,1);b.finishBattle('ceasefire');
   const id=battleIdOf(b),result=commitBattleOutcome({battleId:id,committedIds:[],records,roster:[a,d],combatants:b.combatants,awards:[],registry});
   const epilogue=battleEpilogue(b,start);expect(epilogue).toContain('73/100生命');expect(epilogue).toContain('54/100生命');
@@ -40,6 +40,6 @@ describe('成员生命的本地档案与重战',()=>{
   expect(inventory.inventory).toHaveLength(1);
   // 通用机制名称通过正式解析生成，检查升级后的范围参数能够通过档案验证。
   const caster=buildUnit(d,registry,'caster'),loaded=materializeUnitRecord(unitRecordFromCombatant(caster),registry);
-  expect(loaded.abilities[0]!.effectVersion).toBe('skill-v5.0');expect(loaded.abilities[0]!.areaExposure).toBe(128);
+  expect(loaded.abilities[0]!.effectVersion).toBe('skill-v6.0');expect(loaded.abilities[0]!.areaExposure).toBe(24);
  });
 });

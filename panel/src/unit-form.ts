@@ -1,7 +1,7 @@
 import { MAX_PREPARED_SKILLS } from '../../engine/src/skill-catalog.js';
 import { enhancementLabel } from '../../engine/src/enhancements.js';
 import { gridAbility } from '../../engine/src/small/skill-range.js';
-import { SINGLE_LIFE_LIMIT } from '../../engine/src/health-limits.js';
+import { singleLifeLimit } from '../../engine/src/health-limits.js';
 import { memberDurability } from '../../engine/src/combat-model.js';
 import {memberHealthSummary,memberHealth,memberHealthMax,memberNoun,hasMemberHealth} from '../../engine/src/member-health.js';
 import {anchoredWeaponLabel,anchoredProtection,armorEffectLabel} from '../../engine/src/power-anchors.js';
@@ -34,7 +34,7 @@ export function unitForm(prefix: string, d: UnitDraft, registry: Map<string, Tra
   return `<div data-builder-form="${prefix}" class="unit-builder"><div class="builder-basics">
     <label>名称${input('name', 'placeholder="角色或编队名称"')}</label><label>归属${select('side', [['ally', '我方'], ['enemy', '敌方']])}</label>
     <label>人数形式${select('scale', [['hero', '个体'], ['company', '编队']], opts.editing)}</label><label>训练${input('level', 'type="number" min="1" max="10" ' + (opts.editing ? 'readonly title="随经验成长"' : ''))}</label>
-    ${d.scale === 'company' || opts.editing ? `<label>${d.scale === 'company' ? '编制上限' : '生命上限'}${input('hpMax', 'type="number" min="1" placeholder="50"' + (d.scale === 'hero' ? ' max="' + SINGLE_LIFE_LIMIT + '"' : ''))}</label>` : ''}
+    ${d.scale === 'company' || opts.editing ? `<label>${d.scale === 'company' ? '编制上限' : '生命上限'}${input('hpMax', 'type="number" min="1" placeholder="50"' + (d.scale === 'hero' ? ' max="' + singleLifeLimit(d.damageModel) + '"' : ''))}</label>` : ''}
     ${opts.editing ? `<label>${d.scale === 'company' ? '当前人数' : '当前生命'}${input('hp', 'type="number" min="0"')}</label>` : ''}</div>
     <div class="builder-recommendation"><span>当前方案</span><b>${esc(d.primary.name || WEAPON_CLASSES[d.primary.mechanism]?.name || '主武器')} · ${['无甲', '轻甲', '中甲', '重甲', '超重甲'][Number(d.armor.tier)] ?? '护甲'}${d.mount ? ' · 骑乘' : ''}${d.shield ? ' · 携盾' : ''}</b><small>${opts.editing ? '修改后先预览，未改动的记录保持原样。' : '默认无甲、L1主武器；需要装备或特殊能力时再展开调整。'}</small></div>
     <details class="builder-section" data-detail-id="${prefix}-body"><summary>身体与装备 <span>调整配装</span></summary><p class="sub">基础速度决定移动格数，与训练先攻独立；护甲、坐骑、地形、状态和疲劳继续影响实际机动。</p>
@@ -57,9 +57,9 @@ export function unitForm(prefix: string, d: UnitDraft, registry: Map<string, Tra
       <p class="sub">填写自定义名称、效果类型与等级。六类为物理单体、物理范围、魔法单体、魔法范围、增益、减益；需要具体效果时在效果后加治疗、加速、定身等。最多准备${MAX_PREPARED_SKILLS}项，同种效果共享冷却。旧记录名称仅用于保留原效果。</p>
     </details>
     <details class="builder-section" data-detail-id="${prefix}-traits"><summary>特质 <span>${d.traits.length ? d.traits.length + '项' : '可选专长'}</span></summary><div class="builder-traits">${traitCatalog(registry).map((g) => `<div><h4>${g.group}</h4>${g.traits.filter((t) => !['large', 'titan'].includes(t.id)).map((t) => `<label title="${esc(traitDescription(t, { rulesVersion: 'v2' }))}"><input type="checkbox" data-role="${prefix}-trait" value="${t.id}" ${d.traits.includes(t.id) ? 'checked' : ''}>${t.name}</label>`).join('')}</div>`).join('')}</div><p class="sub">体量性质由身体提供；骑射、盾墙等专长仍需要实际坐骑或装备。</p></details>
-    ${d.scale==='company'?`<label>单个${d.body==='vehicle'?'载具':'成员'}最大生命${input('memberHp','type="number" min="1" max="'+SINGLE_LIFE_LIMIT+'" placeholder="按同模板个体生命计算"')}</label><p class="sub">现员与成员生命分别保存。伤害先扣成员当前生命，归零后才减员；已有较低生命不会补满。</p>`:''}
-    <p class="sub">个体与每名成员生命硬上限${SINGLE_LIFE_LIMIT}，超出自动截断；编队人数和总生命不受此单体上限限制。</p>
-    <details class="builder-section" data-detail-id="${prefix}-notes"><summary>备注与自定义生命</summary><label>备注${input('note')}</label>${!opts.editing && d.scale === 'hero' ? `<div class="builder-basics"><label>生命上限${input('hpMax', 'type="number" min="1" max="'+SINGLE_LIFE_LIMIT+'" placeholder="系统计算"')}</label><label>当前生命${input('hp', 'type="number" min="0" max="'+SINGLE_LIFE_LIMIT+'" placeholder="首次默认满生命"')}</label></div><p class="sub">高生命个体也会因持续受创降低士气，具备不溃能力时继续作战。</p>` : ''}</details>
+    ${d.scale==='company'?`<label>单个${d.body==='vehicle'?'载具':'成员'}最大生命${input('memberHp','type="number" min="1" max="'+singleLifeLimit(d.damageModel)+'" placeholder="按同模板个体生命计算"')}</label><p class="sub">现员与成员生命分别保存。伤害先扣成员当前生命，归零后才减员；已有较低生命不会补满。</p>`:''}
+    <p class="sub">个体与每名成员生命硬上限${singleLifeLimit(d.damageModel)}，超出自动截断；编队人数和总生命不受此单体上限限制。</p>
+    <details class="builder-section" data-detail-id="${prefix}-notes"><summary>备注与自定义生命</summary><label>备注${input('note')}</label>${!opts.editing && d.scale === 'hero' ? `<div class="builder-basics"><label>生命上限${input('hpMax', 'type="number" min="1" max="'+singleLifeLimit(d.damageModel)+'" placeholder="系统计算"')}</label><label>当前生命${input('hp', 'type="number" min="0" max="'+singleLifeLimit(d.damageModel)+'" placeholder="首次默认满生命"')}</label></div><p class="sub">高生命个体也会因持续受创降低士气，具备不溃能力时继续作战。</p>` : ''}</details>
   </div>`;
 }
 export function buildPreview(unit: Combatant, before?: Combatant): string {

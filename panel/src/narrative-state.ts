@@ -1,3 +1,6 @@
+import { prepareCombatModel } from '../../engine/src/combat-model.js';
+import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
+import { V6_D20 } from '../../engine/src/rules.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import type { PromptSettings } from './prompt-settings.js';
 import { PANEL_SAVE_SCHEMA_VERSION, learnUnitRecord } from './unit-state.js';
@@ -125,7 +128,7 @@ function spawnInput(event: Extract<Suggestion, { kind: 'spawn' }>): GenerateInpu
   // 兼容更新前已保存的候选：未知特质不会令建档再次失败。
   const traits = [...new Set((event.traits ?? []).map((name) => resolveTraitId(name, registry)).filter((id): id is string => !!id))];
   return {
-    rulesVersion: 'v2', body: event.body, mount: event.mount, speedTier: event.speedTier, quality: event.quality, shield: event.shield,
+    rulesVersion: 'v2', damageModel: 'wounds-v2', body: event.body, mount: event.mount, speedTier: event.speedTier, quality: event.quality, shield: event.shield,
     hp: event.hp, hpMax: event.hpMax,
     name: event.name, scale: event.scale ?? 'hero', archetype: event.archetype, level: event.level, side: event.side ?? 'enemy',
     traits: traits as string[], weaponName: event.weaponName ?? event.weapon, weaponClass: event.weaponClass,
@@ -224,6 +227,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
         if (records.some((r) => r.id === id)) throw new Error('新单位身份已存在');
         const unit = generateUnit(spawnInput(event), { registry, seed: id }).unit;
         unit.id = id;
+        prepareCombatModel(unit,V6_D20); upgradeCombatSkills(unit);
         records.push(unitRecordFromCombatant(unit, undefined, { sourceId: proposal.id }));
         if (unit.hp > 0) roster.push(materializeUnitRecord(records.at(-1)!, registry));
       }
