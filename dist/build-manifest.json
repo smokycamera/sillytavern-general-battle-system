@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "1.1.0",
-  "builtAt": "2026-09-27T06:33:42.067Z",
-  "sourceFingerprint": "4d73af68fd734933224ac018b7d80b4b09d6899a42f31fcd7d971be0ec47da0a",
+  "version": "1.1.1",
+  "builtAt": "2026-09-27T08:17:27.809Z",
+  "sourceFingerprint": "5d7489cfa06bc70ff3cdff99108a4ca6ad6e9aac9b6aafd518d603a191d7923a",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -132,8 +132,8 @@
     },
     {
       "path": "dist/index.js",
-      "bytes": 79398,
-      "sha256": "2362378ad77c7ec672a09df9839b6f593b7713b3a5ddc23396232b6de707e39b"
+      "bytes": 79884,
+      "sha256": "5e0ca8d5755d94b2ae5638b75b4b98818cab47a0b93ad46436f6caba1ce35d3b"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -143,7 +143,7 @@
     {
       "path": "manifest.json",
       "bytes": 168,
-      "sha256": "48634adcc30a111e97e515fb3164214e0bad0264e25dbed99cf94c343b66c5e3"
+      "sha256": "9b162ff721d077e84d676df827debf05643221f5f858a87d337f5a73b8fd2f5e"
     },
     {
       "path": "dist/panel/index.html",

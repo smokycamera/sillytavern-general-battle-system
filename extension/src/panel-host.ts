@@ -13,6 +13,8 @@ export class PanelHost {
   private entryPosition?: DisplayPreferences['entryPosition'];
   private entryDrag?: { id: number; x: number; y: number; left: number; top: number; moved: boolean };
   private suppressEntryClick = false;
+  private viewport = window.visualViewport;
+  private onViewportChange = () => this.applyEntryPosition();
   private onResize = () => { this.applyGeometry(); this.applyEntryPosition(); };
   private onVisibility = () => { if (document.hidden) this.pause(); };
   constructor(private panelUrl: string, private display?: { read(): DisplayPreferences; write(value: DisplayPreferences): void }) {
@@ -68,10 +70,11 @@ export class PanelHost {
     this.entry.addEventListener('pointerup', finishDrag); this.entry.addEventListener('pointercancel', finishDrag); this.entry.addEventListener('lostpointercapture', finishDrag);
     document.body.append(this.entry, this.root); document.addEventListener('visibilitychange', this.onVisibility);
     const savedDisplay = this.display?.read(); this.root.dataset.theme = savedDisplay?.theme ?? 'dark'; this.geometry = savedDisplay?.geometry; this.entryPosition = savedDisplay?.entryPosition; this.applyGeometry(); this.applyEntryPosition(); window.addEventListener('resize', this.onResize);
+    this.viewport?.addEventListener('resize', this.onViewportChange); this.viewport?.addEventListener('scroll', this.onViewportChange);
   }
   open(): void { this.root.hidden = false; this.entry.hidden = true; if (this.ready) this.showPanel(); }
   setManagementHandler(handler: () => void): void { this.manage = handler; }
-  close(): void { this.pause(); this.root.hidden = true; this.entry.hidden = false; }
+  close(): void { this.pause(); this.root.hidden = true; this.entry.hidden = false; this.applyEntryPosition(); }
   private pause(): void { this.frame?.contentWindow?.postMessage({ type: 'tb:panel-hidden' }, location.origin); }
   showPanel(): void {
     this.ready = true;
@@ -93,10 +96,18 @@ export class PanelHost {
     }
   }
   private applyEntryPosition(): void {
-    if (!this.entryPosition) return;
-    const left = Math.max(8, Math.min(innerWidth - 60, this.entryPosition.left));
-    const top = Math.max(8, Math.min(innerHeight - 60, this.entryPosition.top));
-    this.entryPosition = { left, top };
+    const viewport = this.viewport;
+    const width = viewport?.width || innerWidth, height = viewport?.height || innerHeight;
+    const originLeft = viewport?.offsetLeft ?? 0, originTop = viewport?.offsetTop ?? 0;
+    const mobile = innerWidth <= 600;
+    // Mobile ST transforms <html> while fixing <body>, so a bottom-anchored
+    // entry can be positioned against a zero-height root. Always use explicit
+    // viewport coordinates, including the first run with no saved position.
+    const position = this.entryPosition ?? { left: originLeft + width - (mobile ? 62 : 70), top: originTop + height - (mobile ? 132 : 127) };
+    const left = Math.max(originLeft + 8, Math.min(originLeft + width - 60, position.left));
+    const top = Math.max(originTop + 8, Math.min(originTop + height - 60, position.top));
+    // A keyboard/rotation clamp must not overwrite the user's preferred position.
+    if (this.entryDrag) this.entryPosition = { left, top };
     Object.assign(this.entry.style, { left: left + 'px', top: top + 'px', right: 'auto', bottom: 'auto' });
   }
   private applyGeometry(): void {
@@ -106,5 +117,5 @@ export class PanelHost {
     const width = Math.min(this.geometry.width, innerWidth - 24), height = Math.min(this.geometry.height, innerHeight - 24);
     Object.assign(this.root.style, { left: Math.max(0, Math.min(this.geometry.left, innerWidth - width)) + 'px', top: Math.max(0, Math.min(this.geometry.top, innerHeight - height)) + 'px', right: 'auto', width: width + 'px', height: height + 'px' });
   }
-  dispose(): void { this.pause(); this.frame?.remove(); this.root.remove(); this.entry.remove(); document.removeEventListener('visibilitychange', this.onVisibility); window.removeEventListener('resize', this.onResize); }
+  dispose(): void { this.pause(); this.frame?.remove(); this.root.remove(); this.entry.remove(); document.removeEventListener('visibilitychange', this.onVisibility); window.removeEventListener('resize', this.onResize); this.viewport?.removeEventListener('resize', this.onViewportChange); this.viewport?.removeEventListener('scroll', this.onViewportChange); }
 }
