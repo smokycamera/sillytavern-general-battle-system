@@ -14,10 +14,14 @@ const defaults = (): LlmSettings => ({ enabled: false, selectBattleScale: true, 
 
 /** Origin-wide preferences. Never serialize these credentials into a chat or character. */
 export function readLlmSettings(): LlmSettings {
-  const raw = localStorage.getItem(LLM_SETTINGS_KEY);
+  let storage: Storage;
+  let raw: string | null;
+  try { storage = localStorage; raw = storage.getItem(LLM_SETTINGS_KEY); }
+  catch { throw Error('模型配置暂不可读取，请检查浏览器存储权限后重试；原配置未修改'); }
   if (raw) {
     try {
       const v = JSON.parse(raw);
+      if (!v || typeof v !== 'object' || Array.isArray(v)) throw Error('Invalid settings');
       return {
         enabled: v.enabled === true,
         selectBattleScale: v.selectBattleScale !== false,
@@ -30,14 +34,19 @@ export function readLlmSettings(): LlmSettings {
   }
   const settings = defaults();
   // Copy only a compatible previous connection, retaining the old keys for recovery.
-  if (localStorage.getItem('tb:jev:protocol') === 'openai') {
-    settings.url = localStorage.getItem('tb:jev:url') ?? '';
-    settings.token = localStorage.getItem('tb:jev:token') ?? sessionStorage.getItem('tb:jev:token') ?? '';
-    settings.model = localStorage.getItem('tb:jev:model') ?? '';
+  if (storage.getItem('tb:jev:protocol') === 'openai') {
+    settings.url = storage.getItem('tb:jev:url') ?? '';
+    settings.token = storage.getItem('tb:jev:token') ?? sessionStorage.getItem('tb:jev:token') ?? '';
+    settings.model = storage.getItem('tb:jev:model') ?? '';
     if (settings.model) settings.models = [settings.model];
     saveLlmSettings(settings);
   }
   return settings;
+}
+/** Rendering may show an error; actions still use the strict reader above. */
+export function llmSettingsView(): { settings: LlmSettings; error?: string } {
+  try { return { settings: readLlmSettings() }; }
+  catch (error) { return { settings: defaults(), error: error instanceof Error ? error.message : '模型配置读取失败；原记录已保留' }; }
 }
 export function saveLlmSettings(settings: LlmSettings): void {
   try { localStorage.setItem(LLM_SETTINGS_KEY, JSON.stringify(settings)); }

@@ -1,3 +1,4 @@
+import { abortReason, throwIfAborted } from '../../host/src/browser-compat.js';
 export const JEV_RETRY_DELAY_MS = 1000;
 export const JEV_MAX_RETRIES = 10;
 export const JEV_ATTEMPT_TIMEOUT_MS = 30000;
@@ -13,10 +14,10 @@ export class JevRetriesExhausted extends Error {
 }
 
 export function waitForJev(ms: number, signal: AbortSignal): Promise<void> {
-  signal.throwIfAborted();
+  throwIfAborted(signal);
   return new Promise((resolve, reject) => {
     const finish = () => { clearTimeout(timer); signal.removeEventListener('abort', abort); };
-    const abort = () => { finish(); reject(signal.reason); };
+    const abort = () => { finish(); reject(abortReason(signal)); };
     const timer = setTimeout(() => { finish(); resolve(); }, ms);
     signal.addEventListener('abort', abort, { once: true });
   });
@@ -24,12 +25,12 @@ export function waitForJev(ms: number, signal: AbortSignal): Promise<void> {
 
 /** Bound even transports which ignore abort, and never accept a late response. */
 async function attempt<T>(operation: (signal: AbortSignal) => Promise<T>, parent: AbortSignal): Promise<T> {
-  parent.throwIfAborted();
+  throwIfAborted(parent);
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout>;
   let abort: () => void;
   const limit = new Promise<never>((_, reject) => {
-    abort = () => { controller.abort(parent.reason); reject(parent.reason); };
+    abort = () => { controller.abort(abortReason(parent)); reject(abortReason(parent)); };
     parent.addEventListener('abort', abort, { once: true });
     timer = setTimeout(() => {
       const error = new JevRequestTimeoutError();
@@ -40,7 +41,7 @@ async function attempt<T>(operation: (signal: AbortSignal) => Promise<T>, parent
   });
   try {
     const value = await Promise.race([operation(controller.signal), limit]);
-    parent.throwIfAborted();
+    throwIfAborted(parent);
     return value;
   } finally {
     clearTimeout(timer!);
@@ -55,14 +56,14 @@ export async function retryJev<T>(
 ): Promise<T> {
   for (let retry = 0; ; retry++) {
     options.check();
-    options.signal.throwIfAborted();
+    throwIfAborted(options.signal);
     try {
       const value = await attempt(operation, options.signal);
       options.check();
       return value;
     } catch (error) {
       options.check();
-      options.signal.throwIfAborted();
+      throwIfAborted(options.signal);
       if (retry === JEV_MAX_RETRIES) throw new JevRetriesExhausted(error);
       options.onRetry(retry + 1);
       await waitForJev(JEV_RETRY_DELAY_MS, options.signal);

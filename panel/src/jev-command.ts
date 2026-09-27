@@ -1,3 +1,4 @@
+import { throwIfAborted, withAbort } from '../../host/src/browser-compat.js';
 import { connectionUrl, fetchJevModels, directJevRequest, jevJsonRequest, JevConnectionError, type JevConnection } from './jev-connection.js';
 import { JevTransportError } from './jev-transport.js';
 import { retryJev, waitForJev, JevRequestTimeoutError, JevRetriesExhausted, JEV_MAX_RETRIES, JEV_RETRY_DELAY_MS, JEV_REQUEST_BUDGET_MS } from './jev-retry.js';
@@ -162,7 +163,7 @@ export class JevCommandController {
     connection: JevConnection,
     signal: AbortSignal,
     beforeRequest: () => void = () => {},
-    check: () => void = () => signal.throwIfAborted(),
+    check: () => void = () => throwIfAborted(signal),
     onStatus?: () => void,
   ): Promise<JevEncounterContext> {
     const { base, request } = encounterRequest(input);
@@ -256,7 +257,7 @@ export class JevCommandController {
         const answer = await this.post<import("../../vendor/jev-core/src/index.js").ContextSelectionAnswer>(connection, "select-context", request, signal);
         try { validateContextSelectionAnswer(answer, request); }
         catch { throw new JevConnectionError("模型返回无效选择，请检查所选协议和模型"); }
-      }, aborter.signal, () => aborter.signal.throwIfAborted(), onStatus);
+      }, aborter.signal, () => throwIfAborted(aborter.signal), onStatus);
       return "模型推理测试通过，已验证实际 POST 请求和返回格式";
     } catch (error) {
       if (aborter.signal.aborted) return "已取消模型推理测试";
@@ -270,13 +271,13 @@ export class JevCommandController {
       const models = await this.models(connection);
       return `连接正常，获取到 ${models.length} 个模型（尚未调用决策）`;
     }
-    const meta = await jevJsonRequest(connection, this.request,
+    const meta = await withAbort({ timeout: 5000 }, signal => jevJsonRequest(connection, this.request,
       connectionUrl(connection.url) + "/api/meta",
       {
         headers: connection.token ? { Authorization: "Bearer " + connection.token } : {},
-        signal: AbortSignal.timeout(5000),
+        signal,
       },
-    );
+    ));
     if (meta.bridge?.protocol !== 1)
       throw Error("请更新 JEV 服务以支持酒馆接入");
     return meta.provider === "local"
@@ -355,7 +356,7 @@ export class JevCommandController {
           scores: Object.fromEntries(request.candidates.map(c => [c.id, 0.5])),
         };
         try {
-          const answer = await this.retry(async attemptSignal => {
+          const answer = await withAbort({ signals: [signal, aborter.signal] }, combined => this.retry(async attemptSignal => {
             const answer = await this.post<DecisionAnswer>(
               connection,
               "evaluate",
@@ -377,7 +378,7 @@ export class JevCommandController {
             )
               throw new JevConnectionError("JEV 返回无效评分");
             return answer;
-          }, AbortSignal.any([signal, aborter.signal]), check, options.onStatus);
+          }, combined, check, options.onStatus));
           this.cooldownUntil = 0;
           return answer;
         } catch (error) {
@@ -396,13 +397,13 @@ export class JevCommandController {
         check();
         if (contextFailure || ++calls > 10) return [];
         try {
-          return await this.retry(async attemptSignal => {
+          return await withAbort({ signals: [signal, aborter.signal] }, combined => this.retry(async attemptSignal => {
             const answer = await this.post<Awaited<ReturnType<TextExtractor['extract']>>>(
               connection, "context", { messages, observation }, attemptSignal,
             );
             try { return validateNarrativeContext(answer, observation); }
             catch { throw new JevConnectionError("模型返回无效正文目标"); }
-          }, AbortSignal.any([signal, aborter.signal]), check, options.onStatus);
+          }, combined, check, options.onStatus));
         } catch (error) {
           check();
           contextFailure = `正文目标提取暂不可用（已自动重试 ${JEV_MAX_RETRIES} 次）：${failureReason(error)}`;

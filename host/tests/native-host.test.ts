@@ -37,6 +37,14 @@ it('TauriTavern 从宿主账户模块获取身份，不把未实现的 API 网�
   expect(host.session()?.scope.account).toBe('local-user'); expect(f.request).not.toHaveBeenCalled();
   await expect(createNativeHost({ ...f.window, __TAURI_RUNNING__: true }, f.request as typeof fetch, async () => ({ accountsEnabled: true, currentUser: null, getCurrentUserHandle: () => 'default-user' }))).rejects.toThrow(/尚未初始化/);
 });
+it('旧镜像 localStorage 被禁用时仍可建立原生宿主', async () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new DOMException('blocked', 'SecurityError'); } });
+  try {
+    const f = fixture(); const host = await createNativeHost(f.window, f.request as typeof fetch);
+    expect(host.session()?.scope.account).toBe('tester'); expect(host.legacyStorage).toBeUndefined();
+  } finally { if (original) Object.defineProperty(globalThis, 'localStorage', original); else Reflect.deleteProperty(globalThis, 'localStorage'); }
+});
 it('兼容 TauriTavern removeListener，并在注销后不再触发回调', async () => {
   const f = fixture(); const source = f.context.eventSource!;
   source.removeListener = source.off; delete source.off;

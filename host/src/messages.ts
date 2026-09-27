@@ -1,3 +1,4 @@
+import { randomId } from './browser-compat.js';
 import type { DeliveryReceipt } from '../../panel/src/tavern.js';
 import { sameSession, type HostSession } from './contracts.js';
 import { NativeHost, type HostMessage } from './sillytavern.js';
@@ -8,7 +9,7 @@ export class NativeMessages {
   constructor(private host: NativeHost, private canSend: () => boolean = () => true) {}
   send(text: string, options: { deliveryId?: string; generate?: boolean } = {}): Promise<DeliveryReceipt> {
     const session = this.host.session();
-    const deliveryId = options.deliveryId ?? crypto.randomUUID();
+    const deliveryId = options.deliveryId ?? randomId();
     const run = async (): Promise<DeliveryReceipt> => {
       if (!session || !sameSession(session, this.host.session()) || this.host.hasLegacyRuntime() || !this.canSend()) return { status: 'failed', detail: '发送目标已切换、档案保存尚待核实或旧战阵脚本仍在运行' };
       const ctx = this.host.context(); const chat = ctx.chat;

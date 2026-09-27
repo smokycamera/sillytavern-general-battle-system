@@ -1,3 +1,4 @@
+import { optionalIndexedDB } from '../../host/src/browser-compat.js';
 import type { RecoveryJournal, RecoveryRecord } from '../../host/src/contracts.js';
 
 export class MemoryJournal implements RecoveryJournal {
@@ -10,14 +11,19 @@ export class MemoryJournal implements RecoveryJournal {
 /** A journal is recovery evidence only, never an automatic authoritative save. */
 export class IndexedDbJournal implements RecoveryJournal {
   private database?: Promise<IDBDatabase>;
-  constructor(private factory: IDBFactory = indexedDB) {}
+  constructor(private factory: IDBFactory | undefined = optionalIndexedDB()) {}
   private open(): Promise<IDBDatabase> {
-    return this.database ??= new Promise((resolve, reject) => {
-      const request = this.factory.open('tavern-battle-native-recovery', 1);
+    const factory = this.factory ?? optionalIndexedDB();
+    if (!factory) return Promise.reject(Error('浏览器恢复记录存储不可用，请检查存储权限后重试；未写入存档'));
+    return this.database ??= new Promise<IDBDatabase>((resolve, reject) => {
+      const request = factory.open('tavern-battle-native-recovery', 1);
       request.onupgradeneeded = () => request.result.createObjectStore('pending');
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => { this.database = undefined; reject(request.error); };
       request.onblocked = () => { this.database = undefined; reject(Error('恢复记录数据库被其他窗口占用')); };
+    }).catch(error => {
+      this.database = undefined;
+      throw Error('浏览器恢复记录存储暂不可用，请检查存储权限与空间后重试；未写入存档', { cause: error });
     });
   }
   private async transaction<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore, done: (value: T) => void) => void): Promise<T> {

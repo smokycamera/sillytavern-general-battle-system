@@ -1,3 +1,4 @@
+import { throwIfAborted } from '../../host/src/browser-compat.js';
 import type { JevConnection } from './jev-connection.js';
 
 export type JevTransport = 'auto' | 'host' | 'relay' | 'direct';
@@ -51,7 +52,7 @@ export async function jevRequest(connection: JevConnection, url: string, init: R
       ? connection.protocol === 'openai' ? 'host' : 'direct'
       : connection.relayUrl?.trim() ? 'relay' : host && !bridge ? 'host' : 'direct'
     : mode;
-  init.signal?.throwIfAborted();
+  throwIfAborted(init.signal);
 
   if (transport === 'relay') {
     if (!connection.relayUrl?.trim()) throw new JevTransportError('请填写你自己运行的转发地址，例如 http://127.0.0.1:4318');

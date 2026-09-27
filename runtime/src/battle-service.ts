@@ -1,3 +1,4 @@
+import { randomId } from '../../host/src/browser-compat.js';
 import type { PersistReceipt, HostSession, MessageTag } from '../../host/src/contracts.js';
 import { sameSession } from '../../host/src/contracts.js';
 import { NativeHost } from '../../host/src/sillytavern.js';
@@ -198,7 +199,7 @@ export class BattleService {
       return prepared;
     });
   }
-  previewInventory(action: InventoryAction, id: string = crypto.randomUUID()): InventoryPreview {
+  previewInventory(action: InventoryAction, id: string = randomId()): InventoryPreview {
     this.version(); if (this.migration) throw Error('请先核对档案迁移预览');
     const before = this.snapshot(); const intent = { ...structuredClone(action), id, expectedRevision: before.factRevision ?? 0 };
     return { context: this.inventoryContext(), action: structuredClone(action), intent, before, after: prepareInventoryTransaction(before, intent) };
@@ -245,7 +246,7 @@ export class BattleService {
       const old = before.proposals?.find(p => p.id === id);
       if (!old || !namespace || namespaceOf(old.source) !== namespace || old.source.role !== 'assistant' || !old.source.complete || old.status === 'committed') throw Error('没有可修正的完整事件草稿');
       if (sourceCommitted(before, old.sourceKey)) throw Error('此消息已入账');
-      const binding = captureGeneration(before, namespace, crypto.randomUUID()); binding.complete = true;
+      const binding = captureGeneration(before, namespace, randomId()); binding.complete = true;
       const proposal = proposalFromMessage({ ...old.source, text, generationId: binding.id }, binding);
       if (!proposal) throw Error('草稿里尚未识别到事件标签');
       proposal.corrected = true; proposal.originalText = old.originalText ?? old.source.text;
@@ -272,7 +273,7 @@ export class BattleService {
     this.receivedId = undefined; this.generationEnded = false; this.binding = undefined;
     if (this.phase !== 'ready' || !sameSession(this.store.session(), this.host.session())) { this.project(); return; }
     const namespace = this.host.namespace();
-    this.binding = namespace ? captureGeneration(this.snapshot(), namespace, crypto.randomUUID()) : undefined;
+    this.binding = namespace ? captureGeneration(this.snapshot(), namespace, randomId()) : undefined;
     this.project();
   }
   scan(messageId?: number, options: { manual?: boolean } = {}): Promise<void> {
@@ -306,7 +307,7 @@ export class BattleService {
       const originalId = message.messageId; message.messageId = tag.id;
       this.capabilities.messageIdentity = !!message.messageId && !!message.swipeId;
       const before = this.snapshot(); let expected = binding && !refreshed && !options.manual ? { ...binding, messageId: binding.messageId === originalId ? tag.id : binding.messageId } : undefined;
-      if (!(expected?.complete && expected.messageId === message.messageId) && message.complete && this.capabilities.messageIdentity) expected = { ...captureGeneration(before, namespace, crypto.randomUUID()), complete: true, manualOnly: true, messageId: message.messageId };
+      if (!(expected?.complete && expected.messageId === message.messageId) && message.complete && this.capabilities.messageIdentity) expected = { ...captureGeneration(before, namespace, randomId()), complete: true, manualOnly: true, messageId: message.messageId };
       if (expected?.complete && this.capabilities.messageIdentity) message.generationId = expected.id;
       const proposal = proposalFromMessage(message, expected); if (!proposal) return;
       if (sourceCommitted(before, proposal.sourceKey) || before.deletedNarrativeReceipts?.includes(narrativeReceiptKey(proposal))) return;
@@ -340,7 +341,7 @@ export class BattleService {
     const current = this.host.messageBySource(old.source.messageId);
     if (!current || current.role !== 'assistant' || !current.complete || namespaceOf(current) !== namespace || protocolExcerpt(current.text) !== old.source.text || current.swipeId !== old.source.swipeId) throw Error('原消息已变化，需要重新扫描');
     if (sourceCommitted(before, messageSourceKey(current))) throw Error('此消息已入账');
-    const binding = captureGeneration(before, namespace, crypto.randomUUID()); binding.complete = true; binding.manualOnly = true;
+    const binding = captureGeneration(before, namespace, randomId()); binding.complete = true; binding.manualOnly = true;
     current.generationId = binding.id; const proposal = proposalFromMessage(current, binding)!;
     const receipt = await this.transact(state => ({ ...state, proposals: [...(state.proposals ?? []).map((p): NarrativeProposal => p.id === old.id ? { ...p, status: 'stale' } : p), proposal] }));
     if (receipt.status !== 'confirmed') throw Error(receipt.error ?? '待确认内容尚未保存');

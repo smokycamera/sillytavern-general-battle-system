@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readLlmSettings,saveLlmSettings,llmConnection,LLM_SETTINGS_KEY } from './llm-settings.js';
+import { readLlmSettings,saveLlmSettings,llmConnection,LLM_SETTINGS_KEY,llmSettingsView } from './llm-settings.js';
 import { renderLlmSettings } from './llm-settings-view.js';
 afterEach(()=>vi.unstubAllGlobals());
 function storage(){const data=new Map<string,string>();vi.stubGlobal('localStorage',{getItem:(k:string)=>data.get(k)??null,setItem:(k:string,v:string)=>data.set(k,v)});vi.stubGlobal('sessionStorage',{getItem:()=>null});return data;}
@@ -27,5 +27,19 @@ describe('global ordinary LLM settings',()=>{
   it('does not silently overwrite corrupted settings or reinterpret TypeSafe as OpenAI',()=>{
     const data=storage();data.set('tb:jev:protocol','typesafe');expect(readLlmSettings().url).toBe('');
     data.set(LLM_SETTINGS_KEY,'broken');expect(()=>readLlmSettings()).toThrow('原记录已保留');expect(data.get(LLM_SETTINGS_KEY)).toBe('broken');
+  });
+  it('renders a readable error for damaged or blocked storage while actions stay strict',()=>{
+    const data=storage();data.set(LLM_SETTINGS_KEY,'broken');
+    const view=llmSettingsView();expect(view.error).toContain('原记录已保留');
+    expect(()=>renderLlmSettings(view.settings,view.error)).not.toThrow();
+    expect(data.get(LLM_SETTINGS_KEY)).toBe('broken');expect(()=>readLlmSettings()).toThrow();
+    vi.stubGlobal('localStorage',{getItem(){throw new DOMException('blocked','SecurityError');}});
+    expect(llmSettingsView().error).toContain('存储权限');expect(()=>readLlmSettings()).toThrow('原配置未修改');
+  });
+  it('keeps the saved credentials when a quota error prevents replacing settings',()=>{
+    const data=storage(),saved={...readLlmSettings(),token:'original-key',model:'original'};saveLlmSettings(saved);
+    vi.stubGlobal('localStorage',{getItem:(k:string)=>data.get(k)??null,setItem(){throw new DOMException('full','QuotaExceededError');}});
+    expect(()=>saveLlmSettings({...saved,token:'new-key'})).toThrow('未保存');
+    expect(readLlmSettings()).toEqual(saved);
   });
 });
