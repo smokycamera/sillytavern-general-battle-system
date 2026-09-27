@@ -2,7 +2,7 @@ import type { Ability, Combatant, EffectOp } from './types.js';
 import type { ObservationContext } from './observation.js';
 import { formationNode, FORMATION_NODES } from './mass/formation.js';
 import { applyCombatDamage, applyRecovery, recoveryCapacity } from './recovery.js';
-import { armorTransmission } from './power-anchors.js';
+import { armorTransmission, overmatchMultiplier } from './power-anchors.js';
 import { poisonFactor } from './afflictions.js';
 import { unitLineOfSight } from './small/spatial.js';
 import { activeTraitIds } from './trait-sources.js';
@@ -111,8 +111,9 @@ export function settleZones(context: ObservationContext, round: number, boundary
         } else if(zone.kind!=='smoke') {
           const count=target.scale==='hero'?1:Math.min(target.hp,4);
           const factor=zone.kind==='poison'?poisonFactor(target):armorTransmission(target,zone.kind==='fire'?'thermal':'kinetic',zonePenetration(zone));
-          damage=applyCombatDamage(target,Math.round(amount*factor*count),count);
-          results.push({target,source:owner,damage,text:target.name+'受到'+ZONE_NAMES[zone.kind]+'影响，损失'+damage+'点生命'});
+          const overmatch=context.rules?.overmatch&&zone.kind!=='poison'?overmatchMultiplier(zone.power,target,zone.kind==='fire'?'thermal':'kinetic',zonePenetration(zone),true):1;
+          damage=applyCombatDamage(target,Math.round(amount*factor*count*overmatch),count);
+          results.push({target,source:owner,damage,text:target.name+'受到'+ZONE_NAMES[zone.kind]+'影响，损失'+damage+'点生命'+(overmatch>1?'，跨代毁伤×'+Number(overmatch.toFixed(2)): '')});
         }
         const random=rng??new SeededRng(`${zone.id}:${zone.createdRound}:${round}:${target.id}`);
         for(const effect of zone.effects??[]) {

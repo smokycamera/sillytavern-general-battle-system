@@ -19,7 +19,7 @@ try{
  const p=page.frameLocator('#panel');
  const load=async save=>{await page.evaluate(({save,html})=>{window.loadFixture(save);document.querySelector('#panel').srcdoc=html;},{save,html});};
  const prepared=structuredClone(small);delete prepared.battle;await load(prepared);await startBattle(p, 'small');await p.locator('.grid-board').waitFor();
- assert.equal(await page.evaluate(()=>window.readPanel().battle.snap.rulesId),'v6-overflow-d20');assert.deepEqual((await page.evaluate(()=>window.readPanel())).migrationBackups.at(-1).source.storage,prepared.storage);checks.push('面板新开小战确认升级后采用V6，完整原档备份可回退；以下旧V3快照保持原规则');
+ assert.equal(await page.evaluate(()=>window.readPanel().battle.snap.rulesId),'v7-overflow-d20');assert.deepEqual((await page.evaluate(()=>window.readPanel())).migrationBackups.at(-1).source.storage,prepared.storage);checks.push('面板新开小战确认升级后采用V7，完整原档备份可回退；以下旧V3快照保持原规则');
  for(const [mode,save] of [['small',small],['mass',mass]]){
   await load(save);await p.locator(mode==='mass'?'.formation-grid':'.grid-board').waitFor();
   if(mode==='small'){

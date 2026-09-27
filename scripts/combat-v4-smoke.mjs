@@ -20,7 +20,7 @@ try{
  await p.locator('[data-detail-id="gen-body"] > summary').click();await p.locator('[data-role="gen-body"]').selectOption('vehicle');await p.locator('[data-role="gen-hpMax"]').fill('12');await p.locator('[data-role="gen-memberHp"]').fill('100');
  await p.locator('[data-action="gen-add"]').click();assert.match(await p.locator('[data-role="builder-preview"]').innerText(),/总生命 1200\/1200/);await p.locator('[data-action="builder-confirm"]').click();
  const created=(await read()).storage.find(u=>u.name==='十二辆自定义生命车辆');assert.equal(created.snapshot.formation.memberHp,100);assert.deepEqual(created.snapshot.formation.health,[{hp:100,count:12}]);checks.push('实际新建界面保存12辆、每辆100生命，预览与归档均为1200总生命');
- await load(cases[0][1].before);await startBattle(p, 'small');await p.locator('.grid-board').waitFor();assert.equal((await read()).battle.snap.rulesId,'v6-overflow-d20');checks.push('实际新开战确认升级后使用V6，并保留预先受伤的成员生命');
+ await load(cases[0][1].before);await startBattle(p, 'small');await p.locator('.grid-board').waitFor();assert.equal((await read()).battle.snap.rulesId,'v7-overflow-d20');checks.push('实际新开战确认升级后使用V7，并保留预先受伤的成员生命');
  for(const [mode,data] of cases){
   await load(data.active);await p.locator(mode==='small'?'.grid-board':'.formation-grid').waitFor();
   if(mode==='small'){await p.locator('.command-modes button').filter({hasText:'攻击'}).click();await p.locator('[data-role="grid-target"]').selectOption('D');}

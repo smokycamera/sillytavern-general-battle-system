@@ -47,7 +47,7 @@ import {
   generateUnit, traitCatalog, traitRegistry, resolveTraitId,
   SmallBattle, MassBattle, battleXpAwardsForBothSides, applyXp, xpProgress, xpLabel,
   armorDR, fieldModsFor, LITE_D20,
-  V5_D20, V6_D20, V6_OVERFLOW_D20, V6_OVERFLOW_TW, isAirborne, abilityUsabilityReason,
+  V5_D20, V6_D20, V7_OVERFLOW_D20, V7_OVERFLOW_TW, isAirborne, abilityUsabilityReason,
   generatedField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
   FORMATION_NODES, formationNode, concealmentLabel,
   type Combatant, type GenerateInput, type Order, type BattleLogEntry, type Side,
@@ -1082,7 +1082,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   if(u.combatModel&&u.scale!=='hero')rows.push('<p class="sub">人数与成员耐久分别结算。参战规模随现员增长，地形与阵位限制展开；减员后火力同步下降。</p>');
   if(u.combatModel&&u.scale==='hero'&&u.moraleState?.damagePenalty)rows.push('<p class="sub">累计受创压力 '+u.moraleState.damagePenalty+'，影响本场士气；不溃能力免疫惊退。</p>');
   if (u.mount) rows.push('<div class="sub">骑乘 · 占格更大 · 机动提高 · 不增加人员或生命</div>');
-  if (u.weapon?.recipe) rows.push(`<details><summary>装备属性</summary><div class="sub">训练${u.level} · 装备等级${u.weapon.recipe.power}${esc(enhancementLabel(u.weapon.recipe.bonuses))} · 体型${({human:'普通人形',large:'大型生物',giant:'巨型生物',vehicle:'车辆'})[u.body??'human']} · 品质${u.weapon.recipe.quality} · ${esc(WEAPON_CLASSES[u.weapon.recipe.mechanism]?.name ?? u.weapon.recipe.mechanism)} · 穿透${u.weapon.penetration} · 物品编号 ${esc(u.weapon.id)}</div></details>`);
+  if (u.weapon?.recipe) rows.push(`<details><summary>装备属性</summary><div class="sub">训练${u.level} · 装备等级${u.weapon.recipe.power}${esc(enhancementLabel(u.weapon.recipe.bonuses))} · 体型${({human:'普通人形',large:'大型生物',giant:'巨型生物',vehicle:'车辆'})[u.body??'human']} · 品质${u.weapon.recipe.quality} · ${esc(WEAPON_CLASSES[u.weapon.recipe.mechanism]?.name ?? u.weapon.recipe.mechanism)} · 穿透${modern?anchoredWeapon(u.weapon,u.cannonAmmo,u.damageModel)?.penetration:u.weapon.penetration} · 物品编号 ${esc(u.weapon.id)}</div></details>`);
   if (u.generationWarnings?.length) rows.push(`<details><summary>生成说明</summary><div class="sub">${u.generationWarnings.map(esc).join('；')}</div></details>`);
 
   // 特质
@@ -1414,10 +1414,15 @@ function logDetailHtml(e: BattleLogEntry): string {
     ? `d20[${r.attackRoll.kept.join(',')}]${r.crit ? ' 暴击!' : ''}${r.netAtk >= 0 ? '+' : ''}${r.netAtk}=${r.attackRoll.total + r.netAtk} vs 防御${r.targetDef}`
     : `命中率${Math.round((r.hitChance ?? 0) * 100)}%`;
   lines.push(`${head}：${rollPart} —— <b class="hit">命中</b>`);
-  lines.push(`<span class="dim">净攻${r.netAtk}｜目标防${r.targetDef}${r.drPercent ? `｜护甲减伤${r.drPercent}%` : ''}${r.dmgMult !== 1 ? `｜攻倍×${r.dmgMult}` : ''}${r.wardMult !== 1 ? `｜守护×${r.wardMult}` : ''}</span>`);
+  lines.push(`<span class="dim">净攻${r.netAtk}｜目标防${r.targetDef}${r.drPercent ? `｜护甲减伤${Number(r.drPercent.toFixed(1))}%` : ''}${r.dmgMult !== 1 ? `｜攻倍×${Number(r.dmgMult.toFixed(3))}` : ''}${r.wardMult !== 1 ? `｜守护×${Number(r.wardMult.toFixed(3))}` : ''}</span>`);
+  if(r.overmatchMultiplier!==undefined)lines.push(`<span class="dim">${({kinetic:'动能',thermal:'热能',arcane:'奥术'})[r.channel??'kinetic']} · 穿透${Number((r.penetration??0).toFixed(2))}／防护${Number((r.resistance??0).toFixed(2))} · ${r.penetrationFactor===0?'未穿透':r.overmatchMultiplier>1?'跨代压倒':'正常结算'}${r.overmatchMultiplier>1?' · 毁伤×'+Number(r.overmatchMultiplier.toFixed(2))+'（已计入攻倍）':''}</span>`);
   if (r.baseRoll) lines.push(`<span class="dim">普通段 ${r.baseRoll.rolls.join('+')}${r.baseRoll.flat ? '+' + r.baseRoll.flat : ''} → 减伤后 ${r.baseAfterDR}</span>`);
   if (r.apRoll || r.apTotal > 0) lines.push(`<span class="dim">破甲段 ${r.apTotal}</span>`);
   lines.push(`<b>最终伤害 ${r.finalDamage}</b> → ${esc(r.defenderName)} 生命 ${r.hpBefore}→${r.hpAfter}`);
+  if(r.damageModel==='member-health'&&r.membersBefore!==undefined&&r.membersAfter!==undefined&&r.membersBefore!==r.membersAfter)lines.push(`<span class="dim">减员 ${r.membersBefore-r.membersAfter}</span>`);
+  if(r.overflowDamage)lines.push(`<span class="dim">其中余伤传递 ${r.overflowDamage}</span>`);
+  if(r.splashDamage)lines.push(`<span class="dim">其中溅射 ${r.splashDamage}</span>`);
+  if(r.barrierAbsorbed)lines.push(`<span class="dim">屏障吸收 ${r.barrierAbsorbed}</span>`);
   return lines.join('<br>');
 }
 
@@ -2462,7 +2467,7 @@ async function startSmallBattle(context?:LlmEncounterContext):Promise<void> {
     const small = new SmallBattle({
       nonLethal:state.nonLethal,
       ...(state.roster.every((u) => u.rulesVersion === 'v2') ? { battlefield } : {}),
-      rules: state.roster.every((u) => u.rulesVersion === 'v2') ? V6_OVERFLOW_D20 : LITE_D20,
+      rules: state.roster.every((u) => u.rulesVersion === 'v2') ? V7_OVERFLOW_D20 : LITE_D20,
       combatants: JSON.parse(JSON.stringify(state.roster)), seed: state.roster.every((u) => u.rulesVersion === 'v2') ? seed : undefined, traitRegistry: reg,
       summonUnit,
       field: { tags: state.roster.every((u) => u.rulesVersion === 'v2') ? tags : state.field ? [state.field] : [] },
@@ -2493,7 +2498,7 @@ async function startMassBattle(context?:LlmEncounterContext):Promise<void> {
     }
     const mass = new MassBattle({
       nonLethal:state.nonLethal,
-      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V6_OVERFLOW_TW } : {}),
+      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V7_OVERFLOW_TW } : {}),
       combatants: clones,
       traitRegistry: reg,
       commanderId: state.commanderId,

@@ -23,9 +23,9 @@ export function skillAttack(context: ObservationContext, actor: Combatant, targe
     const width=engagementWidth(actor,target,ability.delivery!=='melee',context.battlefield,context.fieldTags);
     const attached=new Set(context.attached?.values()??[]);
     const cohort=context.units.filter(u=>!attached.has(u.id)&&sameLayer(actor,u)&&(context.mode==='mass'?formationNode(actor).id===formationNode(u).id:u.pos===actor.pos));
-    return {participants:sharedParticipants(actor,cohort,width,target),abilityDamage:{accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect,damageScale:ability.damageScale,channel:ability.channel,penetration:ability.penetration,delivery:ability.delivery,areaExposure:ability.areaExposure},ranged:ability.delivery!=='melee'};
+    return {participants:sharedParticipants(actor,cohort,width,target),abilityDamage:{power:ability.power,accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect,damageScale:ability.damageScale,channel:ability.channel,penetration:ability.penetration,delivery:ability.delivery,areaExposure:ability.areaExposure},ranged:ability.delivery!=='melee'};
   }
-  if (actor.rulesVersion !== 'v2' || !ability.damageBasis) return { abilityDamage: { accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect, damageScale:ability.damageScale,channel: ability.channel, penetration: ability.penetration, delivery: ability.delivery, areaExposure: ability.areaExposure }, ranged: ability.delivery ? ability.delivery !== 'melee' : effect.tag === 'ranged' ? true : undefined };
+  if (actor.rulesVersion !== 'v2' || !ability.damageBasis) return { abilityDamage: { power:ability.power,accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect, damageScale:ability.damageScale,channel: ability.channel, penetration: ability.penetration, delivery: ability.delivery, areaExposure: ability.areaExposure }, ranged: ability.delivery ? ability.delivery !== 'melee' : effect.tag === 'ranged' ? true : undefined };
   let weapon: Weapon | undefined;
   if (ability.damageBasis === 'weapon') weapon = skillWeapon(actor, ability, context.mode === 'mass' ? formationDistance(actor, target) : context.battlefield ? gridDistance(context.battlefield, actor.pos!, target.pos!) : Math.abs((actor.pos ?? 0) - (target.pos ?? 0)));
   else if (actor.shield) {
@@ -34,7 +34,7 @@ export function skillAttack(context: ObservationContext, actor: Combatant, targe
       ...(actor.combatModel==='cohort-v2'?{level:power,recipe:{...(actor.shield.recipe??{version:'mechanism-v2.3',mechanism:'shield',power,quality:3,size,seed:actor.shield.id}),...(actor.damageModel==='wounds-v2'?{balanceVersion:'unified-v1' as const}:{})}}:{}) };
   }
   if (!weapon) return { abilityDamage: { accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect, baseDice: '1d2-2', apDice: undefined, penetration: 0, channel: 'kinetic', weaponBased: true }, ranged: false, participants: 0 };
-  if(actor.combatModel==='cohort-v2')weapon=combatWeapon(weapon,actor,target,rules?.weaponOverflow)!;
+  if(actor.combatModel==='cohort-v2')weapon=combatWeapon(weapon,actor,target,rules?.weaponOverflow,rules?.damageModel,rules?.overmatch)!;
   const skillBudget = diceAvg(effect.baseDice) + (effect.apDice ? diceAvg(effect.apDice) : 0);
   const channel=weapon.channel??'kinetic';
   // 武技在实际武器通道上应用专项修正；避免公式升级时猜测通道或重复叠加通用强化。
