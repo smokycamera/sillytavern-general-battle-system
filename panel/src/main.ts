@@ -2624,7 +2624,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   'worldbook-save': (el) => {
     if (!runtime.setWorldbookSettings || !runtime.getWorldbookSettings) return;
     const id = el.dataset.entry; if (!id) return;
-    const textarea = document.querySelector<HTMLTextAreaElement>(`[data-role="worldbook-template"][data-entry="${CSS.escape(id)}"]`);
+    const textarea = Array.from(document.querySelectorAll<HTMLTextAreaElement>('[data-role="worldbook-template"]')).find(item => item.dataset.entry === id);
     if (!textarea) return;
     runtime.setWorldbookSettings({ entry: { id, content: textarea.value } });
     worldbookDrafts.delete(id); render('view'); toast('内置世界书已保存并立即生效');
