@@ -1,5 +1,5 @@
 import type { PanelController } from '../../panel/src/controller-port.js';
-import type { PanelRuntime } from '../../panel/src/panel-runtime.js';
+import type { PanelRuntime, WorldbookEditorState, WorldbookEditorUpdate } from '../../panel/src/panel-runtime.js';
 import type { SaveReceipt, TavernAdapter } from '../../panel/src/tavern.js';
 import type { PersistReceipt } from '../../host/src/contracts.js';
 import { sameSession } from '../../host/src/contracts.js';
@@ -7,7 +7,14 @@ import { NativeMessages } from '../../host/src/messages.js';
 import type { BattleService } from '../../runtime/src/battle-service.js';
 import { preferences } from './preferences.js';
 
-export interface NativeRuntime { service: BattleService; messages: NativeMessages; open(): void; close(): void; dispose(): void }
+export interface NativeRuntime {
+  service: BattleService;
+  messages: NativeMessages;
+  open(): void;
+  close(): void;
+  dispose(): void;
+  worldbook: { view(): WorldbookEditorState; update(update: WorldbookEditorUpdate): WorldbookEditorState };
+}
 export function legacyReceipt(receipt: PersistReceipt): SaveReceipt {
   const confirmed = receipt.status === 'confirmed';
   return { status: confirmed ? 'saved' : 'failed', host: confirmed, local: confirmed || receipt.status === 'pending', nativeStatus: receipt.status,
@@ -62,6 +69,8 @@ export function createPanelRuntime(): PanelRuntime {
       return Array.from({length: Math.min(count, 100)}, (_, i) => host.message(count - Math.min(count, 100) + i)).flatMap(m => m ? [{ id: m.messageId + ':' + m.swipeId, role: m.role, text: m.text, completed: m.complete }] : []);
     },
     getTheme: () => display.read().theme ?? 'dark', setTheme: theme => display.write({ theme }),
+    getWorldbookSettings: () => runtime.worldbook.view(),
+    setWorldbookSettings: update => runtime.worldbook.update(update),
     retryGeneration: deliveryId => messages.retryGeneration(deliveryId),
     canWrite: () => service.canWrite(),
     writeBlockReason: () => service.writeBlockReason(),

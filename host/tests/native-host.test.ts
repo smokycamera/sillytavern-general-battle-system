@@ -19,7 +19,8 @@ function fixture() {
 }
 it('原生接口无需 TavernHelper；按用户/角色/聊天隔离，切回同名聊天也更新 epoch', async () => {
   const f = fixture(); const host = await createNativeHost(f.window, f.request as typeof fetch);
-  const one = host.session()!; expect(one.scope.account).toBe('tester'); expect(host.inject('test', 'facts')).toBe(true);
+  const one = host.session()!; expect(one.scope.account).toBe('tester'); expect(host.inject('test', 'facts', { position: 1, depth: 3, scan: false, role: 2 })).toBe(true);
+  expect(f.context.setExtensionPrompt).toHaveBeenCalledWith('test', 'facts', 1, 3, false, 2);
   f.context.chatMetadata = {}; const two = host.session()!; expect(two.epoch).toBeGreaterThan(one.epoch);
   f.context.characterId = '0'; f.context.groupId = false; expect(host.session()?.scope.avatar).toBe('one.png');
   f.context.characterId = 'constructor'; expect(host.session()).toBeUndefined(); f.context.characterId = '0';

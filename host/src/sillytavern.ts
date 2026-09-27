@@ -180,10 +180,10 @@ export class NativeHost implements MetadataPort {
     this.stops.add(stop); return { available: true, stop };
   }
   isGenerating(): boolean { return this.generating; }
-  inject(id: string, content: string): boolean {
+  inject(id: string, content: string, options: { position?: number; depth?: number; scan?: boolean; role?: number } = {}): boolean {
     const set = this.context().setExtensionPrompt;
-    if (!set || !this.session() || this.hasLegacyRuntime()) return false;
-    set(id, content, 1, 0, false, 0); return true;
+    if (!set || this.hasLegacyRuntime()) return false;
+    set(id, content, options.position ?? 1, options.depth ?? 0, options.scan ?? false, options.role ?? 0); return true;
   }
   clearInjection(id: string): void { this.context().setExtensionPrompt?.(id, '', 1, 0, false, 0); }
   dispose(): void { for (const stop of [...this.stops]) stop(); this.generating = false; }
