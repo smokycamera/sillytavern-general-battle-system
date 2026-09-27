@@ -16,7 +16,7 @@ const penetrationChannels: BonusStat[] = ['kineticPenetration','thermalPenetrati
 const protectionChannels: BonusStat[] = ['kineticProtection','thermalProtection','arcaneProtection'];
 export const ENHANCEMENT_STATS: Record<BonusKind, BonusStat[]> = {
   unit: ['power', 'damage', 'accuracy', 'defense', 'health', 'speed', 'morale', ...damageChannels],
-  weapon: ['power', 'damage', 'accuracy', 'penetration', 'range', ...damageChannels, ...penetrationChannels],
+  weapon: ['power', 'damage', 'accuracy', 'defense', 'penetration', 'range', ...damageChannels, ...penetrationChannels],
   armor: ['power', 'defense', 'protection', ...protectionChannels], shield: ['power', 'defense', 'protection', ...protectionChannels],
   consumable: ['power', 'healing'],
   accessory: [],

@@ -375,10 +375,16 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
   // 防御方视角：其条件修正（如「仅对大型目标生效」）看攻击方标签
   const ctxDef = { area: opts.abilityDamage?.shape === 'burst' || ((!opts.abilityDamage || opts.abilityDamage.weaponBased) && !!weapon?.tags?.includes('blast')), attacker: defender, defender: attacker, charge: opts.charge, ranged, weapon: defender.weapon, fieldTags: opts.fieldTags, terrain: opts.defenderTerrain, opponentTerrain: opts.attackerTerrain, distance: opts.distance, engaged: opts.defenderEngaged };
   const defenderMods = [...(opts.defenderMods ?? [])];
-  if (rules.combatModel === MEMBER_HEALTH_MODEL && !ranged && (!opts.abilityDamage || opts.abilityDamage.weaponBased)
-    && defender.status === 'ready' && !defender.conditions.some(c => c.dur > 0 && (opts.conditionDefs.get(c.id)?.preventAttack || opts.conditionDefs.get(c.id)?.skipTurn))) {
-    const parry = meleeProfile(meleeWeapon(defender))?.parry;
-    if (parry) defenderMods.push({ source: 'intrinsic', name: '剑术格挡', kind: 'def', type: 'flat', value: parry });
+  if (rules.combatModel === MEMBER_HEALTH_MODEL && defender.status === 'ready'
+    && !defender.conditions.some(c => c.dur > 0 && (opts.conditionDefs.get(c.id)?.preventAttack || opts.conditionDefs.get(c.id)?.skipTurn))) {
+    // 贴身沿用近战换武器规则；备用武器不与当前武器重复叠加。
+    const defensiveWeapon = (!ranged ? meleeWeapon(defender) : undefined) ?? defender.weapon ?? defender.sidearm;
+    const weaponDefense = bonusSteps(defensiveWeapon?.recipe?.bonuses, 'defense');
+    if (weaponDefense) defenderMods.push({ source: 'intrinsic', name: '武器防御修正', kind: 'def', type: 'flat', value: weaponDefense });
+    if (!ranged && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) {
+      const parry = meleeProfile(meleeWeapon(defender))?.parry;
+      if (parry) defenderMods.push({ source: 'intrinsic', name: '剑术格挡', kind: 'def', type: 'flat', value: parry });
+    }
   }
   const defMods = collectMods(defender, ctxDef, opts.conditionDefs, defenderMods, opts.traitRegistry);
   const defStack = resolveStack(defMods, 'def', ctxDef, { sameNameKeepsHighest: rules.sameNameKeepsHighest, maxFlat: rules.maxFlat });
