@@ -75,7 +75,7 @@ describe('V5 通用设定、技能与修正约束',()=>{
       const once=JSON.stringify(a);upgradeCombatSkills(a);expect(JSON.stringify(a)).toBe(once);
     }
     const old=unit('a');prepareCombatModel(old,V4_D20);
-    const legacy=ability(old,'generic:buff:barrier',5,{power:10,duration:10});expect(legacy.effects).toEqual([{op:'barrier',amount:33,dur:3}]);
+    const legacy=ability(old,'generic:buff:barrier',5,{power:10,duration:10});expect(legacy.effects).toEqual([{op:'barrier',amount:33,dur:3,defensePower:5}]);
   });
   it('控制保留抵抗和冷却；回能复合技能不能无限免费循环',()=>{
     const a=unit('a'),control=ability(a,'generic:debuff:stun',10,{duration:10,accuracy:10});

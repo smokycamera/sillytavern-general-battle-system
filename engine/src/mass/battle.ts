@@ -1059,7 +1059,7 @@ export class MassBattle {
               this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id,t.id], text: `${actor.name} 使用【${ability.name}】治疗 ${restored} → ${t.name} 生命 ${before}→${memberHealth(t)}` });
             } });
           } else if (effect.op === 'barrier') for (const affected of this.supportTargets(actor, ability, target, support)) changes.push(() => {
-            const unit = this.byId(affected.id); grantBarrier(unit, effect.amount, effect.dur, actor.id);
+            const unit = this.byId(affected.id); grantBarrier(unit, effect.amount, effect.dur, actor.id, effect.defensePower ?? ability.power);
             this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id, unit.id], text: `${unit.name} 获得屏障，可吸收${unit.barrier?.remaining ?? 0}点伤害，持续${effect.dur}轮` });
           });
           else if (effect.op === 'morale') for (const affected of this.supportTargets(actor, ability, target, support)) changes.push(() => changeMorale(this.byId(affected.id), effect.amount));

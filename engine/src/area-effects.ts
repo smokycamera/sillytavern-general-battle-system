@@ -112,7 +112,8 @@ export function settleZones(context: ObservationContext, round: number, boundary
           const count=target.scale==='hero'?1:Math.min(target.hp,4);
           const factor=zone.kind==='poison'?poisonFactor(target):armorTransmission(target,zone.kind==='fire'?'thermal':'kinetic',zonePenetration(zone));
           const overmatch=context.rules?.overmatch&&zone.kind!=='poison'?overmatchMultiplier(zone.power,target,zone.kind==='fire'?'thermal':'kinetic',zonePenetration(zone),true):1;
-          damage=applyCombatDamage(target,Math.round(amount*factor*count*overmatch),count);
+          damage=applyCombatDamage(target,Math.round(amount*factor*count*overmatch),count,overmatch>1?{
+            power:zone.power,channel:zone.kind==='fire'?'thermal':'kinetic',penetration:zonePenetration(zone),area:true,canBlock:true,multiplier:overmatch}:undefined);
           results.push({target,source:owner,damage,text:target.name+'受到'+ZONE_NAMES[zone.kind]+'影响，损失'+damage+'点生命'+(overmatch>1?'，跨代毁伤×'+Number(overmatch.toFixed(2)): '')});
         }
         const random=rng??new SeededRng(`${zone.id}:${zone.createdRound}:${round}:${target.id}`);
@@ -126,7 +127,7 @@ export function settleZones(context: ObservationContext, round: number, boundary
             if(outcome.condition?.affectedMembers!==undefined)outcome.condition.affectedMembers=Math.min(target.hp,4);
             applySkillCondition(target,outcome.condition);text=outcome.text;control=!!outcome.condition;
           } else if(effect.op==='barrier') {
-            grantBarrier(target,effect.amount,effect.dur,owner.id);text=target.name+'在区域内获得屏障';
+            grantBarrier(target,effect.amount,effect.dur,owner.id,effect.defensePower);text=target.name+'在区域内获得屏障';
           } else if(effect.op==='heal') {
             const healed=applyRecovery(target,Math.min(recoveryCapacity(target),effect.amount??rollDice(effect.dice!,random).total));text=target.name+'在区域内恢复'+healed+'点生命';
           } else if(effect.op==='resource') {

@@ -5,6 +5,7 @@ import { parseSkillMechanism, skillMechanismFromId, skillMechanismId, skillMecha
 import { compileAbility } from './gen/abilities.js';
 import { compileGenericSkill } from './gen/generic-skills.js';
 import { upgradeZoneSkill } from './zone-skills.js';
+import { attachDefensePower } from './barrier.js';
 
 export const MAX_PREPARED_SKILLS = 5;
 
@@ -23,6 +24,7 @@ export function compileSkill(spec: BlueprintSpec, power: number, ownerId: string
   if (!ability) throw new Error('未知技能效果：' + skillDefinitionName(id));
   if (typeof spec !== 'string' && spec.instanceId) ability.id = spec.instanceId;
   upgradeZoneSkill(ability);
+  attachDefensePower(ability);
   return ability;
 }
 export function resolvePreparedSkills(abilities: Ability[], requested: string[]): string[] {
