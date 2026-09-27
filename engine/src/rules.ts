@@ -53,8 +53,13 @@ export const V6_TW:RulePack={...V5_TW,id:'v6-tw',name:'V6 统一生命会战',da
 export const V6_OVERFLOW_D20:RulePack={...V6_D20,id:'v6-overflow-d20',name:'V6 统一生命与溢出',weaponOverflow:true};
 export const V6_OVERFLOW_TW:RulePack={...V6_TW,id:'v6-overflow-tw',name:'V6 统一生命溢出会战',weaponOverflow:true};
 
+/** Only new battles opt in; V2–V6 ids and their replay formulas remain frozen. */
+export const V7_OVERFLOW_D20:RulePack={...V6_OVERFLOW_D20,id:'v7-overflow-d20',name:'V7 跨代毁伤与溢出',overmatch:true};
+export const V7_OVERFLOW_TW:RulePack={...V6_OVERFLOW_TW,id:'v7-overflow-tw',name:'V7 跨代毁伤溢出会战',overmatch:true};
+
 /** id → 规则包（战斗快照恢复用；面板只用默认两包） */
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V7_OVERFLOW_D20.id]:V7_OVERFLOW_D20,[V7_OVERFLOW_TW.id]:V7_OVERFLOW_TW,
   [V6_D20.id]:V6_D20,[V6_TW.id]:V6_TW,[V6_OVERFLOW_D20.id]:V6_OVERFLOW_D20,[V6_OVERFLOW_TW.id]:V6_OVERFLOW_TW,
   [V5_D20.id]:V5_D20,
   [V5_TW.id]:V5_TW,

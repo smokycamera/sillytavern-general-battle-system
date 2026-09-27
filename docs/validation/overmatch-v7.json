@@ -1,0 +1,1713 @@
+{
+  "baselineCommit": "6c553da43a37ec81766103719a5906b4e750969f",
+  "method": "V6 versus V7 using the same saved inputs and seeds; 40-round/1000-action limit. Cross cases use steadfast troops to measure damage rather than early routs. Not a population win-rate study.",
+  "baseline": [
+    {
+      "level": 3,
+      "mode": "small",
+      "gap": 0,
+      "skills": false,
+      "seed": 0,
+      "same": true,
+      "rounds": 7,
+      "over": true,
+      "winner": "ally"
+    },
+    {
+      "level": 3,
+      "mode": "small",
+      "gap": 0,
+      "skills": false,
+      "seed": 1,
+      "same": true,
+      "rounds": 8,
+      "over": true,
+      "winner": "ally"
+    },
+    {
+      "level": 3,
+      "mode": "small",
+      "gap": 0,
+      "skills": true,
+      "seed": 0,
+      "same": true,
+      "rounds": 3,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 3,
+      "mode": "small",
+      "gap": 0,
+      "skills": true,
+      "seed": 1,
+      "same": true,
+      "rounds": 5,
+      "over": true,
+      "winner": "ally"
+    },
+    {
+      "level": 3,
+      "mode": "small",
+      "gap": 1,
+      "skills": false,
+      "seed": 0,
+      "same": true,
+      "rounds": 3,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 3,
+      "mode": "small",
+      "gap": 1,
+      "skills": false,
+      "seed": 1,
+      "same": true,
+      "rounds": 4,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 3,
+      "mode": "small",
+      "gap": 1,
+      "skills": true,
+      "seed": 0,
+      "same": true,
+      "rounds": 1,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 3,
+      "mode": "small",
+      "gap": 1,
+      "skills": true,
+      "seed": 1,
+      "same": true,
+      "rounds": 3,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 3,
+      "mode": "mass",
+      "gap": 0,
+      "skills": false,
+      "seed": 0,
+      "same": true,
+      "rounds": 8,
+      "over": true,
+      "winner": "draw"
+    },
+    {
+      "level": 3,
+      "mode": "mass",
+      "gap": 0,
+      "skills": false,
+      "seed": 1,
+      "same": true,
+      "rounds": 9,
+      "over": true,
+      "winner": "draw"
+    },
+    {
+      "level": 3,
+      "mode": "mass",
+      "gap": 0,
+      "skills": true,
+      "seed": 0,
+      "same": true,
+      "rounds": 8,
+      "over": true,
+      "winner": "ally"
+    },
+    {
+      "level": 3,
+      "mode": "mass",
+      "gap": 0,
+      "skills": true,
+      "seed": 1,
+      "same": true,
+      "rounds": 7,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 3,
+      "mode": "mass",
+      "gap": 1,
+      "skills": false,
+      "seed": 0,
+      "same": true,
+      "rounds": 5,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 3,
+      "mode": "mass",
+      "gap": 1,
+      "skills": false,
+      "seed": 1,
+      "same": true,
+      "rounds": 6,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 3,
+      "mode": "mass",
+      "gap": 1,
+      "skills": true,
+      "seed": 0,
+      "same": true,
+      "rounds": 7,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 3,
+      "mode": "mass",
+      "gap": 1,
+      "skills": true,
+      "seed": 1,
+      "same": true,
+      "rounds": 5,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 5,
+      "mode": "small",
+      "gap": 0,
+      "skills": false,
+      "seed": 0,
+      "same": true,
+      "rounds": 7,
+      "over": true,
+      "winner": "ally"
+    },
+    {
+      "level": 5,
+      "mode": "small",
+      "gap": 0,
+      "skills": false,
+      "seed": 1,
+      "same": true,
+      "rounds": 7,
+      "over": true,
+      "winner": "ally"
+    },
+    {
+      "level": 5,
+      "mode": "small",
+      "gap": 0,
+      "skills": true,
+      "seed": 0,
+      "same": true,
+      "rounds": 3,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 5,
+      "mode": "small",
+      "gap": 0,
+      "skills": true,
+      "seed": 1,
+      "same": true,
+      "rounds": 5,
+      "over": true,
+      "winner": "ally"
+    },
+    {
+      "level": 5,
+      "mode": "small",
+      "gap": 1,
+      "skills": false,
+      "seed": 0,
+      "same": true,
+      "rounds": 3,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 5,
+      "mode": "small",
+      "gap": 1,
+      "skills": false,
+      "seed": 1,
+      "same": true,
+      "rounds": 4,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 5,
+      "mode": "small",
+      "gap": 1,
+      "skills": true,
+      "seed": 0,
+      "same": true,
+      "rounds": 1,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 5,
+      "mode": "small",
+      "gap": 1,
+      "skills": true,
+      "seed": 1,
+      "same": true,
+      "rounds": 3,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 5,
+      "mode": "mass",
+      "gap": 0,
+      "skills": false,
+      "seed": 0,
+      "same": true,
+      "rounds": 8,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 5,
+      "mode": "mass",
+      "gap": 0,
+      "skills": false,
+      "seed": 1,
+      "same": true,
+      "rounds": 9,
+      "over": true,
+      "winner": "draw"
+    },
+    {
+      "level": 5,
+      "mode": "mass",
+      "gap": 0,
+      "skills": true,
+      "seed": 0,
+      "same": true,
+      "rounds": 8,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 5,
+      "mode": "mass",
+      "gap": 0,
+      "skills": true,
+      "seed": 1,
+      "same": true,
+      "rounds": 7,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 5,
+      "mode": "mass",
+      "gap": 1,
+      "skills": false,
+      "seed": 0,
+      "same": true,
+      "rounds": 5,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 5,
+      "mode": "mass",
+      "gap": 1,
+      "skills": false,
+      "seed": 1,
+      "same": true,
+      "rounds": 6,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 5,
+      "mode": "mass",
+      "gap": 1,
+      "skills": true,
+      "seed": 0,
+      "same": true,
+      "rounds": 7,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 5,
+      "mode": "mass",
+      "gap": 1,
+      "skills": true,
+      "seed": 1,
+      "same": true,
+      "rounds": 4,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 8,
+      "mode": "small",
+      "gap": 0,
+      "skills": false,
+      "seed": 0,
+      "same": true,
+      "rounds": 11,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 8,
+      "mode": "small",
+      "gap": 0,
+      "skills": false,
+      "seed": 1,
+      "same": true,
+      "rounds": 7,
+      "over": true,
+      "winner": "ally"
+    },
+    {
+      "level": 8,
+      "mode": "small",
+      "gap": 0,
+      "skills": true,
+      "seed": 0,
+      "same": true,
+      "rounds": 9,
+      "over": true,
+      "winner": "ally"
+    },
+    {
+      "level": 8,
+      "mode": "small",
+      "gap": 0,
+      "skills": true,
+      "seed": 1,
+      "same": true,
+      "rounds": 15,
+      "over": true,
+      "winner": "ally"
+    },
+    {
+      "level": 8,
+      "mode": "small",
+      "gap": 1,
+      "skills": false,
+      "seed": 0,
+      "same": true,
+      "rounds": 5,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 8,
+      "mode": "small",
+      "gap": 1,
+      "skills": false,
+      "seed": 1,
+      "same": true,
+      "rounds": 7,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 8,
+      "mode": "small",
+      "gap": 1,
+      "skills": true,
+      "seed": 0,
+      "same": true,
+      "rounds": 3,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 8,
+      "mode": "small",
+      "gap": 1,
+      "skills": true,
+      "seed": 1,
+      "same": true,
+      "rounds": 5,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 8,
+      "mode": "mass",
+      "gap": 0,
+      "skills": false,
+      "seed": 0,
+      "same": true,
+      "rounds": 25,
+      "over": true,
+      "winner": "ally"
+    },
+    {
+      "level": 8,
+      "mode": "mass",
+      "gap": 0,
+      "skills": false,
+      "seed": 1,
+      "same": true,
+      "rounds": 26,
+      "over": true,
+      "winner": "draw"
+    },
+    {
+      "level": 8,
+      "mode": "mass",
+      "gap": 0,
+      "skills": true,
+      "seed": 0,
+      "same": true,
+      "rounds": 21,
+      "over": true,
+      "winner": "ally"
+    },
+    {
+      "level": 8,
+      "mode": "mass",
+      "gap": 0,
+      "skills": true,
+      "seed": 1,
+      "same": true,
+      "rounds": 18,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 8,
+      "mode": "mass",
+      "gap": 1,
+      "skills": false,
+      "seed": 0,
+      "same": true,
+      "rounds": 11,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 8,
+      "mode": "mass",
+      "gap": 1,
+      "skills": false,
+      "seed": 1,
+      "same": true,
+      "rounds": 11,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 8,
+      "mode": "mass",
+      "gap": 1,
+      "skills": true,
+      "seed": 0,
+      "same": true,
+      "rounds": 11,
+      "over": true,
+      "winner": "enemy"
+    },
+    {
+      "level": 8,
+      "mode": "mass",
+      "gap": 1,
+      "skills": true,
+      "seed": 1,
+      "same": true,
+      "rounds": 10,
+      "over": true,
+      "winner": "enemy"
+    }
+  ],
+  "differences": [],
+  "cross": [
+    {
+      "scenario": "liberty-v-rangers",
+      "mode": "small",
+      "seed": 0,
+      "old": {
+        "over": true,
+        "rounds": 33,
+        "steps": 65,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 66,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 5,
+        "steps": 9,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 9,
+        "overmatchHits": 9
+      }
+    },
+    {
+      "scenario": "liberty-v-rangers",
+      "mode": "small",
+      "seed": 1,
+      "old": {
+        "over": false,
+        "rounds": 40,
+        "steps": 80,
+        "winner": null,
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 2,
+            "health": 100,
+            "status": "ready"
+          }
+        ],
+        "attacks": 80,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 8,
+        "steps": 16,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 15,
+        "overmatchHits": 10
+      }
+    },
+    {
+      "scenario": "liberty-v-rangers",
+      "mode": "small",
+      "seed": 2,
+      "old": {
+        "over": false,
+        "rounds": 40,
+        "steps": 80,
+        "winner": null,
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 2,
+            "health": 111,
+            "status": "ready"
+          }
+        ],
+        "attacks": 80,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 5,
+        "steps": 9,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 10,
+        "overmatchHits": 9
+      }
+    },
+    {
+      "scenario": "liberty-v-rangers",
+      "mode": "small",
+      "seed": 3,
+      "old": {
+        "over": true,
+        "rounds": 36,
+        "steps": 71,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 72,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 7,
+        "steps": 13,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 14,
+        "overmatchHits": 11
+      }
+    },
+    {
+      "scenario": "sword10-v-company",
+      "mode": "small",
+      "seed": 0,
+      "old": {
+        "over": false,
+        "rounds": 40,
+        "steps": 80,
+        "winner": null,
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 100,
+            "health": 7200,
+            "status": "ready"
+          }
+        ],
+        "attacks": 0,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 2,
+        "steps": 4,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 1,
+        "overmatchHits": 1
+      }
+    },
+    {
+      "scenario": "sword10-v-company",
+      "mode": "small",
+      "seed": 1,
+      "old": {
+        "over": false,
+        "rounds": 40,
+        "steps": 80,
+        "winner": null,
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 100,
+            "health": 7200,
+            "status": "ready"
+          }
+        ],
+        "attacks": 0,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 2,
+        "steps": 3,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 1,
+        "overmatchHits": 1
+      }
+    },
+    {
+      "scenario": "sword10-v-company",
+      "mode": "small",
+      "seed": 2,
+      "old": {
+        "over": false,
+        "rounds": 40,
+        "steps": 80,
+        "winner": null,
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 100,
+            "health": 7200,
+            "status": "ready"
+          }
+        ],
+        "attacks": 0,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 2,
+        "steps": 4,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 1,
+        "overmatchHits": 1
+      }
+    },
+    {
+      "scenario": "sword10-v-company",
+      "mode": "small",
+      "seed": 3,
+      "old": {
+        "over": false,
+        "rounds": 40,
+        "steps": 80,
+        "winner": null,
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 100,
+            "health": 7200,
+            "status": "ready"
+          }
+        ],
+        "attacks": 0,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 2,
+        "steps": 4,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 1,
+        "overmatchHits": 1
+      }
+    },
+    {
+      "scenario": "spell8-v-company",
+      "mode": "small",
+      "seed": 0,
+      "old": {
+        "over": false,
+        "rounds": 40,
+        "steps": 80,
+        "winner": null,
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 87,
+            "health": 6264,
+            "status": "ready"
+          }
+        ],
+        "attacks": 14,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 9,
+        "steps": 17,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 9,
+        "overmatchHits": 9
+      }
+    },
+    {
+      "scenario": "spell8-v-company",
+      "mode": "small",
+      "seed": 1,
+      "old": {
+        "over": false,
+        "rounds": 40,
+        "steps": 80,
+        "winner": null,
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 88,
+            "health": 6336,
+            "status": "ready"
+          }
+        ],
+        "attacks": 15,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 9,
+        "steps": 18,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 10,
+        "overmatchHits": 7
+      }
+    },
+    {
+      "scenario": "spell8-v-company",
+      "mode": "small",
+      "seed": 2,
+      "old": {
+        "over": false,
+        "rounds": 40,
+        "steps": 80,
+        "winner": null,
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 89,
+            "health": 6342,
+            "status": "ready"
+          }
+        ],
+        "attacks": 14,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 9,
+        "steps": 17,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 9,
+        "overmatchHits": 8
+      }
+    },
+    {
+      "scenario": "spell8-v-company",
+      "mode": "small",
+      "seed": 3,
+      "old": {
+        "over": false,
+        "rounds": 40,
+        "steps": 80,
+        "winner": null,
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 89,
+            "health": 6408,
+            "status": "ready"
+          }
+        ],
+        "attacks": 14,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 13,
+        "steps": 25,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 13,
+        "overmatchHits": 10
+      }
+    },
+    {
+      "scenario": "liberty-v-rangers",
+      "mode": "mass",
+      "seed": 0,
+      "old": {
+        "over": true,
+        "rounds": 40,
+        "steps": 40,
+        "winner": "draw",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 21,
+            "health": 1448,
+            "status": "ready"
+          }
+        ],
+        "attacks": 80,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 9,
+        "steps": 9,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 18,
+        "overmatchHits": 10
+      }
+    },
+    {
+      "scenario": "liberty-v-rangers",
+      "mode": "mass",
+      "seed": 1,
+      "old": {
+        "over": true,
+        "rounds": 40,
+        "steps": 40,
+        "winner": "draw",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 25,
+            "health": 1730,
+            "status": "ready"
+          }
+        ],
+        "attacks": 80,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 11,
+        "steps": 11,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 22,
+        "overmatchHits": 10
+      }
+    },
+    {
+      "scenario": "liberty-v-rangers",
+      "mode": "mass",
+      "seed": 2,
+      "old": {
+        "over": true,
+        "rounds": 40,
+        "steps": 40,
+        "winner": "draw",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 23,
+            "health": 1596,
+            "status": "ready"
+          }
+        ],
+        "attacks": 80,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 13,
+        "steps": 13,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 26,
+        "overmatchHits": 11
+      }
+    },
+    {
+      "scenario": "liberty-v-rangers",
+      "mode": "mass",
+      "seed": 3,
+      "old": {
+        "over": true,
+        "rounds": 40,
+        "steps": 40,
+        "winner": "draw",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 20,
+            "health": 1404,
+            "status": "ready"
+          }
+        ],
+        "attacks": 80,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 10,
+        "steps": 10,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 20,
+        "overmatchHits": 11
+      }
+    },
+    {
+      "scenario": "sword10-v-company",
+      "mode": "mass",
+      "seed": 0,
+      "old": {
+        "over": true,
+        "rounds": 40,
+        "steps": 40,
+        "winner": "draw",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 15,
+            "health": 1070,
+            "status": "ready"
+          }
+        ],
+        "attacks": 40,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 3,
+        "steps": 3,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 3,
+        "overmatchHits": 1
+      }
+    },
+    {
+      "scenario": "sword10-v-company",
+      "mode": "mass",
+      "seed": 1,
+      "old": {
+        "over": true,
+        "rounds": 36,
+        "steps": 36,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 36,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 3,
+        "steps": 3,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 3,
+        "overmatchHits": 1
+      }
+    },
+    {
+      "scenario": "sword10-v-company",
+      "mode": "mass",
+      "seed": 2,
+      "old": {
+        "over": true,
+        "rounds": 40,
+        "steps": 40,
+        "winner": "draw",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 9,
+            "health": 578,
+            "status": "ready"
+          }
+        ],
+        "attacks": 40,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 1,
+        "steps": 1,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 1,
+        "overmatchHits": 1
+      }
+    },
+    {
+      "scenario": "sword10-v-company",
+      "mode": "mass",
+      "seed": 3,
+      "old": {
+        "over": true,
+        "rounds": 40,
+        "steps": 40,
+        "winner": "draw",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 6,
+            "health": 404,
+            "status": "ready"
+          }
+        ],
+        "attacks": 40,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 2,
+        "steps": 2,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 2,
+        "overmatchHits": 1
+      }
+    },
+    {
+      "scenario": "spell8-v-company",
+      "mode": "mass",
+      "seed": 0,
+      "old": {
+        "over": true,
+        "rounds": 40,
+        "steps": 40,
+        "winner": "draw",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 92,
+            "health": 6624,
+            "status": "ready"
+          }
+        ],
+        "attacks": 14,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 27,
+        "steps": 27,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 14,
+        "overmatchHits": 8
+      }
+    },
+    {
+      "scenario": "spell8-v-company",
+      "mode": "mass",
+      "seed": 1,
+      "old": {
+        "over": true,
+        "rounds": 40,
+        "steps": 40,
+        "winner": "draw",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 92,
+            "health": 6624,
+            "status": "ready"
+          }
+        ],
+        "attacks": 14,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 40,
+        "steps": 40,
+        "winner": "draw",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 8,
+            "health": 557,
+            "status": "ready"
+          }
+        ],
+        "attacks": 14,
+        "overmatchHits": 8
+      }
+    },
+    {
+      "scenario": "spell8-v-company",
+      "mode": "mass",
+      "seed": 2,
+      "old": {
+        "over": true,
+        "rounds": 40,
+        "steps": 40,
+        "winner": "draw",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 89,
+            "health": 6408,
+            "status": "ready"
+          }
+        ],
+        "attacks": 14,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 23,
+        "steps": 23,
+        "winner": "ally",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 0,
+            "health": 0,
+            "status": "dead"
+          }
+        ],
+        "attacks": 12,
+        "overmatchHits": 9
+      }
+    },
+    {
+      "scenario": "spell8-v-company",
+      "mode": "mass",
+      "seed": 3,
+      "old": {
+        "over": true,
+        "rounds": 40,
+        "steps": 40,
+        "winner": "draw",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 92,
+            "health": 6624,
+            "status": "ready"
+          }
+        ],
+        "attacks": 14,
+        "overmatchHits": 0
+      },
+      "next": {
+        "over": true,
+        "rounds": 40,
+        "steps": 40,
+        "winner": "draw",
+        "final": [
+          {
+            "id": "a",
+            "hp": 1800,
+            "health": 1800,
+            "status": "ready"
+          },
+          {
+            "id": "d",
+            "hp": 12,
+            "health": 855,
+            "status": "ready"
+          }
+        ],
+        "attacks": 14,
+        "overmatchHits": 8
+      }
+    }
+  ]
+}

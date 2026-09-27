@@ -2,11 +2,11 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **1.2.1**.
+Current version: **1.3.0**.
 
 Human carrying capacity is now 14, and large bodies carry 18. Humans at load 12 or above lose 1 movement and 2 initiative. Non-vehicle units may equip and fire autocannons and artillery; vehicle stabilization still requires a vehicle. Load penalties appear in equipment previews and unit details.
 
-New battles use V6 unified life and combat pacing: the 16T+4 life curve, giant melee strength, shared frontage, skill budgets and bounded area coverage. Signed modifiers, level growth, editing and save validation share the same limits. Archive upgrades show a preview and retain a full backup; ongoing old battles retain their rules. Reimport the bundled lorebook. See [formulas, migration and validation](docs/unified-balance-v6.md).
+New battles use V7 cross-grade damage while retaining the V6 life and pacing baseline: the 16T+4 life curve, giant melee strength, shared frontage, skill budgets and bounded area coverage. Signed modifiers, level growth, editing and save validation share the same limits. Archive upgrades show a preview and retain a full backup; ongoing old battles retain their rules. Reimport the bundled lorebook. See [V7 overmatch, overflow and validation](docs/overmatch-v7.md) and [V6 life formulas](docs/unified-balance-v6.md).
 
 Export a save before upgrading if you may need to downgrade. The complete 1.0.6 build is preserved on a dedicated rollback branch; see [version rollback](docs/version-rollback.md).
 

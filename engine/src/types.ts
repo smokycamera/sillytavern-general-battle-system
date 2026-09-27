@@ -508,6 +508,8 @@ export interface BattleLogEntry {
 // ---------- 规则包 ----------
 
 export interface RulePack {
+  /** V7：跨代充分穿透追加毁伤；旧快照缺省关闭。 */
+  overmatch?: boolean;
   /** V5 单体毁伤与通道防护；缺省沿用旧战斗的规格耐久。 */
   damageModel?: 'wounds-v1' | 'wounds-v2';
   combatModel?: 'cohort-v1' | 'cohort-v2';

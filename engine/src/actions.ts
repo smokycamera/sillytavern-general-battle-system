@@ -44,6 +44,9 @@ export interface TargetOption {
 }
 
 export interface ActionPreview {
+  overmatchMultiplier?:number;
+  attackPower?:number;
+  protectionPower?:number;
   weaponOverflow?:boolean;
   armorScale?:number;
   armorFactor?:number;

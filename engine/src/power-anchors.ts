@@ -124,19 +124,55 @@ export function shieldTransmission(unit:Pick<Combatant,'shield'|'status'>,channe
   const coverage=Math.min(.5,.35*bonusMultiplier(unit.shield.recipe?.bonuses,'power'));
   return 1-coverage*(1-penetrationThrough(penetration,shieldProtection(unit,channel)));
 }
+
+/** Real channel resistance expressed in the existing equipment-L scale, never training T.
+ * Type/channel offsets preserve ordinary same/adjacent-grade loadouts. Explicit overrides,
+ * focus and signed protection modifiers are reflected through the actual resistance.
+ * An absent/zero channel grants no protection merely because a recipe has a high L. */
+export function protectionPower(unit:Pick<Combatant,'armor'|'body'|'shield'|'damageModel'>,channel:DamageChannel):number {
+  const resistance=anchoredProtection(unit,channel),armor=unit.armor;
+  if(resistance<=0)return 0;
+  const innate=BODY[unit.body??'human'].protection[channel];
+  if(!armor?.tier||anchoredProtection({...unit,body:'human'},channel)<innate)return resistance/2;
+  const offset=armor.tier-2-({kinetic:0,thermal:1,arcane:2}[channel]);
+  return Math.max(0,(resistance-offset)/2);
+}
+function continuousPowerBudget(power:number):number {
+  const p=Math.max(1,Math.min(10,power)),low=Math.floor(p),fraction=p-low;
+  return powerBudget(low)*(powerBudget(Math.min(10,low+1))/powerBudget(low))**fraction;
+}
+/** A one-grade safe band; smooth for fractional channel modifiers, bounded by L1–L10.
+ * Extra damage ramps in only after the attack exceeds the actual channel resistance.
+ * No unit HP, personnel, training, size damage multiplier or new random roll enters here. */
+export function gradeOvermatch(power:number|undefined,defensePower:number,penetration:number,resistance:number):number {
+  if(power===undefined||!Number.isFinite(power)||power<1||power>10||power<=defensePower+1)return 1;
+  const extra=Math.sqrt(continuousPowerBudget(power)/continuousPowerBudget(defensePower+1))-1;
+  return 1+extra*Math.max(0,Math.min(1,penetration-resistance));
+}
+export function overmatchMultiplier(power:number|undefined,unit:Pick<Combatant,'armor'|'body'|'shield'|'status'|'damageModel'>,channel:DamageChannel,penetration:number,area=false,canBlock=true):number {
+  const armor=gradeOvermatch(power,protectionPower(unit,channel),penetration,anchoredProtection(unit,channel));
+  if(!unit.shield||unit.status!=='ready'||area||!canBlock||armor===1)return armor;
+  const coverage=Math.min(.5,.35*bonusMultiplier(unit.shield.recipe?.bonuses,'power'));
+  const resistance=shieldProtection(unit,channel),through=penetrationThrough(penetration,resistance);
+  const shieldPower=Math.max(0,(resistance-1+({kinetic:0,thermal:1,arcane:2}[channel]))/2);
+  const shield=gradeOvermatch(power,shieldPower,penetration,resistance);
+  // A shield only limits the covered portion; it never lends its L to the whole body.
+  return ((1-coverage)*armor+coverage*through*Math.min(armor,shield))/(1-coverage+coverage*through);
+}
 export function armorEffectLabel(unit:Pick<Combatant,'armor'|'shield'|'damageModel'>):string {
   return isWoundModel(unit.damageModel)
     ? `部分穿透吸能强度×${Number(bonusMultiplier(unit.armor?.tier?unit.armor.recipe?.bonuses:undefined,'power').toFixed(2))}；充分穿透后无额外减伤${unit.armor?.powerScale!==undefined||unit.shield?.powerScale!==undefined?'（旧耐久覆盖不参与新规则）':''}`
     : `装甲等效耐久×${Number(armorPowerScale(unit).toFixed(2))}（旧规则）`;
 }
 /** 没有手动指定时，火炮按公开目标防护和人数选择有效毁伤较高的弹种。 */
-export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Combatant,weaponOverflow=false,model=actor.damageModel):Weapon|undefined {
+export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Combatant,weaponOverflow=false,model=actor.damageModel,overmatch=false):Weapon|undefined {
   if(!weapon)return weapon;
   if(actor.cannonAmmo||!isCannonWeapon(weapon))return anchoredWeapon(weapon,actor.cannonAmmo,model);
   const he=anchoredWeapon(weapon,'he',model)!,ap=anchoredWeapon(weapon,'ap',model)!;
   const protectedTarget={...target,damageModel:model};
   const score=(w:Weapon)=>{
-    const raw=diceAvg(w.baseDice)*(w.damageScale??1)*armorTransmission(protectedTarget,w.channel??'kinetic',w.penetration??0)/armorPowerScale(protectedTarget);
+    const raw=diceAvg(w.baseDice)*(w.damageScale??1)*armorTransmission(protectedTarget,w.channel??'kinetic',w.penetration??0)/armorPowerScale(protectedTarget)
+      *(overmatch?overmatchMultiplier(w.recipe?.power??w.level,protectedTarget,w.channel??'kinetic',w.penetration??0,!!w.splashTargets):1);
     if(weaponOverflow&&hasMemberHealth(target)){
       const copy={...target,formation:{...target.formation!,health:target.formation!.health!.map(g=>({...g}))}};
       const direct=damageMemberGroups(copy,Math.round(raw),1,true).health;
@@ -153,5 +189,5 @@ export function anchoredWeaponLabel(weapon:Weapon|undefined,model:Combatant['dam
   const w=anchoredWeapon(weapon,undefined,model);if(!w)return '—';
   const raw=(diceAvg(w.baseDice)+(w.apDice?diceAvg(w.apDice):0))*(w.damageScale??1);
   const melee=meleeProfile(w);
-  return `${isRangedWeapon(w) ? (w.indirect ? '曲射' : '直射') + (isCannonWeapon(w) ? '火炮' : '') + ' · ' : ''}单次命中均值${Number(raw.toFixed(1))}生命 · 穿透${w.penetration??0}${(w.attacks??1)>1?` · ${w.attacks}段`:''}${w.splashTargets?` · 爆炸${w.splashTargets>=1e9?'覆盖目标编队':'另及'+w.splashTargets+'名额'}`:''}${melee?` · ${melee.description}`:''}`;
+  return `${isRangedWeapon(w) ? (w.indirect ? '曲射' : '直射') + (isCannonWeapon(w) ? '火炮' : '') + ' · ' : ''}${model==='wounds-v2'?'基础单段命中均值':'单次命中均值'}${Number(raw.toFixed(1))}生命 · 穿透${w.penetration??0}${(w.attacks??1)>1?` · ${w.attacks}段`:''}${w.splashTargets?` · 爆炸${w.splashTargets>=1e9?'覆盖目标编队':'另及'+w.splashTargets+'名额'}`:''}${melee?` · ${melee.description}`:''}`;
 }
