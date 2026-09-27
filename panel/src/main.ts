@@ -936,7 +936,8 @@ function renderEmbeddedWorldbookSettings(): string {
   if (!view) return '';
   return `<section><h2>内置世界书</h2>
     <label><input type="checkbox" data-role="worldbook-enabled" ${view.enabled ? 'checked' : ''}> 启用内置世界书</label>
-    <p>默认使用插件内置的四个常驻条目，不再依赖全局世界书或关键词触发。插入深度、角色与条目顺序被锁定，编辑这里只修改文本，因此不会把原来的位置语义改乱。</p>
+    <p>默认启用四个常驻条目，无需关键词。开关与编辑内容全局保存，不随聊天或角色切换。位置、深度、角色和顺序沿用原文件；这里只编辑正文。启用后请自行停用外挂的同一套世界书，避免重复发送。</p>
+    ${view.injectionMode === 'depth' ? '<p>当前酒馆使用深度注入兼容模式：保留深度、角色及四条内部顺序，但与其他世界书的混排顺序可能不同。更新酒馆可使用原生世界书排序。</p>' : ''}
     ${view.items.map(item => `<div class="prompt-setting"><label><strong>${esc(item.title)}</strong> <span class="sub">depth ${item.depth} · ${item.role === 0 ? 'system' : 'role '+item.role} · order ${item.order}</span></label><details data-detail-id="worldbook-editor-${esc(item.id)}"><summary>编辑条目</summary><textarea data-role="worldbook-template" data-entry="${esc(item.id)}" style="width:100%;min-height:12em">${esc(worldbookDrafts.get(item.id) ?? item.content)}</textarea><div class="row"><button data-action="worldbook-save" data-entry="${esc(item.id)}">保存编辑并立即生效</button><button data-action="worldbook-reset" data-entry="${esc(item.id)}">恢复内置默认文本</button></div></details></div>`).join('')}
   </section>`;
 }
@@ -2023,6 +2024,10 @@ async function handleAction(e: Event): Promise<void> {
     return;
   }
   if (act === 'theme-toggle') { const theme = document.body.dataset.theme === 'light' ? 'dark' : 'light'; document.body.dataset.theme = theme; runtime.setTheme?.(theme); return; }
+  if (act === 'worldbook-save' || act === 'worldbook-reset') {
+    try { await actions[act]?.(el); } catch (error) { toast(error instanceof Error ? error.message : String(error)); }
+    return;
+  }
   if (act === 'grid-pan') { document.querySelector('.grid-camera')?.scrollBy({ left: Number(el.dataset.dx) * 180, behavior: 'auto' }); return; }
   if (act === 'grid-focus') { battleCamera.focus(document.querySelector<HTMLElement>('.grid-cell.selected') ?? undefined); return; }
   if (act === 'modal-stop') return;

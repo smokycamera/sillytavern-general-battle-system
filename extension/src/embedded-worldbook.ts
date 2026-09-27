@@ -2,6 +2,7 @@ import worldbook from '../../assets/worldbook/!通用战斗系统约束.json';
 import type { WorldbookEditorState, WorldbookEditorUpdate } from '../../panel/src/panel-runtime.js';
 
 interface SourceEntry {
+  [key: string]: unknown;
   content: string;
   comment?: string;
   position: number;
@@ -30,6 +31,27 @@ const IN_CHAT = 1;
 const sourceEntries = Object.entries(worldbook.entries as Record<string, SourceEntry>)
   .filter(([, entry]) => !entry.disable)
   .sort(([, a], [, b]) => a.order - b.order);
+
+export const EMBEDDED_WORLD_NAME = 'tavern-battle-native:worldbook';
+export type WorldbookInstallation = (() => void) & { mode: 'native' | 'depth' };
+
+/** Feed the original metadata to the same pipeline used by global World Info.
+ * Separate extension prompts cannot preserve ordering with other depth entries,
+ * WI regex processing, or the host's token-budget behavior.
+ */
+export function embeddedWorldbookEntries(value?: EmbeddedWorldbookSettings) {
+  const settings = normalizeEmbeddedWorldbookSettings(value);
+  if (!settings.enabled) return [];
+  return sourceEntries.map(([id, entry]) => ({
+    ...structuredClone(entry),
+    world: EMBEDDED_WORLD_NAME,
+    constant: true,
+    key: [],
+    keysecondary: [],
+    selective: false,
+    content: Object.prototype.hasOwnProperty.call(settings.entries, id) ? settings.entries[id]! : entry.content,
+  }));
+}
 
 export function normalizeEmbeddedWorldbookSettings(value?: EmbeddedWorldbookSettings): { enabled: boolean; entries: Record<string, string> } {
   const known = new Set(sourceEntries.map(([id]) => id));
@@ -90,10 +112,22 @@ export function buildEmbeddedWorldbook(value?: EmbeddedWorldbookSettings): Embed
 export function installEmbeddedWorldbook(host: {
   inject(id: string, content: string, options?: { position?: number; depth?: number; scan?: boolean; role?: number }): boolean;
   clearInjection(id: string): void;
-}, value?: EmbeddedWorldbookSettings): () => void {
+  subscribe?(kind: string, callback: (...args: unknown[]) => void): { available: boolean; stop(): void };
+  hasLegacyRuntime?(): boolean;
+}, value?: EmbeddedWorldbookSettings): WorldbookInstallation {
+  const native = host.subscribe?.('WORLDINFO_ENTRIES_LOADED', payload => {
+    if (host.hasLegacyRuntime?.() || !payload || typeof payload !== 'object') return;
+    const { globalLore } = payload as { globalLore?: unknown };
+    // Append only our ephemeral entries. External books remain user-managed.
+    if (Array.isArray(globalLore)) globalLore.push(...embeddedWorldbookEntries(value));
+  });
+  if (native?.available) return Object.assign(() => native.stop(), { mode: 'native' as const });
+
+  // Older hosts without the native hook retain depth/role and internal order.
+  // The settings UI explicitly identifies this reduced-compatibility mode.
   const installed: string[] = [];
   for (const prompt of buildEmbeddedWorldbook(value)) {
     if (host.inject(prompt.id, prompt.content, prompt)) installed.push(prompt.id);
   }
-  return () => { for (const id of installed) host.clearInjection(id); };
+  return Object.assign(() => { for (const id of installed) host.clearInjection(id); }, { mode: 'depth' as const });
 }
