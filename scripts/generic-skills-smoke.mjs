@@ -1,3 +1,4 @@
+import { startBattle } from './smoke-start-battle.mjs';
 import { chromium } from 'playwright-core';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -95,7 +96,7 @@ try {
   assert.equal(renamed.effectVersion, 'skill-v5.0');
   assert.equal(renamed.cooldownGroup, 'skill-mechanism:' + heal.definitionId);
   assert.equal(renamed.effects.find(e => e.op === 'heal').amount, 27);
-  await tab('battle'); await p.locator('[data-action="small-start"]').click(); await p.locator('.grid-board').waitFor();
+  await tab('battle'); await startBattle(p, 'small'); await p.locator('.grid-board').waitFor();
   const before = await page.evaluate(() => window.readPanel().battle.snap);
   assert.equal(before.turnOrder[before.turnIndex], 'caster');
   await p.locator('[data-action="grid-mode"]').filter({ hasText: '技能' }).click();

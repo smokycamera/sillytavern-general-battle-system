@@ -1,3 +1,4 @@
+import { startBattle } from './smoke-start-battle.mjs';
 import { chromium } from 'playwright-core';
 import { readFileSync,mkdirSync,writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -17,8 +18,8 @@ try{
  const page=await browser.newPage({viewport:{width:1024,height:844}});page.on('pageerror',e=>errors.push(e.message));await page.goto(`http://127.0.0.1:${server.address().port}`);
  const p=page.frameLocator('#panel');
  const load=async save=>{await page.evaluate(({save,html})=>{window.loadFixture(save);document.querySelector('#panel').srcdoc=html;},{save,html});};
- const prepared=structuredClone(small);delete prepared.battle;await load(prepared);await p.locator('[data-action="small-start"]').click();await p.locator('.grid-board').waitFor();
- assert.equal(await page.evaluate(()=>window.readPanel().battle.snap.rulesId),'v5-overflow-d20');checks.push('面板新开小战采用V5；以下旧V3快照保持原规则');
+ const prepared=structuredClone(small);delete prepared.battle;await load(prepared);await startBattle(p, 'small');await p.locator('.grid-board').waitFor();
+ assert.equal(await page.evaluate(()=>window.readPanel().battle.snap.rulesId),'v6-overflow-d20');assert.deepEqual((await page.evaluate(()=>window.readPanel())).migrationBackups.at(-1).source.storage,prepared.storage);checks.push('面板新开小战确认升级后采用V6，完整原档备份可回退；以下旧V3快照保持原规则');
  for(const [mode,save] of [['small',small],['mass',mass]]){
   await load(save);await p.locator(mode==='mass'?'.formation-grid':'.grid-board').waitFor();
   if(mode==='small'){

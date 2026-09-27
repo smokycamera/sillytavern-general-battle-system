@@ -1,3 +1,4 @@
+import { startBattle } from './smoke-start-battle.mjs';
 import {chromium} from 'playwright-core';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
@@ -19,7 +20,7 @@ try{
  await page.evaluate(save=>window.loadFixture(save),fixture.before);await reload();
  assert.equal(await p.locator('[data-role="non-lethal"]').isChecked(),false);await p.locator('[data-role="non-lethal"]').check();
  assert.equal((await read()).nonLethal,true);await reload();assert.equal(await p.locator('[data-role="non-lethal"]').isChecked(),true);
- await p.locator('[data-action="small-start"]').click();await p.locator('.grid-board').waitFor();
+ await startBattle(p, 'small');await p.locator('.grid-board').waitFor();
  assert.equal((await read()).battle.snap.nonLethal,true);assert.equal((await read()).activeBattleStart.snapshot.nonLethal,true);
  assert.match(await p.locator('.battle-toolbar').innerText(),/本场：非致命/);checks.push('非致命默认关闭，勾选刷新保留，新战和开局快照均保存规则');
  await p.locator('[data-action="battle-finish"][data-reason="ceasefire"]').click();

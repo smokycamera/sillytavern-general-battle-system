@@ -1,3 +1,4 @@
+import { startBattle } from './smoke-start-battle.mjs';
 import {chromium} from 'playwright-core';
 import {readFileSync,mkdirSync,writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
@@ -20,7 +21,7 @@ try{
  const load=async save=>{await page.evaluate(({save,html})=>{window.loadFixture(save);document.querySelector('#panel').srcdoc=html;},{save,html});};
  const read=()=>page.evaluate(()=>window.readPanel());
  // 实际新开战入口保存开局，而非在结算时用残血状态重建。
- await load(small.before);await p.locator('[data-action="small-start"]').click();await p.locator('.grid-board').waitFor();
+ await load(small.before);await startBattle(p, 'small');await p.locator('.grid-board').waitFor();
  const opened=await read();assert.equal(opened.activeBattleStart.snapshot.round,1);assert.equal(opened.activeBattleStart.before.storage[0].hp,400);
  assert.equal(opened.activeBattleStart.snapshot.combatants.find(u=>u.id==='A').hp,400);
  checks.push('新战在自动行动前保存开局阵容、档案与携行状态');

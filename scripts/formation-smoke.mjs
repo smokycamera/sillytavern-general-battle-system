@@ -1,3 +1,4 @@
+import { startBattle } from './smoke-start-battle.mjs';
 import { chromium } from 'playwright-core';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -136,7 +137,7 @@ try {
   }
   const reserve = forward.storage.find((u) => u.id === 'reserve'); reserve.traits.push('vanguard'); reserve.snapshot.traits.push('vanguard');
   await page.evaluate(({ save, html }) => { window.loadFixture(save); document.querySelector('#panel').srcdoc = html; }, { save: forward, html });
-  await p.locator('[data-action="mass-start"]').click(); await idle(); await p.locator('.formation-grid').waitFor();
+  await startBattle(p, 'mass'); await idle(); await p.locator('.formation-grid').waitFor();
   const deployed = await page.evaluate(() => window.readBattle());
   assert.ok(deployed.combatants.find((u) => u.id === 'reserve').tags.includes('rank:rear'));
   assert.equal(deployed.combatants.find((u) => u.id === 'reserve').vanguardOrigin, 'ally:中军:reserve');
