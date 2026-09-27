@@ -1,7 +1,7 @@
 import { prepareCombatModel } from '../../engine/src/combat-model.js';
 import { V6_D20 } from '../../engine/src/rules.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
-import { unitRecordFromCombatant } from './unit-state.js';
+import { unitRecordFromCombatant, materializeUnitRecord } from './unit-state.js';
 import { SmallBattle, MassBattle, traitRegistry, rulesById, validateTraitSource, validateTacticalPose, validateTacticalEffort, validateConcealment, validateFlightState, validateWounded, validateMoraleState, validateVanguardOrigin, validateFormationPosition, normalizeV2Scale, type Combatant } from '../../engine/src/index.js';
 import { combatantFromUnknown, migratePanelUnits } from './unit-state.js';
 import type { NarrativeSave } from './narrative-state.js';
@@ -116,8 +116,14 @@ export function reviewMigration(raw: NarrativeSave, unifiedBalance = false): Mig
   if (unifiedBalance) {
     if (raw.battle) throw Error('请先收兵归档；进行中的旧战斗继续使用原规则');
     candidate.storage = (candidate.storage ?? []).map(record => {
-      const unit = record.snapshot;
-      if (!unit || unit.rulesVersion !== 'v2' || unit.damageModel === 'wounds-v2') return record;
+      const snapshot = record.snapshot;
+      if (!snapshot || snapshot.rulesVersion !== 'v2' || snapshot.damageModel === 'wounds-v2') return record;
+      // Apply authoritative record fields (including deployment preferences) before conversion.
+      // This is an archive migration, so preserve the saved resources and action ledger.
+      const unit = materializeUnitRecord(record, traitRegistry());
+      unit.resources = structuredClone(snapshot.resources);
+      unit.abilityState = structuredClone(snapshot.abilityState);
+      unit.fatigue = snapshot.fatigue;
       const before = unit.scale === 'hero' ? unit.base.hpMax : unit.formation?.memberHp;
       prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit);
       const after = unit.scale === 'hero' ? unit.base.hpMax : unit.formation?.memberHp;

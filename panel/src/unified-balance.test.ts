@@ -80,6 +80,19 @@ describe('V6 archive, skill families and signed modifier round trips',()=>{
   const active={...old,battle:{kind:'small' as const,snap:battle.toSnapshot()}};expect(reviewMigration(active)).toBeUndefined();
   expect(()=>reviewMigration(active,true)).toThrow('收兵');expect(SmallBattle.fromSnapshot(structuredClone(active.battle.snap)).rules.id).toBe(V5_D20.id);
  });
+ it('upgrade honors archive deployment and wounds over stale snapshot fields without resetting resources',()=>{
+  const u=unit(true);u.tags.push('zone:中军','rank:reserve');u.resources.SP=1;u.fatigue=2;
+  const record=unitRecordFromCombatant(u);record.zone='右翼';record.rank='rear';record.hp-=9;
+  record.name='archive name';record.traits.push('vanguard');
+  const save={schemaVersion:2,storage:[record],rosterIds:[record.id]};
+  const review=reviewMigration(save,true)!;const next=review.candidate.storage![0]!;
+  expect(next).toMatchObject({name:'archive name',zone:'右翼',rank:'rear'});
+  expect(next.base.hpMax-next.hp).toBe(9);expect(next.traits).toContain('vanguard');
+  expect(next.snapshot!.tags).toEqual(expect.arrayContaining(['zone:右翼','rank:rear']));
+  expect(next.snapshot!.tags).not.toContain('rank:reserve');
+  expect(next.snapshot!.resources).toEqual(u.resources);expect(next.snapshot!.fatigue).toBe(2);
+  expect(review.original).toEqual(save);expect(record.snapshot!.tags).toContain('rank:reserve');
+ });
  it('unit_set applies combined ±10 life to the current formula and preserves quantities, ledgers and explicit maxima',()=>{
   const u=skill('魔法单体');u.storyState={resources:true,abilityState:true};u.resources.SP=1;u.abilityState=[{abilityId:u.abilities[0]!.cooldownGroup!,cdLeft:3,used:1}];
   let save=prepareInventoryState({storage:[unitRecordFromCombatant(u)],rosterIds:[u.id]});
