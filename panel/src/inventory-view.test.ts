@@ -51,6 +51,7 @@ it('shows only the selected unit and public items, with equipped gear before its
   expect(document.querySelector('#inventory-panel h2')?.textContent).toContain(`${equippedA.length + 2}种物品`);
   expect(document.querySelector('.loadout-current')!.compareDocumentPosition(document.querySelector('[data-action="prompt-select-items"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   f.choose('b');
+  expect(document.querySelector<HTMLElement>('[data-action="loadout-skills"]')!.dataset.id).toBe('b');
   expect(f.ids()).toEqual([...f.save().inventory!.filter(i => i.equippedTo?.unitId === 'b').map(i => i.id), 'b-bag', 'public']);
   expect(f.save()).toEqual(before);
 });
@@ -60,6 +61,7 @@ it('keeps the public-only selection across redraws and resets it on a chat chang
   expect(f.ids()).toEqual(['public']);
   expect(document.querySelector<HTMLSelectElement>('[data-role="inventory-unit"]')!.value).toBe('');
   expect(document.querySelector('.loadout-current')).toBeNull();
+  expect(document.querySelector<HTMLButtonElement>('[data-action="loadout-skills"]')!.disabled).toBe(true);
   f.context('chat-b'); f.render();
   expect(document.querySelector<HTMLSelectElement>('[data-role="inventory-unit"]')!.value).toBe('a');
 });
@@ -92,6 +94,7 @@ it('limits bulk prompt selection to visible items and preserves observation rest
 it('locks returning carried items to public inventory during a battle', () => {
   const f = mount(); f.save().battle = { kind: 'small', snap: { seed: 'battle' } }; f.render();
   expect(document.querySelector<HTMLButtonElement>('[data-action="inventory-unassign"][data-item="a-bag"]')!.disabled).toBe(true);
+  expect(document.querySelector<HTMLButtonElement>('[data-action="loadout-skills"]')!.disabled).toBe(true);
 });
 
 it('closes a hidden unit item draft and cancels its pending preview when switching units', async () => {

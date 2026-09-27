@@ -12,6 +12,7 @@ import {hasMemberHealth,memberHealth,memberHealthMax} from '../../engine/src/mem
 import {anchoredWeapon,anchoredWeaponLabel,anchoredProtection,armorEffectLabel} from '../../engine/src/power-anchors.js';
 import {memberHealthPanel,cannonAmmoControl} from './combat-model-view.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
+import { MAX_PREPARED_SKILLS, skillDefinitionName } from '../../engine/src/skill-catalog.js';
 import { zoneEffectDescription } from '../../engine/src/zone-skills.js';
 import './battle-ui.css';
 import { updateRegion, BattleCamera } from './view-dom.js';
@@ -113,6 +114,7 @@ let builderSeed = randomId();
 let builderPreview: { namespace?: string; signature: string; unit: Combatant; record?: UnitRecord; previousRevision?: number } | undefined;
 let unitConversion: { namespace?: string; before: UnitRecord; after: UnitRecord } | undefined;
 let reportRestartPreview: { id: string; revision: number; namespace?: string } | undefined;
+let loadoutSkills: { id: string; revision?: number; namespace?: string; selected: string[] } | undefined;
 
 // ---------- 战场环境 ----------
 
@@ -418,6 +420,7 @@ function restore(): void {
     formationView.selectedId = undefined; formationView.inspectedId = undefined; formationView.nodeId = undefined;
     tacticalView.selectedId = undefined; tacticalView.targetId = undefined; tacticalView.cell = undefined; tacticalView.inspectedCell = undefined; tacticalView.mode = 'weapon';
     state.editingUnit = null; state.editingDraft = undefined; state.abilityDialog = null; unitConversion = undefined;
+    loadoutSkills = undefined;
     builderEditDraft = undefined; builderPreview = undefined; builderSeed = randomId(); state.form = newUnitDraft();
   }
   const snapshot = controller.snapshot();
@@ -864,7 +867,7 @@ function render(scope: RenderScope = 'all', tacticalQuery?: TacticalQuery): void
     updateRegion(app.querySelector<HTMLElement>(`[data-workspace="${workspaceTab}"]`)!, content);
     dirtyWorkspaces.delete(workspaceTab);
   }
-  const dialog = app.querySelector<HTMLElement>('#workspace-dialog')!, dialogHtml = renderAbilityDialog();
+  const dialog = app.querySelector<HTMLElement>('#workspace-dialog')!, dialogHtml = renderLoadoutSkills() || renderAbilityDialog();
   if (dialog.innerHTML !== dialogHtml) updateRegion(dialog, dialogHtml);
   window.scrollTo(0, winScroll);
   if (workspaceTab === 'battle' && b) {
@@ -1517,6 +1520,27 @@ function renderSmall(): string {
   </section>`;
 }
 
+function renderLoadoutSkills(): string {
+  const draft = loadoutSkills;
+  if (!draft) return '';
+  const record = state.storage.find(r => r.id === draft.id && visibleUnitRecord(r)), unit = record?.snapshot;
+  const stale = !unit || record?.revision !== draft.revision || draft.namespace !== adapter.namespace();
+  const battle = currentBattle();
+  const locked = !!battle && !state.committedOutcomeIds.includes(battleIdOf(battle));
+  const skills = unit?.abilities.filter(a => !a.itemSourceId && !a.equipmentSourceId) ?? [];
+  return `<div class="modal-backdrop" data-action="loadout-skills-close"><section class="modal-card loadout-skill-dialog" data-action="modal-stop" role="dialog" aria-modal="true" aria-labelledby="loadout-skill-title">
+    <h2 id="loadout-skill-title">技能选择 · ${esc(record?.name ?? '单位已不可用')}</h2>
+    <p data-role="loadout-skill-count" aria-live="polite">已选 ${draft.selected.length} / ${MAX_PREPARED_SKILLS} · 勾选准备上场的已学技能</p>
+    ${stale || locked ? `<p class="grid-reason">${stale ? '档案已更新，请关闭后重新选择。' : '战斗中或战果未提交，暂不能更换技能。'}</p>` : ''}
+    <div class="loadout-skill-list">${skills.map(skill => {
+      const checked = draft.selected.includes(skill.id);
+      return `<label class="loadout-skill-choice"><input type="checkbox" data-role="loadout-skill" data-id="${esc(skill.id)}" ${checked ? 'checked' : ''} ${stale || locked || !checked && draft.selected.length >= MAX_PREPARED_SKILLS ? 'disabled' : ''}><span><b>${esc(skill.name)}</b><small>${esc(skillDefinitionName(skill.definitionId ?? skill.id))} · L${skill.power ?? 5}${esc(enhancementLabel(skill.bonuses))}${skill.cost ? ' · ' + esc(resourceLabel(skill.cost.resource)) + ' ' + skill.cost.amount : ''}</small>${skill.desc ? `<small>${esc(skill.desc)}</small>` : ''}</span></label>`;
+    }).join('') || '<p class="sub">这个单位还没有已学技能。</p>'}</div>
+    <p class="sub">最多准备 ${MAX_PREPARED_SKILLS} 项；装备和物品附带的能力随配装提供。</p>
+    <div class="row"><button class="primary" data-action="loadout-skills-save" ${stale || locked ? 'disabled' : ''}>保存选择</button><button data-action="loadout-skills-close">取消</button></div>
+  </section></div>`;
+}
+
 function abilityTargetLabel(a: Ability): string {
   return { enemy: '敌方单位', ally: '友方单位', self: '自己', zone: '战区' }[a.target] ?? a.target;
 }
@@ -2024,6 +2048,35 @@ async function handleAction(e: Event): Promise<void> {
     return;
   }
   if (act === 'theme-toggle') { const theme = document.body.dataset.theme === 'light' ? 'dark' : 'light'; document.body.dataset.theme = theme; runtime.setTheme?.(theme); return; }
+  if (act === 'loadout-skills' || act === 'loadout-skills-close') {
+    if (act === 'loadout-skills') {
+      requireArchiveWritable();
+      const record = state.storage.find(r => r.id === el.dataset.id && visibleUnitRecord(r));
+      if (!record?.snapshot || record.snapshot.rulesVersion !== 'v2' || record.retired || record.status === 'dead') throw Error('当前单位无法选择技能');
+      const ids = new Set(record.snapshot.abilities.filter(a => !a.itemSourceId && !a.equipmentSourceId).map(a => a.id));
+      loadoutSkills = { id: record.id, revision: record.revision, namespace: adapter.namespace(), selected: (record.preparedAbilityIds ?? record.snapshot.preparedAbilityIds ?? []).filter(id => ids.has(id)) };
+    } else loadoutSkills = undefined;
+    render('view');
+    document.querySelector<HTMLElement>(act === 'loadout-skills' ? '.loadout-skill-dialog input:not(:disabled), .loadout-skill-dialog button' : '[data-action="loadout-skills"]')?.focus({ preventScroll: true });
+    return;
+  }
+  if (act === 'loadout-skills-save') {
+    requireArchiveWritable();
+    const draft = loadoutSkills, saved = controller.snapshot();
+    const record = saved.storage?.find(r => r.id === draft?.id && visibleUnitRecord(r));
+    if (!draft || draft.namespace !== adapter.namespace() || !record || record.revision !== draft.revision) throw Error('档案已更新，请重新选择技能');
+    if (record.retired || record.status === 'dead' || record.snapshot?.rulesVersion !== 'v2') throw Error('当前单位无法选择技能');
+    const learned = new Set(record.snapshot.abilities.filter(a => !a.itemSourceId && !a.equipmentSourceId).map(a => a.id));
+    if (draft.selected.some(id => !learned.has(id))) throw Error('只能选择当前单位已学技能');
+    const next = editUnitRecord(record, { ...record, preparedAbilityIds: [...draft.selected] }, reg, state.era);
+    const { receipt } = await controller.persistPanel({ ...saved, storage: saved.storage!.map(r => r.id === record.id ? next : r) }, saved.factRevision ?? 0);
+    restore(); state.saveReceipt = receipt;
+    if (receipt.status === 'failed') throw Error(receipt.error ?? '技能选择尚未保存，请重试');
+    loadoutSkills = undefined;
+    render('view'); toast('上场技能已保存');
+    document.querySelector<HTMLElement>('[data-action="loadout-skills"]')?.focus({ preventScroll: true });
+    return;
+  }
   if (act === 'worldbook-save' || act === 'worldbook-reset') {
     try { await actions[act]?.(el); } catch (error) { toast(error instanceof Error ? error.message : String(error)); }
     return;
@@ -3235,7 +3288,7 @@ document.addEventListener('click', e => {
   if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'modal-stop', 'llm-stop', 'llm-models', 'worldbook-save', 'worldbook-reset'].includes(action)) { void handleAction(e); return; }
   // Scan/reload validate the refreshed service themselves; they must remain
   // reachable when a host metadata refresh invalidates the old panel session.
-  const viewOnly = ['save-retry', 'archive-reload', 'narrative-scan', 'pending-scan', 'workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-inspect-unit', 'grid-cell', 'grid-mode', 'narrative-review', 'log-detail', 'unit-detail', 'role-detail', 'modal-stop', 'migration-export'].includes(action);
+  const viewOnly = ['save-retry', 'archive-reload', 'narrative-scan', 'pending-scan', 'workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-inspect-unit', 'grid-cell', 'grid-mode', 'narrative-review', 'log-detail', 'unit-detail', 'role-detail', 'modal-stop', 'migration-export', 'loadout-skills', 'loadout-skills-close'].includes(action);
   const feedback = !viewOnly && /^(grid-|small-|mass-|formation-)/.test(action) ? (e.target as HTMLElement).closest<HTMLElement>('[data-action]') ?? undefined : undefined;
   void panelTask(() => handleAction(e), viewOnly, feedback);
 });
@@ -3399,6 +3452,14 @@ async function handleChange(e: Event): Promise<void> {
   }
 }
 document.addEventListener('change', e => {
+  if (e.target instanceof HTMLInputElement && e.target.dataset.role === 'loadout-skill') {
+    const id = e.target.dataset.id, draft = loadoutSkills;
+    if (!id || !draft || uiBusy) return;
+    const selected = draft.selected.filter(value => value !== id);
+    if (e.target.checked && selected.length < MAX_PREPARED_SKILLS) selected.push(id);
+    draft.selected = selected; render('view');
+    return;
+  }
   if (e.target instanceof HTMLInputElement && e.target.dataset.role === 'worldbook-enabled') {
     if (!runtime.setWorldbookSettings) return;
     try { runtime.setWorldbookSettings({ enabled: e.target.checked }); worldbookDrafts.clear(); render('view'); }
