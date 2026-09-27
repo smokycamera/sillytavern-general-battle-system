@@ -1,4 +1,5 @@
 import { randomId } from '../../host/src/browser-compat.js';
+import { equipmentLoadLabel } from '../../engine/src/body.js';
 import { enhancementLabel, bonusMultiplier } from '../../engine/src/enhancements.js';
 import { ACCESSORY_NAMES, CONSUMABLE_NAMES, type EquipmentSlot } from '../../engine/src/items.js';
 import { promptSelected, type PromptSettings } from './prompt-settings.js';
@@ -50,7 +51,7 @@ function gearText(record: UnitRecord | undefined): string {
     ...equipmentTraitIds(u).map(id => '装备自动特质：' + (id === 'super-heavy' ? '超重装甲（先攻−2，无额外防御）' : '重甲（先攻−1，无额外防御）')),
     `有效防护 ${anchoredProtection(u, 'kinetic')}/${anchoredProtection(u, 'thermal')}/${anchoredProtection(u, 'arcane')}（动能/热能/奥术） · ${armorEffectLabel(u)}`,
     u.shield ? '携盾' : '无盾',
-    `总负重 ${(u.weapon?.load ?? 0) + (u.sidearm?.load ?? 0) + (u.armor?.load ?? 0) + (u.shield?.load ?? 0) + Object.values(u.accessories ?? {}).reduce((sum,item)=>sum+(item?.load??0),0)}`].filter(Boolean).join(' · ');
+    equipmentLoadLabel(u)].filter(Boolean).join(' · ');
 }
 function gearComparison(before: UnitRecord | undefined, after: UnitRecord): string {
   const rows: string[] = [];

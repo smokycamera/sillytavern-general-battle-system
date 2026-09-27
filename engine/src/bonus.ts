@@ -7,6 +7,7 @@
 import type { Combatant, Trait, TraitEffect } from './types.js';
 import type { ConditionDef } from './types.js';
 import { standardConditionMap } from './conditions.js';
+import { humanEncumbered } from './body.js';
 import { defensivePostureMods, looseFormation } from './tactics.js';
 import { activeTraitIds, actualTargetTag, traitPrerequisiteReason, traitStatAdjustments, bodyRank, traitSourceActive } from './trait-sources.js';
 
@@ -308,6 +309,7 @@ export function collectMods(
   const equipment: Modifier[] = [];
   if (unit.rulesVersion === 'v2') {
     const traits = activeTraitIds(unit);
+    if (humanEncumbered(unit)) equipment.push({ source: 'intrinsic', sourceId: 'equipment:encumbrance', name: '人形重载', kind: 'spd', type: 'flat', value: -2 });
     if (ctx.fieldTags?.includes('night') && !traits.includes('night-fighter')) equipment.push({ source: 'stance', sourceId: 'environment:night', name: '夜间行动', kind: 'atk', type: 'flat', value: -2 });
     if (ctx.terrain === 'forest' && !traits.includes('forest-lore') || ctx.terrain === 'hill' && !traits.includes('mountain-born')) equipment.push({ source: 'stance', sourceId: 'environment:ground', name: '困难地形', kind: 'atk', type: 'flat', value: -1 });
     if (ctx.ranged && (ctx.distance ?? 0) > 1 && ctx.terrain === 'forest') equipment.push({ source: 'stance', sourceId: 'environment:forest-cover', name: '林木掩护', kind: 'def', type: 'flat', value: 2 });

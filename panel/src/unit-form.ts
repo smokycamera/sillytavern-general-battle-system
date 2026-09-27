@@ -1,4 +1,5 @@
 import { MAX_PREPARED_SKILLS } from '../../engine/src/skill-catalog.js';
+import { equipmentLoadLabel } from '../../engine/src/body.js';
 import { enhancementLabel } from '../../engine/src/enhancements.js';
 import { gridAbility } from '../../engine/src/small/skill-range.js';
 import { singleLifeLimit } from '../../engine/src/health-limits.js';
@@ -9,7 +10,7 @@ import { fallbackAbilityRange } from '../../engine/src/actions.js';
 import { armorTraitId, equipmentTraitIds } from '../../engine/src/trait-sources.js';
 import { SKILL_CATEGORIES, skillMechanismName } from '../../engine/src/data/skill-mechanisms.js';
 import { skillDefinitionName, skillDefinitionId } from '../../engine/src/skill-catalog.js';
-import { WEAPON_CLASSES, ABILITY_BLUEPRINTS, traitCatalog, traitDescription, type Trait, type Combatant, abilityUsabilityReason, effectiveProtection, equipmentReason, BODY } from '../../engine/src/index.js';
+import { WEAPON_CLASSES, ABILITY_BLUEPRINTS, traitCatalog, traitDescription, type Trait, type Combatant, abilityUsabilityReason, effectiveProtection, equipmentReason } from '../../engine/src/index.js';
 import { bodyChoices, equipmentFields, captureEquipment, selectField, htmlText as esc } from './equipment-form.js';
 import type { UnitDraft } from './unit-builder.js';
 export function captureUnitDraft(prefix: string, d: UnitDraft): UnitDraft {
@@ -37,7 +38,7 @@ export function unitForm(prefix: string, d: UnitDraft, registry: Map<string, Tra
     ${d.scale === 'company' || opts.editing ? `<label>${d.scale === 'company' ? '编制上限' : '生命上限'}${input('hpMax', 'type="number" min="1" placeholder="50"' + (d.scale === 'hero' ? ' max="' + singleLifeLimit(d.damageModel) + '"' : ''))}</label>` : ''}
     ${opts.editing ? `<label>${d.scale === 'company' ? '当前人数' : '当前生命'}${input('hp', 'type="number" min="0"')}</label>` : ''}</div>
     <div class="builder-recommendation"><span>当前方案</span><b>${esc(d.primary.name || WEAPON_CLASSES[d.primary.mechanism]?.name || '主武器')} · ${['无甲', '轻甲', '中甲', '重甲', '超重甲'][Number(d.armor.tier)] ?? '护甲'}${d.mount ? ' · 骑乘' : ''}${d.shield ? ' · 携盾' : ''}</b><small>${opts.editing ? '修改后先预览，未改动的记录保持原样。' : '默认无甲、L1主武器；需要装备或特殊能力时再展开调整。'}</small></div>
-    <details class="builder-section" data-detail-id="${prefix}-body"><summary>身体与装备 <span>调整配装</span></summary><p class="sub">基础速度决定移动格数，与训练先攻独立；护甲、坐骑、地形、状态和疲劳继续影响实际机动。</p>
+    <details class="builder-section" data-detail-id="${prefix}-body"><summary>身体与装备 <span>调整配装</span></summary><p class="sub">基础速度决定移动格数，与训练先攻独立；护甲、负重、坐骑、地形、状态和疲劳继续影响实际机动。人形容量14，负重达到12时移动−1、先攻−2；大型容量18。</p>
       <div class="builder-basics"><label>身体${select('body', bodyChoices)}</label><label>基础速度${select('speedTier', [['', '随身体'], ['1', '1 · 迟缓'], ['2', '2 · 缓行'], ['3', '3 · 标准'], ['4', '4 · 快速'], ['5', '5 · 疾速']])}</label><label class="check-field"><input type="checkbox" data-role="${prefix}-mount" ${d.mount ? 'checked' : ''}>明确骑乘</label></div>
       ${opts.editing ? '<p class="sub">身体变化不会重铸原装备或增加生命/兵员。训练随经验成长。</p>' : ''}
       ${opts.managed ? '<p class="builder-hint">这套装备由实物库存管理。<button data-action="workspace-tab" data-tab="inventory">前往配装与改造</button></p>' : ''}
@@ -65,13 +66,11 @@ export function unitForm(prefix: string, d: UnitDraft, registry: Map<string, Tra
 export function buildPreview(unit: Combatant, before?: Combatant): string {
   const change = (value: string, old?: string) => old && value !== old ? esc(old) + ' → ' + esc(value) : esc(value);
   const gear = (u: Combatant) => [u.weapon?.name ?? '主手空置', u.sidearm && '副武器' + u.sidearm.name, u.armor?.name ?? '无甲', u.shield && '携盾'].filter(Boolean).join(' · ');
-  const load = (unit.weapon?.load ?? 0) + (unit.sidearm?.load ?? 0) + (unit.armor?.load ?? 0) + (unit.shield?.load ?? 0) + Object.values(unit.accessories ?? {}).reduce((sum,item)=>sum+(item?.load??0),0);
   return `<div class="builder-preview" data-role="builder-preview"><h3>${before ? '确认档案变化' : '确认加入队伍'}</h3><b>${esc(unit.name)}</b><p>${change(`${unit.hp}/${unit.base.hpMax}`, before && `${before.hp}/${before.base.hpMax}`)} ${unit.scale === 'hero' ? '生命' : '人数'} · 训练${unit.level}${unit.scale!=='hero'?' · 成员耐久 '+memberDurability(unit):''}</p><p>${change(gear(unit), before && gear(before))}</p>
     ${hasMemberHealth(unit)?`<p>总生命 ${memberHealth(unit)}/${memberHealthMax(unit)} · ${esc(memberHealthSummary(unit))}</p>`:''}
-    <p>${esc(anchoredWeaponLabel(unit.weapon,unit.damageModel))}</p><p>负重 ${load}/${BODY[unit.body ?? 'human'].capacity} · 防护 动能${anchoredProtection(unit, 'kinetic')} / 热能${anchoredProtection(unit, 'thermal')} / 奥术${anchoredProtection(unit, 'arcane')} · ${esc(armorEffectLabel(unit))}</p>
+    <p>${esc(anchoredWeaponLabel(unit.weapon,unit.damageModel))}</p><p>${esc(equipmentLoadLabel(unit))} · 防护 动能${anchoredProtection(unit, 'kinetic')} / 热能${anchoredProtection(unit, 'thermal')} / 奥术${anchoredProtection(unit, 'arcane')} · ${esc(armorEffectLabel(unit))}</p>
     ${equipmentTraitIds(unit).length ? `<p data-role="equipment-traits">装备自动特质：${equipmentTraitIds(unit).map(id => esc(id === 'super-heavy' ? '超重装甲（先攻−2，无额外防御）' : '重甲（先攻−1，无额外防御）')).join('、')}，无需另行勾选。</p>` : ''}
     ${equipmentReason(unit) ? `<p class="grid-reason">${esc(equipmentReason(unit))}</p>` : ''}
     ${unit.abilities.length ? `<div class="builder-skills-preview">${unit.abilities.map((a) => `<p><b>${esc(a.name)}</b> · ${esc(skillDefinitionName(a.definitionId ?? a.id))} L${a.power ?? 5}${esc(enhancementLabel(a.bonuses))}<br><small>格子射程${fallbackAbilityRange(unit, gridAbility(a)).min}–${fallbackAbilityRange(unit, gridAbility(a)).max}／会战${fallbackAbilityRange(unit, a).min}–${fallbackAbilityRange(unit, a).max}阵距 · ${a.cost ? (a.cost.resource==='SP'?'精力':a.cost.resource) + ' ' + a.cost.amount : '无资源消耗'} · 冷却${a.cooldown ?? 0} · ${esc(abilityUsabilityReason(unit, a) ?? '已准备，可用')}</small></p>`).join('')}</div>` : ''}
     <div class="row"><button class="primary" data-action="builder-confirm">确认${before ? '保存修改' : '加入队伍'}</button><button data-action="builder-cancel-preview">返回调整</button></div></div>`;
 }
-

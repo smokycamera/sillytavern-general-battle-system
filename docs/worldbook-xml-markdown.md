@@ -79,6 +79,8 @@
 - 必填name、side（ally/enemy）、scale（hero/company）。company还必填hpMax；填写hp必须同时填写hpMax。count是卡数。
 - level为训练1—10。weapon主武器、weapon2副武器均支持下列种类；armor用护甲规格，shield="true"表示有盾，省略无盾。
 - 真实坐骑写mount="true"，省略无坐骑；大型、车辆、巨体明确body。骑射仅适用真实坐骑，车辆稳定装置用stabilized。非装甲炮兵计算为人形单位
+- 负重容量：human14、large18、vehicle/giant24；主副武器、护甲、盾、配件合计。human负重达到12时移动−1、先攻−2，与护甲减益叠加，最终移动最低1。
+- 非载具（包括human个体）可装备、使用机炮、直射火炮、曲射火炮，按总负重配装，不要求改为炮组或载具。动力甲、外骨骼、超常力量角色保留实际body，名称不自动增加容量；stabilized仍须真实载具。
 - speed选1—5（迟缓/缓行/标准/快速/疾速），护甲、坐骑、状态另行修正。
 - skills、traits按“技能与效果”规格写有依据的能力。
 
