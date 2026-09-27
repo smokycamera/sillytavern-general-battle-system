@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateUnit, SmallBattle, MassBattle, standardField, traitRegistry, V2_D20, V2_TW, resolveAttack, standardConditionMap, grantTraitSource, type Combatant } from '../src/index.js';
+import { generateUnit, SmallBattle, MassBattle, standardField, traitRegistry, V2_D20, V2_TW, resolveAttack, standardConditionMap, grantTraitSource, expireTraitSources, type Combatant } from '../src/index.js';
 const registry = traitRegistry();
 function unit(id: string, weaponClass: string, traits: string[] = []) {
   const u = generateUnit({ name: id, side: id === 'a' ? 'ally' : 'enemy', scale: 'hero', rulesVersion: 'v2', level: 4, hpMax: 500, weaponClass, weaponLevel: 5, armorTier: 1, archetype: 'mobile', shield: traits.includes('shield-wall'), traits }, { seed: id, registry, noVariance: true }).unit;
@@ -61,5 +61,36 @@ describe('V2稳固姿态与真实受击方向', () => {
     battle.movementSpent.set('a', 3); battle.autoAction('a');
     expect(a.tacticalPose).toBeDefined(); expect(battle.actedThisTurn.has('a')).toBe(true);
     expect(battle.attack('b', 'a').wardMult).toBe(0.6);
+  });
+  it('守城工事在背袭、移动、失能与空中仍生效，近战仅加防御，盾墙取强且来源到期撤销', () => {
+    for (const change of ['rear', 'move', 'stun', 'air', 'none']) for (const ranged of [false, true]) {
+      const { battle, a, b } = grid('fortification');
+      if (change !== 'none') battle.brace('a');
+      if (change === 'rear') b.pos = 52;
+      if (change === 'move') battle.moveTo('a', 32);
+      if (change === 'stun') a.conditions.push({ id: 'stunned', dur: 2 });
+      if (change === 'air') { a.traits.push('flying'); a.airborne = true; }
+      const attack = (target: Combatant) => resolveAttack({ attacker: b, defender: target, rules: V2_D20, ranged,
+        conditionDefs: standardConditionMap(), traitRegistry: registry, rng: { seed: 'hit', next: () => 0, d: n => n } });
+      const plain = structuredClone(a); plain.traits = plain.traits.filter(id => id !== 'fortification');
+      const result = attack(a), base = attack(plain);
+      expect(result.targetDef - base.targetDef).toBe(3); expect(result.wardMult).toBe(ranged ? 0.7 : 1);
+    }
+    const { battle, a } = grid();
+    grantTraitSource(a, { id: 'fort', name: '构筑工事', kind: 'blessing', traitIds: ['fortification'], duration: { kind: 'rounds', count: 1 } });
+    battle.brace('a'); battle.endTurn();
+    const result = battle.attack('b', 'a'); expect(result.targetDef).toBe(a.base.def + 3); expect(result.wardMult).toBe(0.6);
+    expireTraitSources(a, 'rounds'); expect(a.traitSources![0]!.remaining).toBe(0);
+    delete a.tacticalPose;
+    expect(resolveAttack({ attacker: battle.byId('b'), defender: a, rules: V2_D20, ranged: true,
+      conditionDefs: standardConditionMap(), traitRegistry: registry, rng: { seed: 'hit', next: () => 0, d: n => n } }).wardMult).toBe(1);
+  });
+  it('会战野外未固守单位的守城工事同样提供防御和射击减伤', () => {
+    const a = unit('a', 'sword', ['fortification']), b = unit('b', 'bow'); a.scale = b.scale = 'company'; b.tags.push('rank:rear');
+    const battle = new MassBattle({ rules: V2_TW, combatants: [a, b], field: { tags: ['plains'] }, traitRegistry: registry,
+      rng: { seed: 'hit', next: () => 0, d: n => n } }); battle.start();
+    battle.issue({ unitId: 'a', type: 'hold' }); battle.issue({ unitId: 'b', type: 'volley', targetId: 'a' }); battle.resolveRound(1);
+    const result = battle.log.find(e => e.resolution?.attackerId === 'b')!.resolution!;
+    expect(result.targetDef).toBe(a.base.def + 3); expect(result.wardMult).toBe(0.7);
   });
 });

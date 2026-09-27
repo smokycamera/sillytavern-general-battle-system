@@ -13,7 +13,7 @@ describe('实际机动与疲劳', () => {
   it('体量、重甲和合法机动前提共用有界预算；多来源不无限叠移动', () => {
     expect(movementPoints(unit('a', [], 'vehicle'))).toBe(3);
     expect(movementPoints(unit('a', ['mechanized'], 'vehicle'))).toBe(4);
-    expect(movementPoints(unit('a', ['mechanized']))).toBe(3);
+    expect(movementPoints(unit('a', ['mechanized']))).toBe(4);
     const a = unit('a', ['fast', 'skirmisher']); expect(movementPoints(a)).toBe(4);
     a.armor!.tier = 3; expect(movementPoints(a)).toBe(3);
     a.traits = ['skirmisher']; expect(movementPoints(a)).toBe(2);

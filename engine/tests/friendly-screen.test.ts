@@ -15,8 +15,8 @@ function addShot(actor: Combatant) {
     range: { min: 0, max: 10, metric: 'grid' as const, allowEngaged: true } };
   actor.abilities.push(skill); (actor.preparedAbilityIds ??= []).push(skill.id); return skill;
 }
-function setup(mechanism: string, sidearm = false) {
-  const actor = make('a', 'ally', { weaponClass: sidearm ? 'sword' : mechanism, ...(sidearm ? { sidearmClass: mechanism, sidearmLevel: 3 } : {}) });
+function setup(mechanism: string, sidearm = false, extra: Partial<GenerateInput> = {}) {
+  const actor = make('a', 'ally', { weaponClass: sidearm ? 'sword' : mechanism, ...(sidearm ? { sidearmClass: mechanism, sidearmLevel: 3 } : {}), ...extra });
   const friend = make('f', 'ally'), enemy = make('e', 'enemy'), target = make('t', 'enemy');
   const field = standardField(); field.tiles.fill('open');
   const battle = new SmallBattle({ combatants: [actor, friend, enemy, target], battlefield: field, rules: V4_D20, traitRegistry: registry, seed: 'friendly-screen' });
@@ -93,5 +93,57 @@ describe('弓弩、法杖越友军不越敌军', () => {
     expect(ignoresFriendlyScreen(rifle)).toBe(false);
     const legacy = make('legacy', 'ally', { weaponClass: 'bow' }).weapon!; delete legacy.recipe;
     expect(ignoresFriendlyScreen(legacy)).toBe(true);
+  });
+});
+
+describe('大体型直射越过更小友军', () => {
+  const sizes = [
+    ['large', 'human', true], ['vehicle', 'human', true], ['giant', 'large', true], ['giant', 'vehicle', true],
+    ['large', 'vehicle', false], ['vehicle', 'large', false], ['giant', 'giant', false], ['human', 'human', false],
+  ] as const;
+  it.each(sizes)('小战 %s 越过 %s：%s，普通攻击与武器技能使用同一判定', (body, friendBody, allowed) => {
+    for (const action of ['weapon', 'skill']) {
+      const { battle, actor, friend, target, skill, option } = setup('rifle', false, { body });
+      friend.body = friendBody;
+      expect(option(action === 'weapon' ? 'weapon' : skill.id).enabled).toBe(allowed);
+      if (allowed) {
+        if (action === 'weapon') battle.attack(actor.id, target.id);
+        else expect(battle.useAbility(actor.id, skill.id, target.id).ok).toBe(true);
+        expect(battle.log.some(e => (e.resolutions ?? (e.resolution ? [e.resolution] : [])).some(r => r.attackerId === actor.id && r.defenderId === target.id))).toBe(true);
+      } else {
+        const before = JSON.stringify(battle.toSnapshot());
+        if (action === 'weapon') expect(() => battle.attack(actor.id, target.id)).toThrow(/遮挡/);
+        else expect(battle.useAbility(actor.id, skill.id, target.id).ok).toBe(false);
+        expect(JSON.stringify(battle.toSnapshot())).toBe(before);
+      }
+    }
+  });
+  it.each(sizes)('会战预备队 %s 越过 %s：%s，预览与实际射击一致', (body, friendBody, allowed) => {
+    for (const action of ['weapon', 'skill']) {
+      const actor = make('a', 'ally', { body, scale: 'company', hpMax: 20, weaponClass: 'rifle' });
+      const friend = make('f', 'ally', { body: friendBody, scale: 'company', hpMax: 20 });
+      const target = make('t', 'enemy', { scale: 'company', hpMax: 20 });
+      const battle = new MassBattle({ combatants: [actor, friend, target], rules: V4_TW, traitRegistry: registry, seed: 'size-mass' }); battle.start();
+      actor.formationPosition = 'ally:中军:reserve'; friend.formationPosition = 'ally:中军:front'; target.formationPosition = 'enemy:中军:front';
+      const skill = addShot(actor);
+      const order = { unitId: actor.id, targetId: target.id, type: action === 'weapon' ? 'volley' as const : 'ability' as const, ...(action === 'skill' ? { abilityId: skill.id } : {}) };
+      expect(!battle.orderPreview(order).reason).toBe(allowed);
+      expect(battle.issue(order).ok).toBe(allowed);
+      if (!allowed) continue;
+      for (const u of [friend, target]) battle.issue({ unitId: u.id, type: 'hold' });
+      battle.resolveRound();
+      expect(battle.log.some(e => e.resolution?.attackerId === actor.id && e.resolution.defenderId === target.id)).toBe(true);
+    }
+  });
+  it('巨型仍受更小敌军、同格盾卫和墙体遮挡；副武器与读档继承体型判定', () => {
+    const { battle, actor, friend, enemy, target, weaponId, option } = setup('rifle', true, { body: 'giant' });
+    expect(option(weaponId).enabled).toBe(true);
+    const restored = SmallBattle.fromSnapshot(JSON.parse(JSON.stringify(battle.toSnapshot())), { traitRegistry: registry });
+    expect(restored.getActionOptions(actor.id).find(o => o.id === weaponId)!.targets!.find(t => t.targetId === target.id)!.enabled).toBe(true);
+    enemy.pos = 31; expect(option(weaponId).enabled).toBe(false);
+    enemy.pos = target.pos; enemy.shield = make('s', 'enemy', { shield: true }).shield;
+    enemy.tacticalPose = bracePose(enemy, actor, 'small', 7); expect(option(weaponId).enabled).toBe(false);
+    enemy.pos = 28; friend.pos = 39; battle.battlefield!.tiles[24] = 'wall';
+    expect(battle.visibleCombatants(actor.side)).toContain(target); expect(option(weaponId).enabled).toBe(false);
   });
 });

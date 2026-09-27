@@ -180,10 +180,15 @@ export function hasFlag(unit: Combatant, flag: string, registry?: Map<string, Tr
 export function traitRuntimeMods(traitIds: string[], registry?: Map<string, Trait>, unit?: Combatant, context: ResolveContext = {}): Modifier[] {
   const out: Modifier[] = [];
   for (const id of unit ? activeTraitIds(unit) : [...new Set(traitIds)]) {
-    if (unit?.rulesVersion === 'v2' && ['large', 'titan', 'flying', 'shield-wall', 'pike-wall', 'fortification'].includes(id)) continue;
+    if (unit?.rulesVersion === 'v2' && ['large', 'titan', 'flying', 'shield-wall', 'pike-wall'].includes(id)) continue;
     const t = getTrait(id, registry);
     if (!t) continue;
     if (unit && traitPrerequisiteReason(unit, id, context)) continue;
+    if (unit?.rulesVersion === 'v2' && id === 'fortification') {
+      out.push({ source: 'intrinsic', sourceId: 'fortification:def', stackGroup: 'posture:def', name: t.name, kind: 'def', type: 'flat', value: 3 });
+      if (context.ranged) out.push({ source: 'intrinsic', sourceId: 'fortification:ward', stackGroup: 'posture:ward', name: t.name, kind: 'ward', type: 'mult', value: 0.7 });
+      continue;
+    }
     if (unit?.rulesVersion === 'v2' && id === 'loose-formation') {
       if (looseFormation(unit)) {
         if (context.area && !context.engaged) out.push({ source: 'intrinsic', sourceId: 'loose:area', name: '疏散减轻范围暴露', kind: 'ward', type: 'mult', value: 0.5 });

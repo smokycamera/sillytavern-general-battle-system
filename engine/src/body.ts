@@ -31,6 +31,11 @@ export function physicalTraitIds(unit: Combatant): string[] {
   if (unit.rulesVersion !== 'v2') return [];
   return unit.body === 'giant' ? ['large', 'titan'] : unit.body === 'large' ? ['large'] : [];
 }
+/** 直射高度只比较实际体型；载具按大型，骑乘至少大型，不改变践踏、生命或负重。 */
+export function canShootOverAlly(attacker: Combatant, ally: Combatant): boolean {
+  const height = (unit: Combatant) => Math.max(unit.mount ? 2 : 1, { human: 1, large: 2, vehicle: 2, giant: 3 }[unit.body ?? 'human']);
+  return ally.side === attacker.side && height(attacker) > height(ally);
+}
 export function bodyMovement(unit: Combatant): number {
   const body = unit.body ?? 'human';
   // 装甲车与重型火炮平台共用车体；重装或重型投送让出一格机动。

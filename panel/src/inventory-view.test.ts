@@ -94,7 +94,7 @@ it('limits bulk prompt selection to visible items and preserves observation rest
 it('locks returning carried items to public inventory during a battle', () => {
   const f = mount(); f.save().battle = { kind: 'small', snap: { seed: 'battle' } }; f.render();
   expect(document.querySelector<HTMLButtonElement>('[data-action="inventory-unassign"][data-item="a-bag"]')!.disabled).toBe(true);
-  expect(document.querySelector<HTMLButtonElement>('[data-action="loadout-skills"]')!.disabled).toBe(true);
+  expect(document.querySelector<HTMLButtonElement>('[data-action="loadout-skills"]')!.disabled).toBe(false);
 });
 
 it('closes a hidden unit item draft and cancels its pending preview when switching units', async () => {

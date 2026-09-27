@@ -71,6 +71,7 @@ import { InventoryPanel } from './inventory-view.js';
 import { itemSpecificationLabel } from './item-spec.js';
 import { WORKSPACES, workspaceNavigation, workspacePage, showWorkspace, type WorkspaceTab } from './workspace-view.js';
 import { renderFormationBattle } from './formation-view.js';
+import { battleSkillChangeReason, learnedSkills, removedSkillOrder, setBattlePreparedSkills } from './battle-skills.js';
 import { formationSelection, selectFormationUnit, setFormationChoice, orderDraft, type FormationView, type OrderDrafts } from './formation-orders.js';
 import { renderTacticalBattle, selectTacticalElement, type TacticalView, type TacticalQuery } from './tactical-view.js';
 import {
@@ -117,7 +118,7 @@ let builderSeed = randomId();
 let builderPreview: { namespace?: string; signature: string; unit: Combatant; record?: UnitRecord; previousRevision?: number } | undefined;
 let unitConversion: { namespace?: string; before: UnitRecord; after: UnitRecord } | undefined;
 let reportRestartPreview: { id: string; revision: number; namespace?: string } | undefined;
-let loadoutSkills: { id: string; revision?: number; namespace?: string; selected: string[] } | undefined;
+let loadoutSkills: { id: string; revision?: number; namespace?: string; selected: string[]; battleId?: string; factRevision?: number } | undefined;
 
 // ---------- 战场环境 ----------
 
@@ -1527,18 +1528,26 @@ function renderSmall(): string {
   </section>`;
 }
 
+function loadoutSkillContext(id: string) {
+  const current = currentBattle();
+  const battle = current && !state.committedOutcomeIds.includes(battleIdOf(current)) ? current : undefined;
+  const record = state.storage.find(r => r.id === id && visibleUnitRecord(r));
+  const unit = battle ? battle.combatants.find(u => u.id === id && u.side === 'ally') : record?.snapshot;
+  return { battle, record, unit };
+}
+
 function renderLoadoutSkills(): string {
   const draft = loadoutSkills;
   if (!draft) return '';
-  const record = state.storage.find(r => r.id === draft.id && visibleUnitRecord(r)), unit = record?.snapshot;
-  const stale = !unit || record?.revision !== draft.revision || draft.namespace !== adapter.namespace();
-  const battle = currentBattle();
-  const locked = !!battle && !state.committedOutcomeIds.includes(battleIdOf(battle));
-  const skills = unit?.abilities.filter(a => !a.itemSourceId && !a.equipmentSourceId) ?? [];
+  const { battle, record, unit } = loadoutSkillContext(draft.id);
+  const stale = !unit || draft.namespace !== adapter.namespace() || draft.battleId !== (battle && battleIdOf(battle))
+    || (battle ? draft.factRevision !== state.factRevision : record?.revision !== draft.revision);
+  const reason = battle ? battleSkillChangeReason(battle, draft.id) : undefined, locked = !!reason;
+  const skills = unit ? learnedSkills(unit) : [];
   return `<div class="modal-backdrop" data-action="loadout-skills-close"><section class="modal-card loadout-skill-dialog" data-action="modal-stop" role="dialog" aria-modal="true" aria-labelledby="loadout-skill-title">
-    <h2 id="loadout-skill-title">技能选择 · ${esc(record?.name ?? '单位已不可用')}</h2>
+    <h2 id="loadout-skill-title">技能选择 · ${esc(unit?.name ?? '单位已不可用')}</h2>
     <p data-role="loadout-skill-count" aria-live="polite">已选 ${draft.selected.length} / ${MAX_PREPARED_SKILLS} · 勾选准备上场的已学技能</p>
-    ${stale || locked ? `<p class="grid-reason">${stale ? '档案已更新，请关闭后重新选择。' : '战斗中或战果未提交，暂不能更换技能。'}</p>` : ''}
+    ${stale || locked ? `<p class="grid-reason">${stale ? '档案已更新，请关闭后重新选择。' : esc(reason!)}</p>` : ''}
     <div class="loadout-skill-list">${skills.map(skill => {
       const checked = draft.selected.includes(skill.id);
       return `<label class="loadout-skill-choice"><input type="checkbox" data-role="loadout-skill" data-id="${esc(skill.id)}" ${checked ? 'checked' : ''} ${stale || locked || !checked && draft.selected.length >= MAX_PREPARED_SKILLS ? 'disabled' : ''}><span><b>${esc(skill.name)}</b><small>${esc(skillDefinitionName(skill.definitionId ?? skill.id))} · L${skill.power ?? 5}${esc(enhancementLabel(skill.bonuses))}${skill.cost ? ' · ' + esc(resourceLabel(skill.cost.resource)) + ' ' + skill.cost.amount : ''}</small>${skill.desc ? `<small>${esc(skill.desc)}</small>` : ''}</span></label>`;
@@ -2057,19 +2066,37 @@ async function handleAction(e: Event): Promise<void> {
   if (act === 'theme-toggle') { const theme = document.body.dataset.theme === 'light' ? 'dark' : 'light'; document.body.dataset.theme = theme; runtime.setTheme?.(theme); return; }
   if (act === 'loadout-skills' || act === 'loadout-skills-close') {
     if (act === 'loadout-skills') {
-      requireArchiveWritable();
-      const record = state.storage.find(r => r.id === el.dataset.id && visibleUnitRecord(r));
-      if (!record?.snapshot || record.snapshot.rulesVersion !== 'v2' || record.retired || record.status === 'dead') throw Error('当前单位无法选择技能');
-      const ids = new Set(record.snapshot.abilities.filter(a => !a.itemSourceId && !a.equipmentSourceId).map(a => a.id));
-      loadoutSkills = { id: record.id, revision: record.revision, namespace: adapter.namespace(), selected: (record.preparedAbilityIds ?? record.snapshot.preparedAbilityIds ?? []).filter(id => ids.has(id)) };
+      const { battle, record, unit } = loadoutSkillContext(el.dataset.id!);
+      if (!unit || unit.rulesVersion !== 'v2' || !battle && (record?.retired || record?.status === 'dead')) throw Error('当前单位无法选择技能');
+      const reason = battle && battleSkillChangeReason(battle, unit.id); if (reason) throw Error(reason);
+      if (controller.migrationReview()) throw Error('请先完成档案迁移预览');
+      stopAutomation();
+      const ids = new Set(learnedSkills(unit).map(a => a.id));
+      loadoutSkills = { id: unit.id, revision: record?.revision, namespace: adapter.namespace(),
+        battleId: battle && battleIdOf(battle), factRevision: state.factRevision,
+        selected: (battle ? unit.preparedAbilityIds ?? [] : record?.preparedAbilityIds ?? unit.preparedAbilityIds ?? []).filter(id => ids.has(id)) };
     } else loadoutSkills = undefined;
     render('view');
     document.querySelector<HTMLElement>(act === 'loadout-skills' ? '.loadout-skill-dialog input:not(:disabled), .loadout-skill-dialog button' : '[data-action="loadout-skills"]')?.focus({ preventScroll: true });
     return;
   }
   if (act === 'loadout-skills-save') {
-    requireArchiveWritable();
     const draft = loadoutSkills, saved = controller.snapshot();
+    if (!draft || draft.namespace !== adapter.namespace()) throw Error('档案已更新，请重新选择技能');
+    const { battle, unit } = loadoutSkillContext(draft.id);
+    if (draft.battleId !== (battle && battleIdOf(battle))) throw Error('战斗已变化，请重新选择技能');
+    if (battle) {
+      if (!unit || draft.factRevision !== state.factRevision || draft.factRevision !== (saved.factRevision ?? 0)) throw Error('战况已更新，请重新选择技能');
+      const removed = setBattlePreparedSkills(battle, draft.id, draft.selected);
+      for (const [unitId, order] of Object.entries(state.orderDraft)) {
+        if (removedSkillOrder(draft.id, removed, { unitId, ...order })) state.orderDraft[unitId] = { type: 'hold' };
+      }
+      state.abilityDialog = null; tacticalView.mode = 'weapon';
+      if (!(await persist())) throw Error(state.saveReceipt?.error ?? '技能选择尚未保存，请重试');
+      loadoutSkills = undefined; render(); toast('上场技能已更换');
+      return;
+    }
+    requireArchiveWritable();
     const record = saved.storage?.find(r => r.id === draft?.id && visibleUnitRecord(r));
     if (!draft || draft.namespace !== adapter.namespace() || !record || record.revision !== draft.revision) throw Error('档案已更新，请重新选择技能');
     if (record.retired || record.status === 'dead' || record.snapshot?.rulesVersion !== 'v2') throw Error('当前单位无法选择技能');

@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "1.3.5",
-  "builtAt": "2026-09-27T16:05:41.095Z",
-  "sourceFingerprint": "40c57c96771595646a4bc37e91b318658c84cdb253dde2dd2b3f8fb99b2355e5",
+  "version": "1.3.6",
+  "builtAt": "2026-09-27T16:57:57.631Z",
+  "sourceFingerprint": "4865d6d55b3c057874019b00c30024470e58a0c606e8f2c96ffb9124e83836ef",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -31,9 +31,9 @@
       "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     },
     {
-      "path": "dist/assets/panel-C4P_9LIo.js",
-      "bytes": 310956,
-      "sha256": "9564c55a5a6853f7ebb8411d7e715b8bc54228fc8d02033d5b8c665b3059dbc5"
+      "path": "dist/assets/panel-DHZWlVMC.js",
+      "bytes": 313176,
+      "sha256": "617949eea6447fec3d6f15804f2ad3dbfe8f2e41e84935ca71befcad0dd124b4"
     },
     {
       "path": "dist/assets/panel-KVZ1GitA.css",
@@ -41,9 +41,9 @@
       "sha256": "9ecfd9e2abb7edeb8b59fe6e7d1f5c6b36332b81fe9f688d0b3d63b13b486cd0"
     },
     {
-      "path": "dist/assets/preferences-Ct8gDTRL.js",
-      "bytes": 560167,
-      "sha256": "02131c6304f107725e954fdb84b08c154151bbcc17e08f00a745500bbe662958"
+      "path": "dist/assets/preferences-B9jqaqsg.js",
+      "bytes": 560253,
+      "sha256": "cb615bf21bd187d8de33a2131ea0516e20f726dafabbb86d524a7abc61049198"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -148,7 +148,7 @@
     {
       "path": "dist/index.js",
       "bytes": 82398,
-      "sha256": "a5a61b47064e55881f2253e600d9469ffb42a7567a95a20f25b5ca4de5bee999"
+      "sha256": "8146e49329829f449a473e5081184a0bf3b3ae3685f6eb311546935fb7969751"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -158,12 +158,12 @@
     {
       "path": "manifest.json",
       "bytes": 168,
-      "sha256": "0a55999185bd4382f377bb7eacc0332ad63ac676d94497d2cd5407941171b50f"
+      "sha256": "23666dab6f0095cc9c0d4a4d0b89c00bbb1aa25ebd298c8897f405f7d7e50464"
     },
     {
       "path": "dist/panel/index.html",
       "bytes": 49570,
-      "sha256": "4cd5ece83f72c87a3a0f8ebb8e5f8e1730276d1331b7c3342f7cbebee3ea3775"
+      "sha256": "486c09fad326a9c95de3921c2208d876103e47c5a4193f268063092320aa1958"
     },
     {
       "path": "release/current-baseline.json",

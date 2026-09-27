@@ -98,7 +98,6 @@ export function traitPrerequisiteReason(unit: Combatant, id: string, context: Tr
   if (id === 'super-heavy' && unit.armor?.tier !== 4) return '需要实际超重甲';
   if (id === 'mounted-archer' && unit.mount !== true) return '需要明确坐骑，骑射不适用于装甲车辆';
   if (id === 'mounted-archer' && ![unit.weapon, unit.sidearm].some((w) => w?.tags?.includes('ranged') && (w.load ?? 99) <= 2 && !w.reload)) return '需要适于移动投射的实际轻便武器';
-  if (id === 'mechanized' && unit.body !== 'vehicle') return '需要明确载具平台';
   if (id === 'skirmisher' && (!['human', 'large'].includes(unit.body ?? 'human') || (unit.armor?.tier ?? 0) > 2)) return '游击需要轻装或中装的人形/大型身体';
   if (id === 'anti-mobile' && (weapon?.recipe?.mechanism !== 'spear' || context.ranged)) return '需要实际长柄近战武器';
   if (id === 'armor-piercing-shot' && (!context.ranged || !weapon?.tags?.includes('ranged') || weapon.channel !== 'kinetic')) return '需要真实动能投射动作';
