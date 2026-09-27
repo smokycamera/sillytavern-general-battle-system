@@ -30,7 +30,7 @@ const resourceLabel = (key: string) => key === 'SP' ? '精力' : key === 'reserv
 import { spCapacity } from '../../engine/src/resources.js';
 import { PROMPT_SECTIONS, applySettlementPrompt, promptSelected, selectPromptEntries, renderPromptSettings, type PromptSectionId } from './prompt-settings.js';
 import { narrativeDeploymentIds } from './narrative-state.js';
-import { AutoBattleLoop } from './auto-battle.js';
+import { AutoBattleLoop, yieldBattleFrame } from './auto-battle.js';
 import { newUnitDraft, unitDraftFromRecord, buildUnit, editUnitBuild, type UnitDraft } from './unit-builder.js';
 import { MAX_SCENE_UNITS } from './narrative-limits.js';
 import { recommendBattleMode, extendSmallRoundLimit, upgradeDefaultObjective, normalizeObjectiveMode, prepareBattleObjective, battleCapacityIssue, prepareMassRoster, type BattleObjectiveMode } from './battle-setup.js';
@@ -290,8 +290,9 @@ const fullAuto = new AutoBattleLoop();
 const llmContext = new LlmContextController();
 let llmDiagnostic = "";
 let smallResumeRequested = false;
+let automationEpoch = 0;
 function recentContextMessages() { return (runtime.recentNarrative?.()??[]).filter(m=>m.completed); }
-function stopAutomation(): void { fullAuto.stop(); llmContext.cancel(); smallResumeRequested = false; }
+function stopAutomation(): void { automationEpoch++; fullAuto.stop(); llmContext.cancel(); smallResumeRequested = false; }
 window.addEventListener('pagehide', stopAutomation);
 let battleSaveFailed = false;
 let uiBusy = false;
@@ -685,20 +686,29 @@ async function autoSmall(b: SmallBattle): Promise<void> {
   if (b.active.status !== 'ready') b.endTurn();
   else b.autoAction(b.active.id);
 }
+function smallActorBlocked(b: SmallBattle): boolean {
+  return !!b.active && (b.active.status !== 'ready' || b.active.conditions.some(c => c.dur > 0 && b.conditions.get(c.id)?.skipTurn));
+}
 async function runAuto(): Promise<void> {
   if (fullAuto.running) return;
   const b = state.small;
   if (!b) return;
+  const epoch = automationEpoch;
   if (!b.isOver()) {
     let guard = 0;
-    while (state.small === b && !b.isOver() && b.active && guard++ < 200) {
+    while (epoch === automationEpoch && state.small === b && !b.isOver() && b.active && guard++ < 200) {
       const a = b.active;
       // 反应击杀/失能必须先交还行动权，不能等待已倒下的玩家单位。
-      if (a.status === 'ready') {
+      if (!smallActorBlocked(b)) {
         if (a.id === state.protagonistId) break;
         if (a.side !== 'enemy' && !state.autoTurn) break;
       }
+      tacticalView.selectedId = a.id; tacticalView.cell = undefined; render('battle');
+      await yieldBattleFrame();
+      if (epoch !== automationEpoch || state.small !== b) return;
+      const progress = `${b.round}:${b.turnIndex}`;
       await autoSmall(b);
+      if (!b.isOver() && progress === `${b.round}:${b.turnIndex}`) throw Error('自动行动未推进回合，已暂停');
       // Each completed activation is durable before the next remote decision.
       if (state.small !== b || !(await persist())) return;
     }
@@ -723,7 +733,7 @@ async function resumeSmallTurnIfNeeded(): Promise<void> {
   if (uiBusy || fullAuto.running) return;
   smallResumeRequested = false;
   const b = state.small;
-  if (!b || b.isOver() || !b.active || (b.active.status === 'ready' && b.active.side !== 'enemy')
+  if (!b || b.isOver() || !b.active || (!smallActorBlocked(b) && b.active.side !== 'enemy')
     || battleSaveFailed || (runtime.canWrite && !runtime.canWrite())) return;
   await panelTask(async () => {
     await runAuto();
@@ -2176,7 +2186,7 @@ async function handleAction(e: Event): Promise<void> {
     (await actions[act]?.(el));
     if (battleSaveFailed) { const receipt = state.saveReceipt; restore(); state.saveReceipt = receipt; render(); return; }
     if (state.small?.battlefield && (['grid-endturn', 'grid-mobile-endturn', 'grid-auto', 'small-start', 'mass-start'].includes(act)
-      || state.small.active && state.small.active.status !== 'ready')) {
+      || smallActorBlocked(state.small))) {
       // 先保存动作及反应结果，再跳过失能行动者并执行后续自动回合。
       if (!(await persist())) return;
       (await runAuto()); tacticalView.selectedId = state.small.active?.id; tacticalView.cell = undefined;
@@ -2673,6 +2683,8 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     tacticalView.cell = undefined;
   },
   'grid-watch': () => { state.small!.setOverwatch(state.small!.active!.id); },
+  'grid-haste': () => { const b = state.small!, id = b.active!.id; b.selectHaste(id, !b.hasteSelected.has(id)); },
+  'grid-reload': (el) => { state.small!.reloadWeapon(state.small!.active!.id, el.dataset.sidearm === 'true'); },
   'grid-brace': () => { state.small!.brace(state.small!.active!.id); },
   'grid-suppress': (el) => { state.small!.suppress(state.small!.active!.id, el.dataset.target!); },
   'grid-retreat': () => { state.small!.retreat(state.small!.active!.id); },
@@ -3276,7 +3288,7 @@ async function afterSmallAction(endTurn = true): Promise<void> {
     (await onBattleEnded());
     return;
   }
-  if (endTurn) b.endTurn();
+  if (endTurn && (!b.active || !b.getTurnEconomy(b.active.id).actionAvailable)) b.endTurn();
   (await persist());
 }
 
@@ -3354,6 +3366,12 @@ async function handleChange(e: Event): Promise<void> {
     const oldBody = state.form.body; captureForm(); builderPreview = undefined;
     if (role === 'gen-body') for (const slot of ['primary', 'sidearm', 'armor', 'shieldGear'] as const) if (state.form[slot].body === oldBody) state.form[slot].body = state.form.body;
     if (el instanceof HTMLSelectElement || el instanceof HTMLInputElement && el.type === 'checkbox') render();
+    return;
+  }
+  if (role === 'formation-haste' && state.mass) {
+    if (massAutoCommand() || state.mass.isOver() || state.mass.planningLocked) return;
+    const actor = formationSelection(state.mass, formationView, state.orderDraft).actor;
+    if (actor) { const value = (el as HTMLSelectElement).value; const [type, targetId, abilityId, abilityActorId] = value ? JSON.parse(value) : []; state.mass.setHasteOrder(value ? { unitId: actor.id, type, targetId, abilityId, abilityActorId } : undefined, actor.id); await persist(); render('view'); }
     return;
   }
   if ((role === 'formation-order' || role === 'formation-target') && state.mass?.rules.resolutionVersion === 'v2') {

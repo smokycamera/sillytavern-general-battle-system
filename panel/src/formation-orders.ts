@@ -5,7 +5,7 @@ export type OrderDraft = Omit<Order, 'unitId' | 'automatic'>;
 export type OrderDrafts = Record<string, OrderDraft>;
 export interface FormationView { selectedId?: string; inspectedId?: string; nodeId?: string }
 export const orderLabels: Record<OrderType, string> = {
-  attack: '近战攻击', volley: '武器射击', charge: '冲锋', hold: '原地休整', brace: '固守战线', retreat: '撤离战场',
+  reload: '主动装填', attack: '近战攻击', volley: '武器射击', charge: '冲锋', hold: '原地休整', brace: '固守战线', retreat: '撤离战场',
   'rank-forward': '向前机动', 'rank-back': '向后机动', 'shift-left': '向左翼机动', 'shift-right': '向右翼机动',
   takeoff: '升空', land: '降落', ability: '使用技能',
 };
@@ -23,7 +23,7 @@ export function formationChoices(b: MassBattle, host: Combatant): FormationChoic
     const entries = targets.map((target) => { const intent = { ...order, targetId: target?.id }; return { id: target?.id, order: intent, preview: b.orderPreview(intent) }; });
     return { key: orderKey(order), label, order, targets: entries, enabled: entries.some((t) => !t.preview.reason) };
   };
-  const types: OrderType[] = ['attack', 'volley', 'charge', 'brace', 'hold', 'rank-forward', 'rank-back', 'shift-left', 'shift-right', 'retreat'];
+  const types: OrderType[] = ['attack', 'volley', 'charge', 'brace', 'hold', 'reload', 'rank-forward', 'rank-back', 'shift-left', 'shift-right', 'retreat'];
   if (hasFlightAbility(host) || isAirborne(host)) types.push(isAirborne(host) ? 'land' : 'takeoff');
   const choices = types.map((type) => make({ unitId: host.id, type }, orderLabels[type], ['attack', 'volley', 'charge'].includes(type) ? enemies : [undefined]));
   for (const source of [host, ...visible.filter((u) => u.id === b.attached.get(host.id))]) for (const ability of source.abilities) {

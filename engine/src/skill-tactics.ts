@@ -1,3 +1,4 @@
+import { hasteMagnitude, hasteAttackScale } from './haste.js';
 import { V6_D20, V6_TW } from './rules.js';
 import type { Combatant, Weapon } from './types.js';
 import type { ObservationContext } from './observation.js';
@@ -25,6 +26,7 @@ import { meleeReach } from './melee.js';
 
 const defaults = standardConditionMap();
 const caches = new WeakMap<ObservationContext, WeakMap<Combatant, Map<Combatant | undefined, number>>>();
+const extraCaches = new WeakMap<ObservationContext, WeakMap<Combatant, Map<Combatant | undefined, number>>>();
 const alive = (u: Combatant) => u.hp > 0 && !['dead', 'fled'].includes(u.status);
 function flags(context: ObservationContext, unit: Combatant) {
   return unit.conditions.filter(c => c.dur > 0).map(c => (context.conditions ?? defaults).get(c.id));
@@ -38,9 +40,10 @@ function distance(context: ObservationContext, a: Combatant, b: Combatant) {
  * 小队可先移动后行动；会战调动另占军令，故只计算当前阵位。
  * 治疗算真实伤口，沉默/缴械之后仍保留另一种攻击及天生武器。
  */
-export function actionPotential(context: ObservationContext, source: Combatant, onlyTarget?: Combatant): number {
+export function actionPotential(context: ObservationContext, source: Combatant, onlyTarget?: Combatant, weaponOnly = false): number {
   if (source.status !== 'ready' || !alive(source) || flags(context, source).some(d => d?.skipTurn)) return 0;
-  let cache = caches.get(context); if (!cache) caches.set(context, cache = new WeakMap());
+  const cacheStore = weaponOnly ? extraCaches : caches;
+  let cache = cacheStore.get(context); if (!cache) cacheStore.set(context, cache = new WeakMap());
   let values = cache.get(source); if (!values) cache.set(source, values = new Map());
   if (values.has(onlyTarget)) return values.get(onlyTarget)!;
   const origin = positionedUnit(context, source), field = context.battlefield;
@@ -83,7 +86,7 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
         const cohort = world.units.filter(u => !attached.has(u.id) && sameLayer(actor, u) && (context.mode === 'mass' ? formationNode(actor).id === formationNode(u).id : u.pos === actor.pos));
         best = Math.max(best, evaluate({ weaponOverride: weapon, ranged, participants: sharedParticipants(actor, cohort, width, target) }));
       }
-      for (const rawAbility of actor.abilities) {
+      for (const rawAbility of weaponOnly ? [] : actor.abilities) {
         if (!rawAbility.effects.some(e => e.op === 'damage')) continue;
         const ability = field ? gridAbility(rawAbility) : rawAbility;
         if (abilityUsabilityReason(actor, ability) || abilityTargetReason({ actor, ability, target, distance: dist })) continue;
@@ -94,7 +97,7 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
         best = Math.max(best, Math.min(memberHealth(target), value));
       }
     }
-    if (!onlyTarget) for (const ability of actor.abilities) {
+    if (!weaponOnly && !onlyTarget) for (const ability of actor.abilities) {
       if (abilityUsabilityReason(actor, ability)) continue;
       for (const target of context.units.filter(u => u.side === actor.side && alive(u))) {
         if (field && !unitLineOfSight(field,actor,positionedUnit(context,target))) continue;
@@ -104,6 +107,8 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
       }
     }
   }
+  if (!weaponOnly && hasteMagnitude(source) > 0) best += actionPotential(context, source, onlyTarget, true) * hasteAttackScale(source);
+  if (onlyTarget) best = Math.min(memberHealth(onlyTarget), best);
   values.set(onlyTarget, best); return best;
 }
 
@@ -115,5 +120,6 @@ export function tacticalStateValue(context: ObservationContext, target: Combatan
   const outgoing = actionPotential(context, target), incoming = incomingPotential(context, target);
   const risk = moraleRisk(context, target, (context.rules ?? V4_TW).morale.breakAt, context.traitRegistry).breakChance;
   const dot = target.conditions.reduce((n, c) => n + (c.dur > 0 ? averageDice((context.conditions ?? defaults).get(c.id)?.dot?.dice) * (c.affectedMembers ?? 1) : 0), 0);
-  return outgoing - incoming - Math.min(memberHealth(target), dot) - risk * Math.max(outgoing, memberHealth(target) * 0.1);
+  const survival = incoming + dot >= memberHealth(target) ? outgoing * 0.5 : 0;
+  return outgoing - incoming - survival - Math.min(memberHealth(target), dot) - risk * Math.max(outgoing, memberHealth(target) * 0.1);
 }

@@ -1,3 +1,5 @@
+import { actionPotential } from '../skill-tactics.js';
+import { hasteMagnitude, hasteAttackScale } from '../haste.js';
 import { commanderScores, normalizeCommanderProfiles, type CommanderProfiles } from '../commander-profile.js';
 import { validateAccessories } from '../items.js';
 import { areaTargets, zoneTarget, placeZone, settleZones, validateAreas, ZONE_NAMES } from '../area-effects.js';
@@ -16,7 +18,7 @@ import { engagementWidth } from '../exposure.js';
 import { skillWeapon, skillResourceChange, skillResourceCost, conjureSkillUnit, conjuredTemplate, summonedMemberLife } from '../skill-runtime.js';
 import { applySkillTrait, isPositiveCondition } from '../skill-effects.js';
 import { skillAttack } from '../skill-attack.js';
-import { prepareCondition, applySkillCondition, dispelCandidates, applyDispel, applyPush, pushPreview, skillEffectLines, skillEffectValue, conditionChance } from '../skill-effects.js';
+import { prepareCondition, applySkillCondition, dispelCandidates, applyDispel, applyPush, pushPreview, skillEffectLines, skillEffectValue, summonValue, conditionChance } from '../skill-effects.js';
 import { applyWeaponConditions, poisonDamage, poisonFactor, conditionDamage } from '../afflictions.js';
 import { isRangedWeapon, weaponReloadKey, weaponReloadTurns, meleeWeapon, validateMount, mountedShooting, steadyMovingShot } from '../loadout.js';
 import { moraleProfile, moraleAttackMods, decideMorale, changeMorale, validateMoraleState, moraleRisk, moraleChangePreview, reconcileDamageMorale } from '../morale.js';
@@ -157,6 +159,42 @@ export class SmallBattle {
   movedThisTurn = new Set<string>();
   /** 本回合已消耗主行动的单位；移动额度与主行动独立。 */
   actedThisTurn = new Set<string>();
+  hasteSpent = new Map<string, number>();
+  hasteMovement = new Map<string, number>();
+  hasteSelected = new Set<string>();
+  hasteOverwatch = new Map<string, number>();
+  hasteAvailable(actorId: string): boolean {
+    const actor = this.byId(actorId);
+    return actor.status === 'ready' && this.isTurnOf(actorId) && hasteMagnitude(actor) > 0 && this.hasteSpent.get(actorId) !== this.round
+      && !actor.conditions.some(c => c.dur > 0 && this.conditions.get(c.id)?.skipTurn);
+  }
+  selectHaste(actorId: string, selected: boolean): void {
+    if (selected && !this.hasteAvailable(actorId)) throw Error('本轮没有可用加速动作');
+    if (selected) this.hasteSelected.add(actorId); else this.hasteSelected.delete(actorId);
+  }
+  private usingHaste(actorId: string): boolean { return this.hasteAvailable(actorId) && (this.hasteSelected.has(actorId) || this.actedThisTurn.has(actorId)); }
+  private nonSkillActionAvailable(actorId: string): boolean { return !this.byId(actorId).conditions.some(c => c.dur > 0 && this.conditions.get(c.id)?.skipTurn) && (!this.actedThisTurn.has(actorId) || this.hasteAvailable(actorId)); }
+  private spendAction(actorId: string, haste = this.usingHaste(actorId)): void {
+    if (haste) { this.hasteSpent.set(actorId, this.round); this.hasteSelected.delete(actorId); }
+    else this.actedThisTurn.add(actorId);
+  }
+  private activateHasteMovement(actorId: string): void {
+    if (!this.hasteSelected.has(actorId) || !this.hasteAvailable(actorId)) return;
+    this.hasteMovement.set(actorId, this.movementBudget(actorId));
+    this.hasteSpent.set(actorId, this.round); this.hasteSelected.delete(actorId);
+    this.recordEvent({ round: this.round, kind: 'move', participants: [actorId], text: this.byId(actorId).name + ' 使用加速动作，获得一次额外机动' });
+  }
+  reloadReason(actorId: string, sidearm = false): string | undefined {
+    const actor = this.byId(actorId), weapon = sidearm ? actor.sidearm : actor.weapon;
+    if (!this.isTurnOf(actorId) || actor.status !== 'ready' || !this.nonSkillActionAvailable(actorId) || actor.conditions.some(c => c.dur > 0 && (this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack))) return '当前不能装填';
+    return !weapon || !(this.reloadCd.get(weaponReloadKey(actor, weapon)) ?? 0) ? '武器不需要装填' : undefined;
+  }
+  reloadWeapon(actorId: string, sidearm = false): void {
+    const reason = this.reloadReason(actorId, sidearm); if (reason) throw Error(reason);
+    const actor = this.byId(actorId), key = weaponReloadKey(actor, sidearm ? actor.sidearm : actor.weapon);
+    this.reloadCd.set(key, Math.max(0, this.reloadCd.get(key)! - 1)); this.spendAction(actorId);
+    this.recordEvent({ round: this.round, kind: 'condition', participants: [actorId], text: actor.name + ' 主动装填，剩余装填时间减少1轮' });
+  }
   /** 战场环境标签 */
   readonly fieldTags: string[];
   /** 武器装填冷却：单位 id → 剩余装填回合 */
@@ -294,7 +332,7 @@ export class SmallBattle {
       isTurn: !this.started || this.isTurnOf(actorId),
       ready: actor.status === 'ready',
       moved: this.battlefield ? this.movementLeft(actorId) <= 0 : this.movedThisTurn.has(actorId),
-      acted: this.actedThisTurn.has(actorId),
+      acted: !this.nonSkillActionAvailable(actorId),
     });
   }
 
@@ -310,9 +348,10 @@ export class SmallBattle {
     if (!canOccupy(this.battlefield, this.visibleCombatants(actor.side), { ...actor, airborne }, actor.pos!)) return '当前格没有合法落点或同层容量已满';
     return undefined;
   }
-  changeFlight(actorId: string, airborne: boolean): void {
+  changeFlight(actorId: string, airborne: boolean, attackMovement = false): void {
     const reason = this.flightReason(actorId, airborne); if (reason) throw new Error(reason);
     const actor = this.byId(actorId);
+    if (!attackMovement) this.activateHasteMovement(actorId);
     this.movementSpent.set(actorId, (this.movementSpent.get(actorId) ?? 0) + 1); this.movedThisTurn.add(actorId); delete actor.tacticalPose;
     if (airborne) for (const foe of [...this.combatants].sort((a, b) => a.id.localeCompare(b.id))) {
       const weapon = this.rules.resolutionVersion === 'v2' ? meleeWeapon(foe) : foe.sidearm ?? (!isRangedCapable(foe) ? foe.weapon : undefined);
@@ -404,10 +443,10 @@ export class SmallBattle {
     if (this.rules.resolutionVersion !== 'v2') return true;
     return this.combatants.some((u) => u.side === side && u.status === 'ready' && canSpot(this.observationContext(), u, { ...u, id: '', traits: [], traitSources: [], side: side === 'enemy' ? 'ally' : 'enemy', pos: cell }));
   }
-  movementLeft(actorId: string): number {
+  movementLeft(actorId: string, includeHaste = true): number {
     const unit = this.byId(actorId);
     if (unit.conditions.some((c) => c.dur > 0 && (this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventMove))) return 0;
-    return Math.max(0, this.movementBudget(unit.id) - (this.movementSpent.get(actorId) ?? 0));
+    return Math.max(0, this.movementBudget(unit.id) + (this.hasteMovement.get(actorId) ?? 0) + (includeHaste && this.hasteSelected.has(actorId) && this.hasteAvailable(actorId) ? this.movementBudget(actorId) : 0) - (this.movementSpent.get(actorId) ?? 0));
   }
   reachableCells(actorId: string): GridPath[] {
     const field = this.battlefield; if (!field) return [];
@@ -430,7 +469,7 @@ export class SmallBattle {
   private chargePath(actor: Combatant, target: Combatant): GridPath | undefined {
     if (!this.battlefield) return undefined;
     return neighbors(this.battlefield, target.pos!).map((cell) => findGridPath(this.battlefield!, actor.pos!, cell, (n) => canOccupy(this.battlefield!, this.visibleCombatants(actor.side), actor, n), (n) => tileCost(this.battlefield!, n, actor)))
-      .filter((p): p is GridPath => !!p && p.cost + (isAirborne(actor) && !isAirborne(target) ? 1 : 0) <= this.movementLeft(actor.id) && (sameLayer(actor, target) || canOccupy(this.battlefield!, this.visibleCombatants(actor.side), { ...actor, airborne: false }, p.cells.at(-1)!)))
+      .filter((p): p is GridPath => !!p && p.cost + (isAirborne(actor) && !isAirborne(target) ? 1 : 0) <= this.movementLeft(actor.id, false) && (sameLayer(actor, target) || canOccupy(this.battlefield!, this.visibleCombatants(actor.side), { ...actor, airborne: false }, p.cells.at(-1)!)))
       .sort((a, b) => a.cost - b.cost || a.cells.at(-1)! - b.cells.at(-1)!)[0];
   }
   private summonReason(actor: Combatant, ability: Combatant['abilities'][number]): string | undefined {
@@ -459,7 +498,7 @@ export class SmallBattle {
       .map((u) => u.name + '可能反应一次');
     return { path, risks };
   }
-  moveTo(actorId: string, cell: number): void {
+  moveTo(actorId: string, cell: number, attackMovement = false): void {
     const preview = this.pathPreview(actorId, cell);
     if (!preview.path) throw new Error(preview.reason ?? '不能移动');
     const actor = this.byId(actorId); const field = this.battlefield!;
@@ -467,6 +506,7 @@ export class SmallBattle {
       if (actor.status !== 'ready' || actor.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventMove)) break;
       if (gridDistance(field, actor.pos!, next) !== 1 || tileCost(field, next, actor) > this.movementLeft(actorId)) break;
       if (!canOccupy(field, this.combatants, actor, next)) break;
+      if (!attackMovement) this.activateHasteMovement(actorId);
       const previous = actor.pos!;
       delete actor.tacticalPose;
       actor.pos = next; this.settleAreaEffects(); if (actor.status !== 'ready') break;
@@ -488,6 +528,7 @@ export class SmallBattle {
         const result = this.resolveAttackWithEnvironment({ attacker: foe, defender: actor, rng: this.rng, rules: this.rules,
           conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry,
           ...this.attackModifiers(foe, actor, context),
+          actionDamageScale: !opportunity ? this.hasteOverwatch.get(foe.id) ?? 1 : 1,
           ranged: !opportunity && context.ranged, weaponOverride: opportunity ? reactionWeapon : context.weapon });
         this.recordEvent({ round: this.round, kind: 'attack', text: (opportunity ? '借机' : '警戒') + '反应｜' + result.text, resolution: result });
         if (result.hit) this.applyOnHitTraits(foe, actor, result);
@@ -500,7 +541,7 @@ export class SmallBattle {
   braceReason(actorId: string): string | undefined {
     const actor = this.byId(actorId);
     if (!this.battlefield || actor.rulesVersion !== 'v2' || !this.isTurnOf(actorId) || actor.status !== 'ready' || this.isOver()) return '当前单位不能固守';
-    if (this.actedThisTurn.has(actorId)) return '本回合主行动已使用';
+    if (!this.nonSkillActionAvailable(actorId)) return '本回合主行动已使用';
     if (isAirborne(actor)) return '空中不能固守，先降落';
     if (actor.suppression || actor.conditions.some((c) => c.dur > 0 && (this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack && meleeWeapon(actor)?.recipe?.mechanism !== 'natural'))) return '受压制或失能时不能维持稳固姿态';
     return undefined;
@@ -516,18 +557,19 @@ export class SmallBattle {
     const threat = this.combatants.filter((u) => u.side !== actor.side && u.status === 'ready' && !this.sightReason(actor, u))
       .sort((a, b) => this.dist(actor, a) - this.dist(actor, b) || a.id.localeCompare(b.id))[0];
     actor.tacticalPose = bracePose(actor, threat, 'small', this.battlefield!.width);
-    this.actedThisTurn.add(actorId); this.overwatch.delete(actorId);
+    this.spendAction(actorId); this.overwatch.delete(actorId);
     this.recordEvent({ round: this.round, kind: 'condition', participants: [actor.id, ...(threat ? [threat.id] : [])], text: `${actor.name} 固守${threat ? '，面向' + threat.name : ''}：${this.braceDescription(actorId)}` });
   }
   setOverwatch(actorId: string): void {
     const actor = this.byId(actorId);
     const reason = this.overwatchReason(actorId); if (reason) throw new Error(reason);
-    this.actedThisTurn.add(actorId); this.overwatch.add(actorId);
+    if (this.usingHaste(actorId)) this.hasteOverwatch.set(actorId, hasteAttackScale(actor)); else this.hasteOverwatch.delete(actorId);
+    this.spendAction(actorId); this.overwatch.add(actorId);
     this.recordEvent({ round: this.round, kind: 'condition', participants: [actor.id], text: `${actor.name} 警戒：共用一次反应额度` });
   }
   overwatchReason(actorId: string): string | undefined {
     const actor = this.byId(actorId);
-    if (!this.battlefield || !this.isTurnOf(actorId) || actor.status !== 'ready' || this.actedThisTurn.has(actorId) || this.reactionSpent.has(actorId) || actor.suppression) return '当前没有警戒行动/反应额度';
+    if (!this.battlefield || !this.isTurnOf(actorId) || actor.status !== 'ready' || !this.nonSkillActionAvailable(actorId) || this.reactionSpent.has(actorId) || actor.suppression) return '当前没有警戒行动/反应额度';
     if (!actor.weapon && !actor.sidearm) return '没有可用于警戒的武器';
     if (actor.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack && meleeWeapon(actor)?.recipe?.mechanism !== 'natural')) return '当前状态禁止武器反应';
     return undefined;
@@ -538,14 +580,14 @@ export class SmallBattle {
     actor.resources.SP = (actor.resources.SP ?? 0) - 1; target.suppression = 2;
     actor.tacticalEffort = 1;
     revealUnit(this.observationContext(), actor); revealUnit(this.observationContext(), target);
-    this.actedThisTurn.add(actorId); this.overwatch.delete(targetId);
+    this.spendAction(actorId); this.overwatch.delete(targetId);
     this.recordEvent({ round: this.round, kind: 'condition', participants: [actor.id, target.id], text: `${actor.name} 压制 ${target.name}：未结算生命伤害，目标反应停用、命中-2` });
   }
   suppressReason(actorId: string, targetId?: string): string | undefined {
     const actor = this.byId(actorId), target = this.combatants.find((u) => u.id === targetId);
     if (!target || target.side === actor.side || target.status !== 'ready') return '选择可压制的敌方目标';
     const context = this.weaponContext(actor, target);
-    if (!this.battlefield || !this.isTurnOf(actorId) || actor.status !== 'ready' || this.actedThisTurn.has(actorId) || !context.ranged || context.reason) return context.reason ?? '压制需要合法射击与主行动';
+    if (!this.battlefield || !this.isTurnOf(actorId) || actor.status !== 'ready' || !this.nonSkillActionAvailable(actorId) || !context.ranged || context.reason) return context.reason ?? '压制需要合法射击与主行动';
     if (actor.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack)) return '当前状态禁止射击';
     if ((actor.resources.SP ?? 0) < 1) return '压制需要1点战术资源';
     if (target.body === 'vehicle' && penetrationContext({ attacker: actor, defender: target,rules:this.rules }).factor === 0) return '火力对封闭车体不构成压制威胁';
@@ -706,7 +748,7 @@ export class SmallBattle {
       const arrival = context.landing ? { ...actor, airborne: false } : actor;
       return { ...this.previewAttackWithEnvironment({ attacker: arrival, defender: target, rules: this.rules,
         conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, weaponOverride: context.weapon,
-        ranged: context.ranged, ...this.attackModifiers(arrival, target, context) }), ...(context.landing ? { movementCost: 1, lands: true } : {}) };
+        ranged: context.ranged, actionDamageScale: this.usingHaste(actor.id) ? hasteAttackScale(actor) : 1, ...this.attackModifiers(arrival, target, context) }), ...(context.landing ? { movementCost: 1, lands: true } : {}) };
     }
     const movedPenalty = context.ranged
       && this.movedThisTurn.has(actor.id)
@@ -774,7 +816,7 @@ export class SmallBattle {
       const path = this.battlefield && !reason ? this.chargePath(actor, target) : undefined;
       const arrival = path ? { ...actor, pos: path.cells.at(-1)!, ...(context.landing ? { airborne: false } : {}) } : actor;
       const preview = !reason && this.rules.resolutionVersion === 'v2' ? this.previewAttackWithEnvironment({ attacker: arrival, defender: target, rules: this.rules,
-        conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, weaponOverride: context.weapon, ranged: false, charge: true,
+        conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, weaponOverride: context.weapon, ranged: false, charge: true, actionDamageScale: this.usingHaste(actorId) ? hasteAttackScale(actor) : 1,
         ...this.attackModifiers(arrival, target, context, { charge: true }) }) : undefined;
       return { targetId: target.id, enabled: !reason, ...(reason ? { reason } : {}), distance: this.dist(actor, target), ...(preview ? { preview: { ...preview, movementCost: (path?.cost ?? 0) + Number(!!context.landing), lands: context.landing } } : {}) };
     });
@@ -814,7 +856,7 @@ export class SmallBattle {
             : ability.effects.some(e=>e.op==='zone') && this.battlefield ? this.battlefield.tiles.flatMap((_tile,cell)=>{ const at=zoneTarget(this.observationContext(),actor,'cell:'+cell); return at && this.cellVisible(actor.side,cell)?[at]:[]; }) : [];
       const targets = candidates.map((target) => {
         const targetReason = this.skillTargetReason(actor, ability, target);
-        const reason = actorReason ?? (!economy.actionAvailable ? '本回合主行动已使用' : undefined) ?? usability ?? targetReason;
+        const reason = actorReason ?? (ability.itemSourceId ? !economy.actionAvailable ? '本回合行动已使用' : undefined : this.hasteSelected.has(actorId) ? '加速动作不能使用技能' : this.actedThisTurn.has(actorId) ? '本回合主行动已使用' : undefined) ?? usability ?? targetReason;
         const damage = ability.effects.find((e) => e.op === 'damage');
         const healing = ability.effects.find((e) => e.op === 'heal');
         const moraleEffect = ability.effects.find((e) => e.op === 'morale');
@@ -831,7 +873,7 @@ export class SmallBattle {
         })) : [];
         return { targetId: target.id, enabled: !reason, ...(reason ? { reason } : {}), distance: this.dist(actor, target), ...(preview || landing || effects.length ? { preview: { ...preview, ...landing, ...(effects.length ? { effects } : {}), ...(area.length ? { areaTargets: area.map((u) => u.name), areaTargetIds: area.map((u) => u.id), areaPreviews } : {}) } } : {}) };
       });
-      const targetlessReason = actorReason ?? (!economy.actionAvailable ? '本回合主行动已使用' : undefined) ?? usability;
+      const targetlessReason = actorReason ?? (ability.itemSourceId ? !economy.actionAvailable ? '本回合行动已使用' : undefined : this.hasteSelected.has(actorId) ? '加速动作不能使用技能' : this.actedThisTurn.has(actorId) ? '本回合主行动已使用' : undefined) ?? usability;
       const enabled = candidates.length ? targets.some((target) => target.enabled) : !targetlessReason;
       options.push({
         id: ability.id,
@@ -878,9 +920,11 @@ export class SmallBattle {
       throw new Error(`现在不是 ${attacker.name} 的回合`);
     }
     if (attacker.status !== 'ready') throw new Error(`${attacker.name} 无法行动（${attacker.status}）`);
-    if (!opts.bypassTurn && this.actedThisTurn.has(attackerId)) throw new Error('本回合主行动已使用');
+    if (!opts.bypassTurn && !this.nonSkillActionAvailable(attackerId)) throw new Error('本回合主行动已使用');
     if (!this.battlefield && !opts.bypassTurn && opts.charge && this.movedThisTurn.has(attackerId)) throw new Error('本回合移动额度已使用，无法再冲锋');
 
+    const hasteAction = !opts.bypassTurn && this.usingHaste(attackerId);
+    const hasteScale = hasteAction ? hasteAttackScale(attacker) : 1;
     const d = this.dist(attacker, target);
     const context = this.weaponContext(attacker, target, opts);
     if (context.reason) throw new Error(context.reason);
@@ -888,15 +932,15 @@ export class SmallBattle {
     if (this.battlefield && attacker.rulesVersion === 'v2' && !opts.bypassTurn) attacker.tacticalEffort = Math.max(attacker.tacticalEffort ?? 0, opts.charge ? 2 : 1);
     if (opts.charge && this.battlefield) {
       const path = this.chargePath(attacker, target)!;
-      this.moveTo(attacker.id, path.cells.at(-1)!);
+      this.moveTo(attacker.id, path.cells.at(-1)!, true);
       if (attacker.status !== 'ready' || this.dist(attacker, target) > 1 || attacker.conditions.some((c) => this.conditions.get(c.id)?.skipTurn)) {
-        this.actedThisTurn.add(attacker.id);
+        this.spendAction(attacker.id, hasteAction);
         return { attackerId: attacker.id, defenderId: target.id, attackerName: attacker.name, defenderName: target.name,
           hit: false, crit: false, netAtk: 0, targetDef: target.base.def, atkDetail: '', drPercent: 0, baseAfterDR: 0, apTotal: 0,
           dmgMult: 1, wardMult: 1, finalDamage: 0, hpBefore: target.hp, hpAfter: target.hp, defenderStatus: target.status, text: '冲锋途中被反应中断，未发生攻击' };
       }
     }
-    if (context.landing && isAirborne(attacker)) this.changeFlight(attacker.id, false);
+    if (context.landing && isAirborne(attacker)) this.changeFlight(attacker.id, false, true);
     const activeWeapon = context.weapon;
     const rangedAttack = context.ranged;
 
@@ -912,6 +956,7 @@ export class SmallBattle {
         attacker,
         defender: target,
         participants,
+        actionDamageScale: hasteScale,
         rng: this.rng,
         rules: this.rules,
         conditionDefs: this.conditionDefMap(),
@@ -945,7 +990,7 @@ export class SmallBattle {
     const reload = weaponReloadTurns(activeWeapon);
     this.resolveFlightStates();
     if (reload > 0 && rangedAttack) this.reloadCd.set(weaponReloadKey(attacker, activeWeapon), reload + 1);
-    if (!opts.bypassTurn) this.actedThisTurn.add(attackerId);
+    if (!opts.bypassTurn) this.spendAction(attackerId, hasteAction);
     return last!;
   }
 
@@ -1052,14 +1097,14 @@ export class SmallBattle {
       throw new Error(`现在不是 ${actor.name} 的回合`);
     }
     if (actor.status !== 'ready') throw new Error(`${actor.name} 无法行动（${actor.status}）`);
-    if (!opts.bypassTurn && this.actedThisTurn.has(actorId)) throw new Error('本回合主行动已使用');
+    if (!opts.bypassTurn && !this.nonSkillActionAvailable(actorId)) throw new Error('本回合主行动已使用');
     const foes = this.combatants.filter((c) => c.side !== actor.side && c.status === 'ready');
     const minD = foes.length ? Math.min(...foes.map((f) => this.dist(actor, f))) : Infinity;
     if (minD < 2) {
       throw new Error(`距离不足（最近敌人仅 ${bandLabel(minD === Infinity ? 99 : minD)}），先脱离接触再撤离`);
     }
+    if (!opts.bypassTurn) this.spendAction(actorId);
     actor.status = 'fled';
-    if (!opts.bypassTurn) this.actedThisTurn.add(actorId);
     this.recordEvent({ round: this.round, kind: 'move', participants: [actor.id], text: `${actor.name} 撤离战场` });
     this.checkGridObjective(false);
   }
@@ -1146,9 +1191,10 @@ export class SmallBattle {
         }
       }
     }
-    if (!opts.bypassTurn && this.actedThisTurn.has(actorId)) {
+    if (!opts.bypassTurn && (ability.itemSourceId ? !this.nonSkillActionAvailable(actorId) : this.actedThisTurn.has(actorId) || this.hasteSelected.has(actorId))) {
       return { ok: false, reason: '本回合主行动已使用', resolutions: [], log: '' };
     }
+    const hasteAction = !opts.bypassTurn && !!ability.itemSourceId && this.usingHaste(actorId);
     const stateId = ability.cooldownGroup ?? abilityId;
     const state = actor.abilityState.find((s) => s.abilityId === stateId) ?? {
       abilityId: stateId,
@@ -1336,7 +1382,7 @@ export class SmallBattle {
     const text = logBits.join('\n');
     this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id, ...(chosenTarget ? [chosenTarget.id] : []), ...resolutions.map((r) => r.defenderId)], text, resolution: resolutions[0], resolutions });
     if (this.battlefield && actor.rulesVersion === 'v2' && !opts.bypassTurn) actor.tacticalEffort = Math.max(actor.tacticalEffort ?? 0, 1);
-    if (!opts.bypassTurn) this.actedThisTurn.add(actorId);
+    if (!opts.bypassTurn) { if (ability.itemSourceId) this.spendAction(actorId, hasteAction); else this.actedThisTurn.add(actorId); }
     return { ok: true, resolutions, heal, log: text };
   }
 
@@ -1379,6 +1425,8 @@ export class SmallBattle {
    * 濒死敌在无 ready 敌时会被补刀——「不围殴濒死」是演出偏好，但不该让战斗僵持。
    */
   autoAction(unitId: string): void {
+    const current = this.byId(unitId);
+    if (this.isTurnOf(unitId) && current.conditions.some(c => c.dur > 0 && this.conditions.get(c.id)?.skipTurn)) { this.recordEvent({ round: this.round, kind: 'condition', participants: [unitId], text: current.name + ' 眩晕，跳过回合' }); this.endTurn(); return; }
     if (this.battlefield) { this.autoGridAction(unitId); return; }
     const u = this.byId(unitId);
     if (u.status !== 'ready' || !this.isTurnOf(unitId)) return;
@@ -1390,6 +1438,7 @@ export class SmallBattle {
 
     if (foes.length) {
       if (this.planAutoAction(u, foes)) {
+        if (this.hasteAvailable(unitId) && !this.isOver()) this.planAutoAction(u, foes.filter(f => ['ready', 'dying'].includes(f.status)));
         this.endTurn();
         return;
       }
@@ -1416,6 +1465,7 @@ export class SmallBattle {
   /** utility 评分：构建候选动作列表，按分择优尝试执行；返回是否执行了任一动作 */
   private autoGridAction(unitId: string, reconsidered = false, failedAbilities = new Set<string>()): void {
     const unit = this.byId(unitId); const field = this.battlefield!;
+    const actionBefore = `${this.actedThisTurn.has(unitId)}:${this.hasteSpent.get(unitId)}`;
     if (!this.isTurnOf(unitId) || unit.status !== 'ready' || this.isOver()) return;
     if (!isAirborne(unit) && !this.flightReason(unitId, true)) {
       // 地面绕行明显更贵时先升空；歼灭战以最近已知敌人的邻格为目标（扑击前保持机动优势）
@@ -1432,7 +1482,7 @@ export class SmallBattle {
       }
       if (unit.status !== 'ready') { if (!this.isOver()) this.endTurn(); return; }
     }
-    const plans: { score: number; path: GridPath; offensive?: boolean; selfDefenseScore?: number; targetId?: string; abilityId?: string; weaponMode?: SmallAttackOpts['weaponMode']; kind: 'weapon' | 'charge' | 'ability' | 'brace' | 'hold' | 'land' }[] = [];
+    const plans: { score: number; path: GridPath; offensive?: boolean; selfDefenseScore?: number; targetId?: string; abilityId?: string; weaponMode?: SmallAttackOpts['weaponMode']; kind: 'weapon' | 'charge' | 'ability' | 'brace' | 'hold' | 'land' | 'reload' | 'haste-move' | 'haste-flight' }[] = [];
     const knownUnits = this.visibleCombatants(unit.side);
     const objective = field.objective;
     const escorted = objective.kind === 'escape' && objective.unitId !== unitId
@@ -1537,7 +1587,7 @@ export class SmallBattle {
       const baseScore = positionScore(path);
       if (isAirborne(unit) && path.cost + 1 <= this.movementLeft(unitId) && canOccupy(field, this.visibleCombatants(unit.side), { ...actor, airborne: false }, actor.pos!)) plans.push({ score: baseScore + (objective.kind !== 'annihilation' && actor.pos === field.objective.cell ? 6 : 0.1), path, kind: 'land' });
       plans.push({ score: baseScore + (foes.length && path.cost === 0 && canReconceal(this.observationContext(), unit) ? 4 : 0), path, kind: 'hold' });
-      if (this.actedThisTurn.has(unitId)) continue;
+      if (!this.nonSkillActionAvailable(unitId)) continue;
       if (!this.braceReason(unitId)) {
         const threats = foes.filter((f) => !this.sightReason(actor, f)).sort((a, b) => this.dist(actor, a) - this.dist(actor, b) || a.id.localeCompare(b.id)).slice(0, 3);
         const braced = { ...actor, tacticalPose: bracePose(actor, threats[0], 'small', field.width) };
@@ -1551,12 +1601,13 @@ export class SmallBattle {
         const arrival = context.landing ? { ...actor, airborne: false } : actor;
         const mods = this.attackModifiers(arrival, target, context);
         if (path.cost > 0 && context.ranged && !this.movedThisTurn.has(unitId) && !steadyMovingShot(actor, context.weapon)) mods.extraMods.push({ source: 'stance', name: '移动射击', kind: 'atk', type: 'flat', value: -2 });
-        const preview = this.previewAttackWithEnvironment({ attacker: arrival, defender: target, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, weaponOverride: context.weapon, ranged: context.ranged, ...mods });
+        const preview = this.previewAttackWithEnvironment({ attacker: arrival, defender: target, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, weaponOverride: context.weapon, ranged: context.ranged, actionDamageScale: this.usingHaste(unitId) ? hasteAttackScale(unit) : 1, ...mods });
         // 预览已经包含整轮速射；再次乘段数会高估自动武器并压低技能的选择机会。
         const volleyDamage = Math.min(memberHealth(target), preview.expectedDamage);
         plans.push({ score: baseScore + volleyDamage + (preview.conditionValue ?? 0) + (volleyDamage >= memberHealth(target) ? 4 : 0), offensive: volleyDamage + (preview.conditionValue ?? 0) > 0, path, targetId: target.id, weaponMode, kind: 'weapon' });
       }
       for (const ability of actor.abilities) {
+        if (!ability.itemSourceId && (this.actedThisTurn.has(unitId) || this.hasteSelected.has(unitId))) continue;
         if (failedAbilities.has(ability.id) || abilityUsabilityReason(actor, ability) || this.summonReason(actor, ability)) continue;
         const candidates = ability.target === 'zone' ? this.visibleCombatants(actor.side).filter(u=>u.status==='ready') : ability.target === 'self' ? [actor] : ability.target === 'enemy' ? foes : this.combatants.filter((target) => target.side === actor.side
           && (['ready', 'routing'].includes(target.status) || target.status === 'dying' && ability.effects.some((e) => e.op === 'heal')));
@@ -1577,7 +1628,7 @@ export class SmallBattle {
               benefit += preview.expectedDamage + (preview.conditionValue ?? 0);
             }
             if (effect.op === 'heal') for (const affected of this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst')) benefit += Math.min(recoveryCapacity(affected), healingYield(actor,affected,effect.amount ?? diceAvg(effect.dice!),!!ability.itemSourceId));
-            if (effect.op === 'summon') benefit += 8;
+            if (effect.op === 'summon') benefit += summonValue(skillContext, actor, ability, effect);
             if (effect.op === 'zone' || effect.op === 'barrier' || effect.op === 'push' || effect.op === 'dispel' || effect.op === 'trait') for (const affected of this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst')) benefit += skillEffectValue(skillContext, actor, affected, { ...ability, effects: [effect] }, controlChance(affected, false));
             if (effect.op === 'morale') for (const affected of this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst')) benefit += moraleChangePreview({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, affected, effect.amount, this.rules.morale.breakAt, this.traitRegistry, ability.effects.flatMap((e) => e.op === 'condition' ? [{ id: e.conditionId, dur: e.dur }] : [])).value * (affected.side === actor.side ? 1 : -1);
           }
@@ -1585,20 +1636,38 @@ export class SmallBattle {
           const landing = this.abilityFlightPreview(actor, target, ability);
           if (landing) benefit += Math.min(target.hp, landing.fallDamage) * (landing.fallChance ?? 1);
           for (const affected of ability.recipe || ability.itemSourceId || ability.equipmentSourceId ? this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst') : [actor]) benefit += skillEffectValue(skillContext, actor, affected, { ...ability, effects: ability.effects.filter(e => e.op === 'resource') });
-          const cost = skillResourceCost(ability);
+          const cost = skillResourceCost(ability, actor);
           if (benefit > cost) plans.push({ score: baseScore + benefit - cost, offensive: target.side !== actor.side, path, targetId: target.id, abilityId: ability.id, kind: 'ability' });
         }
       }
     }
-    if (!this.actedThisTurn.has(unitId)) for (const target of foes) {
+    if (this.nonSkillActionAvailable(unitId)) for (const target of foes) {
       const context = this.weaponContext(unit, target, { charge: true });
       const path = context.reason ? undefined : this.chargePath(unit, target);
       if (!path) continue;
       const arrival = { ...unit, pos: path.cells.at(-1)!, ...(context.landing ? { airborne: false } : {}) };
       if (escortCorridor.has(arrival.pos)) continue;
       const preview = this.previewAttackWithEnvironment({ attacker: arrival, defender: target, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry,
-        weaponOverride: context.weapon, ranged: false, charge: true, ...this.attackModifiers(arrival, target, context, { charge: true }) });
+        weaponOverride: context.weapon, ranged: false, charge: true, actionDamageScale: this.usingHaste(unitId) ? hasteAttackScale(unit) : 1, ...this.attackModifiers(arrival, target, context, { charge: true }) });
       plans.push({ score: positionScore(path) + preview.expectedDamage + (preview.expectedDamage >= memberHealth(target) ? 4 : 0), offensive: preview.expectedDamage > 0, path, targetId: target.id, kind: 'charge' });
+    }
+    if (this.nonSkillActionAvailable(unitId)) {
+      const stay: GridPath = { cells: [unit.pos!], cost: 0 };
+      for (const sidearm of [false, true]) if (!this.reloadReason(unitId, sidearm)) {
+        if ((this.reloadCd.get(weaponReloadKey(unit, sidearm ? unit.sidearm : unit.weapon)) ?? 0) <= 1 && (this.actedThisTurn.has(unitId) || !this.hasteAvailable(unitId))) continue;
+        const reload = new Map(this.reloadCd); reload.delete(weaponReloadKey(unit, sidearm ? unit.sidearm : unit.weapon));
+        const value = actionPotential({ ...this.observationContext(), units: knownUnits, reload }, unit, undefined, true);
+        plans.push({ kind: 'reload', weaponMode: sidearm ? 'sidearm' : 'primary', path: stay, score: positionScore(stay) + value * 0.5 });
+      }
+      if (this.actedThisTurn.has(unitId) && this.hasteAvailable(unitId)) {
+        const extraPaths = reachableGridPaths(field, unit.pos!, this.movementLeft(unitId) + this.movementBudget(unitId), allowed, n => tileCost(field, n, unit));
+        for (const path of extraPaths.filter(p => p.cost > this.movementLeft(unitId))) plans.push({ kind: 'haste-move', path, score: positionScore(path) - 0.25 });
+        const flying = { ...unit, airborne: !isAirborne(unit) };
+        if ((isAirborne(unit) || !flightCapabilityReason(unit, this.conditions)) && canOccupy(field, knownUnits, flying, flying.pos!)) {
+          const value = incomingReduction(unit, flying) * 0.5 + (isAirborne(unit) && objective.kind !== 'annihilation' && unit.pos === field.objective.cell ? 6 : 0);
+          if (value > 0) plans.push({ kind: 'haste-flight', path: stay, score: positionScore(stay) + value });
+        }
+      }
     }
     const tactic = unit.side === 'ally' ? this.allyTactic : 'balanced';
     // 逃脱任务的防守方若已经占住出口，不应为了普通位置评分主动让路。
@@ -1607,7 +1676,7 @@ export class SmallBattle {
       && this.combatants.some(other => other.id === objective.unitId && other.side !== unit.side);
     // 单纯自保不能推进战斗：存在有效进攻时，仅保留固守的队友掩护收益。
     // 无法还击或玩家明确选择固守时，仍允许靠姿态减轻当前威胁。
-    if (tactic !== 'defensive' && plans.some(plan => plan.offensive)) for (const plan of plans) plan.score -= plan.selfDefenseScore ?? 0;
+    if (!this.actedThisTurn.has(unitId) && tactic !== 'defensive' && plans.some(plan => plan.offensive)) for (const plan of plans) plan.score -= plan.selfDefenseScore ?? 0;
     if (tactic === 'aggressive') for (const plan of plans) if (['weapon','charge'].includes(plan.kind)) plan.score += plan.kind === 'charge' ? 3 : 1.5;
     // 固守只影响自动决策；护送对象抵达出口仍优先，手动命令不受限制。
     const eligible = tactic === 'defensive' && !(objective.kind === 'escape' && objective.unitId === unitId) ? plans.filter(plan => plan.path.cost === 0) : plans;
@@ -1620,12 +1689,13 @@ export class SmallBattle {
     const commandScores = commanderScores(candidates.map(plan => ({
       key: JSON.stringify([plan.kind, plan.path.cells, plan.targetId, plan.abilityId, plan.weaponMode]), score: plan.score,
       attack: !!plan.offensive, ranged: plan.kind === 'weapon' ? isRangedWeapon(plan.weaponMode === 'sidearm' ? unit.sidearm : unit.weapon) : plan.kind === 'ability' && (unit.abilities.find(a => a.id === plan.abilityId)?.range?.max ?? 0) > 1,
-      move: plan.path.cost > 0, defend: plan.kind === 'brace' || plan.kind === 'hold',
+      move: plan.path.cost > 0, defend: plan.kind === 'brace' || plan.kind === 'hold' || plan.kind === 'ability' && !!unit.abilities.find(a => a.id === plan.abilityId)?.effects.some(e => e.op === 'barrier' || e.op === 'heal' || e.op === 'dispel' && e.polarity === 'negative' || e.op === 'condition' && ['blessed','encouraged'].includes(e.conditionId)),
     })), this.commanderProfiles[unit.side === 'ally' ? 'ally' : 'enemy'], `${this.seed}:${this.round}:${unitId}`);
     const ranked = new Map(candidates.map((plan, i) => [plan, commandScores[i]!]));
     const best = candidates.sort((a, b) => Number(completesEscort(b)) - Number(completesEscort(a))
       || ranked.get(b)! - ranked.get(a)! || a.path.cost - b.path.cost || (a.targetId ?? '').localeCompare(b.targetId ?? ''))[0];
     if (best) {
+      if (best.kind === 'haste-move' || best.kind === 'haste-flight') this.selectHaste(unitId, true);
       if (best.path.cost > 0 && best.kind !== 'charge') {
         this.moveTo(unitId, best.path.cells.at(-1)!);
         const changed = unit.pos !== best.path.cells.at(-1) || this.visibleCombatants(unit.side).some(other => !knownUnits.some(known => known.id === other.id));
@@ -1643,6 +1713,9 @@ export class SmallBattle {
             this.autoGridAction(unitId, reconsidered, failedAbilities); return;
           }
         }
+        else if (best.kind === 'haste-move') { /* 额外机动已在上方执行。 */ }
+        else if (best.kind === 'haste-flight') this.changeFlight(unitId, !isAirborne(unit));
+        else if (best.kind === 'reload') this.reloadWeapon(unitId, best.weaponMode === 'sidearm');
         else if (best.kind === 'land' && !this.flightReason(unitId, false)) this.changeFlight(unitId, false);
         else if (best.kind === 'brace' && !this.braceReason(unitId)) this.brace(unitId);
         else if (!(best.path.cost === 0 && canReconceal(this.observationContext(), unit)) && !this.overwatchReason(unitId)) this.setOverwatch(unitId);
@@ -1653,6 +1726,7 @@ export class SmallBattle {
       && this.combatants.some((foe) => foe.side !== unit.side && foe.status === 'ready' && !isAirborne(foe) && !!meleeWeapon(foe) && this.dist(unit, foe) === 1)) {
       this.changeFlight(unitId, true);
     }
+    if (!this.isOver() && unit.status === 'ready' && this.nonSkillActionAvailable(unitId) && actionBefore !== `${this.actedThisTurn.has(unitId)}:${this.hasteSpent.get(unitId)}`) { this.autoGridAction(unitId, true, failedAbilities); return; }
     if (!this.isOver()) this.endTurn();
   }
 
@@ -1671,7 +1745,7 @@ export class SmallBattle {
   }
 
   private planAutoAction(u: Combatant, foes: Combatant[]): boolean {
-    if (this.actedThisTurn.has(u.id)) return false;
+    if (!this.nonSkillActionAvailable(u.id)) return false;
     interface Candidate {
       score: number;
       run: () => boolean;
@@ -1727,7 +1801,7 @@ export class SmallBattle {
 
     // —— 技能候选（冷却/次数/资源门禁；射程门禁与 useAbility 同构）——
     for (const a of u.abilities) {
-      if (!this.abilityUsable(u, a)) continue;
+      if ((!a.itemSourceId && (this.actedThisTurn.has(u.id) || this.hasteSelected.has(u.id))) || !this.abilityUsable(u, a)) continue;
       const damageEff = a.effects.find((e): e is Extract<EffectOp, { op: 'damage' }> => e.op === 'damage');
       const healEff = a.effects.find((e): e is Extract<EffectOp, { op: 'heal' }> => e.op === 'heal');
       const cost = a.cost ? a.cost.amount * 0.5 : 0; // 资源机会成本
@@ -1880,9 +1954,9 @@ export class SmallBattle {
   private beginTurn(u: Combatant): void {
     delete u.tacticalPose;
     delete u.tacticalEffort;
-    this.movementSpent.delete(u.id); this.reactionSpent.delete(u.id); this.overwatch.delete(u.id);
+    this.movementSpent.delete(u.id); this.reactionSpent.delete(u.id); this.overwatch.delete(u.id); this.hasteOverwatch.delete(u.id);
     this.movedThisTurn.delete(u.id);
-    this.actedThisTurn.delete(u.id);
+    this.actedThisTurn.delete(u.id); this.hasteSelected.delete(u.id); this.hasteMovement.delete(u.id);
     for (const key of new Set([u.id, weaponReloadKey(u, u.sidearm)])) {
       const rl = this.reloadCd.get(key) ?? 0;
       if (rl > 0) {
@@ -2085,6 +2159,7 @@ export class SmallBattle {
       xpByUnit: [...this.xpByUnit],
       movedThisTurn: [...this.movedThisTurn],
       actedThisTurn: [...this.actedThisTurn],
+      hasteOverwatch: [...this.hasteOverwatch], hasteSpent: [...this.hasteSpent], hasteMovement: [...this.hasteMovement], hasteSelected: [...this.hasteSelected],
       fieldTags: this.fieldTags,
       reloadCd: [...this.reloadCd],
       started: this.started,
@@ -2144,6 +2219,10 @@ export class SmallBattle {
     b.xpByUnit = new Map(snap.xpByUnit ?? []);
     b.movedThisTurn = new Set(snap.movedThisTurn ?? []);
     b.actedThisTurn = new Set(snap.actedThisTurn ?? []);
+    b.hasteOverwatch = new Map(snap.hasteOverwatch ?? []);
+    b.hasteSpent = new Map(snap.hasteSpent ?? []); b.hasteMovement = new Map(snap.hasteMovement ?? []); b.hasteSelected = new Set(snap.hasteSelected ?? []);
+    if ([...b.hasteSpent].some(([id, round]) => !b.combatants.some(u => u.id === id) || !Number.isInteger(round) || round < 1 || round > b.round) || [...b.hasteMovement].some(([id, amount]) => !b.combatants.some(u => u.id === id) || !Number.isInteger(amount) || amount < 0 || amount > 5)) throw Error('加速动作记录损坏');
+    if ([...b.hasteSelected].some(id => !b.combatants.some(u => u.id === id)) || [...b.hasteOverwatch].some(([id, scale]) => !b.combatants.some(u => u.id === id) || !Number.isFinite(scale) || scale < 0 || scale > 1)) throw Error('加速动作记录损坏');
     b.reloadCd = new Map(snap.reloadCd ?? []);
     (b as unknown as { started: boolean }).started = !!snap.started;
     b.finalizeCasualties();

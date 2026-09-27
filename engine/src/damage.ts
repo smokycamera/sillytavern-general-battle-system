@@ -87,6 +87,8 @@ export interface AttackResolution {
 }
 
 export interface AttackOpts {
+  /** 行动本身的伤害预算，不改变参战人数、段数或抽样次数。 */
+  actionDamageScale?: number;
   packetShare?: number;
   fieldTags?: string[];
   attackerTerrain?: string;
@@ -338,7 +340,8 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
   // 远程武器被迫近战（借机攻击/贴身挥击/军团近战阶段）：枪托弓杆终究不是称手兵器
   // 「远近双全」（no-melee-penalty 旗标）豁免——刺刀/弓杆近战有专门训练；
   // 换用近战副武器结算时武器本身不带 ranged 标签，天然免罚
-  const extraMods = [...(opts.extraMods ?? [])];
+  const extraMods: Modifier[] = [...(opts.extraMods ?? [])];
+  if (opts.actionDamageScale !== undefined && opts.actionDamageScale !== 1) extraMods.push({ source: 'temp', name: '加速攻击预算', kind: 'dmg', type: 'mult', value: opts.actionDamageScale });
   if (rules.combatModel === MEMBER_HEALTH_MODEL && !ranged && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) {
     const melee = meleeProfile(weapon);
     if (melee?.accuracy) extraMods.push({ source: 'intrinsic', name: '近战武器操控', kind: 'atk', type: 'flat', value: melee.accuracy });

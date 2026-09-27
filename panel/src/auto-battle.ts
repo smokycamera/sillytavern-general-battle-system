@@ -29,3 +29,11 @@ export class AutoBattleLoop {
     this.timer = setTimeout(tick, 250);
   }
 }
+
+/** 让已保存的行动结果先绘制，再开始下一次同步 AI 搜索。 */
+export function yieldBattleFrame(): Promise<void> {
+  return new Promise(resolve => {
+    if (typeof document === 'undefined' || document.hidden || typeof requestAnimationFrame !== 'function') setTimeout(resolve, 0);
+    else requestAnimationFrame(() => setTimeout(resolve, 0));
+  });
+}

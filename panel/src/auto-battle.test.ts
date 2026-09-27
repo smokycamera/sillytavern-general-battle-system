@@ -1,8 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { AutoBattleLoop } from './auto-battle.js';
+import { AutoBattleLoop, yieldBattleFrame } from './auto-battle.js';
 import { extendSmallRoundLimit, prepareBattleObjective } from './battle-setup.js';
 import { generateUnit, generatedField, standardField, SmallBattle, V2_D20 } from '../../engine/src/index.js';
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 it('异步保存未结束前不开始下一步，关闭重开不会接续旧回调', async () => {
   vi.useFakeTimers(); const loop = new AutoBattleLoop(); let release!: (value: boolean) => void;
@@ -46,4 +46,19 @@ it('小战各任务默认60轮，旧未结束12轮档续期，满60轮判限期�
   for (let i = 24; i < 120 && !battle.isOver(); i++) battle.endTurn();
   expect(battle.isOver()).toBe(true); expect(battle.round).toBe(60); expect(battle.winner()).toBe('draw');
   battle.battlefield!.objective.limit = 12; extendSmallRoundLimit(battle); expect(battle.battlefield!.objective.limit).toBe(12);
+});
+
+it('下一次同步决策让出绘制机会；隐藏页面也能继续推进', async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal('document', { hidden: false });
+  let paint!: FrameRequestCallback;
+  const frame = vi.fn((callback: FrameRequestCallback) => { paint = callback; return 1; });
+  vi.stubGlobal('requestAnimationFrame', frame);
+  const next = vi.fn(); const waiting = yieldBattleFrame().then(next);
+  expect(frame).toHaveBeenCalledOnce(); expect(next).not.toHaveBeenCalled();
+  paint(0); expect(next).not.toHaveBeenCalled();
+  await vi.runAllTimersAsync(); await waiting; expect(next).toHaveBeenCalledOnce();
+  vi.stubGlobal('document', { hidden: true });
+  const hidden = yieldBattleFrame(); await vi.runAllTimersAsync(); await hidden;
+  expect(frame).toHaveBeenCalledOnce();
 });
