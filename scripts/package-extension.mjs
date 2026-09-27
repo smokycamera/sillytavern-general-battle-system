@@ -4,7 +4,9 @@ import { createHash } from 'node:crypto';
 import { nativeSourceFingerprint } from './native-build-fingerprint.mjs';
 const output = path.resolve('release/native-candidate');
 const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
-copyFileSync('extension/manifest.json', path.join(output, 'manifest.json'));
+const extensionManifest = { ...JSON.parse(readFileSync('extension/manifest.json', 'utf8')), version };
+extensionManifest.display_name += `v${version}`;
+writeFileSync(path.join(output, 'manifest.json'), JSON.stringify(extensionManifest, null, 2) + '\n');
 for (const file of ['README.md', 'README.zh-CN.md', 'LICENSE', 'LICENSE-NOTES.md', 'THIRD_PARTY_NOTICES.md']) copyFileSync(file, path.join(output, file));
 mkdirSync(path.join(output, 'release'), { recursive: true });
 copyFileSync('release/current-baseline.json', path.join(output, 'release/current-baseline.json'));
@@ -36,7 +38,7 @@ if (dist !== path.join(process.cwd(), 'dist') || path.dirname(dist) !== process.
 rmSync(dist,{recursive:true,force:true});
 mkdirSync(dist,{recursive:true});
 for(const name of ['index.js','assets','panel']) cpSync(path.join(output,name),path.join(dist,name),{recursive:true});
-const rootManifest={...JSON.parse(readFileSync('extension/manifest.json','utf8')),js:'dist/index.js'};
+const rootManifest={...extensionManifest,js:'dist/index.js'};
 writeFileSync('manifest.json',JSON.stringify(rootManifest,null,2)+'\n');
 const repositoryManifest={...manifest,layout:'paths relative to repository root',files:manifest.files.map(file=>{
   const runtime=file.path==='index.js'||file.path.startsWith('panel/')||/^assets\/[^/]+\.(js|css)$/.test(file.path);
