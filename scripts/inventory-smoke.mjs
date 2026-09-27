@@ -138,7 +138,9 @@ try {
     for (const theme of ['dark', 'light']) {
       await root.evaluate((_root, theme) => { document.body.dataset.theme = theme; }, theme);
       const layout = await root.evaluate((element) => ({ overflow: document.documentElement.scrollWidth > innerWidth + 1,
-        small: [...element.querySelectorAll('button,select,input')].filter((e) => e.getBoundingClientRect().width > 0 && e.getBoundingClientRect().height < 43.5).length }));
+        // The wrapping label is the checkbox's clickable target, not its 18px glyph.
+        small: [...element.querySelectorAll('button,select,input')].map(e => e.matches('input[type="checkbox"]') ? e.closest('label') ?? e : e)
+          .filter(e => e.getBoundingClientRect().width > 0 && e.getBoundingClientRect().height < 43.5).length }));
       assert.equal(layout.overflow, false, `overflow ${width}/${theme}`); assert.equal(layout.small, 0, `touch targets ${width}/${theme}`);
       // Element screenshots cannot expand a fixed-height iframe: capture real scrollable viewports.
       await root.evaluate((element) => element.scrollIntoView({ block: 'start' }));
