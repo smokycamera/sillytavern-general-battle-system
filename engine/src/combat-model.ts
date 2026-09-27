@@ -10,6 +10,7 @@ export const COHORT_REFERENCE = 50;
 export interface FormationStrength { members: number; capacity: number; memberHp: number; woundedRemainder?: number; health?:MemberHealthGroup[] }
 export const isCohort = (u: Combatant) => u.combatModel === COHORT_MODEL || u.combatModel === MEMBER_HEALTH_MODEL;
 export function validateCombatModel(u: Combatant): void {
+  if(u.damageModel!==undefined&&u.damageModel!=='wounds-v1')throw Error('未知伤害模型');
   if(u.combatModel===undefined){if(u.formation!==undefined)throw Error('编队人数缺少规则版本');return;}
   if(!isCohort(u))throw Error('未知战斗人数模型');
   if(u.scale==='hero'){if(u.formation!==undefined)throw Error('个体不能携带编队人数');return;}
@@ -40,7 +41,9 @@ export function prepareCombatModel(u: Combatant, rules: RulePack, memberHp?:numb
   if(u.combatModel!==undefined||u.formation!==undefined)validateCombatModel(u);
   // 旧快照依旧版本运行；只有显式进入V4才创建成员生命，不能在恢复时重置伤损。
   const fresh=!u.formation;
-  u.combatModel=rules.combatModel;synchronizePersonnel(u);
+  u.combatModel=rules.combatModel;
+  if(rules.damageModel)u.damageModel=rules.damageModel;else delete u.damageModel;
+  synchronizePersonnel(u);
   if(fresh&&u.formation&&rules.combatModel===MEMBER_HEALTH_MODEL)u.formation.memberHp=memberHp??nominalLife(u);
   if(rules.combatModel===MEMBER_HEALTH_MODEL){limitCombatantLife(u);initializeMemberHealth(u);}
 }

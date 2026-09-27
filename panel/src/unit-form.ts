@@ -4,7 +4,7 @@ import { gridAbility } from '../../engine/src/small/skill-range.js';
 import { SINGLE_LIFE_LIMIT } from '../../engine/src/health-limits.js';
 import { memberDurability } from '../../engine/src/combat-model.js';
 import {memberHealthSummary,memberHealth,memberHealthMax,memberNoun,hasMemberHealth} from '../../engine/src/member-health.js';
-import {anchoredWeaponLabel,anchoredProtection,armorPowerScale} from '../../engine/src/power-anchors.js';
+import {anchoredWeaponLabel,anchoredProtection,armorEffectLabel} from '../../engine/src/power-anchors.js';
 import { fallbackAbilityRange } from '../../engine/src/actions.js';
 import { armorTraitId, equipmentTraitIds } from '../../engine/src/trait-sources.js';
 import { SKILL_CATEGORIES, skillMechanismName } from '../../engine/src/data/skill-mechanisms.js';
@@ -68,7 +68,7 @@ export function buildPreview(unit: Combatant, before?: Combatant): string {
   const load = (unit.weapon?.load ?? 0) + (unit.sidearm?.load ?? 0) + (unit.armor?.load ?? 0) + (unit.shield?.load ?? 0) + Object.values(unit.accessories ?? {}).reduce((sum,item)=>sum+(item?.load??0),0);
   return `<div class="builder-preview" data-role="builder-preview"><h3>${before ? '确认档案变化' : '确认加入队伍'}</h3><b>${esc(unit.name)}</b><p>${change(`${unit.hp}/${unit.base.hpMax}`, before && `${before.hp}/${before.base.hpMax}`)} ${unit.scale === 'hero' ? '生命' : '人数'} · 训练${unit.level}${unit.scale!=='hero'?' · 成员耐久 '+memberDurability(unit):''}</p><p>${change(gear(unit), before && gear(before))}</p>
     ${hasMemberHealth(unit)?`<p>总生命 ${memberHealth(unit)}/${memberHealthMax(unit)} · ${esc(memberHealthSummary(unit))}</p>`:''}
-    <p>${esc(anchoredWeaponLabel(unit.weapon))}</p><p>负重 ${load}/${BODY[unit.body ?? 'human'].capacity} · 防护 动能${anchoredProtection(unit, 'kinetic')} / 热能${anchoredProtection(unit, 'thermal')} / 奥术${anchoredProtection(unit, 'arcane')} · 装甲等效耐久×${Number(armorPowerScale(unit).toFixed(2))}</p>
+    <p>${esc(anchoredWeaponLabel(unit.weapon,unit.damageModel))}</p><p>负重 ${load}/${BODY[unit.body ?? 'human'].capacity} · 防护 动能${anchoredProtection(unit, 'kinetic')} / 热能${anchoredProtection(unit, 'thermal')} / 奥术${anchoredProtection(unit, 'arcane')} · ${esc(armorEffectLabel(unit))}</p>
     ${equipmentTraitIds(unit).length ? `<p data-role="equipment-traits">装备自动特质：${equipmentTraitIds(unit).map(id => esc(id === 'super-heavy' ? '超重装甲（先攻−2，无额外防御）' : '重甲（先攻−1，无额外防御）')).join('、')}，无需另行勾选。</p>` : ''}
     ${equipmentReason(unit) ? `<p class="grid-reason">${esc(equipmentReason(unit))}</p>` : ''}
     ${unit.abilities.length ? `<div class="builder-skills-preview">${unit.abilities.map((a) => `<p><b>${esc(a.name)}</b> · ${esc(skillDefinitionName(a.definitionId ?? a.id))} L${a.power ?? 5}${esc(enhancementLabel(a.bonuses))}<br><small>格子射程${fallbackAbilityRange(unit, gridAbility(a)).min}–${fallbackAbilityRange(unit, gridAbility(a)).max}／会战${fallbackAbilityRange(unit, a).min}–${fallbackAbilityRange(unit, a).max}阵距 · ${a.cost ? (a.cost.resource==='SP'?'精力':a.cost.resource) + ' ' + a.cost.amount : '无资源消耗'} · 冷却${a.cooldown ?? 0} · ${esc(abilityUsabilityReason(unit, a) ?? '已准备，可用')}</small></p>`).join('')}</div>` : ''}

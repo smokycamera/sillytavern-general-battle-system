@@ -21,6 +21,10 @@ export const POWER_ANCHORS=[
  {level:10,name:'神器级',budget:400000,example:'神器、概念、因果、空间切断、法则、位面级武器'},
 ] as const;
 export const powerBudget=(power:number)=>POWER_ANCHORS[Math.max(0,Math.min(9,Math.round(power)-1))]!.budget;
+/** 单体创伤预算独立于穿透/范围；身体生命不会因穿戴高阶装备而膨胀。 */
+export const WOUND_BUDGETS=[4.5,10,24,28,32,36,42,48,56,64] as const;
+export const woundBudget=(power:number)=>WOUND_BUDGETS[Math.max(0,Math.min(9,Math.round(power)-1))]!;
+export const combatPowerBudget=(power:number,model?:Combatant['damageModel'])=>model==='wounds-v1'?woundBudget(power):powerBudget(power);
 export function penetrationThrough(power:number,resistance:number):number {
   if(!Number.isFinite(power)||!Number.isFinite(resistance)||power<0||resistance<0)throw Error('穿透与防护须为非负有限数');
   const gap=power-resistance;
@@ -34,24 +38,30 @@ export function scaledPowerDice(mean:number):{dice:string;scale:number} {
   const dice=mean<3.5?'1d2':'8d6',base=mean<3.5?1.5:28;
   return {dice,scale:mean/base};
 }
-export function anchoredWeapon(weapon:Weapon|undefined,ammo:'he'|'ap'='he'):Weapon|undefined {
+export function anchoredWeapon(weapon:Weapon|undefined,ammo:'he'|'ap'='he',model?:Combatant['damageModel']):Weapon|undefined {
   if(!weapon)return undefined;
-  if(weapon.powerModel==='anchors-v1')return weapon;
+  const projection=model==='wounds-v1'?'wounds-v1':'anchors-v1';
+  if(weapon.powerModel===projection||weapon.powerModel&&weapon.customized)return weapon;
+  if(weapon.powerModel){
+    const power=weapon.recipe?.power??weapon.level??5;
+    const ratio=combatPowerBudget(power,model)/combatPowerBudget(power,weapon.powerModel==='wounds-v1'?'wounds-v1':undefined);
+    return {...weapon,powerModel:projection,damageScale:(weapon.damageScale??1)*ratio};
+  }
   const mechanism=weapon.recipe?.mechanism??weapon.tags?.find(t=>t.startsWith('mechanism:'))?.slice(10);
   if(!mechanism)return weapon;
   const power=weapon.recipe?.power??weapon.level??5,curve=curveAt(power),old=diceAvg(curve.dmgBase)+(curve.dmgAp?diceAvg(curve.dmgAp):0);
   const melee=meleeProfile(weapon);
-  const ratio=powerBudget(power)/old*(isCannonWeapon(weapon)?3:mechanism==='autocannon'?1.5:1)*(melee?.damageScale??1);
+  const ratio=combatPowerBudget(power,model)/old*(isCannonWeapon(weapon)?3:mechanism==='autocannon'?1.5:1)*(melee?.damageScale??1);
   const base=diceAvg(weapon.baseDice)+(weapon.apDice?diceAvg(weapon.apDice):0),scaled=scaledPowerDice(base*ratio*bonusMultiplier(weapon.recipe?.bonuses, 'damage',weapon.channel??'kinetic')*(mechanism==='summon'?(weapon.damageScale??1):1));
   const artillery=isCannonWeapon(weapon),explosive=artillery&&ammo==='he'&&power>=3;
   const splash=explosive?(power>=10?1e9:power>=9?256:power>=8?12:power>=7?6:power>=5?4:2):mechanism==='demolition'?6:0;
-  return {...weapon,powerModel:'anchors-v1',ammunition:ammo,baseDice:scaled.dice,apDice:undefined,damageScale:scaled.scale,
+  return {...weapon,powerModel:projection,ammunition:ammo,baseDice:scaled.dice,apDice:undefined,damageScale:scaled.scale,
     penetration:Math.max(0,2*power+(['cannon','indirect-cannon','autocannon','demolition'].includes(mechanism)?2:mechanism==='heavy-rifle'?2:['firearm','rifle','energy'].includes(mechanism)?1:0)+(melee?.penetration??0)+(artillery&&ammo==='ap'?2:0)+bonusRating(weapon.recipe?.bonuses,'penetration',weapon.channel??'kinetic')),
     splashTargets:splash,splashFactor:mechanism==='demolition'?0.6:0.4};
 }
-export function anchoredProtection(unit:Pick<Combatant,'armor'|'body'|'shield'>,channel:DamageChannel):number {
+export function anchoredProtection(unit:Pick<Combatant,'armor'|'body'|'shield'|'damageModel'>,channel:DamageChannel):number {
   const armor=unit.armor,innate=BODY[unit.body??'human'].protection[channel];
-  const armorBonus=armor?.tier?armor.recipe?.bonuses:undefined,shieldBonus=unit.shield?.recipe?.bonuses;
+  const armorBonus=armor?.tier?armor.recipe?.bonuses:undefined,shieldBonus=unit.damageModel==='wounds-v1'?undefined:unit.shield?.recipe?.bonuses;
   const adjustment=bonusRating({protection:bonusPoints(armorBonus,'protection')+channelPoints(armorBonus,'protection',channel)+bonusPoints(shieldBonus,'protection')+channelPoints(shieldBonus,'protection',channel)},'protection');
   if(!armor)return Math.max(innate,adjustment);
   if(armor.protectionOverride&&armor.protection)return Math.max(BODY[unit.body??'human'].protection[channel],armor.protection[channel]);
@@ -65,18 +75,42 @@ export function anchoredProtection(unit:Pick<Combatant,'armor'|'body'|'shield'>,
   return Math.max(innate,protection[channel]+adjustment);
 }
 /** 高阶材料/护场提供等效耐久；24为固定同代交战基准，避免提高攻击曲线后同档全部秒杀。 */
-export function armorPowerScale(unit:Pick<Combatant,'armor'|'shield'>):number {
+export function armorPowerScale(unit:Pick<Combatant,'armor'|'shield'|'damageModel'>):number {
+  if(unit.damageModel==='wounds-v1')return 1;
   const armor=unit.armor?.powerScale??(unit.armor&&unit.armor.tier>0?Math.max(1,powerBudget(unit.armor.recipe?.power??unit.armor.level??5)/24)*bonusMultiplier(unit.armor.recipe?.bonuses,'power'):1);
   const shield=unit.shield?.powerScale??(unit.shield ? Math.max(1,powerBudget(unit.shield.recipe?.power??3)/48) : 1);
   return Math.max(armor,unit.shield?shield:0)*bonusMultiplier(unit.shield?.recipe?.bonuses,'power');
 }
+/** 强度只改变部分穿透时的吸能；完全穿透/无法穿透不被另加减伤。 */
+export function armorTransmission(unit:Pick<Combatant,'armor'|'body'|'shield'|'damageModel'>,channel:DamageChannel,penetration:number):number {
+  const through=penetrationThrough(penetration,anchoredProtection(unit,channel));
+  const armorDominates=anchoredProtection({...unit,body:'human'},channel)>=BODY[unit.body??'human'].protection[channel];
+  return unit.damageModel==='wounds-v1'&&unit.armor?.tier&&armorDominates ? through**bonusMultiplier(unit.armor.recipe?.bonuses,'power') : through;
+}
+/** 盾牌有界覆盖按期望折算，不追加随机骰；范围/失能/充分穿透不会获得保护。 */
+export function shieldProtection(unit:Pick<Combatant,'shield'>,channel:DamageChannel):number {
+  if(!unit.shield)return 0;
+  const recipe=unit.shield.recipe;
+  return Math.max(0,2*(recipe?.power??3)+1-({kinetic:0,thermal:1,arcane:2}[channel])+bonusRating(recipe?.bonuses,'protection',channel));
+}
+export function shieldTransmission(unit:Pick<Combatant,'shield'|'status'>,channel:DamageChannel,penetration:number,area=false,canBlock=true):number {
+  if(!unit.shield||unit.status!=='ready'||area||!canBlock)return 1;
+  const coverage=Math.min(.5,.35*bonusMultiplier(unit.shield.recipe?.bonuses,'power'));
+  return 1-coverage*(1-penetrationThrough(penetration,shieldProtection(unit,channel)));
+}
+export function armorEffectLabel(unit:Pick<Combatant,'armor'|'shield'|'damageModel'>):string {
+  return unit.damageModel==='wounds-v1'
+    ? `部分穿透吸能强度×${Number(bonusMultiplier(unit.armor?.tier?unit.armor.recipe?.bonuses:undefined,'power').toFixed(2))}；充分穿透后无额外减伤${unit.armor?.powerScale!==undefined||unit.shield?.powerScale!==undefined?'（旧耐久覆盖不参与新规则）':''}`
+    : `装甲等效耐久×${Number(armorPowerScale(unit).toFixed(2))}（旧规则）`;
+}
 /** 没有手动指定时，火炮按公开目标防护和人数选择有效毁伤较高的弹种。 */
-export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Combatant,weaponOverflow=false):Weapon|undefined {
-  if(!weapon||weapon.powerModel==='anchors-v1')return weapon;
-  if(actor.cannonAmmo||!isCannonWeapon(weapon))return anchoredWeapon(weapon,actor.cannonAmmo);
-  const he=anchoredWeapon(weapon,'he')!,ap=anchoredWeapon(weapon,'ap')!;
+export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Combatant,weaponOverflow=false,model=actor.damageModel):Weapon|undefined {
+  if(!weapon)return weapon;
+  if(actor.cannonAmmo||!isCannonWeapon(weapon))return anchoredWeapon(weapon,actor.cannonAmmo,model);
+  const he=anchoredWeapon(weapon,'he',model)!,ap=anchoredWeapon(weapon,'ap',model)!;
+  const protectedTarget={...target,damageModel:model};
   const score=(w:Weapon)=>{
-    const raw=diceAvg(w.baseDice)*(w.damageScale??1)*penetrationThrough(w.penetration??0,anchoredProtection(target,w.channel??'kinetic'))/armorPowerScale(target);
+    const raw=diceAvg(w.baseDice)*(w.damageScale??1)*armorTransmission(protectedTarget,w.channel??'kinetic',w.penetration??0)/armorPowerScale(protectedTarget);
     if(weaponOverflow&&hasMemberHealth(target)){
       const copy={...target,formation:{...target.formation!,health:target.formation!.health!.map(g=>({...g}))}};
       const direct=damageMemberGroups(copy,Math.round(raw),1,true).health;
@@ -89,8 +123,8 @@ export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Comb
   };
   return score(ap)>score(he)?ap:he;
 }
-export function anchoredWeaponLabel(weapon:Weapon|undefined):string {
-  const w=anchoredWeapon(weapon);if(!w)return '—';
+export function anchoredWeaponLabel(weapon:Weapon|undefined,model?:Combatant['damageModel']):string {
+  const w=weapon?.powerModel?weapon:anchoredWeapon(weapon,undefined,model);if(!w)return '—';
   const raw=(diceAvg(w.baseDice)+(w.apDice?diceAvg(w.apDice):0))*(w.damageScale??1);
   const melee=meleeProfile(w);
   return `${isRangedWeapon(w) ? (w.indirect ? '曲射' : '直射') + (isCannonWeapon(w) ? '火炮' : '') + ' · ' : ''}单次命中均值${Number(raw.toFixed(1))}生命 · 穿透${w.penetration??0}${(w.attacks??1)>1?` · ${w.attacks}段`:''}${w.splashTargets?` · 爆炸${w.splashTargets>=1e9?'覆盖目标编队':'另及'+w.splashTargets+'名额'}`:''}${melee?` · ${melee.description}`:''}`;

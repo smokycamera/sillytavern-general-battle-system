@@ -7,7 +7,7 @@ import { renderReportWorkspace } from './report-view.js';
 import { captureBattleArchive, captureBattleStart, reportRestartReason, type BattleStart, type DeletedReport } from './report-history.js';
 import { prepareCombatModel, strengthDescription, memberDurability } from '../../engine/src/combat-model.js';
 import {hasMemberHealth,memberHealth,memberHealthMax} from '../../engine/src/member-health.js';
-import {anchoredWeapon,anchoredWeaponLabel,anchoredProtection,armorPowerScale} from '../../engine/src/power-anchors.js';
+import {anchoredWeapon,anchoredWeaponLabel,anchoredProtection,armorEffectLabel} from '../../engine/src/power-anchors.js';
 import {memberHealthPanel,cannonAmmoControl} from './combat-model-view.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
 import { zoneEffectDescription } from '../../engine/src/zone-skills.js';
@@ -45,7 +45,7 @@ import {
   generateUnit, traitCatalog, traitRegistry, resolveTraitId,
   SmallBattle, MassBattle, battleXpAwardsForBothSides, applyXp, xpProgress, xpLabel,
   armorDR, fieldModsFor, LITE_D20,
-  V4_D20, V4_OVERFLOW_D20, V4_OVERFLOW_TW, isAirborne, abilityUsabilityReason,
+  V5_D20, V5_OVERFLOW_D20, V5_OVERFLOW_TW, isAirborne, abilityUsabilityReason,
   generatedField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
   FORMATION_NODES, formationNode, concealmentLabel,
   type Combatant, type GenerateInput, type Order, type BattleLogEntry, type Side,
@@ -520,7 +520,7 @@ function restore(): void {
   }
   // 旧存档已结算标记也封口，不能因旧版缺少完整战果 id 而重写最新档案。
   const restoredBattle = currentBattle();
-  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareCombatModel(unit,V4_D20);upgradeCombatSkills(unit);}
+  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareCombatModel(unit,V5_D20);upgradeCombatSkills(unit);}
   if (restoredBattle && state.xpSettled) {
     const id = battleOutcomeId(state.mass ? 'mass' : 'small', restoredBattle.seed);
     if (!state.committedOutcomeIds.includes(id)) state.committedOutcomeIds.push(id);
@@ -589,7 +589,7 @@ function defaultRank(u: Pick<Combatant, 'archetype'>): 'front' | 'rear' | 'reser
 async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {}): Promise<void> {
   // 特质去重：AI 标签/面板勾选可能重复给同一特质
   const { unit } = generateUnit({ ...input, rulesVersion: 'v2', era: undefined, traits: [...new Set(input.traits)] }, { registry: reg });
-  prepareCombatModel(unit, V4_D20); upgradeCombatSkills(unit);
+  prepareCombatModel(unit, V5_D20); upgradeCombatSkills(unit);
   // id 去重
   state.idSeq++;
   state.roster.push(unit);
@@ -603,7 +603,7 @@ async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {})
 /** 储存器档案实体化为本场编制，保留稳定 id、当前兵力、状态和玩家编辑过的基础属性。 */
 function materializeStorageUnit(r0: RosterUnit): Combatant {
   const unit=materializeUnitRecord(r0, reg, { era: state.era });
-  if(unit.rulesVersion==='v2'){prepareCombatModel(unit,V4_D20);upgradeCombatSkills(unit);}
+  if(unit.rulesVersion==='v2'){prepareCombatModel(unit,V5_D20);upgradeCombatSkills(unit);}
   return unit;
 }
 
@@ -1037,12 +1037,12 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   if (u.weapon) {
     const atkTimes = u.weapon.attacks && u.weapon.attacks > 1 ? ` ×${u.weapon.attacks}` : '';
     const reload = u.weapon.reload ? ` 装填${u.weapon.reload}` : '';
-    if(modern)rows.push(`<div class="eq"><b>武器</b> ${esc(u.weapon.name)} L${u.weapon.level??5}${esc(enhancementLabel(u.weapon.recipe?.bonuses))}：${esc(anchoredWeaponLabel(anchoredWeapon(u.weapon,u.cannonAmmo)))} · 格子射程${gridWeaponRange(u.weapon)}／会战${formationWeaponRange(u.weapon)}阵距${reload}</div>`);
+    if(modern)rows.push(`<div class="eq"><b>武器</b> ${esc(u.weapon.name)} L${u.weapon.level??5}${esc(enhancementLabel(u.weapon.recipe?.bonuses))}：${esc(anchoredWeaponLabel(anchoredWeapon(u.weapon,u.cannonAmmo,u.damageModel)))} · 格子射程${gridWeaponRange(u.weapon)}／会战${formationWeaponRange(u.weapon)}阵距${reload}</div>`);
     else rows.push(`<div class="eq"><b>武器</b> ${esc(u.weapon.name)}：${esc(u.weapon.baseDice)}${u.weapon.apDice ? ` +破甲${esc(u.weapon.apDice)}` : ''}｜射程${u.rulesVersion === 'v2' ? gridWeaponRange(u.weapon, false) + '格／会战' + (u.weapon.range ?? 0) + '阵距' : u.weapon.range ?? 0}${atkTimes}${reload}${u.rulesVersion === 'v2' ? ' · 穿透' + (u.weapon.penetration ?? 0) + ' · ' + ({ kinetic: '动能', thermal: '热能', arcane: '奥术' })[u.weapon.channel ?? 'kinetic'] : u.weapon.tags?.length ? '｜' + esc(u.weapon.tags.join(',')) : ''}</div>`);
   }
   if (u.armor) {
     if (u.armor.protection) {
-      rows.push(`<div class="eq"><b>通道防护</b> L${u.armor.level??5}${esc(enhancementLabel(u.armor.recipe?.bonuses))} · 动能${protection('kinetic')} / 热能${protection('thermal')} / 奥术${protection('arcane')}${modern?' · 装甲等效耐久×'+Number(armorPowerScale(u).toFixed(2)):''} · 负重${u.armor.load ?? 0}</div>`);
+      rows.push(`<div class="eq"><b>通道防护</b> L${u.armor.level??5}${esc(enhancementLabel(u.armor.recipe?.bonuses))} · 动能${protection('kinetic')} / 热能${protection('thermal')} / 奥术${protection('arcane')}${modern?' · '+esc(armorEffectLabel(u)):''} · 负重${u.armor.load ?? 0}</div>`);
     } else {
     const tierNames = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
     // 实际减伤 = (基础档+特质档修正，封顶4档) 表值 × 护甲效率，最终封顶 90%
@@ -2453,7 +2453,7 @@ async function startSmallBattle(context?:LlmEncounterContext):Promise<void> {
     const small = new SmallBattle({
       nonLethal:state.nonLethal,
       ...(state.roster.every((u) => u.rulesVersion === 'v2') ? { battlefield } : {}),
-      rules: state.roster.every((u) => u.rulesVersion === 'v2') ? V4_OVERFLOW_D20 : LITE_D20,
+      rules: state.roster.every((u) => u.rulesVersion === 'v2') ? V5_OVERFLOW_D20 : LITE_D20,
       combatants: JSON.parse(JSON.stringify(state.roster)), seed: state.roster.every((u) => u.rulesVersion === 'v2') ? seed : undefined, traitRegistry: reg,
       summonUnit,
       field: { tags: state.roster.every((u) => u.rulesVersion === 'v2') ? tags : state.field ? [state.field] : [] },
@@ -2484,7 +2484,7 @@ async function startMassBattle(context?:LlmEncounterContext):Promise<void> {
     }
     const mass = new MassBattle({
       nonLethal:state.nonLethal,
-      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V4_OVERFLOW_TW } : {}),
+      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V5_OVERFLOW_TW } : {}),
       combatants: clones,
       traitRegistry: reg,
       commanderId: state.commanderId,

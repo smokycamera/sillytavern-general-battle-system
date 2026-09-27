@@ -40,7 +40,7 @@ export interface Weapon {
   /** 正文明确设定的V4冻结数值，不参与旧装备自动校正。 */
   customized?: boolean;
   /** V4运行时规格投影；库存仍保存原始冻结配方。 */
-  powerModel?: 'anchors-v1';
+  powerModel?: 'anchors-v1' | 'wounds-v1';
   damageScale?: number;
   ammunition?: 'he' | 'ap';
   splashTargets?: number;
@@ -138,7 +138,7 @@ export interface Ability {
   /** 显式编辑的效果与数值不被入场公式重建。 */
   customized?: boolean;
   bonuses?: Enhancements;
-    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3' | 'skill-zone-v1';
+    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3' | 'skill-v5.0' | 'skill-zone-v1';
     damageScale?: number;
   recipe?: import('./data/skill-mechanisms.js').SkillRecipe;
   weaponUse?: 'auto' | 'melee' | 'ranged';
@@ -268,6 +268,8 @@ export interface ActiveCondition {
 export type UnitStatus = 'ready' | 'dying' | 'dead' | 'routing' | 'fled';
 
 export interface Combatant {
+  /** 由战斗规则投影；旧快照缺省使用旧伤害模型。 */
+  damageModel?: 'wounds-v1';
   battleZones?: import('./area-effects.js').BattleZone[];
   barrier?: { remaining: number; duration: number; sourceId?: string };
   accessories?: Partial<Record<'accessory1' | 'accessory2', import('./items.js').AccessoryItem>>;
@@ -501,6 +503,8 @@ export interface BattleLogEntry {
 // ---------- 规则包 ----------
 
 export interface RulePack {
+  /** V5 单体毁伤与通道防护；缺省沿用旧战斗的规格耐久。 */
+  damageModel?: 'wounds-v1';
   combatModel?: 'cohort-v1' | 'cohort-v2';
   /** 武器直击余伤100%在目标编队内传递；旧规则缺省关闭。 */
   weaponOverflow?: boolean;

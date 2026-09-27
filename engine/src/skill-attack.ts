@@ -11,7 +11,7 @@ import { meleeWeapon } from './loadout.js';
 import { BODY } from './body.js';
 import { curveAt } from './data/curves.js';
 import { diceAvg, rebuildDice } from './data/weapons.js';
-import {combatWeapon,scaledPowerDice,powerBudget} from './power-anchors.js';
+import {combatWeapon,scaledPowerDice,combatPowerBudget} from './power-anchors.js';
 import { sharedParticipants, engagementWidth } from './exposure.js';
 import { formationNode } from './mass/formation.js';
 import { sameLayer, isAirborne } from './aerial.js';
@@ -44,7 +44,7 @@ export function skillAttack(context: ObservationContext, actor: Combatant, targe
   const width = engagementWidth(actor, target, isRangedWeapon(weapon), field, context.fieldTags);
   const attached = new Set(context.attached?.values() ?? []);
   const cohort = context.units.filter((u) => !attached.has(u.id) && sameLayer(actor, u) && (context.mode === 'mass' ? formationNode(actor).id === formationNode(u).id : u.pos === actor.pos));
-  const budget=isCohort(actor)?equipmentBudget*Math.min(1,powerBudget(ability.power??5)/powerBudget(weapon.level??5)):Math.min(skillBudget,equipmentBudget),scaled=scaledPowerDice(budget);
+  const budget=isCohort(actor)?equipmentBudget*Math.min(1,combatPowerBudget(ability.power??5,actor.damageModel)/combatPowerBudget(weapon.level??5,actor.damageModel)):Math.min(skillBudget,equipmentBudget),scaled=scaledPowerDice(budget);
   return { weaponOverride: weapon, ranged: isRangedWeapon(weapon), participants: sharedParticipants(actor, cohort, width, target),
     abilityDamage: { accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect, baseDice:actor.combatModel==='cohort-v2'?scaled.dice:cappedDice(budget),damageScale:actor.combatModel==='cohort-v2'?scaled.scale:undefined,apDice: undefined, channel, penetration: Math.max(0,(weapon.penetration ?? 1 + Math.floor((weapon.level ?? 5) / 2)) + bonusRating(ability.bonuses,'penetration',channel)), weaponBased: true } };
 }

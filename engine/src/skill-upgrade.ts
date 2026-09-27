@@ -2,7 +2,7 @@ import { bonusMultiplier, bonusSteps, bonusRating } from './enhancements.js';
 import type { Combatant } from './types.js';
 import { curveAt } from './data/curves.js';
 import { diceAvg, rebuildDice } from './data/weapons.js';
-import {powerBudget,scaledPowerDice} from './power-anchors.js';
+import {combatPowerBudget,scaledPowerDice} from './power-anchors.js';
 import { compileSkill, skillDefinitionKnown } from './skill-catalog.js';
 import { balanceGenericSkill, genericEffectCount } from './skill-balance.js';
 import { upgradeZoneSkill } from './zone-skills.js';
@@ -12,7 +12,8 @@ export function upgradeCombatSkills(unit: Combatant): void {
   for(const a of unit.abilities){
     if (upgradeZoneSkill(a)) continue;
     const generic=a.definitionId?.startsWith('generic:')??false;
-    const version=modern?'skill-v4.3':'skill-v3.0';
+    const wounds=unit.damageModel==='wounds-v1';
+    const version=wounds?'skill-v5.0':modern?'skill-v4.3':'skill-v3.0';
     if(a.customized||a.itemSourceId||a.fixedPower||a.effectVersion===version)continue;
     const previousGroup=a.cooldownGroup??a.id;
     if(modern&&a.definitionId&&skillDefinitionKnown(a.definitionId)) {
@@ -22,7 +23,7 @@ export function upgradeCombatSkills(unit: Combatant): void {
       Object.assign(a,rebuilt,{sourceId,id});
       delete a.damageScale;
     }
-    const power=a.power??5, curve=curveAt(power), base=modern?powerBudget(power):diceAvg(curve.dmgBase)+(curve.dmgAp?diceAvg(curve.dmgAp):0);
+    const power=a.power??5, curve=curveAt(power), base=modern?combatPowerBudget(power,unit.damageModel):diceAvg(curve.dmgBase)+(curve.dmgAp?diceAvg(curve.dmgAp):0);
     const damaging=a.effects.some(e=>e.op==='damage'), area=a.shape==='burst';
     if(modern&&area&&!a.damageBasis&&damaging)a.areaExposure=power>=10?1e9:power>=9?128:power>=8?16:power>=7?8:4;
     const controls=a.effects.filter(e=>!['damage'].includes(e.op)).length;
@@ -49,7 +50,8 @@ export function upgradeCombatSkills(unit: Combatant): void {
       const restored=a.effects.find(e=>e.op==='resource'&&e.resource==='SP'&&e.amount>0);
       if(restored?.op==='resource'&&a.cost?.resource==='SP')a.cost.amount=Math.max(a.cost.amount,restored.amount*(area?2:1));
     }
-    if(modern)a.effects=a.effects.map(e=>e.op==='heal'?{op:'heal',amount:Math.max(1,Math.round(base*(area?0.8:1.5)*bonusMultiplier(a.bonuses,'healing')/(generic?genericEffectCount(a):1)))}:e);
+    const healingScale=wounds?(area ? 0.65 : 1):(area ? 0.8 : 1.5);
+    if(modern)a.effects=a.effects.map(e=>e.op==='heal'?{op:'heal',amount:Math.max(1,Math.round(base*healingScale*bonusMultiplier(a.bonuses,'healing')/(generic?genericEffectCount(a):1)))}:e);
     if(modern)balanceGenericSkill(a);
     const oldGroup=previousGroup;
     a.cooldownGroup='skill-mechanism:'+(a.definitionId??a.id);

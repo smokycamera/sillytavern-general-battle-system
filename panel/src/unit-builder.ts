@@ -3,7 +3,7 @@ import { prepareCombatModel,nominalLife } from '../../engine/src/combat-model.js
 import { capSingleLife } from '../../engine/src/health-limits.js';
 import {setMemberMaximum} from '../../engine/src/member-health.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
-import { V4_D20 } from '../../engine/src/rules.js';
+import { V5_D20 } from '../../engine/src/rules.js';
 import { BODY } from '../../engine/src/body.js';
 import { skillDefinitionKnown, skillDefinitionName } from '../../engine/src/skill-catalog.js';
 import { generateUnit, compileItem, equipmentReason, validateMount, learnAbilities, normalizeBakedTraitStats, ABILITY_BLUEPRINTS, abilityPower, type Combatant, type GenerateInput, type Trait, type ItemMechanics } from '../../engine/src/index.js';
@@ -70,7 +70,7 @@ export function buildUnit(d: UnitDraft, registry: Map<string, Trait>, seed: stri
   if (weapon.kind !== 'weapon' || armor.kind !== 'armor') throw Error('装备类型无效');
   let unit = generateUnit({ ...input, weaponClass: weapon.mechanism, weaponLevel: weapon.power, armorTier: armor.tier, armorLevel: armor.power, preparedAbilityIds: [] }, { seed, registry }).unit;
   setGear(unit, d); unit = learnAbilities(unit, [], { prepared: d.autoPrepare ? undefined : d.skills.filter((s) => s.prepared).map((s) => unit.abilities.find((a) => a.id === s.instanceId || a.definitionId === s.id && a.name === (s.name.trim() || skillDefinitionName(s.id)))?.id ?? s.id) });
-  prepareCombatModel(unit,V4_D20,(d.memberHp??'').trim()?capSingleLife(integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命')):undefined); upgradeCombatSkills(unit);
+  prepareCombatModel(unit,V5_D20,(d.memberHp??'').trim()?capSingleLife(integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命')):undefined); upgradeCombatSkills(unit);
   unit.resources.SP = spCapacity(unit); normalizeBakedTraitStats(unit, registry); return unit;
 }
 /** 只编译变更的配方；名称、体型和训练显示不重掷其他实物。 */
@@ -86,7 +86,7 @@ export function editUnitBuild(previous: UnitRecord, d: UnitDraft, registry: Map<
   edited.traits = [...input.traits];
   const next = editUnitRecord(previous, edited, registry), unit = next.snapshot!;
   unit.body = input.body; unit.mount = input.mount; unit.speedTier = input.speedTier; validateMount(unit);
-  prepareCombatModel(unit,V4_D20);
+  prepareCombatModel(unit,V5_D20);
   if(unit.formation&&(d.memberHp??'').trim())setMemberMaximum(unit,integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命'));
   unit.abilityState = structuredClone(previous.snapshot.abilityState); unit.resources = { ...previous.snapshot.resources, reserve: input.reserves ?? 0 };
   if (!previous.equipmentManaged) setGear(unit, d, oldDraft);

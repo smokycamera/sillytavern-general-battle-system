@@ -10,6 +10,9 @@ import type { NarrativeSave } from '../panel/src/narrative-state.js';
 const baseline = importedModule('engine/src/index.ts') as typeof engine;
 const oldController = importedModule('panel/src/narrative-controller.ts');
 const plain = (value: unknown) => JSON.parse(JSON.stringify(value));
+// 冻结脚本早于空指挥官配置字段；只忽略空对象，不忽略有实际策略的数据。
+const withoutEmptyCommander = (value: unknown) => JSON.parse(JSON.stringify(value, (key, entry) =>
+  key === 'commanderProfiles' && entry && Object.keys(entry).length === 0 ? undefined : entry));
 const cases: string[] = [];
 for (const mode of ['small', 'mass'] as const) {
   const units = (['ally', 'enemy'] as const).map(side => {
@@ -38,7 +41,7 @@ for (const mode of ['small', 'mass'] as const) {
     assert.deepEqual(restored.committedOutcomeIds, save.committedOutcomeIds);
     assert.deepEqual(restored.customValue, save.customValue);
     const prior = mode === 'small' ? baseline.SmallBattle.fromSnapshot(restored.battle!.snap) : baseline.MassBattle.fromSnapshot(restored.battle!.snap);
-    assert.deepEqual(plain(prior.toSnapshot()), plain(battle.toSnapshot()));
+    assert.deepEqual(withoutEmptyCommander(prior.toSnapshot()), withoutEmptyCommander(battle.toSnapshot()));
     cases.push(mode + '-latest-progress-restores-in-frozen-release');
   } finally { controller.dispose(); }
 }
