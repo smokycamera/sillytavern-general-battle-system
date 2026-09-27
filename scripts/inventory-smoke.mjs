@@ -50,7 +50,7 @@ try {
   if (!process.argv.includes('--mass-only')) {
   await tab('inventory');
   await root.evaluate(() => { const original = Storage.prototype.setItem; Storage.prototype.setItem = function (...args) { if (window.parent.testFail) throw Error('test quota'); return original.apply(this, args); }; });
-  const save = () => page.evaluate(() => structuredClone(window.testVars.panel));
+  const save = async () => { await panel.locator('body:not([aria-busy="true"])').waitFor(); return page.evaluate(() => structuredClone(window.testVars.panel)); };
   const itemRow = (name) => root.locator('.inventory-card').filter({ has: panel.locator('b', { hasText: name }) });
   const confirm = async () => {
     assert.equal(await root.locator('[data-action="inventory-confirm"]').count(), 1, 'missing confirmation: ' + await root.locator('[data-role="inventory-feedback"]').innerText());
@@ -264,7 +264,7 @@ try {
   assert.deepEqual(errors, []);
   console.log('✓ 正式战场：改造炮实际手动开火/穿透与伤害骰→归档→下一战保持原炮，耗尽药剂不复生');
   }
-  const saveMass = () => page.evaluate(() => structuredClone(window.testVars.panel));
+  const saveMass = async () => { await panel.locator('body:not([aria-busy="true"])').waitFor(); return page.evaluate(() => structuredClone(window.testVars.panel)); };
   let massCurrent;
   await page.evaluate((fixture) => { window.testChat = 'inventory-mass-test'; window.testVars = { panel: fixture }; window.openPanel(); }, massFixture);
   await panel.locator('.formation-grid').waitFor();
