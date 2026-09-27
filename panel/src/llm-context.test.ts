@@ -23,6 +23,36 @@ function model(values: Record<string,string> = {}, confidence = .95) {
 }
 afterEach(()=>vi.unstubAllGlobals());
 describe('ordinary LLM preparation',()=>{
+  it.each([false, true])('lists models and prepares a battle using the host backend (TT=%s)', async tauri => {
+    const answer = model({ enemy_ability: 'expert', enemy_style: 'firepower' });
+    const backend = vi.fn<typeof fetch>(async (url, init) => {
+      if (url === '/api/backends/chat-completions/status') return new Response(JSON.stringify({ data: [{ id: 'chosen-model' }] }));
+      if (url === '/api/backends/chat-completions/generate') return answer(url, init);
+      return new Response('CORS proxy is disabled', { status: 404 });
+    });
+    vi.stubGlobal('window', { parent: {
+      fetch: backend, __TAURI_RUNNING__: tauri,
+      SillyTavern: { getContext: () => ({ getRequestHeaders: () => ({ 'X-CSRF-Token': 'session' }) }) },
+    } });
+    const direct = vi.fn<typeof fetch>(), controller = new LlmContextController(direct);
+    expect(await controller.models(settings)).toEqual(['chosen-model']);
+    expect(await controller.select(input(), settings, () => true)).toMatchObject({ commanders: { enemy: { ability: 'expert', style: 'firepower' } } });
+    expect(backend).toHaveBeenCalledTimes(2);
+    expect(direct).not.toHaveBeenCalled();
+  });
+  it('preserves actionable connection diagnostics while hiding arbitrary server text', async () => {
+    const backend = vi.fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError('private network details'))
+      .mockResolvedValueOnce(new Response('Invalid CSRF token test-key', { status: 403 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'test-key private response' })));
+    vi.stubGlobal('window', { parent: { fetch: backend, SillyTavern: { getContext: () => ({}) } } });
+    const controller = new LlmContextController(vi.fn());
+    await expect(controller.models(settings)).rejects.toThrow('无法连接酒馆模型后端');
+    await expect(controller.select(input(), settings, () => true)).rejects.toThrow('刷新酒馆');
+    const pending = controller.models(settings);
+    await expect(pending).rejects.toThrow('酒馆返回错误');
+    await expect(pending).rejects.not.toThrow(/test-key|private/);
+  });
   it('reads the requested completed user/assistant layers and applies both commanders and supported scene constraints',async()=>{
     const request=model({ally_ability:'regular',ally_style:'cautious',enemy_ability:'expert',enemy_style:'firepower',field:'urban',lighting:'night',map_layout:'indoor',objective:'escort',battle_mode:'mass'});
     const source=input(),before=JSON.stringify(source);
