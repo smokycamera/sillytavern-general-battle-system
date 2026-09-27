@@ -19,11 +19,12 @@ export function skillResourceChange(target: Combatant, effect: Extract<EffectOp,
   return Math.max(-have, Math.min(effect.amount, effect.maximum === 'training' ? Math.max(0, (effect.resource === 'SP' ? spCapacity(target) : 6 + Math.floor(target.level / 2)) - have) : Infinity));
 }
 /** 回能与支付使用同一估值，避免净亏/零收益的回能被当成免费收益。 */
-export function skillResourceCost(ability: Ability): number {
+export function skillResourceCost(ability: Ability, actor?: Combatant): number {
   const cost = ability.cost;
   if (!cost) return 0;
   const restoresPayment = ability.effects.some(e => e.op === 'resource' && e.resource === cost.resource && e.amount > 0);
-  return cost.amount * (restoresPayment ? 1.5 : 0.5);
+  const reserve = actor ? (actor.resources[cost.resource] ?? 0) : Infinity;
+  return cost.amount * (restoresPayment ? 1.5 : 0.5) * (reserve <= cost.amount ? 2 : reserve <= cost.amount * 2 ? 1.5 : 1);
 }
 export function conjuredTemplate(template: string): boolean { return /^conjured:(?:(?:single|group):)?(?:[1-9]|10)$/.test(template); }
 export function summonProfile(template: string, mode: 'small' | 'mass', bonuses?: Enhancements) {

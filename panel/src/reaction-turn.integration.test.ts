@@ -84,6 +84,13 @@ it('advances after lethal player movement, restores stalled saves, and preserves
   await load(stalled, 'victim');
   expect(snapshot().active?.id).toBe('survivor');
 
+  // A stunned protagonist in a restored active turn must progress without requesting AI text.
+  const stunned = reactionBattle({ healthy: true });
+  stunned.byId('victim').conditions.push({ id: 'stunned', dur: 1 });
+  await load(stunned, 'victim');
+  expect(snapshot().active?.id).toBe('survivor');
+  expect(snapshot().byId('victim').conditions.some(c => c.id === 'stunned')).toBe(false);
+
   // An ordinary surviving move retains this activation and its independent main action.
   await load(reactionBattle({ healthy: true }), 'victim'); await move();
   const healthy = snapshot();

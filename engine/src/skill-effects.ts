@@ -1,10 +1,13 @@
-import { recoveryCapacity } from './recovery.js';
+import { flightCapabilityReason, isAirborne } from './aerial.js';
+import { prepareCombatModel } from './combat-model.js';
+import { memberHealth } from './member-health.js';
+import { recoveryCapacity, regenerationAmount } from './recovery.js';
 import { zoneAmount, zoneEffectDescription } from './zone-skills.js';
 import type { Ability, ActiveCondition, Combatant, EffectOp } from './types.js';
 import type { Rng } from './rng.js';
 import { activeTraitIds, bodyRank, traitSourceActive, grantTraitSource, traitPrerequisiteReason } from './trait-sources.js';
 import { traitRegistry } from './data/traits.js';
-import { skillResourceChange, summonProfile } from './skill-runtime.js';
+import { skillResourceChange, summonProfile, conjureSkillUnit, summonedMemberLife } from './skill-runtime.js';
 import { standardConditionMap } from './conditions.js';
 import { conditionMods } from './bonus.js';
 import { poisonFactor, conditionExposure } from './afflictions.js';
@@ -35,7 +38,7 @@ export function skillConditionDescription(effect: ConditionEffect, target: Comba
   if (def?.preventAttack) details.push('不能使用手持武器攻击，天生武器仍可用');
   if (def?.skipTurn) details.push('跳过行动');
   if (def?.dot) details.push('受到持续' + (def.dot.label ?? def.name) + '，按当前战斗规则结算');
-  if (effect.conditionId === 'hasted') details.push('移动点 +1（受移动上限限制），会战可提升纵深调动距离');
+  if (effect.conditionId === 'hasted') details.push('移动点 +1；每轮额外1次非技能动作，额外攻击按半次普通攻击预算随效力折算，同类不叠加');
   if (effect.conditionId === 'slowed') details.push('移动点 -1（最低1），会战不能冲锋');
   if (['empowered', 'weakened', 'vulnerable', 'blessed'].includes(effect.conditionId)) details.push('仅修正可造成的伤害，不绕过防护');
   if (effect.conditionId === 'blessed' && effect.defensePower !== undefined) details.push(`防御规格L${effect.defensePower}`);
@@ -163,6 +166,23 @@ export function skillEffectLines(context: ObservationContext, actor: Combatant, 
     return [];
   });
 }
+/** 远期逐轮折扣并受可见生存压力限制；不增加逐轮搜索次数。 */
+function futureWeight(context: ObservationContext, target: Combatant, duration: number, from = 0): number {
+  const pressure = incomingPotential(context, target) / Math.max(1, memberHealth(target));
+  const discount = 0.65 * Math.max(0.25, 1 - pressure * 0.5);
+  let value = 0; for (let n = from; n < Math.min(10, duration); n++) value += Math.pow(discount, n);
+  return value;
+}
+export function summonValue(context: ObservationContext, actor: Combatant, ability: Ability, effect: Extract<EffectOp, { op: 'summon' }>): number {
+  const unit = conjureSkillUnit(effect.templateId, actor.side, 'preview-summon:' + actor.id, context.mode, ability.bonuses, actor.damageModel);
+  // 外部召唤模板没有只读规格，保留既有保守估值，不能为评分调用生成回调。
+  if (!unit) return 8 * effect.count;
+  if (!context.rules) return 0;
+  prepareCombatModel(unit, context.rules, summonedMemberLife(unit));
+  unit.pos = actor.pos; unit.formationPosition = actor.formationPosition;
+  const world = { ...context, units: [...context.units, unit] };
+  return (actionPotential(world, unit) * 1.25 + memberHealth(unit) * 0.15) * effect.count;
+}
 export function skillEffectValue(context: ObservationContext, actor: Combatant, target: Combatant, ability: Ability, hitChance = 1, damageChance = hitChance): number {
   const resources = { ...target.resources };
   if (target.id === actor.id && ability.cost) resources[ability.cost.resource] = Math.max(0, (resources[ability.cost.resource] ?? 0) - ability.cost.amount);
@@ -187,18 +207,31 @@ export function skillEffectValue(context: ObservationContext, actor: Combatant, 
         return [{ unit: branch.unit, probability: branch.probability * (1 - chance) }, { unit: future, probability: branch.probability * chance }].filter(b => b.probability > 0);
       }).sort((a, b) => b.probability - a.probability).slice(0, 16);
     }
-    controlValue += branches.reduce((sum, b) => sum + b.probability * (tacticalStateValue(context, b.unit) - before), 0) * polarity * (horizon ? 0.5 : 1);
+    const duration = horizon ? Math.min(...controls.filter(e => e.dur > 1).map(e => e.dur)) : 1;
+    controlValue += branches.reduce((sum, b) => sum + b.probability * (tacticalStateValue(context, b.unit) - before) * (horizon ? futureWeight(context, b.unit, duration, 1) : 1), 0) * polarity;
   }
   return ability.effects.reduce((sum, effect) => {
     if (effect.op === 'zone') { const friendly=target.side===actor.side; return sum+(effect.kind==='smoke'?2*effect.dur/3:effect.kind==='healing'?(friendly?Math.min(recoveryCapacity(target),zoneAmount(effect)):0):friendly?effect.kind==='trap'?0:-8:(4+effect.power)*zoneAmount(effect)/(4+effect.power*3)); }
     if (effect.op === 'barrier') {
       if (context.rules?.overmatch && (effect.defensePower ?? ability.power)) {
         const future = structuredClone(target); grantBarrier(future, effect.amount, effect.dur, actor.id, effect.defensePower ?? ability.power);
-        return sum + Math.max(0, incomingPotential(context, target) - incomingPotential(context, future)) * polarity;
+        return sum + Math.max(0, tacticalStateValue(context, future) - tacticalStateValue(context, target)) * polarity;
       }
       return sum + Math.min(Math.max(0, effect.amount - (target.barrier?.remaining ?? 0)), incomingPotential(context, target)) * polarity;
     }
-    if (effect.op === 'trait') return sum + (skillTraitReason(target, effect) ? 0 : 3 + Math.min(3, effect.dur / 3));
+    if (effect.op === 'trait') {
+      if (skillTraitReason(target, effect)) return sum;
+      const future = structuredClone(target);
+      grantTraitSource(future, { id: 'preview:' + effect.traitId, name: ability.name, kind: 'blessing', traitIds: [effect.traitId], duration: { kind: 'rounds', count: effect.dur }, battleOnly: true });
+      const regeneration = Math.min(recoveryCapacity(target), Math.max(0, regenerationAmount(future, context.traitRegistry) - regenerationAmount(target, context.traitRegistry)));
+      let futureValue = tacticalStateValue(context, future);
+      if (!isAirborne(target) && flightCapabilityReason(target, context.conditions) && !flightCapabilityReason(future, context.conditions)) {
+        const flying = { ...future, airborne: true };
+        futureValue += Math.max(0, tacticalStateValue(context, flying) - futureValue) * 0.65;
+      }
+      const difference = (regeneration + futureValue - tacticalStateValue(context, target)) * polarity;
+      return sum + Math.max(0, difference) * futureWeight(context, future, effect.dur);
+    }
     if (effect.op === 'resource') {
       const before = { ...target, resources: { ...resources } };
       const change = skillResourceChange({ ...target, resources }, effect);

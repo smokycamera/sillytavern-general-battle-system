@@ -65,7 +65,7 @@ export const STANDARD_CONDITIONS: ConditionDef[] = [
     id: 'hasted',
     v2SourceReady: true,
     name: '加速',
-    desc: '先攻速度提高2、移动点提高1；会战可提升纵深调动距离',
+    desc: '先攻速度提高2、移动点提高1；每轮额外一次非技能动作，额外攻击按效力折算，重复加速不增加次数',
     mods: [{ source: 'condition', name: '加速', kind: 'spd', type: 'flat', value: 2 }],
   },
   {
