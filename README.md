@@ -2,7 +2,9 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **1.3.1**.
+Current version: **1.3.2**.
+
+The loadout header now includes **技能选择** beside **新增物品**. Choose a unit, select up to five learned skills, and save; preparation retains skill effects, cooldowns, resources, and equipment.
 
 All four entries are constant, with keywords removed and the user-provided text retained. Supported ST / TT hosts process them through the global World Info pipeline with the original position, depth, role, and order. Older hosts display a depth-fallback notice. See [embedded lorebook notes](docs/embedded-worldbook.md).
 
