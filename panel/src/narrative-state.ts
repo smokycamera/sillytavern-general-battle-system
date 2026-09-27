@@ -1,3 +1,4 @@
+import { randomId } from '../../host/src/browser-compat.js';
 import type { PromptSettings } from './prompt-settings.js';
 import { PANEL_SAVE_SCHEMA_VERSION, learnUnitRecord } from './unit-state.js';
 import { generateUnit, grantTraitSource, revokeTraitSource, traitRegistry, resolveTraitId, type Combatant, type GenerateInput } from '../../engine/src/index.js';
@@ -102,7 +103,7 @@ export function proposalFromMessage(source: MessageEnvelope, expected?: Generati
   if (!parsed.events.length && !parsed.errors.length) return undefined;
   const trusted = source.role === 'assistant' && source.complete && !!source.messageId && !!source.swipeId && (!expected?.messageId || expected.messageId === source.messageId) && source.generationId && source.generationId === expected?.id && expected.complete && namespaceOf(source) === expected.namespace;
   return {
-    id: crypto.randomUUID(), source: { ...structuredClone(source), text: protocolExcerpt(source.text) }, sourceKey: messageSourceKey(source),
+    id: randomId(), source: { ...structuredClone(source), text: protocolExcerpt(source.text) }, sourceKey: messageSourceKey(source),
     canonical: parsed.canonical, events: parsed.events, expected: expected ? structuredClone(expected) : undefined,
     status: parsed.errors.length ? 'unresolved' : trusted ? 'pending' : 'legacy',
     notices: parsed.warnings,

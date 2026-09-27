@@ -1,3 +1,4 @@
+import { randomId } from '../../host/src/browser-compat.js';
 import { SourceMessageChangedError } from '../../host/src/message-identity.js';
 import type { HostSession, MetadataPort, NativeEnvelope, PersistReceipt, RecoveryJournal, RecoveryRecord, MessageTag, LegacyHandoff } from '../../host/src/contracts.js';
 import { sameSession } from '../../host/src/contracts.js';
@@ -50,7 +51,7 @@ export class NativeStore {
     // Capture before queueing so a delayed request cannot jump to another chat.
     const session = this.active;
     if (!session) return Promise.reject(Error('尚未载入原生存档'));
-    const operationId = options.operationId ?? crypto.randomUUID();
+    const operationId = options.operationId ?? randomId();
     return this.enqueue(async () => {
       if (!sameSession(session, this.active) || !sameSession(session, this.host.session()) || this.host.hasLegacyRuntime()) return this.result('conflict', session, operationId, '聊天已切换或旧战阵脚本仍在运行');
       if (this.current?.lastOperationId === operationId) return this.result('confirmed', session, operationId);
@@ -69,8 +70,8 @@ export class NativeStore {
         const payload = options.clear ? null : structuredClone(update(this.snapshot()));
         candidate = {
           format: 'tavern-battle-native', containerVersion: 1,
-          documentId: previous?.documentId ?? crypto.randomUUID(),
-          generation: options.clear || options.replace ? crypto.randomUUID() : previous?.generation ?? crypto.randomUUID(),
+          documentId: previous?.documentId ?? randomId(),
+          generation: options.clear || options.replace ? randomId() : previous?.generation ?? randomId(),
           revision: options.clear || options.replace ? 1 : expectedRevision + 1,
           state: options.clear ? 'cleared' : 'active', lastOperationId: operationId,
           payloadHash: await payloadHash(payload), payload,

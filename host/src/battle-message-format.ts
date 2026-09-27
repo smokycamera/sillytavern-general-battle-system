@@ -1,3 +1,4 @@
+import { randomId } from './browser-compat.js';
 import { decodeEntities, scanProtocolTags } from '../../panel/src/protocol-syntax.js';
 
 export const BATTLE_DETAILS_CLASS = 'tb-native-events';
@@ -41,7 +42,7 @@ export function createBattleMessageHooks() {
     beforeMarkdown(text: string, context: FormattingContext): string {
       if (context.isUser || context.isSystem || context.isReasoning) return text;
       const blocks = battleDisplayBlocks(text); if (!blocks.length) return text;
-      const key = crypto.randomUUID().replaceAll('-', '');
+      const key = randomId().replaceAll('-', '');
       // 正常格式化同步完成；只为宿主异常中断留下少量临时帧，不积累聊天原文。
       if (frames.size >= 16) frames.delete(frames.keys().next().value!);
       const frame = new Map<string, string>(); frames.set(key, frame);

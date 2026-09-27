@@ -1,3 +1,4 @@
+import { abortReason, withAbort } from '../../host/src/browser-compat.js';
 import { jevRequest, jevNetworkError, JevTransportError, type JevTransport } from './jev-transport.js';
 import type { ContextSelectionRequest, DecisionRequest } from '../../vendor/jev-core/src/index.js';
 
@@ -110,7 +111,7 @@ export async function jevJsonRequest(connection: JevConnection, request: typeof 
   try { response = await jevRequest(connection, url, init, request); }
   catch (error) {
     if (init.signal?.aborted) {
-      if (init.signal.reason?.name === 'TimeoutError') throw new JevConnectionError('模型连接超时，请检查网络或转发服务');
+      if ((abortReason(init.signal) as { name?: string })?.name === 'TimeoutError') throw new JevConnectionError('模型连接超时，请检查网络或转发服务');
       throw error;
     }
     if (error instanceof JevTransportError) throw error;
@@ -132,8 +133,11 @@ export async function jevJsonRequest(connection: JevConnection, request: typeof 
 }
 export async function fetchJevModels(connection: JevConnection, request: typeof fetch = (url, init) => fetch(url, init)): Promise<string[]> {
   if (!connection.protocol || connection.protocol === 'bridge') throw new JevConnectionError('本地桥接模式的模型由服务端配置；联网拉取请选择 TypeSafe 或 OpenAI 兼容接口');
-  const body = await jevJsonRequest(connection, request, apiEndpoint(connection, 'models'), {
-    headers: headers(connection), signal: AbortSignal.timeout(10000),
+  const body = await withAbort({ timeout: 10000 }, signal => jevJsonRequest(connection, request, apiEndpoint(connection, 'models'), {
+    headers: headers(connection), signal,
+  })).catch(error => {
+    if (error instanceof Error && error.name === 'TimeoutError') throw new JevConnectionError('模型连接超时，请检查网络或转发服务');
+    throw error;
   });
   const entries = Array.isArray(body) ? body : body?.models ?? body?.data;
   if (!Array.isArray(entries)) throw new JevConnectionError('模型列表格式无效：需要 models 或 data 数组');

@@ -9,18 +9,29 @@ import type { NativeRuntime } from './panel-runtime.js';
 import { SaveManagement, type SaveChangePreview } from '../../runtime/src/save-management.js';
 import { preferences } from './preferences.js';
 import { installBattleMessageDisplay } from '../../host/src/battle-message-display.js';
+import { bindPageLifecycle } from '../../host/src/page-lifecycle.js';
 
 const windowHost = window as unknown as HostWindow & { __tavernBattleNative?: NativeRuntime };
 windowHost.__tavernBattleNative?.dispose();
 const panelPath = 'panel/index.html';
 const panel = new PanelHost(new URL(panelPath, import.meta.url).href, preferences(windowHost));
 let disposed = false; let unlock = () => {}; let stop = () => {}; let stopDisplay = () => {}; let service: BattleService | undefined;
+let starting: Promise<void> | undefined; let stopLifecycle = () => {};
 const exportData = (name: string, value: unknown) => {
   const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }));
   const link = document.createElement('a'); link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
-const dispose = () => { if (disposed) return; disposed = true; stopDisplay(); stop(); service?.dispose(); panel.dispose(); unlock(); if (windowHost.__tavernBattleNative?.dispose === dispose) delete windowHost.__tavernBattleNative; window.removeEventListener('pagehide', dispose); };
-window.addEventListener('pagehide', dispose);
+const stopRuntime = () => {
+  stopDisplay(); stopDisplay = () => {}; stop(); stop = () => {};
+  service?.dispose(); service?.host.dispose(); service = undefined;
+  unlock(); unlock = () => {};
+};
+const dispose = () => { if (disposed) return; disposed = true; stopRuntime(); panel.dispose(); stopLifecycle(); if (windowHost.__tavernBattleNative?.dispose === dispose) delete windowHost.__tavernBattleNative; };
+stopLifecycle = bindPageLifecycle(window, {
+  pause: () => panel.pause(),
+  resume: () => { if (!disposed) { if (service) void service.load(); else void start(); } },
+  dispose,
+});
 
 async function acquireWriter(): Promise<boolean> {
   if (!navigator.locks) return true; // One instance only is supported on hosts without Web Locks.
@@ -31,8 +42,9 @@ async function acquireWriter(): Promise<boolean> {
     }).catch(reject);
   });
 }
-async function start() {
-  if (!(await acquireWriter())) { panel.showStatus('另一个酒馆窗口已在运行原生战阵。请在该窗口继续，或关闭后刷新这里。', [], true); return; }
+async function startRuntime() {
+  if (!(await acquireWriter())) throw Error('另一个酒馆窗口已在运行原生战阵。请关闭该窗口后重试。');
+  if (disposed) { unlock(); return; }
   const host = await createNativeHost(windowHost);
   if (disposed) { host.dispose(); unlock(); return; }
   stopDisplay = installBattleMessageDisplay(host, windowHost, document);
@@ -104,4 +116,15 @@ async function start() {
   });
   await current.start();
 }
-void start().catch(error => { panel.showStatus(String(error), [], true); unlock(); });
+function start(): Promise<void> {
+  if (disposed) return Promise.resolve();
+  if (starting) return starting;
+  panel.showStatus('正在连接酒馆…', [], true);
+  starting = startRuntime().catch(error => {
+    stopRuntime();
+    if (windowHost.__tavernBattleNative?.dispose === dispose) delete windowHost.__tavernBattleNative;
+    if (!disposed) panel.showStatus(String(error), [{ label: '重新初始化', run: start }], true);
+  }).finally(() => { starting = undefined; });
+  return starting;
+}
+void start();

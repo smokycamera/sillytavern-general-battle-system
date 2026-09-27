@@ -97,5 +97,15 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   f.switchTo('c');await f.service.load();release?.();await idle();
   expect(f.service.snapshot().battle).toBeUndefined();expect(localStorage.getItem(LLM_SETTINGS_KEY)).toBe(config);
   expect(f.disk.has('c')).toBe(false);
+  // Broken optional model preferences must not take down either workspace.
+  localStorage.setItem(LLM_SETTINGS_KEY, 'broken'); await f.service.load(); nav('settings');
+  expect(document.body.textContent).toContain('原记录已保留'); nav('battle');
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain('原记录已保留');
+  expect(localStorage.getItem(LLM_SETTINGS_KEY)).toBe('broken'); localStorage.setItem(LLM_SETTINGS_KEY, config!);
+  // bfcache must not unsubscribe the panel from later archive updates.
+  nav('units'); const cachedHide = new Event('pagehide'); Object.defineProperty(cachedHide, 'persisted', { value: true });
+  window.dispatchEvent(cachedHide);
+  await f.service.transact(() => ({ schemaVersion: 2, storage: units.map(u => unitRecordFromCombatant({ ...u, name: 'cached-' + u.name })), rosterIds: units.map(u => u.id) }));
+  expect(document.body.textContent).toContain('cached-ally');
   f.service.dispose();
 },15000);

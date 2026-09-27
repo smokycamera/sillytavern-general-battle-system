@@ -75,7 +75,7 @@ export class PanelHost {
   open(): void { this.root.hidden = false; this.entry.hidden = true; if (this.ready) this.showPanel(); }
   setManagementHandler(handler: () => void): void { this.manage = handler; }
   close(): void { this.pause(); this.root.hidden = true; this.entry.hidden = false; this.applyEntryPosition(); }
-  private pause(): void { this.frame?.contentWindow?.postMessage({ type: 'tb:panel-hidden' }, location.origin); }
+  pause(): void { this.frame?.contentWindow?.postMessage({ type: 'tb:panel-hidden' }, location.origin); }
   showPanel(): void {
     this.ready = true;
     this.content.hidden = false;

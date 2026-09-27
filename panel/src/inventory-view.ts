@@ -1,3 +1,4 @@
+import { randomId } from '../../host/src/browser-compat.js';
 import { enhancementLabel } from '../../engine/src/enhancements.js';
 import { ACCESSORY_NAMES, CONSUMABLE_NAMES, type EquipmentSlot } from '../../engine/src/items.js';
 import { promptSelected, type PromptSettings } from './prompt-settings.js';
@@ -21,7 +22,7 @@ interface Draft extends EquipmentDraft {
   mode: 'create' | 'define' | 'reforge'; itemId?: string; id: string; qty: string;
 }
 function newDraft(body = 'human'): Draft {
-  return { ...equipmentDraft('weapon', body), mode: 'create', id: crypto.randomUUID(), qty: '1' };
+  return { ...equipmentDraft('weapon', body), mode: 'create', id: randomId(), qty: '1' };
 }
 export function itemDescription(item: InventoryItem): string {
   const m = item.mechanics;

@@ -1,10 +1,10 @@
+import { sha256 } from '../../host/src/browser-compat.js';
 import type { NativeEnvelope } from '../../host/src/contracts.js';
 import { serialized } from '../../host/src/json.js';
 export { serialized } from '../../host/src/json.js';
 export async function payloadHash(value: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(serialized(value));
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+  return sha256(bytes);
 }
 export function envelopeFrom(value: unknown): NativeEnvelope | undefined {
   if (value === undefined) return undefined;

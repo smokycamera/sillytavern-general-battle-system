@@ -1,3 +1,4 @@
+import { randomId } from '../../host/src/browser-compat.js';
 import { PROMPT_SECTIONS, formatPromptSection, promptSelected, unitInPromptScope, itemInPromptScope, type ProjectionDetails, type PromptSettings, type PromptSectionId } from './prompt-settings.js';
 import { skillMechanismName } from '../../engine/src/data/skill-mechanisms.js';
 import { spCapacity } from '../../engine/src/resources.js';
@@ -259,7 +260,7 @@ export class NarrativeController {
     return this.write(prepareInventoryTransaction(this.state, intent));
   }
   inventoryContext(): string { return JSON.stringify([this.identity, this.namespace, this.epoch]); }
-  previewInventory(action: InventoryAction, id: string = crypto.randomUUID()): InventoryPreview {
+  previewInventory(action: InventoryAction, id: string = randomId()): InventoryPreview {
     if (this.migration) throw new Error('先核对迁移预览，再操作库存');
     if (!this.active || this.identity !== this.adapter.identity() || this.namespace !== this.adapter.namespace()) throw new Error('聊天上下文正在切换，请重新预览');
     const intent = { ...structuredClone(action), id, expectedRevision: this.state.factRevision ?? 0 };
@@ -274,7 +275,7 @@ export class NarrativeController {
     if (!this.active || this.migration) return;
     if (this.identity !== this.adapter.identity() || this.namespace !== this.adapter.namespace()) this.switchContext();
     this.receivedId = undefined; this.generationEnded = false;
-    this.binding = this.namespace ? captureGeneration(this.state, this.namespace, crypto.randomUUID()) : undefined;
+    this.binding = this.namespace ? captureGeneration(this.state, this.namespace, randomId()) : undefined;
     this.project();
   }
   async scan(messageId?: number, options: { manual?: boolean } = {}): Promise<void> {
@@ -291,7 +292,7 @@ export class NarrativeController {
       let expected = options.manual ? undefined : binding;
       const matchesGeneration = !options.manual && binding?.complete && binding.messageId === envelope.messageId;
       if (!matchesGeneration && envelope.complete && this.capabilities.messageIdentity && namespaceOf(envelope) === this.namespace) {
-        expected = { ...captureGeneration(this.state, this.namespace!, crypto.randomUUID()), complete: true, manualOnly: true, messageId: envelope.messageId };
+        expected = { ...captureGeneration(this.state, this.namespace!, randomId()), complete: true, manualOnly: true, messageId: envelope.messageId };
       }
       if (expected?.complete && this.capabilities.messageIdentity) envelope.generationId = expected.id;
       const proposal = proposalFromMessage(envelope, expected);
@@ -346,7 +347,7 @@ export class NarrativeController {
     if (!this.active || this.identity !== this.adapter.identity() || this.namespace !== this.adapter.namespace() || namespaceOf(old.source) !== this.namespace) throw new Error('聊天已切换，请重新查看当前记录');
     if (this.state.committedNarrativeSources?.includes(old.sourceKey) || this.state.proposals?.some((p) => p.sourceKey === old.sourceKey && p.status === 'committed')) throw new Error('此消息已同步，不能通过草稿重复入账');
     if (old.source.role !== 'assistant' || !old.source.complete) throw new Error('需要完整assistant回复才能修正并提交事件');
-    const binding = captureGeneration(this.state, this.namespace, crypto.randomUUID()); binding.complete = true;
+    const binding = captureGeneration(this.state, this.namespace, randomId()); binding.complete = true;
     const proposal = proposalFromMessage({ ...old.source, text, generationId: binding.id }, binding);
     if (!proposal) throw new Error('草稿里尚未识别到事件标签');
     proposal.corrected = true; proposal.originalText = old.originalText ?? old.source.text;
@@ -365,7 +366,7 @@ export class NarrativeController {
     const current = await this.adapter.getEnvelope(Number(old.source.messageId));
     if (epoch !== this.epoch || !current || current.role !== 'assistant' || !current.complete || namespaceOf(current) !== this.namespace || protocolExcerpt(current.text) !== old.source.text || current.swipeId !== old.source.swipeId) throw new Error('原消息事件已变更/未完成，需重新扫描');
     if (this.state.committedNarrativeSources?.includes(messageSourceKey(current)) || this.state.proposals?.some((p) => p.sourceKey === messageSourceKey(current) && p.status === 'committed')) throw new Error('已提交消息不能重新入账');
-    const binding = captureGeneration(this.state, this.namespace, crypto.randomUUID()); binding.complete = true;
+    const binding = captureGeneration(this.state, this.namespace, randomId()); binding.complete = true;
     current.generationId = binding.id;
     const proposal = proposalFromMessage(current, binding)!;
     this.write({ ...this.state, proposals: [...(this.state.proposals ?? []).map((p): NarrativeProposal => p.id === old.id ? { ...p, status: 'stale' } : p), proposal] });

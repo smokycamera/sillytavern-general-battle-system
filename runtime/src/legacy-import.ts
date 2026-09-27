@@ -1,3 +1,4 @@
+import { optionalIndexedDB, randomId } from '../../host/src/browser-compat.js';
 import type { HostSession, NativeEnvelope, PersistReceipt } from '../../host/src/contracts.js';
 import { sameSession } from '../../host/src/contracts.js';
 import { NativeHost } from '../../host/src/sillytavern.js';
@@ -76,7 +77,7 @@ export class LegacyImporter {
     }
     if (!sameSession(session, this.host.session())) throw Error('备份期间聊天已切换');
     const migration: NativeEnvelope['migration'] = { source: choice === 'empty' || preview.kind === 'empty' ? 'empty' : 'helper-chat', sourceHash: preview.sourceHash, legacyNamespace: preview.legacyNamespace };
-    const receipt = await this.store.commit(0, () => candidate.save, { operationId: 'import:' + crypto.randomUUID(), migration, messageTags: candidate.tags });
+    const receipt = await this.store.commit(0, () => candidate.save, { operationId: 'import:' + randomId(), migration, messageTags: candidate.tags });
     if (receipt.status === 'confirmed' || receipt.status === 'pending') this.previews.delete(preview);
     return receipt;
   }
@@ -89,14 +90,19 @@ export class MemorySourceBackups implements SourceBackups {
 }
 export class IndexedDbSourceBackups implements SourceBackups {
   private database?: Promise<IDBDatabase>;
-  constructor(private factory: IDBFactory = indexedDB) {}
+  constructor(private factory: IDBFactory | undefined = optionalIndexedDB()) {}
   private open(): Promise<IDBDatabase> {
-    return this.database ??= new Promise((resolve, reject) => {
-      const request = this.factory.open('tavern-battle-native-sources', 1);
+    const factory = this.factory ?? optionalIndexedDB();
+    if (!factory) return Promise.reject(Error('浏览器恢复记录存储不可用，请检查存储权限后重试；未写入存档'));
+    return this.database ??= new Promise<IDBDatabase>((resolve, reject) => {
+      const request = factory.open('tavern-battle-native-sources', 1);
       request.onupgradeneeded = () => request.result.createObjectStore('sources');
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => { this.database = undefined; reject(request.error); };
       request.onblocked = () => { this.database = undefined; reject(Error('原档备份数据库被占用')); };
+    }).catch(error => {
+      this.database = undefined;
+      throw Error('浏览器恢复记录存储暂不可用，请检查存储权限与空间后重试；未写入存档', { cause: error });
     });
   }
   private async access<T>(mode: IDBTransactionMode, act: (store: IDBObjectStore, done: (value: T) => void) => void): Promise<T> {

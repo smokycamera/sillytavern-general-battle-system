@@ -1,3 +1,4 @@
+import { randomId } from './browser-compat.js';
 import type { HostMessage } from './sillytavern.js';
 import type { MessageTag } from './contracts.js';
 
@@ -22,7 +23,7 @@ export class SourceMessageChangedError extends Error {
 }
 export function prepareMessageTag(chat: HostMessage[], index: number): MessageTag {
   const message = chat[index]; if (!message) throw Error('消息已不存在');
-  return { index, id: sourceId(message) ?? 'tb-source:' + crypto.randomUUID(), fingerprint: messageFingerprint(message) };
+  return { index, id: sourceId(message) ?? 'tb-source:' + randomId(), fingerprint: messageFingerprint(message) };
 }
 export function findMessageBySourceId(chat: HostMessage[], id: string): number | undefined {
   if (/^\d+$/.test(id)) { const index = Number(id); return chat[index] ? index : undefined; }

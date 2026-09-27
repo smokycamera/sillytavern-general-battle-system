@@ -1,3 +1,4 @@
+import { optionalStorage, withAbort } from './browser-compat.js';
 import { sameSession, type ChatScope, type HostSession, type MetadataPort, type MessageTag, type LegacyHandoff } from './contracts.js';
 import { namespaceOf, type MessageEnvelope } from '../../panel/src/narrative-state.js';
 import { findMessageBySourceId, matchesMessageFingerprint, SourceMessageChangedError, sourceId } from './message-identity.js';
@@ -51,7 +52,7 @@ export class NativeHost implements MetadataPort {
   private lastChat?: HostMessage[];
   private stops = new Set<() => void>();
   private generating = false;
-  constructor(private host: HostWindow, private account: string, private request: typeof fetch = fetch, readonly legacyStorage: Storage | undefined = globalThis.localStorage) {}
+  constructor(private host: HostWindow, private account: string, private request: typeof fetch = fetch, readonly legacyStorage: Storage | undefined = optionalStorage()) {}
   context(): HostContext { return this.host.SillyTavern?.getContext() ?? {}; }
   session(): HostSession | undefined {
     const context = this.context();
@@ -196,15 +197,17 @@ export async function createNativeHost(host: HostWindow, request: typeof fetch =
   // TauriTavern 2.1 has no /api/users/me route. Use its own account selector,
   // rather than guessing a shared fallback handle for a malformed API response.
   if (host.__TAURI_RUNNING__ === true || host.__TAURITAVERN__) {
-    const user = await loadUser();
+    const user = await withAbort({ timeout: 10000 }, () => loadUser());
     if (user.accountsEnabled && !user.currentUser?.handle) throw Error('酒馆账户尚未初始化');
     const handle = user.getCurrentUserHandle?.();
     if (typeof handle !== 'string' || !handle) throw Error('TauriTavern 未提供可靠用户标识');
     return new NativeHost(host, handle, request);
   }
-  const response = await request('/api/users/me', { headers, cache: 'no-store' });
-  if (!response.ok) throw Error('无法确定当前酒馆用户，不能建立存档作用域');
-  const user: unknown = await response.json();
+  const user: unknown = await withAbort({ timeout: 10000 }, async signal => {
+    const response = await request('/api/users/me', { headers, cache: 'no-store', signal });
+    if (!response.ok) throw Error('无法确定当前酒馆用户，不能建立存档作用域');
+    return response.json();
+  });
   const handle = user && typeof user === 'object' ? (user as { handle?: unknown }).handle : undefined;
   if (typeof handle !== 'string' || !handle) throw Error('酒馆未返回可靠用户标识');
   return new NativeHost(host, handle, request);

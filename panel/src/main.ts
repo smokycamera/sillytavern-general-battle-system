@@ -1,5 +1,6 @@
+import { randomId } from '../../host/src/browser-compat.js';
 import { LlmContextController, llmContextSummary, type LlmEncounterContext } from './llm-context.js';
-import { readLlmSettings, saveLlmSettings, llmConnectionKey } from './llm-settings.js';
+import { readLlmSettings, saveLlmSettings, llmConnectionKey, llmSettingsView } from './llm-settings.js';
 import { renderLlmSettings } from './llm-settings-view.js';
 import { encounterRequest, normalizeContextSettings } from './jev-context.js';
 import { enhancementLabel, trainingEdge, trainingDamage } from '../../engine/src/enhancements.js';
@@ -97,7 +98,7 @@ const { adapter, controller, resident } = runtime;
 document.body.dataset.native = String(!!runtime.native);
 if (runtime.getTheme) document.body.dataset.theme = runtime.getTheme();
 const inventoryPanel = new InventoryPanel(controller, visibleUnitRecord);
-if (!resident) window.addEventListener('pagehide', () => controller.dispose());
+if (!resident) window.addEventListener('pagehide', event => { if (!event.persisted) controller.dispose(); });
 const reg = traitRegistry();
 const tacticalView: TacticalView = { mode: 'weapon' };
 const formationView: FormationView = {};
@@ -106,7 +107,7 @@ const promptDrafts = new Map<string, string>();
 let workspaceTab: WorkspaceTab = 'battle';
 let workspaceNamespace = adapter.namespace();
 let builderEditDraft: UnitDraft | undefined;
-let builderSeed = crypto.randomUUID();
+let builderSeed = randomId();
 let builderPreview: { namespace?: string; signature: string; unit: Combatant; record?: UnitRecord; previousRevision?: number } | undefined;
 let unitConversion: { namespace?: string; before: UnitRecord; after: UnitRecord } | undefined;
 let reportRestartPreview: { id: string; revision: number; namespace?: string } | undefined;
@@ -415,7 +416,7 @@ function restore(): void {
     formationView.selectedId = undefined; formationView.inspectedId = undefined; formationView.nodeId = undefined;
     tacticalView.selectedId = undefined; tacticalView.targetId = undefined; tacticalView.cell = undefined; tacticalView.inspectedCell = undefined; tacticalView.mode = 'weapon';
     state.editingUnit = null; state.editingDraft = undefined; state.abilityDialog = null; unitConversion = undefined;
-    builderEditDraft = undefined; builderPreview = undefined; builderSeed = crypto.randomUUID(); state.form = newUnitDraft();
+    builderEditDraft = undefined; builderPreview = undefined; builderSeed = randomId(); state.form = newUnitDraft();
   }
   const snapshot = controller.snapshot();
   const saved = Object.keys(snapshot).length ? snapshot as SavedPanel : undefined;
@@ -906,6 +907,7 @@ function replayBattleTrace(eventIndex?: number): void {
 
 
 function renderBattlePreparation(): string {
+  const llm = llmSettingsView();
   const visible = state.roster.filter(visibleUnitRecord), allies = visible.filter((u) => u.side === 'ally'), enemies = visible.filter((u) => u.side === 'enemy');
   const mode = effectiveMode(), capacityIssue = battleCapacityIssue(state.roster), ready = rosterHasBothSides() && !capacityIssue;
   const escortSide = state.objectiveMode === 'intercept' ? 'enemy' : 'ally';
@@ -922,14 +924,14 @@ function renderBattlePreparation(): string {
     ${mode === 'small' ? `<p class="mission-summary">${esc(missionSummary)}</p>` : ''}
     <div class="preparation-stats"><div><strong>${allies.length}</strong><span>我方单位</span></div><div><strong>${enemies.length}</strong><span>已知敌方</span></div><div><strong>${mode === 'mass' ? '会战' : '战术'}</strong><span>${esc(fieldLabel(plannedFieldTags()) || '野战')}</span></div></div>
     <label class="battle-auto"><input type="checkbox" data-role="non-lethal" ${state.nonLethal?'checked':''}> 非致命战斗（双方伤害只会造成濒死）</label>
-    ${renderContextStatus()}${readLlmSettings().enabled ? '<p class="sub">开战前将由普通 LLM 读取最近所选层数的正文，选择指挥与场景配置。可在设置中关闭。</p>' : ''}<div class="row"><button class="primary" data-action="${mode === 'mass' ? 'mass-start' : 'small-start'}" ${ready ? '' : 'disabled'}>开始交战</button><button data-action="workspace-tab" data-tab="units">${ready ? '查看队伍' : '集结队伍'}</button><button data-action="workspace-tab" data-tab="inventory">整理配装</button></div>
+    ${renderContextStatus()}${llm.error ? '<p role="alert">'+esc(llm.error)+'</p>' : ''}${llm.settings.enabled ? '<p class="sub">开战前将由普通 LLM 读取最近所选层数的正文，选择指挥与场景配置。可在设置中关闭。</p>' : ''}<div class="row"><button class="primary" data-action="${mode === 'mass' ? 'mass-start' : 'small-start'}" ${ready ? '' : 'disabled'}>开始交战</button><button data-action="workspace-tab" data-tab="units">${ready ? '查看队伍' : '集结队伍'}</button><button data-action="workspace-tab" data-tab="inventory">整理配装</button></div>
     ${state.roster.every((u) => u.rulesVersion === 'v2') ? `<details class="preparation-options" data-detail-id="preparation-options"><summary>任务设置 · ${state.mapLayout === 'indoor' ? '室内' : '野战'} / ${state.objectiveMode === 'escort' ? '护送' : state.objectiveMode === 'intercept' ? '拦截' : state.objectiveMode === 'siege' ? '攻城' : state.objectiveMode === 'annihilation' ? '歼灭' : plannedFieldTags().includes('siege') ? '攻城' : '歼灭'}</summary><div class="row"><label>地形<select data-role="context-field">${Object.entries(FIELD_LABELS).filter(([id])=>id!=='night').map(([id,label])=>`<option value="${id}" ${(state.field||'plains')===id?'selected':''}>${label}</option>`).join('')}</select></label><label>光照<select data-role="context-lighting"><option value="day" ${state.lighting==='day'?'selected':''}>日间</option><option value="night" ${state.lighting==='night'?'selected':''}>夜间</option></select></label><label>地图<select data-role="map-layout"><option value="standard" ${state.mapLayout !== 'indoor' ? 'selected' : ''}>标准野战</option><option value="indoor" ${state.mapLayout === 'indoor' ? 'selected' : ''}>紧凑室内</option></select></label><label>目标<select data-role="objective-mode"><option value="auto" ${state.objectiveMode === 'auto' ? 'selected' : ''}>按环境：野战歼灭／攻城夺点</option><option value="annihilation" ${state.objectiveMode === 'annihilation' ? 'selected' : ''}>歼灭战</option><option value="siege" ${state.objectiveMode === 'siege' ? 'selected' : ''}>攻城战</option><option value="escort" ${state.objectiveMode === 'escort' ? 'selected' : ''}>我方护送</option><option value="intercept" ${state.objectiveMode === 'intercept' ? 'selected' : ''}>拦截敌方护送</option></select></label><label>攻城角色<select data-role="siege-attacker"><option value="ally" ${state.siegeAttacker === 'ally' ? 'selected' : ''}>我方进攻</option><option value="enemy" ${state.siegeAttacker === 'enemy' ? 'selected' : ''}>我方防守</option></select></label></div><p>野战默认歼灭；攻城胜利点在守方纵深，攻方连续控制5个完整回合获胜，守方坚持到60回合获胜。我方护送沿用主控或首个我方单位；拦截以首个敌方单位为护送对象。双方规则相同：抵达出口则护送方胜，目标被消灭、撤离或逾期未抵达则拦截方胜。</p></details>` : ''}
     ${allies.length ? `<div class="preparation-roster">${allies.slice(0, 8).map((u) => `<span><b>${esc(u.name)}</b><small>${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}/${u.base.hpMax}</small></span>`).join('')}${allies.length > 8 ? `<span>另有${allies.length - 8}支单位</span>` : ''}</div>` : ''}
   </section>`;
 }
 function renderWorkspaceSettings(): string {
-  const saved = controller.snapshot();
-  return `${renderLlmSettings(readLlmSettings(), llmDiagnostic)}${promptScopeControls(saved.promptSettings, narrativeProjectionDetails(saved, adapter.recentPromptText?.() ?? ''), (saved.storage ?? []).filter(visibleUnitRecord))}${renderPromptSettings(saved.promptSettings, promptDrafts)}<section><h2>显示与操作</h2><p>战场形式由参战队伍确定，环境沿用剧情声明。</p><button data-action="theme-toggle">切换深浅主题</button></section>
+  const saved = controller.snapshot(), view = llmSettingsView();
+  return `${renderLlmSettings(view.settings, view.error ?? llmDiagnostic)}${promptScopeControls(saved.promptSettings, narrativeProjectionDetails(saved, adapter.recentPromptText?.() ?? ''), (saved.storage ?? []).filter(visibleUnitRecord))}${renderPromptSettings(saved.promptSettings, promptDrafts)}<section><h2>显示与操作</h2><p>战场形式由参战队伍确定，环境沿用剧情声明。</p><button data-action="theme-toggle">切换深浅主题</button></section>
     <section><h2>保存与恢复</h2><p>${state.saveReceipt?.status === 'local-only' ? '目前仅确认本地副本，酒馆尚未确认保存。' : '单位档案和战报随当前聊天保存。保存失败时会在顶部显示。'}</p><button data-action="save-retry">核实并重试保存</button>${controller.migrationReview() ? '' : renderMigrationReview()}</section>
     <details class="workspace-diagnostics"><summary>版本与运行信息</summary><p>战斗结果由本设备计算。伤害、命中和状态的详细过程可在战报中查看。</p><p>${controller.capabilities.injection ? '已支持在续写剧情时参考当前战斗进度。' : '当前酒馆暂不支持自动提供剧情参考。'}</p></details>`;
 }
@@ -1806,7 +1808,7 @@ async function sendToAi(text: string, label: string, reportId?: string, batch?: 
   const namespace = adapter.namespace();
   const report = !batch && reportId ? state.reports.find((r) => r.id === reportId) : undefined;
   const prior = report?.deliveries[label];
-  const deliveryId = (batch ? state.reportDeliveries[batch.battleId]?.receipts[batch.key]?.deliveryId : prior?.deliveryId) ?? crypto.randomUUID();
+  const deliveryId = (batch ? state.reportDeliveries[batch.battleId]?.receipts[batch.key]?.deliveryId : prior?.deliveryId) ?? randomId();
   if (prior && ['sent', 'inserted', 'unknown', 'sending'].includes(prior.status)) {
     toast('此战报已发送或投递结果待核对；不会盲目重发'); return;
   }
@@ -2140,7 +2142,7 @@ async function commitBuilder(): Promise<void> {
   if (!(await persist())) { const receipt = state.saveReceipt; Object.assign(state, original); state.saveReceipt = receipt; throw Error('尚未保存，当前预览保留，可直接重试'); }
   const edited = !!preview.record; builderPreview = undefined;
   if (edited) { builderEditDraft = undefined; state.editingUnit = null; state.editingDraft = undefined; }
-  if (!edited) { state.genOpen = false; state.form = newUnitDraft(); builderSeed = crypto.randomUUID(); }
+  if (!edited) { state.genOpen = false; state.form = newUnitDraft(); builderSeed = randomId(); }
   toast(edited ? '档案修改已保存' : '已加入队伍');
 }
 
@@ -3396,7 +3398,7 @@ const stopControllerView = controller.listen((_saved: NarrativeSave, receipt?: S
   render();
   void resumeSmallTurnIfNeeded();
 });
-window.addEventListener('pagehide', stopControllerView);
+window.addEventListener('pagehide', event => { if (!event.persisted) stopControllerView(); });
 window.addEventListener('message', (event: MessageEvent) => {
   if (event.source === window.parent && event.origin === location.origin && event.data?.type === 'tb:panel-hidden') {
     const wasRunning = fullAuto.running; stopAutomation(); if (wasRunning) render('battle');
