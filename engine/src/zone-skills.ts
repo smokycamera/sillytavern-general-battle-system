@@ -4,6 +4,7 @@ import { bonusMultiplier, bonusRating, bonusSteps, bonusPoints } from './enhance
 import { standardConditionMap } from './conditions.js';
 import { traitRegistry } from './data/traits.js';
 import { parseDice } from './dice.js';
+import { validDefensePower } from './barrier.js';
 
 type ZoneEffect = Extract<EffectOp, { op: 'zone' }>;
 type ZoneStrength = Pick<ZoneEffect, 'power' | 'amount' | 'penetration'>;
@@ -16,6 +17,7 @@ export function validateZoneStrength(zone: { amount?: unknown; penetration?: unk
     || !['condition','trait','heal','barrier','dispel','resource','morale','push'].includes(e.op)))) throw Error('持续区域的附加效果损坏');
   const integer=(v:unknown,min:number,max:number)=>Number.isSafeInteger(v)&&Number(v)>=min&&Number(v)<=max;
   for(const e of (zone.effects??[]) as Exclude<EffectOp,{op:'zone'|'damage'|'summon'}>[]) {
+    if ('defensePower' in e && e.defensePower !== undefined && (!validDefensePower(e.defensePower) || e.op === 'condition' && e.conditionId !== 'blessed')) throw Error('持续区域的防御规格损坏');
     if ('dur' in e && !integer(e.dur,1,99) || 'onHit' in e && e.onHit!==undefined && typeof e.onHit!=='boolean'
       || 'onDamage' in e && e.onDamage!==undefined && typeof e.onDamage!=='boolean') throw Error('持续区域的附加效果时间或前提损坏');
     if(e.op==='condition' && (!standardConditionMap().has(e.conditionId) || e.saveDC!==undefined&&!integer(e.saveDC,1,30)
@@ -32,7 +34,7 @@ export function validateZoneStrength(zone: { amount?: unknown; penetration?: unk
 
 /** 区域不经过普通伤害技能公式；从原配方升级一次，保留身份、冷却与已布置区域。 */
 export function upgradeZoneSkill(ability: Ability, model?: Combatant['damageModel']): boolean {
-  const version = model === 'wounds-v2' ? 'skill-zone-v2' : 'skill-zone-v1';
+  const version = model === 'wounds-v2' ? 'skill-zone-v3' : 'skill-zone-v1';
   let zones = ability.effects.filter((e): e is ZoneEffect => e.op === 'zone');
   if (!zones.length) return false;
   if (!ability.recipe || zones.some(effect => !ability.recipe!.modifiers.includes('zone-' + effect.kind))

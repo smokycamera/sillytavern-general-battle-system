@@ -6,17 +6,24 @@ import { traitRegistry } from './data/traits.js';
 import { moraleOnDamage } from './morale.js';
 import { isCohort, setStrength, personnel, COHORT_REFERENCE } from './combat-model.js';
 import {hasMemberHealth,memberHealth,damageMemberGroups,memberRecoveryCapacity,healMemberGroups} from './member-health.js';
+import { overmatchMultiplier } from './power-anchors.js';
 
 type Health = Pick<Combatant, 'hp' | 'base' | 'scale'> & Partial<Pick<Combatant, 'status' | 'rulesVersion' | 'recoverableWounded' | 'combatModel' | 'formation'>>;
 
-export interface MemberDamagePlan { direct:number; targets:number; overflow?:boolean; splash?:number; splashTargets?:number; incomingDirect?:number; incomingSplash?:number }
-/** V4以真实生命结算；旧版继续使用人数换算，不改写进行中的旧战斗。 */
-export function applyCombatDamage(unit:Combatant,amount:number,targets=1):number {
-  return applyMemberDamage(unit,amount,targets).health;
+/** 保留攻击规格和已乘倍率，屏障可在同时行动实际结算前才获得。 */
+export interface DamageOvermatch { power?:number; channel:import('./types.js').DamageChannel; penetration:number; area:boolean; canBlock:boolean; multiplier:number }
+export interface MemberDamagePlan { direct:number; targets:number; overflow?:boolean; splash?:number; splashTargets?:number; incomingDirect?:number; incomingSplash?:number; overmatch?:DamageOvermatch }
+function barrierRatio(unit:Combatant,context?:DamageOvermatch):number {
+  if(!unit.barrier||!context)return 1;
+  return Math.min(1,overmatchMultiplier(context.power,unit,context.channel,context.penetration,context.area,context.canBlock,true)/context.multiplier);
 }
-function applyMemberDamage(unit:Combatant,amount:number,targets:number,overflow=false):{health:number;overflow:number} {
-  if(!hasMemberHealth(unit))return {health:applyHealthLoss(unit,amount),overflow:0};
-  const result=damageMemberGroups(unit,targets > 0 ? absorbBarrier(unit,amount) : 0,targets,overflow);
+/** V4以真实生命结算；旧版继续使用人数换算，不改写进行中的旧战斗。 */
+export function applyCombatDamage(unit:Combatant,amount:number,targets=1,overmatch?:DamageOvermatch):number {
+  return applyMemberDamage(unit,amount,targets,false,overmatch).health;
+}
+function applyMemberDamage(unit:Combatant,amount:number,targets:number,overflow=false,overmatch?:DamageOvermatch):{health:number;overflow:number} {
+  if(!hasMemberHealth(unit))return {health:applyHealthLoss(unit,amount,unit.rulesVersion==='v2',overmatch),overflow:0};
+  const result=damageMemberGroups(unit,targets > 0 ? absorbBarrier(unit,amount,barrierRatio(unit,overmatch)) : 0,targets,overflow);
   if(result.health)moraleOnDamage(unit,result.health);
   if(result.casualties){
     const wounded=result.casualties+(unit.formation!.woundedRemainder??0);
@@ -26,8 +33,8 @@ function applyMemberDamage(unit:Combatant,amount:number,targets:number,overflow=
   return result;
 }
 export function applyDamagePlan(unit:Combatant,plan:MemberDamagePlan):{direct:number;splash:number;overflow:number} {
-  const direct=applyMemberDamage(unit,unit.barrier ? plan.incomingDirect ?? plan.direct : plan.direct,plan.targets,plan.overflow);
-  const splash=plan.splash&&plan.splashTargets?applyCombatDamage(unit,unit.barrier ? plan.incomingSplash ?? plan.splash : plan.splash,plan.splashTargets):0;
+  const direct=applyMemberDamage(unit,unit.barrier ? plan.incomingDirect ?? plan.direct : plan.direct,plan.targets,plan.overflow,plan.overmatch);
+  const splash=plan.splash&&plan.splashTargets?applyCombatDamage(unit,unit.barrier ? plan.incomingSplash ?? plan.splash : plan.splash,plan.splashTargets,plan.overmatch):0;
   return {direct:direct.health,splash,overflow:direct.overflow};
 }
 
@@ -42,8 +49,8 @@ export function validateWounded(unit: Health): void {
 }
 
 /** 实际损失唯一记账入口；V3跨分组累计半数伤兵余量，避免连发逐次取整丢失。 */
-export function applyHealthLoss(unit: Combatant, amount: number, v2 = unit.rulesVersion === 'v2'): number {
-  const loss = Math.min(unit.hp, absorbBarrier(unit, amount));
+export function applyHealthLoss(unit: Combatant, amount: number, v2 = unit.rulesVersion === 'v2', overmatch?:DamageOvermatch): number {
+  const loss = Math.min(unit.hp, absorbBarrier(unit, amount,barrierRatio(unit,overmatch)));
   setStrength(unit, unit.hp - loss);
   if (v2) moraleOnDamage(unit, loss);
   if (v2 && unit.scale !== 'hero' && loss > 0) {

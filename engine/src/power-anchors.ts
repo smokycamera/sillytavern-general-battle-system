@@ -8,6 +8,7 @@ import {diceAvg} from './data/weapons.js';
 import {BODY} from './body.js';
 import {meleeProfile} from './melee.js';
 import {hasMemberHealth,damageMemberGroups} from './member-health.js';
+import { barrierDefensePower, validDefensePower } from './barrier.js';
 
 /** 装备P与训练T分离；高阶增加战术毁伤与覆盖规模，不追加随机骰数量。 */
 export const POWER_ANCHORS=[
@@ -149,8 +150,14 @@ export function gradeOvermatch(power:number|undefined,defensePower:number,penetr
   const extra=Math.sqrt(continuousPowerBudget(power)/continuousPowerBudget(defensePower+1))-1;
   return 1+extra*Math.max(0,Math.min(1,penetration-resistance));
 }
-export function overmatchMultiplier(power:number|undefined,unit:Pick<Combatant,'armor'|'body'|'shield'|'status'|'damageModel'>,channel:DamageChannel,penetration:number,area=false,canBlock=true):number {
-  const armor=gradeOvermatch(power,protectionPower(unit,channel),penetration,anchoredProtection(unit,channel));
+type DefensiveTarget = Pick<Combatant,'armor'|'body'|'shield'|'status'|'damageModel'> & Partial<Pick<Combatant,'conditions'|'barrier'>>;
+/** 临时守护的L只约束跨代毁伤，不改写护甲的通道抗穿值。 */
+export function defensePower(unit:DefensiveTarget,channel:DamageChannel,includeBarrier=false):number {
+  const wards=(unit.conditions??[]).filter(c=>c.id==='blessed'&&c.dur>0&&validDefensePower(c.defensePower)).map(c=>c.defensePower!);
+  return Math.max(protectionPower(unit,channel),...wards,includeBarrier?barrierDefensePower(unit):0);
+}
+export function overmatchMultiplier(power:number|undefined,unit:DefensiveTarget,channel:DamageChannel,penetration:number,area=false,canBlock=true,includeBarrier=false):number {
+  const armor=gradeOvermatch(power,defensePower(unit,channel,includeBarrier),penetration,anchoredProtection(unit,channel));
   if(!unit.shield||unit.status!=='ready'||area||!canBlock||armor===1)return armor;
   const coverage=Math.min(.5,.35*bonusMultiplier(unit.shield.recipe?.bonuses,'power'));
   const resistance=shieldProtection(unit,channel),through=penetrationThrough(penetration,resistance);

@@ -116,11 +116,11 @@ export interface RangeSpec {
 }
 
 export type EffectOp =
-  | { op: 'barrier'; amount: number; dur: number }
+  | { op: 'barrier'; amount: number; dur: number; defensePower?: number }
   | { op: 'zone'; kind: 'fire' | 'poison' | 'smoke' | 'healing' | 'trap'; power: number; dur: number; radius: number; amount?: number; penetration?: number; effects?: ZonePayload[] }
   | { op: 'damage'; baseDice: string; apDice?: string; tag?: string; shape?: 'single' | 'burst' }
   | ({ op: 'heal' } & ({ dice: string; amount?: never } | { amount: number; dice?: never }))
-  | { op: 'condition'; conditionId: string; dur: number; potency?: number; magnitude?: number; saveDC?: number; onHit?: boolean; onDamage?: boolean; shape?: 'single' | 'burst' }
+  | { op: 'condition'; conditionId: string; dur: number; potency?: number; magnitude?: number; defensePower?: number; saveDC?: number; onHit?: boolean; onDamage?: boolean; shape?: 'single' | 'burst' }
   | { op: 'trait'; traitId: string; dur: number; shape?: 'single' | 'burst' }
   | { op: 'push'; force: number; steps: 1; physical?: boolean; onHit?: boolean; direction?: 'away' | 'towards' }
   | { op: 'dispel'; polarity: 'positive' | 'negative'; count: 1 | 2 }
@@ -138,7 +138,7 @@ export interface Ability {
   /** 显式编辑的效果与数值不被入场公式重建。 */
   customized?: boolean;
   bonuses?: Enhancements;
-    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3' | 'skill-v5.0' | 'skill-v6.0' | 'skill-zone-v1' | 'skill-zone-v2';
+    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3' | 'skill-v5.0' | 'skill-v6.0' | 'skill-v6.1' | 'skill-zone-v1' | 'skill-zone-v2' | 'skill-zone-v3';
     damageScale?: number;
   recipe?: import('./data/skill-mechanisms.js').SkillRecipe;
   weaponUse?: 'auto' | 'melee' | 'ranged';
@@ -251,6 +251,8 @@ export interface ConditionDef {
 }
 
 export interface ActiveCondition {
+  /** 施放守护的技能规格；只参与跨代毁伤，不增加抗穿。 */
+  defensePower?: number;
   /** 小队自身激活中施加的增益，跳过当次回合末递减；随战斗快照保存。 */
   skipNextDecay?: boolean;
   /** V3本地记录状态实际波及成员，单次点燃不会感染整支军团。 */
@@ -271,7 +273,7 @@ export interface Combatant {
   /** 由战斗规则投影；旧快照缺省使用旧伤害模型。 */
   damageModel?: 'wounds-v1' | 'wounds-v2';
   battleZones?: import('./area-effects.js').BattleZone[];
-  barrier?: { remaining: number; duration: number; sourceId?: string };
+  barrier?: { remaining: number; duration: number; sourceId?: string; defenses?: { power: number; duration: number }[] };
   accessories?: Partial<Record<'accessory1' | 'accessory2', import('./items.js').AccessoryItem>>;
   /** 战外明确设置的初始状态；战果归档后恢复通常的出场重置规则。 */
   storyState?: { resources?: boolean; abilityState?: boolean; fatigue?: boolean };

@@ -1,6 +1,7 @@
 import type { Ability } from './types.js';
 
 export const HARD_CONTROLS = new Set(['stunned', 'restrained', 'disarmed', 'silenced']);
+export const BUFF_CONDITIONS = new Set(['inspired', 'encouraged', 'empowered', 'blessed', 'hasted', 'confident']);
 /** 投送方式、能量通道和几何形状不占效果预算。 */
 export function genericEffectCount(ability: Ability): number {
   return Math.max(1, ability.effects.filter(e => e.op !== 'damage').length);

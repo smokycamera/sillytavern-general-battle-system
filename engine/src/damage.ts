@@ -6,7 +6,7 @@ import { looseFormation } from './tactics.js';
 import { effectiveProtection } from './body.js';
 import { applyHealthLoss, applyDamagePlan, type MemberDamagePlan } from './recovery.js';
 import { MEMBER_HEALTH_MODEL, hasMemberHealth, memberHealth, damageMemberGroups } from './member-health.js';
-import { combatWeapon, anchoredProtection,penetrationThrough,armorPowerScale,armorTransmission,shieldTransmission,overmatchMultiplier,protectionPower } from './power-anchors.js';
+import { combatWeapon, anchoredProtection,penetrationThrough,armorPowerScale,armorTransmission,shieldTransmission,overmatchMultiplier,defensePower } from './power-anchors.js';
 import { meleeProfile } from './melee.js';
 import { meleeWeapon, isCannonWeapon } from './loadout.js';
 /**
@@ -173,7 +173,7 @@ export function penetrationContext(opts: Pick<AttackOpts, 'attacker' | 'defender
   const shieldFactor=wounds?shieldTransmission(target,channel,penetration,area,canBlock):1;
   const power=opts.abilityDamage&&!opts.abilityDamage.weaponBased?opts.abilityDamage.power:weapon?.recipe?.power??weapon?.level;
   return { channel, penetration, resistance, factor:armorFactor*shieldFactor,armorScale:modern?armorPowerScale(target):1,...(wounds?{armorFactor,shieldFactor}:{}),
-    ...(modern&&opts.rules?.overmatch?{attackPower:power,protectionPower:protectionPower(target,channel),overmatchMultiplier:overmatchMultiplier(power,target,channel,penetration,area,canBlock)}:{}) };
+    ...(modern&&opts.rules?.overmatch?{attackPower:power,protectionPower:defensePower(target,channel),overmatchMultiplier:overmatchMultiplier(power,target,channel,penetration,area,canBlock),area,canBlock}:{}) };
 }
 
 /** 与执行共用属性栈与穿透。期望值不读取实战 RNG；骰子取整/暴击导致实际结果有波动。 */
@@ -233,7 +233,9 @@ function memberPlan(opts:Omit<AttackOpts,'rng'>,direct:number,targets:number):Me
   const overflow=members&&attackOverflow(opts);
   const cappedDirect=overflow&&directTargets>0?direct:Math.min(direct,max*directTargets);
   const incomingSplash=Math.round(direct*extra*(weapon?.splashFactor??0)),splash=Math.min(max*splashTargets,incomingSplash);
+  const context=opts.rules.overmatch?penetrationContext(opts):undefined;
   return {direct:cappedDirect,targets:directTargets,...(overflow?{overflow:true}:{}),
+    ...(context&&(context.overmatchMultiplier??1)>1?{overmatch:{power:context.attackPower,channel:context.channel,penetration:context.penetration,area:!!context.area,canBlock:context.canBlock!==false,multiplier:context.overmatchMultiplier!}}:{}),
     ...(direct>cappedDirect?{incomingDirect:direct}:{}),
     ...(extra&&targets?{splash,splashTargets,...(incomingSplash>splash?{incomingSplash}:{})}:{})};
 }
@@ -273,7 +275,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   }
   const rawMultiplier=memberAreaBudget(opts)*modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level)*bonusMultiplier(opts.attacker.bonuses,'damage',opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
   const moments=(times:number)=>{
-    const key=JSON.stringify([source?.baseDice,source?.apDice,rawMultiplier,times,weight,opts.defender.hp,opts.defender.barrier?.remaining,opts.defender.formation,ctx.weapon?.splashTargets,ctx.weapon?.splashFactor,opts.abilityDamage?.weaponBased,!!opts.abilityDamage,attackOverflow(opts)]);
+    const key=JSON.stringify([source?.baseDice,source?.apDice,rawMultiplier,times,weight,opts.defender.hp,opts.defender.barrier,opts.defender.formation,ctx.weapon?.splashTargets,ctx.weapon?.splashFactor,opts.abilityDamage?.weaponBased,!!opts.abilityDamage,attackOverflow(opts),opts.rules.overmatch?penetrationContext(opts):undefined]);
     const cached=memberPreviewCache.get(key);if(cached)return cached;
     const base=diceDistribution(source?.baseDice,times),ap=diceDistribution(source?.apDice,times);
     const result={mean:0,second:0,positive:0,casualties:0,max:0};

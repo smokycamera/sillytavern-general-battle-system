@@ -5,17 +5,18 @@ import { curveAt } from './data/curves.js';
 import { diceAvg, rebuildDice } from './data/weapons.js';
 import {combatPowerBudget,scaledPowerDice} from './power-anchors.js';
 import { compileSkill, skillDefinitionKnown } from './skill-catalog.js';
-import { balanceGenericSkill, genericEffectCount } from './skill-balance.js';
+import { balanceGenericSkill, genericEffectCount, BUFF_CONDITIONS } from './skill-balance.js';
 import { upgradeZoneSkill } from './zone-skills.js';
+import { attachDefensePower } from './barrier.js';
 /** V3只在新规则入场时升级；原技能身份、P与已支付的账本都保留。 */
 export function upgradeCombatSkills(unit: Combatant): void {
   const modern=unit.combatModel==='cohort-v2';
   for(const a of unit.abilities){
-    if (upgradeZoneSkill(a,unit.damageModel)) continue;
+    if (upgradeZoneSkill(a,unit.damageModel)) { attachDefensePower(a); continue; }
     const generic=a.definitionId?.startsWith('generic:')??false;
     const wounds=isWoundModel(unit.damageModel), unified=unit.damageModel==='wounds-v2';
-    const version=unified?'skill-v6.0':wounds?'skill-v5.0':modern?'skill-v4.3':'skill-v3.0';
-    if(a.customized||a.itemSourceId||a.fixedPower||a.effectVersion===version)continue;
+    const version=unified?'skill-v6.1':wounds?'skill-v5.0':modern?'skill-v4.3':'skill-v3.0';
+    if(a.customized||a.itemSourceId||a.fixedPower||a.effectVersion===version) { attachDefensePower(a); continue; }
     const previousGroup=a.cooldownGroup??a.id;
     if(modern&&a.definitionId&&skillDefinitionKnown(a.definitionId)) {
       const rebuilt=compileSkill({id:a.definitionId!,name:a.name,bonuses:a.bonuses,instanceId:a.id},a.power??5,unit.id);
@@ -42,9 +43,9 @@ export function upgradeCombatSkills(unit: Combatant): void {
       a.penetration=Math.max(0,(a.penetration??0)+bonusRating(a.bonuses,'penetration',a.channel??'kinetic'));
       if(a.range && a.range.max>1 && !a.effects.some(e=>e.op==='summon')) a.range.max=Math.max(a.range.min,1,a.range.max+bonusSteps(a.bonuses,'range',5));
       a.effects=a.effects.map(e=>{
-        if(wounds&&e.op==='barrier')return {...e,amount:Math.max(1,Math.round(e.amount*bonusMultiplier(a.bonuses,'power'))),dur:Math.max(1,Math.min(99,e.dur+bonusSteps(a.bonuses,'duration',5)))};
-        if(e.op==='condition')return {...e,...(e.saveDC!==undefined?{saveDC:Math.max(1,Math.min(30,e.saveDC+bonusSteps(a.bonuses,'accuracy')))}:{}),dur:Math.max(1,e.dur+(['stunned','restrained','disarmed','silenced'].includes(e.conditionId)?Math.min(0,bonusSteps(a.bonuses,'duration',5)):bonusSteps(a.bonuses,'duration',5))),magnitude:Math.max(unified?.25:0,Math.min(1.5,(e.magnitude??1)*bonusMultiplier(a.bonuses,'power')))};
-        if(e.op==='trait')return {...e,dur:Math.max(1,e.dur+bonusSteps(a.bonuses,'duration',5))};
+        if(wounds&&e.op==='barrier')return {...e,amount:Math.max(1,Math.round(e.amount*bonusMultiplier(a.bonuses,'power'))),dur:Math.max(1,Math.min(99,(unified?power:e.dur)+bonusSteps(a.bonuses,'duration',5)))};
+        if(e.op==='condition')return {...e,...(e.saveDC!==undefined?{saveDC:Math.max(1,Math.min(30,e.saveDC+bonusSteps(a.bonuses,'accuracy')))}:{}),dur:Math.max(1,(unified&&BUFF_CONDITIONS.has(e.conditionId)?power:e.dur)+(['stunned','restrained','disarmed','silenced'].includes(e.conditionId)?Math.min(0,bonusSteps(a.bonuses,'duration',5)):bonusSteps(a.bonuses,'duration',5))),magnitude:Math.max(unified?.25:0,Math.min(1.5,(e.magnitude??1)*bonusMultiplier(a.bonuses,'power')))};
+        if(e.op==='trait')return {...e,dur:Math.max(1,(unified?power:e.dur)+bonusSteps(a.bonuses,'duration',5))};
         if(e.op==='resource')return {...e,amount:Math.sign(e.amount)*Math.max(0,Math.abs(e.amount)+bonusSteps(a.bonuses,'resource',5))};
         if(e.op==='morale')return {...e,amount:Math.round(e.amount*bonusMultiplier(a.bonuses,'morale'))};
         return e;
@@ -64,6 +65,7 @@ export function upgradeCombatSkills(unit: Combatant): void {
       else unit.abilityState.push({ ...old, abilityId: a.cooldownGroup });
     }
     a.effectVersion=version;
+    attachDefensePower(a);
     a.desc=(a.desc??'').replace('同类别共享冷却','不同种效果独立冷却，同种效果改名不刷新').replace('至多两名近身合法目标分担范围攻击可用上限','至多两名近身合法目标分别承受范围攻击');
   }
 }

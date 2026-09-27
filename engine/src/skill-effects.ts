@@ -13,6 +13,7 @@ import { positionedUnit, revealUnit, type ObservationContext } from './observati
 import { canOccupy, terrainCellLabel } from './small/spatial.js';
 import { formationNode, FORMATION_NODES, formationCanOccupy } from './mass/formation.js';
 import { actionPotential, incomingPotential, tacticalStateValue } from './skill-tactics.js';
+import { grantBarrier } from './barrier.js';
 
 type ConditionEffect = Extract<EffectOp, { op: 'condition' }>;
 type PushEffect = Extract<EffectOp, { op: 'push' }>;
@@ -37,6 +38,7 @@ export function skillConditionDescription(effect: ConditionEffect, target: Comba
   if (effect.conditionId === 'hasted') details.push('移动点 +1（受移动上限限制），会战可提升纵深调动距离');
   if (effect.conditionId === 'slowed') details.push('移动点 -1（最低1），会战不能冲锋');
   if (['empowered', 'weakened', 'vulnerable', 'blessed'].includes(effect.conditionId)) details.push('仅修正可造成的伤害，不绕过防护');
+  if (effect.conditionId === 'blessed' && effect.defensePower !== undefined) details.push(`防御规格L${effect.defensePower}`);
   return details.join('、') || def?.desc || effect.conditionId;
 }
 const positive = new Set(['empowered', 'inspired', 'blessed', 'encouraged', 'confident', 'hasted']);
@@ -52,8 +54,8 @@ export function conditionChance(target: Combatant, effect: ConditionEffect): num
   if (target.hp <= 0 || ['dead', 'fled'].includes(target.status) || conditionImmunity(target, effect.conditionId)) return 0;
   if (effect.saveDC === undefined) {
     if (positive.has(effect.conditionId)) {
-      const same = target.conditions.filter((c) => c.id === effect.conditionId && c.dur >= effect.dur).map((c) => (c.potency ?? 2) * (c.magnitude ?? 1));
-      if ((target.traitSources ?? []).some((s) => traitSourceActive(target, s) && s.conditionIds?.includes(effect.conditionId))) same.push(2);
+      const same = target.conditions.filter((c) => c.id === effect.conditionId && c.dur >= effect.dur && (c.defensePower ?? 0) >= (effect.defensePower ?? 0)).map((c) => (c.potency ?? 2) * (c.magnitude ?? 1));
+      if (!effect.defensePower && (target.traitSources ?? []).some((s) => traitSourceActive(target, s) && s.conditionIds?.includes(effect.conditionId))) same.push(2);
       if (same.some((value) => value >= (effect.potency ?? 2) * (effect.magnitude ?? 1))) return 0;
     }
     return 1;
@@ -68,11 +70,12 @@ export function prepareCondition(actor: Combatant, target: Combatant, effect: Co
     const roll = rng.d(20), total = roll + controlBonus(target);
     if (roll === 20 || roll !== 1 && total >= effect.saveDC) return { text: `${target.name} 抵抗${name}（${roll}+${controlBonus(target)}对抗${effect.saveDC}）` };
   }
-  return { condition: { id: effect.conditionId, dur: effect.dur, sourceId: actor.id, ...(isCohort(target)&&target.scale!=='hero'&&definitions.get(effect.conditionId)?.dot?{affectedMembers:conditionExposure(actor,target,effect.shape==='burst')}:{}), ...(effect.potency !== undefined ? { potency: effect.potency } : {}), ...(effect.magnitude !== undefined ? { magnitude: effect.magnitude } : {}) }, text: `${target.name} 获得${name}，持续${effect.dur}次状态结算` };
+  return { condition: { id: effect.conditionId, dur: effect.dur, sourceId: actor.id, ...(effect.conditionId === 'blessed' && effect.defensePower !== undefined ? { defensePower: effect.defensePower } : {}), ...(isCohort(target)&&target.scale!=='hero'&&definitions.get(effect.conditionId)?.dot?{affectedMembers:conditionExposure(actor,target,effect.shape==='burst')}:{}), ...(effect.potency !== undefined ? { potency: effect.potency } : {}), ...(effect.magnitude !== undefined ? { magnitude: effect.magnitude } : {}) }, text: `${target.name} 获得${name}，持续${effect.dur}次状态结算` };
 }
 export function applySkillCondition(target: Combatant, condition?: ActiveCondition): void {
   if (!condition || target.hp <= 0) return;
-  const existing = target.conditions.find((c) => c.id === condition.id && c.dur > 0);
+  // 不同规格各自到期；低阶长效守护不能延长高阶短效守护。
+  const existing = target.conditions.find((c) => c.id === condition.id && c.dur > 0 && c.defensePower === condition.defensePower);
   if (!existing) target.conditions.push({ ...condition });
   else if (positive.has(condition.id)) {
     const stronger = (condition.potency ?? 2) * (condition.magnitude ?? 1) > (existing.potency ?? 2) * (existing.magnitude ?? 1);
@@ -150,7 +153,7 @@ export function skillEffectLines(context: ObservationContext, actor: Combatant, 
       return p ? [`${p.group ? `群体召唤：一支${p.members}名成员的编队` : '单体召唤：一个个体'}，等级L${p.power}；召唤武器L${p.power}，${p.range > 1 ? '远程' : '近战'}距离${p.range}；在施法者附近出现，下轮行动；群体分摊同级单体的生命和武器伤害预算`] : [];
     }
     if (effect.op === 'zone') return [zoneEffectDescription(effect)];
-    if (effect.op === 'barrier') return [`屏障最多吸收${effect.amount}点伤害，持续${effect.dur}轮；重复施放取较强保护`];
+    if (effect.op === 'barrier') return [`屏障最多吸收${effect.amount}点伤害，持续${effect.dur}轮${effect.defensePower ? `，防御规格L${effect.defensePower}` : ''}；重复施放取较强保护`];
     if (effect.op === 'trait') return [skillTraitReason(target, effect) ?? `${traitRegistry().get(effect.traitId)?.name}持续${effect.dur}轮，战斗归档时结束`];
     if (effect.op === 'resource') return [`${effect.resource==='SP'?'精力':effect.resource}变化${skillResourceChange(target, effect)}，受当前资源与上限约束`];
     if (effect.op === 'damage' && ability.areaExposure && target.scale !== 'hero') return [isCohort(actor)?'范围伤害按参战规模与成员耐久折算；疏散可减轻伤害':`每编队至多${Math.min(target.hp, ability.areaExposure)}名成员暴露；疏散可减轻范围伤害`];
@@ -179,7 +182,7 @@ export function skillEffectValue(context: ObservationContext, actor: Combatant, 
         const chance = conditionChance(branch.unit, effect) * (effect.onDamage ? damageChance : effect.onHit ? hitChance : 1);
         if (!chance) return [branch];
         const future = { ...branch.unit, conditions: branch.unit.conditions.map(c => ({ ...c })) };
-        applySkillCondition(future, { id: effect.conditionId, dur: effect.dur - horizon, potency: effect.potency, magnitude: effect.magnitude,
+        applySkillCondition(future, { id: effect.conditionId, dur: effect.dur - horizon, potency: effect.potency, magnitude: effect.magnitude, defensePower: effect.defensePower,
           ...(isCohort(target) && target.scale !== 'hero' && definitions.get(effect.conditionId)?.dot ? { affectedMembers: conditionExposure(actor, target, effect.shape === 'burst') } : {}) });
         return [{ unit: branch.unit, probability: branch.probability * (1 - chance) }, { unit: future, probability: branch.probability * chance }].filter(b => b.probability > 0);
       }).sort((a, b) => b.probability - a.probability).slice(0, 16);
@@ -188,7 +191,13 @@ export function skillEffectValue(context: ObservationContext, actor: Combatant, 
   }
   return ability.effects.reduce((sum, effect) => {
     if (effect.op === 'zone') { const friendly=target.side===actor.side; return sum+(effect.kind==='smoke'?2*effect.dur/3:effect.kind==='healing'?(friendly?Math.min(recoveryCapacity(target),zoneAmount(effect)):0):friendly?effect.kind==='trap'?0:-8:(4+effect.power)*zoneAmount(effect)/(4+effect.power*3)); }
-    if (effect.op === 'barrier') return sum + Math.min(Math.max(0, effect.amount - (target.barrier?.remaining ?? 0)), incomingPotential(context, target)) * polarity;
+    if (effect.op === 'barrier') {
+      if (context.rules?.overmatch && (effect.defensePower ?? ability.power)) {
+        const future = structuredClone(target); grantBarrier(future, effect.amount, effect.dur, actor.id, effect.defensePower ?? ability.power);
+        return sum + Math.max(0, incomingPotential(context, target) - incomingPotential(context, future)) * polarity;
+      }
+      return sum + Math.min(Math.max(0, effect.amount - (target.barrier?.remaining ?? 0)), incomingPotential(context, target)) * polarity;
+    }
     if (effect.op === 'trait') return sum + (skillTraitReason(target, effect) ? 0 : 3 + Math.min(3, effect.dur / 3));
     if (effect.op === 'resource') {
       const before = { ...target, resources: { ...resources } };

@@ -2,7 +2,8 @@ import type { Ability, EffectOp, ZonePayload } from '../types.js';
 import { curveAt } from '../data/curves.js';
 import { diceAvg, rebuildDice } from '../data/weapons.js';
 import { skillMechanismFromId, skillMechanismName, SKILL_MODIFIERS } from '../data/skill-mechanisms.js';
-import { balanceGenericSkill } from '../skill-balance.js';
+import { balanceGenericSkill, BUFF_CONDITIONS } from '../skill-balance.js';
+import { attachDefensePower } from '../barrier.js';
 
 /** 由类别、效果原语和独立P生成；不经过命名蓝图，也不从自定义名猜机制。 */
 export function compileGenericSkill(id: string, power: number, ownerId: string, name?: string, model?: import('../types.js').Combatant['damageModel']): Ability {
@@ -23,11 +24,11 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
   if (damagingDebuff) effects.push({ op: 'damage', baseDice: rebuildDice(diceAvg(curve.dmgBase) * 0.35 / (area ? 2 : 1), 6), shape: area ? 'burst' : 'single' });
   for (const key of selected) {
     const modifier = SKILL_MODIFIERS.find((m) => m.id === key)!;
-    if (modifier.condition) effects.push({ op: 'condition', conditionId: modifier.condition, dur: ['stunned', 'restrained', 'disarmed', 'silenced'].includes(modifier.condition) ? 1 : duration,
+    if (modifier.condition) effects.push({ op: 'condition', conditionId: modifier.condition, dur: ['stunned', 'restrained', 'disarmed', 'silenced'].includes(modifier.condition) ? 1 : model === 'wounds-v2' && BUFF_CONDITIONS.has(modifier.condition) ? power : duration,
       magnitude, ...(modifier.allowed === 'hostile' ? { saveDC: Math.max(1, saveDC - 2 * Math.max(0, selected.length - 1) - (key === 'stun' ? 2 : 0)) } : {}), ...(damage || damagingDebuff ? { onHit: true, ...(['poisoned', 'bleeding', 'burning'].includes(modifier.condition) ? { onDamage: true } : {}) } : {}), shape: area ? 'burst' : 'single' });
-    else if (modifier.trait) effects.push({ op: 'trait', traitId: modifier.trait, dur: 1 + power, shape: area ? 'burst' : 'single' });
+    else if (modifier.trait) effects.push({ op: 'trait', traitId: modifier.trait, dur: model === 'wounds-v2' ? power : 1 + power, shape: area ? 'burst' : 'single' });
     else if (key === 'heal') effects.push({ op: 'heal', amount: Math.max(1, Math.round(curve.hp * 0.25 / Math.max(1, selected.length) / (area ? 2 : 1))) });
-    else if (key === 'barrier') effects.push({ op: 'barrier', amount: Math.max(1, Math.round((8 + power * 5) / Math.max(1, selected.length) / (area ? 2 : 1))), dur: 3 });
+    else if (key === 'barrier') effects.push({ op: 'barrier', amount: Math.max(1, Math.round((8 + power * 5) / Math.max(1, selected.length) / (area ? 2 : 1))), dur: model === 'wounds-v2' ? power : 3 });
     else if (key === 'cleanse' || key === 'dispel') effects.push({ op: 'dispel', polarity: key === 'cleanse' ? 'negative' : 'positive', count: power >= 6 ? 2 : 1 });
     else if (key === 'morale-up' || key === 'morale-down') effects.push({ op: 'morale', amount: (key === 'morale-up' ? 1 : -1) * (3 + power) });
     else if (key === 'restore' || key === 'drain') effects.push({ op: 'resource', resource: 'SP', amount: (key === 'restore' ? 1 : -1) * (1 + Math.ceil(power / 3)), maximum: 'training' });
@@ -68,5 +69,6 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
   }
   if (!area && !damage && selected.length === 1 && ['root','disarm','silence'].includes(selected[0]!)) ability.cost!.amount = 2;
   balanceGenericSkill(ability);
+  attachDefensePower(ability);
   return ability;
 }

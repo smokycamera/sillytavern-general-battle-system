@@ -1174,7 +1174,7 @@ export class SmallBattle {
       switch (eff.op) {
         case 'zone': { if (chosenTarget) { placeZone(this.observationContext(),actor,chosenTarget,eff,this.round,ability.id); logBits.push('布置'+ZONE_NAMES[eff.kind]+'，持续'+eff.dur+'轮'); } break; }
         case 'barrier': {
-          for (const target of effectTargets(ability.shape === 'burst')) { grantBarrier(target, eff.amount, eff.dur, actor.id); logBits.push(`${target.name} 获得屏障，可吸收${target.barrier?.remaining ?? 0}点伤害，持续${eff.dur}轮`); }
+          for (const target of effectTargets(ability.shape === 'burst')) { grantBarrier(target, eff.amount, eff.dur, actor.id, eff.defensePower ?? ability.power); logBits.push(`${target.name} 获得屏障，可吸收${target.barrier?.remaining ?? 0}点伤害，持续${eff.dur}轮`); }
           break;
         }
         case 'damage': {

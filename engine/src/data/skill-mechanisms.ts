@@ -17,7 +17,7 @@ export const SKILL_MODIFIER_ALIASES: Record<string, string[]> = {
   melee: ['近身', '近战技法'], ranged: ['远射', '远程射击'], shield: ['盾击'], projectile: ['动能投射', '远程投射'],
   thermal: ['火焰', '热伤'], arcane: ['奥术伤害'], martial: ['非魔法', '物理技法'],
   attack: ['提高攻击', '攻击提升', '提高命中', '命中提升'], defense: ['提高防御', '防御提升'],
-  empower: ['提高伤害', '伤害提升', '强击'], ward: ['护盾', '防护', '减伤'], haste: ['提速', '迅捷'],
+  empower: ['提高伤害', '伤害提升', '强击'], ward: ['减伤'], barrier: ['护盾', '防护'], haste: ['提速', '迅捷'],
   heal: ['治疗术', '恢复生命', '疗伤', '治愈', '医疗'], cleanse: ['解除负面', '清除减益', '驱除减益'],
   restore: ['恢复能量', '能量恢复'], summon: ['召唤造物'], 'morale-up': ['提高士气', '鼓舞士气'],
   weaken: ['削弱'], 'accuracy-down': ['降低攻击', '降低命中', '失准'], 'defense-down': ['降低防御', '破绽'],
