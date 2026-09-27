@@ -13,7 +13,7 @@ window.SillyTavern={getContext:()=>({chatId:'combat-v4-smoke',characterId:0,char
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
 try{
  const page=await browser.newPage({viewport:{width:390,height:844}});page.on('pageerror',e=>errors.push(e.message));await page.goto(`http://127.0.0.1:${server.address().port}`);
- const p=page.frameLocator('#panel'),read=()=>page.evaluate(()=>window.readPanel()),load=async save=>{await page.evaluate(({save,html})=>{window.loadFixture(save);document.querySelector('#panel').srcdoc=html;},{save,html});};
+ const p=page.frameLocator('#panel'),read=async()=>{await p.locator('body:not([aria-busy="true"])').waitFor();return page.evaluate(()=>window.readPanel());},load=async save=>{await page.evaluate(({save,html})=>{window.loadFixture(save);document.querySelector('#panel').srcdoc=html;},{save,html});};
  await load(cases[0][1].before);await p.locator('.workspace-nav [data-tab="units"]').click();
  if(!await p.locator('[data-role="gen-name"]').isVisible())await p.locator('[data-action="gen-toggle"]').click();
  await p.locator('[data-role="gen-name"]').fill('十二辆自定义生命车辆');await p.locator('[data-role="gen-scale"]').selectOption('company');
