@@ -1,4 +1,5 @@
 import { isWoundModel } from './balance.js';
+import { instanceMultiplier } from './instance-variance.js';
 import { bonusMultiplier, bonusSteps, trainingEdge, trainingDamage } from './enhancements.js';
 import { barrierAmount } from './barrier.js';
 import { weaponConditions, poisonHint, poisonValue } from './afflictions.js';
@@ -286,7 +287,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
       expectedCasualties:hasMemberHealth(opts.defender)?casualties/96:undefined,damageChance:positive/96,penetrationFactor:factor,exact:false,
       variance:Math.max(0,squares/96-mean*mean),minDamage:0,maxDamage:maximum};
   }
-  const rawMultiplier=memberAreaBudget(opts)*modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level,opts.rules)*bonusMultiplier(opts.attacker.bonuses,'damage',opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
+  const rawMultiplier=memberAreaBudget(opts)*modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level,opts.rules)*instanceMultiplier(opts.attacker.bonuses,'damage',opts.attacker.genAudit?.variance,opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
   const moments=(times:number)=>{
     const key=JSON.stringify([source?.baseDice,source?.apDice,rawMultiplier,times,weight,opts.defender.hp,opts.defender.barrier,opts.defender.formation,ctx.weapon?.splashTargets,ctx.weapon?.splashFactor,opts.abilityDamage?.weaponBased,!!opts.abilityDamage,attackOverflow(opts),opts.rules.overmatch?penetrationContext(opts):undefined]);
     const cached=memberPreviewCache.get(key);if(cached)return cached;
@@ -547,7 +548,7 @@ export function resolveAttack(opts: AttackOpts): AttackResolution {
 
   const scale = outcomeScale(opts);
   const modern=rules.combatModel===MEMBER_HEALTH_MODEL;
-  const sourceScale=modern?memberAreaBudget(opts)*(opts.abilityDamage?opts.abilityDamage.damageScale??1:weapon?.damageScale??1)/(penetration?.armorScale??1)*trainingDamage(attacker.level,rules)*bonusMultiplier(attacker.bonuses,'damage',penetration?.channel??'kinetic')*(penetration?.overmatchMultiplier??1):1;
+  const sourceScale=modern?memberAreaBudget(opts)*(opts.abilityDamage?opts.abilityDamage.damageScale??1:weapon?.damageScale??1)/(penetration?.armorScale??1)*trainingDamage(attacker.level,rules)*instanceMultiplier(attacker.bonuses,'damage',attacker.genAudit?.variance,penetration?.channel??'kinetic')*(penetration?.overmatchMultiplier??1):1;
   const targets=modern?roundDamage(scale.multiplier,rng):0;
   let final = Math.round((baseAfterDR + apTotal) * dmgMult * wardMult * scale.multiplier);
   if (v2) final = roundDamage(v2DamageAmount(baseRaw, apRoll?.total ?? 0, penetration!.factor, dmgMult * wardMult * (modern?targets*sourceScale:scale.multiplier)), rng);

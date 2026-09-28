@@ -23,7 +23,7 @@ describe('V8 bounded training and single weapon bursts',()=>{
     const a=unit('a',{weaponBonuses:{accuracy:5,damage:4},traits:['fast','melee-master','versatile'],
       abilityBlueprints:blueprints});
     for(let i=0;i<100;i++) {
-      const weapon=compileWeapon({mechanism:'sword',power:7,bonuses:{accuracy:5,damage:4}},{id:'sword',seed:'audit:'+i,damageModel:'wounds-v2'});
+      const weapon=compileWeapon({mechanism:'sword',power:7,bonuses:{accuracy:5,damage:4}},{id:'sword',seed:'audit:'+i,damageModel:'wounds-v2',variance:false});
       if(weapon.baseDice==='5d6+1'){a.weapon=weapon;break;}
     }
     const d=unit('d',{level:8,weaponLevel:8,armorBonuses:{defense:3},traits:['fast','elite','melee-master']});

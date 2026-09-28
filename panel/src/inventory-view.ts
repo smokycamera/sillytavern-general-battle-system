@@ -1,3 +1,4 @@
+import { instanceVarianceLabel } from '../../engine/src/instance-variance.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import { equipmentLoadLabel } from '../../engine/src/body.js';
 import { enhancementLabel, bonusMultiplier } from '../../engine/src/enhancements.js';
@@ -26,6 +27,10 @@ function newDraft(body = 'human'): Draft {
   return { ...equipmentDraft('weapon', body), mode: 'create', id: randomId(), qty: '1' };
 }
 export function itemDescription(item: InventoryItem): string {
+  const mechanics = item.mechanics, variance = mechanics && mechanics.kind !== 'consumable' ? mechanics.value.recipe?.variance : undefined;
+  return itemDescriptionBase(item) + (variance ? ' · ' + instanceVarianceLabel(variance) : '');
+}
+function itemDescriptionBase(item: InventoryItem): string {
   const m = item.mechanics;
   if (!m) return '剧情物品 · 尚未设置战斗用途';
   if (m.kind === 'consumable') {
@@ -71,11 +76,17 @@ function gearComparison(before: UnitRecord | undefined, after: UnitRecord): stri
 }
 function previewHtml(preview: InventoryPreview): string {
   const intent = preview.intent;
+  if (intent.kind === 'discard-many') {
+    const names = new Map(preview.before.inventory?.map(item => [item.id, item.name]));
+    return `<div class="inventory-preview" data-role="inventory-preview" role="alertdialog" aria-label="确认批量删除"><h3>删除已选的${intent.items.length}项物品？</h3>
+      <div class="inventory-delete-list">${intent.items.map(item => `<div>${esc(names.get(item.itemId) ?? item.itemId)} ×${item.qty}</div>`).join('')}</div>
+      <div class="row"><button class="danger" data-action="inventory-confirm">确认删除</button><button data-action="inventory-cancel">取消</button></div></div>`;
+  }
   const changed = (preview.after.storage ?? []).filter((r) => (preview.before.storage ?? []).find((old) => old.id === r.id)?.revision !== r.revision);
   const itemId = 'itemId' in intent ? intent.itemId : undefined;
   const afterItem = preview.after.inventory?.find((i) => i.id === itemId);
   const beforeItem = preview.before.inventory?.find((i) => i.id === itemId);
-  const labels: Record<InventoryAction['kind'], string> = { create: '新增物品', define: '设置物品效果', reforge: '改造装备', assign: '调整归属', equip: '更换装备', unequip: '卸下装备', use: '使用物品', discard: '移出库存' };
+  const labels: Record<InventoryAction['kind'], string> = { create: '新增物品', define: '设置物品效果', reforge: '改造装备', assign: '调整归属', equip: '更换装备', unequip: '卸下装备', use: '使用物品', discard: '移出库存', 'discard-many': '批量删除' };
   const units = changed.map((record) => {
     const before = preview.before.storage?.find((r) => r.id === record.id);
     const registry = traitRegistry();
@@ -102,6 +113,9 @@ function previewHtml(preview: InventoryPreview): string {
 
 /** 只展示和提交意图；所有数据变化由常驻控制器校验、保存和发布。 */
 export class InventoryPanel {
+  private bulkDelete = false;
+  private selectedItems = new Set<string>();
+  private committing = false;
   private draft?: Draft;
   private preview?: InventoryPreview;
   private error?: string;
@@ -137,8 +151,18 @@ export class InventoryPanel {
   }
   handleChange(target: Element): boolean {
     if (!target.closest('#inventory-panel')) return false;
+    if ((target as HTMLElement).dataset.role === 'inventory-select') {
+      const input = target as HTMLInputElement;
+      const item = this.currentItems(this.view()).find(item => item.id === input.dataset.item);
+      if (this.bulkDelete && item && !item.equippedTo && !input.disabled) {
+        if (input.checked) this.selectedItems.add(item.id); else this.selectedItems.delete(item.id);
+        this.preview = undefined; this.error = undefined; this.draw();
+      }
+      return true;
+    }
     this.capture(target);
     if ((target as HTMLElement).dataset.role === 'inventory-unit') {
+      this.selectedItems.clear();
       this.selectedUnit = (target as HTMLSelectElement).value;
       if (this.draft?.itemId && !this.currentItems(this.view()).some(item => item.id === this.draft?.itemId)) this.draft = undefined;
     }
@@ -164,17 +188,38 @@ export class InventoryPanel {
   async handleAction(element: HTMLElement): Promise<boolean> {
     const action = element.dataset.action ?? '';
     if (!action.startsWith('inventory-')) return false;
+    if (this.committing || element instanceof HTMLButtonElement && element.disabled) return true;
+    const actionContext = this.controller.inventoryContext();
     this.capture(); this.error = undefined;
     try {
       const item = this.view().inventory?.find((i) => i.id === element.dataset.item);
-      if (action === 'inventory-new') { this.editorScroll = window.scrollY; this.draft = newDraft(this.view().storage?.find((r) => r.id === this.selectedUnit)?.snapshot?.body); this.preview = undefined; }
+      if (action === 'inventory-bulk') {
+        this.bulkDelete = true; this.selectedItems.clear(); this.preview = undefined; this.draft = undefined;
+      } else if (action === 'inventory-bulk-cancel') {
+        this.bulkDelete = false; this.selectedItems.clear(); this.preview = undefined;
+      } else if (action === 'inventory-select-all') {
+        const eligible = this.currentItems(this.view()).filter(item => !item.equippedTo);
+        if (eligible.every(item => this.selectedItems.has(item.id))) this.selectedItems.clear();
+        else this.selectedItems = new Set(eligible.map(item => item.id));
+        this.preview = undefined;
+      } else if (action === 'inventory-delete-selected') {
+        const selected = this.currentItems(this.view()).filter(item => this.selectedItems.has(item.id));
+        this.preview = this.controller.previewInventory({ kind: 'discard-many', items: selected.map(item => ({ itemId: item.id, qty: item.qty })) });
+      } else if (action === 'inventory-new') { this.editorScroll = window.scrollY; this.draft = newDraft(this.view().storage?.find((r) => r.id === this.selectedUnit)?.snapshot?.body); this.preview = undefined; }
       else if (action === 'inventory-cancel') this.preview = undefined;
       else if (action === 'inventory-close-draft') { this.draft = undefined; this.preview = undefined; }
       else if (action === 'inventory-confirm') {
         if (!this.preview) throw new Error('请先预览');
-        const receipt = await this.controller.commitInventoryPreview(this.preview);
-        if (receipt.status === 'failed') throw new Error(receipt.error ?? '尚未保存，可重试当前预览');
-        this.preview = undefined; this.draft = undefined;
+        const preview = this.preview, context = this.controller.inventoryContext();
+        this.committing = true; this.draw();
+        try {
+          const receipt = await this.controller.commitInventoryPreview(preview);
+          // A late acknowledgement from an old chat must not clear a new chat's form.
+          if (context !== this.controller.inventoryContext() || this.preview !== preview) return true;
+          if (receipt.status === 'failed') throw new Error(receipt.error ?? '尚未保存，可重试当前预览');
+          this.preview = undefined; this.draft = undefined;
+          if (preview.intent.kind === 'discard-many') { this.bulkDelete = false; this.selectedItems.clear(); }
+        } finally { this.committing = false; this.draw(); }
       } else if (action === 'inventory-preview-draft') {
         if (!this.draft) throw new Error('请先填写规格');
         this.preview = this.controller.previewInventory(this.draftAction(), this.draft.id);
@@ -198,8 +243,11 @@ export class InventoryPanel {
         else throw new Error('未知库存操作');
         this.preview = this.controller.previewInventory(intent);
       }
-    } catch (error) { this.error = error instanceof Error ? error.message : String(error); }
+    } catch (error) {
+      if (actionContext === this.controller.inventoryContext()) this.error = error instanceof Error ? error.message : String(error);
+    }
     this.draw();
+    if (actionContext !== this.controller.inventoryContext()) return true;
     if (['inventory-new', 'inventory-edit', 'inventory-define'].includes(action)) document.querySelector<HTMLInputElement>('[data-role="inventory-name"]')?.focus();
     if (action === 'inventory-close-draft' || action === 'inventory-confirm' && !this.draft && !this.error) { window.scrollTo(0, this.editorScroll); document.querySelector<HTMLButtonElement>('[data-action="inventory-new"]')?.focus({ preventScroll: true }); }
     if (this.preview || this.error) document.querySelector('[data-role="inventory-feedback"]')?.scrollIntoView({ block: 'nearest' });
@@ -207,7 +255,7 @@ export class InventoryPanel {
   }
   render(): string {
     const context = this.controller.inventoryContext();
-    if (this.context !== context) { this.context = context; this.draft = undefined; this.preview = undefined; this.error = undefined; this.selectedUnit = undefined; }
+    if (this.context !== context) { this.context = context; this.draft = undefined; this.preview = undefined; this.error = undefined; this.selectedUnit = undefined; this.bulkDelete = false; this.selectedItems.clear(); }
     let save: InventorySave;
     try { save = this.view(); }
     catch (error) { return `<section id="inventory-panel"><h2>装备与物品</h2><p class="grid-reason">${esc(error)}</p></section>`; }
@@ -215,9 +263,14 @@ export class InventoryPanel {
     if (this.selectedUnit === undefined || this.selectedUnit !== '' && !records.some(r => r.id === this.selectedUnit)) this.selectedUnit = records.find(r => r.side === 'ally' && !r.retired)?.id ?? '';
     const items = this.currentItems(save), current = records.find(r => r.id === this.selectedUnit), actor = current?.snapshot;
     const locked = !!save.battle && !(save.committedOutcomeIds ?? []).includes(`${save.battle.kind}:${String(save.battle.snap.seed)}`);
-    const d = this.draft, disabled = locked ? 'disabled' : '';
+    const eligible = items.filter(item => !item.equippedTo);
+    const eligibleIds = new Set(eligible.map(item => item.id));
+    const removedSelection = [...this.selectedItems].some(id => !eligibleIds.has(id));
+    if (removedSelection || locked) { this.selectedItems = new Set([...this.selectedItems].filter(id => !locked && eligibleIds.has(id))); if (this.preview?.intent.kind === 'discard-many') this.preview = undefined; }
+    const allSelected = eligible.length > 0 && eligible.every(item => this.selectedItems.has(item.id));
+    const d = this.draft, disabled = locked || this.committing ? 'disabled' : '';
     const select = (role: string, value: string, choices: [string, string][], disabled = false) => `<select data-role="inventory-${role}" ${disabled ? 'disabled' : ''}>${choices.map(([id, name]) => `<option value="${esc(id)}" ${id === value ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select>`;
-    const feedback = `<div data-role="inventory-feedback" aria-live="polite">${this.error ? `<p class="grid-reason">${esc(this.error)}</p>` : ''}${this.preview ? previewHtml(this.preview) : ''}</div>`;
+    const feedback = `<div data-role="inventory-feedback" aria-live="polite">${this.error ? `<p class="grid-reason">${esc(this.error)}</p>` : ''}${this.preview ? previewHtml(this.preview).replaceAll('data-action="inventory-confirm"', 'data-action="inventory-confirm"' + (this.committing ? ' disabled' : '')) : ''}</div>`;
     const card = (item: InventoryItem): string => {
       const m = item.mechanics, equipped = item.equippedTo, itemData = `data-item="${esc(item.id)}"`;
       const slots: EquipmentSlot[] = m?.kind === 'weapon' ? ['primary', 'sidearm'] : m?.kind === 'accessory' ? ['accessory1', 'accessory2'] : m && m.kind !== 'consumable' ? [m.kind] : [];
@@ -242,13 +295,13 @@ export class InventoryPanel {
         stats.push(['动能防护', String(anchoredProtection(unit, 'kinetic'))], ['热能防护', String(anchoredProtection(unit, 'thermal'))], ['奥术防护', String(anchoredProtection(unit, 'arcane'))], ['负重', String(m.value.load ?? 0)]);
       }
       const battleOnly = m?.kind === 'consumable' && !['heal', 'repair', 'restore', 'cleanse'].includes(m.recipe.mechanism);
-      return `<article class="inventory-card" data-inventory-id="${esc(item.id)}"><div class="inventory-card-heading"><div><b>${esc(item.name)}</b><span class="item-quantity">×${item.qty}</span></div><label class="item-prompt"><input type="checkbox" data-role="prompt-item" data-id="${esc(item.id)}" ${promptSelected(save.promptSettings as PromptSettings | undefined, 'item', item.id) ? 'checked' : ''}><span>供剧情参考</span></label></div>
+      return `<article class="inventory-card" data-inventory-id="${esc(item.id)}"><div class="inventory-card-heading"><div>${this.bulkDelete ? `<input type="checkbox" class="inventory-select" data-role="inventory-select" ${itemData} aria-label="选择${esc(item.name)}" ${this.selectedItems.has(item.id) ? 'checked' : ''} ${locked || equipped || this.committing ? 'disabled' : ''}>` : ''}<b>${esc(item.name)}</b><span class="item-quantity">×${item.qty}</span></div>${this.bulkDelete ? '' : `<label class="item-prompt"><input type="checkbox" data-role="prompt-item" data-id="${esc(item.id)}" ${promptSelected(save.promptSettings as PromptSettings | undefined, 'item', item.id) ? 'checked' : ''}><span>供剧情参考</span></label>`}</div>
         <div class="item-location">${equipped ? slotNames[equipped.slot] + ' · 已装备' : item.assignedTo ? '随身物品' : '公共库存'}${m && m.kind !== 'consumable' ? ' · 等级' + (m.value.recipe?.power ?? 1) : ''}</div>
         ${stats.length ? `<dl class="item-stats">${stats.map(([key, value]) => `<div><dt>${key}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl><details class="item-rules" data-detail-id="rules-${esc(item.id)}"><summary>查看完整属性与规则</summary><p>${esc(itemDescription(item))}</p></details>` : `<p>${esc(itemDescription(item))}</p>`}
-        <div class="item-actions">${equipped ? `<button class="primary" data-action="inventory-unequip" ${itemData} ${disabled}>卸下</button>` : recommended ? `<button class="primary" data-action="inventory-equip" ${itemData} data-slot="${recommended.slot}" ${locked || !actor || recommended.reason ? 'disabled' : ''}>装备为${slotNames[recommended.slot]}</button>${recommended.reason ? '<span class="grid-reason">' + esc(recommended.reason) + '</span>' : ''}` : ''}
+        <div class="item-actions" ${this.bulkDelete ? 'hidden' : ''}>${equipped ? `<button class="primary" data-action="inventory-unequip" ${itemData} ${disabled}>卸下</button>` : recommended ? `<button class="primary" data-action="inventory-equip" ${itemData} data-slot="${recommended.slot}" ${locked || !actor || recommended.reason ? 'disabled' : ''}>装备为${slotNames[recommended.slot]}</button>${recommended.reason ? '<span class="grid-reason">' + esc(recommended.reason) + '</span>' : ''}` : ''}
         ${m?.kind === 'consumable' ? `<button class="primary" data-action="inventory-use" ${itemData} title="${battleOnly ? '请在战场的行动列表中使用' : ''}" ${locked || !actor || battleOnly ? 'disabled' : ''}>${battleOnly ? '战斗中使用' : '使用1件'}</button>` : ''}
         ${!equipped && !item.assignedTo && actor ? `<button data-action="inventory-assign" ${itemData} ${disabled}>交给${esc(current!.name)}</button>` : ''}</div>
-        ${details.length ? `<details class="inventory-more" data-detail-id="more-${esc(item.id)}"><summary>其他操作</summary><div class="row">${details.join('')}</div></details>` : ''}
+        ${!this.bulkDelete && details.length ? `<details class="inventory-more" data-detail-id="more-${esc(item.id)}"><summary>其他操作</summary><div class="row">${details.join('')}</div></details>` : ''}
         ${item.note || item.history?.length ? `<details data-detail-id="history-${esc(item.id)}"><summary>来源与改造记录</summary>${item.note ? '<p>' + esc(item.note) + '</p>' : ''}${item.history?.map(h => '<p>第' + h.revision + '次记录：' + esc(h.name) + ' · ' + esc(itemDescription({ ...item, mechanics: h.mechanics })) + '</p>').join('') ?? ''}</details>` : ''}</article>`;
     };
     const groups = [
@@ -256,7 +309,7 @@ export class InventoryPanel {
       { name: '随身物品', items: items.filter(item => item.assignedTo && !item.equippedTo) },
       { name: '公共库存', items: items.filter(item => !item.assignedTo) },
     ];
-    return `<section id="inventory-panel"><div class="inventory-title"><h2>装备与物品 <small class="sub">${items.length}种物品</small></h2><div class="inventory-title-actions"><button data-action="loadout-skills" data-id="${esc(current?.id ?? '')}" ${!actor || actor.rulesVersion !== 'v2' || current?.retired || current?.status === 'dead' || locked && actor.side !== 'ally' ? 'disabled' : ''}>技能选择</button><button data-action="inventory-new" ${disabled}>新增物品</button></div></div>
+    return `<section id="inventory-panel"><div class="inventory-title"><h2>装备与物品 <small class="sub">${items.length}种物品</small></h2><div class="inventory-title-actions">${this.bulkDelete ? `<button data-action="inventory-select-all" ${locked || !eligible.length || this.committing ? 'disabled' : ''}>${allSelected ? '取消全选' : '全选'}</button><button class="danger" data-action="inventory-delete-selected" ${locked || !this.selectedItems.size || this.committing ? 'disabled' : ''}>删除（${this.selectedItems.size}）</button><button data-action="inventory-bulk-cancel" ${this.committing ? 'disabled' : ''}>取消</button>` : `<button data-action="inventory-bulk" ${locked || !eligible.length ? 'disabled' : ''}>批量删除</button><button data-action="loadout-skills" data-id="${esc(current?.id ?? '')}" ${!actor || actor.rulesVersion !== 'v2' || current?.retired || current?.status === 'dead' || locked && actor.side !== 'ally' ? 'disabled' : ''}>技能选择</button><button data-action="inventory-new" ${disabled}>新增物品</button>`}</div></div>
       <div class="inventory-unit-choice"><label>查看单位 ${select('unit', this.selectedUnit, [['', '无主物品'], ...records.map((r): [string, string] => [r.id, `${r.name} · ${r.side === 'ally' ? '我方' : '敌方'} · ${r.hp}/${r.base.hpMax}`])])}</label></div>
       ${current ? `<div class="loadout-current"><h3>${esc(current.name)} · 当前装备</h3><div class="loadout-slots">${items.filter(i => i.equippedTo).map(i => '<span><small>' + slotNames[i.equippedTo!.slot] + '</small>' + esc(i.name) + '</span>').join('') || '<span>尚未装备物品</span>'}</div><details data-detail-id="loadout-summary"><summary>查看整体防护与负重</summary><p>${esc(gearText(current))}</p></details></div>` : ''}
       ${locked ? '<p class="grid-reason">战斗中不能更换装备。请在战场的行动列表中使用随身物品。</p>' : ''}

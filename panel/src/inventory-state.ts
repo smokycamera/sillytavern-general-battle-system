@@ -1,3 +1,4 @@
+import { validateInstanceVariance } from '../../engine/src/instance-variance.js';
 import { validateEnhancements, type Enhancements } from '../../engine/src/enhancements.js';
 import { calibrateAutocannon, calibrateWeaponHands } from '../../engine/src/gen/equipment.js';
 import {hasMemberHealth} from '../../engine/src/member-health.js';
@@ -30,6 +31,7 @@ export type InventoryAction =
   | { kind: 'reforge'; itemId: string; name?: string; spec: ItemSpecification }
   | { kind: 'define'; itemId: string; spec: ItemSpecification }
   | { kind: 'discard'; itemId: string; qty: number }
+  | { kind: 'discard-many'; items: { itemId: string; qty: number }[] }
   | { kind: 'assign'; itemId: string; unitId?: string }
   | { kind: 'equip'; itemId: string; unitId: string; slot: EquipmentSlot }
   | { kind: 'unequip'; unitId: string; slot: EquipmentSlot }
@@ -56,6 +58,7 @@ export function validateInventoryItem(value: unknown): asserts value is Inventor
     || !Number.isInteger(recipe.quality) || Number(recipe.quality) < 1 || Number(recipe.quality) > 5
     || !['human', 'large', 'vehicle', 'giant'].includes(String(recipe.size)) || typeof recipe.seed !== 'string' || !recipe.seed)) throw new Error('已保存的属性损坏或版本未知');
   if (object(recipe) && (recipe.balanceVersion !== undefined && recipe.balanceVersion !== 'unified-v1' || recipe.noVariance !== undefined && typeof recipe.noVariance !== 'boolean')) throw Error('装备数值版本损坏');
+  if(object(recipe))validateInstanceVariance(recipe.variance);
   if(object(recipe))validateEnhancements(recipe.bonuses as Enhancements | undefined, m.kind as 'weapon'|'armor'|'shield'|'consumable'|'accessory');
   if (m.kind === 'consumable') {
     if (Number(value.qty) > 9999 || !object(recipe) || !Object.hasOwn(CONSUMABLE_NAMES, String(recipe.mechanism)) || !object(m.effect) || value.equippedTo !== undefined) throw new Error('消耗品效果或装备关系损坏');
@@ -222,6 +225,19 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
   if (action.kind === 'create') {
     if (inventory.some((i) => i.id === action.itemId)) throw new Error('物品身份已存在');
     inventory.push(createInventoryItem(action.itemId, action.name, action.spec, id, action.qty));
+  } else if (action.kind === 'discard-many') {
+    if (!Array.isArray(action.items) || !action.items.length) throw new Error('请先选择要删除的物品');
+    const ids = new Set<string>(), byId = new Map(inventory.map(item => [item.id, item]));
+    for (const entry of action.items) {
+      if (!entry || typeof entry.itemId !== 'string' || !entry.itemId || ids.has(entry.itemId)) throw new Error('批量删除包含重复或无效物品');
+      ids.add(entry.itemId);
+      const item = byId.get(entry.itemId);
+      if (!item || item.qty <= 0) throw new Error('待删除物品不存在或已耗尽');
+      if (item.equippedTo) throw new Error('先卸下已装备物品，再从库存移除');
+      if (!Number.isSafeInteger(entry.qty) || entry.qty !== item.qty) throw new Error('物品数量已变化，请重新选择');
+    }
+    // Validate the entire batch before changing any quantity; publish/save exactly once.
+    for (const itemId of ids) byId.get(itemId)!.qty = 0;
   } else if (action.kind === 'unequip') {
     const record = recordById(next, action.unitId);
     const item = inventory.find((i) => i.equippedTo?.unitId === record.id && i.equippedTo.slot === action.slot);
@@ -254,7 +270,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       if (spec.kind === 'armor' && spec.profile === undefined) spec.profile = oldRecipe?.protectionProfile;
       if (spec.kind === 'weapon' && spec.enchantment === undefined) spec.enchantment = oldRecipe?.enchantment ?? 'none';
       const name = action.name?.trim() || item.name;
-      const mechanics = compileItem(spec, { id: item.id, name, seed: oldRecipe?.seed ?? `reforge:${id}`, damageModel:'wounds-v2' });
+      const mechanics = compileItem(spec, { id: item.id, name, seed: oldRecipe?.seed ?? `reforge:${id}`, damageModel:'wounds-v2', noVariance: oldRecipe?.noVariance, variance: oldRecipe?.variance ?? false });
       item.history = [...(item.history ?? []), { revision: item.revision ?? 1, name: item.name, mechanics: clone(item.mechanics), sourceId: id }];
       item.mechanics = mechanics; item.name = name; item.revision = (item.revision ?? 1) + 1;
       if (item.equippedTo) {

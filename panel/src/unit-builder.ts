@@ -52,7 +52,7 @@ function setGear(u: Combatant, d: UnitDraft, oldDraft?: UnitDraft): void {
     if (!enabled) { if (slot === 'sidearm') delete u.sidearm; if (slot === 'shieldGear') delete u.shield; continue; }
     const unchanged = old && before && JSON.stringify({ ...before, name: '' }) === JSON.stringify({ ...draft, name: '' });
     const result = unchanged ? structuredClone(old) : compileItem(equipmentSpecification(draft), { id: old && old.kind !== 'consumable' ? old.value.id : u.id + ':' + (slot === 'shieldGear' ? 'shield' : slot), name: draft.name.trim() || undefined,
-      seed: old && old.kind !== 'consumable' ? old.value.recipe?.seed ?? (u.genAudit?.seed ?? u.id) + ':' + slot : (u.genAudit?.seed ?? u.id) + ':' + slot, creatingUnit: !oldDraft, damageModel: u.damageModel });
+      seed: old && old.kind !== 'consumable' ? old.value.recipe?.seed ?? (u.genAudit?.seed ?? u.id) + ':' + slot : (u.genAudit?.seed ?? u.id) + ':' + slot, creatingUnit: !oldDraft, damageModel: u.damageModel, ...(oldDraft && old && old.kind !== 'consumable' ? { noVariance: old.value.recipe?.noVariance, variance: old.value.recipe?.variance ?? false } : {}) });
     if (result.kind === 'consumable') throw Error('配装槽不能装入消耗品');
     if (unchanged && draft.name.trim()) result.value.name = draft.name.trim();
     if (slot === 'primary' && result.kind === 'weapon') u.weapon = result.value;

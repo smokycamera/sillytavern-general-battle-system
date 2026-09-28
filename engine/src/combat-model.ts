@@ -1,5 +1,5 @@
 import { isWoundModel } from './balance.js';
-import { bonusMultiplier } from './enhancements.js';
+import { instanceMultiplier, validateInstanceVariance } from './instance-variance.js';
 import type { Combatant, RulePack } from './types.js';
 import { BODY, bodyProfile } from './body.js';
 import { limitCombatantLife, singleLifeLimit } from './health-limits.js';
@@ -11,6 +11,8 @@ export const COHORT_REFERENCE = 50;
 export interface FormationStrength { members: number; capacity: number; memberHp: number; woundedRemainder?: number; health?:MemberHealthGroup[] }
 export const isCohort = (u: Combatant) => u.combatModel === COHORT_MODEL || u.combatModel === MEMBER_HEALTH_MODEL;
 export function validateCombatModel(u: Combatant): void {
+  validateInstanceVariance(u.genAudit?.variance);
+  for (const gear of [u.weapon, u.sidearm, u.armor, u.shield]) validateInstanceVariance(gear?.recipe?.variance);
   if(u.damageModel!==undefined&&!isWoundModel(u.damageModel))throw Error('未知伤害模型');
   if(u.combatModel===undefined){if(u.formation!==undefined)throw Error('编队人数缺少规则版本');return;}
   if(!isCohort(u))throw Error('未知战斗人数模型');
@@ -22,7 +24,7 @@ export function validateCombatModel(u: Combatant): void {
 }
 export function personnel(u: Combatant): number { return u.formation?.members ?? u.hp; }
 export function memberDurability(u: Combatant): number { return u.formation?.memberHp ?? 10 * BODY[u.body ?? 'human'].hp; }
-export function nominalLife(u: Combatant): number { return Math.round((curveAt(u.level, u.damageModel).hp * bodyProfile(u.body, u.damageModel).hp + ARCHETYPE_MODS[u.archetype ?? 'infantry'].hp) * bonusMultiplier(u.bonuses, 'health')); }
+export function nominalLife(u: Combatant): number { return Math.round((curveAt(u.level, u.damageModel).hp * bodyProfile(u.body, u.damageModel).hp + ARCHETYPE_MODS[u.archetype ?? 'infantry'].hp) * instanceMultiplier(u.bonuses, 'health', u.genAudit?.variance)); }
 export function synchronizePersonnel(u: Combatant, fromLegacy = false): void {
   if (!isCohort(u) || u.scale === 'hero') { if (u.scale === 'hero') delete u.formation; return; }
   if (!u.formation) u.formation = {members:u.hp,capacity:u.base.hpMax,memberHp:10*BODY[u.body??'human'].hp};

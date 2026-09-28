@@ -39,7 +39,7 @@ function mount(canView = (_record: NonNullable<InventorySave['storage']>[number]
     expect(button).not.toBeNull(); await panel.handleAction(button);
   };
   const ids = () => [...document.querySelectorAll<HTMLElement>('[data-inventory-id]')].map(el => el.dataset.inventoryId!);
-  return { panel, render, choose, action, ids, save: () => save, context: (value: string) => { context = value; } };
+  return { panel, controller, render, choose, action, ids, save: () => save, context: (value: string) => { context = value; } };
 }
 
 beforeEach(() => { document.body.innerHTML = ''; Element.prototype.scrollIntoView = vi.fn(); });
@@ -106,4 +106,72 @@ it('closes a hidden unit item draft and cancels its pending preview when switchi
   expect(document.querySelector('.inventory-form')).toBeNull();
   expect(document.querySelector('[data-role="inventory-preview"]')).toBeNull();
   expect(f.save()).toEqual(before);
+});
+
+
+it('bulk selection only includes visible unequipped stacks, confirms once, commits one transaction', async () => {
+  const f=mount(record=>record.id!=='enemy'),before=structuredClone(f.save());
+  await f.action('bulk');
+  expect(document.querySelector('[data-action="inventory-new"]')).toBeNull();
+  const checks=[...document.querySelectorAll<HTMLInputElement>('[data-role="inventory-select"]')];
+  expect(checks.filter(c=>!c.disabled).map(c=>c.dataset.item)).toEqual(['a-bag','public']);
+  expect(checks.some(c=>c.disabled)).toBe(true);
+  await f.action('select-all');
+  expect(document.querySelector('[data-action="inventory-delete-selected"]')!.textContent).toBe('删除（2）');
+  await f.action('delete-selected');
+  expect(document.querySelector('[data-role="inventory-preview"]')!.textContent).toContain('删除已选的2项物品？');
+  expect(f.save()).toEqual(before);
+  await f.action('confirm');
+  expect(f.save().factRevision).toBe(before.factRevision!+1);
+  expect(f.save().inventoryOperations).toHaveLength(1);
+  expect(f.save().inventory!.filter(i=>['public','a-bag'].includes(i.id)).every(i=>i.qty===0)).toBe(true);
+  expect(f.save().inventory!.find(i=>i.id==='b-bag')!.qty).toBe(2);
+  expect(f.save().storage).toEqual(before.storage);
+  expect(document.querySelector('[data-role="inventory-select"]')).toBeNull();
+});
+it('cancel, per-item toggles, select-all toggle, changed owner and changed chat clear pending choices', async () => {
+  const f=mount(),before=structuredClone(f.save());await f.action('bulk');
+  const check=document.querySelector<HTMLInputElement>('[data-role="inventory-select"][data-item="public"]')!;
+  check.checked=true;f.panel.handleChange(check);
+  expect(document.querySelector('[data-action="inventory-delete-selected"]')!.textContent).toBe('删除（1）');
+  await f.action('select-all');await f.action('select-all');
+  expect(document.querySelector<HTMLButtonElement>('[data-action="inventory-delete-selected"]')!.disabled).toBe(true);
+  await f.action('select-all');await f.action('delete-selected');await f.action('cancel');
+  expect(document.querySelector('[data-role="inventory-preview"]')).toBeNull();
+  f.choose('b');expect(document.querySelector('[data-action="inventory-delete-selected"]')!.textContent).toBe('删除（0）');
+  await f.action('select-all');f.context('new');f.render();
+  expect(document.querySelector('[data-role="inventory-select"]')).toBeNull();
+  await f.action('bulk');await f.action('select-all');await f.action('bulk-cancel');
+  expect(f.save()).toEqual(before);
+});
+it('lost items and battle locks prune selections and discard stale confirmation', async () => {
+  const f=mount();await f.action('bulk');await f.action('select-all');await f.action('delete-selected');
+  f.save().inventory!.find(i=>i.id==='public')!.qty=0;f.render();
+  expect(document.querySelector('[data-role="inventory-preview"]')).toBeNull();
+  expect(document.querySelector('[data-action="inventory-delete-selected"]')!.textContent).toBe('删除（1）');
+  f.save().battle={kind:'small',snap:{seed:'battle'}};f.render();
+  expect(document.querySelector<HTMLButtonElement>('[data-action="inventory-delete-selected"]')!.disabled).toBe(true);
+  expect(document.querySelector('[data-action="inventory-delete-selected"]')!.textContent).toBe('删除（0）');
+});
+it('failed save keeps facts and same preview for retry; repeated confirm while pending is blocked', async () => {
+  const f=mount(),before=structuredClone(f.save());await f.action('bulk');await f.action('select-all');await f.action('delete-selected');
+  const real=f.controller.commitInventoryPreview.bind(f.controller);
+  let release!:(value:any)=>void;
+  const spy=vi.spyOn(f.controller,'commitInventoryPreview').mockImplementationOnce(()=>new Promise(resolve=>release=resolve));
+  const button=document.querySelector<HTMLElement>('[data-action="inventory-confirm"]')!;
+  const pending=f.panel.handleAction(button);await f.panel.handleAction(button);
+  expect(spy).toHaveBeenCalledTimes(1);expect(f.save()).toEqual(before);
+  release({status:'failed',error:'save failed'});await pending;
+  expect(document.querySelector('[data-role="inventory-preview"]')).not.toBeNull();
+  expect(document.querySelector<HTMLButtonElement>('[data-action="inventory-confirm"]')!.disabled).toBe(false);
+  spy.mockImplementation(real);await f.action('confirm');expect(f.save().factRevision).toBe(before.factRevision!+1);
+});
+it('late failure from old chat cannot poison a new view or leave buttons stuck disabled', async () => {
+  const f=mount();await f.action('bulk');await f.action('select-all');await f.action('delete-selected');
+  let reject!:(error:Error)=>void;
+  vi.spyOn(f.controller,'commitInventoryPreview').mockImplementationOnce(()=>new Promise((_resolve,r)=>reject=r));
+  const pending=f.action('confirm');f.context('new-chat');f.render();
+  reject(Error('old save failure'));await pending;
+  expect(document.querySelector('[data-role="inventory-feedback"]')!.textContent).not.toContain('old save failure');
+  expect(document.querySelector<HTMLButtonElement>('[data-action="inventory-new"]')!.disabled).toBe(false);
 });

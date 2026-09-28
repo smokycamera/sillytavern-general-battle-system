@@ -12,7 +12,8 @@ import { curveAt, ARCHETYPE_MODS } from '../data/curves.js';
 import { diceAvg, rebuildDice } from '../data/weapons.js';
 import { ABILITY_BLUEPRINTS, abilityFromBlueprint } from '../data/ability-blueprints.js';
 import { traitRegistry } from '../data/traits.js';
-import { SeededRng, randomSeed } from '../rng.js';
+import { randomSeed } from '../rng.js';
+import { rollInstanceVariance, instanceMultiplier } from '../instance-variance.js';
 import { BODY, FORMULA_VERSION as EQUIPMENT_FORMULA_VERSION, compileArmor, compileWeapon } from './equipment.js';
 import { equipmentReason } from '../items.js';
 import { normalizeBakedTraitStats } from '../trait-sources.js';
@@ -28,6 +29,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   const oldScale = raw.scale === 'mook';
   if (oldScale) raw = { ...raw, scale: 'company', hpMax: raw.hpMax ?? 10 };
   const seed = opts.seed ?? randomSeed();
+  const variance = raw.damageModel === 'wounds-v2' && !opts.noVariance ? rollInstanceVariance(seed, ['damage', 'health']) : undefined;
   const registry = opts.registry ?? traitRegistry();
   validateMount(raw);
   const body = raw.body ?? 'human';
@@ -54,12 +56,12 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   };
   const weapon = weaponFor('primary')!; const sidearm = weaponFor('sidearm');
   const hasArmor = raw.armorTier !== undefined || !!raw.armorId || !!raw.armorName?.trim();
-  const armor = compileArmor({ bonuses: raw.armorBonuses, tier: hasArmor ? raw.armorTier : 0, profile: raw.armorProfile, armorId: raw.armorId, power: raw.armorLevel }, { id: `${id}:armor`, name: raw.armorName, seed: seed + ':armor', body, quality });
+  const armor = compileArmor({ bonuses: raw.armorBonuses, tier: hasArmor ? raw.armorTier : 0, profile: raw.armorProfile, armorId: raw.armorId, power: raw.armorLevel }, { id: `${id}:armor`, name: raw.armorName, seed: seed + ':armor', body, quality, noVariance: opts.noVariance, damageModel: raw.damageModel });
   const tier = armor.tier, armorPower = armor.level!;
   const conflict = equipmentReason({ body, scale: raw.scale, weapon, sidearm, armor, shield: raw.shield ? { id: `${id}:shield`, load: 2 } : undefined });
   if (conflict) warnings.push('建档已保留配装：' + conflict + '；实际使用由战斗规则判定');
   const group = raw.scale !== 'hero';
-  const requestedMax = integer(raw.hpMax ?? (group ? 50 : Math.round((curve.hp * bodyProfile(body, raw.damageModel).hp + archMod.hp) * bonusMultiplier(raw.bonuses, 'health'))), 1, group ? 1e9 : Number.MAX_SAFE_INTEGER, group ? '编制上限' : '生命上限');
+  const requestedMax = integer(raw.hpMax ?? (group ? 50 : Math.round((curve.hp * bodyProfile(body, raw.damageModel).hp + archMod.hp) * instanceMultiplier(raw.bonuses, 'health', variance))), 1, group ? 1e9 : Number.MAX_SAFE_INTEGER, group ? '编制上限' : '生命上限');
   const requestedHp = integer(raw.hp ?? requestedMax, 0, requestedMax, '当前值');
   const hpMax = group ? requestedMax : capSingleLife(requestedMax, raw.damageModel), hp = Math.min(requestedHp, hpMax);
   if (hpMax !== requestedMax) warnings.push(`单体生命上限${requestedMax}超过硬上限，已限制为${singleLifeLimit(raw.damageModel)}`);
@@ -111,7 +113,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
     conditions: [], abilityState: [], resources: { SP: 6 + Math.floor(training / 2), reserve: integer(raw.reserves ?? 0, 0, 2, '随队预备份额') },
     morale: base.moraleMax, engagedWith: [], status: hp > 0 ? 'ready' : 'dead', fatigue: 0,
     xpValue: curve.xp, generationWarnings: warnings,
-    genAudit: { seed, deltas: {}, formulaVersion: FORMULA_VERSION + (raw.damageModel === 'wounds-v2' ? '+unified-v1' : ''), input, abilities: abilityAudit } };
+    genAudit: { seed, ...(variance ? { variance } : {}), deltas: {}, formulaVersion: FORMULA_VERSION + (raw.damageModel === 'wounds-v2' ? '+unified-v1' : ''), input, abilities: abilityAudit } };
   unit.resources.SP = spCapacity(unit);
   normalizeBakedTraitStats(unit, registry);
   if (oldScale) unit.legacyScale = 'mook';
