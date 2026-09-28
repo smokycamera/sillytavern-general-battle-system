@@ -37,6 +37,13 @@ export function validateMoraleState(value: unknown): void {
     || [s.damage, s.damagePenalty].some((n) => n !== undefined && (!Number.isSafeInteger(n) || n! < 0))
     || s.cause !== undefined && !['terror', 'morale'].includes(s.cause)) throw new Error('惊退来源或重整机会记录损坏');
 }
+/** 仅供新战斗 start 调用；零士气的可行动单位恢复半数上限。 */
+export function recoverEntryMorale(unit: Combatant): number {
+  if (unit.hp <= 0 || unit.status !== 'ready' || unit.morale !== 0) return 0;
+  const maximum = unit.base.moraleMax ?? curveAt(unit.level).morale;
+  unit.morale = Math.max(0, Math.min(maximum, Math.ceil(maximum / 2)));
+  return unit.morale;
+}
 export function changeMorale(unit: Combatant, amount: number): number {
   const before = unit.morale ?? unit.moraleState?.personal ?? curveAt(unit.level).morale;
   const after = Math.max(0, Math.min(unit.base.moraleMax ?? 100, before + amount));
