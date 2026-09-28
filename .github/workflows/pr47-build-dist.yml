@@ -1,0 +1,34 @@
+name: PR47 build dist
+on:
+  push:
+    branches:
+      - fix/ability-log-summon-labels-20260928
+
+permissions:
+  contents: write
+
+jobs:
+  build-dist:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/ability-log-summon-labels-20260928
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:extension
+      - name: Commit generated dist
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A dist
+          if git diff --cached --quiet; then
+            echo "dist already current"
+            exit 0
+          fi
+          git commit -m "Rebuild installable dist for PR #47"
+          git push origin HEAD:fix/ability-log-summon-labels-20260928
