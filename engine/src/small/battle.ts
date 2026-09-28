@@ -1,3 +1,4 @@
+import { fatiguePenalty, abilityCost, prepareResourceModel, recoverSp, spRecovery, skillExertion, resourceRound } from '../resources.js';
 import { actionPotential } from '../skill-tactics.js';
 import { hasteMagnitude, hasteAttackScale } from '../haste.js';
 import { commanderScores, normalizeCommanderProfiles, type CommanderProfiles } from '../commander-profile.js';
@@ -42,7 +43,7 @@ import { LITE_D20, counterMod, rulesById } from '../rules.js';
 import { getTrait, hasFlag, fieldModsFor, collectMods, resolveStack } from '../bonus.js';
 import { BattleFeedback, type FeedbackUnit, type RoundFeedback } from '../battle-feedback.js';
 import { activeTraitIds, activeConditionIds, expireTraitSources, traitSourceActive } from '../trait-sources.js';
-import { bracePose, movementPoints, settleFatigue } from '../tactics.js';
+import { bracePose, movementPoints, settleFatigue, fatigueAfter, addTacticalEffort, validateTacticalEffort } from '../tactics.js';
 import { isAirborne, sameLayer, flightCapabilityReason, flightMaintenanceReason, fallDamage, validateFlightState } from '../aerial.js';
 import { environmentTags } from '../environment.js';
 import { traitRegistry as defaultTraitRegistry } from '../data/traits.js';
@@ -218,6 +219,7 @@ export class SmallBattle {
     }
     this.rules = opts.rules ?? LITE_D20;
     if(this.rules.combatModel)for(const unit of this.combatants){prepareCombatModel(unit,this.rules);upgradeCombatSkills(unit);reconcileDamageMorale(unit);}
+    for (const unit of this.combatants) { prepareResourceModel(unit, this.rules); validateTacticalEffort(unit.tacticalEffort, unit.resourceModel); }
     if (this.combatants.some((u) => u.airborne) && (!this.battlefield || this.rules.resolutionVersion !== 'v2')) throw new Error('空中状态需要V2二维战场');
     this.seed = opts.seed ?? randomSeed();
     this.rng = opts.rng ?? (opts.seed || this.rules.resolutionVersion === 'v2' ? new SeededRng(this.seed) : liveRng());
@@ -580,7 +582,7 @@ export class SmallBattle {
     const reason = this.suppressReason(actorId, targetId); if (reason) throw new Error(reason);
     const actor = this.byId(actorId); const target = this.byId(targetId);
     actor.resources.SP = (actor.resources.SP ?? 0) - 1; target.suppression = 2;
-    actor.tacticalEffort = 1;
+    addTacticalEffort(actor, 1);
     revealUnit(this.observationContext(), actor); revealUnit(this.observationContext(), target);
     this.spendAction(actorId); this.overwatch.delete(targetId);
     this.recordEvent({ round: this.round, kind: 'condition', participants: [actor.id, target.id], text: `${actor.name} 压制 ${target.name}：未结算生命伤害，目标反应停用、命中-2` });
@@ -673,7 +675,7 @@ export class SmallBattle {
       if (guard) reason = rangedScreenReason(guard);
     }
     if (!reason && this.battlefield && ranged && weapon?.pointBlankPolicy === 'forbid' && this.combatants.some((u) => u.side !== actor.side && u.status === 'ready' && sameLayer(actor, u) && this.dist(actor, u) === 1)) reason = '被相邻敌人牵制，该武器不能抵近射击';
-    if (!reason && this.rules.resolutionVersion === 'v2' && opts.charge && (actor.fatigue >= 2 || actor.suppression || activeConditionIds(actor).some((id) => id === 'slowed' || this.conditions.get(id)?.preventMove))) reason = '疲劳、压制、减速或定身令冲锋无法完成';
+    if (!reason && this.rules.resolutionVersion === 'v2' && opts.charge && (fatiguePenalty(actor) > 0 || actor.suppression || activeConditionIds(actor).some((id) => id === 'slowed' || this.conditions.get(id)?.preventMove))) reason = '疲劳、压制、减速或定身令冲锋无法完成';
     if (!reason && this.battlefield && opts.charge && !this.chargePath(actor, target)) reason = '冲锋没有可用上限内的合法路径与相邻落点';
     const landing = isAirborne(actor) && !isAirborne(target) && !ranged;
     if (!reason && landing && !opts.charge && (!this.battlefield || this.movementLeft(actor.id) < 1 || !canOccupy(this.battlefield, this.visibleCombatants(actor.side), { ...actor, airborne: false }, actor.pos!))) reason = '扑击需要1点降落移动与当前格的合法地面落点';
@@ -886,7 +888,7 @@ export class SmallBattle {
         ...(targets.length ? { targets } : {}),
         range: fallbackAbilityRange(actor, this.battlefield ? gridAbility(ability) : ability),
         ...(ability.cost
-          ? { preview: { resource: { name: ability.itemSourceId ? '物品' : ability.cost.resource, cost: ability.cost.amount, available: actor.resources[ability.cost.resource] ?? 0 } } }
+          ? { preview: { resource: { name: ability.itemSourceId ? '物品' : ability.cost.resource, cost: abilityCost(actor, ability)!.amount, available: actor.resources[ability.cost.resource] ?? 0 } } }
           : {}),
       });
     }
@@ -931,7 +933,7 @@ export class SmallBattle {
     const context = this.weaponContext(attacker, target, opts);
     if (context.reason) throw new Error(context.reason);
     delete attacker.tacticalPose;
-    if (this.battlefield && attacker.rulesVersion === 'v2' && !opts.bypassTurn) attacker.tacticalEffort = Math.max(attacker.tacticalEffort ?? 0, opts.charge ? 2 : 1);
+    if ((this.battlefield || attacker.resourceModel) && attacker.rulesVersion === 'v2' && !opts.bypassTurn) addTacticalEffort(attacker, opts.charge ? 2 : 1);
     if (opts.charge && this.battlefield) {
       const path = this.chargePath(attacker, target)!;
       this.moveTo(attacker.id, path.cells.at(-1)!, true);
@@ -1185,7 +1187,7 @@ export class SmallBattle {
           try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'small', ability.bonuses, this.rules.damageModel) ?? this.summonUnit?.(effect.templateId, actor.side, id); }
           catch { return { ok: false, reason: '召唤模板生成失败，未扣费', resolutions: [], log: '' }; }
           if (!unit) return { ok: false, reason: '召唤模板不可用，未扣费', resolutions: [], log: '' };
-          prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit);
+          prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules);
           unit.id = id; unit.summonerId = actor.id; unit.bornRound = this.round;
           if (conjuredTemplate(effect.templateId)) unit.name = `${actor.name}的${unit.name}`;
           const cell = neighbors(this.battlefield, actor.pos!).find((n) => canOccupy(this.battlefield!, [...this.combatants, ...summons], unit, n));
@@ -1208,7 +1210,8 @@ export class SmallBattle {
 
     if (this.rules.resolutionVersion === 'v2') revealUnit(this.observationContext(), actor);
     // 扣费与计数
-    if (ability.cost) actor.resources[ability.cost.resource]! -= ability.cost.amount;
+    const cost = abilityCost(actor, ability);
+    if (cost) actor.resources[cost.resource] = actor.resourceModel && cost.resource === 'SP' ? resourceRound((actor.resources[cost.resource] ?? 0) - cost.amount) : (actor.resources[cost.resource] ?? 0) - cost.amount;
     state.used += 1;
     if (ability.cooldown) state.cdLeft = ability.cooldown;
 
@@ -1388,7 +1391,7 @@ export class SmallBattle {
     const text = logBits.join('\n');
     this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id, ...(chosenTarget ? [chosenTarget.id] : []), ...resolutions.map((r) => r.defenderId)], text, resolution: resolutions[0], resolutions });
     this.log.push(...consequentEvents);
-    if (this.battlefield && actor.rulesVersion === 'v2' && !opts.bypassTurn) actor.tacticalEffort = Math.max(actor.tacticalEffort ?? 0, 1);
+    if ((this.battlefield || actor.resourceModel) && actor.rulesVersion === 'v2' && !opts.bypassTurn) addTacticalEffort(actor, skillExertion(actor, ability));
     if (!opts.bypassTurn) { if (ability.itemSourceId) this.spendAction(actorId, hasteAction); else this.actedThisTurn.add(actorId); }
     return { ok: true, resolutions, heal, log: text };
   }
@@ -1400,6 +1403,7 @@ export class SmallBattle {
    */
   endTurn(): void {
     if (!this.started) throw new Error('战斗尚未开始');
+    if (this.rules.resourceModel && this.isOver()) return;
     const ended = this.active;
     if (ended && ended.status === 'ready') this.settleUnit(ended);
     this.captureFeedback();
@@ -1586,6 +1590,14 @@ export class SmallBattle {
       // 掩护的价值受队友可兑现的火力限制，不能把多名敌人的潜在伤害全算成架盾收益。
       return Math.min(value * 0.5, supportingDamage * 0.35);
     };
+    let restValue = 0;
+    if (unit.resourceModel && !this.actedThisTurn.has(unitId) && !this.movedThisTurn.has(unitId) && this.hasteSpent.get(unitId) !== this.round) {
+      const context = { ...this.observationContext(), units: knownUnits };
+      const rested = { ...unit, resources: { ...unit.resources }, fatigue: fatigueAfter(unit, 0, true),
+        abilityState: unit.abilityState.map(s => ({ ...s, cdLeft: Math.max(0, s.cdLeft - 1) })) };
+      rested.resources.SP = resourceRound((rested.resources.SP ?? 0) + spRecovery(rested, true));
+      restValue = Math.max(0, (actionPotential(context, rested) - actionPotential(context, unit)) * 1.5);
+    }
     for (const path of this.reachableCells(unitId)) {
       const actor = { ...unit, pos: path.cells.at(-1)! };
       const skillContext = { ...this.observationContext(), units: knownUnits.map(u => u.id === actor.id ? actor : u) };
@@ -1593,7 +1605,7 @@ export class SmallBattle {
       if (escortCorridor.has(actor.pos)) continue;
       const baseScore = positionScore(path);
       if (isAirborne(unit) && path.cost + 1 <= this.movementLeft(unitId) && canOccupy(field, this.visibleCombatants(unit.side), { ...actor, airborne: false }, actor.pos!)) plans.push({ score: baseScore + (objective.kind !== 'annihilation' && actor.pos === field.objective.cell ? 6 : 0.1), path, kind: 'land' });
-      plans.push({ score: baseScore + (foes.length && path.cost === 0 && canReconceal(this.observationContext(), unit) ? 4 : 0), path, kind: 'hold' });
+      plans.push({ score: baseScore + (path.cost === 0 ? restValue : 0) + (foes.length && path.cost === 0 && canReconceal(this.observationContext(), unit) ? 4 : 0), path, kind: 'hold' });
       if (!this.nonSkillActionAvailable(unitId)) continue;
       if (!this.braceReason(unitId)) {
         const threats = foes.filter((f) => !this.sightReason(actor, f)).sort((a, b) => this.dist(actor, a) - this.dist(actor, b) || a.id.localeCompare(b.id)).slice(0, 3);
@@ -1725,11 +1737,11 @@ export class SmallBattle {
         else if (best.kind === 'reload') this.reloadWeapon(unitId, best.weaponMode === 'sidearm');
         else if (best.kind === 'land' && !this.flightReason(unitId, false)) this.changeFlight(unitId, false);
         else if (best.kind === 'brace' && !this.braceReason(unitId)) this.brace(unitId);
-        else if (!(best.path.cost === 0 && canReconceal(this.observationContext(), unit)) && !this.overwatchReason(unitId)) this.setOverwatch(unitId);
+        else if (!(unit.resourceModel === 'endurance-v1' && best.kind === 'hold') && !(best.path.cost === 0 && canReconceal(this.observationContext(), unit)) && !this.overwatchReason(unitId)) this.setOverwatch(unitId);
       }
     }
     // 扑击脱离：落地后仍贴近持械地面近战且还能起飞时升空规避（起飞借机是已知代价）
-    if (best?.kind !== 'land' && !isAirborne(unit) && unit.status === 'ready' && !this.isOver() && !this.flightReason(unitId, true)
+    if (best?.kind !== 'land' && !(unit.resourceModel && best?.kind === 'hold') && !isAirborne(unit) && unit.status === 'ready' && !this.isOver() && !this.flightReason(unitId, true)
       && this.combatants.some((foe) => foe.side !== unit.side && foe.status === 'ready' && !isAirborne(foe) && !!meleeWeapon(foe) && this.dist(unit, foe) === 1)) {
       this.changeFlight(unitId, true);
     }
@@ -1811,7 +1823,7 @@ export class SmallBattle {
       if ((!a.itemSourceId && (this.actedThisTurn.has(u.id) || this.hasteSelected.has(u.id))) || !this.abilityUsable(u, a)) continue;
       const damageEff = a.effects.find((e): e is Extract<EffectOp, { op: 'damage' }> => e.op === 'damage');
       const healEff = a.effects.find((e): e is Extract<EffectOp, { op: 'heal' }> => e.op === 'heal');
-      const cost = a.cost ? a.cost.amount * 0.5 : 0; // 资源机会成本
+      const cost = (abilityCost(u, a)?.amount ?? 0) * 0.5; // 资源机会成本
 
       if (damageEff) {
         for (const f of foes) {
@@ -1998,10 +2010,17 @@ export class SmallBattle {
   private settleUnit(u: Combatant): void {
     const regeneration = this.rules.resolutionVersion === 'v2' ? regenerationAmount(u, this.traitRegistry, this.conditionDefMap()) : 0;
     if (this.rules.resolutionVersion === 'v2' && settleConcealment(this.observationContext(), u, !this.actedThisTurn.has(u.id) && !this.movedThisTurn.has(u.id))) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 在掩护中休整，重新潜伏` });
-    if (this.battlefield && u.rulesVersion === 'v2') {
-      settleFatigue(u, (u.tacticalEffort ?? 0) + ((this.movementSpent.get(u.id) ?? 0) >= Math.max(4, this.movementBudget(u.id)) ? 1 : 0));
+    const modernResources = u.resourceModel === 'endurance-v1';
+    const incapacitated = u.conditions.some(c => c.dur > 0 && this.conditions.get(c.id)?.skipTurn);
+    const fullRest = !incapacitated && !u.suppression && this.hasteSpent.get(u.id) !== this.round && !this.actedThisTurn.has(u.id) && !this.movedThisTurn.has(u.id) && !this.reactionSpent.has(u.id) && !(u.tacticalEffort ?? 0);
+    if ((this.battlefield || modernResources) && u.rulesVersion === 'v2') {
+      const moveLimit = modernResources ? Math.max(1, this.movementBudget(u.id)) : Math.max(4, this.movementBudget(u.id));
+      const moved = this.movementSpent.get(u.id) ?? 0;
+      const effort = (u.tacticalEffort ?? 0) + (modernResources ? Math.floor(moved / moveLimit) : Number(moved >= moveLimit));
+      if (!modernResources || u.status === 'ready') settleFatigue(u, effort, fullRest);
       delete u.tacticalEffort;
     }
+    recoverSp(u, fullRest, incapacitated);
     if (u.suppression) u.suppression = Math.max(0, u.suppression - 1);
     const expired: string[] = [];
     for (const c of [...u.conditions]) {

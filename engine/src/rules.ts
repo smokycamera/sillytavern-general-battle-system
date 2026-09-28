@@ -61,8 +61,13 @@ export const V7_OVERFLOW_TW:RulePack={...V6_OVERFLOW_TW,id:'v7-overflow-tw',name
 export const V8_OVERFLOW_D20:RulePack={...V7_OVERFLOW_D20,id:'v8-overflow-d20',name:'V8 训练与武技增伤校准',trainingDamagePerLevel:.06,singleWeaponSkillMultiplier:1.5};
 export const V8_OVERFLOW_TW:RulePack={...V7_OVERFLOW_TW,id:'v8-overflow-tw',name:'V8 训练与武技增伤会战',trainingDamagePerLevel:.06,singleWeaponSkillMultiplier:1.5};
 
+/** Resource economy is opt-in; all previous saved rules retain their costs and recovery. */
+export const V9_OVERFLOW_D20: RulePack = { ...V8_OVERFLOW_D20, id: 'v9-overflow-d20', name: 'V9 等级精力与耐力', resourceModel: 'endurance-v1' };
+export const V9_OVERFLOW_TW: RulePack = { ...V8_OVERFLOW_TW, id: 'v9-overflow-tw', name: 'V9 等级精力与耐力会战', resourceModel: 'endurance-v1' };
+
 /** id → 规则包（战斗快照恢复用；面板只用默认两包） */
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V9_OVERFLOW_D20.id]: V9_OVERFLOW_D20, [V9_OVERFLOW_TW.id]: V9_OVERFLOW_TW,
   [V8_OVERFLOW_D20.id]:V8_OVERFLOW_D20,[V8_OVERFLOW_TW.id]:V8_OVERFLOW_TW,
   [V7_OVERFLOW_D20.id]:V7_OVERFLOW_D20,[V7_OVERFLOW_TW.id]:V7_OVERFLOW_TW,
   [V6_D20.id]:V6_D20,[V6_TW.id]:V6_TW,[V6_OVERFLOW_D20.id]:V6_OVERFLOW_D20,[V6_OVERFLOW_TW.id]:V6_OVERFLOW_TW,

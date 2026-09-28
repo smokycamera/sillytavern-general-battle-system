@@ -195,7 +195,8 @@ function validateRuntimeMetadata(value: Record<string, unknown>): void {
     if (isRecordObject(condition) && condition.sourceId !== undefined && typeof condition.sourceId !== 'string') throw new Error('状态来源记录损坏');
     if (condition.defensePower !== undefined && (condition.id !== 'blessed' || !validDefensePower(condition.defensePower))) throw new Error('守护防御规格记录损坏');
   }
-  validateTacticalEffort(value.tacticalEffort);
+  if (value.resourceModel !== undefined && value.resourceModel !== 'endurance-v1') throw new Error('资源规则版本损坏');
+  validateTacticalEffort(value.tacticalEffort, value.resourceModel);
   validateConcealment(value.tacticalRevealed);
   validateFlightState(value.airborne);
   validateMoraleState(value.moraleState);

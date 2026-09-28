@@ -8,7 +8,7 @@ import { MAX_PREPARED_SKILLS, compileSkill, resolvePreparedSkills, skillDefiniti
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
 import { synchronizePersonnel, nominalLife } from '../../engine/src/combat-model.js';
 import { setMemberMaximum } from '../../engine/src/member-health.js';
-import { spCapacity } from '../../engine/src/resources.js';
+import { spCapacity, fatigueLimit } from '../../engine/src/resources.js';
 import { xpProgress } from '../../engine/src/xp.js';
 import { materializeUnitRecord, unitRecordFromCombatant, combatantFromUnknown } from './unit-state.js';
 import { prepareInventoryState, validateInventoryItem } from './inventory-state.js';
@@ -295,7 +295,7 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   if (unit.resources.reserve !== undefined) number(unit.resources.reserve,'reserve',0,2,true);
   if (!Array.isArray(unit.conditions)) throw Error('conditions须为数组');
   for (const c of unit.conditions) { if (!standardConditionMap().has(c.id)) throw Error('未知状态：'+c.id); number(c.dur,'状态持续',1,99,true); }
-  number(unit.fatigue,'fatigue',0,4,true);
+  number(unit.fatigue,'fatigue',0,fatigueLimit(unit),unit.resourceModel !== 'endurance-v1');
   for (const key of ['resources','abilityState','fatigue'] as const) if (Object.hasOwn(data,key)) (unit.storyState ??= {})[key] = true;
 
   const slotKeys = { weapon:'primary',sidearm:'sidearm',armor:'armor',shield:'shield' } as const;

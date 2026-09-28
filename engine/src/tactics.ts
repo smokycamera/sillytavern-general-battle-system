@@ -1,3 +1,4 @@
+import { resourceRound, fatigueLimit, fatiguePenalty } from './resources.js';
 import { bodyMovement, humanEncumbered } from './body.js';
 import type { Combatant, ConditionDef, Trait } from './types.js';
 import type { Modifier, ResolveContext } from './bonus.js';
@@ -22,7 +23,7 @@ export function movementPoints(unit: Combatant, tags: string[] = []): number {
   const mobility = unit.mount === true || ids.includes('fast') || ids.includes('skirmisher') && light || ids.includes('mechanized') || ids.includes('plains-runner') && tags.includes('plains') ? 1 : 0;
   const armor = !vehicle && (unit.armor?.tier ?? 0) >= 3 ? 1 : 0;
   const night = tags.includes('night') && !ids.includes('night-fighter') ? 1 : 0;
-  return Math.max(1, Math.min(5, bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - armor - night - Math.floor(unit.fatigue / 2) - Number(humanEncumbered(unit))));
+  return Math.max(1, Math.min(5, bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - armor - night - fatiguePenalty(unit) - Number(humanEncumbered(unit))));
 }
 export function formationMarchSteps(unit: Combatant, tags: string[] = []): number {
   if (isAirborne(unit)) return Math.max(1, Math.min(2, movementPoints(unit, tags) - 1));
@@ -31,16 +32,29 @@ export function formationMarchSteps(unit: Combatant, tags: string[] = []): numbe
   return movementPoints(unit, tags) >= (unit.body === 'vehicle' ? 3 : 4) ? 2 : 1;
 }
 /** 疲劳只在激活/阶段边界结算，避免途中追溯减少已经使用的移动额度。 */
-export function settleFatigue(unit: Combatant, exertion: number): void {
+export function settleFatigue(unit: Combatant, exertion: number, fullRest = false): void {
   if (unit.rulesVersion !== 'v2') return;
-  unit.fatigue = fatigueAfter(unit, exertion);
+  unit.fatigue = fatigueAfter(unit, exertion, fullRest);
 }
-export function fatigueAfter(unit: Combatant, exertion: number): number {
+export function fatigueAfter(unit: Combatant, exertion: number, fullRest = false): number {
   const resistance = activeTraitIds(unit).includes('fatigue-trained') ? 0.5 : 1;
+  if (unit.resourceModel === 'endurance-v1') {
+    const gain = exertion > 0 ? exertion * 0.5 * resistance / (1 + 0.1 * (unit.level - 1))
+      : -(fullRest ? 2 + 0.1 * (unit.level - 1) : 1);
+    return resourceRound(Math.max(0, Math.min(fatigueLimit(unit), unit.fatigue + gain)));
+  }
   return Math.max(0, Math.min(4, unit.fatigue + (exertion > 0 ? exertion * 0.5 * resistance : -1)));
 }
-export function validateTacticalEffort(value: unknown): void {
-  if (value !== undefined && (!Number.isSafeInteger(value) || Number(value) < 0 || Number(value) > 2)) throw new Error('待结疲劳记录损坏');
+/** V9 haste adds exertion; old snapshots keep their integer-only contract. */
+export function addTacticalEffort(unit: Combatant, amount: number): void {
+  unit.tacticalEffort = unit.resourceModel === 'endurance-v1'
+    ? resourceRound((unit.tacticalEffort ?? 0) + amount) : Math.max(unit.tacticalEffort ?? 0, amount);
+}
+export function validateTacticalEffort(value: unknown, model?: unknown): void {
+  if (value === undefined) return;
+  if (model === 'endurance-v1') {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 20) throw new Error('待结疲劳记录损坏');
+  } else if (!Number.isSafeInteger(value) || Number(value) < 0 || Number(value) > 2) throw new Error('待结疲劳记录损坏');
 }
 export function validateTacticalPose(pose: TacticalPose): void {
   if (!pose || pose.kind !== 'brace' || !['small', 'mass'].includes(pose.mode)

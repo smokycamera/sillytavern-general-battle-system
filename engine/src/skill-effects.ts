@@ -1,3 +1,4 @@
+import { abilityCost } from './resources.js';
 import { flightCapabilityReason, isAirborne } from './aerial.js';
 import { prepareCombatModel } from './combat-model.js';
 import { memberHealth } from './member-health.js';
@@ -185,7 +186,8 @@ export function summonValue(context: ObservationContext, actor: Combatant, abili
 }
 export function skillEffectValue(context: ObservationContext, actor: Combatant, target: Combatant, ability: Ability, hitChance = 1, damageChance = hitChance): number {
   const resources = { ...target.resources };
-  if (target.id === actor.id && ability.cost) resources[ability.cost.resource] = Math.max(0, (resources[ability.cost.resource] ?? 0) - ability.cost.amount);
+  const cost = abilityCost(actor, ability);
+  if (target.id === actor.id && cost) resources[cost.resource] = Math.max(0, (resources[cost.resource] ?? 0) - cost.amount);
   const polarity = target.side === actor.side ? 1 : -1;
   // 对同一目标一起估值。眩晕已阻止的攻击，不再重复计作缴械/沉默收益。
   // 至多保留16种成功组合；极端自定义多状态技能舍弃低概率分支，保守估值。

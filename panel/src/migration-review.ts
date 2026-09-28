@@ -21,7 +21,7 @@ function validateBattle(save: NarrativeSave): void {
     if (!u || !u.id || ids.has(u.id) || !u.base || !Number.isSafeInteger(u.hp) || u.hp < 0 || u.hp > u.base.hpMax) throw new Error('战斗单位身份或生命值损坏');
     combatantFromUnknown(u);
     ids.add(u.id);
-    validateTacticalEffort(u.tacticalEffort);
+    validateTacticalEffort(u.tacticalEffort, u.resourceModel);
     validateConcealment(u.tacticalRevealed);
     validateFlightState(u.airborne); validateMoraleState(u.moraleState); validateWounded(u);
     validateFormationPosition(u.formationPosition);

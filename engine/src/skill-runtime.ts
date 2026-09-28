@@ -1,4 +1,4 @@
-import { spCapacity } from './resources.js';
+import { spCapacity, abilityCost } from './resources.js';
 import type { Ability, Combatant, EffectOp, Weapon } from './types.js';
 import { isRangedWeapon } from './loadout.js';
 import { meleeWeapon } from './loadout.js';
@@ -20,7 +20,7 @@ export function skillResourceChange(target: Combatant, effect: Extract<EffectOp,
 }
 /** 回能与支付使用同一估值，避免净亏/零收益的回能被当成免费收益。 */
 export function skillResourceCost(ability: Ability, actor?: Combatant): number {
-  const cost = ability.cost;
+  const cost = actor ? abilityCost(actor, ability) : ability.cost;
   if (!cost) return 0;
   const restoresPayment = ability.effects.some(e => e.op === 'resource' && e.resource === cost.resource && e.amount > 0);
   const reserve = actor ? (actor.resources[cost.resource] ?? 0) : Infinity;

@@ -1,3 +1,4 @@
+import { abilityCost } from './resources.js';
 import { isRangedWeapon } from './loadout.js';
 import { meleeReach } from './melee.js';
 import { skillWeapon, skillResourceChange } from './skill-runtime.js';
@@ -267,10 +268,11 @@ export function abilityUsabilityReason(actor: Combatant, ability: Ability): stri
   if (ability.usesPerBattle !== undefined && (state?.used ?? 0) >= ability.usesPerBattle) {
     return '本战次数已用尽';
   }
-  if (ability.cost) {
-    const have = actor.resources[ability.cost.resource] ?? 0;
-    if (have < ability.cost.amount) {
-      return (ability.itemSourceId ? '物品数量' : ability.cost.resource) + ' 不足（' + have + '/' + ability.cost.amount + '）';
+  const cost = abilityCost(actor, ability);
+  if (cost) {
+    const have = actor.resources[cost.resource] ?? 0;
+    if (have < cost.amount) {
+      return (ability.itemSourceId ? '物品数量' : cost.resource) + ' 不足（' + have + '/' + cost.amount + '）';
     }
   }
   return undefined;
@@ -297,7 +299,7 @@ export function abilityTargetReason(input: {
     if (isRangedWeapon(weapon) && weapon.pointBlankPolicy === 'forbid' && distance <= 1 && sameLayer(actor, target)) return '实际武器不能抵近射击';
   }
   if (target && ability.recipe && ability.effects.every((e) => e.op === 'trait' && !!skillTraitReason(target, e)
-    || e.op === 'resource' && (!skillResourceChange(target, e) || target.id === actor.id && e.amount > 0 && (ability.cost?.amount ?? 0) >= e.amount))) return '目标没有可生效的能力或资源变化';
+    || e.op === 'resource' && (!skillResourceChange(target, e) || target.id === actor.id && e.amount > 0 && (abilityCost(actor, ability)?.amount ?? 0) >= e.amount))) return '目标没有可生效的能力或资源变化';
   if (target && !sameLayer(actor, target) && (ability.requires === 'melee' || ability.requires === 'shield')) return '接触技能需要处于同一空地层';
   if (target && actor.rulesVersion === 'v2' && ability.effects.length && ability.effects.every((e) => e.op === 'dispel' && !dispelCandidates(target, e).length || e.op === 'condition' && !conditionChance(target, e))) return '目标没有可解除的效果，或已免疫/处于同类控制';
   if (target && ability.itemSourceId && actor.id !== target.id && !sameLayer(actor, target)) return '向他人使用携行物品需要处于同一空地层';
