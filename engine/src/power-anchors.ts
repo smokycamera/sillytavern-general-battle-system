@@ -88,7 +88,7 @@ export function anchoredWeapon(weapon:Weapon|undefined,ammo:'he'|'ap'='he',model
 }
 export function anchoredProtection(unit:Pick<Combatant,'armor'|'body'|'shield'|'damageModel'>,channel:DamageChannel):number {
   const armor=unit.armor,innate=BODY[unit.body??'human'].protection[channel];
-  const armorBonus=armor?.tier?armor.recipe?.bonuses:undefined,shieldBonus=isWoundModel(unit.damageModel)?undefined:unit.shield?.recipe?.bonuses;
+  const armorBonus=armor?.recipe?.bonuses,shieldBonus=isWoundModel(unit.damageModel)?undefined:unit.shield?.recipe?.bonuses;
   const adjustment=bonusRating({protection:bonusPoints(armorBonus,'protection')+channelPoints(armorBonus,'protection',channel)+bonusPoints(shieldBonus,'protection')+channelPoints(shieldBonus,'protection',channel)},'protection');
   if(!armor)return Math.max(innate,adjustment);
   if(armor.protectionOverride&&armor.protection)return Math.max(BODY[unit.body??'human'].protection[channel],armor.protection[channel]);
@@ -112,7 +112,7 @@ export function armorPowerScale(unit:Pick<Combatant,'armor'|'shield'|'damageMode
 export function armorTransmission(unit:Pick<Combatant,'armor'|'body'|'shield'|'damageModel'>,channel:DamageChannel,penetration:number):number {
   const through=penetrationThrough(penetration,anchoredProtection(unit,channel));
   const armorDominates=anchoredProtection({...unit,body:'human'},channel)>=BODY[unit.body??'human'].protection[channel];
-  return isWoundModel(unit.damageModel)&&unit.armor?.tier&&armorDominates ? through**bonusMultiplier(unit.armor.recipe?.bonuses,'power') : through;
+  return isWoundModel(unit.damageModel)&&unit.armor&&armorDominates ? through**bonusMultiplier(unit.armor.recipe?.bonuses,'power') : through;
 }
 /** 盾牌有界覆盖按期望折算，不追加随机骰；范围/失能/充分穿透不会获得保护。 */
 export function shieldProtection(unit:Pick<Combatant,'shield'>,channel:DamageChannel):number {
@@ -150,11 +150,12 @@ export function gradeOvermatch(power:number|undefined,defensePower:number,penetr
   const extra=Math.sqrt(continuousPowerBudget(power)/continuousPowerBudget(defensePower+1))-1;
   return 1+extra*Math.max(0,Math.min(1,penetration-resistance));
 }
-type DefensiveTarget = Pick<Combatant,'armor'|'body'|'shield'|'status'|'damageModel'> & Partial<Pick<Combatant,'conditions'|'barrier'>>;
-/** 临时守护的L只约束跨代毁伤，不改写护甲的通道抗穿值。 */
+type DefensiveTarget = Pick<Combatant,'level'|'armor'|'body'|'shield'|'status'|'damageModel'> & Partial<Pick<Combatant,'conditions'|'barrier'>>;
+/** 单位等级、无甲装备规格、实际防护与守护取高；屏障仅在吸收时参与，不改写通道抗穿。 */
 export function defensePower(unit:DefensiveTarget,channel:DamageChannel,includeBarrier=false):number {
   const wards=(unit.conditions??[]).filter(c=>c.id==='blessed'&&c.dur>0&&validDefensePower(c.defensePower)).map(c=>c.defensePower!);
-  return Math.max(protectionPower(unit,channel),...wards,includeBarrier?barrierDefensePower(unit):0);
+  const unarmoredPower=unit.armor?.tier===0?(unit.armor.recipe?.power??unit.armor.level??0):0;
+  return Math.max(unit.level,unarmoredPower,protectionPower(unit,channel),...wards,includeBarrier?barrierDefensePower(unit):0);
 }
 export function overmatchMultiplier(power:number|undefined,unit:DefensiveTarget,channel:DamageChannel,penetration:number,area=false,canBlock=true,includeBarrier=false):number {
   const armor=gradeOvermatch(power,defensePower(unit,channel,includeBarrier),penetration,anchoredProtection(unit,channel));
@@ -168,7 +169,7 @@ export function overmatchMultiplier(power:number|undefined,unit:DefensiveTarget,
 }
 export function armorEffectLabel(unit:Pick<Combatant,'armor'|'shield'|'damageModel'>):string {
   return isWoundModel(unit.damageModel)
-    ? `部分穿透吸能强度×${Number(bonusMultiplier(unit.armor?.tier?unit.armor.recipe?.bonuses:undefined,'power').toFixed(2))}；充分穿透后无额外减伤${unit.armor?.powerScale!==undefined||unit.shield?.powerScale!==undefined?'（旧耐久覆盖不参与新规则）':''}`
+    ? `部分穿透吸能强度×${Number(bonusMultiplier(unit.armor?.recipe?.bonuses,'power').toFixed(2))}；充分穿透后无额外减伤${unit.armor?.powerScale!==undefined||unit.shield?.powerScale!==undefined?'（旧耐久覆盖不参与新规则）':''}`
     : `装甲等效耐久×${Number(armorPowerScale(unit).toFixed(2))}（旧规则）`;
 }
 /** 没有手动指定时，火炮按公开目标防护和人数选择有效毁伤较高的弹种。 */

@@ -89,7 +89,7 @@ export function compileArmor(spec: { tier?: Armor['tier']; armorId?: string; pow
   const tier = spec.tier ?? (spec.armorId ? ARMOR_ALIASES[spec.armorId]! : 1);
   integer(tier, 0, 4, '防护类型');
   if (spec.armorId && spec.tier !== undefined && ARMOR_ALIASES[spec.armorId] !== spec.tier) throw new Error('护甲 id 与类型冲突');
-  const recipe = equipmentRecipe('armor:' + tier, spec.power ?? 5, { ...context, bonuses: spec.bonuses ?? context.bonuses });
+  const recipe = equipmentRecipe('armor:' + tier, spec.power ?? (tier === 0 ? 1 : 5), { ...context, bonuses: spec.bonuses ?? context.bonuses });
   const resistance = tier === 0 ? 0 : tier + Math.floor((recipe.power - 1) / 3);
   const protection = { kinetic: resistance, thermal: Math.max(0, resistance - 1), arcane: Math.max(0, resistance - 2) };
   const focus = spec.profile ?? 'balanced';

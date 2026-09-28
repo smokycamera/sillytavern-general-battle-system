@@ -82,7 +82,7 @@ describe('defensive skill grades', () => {
     }
     const old = unit('old', { level: 10 });
     old.conditions.push({ id: 'blessed', dur: 4 }); grantBarrier(old, 100, 3);
-    expect(defensePower(old, 'kinetic', true)).toBe(0);
+    expect(defensePower(old, 'kinetic', true)).toBe(10);
   });
   it('suppresses cross-grade amplification without granting armor penetration immunity or stacking levels', () => {
     const a = unit('a'), d = unit('d'); ward(d, 9, 4, 1.4);
@@ -107,7 +107,7 @@ describe('defensive skill grades', () => {
     for (const c of d.conditions) c.dur--;
     expect(defensePower(d, 'kinetic')).toBe(3);
     applyDispel(d, [{ kind: 'condition', id: 'blessed', name: '祝福' }]);
-    expect(defensePower(d, 'kinetic')).toBe(0);
+    expect(defensePower(d, 'kinetic')).toBe(1);
   });
   it('does not extend a high-grade barrier with a longer low-grade refresh', () => {
     const d = unit('d'); grantBarrier(d, 30, 1, 'd', 9); grantBarrier(d, 20, 4, 'other', 3);
