@@ -1,4 +1,4 @@
-import type { DamageChannel } from './types.js';
+import type { DamageChannel, RulePack } from './types.js';
 /** 有符号同级修正；倍率、连续穿透和离散格数分别换算。 */
 export const BONUS_NAMES = {
   power: '强度', damage: '伤害', accuracy: '精度', penetration: '穿透',
@@ -63,4 +63,4 @@ export function validateChannelProtection(value: unknown): void {
 }
 /** 训练不改变科技层级；在原有攻防差之外增强命中、规避和实际输出。 */
 export const trainingEdge = (level: number) => Math.floor((Math.max(1, Math.min(10, level)) - 1) / 2);
-export const trainingDamage = (level: number) => 1 + 0.12 * (Math.max(1, Math.min(10, level)) - 1);
+export const trainingDamage = (level: number, rules?: Pick<RulePack, 'trainingDamagePerLevel'>) => 1 + (rules?.trainingDamagePerLevel ?? 0.12) * (Math.max(1, Math.min(10, level)) - 1);

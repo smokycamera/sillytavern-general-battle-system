@@ -50,7 +50,7 @@ import {
   generateUnit, traitCatalog, traitRegistry, resolveTraitId,
   SmallBattle, MassBattle, battleXpAwardsForBothSides, applyXp, xpProgress, xpLabel,
   armorDR, fieldModsFor, LITE_D20,
-  V5_D20, V6_D20, V7_OVERFLOW_D20, V7_OVERFLOW_TW, isAirborne, abilityUsabilityReason,
+  V5_D20, V6_D20, V8_OVERFLOW_D20, V8_OVERFLOW_TW, isAirborne, abilityUsabilityReason,
   generatedField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
   FORMATION_NODES, formationNode, concealmentLabel,
   type Combatant, type GenerateInput, type Order, type BattleLogEntry, type Side,
@@ -1054,7 +1054,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   rows.push(`<span>攻 <b>${atkPlus}</b></span>`);
   rows.push(`<span>防 <b>${u.base.def}</b></span>`);
   rows.push(`<span>速 <b>${u.base.spd}</b></span>`);
-  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${trainingDamage(u.level).toFixed(2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
+  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${trainingDamage(u.level,currentBattle()?.rules??V8_OVERFLOW_D20).toFixed(2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
   rows.push(`<span>${u.scale === 'hero' ? '生命' : u.body==='vehicle'?'载具数':'人数'} <b>${u.hp}/${u.base.hpMax}</b></span>`);
   if(u.combatModel&&u.scale!=='hero')rows.push(`<span>单个${u.body==='vehicle'?'载具':'成员'}最大生命 <b>${memberDurability(u)}</b></span>`);
   if (u.base.moraleMax !== undefined) rows.push(`<span>士气 <b>${u.base.moraleMax}</b></span>`);
@@ -1444,7 +1444,7 @@ function logDetailHtml(e: BattleLogEntry): string {
   if (r.baseRoll) lines.push(`<span class="dim">普通段 ${r.baseRoll.rolls.join('+')}${r.baseRoll.flat ? '+' + r.baseRoll.flat : ''} → 减伤后 ${r.baseAfterDR}</span>`);
   if (r.apRoll || r.apTotal > 0) lines.push(`<span class="dim">破甲段 ${r.apTotal}</span>`);
   lines.push(`<b>最终伤害 ${r.finalDamage}</b> → ${esc(r.defenderName)} 生命 ${r.hpBefore}→${r.hpAfter}`);
-  if(r.damageModel==='member-health'&&r.membersBefore!==undefined&&r.membersAfter!==undefined&&r.membersBefore!==r.membersAfter)lines.push(`<span class="dim">减员 ${r.membersBefore-r.membersAfter}</span>`);
+  if(r.damageModel==='member-health'&&r.defenderScale!=='hero'&&r.membersBefore!==undefined&&r.membersAfter!==undefined&&r.membersBefore!==r.membersAfter)lines.push(`<span class="dim">减员 ${r.membersBefore-r.membersAfter}</span>`);
   if(r.overflowDamage)lines.push(`<span class="dim">其中余伤传递 ${r.overflowDamage}</span>`);
   if(r.splashDamage)lines.push(`<span class="dim">其中溅射 ${r.splashDamage}</span>`);
   if(r.barrierAbsorbed)lines.push(`<span class="dim">屏障吸收 ${r.barrierAbsorbed}</span>`);
@@ -2573,7 +2573,7 @@ async function startSmallBattle(context?:LlmEncounterContext):Promise<void> {
     const small = new SmallBattle({
       nonLethal:state.nonLethal,
       ...(state.roster.every((u) => u.rulesVersion === 'v2') ? { battlefield } : {}),
-      rules: state.roster.every((u) => u.rulesVersion === 'v2') ? V7_OVERFLOW_D20 : LITE_D20,
+      rules: state.roster.every((u) => u.rulesVersion === 'v2') ? V8_OVERFLOW_D20 : LITE_D20,
       combatants: JSON.parse(JSON.stringify(state.roster)), seed: state.roster.every((u) => u.rulesVersion === 'v2') ? seed : undefined, traitRegistry: reg,
       summonUnit,
       field: { tags: state.roster.every((u) => u.rulesVersion === 'v2') ? tags : state.field ? [state.field] : [] },
@@ -2604,7 +2604,7 @@ async function startMassBattle(context?:LlmEncounterContext):Promise<void> {
     }
     const mass = new MassBattle({
       nonLethal:state.nonLethal,
-      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V7_OVERFLOW_TW } : {}),
+      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V8_OVERFLOW_TW } : {}),
       combatants: clones,
       traitRegistry: reg,
       commanderId: state.commanderId,
