@@ -1053,7 +1053,9 @@ export class MassBattle {
             const node = FORMATION_NODES.find((node) => node.side === actor.side && node.wing === formationNode(actor).wing && node.rank === 'reserve')!;
             if (!unit || [...this.combatants, ...stagedBirths, ...born].filter((u) => !this.isAttached(u.id) && u.status === 'ready' && formationNode(u).id === node.id).length >= 3) { invalid = true; break; }
             prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit);
-            unit.id = id; unit.summonerId = actor.id; unit.bornRound = this.round; setFormation(unit, node); born.push(unit);
+            unit.id = id; unit.summonerId = actor.id; unit.bornRound = this.round;
+            if (conjuredTemplate(effect.templateId)) unit.name = `${actor.name}的${unit.name}`;
+            setFormation(unit, node); born.push(unit);
           }
         }
         if (invalid) {

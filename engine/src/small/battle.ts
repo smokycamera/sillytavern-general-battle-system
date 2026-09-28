@@ -395,7 +395,9 @@ export class SmallBattle {
     for (const unit of this.combatants.filter(isAirborne)) {
       const reason = flightMaintenanceReason(unit, this.conditions); if (!reason) continue;
       const { landingCell: cell, fallDamage: damage } = this.landingOutcome(unit);
+      const alreadyDefeated = unit.status === 'dead' || unit.status === 'dying' || unit.hp <= 0;
       unit.airborne = false; delete unit.tacticalPose;
+      if (alreadyDefeated) { if (cell !== undefined) unit.pos = cell; revealUnit(this.observationContext(), unit); continue; }
       const hp = memberHealth(unit); applyCombatDamage(unit,damage*(hasMemberHealth(unit)?unit.formation!.memberHp:1),unit.hp);
       if (cell !== undefined) unit.pos = cell;
       if (hp > memberHealth(unit)) this.checkDeath(unit, this.combatants.find((u) => u.id === this.flightCauses.get(unit.id)));
@@ -1185,6 +1187,7 @@ export class SmallBattle {
           if (!unit) return { ok: false, reason: '召唤模板不可用，未扣费', resolutions: [], log: '' };
           prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit);
           unit.id = id; unit.summonerId = actor.id; unit.bornRound = this.round;
+          if (conjuredTemplate(effect.templateId)) unit.name = `${actor.name}的${unit.name}`;
           const cell = neighbors(this.battlefield, actor.pos!).find((n) => canOccupy(this.battlefield!, [...this.combatants, ...summons], unit, n));
           if (cell === undefined || this.combatants.some((u) => u.id === unit.id)) return { ok: false, reason: '召唤落点或身份冲突，整次未扣费', resolutions: [], log: '' };
           unit.pos = cell; summons.push(unit);
@@ -1215,6 +1218,8 @@ export class SmallBattle {
     let summonsSubmitted = false;
     let heal = 0;
     const logBits: string[] = [`${actor.name} 使用【${ability.name}】`];
+    // 技能内部会立即产生阵亡、迫降、任务结束等派生事件；结算完成后把这些事件排在技能本体之后，保持因果顺序。
+    const consequentEventStart = this.log.length;
 
     for (const eff of ability.effects) {
       switch (eff.op) {
@@ -1379,8 +1384,10 @@ export class SmallBattle {
     const usedWeapon = ability.weaponUse && chosenTarget ? skillWeapon(actor, ability, this.dist(actor, chosenTarget)) : undefined;
     if (usedWeapon && isRangedWeapon(usedWeapon) && weaponReloadTurns(usedWeapon)) this.reloadCd.set(weaponReloadKey(actor, usedWeapon), weaponReloadTurns(usedWeapon) + 1);
     this.settleAreaEffects(); this.resolveFlightStates(); this.flightCauses.clear(); this.checkGridObjective(false);
+    const consequentEvents = this.log.splice(consequentEventStart);
     const text = logBits.join('\n');
     this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id, ...(chosenTarget ? [chosenTarget.id] : []), ...resolutions.map((r) => r.defenderId)], text, resolution: resolutions[0], resolutions });
+    this.log.push(...consequentEvents);
     if (this.battlefield && actor.rulesVersion === 'v2' && !opts.bypassTurn) actor.tacticalEffort = Math.max(actor.tacticalEffort ?? 0, 1);
     if (!opts.bypassTurn) { if (ability.itemSourceId) this.spendAction(actorId, hasteAction); else this.actedThisTurn.add(actorId); }
     return { ok: true, resolutions, heal, log: text };
