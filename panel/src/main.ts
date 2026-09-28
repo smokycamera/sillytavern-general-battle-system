@@ -72,7 +72,7 @@ import { InventoryPanel } from './inventory-view.js';
 import { itemSpecificationLabel } from './item-spec.js';
 import { WORKSPACES, workspaceNavigation, workspacePage, showWorkspace, type WorkspaceTab } from './workspace-view.js';
 import { renderFormationBattle } from './formation-view.js';
-import { battleSkillChangeReason, learnedSkills, removedSkillOrder, setBattlePreparedSkills } from './battle-skills.js';
+import { battleAbilities, battleSkillChangeReason, learnedSkills, removedSkillOrder, setBattlePreparedSkills } from './battle-skills.js';
 import { formationSelection, selectFormationUnit, setFormationChoice, orderDraft, type FormationView, type OrderDrafts } from './formation-orders.js';
 import { renderTacticalBattle, selectTacticalElement, type TacticalView, type TacticalQuery } from './tactical-view.js';
 import {
@@ -1488,7 +1488,7 @@ function renderSmall(): string {
         : `｜不可攻击：${primary?.reason ?? sidearm?.reason ?? '没有合法武器'}`;
     return `<option value="${esc(f.id)}" ${selectedTargetId === f.id ? 'selected' : ''}>${esc(unitLabel(f, `（等级${f.level}·生命${f.hp}/${f.base.hpMax}）`))}（距${b.dist(act!, f)}${esc(availability)}）</option>`;
   }).join('');
-  const abilityBtns = (act?.abilities ?? [])
+  const abilityBtns = (act ? battleAbilities(act) : [])
     .map((a) => {
       const option = optionById(a.id);
       const title = [a.desc, option?.reason].filter(Boolean).join('｜');

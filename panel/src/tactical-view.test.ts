@@ -3,6 +3,16 @@ import { tacticalFixture } from '../../scripts/p4-tactical-fixture.js';
 import { renderTacticalBattle, selectTacticalElement, tacticalSelection, type TacticalView } from './tactical-view.js';
 
 describe('战术地图查看与确认', () => {
+  it('隐藏未准备技能，保留装备和物品能力，并让过期技能选择回到武器', () => {
+    const { b } = tacticalFixture(), actor = b.byId('a');
+    const [removed, prepared] = actor.abilities;
+    actor.preparedAbilityIds = [prepared!.id];
+    actor.abilities.push({ ...prepared!, id: 'gear-skill', equipmentSourceId: 'gear' }, { ...prepared!, id: 'item-skill', itemSourceId: 'item' });
+    const s = tacticalSelection(b, { mode: removed!.id, selectedId: actor.id });
+    expect(s.options.filter(o => o.kind === 'ability').map(o => o.id)).toEqual([prepared!.id, 'gear-skill', 'item-skill']);
+    expect(s.option?.id).toBe('weapon');
+    expect(actor.abilities).toContain(removed);
+  });
   it('同一次点选与渲染只查一次动作；换行动者或后续渲染重新查询', () => {
     const { b } = tacticalFixture(), view: TacticalView = { mode: 'weapon', selectedId: 'a' };
     const spy = vi.spyOn(b, 'getActionOptions');

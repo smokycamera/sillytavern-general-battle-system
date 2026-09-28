@@ -333,6 +333,10 @@
     .actor-status span { border-left:2px solid var(--line); padding-left:5px; }
     .command-modes { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; margin:10px 0; }
     .command-modes button { padding:6px 2px; min-width:44px; background:var(--card); border-radius:5px; }
+    .command-modes [data-action="grid-flight"] { grid-area:2 / 1; }
+    .command-modes [data-action="grid-suppress"] { grid-area:2 / 2; }
+    .command-modes [data-action="loadout-skills"] { grid-area:2 / 3; }
+    .command-modes [data-action="grid-retreat"] { grid-area:2 / 4; }
     .command-modes button[aria-pressed="true"] { border-color:var(--gold); color:var(--gold); background:color-mix(in srgb,var(--gold) 9%,var(--card)); }
     .grid-command label { font-size:11px; color:var(--dim); }
     .grid-command select { margin-top:5px; color:var(--txt); text-overflow:ellipsis; }
