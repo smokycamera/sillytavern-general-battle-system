@@ -81,6 +81,17 @@ describe('有限飞行与真实空地状态', () => {
     expect(battle0.useAbility(b.id, 'grounding', a.id).ok).toBe(true); expect(a.airborne).toBe(false); expect(a.hp).toBe(before - 50);
     const restored = SmallBattle.fromSnapshot(JSON.parse(JSON.stringify(battle0.toSnapshot()))); expect(restored.byId(a.id).hp).toBe(a.hp);
   });
+  it('致死技能先记录技能再记录阵亡，死亡飞行单位不再生成零伤迫降事件', () => {
+    const { a, b, battle: battle0 } = battle(); a.hp = 1; a.pos = 31; b.pos = 24; b.base.atk = 100;
+    b.abilities = [{ id: 'execute', name: '斩落', target: 'enemy', range: { metric: 'grid', min: 0, max: 5 }, effects: [{ op: 'damage', baseDice: '100d100' }] }];
+    b.preparedAbilityIds = ['execute']; battle0.turnOrder = ['b', 'a']; battle0.turnIndex = 0;
+    expect(battle0.useAbility(b.id, 'execute', a.id).ok).toBe(true);
+    const abilityAt = battle0.log.findIndex((e) => e.kind === 'ability' && e.text.startsWith('b 使用【斩落】'));
+    const deathAt = battle0.log.findIndex((e) => e.kind === 'death' && e.participants?.includes(a.id));
+    expect(abilityAt).toBeGreaterThanOrEqual(0); expect(deathAt).toBeGreaterThan(abilityAt);
+    expect(a.status).toBe('dead'); expect(a.airborne).toBe(false);
+    expect(battle0.log.some((e) => e.text.includes('坠落损失0'))).toBe(false);
+  });
   it('归档不保留空中坐标状态，非法空中记录不被恢复成飞行能力', () => {
     const { a, battle: battle0 } = battle(); const record = unitRecordFromCombatant(a);
     expect(record.snapshot?.airborne).toBeUndefined(); expect(materializeUnitRecord(record, registry).airborne).toBeUndefined(); expect(a.airborne).toBe(true);
