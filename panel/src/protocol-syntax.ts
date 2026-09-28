@@ -130,6 +130,11 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
     if (originalKey !== key || value !== originalValue || !quote || !pair[quote]) warnings.push('已规范化 ' + tag.name + '.' + key);
     result[key] = value;
   }
+  // Hero creation derives life from training/body/bonuses, even if the narrator supplies it.
+  if (tag.name === 'spawn' && result.scale === 'hero') {
+    delete result.hp;
+    delete result.hpMax;
+  }
   if (result.hp?.includes('/')) {
     const parts = result.hp.split('/').map((part) => numeric(part, 'hp'));
     if (parts.length !== 2 || parts.some((part) => !/^\d+$/.test(part))) throw new Error('hp 的当前值/上限写法不明确');
