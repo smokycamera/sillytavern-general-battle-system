@@ -30,7 +30,8 @@ jobs:
           git rm -rf --ignore-unmatch dist
       - run: npm ci
       - run: npm run typecheck
-      - name: Full suite with explicit unchanged historical failures
+      - run: npm run build:extension && npm run verify:dist
+      - name: Full suite compared to independently verified current-main failures
         run: |
           mkdir -p artifacts/overmatch-integration
           npm test -- --reporter=default --reporter=json --outputFile=artifacts/overmatch-integration/full-tests.json || true
@@ -39,16 +40,22 @@ jobs:
           import assert from 'node:assert/strict';
           const d=JSON.parse(readFileSync('artifacts/overmatch-integration/full-tests.json','utf8'));
           const failed=d.testResults.flatMap(s=>s.assertionResults).filter(t=>t.status==='failed');
-          const expected=['V5 saved battles and V6 prototype replay compatibility V5 human-four T1','V5 saved battles and V6 prototype replay compatibility V6-prototype giant-four T6','V5 saved battles and V6 prototype replay compatibility V6-prototype giant-unbreakable T1'];
-          assert.deepEqual(failed.map(t=>t.fullName).sort(),expected.sort());
-          assert.equal(d.numFailedTests,3);assert.equal(d.numPendingTests,0);
-          const report={total:d.numTotalTests,passed:d.numPassedTests,failed:d.numFailedTests,knownFailures:failed.map(t=>({name:t.fullName,message:t.failureMessages[0].split('\n')[0]})),allGreen:false};
+          const expected=[
+            ['V5 saved battles and V6 prototype replay compatibility V5 human-four T1','AssertionError: expected 59 to be 56 // Object.is equality'],
+            ['V5 saved battles and V6 prototype replay compatibility V6-prototype giant-four T6','AssertionError: expected 32 to be 31 // Object.is equality'],
+            ['V5 saved battles and V6 prototype replay compatibility V6-prototype giant-unbreakable T1','AssertionError: expected 22 to be 47 // Object.is equality'],
+            ['生命上限贯穿正文、编辑与档案 正文高生命自动截断并给出提示，编队人数保留原值',"AssertionError: expected '' to contain '2000'"],
+            ['生命上限贯穿正文、编辑与档案 正文事务不能在生成后用旧事件值覆盖生命上限','AssertionError: expected false to be true // Object.is equality']
+          ];
+          const actual=failed.map(t=>[t.fullName,t.failureMessages[0].split('\n')[0]]);
+          assert.deepEqual(actual.sort(),expected.sort());
+          assert.equal(d.numFailedTests,5);assert.equal(d.numPendingTests,0);assert.equal(d.numTotalTests,1294);
+          const report={baselineCommit:'3124296778fa6ff4f106808e4f4b0d8e7ae63676',baselineRunId:36420348375,baselineTotal:1283,baselinePassed:1278,baselineFailed:5,total:d.numTotalTests,passed:d.numPassedTests,failed:d.numFailedTests,knownFailures:actual,allGreen:false,newFailures:0};
           writeFileSync('artifacts/overmatch-integration/validation.json',JSON.stringify(report,null,2));
           console.log(report);
           JS
       - name: Cross-template integrated battle sample (additional 240, not part of core 26400)
         run: node node_modules/vite-node/vite-node.mjs scripts/audit-overmatch-curves.ts --label=tail2-v10-main --phase=integration --offset=104729 --production=true --shard=7 --shards=10 --out=artifacts/overmatch-integration
-      - run: npm run build:extension && npm run verify:dist
       - name: Native browser regression for both save contracts
         run: |
           npx playwright-core install --with-deps chromium
