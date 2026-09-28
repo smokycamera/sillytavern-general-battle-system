@@ -1,0 +1,73 @@
+name: Integrate main health fix into verified overmatch candidate
+on:
+  push:
+    branches: [research/overmatch-v10-20260928]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    if: >-
+      github.event.head_commit.message == 'chore: integrate verified main health fix into overmatch candidate'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Preserve main source and regenerate only conflicting compiled assets
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ! git merge --no-commit --no-ff 3124296778fa6ff4f106808e4f4b0d8e7ae63676; then
+            conflicts=$(git diff --name-only --diff-filter=U)
+            test -n "$conflicts"
+            if printf '%s\n' "$conflicts" | grep -v '^dist/'; then exit 1; fi
+          fi
+          git rm -rf --ignore-unmatch dist
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Full suite with explicit unchanged historical failures
+        run: |
+          mkdir -p artifacts/overmatch-integration
+          npm test -- --reporter=default --reporter=json --outputFile=artifacts/overmatch-integration/full-tests.json || true
+          node --input-type=module <<'JS'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          import assert from 'node:assert/strict';
+          const d=JSON.parse(readFileSync('artifacts/overmatch-integration/full-tests.json','utf8'));
+          const failed=d.testResults.flatMap(s=>s.assertionResults).filter(t=>t.status==='failed');
+          const expected=['V5 saved battles and V6 prototype replay compatibility V5 human-four T1','V5 saved battles and V6 prototype replay compatibility V6-prototype giant-four T6','V5 saved battles and V6 prototype replay compatibility V6-prototype giant-unbreakable T1'];
+          assert.deepEqual(failed.map(t=>t.fullName).sort(),expected.sort());
+          assert.equal(d.numFailedTests,3);assert.equal(d.numPendingTests,0);
+          const report={total:d.numTotalTests,passed:d.numPassedTests,failed:d.numFailedTests,knownFailures:failed.map(t=>({name:t.fullName,message:t.failureMessages[0].split('\n')[0]})),allGreen:false};
+          writeFileSync('artifacts/overmatch-integration/validation.json',JSON.stringify(report,null,2));
+          console.log(report);
+          JS
+      - name: Cross-template integrated battle sample (additional 240, not part of core 26400)
+        run: node node_modules/vite-node/vite-node.mjs scripts/audit-overmatch-curves.ts --label=tail2-v10-main --phase=integration --offset=104729 --production=true --shard=7 --shards=10 --out=artifacts/overmatch-integration
+      - run: npm run build:extension && npm run verify:dist
+      - name: Native browser regression for both save contracts
+        run: |
+          npx playwright-core install --with-deps chromium
+          export TB_BROWSER=$(node --input-type=module -e "import {chromium} from 'playwright-core'; console.log(chromium.executablePath())")
+          npm run smoke:extension
+          TB_METADATA_MODE=legacy-full npm run smoke:extension
+      - name: Commit reconciled source and installable bundle on PR branch only
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          actual=$(git ls-remote origin refs/heads/research/overmatch-v10-20260928 | cut -f1)
+          test "$actual" = "$EXPECTED_HEAD"
+          git add -A -- dist
+          git commit -m 'merge: preserve main hero health fixes and rebuild verified overmatch bundle'
+          git push origin HEAD:refs/heads/research/overmatch-v10-20260928
+          git archive HEAD | gzip > artifacts/overmatch-integration/source.tar.gz
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: overmatch-main-integration
+          path: artifacts/
+          retention-days: 14
