@@ -162,7 +162,7 @@ export function penetrationFactor(power: number, resistance: number): number {
 }
 export function penetrationContext(opts: Pick<AttackOpts, 'attacker' | 'defender' | 'weaponOverride' | 'abilityDamage' | 'ranged'> & Partial<Pick<AttackOpts,'rules'|'conditionDefs'>>) {
   const modern=opts.rules?.combatModel===MEMBER_HEALTH_MODEL;
-  const original=opts.weaponOverride ?? opts.attacker.weapon,weapon=modern?combatWeapon(original,opts.attacker,opts.defender,opts.rules?.weaponOverflow,opts.rules?.damageModel,opts.rules?.overmatch):original;
+  const original=opts.weaponOverride ?? opts.attacker.weapon,weapon=modern?combatWeapon(original,opts.attacker,opts.defender,opts.rules?.weaponOverflow,opts.rules?.damageModel,opts.rules?.overmatch,opts.rules?.overmatchCurve):original;
   const channel = opts.abilityDamage?.channel ?? weapon?.channel ?? 'kinetic';
   const base = opts.abilityDamage?.penetration ?? weapon?.penetration ?? 1 + Math.floor((weapon?.level ?? 5) / 2);
   const penetration = base + (opts.abilityDamage && !opts.abilityDamage.weaponBased ? 0 : traitPenetrationBonus(opts.attacker, weapon, opts.ranged ?? !!weapon?.tags?.includes('ranged'), base));
@@ -175,7 +175,7 @@ export function penetrationContext(opts: Pick<AttackOpts, 'attacker' | 'defender
   const shieldFactor=wounds?shieldTransmission(target,channel,penetration,area,canBlock):1;
   const power=opts.abilityDamage&&!opts.abilityDamage.weaponBased?opts.abilityDamage.power:weapon?.recipe?.power??weapon?.level;
   return { channel, penetration, resistance, factor:armorFactor*shieldFactor,armorScale:modern?armorPowerScale(target):1,...(wounds?{armorFactor,shieldFactor}:{}),
-    ...(modern&&opts.rules?.overmatch?{attackPower:power,protectionPower:defensePower(target,channel),overmatchMultiplier:overmatchMultiplier(power,target,channel,penetration,area,canBlock),area,canBlock}:{}) };
+    ...(modern&&opts.rules?.overmatch?{attackPower:power,protectionPower:defensePower(target,channel),overmatchMultiplier:overmatchMultiplier(power,target,channel,penetration,area,canBlock,false,opts.rules.overmatchCurve),area,canBlock,...(opts.rules.overmatchCurve?{curve:opts.rules.overmatchCurve}:{})}:{}) };
 }
 
 /** 与执行共用属性栈与穿透。期望值不读取实战 RNG；骰子取整/暴击导致实际结果有波动。 */
@@ -238,7 +238,7 @@ function memberAreaBudget(opts: Omit<AttackOpts,'rng'>): number {
     ? 1 / Math.max(1, Math.min(opts.defender.hp, opts.abilityDamage.areaExposure ?? 4)) : 1;
 }
 function memberPlan(opts:Omit<AttackOpts,'rng'>,direct:number,targets:number):MemberDamagePlan {
-  const weapon=combatWeapon(opts.weaponOverride??opts.attacker.weapon,opts.attacker,opts.defender,opts.rules.weaponOverflow,opts.rules.damageModel,opts.rules.overmatch);
+  const weapon=combatWeapon(opts.weaponOverride??opts.attacker.weapon,opts.attacker,opts.defender,opts.rules.weaponOverflow,opts.rules.damageModel,opts.rules.overmatch,opts.rules.overmatchCurve);
   const extra=hasMemberHealth(opts.defender)&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)?Math.min(opts.defender.hp,weapon?.splashTargets??0):0;
   const members=hasMemberHealth(opts.defender),directTargets=members?Math.min(opts.defender.hp,targets):targets>0?1:0,splashTargets=Math.min(opts.defender.hp,targets*extra),max=members?opts.defender.formation!.memberHp:opts.defender.base.hpMax;
   const overflow=members&&attackOverflow(opts);
@@ -246,7 +246,7 @@ function memberPlan(opts:Omit<AttackOpts,'rng'>,direct:number,targets:number):Me
   const incomingSplash=Math.round(direct*extra*(weapon?.splashFactor??0)),splash=Math.min(max*splashTargets,incomingSplash);
   const context=opts.rules.overmatch?penetrationContext(opts):undefined;
   return {direct:cappedDirect,targets:directTargets,...(overflow?{overflow:true}:{}),
-    ...(context&&(context.overmatchMultiplier??1)>1?{overmatch:{power:context.attackPower,channel:context.channel,penetration:context.penetration,area:!!context.area,canBlock:context.canBlock!==false,multiplier:context.overmatchMultiplier!}}:{}),
+    ...(context&&(context.overmatchMultiplier??1)>1?{overmatch:{power:context.attackPower,channel:context.channel,penetration:context.penetration,area:!!context.area,canBlock:context.canBlock!==false,multiplier:context.overmatchMultiplier!,...(opts.rules.overmatchCurve?{curve:opts.rules.overmatchCurve}:{})}}:{}),
     ...(direct>cappedDirect?{incomingDirect:direct}:{}),
     ...(extra&&targets?{splash,splashTargets,...(incomingSplash>splash?{incomingSplash}:{})}:{})};
 }
@@ -314,7 +314,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
 function outcomeScale(opts: Omit<AttackOpts, 'rng'>): { participants: number; multiplier: number } {
   if (opts.rules.resolutionVersion !== 'v2') return { participants: 1, multiplier: 1 };
   if(opts.rules.combatModel===MEMBER_HEALTH_MODEL){
-    const a=opts.attacker,d=opts.defender,ranged=opts.ranged??isRangedCapable(a),weapon=combatWeapon(opts.weaponOverride??a.weapon,a,d,opts.rules.weaponOverflow,opts.rules.damageModel,opts.rules.overmatch);
+    const a=opts.attacker,d=opts.defender,ranged=opts.ranged??isRangedCapable(a),weapon=combatWeapon(opts.weaponOverride??a.weapon,a,d,opts.rules.weaponOverflow,opts.rules.damageModel,opts.rules.overmatch,opts.rules.overmatchCurve);
     const count=a.scale==='hero'?1:a.body==='vehicle'?personnel(a):Math.min(personnel(a),opts.participants??engagementWidth(a,d,ranged,undefined,opts.fieldTags)*Math.max(1,personnel(a)/COHORT_REFERENCE));
     const crew=a.scale!=='hero'&&(a.body??'human')==='human'&&!opts.abilityDamage?.delivery?.startsWith('magic')?(isCannonWeapon(weapon)?4:weapon?.recipe?.mechanism==='autocannon'?3:1):1;
     const participants=Math.max(0,count/crew)*(!ranged&&looseFormation(a)?0.5:1);
@@ -347,7 +347,7 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
   const ranged = opts.ranged ?? isRangedCapable(attacker);
   // 结算用武器：副武器近战切换时覆盖（骰子/等级/惩罚判定同源）
   const original=opts.weaponOverride ?? attacker.weapon;
-  const weapon = rules.combatModel===MEMBER_HEALTH_MODEL?combatWeapon(original,attacker,defender,rules.weaponOverflow,rules.damageModel,rules.overmatch):original;
+  const weapon = rules.combatModel===MEMBER_HEALTH_MODEL?combatWeapon(original,attacker,defender,rules.weaponOverflow,rules.damageModel,rules.overmatch,rules.overmatchCurve):original;
 
   // 远程武器被迫近战（借机攻击/贴身挥击/军团近战阶段）：枪托弓杆终究不是称手兵器
   // 「远近双全」（no-melee-penalty 旗标）豁免——刺刀/弓杆近战有专门训练；

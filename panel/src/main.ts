@@ -51,7 +51,7 @@ import {
   generateUnit, traitCatalog, traitRegistry, resolveTraitId,
   SmallBattle, MassBattle, battleXpAwardsForBothSides, applyXp, xpProgress, xpLabel,
   armorDR, fieldModsFor, LITE_D20,
-  V5_D20, V6_D20, V9_OVERFLOW_D20, V9_OVERFLOW_TW, isAirborne, abilityUsabilityReason,
+  V5_D20, V6_D20, V9_OVERFLOW_D20, V10_OVERFLOW_D20, V10_OVERFLOW_TW, isAirborne, abilityUsabilityReason,
   generatedField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
   FORMATION_NODES, formationNode, concealmentLabel,
   type Combatant, type GenerateInput, type Order, type BattleLogEntry, type Side,
@@ -2575,7 +2575,7 @@ async function startSmallBattle(context?:LlmEncounterContext):Promise<void> {
     const small = new SmallBattle({
       nonLethal:state.nonLethal,
       ...(state.roster.every((u) => u.rulesVersion === 'v2') ? { battlefield } : {}),
-      rules: state.roster.every((u) => u.rulesVersion === 'v2') ? V9_OVERFLOW_D20 : LITE_D20,
+      rules: state.roster.every((u) => u.rulesVersion === 'v2') ? V10_OVERFLOW_D20 : LITE_D20,
       combatants: JSON.parse(JSON.stringify(state.roster)), seed: state.roster.every((u) => u.rulesVersion === 'v2') ? seed : undefined, traitRegistry: reg,
       summonUnit,
       field: { tags: state.roster.every((u) => u.rulesVersion === 'v2') ? tags : state.field ? [state.field] : [] },
@@ -2606,7 +2606,7 @@ async function startMassBattle(context?:LlmEncounterContext):Promise<void> {
     }
     const mass = new MassBattle({
       nonLethal:state.nonLethal,
-      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V9_OVERFLOW_TW } : {}),
+      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V10_OVERFLOW_TW } : {}),
       combatants: clones,
       traitRegistry: reg,
       commanderId: state.commanderId,
