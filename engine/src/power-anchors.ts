@@ -2,7 +2,7 @@ import { isWoundModel, UNIFIED_WOUNDS, UNIFIED_SPLASH, powerIndex } from './bala
 import { compileWeapon } from './gen/equipment.js';
 import { isCannonWeapon, isRangedWeapon } from './loadout.js';
 import { bonusMultiplier, bonusRating, bonusPoints, channelPoints } from './enhancements.js';
-import type {Armor,Combatant,DamageChannel,Weapon} from './types.js';
+import type {Armor,Combatant,DamageChannel,Weapon,RulePack} from './types.js';
 import {curveAt} from './data/curves.js';
 import {diceAvg} from './data/weapons.js';
 import {BODY} from './body.js';
@@ -142,10 +142,24 @@ function continuousPowerBudget(power:number):number {
   const p=Math.max(1,Math.min(10,power)),low=Math.floor(p),fraction=p-low;
   return powerBudget(low)*(powerBudget(Math.min(10,low+1))/powerBudget(low))**fraction;
 }
-/** A one-grade safe band; smooth for fractional channel modifiers, bounded by L1–L10.
+/** Legacy keeps its one-grade safe band; V10 starts at any positive fractional gap.
  * Extra damage ramps in only after the attack exceeds the actual channel resistance.
  * No unit HP, personnel, training, size damage multiplier or new random roll enters here. */
-export function gradeOvermatch(power:number|undefined,defensePower:number,penetration:number,resistance:number):number {
+export function gradeOvermatch(power:number|undefined,defensePower:number,penetration:number,resistance:number,curve?:RulePack['overmatchCurve']):number {
+  if(curve==='continuous-v1'||curve==='continuous-soft40-v1'){
+    if(power===undefined||!Number.isFinite(power)||power<1||power>10
+      ||!Number.isFinite(defensePower)||!Number.isFinite(penetration)||!Number.isFinite(resistance)||power<=defensePower)return 1;
+    const gap=power-defensePower,ratio=continuousPowerBudget(power)/continuousPowerBudget(defensePower);
+    // Adjacent gaps already use the full budget ratio. Only the ADDITIONAL
+    // far-gap bonus ramps from x1 toward x2 (C1 at gap=1), without a hard cap.
+    const tail=Math.max(0,gap-1)**2;
+    const extra=(Math.sqrt(ratio)-1)*(1+tail/(1+tail));
+    // Weight only extra overmatch. Attack specification, never actor level, drives it.
+    // Smooth endpoints at L3/L7; the frozen V10 curve and all high-grade attacks stay exact.
+    const x=Math.max(0,Math.min(1,(power-3)/4));
+    const weight=curve==='continuous-soft40-v1' ? 0.4+0.6*(3*x*x-2*x*x*x) : 1;
+    return 1+extra*weight*Math.max(0,Math.min(1,penetration-resistance));
+  }
   if(power===undefined||!Number.isFinite(power)||power<1||power>10||power<=defensePower+1)return 1;
   const extra=Math.sqrt(continuousPowerBudget(power)/continuousPowerBudget(defensePower+1))-1;
   return 1+extra*Math.max(0,Math.min(1,penetration-resistance));
@@ -157,13 +171,13 @@ export function defensePower(unit:DefensiveTarget,channel:DamageChannel,includeB
   const unarmoredPower=unit.armor?.tier===0?(unit.armor.recipe?.power??unit.armor.level??0):0;
   return Math.max(unit.level,unarmoredPower,protectionPower(unit,channel),...wards,includeBarrier?barrierDefensePower(unit):0);
 }
-export function overmatchMultiplier(power:number|undefined,unit:DefensiveTarget,channel:DamageChannel,penetration:number,area=false,canBlock=true,includeBarrier=false):number {
-  const armor=gradeOvermatch(power,defensePower(unit,channel,includeBarrier),penetration,anchoredProtection(unit,channel));
+export function overmatchMultiplier(power:number|undefined,unit:DefensiveTarget,channel:DamageChannel,penetration:number,area=false,canBlock=true,includeBarrier=false,curve?:RulePack['overmatchCurve']):number {
+  const armor=gradeOvermatch(power,defensePower(unit,channel,includeBarrier),penetration,anchoredProtection(unit,channel),curve);
   if(!unit.shield||unit.status!=='ready'||area||!canBlock||armor===1)return armor;
   const coverage=Math.min(.5,.35*bonusMultiplier(unit.shield.recipe?.bonuses,'power'));
   const resistance=shieldProtection(unit,channel),through=penetrationThrough(penetration,resistance);
   const shieldPower=Math.max(0,(resistance-1+({kinetic:0,thermal:1,arcane:2}[channel]))/2);
-  const shield=gradeOvermatch(power,shieldPower,penetration,resistance);
+  const shield=gradeOvermatch(power,shieldPower,penetration,resistance,curve);
   // A shield only limits the covered portion; it never lends its L to the whole body.
   return ((1-coverage)*armor+coverage*through*Math.min(armor,shield))/(1-coverage+coverage*through);
 }
@@ -173,14 +187,14 @@ export function armorEffectLabel(unit:Pick<Combatant,'armor'|'shield'|'damageMod
     : `装甲等效耐久×${Number(armorPowerScale(unit).toFixed(2))}（旧规则）`;
 }
 /** 没有手动指定时，火炮按公开目标防护和人数选择有效毁伤较高的弹种。 */
-export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Combatant,weaponOverflow=false,model=actor.damageModel,overmatch=false):Weapon|undefined {
+export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Combatant,weaponOverflow=false,model=actor.damageModel,overmatch=false,curve?:RulePack['overmatchCurve']):Weapon|undefined {
   if(!weapon)return weapon;
   if(actor.cannonAmmo||!isCannonWeapon(weapon))return anchoredWeapon(weapon,actor.cannonAmmo,model);
   const he=anchoredWeapon(weapon,'he',model)!,ap=anchoredWeapon(weapon,'ap',model)!;
   const protectedTarget={...target,damageModel:model};
   const score=(w:Weapon)=>{
     const raw=diceAvg(w.baseDice)*(w.damageScale??1)*armorTransmission(protectedTarget,w.channel??'kinetic',w.penetration??0)/armorPowerScale(protectedTarget)
-      *(overmatch?overmatchMultiplier(w.recipe?.power??w.level,protectedTarget,w.channel??'kinetic',w.penetration??0,!!w.splashTargets):1);
+      *(overmatch?overmatchMultiplier(w.recipe?.power??w.level,protectedTarget,w.channel??'kinetic',w.penetration??0,!!w.splashTargets,true,false,curve):1);
     if(weaponOverflow&&hasMemberHealth(target)){
       const copy={...target,formation:{...target.formation!,health:target.formation!.health!.map(g=>({...g}))}};
       const direct=damageMemberGroups(copy,Math.round(raw),1,true).health;

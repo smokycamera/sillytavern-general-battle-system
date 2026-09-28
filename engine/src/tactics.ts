@@ -1,4 +1,4 @@
-import { resourceRound, fatigueLimit, fatiguePenalty } from './resources.js';
+import { isEnduranceModel, resourceRound, fatigueLimit, fatiguePenalty } from './resources.js';
 import { bodyMovement, humanEncumbered } from './body.js';
 import type { Combatant, ConditionDef, Trait } from './types.js';
 import type { Modifier, ResolveContext } from './bonus.js';
@@ -39,7 +39,7 @@ export function settleFatigue(unit: Combatant, exertion: number, fullRest = fals
 }
 export function fatigueAfter(unit: Combatant, exertion: number, fullRest = false): number {
   const resistance = activeTraitIds(unit).includes('fatigue-trained') ? 0.5 : 1;
-  if (unit.resourceModel === 'endurance-v1') {
+  if (isEnduranceModel(unit.resourceModel)) {
     const gain = exertion > 0 ? exertion * 0.5 * resistance / (1 + 0.1 * (unit.level - 1))
       : -(fullRest ? 2 + 0.1 * (unit.level - 1) : 1);
     return resourceRound(Math.max(0, Math.min(fatigueLimit(unit), unit.fatigue + gain)));
@@ -48,12 +48,12 @@ export function fatigueAfter(unit: Combatant, exertion: number, fullRest = false
 }
 /** V9 haste adds exertion; old snapshots keep their integer-only contract. */
 export function addTacticalEffort(unit: Combatant, amount: number): void {
-  unit.tacticalEffort = unit.resourceModel === 'endurance-v1'
+  unit.tacticalEffort = isEnduranceModel(unit.resourceModel)
     ? resourceRound((unit.tacticalEffort ?? 0) + amount) : Math.max(unit.tacticalEffort ?? 0, amount);
 }
 export function validateTacticalEffort(value: unknown, model?: unknown): void {
   if (value === undefined) return;
-  if (model === 'endurance-v1') {
+  if (isEnduranceModel(model)) {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 20) throw new Error('待结疲劳记录损坏');
   } else if (!Number.isSafeInteger(value) || Number(value) < 0 || Number(value) > 2) throw new Error('待结疲劳记录损坏');
 }

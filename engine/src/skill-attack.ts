@@ -34,7 +34,7 @@ export function skillAttack(context: ObservationContext, actor: Combatant, targe
       ...(actor.combatModel==='cohort-v2'?{level:power,recipe:{...(actor.shield.recipe??{version:'mechanism-v2.3',mechanism:'shield',power,quality:3,size,seed:actor.shield.id}),...(actor.damageModel==='wounds-v2'?{balanceVersion:'unified-v1' as const}:{})}}:{}) };
   }
   if (!weapon) return { abilityDamage: { accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect, baseDice: '1d2-2', apDice: undefined, penetration: 0, channel: 'kinetic', weaponBased: true }, ranged: false, participants: 0 };
-  if(actor.combatModel==='cohort-v2')weapon=combatWeapon(weapon,actor,target,rules?.weaponOverflow,rules?.damageModel,rules?.overmatch)!;
+  if(actor.combatModel==='cohort-v2')weapon=combatWeapon(weapon,actor,target,rules?.weaponOverflow,rules?.damageModel,rules?.overmatch,rules?.overmatchCurve)!;
   const skillBudget = diceAvg(effect.baseDice) + (effect.apDice ? diceAvg(effect.apDice) : 0);
   const channel=weapon.channel??'kinetic';
   // 武技在实际武器通道上应用专项修正；避免公式升级时猜测通道或重复叠加通用强化。

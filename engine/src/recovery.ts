@@ -11,11 +11,11 @@ import { overmatchMultiplier } from './power-anchors.js';
 type Health = Pick<Combatant, 'hp' | 'base' | 'scale'> & Partial<Pick<Combatant, 'status' | 'rulesVersion' | 'recoverableWounded' | 'combatModel' | 'formation'>>;
 
 /** 保留攻击规格和已乘倍率，屏障可在同时行动实际结算前才获得。 */
-export interface DamageOvermatch { power?:number; channel:import('./types.js').DamageChannel; penetration:number; area:boolean; canBlock:boolean; multiplier:number }
+export interface DamageOvermatch { power?:number; channel:import('./types.js').DamageChannel; penetration:number; area:boolean; canBlock:boolean; multiplier:number; curve?:import('./types.js').RulePack['overmatchCurve'] }
 export interface MemberDamagePlan { direct:number; targets:number; overflow?:boolean; splash?:number; splashTargets?:number; incomingDirect?:number; incomingSplash?:number; overmatch?:DamageOvermatch }
 function barrierRatio(unit:Combatant,context?:DamageOvermatch):number {
   if(!unit.barrier||!context)return 1;
-  return Math.min(1,overmatchMultiplier(context.power,unit,context.channel,context.penetration,context.area,context.canBlock,true)/context.multiplier);
+  return Math.min(1,overmatchMultiplier(context.power,unit,context.channel,context.penetration,context.area,context.canBlock,true,context.curve)/context.multiplier);
 }
 /** V4以真实生命结算；旧版继续使用人数换算，不改写进行中的旧战斗。 */
 export function applyCombatDamage(unit:Combatant,amount:number,targets=1,overmatch?:DamageOvermatch):number {
