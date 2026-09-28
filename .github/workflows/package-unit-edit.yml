@@ -1,0 +1,68 @@
+name: Package managed unit editor fix
+on:
+  push:
+    branches: ['repair/unit-editor-managed-equipment']
+    paths: ['.github/unit-edit.patch', '.github/workflows/package-unit-edit.yml']
+permissions:
+  contents: read
+concurrency:
+  group: package-managed-unit-editor
+  cancel-in-progress: false
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply the locally tested source patch
+        run: git apply --check .github/unit-edit.patch && git apply .github/unit-edit.patch
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Type check
+        run: npm run typecheck
+      - name: Equipment and form regressions
+        run: |
+          mkdir -p artifacts/unit-edit
+          npx vitest run panel/src/unit-form.test.ts panel/src/unit-edit.integration.test.ts panel/src/unit-builder.test.ts panel/src/signed-enhancements.test.ts panel/src/bulk-inventory.test.ts --maxWorkers=2 --minWorkers=2 --reporter=default --reporter=json --outputFile=artifacts/unit-edit/targeted.json
+      - name: Native host and persistence regressions
+        run: npm run test:extension -- --maxWorkers=2 --minWorkers=2 --reporter=default --reporter=json --outputFile=artifacts/unit-edit/native-tests.json
+      - name: Build and verify installable files
+        run: npm run build:extension && npm run verify:dist
+      - name: Install Chromium
+        run: |
+          npx playwright-core install --with-deps chromium
+          node --input-type=module -e "import { chromium } from 'playwright-core'; import { appendFileSync } from 'node:fs'; appendFileSync(process.env.GITHUB_ENV, 'TB_BROWSER=' + chromium.executablePath() + '\n')"
+      - name: Browser edit preview save and reopen in both host save contracts
+        run: npm run smoke:extension && TB_METADATA_MODE=legacy-full npm run smoke:extension
+      - name: Commit only the verified source and installable bundle
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+          BRANCH: repair/unit-editor-managed-equipment
+        run: |
+          set -euo pipefail
+          actual=$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)
+          test "$actual" = "$EXPECTED_HEAD"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add panel/src/main.ts panel/src/unit-form.ts scripts/native-extension-smoke.mjs package.json package-lock.json manifest.json dist
+          git commit -m 'fix: preserve managed gear during character editing (v1.3.21)'
+          git push origin "HEAD:refs/heads/$BRANCH"
+      - name: Preserve test reports and bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: managed-unit-editor-${{ github.sha }}
+          path: |
+            artifacts/unit-edit/
+            artifacts/native-extension-smoke/
+            dist/
+            manifest.json
+          retention-days: 7
