@@ -180,6 +180,14 @@ export function penetrationContext(opts: Pick<AttackOpts, 'attacker' | 'defender
 
 /** 与执行共用属性栈与穿透。期望值不读取实战 RNG；骰子取整/暴击导致实际结果有波动。 */
 export function previewAttack(opts: Omit<AttackOpts, 'rng'>): import('./actions.js').ActionPreview & { hitChance: number; expectedDamage: number; conditionValue?: number } {
+  const preview = previewAttackOutcome(opts);
+  const chance = preview.anyHitChance ?? preview.hitChance;
+  const remaining = opts.rules.combatModel === MEMBER_HEALTH_MODEL ? memberHealth(opts.defender) : opts.defender.hp;
+  return { ...preview, damageOnHit: preview.damageOnHit ?? Math.min(remaining, chance > 0 ? preview.expectedDamage / chance : 0) };
+}
+
+/** 保留含未命中的期望供战术 AI 使用；玩家展示由上层转换为命中后的损失。 */
+function previewAttackOutcome(opts: Omit<AttackOpts, 'rng'>): import('./actions.js').ActionPreview & { hitChance: number; expectedDamage: number; conditionValue?: number } {
   const ctx = attackContext(opts);
   const hitChance = estimateHitChance(opts.rules, ctx.netAtk, ctx.targetDef);
   const source = opts.abilityDamage ?? ctx.weapon;
@@ -216,6 +224,7 @@ export function previewAttack(opts: Omit<AttackOpts, 'rng'>): import('./actions.
       const second = (hit - critical) * normal.second + critical * crit.second;
       const damageChance = 1 - Math.pow(1 - ((hit - critical) * normal.positive + critical * crit.positive), count);
       return { ...diagnostics, ...(opts.abilityDamage?.weaponBased ? { weaponName: ctx.weapon?.name } : {}), ...(onHit ? { onHit, conditionValue: poisonValue(opts.attacker, opts.defender, ctx.weapon, damageChance) } : {}), hitChance: hit, anyHitChance: 1-Math.pow(1-hit,count), damageChance, expectedDamage: mean * count, penetrationFactor: factor, exact: cohortSamples(opts) === 1,
+        ...(count === 1 ? { normalHitDamage: normal.mean, ...(critical > 0 ? { criticalHitDamage: crit.mean } : {}) } : {}),
         variance: Math.max(0, second - mean * mean) * count, minDamage: hit < 1 ? 0 : normal.min * count, maxDamage: Math.max(normal.max, critical > 0 ? crit.max : 0) * count };
     }
   }
@@ -264,14 +273,16 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   const samples=cohortSamples(opts),weight=outcomeScale({...opts,packetShare:1/samples}).multiplier,count=(opts.abilityDamage?1:ctx.weapon?.attacks??1)*samples;
   // 连续攻击共用剩余屏障。固定种子的小样本估计只操作副本，不消耗实战随机数。
   if ((opts.defender.barrier || opts.rules.damageModel === 'wounds-v2' && hasMemberHealth(opts.defender) && opts.abilityDamage && !opts.abilityDamage.weaponBased && opts.abilityDamage.shape === 'burst') && count > 1) {
-    let sum=0,squares=0,positive=0,casualties=0,maximum=0;
+    let sum=0,squares=0,positive=0,casualties=0,maximum=0,hits=0;
     for(let i=0;i<96;i++) {
       const defender=structuredClone(opts.defender),attacker=structuredClone(opts.attacker),rng=new SeededRng('barrier-preview:'+i),before=memberHealth(defender),members=defender.hp;
-      for(let n=0;n<(opts.abilityDamage?1:ctx.weapon?.attacks??1)&&defender.hp>0;n++)resolveAttack({...opts,attacker,defender,rng});
+      let hitAny=false;
+      for(let n=0;n<(opts.abilityDamage?1:ctx.weapon?.attacks??1)&&defender.hp>0;n++)hitAny=resolveAttack({...opts,attacker,defender,rng}).hit||hitAny;
+      hits+=Number(hitAny);
       const loss=before-memberHealth(defender);sum+=loss;squares+=loss*loss;positive+=Number(loss>0);casualties+=members-defender.hp;maximum=Math.max(maximum,loss);
     }
     const mean=sum/96;
-    return {...diagnostics,damageModel:'member-health' as const,...(opts.rules.overmatch?{weaponOverflow:hasMemberHealth(opts.defender)&&attackOverflow(opts)}:{}),hitChance:hit,anyHitChance:1-(1-hit)**count,expectedDamage:mean,
+    return {...diagnostics,damageModel:'member-health' as const,...(opts.rules.overmatch?{weaponOverflow:hasMemberHealth(opts.defender)&&attackOverflow(opts)}:{}),hitChance:hit,anyHitChance:1-(1-hit)**count,expectedDamage:mean,damageOnHit:hits?sum/hits:0,
       expectedCasualties:hasMemberHealth(opts.defender)?casualties/96:undefined,damageChance:positive/96,penetrationFactor:factor,exact:false,
       variance:Math.max(0,squares/96-mean*mean),minDamage:0,maxDamage:maximum};
   }
@@ -294,6 +305,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   };
   const normal=moments(1),crit=moments(opts.rules.critRule==='doubleDice'?2:1),mean=(hit-critical)*normal.mean+critical*crit.mean,second=(hit-critical)*normal.second+critical*crit.second;
   return {...diagnostics,damageModel:'member-health' as const,weaponOverflow:hasMemberHealth(opts.defender)&&attackOverflow(opts),hitChance:hit,anyHitChance:1-(1-hit)**count,expectedDamage:Math.min(memberHealth(opts.defender),mean*count),
+    ...(count === 1 ? { normalHitDamage: normal.mean, ...(critical > 0 ? { criticalHitDamage: crit.mean } : {}) } : {}),
     expectedCasualties:hasMemberHealth(opts.defender)?Math.min(opts.defender.hp,((hit-critical)*normal.casualties+critical*crit.casualties)*count):undefined,
     damageChance:1-(1-((hit-critical)*normal.positive+critical*crit.positive))**count,penetrationFactor:factor,exact:count===1,variance:Math.max(0,second-mean*mean)*count,minDamage:0,maxDamage:Math.min(memberHealth(opts.defender),Math.max(normal.max,critical?crit.max:0)*count)};
 }

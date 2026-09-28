@@ -1,3 +1,4 @@
+import { hitChanceText, hitDamageText, hitDamageDetails } from './damage-preview.js';
 import { version } from '../../package.json';
 import { renderWorldbookSettings, captureWorldbookDraft, worldbookDraftPatch, type WorldbookDraft } from './worldbook-settings.js';
 import { randomId } from '../../host/src/browser-compat.js';
@@ -1480,7 +1481,7 @@ function renderSmall(): string {
     const primary = weaponOption?.targets?.find((candidate) => candidate.targetId === f.id);
     const sidearm = sidearmOption?.targets?.find((candidate) => candidate.targetId === f.id);
     const preview = primary?.preview;
-    const estimate = preview ? `｜命中≈${Math.round((preview.hitChance ?? 0) * 100)}%·期望伤害≈${(preview.expectedDamage ?? 0).toFixed(1)}` : '';
+    const estimate = preview ? `｜命中率${hitChanceText(preview)}·命中后伤害${hitDamageText(preview)}` : '';
     const availability = primary?.enabled
       ? estimate
       : sidearm?.enabled
@@ -1630,7 +1631,7 @@ function renderAbilityDialog(): string {
   const recoveryTarget = targets.find((u) => u.id === selected);
   const effectPreview = massV2 ? b.orderPreview({ unitId: [...b.attached].find(([, id]) => id === actor.id)?.[0] ?? actor.id, type: 'ability', abilityActorId: actor.id, abilityId: ability.id, targetId: selected }) : smallOption?.targets?.find((t) => t.targetId === selected)?.preview;
   const strikePreview = effectPreview && 'preview' in effectPreview ? effectPreview.preview : effectPreview;
-  const damagePreview = strikePreview && 'expectedDamage' in strikePreview && strikePreview.expectedDamage !== undefined ? `<div class="damage-preview">主目标伤害期望 ${strikePreview.expectedDamage.toFixed(1)}${effectPreview?.areaTargets?.length ? ' · 波及' + effectPreview.areaTargets.map(esc).join('、') : ''}</div>` : '';
+  const damagePreview = strikePreview && 'expectedDamage' in strikePreview && strikePreview.expectedDamage !== undefined ? `<div class="damage-preview">命中率 ${hitChanceText(strikePreview)} · 命中后伤害 ${hitDamageText(strikePreview)}${strikePreview.damageModel === 'member-health' || recoveryTarget?.scale === 'hero' ? '生命' : '人'}${effectPreview?.areaTargets?.length ? ' · 波及' + effectPreview.areaTargets.map(esc).join('、') : ''}</div>` : '';
   const healingPreview = effectPreview?.healing;
   const moralePreview = effectPreview?.moraleAfter === undefined ? '' : `<div class="morale-preview">预计有效士气 ${effectPreview.moraleBefore} → ${effectPreview.moraleAfter}${effectPreview.rallyChance !== undefined ? '，基础重整成功率' + Math.round(effectPreview.rallyChance * 100) + '%，仍需合法空位' : '，惊退风险' + Math.round((effectPreview.breakChance ?? 0) * 100) + '%'}</div>`;
   const recoveryPreview = healingPreview === undefined ? '' : `<div class="recovery-preview">预计恢复${recoveryTarget?.scale === 'hero' ? '生命' : '可救伤兵'} ${healingPreview}${recoveryTarget?.scale !== 'hero' ? '，不会补回其余缺员' : ''}</div>`;
@@ -1647,7 +1648,7 @@ function renderAbilityDialog(): string {
       <div class="row"><span class="tag">使用者：${esc(unitLabel(actor))}</span><span class="tag">目标：${abilityTargetLabel(ability)}</span><span class="tag">射程：${range}</span>${ability.itemSourceId ? '' : `<span class="tag">冷却：${runtime?.cdLeft ?? 0}/${ability.cooldown ?? 0}</span>`}</div>
       <div class="effect-list">${abilityEffectLabel(ability, recoveryTarget ?? actor).map((x) => `<div>▸ ${esc(x)}</div>`).join('')}</div>
       <div class="row"><b>选择目标</b>${targetSelect}</div>
-      ${damagePreview}${recoveryPreview}${moralePreview}${effectPreview?.effects?.length ? '<div class="effect-preview">' + effectPreview.effects.map(esc).join('<br>') + '</div>' : ''}
+      ${damagePreview}${damagePreview && strikePreview && 'expectedDamage' in strikePreview ? '<details><summary>伤害详情</summary><p>' + hitDamageDetails(strikePreview, strikePreview.damageModel === 'member-health' || recoveryTarget?.scale === 'hero' ? '生命' : '人') + '</p></details>' : ''}${recoveryPreview}${moralePreview}${effectPreview?.effects?.length ? '<div class="effect-preview">' + effectPreview.effects.map(esc).join('<br>') + '</div>' : ''}
       <div class="sub">资源：${esc(resource)}｜${uses}${unavailable ? `｜不可用：${esc(unavailable)}` : ''}${massV2 ? '｜支援阶段执行时扣费，占用所属编队唯一主任务' : ''}</div>
       <div class="row"><button class="primary" data-action="ability-confirm" ${unavailable || smallOption && !smallOption.enabled ? 'disabled' : ''}>${confirmation}</button><button data-action="ability-cancel">取消</button></div>
     </div>
@@ -1667,7 +1668,7 @@ function massOrderPreviewText(b: MassBattle, order: Order): string {
   if (result.moraleAfter !== undefined) return `${cost} · 有效士气${result.moraleBefore}→${result.moraleAfter}${result.rallyChance !== undefined ? ' · 基础重整成功率' + Math.round(result.rallyChance * 100) + '%' : ' · 惊退风险' + Math.round((result.breakChance ?? 0) * 100) + '%'}`;
   if (result.healing !== undefined) return `${cost} · 预计恢复${result.healing}，以目标可恢复生命或伤兵为上限`;
   const fall = result.fallDamage !== undefined ? ` · ${result.fallChance !== undefined && result.fallChance < 1 ? '迫降概率' + Math.round(result.fallChance * 100) + '%' : '将迫降'}，额外坠落损失至多${result.fallDamage}${result.forcedLanding ? '，预计落点' + place(result.forcedLanding) : '，已知范围无落点，预计撤出'}` : '';
-  return result.preview ? `${cost}${result.weaponName ? ' · 使用' + result.weaponName : ''}${result.approach && !result.landing ? ' · 冲锋接近至' + place(result.approach) : ''}${result.vehicleMove ? ' · 短移至' + place(result.vehicleMove) + '稳定射击' + (result.reactions?.length ? '，可能遭' + result.reactions.join('、') + '借机' : '') : ''}${result.withdrawal ? ' · 自动后撤至' + place(result.withdrawal) + '射击' : ''}${result.landing ? ' · 先降落至' + place(result.landing) + '扑击' : ''} · 单次命中${Math.round(result.preview.hitChance * 100)}% · 主目标伤害期望${result.preview.expectedDamage.toFixed(1)}${result.preview.onHit ? ' · ' + result.preview.onHit : ''}${result.areaTargets?.length ? ' · 波及' + result.areaTargets.join('、') : ''}${result.effects?.length ? ' · ' + result.effects.join('；') : ''}${fall}（阶段行动可能改变结果）` : cost + fall + (result.effects?.length ? ' · ' + result.effects.join('；') : '');
+  return result.preview ? `${cost}${result.weaponName ? ' · 使用' + result.weaponName : ''}${result.approach && !result.landing ? ' · 冲锋接近至' + place(result.approach) : ''}${result.vehicleMove ? ' · 短移至' + place(result.vehicleMove) + '稳定射击' + (result.reactions?.length ? '，可能遭' + result.reactions.join('、') + '借机' : '') : ''}${result.withdrawal ? ' · 自动后撤至' + place(result.withdrawal) + '射击' : ''}${result.landing ? ' · 先降落至' + place(result.landing) + '扑击' : ''} · 命中率${hitChanceText(result.preview)} · 命中后伤害${hitDamageText(result.preview)}${result.preview.onHit ? ' · ' + result.preview.onHit : ''}${result.areaTargets?.length ? ' · 波及' + result.areaTargets.join('、') : ''}${result.effects?.length ? ' · ' + result.effects.join('；') : ''}${fall}（阶段行动可能改变结果）` : cost + fall + (result.effects?.length ? ' · ' + result.effects.join('；') : '');
 }
 
 function renderMass(): string {

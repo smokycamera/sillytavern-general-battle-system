@@ -66,6 +66,9 @@ describe('军团地图与任务闭环', () => {
     expect(preview.areaPreviews?.[0]?.expectedDamage).toBe(0);
     expect(preview.areaPreviews?.[1]?.expectedDamage).toBeGreaterThan(0);
     const html = renderFormationBattle(b, { selectedId: 'a' }, { a: order }, false, (u) => u.name, (_b, o) => o.type);
+    expect(html).toContain('命中率');
+    expect(html).toContain('命中后伤害');
+    expect(html).not.toContain('预计损失');
     expect(html.match(/class="formation-piece [^"]*area-hit/g)).toHaveLength(2);
     expect(html).not.toContain('未发现的守卫');
     expect(JSON.stringify(b.toSnapshot())).toBe(before);

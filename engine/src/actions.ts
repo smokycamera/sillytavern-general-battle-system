@@ -64,7 +64,7 @@ export interface ActionPreview {
   weaponName?: string;
   areaTargets?: string[];
   areaTargetIds?: string[];
-  areaPreviews?: { targetId: string; hitChance: number; expectedDamage: number }[];
+  areaPreviews?: (Pick<ActionPreview, 'anyHitChance' | 'damageOnHit' | 'normalHitDamage' | 'criticalHitDamage'> & { targetId: string; hitChance: number; expectedDamage: number })[];
   channel?: import('./types.js').DamageChannel;
   penetration?: number;
   resistance?: number;
@@ -93,6 +93,11 @@ export interface ActionPreview {
   hitChance?: number;
   /** 含命中率后的平均伤害估算。 */
   expectedDamage?: number;
+  /** 整次行动至少命中一次时的平均实际损失，含暴击、减伤及目标余量。 */
+  damageOnHit?: number;
+  /** 单次攻击普通命中／暴击的平均实际损失；多组攻击不伪装成一次命中。 */
+  normalHitDamage?: number;
+  criticalHitDamage?: number;
   movePenalty?: number;
   pointBlankPenalty?: number;
   resource?: { name: string; cost: number; available: number };
