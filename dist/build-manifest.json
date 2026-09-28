@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "1.3.14",
-  "builtAt": "2026-09-28T04:01:56.141Z",
-  "sourceFingerprint": "8d3933723af706cd5f73817f11668ec73daa6467bcb43d087bf45c1aa11ccf16",
+  "builtAt": "2026-09-28T05:23:08.470Z",
+  "sourceFingerprint": "30c57be40a429a160db47afef0c97575f19b17610e701f4d7c7b6ca128f2f737",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -31,9 +31,9 @@
       "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     },
     {
-      "path": "dist/assets/panel-B_x0BOZk.js",
+      "path": "dist/assets/panel-ClzCtoC1.js",
       "bytes": 315803,
-      "sha256": "b4939846089c93ac20c8e81da571a22c2397b9539dcd7e7a7f0d6e5fe8ca662f"
+      "sha256": "9fb7190c08578fb01e3b19477467da91e443c42781fbc1ea29ada989e4ebab1d"
     },
     {
       "path": "dist/assets/panel-KVZ1GitA.css",
@@ -41,9 +41,9 @@
       "sha256": "9ecfd9e2abb7edeb8b59fe6e7d1f5c6b36332b81fe9f688d0b3d63b13b486cd0"
     },
     {
-      "path": "dist/assets/preferences-BW6iSoO2.js",
-      "bytes": 567241,
-      "sha256": "4d1aa1adce36cff01af46a6fd2d5e471e8fc84b73042aa3daaef2c0d2263142a"
+      "path": "dist/assets/preferences-DD3Ajh7d.js",
+      "bytes": 567520,
+      "sha256": "6ab8340ccc85a3afbeca1957d1664db836820d2f8514828194872d04e97ded02"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -153,7 +153,7 @@
     {
       "path": "dist/index.js",
       "bytes": 82394,
-      "sha256": "13a0d0b13c58737b9b8ef905042d38778c535cbbb2757230a6900af293c6b06c"
+      "sha256": "8a5bccf21f023701942e99e6b26f9856445b9fa133b105e1a2036836dbef81f0"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -168,7 +168,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 49844,
-      "sha256": "4a7262cdf6329cde326164533bc77f10bb95dedee517abe2622a2da8da329d69"
+      "sha256": "0c1caaffc461bde62d29925915c2beb50ff2a790edd6c6f9945df82f966c856e"
     },
     {
       "path": "release/current-baseline.json",
