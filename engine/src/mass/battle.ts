@@ -1,3 +1,4 @@
+import { tacticalSkillCost, tacticalRestValue } from '../skill-economy.js';
 import { actionPotential } from '../skill-tactics.js';
 import { hasteMagnitude, hasteAttackScale } from '../haste.js';
 import { commanderScores, normalizeCommanderProfiles, type CommanderProfiles } from '../commander-profile.js';
@@ -11,9 +12,9 @@ import { upgradeCombatSkills } from '../skill-upgrade.js';
 import { normalizeTactic, type TacticalPreference } from '../tactical-preference.js';
 import { calibrateAutocannon, calibrateWeaponHands } from '../gen/equipment.js';
 import { rangedScreen, rangedScreenReason } from '../guard-screen.js';
-import { fatigueLimit, fatiguePenalty, spCapacity, abilityCost, prepareResourceModel, recoverSp, spRecovery, skillExertion, resourceRound } from '../resources.js';
+import { fatigueLimit, fatiguePenalty, spCapacity, abilityCost, prepareResourceModel, recoverSp, skillExertion, resourceRound } from '../resources.js';
 import type { EffectOp } from '../types.js';
-import { skillWeapon, skillResourceChange, skillResourceCost, conjureSkillUnit, conjuredTemplate, summonedMemberLife } from '../skill-runtime.js';
+import { skillWeapon, skillResourceChange, conjureSkillUnit, conjuredTemplate, summonedMemberLife } from '../skill-runtime.js';
 import { applySkillTrait } from '../skill-effects.js';
 import { BattleFeedback, type FeedbackUnit } from '../battle-feedback.js';
 import { restoreMassReport, type MassRoundReport, type MassPhase } from './feedback.js';
@@ -788,7 +789,7 @@ export class MassBattle {
       for (const target of targets) {
         const order: Order = { unitId: u.id, type: 'ability', abilityActorId: actor.id, abilityId: ability.id, targetId: target.id };
         if (this.v2OrderReason(order, planning)) continue;
-        let score = 0;
+        let score = 0, expectedDamage = 0;
         const plannedHealing = new Map(reservedHealing);
         const damageForControl = ability.effects.find((e) => e.op === 'damage');
         const controlPreviews = new Map<string, ReturnType<MassBattle['previewAttackWithEnvironment']>>();
@@ -802,6 +803,7 @@ export class MassBattle {
           if (effect.op === 'damage') for (const t of this.supportTargets(actor, ability, target, planning)) {
             const preview = this.previewAttackWithEnvironment({ attacker: actor, defender: t, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(planning, actor, t, ability, effect) });
             score += preview.expectedDamage + (preview.conditionValue ?? 0);
+            if (t.side !== actor.side) expectedDamage += preview.expectedDamage;
           }
           if (effect.op === 'heal') for (const affected of this.supportTargets(actor, ability, target, planning)) {
             const reserved = plannedHealing.get(affected.id) ?? 0;
@@ -820,7 +822,7 @@ export class MassBattle {
         for (const affected of this.supportTargets(actor, ability, target, planning)) score += skillEffectValue(skillContext, actor, reservedSupport.get(affected.id) ?? affected, { ...ability, effects: ability.effects.filter(e => e.op === 'condition') }, controlChance(affected, false), controlChance(affected, true)) * Math.max(0, 1 - (controlPreviews.get(affected.id)?.expectedDamage ?? 0) / Math.max(1, memberHealth(affected)));
         const falling = this.abilityFlightPreview(actor, target, ability, planning); if (falling) score += falling.fallDamage * (falling.fallChance ?? 1);
         for (const affected of this.supportTargets(actor, ability, target, planning)) score += skillEffectValue(skillContext, actor, reservedSupport.get(affected.id) ?? affected, { ...ability, effects: ability.effects.filter(e => e.op === 'resource') });
-        score -= skillResourceCost(ability, actor);
+        score -= tacticalSkillCost(skillContext, actor, ability, expectedDamage);
         if (score > 0) candidates.push({ order, score: score - 0.25 });
       }
     }
@@ -846,13 +848,9 @@ export class MassBattle {
         })));
     };
     if (fatiguePenalty(u) > 0 || u.resourceModel && !hasteOnly) {
-      const rested = { ...u, conditions: [...u.conditions], resources: { ...u.resources }, fatigue: fatigueAfter(u, 0, !!u.resourceModel),
-        abilityState: u.abilityState.map(s => ({ ...s, cdLeft: u.resourceModel ? Math.max(0, s.cdLeft - 1) : s.cdLeft })) };
-      rested.resources.SP = resourceRound((rested.resources.SP ?? 0) + spRecovery(rested, true));
-      // V2直接由fatigue计算修正，休整预估不能再叠加旧版fat-*状态。
-      // 比较休整对后续两个交战窗口的收益，避免力竭后永远重复低效攻击。
+      const rested = { ...u, fatigue: fatigueAfter(u, 0) };
       const context = { ...this.observationContext(planning), units: known };
-      const gain = (u.resourceModel ? actionPotential(context, rested) - actionPotential(context, u) : futureValue(rested) - futureValue(u)) * 1.5;
+      const gain = u.resourceModel ? tacticalRestValue(context, u) : (futureValue(rested) - futureValue(u)) * 1.5;
       if (gain > 0) candidates.push({ order: { unitId: u.id, type: 'hold' }, score: gain });
     }
     if (hasFlightAbility(u) || isAirborne(u) || isRangedWeapon(u.weapon) || isRangedWeapon(u.sidearm)) {
