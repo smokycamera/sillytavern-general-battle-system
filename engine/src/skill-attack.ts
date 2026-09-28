@@ -39,7 +39,12 @@ export function skillAttack(context: ObservationContext, actor: Combatant, targe
   const channel=weapon.channel??'kinetic';
   // 武技在实际武器通道上应用专项修正；避免公式升级时猜测通道或重复叠加通用强化。
   const channelScale=bonusMultiplier(ability.bonuses,'damage',channel)/bonusMultiplier(ability.bonuses,'damage');
-  const equipmentBudget = (diceAvg(weapon.baseDice) + (weapon.apDice ? diceAvg(weapon.apDice) : 0)) * (weapon.damageScale??1) * Math.min(3, weapon.attacks ?? 1) * (ability.weaponDamageMult ?? 1) * channelScale;
+  // Saved V6 skill multipliers already contain signed bonuses and control discounts.
+  // Replace only their 2.2 single-target baseline at execution/preview; never rescale the instance.
+  const singleScale=rules?.singleWeaponSkillMultiplier!==undefined&&actor.damageModel==='wounds-v2'
+    &&ability.shape!=='burst'&&!ability.customized&&!ability.fixedPower&&/^skill-v6\./.test(ability.effectVersion??'')
+    ?rules.singleWeaponSkillMultiplier/2.2:1;
+  const equipmentBudget = (diceAvg(weapon.baseDice) + (weapon.apDice ? diceAvg(weapon.apDice) : 0)) * (weapon.damageScale??1) * Math.min(3, weapon.attacks ?? 1) * (ability.weaponDamageMult ?? 1) * channelScale * singleScale;
   const field = context.battlefield;
   const width = engagementWidth(actor, target, isRangedWeapon(weapon), field, context.fieldTags);
   const attached = new Set(context.attached?.values() ?? []);

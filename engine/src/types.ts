@@ -510,6 +510,10 @@ export interface BattleLogEntry {
 // ---------- 规则包 ----------
 
 export interface RulePack {
+  /** V8：训练输出每级增幅；缺省保留旧战斗的 12%。 */
+  trainingDamagePerLevel?: number;
+  /** V8：自动生成的单体武器/盾牌技法基础倍率；不改写技能实例。 */
+  singleWeaponSkillMultiplier?: number;
   /** V7：跨代充分穿透追加毁伤；旧快照缺省关闭。 */
   overmatch?: boolean;
   /** V5 单体毁伤与通道防护；缺省沿用旧战斗的规格耐久。 */

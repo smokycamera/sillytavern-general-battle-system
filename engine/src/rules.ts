@@ -57,8 +57,13 @@ export const V6_OVERFLOW_TW:RulePack={...V6_TW,id:'v6-overflow-tw',name:'V6 统�
 export const V7_OVERFLOW_D20:RulePack={...V6_OVERFLOW_D20,id:'v7-overflow-d20',name:'V7 跨代毁伤与溢出',overmatch:true};
 export const V7_OVERFLOW_TW:RulePack={...V6_OVERFLOW_TW,id:'v7-overflow-tw',name:'V7 跨代毁伤溢出会战',overmatch:true};
 
+/** New battles soften stacked burst damage; saved V2–V7 rules and skill instances stay intact. */
+export const V8_OVERFLOW_D20:RulePack={...V7_OVERFLOW_D20,id:'v8-overflow-d20',name:'V8 训练与武技增伤校准',trainingDamagePerLevel:.06,singleWeaponSkillMultiplier:1.5};
+export const V8_OVERFLOW_TW:RulePack={...V7_OVERFLOW_TW,id:'v8-overflow-tw',name:'V8 训练与武技增伤会战',trainingDamagePerLevel:.06,singleWeaponSkillMultiplier:1.5};
+
 /** id → 规则包（战斗快照恢复用；面板只用默认两包） */
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V8_OVERFLOW_D20.id]:V8_OVERFLOW_D20,[V8_OVERFLOW_TW.id]:V8_OVERFLOW_TW,
   [V7_OVERFLOW_D20.id]:V7_OVERFLOW_D20,[V7_OVERFLOW_TW.id]:V7_OVERFLOW_TW,
   [V6_D20.id]:V6_D20,[V6_TW.id]:V6_TW,[V6_OVERFLOW_D20.id]:V6_OVERFLOW_D20,[V6_OVERFLOW_TW.id]:V6_OVERFLOW_TW,
   [V5_D20.id]:V5_D20,
