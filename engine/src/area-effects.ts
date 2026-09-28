@@ -111,9 +111,9 @@ export function settleZones(context: ObservationContext, round: number, boundary
         } else if(zone.kind!=='smoke') {
           const count=target.scale==='hero'?1:Math.min(target.hp,4);
           const factor=zone.kind==='poison'?poisonFactor(target):armorTransmission(target,zone.kind==='fire'?'thermal':'kinetic',zonePenetration(zone));
-          const overmatch=context.rules?.overmatch&&zone.kind!=='poison'?overmatchMultiplier(zone.power,target,zone.kind==='fire'?'thermal':'kinetic',zonePenetration(zone),true):1;
+          const overmatch=context.rules?.overmatch&&zone.kind!=='poison'?overmatchMultiplier(zone.power,target,zone.kind==='fire'?'thermal':'kinetic',zonePenetration(zone),true,true,false,context.rules.overmatchCurve):1;
           damage=applyCombatDamage(target,Math.round(amount*factor*count*overmatch),count,overmatch>1?{
-            power:zone.power,channel:zone.kind==='fire'?'thermal':'kinetic',penetration:zonePenetration(zone),area:true,canBlock:true,multiplier:overmatch}:undefined);
+            power:zone.power,channel:zone.kind==='fire'?'thermal':'kinetic',penetration:zonePenetration(zone),area:true,canBlock:true,multiplier:overmatch,...(context.rules?.overmatchCurve?{curve:context.rules.overmatchCurve}:{})}:undefined);
           results.push({target,source:owner,damage,text:target.name+'受到'+ZONE_NAMES[zone.kind]+'影响，损失'+damage+'点生命'+(overmatch>1?'，跨代毁伤×'+Number(overmatch.toFixed(2)): '')});
         }
         const random=rng??new SeededRng(`${zone.id}:${zone.createdRound}:${round}:${target.id}`);

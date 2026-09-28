@@ -518,6 +518,8 @@ export interface RulePack {
   singleWeaponSkillMultiplier?: number;
   /** V7：跨代充分穿透追加毁伤；旧快照缺省关闭。 */
   overmatch?: boolean;
+  /** V10: continuous positive grade gaps; absent preserves the V7–V9 safe band. */
+  overmatchCurve?: 'continuous-v1';
   /** V5 单体毁伤与通道防护；缺省沿用旧战斗的规格耐久。 */
   damageModel?: 'wounds-v1' | 'wounds-v2';
   /** V9: level-scaled skill reserve and endurance, serialized with the battle. */
