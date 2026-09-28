@@ -1869,6 +1869,9 @@ async function sendToAi(text: string, label: string, reportId?: string, batch?: 
   if(historical?.supersededBy)text='【已被重战替代的历史战报：仅供对照，不代表当前战果】\n'+text;
   text = applySettlementPrompt(text, controller.snapshot().promptSettings);
   if (!text) { toast(`暂无可发送的${label}`); return; }
+  if (['新增战况', '战斗终章', '结算卡（整场）', '回合纪要（整场）', '状态摘要'].includes(label)) {
+    text = text.trimEnd() + '\n\n本次回复应根据战报对战斗过程进行详细描写，禁止输出<tb>内容';
+  }
   const identity = adapter.identity();
   const namespace = adapter.namespace();
   const report = !batch && reportId ? state.reports.find((r) => r.id === reportId) : undefined;

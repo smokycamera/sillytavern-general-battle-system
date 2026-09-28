@@ -76,3 +76,14 @@ describe('空间士气与可观察压力', () => {
     expect(resolveStack(mods, 'atk', {}).flatTotal).toBe(-2); expect(a.conditions.some((c) => c.id === 'stunned')).toBe(true);
   });
 });
+
+describe('新战斗零士气兜底', () => {
+  for (const mode of ['small', 'mass'] as const) it(`${mode}仅在新开战恢复一次，读档不恢复`, () => {
+    const a = unit('entry'), e = unit('enemy', 'enemy'); a.morale = 0; e.morale = 10;
+    const b = mode === 'small' ? new SmallBattle({ combatants: [a,e], rules: V2_D20, seed: 'entry' }) : new MassBattle({ combatants: [a,e], rules: V2_TW, seed: 'entry' });
+    b.start(); expect(b.combatants[0]!.morale).toBe(50); expect(b.combatants[1]!.morale).toBe(10);
+    b.combatants[0]!.morale = 0; b.start(); expect(b.combatants[0]!.morale).toBe(0);
+    const restored = mode === 'small' ? SmallBattle.fromSnapshot(b.toSnapshot()) : MassBattle.fromSnapshot(b.toSnapshot());
+    restored.start(); expect(restored.combatants[0]!.morale).toBe(0);
+  });
+});
