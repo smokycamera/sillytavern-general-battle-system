@@ -843,7 +843,7 @@ function issueMemoryOrders(): number {
 /** 渲染前捕获生成器表单当前值（render 会重建 DOM，必须回填防止选择被重置） */
 function captureForm(): void {
   state.form = captureUnitDraft('gen', state.form);
-  if (builderEditDraft) builderEditDraft = captureUnitDraft('edit', builderEditDraft);
+  if (builderEditDraft) builderEditDraft = captureUnitDraft('edit', builderEditDraft, { managed: state.editingDraft?.equipmentManaged });
 }
 
 type RenderScope = 'all' | 'battle' | 'view' | 'none';

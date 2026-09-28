@@ -13,12 +13,17 @@ import { skillDefinitionName, skillDefinitionId } from '../../engine/src/skill-c
 import { WEAPON_CLASSES, ABILITY_BLUEPRINTS, traitCatalog, traitDescription, type Trait, type Combatant, abilityUsabilityReason, effectiveProtection, equipmentReason } from '../../engine/src/index.js';
 import { bodyChoices, equipmentFields, captureEquipment, selectField, htmlText as esc } from './equipment-form.js';
 import type { UnitDraft } from './unit-builder.js';
-export function captureUnitDraft(prefix: string, d: UnitDraft): UnitDraft {
+export function captureUnitDraft(prefix: string, d: UnitDraft, opts: { managed?: boolean } = {}): UnitDraft {
   const root = document.querySelector(`[data-builder-form="${prefix}"]`); if (!root) return d;
   const next = structuredClone(d);
   for (const key of ['name', 'side', 'scale', 'level', 'body', 'speedTier', 'hp', 'hpMax', 'memberHp', 'note', 'reserves'] as const) { const el = root.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-role="${prefix}-${key}"]`); if (el) next[key] = el.value; }
-  for (const key of ['mount', 'sidearmEnabled', 'shield', 'autoPrepare'] as const) { const el = root.querySelector<HTMLInputElement>(`[data-role="${prefix}-${key}"]`); if (el) next[key] = el.checked; }
-  for (const slot of ['primary', 'sidearm', 'armor', 'shieldGear'] as const) next[slot] = captureEquipment(prefix + '-' + slot, d[slot]);
+  for (const key of ['mount', 'autoPrepare'] as const) { const el = root.querySelector<HTMLInputElement>(`[data-role="${prefix}-${key}"]`); if (el) next[key] = el.checked; }
+  // Managed gear is a frozen inventory projection, not an editable recipe. Even
+  // untouched controls lose absent/zero bonuses and unsupported legacy values.
+  if (!opts.managed) {
+    for (const key of ['sidearmEnabled', 'shield'] as const) { const el = root.querySelector<HTMLInputElement>(`[data-role="${prefix}-${key}"]`); if (el) next[key] = el.checked; }
+    for (const slot of ['primary', 'sidearm', 'armor', 'shieldGear'] as const) next[slot] = captureEquipment(prefix + '-' + slot, d[slot]);
+  }
   next.traits = [...d.traits.filter((id) => ['large', 'titan'].includes(id)), ...root.querySelectorAll<HTMLInputElement>(`[data-role="${prefix}-trait"]:checked`)].map((el) => typeof el === 'string' ? el : el.value);
   next.skills = [...root.querySelectorAll<HTMLInputElement>(`[data-role="${prefix}-skill"]`)].map((el, i) => ({ id: skillDefinitionId(el.value.trim()) ?? 'invalid:' + el.value, instanceId: d.skills[i]?.instanceId,
     name: root.querySelector<HTMLInputElement>(`[data-role="${prefix}-skill-name"][data-index="${i}"]`)?.value ?? '',

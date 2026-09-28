@@ -85,6 +85,45 @@ try {
   await frame.locator('[data-action="workspace-tab"][data-tab="units"]').first().click();await idle(frame);
   await frame.locator('[data-action="narrative-approve"]').click();await page.waitForFunction(()=>window.__tavernBattleNative.service.snapshot().storage?.length===2);await idle(frame);
   check('正文候选经面板确认建档并部署',(await state()).rosterIds.length===2);
+  // The freshly spawned fixture is not inventory-managed until a real inventory
+  // transaction adopts its gear. Create one unequipped item through the UI first.
+  await frame.locator('[data-action="workspace-tab"][data-tab="inventory"]').first().click(); await idle(frame);
+  await frame.locator('[data-action="inventory-new"]').click();
+  await frame.locator('[data-role="inventory-name"]').fill('编辑回归备用剑');
+  await frame.locator('[data-action="inventory-preview-draft"]').click();
+  await frame.locator('[data-action="inventory-confirm"]').click();
+  await page.waitForFunction(() => __tavernBattleNative.service.snapshot().storage?.every(r => r.equipmentManaged));
+  await frame.locator('[data-action="workspace-tab"][data-tab="units"]').first().click(); await idle(frame);
+  // Managed equipment controls are display-only. This exercises main.captureForm,
+  // not just editUnitBuild with a hand-constructed draft (which missed the bug).
+  await frame.locator('[data-action="manage-toggle"]').click(); await idle(frame);
+  const editBefore = await state(), editedUnit = editBefore.storage.find(r => r.side === 'ally');
+  check('编辑回归使用已接管且没有强化的实物装备', editedUnit.equipmentManaged && !editedUnit.snapshot.weapon.recipe.bonuses);
+  await frame.locator(`[data-action="storage-edit"][data-id="${editedUnit.id}"]`).click(); await idle(frame);
+  await frame.locator('[data-role="edit-name"]').fill('编辑后的原生卫兵');
+  const editedHp = Math.max(1, editedUnit.hp - 1), editedMax = editedUnit.base.hpMax + 1;
+  await frame.locator('[data-role="edit-hpMax"]').fill(String(editedMax));
+  await frame.locator('[data-role="edit-hp"]').fill(String(editedHp));
+  await frame.locator('[data-detail-id="edit-notes"] > summary').click();
+  await frame.locator('[data-role="edit-note"]').fill('只修改人物资料，不重铸装备');
+  await frame.locator('[data-action="storage-preview"]').click(); await idle(frame);
+  await frame.locator('[data-role="builder-preview"]').waitFor();
+  await frame.locator('[data-action="storage-preview"]').click(); await idle(frame);
+  check('人物编辑可重复预览且确认前不改写档案', JSON.stringify((await state()).storage) === JSON.stringify(editBefore.storage));
+  await frame.locator('[data-action="builder-confirm"]').click(); await idle(frame);
+  const editAfter = await state(), savedEdit = editAfter.storage.find(r => r.id === editedUnit.id);
+  check('姓名生命上限当前生命备注均可保存', savedEdit.name === '编辑后的原生卫兵' && savedEdit.hp === editedHp && savedEdit.base.hpMax === editedMax && savedEdit.note === '只修改人物资料，不重铸装备');
+  const equipmentSnapshot = r => JSON.stringify(['weapon', 'sidearm', 'armor', 'shield'].map(slot => r.snapshot[slot]));
+  check('保存人物资料不改变装备实例随机值或库存归属', equipmentSnapshot(savedEdit) === equipmentSnapshot(editedUnit) && JSON.stringify(editAfter.inventory) === JSON.stringify(editBefore.inventory));
+  await frame.locator(`[data-action="storage-edit"][data-id="${editedUnit.id}"]`).click(); await idle(frame);
+  await frame.locator('[data-action="storage-preview"]').click(); await idle(frame);
+  check('保存后重新打开并直接预览不会误报装备修改', await frame.locator('[data-role="builder-preview"]').isVisible());
+  await frame.locator('[data-action="manage-cancel-edit"]').click(); await idle(frame);
+  await page.reload(); await ready(); await page.locator('#tavern-battle-native-entry').click();
+  await frame.locator('#app h1').waitFor();
+  const reloadedEdit = (await state()).storage.find(r => r.id === editedUnit.id);
+  check('刷新后人物修改与原装备完整保留', reloadedEdit.name === savedEdit.name && reloadedEdit.hp === editedHp && reloadedEdit.note === savedEdit.note && equipmentSnapshot(reloadedEdit) === equipmentSnapshot(editedUnit));
+  await frame.locator('[data-action="workspace-tab"][data-tab="units"]').first().click(); await idle(frame);
   await frame.locator('[data-action="gen-toggle"]').click();await idle(frame);
   await frame.locator('[data-role="gen-name"]').fill('保留的未提交表单');
   const listeners=await page.evaluate(()=>[...handlers.values()].reduce((n,s)=>n+s.size,0));
