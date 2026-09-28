@@ -129,7 +129,7 @@ function spawnInput(event: Extract<Suggestion, { kind: 'spawn' }>): GenerateInpu
   const traits = [...new Set((event.traits ?? []).map((name) => resolveTraitId(name, registry)).filter((id): id is string => !!id))];
   return {
     rulesVersion: 'v2', damageModel: 'wounds-v2', body: event.body, mount: event.mount, speedTier: event.speedTier, quality: event.quality, shield: event.shield,
-    hp: event.hp, hpMax: event.hpMax,
+    ...((event.scale ?? 'hero') === 'hero' ? {} : { hp: event.hp, hpMax: event.hpMax }),
     name: event.name, scale: event.scale ?? 'hero', archetype: event.archetype, level: event.level, side: event.side ?? 'enemy',
     traits: traits as string[], weaponName: event.weaponName ?? event.weapon, weaponClass: event.weaponClass,
     bonuses: event.bonuses, weaponBonuses: event.weaponBonuses, sidearmBonuses: event.weapon2Bonuses, armorBonuses: event.armorBonuses,

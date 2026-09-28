@@ -150,7 +150,7 @@ export function xpProgress(unit: Combatant): { current: number; next: number } |
 
 /**
  * 训练只更新人物属性；装备与能力实例不参与成长重算。
- * 群体编制不增长。英雄生命上限只增加前后曲线的差值，保留自定义偏移且不治疗。
+ * 群体编制不增长。V2英雄保留剧情生命上限，仅在等级标准更高时上调，不治疗。
  */
 function recomputeFromCurve(unit: Combatant, fromLevel: number, registry?: Map<string, Trait>): void {
   const curve = curveAt(unit.level, unit.damageModel);
@@ -174,7 +174,9 @@ function recomputeFromCurve(unit: Combatant, fromLevel: number, registry?: Map<s
   const bodyHp = unit.rulesVersion === 'v2' ? bodyProfile(unit.body, unit.damageModel).hp : scaleMod.hpMult;
   const unifiedGrowth = nominalLife(unit) - nominalLife({...unit, level:fromLevel});
   const hpMax = unit.scale === 'hero'
-    ? unit.base.hpMax + (unit.damageModel==='wounds-v2' ? unifiedGrowth : Math.round(curve.hp * bodyHp * bonusMultiplier(unit.bonuses,'health')) - Math.round(curveAt(fromLevel, unit.damageModel).hp * bodyHp * bonusMultiplier(unit.bonuses,'health')))
+    ? unit.rulesVersion === 'v2'
+      ? Math.max(unit.base.hpMax, nominalLife(unit) + (traitStats.hpMax ?? 0))
+      : unit.base.hpMax + Math.round(curve.hp * bodyHp * bonusMultiplier(unit.bonuses,'health')) - Math.round(curveAt(fromLevel, unit.damageModel).hp * bodyHp * bonusMultiplier(unit.bonuses,'health'))
     : unit.base.hpMax;
 
   unit.base = { ...unit.base, atk, def, spd, hpMax: unit.scale === 'hero' ? capSingleLife(hpMax, unit.damageModel) : hpMax };

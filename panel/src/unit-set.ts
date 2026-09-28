@@ -186,7 +186,7 @@ function validateAbility(a: Ability): void {
   }
 }
 
-/** 重算被训练/身体/强化改变的标准部分，保留原档的手动数值偏移；显式base随后覆盖。 */
+/** 重算训练/身体/强化的标准部分；hero生命取现有上限与新标准较大值，显式base随后覆盖。 */
 function rebase(unit: Combatant, data: ObjectData): void {
   if (!['level','body','archetype','scale','bonuses','traits'].some(key=>Object.hasOwn(data,key))) return;
   const registry=traitRegistry();
@@ -198,7 +198,7 @@ function rebase(unit: Combatant, data: ObjectData): void {
   };
   const old=baseline(unit as unknown as ObjectData), changed=merge(unit as unknown as ObjectData,Object.fromEntries(['level','body','archetype','scale','bonuses','traits'].filter(key=>Object.hasOwn(data,key)).map(key=>[key,data[key]]))), next=baseline(changed);
   for(const key of ['atk','def','spd'] as const)unit.base[key]+=next.base[key]-old.base[key];
-  if(next.scale==='hero')unit.base.hpMax=Math.max(1,Math.min(singleLifeLimit(unit.damageModel),unit.base.hpMax+next.base.hpMax-old.base.hpMax));
+  if(next.scale==='hero')unit.base.hpMax=Math.max(1,Math.min(singleLifeLimit(unit.damageModel),Math.max(unit.base.hpMax,next.base.hpMax)));
   if(next.scale==='company')unit.base.moraleMax=(unit.base.moraleMax??old.base.moraleMax??0)+(next.base.moraleMax??0)-(old.base.moraleMax??0);
   else {delete unit.base.moraleMax;delete unit.morale;}
   if(unit.formation)setMemberMaximum(unit,Math.max(1,Math.round(unit.formation.memberHp+nominalLife(next)-nominalLife(old))));
