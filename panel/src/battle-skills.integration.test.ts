@@ -40,6 +40,16 @@ it('saves battle skill changes from battle and loadout, preserves live ledgers a
     await f.service.transact(() => ({ schemaVersion: 2, storage: units.map(u => unitRecordFromCombatant(u)), rosterIds: units.map(u => u.id),
       battle: { kind: mode, snap: b.toSnapshot() }, orderDraft: mode === 'mass' ? { a: oldOrder, b: { type: 'brace' } } : {} }));
     await tab('battle');
+    const castingSkills = async () => {
+      if (mode === 'small') {
+        [...document.querySelectorAll<HTMLButtonElement>('.command-modes [data-action="grid-mode"]')].find(el => el.textContent === '技能')!.click();
+        await idle();
+      }
+      const role = mode === 'small' ? 'grid-mode' : 'formation-order';
+      return [...document.querySelectorAll<HTMLOptionElement>(`[data-role="${role}"] option`)].map(el => el.textContent!.split(' · ')[0]);
+    };
+    expect(await castingSkills()).toContain('a0'); // 已装备但正在冷却，仍需显示。
+    expect(await castingSkills()).not.toContain('a5');
     const before = f.service.snapshot();
     const skill = (i: number) => document.querySelector<HTMLInputElement>(`[data-role="loadout-skill"][data-id="${ids[i]}"]`)!;
     await click('loadout-skills');
@@ -47,6 +57,8 @@ it('saves battle skill changes from battle and loadout, preserves live ledgers a
     skill(0).click(); skill(5).click(); await click('loadout-skills-save');
     expect(document.querySelector('.loadout-skill-dialog'), document.querySelector('#toast')?.textContent).toBeNull();
     expect(savedUnit().preparedAbilityIds).toEqual(ids.slice(1));
+    expect(await castingSkills()).not.toContain('a0');
+    expect(await castingSkills()).toContain('a5');
     const expected = structuredClone(before.battle!);
     (expected.snap.combatants as Combatant[]).find(u => u.id === 'a')!.preparedAbilityIds = ids.slice(1);
     if (mode === 'mass') {

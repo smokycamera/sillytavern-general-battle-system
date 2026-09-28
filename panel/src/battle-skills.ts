@@ -5,6 +5,11 @@ export function learnedSkills(unit: Combatant) {
   return unit.abilities.filter(a => !a.itemSourceId && !a.equipmentSourceId);
 }
 
+/** 施放列表只列已准备技能，物品与装备提供的能力不占技能位。 */
+export function battleAbilities(unit: Combatant) {
+  return unit.abilities.filter(a => unit.rulesVersion !== 'v2' || a.itemSourceId || a.equipmentSourceId || unit.preparedAbilityIds?.includes(a.id));
+}
+
 export function battleSkillChangeReason(battle: SmallBattle | MassBattle, unitId: string): string | undefined {
   if (battle.isOver()) return '战斗已结束，请先提交战果';
   const unit = battle.combatants.find(u => u.id === unitId);
