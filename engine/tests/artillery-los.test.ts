@@ -15,7 +15,8 @@ function setup(weaponClass: string, wall = false, sidearm = false) {
   const actor = make('gun', 'ally', { body: 'vehicle', weaponClass: sidearm ? 'sword' : weaponClass,
     ...(sidearm ? { sidearmClass: weaponClass, sidearmLevel: 3 } : {}),
     abilityBlueprints: [{ id: 'generic:physical-single:ranged', level: 3, name: '炮击' }] });
-  const blocker = make('screen', 'ally'), target = make('target', 'enemy');
+  // A vehicle can now fire over a human ally. Use an equal-height blocker for the blocking contract.
+  const blocker = make('screen', 'ally', { body: 'large' }), target = make('target', 'enemy');
   const field = standardField(); field.tiles.fill('open');
   const battle = new SmallBattle({ combatants: [actor, blocker, target], rules: V4_D20, traitRegistry: registry, battlefield: field, seed: 'artillery-los' });
   battle.start(); battle.turnOrder = [actor.id, blocker.id, target.id]; battle.turnIndex = 0;
@@ -54,6 +55,14 @@ describe('普通直射、直射火炮与曲射火炮', () => {
       expect(JSON.stringify(battle.toSnapshot())).toBe(before);
     }
   });
+  it.each(['rifle', 'cannon'])('%s：载具可越过小体型友军，同体型仍遮挡', weaponClass => {
+    const { battle, actor, blocker, target } = setup(weaponClass);
+    expect(shot(battle, target.id).enabled).toBe(false);
+    blocker.body = 'human';
+    expect(shot(battle, target.id).enabled).toBe(true);
+    battle.attack(actor.id, target.id);
+    expect(battle.log.some(entry => entry.resolution?.defenderId === target.id)).toBe(true);
+  });
   it.each(['cannon', 'indirect-cannon'])('%s：地形遮挡的射击技能沿用武器LOS，曲射仍需观察者', weaponClass => {
     const { battle, actor, target } = setup(weaponClass, true);
     expect(battle.visibleCombatants(actor.side)).toContain(target);
@@ -80,7 +89,7 @@ describe('普通直射、直射火炮与曲射火炮', () => {
   });
   it.each(['cannon', 'indirect-cannon'])('会战%s：预备队隔着己方前线射击的军令预览与结算一致', weaponClass => {
     const actor = make('gun', 'ally', { scale: 'company', hpMax: 20, body: 'vehicle', weaponClass });
-    const observer = make('observer', 'ally', { scale: 'company', hpMax: 20 });
+    const observer = make('observer', 'ally', { scale: 'company', hpMax: 20, body: 'large' });
     const target = make('target', 'enemy', { scale: 'company', hpMax: 20 });
     actor.tags.push('rank:reserve'); observer.tags.push('rank:front'); target.tags.push('rank:front');
     const battle = new MassBattle({ combatants: [actor, observer, target], rules: V4_TW, traitRegistry: registry, seed: 'artillery-mass' }); battle.start();

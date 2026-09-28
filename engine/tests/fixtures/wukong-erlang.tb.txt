@@ -1,0 +1,5 @@
+<tb>
+<field env="mountain" light="day"/>
+<spawn name="孙悟空" side="ally" scale="hero" hp="1000" hpMax="1000" level="10" body="human" speed="5" weapon="如意金箍棒:长兵器L9+6伤害+4强度" armor="锁子黄金甲:轻甲L8+6防护" skills="如意棒法:物理单体近战L9+8伤害,筋斗云:buff+飞行L9,身外身法:单体召唤L8,金刚不坏:buff+守护L9,定身法:debuff定身L8" traits="飞行,狂暴,不溃,精锐"/>
+<spawn name="二郎神" side="enemy" scale="hero" hp="950" hpMax="950" level="10" body="human" speed="5" weapon="三尖两刃刀:长兵器L9+6伤害+4精度" armor="银甲白袍:中甲L8+6防御" skills="三尖两刃刀法:物理单体近战L9+6伤害,八九玄功:buff+守护L9,天眼照破:debuff+易伤L8,纵犬咬噬:单体召唤L8,撒豆成兵:群体召唤L8" traits="飞行,守护,老练,精锐"/>
+</tb>
