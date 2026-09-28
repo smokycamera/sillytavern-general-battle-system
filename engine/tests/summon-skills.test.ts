@@ -86,6 +86,7 @@ describe('单体／群体召唤及召唤武器', () => {
       expect(b.useAbility(a.id, ability.id, a.id).ok).toBe(true);
       if (b instanceof MassBattle) { b.issue({ unitId: e.id, type: 'hold' }); b.resolveRound(); }
       const u = b.combatants.find(u => u.summonerId === a.id)!;
+      expect(u.name).toBe(`${a.name}的${group ? '召唤群体' : '召唤个体'}`);
       expect(u.scale).toBe(group ? 'company' : 'hero'); expect(u.bornRound).toBe(1);
       expect(u.weapon!.recipe!.bonuses).toMatchObject({ range: 5, damage: 5 });
       expect(a.resources.SP).toBe(sp - ability.cost!.amount);
