@@ -368,6 +368,7 @@ export interface Combatant {
 }
 
 export interface GenAudit {
+  variance?: import('./instance-variance.js').InstanceVariance;
   formulaVersion?: string;
   seed: string;
   /** 各属性相对基准的浮动量 */
@@ -460,6 +461,7 @@ export type DamageChannel = 'kinetic' | 'thermal' | 'arcane';
 export type BodyKind = 'human' | 'large' | 'vehicle' | 'giant';
 /** 规范化且冻结的 T/P/S/Q/F 中装备职责；训练 T 不在装备配方中。 */
 export interface ItemRecipe {
+  variance?: import('./instance-variance.js').InstanceVariance;
   /** Identifies the body-strength formula baked into this physical instance. */
   balanceVersion?: 'unified-v1';
   noVariance?: boolean;

@@ -1,3 +1,4 @@
+import { instanceMultiplier, instanceRating } from './instance-variance.js';
 import { isWoundModel, UNIFIED_WOUNDS, UNIFIED_SPLASH, powerIndex } from './balance.js';
 import { compileWeapon } from './gen/equipment.js';
 import { isCannonWeapon, isRangedWeapon } from './loadout.js';
@@ -48,7 +49,7 @@ function projectWeaponStrength(weapon: Weapon, model?: Combatant['damageModel'])
   const from=recipe.balanceVersion==='unified-v1'?'wounds-v2':undefined;
   if ((from==='wounds-v2') === (model==='wounds-v2')) return weapon;
   const spec={mechanism:recipe.mechanism,power:recipe.power,bonuses:recipe.bonuses,stabilized:recipe.stabilized,enchantment:recipe.enchantment};
-  const context={id:weapon.id,name:weapon.name,seed:recipe.seed,body:recipe.size,quality:recipe.quality,creatingUnit:true};
+  const context={id:weapon.id,name:weapon.name,seed:recipe.seed,body:recipe.size,quality:recipe.quality,creatingUnit:true,variance:recipe.variance??false as const};
   // Historical noVariance was not serialized. Match the original dice without a new roll;
   // if rounding makes both modes indistinguishable, prefer the normal seeded recipe.
   for (const noVariance of recipe.noVariance===undefined?[false,true]:[recipe.noVariance]) {
@@ -79,11 +80,11 @@ export function anchoredWeapon(weapon:Weapon|undefined,ammo:'he'|'ap'='he',model
   const power=weapon.recipe?.power??weapon.level??5,curve=curveAt(power),old=diceAvg(curve.dmgBase)+(curve.dmgAp?diceAvg(curve.dmgAp):0);
   const melee=meleeProfile(weapon);
   const ratio=combatPowerBudget(power,model)/old*(isCannonWeapon(weapon)?3:mechanism==='autocannon'?1.5:1)*(melee?.damageScale??1);
-  const base=diceAvg(weapon.baseDice)+(weapon.apDice?diceAvg(weapon.apDice):0),scaled=scaledPowerDice(base*ratio*bonusMultiplier(weapon.recipe?.bonuses, 'damage',weapon.channel??'kinetic')*(mechanism==='summon'?(weapon.damageScale??1):1));
+  const base=diceAvg(weapon.baseDice)+(weapon.apDice?diceAvg(weapon.apDice):0),scaled=scaledPowerDice(base*ratio*instanceMultiplier(weapon.recipe?.bonuses, 'damage',weapon.customized?undefined:weapon.recipe?.variance,weapon.channel??'kinetic')*(mechanism==='summon'?(weapon.damageScale??1):1));
   const artillery=isCannonWeapon(weapon),explosive=artillery&&ammo==='he'&&power>=3;
   const splash=explosive?(model==='wounds-v2'?UNIFIED_SPLASH[powerIndex(power)]:power>=10?1e9:power>=9?256:power>=8?12:power>=7?6:power>=5?4:2):mechanism==='demolition'?6:0;
   return {...weapon,powerModel:projection,ammunition:ammo,baseDice:scaled.dice,apDice:undefined,damageScale:scaled.scale,
-    penetration:Math.max(0,2*power+(['cannon','indirect-cannon','autocannon','demolition'].includes(mechanism)?2:mechanism==='heavy-rifle'?2:['firearm','rifle','energy'].includes(mechanism)?1:0)+(melee?.penetration??0)+(artillery&&ammo==='ap'?2:0)+bonusRating(weapon.recipe?.bonuses,'penetration',weapon.channel??'kinetic')),
+    penetration:Math.max(0,2*power+(['cannon','indirect-cannon','autocannon','demolition'].includes(mechanism)?2:mechanism==='heavy-rifle'?2:['firearm','rifle','energy'].includes(mechanism)?1:0)+(melee?.penetration??0)+(artillery&&ammo==='ap'?2:0)+instanceRating(weapon.recipe?.bonuses,'penetration',weapon.customized?undefined:weapon.recipe?.variance,weapon.channel??'kinetic')),
     splashTargets:splash,splashFactor:mechanism==='demolition'?0.6:0.4};
 }
 export function anchoredProtection(unit:Pick<Combatant,'armor'|'body'|'shield'|'damageModel'>,channel:DamageChannel):number {
@@ -99,7 +100,10 @@ export function anchoredProtection(unit:Pick<Combatant,'armor'|'body'|'shield'|'
   if(focus&&focus!=='balanced'){
     let left=2;for(const key of (['kinetic','thermal','arcane'] as const).filter(k=>k!==focus).sort((a,b)=>protection[b]-protection[a])){const n=Math.min(protection[key],left);protection[key]-=n;protection[focus]+=n;left-=n;}
   }
-  return Math.max(innate,protection[channel]+adjustment);
+  const nominal = protection[channel] + adjustment;
+  // Zero protection stays zero: generation does not conjure armor onto bare skin.
+  const variation = nominal > 0 ? instanceRating(armorBonus, 'protection', armor.recipe?.variance, channel) - bonusRating(armorBonus, 'protection', channel) : 0;
+  return Math.max(innate,armor.recipe?.variance?Number((nominal + variation).toPrecision(12)):nominal);
 }
 /** 高阶材料/护场提供等效耐久；24为固定同代交战基准，避免提高攻击曲线后同档全部秒杀。 */
 export function armorPowerScale(unit:Pick<Combatant,'armor'|'shield'|'damageModel'>):number {
@@ -112,17 +116,17 @@ export function armorPowerScale(unit:Pick<Combatant,'armor'|'shield'|'damageMode
 export function armorTransmission(unit:Pick<Combatant,'armor'|'body'|'shield'|'damageModel'>,channel:DamageChannel,penetration:number):number {
   const through=penetrationThrough(penetration,anchoredProtection(unit,channel));
   const armorDominates=anchoredProtection({...unit,body:'human'},channel)>=BODY[unit.body??'human'].protection[channel];
-  return isWoundModel(unit.damageModel)&&unit.armor&&armorDominates ? through**bonusMultiplier(unit.armor.recipe?.bonuses,'power') : through;
+  return isWoundModel(unit.damageModel)&&unit.armor&&armorDominates ? through**instanceMultiplier(unit.armor.recipe?.bonuses,'power',unit.armor.recipe?.variance) : through;
 }
 /** 盾牌有界覆盖按期望折算，不追加随机骰；范围/失能/充分穿透不会获得保护。 */
 export function shieldProtection(unit:Pick<Combatant,'shield'>,channel:DamageChannel):number {
   if(!unit.shield)return 0;
   const recipe=unit.shield.recipe;
-  return Math.max(0,2*(recipe?.power??3)+1-({kinetic:0,thermal:1,arcane:2}[channel])+bonusRating(recipe?.bonuses,'protection',channel));
+  return Math.max(0,2*(recipe?.power??3)+1-({kinetic:0,thermal:1,arcane:2}[channel])+instanceRating(recipe?.bonuses,'protection',recipe?.variance,channel));
 }
 export function shieldTransmission(unit:Pick<Combatant,'shield'|'status'>,channel:DamageChannel,penetration:number,area=false,canBlock=true):number {
   if(!unit.shield||unit.status!=='ready'||area||!canBlock)return 1;
-  const coverage=Math.min(.5,.35*bonusMultiplier(unit.shield.recipe?.bonuses,'power'));
+  const coverage=Math.min(.5,.35*instanceMultiplier(unit.shield.recipe?.bonuses,'power',unit.shield.recipe?.variance));
   return 1-coverage*(1-penetrationThrough(penetration,shieldProtection(unit,channel)));
 }
 
@@ -174,7 +178,7 @@ export function defensePower(unit:DefensiveTarget,channel:DamageChannel,includeB
 export function overmatchMultiplier(power:number|undefined,unit:DefensiveTarget,channel:DamageChannel,penetration:number,area=false,canBlock=true,includeBarrier=false,curve?:RulePack['overmatchCurve']):number {
   const armor=gradeOvermatch(power,defensePower(unit,channel,includeBarrier),penetration,anchoredProtection(unit,channel),curve);
   if(!unit.shield||unit.status!=='ready'||area||!canBlock||armor===1)return armor;
-  const coverage=Math.min(.5,.35*bonusMultiplier(unit.shield.recipe?.bonuses,'power'));
+  const coverage=Math.min(.5,.35*instanceMultiplier(unit.shield.recipe?.bonuses,'power',unit.shield.recipe?.variance));
   const resistance=shieldProtection(unit,channel),through=penetrationThrough(penetration,resistance);
   const shieldPower=Math.max(0,(resistance-1+({kinetic:0,thermal:1,arcane:2}[channel]))/2);
   const shield=gradeOvermatch(power,shieldPower,penetration,resistance,curve);
@@ -183,7 +187,7 @@ export function overmatchMultiplier(power:number|undefined,unit:DefensiveTarget,
 }
 export function armorEffectLabel(unit:Pick<Combatant,'armor'|'shield'|'damageModel'>):string {
   return isWoundModel(unit.damageModel)
-    ? `部分穿透吸能强度×${Number(bonusMultiplier(unit.armor?.recipe?.bonuses,'power').toFixed(2))}；充分穿透后无额外减伤${unit.armor?.powerScale!==undefined||unit.shield?.powerScale!==undefined?'（旧耐久覆盖不参与新规则）':''}`
+    ? `部分穿透吸能强度×${Number(instanceMultiplier(unit.armor?.recipe?.bonuses,'power',unit.armor?.recipe?.variance).toFixed(2))}；充分穿透后无额外减伤${unit.armor?.powerScale!==undefined||unit.shield?.powerScale!==undefined?'（旧耐久覆盖不参与新规则）':''}`
     : `装甲等效耐久×${Number(armorPowerScale(unit).toFixed(2))}（旧规则）`;
 }
 /** 没有手动指定时，火炮按公开目标防护和人数选择有效毁伤较高的弹种。 */

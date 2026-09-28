@@ -1,3 +1,4 @@
+import { instanceVarianceLabel } from '../../engine/src/instance-variance.js';
 import { hitChanceText, hitDamageText, hitDamageDetails } from './damage-preview.js';
 import { version } from '../../package.json';
 import { renderWorldbookSettings, captureWorldbookDraft, worldbookDraftPatch, type WorldbookDraft } from './worldbook-settings.js';
@@ -1146,7 +1147,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
 
   // 生成审计
   if (u.genAudit) {
-    rows.push(`<details><summary>生成计算依据</summary><div class="eq dim"><b>随机记录号</b> <code>${esc(u.genAudit.seed)}</code>${u.genAudit.deltas && Object.keys(u.genAudit.deltas).length ? `｜浮动：${esc(JSON.stringify(u.genAudit.deltas))}` : ''}</div></details>`);
+    rows.push(`<details><summary>生成计算依据</summary><div class="eq dim"><b>随机记录号</b> <code>${esc(u.genAudit.seed)}</code>${u.genAudit.variance ? '<br>' + esc(instanceVarianceLabel(u.genAudit.variance)) : ''}${u.genAudit.deltas && Object.keys(u.genAudit.deltas).length ? `｜浮动：${esc(JSON.stringify(u.genAudit.deltas))}` : ''}</div></details>`);
   }
   return rows.join('');
 }

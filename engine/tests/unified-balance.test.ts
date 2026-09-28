@@ -48,7 +48,7 @@ describe('V6 unified formulas and bounded signed enhancements',()=>{
    // Legacy generation remains byte-for-byte frozen; known recipe provenance is explicit.
    old.recipe!.noVariance=noVariance;
    const saved=structuredClone(old);
-   const current=compileWeapon({mechanism,power},{...context,damageModel:'wounds-v2'});
+   const current=compileWeapon({mechanism,power},{...context,damageModel:'wounds-v2',variance:false});
    expect(mean(anchoredWeapon(old,'he','wounds-v2')!)).toBeCloseTo(mean(anchoredWeapon(current,'he','wounds-v2')!),8);
    expect(old).toEqual(saved);
    if(mechanism==='rifle')expect(old.baseDice).toBe(current.baseDice);

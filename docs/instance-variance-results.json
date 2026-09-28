@@ -1,0 +1,80 @@
+{
+  "baselineCommit": "c51aada22024a7c12c6a7a09d1f180861e867730",
+  "battlesExecuted": 1200,
+  "pairedBattles": 600,
+  "errors": 0,
+  "old": {
+    "battles": 600,
+    "result": {
+      "B": 110,
+      "A": 452,
+      "draw": 38
+    },
+    "meanRounds": 6.756666666666667,
+    "medianRounds": 5.0,
+    "oneShotBattles": 109
+  },
+  "bands": {
+    "battles": 600,
+    "result": {
+      "B": 112,
+      "A": 454,
+      "draw": 34
+    },
+    "meanRounds": 6.733333333333333,
+    "medianRounds": 5.0,
+    "oneShotBattles": 108
+  },
+  "changedOutcomes": 18,
+  "modes": {
+    "small": {
+      "old": {
+        "battles": 300,
+        "result": {
+          "B": 76,
+          "A": 222,
+          "draw": 2
+        },
+        "meanRounds": 7.3133333333333335,
+        "medianRounds": 5.0,
+        "oneShotBattles": 109
+      },
+      "bands": {
+        "battles": 300,
+        "result": {
+          "B": 76,
+          "A": 222,
+          "draw": 2
+        },
+        "meanRounds": 7.246666666666667,
+        "medianRounds": 5.0,
+        "oneShotBattles": 108
+      }
+    },
+    "mass": {
+      "old": {
+        "battles": 300,
+        "result": {
+          "A": 230,
+          "draw": 36,
+          "B": 34
+        },
+        "meanRounds": 6.2,
+        "medianRounds": 5.0,
+        "oneShotBattles": 0
+      },
+      "bands": {
+        "battles": 300,
+        "result": {
+          "draw": 32,
+          "B": 36,
+          "A": 232
+        },
+        "meanRounds": 6.22,
+        "medianRounds": 5.0,
+        "oneShotBattles": 0
+      }
+    }
+  },
+  "note": "A is the designed stronger/different team in many scenarios, not a balanced player faction. Paired sensitivity audit, not a universal win-rate estimate."
+}

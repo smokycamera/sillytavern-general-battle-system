@@ -75,7 +75,7 @@ export function attachCarriedItems(unit: Combatant, items: CarriedItem[]): Comba
 }
 
 /** 物品编译不依赖持有者等级，也不生成临时人物；效果创建后冻结。 */
-export function compileItem(spec: ItemSpecification, identity: Pick<EquipmentContext, 'id' | 'name' | 'seed' | 'creatingUnit' | 'damageModel'>): ItemMechanics {
+export function compileItem(spec: ItemSpecification, identity: Pick<EquipmentContext, 'id' | 'name' | 'seed' | 'creatingUnit' | 'damageModel' | 'noVariance' | 'variance'>): ItemMechanics {
   validateEnhancements(spec.bonuses, spec.kind);
   const context = { ...identity, body: spec.body, quality: spec.quality, bonuses: spec.bonuses };
   switch (spec.kind) {
