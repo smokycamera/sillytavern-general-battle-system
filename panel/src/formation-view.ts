@@ -1,3 +1,4 @@
+import { abilityCost } from '../../engine/src/resources.js';
 import { hitChanceText, hitDamageText, hitDamageDetails } from './damage-preview.js';
 import { ZONE_NAMES, visibleBattleZones } from '../../engine/src/area-effects.js';
 import { tbWeaponShortName } from '../../engine/src/weapon-name.js';
@@ -65,7 +66,7 @@ export function renderFormationBattle(b: MassBattle, view: FormationView, drafts
       + (preview?.areaPreviews?.length ? '<div class="formation-area-preview">' + preview.areaPreviews.map((hit) => { const affected = visible.find((u) => u.id === hit.targetId); return affected ? '<p>' + esc(affected.name) + ' · 命中率' + hitChanceText(hit) + ' · 命中后伤害' + hitDamageText(hit) + (affected.scale === 'hero'||hasMemberHealth(affected) ? '生命' : '人') + '</p>' : ''; }).join('') + '</div>' : '')
       + (preview?.preview ? '<details><summary>伤害详情</summary><p>' + hitDamageDetails(preview.preview, preview.preview.damageModel === 'member-health' || selectedTarget && selectedTarget.scale === 'hero' ? '生命' : '人') + '</p></details>' : '')
       + '<p class="' + (preview?.reason ? 'grid-reason' : '') + '">' + esc(previewText(b, order)) + '</p>'
-      + (ability?.cost && source ? '<div class="preview-cost">' + esc(source.name) + ' · ' + (ability.itemSourceId ? '消耗品' : ability.cost.resource === 'SP' ? '精力' : '预备资源') + ' ' + ability.cost.amount + '/' + (source.resources[ability.cost.resource] ?? 0) + '，支援阶段扣除</div>' : '')
+      + (ability?.cost && source ? '<div class="preview-cost">' + esc(source.name) + ' · ' + (ability.itemSourceId ? '消耗品' : ability.cost.resource === 'SP' ? '精力' : '预备资源') + ' ' + abilityCost(source, ability)!.amount + '/' + (source.resources[ability.cost.resource] ?? 0) + '，支援阶段扣除</div>' : '')
       + '<small>基于当前已知信息；前序阶段和未发现的占位可能使后续任务受阻。</small></div>' : ''}
     <div class="formation-submit"><button class="primary" data-action="formation-issue" data-unit="${esc(actor.id)}" data-round="${b.round}" ${editable && order && !preview?.reason ? '' : 'disabled'}>${s.issued ? '确认改令' : '下达此任务'}</button>
       ${s.draft ? '<button data-action="formation-cancel" data-unit="' + esc(actor.id) + '">取消草案</button>' : s.issued ? '<button data-action="formation-revoke" data-unit="' + esc(actor.id) + '" ' + (editable ? '' : 'disabled') + '>撤回军令</button>' : ''}</div>

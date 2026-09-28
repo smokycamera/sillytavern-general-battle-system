@@ -1,3 +1,4 @@
+import { actionPotential } from '../skill-tactics.js';
 import { hasteMagnitude, hasteAttackScale } from '../haste.js';
 import { commanderScores, normalizeCommanderProfiles, type CommanderProfiles } from '../commander-profile.js';
 import { validateAccessories } from '../items.js';
@@ -10,7 +11,7 @@ import { upgradeCombatSkills } from '../skill-upgrade.js';
 import { normalizeTactic, type TacticalPreference } from '../tactical-preference.js';
 import { calibrateAutocannon, calibrateWeaponHands } from '../gen/equipment.js';
 import { rangedScreen, rangedScreenReason } from '../guard-screen.js';
-import { spCapacity } from '../resources.js';
+import { spCapacity, abilityCost, prepareResourceModel, recoverSp, spRecovery, skillExertion, resourceRound } from '../resources.js';
 import type { EffectOp } from '../types.js';
 import { skillWeapon, skillResourceChange, skillResourceCost, conjureSkillUnit, conjuredTemplate, summonedMemberLife } from '../skill-runtime.js';
 import { applySkillTrait } from '../skill-effects.js';
@@ -194,6 +195,7 @@ export class MassBattle {
     for (const unit of this.combatants) { validateConcealment(unit.tacticalRevealed); validateVanguardOrigin(unit.vanguardOrigin, unit.side); }
     this.rules = opts.rules ?? MASS_TW;
     if(this.rules.combatModel)for(const unit of this.combatants){prepareCombatModel(unit,this.rules);upgradeCombatSkills(unit);}
+    for (const unit of this.combatants) prepareResourceModel(unit, this.rules);
     for (const u of this.combatants) { validateFlightState(u.airborne); validateFormationPosition(u.formationPosition); validateWounded(u); validateBarrier(u.barrier); validateAreas(u); validateAccessories(u); validateMount(u); validateMoraleState(u.moraleState); }
     for (const unit of this.combatants) reconcileDamageMorale(unit);
     if (this.rules.resolutionVersion !== 'v2' && this.combatants.some((u) => u.airborne || u.formationPosition !== undefined)) throw new Error('空域位置需要V2会战规则');
@@ -843,11 +845,14 @@ export class MassBattle {
           return this.v2OrderReason(order, world) ? 0 : this.previewAttackWithEnvironment(this.orderAttackOptions(order, world), world).expectedDamage;
         })));
     };
-    if (u.fatigue >= 2) {
-      const rested = { ...u, conditions: [...u.conditions], fatigue: fatigueAfter(u, 0) };
+    if (u.fatigue >= 2 || u.resourceModel && !hasteOnly) {
+      const rested = { ...u, conditions: [...u.conditions], resources: { ...u.resources }, fatigue: fatigueAfter(u, 0, !!u.resourceModel),
+        abilityState: u.abilityState.map(s => ({ ...s, cdLeft: u.resourceModel ? Math.max(0, s.cdLeft - 1) : s.cdLeft })) };
+      rested.resources.SP = resourceRound((rested.resources.SP ?? 0) + spRecovery(rested, true));
       // V2直接由fatigue计算修正，休整预估不能再叠加旧版fat-*状态。
       // 比较休整对后续两个交战窗口的收益，避免力竭后永远重复低效攻击。
-      const gain = (futureValue(rested) - futureValue(u)) * 1.5;
+      const context = { ...this.observationContext(planning), units: known };
+      const gain = (u.resourceModel ? actionPotential(context, rested) - actionPotential(context, u) : futureValue(rested) - futureValue(u)) * 1.5;
       if (gain > 0) candidates.push({ order: { unitId: u.id, type: 'hold' }, score: gain });
     }
     if (hasFlightAbility(u) || isAirborne(u) || isRangedWeapon(u.weapon) || isRangedWeapon(u.sidearm)) {
@@ -1052,7 +1057,7 @@ export class MassBattle {
             try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'mass', ability.bonuses, this.rules.damageModel) ?? this.summonUnit?.(effect.templateId, actor.side, id); } catch { invalid = true; break; }
             const node = FORMATION_NODES.find((node) => node.side === actor.side && node.wing === formationNode(actor).wing && node.rank === 'reserve')!;
             if (!unit || [...this.combatants, ...stagedBirths, ...born].filter((u) => !this.isAttached(u.id) && u.status === 'ready' && formationNode(u).id === node.id).length >= 3) { invalid = true; break; }
-            prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit);
+            prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules);
             unit.id = id; unit.summonerId = actor.id; unit.bornRound = this.round;
             if (conjuredTemplate(effect.templateId)) unit.name = `${actor.name}的${unit.name}`;
             setFormation(unit, node); born.push(unit);
@@ -1078,7 +1083,8 @@ export class MassBattle {
         this.orderReceipt(order, '支援', 'executed');
         const actualActor = this.byId(actor.id);
         revealUnit(this.observationContext(), actualActor);
-        if (ability.cost) actualActor.resources[ability.cost.resource]! -= ability.cost.amount;
+        const cost = abilityCost(actualActor, ability);
+        if (cost) actualActor.resources[cost.resource] = actualActor.resourceModel && cost.resource === 'SP' ? resourceRound((actualActor.resources[cost.resource] ?? 0) - cost.amount) : (actualActor.resources[cost.resource] ?? 0) - cost.amount;
         const key = ability.cooldownGroup ?? ability.id;
         const state = actualActor.abilityState.find((s) => s.abilityId === key) ?? { abilityId: key, cdLeft: 0, used: 0 };
         if (!actualActor.abilityState.includes(state)) actualActor.abilityState.push(state);
@@ -1133,7 +1139,7 @@ export class MassBattle {
           } else if (effect.op === 'resource') for (const affected of this.supportTargets(actor, ability, target, support)) {
             if (!resourceTargets.has(affected.id)) {
               const paid = { ...affected, resources: { ...affected.resources } };
-              if (affected.id === actor.id && ability.cost) paid.resources[ability.cost.resource] = (paid.resources[ability.cost.resource] ?? 0) - ability.cost.amount;
+              if (affected.id === actor.id && cost) paid.resources[cost.resource] = (paid.resources[cost.resource] ?? 0) - cost.amount;
               resourceTargets.set(affected.id, paid);
             }
             const paid = resourceTargets.get(affected.id)!, amount = skillResourceChange(paid, effect);
@@ -1144,7 +1150,7 @@ export class MassBattle {
           }
         }
         changes.push(() => {for(const unit of born)unit.nonLethal=this.nonLethal;this.combatants.push(...born);});
-        exertion.set(actor.id, 1);
+        exertion.set(actor.id, skillExertion(actor, ability));
         this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id], text: `${actor.name} 的【${ability.name}】占用所属编队${order.haste ? '加速任务' : '本轮主任务'}` });
       }
       changes.forEach((apply) => apply());
@@ -1181,6 +1187,8 @@ export class MassBattle {
         const chosen = this.hasteOrders.get(actor.id) ?? this.recommendV2Order(actor.id, false, true);
         if (chosen) hastePlans.push({ ...chosen, haste: true });
       }
+      const mainExertion = new Map(exertion);
+      if (this.rules.resourceModel) exertion.clear();
       if (hastePlans.length) {
         this.lastPhases.push('加速'); this.beginPhase('加速');
         const valid: Order[] = [];
@@ -1199,11 +1207,16 @@ export class MassBattle {
         attacks('加速', structuredClone(this.combatants), valid.filter(p => ['attack','volley','charge'].includes(p.type)));
         this.resolveFlightStates(); this.finishPhase('加速');
       }
+      if (this.rules.resourceModel) for (const [id, amount] of mainExertion) exertion.set(id, resourceRound((exertion.get(id) ?? 0) + amount));
       this.lastPhases.push('重整'); this.beginPhase('重整');
       this.settleMorale();
       for (const u of this.combatants) {
         if (settleConcealment(this.observationContext(), u, plans.some((p) => p.unitId === u.id && p.type === 'hold') && !exertion.get(u.id) && !this.damageTaken.get(u.id))) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 在掩护中休整，重新潜伏` });
-        settleFatigue(u, exertion.get(u.id) ?? 0);
+        const incapacitated = u.conditions.some(c => c.dur > 0 && this.conditions.get(c.id)?.skipTurn);
+        const fullRest = !incapacitated && !u.suppression && !reactions.has(u.id) && !exertion.get(u.id)
+          && plans.some(p => p.unitId === u.id && p.type === 'hold')
+          && !hastePlans.some(p => p.unitId === u.id && p.type !== 'hold');
+        if (!u.resourceModel || u.status === 'ready' && u.bornRound !== this.round) settleFatigue(u, exertion.get(u.id) ?? 0, fullRest);
         for (const s of u.abilityState) s.cdLeft = Math.max(0, s.cdLeft - 1);
         for (const condition of u.conditions) {
           if (condition.id === 'poisoned' && !poisonFactor(u)) { condition.dur = 0; continue; }
@@ -1216,6 +1229,7 @@ export class MassBattle {
             this.defeatUnit(u, this.combatants.find((source) => source.id === condition.sourceId));
           }
         }
+        if (u.bornRound !== this.round) recoverSp(u, fullRest, incapacitated);
         const regeneration = regenerationAmount(u, this.traitRegistry, this.conditionMap());
         for (const condition of u.conditions) if (condition.dur !== undefined) condition.dur--;
         u.conditions = u.conditions.filter((c) => c.dur === undefined || c.dur > 0);
@@ -1693,7 +1707,8 @@ export class MassBattle {
     const stateId = ability.cooldownGroup ?? abilityId;
     const state = u.abilityState.find((s) => s.abilityId === stateId) ?? { abilityId: stateId, cdLeft: 0, used: 0 };
     if (!u.abilityState.some((s) => s.abilityId === stateId)) u.abilityState.push(state);
-    if (ability.cost) u.resources[ability.cost.resource]! -= ability.cost.amount;
+    const cost = abilityCost(u, ability);
+    if (cost) u.resources[cost.resource] = u.resourceModel && cost.resource === 'SP' ? resourceRound((u.resources[cost.resource] ?? 0) - cost.amount) : (u.resources[cost.resource] ?? 0) - cost.amount;
     state.used += 1;
 
     const logBits = [`${this.zoneOf(u)}｜${u.name} 发动【${ability.name}】`];

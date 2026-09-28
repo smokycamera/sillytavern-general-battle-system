@@ -30,7 +30,7 @@ import { gridWeaponRange } from '../../engine/src/small/weapon-range.js';
 import { formationWeaponRange } from '../../engine/src/melee.js';
 import { movementLabel } from '../../engine/src/tactics.js';
 const resourceLabel = (key: string) => key === 'SP' ? '精力' : key === 'reserve' ? '预备兵力' : key.startsWith('item:') ? '消耗品' : key;
-import { spCapacity } from '../../engine/src/resources.js';
+import { spCapacity, abilityCost, spRecovery, prepareResourceModel, skillExertion, resourceRound } from '../../engine/src/resources.js';
 import { PROMPT_SECTIONS, applySettlementPrompt, promptSelected, selectPromptEntries, renderPromptSettings, type PromptSectionId } from './prompt-settings.js';
 import { narrativeDeploymentIds } from './narrative-state.js';
 import { AutoBattleLoop, yieldBattleFrame } from './auto-battle.js';
@@ -51,7 +51,7 @@ import {
   generateUnit, traitCatalog, traitRegistry, resolveTraitId,
   SmallBattle, MassBattle, battleXpAwardsForBothSides, applyXp, xpProgress, xpLabel,
   armorDR, fieldModsFor, LITE_D20,
-  V5_D20, V6_D20, V8_OVERFLOW_D20, V8_OVERFLOW_TW, isAirborne, abilityUsabilityReason,
+  V5_D20, V6_D20, V9_OVERFLOW_D20, V9_OVERFLOW_TW, isAirborne, abilityUsabilityReason,
   generatedField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
   FORMATION_NODES, formationNode, concealmentLabel,
   type Combatant, type GenerateInput, type Order, type BattleLogEntry, type Side,
@@ -535,7 +535,7 @@ function restore(): void {
   }
   // 旧存档已结算标记也封口，不能因旧版缺少完整战果 id 而重写最新档案。
   const restoredBattle = currentBattle();
-  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);}
+  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V9_OVERFLOW_D20);}
   if (restoredBattle && state.xpSettled) {
     const id = battleOutcomeId(state.mass ? 'mass' : 'small', restoredBattle.seed);
     if (!state.committedOutcomeIds.includes(id)) state.committedOutcomeIds.push(id);
@@ -604,7 +604,7 @@ function defaultRank(u: Pick<Combatant, 'archetype'>): 'front' | 'rear' | 'reser
 async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {}): Promise<void> {
   // 特质去重：AI 标签/面板勾选可能重复给同一特质
   const { unit } = generateUnit({ ...input, rulesVersion: 'v2', damageModel: 'wounds-v2', era: undefined, traits: [...new Set(input.traits)] }, { registry: reg });
-  prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit);
+  prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit); prepareResourceModel(unit, V9_OVERFLOW_D20);
   // id 去重
   state.idSeq++;
   state.roster.push(unit);
@@ -618,7 +618,7 @@ async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {})
 /** 储存器档案实体化为本场编制，保留稳定 id、当前兵力、状态和玩家编辑过的基础属性。 */
 function materializeStorageUnit(r0: RosterUnit): Combatant {
   const unit=materializeUnitRecord(r0, reg, { era: state.era });
-  if(unit.rulesVersion==='v2'){prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);}
+  if(unit.rulesVersion==='v2'){prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V9_OVERFLOW_D20);}
   return unit;
 }
 
@@ -1055,7 +1055,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   rows.push(`<span>攻 <b>${atkPlus}</b></span>`);
   rows.push(`<span>防 <b>${u.base.def}</b></span>`);
   rows.push(`<span>速 <b>${u.base.spd}</b></span>`);
-  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${trainingDamage(u.level,currentBattle()?.rules??V8_OVERFLOW_D20).toFixed(2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
+  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${trainingDamage(u.level,currentBattle()?.rules??V9_OVERFLOW_D20).toFixed(2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
   rows.push(`<span>${u.scale === 'hero' ? '生命' : u.body==='vehicle'?'载具数':'人数'} <b>${u.hp}/${u.base.hpMax}</b></span>`);
   if(u.combatModel&&u.scale!=='hero')rows.push(`<span>单个${u.body==='vehicle'?'载具':'成员'}最大生命 <b>${memberDurability(u)}</b></span>`);
   if (u.base.moraleMax !== undefined) rows.push(`<span>士气 <b>${u.base.moraleMax}</b></span>`);
@@ -1097,14 +1097,14 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   // 技能
   if (u.abilities.length) {
     rows.push(`<b class="detail-label">技能</b>`);
-    rows.push(`<div class="detail-list">${u.abilities.map((a) => `<div><b>${esc(a.name)}</b> L${a.power??5}${esc(enhancementLabel(a.bonuses))}${a.desc && (u.rulesVersion !== 'v2' || a.effectVersion) ? ` <span class="dim">${esc(a.desc)}</span>` : ''}<div class="sub">${abilityEffectLabel(a, u).map(esc).join('；')}</div>${u.rulesVersion === 'v2' ? '<span class="dim"> · 已学 · ' + esc(abilityUsabilityReason(u, a) ?? '已准备可用') + (a.cost ? ' · ' + esc(resourceLabel(a.cost.resource)) + ' ' + a.cost.amount : '') + '</span>' : ''}</div>`).join('')}</div>`);
+    rows.push(`<div class="detail-list">${u.abilities.map((a) => `<div><b>${esc(a.name)}</b> L${a.power??5}${esc(enhancementLabel(a.bonuses))}${a.desc && (u.rulesVersion !== 'v2' || a.effectVersion) ? ` <span class="dim">${esc(a.desc)}</span>` : ''}<div class="sub">${abilityEffectLabel(a, u).map(esc).join('；')}</div>${u.rulesVersion === 'v2' ? '<span class="dim"> · 已学 · ' + esc(abilityUsabilityReason(u, a) ?? '已准备可用') + (a.cost ? ' · ' + esc(resourceLabel(a.cost.resource)) + ' ' + abilityCost(u, a)!.amount : '') + '</span>' : ''}</div>`).join('')}</div>`);
   }
   if (u.barrier) rows.push('<p class="sub">屏障剩余 '+u.barrier.remaining+' 点，可继续吸收伤害；剩余 '+u.barrier.duration+' 轮</p>');
   if (u.weapon?.recipe?.stabilized) rows.push('<div class="sub">车载行进稳定 · 移动射击免罚 · 仍须装填且可能遭近战借机</div>');
   if (u.rulesVersion === 'v2') rows.push(`<div class="sub">${esc(equipmentLoadLabel(u))}</div>`);
   if (u.rulesVersion === 'v2' && u.body && u.body !== 'human') rows.push(`<div class="sub">${({ large: '大型身体', giant: '巨型身体', vehicle: '车辆平台' })[u.body]} · 有效防护 ${protection('kinetic')}/${protection('thermal')}/${protection('arcane')}（动能/热能/奥术） · 负重容量${BODY[u.body].capacity}</div>`);
   if (looseFormation(u)) rows.push('<div class="sub">疏散队形 · 未接敌时范围暴露减半 · 近战展开减半、防御降低1；固守后收拢</div>');
-  if (u.rulesVersion === 'v2') rows.push('<div class="sub">移动 ' + movementLabel(u, plannedFieldTags()) + ' · 基础速度' + (u.speedTier ?? BODY[u.body ?? 'human'].movement) + '档 · 精力 ' + (u.resources.SP ?? 0) + '/' + spCapacity(u) + '</div>');
+  if (u.rulesVersion === 'v2') rows.push('<div class="sub">移动 ' + movementLabel(u, plannedFieldTags()) + ' · 基础速度' + (u.speedTier ?? BODY[u.body ?? 'human'].movement) + '档 · 精力 ' + (u.resources.SP ?? 0) + '/' + spCapacity(u) + (u.resourceModel ? ' · 自然恢复 ' + spRecovery({ ...u, status: 'ready', resources: { ...u.resources, SP: 0 } }) + '/轮 · 空过休整恢复×3 · 疲劳 ' + u.fatigue + '/4' : '') + '</div>');
   if(u.combatModel&&u.scale!=='hero')rows.push('<p class="sub">人数与成员耐久分别结算。参战规模随现员增长，地形与阵位限制展开；减员后火力同步下降。</p>');
   if(u.combatModel&&u.scale==='hero'&&u.moraleState?.damagePenalty)rows.push('<p class="sub">累计受创压力 '+u.moraleState.damagePenalty+'，影响本场士气；不溃能力免疫惊退。</p>');
   if (u.mount) rows.push('<div class="sub">骑乘 · 占格更大 · 机动提高 · 不增加人员或生命</div>');
@@ -1536,7 +1536,7 @@ function loadoutSkillContext(id: string) {
   const current = currentBattle();
   const battle = current && !state.committedOutcomeIds.includes(battleIdOf(current)) ? current : undefined;
   const record = state.storage.find(r => r.id === id && visibleUnitRecord(r));
-  const unit = battle ? battle.combatants.find(u => u.id === id && u.side === 'ally') : record?.snapshot;
+  const unit = battle ? battle.combatants.find(u => u.id === id && u.side === 'ally') : record?.snapshot && { ...record.snapshot, resourceModel: 'endurance-v1' as const };
   return { battle, record, unit };
 }
 
@@ -1554,7 +1554,7 @@ function renderLoadoutSkills(): string {
     ${stale || locked ? `<p class="grid-reason">${stale ? '档案已更新，请关闭后重新选择。' : esc(reason!)}</p>` : ''}
     <div class="loadout-skill-list">${skills.map(skill => {
       const checked = draft.selected.includes(skill.id);
-      return `<label class="loadout-skill-choice"><input type="checkbox" data-role="loadout-skill" data-id="${esc(skill.id)}" ${checked ? 'checked' : ''} ${stale || locked || !checked && draft.selected.length >= MAX_PREPARED_SKILLS ? 'disabled' : ''}><span><b>${esc(skill.name)}</b><small>${esc(skillDefinitionName(skill.definitionId ?? skill.id))} · L${skill.power ?? 5}${esc(enhancementLabel(skill.bonuses))}${skill.cost ? ' · ' + esc(resourceLabel(skill.cost.resource)) + ' ' + skill.cost.amount : ''}</small>${skill.desc ? `<small>${esc(skill.desc)}</small>` : ''}</span></label>`;
+      return `<label class="loadout-skill-choice"><input type="checkbox" data-role="loadout-skill" data-id="${esc(skill.id)}" ${checked ? 'checked' : ''} ${stale || locked || !checked && draft.selected.length >= MAX_PREPARED_SKILLS ? 'disabled' : ''}><span><b>${esc(skill.name)}</b><small>${esc(skillDefinitionName(skill.definitionId ?? skill.id))} · L${skill.power ?? 5}${esc(enhancementLabel(skill.bonuses))}${skill.cost ? ' · ' + esc(resourceLabel(skill.cost.resource)) + ' ' + (unit ? abilityCost(unit, skill)!.amount : skill.cost.amount) : ''}</small>${skill.desc ? `<small>${esc(skill.desc)}</small>` : ''}</span></label>`;
     }).join('') || '<p class="sub">这个单位还没有已学技能。</p>'}</div>
     <p class="sub">最多准备 ${MAX_PREPARED_SKILLS} 项；装备和物品附带的能力随配装提供。</p>
     <div class="row"><button class="primary" data-action="loadout-skills-save" ${stale || locked ? 'disabled' : ''}>保存选择</button><button data-action="loadout-skills-close">取消</button></div>
@@ -1625,7 +1625,7 @@ function renderAbilityDialog(): string {
           return `<option value="${esc(u.id)}" ${u.id === selected ? 'selected' : ''}>${esc(unitLabel(u, `（生命${u.hp}/${u.base.hpMax}${distance}）`))}</option>`;
         }).join('')}</select>`
       : '<span class="tag">无需选择</span>';
-  const resource = ability.cost ? `${ability.itemSourceId ? '物品剩余/消耗' : resourceLabel(ability.cost.resource)} ${actor.resources[ability.cost.resource] ?? 0}/${ability.cost.amount}` : '无消耗';
+  const resource = ability.cost ? `${ability.itemSourceId ? '物品剩余/消耗' : resourceLabel(ability.cost.resource)} ${actor.resources[ability.cost.resource] ?? 0}/${abilityCost(actor, ability)!.amount}` : '无消耗';
   const massV2 = isMassBattle(b) && b.rules.resolutionVersion === 'v2';
   const unavailable = massV2 ? b.abilityOrderReason(actor.id, ability.id, selected) : smallOption?.reason;
   const recoveryTarget = targets.find((u) => u.id === selected);
@@ -1660,8 +1660,9 @@ function massOrderPreviewText(b: MassBattle, order: Order): string {
   if (result.reason) return '不可下达：' + result.reason;
   const unit = b.byId(order.unitId);
   const fatigueUnit = order.type === 'ability' && order.abilityActorId ? b.byId(order.abilityActorId) : unit;
-  const exertion = (order.type === 'charge' ? 2 : ['hold', 'brace', 'retreat'].includes(order.type) ? 0 : 1) + (result.extraFatigue ?? 0);
-  const fatigue = fatigueAfter(fatigueUnit, exertion) - fatigueUnit.fatigue;
+  const skill = order.type === 'ability' ? fatigueUnit.abilities.find(a => a.id === order.abilityId) : undefined;
+  const exertion = (skill ? skillExertion(fatigueUnit, skill) : order.type === 'charge' ? 2 : ['hold', 'brace', 'retreat'].includes(order.type) ? 0 : 1) + (result.extraFatigue ?? 0);
+  const fatigue = resourceRound(fatigueAfter(fatigueUnit, exertion, order.type === 'hold' && !order.haste) - fatigueUnit.fatigue);
   const cost = `占用编队本轮任务${fatigue ? ` · ${fatigueUnit.id !== unit.id ? '使用者' : ''}疲劳${fatigue > 0 ? '+' : ''}${fatigue}` : ''}`;
   const place = (node: typeof FORMATION_NODES[number]) => `${node.side === 'ally' ? '我方' : '敌方'}${node.wing}${{ front: '前线', rear: '支援', reserve: '预备' }[node.rank]}`;
   if (result.destination) return `${cost} · 到达${place(result.destination)}${result.layer === 'air' ? '空域' : '地面'}（阶段状态与容量变化可能调整路径）${result.reactions?.length ? ' · 起飞可能遭' + result.reactions.join('、') + '借机' : ''}`;
@@ -2574,7 +2575,7 @@ async function startSmallBattle(context?:LlmEncounterContext):Promise<void> {
     const small = new SmallBattle({
       nonLethal:state.nonLethal,
       ...(state.roster.every((u) => u.rulesVersion === 'v2') ? { battlefield } : {}),
-      rules: state.roster.every((u) => u.rulesVersion === 'v2') ? V8_OVERFLOW_D20 : LITE_D20,
+      rules: state.roster.every((u) => u.rulesVersion === 'v2') ? V9_OVERFLOW_D20 : LITE_D20,
       combatants: JSON.parse(JSON.stringify(state.roster)), seed: state.roster.every((u) => u.rulesVersion === 'v2') ? seed : undefined, traitRegistry: reg,
       summonUnit,
       field: { tags: state.roster.every((u) => u.rulesVersion === 'v2') ? tags : state.field ? [state.field] : [] },
@@ -2605,7 +2606,7 @@ async function startMassBattle(context?:LlmEncounterContext):Promise<void> {
     }
     const mass = new MassBattle({
       nonLethal:state.nonLethal,
-      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V8_OVERFLOW_TW } : {}),
+      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V9_OVERFLOW_TW } : {}),
       combatants: clones,
       traitRegistry: reg,
       commanderId: state.commanderId,

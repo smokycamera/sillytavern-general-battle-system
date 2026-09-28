@@ -272,6 +272,8 @@ export type UnitStatus = 'ready' | 'dying' | 'dead' | 'routing' | 'fled';
 export interface Combatant {
   /** 由战斗规则投影；旧快照缺省使用旧伤害模型。 */
   damageModel?: 'wounds-v1' | 'wounds-v2';
+  /** V9: level-scaled skill reserve and endurance, serialized with the battle. */
+  resourceModel?: 'endurance-v1';
   battleZones?: import('./area-effects.js').BattleZone[];
   barrier?: { remaining: number; duration: number; sourceId?: string; defenses?: { power: number; duration: number }[] };
   accessories?: Partial<Record<'accessory1' | 'accessory2', import('./items.js').AccessoryItem>>;
@@ -518,6 +520,8 @@ export interface RulePack {
   overmatch?: boolean;
   /** V5 单体毁伤与通道防护；缺省沿用旧战斗的规格耐久。 */
   damageModel?: 'wounds-v1' | 'wounds-v2';
+  /** V9: level-scaled skill reserve and endurance, serialized with the battle. */
+  resourceModel?: 'endurance-v1';
   combatModel?: 'cohort-v1' | 'cohort-v2';
   /** 武器直击余伤100%在目标编队内传递；旧规则缺省关闭。 */
   weaponOverflow?: boolean;
