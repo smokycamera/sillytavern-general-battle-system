@@ -1,6 +1,5 @@
 import { parseEnhancementSuffix, enhancementLabel, type Enhancements } from '../../engine/src/enhancements.js';
 import { resolveTraitId } from '../../engine/src/index.js';
-import { SINGLE_LIFE_LIMIT } from '../../engine/src/health-limits.js';
 /** V2正文：全文提取、格式容错、逐项诊断；真实身份和数值由事务层最终核对。 */
 import { parseAbilitySpec, parseSuggestionTags, type Suggestion } from './tags.js';
 import { resolveWeaponClass } from '../../engine/src/data/weapons.js';
@@ -138,10 +137,6 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     if (attrs.scale !== 'hero' && attrs.hpMax === undefined) throw new Error('群体首次建档必须明确 hpMax 编制上限；count 表示单位个数');
     if (attrs.hp !== undefined && attrs.hpMax === undefined) throw new Error('新单位提供 hp 时也需要 hpMax');
     if (attrs.hp !== undefined && Number(attrs.hp) > Number(attrs.hpMax)) throw new Error('新单位当前值不能超过上限');
-    if (attrs.scale === 'hero') for (const key of ['hpMax', 'hp']) if (attrs[key] !== undefined && Number(attrs[key]) > SINGLE_LIFE_LIMIT) {
-      warnings.push(`${attrs.name}的${key}已从${attrs[key]}限制为单体硬上限${SINGLE_LIFE_LIMIT}`);
-      attrs[key] = String(SINGLE_LIFE_LIMIT);
-    }
     if (attrs.archetype === undefined) attrs.archetype = 'infantry';
     if (attrs.weapon?.match(/[,，、;；]/)) {
       const weapons = attrs.weapon.split(/[,，、;；]/).map((v) => v.trim());
