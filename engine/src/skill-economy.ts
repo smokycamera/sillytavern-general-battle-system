@@ -1,7 +1,7 @@
 import type { Ability, Combatant } from './types.js';
 import type { ObservationContext } from './observation.js';
 import { standardConditionMap } from './conditions.js';
-import { abilityCost, resourceRound, skillExertion, spRecovery } from './resources.js';
+import { isEnduranceModel, abilityCost, resourceRound, skillExertion, spRecovery } from './resources.js';
 import { fatigueAfter } from './tactics.js';
 import { actionPotential } from './skill-tactics.js';
 import { skillResourceCost } from './skill-runtime.js';
@@ -50,7 +50,7 @@ function futureAttack(context: ObservationContext, source: Combatant, action: Ab
  */
 export function tacticalSkillCost(context: ObservationContext, source: Combatant, ability: Ability, expectedDamage = 0): number {
   const base = skillResourceCost(ability, source), cost = abilityCost(source, ability);
-  if (source.resourceModel !== 'endurance-v1' || cost?.resource !== 'SP' || cost.amount <= 0
+  if (!isEnduranceModel(source.resourceModel) || cost?.resource !== 'SP' || cost.amount <= 0
     || ability.effects.some(e => e.op === 'resource' && e.resource === 'SP')) return base;
   const loss = Math.max(0, futureAttack(context, source, 'active') - futureAttack(context, source, ability));
   const remaining = context.units.filter(t => t.side !== source.side && t.hp > 0 && ['ready', 'routing'].includes(t.status))
@@ -64,6 +64,6 @@ export function tacticalSkillCost(context: ObservationContext, source: Combatant
  * Shared cooldown decay/natural SP recovery are therefore never credited exclusively to resting.
  */
 export function tacticalRestValue(context: ObservationContext, source: Combatant): number {
-  if (source.resourceModel !== 'endurance-v1' || source.status !== 'ready' || source.hp <= 0) return 0;
+  if (!isEnduranceModel(source.resourceModel) || source.status !== 'ready' || source.hp <= 0) return 0;
   return Math.max(0, futureAttack(context, source, 'rest') - futureAttack(context, source, 'active')) * FUTURE_DISCOUNT;
 }

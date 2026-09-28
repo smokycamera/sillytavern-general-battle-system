@@ -10,7 +10,9 @@ import { generateUnit, SmallBattle, MassBattle, generatedField, rulesById,
 const arg=(key:string,fallback:string)=>process.argv.find(a=>a.startsWith('--'+key+'='))?.split('=').slice(1).join('=')??fallback;
 const label=arg('label','baseline'),out=arg('out','/mnt/data/curve-results'),phase=arg('phase','discovery');
 const only=arg('only',''),production=arg('production','false')==='true';
-const smallRules=rulesById(production?'v10-overflow-d20':'v9-overflow-d20'),massRules=rulesById(production?'v10-overflow-tw':'v9-overflow-tw');
+const ruleVersion=arg('rules',production?'v10':'v9');
+if(!['v9','v10','v11'].includes(ruleVersion))throw Error('Unknown audit rules');
+const smallRules=rulesById(ruleVersion+'-overflow-d20'),massRules=rulesById(ruleVersion+'-overflow-tw');
 const limit=Number(arg('limit','999999')),offset=Number(arg('offset',phase==='holdout'?'104729':'0'));
 const shard=Number(arg('shard','0')),shards=Number(arg('shards','1'));
 mkdirSync(out,{recursive:true});
@@ -56,7 +58,7 @@ const harnessHash=createHash('sha256').update(readFileSync(new URL(import.meta.u
 const engineHash=createHash('sha256').update(readFileSync('engine/src/power-anchors.ts')).digest('hex');
 const path=`${out}/${label}-${phase}-${shard}.jsonl`,logs=`${out}/${label}-${phase}-${shard}-logs.jsonl.gz`;
 writeFileSync(path,'');writeFileSync(logs,'');
-writeFileSync(`${out}/manifest-${label}-${phase}-${shard}.json`,JSON.stringify({label,phase,offset,production,harnessHash,engineHash,baselineCommit:'069c4c0f0973a3c99ebda56cf94d5d31e7ab835f',cases,envs,modes,shard,shards,seeds:2,mirrors:2},null,2));
+writeFileSync(`${out}/manifest-${label}-${phase}-${shard}.json`,JSON.stringify({label,phase,offset,production,ruleVersion,harnessHash,engineHash,baselineCommit:'069c4c0f0973a3c99ebda56cf94d5d31e7ab835f',cases,envs,modes,shard,shards,seeds:2,mirrors:2},null,2));
 let scheduled=0,completed=0,errors=0;const start=Date.now();
 for(const scenario of cases)for(const tags of envs)for(const mode of modes)for(let seed=0;seed<2;seed++)for(const swap of [false,true]){
  const index=scheduled++;if(only&&only!==scenario.id+':'+mode)continue;if(index%shards!==shard||completed>=limit)continue;

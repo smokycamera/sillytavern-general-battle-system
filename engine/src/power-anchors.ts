@@ -146,7 +146,7 @@ function continuousPowerBudget(power:number):number {
  * Extra damage ramps in only after the attack exceeds the actual channel resistance.
  * No unit HP, personnel, training, size damage multiplier or new random roll enters here. */
 export function gradeOvermatch(power:number|undefined,defensePower:number,penetration:number,resistance:number,curve?:RulePack['overmatchCurve']):number {
-  if(curve==='continuous-v1'){
+  if(curve==='continuous-v1'||curve==='continuous-soft40-v1'){
     if(power===undefined||!Number.isFinite(power)||power<1||power>10
       ||!Number.isFinite(defensePower)||!Number.isFinite(penetration)||!Number.isFinite(resistance)||power<=defensePower)return 1;
     const gap=power-defensePower,ratio=continuousPowerBudget(power)/continuousPowerBudget(defensePower);
@@ -154,7 +154,11 @@ export function gradeOvermatch(power:number|undefined,defensePower:number,penetr
     // far-gap bonus ramps from x1 toward x2 (C1 at gap=1), without a hard cap.
     const tail=Math.max(0,gap-1)**2;
     const extra=(Math.sqrt(ratio)-1)*(1+tail/(1+tail));
-    return 1+extra*Math.max(0,Math.min(1,penetration-resistance));
+    // Weight only extra overmatch. Attack specification, never actor level, drives it.
+    // Smooth endpoints at L3/L7; the frozen V10 curve and all high-grade attacks stay exact.
+    const x=Math.max(0,Math.min(1,(power-3)/4));
+    const weight=curve==='continuous-soft40-v1' ? 0.4+0.6*(3*x*x-2*x*x*x) : 1;
+    return 1+extra*weight*Math.max(0,Math.min(1,penetration-resistance));
   }
   if(power===undefined||!Number.isFinite(power)||power<1||power>10||power<=defensePower+1)return 1;
   const extra=Math.sqrt(continuousPowerBudget(power)/continuousPowerBudget(defensePower+1))-1;

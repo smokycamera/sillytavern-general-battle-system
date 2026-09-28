@@ -5,7 +5,7 @@ import { validateAccessories } from '../../engine/src/items.js';
 import { validateEnhancements, validateChannelProtection, type Enhancements } from '../../engine/src/enhancements.js';
 import { synchronizePersonnel, validateCombatModel } from '../../engine/src/combat-model.js';
 import { capSingleLife, limitCombatantLife } from '../../engine/src/health-limits.js';
-import { spCapacity } from '../../engine/src/resources.js';
+import { isEnduranceModel, spCapacity } from '../../engine/src/resources.js';
 import { traitRegistry } from '../../engine/src/data/traits.js';
 import { skillMechanismFromId } from '../../engine/src/data/skill-mechanisms.js';
 /**
@@ -195,7 +195,7 @@ function validateRuntimeMetadata(value: Record<string, unknown>): void {
     if (isRecordObject(condition) && condition.sourceId !== undefined && typeof condition.sourceId !== 'string') throw new Error('状态来源记录损坏');
     if (condition.defensePower !== undefined && (condition.id !== 'blessed' || !validDefensePower(condition.defensePower))) throw new Error('守护防御规格记录损坏');
   }
-  if (value.resourceModel !== undefined && value.resourceModel !== 'endurance-v1') throw new Error('资源规则版本损坏');
+  if (value.resourceModel !== undefined && !isEnduranceModel(value.resourceModel)) throw new Error('资源规则版本损坏');
   validateTacticalEffort(value.tacticalEffort, value.resourceModel);
   validateConcealment(value.tacticalRevealed);
   validateFlightState(value.airborne);

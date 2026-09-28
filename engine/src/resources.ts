@@ -2,11 +2,13 @@ import { ABILITY_BLUEPRINTS } from './data/ability-blueprints.js';
 import type { Ability, Combatant, EffectOp, RulePack } from './types.js';
 
 type ReserveUnit = Pick<Combatant, 'level' | 'rulesVersion' | 'resourceModel' | 'weapon' | 'sidearm' | 'abilities' | 'preparedAbilityIds'>;
+/** Both versions share fatigue, costs and recovery; V11 only changes capacity. */
+export const isEnduranceModel = (model: unknown): boolean => model === 'endurance-v1' || model === 'endurance-v2';
 export const resourceRound = (value: number): number => Math.round(value * 100) / 100;
 
 /** V9 doubles endurance space, not penalty strength; saved pre-V9 units retain 0–4. */
 export function fatigueLimit(unit: Pick<Combatant, 'resourceModel'>): number {
-  return unit.resourceModel === 'endurance-v1' ? 8 : 4;
+  return isEnduranceModel(unit.resourceModel) ? 8 : 4;
 }
 export function fatiguePenalty(unit: Pick<Combatant, 'resourceModel' | 'fatigue'>): number {
   return Math.floor(unit.fatigue / (fatigueLimit(unit) / 2));
@@ -20,6 +22,8 @@ export function casterReserve(unit: ReserveUnit): boolean {
 /** Training determines reserve, not skill or equipment power. Changing loadout never refills it. */
 export function spCapacity(unit: ReserveUnit): number {
   if (unit.rulesVersion !== 'v2') return 3 + unit.level;
+  if (unit.resourceModel === 'endurance-v2') return casterReserve(unit) ? 6 + 2 * unit.level : 4 + unit.level;
+  // Frozen V9–V10 reserve; saved battles retain their original economy.
   if (unit.resourceModel === 'endurance-v1') return casterReserve(unit) ? 10 + 3 * unit.level : 6 + 2 * unit.level;
   // Frozen pre-V9 classification and capacity.
   const caster = unit.weapon?.recipe?.mechanism === 'magic'
@@ -36,7 +40,7 @@ export function prepareResourceModel(unit: Combatant, rules: Pick<RulePack, 'res
   unit.resources.SP = !unit.storyState?.resources && have >= previousCap ? spCapacity(unit) : Math.min(have, spCapacity(unit));
 }
 function managedSkill(actor: Pick<Combatant, 'resourceModel'>, ability: Ability): boolean {
-  return actor.resourceModel === 'endurance-v1' && (!!ability.recipe || !!ABILITY_BLUEPRINTS[ability.definitionId ?? '']) && !ability.customized && !ability.itemSourceId && !ability.equipmentSourceId && !ability.fixedPower;
+  return isEnduranceModel(actor.resourceModel) && (!!ability.recipe || !!ABILITY_BLUEPRINTS[ability.definitionId ?? '']) && !ability.customized && !ability.itemSourceId && !ability.equipmentSourceId && !ability.fixedPower;
 }
 function primitives(ability: Ability): EffectOp[] {
   return ability.effects.flatMap<EffectOp>(e => e.op === 'zone' ? [e, ...(e.effects ?? [])] : [e]);
@@ -61,13 +65,13 @@ export function abilityCost(actor: Pick<Combatant, 'resourceModel'>, ability: Ab
 }
 /** Skill grade is independent of training. Overcasting and area casting place additional strain. */
 export function skillExertion(actor: Combatant, ability: Ability): number {
-  if (actor.resourceModel !== 'endurance-v1') return 1;
+  if (!isEnduranceModel(actor.resourceModel)) return 1;
   if (ability.itemSourceId || ability.equipmentSourceId) return 1;
   return resourceRound(1 + Math.max(0, (ability.power ?? 1) - actor.level) * 0.15 + (ability.shape === 'burst' || ability.area ? 0.25 : 0));
 }
 /** Called only at the existing end-of-activation/end-of-round boundary, never from preview or load. */
 export function spRecovery(unit: Combatant, fullRest = false, incapacitated = false): number {
-  if (unit.resourceModel !== 'endurance-v1' || unit.status !== 'ready' || unit.hp <= 0 || incapacitated) return 0;
+  if (!isEnduranceModel(unit.resourceModel) || unit.status !== 'ready' || unit.hp <= 0 || incapacitated) return 0;
   const base = 0.5 + (unit.level - 1) / 18;
   const penalty = fatiguePenalty(unit);
   const fatigue = penalty >= 2 ? 0.25 : penalty >= 1 ? 0.5 : 1;

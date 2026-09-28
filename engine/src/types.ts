@@ -272,8 +272,8 @@ export type UnitStatus = 'ready' | 'dying' | 'dead' | 'routing' | 'fled';
 export interface Combatant {
   /** 由战斗规则投影；旧快照缺省使用旧伤害模型。 */
   damageModel?: 'wounds-v1' | 'wounds-v2';
-  /** V9: level-scaled skill reserve and endurance, serialized with the battle. */
-  resourceModel?: 'endurance-v1';
+  /** Versioned reserve: V9–V10 endurance-v1; V11 endurance-v2. Costs/fatigue/recovery are shared. */
+  resourceModel?: 'endurance-v1' | 'endurance-v2';
   battleZones?: import('./area-effects.js').BattleZone[];
   barrier?: { remaining: number; duration: number; sourceId?: string; defenses?: { power: number; duration: number }[] };
   accessories?: Partial<Record<'accessory1' | 'accessory2', import('./items.js').AccessoryItem>>;
@@ -518,12 +518,12 @@ export interface RulePack {
   singleWeaponSkillMultiplier?: number;
   /** V7：跨代充分穿透追加毁伤；旧快照缺省关闭。 */
   overmatch?: boolean;
-  /** V10: continuous positive grade gaps; absent preserves the V7–V9 safe band. */
-  overmatchCurve?: 'continuous-v1';
+  /** V10 continuous; V11 soft40 attenuates low-grade extra damage. Absent keeps the V7–V9 safe band. */
+  overmatchCurve?: 'continuous-v1' | 'continuous-soft40-v1';
   /** V5 单体毁伤与通道防护；缺省沿用旧战斗的规格耐久。 */
   damageModel?: 'wounds-v1' | 'wounds-v2';
-  /** V9: level-scaled skill reserve and endurance, serialized with the battle. */
-  resourceModel?: 'endurance-v1';
+  /** Versioned reserve: V9–V10 endurance-v1; V11 endurance-v2. Costs/fatigue/recovery are shared. */
+  resourceModel?: 'endurance-v1' | 'endurance-v2';
   combatModel?: 'cohort-v1' | 'cohort-v2';
   /** 武器直击余伤100%在目标编队内传递；旧规则缺省关闭。 */
   weaponOverflow?: boolean;

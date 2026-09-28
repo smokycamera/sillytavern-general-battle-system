@@ -1,5 +1,5 @@
 import { tacticalSkillCost, tacticalRestValue } from '../skill-economy.js';
-import { fatiguePenalty, abilityCost, prepareResourceModel, recoverSp, skillExertion, resourceRound } from '../resources.js';
+import { isEnduranceModel, fatiguePenalty, abilityCost, prepareResourceModel, recoverSp, skillExertion, resourceRound } from '../resources.js';
 import { actionPotential } from '../skill-tactics.js';
 import { hasteMagnitude, hasteAttackScale } from '../haste.js';
 import { commanderScores, normalizeCommanderProfiles, type CommanderProfiles } from '../commander-profile.js';
@@ -1736,7 +1736,7 @@ export class SmallBattle {
         else if (best.kind === 'reload') this.reloadWeapon(unitId, best.weaponMode === 'sidearm');
         else if (best.kind === 'land' && !this.flightReason(unitId, false)) this.changeFlight(unitId, false);
         else if (best.kind === 'brace' && !this.braceReason(unitId)) this.brace(unitId);
-        else if (!(unit.resourceModel === 'endurance-v1' && best.kind === 'hold') && !(best.path.cost === 0 && canReconceal(this.observationContext(), unit)) && !this.overwatchReason(unitId)) this.setOverwatch(unitId);
+        else if (!(isEnduranceModel(unit.resourceModel) && best.kind === 'hold') && !(best.path.cost === 0 && canReconceal(this.observationContext(), unit)) && !this.overwatchReason(unitId)) this.setOverwatch(unitId);
       }
     }
     // 扑击脱离：落地后仍贴近持械地面近战且还能起飞时升空规避（起飞借机是已知代价）
@@ -2026,7 +2026,7 @@ export class SmallBattle {
   private settleUnit(u: Combatant): void {
     const regeneration = this.rules.resolutionVersion === 'v2' ? regenerationAmount(u, this.traitRegistry, this.conditionDefMap()) : 0;
     if (this.rules.resolutionVersion === 'v2' && settleConcealment(this.observationContext(), u, !this.actedThisTurn.has(u.id) && !this.movedThisTurn.has(u.id))) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 在掩护中休整，重新潜伏` });
-    const modernResources = u.resourceModel === 'endurance-v1';
+    const modernResources = isEnduranceModel(u.resourceModel);
     const incapacitated = u.conditions.some(c => c.dur > 0 && this.conditions.get(c.id)?.skipTurn);
     const fullRest = !incapacitated && !u.suppression && this.hasteSpent.get(u.id) !== this.round && !this.actedThisTurn.has(u.id) && !this.movedThisTurn.has(u.id) && !this.reactionSpent.has(u.id) && !(u.tacticalEffort ?? 0);
     if ((this.battlefield || modernResources) && u.rulesVersion === 'v2') {

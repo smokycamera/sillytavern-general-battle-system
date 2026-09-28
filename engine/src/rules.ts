@@ -69,8 +69,13 @@ export const V9_OVERFLOW_TW: RulePack = { ...V8_OVERFLOW_TW, id: 'v9-overflow-tw
 export const V10_OVERFLOW_D20: RulePack = { ...V9_OVERFLOW_D20, id: 'v10-overflow-d20', name: 'V10 连续跨级毁伤', overmatchCurve: 'continuous-v1' };
 export const V10_OVERFLOW_TW: RulePack = { ...V9_OVERFLOW_TW, id: 'v10-overflow-tw', name: 'V10 连续跨级毁伤会战', overmatchCurve: 'continuous-v1' };
 
+/** V11 only opts new battles into soft low grades and a smaller SP reserve. */
+export const V11_OVERFLOW_D20: RulePack = { ...V10_OVERFLOW_D20, id: 'v11-overflow-d20', name: 'V11 低阶柔化与精力约束', overmatchCurve: 'continuous-soft40-v1', resourceModel: 'endurance-v2' };
+export const V11_OVERFLOW_TW: RulePack = { ...V10_OVERFLOW_TW, id: 'v11-overflow-tw', name: 'V11 低阶柔化与精力约束会战', overmatchCurve: 'continuous-soft40-v1', resourceModel: 'endurance-v2' };
+
 /** id → 规则包（战斗快照恢复用；面板只用默认两包） */
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V11_OVERFLOW_D20.id]: V11_OVERFLOW_D20, [V11_OVERFLOW_TW.id]: V11_OVERFLOW_TW,
   [V10_OVERFLOW_D20.id]: V10_OVERFLOW_D20, [V10_OVERFLOW_TW.id]: V10_OVERFLOW_TW,
   [V9_OVERFLOW_D20.id]: V9_OVERFLOW_D20, [V9_OVERFLOW_TW.id]: V9_OVERFLOW_TW,
   [V8_OVERFLOW_D20.id]:V8_OVERFLOW_D20,[V8_OVERFLOW_TW.id]:V8_OVERFLOW_TW,

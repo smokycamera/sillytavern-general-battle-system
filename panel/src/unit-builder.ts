@@ -1,4 +1,4 @@
-import { V9_OVERFLOW_D20 } from '../../engine/src/rules.js';
+import { V11_OVERFLOW_D20 } from '../../engine/src/rules.js';
 import { spCapacity, prepareResourceModel } from '../../engine/src/resources.js';
 import { prepareCombatModel,nominalLife } from '../../engine/src/combat-model.js';
 import { capSingleLife } from '../../engine/src/health-limits.js';
@@ -73,7 +73,7 @@ export function buildUnit(d: UnitDraft, registry: Map<string, Trait>, seed: stri
   let unit = generateUnit({ ...input, weaponClass: weapon.mechanism, weaponLevel: weapon.power, armorTier: armor.tier, armorLevel: armor.power, preparedAbilityIds: [] }, { seed, registry }).unit;
   setGear(unit, d); unit = learnAbilities(unit, [], { prepared: d.autoPrepare ? undefined : d.skills.filter((s) => s.prepared).map((s) => unit.abilities.find((a) => a.id === s.instanceId || a.definitionId === s.id && a.name === (s.name.trim() || skillDefinitionName(s.id)))?.id ?? s.id) });
   prepareCombatModel(unit,V6_D20,(d.memberHp??'').trim()?capSingleLife(integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命'), d.damageModel):undefined); upgradeCombatSkills(unit);
-  prepareResourceModel(unit, V9_OVERFLOW_D20);
+  prepareResourceModel(unit, V11_OVERFLOW_D20);
   unit.resources.SP = spCapacity(unit); normalizeBakedTraitStats(unit, registry); return unit;
 }
 /** 只编译变更的配方；名称、体型和训练显示不重掷其他实物。 */
