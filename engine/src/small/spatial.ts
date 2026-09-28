@@ -1,8 +1,11 @@
 import { isRangedWeapon } from '../loadout.js';
-import type { Combatant } from '../types.js';
+import type { Combatant, ConditionDef } from '../types.js';
 import { activeTraitIds } from '../trait-sources.js';
 import { environmentTags } from '../environment.js';
 import { isAirborne, sameLayer } from '../aerial.js';
+import { SeededRng } from '../rng.js';
+import { rangedScreen } from '../guard-screen.js';
+import { gridWeaponRange } from './weapon-range.js';
 
 export const DEFAULT_SMALL_ROUND_LIMIT = 60;
 
@@ -178,15 +181,81 @@ export function gridDeploymentCells(field: BattlefieldSpec, unit: Combatant): nu
     .map((x) => y * field.width + x).filter((cell) => cell !== field.objective.cell);
   return [...forward, ...ordinary];
 }
-export function deployOnGrid(field: BattlefieldSpec, units: Combatant[]): number[] {
+/** 小幅扰动按单位/格子派生，数组顺序、评分次数与战斗骰子都不会改变它。 */
+function deploymentNoise(seed: string, id: string, key: string): number {
+  return new SeededRng(JSON.stringify(['deployment-v1', seed, id, key])).next();
+}
+
+/** 只看公开地形与己方站位，不读取尚未发现的敌军位置来优化射界。 */
+function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string) {
+  const enemy = unit.side === 'enemy', ranged = isRangedWeapon(unit.weapon), air = isAirborne(unit);
+  const forward = enemy ? 3 : field.height - 4;
+  const vanguard = activeTraitIds(unit).includes('vanguard');
+  const preferredDepth = ranged ? gridWeaponRange(unit.weapon) <= 4 ? 1 : 0 : 2;
+  const preferredY = vanguard ? forward : enemy ? preferredDepth : field.height - 1 - preferredDepth;
+  const middle = Math.floor(field.height / 2);
+  const probes = [...new Set([forward, middle])].flatMap(y => Array.from({ length: field.width }, (_, x) => y * field.width + x))
+    .filter(p => field.tiles[p] !== 'wall');
+  const costs = gridCostsToGoals(field, probes, p => air || field.tiles[p] !== 'wall', p => tileCost(field, p, unit));
+  const emptyConditions = new Map<string, ConditionDef>();
+  return (position: number, placed: Combatant[]) => {
+    const actor = { ...unit, pos: position }, friends = placed.filter(u => u.id !== unit.id && u.side === unit.side);
+    const blockingFriends = friends.filter(u => sameLayer(unit, u) && u.hp > 0 && ['ready', 'routing'].includes(u.status));
+    const y = Math.floor(position / field.width), x = position % field.width;
+    const terrain = air ? 'open' : field.tiles[position];
+    const distance = probes.length ? Math.min(...probes.map(p => gridDistance(field, position, p))) : 0;
+    const detour = Math.max(0, (costs.get(position) ?? distance + 20) - distance);
+    let score = -5 * Math.abs(y - preferredY) - 0.45 * Math.abs(x - Math.floor(field.width / 2))
+      - 8 * blockingFriends.filter(u => u.pos === position).length
+      - 0.3 * blockingFriends.filter(u => gridDistance(field, u.pos!, position) === 1).length
+      - 0.4 * detour - 0.7 * (tileCost(field, position, unit) - 1)
+      + (terrain === 'cover' ? 1.4 : terrain === 'forest' ? 0.4 : 0)
+      + 1.5 * deploymentNoise(seed, unit.id, String(position));
+    if (ranged && !unit.weapon?.indirect) {
+      const targets = probes.filter(p => p !== position && gridDistance(field, position, p) <= gridWeaponRange(unit.weapon));
+      const clear = targets.filter(p => {
+        const target = { ...actor, id: '@deployment-probe', side: enemy ? 'ally' as const : 'enemy' as const, pos: p, airborne: false };
+        return unitLineOfSight(field, actor, target) && !rangedScreen(actor, target, unit.weapon, friends, { mode: 'small', width: field.width }, emptyConditions);
+      }).length;
+      score += clear ? 4 * clear / targets.length : -6;
+    }
+    return score;
+  };
+}
+
+/** 未指定位置的新规则单位按角色/地形布阵；同种子复现，显式部署优先且失败不修改原名单。 */
+export function deployOnGrid(field: BattlefieldSpec, units: Combatant[], seed = 'deployment'): number[] {
   validateField(field);
   const scratch = units.map((u) => ({ ...u }));
   const occupied: Combatant[] = [];
-  for (const unit of [...scratch].sort((a, b) => Number(a.pos === undefined) - Number(b.pos === undefined) || a.id.localeCompare(b.id))) {
+  const modern = units.every(u => u.rulesVersion === 'v2');
+  const ordered = [...scratch].sort((a, b) => Number(a.pos === undefined) - Number(b.pos === undefined)
+    || (modern ? footprint(b) - footprint(a)
+      || Number(activeTraitIds(a).includes('vanguard')) - Number(activeTraitIds(b).includes('vanguard'))
+      || Number(isRangedWeapon(a.weapon)) - Number(isRangedWeapon(b.weapon))
+      || deploymentNoise(seed, a.id, 'order') - deploymentNoise(seed, b.id, 'order') : 0)
+    || a.id.localeCompare(b.id));
+  const scorers = new Map(ordered.filter(u => modern && u.pos === undefined).map(u => [u.id, deploymentScorer(field, u, seed)]));
+  const select = (unit: Combatant, candidates: number[]) => {
+    let legal = candidates.filter(n => canOccupy(field, occupied, unit, n));
+    // 先锋优先利用专属前出域，避免占掉普通单位唯一可用的部署容量。
+    if (modern && activeTraitIds(unit).includes('vanguard')) {
+      const forward = unit.side === 'enemy' ? 3 : field.height - 4;
+      const advanced = legal.filter(n => Math.floor(n / field.width) === forward);
+      if (advanced.length) legal = advanced;
+    }
+    const score = scorers.get(unit.id);
+    return score ? legal.map(n => ({ n, score: score(n, occupied) })).sort((a, b) => b.score - a.score || a.n - b.n)[0]?.n : legal[0];
+  };
+  for (const unit of ordered) {
     const candidates = gridDeploymentCells(field, unit);
-    const cell = unit.pos ?? candidates.find((n) => canOccupy(field, occupied, unit, n));
+    const cell = unit.pos ?? select(unit, candidates);
     if (cell === undefined || !candidates.includes(cell) || !canOccupy(field, occupied, unit, cell)) throw new Error('部署越界、跨阵营或容量不足；请减少上场单位');
     unit.pos = cell; occupied.push(unit);
+  }
+  // 大型远程先占整格后，再依据已完成的前排站位调整一次射界；玩家指定位置不动。
+  if (modern) for (const unit of ordered.filter(u => scorers.has(u.id) && isRangedWeapon(u.weapon))) {
+    unit.pos = select(unit, gridDeploymentCells(field, unit)) ?? unit.pos;
   }
   return units.map((u) => scratch.find((c) => c.id === u.id)!.pos!);
 }

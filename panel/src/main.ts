@@ -2567,7 +2567,8 @@ async function startSmallBattle(context?:LlmEncounterContext):Promise<void> {
     if (!rosterHasBothSides()) throw new Error('开战前必须同时有我方与敌方单位');
     const seed = randomSeed();
     const tags = state.objectiveMode === 'siege' ? [...new Set([...plannedFieldTags(), 'siege'])] : plannedFieldTags();
-    let battlefield = state.mapLayout === 'indoor' ? generatedField(seed, 5, 7, tags) : generatedField(seed, 7, 13, tags);
+    const fieldOptions = { roster: state.roster.every(u => u.rulesVersion === 'v2') ? state.roster : undefined, attackingSide: state.siegeAttacker };
+    let battlefield = state.mapLayout === 'indoor' ? generatedField(seed, 5, 7, tags, fieldOptions) : generatedField(seed, 7, 13, tags, fieldOptions);
     if (state.roster.every((u) => u.rulesVersion === 'v2')) battlefield = prepareBattleObjective(battlefield, state.roster, state.objectiveMode, state.protagonistId, state.siegeAttacker);
     const small = new SmallBattle({
       nonLethal:state.nonLethal,

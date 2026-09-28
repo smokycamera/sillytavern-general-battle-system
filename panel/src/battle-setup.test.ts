@@ -82,7 +82,7 @@ describe('按实际规模准备新战场', () => {
         for (const from of [0, w - 1, (h - 1) * w, h * w - 1]) {
           expect(findGridPath(field, from, field.objective.cell, (n) => field.tiles[n] !== 'wall')).toBeDefined();
         }
-        expect(field.tiles.every((tile, n) => tile === field.tiles[field.tiles.length - 1 - n])).toBe(true);
+        expect(field.tiles.every((tile, n) => tile === field.tiles[field.tiles.length - 1 - n])).toBe(false);
       }
     }
     expect(variants.size).toBeGreaterThan(8);
