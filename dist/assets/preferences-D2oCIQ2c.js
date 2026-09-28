@@ -69,7 +69,7 @@ function Dc(){const e=globalThis.crypto;if(typeof e?.randomUUID=="function")retu
 </example>
 </examples>
 </battle_contract>`,cooldown:0,delay:0,delayUntilRecursion:!1,depth:0,disable:!1,displayIndex:0,excludeRecursion:!0,group:"",groupOverride:!1,groupWeight:100,ignoreBudget:!0,key:[],keysecondary:[],matchCharacterDepthPrompt:!1,matchCharacterDescription:!1,matchCharacterPersonality:!1,matchCreatorNotes:!1,matchPersonaDescription:!1,matchScenario:!1,matchWholeWords:!1,order:1,outletName:"",position:4,preventRecursion:!0,probability:100,role:0,scanDepth:2,selective:!1,selectiveLogic:0,sticky:0,title:!0,triggers:[],uid:0,useGroupScoring:null,useProbability:!0,vectorized:!1},1:{addMemo:!0,automationId:"",caseSensitive:!1,comment:"战阵 V2 单位与装备",constant:!0,content:`<unit_equipment_specs>
-# 单位与装备(不同等级之间相差巨大，谨慎选择，善用±修正，单位等级和装备等级没有关联)
+# 单位与装备(不同等级之间相差巨大，谨慎选择，善用±修正，单位等级和装备等级没有关联，单位训练等级L1新兵L2受训L3老兵L4精锐L5王牌L6大师L7史诗L8传奇L9半神L10神明)
 
 ## 新建单位：spawn
 
@@ -178,7 +178,7 @@ function Dc(){const e=globalThis.crypto;if(typeof e?.randomUUID=="function")retu
 </ability_effect_specs>`,cooldown:0,delay:0,delayUntilRecursion:!1,depth:1,disable:!1,displayIndex:5,excludeRecursion:!0,group:"",groupOverride:!1,groupWeight:100,ignoreBudget:!1,key:[],keysecondary:[],matchCharacterDepthPrompt:!1,matchCharacterDescription:!1,matchCharacterPersonality:!1,matchCreatorNotes:!1,matchPersonaDescription:!1,matchScenario:!1,matchWholeWords:!1,order:4,outletName:"",position:4,preventRecursion:!0,probability:100,role:0,scanDepth:2,selective:!1,selectiveLogic:0,sticky:0,title:!0,triggers:[],uid:5,useGroupScoring:null,useProbability:!0,vectorized:!1},8:{addMemo:!0,automationId:"",caseSensitive:!1,comment:"战阵 V2 规格等级锚定",constant:!0,content:`<power_reference>
 # 规格等级锚定
 
-不同等级之间相差巨大，谨慎选择，善用±修正！
+不同等级之间相差巨大，谨慎选择，善用±修正！单位等级和装备等级没有关联，单位训练等级L1新兵L2受训L3老兵L4精锐L5王牌L6大师L7史诗L8传奇L9半神L10神明
 
 武器与技能L依据技术或魔法规格，训练level独立。护甲等级与类型分开：重甲不等于固定等级，L对应材料或技术，天生武器根据生物类型取L。武器种类只能从<unit_equipment_specs>装备规格给出机制中选择
 
