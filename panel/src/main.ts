@@ -60,7 +60,7 @@ import {
   battleIntroSummary, battleAftermathSummary, roundDigest, isRangedCapable,
   STANDARD_CONDITIONS, standardConditionMap, skillConditionDescription,
   activeTraitIds, equipmentTraitIds, traitDescription, traitSourceActive, traitStatAdjustments,
-  scaleLabel, postureLabel, fatigueAfter, environmentTags,
+  scaleLabel, postureLabel, fatigueAfter, fatigueLimit, fatiguePenalty, environmentTags,
   WEAPON_LIBRARY, ARMOR_LIBRARY, WEAPON_CLASSES, calibrateWeaponRange,
 } from '../../engine/src/index.js';
 import type { SaveScope, SaveReceipt, DeliveryReceipt } from './tavern.js';
@@ -1013,7 +1013,7 @@ function unitHtml(u: Combatant, index: number, inBattle: boolean): string {
   const cls = [`unit`, u.side, u.status === 'dead' ? 'dead' : '', u.status === 'routing' ? 'routing' : '', u.status === 'fled' ? 'fled' : '', isActive ? 'active' : ''].join(' ');
   const statusWord = u.status === 'dead' ? ' †' : u.status === 'dying' ? ' ‼濒死' : u.status === 'routing' ? ' 溃逃中' : u.status === 'fled' ? ' 已撤离' : '';
   const morale = u.morale !== undefined ? ` 士气${u.morale}` : '';
-  const fat = u.fatigue >= 2 ? ` 疲劳${Math.floor(u.fatigue)}` : '';
+  const fat = fatiguePenalty(u) > 0 ? ` 疲劳${Math.floor(u.fatigue)}` : '';
   const engage = u.engagedWith.length ? ' ⚔' : '';
   const pos = inBattle && u.pos !== undefined ? `｜阵位${u.pos}` : '';
   const marks = `${u.id === state.protagonistId ? '<span class="badge">★</span>' : ''}${u.side === 'ally' && u.id === state.commanderId ? '<span class="badge">⚑</span>' : ''}`;
@@ -1104,7 +1104,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   if (u.rulesVersion === 'v2') rows.push(`<div class="sub">${esc(equipmentLoadLabel(u))}</div>`);
   if (u.rulesVersion === 'v2' && u.body && u.body !== 'human') rows.push(`<div class="sub">${({ large: '大型身体', giant: '巨型身体', vehicle: '车辆平台' })[u.body]} · 有效防护 ${protection('kinetic')}/${protection('thermal')}/${protection('arcane')}（动能/热能/奥术） · 负重容量${BODY[u.body].capacity}</div>`);
   if (looseFormation(u)) rows.push('<div class="sub">疏散队形 · 未接敌时范围暴露减半 · 近战展开减半、防御降低1；固守后收拢</div>');
-  if (u.rulesVersion === 'v2') rows.push('<div class="sub">移动 ' + movementLabel(u, plannedFieldTags()) + ' · 基础速度' + (u.speedTier ?? BODY[u.body ?? 'human'].movement) + '档 · 精力 ' + (u.resources.SP ?? 0) + '/' + spCapacity(u) + (u.resourceModel ? ' · 自然恢复 ' + spRecovery({ ...u, status: 'ready', resources: { ...u.resources, SP: 0 } }) + '/轮 · 空过休整恢复×3 · 疲劳 ' + u.fatigue + '/4' : '') + '</div>');
+  if (u.rulesVersion === 'v2') rows.push('<div class="sub">移动 ' + movementLabel(u, plannedFieldTags()) + ' · 基础速度' + (u.speedTier ?? BODY[u.body ?? 'human'].movement) + '档 · 精力 ' + (u.resources.SP ?? 0) + '/' + spCapacity(u) + (u.resourceModel ? ' · 自然恢复 ' + spRecovery({ ...u, status: 'ready', resources: { ...u.resources, SP: 0 } }) + '/轮 · 空过休整恢复×3 · 疲劳 ' + u.fatigue + '/' + fatigueLimit(u) : '') + '</div>');
   if(u.combatModel&&u.scale!=='hero')rows.push('<p class="sub">人数与成员耐久分别结算。参战规模随现员增长，地形与阵位限制展开；减员后火力同步下降。</p>');
   if(u.combatModel&&u.scale==='hero'&&u.moraleState?.damagePenalty)rows.push('<p class="sub">累计受创压力 '+u.moraleState.damagePenalty+'，影响本场士气；不溃能力免疫惊退。</p>');
   if (u.mount) rows.push('<div class="sub">骑乘 · 占格更大 · 机动提高 · 不增加人员或生命</div>');
@@ -1228,7 +1228,7 @@ function roundSnapshotHtml(b: SmallBattle | MassBattle): string {
     const morale = u.morale !== undefined ? ` 士气${u.morale}` : '';
     const hp = mass ? ` 兵力${u.hp}/${u.base.hpMax}` : ` 生命${u.hp}/${u.base.hpMax}`;
     const conds = u.conditions.length ? ` [${u.conditions.map((c) => c.id).join(',')}]` : '';
-    const fatigue = u.fatigue >= 2 ? ` 疲劳${u.fatigue}` : '';
+    const fatigue = fatiguePenalty(u) > 0 ? ` 疲劳${u.fatigue}` : '';
     return `<div class="snapshot-line"><b>${marks}${esc(u.name)}</b> <span class="dim">${geo}${u.side === 'ally' ? '我' : '敌'}${engage}${hp}${morale}${fatigue}${conds}${status}</span></div>`;
   };
   return `<div class="gen-head" data-action="snapshot-toggle">${header}<span class="gen-caret">${state.snapOpen ? '▾' : '▸'}</span></div>

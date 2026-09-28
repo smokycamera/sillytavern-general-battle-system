@@ -11,7 +11,7 @@ import { upgradeCombatSkills } from '../skill-upgrade.js';
 import { normalizeTactic, type TacticalPreference } from '../tactical-preference.js';
 import { calibrateAutocannon, calibrateWeaponHands } from '../gen/equipment.js';
 import { rangedScreen, rangedScreenReason } from '../guard-screen.js';
-import { spCapacity, abilityCost, prepareResourceModel, recoverSp, spRecovery, skillExertion, resourceRound } from '../resources.js';
+import { fatigueLimit, fatiguePenalty, spCapacity, abilityCost, prepareResourceModel, recoverSp, spRecovery, skillExertion, resourceRound } from '../resources.js';
 import type { EffectOp } from '../types.js';
 import { skillWeapon, skillResourceChange, skillResourceCost, conjureSkillUnit, conjuredTemplate, summonedMemberLife } from '../skill-runtime.js';
 import { applySkillTrait } from '../skill-effects.js';
@@ -548,7 +548,7 @@ export class MassBattle {
       if (formationScreened(u, target, units)) return '目标受到前线掩护';
       if (isAirborne(u) && !isAirborne(target) && !this.diveDestination(u, target, units)) return '扑击缺少相邻合法地面落点';
       if (order.type === 'charge' && (u.suppression || u.archetype !== 'mobile' && !activeTraitIds(u).includes('charge-strong'))) return '缺少冲锋训练或正被压制';
-      if (order.type === 'charge' && u.fatigue >= 2) return '冲锋前需要重整，疲劳必须低于2';
+      if (order.type === 'charge' && fatiguePenalty(u) > 0) return `冲锋前需要重整，疲劳必须低于${fatigueLimit(u) / 2}`;
       if (order.type === 'charge' && activeConditionIds(u).some((id) => id === 'slowed' || this.conditions.get(id)?.preventMove)) return '减速或定身状态不能完成冲锋';
       if (order.type === 'charge' && formationDistance(u, target) < 2) return '已经接敌，没有冲锋助跑距离';
       if (order.type === 'charge' && !this.chargeDestination(u, target, this.visibleCombatants(u.side, units))) return '冲锋需要一格合法接近路线和相邻落点';
@@ -845,7 +845,7 @@ export class MassBattle {
           return this.v2OrderReason(order, world) ? 0 : this.previewAttackWithEnvironment(this.orderAttackOptions(order, world), world).expectedDamage;
         })));
     };
-    if (u.fatigue >= 2 || u.resourceModel && !hasteOnly) {
+    if (fatiguePenalty(u) > 0 || u.resourceModel && !hasteOnly) {
       const rested = { ...u, conditions: [...u.conditions], resources: { ...u.resources }, fatigue: fatigueAfter(u, 0, !!u.resourceModel),
         abilityState: u.abilityState.map(s => ({ ...s, cdLeft: u.resourceModel ? Math.max(0, s.cdLeft - 1) : s.cdLeft })) };
       rested.resources.SP = resourceRound((rested.resources.SP ?? 0) + spRecovery(rested, true));

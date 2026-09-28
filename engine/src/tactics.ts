@@ -1,4 +1,4 @@
-import { resourceRound } from './resources.js';
+import { resourceRound, fatigueLimit, fatiguePenalty } from './resources.js';
 import { bodyMovement, humanEncumbered } from './body.js';
 import type { Combatant, ConditionDef, Trait } from './types.js';
 import type { Modifier, ResolveContext } from './bonus.js';
@@ -23,7 +23,7 @@ export function movementPoints(unit: Combatant, tags: string[] = []): number {
   const mobility = unit.mount === true || ids.includes('fast') || ids.includes('skirmisher') && light || ids.includes('mechanized') || ids.includes('plains-runner') && tags.includes('plains') ? 1 : 0;
   const armor = !vehicle && (unit.armor?.tier ?? 0) >= 3 ? 1 : 0;
   const night = tags.includes('night') && !ids.includes('night-fighter') ? 1 : 0;
-  return Math.max(1, Math.min(5, bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - armor - night - Math.floor(unit.fatigue / 2) - Number(humanEncumbered(unit))));
+  return Math.max(1, Math.min(5, bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - armor - night - fatiguePenalty(unit) - Number(humanEncumbered(unit))));
 }
 export function formationMarchSteps(unit: Combatant, tags: string[] = []): number {
   if (isAirborne(unit)) return Math.max(1, Math.min(2, movementPoints(unit, tags) - 1));
@@ -40,8 +40,8 @@ export function fatigueAfter(unit: Combatant, exertion: number, fullRest = false
   const resistance = activeTraitIds(unit).includes('fatigue-trained') ? 0.5 : 1;
   if (unit.resourceModel === 'endurance-v1') {
     const gain = exertion > 0 ? exertion * 0.5 * resistance / (1 + 0.1 * (unit.level - 1))
-      : -(fullRest ? 1 + 0.05 * (unit.level - 1) : 0.5);
-    return resourceRound(Math.max(0, Math.min(4, unit.fatigue + gain)));
+      : -(fullRest ? 2 + 0.1 * (unit.level - 1) : 1);
+    return resourceRound(Math.max(0, Math.min(fatigueLimit(unit), unit.fatigue + gain)));
   }
   return Math.max(0, Math.min(4, unit.fatigue + (exertion > 0 ? exertion * 0.5 * resistance : -1)));
 }

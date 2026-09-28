@@ -1,4 +1,4 @@
-import { abilityCost } from '../../engine/src/resources.js';
+import { abilityCost, fatigueLimit } from '../../engine/src/resources.js';
 import { hitChanceText, hitDamageText, hitDamageDetails } from './damage-preview.js';
 import { ZONE_NAMES, visibleBattleZones } from '../../engine/src/area-effects.js';
 import { tbWeaponShortName } from '../../engine/src/weapon-name.js';
@@ -50,7 +50,7 @@ export function renderFormationBattle(b: MassBattle, view: FormationView, drafts
   const selectedNode = FORMATION_NODES.find((n) => n.id === view.nodeId);
   const inspection = visible.find((u) => u.id === view.inspectedId);
   const unitControls = actor ? `<div class="formation-actor"><span class="sub">${editable ? '正在指挥' : '查看我方编队'}</span><h3>${esc(actor.name)}</h3><p>${strengthDescription(actor)} · ${location(actor)}${isAirborne(actor) ? ' · 空中' : ''}</p></div>${memberHealthPanel(actor)}
-    <div class="formation-status">${[actor.fatigue ? '疲劳' + actor.fatigue + '/4' : '', (b.reloadCd.get(actor.id) ?? 0) > 0 ? (tbWeaponShortName(actor.weapon) || '主武器') + '装填中' : '', actor.sidearm && (b.reloadCd.get(weaponReloadKey(actor, actor.sidearm)) ?? 0) > 0 ? (tbWeaponShortName(actor.sidearm) || '副武器') + '装填中' : '', actor.suppression ? '受压制' : '', pressure,
+    <div class="formation-status">${[actor.fatigue ? '疲劳' + actor.fatigue + '/' + fatigueLimit(actor) : '', (b.reloadCd.get(actor.id) ?? 0) > 0 ? (tbWeaponShortName(actor.weapon) || '主武器') + '装填中' : '', actor.sidearm && (b.reloadCd.get(weaponReloadKey(actor, actor.sidearm)) ?? 0) > 0 ? (tbWeaponShortName(actor.sidearm) || '副武器') + '装填中' : '', actor.suppression ? '受压制' : '', pressure,
       ...actor.conditions.filter((c) => c.dur > 0).map((c) => (b.conditions.get(c.id)?.name ?? '持续效果') + ' ' + c.dur + '轮')].filter(Boolean).map((t) => '<span>' + esc(t!) + '</span>').join('')}</div>
     <div class="row">${[actor, ...visible.filter(u => u.id === b.attached.get(actor.id))].map(u => `<button data-action="loadout-skills" data-id="${esc(u.id)}" ${battleSkillChangeReason(b, u.id) ? 'disabled' : ''}>${u.id === actor.id ? '技能选择' : '随队技能 · ' + esc(u.name)}</button>`).join('')}</div>
     <div class="formation-current"><span class="tag">${s.draft ? '草案' : s.issued ? '已下达' : '系统建议'}</span><b>${esc(orderName(b, order))}</b>${selectedTarget ? '<p>目标 · ' + esc(selectedTarget.name) + '</p>' : ''}${s.draft && s.issued ? '<small>确认后替换原任务：' + esc(orderName(b, s.issued)) + '</small>' : ''}</div>

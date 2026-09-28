@@ -7,6 +7,7 @@
 import type { Combatant, Trait, TraitEffect } from './types.js';
 import type { ConditionDef } from './types.js';
 import { standardConditionMap } from './conditions.js';
+import { fatiguePenalty } from './resources.js';
 import { humanEncumbered } from './body.js';
 import { defensivePostureMods, looseFormation } from './tactics.js';
 import { activeTraitIds, actualTargetTag, traitPrerequisiteReason, traitStatAdjustments, bodyRank, traitSourceActive } from './trait-sources.js';
@@ -321,7 +322,7 @@ export function collectMods(
     if (ctx.terrain === 'hill' && ctx.opponentTerrain !== 'hill') equipment.push({ source: 'stance', sourceId: 'environment:high-ground', name: '高地', kind: 'def', type: 'flat', value: 1 });
     equipment.push(...fieldModsFor(unit, ctx.fieldTags ?? [], registry));
   }
-  if (unit.rulesVersion === 'v2' && unit.fatigue >= 2) equipment.push({ source: 'condition', sourceId: 'fatigue:atk', name: '持续作战疲劳', kind: 'atk', type: 'flat', value: -Math.floor(unit.fatigue / 2) });
+  if (unit.rulesVersion === 'v2' && fatiguePenalty(unit) > 0) equipment.push({ source: 'condition', sourceId: 'fatigue:atk', name: '持续作战疲劳', kind: 'atk', type: 'flat', value: -fatiguePenalty(unit) });
   const sourceConditions: Modifier[] = [];
   if (unit.rulesVersion === 'v2') for (const source of unit.traitSources ?? []) {
     if (!traitSourceActive(unit, source)) continue;
