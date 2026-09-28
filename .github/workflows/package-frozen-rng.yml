@@ -1,0 +1,59 @@
+name: Package frozen RNG candidate
+on:
+  push:
+    branches: ['feat/bulk-delete-instance-rng']
+permissions:
+  contents: write
+jobs:
+  package:
+    if: startsWith(github.event.head_commit.message, 'chore: package frozen-rng candidate')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply checksum-verified source patch
+        run: |
+          python - <<'PY'
+          import pathlib, lzma, hashlib, subprocess
+          parts = [pathlib.Path(f'.review/rng-patch.{i}') for i in range(3)]
+          patch = lzma.decompress(b''.join(p.read_bytes() for p in parts))
+          assert hashlib.sha256(patch).hexdigest() == '73867fcaa2f52973e95dbe09666e0a940d68dd84b3270e7a5e935d11b20152a2'
+          subprocess.run(['git', 'apply', '--unidiff-zero', '--check', '-'], input=patch, check=True)
+          subprocess.run(['git', 'apply', '--unidiff-zero', '-'], input=patch, check=True)
+          for p in parts: p.unlink()
+          PY
+      - run: npm ci
+      - run: npm run typecheck
+      - name: RNG and inventory focused regression suite
+        run: npx vitest run engine/tests/instance-variance.test.ts panel/src/bulk-inventory.test.ts panel/src/inventory-view.test.ts engine/tests/burst-v8.test.ts engine/tests/unified-balance.test.ts --maxWorkers=2 --minWorkers=2
+      - name: Build and verify installable extension
+        run: npm run build:extension && npm run verify:dist
+      - name: Build browser panel
+        run: npm run build:panel
+      - name: Install browser
+        run: npx playwright-core install --with-deps chromium
+      - name: Browser and persistence regression at four viewport widths
+        run: |
+          node --input-type=module <<'JS'
+          import { chromium } from 'playwright-core';
+          import { execFileSync } from 'node:child_process';
+          execFileSync(process.execPath, ['scripts/bulk-inventory-smoke.mjs'], {stdio: 'inherit', env: {...process.env, TB_BROWSER: chromium.executablePath()}});
+          JS
+      - name: Publish verified candidate
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: atomic inventory bulk delete and frozen five-band RNG (v1.3.19)'
+          git push origin HEAD:refs/heads/feat/bulk-delete-instance-rng
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frozen-rng-browser-validation
+          path: artifacts/bulk-inventory/
+          if-no-files-found: warn
+          retention-days: 14
