@@ -54,7 +54,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   };
   const weapon = weaponFor('primary')!; const sidearm = weaponFor('sidearm');
   const hasArmor = raw.armorTier !== undefined || !!raw.armorId || !!raw.armorName?.trim();
-  const armor = compileArmor({ bonuses: raw.armorBonuses, tier: hasArmor ? raw.armorTier : 0, profile: raw.armorProfile, armorId: raw.armorId, power: raw.armorLevel ?? (hasArmor ? 5 : 1) }, { id: `${id}:armor`, name: raw.armorName, seed: seed + ':armor', body, quality });
+  const armor = compileArmor({ bonuses: raw.armorBonuses, tier: hasArmor ? raw.armorTier : 0, profile: raw.armorProfile, armorId: raw.armorId, power: raw.armorLevel }, { id: `${id}:armor`, name: raw.armorName, seed: seed + ':armor', body, quality });
   const tier = armor.tier, armorPower = armor.level!;
   const conflict = equipmentReason({ body, scale: raw.scale, weapon, sidearm, armor, shield: raw.shield ? { id: `${id}:shield`, load: 2 } : undefined });
   if (conflict) warnings.push('建档已保留配装：' + conflict + '；实际使用由战斗规则判定');
