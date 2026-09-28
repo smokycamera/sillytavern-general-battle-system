@@ -7,6 +7,7 @@ import { resolveWeaponClass } from '../../engine/src/data/weapons.js';
 import { MAX_PROTOCOL_CHARS, MAX_PROTOCOL_EVENTS, MAX_SCENE_UNITS, MAX_SPAWN_COUNT, GROUPING_HINT } from './narrative-limits.js';
 import { scanProtocolTags, normalizedAttributes, serializeEvent } from './protocol-syntax.js';
 import { parseUnitSet, UNIT_SET_ATTRIBUTES } from './unit-set.js';
+import { normalizeNarrativeSkill } from './spec-tolerance.js';
 
 export interface ProtocolBatch { events: Suggestion[]; canonical: string; errors: string[]; warnings: string[] }
 const ATTRIBUTES: Record<string, readonly string[]> = {
@@ -55,24 +56,37 @@ export function parseProtocol(text: string): ProtocolBatch {
       if (!known.has(tag.name)) throw new Error('暂不支持事件 ' + tag.name + '，请补成已支持的效果；引擎战果无需正文重复发放');
       if (!tag.complete) throw new Error(tag.name + ' 事件被截断，属性值尚不完整');
       const attrs = normalizedAttributes(tag, ATTRIBUTES[tag.name]!, warnings);
-      if ((tag.name === 'spawn' || tag.name === 'bless') && attrs.traits) {
+      const hadOptionalList = !!(attrs.skills || attrs.traits);
+      if (['spawn', 'bless', 'unit_set'].includes(tag.name) && attrs.traits) {
         const names = attrs.traits.split(/[,，、;；|]/).map((name) => name.trim()).filter(Boolean);
         const unknown = names.filter((name) => !resolveTraitId(name));
-        if (unknown.length) warnings.push(`${attrs.name || tag.name}：已忽略未支持特质 ${unknown.join('、')}`);
+        if (unknown.length) warnings.push(`${attrs.name || tag.name}：${tag.name === 'unit_set' ? '保留原特质，未采用含未知项的特质列表' : '已忽略未支持特质'} ${unknown.join('、')}`);
         const supported = [...new Set(names.map((name) => resolveTraitId(name)).filter((id): id is string => !!id))];
-        if (supported.length) attrs.traits = supported.join(',');
+        if (tag.name === 'unit_set' && unknown.length) delete attrs.traits;
+        else if (supported.length) attrs.traits = supported.join(',');
         else if (tag.name === 'spawn') delete attrs.traits;
         else if (unknown.length) continue; // 空祝福不创建无效果来源，也不阻断其他事件。
       }
-      if ((tag.name === 'spawn' || tag.name === 'learn') && attrs.skills) {
+      if (['spawn', 'learn', 'unit_set'].includes(tag.name) && attrs.skills) {
         const names = attrs.skills.split(/[,，、;；]/).map((name) => name.trim()).filter(Boolean);
-        const supported = names.filter((name) => parseAbilitySpec(name).length === 1);
-        const unknown = names.filter((name) => !supported.includes(name));
-        if (unknown.length) warnings.push(`${attrs.name || tag.name}：已忽略未支持技能 ${unknown.join('、')}`);
-        if (supported.length) attrs.skills = supported.join(',');
+        const supported: string[] = [], unknown: string[] = [];
+        for (const name of names) {
+          try {
+            const normalized = normalizeNarrativeSkill(name, warnings);
+            if (parseAbilitySpec(normalized).length !== 1) throw Error('未支持的技能机制');
+            supported.push(normalized);
+          } catch (error) {
+            unknown.push(name);
+            warnings.push(`${attrs.name || tag.name}：未采用技能「${name}」（${error instanceof Error ? error.message : String(error)}）`);
+          }
+        }
+        if (tag.name === 'unit_set' && unknown.length) {
+          delete attrs.skills; warnings.push(`${attrs.name || tag.name}：保留原技能列表，避免不完整替换`);
+        } else if (supported.length) attrs.skills = supported.join(',');
         else if (tag.name === 'spawn') delete attrs.skills;
         else if (unknown.length) continue;
       }
+      if (tag.name === 'unit_set' && hadOptionalList && !Object.keys(attrs).some(key => !['id', 'reason'].includes(key))) continue;
       const event = validatedEvent(tag.name, attrs, warnings);
       const earlier = seen.get(event.raw);
       if (earlier !== undefined && (earlier !== tag.block || ['deploy', 'unit-update'].includes(event.kind))) {
@@ -100,7 +114,10 @@ export function parseProtocol(text: string): ProtocolBatch {
   const spawned = events.reduce((n, event) => n + (event.kind === 'spawn' ? event.count : 0), 0);
   if (events.length > MAX_PROTOCOL_EVENTS) errors.push('合并重复内容后共有' + events.length + '项事件，最多' + MAX_PROTOCOL_EVENTS + '项；请调整草稿，尚未入账');
   if (spawned > MAX_SCENE_UNITS) errors.push('本批新建单位超过' + MAX_SCENE_UNITS + '，请调整草稿；' + GROUPING_HINT);
-  return { events, canonical: events.map((e) => e.raw).join('\n'), errors: [...new Set(errors)], warnings: [...new Set(warnings)].slice(0, 12) };
+  // 格式变换提示较多时，优先展示跳过内容/保留旧值的实质诊断。
+  const uniqueWarnings = [...new Set(warnings)];
+  const orderedWarnings = [...uniqueWarnings.filter(w => !w.startsWith('已规范化 ')), ...uniqueWarnings.filter(w => w.startsWith('已规范化 '))];
+  return { events, canonical: events.map((e) => e.raw).join('\n'), errors: [...new Set(errors)], warnings: orderedWarnings.slice(0, 12) };
 }
 
 function validatedEvent(kind: string, attrs: Record<string, string>, warnings: string[]): Suggestion {

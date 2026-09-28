@@ -1,3 +1,4 @@
+import { normalizeNarrativeSpec } from './spec-tolerance.js';
 /** 正文格式层：只提取标签并修正常见书写差异，不生成缺失身份或战斗数值。 */
 export interface ProtocolTag { name: string; attrs: string; raw: string; complete: boolean; block: number }
 const compactKey = (value: string) => value.toLowerCase().replace(/[-_]/g, '');
@@ -67,8 +68,8 @@ function numeric(value: string, key: string): string {
   if (/^\d+(?:\.0+)?$/.test(source)) source = String(Number(source));
   return source;
 }
-const numericKeys = new Set(['hp', 'hpMax', 'level', 'count', 'qty', 'quality', 'rounds', 'battles', 'reserves']);
-const booleanKeys = new Set(['shield', 'mount', 'stabilized', 'permanent']);
+const numericKeys = new Set(['hp', 'hpMax', 'level', 'count', 'qty', 'quality', 'rounds', 'battles', 'reserves', 'speed']);
+const booleanKeys = new Set(['shield', 'mount', 'stabilized', 'permanent', 'retired']);
 const enumAliases: Record<string, Record<string, string>> = {
   side: { 我方: 'ally', 友方: 'ally', 友军: 'ally', allied: 'ally', friendly: 'ally', 敌方: 'enemy', 敌军: 'enemy', hostile: 'enemy' },
   scale: { 个体: 'hero', 英雄: 'hero', 人物: 'hero', 编队: 'company', 连队: 'company', 军团: 'company', 小队: 'company', mook: 'company' },
@@ -81,7 +82,7 @@ const enumAliases: Record<string, Record<string, string>> = {
 };
 export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[], warnings: string[]): Record<string, string> {
   const aliases: Record<string, string> = { ref: 'id', unitid: 'id', maxhp: 'hpMax', max: 'hpMax', currenthp: 'hp',
-    abilities: 'skills', skill: 'skills', sidearm: 'weapon2', secondaryweapon: 'weapon2', lv: 'level',
+    abilities: 'skills', skill: 'skills', sidearm: 'weapon2', secondaryweapon: 'weapon2', primaryweapon: 'weapon', trait: 'traits', armour: 'armor', lv: 'level',
     quantity: tag.name === 'spawn' ? 'count' : 'qty', environment: 'env', lighting: 'light',
     ...(tag.name === 'give' ? { name: 'item' } : tag.name === 'field' ? { name: 'env' } : {}) };
   const result: Record<string, string> = Object.create(null);
@@ -116,8 +117,15 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
     if (booleanKeys.has(key)) value = ({ '1': 'true', '0': 'false', yes: 'true', no: 'false', 是: 'true', 否: 'false', 有: 'true', 无: 'false' } as Record<string, string>)[value.toLowerCase()] ?? value.toLowerCase();
     if (enumAliases[key]) value = enumAliases[key]![value.toLowerCase()] ?? value.toLowerCase();
     if (key === 'env') value = value.toLowerCase();
-    if (['weapon', 'weapon2', 'armor', 'skills', 'spec'].includes(key)) value = halfWidth(value).replace(/(?:level|lv\.?|l)\s*(\d+)(?=\s*(?:[,，、;；]|$))/gi, 'L$1');
-    if (['skills', 'traits', 'effects'].includes(key)) value = value.split(/[,，、;；\n]+/).map((part) => part.trim()).filter(Boolean).join(',');
+    if (['weapon', 'weapon2', 'armor', 'shieldSpec', 'spec'].includes(key)) value = value.split(/[,，、;；]/).map(normalizeNarrativeSpec).join(',');
+    if (['skills', 'traits', 'effects'].includes(key)) {
+      if (value.startsWith('[')) {
+        const list: unknown = JSON.parse(value);
+        if (!Array.isArray(list) || list.some(item => typeof item !== 'string')) throw Error(key + '列表须为文字数组');
+        value = list.join(',');
+      }
+      value = value.split(key === 'skills' ? /[,，、;；\n]+/ : /[,，、;；|+＋\n]+/).map((part) => part.trim()).filter(Boolean).join(',');
+    }
     if (Object.hasOwn(result, key) && result[key] !== value) throw new Error(tag.name + ' 的 ' + key + ' 重复且数值冲突');
     if (originalKey !== key || value !== originalValue || !quote || !pair[quote]) warnings.push('已规范化 ' + tag.name + '.' + key);
     result[key] = value;
