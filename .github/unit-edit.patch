@@ -77,13 +77,21 @@ index 6321a28..6293561 100644
    next.skills = [...root.querySelectorAll<HTMLInputElement>(`[data-role="${prefix}-skill"]`)].map((el, i) => ({ id: skillDefinitionId(el.value.trim()) ?? 'invalid:' + el.value, instanceId: d.skills[i]?.instanceId,
      name: root.querySelector<HTMLInputElement>(`[data-role="${prefix}-skill-name"][data-index="${i}"]`)?.value ?? '',
 diff --git a/scripts/native-extension-smoke.mjs b/scripts/native-extension-smoke.mjs
-index 96c8352..44208a9 100644
 --- a/scripts/native-extension-smoke.mjs
 +++ b/scripts/native-extension-smoke.mjs
-@@ -85,6 +85,36 @@ try {
+@@ -85,6 +85,45 @@ try {
    await frame.locator('[data-action="workspace-tab"][data-tab="units"]').first().click();await idle(frame);
    await frame.locator('[data-action="narrative-approve"]').click();await page.waitForFunction(()=>window.__tavernBattleNative.service.snapshot().storage?.length===2);await idle(frame);
    check('正文候选经面板确认建档并部署',(await state()).rosterIds.length===2);
++  // The freshly spawned fixture is not inventory-managed until a real inventory
++  // transaction adopts its gear. Create one unequipped item through the UI first.
++  await frame.locator('[data-action="workspace-tab"][data-tab="inventory"]').first().click(); await idle(frame);
++  await frame.locator('[data-action="inventory-new"]').click();
++  await frame.locator('[data-role="inventory-name"]').fill('编辑回归备用剑');
++  await frame.locator('[data-action="inventory-preview-draft"]').click();
++  await frame.locator('[data-action="inventory-confirm"]').click();
++  await page.waitForFunction(() => __tavernBattleNative.service.snapshot().storage?.every(r => r.equipmentManaged));
++  await frame.locator('[data-action="workspace-tab"][data-tab="units"]').first().click(); await idle(frame);
 +  // Managed equipment controls are display-only. This exercises main.captureForm,
 +  // not just editUnitBuild with a hand-constructed draft (which missed the bug).
 +  await frame.locator('[data-action="manage-toggle"]').click(); await idle(frame);
