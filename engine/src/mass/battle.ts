@@ -44,7 +44,7 @@ import type { ConditionDef } from '../types.js';
 import type { Rng } from '../rng.js';
 import { SeededRng, liveRng, randomSeed } from '../rng.js';
 import { rollDice } from '../dice.js';
-import { isAirborne, sameLayer, hasFlightAbility, flightCapabilityReason, flightMaintenanceReason, aerialTargetReason, fallDamage, validateFlightState } from '../aerial.js';
+import { isAirborne, sameLayer, hasFlightAbility, flightCapabilityReason, flightMaintenanceReason, aerialTargetReason, rangedTargetDistance, fallDamage, validateFlightState } from '../aerial.js';
 import { sharedParticipants, engagementWidth } from '../exposure.js';
 import { resolveAttack, isRangedCapable, recordAppliedDamage, applyResolutionDamage } from '../damage.js';
 import { grantBarrier, decayBarrier, validateBarrier } from '../barrier.js';
@@ -55,7 +55,7 @@ import { activeTraitIds, activeConditionIds, expireTraitSources, traitSourceActi
 import { bracePose, formationMarchSteps, settleFatigue, fatigueAfter } from '../tactics.js';
 import { environmentTags, macroTerrain } from '../environment.js';
 import { traitRegistry as defaultTraitRegistry } from '../data/traits.js';
-import { pointBlankModifier, abilityTargetReason, abilityUsabilityReason } from '../actions.js';
+import { pointBlankModifier, abilityRangeDistance, abilityTargetReason, abilityUsabilityReason } from '../actions.js';
 import { positionedUnit, observedUnits, observeEvent, observedLog, revealUnit, revealContacts, settleConcealment, canReconceal, validateConcealment, type ObservationContext } from '../observation.js';
 import { FORMATION_NODES, RANKS, formationNode, formationDistance, formationShotReason, formationScreened, formationCanOccupy, formationNodeDistance, validateFormationPosition, setFormation } from './formation.js';
 import { previewAttack, formatResolution, type AttackResolution, type AttackOpts } from '../damage.js';
@@ -504,7 +504,7 @@ export class MassBattle {
       if (ability.target === 'zone' && !target) return '请指定地面阵位';
       if (target && ability.target !== 'zone' && !this.visibleCombatants(actor.side, units).some((u) => u.id === target.id)) return '尚未观测到目标';
       if (target && target.side !== actor.side && this.isAttached(target.id)) return '随队人物受编队掩护';
-      const reason = abilityUsabilityReason(actor, ability) ?? abilityTargetReason({ actor, ability, target, distance: target ? formationDistance(actor, target) : undefined });
+      const reason = abilityUsabilityReason(actor, ability) ?? abilityTargetReason({ space: 'mass', actor, ability, target, distance: target ? formationDistance(actor, target) : undefined });
       if (reason) return reason;
       if (ability.weaponUse && target) {
         const weapon = skillWeapon(actor, ability, formationDistance(actor, target));
@@ -611,13 +611,13 @@ export class MassBattle {
   }
   private supportTargets(actor: Combatant, ability: Ability, primary: Combatant, units: Combatant[]): Combatant[] {
     if (ability.area) return areaTargets({...this.observationContext(units),units:this.visibleCombatants(actor.side,units)},actor,primary,ability,u=>!this.isAttached(u.id)
-      && !abilityTargetReason({actor,ability,target:u,distance:formationDistance(actor,u)})
+      && !abilityTargetReason({space:'mass',actor,ability,target:u,distance:formationDistance(actor,u)})
       && (this.rules.combatModel !== MEMBER_HEALTH_MODEL || !ability.weaponUse || isRangedWeapon(skillWeapon(actor, ability)) || !formationScreened(actor,u,units))
       && (!ability.weaponUse || !rangedScreen(actor,u,skillWeapon(actor,ability,formationDistance(actor,u)),units.filter(c=>!this.isAttached(c.id)),{mode:'mass'},this.conditionMap())));
     if (ability.shape !== 'burst' && !ability.effects.some((e) => e.op === 'damage' && e.shape === 'burst')) return [primary];
     const pivot = ability.recipe?.category === 'physical-area' && ability.damageBasis && !isRangedWeapon(skillWeapon(actor, ability)) ? actor : primary;
     return [primary, ...this.visibleCombatants(actor.side, units).filter((u) => u.id !== primary.id && u.side === primary.side && u.status === 'ready' && !this.isAttached(u.id)
-      && formationDistance(pivot, u) <= 1 && !abilityTargetReason({ actor, ability, target: u, distance: formationDistance(actor, u) })
+      && formationDistance(pivot, u) <= 1 && !abilityTargetReason({ space: 'mass', actor, ability, target: u, distance: formationDistance(actor, u) })
       && (this.rules.combatModel !== MEMBER_HEALTH_MODEL || !ability.weaponUse || isRangedWeapon(skillWeapon(actor, ability)) || !formationScreened(actor, u, units))
       && (!ability.weaponUse || !rangedScreen(actor, u, skillWeapon(actor, ability, formationDistance(actor, u)), units.filter(c => !this.isAttached(c.id)), { mode: 'mass' }, this.conditionMap())))
       .sort((a, b) => a.id.localeCompare(b.id))].slice(0, 2);
@@ -641,7 +641,7 @@ export class MassBattle {
       extraMods: [...this.stanceMods(actor, target, { charge: order.type === 'charge' }), ...(close ? [{ source: 'stance' as const, name: '抵近射击', kind: 'atk' as const, type: 'flat' as const, value: close }] : [])],
       defenderMods: this.defModsFor(target) };
   }
-  orderPreview(order: Order): { effects?: string[]; fallChance?: number; areaTargets?: string[]; areaTargetIds?: string[]; areaPreviews?: import('../actions.js').ActionPreview['areaPreviews']; vehicleMove?: typeof FORMATION_NODES[number]; withdrawal?: typeof FORMATION_NODES[number]; weaponName?: string; approach?: typeof FORMATION_NODES[number]; moraleBefore?: number; moraleAfter?: number; breakChance?: number; rallyChance?: number; healing?: number; reason?: string; preview?: ReturnType<typeof previewAttack>; landing?: typeof FORMATION_NODES[number]; extraFatigue?: number; forcedLanding?: typeof FORMATION_NODES[number]; fallDamage?: number; forcedExit?: boolean; reactions?: string[]; layer?: 'air' | 'ground'; destination?: typeof FORMATION_NODES[number] } {
+  orderPreview(order: Order): { distance?: number; rangeDistance?: number; effects?: string[]; fallChance?: number; areaTargets?: string[]; areaTargetIds?: string[]; areaPreviews?: import('../actions.js').ActionPreview['areaPreviews']; vehicleMove?: typeof FORMATION_NODES[number]; withdrawal?: typeof FORMATION_NODES[number]; weaponName?: string; approach?: typeof FORMATION_NODES[number]; moraleBefore?: number; moraleAfter?: number; breakChance?: number; rallyChance?: number; healing?: number; reason?: string; preview?: ReturnType<typeof previewAttack>; landing?: typeof FORMATION_NODES[number]; extraFatigue?: number; forcedLanding?: typeof FORMATION_NODES[number]; fallDamage?: number; forcedExit?: boolean; reactions?: string[]; layer?: 'air' | 'ground'; destination?: typeof FORMATION_NODES[number] } {
     const known = this.planningUnits(order), reason = this.v2OrderReason(order, known);
     if (reason) return { reason };
     if (order.type === 'reload') return { effects: ['消耗一次行动，实际武器装填时间减少1轮'] };
@@ -663,6 +663,8 @@ export class MassBattle {
           ...this.skillAttackOptions(known, actor, affected, ability, damage) }, known),
       })) : [];
       return target ? {
+        distance: formationDistance(actor, target),
+        rangeDistance: abilityRangeDistance(actor, ability, target, formationDistance(actor, target), 'mass'),
         effects: skillEffectLines(this.observationContext(known), actor, target, ability),
         ...(strike ? { preview: strike } : {}),
         ...(area.length ? { areaTargets: area.map((u) => u.name), areaTargetIds: area.map((u) => u.id), areaPreviews } : {}),
@@ -678,7 +680,9 @@ export class MassBattle {
     if (!['attack', 'charge', 'volley'].includes(order.type)) return {};
     const attack = { ...this.orderAttackOptions(order, known), actionDamageScale: order.haste ? hasteAttackScale(actor) : 1 };
     const vehicleMove = order.type === 'volley' && target ? this.vehicleShotDestination(actor, target, known) : undefined;
-    return { ...(vehicleMove ? { vehicleMove, reactions: this.takeoffThreats(actor, known).filter((u) => formationNodeDistance(formationNode(u), vehicleMove) > 1).map((u) => u.name) } : {}), preview: this.previewAttackWithEnvironment(attack, known), weaponName: attack.weaponOverride?.name,
+    return { distance: formationDistance(attack.attacker, attack.defender),
+      rangeDistance: attack.ranged ? rangedTargetDistance(attack.attacker, attack.defender, formationDistance(attack.attacker, attack.defender), 'mass') : formationDistance(attack.attacker, attack.defender),
+      ...(vehicleMove ? { vehicleMove, reactions: this.takeoffThreats(actor, known).filter((u) => formationNodeDistance(formationNode(u), vehicleMove) > 1).map((u) => u.name) } : {}), preview: this.previewAttackWithEnvironment(attack, known), weaponName: attack.weaponOverride?.name,
       ...(approach ? { approach } : {}), ...(order.type === 'volley' && target && this.mountedShotDestination(actor, target, known) ? { withdrawal: this.mountedShotDestination(actor, target, known) } : {}), ...(landing ? { landing: approach ?? landing, extraFatigue: 1 } : {}) };
   }
   /** UI默认方案与自动军令共用；只读取当前可观察事实，不下令、不消耗RNG。 */
@@ -1699,6 +1703,7 @@ export class MassBattle {
     const unavailable = abilityUsabilityReason(u, ability);
     if (unavailable) return { ok: false, reason: unavailable };
     const invalidTarget = abilityTargetReason({
+      space: 'mass',
       actor: u,
       ability,
       target: chosenTarget,

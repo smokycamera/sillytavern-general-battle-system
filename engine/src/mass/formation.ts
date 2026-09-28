@@ -2,7 +2,7 @@ import { ignoresFriendlyScreen } from '../loadout.js';
 import { canShootOverAlly } from '../body.js';
 import type { Combatant } from '../types.js';
 import { activeTraitIds } from '../trait-sources.js';
-import { hasFlightAbility, isAirborne, sameLayer } from '../aerial.js';
+import { hasFlightAbility, isAirborne, sameLayer, aerialTargetReason, rangedTargetDistance } from '../aerial.js';
 /** 普通个体在会战依附编队；真实独立平台与飞行单位保留独立位置。 */
 export function needsFormationHost(unit: Combatant): boolean {
   return unit.scale === 'hero' && !unit.summonerId && (unit.body ?? 'human') === 'human' && unit.status === 'ready' && !hasFlightAbility(unit);
@@ -87,8 +87,9 @@ export function deployVanguardFormation(units: Combatant[], attached: Map<string
 export function formationShotReason(actor: Combatant, target: Combatant, units: Combatant[]): string | undefined {
   const weapon = actor.weapon;
   if (!weapon?.tags?.includes('ranged')) return '需要射击武器';
+  const aerial = aerialTargetReason(actor, target, true, weapon); if (aerial) return aerial;
   const from = formationNode(actor), to = formationNode(target);
-  const distance = formationDistance(actor, target);
+  const distance = rangedTargetDistance(actor, target, formationDistance(actor, target), 'mass');
   if (distance < (weapon.minRange ?? 0) || distance > (weapon.range ?? 3)) return `阵位距离${distance}不在武器射程内`;
   if (isAirborne(actor) || isAirborne(target)) return undefined;
   if (weapon.pointBlankPolicy === 'forbid' && units.some((u) => u.side !== actor.side && u.status === 'ready' && sameLayer(actor, u) && formationDistance(actor, u) <= 1)) return '被相邻敌人牵制，该武器不能抵近射击';

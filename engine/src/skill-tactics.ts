@@ -80,7 +80,7 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
         if (!rawWeapon || flags(context, actor).some(d => d?.preventAttack) && rawWeapon.recipe?.mechanism !== 'natural') continue;
         const ranged = isRangedWeapon(rawWeapon);
         const weapon = field ? gridWeapon(rawWeapon) : !ranged && actor.combatModel === 'cohort-v2' ? { ...rawWeapon, range: meleeReach(rawWeapon) } : rawWeapon;
-        if (weaponTargetReason({ actor, target, weapon, ranged, distance: dist, reloadLeft: context.reload?.get(weaponReloadKey(actor, rawWeapon)) }) || shotBlocked(weapon, ranged)) continue;
+        if (weaponTargetReason({ space: context.mode, actor, target, weapon, ranged, distance: dist, reloadLeft: context.reload?.get(weaponReloadKey(actor, rawWeapon)) }) || shotBlocked(weapon, ranged)) continue;
         const width = engagementWidth(actor, target, ranged, field, context.fieldTags);
         const attached = new Set(context.attached?.values() ?? []);
         const cohort = world.units.filter(u => !attached.has(u.id) && sameLayer(actor, u) && (context.mode === 'mass' ? formationNode(actor).id === formationNode(u).id : u.pos === actor.pos));
@@ -89,7 +89,7 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
       for (const rawAbility of weaponOnly ? [] : actor.abilities) {
         if (!rawAbility.effects.some(e => e.op === 'damage')) continue;
         const ability = field ? gridAbility(rawAbility) : rawAbility;
-        if (abilityUsabilityReason(actor, ability) || abilityTargetReason({ actor, ability, target, distance: dist })) continue;
+        if (abilityUsabilityReason(actor, ability) || abilityTargetReason({ space: context.mode, actor, ability, target, distance: dist })) continue;
         const weapon = skillWeapon(actor, ability, dist);
         if (!weapon && !sighted) continue;
         if (weapon && ((context.reload?.get(weaponReloadKey(actor, weapon)) ?? 0) > 0 || shotBlocked(weapon, isRangedWeapon(weapon)))) continue;
@@ -101,7 +101,7 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
       if (abilityUsabilityReason(actor, ability)) continue;
       for (const target of context.units.filter(u => u.side === actor.side && alive(u))) {
         if (field && !unitLineOfSight(field,actor,positionedUnit(context,target))) continue;
-        if (abilityTargetReason({ actor, ability: field ? gridAbility(ability) : ability, target, distance: distance(context, actor, positionedUnit(context, target)) })) continue;
+        if (abilityTargetReason({ space: context.mode, actor, ability: field ? gridAbility(ability) : ability, target, distance: distance(context, actor, positionedUnit(context, target)) })) continue;
         const heal = ability.effects.reduce((sum, e) => e.op === 'heal' ? sum + healingYield(actor, target, e.amount ?? averageDice(e.dice), !!ability.itemSourceId) : sum, 0);
         best = Math.max(best, Math.min(recoveryCapacity(target), heal));
       }

@@ -6,6 +6,11 @@ export function isRangedWeapon(weapon?: Weapon): boolean { return !!weapon?.tags
 export function isCannonWeapon(weapon?: Weapon): boolean {
   return ['cannon', 'indirect-cannon'].includes(weapon?.recipe?.mechanism ?? weapon?.tags?.find(tag => tag.startsWith('mechanism:'))?.slice(10) ?? '');
 }
+/** 弹道由装备机制决定，不用名称猜测；兼容旧直射炮的 indirect 标记。 */
+export function isIndirectCannonWeapon(weapon?: Weapon): boolean {
+  const mechanism = weapon?.recipe?.mechanism ?? weapon?.tags?.find(tag => tag.startsWith('mechanism:'))?.slice(10);
+  return mechanism === 'indirect-cannon' || !!weapon?.indirect && isCannonWeapon(weapon);
+}
 /** 弓弩与法杖可越过友方占位；不授予穿墙或越过敌军的间接火力性质。 */
 export function ignoresFriendlyScreen(weapon?: Weapon): boolean {
   return ['bow', 'magic'].includes(weapon?.recipe?.mechanism ?? weapon?.tags?.find(tag => tag.startsWith('mechanism:'))?.slice(10) ?? '');
