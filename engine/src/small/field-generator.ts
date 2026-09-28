@@ -29,7 +29,7 @@ export function generatedField(seed: string, width = 7, height = 13, tags: strin
     cell(center, height - 2), cell(center, height - 1)]);
   if (indoor && options.roster?.length) {
     const units = options.roster.map(u => ({ ...u, airborne: u.airborne ?? !flightCapabilityReason(u) }));
-    for (const position of deployOnGrid(field, units)) reserved.add(position);
+    for (const position of deployOnGrid(field, units, seed)) reserved.add(position);
   }
 
   // 两条通路各自选起点和转折，不复制/旋转另一侧。允许侧边和中列出现地形。

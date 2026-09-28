@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateUnit, SmallBattle, standardField, traitRegistry, V2_D20, type Combatant } from '../src/index.js';
+import { generateUnit, SmallBattle, standardField, neighbors, traitRegistry, V2_D20, type Combatant } from '../src/index.js';
 const registry = traitRegistry();
 function unit(id: string, side: 'ally' | 'enemy', weaponClass = 'rifle'): Combatant {
   const u = generateUnit({ name: id, side, scale: 'hero', rulesVersion: 'v2', level: 4, weaponClass, weaponLevel: 5, armorTier: 1, hpMax: 500, traits: [], archetype: 'mobile' }, { registry, seed: id, noVariance: true }).unit;
@@ -43,7 +43,7 @@ describe('真实二维战斗行为', () => {
       summonUnit: (_template, side) => unit('temporary', side as 'ally' | 'enemy', 'sword') });
     b.start(); b.turnOrder = [summoner.id, 'enemy']; b.turnIndex = 0;
     const before = JSON.stringify(b.toSnapshot());
-    for (const cell of [summoner.pos! - 7, summoner.pos! + 1, summoner.pos! + 7]) b.battlefield!.tiles[cell] = 'wall';
+    for (const cell of neighbors(b.battlefield!, summoner.pos!)) b.battlefield!.tiles[cell] = 'wall';
     expect(b.useAbility(summoner.id, summoner.abilities[0]!.id).ok).toBe(false);
     expect(summoner.resources.reserve).toBe(2); expect(b.combatants).toHaveLength(2);
     const restored = SmallBattle.fromSnapshot(JSON.parse(before), { traitRegistry: registry, summonUnit: (_template, side) => unit('temporary', side as 'ally' | 'enemy', 'sword') });

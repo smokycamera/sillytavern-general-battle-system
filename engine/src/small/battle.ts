@@ -258,7 +258,7 @@ export class SmallBattle {
     if (this.started) return;
     if (this.battlefield) {
       const prepared = this.combatants.map((u) => ({ ...u, ...(this.rules.resolutionVersion === 'v2' && u.airborne === undefined && !flightCapabilityReason(u, this.conditions) ? { airborne: true } : {}) }));
-      const positions = deployOnGrid(this.battlefield, prepared);
+      const positions = deployOnGrid(this.battlefield, prepared, this.seed);
       this.combatants.forEach((c, i) => { c.pos = positions[i]; if (prepared[i]!.airborne !== undefined) c.airborne = prepared[i]!.airborne; });
     }
     this.started = true;
