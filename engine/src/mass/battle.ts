@@ -23,7 +23,7 @@ import { prepareCondition, applySkillCondition, dispelCandidates, applyDispel, p
 import { applyWeaponConditions, poisonDamage, poisonFactor, conditionDamage } from '../afflictions.js';
 import { isRangedWeapon, meleeWeapon, weaponReloadKey, weaponReloadTurns, validateMount, mountedShooting, mobileRangedWeapon, vehicleShooting } from '../loadout.js';
 import { meleeReach } from '../melee.js';
-import { MAX_RALLY_ATTEMPTS, moraleProfile, moraleAttackMods, decideMorale, changeMorale, validateMoraleState, moraleRisk, moraleChangePreview, reconcileDamageMorale } from '../morale.js';
+import { MAX_RALLY_ATTEMPTS, moraleProfile, moraleAttackMods, decideMorale, changeMorale, validateMoraleState, moraleRisk, moraleChangePreview, reconcileDamageMorale, recoverEntryMorale } from '../morale.js';
 import { applyHealthLoss, applyCombatDamage, applyRecovery, recoveryCapacity, regenerationAmount, validateWounded } from '../recovery.js';
 import {hasMemberHealth,memberHealth,MEMBER_HEALTH_MODEL} from '../member-health.js';
 import { diceAvg } from '../data/weapons.js';
@@ -1286,6 +1286,10 @@ export class MassBattle {
     if (this.rules.resolutionVersion === 'v2') this.prepareFormation();
     this.started = true;
     this.round = 1;
+    for (const unit of this.combatants) {
+      const restored = recoverEntryMorale(unit);
+      if (restored) this.recordEvent({ round: 1, kind: 'morale', participants: [unit.id], text: `${unit.name} 开战前整顿，士气 0→${restored}` });
+    }
     this.updateFrontControl();
     this.refreshCp();
     if (this.rules.resolutionVersion === 'v2') revealContacts(this.observationContext());

@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "1.3.18",
-  "builtAt": "2026-09-28T14:18:09.652Z",
-  "sourceFingerprint": "23bf19e3520e4177adda754f30f63a6706a3dba9b9f62339f256137041981332",
+  "builtAt": "2026-09-28T14:27:01.160Z",
+  "sourceFingerprint": "5c8ca6b6a2db9ed3a3c020862f0110fcec25ffc246d145b8f05bb7ae0426ad66",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -31,9 +31,9 @@
       "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     },
     {
-      "path": "dist/assets/panel-CIgijHS8.js",
-      "bytes": 316240,
-      "sha256": "bbca86579b8d6d9577c064ddf0565bb67bbf84ab5985b7ec759482db98cd9b61"
+      "path": "dist/assets/panel-BOvjBGy7.js",
+      "bytes": 316457,
+      "sha256": "39077bd82aad3636528fcfe3f1be015de38184cbd66a45729742c058d0bf6cf3"
     },
     {
       "path": "dist/assets/panel-KVZ1GitA.css",
@@ -41,9 +41,9 @@
       "sha256": "9ecfd9e2abb7edeb8b59fe6e7d1f5c6b36332b81fe9f688d0b3d63b13b486cd0"
     },
     {
-      "path": "dist/assets/preferences-D7BuQK6g.js",
-      "bytes": 576123,
-      "sha256": "3d76b8c5b5dc7d86c4c7d2f7d2ef94a92e91f99b737aca562856b97a53aa0813"
+      "path": "dist/assets/preferences-0b-_xkME.js",
+      "bytes": 576713,
+      "sha256": "68f8e1b6be68a2f44cdb5b52b6623353d6809bd0d20368dd1e307e73fe369cf9"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -52,8 +52,8 @@
     },
     {
       "path": "assets/worldbook/!通用战斗系统约束.json",
-      "bytes": 18446,
-      "sha256": "ce27961578de3847c8e69b68f26f1b8a30450fd1e6b38b72b26fe57cda011d91"
+      "bytes": 18531,
+      "sha256": "0e22545f99acf9515f5811fa59ac6fac7f57eba8d92213b5dd62cfe54404c511"
     },
     {
       "path": "assets/worldbook/lorebook system explain.md",
@@ -158,7 +158,7 @@
     {
       "path": "dist/index.js",
       "bytes": 82410,
-      "sha256": "91e216906f99f525cb3169c838b500434d335400c4860e0819a4f108bf5ac070"
+      "sha256": "b8a07327906f69d9455ee82ff895c57484d2971cd16f3823a733ac3a61a227b6"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -173,7 +173,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 49844,
-      "sha256": "166b04c53b325c8d2952928f5c20f50715b1578591b7da897de4a82fc96b052e"
+      "sha256": "5386e96ad5e3b9f0a493930f0fd476daeb95ba21545f7ac76ebe39843b4f8058"
     },
     {
       "path": "release/current-baseline.json",
