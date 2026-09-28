@@ -1,6 +1,6 @@
 {
   "name": "tavern-battle",
-  "version": "1.3.20",
+  "version": "1.3.21",
   "description": "通用战斗系统v1.0 —— SillyTavern / TauriTavern 原生回合制战斗扩展",
   "license": "GPL-3.0-only",
   "type": "module",
@@ -10,7 +10,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "build:extension": "node scripts/check-jev-vendor.mjs && vite build --config extension/vite.config.ts && node scripts/package-extension.mjs",
-    "test:extension": "vitest run host/tests runtime/tests panel/src/auto-battle.test.ts panel/src/report-history.test.ts panel/src/report-epilogue.test.ts panel/src/jev-command.test.ts panel/src/jev-context.test.ts panel/src/jev-retry.test.ts panel/src/jev-connection.test.ts panel/src/jev-transport.test.ts panel/src/main.integration.test.ts panel/src/reaction-turn.integration.test.ts panel/src/scan-readiness.integration.test.ts",
+    "test:extension": "vitest run host/tests runtime/tests panel/src/auto-battle.test.ts panel/src/report-history.test.ts panel/src/report-epilogue.test.ts panel/src/jev-command.test.ts panel/src/jev-context.test.ts panel/src/jev-retry.test.ts panel/src/jev-connection.test.ts panel/src/jev-transport.test.ts panel/src/main.integration.test.ts panel/src/reaction-turn.integration.test.ts panel/src/scan-readiness.integration.test.ts panel/src/unit-edit.integration.test.ts",
     "verify:compatibility": "vite-node scripts/verify-recovered-scenarios.ts && vite-node scripts/verify-native-compatibility.ts",
     "smoke:extension": "node scripts/native-extension-smoke.mjs",
     "verify:extension": "npm run typecheck && npm run test:extension && npm run test:jev-relay && npm run verify:compatibility && npm run build:extension && npm run smoke:extension",
