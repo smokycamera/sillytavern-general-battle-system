@@ -1,4 +1,5 @@
-import { fatiguePenalty, abilityCost, prepareResourceModel, recoverSp, spRecovery, skillExertion, resourceRound } from '../resources.js';
+import { tacticalSkillCost, tacticalRestValue } from '../skill-economy.js';
+import { fatiguePenalty, abilityCost, prepareResourceModel, recoverSp, skillExertion, resourceRound } from '../resources.js';
 import { actionPotential } from '../skill-tactics.js';
 import { hasteMagnitude, hasteAttackScale } from '../haste.js';
 import { commanderScores, normalizeCommanderProfiles, type CommanderProfiles } from '../commander-profile.js';
@@ -16,7 +17,7 @@ import { gridAbility } from './skill-range.js';
 import { gridWeapon, gridWeaponRange } from './weapon-range.js';
 import { rangedScreen, rangedScreenReason } from '../guard-screen.js';
 import { engagementWidth } from '../exposure.js';
-import { skillWeapon, skillResourceChange, skillResourceCost, conjureSkillUnit, conjuredTemplate, summonedMemberLife } from '../skill-runtime.js';
+import { skillWeapon, skillResourceChange, conjureSkillUnit, conjuredTemplate, summonedMemberLife } from '../skill-runtime.js';
 import { applySkillTrait, isPositiveCondition } from '../skill-effects.js';
 import { skillAttack } from '../skill-attack.js';
 import { prepareCondition, applySkillCondition, dispelCandidates, applyDispel, applyPush, pushPreview, skillEffectLines, skillEffectValue, summonValue, conditionChance } from '../skill-effects.js';
@@ -43,7 +44,7 @@ import { LITE_D20, counterMod, rulesById } from '../rules.js';
 import { getTrait, hasFlag, fieldModsFor, collectMods, resolveStack } from '../bonus.js';
 import { BattleFeedback, type FeedbackUnit, type RoundFeedback } from '../battle-feedback.js';
 import { activeTraitIds, activeConditionIds, expireTraitSources, traitSourceActive } from '../trait-sources.js';
-import { bracePose, movementPoints, settleFatigue, fatigueAfter, addTacticalEffort, validateTacticalEffort } from '../tactics.js';
+import { bracePose, movementPoints, settleFatigue, addTacticalEffort, validateTacticalEffort } from '../tactics.js';
 import { isAirborne, sameLayer, flightCapabilityReason, flightMaintenanceReason, fallDamage, validateFlightState } from '../aerial.js';
 import { environmentTags } from '../environment.js';
 import { traitRegistry as defaultTraitRegistry } from '../data/traits.js';
@@ -1593,10 +1594,7 @@ export class SmallBattle {
     let restValue = 0;
     if (unit.resourceModel && !this.actedThisTurn.has(unitId) && !this.movedThisTurn.has(unitId) && this.hasteSpent.get(unitId) !== this.round) {
       const context = { ...this.observationContext(), units: knownUnits };
-      const rested = { ...unit, resources: { ...unit.resources }, fatigue: fatigueAfter(unit, 0, true),
-        abilityState: unit.abilityState.map(s => ({ ...s, cdLeft: Math.max(0, s.cdLeft - 1) })) };
-      rested.resources.SP = resourceRound((rested.resources.SP ?? 0) + spRecovery(rested, true));
-      restValue = Math.max(0, (actionPotential(context, rested) - actionPotential(context, unit)) * 1.5);
+      if (!this.reactionSpent.has(unitId)) restValue = tacticalRestValue(context, unit);
     }
     for (const path of this.reachableCells(unitId)) {
       const actor = { ...unit, pos: path.cells.at(-1)! };
@@ -1632,7 +1630,7 @@ export class SmallBattle {
           && (['ready', 'routing'].includes(target.status) || target.status === 'dying' && ability.effects.some((e) => e.op === 'heal')));
         for (const target of candidates) {
           if (this.skillTargetReason(actor, ability, target)) continue;
-          let benefit = 0;
+          let benefit = 0, expectedDamage = 0;
           const damageForControl = ability.effects.find((e) => e.op === 'damage');
           const controlPreviews = new Map<string, ReturnType<SmallBattle['previewAttackWithEnvironment']>>();
           const controlChance = (affected: Combatant, needsDamage: boolean) => {
@@ -1645,6 +1643,7 @@ export class SmallBattle {
             if (effect.op === 'damage') for (const affected of this.abilityDamageTargets(actor, target, ability, effect.shape === 'burst')) {
               const preview = this.previewAttackWithEnvironment({ attacker: actor, defender: affected, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(actor, affected, ability, effect, path.cost > 0) });
               benefit += preview.expectedDamage + (preview.conditionValue ?? 0);
+              if (affected.side !== actor.side) expectedDamage += preview.expectedDamage;
             }
             if (effect.op === 'heal') for (const affected of this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst')) benefit += Math.min(recoveryCapacity(affected), healingYield(actor,affected,effect.amount ?? diceAvg(effect.dice!),!!ability.itemSourceId));
             if (effect.op === 'summon') benefit += summonValue(skillContext, actor, ability, effect);
@@ -1655,7 +1654,7 @@ export class SmallBattle {
           const landing = this.abilityFlightPreview(actor, target, ability);
           if (landing) benefit += Math.min(target.hp, landing.fallDamage) * (landing.fallChance ?? 1);
           for (const affected of ability.recipe || ability.itemSourceId || ability.equipmentSourceId ? this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst') : [actor]) benefit += skillEffectValue(skillContext, actor, affected, { ...ability, effects: ability.effects.filter(e => e.op === 'resource') });
-          const cost = skillResourceCost(ability, actor);
+          const cost = tacticalSkillCost(skillContext, actor, ability, expectedDamage);
           if (benefit > cost) plans.push({ score: baseScore + benefit - cost, offensive: target.side !== actor.side, path, targetId: target.id, abilityId: ability.id, kind: 'ability' });
         }
       }

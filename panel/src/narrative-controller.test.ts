@@ -68,7 +68,7 @@ describe('常驻宿主生命周期与故障', () => {
     const { controller, generate, fail } = setup({ schemaVersion: 2, factRevision: 1, storySync: true, storage: [unitRecordFromCombatant(learner)], rosterIds: [] });
     await generate('<tb><spawn name="法师" side="ally" scale="hero" skills="火花:魔法单体L3,自创未知术L5"/><spawn name="普通人" side="ally" scale="hero" skills="未知技能"/><learn id="a" skills="术弹:魔法单体L3,无此技能"/><learn id="a" skills="全都未知"/></tb>');
     const p = controller.snapshot().proposals!.at(-1)!;
-    expect(p.status).toBe('pending'); expect(p.events).toHaveLength(3); expect(p.notices?.join(' ')).toContain('已忽略未支持技能');
+    expect(p.status).toBe('pending'); expect(p.events).toHaveLength(3); expect(p.notices?.join(' ')).toContain('未采用技能「自创未知术L5」（未支持的技能机制）');
     expect(controller.approve(p.id).status).toBe('saved'); const saved = controller.snapshot();
     expect(saved.storage!.find((r) => r.name === '法师')!.snapshot!.abilities).toHaveLength(1);
     expect(saved.storage!.find((r) => r.name === '普通人')!.snapshot!.abilities).toHaveLength(0);
