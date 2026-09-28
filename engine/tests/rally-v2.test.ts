@@ -70,7 +70,7 @@ describe('有界惊退与重整', () => {
     const battle = new MassBattle({ combatants: [a, backup, source], rules: V2_TW, traitRegistry: registry, seed: 'blocked-rally', rng: { seed: 'blocked-rally', next: () => 0, d: () => roll } }); battle.start();
     const next = () => { for (const u of battle.combatants.filter((u) => u.status === 'ready')) battle.issue({ unitId: u.id, type: 'hold' }); battle.resolveRound(battle.round); }; next();
     expect(a.status).toBe('routing');
-    for (const node of FORMATION_NODES.filter((n) => ['ally:中军:front', 'ally:中军:rear', 'ally:中军:reserve', 'ally:左翼:rear', 'ally:右翼:rear'].includes(n.id))) for (let i = 0; i < 3; i++) { const u = unit('block-' + node.id + i); setFormation(u, node); battle.combatants.push(u); }
+    for (const node of FORMATION_NODES.filter((n) => n.side === 'ally')) for (let i = 0; i < 3; i++) { const u = unit('block-' + node.id + i); setFormation(u, node); battle.combatants.push(u); }
     roll = 20; next(); expect(a.status).toBe('routing'); expect(a.moraleState!.attempts).toBe(1);
     next(); expect(a.status).toBe('routing'); expect(a.moraleState!.attempts).toBe(2);
     next(); expect(a.status).toBe('fled'); expect(a.moraleState!.attempts).toBe(3); expect(a.hp).toBe(500);

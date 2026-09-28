@@ -1957,15 +1957,32 @@ export class SmallBattle {
     const decision = decideMorale(this.observationContext(), unit, this.round, this.rng, this.rules.morale.breakAt, this.traitRegistry);
     if (decision.kind === 'none') return;
     if (decision.state) unit.moraleState = decision.state;
-    if (decision.kind === 'routed') {
+    if (decision.kind === 'routed' || decision.kind === 'failed') {
       unit.status = 'routing'; delete unit.tacticalPose; this.overwatch.delete(unit.id); this.reactionSpent.add(unit.id);
-      if (this.battlefield && unit.pos !== undefined) {
-        const next = unit.pos + (unit.side === 'ally' ? this.battlefield.width : -this.battlefield.width);
-        if (canOccupy(this.battlefield, this.combatants, unit, next)) { unit.pos = next; this.movedThisTurn.add(unit.id); }
-      }
     } else if (decision.kind === 'fled') { unit.status = 'fled'; delete unit.tacticalPose; this.overwatch.delete(unit.id); }
     else if (decision.kind === 'rallied') { unit.status = 'ready'; changeMorale(unit, Math.max(0, this.rules.morale.breakAt + 15 - (decision.effective ?? 0))); }
     if (decision.text) this.recordEvent({ round: this.round, kind: 'morale', participants: [unit.id], text: decision.text });
+    if (decision.kind === 'routed' || decision.kind === 'failed') this.moveRoutingUnit(unit);
+  }
+
+  /** Each failed rally grants one retreat move; repeated settlements in a round grant none. */
+  private moveRoutingUnit(unit: Combatant): void {
+    const field = this.battlefield, start = unit.pos;
+    if (!field || start === undefined || unit.conditions.some(c => {
+      const def = this.conditions.get(c.id); return c.dur > 0 && (def?.skipTurn || def?.preventMove);
+    })) return;
+    const allowed = (cell: number) => cell === start || canOccupy(field, this.combatants, unit, cell);
+    const cost = (cell: number) => tileCost(field, cell, unit);
+    const rearRow = unit.side === 'ally' ? field.height - 1 : 0;
+    const goals = Array.from({ length: field.width }, (_, x) => rearRow * field.width + x);
+    const remaining = gridCostsToGoals(field, goals, allowed, cost);
+    const distance = (cell: number) => remaining.get(cell) ?? Math.abs(Math.floor(cell / field.width) - rearRow) * 2;
+    const path = reachableGridPaths(field, start, this.movementBudget(unit.id), allowed, cost)
+      .filter(p => distance(p.cells.at(-1)!) < distance(start))
+      .sort((a, b) => distance(a.cells.at(-1)!) - distance(b.cells.at(-1)!) || a.cost - b.cost)[0];
+    if (!path) return;
+    unit.pos = path.cells.at(-1)!; this.movedThisTurn.add(unit.id);
+    this.recordEvent({ round: this.round, kind: 'morale', participants: [unit.id], text: `${unit.name} 溃退：${cellLabel(field, start)}→${cellLabel(field, unit.pos)}` });
   }
 
   /** 回合开始效果：清移动标记、装填递减、持续伤害与死亡判定 */

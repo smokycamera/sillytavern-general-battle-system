@@ -348,13 +348,14 @@ export class MassBattle {
     for (const { id, decision } of decisions) {
       if (decision.kind === 'none') continue;
       const unit = this.byId(id); if (decision.state) unit.moraleState = decision.state;
-      if (decision.kind === 'routed') {
+      if (decision.kind === 'routed' || decision.kind === 'failed') {
         unit.status = 'routing'; delete unit.tacticalPose;
-        if (!this.isAttached(id)) {
+        const immobilized = activeConditionIds(unit).some(id => this.conditions.get(id)?.skipTurn || this.conditions.get(id)?.preventMove);
+        if (!this.isAttached(id) && !immobilized) for (let step = 0; step < formationMarchSteps(unit, this.fieldTags); step++) {
           const from = formationNode(unit), to = FORMATION_NODES.find((n) => n.x === from.x && n.y === from.y + (unit.side === 'ally' ? 1 : -1));
           if (to && (to.side === unit.side || unit.formationPosition !== undefined) && formationCanOccupy(this.combatants, unit, to, this.attached)) {
             unit.formationPosition ??= from.id; setFormation(unit, to); this.syncPassenger(unit);
-          }
+          } else break;
         }
       } else if (decision.kind === 'fled') { unit.status = 'fled'; delete unit.tacticalPose; }
       else if (decision.kind === 'rallied') {
