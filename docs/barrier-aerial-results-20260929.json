@@ -1,0 +1,423 @@
+{
+  "version": "1.3.20",
+  "baseline": "5395b9b64b34a976fe9b49d8e4703a1afbf16b5c",
+  "date": "2026-09-29",
+  "checks": {
+    "typecheck": "passed",
+    "fullSuite": {
+      "total": 1400,
+      "passed": 1393,
+      "failed": 7,
+      "newFailures": [],
+      "baselineFailures": [
+        "V5 saved battles and V6 prototype replay compatibility V5 human-four T1",
+        "V5 saved battles and V6 prototype replay compatibility V5 giant-four T10",
+        "V5 saved battles and V6 prototype replay compatibility V6-prototype giant-four T6",
+        "V5 saved battles and V6 prototype replay compatibility V6-prototype giant-unbreakable T1",
+        "V5 saved battles and V6 prototype replay compatibility V6-prototype human4-vehicle2 T10",
+        "生命上限贯穿正文、编辑与档案 正文高生命自动截断并给出提示，编队人数保留原值",
+        "生命上限贯穿正文、编辑与档案 正文事务不能在生成后用旧事件值覆盖生命上限"
+      ]
+    },
+    "targetedNewTests": 41,
+    "nativeTests": {
+      "passed": 220,
+      "failed": 0
+    },
+    "relayTests": {
+      "passed": 5,
+      "failed": 0
+    },
+    "build": "passed",
+    "verifyDist": "passed",
+    "worldbookDiff": "empty",
+    "compatibility": "same failure as baseline (small-seeded-actions-and-restore; haste snapshot fields)",
+    "browserLocal": "blocked by container policy ERR_BLOCKED_BY_ADMINISTRATOR before page load; not a product pass",
+    "browserRemote": "see barrier-aerial-browser-20260929.json when produced by packaging workflow",
+    "realSTorTT": "not tested on a live installation"
+  },
+  "benchmark": {
+    "matchingCases": 30,
+    "matchingPreviews": 1200,
+    "matchingAiActivations": 30,
+    "note": "same Node 22.16.0 container, sequential baseline/candidate runs; median of five trials; no browser/phone latency claim",
+    "node": "v22.16.0",
+    "trials": 5,
+    "summary": [
+      {
+        "scenario": "hero/1/false",
+        "previewBeforeMs": 3.308,
+        "previewAfterMs": 3.438,
+        "activationBeforeMs": 16.374,
+        "activationAfterMs": 20.745
+      },
+      {
+        "scenario": "hero/1/true",
+        "previewBeforeMs": 314.607,
+        "previewAfterMs": 12.795,
+        "activationBeforeMs": 214.26,
+        "activationAfterMs": 74.748
+      },
+      {
+        "scenario": "company/20/false",
+        "previewBeforeMs": 2.637,
+        "previewAfterMs": 3.06,
+        "activationBeforeMs": 12.051,
+        "activationAfterMs": 16.693
+      },
+      {
+        "scenario": "company/20/true",
+        "previewBeforeMs": 1120.194,
+        "previewAfterMs": 41.455,
+        "activationBeforeMs": 666.824,
+        "activationAfterMs": 245.225
+      },
+      {
+        "scenario": "company/100/false",
+        "previewBeforeMs": 2.667,
+        "previewAfterMs": 2.576,
+        "activationBeforeMs": 11.921,
+        "activationAfterMs": 14.448
+      },
+      {
+        "scenario": "company/100/true",
+        "previewBeforeMs": 1368.195,
+        "previewAfterMs": 36.082,
+        "activationBeforeMs": 733.676,
+        "activationAfterMs": 213.256
+      }
+    ],
+    "samples": [
+      {
+        "scale": "hero",
+        "members": 1,
+        "barrier": false,
+        "trial": 0,
+        "previewBeforeMs": 15.967,
+        "previewAfterMs": 16.074,
+        "activationBeforeMs": 38.231,
+        "activationAfterMs": 42.671,
+        "matchingOutcomeHash": "c906e8a9502689ca3196f7dede43d75af2804495f653185a94d5f7cf2cd01e45"
+      },
+      {
+        "scale": "hero",
+        "members": 1,
+        "barrier": false,
+        "trial": 1,
+        "previewBeforeMs": 3.273,
+        "previewAfterMs": 3.072,
+        "activationBeforeMs": 17.495,
+        "activationAfterMs": 24.174,
+        "matchingOutcomeHash": "00d30287b4d6a3e39fff9608d538ea72d09935e00084be7b57eaa376cd477c63"
+      },
+      {
+        "scale": "hero",
+        "members": 1,
+        "barrier": false,
+        "trial": 2,
+        "previewBeforeMs": 3.715,
+        "previewAfterMs": 3.438,
+        "activationBeforeMs": 16.374,
+        "activationAfterMs": 20.745,
+        "matchingOutcomeHash": "12030a7e47a0f73e3c7c3d3088e70ceee4714a236dd06656a90fc155c249d5d8"
+      },
+      {
+        "scale": "hero",
+        "members": 1,
+        "barrier": false,
+        "trial": 3,
+        "previewBeforeMs": 3.308,
+        "previewAfterMs": 4.652,
+        "activationBeforeMs": 12.383,
+        "activationAfterMs": 16.271,
+        "matchingOutcomeHash": "594b33da9bfb88740a9e340c49498229ac33dd1be48358b59ddeb50d60fec54d"
+      },
+      {
+        "scale": "hero",
+        "members": 1,
+        "barrier": false,
+        "trial": 4,
+        "previewBeforeMs": 2.298,
+        "previewAfterMs": 2.611,
+        "activationBeforeMs": 12.664,
+        "activationAfterMs": 17.863,
+        "matchingOutcomeHash": "569581bc9cb4821dba85b6f0556ab2eb327ddd9626a32ad86ab084104e9fbc31"
+      },
+      {
+        "scale": "hero",
+        "members": 1,
+        "barrier": true,
+        "trial": 0,
+        "previewBeforeMs": 402.602,
+        "previewAfterMs": 37.318,
+        "activationBeforeMs": 219.535,
+        "activationAfterMs": 130.242,
+        "matchingOutcomeHash": "8bc350ee6bb14645c7744e0224395e62529b10948c3800753fafa5fcf8bc6c39"
+      },
+      {
+        "scale": "hero",
+        "members": 1,
+        "barrier": true,
+        "trial": 1,
+        "previewBeforeMs": 314.607,
+        "previewAfterMs": 18.662,
+        "activationBeforeMs": 234.205,
+        "activationAfterMs": 74.748,
+        "matchingOutcomeHash": "112b456526bbc4c0b2e27addd7cfee8c71b6309a5a6d8efc87d7beb9c2c91e5b"
+      },
+      {
+        "scale": "hero",
+        "members": 1,
+        "barrier": true,
+        "trial": 2,
+        "previewBeforeMs": 420.466,
+        "previewAfterMs": 12.795,
+        "activationBeforeMs": 214.26,
+        "activationAfterMs": 69.796,
+        "matchingOutcomeHash": "ccdfaeae9652e58d2ce2c473b71b0213eb3477a2b19a4339973b814345e78bba"
+      },
+      {
+        "scale": "hero",
+        "members": 1,
+        "barrier": true,
+        "trial": 3,
+        "previewBeforeMs": 303.3,
+        "previewAfterMs": 11.464,
+        "activationBeforeMs": 179.323,
+        "activationAfterMs": 68.076,
+        "matchingOutcomeHash": "a249b811ef4380173ca35b4a532343c5cac7736c9ea5ac1e6ad4f3dce332b16c"
+      },
+      {
+        "scale": "hero",
+        "members": 1,
+        "barrier": true,
+        "trial": 4,
+        "previewBeforeMs": 292.236,
+        "previewAfterMs": 11.646,
+        "activationBeforeMs": 183.761,
+        "activationAfterMs": 114.792,
+        "matchingOutcomeHash": "d5bc440e6c07c6a3eaf3b140ce92beef36e4a58dfcc63b088b4060f1026fec9e"
+      },
+      {
+        "scale": "company",
+        "members": 20,
+        "barrier": false,
+        "trial": 0,
+        "previewBeforeMs": 9.051,
+        "previewAfterMs": 10.697,
+        "activationBeforeMs": 13.909,
+        "activationAfterMs": 25.645,
+        "matchingOutcomeHash": "34b31925fdb46e2649466244ee204d26228f18b5ba3b424d43420860df233db9"
+      },
+      {
+        "scale": "company",
+        "members": 20,
+        "barrier": false,
+        "trial": 1,
+        "previewBeforeMs": 2.31,
+        "previewAfterMs": 2.776,
+        "activationBeforeMs": 15.067,
+        "activationAfterMs": 18.915,
+        "matchingOutcomeHash": "583d20b303a8b574762d094d78bf88d451f8afa68695072a73f76849961df79e"
+      },
+      {
+        "scale": "company",
+        "members": 20,
+        "barrier": false,
+        "trial": 2,
+        "previewBeforeMs": 4.157,
+        "previewAfterMs": 3.06,
+        "activationBeforeMs": 12.051,
+        "activationAfterMs": 16.207,
+        "matchingOutcomeHash": "77177d6fb6d3b9a0c4d35be24bb4c492c065910a18e1c508ec5acc4bca966c00"
+      },
+      {
+        "scale": "company",
+        "members": 20,
+        "barrier": false,
+        "trial": 3,
+        "previewBeforeMs": 2.637,
+        "previewAfterMs": 2.961,
+        "activationBeforeMs": 12.047,
+        "activationAfterMs": 16.693,
+        "matchingOutcomeHash": "347239247bde2a7bad25bd9bef028667b116f37d56fb383af8d3c2fff4e95be4"
+      },
+      {
+        "scale": "company",
+        "members": 20,
+        "barrier": false,
+        "trial": 4,
+        "previewBeforeMs": 2.439,
+        "previewAfterMs": 3.229,
+        "activationBeforeMs": 10.543,
+        "activationAfterMs": 13.447,
+        "matchingOutcomeHash": "cae57a100358974ade93cdef269f68687e6c98ccf78e278b843b2318aff38605"
+      },
+      {
+        "scale": "company",
+        "members": 20,
+        "barrier": true,
+        "trial": 0,
+        "previewBeforeMs": 1186.129,
+        "previewAfterMs": 41.455,
+        "activationBeforeMs": 666.824,
+        "activationAfterMs": 239.688,
+        "matchingOutcomeHash": "7af4f730e4b124f39c60bac4135cf6e70be6b9d099d1a466176cb3d8df1e8676"
+      },
+      {
+        "scale": "company",
+        "members": 20,
+        "barrier": true,
+        "trial": 1,
+        "previewBeforeMs": 1143.068,
+        "previewAfterMs": 39.376,
+        "activationBeforeMs": 593.144,
+        "activationAfterMs": 258.269,
+        "matchingOutcomeHash": "b35364eac0eff4c08fdc4c9299260f2d846c4a8a22a62e940a45261639c23176"
+      },
+      {
+        "scale": "company",
+        "members": 20,
+        "barrier": true,
+        "trial": 2,
+        "previewBeforeMs": 1102.463,
+        "previewAfterMs": 45.668,
+        "activationBeforeMs": 589.302,
+        "activationAfterMs": 227.798,
+        "matchingOutcomeHash": "94f269a2fa7c81904bb067f181ee444a4cbfa369c43d4365bed2a9616cafe682"
+      },
+      {
+        "scale": "company",
+        "members": 20,
+        "barrier": true,
+        "trial": 3,
+        "previewBeforeMs": 1107.954,
+        "previewAfterMs": 33.881,
+        "activationBeforeMs": 684.704,
+        "activationAfterMs": 245.225,
+        "matchingOutcomeHash": "d3939ee69ed09d7f7302f5c7d7708285301f0b4570701cd7899197a7421454a8"
+      },
+      {
+        "scale": "company",
+        "members": 20,
+        "barrier": true,
+        "trial": 4,
+        "previewBeforeMs": 1120.194,
+        "previewAfterMs": 43.358,
+        "activationBeforeMs": 676.904,
+        "activationAfterMs": 249.832,
+        "matchingOutcomeHash": "bde4330d79abb1aebda200bb749465a5bdda78d785c8d988adf4be9c99ce1318"
+      },
+      {
+        "scale": "company",
+        "members": 100,
+        "barrier": false,
+        "trial": 0,
+        "previewBeforeMs": 5.94,
+        "previewAfterMs": 5.063,
+        "activationBeforeMs": 15.169,
+        "activationAfterMs": 14.237,
+        "matchingOutcomeHash": "54c604c7bcd2d52070907d4f51eb4dfdfe915eee28784aae387bda67bf12b584"
+      },
+      {
+        "scale": "company",
+        "members": 100,
+        "barrier": false,
+        "trial": 1,
+        "previewBeforeMs": 3.905,
+        "previewAfterMs": 2.511,
+        "activationBeforeMs": 12.376,
+        "activationAfterMs": 18.539,
+        "matchingOutcomeHash": "09587dd85c86656ff030810b2de42a3876c8a3e94ae9c02f1889f7bf329cf6c6"
+      },
+      {
+        "scale": "company",
+        "members": 100,
+        "barrier": false,
+        "trial": 2,
+        "previewBeforeMs": 2.667,
+        "previewAfterMs": 2.483,
+        "activationBeforeMs": 10.208,
+        "activationAfterMs": 10.578,
+        "matchingOutcomeHash": "8e1b49f009038865e15c2e0c0aca1aa005a50d4f23872ca01d0c10a5aedd8fb4"
+      },
+      {
+        "scale": "company",
+        "members": 100,
+        "barrier": false,
+        "trial": 3,
+        "previewBeforeMs": 2.435,
+        "previewAfterMs": 2.576,
+        "activationBeforeMs": 10.24,
+        "activationAfterMs": 15.676,
+        "matchingOutcomeHash": "3ae2ec268faa09d04a79a0e3bc9912db191b66383930a200bb6e6f107bcdb7b6"
+      },
+      {
+        "scale": "company",
+        "members": 100,
+        "barrier": false,
+        "trial": 4,
+        "previewBeforeMs": 1.903,
+        "previewAfterMs": 3.803,
+        "activationBeforeMs": 11.921,
+        "activationAfterMs": 14.448,
+        "matchingOutcomeHash": "60f55268df81d473c94959a28349ff270642a6a8ca0d21bfba6f171abaa4204b"
+      },
+      {
+        "scale": "company",
+        "members": 100,
+        "barrier": true,
+        "trial": 0,
+        "previewBeforeMs": 1264.355,
+        "previewAfterMs": 40.465,
+        "activationBeforeMs": 717.137,
+        "activationAfterMs": 255.929,
+        "matchingOutcomeHash": "f8d4f65c0798f72d99d38791264165490921bfe50cf6d84d5efa3edfddcf7bae"
+      },
+      {
+        "scale": "company",
+        "members": 100,
+        "barrier": true,
+        "trial": 1,
+        "previewBeforeMs": 1330.375,
+        "previewAfterMs": 34.922,
+        "activationBeforeMs": 745.755,
+        "activationAfterMs": 203.636,
+        "matchingOutcomeHash": "86826e55331c423193cca9a604ae1b89912a3c27bd305e6eb48943c465c8ac7f"
+      },
+      {
+        "scale": "company",
+        "members": 100,
+        "barrier": true,
+        "trial": 2,
+        "previewBeforeMs": 1368.195,
+        "previewAfterMs": 36.082,
+        "activationBeforeMs": 683.945,
+        "activationAfterMs": 213.256,
+        "matchingOutcomeHash": "e7a989f105c8ec48a8982a5f0feb8af492b1f4bb30274063717c96ff150c67f5"
+      },
+      {
+        "scale": "company",
+        "members": 100,
+        "barrier": true,
+        "trial": 3,
+        "previewBeforeMs": 1593.117,
+        "previewAfterMs": 42.071,
+        "activationBeforeMs": 803.908,
+        "activationAfterMs": 217.262,
+        "matchingOutcomeHash": "e5b070484a5453461873523d6d804a1915cf06a503ba859ee294c4cc824db2bc"
+      },
+      {
+        "scale": "company",
+        "members": 100,
+        "barrier": true,
+        "trial": 4,
+        "previewBeforeMs": 1554.35,
+        "previewAfterMs": 33.716,
+        "activationBeforeMs": 733.676,
+        "activationAfterMs": 210.82,
+        "matchingOutcomeHash": "9a09cb77048c6fa7fc40abdd7470011071f7e6c6609db2e1cacf6947e1f46a5c"
+      }
+    ]
+  }
+}

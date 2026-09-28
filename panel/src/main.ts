@@ -1664,7 +1664,9 @@ function massOrderPreviewText(b: MassBattle, order: Order): string {
   const skill = order.type === 'ability' ? fatigueUnit.abilities.find(a => a.id === order.abilityId) : undefined;
   const exertion = (skill ? skillExertion(fatigueUnit, skill) : order.type === 'charge' ? 2 : ['hold', 'brace', 'retreat'].includes(order.type) ? 0 : 1) + (result.extraFatigue ?? 0);
   const fatigue = resourceRound(fatigueAfter(fatigueUnit, exertion, order.type === 'hold' && !order.haste) - fatigueUnit.fatigue);
-  const cost = `占用编队本轮任务${fatigue ? ` · ${fatigueUnit.id !== unit.id ? '使用者' : ''}疲劳${fatigue > 0 ? '+' : ''}${fatigue}` : ''}`;
+  const aerialRange = result.distance !== undefined && result.rangeDistance !== undefined && result.rangeDistance > result.distance
+    ? ` · 阵距${result.distance}+对空${result.rangeDistance - result.distance}=射程距离${result.rangeDistance}` : '';
+  const cost = `占用编队本轮任务${aerialRange}${fatigue ? ` · ${fatigueUnit.id !== unit.id ? '使用者' : ''}疲劳${fatigue > 0 ? '+' : ''}${fatigue}` : ''}`;
   const place = (node: typeof FORMATION_NODES[number]) => `${node.side === 'ally' ? '我方' : '敌方'}${node.wing}${{ front: '前线', rear: '支援', reserve: '预备' }[node.rank]}`;
   if (result.destination) return `${cost} · 到达${place(result.destination)}${result.layer === 'air' ? '空域' : '地面'}（阶段状态与容量变化可能调整路径）${result.reactions?.length ? ' · 起飞可能遭' + result.reactions.join('、') + '借机' : ''}`;
   if (result.moraleAfter !== undefined) return `${cost} · 有效士气${result.moraleBefore}→${result.moraleAfter}${result.rallyChance !== undefined ? ' · 基础重整成功率' + Math.round(result.rallyChance * 100) + '%' : ' · 惊退风险' + Math.round((result.breakChance ?? 0) * 100) + '%'}`;

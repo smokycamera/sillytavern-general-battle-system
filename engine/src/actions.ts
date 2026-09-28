@@ -17,7 +17,7 @@ import { recoveryCapacity } from './recovery.js';
 import type { Ability, Combatant, RangeSpec, Weapon } from './types.js';
 import { healingAmount } from './items.js';
 import { activeTraitIds } from './trait-sources.js';
-import { aerialTargetReason, sameLayer } from './aerial.js';
+import { aerialTargetReason, sameLayer, rangedTargetDistance, type AerialRangeSpace } from './aerial.js';
 
 export type ActionKind = 'move' | 'weapon' | 'charge' | 'ability' | 'brace' | 'retreat' | 'end-turn';
 
@@ -41,6 +41,8 @@ export interface TargetOption {
   enabled: boolean;
   reason?: string;
   distance?: number;
+  /** 包含对空加值的射程距离；distance 仍为几何/接敌距离。 */
+  rangeDistance?: number;
   preview?: ActionPreview;
 }
 
@@ -193,13 +195,15 @@ export function weaponTargetReason(input: {
   distance: number;
   reloadLeft?: number;
   charge?: boolean;
+  space?: AerialRangeSpace;
 }): string | undefined {
-  const { actor, target, weapon, ranged, distance } = input;
+  const { actor, target, weapon, ranged } = input;
+  const distance = ranged ? rangedTargetDistance(actor, target, input.distance, input.space) : input.distance;
   if (target.side === actor.side) return '武器攻击只能选择敌方目标';
   if (target.status === 'dead' || target.status === 'fled') return target.name + ' 已离场';
   if (target.status !== 'ready' && target.status !== 'dying' && target.status !== 'routing') return target.name + ' 当前无法作为攻击目标';
   if (!weapon) return actor.name + ' 没有可用武器';
-  const aerial = aerialTargetReason(actor, target, ranged); if (aerial) return aerial;
+  const aerial = aerialTargetReason(actor, target, ranged, weapon); if (aerial) return aerial;
   if (input.charge) {
     if (actor.rulesVersion === 'v2' && ranged) return '冲锋需要近战武器';
     if (distance < 2) return '距离太近，无从冲锋（需 ≥2 带）';
@@ -251,6 +255,15 @@ function skillWeaponReach(actor: Combatant, weapon: Weapon): number {
   return actor.combatModel === 'cohort-v2' && !isRangedWeapon(weapon) ? meleeReach(weapon) : Math.max(1, weapon.range ?? 0);
 }
 
+/** 有限射程的敌对远程技法/法术计入高度；接触、友方支援、自身与区域不变。 */
+export function abilityRangeDistance(actor: Combatant, ability: Ability, target: Combatant, distance: number, space: AerialRangeSpace = 'small'): number {
+  if (ability.weaponUse) return isRangedWeapon(skillWeapon(actor, ability, distance)) ? rangedTargetDistance(actor, target, distance, space) : distance;
+  if (target.side === actor.side || ability.target === 'self' || ability.target === 'zone'
+    || ability.requires === 'melee' || ability.requires === 'shield') return distance;
+  const range = fallbackAbilityRange(actor, ability);
+  return range.metric === 'self' || range.metric === 'global' ? distance : rangedTargetDistance(actor, target, distance, space);
+}
+
 export function abilityUsabilityReason(actor: Combatant, ability: Ability): string | undefined {
   if (ability.unavailableReason) return ability.unavailableReason;
   if (actor.rulesVersion === 'v2') {
@@ -283,6 +296,7 @@ export function abilityTargetReason(input: {
   ability: Ability;
   target?: Combatant;
   distance?: number;
+  space?: AerialRangeSpace;
 }): string | undefined {
   const { actor, ability } = input;
   const target = ability.target === 'self' ? actor : input.target ?? (ability.target === 'ally' ? actor : undefined);
@@ -293,8 +307,9 @@ export function abilityTargetReason(input: {
   if (target && ability.weaponUse) {
     const weapon = skillWeapon(actor, ability, input.distance);
     if (!weapon) return '没有符合技法的武器';
+    const aerial = aerialTargetReason(actor, target, isRangedWeapon(weapon), weapon); if (aerial) return aerial;
     if (!isRangedWeapon(weapon) && !sameLayer(actor, target)) return '接触技能需要处于同一空地层';
-    const distance = input.distance ?? 0;
+    const distance = abilityRangeDistance(actor, ability, target, input.distance ?? 0, input.space);
     if (distance > skillWeaponReach(actor, weapon) || distance < (weapon.minRange ?? 0)) return '目标超出实际武器射程';
     if (isRangedWeapon(weapon) && weapon.pointBlankPolicy === 'forbid' && distance <= 1 && sameLayer(actor, target)) return '实际武器不能抵近射击';
   }
@@ -323,7 +338,7 @@ export function abilityTargetReason(input: {
     return target && target.id !== actor.id ? '该技能只能对自己施放' : undefined;
   }
   if (!target || range.metric === 'global') return undefined;
-  const distance = input.distance ?? 0;
+  const distance = abilityRangeDistance(actor, ability, target, input.distance ?? 0, input.space);
   if (distance === 0 && range.allowEngaged === false) return '该技能不能对贴身目标施放';
   if (distance < range.min) return '未达技能最小射程（距离' + distance + ' < ' + range.min + '）';
   if (distance > range.max) return '超出技能射程（距离' + distance + ' > ' + range.max + '）';

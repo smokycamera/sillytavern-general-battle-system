@@ -265,6 +265,33 @@ function previewMemberPlan(unit:Combatant,plan:MemberDamagePlan):{damage:number;
   return {damage:direct.health+splash.health,casualties:direct.casualties+splash.casualties};
 }
 const memberPreviewCache=new Map<string,{mean:number;second:number;positive:number;casualties:number;max:number}>();
+
+interface SampledMemberPreview { sum: number; squares: number; positive: number; casualties: number; maximum: number; hits: number }
+const SAMPLED_PREVIEW_COUNT = 96;
+// Cache values, not live units/resolutions. Both entry count and key memory are bounded.
+const sampledMemberPreviewCache = new Map<string, SampledMemberPreview>();
+const SAMPLE_CACHE_ENTRIES = 128, SAMPLE_CACHE_CHARS = 2 * 1024 * 1024;
+let sampledPreviewChars = 0;
+function sampledPreviewKey(opts: Omit<AttackOpts, 'rng'>): string {
+  // Damage receives terrain, distance, participants and external modifiers explicitly.
+  // Coordinates only affect directional brace. Do not merge positions when either
+  // combatant has a pose; HP, barrier power/duration, equipment, traits, fatigue,
+  // rules and mutable registry *contents* remain in the key (not just object IDs).
+  const positional = !!(opts.attacker.tacticalPose || opts.defender.tacticalPose);
+  const unit = (u: Combatant) => positional ? u : { ...u, pos: undefined, formationPosition: undefined };
+  return JSON.stringify({ ...opts, attacker: unit(opts.attacker), defender: unit(opts.defender),
+    conditionDefs: [...opts.conditionDefs], traitRegistry: opts.traitRegistry ? [...opts.traitRegistry] : undefined });
+}
+function rememberSampledPreview(key: string, value: SampledMemberPreview): void {
+  if (key.length > SAMPLE_CACHE_CHARS) return;
+  while (sampledMemberPreviewCache.size >= SAMPLE_CACHE_ENTRIES || sampledPreviewChars + key.length > SAMPLE_CACHE_CHARS) {
+    const oldest = sampledMemberPreviewCache.keys().next().value;
+    if (oldest === undefined) break;
+    sampledPreviewChars -= oldest.length; sampledMemberPreviewCache.delete(oldest);
+  }
+  sampledMemberPreviewCache.set(key, value); sampledPreviewChars += key.length;
+}
+
 /** 有界骰分布×成员伤损组；不触碰实战对象或随机源。多组攻击的目标耗尽仅作上限裁剪。 */
 function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof attackContext>,source:AttackOpts['abilityDamage']|Weapon|undefined,modifier:number,factor:number,diagnostics:Record<string,unknown>) {
   let hit=estimateHitChance(opts.rules,ctx.netAtk,ctx.targetDef),critical=0;
@@ -274,18 +301,28 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   const samples=cohortSamples(opts),weight=outcomeScale({...opts,packetShare:1/samples}).multiplier,count=(opts.abilityDamage?1:ctx.weapon?.attacks??1)*samples;
   // 连续攻击共用剩余屏障。固定种子的小样本估计只操作副本，不消耗实战随机数。
   if ((opts.defender.barrier || opts.rules.damageModel === 'wounds-v2' && hasMemberHealth(opts.defender) && opts.abilityDamage && !opts.abilityDamage.weaponBased && opts.abilityDamage.shape === 'burst') && count > 1) {
-    let sum=0,squares=0,positive=0,casualties=0,maximum=0,hits=0;
-    for(let i=0;i<96;i++) {
-      const defender=structuredClone(opts.defender),attacker=structuredClone(opts.attacker),rng=new SeededRng('barrier-preview:'+i),before=memberHealth(defender),members=defender.hp;
-      let hitAny=false;
-      for(let n=0;n<(opts.abilityDamage?1:ctx.weapon?.attacks??1)&&defender.hp>0;n++)hitAny=resolveAttack({...opts,attacker,defender,rng}).hit||hitAny;
-      hits+=Number(hitAny);
-      const loss=before-memberHealth(defender);sum+=loss;squares+=loss*loss;positive+=Number(loss>0);casualties+=members-defender.hp;maximum=Math.max(maximum,loss);
+    const key = sampledPreviewKey(opts);
+    let stats = sampledMemberPreviewCache.get(key);
+    if (!stats) {
+      stats = { sum: 0, squares: 0, positive: 0, casualties: 0, maximum: 0, hits: 0 };
+      for (let i = 0; i < SAMPLED_PREVIEW_COUNT; i++) {
+        const defender = structuredClone(opts.defender), attacker = structuredClone(opts.attacker);
+        const rng = new SeededRng('barrier-preview:' + i), before = memberHealth(defender), members = defender.hp;
+        let hitAny = false;
+        for (let n = 0; n < (opts.abilityDamage ? 1 : ctx.weapon?.attacks ?? 1) && defender.hp > 0; n++) {
+          hitAny = resolveAttack({ ...opts, attacker, defender, rng }).hit || hitAny;
+        }
+        stats.hits += Number(hitAny);
+        const loss = before - memberHealth(defender);
+        stats.sum += loss; stats.squares += loss * loss; stats.positive += Number(loss > 0);
+        stats.casualties += members - defender.hp; stats.maximum = Math.max(stats.maximum, loss);
+      }
+      rememberSampledPreview(key, stats);
     }
-    const mean=sum/96;
-    return {...diagnostics,damageModel:'member-health' as const,...(opts.rules.overmatch?{weaponOverflow:hasMemberHealth(opts.defender)&&attackOverflow(opts)}:{}),hitChance:hit,anyHitChance:1-(1-hit)**count,expectedDamage:mean,damageOnHit:hits?sum/hits:0,
-      expectedCasualties:hasMemberHealth(opts.defender)?casualties/96:undefined,damageChance:positive/96,penetrationFactor:factor,exact:false,
-      variance:Math.max(0,squares/96-mean*mean),minDamage:0,maxDamage:maximum};
+    const mean = stats.sum / SAMPLED_PREVIEW_COUNT;
+    return {...diagnostics,damageModel:'member-health' as const,...(opts.rules.overmatch?{weaponOverflow:hasMemberHealth(opts.defender)&&attackOverflow(opts)}:{}),hitChance:hit,anyHitChance:1-(1-hit)**count,expectedDamage:mean,damageOnHit:stats.hits?stats.sum/stats.hits:0,
+      expectedCasualties:hasMemberHealth(opts.defender)?stats.casualties/SAMPLED_PREVIEW_COUNT:undefined,damageChance:stats.positive/SAMPLED_PREVIEW_COUNT,penetrationFactor:factor,exact:false,
+      variance:Math.max(0,stats.squares/SAMPLED_PREVIEW_COUNT-mean*mean),minDamage:0,maxDamage:stats.maximum};
   }
   const rawMultiplier=memberAreaBudget(opts)*modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level,opts.rules)*instanceMultiplier(opts.attacker.bonuses,'damage',opts.attacker.genAudit?.variance,opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
   const moments=(times:number)=>{

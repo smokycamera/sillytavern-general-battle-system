@@ -45,13 +45,14 @@ import { getTrait, hasFlag, fieldModsFor, collectMods, resolveStack } from '../b
 import { BattleFeedback, type FeedbackUnit, type RoundFeedback } from '../battle-feedback.js';
 import { activeTraitIds, activeConditionIds, expireTraitSources, traitSourceActive } from '../trait-sources.js';
 import { bracePose, movementPoints, settleFatigue, addTacticalEffort, validateTacticalEffort } from '../tactics.js';
-import { isAirborne, sameLayer, flightCapabilityReason, flightMaintenanceReason, fallDamage, validateFlightState } from '../aerial.js';
+import { rangedTargetDistance, isAirborne, sameLayer, flightCapabilityReason, flightMaintenanceReason, fallDamage, validateFlightState } from '../aerial.js';
 import { environmentTags } from '../environment.js';
 import { traitRegistry as defaultTraitRegistry } from '../data/traits.js';
 import { meleeLineBlocker, canOccupy, cellLabel, terrainCellLabel, deployOnGrid, findGridPath, reachableGridPaths, gridCostsToGoals, gridDistance, lineOfSight, unitLineOfSight, neighbors, tileCost, validateField, type BattlefieldSpec, type GridPath } from './spatial.js';
 import { canSpot, observedUnits, observeEvent, observedLog, revealUnit, revealContacts, settleConcealment, canReconceal, validateConcealment, type ObservationContext } from '../observation.js';
 import {
   abilityTargetReason,
+  abilityRangeDistance,
   abilityUsabilityReason,
   estimateExpectedDamage,
   estimateHitChance,
@@ -802,6 +803,7 @@ export class SmallBattle {
         enabled: !reason,
         ...(reason ? { reason } : {}),
         distance: this.dist(actor, target),
+        rangeDistance: context.ranged ? rangedTargetDistance(actor, target, this.dist(actor, target)) : this.dist(actor, target),
         ...(!context.reason ? { preview: this.weaponPreview(actor, target, context) } : {}),
       };
     });
@@ -813,6 +815,7 @@ export class SmallBattle {
         enabled: !reason,
         ...(reason ? { reason } : {}),
         distance: this.dist(actor, target),
+        rangeDistance: context.ranged ? rangedTargetDistance(actor, target, this.dist(actor, target)) : this.dist(actor, target),
         ...(!context.reason ? { preview: this.weaponPreview(actor, target, context) } : {}),
       };
     }) : [];
@@ -871,7 +874,7 @@ export class SmallBattle {
         const moraleEffect = ability.effects.find((e) => e.op === 'morale');
         const landing = !reason ? this.abilityFlightPreview(actor, target, ability) : undefined;
         const effects = !reason && this.rules.resolutionVersion === 'v2' ? skillEffectLines({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, actor, target, ability) : [];
-        const preview = this.rules.resolutionVersion === 'v2' && damage ? this.previewAttackWithEnvironment({ attacker: actor, defender: target, rules: this.rules,
+        const preview = !reason && this.rules.resolutionVersion === 'v2' && damage ? this.previewAttackWithEnvironment({ attacker: actor, defender: target, rules: this.rules,
           conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ranged: damage.tag === 'ranged' ? true : undefined,
           ...this.skillAttackOptions(actor, target, ability, damage) })
           : healing && !reason ? { healing: Math.min(recoveryCapacity(target), healingYield(actor,target,healing.amount ?? diceAvg(healing.dice!),!!ability.itemSourceId)) } : moraleEffect && !reason ? moraleChangePreview({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, target, moraleEffect.amount, this.rules.morale.breakAt, this.traitRegistry, ability.effects.flatMap((e) => e.op === 'condition' ? [{ id: e.conditionId, dur: e.dur }] : [])) : undefined;
@@ -880,7 +883,7 @@ export class SmallBattle {
           targetId: affected.id, ...this.previewAttackWithEnvironment({ attacker: actor, defender: affected, rules: this.rules,
             conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(actor, affected, ability, damage) }),
         })) : [];
-        return { targetId: target.id, enabled: !reason, ...(reason ? { reason } : {}), distance: this.dist(actor, target), ...(preview || landing || effects.length ? { preview: { ...preview, ...landing, ...(effects.length ? { effects } : {}), ...(area.length ? { areaTargets: area.map((u) => u.name), areaTargetIds: area.map((u) => u.id), areaPreviews } : {}) } } : {}) };
+        return { targetId: target.id, enabled: !reason, ...(reason ? { reason } : {}), distance: this.dist(actor, target), rangeDistance: abilityRangeDistance(actor, this.battlefield ? gridAbility(ability) : ability, target, this.dist(actor, target)), ...(preview || landing || effects.length ? { preview: { ...preview, ...landing, ...(effects.length ? { effects } : {}), ...(area.length ? { areaTargets: area.map((u) => u.name), areaTargetIds: area.map((u) => u.id), areaPreviews } : {}) } } : {}) };
       });
       const targetlessReason = actorReason ?? (ability.itemSourceId ? !economy.actionAvailable ? '本回合行动已使用' : undefined : this.hasteSelected.has(actorId) ? '加速动作不能使用技能' : this.actedThisTurn.has(actorId) ? '本回合主行动已使用' : undefined) ?? usability;
       const enabled = candidates.length ? targets.some((target) => target.enabled) : !targetlessReason;
@@ -1519,8 +1522,8 @@ export class SmallBattle {
         if (!allowed(cell)) return [];
         const actor = { ...unit, pos: cell };
         return foes.some(target => rangedRole
-          ? [actor.weapon, actor.sidearm].some(weapon => isRangedWeapon(weapon) && this.dist(actor, target) <= gridWeaponRange(weapon)
-            && this.dist(actor, target) >= Math.max(1, weapon?.minRange ?? 0) && !this.sightReason(actor, target, weapon?.indirect)
+          ? [actor.weapon, actor.sidearm].some(weapon => isRangedWeapon(weapon) && !weaponTargetReason({ actor, target,
+              weapon: gridWeapon(weapon, this.rules.combatModel === MEMBER_HEALTH_MODEL), ranged: true, distance: this.dist(actor, target) }) && !this.sightReason(actor, target, weapon?.indirect)
             && !rangedScreen(actor, target, weapon, knownUnits, { mode: 'small', width: field.width }, this.conditionDefMap()))
           : this.dist(actor, target) <= gridWeaponRange(meleeWeapon(actor), this.rules.combatModel === MEMBER_HEALTH_MODEL)
             && !this.sightReason(actor, target) && (sameLayer(actor, target) || isAirborne(actor))) ? [cell] : [];

@@ -1,4 +1,5 @@
-import type { Combatant, ConditionDef } from './types.js';
+import { isIndirectCannonWeapon } from './loadout.js';
+import type { Combatant, ConditionDef, Weapon } from './types.js';
 import { activeTraitIds, activeConditionIds } from './trait-sources.js';
 import { standardConditionMap } from './conditions.js';
 const defaultConditions = standardConditionMap();
@@ -17,7 +18,17 @@ export function flightMaintenanceReason(unit: Combatant, defs: FlightConditions 
   if (activeConditionIds(unit).some((id) => defs.get(id)?.skipTurn || defs.get(id)?.preventMove)) return '失能或定身，无法维持飞行';
   return undefined;
 }
-export function aerialTargetReason(actor: Combatant, target: Combatant, ranged: boolean): string | undefined {
+export type AerialRangeSpace = 'small' | 'mass';
+export const GROUND_TO_AIR_RANGE_COST = { small: 2, mass: 1 } as const;
+/** 仅用于远程选敌的射程预算，不改变移动、接敌、视线或范围效果半径。 */
+export function groundToAirRangePenalty(actor: Combatant, target: Combatant, space: AerialRangeSpace = 'small'): number {
+  return !isAirborne(actor) && isAirborne(target) ? GROUND_TO_AIR_RANGE_COST[space] : 0;
+}
+export function rangedTargetDistance(actor: Combatant, target: Combatant, distance: number, space: AerialRangeSpace = 'small'): number {
+  return distance + groundToAirRangePenalty(actor, target, space);
+}
+export function aerialTargetReason(actor: Combatant, target: Combatant, ranged: boolean, weapon?: Weapon): string | undefined {
+  if (ranged && isAirborne(target) && isIndirectCannonWeapon(weapon)) return '曲射火炮不能攻击空中目标';
   if (!ranged && !isAirborne(actor) && isAirborne(target)) return '地面近战无法攻击空中目标';
   return undefined;
 }
