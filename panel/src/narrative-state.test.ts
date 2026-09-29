@@ -23,14 +23,16 @@ describe('正文原子事务', () => {
     expect(() => prepareNarrativeTransaction(save, proposal, ns, true)).toThrow(/数量/);
     expect(save.inventory[0]!.qty).toBe(1);
   });
-  it('分多批累积超量部署也被拒绝；不合并旧身份，仍允许原档治疗和合法编队人数', () => {
+  it('新批出场替换旧名单；不合并旧身份，仍允许原档治疗和合法编队人数', () => {
     const { save, ns, source } = setup('');
     const base = structuredClone(save.storage![0]!);
     save.storage = Array.from({ length: 40 }, (_, n) => ({ ...structuredClone(base), id: 'unit-' + n, snapshot: { ...structuredClone(base.snapshot!), id: 'unit-' + n } }));
     save.rosterIds = save.storage.slice(0, 32).map((r) => r.id);
     const before = structuredClone(save), binding = captureGeneration(save, ns, 'g1'); binding.complete = true;
     const proposal = proposalFromMessage({ ...source, text: '<tb><unit_update id="unit-0" hp="500"/><deploy id="unit-32"/></tb>' }, binding)!;
-    expect(() => prepareNarrativeTransaction(save, proposal, ns, true)).toThrow(/33|上限/);
+    const replaced = prepareNarrativeTransaction(save, proposal, ns, true);
+    expect(replaced.rosterIds).toEqual(['unit-32']); expect(replaced.storage).toHaveLength(40);
+    expect(replaced.storage![0]!.hp).toBe(500);
     expect(save).toEqual(before);
     const repair = proposalFromMessage({ ...source, text: '<tb><unit_update id="unit-0" hp="500"/></tb>' }, binding)!;
     const next = prepareNarrativeTransaction(save, repair, ns, true);
