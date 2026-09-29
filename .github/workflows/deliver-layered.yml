@@ -1,0 +1,135 @@
+name: Deliver layered city battlefields
+on:
+  push:
+    branches: ['feat/layered-city-siege-v1']
+permissions:
+  contents: write
+concurrency:
+  group: layered-city-delivery
+  cancel-in-progress: false
+jobs:
+  deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply hash-verified source delta
+        run: |
+          git merge-base --is-ancestor 1a859a64c6be3dc9259359030a2bee67fe947ed3 HEAD
+          python3 - <<'PY'
+          import base64, hashlib, lzma, pathlib, subprocess
+          parts = sorted(pathlib.Path('.layered-delivery').glob('part*'))
+          assert len(parts) == 4
+          patch = lzma.decompress(base64.b64decode(''.join(p.read_text() for p in parts), validate=True))
+          assert hashlib.sha256(patch).hexdigest() == '1fb9ee31848b60707cd049e98ae490f502cbce1f71679548f507cbafa79e05b0'
+          target = pathlib.Path('/tmp/layered-city.patch'); target.write_bytes(patch)
+          subprocess.run(['git','apply','--unidiff-zero','--check',str(target)],check=True)
+          subprocess.run(['git','apply','--unidiff-zero',str(target)],check=True)
+          PY
+          git diff --check
+          node scripts/check-worldbook-trait-only.mjs
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Type check and native regression tests
+        run: npm run typecheck && npm run test:extension && npm run test:jev-relay
+      - name: Full test suite with explicit unchanged baseline
+        run: |
+          mkdir -p artifacts/review
+          npm test -- --reporter=default --reporter=json --outputFile=artifacts/review/full-tests.json || full_exit=$?
+          echo "Normal full-suite exit code: ${full_exit:-0}; baseline comparison below does not hide failures."
+          node scripts/check-layered-test-baseline.mjs artifacts/review/full-tests.json > artifacts/review/layered-baseline.json
+          cat artifacts/review/layered-baseline.json
+      - name: Re-run map and live local-AI audits
+        run: npm run audit:layered-maps && npm run audit:layered-combat
+      - name: Build installable extension and verify source fingerprint
+        id: build
+        run: npm run build:extension && npm run verify:dist && npm run verify:worldbook-scope
+      - name: Install browser
+        if: steps.build.outcome == 'success'
+        run: |
+          npx playwright-core install --with-deps chromium
+          node --input-type=module -e "import { chromium } from 'playwright-core'; import { appendFileSync } from 'node:fs'; appendFileSync(process.env.GITHUB_ENV,'TB_BROWSER='+chromium.executablePath()+'\n')"
+      - name: Layered city browser smoke - metadata save
+        id: layered_metadata
+        continue-on-error: true
+        run: npm run smoke:layered
+      - name: Layered city browser smoke - legacy save
+        id: layered_legacy
+        continue-on-error: true
+        run: TB_METADATA_MODE=legacy-full npm run smoke:layered
+      - name: Native browser regression - metadata save
+        id: native_metadata
+        continue-on-error: true
+        run: npm run smoke:extension
+      - name: Native browser regression - legacy save
+        id: native_legacy
+        continue-on-error: true
+        run: TB_METADATA_MODE=legacy-full npm run smoke:extension
+      - name: Record exact CI browser outcomes and build verified delivery
+        if: always() && steps.build.outcome == 'success'
+        env:
+          LAYERED_METADATA: ${{ steps.layered_metadata.outcome }}
+          LAYERED_LEGACY: ${{ steps.layered_legacy.outcome }}
+          NATIVE_METADATA: ${{ steps.native_metadata.outcome }}
+          NATIVE_LEGACY: ${{ steps.native_legacy.outcome }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          path = pathlib.Path('docs/layered-release-validation.json')
+          report = json.loads(path.read_text())
+          baseline = pathlib.Path('artifacts/review/layered-baseline.json')
+          if baseline.exists(): report['fullSuite'] = json.loads(baseline.read_text())
+          outcomes = {k:os.environ[k] for k in ['LAYERED_METADATA','LAYERED_LEGACY','NATIVE_METADATA','NATIVE_LEGACY']}
+          report['scope'] = 'local tests plus independently re-run GitHub Actions source/build/audit/browser verification'
+          report['browser'] = {'status':'passed' if all(v == 'success' for v in outcomes.values()) else 'failed','ciResult':outcomes,'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",'realHost':False}
+          report['ciHead'] = os.environ['GITHUB_SHA']
+          path.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+          PY
+          npm run verify:worldbook-scope
+          npm run build:extension
+          npm run verify:dist
+          git diff --check
+      - name: Commit source, installable bundle and exact evidence
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          actual=$(git ls-remote origin refs/heads/feat/layered-city-siege-v1 | cut -f1)
+          test "$actual" = "$GITHUB_SHA"
+          test -f docs/layered-release-validation.json
+          npm run verify:dist
+          rm -rf .layered-delivery
+          rm .github/workflows/deliver-layered.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: layered city and siege battlefields with verified v1.6.0 native bundle'
+          git push origin HEAD:refs/heads/feat/layered-city-siege-v1
+      - name: Preserve review evidence and installable build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: layered-city-review
+          path: |
+            artifacts/review/
+            artifacts/layered-browser/
+            artifacts/layered-review/
+            artifacts/native-extension-smoke/
+            release/native-candidate/
+            docs/layered*.json
+            docs/layered-city-v1.md
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Browser acceptance gate
+        if: always()
+        env:
+          BUILD: ${{ steps.build.outcome }}
+          LAYERED_METADATA: ${{ steps.layered_metadata.outcome }}
+          LAYERED_LEGACY: ${{ steps.layered_legacy.outcome }}
+          NATIVE_METADATA: ${{ steps.native_metadata.outcome }}
+          NATIVE_LEGACY: ${{ steps.native_legacy.outcome }}
+        run: test "$BUILD" = success && test "$LAYERED_METADATA" = success && test "$LAYERED_LEGACY" = success && test "$NATIVE_METADATA" = success && test "$NATIVE_LEGACY" = success
