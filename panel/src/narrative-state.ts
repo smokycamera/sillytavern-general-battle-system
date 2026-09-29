@@ -9,7 +9,7 @@ import { deployUnitRecord, materializeUnitRecord, unitRecordFromCombatant, updat
 import { parseProtocol, protocolExcerpt } from './protocol.js';
 import type { Suggestion } from './tags.js';
 import { createInventoryItem, prepareInventoryState, prepareInventoryTransaction, type InventoryItem } from './inventory-state.js';
-import { assertNarrativeCapacity } from './narrative-limits.js';
+import { assertNarrativeCapacity, hasNarrativeDeployment, MAX_SCENE_UNITS } from './narrative-limits.js';
 import { applyUnitSet } from './unit-set.js';
 
 export interface MessageEnvelope {
@@ -184,7 +184,10 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   if (!manual && expected.manualOnly) throw new Error('此消息需要预览确认后提交');
   if (!manual && (!save.storySync || proposal.events.some((e) => !['unit-set', 'unit-update', 'deploy'].includes(e.kind)))) throw new Error('此类变更需人工审查');
   assertNarrativeCapacity(save, proposal.events);
+  const replacesRoster = hasNarrativeDeployment(proposal.events);
   let next = structuredClone(save);
+  // 只清候选副本的出场选择，档案/装备/战果保持；校验或保存失败仍保留旧事实。
+  if (replacesRoster) next.rosterIds = [];
   const registry = traitRegistry();
   let records = next.storage ?? [];
   assertCompatibleUnitChanges(proposal.events);
@@ -264,7 +267,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   next.storage = records;
   next.rosterIds = [...new Set(roster.map((u) => u.id))];
   const oldDeployedAlive = (save.storage ?? []).filter(r=>(save.rosterIds ?? []).includes(r.id)&&r.hp>0&&!r.retired).length;
-  if (next.rosterIds.length > 32 && next.rosterIds.length > oldDeployedAlive) throw Error('本场参战单位卡上限32，整批未应用');
+  if (next.rosterIds.length > MAX_SCENE_UNITS && (replacesRoster || next.rosterIds.length > oldDeployedAlive)) throw Error(`本场参战单位卡上限${MAX_SCENE_UNITS}，整批未应用`);
   next.factRevision = (save.factRevision ?? 0) + 1;
   next.proposals = [...(save.proposals ?? []).filter((p) => p.id !== proposal.id), { ...structuredClone(proposal), status: 'committed', reason: undefined }];
   return next;
@@ -279,11 +282,17 @@ export function narrativeDeploymentIds(save: NarrativeSave, proposalId: string):
     ? Array.from({ length: event.count }, (_, n) => `unit-${committed.id}-${index}-${n}`) : []);
   return [...new Set(ids)].filter((id) => save.storage?.some((r) => r.id === id && r.hp > 0 && !r.retired && r.status !== 'dead' && r.status !== 'dying'));
 }
+/** 已有本批全部单位但夹带旧单位时，也应允许从历史记录修复名单。 */
+export function needsNarrativeDeploymentRestore(save: NarrativeSave, proposalId: string): boolean {
+  const ids = narrativeDeploymentIds(save, proposalId), current = new Set(save.rosterIds ?? []);
+  return ids.length > 0 && (ids.length !== current.size || ids.some((id) => !current.has(id)));
+}
 export function restoreNarrativeDeployment(save: NarrativeSave, proposalId: string): NarrativeSave {
   if (save.battle && !(save.committedOutcomeIds ?? []).includes(`${save.battle.kind}:${String(save.battle.snap.seed)}`)) throw Error('请先结束并结算当前战斗');
   const ids = narrativeDeploymentIds(save, proposalId);
   if (!ids.length) throw Error('原批次没有仍可参战的已建档单位');
   assertNarrativeCapacity(save, ids.map((id) => ({ kind: 'deploy', id, raw: '' })));
-  const rosterIds = [...new Set([...(save.rosterIds ?? []), ...ids])];
-  return { ...save, schemaVersion: PANEL_SAVE_SCHEMA_VERSION, rosterIds, factRevision: (save.factRevision ?? 0) + Number(rosterIds.length !== (save.rosterIds ?? []).length) };
+  const rosterIds = ids, previous = save.rosterIds ?? [];
+  const changed = rosterIds.length !== previous.length || rosterIds.some((id, index) => id !== previous[index]);
+  return { ...save, schemaVersion: PANEL_SAVE_SCHEMA_VERSION, rosterIds, factRevision: (save.factRevision ?? 0) + Number(changed) };
 }

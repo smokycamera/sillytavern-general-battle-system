@@ -33,7 +33,7 @@ import { movementLabel } from '../../engine/src/tactics.js';
 const resourceLabel = (key: string) => key === 'SP' ? '精力' : key === 'reserve' ? '预备兵力' : key.startsWith('item:') ? '消耗品' : key;
 import { spCapacity, abilityCost, spRecovery, prepareResourceModel, skillExertion, resourceRound } from '../../engine/src/resources.js';
 import { PROMPT_SECTIONS, applySettlementPrompt, promptSelected, selectPromptEntries, renderPromptSettings, type PromptSectionId } from './prompt-settings.js';
-import { narrativeDeploymentIds } from './narrative-state.js';
+import { needsNarrativeDeploymentRestore } from './narrative-state.js';
 import { AutoBattleLoop, yieldBattleFrame } from './auto-battle.js';
 import { newUnitDraft, unitDraftFromRecord, buildUnit, editUnitBuild, type UnitDraft } from './unit-builder.js';
 import { MAX_SCENE_UNITS } from './narrative-limits.js';
@@ -1944,7 +1944,7 @@ function renderNarrativeProposals(): string {
     <p>${p.events.map((e) => esc(suggestionDesc(e))).join('；')}</p>${p.corrected ? '<p class="sub">本地修正草稿，原聊天未修改。</p>' : ''}${p.reason ? '<p class="grid-reason">' + esc(p.reason) + '</p>' : ''}
     ${p.notices?.length ? '<details><summary>识别与格式整理说明</summary><p class="sub">' + p.notices.map(esc).join('；') + '</p></details>' : ''}
     <div class="row">${['pending', 'failed'].includes(p.status) ? '<button class="primary" data-action="narrative-approve" data-id="' + esc(p.id) + '">' + (p.events.some((e) => e.kind === 'spawn' || e.kind === 'deploy') ? '确认入库并上场' : '确认本批变更') + '</button>' : ''}
-    ${narrativeDeploymentIds({ proposals: state.proposals, storage: state.storage }, p.id).some((id) => !state.roster.some((u) => u.id === id)) ? '<button class="primary" data-action="narrative-restore-roster" data-id="' + esc(p.id) + '">恢复本批参战单位</button>' : ''}
+    ${needsNarrativeDeploymentRestore({ proposals: state.proposals, storage: state.storage, rosterIds: state.roster.map((u) => u.id) }, p.id) ? '<button class="primary" data-action="narrative-restore-roster" data-id="' + esc(p.id) + '">恢复本批参战单位</button>' : ''}
     ${['legacy', 'stale'].includes(p.status) ? '<button data-action="narrative-rebind" data-id="' + esc(p.id) + '">重新预览</button>' : ''}
     ${!['committed', 'rejected'].includes(p.status) ? '<button data-action="narrative-reject" data-id="' + esc(p.id) + '">忽略本次</button>' : ''}
     <button data-action="narrative-delete" data-id="${esc(p.id)}" title="删除此记录；已同步的档案保持，重复扫描不会再次入账">删除记录</button></div>
