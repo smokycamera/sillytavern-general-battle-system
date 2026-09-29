@@ -20,9 +20,12 @@ A native frontend battle extension for SillyTavern / TauriTavern. It supports sm
 
 ## Installation
 
-1. In SillyTavern, open **Extensions → Install Extension**, enter `https://github.com/smokycamera/sillytavern-general-battle-system`, install it, and refresh the page.
-2. The four lorebook entries are built in and enabled by default. Open **Battle panel → Settings → 内置世界书** to add custom entries, toggle, edit individual texts, or restore built-in defaults. These settings persist across chats and characters.
-3. Disable the external copy yourself to avoid duplicate context. The plugin does not modify or disable external lorebooks.
+1. **Stable**: in SillyTavern, open **Extensions → Install Extension**, enter `https://github.com/smokycamera/sillytavern-general-battle-system`, keep the default `main` branch, install it, and refresh the page.
+2. **Test**: use the same repository URL and select the `test` branch during installation. New changes land there first and are promoted with `test → main` after acceptance. Do not enable stable and test copies at the same time.
+3. The four lorebook entries are built in and enabled by default. Open **Battle panel → Settings → 内置世界书** to add custom entries, toggle, edit individual texts, or restore built-in defaults. These settings persist across chats and characters.
+4. Disable the external copy yourself to avoid duplicate context. The plugin does not modify or disable external lorebooks.
+
+See [release channels](docs/release-channels.md) for the development and promotion workflow.
 
 Complete `<tb>` blocks in assistant replies are automatically escaped and shown in a collapsible event panel. No separate display regex is required. Expand it to read or copy the original event text; saved messages, scanning and model context remain unchanged. Disable any old `<tb>` hiding/folding regex and refresh after updating. See [display notes](docs/native-event-display.md).
 
