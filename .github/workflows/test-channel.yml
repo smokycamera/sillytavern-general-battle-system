@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   verify-and-package:
-    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'build: sync test channel bundle')
+    if: "${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'build: sync test channel bundle') }}"
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
