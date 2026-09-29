@@ -28,7 +28,7 @@ import { CATEGORY_LABELS } from '../../engine/src/data/ability-blueprints.js';
  */
 
 import { WEAPON_CLASSES, resolveWeaponClass, ABILITY_BLUEPRINTS, DEFAULT_BLUEPRINTS, categoryLabel, type Category, resolveTraitId, standardConditionMap, validateTraitSource, type TraitDuration, type BodyKind, type ItemSpecification } from '../../engine/src/index.js';
-import { parseItemSpecification } from './item-spec.js';
+import { parseItemSpecification, splitItemSpecification } from './item-spec.js';
 
 export type LootType = 'weapon' | 'armor' | 'consumable' | 'accessory' | 'material' | 'quest' | 'misc';
 
@@ -456,7 +456,7 @@ export function parseSuggestionTags(text: string): ParseResult {
           if (!a.id?.trim() || !a.spec?.trim()) throw new Error('缺少装备引用或规格');
           const spec = parseItemSpecification(a.spec, a);
           if (spec.kind === 'consumable') throw new Error('消耗品不能重铸');
-          suggestions.push({ kind: 'reforge', id: a.id.trim(), name: a.name?.trim() || undefined, spec, raw });
+          suggestions.push({ kind: 'reforge', id: a.id.trim(), name: a.name?.trim() || splitItemSpecification(a.spec).name, spec, raw });
         } catch { invalid.push(raw); }
         break;
       }

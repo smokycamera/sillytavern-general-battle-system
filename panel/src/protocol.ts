@@ -7,13 +7,14 @@ import { MAX_PROTOCOL_CHARS, MAX_PROTOCOL_EVENTS, MAX_SCENE_UNITS, MAX_SPAWN_COU
 import { scanProtocolTags, normalizedAttributes, serializeEvent } from './protocol-syntax.js';
 import { parseUnitSet, UNIT_SET_ATTRIBUTES } from './unit-set.js';
 import { normalizeNarrativeSkill } from './spec-tolerance.js';
+import { parseItemSpecification } from './item-spec.js';
 
 export interface ProtocolBatch { events: Suggestion[]; canonical: string; errors: string[]; warnings: string[] }
 const ATTRIBUTES: Record<string, readonly string[]> = {
   unit_set: UNIT_SET_ATTRIBUTES,
   deploy: ['id'],
   learn: ['id', 'skills'],
-  unit_update: ['id', 'hp', 'hpMax', 'reason'],
+  unit_update: ['id', 'hp', 'hpMax', 'morale', 'state', 'clear', 'reason'],
   spawn: ['name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'speed', 'stabilized', 'protection', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits'],
   field: ['env', 'light', 'note'],
   take: ['id', 'qty', 'note'],
@@ -95,14 +96,19 @@ export function parseProtocol(text: string): ProtocolBatch {
       if (event.kind === 'unit-update') {
         const existing = events.find((e): e is Extract<Suggestion, { kind: 'unit-update' }> => e.kind === 'unit-update' && e.id === event.id);
         if (existing) {
-          if (['hp', 'hpMax'].some((key) => {
-            const field = key as 'hp' | 'hpMax';
+          if (['hp', 'hpMax', 'morale', 'state'].some((key) => {
+            const field = key as 'hp' | 'hpMax' | 'morale' | 'state';
             return existing[field] !== undefined && event[field] !== undefined && existing[field] !== event[field];
-          })) throw new Error('档案 ' + event.id + ' 的人数/生命更新冲突，请明确采用哪个绝对值');
+          })) throw new Error('档案 ' + event.id + ' 的人数/生命、士气或状态更新冲突，请明确采用哪个绝对值');
           if (event.hp !== undefined) existing.hp = event.hp;
           if (event.hpMax !== undefined) existing.hpMax = event.hpMax;
+          if (event.morale !== undefined) existing.morale = event.morale;
+          if (event.state !== undefined) existing.state = event.state;
+          if (event.clear?.length) existing.clear = [...new Set([...(existing.clear ?? []), ...event.clear])];
+          if (event.reason) existing.reason = [existing.reason, event.reason].filter(Boolean).join('；');
           const merged: Record<string, string> = { id: existing.id! };
-          for (const key of ['hp', 'hpMax', 'reason'] as const) if (existing[key] !== undefined) merged[key] = String(existing[key]);
+          for (const key of ['hp', 'hpMax', 'morale', 'state', 'reason'] as const) if (existing[key] !== undefined) merged[key] = String(existing[key]);
+          if (existing.clear?.length) merged.clear = existing.clear.join(',');
           existing.raw = serializeEvent('unit_update', merged);
           warnings.push('已合并同一档案的互补更新'); continue;
         }
@@ -125,7 +131,17 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
   if (!integer('count', 1, MAX_SPAWN_COUNT)) throw new Error(`count是单位卡数量，须为1–${MAX_SPAWN_COUNT}；人数写hpMax。${GROUPING_HINT}`);
   const lifeInputMax = kind === 'unit_update' || kind === 'spawn' && attrs.scale === 'hero' ? Number.MAX_SAFE_INTEGER : 1e9;
   if (!integer('hp', 0, lifeInputMax) || !integer('hpMax', 1, lifeInputMax) || (attrs.level !== undefined && !/^[lL]?(?:10|[1-9])(?:[+-].*)?$/.test(attrs.level)) || !integer('qty', 1, 9999)) throw new Error(`${kind} 数值必须是范围内的完整整数`);
-  if (kind === 'unit_update' && (!attrs.id?.trim() || (attrs.hp === undefined && attrs.hpMax === undefined))) throw new Error('unit_update 需要 id 与 hp/hpMax');
+  if (kind === 'unit_update') {
+    if (!attrs.id?.trim() || !['hp', 'hpMax', 'morale', 'state', 'clear'].some(key => attrs[key]?.trim())) throw new Error('unit_update 需要 id 与明确的生命/人数、士气、状态或清除效果');
+    if (!integer('morale', 0, 1e9)) throw new Error('unit_update 士气必须是非负整数');
+    if (attrs.state !== undefined && !['ready', 'dying', 'dead', 'routing', 'fled'].includes(attrs.state)) throw new Error('unit_update 状态须为ready/dying/dead/routing/fled');
+  }
+  if (kind === 'reforge' && (!attrs.id?.trim() || !attrs.spec?.trim())) throw new Error('reforge 需要真实装备id与明确spec');
+  if ((kind === 'reforge' || kind === 'give') && attrs.spec !== undefined) {
+    // 先保留具体错误原因，避免旧标签解析器将所有规格错误折叠成“无法解析”。
+    const spec = parseItemSpecification(attrs.spec, attrs);
+    if (kind === 'reforge' && spec.kind === 'consumable') throw new Error('消耗品不能重铸');
+  }
   if (kind === 'give') {
     if (attrs.type !== undefined && !['weapon', 'armor', 'consumable', 'accessory', 'material', 'quest', 'misc'].includes(attrs.type)) throw new Error('未知物品种类');
     if (attrs.spec === undefined && ['body', 'quality', 'enchant', 'stabilized', 'protection'].some((key) => attrs[key] !== undefined)) throw new Error('有效果的物品需要明确spec，不能只靠名称或附魔提示猜测');

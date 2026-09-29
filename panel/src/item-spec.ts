@@ -8,12 +8,23 @@ export function itemSpecificationLabel(spec: ItemSpecification): string {
   return `${name}L${spec.power}${enhancementLabel(spec.bonuses)}${spec.kind === 'weapon' && spec.enchantment && spec.enchantment !== 'none' ? ' · ' + (spec.enchantment === 'arcane' ? '奥术转化' : '热能转化') : ''}`;
 }
 
+/** 名称只是显示前缀；只读取分隔符后明确写出的机制，不按名称猜装备。 */
+export function splitItemSpecification(text: string): { name?: string; spec: string } {
+  const value = text.trim(), colon = value.search(/[:：]/);
+  const separator = colon >= 0 ? colon : value.search(/[·｜|/／]/);
+  if (separator < 0) return { spec: value };
+  const name = value.slice(0, separator).trim(), spec = value.slice(separator + 1).trim();
+  if (!name || !spec || /[:：·｜|/／]/.test(spec)) throw new Error('装备规格使用“名称:效果L强度”或“效果L强度”，每项只写一个明确规格');
+  return { name, spec };
+}
+
 /** 正文仅提供机制与规格；属性、骰子、身份、种子与版本仍由插件计算。 */
 export function parseItemSpecification(text: string, attrs: { type?: string; quality?: string; body?: string; enchant?: string; stabilized?: string; protection?: string } = {}): ItemSpecification {
+  text = splitItemSpecification(text).spec;
   const label = text.trim().replace(/[lL]\s*\d{1,2}(?:[+-].*)?$/, ''), consumable = Object.entries(CONSUMABLE_NAMES).find(([id, name]) => label === id || label === name)?.[0], accessory = Object.entries(ACCESSORY_NAMES).find(([id, name]) => label === id || label === name)?.[0];
   const kind = accessory ? 'accessory' : consumable ? 'consumable' : /^(?:无甲|轻甲|中甲|重甲|超重甲)/.test(text) ? 'armor' : /^(?:盾|shield)/.test(text) ? 'shield' : /^(?:治疗|heal)/.test(text) ? 'consumable' : 'weapon';
   const parsed = parseEnhancementSuffix(text,kind);
-  const match = parsed.text.trim().match(/^([^:：|]+?)[lL](\d{1,2})$/);
+  const match = parsed.text.trim().match(/^([^:：|]+?)\s*[lL]\s*(\d{1,2})$/);
   if (!match) throw new Error('物品规格使用“效果L强度”，例如火炮L7、重甲L5、治疗L3');
   const name = match[1]!.trim(), power = Number(match[2]);
   if (power < 1 || power > 10) throw new Error('物品强度必须为1–10');

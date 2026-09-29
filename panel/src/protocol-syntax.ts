@@ -68,7 +68,7 @@ function numeric(value: string, key: string): string {
   if (/^\d+(?:\.0+)?$/.test(source)) source = String(Number(source));
   return source;
 }
-const numericKeys = new Set(['hp', 'hpMax', 'level', 'count', 'qty', 'quality', 'rounds', 'battles', 'reserves', 'speed']);
+const numericKeys = new Set(['hp', 'hpMax', 'level', 'count', 'qty', 'quality', 'rounds', 'battles', 'reserves', 'speed', 'morale']);
 const booleanKeys = new Set(['shield', 'mount', 'stabilized', 'permanent', 'retired']);
 const enumAliases: Record<string, Record<string, string>> = {
   side: { 我方: 'ally', 友方: 'ally', 友军: 'ally', allied: 'ally', friendly: 'ally', 敌方: 'enemy', 敌军: 'enemy', hostile: 'enemy' },
@@ -118,7 +118,7 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
     if (enumAliases[key]) value = enumAliases[key]![value.toLowerCase()] ?? value.toLowerCase();
     if (key === 'env') value = value.toLowerCase();
     if (['weapon', 'weapon2', 'armor', 'shieldSpec', 'spec'].includes(key)) value = value.split(/[,，、;；]/).map(normalizeNarrativeSpec).join(',');
-    if (['skills', 'traits', 'effects'].includes(key)) {
+    if (['skills', 'traits', 'effects', 'clear'].includes(key)) {
       if (value.startsWith('[')) {
         const list: unknown = JSON.parse(value);
         if (!Array.isArray(list) || list.some(item => typeof item !== 'string')) throw Error(key + '列表须为文字数组');
