@@ -1,7 +1,7 @@
 {
   "format": "tavern-battle-native-build",
   "version": "1.6.1-rc.2",
-  "builtAt": "2026-09-29T11:48:19.746Z",
+  "builtAt": "2026-09-29T12:13:07.595Z",
   "sourceFingerprint": "45ab70c1e3311d7ba85680b376ddb102df10d3d97fae21745ea32a1808d2ea9b",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
@@ -17,13 +17,13 @@
     },
     {
       "path": "README.md",
-      "bytes": 4393,
-      "sha256": "9ac94edc761f8da0a0f64774df9590e8157301dd3c4adf94299c11cfe686eaf6"
+      "bytes": 4762,
+      "sha256": "8f3c3ccb54e0f2c4cb08aa66f22662d0e7f828584599c5ceb7b9f8963b25d4db"
     },
     {
       "path": "README.zh-CN.md",
-      "bytes": 4089,
-      "sha256": "8bcb008bb0664789436a64ac7749cb40c542b7d41469025ad72c4d3546a16fe2"
+      "bytes": 4414,
+      "sha256": "af75169e632ec5abfd36e167c76258be7c61a11021fd9dbba2401056c9ce5ad6"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
