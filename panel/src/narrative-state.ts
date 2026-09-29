@@ -196,8 +196,17 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     const record = records.find((r) => r.id === event.id);
     if (!record || !event.id || expected.unitVersions[event.id] !== (record.revision ?? 1)) throw new Error(`档案 ${event.id} 缺失或版本过期`);
   }
-  // 固定阶段：补员/状态 → 单位字段 → 实物改造/学习/效果 → 部署。deploy写在前面也使用最终档案。
+  // 固定阶段：移除旧实物 → 补员/状态 → 单位字段 → 实物改造/学习/效果 → 部署。
   // 版本只对批次开始前的事实校验；后续任一步失败只丢弃此候选副本。
+  for (const [index, event] of proposal.events.entries()) {
+    if (event.kind !== 'take') continue;
+    next = prepareInventoryState(next);
+    const item = next.inventory?.find((i) => i.id === event.id);
+    if (!item || item.qty < event.qty) throw new Error('物品不存在或移除数量超出库存');
+    if (item.equippedTo) next = prepareInventoryTransaction(next, { kind: 'unequip', id: 'take-unequip:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, ...item.equippedTo });
+    next = prepareInventoryTransaction(next, { kind: 'discard', id: 'take:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, itemId: event.id, qty: event.qty });
+  }
+  records = next.storage ?? [];
   for (const event of proposal.events) {
     if (event.kind !== 'unit-update') continue;
     records = records.map((r) => r.id === event.id ? updateUnitRecord(r, event, registry, proposal.id) : r);
@@ -223,12 +232,6 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
         revokeTraitSource(unit, event.sourceId);
       }
       next.storage = next.storage!.map((r) => r.id === record.id ? unitRecordFromCombatant(unit, record, { sourceId: proposal.id, kind: 'update' }) : r);
-    } else if (event.kind === 'take') {
-      next = prepareInventoryState(next);
-      const item = next.inventory?.find((i) => i.id === event.id);
-      if (!item || item.qty < event.qty) throw new Error('物品不存在或移除数量超出库存');
-      if (item.equippedTo) next = prepareInventoryTransaction(next, { kind: 'unequip', id: 'take-unequip:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, ...item.equippedTo });
-      next = prepareInventoryTransaction(next, { kind: 'discard', id: 'take:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, itemId: event.id, qty: event.qty });
     } else if (event.kind === 'give') {
       const id = `loot-${proposal.id}-${index}`;
       if (!event.spec) next.inventory = [...(next.inventory ?? []), { id, name: event.item, qty: event.qty, lootType: event.lootType, note: event.note }];

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateUnit, traitRegistry, activeTraitIds, applyXp } from '../../engine/src/index.js';
 import { unitRecordFromCombatant, materializeUnitRecord } from './unit-state.js';
+import { prepareInventoryState } from './inventory-state.js';
 import { captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type MessageEnvelope, type NarrativeSave } from './narrative-state.js';
 const reg = traitRegistry();
 function setup(body: string) {
@@ -12,6 +13,20 @@ function setup(body: string) {
   return { save, source, ns, proposal: proposalFromMessage(source, binding)! };
 }
 describe('正文原子事务', () => {
+  it('同批先收走旧装备再执行unit_set，新装备不会被后续take卸掉', () => {
+    const fixture = setup('');
+    const armed = generateUnit({ name: 'A军团', side: 'ally', scale: 'company', level: 4, rulesVersion: 'v2', weaponClass: 'rifle', traits: [] }, { seed: 'armed-narrative', registry: reg }).unit;
+    armed.id = 'a'; fixture.save.storage = [unitRecordFromCombatant(armed)];
+    const prepared = prepareInventoryState(fixture.save);
+    const oldId = prepared.inventory!.find(item => item.equippedTo?.unitId === 'a' && item.equippedTo.slot === 'primary')!.id;
+    const source = { ...fixture.source, text: `<tb><unit_set id="a" weapon="新步枪:步枪L5"/><take id="${oldId}" qty="1"/></tb>` };
+    const binding = captureGeneration(prepared, fixture.ns, 'g1'); binding.complete = true;
+    const proposal = proposalFromMessage(source, binding)!;
+    const next = prepareNarrativeTransaction(prepared, proposal, fixture.ns, true);
+    expect(next.inventory!.find(item => item.id === oldId)!.qty).toBe(0);
+    expect(materializeUnitRecord(next.storage![0]!, reg).weapon?.name).toBe('新步枪');
+    expect(next.inventory!.some(item => item.equippedTo?.unitId === 'a' && item.equippedTo.slot === 'primary' && item.id !== oldId)).toBe(true);
+  });
   it('正文按实物id扣减，超量整批回滚且不能重复提交', () => {
     const { save, ns, proposal } = setup('<take id="herb" qty="2" note="交出药草"/>');
     save.inventory = [{ id: 'herb', name: '药草', qty: 3, lootType: 'material' }];

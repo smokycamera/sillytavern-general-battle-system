@@ -76,6 +76,15 @@ describe('layered city and siege maps', () => {
     a.traits.push('siege-assault'); expect(canClimbFrom(field, a, 24)).toBe(true); expect(battle.climbReason('a', 24)).toContain('占据');
     expect(() => battle.attack(a.id, b.id)).not.toThrow();
   });
+  it('墙顶可斜射相邻墙脚，相连墙段不挡角线，其他建筑仍挡住', () => {
+    const { a, b, field } = layeredFixture();
+    a.pos = 24; a.elevation = 1; b.pos = 32;
+    field.structures![24] = createStructure('wall', 3, { top: true });
+    field.structures![25] = createStructure('wall', 3, { top: true });
+    expect(unitLineOfSight(field, a, b)).toBe(true);
+    field.structures![31] = createStructure('building', 3);
+    expect(unitLineOfSight(field, a, b)).toBe(false);
+  });
   it('climbing pays an action and movement; inside stairs need no trait; height persists only in battle', () => {
     const { a, battle, field } = layeredFixture(); a.pos = 17; field.structures![24] = createStructure('wall', 3, { top: true, access: [17] });
     const before = JSON.stringify(battle.toSnapshot()), movement = battle.movementLeft('a');

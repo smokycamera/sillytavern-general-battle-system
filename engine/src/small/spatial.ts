@@ -218,9 +218,14 @@ export function unitLineOfSight(field: BattlefieldSpec, from: Combatant, to: Com
   if (!field.layerVersion) return isAirborne(from) || isAirborne(to) || lineOfSight(field, from.pos!, to.pos!);
   const height = (u: Combatant) => isAirborne(u) ? 2.25 : isElevated(u) ? 1.25 : .25;
   const distance = Math.max(1, gridDistance(field, from.pos!, to.pos!));
+  const adjacentDiagonal = Math.abs(from.pos! % field.width - to.pos! % field.width) === 1
+    && Math.abs(Math.floor(from.pos! / field.width) - Math.floor(to.pos! / field.width)) === 1;
   const forest = new Set<number>();
   return lineOfSight(field, from.pos!, to.pos!, cell => {
     if (cell === to.pos || cell === from.pos) return false;
+    // 墙顶射向斜邻墙脚时，射线只擦过相连的墙顶格角，不应被本段城墙挡住。
+    if (adjacentDiagonal && isElevated(from) && !isElevated(to) && gridDistance(field, from.pos!, cell) === 1
+      && structureAt(field, cell)?.top && obstructionHeight(field, cell) === 1) return false;
     const fraction = Math.min(1, gridDistance(field, from.pos!, cell) / distance);
     const rayHeight = height(from) + (height(to) - height(from)) * fraction;
     if (obstructionHeight(field, cell) >= rayHeight) return true;
