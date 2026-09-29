@@ -1,6 +1,6 @@
 {
   "name": "tavern-battle",
-  "version": "1.6.0",
+  "version": "1.6.1-rc.1",
   "description": "通用战斗系统v1.0 —— SillyTavern / TauriTavern 原生回合制战斗扩展",
   "license": "GPL-3.0-only",
   "type": "module",
@@ -36,7 +36,8 @@
     "audit:layered-maps": "vite-node scripts/audit-layered-battlefields.ts",
     "audit:layered-combat": "vite-node scripts/audit-layered-combat.ts",
     "smoke:layered": "vite-node scripts/layered-browser-fixture.ts && node scripts/layered-browser-smoke.mjs",
-    "verify:worldbook-scope": "node scripts/check-worldbook-trait-only.mjs"
+    "verify:worldbook-scope": "node scripts/check-worldbook-trait-only.mjs",
+    "audit:breach-review": "vite-node scripts/audit-breach-review.ts"
   },
   "devDependencies": {
     "happy-dom": "20.8.8",

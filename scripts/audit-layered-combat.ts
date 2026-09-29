@@ -4,6 +4,7 @@ import { performance } from 'node:perf_hooks';
 import { isDeepStrictEqual } from 'node:util';
 import { generatedLayeredField, generateUnit, SmallBattle, V11_OVERFLOW_D20, groundBlocked, type Combatant, type BattlefieldPlan } from '../engine/src/index.js';
 const samples: number[] = [], cases: unknown[] = [], failures: unknown[] = [], count = Number(process.env.TB_CASES ?? 24);
+if (!Number.isSafeInteger(count) || count < 1 || count > 256) throw Error('TB_CASES must be 1–256');
 const began = performance.now();
 const artifactDir = process.env.TB_LAYERED_AUDIT_DIR ?? 'artifacts/layered-review'; mkdirSync(artifactDir, { recursive: true });
 for (let n = 0; n < count; n++) {
@@ -35,6 +36,7 @@ for (let n = 0; n < count; n++) {
         if (!isDeepStrictEqual(restored.toSnapshot(), left.toSnapshot())) throw Error('restored AI diverges');
       }
     }
+    if (!battle.isOver()) throw Error('Combat exceeded the action limit without finishing');
     const row = { seed, tag, shape: field.city?.shape, dimensions: `${field.width}x${field.height}`, actions, rounds: battle.round, ended: battle.isOver(), winner: battle.winner(),
       elapsedMs: performance.now() - start, broken: battle.battlefield!.structures?.filter(s => s?.hp === 0).length ?? 0,
       structureActions: battle.log.filter(e => e.text.includes('结构耐久')).length, climbs: battle.log.filter(e => /登上城防平台|下至地面/.test(e.text)).length,
@@ -46,6 +48,6 @@ for (let n = 0; n < count; n++) {
 samples.sort((a, b) => a - b);
 const percentile = (p: number) => samples[Math.min(samples.length - 1, Math.floor(samples.length * p))];
 const report = { count, completed: cases.length, elapsedMs: performance.now() - began, actionSamples: samples.length, p50Ms: percentile(.5), p95Ms: percentile(.95), maxMs: samples.at(-1), cases, failures };
-writeFileSync('docs/layered-combat-audit-20260929.json', JSON.stringify(report, null, 2) + '\n');
+writeFileSync(process.env.TB_AUDIT_REPORT ?? 'docs/layered-combat-audit-20260929.json', JSON.stringify(report, null, 2) + '\n');
 console.log(JSON.stringify({ ...report, cases: undefined, failures: failures.slice(0, 10) }, null, 2));
 if (failures.length) process.exitCode = 1;

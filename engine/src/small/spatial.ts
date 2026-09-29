@@ -1,3 +1,4 @@
+import { movementPoints } from '../tactics.js';
 import { GridQueue } from './grid-queue.js';
 import { layerMoveCost, groundBlocked, obstructionHeight, structureAt, STRUCTURE_NAMES, validateLayers, isElevated, structureDefense, type FieldStructure, type GroundOverlay, type FieldLandmark, type CityRecord } from './layers.js';
 import { landmarkAt, type MapGenerationRecord } from './map-design.js';
@@ -95,6 +96,13 @@ export function tileCost(field: BattlefieldSpec, cell: number, actor?: Combatant
   if (terrain === 'forest') return traits.includes('forest-lore') ? 1 : 2;
   if (terrain === 'hill') return traits.includes('mountain-born') ? 1 : 2;
   return terrain === 'rough' ? 2 : 1;
+}
+/** Difficult but traversable ground cannot permanently trap a slow unit. A step costs
+ * at most its FULL normal allowance, never its remaining allowance. Thus a 2-MP unit
+ * with only 1 MP left still cannot enter a 3-cost fortification. Prohibitions stay infinite. */
+export function movementStepCost(field: BattlefieldSpec, cell: number, actor: Combatant, tags = field.environment ?? []): number {
+  const cost = tileCost(field, cell, actor);
+  return field.layerVersion && Number.isFinite(cost) ? Math.min(cost, movementPoints(actor, tags)) : cost;
 }
 export function footprint(unit: Combatant): number { return unit.mount === true || unit.body && unit.body !== 'human' ? 2 : 1; }
 export function canOccupy(field: BattlefieldSpec, units: Combatant[], actor: Combatant, cell: number): boolean {

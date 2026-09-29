@@ -4,7 +4,7 @@ import type { CommanderProfile } from '../commander-profile.js';
 import { activeTraitIds } from '../trait-sources.js';
 import { isAirborne } from '../aerial.js';
 import { isRangedWeapon } from '../loadout.js';
-import { gridDistance, neighbors, type BattlefieldSpec } from './spatial.js';
+import { gridDistance, neighbors, gridCostsToGoals, type BattlefieldSpec } from './spatial.js';
 import { groundBlocked, isElevated, intactStructure } from './layers.js';
 export interface RegionalOrder {
   role: 'front' | 'fire' | 'reserve' | 'core' | 'breach' | 'flank' | 'advance';
@@ -56,7 +56,9 @@ export function regionalOrder(field: BattlefieldSpec, unit: Combatant, known: Co
     else goals = legal(goals);
     return { role, goals: goals.length ? goals : [unit.pos], phase };
   }
-  if (isAirborne(unit) || isElevated(unit) || city.inside.includes(unit.pos) || breached.length) {
+  // A gap behind water/cliffs is not a usable breach for this unit. Public terrain only.
+  const coreReachable = breached.length > 0 && gridCostsToGoals(field, legal(city.core), p => !groundBlocked(field, p, unit), () => 1).has(unit.pos);
+  if (isAirborne(unit) || isElevated(unit) || city.inside.includes(unit.pos) || coreReachable) {
     return { role: ranged ? 'fire' : 'advance', goals: legal(city.core).length ? legal(city.core) : city.core, phase: 'advance' };
   }
   const flanking = style === 'flanking' || style === 'infiltration' || slot % 4 === 3;

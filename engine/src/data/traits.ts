@@ -259,7 +259,7 @@ export const TRAITS: Trait[] = [
     v2SourceReady: true, effects: [{ kind: 'flag', flag: 'water-crossing' }],
   },
   {
-    id: 'siege-assault', name: '登城', desc: '可从墙外攀登相邻的墙顶，并与该处守军近战；攀登消耗主行动和2移动，不能穿过敌军占据的位置',
+    id: 'siege-assault', name: '登城', desc: '可从墙外攀登相邻的墙顶，并与该处守军近战；攀登消耗主行动及最多2点基础移动力；迟缓单位耗尽1点也可登城，不能穿过敌军占据的位置',
     v2SourceReady: true, effects: [{ kind: 'flag', flag: 'siege-assault' }],
   },
   {
