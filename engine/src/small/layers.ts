@@ -1,3 +1,5 @@
+import { instanceMultiplier } from '../instance-variance.js';
+import { bodyProfile } from '../body.js';
 /** Layered maps are opt-in on new fields. Frozen version-2 tile-only saves retain their rules. */
 import type { Combatant, Weapon } from '../types.js';
 import { activeTraitIds } from '../trait-sources.js';
@@ -106,19 +108,31 @@ export function createStructure(kind: StructureKind, level = 3, options: Omit<Pa
   const hp = structureDurability(kind, level);
   return { ...options, kind, level, hp, hpMax: hp, ...(kind === 'gate' ? { gateState: options.gateState ?? 'closed' } : {}) };
 }
-/** Distinct engineering budget, no poison/morale/critical hits against buildings. */
-export function weaponStructureDamage(actor: Combatant, weapon: Weapon | undefined): number {
-  if (!weapon) return 0;
-  const mechanism = weapon.recipe?.mechanism ?? '';
+/** Per main action, not per bullet/member. Coefficients are game balance, not material physics.
+ * Penetration/accuracy are intentionally not demolition bonuses; grade and damage are. */
+export const BREACH_COEFFICIENTS: Readonly<Record<string, number>> = Object.freeze({
+  demolition: 2, cannon: 1.5, 'indirect-cannon': 1.5, autocannon: .65,
+  'heavy-rifle': .30, rifle: .16, firearm: .12, bow: .08, throwing: .12,
+  'light-ranged': .08, energy: .65, magic: .55,
+  blunt: 1, axe: 1, sword: .45, spear: .25, natural: .65, summon: .65,
+});
+export interface BreachBudget { damage: number; coefficient: number; enhancement: number; engineers: number; frontage: number; strength: number }
+export function weaponBreachBudget(actor: Combatant, weapon: Weapon | undefined): BreachBudget {
+  if (!weapon) return { damage: 0, coefficient: 0, enhancement: 1, engineers: 1, frontage: 1, strength: 1 };
+  const mechanism = weapon.recipe?.mechanism ?? weapon.tags?.find(t => t.startsWith('mechanism:'))?.slice(10) ?? '';
   const ranged = weapon.tags?.includes('ranged');
-  const efficiency = weapon.tags?.includes('blast') || mechanism === 'cannon' ? 1.5
-    : ['blunt', 'axe', 'natural'].includes(mechanism) ? 1
-      : ranged ? .18 : .45;
+  const coefficient = BREACH_COEFFICIENTS[mechanism] ?? (weapon.tags?.includes('blast') ? 1.5 : ranged ? .16 : .45);
+  const enhancement = instanceMultiplier(weapon.recipe?.bonuses, 'damage', weapon.recipe?.variance, weapon.channel ?? 'kinetic');
   const engineers = activeTraitIds(actor).includes('siege-breaker') ? 1.5 : 1;
-  const frontage = actor.scale === 'company' ? Math.min(3, Math.max(1, Math.sqrt(actor.hp / 10))) : 1;
-  const body = ['giant', 'titan', 'beast'].includes(actor.body ?? '') ? 1.4 : 1;
-  return Math.max(0, Math.round(structureDurability('wall', weapon.level ?? weapon.recipe?.power ?? 1) / 5 * efficiency * engineers * frontage * body));
+  const frontage = actor.scale === 'company' ? Math.min(3, Math.max(1, Math.sqrt(Math.max(0, actor.hp) / 10))) : 1;
+  // Strong arms help melee demolition, not firearm/explosive projectile energy.
+  const strength = ranged ? 1 : bodyProfile(actor.body, actor.damageModel).strength;
+  const summonedShare = mechanism === 'summon' ? Math.min(1, weapon.damageScale ?? 1) : 1;
+  const damage = Math.max(0, Math.round(structureDurability('wall', weapon.level ?? weapon.recipe?.power ?? 1) / 5
+    * coefficient * enhancement * engineers * frontage * strength * summonedShare));
+  return { damage, coefficient, enhancement, engineers, frontage, strength };
 }
+export function weaponStructureDamage(actor: Combatant, weapon: Weapon | undefined): number { return weaponBreachBudget(actor, weapon).damage; }
 export function damageStructure(field: BattlefieldSpec, cell: number, amount: number): { damage: number; destroyed: boolean } {
   const s = intactStructure(field, cell);
   if (!s || !Number.isFinite(amount) || amount <= 0) return { damage: 0, destroyed: false };

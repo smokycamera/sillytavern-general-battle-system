@@ -84,7 +84,7 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   nav('battle');button('small-start').click();await idle();
   expect(f.service.snapshot().battle, document.querySelector('#toast')?.textContent ?? JSON.stringify(f.service.status())).toBeDefined();
   const selected=SmallBattle.fromSnapshot(f.service.snapshot().battle!.snap);
-  expect(selected.commanderProfiles).toEqual({ally:{ability:'master',style:'aggressive'},enemy:{ability:'expert',style:'cautious'}});
+  expect(selected.commanderProfiles).toEqual({ally:{ability:'master',style:'aggressive',scoring:'tactical-v2'},enemy:{ability:'expert',style:'cautious',scoring:'tactical-v2'}});
   expect(f.service.snapshot()).toMatchObject({field:'forest',lighting:'night'});
   expect(selected.battlefield!.generation).toMatchObject({source:'context',design:{layout:'ring'}});
   expect(selected.battlefield!.objective).toMatchObject({kind:'escape',unitId:'u1',cell:87});
