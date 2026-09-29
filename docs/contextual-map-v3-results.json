@@ -1,0 +1,72 @@
+{
+  "baseCommit": "e9a9f66af5345706dd25e3752398a1de785f303e",
+  "version": "1.4.0",
+  "mapMatrix": {
+    "maps": 2400,
+    "layouts": 6,
+    "environmentTags": 5,
+    "sizes": 4,
+    "seedsPerCombination": 20,
+    "checks": [
+      "determinism",
+      "full passable connectivity",
+      "more than 25 percent open",
+      "top-bottom route survives each individually blocked interior passable tile"
+    ]
+  },
+  "targeted": {
+    "files": 7,
+    "passed": 54,
+    "failed": 0
+  },
+  "fullSuite": {
+    "passed": 1500,
+    "failed": 7,
+    "baselineFailed": 7,
+    "newFailures": 0,
+    "baselineFailures": [
+      {
+        "file": "src/life-limit-state.test.ts",
+        "test": "生命上限贯穿正文、编辑与档案 正文事务不能在生成后用旧事件值覆盖生命上限"
+      },
+      {
+        "file": "src/life-limit-state.test.ts",
+        "test": "生命上限贯穿正文、编辑与档案 正文高生命自动截断并给出提示，编队人数保留原值"
+      },
+      {
+        "file": "tests/unified-replay.test.ts",
+        "test": "V5 saved battles and V6 prototype replay compatibility V5 giant-four T10"
+      },
+      {
+        "file": "tests/unified-replay.test.ts",
+        "test": "V5 saved battles and V6 prototype replay compatibility V5 human-four T1"
+      },
+      {
+        "file": "tests/unified-replay.test.ts",
+        "test": "V5 saved battles and V6 prototype replay compatibility V6-prototype giant-four T6"
+      },
+      {
+        "file": "tests/unified-replay.test.ts",
+        "test": "V5 saved battles and V6 prototype replay compatibility V6-prototype giant-unbreakable T1"
+      },
+      {
+        "file": "tests/unified-replay.test.ts",
+        "test": "V5 saved battles and V6 prototype replay compatibility V6-prototype human4-vehicle2 T10"
+      }
+    ]
+  },
+  "nativeSuite": {
+    "passed": 222,
+    "failed": 0
+  },
+  "relayTests": {
+    "passed": 5,
+    "failed": 0
+  },
+  "typecheck": "passed",
+  "build": "passed",
+  "verifyDist": "passed",
+  "localBrowserSmoke": "blocked before navigation by container Chromium policy (ERR_BLOCKED_BY_ADMINISTRATOR); GitHub packaging workflow runs both host contracts",
+  "realThirdPartyModel": "not-run; protocol and scene wiring tested with mock model responses",
+  "realSillyTavernOrTauriTavern": "not-run; synthetic host and integration fixtures only"
+}

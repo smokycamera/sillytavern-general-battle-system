@@ -25,7 +25,7 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
     if (String(url).endsWith('/status')) return new Response(JSON.stringify({data:[{id:'model-one'},{id:'model-two'}]}));
     if (delayed) await new Promise<void>(resolve => { release = resolve; });
     const payload = JSON.parse(String(init?.body)), body = JSON.parse(payload.messages[1].content);
-    const values:Record<string,string> = {field:'forest',lighting:'night',battle_mode:'small',map_layout:'standard',objective:'annihilation',siege_attacker:'ally',enemy_ability:'expert',enemy_style:'cautious',ally_ability:'master',ally_style:'aggressive'};
+    const values:Record<string,string> = {field:'forest',lighting:'night',battle_mode:'small',map_layout:'standard',objective:'intercept',design_layout:'ring',design_orientation:'diagonal',design_relief:'dense',design_cover:'dense',design_obstacles:'sparse',design_route:'flank',design_breadth:'narrow',design_feature:'hill',design_featurezone:'enemy_left',vip_ally:'unit_0',vip_enemy:'unit_0',siege_attacker:'ally',enemy_ability:'expert',enemy_style:'cautious',ally_ability:'master',ally_style:'aggressive'};
     return new Response(JSON.stringify({model:'remote-alias',choices:[{message:{content:JSON.stringify({selections:Object.fromEntries(body.fields.map((v:{id:string})=>[v.id,{value:values[v.id],confidence:.2}]))})}}]}));
   });
   vi.stubGlobal('fetch', request);
@@ -54,7 +54,12 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   expect(scaleToggle().checked).toBe(true);expect(scaleToggle().disabled).toBe(false);
   scaleToggle().click();
   expect(readLlmSettings().selectBattleScale).toBe(false);
-  select('llm-mode','manual');expect(scaleToggle().disabled).toBe(true);
+  const designToggle=()=>document.querySelector<HTMLInputElement>('[data-role="llm-map-design"]')!;
+  const vipToggle=()=>document.querySelector<HTMLInputElement>('[data-role="llm-vip"]')!;
+  expect(designToggle().checked).toBe(false);expect(vipToggle().checked).toBe(false);
+  designToggle().click();expect(readLlmSettings()).toMatchObject({designMap:true,selectVip:false,selectBattleScale:false});
+  vipToggle().click();expect(readLlmSettings()).toMatchObject({designMap:true,selectVip:true});
+  select('llm-mode','manual');expect(designToggle().disabled).toBe(true);expect(vipToggle().disabled).toBe(true);expect(scaleToggle().disabled).toBe(true);
   select('llm-mode','llm');expect(scaleToggle().checked).toBe(false);
   const config=localStorage.getItem(LLM_SETTINGS_KEY);
   expect(readLlmSettings()).toMatchObject({model:'model-two',windowSize:2,enabled:true});
@@ -81,20 +86,27 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   const selected=SmallBattle.fromSnapshot(f.service.snapshot().battle!.snap);
   expect(selected.commanderProfiles).toEqual({ally:{ability:'master',style:'aggressive'},enemy:{ability:'expert',style:'cautious'}});
   expect(f.service.snapshot()).toMatchObject({field:'forest',lighting:'night'});
+  expect(selected.battlefield!.generation).toMatchObject({source:'context',design:{layout:'ring',route:'flank',feature:'hill'}});
+  expect(selected.battlefield!.objective).toMatchObject({kind:'escape',unitId:'u1',cell:87});
+  expect(f.service.snapshot().encounterContext).toMatchObject({vipId:'u1',mapDesign:{layout:'ring'}});
+  const frozen=structuredClone(f.service.snapshot().battle);
+  nav('settings');designToggle().click();vipToggle().click();
+  expect(f.service.snapshot().battle).toEqual(frozen);
+  designToggle().click();vipToggle().click();nav('battle');
   expect(localStorage.getItem(LLM_SETTINGS_KEY)).toBe(config);
   expect(JSON.stringify(f.service.snapshot())).not.toContain('private-fixture-key');
   const payload=JSON.parse(String(request.mock.calls.at(-1)![1]?.body));
   expect(payload.model).toBe('model-two');expect(JSON.parse(payload.messages[1].content).messages.map((m:{role:string})=>m.role)).toEqual(['user','assistant']);
   expect(JSON.parse(payload.messages[1].content).fields.some((field:{id:string})=>field.id==='battle_mode')).toBe(false);
 
-  // Changing the scale preference while a request is pending invalidates its answer.
+  // Any independent preparation toggle invalidates a pending response, never starts a stale battle.
   const beforeToggle=f.service.snapshot();await f.service.transact(()=>({...beforeToggle,battle:null,encounterContext:undefined}));
-  delayed=true;request.mockClear();button('small-start').click();await vi.waitFor(()=>expect(request).toHaveBeenCalled());
-  nav('settings');scaleToggle().click();release?.();await idle();
-  expect(f.service.snapshot().battle).toBeNull();
-  expect(readLlmSettings().selectBattleScale).toBe(true);
-  scaleToggle().click();expect(localStorage.getItem(LLM_SETTINGS_KEY)).toBe(config);
-  nav('battle');
+  for(const toggle of [scaleToggle,designToggle,vipToggle]) {
+    delayed=true;request.mockClear();button('small-start').click();await vi.waitFor(()=>expect(request).toHaveBeenCalled());
+    nav('settings');toggle().click();release?.();await idle();
+    expect(f.service.snapshot().battle).toBeNull();
+    toggle().click();expect(localStorage.getItem(LLM_SETTINGS_KEY)).toBe(config);nav('battle');
+  }
 
   // Start a second preparation and switch chat before the model answers.
   const saved=f.service.snapshot();await f.service.transact(()=>({...saved,battle:null,encounterContext:undefined}));

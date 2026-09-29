@@ -2549,12 +2549,14 @@ async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void>
   const setup={mode:requestedMode,field:state.field||'plains',lighting:state.lighting,mapLayout:state.mapLayout,objectiveMode:state.objectiveMode,siegeAttacker:state.siegeAttacker};
   if(settings.enabled && v2) {
     const namespace=adapter.namespace(), identity=adapter.identity(), revision=state.factRevision,
-      generation=controller.inventoryContext(), settingsKey=JSON.stringify(settings), rosterKey=JSON.stringify(state.roster);
+      generation=controller.inventoryContext(), settingsKey=JSON.stringify(settings), rosterKey=JSON.stringify(state.roster), setupKey=JSON.stringify([state.mode,state.field,state.lighting,state.mapLayout,state.objectiveMode,state.siegeAttacker,state.protagonistId]);
     const messages=recentContextMessages(), messagesKey=JSON.stringify(messages);
     const valid=()=>!currentBattle() && adapter.namespace()===namespace && adapter.identity()===identity && state.factRevision===revision
         && controller.inventoryContext()===generation && JSON.stringify(readLlmSettings())===settingsKey && JSON.stringify(state.roster)===rosterKey
+        && JSON.stringify([state.mode,state.field,state.lighting,state.mapLayout,state.objectiveMode,state.siegeAttacker,state.protagonistId])===setupKey
         && JSON.stringify(recentContextMessages())===messagesKey && (!runtime.canWrite||runtime.canWrite());
-    const pending=llmContext.select({roster:state.roster,setup,messages},settings,valid);
+    const unitNotes=Object.fromEntries(state.storage.filter(u=>state.roster.some(c=>c.id===u.id)).map(u=>[u.id,u.note??'']));
+    const pending=llmContext.select({roster:state.roster,setup,messages,unitNotes},settings,valid);
     render('battle');
     context=await pending;
     if (!valid()) throw Error('准备信息已变化，尚未开始战斗');
@@ -2575,9 +2577,14 @@ async function startSmallBattle(context?:LlmEncounterContext):Promise<void> {
     if (!rosterHasBothSides()) throw new Error('开战前必须同时有我方与敌方单位');
     const seed = randomSeed();
     const tags = state.objectiveMode === 'siege' ? [...new Set([...plannedFieldTags(), 'siege'])] : plannedFieldTags();
-    const fieldOptions = { roster: state.roster.every(u => u.rulesVersion === 'v2') ? state.roster : undefined, attackingSide: state.siegeAttacker };
+    const fieldOptions = { roster: state.roster.every(u => u.rulesVersion === 'v2') ? state.roster : undefined, attackingSide: state.siegeAttacker, design: context?.mapDesign };
     let battlefield = state.mapLayout === 'indoor' ? generatedField(seed, 5, 7, tags, fieldOptions) : generatedField(seed, 7, 13, tags, fieldOptions);
-    if (state.roster.every((u) => u.rulesVersion === 'v2')) battlefield = prepareBattleObjective(battlefield, state.roster, state.objectiveMode, state.protagonistId, state.siegeAttacker);
+    if (state.roster.every((u) => u.rulesVersion === 'v2')) battlefield = prepareBattleObjective(battlefield, state.roster, state.objectiveMode, state.protagonistId, state.siegeAttacker, context?.vipId);
+    if (context?.mapDesign && battlefield.generation?.source === 'context') context.mapDesign = structuredClone(battlefield.generation.design);
+    if (context && battlefield.objective.kind === 'escape') {
+      context.vipId = battlefield.objective.unitId;
+      context.vipName = state.roster.find(u => u.id === context!.vipId)?.name;
+    }
     const small = new SmallBattle({
       nonLethal:state.nonLethal,
       ...(state.roster.every((u) => u.rulesVersion === 'v2') ? { battlefield } : {}),
@@ -3558,10 +3565,12 @@ document.addEventListener('change', e => {
     catch (error) { toast(error instanceof Error ? error.message : '世界书设置保存失败'); }
     return;
   }
-  if (e.target instanceof HTMLInputElement && e.target.dataset.role === 'llm-battle-scale') {
+  if (e.target instanceof HTMLInputElement && ['llm-battle-scale', 'llm-map-design', 'llm-vip'].includes(e.target.dataset.role ?? '')) {
     try {
       const settings = readLlmSettings();
-      settings.selectBattleScale = e.target.checked;
+      if (e.target.dataset.role === 'llm-map-design') settings.designMap = e.target.checked;
+      else if (e.target.dataset.role === 'llm-vip') settings.selectVip = e.target.checked;
+      else settings.selectBattleScale = e.target.checked;
       saveLlmSettings(settings); llmContext.cancel(); llmDiagnostic = '已保存'; render('view');
     } catch (error) { toast(error instanceof Error ? error.message : '保存失败'); }
     return;

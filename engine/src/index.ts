@@ -59,3 +59,5 @@ export * from './skill-upgrade.js';
 export * from './barrier.js';
 
 export * from './area-effects.js';
+
+export * from './small/map-design.js';
