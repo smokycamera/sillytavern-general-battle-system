@@ -58,9 +58,9 @@ describe('layered city and siege maps', () => {
     field.structures![23] = createStructure('bridge', 3); expect(tileCost(field, 23, a)).toBe(1); a.traits = [];
     damageStructure(field, 23, 1e8); expect(canOccupy(field, [], a, 23)).toBe(false);
   });
-  it('fortification has facing, integrity and capture without magical side-only passage', () => {
+  it('fortification has omnidirectional protection, integrity and capture without side-only passage', () => {
     const { a, b, field } = layeredFixture(); a.pos = 31; b.pos = 24; field.structures![24] = createStructure('fortification', 3, { facing: 'south' });
-    expect(structureDefense(field, b, a, false)).toBe(3); a.pos = 17; expect(structureDefense(field, b, a, false)).toBe(0);
+    expect(structureDefense(field, b, a, false)).toBe(3); a.pos = 17; expect(structureDefense(field, b, a, false)).toBe(3);
     a.pos = 31; field.structures![24]!.hp = 1; expect(structureDefense(field, b, a, false)).toBe(1);
     expect(tileCost(field, 24, a)).toBe(3); expect(tileCost(field, 24, b)).toBe(3);
   });
@@ -99,7 +99,7 @@ describe('layered city and siege maps', () => {
   });
   it('gate opening is physical for both sides, cannot close on units, and outside enemies cannot unlock it', () => {
     const { a, b, battle, field } = layeredFixture(); field.structures![24] = createStructure('gate', 3, { owner: 'enemy' });
-    expect(battle.gateReason('a', 24)).toContain('城内'); field.structures![24]!.owner = 'ally'; battle.toggleGate('a', 24);
+    expect(battle.gateReason('a', 24)).toContain('内部'); field.structures![24]!.owner = 'ally'; battle.toggleGate('a', 24);
     expect(canOccupy(field, [], b, 24)).toBe(true); resetAction(battle); a.pos = 24;
     expect(battle.gateReason('a', 24)).toContain('有人'); a.pos = 31; battle.toggleGate('a', 24); expect(field.structures![24]!.gateState).toBe('closed');
   });

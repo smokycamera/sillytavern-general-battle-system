@@ -1,5 +1,5 @@
-import { MAX_SMALL_UNITS } from '../../engine/src/battle-limits.js';
-import { BATTLEFIELD_PLAN_PROMPT } from '../../engine/src/small/battlefield-plan.js';
+import { MAX_SMALL_UNITS, activeBattleUnits, assertBattleCapacity } from '../../engine/src/battle-limits.js';
+import { BATTLEFIELD_PLAN_PROMPT, BattlefieldPlanError } from '../../engine/src/small/battlefield-plan.js';
 import { normalizeCommanderProfiles } from '../../engine/src/commander-profile.js';
 import { activeTraitIds, isRangedWeapon } from '../../engine/src/index.js';
 import { preparationDesignRequest, applyPreparationDesign, type PreparationDesignResult } from './llm-map-design.js';
@@ -33,11 +33,15 @@ export class LlmContextController {
     // One layer = one completed user/assistant message, in the host's chronological order.
     const messages = input.messages.map(m => ({ ...m, text: m.text.replace(/<(think|analysis|reasoning)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi, '').trim() }));
     // Never ask the model to choose an impossible >32-card grid, or spend tokens designing one.
-    const forcedMass = input.roster.filter(u => u.hp > 0 && u.status === 'ready').length > MAX_SMALL_UNITS;
+    assertBattleCapacity(input.roster,'mass');
+    const forcedMass = activeBattleUnits(input.roster).length > MAX_SMALL_UNITS;
     // Freeze the prepared scale when opted out, including scene-driven mode changes.
     const contextInput = { ...input, messages, settings: normalizeContextSettings({ battleMode: forcedMass ? 'mass' : settings.selectBattleScale === false ? input.setup.mode : 'auto' }), windowSize: settings.windowSize, roles: ['user', 'assistant'], phase: 'preparation' as const };
     const { base, request } = encounterRequest(contextInput);
-    if (!request) return { ...base, detail: '所选范围没有可读取的已完成正文，沿用准备设置' };
+    if (!request) {
+      if (settings.designMap && base.mode === 'small') throw new BattlefieldPlanError('所选范围没有可读取的正文，无法请求副API设计地标；请调整扫描范围或关闭LLM设计地图');
+      return { ...base, detail: '所选范围没有可读取的已完成正文，沿用准备设置' };
+    }
     request.fields = request.fields.filter(f => f.id !== 'enemy_ability' && !f.id.startsWith('style_'));
     // Preparation needs a concrete choice even when the narrative only provides indirect clues.
     for (const field of request.fields) delete field.options.unknown;
@@ -51,10 +55,10 @@ export class LlmContextController {
     request.fields.push(...designRequest.fields);
     request.state = {
       encounter: request.state,
-      protocol: 'battlefield-v1',
+      protocol: 'battlefield-v2',
       ...(designRequest.compactMap ? { mapRules: BATTLEFIELD_PLAN_PROMPT } : {}),
       commandRules: '可在答案顶层添加commanders:{ally:{preferences:{}},enemy:{preferences:{}}}。preferences从reserve预备队/risk冒险/counterattack反击/cohesion协同/breach破障选最多3项，各0—4整数，2为普通。选择实际任务需要的差异；指挥能力不改变属性或赋予隐藏视野。防守默认考虑纵深/机动/前沿防区，不默认核心龟缩。不要输出解释。',
-      ...(designRequest.compactMap ? { units: input.roster.slice(0, 32).map(u => ({ name: u.name.slice(0, 80), side: u.side, body: u.body ?? 'human',
+      ...(designRequest.compactMap ? { units: activeBattleUnits(input.roster).slice(0, 32).map(u => ({ name: u.name.slice(0, 80), side: u.side, body: u.body ?? 'human',
         note: (input.unitNotes?.[u.id] ?? '').slice(0, 160), traits: activeTraitIds(u), ranged: isRangedWeapon(u.weapon), weaponLevel: u.weapon?.level ?? 1,
         spells: u.abilities.filter(a => a.delivery === 'magic' && a.effects.some(e => e.op === 'damage')).map(a => a.power ?? 1).slice(0, 3) })) } : {}),
     };
@@ -85,6 +89,7 @@ export class LlmContextController {
   }
 }
 function llmFailure(error: unknown): string {
+  if (error instanceof BattlefieldPlanError) return error.message;
   if (!(error instanceof JevConnectionError || error instanceof JevTransportError)) return error instanceof Error && /请先填写 API|普通 LLM/.test(error.message) ? error.message : '模型请求或返回格式无效';
   // These error classes already contain bounded, credential-free diagnostics.
   // Preserve actionable host, timeout and CORS details instead of hiding the cause.

@@ -1,3 +1,4 @@
+import { assertBattleCapacity } from '../battle-limits.js';
 import { tacticalSkillCost, tacticalRestValue } from '../skill-economy.js';
 import { actionPotential } from '../skill-tactics.js';
 import { hasteMagnitude, hasteAttackScale } from '../haste.js';
@@ -204,7 +205,8 @@ export class MassBattle {
     for (const unit of this.combatants) prepareResourceModel(unit, this.rules);
     for (const u of this.combatants) { validateFlightState(u.airborne); validateFormationPosition(u.formationPosition); validateWounded(u); validateBarrier(u.barrier); validateAreas(u); validateAccessories(u); validateMount(u); validateMoraleState(u.moraleState); }
     for (const unit of this.combatants) reconcileDamageMorale(unit);
-    if (this.rules.resolutionVersion !== 'v2' && this.combatants.some((u) => u.airborne || u.formationPosition !== undefined)) throw new Error('空域位置需要V2会战规则');
+    if (this.rules.resolutionVersion !== 'v2' && this.combatants.some((u) => u.airborne || u.formationPosition !== undefined
+      && (this.formationSlots === undefined || formationNode(u).side !== u.side))) throw new Error('空域/跨阵营位置需要V2会战规则；新容量规则仅兼容己方地面阵位');
     this.seed = opts.seed ?? randomSeed();
     this.rng = opts.rng ?? (opts.seed || this.rules.resolutionVersion === 'v2' ? new SeededRng(this.seed) : liveRng());
     this.conditions = new ConditionRegistry([
@@ -238,11 +240,13 @@ export class MassBattle {
     const units = structuredClone(this.combatants);
     for (const unit of units) {
       const node = formationNode(unit); if (node.side !== unit.side) throw new Error('开战部署不能位于敌方阵位');
-      if (unit.airborne === undefined && !flightCapabilityReason(unit, this.conditions)) unit.airborne = true;
-      if (hasFlightAbility(unit) && unit.formationPosition === undefined) unit.formationPosition = node.id;
+      if (this.rules.resolutionVersion === 'v2') {
+        if (unit.airborne === undefined && !flightCapabilityReason(unit, this.conditions)) unit.airborne = true;
+        if (hasFlightAbility(unit) && unit.formationPosition === undefined) unit.formationPosition = node.id;
+      }
     }
     const attached = new Map<string, string>();
-    for (const hero of units.filter(needsFormationHost).sort((a, b) => a.id.localeCompare(b.id))) {
+    for (const hero of units.filter(u => this.rules.resolutionVersion === 'v2' && needsFormationHost(u)).sort((a, b) => a.id.localeCompare(b.id))) {
       const hosts = units.filter((u) => u.side === hero.side && u.scale !== 'hero' && u.status === 'ready' && !attached.has(u.id) && (!isAirborne(u) || (u.body ?? 'human') !== 'human'));
       const host = hosts.sort((a, b) => formationDistance(hero, a) - formationDistance(hero, b) || a.id.localeCompare(b.id))[0];
       if (!host) {
@@ -254,7 +258,7 @@ export class MassBattle {
     for (const node of FORMATION_NODES) for (const air of [false, true]) {
       if (units.filter((u) => u.status === 'ready' && ![...attached.values()].includes(u.id) && isAirborne(u) === air && formationNode(u).id === node.id).length > (this.formationSlots ?? 3)) throw new Error(`宏观阵位每层容量为${this.formationSlots ?? 3}支单位，请调整战前部署`);
     }
-    const vanguard = deployVanguardFormation(units, attached, this.formationSlots ?? 3);
+    const vanguard = this.rules.resolutionVersion === 'v2' ? deployVanguardFormation(units, attached, this.formationSlots ?? 3) : [];
     this.attached = attached;
     for (const unit of this.combatants) { const placed = units.find((u) => u.id === unit.id)!; unit.tags = placed.tags; if (placed.airborne !== undefined) unit.airborne = placed.airborne; if (placed.formationPosition !== undefined) unit.formationPosition = placed.formationPosition; if (placed.vanguardOrigin) unit.vanguardOrigin = placed.vanguardOrigin; }
     for (const move of vanguard) this.recordEvent({ round: 1, kind: 'move', participants: [move.id], text: this.byId(move.id).name + (move.from.id === move.to.id ? ' 先锋部署：前出域已满或已位于先遣侧翼，保持阵位' : ` 先锋部署：前出至${move.to.wing}${{ front: '前线', rear: '支援', reserve: '预备' }[move.to.rank]}`) });
@@ -1295,7 +1299,8 @@ export class MassBattle {
 
   start(): void {
     if (this.started) return;
-    if (this.rules.resolutionVersion === 'v2') this.prepareFormation();
+    assertBattleCapacity(this.combatants, 'mass');
+    if (this.rules.resolutionVersion === 'v2' || this.formationSlots !== undefined) this.prepareFormation();
     this.started = true;
     this.round = 1;
     for (const unit of this.combatants) {
@@ -1402,6 +1407,8 @@ export class MassBattle {
     if (order.type === 'rank-back' && this.rankOf(u) === 'reserve') {
       return { ok: false, reason: `${u.name} 已在预备队` };
     }
+    const capacity = this.legacyManeuverCapacityReason(order);
+    if (capacity) return { ok: false, reason: capacity };
     this.orders.set(order.unitId, order);
     this.cp[u.side as 'ally' | 'enemy'] -= cost;
     return { ok: true };
@@ -1841,9 +1848,23 @@ export class MassBattle {
     return mods;
   }
 
+  private legacyManeuverCapacityReason(order: Order): string | undefined {
+    if (this.formationSlots === undefined || !['shift-left', 'shift-right', 'rank-forward', 'rank-back'].includes(order.type)) return;
+    const unit = this.byId(order.unitId), from = formationNode(unit);
+    const wing = order.type === 'shift-left' || order.type === 'shift-right'
+      ? this.zones?.[this.zones.indexOf(from.wing) + (order.type === 'shift-left' ? -1 : 1)] : from.wing;
+    const rank = order.type === 'rank-forward' || order.type === 'rank-back'
+      ? RANKS[RANKS.indexOf(from.rank) + (order.type === 'rank-forward' ? -1 : 1)] : from.rank;
+    const target = FORMATION_NODES.find(n => n.side === unit.side && n.wing === wing && n.rank === rank);
+    return target && !formationCanOccupy(this.combatants, unit, target, this.attached, this.formationSlots)
+      ? `目标阵位容量已满（每层${this.formationSlots}张）` : undefined;
+  }
+
   private resolveManeuver(o: Order): void {
     const u = this.byId(o.unitId);
     if (u.status !== 'ready' || u.engagedWith.length) return;
+    const capacity = this.legacyManeuverCapacityReason(o);
+    if (capacity) { this.recordEvent({ round: this.round, kind: 'move', participants: [u.id], text: `${u.name} 变阵未执行：${capacity}` }); return; }
     if (o.type === 'shift-left' || o.type === 'shift-right') {
       if (!this.zones?.length) return;
       const from = this.zoneOf(u);
@@ -1855,6 +1876,10 @@ export class MassBattle {
       }
       const to = this.zones[next]!;
       u.tags = [...u.tags.filter((t) => !t.startsWith('zone:')), `zone:${to}`];
+      if (this.formationSlots !== undefined && u.rulesVersion === 'v2' && u.formationPosition !== undefined) {
+        const target = FORMATION_NODES.find(n=>n.side===u.side && n.wing===to && n.rank===this.rankOf(u));
+        if (target) u.formationPosition=target.id;
+      }
       this.recordEvent({ round: this.round, kind: 'move', participants: [u.id], text: `${u.name} 转移战区：${from}→${to}` });
       return;
     }
@@ -1868,6 +1893,10 @@ export class MassBattle {
     }
     const after = ranks[next]!;
     u.tags = [...u.tags.filter((t) => !t.startsWith('rank:')), `rank:${after}`];
+    if (this.formationSlots !== undefined && u.rulesVersion === 'v2' && u.formationPosition !== undefined) {
+      const target=FORMATION_NODES.find(n=>n.side===u.side && n.wing===this.zoneOf(u) && n.rank===after);
+      if (target) u.formationPosition=target.id;
+    }
     const label = { front: '前排', rear: '后排', reserve: '预备队' } as const;
     this.recordEvent({ round: this.round, kind: 'move', participants: [u.id], text: `${u.name} 变阵：${label[before]}→${label[after]}` });
   }

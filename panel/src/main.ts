@@ -1,3 +1,4 @@
+import { assertBattleCapacity } from '../../engine/src/battle-limits.js';
 import { newBattleCommanderProfiles } from '../../engine/src/commander-profile.js';
 import { instanceVarianceLabel } from '../../engine/src/instance-variance.js';
 import { hitChanceText, hitDamageText, hitDamageDetails } from './damage-preview.js';
@@ -2566,7 +2567,7 @@ async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void>
     state.objectiveMode=context.objectiveMode;state.siegeAttacker=context.siegeAttacker;
   }
   let mode=context?.mode??requestedMode;
-  if(!context&&v2) {
+  if(!context) {
     const manual=encounterRequest({roster:state.roster,setup,
       settings:{...normalizeContextSettings(),enemy:'manual',scene:'manual'},messages:[],windowSize:0,roles:[],phase:'preparation'}).base;
     mode=manual.mode;state.mapLayout=manual.mapLayout;
@@ -2579,12 +2580,14 @@ async function startSmallBattle(context?:LlmEncounterContext):Promise<void> {
     if (!rosterHasBothSides()) throw new Error('开战前必须同时有我方与敌方单位');
     const seed = randomSeed();
     const tags = state.objectiveMode === 'siege' ? [...new Set([...plannedFieldTags(), 'siege'])] : plannedFieldTags();
-    const fieldOptions = { roster: state.roster.every(u => u.rulesVersion === 'v2') ? state.roster : undefined, attackingSide: state.siegeAttacker, design: context?.mapDesign, plan: context?.battlefieldPlan };
-    let battlefield = state.mapLayout === 'indoor' ? generatedLayeredField(seed, 5, 7, tags, fieldOptions) : generatedLayeredField(seed, 7, 13, tags, fieldOptions);
-    if (state.roster.every((u) => u.rulesVersion === 'v2')) battlefield = prepareBattleObjective(battlefield, state.roster, state.objectiveMode, state.protagonistId, state.siegeAttacker, context?.vipId);
-    if (context && battlefield.generation?.notes?.length) context.designDetail = [context.designDetail, ...battlefield.generation.notes].filter(Boolean).join('；');
-    if (context?.mapDesign && battlefield.generation?.source === 'context') context.mapDesign = structuredClone(battlefield.generation.design);
-    if (context && battlefield.objective.kind === 'escape') {
+    assertBattleCapacity(state.roster, 'small');
+    const v2 = state.roster.every(u => u.rulesVersion === 'v2');
+    const fieldOptions = { roster: state.roster, attackingSide: state.siegeAttacker, design: context?.mapDesign, plan: context?.battlefieldPlan };
+    let battlefield = v2 ? (state.mapLayout === 'indoor' ? generatedLayeredField(seed, 5, 7, tags, fieldOptions) : generatedLayeredField(seed, 7, 13, tags, fieldOptions)) : undefined;
+    if (battlefield) battlefield = prepareBattleObjective(battlefield, state.roster, state.objectiveMode, state.protagonistId, state.siegeAttacker, context?.vipId);
+    if (context && battlefield?.generation?.notes?.length) context.designDetail = [context.designDetail, ...battlefield.generation.notes].filter(Boolean).join('；');
+    if (context?.mapDesign && battlefield?.generation?.source === 'context') context.mapDesign = structuredClone(battlefield.generation.design);
+    if (context && battlefield?.objective.kind === 'escape') {
       context.vipId = battlefield.objective.unitId;
       context.vipName = state.roster.find(u => u.id === context!.vipId)?.name;
     }
@@ -2611,18 +2614,13 @@ async function startSmallBattle(context?:LlmEncounterContext):Promise<void> {
 async function startMassBattle(context?:LlmEncounterContext):Promise<void> {
     const before=captureBattleArchive({...controller.snapshot(),storage:state.storage,inventory:state.inventory,rosterIds:state.roster.map(u=>u.id),protagonistId:state.protagonistId,commanderId:state.commanderId,encounterIds:[...state.encounterIds],lastBattleUnitIds:state.lastBattleUnitIds});
     if (!rosterHasBothSides()) throw new Error('开战前必须同时有我方与敌方单位');
-    const clones: Combatant[] = state.roster.every((u) => u.rulesVersion === 'v2') ? prepareMassRoster(state.roster) : structuredClone(state.roster);
+    assertBattleCapacity(state.roster, 'mass');
+    const clones: Combatant[] = prepareMassRoster(state.roster);
     const zoneNames = ['左翼', '中军', '右翼'];
-    if (clones.some((u) => u.rulesVersion !== 'v2')) for (const side of ['ally', 'enemy'] as const) {
-      const sideUnits = clones.filter((c) => c.side === side);
-      sideUnits.forEach((c, i) => {
-        const z = formationZone(c) ?? zoneNames[Math.floor(i * zoneNames.length / Math.max(1, sideUnits.length))]!;
-        c.tags = [...c.tags.filter((t) => !t.startsWith('zone:') && !t.startsWith('rank:')), 'zone:' + z, 'rank:' + (formationRank(c) ?? defaultRank(c))];
-      });
-    }
     const mass = new MassBattle({
       nonLethal:state.nonLethal,
-      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V11_OVERFLOW_TW, formationSlots: recommendedFormationSlots(clones) } : {}),
+      formationSlots: recommendedFormationSlots(clones),
+      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V11_OVERFLOW_TW } : {}),
       combatants: clones,
       traitRegistry: reg,
       commanderId: state.commanderId,

@@ -21,6 +21,7 @@ export interface FieldStructure {
   top?: boolean;
   /** Ground cells with built-in stairs, not remote control points. */
   access?: number[];
+  /** Legacy metadata, ignored by fortification protection. New fortifications omit it. */
   facing?: 'north' | 'south' | 'east' | 'west';
 }
 export interface FieldLandmark { kind: string; label: string; cells: number[]; scale: 'minor' | 'major' }
@@ -81,11 +82,8 @@ export function structureDefense(field: BattlefieldSpec, defender: Combatant, at
   if (isElevated(defender)) return isElevated(attacker) ? 0 : 2;
   if (s.kind === 'cover') return ranged ? 2 : 0;
   if (s.kind !== 'fortification') return 0;
-  const dx = attacker.pos % field.width - defender.pos % field.width;
-  const dy = Math.floor(attacker.pos / field.width) - Math.floor(defender.pos / field.width);
-  const front = !s.facing || s.facing === 'north' && dy < 0 || s.facing === 'south' && dy > 0
-    || s.facing === 'east' && dx > 0 || s.facing === 'west' && dx < 0;
-  return front ? s.hp > s.hpMax / 2 ? 3 : 1 : ranged ? 1 : 0;
+  // Facing in an older snapshot is harmless provenance, not a directional protection rule.
+  return s.hp > s.hpMax / 2 ? 3 : 1;
 }
 export function canClimbFrom(field: BattlefieldSpec, actor: Combatant, target: number): boolean {
   if (actor.pos === undefined || isAirborne(actor)) return false;
@@ -108,6 +106,7 @@ export function structureDurability(kind: StructureKind, level: number): number 
 }
 export function createStructure(kind: StructureKind, level = 3, options: Omit<Partial<FieldStructure>, 'kind' | 'level' | 'hp' | 'hpMax'> = {}): FieldStructure {
   const hp = structureDurability(kind, level);
+  if (kind === 'fortification') { options = { ...options }; delete options.facing; }
   return { ...options, kind, level, hp, hpMax: hp, ...(kind === 'gate' ? { gateState: options.gateState ?? 'closed' } : {}) };
 }
 /** Per main action, not per bullet/member. Coefficients are game balance, not material physics.

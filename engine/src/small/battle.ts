@@ -1,3 +1,4 @@
+import { assertBattleCapacity } from '../battle-limits.js';
 import { prepareGridDeployment } from './spatial.js';
 import { bonusMultiplier } from '../enhancements.js';
 import { regionalOrder } from './team-tactics.js';
@@ -265,6 +266,7 @@ export class SmallBattle {
   /** 开始战斗：布阵、掷先攻并排序 */
   start(): void {
     if (this.started) return;
+    assertBattleCapacity(this.combatants, 'small');
     if (this.battlefield) {
       const prepared = prepareGridDeployment(this.battlefield, this.combatants, this.seed, this.conditions, this.rules.resolutionVersion === 'v2');
       this.combatants.forEach((c, i) => { c.pos = prepared[i]!.pos; c.elevation = prepared[i]!.elevation; if (prepared[i]!.airborne !== undefined) c.airborne = prepared[i]!.airborne; });
@@ -699,12 +701,12 @@ export class SmallBattle {
   }
   gateReason(actorId: string, cell: number): string | undefined {
     const field = this.battlefield, actor = this.byId(actorId), door = field && intactStructure(field, cell);
-    if (!field?.layerVersion || !door || door.kind !== 'gate') return '此处没有可操作的城门';
-    if (!this.isTurnOf(actorId) || this.isOver() || actor.status !== 'ready' || !this.nonSkillActionAvailable(actorId)) return '开关城门需要主行动';
-    if (actor.conditions.some(c => c.dur > 0 && this.conditions.get(c.id)?.skipTurn)) return '失能状态不能操作城门';
+    if (!field?.layerVersion || !door || door.kind !== 'gate') return '此处没有可操作的门';
+    if (!this.isTurnOf(actorId) || this.isOver() || actor.status !== 'ready' || !this.nonSkillActionAvailable(actorId)) return '开关门需要主行动';
+    if (actor.conditions.some(c => c.dur > 0 && this.conditions.get(c.id)?.skipTurn)) return '失能状态不能操作门';
     if (isAirborne(actor) || isElevated(actor) || actor.pos === undefined || gridDistance(field, actor.pos, cell) > 1) return '须在门旁地面操作';
     // Inner-side capture may take control; the exterior cannot remotely unlock a defended closed gate.
-    if (door.owner !== actor.side && !field.city?.inside.includes(actor.pos)) return '须从城内夺取门控位置';
+    if (field.generation?.scene !== 'interior' && door.owner !== undefined && door.owner !== actor.side && !field.city?.inside.includes(actor.pos)) return '须从内部夺取门控位置';
     if (this.visibleCombatants(actor.side).some(u => u.side !== actor.side && u.status === 'ready' && !isAirborne(u) && !isElevated(u) && gridDistance(field, u.pos!, cell) <= 1)) return '门区仍有敌军争夺，无法操作';
     if (door.gateState === 'open' && this.combatants.some(u => u.pos === cell && !isAirborne(u) && !isElevated(u) && u.hp > 0 && ['ready', 'routing'].includes(u.status))) return '门洞有人，不能关门';
     return undefined;
@@ -714,7 +716,7 @@ export class SmallBattle {
     const field = this.battlefield!, door = intactStructure(field, cell)!, actor = this.byId(actorId);
     door.gateState = door.gateState === 'open' ? 'closed' : 'open'; door.owner = actor.side === 'enemy' ? 'enemy' : 'ally';
     field.terrainRevision = (field.terrainRevision ?? 0) + 1; this.spendAction(actorId);
-    this.recordEvent({ round: this.round, kind: 'move', participants: [actorId], text: `${actor.name} ${door.gateState === 'open' ? '打开' : '关闭'} ${cellLabel(field, cell)}城门，消耗主行动` });
+    this.recordEvent({ round: this.round, kind: 'move', participants: [actorId], text: `${actor.name} ${door.gateState === 'open' ? '打开' : '关闭'} ${cellLabel(field, cell)}门，消耗主行动` });
     revealContacts(this.observationContext());
   }
   climbMovementCost(actorId: string): number { return Math.min(2, this.movementBudget(actorId)); }

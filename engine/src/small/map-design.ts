@@ -17,7 +17,12 @@ export type MapDesign = { -readonly [K in MapDesignKey]: keyof typeof MAP_DESIGN
   topology?: RouteTopology; landmarkLabel?: string; landmarkScale?: 'minor' | 'major';
 };
 export type MapFamily = 'plains' | 'forest' | 'mountain' | 'urban' | 'siege' | 'indoor';
+export const BATTLEFIELD_SCENES = ['field', 'city_siege', 'city_streets', 'building_siege', 'interior', 'trenches'] as const;
+export type BattlefieldScene = typeof BATTLEFIELD_SCENES[number];
+export const SCENE_NAMES: Record<BattlefieldScene, string> = { field: '野战', city_siege: '城市攻防', city_streets: '城区巷战', building_siege: '建筑围攻', interior: '室内战斗', trenches: '堑壕战' };
 export interface MapGenerationRecord {
+  /** Scene identity is independent of map dimensions and survives capacity upgrades. */
+  scene?: BattlefieldScene;
   version: 3 | 4 | 5 | 6;
   /** Bounded local repairs/size upgrades, never instructions from model labels. */
   notes?: string[];

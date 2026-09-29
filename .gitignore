@@ -26,3 +26,6 @@ settings.json
 /release/baselines/*
 !/release/baselines/user-20260918/
 /.publication/
+
+# Local review audit build
+.review-build/

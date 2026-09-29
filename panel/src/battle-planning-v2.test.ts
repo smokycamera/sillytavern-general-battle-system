@@ -106,7 +106,7 @@ describe('independent city shape, breaches and legal deployment', () => {
     expect(plan).toEqual({shape:'riverside',gateState:'open',gates:'side',cover:'sparse',obstacles:'dense',breadth:'broad',breaches:{count:2,width:2,sector:'front_left'}});expect(notes).toEqual([]);
     const invalid=normalizeBattlefieldPlan({shape:'broken',breaches:{count:'2'},gateState:'malicious'});
     expect(invalid.plan?.breaches).toEqual({count:0});expect(invalid.plan?.gateState).toBeUndefined();expect(invalid.notes.length).toBeGreaterThan(0);
-    expect(BATTLEFIELD_PLAN_PROMPT).toContain('不替攻方预先拆墙');
+    expect(BATTLEFIELD_PLAN_PROMPT).toContain('保留正文明确的完整或损坏状态');
   });
   it.each(['front','enclosure','riverside','hillside'] as const)('%s combines with zero, one or multiple breaches independently', shape => {
     for (const count of [0,1,2,3] as const) for (const width of [1,2] as const) for (const side of ['ally','enemy'] as const) {

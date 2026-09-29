@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [],
+    "noEmit": true
+  },
+  "include": [
+    "engine/src/**/*.ts",
+    "panel/src/**/*.ts",
+    "host/src/**/*.ts",
+    "runtime/src/**/*.ts",
+    "extension/src/**/*.ts"
+  ],
+  "exclude": [
+    "**/*.test.ts",
+    "**/tests/**"
+  ]
+}

@@ -165,14 +165,8 @@ function finishSetup(
     context.objectiveMode = "annihilation";
     context.mapLayout = "standard";
   }
-  if (context.mode === "small" && context.mapLayout === "indoor") {
-    try {
-      deployOnGrid(standardField(5, 7), structuredClone(input.roster));
-    } catch {
-      context.mapLayout = "standard";
-      context.detail += "；室内地图容量不足，采用标准地图";
-    }
-  }
+  // Map capacity growth happens in the shared generator, without erasing indoor scene identity.
+
   return context;
 }
 export function encounterRequest(input: EncounterContextInput): {

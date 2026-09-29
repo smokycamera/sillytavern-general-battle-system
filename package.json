@@ -38,7 +38,8 @@
     "smoke:layered": "vite-node scripts/layered-browser-fixture.ts && node scripts/layered-browser-smoke.mjs",
     "verify:worldbook-scope": "node scripts/check-worldbook-trait-only.mjs",
     "audit:breach-review": "vite-node scripts/audit-breach-review.ts",
-    "audit:planning": "vite-node scripts/audit-planning-capacity.ts"
+    "audit:planning": "vite-node scripts/audit-planning-capacity.ts",
+    "audit:review": "tsc -p tsconfig.review.json --noEmit false --outDir .review-build --rootDir . && node scripts/audit-pr66-review.mjs .review-build"
   },
   "devDependencies": {
     "happy-dom": "20.8.8",

@@ -1,0 +1,50 @@
+name: Verify and deliver PR66 review fixes
+on:
+  push:
+    branches: ['feat/orthogonal-maps-32-unit-tactics']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr66-review-fixes-delivery
+  cancel-in-progress: false
+
+jobs:
+  verify-and-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Review audit and typecheck
+        run: |
+          npm run audit:review
+          npm run typecheck
+          git diff --check
+      - name: Focused regression tests
+        run: npx vitest run engine/tests/layered-city.test.ts panel/src/battle-planning-v2.test.ts panel/src/llm-map-design.test.ts
+      - name: Build and verify installable extension
+        run: |
+          npm run build:extension
+          npm run verify:dist
+      - name: Commit generated bundle back to the existing PR branch
+        run: |
+          test "$(git ls-remote origin refs/heads/feat/orthogonal-maps-32-unit-tactics | cut -f1)" = "$GITHUB_SHA"
+          rm .github/workflows/deliver-pr66-review.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No generated changes to commit.'
+            exit 0
+          fi
+          git commit -m 'build: sync PR66 review fixes and native bundle'
+          git push origin HEAD:refs/heads/feat/orthogonal-maps-32-unit-tactics
