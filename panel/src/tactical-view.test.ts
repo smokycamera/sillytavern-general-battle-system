@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { generatedField } from '../../engine/src/index.js';
+import { generatedField, generateUnit, generatedLayeredField, SmallBattle, V11_OVERFLOW_D20 } from '../../engine/src/index.js';
 import { TavernJevAdapter } from './jev-adapter.js';
 import { tacticalFixture } from '../../scripts/p4-tactical-fixture.js';
 import { renderTacticalBattle, selectTacticalElement, tacticalSelection, type TacticalView } from './tactical-view.js';
@@ -18,6 +18,18 @@ describe('战术地图查看与确认', () => {
     expect(() => renderTacticalBattle(b, { mode: 'weapon', selectedId: 'a' })).not.toThrow();
     b.battlefield!.generation!.landmark = { label: '<img src=x>', cells: [44], terrain: 'hill' };
     expect(renderTacticalBattle(b, { mode: 'weapon', selectedId: 'a' })).not.toContain('<img src=x>');
+  });
+  it('renders destructible city layers and legal actions without changing the battle', () => {
+    const a = generateUnit({name:'先锋',side:'ally',scale:'hero',rulesVersion:'v2',level:3,weaponClass:'blunt',traits:['siege-assault']},{seed:'ui-a'}).unit;
+    const b = generateUnit({name:'守军',side:'enemy',scale:'hero',rulesVersion:'v2',level:3,weaponClass:'bow',traits:[]},{seed:'ui-b'}).unit;
+    const field = generatedLayeredField('city-ui',7,13,['siege'],{plan:{shape:'front',landmarks:[]}});
+    const battle = new SmallBattle({battlefield:field,combatants:[a,b],rules:V11_OVERFLOW_D20,seed:'city-ui'}); battle.start(); battle.turnOrder=[a.id,b.id];battle.turnIndex=0;
+    const cell = battle.battlefield!.city!.gates[0]!; a.pos = cell + field.width;
+    const before = structuredClone(battle.toSnapshot());
+    const html = renderTacticalBattle(battle,{mode:'weapon',selectedId:a.id,inspectedCell:cell});
+    expect(html).toContain('grid-structure'); expect(html).toContain('grid-gate'); expect(html).toContain('grid-climb');
+    expect(html).toContain('耐久'); expect(html).toContain('地面不可通行'); expect(html).toContain('control-region');
+    expect(battle.toSnapshot()).toEqual(before);
   });
   it('隐藏未准备技能，保留装备和物品能力，并让过期技能选择回到武器', () => {
     const { b } = tacticalFixture(), actor = b.byId('a');

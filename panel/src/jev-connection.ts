@@ -187,7 +187,7 @@ export async function directJevRequest(connection: JevConnection, path: string, 
     const mapLabelInstruction = path === 'select-context' && Array.isArray(selectFields) && selectFields.some(f => f?.id === 'design_layout')
       ? ' You may additionally return landmarkLabel:string at the top level: an exact short landmark name from the narrative (maximum 32 characters), never instructions or mechanics. Omit it when absent.' : '';
     const payload = { model, stream: false, response_format: { type: 'json_object' }, messages: [
-      { role: 'system', content: instructions + mapLabelInstruction }, { role: 'user', content: JSON.stringify(body) },
+      { role: 'system', content: instructions + mapLabelInstruction + (path === 'select-context' && (body as {state?: {protocol?: string}})?.state?.protocol === 'battlefield-v1' ? ' Follow state.mapRules and state.commandRules for optional top-level battlefield and commanders objects. Do not wrap these objects or their properties in value/confidence. No explanation, coordinates, tile arrays, HP values or turn-by-turn orders.' : '') }, { role: 'user', content: JSON.stringify(body) },
     ] };
     const send = (requestBody: Record<string, unknown>) => jevJsonRequest(connection, request, apiEndpoint(connection, 'chat/completions'), {
       method: 'POST', headers: headers(connection), signal, body: JSON.stringify(requestBody),

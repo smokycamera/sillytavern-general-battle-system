@@ -53,7 +53,7 @@ import {
   SmallBattle, MassBattle, battleXpAwardsForBothSides, applyXp, xpProgress, xpLabel,
   armorDR, fieldModsFor, LITE_D20,
   V5_D20, V6_D20, V11_OVERFLOW_D20, V11_OVERFLOW_TW, isAirborne, abilityUsabilityReason,
-  generatedField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
+  generatedField, generatedLayeredField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
   FORMATION_NODES, formationNode, concealmentLabel,
   type Combatant, type GenerateInput, type Order, type BattleLogEntry, type Side,
   type Category, type Ability, categoryLabel, CATEGORY_LABELS,
@@ -2577,8 +2577,8 @@ async function startSmallBattle(context?:LlmEncounterContext):Promise<void> {
     if (!rosterHasBothSides()) throw new Error('开战前必须同时有我方与敌方单位');
     const seed = randomSeed();
     const tags = state.objectiveMode === 'siege' ? [...new Set([...plannedFieldTags(), 'siege'])] : plannedFieldTags();
-    const fieldOptions = { roster: state.roster.every(u => u.rulesVersion === 'v2') ? state.roster : undefined, attackingSide: state.siegeAttacker, design: context?.mapDesign };
-    let battlefield = state.mapLayout === 'indoor' ? generatedField(seed, 5, 7, tags, fieldOptions) : generatedField(seed, 7, 13, tags, fieldOptions);
+    const fieldOptions = { roster: state.roster.every(u => u.rulesVersion === 'v2') ? state.roster : undefined, attackingSide: state.siegeAttacker, design: context?.mapDesign, plan: context?.battlefieldPlan };
+    let battlefield = state.mapLayout === 'indoor' ? generatedLayeredField(seed, 5, 7, tags, fieldOptions) : generatedLayeredField(seed, 7, 13, tags, fieldOptions);
     if (state.roster.every((u) => u.rulesVersion === 'v2')) battlefield = prepareBattleObjective(battlefield, state.roster, state.objectiveMode, state.protagonistId, state.siegeAttacker, context?.vipId);
     if (context?.mapDesign && battlefield.generation?.source === 'context') context.mapDesign = structuredClone(battlefield.generation.design);
     if (context && battlefield.objective.kind === 'escape') {
@@ -2701,6 +2701,21 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   'migration-balance': () => { controller.reviewBalanceUpgrade(); restore(); render(); },
   'migration-accept': async () => { const receipt = (await controller.acceptMigration()); if (receipt.status === 'failed') throw new Error(receipt.error); restore(); state.saveReceipt = receipt; },
   'migration-restore': async () => { const receipt = (await controller.restoreMigrationBackup()); if (receipt.status === 'failed') throw new Error(receipt.error); restore(); state.saveReceipt = receipt; },
+  'grid-structure': (el) => {
+    const b = state.small, id = el.dataset.actor;
+    if (!b || !id || id !== b.active?.id || b.active.side !== 'ally') throw Error('行动者已变化，请重新预览');
+    b.attackStructure(id, Number(el.dataset.cell), el.dataset.mode ?? 'primary');
+  },
+  'grid-gate': (el) => {
+    const b = state.small, id = el.dataset.actor;
+    if (!b || !id || id !== b.active?.id || b.active.side !== 'ally') throw Error('行动者已变化，请重新预览');
+    b.toggleGate(id, Number(el.dataset.cell));
+  },
+  'grid-climb': (el) => {
+    const b = state.small, id = el.dataset.actor;
+    if (!b || !id || id !== b.active?.id || b.active.side !== 'ally') throw Error('行动者已变化，请重新预览');
+    b.climb(id, Number(el.dataset.cell));
+  },
   'grid-flight': (el) => {
     const b = state.small; const actorId = el.dataset.actor;
     if (!b || !actorId || actorId !== b.active?.id) throw new Error('行动者已变化，请重新预览');

@@ -25,7 +25,7 @@ function model(overrides: Record<string, unknown> = {}, landmarkLabel?: unknown)
     const selections = Object.fromEntries(request.fields.map((f: { id: string }) => [f.id, { value: (values as Record<string, unknown>)[f.id], confidence: 0 }]));
     // Deliberate unsolicited output must not make disabled switches take effect.
     selections.vip_enemy ??= { value: 'unit_1', confidence: 1 };
-    for (const [key, value] of Object.entries(plan)) selections['design_' + key.toLowerCase()] ??= { value, confidence: 1 };
+    for (const [key, value] of Object.entries(values)) if (key.startsWith('design_')) selections[key] ??= { value, confidence: 1 };
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ selections, landmarkLabel }) } }] }));
   });
 }
@@ -38,7 +38,9 @@ describe('optional ordinary LLM map/VIP preparation', () => {
     const payload = JSON.parse(String(request.mock.calls[0]![1]!.body));
     expect(payload.messages[1].content).toContain('载有任务重要货物');
     const body = JSON.parse(payload.messages[1].content);
-    expect(body.fields).toHaveLength(22); // 9 core + 11 geometry + 2 VIP
+    expect(body.fields).toHaveLength(11); // 9 core + 2 VIP; compact map has no repeated selection wrappers
+    expect(body.state.protocol).toBe('battlefield-v1');
+    expect(body.state.mapRules).toContain('landmarks最多5项');
     expect(body.fields.find((f: {id:string}) => f.id === 'vip_enemy').options).not.toHaveProperty('unit_2');
     const field = generatedField('context', 7, 13, ['urban', 'night'], { design: result.mapDesign });
     expect(field.tiles).not.toEqual(generatedField('context', 7, 13, ['urban', 'night']).tiles);
@@ -52,7 +54,9 @@ describe('optional ordinary LLM map/VIP preparation', () => {
     const source = input(), request = model({ objective: 'escort' });
     const result = await new LlmContextController(request).select(source, { ...settings, designMap, selectVip }, () => true);
     const fields = JSON.parse(JSON.parse(String(request.mock.calls[0]![1]!.body)).messages[1].content).fields;
-    expect(fields.some((f: { id: string }) => f.id.startsWith('design_'))).toBe(designMap);
+    expect(fields.some((f: { id: string }) => f.id.startsWith('design_'))).toBe(false);
+    const body = JSON.parse(JSON.parse(String(request.mock.calls[0]![1]!.body)).messages[1].content);
+    expect(!!body.state.mapRules).toBe(designMap);
     expect(fields.some((f: { id: string }) => f.id.startsWith('vip_'))).toBe(selectVip);
     expect(!!result.mapDesign).toBe(designMap);
     expect(result.vipId).toBe(selectVip ? source.roster[1]!.id : undefined);
@@ -117,6 +121,39 @@ describe('optional ordinary LLM map/VIP preparation', () => {
     const disabled = await new LlmContextController(model({}, '废弃庭院')).select(source, { ...settings, designMap: false }, () => true);
     expect(disabled.mapDesign).toBeUndefined();
     expect(disabled.vipId).toBe(source.roster[3]!.id);
+  });
+  it('accepts primary compact plans and bounded commander overrides in exactly one request', async () => {
+    const responder = model();
+    const request = vi.fn<typeof fetch>(async (...args) => {
+      const response = await responder(...args), envelope = await response.json();
+      const answer = JSON.parse(envelope.choices[0].message.content);
+      answer.battlefield = { size:'large', shape:'enclosure', topology:'braid', fortLevel:4,
+        landmarks:Array.from({length:7}, () => ({kind:'ruins',anchor:'inside_left',label:'废弃庭院',hp:999})) };
+      answer.commanders = { ally:{ preferences:{reserve:4,breach:3,risk:99,cohesion:1,counterattack:2,hp:999} } };
+      envelope.choices[0].message.content = JSON.stringify(answer);
+      return new Response(JSON.stringify(envelope));
+    });
+    const result = await new LlmContextController(request).select(input(), settings, () => true);
+    expect(request).toHaveBeenCalledTimes(1); expect(result.mapDesign).toBeUndefined();
+    expect(result.battlefieldPlan).toMatchObject({size:'large',shape:'enclosure',fortLevel:4,topology:'braid'});
+    expect(result.battlefieldPlan!.landmarks).toHaveLength(5);
+    expect(result.battlefieldPlan!.landmarks![0]).toEqual({kind:'ruins',anchor:'inside_left',label:'废弃庭院'});
+    expect(result.commanders!.ally!.preferences).toEqual({reserve:4,breach:3,cohesion:1});
+    expect(result.designDetail).toContain('最多5个');
+    const req = JSON.parse(JSON.parse(String(request.mock.calls[0]![1]?.body)).messages[1].content);
+    expect(req.state.protocol).toBe('battlefield-v1'); expect(req.fields.some((f:{id:string}) => f.id.startsWith('design_'))).toBe(false);
+  });
+  it('repairs individual compact fields locally without losing valid core settings or making another request', async () => {
+    const responder = model();
+    const request = vi.fn<typeof fetch>(async (...args) => {
+      const response = await responder(...args), envelope = await response.json(); const answer = JSON.parse(envelope.choices[0].message.content);
+      answer.battlefield = {size:'standard',shape:'teleport',fortLevel:99,landmarks:[{kind:'tower',anchor:'rear',label:'无正文依据的神塔'}]};
+      envelope.choices[0].message.content=JSON.stringify(answer); return new Response(JSON.stringify(envelope));
+    });
+    const result = await new LlmContextController(request).select(input(),settings,()=>true);
+    expect(result.battlefieldPlan).toEqual({size:'standard',landmarks:[{kind:'tower',anchor:'rear'}]});
+    expect(result.vipId).toBe(input().roster[3]!.id); expect(result.commanders!.enemy!.ability).toBe('expert');
+    expect(result.designDetail).toContain('无正文依据'); expect(request).toHaveBeenCalledTimes(1);
   });
   it('cancellation/stale facts discard optional choices too, even when the transport ignores abort', async () => {
     const source = input(), responder = model(); let release!: () => void; let current = true;

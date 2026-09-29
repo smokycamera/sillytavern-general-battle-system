@@ -65,6 +65,7 @@ export interface ResolveContext {
   area?: boolean;
   fieldTags?: string[];
   terrain?: string;
+  localTerrain?: boolean;
   opponentTerrain?: string;
   distance?: number;
   engaged?: boolean;
@@ -320,7 +321,7 @@ export function collectMods(
     if (ctx.terrain === 'forest' && !traits.includes('forest-lore') || ctx.terrain === 'hill' && !traits.includes('mountain-born')) equipment.push({ source: 'stance', sourceId: 'environment:ground', name: '困难地形', kind: 'atk', type: 'flat', value: -1 });
     if (ctx.ranged && (ctx.distance ?? 0) > 1 && ctx.terrain === 'forest') equipment.push({ source: 'stance', sourceId: 'environment:forest-cover', name: '林木掩护', kind: 'def', type: 'flat', value: 2 });
     if (ctx.terrain === 'hill' && ctx.opponentTerrain !== 'hill') equipment.push({ source: 'stance', sourceId: 'environment:high-ground', name: '高地', kind: 'def', type: 'flat', value: 1 });
-    equipment.push(...fieldModsFor(unit, ctx.fieldTags ?? [], registry));
+    equipment.push(...fieldModsFor(unit, ctx.localTerrain ? [...(ctx.fieldTags ?? []).filter(t => t !== 'urban'), ...(ctx.terrain === 'street' ? ['urban'] : [])] : ctx.fieldTags ?? [], registry));
   }
   if (unit.rulesVersion === 'v2' && fatiguePenalty(unit) > 0) equipment.push({ source: 'condition', sourceId: 'fatigue:atk', name: '持续作战疲劳', kind: 'atk', type: 'flat', value: -fatiguePenalty(unit) });
   const sourceConditions: Modifier[] = [];

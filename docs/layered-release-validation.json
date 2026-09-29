@@ -1,0 +1,55 @@
+{
+  "version": "1.6.0",
+  "baseCommit": "1a859a64c6be3dc9259359030a2bee67fe947ed3",
+  "scope": "local tests plus independently re-run GitHub Actions source/build/audit/browser verification",
+  "typecheck": "passed",
+  "fullSuite": {
+    "total": 1580,
+    "passed": 1573,
+    "knownFailures": [
+      "engine/tests/unified-replay.test.ts::V5 saved battles and V6 prototype replay compatibility V5 human-four T1",
+      "engine/tests/unified-replay.test.ts::V5 saved battles and V6 prototype replay compatibility V5 giant-four T10",
+      "engine/tests/unified-replay.test.ts::V5 saved battles and V6 prototype replay compatibility V6-prototype giant-four T6",
+      "engine/tests/unified-replay.test.ts::V5 saved battles and V6 prototype replay compatibility V6-prototype giant-unbreakable T1",
+      "engine/tests/unified-replay.test.ts::V5 saved battles and V6 prototype replay compatibility V6-prototype human4-vehicle2 T10",
+      "panel/src/life-limit-state.test.ts::生命上限贯穿正文、编辑与档案 正文高生命自动截断并给出提示，编队人数保留原值",
+      "panel/src/life-limit-state.test.ts::生命上限贯穿正文、编辑与档案 正文事务不能在生成后用旧事件值覆盖生命上限"
+    ],
+    "newFailures": []
+  },
+  "nativeTests": {
+    "passed": 224,
+    "failed": 0
+  },
+  "staticMaps": {
+    "samples": 2400,
+    "deploymentChecks": 240,
+    "outdoorApproachChecks": 2880,
+    "failed": 0
+  },
+  "automatedBattles": {
+    "samples": 24,
+    "completed": 24,
+    "actions": 2652,
+    "failed": 0
+  },
+  "worldbookScope": "passed; only two trait names added",
+  "nativeBuild": "passed",
+  "sourceFingerprint": "passed",
+  "browser": {
+    "status": "passed",
+    "ciResult": {
+      "LAYERED_METADATA": "success",
+      "LAYERED_LEGACY": "success",
+      "NATIVE_METADATA": "success",
+      "NATIVE_LEGACY": "success"
+    },
+    "runUrl": "https://github.com/smokycamera/sillytavern-general-battle-system/actions/runs/36529343813",
+    "realHost": false
+  },
+  "realSillyTavernHost": "not-run",
+  "realTauriTavernHost": "not-run",
+  "androidDevice": "not-run",
+  "liveLlmLatency": "not-measured",
+  "ciHead": "756c4c05e64db656ff2de7040d42375cb233df74"
+}
