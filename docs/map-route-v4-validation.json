@@ -1,0 +1,211 @@
+{
+  "baseCommit": "38eaef0b49bf574e45a40277838fd96c362e824a",
+  "version": "1.5.0",
+  "fullSuite": {
+    "passed": 1517,
+    "failed": 7,
+    "total": 1524
+  },
+  "baselineFullSuite": {
+    "passed": 1499,
+    "failed": 7,
+    "total": 1506
+  },
+  "newFailures": [],
+  "knownBaselineFailures": [
+    {
+      "file": "engine/tests/unified-replay.test.ts",
+      "test": "V5 saved battles and V6 prototype replay compatibility V5 giant-four T10"
+    },
+    {
+      "file": "engine/tests/unified-replay.test.ts",
+      "test": "V5 saved battles and V6 prototype replay compatibility V5 human-four T1"
+    },
+    {
+      "file": "engine/tests/unified-replay.test.ts",
+      "test": "V5 saved battles and V6 prototype replay compatibility V6-prototype giant-four T6"
+    },
+    {
+      "file": "engine/tests/unified-replay.test.ts",
+      "test": "V5 saved battles and V6 prototype replay compatibility V6-prototype giant-unbreakable T1"
+    },
+    {
+      "file": "engine/tests/unified-replay.test.ts",
+      "test": "V5 saved battles and V6 prototype replay compatibility V6-prototype human4-vehicle2 T10"
+    },
+    {
+      "file": "panel/src/life-limit-state.test.ts",
+      "test": "生命上限贯穿正文、编辑与档案 正文事务不能在生成后用旧事件值覆盖生命上限"
+    },
+    {
+      "file": "panel/src/life-limit-state.test.ts",
+      "test": "生命上限贯穿正文、编辑与档案 正文高生命自动截断并给出提示，编队人数保留原值"
+    }
+  ],
+  "native": {
+    "passed": 222,
+    "failed": 0
+  },
+  "relay": {
+    "passed": 5,
+    "failed": 0
+  },
+  "typecheck": "passed",
+  "build": "passed",
+  "dist": "passed",
+  "browser": {
+    "status": "passed",
+    "realHost": false,
+    "realModel": false,
+    "runs": {
+      "metadata-only": {
+        "status": "passed",
+        "checks": 51,
+        "results": [
+          "启动无需助手且尚未创建面板",
+          "纯档案初始化不触发完整聊天保存",
+          "悬浮入口为圆形交叉剑",
+          "拖动不误开面板且保存位置",
+          "独立静态面板已加载",
+          "复现旧候选部分落盘而消息标签缺失",
+          "旧 pending 刷新后以原操作身份完整保存并解锁",
+          "来源消息标签经过服务端独立读回确认",
+          "正文候选经面板确认建档并部署",
+          "编辑回归使用已接管且没有强化的实物装备",
+          "人物编辑可重复预览且确认前不改写档案",
+          "姓名生命上限当前生命备注均可保存",
+          "保存人物资料不改变装备实例随机值或库存归属",
+          "保存后重新打开并直接预览不会误报装备修改",
+          "刷新后人物修改与原装备完整保留",
+          "100次开关保持单个面板和固定监听数",
+          "关闭重开保留表单草稿",
+          "慢保存期间仍可立即切换页面",
+          "单次设置变更只保存一次",
+          "原生面板可以开始并保存小战",
+          "战场已移除 JEV 切换入口",
+          "设置保留 JEV 未完成禁用提示",
+          "模型连接未写入聊天存档",
+          "关闭重开保留模型连接",
+          "收起面板后全自动暂停",
+          "小战结算与战报归档只入账一次",
+          "战报只插入用户消息，不自动生成，并保留草稿附件",
+          "用户手动点击发送后只生成一次",
+          "保存接口吞错时保持原事实并进入待核实",
+          "刷新后恢复同一候选，不重算业务",
+          "战报去重且不消费草稿附件",
+          "插件插入的战报确实保存到服务端",
+          "切聊天得到独立空档",
+          "战斗命令保存期间立即显示处理中",
+          "命令处理中重复点击不会重复执行或保存",
+          "会战通过面板执行一轮并保存",
+          "会战结算和报告保留",
+          "管理界面回退最新会战进度并停止原生写入",
+          "管理界面重新迁回保留进度",
+          "清空有墓碑，旧变量仍在也不恢复",
+          "管理界面文件导入恢复完整报告且更换代次",
+          "来源在自动扫描保存前收尾后直接重扫，不锁住档案",
+          "重扫仅建立人工候选，不执行失效候选的事实",
+          "复现rc.4来源已变化但候选未落盘的恢复记录",
+          "旧来源冲突只需点击重试即可解锁并重扫，重复扫描不重复候选",
+          "390px窗口不横向溢出",
+          "缩小窗口后悬浮球仍在屏幕内",
+          "手机触摸拖动可用且不会误开",
+          "拖动后仍能点击打开",
+          "停用清除入口面板、注入和监听",
+          "无未处理页面异常"
+        ]
+      },
+      "legacy-full": {
+        "status": "passed",
+        "checks": 51,
+        "results": [
+          "启动无需助手且尚未创建面板",
+          "纯档案初始化不触发完整聊天保存",
+          "悬浮入口为圆形交叉剑",
+          "拖动不误开面板且保存位置",
+          "独立静态面板已加载",
+          "复现旧候选部分落盘而消息标签缺失",
+          "旧 pending 刷新后以原操作身份完整保存并解锁",
+          "来源消息标签经过服务端独立读回确认",
+          "正文候选经面板确认建档并部署",
+          "编辑回归使用已接管且没有强化的实物装备",
+          "人物编辑可重复预览且确认前不改写档案",
+          "姓名生命上限当前生命备注均可保存",
+          "保存人物资料不改变装备实例随机值或库存归属",
+          "保存后重新打开并直接预览不会误报装备修改",
+          "刷新后人物修改与原装备完整保留",
+          "100次开关保持单个面板和固定监听数",
+          "关闭重开保留表单草稿",
+          "慢保存期间仍可立即切换页面",
+          "单次设置变更只保存一次",
+          "原生面板可以开始并保存小战",
+          "战场已移除 JEV 切换入口",
+          "设置保留 JEV 未完成禁用提示",
+          "模型连接未写入聊天存档",
+          "关闭重开保留模型连接",
+          "收起面板后全自动暂停",
+          "小战结算与战报归档只入账一次",
+          "战报只插入用户消息，不自动生成，并保留草稿附件",
+          "用户手动点击发送后只生成一次",
+          "保存接口吞错时保持原事实并进入待核实",
+          "刷新后恢复同一候选，不重算业务",
+          "战报去重且不消费草稿附件",
+          "插件插入的战报确实保存到服务端",
+          "切聊天得到独立空档",
+          "战斗命令保存期间立即显示处理中",
+          "命令处理中重复点击不会重复执行或保存",
+          "会战通过面板执行一轮并保存",
+          "会战结算和报告保留",
+          "管理界面回退最新会战进度并停止原生写入",
+          "管理界面重新迁回保留进度",
+          "清空有墓碑，旧变量仍在也不恢复",
+          "管理界面文件导入恢复完整报告且更换代次",
+          "来源在自动扫描保存前收尾后直接重扫，不锁住档案",
+          "重扫仅建立人工候选，不执行失效候选的事实",
+          "复现rc.4来源已变化但候选未落盘的恢复记录",
+          "旧来源冲突只需点击重试即可解锁并重扫，重复扫描不重复候选",
+          "390px窗口不横向溢出",
+          "缩小窗口后悬浮球仍在屏幕内",
+          "手机触摸拖动可用且不会误开",
+          "拖动后仍能点击打开",
+          "停用清除入口面板、注入和监听",
+          "无未处理页面异常"
+        ]
+      },
+      "route-landmarks": {
+        "status": "passed",
+        "checks": 13,
+        "results": [
+          "地标实际足迹与地图标记数量相同",
+          "地图详情显示剧情名称与实际地形",
+          "战况和JEV观测使用同一个名称",
+          "保存恢复保留真实格子和地标",
+          "点选地标不会改写战斗事实",
+          "手机视口仍有地标与可滚动地图",
+          "plains硬障碍使用自然名称而不是建筑墙体",
+          "plains障碍详情明确阻路与直射遮挡规则",
+          "forest硬障碍使用自然名称而不是建筑墙体",
+          "forest障碍详情明确阻路与直射遮挡规则",
+          "mountain硬障碍使用自然名称而不是建筑墙体",
+          "mountain障碍详情明确阻路与直射遮挡规则",
+          "没有浏览器运行错误"
+        ]
+      }
+    }
+  },
+  "scope": {
+    "contextMatrixMaps": 2400,
+    "topologyMatrixMaps": 1440,
+    "localLandmarkSamples": 1200,
+    "diversityFloorMaps": 240,
+    "structuralAuditMaps": 1320,
+    "matchedBaselineAuditMaps": 960
+  },
+  "realHost": false,
+  "realModel": false,
+  "remoteValidation": {
+    "runId": "36513451094",
+    "url": "https://github.com/smokycamera/sillytavern-general-battle-system/actions/runs/36513451094",
+    "transferSha256": "c32e66e89e0aab5513610aca4789a0f4791de1fd23206c706567c6fdb030d612"
+  }
+}

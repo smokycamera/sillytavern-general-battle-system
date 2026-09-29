@@ -1,6 +1,6 @@
 {
   "name": "tavern-battle",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "通用战斗系统v1.0 —— SillyTavern / TauriTavern 原生回合制战斗扩展",
   "license": "GPL-3.0-only",
   "type": "module",
@@ -31,7 +31,8 @@
     "verify": "npm run test && npm run typecheck && npm run build:dist",
     "jev:relay": "node scripts/jev-cors-relay.mjs",
     "test:jev-relay": "node --test scripts/jev-cors-relay.test.mjs",
-    "verify:dist": "node scripts/check-native-dist.mjs"
+    "verify:dist": "node scripts/check-native-dist.mjs",
+    "audit:maps": "vite-node scripts/audit-map-diversity.ts"
   },
   "devDependencies": {
     "happy-dom": "20.8.8",

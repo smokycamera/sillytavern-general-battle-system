@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generatedField } from '../src/small/field-generator.js';
-import { deployOnGrid, neighbors, validateField, type BattlefieldSpec } from '../src/small/spatial.js';
+import { deployOnGrid, neighbors, validateField, terrainName, type BattlefieldSpec } from '../src/small/spatial.js';
 import { generateUnit, SmallBattle, V7_OVERFLOW_D20, type Combatant } from '../src/index.js';
 
 const sizes = [[7, 13], [7, 11], [7, 9], [5, 7]] as const;
@@ -68,7 +68,11 @@ describe('非对称环境地图生成', () => {
       const seed = 'theme-' + n, field = generatedField(seed, w, h, [environment]);
       expect(generatedField(seed, w, h, [environment, 'night']).tiles).toEqual(field.tiles);
       expect(field.tiles.filter(t => t === 'open').length).toBeGreaterThan(field.tiles.length / 4);
-      if (w === 7 && ['plains', 'forest', 'mountain'].includes(environment)) expect(field.tiles).not.toContain('wall');
+      // v4 adds natural hard blockers using wall physics, not constructed buildings.
+      if (w === 7 && ['plains', 'forest', 'mountain'].includes(environment)) {
+        expect(field.tiles.filter(t => t === 'wall').length).toBeLessThan(field.tiles.length / 4);
+        field.tiles.forEach((t, p) => { if (t === 'wall') expect(['巨石', '密林障碍', '岩障']).toContain(terrainName(field, p)); });
+      }
     }
     for (const [environment, terrain] of [['forest', 'forest'], ['mountain', 'hill']] as const) {
       let themed = 0, plains = 0;

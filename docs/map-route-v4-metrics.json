@@ -1,0 +1,4884 @@
+{
+  "schema": 1,
+  "seedPrefix": "map-v4-audit-",
+  "mapsPerFamily": 160,
+  "generatedMaps": 1320,
+  "definitions": {
+    "similarity": "All same-size pairs: fraction of equal tile types (1 means identical). Higher is not better.",
+    "spatialProfile": "3×3 zones, each with wall / costly terrain / ranged cover / hill coverage, quantized to quarters. Normalized L1 distance ignores names/seeds.",
+    "alternatives": "Exact vertex-capacity max flow over actual ground-walkable tiles between deployment edges; graph routes themselves may share trunks.",
+    "routeBranches": "Connected junction regions of the rasterized designed route graph; v3 has no graph, so its open-tile proxy is not directly comparable.",
+    "lateralLinks": "Contiguous row groups with a route run spanning at least half the width; v3 uses open tiles as a proxy.",
+    "narrowRegions": "Connected non-deployment traversable areas of grid degree ≤2. criticalCuts counts single blocked tiles that sever contact.",
+    "meanLOS": "Average geometric visible length in 8 directions, existing wall/supercover rules, no unit occlusion or night restrictions.",
+    "distances": "Minimum weighted ground movement from each deployment edge, not actual spawned units; actual roster deployment is tested separately.",
+    "interpretation": "Structural proxies are not proof of human-perceived fun or match balance. More open terrain can increase LOS but reduce protected positions."
+  },
+  "families": {
+    "plains": {
+      "current": {
+        "count": 160,
+        "distinctTileArrays": 160,
+        "distinctStructuralSignatures": 160,
+        "tileSimilarity": {
+          "min": 0.18681318681318682,
+          "p10": 0.3626373626373626,
+          "median": 0.43956043956043955,
+          "p90": 0.5274725274725275,
+          "max": 0.7472527472527473,
+          "mean": 0.4446877807726896
+        },
+        "macroProfileDistance": {
+          "min": 0.041666666666666664,
+          "p10": 0.09722222222222222,
+          "median": 0.1388888888888889,
+          "p90": 0.1875,
+          "max": 0.2916666666666667,
+          "mean": 0.13853948287910553
+        },
+        "routeBranches": {
+          "min": 1,
+          "p10": 1,
+          "median": 2,
+          "p90": 6,
+          "max": 6,
+          "mean": 2.9875
+        },
+        "lateralLinks": {
+          "min": 0,
+          "p10": 1,
+          "median": 2,
+          "p90": 3,
+          "max": 3,
+          "mean": 2.03125
+        },
+        "narrowRegions": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 2,
+          "max": 4,
+          "mean": 0.4375
+        },
+        "criticalCuts": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "shortestContactSteps": {
+          "min": 12,
+          "p10": 12,
+          "median": 12,
+          "p90": 12,
+          "max": 12,
+          "mean": 12
+        },
+        "shortestContactCost": {
+          "min": 12,
+          "p10": 12,
+          "median": 12,
+          "p90": 13,
+          "max": 14,
+          "mean": 12.24375
+        },
+        "alternativePaths": {
+          "min": 4,
+          "p10": 6,
+          "median": 7,
+          "p90": 7,
+          "max": 7,
+          "mean": 6.4625
+        },
+        "meanLOS": {
+          "min": 3.08922217140813,
+          "p10": 3.5276258599418338,
+          "median": 3.9361777089833017,
+          "p90": 3.9361777089833017,
+          "max": 3.9361777089833017,
+          "mean": 3.7599999905260875
+        },
+        "coverFraction": {
+          "min": 0.06593406593406594,
+          "p10": 0.14285714285714285,
+          "median": 0.25274725274725274,
+          "p90": 0.32967032967032966,
+          "max": 0.46153846153846156,
+          "mean": 0.24004120879120858
+        },
+        "terrainComponents": {
+          "open": {
+            "min": 1,
+            "p10": 2,
+            "median": 3,
+            "p90": 6,
+            "max": 11,
+            "mean": 3.8
+          },
+          "cover": {
+            "min": 3,
+            "p10": 5,
+            "median": 7,
+            "p90": 10,
+            "max": 12,
+            "mean": 7.29375
+          },
+          "wall": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 1,
+            "max": 3,
+            "mean": 0.55625
+          },
+          "rough": {
+            "min": 1,
+            "p10": 2,
+            "median": 5,
+            "p90": 7,
+            "max": 13,
+            "mean": 5.15
+          },
+          "forest": {
+            "min": 0,
+            "p10": 0,
+            "median": 1,
+            "p90": 6,
+            "max": 8,
+            "mean": 1.96875
+          },
+          "hill": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 5,
+            "max": 10,
+            "mean": 1.4
+          }
+        },
+        "coverCentroid": {
+          "x": {
+            "min": 0.09722222222222222,
+            "p10": 0.29761904761904756,
+            "median": 0.511904761904762,
+            "p90": 0.6862745098039216,
+            "max": 0.8111111111111112,
+            "mean": 0.497052893746402
+          },
+          "y": {
+            "min": 0.3333333333333333,
+            "p10": 0.41,
+            "median": 0.5026041666666666,
+            "p90": 0.601449275362319,
+            "max": 0.7463768115942028,
+            "mean": 0.5018764375718664
+          }
+        },
+        "terrainCentroid": {
+          "x": {
+            "min": 0.21428571428571427,
+            "p10": 0.3655913978494624,
+            "median": 0.49479166666666674,
+            "p90": 0.6153846153846153,
+            "max": 0.7628205128205129,
+            "mean": 0.49633336091567193
+          },
+          "y": {
+            "min": 0.35360360360360366,
+            "p10": 0.43749999999999994,
+            "median": 0.5000000000000001,
+            "p90": 0.5691489361702128,
+            "max": 0.6604938271604939,
+            "mean": 0.5038197817610075
+          }
+        },
+        "objectiveDistance": {
+          "ally": {
+            "min": 6,
+            "p10": 6,
+            "median": 7,
+            "p90": 8,
+            "max": 9,
+            "mean": 6.675
+          },
+          "enemy": {
+            "min": 6,
+            "p10": 6,
+            "median": 7,
+            "p90": 8,
+            "max": 10,
+            "mean": 6.7375
+          }
+        },
+        "landmarkDistance": {
+          "ally": {
+            "min": 1,
+            "p10": 2,
+            "median": 6,
+            "p90": 11,
+            "max": 13,
+            "mean": 6.155555555555556
+          },
+          "enemy": {
+            "min": 1,
+            "p10": 1,
+            "median": 6,
+            "p90": 11,
+            "max": 13,
+            "mean": 5.633333333333334
+          }
+        },
+        "landmarks": {
+          "none": 70,
+          "minor": 70,
+          "major": 20
+        },
+        "topologyCounts": {
+          "spine_branches": 14,
+          "y_fork": 18,
+          "braid": 17,
+          "flank": 17,
+          "ring": 31,
+          "parallel": 15,
+          "alleys": 6,
+          "crosslinks": 25,
+          "courtyards": 17
+        }
+      },
+      "baseline": {
+        "count": 160,
+        "distinctTileArrays": 160,
+        "distinctStructuralSignatures": 160,
+        "tileSimilarity": {
+          "min": 0.25274725274725274,
+          "p10": 0.4175824175824176,
+          "median": 0.5164835164835165,
+          "p90": 0.6263736263736264,
+          "max": 0.7802197802197802,
+          "mean": 0.5228065173819851
+        },
+        "macroProfileDistance": {
+          "min": 0.027777777777777776,
+          "p10": 0.08333333333333333,
+          "median": 0.125,
+          "p90": 0.1736111111111111,
+          "max": 0.2847222222222222,
+          "mean": 0.12727714447938493
+        },
+        "routeBranches": {
+          "min": 1,
+          "p10": 1,
+          "median": 3,
+          "p90": 5,
+          "max": 10,
+          "mean": 3.10625
+        },
+        "lateralLinks": {
+          "min": 0,
+          "p10": 1,
+          "median": 3,
+          "p90": 4,
+          "max": 5,
+          "mean": 2.5125
+        },
+        "narrowRegions": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "criticalCuts": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "shortestContactSteps": {
+          "min": 12,
+          "p10": 12,
+          "median": 12,
+          "p90": 12,
+          "max": 12,
+          "mean": 12
+        },
+        "shortestContactCost": {
+          "min": 12,
+          "p10": 12,
+          "median": 12,
+          "p90": 13,
+          "max": 15,
+          "mean": 12.30625
+        },
+        "alternativePaths": {
+          "min": 7,
+          "p10": 7,
+          "median": 7,
+          "p90": 7,
+          "max": 7,
+          "mean": 7
+        },
+        "meanLOS": {
+          "min": 3.9361777089833017,
+          "p10": 3.9361777089833017,
+          "median": 3.9361777089833017,
+          "p90": 3.9361777089833017,
+          "max": 3.9361777089833017,
+          "mean": 3.936177708983301
+        },
+        "coverFraction": {
+          "min": 0.02197802197802198,
+          "p10": 0.04395604395604396,
+          "median": 0.10989010989010989,
+          "p90": 0.26373626373626374,
+          "max": 0.37362637362637363,
+          "mean": 0.13365384615384587
+        },
+        "terrainComponents": {
+          "open": {
+            "min": 1,
+            "p10": 1,
+            "median": 2,
+            "p90": 5,
+            "max": 10,
+            "mean": 2.8
+          },
+          "cover": {
+            "min": 1,
+            "p10": 2,
+            "median": 5,
+            "p90": 7,
+            "max": 10,
+            "mean": 4.625
+          },
+          "wall": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          },
+          "rough": {
+            "min": 1,
+            "p10": 2,
+            "median": 4,
+            "p90": 7,
+            "max": 9,
+            "mean": 4.14375
+          },
+          "forest": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 5,
+            "max": 9,
+            "mean": 1.39375
+          },
+          "hill": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 5,
+            "max": 8,
+            "mean": 1.48125
+          }
+        },
+        "coverCentroid": {
+          "x": {
+            "min": 0.06666666666666667,
+            "p10": 0.31250000000000006,
+            "median": 0.5,
+            "p90": 0.6666666666666666,
+            "max": 0.8,
+            "mean": 0.4950167516985953
+          },
+          "y": {
+            "min": 0.26111111111111107,
+            "p10": 0.369047619047619,
+            "median": 0.5032051282051283,
+            "p90": 0.6527777777777778,
+            "max": 0.85,
+            "mean": 0.5106067189742312
+          }
+        },
+        "terrainCentroid": {
+          "x": {
+            "min": 0.17391304347826084,
+            "p10": 0.3571428571428571,
+            "median": 0.5133333333333333,
+            "p90": 0.6470588235294119,
+            "max": 0.7807017543859649,
+            "mean": 0.5079661213607083
+          },
+          "y": {
+            "min": 0.35000000000000003,
+            "p10": 0.41388888888888886,
+            "median": 0.516025641025641,
+            "p90": 0.6217948717948717,
+            "max": 0.699074074074074,
+            "mean": 0.5143916121663017
+          }
+        },
+        "objectiveDistance": {
+          "ally": {
+            "min": 6,
+            "p10": 6,
+            "median": 7,
+            "p90": 8,
+            "max": 10,
+            "mean": 6.7125
+          },
+          "enemy": {
+            "min": 6,
+            "p10": 6,
+            "median": 7,
+            "p90": 8,
+            "max": 10,
+            "mean": 6.75625
+          }
+        },
+        "landmarkDistance": {
+          "ally": {
+            "min": null,
+            "p10": null,
+            "median": null,
+            "p90": null,
+            "max": null,
+            "mean": null
+          },
+          "enemy": {
+            "min": null,
+            "p10": null,
+            "median": null,
+            "p90": null,
+            "max": null,
+            "mean": null
+          }
+        },
+        "landmarks": {
+          "none": 160,
+          "minor": 0,
+          "major": 0
+        },
+        "topologyCounts": {
+          "spine_branches": 0,
+          "y_fork": 0,
+          "braid": 0,
+          "flank": 0,
+          "ring": 0,
+          "parallel": 0,
+          "alleys": 0,
+          "crosslinks": 0,
+          "courtyards": 0
+        }
+      }
+    },
+    "forest": {
+      "current": {
+        "count": 160,
+        "distinctTileArrays": 160,
+        "distinctStructuralSignatures": 160,
+        "tileSimilarity": {
+          "min": 0.2087912087912088,
+          "p10": 0.3516483516483517,
+          "median": 0.42857142857142855,
+          "p90": 0.5274725274725275,
+          "max": 0.7142857142857143,
+          "mean": 0.4328313981615902
+        },
+        "macroProfileDistance": {
+          "min": 0.04861111111111111,
+          "p10": 0.125,
+          "median": 0.16666666666666666,
+          "p90": 0.2152777777777778,
+          "max": 0.3125,
+          "mean": 0.1681134259259261
+        },
+        "routeBranches": {
+          "min": 1,
+          "p10": 1,
+          "median": 2,
+          "p90": 6,
+          "max": 6,
+          "mean": 2.9875
+        },
+        "lateralLinks": {
+          "min": 0,
+          "p10": 1,
+          "median": 2,
+          "p90": 3,
+          "max": 3,
+          "mean": 2.03125
+        },
+        "narrowRegions": {
+          "min": 0,
+          "p10": 0,
+          "median": 1,
+          "p90": 3,
+          "max": 7,
+          "mean": 1.10625
+        },
+        "criticalCuts": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "shortestContactSteps": {
+          "min": 12,
+          "p10": 12,
+          "median": 12,
+          "p90": 12,
+          "max": 12,
+          "mean": 12
+        },
+        "shortestContactCost": {
+          "min": 12,
+          "p10": 12,
+          "median": 12,
+          "p90": 14,
+          "max": 16,
+          "mean": 12.59375
+        },
+        "alternativePaths": {
+          "min": 3,
+          "p10": 4,
+          "median": 6,
+          "p90": 7,
+          "max": 7,
+          "mean": 5.8875
+        },
+        "meanLOS": {
+          "min": 2.612950307510002,
+          "p10": 3.082085011212919,
+          "median": 3.6038920936160435,
+          "p90": 3.9361777089833017,
+          "max": 3.9361777089833017,
+          "mean": 3.5435313669611888
+        },
+        "coverFraction": {
+          "min": 0.2087912087912088,
+          "p10": 0.2857142857142857,
+          "median": 0.37362637362637363,
+          "p90": 0.46153846153846156,
+          "max": 0.5494505494505495,
+          "mean": 0.3765796703296702
+        },
+        "terrainComponents": {
+          "open": {
+            "min": 1,
+            "p10": 2,
+            "median": 4,
+            "p90": 7,
+            "max": 10,
+            "mean": 4.2125
+          },
+          "cover": {
+            "min": 0,
+            "p10": 3,
+            "median": 5,
+            "p90": 8,
+            "max": 10,
+            "mean": 5.325
+          },
+          "wall": {
+            "min": 0,
+            "p10": 0,
+            "median": 1,
+            "p90": 2,
+            "max": 5,
+            "mean": 1.1125
+          },
+          "rough": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 3,
+            "max": 6,
+            "mean": 0.59375
+          },
+          "forest": {
+            "min": 2,
+            "p10": 4,
+            "median": 7,
+            "p90": 10,
+            "max": 13,
+            "mean": 6.6625
+          },
+          "hill": {
+            "min": 0,
+            "p10": 1,
+            "median": 3,
+            "p90": 4,
+            "max": 6,
+            "mean": 2.75
+          }
+        },
+        "coverCentroid": {
+          "x": {
+            "min": 0.2543859649122807,
+            "p10": 0.3571428571428572,
+            "median": 0.5,
+            "p90": 0.6333333333333333,
+            "max": 0.7343749999999999,
+            "mean": 0.4930363838277949
+          },
+          "y": {
+            "min": 0.3416666666666666,
+            "p10": 0.42528735632183906,
+            "median": 0.496031746031746,
+            "p90": 0.56875,
+            "max": 0.6484375000000001,
+            "mean": 0.4969889403806908
+          }
+        },
+        "terrainCentroid": {
+          "x": {
+            "min": 0.26262626262626265,
+            "p10": 0.36363636363636354,
+            "median": 0.4914529914529914,
+            "p90": 0.6240310077519378,
+            "max": 0.7054263565891472,
+            "mean": 0.49555594667859254
+          },
+          "y": {
+            "min": 0.33333333333333326,
+            "p10": 0.43790849673202603,
+            "median": 0.5,
+            "p90": 0.5666666666666668,
+            "max": 0.6365248226950353,
+            "mean": 0.5018211399503599
+          }
+        },
+        "objectiveDistance": {
+          "ally": {
+            "min": 6,
+            "p10": 6,
+            "median": 7,
+            "p90": 8,
+            "max": 11,
+            "mean": 7
+          },
+          "enemy": {
+            "min": 6,
+            "p10": 6,
+            "median": 7,
+            "p90": 8,
+            "max": 10,
+            "mean": 7.025
+          }
+        },
+        "landmarkDistance": {
+          "ally": {
+            "min": 1,
+            "p10": 1,
+            "median": 6,
+            "p90": 12,
+            "max": 14,
+            "mean": 6.411111111111111
+          },
+          "enemy": {
+            "min": 1,
+            "p10": 1,
+            "median": 6,
+            "p90": 11,
+            "max": 13,
+            "mean": 5.822222222222222
+          }
+        },
+        "landmarks": {
+          "none": 70,
+          "minor": 70,
+          "major": 20
+        },
+        "topologyCounts": {
+          "spine_branches": 14,
+          "y_fork": 18,
+          "braid": 17,
+          "flank": 17,
+          "ring": 31,
+          "parallel": 15,
+          "alleys": 6,
+          "crosslinks": 25,
+          "courtyards": 17
+        }
+      },
+      "baseline": {
+        "count": 160,
+        "distinctTileArrays": 160,
+        "distinctStructuralSignatures": 160,
+        "tileSimilarity": {
+          "min": 0.21978021978021978,
+          "p10": 0.37362637362637363,
+          "median": 0.45054945054945056,
+          "p90": 0.5384615384615384,
+          "max": 0.7142857142857143,
+          "mean": 0.45398438039947825
+        },
+        "macroProfileDistance": {
+          "min": 0.034722222222222224,
+          "p10": 0.1111111111111111,
+          "median": 0.1597222222222222,
+          "p90": 0.2013888888888889,
+          "max": 0.2847222222222222,
+          "mean": 0.15767164570230555
+        },
+        "routeBranches": {
+          "min": 1,
+          "p10": 2,
+          "median": 3,
+          "p90": 6,
+          "max": 8,
+          "mean": 3.525
+        },
+        "lateralLinks": {
+          "min": 0,
+          "p10": 1,
+          "median": 2,
+          "p90": 3,
+          "max": 5,
+          "mean": 2.25
+        },
+        "narrowRegions": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "criticalCuts": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "shortestContactSteps": {
+          "min": 12,
+          "p10": 12,
+          "median": 12,
+          "p90": 12,
+          "max": 12,
+          "mean": 12
+        },
+        "shortestContactCost": {
+          "min": 12,
+          "p10": 12,
+          "median": 13,
+          "p90": 14,
+          "max": 16,
+          "mean": 12.8875
+        },
+        "alternativePaths": {
+          "min": 7,
+          "p10": 7,
+          "median": 7,
+          "p90": 7,
+          "max": 7,
+          "mean": 7
+        },
+        "meanLOS": {
+          "min": 3.9361777089833017,
+          "p10": 3.9361777089833017,
+          "median": 3.9361777089833017,
+          "p90": 3.9361777089833017,
+          "max": 3.9361777089833017,
+          "mean": 3.936177708983301
+        },
+        "coverFraction": {
+          "min": 0.14285714285714285,
+          "p10": 0.23076923076923078,
+          "median": 0.3076923076923077,
+          "p90": 0.4175824175824176,
+          "max": 0.4835164835164835,
+          "mean": 0.3124999999999999
+        },
+        "terrainComponents": {
+          "open": {
+            "min": 1,
+            "p10": 2,
+            "median": 4,
+            "p90": 7,
+            "max": 11,
+            "mean": 4.05
+          },
+          "cover": {
+            "min": 1,
+            "p10": 2,
+            "median": 4,
+            "p90": 7,
+            "max": 10,
+            "mean": 4.575
+          },
+          "wall": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          },
+          "rough": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 4,
+            "max": 7,
+            "mean": 0.91875
+          },
+          "forest": {
+            "min": 1,
+            "p10": 3,
+            "median": 6,
+            "p90": 9,
+            "max": 15,
+            "mean": 6.10625
+          },
+          "hill": {
+            "min": 0,
+            "p10": 2,
+            "median": 3,
+            "p90": 4,
+            "max": 6,
+            "mean": 3.0375
+          }
+        },
+        "coverCentroid": {
+          "x": {
+            "min": 0.21969696969696964,
+            "p10": 0.36666666666666675,
+            "median": 0.5192307692307693,
+            "p90": 0.6666666666666666,
+            "max": 0.7857142857142857,
+            "mean": 0.5152499740327692
+          },
+          "y": {
+            "min": 0.27976190476190477,
+            "p10": 0.4142156862745097,
+            "median": 0.5178571428571429,
+            "p90": 0.6339285714285715,
+            "max": 0.7175925925925927,
+            "mean": 0.5171488647678623
+          }
+        },
+        "terrainCentroid": {
+          "x": {
+            "min": 0.20666666666666664,
+            "p10": 0.3953488372093023,
+            "median": 0.5138888888888888,
+            "p90": 0.6196581196581196,
+            "max": 0.7261904761904762,
+            "mean": 0.5043743736777943
+          },
+          "y": {
+            "min": 0.33809523809523817,
+            "p10": 0.430952380952381,
+            "median": 0.5233333333333333,
+            "p90": 0.5967741935483872,
+            "max": 0.6689814814814817,
+            "mean": 0.5162660023012025
+          }
+        },
+        "objectiveDistance": {
+          "ally": {
+            "min": 6,
+            "p10": 6,
+            "median": 7,
+            "p90": 8,
+            "max": 10,
+            "mean": 7.0375
+          },
+          "enemy": {
+            "min": 6,
+            "p10": 6,
+            "median": 7,
+            "p90": 8,
+            "max": 9,
+            "mean": 7.01875
+          }
+        },
+        "landmarkDistance": {
+          "ally": {
+            "min": null,
+            "p10": null,
+            "median": null,
+            "p90": null,
+            "max": null,
+            "mean": null
+          },
+          "enemy": {
+            "min": null,
+            "p10": null,
+            "median": null,
+            "p90": null,
+            "max": null,
+            "mean": null
+          }
+        },
+        "landmarks": {
+          "none": 160,
+          "minor": 0,
+          "major": 0
+        },
+        "topologyCounts": {
+          "spine_branches": 0,
+          "y_fork": 0,
+          "braid": 0,
+          "flank": 0,
+          "ring": 0,
+          "parallel": 0,
+          "alleys": 0,
+          "crosslinks": 0,
+          "courtyards": 0
+        }
+      }
+    },
+    "mountain": {
+      "current": {
+        "count": 160,
+        "distinctTileArrays": 160,
+        "distinctStructuralSignatures": 160,
+        "tileSimilarity": {
+          "min": 0.2087912087912088,
+          "p10": 0.34065934065934067,
+          "median": 0.42857142857142855,
+          "p90": 0.5164835164835165,
+          "max": 0.7142857142857143,
+          "mean": 0.42929193448061886
+        },
+        "macroProfileDistance": {
+          "min": 0.04861111111111111,
+          "p10": 0.11805555555555555,
+          "median": 0.1597222222222222,
+          "p90": 0.20833333333333334,
+          "max": 0.3263888888888889,
+          "mean": 0.16261847047519296
+        },
+        "routeBranches": {
+          "min": 1,
+          "p10": 1,
+          "median": 2,
+          "p90": 6,
+          "max": 6,
+          "mean": 2.9875
+        },
+        "lateralLinks": {
+          "min": 0,
+          "p10": 1,
+          "median": 2,
+          "p90": 3,
+          "max": 3,
+          "mean": 2.03125
+        },
+        "narrowRegions": {
+          "min": 0,
+          "p10": 0,
+          "median": 1,
+          "p90": 3,
+          "max": 6,
+          "mean": 1.13125
+        },
+        "criticalCuts": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "shortestContactSteps": {
+          "min": 12,
+          "p10": 12,
+          "median": 12,
+          "p90": 12,
+          "max": 12,
+          "mean": 12
+        },
+        "shortestContactCost": {
+          "min": 12,
+          "p10": 12,
+          "median": 12,
+          "p90": 14,
+          "max": 16,
+          "mean": 12.84375
+        },
+        "alternativePaths": {
+          "min": 2,
+          "p10": 4,
+          "median": 6,
+          "p90": 7,
+          "max": 7,
+          "mean": 5.725
+        },
+        "meanLOS": {
+          "min": 2.417602494406917,
+          "p10": 2.999455183492089,
+          "median": 3.5470703043862786,
+          "p90": 3.9361777089833017,
+          "max": 3.9361777089833017,
+          "mean": 3.50590570715318
+        },
+        "coverFraction": {
+          "min": 0.01098901098901099,
+          "p10": 0.03296703296703297,
+          "median": 0.07692307692307693,
+          "p90": 0.14285714285714285,
+          "max": 0.26373626373626374,
+          "mean": 0.08344780219780204
+        },
+        "terrainComponents": {
+          "open": {
+            "min": 1,
+            "p10": 2,
+            "median": 4,
+            "p90": 7,
+            "max": 10,
+            "mean": 4
+          },
+          "cover": {
+            "min": 1,
+            "p10": 2,
+            "median": 4,
+            "p90": 6,
+            "max": 11,
+            "mean": 4.1625
+          },
+          "wall": {
+            "min": 0,
+            "p10": 0,
+            "median": 1,
+            "p90": 2,
+            "max": 4,
+            "mean": 1.18125
+          },
+          "rough": {
+            "min": 1,
+            "p10": 3,
+            "median": 5,
+            "p90": 8,
+            "max": 11,
+            "mean": 5.175
+          },
+          "forest": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          },
+          "hill": {
+            "min": 1,
+            "p10": 4,
+            "median": 7,
+            "p90": 9,
+            "max": 13,
+            "mean": 6.65
+          }
+        },
+        "coverCentroid": {
+          "x": {
+            "min": 0.05555555555555555,
+            "p10": 0.25,
+            "median": 0.4999999999999999,
+            "p90": 0.7083333333333334,
+            "max": 0.8333333333333334,
+            "mean": 0.4850441619926914
+          },
+          "y": {
+            "min": 0.25925925925925924,
+            "p10": 0.3333333333333333,
+            "median": 0.5297619047619048,
+            "p90": 0.6666666666666666,
+            "max": 0.9583333333333333,
+            "mean": 0.517783390952049
+          }
+        },
+        "terrainCentroid": {
+          "x": {
+            "min": 0.29545454545454536,
+            "p10": 0.3675213675213675,
+            "median": 0.48427672955974854,
+            "p90": 0.6149425287356322,
+            "max": 0.725,
+            "mean": 0.48933699944866016
+          },
+          "y": {
+            "min": 0.3625,
+            "p10": 0.4314814814814814,
+            "median": 0.5,
+            "p90": 0.5671296296296297,
+            "max": 0.60625,
+            "mean": 0.49982842340956235
+          }
+        },
+        "objectiveDistance": {
+          "ally": {
+            "min": 6,
+            "p10": 6,
+            "median": 7,
+            "p90": 9,
+            "max": 10,
+            "mean": 7.15625
+          },
+          "enemy": {
+            "min": 6,
+            "p10": 6,
+            "median": 7,
+            "p90": 9,
+            "max": 11,
+            "mean": 7.23125
+          }
+        },
+        "landmarkDistance": {
+          "ally": {
+            "min": 1,
+            "p10": 1,
+            "median": 6,
+            "p90": 13,
+            "max": 15,
+            "mean": 6.455555555555556
+          },
+          "enemy": {
+            "min": 1,
+            "p10": 1,
+            "median": 6,
+            "p90": 11,
+            "max": 14,
+            "mean": 5.788888888888889
+          }
+        },
+        "landmarks": {
+          "none": 70,
+          "minor": 70,
+          "major": 20
+        },
+        "topologyCounts": {
+          "spine_branches": 14,
+          "y_fork": 18,
+          "braid": 17,
+          "flank": 17,
+          "ring": 31,
+          "parallel": 15,
+          "alleys": 6,
+          "crosslinks": 25,
+          "courtyards": 17
+        }
+      },
+      "baseline": {
+        "count": 160,
+        "distinctTileArrays": 160,
+        "distinctStructuralSignatures": 160,
+        "tileSimilarity": {
+          "min": 0.21978021978021978,
+          "p10": 0.37362637362637363,
+          "median": 0.46153846153846156,
+          "p90": 0.5384615384615384,
+          "max": 0.7142857142857143,
+          "mean": 0.4563480544612663
+        },
+        "macroProfileDistance": {
+          "min": 0.027777777777777776,
+          "p10": 0.1111111111111111,
+          "median": 0.1527777777777778,
+          "p90": 0.2013888888888889,
+          "max": 0.3055555555555556,
+          "mean": 0.15345857354996487
+        },
+        "routeBranches": {
+          "min": 1,
+          "p10": 2,
+          "median": 3,
+          "p90": 6,
+          "max": 8,
+          "mean": 3.525
+        },
+        "lateralLinks": {
+          "min": 0,
+          "p10": 1,
+          "median": 2,
+          "p90": 3,
+          "max": 5,
+          "mean": 2.25
+        },
+        "narrowRegions": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "criticalCuts": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "shortestContactSteps": {
+          "min": 12,
+          "p10": 12,
+          "median": 12,
+          "p90": 12,
+          "max": 12,
+          "mean": 12
+        },
+        "shortestContactCost": {
+          "min": 12,
+          "p10": 12,
+          "median": 13,
+          "p90": 14,
+          "max": 16,
+          "mean": 12.8875
+        },
+        "alternativePaths": {
+          "min": 7,
+          "p10": 7,
+          "median": 7,
+          "p90": 7,
+          "max": 7,
+          "mean": 7
+        },
+        "meanLOS": {
+          "min": 3.9361777089833017,
+          "p10": 3.9361777089833017,
+          "median": 3.9361777089833017,
+          "p90": 3.9361777089833017,
+          "max": 3.9361777089833017,
+          "mean": 3.936177708983301
+        },
+        "coverFraction": {
+          "min": 0.01098901098901099,
+          "p10": 0.04395604395604396,
+          "median": 0.08791208791208792,
+          "p90": 0.13186813186813187,
+          "max": 0.2087912087912088,
+          "mean": 0.09168956043956025
+        },
+        "terrainComponents": {
+          "open": {
+            "min": 1,
+            "p10": 2,
+            "median": 4,
+            "p90": 7,
+            "max": 11,
+            "mean": 4.05
+          },
+          "cover": {
+            "min": 1,
+            "p10": 2,
+            "median": 4,
+            "p90": 7,
+            "max": 10,
+            "mean": 4.575
+          },
+          "wall": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          },
+          "rough": {
+            "min": 0,
+            "p10": 2,
+            "median": 3,
+            "p90": 6,
+            "max": 9,
+            "mean": 3.66875
+          },
+          "forest": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          },
+          "hill": {
+            "min": 1,
+            "p10": 3,
+            "median": 6,
+            "p90": 9,
+            "max": 15,
+            "mean": 6.10625
+          }
+        },
+        "coverCentroid": {
+          "x": {
+            "min": 0.041666666666666664,
+            "p10": 0.25,
+            "median": 0.5,
+            "p90": 0.6875,
+            "max": 1,
+            "mean": 0.49127267342739983
+          },
+          "y": {
+            "min": 0.25,
+            "p10": 0.375,
+            "median": 0.5138888888888888,
+            "p90": 0.6785714285714286,
+            "max": 0.9166666666666666,
+            "mean": 0.5228864290276466
+          }
+        },
+        "terrainCentroid": {
+          "x": {
+            "min": 0.20666666666666664,
+            "p10": 0.3953488372093023,
+            "median": 0.5138888888888888,
+            "p90": 0.6196581196581196,
+            "max": 0.7261904761904762,
+            "mean": 0.5043743736777943
+          },
+          "y": {
+            "min": 0.33809523809523817,
+            "p10": 0.430952380952381,
+            "median": 0.5233333333333333,
+            "p90": 0.5967741935483872,
+            "max": 0.6689814814814817,
+            "mean": 0.5162660023012025
+          }
+        },
+        "objectiveDistance": {
+          "ally": {
+            "min": 6,
+            "p10": 6,
+            "median": 7,
+            "p90": 8,
+            "max": 10,
+            "mean": 7.0375
+          },
+          "enemy": {
+            "min": 6,
+            "p10": 6,
+            "median": 7,
+            "p90": 8,
+            "max": 9,
+            "mean": 7.01875
+          }
+        },
+        "landmarkDistance": {
+          "ally": {
+            "min": null,
+            "p10": null,
+            "median": null,
+            "p90": null,
+            "max": null,
+            "mean": null
+          },
+          "enemy": {
+            "min": null,
+            "p10": null,
+            "median": null,
+            "p90": null,
+            "max": null,
+            "mean": null
+          }
+        },
+        "landmarks": {
+          "none": 160,
+          "minor": 0,
+          "major": 0
+        },
+        "topologyCounts": {
+          "spine_branches": 0,
+          "y_fork": 0,
+          "braid": 0,
+          "flank": 0,
+          "ring": 0,
+          "parallel": 0,
+          "alleys": 0,
+          "crosslinks": 0,
+          "courtyards": 0
+        }
+      }
+    },
+    "urban": {
+      "current": {
+        "count": 160,
+        "distinctTileArrays": 160,
+        "distinctStructuralSignatures": 160,
+        "tileSimilarity": {
+          "min": 0.24175824175824176,
+          "p10": 0.37362637362637363,
+          "median": 0.46153846153846156,
+          "p90": 0.5494505494505495,
+          "max": 0.7472527472527473,
+          "mean": 0.45958428364089104
+        },
+        "macroProfileDistance": {
+          "min": 0.034722222222222224,
+          "p10": 0.09027777777777778,
+          "median": 0.11805555555555555,
+          "p90": 0.1527777777777778,
+          "max": 0.2152777777777778,
+          "mean": 0.12186353511530404
+        },
+        "routeBranches": {
+          "min": 1,
+          "p10": 1,
+          "median": 2,
+          "p90": 6,
+          "max": 6,
+          "mean": 2.9875
+        },
+        "lateralLinks": {
+          "min": 0,
+          "p10": 1,
+          "median": 2,
+          "p90": 3,
+          "max": 3,
+          "mean": 2.03125
+        },
+        "narrowRegions": {
+          "min": 0,
+          "p10": 0,
+          "median": 3,
+          "p90": 7,
+          "max": 13,
+          "mean": 3.7125
+        },
+        "criticalCuts": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "shortestContactSteps": {
+          "min": 12,
+          "p10": 12,
+          "median": 12,
+          "p90": 12,
+          "max": 13,
+          "mean": 12.00625
+        },
+        "shortestContactCost": {
+          "min": 12,
+          "p10": 12,
+          "median": 12,
+          "p90": 13,
+          "max": 16,
+          "mean": 12.375
+        },
+        "alternativePaths": {
+          "min": 2,
+          "p10": 2,
+          "median": 4,
+          "p90": 6,
+          "max": 7,
+          "mean": 4.325
+        },
+        "meanLOS": {
+          "min": 1.7337328034904849,
+          "p10": 2.3034923233552265,
+          "median": 2.8299760466073645,
+          "p90": 3.413415047633035,
+          "max": 3.9361777089833017,
+          "mean": 2.8405104296853123
+        },
+        "coverFraction": {
+          "min": 0.054945054945054944,
+          "p10": 0.10989010989010989,
+          "median": 0.17582417582417584,
+          "p90": 0.26373626373626374,
+          "max": 0.3516483516483517,
+          "mean": 0.18516483516483478
+        },
+        "terrainComponents": {
+          "open": {
+            "min": 1,
+            "p10": 1,
+            "median": 4,
+            "p90": 7,
+            "max": 11,
+            "mean": 3.89375
+          },
+          "cover": {
+            "min": 3,
+            "p10": 5,
+            "median": 7,
+            "p90": 10,
+            "max": 12,
+            "mean": 7.24375
+          },
+          "wall": {
+            "min": 0,
+            "p10": 1,
+            "median": 3,
+            "p90": 5,
+            "max": 8,
+            "mean": 2.86875
+          },
+          "rough": {
+            "min": 2,
+            "p10": 4,
+            "median": 6,
+            "p90": 9,
+            "max": 11,
+            "mean": 6.2
+          },
+          "forest": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          },
+          "hill": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          }
+        },
+        "coverCentroid": {
+          "x": {
+            "min": 0.027777777777777776,
+            "p10": 0.2564102564102564,
+            "median": 0.48245614035087725,
+            "p90": 0.6960784313725491,
+            "max": 0.8333333333333333,
+            "mean": 0.48348751454692473
+          },
+          "y": {
+            "min": 0.29824561403508776,
+            "p10": 0.40384615384615385,
+            "median": 0.4916666666666666,
+            "p90": 0.5757575757575758,
+            "max": 0.6833333333333333,
+            "mean": 0.49326202900163496
+          }
+        },
+        "terrainCentroid": {
+          "x": {
+            "min": 0.2761904761904762,
+            "p10": 0.3684210526315789,
+            "median": 0.47008547008547014,
+            "p90": 0.6228070175438596,
+            "max": 0.7365591397849462,
+            "mean": 0.4872536475414969
+          },
+          "y": {
+            "min": 0.35344827586206895,
+            "p10": 0.43798449612403106,
+            "median": 0.5016025641025641,
+            "p90": 0.5642857142857143,
+            "max": 0.6410256410256411,
+            "mean": 0.5004146702898742
+          }
+        },
+        "objectiveDistance": {
+          "ally": {
+            "min": 6,
+            "p10": 6,
+            "median": 7,
+            "p90": 8,
+            "max": 11,
+            "mean": 6.90625
+          },
+          "enemy": {
+            "min": 6,
+            "p10": 6,
+            "median": 7,
+            "p90": 8,
+            "max": 13,
+            "mean": 6.85625
+          }
+        },
+        "landmarkDistance": {
+          "ally": {
+            "min": 1,
+            "p10": 1,
+            "median": 5,
+            "p90": 11,
+            "max": 13,
+            "mean": 5.811111111111111
+          },
+          "enemy": {
+            "min": 1,
+            "p10": 1,
+            "median": 5,
+            "p90": 10,
+            "max": 15,
+            "mean": 5.277777777777778
+          }
+        },
+        "landmarks": {
+          "none": 70,
+          "minor": 70,
+          "major": 20
+        },
+        "topologyCounts": {
+          "spine_branches": 14,
+          "y_fork": 18,
+          "braid": 17,
+          "flank": 17,
+          "ring": 31,
+          "parallel": 15,
+          "alleys": 6,
+          "crosslinks": 25,
+          "courtyards": 17
+        }
+      },
+      "baseline": {
+        "count": 160,
+        "distinctTileArrays": 160,
+        "distinctStructuralSignatures": 160,
+        "tileSimilarity": {
+          "min": 0.24175824175824176,
+          "p10": 0.4065934065934066,
+          "median": 0.4945054945054945,
+          "p90": 0.5934065934065934,
+          "max": 0.7692307692307693,
+          "mean": 0.49562167392356443
+        },
+        "macroProfileDistance": {
+          "min": 0.020833333333333332,
+          "p10": 0.08333333333333333,
+          "median": 0.11805555555555555,
+          "p90": 0.14583333333333334,
+          "max": 0.20833333333333334,
+          "mean": 0.1167327262403912
+        },
+        "routeBranches": {
+          "min": 1,
+          "p10": 1,
+          "median": 3,
+          "p90": 6,
+          "max": 8,
+          "mean": 3.3125
+        },
+        "lateralLinks": {
+          "min": 0,
+          "p10": 1,
+          "median": 2,
+          "p90": 4,
+          "max": 5,
+          "mean": 2.45
+        },
+        "narrowRegions": {
+          "min": 0,
+          "p10": 0,
+          "median": 4,
+          "p90": 7,
+          "max": 10,
+          "mean": 4.0625
+        },
+        "criticalCuts": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "shortestContactSteps": {
+          "min": 12,
+          "p10": 12,
+          "median": 12,
+          "p90": 12,
+          "max": 13,
+          "mean": 12.00625
+        },
+        "shortestContactCost": {
+          "min": 12,
+          "p10": 12,
+          "median": 12,
+          "p90": 14,
+          "max": 17,
+          "mean": 12.70625
+        },
+        "alternativePaths": {
+          "min": 2,
+          "p10": 3,
+          "median": 4,
+          "p90": 6,
+          "max": 7,
+          "mean": 4.1
+        },
+        "meanLOS": {
+          "min": 1.9327746442797418,
+          "p10": 2.2244377184987427,
+          "median": 2.727262115722982,
+          "p90": 3.3190502820235,
+          "max": 3.9361777089833017,
+          "mean": 2.7724435020759266
+        },
+        "coverFraction": {
+          "min": 0.01098901098901099,
+          "p10": 0.03296703296703297,
+          "median": 0.07692307692307693,
+          "p90": 0.13186813186813187,
+          "max": 0.18681318681318682,
+          "mean": 0.08303571428571413
+        },
+        "terrainComponents": {
+          "open": {
+            "min": 1,
+            "p10": 1,
+            "median": 3,
+            "p90": 6,
+            "max": 10,
+            "mean": 3.46875
+          },
+          "cover": {
+            "min": 1,
+            "p10": 2,
+            "median": 4,
+            "p90": 7,
+            "max": 9,
+            "mean": 4.2125
+          },
+          "wall": {
+            "min": 0,
+            "p10": 1,
+            "median": 3,
+            "p90": 5,
+            "max": 7,
+            "mean": 3.00625
+          },
+          "rough": {
+            "min": 1,
+            "p10": 3,
+            "median": 6,
+            "p90": 9,
+            "max": 11,
+            "mean": 5.76875
+          },
+          "forest": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          },
+          "hill": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          }
+        },
+        "coverCentroid": {
+          "x": {
+            "min": 0,
+            "p10": 0.25,
+            "median": 0.5,
+            "p90": 0.7272727272727272,
+            "max": 0.9166666666666667,
+            "mean": 0.4918578136018394
+          },
+          "y": {
+            "min": 0.16666666666666666,
+            "p10": 0.3333333333333333,
+            "median": 0.5166666666666667,
+            "p90": 0.6666666666666666,
+            "max": 0.9333333333333332,
+            "mean": 0.5103461043569044
+          }
+        },
+        "terrainCentroid": {
+          "x": {
+            "min": 0.16666666666666666,
+            "p10": 0.3666666666666666,
+            "median": 0.4961240310077518,
+            "p90": 0.6333333333333333,
+            "max": 0.7916666666666666,
+            "mean": 0.49551717157032743
+          },
+          "y": {
+            "min": 0.3151041666666667,
+            "p10": 0.42592592592592593,
+            "median": 0.5294117647058825,
+            "p90": 0.6021505376344083,
+            "max": 0.6987179487179489,
+            "mean": 0.5220810803859722
+          }
+        },
+        "objectiveDistance": {
+          "ally": {
+            "min": 6,
+            "p10": 6,
+            "median": 7,
+            "p90": 9,
+            "max": 12,
+            "mean": 7.2875
+          },
+          "enemy": {
+            "min": 6,
+            "p10": 6,
+            "median": 7,
+            "p90": 9,
+            "max": 10,
+            "mean": 7.1125
+          }
+        },
+        "landmarkDistance": {
+          "ally": {
+            "min": null,
+            "p10": null,
+            "median": null,
+            "p90": null,
+            "max": null,
+            "mean": null
+          },
+          "enemy": {
+            "min": null,
+            "p10": null,
+            "median": null,
+            "p90": null,
+            "max": null,
+            "mean": null
+          }
+        },
+        "landmarks": {
+          "none": 160,
+          "minor": 0,
+          "major": 0
+        },
+        "topologyCounts": {
+          "spine_branches": 0,
+          "y_fork": 0,
+          "braid": 0,
+          "flank": 0,
+          "ring": 0,
+          "parallel": 0,
+          "alleys": 0,
+          "crosslinks": 0,
+          "courtyards": 0
+        }
+      }
+    },
+    "siege": {
+      "current": {
+        "count": 160,
+        "distinctTileArrays": 160,
+        "distinctStructuralSignatures": 160,
+        "tileSimilarity": {
+          "min": 0.25274725274725274,
+          "p10": 0.37362637362637363,
+          "median": 0.45054945054945056,
+          "p90": 0.5384615384615384,
+          "max": 0.7582417582417582,
+          "mean": 0.45269541778976036
+        },
+        "macroProfileDistance": {
+          "min": 0.027777777777777776,
+          "p10": 0.09722222222222222,
+          "median": 0.125,
+          "p90": 0.1597222222222222,
+          "max": 0.2152777777777778,
+          "mean": 0.12645713225017494
+        },
+        "routeBranches": {
+          "min": 1,
+          "p10": 1,
+          "median": 2,
+          "p90": 6,
+          "max": 6,
+          "mean": 2.9875
+        },
+        "lateralLinks": {
+          "min": 0,
+          "p10": 1,
+          "median": 2,
+          "p90": 3,
+          "max": 3,
+          "mean": 2.03125
+        },
+        "narrowRegions": {
+          "min": 0,
+          "p10": 2,
+          "median": 6,
+          "p90": 10,
+          "max": 15,
+          "mean": 6.0625
+        },
+        "criticalCuts": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "shortestContactSteps": {
+          "min": 12,
+          "p10": 12,
+          "median": 12,
+          "p90": 12,
+          "max": 14,
+          "mean": 12.05
+        },
+        "shortestContactCost": {
+          "min": 12,
+          "p10": 12,
+          "median": 12,
+          "p90": 14,
+          "max": 16,
+          "mean": 12.5625
+        },
+        "alternativePaths": {
+          "min": 2,
+          "p10": 2,
+          "median": 3,
+          "p90": 4,
+          "max": 6,
+          "mean": 3.00625
+        },
+        "meanLOS": {
+          "min": 1.5306188169885258,
+          "p10": 1.9433626490646916,
+          "median": 2.368219718672095,
+          "p90": 2.891708257621311,
+          "max": 3.413415047633035,
+          "mean": 2.415748622646528
+        },
+        "coverFraction": {
+          "min": 0.06593406593406594,
+          "p10": 0.12087912087912088,
+          "median": 0.1978021978021978,
+          "p90": 0.27472527472527475,
+          "max": 0.3626373626373626,
+          "mean": 0.19581043956043911
+        },
+        "terrainComponents": {
+          "open": {
+            "min": 1,
+            "p10": 2,
+            "median": 4,
+            "p90": 7,
+            "max": 10,
+            "mean": 4.14375
+          },
+          "cover": {
+            "min": 2,
+            "p10": 5,
+            "median": 8,
+            "p90": 10,
+            "max": 14,
+            "mean": 7.6625
+          },
+          "wall": {
+            "min": 1,
+            "p10": 2,
+            "median": 4,
+            "p90": 6,
+            "max": 9,
+            "mean": 3.76875
+          },
+          "rough": {
+            "min": 2,
+            "p10": 4,
+            "median": 6,
+            "p90": 9,
+            "max": 11,
+            "mean": 6.20625
+          },
+          "forest": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          },
+          "hill": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          }
+        },
+        "coverCentroid": {
+          "x": {
+            "min": 0.027777777777777776,
+            "p10": 0.2666666666666667,
+            "median": 0.4696969696969697,
+            "p90": 0.6975308641975309,
+            "max": 0.8333333333333333,
+            "mean": 0.4848520377059966
+          },
+          "y": {
+            "min": 0.3106060606060606,
+            "p10": 0.38492063492063494,
+            "median": 0.47368421052631576,
+            "p90": 0.5476190476190477,
+            "max": 0.675925925925926,
+            "mean": 0.47231993372258413
+          }
+        },
+        "terrainCentroid": {
+          "x": {
+            "min": 0.2903225806451613,
+            "p10": 0.3709677419354839,
+            "median": 0.4791666666666667,
+            "p90": 0.6025641025641024,
+            "max": 0.7323232323232323,
+            "mean": 0.4874896724792587
+          },
+          "y": {
+            "min": 0.34635416666666663,
+            "p10": 0.4212962962962964,
+            "median": 0.48833333333333334,
+            "p90": 0.5392156862745098,
+            "max": 0.6166666666666668,
+            "mean": 0.48505893992003346
+          }
+        },
+        "objectiveDistance": {
+          "ally": {
+            "min": 11,
+            "p10": 11,
+            "median": 13,
+            "p90": 16,
+            "max": 18,
+            "mean": 12.99375
+          },
+          "enemy": {
+            "min": 1,
+            "p10": 1,
+            "median": 1,
+            "p90": 1,
+            "max": 1,
+            "mean": 1
+          }
+        },
+        "landmarkDistance": {
+          "ally": {
+            "min": 1,
+            "p10": 1,
+            "median": 5,
+            "p90": 11,
+            "max": 14,
+            "mean": 5.9
+          },
+          "enemy": {
+            "min": 1,
+            "p10": 1,
+            "median": 5,
+            "p90": 11,
+            "max": 15,
+            "mean": 5.555555555555555
+          }
+        },
+        "landmarks": {
+          "none": 70,
+          "minor": 70,
+          "major": 20
+        },
+        "topologyCounts": {
+          "spine_branches": 14,
+          "y_fork": 18,
+          "braid": 17,
+          "flank": 17,
+          "ring": 31,
+          "parallel": 15,
+          "alleys": 6,
+          "crosslinks": 25,
+          "courtyards": 17
+        }
+      },
+      "baseline": {
+        "count": 160,
+        "distinctTileArrays": 160,
+        "distinctStructuralSignatures": 160,
+        "tileSimilarity": {
+          "min": 0.24175824175824176,
+          "p10": 0.3956043956043956,
+          "median": 0.4835164835164835,
+          "p90": 0.5714285714285714,
+          "max": 0.8241758241758241,
+          "mean": 0.4834663763909076
+        },
+        "macroProfileDistance": {
+          "min": 0.027777777777777776,
+          "p10": 0.09027777777777778,
+          "median": 0.11805555555555555,
+          "p90": 0.1527777777777778,
+          "max": 0.2222222222222222,
+          "mean": 0.120031337351502
+        },
+        "routeBranches": {
+          "min": 1,
+          "p10": 2,
+          "median": 3,
+          "p90": 6,
+          "max": 8,
+          "mean": 3.3875
+        },
+        "lateralLinks": {
+          "min": 0,
+          "p10": 1,
+          "median": 2,
+          "p90": 3,
+          "max": 4,
+          "mean": 2.2375
+        },
+        "narrowRegions": {
+          "min": 1,
+          "p10": 4,
+          "median": 7,
+          "p90": 11,
+          "max": 14,
+          "mean": 7.225
+        },
+        "criticalCuts": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "shortestContactSteps": {
+          "min": 12,
+          "p10": 12,
+          "median": 12,
+          "p90": 12,
+          "max": 13,
+          "mean": 12.06875
+        },
+        "shortestContactCost": {
+          "min": 12,
+          "p10": 12,
+          "median": 13,
+          "p90": 15,
+          "max": 19,
+          "mean": 13.275
+        },
+        "alternativePaths": {
+          "min": 2,
+          "p10": 2,
+          "median": 2,
+          "p90": 4,
+          "max": 5,
+          "mean": 2.61875
+        },
+        "meanLOS": {
+          "min": 1.4770254924610848,
+          "p10": 1.8624502157876508,
+          "median": 2.2306481916741125,
+          "p90": 2.6536942128273933,
+          "max": 3.209146044804709,
+          "mean": 2.242179016080627
+        },
+        "coverFraction": {
+          "min": 0.01098901098901099,
+          "p10": 0.04395604395604396,
+          "median": 0.08791208791208792,
+          "p90": 0.14285714285714285,
+          "max": 0.18681318681318682,
+          "mean": 0.09189560439560421
+        },
+        "terrainComponents": {
+          "open": {
+            "min": 1,
+            "p10": 1,
+            "median": 4,
+            "p90": 7,
+            "max": 11,
+            "mean": 4.13125
+          },
+          "cover": {
+            "min": 1,
+            "p10": 3,
+            "median": 5,
+            "p90": 8,
+            "max": 11,
+            "mean": 5.09375
+          },
+          "wall": {
+            "min": 1,
+            "p10": 3,
+            "median": 4,
+            "p90": 6,
+            "max": 8,
+            "mean": 4.40625
+          },
+          "rough": {
+            "min": 1,
+            "p10": 4,
+            "median": 6,
+            "p90": 8,
+            "max": 10,
+            "mean": 5.98125
+          },
+          "forest": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          },
+          "hill": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          }
+        },
+        "coverCentroid": {
+          "x": {
+            "min": 0,
+            "p10": 0.29166666666666663,
+            "median": 0.49999999999999994,
+            "p90": 0.6666666666666666,
+            "max": 0.888888888888889,
+            "mean": 0.48235723129335273
+          },
+          "y": {
+            "min": 0.16666666666666666,
+            "p10": 0.3181818181818181,
+            "median": 0.4629629629629629,
+            "p90": 0.5972222222222222,
+            "max": 0.7833333333333333,
+            "mean": 0.45521145550902026
+          }
+        },
+        "terrainCentroid": {
+          "x": {
+            "min": 0.19444444444444445,
+            "p10": 0.3550724637681159,
+            "median": 0.4965277777777777,
+            "p90": 0.6055555555555554,
+            "max": 0.7252252252252251,
+            "mean": 0.4916922024855114
+          },
+          "y": {
+            "min": 0.3148148148148148,
+            "p10": 0.42013888888888884,
+            "median": 0.5,
+            "p90": 0.5679012345679012,
+            "max": 0.6496212121212122,
+            "mean": 0.4954309784921992
+          }
+        },
+        "objectiveDistance": {
+          "ally": {
+            "min": 11,
+            "p10": 12,
+            "median": 13,
+            "p90": 16,
+            "max": 18,
+            "mean": 13.61875
+          },
+          "enemy": {
+            "min": 1,
+            "p10": 1,
+            "median": 1,
+            "p90": 1,
+            "max": 1,
+            "mean": 1
+          }
+        },
+        "landmarkDistance": {
+          "ally": {
+            "min": null,
+            "p10": null,
+            "median": null,
+            "p90": null,
+            "max": null,
+            "mean": null
+          },
+          "enemy": {
+            "min": null,
+            "p10": null,
+            "median": null,
+            "p90": null,
+            "max": null,
+            "mean": null
+          }
+        },
+        "landmarks": {
+          "none": 160,
+          "minor": 0,
+          "major": 0
+        },
+        "topologyCounts": {
+          "spine_branches": 0,
+          "y_fork": 0,
+          "braid": 0,
+          "flank": 0,
+          "ring": 0,
+          "parallel": 0,
+          "alleys": 0,
+          "crosslinks": 0,
+          "courtyards": 0
+        }
+      }
+    },
+    "indoor": {
+      "current": {
+        "count": 160,
+        "distinctTileArrays": 160,
+        "distinctStructuralSignatures": 160,
+        "tileSimilarity": {
+          "min": 0.2857142857142857,
+          "p10": 0.45714285714285713,
+          "median": 0.5428571428571428,
+          "p90": 0.6571428571428571,
+          "max": 0.9142857142857143,
+          "mean": 0.5570148247978529
+        },
+        "macroProfileDistance": {
+          "min": 0.013888888888888888,
+          "p10": 0.0763888888888889,
+          "median": 0.11805555555555555,
+          "p90": 0.1597222222222222,
+          "max": 0.22916666666666666,
+          "mean": 0.11692872117400381
+        },
+        "routeBranches": {
+          "min": 1,
+          "p10": 1,
+          "median": 1,
+          "p90": 2,
+          "max": 4,
+          "mean": 1.50625
+        },
+        "lateralLinks": {
+          "min": 0,
+          "p10": 1,
+          "median": 1,
+          "p90": 2,
+          "max": 2,
+          "mean": 1.34375
+        },
+        "narrowRegions": {
+          "min": 0,
+          "p10": 0,
+          "median": 1,
+          "p90": 3,
+          "max": 5,
+          "mean": 1.2375
+        },
+        "criticalCuts": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "shortestContactSteps": {
+          "min": 6,
+          "p10": 6,
+          "median": 6,
+          "p90": 6,
+          "max": 6,
+          "mean": 6
+        },
+        "shortestContactCost": {
+          "min": 6,
+          "p10": 6,
+          "median": 6,
+          "p90": 6,
+          "max": 8,
+          "mean": 6.10625
+        },
+        "alternativePaths": {
+          "min": 2,
+          "p10": 3,
+          "median": 4,
+          "p90": 5,
+          "max": 5,
+          "mean": 4.0375
+        },
+        "meanLOS": {
+          "min": 1.2662273653937086,
+          "p10": 1.6297340278865757,
+          "median": 1.9655048372433939,
+          "p90": 2.260152544552213,
+          "max": 2.260152544552213,
+          "mean": 1.9521356470057942
+        },
+        "coverFraction": {
+          "min": 0.02857142857142857,
+          "p10": 0.11428571428571428,
+          "median": 0.22857142857142856,
+          "p90": 0.34285714285714286,
+          "max": 0.42857142857142855,
+          "mean": 0.23124999999999965
+        },
+        "terrainComponents": {
+          "open": {
+            "min": 1,
+            "p10": 1,
+            "median": 2,
+            "p90": 4,
+            "max": 6,
+            "mean": 2.43125
+          },
+          "cover": {
+            "min": 1,
+            "p10": 1,
+            "median": 3,
+            "p90": 4,
+            "max": 7,
+            "mean": 2.98125
+          },
+          "wall": {
+            "min": 0,
+            "p10": 0,
+            "median": 1,
+            "p90": 2,
+            "max": 4,
+            "mean": 1.0875
+          },
+          "rough": {
+            "min": 0,
+            "p10": 1,
+            "median": 2,
+            "p90": 4,
+            "max": 6,
+            "mean": 2.34375
+          },
+          "forest": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          },
+          "hill": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          }
+        },
+        "coverCentroid": {
+          "x": {
+            "min": 0,
+            "p10": 0.225,
+            "median": 0.5,
+            "p90": 0.75,
+            "max": 1,
+            "mean": 0.4902417114135864
+          },
+          "y": {
+            "min": 0.27777777777777773,
+            "p10": 0.3958333333333333,
+            "median": 0.49999999999999994,
+            "p90": 0.5714285714285714,
+            "max": 0.75,
+            "mean": 0.49124235717985726
+          }
+        },
+        "terrainCentroid": {
+          "x": {
+            "min": 0.125,
+            "p10": 0.2777777777777778,
+            "median": 0.48214285714285715,
+            "p90": 0.65625,
+            "max": 0.9285714285714286,
+            "mean": 0.48416459902648973
+          },
+          "y": {
+            "min": 0.2708333333333333,
+            "p10": 0.4250000000000001,
+            "median": 0.49999999999999994,
+            "p90": 0.5784313725490196,
+            "max": 0.6666666666666666,
+            "mean": 0.501124806579407
+          }
+        },
+        "objectiveDistance": {
+          "ally": {
+            "min": 3,
+            "p10": 3,
+            "median": 3,
+            "p90": 4,
+            "max": 4,
+            "mean": 3.18125
+          },
+          "enemy": {
+            "min": 3,
+            "p10": 3,
+            "median": 3,
+            "p90": 4,
+            "max": 5,
+            "mean": 3.15
+          }
+        },
+        "landmarkDistance": {
+          "ally": {
+            "min": 1,
+            "p10": 1,
+            "median": 2,
+            "p90": 4,
+            "max": 6,
+            "mean": 2.3777777777777778
+          },
+          "enemy": {
+            "min": 1,
+            "p10": 1,
+            "median": 2,
+            "p90": 4,
+            "max": 5,
+            "mean": 2.2
+          }
+        },
+        "landmarks": {
+          "none": 70,
+          "minor": 70,
+          "major": 20
+        },
+        "topologyCounts": {
+          "spine_branches": 14,
+          "y_fork": 18,
+          "braid": 17,
+          "flank": 17,
+          "ring": 31,
+          "parallel": 15,
+          "alleys": 6,
+          "crosslinks": 25,
+          "courtyards": 17
+        }
+      },
+      "baseline": {
+        "count": 160,
+        "distinctTileArrays": 160,
+        "distinctStructuralSignatures": 160,
+        "tileSimilarity": {
+          "min": 0.2857142857142857,
+          "p10": 0.45714285714285713,
+          "median": 0.5714285714285714,
+          "p90": 0.6857142857142857,
+          "max": 0.9142857142857143,
+          "mean": 0.5656199460916577
+        },
+        "macroProfileDistance": {
+          "min": 0.020833333333333332,
+          "p10": 0.0763888888888889,
+          "median": 0.11805555555555555,
+          "p90": 0.1527777777777778,
+          "max": 0.25,
+          "mean": 0.11654492051013308
+        },
+        "routeBranches": {
+          "min": 1,
+          "p10": 1,
+          "median": 1,
+          "p90": 2,
+          "max": 4,
+          "mean": 1.5625
+        },
+        "lateralLinks": {
+          "min": 0,
+          "p10": 1,
+          "median": 1,
+          "p90": 2,
+          "max": 3,
+          "mean": 1.44375
+        },
+        "narrowRegions": {
+          "min": 0,
+          "p10": 0,
+          "median": 2,
+          "p90": 3,
+          "max": 6,
+          "mean": 1.68125
+        },
+        "criticalCuts": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "shortestContactSteps": {
+          "min": 6,
+          "p10": 6,
+          "median": 6,
+          "p90": 6,
+          "max": 7,
+          "mean": 6.00625
+        },
+        "shortestContactCost": {
+          "min": 6,
+          "p10": 6,
+          "median": 6,
+          "p90": 7,
+          "max": 8,
+          "mean": 6.19375
+        },
+        "alternativePaths": {
+          "min": 2,
+          "p10": 3,
+          "median": 4,
+          "p90": 5,
+          "max": 5,
+          "mean": 3.64375
+        },
+        "meanLOS": {
+          "min": 0.8639069261689353,
+          "p10": 1.4125349107463776,
+          "median": 1.8321067811865488,
+          "p90": 2.260152544552213,
+          "max": 2.260152544552213,
+          "mean": 1.8238367190489064
+        },
+        "coverFraction": {
+          "min": 0,
+          "p10": 0,
+          "median": 0.08571428571428572,
+          "p90": 0.14285714285714285,
+          "max": 0.22857142857142856,
+          "mean": 0.07642857142857126
+        },
+        "terrainComponents": {
+          "open": {
+            "min": 1,
+            "p10": 1,
+            "median": 2,
+            "p90": 4,
+            "max": 6,
+            "mean": 2.3125
+          },
+          "cover": {
+            "min": 0,
+            "p10": 0,
+            "median": 2,
+            "p90": 3,
+            "max": 5,
+            "mean": 1.775
+          },
+          "wall": {
+            "min": 0,
+            "p10": 0,
+            "median": 1,
+            "p90": 2,
+            "max": 5,
+            "mean": 1.31875
+          },
+          "rough": {
+            "min": 0,
+            "p10": 1,
+            "median": 3,
+            "p90": 5,
+            "max": 6,
+            "mean": 2.9
+          },
+          "forest": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          },
+          "hill": {
+            "min": 0,
+            "p10": 0,
+            "median": 0,
+            "p90": 0,
+            "max": 0,
+            "mean": 0
+          }
+        },
+        "coverCentroid": {
+          "x": {
+            "min": 0,
+            "p10": 0.1875,
+            "median": 0.5,
+            "p90": 0.875,
+            "max": 1,
+            "mean": 0.5337549603174603
+          },
+          "y": {
+            "min": 0.16666666666666666,
+            "p10": 0.29166666666666663,
+            "median": 0.5,
+            "p90": 0.7777777777777778,
+            "max": 0.8333333333333334,
+            "mean": 0.5154885912698413
+          }
+        },
+        "terrainCentroid": {
+          "x": {
+            "min": 0.125,
+            "p10": 0.3055555555555556,
+            "median": 0.5147058823529411,
+            "p90": 0.7222222222222222,
+            "max": 0.9583333333333334,
+            "mean": 0.5092974608354106
+          },
+          "y": {
+            "min": 0.27777777777777773,
+            "p10": 0.38888888888888884,
+            "median": 0.5277777777777778,
+            "p90": 0.6363636363636362,
+            "max": 0.7962962962962963,
+            "mean": 0.5236017600864978
+          }
+        },
+        "objectiveDistance": {
+          "ally": {
+            "min": 3,
+            "p10": 3,
+            "median": 3,
+            "p90": 4,
+            "max": 7,
+            "mean": 3.3875
+          },
+          "enemy": {
+            "min": 3,
+            "p10": 3,
+            "median": 3,
+            "p90": 4,
+            "max": 10,
+            "mean": 3.38125
+          }
+        },
+        "landmarkDistance": {
+          "ally": {
+            "min": null,
+            "p10": null,
+            "median": null,
+            "p90": null,
+            "max": null,
+            "mean": null
+          },
+          "enemy": {
+            "min": null,
+            "p10": null,
+            "median": null,
+            "p90": null,
+            "max": null,
+            "mean": null
+          }
+        },
+        "landmarks": {
+          "none": 160,
+          "minor": 0,
+          "major": 0
+        },
+        "topologyCounts": {
+          "spine_branches": 0,
+          "y_fork": 0,
+          "braid": 0,
+          "flank": 0,
+          "ring": 0,
+          "parallel": 0,
+          "alleys": 0,
+          "crosslinks": 0,
+          "courtyards": 0
+        }
+      }
+    }
+  },
+  "topologyAblation": {
+    "spine_branches": {
+      "count": 40,
+      "distinctTileArrays": 40,
+      "distinctStructuralSignatures": 40,
+      "tileSimilarity": {
+        "min": 0.2967032967032967,
+        "p10": 0.3956043956043956,
+        "median": 0.4725274725274725,
+        "p90": 0.5494505494505495,
+        "max": 0.6813186813186813,
+        "mean": 0.47268244575936935
+      },
+      "macroProfileDistance": {
+        "min": 0.04861111111111111,
+        "p10": 0.08333333333333333,
+        "median": 0.1111111111111111,
+        "p90": 0.14583333333333334,
+        "max": 0.1875,
+        "mean": 0.11395121082621086
+      },
+      "routeBranches": {
+        "min": 3,
+        "p10": 3,
+        "median": 3,
+        "p90": 3,
+        "max": 3,
+        "mean": 3
+      },
+      "lateralLinks": {
+        "min": 2,
+        "p10": 2,
+        "median": 2,
+        "p90": 3,
+        "max": 3,
+        "mean": 2.325
+      },
+      "narrowRegions": {
+        "min": 4,
+        "p10": 4,
+        "median": 7,
+        "p90": 10,
+        "max": 12,
+        "mean": 7.2
+      },
+      "criticalCuts": {
+        "min": 0,
+        "p10": 0,
+        "median": 0,
+        "p90": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "shortestContactSteps": {
+        "min": 12,
+        "p10": 12,
+        "median": 12,
+        "p90": 12,
+        "max": 12,
+        "mean": 12
+      },
+      "shortestContactCost": {
+        "min": 12,
+        "p10": 12,
+        "median": 12,
+        "p90": 12,
+        "max": 12,
+        "mean": 12
+      },
+      "alternativePaths": {
+        "min": 2,
+        "p10": 2,
+        "median": 3,
+        "p90": 3,
+        "max": 4,
+        "mean": 2.65
+      },
+      "meanLOS": {
+        "min": 1.9249684335382327,
+        "p10": 2.009461704848843,
+        "median": 2.190501442127224,
+        "p90": 2.559591763732887,
+        "max": 2.7362080879592843,
+        "mean": 2.280331774618147
+      },
+      "coverFraction": {
+        "min": 0.10989010989010989,
+        "p10": 0.15384615384615385,
+        "median": 0.1978021978021978,
+        "p90": 0.23076923076923078,
+        "max": 0.25274725274725274,
+        "mean": 0.19752747252747263
+      },
+      "terrainComponents": {
+        "open": {
+          "min": 1,
+          "p10": 3,
+          "median": 4,
+          "p90": 7,
+          "max": 9,
+          "mean": 4.625
+        },
+        "cover": {
+          "min": 5,
+          "p10": 6,
+          "median": 8,
+          "p90": 11,
+          "max": 13,
+          "mean": 8.075
+        },
+        "wall": {
+          "min": 3,
+          "p10": 3,
+          "median": 4,
+          "p90": 6,
+          "max": 8,
+          "mean": 4.6
+        },
+        "rough": {
+          "min": 3,
+          "p10": 4,
+          "median": 7,
+          "p90": 9,
+          "max": 11,
+          "mean": 6.7
+        },
+        "forest": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "hill": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        }
+      },
+      "coverCentroid": {
+        "x": {
+          "min": 0.3235294117647059,
+          "p10": 0.35,
+          "median": 0.5196078431372549,
+          "p90": 0.5784313725490196,
+          "max": 0.6078431372549019,
+          "mean": 0.5007225687324371
+        },
+        "y": {
+          "min": 0.4166666666666667,
+          "p10": 0.43750000000000006,
+          "median": 0.515625,
+          "p90": 0.5972222222222222,
+          "max": 0.6507936507936508,
+          "mean": 0.5207576350611668
+        }
+      },
+      "terrainCentroid": {
+        "x": {
+          "min": 0.43023255813953487,
+          "p10": 0.462962962962963,
+          "median": 0.5175438596491228,
+          "p90": 0.5629629629629627,
+          "max": 0.6538461538461537,
+          "mean": 0.5158049467230084
+        },
+        "y": {
+          "min": 0.43452380952380953,
+          "p10": 0.4704861111111111,
+          "median": 0.5187074829931974,
+          "p90": 0.5658914728682171,
+          "max": 0.621951219512195,
+          "mean": 0.5254797145962499
+        }
+      },
+      "objectiveDistance": {
+        "ally": {
+          "min": 6,
+          "p10": 6,
+          "median": 7,
+          "p90": 7,
+          "max": 7,
+          "mean": 6.65
+        },
+        "enemy": {
+          "min": 6,
+          "p10": 6,
+          "median": 7,
+          "p90": 7,
+          "max": 7,
+          "mean": 6.525
+        }
+      },
+      "landmarkDistance": {
+        "ally": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        },
+        "enemy": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        }
+      },
+      "landmarks": {
+        "none": 40,
+        "minor": 0,
+        "major": 0
+      },
+      "topologyCounts": {
+        "spine_branches": 40,
+        "y_fork": 0,
+        "braid": 0,
+        "flank": 0,
+        "ring": 0,
+        "parallel": 0,
+        "alleys": 0,
+        "crosslinks": 0,
+        "courtyards": 0
+      }
+    },
+    "y_fork": {
+      "count": 40,
+      "distinctTileArrays": 40,
+      "distinctStructuralSignatures": 40,
+      "tileSimilarity": {
+        "min": 0.3076923076923077,
+        "p10": 0.3956043956043956,
+        "median": 0.46153846153846156,
+        "p90": 0.5494505494505495,
+        "max": 0.6483516483516484,
+        "mean": 0.4670329670329673
+      },
+      "macroProfileDistance": {
+        "min": 0.04861111111111111,
+        "p10": 0.09027777777777778,
+        "median": 0.1111111111111111,
+        "p90": 0.14583333333333334,
+        "max": 0.19444444444444445,
+        "mean": 0.11519764957264972
+      },
+      "routeBranches": {
+        "min": 1,
+        "p10": 1,
+        "median": 1,
+        "p90": 1,
+        "max": 1,
+        "mean": 1
+      },
+      "lateralLinks": {
+        "min": 1,
+        "p10": 1,
+        "median": 1,
+        "p90": 1,
+        "max": 2,
+        "mean": 1.05
+      },
+      "narrowRegions": {
+        "min": 5,
+        "p10": 6,
+        "median": 8,
+        "p90": 12,
+        "max": 13,
+        "mean": 8.575
+      },
+      "criticalCuts": {
+        "min": 0,
+        "p10": 0,
+        "median": 0,
+        "p90": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "shortestContactSteps": {
+        "min": 12,
+        "p10": 12,
+        "median": 12,
+        "p90": 13,
+        "max": 14,
+        "mean": 12.3
+      },
+      "shortestContactCost": {
+        "min": 12,
+        "p10": 12,
+        "median": 13,
+        "p90": 15,
+        "max": 16,
+        "mean": 13.15
+      },
+      "alternativePaths": {
+        "min": 2,
+        "p10": 2,
+        "median": 2,
+        "p90": 3,
+        "max": 3,
+        "mean": 2.125
+      },
+      "meanLOS": {
+        "min": 1.6306216112311815,
+        "p10": 1.7144437791414835,
+        "median": 2.0250978178391046,
+        "p90": 2.3283925919503345,
+        "max": 2.550742877225517,
+        "mean": 2.0366817361811482
+      },
+      "coverFraction": {
+        "min": 0.07692307692307693,
+        "p10": 0.08791208791208792,
+        "median": 0.12087912087912088,
+        "p90": 0.15384615384615385,
+        "max": 0.18681318681318682,
+        "mean": 0.12417582417582415
+      },
+      "terrainComponents": {
+        "open": {
+          "min": 1,
+          "p10": 2,
+          "median": 4,
+          "p90": 6,
+          "max": 7,
+          "mean": 3.875
+        },
+        "cover": {
+          "min": 4,
+          "p10": 5,
+          "median": 6,
+          "p90": 9,
+          "max": 10,
+          "mean": 6.575
+        },
+        "wall": {
+          "min": 3,
+          "p10": 4,
+          "median": 5,
+          "p90": 7,
+          "max": 7,
+          "mean": 5.1
+        },
+        "rough": {
+          "min": 4,
+          "p10": 5,
+          "median": 7,
+          "p90": 9,
+          "max": 10,
+          "mean": 6.8
+        },
+        "forest": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "hill": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        }
+      },
+      "coverCentroid": {
+        "x": {
+          "min": 0.15277777777777776,
+          "p10": 0.24358974358974358,
+          "median": 0.5416666666666666,
+          "p90": 0.7333333333333334,
+          "max": 0.7857142857142857,
+          "mean": 0.5012141405707584
+        },
+        "y": {
+          "min": 0.28846153846153844,
+          "p10": 0.356060606060606,
+          "median": 0.4404761904761906,
+          "p90": 0.5370370370370371,
+          "max": 0.6071428571428571,
+          "mean": 0.44742107803688685
+        }
+      },
+      "terrainCentroid": {
+        "x": {
+          "min": 0.3431372549019608,
+          "p10": 0.4,
+          "median": 0.5135135135135136,
+          "p90": 0.5900900900900902,
+          "max": 0.6268115942028987,
+          "mean": 0.5025421665041006
+        },
+        "y": {
+          "min": 0.43992248062015515,
+          "p10": 0.4517543859649123,
+          "median": 0.5094696969696969,
+          "p90": 0.5859375,
+          "max": 0.6495098039215688,
+          "mean": 0.5198951595223738
+        }
+      },
+      "objectiveDistance": {
+        "ally": {
+          "min": 6,
+          "p10": 6,
+          "median": 7,
+          "p90": 7,
+          "max": 7,
+          "mean": 6.675
+        },
+        "enemy": {
+          "min": 6,
+          "p10": 6,
+          "median": 8,
+          "p90": 9,
+          "max": 9,
+          "mean": 7.6
+        }
+      },
+      "landmarkDistance": {
+        "ally": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        },
+        "enemy": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        }
+      },
+      "landmarks": {
+        "none": 40,
+        "minor": 0,
+        "major": 0
+      },
+      "topologyCounts": {
+        "spine_branches": 0,
+        "y_fork": 40,
+        "braid": 0,
+        "flank": 0,
+        "ring": 0,
+        "parallel": 0,
+        "alleys": 0,
+        "crosslinks": 0,
+        "courtyards": 0
+      }
+    },
+    "braid": {
+      "count": 40,
+      "distinctTileArrays": 40,
+      "distinctStructuralSignatures": 40,
+      "tileSimilarity": {
+        "min": 0.26373626373626374,
+        "p10": 0.37362637362637363,
+        "median": 0.46153846153846156,
+        "p90": 0.5494505494505495,
+        "max": 0.6593406593406593,
+        "mean": 0.463088193857424
+      },
+      "macroProfileDistance": {
+        "min": 0.034722222222222224,
+        "p10": 0.08333333333333333,
+        "median": 0.1111111111111111,
+        "p90": 0.14583333333333334,
+        "max": 0.18055555555555555,
+        "mean": 0.11371972934472932
+      },
+      "routeBranches": {
+        "min": 1,
+        "p10": 1,
+        "median": 2,
+        "p90": 2,
+        "max": 2,
+        "mean": 1.85
+      },
+      "lateralLinks": {
+        "min": 1,
+        "p10": 1,
+        "median": 2,
+        "p90": 2,
+        "max": 3,
+        "mean": 1.9
+      },
+      "narrowRegions": {
+        "min": 4,
+        "p10": 4,
+        "median": 7,
+        "p90": 10,
+        "max": 12,
+        "mean": 7.425
+      },
+      "criticalCuts": {
+        "min": 0,
+        "p10": 0,
+        "median": 0,
+        "p90": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "shortestContactSteps": {
+        "min": 12,
+        "p10": 12,
+        "median": 12,
+        "p90": 13,
+        "max": 14,
+        "mean": 12.175
+      },
+      "shortestContactCost": {
+        "min": 12,
+        "p10": 12,
+        "median": 12,
+        "p90": 15,
+        "max": 15,
+        "mean": 12.85
+      },
+      "alternativePaths": {
+        "min": 2,
+        "p10": 2,
+        "median": 2,
+        "p90": 3,
+        "max": 4,
+        "mean": 2.55
+      },
+      "meanLOS": {
+        "min": 1.6477535970820782,
+        "p10": 1.786110873103337,
+        "median": 2.1914043611998153,
+        "p90": 2.4658964204894525,
+        "max": 2.822373652162162,
+        "mean": 2.1789698434326015
+      },
+      "coverFraction": {
+        "min": 0.0989010989010989,
+        "p10": 0.12087912087912088,
+        "median": 0.15384615384615385,
+        "p90": 0.1978021978021978,
+        "max": 0.21978021978021978,
+        "mean": 0.15851648351648356
+      },
+      "terrainComponents": {
+        "open": {
+          "min": 1,
+          "p10": 2,
+          "median": 4,
+          "p90": 6,
+          "max": 8,
+          "mean": 3.975
+        },
+        "cover": {
+          "min": 4,
+          "p10": 4,
+          "median": 6,
+          "p90": 8,
+          "max": 10,
+          "mean": 6.6
+        },
+        "wall": {
+          "min": 2,
+          "p10": 3,
+          "median": 5,
+          "p90": 6,
+          "max": 7,
+          "mean": 4.425
+        },
+        "rough": {
+          "min": 4,
+          "p10": 4,
+          "median": 6,
+          "p90": 8,
+          "max": 10,
+          "mean": 6.1
+        },
+        "forest": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "hill": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        }
+      },
+      "coverCentroid": {
+        "x": {
+          "min": 0.14285714285714285,
+          "p10": 0.16666666666666663,
+          "median": 0.59375,
+          "p90": 0.7543859649122807,
+          "max": 0.8030303030303029,
+          "mean": 0.4915310142070979
+        },
+        "y": {
+          "min": 0.31249999999999994,
+          "p10": 0.40476190476190477,
+          "median": 0.5,
+          "p90": 0.5879629629629628,
+          "max": 0.636904761904762,
+          "mean": 0.4943684065941225
+        }
+      },
+      "terrainCentroid": {
+        "x": {
+          "min": 0.3111111111111111,
+          "p10": 0.3536585365853659,
+          "median": 0.4999999999999999,
+          "p90": 0.6325757575757576,
+          "max": 0.6801801801801802,
+          "mean": 0.5010889965482713
+        },
+        "y": {
+          "min": 0.42792792792792805,
+          "p10": 0.4592592592592593,
+          "median": 0.5370370370370369,
+          "p90": 0.5980392156862746,
+          "max": 0.625,
+          "mean": 0.53137377400948
+        }
+      },
+      "objectiveDistance": {
+        "ally": {
+          "min": 6,
+          "p10": 6,
+          "median": 8,
+          "p90": 9,
+          "max": 10,
+          "mean": 7.8
+        },
+        "enemy": {
+          "min": 6,
+          "p10": 6,
+          "median": 7,
+          "p90": 9,
+          "max": 9,
+          "mean": 7.675
+        }
+      },
+      "landmarkDistance": {
+        "ally": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        },
+        "enemy": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        }
+      },
+      "landmarks": {
+        "none": 40,
+        "minor": 0,
+        "major": 0
+      },
+      "topologyCounts": {
+        "spine_branches": 0,
+        "y_fork": 0,
+        "braid": 40,
+        "flank": 0,
+        "ring": 0,
+        "parallel": 0,
+        "alleys": 0,
+        "crosslinks": 0,
+        "courtyards": 0
+      }
+    },
+    "flank": {
+      "count": 40,
+      "distinctTileArrays": 40,
+      "distinctStructuralSignatures": 40,
+      "tileSimilarity": {
+        "min": 0.24175824175824176,
+        "p10": 0.38461538461538464,
+        "median": 0.46153846153846156,
+        "p90": 0.5494505494505495,
+        "max": 0.6593406593406593,
+        "mean": 0.46066497604959133
+      },
+      "macroProfileDistance": {
+        "min": 0.04861111111111111,
+        "p10": 0.08333333333333333,
+        "median": 0.1111111111111111,
+        "p90": 0.14583333333333334,
+        "max": 0.18055555555555555,
+        "mean": 0.11403133903133918
+      },
+      "routeBranches": {
+        "min": 2,
+        "p10": 2,
+        "median": 2,
+        "p90": 2,
+        "max": 2,
+        "mean": 2
+      },
+      "lateralLinks": {
+        "min": 0,
+        "p10": 0,
+        "median": 2,
+        "p90": 2,
+        "max": 2,
+        "mean": 1.3
+      },
+      "narrowRegions": {
+        "min": 5,
+        "p10": 6,
+        "median": 8,
+        "p90": 10,
+        "max": 15,
+        "mean": 8.4
+      },
+      "criticalCuts": {
+        "min": 0,
+        "p10": 0,
+        "median": 0,
+        "p90": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "shortestContactSteps": {
+        "min": 12,
+        "p10": 12,
+        "median": 12,
+        "p90": 12,
+        "max": 12,
+        "mean": 12
+      },
+      "shortestContactCost": {
+        "min": 12,
+        "p10": 12,
+        "median": 12,
+        "p90": 12,
+        "max": 12,
+        "mean": 12
+      },
+      "alternativePaths": {
+        "min": 2,
+        "p10": 2,
+        "median": 2,
+        "p90": 3,
+        "max": 3,
+        "mean": 2.175
+      },
+      "meanLOS": {
+        "min": 1.7439876557788303,
+        "p10": 1.8677796732215224,
+        "median": 2.129406009753477,
+        "p90": 2.454057989366677,
+        "max": 2.5752148901518583,
+        "mean": 2.1553718759196756
+      },
+      "coverFraction": {
+        "min": 0.10989010989010989,
+        "p10": 0.10989010989010989,
+        "median": 0.15384615384615385,
+        "p90": 0.18681318681318682,
+        "max": 0.23076923076923078,
+        "mean": 0.15412087912087913
+      },
+      "terrainComponents": {
+        "open": {
+          "min": 2,
+          "p10": 3,
+          "median": 4,
+          "p90": 7,
+          "max": 9,
+          "mean": 4.4
+        },
+        "cover": {
+          "min": 3,
+          "p10": 6,
+          "median": 7,
+          "p90": 10,
+          "max": 11,
+          "mean": 7.55
+        },
+        "wall": {
+          "min": 3,
+          "p10": 3,
+          "median": 5,
+          "p90": 7,
+          "max": 7,
+          "mean": 4.95
+        },
+        "rough": {
+          "min": 3,
+          "p10": 4,
+          "median": 7,
+          "p90": 9,
+          "max": 11,
+          "mean": 6.8
+        },
+        "forest": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "hill": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        }
+      },
+      "coverCentroid": {
+        "x": {
+          "min": 0.21428571428571427,
+          "p10": 0.2708333333333333,
+          "median": 0.4861111111111111,
+          "p90": 0.6666666666666666,
+          "max": 0.7000000000000001,
+          "mean": 0.4863476348678556
+        },
+        "y": {
+          "min": 0.4,
+          "p10": 0.42187500000000006,
+          "median": 0.4871794871794872,
+          "p90": 0.5833333333333334,
+          "max": 0.6274509803921569,
+          "mean": 0.4961339900907915
+        }
+      },
+      "terrainCentroid": {
+        "x": {
+          "min": 0.41228070175438597,
+          "p10": 0.45045045045045046,
+          "median": 0.5037878787878789,
+          "p90": 0.5528455284552845,
+          "max": 0.5888888888888889,
+          "mean": 0.5047180192262932
+        },
+        "y": {
+          "min": 0.43089430894308944,
+          "p10": 0.4604166666666667,
+          "median": 0.5264227642276422,
+          "p90": 0.5686274509803921,
+          "max": 0.6306306306306307,
+          "mean": 0.5216521677274228
+        }
+      },
+      "objectiveDistance": {
+        "ally": {
+          "min": 6,
+          "p10": 6,
+          "median": 7,
+          "p90": 7,
+          "max": 7,
+          "mean": 6.675
+        },
+        "enemy": {
+          "min": 6,
+          "p10": 6,
+          "median": 7,
+          "p90": 7,
+          "max": 7,
+          "mean": 6.6
+        }
+      },
+      "landmarkDistance": {
+        "ally": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        },
+        "enemy": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        }
+      },
+      "landmarks": {
+        "none": 40,
+        "minor": 0,
+        "major": 0
+      },
+      "topologyCounts": {
+        "spine_branches": 0,
+        "y_fork": 0,
+        "braid": 0,
+        "flank": 40,
+        "ring": 0,
+        "parallel": 0,
+        "alleys": 0,
+        "crosslinks": 0,
+        "courtyards": 0
+      }
+    },
+    "ring": {
+      "count": 40,
+      "distinctTileArrays": 40,
+      "distinctStructuralSignatures": 40,
+      "tileSimilarity": {
+        "min": 0.32967032967032966,
+        "p10": 0.42857142857142855,
+        "median": 0.4945054945054945,
+        "p90": 0.5934065934065934,
+        "max": 0.7032967032967034,
+        "mean": 0.503536207382361
+      },
+      "macroProfileDistance": {
+        "min": 0.027777777777777776,
+        "p10": 0.0763888888888889,
+        "median": 0.10416666666666667,
+        "p90": 0.13194444444444445,
+        "max": 0.19444444444444445,
+        "mean": 0.103258547008547
+      },
+      "routeBranches": {
+        "min": 2,
+        "p10": 2,
+        "median": 2,
+        "p90": 2,
+        "max": 2,
+        "mean": 2
+      },
+      "lateralLinks": {
+        "min": 2,
+        "p10": 2,
+        "median": 2,
+        "p90": 2,
+        "max": 2,
+        "mean": 2
+      },
+      "narrowRegions": {
+        "min": 2,
+        "p10": 5,
+        "median": 7,
+        "p90": 10,
+        "max": 13,
+        "mean": 7.575
+      },
+      "criticalCuts": {
+        "min": 0,
+        "p10": 0,
+        "median": 0,
+        "p90": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "shortestContactSteps": {
+        "min": 12,
+        "p10": 12,
+        "median": 12,
+        "p90": 12,
+        "max": 12,
+        "mean": 12
+      },
+      "shortestContactCost": {
+        "min": 12,
+        "p10": 12,
+        "median": 12,
+        "p90": 13,
+        "max": 14,
+        "mean": 12.45
+      },
+      "alternativePaths": {
+        "min": 2,
+        "p10": 2,
+        "median": 2,
+        "p90": 3,
+        "max": 4,
+        "mean": 2.6
+      },
+      "meanLOS": {
+        "min": 1.9201794154956902,
+        "p10": 2.043750584761276,
+        "median": 2.238500524628693,
+        "p90": 2.4821847986799397,
+        "max": 2.961888381544109,
+        "mean": 2.2773491886699007
+      },
+      "coverFraction": {
+        "min": 0.16483516483516483,
+        "p10": 0.17582417582417584,
+        "median": 0.1978021978021978,
+        "p90": 0.24175824175824176,
+        "max": 0.25274725274725274,
+        "mean": 0.20219780219780228
+      },
+      "terrainComponents": {
+        "open": {
+          "min": 2,
+          "p10": 3,
+          "median": 4,
+          "p90": 7,
+          "max": 9,
+          "mean": 4.7
+        },
+        "cover": {
+          "min": 6,
+          "p10": 7,
+          "median": 9,
+          "p90": 11,
+          "max": 12,
+          "mean": 8.775
+        },
+        "wall": {
+          "min": 1,
+          "p10": 3,
+          "median": 4,
+          "p90": 6,
+          "max": 8,
+          "mean": 4.3
+        },
+        "rough": {
+          "min": 2,
+          "p10": 4,
+          "median": 6,
+          "p90": 8,
+          "max": 12,
+          "mean": 6.15
+        },
+        "forest": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "hill": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        }
+      },
+      "coverCentroid": {
+        "x": {
+          "min": 0.3157894736842105,
+          "p10": 0.34259259259259256,
+          "median": 0.5454545454545454,
+          "p90": 0.7045454545454546,
+          "max": 0.7685185185185185,
+          "mean": 0.5150576788122849
+        },
+        "y": {
+          "min": 0.40196078431372545,
+          "p10": 0.4264705882352941,
+          "median": 0.49444444444444446,
+          "p90": 0.5781249999999999,
+          "max": 0.6342592592592591,
+          "mean": 0.5014273217434814
+        }
+      },
+      "terrainCentroid": {
+        "x": {
+          "min": 0.38235294117647056,
+          "p10": 0.40079365079365087,
+          "median": 0.537878787878788,
+          "p90": 0.6126126126126127,
+          "max": 0.6428571428571429,
+          "mean": 0.5131323005788611
+        },
+        "y": {
+          "min": 0.4273504273504274,
+          "p10": 0.47794117647058826,
+          "median": 0.5157657657657658,
+          "p90": 0.5772357723577236,
+          "max": 0.625,
+          "mean": 0.5233123531562365
+        }
+      },
+      "objectiveDistance": {
+        "ally": {
+          "min": 6,
+          "p10": 6,
+          "median": 7,
+          "p90": 11,
+          "max": 14,
+          "mean": 8.15
+        },
+        "enemy": {
+          "min": 6,
+          "p10": 6,
+          "median": 7,
+          "p90": 11,
+          "max": 14,
+          "mean": 8.175
+        }
+      },
+      "landmarkDistance": {
+        "ally": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        },
+        "enemy": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        }
+      },
+      "landmarks": {
+        "none": 40,
+        "minor": 0,
+        "major": 0
+      },
+      "topologyCounts": {
+        "spine_branches": 0,
+        "y_fork": 0,
+        "braid": 0,
+        "flank": 0,
+        "ring": 40,
+        "parallel": 0,
+        "alleys": 0,
+        "crosslinks": 0,
+        "courtyards": 0
+      }
+    },
+    "parallel": {
+      "count": 40,
+      "distinctTileArrays": 40,
+      "distinctStructuralSignatures": 40,
+      "tileSimilarity": {
+        "min": 0.31868131868131866,
+        "p10": 0.4175824175824176,
+        "median": 0.4835164835164835,
+        "p90": 0.5714285714285714,
+        "max": 0.6813186813186813,
+        "mean": 0.4879543533389685
+      },
+      "macroProfileDistance": {
+        "min": 0.041666666666666664,
+        "p10": 0.0763888888888889,
+        "median": 0.10416666666666667,
+        "p90": 0.125,
+        "max": 0.1597222222222222,
+        "mean": 0.10082799145299147
+      },
+      "routeBranches": {
+        "min": 4,
+        "p10": 4,
+        "median": 4,
+        "p90": 4,
+        "max": 4,
+        "mean": 4
+      },
+      "lateralLinks": {
+        "min": 1,
+        "p10": 1,
+        "median": 1,
+        "p90": 2,
+        "max": 2,
+        "mean": 1.325
+      },
+      "narrowRegions": {
+        "min": 3,
+        "p10": 4,
+        "median": 7,
+        "p90": 11,
+        "max": 13,
+        "mean": 7.5
+      },
+      "criticalCuts": {
+        "min": 0,
+        "p10": 0,
+        "median": 0,
+        "p90": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "shortestContactSteps": {
+        "min": 12,
+        "p10": 12,
+        "median": 12,
+        "p90": 12,
+        "max": 12,
+        "mean": 12
+      },
+      "shortestContactCost": {
+        "min": 12,
+        "p10": 12,
+        "median": 12,
+        "p90": 12,
+        "max": 12,
+        "mean": 12
+      },
+      "alternativePaths": {
+        "min": 3,
+        "p10": 3,
+        "median": 3,
+        "p90": 4,
+        "max": 4,
+        "mean": 3.25
+      },
+      "meanLOS": {
+        "min": 1.9888069202457372,
+        "p10": 2.0830828114826203,
+        "median": 2.284473529039304,
+        "p90": 2.5614525029683093,
+        "max": 2.8820062267359954,
+        "mean": 2.319662067340752
+      },
+      "coverFraction": {
+        "min": 0.18681318681318682,
+        "p10": 0.2087912087912088,
+        "median": 0.23076923076923078,
+        "p90": 0.27472527472527475,
+        "max": 0.2967032967032967,
+        "mean": 0.23406593406593404
+      },
+      "terrainComponents": {
+        "open": {
+          "min": 2,
+          "p10": 2,
+          "median": 5,
+          "p90": 7,
+          "max": 9,
+          "mean": 4.925
+        },
+        "cover": {
+          "min": 6,
+          "p10": 7,
+          "median": 9,
+          "p90": 11,
+          "max": 13,
+          "mean": 9.225
+        },
+        "wall": {
+          "min": 2,
+          "p10": 3,
+          "median": 5,
+          "p90": 7,
+          "max": 7,
+          "mean": 4.65
+        },
+        "rough": {
+          "min": 3,
+          "p10": 5,
+          "median": 7,
+          "p90": 10,
+          "max": 13,
+          "mean": 7.325
+        },
+        "forest": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "hill": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        }
+      },
+      "coverCentroid": {
+        "x": {
+          "min": 0.38095238095238093,
+          "p10": 0.4206349206349206,
+          "median": 0.4912280701754385,
+          "p90": 0.5750000000000001,
+          "max": 0.6031746031746033,
+          "mean": 0.495603868038645
+        },
+        "y": {
+          "min": 0.3833333333333334,
+          "p10": 0.43478260869565216,
+          "median": 0.49666666666666665,
+          "p90": 0.5462962962962963,
+          "max": 0.6125,
+          "mean": 0.4955692458751823
+        }
+      },
+      "terrainCentroid": {
+        "x": {
+          "min": 0.4184397163120568,
+          "p10": 0.46453900709219853,
+          "median": 0.5217391304347827,
+          "p90": 0.55,
+          "max": 0.5691056910569107,
+          "mean": 0.513888474388871
+        },
+        "y": {
+          "min": 0.46557971014492766,
+          "p10": 0.4751773049645391,
+          "median": 0.5131578947368421,
+          "p90": 0.5533333333333335,
+          "max": 0.5629629629629629,
+          "mean": 0.5129109329001584
+        }
+      },
+      "objectiveDistance": {
+        "ally": {
+          "min": 6,
+          "p10": 6,
+          "median": 7,
+          "p90": 7,
+          "max": 7,
+          "mean": 6.625
+        },
+        "enemy": {
+          "min": 6,
+          "p10": 6,
+          "median": 7,
+          "p90": 7,
+          "max": 7,
+          "mean": 6.625
+        }
+      },
+      "landmarkDistance": {
+        "ally": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        },
+        "enemy": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        }
+      },
+      "landmarks": {
+        "none": 40,
+        "minor": 0,
+        "major": 0
+      },
+      "topologyCounts": {
+        "spine_branches": 0,
+        "y_fork": 0,
+        "braid": 0,
+        "flank": 0,
+        "ring": 0,
+        "parallel": 40,
+        "alleys": 0,
+        "crosslinks": 0,
+        "courtyards": 0
+      }
+    },
+    "alleys": {
+      "count": 40,
+      "distinctTileArrays": 40,
+      "distinctStructuralSignatures": 40,
+      "tileSimilarity": {
+        "min": 0.3076923076923077,
+        "p10": 0.38461538461538464,
+        "median": 0.46153846153846156,
+        "p90": 0.5494505494505495,
+        "max": 0.7032967032967034,
+        "mean": 0.4680050718512258
+      },
+      "macroProfileDistance": {
+        "min": 0.041666666666666664,
+        "p10": 0.08333333333333333,
+        "median": 0.1111111111111111,
+        "p90": 0.1388888888888889,
+        "max": 0.19444444444444445,
+        "mean": 0.10878739316239316
+      },
+      "routeBranches": {
+        "min": 3,
+        "p10": 3,
+        "median": 4,
+        "p90": 6,
+        "max": 6,
+        "mean": 4.45
+      },
+      "lateralLinks": {
+        "min": 1,
+        "p10": 2,
+        "median": 2,
+        "p90": 2,
+        "max": 3,
+        "mean": 2.05
+      },
+      "narrowRegions": {
+        "min": 3,
+        "p10": 4,
+        "median": 8,
+        "p90": 11,
+        "max": 14,
+        "mean": 7.85
+      },
+      "criticalCuts": {
+        "min": 0,
+        "p10": 0,
+        "median": 0,
+        "p90": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "shortestContactSteps": {
+        "min": 12,
+        "p10": 12,
+        "median": 12,
+        "p90": 12,
+        "max": 12,
+        "mean": 12
+      },
+      "shortestContactCost": {
+        "min": 12,
+        "p10": 12,
+        "median": 12,
+        "p90": 13,
+        "max": 15,
+        "mean": 12.4
+      },
+      "alternativePaths": {
+        "min": 2,
+        "p10": 2,
+        "median": 3,
+        "p90": 4,
+        "max": 4,
+        "mean": 2.85
+      },
+      "meanLOS": {
+        "min": 1.8949561156587365,
+        "p10": 1.9408887695377284,
+        "median": 2.206792702863463,
+        "p90": 2.5309646980902607,
+        "max": 2.942266464518976,
+        "mean": 2.2446458526880653
+      },
+      "coverFraction": {
+        "min": 0.13186813186813187,
+        "p10": 0.15384615384615385,
+        "median": 0.1978021978021978,
+        "p90": 0.23076923076923078,
+        "max": 0.26373626373626374,
+        "mean": 0.19615384615384626
+      },
+      "terrainComponents": {
+        "open": {
+          "min": 1,
+          "p10": 2,
+          "median": 4,
+          "p90": 6,
+          "max": 8,
+          "mean": 4.1
+        },
+        "cover": {
+          "min": 6,
+          "p10": 6,
+          "median": 9,
+          "p90": 12,
+          "max": 13,
+          "mean": 9.125
+        },
+        "wall": {
+          "min": 2,
+          "p10": 3,
+          "median": 4,
+          "p90": 6,
+          "max": 7,
+          "mean": 4.7
+        },
+        "rough": {
+          "min": 2,
+          "p10": 4,
+          "median": 6,
+          "p90": 8,
+          "max": 10,
+          "mean": 6.125
+        },
+        "forest": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "hill": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        }
+      },
+      "coverCentroid": {
+        "x": {
+          "min": 0.1794871794871795,
+          "p10": 0.29411764705882354,
+          "median": 0.5333333333333333,
+          "p90": 0.6666666666666665,
+          "max": 0.777777777777778,
+          "mean": 0.492461647195061
+        },
+        "y": {
+          "min": 0.38333333333333336,
+          "p10": 0.46491228070175444,
+          "median": 0.5219298245614035,
+          "p90": 0.587962962962963,
+          "max": 0.6468253968253966,
+          "mean": 0.5247464856760878
+        }
+      },
+      "terrainCentroid": {
+        "x": {
+          "min": 0.3531746031746031,
+          "p10": 0.375,
+          "median": 0.5121951219512195,
+          "p90": 0.6190476190476191,
+          "max": 0.6435185185185187,
+          "mean": 0.5086328964022069
+        },
+        "y": {
+          "min": 0.4055555555555556,
+          "p10": 0.4774774774774775,
+          "median": 0.5329457364341085,
+          "p90": 0.58125,
+          "max": 0.6041666666666666,
+          "mean": 0.5272994455510204
+        }
+      },
+      "objectiveDistance": {
+        "ally": {
+          "min": 6,
+          "p10": 6,
+          "median": 7,
+          "p90": 8,
+          "max": 8,
+          "mean": 6.8
+        },
+        "enemy": {
+          "min": 6,
+          "p10": 6,
+          "median": 8,
+          "p90": 9,
+          "max": 9,
+          "mean": 7.85
+        }
+      },
+      "landmarkDistance": {
+        "ally": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        },
+        "enemy": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        }
+      },
+      "landmarks": {
+        "none": 40,
+        "minor": 0,
+        "major": 0
+      },
+      "topologyCounts": {
+        "spine_branches": 0,
+        "y_fork": 0,
+        "braid": 0,
+        "flank": 0,
+        "ring": 0,
+        "parallel": 0,
+        "alleys": 40,
+        "crosslinks": 0,
+        "courtyards": 0
+      }
+    },
+    "crosslinks": {
+      "count": 40,
+      "distinctTileArrays": 40,
+      "distinctStructuralSignatures": 40,
+      "tileSimilarity": {
+        "min": 0.27472527472527475,
+        "p10": 0.37362637362637363,
+        "median": 0.4725274725274725,
+        "p90": 0.5714285714285714,
+        "max": 0.6923076923076923,
+        "mean": 0.4750915750915755
+      },
+      "macroProfileDistance": {
+        "min": 0.041666666666666664,
+        "p10": 0.0763888888888889,
+        "median": 0.10416666666666667,
+        "p90": 0.1388888888888889,
+        "max": 0.1875,
+        "mean": 0.10698896011396025
+      },
+      "routeBranches": {
+        "min": 6,
+        "p10": 6,
+        "median": 6,
+        "p90": 6,
+        "max": 6,
+        "mean": 6
+      },
+      "lateralLinks": {
+        "min": 3,
+        "p10": 3,
+        "median": 3,
+        "p90": 3,
+        "max": 3,
+        "mean": 3
+      },
+      "narrowRegions": {
+        "min": 1,
+        "p10": 3,
+        "median": 6,
+        "p90": 9,
+        "max": 11,
+        "mean": 6.275
+      },
+      "criticalCuts": {
+        "min": 0,
+        "p10": 0,
+        "median": 0,
+        "p90": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "shortestContactSteps": {
+        "min": 12,
+        "p10": 12,
+        "median": 12,
+        "p90": 12,
+        "max": 12,
+        "mean": 12
+      },
+      "shortestContactCost": {
+        "min": 12,
+        "p10": 12,
+        "median": 12,
+        "p90": 12,
+        "max": 12,
+        "mean": 12
+      },
+      "alternativePaths": {
+        "min": 2,
+        "p10": 2,
+        "median": 3,
+        "p90": 4,
+        "max": 4,
+        "mean": 2.875
+      },
+      "meanLOS": {
+        "min": 1.9209550858899136,
+        "p10": 1.9934963466261528,
+        "median": 2.227123081724325,
+        "p90": 2.641108131640861,
+        "max": 2.9024450151618812,
+        "mean": 2.291891876054473
+      },
+      "coverFraction": {
+        "min": 0.15384615384615385,
+        "p10": 0.17582417582417584,
+        "median": 0.21978021978021978,
+        "p90": 0.23076923076923078,
+        "max": 0.2967032967032967,
+        "mean": 0.21346153846153854
+      },
+      "terrainComponents": {
+        "open": {
+          "min": 2,
+          "p10": 4,
+          "median": 5,
+          "p90": 8,
+          "max": 11,
+          "mean": 5.4
+        },
+        "cover": {
+          "min": 4,
+          "p10": 5,
+          "median": 8,
+          "p90": 9,
+          "max": 11,
+          "mean": 7.575
+        },
+        "wall": {
+          "min": 2,
+          "p10": 2,
+          "median": 3,
+          "p90": 6,
+          "max": 6,
+          "mean": 3.775
+        },
+        "rough": {
+          "min": 4,
+          "p10": 4,
+          "median": 6,
+          "p90": 9,
+          "max": 10,
+          "mean": 6.6
+        },
+        "forest": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "hill": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        }
+      },
+      "coverCentroid": {
+        "x": {
+          "min": 0.21875,
+          "p10": 0.2753623188405797,
+          "median": 0.6083333333333333,
+          "p90": 0.7222222222222222,
+          "max": 0.7407407407407407,
+          "mean": 0.5111385522882346
+        },
+        "y": {
+          "min": 0.3854166666666667,
+          "p10": 0.4125,
+          "median": 0.5041666666666667,
+          "p90": 0.5515873015873016,
+          "max": 0.5877192982456141,
+          "mean": 0.4965061982696387
+        }
+      },
+      "terrainCentroid": {
+        "x": {
+          "min": 0.38372093023255816,
+          "p10": 0.3952380952380952,
+          "median": 0.5583333333333333,
+          "p90": 0.623931623931624,
+          "max": 0.6375,
+          "mean": 0.5118390538258634
+        },
+        "y": {
+          "min": 0.43659420289855083,
+          "p10": 0.4649122807017545,
+          "median": 0.5041666666666667,
+          "p90": 0.5576923076923075,
+          "max": 0.605072463768116,
+          "mean": 0.5148041565295708
+        }
+      },
+      "objectiveDistance": {
+        "ally": {
+          "min": 6,
+          "p10": 7,
+          "median": 9,
+          "p90": 9,
+          "max": 10,
+          "mean": 8.475
+        },
+        "enemy": {
+          "min": 6,
+          "p10": 7,
+          "median": 9,
+          "p90": 10,
+          "max": 10,
+          "mean": 8.475
+        }
+      },
+      "landmarkDistance": {
+        "ally": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        },
+        "enemy": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        }
+      },
+      "landmarks": {
+        "none": 40,
+        "minor": 0,
+        "major": 0
+      },
+      "topologyCounts": {
+        "spine_branches": 0,
+        "y_fork": 0,
+        "braid": 0,
+        "flank": 0,
+        "ring": 0,
+        "parallel": 0,
+        "alleys": 0,
+        "crosslinks": 40,
+        "courtyards": 0
+      }
+    },
+    "courtyards": {
+      "count": 40,
+      "distinctTileArrays": 40,
+      "distinctStructuralSignatures": 40,
+      "tileSimilarity": {
+        "min": 0.2857142857142857,
+        "p10": 0.3956043956043956,
+        "median": 0.46153846153846156,
+        "p90": 0.5384615384615384,
+        "max": 0.6373626373626373,
+        "mean": 0.4676951253874337
+      },
+      "macroProfileDistance": {
+        "min": 0.041666666666666664,
+        "p10": 0.08333333333333333,
+        "median": 0.11805555555555555,
+        "p90": 0.14583333333333334,
+        "max": 0.1875,
+        "mean": 0.11431623931623941
+      },
+      "routeBranches": {
+        "min": 3,
+        "p10": 3,
+        "median": 3,
+        "p90": 3,
+        "max": 3,
+        "mean": 3
+      },
+      "lateralLinks": {
+        "min": 1,
+        "p10": 1,
+        "median": 3,
+        "p90": 3,
+        "max": 3,
+        "mean": 2.35
+      },
+      "narrowRegions": {
+        "min": 3,
+        "p10": 4,
+        "median": 9,
+        "p90": 11,
+        "max": 14,
+        "mean": 8
+      },
+      "criticalCuts": {
+        "min": 0,
+        "p10": 0,
+        "median": 0,
+        "p90": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "shortestContactSteps": {
+        "min": 12,
+        "p10": 12,
+        "median": 12,
+        "p90": 12,
+        "max": 12,
+        "mean": 12
+      },
+      "shortestContactCost": {
+        "min": 12,
+        "p10": 12,
+        "median": 12,
+        "p90": 12,
+        "max": 12,
+        "mean": 12
+      },
+      "alternativePaths": {
+        "min": 2,
+        "p10": 2,
+        "median": 2,
+        "p90": 3,
+        "max": 4,
+        "mean": 2.225
+      },
+      "meanLOS": {
+        "min": 1.7997806241091052,
+        "p10": 1.9355429284257888,
+        "median": 2.1535757114524543,
+        "p90": 2.5044992858123014,
+        "max": 2.9023238321168026,
+        "mean": 2.196800417926711
+      },
+      "coverFraction": {
+        "min": 0.12087912087912088,
+        "p10": 0.14285714285714285,
+        "median": 0.17582417582417584,
+        "p90": 0.2087912087912088,
+        "max": 0.21978021978021978,
+        "mean": 0.1780219780219781
+      },
+      "terrainComponents": {
+        "open": {
+          "min": 2,
+          "p10": 3,
+          "median": 6,
+          "p90": 8,
+          "max": 10,
+          "mean": 5.725
+        },
+        "cover": {
+          "min": 5,
+          "p10": 6,
+          "median": 8,
+          "p90": 10,
+          "max": 11,
+          "mean": 8.05
+        },
+        "wall": {
+          "min": 2,
+          "p10": 4,
+          "median": 5,
+          "p90": 6,
+          "max": 8,
+          "mean": 4.9
+        },
+        "rough": {
+          "min": 4,
+          "p10": 5,
+          "median": 7,
+          "p90": 9,
+          "max": 11,
+          "mean": 6.975
+        },
+        "forest": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        },
+        "hill": {
+          "min": 0,
+          "p10": 0,
+          "median": 0,
+          "p90": 0,
+          "max": 0,
+          "mean": 0
+        }
+      },
+      "coverCentroid": {
+        "x": {
+          "min": 0.2738095238095238,
+          "p10": 0.3240740740740741,
+          "median": 0.5,
+          "p90": 0.627450980392157,
+          "max": 0.761904761904762,
+          "mean": 0.5045809518318226
+        },
+        "y": {
+          "min": 0.37179487179487186,
+          "p10": 0.3796296296296296,
+          "median": 0.49509803921568624,
+          "p90": 0.5892857142857143,
+          "max": 0.6271929824561403,
+          "mean": 0.49762472860673335
+        }
+      },
+      "terrainCentroid": {
+        "x": {
+          "min": 0.41414141414141403,
+          "p10": 0.45348837209302323,
+          "median": 0.5133333333333333,
+          "p90": 0.5795454545454546,
+          "max": 0.6541666666666666,
+          "mean": 0.5197866547465347
+        },
+        "y": {
+          "min": 0.404040404040404,
+          "p10": 0.45930232558139544,
+          "median": 0.5222222222222221,
+          "p90": 0.571705426356589,
+          "max": 0.5940170940170939,
+          "mean": 0.5191990736898973
+        }
+      },
+      "objectiveDistance": {
+        "ally": {
+          "min": 6,
+          "p10": 6,
+          "median": 7,
+          "p90": 7,
+          "max": 7,
+          "mean": 6.675
+        },
+        "enemy": {
+          "min": 6,
+          "p10": 6,
+          "median": 7,
+          "p90": 7,
+          "max": 7,
+          "mean": 6.65
+        }
+      },
+      "landmarkDistance": {
+        "ally": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        },
+        "enemy": {
+          "min": null,
+          "p10": null,
+          "median": null,
+          "p90": null,
+          "max": null,
+          "mean": null
+        }
+      },
+      "landmarks": {
+        "none": 40,
+        "minor": 0,
+        "major": 0
+      },
+      "topologyCounts": {
+        "spine_branches": 0,
+        "y_fork": 0,
+        "braid": 0,
+        "flank": 0,
+        "ring": 0,
+        "parallel": 0,
+        "alleys": 0,
+        "crosslinks": 0,
+        "courtyards": 40
+      }
+    }
+  }
+}

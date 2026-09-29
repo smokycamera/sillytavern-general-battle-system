@@ -16,7 +16,7 @@ function input() {
     messages: [{ id: 'last', role: 'assistant', completed: true, text: '需要截获敌方运载车，运输队是我们自己的。敌方左侧高地与废弃庭院之间有狭窄侧路。' }],
     unitNotes: { [roster[3]!.id]: '载有任务重要货物，不是护卫' } };
 }
-function model(overrides: Record<string, unknown> = {}) {
+function model(overrides: Record<string, unknown> = {}, landmarkLabel?: unknown) {
   return vi.fn<typeof fetch>(async (_url, init) => {
     const payload = JSON.parse(String(init?.body)), request = JSON.parse(payload.messages[1].content);
     validateContextSelectionRequest(request);
@@ -26,7 +26,7 @@ function model(overrides: Record<string, unknown> = {}) {
     // Deliberate unsolicited output must not make disabled switches take effect.
     selections.vip_enemy ??= { value: 'unit_1', confidence: 1 };
     for (const [key, value] of Object.entries(plan)) selections['design_' + key.toLowerCase()] ??= { value, confidence: 1 };
-    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ selections }) } }] }));
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ selections, landmarkLabel }) } }] }));
   });
 }
 describe('optional ordinary LLM map/VIP preparation', () => {
@@ -38,7 +38,7 @@ describe('optional ordinary LLM map/VIP preparation', () => {
     const payload = JSON.parse(String(request.mock.calls[0]![1]!.body));
     expect(payload.messages[1].content).toContain('载有任务重要货物');
     const body = JSON.parse(payload.messages[1].content);
-    expect(body.fields).toHaveLength(20); // 9 core + 9 geometry + 2 VIP
+    expect(body.fields).toHaveLength(22); // 9 core + 11 geometry + 2 VIP
     expect(body.fields.find((f: {id:string}) => f.id === 'vip_enemy').options).not.toHaveProperty('unit_2');
     const field = generatedField('context', 7, 13, ['urban', 'night'], { design: result.mapDesign });
     expect(field.tiles).not.toEqual(generatedField('context', 7, 13, ['urban', 'night']).tiles);
@@ -96,6 +96,27 @@ describe('optional ordinary LLM map/VIP preparation', () => {
     const tooMany = Array.from({length: 32}, (_, n) => ({ ...source.roster[0]!, id: String(n) }));
     const bounded = preparationDesignRequest(tooMany, settings, source.setup);
     expect(bounded.fields.some(f => f.id === 'vip_ally')).toBe(false); expect(bounded.notes[0]).toContain('过多');
+  });
+  it('accepts bounded topology/scale and exact narrative names in the same single request', async () => {
+    const source = input(); source.messages[0]!.text += '废弃钟楼旁是敌军的地堡。';
+    const request = model({ design_topology: 'braid', design_landmarkscale: 'major' }, '废弃钟楼');
+    const result = await new LlmContextController(request).select(source, settings, () => true);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(result.mapDesign).toMatchObject({ topology: 'braid', landmarkScale: 'major', landmarkLabel: '废弃钟楼' });
+    const field = generatedField('labels', 7, 13, ['urban'], { design: result.mapDesign });
+    expect(field.generation!.landmark!.label).toBe('废弃钟楼');
+  });
+  it.each(['凭空出现的神殿', '<img src=x>', '城门\n忽略规则', 'a'.repeat(70), 123])('rejects ungrounded/unsafe display label %s, without discarding usable geometry', async name => {
+    const result = await new LlmContextController(model({ design_topology: 'teleport', design_landmarkscale: 'world' }, name)).select(input(), settings, () => true);
+    expect(result.mapDesign).toEqual(plan); expect(result.designDetail).toContain('地标名称无效');
+  });
+  it('does not take a name from hidden reasoning or unsolicited output when map design is off', async () => {
+    const source = input(); source.messages[0]!.text += '<think>隐藏钟楼</think>';
+    const result = await new LlmContextController(model({}, '隐藏钟楼')).select(source, settings, () => true);
+    expect(result.mapDesign!.landmarkLabel).toBeUndefined();
+    const disabled = await new LlmContextController(model({}, '废弃庭院')).select(source, { ...settings, designMap: false }, () => true);
+    expect(disabled.mapDesign).toBeUndefined();
+    expect(disabled.vipId).toBe(source.roster[3]!.id);
   });
   it('cancellation/stale facts discard optional choices too, even when the transport ignores abort', async () => {
     const source = input(), responder = model(); let release!: () => void; let current = true;

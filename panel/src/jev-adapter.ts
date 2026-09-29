@@ -8,6 +8,7 @@ import {
 } from "../../engine/src/index.js";
 import {
   cellLabel,
+  terrainCellLabel,
   neighbors,
   gridDistance,
 } from "../../engine/src/small/spatial.js";
@@ -79,7 +80,7 @@ export class TavernJevAdapter implements BattleAdapter {
     const locations = field
       ? field.tiles.map((terrain, cell) => ({
           id: String(cell),
-          label: cellLabel(field, cell),
+          label: terrainCellLabel(field, cell),
           x: cell % field.width,
           y: Math.floor(cell / field.width),
           cover: ["cover", "forest"].includes(terrain) ? 0.6 : 0,

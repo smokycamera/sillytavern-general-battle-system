@@ -20,7 +20,7 @@ describe('bounded contextual map director', () => {
           const before = structuredClone(plan);
           expect(field).toEqual(generatedField(seed, w, h, [env], { design: plan, attackingSide: n % 2 ? 'enemy' : 'ally' }));
           expect(plan).toEqual(before);
-          expect(field.generation).toMatchObject({ version: 3, source: 'context', design: plan });
+          expect(field.generation).toMatchObject({ version: 4, source: 'context', design: plan });
           expect(flood(field).size).toBe(field.tiles.filter(t => t !== 'wall').length);
           expect(field.tiles.filter(t => t === 'open').length).toBeGreaterThan(field.tiles.length / 4);
           for (let blocked = w!; blocked < w! * (h! - 1); blocked++) if (field.tiles[blocked] !== 'wall') {
@@ -33,7 +33,7 @@ describe('bounded contextual map director', () => {
     }
   }, 30000);
   it('layout, orientation, density, path shape/width and landmark position change actual tiles', () => {
-    for (const key of Object.keys(MAP_DESIGN_OPTIONS) as (keyof MapDesign)[]) {
+    for (const key of Object.keys(MAP_DESIGN_OPTIONS) as (keyof typeof MAP_DESIGN_OPTIONS)[]) {
       const differences = new Set<string>();
       for (let n = 0; n < 12; n++) for (const value of Object.keys(MAP_DESIGN_OPTIONS[key])) {
         const field = generatedField('effect-' + n, 7, 13, ['urban'], { design: { ...design, feature: 'forest', [key]: value } });

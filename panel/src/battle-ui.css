@@ -60,3 +60,5 @@ button[data-processing="true"] { outline: 2px solid var(--accent, #cdbb86); opac
 .worldbook-keys[hidden]{display:none}
 .worldbook-settings .prompt-setting{margin-top:16px}
 .worldbook-settings .prompt-setting>.sub{display:block}
+
+.grid-landmark{position:absolute;right:3px;top:2px;color:var(--gold);font-size:12px;pointer-events:none}.map-landmark{font-size:12px;color:var(--dim);padding:4px 8px;overflow-wrap:anywhere}

@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "1.4.0",
-  "builtAt": "2026-09-29T01:25:32.251Z",
-  "sourceFingerprint": "6c1212b741d786d5a8a20402498f37b2bd9eb6b8184543e8a2637e8883237fe6",
+  "version": "1.5.0",
+  "builtAt": "2026-09-29T02:39:25.406Z",
+  "sourceFingerprint": "5a3eab015eb1622998b550a0de3ae6e8259865f70d4e8f062f0a393f3fec8da9",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -31,19 +31,19 @@
       "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     },
     {
-      "path": "dist/assets/panel-KVZ1GitA.css",
-      "bytes": 8459,
-      "sha256": "9ecfd9e2abb7edeb8b59fe6e7d1f5c6b36332b81fe9f688d0b3d63b13b486cd0"
+      "path": "dist/assets/panel-DX6CX0wW.css",
+      "bytes": 8648,
+      "sha256": "c06f90041eddd1092ea358ab266413b349822c1860a0eeffa01fe24732cdf1bb"
     },
     {
-      "path": "dist/assets/panel-sBIljoYB.js",
-      "bytes": 331917,
-      "sha256": "ade6deda0f89674e8cefb39539da527b62b370c93a23e1ca64546388c68621fc"
+      "path": "dist/assets/panel-EOaeEBnU.js",
+      "bytes": 334101,
+      "sha256": "f8351f56880e63da7380f2fabd7623c502d66b16e65280502cd766d0f695d695"
     },
     {
-      "path": "dist/assets/preferences-2QN9WrS-.js",
-      "bytes": 583144,
-      "sha256": "399973b1b82325ca66d5dff93875b452590f9a6aed47dee4a4ba665dc033e1ef"
+      "path": "dist/assets/preferences-BlfnH27N.js",
+      "bytes": 589817,
+      "sha256": "ef7e61fd367fba49a1738f458090b036e76078e5ec56cb478d46a7e1498ddbbd"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -116,6 +116,11 @@
       "sha256": "cf8b53f8909ce6879bb1e027c59704eb9a265492822ebf6befed738afef88c0f"
     },
     {
+      "path": "docs/map-route-v4.md",
+      "bytes": 7721,
+      "sha256": "352db5b48093c697c96ccf7480f4c5192194f5aefe2be52f3e52fc2ee50aa95c"
+    },
+    {
       "path": "docs/native-event-display.md",
       "bytes": 3100,
       "sha256": "c45c218b36f1780a1c84f1c560e6642b789de77bfe3e547c1b59d2251848851a"
@@ -163,7 +168,7 @@
     {
       "path": "dist/index.js",
       "bytes": 82410,
-      "sha256": "3aa1a6455cd023082a5b6ec65b88744eaa2d0ed58500c610fc4f42c51f334096"
+      "sha256": "4cd438b333830384959dd3d2d526a0e0a63264c83011045ccb2fb900462beb97"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -173,12 +178,12 @@
     {
       "path": "manifest.json",
       "bytes": 170,
-      "sha256": "ca1f725b04c11f45571407e7994c0c7109d090db1c9c4702a52cfd06f1ac008c"
+      "sha256": "f52bda519a041ef4a4d70f13148cb523f354e39ee28a0507d403299fc396ef9d"
     },
     {
       "path": "dist/panel/index.html",
       "bytes": 50401,
-      "sha256": "22bbe4ffed11da7568c00ce436f6a53b485b0cff91ca505c193e0f413fb9261c"
+      "sha256": "a40c7aaa0994969ea8d3fa5d1b64d9970d4bd62a86c2ff2e762f1b39b16587a7"
     },
     {
       "path": "release/current-baseline.json",
