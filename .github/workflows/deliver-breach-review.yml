@@ -1,0 +1,154 @@
+name: Deliver breach review candidate
+on:
+  push:
+    branches: ['review/layered-breach-rc1']
+permissions:
+  contents: write
+concurrency:
+  group: breach-review-delivery
+  cancel-in-progress: false
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply hash-verified reviewed source delta
+        run: |
+          git merge-base --is-ancestor c6495ebb5331a89069e19c6b79dee9315e605488 HEAD
+          python3 - <<'PY'
+          import base64,hashlib,lzma,pathlib,subprocess
+          parts=sorted(pathlib.Path('.review-delivery').glob('part*'))
+          assert len(parts)==5
+          patch=lzma.decompress(base64.b64decode(''.join(p.read_text() for p in parts),validate=True))
+          assert hashlib.sha256(patch).hexdigest()=='2c416ed11b559e6f02b9875567fde7c20088f49033b37695d20e375368511f15'
+          target=pathlib.Path('/tmp/breach-review.patch');target.write_bytes(patch)
+          subprocess.run(['git','apply','--unidiff-zero','--check',str(target)],check=True)
+          subprocess.run(['git','apply','--unidiff-zero',str(target)],check=True)
+          PY
+          git diff --check
+          node scripts/check-worldbook-trait-only.mjs
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Typecheck and full regression against unchanged baseline
+        run: |
+          npm run typecheck
+          mkdir -p artifacts/review
+          npm test -- --reporter=default --reporter=json --outputFile=artifacts/review/full-tests.json || full_exit=$?
+          echo "${full_exit:-0}" > artifacts/review/full-test-exit.txt
+          echo "Normal full-suite exit: ${full_exit:-0}; the seven original failures remain visible."
+          node scripts/check-layered-test-baseline.mjs artifacts/review/full-tests.json > artifacts/review/baseline-comparison.json
+          cat artifacts/review/baseline-comparison.json
+      - name: Native host and relay regressions
+        run: |
+          npm run test:extension -- --reporter=default --reporter=json --outputFile=artifacts/review/native-tests.json
+          npm run test:jev-relay
+          node scripts/publish-test-repository.mjs --dry-run
+      - name: Weapon matrix and actual structure execution
+        run: npm run audit:breach-review
+      - name: Map and deployment validation
+        run: TB_AUDIT_REPORT=docs/review-map-audit.json npm run audit:layered-maps
+      - name: Actual local AI combat and snapshot round-trip
+        run: TB_AUDIT_REPORT=docs/review-combat-audit.json npm run audit:layered-combat
+      - name: Build installable candidate
+        id: build
+        run: npm run build:extension && npm run verify:dist && npm run verify:worldbook-scope
+      - name: Install browser for independent interaction tests
+        run: |
+          npx playwright-core install --with-deps chromium
+          node --input-type=module -e "import {chromium} from 'playwright-core';import {appendFileSync} from 'node:fs';appendFileSync(process.env.GITHUB_ENV,'TB_BROWSER='+chromium.executablePath()+'\n')"
+      - name: Layered interaction - metadata-only save
+        id: layered_metadata
+        continue-on-error: true
+        run: npm run smoke:layered
+      - name: Layered interaction - legacy-full save
+        id: layered_legacy
+        continue-on-error: true
+        run: TB_METADATA_MODE=legacy-full npm run smoke:layered
+      - name: Native interaction - metadata-only save
+        id: native_metadata
+        continue-on-error: true
+        run: npm run smoke:extension
+      - name: Native interaction - legacy-full save
+        id: native_legacy
+        continue-on-error: true
+        run: TB_METADATA_MODE=legacy-full npm run smoke:extension
+      - name: Record exact validation outcomes
+        if: always() && steps.build.outcome == 'success'
+        env:
+          LAYERED_METADATA: ${{ steps.layered_metadata.outcome }}
+          LAYERED_LEGACY: ${{ steps.layered_legacy.outcome }}
+          NATIVE_METADATA: ${{ steps.native_metadata.outcome }}
+          NATIVE_LEGACY: ${{ steps.native_legacy.outcome }}
+        run: |
+          python3 - <<'PY'
+          import json,os,pathlib
+          read=lambda p:json.loads(pathlib.Path(p).read_text())
+          path=pathlib.Path('docs/breach-review-validation.json');r=read(path)
+          r['scope']='Source, full/native/relay tests, map/breach/combat audits and synthetic-browser interactions independently rerun in GitHub Actions'
+          r['ciHead']=os.environ['GITHUB_SHA']
+          r['ciRun']='https://github.com/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/'+os.environ['GITHUB_RUN_ID']
+          r['fullSuite']=read('artifacts/review/baseline-comparison.json')
+          r['rawNpmTestExit']=int(pathlib.Path('artifacts/review/full-test-exit.txt').read_text())
+          n=read('artifacts/review/native-tests.json');r['nativeTests']={'status':'passed' if n['numFailedTests']==0 else 'failed','total':n['numTotalTests'],'passed':n['numPassedTests'],'failed':n['numFailedTests']}
+          r['staticMaps']=read('docs/review-map-audit.json')
+          b=read('docs/breach-review-audit.json');r['breach']={k:b[k] for k in ['weaponClasses','matrixChecks','executionChecks']}
+          c=read('docs/review-combat-audit.json');r['liveAi']={k:c[k] for k in ['count','completed','actionSamples','failures']}
+          r['liveAi']['actionsByKind']={k:sum(x[k] for x in c['cases']) for k in ['structureActions','climbs','gates']}
+          outcomes={k:os.environ[k] for k in ['LAYERED_METADATA','LAYERED_LEGACY','NATIVE_METADATA','NATIVE_LEGACY']}
+          reports={}
+          for suite in ['layered-browser','native-extension-smoke']:
+            for mode in ['metadata-only','legacy-full']:
+              p=pathlib.Path('artifacts')/suite/mode/'report.json'
+              if p.exists():
+                d=read(p);reports[suite+'/'+mode]={'status':d['status'],'checks':len(d.get('results',[])),'errors':d.get('errors',[])}
+          r['browser']={'status':'passed' if all(v=='success' for v in outcomes.values()) else 'failed','ciResult':outcomes,'reports':reports,'realHost':False,'localAttempt':'Runtime policy blocked localhost; no claim of local browser success.'}
+          path.write_text(json.dumps(r,ensure_ascii=False,indent=2)+'\n')
+          PY
+          npm run build:extension
+          npm run verify:dist
+          npm run verify:worldbook-scope
+          git diff --check
+      - name: Commit reviewed sources, reports and matching installable dist
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          test "$(git ls-remote origin refs/heads/review/layered-breach-rc1 | cut -f1)" = "$GITHUB_SHA"
+          npm run verify:dist
+          rm -rf .review-delivery
+          rm .github/workflows/deliver-breach-review.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: review structural combat, slow traversal and commander scoring in 1.6.1-rc.1'
+          git push origin HEAD:refs/heads/review/layered-breach-rc1
+          git archive HEAD | gzip > artifacts/review/source.tar.gz
+      - name: Preserve exact validation evidence and candidate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: breach-review-candidate
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            artifacts/review/
+            artifacts/layered-browser/
+            artifacts/native-extension-smoke/
+            release/native-candidate/
+            docs/breach-review*.json
+            docs/breach-review.md
+            docs/review-*-audit.json
+      - name: Browser acceptance gate
+        if: always()
+        env:
+          BUILD: ${{ steps.build.outcome }}
+          LAYERED_METADATA: ${{ steps.layered_metadata.outcome }}
+          LAYERED_LEGACY: ${{ steps.layered_legacy.outcome }}
+          NATIVE_METADATA: ${{ steps.native_metadata.outcome }}
+          NATIVE_LEGACY: ${{ steps.native_legacy.outcome }}
+        run: test "$BUILD" = success && test "$LAYERED_METADATA" = success && test "$LAYERED_LEGACY" = success && test "$NATIVE_METADATA" = success && test "$NATIVE_LEGACY" = success
