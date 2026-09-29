@@ -38,10 +38,10 @@ jobs:
           npm test -- --reporter=default --reporter=json --outputFile=artifacts/test-channel/full-tests.json || full_exit=$?
           echo "Ordinary npm test exit: $full_exit"
           node scripts/check-layered-test-baseline.mjs artifacts/test-channel/full-tests.json
-      - name: Native relay and migration compatibility
+      - name: Native host, persistence and relay regressions
         run: |
+          npm run test:extension
           npm run test:jev-relay
-          npm run verify:compatibility
       - name: Build installable test bundle
         run: |
           npm run build:extension
