@@ -42,4 +42,19 @@ describe('global ordinary LLM settings',()=>{
     expect(()=>saveLlmSettings({...saved,token:'new-key'})).toThrow('未保存');
     expect(readLlmSettings()).toEqual(saved);
   });
+  it('map design and VIP are independently opt-in, persisted globally, and strictly boolean',()=>{
+    const data=storage();
+    expect(readLlmSettings()).toMatchObject({designMap:false,selectVip:false,selectBattleScale:true});
+    for(const designMap of [true,false])for(const selectVip of [true,false]){
+      const settings={...readLlmSettings(),enabled:true,designMap,selectVip};saveLlmSettings(settings);
+      expect(readLlmSettings()).toEqual(settings);
+      const html=renderLlmSettings(settings);
+      expect(/data-role="llm-map-design"[^>]*checked/.test(html)).toBe(designMap);
+      expect(/data-role="llm-vip"[^>]*checked/.test(html)).toBe(selectVip);
+      expect(renderLlmSettings({...settings,enabled:false})).toMatch(/data-role="llm-vip"[^>]*disabled/);
+    }
+    data.set(LLM_SETTINGS_KEY,JSON.stringify({designMap:'true',selectVip:1}));
+    expect(readLlmSettings()).toMatchObject({designMap:false,selectVip:false});
+  });
+
 });

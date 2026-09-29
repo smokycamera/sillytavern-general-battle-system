@@ -41,15 +41,20 @@ export function normalizeObjectiveMode(value: unknown): BattleObjectiveMode {
   return value === 'escort' || value === 'intercept' || value === 'siege' || value === 'annihilation' ? value : 'auto';
 }
 
+/** Shared eligibility for model choices and final objective preparation. */
+export function vipCandidates(roster: Combatant[], side: 'ally' | 'enemy'): Combatant[] {
+  return roster.filter(u => u.side === side && u.hp > 0 && u.status === 'ready');
+}
+
 /** 只准备下一场任务；对象和规则随战场快照冻结。 */
-export function prepareBattleObjective(field: BattlefieldSpec, roster: Combatant[], mode: BattleObjectiveMode, protagonistId?: string, attackingSide: 'ally' | 'enemy' = 'ally'): BattlefieldSpec {
+export function prepareBattleObjective(field: BattlefieldSpec, roster: Combatant[], mode: BattleObjectiveMode, protagonistId?: string, attackingSide: 'ally' | 'enemy' = 'ally', selectedVipId?: string): BattlefieldSpec {
   if (!['escort', 'intercept'].includes(mode)) {
     const siege = mode === 'siege' || (mode === 'auto' || mode === 'control') && field.environment?.includes('siege');
     return { ...field, objective: { ...defaultBattleObjective(field.width, field.height, siege ? ['siege'] : [], attackingSide), limit: field.objective.limit } };
   }
   const side = mode === 'intercept' ? 'enemy' : 'ally';
-  const eligible = roster.filter((u) => u.side === side && u.hp > 0 && u.status === 'ready');
-  const escorted = eligible.find((u) => u.id === protagonistId) ?? eligible[0];
+  const eligible = vipCandidates(roster, side);
+  const escorted = eligible.find(u => u.id === selectedVipId) ?? eligible.find((u) => u.id === protagonistId) ?? eligible[0];
   if (!escorted) throw new Error(side === 'enemy' ? '拦截任务需要可参战的敌方护送对象' : '护送任务需要可参战的我方单位');
   return { ...field, objective: { kind: 'escape', unitId: escorted.id,
     cell: (side === 'enemy' ? (field.height - 1) * field.width : 0) + Math.floor(field.width / 2),

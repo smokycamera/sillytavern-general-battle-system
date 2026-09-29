@@ -1,3 +1,4 @@
+import type { MapGenerationRecord } from './map-design.js';
 import { isRangedWeapon } from '../loadout.js';
 import type { Combatant, ConditionDef } from '../types.js';
 import { activeTraitIds } from '../trait-sources.js';
@@ -12,6 +13,8 @@ export const DEFAULT_SMALL_ROUND_LIMIT = 60;
 export type Terrain = 'open' | 'cover' | 'wall' | 'rough' | 'forest' | 'hill';
 export const TERRAIN_NAMES: Record<Terrain, string> = { open: '开阔地', cover: '掩体', wall: '墙体', rough: '崎岖地', forest: '森林', hill: '山地' };
 export interface BattlefieldSpec {
+  /** Frozen provenance; actual tiles remain authoritative when loading old/new saves. */
+  generation?: MapGenerationRecord;
   environment?: string[];
   version: 2;
   width: number;
