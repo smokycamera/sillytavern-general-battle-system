@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generatedLayeredField, groundBlocked, structureDefense, structureDurability, createStructure, damageStructure, canClimbFrom, canOccupy, unitLineOfSight, tileCost, standardField, validateField, SmallBattle, V11_OVERFLOW_D20, generateUnit, collectMods, traitRegistry, standardConditionMap, memberHealth, memberHealthMax, activeTraitIds, normalizeBattlefieldPlan, ROUTE_TOPOLOGIES, type Combatant, type BattlefieldSpec } from '../src/index.js';
+import { generatedLayeredField, groundBlocked, findGridPath, structureDefense, structureDurability, createStructure, damageStructure, canClimbFrom, canOccupy, unitLineOfSight, tileCost, standardField, validateField, SmallBattle, V11_OVERFLOW_D20, generateUnit, collectMods, traitRegistry, standardConditionMap, memberHealth, memberHealthMax, activeTraitIds, normalizeBattlefieldPlan, ROUTE_TOPOLOGIES, type Combatant, type BattlefieldSpec } from '../src/index.js';
 import { regionalOrder } from '../src/small/team-tactics.js';
 import { normalizeCommanderProfiles, commanderScores } from '../src/commander-profile.js';
 import { prepareBattleObjective } from '../../panel/src/battle-setup.js';
@@ -18,6 +18,15 @@ export function layeredFixture(scale: 'hero' | 'company' = 'hero') {
 }
 const resetAction = (b: SmallBattle, id = 'a') => { b.actedThisTurn.delete(id); b.movementSpent.delete(id); };
 describe('layered city and siege maps', () => {
+  it('river bridges preserve real approach paths instead of ending behind natural cliffs', () => {
+    for (const env of ['plains', 'forest', 'mountain']) for (let i = 0; i < 160; i++) {
+      const f = generatedLayeredField('conn-' + i, 7, 13, [env], { plan: { water: 'river' } });
+      for (const row of [1, f.height - 2]) {
+        const origin = row * f.width + Math.floor(f.width / 2);
+        expect(findGridPath(f, origin, f.objective.cell, p => !groundBlocked(f, p)), env + ':' + i + ':' + row).toBeDefined();
+      }
+    }
+  });
   it('uses independent compact choices, strips untrusted coordinates/HP and bounds landmarks', () => {
     const value = normalizeBattlefieldPlan({ fortLevel: 11, size: 'large', hp: 999, tiles: ['open'], landmarks: Array.from({ length: 9 }, () => ({ kind: 'tower', anchor: 'rear', label: '<script>' })) });
     expect(value.plan).toEqual({ size: 'large', landmarks: Array.from({ length: 5 }, () => ({ kind: 'tower', anchor: 'rear' })) });

@@ -15,7 +15,7 @@ const failures = report.testResults.flatMap(file => file.assertionResults.filter
   const relative = file.name.replaceAll('\\','/').match(/(?:engine\/tests|panel\/src)\/.*$/)?.[0] ?? file.name;
   return relative + '::' + t.fullName;
 }));
-assert.ok(report.numTotalTests >= 1579, 'Expected the complete suite including layered-city tests');
+assert.ok(report.numTotalTests >= 1580, 'Expected the complete suite including layered-city tests');
 assert.equal(report.numFailedTests, failures.length, 'Unaccounted suite/process failure');
 assert.equal(report.numRuntimeErrorTestSuites ?? 0, 0, 'Runtime-error suite is not a baseline test failure');
 const additional = failures.filter(f => !known.has(f));

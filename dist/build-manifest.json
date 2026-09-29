@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "1.6.0",
-  "builtAt": "2026-09-29T06:03:41.531Z",
-  "sourceFingerprint": "274c863d566c2b7d4d1f36ad537c422174bb52ceafd1deb48cf570bcd5a5e7a3",
+  "builtAt": "2026-09-29T06:08:57.510Z",
+  "sourceFingerprint": "7712309062525efc35c27c49a2fc88782c2a6f098cf90cefede529475db26c45",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -31,14 +31,14 @@
       "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     },
     {
-      "path": "dist/assets/panel-BxVfyYXH.js",
-      "bytes": 348049,
-      "sha256": "ce53640272e787dc6258ba95b98ed82d850a2ccf0607f9f94ec6ed224871a0de"
-    },
-    {
       "path": "dist/assets/panel-ClMQcDFG.css",
       "bytes": 10292,
       "sha256": "7478e153743018c0f2b5f1dddad67109e731bb04d2eff8c5bf8fa74586079a11"
+    },
+    {
+      "path": "dist/assets/panel-sBXtaFMF.js",
+      "bytes": 348282,
+      "sha256": "54c87725806b753ab025f4d3d719692ce7452ebe32dda3512eefaf358ea9ac7a"
     },
     {
       "path": "dist/assets/preferences-C91duCvR.js",
@@ -117,8 +117,8 @@
     },
     {
       "path": "docs/layered-city-v1.md",
-      "bytes": 7763,
-      "sha256": "bebf46aed03f20f3e0045dc9e2f45a6d8f62464769357b76814afce825ecd553"
+      "bytes": 7851,
+      "sha256": "73cd5a0994a47b8a37c319991eca62542172bee8e8d88236d428db876c108223"
     },
     {
       "path": "docs/layered-combat-audit-20260929.json",
@@ -127,13 +127,13 @@
     },
     {
       "path": "docs/layered-map-audit-20260929.json",
-      "bytes": 112,
-      "sha256": "0d0a502dea5810eb601718a267a6d3cc767e2435b874a0070f24631a554cf40d"
+      "bytes": 144,
+      "sha256": "f2dd6e8b3e5b76c6873ae57dbb0f67fcdaf42b18be06be0801ceb11e88122a54"
     },
     {
       "path": "docs/layered-release-validation.json",
-      "bytes": 2178,
-      "sha256": "d797b5d2a28e8a30541b11a3a3b47757bee0486d4f89c40fe84f07d50853eadc"
+      "bytes": 2213,
+      "sha256": "f908c8282284f2f63a1c7413fff020f2918c64473b697ff725d5e414e8eb94b5"
     },
     {
       "path": "docs/map-route-v4.md",
@@ -203,7 +203,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 50401,
-      "sha256": "72e312404f2d30b9a1daddfe163439ffee4412e63528669a92b05ba0ce514959"
+      "sha256": "720fbf0dbf7e3cde14cbcbf9dcefcb92e435cff31f602113ddcbdc17fd29b475"
     },
     {
       "path": "release/current-baseline.json",

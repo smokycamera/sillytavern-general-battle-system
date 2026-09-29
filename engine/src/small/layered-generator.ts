@@ -142,12 +142,22 @@ export function generatedLayeredField(seed: string, width = 7, height = 13, tags
   const water = plan?.water ?? (city ? 'none' : pick(['none', 'none', 'none', 'ford', 'river'] as const));
   if (water !== 'none' && width > 5) {
     const d = city ? Math.min(height - 4, frontDepth + 2) : Math.floor(height / 2);
+    // Keep the actual approach paths when laying water over existing terrain.
+    // Random bridge columns alone can land behind cliffs and disconnect the goal.
+    const crossings = new Set<number>();
+    if (!city && water !== 'ford') for (const origin of [at(Math.floor(width / 2), 1), at(Math.floor(width / 2), height - 2)]) {
+      const approach = findGridPath(field, origin, field.objective.cell, p => !groundBlocked(field, p));
+      for (const p of approach?.cells ?? []) if (depthOf(p) === d) crossings.add(p);
+    }
     for (let x = 0; x < width; x++) {
       const p = at(x, d); if (p === field.objective.cell || core.includes(p) || field.structures[p]?.kind === 'wall' || field.structures[p]?.kind === 'gate') continue;
       field.tiles[p] = water === 'ford' ? 'shallow_water' : 'deep_water'; field.structures[p] = null; delete field.overlays[p];
     }
     if (water !== 'ford') for (const x of [int(1, Math.floor(width / 2) - 1), int(Math.floor(width / 2) + 1, width - 2)]) {
-      const p = at(x, d); field.structures[p] = createStructure('bridge', wallLevel); field.overlays[p] = ['road'];
+      crossings.add(at(x, d));
+    }
+    for (const p of crossings) if (field.tiles[p] === 'deep_water') {
+      field.structures[p] = createStructure('bridge', wallLevel); field.overlays[p] = ['road'];
     }
   }
   // Marshes are passable but expensive and do not blanket a primary approach.

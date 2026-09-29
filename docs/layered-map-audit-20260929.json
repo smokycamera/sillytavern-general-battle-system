@@ -2,6 +2,7 @@
   "maps": 2400,
   "distinctMaps": 2400,
   "deployments": 240,
-  "elapsedMs": 20321.081417,
+  "approachChecks": 2880,
+  "elapsedMs": 19965.570971999998,
   "failures": []
 }

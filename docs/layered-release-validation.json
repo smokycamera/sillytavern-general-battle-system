@@ -4,8 +4,8 @@
   "scope": "local tests plus independently re-run GitHub Actions source/build/audit/browser verification",
   "typecheck": "passed",
   "fullSuite": {
-    "total": 1579,
-    "passed": 1572,
+    "total": 1580,
+    "passed": 1573,
     "knownFailures": [
       "engine/tests/unified-replay.test.ts::V5 saved battles and V6 prototype replay compatibility V5 human-four T1",
       "engine/tests/unified-replay.test.ts::V5 saved battles and V6 prototype replay compatibility V5 giant-four T10",
@@ -24,6 +24,7 @@
   "staticMaps": {
     "samples": 2400,
     "deploymentChecks": 240,
+    "outdoorApproachChecks": 2880,
     "failed": 0
   },
   "automatedBattles": {
@@ -43,12 +44,12 @@
       "NATIVE_METADATA": "success",
       "NATIVE_LEGACY": "success"
     },
-    "runUrl": "https://github.com/smokycamera/sillytavern-general-battle-system/actions/runs/36528746520",
+    "runUrl": "https://github.com/smokycamera/sillytavern-general-battle-system/actions/runs/36529343813",
     "realHost": false
   },
   "realSillyTavernHost": "not-run",
   "realTauriTavernHost": "not-run",
   "androidDevice": "not-run",
   "liveLlmLatency": "not-measured",
-  "ciHead": "d8d75d3b562256d253625d5f5be6de13722b13f4"
+  "ciHead": "756c4c05e64db656ff2de7040d42375cb233df74"
 }

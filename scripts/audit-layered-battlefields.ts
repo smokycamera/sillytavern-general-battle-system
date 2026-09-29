@@ -1,9 +1,9 @@
 /** Reproducible static map and deployment audit; run with vite-node. */
 import { writeFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
-import { generatedLayeredField, groundBlocked, validateField, generateUnit, SmallBattle, V11_OVERFLOW_D20, type BattlefieldPlan } from '../engine/src/index.js';
+import { generatedLayeredField, groundBlocked, findGridPath, validateField, generateUnit, SmallBattle, V11_OVERFLOW_D20, type BattlefieldPlan } from '../engine/src/index.js';
 const start = performance.now(), failures: unknown[] = [], signatures = new Set<string>();
-let maps = 0, deployments = 0;
+let maps = 0, deployments = 0, approachChecks = 0;
 for (const environment of ['plains', 'forest', 'mountain', 'urban', 'siege']) for (const size of ['compact', 'standard', 'large'] as const) for (let i = 0; i < 160; i++) {
   const seed = `${environment}-${size}-${i}`;
   const plan: BattlefieldPlan = { size, fortLevel: i % 10 + 1, water: (['none', 'ford', 'river', 'moat'] as const)[i % 4],
@@ -12,6 +12,11 @@ for (const environment of ['plains', 'forest', 'mountain', 'urban', 'siege']) fo
     const field = generatedLayeredField(seed, 7, 13, [environment], { plan, attackingSide: i % 2 ? 'enemy' : 'ally' });
     validateField(field); maps++;
     if (groundBlocked(field, field.objective.cell)) throw Error('blocked goal');
+    if (!field.city) for (const row of [1, field.height - 2]) {
+      const origin = row * field.width + Math.floor(field.width / 2);
+      if (!findGridPath(field, origin, field.objective.cell, p => !groundBlocked(field, p))) throw Error('disconnected outdoor approach');
+      approachChecks++;
+    }
     signatures.add(JSON.stringify([field.tiles, field.structures, field.overlays]));
     if (i % 10 === 0) {
       const units = (['ally', 'enemy'] as const).flatMap(side => Array.from({ length: 6 }, (_, n) => {
@@ -26,7 +31,7 @@ for (const environment of ['plains', 'forest', 'mountain', 'urban', 'siege']) fo
     }
   } catch (error) { failures.push({ seed, message: String(error) }); }
 }
-const report = { maps, distinctMaps: signatures.size, deployments, elapsedMs: performance.now() - start, failures };
+const report = { maps, distinctMaps: signatures.size, deployments, approachChecks, elapsedMs: performance.now() - start, failures };
 writeFileSync('docs/layered-map-audit-20260929.json', JSON.stringify(report, null, 2) + '\n');
 console.log(JSON.stringify({ ...report, failures: failures.slice(0, 20) }, null, 2));
 if (failures.length) process.exitCode = 1;
