@@ -1,0 +1,45 @@
+name: Land 1.6.1 review cleanly on main
+on:
+  push:
+    branches: ['fix/land-1.6.1-main']
+permissions:
+  contents: write
+concurrency:
+  group: land-1.6.1-main
+  cancel-in-progress: false
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Reconcile final reviewed tree onto current main
+        run: |
+          git fetch origin review/layered-breach-rc1
+          BASE=$(git rev-parse HEAD^)
+          git diff --binary "$BASE" origin/review/layered-breach-rc1 -- . ':(exclude).github/workflows/land-1.6.1-main.yml' > /tmp/review.patch
+          git apply --check /tmp/review.patch
+          git apply /tmp/review.patch
+          git diff --check
+      - name: Verify authorized worldbook sentence
+        run: npm ci && npm run verify:worldbook-scope
+      - name: Typecheck, native tests and dist parity
+        run: |
+          npm run typecheck
+          npm run test:extension
+          npm run build:extension
+          npm run verify:dist
+      - name: Commit reconciled result
+        run: |
+          rm .github/workflows/land-1.6.1-main.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: land reviewed 1.6.1 changes and corrected 登城 worldbook on main base'
+          git push origin HEAD:refs/heads/fix/land-1.6.1-main
