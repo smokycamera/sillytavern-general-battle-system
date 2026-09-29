@@ -211,7 +211,7 @@ describe('independent city shape, breaches and legal deployment', () => {
       const values:Record<string,string>={field:'siege',lighting:'day',map_layout:'standard',objective:'escort',siege_attacker:'ally',ally_ability:'expert',ally_style:'siege',enemy_ability:'expert',enemy_style:'depth',vip_ally:'unit_30',vip_enemy:'default'};
       // Choose supported style IDs instead of assuming a label.
       for(const f of body.fields) if(values[f.id]&&!Object.hasOwn(f.options,values[f.id]!)) values[f.id]=Object.keys(f.options)[0]!;
-      return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({selections:Object.fromEntries(body.fields.map((f:any)=>[f.id,{value:values[f.id],confidence:1}])),battlefield:{shape:'riverside',breaches:{count:2,width:2},gates:'single'}})}}]}));
+      return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({selections:Object.fromEntries(body.fields.map((f:any)=>[f.id,{value:values[f.id],confidence:1}])),battlefield:{shape:'riverside',breaches:{count:2,width:2},gates:'single',landmarks:[{kind:'fortification',anchor:'front_left',scale:'major',label:'临河城防'}]}})}}]}));
     });
     const result=await new LlmContextController(request).select({roster,setup,messages:[{id:'m',role:'assistant',completed:true,text:'临河城防已有两处宽缺口，护送末尾那支运输队撤离。'}]},{enabled:true,selectBattleScale:false,designMap:true,selectVip:true,url:'https://api.example/v1',token:'',model:'test',models:[],windowSize:6},()=>true);
     expect(request).toHaveBeenCalledTimes(1);expect(result.battlefieldPlan).toMatchObject({shape:'riverside',breaches:{count:2,width:2}});expect(result.vipId).toBe(roster[30]!.id);
