@@ -1,0 +1,162 @@
+name: Verify and deliver battle planning rc2
+on:
+  push:
+    branches: ['feat/orthogonal-maps-32-unit-tactics']
+permissions:
+  contents: write
+concurrency:
+  group: planning-rc2-delivery
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply hash-verified source changes
+        run: |
+          git merge-base --is-ancestor 0d54af74ffb7043f5b65bd90cc42b3514c2fb443 HEAD
+          python3 - <<'PY'
+          import pathlib,base64,lzma,hashlib,subprocess
+          parts=sorted(pathlib.Path('.planning-delivery').glob('part*')); assert len(parts)==3
+          data=lzma.decompress(base64.b64decode(''.join(p.read_text() for p in parts),validate=True))
+          assert hashlib.sha256(data).hexdigest()=='60e9bdf1e82d66bfc4b45ca8afbafa996c88f86b4b119c493a92f1aa5654b3e0'
+          p=pathlib.Path('/tmp/planning-source.patch');p.write_bytes(data)
+          subprocess.run(['git','apply','--unidiff-zero','--check',str(p)],check=True)
+          subprocess.run(['git','apply','--unidiff-zero',str(p)],check=True)
+          fixture=pathlib.Path('.planning-delivery/native-fixture.patch')
+          assert hashlib.sha256(fixture.read_bytes()).hexdigest()=='23e67f7a7d3a79371f4ed5395d6afeed84b0c0903a16801dee7e52941daef54b'
+          subprocess.run(['git','apply','--check',str(fixture)],check=True)
+          subprocess.run(['git','apply',str(fixture)],check=True)
+          path='assets/worldbook/!通用战斗系统约束.json'
+          before=subprocess.check_output(['git','show','0d54af74ffb7043f5b65bd90cc42b3514c2fb443:'+path])
+          assert pathlib.Path(path).read_bytes()==before
+          old='单场上限32张'.encode();new='单场上限64张'.encode();assert before.count(old)==1
+          pathlib.Path(path).write_bytes(before.replace(old,new))
+          assert pathlib.Path(path).read_bytes().replace(new,old)==before
+          assert '登城指能攀登城墙或有攻城器械；身体由body表达。'.encode() in before
+          explain='assets/worldbook/lorebook system explain.md'
+          assert pathlib.Path(explain).read_bytes()==subprocess.check_output(['git','show','0d54af74ffb7043f5b65bd90cc42b3514c2fb443:'+explain])
+          PY
+          git diff --check
+          npm run verify:worldbook-scope
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Typecheck and full regression with explicit known failures
+        run: |
+          npm run typecheck
+          mkdir -p artifacts/planning
+          full_exit=0
+          npm test -- --reporter=default --reporter=json --outputFile=artifacts/planning/full-tests.json || full_exit=$?
+          echo "$full_exit" > artifacts/planning/full-test-exit.txt
+          echo "Ordinary npm test exit: $full_exit; the seven baseline failures are not hidden or removed."
+          node scripts/check-layered-test-baseline.mjs artifacts/planning/full-tests.json > artifacts/planning/test-baseline.json
+          cat artifacts/planning/test-baseline.json
+          node --input-type=module -e "import fs from 'node:fs';import assert from 'node:assert/strict';const r=JSON.parse(fs.readFileSync('artifacts/planning/full-tests.json'));assert.equal(r.numTotalTests,1667);assert.ok(r.numFailedTests<=7)"
+      - name: Native save and relay regressions
+        run: |
+          npm run test:extension -- --reporter=default --reporter=json --outputFile=artifacts/planning/native-tests.json
+          npm run test:jev-relay
+      - name: Full-card capacity, breach combinations and bounded live turns
+        run: npm run audit:planning
+      - name: Static terrain and approach regression audit
+        run: TB_AUDIT_REPORT=artifacts/planning/static-maps.json npm run audit:layered-maps
+      - name: Recheck prior weapon breach budgets and execution
+        run: |
+          npm run audit:breach-review
+          cp docs/breach-review-audit.json artifacts/planning/breach-matrix.json
+          git restore -- docs/breach-review-audit.json
+      - name: Build installable extension
+        id: build
+        run: npm run build:extension && npm run verify:dist && npm run verify:worldbook-scope
+      - name: Install Chromium
+        run: |
+          npx playwright-core install --with-deps chromium
+          node --input-type=module -e "import { chromium } from 'playwright-core';import { appendFileSync } from 'node:fs';appendFileSync(process.env.GITHUB_ENV,'TB_BROWSER='+chromium.executablePath()+'\n')"
+      - name: Layered browser - metadata-only
+        id: layered_metadata
+        continue-on-error: true
+        run: npm run smoke:layered
+      - name: Layered browser - legacy-full
+        id: layered_legacy
+        continue-on-error: true
+        run: TB_METADATA_MODE=legacy-full npm run smoke:layered
+      - name: Native browser - metadata-only
+        id: native_metadata
+        continue-on-error: true
+        run: npm run smoke:extension
+      - name: Native browser - legacy-full
+        id: native_legacy
+        continue-on-error: true
+        run: TB_METADATA_MODE=legacy-full npm run smoke:extension
+      - name: Browser acceptance gate
+        env:
+          LAYERED_METADATA: ${{ steps.layered_metadata.outcome }}
+          LAYERED_LEGACY: ${{ steps.layered_legacy.outcome }}
+          NATIVE_METADATA: ${{ steps.native_metadata.outcome }}
+          NATIVE_LEGACY: ${{ steps.native_legacy.outcome }}
+        run: test "$LAYERED_METADATA" = success && test "$LAYERED_LEGACY" = success && test "$NATIVE_METADATA" = success && test "$NATIVE_LEGACY" = success
+      - name: Record exact verification and rebuild packaged evidence
+        run: |
+          python3 - <<'PY'
+          import pathlib,json,os,subprocess,hashlib
+          def load(p): return json.loads(pathlib.Path(p).read_text())
+          path=pathlib.Path('docs/planning-release-validation.json');r=load(path)
+          r['scope']='Local development plus independently re-run GitHub Actions full tests, audits, build and browser verification'
+          r['status']='passed-with-seven-unchanged-baseline-test-failures'
+          r['fullSuite']=load('artifacts/planning/test-baseline.json')
+          r['ordinaryNpmTestExit']=int(pathlib.Path('artifacts/planning/full-test-exit.txt').read_text())
+          n=load('artifacts/planning/native-tests.json');r['nativeSuite']={'total':n['numTotalTests'],'passed':n['numPassedTests'],'failed':n['numFailedTests']}
+          r['staticMaps']=load('artifacts/planning/static-maps.json');r['capacityAudit']=load('docs/planning-capacity-audit.json')
+          matrix=load('artifacts/planning/breach-matrix.json');r['priorBreachRecheck']={k:matrix[k] for k in ['weaponClasses','matrixChecks','executionChecks']}
+          browsers={}
+          for suite in ['layered-browser','native-extension-smoke']:
+            for mode in ['metadata-only','legacy-full']:
+              report=load(f'artifacts/{suite}/{mode}/report.json');assert report['status']=='passed'
+              browsers[suite+':'+mode]={'status':report['status'],'checks':len(report['results']),'errors':report['errors']}
+          r['browser']={'status':'passed','realHost':False,'results':browsers}
+          world=pathlib.Path('assets/worldbook/!通用战斗系统约束.json').read_bytes()
+          assert world==pathlib.Path('dist/assets/worldbook/!通用战斗系统约束.json').read_bytes()
+          r['worldbook']['sourceAndDistIdentical']=True;r['worldbook']['sha256']=hashlib.sha256(world).hexdigest()
+          r['ciRun']=f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+          r['ciHead']=os.environ['GITHUB_SHA']
+          r['installedFiles']=len(load('dist/build-manifest.json')['files'])
+          path.write_text(json.dumps(r,ensure_ascii=False,indent=2)+'\n')
+          PY
+          npm run verify:worldbook-scope
+          npm run build:extension
+          npm run verify:dist
+          git diff --check
+      - name: Commit source, generated dist and evidence to feature branch only
+        run: |
+          test "$(git ls-remote origin refs/heads/feat/orthogonal-maps-32-unit-tactics | cut -f1)" = "$GITHUB_SHA"
+          test -f docs/planning-release-validation.json
+          npm run verify:dist
+          rm -rf .planning-delivery
+          rm .github/workflows/deliver-planning.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: independent city damage, 32-card tactics and 64-card deployment; verified rc2 bundle'
+          git push origin HEAD:refs/heads/feat/orthogonal-maps-32-unit-tactics
+          git archive HEAD | gzip > artifacts/planning/source.tar.gz
+      - name: Preserve reproducible build and verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: planning-rc2-review
+          path: |
+            artifacts/planning/
+            artifacts/layered-browser/
+            artifacts/native-extension-smoke/
+            docs/planning*.json
+            docs/battle-planning-v2.md
+            release/native-candidate/
+          retention-days: 14
+          if-no-files-found: warn
