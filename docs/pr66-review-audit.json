@@ -1,6 +1,6 @@
 {
   "runner": "Node assertions against tsc-compiled production sources; Vitest not run by this script",
-  "durationMs": 35398,
+  "durationMs": 43175,
   "checks": 16,
   "passed": 16,
   "failed": 0,
