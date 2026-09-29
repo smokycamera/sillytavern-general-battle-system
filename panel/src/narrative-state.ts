@@ -139,6 +139,35 @@ function spawnInput(event: Extract<Suggestion, { kind: 'spawn' }>): GenerateInpu
   };
 }
 
+/** 同一档案允许互补/相同赋值；真正冲突仍需澄清，不能靠执行顺序暗中覆盖。 */
+function assertCompatibleUnitChanges(events: Suggestion[]): void {
+  const changes = new Map<string, Map<string, string>>();
+  const aliases: Record<string, string> = { state: 'status', speed: 'speedTier', weapon2: 'sidearm',
+    'base.hpMax': 'hpMax', 'base.atk': 'atk', 'base.def': 'def', 'base.spd': 'spd', 'base.moraleMax': 'moraleMax',
+    'formation.members': 'hp', 'formation.capacity': 'hpMax' };
+  for (const event of events) {
+    if (event.kind !== 'unit-set' && event.kind !== 'unit-update') continue;
+    const fields = changes.get(event.id!) ?? new Map<string, string>();
+    changes.set(event.id!, fields);
+    const visit = (value: unknown, path: string): void => {
+      if (value === undefined) return;
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        for (const [key, child] of Object.entries(value)) visit(child, path ? path + '.' + key : key);
+        return;
+      }
+      path = aliases[path] ?? path;
+      const encoded = JSON.stringify(value);
+      for (const [previous, encodedPrevious] of fields) {
+        if (previous === path ? encodedPrevious !== encoded : previous.startsWith(path + '.') || path.startsWith(previous + '.')) {
+          throw new Error(`档案 ${event.id} 的 ${path} 更新冲突，请合并为明确的绝对值`);
+        }
+      }
+      fields.set(path, encoded);
+    };
+    visit(event.kind === 'unit-set' ? event.data : { hp: event.hp, hpMax: event.hpMax, morale: event.morale, status: event.state }, '');
+  }
+}
+
 /** 整包准备与校验；调用方持久化成功后才替换当前事实。 */
 export function prepareNarrativeTransaction(save: NarrativeSave, proposal: NarrativeProposal, namespace: string, manual = false): NarrativeSave {
   if (proposal.status === 'unresolved') throw new Error('还有待补全的事件，请先修正草稿或明确仅保留已识别部分');
@@ -158,17 +187,14 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   let next = structuredClone(save);
   const registry = traitRegistry();
   let records = next.storage ?? [];
-  const changed = new Set<string>();
+  assertCompatibleUnitChanges(proposal.events);
   for (const event of proposal.events) {
     if (event.kind !== 'unit-set' && event.kind !== 'unit-update' && event.kind !== 'deploy' && event.kind !== 'bless' && event.kind !== 'unbless' && event.kind !== 'affect' && event.kind !== 'unaffect' && event.kind !== 'learn') continue;
     const record = records.find((r) => r.id === event.id);
     if (!record || !event.id || expected.unitVersions[event.id] !== (record.revision ?? 1)) throw new Error(`档案 ${event.id} 缺失或版本过期`);
-    if (event.kind === 'unit-update' || event.kind === 'unit-set') {
-      if (changed.has(event.id)) throw new Error('同一回复不能多次更新同一档案，请合并为一个绝对更新');
-      changed.add(event.id);
-    }
   }
-  // 顺序固定：更新全部档案，再部署。后续任一步失败只丢弃此候选副本。
+  // 固定阶段：补员/状态 → 单位字段 → 实物改造/学习/效果 → 部署。deploy写在前面也使用最终档案。
+  // 版本只对批次开始前的事实校验；后续任一步失败只丢弃此候选副本。
   for (const event of proposal.events) {
     if (event.kind !== 'unit-update') continue;
     records = records.map((r) => r.id === event.id ? updateUnitRecord(r, event, registry, proposal.id) : r);

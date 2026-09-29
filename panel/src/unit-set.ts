@@ -12,7 +12,7 @@ import { isEnduranceModel, spCapacity, fatigueLimit } from '../../engine/src/res
 import { xpProgress } from '../../engine/src/xp.js';
 import { materializeUnitRecord, unitRecordFromCombatant, combatantFromUnknown } from './unit-state.js';
 import { prepareInventoryState, validateInventoryItem } from './inventory-state.js';
-import { parseItemSpecification } from './item-spec.js';
+import { parseItemSpecification, splitItemSpecification } from './item-spec.js';
 import { parseAbilitySpec } from './tags.js';
 import type { NarrativeSave } from './narrative-state.js';
 
@@ -78,9 +78,9 @@ function gearValue(input: unknown, previous: ItemMechanics | undefined, slot: Eq
   if (config.spec !== undefined) {
     let spec: ItemSpecification, name: string | undefined;
     if (typeof config.spec === 'string') {
-      const parts = config.spec.split(/[:：]/); if (parts.length > 2) throw Error('装备规格使用名称:效果L等级');
-      if (parts.length === 2) name = parts.shift()!;
-      spec = parseItemSpecification(parts[0]!);
+      const named = splitItemSpecification(config.spec);
+      name = named.name;
+      spec = parseItemSpecification(named.spec);
     } else {
       const value = requireObject(config.spec, '装备spec');
       keys(value, ['kind','power','quality','body','bonuses','mechanism','enchantment','stabilized','tier','profile','name'], '装备spec');

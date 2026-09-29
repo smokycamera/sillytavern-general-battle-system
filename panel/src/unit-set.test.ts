@@ -97,7 +97,9 @@ describe('正文战外全字段事务（定向验证）',()=>{
     expect(()=>prepareNarrativeTransaction({...save,battle:{kind:'small',snap:{seed:'active'}}},tx.proposal,tx.ns)).toThrow(/战内/);
     const next=tx.next();expect(()=>prepareNarrativeTransaction(next,tx.proposal,tx.ns)).toThrow(/过期|已经/);
     expect(()=>transact(save,{xp:25},'<deploy id="missing"/>').next()).toThrow();
-    expect(()=>transact(save,{xp:25},'<unit_update id="u1" hp="50"/>').next()).toThrow(/多次更新/);
+    // 同批互补修改合法；显式冲突仍不能落库。
+    expect(restored(transact(save,{xp:25},'<unit_update id="u1" hp="50"/>').next())).toMatchObject({ xp:25, hp:50 });
+    expect(()=>transact(save,{hp:40},'<unit_update id="u1" hp="50"/>').next()).toThrow(/冲突/);
     expect(save).toEqual(before);
   });
 });
