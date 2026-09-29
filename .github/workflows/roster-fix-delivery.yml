@@ -1,0 +1,39 @@
+name: Package roster replacement fix
+on:
+  push:
+    branches: [fix/narrative-roster-replacement]
+permissions:
+  contents: write
+jobs:
+  package:
+    if: github.event.head_commit.message == 'build: prepare roster fix delivery'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply reviewed source patch
+        run: git apply --check .github/roster-source.patch && git apply .github/roster-source.patch
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Roster and persistence regressions
+        run: npx vitest run panel/src/narrative-roster.test.ts panel/src/narrative-state.test.ts panel/src/narrative-controller.test.ts runtime/tests/narrative-roster.test.ts
+      - run: npm run build:extension && npm run verify:dist
+      - name: Commit source and installable bundle to this fix branch only
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          branch=fix/narrative-roster-replacement
+          actual=$(git ls-remote origin "refs/heads/$branch" | cut -f1)
+          test "$actual" = "$EXPECTED_HEAD"
+          rm .github/roster-source.patch
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- package.json package-lock.json panel/src/main.ts panel/src/narrative-limits.ts panel/src/narrative-state.ts panel/src/narrative-state.test.ts dist manifest.json .github/roster-source.patch
+          git commit -m 'fix: replace narrative battle roster and synchronize v1.5.1 bundle'
+          git push origin "HEAD:refs/heads/$branch"
