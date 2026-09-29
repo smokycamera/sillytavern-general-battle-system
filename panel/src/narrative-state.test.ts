@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { generateUnit, traitRegistry, activeTraitIds, applyXp } from '../../engine/src/index.js';
 import { unitRecordFromCombatant, materializeUnitRecord } from './unit-state.js';
 import { prepareInventoryState } from './inventory-state.js';
+import { narrativeIds } from './narrative-ids.js';
+import { narrativeProjection } from './narrative-controller.js';
 import { captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type MessageEnvelope, type NarrativeSave } from './narrative-state.js';
 const reg = traitRegistry();
 function setup(body: string) {
@@ -13,6 +15,25 @@ function setup(body: string) {
   return { save, source, ns, proposal: proposalFromMessage(source, binding)! };
 }
 describe('正文原子事务', () => {
+  it('给LLM短单位与实物代号，并将返回的短代号映射回原存档身份', () => {
+    const fixture = setup('');
+    const unitId = 'unit-very-long-saved-identity-20260930', itemId = 'equipment-very-long-saved-identity-20260930';
+    fixture.save.storage![0]!.id = unitId;
+    fixture.save.storage![0]!.snapshot!.id = unitId;
+    fixture.save.inventory = [{ id: itemId, name: '旧物', qty: 2, lootType: 'material' }];
+    const ids = narrativeIds(prepareInventoryState(fixture.save));
+    const prompt = narrativeProjection(fixture.save, '调整单位装备');
+    expect(ids.publicId(unitId).length).toBeLessThanOrEqual(10);
+    expect(ids.publicId(itemId).length).toBeLessThanOrEqual(10);
+    expect(prompt).toContain(`"id":"${ids.publicId(unitId)}"`);
+    expect(prompt).toContain(`"id":"${ids.publicId(itemId)}"`);
+    expect(prompt).not.toContain(unitId); expect(prompt).not.toContain(itemId);
+    const binding = captureGeneration(fixture.save, fixture.ns, 'g1'); binding.complete = true;
+    const source = { ...fixture.source, text: `<tb><unit_update id="${ids.publicId(unitId)}" hp="60"/><take id="${ids.publicId(itemId)}" qty="1"/></tb>` };
+    const next = prepareNarrativeTransaction(fixture.save, proposalFromMessage(source, binding)!, fixture.ns, true);
+    expect(next.storage![0]!.id).toBe(unitId); expect(next.storage![0]!.hp).toBe(60);
+    expect(next.inventory!.find(item => item.id === itemId)!.qty).toBe(1);
+  });
   it('同批先收走旧装备再执行unit_set，新装备不会被后续take卸掉', () => {
     const fixture = setup('');
     const armed = generateUnit({ name: 'A军团', side: 'ally', scale: 'company', level: 4, rulesVersion: 'v2', weaponClass: 'rifle', traits: [] }, { seed: 'armed-narrative', registry: reg }).unit;

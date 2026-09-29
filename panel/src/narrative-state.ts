@@ -11,6 +11,7 @@ import type { Suggestion } from './tags.js';
 import { createInventoryItem, prepareInventoryState, prepareInventoryTransaction, type InventoryItem } from './inventory-state.js';
 import { assertNarrativeCapacity, hasNarrativeDeployment, MAX_SCENE_UNITS } from './narrative-limits.js';
 import { applyUnitSet } from './unit-set.js';
+import { narrativeIds } from './narrative-ids.js';
 
 export interface MessageEnvelope {
   characterId: string;
@@ -181,6 +182,9 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (!(save.committedOutcomeIds ?? []).includes(id)) throw new Error('战内与未结算战果只能由引擎更新');
   }
   if (save.committedNarrativeSources?.includes(proposal.sourceKey) || (save.proposals ?? []).some((p) => p.sourceKey === proposal.sourceKey && p.status === 'committed')) throw new Error('此消息已经提交，编辑/重生成不会重复执行');
+  const { realId } = narrativeIds(prepareInventoryState(save));
+  proposal = { ...proposal, events: proposal.events.map(event => 'id' in event && typeof event.id === 'string'
+    ? { ...event, id: realId(event.id) } as Suggestion : event) };
   if (!manual && expected.manualOnly) throw new Error('此消息需要预览确认后提交');
   if (!manual && (!save.storySync || proposal.events.some((e) => !['unit-set', 'unit-update', 'deploy'].includes(e.kind)))) throw new Error('此类变更需人工审查');
   assertNarrativeCapacity(save, proposal.events);

@@ -21,7 +21,8 @@ import {
 
 import { RUNTIME_REMINDER } from './narrative-prompt.js';
 import { parseProtocol, protocolExcerpt } from './protocol.js';
-const promptJson = (value: unknown) => JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+import { narrativeIds } from './narrative-ids.js';
+const promptJson = (value: unknown, publicId: (id: string) => string = id => id) => JSON.stringify(value, (_key, entry) => typeof entry === 'string' ? publicId(entry) : entry).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
 
 const PROMPT_ID = 'tavern-battle:context';
 export function narrativeProjection(save: NarrativeSave, requestText = '', details?: ProjectionDetails): string {
@@ -38,9 +39,10 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
   const visible = new Set((limited ? observedUnits(observation, 'ally') : combatants).map((u) => u.id));
   const canInclude = (record: { id: string; side: string }) => !limited || record.side === 'ally' || visible.has(record.id);
   const roster = new Set(save.rosterIds ?? []);
-  const relevant = (r: { id: string; name: string }) => requestText.includes(r.id) || r.name.length > 1 && requestText.includes(r.name);
   let inventory: InventorySave['inventory'] = [];
   try { inventory = prepareInventoryState(save).inventory; } catch { /* 坏项由迁移/库存界面说明，不注入不可用物品引用。 */ }
+  const { publicId } = narrativeIds({ storage: save.storage, inventory });
+  const relevant = (r: { id: string; name: string }) => requestText.includes(r.id) || requestText.includes(publicId(r.id)) || r.name.length > 1 && requestText.includes(r.name);
   const equipment = (inventory ?? []).filter((i) => i.qty > 0 && promptSelected(settings, 'item', i.id) && (!i.assignedTo || !limited || save.storage?.some((r) => r.id === i.assignedTo && canInclude(r)))).sort((a, b) => Number(relevant(b)) - Number(relevant(a)) || Number(roster.has(b.assignedTo ?? '')) - Number(roster.has(a.assignedTo ?? '')) || (b.revision ?? 1) - (a.revision ?? 1));
   const allRecords = [...(save.storage ?? [])].filter(canInclude);
   const records = allRecords.filter((r) => promptSelected(settings, 'unit', r.id)
@@ -53,7 +55,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     const owner = goal.kind === 'escape' ? combatants.find((u) => u.id === goal.unitId)?.side : undefined;
     blocks.mission.push(`当前地图${field.width}×${field.height}${goal.kind === 'annihilation' ? '' : '，任务格' + cellLabel(field, goal.cell)}，第${save.battle?.snap.round ?? 1}/${goal.limit}轮；移动/位置以引擎为准。`);
     blocks.mission.push(goal.kind === 'annihilation' ? '任务：歼灭战，使敌方全部失去作战能力获胜，无占点胜利。' : goal.kind === 'control' ? `任务：${goal.attackingSide ? (goal.attackingSide === 'ally' ? '我方进攻、敌方防守' : '我方防守、敌方进攻') + '；仅攻方可占点获胜，守方坚持至期限获胜' : '双方争夺'}，占领当轮不计，连续控制${goal.rounds}个完整回合可胜；当前进展${promptJson(save.battle?.snap.controlRounds ?? {})}。`
-      : `任务：${owner === 'enemy' ? '我方拦截敌方护送' : '我方护送、敌方拦截'}；对象${visible.has(goal.unitId) ? promptJson(goal.unitId) : '尚未观测'}，地面抵达则护送方胜；${goal.defenderWins ? '消灭、撤离或逾期则拦截方胜' : '旧规则逾期僵持'}。`);
+      : `任务：${owner === 'enemy' ? '我方拦截敌方护送' : '我方护送、敌方拦截'}；对象${visible.has(goal.unitId) ? promptJson(goal.unitId, publicId) : '尚未观测'}，地面抵达则护送方胜；${goal.defenderWins ? '消灭、撤离或逾期则拦截方胜' : '旧规则逾期僵持'}。`);
   }
   if (limited) blocks.mission.push('仅列我方与当前已观测敌军；未列出的敌军位置、兵力与行动未知，不补写隐藏战斗记录。');
   for (const record of records) {
@@ -83,7 +85,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
         : { id:a.id, definitionId:a.definitionId, name: a.name, mechanism: skillMechanismName(a.definitionId ?? '') || a.definitionId, power: a.fixedPower ? undefined : a.power, bonuses:a.bonuses, prepared: unit.preparedAbilityIds?.includes(a.id) }) : undefined,
       ...(!battleOpen && /修改|调整|数值|属性|unit_set/.test(requestText) ? { editable: { formation:unit?.formation,abilities:unit?.abilities,traitSources:unit?.traitSources,trinkets:unit?.trinkets,abilityState:unit?.abilityState,fatigue:unit?.fatigue,weapon:unit?.weapon,sidearm:unit?.sidearm,armor:unit?.armor,shield:unit?.shield,xpValue:unit?.xpValue } } : {}),
       body: unit?.rulesVersion === 'v2' && unit.body !== 'human' ? unit.body : undefined, mount: unit?.mount || undefined,
-      weapon: unit?.weapon?.name, sidearm: unit?.sidearm?.name, armor: unit?.armor?.name, ...(effects?.length ? { effects } : {}) });
+      weapon: unit?.weapon?.name, sidearm: unit?.sidearm?.name, armor: unit?.armor?.name, ...(effects?.length ? { effects } : {}) }, publicId);
     blocks.units.push(line);
     details?.units.push({id: record.id, name: record.name, reason: settings?.pinnedUnitIds?.includes(record.id) ? '固定关注' : roster.has(record.id) ? '当前参战' : relevant(record) ? '正文提及' : '手动勾选'});
   }
@@ -95,7 +97,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     const recipe = m?.kind === 'consumable' ? m.recipe : m?.value.recipe;
     blocks.items.push(promptJson({ id: item.id, name: item.name, qty: item.qty, owner: item.assignedTo, slot: item.equippedTo?.slot,
       kind: m?.kind ?? item.lootType, mechanism: recipe?.mechanism, power: recipe?.power, bonuses:recipe?.bonuses, enchant: recipe?.enchantment,
-      quality: recipe?.quality, body: recipe?.size, stabilized: recipe?.stabilized, protection: recipe?.protectionProfile, note: item.note }));
+      quality: recipe?.quality, body: recipe?.size, stabilized: recipe?.stabilized, protection: recipe?.protectionProfile, note: item.note }, publicId));
     details?.items.push({id: item.id, name: item.name, reason: item.assignedTo && roster.has(item.assignedTo) ? '参战队伍携行' : relevant(item) ? '正文提及' : '手动勾选'});
   }
   blocks.phase.push(battleOpen ? '当前战斗/战果待提交，正文不能更新档案。' : '当前可进行战外档案事件。');
