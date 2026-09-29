@@ -32,6 +32,6 @@ for (const environment of ['plains', 'forest', 'mountain', 'urban', 'siege']) fo
   } catch (error) { failures.push({ seed, message: String(error) }); }
 }
 const report = { maps, distinctMaps: signatures.size, deployments, approachChecks, elapsedMs: performance.now() - start, failures };
-writeFileSync('docs/layered-map-audit-20260929.json', JSON.stringify(report, null, 2) + '\n');
+writeFileSync(process.env.TB_AUDIT_REPORT ?? 'docs/layered-map-audit-20260929.json', JSON.stringify(report, null, 2) + '\n');
 console.log(JSON.stringify({ ...report, failures: failures.slice(0, 20) }, null, 2));
 if (failures.length) process.exitCode = 1;

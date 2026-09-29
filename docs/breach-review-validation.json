@@ -1,0 +1,106 @@
+{
+  "version": "1.6.1-rc.1",
+  "base": "c6495ebb5331a89069e19c6b79dee9315e605488",
+  "scope": "Source, full/native/relay tests, map/breach/combat audits and synthetic-browser interactions independently rerun in GitHub Actions",
+  "fullSuite": {
+    "total": 1622,
+    "passed": 1615,
+    "knownFailures": [
+      "engine/tests/unified-replay.test.ts::V5 saved battles and V6 prototype replay compatibility V5 human-four T1",
+      "engine/tests/unified-replay.test.ts::V5 saved battles and V6 prototype replay compatibility V5 giant-four T10",
+      "engine/tests/unified-replay.test.ts::V5 saved battles and V6 prototype replay compatibility V6-prototype giant-four T6",
+      "engine/tests/unified-replay.test.ts::V5 saved battles and V6 prototype replay compatibility V6-prototype giant-unbreakable T1",
+      "engine/tests/unified-replay.test.ts::V5 saved battles and V6 prototype replay compatibility V6-prototype human4-vehicle2 T10",
+      "panel/src/life-limit-state.test.ts::生命上限贯穿正文、编辑与档案 正文高生命自动截断并给出提示，编队人数保留原值",
+      "panel/src/life-limit-state.test.ts::生命上限贯穿正文、编辑与档案 正文事务不能在生成后用旧事件值覆盖生命上限"
+    ],
+    "newFailures": []
+  },
+  "rawNpmTestExit": 1,
+  "additionalTests": 42,
+  "worldbook": {
+    "status": "passed",
+    "change": "only the authorized exact substring; PR62 trait names retained; other bytes verified"
+  },
+  "types": "passed",
+  "nativeTests": {
+    "status": "passed",
+    "total": 224,
+    "passed": 224,
+    "failed": 0
+  },
+  "relayTests": {
+    "status": "passed",
+    "report": "Node built-in test runner"
+  },
+  "staticMaps": {
+    "maps": 2400,
+    "distinctMaps": 2400,
+    "deployments": 240,
+    "approachChecks": 2880,
+    "elapsedMs": 19922.843722999998,
+    "failures": []
+  },
+  "breach": {
+    "weaponClasses": 18,
+    "matrixChecks": 12600,
+    "executionChecks": 1260
+  },
+  "liveAi": {
+    "count": 24,
+    "completed": 24,
+    "actionSamples": 2100,
+    "failures": [],
+    "actionsByKind": {
+      "structureActions": 116,
+      "climbs": 41,
+      "gates": 4
+    }
+  },
+  "browser": {
+    "status": "passed",
+    "ciResult": {
+      "LAYERED_METADATA": "success",
+      "LAYERED_LEGACY": "success",
+      "NATIVE_METADATA": "success",
+      "NATIVE_LEGACY": "success"
+    },
+    "reports": {
+      "layered-browser/metadata-only": {
+        "status": "passed",
+        "checks": 9,
+        "errors": []
+      },
+      "layered-browser/legacy-full": {
+        "status": "passed",
+        "checks": 9,
+        "errors": []
+      },
+      "native-extension-smoke/metadata-only": {
+        "status": "passed",
+        "checks": 51,
+        "errors": []
+      },
+      "native-extension-smoke/legacy-full": {
+        "status": "passed",
+        "checks": 51,
+        "errors": []
+      }
+    },
+    "realHost": false,
+    "localAttempt": "Runtime policy blocked localhost; no claim of local browser success."
+  },
+  "testRepository": {
+    "target": "smokycamera/sillytavern-general-battle-system-test",
+    "status": "not-created",
+    "publisher": "dry-run only; requires maintainer gh authentication; no overwrite"
+  },
+  "limits": [
+    "Seven unchanged baseline test failures; normal npm test still fails.",
+    "Synthetic browser is not real ST/TT or Android verification.",
+    "No actual third-party LLM latency benchmark.",
+    "No material-specific resistance or full ocean/space mechanics."
+  ],
+  "ciHead": "140093a801f80158765d9f78ecb57201e3dfd986",
+  "ciRun": "https://github.com/smokycamera/sillytavern-general-battle-system/actions/runs/36535749467"
+}

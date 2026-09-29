@@ -1,3 +1,4 @@
+import { movementStepCost } from '../../engine/src/small/spatial.js';
 import { structureAt, intactStructure, groundBlocked, isElevated, STRUCTURE_NAMES } from '../../engine/src/small/layers.js';
 import { ZONE_NAMES } from '../../engine/src/area-effects.js';
 import { tbWeaponShortName } from '../../engine/src/weapon-name.js';
@@ -6,7 +7,7 @@ import { participationText,memberHealthPanel } from './combat-model-view.js';
 import {hasMemberHealth} from '../../engine/src/member-health.js';
 import { difficultEngagementDescription } from '../../engine/src/exposure.js';
 import { renderBattleHighlights, traceOverlay, traceLocations, unitSymbol } from './battle-presentation.js';
-import { weaponReloadKey, terrainName, landmarkAt, landmarkCells, cellLabel, gridDistance, tileCost, inBounds, moraleLabel, isAirborne, activeTraitIds, postureLabel, concealmentLabel, standardConditionMap, type SmallBattle, type ActionOption, type ActionPreview, type Combatant, type Terrain, TERRAIN_NAMES } from '../../engine/src/index.js';
+import { weaponReloadKey, terrainName, landmarkAt, landmarkCells, cellLabel, gridDistance, inBounds, moraleLabel, isAirborne, activeTraitIds, postureLabel, concealmentLabel, standardConditionMap, type SmallBattle, type ActionOption, type ActionPreview, type Combatant, type Terrain, TERRAIN_NAMES } from '../../engine/src/index.js';
 
 import { renderRoundFeedback } from './round-feedback.js';
 import { movementLabel } from '../../engine/src/tactics.js';
@@ -112,17 +113,17 @@ function tileInspector(battle: SmallBattle, view: TacticalView, selection: Retur
     ...battleAbilities(actor).filter(a => a.effects.some(e => e.op === 'damage')).map(a => ['ability:' + a.id, a.name]),
   ].map(([mode, label]) => {
     const preview = battle.structurePreview(actor.id, cell, mode);
-    return `<button data-action="grid-structure" data-actor="${esc(actor.id)}" data-cell="${cell}" data-mode="${esc(mode!)}" ${preview.reason || !preview.damage ? 'disabled' : ''} title="${esc(preview.reason ?? '主行动破障；只伤结构，不附带单位伤害')}">${esc(label!)}破障${preview.reason ? '' : ' · ' + preview.damage}</button>`;
+    return `<button data-action="grid-structure" data-actor="${esc(actor.id)}" data-cell="${cell}" data-mode="${esc(mode!)}" ${preview.reason || !preview.damage ? 'disabled' : ''} title="${esc(preview.reason ?? `破障系数×${preview.coefficient}；约${preview.actions}次有效攻击（不含装填），只伤结构`)}">${esc(label!)}破障${preview.reason ? '' : ' · ' + preview.damage + '（×' + preview.coefficient + '）'}</button>`;
   }).join('') : '';
   const gateReason = actor && structure?.kind === 'gate' ? battle.gateReason(actor.id, cell) : undefined;
   const climbReason = actor ? battle.climbReason(actor.id, cell) : undefined;
-  return `<div class="map-inspector" aria-live="polite"><div class="inspector-heading"><strong>${cellLabel(field, cell)} · ${landmarkAt(field, cell) ? esc(landmarkAt(field, cell)!) + ' · ' : ''}${terrainName(field, cell)}</strong><span>${actor && traversable ? '进入花费' + tileCost(field, cell, actor) + '移动' : terrain === 'wall' || !traversable ? '地面不可通行' : ''}</span></div>
+  return `<div class="map-inspector" aria-live="polite"><div class="inspector-heading"><strong>${cellLabel(field, cell)} · ${landmarkAt(field, cell) ? esc(landmarkAt(field, cell)!) + ' · ' : ''}${terrainName(field, cell)}</strong><span>${actor && traversable ? '进入花费' + movementStepCost(field, cell, actor, battle.fieldTags) + '移动' : terrain === 'wall' || !traversable ? '地面不可通行' : ''}</span></div>
     <p>${terrainDescription(terrain, actor)}</p>
     ${structure ? `<p><b>${STRUCTURE_NAMES[structure.kind]} L${structure.level}</b> · 耐久 ${structure.hp}/${structure.hpMax}${structure.top && structure.hp > 0 ? ' · 可登城防平台' : ''}${structure.facing ? ' · 朝向 ' + ({north:'北',south:'南',east:'东',west:'西'}[structure.facing]) : ''}</p>` : ''}
-    ${field.overlays?.[cell]?.length ? '<p>' + field.overlays[cell]!.map(o => o === 'road' ? '道路' : '瓦砾：至少花费2移动').join(' · ') + '</p>' : ''}
+    ${field.overlays?.[cell]?.length ? '<p>' + field.overlays[cell]!.map(o => o === 'road' ? '道路' : '瓦砾：基础2移动；慢速单位花费整轮基础移动力可前进一步').join(' · ') + '</p>' : ''}
     <div class="structure-actions">${structureActions}
     ${structure?.kind === 'gate' && actor && selection.canControl ? `<button data-action="grid-gate" data-actor="${esc(actor.id)}" data-cell="${cell}" ${gateReason ? 'disabled' : ''} title="${esc(gateReason ?? '消耗主行动')}">${structure.gateState === 'open' ? '关闭城门' : '打开城门'}</button>` : ''}
-    ${actor && selection.canControl && (!climbReason || structure?.top && structure.hp > 0) ? `<button data-action="grid-climb" data-actor="${esc(actor.id)}" data-cell="${cell}" ${climbReason ? 'disabled' : ''} title="${esc(climbReason ?? '消耗主行动和2移动')}">${isElevated(actor) ? '下到地面' : '登城'}</button>` : ''}</div>
+    ${actor && selection.canControl && (!climbReason || structure?.top && structure.hp > 0) ? `<button data-action="grid-climb" data-actor="${esc(actor.id)}" data-cell="${cell}" ${climbReason ? 'disabled' : ''} title="${esc(climbReason ?? `消耗主行动和${battle.climbMovementCost(actor.id)}移动`)}">${isElevated(actor) ? '下到地面' : '登城'}</button>` : ''}</div>
     ${!battle.cellVisible('ally', cell) ? '<p class="grid-reason">此格尚未观测；路线只考虑已知占位，实际移动可能遇敌受阻。</p>' : ''}
     ${field.objective.kind !== 'annihilation' && field.objective.cell === cell ? '<div class="objective-detail"><b>任务目标</b><div class="objective-rule">' + objectiveDetails(battle) + '</div></div>' : ''}
     ${occupants.length ? '<div class="inspector-units">' + occupants.map((u) => `<button data-action="grid-inspect-unit" data-unit="${esc(u.id)}" class="${u.side}">${esc(u.name)} · ${u.hp}/${u.base.hpMax}${u.scale === 'hero' ? '生命' : '人'}${isAirborne(u) ? ' · 空中' : isElevated(u) ? ' · 墙顶' : ''}${u.barrier?' · 屏障'+u.barrier.remaining:''}</button>`).join('') + '</div>' : ''}

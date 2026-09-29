@@ -1,3 +1,4 @@
+import { newBattleCommanderProfiles } from '../../engine/src/commander-profile.js';
 import { instanceVarianceLabel } from '../../engine/src/instance-variance.js';
 import { hitChanceText, hitDamageText, hitDamageDetails } from './damage-preview.js';
 import { version } from '../../package.json';
@@ -2593,7 +2594,7 @@ async function startSmallBattle(context?:LlmEncounterContext):Promise<void> {
       summonUnit,
       field: { tags: state.roster.every((u) => u.rulesVersion === 'v2') ? tags : state.field ? [state.field] : [] },
     });
-    small.commanderProfiles = structuredClone(context?.commanders ?? {});
+    small.commanderProfiles = newBattleCommanderProfiles(context?.commanders);
     small.start();
     state.activeBattleStart=captureBattleStart(small,before);state.selectedReportId=undefined;
     state.small = small;
@@ -2627,7 +2628,7 @@ async function startMassBattle(context?:LlmEncounterContext):Promise<void> {
       summonUnit,
       field: { tags: state.roster.every((u) => u.rulesVersion === 'v2') ? plannedFieldTags() : state.field ? [state.field] : [] },
     });
-    mass.commanderProfiles = structuredClone(context?.commanders ?? {});
+    mass.commanderProfiles = newBattleCommanderProfiles(context?.commanders);
     mass.start();
     state.activeBattleStart=captureBattleStart(mass,before);state.selectedReportId=undefined;
     state.mass = mass;
