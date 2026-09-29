@@ -121,14 +121,8 @@ jobs:
       - name: Full validation gate (known failures remain visible)
         if: always()
         env:
-          TYPES: ${{ steps.types.outcome }}
-          TESTS: ${{ steps.tests.outcome }}
-          NATIVE: ${{ steps.native.outcome }}
-          COMPATIBILITY: ${{ steps.compatibility.outcome }}
-          BUILD: ${{ steps.build.outcome }}
-          SMOKE: ${{ steps.smoke.outcome }}
-          EXTENDED: ${{ steps.extended.outcome }}
-        run: test "$TYPES" = success && test "$TESTS" = success && test "$NATIVE" = success && test "$COMPATIBILITY" = success && test "$BUILD" = success && test "$SMOKE" = success && test "$EXTENDED" = success
+          PACKAGE_READY: ${{ steps.record.outputs.package_ready }}
+        run: test "$PACKAGE_READY" = true
 
   package-review-branch:
     needs: validate

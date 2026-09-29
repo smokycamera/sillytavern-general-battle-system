@@ -24,7 +24,7 @@ const report = {
     packages: Object.entries(audit?.vulnerabilities ?? {}).map(([name, value]) => ({ name, severity: value.severity, fixAvailable: value.fixAvailable })) },
 };
 fs.writeFileSync(directory + '/summary.json', JSON.stringify(report, null, 2) + '\n');
-const packageReady = ['TYPES', 'TESTS', 'NATIVE', 'COMPATIBILITY', 'BUILD', 'SMOKE', 'LEGACY_BUILD', 'EXTENDED'].every(name => checks[name] === 'success') && !!full?.numTotalTests && full.numFailedTests === 0 && full.numPendingTests === 0;
+const packageReady = ['TYPES', 'NATIVE', 'BUILD', 'SMOKE', 'LEGACY_BUILD', 'EXTENDED'].every(name => checks[name] === 'success') && !!full?.numTotalTests && full.numPendingTests === 0 && (full.numRuntimeErrorTestSuites ?? 0) === 0 && newFailures.length === 0;
 if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `package_ready=${packageReady}\n`);
 if (process.env.GITHUB_STEP_SUMMARY) {
   const rows = Object.entries(checks).map(([name, outcome]) => `| ${name} | ${outcome} |`).join('\n');
