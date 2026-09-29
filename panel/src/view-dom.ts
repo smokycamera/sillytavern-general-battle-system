@@ -1,3 +1,4 @@
+import { hydrateTerrain } from './terrain-layer.js';
 /** 战场在原位更新节点；格子、滚动容器和下拉框不因查看目标而离开文档。 */
 function battleNodeKey(node: Node): string | undefined {
   if (!(node instanceof Element)) return undefined;
@@ -11,15 +12,14 @@ function battleNodeKey(node: Node): string | undefined {
   return cls ? tag + ':class:' + cls : undefined;
 }
 
-function compatibleNode(old: Node, next: Node): boolean {
-  return old.nodeType === next.nodeType && (!(old instanceof Element) || next instanceof Element && old.tagName === next.tagName && old.namespaceURI === next.namespaceURI);
-}
-
 function patchBattleNode(old: Node, next: Node): void {
   if (!(old instanceof Element) || !(next instanceof Element)) {
     if (old.nodeValue !== next.nodeValue) old.nodeValue = next.nodeValue;
     return;
   }
+  // 静态底图：同一 id 的内容不变，整棵子树跳过；id 变化时清空，交给 hydrateTerrain 重画。
+  const island = next.getAttribute('data-static');
+  if (island !== null && island === old.getAttribute('data-static')) return;
   const keepOpen = old instanceof HTMLDetailsElement && old.hasAttribute('data-detail-id');
   for (const attr of [...old.attributes]) if (!(keepOpen && attr.name === 'open') && !next.hasAttribute(attr.name)) old.removeAttribute(attr.name);
   for (const attr of [...next.attributes]) if (!(keepOpen && attr.name === 'open') && old.getAttribute(attr.name) !== attr.value) old.setAttribute(attr.name, attr.value);
@@ -34,13 +34,18 @@ function patchBattleNode(old: Node, next: Node): void {
   }
 }
 
+/** 匹配键 = 节点键 + 可兼容的节点类型；同键按文档顺序排队，取第一个未用节点（与逐个查找结果相同，但为线性复杂度）。 */
+function matchKey(node: Node): string {
+  const kind = node instanceof Element ? node.namespaceURI + ':' + node.tagName : String(node.nodeType);
+  return (battleNodeKey(node) ?? '') + '\u0001' + kind;
+}
+
 function patchBattleChildren(parent: Node, next: Node): void {
-  const previous = [...parent.childNodes], used = new Set<Node>();
-  const keys = new Map(previous.map(node => [node, battleNodeKey(node)]));
+  const previous = [...parent.childNodes], used = new Set<Node>(), queues = new Map<string, Node[]>();
+  for (const node of previous) { const key = matchKey(node), queue = queues.get(key); if (queue) queue.push(node); else queues.set(key, [node]); }
   let cursor = parent.firstChild;
   for (const child of [...next.childNodes]) {
-    const key = battleNodeKey(child);
-    const current = previous.find(node => !used.has(node) && keys.get(node) === key && compatibleNode(node, child));
+    const current = queues.get(matchKey(child))?.shift();
     if (current) {
       used.add(current);
       if (current !== cursor) parent.insertBefore(current, cursor);
@@ -61,10 +66,17 @@ export function updateRegion(root: HTMLElement, html: string): void {
   const focus = root.contains(document.activeElement) ? document.activeElement as HTMLInputElement : undefined;
   const role = focus?.dataset.role, id = focus?.id, section = focus?.dataset.section;
   const selection = focus && ['INPUT', 'TEXTAREA'].includes(focus.tagName) ? [focus.selectionStart, focus.selectionEnd] : undefined;
+  if (root.dataset.workspace === 'battle') {
+    // 文档里已有同签名的格子不再解析：只留同键空壳，打补丁时按签名整格跳过。
+    const live = new Set([...root.querySelectorAll('button.grid-cell[data-static]')].map(el => el.getAttribute('data-static')));
+    if (live.size) html = html.replace(/<button (class="grid-cell [^>]*?)data-static="([^"]+)">[\s\S]*?<\/button>/g,
+      (whole, attrs: string, sig: string) => live.has(sig) ? `<button data-cell="${/data-cell="(\d+)"/.exec(attrs)?.[1] ?? ''}" data-static="${sig}"></button>` : whole);
+  }
   const fragment = document.createElement('template'); fragment.innerHTML = html;
   if (root.dataset.workspace === 'battle') {
     const scroll = [...root.querySelectorAll<HTMLElement>('.grid-camera, .formation-map-camera, #logview')].map(el => ({el, left:el.scrollLeft, top:el.scrollTop}));
     patchBattleChildren(root, fragment.content);
+    hydrateTerrain(root);
     for (const {el,left,top} of scroll) if (el.isConnected) { el.scrollLeft=left; el.scrollTop=top; }
     return;
   }

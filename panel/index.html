@@ -158,29 +158,6 @@
     .tactical-heading h2 { font-size:21px; margin:0; letter-spacing:1px; }
     .tactical-columns { display:grid; grid-template-columns:minmax(0,7fr) minmax(220px,3fr); gap:18px; }
     .tactical-map-column, .grid-command { min-width:0; }
-    .grid-camera { overflow:auto; max-width:100%; height:min(70vh,660px); border:1px solid var(--line); border-radius:8px; overscroll-behavior:contain; background:var(--bg); }
-    .grid-board { display:grid; grid-template-columns:repeat(var(--columns),var(--cell)); grid-auto-rows:max(68px,var(--cell)); width:max-content; gap:2px; padding:4px; background:var(--line); }
-    .grid-cell { border:1px solid transparent; border-radius:4px; padding:4px; position:relative; overflow:hidden; background:color-mix(in srgb,var(--card) 82%,#568263); text-align:left; min-height:44px; min-width:44px; display:flex; flex-direction:column; align-items:stretch; justify-content:center; gap:2px; }
-    .grid-cell.wall { background:repeating-linear-gradient(135deg,var(--line),var(--line) 5px,var(--panel) 5px,var(--panel) 10px); }
-    .grid-cell.cover { border-bottom:5px solid #667b6a; }
-    .grid-cell.rough { background:color-mix(in srgb,var(--card) 70%,#94734f); }
-    .grid-cell.unobserved { filter:brightness(.65); border-style:dashed; }
-    .grid-cell.forest { background:color-mix(in srgb,var(--card) 65%,#4c7959); border-bottom:3px solid #6b956a; }
-    .grid-cell.hill { background:color-mix(in srgb,var(--card) 70%,#90816a); border-top:3px solid #b0a286; }
-    .grid-cell.reachable { border-color:color-mix(in srgb,var(--ally) 45%,transparent); }
-    .grid-cell.path { background:color-mix(in srgb,var(--gold) 30%,var(--card)); border-color:var(--gold); }
-    .grid-cell.selected { outline:2px solid var(--gold); outline-offset:-3px; }
-    .grid-cell.objective { box-shadow:inset 0 0 0 2px var(--gold); }
-    .grid-coordinate { position:absolute; top:2px; left:4px; font-size:10px; color:var(--dim); }
-    .grid-goal { position:absolute; top:0; right:3px; color:var(--gold); }
-    .grid-piece { display:block; flex-shrink:0; min-width:0; white-space:nowrap; overflow:hidden; font-size:11px; line-height:1.2; padding-top:0; font-weight:600; }
-    .grid-piece-name { display:flex; min-width:0; }
-    .grid-piece-name > span:first-child { overflow:hidden; text-overflow:ellipsis; }
-    .grid-piece-name > span:last-child { flex-shrink:0; }
-    .grid-cell:has(.grid-piece) { padding-top:12px; padding-bottom:3px; }
-    .grid-piece.ally { color:var(--ally); } .grid-piece.enemy { color:var(--enemy); }
-    .grid-piece small { display:block; font-size:9px; font-weight:400; color:var(--txt); }
-    .grid-terrain { font-size:11px; text-align:center; color:var(--dim); }
     .grid-command { padding:14px; border:1px solid var(--line); border-radius:8px; background:var(--card); align-self:start; }
     .grid-command h3 { margin:12px 0 6px; font-size:19px; }
     .grid-command label { display:block; margin:8px 0; }
@@ -208,7 +185,6 @@
     @media (max-width:900px) {
       .tactical-workspace { --cell:60px; padding:10px; }
       .tactical-columns { grid-template-columns:minmax(0,1fr); gap:10px; }
-      .grid-camera { height:min(52vh,430px); }
       .grid-command { width:100%; }
       .grid-command .row { gap:6px; }
       .grid-command .row button { flex:1; }
@@ -301,21 +277,7 @@
     .objective-status { min-height:48px; background:transparent; text-align:right; color:var(--txt); font-variant-numeric:tabular-nums; }
     .objective-status small { display:block; color:var(--gold); font-size:11px; margin-top:3px; }
     .turn-indicator { padding:4px 0 12px; font-size:12px; color:var(--dim); } .turn-indicator b { color:var(--txt); margin-left:6px; }
-    .camera-tools { display:flex; gap:8px; justify-content:space-between; align-items:center; margin-bottom:8px; }
-    .camera-tools button { flex:none; background:transparent; padding:8px 10px; }
     .map-legend { font-size:11px; color:var(--dim); }
-    .grid-board { background:var(--bg); gap:2px; }
-    .grid-cell { background:color-mix(in srgb,var(--card) 90%,#5e7062); border-radius:3px; }
-    .grid-cell.in-range { background:color-mix(in srgb,var(--ally) 13%,var(--card)); }
-    .grid-cell.reachable { border-color:var(--ally); }
-    .grid-cell.legal-target { border:2px solid var(--enemy); }
-    .grid-cell:has(.grid-piece.ally).legal-target { border-color:var(--ally); }
-    .grid-cell.targeted { outline:2px solid var(--enemy); outline-offset:-5px; }
-    .grid-cell.area-hit { background:color-mix(in srgb,var(--enemy) 22%,var(--card)); }
-    .grid-cell.inspected { box-shadow:inset 0 0 0 2px var(--gold); }
-    .grid-cell.path { border-color:var(--gold); background:color-mix(in srgb,var(--gold) 23%,var(--card)); }
-    .grid-goal, .grid-exit { font-size:10px; top:2px; right:4px; }
-    .grid-exit { position:absolute; color:var(--gold); }
     .map-inspector { border-left:2px solid var(--gold); padding:12px 14px; margin-top:10px; background:var(--card); font-size:12px; overflow-wrap:anywhere; }
     .map-inspector p { margin:7px 0 0; line-height:1.65; color:var(--dim); }
     .inspector-heading { display:flex; flex-wrap:wrap; gap:6px 16px; justify-content:space-between; }
@@ -362,7 +324,6 @@
     @media (max-width:600px) {
       .tactical-workspace { --cell:60px; padding:10px; }
       .tactical-heading h2 { font-size:20px; }
-      .grid-camera { height:min(48vh,390px); }
       .grid-command { padding:12px; }
       .map-inspector { padding:10px; }
       .grid-mobile-shortcuts { gap:6px; padding:8px 10px; }
@@ -380,7 +341,6 @@
     .round-feedback h4 { margin:12px 0 5px; font-size:12px; }
     .round-feedback p { margin:10px 0 0; font-size:11px; color:var(--dim); }
     .activation-feedback { color:var(--dim); font-size:11px; margin-top:5px; }
-    .grid-affiliation { display:inline-block; font-size:9px; font-weight:400; margin-right:2px; border:1px solid currentColor; border-radius:2px; padding:0 1px; }
     summary:focus-visible, .grid-camera:focus-visible { outline:2px solid var(--gold); outline-offset:2px; }
     .preparation-options { margin-top:16px; border-top:1px solid var(--line); }
     .preparation-options summary { min-height:44px; padding:14px 0; color:var(--dim); cursor:pointer; font-size:12px; }
@@ -559,7 +519,7 @@ body[data-native="true"] .app-brand h1 { font-size:15px; letter-spacing:1px; }
   .inventory-title-actions { flex:1 0 100%; margin-left:0; }
 }
 
-.control-presets { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:12px 0 6px; }.control-presets > span { flex-basis:100%; color:var(--dim); font-size:12px; }.control-presets button { min-height:36px; }.grid-zone { position:absolute;bottom:2px;left:2px;right:2px;font-size:10px;background:var(--panel);color:var(--gold);border:1px solid var(--gold);border-radius:3px; }.zone-label { display:inline-block;color:var(--gold);font-size:12px;padding:3px 5px; }
+.control-presets { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:12px 0 6px; }.control-presets > span { flex-basis:100%; color:var(--dim); font-size:12px; }.control-presets button { min-height:36px; }.zone-label { display:inline-block;color:var(--gold);font-size:12px;padding:3px 5px; }
 </style>
 </head>
 <body>

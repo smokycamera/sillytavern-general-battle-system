@@ -21,6 +21,7 @@ import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
 import { MAX_PREPARED_SKILLS, skillDefinitionName } from '../../engine/src/skill-catalog.js';
 import { zoneEffectDescription } from '../../engine/src/zone-skills.js';
 import './battle-ui.css';
+import './map-ui.css';
 import { updateRegion, BattleCamera } from './view-dom.js';
 import { executeMassPlan, executeAndSaveAsync as executeAndSave } from './battle-execution.js';
 import { TACTICAL_PREFERENCES, normalizeTactic } from '../../engine/src/tactical-preference.js';
@@ -79,7 +80,7 @@ import { WORKSPACES, workspaceNavigation, workspacePage, showWorkspace, type Wor
 import { renderFormationBattle } from './formation-view.js';
 import { battleAbilities, battleSkillChangeReason, learnedSkills, removedSkillOrder, setBattlePreparedSkills } from './battle-skills.js';
 import { formationSelection, selectFormationUnit, setFormationChoice, orderDraft, type FormationView, type OrderDrafts } from './formation-orders.js';
-import { renderTacticalBattle, selectTacticalElement, type TacticalView, type TacticalQuery } from './tactical-view.js';
+import { renderTacticalBattle, selectTacticalElement, MAP_ZOOM_LABELS, type MapZoom, type TacticalView, type TacticalQuery } from './tactical-view.js';
 import {
   PANEL_SAVE_SCHEMA_VERSION,
   battleOutcomeId,
@@ -112,7 +113,12 @@ if (runtime.getTheme) document.body.dataset.theme = runtime.getTheme();
 const inventoryPanel = new InventoryPanel(controller, visibleUnitRecord);
 if (!resident) window.addEventListener('pagehide', event => { if (!event.persisted) controller.dispose(); });
 const reg = traitRegistry();
-const tacticalView: TacticalView = { mode: 'weapon' };
+const MAP_ZOOM_KEY = 'tavern-battle:map-zoom';
+/** 缩放只是本机查看偏好：读不到存储时回到“适应”，不进入存档。 */
+function storedMapZoom(): MapZoom {
+  try { const value = localStorage.getItem(MAP_ZOOM_KEY); return value && Object.hasOwn(MAP_ZOOM_LABELS, value) ? value as MapZoom : 'fit'; } catch { return 'fit'; }
+}
+const tacticalView: TacticalView = { mode: 'weapon', zoom: storedMapZoom() };
 const formationView: FormationView = {};
 const narrativeDrafts = new Map<string, string>();
 const promptDrafts = new Map<string, string>();
@@ -2065,6 +2071,16 @@ function renderLogEntries(b: SmallBattle | MassBattle): string {
 
 // ---------- 事件 ----------
 
+/** 点选格子、单位或切换行动类型只改查看状态：同步渲染，不进入保存队列，也不切换整页忙碌样式。 */
+const MAP_INSPECTION = ['grid-cell', 'grid-inspect-unit', 'grid-mode'];
+function inspectBattleMap(el: HTMLElement): void {
+  if (!state.small?.battlefield) return;
+  const act = el.dataset.action;
+  const query = selectTacticalElement(state.small, tacticalView, act === 'grid-cell' ? { cell: Number(el.dataset.cell) }
+    : act === 'grid-mode' ? { mode: el.dataset.mode } : { unitId: el.dataset.unit });
+  render('view', query);
+}
+
 async function handleAction(e: Event): Promise<void> {
   const el = (e.target as HTMLElement).closest('[data-action]') as HTMLElement | null;
   if (!el) return;
@@ -2131,6 +2147,12 @@ async function handleAction(e: Event): Promise<void> {
   }
   if (act === 'grid-pan') { document.querySelector('.grid-camera')?.scrollBy({ left: Number(el.dataset.dx) * 180, behavior: 'auto' }); return; }
   if (act === 'grid-focus') { battleCamera.focus(document.querySelector<HTMLElement>('.grid-cell.selected') ?? undefined); return; }
+  if (act === 'grid-zoom') {
+    const order: MapZoom[] = ['fit', 'large', 'compact'];
+    tacticalView.zoom = order[(order.indexOf(tacticalView.zoom ?? 'fit') + 1) % order.length];
+    try { localStorage.setItem(MAP_ZOOM_KEY, tacticalView.zoom!); } catch { /* 仅本次会话生效 */ }
+    render('view'); battleCamera.focus(document.querySelector<HTMLElement>('.grid-cell.selected') ?? undefined); return;
+  }
   if (act === 'modal-stop') return;
   if ((await inventoryPanel.handleAction(el))) return;
   battleSaveFailed = false;
@@ -2195,14 +2217,7 @@ async function handleAction(e: Event): Promise<void> {
     try { if (act === 'builder-confirm') (await commitBuilder()); else (await actions[act]?.(el)); } catch (error) { toast(error instanceof Error ? error.message : String(error)); }
     render(); return;
   }
-  if (['grid-cell', 'grid-inspect-unit', 'grid-mode'].includes(act)) {
-    if (state.small?.battlefield) {
-      const query = selectTacticalElement(state.small, tacticalView, act === 'grid-cell' ? { cell: Number(el.dataset.cell) }
-        : act === 'grid-mode' ? { mode: el.dataset.mode } : { unitId: el.dataset.unit });
-      render('view', query);
-    }
-    return;
-  }
+  if (MAP_INSPECTION.includes(act)) { inspectBattleMap(el); return; }
   // 相机/主题是纯视图操作，不保存、不重新渲染，也不触发自动回合。
   if (act === 'battle-replay' || act === 'battle-highlight') { replayBattleTrace(act === 'battle-highlight' ? Number(el.dataset.event) : undefined); return; }
   if (act === 'grid-command-focus') { document.querySelector('.grid-command')?.scrollIntoView({ block: 'start' }); return; }
@@ -3379,10 +3394,16 @@ async function afterSmallAction(endTurn = true): Promise<void> {
 document.addEventListener('click', e => {
   const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
   if (!action) return;
-  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'modal-stop', 'llm-stop', 'llm-models'].includes(action) || action.startsWith('worldbook-')) { void handleAction(e); return; }
+  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'modal-stop', 'llm-stop', 'llm-models'].includes(action) || action.startsWith('worldbook-')) { void handleAction(e); return; }
+  if (MAP_INSPECTION.includes(action)) {
+    if (uiBusy) { toast('正在保存上一项操作，请稍候…'); return; }
+    try { inspectBattleMap((e.target as HTMLElement).closest<HTMLElement>('[data-action]')!); }
+    catch (error) { restore(); toast(error instanceof Error ? error.message : String(error)); render(); }
+    return;
+  }
   // Scan/reload validate the refreshed service themselves; they must remain
   // reachable when a host metadata refresh invalidates the old panel session.
-  const viewOnly = ['save-retry', 'archive-reload', 'narrative-scan', 'pending-scan', 'workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-inspect-unit', 'grid-cell', 'grid-mode', 'narrative-review', 'log-detail', 'unit-detail', 'role-detail', 'modal-stop', 'migration-export', 'loadout-skills', 'loadout-skills-close'].includes(action);
+  const viewOnly = ['save-retry', 'archive-reload', 'narrative-scan', 'pending-scan', 'workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'grid-inspect-unit', 'grid-cell', 'grid-mode', 'narrative-review', 'log-detail', 'unit-detail', 'role-detail', 'modal-stop', 'migration-export', 'loadout-skills', 'loadout-skills-close'].includes(action);
   const feedback = !viewOnly && /^(grid-|small-|mass-|formation-)/.test(action) ? (e.target as HTMLElement).closest<HTMLElement>('[data-action]') ?? undefined : undefined;
   void panelTask(() => handleAction(e), viewOnly, feedback);
 });

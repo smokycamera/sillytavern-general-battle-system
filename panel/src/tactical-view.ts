@@ -15,8 +15,11 @@ import { movementLabel } from '../../engine/src/tactics.js';
 import { spCapacity, fatigueLimit } from '../../engine/src/resources.js';
 import { battleAbilities, battleSkillChangeReason } from './battle-skills.js';
 import { hitChanceText, hitDamageText, hitDamageDetails } from './damage-preview.js';
+import { terrainLayer, signature } from './terrain-layer.js';
 
-export interface TacticalView { selectedId?: string; targetId?: string; cell?: number; inspectedCell?: number; mode: string }
+export type MapZoom = 'fit' | 'large' | 'compact';
+export const MAP_ZOOM_LABELS: Record<MapZoom, string> = { fit: '适应', large: '放大', compact: '紧凑' };
+export interface TacticalView { selectedId?: string; targetId?: string; cell?: number; inspectedCell?: number; mode: string; zoom?: MapZoom }
 /** 仅在一次同步点选→渲染中复用；不能跨动作或异步保存缓存。 */
 export interface TacticalQuery { battle: SmallBattle; actor: Combatant; options: ActionOption[] }
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -153,6 +156,24 @@ function actionPreview(battle: SmallBattle, preview: ActionPreview | undefined, 
   </div>`;
 }
 
+const MAP_KEY = `<details class="map-key" data-detail-id="map-key"><summary>图例</summary><div class="map-key-body">${([
+  ['grass', '开阔地'], ['forest', '森林'], ['hill', '山地'], ['rough', '崎岖地'], ['rock', '岩壁 / 巨石'], ['swamp', '沼泽'], ['shallow', '浅水'], ['deep', '深水'],
+  ['paving', '街道'], ['road', '道路'], ['roof', '建筑'], ['wall', '城墙 / 塔楼'], ['gate', '城门 / 门'], ['trench', '工事'], ['cover', '掩体'], ['bridge', '桥梁'], ['rubble', '瓦砾'],
+  ['zone', '占领区'], ['reach', '可到达'], ['range', '射程'], ['target', '可选目标'], ['fog', '未观测'],
+] as const).map(([key, text]) => `<span><i class="key key-${key}"></i>${text}</span>`).join('')}<span><i class="key key-exit">︾</i>撤离方向：我方下沿，敌方上沿</span><span><i class="key key-token-hero"></i>人物</span><span><i class="key key-token-company"></i>编队</span></div></details>`;
+
+/** 棋子：阵营色底 + 兵种符号 + 名称 + 生命条。小格只留符号与名字，大格补充数值。 */
+function gridPiece(battle: SmallBattle, u: Combatant, isActor: boolean): string {
+  const name = [...u.name], ratio = u.base.hpMax > 0 ? Math.max(0, Math.min(1, u.hp / u.base.hpMax)) : 0;
+  const health = ratio >= .6 ? 'hp-high' : ratio >= .3 ? 'hp-mid' : 'hp-low';
+  const side = u.side === 'ally' || u.side === 'enemy' ? u.side : 'neutral';
+  const badges = [isAirborne(u) ? '空' : isElevated(u) ? '顶' : '', u.suppression ? '压' : '', battle.overwatch.has(u.id) ? '警' : ''].filter(Boolean);
+  return `<span class="grid-piece ${side} ${u.scale === 'hero' ? 'hero' : 'company'} ${health}${u.status !== 'ready' ? ' status-' + u.status : ''}${isActor ? ' actor' : ''}${isAirborne(u) ? ' airborne' : ''}" style="--hp:${ratio.toFixed(2)}">`
+    + `<span class="grid-token">${unitSymbol(u)}${badges.length ? '<span class="grid-badges">' + badges.map(b => '<i>' + b + '</i>').join('') + '</span>' : ''}</span>`
+    + `<span class="grid-piece-name"><span>${esc(name.slice(0, -2).join(''))}</span><span>${esc(name.slice(-2).join(''))}</span></span>`
+    + `<small><span class="grid-affiliation">${u.side === 'ally' ? '我' : u.side === 'enemy' ? '敌' : '中'}</span>${u.hp}/${u.base.hpMax}${isAirborne(u) ? ' 空中' : isElevated(u) ? ' 墙顶' : ''}${u.suppression ? ' 受压' : ''}${battle.overwatch.has(u.id) ? ' 警戒' : ''}</small></span>`;
+}
+
 export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, autoTurn = false, query?: TacticalQuery): string {
   const field = battle.battlefield!, s = tacticalSelection(battle, view, query);
   const { visible, actor, options, option, target, canControl } = s;
@@ -167,32 +188,38 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
   const area = new Set(mode !== 'move' && mode !== 'guard' ? target?.preview?.areaTargetIds ?? [] : []);
   const range = mode !== 'move' && mode !== 'guard' ? option?.range : undefined;
   const trace = traceLocations(battle);
+  // 每次渲染只算一遍的查询：占位、可见格、持续区域。避免逐格重复扫描全体单位与视线。
+  const occupantsAt = new Map<number, Combatant[]>();
+  for (const u of visible) if (u.pos !== undefined) { const list = occupantsAt.get(u.pos); if (list) list.push(u); else occupantsAt.set(u.pos, [u]); }
+  const seen = field.tiles.map((_, cell) => battle.cellVisible('ally', cell));
+  const liveZones = battle.combatants.flatMap(u => u.battleZones ?? []).filter(z => z.mode === 'small' && (z.kind !== 'trap' || z.side === 'ally'));
+  const goalCell = field.objective.kind !== 'annihilation' ? field.objective.cell : undefined;
+  const controlCells = new Set(field.objective.kind === 'control' ? field.objective.cells ?? [] : []);
   const cells = field.tiles.map((terrain, cell) => {
-    const occupants = visible.filter((u) => u.pos === cell && !['dead', 'fled'].includes(u.status));
+    const occupants = occupantsAt.get(cell) ?? [];
     const distance = actor?.pos !== undefined ? gridDistance(field, actor.pos, cell) : Infinity;
     const inRange = !!actor && range && (range.metric === 'global' || range.metric === 'self' ? range.metric === 'global' || cell === actor.pos : distance >= range.min && distance <= range.max);
-    const structure = structureAt(field, cell);
-    const showGroundLabel = terrain !== 'open' && terrain !== 'street' || view.inspectedCell === cell;
-    const structureLabel = structureDisplayName(field, cell);
-    const joined = structure?.hp && ['building','wall','fortification'].includes(structure.kind)
-      ? ([['n',cell-field.width],['s',cell+field.width],['w',cell%field.width?cell-1:-1],['e',cell%field.width<field.width-1?cell+1:-1]] as const)
-        .filter(([,p])=>p>=0 && p<field.tiles.length && structureAt(field,p)?.kind===structure.kind && (structureAt(field,p)?.hp??0)>0)
-        .map(([direction])=>'structure-join-'+direction) : [];
-    const flags = [terrain, ...joined, structure?.hp ? 'structure-' + structure.kind + (structure.kind === 'gate' ? ' gate-' + structure.gateState : '') : '', ...(field.overlays?.[cell] ?? []).map(o => 'overlay-' + o), field.objective.kind === 'control' && field.objective.cells?.includes(cell) ? 'control-region' : '', trace?.cells.includes(cell) ? 'trace-cell' : '', !battle.cellVisible('ally', cell) ? 'unobserved' : '', reachable.has(cell) ? 'reachable' : '', paths.has(cell) ? 'path' : '',
-      occupants.some((u) => u.id === actor?.id) ? 'selected' : '', view.inspectedCell === cell ? 'inspected' : '',
-      field.objective.kind !== 'annihilation' && field.objective.cell === cell ? 'objective' : '', inRange ? 'in-range' : '', (targets.has('cell:'+cell) || occupants.some((u) => targets.has(u.id))) ? 'legal-target' : '',
-      (target?.targetId==='cell:'+cell || occupants.some((u) => u.id === target?.targetId)) && mode !== 'move' && mode !== 'guard' ? 'targeted' : '', occupants.some((u) => area.has(u.id)) ? 'area-hit' : ''].join(' ');
-    const zones = battle.combatants.flatMap(u=>u.battleZones??[]).filter(z=>z.mode==='small' && Math.abs(z.x-cell%field.width)+Math.abs(z.y-Math.floor(cell/field.width))<=z.radius && (z.kind!=='trap'||z.side==='ally') && battle.cellVisible('ally',cell));
-    const label = zones.map(z=>ZONE_NAMES[z.kind]).join('、')+' '+cellLabel(field, cell) + ' ' + (landmarkAt(field, cell) ?? '') + ' ' + terrainName(field, cell) + ' ' + occupants.map((u) => (u.side === 'ally' ? '我方' : u.side === 'enemy' ? '敌方' : '中立') + u.name).join('、');
-    return `<button class="grid-cell ${flags}" data-action="grid-cell" data-cell="${cell}" title="${esc(label)}" aria-label="${esc(label)}" aria-pressed="${view.inspectedCell === cell}">
-      <span class="grid-coordinate">${cellLabel(field, cell)}</span>${landmarkAt(field, cell) ? '<span class="grid-landmark" aria-hidden="true">◇</span>' : ''}${Math.floor(cell / field.width) === field.height - 1 ? '<span class="grid-exit">撤</span>' : ''}${field.objective.kind !== 'annihilation' && field.objective.cell === cell ? '<span class="grid-goal">旗</span>' : ''}
-      ${occupants.map((u) => { const name = [...u.name]; return `<span class="grid-piece ${u.side}">${unitSymbol(u)}<span class="grid-piece-name"><span>${esc(name.slice(0, -2).join(''))}</span><span>${esc(name.slice(-2).join(''))}</span></span><small><span class="grid-affiliation">${u.side === 'ally' ? '我' : u.side === 'enemy' ? '敌' : '中'}</span>${u.hp}/${u.base.hpMax}${isAirborne(u) ? ' 空中' : isElevated(u) ? ' 墙顶' : ''}${u.suppression ? ' 受压' : ''}${battle.overwatch.has(u.id) ? ' 警戒' : ''}</small></span>`; }).join('')}
-      ${occupants.length > 1 ? '<span class="grid-stack-count">' + occupants.length + '队</span>' : ''}
-      ${structure?.hp ? `<span class="structure-hp" style="--integrity:${Math.max(0, Math.min(100, structure.hp / structure.hpMax * 100))}%" title="耐久 ${structure.hp}/${structure.hpMax}"></span>` : ''}
-      ${zones.length ? '<span class="grid-zone">'+zones.map(z=>ZONE_NAMES[z.kind]).join('·')+'</span>' : ''}
-      ${!occupants.length && (showGroundLabel || structure) ? '<span class="grid-terrain">' + (structure ? structureLabel + (structure.hp ? ' L' + structure.level : '·残骸') : field.generation?.scene === 'interior' && terrain === 'street' ? '室内地面' : terrainNames[terrain]) + '</span>' : ''}
-    </button>`;
+    const structure = structureAt(field, cell), inspected = view.inspectedCell === cell, landmark = landmarkAt(field, cell);
+    const flags = [terrain, structure?.hp ? 'structure-' + structure.kind + (structure.kind === 'gate' ? ' gate-' + structure.gateState : '') : '', ...(field.overlays?.[cell] ?? []).map(o => 'overlay-' + o), controlCells.has(cell) ? 'control-region' : '', trace?.cells.includes(cell) ? 'trace-cell' : '', !seen[cell] ? 'unobserved' : '', reachable.has(cell) ? 'reachable' : '', paths.has(cell) ? 'path' : '',
+      occupants.some((u) => u.id === actor?.id) ? 'selected' : '', inspected ? 'inspected' : '',
+      goalCell === cell ? 'objective' : '', inRange ? 'in-range' : '', (targets.has('cell:'+cell) || occupants.some((u) => targets.has(u.id))) ? 'legal-target' + (occupants.some((u) => targets.has(u.id) && u.side === 'ally') ? ' legal-ally' : '') : '',
+      (target?.targetId==='cell:'+cell || occupants.some((u) => u.id === target?.targetId)) && mode !== 'move' && mode !== 'guard' ? 'targeted' : '', occupants.some((u) => area.has(u.id)) ? 'area-hit' : '', occupants.length > 1 ? 'stacked' : ''].filter(Boolean).join(' ');
+    const zones = seen[cell] ? liveZones.filter(z => Math.abs(z.x - cell % field.width) + Math.abs(z.y - Math.floor(cell / field.width)) <= z.radius) : [];
+    const label = zones.map(z=>ZONE_NAMES[z.kind]).join('、')+' '+cellLabel(field, cell) + ' ' + (landmark ?? '') + ' ' + terrainName(field, cell) + ' ' + occupants.map((u) => (u.side === 'ally' ? '我方' : u.side === 'enemy' ? '敌方' : '中立') + u.name).join('、');
+    // 地形与结构由底图表达；格内只放单位、状态与被查看格的名称。
+    const inner = (landmark ? '<span class="grid-landmark" aria-hidden="true">◇</span>' : '') + (goalCell === cell ? '<span class="grid-goal" aria-hidden="true">旗</span>' : '')
+      + occupants.map((u) => gridPiece(battle, u, u.id === actor?.id)).join('')
+      + (occupants.length > 1 ? '<span class="grid-stack-count">' + occupants.length + '队</span>' : '')
+      + (structure?.hp && (structure.hp < structure.hpMax || inspected) ? `<span class="structure-hp" style="--integrity:${Math.max(0, Math.min(100, structure.hp / structure.hpMax * 100))}%"></span>` : '')
+      + (zones.length ? '<span class="grid-zone">' + zones.map(z => ZONE_NAMES[z.kind]).join('·') + '</span>' : '')
+      + (inspected && !occupants.length ? '<span class="grid-terrain">' + (structure ? structureDisplayName(field, cell) + (structure.hp ? ' L' + structure.level : '·残骸') : field.generation?.scene === 'interior' && terrain === 'street' ? '室内地面' : terrainNames[terrain]) + '</span>' : '');
+    const attrs = `class="grid-cell ${flags}" data-action="grid-cell" data-cell="${cell}" aria-label="${esc(label)}" aria-pressed="${inspected}"`;
+    // 内容签名：点选只改动少数格，其余格在打补丁时整格跳过。
+    return `<button ${attrs} data-static="c${signature(attrs + inner)}">${inner}</button>`;
   }).join('');
+  const zoom = view.zoom ?? 'fit';
+  const rulers = `<div class="grid-ruler-x" aria-hidden="true"><span class="grid-ruler-corner"></span>${Array.from({ length: field.width }, (_, x) => '<span>' + String.fromCharCode(65 + x) + '</span>').join('')}</div>`;
+  const rows = `<div class="grid-ruler-y" aria-hidden="true">${Array.from({ length: field.height }, (_, y) => '<span>' + (y + 1) + '</span>').join('')}</div>`;
   const concealment = actor && concealmentLabel(battle.observationContext(), actor);
   const pressure = actor && moraleLabel({ ...battle.observationContext(), units: visible }, actor, battle.traitRegistry);
   const mission = field.objective, markedCells = landmarkCells(field);
@@ -212,15 +239,14 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
   const movePanel = `<div class="move-preview">${movement ? movement.path ? '到' + cellLabel(field, view.cell!) + ' · 花费' + movement.path.cost + '移动，余' + (battle.movementLeft(actor!.id) - movement.path.cost) : esc(movement.reason ?? '') : '点击蓝边可达格，空格、队友格或濒死单位所在格均可预览移动；濒死单位不占容量，存活敌军仍阻路。'}
     ${movement?.path && movement.path.cost > 0 ? '<div class="sub">' + (movement.risks.length ? movement.risks.map(esc).join('；') : '已知敌军没有可触发的移动反应。') + '</div>' : ''}
     <button class="primary" data-action="grid-move" data-actor="${esc(actor?.id ?? '')}" ${canControl && movement?.path && movement.path.cost > 0 ? '' : 'disabled'}>确认移动${movement?.path ? ' · ' + movement.path.cost + '点' : ''}</button></div>`;
-  return `<section class="tactical-workspace" data-ended="${over}">
-    <div class="tactical-heading"><div><span class="sub">战术交战${battle.fieldTags.includes('night') ? ' · 夜间' : ''}</span><h2>${goal}</h2></div><button class="objective-status" ${mission.kind === 'annihilation' ? 'disabled' : 'data-action="grid-cell" data-cell="' + mission.cell + '"'}>第${battle.round}/${field.objective.limit}轮${mission.kind === 'control' ? '<small>攻方占领 ' + battle.controlRounds[mission.attackingSide ?? 'ally'] + '/' + mission.rounds + '</small>' : ''}</button></div>
-    ${over ? '<div class="banner">' + (battle.winner() === 'ally' ? '任务胜利' : battle.winner() === 'enemy' ? '任务失败' : '任务结束：僵持') + '</div>' : '<div class="turn-indicator">当前行动 <b>' + esc(activeLabel) + '</b></div>'}
+  return `<section class="tactical-workspace" data-ended="${over}" data-map-zoom="${zoom}">
+    <div class="tactical-heading"><div><span class="sub">战术交战${battle.fieldTags.includes('night') ? ' · 夜间' : ''}${over ? '' : ' · <span class="turn-indicator">当前行动 <b>' + esc(activeLabel) + '</b></span>'}</span><h2>${goal}</h2></div><button class="objective-status" ${mission.kind === 'annihilation' ? 'disabled' : 'data-action="grid-cell" data-cell="' + mission.cell + '"'}>第${battle.round}/${field.objective.limit}轮${mission.kind === 'control' ? '<small>攻方占领 ' + battle.controlRounds[mission.attackingSide ?? 'ally'] + '/' + mission.rounds + '</small>' : ''}</button></div>
+    ${over ? '<div class="banner">' + (battle.winner() === 'ally' ? '任务胜利' : battle.winner() === 'enemy' ? '任务失败' : '任务结束：僵持') + '</div>' : ''}
     ${renderBattleHighlights(battle)}
     <div class="tactical-columns"><div class="tactical-map-column">
-      <div class="map-surface-legend">浅灰地面可通行 · 实心轮廓为建筑 · ◇为地标 · 点格子查看详情</div>
-      <div class="camera-tools"><span class="map-legend">${mode === 'move' ? '蓝边可移动 · 金线为路径' : mode === 'guard' ? '选择固守或警戒' : '浅底为射程参考 · 亮边为可选目标'}</span><button data-action="grid-focus">定位我方</button></div>
+      <div class="map-toolbar"><span class="map-legend">${mode === 'move' ? '蓝底可到达 · 金点为路径' : mode === 'guard' ? '选择固守或警戒' : '浅蓝底为射程 · 红框为可选目标'}</span><div class="map-tools">${MAP_KEY}<button data-action="grid-zoom" aria-label="切换地图缩放，当前${MAP_ZOOM_LABELS[zoom]}">缩放 · ${MAP_ZOOM_LABELS[zoom]}</button><button data-action="grid-focus">定位我方</button></div></div>
       ${field.landmarks?.length ? '<div class="map-landmark">' + field.landmarks.map(m => '◇ ' + esc(m.label) + ' ' + m.cells.map(p => cellLabel(field, p)).join('、')).join(' · ') + '</div>' : markedCells.length && landmarkAt(field, markedCells[0]!) ? '<div class="map-landmark">◇ ' + esc(landmarkAt(field, markedCells[0]!)!) + ' · ' + markedCells.map(p => cellLabel(field, p)).join('、') + '</div>' : ''}
-      <div class="grid-camera" tabindex="0" aria-label="战场地图，可横向和纵向滚动"><div class="grid-board" style="--columns:${field.width}">${cells}${traceOverlay(battle)}</div></div>
+      <div class="grid-camera" tabindex="0" aria-label="战场地图，可横向和纵向滚动"><div class="grid-stage" style="--columns:${field.width};--rows:${field.height}">${rulers}<div class="grid-stage-body">${rows}<div class="grid-board" style="--columns:${field.width}">${terrainLayer(field)}${cells}${traceOverlay(battle)}</div></div></div></div>
       ${renderRoundFeedback(battle)}${tileInspector(battle, view, s)}
     </div><div class="grid-command">
       <div class="command-actor"><span class="sub">${canControl ? '正在指挥' : '我方单位'}</span><h3>${esc(actor?.name ?? '没有可用单位')}</h3>${actor ? '<span>' + strengthDescription(actor) + '</span>' : ''}</div>${actor?memberHealthPanel(actor):''}
