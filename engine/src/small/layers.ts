@@ -27,6 +27,8 @@ export interface FieldLandmark { kind: string; label: string; cells: number[]; s
 export type CityShape = 'front' | 'enclosure' | 'riverside' | 'hillside' | 'broken';
 export interface CityRecord {
   shape: CityShape | 'district';
+  /** Initial damage provenance; combat damage stays authoritative in structures. */
+  breaches?: number[][];
   inside: number[];
   frontline: number[];
   gates: number[];
@@ -170,6 +172,10 @@ export function validateLayers(field: BattlefieldSpec): void {
     || ['inside', 'frontline', 'gates', 'core', 'reserve'].some(key => {
       const cells = field.city![key as 'inside']; return !Array.isArray(cells) || cells.some(p => !legalCell(p)) || new Set(cells).size !== cells.length;
     }) || field.city.defender !== undefined && !['ally', 'enemy'].includes(field.city.defender))) throw Error('城区记录损坏');
+  if (field.city?.breaches !== undefined && (!Array.isArray(field.city.breaches) || field.city.breaches.length > 3
+    || field.city.breaches.some(group => !Array.isArray(group) || group.length < 1 || group.length > 2 || group.some(p => !legalCell(p))
+      || group.length === 2 && Math.abs(group[0]! % field.width - group[1]! % field.width) + Math.abs(Math.floor(group[0]! / field.width) - Math.floor(group[1]! / field.width)) !== 1)
+    || new Set(field.city.breaches.flat()).size !== field.city.breaches.flat().length)) throw Error('初始破口记录损坏');
   if (field.landmarks && (!Array.isArray(field.landmarks) || field.landmarks.length > 5 || field.landmarks.some(m => !m
     || typeof m.label !== 'string' || m.label.length > 64 || !Array.isArray(m.cells) || !m.cells.length || m.cells.some(p => !legalCell(p))))) throw Error('地标记录损坏');
 }

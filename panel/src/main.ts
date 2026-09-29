@@ -37,6 +37,7 @@ import { PROMPT_SECTIONS, applySettlementPrompt, promptSelected, selectPromptEnt
 import { needsNarrativeDeploymentRestore } from './narrative-state.js';
 import { AutoBattleLoop, yieldBattleFrame } from './auto-battle.js';
 import { newUnitDraft, unitDraftFromRecord, buildUnit, editUnitBuild, type UnitDraft } from './unit-builder.js';
+import { recommendedFormationSlots } from '../../engine/src/mass/formation.js';
 import { MAX_SCENE_UNITS } from './narrative-limits.js';
 import { recommendBattleMode, extendSmallRoundLimit, upgradeDefaultObjective, normalizeObjectiveMode, prepareBattleObjective, battleCapacityIssue, prepareMassRoster, type BattleObjectiveMode } from './battle-setup.js';
 import { unitForm, captureUnitDraft, buildPreview } from './unit-form.js';
@@ -2380,7 +2381,7 @@ async function approveSuggestion(s: Suggestion): Promise<void> {
       break;
     }
     case 'spawn': {
-      if (!Number.isInteger(s.count) || s.count < 1 || s.count + state.roster.length > MAX_SCENE_UNITS) throw new Error('本场单位卡超过32，请通过正文整批审查重新按编队描述；人数写hpMax');
+      if (!Number.isInteger(s.count) || s.count < 1 || s.count + state.roster.length > MAX_SCENE_UNITS) throw new Error(`本场单位卡超过${MAX_SCENE_UNITS}，请通过正文整批审查重新按编队描述；人数写hpMax`);
       // 正文对应层：装备/特质/人设从 AI 描述映射到生成输入（匹配不到的按曲线基准+原名生成）
       // 武器显示名：weapon="名字:种类L等级" 的名字段（旧格式无名字段则用原文）——面板一律显示它
       const weaponLabel = s.weaponName ?? s.weapon;
@@ -2581,6 +2582,7 @@ async function startSmallBattle(context?:LlmEncounterContext):Promise<void> {
     const fieldOptions = { roster: state.roster.every(u => u.rulesVersion === 'v2') ? state.roster : undefined, attackingSide: state.siegeAttacker, design: context?.mapDesign, plan: context?.battlefieldPlan };
     let battlefield = state.mapLayout === 'indoor' ? generatedLayeredField(seed, 5, 7, tags, fieldOptions) : generatedLayeredField(seed, 7, 13, tags, fieldOptions);
     if (state.roster.every((u) => u.rulesVersion === 'v2')) battlefield = prepareBattleObjective(battlefield, state.roster, state.objectiveMode, state.protagonistId, state.siegeAttacker, context?.vipId);
+    if (context && battlefield.generation?.notes?.length) context.designDetail = [context.designDetail, ...battlefield.generation.notes].filter(Boolean).join('；');
     if (context?.mapDesign && battlefield.generation?.source === 'context') context.mapDesign = structuredClone(battlefield.generation.design);
     if (context && battlefield.objective.kind === 'escape') {
       context.vipId = battlefield.objective.unitId;
@@ -2620,7 +2622,7 @@ async function startMassBattle(context?:LlmEncounterContext):Promise<void> {
     }
     const mass = new MassBattle({
       nonLethal:state.nonLethal,
-      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V11_OVERFLOW_TW } : {}),
+      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V11_OVERFLOW_TW, formationSlots: recommendedFormationSlots(clones) } : {}),
       combatants: clones,
       traitRegistry: reg,
       commanderId: state.commanderId,

@@ -1,7 +1,5 @@
+import { MAX_SMALL_UNITS } from '../../engine/src/battle-limits.js';
 import {
-  needsFormationHost,
-  hasFlightAbility,
-  isAirborne,
   deployOnGrid,
   standardField,
   type Combatant,
@@ -127,19 +125,6 @@ function messageKey(messages: NarrativeMessage[]): string {
   return `${source.length}:${h >>> 0}`;
 }
 function massAvailable(roster: Combatant[]): boolean {
-  for (const side of ["ally", "enemy"]) {
-    const group = roster.filter(
-      (u) => u.side === side && u.hp > 0 && u.status === "ready",
-    );
-    const people = group.filter(needsFormationHost).length;
-    const hosts = group.filter(
-      (u) =>
-        u.scale !== "hero" &&
-        ((u.body ?? "human") !== "human" ||
-          (!isAirborne(u) && !hasFlightAbility(u))),
-    ).length;
-    if (people > hosts) return false;
-  }
   try {
     prepareMassRoster(roster);
     return true;
@@ -154,12 +139,18 @@ function finishSetup(
   if (input.phase === "battle") return context; // Existing battle geometry and victory rules are immutable.
   if (input.settings.battleMode !== "auto")
     context.mode = input.settings.battleMode;
-  if (context.mode === "mass" && !massAvailable(input.roster)) {
-    context.mode = "small";
-    context.detail += "；当前编制需要独立人物行动，采用小战";
+  const count = input.roster.filter(u => u.hp > 0 && u.status === 'ready').length;
+  if (count > MAX_SMALL_UNITS) {
+    if (context.mode !== 'mass') context.detail += '；超过32张，采用会战';
+    context.mode = 'mass';
+  }
+  if (context.mode === 'mass' && !massAvailable(input.roster)) {
+    if (count > MAX_SMALL_UNITS) throw Error('会战部署容量或明确阵位无效，请调整部署；不会把超过32张的名单塞回小战');
+    context.mode = 'small';
+    context.detail += '；会战部署不可用，采用小战';
   }
   if (
-    input.settings.battleMode === "auto" &&
+    input.settings.battleMode === "auto" && count <= MAX_SMALL_UNITS &&
     (["siege", "escort", "intercept"].includes(context.objectiveMode) ||
       context.mapLayout === "indoor")
   )
@@ -170,6 +161,7 @@ function finishSetup(
       ["siege", "escort", "intercept"].includes(context.objectiveMode)
     )
       throw Error("当前会战只支持歼灭结算；护送、拦截或攻城夺点请选择小战地图");
+    if (context.objectiveMode !== 'annihilation' && context.objectiveMode !== 'auto') context.detail += '；会战不使用格子任务，采用歼灭结算';
     context.objectiveMode = "annihilation";
     context.mapLayout = "standard";
   }

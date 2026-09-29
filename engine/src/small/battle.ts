@@ -1,3 +1,4 @@
+import { prepareGridDeployment } from './spatial.js';
 import { bonusMultiplier } from '../enhancements.js';
 import { regionalOrder } from './team-tactics.js';
 import { groundBlocked, isElevated, intactStructure, canClimbFrom, meleeHeightReason, structureDefense, structureDurability, damageStructure, weaponBreachBudget, STRUCTURE_NAMES } from './layers.js';
@@ -265,15 +266,8 @@ export class SmallBattle {
   start(): void {
     if (this.started) return;
     if (this.battlefield) {
-      const prepared = this.combatants.map((u) => ({ ...u, ...(this.rules.resolutionVersion === 'v2' && u.airborne === undefined && !flightCapabilityReason(u, this.conditions) ? { airborne: true } : {}) }));
-      if (this.battlefield.layerVersion && this.battlefield.city?.defender) {
-        const guard = prepared.filter(u => u.side === this.battlefield!.city!.defender && u.pos === undefined && !isAirborne(u))
-          .sort((a, b) => Number(isRangedWeapon(b.weapon)) - Number(isRangedWeapon(a.weapon)) || a.id.localeCompare(b.id));
-        const capacity = this.battlefield.city.frontline.filter(p => intactStructure(this.battlefield!, p)?.top).length;
-        for (const u of guard.slice(0, Math.min(capacity, Math.floor(guard.length * .4)))) u.elevation = 1;
-      }
-      const positions = deployOnGrid(this.battlefield, prepared, this.seed);
-      this.combatants.forEach((c, i) => { c.pos = positions[i]; c.elevation = prepared[i]!.elevation; if (prepared[i]!.airborne !== undefined) c.airborne = prepared[i]!.airborne; });
+      const prepared = prepareGridDeployment(this.battlefield, this.combatants, this.seed, this.conditions, this.rules.resolutionVersion === 'v2');
+      this.combatants.forEach((c, i) => { c.pos = prepared[i]!.pos; c.elevation = prepared[i]!.elevation; if (prepared[i]!.airborne !== undefined) c.airborne = prepared[i]!.airborne; });
     }
     this.started = true;
     this.round = 1;

@@ -10,13 +10,13 @@ describe('global ordinary LLM settings',()=>{
     expect(llmConnection(s)).toEqual({url:s.url,token:s.token,model:s.model,protocol:'openai',transport:'auto'});
     const html=renderLlmSettings(s);expect(html).toContain('<option value="jev" disabled>jev指挥功能(未完成，勿选)</option>');expect(html).not.toMatch(/data-role="jev-|转发地址|连接途径/);
   });
-  it('preserves previous scale selection by default and disables the control outside LLM mode',()=>{
+  it('defaults scale selection off and disables the control outside LLM mode',()=>{
     const data=storage();
-    expect(readLlmSettings().selectBattleScale).toBe(true);
+    expect(readLlmSettings().selectBattleScale).toBe(false);
     data.set(LLM_SETTINGS_KEY,JSON.stringify({enabled:true,model:'previous-model'}));
     const settings=readLlmSettings();
-    expect(settings).toMatchObject({selectBattleScale:true,model:'previous-model'});
-    expect(renderLlmSettings(settings)).toMatch(/data-role="llm-battle-scale"[^>]*checked/);
+    expect(settings).toMatchObject({selectBattleScale:false,model:'previous-model'});
+    expect(renderLlmSettings(settings)).not.toMatch(/data-role="llm-battle-scale"[^>]*checked/);
     expect(renderLlmSettings({...settings,enabled:false})).toMatch(/data-role="llm-battle-scale"[^>]*disabled/);
   });
   it('migrates a legacy OpenAI connection once while retaining the original and ignoring a stale relay',()=>{
@@ -42,9 +42,9 @@ describe('global ordinary LLM settings',()=>{
     expect(()=>saveLlmSettings({...saved,token:'new-key'})).toThrow('未保存');
     expect(readLlmSettings()).toEqual(saved);
   });
-  it('map design and VIP are independently opt-in, persisted globally, and strictly boolean',()=>{
+  it('map design and VIP default on, are persisted independently, and remain strictly boolean',()=>{
     const data=storage();
-    expect(readLlmSettings()).toMatchObject({designMap:false,selectVip:false,selectBattleScale:true});
+    expect(readLlmSettings()).toMatchObject({designMap:true,selectVip:true,selectBattleScale:false});
     for(const designMap of [true,false])for(const selectVip of [true,false]){
       const settings={...readLlmSettings(),enabled:true,designMap,selectVip};saveLlmSettings(settings);
       expect(readLlmSettings()).toEqual(settings);

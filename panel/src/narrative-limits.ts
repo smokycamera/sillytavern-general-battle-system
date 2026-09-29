@@ -1,11 +1,13 @@
 import type { Suggestion } from './tags.js';
 import type { NarrativeSave } from './narrative-state.js';
 
-export const RECOMMENDED_UNITS = 16;
-export const MAX_SCENE_UNITS = 32;
-export const MAX_PROTOCOL_EVENTS = 32;
+import { MAX_SMALL_UNITS, MAX_BATTLE_UNITS } from '../../engine/src/battle-limits.js';
+export const RECOMMENDED_UNITS = MAX_SMALL_UNITS;
+export const MAX_SCENE_UNITS = MAX_BATTLE_UNITS;
+// One transaction can include all 64 deploys plus their updates and the field.
+export const MAX_PROTOCOL_EVENTS = 160;
 export const MAX_SPAWN_COUNT = 20;
-export const MAX_PROTOCOL_CHARS = 12000;
+export const MAX_PROTOCOL_CHARS = 64000;
 export const GROUPING_HINT = '普通人员按同阵营、相近装备和训练编成少量编队，用hpMax表示人数；已有独立档案不能自动合并，也不要分多次绕过本场上限。';
 
 /** spawn/deploy 明确指定本批完整出场名单；纯战外修改不改变选择。 */

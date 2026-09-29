@@ -1,0 +1,136 @@
+{
+  "version": "1.6.1-rc.2",
+  "base": "0d54af74ffb7043f5b65bd90cc42b3514c2fb443",
+  "priorPr": 65,
+  "scope": "Local development plus independently re-run GitHub Actions full tests, audits, build and browser verification",
+  "fullSuite": {
+    "total": 1667,
+    "passed": 1660,
+    "knownFailures": [
+      "engine/tests/unified-replay.test.ts::V5 saved battles and V6 prototype replay compatibility V5 human-four T1",
+      "engine/tests/unified-replay.test.ts::V5 saved battles and V6 prototype replay compatibility V5 giant-four T10",
+      "engine/tests/unified-replay.test.ts::V5 saved battles and V6 prototype replay compatibility V6-prototype giant-four T6",
+      "engine/tests/unified-replay.test.ts::V5 saved battles and V6 prototype replay compatibility V6-prototype giant-unbreakable T1",
+      "engine/tests/unified-replay.test.ts::V5 saved battles and V6 prototype replay compatibility V6-prototype human4-vehicle2 T10",
+      "panel/src/life-limit-state.test.ts::生命上限贯穿正文、编辑与档案 正文高生命自动截断并给出提示，编队人数保留原值",
+      "panel/src/life-limit-state.test.ts::生命上限贯穿正文、编辑与档案 正文事务不能在生成后用旧事件值覆盖生命上限"
+    ],
+    "newFailures": []
+  },
+  "baseline": {
+    "total": 1622,
+    "passed": 1615,
+    "failed": 7
+  },
+  "addedTests": 45,
+  "nativeSuite": {
+    "total": 225,
+    "passed": 225,
+    "failed": 0
+  },
+  "staticMaps": {
+    "maps": 2400,
+    "distinctMaps": 2400,
+    "deployments": 240,
+    "approachChecks": 2880,
+    "elapsedMs": 21237.675918,
+    "failures": []
+  },
+  "capacityAudit": {
+    "maps": 1008,
+    "gridDeployments": 240,
+    "massDeployments": 64,
+    "breachPathChecks": 120,
+    "restores": 309,
+    "smallActions": 226,
+    "massRounds": 4,
+    "smallActionP50Ms": 129.35979699999734,
+    "smallActionP95Ms": 341.64031299999624,
+    "elapsedMs": 130265.292995,
+    "cases": [
+      {
+        "seed": "live32:plains",
+        "initialCards": 32,
+        "actions": 62,
+        "round": 3,
+        "ended": true
+      },
+      {
+        "seed": "live32:urban",
+        "initialCards": 32,
+        "actions": 83,
+        "round": 4,
+        "ended": false
+      },
+      {
+        "seed": "live32:siege",
+        "initialCards": 32,
+        "actions": 81,
+        "round": 4,
+        "ended": false
+      },
+      {
+        "seed": "live64:1",
+        "initialCards": 64,
+        "round": 3,
+        "ended": false
+      },
+      {
+        "seed": "live64:2",
+        "initialCards": 64,
+        "round": 3,
+        "ended": false
+      }
+    ],
+    "failures": []
+  },
+  "worldbook": {
+    "authorizedChange": "单场上限32张 → 单场上限64张",
+    "otherwiseByteIdenticalToBase": true,
+    "sourceAndDistIdentical": true,
+    "sha256": "d8cc27cb21acaab30387893b5f776f891b99a831841ea54134cbac0b55f07b05"
+  },
+  "browser": {
+    "status": "passed",
+    "realHost": false,
+    "results": {
+      "layered-browser:metadata-only": {
+        "status": "passed",
+        "checks": 9,
+        "errors": []
+      },
+      "layered-browser:legacy-full": {
+        "status": "passed",
+        "checks": 9,
+        "errors": []
+      },
+      "native-extension-smoke:metadata-only": {
+        "status": "passed",
+        "checks": 51,
+        "errors": []
+      },
+      "native-extension-smoke:legacy-full": {
+        "status": "passed",
+        "checks": 51,
+        "errors": []
+      }
+    }
+  },
+  "realLlmLatencyMeasured": false,
+  "limitations": [
+    "Full npm test still reports seven unchanged failures; no baseline test was removed.",
+    "Bounded live-turn audits are not whole-battle balance validation.",
+    "Synthetic host browser checks are not real ST/TT or Android testing.",
+    "Existing explicit LLM preferences are preserved."
+  ],
+  "status": "passed-with-seven-unchanged-baseline-test-failures",
+  "ordinaryNpmTestExit": 1,
+  "priorBreachRecheck": {
+    "weaponClasses": 18,
+    "matrixChecks": 12600,
+    "executionChecks": 1260
+  },
+  "ciRun": "https://github.com/smokycamera/sillytavern-general-battle-system/actions/runs/36545225220",
+  "ciHead": "fe8c6d44f5c6b8905b33b68466d024075c29a21e",
+  "installedFiles": 50
+}

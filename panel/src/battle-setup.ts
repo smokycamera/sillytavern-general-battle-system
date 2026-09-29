@@ -1,4 +1,4 @@
-import { DEFAULT_SMALL_ROUND_LIMIT, defaultBattleObjective, type SmallBattle, hasFlightAbility, isAirborne, needsFormationHost, flightCapabilityReason, standardConditionMap, FORMATION_NODES, type BattlefieldSpec, type Combatant } from '../../engine/src/index.js';
+import { DEFAULT_SMALL_ROUND_LIMIT, defaultBattleObjective, type SmallBattle, needsFormationHost, recommendedFormationSlots, flightCapabilityReason, standardConditionMap, FORMATION_NODES, type BattlefieldSpec, type Combatant } from '../../engine/src/index.js';
 import { MAX_SCENE_UNITS, RECOMMENDED_UNITS, GROUPING_HINT } from './narrative-limits.js';
 
 export function battleCapacityIssue(roster: Combatant[]): string | undefined {
@@ -9,11 +9,15 @@ export function battleCapacityIssue(roster: Combatant[]): string | undefined {
 /** 为未指定阵位的编队分配实际空位；不重写明确部署，不修改长期档案。 */
 export function prepareMassRoster(roster: Combatant[]): Combatant[] {
   const issue = battleCapacityIssue(roster); if (issue) throw new Error(issue);
-  const units = structuredClone(roster), occupied = new Map<string, number>();
+  const units = structuredClone(roster), occupied = new Map<string, number>(), slots = recommendedFormationSlots(roster);
   const explicit = (u: Combatant) => !!u.formationPosition || u.tags.some((t) => t.startsWith('zone:')) && u.tags.some((t) => t.startsWith('rank:'));
   const ordered = [...units].sort((a, b) => Number(explicit(b)) - Number(explicit(a)) || a.id.localeCompare(b.id));
   for (const side of ['ally', 'enemy'] as const) {
-    const group = ordered.filter((u) => u.side === side), combatants = group.filter((u) => !needsFormationHost(u));
+    const group = ordered.filter((u) => u.side === side);
+    const hosts = group.filter(u => !needsFormationHost(u) && u.scale !== 'hero' && u.hp > 0 && u.status === 'ready'
+      && ((u.body ?? 'human') !== 'human' || flightCapabilityReason(u, standardConditionMap()) !== undefined));
+    const attachedHeroes = new Set(group.filter(needsFormationHost).sort((a,b) => a.id.localeCompare(b.id)).slice(0, hosts.length).map(u => u.id));
+    const combatants = group.filter(u => !attachedHeroes.has(u.id));
     for (const [index, unit] of combatants.entries()) {
       const zone = unit.tags.find((t) => t.startsWith('zone:'))?.slice(5);
       const rank = unit.tags.find((t) => t.startsWith('rank:'))?.slice(5);
@@ -23,7 +27,7 @@ export function prepareMassRoster(roster: Combatant[]): Combatant[] {
       const key = (id: string) => id + ':' + Number(air);
       const candidates = FORMATION_NODES.filter((n) => n.side === side
         && (!unit.formationPosition || n.id === unit.formationPosition) && (!zone || n.wing === zone) && (!rank || n.rank === rank));
-      const node = candidates.filter((n) => (occupied.get(key(n.id)) ?? 0) < 3)
+      const node = candidates.filter((n) => (occupied.get(key(n.id)) ?? 0) < slots)
         .sort((a, b) => Number(b.rank === preferredRank) - Number(a.rank === preferredRank)
           || Number(b.wing === preferredWing) - Number(a.wing === preferredWing)
           || (occupied.get(key(a.id)) ?? 0) - (occupied.get(key(b.id)) ?? 0) || a.y - b.y || a.x - b.x)[0];
@@ -70,15 +74,9 @@ export function recommendBattleMode(roster: Combatant[]): { mode: 'small' | 'mas
     mode: roster.some((u) => u.scale === 'company') ? 'mass' : 'small', reason: '旧单位沿用原战斗规则',
   };
   const units = roster.filter((u) => u.hp > 0 && u.status === 'ready' && (u.side === 'ally' || u.side === 'enemy'));
-  for (const side of ['ally', 'enemy']) {
-    const group = units.filter((u) => u.side === side);
-    const people = group.filter(needsFormationHost).length;
-    const hosts = group.filter((u) => u.scale !== 'hero' && ((u.body ?? 'human') !== 'human' || !isAirborne(u) && !hasFlightAbility(u))).length;
-    if (people > hosts) return { mode: 'small', reason: '有独立参战人物，采用逐单位行动的小战' };
-  }
   // 地图承载的是可操作实体，编队人数不等于格子数，也不能用师团等名称判定。
-  if (units.length > RECOMMENDED_UNITS) return { mode: 'mass', reason: '参战单位较多，采用编队军令与阶段结算' };
-  return { mode: 'small', reason: '参战单位数量适合战术地图，保留具体移动与目标操作' };
+  if (units.length > RECOMMENDED_UNITS) return { mode: 'mass', reason: '参战单位超过32张，采用会战军令与阶段结算；人物身份保持不变' };
+  return { mode: 'small', reason: '参战单位不超过32张，采用小战地图，保留具体移动与目标操作' };
 }
 
 /** 只延长尚未结束的旧默认小战，不改已判胜战果或其他自定义期限。 */

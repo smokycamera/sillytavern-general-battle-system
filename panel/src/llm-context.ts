@@ -1,3 +1,4 @@
+import { MAX_SMALL_UNITS } from '../../engine/src/battle-limits.js';
 import { BATTLEFIELD_PLAN_PROMPT } from '../../engine/src/small/battlefield-plan.js';
 import { normalizeCommanderProfiles } from '../../engine/src/commander-profile.js';
 import { activeTraitIds, isRangedWeapon } from '../../engine/src/index.js';
@@ -14,7 +15,7 @@ import type { NarrativeMessage, ContextSelectionAnswer } from '../../vendor/jev-
 export interface LlmEncounterContext extends JevEncounterContext, PreparationDesignResult { commanders?: CommanderProfiles }
 export function llmContextSummary(context: LlmEncounterContext): string {
   const commanders = Object.entries(context.commanders ?? {}).map(([side, p]) => `${side === 'ally' ? '我方' : '敌方'}指挥：${ABILITY_LABELS[p!.ability]} · ${STYLE_PRESETS[p!.style].label}`);
-  return [...commanders, encounterSummary(context).split('；').slice(1).join('；'), validMapDesign(context.mapDesign) ? '地图：' + mapDesignSummary(context.mapDesign) : '', context.battlefieldPlan ? '战场：' + (context.battlefieldPlan.size ?? '自动尺寸') + ' / ' + (context.battlefieldPlan.shape ?? context.battlefieldPlan.layout ?? '组合布局') + ' / ' + (context.battlefieldPlan.landmarks?.length ?? '自动') + '地标' : '', context.vipName ? 'VIP：' + context.vipName : '', context.designDetail].filter(Boolean).join('；');
+  return [...commanders, encounterSummary(context).split('；').slice(1).join('；'), validMapDesign(context.mapDesign) ? '地图：' + mapDesignSummary(context.mapDesign) : '', context.battlefieldPlan ? '战场：' + (context.battlefieldPlan.size ?? '自动尺寸') + ' / ' + (context.battlefieldPlan.shape ?? context.battlefieldPlan.layout ?? '组合布局') + ' / ' + (context.battlefieldPlan.landmarks?.length ?? '自动') + '地标' + (context.battlefieldPlan.breaches ? ' / ' + context.battlefieldPlan.breaches.count + '处破口' : '') : '', context.vipName ? 'VIP：' + context.vipName : '', context.designDetail].filter(Boolean).join('；');
 }
 export class LlmContextController {
   private aborter?: AbortController;
@@ -31,8 +32,10 @@ export class LlmContextController {
     if (!connection.model) throw Error('请先拉取并选择模型，或填写模型 ID');
     // One layer = one completed user/assistant message, in the host's chronological order.
     const messages = input.messages.map(m => ({ ...m, text: m.text.replace(/<(think|analysis|reasoning)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi, '').trim() }));
+    // Never ask the model to choose an impossible >32-card grid, or spend tokens designing one.
+    const forcedMass = input.roster.filter(u => u.hp > 0 && u.status === 'ready').length > MAX_SMALL_UNITS;
     // Freeze the prepared scale when opted out, including scene-driven mode changes.
-    const contextInput = { ...input, messages, settings: normalizeContextSettings({ battleMode: settings.selectBattleScale === false ? input.setup.mode : 'auto' }), windowSize: settings.windowSize, roles: ['user', 'assistant'], phase: 'preparation' as const };
+    const contextInput = { ...input, messages, settings: normalizeContextSettings({ battleMode: forcedMass ? 'mass' : settings.selectBattleScale === false ? input.setup.mode : 'auto' }), windowSize: settings.windowSize, roles: ['user', 'assistant'], phase: 'preparation' as const };
     const { base, request } = encounterRequest(contextInput);
     if (!request) return { ...base, detail: '所选范围没有可读取的已完成正文，沿用准备设置' };
     request.fields = request.fields.filter(f => f.id !== 'enemy_ability' && !f.id.startsWith('style_'));
@@ -44,7 +47,7 @@ export class LlmContextController {
       request.fields.push({ id: side + '_style', question: `结合设定、行为倾向、当前任务与处境，自行选择${who}最合适的指挥风格；没有明确性格标签时根据上下文合理推断。`, options: Object.fromEntries(Object.entries(STYLE_PRESETS).map(([k, v]) => [k, v.label])) });
     }
     const coreRequest = { ...request, fields: [...request.fields] };
-    const designRequest = preparationDesignRequest(input.roster, settings, input.setup, input.unitNotes, request.messages.map(m => m.text).join('\n'), true);
+    const designRequest = preparationDesignRequest(input.roster, forcedMass ? { ...settings, selectBattleScale: false } : settings, forcedMass ? { ...input.setup, mode: 'mass' } : input.setup, input.unitNotes, request.messages.map(m => m.text).join('\n'), true);
     request.fields.push(...designRequest.fields);
     request.state = {
       encounter: request.state,

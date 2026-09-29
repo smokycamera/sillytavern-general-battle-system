@@ -16,6 +16,8 @@ export interface ObservationContext {
   fieldTags: string[];
   battlefield?: BattlefieldSpec;
   attached?: Map<string, string>;
+  /** Frozen macro-node capacity; old battle contexts default to three. */
+  formationSlots?: number;
   conditions?: Pick<ReadonlyMap<string, ConditionDef>, 'get'>;
   rules?: import('./types.js').RulePack;
   traitRegistry?: Map<string, import('./types.js').Trait>;

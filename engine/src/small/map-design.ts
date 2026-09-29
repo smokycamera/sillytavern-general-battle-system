@@ -18,7 +18,9 @@ export type MapDesign = { -readonly [K in MapDesignKey]: keyof typeof MAP_DESIGN
 };
 export type MapFamily = 'plains' | 'forest' | 'mountain' | 'urban' | 'siege' | 'indoor';
 export interface MapGenerationRecord {
-  version: 3 | 4 | 5;
+  version: 3 | 4 | 5 | 6;
+  /** Bounded local repairs/size upgrades, never instructions from model labels. */
+  notes?: string[];
   family: MapFamily;
   source: 'random' | 'context';
   design: MapDesign;

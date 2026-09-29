@@ -6,7 +6,7 @@ import { isRangedWeapon } from '../loadout.js';
 import type { Combatant, ConditionDef } from '../types.js';
 import { activeTraitIds } from '../trait-sources.js';
 import { environmentTags } from '../environment.js';
-import { isAirborne, sameLayer } from '../aerial.js';
+import { isAirborne, sameLayer, flightCapabilityReason, type FlightConditions } from '../aerial.js';
 import { SeededRng } from '../rng.js';
 import { rangedScreen } from '../guard-screen.js';
 import { gridWeaponRange } from './weapon-range.js';
@@ -247,8 +247,8 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
   const preferredY = vanguard ? forward : enemy ? preferredDepth : field.height - 1 - preferredDepth;
   const middle = Math.floor(field.height / 2);
   const probes = [...new Set([forward, middle])].flatMap(y => Array.from({ length: field.width }, (_, x) => y * field.width + x))
-    .filter(p => field.tiles[p] !== 'wall');
-  const costs = gridCostsToGoals(field, probes, p => air || field.tiles[p] !== 'wall', p => tileCost(field, p, unit));
+    .filter(p => field.layerVersion ? !groundBlocked(field, p, unit) : field.tiles[p] !== 'wall');
+  const costs = gridCostsToGoals(field, probes, p => field.layerVersion ? !groundBlocked(field, p, unit) : air || field.tiles[p] !== 'wall', p => tileCost(field, p, unit));
   const emptyConditions = new Map<string, ConditionDef>();
   return (position: number, placed: Combatant[]) => {
     const actor = { ...unit, pos: position }, friends = placed.filter(u => u.id !== unit.id && u.side === unit.side);
@@ -276,6 +276,20 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
     }
     return score;
   };
+}
+
+/** Pure preparation shared by generator capacity checks and SmallBattle.start. */
+export function prepareGridDeployment(field: BattlefieldSpec, units: readonly Combatant[], seed = 'deployment', conditions?: FlightConditions, enableFlight = true): Combatant[] {
+  const prepared = units.map(u => ({ ...u, ...(enableFlight && u.rulesVersion === 'v2' && u.airborne === undefined && !flightCapabilityReason(u, conditions) ? { airborne: true } : {}) }));
+  if (field.layerVersion && field.city?.defender) {
+    const guard = prepared.filter(u => u.side === field.city!.defender && u.pos === undefined && !isAirborne(u))
+      .sort((a,b) => Number(isRangedWeapon(b.weapon)) - Number(isRangedWeapon(a.weapon)) || a.id.localeCompare(b.id));
+    const capacity = field.city.frontline.filter(p => structureAt(field,p)?.hp && structureAt(field,p)?.top).length;
+    for (const u of guard.slice(0, Math.min(capacity, Math.floor(guard.length * .4)))) u.elevation = 1;
+  }
+  const positions = deployOnGrid(field, prepared, seed);
+  prepared.forEach((u,i) => { u.pos = positions[i]; });
+  return prepared;
 }
 
 /** 未指定位置的新规则单位按角色/地形布阵；同种子复现，显式部署优先且失败不修改原名单。 */
