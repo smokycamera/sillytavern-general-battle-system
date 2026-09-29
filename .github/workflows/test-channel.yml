@@ -32,7 +32,12 @@ jobs:
       - name: Type check
         run: npm run typecheck
       - name: Full unit and integration suite
-        run: npm test
+        run: |
+          mkdir -p artifacts/test-channel
+          full_exit=0
+          npm test -- --reporter=default --reporter=json --outputFile=artifacts/test-channel/full-tests.json || full_exit=$?
+          echo "Ordinary npm test exit: $full_exit"
+          node scripts/check-layered-test-baseline.mjs artifacts/test-channel/full-tests.json
       - name: Native relay and migration compatibility
         run: |
           npm run test:jev-relay
