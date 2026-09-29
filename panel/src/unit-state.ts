@@ -431,13 +431,13 @@ export function unitRecordFromCombatant(
   if(opts.kind==='battle')delete c.storyState;
   limitCombatantLife(c);
   delete c.nonLethal;delete c.cannonAmmo;
-  delete c.airborne; delete c.formationPosition;
+  delete c.airborne; delete c.elevation; delete c.formationPosition;
   restoreDeploymentPreference(c);
   delete c.tacticalPose;
   delete c.moraleState;
   delete c.tacticalEffort;
   delete c.tacticalRevealed;
-  delete c.airborne;
+  delete c.airborne; delete c.elevation;
   normalizeV2Scale(c);
   synchronizePersonnel(c, true);
   if (c.rulesVersion === 'v2') c.bakedTraitStats ??= bakedTraitStats(c);
@@ -650,7 +650,7 @@ export function materializeUnitRecord(
   delete generated.moraleState;
   delete generated.tacticalEffort;
   delete generated.tacticalRevealed;
-  delete generated.airborne;
+  delete generated.airborne; delete generated.elevation;
   delete generated.formationPosition;
   delete generated.vanguardOrigin;
   delete generated.pos;

@@ -1,3 +1,4 @@
+import { normalizeBattlefieldPlan, type BattlefieldPlan } from '../../engine/src/small/battlefield-plan.js';
 import { MAP_DESIGN_OPTIONS, ROUTE_TOPOLOGIES, safeLandmarkLabel, validMapDesign, type MapDesign, type Combatant } from '../../engine/src/index.js';
 import type { ContextSelectionRequest, ContextSelectionAnswer } from '../../vendor/jev-core/src/index.js';
 import type { EncounterSetup } from './jev-context.js';
@@ -7,12 +8,14 @@ import { vipCandidates } from './battle-setup.js';
 type Field = ContextSelectionRequest['fields'][number];
 export interface PreparationDesignRequest {
   fields: Field[];
+  compactMap?: boolean;
   vipIds: Partial<Record<'ally' | 'enemy', Record<string, string>>>;
   notes: string[];
   landmarkSource?: string;
 }
 export interface PreparationDesignResult {
   mapDesign?: MapDesign;
+  battlefieldPlan?: BattlefieldPlan;
   vipId?: string;
   vipName?: string;
   designDetail?: string;
@@ -30,14 +33,16 @@ const questions: Record<keyof typeof MAP_DESIGN_OPTIONS, string> = {
 };
 
 /** Uses the existing preparation request, never an additional API call. Raw unit IDs are not option IDs. */
-export function preparationDesignRequest(roster: Combatant[], settings: LlmSettings, setup: EncounterSetup, unitNotes: Record<string, string> = {}, landmarkSource = ''): PreparationDesignRequest {
+export function preparationDesignRequest(roster: Combatant[], settings: LlmSettings, setup: EncounterSetup, unitNotes: Record<string, string> = {}, landmarkSource = '', compact = false): PreparationDesignRequest {
   const result: PreparationDesignRequest = { fields: [], vipIds: {}, notes: [] };
   // A fixed mass battle has no tactical grid or escape objective.
   if (settings.selectBattleScale === false && setup.mode === 'mass') return result;
-  if (settings.designMap === true) for (const key of Object.keys(MAP_DESIGN_OPTIONS) as (keyof typeof MAP_DESIGN_OPTIONS)[]) {
+  if (settings.designMap === true) result.landmarkSource = landmarkSource;
+  if (settings.designMap === true && compact) result.compactMap = true;
+  if (settings.designMap === true && !compact) for (const key of Object.keys(MAP_DESIGN_OPTIONS) as (keyof typeof MAP_DESIGN_OPTIONS)[]) {
     result.fields.push({ id: 'design_' + key.toLowerCase(), question: questions[key] + ' 若本次最终是军团会战，此项忽略。', options: { ...MAP_DESIGN_OPTIONS[key] } });
   }
-  if (settings.designMap === true) {
+  if (settings.designMap === true && !compact) {
     result.landmarkSource = landmarkSource;
     result.fields.push({ id: 'design_topology', question: '选择实际路网结构；可共用路段、分叉汇合，不要求始终存在两条贯通独立大道。小地图由本地压缩实现。', options: { automatic: '按既有通路风格随机', ...ROUTE_TOPOLOGIES } });
     result.fields.push({ id: 'design_landmarkscale', question: '主要地标的影响范围；普通地标为局部位置，主地标带接近地带与侧翼。不要覆盖整张地图。', options: { minor: '普通局部地标', major: '显著战术地标' } });
@@ -72,6 +77,24 @@ function choice(answer: ContextSelectionAnswer, fields: Field[], id: string): st
 export function applyPreparationDesign(answer: ContextSelectionAnswer, request: PreparationDesignRequest, setup: EncounterSetup, roster: Combatant[]): PreparationDesignResult {
   if (setup.mode !== 'small') return {};
   const result: PreparationDesignResult = {}, notes = [...request.notes];
+  if (request.compactMap) {
+    const raw = (answer as ContextSelectionAnswer & { battlefield?: unknown }).battlefield;
+    const normalized = normalizeBattlefieldPlan(raw);
+    for (const m of normalized.plan?.landmarks ?? []) if (m.label && !request.landmarkSource?.includes(m.label)) {
+      delete m.label; notes.push('地标名称无正文依据，采用通用名称');
+    }
+    result.battlefieldPlan = normalized.plan;
+    // Read-only acceptance of an older answer costs no extra outbound fields/tokens.
+    // A present compact plan always takes precedence; this never triggers a second request.
+    if (raw === undefined && answer.selections?.design_layout) {
+      const legacy = preparationDesignRequest(roster, { designMap: true } as LlmSettings, setup, {}, request.landmarkSource);
+      const converted = applyPreparationDesign(answer, legacy, setup, roster);
+      if (converted.mapDesign) Object.assign(result, converted);
+      else if (converted.designDetail) notes.push(converted.designDetail);
+    }
+    notes.push(...normalized.notes);
+    if (!normalized.plan && !result.mapDesign) notes.push('未返回有效战场设计，采用本地随机生成');
+  }
   if (request.fields.some(f => f.id === 'design_layout')) {
     const candidate = Object.fromEntries((Object.keys(MAP_DESIGN_OPTIONS) as (keyof typeof MAP_DESIGN_OPTIONS)[]).map(k => [k, choice(answer, request.fields, 'design_' + k.toLowerCase())]));
     if (validMapDesign(candidate)) {

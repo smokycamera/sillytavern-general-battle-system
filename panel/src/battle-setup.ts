@@ -50,7 +50,10 @@ export function vipCandidates(roster: Combatant[], side: 'ally' | 'enemy'): Comb
 export function prepareBattleObjective(field: BattlefieldSpec, roster: Combatant[], mode: BattleObjectiveMode, protagonistId?: string, attackingSide: 'ally' | 'enemy' = 'ally', selectedVipId?: string): BattlefieldSpec {
   if (!['escort', 'intercept'].includes(mode)) {
     const siege = mode === 'siege' || (mode === 'auto' || mode === 'control') && field.environment?.includes('siege');
-    return { ...field, objective: { ...defaultBattleObjective(field.width, field.height, siege ? ['siege'] : [], attackingSide), limit: field.objective.limit } };
+    if (siege && field.layerVersion && field.city?.core.length) return { ...field, objective: { kind: 'control', cell: field.city.core[0]!, cells: [...field.city.core], attackingSide, rounds: 5, limit: field.objective.limit } };
+    const next = defaultBattleObjective(field.width, field.height, siege ? ['siege'] : [], attackingSide);
+    if (field.layerVersion && !siege) next.cell = field.city?.core[0] ?? field.objective.cell;
+    return { ...field, objective: { ...next, limit: field.objective.limit } };
   }
   const side = mode === 'intercept' ? 'enemy' : 'ally';
   const eligible = vipCandidates(roster, side);

@@ -292,6 +292,8 @@ export interface Combatant {
   recoverableWounded?: number;
   /** 本场空地状态；缺省按地面读取，新的飞行单位由开战部署初始化。 */
   airborne?: boolean;
+  /** Ground platform in a layered tactical field; not flight and not a permanent trait. */
+  elevation?: 1;
   /** 会战中的实际阵位，供飞行越线及落地后使用；不覆盖长期部署偏好。 */
   formationPosition?: string;
   /** 仅存在于战斗快照的姿态，归档/下次部署不继承。 */

@@ -1,3 +1,4 @@
+import { intactStructure } from './small/layers.js';
 import { smokeBlocks } from './area-effects.js';
 import type { BattleLogEntry, Combatant, ConditionDef, Side } from './types.js';
 import { standardConditionMap } from './conditions.js';
@@ -61,7 +62,7 @@ export function revealContacts(context: ObservationContext): void {
 }
 export function canReconceal(context: ObservationContext, unit: Combatant): boolean {
   if (!canConceal(context, unit) || !unit.tacticalRevealed || hostOf(context, unit)) return false;
-  const cover = context.mode === 'small' ? ['forest', 'cover'].includes(context.battlefield?.tiles[unit.pos!] ?? '') : context.fieldTags.some((tag) => ['forest', 'urban', 'siege'].includes(tag));
+  const cover = context.mode === 'small' ? (['forest', 'cover'].includes(context.battlefield?.tiles[unit.pos!] ?? '') || !!context.battlefield?.layerVersion && (['cover', 'fortification'].includes(intactStructure(context.battlefield, unit.pos!)?.kind ?? '') || !!context.battlefield.overlays?.[unit.pos!]?.includes('rubble'))) : context.fieldTags.some((tag) => ['forest', 'urban', 'siege'].includes(tag));
   if (!cover && !context.fieldTags.includes('night')) return false;
   return !context.units.some((foe) => foe.side !== unit.side && foe.status === 'ready' && distanceBetween(context, unit, foe) <= (context.mode === 'small' ? 2 : 1)
     && (!context.battlefield || lineOfSight(context.battlefield, positionedUnit(context, unit).pos!, positionedUnit(context, foe).pos!)));

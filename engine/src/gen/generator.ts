@@ -286,7 +286,7 @@ export function traitCatalog(registry?: Map<string, Trait>): { group: string; tr
     士气: ['fear', 'terror', 'steadfast', 'stubborn', 'commander'],
     机动: ['charge-strong', 'mounted-archer', 'skirmisher', 'vanguard', 'stalk', 'fast'],
     风格: ['melee-master', 'sharpshooter', 'versatile', 'mechanized'],
-    环境: ['urban-fighter', 'siege-breaker', 'fortification', 'plains-runner', 'forest-lore', 'mountain-born', 'night-fighter'],
+    环境: ['urban-fighter', 'siege-breaker', 'fortification', 'plains-runner', 'forest-lore', 'mountain-born', 'night-fighter', 'water-crossing', 'siege-assault'],
     规模: ['large', 'titan', 'flying', 'loose-formation'],
     精英: ['veteran', 'elite', 'fatigue-trained'],
   };

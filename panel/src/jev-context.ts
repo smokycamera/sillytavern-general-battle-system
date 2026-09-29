@@ -30,6 +30,13 @@ export const ABILITY_LABELS = {
 export type CommanderAbility = keyof typeof ABILITY_LABELS;
 export const STYLE_PRESETS = {
   balanced: { label: "均衡", style: {} },
+  siege: { label: "稳步攻坚", style: { firepower: 80, concentration: 85, patience: 75 } },
+  infiltration: { label: "渗透袭扰", style: { flank: 90, mobility: 85, feint: 85 } },
+  skirmish: { label: "游击消耗", style: { mobility: 90, preservation: 80, firepower: 70 } },
+  forward: { label: "前沿坚守", style: { hold: 90, concentration: 75, initiative: 60 } },
+  depth: { label: "纵深防御", style: { preservation: 75, patience: 80, hold: 65 } },
+  mobile: { label: "机动防御", style: { mobility: 85, flank: 75, initiative: 70 } },
+  core: { label: "核心固守", style: { hold: 95, preservation: 85, patience: 90 } },
   aggressive: {
     label: "积极进攻",
     style: { initiative: 85, risk: 80, patience: 25 },

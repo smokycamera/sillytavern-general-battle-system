@@ -63,3 +63,7 @@ export * from './area-effects.js';
 export * from './small/map-design.js';
 
 export * from './small/route-graph.js';
+
+export * from './small/layers.js';
+export * from './small/battlefield-plan.js';
+export * from './small/layered-generator.js';

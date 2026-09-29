@@ -5,7 +5,7 @@ import { standardConditionMap } from './conditions.js';
 const defaultConditions = standardConditionMap();
 export type FlightConditions = Pick<ReadonlyMap<string, ConditionDef>, 'get'>;
 export function isAirborne(unit: Combatant): boolean { return unit.rulesVersion === 'v2' && unit.airborne === true; }
-export function sameLayer(a: Combatant, b: Combatant): boolean { return isAirborne(a) === isAirborne(b); }
+export function sameLayer(a: Combatant, b: Combatant): boolean { return isAirborne(a) === isAirborne(b) && (isAirborne(a) || (a.elevation ?? 0) === (b.elevation ?? 0)); }
 export function hasFlightAbility(unit: Combatant): boolean { return unit.rulesVersion === 'v2' && activeTraitIds(unit).includes('flying'); }
 export function flightCapabilityReason(unit: Combatant, defs: FlightConditions = defaultConditions): string | undefined {
   if (unit.status !== 'ready' || unit.hp <= 0) return '当前不能主动飞行';

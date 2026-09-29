@@ -59,12 +59,12 @@ export function validateTacticalEffort(value: unknown, model?: unknown): void {
 }
 export function validateTacticalPose(pose: TacticalPose): void {
   if (!pose || pose.kind !== 'brace' || !['small', 'mass'].includes(pose.mode)
-    || pose.mode === 'small' && ![5, 7].includes(pose.width!)
+    || pose.mode === 'small' && ![5, 7, 9, 11, 13].includes(pose.width!)
     || !pose.anchor || !pose.facing || ![pose.anchor.x, pose.anchor.y, pose.facing.x, pose.facing.y].every(Number.isSafeInteger)
     || Math.abs(pose.facing.x) + Math.abs(pose.facing.y) !== 1
     || pose.anchor.x < 0 || pose.anchor.y < 0
     || pose.anchor.x >= (pose.mode === 'mass' ? 3 : pose.width!)
-    || pose.anchor.y >= (pose.mode === 'mass' ? 6 : pose.width === 7 ? 13 : 7)) throw new Error('战术姿态数据损坏');
+    || pose.anchor.y >= (pose.mode === 'mass' ? 6 : ({ 5: 7, 7: 13, 9: 15, 11: 17, 13: 19 } as Record<number, number>)[pose.width!]!)) throw new Error('战术姿态数据损坏');
 }
 function position(unit: Combatant, space: Pick<TacticalPose, 'mode' | 'width'>) {
   if (space.mode === 'mass') { const node = formationNode(unit); return { x: node.x, y: node.y }; }

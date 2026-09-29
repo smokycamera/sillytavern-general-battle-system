@@ -18,7 +18,7 @@ export type MapDesign = { -readonly [K in MapDesignKey]: keyof typeof MAP_DESIGN
 };
 export type MapFamily = 'plains' | 'forest' | 'mountain' | 'urban' | 'siege' | 'indoor';
 export interface MapGenerationRecord {
-  version: 3 | 4;
+  version: 3 | 4 | 5;
   family: MapFamily;
   source: 'random' | 'context';
   design: MapDesign;
@@ -50,6 +50,9 @@ export function safeLandmarkLabel(value: unknown): string | undefined {
   return label && [...label].length <= 32 && /^[\p{L}\p{N} ·・—–\-()（）]+$/u.test(label) ? label : undefined;
 }
 export function landmarkAt(field: { generation?: MapGenerationRecord; tiles: readonly string[] }, cell: number): string | undefined {
+  const marks = (field as { landmarks?: import('./layers.js').FieldLandmark[] }).landmarks;
+  const label = marks?.find(m => m.cells?.includes(cell))?.label;
+  if (label) return safeLandmarkLabel(label);
   const mark = field.generation?.landmark;
   if (!mark || !Number.isInteger(cell) || cell < 0 || cell >= field.tiles.length || !Array.isArray(mark.cells) || !mark.cells.includes(cell)) return undefined;
   return safeLandmarkLabel(mark.label);
@@ -57,6 +60,6 @@ export function landmarkAt(field: { generation?: MapGenerationRecord; tiles: rea
 
 /** Snapshot provenance is optional/untrusted; invalid metadata never prevents a battle loading. */
 export function landmarkCells(field: { generation?: MapGenerationRecord; tiles: readonly string[] }): number[] {
-  const cells = field.generation?.landmark?.cells;
+  const cells = (field as { landmarks?: import('./layers.js').FieldLandmark[] }).landmarks?.flatMap(m => m.cells) ?? field.generation?.landmark?.cells;
   return Array.isArray(cells) ? [...new Set(cells.filter(p => Number.isInteger(p) && p >= 0 && p < field.tiles.length))] : [];
 }

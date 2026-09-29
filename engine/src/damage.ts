@@ -93,6 +93,7 @@ export interface AttackOpts {
   packetShare?: number;
   fieldTags?: string[];
   attackerTerrain?: string;
+  localTerrain?: boolean;
   defenderTerrain?: string;
   defenderEngaged?: boolean;
   distance?: number;
@@ -421,12 +422,12 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
 
   // ---- 收集双方修正 ----
   // 攻击方视角：条件修正看 defender 的标签
-  const ctxAtk = { skillDelivery: opts.abilityDamage?.delivery, attacker, defender, charge: opts.charge, ranged, weapon, fieldTags: opts.fieldTags, terrain: opts.attackerTerrain, opponentTerrain: opts.defenderTerrain, distance: opts.distance };
+  const ctxAtk = { skillDelivery: opts.abilityDamage?.delivery, attacker, defender, charge: opts.charge, ranged, weapon, fieldTags: opts.fieldTags, localTerrain: opts.localTerrain, terrain: opts.attackerTerrain, opponentTerrain: opts.defenderTerrain, distance: opts.distance };
   const atkMods = collectMods(attacker, ctxAtk, opts.conditionDefs, extraMods, opts.traitRegistry);
   const atkStack = resolveStack(atkMods, 'atk', ctxAtk, { sameNameKeepsHighest: rules.sameNameKeepsHighest, maxFlat: rules.maxFlat });
 
   // 防御方视角：其条件修正（如「仅对大型目标生效」）看攻击方标签
-  const ctxDef = { area: opts.abilityDamage?.shape === 'burst' || ((!opts.abilityDamage || opts.abilityDamage.weaponBased) && !!weapon?.tags?.includes('blast')), attacker: defender, defender: attacker, charge: opts.charge, ranged, weapon: defender.weapon, fieldTags: opts.fieldTags, terrain: opts.defenderTerrain, opponentTerrain: opts.attackerTerrain, distance: opts.distance, engaged: opts.defenderEngaged };
+  const ctxDef = { area: opts.abilityDamage?.shape === 'burst' || ((!opts.abilityDamage || opts.abilityDamage.weaponBased) && !!weapon?.tags?.includes('blast')), attacker: defender, defender: attacker, charge: opts.charge, ranged, weapon: defender.weapon, fieldTags: opts.fieldTags, localTerrain: opts.localTerrain, terrain: opts.defenderTerrain, opponentTerrain: opts.attackerTerrain, distance: opts.distance, engaged: opts.defenderEngaged };
   const defenderMods = [...(opts.defenderMods ?? [])];
   if (rules.combatModel === MEMBER_HEALTH_MODEL && defender.status === 'ready'
     && !defender.conditions.some(c => c.dur > 0 && (opts.conditionDefs.get(c.id)?.preventAttack || opts.conditionDefs.get(c.id)?.skipTurn))) {
