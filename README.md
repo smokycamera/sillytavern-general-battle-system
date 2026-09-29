@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current candidate: **1.6.1-rc.1**. Layered city/siege review, explicit weapon breach coefficients, slow-unit traversal and commander scoring fixes. See [review and validation](docs/breach-review.md). This is a prerelease; do not enable both stable and test installations at once.
+Current candidate: **1.6.1-rc.2**. Independent city damage/gates, 32-card tactical battles, 64-card encounters and full-roster deployment. See [planning and validation](docs/battle-planning-v2.md). This is a prerelease; do not enable both stable and test installations at once.
 
 The loadout header now includes **技能选择** beside **新增物品**. Choose a unit, select up to five learned skills, and save; preparation retains skill effects, cooldowns, resources, and equipment.
 

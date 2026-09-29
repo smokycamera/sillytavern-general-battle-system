@@ -1,0 +1,48 @@
+{
+  "maps": 1008,
+  "gridDeployments": 240,
+  "massDeployments": 64,
+  "breachPathChecks": 120,
+  "restores": 309,
+  "smallActions": 226,
+  "massRounds": 4,
+  "smallActionP50Ms": 129.35979699999734,
+  "smallActionP95Ms": 341.64031299999624,
+  "elapsedMs": 130265.292995,
+  "cases": [
+    {
+      "seed": "live32:plains",
+      "initialCards": 32,
+      "actions": 62,
+      "round": 3,
+      "ended": true
+    },
+    {
+      "seed": "live32:urban",
+      "initialCards": 32,
+      "actions": 83,
+      "round": 4,
+      "ended": false
+    },
+    {
+      "seed": "live32:siege",
+      "initialCards": 32,
+      "actions": 81,
+      "round": 4,
+      "ended": false
+    },
+    {
+      "seed": "live64:1",
+      "initialCards": 64,
+      "round": 3,
+      "ended": false
+    },
+    {
+      "seed": "live64:2",
+      "initialCards": 64,
+      "round": 3,
+      "ended": false
+    }
+  ],
+  "failures": []
+}

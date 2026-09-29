@@ -1,0 +1,76 @@
+{
+  "runner": "Node assertions against tsc-compiled production sources; Vitest not run by this script",
+  "durationMs": 43175,
+  "checks": 16,
+  "passed": 16,
+  "failed": 0,
+  "mapCount": 504,
+  "modeCount": 192,
+  "movementCount": 16,
+  "results": [
+    {
+      "name": "all rule versions use card counts 2..65 without changing roster data",
+      "pass": true
+    },
+    {
+      "name": "small and mass engine starts guard all versions; inactive records do not consume slots",
+      "pass": true
+    },
+    {
+      "name": "legacy and mixed contextual starts cannot route 33 cards back to a small battle",
+      "pass": true
+    },
+    {
+      "name": "new 33/64-card formations preserve versions, identity, capacity and deterministic save/replay",
+      "pass": true
+    },
+    {
+      "name": "mixed explicit formation positions move consistently with legacy zone/rank tags",
+      "pass": true
+    },
+    {
+      "name": "legacy formations reject full destinations and simultaneous arrivals cannot overfill",
+      "pass": true
+    },
+    {
+      "name": "existing started snapshots are neither resized nor capped nor given new formationSlots",
+      "pass": true
+    },
+    {
+      "name": "intact/damaged/destroyed fortifications protect all sides, including old facing metadata",
+      "pass": true
+    },
+    {
+      "name": "scene and gate schemas preserve exact independent states and reject malformed gate counts",
+      "pass": true
+    },
+    {
+      "name": "all six scene layouts: multiple seeds, both attack sides, deterministic geometry, usable deployments",
+      "pass": true
+    },
+    {
+      "name": "city gate plans 0..4 coexist with independent initial breaches",
+      "pass": true
+    },
+    {
+      "name": "existing shape/breach matrix retains count, width, separation and reachable interiors",
+      "pass": true
+    },
+    {
+      "name": "API plans missing landmarks do not inherit random landmarks; indoor never inherits outdoor features",
+      "pass": true
+    },
+    {
+      "name": "streets use complete building parcels and preserve inner connectivity without opening perimeter walls",
+      "pass": true
+    },
+    {
+      "name": "secondary API requires landmarks, accepts safe inferred names, keeps one request and both commander choices",
+      "pass": true
+    },
+    {
+      "name": "street labels disappear from idle tiles but accessibility, inspection, structures and landmarks remain",
+      "pass": true
+    }
+  ]
+}

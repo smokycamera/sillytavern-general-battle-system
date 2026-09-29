@@ -176,9 +176,9 @@ try {
   check('战报去重且不消费草稿附件',delivered.first.status==='inserted'&&delivered.count===1&&delivered.draft&&delivered.attachment&&delivered.generations===0);
   check('插件插入的战报确实保存到服务端',disk.get('a').chat.filter(x=>x.extra?.tavernBattleDeliveryId==='smoke-delivery').length===1);
   await page.evaluate(()=>switchChat('b'));await ready();check('切聊天得到独立空档',!(await state()).storage?.length&&!(await state()).battle);
-  await page.evaluate(async()=>{context.chat.push({is_user:false,mes:'<tb><spawn name="原生连队" side="ally" scale="company" hpMax="40" count="9"/><spawn name="敌方连队" side="enemy" scale="company" hpMax="40" count="9"/></tb>',swipe_id:0,gen_finished:'complete'});await context.saveChat();await __tavernBattleNative.service.scan();});
+  await page.evaluate(async()=>{context.chat.push({is_user:false,mes:'<tb><spawn name="原生连队" side="ally" scale="company" hpMax="40" count="17"/><spawn name="敌方连队" side="enemy" scale="company" hpMax="40" count="17"/></tb>',swipe_id:0,gen_finished:'complete'});await context.saveChat();await __tavernBattleNative.service.scan();});
   await frame.locator('[data-action="workspace-tab"][data-tab="units"]').first().click();await idle(frame);
-  await frame.locator('[data-action="narrative-approve"]').click();await page.waitForFunction(()=>__tavernBattleNative.service.snapshot().storage?.length===18);await idle(frame);
+  await frame.locator('[data-action="narrative-approve"]').click();await page.waitForFunction(()=>__tavernBattleNative.service.snapshot().storage?.length===34);await idle(frame);
   await frame.locator('[data-action="workspace-tab"][data-tab="battle"]').first().click();await idle(frame);
   await frame.locator('[data-action="mass-start"]').first().click();await idle(frame);
   const massRound=(await state()).battle.snap.round;

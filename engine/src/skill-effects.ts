@@ -122,7 +122,7 @@ export function pushPreview(context: ObservationContext, actor: Combatant, targe
   if (effect.direction === 'towards') { step.x *= -1; step.y *= -1; }
   if (context.mode === 'mass') {
     const node = FORMATION_NODES.find((n) => n.x === to.x + step.x && n.y === to.y + step.y);
-    if (!node || !formationCanOccupy(context.units, unit, node, context.attached ?? new Map())) return { reason: '推离位置受阻，不产生碰撞伤害' };
+    if (!node || !formationCanOccupy(context.units, unit, node, context.attached ?? new Map(), context.formationSlots ?? 3)) return { reason: '推离位置受阻，不产生碰撞伤害' };
     return { nodeId: node.id, label: `${node.side === 'ally' ? '我方' : '敌方'}${node.wing}${{ front: '前线', rear: '支援', reserve: '预备' }[node.rank]}` };
   }
   if (!field) return { reason: '位移技能需要二维战场' };

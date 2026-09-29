@@ -21,12 +21,15 @@ export interface FieldStructure {
   top?: boolean;
   /** Ground cells with built-in stairs, not remote control points. */
   access?: number[];
+  /** Legacy metadata, ignored by fortification protection. New fortifications omit it. */
   facing?: 'north' | 'south' | 'east' | 'west';
 }
 export interface FieldLandmark { kind: string; label: string; cells: number[]; scale: 'minor' | 'major' }
 export type CityShape = 'front' | 'enclosure' | 'riverside' | 'hillside' | 'broken';
 export interface CityRecord {
   shape: CityShape | 'district';
+  /** Initial damage provenance; combat damage stays authoritative in structures. */
+  breaches?: number[][];
   inside: number[];
   frontline: number[];
   gates: number[];
@@ -79,11 +82,8 @@ export function structureDefense(field: BattlefieldSpec, defender: Combatant, at
   if (isElevated(defender)) return isElevated(attacker) ? 0 : 2;
   if (s.kind === 'cover') return ranged ? 2 : 0;
   if (s.kind !== 'fortification') return 0;
-  const dx = attacker.pos % field.width - defender.pos % field.width;
-  const dy = Math.floor(attacker.pos / field.width) - Math.floor(defender.pos / field.width);
-  const front = !s.facing || s.facing === 'north' && dy < 0 || s.facing === 'south' && dy > 0
-    || s.facing === 'east' && dx > 0 || s.facing === 'west' && dx < 0;
-  return front ? s.hp > s.hpMax / 2 ? 3 : 1 : ranged ? 1 : 0;
+  // Facing in an older snapshot is harmless provenance, not a directional protection rule.
+  return s.hp > s.hpMax / 2 ? 3 : 1;
 }
 export function canClimbFrom(field: BattlefieldSpec, actor: Combatant, target: number): boolean {
   if (actor.pos === undefined || isAirborne(actor)) return false;
@@ -106,6 +106,7 @@ export function structureDurability(kind: StructureKind, level: number): number 
 }
 export function createStructure(kind: StructureKind, level = 3, options: Omit<Partial<FieldStructure>, 'kind' | 'level' | 'hp' | 'hpMax'> = {}): FieldStructure {
   const hp = structureDurability(kind, level);
+  if (kind === 'fortification') { options = { ...options }; delete options.facing; }
   return { ...options, kind, level, hp, hpMax: hp, ...(kind === 'gate' ? { gateState: options.gateState ?? 'closed' } : {}) };
 }
 /** Per main action, not per bullet/member. Coefficients are game balance, not material physics.
@@ -170,6 +171,10 @@ export function validateLayers(field: BattlefieldSpec): void {
     || ['inside', 'frontline', 'gates', 'core', 'reserve'].some(key => {
       const cells = field.city![key as 'inside']; return !Array.isArray(cells) || cells.some(p => !legalCell(p)) || new Set(cells).size !== cells.length;
     }) || field.city.defender !== undefined && !['ally', 'enemy'].includes(field.city.defender))) throw Error('城区记录损坏');
+  if (field.city?.breaches !== undefined && (!Array.isArray(field.city.breaches) || field.city.breaches.length > 3
+    || field.city.breaches.some(group => !Array.isArray(group) || group.length < 1 || group.length > 2 || group.some(p => !legalCell(p))
+      || group.length === 2 && Math.abs(group[0]! % field.width - group[1]! % field.width) + Math.abs(Math.floor(group[0]! / field.width) - Math.floor(group[1]! / field.width)) !== 1)
+    || new Set(field.city.breaches.flat()).size !== field.city.breaches.flat().length)) throw Error('初始破口记录损坏');
   if (field.landmarks && (!Array.isArray(field.landmarks) || field.landmarks.length > 5 || field.landmarks.some(m => !m
     || typeof m.label !== 'string' || m.label.length > 64 || !Array.isArray(m.cells) || !m.cells.length || m.cells.some(p => !legalCell(p))))) throw Error('地标记录损坏');
 }

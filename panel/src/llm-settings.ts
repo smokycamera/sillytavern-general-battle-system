@@ -3,7 +3,7 @@ import { connectionUrl, type JevConnection } from './jev-connection.js';
 export interface LlmSettings {
   enabled: boolean;
   selectBattleScale: boolean;
-  /** Optional for older callers; persisted readers normalize absence to false. */
+  /** Older records inherit defaults only for missing keys; explicit choices survive upgrades. */
   designMap?: boolean;
   selectVip?: boolean;
   windowSize: number;
@@ -13,7 +13,7 @@ export interface LlmSettings {
   models: string[];
 }
 export const LLM_SETTINGS_KEY = 'tb:llm:settings:v1';
-const defaults = (): LlmSettings => ({ enabled: false, selectBattleScale: true, designMap: false, selectVip: false, windowSize: 6, url: '', token: '', model: '', models: [] });
+const defaults = (): LlmSettings => ({ enabled: false, selectBattleScale: false, designMap: true, selectVip: true, windowSize: 6, url: '', token: '', model: '', models: [] });
 
 /** Origin-wide preferences. Never serialize these credentials into a chat or character. */
 export function readLlmSettings(): LlmSettings {
@@ -27,9 +27,9 @@ export function readLlmSettings(): LlmSettings {
       if (!v || typeof v !== 'object' || Array.isArray(v)) throw Error('Invalid settings');
       return {
         enabled: v.enabled === true,
-        selectBattleScale: v.selectBattleScale !== false,
-        designMap: v.designMap === true,
-        selectVip: v.selectVip === true,
+        selectBattleScale: v.selectBattleScale === true,
+        designMap: v.designMap === undefined ? true : v.designMap === true,
+        selectVip: v.selectVip === undefined ? true : v.selectVip === true,
         windowSize: Number.isInteger(v.windowSize) && v.windowSize >= 1 && v.windowSize <= 100 ? v.windowSize : 6,
         url: typeof v.url === 'string' ? v.url : '', token: typeof v.token === 'string' ? v.token : '',
         model: typeof v.model === 'string' ? v.model : '',

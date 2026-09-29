@@ -10,7 +10,7 @@ function unit(id: string, side: 'ally' | 'enemy', input: Partial<GenerateInput> 
   u.id = id; return u;
 }
 describe('按实际规模准备新战场', () => {
-  it('32个未指定部署单位可自动利用支援/预备空位开战，33个提前拦截；明确部署不被擅改', () => {
+  it('32个未指定部署单位可自动利用支援/预备空位开战，场景64卡封顶；明确部署不被擅改', () => {
     const units = Array.from({ length: 32 }, (_, n) => unit('team-' + n.toString().padStart(2, '0'), n < 16 ? 'ally' : 'enemy'));
     const before = structuredClone(units), prepared = prepareMassRoster(units);
     const b = new MassBattle({ combatants: prepared, rules: V2_TW, traitRegistry: registry, seed: 'capacity' });
@@ -18,7 +18,10 @@ describe('按实际规模准备新战场', () => {
     expect(units).toEqual(before);
     const nodes = b.combatants.map((u) => formationNode(u).id);
     expect([...new Set(nodes)].every((id) => nodes.filter((n) => n === id).length <= 3)).toBe(true);
-    expect(battleCapacityIssue([...units, unit('extra', 'enemy')])).toMatch(/33.*32/);
+    expect(battleCapacityIssue([...units, unit('extra', 'enemy')])).toBeUndefined();
+    const full = Array.from({length:64}, (_,n) => unit('full-'+n,n<32?'ally':'enemy'));
+    expect(battleCapacityIssue(full)).toBeUndefined();
+    expect(battleCapacityIssue([...full,unit('extra','enemy')])).toMatch(/65.*64/);
     const crowded = units.slice(0, 4).map((u) => ({ ...u, tags: ['zone:中军', 'rank:front'] }));
     expect(() => prepareMassRoster(crowded)).toThrow(/容量/);
   });
@@ -57,7 +60,7 @@ describe('按实际规模准备新战场', () => {
       expect(guard.status).toBe('ready');
     }
   });
-  it('地图按操作单位数选模式，较大编队仍可小战；无宿主的普通人物不能被强塞会战', () => {
+  it('地图按32张操作卡分界，较大编制仍可小战，超过32张人物也可独立参加新会战', () => {
     const small = [unit('a', 'ally'), unit('b', 'enemy')], before = JSON.stringify(small);
     expect(recommendBattleMode(small).mode).toBe('small');
     const large = [unit('a', 'ally', { hpMax: 10000 }), unit('b', 'enemy', { hpMax: 10000 })];
@@ -65,11 +68,12 @@ describe('按实际规模准备新战场', () => {
     const hero = unit('person', 'enemy', { scale: 'hero', hpMax: 100 });
     expect(recommendBattleMode([large[0]!, hero]).mode).toBe('small');
     expect(recommendBattleMode([...large, hero]).mode).toBe('small');
-    const many = Array.from({ length: 18 }, (_, n) => unit('team-' + n, n < 9 ? 'ally' : 'enemy', { hpMax: 1 }));
+    const many = Array.from({ length: 33 }, (_, n) => unit('team-' + n, n < 16 ? 'ally' : 'enemy', { hpMax: 1 }));
     expect(recommendBattleMode(many.slice(0, 16)).mode).toBe('small');
-    expect(recommendBattleMode(many.slice(0, 17)).mode).toBe('mass');
+    expect(recommendBattleMode(many.slice(0, 17)).mode).toBe('small');
+    expect(recommendBattleMode(many.slice(0, 32)).mode).toBe('small');
     expect(recommendBattleMode(many).mode).toBe('mass');
-    expect(recommendBattleMode(many.map((u) => ({ ...u, scale: 'hero' as const }))).mode).toBe('small');
+    expect(recommendBattleMode(many.map((u) => ({ ...u, scale: 'hero' as const }))).mode).toBe('mass');
     expect(JSON.stringify(small)).toBe(before);
   });
   it('本场种子固定地形，新场有变体；各边和目标相通，小编队存档仍保持人员语义', () => {

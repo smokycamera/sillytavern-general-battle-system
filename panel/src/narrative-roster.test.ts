@@ -80,19 +80,21 @@ describe('每批明确出场名单取代上一场，而非累加', () => {
     expect(() => commit(save, '<unit_update id="u2" hp="0"/><deploy id="u2"/>')).toThrow();
     expect(save).toEqual(before);
   });
-  it('历史满员名单不占新场名额，新场自身仍限制32卡', () => {
+  it('历史满员名单不占新场名额，新场自身限制64卡', () => {
     const save = fixture(40); save.rosterIds = save.storage!.slice(0, 32).map(r => r.id);
     const next = commit(save, '<deploy id="u32"/><spawn name="新部队" side="enemy" scale="company" hpMax="30" count="20"/>');
     expect(next.rosterIds).toHaveLength(21); expect(next.rosterIds![0]).toBe('u32'); expect(next.storage).toHaveLength(60);
     const before = structuredClone(save);
-    const twenty = Array.from({ length: 20 }, (_, i) => `<deploy id="u${i}"/>`).join('');
-    expect(() => commit(save, twenty + '<spawn name="B" side="enemy" scale="hero" count="13"/>')).toThrow(/上限|最多/);
+    const forty = Array.from({ length: 40 }, (_, i) => `<deploy id="u${i}"/>`).join('');
+    const twenty = '<spawn name="B" side="enemy" scale="hero" count="20"/>';
+    expect(() => commit(save, forty + twenty + '<spawn name="C" side="enemy" scale="hero" count="5"/>')).toThrow(/上限|最多/);
     expect(save).toEqual(before);
-    expect(commit(save, twenty + '<spawn name="B" side="enemy" scale="hero" count="12"/>').rosterIds).toHaveLength(32);
+    const full = commit(save, forty + twenty + '<spawn name="C" side="enemy" scale="hero" count="4"/>');
+    expect(full.rosterIds).toHaveLength(64); expect(full.storage).toHaveLength(64);
   });
   it('旧超限存档仍可纯治疗，但不能建立新的超限名单', () => {
-    const save = fixture(40); save.rosterIds = save.storage!.map(r => r.id);
-    expect(commit(save, '<unit_update id="u0" hp="25"/>').rosterIds).toHaveLength(40);
+    const save = fixture(80); save.rosterIds = save.storage!.map(r => r.id);
+    expect(commit(save, '<unit_update id="u0" hp="25"/>').rosterIds).toHaveLength(80);
     expect(commit(save, '<deploy id="u2"/>').rosterIds).toEqual(['u2']);
   });
   it('恢复原批只恢复该批名单，不叠加、不重新生成或发奖，同数量换人也更新事实版本', () => {

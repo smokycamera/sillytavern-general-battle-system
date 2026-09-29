@@ -1,5 +1,6 @@
-import { movementStepCost } from '../../engine/src/small/spatial.js';
-import { structureAt, intactStructure, groundBlocked, isElevated, STRUCTURE_NAMES } from '../../engine/src/small/layers.js';
+import { SCENE_NAMES } from '../../engine/src/small/map-design.js';
+import { movementStepCost, structureDisplayName } from '../../engine/src/small/spatial.js';
+import { structureAt, intactStructure, groundBlocked, isElevated } from '../../engine/src/small/layers.js';
 import { ZONE_NAMES } from '../../engine/src/area-effects.js';
 import { tbWeaponShortName } from '../../engine/src/weapon-name.js';
 import { strengthDescription } from '../../engine/src/combat-model.js';
@@ -119,7 +120,7 @@ function tileInspector(battle: SmallBattle, view: TacticalView, selection: Retur
   const climbReason = actor ? battle.climbReason(actor.id, cell) : undefined;
   return `<div class="map-inspector" aria-live="polite"><div class="inspector-heading"><strong>${cellLabel(field, cell)} · ${landmarkAt(field, cell) ? esc(landmarkAt(field, cell)!) + ' · ' : ''}${terrainName(field, cell)}</strong><span>${actor && traversable ? '进入花费' + movementStepCost(field, cell, actor, battle.fieldTags) + '移动' : terrain === 'wall' || !traversable ? '地面不可通行' : ''}</span></div>
     <p>${terrainDescription(terrain, actor)}</p>
-    ${structure ? `<p><b>${STRUCTURE_NAMES[structure.kind]} L${structure.level}</b> · 耐久 ${structure.hp}/${structure.hpMax}${structure.top && structure.hp > 0 ? ' · 可登城防平台' : ''}${structure.facing ? ' · 朝向 ' + ({north:'北',south:'南',east:'东',west:'西'}[structure.facing]) : ''}</p>` : ''}
+    ${structure ? `<p><b>${structureDisplayName(field, cell)} L${structure.level}</b> · 耐久 ${structure.hp}/${structure.hpMax}${structure.top && structure.hp > 0 ? ' · 可登城防平台' : ''}${structure.kind === 'fortification' ? ' · 全向防护' : structure.facing ? ' · 朝向 ' + ({north:'北',south:'南',east:'东',west:'西'}[structure.facing]) : ''}</p>` : ''}
     ${field.overlays?.[cell]?.length ? '<p>' + field.overlays[cell]!.map(o => o === 'road' ? '道路' : '瓦砾：基础2移动；慢速单位花费整轮基础移动力可前进一步').join(' · ') + '</p>' : ''}
     <div class="structure-actions">${structureActions}
     ${structure?.kind === 'gate' && actor && selection.canControl ? `<button data-action="grid-gate" data-actor="${esc(actor.id)}" data-cell="${cell}" ${gateReason ? 'disabled' : ''} title="${esc(gateReason ?? '消耗主行动')}">${structure.gateState === 'open' ? '关闭城门' : '打开城门'}</button>` : ''}
@@ -171,7 +172,13 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
     const distance = actor?.pos !== undefined ? gridDistance(field, actor.pos, cell) : Infinity;
     const inRange = !!actor && range && (range.metric === 'global' || range.metric === 'self' ? range.metric === 'global' || cell === actor.pos : distance >= range.min && distance <= range.max);
     const structure = structureAt(field, cell);
-    const flags = [terrain, structure?.hp ? 'structure-' + structure.kind + (structure.kind === 'gate' ? ' gate-' + structure.gateState : '') : '', ...(field.overlays?.[cell] ?? []).map(o => 'overlay-' + o), field.objective.kind === 'control' && field.objective.cells?.includes(cell) ? 'control-region' : '', trace?.cells.includes(cell) ? 'trace-cell' : '', !battle.cellVisible('ally', cell) ? 'unobserved' : '', reachable.has(cell) ? 'reachable' : '', paths.has(cell) ? 'path' : '',
+    const showGroundLabel = terrain !== 'open' && terrain !== 'street' || view.inspectedCell === cell;
+    const structureLabel = structureDisplayName(field, cell);
+    const joined = structure?.hp && ['building','wall','fortification'].includes(structure.kind)
+      ? ([['n',cell-field.width],['s',cell+field.width],['w',cell%field.width?cell-1:-1],['e',cell%field.width<field.width-1?cell+1:-1]] as const)
+        .filter(([,p])=>p>=0 && p<field.tiles.length && structureAt(field,p)?.kind===structure.kind && (structureAt(field,p)?.hp??0)>0)
+        .map(([direction])=>'structure-join-'+direction) : [];
+    const flags = [terrain, ...joined, structure?.hp ? 'structure-' + structure.kind + (structure.kind === 'gate' ? ' gate-' + structure.gateState : '') : '', ...(field.overlays?.[cell] ?? []).map(o => 'overlay-' + o), field.objective.kind === 'control' && field.objective.cells?.includes(cell) ? 'control-region' : '', trace?.cells.includes(cell) ? 'trace-cell' : '', !battle.cellVisible('ally', cell) ? 'unobserved' : '', reachable.has(cell) ? 'reachable' : '', paths.has(cell) ? 'path' : '',
       occupants.some((u) => u.id === actor?.id) ? 'selected' : '', view.inspectedCell === cell ? 'inspected' : '',
       field.objective.kind !== 'annihilation' && field.objective.cell === cell ? 'objective' : '', inRange ? 'in-range' : '', (targets.has('cell:'+cell) || occupants.some((u) => targets.has(u.id))) ? 'legal-target' : '',
       (target?.targetId==='cell:'+cell || occupants.some((u) => u.id === target?.targetId)) && mode !== 'move' && mode !== 'guard' ? 'targeted' : '', occupants.some((u) => area.has(u.id)) ? 'area-hit' : ''].join(' ');
@@ -183,14 +190,14 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
       ${occupants.length > 1 ? '<span class="grid-stack-count">' + occupants.length + '队</span>' : ''}
       ${structure?.hp ? `<span class="structure-hp" style="--integrity:${Math.max(0, Math.min(100, structure.hp / structure.hpMax * 100))}%" title="耐久 ${structure.hp}/${structure.hpMax}"></span>` : ''}
       ${zones.length ? '<span class="grid-zone">'+zones.map(z=>ZONE_NAMES[z.kind]).join('·')+'</span>' : ''}
-      ${!occupants.length && (terrain !== 'open' || structure) ? '<span class="grid-terrain">' + (structure ? STRUCTURE_NAMES[structure.kind] + (structure.hp ? ' L' + structure.level : '·残骸') : terrainNames[terrain]) + '</span>' : ''}
+      ${!occupants.length && (showGroundLabel || structure) ? '<span class="grid-terrain">' + (structure ? structureLabel + (structure.hp ? ' L' + structure.level : '·残骸') : field.generation?.scene === 'interior' && terrain === 'street' ? '室内地面' : terrainNames[terrain]) + '</span>' : ''}
     </button>`;
   }).join('');
   const concealment = actor && concealmentLabel(battle.observationContext(), actor);
   const pressure = actor && moraleLabel({ ...battle.observationContext(), units: visible }, actor, battle.traitRegistry);
   const mission = field.objective, markedCells = landmarkCells(field);
   const enemyEscort = mission.kind === 'escape' && battle.combatants.find((u) => u.id === mission.unitId)?.side === 'enemy';
-  const goal = mission.kind === 'annihilation' ? '野战 · 歼灭战' : (mission.kind === 'control' ? mission.attackingSide === 'enemy' ? '防守据点 ' : '攻占据点 ' : enemyEscort ? '拦截于' : '护送至') + cellLabel(field, mission.cell);
+  const goal = mission.kind === 'annihilation' ? (SCENE_NAMES[field.generation?.scene ?? 'field'] + ' · 歼灭战') : (mission.kind === 'control' ? mission.attackingSide === 'enemy' ? '防守据点 ' : '攻占据点 ' : enemyEscort ? '拦截于' : '护送至') + cellLabel(field, mission.cell);
   const skill = options.find((o) => o.id === view.mode && o.kind === 'ability') ?? options.find((o) => o.kind === 'ability' && o.enabled) ?? options.find((o) => o.kind === 'ability');
   const weapon = options.find((o) => o.id === view.mode && ['weapon', 'charge'].includes(o.kind)) ?? options.find((o) => o.kind === 'weapon' && o.enabled) ?? options.find((o) => o.id === 'weapon');
   const actionReady = canControl && !!option?.enabled && (!option.targets?.length || !!target?.enabled);
@@ -210,6 +217,7 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
     ${over ? '<div class="banner">' + (battle.winner() === 'ally' ? '任务胜利' : battle.winner() === 'enemy' ? '任务失败' : '任务结束：僵持') + '</div>' : '<div class="turn-indicator">当前行动 <b>' + esc(activeLabel) + '</b></div>'}
     ${renderBattleHighlights(battle)}
     <div class="tactical-columns"><div class="tactical-map-column">
+      <div class="map-surface-legend">浅灰地面可通行 · 实心轮廓为建筑 · ◇为地标 · 点格子查看详情</div>
       <div class="camera-tools"><span class="map-legend">${mode === 'move' ? '蓝边可移动 · 金线为路径' : mode === 'guard' ? '选择固守或警戒' : '浅底为射程参考 · 亮边为可选目标'}</span><button data-action="grid-focus">定位我方</button></div>
       ${field.landmarks?.length ? '<div class="map-landmark">' + field.landmarks.map(m => '◇ ' + esc(m.label) + ' ' + m.cells.map(p => cellLabel(field, p)).join('、')).join(' · ') + '</div>' : markedCells.length && landmarkAt(field, markedCells[0]!) ? '<div class="map-landmark">◇ ' + esc(landmarkAt(field, markedCells[0]!)!) + ' · ' + markedCells.map(p => cellLabel(field, p)).join('、') + '</div>' : ''}
       <div class="grid-camera" tabindex="0" aria-label="战场地图，可横向和纵向滚动"><div class="grid-board" style="--columns:${field.width}">${cells}${traceOverlay(battle)}</div></div>

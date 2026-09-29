@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "1.6.1-rc.1",
-  "builtAt": "2026-09-29T07:46:12.109Z",
-  "sourceFingerprint": "9b768ea3efe160a737cfeb87c3b8a34226a62efc4279e9e9f1b33cc9fb983655",
+  "version": "1.6.1-rc.2",
+  "builtAt": "2026-09-29T11:48:19.746Z",
+  "sourceFingerprint": "45ab70c1e3311d7ba85680b376ddb102df10d3d97fae21745ea32a1808d2ea9b",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -17,13 +17,13 @@
     },
     {
       "path": "README.md",
-      "bytes": 4395,
-      "sha256": "b18e9719953c3a298694b5dca001ae431f6d2f885d15c7601657ef4290b4852e"
+      "bytes": 4393,
+      "sha256": "9ac94edc761f8da0a0f64774df9590e8157301dd3c4adf94299c11cfe686eaf6"
     },
     {
       "path": "README.zh-CN.md",
-      "bytes": 4078,
-      "sha256": "abfe73d863ce71d26cddad6905e3581415050d970348fb64fe70b8e44de5dfa1"
+      "bytes": 4089,
+      "sha256": "8bcb008bb0664789436a64ac7749cb40c542b7d41469025ad72c4d3546a16fe2"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -31,19 +31,19 @@
       "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     },
     {
-      "path": "dist/assets/panel-ClMQcDFG.css",
-      "bytes": 10292,
-      "sha256": "7478e153743018c0f2b5f1dddad67109e731bb04d2eff8c5bf8fa74586079a11"
+      "path": "dist/assets/panel-D-1Ww24F.css",
+      "bytes": 10763,
+      "sha256": "772b99106cd714ca1177c02232a11fed61c5b01445d559331f11172640fd29ec"
     },
     {
-      "path": "dist/assets/panel-CxmdS0vJ.js",
-      "bytes": 348422,
-      "sha256": "9b089cd81e085d1396b58b6b88356b15ed41f509d2fa149b8937c94b34accce2"
+      "path": "dist/assets/panel-s6s3Iu3x.js",
+      "bytes": 361169,
+      "sha256": "b309ffe090ef6a5646dc95af785fb0751a8b94fa203dc7696ed86f0961f31287"
     },
     {
-      "path": "dist/assets/preferences-C84IvOSo.js",
-      "bytes": 621674,
-      "sha256": "9d0e735a1080cb31e6c54f6fe62a76da44dd17b8468b340bebfb9400ec45e986"
+      "path": "dist/assets/preferences-CK6DPmoJ.js",
+      "bytes": 628429,
+      "sha256": "923b148d47648e38d9cc44f2e187d50bb2de9d582005dcfd3157ac269d804a4e"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -53,7 +53,7 @@
     {
       "path": "assets/worldbook/!通用战斗系统约束.json",
       "bytes": 18429,
-      "sha256": "72379da37f76622a3ab08873e3813c6547b599c75d90c6c941db28a41f44b3bd"
+      "sha256": "d8cc27cb21acaab30387893b5f776f891b99a831841ea54134cbac0b55f07b05"
     },
     {
       "path": "assets/worldbook/lorebook system explain.md",
@@ -64,6 +64,11 @@
       "path": "docs/armor-v5-design.md",
       "bytes": 13349,
       "sha256": "89aac5f0966c6ddbfb021a0e22ff364fbc6b18c69f57ce076d51a8394eefdc13"
+    },
+    {
+      "path": "docs/battle-planning-v2.md",
+      "bytes": 5739,
+      "sha256": "05ebb32cad8e2f1643253ad9f2103b6e4b0bc7618bc717c25a9ff3ea87d84486"
     },
     {
       "path": "docs/breach-review-audit.json",
@@ -176,6 +181,16 @@
       "sha256": "e3b74c35d805da89eba910180c942eb8c23c8be03fbd8818ab4992032d51fee0"
     },
     {
+      "path": "docs/planning-capacity-audit.json",
+      "bytes": 902,
+      "sha256": "c92c098a907664997f5da20231904286907279063ed56e1e37f06a0ba4708587"
+    },
+    {
+      "path": "docs/planning-release-validation.json",
+      "bytes": 4211,
+      "sha256": "cefe878c27b2aa49611b82f4f7b2df305a0116bbbcc07534e5b40d6eb69f11f2"
+    },
+    {
       "path": "docs/resources-v9.md",
       "bytes": 6276,
       "sha256": "d0e4f4dd75fb3b055fc87a1f08ad93faea94b409b08767b0e616d81882131b32"
@@ -213,7 +228,7 @@
     {
       "path": "dist/index.js",
       "bytes": 82410,
-      "sha256": "3fbff7ed08feb1b64c2dc97fb2257ab7d512e153c0530c44c9e44b7f0b4c9de7"
+      "sha256": "f6bf0d2b41a87490e2fe7e293cd97887d7cec9391ea90f5472ca0dc004e6b8b1"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -223,12 +238,12 @@
     {
       "path": "manifest.json",
       "bytes": 180,
-      "sha256": "bf9762ab52cd64d38d97c519626532fa865bf45fecfe84df9259f2f3b70d7996"
+      "sha256": "4e6ba5c345db60fa1f7ab2f01e70f999df8b9a6dd63a787317ef57ad3fdd4090"
     },
     {
       "path": "dist/panel/index.html",
       "bytes": 50401,
-      "sha256": "1d5ef9306999089002eb9380b6de2d9d52759e7be62d8b8534f0b944ae51bf00"
+      "sha256": "8b45d3cf32c8f33b3927af1f5aada28e08746a3b76e8ff0803c55b30476ae845"
     },
     {
       "path": "release/current-baseline.json",

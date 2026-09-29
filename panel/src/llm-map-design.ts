@@ -1,4 +1,4 @@
-import { normalizeBattlefieldPlan, type BattlefieldPlan } from '../../engine/src/small/battlefield-plan.js';
+import { normalizeBattlefieldPlan, requireApiLandmarks, BattlefieldPlanError, type BattlefieldPlan } from '../../engine/src/small/battlefield-plan.js';
 import { MAP_DESIGN_OPTIONS, ROUTE_TOPOLOGIES, safeLandmarkLabel, validMapDesign, type MapDesign, type Combatant } from '../../engine/src/index.js';
 import type { ContextSelectionRequest, ContextSelectionAnswer } from '../../vendor/jev-core/src/index.js';
 import type { EncounterSetup } from './jev-context.js';
@@ -28,7 +28,7 @@ const questions: Record<keyof typeof MAP_DESIGN_OPTIONS, string> = {
   obstacles: '硬障碍密度：城市/室内/攻城为墙段，平原为零散巨石，森林为不可通行的密林障碍，山地为岩障。不会在自然环境凭空建造建筑；保留接敌通路。',
   route: '接敌/护送通路形态；兼顾正文中的街道、山路、伏击和撤离方向。',
   breadth: '主通路宽度；狭窄通路仍保留替代路线，不能设计必然卡死的关卡。',
-  feature: '正文最重要的一个局部地标；仅用已有地形规则表达。不把普通地形声称为水域、桥梁、可破坏建筑或新增技能机制。无明确地标选none。',
+  feature: '结合场景合理设计至少一个有战术意义的局部地标，可概括名称与补全空间细节。选择与地点相符的类型，不选none。',
   featureZone: '该地标在战场中的相对位置；上敌下我，左/右按地图画面。不改变目标出口或角色部署。',
 };
 
@@ -73,16 +73,13 @@ function choice(answer: ContextSelectionAnswer, fields: Field[], id: string): st
     || !Number.isFinite(selected.confidence) || selected.confidence < 0 || selected.confidence > 1) return undefined;
   return selected.value;
 }
-/** Optional design errors fall back locally; mandatory encounter/commander errors still reject upstream. */
+/** API-designed maps require real model-selected landmarks. Invalid output never becomes a random map. */
 export function applyPreparationDesign(answer: ContextSelectionAnswer, request: PreparationDesignRequest, setup: EncounterSetup, roster: Combatant[]): PreparationDesignResult {
   if (setup.mode !== 'small') return {};
   const result: PreparationDesignResult = {}, notes = [...request.notes];
   if (request.compactMap) {
     const raw = (answer as ContextSelectionAnswer & { battlefield?: unknown }).battlefield;
     const normalized = normalizeBattlefieldPlan(raw);
-    for (const m of normalized.plan?.landmarks ?? []) if (m.label && !request.landmarkSource?.includes(m.label)) {
-      delete m.label; notes.push('地标名称无正文依据，采用通用名称');
-    }
     result.battlefieldPlan = normalized.plan;
     // Read-only acceptance of an older answer costs no extra outbound fields/tokens.
     // A present compact plan always takes precedence; this never triggers a second request.
@@ -93,7 +90,7 @@ export function applyPreparationDesign(answer: ContextSelectionAnswer, request: 
       else if (converted.designDetail) notes.push(converted.designDetail);
     }
     notes.push(...normalized.notes);
-    if (!normalized.plan && !result.mapDesign) notes.push('未返回有效战场设计，采用本地随机生成');
+    requireApiLandmarks(result.battlefieldPlan);
   }
   if (request.fields.some(f => f.id === 'design_layout')) {
     const candidate = Object.fromEntries((Object.keys(MAP_DESIGN_OPTIONS) as (keyof typeof MAP_DESIGN_OPTIONS)[]).map(k => [k, choice(answer, request.fields, 'design_' + k.toLowerCase())]));
@@ -103,13 +100,19 @@ export function applyPreparationDesign(answer: ContextSelectionAnswer, request: 
       if (topology && Object.hasOwn(ROUTE_TOPOLOGIES, topology)) candidate.topology = topology as keyof typeof ROUTE_TOPOLOGIES;
       const scale = choice(answer, request.fields, 'design_landmarkscale');
       if (scale === 'minor' || scale === 'major') candidate.landmarkScale = scale;
-      // Free text is optional, display-only and must be a short exact phrase in the chosen narrative window.
+      // Display-only names may be inferred; HTML/control characters are still rejected.
       const rawLabel = (answer as ContextSelectionAnswer & { landmarkLabel?: unknown }).landmarkLabel;
       const label = safeLandmarkLabel(rawLabel);
-      if (candidate.feature !== 'none' && label && request.landmarkSource?.includes(label)) candidate.landmarkLabel = label;
-      else if (rawLabel !== undefined && rawLabel !== '') notes.push('地标名称无效或无正文依据，采用地形通用名称');
+      if (candidate.feature !== 'none' && label) candidate.landmarkLabel = label;
+      else if (rawLabel !== undefined && rawLabel !== '') notes.push('地标名称无效（含非法字符或过长），使用类型通用名称');
+      if (candidate.feature === 'none') throw new BattlefieldPlanError('副API地图设计须至少选择一个地标，不能返回none');
+      const kind = {clearing:'square',cover:'cover',rough:'ruins',forest:'forest',hill:'hill',ruins:'ruins'}[candidate.feature] as NonNullable<BattlefieldPlan['landmarks']>[number]['kind'];
+      const anchor = candidate.featureZone.endsWith('left') ? 'front_left' : candidate.featureZone.endsWith('right') ? 'front_right' : 'center';
+      result.battlefieldPlan = { layout:candidate.layout,topology:candidate.topology,orientation:candidate.orientation,
+        relief:candidate.relief,cover:candidate.cover,obstacles:candidate.obstacles,breadth:candidate.breadth,
+        landmarks:[{kind,anchor,scale:candidate.landmarkScale??'minor',...(candidate.landmarkLabel?{label:candidate.landmarkLabel}:{})}] };
     }
-    else notes.push('地图设计返回不完整或无效，采用本地随机地图');
+    else throw new BattlefieldPlanError('副API地图设计返回不完整或无效，未生成随机保底地图');
   }
   const side = setup.objectiveMode === 'escort' ? 'ally' : setup.objectiveMode === 'intercept' ? 'enemy' : undefined;
   if (side && request.vipIds[side]) {

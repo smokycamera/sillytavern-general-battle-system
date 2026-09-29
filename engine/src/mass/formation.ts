@@ -7,6 +7,12 @@ import { hasFlightAbility, isAirborne, sameLayer, aerialTargetReason, rangedTarg
 export function needsFormationHost(unit: Combatant): boolean {
   return unit.scale === 'hero' && !unit.summonerId && (unit.body ?? 'human') === 'human' && unit.status === 'ready' && !hasFlightAbility(unit);
 }
+/** New battle capacity: 3..7 per node, chosen once from the larger faction.
+ * Dead units do not shrink a frozen battle; callers persist the resulting number. */
+export function recommendedFormationSlots(units: readonly Combatant[]): number {
+  return Math.max(3, Math.min(7, Math.ceil(Math.max(...(['ally', 'enemy'] as const).map(side =>
+    units.filter(u => u.side === side && u.hp > 0 && u.status === 'ready').length)) / 9)));
+}
 export const WINGS = ['左翼', '中军', '右翼'] as const;
 export const RANKS = ['front', 'rear', 'reserve'] as const;
 export interface FormationNode { id: string; side: 'ally' | 'enemy'; wing: typeof WINGS[number]; rank: typeof RANKS[number]; x: number; y: number }
@@ -44,10 +50,10 @@ export function validateFormationPosition(value: unknown): void {
   if (value !== undefined && (typeof value !== 'string' || !FORMATION_NODES.some((n) => n.id === value))) throw new Error('实际会战阵位损坏');
 }
 export function formationNodeDistance(a: FormationNode, b: FormationNode): number { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
-export function formationCanOccupy(units: Combatant[], actor: Combatant, node: FormationNode, attached: Map<string, string>): boolean {
+export function formationCanOccupy(units: Combatant[], actor: Combatant, node: FormationNode, attached: Map<string, string>, slots = 3): boolean {
   const embedded = new Set(attached.values());
   const occupants = units.filter((u) => u.id !== actor.id && u.status === 'ready' && !embedded.has(u.id) && sameLayer(actor, u) && formationNode(u).id === node.id);
-  return occupants.length < 3 && !occupants.some((u) => u.side !== actor.side);
+  return occupants.length < slots && !occupants.some((u) => u.side !== actor.side);
 }
 export function formationScreened(actor: Combatant, target: Combatant, units: Combatant[]): boolean {
   if (isAirborne(actor) || isAirborne(target)) return false;
@@ -64,7 +70,7 @@ export function restoreDeploymentPreference(unit: Combatant): void {
   delete unit.vanguardOrigin;
 }
 /** 输入为部署副本，只读取己方占位；前出不得改变战前长期偏好。 */
-export function deployVanguardFormation(units: Combatant[], attached: Map<string, string>): { id: string; from: FormationNode; to: FormationNode }[] {
+export function deployVanguardFormation(units: Combatant[], attached: Map<string, string>, slots = 3): { id: string; from: FormationNode; to: FormationNode }[] {
   const changes: { id: string; from: FormationNode; to: FormationNode }[] = [];
   const embedded = new Set(attached.values());
   const count = (node: FormationNode, except: string) => units.filter((u) => u.id !== except && u.status === 'ready' && !embedded.has(u.id) && sameLayer(u, units.find((u) => u.id === except)!) && formationNode(u).id === node.id).length;
@@ -74,7 +80,7 @@ export function deployVanguardFormation(units: Combatant[], attached: Map<string
     const candidates = FORMATION_NODES.filter((node) => node.side === unit.side && (from.rank === 'front'
       ? from.wing === '中军' && node.rank === 'front' && node.wing !== '中军'
       : node.wing === from.wing && RANKS.indexOf(node.rank) === RANKS.indexOf(from.rank) - 1));
-    const to = candidates.filter((n) => count(n, unit.id) < 3).sort((a, b) => count(a, unit.id) - count(b, unit.id) || a.x - b.x)[0] ?? from;
+    const to = candidates.filter((n) => count(n, unit.id) < slots).sort((a, b) => count(a, unit.id) - count(b, unit.id) || a.x - b.x)[0] ?? from;
     if (to.id !== from.id) {
       unit.vanguardOrigin = from.id; setFormation(unit, to);
       const hero = units.find((u) => u.id === attached.get(unit.id));

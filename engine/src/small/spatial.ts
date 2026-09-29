@@ -1,12 +1,12 @@
 import { movementPoints } from '../tactics.js';
 import { GridQueue } from './grid-queue.js';
 import { layerMoveCost, groundBlocked, obstructionHeight, structureAt, STRUCTURE_NAMES, validateLayers, isElevated, structureDefense, type FieldStructure, type GroundOverlay, type FieldLandmark, type CityRecord } from './layers.js';
-import { landmarkAt, type MapGenerationRecord } from './map-design.js';
+import { landmarkAt, BATTLEFIELD_SCENES, type MapGenerationRecord } from './map-design.js';
 import { isRangedWeapon } from '../loadout.js';
 import type { Combatant, ConditionDef } from '../types.js';
 import { activeTraitIds } from '../trait-sources.js';
 import { environmentTags } from '../environment.js';
-import { isAirborne, sameLayer } from '../aerial.js';
+import { isAirborne, sameLayer, flightCapabilityReason, type FlightConditions } from '../aerial.js';
 import { SeededRng } from '../rng.js';
 import { rangedScreen } from '../guard-screen.js';
 import { gridWeaponRange } from './weapon-range.js';
@@ -55,6 +55,7 @@ export function standardField(width = 7, height = 9, tags: string[] = []): Battl
   return { version: 2, width, height, tiles, environment, objective: defaultBattleObjective(width, height, environment) };
 }
 export function validateField(field: BattlefieldSpec): void {
+  if (field.generation?.scene !== undefined && !BATTLEFIELD_SCENES.includes(field.generation.scene)) throw Error('场景记录损坏');
   if (field.version !== 2 || ![[7, 9], [5, 7], [7, 11], [7, 13], [9, 15], [11, 17], [13, 19]].some(([w, h]) => field.width === w && field.height === h)) throw new Error('地图尺寸不支持（野战7×13，城区9×15/11×17/13×19，或旧地图）');
   if (field.tiles.length !== field.width * field.height || field.tiles.some((t) => !Object.hasOwn(TERRAIN_NAMES, t))) throw new Error('地形数据不完整');
   validateLayers(field);
@@ -70,10 +71,22 @@ export function gridDistance(field: BattlefieldSpec, a: number, b: number): numb
 export function cellLabel(field: BattlefieldSpec, cell: number): string { return String.fromCharCode(65 + cell % field.width) + (Math.floor(cell / field.width) + 1); }
 /** 战报使用实际落点；飞越特殊地形时标清空中，避免误报地面掩护。 */
 /** The collision token stays wall; environmental names explain natural hard blockers in v4 maps. */
+export function structureDisplayName(field: BattlefieldSpec, cell: number): string {
+  const structure = structureAt(field, cell), scene = field.generation?.scene;
+  if (!structure) return '';
+  if (scene === 'interior' && ['wall', 'building'].includes(structure.kind)) return '隔墙';
+  if (scene === 'building_siege' && structure.kind === 'wall') return '外墙';
+  if ((scene === 'interior' || scene === 'building_siege') && structure.kind === 'gate') return '门';
+  return STRUCTURE_NAMES[structure.kind];
+}
 export function terrainName(field: BattlefieldSpec, cell: number): string {
   const terrain = field.tiles[cell];
   const structure = structureAt(field, cell);
-  if (structure) return `${TERRAIN_NAMES[terrain!]}·${STRUCTURE_NAMES[structure.kind]}${structure.hp > 0 ? ' L' + structure.level + (structure.kind === 'gate' ? structure.gateState === 'open' ? '（开启）' : '（关闭）' : '') : '（已毁）'}`;
+  const indoor = field.generation?.scene === 'interior';
+  const floorName = indoor && terrain === 'street' ? '室内地面' : TERRAIN_NAMES[terrain!];
+  const structureLabel = structureDisplayName(field, cell);
+  if (structure) return `${floorName}·${structureLabel}${structure.hp > 0 ? ' L' + structure.level + (structure.kind === 'gate' ? structure.gateState === 'open' ? '（开启）' : '（关闭）' : '') : '（已毁）'}`;
+  if (indoor && terrain === 'street') return floorName;
   if (terrain === 'wall' && field.generation?.version === 4) {
     if (field.generation.family === 'forest') return '密林障碍';
     if (field.generation.family === 'mountain') return '岩障';
@@ -247,8 +260,8 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
   const preferredY = vanguard ? forward : enemy ? preferredDepth : field.height - 1 - preferredDepth;
   const middle = Math.floor(field.height / 2);
   const probes = [...new Set([forward, middle])].flatMap(y => Array.from({ length: field.width }, (_, x) => y * field.width + x))
-    .filter(p => field.tiles[p] !== 'wall');
-  const costs = gridCostsToGoals(field, probes, p => air || field.tiles[p] !== 'wall', p => tileCost(field, p, unit));
+    .filter(p => field.layerVersion ? !groundBlocked(field, p, unit) : field.tiles[p] !== 'wall');
+  const costs = gridCostsToGoals(field, probes, p => field.layerVersion ? !groundBlocked(field, p, unit) : air || field.tiles[p] !== 'wall', p => tileCost(field, p, unit));
   const emptyConditions = new Map<string, ConditionDef>();
   return (position: number, placed: Combatant[]) => {
     const actor = { ...unit, pos: position }, friends = placed.filter(u => u.id !== unit.id && u.side === unit.side);
@@ -276,6 +289,20 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
     }
     return score;
   };
+}
+
+/** Pure preparation shared by generator capacity checks and SmallBattle.start. */
+export function prepareGridDeployment(field: BattlefieldSpec, units: readonly Combatant[], seed = 'deployment', conditions?: FlightConditions, enableFlight = true): Combatant[] {
+  const prepared = units.map(u => ({ ...u, ...(enableFlight && u.rulesVersion === 'v2' && u.airborne === undefined && !flightCapabilityReason(u, conditions) ? { airborne: true } : {}) }));
+  if (field.layerVersion && field.city?.defender) {
+    const guard = prepared.filter(u => u.side === field.city!.defender && u.pos === undefined && !isAirborne(u))
+      .sort((a,b) => Number(isRangedWeapon(b.weapon)) - Number(isRangedWeapon(a.weapon)) || a.id.localeCompare(b.id));
+    const capacity = field.city.frontline.filter(p => structureAt(field,p)?.hp && structureAt(field,p)?.top).length;
+    for (const u of guard.slice(0, Math.min(capacity, Math.floor(guard.length * .4)))) u.elevation = 1;
+  }
+  const positions = deployOnGrid(field, prepared, seed);
+  prepared.forEach((u,i) => { u.pos = positions[i]; });
+  return prepared;
 }
 
 /** 未指定位置的新规则单位按角色/地形布阵；同种子复现，显式部署优先且失败不修改原名单。 */
