@@ -61,3 +61,5 @@ export * from './barrier.js';
 export * from './area-effects.js';
 
 export * from './small/map-design.js';
+
+export * from './small/route-graph.js';

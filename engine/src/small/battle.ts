@@ -48,7 +48,7 @@ import { bracePose, movementPoints, settleFatigue, addTacticalEffort, validateTa
 import { rangedTargetDistance, isAirborne, sameLayer, flightCapabilityReason, flightMaintenanceReason, fallDamage, validateFlightState } from '../aerial.js';
 import { environmentTags } from '../environment.js';
 import { traitRegistry as defaultTraitRegistry } from '../data/traits.js';
-import { meleeLineBlocker, canOccupy, cellLabel, terrainCellLabel, deployOnGrid, findGridPath, reachableGridPaths, gridCostsToGoals, gridDistance, lineOfSight, unitLineOfSight, neighbors, tileCost, validateField, type BattlefieldSpec, type GridPath } from './spatial.js';
+import { meleeLineBlocker, terrainTacticalValue, canOccupy, cellLabel, terrainCellLabel, deployOnGrid, findGridPath, reachableGridPaths, gridCostsToGoals, gridDistance, lineOfSight, unitLineOfSight, neighbors, tileCost, validateField, type BattlefieldSpec, type GridPath } from './spatial.js';
 import { canSpot, observedUnits, observeEvent, observedLog, revealUnit, revealContacts, settleConcealment, canReconceal, validateConcealment, type ObservationContext } from '../observation.js';
 import {
   abilityTargetReason,
@@ -1541,7 +1541,8 @@ export class SmallBattle {
         ? -Math.abs(nearest - safeDistance) * 1.5 - (route ?? destinationDistance) * 2
         : -(route ?? destinationDistance) * 1.5;
       const exposure = rangedRole ? meleeThreats.reduce((sum, foe) => sum + Math.max(0, movementPoints(foe, this.fieldTags) + 2 - gridDistance(field, cell, foe.pos!)) * 2, 0) : 0;
-      return spacing - exposure + (field.tiles[cell] === 'cover' ? 0.5 : 0)
+      // Old frozen maps/replays keep their previous positional tie-breaker.
+      return spacing - exposure + (field.generation?.version === 4 ? terrainTacticalValue(field, cell, unit, foes) : field.tiles[cell] === 'cover' ? .5 : 0)
         - path.cost * 0.1 - this.pathPreview(unitId, cell).risks.length * 2
         - (hasFear ? moraleRisk({ ...this.observationContext(), units: knownUnits.map((u) => u.id === unit.id ? { ...unit, pos: cell } : u) }, { ...unit, pos: cell }, this.rules.morale.breakAt, this.traitRegistry).breakChance * 6 : 0);
     };

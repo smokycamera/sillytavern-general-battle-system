@@ -3,7 +3,8 @@ import { spCapacity } from '../resources.js';
 import { NARRATIVE_TASK } from './narrative-task.js';
 import { standardConditionMap } from '../conditions.js';
 import { isAirborne } from '../aerial.js';
-import { cellLabel } from '../small/spatial.js';
+import { cellLabel, terrainCellLabel } from '../small/spatial.js';
+import { landmarkAt, landmarkCells } from '../small/map-design.js';
 import { formationNode } from '../mass/formation.js';
 import { woundedLabel } from '../recovery.js';
 import {hasMemberHealth,memberHealth,memberHealthMax,memberHealthSummary,memberNoun} from '../member-health.js';
@@ -129,7 +130,7 @@ function narrativeDirectives(): string[] {
 
 function smallPosition(b: SmallBattle, u: Combatant): string {
   const distance = b.distToNearestFoe(u);
-  return b.battlefield && u.pos !== undefined ? '(' + cellLabel(b.battlefield, u.pos) + (Number.isFinite(distance) ? '·距已知敌' + distance + '格' : '·未定位敌军') + ')'
+  return b.battlefield && u.pos !== undefined ? '(' + terrainCellLabel(b.battlefield, u.pos, u) + (Number.isFinite(distance) ? '·距已知敌' + distance + '格' : '·未定位敌军') + ')'
     : Number.isFinite(distance) ? '(距敌' + bandLabel(distance) + ')' : '(未定位敌军)';
 }
 function unitReadiness(b: SmallBattle | MassBattle, u: Combatant): string {
@@ -149,6 +150,11 @@ function battleSituation(b: SmallBattle | MassBattle): string[] {
   const lines: string[] = [];
   if (b.fieldTags.length) lines.push('环境：' + b.fieldTags.join('/'));
   if (!isMass(b) && b.battlefield) {
+    const cells = landmarkCells(b.battlefield);
+    if (cells.length) {
+      const label = landmarkAt(b.battlefield, cells[0]!);
+      if (label) lines.push('地标：' + label + '｜' + cells.map(p => terrainCellLabel(b.battlefield!, p)).join('、'));
+    }
     const goal = b.battlefield.objective;
     lines.push(goal.kind === 'annihilation' ? '任务：歼灭敌军' : goal.kind === 'control'
       ? '任务：' + (goal.attackingSide === 'enemy' ? '敌方' : '我方') + '攻占' + cellLabel(b.battlefield, goal.cell) + '，连续控制' + b.controlRounds[goal.attackingSide ?? 'ally'] + '/' + goal.rounds + '轮'

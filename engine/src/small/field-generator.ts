@@ -2,7 +2,8 @@ import { SeededRng } from '../rng.js';
 import { environmentTags } from '../environment.js';
 import { flightCapabilityReason } from '../aerial.js';
 import type { Combatant } from '../types.js';
-import { mapFamily, validMapDesign, type MapDesign } from './map-design.js';
+import { mapFamily, validMapDesign, safeLandmarkLabel, MAP_DESIGN_OPTIONS, type MapDesign, type MapDesignKey } from './map-design.js';
+import { buildRouteGraph, repairRouteCuts, ROUTE_TOPOLOGIES } from './route-graph.js';
 import { defaultBattleObjective, deployOnGrid, findGridPath, neighbors, validateField, type BattlefieldSpec, type Terrain } from './spatial.js';
 
 export interface FieldGenerationOptions {
@@ -15,7 +16,7 @@ export interface FieldGenerationOptions {
 /** Macro layout → environmental regions → structures → routes/landmarks → safety repair.
  * Independent RNG, asymmetric geometry, no reroll of combat dice or saved tile arrays. */
 export function generatedField(seed: string, width = 7, height = 13, tags: string[] = [], options: FieldGenerationOptions = {}): BattlefieldSpec {
-  const rng = new SeededRng('field-v3:' + seed), environment = environmentTags(tags);
+  const rng = new SeededRng('field-v4:' + seed), environment = environmentTags(tags);
   const center = Math.floor(width / 2), middle = Math.floor(height / 2), indoor = width === 5;
   const tiles: Terrain[] = Array.from({ length: width * height }, () => 'open');
   const field: BattlefieldSpec = { version: 2, width, height, tiles, environment,
@@ -28,17 +29,31 @@ export function generatedField(seed: string, width = 7, height = 13, tags: strin
   const clampY = (y: number) => Math.max(1, Math.min(height - 2, y));
   const family = mapFamily(environment, width), structural = ['urban', 'siege', 'indoor'].includes(family);
   // Consume the same defaults before overlaying a plan, so each option has an isolated effect.
+  const landmarkRoll = rng.next();
+  const featurePool: MapDesign['feature'][] = family === 'forest' ? ['clearing', 'forest', 'cover', 'hill']
+    : family === 'mountain' ? ['hill', 'rough', 'cover', 'clearing'] : structural ? ['ruins', 'cover', 'clearing', 'rough']
+      : ['clearing', 'cover', 'forest', 'hill', 'rough'];
   const randomDesign: MapDesign = {
     layout: pick(['scattered', 'lanes', 'crossroads', 'ring', 'strongpoint', 'broken']),
     orientation: pick(['longitudinal', 'transverse', 'diagonal']),
     relief: pick(['balanced', 'balanced', 'dense']), cover: pick(['sparse', 'balanced', 'dense']),
     obstacles: pick(['sparse', 'balanced', 'dense']), route: pick(['direct', 'winding', 'winding', 'flank']),
-    breadth: pick(['narrow', 'normal', 'broad']), feature: 'none', featureZone: 'center',
+    breadth: pick(['narrow', 'normal', 'broad']), feature: landmarkRoll < .4 ? 'none' : pick(featurePool),
+    featureZone: pick(Object.keys(MAP_DESIGN_OPTIONS.featureZone) as MapDesign['featureZone'][]),
+    landmarkScale: landmarkRoll >= .85 ? 'major' : 'minor',
   };
   const directed = validMapDesign(options.design);
-  const design: MapDesign = directed ? { ...options.design! } : randomDesign;
+  // Copy only the supported schema; never persist unknown model commands or tile arrays.
+  const design: MapDesign = directed ? Object.fromEntries((Object.keys(MAP_DESIGN_OPTIONS) as MapDesignKey[]).map(k => [k, options.design![k]])) as unknown as MapDesign : randomDesign;
+  if (directed) {
+    const requested = options.design!;
+    if (typeof requested.topology === 'string' && Object.hasOwn(ROUTE_TOPOLOGIES, requested.topology)) design.topology = requested.topology;
+    const label = safeLandmarkLabel(requested.landmarkLabel);
+    if (label) design.landmarkLabel = label;
+    design.landmarkScale = requested.landmarkScale === 'major' ? 'major' : 'minor';
+  }
   if (design.layout === 'automatic') design.layout = randomDesign.layout;
-  field.generation = { version: 3, family, source: directed ? 'context' : 'random', design: { ...design } };
+  field.generation = { version: 4, family, source: directed ? 'context' : 'random', design: { ...design } };
   const reserved = new Set([field.objective.cell, 0, width - 1, tiles.length - width, tiles.length - 1,
     cell(center, 0), cell(center, 1), cell(center, middle), cell(center, height - 2), cell(center, height - 1)]);
   if (indoor && options.roster?.length) {
@@ -48,28 +63,22 @@ export function generatedField(seed: string, width = 7, height = 13, tags: strin
   // Even vanguard / explicitly positioned units must not be buried by a wall.
   for (const unit of options.roster ?? []) if (Number.isInteger(unit.pos) && unit.pos! >= 0 && unit.pos! < tiles.length) reserved.add(unit.pos!);
 
-  // Two vertex-disjoint safety routes can move across the centre, unlike fixed left/right lanes.
-  // They prohibit walls, not all terrain: forest paths and rocky passes keep their identity.
-  const routes = new Set<number>(), primaryRoute = new Set<number>(), wideRoutes = new Set<number>();
-  let left = design.route === 'flank' ? int(0, 1) : int(0, width - 3);
-  let right = design.route === 'flank' ? int(width - 2, width - 1) : int(left + 2, width - 1);
-  for (let y = 0; y < height; y++) {
-    const previousLeft = left, previousRight = right;
-    if (design.route !== 'direct' && y > 0 && y < height - 1) {
-      left = Math.max(0, Math.min(previousRight - 1, left + pick([-1, 0, 1])));
-      right = Math.max(Math.max(previousLeft, left) + 1, Math.min(width - 1, right + pick([-1, 0, 1])));
-      if (Math.max(previousLeft, left) >= Math.min(previousRight, right)) { left = previousLeft; right = previousRight; }
-    }
-    for (let x = Math.min(previousLeft, left); x <= Math.max(previousLeft, left); x++) primaryRoute.add(cell(x, y));
-    for (const [a, b] of [[previousLeft, left], [previousRight, right]]) for (let x = Math.min(a!, b!); x <= Math.max(a!, b!); x++) routes.add(cell(x, y));
+  const graph = buildRouteGraph(field, rng, design);
+  field.generation.routes = graph;
+  field.generation.design.topology = graph.kind;
+  const routes = new Set(graph.edges.flatMap(e => e.cells));
+  const primaryRoute = new Set(graph.edges.filter(e => e.role === 'main').flatMap(e => e.cells));
+  const wideRoutes = new Set<number>();
+  if (design.breadth === 'broad') for (const p of primaryRoute) {
+    const shoulder = p % width < width - 1 ? p + 1 : p - 1;
+    wideRoutes.add(shoulder);
   }
-  if (design.breadth === 'broad') for (const p of primaryRoute) if (p % width < width - 1) wideRoutes.add(p + 1);
   const wallMinY = indoor ? 1 : 3, wallMaxY = height - 1 - wallMinY;
   const paint = (x: number, y: number, terrain: Terrain) => {
     if (x < 0 || x >= width || y < 0 || y >= height) return;
     const p = cell(x, y);
     if (reserved.has(p)) return;
-    if (terrain === 'wall' && (!structural || y < wallMinY || y > wallMaxY || routes.has(p) || wideRoutes.has(p))) return;
+    if (terrain === 'wall' && (y < wallMinY || y > wallMaxY || routes.has(p) || wideRoutes.has(p))) return;
     tiles[p] = terrain;
   };
   const brush = (x: number, y: number, rx: number, ry: number, terrain: Terrain, broken = false) => {
@@ -126,6 +135,19 @@ export function generatedField(seed: string, width = 7, height = 13, tags: strin
       }
     }
   }
+  // Natural hard obstacles use the existing wall collision/LOS rule, never invisible forest opacity.
+  // Sparse boulders on plains, dense tree barriers in forests and rock spurs in mountains.
+  if (!structural) {
+    const clusters = Math.max(1, Math.round(int(1, family === 'plains' ? 2 : 4) * obstacles));
+    for (let n = 0; n < clusters; n++) {
+      const x = int(0, width - 1), y = int(wallMinY, wallMaxY);
+      stroke(x, y, family === 'plains' ? 1 : int(1, 3), 'wall',
+        family === 'mountain' ? design.orientation : pick(['longitudinal', 'transverse']));
+      for (const p of neighbors(field, cell(x, y))) if (!routes.has(p) && tiles[p] !== 'wall') {
+        paint(p % width, Math.floor(p / width), family === 'forest' ? 'forest' : 'rough');
+      }
+    }
+  }
   // Layout-specific negative space changes the fight, not just the tile colouring.
   if (design.layout === 'crossroads') {
     for (let x = 0; x < width; x++) paint(x, anchorY, 'open');
@@ -143,28 +165,58 @@ export function generatedField(seed: string, width = 7, height = 13, tags: strin
       paint(x, front - inward, 'cover');
     }
   }
-  // A broad road clears its shoulder; narrow roads retain costly but traversable terrain.
-  for (const p of wideRoutes) if (!reserved.has(p) && rng.next() < .7) tiles[p] = 'open';
-  for (const p of routes) {
-    if (tiles[p] === 'wall') tiles[p] = 'cover';
-    if (design.breadth !== 'narrow' && rng.next() < (design.breadth === 'broad' ? .85 : .4)) tiles[p] = 'open';
+  // Main routes are faster but exposed. Branches keep cover/biome trade-offs; no invisible road bonus.
+  for (const p of wideRoutes) if (!reserved.has(p)) tiles[p] = 'open';
+  for (const edge of graph.edges) for (const p of edge.cells) {
+    if (reserved.has(p)) continue;
+    if (edge.role === 'main') tiles[p] = design.breadth === 'narrow' && rng.next() < .2 ? theme : 'open';
+    else if (edge.role === 'dead_end') tiles[p] = rng.next() < .5 ? 'cover' : 'open';
+    else if (tiles[p] === 'wall') tiles[p] = 'rough';
+    else if (!primaryRoute.has(p) && rng.next() < .45) tiles[p] = family === 'forest' ? 'forest' : family === 'mountain' ? 'hill' : 'cover';
+  }
+  // Important route decisions get usable positions rather than decoration scattered at random.
+  for (const node of graph.nodes) {
+    const degree = graph.edges.filter(e => e.from === node.id || e.to === node.id).length;
+    if (degree < 3) continue;
+    const positions = neighbors(field, node.cell).filter(p => !reserved.has(p) && !routes.has(p));
+    if (positions.length) tiles[pick(positions)] = family === 'mountain' ? 'hill' : 'cover';
   }
   // A small room or a broad road must not erase every environmental feature.
   const minimumDetail = Math.ceil(tiles.length * (family === 'forest' || family === 'mountain' ? .27 * relief : .16));
   let detail = tiles.filter(t => t !== 'open').length;
   const detailCells = tiles.map((_, p) => ({ p, rank: rng.next() })).filter(({ p }) => !reserved.has(p) && !primaryRoute.has(p)).sort((a, b) => a.rank - b.rank);
   for (const { p } of detailCells) { if (detail >= minimumDetail) break; if (tiles[p] === 'open') { tiles[p] = theme; detail++; } }
-  // Landmark is a bounded local patch. No model may overwrite deployment or close a route.
+  // Landmarks exist locally too: 40% none, 45% small, 15% major before contextual override.
+  // Major landmarks combine existing tiles: a position, an approach and an exposed access gap.
   const landmarkCells: number[] = [];
-  const landmarkTerrain: Terrain | undefined = design.feature === 'none' ? undefined : design.feature === 'clearing' ? 'open' : design.feature;
+  const landmarkTerrain: Terrain | undefined = design.feature === 'none' ? undefined
+    : design.feature === 'clearing' ? 'open' : design.feature === 'ruins' ? 'rough' : design.feature;
+  const defaultLabels: Record<Exclude<MapDesign['feature'], 'none'>, string> = {
+    clearing: structural ? '院落广场' : family === 'forest' ? '林间空地' : '开阔空地', cover: '掩体阵地', forest: '密林地带', hill: '岩脊高地', rough: '崎岖地带', ruins: '残垣废墟',
+  };
   if (landmarkTerrain) {
     const zone = design.featureZone;
     const x = zone.endsWith('left') ? 1 : zone.endsWith('right') ? width - 2 : center;
     const y = zone.startsWith('enemy') ? 2 : zone.startsWith('ally') ? height - 3 : middle;
-    brush(x, y, 1, 1, landmarkTerrain);
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      const p = cell(x + dx, y + dy);
-      if (!reserved.has(p) && tiles[p] === landmarkTerrain) landmarkCells.push(p);
+    const major = design.landmarkScale === 'major', rx = 1, ry = major && !indoor ? 2 : 1;
+    for (let dy = -ry; dy <= ry; dy++) for (let dx = -rx; dx <= rx; dx++) {
+      const xx = x + dx, yy = y + dy;
+      if (xx < 0 || xx >= width || yy < 1 || yy >= height - 1) continue;
+      const p = cell(xx, yy);
+      if (reserved.has(p)) continue;
+      let terrain: Terrain = landmarkTerrain;
+      if (design.feature === 'ruins') terrain = structural && Math.abs(dx) === rx && dy < 0 && !routes.has(p) ? 'wall' : dy % 2 ? 'cover' : 'rough';
+      else if (major && Math.abs(dx) === rx && Math.abs(dy) === ry) terrain = design.feature === 'hill' ? 'rough' : 'cover';
+      // Never overwrite the fast approach with impassable walls or an entire slow-terrain blanket.
+      if (primaryRoute.has(p) && terrain !== 'open' && design.feature !== 'ruins') continue;
+      paint(xx, yy, terrain);
+      if (tiles[p] === terrain) landmarkCells.push(p);
+    }
+    // A centred landmark in a tiny room still needs a real, non-reserved cell.
+    if (!landmarkCells.length) {
+      const p = tiles.map((_, p) => p).filter(p => !reserved.has(p) && !primaryRoute.has(p))
+        .sort((a, b) => Math.abs(a % width - x) + Math.abs(Math.floor(a / width) - y) - Math.abs(b % width - x) - Math.abs(Math.floor(b / width) - y))[0];
+      if (p !== undefined) { tiles[p] = landmarkTerrain; landmarkCells.push(p); }
     }
   }
   for (const p of reserved) tiles[p] = 'open';
@@ -190,7 +242,11 @@ export function generatedField(seed: string, width = 7, height = 13, tags: strin
     for (const n of connection.cells) if (tiles[n] === 'wall') tiles[n] = 'cover';
     reached = reachable();
   }
-  if (landmarkTerrain) field.generation.landmark = { terrain: landmarkTerrain, cells: landmarkCells.filter(p => tiles[p] === landmarkTerrain) };
+  repairRouteCuts(field, graph);
+  if (landmarkTerrain && landmarkCells.length) field.generation.landmark = { terrain: landmarkTerrain,
+    cells: [...new Set(landmarkCells)].filter(p => !reserved.has(p)),
+    label: safeLandmarkLabel(design.landmarkLabel) ?? defaultLabels[design.feature as Exclude<MapDesign['feature'], 'none'>],
+    scale: design.landmarkScale ?? 'minor', zone: design.featureZone };
   validateField(field);
   return field;
 }

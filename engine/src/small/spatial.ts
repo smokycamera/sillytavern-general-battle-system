@@ -1,4 +1,4 @@
-import type { MapGenerationRecord } from './map-design.js';
+import { landmarkAt, type MapGenerationRecord } from './map-design.js';
 import { isRangedWeapon } from '../loadout.js';
 import type { Combatant, ConditionDef } from '../types.js';
 import { activeTraitIds } from '../trait-sources.js';
@@ -58,9 +58,19 @@ export function gridDistance(field: BattlefieldSpec, a: number, b: number): numb
 }
 export function cellLabel(field: BattlefieldSpec, cell: number): string { return String.fromCharCode(65 + cell % field.width) + (Math.floor(cell / field.width) + 1); }
 /** 战报使用实际落点；飞越特殊地形时标清空中，避免误报地面掩护。 */
+/** The collision token stays wall; environmental names explain natural hard blockers in v4 maps. */
+export function terrainName(field: BattlefieldSpec, cell: number): string {
+  const terrain = field.tiles[cell];
+  if (terrain === 'wall' && field.generation?.version === 4) {
+    if (field.generation.family === 'forest') return '密林障碍';
+    if (field.generation.family === 'mountain') return '岩障';
+    if (field.generation.family === 'plains') return '巨石';
+  }
+  return terrain ? TERRAIN_NAMES[terrain] : '';
+}
 export function terrainCellLabel(field: BattlefieldSpec, cell: number, actor?: Combatant): string {
   const terrain = field.tiles[cell];
-  return cellLabel(field, cell) + (terrain && terrain !== 'open' ? '(' + TERRAIN_NAMES[terrain] + (actor && isAirborne(actor) ? '上空' : '') + ')' : '');
+  return cellLabel(field, cell) + (landmarkAt(field, cell) ? '〔' + landmarkAt(field, cell) + '〕' : '') + (terrain && terrain !== 'open' ? '(' + terrainName(field, cell) + (actor && isAirborne(actor) ? '上空' : '') + ')' : '');
 }
 export function neighbors(field: BattlefieldSpec, cell: number): number[] {
   return [cell - field.width, cell - 1, cell + 1, cell + field.width].filter((n) => inBounds(field, n) && gridDistance(field, cell, n) === 1);
@@ -261,4 +271,21 @@ export function deployOnGrid(field: BattlefieldSpec, units: Combatant[], seed = 
     unit.pos = select(unit, gridDeploymentCells(field, unit)) ?? unit.pos;
   }
   return units.map((u) => scratch.find((c) => c.id === u.id)!.pos!);
+}
+
+/** Small positional tie-breaker, using actual rules and observed opponents only. Never a combat modifier. */
+export function terrainTacticalValue(field: BattlefieldSpec, cell: number, actor: Combatant, visibleFoes: Combatant[]): number {
+  if (isAirborne(actor) || !inBounds(field, cell)) return 0;
+  const terrain = field.tiles[cell], traits = activeTraitIds(actor);
+  const foes = visibleFoes.filter(u => u.side !== actor.side && u.status === 'ready' && u.hp > 0 && u.pos !== undefined);
+  let protection = 0;
+  for (const foe of foes) {
+    const distant = gridDistance(field, cell, foe.pos!) > 1;
+    if (terrain === 'cover' && distant || actor.rulesVersion === 'v2' && terrain === 'forest' && distant && isRangedWeapon(foe.weapon)) protection += 2;
+    else if (actor.rulesVersion === 'v2' && terrain === 'hill' && (isAirborne(foe) || field.tiles[foe.pos!] !== 'hill')) protection += 1;
+  }
+  const penalty = actor.rulesVersion === 'v2' && (terrain === 'forest' && !traits.includes('forest-lore') || terrain === 'hill' && !traits.includes('mountain-born')) ? .45 : 0;
+  const concealment = traits.includes('stalk') && ['cover', 'forest'].includes(terrain ?? '')
+    && foes.every(u => gridDistance(field, cell, u.pos!) > 2) ? .25 : 0;
+  return Math.min(1.2, protection / Math.max(1, foes.length) * .55) - penalty + concealment;
 }

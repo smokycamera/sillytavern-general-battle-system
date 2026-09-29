@@ -1,8 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
+import { generatedField } from '../../engine/src/index.js';
+import { TavernJevAdapter } from './jev-adapter.js';
 import { tacticalFixture } from '../../scripts/p4-tactical-fixture.js';
 import { renderTacticalBattle, selectTacticalElement, tacticalSelection, type TacticalView } from './tactical-view.js';
 
 describe('战术地图查看与确认', () => {
+  it('shows named landmarks in the inspector and commander map without enabling new terrain rules', async () => {
+    const { b } = tacticalFixture();
+    b.battlefield!.generation = generatedField('ui-label', 7, 9, ['urban']).generation;
+    b.battlefield!.generation!.landmark = { label: '废弃钟楼', cells: [44, 46], terrain: 'hill' };
+    const html = renderTacticalBattle(b, { mode: 'weapon', selectedId: 'a', inspectedCell: 44 });
+    expect(html).toContain('废弃钟楼'); expect(html).toContain('grid-landmark');
+    expect(html).toContain('森林');
+    const adapter = new TavernJevAdapter(b, 'ally', 'test', 0, new AbortController().signal);
+    expect(JSON.stringify(await adapter.observe())).toContain('废弃钟楼');
+    b.battlefield!.generation!.landmark.cells = 'broken' as unknown as number[];
+    expect(() => renderTacticalBattle(b, { mode: 'weapon', selectedId: 'a' })).not.toThrow();
+    b.battlefield!.generation!.landmark = { label: '<img src=x>', cells: [44], terrain: 'hill' };
+    expect(renderTacticalBattle(b, { mode: 'weapon', selectedId: 'a' })).not.toContain('<img src=x>');
+  });
   it('隐藏未准备技能，保留装备和物品能力，并让过期技能选择回到武器', () => {
     const { b } = tacticalFixture(), actor = b.byId('a');
     const [removed, prepared] = actor.abilities;
