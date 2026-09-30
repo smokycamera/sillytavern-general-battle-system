@@ -1,6 +1,7 @@
 /** Reproducible static map and deployment audit; run with vite-node. */
 import { writeFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
+import { geometrySignature } from '../engine/src/small/map-metrics.js';
 import { generatedLayeredField, groundBlocked, findGridPath, validateField, generateUnit, SmallBattle, V11_OVERFLOW_D20, type BattlefieldPlan } from '../engine/src/index.js';
 const start = performance.now(), failures: unknown[] = [], signatures = new Set<string>();
 let maps = 0, deployments = 0, approachChecks = 0;
@@ -17,7 +18,7 @@ for (const environment of ['plains', 'forest', 'mountain', 'urban', 'siege']) fo
       if (!findGridPath(field, origin, field.objective.cell, p => !groundBlocked(field, p))) throw Error('disconnected outdoor approach');
       approachChecks++;
     }
-    signatures.add(JSON.stringify([field.tiles, field.structures, field.overlays]));
+    signatures.add(geometrySignature(field));
     if (i % 10 === 0) {
       const units = (['ally', 'enemy'] as const).flatMap(side => Array.from({ length: 6 }, (_, n) => {
         const u = generateUnit({ name: side + n, side, scale: 'company', hpMax: 20, level: 3, rulesVersion: 'v2', weaponClass: n % 2 ? 'rifle' : 'sword', weaponLevel: 3, traits: [] }, { seed: side + n, noVariance: true }).unit;

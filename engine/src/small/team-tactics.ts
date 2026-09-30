@@ -4,7 +4,7 @@ import type { CommanderProfile } from '../commander-profile.js';
 import { activeTraitIds } from '../trait-sources.js';
 import { isAirborne } from '../aerial.js';
 import { isRangedWeapon } from '../loadout.js';
-import { gridDistance, neighbors, gridCostsToGoals, type BattlefieldSpec } from './spatial.js';
+import { gridDistance, neighbors, gridCostsToGoals,movementStepCost, type BattlefieldSpec } from './spatial.js';
 import { groundBlocked, isElevated, intactStructure } from './layers.js';
 export interface RegionalOrder {
   role: 'front' | 'fire' | 'reserve' | 'core' | 'breach' | 'flank' | 'advance';
@@ -14,6 +14,11 @@ export interface RegionalOrder {
 }
 function hash(s: string): number { let n = 2166136261; for (const c of s) n = Math.imul(n ^ c.charCodeAt(0), 16777619); return n >>> 0; }
 export function regionalOrder(field: BattlefieldSpec, unit: Combatant, known: Combatant[], profile?: CommanderProfile): RegionalOrder | undefined {
+  const assigned=field.deploymentZones?.filter(z=>(z.unitId===unit.id||!z.unitId&&z.side===unit.side)&&['guards','occupies'].includes(z.relation??''))??[];
+  if(assigned.length&&unit.pos!==undefined&&(!field.city?.core.some(p=>known.some(u=>u.side!==unit.side&&u.status==='ready'&&gridDistance(field,p,u.pos!)<=2)))) {
+    const goals=[...new Set(assigned.flatMap(z=>z.cells))].filter(p=>!groundBlocked(field,p,unit));
+    if(goals.length)return {role:isRangedWeapon(unit.weapon)?'fire':'front',goals,phase:'intact'};
+  }
   if (!field.layerVersion || !field.city?.defender || field.objective.kind !== 'control' || unit.pos === undefined) return;
   const city = field.city;
   const friends = known.filter(u => u.side === unit.side && u.hp > 0 && u.status === 'ready').sort((a, b) => hash(a.id) - hash(b.id));
@@ -45,9 +50,11 @@ export function regionalOrder(field: BattlefieldSpec, unit: Combatant, known: Co
     else {
       const rows = city.frontline.map(p => Math.floor(p / field.width));
       const forwardRow = city.defender === 'enemy' ? Math.max(...rows) : Math.min(...rows);
-      const forwardLine = city.frontline.filter(p => Math.floor(p / field.width) === forwardRow);
+      const forwardLine = city.frontage?.filter(p=>city.frontline.includes(p))??city.frontline.filter(p => Math.floor(p / field.width) === forwardRow);
+      const lateral=(p:number)=>city.facing==='east'||city.facing==='west'?Math.floor(p/field.width):p%field.width;
+      const extent=city.facing==='east'||city.facing==='west'?field.height:field.width;
       const sectors = Math.min(3, Math.max(1, friends.length));
-      const sector = forwardLine.filter(p => Math.min(sectors - 1, Math.floor((p % field.width) * sectors / field.width)) === slot % sectors);
+      const sector = forwardLine.filter(p => Math.min(sectors - 1, Math.floor(lateral(p) * sectors / extent)) === slot % sectors);
       const line = sector.length ? sector : forwardLine.length ? forwardLine : city.frontline;
       goals = isElevated(unit) ? line : line.flatMap(p => neighbors(field, p)).filter(p => city.inside.includes(p));
       if (phase === 'breached' && !isElevated(unit)) goals.push(...breached.filter(p => Math.abs(p % field.width - unit.pos! % field.width) <= 3));
@@ -57,7 +64,7 @@ export function regionalOrder(field: BattlefieldSpec, unit: Combatant, known: Co
     return { role, goals: goals.length ? goals : [unit.pos], phase };
   }
   // A gap behind water/cliffs is not a usable breach for this unit. Public terrain only.
-  const coreReachable = breached.length > 0 && gridCostsToGoals(field, legal(city.core), p => !groundBlocked(field, p, unit), () => 1).has(unit.pos);
+  const coreReachable = breached.length > 0 && gridCostsToGoals(field, legal(city.core), p => !groundBlocked(field, p, unit), (p,from)=>movementStepCost(field,p,unit,field.environment,from)).has(unit.pos);
   if (isAirborne(unit) || isElevated(unit) || city.inside.includes(unit.pos) || coreReachable) {
     return { role: ranged ? 'fire' : 'advance', goals: legal(city.core).length ? legal(city.core) : city.core, phase: 'advance' };
   }

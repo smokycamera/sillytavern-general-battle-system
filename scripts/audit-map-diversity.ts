@@ -60,17 +60,17 @@ const report = { schema: 1, seedPrefix: 'map-v4-audit-', mapsPerFamily: seeds, g
   }, families: {} as Record<string, unknown>, topologyAblation: {} as Record<string, unknown> };
 for (const c of cases) {
   const fields = Array.from({ length: seeds }, (_, n) => generatedField('map-v4-audit-' + n, c.w, c.h, c.tags));
-  const measures = fields.map(measureMap);
+  const measures = fields.map(f => measureMap(f));
   if (measures.some(m => m.alternativePaths < 2 || m.criticalCuts > 0 || !Number.isFinite(m.shortestContactCost))) throw Error('Unplayable map: ' + c.family);
   report.generatedMaps += fields.length;
   let previous;
-  if (baseline) { const fs = Array.from({ length: seeds }, (_, n) => baseline('map-v4-audit-' + n, c.w, c.h, c.tags)); previous = summary(fs, fs.map(measureMap)); }
+  if (baseline) { const fs = Array.from({ length: seeds }, (_, n) => baseline('map-v4-audit-' + n, c.w, c.h, c.tags)); previous = summary(fs, fs.map(f => measureMap(f))); }
   report.families[c.family] = { current: summary(fields, measures), ...(previous ? { baseline: previous } : {}) };
 }
 const plan: MapDesign = { layout: 'lanes', orientation: 'diagonal', relief: 'balanced', cover: 'balanced', obstacles: 'dense', route: 'winding', breadth: 'normal', feature: 'none', featureZone: 'center' };
 for (const topology of Object.keys(ROUTE_TOPOLOGIES) as (keyof typeof ROUTE_TOPOLOGIES)[]) {
   const fs = Array.from({ length: 40 }, (_, n) => generatedField('map-v4-ablation-' + n, 7, 13, ['urban'], { design: { ...plan, topology } }));
-  report.topologyAblation[topology] = summary(fs, fs.map(measureMap)); report.generatedMaps += fs.length;
+  report.topologyAblation[topology] = summary(fs, fs.map(f => measureMap(f))); report.generatedMaps += fs.length;
 }
 writeFileSync(output, JSON.stringify(report, null, 2) + '\n');
 console.log(JSON.stringify({ maps: report.generatedMaps, output, families: Object.keys(report.families) }));

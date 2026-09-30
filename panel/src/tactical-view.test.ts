@@ -5,6 +5,26 @@ import { tacticalFixture } from '../../scripts/p4-tactical-fixture.js';
 import { renderTacticalBattle, selectTacticalElement, tacticalSelection, type TacticalView } from './tactical-view.js';
 
 describe('战术地图查看与确认', () => {
+  it('查看友军后点击当前行动单位直接恢复操作，优先于移动和治疗选点', () => {
+    const { b } = tacticalFixture(), actor = b.byId('a'), friend = b.byId('c');
+    friend.abilities = structuredClone(actor.abilities);
+    friend.preparedAbilityIds = friend.abilities.map(a => a.id);
+    const healing = friend.abilities.find(a => a.definitionId === 'bp-mending')!;
+    const before = JSON.stringify(b.toSnapshot());
+    for (const mode of ['move', healing.id]) {
+      const view: TacticalView = { mode: 'weapon', selectedId: actor.id };
+      selectTacticalElement(b, view, { unitId: friend.id });
+      selectTacticalElement(b, view, { mode });
+      expect(tacticalSelection(b, view).canControl).toBe(false);
+      if (mode === healing.id) expect(tacticalSelection(b, view).option?.targets?.some(t => t.targetId === actor.id)).toBe(true);
+      const query = selectTacticalElement(b, view, { cell: actor.pos });
+      const selected = tacticalSelection(b, view, query);
+      expect(view.selectedId).toBe(actor.id);
+      expect(view.targetId).toBeUndefined(); expect(view.cell).toBeUndefined();
+      expect(selected.canControl).toBe(true); expect(b.active?.id).toBe(actor.id);
+      expect(JSON.stringify(b.toSnapshot())).toBe(before);
+    }
+  });
   it('shows named landmarks in the inspector and commander map without enabling new terrain rules', async () => {
     const { b } = tacticalFixture();
     b.battlefield!.generation = generatedField('ui-label', 7, 9, ['urban']).generation;

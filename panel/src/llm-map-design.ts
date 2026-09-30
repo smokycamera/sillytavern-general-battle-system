@@ -4,6 +4,7 @@ import type { ContextSelectionRequest, ContextSelectionAnswer } from '../../vend
 import type { EncounterSetup } from './jev-context.js';
 import type { LlmSettings } from './llm-settings.js';
 import { vipCandidates } from './battle-setup.js';
+import { validateSceneIntentEvidence, type NarrativeSource } from '../../engine/src/small/scene-intent.js';
 
 type Field = ContextSelectionRequest['fields'][number];
 export interface PreparationDesignRequest {
@@ -12,10 +13,13 @@ export interface PreparationDesignRequest {
   vipIds: Partial<Record<'ally' | 'enemy', Record<string, string>>>;
   notes: string[];
   landmarkSource?: string;
+  narrativeSources?: NarrativeSource[];
+  unitBindings?: Record<string,string>;
 }
 export interface PreparationDesignResult {
   mapDesign?: MapDesign;
   battlefieldPlan?: BattlefieldPlan;
+  unitBindings?: Record<string,string>;
   vipId?: string;
   vipName?: string;
   designDetail?: string;
@@ -29,7 +33,7 @@ const questions: Record<keyof typeof MAP_DESIGN_OPTIONS, string> = {
   route: '接敌/护送通路形态；兼顾正文中的街道、山路、伏击和撤离方向。',
   breadth: '主通路宽度；狭窄通路仍保留替代路线，不能设计必然卡死的关卡。',
   feature: '结合场景合理设计至少一个有战术意义的局部地标，可概括名称与补全空间细节。选择与地点相符的类型，不选none。',
-  featureZone: '该地标在战场中的相对位置；上敌下我，左/右按地图画面。不改变目标出口或角色部署。',
+  featureZone: '该地标在战场中的相对位置；上敌下我，左/右按地图画面。',
 };
 
 /** Uses the existing preparation request, never an additional API call. Raw unit IDs are not option IDs. */
@@ -44,7 +48,7 @@ export function preparationDesignRequest(roster: Combatant[], settings: LlmSetti
   }
   if (settings.designMap === true && !compact) {
     result.landmarkSource = landmarkSource;
-    result.fields.push({ id: 'design_topology', question: '选择实际路网结构；可共用路段、分叉汇合，不要求始终存在两条贯通独立大道。小地图由本地压缩实现。', options: { automatic: '按既有通路风格随机', ...ROUTE_TOPOLOGIES } });
+    result.fields.push({ id: 'design_topology', question: '选择实际路网结构；可共用路段、分叉汇合。', options: { automatic: '按既有通路风格随机', ...ROUTE_TOPOLOGIES } });
     result.fields.push({ id: 'design_landmarkscale', question: '主要地标的影响范围；普通地标为局部位置，主地标带接近地带与侧翼。不要覆盖整张地图。', options: { minor: '普通局部地标', major: '显著战术地标' } });
   }
   if (settings.selectVip === true) for (const side of ['ally', 'enemy'] as const) {
@@ -91,6 +95,13 @@ export function applyPreparationDesign(answer: ContextSelectionAnswer, request: 
     }
     notes.push(...normalized.notes);
     requireApiLandmarks(result.battlefieldPlan);
+    if(result.battlefieldPlan.intent) {
+      try{validateSceneIntentEvidence(result.battlefieldPlan.intent,request.narrativeSources??[],Object.keys(request.unitBindings??{}));}
+      catch(error){throw new BattlefieldPlanError(error instanceof Error?error.message:'场景依据无效');}
+      result.unitBindings=request.unitBindings;
+      const intent=result.battlefieldPlan.intent;
+      notes.push(`已读取${intent.entities.filter(e=>e.basis==='explicit').length}项正文地点与${intent.relations.length}条空间关系`);
+    }
   }
   if (request.fields.some(f => f.id === 'design_layout')) {
     const candidate = Object.fromEntries((Object.keys(MAP_DESIGN_OPTIONS) as (keyof typeof MAP_DESIGN_OPTIONS)[]).map(k => [k, choice(answer, request.fields, 'design_' + k.toLowerCase())]));
@@ -107,7 +118,7 @@ export function applyPreparationDesign(answer: ContextSelectionAnswer, request: 
       else if (rawLabel !== undefined && rawLabel !== '') notes.push('地标名称无效（含非法字符或过长），使用类型通用名称');
       if (candidate.feature === 'none') throw new BattlefieldPlanError('副API地图设计须至少选择一个地标，不能返回none');
       const kind = {clearing:'square',cover:'cover',rough:'ruins',forest:'forest',hill:'hill',ruins:'ruins'}[candidate.feature] as NonNullable<BattlefieldPlan['landmarks']>[number]['kind'];
-      const anchor = candidate.featureZone.endsWith('left') ? 'front_left' : candidate.featureZone.endsWith('right') ? 'front_right' : 'center';
+      const anchor = candidate.featureZone;
       result.battlefieldPlan = { layout:candidate.layout,topology:candidate.topology,orientation:candidate.orientation,
         relief:candidate.relief,cover:candidate.cover,obstacles:candidate.obstacles,breadth:candidate.breadth,
         landmarks:[{kind,anchor,scale:candidate.landmarkScale??'minor',...(candidate.landmarkLabel?{label:candidate.landmarkLabel}:{})}] };

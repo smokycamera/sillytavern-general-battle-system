@@ -9,6 +9,8 @@ import { environmentTags } from '../environment.js';
 import { isAirborne, sameLayer, flightCapabilityReason, type FlightConditions } from '../aerial.js';
 import { SeededRng } from '../rng.js';
 import { rangedScreen } from '../guard-screen.js';
+import {validateSceneRecord,type SceneRecord,type DeploymentZone} from './scene-compiler.js';
+import { heightStepCost,validateHeightMap,eyeHeight,unitHeight,heightDescription,type HeightTransition } from './height-map.js';
 import { gridWeaponRange } from './weapon-range.js';
 
 export const DEFAULT_SMALL_ROUND_LIMIT = 60;
@@ -16,6 +18,13 @@ export const DEFAULT_SMALL_ROUND_LIMIT = 60;
 export type Terrain = 'open' | 'cover' | 'wall' | 'rough' | 'forest' | 'hill' | 'street' | 'shallow_water' | 'deep_water' | 'swamp' | 'cliff';
 export const TERRAIN_NAMES: Record<Terrain, string> = { open: '开阔地', cover: '掩体', wall: '墙体', rough: '崎岖地', forest: '森林', hill: '山地', street: '街道', shallow_water: '浅水', deep_water: '深水', swamp: '沼泽', cliff: '岩壁' };
 export interface BattlefieldSpec {
+  spatialRulesVersion?: 2;
+  groundHeight?: number[];
+  heightTransitions?: HeightTransition[];
+  scene?: SceneRecord;
+  deploymentZones?: DeploymentZone[];
+  retreatEdges?: Partial<Record<'ally'|'enemy',number[]>>;
+  initialDeployment?: Record<string,{pos:number;elevation?:1;airborne?:boolean}>;
   layerVersion?: 1;
   structures?: (FieldStructure | null)[];
   overlays?: Partial<Record<number, GroundOverlay[]>>;
@@ -59,6 +68,8 @@ export function validateField(field: BattlefieldSpec): void {
   if (field.version !== 2 || ![[7, 9], [5, 7], [7, 11], [7, 13], [9, 15], [11, 17], [13, 19]].some(([w, h]) => field.width === w && field.height === h)) throw new Error('地图尺寸不支持（野战7×13，城区9×15/11×17/13×19，或旧地图）');
   if (field.tiles.length !== field.width * field.height || field.tiles.some((t) => !Object.hasOwn(TERRAIN_NAMES, t))) throw new Error('地形数据不完整');
   validateLayers(field);
+  validateHeightMap(field);
+  validateSceneRecord(field);
   if (field.objective.kind === 'control' && field.objective.cells !== undefined && (!Array.isArray(field.objective.cells) || !field.objective.cells.includes(field.objective.cell) || field.objective.cells.some(p => !inBounds(field, p) || groundBlocked(field, p)))) throw Error('占领区域不合法');
   if (field.environment !== undefined && (!Array.isArray(field.environment) || field.environment.some((t) => typeof t !== 'string'))) throw new Error('环境附加记录损坏');
   if (!inBounds(field, field.objective.cell) || (field.layerVersion ? groundBlocked(field, field.objective.cell) : field.tiles[field.objective.cell] === 'wall')) throw new Error('目标必须是合法可通行格');
@@ -113,8 +124,8 @@ export function tileCost(field: BattlefieldSpec, cell: number, actor?: Combatant
 /** Difficult but traversable ground cannot permanently trap a slow unit. A step costs
  * at most its FULL normal allowance, never its remaining allowance. Thus a 2-MP unit
  * with only 1 MP left still cannot enter a 3-cost fortification. Prohibitions stay infinite. */
-export function movementStepCost(field: BattlefieldSpec, cell: number, actor: Combatant, tags = field.environment ?? []): number {
-  const cost = tileCost(field, cell, actor);
+export function movementStepCost(field: BattlefieldSpec, cell: number, actor: Combatant, tags = field.environment ?? [],from=actor.pos??cell): number {
+  const cost = tileCost(field, cell, actor)+heightStepCost(field,from,cell,actor);
   return field.layerVersion && Number.isFinite(cost) ? Math.min(cost, movementPoints(actor, tags)) : cost;
 }
 export function footprint(unit: Combatant): number { return unit.mount === true || unit.body && unit.body !== 'human' ? 2 : 1; }
@@ -125,7 +136,7 @@ export function canOccupy(field: BattlefieldSpec, units: Combatant[], actor: Com
   return footprint(actor) + occupants.reduce((n, u) => n + footprint(u), 0) <= 2;
 }
 /** Dijkstra：几何距离与地形路径成本分开，稳定平局规则不消费RNG。 */
-export function findGridPath(field: BattlefieldSpec, start: number, goal: number, allowed: (cell: number) => boolean, costOf = (cell: number) => tileCost(field, cell)): GridPath | undefined {
+export function findGridPath(field: BattlefieldSpec, start: number, goal: number, allowed: (cell: number) => boolean, costOf:(cell:number,from:number)=>number = (cell,from) => tileCost(field, cell)+heightStepCost(field,from,cell)): GridPath | undefined {
   if (!inBounds(field, start) || !inBounds(field, goal) || (goal !== start && !allowed(goal))) return undefined;
   const costs = new Map([[start, 0]]); const previous = new Map<number, number>(); const open = new GridQueue(); open.push(start, 0);
   while (open.size) {
@@ -137,7 +148,7 @@ export function findGridPath(field: BattlefieldSpec, start: number, goal: number
     }
     for (const next of neighbors(field, current)) {
       if (!allowed(next)) continue;
-      const cost = costs.get(current)! + costOf(next);
+      const cost = costs.get(current)! + costOf(next,current);
       if (cost >= (costs.get(next) ?? Infinity)) continue;
       costs.set(next, cost); previous.set(next, current); open.push(next, cost);
     }
@@ -146,7 +157,7 @@ export function findGridPath(field: BattlefieldSpec, start: number, goal: number
 }
 /** 一次有界Dijkstra得到所有可达格，沿用单目标寻路的平局规则与路径。 */
 export function reachableGridPaths(field: BattlefieldSpec, start: number, budget: number, allowed: (cell: number) => boolean,
-  costOf = (cell: number) => tileCost(field, cell)): GridPath[] {
+  costOf:(cell:number,from:number)=>number = (cell,from) => tileCost(field, cell)+heightStepCost(field,from,cell)): GridPath[] {
   if (!inBounds(field, start) || budget < 0) return [];
   const costs = new Map([[start, 0]]), previous = new Map<number, number>(), open = new GridQueue(); open.push(start, 0);
   while (open.size) {
@@ -154,7 +165,7 @@ export function reachableGridPaths(field: BattlefieldSpec, start: number, budget
     if (entry.cost !== costs.get(current)) continue;
     for (const next of neighbors(field, current)) {
       if (!allowed(next)) continue;
-      const cost = costs.get(current)! + costOf(next);
+      const cost = costs.get(current)! + costOf(next,current);
       if (cost > budget || cost >= (costs.get(next) ?? Infinity)) continue;
       costs.set(next, cost); previous.set(next, current); open.push(next, cost);
     }
@@ -166,7 +177,7 @@ export function reachableGridPaths(field: BattlefieldSpec, start: number, budget
 }
 /** 反向多源Dijkstra：一次计算各格到合法目标格的实际移动成本，供AI绕障碍。 */
 export function gridCostsToGoals(field: BattlefieldSpec, goals: number[], allowed: (cell: number) => boolean,
-  costOf = (cell: number) => tileCost(field, cell)): Map<number, number> {
+  costOf:(cell:number,from:number)=>number = (cell,from) => tileCost(field, cell)+heightStepCost(field,from,cell)): Map<number, number> {
   const costs = new Map(goals.filter(cell => inBounds(field, cell) && allowed(cell)).map(cell => [cell, 0]));
   const open = new GridQueue(); for (const cell of costs.keys()) open.push(cell, 0);
   while (open.size) {
@@ -175,7 +186,7 @@ export function gridCostsToGoals(field: BattlefieldSpec, goals: number[], allowe
     for (const previous of neighbors(field, current)) {
       if (!allowed(previous)) continue;
       // 正向从previous进入current时支付current地形成本。
-      const cost = costs.get(current)! + costOf(current);
+      const cost = costs.get(current)! + costOf(current,previous);
       if (cost >= (costs.get(previous) ?? Infinity)) continue;
       costs.set(previous, cost); open.push(previous, cost);
     }
@@ -216,7 +227,7 @@ export function meleeLineBlocker(field: BattlefieldSpec, from: Combatant, to: Co
 export function unitLineOfSight(field: BattlefieldSpec, from: Combatant, to: Combatant): boolean {
   if (!inBounds(field, from.pos!) || !inBounds(field, to.pos!)) return false;
   if (!field.layerVersion) return isAirborne(from) || isAirborne(to) || lineOfSight(field, from.pos!, to.pos!);
-  const height = (u: Combatant) => isAirborne(u) ? 2.25 : isElevated(u) ? 1.25 : .25;
+  const height = (u: Combatant) => field.spatialRulesVersion===2?eyeHeight(field,u):isAirborne(u) ? 2.25 : isElevated(u) ? 1.25 : .25;
   const distance = Math.max(1, gridDistance(field, from.pos!, to.pos!));
   const adjacentDiagonal = Math.abs(from.pos! % field.width - to.pos! % field.width) === 1
     && Math.abs(Math.floor(from.pos! / field.width) - Math.floor(to.pos! / field.width)) === 1;
@@ -226,15 +237,39 @@ export function unitLineOfSight(field: BattlefieldSpec, from: Combatant, to: Com
     // 墙顶射向斜邻墙脚时，射线只擦过相连的墙顶格角，不应被本段城墙挡住。
     if (adjacentDiagonal && isElevated(from) && !isElevated(to) && gridDistance(field, from.pos!, cell) === 1
       && structureAt(field, cell)?.top && obstructionHeight(field, cell) === 1) return false;
-    const fraction = Math.min(1, gridDistance(field, from.pos!, cell) / distance);
-    const rayHeight = height(from) + (height(to) - height(from)) * fraction;
+    const dx=to.pos!%field.width-from.pos!%field.width,dy=Math.floor(to.pos!/field.width)-Math.floor(from.pos!/field.width);
+    const fraction = field.spatialRulesVersion===2?Math.max(0,Math.min(1,((cell%field.width-from.pos!%field.width)*dx+(Math.floor(cell/field.width)-Math.floor(from.pos!/field.width))*dy)/Math.max(1,dx*dx+dy*dy))):Math.min(1, gridDistance(field, from.pos!, cell) / distance);
+    let rayHeight = height(from) + (height(to) - height(from)) * fraction;
+    if(field.spatialRulesVersion===2) {
+      // Use the lowest ray height within the intersected cell, not only the cell centre.
+      let enter=0,leave=1;
+      for(const [start,delta,center] of [[from.pos!%field.width,dx,cell%field.width],[Math.floor(from.pos!/field.width),dy,Math.floor(cell/field.width)]])if(delta!==0) {
+        const a=(center!-.5-start!)/delta!,b=(center!+.5-start!)/delta!;
+        enter=Math.max(enter,Math.min(a,b));leave=Math.min(leave,Math.max(a,b));
+      }
+      const deltaHeight=height(to)-height(from);rayHeight=height(from)+deltaHeight*(deltaHeight>=0?enter:leave);
+    }
     if (obstructionHeight(field, cell) >= rayHeight) return true;
-    if (field.tiles[cell] === 'forest' && rayHeight < 1) forest.add(cell);
+    if (field.tiles[cell] === 'forest' && rayHeight < (field.groundHeight?.[cell]??0)+1) forest.add(cell);
     return forest.size > 2;
   });
 }
 /** 部署先在副本上验证所有容量与阵营归属，失败不改真实单位。 */
 export function gridDeploymentCells(field: BattlefieldSpec, unit: Combatant): number[] {
+  const specific=field.deploymentZones?.filter(z=>z.unitId===unit.id)??[];
+  const bySide=field.deploymentZones?.filter(z=>!z.unitId&&z.side===unit.side)??[];
+  const selected=specific.length?specific:bySide.some(z=>z.landmarkId)?bySide.filter(z=>z.landmarkId):bySide;
+  if(selected.length&&(!isElevated(unit)||selected.some(z=>z.landmarkId))) {
+    let cells=selected[0]!.cells.filter(p=>selected.every(z=>z.cells.includes(p)));
+    if(isElevated(unit))cells=cells.filter(p=>structureAt(field,p)?.top&&structureAt(field,p)!.hp>0);
+    if(unit.rulesVersion==='v2'&&activeTraitIds(unit).includes('vanguard')&&!selected.some(z=>z.landmarkId)) {
+      const front=[...new Set(cells.flatMap(p=>neighbors(field,p)))].filter(p=>!cells.includes(p)&&!groundBlocked(field,p,unit)
+        &&(!field.city?.defender||unit.side===field.city.defender||!field.city.inside.includes(p))
+        &&!field.deploymentZones?.some(z=>z.side!==unit.side&&z.cells.includes(p)));
+      cells=[...cells,...front];
+    }
+    return [...new Set(cells)];
+  }
   if (field.layerVersion && field.city?.defender === unit.side) {
     const cells = isElevated(unit) ? field.city.frontline.filter(p => structureAt(field, p)?.top && structureAt(field, p)!.hp > 0)
       : [...field.city.inside, ...field.city.reserve].filter(p => !groundBlocked(field, p, unit));
@@ -251,6 +286,10 @@ export function gridDeploymentCells(field: BattlefieldSpec, unit: Combatant): nu
     .map((x) => y * field.width + x).filter((cell) => cell !== field.objective.cell);
   return [...forward, ...ordinary].filter(p => !field.city?.defender || unit.side === field.city.defender || !field.city.inside.includes(p));
 }
+export function retreatCells(field:BattlefieldSpec,side:Combatant['side']):number[] {
+  if(side!=='ally'&&side!=='enemy')return [];
+  return field.retreatEdges?.[side]??Array.from({length:field.width},(_,x)=>(side==='ally'?field.height-1:0)*field.width+x);
+}
 /** 小幅扰动按单位/格子派生，数组顺序、评分次数与战斗骰子都不会改变它。 */
 function deploymentNoise(seed: string, id: string, key: string): number {
   return new SeededRng(JSON.stringify(['deployment-v1', seed, id, key])).next();
@@ -266,7 +305,8 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
   const middle = Math.floor(field.height / 2);
   const probes = [...new Set([forward, middle])].flatMap(y => Array.from({ length: field.width }, (_, x) => y * field.width + x))
     .filter(p => field.layerVersion ? !groundBlocked(field, p, unit) : field.tiles[p] !== 'wall');
-  const costs = gridCostsToGoals(field, probes, p => field.layerVersion ? !groundBlocked(field, p, unit) : air || field.tiles[p] !== 'wall', p => tileCost(field, p, unit));
+  const costs = gridCostsToGoals(field, probes, p => field.layerVersion ? !groundBlocked(field, p, unit) : air || field.tiles[p] !== 'wall', (p,from) => tileCost(field, p, unit)+heightStepCost(field,from,p,unit));
+  const contextual=field.deploymentZones?.some(z=>z.unitId===unit.id||!z.unitId&&z.side===unit.side);
   const emptyConditions = new Map<string, ConditionDef>();
   return (position: number, placed: Combatant[]) => {
     const actor = { ...unit, pos: position }, friends = placed.filter(u => u.id !== unit.id && u.side === unit.side);
@@ -278,7 +318,7 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
     const city = field.layerVersion && field.city?.defender === unit.side ? field.city : undefined;
     const slots = city ? (deploymentNoise(seed, unit.id, 'reserve') < .2 && !isElevated(unit) ? city.reserve : city.frontline) : [];
     const lineDistance = slots.length ? Math.min(...slots.map(p => gridDistance(field, p, position))) : 0;
-    let score = (city ? -4 * lineDistance : -5 * Math.abs(y - preferredY)) - 0.45 * Math.abs(x - Math.floor(field.width / 2))
+    let score = (contextual?(ranged?1.2:-1.8)*gridDistance(field,position,field.objective.cell):city ? -4 * lineDistance : -5 * Math.abs(y - preferredY)) - 0.45 * Math.abs(x - Math.floor(field.width / 2))
       - 8 * blockingFriends.filter(u => u.pos === position).length
       - 0.3 * blockingFriends.filter(u => gridDistance(field, u.pos!, position) === 1).length
       - 0.4 * detour - 0.7 * (tileCost(field, position, unit) - 1)
@@ -288,7 +328,7 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
       const targets = probes.filter(p => p !== position && gridDistance(field, position, p) <= gridWeaponRange(unit.weapon));
       const clear = targets.filter(p => {
         const target = { ...actor, id: '@deployment-probe', side: enemy ? 'ally' as const : 'enemy' as const, pos: p, airborne: false };
-        return unitLineOfSight(field, actor, target) && !rangedScreen(actor, target, unit.weapon, friends, { mode: 'small', width: field.width }, emptyConditions);
+        return unitLineOfSight(field, actor, target) && !rangedScreen(actor, target, unit.weapon, friends, { mode: 'small', width: field.width,battlefield:field }, emptyConditions);
       }).length;
       score += clear ? 4 * clear / targets.length : -6;
     }
@@ -299,8 +339,16 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
 /** Pure preparation shared by generator capacity checks and SmallBattle.start. */
 export function prepareGridDeployment(field: BattlefieldSpec, units: readonly Combatant[], seed = 'deployment', conditions?: FlightConditions, enableFlight = true): Combatant[] {
   const prepared = units.map(u => ({ ...u, ...(enableFlight && u.rulesVersion === 'v2' && u.airborne === undefined && !flightCapabilityReason(u, conditions) ? { airborne: true } : {}) }));
+  for(const u of prepared) {
+    const frozen=field.initialDeployment&&Object.hasOwn(field.initialDeployment,u.id)?field.initialDeployment[u.id]:undefined;
+    if(frozen&&u.pos===undefined){if(frozen.airborne&&(!enableFlight||flightCapabilityReason(u,conditions)))throw Error('冻结部署的飞行状态与实际能力不一致');Object.assign(u,frozen);}
+    const zones=field.deploymentZones?.filter(z=>z.unitId===u.id||!z.unitId&&z.side===u.side)??[];
+    if(zones.some(z=>z.platform)){u.elevation=1;u.airborne=false;}
+    else if(zones.some(z=>z.relation==='occupies'||z.relation==='inside'))u.airborne=false;
+  }
   if (field.layerVersion && field.city?.defender) {
-    const guard = prepared.filter(u => u.side === field.city!.defender && u.pos === undefined && !isAirborne(u))
+    const guard = prepared.filter(u => u.side === field.city!.defender && u.pos === undefined && !isAirborne(u)
+      &&gridDeploymentCells(field,{...u,elevation:1}).some(p=>structureAt(field,p)?.top))
       .sort((a,b) => Number(isRangedWeapon(b.weapon)) - Number(isRangedWeapon(a.weapon)) || a.id.localeCompare(b.id));
     const capacity = field.city.frontline.filter(p => structureAt(field,p)?.hp && structureAt(field,p)?.top).length;
     for (const u of guard.slice(0, Math.min(capacity, Math.floor(guard.length * .4)))) u.elevation = 1;
@@ -326,7 +374,7 @@ export function deployOnGrid(field: BattlefieldSpec, units: Combatant[], seed = 
   const select = (unit: Combatant, candidates: number[]) => {
     let legal = candidates.filter(n => canOccupy(field, occupied, unit, n));
     // 先锋优先利用专属前出域，避免占掉普通单位唯一可用的部署容量。
-    if (modern && activeTraitIds(unit).includes('vanguard')) {
+    if (modern && activeTraitIds(unit).includes('vanguard')&&!field.deploymentZones?.length) {
       const forward = unit.side === 'enemy' ? 3 : field.height - 4;
       const advanced = legal.filter(n => Math.floor(n / field.width) === forward);
       if (advanced.length) legal = advanced;
@@ -356,7 +404,7 @@ export function terrainTacticalValue(field: BattlefieldSpec, cell: number, actor
   for (const foe of foes) {
     const distant = gridDistance(field, cell, foe.pos!) > 1;
     if (terrain === 'cover' && distant || actor.rulesVersion === 'v2' && terrain === 'forest' && distant && isRangedWeapon(foe.weapon)) protection += 2;
-    else if (actor.rulesVersion === 'v2' && terrain === 'hill' && (isAirborne(foe) || field.tiles[foe.pos!] !== 'hill')) protection += 1;
+    else if (actor.rulesVersion === 'v2' && (field.spatialRulesVersion===2?unitHeight(field,{...actor,pos:cell})>unitHeight(field,foe):terrain === 'hill' && (isAirborne(foe) || field.tiles[foe.pos!] !== 'hill'))) protection += 1;
   }
   const penalty = actor.rulesVersion === 'v2' && (terrain === 'forest' && !traits.includes('forest-lore') || terrain === 'hill' && !traits.includes('mountain-born')) ? .45 : 0;
   const concealment = traits.includes('stalk') && ['cover', 'forest'].includes(terrain ?? '')

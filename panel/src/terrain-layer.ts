@@ -3,6 +3,8 @@
 import type { FieldStructure } from '../../engine/src/small/layers.js';
 import { mapFamily, safeLandmarkLabel } from '../../engine/src/small/map-design.js';
 import type { BattlefieldSpec, Terrain } from '../../engine/src/small/spatial.js';
+import { retreatCells } from '../../engine/src/small/spatial.js';
+import { surfaceHeightAt } from '../../engine/src/small/height-map.js';
 
 const S = 100;
 type Style = 'field' | 'city' | 'compound' | 'interior' | 'trenches';
@@ -105,6 +107,7 @@ export function terrainKey(field: BattlefieldSpec): string {
   const legacy = field.generation?.landmark;
   key += '|' + JSON.stringify(field.landmarks?.map(m => [m.label, m.cells]) ?? (legacy ? [legacy.label, legacy.cells] : ''));
   if (field.objective.kind === 'control') key += '|z' + (field.objective.cells ?? [field.objective.cell]).join('.');
+  key+='|h'+JSON.stringify([field.groundHeight,field.heightTransitions,field.retreatEdges,field.structures?.map(s=>s?[s.platformHeight,s.obstructionHeight,s.deckHeight]:null)]);
   return key;
 }
 
@@ -409,9 +412,24 @@ function buildTerrain(field: BattlefieldSpec, id: string): string {
     path('t-zone-fill', blob(g, zone, inZone, 10, -6, false), ` fill="url(#${id}-hatch)"`);
     path('t-zone-line', outline(g, zone, 6));
   }
-  // 撤离方向：我方最下沿、敌方最上沿。
+  if(field.spatialRulesVersion===2)for(let level=1;level<=3;level++) {
+    const cells=all(p=>surfaceHeightAt(field,p)>=level&&!isWater(p));
+    path('t-height-fill t-height-'+level,blob(g,cells,p=>cells.includes(p),4,0,false));
+    path('t-height-contour',outline(g,cells,2));
+    let slopes='',drops='';
+    for(const p of cells) {
+      const [x,y]=at(p);
+      if(p%g.w<g.w-1&&surfaceHeightAt(field,p+1)<level){const d=surfaceHeightAt(field,p)-surfaceHeightAt(field,p+1);if(d>1)drops+=`M${x+94} ${y+8}v84`;else slopes+=`M${x+90} ${y+40}l-10 10l10 10`;}
+      if(Math.floor(p/g.w)<g.h-1&&surfaceHeightAt(field,p+g.w)<level){const d=surfaceHeightAt(field,p)-surfaceHeightAt(field,p+g.w);if(d>1)drops+=`M${x+8} ${y+94}h84`;else slopes+=`M${x+40} ${y+90}l10 -10l10 10`;}
+    }
+    path('t-slope',slopes);path('t-drop',drops);
+  }
+  // Retreat markers follow the frozen deployment direction.
   let exits = '';
-  for (let x = 0; x < g.w; x++) exits += `M${x * S + 38} ${H - 13}l12 8l12 -8M${x * S + 38} 13l12 -8l12 8`;
+  for(const p of [...new Set([...retreatCells(field,'ally'),...retreatCells(field,'enemy')])]) {
+    const [x,y]=at(p);
+    exits+=Math.floor(p/g.w)===0?`M${x+38} ${y+13}l12 -8l12 8`:Math.floor(p/g.w)===g.h-1?`M${x+38} ${y+87}l12 8l12 -8`:p%g.w===0?`M${x+13} ${y+38}l-8 12l8 12`:`M${x+87} ${y+38}l8 12l-8 12`;
+  }
   path('t-exit', exits);
   let grid = '';
   for (let x = 1; x < g.w; x++) grid += `M${x * S} 0V${H}`;

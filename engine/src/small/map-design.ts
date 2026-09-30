@@ -1,4 +1,6 @@
 import { ROUTE_TOPOLOGIES, type RouteGraph, type RouteTopology } from './route-graph.js';
+import { safeLandmarkLabel } from './map-label.js';
+export {safeLandmarkLabel} from './map-label.js';
 /** Bounded design vocabulary shared by the local builder and the optional LLM director.
  * A design describes geometry, never executable code or a replacement tile array. */
 export const MAP_DESIGN_OPTIONS = {
@@ -51,11 +53,6 @@ export function mapDesignSummary(design: MapDesign): string {
 }
 
 /** Display-only noun phrase. Reject markup, control characters and oversized payloads. */
-export function safeLandmarkLabel(value: unknown): string | undefined {
-  if (typeof value !== 'string' || value.length > 64) return undefined;
-  const label = value.trim();
-  return label && [...label].length <= 32 && /^[\p{L}\p{N} ·・—–\-()（）]+$/u.test(label) ? label : undefined;
-}
 export function landmarkAt(field: { generation?: MapGenerationRecord; tiles: readonly string[] }, cell: number): string | undefined {
   const marks = (field as { landmarks?: import('./layers.js').FieldLandmark[] }).landmarks;
   const label = marks?.find(m => m.cells?.includes(cell))?.label;

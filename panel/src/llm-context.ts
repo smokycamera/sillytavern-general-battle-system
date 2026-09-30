@@ -12,6 +12,8 @@ import type { Combatant } from '../../engine/src/index.js';
 import type { CommanderProfiles, CommanderProfile } from '../../engine/src/commander-profile.js';
 import type { NarrativeMessage, ContextSelectionAnswer } from '../../vendor/jev-core/src/index.js';
 import type { NarrativeIdState } from './narrative-ids.js';
+import { narrativeIds } from './narrative-ids.js';
+import { narrativeMapSources } from './narrative-map-source.js';
 
 export interface LlmEncounterContext extends JevEncounterContext, PreparationDesignResult { commanders?: CommanderProfiles }
 export function llmContextSummary(context: LlmEncounterContext): string {
@@ -48,18 +50,25 @@ export class LlmContextController {
     for (const field of request.fields) delete field.options.unknown;
     for (const side of ['ally', 'enemy']) {
       const who = side === 'ally' ? '我方实际指挥官（主控不一定是指挥官）' : '敌方实际指挥官';
-      request.fields.push({ id: side + '_ability', question: `结合正文中的身份、经历、组织与行动表现，自行判断${who}最合适的指挥能力；优先明确设定，信息不足时合理推断，不把战斗等级、人数或胜负直接等同于指挥能力。`, options: { ...ABILITY_LABELS } });
-      request.fields.push({ id: side + '_style', question: `结合设定、行为倾向、当前任务与处境，自行选择${who}最合适的指挥风格；没有明确性格标签时根据上下文合理推断。`, options: Object.fromEntries(Object.entries(STYLE_PRESETS).map(([k, v]) => [k, v.label])) });
+      request.fields.push({ id: side + '_ability', question: `结合身份、经历、组织与行动表现，判断${who}的指挥能力；不把战斗等级、人数或胜负直接等同于指挥能力。`, options: { ...ABILITY_LABELS } });
+      request.fields.push({ id: side + '_style', question: `结合行为倾向、当前任务与处境，选择${who}的指挥风格。`, options: Object.fromEntries(Object.entries(STYLE_PRESETS).map(([k, v]) => [k, v.label])) });
     }
     const coreRequest = { ...request, fields: [...request.fields] };
     const designRequest = preparationDesignRequest(input.roster, forcedMass ? { ...settings, selectBattleScale: false } : settings, forcedMass ? { ...input.setup, mode: 'mass' } : input.setup, input.unitNotes, request.messages.map(m => m.text).join('\n'), true);
+    const bindings=narrativeIds({storage:input.roster,narrativeIdState:input.narrativeIdState});
+    if(designRequest.compactMap) {
+      const source=narrativeMapSources(request.messages); request.messages=source.messages;
+      designRequest.narrativeSources=source.sources;
+      designRequest.unitBindings=Object.fromEntries(activeBattleUnits(input.roster).map(u=>[bindings.publicId(u.id),u.id]));
+    }
     request.fields.push(...designRequest.fields);
     request.state = {
       encounter: request.state,
       protocol: 'battlefield-v2',
       ...(designRequest.compactMap ? { mapRules: BATTLEFIELD_PLAN_PROMPT } : {}),
-      commandRules: '可在答案顶层添加commanders:{ally:{preferences:{}},enemy:{preferences:{}}}。preferences从reserve预备队/risk冒险/counterattack反击/cohesion协同/breach破障选最多3项，各0—4整数，2为普通。选择实际任务需要的差异；指挥能力不改变属性或赋予隐藏视野。防守默认考虑纵深/机动/前沿防区，不默认核心龟缩。不要输出解释。',
-      ...(designRequest.compactMap ? { units: activeBattleUnits(input.roster).slice(0, 32).map(u => ({ name: u.name.slice(0, 80), side: u.side, body: u.body ?? 'human',
+      ...(designRequest.compactMap ? { narrativeSources:designRequest.narrativeSources?.map(s=>({id:s.id})) } : {}),
+      commandRules: '可返回顶层commanders:{ally:{preferences:{}},enemy:{preferences:{}}}。preferences从reserve预备队/risk冒险/counterattack反击/cohesion协同/breach破障选最多3项，各0—4整数，2为普通。根据当前任务选择偏好，防守结合前沿、机动和纵深防区。',
+      ...(designRequest.compactMap ? { units: activeBattleUnits(input.roster).slice(0, 32).map(u => ({ id:bindings.publicId(u.id),name: u.name.slice(0, 80), side: u.side, body: u.body ?? 'human',
         note: (input.unitNotes?.[u.id] ?? '').slice(0, 160), traits: activeTraitIds(u), ranged: isRangedWeapon(u.weapon), weaponLevel: u.weapon?.level ?? 1,
         spells: u.abilities.filter(a => a.delivery === 'magic' && a.effects.some(e => e.op === 'damage')).map(a => a.power ?? 1).slice(0, 3) })) } : {}),
     };

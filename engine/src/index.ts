@@ -68,3 +68,6 @@ export * from './small/route-graph.js';
 export * from './small/layers.js';
 export * from './small/battlefield-plan.js';
 export * from './small/layered-generator.js';
+export * from './small/scene-intent.js';
+export * from './small/scene-compiler.js';
+export * from './small/height-map.js';

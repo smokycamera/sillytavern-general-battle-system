@@ -107,7 +107,7 @@ describe('route graph, landmarks and tactical geometry', () => {
     for (const env of ['plains', 'forest', 'mountain', 'urban', 'siege', 'indoor']) {
       const fields = Array.from({length: 40}, (_, n) => generatedField('diversity-floor-' + n, env === 'indoor' ? 5 : 7,
         env === 'indoor' ? 7 : 13, env === 'indoor' ? [] : [env]));
-      const metrics = fields.map(measureMap); let pairs = 0, similarity = 0, macroDistance = 0;
+      const metrics = fields.map(f => measureMap(f)); let pairs = 0, similarity = 0, macroDistance = 0;
       for (let a = 0; a < fields.length; a++) for (let b = a + 1; b < fields.length; b++) {
         pairs++; similarity += tileSimilarity(fields[a]!, fields[b]!);
         macroDistance += metrics[a]!.spatialProfile.reduce((sum, v, i) => sum + Math.abs(v - metrics[b]!.spatialProfile[i]!), 0) / 144;

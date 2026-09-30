@@ -10,8 +10,12 @@ import { normalizeBattlefieldPlan, type BattlefieldPlan, type LandmarkPlan, CITY
 import { createStructure, groundBlocked, type CityShape, type FieldLandmark } from './layers.js';
 import { validateField, neighbors, findGridPath, gridDistance, prepareGridDeployment, footprint, type BattlefieldSpec, type Terrain } from './spatial.js';
 import { safeLandmarkLabel, type BattlefieldScene } from './map-design.js';
+import { landmarkAnchorCell, landmarkCandidates } from './landmark-placement.js';
+import { compileScenePlan, finishSceneRegions, validateSceneFacts,deriveRetreatEdges } from './scene-compiler.js';
+import { buildPlannedCity, buildPlannedWater, applySceneArchetype, selectSceneArchetype } from './scene-layout-v2.js';
+import { initializeHeightMap } from './height-map.js';
 
-export interface LayeredGenerationOptions extends FieldGenerationOptions { plan?: BattlefieldPlan; scene?: BattlefieldScene }
+export interface LayeredGenerationOptions extends FieldGenerationOptions { plan?: BattlefieldPlan; scene?: BattlefieldScene; unitBindings?: Record<string,string> }
 export function recommendedCitySize(roster: readonly Combatant[] = [], size?: BattlefieldPlan['size']): [number, number] {
   if (size === 'large' || !size && roster.length > 20) return [13, 19];
   if (size === 'compact' || !size && roster.length > 0 && roster.length <= 6) return [9, 15];
@@ -19,12 +23,12 @@ export function recommendedCitySize(roster: readonly Combatant[] = [], size?: Ba
 }
 /** Bounded local safety pass: grow instead of dropping cards, changing traits or opening intact walls. */
 export function generatedLayeredField(seed: string, width = 7, height = 13, tags: string[] = [], options: LayeredGenerationOptions = {}): BattlefieldSpec {
-  const roster = options.roster ?? [], plan = normalizeBattlefieldPlan(options.plan).plan;
+  const roster = options.roster ?? [], plan = compileScenePlan(normalizeBattlefieldPlan(options.plan).plan);
   const active = roster.filter(u => u.hp > 0 && u.status === 'ready');
   if (active.length > MAX_SMALL_UNITS) throw Error('小战最多32张单位卡，33—64张应采用会战');
   const scene = options.scene ?? resolveBattlefieldScene(plan, environmentTags(tags), width);
-  const city = ['city_siege', 'city_streets', 'building_siege'].includes(scene);
-  if (plan?.gatePlan?.length && !['city_siege','building_siege','interior'].includes(scene))
+  const city = ['city_siege', 'city_streets', 'building_siege'].includes(scene)||!!plan?.intent?.entities.some(e=>e.kind==='city');
+  if (plan?.gatePlan?.length && !['city_siege','building_siege','interior'].includes(scene)&&!plan.intent?.entities.some(e=>e.kind==='city'))
     throw new BattlefieldPlanError('此场景不含门墙；门设计请配合city_siege、building_siege或interior');
   let initial: [number, number] = city && width <= 7 ? recommendedCitySize(active, plan?.size)
     : scene === 'interior' && width === 7 ? plan?.size === 'large' ? [9,15] : plan?.size === 'standard' ? [7,13] : [5,7] : [width, height];
@@ -35,20 +39,28 @@ export function generatedLayeredField(seed: string, width = 7, height = 13, tags
   const candidates: [number,number][] = [initial, ...sizes.filter(([w]) => w > initial[0])];
   const fixed = roster.some(u => u.pos !== undefined);
   let lastError: unknown;
-  for (const [w,h] of candidates) {
+  for (const [w,h] of candidates) for(let attempt=0;attempt<(plan?.intent?6:1);attempt++) {
     try {
-      const field = generateLayeredCandidate(seed, w, h, tags, { ...options, plan, scene });
-      if (active.length) prepareGridDeployment(field, active, seed);
+      const candidateSeed=attempt===0?seed:`${seed}:scene-candidate-${attempt}`;
+      const field = generateLayeredCandidate(candidateSeed, w, h, tags, { ...options, plan, scene });
+      if(attempt)field.generation!.notes=[...(field.generation!.notes??[]),`为满足正文关系采用第${attempt+1}个本地布局候选`];
+      if (active.length) {
+        const prepared=prepareGridDeployment(field,active,seed);validateSceneFacts(field,prepared);
+        field.initialDeployment=Object.fromEntries(prepared.map(u=>[u.id,{pos:u.pos!,...(u.elevation?{elevation:u.elevation}:{}),...(u.airborne!==undefined?{airborne:u.airborne}:{})}]));
+      }
       const wanted = plan?.breaches?.count ?? 0;
-      if (!fixed && field.city?.defender && (field.city.breaches?.length ?? 0) < wanted && w < 13) continue;
+      if (!fixed && field.city?.defender && (field.city.breaches?.length ?? 0) < wanted && w < 13) break;
       if (w !== width || h !== height) {
         const requested = city && width === 7 ? recommendedCitySize(active, plan?.size) : [width,height];
         if (w !== requested[0] || h !== requested[1]) field.generation!.notes = [...(field.generation!.notes ?? []), `为容纳完整部署/破口，地图调整为${w}×${h}`];
       }
       return field;
     } catch (error) {
-      if (fixed || !(error instanceof Error) || !/部署|容量不足/.test(error.message)) throw error;
+      const relational=!!plan?.intent&&error instanceof Error&&/正文关系|正文指定|合法位置|部署|容量不足/.test(error.message);
+      if (!(error instanceof Error)||!relational&&(fixed||!/部署|容量不足/.test(error.message))) throw error;
       lastError = error;
+      if (error.message.startsWith('城市与水岸部署容量不足')) break;
+      if(!relational)break;
     }
   }
   throw lastError ?? Error('无法为完整名单生成合法部署');
@@ -56,13 +68,20 @@ export function generatedLayeredField(seed: string, width = 7, height = 13, tags
 
 /** New preparation only; never call this on a loaded snapshot. No model or combat RNG is involved. */
 function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: string[] = [], options: LayeredGenerationOptions = {}): BattlefieldSpec {
-  const plan = normalizeBattlefieldPlan(options.plan).plan;
+  let plan = compileScenePlan(normalizeBattlefieldPlan(options.plan).plan);
   const environment = environmentTags(tags), scene = options.scene ?? resolveBattlefieldScene(plan, environment, width);
   const siege = scene === 'city_siege', city = siege || scene === 'city_streets';
   if (city && width === 7) [width, height] = recommendedCitySize(options.roster, plan?.size);
   const random = new SeededRng('layered-field-v1:' + seed);
   const int = (min: number, max: number) => min + Math.floor(random.next() * (max - min + 1));
   const pick = <T>(items: readonly T[]) => items[int(0, items.length - 1)]!;
+  const supplied=options.plan!==undefined;
+  if(!supplied) {
+    const archetype=selectSceneArchetype(scene,environment.includes('forest')?'forest':environment.includes('mountain')?'mountain':'plains',seed);
+    plan={archetype,...(city?{cityPosition:(options.attackingSide??'ally')==='ally'?'north':'south'}:{}),
+      ...(siege?{shape:archetype==='riverside'?'riverside':archetype==='hilltown'?'hillside':'front'}:{}),
+      ...(['river_crossing','forest_stream','riverside'].includes(archetype)?{water:'river',bridgePlan:[{anchor:'center',state:'intact',width:1}],...(archetype==='riverside'?{waterPosition:'east',waterAxis:'vertical'}:{})}:{})};
+  }
   // Preserve route-builder variety; it remains useful for streets and ordinary outdoor terrain.
   let field = generatedField(seed, width, height, tags, options);
   if (plan) field = generatedField(seed, width, height, tags, { ...options,
@@ -83,7 +102,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   if (scene === 'interior') field.generation!.family = 'indoor';
   else if (scene === 'city_siege' || scene === 'building_siege') field.generation!.family = 'siege';
   else if (scene === 'city_streets') field.generation!.family = 'urban';
-  field.generation!.source = plan || options.design ? 'context' : 'random';
+  field.generation!.source = supplied || options.design ? 'context' : 'random';
   delete field.generation!.landmark;
   if (!siege) field.objective = {kind:'annihilation',cell:field.objective.cell,limit:field.objective.limit};
   const attack = options.attackingSide ?? 'ally', defender = attack === 'ally' ? 'enemy' : 'ally';
@@ -92,7 +111,14 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   const wallLevel = plan?.fortLevel ?? 3;
   let inner: number[] = [], frontline: number[] = [], gates: number[] = [], core: number[] = [], reserve: number[] = [];
   let frontDepth = Math.floor(height * .53), left = 0, right = width - 1;
-  if (city) {
+  const plannedCity=!!plan&&(!!plan.cityPosition||!!plan.intent?.entities.some(e=>e.kind==='city'));
+  if(plannedCity) {
+    buildPlannedCity(field,plan!,seed,scene,attack);
+    inner=field.city!.inside;frontline=field.city!.frontline;gates=field.city!.gates;core=field.city!.core;reserve=field.city!.reserve;
+    frontDepth=frontline.length?Math.max(...frontline.map(depthOf)):Math.floor(height*.53);
+    left=Math.min(...inner.map(p=>p%width));right=Math.max(...inner.map(p=>p%width));
+  }
+  if (city && !plannedCity) {
     field.tiles.fill('open'); field.structures.fill(null);
     const shape: CityShape | 'district' = siege ? plan?.shape ?? pick(CITY_SHAPES.filter(s => s !== 'broken')) : 'district';
     frontDepth = siege ? int(Math.floor(height * .48), Math.floor(height * .60)) : height - 4;
@@ -212,7 +238,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
     if (!siege) field.objective.cell = core[0]!;
   }
   if (['interior','building_siege','trenches'].includes(scene)) {
-    buildSpecialScene(field,scene,plan,random,attack);
+    buildSpecialScene(field,scene,plan?{...plan,...(plan.archetype==='fortress'?{layout:'strongpoint'}:plan.archetype==='great_hall'?{breadth:'broad'}:{})}:plan,random,attack);
     inner=field.city?.inside ?? []; frontline=field.city?.frontline ?? []; gates=field.city?.gates ?? [];
     core=field.city?.core ?? []; reserve=field.city?.reserve ?? [];
     if (field.city) {
@@ -225,7 +251,9 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   }
   // Water changes routes. Bridges are real structures; no trait is granted to the roster.
   const water = scene === 'interior' ? 'none' : plan?.water ?? (scene !== 'field' ? 'none' : pick(['none', 'none', 'none', 'ford', 'river'] as const));
-  if (water !== 'none' && width > 5) {
+  if(plan&&(plan.bridgePlan!==undefined||plan.waterAxis||plan.intent?.entities.some(e=>e.kind==='river'))) {
+    buildPlannedWater(field,{...plan,water},seed);
+  } else if (water !== 'none' && width > 5) {
     const d = city ? Math.min(height - 4, frontDepth + 2) : Math.floor(height / 2);
     // Keep the actual approach paths when laying water over existing terrain.
     // Random bridge columns alone can land behind cliffs and disconnect the goal.
@@ -245,6 +273,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
       field.structures[p] = createStructure('bridge', wallLevel); field.overlays[p] = ['road'];
     }
   }
+  if(plan?.archetype)applySceneArchetype(field,plan.archetype,seed);
   // Marshes are passable but expensive and do not blanket a primary approach.
   if (scene === 'field' && width > 5 && random.next() < .45) {
     const p = at(pick([0, width - 1]), int(3, height - 4));
@@ -264,50 +293,56 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   const protectedCells = new Set([...core, field.objective.cell, ...gates, ...(options.roster??[]).flatMap(u=>u.pos!==undefined?[u.pos]:[]), ...(field.city?.frontline ?? []),
     ...field.structures.flatMap((s,p)=>s?.kind==='gate'?[p]:[])]);
   // A supplied plan never inherits random fallback landmarks, including an omitted/empty list.
-  for (const mark of (plan ? plan.landmarks ?? [] : defaults).slice(0, 5)) {
+  for (const mark of (supplied ? plan?.landmarks ?? [] : defaults).slice(0, 5)) {
     if (scene === 'interior' && ['hill','forest','bridge','tower','square','building'].includes(mark.kind))
       throw new BattlefieldPlanError('室内地标与场景不匹配，请使用room、cover、position、ruins或fortification');
     if (mark.kind === 'room' && !['interior','building_siege'].includes(scene))
       throw new BattlefieldPlanError('房间地标需要室内或建筑围攻场景');
     const semanticCore = ['square','position','room'].includes(mark.kind) || scene === 'building_siege' && mark.kind === 'building';
-    let x = mark.anchor.endsWith('left') ? left + 2 : mark.anchor.endsWith('right') ? right - 2 : Math.floor(width / 2);
-    let d = mark.anchor === 'approach' ? Math.min(height - 4, frontDepth + 1) : mark.anchor.startsWith('front') ? frontDepth - 1
-      : mark.anchor === 'rear' ? 2 : mark.anchor === 'core' ? depthOf(core[0] ?? field.objective.cell) : Math.max(3, frontDepth - 3);
-    x = Math.max(0, Math.min(width - 1, x)); d = Math.max(1, Math.min(height - 2, d));
-    let p = at(x, d);
+    let anchor=landmarkAnchorCell(field,mark.anchor,defender,frontDepth,left,right);
+    if(mark.edge){const x=anchor%width,y=Math.floor(anchor/width);anchor=mark.anchor.includes('west')?y*width:mark.anchor.includes('east')?y*width+width-1:mark.anchor.includes('north')?x:mark.anchor.includes('south')?(height-1)*width+x:anchor;}
+    let p = anchor;
+    if (mark.anchor==='riverbank') p=landmarkCandidates(field,mark,anchor,n=>!protectedCells.has(n)&&!marked.has(n))[0]??-1;
+    if(p<0) { if(plan) throw new BattlefieldPlanError('河岸地标没有合法水岸位置'); else continue; }
     if (semanticCore && mark.anchor === 'core' && core.length) p = core[0]!;
     if (mark.kind === 'fortification' && scene === 'trenches') {
       const trench=field.structures.flatMap((s,n)=>s?.kind==='fortification'&&!marked.has(n)?[n]:[]);
       p=trench.sort((a,b)=>gridDistance(field,a,p)-gridDistance(field,b,p)||a-b)[0] ?? p;
     } else if (mark.kind === 'building' && scene !== 'building_siege') {
-      const plots=field.structures.flatMap((s,n)=>s?.kind==='building'&&!marked.has(n)&&!protectedCells.has(n)?[n]:[]);
+      const plots=landmarkCandidates(field,mark,anchor,n=>field.structures![n]?.kind==='building'&&!marked.has(n)&&!protectedCells.has(n));
       if (!plots.length) { if (plan) throw new BattlefieldPlanError('建筑地标部署容量不足，请调整布局或地标'); else continue; }
       p=plots.sort((a,b)=>gridDistance(field,a,p)-gridDistance(field,b,p)||a-b)[0]!;
     } else if (mark.kind === 'building' && scene === 'building_siege') {
       p=inner.filter(n=>!marked.has(n)&&!groundBlocked(field,n)).sort((a,b)=>gridDistance(field,a,p)-gridDistance(field,b,p)||a-b)[0] ?? p;
     } else if (mark.kind === 'bridge') {
-      const waters = field.tiles.flatMap((t, n) => t === 'deep_water' || t === 'shallow_water' ? [n] : []);
+      const waters = field.tiles.flatMap((t, n) => (plan?.bridgePlan!==undefined?field.structures![n]?.kind==='bridge':t === 'deep_water' || t === 'shallow_water') ? [n] : []);
       if (!waters.length) { if (plan) throw new BattlefieldPlanError('桥梁地标需要水域，请在同一设计中选择river、ford或moat'); else continue; }
       p = waters.sort((a, b) => gridDistance(field, a, p) - gridDistance(field, b, p) || a - b)[0]!;
-    } else if (protectedCells.has(p) && !(semanticCore && core.includes(p)) || marked.has(p) || groundBlocked(field,p)) {
-      const candidate = field.tiles.map((_, n) => n).filter(n => !marked.has(n) && !protectedCells.has(n) && !groundBlocked(field, n))
-        .sort((a, b) => gridDistance(field, a, p) - gridDistance(field, b, p) || a - b)[0];
-      if (candidate === undefined) continue; p = candidate;
+    } else if (protectedCells.has(p) && !(semanticCore && core.includes(p)) || marked.has(p) || groundBlocked(field,p)||['deep_water','shallow_water'].includes(field.tiles[p]!)) {
+      const candidate = landmarkCandidates(field,mark,anchor,n=>!marked.has(n)&&(!protectedCells.has(n)||semanticCore&&n===field.objective.cell)&&!groundBlocked(field,n)&&!['deep_water','shallow_water'].includes(field.tiles[n]!))[0];
+      if (candidate === undefined) { if(plan) throw new BattlefieldPlanError(`地标${mark.label??mark.kind}在指定区域部署容量不足`); else continue; } p = candidate;
     }
     if (mark.kind === 'tower' && city && inner.includes(p)) {
-      const plots = inner.filter(n => field.structures![n]?.kind === 'building' && !marked.has(n) && !protectedCells.has(n));
+      const plots = landmarkCandidates(field,mark,anchor,n=>inner.includes(n)&&field.structures![n]?.kind==='building'&&!marked.has(n)&&!protectedCells.has(n));
       if (!plots.length) { if (plan) throw new BattlefieldPlanError('塔楼地标部署容量不足，请调整布局或地标'); else continue; }
       // Replace an already closed parcel; never sever an existing alley for a tower.
       p = plots.sort((a, b) => gridDistance(field, a, p) - gridDistance(field, b, p) || a - b)[0]!;
     }
     const cells = [p];
-    if (mark.scale === 'major' && mark.kind !== 'tower' && mark.kind !== 'bridge' && mark.kind !== 'building') cells.push(...neighbors(field, p).filter(n => !protectedCells.has(n) && !marked.has(n) && !groundBlocked(field, n)).slice(0, 2));
+    if(mark.kind==='building'&&field.structures[p]?.entityId)cells.push(...field.structures.flatMap((s,n)=>n!==p&&s?.entityId===field.structures![p]!.entityId?[n]:[]));
+    if (mark.scale === 'major' && mark.kind !== 'tower' && mark.kind !== 'bridge' && mark.kind !== 'building') {
+      const size=Math.max(3,Math.min(10,Math.ceil(field.tiles.length*.04)));
+      for(let i=0;i<cells.length&&cells.length<size;i++)for(const n of neighbors(field,cells[i]!)) {
+        if(cells.length>=size)break;
+        if(!cells.includes(n)&&!protectedCells.has(n)&&!marked.has(n)&&!groundBlocked(field,n)&&!['deep_water','shallow_water'].includes(field.tiles[n]!))cells.push(n);
+      }
+    }
     for (const n of cells) {
       if (core.includes(n) && !semanticCore) continue;
       if (mark.kind === 'ruins') field.overlays[n] = [...new Set([...(field.overlays[n] ?? []), 'rubble' as const])];
       else if (mark.kind === 'fortification') field.structures[n] = createStructure('fortification', mark.level ?? wallLevel);
       else if (mark.kind === 'cover') field.structures[n] = createStructure('cover', mark.level ?? wallLevel);
-      else if (mark.kind === 'bridge') field.structures[n] = createStructure('bridge', mark.level ?? wallLevel);
+      else if (mark.kind === 'bridge'&&plan?.bridgePlan===undefined) field.structures[n] = createStructure('bridge', mark.level ?? wallLevel,{entityId:mark.id??`bridge_${n}`});
       else if (mark.kind === 'tower') {
         // A tower stands beside circulation, never replaces a gate or the objective.
         if (field.overlays[n]?.includes('road') || protectedCells.has(n)) continue;
@@ -317,11 +352,16 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
     }
     const actual = cells.filter(n => !marked.has(n) && !(core.includes(n) && !semanticCore)
       && (mark.kind !== 'tower' || field.structures![n]?.kind === 'tower'));
-    if (!actual.length) continue;
+    if (!actual.length) {if(supplied)throw new BattlefieldPlanError(`地标${mark.label??mark.kind}没有合法位置，部署容量不足`);else continue;}
     actual.forEach(n => marked.add(n));
-    field.landmarks.push({ kind: mark.kind, label: safeLandmarkLabel(mark.label) ?? labels[mark.kind], cells: actual, scale: mark.scale ?? 'minor' });
+    field.landmarks.push({ ...(mark.id?{id:mark.id}:{}), kind: mark.kind, label: safeLandmarkLabel(mark.label) ?? labels[mark.kind], cells: actual, scale: mark.scale ?? 'minor' });
+    if(p!==anchor && mark.anchor!=='riverbank') field.generation!.notes=[...(field.generation!.notes??[]),`地标${mark.label??labels[mark.kind]}在指定区域内调整${gridDistance(field,p,anchor)}格`];
   }
   if (plan?.landmarks?.length && !field.landmarks.length) throw new BattlefieldPlanError('请求的地标无法落到合法位置，未使用随机地标；请调整设计');
+  finishSceneRegions(field,plan,options.unitBindings,options.roster);
+  initializeHeightMap(field,plan);
+  deriveRetreatEdges(field);
+  validateSceneFacts(field);
   validateField(field);
   return field;
 }
