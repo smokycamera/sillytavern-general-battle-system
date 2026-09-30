@@ -5,8 +5,17 @@ import { MEMBER_HEALTH_MODEL } from './member-health.js';
 import { formationNode } from './mass/formation.js';
 import { postureActive } from './tactics.js';
 import { canShootOverAlly } from './body.js';
+import { eyeHeight,unitHeight } from './small/height-map.js';
+import type { BattlefieldSpec } from './small/spatial.js';
 
-export interface GuardSpace { mode: 'small' | 'mass'; width?: number }
+export interface GuardSpace { mode: 'small' | 'mass'; width?: number; battlefield?: BattlefieldSpec }
+function rayClearsUnit(attacker:Combatant,target:Combatant,unit:Combatant,space:GuardSpace):boolean {
+  const field=space.battlefield;if(space.mode!=='small'||field?.spatialRulesVersion!==2)return false;
+  const ax=attacker.pos!%field.width,ay=Math.floor(attacker.pos!/field.width),dx=target.pos!%field.width-ax,dy=Math.floor(target.pos!/field.width)-ay;
+  const t=Math.max(0,Math.min(1,((unit.pos!%field.width-ax)*dx+(Math.floor(unit.pos!/field.width)-ay)*dy)/Math.max(1,dx*dx+dy*dy)));
+  const height=eyeHeight(field,attacker)+(eyeHeight(field,target)-eyeHeight(field,attacker))*t;
+  return height>unitHeight(field,unit)+({human:.5,large:.75,vehicle:.75,giant:1}[unit.body??'human']);
+}
 function coordinates(unit: Combatant, space: GuardSpace) {
   if (space.mode === 'mass') return formationNode(unit);
   return { x: unit.pos! % space.width!, y: Math.floor(unit.pos! / space.width!) };
@@ -25,7 +34,7 @@ export function shieldScreen(attacker: Combatant, target: Combatant, weapon: Wea
   const dx = to.x - from.x, dy = to.y - from.y, lengthSquared = dx * dx + dy * dy;
   if (!lengthSquared) return undefined;
   return units.filter(guard => {
-    if (guard.id === target.id || guard.side !== target.side || !shieldGuardActive(guard, defs)
+    if (guard.id === target.id || guard.side !== target.side || rayClearsUnit(attacker,target,guard,space) || !shieldGuardActive(guard, defs)
       || guard.tacticalPose!.mode !== space.mode || space.mode === 'small' && guard.tacticalPose!.width !== space.width) return false;
     const at = coordinates(guard, space), facing = guard.tacticalPose!.facing;
     const backX = to.x - at.x, backY = to.y - at.y;
@@ -58,7 +67,8 @@ export function rangedScreen(attacker: Combatant, target: Combatant, weapon: Wea
   if (!lengthSquared) return undefined;
   const bypassFriends = ignoresFriendlyScreen(weapon);
   const blockers = units.filter(unit => {
-    if (bypassFriends && unit.side === attacker.side || canShootOverAlly(attacker, unit)) return false;
+    if (bypassFriends && unit.side === attacker.side || rayClearsUnit(attacker,target,unit,space)
+      || canShootOverAlly(attacker, unit)&&(!space.battlefield||space.battlefield.spatialRulesVersion!==2||unitHeight(space.battlefield,attacker)>=unitHeight(space.battlefield,unit))) return false;
     if (unit.id === attacker.id || unit.id === target.id || isAirborne(unit) || unit.hp <= 0 || !['ready', 'routing'].includes(unit.status)) return false;
     const at = coordinates(unit, space), x = at.x - from.x, y = at.y - from.y;
     const along = x * dx + y * dy, cross = x * dy - y * dx;

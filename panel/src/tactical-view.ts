@@ -1,5 +1,7 @@
 import { SCENE_NAMES } from '../../engine/src/small/map-design.js';
-import { movementStepCost, structureDisplayName } from '../../engine/src/small/spatial.js';
+import { movementStepCost, structureDisplayName,retreatCells } from '../../engine/src/small/spatial.js';
+import { heightDescription,surfaceHeightAt,unitHeight } from '../../engine/src/small/height-map.js';
+import { SCENE_ARCHETYPE_NAMES } from '../../engine/src/small/scene-intent.js';
 import { structureAt, intactStructure, groundBlocked, isElevated } from '../../engine/src/small/layers.js';
 import { ZONE_NAMES } from '../../engine/src/area-effects.js';
 import { tbWeaponShortName } from '../../engine/src/weapon-name.js';
@@ -73,7 +75,7 @@ export function selectTacticalElement(battle: SmallBattle, view: TacticalView, i
   return selection.query;
 }
 
-function terrainDescription(terrain: Terrain, actor?: Combatant): string {
+function terrainDescription(terrain: Terrain, actor?: Combatant,heightRules=false): string {
   const airborne = actor && isAirborne(actor);
   const traits = actor ? activeTraitIds(actor) : [];
   const effect = {
@@ -87,9 +89,9 @@ function terrainDescription(terrain: Terrain, actor?: Combatant): string {
     wall: '阻挡地面通行与地面直射；空中单位可越过。',
     rough: '地面移动花费2点，' + difficultEngagementDescription(actor?.damageModel) + '。',
     forest: '地面单位抵御一格以外的远射时防御提高2；' + difficultEngagementDescription(actor?.damageModel) + '。',
-    hill: '地面单位面对不在山地的攻击者时防御提高1；' + difficultEngagementDescription(actor?.damageModel) + '。',
+    hill: heightRules?'按实际高度判断：高于攻击者的地面单位防御提高1；台地内部正常移动，上坡额外消耗移动。':'地面单位面对不在山地的攻击者时防御提高1；' + difficultEngagementDescription(actor?.damageModel) + '。',
   }[terrain];
-  const penalty = terrain === 'forest' || terrain === 'hill'
+  const penalty = terrain === 'forest' || terrain === 'hill'&&!heightRules
     ? traits.includes(terrain === 'forest' ? 'forest-lore' : 'mountain-born') ? '当前单位适应该地形，免额外移动与攻击惩罚。' : '未适应的地面单位在此攻击降低1。'
     : '';
   return effect + (airborne ? '当前单位在空中，不享受地面地形防护与适应效果。' : penalty);
@@ -121,8 +123,8 @@ function tileInspector(battle: SmallBattle, view: TacticalView, selection: Retur
   }).join('') : '';
   const gateReason = actor && structure?.kind === 'gate' ? battle.gateReason(actor.id, cell) : undefined;
   const climbReason = actor ? battle.climbReason(actor.id, cell) : undefined;
-  return `<div class="map-inspector" aria-live="polite"><div class="inspector-heading"><strong>${cellLabel(field, cell)} · ${landmarkAt(field, cell) ? esc(landmarkAt(field, cell)!) + ' · ' : ''}${terrainName(field, cell)}</strong><span>${actor && traversable ? '进入花费' + movementStepCost(field, cell, actor, battle.fieldTags) + '移动' : terrain === 'wall' || !traversable ? '地面不可通行' : ''}</span></div>
-    <p>${terrainDescription(terrain, actor)}</p>
+  return `<div class="map-inspector" aria-live="polite"><div class="inspector-heading"><strong>${cellLabel(field, cell)} · ${landmarkAt(field, cell) ? esc(landmarkAt(field, cell)!) + ' · ' : ''}${terrainName(field, cell)}${field.spatialRulesVersion===2?' · '+heightDescription(field,cell):''}</strong><span>${actor && traversable ? Number.isFinite(movementStepCost(field,cell,actor,battle.fieldTags))?'相邻进入花费'+movementStepCost(field,cell,actor,battle.fieldTags)+'移动':'需经坡道或阶梯接近' : terrain === 'wall' || !traversable ? '地面不可通行' : ''}</span></div>
+    <p>${terrainDescription(terrain, actor,field.spatialRulesVersion===2)}${field.spatialRulesVersion===2?' '+heightDescription(field,cell)+'；相邻高差超过1级需坡道或阶梯。':''}</p>
     ${structure ? `<p><b>${structureDisplayName(field, cell)} L${structure.level}</b> · 耐久 ${structure.hp}/${structure.hpMax}${structure.top && structure.hp > 0 ? ' · 可登城防平台' : ''}${structure.kind === 'fortification' ? ' · 全向防护' : structure.facing ? ' · 朝向 ' + ({north:'北',south:'南',east:'东',west:'西'}[structure.facing]) : ''}</p>` : ''}
     ${field.overlays?.[cell]?.length ? '<p>' + field.overlays[cell]!.map(o => o === 'road' ? '道路' : '瓦砾：基础2移动；慢速单位花费整轮基础移动力可前进一步').join(' · ') + '</p>' : ''}
     <div class="structure-actions">${structureActions}
@@ -194,6 +196,7 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
   const seen = field.tiles.map((_, cell) => battle.cellVisible('ally', cell));
   const liveZones = battle.combatants.flatMap(u => u.battleZones ?? []).filter(z => z.mode === 'small' && (z.kind !== 'trap' || z.side === 'ally'));
   const goalCell = field.objective.kind !== 'annihilation' ? field.objective.cell : undefined;
+  const inspectedMark=field.landmarks?.find(m=>m.cells.includes(view.inspectedCell??-1));
   const controlCells = new Set(field.objective.kind === 'control' ? field.objective.cells ?? [] : []);
   const cells = field.tiles.map((terrain, cell) => {
     const occupants = occupantsAt.get(cell) ?? [];
@@ -201,13 +204,13 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
     const inRange = !!actor && range && (range.metric === 'global' || range.metric === 'self' ? range.metric === 'global' || cell === actor.pos : distance >= range.min && distance <= range.max);
     const structure = structureAt(field, cell), inspected = view.inspectedCell === cell, landmark = landmarkAt(field, cell);
     const flags = [terrain, structure?.hp ? 'structure-' + structure.kind + (structure.kind === 'gate' ? ' gate-' + structure.gateState : '') : '', ...(field.overlays?.[cell] ?? []).map(o => 'overlay-' + o), controlCells.has(cell) ? 'control-region' : '', trace?.cells.includes(cell) ? 'trace-cell' : '', !seen[cell] ? 'unobserved' : '', reachable.has(cell) ? 'reachable' : '', paths.has(cell) ? 'path' : '',
-      occupants.some((u) => u.id === actor?.id) ? 'selected' : '', inspected ? 'inspected' : '',
+      occupants.some((u) => u.id === actor?.id) ? 'selected' : '', inspected ? 'inspected' : '',inspectedMark?.cells.includes(cell)?'landmark-focus':'',
       goalCell === cell ? 'objective' : '', inRange ? 'in-range' : '', (targets.has('cell:'+cell) || occupants.some((u) => targets.has(u.id))) ? 'legal-target' + (occupants.some((u) => targets.has(u.id) && u.side === 'ally') ? ' legal-ally' : '') : '',
       (target?.targetId==='cell:'+cell || occupants.some((u) => u.id === target?.targetId)) && mode !== 'move' && mode !== 'guard' ? 'targeted' : '', occupants.some((u) => area.has(u.id)) ? 'area-hit' : '', occupants.length > 1 ? 'stacked' : ''].filter(Boolean).join(' ');
     const zones = seen[cell] ? liveZones.filter(z => Math.abs(z.x - cell % field.width) + Math.abs(z.y - Math.floor(cell / field.width)) <= z.radius) : [];
-    const label = zones.map(z=>ZONE_NAMES[z.kind]).join('、')+' '+cellLabel(field, cell) + ' ' + (landmark ?? '') + ' ' + terrainName(field, cell) + ' ' + occupants.map((u) => (u.side === 'ally' ? '我方' : u.side === 'enemy' ? '敌方' : '中立') + u.name).join('、');
+    const label = zones.map(z=>ZONE_NAMES[z.kind]).join('、')+' '+cellLabel(field, cell) + ' ' + (landmark ?? '') + ' ' + terrainName(field, cell) + ' '+heightDescription(field,cell)+' ' + occupants.map((u) => (u.side === 'ally' ? '我方' : u.side === 'enemy' ? '敌方' : '中立') + u.name).join('、');
     // 地形与结构由底图表达；格内只放单位、状态与被查看格的名称。
-    const inner = (landmark ? '<span class="grid-landmark" aria-hidden="true">◇</span>' : '') + (goalCell === cell ? '<span class="grid-goal" aria-hidden="true">旗</span>' : '')
+    const inner = (field.spatialRulesVersion===2 ? '<span class="grid-height" aria-hidden="true">高'+surfaceHeightAt(field,cell)+'</span>' : '') + (landmark ? '<span class="grid-landmark" aria-hidden="true">◇</span>' : '') + (goalCell === cell ? '<span class="grid-goal" aria-hidden="true">旗</span>' : '')
       + occupants.map((u) => gridPiece(battle, u, u.id === actor?.id)).join('')
       + (occupants.length > 1 ? '<span class="grid-stack-count">' + occupants.length + '队</span>' : '')
       + (structure?.hp && (structure.hp < structure.hpMax || inspected) ? `<span class="structure-hp" style="--integrity:${Math.max(0, Math.min(100, structure.hp / structure.hpMax * 100))}%"></span>` : '')
@@ -244,8 +247,9 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
     ${over ? '<div class="banner">' + (battle.winner() === 'ally' ? '任务胜利' : battle.winner() === 'enemy' ? '任务失败' : '任务结束：僵持') + '</div>' : ''}
     ${renderBattleHighlights(battle)}
     <div class="tactical-columns"><div class="tactical-map-column">
-      <div class="map-toolbar"><span class="map-legend">${mode === 'move' ? '蓝底可到达 · 金点为路径' : mode === 'guard' ? '选择固守或警戒' : '浅蓝底为射程 · 红框为可选目标'}</span><div class="map-tools">${MAP_KEY}<button data-action="grid-zoom" aria-label="切换地图缩放，当前${MAP_ZOOM_LABELS[zoom]}">缩放 · ${MAP_ZOOM_LABELS[zoom]}</button><button data-action="grid-focus">定位我方</button></div></div>
-      ${field.landmarks?.length ? '<div class="map-landmark">' + field.landmarks.map(m => '◇ ' + esc(m.label) + ' ' + m.cells.map(p => cellLabel(field, p)).join('、')).join(' · ') + '</div>' : markedCells.length && landmarkAt(field, markedCells[0]!) ? '<div class="map-landmark">◇ ' + esc(landmarkAt(field, markedCells[0]!)!) + ' · ' + markedCells.map(p => cellLabel(field, p)).join('、') + '</div>' : ''}
+      <div class="map-toolbar"><span class="map-legend">${mode === 'move' ? '蓝底可到达 · 金点为路径' : mode === 'guard' ? '选择固守或警戒' : '浅蓝底为射程 · 红框为可选目标'}</span><div class="map-tools">${field.retreatEdges?MAP_KEY.replace('撤离方向：我方下沿，敌方上沿','撤离方向：以本场边缘标记为准'):MAP_KEY}<button data-action="grid-zoom" aria-label="切换地图缩放，当前${MAP_ZOOM_LABELS[zoom]}">缩放 · ${MAP_ZOOM_LABELS[zoom]}</button><button data-action="grid-focus">定位我方</button></div></div>
+      ${field.landmarks?.length ? '<div class="map-landmark">' + field.landmarks.map(m => '<button data-action="grid-cell" data-cell="'+m.cells[0]+'">◇ '+esc(m.label)+'</button> ' + m.cells.map(p => cellLabel(field, p)).join('、')).join(' · ') + '</div>' : markedCells.length && landmarkAt(field, markedCells[0]!) ? '<div class="map-landmark">◇ ' + esc(landmarkAt(field, markedCells[0]!)!) + ' · ' + markedCells.map(p => cellLabel(field, p)).join('、') + '</div>' : ''}
+      ${field.scene ? '<details class="map-context"><summary>'+esc(field.scene.archetype?SCENE_ARCHETYPE_NAMES[field.scene.archetype]:'场景关系')+' · 上北下南 · 查看布局依据</summary><ul>'+field.scene.fulfilled.map(text=>'<li>'+esc(text)+'</li>').join('')+'</ul></details>' : ''}
       <div class="grid-camera" tabindex="0" aria-label="战场地图，可横向和纵向滚动"><div class="grid-stage" style="--columns:${field.width};--rows:${field.height}">${rulers}<div class="grid-stage-body">${rows}<div class="grid-board" style="--columns:${field.width}">${terrainLayer(field)}${cells}${traceOverlay(battle)}</div></div></div></div>
       ${renderRoundFeedback(battle)}${tileInspector(battle, view, s)}
     </div><div class="grid-command">
@@ -272,7 +276,7 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
         <label>查看我方单位<select data-role="grid-unit">${visible.filter((u) => u.side === 'ally').map((u) => '<option value="' + esc(u.id) + '" ' + (u.id === actor?.id ? 'selected' : '') + '>' + esc(u.name) + (u.id === battle.active?.id ? ' · 当前' : '') + '</option>').join('')}</select></label>
         ${actor && (isAirborne(actor) || activeTraitIds(actor).includes('flying')) ? `<p>${esc(battle.flightReason(actor.id, !isAirborne(actor)) ?? '起飞离开接敌可能触发借机；扑击会先降落。')}</p>` : ''}
         <p class="suppression-description">消耗1次主行动和1点战技点，需要合法射击目标；不造成生命伤害。目标攻击命中 -2，停用借机与警戒反应、取消现有警戒，且不能固守或冲锋；持续到目标完成2次行动结算。</p>${actor && battle.suppressReason(actor.id, target?.targetId) ? '<p class="grid-reason">' + esc(battle.suppressReason(actor.id, target?.targetId)!) + '</p>' : ''}
-        <p>我方撤离点：地图最下排标“撤”的格子；敌方从最上排撤离。脱离敌人至少2格并保留主行动后可撤离。${esc(s.allOptions.find((o) => o.id === 'retreat')?.reason ?? '')}</p>
+        <p>${field.retreatEdges?'本场我方撤离点：'+retreatCells(field,'ally').map(p=>cellLabel(field,p)).join('、')+'。':'我方撤离点：地图最下排标“撤”的格子；敌方从最上排撤离。'}脱离敌人至少2格并保留主行动后可撤离。${esc(s.allOptions.find((o) => o.id === 'retreat')?.reason ?? '')}</p>
         <button data-action="grid-auto" ${canControl ? '' : 'disabled'}>移交当前单位本次行动给AI</button><p>由AI代打当前单位的这次行动，后续回合仍按原控制设置执行。</p>
         <label><input type="checkbox" data-role="auto-turn" ${autoTurn ? 'checked' : ''}>自动非主控单位</label>
         <p>地面对空射程距离额外 +2 格，曲射火炮不能对空。射程底色只表示平面距离；目标亮边和禁用原因同时考虑视线、接敌、装备、状态与行动成本。暗区可能存在未发现的敌军。</p>

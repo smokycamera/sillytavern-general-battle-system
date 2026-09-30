@@ -89,6 +89,13 @@ body[data-theme="light"] .tactical-workspace {
 .terrain-layer .t-exit{fill:none;stroke:var(--t-exit);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
 .terrain-layer .t-grid{fill:none;stroke:var(--t-grid);stroke-width:1}
 .terrain-layer .t-landmark-line{fill:none;stroke:var(--t-landmark);stroke-width:2.6;stroke-dasharray:3 6;stroke-linecap:round}
+.t-height-fill{fill:rgba(226,194,110,.055)} .t-height-2{fill:rgba(226,194,110,.09)} .t-height-3{fill:rgba(226,194,110,.14)}
+.terrain-layer .t-height-contour{fill:none;stroke:var(--t-contour);stroke-width:3}
+.terrain-layer .t-slope{fill:none;stroke:var(--t-hill-light);stroke-width:4;stroke-linecap:round}
+.terrain-layer .t-drop{fill:none;stroke:var(--t-contour);stroke-width:8;stroke-dasharray:10 5}
+.grid-height{position:absolute;right:2px;top:1px;font-size:9px;color:var(--dim);pointer-events:none}
+.grid-cell.landmark-focus{box-shadow:inset 0 0 0 2px var(--gold)}
+.map-landmark button{font-size:11px;padding:3px 6px;min-height:28px}.map-context{margin:6px 0;font-size:12px}.map-context ul{margin:5px 0;padding-left:20px}
 
 /* 交互格：透明，只承载状态与棋子。 */
 .tactical-workspace .grid-cell { position:relative; z-index:1; box-sizing:border-box; margin:0; padding:0; border:0; border-radius:0; background:transparent; color:var(--txt); min-width:44px; min-height:44px; overflow:hidden; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; text-align:center; container-type:size; isolation:auto; filter:none; box-shadow:none; }

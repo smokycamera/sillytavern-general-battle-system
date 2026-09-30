@@ -1,8 +1,9 @@
 import { abilityCost } from './resources.js';
 import { flightCapabilityReason, isAirborne } from './aerial.js';
 import { prepareCombatModel } from './combat-model.js';
-import { memberHealth } from './member-health.js';
-import { recoveryCapacity, regenerationAmount } from './recovery.js';
+import { memberHealth,hasMemberHealth } from './member-health.js';
+import { recoveryCapacity, regenerationAmount,applyCombatDamage } from './recovery.js';
+import { unitHeight,surfaceHeightAt } from './small/height-map.js';
 import { zoneAmount, zoneEffectDescription } from './zone-skills.js';
 import type { Ability, ActiveCondition, Combatant, EffectOp } from './types.js';
 import type { Rng } from './rng.js';
@@ -106,7 +107,7 @@ export function applyDispel(target: Combatant, chosen: DispelCandidate[]): void 
     else { const source = target.traitSources?.find((s) => s.id === entry.id); if (source) source.revoked = true; }
   }
 }
-export interface PushPreview { reason?: string; cell?: number; nodeId?: string; label?: string }
+export interface PushPreview { reason?: string; cell?: number; nodeId?: string; label?: string;fallDamage?:number;groundLanding?:boolean }
 export function pushStrength(actor: Combatant, effect: PushEffect): number { return effect.physical ? Math.min(effect.force, bodyRank(actor) + 1) : effect.force; }
 export function pushPreview(context: ObservationContext, actor: Combatant, target: Combatant, effect: PushEffect): PushPreview {
   if (target.hp <= 0 || target.status === 'dead' || target.status === 'fled') return { reason: '目标已离场' };
@@ -127,13 +128,20 @@ export function pushPreview(context: ObservationContext, actor: Combatant, targe
   }
   if (!field) return { reason: '位移技能需要二维战场' };
   const x = to.x + step.x, y = to.y + step.y, cell = y * field.width + x;
-  if (x < 0 || x >= field.width || y < 0 || y >= field.height || !canOccupy(field, context.units, unit, cell)) return { reason: '推离位置受阻，不产生碰撞伤害' };
-  return { cell, label: terrainCellLabel(field, cell, target) };
+  const groundLanding=field.spatialRulesVersion===2&&!isAirborne(unit)&&unit.elevation===1&&!field.structures?.[cell]?.top;
+  const landing=groundLanding?{...unit,elevation:undefined}:unit;
+  if (x < 0 || x >= field.width || y < 0 || y >= field.height || !canOccupy(field, context.units, landing, cell)) return { reason: '推离位置受阻，不产生碰撞伤害' };
+  const drop=field.spatialRulesVersion===2&&!isAirborne(unit)?unitHeight(field,unit)-surfaceHeightAt(field,cell,landing):0;
+  if(drop< -1)return {reason:'高差阻断推拉，无法把目标推上陡台'};
+  const fallDamage=drop>1?Math.max(1,Math.round(memberHealth(target)*Math.min(.3,.1*drop))):undefined;
+  return { cell, label: terrainCellLabel(field, cell, landing)+(fallDamage?` · 坠落伤害${fallDamage}生命`:''),...(fallDamage?{fallDamage}:{}),...(groundLanding?{groundLanding:true}:{}) };
 }
 export function applyPush(context: ObservationContext, actor: Combatant, target: Combatant, effect: PushEffect): PushPreview {
   const result = pushPreview(context, actor, target, effect);
   if (result.reason) return result;
   if (result.cell !== undefined) target.pos = result.cell;
+  if(result.groundLanding)delete target.elevation;
+  if(result.fallDamage)applyCombatDamage(target,result.fallDamage,hasMemberHealth(target)?target.hp:1);
   if (result.nodeId) target.formationPosition = result.nodeId;
   delete target.tacticalPose; revealUnit(context, target); return result;
 }

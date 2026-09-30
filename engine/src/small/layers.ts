@@ -5,6 +5,7 @@ import type { Combatant, Weapon } from '../types.js';
 import { activeTraitIds } from '../trait-sources.js';
 import { isAirborne } from '../aerial.js';
 import type { BattlefieldSpec } from './spatial.js';
+import { groundHeightAt,unitHeight,heightTransition } from './height-map.js';
 
 export const STRUCTURE_NAMES = { cover: '掩体', fortification: '工事', wall: '城墙', gate: '城门', building: '建筑', tower: '塔楼', bridge: '桥梁' } as const;
 export type StructureKind = keyof typeof STRUCTURE_NAMES;
@@ -12,6 +13,10 @@ export const STRUCTURE_ANCHORS = ['临时', '简易', '正规', '重型', '要�
 export type GroundOverlay = 'road' | 'rubble';
 export interface FieldStructure {
   kind: StructureKind;
+  entityId?: string;
+  platformHeight?: number;
+  obstructionHeight?: number;
+  deckHeight?: number;
   level: number;
   hp: number;
   hpMax: number;
@@ -24,7 +29,7 @@ export interface FieldStructure {
   /** Legacy metadata, ignored by fortification protection. New fortifications omit it. */
   facing?: 'north' | 'south' | 'east' | 'west';
 }
-export interface FieldLandmark { kind: string; label: string; cells: number[]; scale: 'minor' | 'major' }
+export interface FieldLandmark { id?: string; kind: string; label: string; cells: number[]; scale: 'minor' | 'major' }
 export type CityShape = 'front' | 'enclosure' | 'riverside' | 'hillside' | 'broken';
 export interface CityRecord {
   shape: CityShape | 'district';
@@ -36,6 +41,8 @@ export interface CityRecord {
   core: number[];
   reserve: number[];
   defender?: 'ally' | 'enemy';
+  facing?: 'north'|'south'|'east'|'west';
+  frontage?: number[];
 }
 export function structureAt(field: BattlefieldSpec, cell: number): FieldStructure | undefined { return field.structures?.[cell] ?? undefined; }
 export function intactStructure(field: BattlefieldSpec, cell: number): FieldStructure | undefined {
@@ -53,11 +60,12 @@ export function groundBlocked(field: BattlefieldSpec, cell: number, actor?: Comb
   return t === 'deep_water' && s?.kind !== 'bridge' && !(actor && activeTraitIds(actor).includes('water-crossing'));
 }
 export function obstructionHeight(field: BattlefieldSpec, cell: number): number {
-  if (field.tiles[cell] === 'cliff') return 3;
-  if (field.tiles[cell] === 'wall') return 1;
+  const ground=groundHeightAt(field,cell);
+  if (field.tiles[cell] === 'cliff') return ground+3;
+  if (field.tiles[cell] === 'wall') return ground+1;
   const s = intactStructure(field, cell);
-  if (!s) return 0;
-  return s.kind === 'building' || s.kind === 'tower' ? 2 : s.kind === 'wall' || s.kind === 'gate' && s.gateState !== 'open' ? 1 : 0;
+  if (!s) return ground;
+  return ground+(s.obstructionHeight??(s.kind === 'building' || s.kind === 'tower' ? 2 : s.kind === 'wall' || s.kind === 'gate' && s.gateState !== 'open' ? 1 : 0));
 }
 export function layerMoveCost(field: BattlefieldSpec, cell: number, actor?: Combatant): number | undefined {
   if (!field.layerVersion) return undefined;
@@ -69,7 +77,7 @@ export function layerMoveCost(field: BattlefieldSpec, cell: number, actor?: Comb
   let cost = t === 'shallow_water' ? traits.includes('water-crossing') ? 1 : 2
     : t === 'deep_water' ? 3 : t === 'swamp' ? traits.includes('water-crossing') ? 2 : 3
       : t === 'forest' ? traits.includes('forest-lore') ? 1 : 2
-        : t === 'hill' ? traits.includes('mountain-born') ? 1 : 2 : t === 'rough' ? 2 : 1;
+        : t === 'hill' ? field.spatialRulesVersion===2||traits.includes('mountain-born') ? 1 : 2 : t === 'rough' ? 2 : 1;
   // A road changes ground cost, not a barricade, water or rubble sitting on it.
   if (overlays.includes('road') && !['deep_water', 'shallow_water', 'swamp'].includes(t ?? '')) cost = 1;
   if (overlays.includes('rubble')) cost = Math.max(cost, 2);
@@ -79,7 +87,7 @@ export function layerMoveCost(field: BattlefieldSpec, cell: number, actor?: Comb
 export function structureDefense(field: BattlefieldSpec, defender: Combatant, attacker: Combatant, ranged: boolean): number {
   if (!field.layerVersion || isAirborne(defender) || defender.pos === undefined || attacker.pos === undefined) return 0;
   const s = intactStructure(field, defender.pos); if (!s) return 0;
-  if (isElevated(defender)) return isElevated(attacker) ? 0 : 2;
+  if (isElevated(defender)) return field.spatialRulesVersion===2?(unitHeight(field,defender)>unitHeight(field,attacker)?isElevated(attacker)?1:2:0):isElevated(attacker) ? 0 : 2;
   if (s.kind === 'cover') return ranged ? 2 : 0;
   if (s.kind !== 'fortification') return 0;
   // Facing in an older snapshot is harmless provenance, not a directional protection rule.
@@ -95,9 +103,17 @@ export function canClimbFrom(field: BattlefieldSpec, actor: Combatant, target: n
   return !!s?.top && (!!s.access?.includes(actor.pos) || activeTraitIds(actor).includes('siege-assault'));
 }
 export function meleeHeightReason(field: BattlefieldSpec, a: Combatant, b: Combatant): string | undefined {
+  const transition=field.spatialRulesVersion===2?heightTransition(field,a.pos!,b.pos!):'flat';
+  if(field.spatialRulesVersion===2&&!isAirborne(a)&&!isAirborne(b)&&isElevated(a)===isElevated(b)
+    &&(Math.abs(unitHeight(field,a)-unitHeight(field,b))>1&&!['stairs','ramp'].includes(transition)||!isElevated(a)&&transition==='cliff'))return '高差阻断近战；需接近坡道或阶梯';
   if (!field.layerVersion || isAirborne(a) || isAirborne(b) || isElevated(a) === isElevated(b)) return;
   const ground = isElevated(a) ? b : a, top = isElevated(a) ? a : b;
   return canClimbFrom(field, ground, top.pos!) ? undefined : '高差阻断近战；需通过梯道或具备登城能力';
+}
+export function meleeContact(field:BattlefieldSpec|undefined,a:Combatant,b:Combatant):boolean {
+  if(isAirborne(a)!==isAirborne(b))return false;
+  if(!field||field.spatialRulesVersion!==2)return isElevated(a)===isElevated(b);
+  return !meleeHeightReason(field,a,b);
 }
 /** Single-grade durability budget. Unit level does not silently rescale the scenery. */
 export function structureDurability(kind: StructureKind, level: number): number {

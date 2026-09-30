@@ -5,6 +5,7 @@ import { applyCombatDamage, applyRecovery, recoveryCapacity } from './recovery.j
 import { armorTransmission, overmatchMultiplier } from './power-anchors.js';
 import { poisonFactor } from './afflictions.js';
 import { unitLineOfSight } from './small/spatial.js';
+import { unitHeight,eyeHeight } from './small/height-map.js';
 import { activeTraitIds } from './trait-sources.js';
 import { zoneAmount, zonePenetration, validateZoneStrength } from './zone-skills.js';
 import { prepareCondition, applySkillCondition, applySkillTrait, applyPush, dispelCandidates, applyDispel } from './skill-effects.js';
@@ -16,7 +17,7 @@ import { rollDice } from './dice.js';
 
 type Point = { x: number; y: number };
 type ZoneEffect = Extract<EffectOp, { op: 'zone' }>;
-export interface BattleZone extends Point { id: string; ownerId: string; side: Combatant['side']; kind: ZoneEffect['kind']; power: number; amount?: number; penetration?: number; effects?: ZoneEffect['effects']; radius: number; remaining: number; createdRound: number; lastRound: number; affected: string[]; mode: 'small' | 'mass' }
+export interface BattleZone extends Point { id: string; ownerId: string; side: Combatant['side']; kind: ZoneEffect['kind']; power: number; amount?: number; penetration?: number; effects?: ZoneEffect['effects']; radius: number; remaining: number; createdRound: number; lastRound: number; affected: string[]; mode: 'small' | 'mass'; surface?:'ground'|'platform';height?:number }
 export const ZONE_NAMES = { fire: '燃烧区域', poison: '毒雾', smoke: '烟幕', healing: '治疗区域', trap: '陷阱' } as const;
 export const AREA_NAMES = { cone: '扇形', line: '直线', ring: '环形', chain: '连锁', circle: '圆形' } as const;
 export function areaPosition(context: ObservationContext, unit: Combatant): Point {
@@ -37,12 +38,16 @@ export function visibleBattleZones(context: ObservationContext, side: Combatant[
 export function areaTargets(context: ObservationContext, actor: Combatant, primary: Combatant, ability: Ability, valid: (unit: Combatant) => boolean): Combatant[] {
   const area = ability.area; if (!area) return [primary];
   const origin = areaPosition(context, actor), pivot = areaPosition(context, primary);
-  const eligible = context.units.filter(u => u.side === primary.side && u.hp > 0 && !['dead','fled'].includes(u.status) && valid(u)).sort((a,b) => a.id.localeCompare(b.id));
+  const field=context.battlefield;
+  const connects=(from:Combatant,to:Combatant)=>field?.spatialRulesVersion!==2||!!from.airborne===!!to.airborne
+    &&Math.abs(unitHeight(field,from)-unitHeight(field,to))<=area.radius&&unitLineOfSight(field,from,to);
+  const eligible = context.units.filter(u => u.side === primary.side && u.hp > 0 && !['dead','fled'].includes(u.status) && valid(u)
+    &&(area.shape==='chain'||connects(primary,u))).sort((a,b) => a.id.localeCompare(b.id));
   if (area.shape === 'chain') {
     const result: Combatant[] = eligible.some(u => u.id === primary.id) ? [primary] : [];
     while (result.length && result.length < area.maxTargets) {
       const last = areaPosition(context, result.at(-1)!);
-      const next = eligible.filter(u => !result.some(r => r.id === u.id) && distance(last, areaPosition(context,u)) <= area.radius)
+      const next = eligible.filter(u => !result.some(r => r.id === u.id) && distance(last, areaPosition(context,u)) <= area.radius&&connects(result.at(-1)!,u))
         .sort((a,b) => distance(last,areaPosition(context,a))-distance(last,areaPosition(context,b)) || a.id.localeCompare(b.id))[0];
       if (!next) break; result.push(next);
     }
@@ -63,7 +68,7 @@ export function zoneTarget(context: ObservationContext, actor: Combatant, id?: s
   const unit = context.units.find(u => u.id === id); if (unit) return unit;
   if (context.mode === 'small' && /^cell:\d+$/.test(id) && context.battlefield) {
     const cell=Number(id.slice(5)); if (cell<0 || cell>=context.battlefield.tiles.length || context.battlefield.tiles[cell]==='wall') return undefined;
-    return {...actor,id,name:'选定位置',pos:cell,airborne:false};
+    return {...actor,id,name:'选定位置',pos:cell,airborne:false,...(context.battlefield.spatialRulesVersion===2?{elevation:undefined}:{})};
   }
   if (context.mode === 'mass' && id.startsWith('zone:')) {
     const node=FORMATION_NODES.find(n=>n.id===id.slice(5));
@@ -74,6 +79,7 @@ export function zoneTarget(context: ObservationContext, actor: Combatant, id?: s
 export function placeZone(context: ObservationContext, actor: Combatant, target: Combatant, effect: ZoneEffect, round: number, abilityId: string): BattleZone {
   const point=areaPosition(context,target), id=actor.id+':'+abilityId+':'+effect.kind;
   const zone:BattleZone={...point,id,ownerId:actor.id,side:actor.side,kind:effect.kind,power:effect.power,amount:zoneAmount(effect),penetration:zonePenetration(effect),radius:effect.radius,remaining:effect.dur,createdRound:round,lastRound:round,affected:[],mode:context.mode};
+  if(context.battlefield?.spatialRulesVersion===2){zone.surface=target.elevation===1?'platform':'ground';zone.height=unitHeight(context.battlefield,{...target,airborne:false});}
   if (effect.effects?.length) zone.effects=structuredClone(effect.effects);
   actor.battleZones=(actor.battleZones??[]).filter(old=>old.id!==id);
   actor.battleZones.push(zone); return zone;
@@ -85,6 +91,7 @@ export function smokeBlocks(context: ObservationContext, from: Combatant, to: Co
   return context.units.flatMap(u=>u.battleZones??[]).some(z=>{
     if(z.mode!==context.mode || z.kind!=='smoke' || z.remaining<=0)return false;
     const t=Math.max(0,Math.min(1,((z.x-a.x)*dx+(z.y-a.y)*dy)/length));
+    if(context.battlefield?.spatialRulesVersion===2&&z.height!==undefined&&eyeHeight(context.battlefield,from)+(eyeHeight(context.battlefield,to)-eyeHeight(context.battlefield,from))*t>z.height+1.5)return false;
     return Math.hypot(z.x-a.x-t*dx,z.y-a.y-t*dy)<=z.radius+.35;
   });
 }
@@ -100,7 +107,9 @@ export function settleZones(context: ObservationContext, round: number, boundary
         if(target.hp<=0 || ['dead','fled'].includes(target.status) || target.airborne || zone.affected.includes(target.id) || distance(zone,areaPosition(context,target))>zone.radius)continue;
         if(zone.kind==='healing' || zone.kind==='smoke' ? target.side!==zone.side : zone.kind==='trap' && target.side===zone.side)continue;
         if(context.battlefield) {
-          const anchor={...target,pos:zone.y*context.battlefield.width+zone.x,airborne:false};
+          if(context.battlefield.spatialRulesVersion===2&&zone.surface!==undefined&&(target.elevation===1)!==(zone.surface==='platform'))continue;
+          const anchor={...target,pos:zone.y*context.battlefield.width+zone.x,airborne:false,...(zone.surface!==undefined?{elevation:zone.surface==='platform'?1 as const:undefined}:{})};
+          if(context.battlefield.spatialRulesVersion===2&&zone.height!==undefined&&Math.abs(unitHeight(context.battlefield,target)-zone.height)>zone.radius)continue;
           if(!unitLineOfSight(context.battlefield,anchor,target))continue;
         }
         zone.affected.push(target.id);
@@ -158,5 +167,6 @@ export function validateAreas(unit: Combatant): void {
   for(const zone of unit.battleZones??[]) {
     if(!zone || typeof zone.id!=='string' || !zone.id || ids.has(zone.id) || zone.side!==unit.side || zone.ownerId!==unit.id || !Object.hasOwn(ZONE_NAMES,zone.kind) || !['small','mass'].includes(zone.mode) || !Number.isSafeInteger(zone.x) || zone.x<0 || !Number.isSafeInteger(zone.y) || zone.y<0 || !Number.isInteger(zone.radius) || zone.radius<0 || zone.radius>3 || !Number.isInteger(zone.power) || zone.power<1 || zone.power>10 || !Number.isInteger(zone.remaining) || zone.remaining<1 || zone.remaining>99 || !Number.isSafeInteger(zone.createdRound) || zone.createdRound<1 || !Number.isSafeInteger(zone.lastRound) || zone.lastRound<zone.createdRound || !Array.isArray(zone.affected) || zone.affected.some(id=>typeof id!=='string') || new Set(zone.affected).size!==zone.affected.length)throw Error('持续区域的存档不完整');
     validateZoneStrength(zone); ids.add(zone.id);
+    if(zone.surface!==undefined&&!['ground','platform'].includes(zone.surface)||zone.height!==undefined&&(!Number.isFinite(zone.height)||zone.height<0||zone.height>5))throw Error('持续区域高度损坏');
   }
 }

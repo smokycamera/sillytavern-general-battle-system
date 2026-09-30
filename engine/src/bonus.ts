@@ -66,6 +66,8 @@ export interface ResolveContext {
   fieldTags?: string[];
   terrain?: string;
   localTerrain?: boolean;
+  heightRules?: boolean;
+  heightAdvantage?: boolean;
   opponentTerrain?: string;
   distance?: number;
   engaged?: boolean;
@@ -318,9 +320,9 @@ export function collectMods(
     const traits = activeTraitIds(unit);
     if (humanEncumbered(unit)) equipment.push({ source: 'intrinsic', sourceId: 'equipment:encumbrance', name: '人形重载', kind: 'spd', type: 'flat', value: -2 });
     if (ctx.fieldTags?.includes('night') && !traits.includes('night-fighter')) equipment.push({ source: 'stance', sourceId: 'environment:night', name: '夜间行动', kind: 'atk', type: 'flat', value: -2 });
-    if (ctx.terrain === 'forest' && !traits.includes('forest-lore') || ctx.terrain === 'hill' && !traits.includes('mountain-born')) equipment.push({ source: 'stance', sourceId: 'environment:ground', name: '困难地形', kind: 'atk', type: 'flat', value: -1 });
+    if (ctx.terrain === 'forest' && !traits.includes('forest-lore') || !ctx.heightRules&&ctx.terrain === 'hill' && !traits.includes('mountain-born')) equipment.push({ source: 'stance', sourceId: 'environment:ground', name: '困难地形', kind: 'atk', type: 'flat', value: -1 });
     if (ctx.ranged && (ctx.distance ?? 0) > 1 && ctx.terrain === 'forest') equipment.push({ source: 'stance', sourceId: 'environment:forest-cover', name: '林木掩护', kind: 'def', type: 'flat', value: 2 });
-    if (ctx.terrain === 'hill' && ctx.opponentTerrain !== 'hill') equipment.push({ source: 'stance', sourceId: 'environment:high-ground', name: '高地', kind: 'def', type: 'flat', value: 1 });
+    if (ctx.heightRules?ctx.heightAdvantage:ctx.terrain === 'hill' && ctx.opponentTerrain !== 'hill') equipment.push({ source: 'stance', sourceId: 'environment:high-ground', name: '高地', kind: 'def', type: 'flat', value: 1 });
     equipment.push(...fieldModsFor(unit, ctx.localTerrain ? [...(ctx.fieldTags ?? []).filter(t => t !== 'urban'), ...(ctx.terrain === 'street' ? ['urban'] : [])] : ctx.fieldTags ?? [], registry));
   }
   if (unit.rulesVersion === 'v2' && fatiguePenalty(unit) > 0) equipment.push({ source: 'condition', sourceId: 'fatigue:atk', name: '持续作战疲劳', kind: 'atk', type: 'flat', value: -fatiguePenalty(unit) });

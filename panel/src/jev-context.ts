@@ -1,5 +1,6 @@
 import { MAX_SMALL_UNITS } from '../../engine/src/battle-limits.js';
 import { narrativeIds, type NarrativeIdState } from './narrative-ids.js';
+import { selectSpatialNarrative } from './narrative-map-source.js';
 import {
   deployOnGrid,
   standardField,
@@ -179,7 +180,7 @@ export function encounterRequest(input: EncounterContextInput): {
     input.messages,
     input.windowSize,
     input.roles,
-  ).map((m) => ({ ...m, text: m.text.slice(-6000) }));
+  ).map((m) => ({ ...m, text: input.phase==='preparation'?selectSpatialNarrative(m.text):m.text.slice(-6000) }));
   const key = messageKey(messages);
   const messageKeys = messages.map((m) => messageKey([m]));
   const base: JevEncounterContext = input.previous
@@ -235,9 +236,9 @@ export function encounterRequest(input: EncounterContextInput): {
             scale: u.scale,
             tags: u.tags,
           })),
-        constraints: "只选择配置，不改变单位属性、人数、伤亡或战斗记录。" + (input.phase === "preparation"
-          ? "优先遵循明确设定；未直接说明的项目结合当前上下文合理推断，自行选择最贴合场景的配置，保持各项选择一致。"
-          : "战斗中仅明确指挥官更换、能力或性格状态变化才更新敌方配置；常规战况、战法描述不算变化。"),
+        constraints: input.phase === "preparation"
+          ? "优先明确设定，结合当前正文选择一致的配置。"
+          : "战斗中仅明确指挥官更换、能力或性格状态变化才更新敌方配置；常规战况、战法描述不算变化。",
       }),
     ),
     fields: [],

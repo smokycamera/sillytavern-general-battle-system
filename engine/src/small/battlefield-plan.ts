@@ -1,22 +1,36 @@
 import { safeLandmarkLabel, MAP_DESIGN_OPTIONS, BATTLEFIELD_SCENES, type BattlefieldScene, type MapDesign } from './map-design.js';
 import { ROUTE_TOPOLOGIES, type RouteTopology } from './route-graph.js';
 import type { CityShape } from './layers.js';
+import {BattlefieldPlanError} from './battlefield-error.js';
+export {BattlefieldPlanError} from './battlefield-error.js';
+import { normalizeSceneIntent, SCENE_ARCHETYPES, WORLD_ANCHORS, SCENE_INTENT_PROMPT, type SceneIntent, type SceneArchetype, type WorldAnchor } from './scene-intent.js';
 export const BREACH_SECTORS = ['auto', 'front_left', 'front_right', 'left', 'right', 'rear'] as const;
 export interface BreachPlan { count: 0 | 1 | 2 | 3; width?: 1 | 2; sector?: typeof BREACH_SECTORS[number] }
 export const CITY_SHAPES = ['front', 'enclosure', 'riverside', 'hillside', 'broken'] as const;
 export const LANDMARK_KINDS = ['square', 'tower', 'ruins', 'fortification', 'hill', 'forest', 'bridge', 'building', 'room', 'cover', 'position'] as const;
-export const LANDMARK_ANCHORS = ['approach', 'front_left', 'front_right', 'inside_left', 'inside_right', 'core', 'rear', 'center', 'riverbank'] as const;
+export const LANDMARK_ANCHORS = ['approach', 'front_left', 'front_right', 'inside_left', 'inside_right', 'core', 'rear', 'center', 'riverbank',
+  'ally_left','ally_center','ally_right','enemy_left','enemy_center','enemy_right','center_left','center_right', ...WORLD_ANCHORS.filter(a=>a!=='center')] as const;
 export interface LandmarkPlan {
   kind: typeof LANDMARK_KINDS[number];
   anchor: typeof LANDMARK_ANCHORS[number];
   scale?: 'minor' | 'major';
   label?: string;
   level?: number;
+  id?: string;
+  height?: number;
+  edge?: boolean;
 }
-export const GATE_SECTORS = ['auto', 'front_left', 'front_center', 'front_right', 'left', 'right', 'rear'] as const;
-export interface GatePlan { sector: typeof GATE_SECTORS[number]; state: 'closed' | 'open' | 'destroyed' }
+export interface BridgePlan { id?: string; anchor: WorldAnchor; state: 'intact' | 'destroyed'; width?: 1 | 2 }
+export const GATE_SECTORS = ['auto', 'front_left', 'front_center', 'front_right', 'left', 'right', 'rear','north','south','east','west'] as const;
+export interface GatePlan { id?: string; sector: typeof GATE_SECTORS[number]; state: 'closed' | 'open' | 'destroyed' }
 export interface BattlefieldPlan {
   scene?: BattlefieldScene;
+  intent?: SceneIntent;
+  archetype?: SceneArchetype;
+  cityPosition?: WorldAnchor;
+  waterAxis?: 'horizontal' | 'vertical';
+  waterPosition?: WorldAnchor;
+  bridgePlan?: BridgePlan[];
   /** Array length is the exact number of gates; each state is independent. Overrides legacy gates/gateState. */
   gatePlan?: GatePlan[];
   size?: 'compact' | 'standard' | 'large';
@@ -45,17 +59,32 @@ export function normalizeBattlefieldPlan(value: unknown): { plan?: BattlefieldPl
   const enums = { scene: BATTLEFIELD_SCENES, size: ['compact', 'standard', 'large'], layout: Object.keys(MAP_DESIGN_OPTIONS.layout), shape: CITY_SHAPES,
     topology: Object.keys(ROUTE_TOPOLOGIES), density: ['sparse', 'balanced', 'dense'], water: ['none', 'ford', 'river', 'moat'], gates: ['none', 'single', 'side', 'double'], gateState: ['closed', 'open', 'destroyed'],
     orientation: Object.keys(MAP_DESIGN_OPTIONS.orientation), relief: Object.keys(MAP_DESIGN_OPTIONS.relief),
-    cover: Object.keys(MAP_DESIGN_OPTIONS.cover), obstacles: Object.keys(MAP_DESIGN_OPTIONS.obstacles), breadth: Object.keys(MAP_DESIGN_OPTIONS.breadth) };
+    cover: Object.keys(MAP_DESIGN_OPTIONS.cover), obstacles: Object.keys(MAP_DESIGN_OPTIONS.obstacles), breadth: Object.keys(MAP_DESIGN_OPTIONS.breadth),
+    archetype: SCENE_ARCHETYPES, cityPosition: WORLD_ANCHORS, waterAxis: ['horizontal','vertical'], waterPosition: WORLD_ANCHORS };
   for (const [key, choices] of Object.entries(enums)) if (input[key] !== undefined) {
     if (typeof input[key] === 'string' && (choices as readonly string[]).includes(input[key] as string)) (plan as Record<string, unknown>)[key] = input[key];
     else notes.push(`地图${key}无效，采用本地默认`);
+  }
+  if (input.intent !== undefined) {
+    try { plan.intent = normalizeSceneIntent(input.intent); }
+    catch (error) { throw new BattlefieldPlanError(error instanceof Error ? error.message : '场景意图无效'); }
+  }
+  if (input.bridgePlan !== undefined) {
+    if (!Array.isArray(input.bridgePlan) || input.bridgePlan.length > 4) throw new BattlefieldPlanError('bridgePlan须为0—4座桥的列表');
+    plan.bridgePlan = input.bridgePlan.map(raw => {
+      const b = object(raw);
+      if (!b || !(WORLD_ANCHORS as readonly unknown[]).includes(b.anchor) || !['intact','destroyed'].includes(String(b.state))) throw new BattlefieldPlanError('桥梁方位或状态无效');
+      return { anchor: b.anchor as WorldAnchor, state: b.state as BridgePlan['state'], ...(b.width===1||b.width===2?{width:b.width}:{}),
+        ...(typeof b.id==='string' && /^[a-zA-Z][a-zA-Z0-9_-]{0,31}$/.test(b.id)?{id:b.id}:{}) };
+    });
   }
   if (input.gatePlan !== undefined) {
     if (!Array.isArray(input.gatePlan) || input.gatePlan.length > 4 || input.gatePlan.some(raw => {
       const g = object(raw); return !g || !(GATE_SECTORS as readonly unknown[]).includes(g.sector)
         || !['closed', 'open', 'destroyed'].includes(String(g.state));
     })) throw new BattlefieldPlanError('gatePlan须为0—4个门的列表，每个门给出合法sector与state');
-    plan.gatePlan = input.gatePlan.map(raw => ({ sector: raw.sector, state: raw.state }));
+    plan.gatePlan = input.gatePlan.map(raw => ({ sector: raw.sector, state: raw.state,
+      ...(typeof raw.id === 'string' && /^[a-zA-Z][a-zA-Z0-9_-]{0,31}$/.test(raw.id) ? { id: raw.id } : {}) }));
   }
   if (input.breaches !== undefined) {
     const b = object(input.breaches);
@@ -86,6 +115,9 @@ export function normalizeBattlefieldPlan(value: unknown): { plan?: BattlefieldPl
         if (m.scale === 'minor' || m.scale === 'major') mark.scale = m.scale;
         const label = safeLandmarkLabel(m.label); if (label) mark.label = label;
         if (Number.isInteger(m.level) && Number(m.level) >= 1 && Number(m.level) <= 10) mark.level = Number(m.level);
+        if (typeof m.id==='string' && /^[a-zA-Z][a-zA-Z0-9_-]{0,31}$/.test(m.id)) mark.id=m.id;
+        if (Number.isInteger(m.height) && Number(m.height)>=0 && Number(m.height)<=3) mark.height=Number(m.height);
+        if(m.edge===true)mark.edge=true;
         plan.landmarks.push(mark);
       }
     }
@@ -93,17 +125,15 @@ export function normalizeBattlefieldPlan(value: unknown): { plan?: BattlefieldPl
   return { plan, notes };
 }
 /** Bounded, credential-free diagnostics safe to show before a battle starts. */
-export class BattlefieldPlanError extends Error {
-  constructor(message: string) { super(message); this.name = 'BattlefieldPlanError'; }
-}
 export function requireApiLandmarks(plan: BattlefieldPlan | undefined): asserts plan is BattlefieldPlan {
-  if (!plan?.landmarks?.length) throw new BattlefieldPlanError('副API须返回1—5个有效地标；本次未返回，不使用保底地标，请重试地图设计或关闭LLM设计地图');
+  if (!plan || !plan.intent && !plan.landmarks?.length) throw new BattlefieldPlanError('副API须返回场景意图或1—5个有效地标；本次未返回，不使用保底地标，请重试地图设计或关闭LLM设计地图');
 }
-export const BATTLEFIELD_PLAN_PROMPT = `返回紧凑battlefield对象。结合正文、时代和交战地点合理设计，未写明的空间细节可以合理补全；名称可以概括，不必逐字引用正文。不输出解释、坐标、逐格数组、血量或每单位指令。
-先选scene=field野战|city_siege城市攻防|city_streets城区巷战|building_siege围攻单栋建筑|interior室内交战|trenches堑壕战。场景与环境、尺寸独立：城内作战用city_streets，不自动套城墙和夺旗；室内扩容仍是房间与走廊；building_siege有目标建筑的可进入内院/内部和外围；trenches有战斗壕、交通壕与无人地带。
-各维度自由组合：size=compact|standard|large；layout=scattered|lanes|crossroads|ring|strongpoint|broken（空间布局，非城墙破损）；shape=front正面战段|enclosure封闭据点|riverside临河|hillside依山；topology=${Object.keys(ROUTE_TOPOLOGIES).join('|')}。城市先道路后整块街区；房间、掩体、壕线符合地点用途，局部变化而非逐格散点。
-可选细化：orientation=longitudinal|transverse|diagonal；breadth=narrow|normal|broad；relief/cover/obstacles各自=sparse|balanced|dense；density为后两项共用默认；water=none|ford|river|moat；fortLevel=1..10。室内不设置室外自然地形。
-gatePlan=[{sector:auto|front_left|front_center|front_right|left|right|rear,state:closed|open|destroyed},...]，0—4项，项数就是门数，可各门不同状态；空数组表示无门。城市攻防是城门，建筑围攻是建筑入口，室内是隔间门。不存在对应方位墙段时选最近合法段并显示调整。旧gates=none|single|side|double与gateState仍可读取，但gatePlan优先。
-城防或建筑外围可单独给breaches:{count:0..3,width:1|2,sector:auto|front_left|front_right|left|right|rear}；与轮廓、门数、门状态独立。count=0或省略表示完整；每处宽度1—2格。保留正文明确的完整或损坏状态，其余按场景合理选择。
-landmarks必须1—5项，每项{kind:square|tower|ruins|fortification|hill|forest|bridge|building|room|cover|position,anchor:approach|front_left|front_right|inside_left|inside_right|core|rear|center|riverbank,scale:minor|major,label?:短名称,level?:1..10}。选择实际有战术意义的地点：室内可用room议事厅、cover桌柜掩体、position走廊转角；城区可用building目标建筑、square路口广场；堑壕可用fortification机枪阵地、position交通壕交汇。地标不要求宏伟或正文已有专名，但须符合场景；桥梁要有水域。最多5个，不把每栋普通建筑都列为地标。anchor按攻守角色，左右按画面。模型漏返地标会中止准备，不自动补保底地标。
-结构锚定：L1临时 L2简易 L3正规 L4重型 L5要塞 L6超凡 L7史诗 L8传奇 L9半神 L10神造。结构、单位、装备等级独立；根据材料、建造规格和设定中的超常强化选级，不按守军等级抬升建筑。模型不修改单位能力；部署不足由本地扩图，仍保持场景。`;
+export const BATTLEFIELD_PLAN_PROMPT = `返回battlefield对象，以正文中的时代、交战地点和当前局势设计战区。
+scene=field野战或城外交战|city_siege城市攻防|city_streets城区巷战|building_siege围攻单栋建筑|interior室内交战|trenches堑壕战。室内由房间和走廊组织；建筑围攻包含目标建筑、可进入的内部或内院及外围；堑壕包含战斗壕、交通壕和无人地带。
+可选布局：size=compact|standard|large；layout=scattered|lanes|crossroads|ring|strongpoint|broken（布局破碎）；shape=front正面战段|enclosure封闭据点|riverside临河|hillside依山；topology=${Object.keys(ROUTE_TOPOLOGIES).join('|')}。城市先道路后整块街区，建筑、掩体和壕线符合场所用途。
+可选细化：orientation=longitudinal|transverse|diagonal；breadth=narrow|normal|broad；relief/cover/obstacles=sparse|balanced|dense；density为cover与obstacles的共用默认。
+water=none|ford|river|moat：none代表无水域；ford代表浅水，可涉水的浅滩；river代表深水河流；moat代表护城河。按正文的深浅和可涉水情况选择；室内不设置室外水系。
+cityPosition=${WORLD_ANCHORS.join('|')}；waterPosition采用同一组绝对方位；waterAxis=horizontal|vertical。
+城防或建筑外围破口可给breaches:{count:0..3,width:1|2,sector:auto|front_left|front_right|left|right|rear}，count=0表示完整。桥梁、城门及地标统一写入intent.entities，各自保留位置、数量和状态。
+fortLevel=1..10：L1临时 L2简易 L3正规 L4重型 L5要塞 L6超凡 L7史诗 L8传奇 L9半神 L10神造。根据材料、建造规格和超常强化选级，不按守军等级抬升建筑。
+${SCENE_INTENT_PROMPT}`;

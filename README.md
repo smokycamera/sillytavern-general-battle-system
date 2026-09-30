@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current candidate: **1.6.1-rc.2**. Independent city damage/gates, 32-card tactical battles, 64-card encounters and full-roster deployment. See [planning and validation](docs/battle-planning-v2.md). This is a prerelease; do not enable both stable and test installations at once.
+Current candidate: **1.6.1-rc.3**. Narrative spatial relationships now guide city and outside-city layouts, landmarks and deployment. New maps use actual elevation and explicit bridge/gate counts, positions and states. Secondary API prompts are shorter and explicitly identify ford as shallow water. See [implementation and validation](docs/battlefield-refactor-implementation.md). This is a prerelease; do not enable both stable and test installations at once.
 
 The loadout header now includes **技能选择** beside **新增物品**. Choose a unit, select up to five learned skills, and save; preparation retains skill effects, cooldowns, resources, and equipment.
 

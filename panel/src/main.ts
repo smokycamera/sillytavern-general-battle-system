@@ -2672,7 +2672,7 @@ async function startSmallBattle(context?:LlmEncounterContext):Promise<void> {
     const tags = state.objectiveMode === 'siege' ? [...new Set([...plannedFieldTags(), 'siege'])] : plannedFieldTags();
     assertBattleCapacity(state.roster, 'small');
     const v2 = state.roster.every(u => u.rulesVersion === 'v2');
-    const fieldOptions = { roster: state.roster, attackingSide: state.siegeAttacker, design: context?.mapDesign, plan: context?.battlefieldPlan };
+    const fieldOptions = { roster: state.roster, attackingSide: state.siegeAttacker, design: context?.mapDesign, plan: context?.battlefieldPlan,unitBindings:context?.unitBindings };
     let battlefield = v2 ? (state.mapLayout === 'indoor' ? generatedLayeredField(seed, 5, 7, tags, fieldOptions) : generatedLayeredField(seed, 7, 13, tags, fieldOptions)) : undefined;
     if (battlefield) battlefield = prepareBattleObjective(battlefield, state.roster, state.objectiveMode, state.protagonistId, state.siegeAttacker, context?.vipId);
     if (context && battlefield?.generation?.notes?.length) context.designDetail = [context.designDetail, ...battlefield.generation.notes].filter(Boolean).join('；');

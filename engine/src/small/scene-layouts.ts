@@ -30,7 +30,7 @@ export function placePlannedGates(field: BattlefieldSpec, candidates: number[], 
       || a-b)[0]!;
     if (!matches(p)) field.generation!.notes = [...(field.generation!.notes ?? []), `门方位${spec.sector}无可用墙段，采用最近合法入口`];
     available.delete(p); gates.push(p);
-    const gate = createStructure('gate', level, { top, ...(inner.length ? { owner: defender } : {}), gateState: spec.state,
+    const gate = createStructure('gate', level, { top, ...(inner.length ? { owner: defender } : {}), gateState: spec.state,...(spec.id?{entityId:spec.id}:{}),
       ...(top ? { access: neighbors(field, p).filter(n => inner.includes(n) && !groundBlocked(field,n)) } : {}) });
     if (spec.state === 'destroyed') { gate.hp = 0; field.overlays![p] = ['rubble']; }
     field.structures![p] = gate; field.tiles[p] = 'street';

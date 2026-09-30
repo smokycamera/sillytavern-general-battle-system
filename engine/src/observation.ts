@@ -1,4 +1,5 @@
 import { intactStructure } from './small/layers.js';
+import { meleeContact } from './small/layers.js';
 import { smokeBlocks } from './area-effects.js';
 import type { BattleLogEntry, Combatant, ConditionDef, Side } from './types.js';
 import { standardConditionMap } from './conditions.js';
@@ -58,8 +59,8 @@ export function revealUnit(context: ObservationContext, unit: Combatant): void {
 }
 export function revealContacts(context: ObservationContext): void {
   for (const unit of context.units.filter((u) => canConceal(context, u) && !u.tacticalRevealed)) {
-    if (context.units.some((foe) => foe.side !== unit.side && foe.status === 'ready' && sameLayer(unit, foe) && distanceBetween(context, unit, foe) <= 1
-      && (!context.battlefield || lineOfSight(context.battlefield, positionedUnit(context, unit).pos!, positionedUnit(context, foe).pos!)))) revealUnit(context, unit);
+    if (context.units.some((foe) => foe.side !== unit.side && foe.status === 'ready' && meleeContact(context.battlefield,unit,foe) && distanceBetween(context, unit, foe) <= 1
+      && (!context.battlefield || unitLineOfSight(context.battlefield, positionedUnit(context, unit), positionedUnit(context, foe))))) revealUnit(context, unit);
   }
 }
 export function canReconceal(context: ObservationContext, unit: Combatant): boolean {
@@ -67,7 +68,7 @@ export function canReconceal(context: ObservationContext, unit: Combatant): bool
   const cover = context.mode === 'small' ? (['forest', 'cover'].includes(context.battlefield?.tiles[unit.pos!] ?? '') || !!context.battlefield?.layerVersion && (['cover', 'fortification'].includes(intactStructure(context.battlefield, unit.pos!)?.kind ?? '') || !!context.battlefield.overlays?.[unit.pos!]?.includes('rubble'))) : context.fieldTags.some((tag) => ['forest', 'urban', 'siege'].includes(tag));
   if (!cover && !context.fieldTags.includes('night')) return false;
   return !context.units.some((foe) => foe.side !== unit.side && foe.status === 'ready' && distanceBetween(context, unit, foe) <= (context.mode === 'small' ? 2 : 1)
-    && (!context.battlefield || lineOfSight(context.battlefield, positionedUnit(context, unit).pos!, positionedUnit(context, foe).pos!)));
+    && (!context.battlefield || unitLineOfSight(context.battlefield, positionedUnit(context, unit), positionedUnit(context, foe))));
 }
 export function settleConcealment(context: ObservationContext, unit: Combatant, quiet: boolean): boolean {
   if (!quiet || !canReconceal(context, unit)) return false;

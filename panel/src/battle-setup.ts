@@ -1,6 +1,7 @@
 import { DEFAULT_SMALL_ROUND_LIMIT, defaultBattleObjective, type SmallBattle, needsFormationHost, recommendedFormationSlots, flightCapabilityReason, standardConditionMap, FORMATION_NODES, type BattlefieldSpec, type Combatant } from '../../engine/src/index.js';
 import { activeBattleUnits } from '../../engine/src/battle-limits.js';
 import { MAX_SCENE_UNITS, RECOMMENDED_UNITS, GROUPING_HINT } from './narrative-limits.js';
+import {groundBlocked} from '../../engine/src/small/layers.js';
 
 export function battleCapacityIssue(roster: Combatant[]): string | undefined {
   const count = activeBattleUnits(roster).length;
@@ -54,11 +55,14 @@ export function vipCandidates(roster: Combatant[], side: 'ally' | 'enemy'): Comb
 
 /** 只准备下一场任务；对象和规则随战场快照冻结。 */
 export function prepareBattleObjective(field: BattlefieldSpec, roster: Combatant[], mode: BattleObjectiveMode, protagonistId?: string, attackingSide: 'ally' | 'enemy' = 'ally', selectedVipId?: string): BattlefieldSpec {
+  const binding=field.scene?.objectiveRegion,region=binding?field.scene?.regions.find(r=>r.id===binding.id):undefined;
+  const targetCells=region?.access.filter(p=>!groundBlocked(field,p))??[];
+  if(binding&&!targetCells.length)throw new Error('正文任务地点没有合法目标格');
   if (!['escort', 'intercept'].includes(mode)) {
     const siegeScene = field.generation?.scene ? ['city_siege','building_siege'].includes(field.generation.scene) : field.environment?.includes('siege');
     const siege = mode === 'siege' || mode === 'auto' && siegeScene;
-    if (siege && field.layerVersion && field.city?.core.length) return { ...field, objective: { kind: 'control', cell: field.city.core[0]!, cells: [...field.city.core], attackingSide, rounds: 2, limit: field.objective.limit } };
-    if (mode === 'control' && !siege) return { ...field, objective: { kind: 'control', cell: field.city?.core[0] ?? field.objective.cell, rounds: 2, limit: field.objective.limit } };
+    if (siege && field.layerVersion && field.city?.core.length) return { ...field, objective: { kind: 'control', cell: binding?.relation==='targets'?targetCells[0]!:field.city.core[0]!, cells: binding?.relation==='targets'?targetCells:[...field.city.core], attackingSide: binding?.relation==='targets'?binding.side:attackingSide, rounds: 2, limit: field.objective.limit } };
+    if ((mode === 'control' || mode === 'auto' && binding?.relation === 'targets') && !siege) return { ...field, objective: { kind: 'control', cell: binding?.relation==='targets'?targetCells[0]!:field.city?.core[0] ?? field.objective.cell,...(binding?.relation==='targets'?{cells:targetCells}:{}), rounds: 2, limit: field.objective.limit } };
     const next = defaultBattleObjective(field.width, field.height, siege ? ['siege'] : [], attackingSide);
     if (field.layerVersion && !siege) next.cell = field.city?.core[0] ?? field.objective.cell;
     return { ...field, objective: { ...next, limit: field.objective.limit } };
@@ -67,9 +71,17 @@ export function prepareBattleObjective(field: BattlefieldSpec, roster: Combatant
   const eligible = vipCandidates(roster, side);
   const escorted = eligible.find(u => u.id === selectedVipId) ?? eligible.find((u) => u.id === protagonistId) ?? eligible[0];
   if (!escorted) throw new Error(side === 'enemy' ? '拦截任务需要可参战的敌方护送对象' : '护送任务需要可参战的我方单位');
+  if(binding?.relation==='exits_at'&&(binding.side!==side||binding.unitId&&binding.unitId!==escorted.id))throw new Error('正文出口所属部队与护送对象不一致');
   return { ...field, objective: { kind: 'escape', unitId: escorted.id,
-    cell: (side === 'enemy' ? (field.height - 1) * field.width : 0) + Math.floor(field.width / 2),
+    cell: binding?.relation==='exits_at'?targetCells[0]!:escapeDestination(field,side),
     limit: field.objective.limit, defenderWins: true } };
+}
+function escapeDestination(field:BattlefieldSpec,side:'ally'|'enemy'):number {
+  const edge=field.retreatEdges?.[side];
+  if(edge?.length){const p=edge[Math.floor(edge.length/2)]!;if(edge.every(p=>p%field.width===0))return Math.floor(p/field.width)*field.width+field.width-1;
+    if(edge.every(p=>p%field.width===field.width-1))return Math.floor(p/field.width)*field.width;
+    return (Math.floor(p/field.width)===0?field.height-1:0)*field.width+p%field.width;}
+  return (side==='enemy'?(field.height-1)*field.width:0)+Math.floor(field.width/2);
 }
 
 /** 默认模式只在准备下一战时计算，不转换单位身份或进行中的战斗。 */

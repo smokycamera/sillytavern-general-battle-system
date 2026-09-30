@@ -40,7 +40,7 @@ describe('optional ordinary LLM map/VIP preparation', () => {
     const body = JSON.parse(payload.messages[1].content);
     expect(body.fields).toHaveLength(11); // 9 core + 2 VIP; compact map has no repeated selection wrappers
     expect(body.state.protocol).toBe('battlefield-v2');
-    expect(body.state.mapRules).toContain('landmarks必须1—5项');
+    expect(body.state.mapRules).toContain('ford代表浅水');
     expect(body.fields.find((f: {id:string}) => f.id === 'vip_enemy').options).not.toHaveProperty('unit_2');
     const field = generatedField('context', 7, 13, ['urban', 'night'], { design: result.mapDesign });
     expect(field.tiles).not.toEqual(generatedField('context', 7, 13, ['urban', 'night']).tiles);
