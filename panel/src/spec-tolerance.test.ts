@@ -19,6 +19,16 @@ function transact(save: NarrativeSave, text: string, messageId = '1'): Narrative
 const registry = traitRegistry();
 
 describe('正文技能规格兼容和局部恢复', () => {
+  it('同义词、省略+1和混合顺序规范化后仍能再次解析', () => {
+    expect(normalizeNarrativeSpec('步枪L5+1精度 伤害+3 穿甲+2 距离+1')).toBe('步枪L5+1精度+3伤害+2穿透+1射程');
+    const text = spawn('推击:物理单体L5+击退+破甲+距离', { weapon: '步枪Lv.5 + 1 命中 伤害+3 +穿甲 +距离', level: 'Ｌｖ．５＋生命值' });
+    const result = parseProtocol(text);
+    expect(result.errors).toEqual([]);
+    expect(result.events[0]).toMatchObject({ bonuses: { health: 1 }, weaponBonuses: { accuracy: 1, damage: 3, penetration: 1, range: 1 },
+      skills: [{ blueprintId: 'generic:physical-single:push', bonuses: { penetration: 1, range: 1 } }] });
+    expect(parseProtocol(result.canonical).canonical).toBe(result.canonical);
+    expect(parseProtocol(spawn('坏:物理单体L3-伤害,治疗L3')).events[0]).toMatchObject({ skills: [{ blueprintId: 'generic:buff:heal' }] });
+  });
   it.each(['剑Ｌ５＋３命中－２伤害', '剑 Lv. 5 + 3 精准 - 2 伤害', '剑（level 5 +3accuracy -2damage）', '剑L5  精度+3 伤害-2', '剑L5（+3命中-2伤害）'])('等价装备写法保留精确数值：%s', text => {
     expect(normalizeNarrativeSpec(text)).toBe('剑L5+3精度-2伤害');
     const result = parseProtocol(spawn('治疗L3', { weapon: '宝剑:' + text }));

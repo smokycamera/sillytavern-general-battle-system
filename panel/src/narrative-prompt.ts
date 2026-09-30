@@ -20,5 +20,7 @@ export function relevantPromptCards(text: string, newScene = false): PromptCard[
 export const RUNTIME_REMINDER = `<turn_contract>
 ## 本次回复
 
+编号沿用当前事实清单：u为单位，w为武器，a为护甲或盾牌，c为消耗品，i为其他物品，k为技能，s为效果来源。编号由插件分配，不按名字猜编号；id、source与data内的身份引用均使用清单给出的编号。
+
 依据本次战斗记录与最新状态叙述，保留{{user}}视角，无变化者合并简述；不改判、不代操作。战斗中、战果待提交或无有效事件时只写正文。仅有据可查的战外变化可在全部格式闭合后追加唯一tb块：开闭标签各一行，每行一个小写自闭合事件，属性用英文双引号，块后结束。已有id用deploy/unit_update/unit_set；unit_set可在战外明确修改全部单位数据（含经验、死亡/复活、装备、技能、强化），保留既有限制，复杂字段写data的JSON属性；其他事件不得输出JSON。新建用spawn；hero的hp是生命，company的hp是人数/车辆数，count是卡数；本场最多${MAX_SCENE_UNITS}张。
 </turn_contract>`;

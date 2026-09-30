@@ -23,6 +23,8 @@ import {
   type TextExtractor,
 } from "../../vendor/jev-core/src/index.js";
 import { TavernJevAdapter } from "./jev-adapter.js";
+import { narrativeIds, type NarrativeIdState } from './narrative-ids.js';
+import { publicDecision, publicObservation } from './jev-ids.js';
 import {
   encounterRequest,
   applyEncounterSelection,
@@ -297,6 +299,7 @@ export class JevCommandController {
     options: {
       battleId: string;
       namespace: string;
+      narrativeIdState?: NarrativeIdState;
       valid(): boolean;
       messages?: NarrativeMessage[];
       manualScan?: boolean;
@@ -327,6 +330,7 @@ export class JevCommandController {
             summonUnit: options.summonUnit,
           });
     let candidate = copy();
+    let ids = narrativeIds({ storage: candidate.combatants, narrativeIdState: options.narrativeIdState });
     const saved: JevBattleState =
       previous?.battleId === options.battleId
         ? structuredClone(previous)
@@ -356,13 +360,15 @@ export class JevCommandController {
           scores: Object.fromEntries(request.candidates.map(c => [c.id, 0.5])),
         };
         try {
+          ids = narrativeIds({ storage: request.observation.units, narrativeIdState: ids.state });
+          const projection = publicDecision(request, ids);
           const answer = await withAbort({ signals: [signal, aborter.signal] }, combined => this.retry(async attemptSignal => {
-            const answer = await this.post<DecisionAnswer>(
+            const answer = projection.restore(await this.post<DecisionAnswer>(
               connection,
               "evaluate",
-              request,
+              projection.request,
               attemptSignal,
-            );
+            ));
             if (
               !answer ||
               typeof answer.model !== "string" ||
@@ -395,11 +401,12 @@ export class JevCommandController {
     const extractor: TextExtractor = {
       extract: async (messages, observation, signal) => {
         check();
+        ids = narrativeIds({ storage: observation.units, narrativeIdState: ids.state });
         if (contextFailure || ++calls > 10) return [];
         try {
           return await withAbort({ signals: [signal, aborter.signal] }, combined => this.retry(async attemptSignal => {
             const answer = await this.post<Awaited<ReturnType<TextExtractor['extract']>>>(
-              connection, "context", { messages, observation }, attemptSignal,
+              connection, "context", { messages, observation: publicObservation(observation, ids) }, attemptSignal,
             );
             try { return validateNarrativeContext(answer, observation); }
             catch { throw new JevConnectionError("模型返回无效正文目标"); }
@@ -461,6 +468,7 @@ export class JevCommandController {
             windowSize: settings.narrative.windowSize,
             roles: settings.narrative.roles,
             phase: "battle",
+            narrativeIdState: ids.state,
             previous: saved.context,
             force: options.manualScan,
           },

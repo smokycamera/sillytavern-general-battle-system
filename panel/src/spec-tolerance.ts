@@ -1,14 +1,24 @@
-import { BONUS_NAMES, ENHANCEMENT_STATS, enhancementLabel, parseEnhancementSuffix, type BonusStat, type Enhancements } from '../../engine/src/enhancements.js';
+import { BONUS_NAMES, ENHANCEMENT_STATS, enhancementLabel, parseEnhancementSuffix, resolveBonusStat as bonusKey, type BonusStat, type Enhancements } from '../../engine/src/enhancements.js';
 import { parseSkillMechanism, skillMechanismName, type SkillMechanism } from '../../engine/src/data/skill-mechanisms.js';
 
-const bonusAliases: Record<string, BonusStat> = {
-  命中: 'accuracy', 命中率: 'accuracy', 准确: 'accuracy', 精准: 'accuracy', 精准度: 'accuracy',
-  穿甲: 'penetration', 穿透力: 'penetration', 伤害加成: 'damage',
-  距离: 'range', 攻击距离: 'range', 持续时间: 'duration', 持续回合: 'duration',
-  治疗量: 'healing', 恢复能量: 'resource', 生命值: 'health', 防御力: 'defense', 防护值: 'protection',
-};
-function bonusKey(label: string): BonusStat | undefined {
-  return bonusAliases[label] ?? Object.entries(BONUS_NAMES).find(([key, name]) => key.toLowerCase() === label.toLowerCase() || name === label)?.[0] as BonusStat | undefined;
+/** Read either sign/number/name or name/sign/number, without borrowing the next bonus's sign. */
+function enhancementOrder(text: string): string | undefined {
+  const parts: string[] = [];
+  let rest = text.trim();
+  while (rest) {
+    const first = rest.match(/^[\p{L}_]+/u)?.[0];
+    if (first) rest = rest.slice(first.length).trimStart();
+    const sign = rest.match(/^[+-]/)?.[0];
+    if (!sign) return undefined;
+    rest = rest.slice(1).trimStart();
+    const points = rest.match(/^\d+(?:\.\d+)?/)?.[0];
+    if (points) rest = rest.slice(points.length).trimStart();
+    const label = first ?? rest.match(/^[\p{L}_]+/u)?.[0];
+    if (!first && label) rest = rest.slice(label.length).trimStart();
+    if (first && !points || !points && !label) return undefined;
+    parts.push(sign + (points ?? '') + (label ?? ''));
+  }
+  return parts.join('');
 }
 
 /** 仅用于正文输入；不放宽存档、手工表单和引擎数值校验。 */
@@ -28,11 +38,16 @@ export function normalizeNarrativeSpec(text: string): string {
   if (!match) return prefix + spec;
   let suffix = match[2]!.trim();
   // “伤害+3”与“+3伤害”只交换明确的名称/数值，不猜没有符号的数值。
-  if (/^[\p{L}]/u.test(suffix)) suffix = suffix.replace(/([\p{L}]+)\s*([+-])\s*(\d+(?:\.0+)?)/gu, '$2$3$1');
+  suffix = enhancementOrder(suffix) ?? suffix;
   suffix = suffix.replace(/\s+/g, '');
   suffix = suffix.replace(/([+-])(\d+(?:\.0+)?)([^+\-\d]*)/g, (_all, sign: string, points: string, label: string) => {
     const key = bonusKey(label);
     return sign + String(Number(points)) + (key ? BONUS_NAMES[key] : label);
+  });
+  // 仅已知强化方向允许省略点数；技能效果如“+击退”仍作为机制处理。
+  suffix = suffix.replace(/\+([^+\-\d]+)/g, (whole, label: string) => {
+    const key = bonusKey(label);
+    return key ? '+1' + BONUS_NAMES[key] : whole;
   });
   return prefix + match[1]!.trim().replace(/\s+(?=[lL][+-]?\d)/g, '') + suffix;
 }
@@ -71,6 +86,7 @@ export function normalizeNarrativeSkill(text: string, warnings: string[]): strin
     const points = number === undefined ? undefined : Number(number) * (sign === '-' ? -1 : 1);
     if (points !== undefined && (!Number.isInteger(points) || Math.abs(points) > 10)) throw Error('技能强化须为-10至+10整数');
     const key = label ? bonusKey(label) : 'power';
+    if (points === undefined && key) throw Error('负修正需要明确点数，只有+方向可省略为+1');
     if (points !== undefined && key && ENHANCEMENT_STATS.skill.includes(key)) { add(key, points); continue; }
     // 防御、护盾和加速等原本由“强度”缩放；同义强化只在对应机制确实存在时换写。
     const targets = key === 'defense' ? ['defense', 'defense-down', 'barrier', 'ward']

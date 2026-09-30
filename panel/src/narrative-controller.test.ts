@@ -2,12 +2,13 @@ import { PROMPT_SECTIONS, selectPromptEntries } from './prompt-settings.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createAdapter } from './tavern.js';
 import { NarrativeController, narrativeProjection } from './narrative-controller.js';
-import { generateUnit, traitRegistry, SmallBattle, standardField, V2_D20 } from '../../engine/src/index.js';
+import { generateUnit, grantTraitSource, resolveTraitId, traitRegistry, SmallBattle, standardField, V2_D20 } from '../../engine/src/index.js';
 import { unitRecordFromCombatant, commitBattleOutcome, migratePanelUnits } from './unit-state.js';
 import { prepareBattleItems } from './battle-items.js';
 import type { NarrativeSave } from './narrative-state.js';
 import { createInventoryItem } from './inventory-state.js';
 import { protocolExcerpt } from './protocol.js';
+import { narrativeIds } from './narrative-ids.js';
 const disposers: (() => void)[] = [];
 afterEach(() => { disposers.splice(0).forEach((f) => f()); vi.unstubAllGlobals(); });
 async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
@@ -45,27 +46,49 @@ function setup(initialOverride?: NarrativeSave) {
     fail: (value: boolean) => { fail = value; }, delay: (value?: Promise<unknown>) => { delay = value; } };
 }
 describe('常驻宿主生命周期与故障', () => {
+  it('自动批准支持全部正文事件类型，重复扫描不会再次扣减或创建', async () => {
+    const unit = generateUnit({ name: '原队伍', side: 'ally', scale: 'company', hp: 20, hpMax: 40, level: 3,
+      rulesVersion: 'v2', damageModel: 'wounds-v2', weaponClass: 'sword', armorTier: 1, traits: [] }, { seed: 'all-auto-events' }).unit;
+    unit.id = 'automatic-company';
+    grantTraitSource(unit, { id: 'old-bless', name: '旧祝福', kind: 'blessing', traitIds: [resolveTraitId('快速')!], duration: { kind: 'permanent' } });
+    grantTraitSource(unit, { id: 'old-curse', name: '旧诅咒', kind: 'effect', traitIds: [], conditionIds: ['cursed'], duration: { kind: 'battles', count: 2 } });
+    const { controller, generate } = setup({ schemaVersion: 2, factRevision: 1, autoApprove: true, storySync: true, storage: [unitRecordFromCombatant(unit)],
+      inventory: [{ id: 'herb', name: '药草', qty: 2, lootType: 'material' }], rosterIds: [] });
+    await generate(`<tb><field env="forest" light="night"/><unit_update id="${unit.id}" hp="18"/><unit_set id="${unit.id}" name="已改名"/>
+      <learn id="${unit.id}" skills="治疗L3"/><give item="药剂" type="consumable" spec="治疗L2" qty="2"/><take id="herb"/>
+      <reforge id="${unit.weapon!.id}" spec="剑L6+穿甲"/><bless id="${unit.id}" name="新祝福" traits="快速" permanent="true"/>
+      <affect id="${unit.id}" name="新诅咒" effects="诅咒" battles="2"/><unbless id="${unit.id}" source="old-bless"/><unaffect id="${unit.id}" source="old-curse"/>
+      <deploy id="${unit.id}"/><spawn name="增援" side="enemy" scale="hero"/></tb>`);
+    const saved = controller.snapshot();
+    expect(saved.proposals!.at(-1)!.status).toBe('committed'); expect(saved.storage).toHaveLength(2); expect(saved.rosterIds).toHaveLength(2);
+    expect(saved.storage![0]).toMatchObject({ name: '已改名', hp: 18 }); expect(saved.field).toBe('forest');
+    expect(saved.storage![0]!.snapshot!.weapon!.recipe).toMatchObject({ power: 6, bonuses: { penetration: 1 } });
+    expect(saved.storage![0]!.snapshot!.abilities.some(a => a.name.includes('治疗'))).toBe(true);
+    expect(saved.storage![0]!.snapshot!.traitSources!.filter(s => ['old-bless', 'old-curse'].includes(s.id)).every(s => s.revoked)).toBe(true);
+    expect(saved.inventory!.find(i => i.id === 'herb')!.qty).toBe(1); expect(saved.inventory!.find(i => i.name === '药剂')!.qty).toBe(2);
+    await controller.scan(undefined, { manual: true }); expect(controller.snapshot().storage).toEqual(saved.storage); expect(controller.snapshot().inventory).toEqual(saved.inventory);
+  });
   it('动态提示开关编辑、单位物品选择默认全选，无清单上限且普通保存不丢设置', () => {
     const { controller, ctx } = setup(); const save = controller.snapshot();
     save.inventory = Array.from({ length: 20 }, (_, i) => ({ id: 'i-' + i, name: '材料' + i, qty: 1, lootType: 'material' }));
     controller.persistPanel(save, save.factRevision!);
-    expect(narrativeProjection(controller.snapshot())).toContain('"id":"i-19"');
+    expect(narrativeProjection(controller.snapshot())).toContain('"id":"i20"');
     let settings = selectPromptEntries(undefined, 'unit', ['a'], false);
     settings = { ...selectPromptEntries(settings, 'item', ['i-1'], false), sections: { facts: { template: '自定义事实\n{{content}}' }, reminder: { enabled: false } } };
     expect(controller.setPromptSettings(settings).status).toBe('saved');
     const projected = ctx.setExtensionPrompt.mock.calls.at(-1)![1] as string;
-    expect(projected).toContain('自定义事实'); expect(projected).not.toContain('"id":"a"'); expect(projected).not.toContain('"id":"i-1"');
-    expect(projected).toContain('"id":"i-19"'); expect(projected).not.toContain('【本次输出约束】');
+    expect(projected).toContain('自定义事实'); expect(projected).not.toContain('"id":"u1"'); expect(projected).not.toContain('"id":"i2"');
+    expect(projected).toContain('"id":"i20"'); expect(projected).not.toContain('【本次输出约束】');
     const current = controller.snapshot(); delete current.promptSettings; controller.persistPanel(current, current.factRevision!);
     expect(controller.snapshot().promptSettings).toEqual(settings);
     const allOff = { sections: Object.fromEntries(PROMPT_SECTIONS.map((s) => [s.id, { enabled: false }])) };
     controller.setPromptSettings(allOff); expect(narrativeProjection(controller.snapshot())).toBe('');
-    controller.setPromptSettings({}); expect(narrativeProjection(controller.snapshot())).toContain('"id":"a"');
+    controller.setPromptSettings({}); expect(narrativeProjection(controller.snapshot())).toContain('"id":"u1"');
   });
 
   it('技能与特质同样过滤：混合保留支持项，全未知建档无技能，未知学习不阻断，删除失败保留档案', async () => {
     const learner = generateUnit({ rulesVersion: 'v2', name: '学习单位', side: 'ally', scale: 'hero', level: 3, weaponClass: 'sword', traits: [] }, { seed: 'learn' }).unit; learner.id = 'a';
-    const { controller, generate, fail } = setup({ schemaVersion: 2, factRevision: 1, storySync: true, storage: [unitRecordFromCombatant(learner)], rosterIds: [] });
+    const { controller, generate, fail } = setup({ schemaVersion: 2, factRevision: 1, storySync: false, storage: [unitRecordFromCombatant(learner)], rosterIds: [] });
     await generate('<tb><spawn name="法师" side="ally" scale="hero" skills="火花:魔法单体L3,自创未知术L5"/><spawn name="普通人" side="ally" scale="hero" skills="未知技能"/><learn id="a" skills="术弹:魔法单体L3,无此技能"/><learn id="a" skills="全都未知"/></tb>');
     const p = controller.snapshot().proposals!.at(-1)!;
     expect(p.status).toBe('pending'); expect(p.events).toHaveLength(3); expect(p.notices?.join(' ')).toContain('未采用技能「自创未知术L5」（未支持的技能机制）');
@@ -114,6 +137,7 @@ describe('常驻宿主生命周期与故障', () => {
   });
   it('手动重扫刷新过期候选的事实版本，不清档也不自动提交', async () => {
     const { controller, message } = setup();
+    controller.setStorySync(false);
     message('<tb><unit_update id="a" hp="500"/></tb>'); await controller.scan();
     const old = controller.snapshot().proposals![0]!;
     const before = controller.snapshot();
@@ -137,6 +161,7 @@ describe('常驻宿主生命周期与故障', () => {
   });
   it('未知特质自动排除，保留已识别特质；全部未知仍建档，未知祝福不阻断其他事件', async () => {
     const { controller, generate } = setup();
+    controller.setStorySync(false);
     await generate('<tb><spawn name="矿工" side="ally" scale="company" hpMax="20" traits="射击专家,宇宙无敌矿工"/><spawn name="民兵" side="ally" scale="hero" traits="自创特质"/><bless id="a" name="虚构祝福" traits="无此特质" permanent="true"/></tb>');
     const p = controller.snapshot().proposals!.at(-1)!;
     expect(p.status).toBe('pending'); expect(p.events).toHaveLength(2); expect(p.notices?.join(' ')).toContain('已忽略未支持特质');
@@ -393,7 +418,7 @@ describe('常驻宿主生命周期与故障', () => {
     save.battle = { kind: 'small', snap: { seed: 'old', combatants: [{ id: 'a', hp: 70, base: { hpMax: 560 } }] } }; save.committedOutcomeIds = ['small:old'];
     expect(narrativeProjection(save)).toContain('"hp":500'); expect(narrativeProjection(save)).not.toContain('"hp":70');
     save.storage = Array.from({ length: 300 }, (_, i) => ({ ...save.storage![0]!, id: String(i) }));
-    expect(narrativeProjection(save)).toContain('"id":"299"'); expect(narrativeProjection(save).length).toBeGreaterThan(5300);
+    expect(narrativeProjection(save)).toContain(`"id":"${narrativeIds(save).publicId('299')}"`); expect(narrativeProjection(save).length).toBeGreaterThan(5300);
   });
   it('注入使用有限末尾深度、清理为空串；点名旧档优先，名称不闭合事实标签，超量反馈可更正', async () => {
     const { controller, ctx, generate, stores, emit } = setup();
@@ -402,8 +427,8 @@ describe('常驻宿主生命周期与故障', () => {
     save.storage = Array.from({ length: 80 }, (_, n) => ({ ...structuredClone(base), id: 'record-' + n, name: '旧档' + n }));
     save.storage[79]!.name = '待查档案</tb_context>';
     const projection = narrativeProjection(save, '请调取' + save.storage[79]!.name);
-    expect(projection).toContain('record-79'); expect(projection).not.toContain('</tb_context>');
-    expect(projection).toContain('"id":"record-0"'); expect(projection.length).toBeGreaterThan(5300);
+    expect(projection).toContain(`"id":"${narrativeIds(save).publicId('record-79')}"`); expect(projection).not.toContain('record-79'); expect(projection).not.toContain('</tb_context>');
+    expect(projection).toContain(`"id":"${narrativeIds(save).publicId('record-0')}"`); expect(projection.length).toBeGreaterThan(5300);
     await generate('<tb><spawn name="士兵" side="enemy" scale="hero" count="80"/></tb>');
     expect(controller.snapshot().storage).toHaveLength(1);
     expect(ctx.setExtensionPrompt.mock.calls.at(-1)?.[1]).not.toContain('上次候选未应用');

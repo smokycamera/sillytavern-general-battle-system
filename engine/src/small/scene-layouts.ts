@@ -99,7 +99,7 @@ export function buildSpecialScene(field: BattlefieldSpec, scene: BattlefieldScen
     const core=inside.sort((a,b)=>gridDistance(field,a,at(Math.floor(w/2),back+2))-gridDistance(field,b,at(Math.floor(w/2),back+2))||a-b).slice(0,3);
     const reserve=inside.filter(p=>!core.includes(p)&&(defender === 'enemy' ? Math.floor(p/w) : h-1-Math.floor(p/w))!==front-1).slice(0,w-3);
     field.city={shape:'enclosure',inside,frontline:perimeter,gates,core,reserve,defender};
-    field.objective={kind:'control',cell:core[0]!,cells:core,attackingSide,rounds:5,limit:field.objective.limit};
+    field.objective={kind:'control',cell:core[0]!,cells:core,attackingSide,rounds:2,limit:field.objective.limit};
     for (const p of inside) if (!core.includes(p) && rng.next()<.06) field.structures![p]=createStructure('cover',level);
   } else if (scene === 'trenches') {
     for (const base of [Math.floor(h*.3),Math.floor(h*.7)]) {

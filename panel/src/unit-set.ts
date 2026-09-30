@@ -53,7 +53,10 @@ export function parseUnitSet(attrs: Record<string, string>): ObjectData {
     if (['id', 'data', 'reason'].includes(key)) continue;
     const field = ({ weapon2: 'sidearm', shieldSpec: 'shield', state: 'status', speed: 'speedTier' } as Record<string,string>)[key] ?? key;
     let value: unknown = text;
-    if (['level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'speedTier'].includes(field)) value = Number(text);
+    if (['level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'speedTier'].includes(field)) {
+      if (!/^[+-]?\d+(?:\.\d+)?$/.test(text) || !Number.isFinite(Number(text))) throw Error(field + '需要明确的有限数值');
+      value = Number(text);
+    }
     if (['mount', 'retired'].includes(field)) { if (!['true','false'].includes(text)) throw Error(field + '需要true/false'); value = text === 'true'; }
     if (field === 'traits') value = text ? text.split(',') : [];
     if (Object.hasOwn(data, field) && JSON.stringify(data[field]) !== JSON.stringify(value)) throw Error(field + '与data冲突');

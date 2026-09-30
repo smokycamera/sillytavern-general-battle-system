@@ -11,7 +11,7 @@ import type { Suggestion } from './tags.js';
 import { createInventoryItem, prepareInventoryState, prepareInventoryTransaction, type InventoryItem } from './inventory-state.js';
 import { assertNarrativeCapacity, hasNarrativeDeployment, MAX_SCENE_UNITS } from './narrative-limits.js';
 import { applyUnitSet } from './unit-set.js';
-import { narrativeIds } from './narrative-ids.js';
+import { mapNarrativeReferences, narrativeIds, prepareNarrativeIds, type NarrativeIdState } from './narrative-ids.js';
 
 export interface MessageEnvelope {
   characterId: string;
@@ -32,6 +32,7 @@ export interface GenerationBinding {
   namespace: string;
   factRevision: number;
   unitVersions: Record<string, number>;
+  narrativeIdState?: NarrativeIdState;
   complete: boolean;
 }
 export interface NarrativeProposal {
@@ -46,6 +47,7 @@ export interface NarrativeProposal {
   notices?: string[];
   /** 玩家修正的是本地事件草稿，宿主原消息未修改。 */
   corrected?: boolean;
+  origin?: 'ai-scan';
   originalText?: string;
 }
 export interface NarrativeSave {
@@ -58,6 +60,7 @@ export interface NarrativeSave {
   storage?: UnitRecord[];
   rosterIds?: string[];
   storySync?: boolean;
+  autoApprove?: boolean;
   factRevision?: number;
   proposals?: NarrativeProposal[];
   /** 删除记录只移除可见正文副本；提交来源键仍防止同一消息重复入账。 */
@@ -66,6 +69,7 @@ export interface NarrativeSave {
   field?: string;
   lighting?: 'day' | 'night';
   inventory?: InventoryItem[];
+  narrativeIdState?: NarrativeIdState;
   inventoryOperations?: { id: string; fingerprint: string }[];
   battle?: { kind: 'small' | 'mass'; snap: Record<string, unknown> } | null;
   committedOutcomeIds?: string[];
@@ -83,8 +87,9 @@ export function factsOf(save: NarrativeSave): string {
 }
 export function captureGeneration(save: NarrativeSave, namespace: string, id: string): GenerationBinding {
   return { id, namespace, factRevision: save.factRevision ?? 0,
-    unitVersions: Object.fromEntries((save.storage ?? []).map((r) => [r.id, r.revision ?? 1])), complete: false };
+    unitVersions: Object.fromEntries((save.storage ?? []).map((r) => [r.id, r.revision ?? 1])), narrativeIdState: narrativeIds(save).state, complete: false };
 }
+export const narrativeAutoApproval = (save: NarrativeSave): boolean => save.autoApprove ?? save.storySync ?? false;
 /** 非鉴权散列，仅用于删除后的重复扫描去重；提交守卫使用完整来源键。 */
 export function narrativeReceiptKey(proposal: NarrativeProposal): string {
   const value = JSON.stringify([proposal.sourceKey, proposal.source.swipeId, proposal.canonical || proposal.source.text]);
@@ -93,8 +98,8 @@ export function narrativeReceiptKey(proposal: NarrativeProposal): string {
   return state.map((n) => (n >>> 0).toString(16).padStart(8, '0')).join('');
 }
 export function compactNarrativeSources(save: NarrativeSave): NarrativeSave {
-  return { ...save, ...(Array.isArray(save.proposals) ? { proposals: save.proposals.map((p) => ({ ...p, source: { ...p.source, text: protocolExcerpt(p.source.text) },
-    ...(p.originalText !== undefined ? { originalText: protocolExcerpt(p.originalText) } : {}) })) } : {}) };
+  return prepareNarrativeIds({ ...save, ...(Array.isArray(save.proposals) ? { proposals: save.proposals.map((p) => ({ ...p, source: { ...p.source, text: protocolExcerpt(p.source.text) },
+    ...(p.originalText !== undefined ? { originalText: protocolExcerpt(p.originalText) } : {}) })) } : {}) });
 }
 export function deleteNarrativeRecords(save: NarrativeSave, ids?: string[]): NarrativeSave {
   const removed = (save.proposals ?? []).filter((p) => ids ? ids.includes(p.id) : ['committed', 'rejected', 'stale'].includes(p.status));
@@ -114,6 +119,23 @@ export function proposalFromMessage(source: MessageEnvelope, expected?: Generati
     reason: parsed.errors.length ? '已识别' + parsed.events.length + '项，待补全：' + parsed.errors.join('；')
       : (!trusted ? !source.complete ? '正文尚未确认生成完成，等待完整消息后刷新' : '无法确定原消息身份，请重新读取或核对来源' : undefined),
   };
+}
+
+/** The local scan is a separate source; it never replaces or tags the original chat message. */
+export function prepareAiScanProposal(save: NarrativeSave, namespace: string, text: string): NarrativeSave {
+  const [characterId, chatId, branchId] = JSON.parse(namespace) as string[];
+  const id = randomId(), binding = captureGeneration(save, namespace, id); binding.complete = true;
+  const source: MessageEnvelope = { characterId: characterId!, chatId: chatId!, branchId: branchId!, messageId: 'ai-scan:' + id, swipeId: '0',
+    role: 'assistant', complete: true, generationId: id, text };
+  const proposal = proposalFromMessage(source, binding);
+  if (!proposal) throw Error('扫描结果没有事件');
+  proposal.origin = 'ai-scan';
+  const candidate = { ...save, proposals: [...(save.proposals ?? []), proposal] };
+  if (proposal.status === 'pending' && narrativeAutoApproval(save)) {
+    try { return prepareNarrativeTransaction(candidate, proposal, namespace); }
+    catch (error) { proposal.status = 'unresolved'; proposal.reason = error instanceof Error ? error.message : String(error); }
+  }
+  return candidate;
 }
 
 /** 相同正文仍可因消息完成或手动重扫获得新的事实绑定；已入账/拒绝不重开。 */
@@ -182,11 +204,10 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (!(save.committedOutcomeIds ?? []).includes(id)) throw new Error('战内与未结算战果只能由引擎更新');
   }
   if (save.committedNarrativeSources?.includes(proposal.sourceKey) || (save.proposals ?? []).some((p) => p.sourceKey === proposal.sourceKey && p.status === 'committed')) throw new Error('此消息已经提交，编辑/重生成不会重复执行');
-  const { realId } = narrativeIds(prepareInventoryState(save));
-  proposal = { ...proposal, events: proposal.events.map(event => 'id' in event && typeof event.id === 'string'
-    ? { ...event, id: realId(event.id) } as Suggestion : event) };
+  const { realId } = narrativeIds({ ...prepareInventoryState(save), narrativeIdState: expected.narrativeIdState ?? save.narrativeIdState });
+  proposal = { ...proposal, events: mapNarrativeReferences(proposal.events, realId) };
   if (!manual && expected.manualOnly) throw new Error('此消息需要预览确认后提交');
-  if (!manual && (!save.storySync || proposal.events.some((e) => !['unit-set', 'unit-update', 'deploy'].includes(e.kind)))) throw new Error('此类变更需人工审查');
+  if (!manual && !narrativeAutoApproval(save)) throw new Error('自动批准未开启，需要确认后提交');
   assertNarrativeCapacity(save, proposal.events);
   const replacesRoster = hasNarrativeDeployment(proposal.events);
   let next = structuredClone(save);
@@ -277,7 +298,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   if (next.rosterIds.length > MAX_SCENE_UNITS && (replacesRoster || next.rosterIds.length > oldDeployedAlive)) throw Error(`本场参战单位卡上限${MAX_SCENE_UNITS}，整批未应用`);
   next.factRevision = (save.factRevision ?? 0) + 1;
   next.proposals = [...(save.proposals ?? []).filter((p) => p.id !== proposal.id), { ...structuredClone(proposal), status: 'committed', reason: undefined }];
-  return next;
+  return prepareNarrativeIds(next);
 }
 
 /** 只找原批次已经存在的出场单位，不重做生成/治疗/奖励。 */

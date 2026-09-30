@@ -14,6 +14,8 @@ import { parseProtocol, protocolExcerpt } from '../../panel/src/protocol.js';
 import type { PromptSettings } from '../../panel/src/prompt-settings.js';
 import { findMessageBySourceId, prepareMessageTag } from '../../host/src/message-identity.js';
 import { invalidateMissingSources, sameSource, sourceCommitted } from './source-receipts.js';
+import { prepareNarrativeIds } from '../../panel/src/narrative-ids.js';
+import { narrativeAutoApproval, prepareAiScanProposal } from '../../panel/src/narrative-state.js';
 
 const PROMPT_ID = 'tavern-battle-native:context';
 export interface CommandVersion { session: HostSession; revision: number; generation?: string }
@@ -158,7 +160,7 @@ export class BattleService {
     const reject = (error: string): PersistReceipt => ({ status: 'conflict', operationId: options.operationId ?? '', session: version.session, error });
     if (this.disposed || !sameSession(version.session, this.store.session()) || !sameSession(version.session, this.host.session()) || version.generation !== this.store.head()?.generation) return reject('聊天或存档代次已变化');
     if (this.migration && !options.allowReview) return reject('请先核对档案迁移预览');
-    const receipt = await this.store.commit(version.revision, before => compactNarrativeSources(update(before)), { operationId: options.operationId, clear: options.clear, messageTags: options.messageTags });
+    const receipt = await this.store.commit(version.revision, before => compactNarrativeSources(update(prepareNarrativeIds(before))), { operationId: options.operationId, clear: options.clear, messageTags: options.messageTags });
     if (!this.disposed && sameSession(version.session, this.store.session()) && sameSession(version.session, this.host.session())) {
       this.receipt = receipt;
       if (receipt.status === 'confirmed') this.error = undefined;
@@ -212,7 +214,15 @@ export class BattleService {
     const copy = structuredClone(intent); return this.transact(before => prepareInventoryTransaction(before, copy), { operationId: copy.id });
   }
   setPromptSettings(settings: PromptSettings): Promise<PersistReceipt> { const copy = structuredClone(settings); return this.transact(before => ({ ...before, promptSettings: copy })); }
-  setStorySync(enabled: boolean): Promise<PersistReceipt> { return this.transact(before => ({ ...before, storySync: enabled })); }
+  setStorySync(enabled: boolean): Promise<PersistReceipt> { return this.transact(before => ({ ...before, storySync: enabled, autoApprove: enabled })); }
+  proposeAiScan(text: string, expectedRevision: number, context: string): Promise<PersistReceipt> {
+    const namespace = this.host.namespace();
+    if (!namespace || context !== this.inventoryContext()) throw Error('聊天或档案已变化，请重新扫描');
+    return this.transact(before => {
+      if (expectedRevision !== (before.factRevision ?? 0) || namespace !== this.host.namespace()) throw Error('扫描结果已过期');
+      return prepareAiScanProposal(before, namespace, text);
+    });
+  }
   deleteBattleReport(id: string): Promise<PersistReceipt> { return this.transact(before => prepareReportDeletion(before, id)); }
   restoreBattleReport(): Promise<PersistReceipt> { return this.transact(prepareReportRestore); }
   restartBattleReport(id: string, expectedRevision: number, seed: string): Promise<PersistReceipt> { return this.transact(before => prepareReportRestart(before, id, expectedRevision, seed)); }
@@ -229,13 +239,13 @@ export class BattleService {
     const namespace = this.host.namespace();
     const proposal = this.snapshot().proposals?.find(item => item.id === id);
     const chat = this.host.context().chat ?? [];
-    const index = proposal ? findMessageBySourceId(chat, proposal.source.messageId) : undefined;
+    const index = proposal && proposal.origin !== 'ai-scan' ? findMessageBySourceId(chat, proposal.source.messageId) : undefined;
     const tags = index === undefined ? [] : [prepareMessageTag(chat, index)];
     return this.transact(before => {
       const proposal = before.proposals?.find(p => p.id === id);
       if (!proposal || !namespace || !['pending', 'failed'].includes(proposal.status)) throw Error('待确认内容不可提交');
       const current = this.host.messageBySource(proposal.source.messageId);
-      if (!current || !current.complete || namespaceOf(current) !== namespace || current.swipeId !== proposal.source.swipeId || protocolExcerpt(current.text) !== (proposal.originalText ?? proposal.source.text)) throw Error('来源消息已改变或删除，请重新扫描');
+      if (proposal.origin !== 'ai-scan' && (!current || !current.complete || namespaceOf(current) !== namespace || current.swipeId !== proposal.source.swipeId || protocolExcerpt(current.text) !== (proposal.originalText ?? proposal.source.text))) throw Error('来源消息已改变或删除，请重新扫描');
       if (sourceCommitted(before, proposal.sourceKey)) throw Error('此消息已入账，不能重复执行');
       return prepareNarrativeTransaction(before, { ...proposal, status: 'pending' }, namespace, true);
     }, { operationId: 'narrative:' + id, messageTags: tags });
@@ -249,7 +259,7 @@ export class BattleService {
       const binding = captureGeneration(before, namespace, randomId()); binding.complete = true;
       const proposal = proposalFromMessage({ ...old.source, text, generationId: binding.id }, binding);
       if (!proposal) throw Error('草稿里尚未识别到事件标签');
-      proposal.corrected = true; proposal.originalText = old.originalText ?? old.source.text;
+      proposal.corrected = true; proposal.originalText = old.originalText ?? old.source.text; proposal.origin = old.origin;
       return { ...before, proposals: [...(before.proposals ?? []).map((p): NarrativeProposal => p.id === id ? { ...p, status: 'stale', reason: '已由本地修正草稿替代' } : p), proposal] };
     });
   }
@@ -313,7 +323,7 @@ export class BattleService {
       const originalId = message.messageId; message.messageId = tag.id;
       this.capabilities.messageIdentity = !!message.messageId && !!message.swipeId;
       const before = this.snapshot(); let expected = binding && !refreshed && !options.manual ? { ...binding, messageId: binding.messageId === originalId ? tag.id : binding.messageId } : undefined;
-      if (!(expected?.complete && expected.messageId === message.messageId) && message.complete && this.capabilities.messageIdentity) expected = { ...captureGeneration(before, namespace, randomId()), complete: true, manualOnly: true, messageId: message.messageId };
+      if (!(expected?.complete && expected.messageId === message.messageId) && message.complete && this.capabilities.messageIdentity) expected = { ...captureGeneration(before, namespace, randomId()), complete: true, manualOnly: !(options.manual && narrativeAutoApproval(before)), messageId: message.messageId };
       if (expected?.complete && this.capabilities.messageIdentity) message.generationId = expected.id;
       const proposal = proposalFromMessage(message, expected); if (!proposal) return;
       if (sourceCommitted(before, proposal.sourceKey) || before.deletedNarrativeReceipts?.includes(narrativeReceiptKey(proposal))) return;
@@ -325,7 +335,7 @@ export class BattleService {
       if (existing.some(p => p.status === 'committed')) { proposal.status = 'stale'; proposal.reason = '此消息已同步，修改不会重复入账'; }
       const proposals = (before.proposals ?? []).filter(p => !upgrade || p.id !== same!.id).map((p): NarrativeProposal => p.sourceKey === proposal.sourceKey && ['pending', 'legacy', 'failed', 'unresolved'].includes(p.status) ? { ...p, status: 'stale', reason: '已被新消息修订替代' } : p);
       let candidate = { ...before, proposals: [...proposals, proposal] };
-      if (proposal.status === 'pending' && !proposal.expected?.manualOnly && candidate.storySync && proposal.events.every(e => ['unit-set', 'unit-update', 'deploy'].includes(e.kind))) {
+      if (proposal.status === 'pending' && !proposal.expected?.manualOnly && narrativeAutoApproval(candidate)) {
         try { candidate = prepareNarrativeTransaction(candidate, proposal, namespace) as typeof candidate; }
         catch (error) { proposal.reason = String(error); proposal.status = /过期|聊天|分支|战内|未结算/.test(proposal.reason) ? 'stale' : 'unresolved'; }
       }
@@ -343,7 +353,7 @@ export class BattleService {
   async rebind(id: string): Promise<void> {
     const before = this.snapshot(); const old = before.proposals?.find(p => p.id === id); const namespace = this.host.namespace();
     if (!old || !namespace || !['legacy', 'stale'].includes(old.status)) throw Error('缺少可重新预览的待确认内容');
-    if (old.corrected) { const receipt = await this.correctProposal(id, old.source.text); if (receipt.status !== 'confirmed') throw Error(receipt.error ?? '草稿尚未保存'); return; }
+    if (old.corrected || old.origin === 'ai-scan') { const receipt = await this.correctProposal(id, old.source.text); if (receipt.status !== 'confirmed') throw Error(receipt.error ?? '草稿尚未保存'); return; }
     const current = this.host.messageBySource(old.source.messageId);
     if (!current || current.role !== 'assistant' || !current.complete || namespaceOf(current) !== namespace || protocolExcerpt(current.text) !== old.source.text || current.swipeId !== old.source.swipeId) throw Error('原消息已变化，需要重新扫描');
     if (sourceCommitted(before, messageSourceKey(current))) throw Error('此消息已入账');

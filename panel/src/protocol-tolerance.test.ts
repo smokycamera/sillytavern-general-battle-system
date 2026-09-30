@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { parseProtocol, protocolExcerpt } from './protocol.js';
 
 describe('正文格式容错', () => {
+  it('空数值、隐式进制和未知显式护甲不变成另一种有效配置', () => {
+    for (const attr of ['hp=""', 'xp=""', 'xp="0x10"', 'atk="Infinity"']) {
+      const result = parseProtocol(`<unit_set id="u1" ${attr}/>`);
+      expect(result.events, attr).toEqual([]); expect(result.errors.length, attr).toBeGreaterThan(0);
+    }
+    expect(parseProtocol('<unit_set id="u1" xpProgress="１２．５点" def="－２"/>').events[0]).toMatchObject({ data: { xpProgress: 12.5, def: -2 } });
+    expect(parseProtocol('<spawn name="甲" side="ally" scale="hero" armor="陌生护甲L5"/>').errors.length).toBeGreaterThan(0);
+  });
   it('扫描全文和常见包裹，缺tb收尾或自闭合斜杠仍识别，记录仅保留事件', () => {
     const tag = '<unit_update id="a" hp="500"/>';
     const expected = parseProtocol('<tb>' + tag + '</tb>').canonical;
@@ -26,6 +34,9 @@ describe('正文格式容错', () => {
     expect(spawn.errors).toEqual([]);
     expect(spawn.events[0]).toMatchObject({ name: 'R&D "卫队"', side: 'ally', scale: 'company', hpMax: 80, weaponLevel: 5, mount: false });
     expect(parseProtocol('<unit_update id=a hp="70 / 560"/>').events[0]).toMatchObject({ hp: 70, hpMax: 560 });
+    expect(parseProtocol('<take item_id="w1"/><unaffect unit_id="u1" source_id="s1"/>').events).toMatchObject([
+      { kind: 'take', id: 'w1', qty: 1 }, { kind: 'unaffect', id: 'u1', sourceId: 's1' },
+    ]);
   });
   it('跨块重复展示去重，同单位互补更新合并，冲突保留待补全', () => {
     const result = parseProtocol('<tb><unit_update id=a hp=500/><deploy id=a/></tb>正文<tb><unit_update id=a hp_max=1000/><deploy id=a/></tb>');

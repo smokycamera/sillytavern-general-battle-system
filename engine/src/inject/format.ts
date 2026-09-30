@@ -1,4 +1,5 @@
 import { tbWeaponShortName } from '../weapon-name.js';
+import { smallBattleResult } from '../battle-result.js';
 import { spCapacity } from '../resources.js';
 import { NARRATIVE_TASK } from './narrative-task.js';
 import { standardConditionMap } from '../conditions.js';
@@ -78,7 +79,7 @@ export function smallStateSummary(
         .join('；')}`,
     );
   }
-  if (b.isOver()) lines.push(b.log.filter((e) => e.kind === 'battle-end').at(-1)?.text ?? '');
+  if (b.isOver()) lines.push(smallBattleResult(b) ?? b.log.filter((e) => e.kind === 'battle-end').at(-1)?.text ?? '');
   lines.push(...battleSituation(b));
   if (opts.includeRecent !== false) lines.push(...recentEvents(b));
   if (opts.directives !== false) lines.push(...narrativeDirectives());
@@ -386,7 +387,7 @@ export function battleAftermathSummary(
     ? `【战阵·战后状况】${won ? '会战大捷' : b.winner() === 'draw' ? '停战／僵持' : '会战失利'}｜我方原始击杀经验 ${b.xpGained}（成长另行折算）`
     : `【战阵·战后状况】${won ? '战斗胜利' : b.winner() === 'draw' ? '僵局' : '战斗失败'}｜我方原始击杀经验 ${b.xpGained}（成长另行折算）`;
   lines.push(head);
-  if (b.isOver()) lines.push(b.log.filter((e) => e.kind === 'battle-end').at(-1)?.text ?? '');
+  if (b.isOver()) lines.push(!isMass(b) ? smallBattleResult(b) ?? '' : b.log.filter((e) => e.kind === 'battle-end').at(-1)?.text ?? '');
   for (const side of ['ally', 'enemy'] as const) {
     const all = b.combatants.filter((c) => c.side === side);
     const dead = all.filter((c) => c.status === 'dead' || c.status === 'fled');

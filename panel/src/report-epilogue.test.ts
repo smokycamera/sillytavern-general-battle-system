@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {generateUnit,traitRegistry,SmallBattle,MassBattle,V3_D20,V3_TW,standardField,applyRecovery,applyHealthLoss,type Combatant} from '../../engine/src/index.js';
 import {captureBattleStart,captureBattleArchive} from './report-history.js';
 import {unitRecordFromCombatant,materializeUnitRecord,commitBattleState,updateUnitRecord} from './unit-state.js';
-import {battleEpilogue,makeNarrativeBatch,battleIdOf,type BattleReport} from './battle-reports.js';
+import {battleEpilogue,makeNarrativeBatch,battleIdOf,publicBattleEvents,type BattleReport} from './battle-reports.js';
 import {skillDefinitionId} from '../../engine/src/skill-catalog.js';
 import {compactEvents} from '../../engine/src/inject/format.js';
 const registry=traitRegistry(),rng={seed:'fixed',next:()=>0,d:(sides:number)=>sides};
@@ -64,5 +64,13 @@ describe('终章事实与致命开关',()=>{
   const restored=SmallBattle.fromSnapshot(structuredClone(b.toSnapshot()));expect(restored.byId('D').status).toBe('dead');
   const company=unit('D','company');battle('small',true,[unit('A','company'),company]);
   applyHealthLoss(company,4);expect(company.recoverableWounded).toBe(4);expect(applyRecovery(company,10)).toBe(4);
+ });
+ it('停战和投降的真实结束原因不会被任务胜负摘要覆盖',()=>{
+  for(const reason of ['ceasefire','surrender'] as const){
+   const b=battle('small',false,[unit('A'),unit('D')]) as SmallBattle;b.finishBattle(reason);
+   const recorded=b.log.filter(e=>e.kind==='battle-end').at(-1)!.text;
+   expect(publicBattleEvents(b).filter(e=>e.entry.kind==='battle-end').at(-1)!.entry.text).toBe(recorded);
+   expect(battleEpilogue(b)).toContain(recorded);expect(makeNarrativeBatch(b,undefined,{},'delta').text).toContain(recorded);
+  }
  });
 });

@@ -185,7 +185,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
         const p = at(x, frontDepth - 1);
         if (!core.includes(p) && !gates.some(g => gridDistance(field, g, p) === 1)) field.structures[p] = createStructure('fortification', wallLevel);
       }
-      field.objective = { kind: 'control', cell: coreCell, cells: core, attackingSide: attack, rounds: 5, limit: field.objective.limit };
+      field.objective = { kind: 'control', cell: coreCell, cells: core, attackingSide: attack, rounds: 2, limit: field.objective.limit };
     }
     // Optional cover is independent of buildings; never blocks primary streets, core or wall access.
     const coverDensity = plan?.cover ?? plan?.density;

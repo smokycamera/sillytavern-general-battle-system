@@ -62,6 +62,8 @@ describe('ordinary LLM preparation',()=>{
     const body=JSON.parse(payload.messages[1].content);
     expect(payload.model).toBe('chosen-model');
     expect(body.messages.map((m:{id:string})=>m.id)).toEqual(['user','new']);
+    expect(body.state.encounter.units.map((u:{id:string})=>u.id)).toEqual(['u1','u2']);
+    for (const unit of source.roster) expect(payload.messages[1].content).not.toContain(unit.id);
     expect(body.fields).toHaveLength(10);
     expect(body.fields.every((f:{options:Record<string,string>})=>!Object.hasOwn(f.options,'unknown'))).toBe(true);
     expect(payload.messages[0].content).toContain('infer a coherent choice');

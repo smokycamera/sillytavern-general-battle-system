@@ -9,6 +9,15 @@ export const BONUS_NAMES = {
   kineticProtection: '动能防护', thermalProtection: '热能防护', arcaneProtection: '奥术防护',
 } as const;
 export type BonusStat = keyof typeof BONUS_NAMES;
+const BONUS_ALIASES: Record<string, BonusStat> = {
+  命中: 'accuracy', 命中率: 'accuracy', 准确: 'accuracy', 精准: 'accuracy', 精准度: 'accuracy',
+  破甲: 'penetration', 穿甲: 'penetration', 穿透力: 'penetration', 伤害加成: 'damage',
+  距离: 'range', 攻击距离: 'range', 持续时间: 'duration', 持续回合: 'duration',
+  治疗量: 'healing', 恢复能量: 'resource', 生命值: 'health', 防御力: 'defense', 防护值: 'protection',
+};
+export function resolveBonusStat(label: string): BonusStat | undefined {
+  return (Object.hasOwn(BONUS_ALIASES, label) ? BONUS_ALIASES[label] : undefined) ?? Object.entries(BONUS_NAMES).find(([key, name]) => key.toLowerCase() === label.toLowerCase() || name === label)?.[0] as BonusStat | undefined;
+}
 export type Enhancements = Partial<Record<BonusStat, number>>;
 export type BonusKind = 'unit' | 'weapon' | 'armor' | 'shield' | 'consumable' | 'accessory' | 'skill';
 const damageChannels: BonusStat[] = ['kineticDamage','thermalDamage','arcaneDamage'];
@@ -33,13 +42,14 @@ export function parseEnhancementSuffix(text: string, kind: BonusKind): { text: s
   const match = text.trim().match(/^(.*?[lL]\s*\d{1,2})((?:[+-].*)?)$/);
   if (!match || !match[2]) return { text: text.trim() };
   const bonuses: Enhancements = {};
-  const parts = [...match[2].matchAll(/([+-])(\d{1,2})([^\d+\-\s]*)/g)];
+  const parts = [...match[2].matchAll(/([+-])(\d{1,2})?([^\d+\-\s]*)/g)];
   if (parts.map(m=>m[0]).join('')!==match[2]) throw Error('强化使用L5+3伤害-2精度，每项-10至+10');
   for (const m of parts) {
-    const label = m[3] === '距离' ? '射程' : m[3] || '强度';
-    const key = Object.entries(BONUS_NAMES).find(([id, name]) => id === label || name === label)?.[0] as BonusStat | undefined;
+    const label = m[3] || '强度';
+    const key = resolveBonusStat(label);
     if (!key || bonuses[key] !== undefined) throw Error('强化方向未知或重复：' + label);
-    bonuses[key] = Number(m[2]) * (m[1]==='-'?-1:1);
+    if (!m[2] && (m[1] !== '+' || !m[3])) throw Error('强化使用L5+3伤害-2精度，每项-10至+10');
+    bonuses[key] = Number(m[2] ?? 1) * (m[1]==='-'?-1:1);
   }
   validateEnhancements(bonuses, kind);
   return { text: match[1]!, bonuses };

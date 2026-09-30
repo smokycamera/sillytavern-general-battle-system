@@ -15,6 +15,7 @@ import {anchoredWeapon,anchoredWeaponLabel,anchoredProtection,armorEffectLabel,s
 import { prepareInventoryState, type InventoryAction, type InventoryItem, type InventorySave } from './inventory-state.js';
 import type { InventoryPreview } from './narrative-controller.js';
 import type { PanelController } from './controller-port.js';
+import { narrativeIds } from './narrative-ids.js';
 
 const esc = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const slotNames = { primary: '主武器', sidearm: '副武器', armor: '护甲', shield: '盾牌', accessory1: '配件一', accessory2: '配件二' };
@@ -259,6 +260,7 @@ export class InventoryPanel {
     let save: InventorySave;
     try { save = this.view(); }
     catch (error) { return `<section id="inventory-panel"><h2>装备与物品</h2><p class="grid-reason">${esc(error)}</p></section>`; }
+    const { publicId } = narrativeIds(save);
     const records = save.storage ?? [];
     if (this.selectedUnit === undefined || this.selectedUnit !== '' && !records.some(r => r.id === this.selectedUnit)) this.selectedUnit = records.find(r => r.side === 'ally' && !r.retired)?.id ?? '';
     const items = this.currentItems(save), current = records.find(r => r.id === this.selectedUnit), actor = current?.snapshot;
@@ -295,7 +297,7 @@ export class InventoryPanel {
         stats.push(['动能防护', String(anchoredProtection(unit, 'kinetic'))], ['热能防护', String(anchoredProtection(unit, 'thermal'))], ['奥术防护', String(anchoredProtection(unit, 'arcane'))], ['负重', String(m.value.load ?? 0)]);
       }
       const battleOnly = m?.kind === 'consumable' && !['heal', 'repair', 'restore', 'cleanse'].includes(m.recipe.mechanism);
-      return `<article class="inventory-card" data-inventory-id="${esc(item.id)}"><div class="inventory-card-heading"><div>${this.bulkDelete ? `<input type="checkbox" class="inventory-select" data-role="inventory-select" ${itemData} aria-label="选择${esc(item.name)}" ${this.selectedItems.has(item.id) ? 'checked' : ''} ${locked || equipped || this.committing ? 'disabled' : ''}>` : ''}<b>${esc(item.name)}</b><span class="item-quantity">×${item.qty}</span></div>${this.bulkDelete ? '' : `<label class="item-prompt"><input type="checkbox" data-role="prompt-item" data-id="${esc(item.id)}" ${promptSelected(save.promptSettings as PromptSettings | undefined, 'item', item.id) ? 'checked' : ''}><span>供剧情参考</span></label>`}</div>
+      return `<article class="inventory-card" data-inventory-id="${esc(item.id)}"><div class="inventory-card-heading"><div>${this.bulkDelete ? `<input type="checkbox" class="inventory-select" data-role="inventory-select" ${itemData} aria-label="选择${esc(item.name)}" ${this.selectedItems.has(item.id) ? 'checked' : ''} ${locked || equipped || this.committing ? 'disabled' : ''}>` : ''}<b>${esc(item.name)}</b><span class="sub">${esc(publicId(item.id))}</span><span class="item-quantity">×${item.qty}</span></div>${this.bulkDelete ? '' : `<label class="item-prompt"><input type="checkbox" data-role="prompt-item" data-id="${esc(item.id)}" ${promptSelected(save.promptSettings as PromptSettings | undefined, 'item', item.id) ? 'checked' : ''}><span>供剧情参考</span></label>`}</div>
         <div class="item-location">${equipped ? slotNames[equipped.slot] + ' · 已装备' : item.assignedTo ? '随身物品' : '公共库存'}${m && m.kind !== 'consumable' ? ' · 等级' + (m.value.recipe?.power ?? 1) : ''}</div>
         ${stats.length ? `<dl class="item-stats">${stats.map(([key, value]) => `<div><dt>${key}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl><details class="item-rules" data-detail-id="rules-${esc(item.id)}"><summary>查看完整属性与规则</summary><p>${esc(itemDescription(item))}</p></details>` : `<p>${esc(itemDescription(item))}</p>`}
         <div class="item-actions" ${this.bulkDelete ? 'hidden' : ''}>${equipped ? `<button class="primary" data-action="inventory-unequip" ${itemData} ${disabled}>卸下</button>` : recommended ? `<button class="primary" data-action="inventory-equip" ${itemData} data-slot="${recommended.slot}" ${locked || !actor || recommended.reason ? 'disabled' : ''}>装备为${slotNames[recommended.slot]}</button>${recommended.reason ? '<span class="grid-reason">' + esc(recommended.reason) + '</span>' : ''}` : ''}

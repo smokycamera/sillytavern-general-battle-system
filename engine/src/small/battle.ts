@@ -1,4 +1,5 @@
 import { assertBattleCapacity } from '../battle-limits.js';
+import { smallBattleResult } from '../battle-result.js';
 import { prepareGridDeployment } from './spatial.js';
 import { bonusMultiplier } from '../enhancements.js';
 import { regionalOrder } from './team-tactics.js';
@@ -827,7 +828,7 @@ export class SmallBattle {
     }
     if (roundEnd && this.round >= goal.limit && !this.objectiveWinner) this.objectiveWinner = goal.kind === 'control' && goal.attackingSide
       ? goal.attackingSide === 'ally' ? 'enemy' : 'ally' : 'draw';
-    if (this.objectiveWinner) this.recordEvent({ round: this.round, kind: 'battle-end', text: `任务结束：${this.objectiveWinner}` });
+    if (this.objectiveWinner) this.recordEvent({ round: this.round, kind: 'battle-end', text: smallBattleResult(this) ?? `任务结束：${this.objectiveWinner}` });
   }
 
   private weaponContext(

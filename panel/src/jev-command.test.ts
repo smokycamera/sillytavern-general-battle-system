@@ -198,6 +198,8 @@ describe("optional JEV command integration", () => {
     expect(JSON.stringify(b.toSnapshot())).toBe(before);
     expect((result.battle as SmallBattle).active?.id).toBe("b");
     expect(requests.length).toBeGreaterThan(0);
+    expect(requests.every(r => r.observation.units.every(u => /^u\d+$/.test(u.id)) && r.commander.unitIds.every(id => /^u\d+$/.test(id)))).toBe(true);
+    expect(requests.every(r => r.candidates.every(c => /^o\d+$/.test(c.id) && (!c.action || /^u\d+$/.test(c.action.unitId))))).toBe(true);
     expect(requests.every((r) => r.commander.side === "ally")).toBe(true);
     expect(result.state.sides.ally?.pending).toBeNull();
     expect(result.state.sides.ally?.plan.tasks.length).toBeGreaterThan(0);

@@ -24,6 +24,14 @@ it('物品种类识别与显示保留负值，配件不接受数值强化',()=>{
   }
   expect(()=>parseItemSpecification('守护护符L3-1')).toThrow();
 });
+it('正文修正同义词和省略的+1都归到正式强化方向', () => {
+  expect(parseItemSpecification('步枪L5+1破甲+1距离').bonuses).toEqual({ penetration: 1, range: 1 });
+  expect(parseItemSpecification('步枪L5+穿甲+伤害').bonuses).toEqual({ penetration: 1, damage: 1 });
+  const parsed = parseProtocol('<tb><spawn name="校验" side="ally" scale="hero" weapon="步枪L5+1穿甲+距离" skills="火花:魔法单体L4+破甲+射程"/></tb>');
+  expect(parsed.errors).toEqual([]);
+  const event = parsed.events.find(e => e.kind === 'spawn');
+  expect(event).toMatchObject({ weaponBonuses: { penetration: 1, range: 1 }, skills: [{ bonuses: { penetration: 1, range: 1 } }] });
+});
 it('正文建档、技能升级及保存读取完整保留负强化与小数人工防护',()=>{
   const parsed=parseProtocol('<tb><spawn name="signed" side="ally" scale="hero" level="L5-3生命+2热能伤害" weapon="步枪L5+1热能穿透-3伤害+3防御" armor="重甲L5-2防护+5热能防护" skills="火花:魔法单体热能L4-3伤害+1穿透"/></tb>');
   expect(parsed.errors).toEqual([]);

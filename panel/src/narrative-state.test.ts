@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { generateUnit, traitRegistry, activeTraitIds, applyXp } from '../../engine/src/index.js';
+import { generateUnit, traitRegistry, activeTraitIds, applyXp, V6_D20 } from '../../engine/src/index.js';
+import { prepareCombatModel } from '../../engine/src/combat-model.js';
+import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
 import { unitRecordFromCombatant, materializeUnitRecord } from './unit-state.js';
 import { prepareInventoryState } from './inventory-state.js';
 import { narrativeIds } from './narrative-ids.js';
 import { narrativeProjection } from './narrative-controller.js';
+import { serializeEvent } from './protocol-syntax.js';
 import { captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type MessageEnvelope, type NarrativeSave } from './narrative-state.js';
 const reg = traitRegistry();
 function setup(body: string) {
@@ -15,6 +18,43 @@ function setup(body: string) {
   return { save, source, ns, proposal: proposalFromMessage(source, binding)! };
 }
 describe('正文原子事务', () => {
+  it('短技能、冷却与效果来源编号可通过JSON修改和撤销，实际实例身份不变', () => {
+    const fixture = setup('');
+    const unit = generateUnit({ name: '法师', side: 'ally', scale: 'hero', rulesVersion: 'v2', level: 4, traits: [], weaponClass: 'rifle',
+      abilityBlueprints: [{ id: 'generic:magic-single', level: 3 }] }, { registry: reg, seed: 'short-skill-references' }).unit;
+    prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit);
+    fixture.save.storage = [unitRecordFromCombatant(unit)];
+    const transact = (save: NarrativeSave, body: string, messageId: string) => {
+      const binding = captureGeneration(save, fixture.ns, 'g1'); binding.complete = true;
+      const source = { ...fixture.source, messageId, text: '<tb>' + body + '</tb>' };
+      return prepareNarrativeTransaction(save, proposalFromMessage(source, binding)!, fixture.ns, true);
+    };
+    const blessed = transact(fixture.save, '<affect id="u1" effects="诅咒" battles="2"/>', 'effect');
+    const ability = blessed.storage![0]!.snapshot!.abilities[0]!, effect = blessed.storage![0]!.snapshot!.traitSources!.find(s => s.kind === 'effect')!;
+    const ids = narrativeIds(blessed), skillId = ids.publicId(ability.id), sourceId = ids.publicId(effect.id);
+    expect(skillId).toBe('k1'); expect(sourceId).toMatch(/^s\d+$/);
+    const prompt = narrativeProjection(blessed, '调整技能');
+    expect(prompt).toContain(`"id":"${skillId}"`); expect(prompt).toContain(`"source":"${sourceId}"`);
+    expect(prompt).not.toContain(`"id":"${ability.id}"`); expect(prompt).not.toContain(`"source":"${effect.id}"`);
+    const data = { skills: [{ id: skillId, values: { power: 5 } }], preparedAbilityIds: [skillId],
+      abilityState: [{ abilityId: ids.publicId(ability.cooldownGroup ?? ability.id), cdLeft: 1, used: 1 }] };
+    const updated = transact(blessed, serializeEvent('unit_set', { id: 'u1', data: JSON.stringify(data) }) + `<unaffect id="u1" source="${sourceId}"/>`, 'edit');
+    const reopened = materializeUnitRecord(JSON.parse(JSON.stringify(updated.storage![0])), reg);
+    expect(reopened.abilities[0]).toMatchObject({ id: ability.id, power: 5 }); expect(reopened.preparedAbilityIds).toEqual([ability.id]);
+    expect(reopened.abilityState[0]).toMatchObject({ abilityId: ability.cooldownGroup ?? ability.id, cdLeft: 1 });
+    expect(reopened.traitSources!.find(s => s.id === effect.id)!.revoked).toBe(true);
+  });
+  it('长身份按单位、武器、护甲分别编号，避开已有短身份', () => {
+    const ids = narrativeIds({ storage: [{ id: 'u1' }, { id: 'long-unit-identity-a' }, { id: 'long-unit-identity-b' }], inventory: [
+      { id: 'long-weapon-identity-a', mechanics: { kind: 'weapon' } }, { id: 'long-weapon-identity-b', mechanics: { kind: 'weapon' } },
+      { id: 'long-armor-identity-a', mechanics: { kind: 'armor' } }, { id: 'long-armor-identity-b', mechanics: { kind: 'shield' } },
+    ] });
+    expect(['u1', 'long-unit-identity-a', 'long-unit-identity-b'].map(ids.publicId)).toEqual(['u1', 'u2', 'u3']);
+    expect(['long-weapon-identity-a', 'long-weapon-identity-b', 'long-armor-identity-a', 'long-armor-identity-b'].map(ids.publicId)).toEqual(['w1', 'w2', 'a1', 'a2']);
+    expect(ids.realId('w2')).toBe('long-weapon-identity-b');
+    expect(ids.realId('u127az2r')).toBe('long-unit-identity-a');
+    expect(ids.realId('e0n3oceh')).toBe('long-weapon-identity-a');
+  });
   it('给LLM短单位与实物代号，并将返回的短代号映射回原存档身份', () => {
     const fixture = setup('');
     const unitId = 'unit-very-long-saved-identity-20260930', itemId = 'equipment-very-long-saved-identity-20260930';
@@ -23,8 +63,8 @@ describe('正文原子事务', () => {
     fixture.save.inventory = [{ id: itemId, name: '旧物', qty: 2, lootType: 'material' }];
     const ids = narrativeIds(prepareInventoryState(fixture.save));
     const prompt = narrativeProjection(fixture.save, '调整单位装备');
-    expect(ids.publicId(unitId).length).toBeLessThanOrEqual(10);
-    expect(ids.publicId(itemId).length).toBeLessThanOrEqual(10);
+    expect(ids.publicId(unitId)).toBe('u1');
+    expect(ids.publicId(itemId)).toBe('i1');
     expect(prompt).toContain(`"id":"${ids.publicId(unitId)}"`);
     expect(prompt).toContain(`"id":"${ids.publicId(itemId)}"`);
     expect(prompt).not.toContain(unitId); expect(prompt).not.toContain(itemId);
@@ -145,7 +185,7 @@ describe('正文原子事务', () => {
     source.text = '<tb><deploy id="a"/><bless id="a" name="神灵庇佑" traits="大守护" battles="2"/></tb>';
     const binding = captureGeneration(save, ns, 'g1'); binding.complete = true;
     const proposal = proposalFromMessage(source, binding)!;
-    expect(() => prepareNarrativeTransaction(save, proposal, ns)).toThrow(/审查/);
+    expect(() => prepareNarrativeTransaction({ ...save, autoApprove: false }, proposal, ns)).toThrow(/自动批准/);
     const next = prepareNarrativeTransaction(save, proposal, ns, true);
     const deployed = materializeUnitRecord(next.storage![0]!, reg);
     expect(deployed.hp).toBe(70); expect(deployed.traits).toEqual([]); expect(activeTraitIds(deployed)).toEqual(['guardian-greater']);
@@ -195,7 +235,7 @@ describe('正文原子事务', () => {
   });
   it('新单位 count=2，每支 560 人，身份不同且重试复现同装备', () => {
     const { save, proposal, ns } = setup('<spawn name="增援" side="ally" scale="company" hpMax="560" count="2"/>');
-    expect(() => prepareNarrativeTransaction(save, proposal, ns)).toThrow('人工审查');
+    expect(() => prepareNarrativeTransaction({ ...save, autoApprove: false }, proposal, ns)).toThrow(/自动批准/);
     const next = prepareNarrativeTransaction(save, proposal, ns, true);
     expect(next.storage!.slice(1).map((r) => [r.hp, r.base.hpMax])).toEqual([[560, 560], [560, 560]]);
     expect(new Set(next.storage!.map((r) => r.id)).size).toBe(3);

@@ -44,7 +44,7 @@ export function prepareMassRoster(roster: Combatant[]): Combatant[] {
 
 export type BattleObjectiveMode = 'auto' | 'annihilation' | 'siege' | 'control' | 'escort' | 'intercept';
 export function normalizeObjectiveMode(value: unknown): BattleObjectiveMode {
-  return value === 'escort' || value === 'intercept' || value === 'siege' || value === 'annihilation' ? value : 'auto';
+  return value === 'escort' || value === 'intercept' || value === 'siege' || value === 'control' || value === 'annihilation' ? value : 'auto';
 }
 
 /** Shared eligibility for model choices and final objective preparation. */
@@ -56,8 +56,9 @@ export function vipCandidates(roster: Combatant[], side: 'ally' | 'enemy'): Comb
 export function prepareBattleObjective(field: BattlefieldSpec, roster: Combatant[], mode: BattleObjectiveMode, protagonistId?: string, attackingSide: 'ally' | 'enemy' = 'ally', selectedVipId?: string): BattlefieldSpec {
   if (!['escort', 'intercept'].includes(mode)) {
     const siegeScene = field.generation?.scene ? ['city_siege','building_siege'].includes(field.generation.scene) : field.environment?.includes('siege');
-    const siege = mode === 'siege' || (mode === 'auto' || mode === 'control') && siegeScene;
-    if (siege && field.layerVersion && field.city?.core.length) return { ...field, objective: { kind: 'control', cell: field.city.core[0]!, cells: [...field.city.core], attackingSide, rounds: 5, limit: field.objective.limit } };
+    const siege = mode === 'siege' || mode === 'auto' && siegeScene;
+    if (siege && field.layerVersion && field.city?.core.length) return { ...field, objective: { kind: 'control', cell: field.city.core[0]!, cells: [...field.city.core], attackingSide, rounds: 2, limit: field.objective.limit } };
+    if (mode === 'control' && !siege) return { ...field, objective: { kind: 'control', cell: field.city?.core[0] ?? field.objective.cell, rounds: 2, limit: field.objective.limit } };
     const next = defaultBattleObjective(field.width, field.height, siege ? ['siege'] : [], attackingSide);
     if (field.layerVersion && !siege) next.cell = field.city?.core[0] ?? field.objective.cell;
     return { ...field, objective: { ...next, limit: field.objective.limit } };
@@ -85,9 +86,8 @@ export function extendSmallRoundLimit(battle: SmallBattle): void {
 }
 
 /** 更新未结束的旧默认占点战：不重判历史战果。 */
-export function upgradeDefaultObjective(battle: SmallBattle, attackingSide: 'ally' | 'enemy' = 'ally'): void {
+export function upgradeDefaultObjective(battle: SmallBattle): void {
   const field = battle.battlefield;
-  if (!field || battle.isOver() || field.objective.kind !== 'control' || field.objective.rounds > 2 || field.objective.attackingSide) return;
-  field.objective = { ...defaultBattleObjective(field.width, field.height, battle.fieldTags, attackingSide), limit: field.objective.limit };
-  battle.controlRounds = { ally: 0, enemy: 0 }; battle.controlHold = undefined;
+  if (!field || battle.isOver() || field.objective.kind !== 'control') return;
+  field.objective = { ...field.objective, rounds: 2 };
 }

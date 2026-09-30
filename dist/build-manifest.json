@@ -1,49 +1,24 @@
 {
   "format": "tavern-battle-native-build",
   "version": "1.6.1-rc.2",
-  "builtAt": "2026-09-29T16:04:14.006Z",
-  "sourceFingerprint": "67065ef124b3a1f318c9eef2f6ffa9a3a25d3d23ee69865c3692a4753c904d24",
+  "builtAt": "2026-09-30T03:18:24.345Z",
+  "sourceFingerprint": "c47cac38459ec64068f1ba4ecd3193cf56b9bc7e21bc0e5dbea86d5983cccb39",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
-    {
-      "path": "LICENSE",
-      "bytes": 35149,
-      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
-    },
-    {
-      "path": "LICENSE-NOTES.md",
-      "bytes": 1076,
-      "sha256": "3c1102b6cb3f1d12fb603fa36920adf797f79463e7178ae4612782765b87f5cc"
-    },
-    {
-      "path": "README.md",
-      "bytes": 4762,
-      "sha256": "8f3c3ccb54e0f2c4cb08aa66f22662d0e7f828584599c5ceb7b9f8963b25d4db"
-    },
-    {
-      "path": "README.zh-CN.md",
-      "bytes": 4414,
-      "sha256": "af75169e632ec5abfd36e167c76258be7c61a11021fd9dbba2401056c9ce5ad6"
-    },
-    {
-      "path": "THIRD_PARTY_NOTICES.md",
-      "bytes": 1564,
-      "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
-    },
     {
       "path": "dist/assets/panel-76wkiQ9O.css",
       "bytes": 27973,
       "sha256": "2d4ed79b03c6270f63ef638dcb724960f1353e9b53ad4cae55522d8d82f6d78c"
     },
     {
-      "path": "dist/assets/panel-icRqgktB.js",
-      "bytes": 378294,
-      "sha256": "27b9b60b9429218abcc32662754e02a4f0d6a06318d5c6bd7c0c94827fff4e9a"
+      "path": "dist/assets/panel-CDKfcOGT.js",
+      "bytes": 385587,
+      "sha256": "d9086674d9234cf1670af7595ef1ad0b4cfc4267a1d65413329a637647a268ed"
     },
     {
-      "path": "dist/assets/preferences-Dso0kXUG.js",
-      "bytes": 628659,
-      "sha256": "55494e6052c2d647c3450ccc5b0b5f869cde78ae07a3517dd8eafcfbd6c69caf"
+      "path": "dist/assets/preferences-CLupAETM.js",
+      "bytes": 639860,
+      "sha256": "004cea08011603083539684cf6cfc595a25238c5d247fae6e7cae6a55310d489"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -52,8 +27,8 @@
     },
     {
       "path": "assets/worldbook/!通用战斗系统约束.json",
-      "bytes": 18429,
-      "sha256": "d8cc27cb21acaab30387893b5f776f891b99a831841ea54134cbac0b55f07b05"
+      "bytes": 18414,
+      "sha256": "30cc842752c33a416b458f353ef631993df26a790b6fb6e2e35f862fbd6ef696"
     },
     {
       "path": "assets/worldbook/lorebook system explain.md",
@@ -227,8 +202,18 @@
     },
     {
       "path": "dist/index.js",
-      "bytes": 82410,
-      "sha256": "84c4471af91b85aa653afe766b83b6f876c15b78c9089975c8a72574b92979c8"
+      "bytes": 82808,
+      "sha256": "bd7ac4648b66d7d519b4dce9ec7618a3a0dd98765390f56ba40e374c5e1ecccb"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 35149,
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "path": "LICENSE-NOTES.md",
+      "bytes": 1076,
+      "sha256": "3c1102b6cb3f1d12fb603fa36920adf797f79463e7178ae4612782765b87f5cc"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -243,7 +228,17 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 46421,
-      "sha256": "bae6f368c365f39ec7368aaebc8f100b3f2b73d0bc241a933f3ec523c2a71c53"
+      "sha256": "6e4a83e205687a4bc651c40ac2bd4f21558cffe234fd27d7a698012e95287ffd"
+    },
+    {
+      "path": "README.md",
+      "bytes": 4762,
+      "sha256": "8f3c3ccb54e0f2c4cb08aa66f22662d0e7f828584599c5ceb7b9f8963b25d4db"
+    },
+    {
+      "path": "README.zh-CN.md",
+      "bytes": 4414,
+      "sha256": "af75169e632ec5abfd36e167c76258be7c61a11021fd9dbba2401056c9ce5ad6"
     },
     {
       "path": "release/current-baseline.json",
@@ -254,6 +249,11 @@
       "path": "scripts/jev-cors-relay.mjs",
       "bytes": 5754,
       "sha256": "c7fb9094f869607e10a45fb46335de4545e14043034f1b56fef937115fca50ca"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "bytes": 1564,
+      "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     }
   ],
   "validation": {

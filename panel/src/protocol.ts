@@ -1,15 +1,16 @@
-import { parseEnhancementSuffix, enhancementLabel, type Enhancements } from '../../engine/src/enhancements.js';
+import { parseEnhancementSuffix, enhancementLabel, type Enhancements, type BonusKind } from '../../engine/src/enhancements.js';
 import { resolveTraitId } from '../../engine/src/index.js';
 /** V2正文：全文提取、格式容错、逐项诊断；真实身份和数值由事务层最终核对。 */
 import { parseAbilitySpec, parseSuggestionTags, type Suggestion } from './tags.js';
 import { resolveWeaponClass } from '../../engine/src/data/weapons.js';
 import { MAX_PROTOCOL_CHARS, MAX_PROTOCOL_EVENTS, MAX_SCENE_UNITS, MAX_SPAWN_COUNT, GROUPING_HINT } from './narrative-limits.js';
-import { scanProtocolTags, normalizedAttributes, serializeEvent } from './protocol-syntax.js';
+import { scanProtocolTags, normalizedAttributes, serializeEvent, type ProtocolTag, type ProtocolAttribute } from './protocol-syntax.js';
 import { parseUnitSet, UNIT_SET_ATTRIBUTES } from './unit-set.js';
-import { normalizeNarrativeSkill } from './spec-tolerance.js';
+import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-tolerance.js';
 import { parseItemSpecification } from './item-spec.js';
 
-export interface ProtocolBatch { events: Suggestion[]; canonical: string; errors: string[]; warnings: string[] }
+export interface ProtocolDiagnostic { message: string; start: number; end: number; field?: string; event: string }
+export interface ProtocolBatch { events: Suggestion[]; canonical: string; errors: string[]; warnings: string[]; diagnostics: ProtocolDiagnostic[] }
 const ATTRIBUTES: Record<string, readonly string[]> = {
   unit_set: UNIT_SET_ATTRIBUTES,
   deploy: ['id'],
@@ -45,7 +46,7 @@ export function protocolExcerpt(text: string): string {
   return tags.every((tag) => !tag.block) ? '<tb>\n' + excerpt + '\n</tb>' : excerpt;
 }
 
-export function parseProtocol(text: string): ProtocolBatch {
+export function parseProtocol(text: string, options: { diagnostics?: boolean } = {}): ProtocolBatch {
   const scanned = scanProtocolTags(text, known), warnings = scanned.warnings, errors: string[] = [];
   const events: Suggestion[] = [], seen = new Map<string, number>();
   const scanLimit = MAX_PROTOCOL_EVENTS * 8;
@@ -122,7 +123,136 @@ export function parseProtocol(text: string): ProtocolBatch {
   // 格式变换提示较多时，优先展示跳过内容/保留旧值的实质诊断。
   const uniqueWarnings = [...new Set(warnings)];
   const orderedWarnings = [...uniqueWarnings.filter(w => !w.startsWith('已规范化 ')), ...uniqueWarnings.filter(w => w.startsWith('已规范化 '))];
-  return { events, canonical: events.map((e) => e.raw).join('\n'), errors: [...new Set(errors)], warnings: orderedWarnings.slice(0, 12) };
+  const batch: ProtocolBatch = { events, canonical: events.map((e) => e.raw).join('\n'), errors: [...new Set(errors)], warnings: orderedWarnings.slice(0, 12), diagnostics: [] };
+  if (options.diagnostics !== false && (errors.length || warnings.some(w => /未采用|未支持|未使用|保留原|忽略/.test(w)))) {
+    batch.diagnostics = recoverProtocol(text).diagnostics;
+    if (!batch.diagnostics.length && errors.length) batch.diagnostics = scanned.tags.map(tag => ({ message: errors[0]!, start: tag.start ?? 0, end: tag.end ?? text.length, event: tag.name }));
+  }
+  return batch;
+}
+
+const repairProbes: Record<string, Record<string, string>> = {
+  spawn: { name: '规格校验', side: 'ally', scale: 'hero' }, unit_set: { id: '校验' },
+  unit_update: { id: '校验', hp: '1' }, deploy: { id: '校验' }, take: { id: '校验' },
+  give: { item: '规格校验' }, reforge: { id: '校验', spec: '剑L1' }, field: { env: 'plains' },
+  learn: { id: '校验', skills: '治疗L1' }, bless: { id: '校验', traits: '快速', battles: '1' },
+  affect: { id: '校验', effects: '诅咒', battles: '1' }, unbless: { id: '校验', source: '校验' }, unaffect: { id: '校验', source: '校验' },
+};
+
+/** Explicit draft recovery only: remove bad fields/suffixes, retain the unit and all usable data. */
+export function recoverProtocol(text: string): { text: string; diagnostics: ProtocolDiagnostic[] } {
+  const tags = scanProtocolTags(text, known).tags, lines: string[] = [], diagnostics: ProtocolDiagnostic[] = [];
+  for (const tag of tags) {
+    const add = (message: string, token?: ProtocolAttribute, needle?: string) => {
+      const relative = needle ? token?.raw.indexOf(needle) ?? -1 : -1;
+      const start = relative >= 0 ? token!.start + relative : token?.start ?? tag.start ?? 0;
+      diagnostics.push({ message, start, end: relative >= 0 ? start + needle!.length : token?.end ?? tag.end ?? text.length, field: token?.key, event: tag.name });
+    };
+    if (!known.has(tag.name)) { add('未支持事件 ' + tag.name); continue; }
+    const full = parseProtocol(tag.raw, { diagnostics: false });
+    if (!full.errors.length && !full.warnings.some(w => /未采用|未支持|未使用|保留原|忽略/.test(w))) { lines.push(tag.raw); continue; }
+    const positions: ProtocolAttribute[] = [];
+    let attrs: Record<string, string> = {};
+    try { normalizedAttributes(tag, ATTRIBUTES[tag.name]!, [], positions, true); }
+    catch (error) { add(error instanceof Error ? error.message : String(error)); }
+    for (const token of positions) {
+      try { Object.assign(attrs, normalizedAttributes({ ...tag, attrs: token.raw }, ATTRIBUTES[tag.name]!, [])); } catch { /* Diagnose each field below. */ }
+    }
+    const probe = { ...repairProbes[tag.name] }, retained: Record<string, string> = {};
+    if (tag.name === 'spawn' && attrs.scale === 'company') {
+      probe.scale = 'company'; probe.hpMax = /^\d+$/.test(attrs.hpMax ?? '') && Number(attrs.hpMax) > 0 ? attrs.hpMax! : '1000000000';
+    }
+    if (tag.name === 'give' && attrs.spec !== undefined) {
+      try { parseItemSpecification(attrs.spec, { type: attrs.type }); probe.spec = attrs.spec; }
+      catch { probe.spec = attrs.type === 'armor' ? '重甲L1' : '剑L1'; }
+    }
+    for (const token of positions) {
+      const key = token.key;
+      if (!ATTRIBUTES[tag.name]!.includes(key)) { add('未使用属性 ' + key, token); continue; }
+      let value: string;
+      try { value = normalizedAttributes({ ...tag, attrs: token.raw }, ATTRIBUTES[tag.name]!, [])[key]!; }
+      catch (error) { add(error instanceof Error ? error.message : String(error), token); continue; }
+      if (value === undefined) continue;
+      if (key === 'data') {
+        try {
+          const data: unknown = JSON.parse(value);
+          if (data && typeof data === 'object' && !Array.isArray(data)) {
+            const valid: Record<string, unknown> = {};
+            for (const [field, entry] of Object.entries(data)) {
+              try { parseUnitSet({ id: probe.id!, data: JSON.stringify({ [field]: entry }) }); valid[field] = entry; }
+              catch (error) { add('data.' + field + '：' + (error instanceof Error ? error.message : String(error)), token, field); }
+            }
+            value = JSON.stringify(valid);
+          }
+        } catch { /* Invalid JSON is diagnosed by the strict field parser. */ }
+      }
+      if (['skills', 'traits', 'effects'].includes(key) && value) {
+        const parts: string[] = [];
+        for (const part of value.split(/[,，、;；]/).filter(Boolean)) {
+          try {
+            let normalized = part;
+            if (key === 'skills') {
+              const notes: string[] = [];
+              try { normalized = normalizeNarrativeSkill(part, notes); }
+              catch { normalized = repairSpecification(part, 'skill', true, message => add(message, token, part)); }
+              if (parseAbilitySpec(normalized).length !== 1) throw Error('未支持技能 ' + part);
+              for (const note of notes) if (/忽略|未支持/.test(note)) add(note, token, part);
+            } else if (key === 'traits' && !resolveTraitId(part)) throw Error('未支持特质 ' + part);
+            const result = parseProtocol(serializeEvent(tag.name, { ...probe, [key]: normalized }), { diagnostics: false });
+            if (result.errors.length || !result.events.length) throw Error(result.errors[0] ?? '未支持' + key + ' ' + part);
+            parts.push(normalized);
+          } catch (error) { add(error instanceof Error ? error.message : String(error), token, part); }
+        }
+        value = parts.join(',');
+        if (!value) continue;
+      }
+      const fieldProbe = { ...probe };
+      if (tag.name === 'unit_set' && ['id', 'reason'].includes(key)) fieldProbe.name = '规格校验';
+      if (['rounds', 'battles', 'permanent'].includes(key)) { delete fieldProbe.rounds; delete fieldProbe.battles; delete fieldProbe.permanent; }
+      const test = (input: string) => parseProtocol(serializeEvent(tag.name, { ...fieldProbe, [key]: input }), { diagnostics: false });
+      let result = test(value);
+      if (result.errors.length && ['weapon', 'weapon2', 'armor', 'shieldSpec', 'spec', 'level'].includes(key)) {
+        try {
+          const kind: BonusKind = key === 'level' ? 'unit' : key === 'armor' ? 'armor' : key === 'shieldSpec' ? 'shield' : 'weapon';
+          const repaired = repairSpecification(key === 'level' ? 'L' + value : value, kind, false, message => add(message, token));
+          value = key === 'level' ? repaired.replace(/^L/i, '') : repaired;
+          result = test(value);
+        } catch { /* Unknown base mechanisms/levels remain a field error. */ }
+      }
+      if (result.errors.length) { add(result.errors.join('；'), token); continue; }
+      if (Object.hasOwn(retained, key) && retained[key] !== value) { add(key + '重复且数值冲突', token); continue; }
+      // Read just this field from the accepted event; never copy probe defaults into the draft.
+      const canonicalTag = scanProtocolTags(result.canonical, known).tags[0];
+      const accepted = canonicalTag ? normalizedAttributes(canonicalTag, ATTRIBUTES[tag.name]!, []) : {};
+      if (accepted[key] !== undefined) retained[key] = accepted[key]!;
+      if (key === 'weapon' && accepted.weapon2 && attrs.weapon2 === undefined) retained.weapon2 = accepted.weapon2;
+    }
+    // Even an incomplete unit remains in the draft so its name and valid fields can be filled in.
+    const recovered = serializeEvent(tag.name, retained);
+    if (!diagnostics.some(d => d.start >= (tag.start ?? 0) && d.end <= (tag.end ?? text.length))) add(full.errors[0] ?? full.warnings[0] ?? '事件需要补全');
+    lines.push(recovered);
+  }
+  const unique = [...new Map(diagnostics.map(d => [d.start + ':' + d.end + ':' + d.message, d])).values()].sort((a, b) => a.start - b.start || a.end - b.end);
+  return { text: lines.length ? '<tb>\n' + lines.join('\n') + '\n</tb>' : '', diagnostics: unique };
+}
+
+function repairSpecification(text: string, kind: BonusKind, skill: boolean, removed: (message: string) => void): string {
+  const normalized = normalizeNarrativeSpec(text), match = normalized.match(/^(.*?[lL][+-]?\d+(?:\.\d+)?)(.*)$/);
+  if (!match || !match[2]) throw Error('基础规格无法解析');
+  const base = match[1]!, suffix = match[2]!;
+  const check = (value: string) => {
+    if (skill) { const result = normalizeNarrativeSkill(value, []); if (parseAbilitySpec(result).length !== 1) throw Error('未知技能机制'); return result; }
+    if (kind === 'unit') { const result = parseEnhancementSuffix(value, kind); if (!/^L(?:10|[1-9])$/i.test(result.text)) throw Error('未知单位等级'); return value; }
+    parseItemSpecification(value); return value;
+  };
+  let retained = check(base);
+  const parts = [...suffix.matchAll(/[+-][^+-]*/g)];
+  if (parts.map(part => part[0]).join('') !== suffix) removed('已移除不完整修正 ' + suffix);
+  for (const part of parts) {
+    try { retained = check(retained + part[0]); }
+    catch (error) { removed('已移除修正 ' + part[0] + '：' + (error instanceof Error ? error.message : String(error))); }
+  }
+  return retained;
 }
 
 function validatedEvent(kind: string, attrs: Record<string, string>, warnings: string[]): Suggestion {
@@ -172,6 +302,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
       const mechanism = resolveWeaponClass(spec);
       if (!mechanism) throw new Error(`${attrs.name}的${key}“${attrs[key]}”缺少支持的效果；请写“自定义名:剑L7”或“激光枪:能量武器L3”，副武器用weapon2`);
     }
+    if (attrs.armor && /[lL]\s*\d/.test(attrs.armor.split(/[:：·｜|/／]/).at(-1)!)) parseItemSpecification(attrs.armor, { type: 'armor' });
   }
   const normalized = serializeEvent(kind, attrs);
   const parsed = parseSuggestionTags(normalized);

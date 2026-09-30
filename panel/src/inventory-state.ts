@@ -10,6 +10,7 @@ import { applyDispel, dispelCandidates } from '../../engine/src/skill-effects.js
 import { calibrateWeaponRange, compileItem, equipmentReason, healingAmount, traitRegistry, parseDice,
   type Combatant, type EquipmentSlot, type ItemMechanics, type ItemSpecification } from '../../engine/src/index.js';
 import { unitRecordFromCombatant, updateUnitRecord, type UnitRecord } from './unit-state.js';
+import { prepareNarrativeIds, type NarrativeIdState } from './narrative-ids.js';
 
 export interface InventoryItem {
   id: string; name: string; qty: number; lootType: string; note?: string; assignedTo?: string;
@@ -21,6 +22,7 @@ export interface InventoryItem {
 }
 export interface InventorySave {
   schemaVersion?: number; storage?: UnitRecord[]; rosterIds?: string[]; inventory?: InventoryItem[]; factRevision?: number;
+  narrativeIdState?: NarrativeIdState;
   inventoryOperations?: { id: string; fingerprint: string }[];
   battle?: { kind: 'small' | 'mass'; snap: Record<string, unknown> } | null;
   committedOutcomeIds?: string[];
@@ -119,7 +121,7 @@ export function fitsEquipmentSlot(mechanics: ItemMechanics, slot: EquipmentSlot)
 
 /** 首次接入只登记已有V2精确实例，绝不按名称生成或重掷旧装备。 */
 export function prepareInventoryState(save: InventorySave, adoptExisting = true): InventorySave {
-  const next = clone(save);
+  const next = clone(prepareNarrativeIds(save));
   calibrateSavedWeaponRanges(next);
   next.inventory ??= []; next.storage ??= [];
   const ids = new Set<string>();

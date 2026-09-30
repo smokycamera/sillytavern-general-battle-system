@@ -1,6 +1,7 @@
 import { normalizeNarrativeSpec } from './spec-tolerance.js';
 /** 正文格式层：只提取标签并修正常见书写差异，不生成缺失身份或战斗数值。 */
-export interface ProtocolTag { name: string; attrs: string; raw: string; complete: boolean; block: number }
+export interface ProtocolTag { name: string; attrs: string; raw: string; complete: boolean; block: number; start?: number; end?: number; attrsStart?: number }
+export interface ProtocolAttribute { key: string; raw: string; start: number; end: number; value: string }
 const compactKey = (value: string) => value.toLowerCase().replace(/[-_]/g, '');
 export function protocolName(value: string): string {
   const key = compactKey(value);
@@ -20,10 +21,26 @@ export function serializeEvent(name: string, attrs: Record<string, string>): str
 }
 
 export function scanProtocolTags(text: string, known: ReadonlySet<string>): { tags: ProtocolTag[]; warnings: string[] } {
+  let offsets = Array.from({ length: text.length }, (_, i) => i);
+  const unwrap = (pattern: RegExp) => {
+    const parts: string[] = [], nextOffsets: number[] = []; let cursor = 0;
+    for (const match of text.matchAll(pattern)) {
+      const at = match.index!, body = match[1]!, bodyAt = match[0].indexOf(body);
+      parts.push(text.slice(cursor, at), '<' + body + '>');
+      for (let i = cursor; i < at; i++) nextOffsets.push(offsets[i]!);
+      nextOffsets.push(offsets[at]!);
+      for (let i = 0; i < body.length; i++) nextOffsets.push(offsets[at + bodyAt + i]!);
+      nextOffsets.push(offsets[at + match[0].length - 1]!); cursor = at + match[0].length;
+    }
+    if (!cursor) return;
+    parts.push(text.slice(cursor));
+    for (let i = cursor; i < text.length; i++) nextOffsets.push(offsets[i]!);
+    text = parts.join(''); offsets = nextOffsets;
+  };
   // 显示转义的标签也参与扫描；属性值中的实体留给属性解析，避免制造额外事件。
-  text = text.replace(/＜/g, '<').replace(/＞/g, '>')
-    .replace(/\\?&lt;(\/?[a-z][\s\S]*?)\\?&gt;/gi, (_all, body: string) => '<' + body + '>')
-    .replace(/\\<(\/?[a-z][^<>]*?)\\?>/gi, '<$1>');
+  text = text.replace(/＜/g, '<').replace(/＞/g, '>');
+  unwrap(/\\?&lt;(\/?[a-z][\s\S]*?)\\?&gt;/gi);
+  unwrap(/\\<(\/?[a-z][^<>]*?)\\?>/gi);
   // 思考区不属于最终正文；保留换行使不完整标签的边界仍可检查。
   text = text.replace(/<(think|thinking|analysis|reasoning)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi, (value) => value.replace(/[^\n]/g, ' '));
   const tags: ProtocolTag[] = [], warnings: string[] = [];
@@ -43,7 +60,9 @@ export function scanProtocolTags(text: string, known: ReadonlySet<string>): { ta
     }
     const end = complete ? at + 1 : at;
     const raw = text.slice(found.index, end).trim();
-    const attrs = text.slice(start.lastIndex, complete ? at : end).trim().replace(/\/\s*$/, '');
+    const attrText = text.slice(start.lastIndex, complete ? at : end);
+    const attrsStart = start.lastIndex + attrText.length - attrText.trimStart().length;
+    const attrs = attrText.trim().replace(/\/\s*$/, '');
     start.lastIndex = Math.max(start.lastIndex, end);
     if (name === 'tb') {
       if (closing) block = 0;
@@ -52,14 +71,14 @@ export function scanProtocolTags(text: string, known: ReadonlySet<string>): { ta
     }
     if (closing) continue;
     if (!known.has(name) && (!block || containers.has(name))) continue;
-    tags.push({ name, attrs, raw, complete, block });
+    tags.push({ name, attrs, raw, complete, block, start: offsets[found.index], end: (offsets[end - 1] ?? offsets[found.index]!) + 1, attrsStart: offsets[attrsStart] ?? offsets[found.index] });
   }
   return { tags, warnings };
 }
 
 function halfWidth(value: string): string {
   return value.replace(/[０-９Ａ-Ｚａ-ｚ]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
-    .replace(/，/g, ',').replace(/．/g, '.').replace(/／/g, '/');
+    .replace(/，/g, ',').replace(/．/g, '.').replace(/／/g, '/').replace(/＋/g, '+').replace(/[−－﹣]/g, '-');
 }
 function numeric(value: string, key: string): string {
   let source = halfWidth(value).trim().replace(/\s*(?:人|名|点|个|支|队|件|份|次|回合|轮|场|级)\s*$/, '').trim();
@@ -68,7 +87,7 @@ function numeric(value: string, key: string): string {
   if (/^\d+(?:\.0+)?$/.test(source)) source = String(Number(source));
   return source;
 }
-const numericKeys = new Set(['hp', 'hpMax', 'level', 'count', 'qty', 'quality', 'rounds', 'battles', 'reserves', 'speed', 'morale']);
+const numericKeys = new Set(['hp', 'hpMax', 'level', 'count', 'qty', 'quality', 'rounds', 'battles', 'reserves', 'speed', 'morale', 'xp', 'xpProgress', 'xpValue', 'memberHp', 'atk', 'def', 'spd', 'moraleMax']);
 const booleanKeys = new Set(['shield', 'mount', 'stabilized', 'permanent', 'retired']);
 const enumAliases: Record<string, Record<string, string>> = {
   side: { 我方: 'ally', 友方: 'ally', 友军: 'ally', allied: 'ally', friendly: 'ally', 敌方: 'enemy', 敌军: 'enemy', hostile: 'enemy' },
@@ -80,8 +99,8 @@ const enumAliases: Record<string, Record<string, string>> = {
   protection: { 均衡: 'balanced', 动能: 'kinetic', 热能: 'thermal', 奥术: 'arcane' },
   enchant: { 无: 'none', 热能: 'thermal', 奥术: 'arcane' },
 };
-export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[], warnings: string[]): Record<string, string> {
-  const aliases: Record<string, string> = { ref: 'id', unitid: 'id', maxhp: 'hpMax', max: 'hpMax', currenthp: 'hp',
+export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[], warnings: string[], positions?: ProtocolAttribute[], collectOnly = false): Record<string, string> {
+  const aliases: Record<string, string> = { ref: 'id', unitid: 'id', itemid: 'id', equipmentid: 'id', sourceid: 'source', maxhp: 'hpMax', max: 'hpMax', currenthp: 'hp',
     abilities: 'skills', skill: 'skills', sidearm: 'weapon2', secondaryweapon: 'weapon2', primaryweapon: 'weapon', trait: 'traits', armour: 'armor', lv: 'level',
     quantity: tag.name === 'spawn' ? 'count' : 'qty', environment: 'env', lighting: 'light',
     ...(tag.name === 'give' ? { name: 'item' } : tag.name === 'field' ? { name: 'env' } : {}) };
@@ -89,6 +108,7 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
   let rest = tag.attrs;
   while (rest.trim()) {
     rest = rest.replace(/^[\s,，;；]+/, '');
+    const attrStart = tag.attrs.length - rest.length;
     const attr = rest.match(/^([a-z][a-z0-9_-]*)\s*[=＝:：]\s*/i);
     if (!attr) throw new Error(tag.name + ' 属性缺少明确的名称或值：' + rest.slice(0, 45));
     const originalKey = attr[1]!, lookup = compactKey(originalKey);
@@ -111,9 +131,13 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
       if (!value) throw new Error(tag.name + ' 的 ' + originalKey + ' 缺少值');
     }
     const originalValue = value;
+    positions?.push({ key: key ?? originalKey, raw: tag.attrs.slice(attrStart, tag.attrs.length - rest.length),
+      start: (tag.attrsStart ?? 0) + attrStart, end: (tag.attrsStart ?? 0) + tag.attrs.length - rest.length, value: decodeEntities(value).trim() });
+    if (collectOnly) continue;
     value = decodeEntities(value).trim();
     if (!key || !allowed.includes(key)) { if(tag.name==='unit_set')throw Error('unit_set未知属性 '+originalKey+'，复杂字段请写data'); warnings.push(tag.name + ' 未使用额外属性 ' + originalKey); continue; }
     if (numericKeys.has(key)) value = numeric(value, key);
+    if (tag.name === 'spawn' && key === 'level') value = normalizeNarrativeSpec('L' + value).replace(/^L/i, '');
     if (booleanKeys.has(key)) value = ({ '1': 'true', '0': 'false', yes: 'true', no: 'false', 是: 'true', 否: 'false', 有: 'true', 无: 'false' } as Record<string, string>)[value.toLowerCase()] ?? value.toLowerCase();
     if (enumAliases[key]) value = enumAliases[key]![value.toLowerCase()] ?? value.toLowerCase();
     if (key === 'env') value = value.toLowerCase();
@@ -130,6 +154,7 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
     if (originalKey !== key || value !== originalValue || !quote || !pair[quote]) warnings.push('已规范化 ' + tag.name + '.' + key);
     result[key] = value;
   }
+  if (collectOnly) return result;
   // Hero creation derives life from training/body/bonuses, even if the narrator supplies it.
   if (tag.name === 'spawn' && result.scale === 'hero') {
     delete result.hp;

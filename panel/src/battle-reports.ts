@@ -1,5 +1,6 @@
 import { SmallBattle, type MassBattle, type BattleLogEntry, type Combatant, woundedLabel } from '../../engine/src/index.js';
 import { observedLog } from '../../engine/src/observation.js';
+import { smallBattleResult } from '../../engine/src/battle-result.js';
 import { compactEvents } from '../../engine/src/inject/format.js';
 import { NARRATIVE_TASK } from '../../engine/src/inject/narrative-task.js';
 import type { DeliveryReceipt } from './tavern.js';
@@ -23,7 +24,8 @@ export function completedBattleRounds(b: Battle): number {
   return b instanceof SmallBattle ? b.round : b.roundReport()?.round ?? b.round;
 }
 export function publicBattleEvents(b: Battle): { index: number; entry: BattleLogEntry }[] {
-  return b.log.flatMap((entry, index) => (b.rules.resolutionVersion === 'v2' ? observedLog([entry], 'ally') : [entry]).map(entry => ({index,entry})));
+  return b.log.flatMap((entry, index) => (b.rules.resolutionVersion === 'v2' ? observedLog([entry], 'ally') : [entry]).map(entry => ({index,
+    entry: entry.kind === 'battle-end' && b instanceof SmallBattle && b.objectiveWinner ? { ...entry, text: smallBattleResult(b) ?? entry.text } : entry })));
 }
 export function narrativeEvents(b: Battle): NarrativeEvent[] {
   return publicBattleEvents(b).filter(({entry}) => !['initiative','round'].includes(entry.kind) && !/^布阵/.test(entry.text)).flatMap(({index,entry}) => {
@@ -32,7 +34,7 @@ export function narrativeEvents(b: Battle): NarrativeEvent[] {
   });
 }
 export function knownBattleState(b: Battle): string {
-  return ['【最新状态】', ...b.visibleCombatants('ally').map(u=>epilogueUnit(b,u))].join('\n');
+  return ['【最新状态】', ...(b instanceof SmallBattle && b.isOver() ? [smallBattleResult(b)!] : []), ...b.visibleCombatants('ally').map(u=>epilogueUnit(b,u))].join('\n');
 }
 function epilogueUnit(b: Battle, u: Combatant): string {
   const statuses = {ready:'可行动',dying:'濒死',dead:u.scale==='hero'?'阵亡':'编队失去战斗力',routing:'溃退中',fled:'已撤离'};
@@ -65,8 +67,9 @@ export function battleEpilogue(b: Battle, start?: BattleReport['start']): string
   const opening=start?.battleId===battleIdOf(b)&&Array.isArray(start.snapshot.combatants)?(start.snapshot.combatants as Combatant[]).filter(u=>ids.has(u.id)):undefined;
   const damage=epilogueDamage(b);
   const goal = b instanceof SmallBattle && b.battlefield?.objective;
-  const mission = goal ? goal.kind === 'annihilation' ? '歼灭战' : goal.kind === 'control' ? '攻城夺点' : '护送/拦截' : '军团会战';
+  const mission = goal ? goal.kind === 'annihilation' ? '歼灭战' : goal.kind === 'control' ? goal.attackingSide ? goal.attackingSide === 'ally' ? '攻城战' : '守城战' : '占旗战' : '护送/拦截' : '军团会战';
   return [`【战阵·战斗终章】${mission}，共${completedBattleRounds(b)}轮；${b.isOver() ? b.winner()==='ally'?'我方胜利':b.winner()==='enemy'?'我方失利':'停战/僵持':'尚未结束'}`,
+    ...(b instanceof SmallBattle && b.isOver() ? ['【胜负原因】' + smallBattleResult(b)] : []),
     `【本场规则】${b.nonLethal?'非致命：双方生命归零只会濒死失能，不视为死亡；编队减员为可救伤兵。':'致命：生命归零按阵亡结算。'}`,
     '【开局单位状态与血量】',...(opening?.length?opening.map(u=>epilogueUnit(b,u)):['这场旧战斗没有开局存档记录，开局状态与血量未记录，不推测。']),
     '【结束单位状态与血量】',...visible.map(u=>epilogueUnit(b,u)),

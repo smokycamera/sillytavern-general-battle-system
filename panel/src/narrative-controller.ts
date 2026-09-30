@@ -16,13 +16,15 @@ import { cellLabel, type BattlefieldSpec } from '../../engine/src/small/spatial.
 import {
   captureGeneration, shouldRefreshNarrativeProposal, factsOf, restoreNarrativeDeployment, messageSourceKey, namespaceOf, prepareNarrativeTransaction, proposalFromMessage,
   compactNarrativeSources, deleteNarrativeRecords, narrativeReceiptKey,
+  narrativeAutoApproval,
+  prepareAiScanProposal,
   type GenerationBinding, type NarrativeSave, type NarrativeProposal,
 } from './narrative-state.js';
 
 import { RUNTIME_REMINDER } from './narrative-prompt.js';
 import { parseProtocol, protocolExcerpt } from './protocol.js';
-import { narrativeIds } from './narrative-ids.js';
-const promptJson = (value: unknown, publicId: (id: string) => string = id => id) => JSON.stringify(value, (_key, entry) => typeof entry === 'string' ? publicId(entry) : entry).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+import { mapNarrativeReferences, mentionsNarrativeId, narrativeIds } from './narrative-ids.js';
+const promptJson = (value: unknown, publicId: (id: string) => string = id => id) => JSON.stringify(mapNarrativeReferences(value, publicId)).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
 
 const PROMPT_ID = 'tavern-battle:context';
 export function narrativeProjection(save: NarrativeSave, requestText = '', details?: ProjectionDetails): string {
@@ -41,8 +43,8 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
   const roster = new Set(save.rosterIds ?? []);
   let inventory: InventorySave['inventory'] = [];
   try { inventory = prepareInventoryState(save).inventory; } catch { /* 坏项由迁移/库存界面说明，不注入不可用物品引用。 */ }
-  const { publicId } = narrativeIds({ storage: save.storage, inventory });
-  const relevant = (r: { id: string; name: string }) => requestText.includes(r.id) || requestText.includes(publicId(r.id)) || r.name.length > 1 && requestText.includes(r.name);
+  const { publicId } = narrativeIds({ ...save, inventory });
+  const relevant = (r: { id: string; name: string }) => mentionsNarrativeId(requestText, r.id) || mentionsNarrativeId(requestText, publicId(r.id)) || r.name.length > 1 && requestText.includes(r.name);
   const equipment = (inventory ?? []).filter((i) => i.qty > 0 && promptSelected(settings, 'item', i.id) && (!i.assignedTo || !limited || save.storage?.some((r) => r.id === i.assignedTo && canInclude(r)))).sort((a, b) => Number(relevant(b)) - Number(relevant(a)) || Number(roster.has(b.assignedTo ?? '')) - Number(roster.has(a.assignedTo ?? '')) || (b.revision ?? 1) - (a.revision ?? 1));
   const allRecords = [...(save.storage ?? [])].filter(canInclude);
   const records = allRecords.filter((r) => promptSelected(settings, 'unit', r.id)
@@ -55,7 +57,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     const owner = goal.kind === 'escape' ? combatants.find((u) => u.id === goal.unitId)?.side : undefined;
     blocks.mission.push(`当前地图${field.width}×${field.height}${goal.kind === 'annihilation' ? '' : '，任务格' + cellLabel(field, goal.cell)}，第${save.battle?.snap.round ?? 1}/${goal.limit}轮；移动/位置以引擎为准。`);
     blocks.mission.push(goal.kind === 'annihilation' ? '任务：歼灭战，使敌方全部失去作战能力获胜，无占点胜利。' : goal.kind === 'control' ? `任务：${goal.attackingSide ? (goal.attackingSide === 'ally' ? '我方进攻、敌方防守' : '我方防守、敌方进攻') + '；仅攻方可占点获胜，守方坚持至期限获胜' : '双方争夺'}，占领当轮不计，连续控制${goal.rounds}个完整回合可胜；当前进展${promptJson(save.battle?.snap.controlRounds ?? {})}。`
-      : `任务：${owner === 'enemy' ? '我方拦截敌方护送' : '我方护送、敌方拦截'}；对象${visible.has(goal.unitId) ? promptJson(goal.unitId, publicId) : '尚未观测'}，地面抵达则护送方胜；${goal.defenderWins ? '消灭、撤离或逾期则拦截方胜' : '旧规则逾期僵持'}。`);
+      : `任务：${owner === 'enemy' ? '我方拦截敌方护送' : '我方护送、敌方拦截'}；对象${visible.has(goal.unitId) ? promptJson(publicId(goal.unitId)) : '尚未观测'}，地面抵达则护送方胜；${goal.defenderWins ? '消灭、撤离或逾期则拦截方胜' : '旧规则逾期僵持'}。`);
   }
   if (limited) blocks.mission.push('仅列我方与当前已观测敌军；未列出的敌军位置、兵力与行动未知，不补写隐藏战斗记录。');
   for (const record of records) {
@@ -256,7 +258,11 @@ export class NarrativeController {
     return { receipt, revision: this.state.factRevision ?? 0 };
   }
   setPromptSettings(settings: PromptSettings): SaveReceipt { return this.write({ ...this.state, promptSettings: structuredClone(settings) }, false); }
-  setStorySync(enabled: boolean): SaveReceipt { return this.write({ ...this.state, storySync: enabled }); }
+  setStorySync(enabled: boolean): SaveReceipt { return this.write({ ...this.state, storySync: enabled, autoApprove: enabled }); }
+  proposeAiScan(text: string, expectedRevision: number, context: string): SaveReceipt {
+    if (!this.namespace || expectedRevision !== (this.state.factRevision ?? 0) || context !== this.inventoryContext()) throw Error('聊天或档案已变化，请重新扫描');
+    return this.write(prepareAiScanProposal(this.state, this.namespace, text));
+  }
   deleteBattleReport(id: string): SaveReceipt { return this.write(prepareReportDeletion(this.state,id)); }
   restoreBattleReport(): SaveReceipt { return this.write(prepareReportRestore(this.state)); }
   restartBattleReport(id: string, expectedRevision: number, seed: string): SaveReceipt { return this.write(prepareReportRestart(this.state,id,expectedRevision,seed)); }
@@ -300,7 +306,7 @@ export class NarrativeController {
       let expected = options.manual ? undefined : binding;
       const matchesGeneration = !options.manual && binding?.complete && binding.messageId === envelope.messageId;
       if (!matchesGeneration && envelope.complete && this.capabilities.messageIdentity && namespaceOf(envelope) === this.namespace) {
-        expected = { ...captureGeneration(this.state, this.namespace!, randomId()), complete: true, manualOnly: true, messageId: envelope.messageId };
+        expected = { ...captureGeneration(this.state, this.namespace!, randomId()), complete: true, manualOnly: !(options.manual && narrativeAutoApproval(this.state)), messageId: envelope.messageId };
       }
       if (expected?.complete && this.capabilities.messageIdentity) envelope.generationId = expected.id;
       const proposal = proposalFromMessage(envelope, expected);
@@ -315,7 +321,7 @@ export class NarrativeController {
       if (existing.some((p) => p.status === 'committed')) { proposal.status = 'stale'; proposal.reason = '此消息已同步；修改不会重复创建单位。可恢复原批次参战单位，新增内容请使用新消息'; }
       const proposals = (this.state.proposals ?? []).filter((p) => !upgrade || p.id !== same!.id).map((p): NarrativeProposal => p.sourceKey === proposal.sourceKey && ['pending', 'legacy', 'failed', 'unresolved'].includes(p.status) ? { ...p, status: 'stale', reason: '已被新消息修订替代' } : p);
       const candidate = { ...this.state, proposals: [...proposals, proposal] };
-      if (proposal.status === 'pending' && !proposal.expected?.manualOnly && candidate.storySync && proposal.events.every((e) => ['unit-set', 'unit-update', 'deploy'].includes(e.kind))) {
+      if (proposal.status === 'pending' && !proposal.expected?.manualOnly && narrativeAutoApproval(candidate)) {
         try {
           const next = prepareNarrativeTransaction(candidate, proposal, this.namespace!);
           if (this.write(next).status !== 'failed') return;
@@ -359,13 +365,14 @@ export class NarrativeController {
     const proposal = proposalFromMessage({ ...old.source, text, generationId: binding.id }, binding);
     if (!proposal) throw new Error('草稿里尚未识别到事件标签');
     proposal.corrected = true; proposal.originalText = old.originalText ?? old.source.text;
+    proposal.origin = old.origin;
     return this.write({ ...this.state, proposals: [...(this.state.proposals ?? []).map((p): NarrativeProposal => p.id === id ? { ...p, status: 'stale', reason: '已由本地修正草稿替代' } : p), proposal] });
   }
   /** 手动重新预览缺绑定的完整消息：生成一个绑定当前事实的候选，不直接执行。 */
   async rebind(id: string): Promise<void> {
     const old = this.state.proposals?.find((p) => p.id === id);
     if (!old || !this.namespace || !['legacy', 'stale'].includes(old.status)) throw new Error('缺少可重新预览的待确认内容或可靠身份');
-    if (old.corrected) {
+    if (old.corrected || old.origin === 'ai-scan') {
       const receipt = this.correctProposal(id, old.source.text);
       if (receipt.status === 'failed') throw new Error(receipt.error ?? '草稿未保存');
       return;

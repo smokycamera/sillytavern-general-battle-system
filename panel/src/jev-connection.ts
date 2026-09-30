@@ -161,6 +161,16 @@ function completionText(content: unknown): string | undefined {
   }).join('');
   return text || undefined;
 }
+export async function openAiTextRequest(connection: JevConnection, messages: { role: string; content: string }[], signal: AbortSignal, request: typeof fetch): Promise<string> {
+  if (connection.protocol !== 'openai' || !connection.model?.trim()) throw new JevConnectionError('请先配置副 API 并选择模型');
+  const response = await jevJsonRequest(connection, request, apiEndpoint(connection, 'chat/completions'), {
+    method: 'POST', headers: headers(connection), signal,
+    body: JSON.stringify({ model: connection.model.trim(), stream: false, messages }),
+  });
+  const text = completionText(response?.choices?.[0]?.message?.content);
+  if (!text?.trim() || text.length > 100000) throw new JevConnectionError('模型没有返回有效的事件文本');
+  return text;
+}
 function parseOpenAiDecision(content: unknown): Record<string, any> {
   const raw = completionText(content);
   if (!raw || raw.length > 100000) throw new JevConnectionError('模型未返回有效决策 JSON');

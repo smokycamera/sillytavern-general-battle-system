@@ -7,6 +7,8 @@ import { renderWorldbookSettings, captureWorldbookDraft, worldbookDraftPatch, ty
 import { randomId } from '../../host/src/browser-compat.js';
 import { equipmentLoadLabel } from '../../engine/src/body.js';
 import { LlmContextController, llmContextSummary, type LlmEncounterContext } from './llm-context.js';
+import { LlmNarrativeScanController } from './llm-narrative-scan.js';
+import { parseProtocol, recoverProtocol } from './protocol.js';
 import { readLlmSettings, saveLlmSettings, llmConnectionKey, llmSettingsView } from './llm-settings.js';
 import { renderLlmSettings } from './llm-settings-view.js';
 import { encounterRequest, normalizeContextSettings } from './jev-context.js';
@@ -29,6 +31,7 @@ import { battleIdOf, publicBattleEvents, battleEpilogue, narrativeEvents, makeNa
 import { lastBattleAction, traceLocations } from './battle-presentation.js';
 import { promptScopeControls } from './prompt-settings.js';
 import { narrativeProjectionDetails } from './narrative-controller.js';
+import { narrativeIds } from './narrative-ids.js';
 import { calibrateAutocannon, calibrateWeaponHands } from '../../engine/src/gen/equipment.js';
 import { gridWeaponRange } from '../../engine/src/small/weapon-range.js';
 import { formationWeaponRange } from '../../engine/src/melee.js';
@@ -121,6 +124,9 @@ function storedMapZoom(): MapZoom {
 const tacticalView: TacticalView = { mode: 'weapon', zoom: storedMapZoom() };
 const formationView: FormationView = {};
 const narrativeDrafts = new Map<string, string>();
+const narrativeErrorIndexes = new Map<string, number>();
+const narrativeScanner = new LlmNarrativeScanController();
+let aiScanDialog: { requirements: string; busy: boolean; error?: string } | undefined;
 const promptDrafts = new Map<string, string>();
 const worldbookDrafts = new Map<string, string>();
 const customWorldbookDrafts = new Map<string, WorldbookDraft>();
@@ -289,7 +295,7 @@ const state: AppState = {
   expandedLog: new Set<number>(),
   manageOpen: false,
   editingUnit: null,
-  autoApprove: true,
+  autoApprove: false,
   encounterIds: new Set<string>(),
   lastBattleUnitIds: [],
   storage: [],
@@ -310,8 +316,44 @@ let llmDiagnostic = "";
 let smallResumeRequested = false;
 let automationEpoch = 0;
 function recentContextMessages() { return (runtime.recentNarrative?.()??[]).filter(m=>m.completed); }
+
+function renderAiScanDialog(): string {
+  const dialog = aiScanDialog;
+  if (!dialog) return '';
+  return `<div class="modal-backdrop" data-action="ai-scan-cancel"><section class="modal-card" data-action="modal-stop" role="dialog" aria-modal="true" aria-labelledby="ai-scan-title">
+    <h2 id="ai-scan-title">AI扫描正文</h2><p>使用副 API 根据正文、内置世界书格式和等级锚定重新生成事件。</p>
+    <label>附加要求（可选）<textarea data-role="ai-scan-requirements" aria-label="扫描附加要求" rows="4" style="width:100%;box-sizing:border-box" ${dialog.busy ? 'disabled' : ''}>${esc(dialog.requirements)}</textarea></label>
+    ${dialog.error ? '<p role="alert" class="grid-reason">' + esc(dialog.error) + '</p>' : ''}
+    <div class="row"><button class="primary" data-action="ai-scan-confirm" ${dialog.busy ? 'disabled' : ''}>${dialog.busy ? '正在扫描…' : '确认扫描'}</button><button data-action="ai-scan-cancel">${dialog.busy ? '取消扫描' : '取消'}</button></div>
+  </section></div>`;
+}
+async function confirmAiScan(): Promise<void> {
+  const dialog = aiScanDialog;
+  if (!dialog || dialog.busy) return;
+  try {
+    requireArchiveWritable();
+    const settings = readLlmSettings(), settingsKey = llmConnectionKey(settings), messages = recentContextMessages(), messagesKey = JSON.stringify(messages);
+    const namespace = adapter.namespace(), revision = state.factRevision, context = controller.inventoryContext();
+    const rules = runtime.getWorldbookSettings?.().items.filter(item => !item.custom).map(item => item.content);
+    const valid = () => aiScanDialog === dialog && adapter.namespace() === namespace && state.factRevision === revision
+      && controller.inventoryContext() === context && JSON.stringify(recentContextMessages()) === messagesKey
+      && llmConnectionKey(readLlmSettings()) === settingsKey && readLlmSettings().windowSize === settings.windowSize;
+    dialog.busy = true; dialog.error = undefined; render('view');
+    const text = await narrativeScanner.scan({ save: controller.snapshot(), messages, requirements: dialog.requirements, rules }, settings, valid);
+    if (!valid()) throw Error('聊天、正文或档案已变化，请重新扫描');
+    const receipt = await controller.proposeAiScan(text, revision, context);
+    if (receipt.status === 'failed') throw Error(receipt.error ?? '扫描事件未保存');
+    if (aiScanDialog !== dialog) return;
+    aiScanDialog = undefined; workspaceTab = 'units'; showWorkspace('units');
+    toast(state.autoApprove ? 'AI扫描完成，事件已按自动批准设置处理' : 'AI扫描完成，请核对生成的事件');
+  } catch (error) {
+    if (aiScanDialog === dialog) { dialog.busy = false; dialog.error = error instanceof Error ? error.message : String(error); }
+  }
+  render('view');
+}
 function stopAutomation(): void { automationEpoch++; fullAuto.stop(); llmContext.cancel(); smallResumeRequested = false; }
 window.addEventListener('pagehide', stopAutomation);
+window.addEventListener('pagehide', () => narrativeScanner.cancel());
 let battleSaveFailed = false;
 let uiBusy = false;
 async function panelTask(task: () => Promise<void>, allowPending = false, feedback?: HTMLElement): Promise<void> {
@@ -435,6 +477,7 @@ function restore(): void {
   reportRestartPreview=undefined;
   if (workspaceNamespace !== adapter.namespace()) {
     narrativeDrafts.clear(); promptDrafts.clear();
+    narrativeErrorIndexes.clear(); narrativeScanner.cancel(); aiScanDialog = undefined;
     workspaceNamespace = adapter.namespace(); workspaceTab = 'battle';
     formationView.selectedId = undefined; formationView.inspectedId = undefined; formationView.nodeId = undefined;
     tacticalView.selectedId = undefined; tacticalView.targetId = undefined; tacticalView.cell = undefined; tacticalView.inspectedCell = undefined; tacticalView.mode = 'weapon';
@@ -447,7 +490,8 @@ function restore(): void {
   state.factRevision = saved?.factRevision ?? 0;
   state.encounterContext = saved?.encounterContext;
   state.proposals = saved?.proposals ?? [];
-  state.storySync = saved?.storySync ?? false;
+  state.storySync = saved?.autoApprove ?? saved?.storySync ?? false;
+  state.autoApprove = state.storySync;
   state.nonLethal = saved?.nonLethal === true;
   state.mapLayout = saved?.mapLayout === 'indoor' ? 'indoor' : 'standard';
   state.objectiveMode = normalizeObjectiveMode(saved?.objectiveMode);
@@ -475,7 +519,7 @@ function restore(): void {
   state.commanderId = saved.commanderId;
   state.autoTurn = !!saved.autoTurn;
   state.saveScope = saved.saveScope === 'character' ? 'character' : 'chat';
-  state.autoApprove = saved.autoApprove ?? true;
+  state.autoApprove = saved.autoApprove ?? saved.storySync ?? false;
   state.pending = Array.isArray(saved.pending) ? saved.pending : [];
   state.inventory = Array.isArray(saved.inventory)
     ? saved.inventory.map((it, i) => ({
@@ -536,7 +580,7 @@ function restore(): void {
   try {
     if (saved.battle?.kind === 'small' && saved.battle.snap) {
       state.small = SmallBattle.fromSnapshot(saved.battle.snap, { traitRegistry: reg, summonUnit });
-      extendSmallRoundLimit(state.small); upgradeDefaultObjective(state.small, state.siegeAttacker);
+      extendSmallRoundLimit(state.small); upgradeDefaultObjective(state.small);
     } else if (saved.battle?.kind === 'mass' && saved.battle.snap) {
       state.mass = MassBattle.fromSnapshot(saved.battle.snap, { traitRegistry: reg, summonUnit });
     }
@@ -895,7 +939,7 @@ function render(scope: RenderScope = 'all', tacticalQuery?: TacticalQuery): void
     updateRegion(app.querySelector<HTMLElement>(`[data-workspace="${workspaceTab}"]`)!, content);
     dirtyWorkspaces.delete(workspaceTab);
   }
-  const dialog = app.querySelector<HTMLElement>('#workspace-dialog')!, dialogHtml = renderLoadoutSkills() || renderAbilityDialog();
+  const dialog = app.querySelector<HTMLElement>('#workspace-dialog')!, dialogHtml = renderAiScanDialog() || renderLoadoutSkills() || renderAbilityDialog();
   if (dialog.innerHTML !== dialogHtml) updateRegion(dialog, dialogHtml);
   window.scrollTo(0, winScroll);
   if (workspaceTab === 'battle' && b) {
@@ -949,7 +993,8 @@ function renderBattlePreparation(): string {
   const missionSummary = state.objectiveMode === 'escort' || state.objectiveMode === 'intercept'
     ? `${escortSide === 'ally' ? '我方护送，敌方拦截' : '敌方护送，我方拦截'}；护送对象：${escortUnit?.name ?? '尚未集结'}。`
     : state.objectiveMode === 'siege' || state.objectiveMode === 'auto' && plannedFieldTags().includes('siege')
-      ? `${state.siegeAttacker === 'ally' ? '我方进攻，敌方防守' : '我方防守，敌方进攻'}；胜利点在守方后方，攻方连续控制5个完整回合获胜。`
+      ? `${state.siegeAttacker === 'ally' ? '我方进攻，敌方防守' : '我方防守，敌方进攻'}；胜利点在守方后方，攻方连续控制2个完整回合获胜。`
+      : state.objectiveMode === 'control' ? '占旗战：任一方连续控制旗点2个完整回合获胜。'
       : '歼灭战：击溃或消灭敌方全部作战单位，没有占点胜利。';
   return `<section class="battle-preparation"><span class="workspace-eyebrow">下一场交战</span><h2>${ready ? '队伍已集结' : '先集结你的队伍'}</h2>
     ${capacityIssue ? `<p class="notice error" role="alert">${esc(capacityIssue)}</p>` : ''}
@@ -958,7 +1003,7 @@ function renderBattlePreparation(): string {
     <div class="preparation-stats"><div><strong>${allies.length}</strong><span>我方单位</span></div><div><strong>${enemies.length}</strong><span>已知敌方</span></div><div><strong>${mode === 'mass' ? '会战' : '战术'}</strong><span>${esc(fieldLabel(plannedFieldTags()) || '野战')}</span></div></div>
     <label class="battle-auto"><input type="checkbox" data-role="non-lethal" ${state.nonLethal?'checked':''}> 非致命战斗（双方伤害只会造成濒死）</label>
     ${renderContextStatus()}${llm.error ? '<p role="alert">'+esc(llm.error)+'</p>' : ''}${llm.settings.enabled ? '<p class="sub">开战前将由普通 LLM 读取最近所选层数的正文，选择指挥与场景配置。可在设置中关闭。</p>' : ''}<div class="row"><button class="primary" data-action="${mode === 'mass' ? 'mass-start' : 'small-start'}" ${ready ? '' : 'disabled'}>开始交战</button><button data-action="workspace-tab" data-tab="units">${ready ? '查看队伍' : '集结队伍'}</button><button data-action="workspace-tab" data-tab="inventory">整理配装</button></div>
-    ${state.roster.every((u) => u.rulesVersion === 'v2') ? `<details class="preparation-options" data-detail-id="preparation-options"><summary>任务设置 · ${state.mapLayout === 'indoor' ? '室内' : '野战'} / ${state.objectiveMode === 'escort' ? '护送' : state.objectiveMode === 'intercept' ? '拦截' : state.objectiveMode === 'siege' ? '攻城' : state.objectiveMode === 'annihilation' ? '歼灭' : plannedFieldTags().includes('siege') ? '攻城' : '歼灭'}</summary><div class="row"><label>地形<select data-role="context-field">${Object.entries(FIELD_LABELS).filter(([id])=>id!=='night').map(([id,label])=>`<option value="${id}" ${(state.field||'plains')===id?'selected':''}>${label}</option>`).join('')}</select></label><label>光照<select data-role="context-lighting"><option value="day" ${state.lighting==='day'?'selected':''}>日间</option><option value="night" ${state.lighting==='night'?'selected':''}>夜间</option></select></label><label>地图<select data-role="map-layout"><option value="standard" ${state.mapLayout !== 'indoor' ? 'selected' : ''}>标准野战</option><option value="indoor" ${state.mapLayout === 'indoor' ? 'selected' : ''}>紧凑室内</option></select></label><label>目标<select data-role="objective-mode"><option value="auto" ${state.objectiveMode === 'auto' ? 'selected' : ''}>按环境：野战歼灭／攻城夺点</option><option value="annihilation" ${state.objectiveMode === 'annihilation' ? 'selected' : ''}>歼灭战</option><option value="siege" ${state.objectiveMode === 'siege' ? 'selected' : ''}>攻城战</option><option value="escort" ${state.objectiveMode === 'escort' ? 'selected' : ''}>我方护送</option><option value="intercept" ${state.objectiveMode === 'intercept' ? 'selected' : ''}>拦截敌方护送</option></select></label><label>攻城角色<select data-role="siege-attacker"><option value="ally" ${state.siegeAttacker === 'ally' ? 'selected' : ''}>我方进攻</option><option value="enemy" ${state.siegeAttacker === 'enemy' ? 'selected' : ''}>我方防守</option></select></label></div><p>野战默认歼灭；攻城胜利点在守方纵深，攻方连续控制5个完整回合获胜，守方坚持到60回合获胜。我方护送沿用主控或首个我方单位；拦截以首个敌方单位为护送对象。双方规则相同：抵达出口则护送方胜，目标被消灭、撤离或逾期未抵达则拦截方胜。</p></details>` : ''}
+    ${state.roster.every((u) => u.rulesVersion === 'v2') ? `<details class="preparation-options" data-detail-id="preparation-options"><summary>任务设置 · ${state.mapLayout === 'indoor' ? '室内' : '野战'} / ${state.objectiveMode === 'escort' ? '护送' : state.objectiveMode === 'intercept' ? '拦截' : state.objectiveMode === 'siege' ? '攻城' : state.objectiveMode === 'control' ? '占旗' : state.objectiveMode === 'annihilation' ? '歼灭' : plannedFieldTags().includes('siege') ? '攻城' : '歼灭'}</summary><div class="row"><label>地形<select data-role="context-field">${Object.entries(FIELD_LABELS).filter(([id])=>id!=='night').map(([id,label])=>`<option value="${id}" ${(state.field||'plains')===id?'selected':''}>${label}</option>`).join('')}</select></label><label>光照<select data-role="context-lighting"><option value="day" ${state.lighting==='day'?'selected':''}>日间</option><option value="night" ${state.lighting==='night'?'selected':''}>夜间</option></select></label><label>地图<select data-role="map-layout"><option value="standard" ${state.mapLayout !== 'indoor' ? 'selected' : ''}>标准野战</option><option value="indoor" ${state.mapLayout === 'indoor' ? 'selected' : ''}>紧凑室内</option></select></label><label>目标<select data-role="objective-mode"><option value="auto" ${state.objectiveMode === 'auto' ? 'selected' : ''}>按环境：野战歼灭／攻城夺点</option><option value="annihilation" ${state.objectiveMode === 'annihilation' ? 'selected' : ''}>歼灭战</option><option value="control" ${state.objectiveMode === 'control' ? 'selected' : ''}>占旗战</option><option value="siege" ${state.objectiveMode === 'siege' ? 'selected' : ''}>攻城战</option><option value="escort" ${state.objectiveMode === 'escort' ? 'selected' : ''}>我方护送</option><option value="intercept" ${state.objectiveMode === 'intercept' ? 'selected' : ''}>拦截敌方护送</option></select></label><label>攻城角色<select data-role="siege-attacker"><option value="ally" ${state.siegeAttacker === 'ally' ? 'selected' : ''}>我方进攻</option><option value="enemy" ${state.siegeAttacker === 'enemy' ? 'selected' : ''}>我方防守</option></select></label></div><p>野战默认歼灭；占旗战任一方连续控制旗点2个完整回合获胜。攻城胜利点在守方纵深，攻方连续控制2个完整回合获胜，守方坚持到60回合获胜。我方护送沿用主控或首个我方单位；拦截以首个敌方单位为护送对象。双方规则相同：抵达出口则护送方胜，目标被消灭、撤离或逾期未抵达则拦截方胜。</p></details>` : ''}
     ${allies.length ? `<div class="preparation-roster">${allies.slice(0, 8).map((u) => `<span><b>${esc(u.name)}</b><small>${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}/${u.base.hpMax}</small></span>`).join('')}${allies.length > 8 ? `<span>另有${allies.length - 8}支单位</span>` : ''}</div>` : ''}
   </section>`;
 }
@@ -999,7 +1044,7 @@ function renderUnitConversion(): string {
 
 function renderConfig(): string {
   const units = state.roster.filter(visibleUnitRecord);
-  return `<section class="team-workspace"><div class="section-heading"><div><h2>参战队伍</h2><p class="sub">沿用当前生命、人数与装备。</p></div><button data-action="gen-toggle">${state.genOpen ? '收起新建' : '添加单位'}</button></div>
+  return `<section class="team-workspace"><div class="section-heading"><div><h2>参战队伍</h2><p class="sub">沿用当前生命、人数与装备。</p></div><div class="row"><button data-action="ai-scan" ${aiScanDialog?.busy ? 'disabled' : ''}>AI扫描</button><button data-action="gen-toggle">${state.genOpen ? '收起新建' : '添加单位'}</button></div></div>
     <div class="gen-details">${state.genOpen ? `<div class="gen-body"><h3>新建单位</h3>${unitForm('gen', state.form, reg)}<div class="row"><button class="primary" data-action="gen-add">预览队伍</button></div>${builderPreview && !builderPreview.record ? buildPreview(builderPreview.unit) : ''}</div>` : ''}</div>
     <div class="units">${units.map((u) => unitHtml(u, state.roster.indexOf(u), false)).join('') || '<div class="workspace-empty"><p>尚未集结队伍。添加新单位，或从下方档案中选择。</p></div>'}</div>
     ${units.length ? '<details class="team-tools"><summary>编制工具</summary><button data-action="gen-clear">清空参战名单</button></details>' : ''}</section>`;
@@ -1264,7 +1309,8 @@ function isMassBattle(b: SmallBattle | MassBattle): b is MassBattle {
 /** 编制管理子界面：编制单位与战场遭遇（AI spawn 投放）分栏管理，可展开查看/编辑详细属性与装备。
  *  仅在非战斗时可用（战斗态单位是快照，不应就地改）。 */
 function renderManage(): string {
-  const promptSettings = controller.snapshot().promptSettings;
+  const saved = controller.snapshot(), promptSettings = saved.promptSettings;
+  const { publicId } = narrativeIds({ ...saved, storage: state.storage, inventory: state.inventory });
   const tierNames = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
   const catKeys = Object.keys(CATEGORY_LABELS) as Category[];
   const storedRecords = state.storage.filter((r) => !r.transient && visibleUnitRecord(r));
@@ -1279,7 +1325,7 @@ function renderManage(): string {
     const isEditingSome = !!state.editingUnit;
     const line = `<div class="manage-row">
         <span class="tag ${r.side}">${r.side === 'ally' ? '我方' : '敌方'}</span>
-        <b>${esc(r.name)}</b><label><input type="checkbox" data-role="prompt-unit" data-id="${esc(r.id)}" ${promptSelected(promptSettings, 'unit', r.id) ? 'checked' : ''}>发送给AI</label>
+        <b>${esc(r.name)}</b><span class="sub">${esc(publicId(r.id))}</span><label><input type="checkbox" data-role="prompt-unit" data-id="${esc(r.id)}" ${promptSelected(promptSettings, 'unit', r.id) ? 'checked' : ''}>发送给AI</label>
         <span class="dim">${scaleLabel({ scale: r.scale, rulesVersion: r.snapshot?.rulesVersion })}等级${r.level}${r.scale !== 'mook' || r.snapshot?.rulesVersion === 'v2' ? `·经验${r.xp ?? 0}` : ''}·${archName(r.archetype ?? 'infantry', true)}·攻${r.base.atk}防${r.base.def}速${r.base.spd}·${r.scale === 'hero' ? '生命' : '人数'}${r.hp}/${r.base.hpMax}${r.morale !== undefined ? `·士气${r.morale}/${r.base.moraleMax}` : ''}${r.status && r.status !== 'ready' ? `·${r.status}` : ''}${r.zone ? `·${r.zone}/${r.rank === 'rear' ? '后排' : r.rank === 'reserve' ? '预备队' : '前排'}` : ''}</span>
         <button data-action="storage-edit" data-id="${esc(r.id)}" ${isEditingSome && !editing ? 'disabled' : ''}>${editing ? '编辑中' : '编辑'}</button>
         ${r.snapshot?.rulesVersion !== 'v2' ? `<button data-action="unit-conversion-preview" data-id="${esc(r.id)}">预览V2更新规则</button>` : r.history?.at(-1)?.sourceId === 'mechanism-v2-conversion' ? `<button data-action="unit-conversion-undo" data-id="${esc(r.id)}">撤销刚才更新规则</button>` : ''}
@@ -1940,10 +1986,27 @@ function renderPending(): string {
 function narrativeEditor(p: NarrativeProposal): string {
   if (p.status === 'committed' || state.proposals.some((other) => other.sourceKey === p.sourceKey && other.status === 'committed')) return '';
   return '<details data-detail-id="narrative-edit-' + esc(p.id) + '"><summary>修正事件草稿</summary>'
-    + '<p class="sub">可直接补改标签，或只保留已识别部分；重新解析后先预览，再确认入账。原聊天正文保持。</p>'
+    + '<p class="sub">可直接补改标签，或保留可解析字段；单位和有效字段会保留。原聊天正文保持。</p>'
     + '<textarea data-role="narrative-draft" data-id="' + esc(p.id) + '" aria-label="事件草稿" rows="6" style="box-sizing:border-box;width:100%;resize:vertical">' + esc(narrativeDrafts.get(p.id) ?? p.source.text) + '</textarea>'
     + '<div class="row"><button data-action="narrative-correct" data-id="' + esc(p.id) + '">重新解析草稿</button>'
-    + (p.status === 'unresolved' && p.events.length ? '<button data-action="narrative-recognized" data-id="' + esc(p.id) + '">草稿只保留已识别部分</button>' : '') + '</div></details>';
+    + '<button data-action="narrative-recognized" data-id="' + esc(p.id) + '">识别可解析部分</button>'
+    + '<button data-action="narrative-error" data-id="' + esc(p.id) + '">查看错误位置</button></div><p data-role="narrative-error-position" class="sub" aria-live="polite"></p></details>';
+}
+
+function jumpToNarrativeError(element: HTMLElement): void {
+  const id = element.dataset.id!, root = element.closest('.narrative-proposal');
+  const draft = root?.querySelector<HTMLTextAreaElement>('[data-role="narrative-draft"]');
+  if (!draft) return;
+  const errors = parseProtocol(draft.value).diagnostics;
+  const status = root?.querySelector<HTMLElement>('[data-role="narrative-error-position"]');
+  if (!errors.length) { if (status) status.textContent = '当前草稿没有解析错误。'; return; }
+  const index = (narrativeErrorIndexes.get(id) ?? 0) % errors.length, error = errors[index]!;
+  narrativeErrorIndexes.set(id, index + 1);
+  draft.closest('details')!.open = true;
+  draft.focus(); draft.setSelectionRange(error.start, error.end);
+  const line = draft.value.slice(0, error.start).split('\n').length, lineHeight = parseFloat(getComputedStyle(draft).lineHeight) || 20;
+  draft.scrollTop = Math.max(0, (line - 2) * lineHeight); draft.scrollIntoView({ block: 'nearest' });
+  if (status) status.textContent = `错误 ${index + 1}/${errors.length}，第${line}行：${error.message}`;
 }
 function renderNarrativeProposals(): string {
   const labels: Record<NarrativeProposal['status'], string> = { pending: '待确认', committed: '已同步', stale: '已过期', legacy: '需核对来源', failed: '未保存', rejected: '已忽略', unresolved: '待补全' };
@@ -1958,9 +2021,9 @@ function renderNarrativeProposals(): string {
     ${!['committed', 'rejected'].includes(p.status) ? '<button data-action="narrative-reject" data-id="' + esc(p.id) + '">忽略本次</button>' : ''}
     <button data-action="narrative-delete" data-id="${esc(p.id)}" title="删除此记录；已同步的档案保持，重复扫描不会再次入账">删除记录</button></div>
     <details><summary>查看事件块</summary><pre>${esc(p.source.text)}</pre></details>${narrativeEditor(p)}</div>`;
-  return `<section class="narrative-sync">${unresolved.length ? '<h2>剧情带来的变化 <small>' + unresolved.length + '项待处理</small></h2>' : '<details data-detail-id="narrative-settings"><summary>剧情同步 · ' + (state.storySync ? '自动同步已启用' : '手动确认') + ' · 没有待处理变更</summary>'}
-    <label><input type="checkbox" data-role="story-sync" ${state.storySync ? 'checked' : ''}>自动同步明确的战外单位修改与部署</label>
-    <div class="sub">${controller.capabilities.beforeGeneration && controller.capabilities.generationEnded ? '关闭面板后仍保持联动。新单位、物品与能力先在这里确认。' : '当前酒馆未连接完整生成事件，请手动扫描并核对变更。'}${controller.capabilities.injection ? '' : '当前酒馆暂不支持自动提供战斗记录。'}</div>
+  return `<section class="narrative-sync">${unresolved.length ? '<h2>剧情带来的变化 <small>' + unresolved.length + '项待处理</small></h2>' : '<details data-detail-id="narrative-settings"><summary>剧情同步 · ' + (state.autoApprove ? '自动批准已启用' : '手动确认') + ' · 没有待处理变更</summary>'}
+    <label><input type="checkbox" data-role="story-sync" ${state.autoApprove ? 'checked' : ''}>自动批准所有受支持的战外事件</label>
+    <div class="sub">${controller.capabilities.beforeGeneration && controller.capabilities.generationEnded ? '关闭面板后仍保持联动。' : '当前酒馆未连接完整生成事件，请手动扫描。'}${state.autoApprove ? '支持的完整事件会自动入账。' : '新单位、物品与能力先在这里确认。'}${controller.capabilities.injection ? '' : '当前酒馆暂不支持自动提供战斗记录。'}</div>
     ${unresolved.length ? unresolved.map(proposal).join('') : '<p class="sub">没有待处理变更。</p>'}
     <details class="narrative-history" data-detail-id="narrative-history"><summary>同步记录与手动扫描</summary><div class="row"><button data-action="narrative-scan">扫描最新完整回复</button><button data-action="narrative-delete">清理已处理记录</button></div><p class="sub">删除记录不撤销已同步档案。事件修正后可重新扫描。</p>${history.map(proposal).join('')}</details>${unresolved.length ? '' : '</details>'}
   </section>`;
@@ -1972,11 +2035,12 @@ function suggestionLabel(s: Suggestion): string {
 
 function suggestionDesc(s: Suggestion): string {
   const unitName = (id?: string, name?: string) => { const record = storageRecordByRef(id, name); return record && visibleUnitRecord(record) ? record.name : name ?? '指定单位'; };
+  const ids = narrativeIds({ ...controller.snapshot(), storage: state.storage, inventory: state.inventory });
   switch (s.kind) {
-    case 'take': return `减少物品「${s.id}」×${s.qty}${s.note ? '——' + s.note : ''}`;
+    case 'take': return `减少物品「${state.inventory.find(i => i.id === ids.realId(s.id))?.name ?? ids.publicId(s.id)}」×${s.qty}${s.note ? '——' + s.note : ''}`;
     case 'give': return `获得物品「${s.item}」×${s.qty}${s.spec ? ' · ' + itemSpecificationLabel(s.spec) : ' · 叙事记录'}${s.note ? `——${s.note}` : ''}`;
     case 'learn': return `${unitName(s.id)} 学习或更新：${s.skills.map((skill) => (skill.name ?? ABILITY_BLUEPRINTS[skill.blueprintId]?.name ?? skill.blueprintId) + (skill.level === undefined ? '' : ' L' + skill.level)).join('、')}；其余记录保留`;
-    case 'reforge': return `改造「${s.name ?? state.inventory.find((i) => i.id === s.id)?.name ?? '指定装备'}」为 ${itemSpecificationLabel(s.spec)}`;
+    case 'reforge': return `改造「${s.name ?? state.inventory.find((i) => i.id === ids.realId(s.id))?.name ?? '指定装备'}」为 ${itemSpecificationLabel(s.spec)}`;
     case 'bless': return `${unitName(s.id)} 获得「${s.name}」：${s.traitIds.map((id) => reg.get(id)?.name ?? id).join('、')} · ${s.duration.kind === 'permanent' ? '永久' : s.duration.count + (s.duration.kind === 'rounds' ? '个战斗整轮' : '场战斗')}`;
     case 'unbless': return `${unitName(s.id)} 撤销指定祝福来源（保留永久特质）`;
     case 'affect': return `${unitName(s.id)} 获得「${s.name}」：${s.conditionIds.map((id) => standardConditionMap().get(id)?.name ?? id).join('、')} · ${s.duration.kind === 'permanent' ? '永久' : s.duration.count + (s.duration.kind === 'rounds' ? '个战斗整轮' : '场战斗')}`;
@@ -2000,7 +2064,10 @@ function suggestionDesc(s: Suggestion): string {
 }
 
 function storageRecordByRef(id?: string, name?: string): RosterUnit | undefined {
-  if (id) return state.storage.find((r) => r.id === id);
+  if (id) {
+    const realId = narrativeIds({ ...controller.snapshot(), storage: state.storage, inventory: state.inventory }).realId(id);
+    return state.storage.find((r) => r.id === realId);
+  }
   if (!name) return undefined;
   const hits = state.storage.filter((r) => r.name === name);
   return hits.length === 1 ? hits[0] : undefined;
@@ -2154,6 +2221,14 @@ async function handleAction(e: Event): Promise<void> {
     render('view'); battleCamera.focus(document.querySelector<HTMLElement>('.grid-cell.selected') ?? undefined); return;
   }
   if (act === 'modal-stop') return;
+  if (act === 'narrative-error') { jumpToNarrativeError(el); return; }
+  if (act === 'narrative-recognized') { try { await actions[act]?.(el); } catch (error) { toast(error instanceof Error ? error.message : String(error)); } render('view'); return; }
+  if (act === 'ai-scan' || act === 'ai-scan-cancel' || act === 'ai-scan-confirm') {
+    if (act === 'ai-scan-cancel') { narrativeScanner.cancel(); aiScanDialog = undefined; }
+    else if (act === 'ai-scan-confirm') { await confirmAiScan(); return; }
+    else { try { requireArchiveWritable(); aiScanDialog = { requirements: '', busy: false }; } catch (error) { toast(error instanceof Error ? error.message : String(error)); } }
+    render('view'); return;
+  }
   if ((await inventoryPanel.handleAction(el))) return;
   battleSaveFailed = false;
   if (act === 'save-retry') { await actions[act]?.(el); render(); return; }
@@ -2335,7 +2410,7 @@ function markProcessed(raw: string): void {
 
 /** 批准一条建议并落地 */
 async function approveSuggestion(s: Suggestion): Promise<void> {
-  if (['bless', 'unbless', 'affect', 'unaffect', 'reforge', 'learn'].includes(s.kind) || s.kind === 'give' && s.spec) throw new Error('有效果的物品、改造和增减益请通过剧情档案同步整批审查，旧无来源记录不能直接执行');
+  if (['take', 'unit-set', 'bless', 'unbless', 'affect', 'unaffect', 'reforge', 'learn'].includes(s.kind) || s.kind === 'give' && s.spec) throw new Error('物品扣减、完整单位修改、有效果的物品、改造和增减益请通过剧情档案同步整批审查，旧无来源记录不能直接执行');
   switch (s.kind) {
     case 'give': {
       const existing = state.inventory.find((it) => it.name === s.item && it.lootType === s.lootType && it.note === s.note && !it.assignedTo);
@@ -2574,7 +2649,7 @@ async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void>
         && JSON.stringify([state.mode,state.field,state.lighting,state.mapLayout,state.objectiveMode,state.siegeAttacker,state.protagonistId])===setupKey
         && JSON.stringify(recentContextMessages())===messagesKey && (!runtime.canWrite||runtime.canWrite());
     const unitNotes=Object.fromEntries(state.storage.filter(u=>state.roster.some(c=>c.id===u.id)).map(u=>[u.id,u.note??'']));
-    const pending=llmContext.select({roster:state.roster,setup,messages,unitNotes},settings,valid);
+    const pending=llmContext.select({roster:state.roster,setup,messages,unitNotes,narrativeIdState:controller.snapshot().narrativeIdState},settings,valid);
     render('battle');
     context=await pending;
     if (!valid()) throw Error('准备信息已变化，尚未开始战斗');
@@ -2835,9 +2910,12 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   },
   'narrative-recognized': (el) => {
     const p = state.proposals.find((p) => p.id === el.dataset.id);
-    if (!p?.canonical) throw new Error('尚无可识别部分');
-    narrativeDrafts.set(p.id, '<tb>\n' + p.canonical + '\n</tb>');
-    toast('草稿已保留识别部分，尚未入账；核对后重新解析');
+    const draft = el.closest('.narrative-proposal')?.querySelector<HTMLTextAreaElement>('[data-role="narrative-draft"]')?.value;
+    if (!p || draft === undefined) throw new Error('没有可解析的草稿');
+    const repaired = recoverProtocol(draft);
+    if (!repaired.text) throw Error('尚未识别到支持的事件');
+    narrativeDrafts.set(p.id, repaired.text); narrativeErrorIndexes.delete(p.id);
+    toast('已保留单位和可解析字段，请核对后重新解析草稿');
   },
   'narrative-reject': async (el) => { (await controller.reject(el.dataset.id!)); },
   'narrative-delete': async (el) => { const receipt = (await controller.deleteRecords(el.dataset.id ? [el.dataset.id] : undefined)); if (receipt.status === 'failed') throw new Error(receipt.error ?? '记录未删除，保存失败'); },
@@ -3394,7 +3472,7 @@ async function afterSmallAction(endTurn = true): Promise<void> {
 document.addEventListener('click', e => {
   const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
   if (!action) return;
-  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'modal-stop', 'llm-stop', 'llm-models'].includes(action) || action.startsWith('worldbook-')) { void handleAction(e); return; }
+  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'modal-stop', 'llm-stop', 'llm-models', 'ai-scan', 'ai-scan-confirm', 'ai-scan-cancel', 'narrative-error', 'narrative-recognized'].includes(action) || action.startsWith('worldbook-')) { void handleAction(e); return; }
   if (MAP_INSPECTION.includes(action)) {
     if (uiBusy) { toast('正在保存上一项操作，请稍候…'); return; }
     try { inspectBattleMap((e.target as HTMLElement).closest<HTMLElement>('[data-action]')!); }
@@ -3434,7 +3512,8 @@ document.addEventListener('input', (e) => {
     return;
   }
   if (e.target instanceof HTMLTextAreaElement && e.target.dataset.role === 'worldbook-template') { worldbookDrafts.set(e.target.dataset.entry!, e.target.value); return; }
-  if (e.target instanceof HTMLTextAreaElement && e.target.dataset.role === 'narrative-draft') { narrativeDrafts.set(e.target.dataset.id!, e.target.value); return; }
+  if (e.target instanceof HTMLTextAreaElement && e.target.dataset.role === 'narrative-draft') { narrativeDrafts.set(e.target.dataset.id!, e.target.value); narrativeErrorIndexes.delete(e.target.dataset.id!); return; }
+  if (e.target instanceof HTMLTextAreaElement && e.target.dataset.role === 'ai-scan-requirements' && aiScanDialog) { aiScanDialog.requirements = e.target.value; return; }
   inventoryPanel.capture(e.target);
   if (e.target.closest('[data-builder-form]') && !(e.target instanceof HTMLSelectElement) && !(e.target instanceof HTMLInputElement && e.target.type === 'checkbox')) { captureForm(); builderPreview = undefined; document.querySelectorAll('[data-role="builder-preview"]').forEach((el) => el.remove()); }
 });
@@ -3517,7 +3596,7 @@ async function handleChange(e: Event): Promise<void> {
     render();
   } else if (role === 'auto-approve') {
     state.autoApprove = (el as HTMLInputElement).checked;
-    (await persist());
+    (await controller.setStorySync(state.autoApprove));
     render();
   } else if (role === 'auto-settle') {
     state.autoSettleXp = (el as HTMLInputElement).checked;

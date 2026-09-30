@@ -11,6 +11,7 @@ import { llmConnection, type LlmSettings } from './llm-settings.js';
 import type { Combatant } from '../../engine/src/index.js';
 import type { CommanderProfiles, CommanderProfile } from '../../engine/src/commander-profile.js';
 import type { NarrativeMessage, ContextSelectionAnswer } from '../../vendor/jev-core/src/index.js';
+import type { NarrativeIdState } from './narrative-ids.js';
 
 export interface LlmEncounterContext extends JevEncounterContext, PreparationDesignResult { commanders?: CommanderProfiles }
 export function llmContextSummary(context: LlmEncounterContext): string {
@@ -26,7 +27,7 @@ export class LlmContextController {
     try { return await fetchJevModels(llmConnection(settings), this.request); }
     catch (error) { throw Error(llmFailure(error)); }
   }
-  async select(input: { roster: Combatant[]; setup: EncounterSetup; messages: NarrativeMessage[]; unitNotes?: Record<string, string> }, settings: LlmSettings, valid: () => boolean): Promise<LlmEncounterContext> {
+  async select(input: { roster: Combatant[]; setup: EncounterSetup; messages: NarrativeMessage[]; unitNotes?: Record<string, string>; narrativeIdState?: NarrativeIdState }, settings: LlmSettings, valid: () => boolean): Promise<LlmEncounterContext> {
     if (this.busy) throw Error('正在读取上下文，请稍候');
     const connection = llmConnection(settings);
     if (!connection.model) throw Error('请先拉取并选择模型，或填写模型 ID');

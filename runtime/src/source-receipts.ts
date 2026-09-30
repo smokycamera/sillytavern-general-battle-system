@@ -52,6 +52,7 @@ export function invalidateMissingSources(save: NarrativeSave, host: NativeHost):
   let changed = false;
   const proposals = save.proposals?.map((proposal): NarrativeProposal => {
     if (proposal.status === 'committed' || proposal.status === 'rejected' || proposal.status === 'stale') return proposal;
+    if (proposal.origin === 'ai-scan' && namespaceOf(proposal.source) === host.namespace()) return proposal;
     const current = host.messageBySource(proposal.source.messageId);
     if (current && namespaceOf(current) === namespaceOf(proposal.source)) return proposal;
     changed = true;

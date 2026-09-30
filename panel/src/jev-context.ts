@@ -1,4 +1,5 @@
 import { MAX_SMALL_UNITS } from '../../engine/src/battle-limits.js';
+import { narrativeIds, type NarrativeIdState } from './narrative-ids.js';
 import {
   deployOnGrid,
   standardField,
@@ -106,6 +107,7 @@ export interface JevEncounterContext extends EncounterSetup {
 }
 export interface EncounterContextInput {
   roster: Combatant[];
+  narrativeIdState?: NarrativeIdState;
   setup: EncounterSetup;
   settings: JevContextSettings;
   messages: NarrativeMessage[];
@@ -211,6 +213,7 @@ export function encounterRequest(input: EncounterContextInput): {
     !input.force;
   base.messageKey = key;
   base.messageKeys = messageKeys;
+  const { publicId } = narrativeIds({ storage: input.roster, narrativeIdState: input.narrativeIdState });
   const request: ContextSelectionRequest = {
     messages,
     state: JSON.parse(
@@ -226,7 +229,7 @@ export function encounterRequest(input: EncounterContextInput): {
         units: input.roster
           .filter((u) => input.phase === "preparation" || u.side === "enemy")
           .map((u) => ({
-            id: u.id,
+            id: publicId(u.id),
             name: u.name,
             side: u.side,
             scale: u.scale,

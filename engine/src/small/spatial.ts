@@ -34,7 +34,7 @@ export interface BattlefieldSpec {
 /** 攻城点位于守方纵深中央；歼灭战保留中心坐标仅供地图连通性检查。 */
 export function defaultBattleObjective(width: number, height: number, tags: string[], attackingSide: 'ally' | 'enemy' = 'ally'): BattlefieldSpec['objective'] {
   return tags.includes('siege')
-    ? { kind: 'control', attackingSide, cell: (attackingSide === 'ally' ? 1 : height - 2) * width + Math.floor(width / 2), rounds: 5, limit: DEFAULT_SMALL_ROUND_LIMIT }
+    ? { kind: 'control', attackingSide, cell: (attackingSide === 'ally' ? 1 : height - 2) * width + Math.floor(width / 2), rounds: 2, limit: DEFAULT_SMALL_ROUND_LIMIT }
     : { kind: 'annihilation', cell: Math.floor(height / 2) * width + Math.floor(width / 2), limit: DEFAULT_SMALL_ROUND_LIMIT };
 }
 export interface GridPath { cells: number[]; cost: number }
