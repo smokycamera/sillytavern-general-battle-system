@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "1.6.1-rc.3",
-  "builtAt": "2026-09-30T07:30:30.031Z",
-  "sourceFingerprint": "edbb5a0014598f30dd7a120c9073b6c8387b4803ff245071a9fe7647877ba5a5",
+  "builtAt": "2026-09-30T07:49:55.488Z",
+  "sourceFingerprint": "987fa26a5289d77f7e002e5df8fb4cc1e09020f134450982a075a3ed1e34bb96",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -11,9 +11,9 @@
       "sha256": "97fa714c7e53b08ae811e605a6e2ef8c97624806780c4105fcae033d4ba80b57"
     },
     {
-      "path": "dist/assets/panel-Dn_EUCa_.js",
-      "bytes": 403678,
-      "sha256": "e90c230f5813ecb9ee8591f8c813314128fac4986dc15977163cb14380c7c38d"
+      "path": "dist/assets/panel-DfOEctvE.js",
+      "bytes": 403833,
+      "sha256": "a5b541e52e9255564c2a83186697d4bec8febe1afb8c25b18cde7b50df2ea43d"
     },
     {
       "path": "dist/assets/preferences-CiKeVAPz.js",
@@ -47,8 +47,8 @@
     },
     {
       "path": "docs/battlefield-refactor-implementation.md",
-      "bytes": 7647,
-      "sha256": "67f6f3a929b273024a3932639455b95fb73f90792416fa44f5ed5471a3fde669"
+      "bytes": 7975,
+      "sha256": "8188f26d9ae04816b693de50ac785459c2a89b5510d5ade7ddd401bd357794e1"
     },
     {
       "path": "docs/battlefield-refactor-proposal.md",
@@ -238,7 +238,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 46421,
-      "sha256": "c2211e4601374c72a62e86a66f537a91b09c2b12a2303ce17da2df86bfad9754"
+      "sha256": "a49eb891c4989e7a8cef70e4a4eae5bd2cca9f21440d1549fa9276a66962d056"
     },
     {
       "path": "README.md",

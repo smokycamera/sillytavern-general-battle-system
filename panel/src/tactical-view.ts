@@ -54,8 +54,13 @@ export function selectTacticalElement(battle: SmallBattle, view: TacticalView, i
   const cell = input.cell ?? selection.visible.find((u) => u.id === input.unitId)?.pos;
   if (cell === undefined || !inBounds(field, cell)) return selection.query;
   view.inspectedCell = cell; view.cell = undefined;
-  if (selection.option?.targets?.some(t=>t.targetId==='cell:'+cell) && !input.actor) { view.targetId='cell:'+cell; return selection.query; }
   const occupants = selection.visible.filter((u) => u.pos === cell);
+  const active = occupants.find(u => u.side === 'ally' && u.id === battle.active?.id);
+  // Returning from another unit's inspection takes precedence over its move or healing targets.
+  if (active && selection.actor?.id !== active.id && (!input.unitId || input.unitId === active.id)) {
+    view.selectedId = active.id; view.targetId = undefined; return;
+  }
+  if (selection.option?.targets?.some(t=>t.targetId==='cell:'+cell) && !input.actor) { view.targetId='cell:'+cell; return selection.query; }
   const unit = input.unitId ? occupants.find((u) => u.id === input.unitId)
     : occupants.find((u) => selection.option?.targets?.some((t) => t.targetId === u.id)) ?? occupants[0];
   if (view.mode === 'move' && !input.actor && (!input.unitId || unit?.status === 'dying')

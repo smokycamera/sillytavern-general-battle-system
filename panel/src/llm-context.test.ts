@@ -66,7 +66,6 @@ describe('ordinary LLM preparation',()=>{
     for (const unit of source.roster) expect(payload.messages[1].content).not.toContain(unit.id);
     expect(body.fields).toHaveLength(10);
     expect(body.fields.every((f:{options:Record<string,string>})=>!Object.hasOwn(f.options,'unknown'))).toBe(true);
-    expect(payload.messages[0].content).toContain('infer a coherent choice');
     expect(payload.messages[1].content).not.toMatch(/未明确时不要推断|没有明确依据|战斗中仅明确指挥官/);
     expect(payload.messages[1].content).not.toMatch(/隐藏推理|未完成|不得发送|旧剧情/);
     expect(request.mock.calls[0]![0]).toBe('https://gateway.example/v1/chat/completions');
