@@ -1,5 +1,7 @@
 # 通用战斗系统
 
+Optional **MCP player controls** connect ChatGPT, Dots and compatible clients to the existing player UI, including battle buttons, loadouts, commander styles and map design. Disabled by default; the battle engine and save format are unchanged. See the [MCP setup guide](mcp/README.md).
+
 **English** | [简体中文](README.zh-CN.md)
 
 Current candidate: **1.6.1-rc.3**. Narrative spatial relationships now guide city and outside-city layouts, landmarks and deployment. New maps use actual elevation and explicit bridge/gate counts, positions and states. Secondary API prompts are shorter and explicitly identify ford as shallow water. See [implementation and validation](docs/battlefield-refactor-implementation.md). This is a prerelease; do not enable both stable and test installations at once.
