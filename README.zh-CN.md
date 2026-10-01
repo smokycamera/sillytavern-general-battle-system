@@ -1,5 +1,9 @@
 # 通用战斗系统
 
+新增可选的 **MCP 玩家操作**：ChatGPT / Dots 等客户端可操作玩家可见的按钮、地图、队伍、配装、指挥风格与地图设计。默认关闭，独立桥接服务不改变本体战斗规则。见 [MCP 安装与使用](mcp/README.md)。
+
+手机 TT + VPS 部署请使用独立的 [tavern-battle-mcp 仓库](https://github.com/smokycamera/tavern-battle-mcp)。手机更新本插件的 `test` 分支，MCP 服务安装在 VPS 上。
+
 [English](README.md) | **简体中文**
 
 当前测试候选版：**1.6.1-rc.3**。本版加入正文空间关系驱动的城市、城外战区与地标部署，支持实际高差和明确的桥门数量、位置、状态；副 API 提示词已精简，并明确 ford 代表浅水。见[实施与验证](docs/battlefield-refactor-implementation.md)。这是预发布候选；请先导出存档，不要同时启用正式版与 test 版。

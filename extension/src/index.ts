@@ -100,11 +100,17 @@ async function startRuntime() {
   };
   const chooseFile = () => {
     const input = document.createElement('input'); input.type = 'file'; input.accept = '.json,application/json';
+    input.setAttribute('aria-label', '导入战阵存档 JSON 文件');
     input.addEventListener('change', async () => {
       const file = input.files?.[0]; if (!file) return;
+      input.disabled = true;
       try { showChange(await management.previewFile(await file.text())); }
       catch (error) { panel.showStatus(String(error), [{ label: '返回存档管理', run: showManagement }], true); }
-    }, { once: true }); input.click();
+      finally { input.disabled = false; }
+    }, { once: true });
+    panel.showStatus('选择 JSON 存档文件，读取后先预览变更，再确认导入。', [{ label: '返回存档管理', run: showManagement }], true);
+    document.querySelector('#tavern-battle-native-panel .tb-status')?.append(input);
+    input.click();
   };
   function showManagement() {
     panel.showStatus('存档操作只针对当前聊天。导入、清空和回退均先预览、备份，再核实保存结果。', [

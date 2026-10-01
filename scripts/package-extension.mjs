@@ -17,6 +17,10 @@ for (const directory of ['assets', 'licenses', 'docs']) {
   } else cpSync(directory, path.join(output, directory), { recursive: true });
 }
 mkdirSync(path.join(output, 'scripts'), { recursive: true });
+mkdirSync(path.join(output, 'mcp'), { recursive: true });
+for (const name of ['package.json', 'package-lock.json', 'server.mjs', 'broker.mjs', 'tools.mjs', 'start.ps1', 'README.md']) copyFileSync(path.join('mcp', name), path.join(output, 'mcp', name));
+cpSync('mcp/test', path.join(output, 'mcp/test'), { recursive: true });
+copyFileSync('docs/mcp-player-bridge.md', path.join(output, 'docs/mcp-player-bridge.md'));
 copyFileSync('scripts/jev-cors-relay.mjs', path.join(output, 'scripts/jev-cors-relay.mjs'));
 const files = [];
 function visit(dir) { for (const name of readdirSync(dir, { withFileTypes: true })) { const file = path.join(dir, name.name); if (name.isDirectory()) visit(file); else files.push(file); } }
