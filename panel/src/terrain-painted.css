@@ -1,0 +1,53 @@
+/* 战术地图底图「手绘战棋」的配色（参考《战场兄弟》一类战棋的画法）。几何见 terrain-painted.ts。
+   底图是一幅暗调的画，深浅主题只微调地表亮度与网格、文字。 */
+.tactical-workspace {
+  --pt-grass:#62653a; --pt-lush:#555c35; --pt-dry:#7f7149; --pt-trampled:#6c6645; --pt-mud:#5b4d39; --pt-floor:#5c5248;
+  --pt-blade:#3d4122; --pt-blade-light:#7c7e46; --pt-flower:#a8453a; --pt-pebble:#8e8774; --pt-pebble-shade:rgba(0,0,0,.35);
+  --pt-paving:#6a6458; --pt-lane:#5a554c; --pt-lane-track:rgba(30,26,20,.32); --pt-crack-fine:rgba(30,26,20,.32); --pt-tile:rgba(0,0,0,.18); --pt-seam:rgba(0,0,0,.3);
+  --pt-crater-rim:#77684a; --pt-crater:#2a2219; --pt-crater-lit:rgba(255,236,196,.18); --pt-rough:rgba(118,98,66,.55);
+  --pt-swamp:#454c33; --pt-pool:#2b3a35; --pt-reed:#4f552e; --pt-reed-light:#8a8a4c;
+  --pt-bank:#6a5e3f; --pt-bank-wet:#4b4531; --pt-water:#2f4b46; --pt-water-deep:#233b39; --pt-water-edge:rgba(20,28,24,.45);
+  --pt-road:#8a7550; --pt-rut:rgba(50,38,24,.4); --pt-rug:#5e2a26; --pt-rug-edge:#8a6a3c;
+  --pt-elev:rgba(255,236,190,.1); --pt-cast:rgba(0,0,0,.5); --pt-cliff:#56472f; --pt-strata:rgba(0,0,0,.2); --pt-cliff-side:rgba(0,0,0,.26); --pt-rim:rgba(255,240,205,.36);
+  --pt-rock-face:#4f4a43; --pt-rock-top:#857e71; --pt-rock-lit:rgba(255,248,230,.3); --pt-crack:rgba(40,36,30,.45);
+  --pt-shadow:rgba(0,0,0,.45); --pt-trunk:#3e2f21; --pt-canopy:#30452a; --pt-canopy-dense:#283b24; --pt-canopy-mid:#465d33; --pt-canopy-light:#63733f;
+  --pt-house-face:#86785f; --pt-window:#2a231b; --pt-roof-0:#6d4a3c; --pt-roof-1:#5c554b; --pt-roof-2:#6e5c3f; --pt-roof-3:#565b5c; --pt-roof-shade:rgba(0,0,0,.26); --pt-ridge:rgba(255,232,196,.3); --pt-shingle:rgba(0,0,0,.16);
+  --pt-wall-top:#978e7c; --pt-wall-face:#645d52; --pt-merlon:#a89e8a; --pt-walk:rgba(0,0,0,.08); --pt-tower-floor:#5b5146;
+  --pt-iwall-top:#4a4038; --pt-iwall-face:#2c2621;
+  --pt-door:#5b4230; --pt-door-top:#7d5f43; --pt-band:#2a211a;
+  --pt-parapet-top:#8c7a55; --pt-parapet-face:#65583e; --pt-trench:#2a2219;   --pt-drystone-top:#948c7b; --pt-drystone-face:#5b564c;   --pt-crate-top:#8d7150; --pt-crate-face:#664f36; --pt-crate-line:rgba(40,30,20,.45); --pt-barrel-top:#7a5b3c; --pt-barrel-face:#553f2a;
+  --pt-table-top:#76593f; --pt-table-face:#4b3828;
+  --pt-deck:#7a7262; --pt-rail:#57514a;
+  --pt-dust:rgba(150,136,110,.42); --pt-debris:#857d6f;
+  --pt-zone:#d8b262; --pt-exit:rgba(238,222,182,.6); --pt-grid:rgba(0,0,0,.22); --pt-landmark:rgba(236,214,160,.6);
+  --pt-label:#efe3c4; --pt-label-halo:rgba(18,14,10,.9); --pt-grain:.16;
+}
+body[data-theme="light"] .tactical-workspace {
+  --pt-grass:#676839; --pt-lush:#585e37; --pt-dry:#857650; --pt-trampled:#716a48; --pt-mud:#62533d; --pt-floor:#665c51;
+  --pt-grid:rgba(0,0,0,.18);
+}
+.pt-grass{fill:var(--pt-grass)} .pt-lush{fill:var(--pt-lush)} .pt-dry{fill:var(--pt-dry)} .pt-trampled{fill:var(--pt-trampled)} .pt-mud{fill:var(--pt-mud)} .pt-floor{fill:var(--pt-floor)}
+.pt-mottle-light{opacity:.8} .pt-brush{opacity:.22} .pt-grain{opacity:var(--pt-grain)}
+.pt-blade{fill:var(--pt-blade)} .pt-blade-light{fill:var(--pt-blade-light)} .pt-flower{fill:var(--pt-flower)} .pt-pebble{fill:var(--pt-pebble)} .pt-pebble-shade{fill:var(--pt-pebble-shade)}
+.pt-paving{fill:var(--pt-paving)} .pt-wear{fill:#000} .pt-floor-wear{opacity:.6} .pt-lane{fill:var(--pt-lane)} .terrain-layer .pt-lane-track{fill:none;stroke:var(--pt-lane-track);stroke-width:5} .terrain-layer .pt-pat-crack-fine{fill:none;stroke:var(--pt-crack-fine);stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round} .terrain-layer .pt-pat-tile{fill:none;stroke:var(--pt-tile);stroke-width:1.6} .terrain-layer .pt-pat-seam{fill:none;stroke:var(--pt-seam);stroke-width:1.4}
+.pt-crater-rim{fill:var(--pt-crater-rim)} .pt-crater{fill:var(--pt-crater)} .terrain-layer .pt-crater-lit{fill:none;stroke:var(--pt-crater-lit);stroke-width:3} .pt-rough{fill:var(--pt-rough)}
+.pt-swamp{fill:var(--pt-swamp)} .pt-pool{fill:var(--pt-pool)} .pt-reed{fill:var(--pt-reed)} .pt-reed-light{fill:var(--pt-reed-light)}
+.pt-bank{fill:var(--pt-bank)} .pt-bank-wet{fill:var(--pt-bank-wet)} .pt-water{fill:var(--pt-water)} .pt-water-deep{fill:var(--pt-water-deep)} .pt-glint{fill:#fff} .terrain-layer .pt-water-edge{fill:none;stroke:var(--pt-water-edge);stroke-width:5}
+.pt-road{fill:var(--pt-road)} .terrain-layer .pt-rut{fill:none;stroke:var(--pt-rut);stroke-width:4} .pt-rug{fill:var(--pt-rug)} .pt-rug-edge{fill:var(--pt-rug-edge)}
+.terrain-layer .pt-pat-weave{fill:none;stroke:rgba(0,0,0,.2);stroke-width:1.2}
+.pt-elev{fill:var(--pt-elev)} .pt-cast{fill:var(--pt-cast)} .pt-cliff{fill:var(--pt-cliff)} .terrain-layer .pt-pat-strata{fill:none;stroke:var(--pt-strata);stroke-width:1.6} .pt-cliff-side{fill:var(--pt-cliff-side)} .terrain-layer .pt-rim{fill:none;stroke:var(--pt-rim);stroke-width:2.4}
+.pt-rock-face{fill:var(--pt-rock-face)} .pt-rock-top{fill:var(--pt-rock-top)} .terrain-layer .pt-rock-lit{fill:none;stroke:var(--pt-rock-lit);stroke-width:2.4;stroke-linecap:round} .terrain-layer .pt-pat-crack{fill:none;stroke:var(--pt-crack);stroke-width:1.4;stroke-linecap:round}
+.pt-shadow{fill:var(--pt-shadow)} .pt-trunk{fill:var(--pt-trunk)} .pt-canopy{fill:var(--pt-canopy-fill,var(--pt-canopy))} .pt-dense{--pt-canopy-fill:var(--pt-canopy-dense)} .pt-canopy-mid{fill:var(--pt-canopy-mid)} .pt-canopy-light{fill:var(--pt-canopy-light)}
+.pt-house-face{fill:var(--pt-house-face)} .pt-window{fill:var(--pt-window)} .pt-roof-0{fill:var(--pt-roof-0)} .pt-roof-1{fill:var(--pt-roof-1)} .pt-roof-2{fill:var(--pt-roof-2)} .pt-roof-3{fill:var(--pt-roof-3)}
+.pt-roof-shade{fill:var(--pt-roof-shade)} .terrain-layer .pt-ridge{fill:none;stroke:var(--pt-ridge);stroke-width:2.6} .terrain-layer .pt-pat-shingle{fill:none;stroke:var(--pt-shingle);stroke-width:1.3}
+.pt-wall-top{fill:var(--pt-wall-top)} .pt-wall-face{fill:var(--pt-wall-face)} .pt-merlon{fill:var(--pt-merlon)} .terrain-layer .pt-walk{fill:none;stroke:var(--pt-walk);stroke-width:14} .pt-tower-floor{fill:var(--pt-tower-floor)}
+.pt-iwall-top{fill:var(--pt-iwall-top)} .pt-iwall-face{fill:var(--pt-iwall-face)}
+.pt-door{fill:var(--pt-door)} .pt-door-top{fill:var(--pt-door-top)} .terrain-layer .pt-band{fill:none;stroke:var(--pt-band);stroke-width:3}
+.pt-parapet-top{fill:var(--pt-parapet-top)} .pt-parapet-face{fill:var(--pt-parapet-face)} .pt-trench{fill:var(--pt-trench)} .pt-drystone-top{fill:var(--pt-drystone-top)} .pt-drystone-face{fill:var(--pt-drystone-face)} .pt-crate-top{fill:var(--pt-crate-top)} .pt-crate-face{fill:var(--pt-crate-face)} .terrain-layer .pt-crate-line{fill:none;stroke:var(--pt-crate-line);stroke-width:1.6} .pt-barrel-top{fill:var(--pt-barrel-top)} .pt-barrel-face{fill:var(--pt-barrel-face)}
+.pt-table-top{fill:var(--pt-table-top)} .pt-table-face{fill:var(--pt-table-face)}
+.pt-deck{fill:var(--pt-deck)} .pt-rail{fill:var(--pt-rail)} .pt-dust{fill:var(--pt-dust)} .pt-debris{fill:var(--pt-debris)}
+.terrain-layer .pt-pat-zone{fill:none;stroke:var(--pt-zone);stroke-width:3;opacity:.45} .terrain-layer .pt-zone-line{fill:none;stroke:var(--pt-zone);stroke-width:3.5;stroke-dasharray:11 7}
+.terrain-layer .pt-exit{fill:none;stroke:var(--pt-exit);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.terrain-layer .pt-grid{fill:none;stroke:var(--pt-grid);stroke-width:1}
+.terrain-layer .pt-landmark{fill:none;stroke:var(--pt-landmark);stroke-width:2.4;stroke-dasharray:3 6;stroke-linecap:round}
+.terrain-layer .pt-label{fill:var(--pt-label);stroke:var(--pt-label-halo)}

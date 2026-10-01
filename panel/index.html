@@ -61,9 +61,7 @@
     .unit.active { outline: 2px solid var(--gold); }
     .unit .nm { font-weight: bold; }
     .unit .st { color: var(--dim); font-size: 11px; }
-    .unit .hpbar { height: 5px; background: #333a48; border-radius: 3px; margin: 4px 0 2px; overflow: hidden; }
-    .unit .hpbar i { display: block; height: 100%; background: var(--ok); }
-    .unit.enemy .hpbar i { background: var(--enemy); }
+    .unit .hp-value { color: var(--txt); font-weight: 600; font-variant-numeric: tabular-nums; }
     .unit .xpbar { height: 3px; background: #333a48; border-radius: 3px; margin: 1px 0 2px; overflow: hidden; }
     .unit .xpbar i { display: block; height: 100%; background: var(--gold); }
     .unit .seq, .manage-row .seq { color: var(--dim); font-weight: normal; font-size: 11px; margin-left: 2px; }
@@ -201,7 +199,7 @@
     .builder-basics, .equipment-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:14px; margin-bottom:16px; }
     .unit-builder input:not([type=checkbox]), .unit-builder select, .equipment-fields input:not([type=checkbox]), .equipment-fields select { max-width:100%; width:100%; min-height:44px; padding:9px 10px; border:1px solid var(--line); background:var(--card); color:var(--txt); border-radius:6px; font:inherit; }
     .unit-tools > summary { min-height:44px; display:flex; align-items:center; color:var(--dim); font-size:11px; cursor:pointer; }
-    .team-workspace .unit { padding:14px; border-radius:8px; }.team-workspace .unit .nm { font-size:14px; font-weight:500; }.team-workspace .unit .st { line-height:1.7; margin-top:7px; }.team-workspace .unit .hpbar { margin:10px 0; height:4px; }
+    .team-workspace .unit { padding:14px; border-radius:8px; }.team-workspace .unit .nm { font-size:14px; font-weight:500; }.team-workspace .unit .st { line-height:1.7; margin-top:7px; }
     body[data-theme=light] button.primary { color:#fffdf8; }
     body:has([data-workspace=battle][hidden]) { padding-bottom:0; }
     .unit-builder .check-field, .equipment-fields .check-field { flex-direction:row; align-items:center; gap:8px; min-height:44px; }

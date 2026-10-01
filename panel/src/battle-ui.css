@@ -9,7 +9,7 @@
 .battle-highlights summary{cursor:pointer;color:var(--dim);padding-top:6px;}.highlight-event{display:block;text-align:left;width:100%;margin-top:6px;}
 .formation-grid{position:relative;}
 .tactical-workspace[data-ended=true] .grid-mobile-shortcuts{display:none;}
-.unit-symbol{width:17px;height:17px;flex-shrink:0;display:inline-block;vertical-align:middle;color:currentColor;}.unit-symbol path{stroke:currentColor;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round;}
+.unit-symbol{width:17px;height:17px;flex-shrink:0;display:inline-block;vertical-align:middle;color:currentColor;}.unit-symbol .f{fill:currentColor;stroke:none;}.unit-symbol .s{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;}
 .formation-stack{min-width:0;}.formation-stack>summary{color:var(--gold);cursor:pointer;padding:8px 4px;min-height:44px;}.formation-stack[open] .formation-piece{width:100%;box-shadow:2px 2px 0 var(--line);}
 .formation-piece .unit-symbol{margin-right:5px;}.formation-node{position:relative;}
 .battle-trace{position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none;opacity:0;color:var(--gold);overflow:visible;}

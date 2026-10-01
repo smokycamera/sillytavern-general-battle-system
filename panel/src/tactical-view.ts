@@ -169,16 +169,17 @@ const MAP_KEY = `<details class="map-key" data-detail-id="map-key"><summary>图�
   ['zone', '占领区'], ['reach', '可到达'], ['range', '射程'], ['target', '可选目标'], ['fog', '未观测'],
 ] as const).map(([key, text]) => `<span><i class="key key-${key}"></i>${text}</span>`).join('')}<span><i class="key key-exit">︾</i>撤离方向：我方下沿，敌方上沿</span><span><i class="key key-token-hero"></i>人物</span><span><i class="key key-token-company"></i>编队</span></div></details>`;
 
-/** 棋子：阵营色底 + 兵种符号 + 名称 + 生命条。小格只留符号与名字，大格补充数值。 */
+/** 棋子：阵营色底 + 兵种符号 + 名称 + 实际生命/人数数值。数值始终显示，颜色随剩余比例变化。 */
 function gridPiece(battle: SmallBattle, u: Combatant, isActor: boolean): string {
   const name = [...u.name], ratio = u.base.hpMax > 0 ? Math.max(0, Math.min(1, u.hp / u.base.hpMax)) : 0;
   const health = ratio >= .6 ? 'hp-high' : ratio >= .3 ? 'hp-mid' : 'hp-low';
   const side = u.side === 'ally' || u.side === 'enemy' ? u.side : 'neutral';
   const badges = [isAirborne(u) ? '空' : isElevated(u) ? '顶' : '', u.suppression ? '压' : '', battle.overwatch.has(u.id) ? '警' : ''].filter(Boolean);
-  return `<span class="grid-piece ${side} ${u.scale === 'hero' ? 'hero' : 'company'} ${health}${u.status !== 'ready' ? ' status-' + u.status : ''}${isActor ? ' actor' : ''}${isAirborne(u) ? ' airborne' : ''}" style="--hp:${ratio.toFixed(2)}">`
+  const status = [isAirborne(u) ? '空中' : isElevated(u) ? '墙顶' : '', u.suppression ? '受压' : '', battle.overwatch.has(u.id) ? '警戒' : ''].filter(Boolean).join(' ');
+  return `<span class="grid-piece ${side} ${u.scale === 'hero' ? 'hero' : 'company'} ${health}${u.status !== 'ready' ? ' status-' + u.status : ''}${isActor ? ' actor' : ''}${isAirborne(u) ? ' airborne' : ''}">`
     + `<span class="grid-token">${unitSymbol(u)}${badges.length ? '<span class="grid-badges">' + badges.map(b => '<i>' + b + '</i>').join('') + '</span>' : ''}</span>`
     + `<span class="grid-piece-name"><span>${esc(name.slice(0, -2).join(''))}</span><span>${esc(name.slice(-2).join(''))}</span></span>`
-    + `<small><span class="grid-affiliation">${u.side === 'ally' ? '我' : u.side === 'enemy' ? '敌' : '中'}</span>${u.hp}/${u.base.hpMax}${isAirborne(u) ? ' 空中' : isElevated(u) ? ' 墙顶' : ''}${u.suppression ? ' 受压' : ''}${battle.overwatch.has(u.id) ? ' 警戒' : ''}</small></span>`;
+    + `<span class="grid-hp"><span class="grid-affiliation">${u.side === 'ally' ? '我' : u.side === 'enemy' ? '敌' : '中'}</span><b>${u.hp}</b>/${u.base.hpMax}${status ? '<span class="grid-status"> ' + status + '</span>' : ''}</span></span>`;
 }
 
 export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, autoTurn = false, query?: TacticalQuery): string {
@@ -214,14 +215,16 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
       (target?.targetId==='cell:'+cell || occupants.some((u) => u.id === target?.targetId)) && mode !== 'move' && mode !== 'guard' ? 'targeted' : '', occupants.some((u) => area.has(u.id)) ? 'area-hit' : '', occupants.length > 1 ? 'stacked' : ''].filter(Boolean).join(' ');
     const zones = seen[cell] ? liveZones.filter(z => Math.abs(z.x - cell % field.width) + Math.abs(z.y - Math.floor(cell / field.width)) <= z.radius) : [];
     const label = zones.map(z=>ZONE_NAMES[z.kind]).join('、')+' '+cellLabel(field, cell) + ' ' + (landmark ?? '') + ' ' + terrainName(field, cell) + ' '+heightDescription(field,cell)+' ' + occupants.map((u) => (u.side === 'ally' ? '我方' : u.side === 'enemy' ? '敌方' : '中立') + u.name).join('、');
-    // 地形与结构由底图表达；格内只放单位、状态与被查看格的名称。
-    const inner = (field.spatialRulesVersion===2 ? '<span class="grid-height" aria-hidden="true">高'+surfaceHeightAt(field,cell)+'</span>' : '') + (landmark ? '<span class="grid-landmark" aria-hidden="true">◇</span>' : '') + (goalCell === cell ? '<span class="grid-goal" aria-hidden="true">旗</span>' : '')
+    // 地形与结构由底图表达；格内只放单位、状态与被查看格的名称。高度0为默认地表，只标注抬高的格子。
+    const height = field.spatialRulesVersion === 2 ? surfaceHeightAt(field, cell) : 0;
+    const terrainLabel = inspected && !occupants.length;
+    const inner = (height ? '<span class="grid-height" aria-hidden="true">高' + height + '</span>' : '') + (landmark ? '<span class="grid-landmark" aria-hidden="true">◇</span>' : '') + (goalCell === cell ? '<span class="grid-goal" aria-hidden="true">旗</span>' : '')
       + occupants.map((u) => gridPiece(battle, u, u.id === actor?.id)).join('')
       + (occupants.length > 1 ? '<span class="grid-stack-count">' + occupants.length + '队</span>' : '')
-      + (structure?.hp && (structure.hp < structure.hpMax || inspected) ? `<span class="structure-hp" style="--integrity:${Math.max(0, Math.min(100, structure.hp / structure.hpMax * 100))}%"></span>` : '')
+      + (structure?.hp && !terrainLabel && (structure.hp < structure.hpMax || inspected) ? `<span class="structure-hp${occupants.length || zones.length ? ' raised' : ''}" aria-hidden="true">${structure.hp}/${structure.hpMax}</span>` : '')
       + (zones.length ? '<span class="grid-zone">' + zones.map(z => ZONE_NAMES[z.kind]).join('·') + '</span>' : '')
-      + (inspected && !occupants.length ? '<span class="grid-terrain">' + (structure ? structureDisplayName(field, cell) + (structure.hp ? ' L' + structure.level : '·残骸') : field.generation?.scene === 'interior' && terrain === 'street' ? '室内地面' : terrainNames[terrain]) + '</span>' : '');
-    const attrs = `class="grid-cell ${flags}" data-action="grid-cell" data-cell="${cell}" aria-label="${esc(label)}" aria-pressed="${inspected}"`;
+      + (terrainLabel ? '<span class="grid-terrain">' + (structure ? structureDisplayName(field, cell) + (structure.hp ? ' L' + structure.level + ' · ' + structure.hp + '/' + structure.hpMax : '·残骸') : field.generation?.scene === 'interior' && terrain === 'street' ? '室内地面' : terrainNames[terrain]) + '</span>' : '');
+    const attrs = `class="grid-cell ${flags}" data-action="grid-cell" data-cell="${cell}"${occupants.length > 1 ? ` style="--stack:${occupants.length}"` : ''} aria-label="${esc(label)}" aria-pressed="${inspected}"`;
     // 内容签名：点选只改动少数格，其余格在打补丁时整格跳过。
     return `<button ${attrs} data-static="c${signature(attrs + inner)}">${inner}</button>`;
   }).join('');

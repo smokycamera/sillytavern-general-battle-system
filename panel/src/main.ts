@@ -16,7 +16,7 @@ import { enhancementLabel, trainingEdge, trainingDamage } from '../../engine/src
 import { renderReportWorkspace } from './report-view.js';
 import { captureBattleArchive, captureBattleStart, reportRestartReason, type BattleStart, type DeletedReport } from './report-history.js';
 import { prepareCombatModel, strengthDescription, memberDurability } from '../../engine/src/combat-model.js';
-import {hasMemberHealth,memberHealth,memberHealthMax} from '../../engine/src/member-health.js';
+import {hasMemberHealth} from '../../engine/src/member-health.js';
 import {anchoredWeapon,anchoredWeaponLabel,anchoredProtection,armorEffectLabel} from '../../engine/src/power-anchors.js';
 import {memberHealthPanel,cannonAmmoControl} from './combat-model-view.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
@@ -24,6 +24,7 @@ import { MAX_PREPARED_SKILLS, skillDefinitionName } from '../../engine/src/skill
 import { zoneEffectDescription } from '../../engine/src/zone-skills.js';
 import './battle-ui.css';
 import './map-ui.css';
+import './terrain-painted.css';
 import { updateRegion, BattleCamera } from './view-dom.js';
 import { executeMassPlan, executeAndSaveAsync as executeAndSave } from './battle-execution.js';
 import { TACTICAL_PREFERENCES, normalizeTactic } from '../../engine/src/tactical-preference.js';
@@ -697,10 +698,6 @@ function summonUnit(templateId: string, side: Side, seed?: string): Combatant | 
   return unit;
 }
 
-function hpPct(u: Combatant): number {
-  return Math.max(0, Math.round((memberHealth(u) / Math.max(1, memberHealthMax(u))) * 100));
-}
-
 /** 新战根据实际规模与参战形式推荐；进行中的战斗由effectiveMode保持。 */
 function autoScaleMode(): 'small' | 'mass' {
   return recommendBattleMode(state.roster).mode;
@@ -1088,9 +1085,8 @@ function unitHtml(u: Combatant, index: number, inBattle: boolean): string {
   const expanded = state.expandedUnits.has(u.id);
   return `<div class="${cls}" data-unit="${esc(u.id)}">
     <div class="nm">${marks}${esc(u.name)}${seq ? `<span class="seq">#${seq}</span>` : ''}${encTag}${statusWord}</div>
-    <div class="st">${!inBattle && u.rulesVersion === 'v2' ? `${scaleLabel(u)} · 训练${u.level}${esc(enhancementLabel(u.bonuses))} · ${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}/${u.base.hpMax}` : `等级${u.level}${u.archetype ? '·' + archName(u.archetype, true) : ''}｜${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}/${u.base.hpMax}${morale}${fat}${engage}${pos}${isAirborne(physical) ? ' · 空中' : ''}${xpTxt}`}</div>
+    <div class="st">${!inBattle && u.rulesVersion === 'v2' ? `${scaleLabel(u)} · 训练${u.level}${esc(enhancementLabel(u.bonuses))} · ${u.scale === 'hero' ? '生命' : '人数'} <b class="hp-value">${u.hp}/${u.base.hpMax}</b>` : `等级${u.level}${u.archetype ? '·' + archName(u.archetype, true) : ''}｜${u.scale === 'hero' ? '生命' : '人数'} <b class="hp-value">${u.hp}/${u.base.hpMax}</b>${morale}${fat}${engage}${pos}${isAirborne(physical) ? ' · 空中' : ''}${xpTxt}`}</div>
     ${hasMemberHealth(u)?`<div class="sub">${esc(strengthDescription(u))}</div>`:''}${woundedLabel(u) ? `<div class="sub">${esc(woundedLabel(u))}</div>` : ''}
-    <div class="hpbar"><i style="width:${hpPct(u)}%"></i></div>
     ${prog ? `<div class="xpbar" title="本级经验 ${xpLabel(prog.current)}/${prog.next} · 累计${xpLabel(u.xp ?? 0)}"><i style="width:${Math.min(100, Math.round((prog.current / prog.next) * 100))}%"></i></div>` : ''}
     ${concealment ? `<div class="sub">${esc(concealment)}</div>` : ''}
     ${pressure ? `<div class="sub morale-pressure">${esc(pressure)}</div>` : ''}
