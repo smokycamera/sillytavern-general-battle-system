@@ -33,6 +33,11 @@ describe('成员生命的本地档案与重战',()=>{
   stampNewBattleReports(before,after);const replay=prepareReportRestart(after,id,2,'health-retry');
   const restored=SmallBattle.fromSnapshot(replay.battle!.snap);expect(restored.byId(a.id).formation!.health![0]).toEqual({hp:73,count:1});
   const facts=narrativeProjection(after);expect(facts).toContain('memberHpMax');expect(facts).toContain('1154');expect(facts).toContain('载具数量');
+  // The chat model reads wounds as text; raw {hp,count} groups never reach it, even in the editable record.
+  expect(facts).toContain('54/100生命');expect(facts).not.toMatch(/"count":/);
+  const editing=narrativeProjection(after,'请修改车辆的属性，补满弹药');
+  expect(editing).toContain('"editable"');expect(editing).toContain('"memberHp":100');expect(editing).not.toMatch(/"health"|"count":/);
+  expect(narrativeProjection(after,'车队调整阵型后继续前进。')).not.toContain('"editable"');
  });
  it('高阶范围技能和机炮配方可以持久化，不因新规格记录被拒绝',()=>{
   const d=newUnitDraft();d.name='高阶施法者';d.skills=[{id:skillDefinitionId('魔法范围')!,name:'高阶法术',power:'9',prepared:true}];

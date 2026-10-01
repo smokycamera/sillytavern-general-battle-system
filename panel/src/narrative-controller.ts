@@ -3,7 +3,7 @@ import { PROMPT_SECTIONS, formatPromptSection, promptSelected, unitInPromptScope
 import { skillMechanismName } from '../../engine/src/data/skill-mechanisms.js';
 import { spCapacity } from '../../engine/src/resources.js';
 import { xpProgress } from '../../engine/src/xp.js';
-import {hasMemberHealth,memberHealth,memberHealthMax} from '../../engine/src/member-health.js';
+import {hasMemberHealth,memberHealth,memberHealthMax,memberHealthSummary} from '../../engine/src/member-health.js';
 import { prepareReportDeletion, prepareReportRestore, prepareReportRestart, stampNewBattleReports } from './report-history.js';
 /** 常驻事实控制器：不依赖面板 DOM，不在后台推进战斗。 */
 import type { SaveReceipt, TavernAdapter } from './tavern.js';
@@ -25,6 +25,8 @@ import { RUNTIME_REMINDER } from './narrative-prompt.js';
 import { parseProtocol, protocolExcerpt } from './protocol.js';
 import { mapNarrativeReferences, mentionsNarrativeId, narrativeIds } from './narrative-ids.js';
 const promptJson = (value: unknown, publicId: (id: string) => string = id => id) => JSON.stringify(mapNarrativeReferences(value, publicId)).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+// Only an explicit request to change a record exposes its editable fields; story wording such as 调整阵型 does not.
+const EDIT_REQUEST = /unit_set|(?:修改|调整|更改|改动)[^\s，。！？、；：,.!?;:]{0,6}(?:属性|数值|档案|面板|数据)|(?:属性|数值|档案|面板|数据)[^\s，。！？、；：,.!?;:]{0,4}(?:修改|调整|更改)/;
 
 const PROMPT_ID = 'tavern-battle:context';
 export function narrativeProjection(save: NarrativeSave, requestText = '', details?: ProjectionDetails): string {
@@ -71,7 +73,8 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     const line = promptJson({ id: record.id, name: record.name, side: record.side, training:record.level, bonuses:unit?.bonuses,
       ...(!battleOpen ? { level:record.level,xp:record.xp ?? 0,xpProgress:unit?xpProgress(unit)?.current:undefined,base:record.base,status:record.status,retired:record.retired,resources:unit?.resources,traits:unit?.traits,speedTier:unit?.speedTier,conditions:record.conditions,preparedAbilityIds:unit?.preparedAbilityIds } : {}),
       semantics: record.scale === 'hero' ? '生命' : unit?.body==='vehicle'?'载具数量':'人数', hp: live?.hp ?? record.hp, hpMax: live?.base.hpMax ?? record.base.hpMax,
-      ...(unit&&hasMemberHealth(unit)?{memberHpMax:unit.formation!.memberHp,totalLife:memberHealth(unit),totalLifeMax:memberHealthMax(unit),memberHealth:unit.formation!.health}:{}),
+      // Wound groups are engine bookkeeping: the chat model gets a readable summary, never raw {hp,count} records to echo or rewrite.
+      ...(unit&&hasMemberHealth(unit)?{memberHpMax:unit.formation!.memberHp,totalLife:memberHealth(unit),totalLifeMax:memberHealthMax(unit),memberHealth:memberHealthSummary(unit,4)}:{}),
       ...(live && live.rulesVersion === 'v2' && moraleLabel({ ...observation, units: combatants.filter((u) => visible.has(u.id)) }, live) ? { morale: moraleLabel({ ...observation, units: combatants.filter((u) => visible.has(u.id)) }, live) } : {}),
       ...(woundedLabel(live ?? record) ? { recovery: woundedLabel(live ?? record) } : {}),
       state: record.retired ? '已解散，不可选择' : ({ ready: '可行动', dying: '倒地失去战斗力（尚未死亡，不代表持续濒死；恢复以最新生命和状态为准）', dead: '死亡', routing: '溃退中，尚未离场', fled: '已撤离战场' }[live?.status ?? record.status ?? 'ready']),
@@ -85,7 +88,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
       skills: unit?.rulesVersion === 'v2' && unit.abilities.length ? unit.abilities.filter((a) => !a.itemSourceId && (!battleOpen || /学习|技能|learn/.test(requestText) || unit.preparedAbilityIds?.includes(a.id))).map((a) => battleOpen && !/学习|技能|learn/.test(requestText)
         ? { name: a.name, cooldown: unit.abilityState.find((s) => s.abilityId === (a.cooldownGroup ?? a.id))?.cdLeft || undefined }
         : { id:a.id, definitionId:a.definitionId, name: a.name, mechanism: skillMechanismName(a.definitionId ?? '') || a.definitionId, power: a.fixedPower ? undefined : a.power, bonuses:a.bonuses, prepared: unit.preparedAbilityIds?.includes(a.id) }) : undefined,
-      ...(!battleOpen && /修改|调整|数值|属性|unit_set/.test(requestText) ? { editable: { formation:unit?.formation,abilities:unit?.abilities,traitSources:unit?.traitSources,trinkets:unit?.trinkets,abilityState:unit?.abilityState,fatigue:unit?.fatigue,weapon:unit?.weapon,sidearm:unit?.sidearm,armor:unit?.armor,shield:unit?.shield,xpValue:unit?.xpValue } } : {}),
+      ...(!battleOpen && EDIT_REQUEST.test(requestText) ? { editable: { formation:unit?.formation&&{...unit.formation,health:undefined},abilities:unit?.abilities,traitSources:unit?.traitSources,trinkets:unit?.trinkets,abilityState:unit?.abilityState,fatigue:unit?.fatigue,weapon:unit?.weapon,sidearm:unit?.sidearm,armor:unit?.armor,shield:unit?.shield,xpValue:unit?.xpValue } } : {}),
       body: unit?.rulesVersion === 'v2' && unit.body !== 'human' ? unit.body : undefined, mount: unit?.mount || undefined,
       weapon: unit?.weapon?.name, sidearm: unit?.sidearm?.name, armor: unit?.armor?.name, ...(effects?.length ? { effects } : {}) }, publicId);
     blocks.units.push(line);
