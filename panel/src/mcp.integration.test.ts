@@ -7,6 +7,8 @@ import { McpPlayerUi } from './mcp-ui.js';
 import type { LlmEncounterContext } from './llm-context.js';
 
 vi.mock('./panel-runtime.js', async () => import('../../extension/src/panel-runtime.js'));
+// MCP is hidden in releases; this suite exercises the restored controls.
+vi.mock('./mcp-flag.js', () => ({ MCP_ENABLED: true }));
 afterEach(() => { window.dispatchEvent(new Event('pagehide')); vi.unstubAllGlobals(); });
 
 it('plays through production buttons, honors player fog and chat changes, and starts a designed battle without a second model', async () => {

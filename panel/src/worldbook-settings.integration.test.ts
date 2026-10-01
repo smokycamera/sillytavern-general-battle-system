@@ -30,7 +30,11 @@ it('edits and resets rules through the settings UI and retains global choices ac
   const editor = () => document.querySelector<HTMLTextAreaElement>('[data-role="worldbook-template"][data-entry="0"]')!;
   const button = (action: string) => document.querySelector<HTMLButtonElement>(`[data-action="${action}"][data-entry="0"]`)!;
   const toggle = () => document.querySelector<HTMLInputElement>('[data-role="worldbook-enabled"]')!;
+  // MCP controls are hidden: no shared preparation editor and no pairing section.
+  expect(document.querySelector('.battle-preparation')).not.toBeNull();
+  expect(document.querySelector('[data-detail-id="player-preparation"]')).toBeNull();
   nav(); expect(document.querySelectorAll('[data-role="worldbook-template"]')).toHaveLength(4);
+  expect(document.querySelector('[data-mcp-private]')).toBeNull();
   const original = editor().value;
   editor().value = '<battle_contract>edited & <literal></battle_contract>';
   editor().dispatchEvent(new Event('input', { bubbles: true }));

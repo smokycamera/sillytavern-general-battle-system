@@ -1,5 +1,6 @@
 import { abilityUsed } from '../../engine/src/ability-state.js';
 import { McpPanelBridge } from './mcp-bridge.js';
+import { MCP_ENABLED } from './mcp-flag.js';
 import { McpGameApi, executeSmallGameAction, type GameAction } from './mcp-game.js';
 import { recoverUnitRecord } from './post-battle-recovery.js';
 import { buildEncounter, encounterPreview } from './game-encounter.js';
@@ -1020,7 +1021,7 @@ function renderBattlePreparation(): string {
     ${renderContextStatus()}${llm.error ? '<p role="alert">'+esc(llm.error)+'</p>' : ''}${llm.settings.enabled ? '<p class="sub">开战前将由普通 LLM 读取最近所选层数的正文，选择指挥与场景配置。可在设置中关闭。</p>' : ''}<div class="row"><button class="primary" data-action="${mode === 'mass' ? 'mass-start' : 'small-start'}" ${ready ? '' : 'disabled'}>开始交战</button><button data-action="workspace-tab" data-tab="units">${ready ? '查看队伍' : '集结队伍'}</button><button data-action="workspace-tab" data-tab="inventory">整理配装</button></div>
     ${state.roster.every((u) => u.rulesVersion === 'v2') ? `<details class="preparation-options" data-detail-id="preparation-options"><summary>任务设置 · ${state.mapLayout === 'indoor' ? '室内' : '野战'} / ${state.objectiveMode === 'escort' ? '护送' : state.objectiveMode === 'intercept' ? '拦截' : state.objectiveMode === 'siege' ? '攻城' : state.objectiveMode === 'control' ? '占旗' : state.objectiveMode === 'annihilation' ? '歼灭' : plannedFieldTags().includes('siege') ? '攻城' : '歼灭'}</summary><div class="row"><label>地形<select data-role="context-field">${Object.entries(FIELD_LABELS).filter(([id])=>id!=='night').map(([id,label])=>`<option value="${id}" ${(state.field||'plains')===id?'selected':''}>${label}</option>`).join('')}</select></label><label>光照<select data-role="context-lighting"><option value="day" ${state.lighting==='day'?'selected':''}>日间</option><option value="night" ${state.lighting==='night'?'selected':''}>夜间</option></select></label><label>地图<select data-role="map-layout"><option value="standard" ${state.mapLayout !== 'indoor' ? 'selected' : ''}>标准野战</option><option value="indoor" ${state.mapLayout === 'indoor' ? 'selected' : ''}>紧凑室内</option></select></label><label>目标<select data-role="objective-mode"><option value="auto" ${state.objectiveMode === 'auto' ? 'selected' : ''}>按环境：野战歼灭／攻城夺点</option><option value="annihilation" ${state.objectiveMode === 'annihilation' ? 'selected' : ''}>歼灭战</option><option value="control" ${state.objectiveMode === 'control' ? 'selected' : ''}>占旗战</option><option value="siege" ${state.objectiveMode === 'siege' ? 'selected' : ''}>攻城战</option><option value="escort" ${state.objectiveMode === 'escort' ? 'selected' : ''}>我方护送</option><option value="intercept" ${state.objectiveMode === 'intercept' ? 'selected' : ''}>拦截敌方护送</option></select></label><label>攻城角色<select data-role="siege-attacker"><option value="ally" ${state.siegeAttacker === 'ally' ? 'selected' : ''}>我方进攻</option><option value="enemy" ${state.siegeAttacker === 'enemy' ? 'selected' : ''}>我方防守</option></select></label></div><p>野战默认歼灭；占旗战任一方连续控制旗点2个完整回合获胜。攻城胜利点在守方纵深，攻方连续控制2个完整回合获胜，守方坚持到60回合获胜。我方护送沿用主控或首个我方单位；拦截以首个敌方单位为护送对象。双方规则相同：抵达出口则护送方胜，目标被消灭、撤离或逾期未抵达则拦截方胜。</p></details>` : ''}
     ${allies.length ? `<div class="preparation-roster">${allies.slice(0, 8).map((u) => `<span><b>${esc(u.name)}</b><small>${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}/${u.base.hpMax}</small></span>`).join('')}${allies.length > 8 ? `<span>另有${allies.length - 8}支单位</span>` : ''}</div>` : ''}
-    ${playerPreparation.render(playerPreparationScope())}
+    ${MCP_ENABLED ? playerPreparation.render(playerPreparationScope()) : ''}
   </section>`;
 }
 function renderEmbeddedWorldbookSettings(): string {
@@ -3907,22 +3908,25 @@ export const mcpGame = {
 };
 
 // The bridge is inert until paired. Original UI tools and the domain API coexist.
-mcpBridge = new McpPanelBridge({
-  game: mcpGame,
-  roots: () => {
-    const app = document.querySelector<HTMLElement>('#app')!;
-    if (!runtime.native || window.parent === window) return [app];
-    const shell = window.parent.document.getElementById('tavern-battle-native-panel');
-    const entry = window.parent.document.getElementById('tavern-battle-native-entry');
-    return [...(entry ? [entry] : []), ...(shell ? [shell] : []), ...(!shell?.hidden && !shell?.querySelector('main')?.hidden ? [app] : [])];
-  },
-  context: () => JSON.stringify([adapter.identity(), adapter.namespace(), controller.inventoryContext()]),
-  busy: () => uiBusy || llmContext.busy || fullAuto.running || !!aiScanDialog?.busy || runtime.native && !!window.parent.document.querySelector('#tavern-battle-native-panel .tb-status button:disabled, #tavern-battle-native-panel .tb-status input:disabled'),
-  help: () => playerPreparation.help(currentBattle() ? undefined : playerPreparationInputs()),
-  prepare: applyPlayerPreparation,
-}, () => { if (workspaceTab === 'settings') render('view'); });
-const stopMcpBridge = mcpBridge.install();
-window.addEventListener('pagehide', event => { if (!event.persisted) stopMcpBridge(); });
+// While MCP is hidden, no bridge is created, so its settings section never renders.
+if (MCP_ENABLED) {
+  mcpBridge = new McpPanelBridge({
+    game: mcpGame,
+    roots: () => {
+      const app = document.querySelector<HTMLElement>('#app')!;
+      if (!runtime.native || window.parent === window) return [app];
+      const shell = window.parent.document.getElementById('tavern-battle-native-panel');
+      const entry = window.parent.document.getElementById('tavern-battle-native-entry');
+      return [...(entry ? [entry] : []), ...(shell ? [shell] : []), ...(!shell?.hidden && !shell?.querySelector('main')?.hidden ? [app] : [])];
+    },
+    context: () => JSON.stringify([adapter.identity(), adapter.namespace(), controller.inventoryContext()]),
+    busy: () => uiBusy || llmContext.busy || fullAuto.running || !!aiScanDialog?.busy || runtime.native && !!window.parent.document.querySelector('#tavern-battle-native-panel .tb-status button:disabled, #tavern-battle-native-panel .tb-status input:disabled'),
+    help: () => playerPreparation.help(currentBattle() ? undefined : playerPreparationInputs()),
+    prepare: applyPlayerPreparation,
+  }, () => { if (workspaceTab === 'settings') render('view'); });
+  const stopMcpBridge = mcpBridge.install();
+  window.addEventListener('pagehide', event => { if (!event.persisted) stopMcpBridge(); });
+}
 
 // 聊天/角色卡切换：重新同步存档（事件 + 轮询双保险都在适配层内处理）
 const stopControllerView = controller.listen((_saved: NarrativeSave, receipt?: SaveReceipt) => {

@@ -1,5 +1,7 @@
 # MCP 玩家桥接
 
+> 当前版本已隐藏全部 MCP 入口：设置页不显示配对区，准备页不显示“指挥风格与地图设计”草稿，面板不安装桥接监听。代码保留，将 `panel/src/mcp-flag.ts` 的 `MCP_ENABLED` 改为 `true` 并重新构建即可恢复；`npm run smoke:mcp` 也需要恢复后的构建。
+
 可选 MCP 桥接通过独立 Node.js 服务和面板主动配对，让 ChatGPT、Dots 及其他客户端操作 ST / TauriTavern 中的同一个战阵界面。
 
 安装、Dots 接入、工具和示例见 [MCP 使用说明](../mcp/README.md)。
