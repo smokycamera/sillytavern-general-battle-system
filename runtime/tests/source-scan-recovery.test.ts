@@ -12,6 +12,14 @@ async function setup() {
   f.context.chat!.push({ is_user: false, mes: content('旧回复'), swipe_id: 0, send_date: 'date', gen_finished: 'first-time' });
   return f;
 }
+it('source text changed during save cannot confirm the old proposal even when its stable ID persists',async()=>{
+  const f=await setup();await f.service.scan();const proposal=f.service.snapshot().proposals![0]!;
+  f.setSave(async()=>{f.context.chat![0]!.mes=content('保存中的新正文');await f.saveNormally();});
+  const receipt=await f.service.approve(proposal.id);
+  expect(receipt.status).toBe('pending');expect(f.store.hasPending()).toBe(true);
+  expect(f.service.snapshot().storage?.some(u=>u.name==='旧回复')).not.toBe(true);
+  expect(await f.journal.get(f.host.session()!.scope.key)).toBeDefined();
+});
 it('生成结束时间被宿主更新不会误判正文已编辑；旧rc.4指纹也可恢复', async () => {
   const f = await setup(); const message = f.context.chat![0]!;
   const tag = prepareMessageTag(f.context.chat!, 0);

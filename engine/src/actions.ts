@@ -1,3 +1,5 @@
+import { abilityUsed } from './ability-state.js';
+import { diceMean } from './dice.js';
 import { abilityCost } from './resources.js';
 import { isRangedWeapon } from './loadout.js';
 import { meleeReach } from './melee.js';
@@ -47,6 +49,7 @@ export interface TargetOption {
 }
 
 export interface ActionPreview {
+  attackRollCount?: number;
   overmatchMultiplier?:number;
   attackPower?:number;
   protectionPower?:number;
@@ -136,12 +139,8 @@ export function estimateHitChance(rules: import('./types.js').RulePack, netAtk: 
 /** 支持引擎常用 NdM±K 表达式的期望值。 */
 export function averageDice(expr?: string): number {
   if (!expr) return 0;
-  const match = expr.trim().match(/^(\d*)d(\d+)(?:\s*([+-])\s*(\d+))?$/i);
-  if (!match) return Number(expr) || 0;
-  const count = Number(match[1] || 1);
-  const sides = Number(match[2]);
-  const flat = Number(match[4] || 0) * (match[3] === '-' ? -1 : 1);
-  return count * (sides + 1) / 2 + flat;
+  if (/^[+-]?[0-9]+([.][0-9]+)?$/.test(expr.trim())) return Number(expr);
+  return diceMean(expr.trim().replace(/^d/i, '1d'));
 }
 
 export function estimateExpectedDamage(input: {
@@ -265,6 +264,7 @@ export function abilityRangeDistance(actor: Combatant, ability: Ability, target:
 }
 
 export function abilityUsabilityReason(actor: Combatant, ability: Ability): string | undefined {
+  if (actor.status !== 'ready' || actor.conditions.some(c => c.dur > 0 && standardConditionMap().get(c.id)?.skipTurn)) return '当前状态无法行动';
   if (ability.unavailableReason) return ability.unavailableReason;
   if (actor.rulesVersion === 'v2') {
     if (ability.weaponUse && !skillWeapon(actor, ability)) return ability.weaponUse === 'ranged' ? '需要实际远程武器' : '需要实际可用武器';
@@ -278,7 +278,7 @@ export function abilityUsabilityReason(actor: Combatant, ability: Ability): stri
   }
   const state = actor.abilityState.find((item) => item.abilityId === (ability.cooldownGroup ?? ability.id));
   if (state && state.cdLeft > 0) return '冷却中（剩 ' + state.cdLeft + ' 回合）';
-  if (ability.usesPerBattle !== undefined && (state?.used ?? 0) >= ability.usesPerBattle) {
+  if (ability.usesPerBattle !== undefined && abilityUsed(actor, ability) >= ability.usesPerBattle) {
     return '本战次数已用尽';
   }
   const cost = abilityCost(actor, ability);

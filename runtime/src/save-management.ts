@@ -1,6 +1,6 @@
 import type { HostSession, LegacyHandoff, NativeEnvelope, PersistReceipt } from '../../host/src/contracts.js';
-import { sameSession } from '../../host/src/contracts.js';
-import { findMessageBySourceId } from '../../host/src/message-identity.js';
+import { sameSession, legacyMirrorKey } from '../../host/src/contracts.js';
+import { findMessageBySourceId, messageFingerprint } from '../../host/src/message-identity.js';
 import type { NativeHost } from '../../host/src/sillytavern.js';
 import { messageSourceKey, namespaceOf, type NarrativeSave } from '../../panel/src/narrative-state.js';
 import { reviewMigration } from '../../panel/src/migration-review.js';
@@ -42,6 +42,10 @@ export function legacyCompatibleSave(save: NarrativeSave, host: NativeHost): Nar
   });
   next.schemaVersion ??= 2; next.storage ??= []; next.rosterIds ??= []; next.inventory ??= [];
   next.saveScope = 'chat';
+  next.legacySourceScope = host.session()?.scope.key;
+  const referenced = new Set((next.committedNarrativeSources??[]).flatMap(key=>{try{return [String(JSON.parse(key)[1])];}catch{return [];}}));
+  next.proposals?.forEach(p=>referenced.add(p.source.messageId));
+  next.legacySourceFingerprints = Object.fromEntries(chat.flatMap((message,index) => referenced.has(String(index)) ? [[String(index),messageFingerprint(message)]] : []));
   return next;
 }
 
@@ -90,7 +94,7 @@ export class SaveManagement {
   async previewRollback(): Promise<SaveChangePreview> {
     const { session, previous } = this.current(); if (previous.handoff) throw Error('此档案已经回退到旧脚本');
     const metadata = await this.host.readPersisted(session.scope); const original = legacySource(metadata);
-    const mirrorKey = `tavern-battle:chat:chat:${session.scope.chatId}:panel`;
+    const mirrorKey = legacyMirrorKey(session.scope);
     if (!this.host.legacyStorage) throw Error('本地镜像存储不可用，只能先导出兼容存档');
     const mirror = this.host.legacyStorage.getItem(mirrorKey);
     if (mirror !== null && (!original || serialized(JSON.parse(decodeSave(mirror))) !== serialized(original))) throw Error('旧镜像与当前聊天旧变量不一致，无法确认归属；请先导出兼容存档，不自动覆盖该镜像');
@@ -133,7 +137,7 @@ export class SaveManagement {
     await this.backup(change);
     if (!sameSession(change.session, this.host.session())) throw Error('备份期间聊天已切换');
     const kind = change.preview.kind;
-    const candidate = kind === 'resume' ? bindLegacySources(change.candidate, this.host) : { save: change.candidate, tags: [] };
+    const candidate = kind === 'resume' || kind === 'file' ? bindLegacySources(change.candidate, this.host, kind === 'file') : { save: change.candidate, tags: [] };
     const receipt = await this.store.commit(change.previous.revision, () => kind === 'rollback' ? change.previous.payload ?? {} : candidate.save, {
       clear: kind === 'clear' || kind === 'rollback' && change.previous.state === 'cleared',
       replace: kind === 'file' || kind === 'resume', resumeHandoff: kind === 'file' || kind === 'resume', legacyHandoff: change.handoff,

@@ -96,3 +96,22 @@ function suffix(e: DiceExpr): string {
   if (e.keepLow !== undefined) return `kl${e.keepLow}`;
   return '';
 }
+
+const meanCache = new Map<string, number>();
+/** Exact keep-high/low mean, with stable mode-centred binomial weights. */
+export function diceMean(expr: string): number {
+  const cached = meanCache.get(expr); if (cached !== undefined) return cached;
+  const e = parseDice(expr), keep = e.keepHigh ?? e.keepLow ?? e.count;
+  if (keep === e.count) return e.count * (e.sides + 1) / 2 + e.flat;
+  let high = keep;
+  for (let face = 2; face <= e.sides; face++) {
+    const p = (e.sides - face + 1) / e.sides, q = 1 - p, mode = Math.floor((e.count + 1) * p);
+    let total = 1, weighted = Math.min(keep, mode), weight = 1;
+    for (let i = mode; i > 0; i--) { weight *= i * q / ((e.count - i + 1) * p); total += weight; weighted += weight * Math.min(keep, i - 1); }
+    weight = 1;
+    for (let i = mode; i < e.count; i++) { weight *= (e.count - i) * p / ((i + 1) * q); total += weight; weighted += weight * Math.min(keep, i + 1); }
+    high += weighted / total;
+  }
+  const mean = (e.keepLow !== undefined ? keep * (e.sides + 1) - high : high) + e.flat;
+  if (meanCache.size >= 256) meanCache.clear(); meanCache.set(expr, mean); return mean;
+}

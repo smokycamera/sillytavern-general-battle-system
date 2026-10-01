@@ -32,6 +32,8 @@ export function generatedLayeredField(seed: string, width = 7, height = 13, tags
     throw new BattlefieldPlanError('此场景不含门墙；门设计请配合city_siege、building_siege或interior');
   let initial: [number, number] = city && width <= 7 ? recommendedCitySize(active, plan?.size)
     : scene === 'interior' && width === 7 ? plan?.size === 'large' ? [9,15] : plan?.size === 'standard' ? [7,13] : [5,7] : [width, height];
+  if (!city && scene !== 'interior' && width === 7 && plan?.size) initial = plan.size === 'large' ? [11,17] : plan.size === 'compact' ? [7,9] : [7,13];
+  if ((plan?.landmarks?.length ?? 0)>4 && initial[0]<9 && !roster.some(u=>u.pos!==undefined)) initial=[9,15];
   const sizes: [number,number][] = [[5,7], [7,13], [9,15], [11,17], [13,19]];
   // Conservative ground-space floor; actual layers/air/platforms are then checked below.
   const neededWidth = Math.ceil(Math.max(0, ...(['ally', 'enemy'] as const).map(side => active.filter(u => u.side === side).reduce((n,u) => n + footprint(u), 0))) / 6);
@@ -168,7 +170,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
       }
     }
     // Lay natural boundaries before selecting breaches so a hole cannot lead into deep water/cliff.
-    if (shape === 'riverside') for (let d = 0; d < height; d++) for (const x of [0]) {
+    if (shape === 'riverside' && plan?.water !== 'none') for (let d = 0; d < height; d++) for (const x of [0]) {
       const p = at(x, d); if (!frontline.includes(p) && !core.includes(p)) { field.tiles[p] = 'deep_water'; field.structures[p] = null; }
     }
     if (shape === 'hillside') for (let d = 2; d < frontDepth; d++) {
@@ -277,7 +279,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   // Marshes are passable but expensive and do not blanket a primary approach.
   if (scene === 'field' && width > 5 && random.next() < .45) {
     const p = at(pick([0, width - 1]), int(3, height - 4));
-    if (!field.structures[p] && field.tiles[p] !== 'cliff' && p !== field.objective.cell) field.tiles[p] = 'swamp';
+    if (!field.structures[p] && !['cliff', 'deep_water', 'shallow_water'].includes(field.tiles[p]!) && p !== field.objective.cell) field.tiles[p] = 'swamp';
   }
   // Explicit roster cells are honored only within legitimate deployment regions at battle start.
   for (const u of options.roster ?? []) if (Number.isInteger(u.pos) && u.pos! >= 0 && u.pos! < field.tiles.length && !frontline.includes(u.pos!)) {
@@ -293,7 +295,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   const protectedCells = new Set([...core, field.objective.cell, ...gates, ...(options.roster??[]).flatMap(u=>u.pos!==undefined?[u.pos]:[]), ...(field.city?.frontline ?? []),
     ...field.structures.flatMap((s,p)=>s?.kind==='gate'?[p]:[])]);
   // A supplied plan never inherits random fallback landmarks, including an omitted/empty list.
-  for (const mark of (supplied ? plan?.landmarks ?? [] : defaults).slice(0, 5)) {
+  for (const mark of (supplied ? plan?.landmarks ?? [] : defaults).slice(0, plan?.intent ? 12 : 5)) {
     if (scene === 'interior' && ['hill','forest','bridge','tower','square','building'].includes(mark.kind))
       throw new BattlefieldPlanError('室内地标与场景不匹配，请使用room、cover、position、ruins或fortification');
     if (mark.kind === 'room' && !['interior','building_siege'].includes(scene))
@@ -309,7 +311,11 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
       const trench=field.structures.flatMap((s,n)=>s?.kind==='fortification'&&!marked.has(n)?[n]:[]);
       p=trench.sort((a,b)=>gridDistance(field,a,p)-gridDistance(field,b,p)||a-b)[0] ?? p;
     } else if (mark.kind === 'building' && scene !== 'building_siege') {
-      const plots=landmarkCandidates(field,mark,anchor,n=>field.structures![n]?.kind==='building'&&!marked.has(n)&&!protectedCells.has(n));
+      let plots=landmarkCandidates(field,mark,anchor,n=>field.structures![n]?.kind==='building'&&!marked.has(n)&&!protectedCells.has(n));
+      if (!plots.length && scene === 'field') {
+        plots = landmarkCandidates(field, mark, anchor, n => !marked.has(n) && !protectedCells.has(n) && !groundBlocked(field,n) && !field.overlays![n]?.includes('road') && !['deep_water','shallow_water'].includes(field.tiles[n]!));
+        if (plots[0] !== undefined) field.structures[plots[0]] = createStructure('building', mark.level ?? wallLevel);
+      }
       if (!plots.length) { if (plan) throw new BattlefieldPlanError('建筑地标部署容量不足，请调整布局或地标'); else continue; }
       p=plots.sort((a,b)=>gridDistance(field,a,p)-gridDistance(field,b,p)||a-b)[0]!;
     } else if (mark.kind === 'building' && scene === 'building_siege') {
@@ -329,6 +335,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
       p = plots.sort((a, b) => gridDistance(field, a, p) - gridDistance(field, b, p) || a - b)[0]!;
     }
     const cells = [p];
+    if (mark.kind==='building' && scene==='building_siege' && mark.state==='destroyed') cells.push(...(field.city?.frontline??[]));
     if(mark.kind==='building'&&field.structures[p]?.entityId)cells.push(...field.structures.flatMap((s,n)=>n!==p&&s?.entityId===field.structures![p]!.entityId?[n]:[]));
     if (mark.scale === 'major' && mark.kind !== 'tower' && mark.kind !== 'bridge' && mark.kind !== 'building') {
       const size=Math.max(3,Math.min(10,Math.ceil(field.tiles.length*.04)));
@@ -352,6 +359,11 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
     }
     const actual = cells.filter(n => !marked.has(n) && !(core.includes(n) && !semanticCore)
       && (mark.kind !== 'tower' || field.structures![n]?.kind === 'tower'));
+    if (mark.state === 'destroyed') for (const n of actual) {
+      const structure = field.structures[n];
+      if (structure) structure.hp = 0;
+      field.overlays[n] = [...new Set([...(field.overlays[n] ?? []), 'rubble' as const])];
+    }
     if (!actual.length) {if(supplied)throw new BattlefieldPlanError(`地标${mark.label??mark.kind}没有合法位置，部署容量不足`);else continue;}
     actual.forEach(n => marked.add(n));
     field.landmarks.push({ ...(mark.id?{id:mark.id}:{}), kind: mark.kind, label: safeLandmarkLabel(mark.label) ?? labels[mark.kind], cells: actual, scale: mark.scale ?? 'minor' });

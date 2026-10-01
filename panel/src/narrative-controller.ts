@@ -174,8 +174,9 @@ export class NarrativeController {
       void this.scan(id);
     });
     bind('GENERATION_STOPPED', () => { this.binding = undefined; this.receivedId = undefined; void this.scan(); });
-    bind('MESSAGE_EDITED', () => { this.binding = undefined; void this.scan(); });
-    bind('MESSAGE_SWIPED', () => { this.binding = undefined; void this.scan(); });
+    bind('MESSAGE_EDITED', () => { this.binding = undefined; void this.invalidateSources().then(() => this.scan()); });
+    bind('MESSAGE_SWIPED', () => { this.binding = undefined; void this.invalidateSources().then(() => this.scan()); });
+    bind('MESSAGE_DELETED', () => { this.binding = undefined; void this.invalidateSources(); });
     bind('CHAT_CHANGED', () => this.switchContext());
     bind('MESSAGE_SENT', () => this.project());
     const timer = setInterval(() => {
@@ -342,9 +343,29 @@ export class NarrativeController {
     if (!p || namespaceOf(p.source) !== this.namespace) throw Error('请选择当前聊天的同步记录');
     return this.write(restoreNarrativeDeployment(this.state, id));
   }
-  approve(id: string): SaveReceipt {
+  private async invalidateSources(): Promise<void> {
+    const epoch = this.epoch, context = this.inventoryContext();
+    const missing = new Set<string>();
+    for (const p of this.state.proposals ?? []) {
+      if (['committed','stale','rejected'].includes(p.status) || p.origin === 'ai-scan') continue;
+      const current = await this.adapter.getEnvelope(Number(p.source.messageId));
+      if (epoch !== this.epoch || context !== this.inventoryContext()) return;
+      if (!current || !current.complete || namespaceOf(current) !== this.namespace || current.swipeId !== p.source.swipeId || protocolExcerpt(current.text) !== (p.originalText ?? p.source.text)) missing.add(p.id);
+    }
+    if (missing.size) this.write({ ...this.state, proposals: this.state.proposals?.map(p => missing.has(p.id) ? { ...p, status: 'stale', reason: '来源已修改或删除，请重新扫描' } : p) });
+  }
+  async approve(id: string): Promise<SaveReceipt> {
+    const epoch = this.epoch, context = this.inventoryContext();
     const proposal = this.state.proposals?.find((p) => p.id === id);
     if (!proposal) throw new Error('待确认内容不存在');
+    if (proposal.origin !== 'ai-scan') {
+      const current = await this.adapter.getEnvelope(Number(proposal.source.messageId));
+      if (epoch !== this.epoch || context !== this.inventoryContext()) throw Error('聊天或档案已变化，请重新预览');
+      if (!current || !current.complete || namespaceOf(current) !== this.namespace || current.swipeId !== proposal.source.swipeId || protocolExcerpt(current.text) !== (proposal.originalText ?? proposal.source.text)) {
+        this.write({ ...this.state, proposals: this.state.proposals?.map(p => p.id === id ? { ...p, status: 'stale', reason: '来源已修改或删除，请重新扫描' } : p) });
+        throw Error('来源已修改或删除，请重新扫描');
+      }
+    }
     if (proposal.status === 'failed') proposal.status = 'pending';
     if (proposal.status !== 'pending') throw new Error('待确认内容未处于可提交状态');
     if (!this.namespace) throw new Error('酒馆缺少聊天/角色身份，不能安全提交');

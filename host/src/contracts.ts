@@ -6,7 +6,9 @@ export interface ChatScope {
   avatar: string;
   characterName: string;
   chatId: string;
+  branchId?: string;
 }
+export function legacyMirrorKey(scope: ChatScope): string { return 'tavern-battle:chat:scope-v2:' + JSON.stringify([scope.account,scope.avatar,scope.chatId,scope.branchId??scope.chatId]) + ':panel'; }
 export interface HostSession { scope: ChatScope; epoch: number }
 export interface MessageTag { index: number; id: string; fingerprint: string }
 export interface LegacyHandoff { panel: NarrativeSave; mirrorKey: string; mirrorValue: string }

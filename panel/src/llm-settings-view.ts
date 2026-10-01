@@ -8,11 +8,12 @@ export function renderLlmSettings(c: LlmSettings, status = ''): string {
     <label><input data-role="llm-battle-scale" type="checkbox" ${c.selectBattleScale ? 'checked' : ''} ${c.enabled ? '' : 'disabled'}>由 LLM 选择战场规模</label>
     <p class="sub">开启：由 LLM 选择小规模战斗或军团会战。关闭（默认）：32张及以下小战，33—64张会战，LLM 继续选择指挥官与该规模支持的战场配置。仅在普通 LLM 模式下生效。</p>
     <label><input data-role="llm-map-design" type="checkbox" ${c.designMap === true ? 'checked' : ''} ${c.enabled ? '' : 'disabled'}>由 LLM 设计地图</label>
-    <p class="sub">按正文独立选择城市形状、破口数量/宽度/方位、门状态、地形密度、路网和最多5个地标，本地生成器检查通路与部署。关闭时仍使用增强随机地图。仅作用于小战格子地图；不会改写进行中的战场。</p>
+    <p class="sub">按正文设计地形、路网、工事状态与最多12个场景实体，本地检查通路和部署容量。失败后再次点击开战会带上最近的错误原因，成功或取消后清除。关闭时使用本地随机地图。</p>
     <label><input data-role="llm-vip" type="checkbox" ${c.selectVip === true ? 'checked' : ''} ${c.enabled ? '' : 'disabled'}>由 LLM 选择护送／拦截 VIP</label>
     <p class="sub">护送从我方、拦截从敌方可参战名单选择；无明确对象或返回无效时沿用默认选择。地图设计与VIP默认开启，已有手动选择保持不变，复用开战前同一次请求，不额外调用 API，但会增加该次请求的内容。</p>
     <div class="row"><label>读取最近层数 <input data-role="llm-window" type="number" min="1" max="100" value="${c.windowSize}"></label><label>API URL <input data-role="llm-url" type="url" value="${esc(c.url)}" placeholder="https://your-api.example/v1"></label><label>API Key <input data-role="llm-token" type="password" autocomplete="off" value="${esc(c.token)}"></label></div>
     <div class="row"><button data-action="llm-models">拉取模型</button><label>选择模型 <select data-role="llm-model-list"><option value="">请选择模型</option>${models.map(id => `<option value="${esc(id)}" ${c.model === id ? 'selected' : ''}>${esc(id)}</option>`).join('')}</select></label><label>模型 ID（也可手填）<input data-role="llm-model" value="${esc(c.model)}"></label></div>
     <p class="sub">填写后即时保存。API URL、Key、模型列表与选择在本机酒馆中共用，不随聊天或角色卡的切换、删除而改变。使用 OpenAI 兼容接口；启用后会把所选正文发送给该服务。一层是一条已完成的用户或 AI 消息，每条最多读取末尾 6000 字符。</p><p role="status">${esc(status)}</p>
+    <details><summary>配置恢复</summary><button data-action="llm-settings-backup">备份原配置（含Key）</button><button data-action="llm-settings-reset">重置选项并保留连接</button><button data-action="llm-settings-clear">清空副API配置和Key</button></details>
   </section>`;
 }

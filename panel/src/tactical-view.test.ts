@@ -82,7 +82,7 @@ describe('战术地图查看与确认', () => {
     const before = JSON.stringify(b.toSnapshot()), query = vi.spyOn(b, 'getActionOptions');
     selectTacticalElement(b, view, { cell: 31 });
     const html = renderTacticalBattle(b, view);
-    expect(html).toContain('命中率');
+    expect(html).toContain('至少命中一次');
     expect(html).toContain('命中后伤害');
     expect(html).not.toContain('主目标预计损失');
     expect(html).not.toContain('期望已包含未命中');

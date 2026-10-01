@@ -1,4 +1,5 @@
-import { prepareMessageTag } from '../../host/src/message-identity.js';
+import { prepareMessageTag, matchesMessageFingerprint } from '../../host/src/message-identity.js';
+import { protocolExcerpt } from '../../panel/src/protocol.js';
 import type { MessageTag } from '../../host/src/contracts.js';
 import type { NativeHost } from '../../host/src/sillytavern.js';
 import { messageSourceKey, narrativeReceiptKey, namespaceOf, proposalFromMessage, type NarrativeSave, type NarrativeProposal } from '../../panel/src/narrative-state.js';
@@ -16,9 +17,19 @@ export function sourceCommitted(save: NarrativeSave, key: string): boolean {
 }
 
 /** Alias legacy index receipts during the explicit import, before indexes can move. */
-export function bindLegacySources(save: NarrativeSave, host: NativeHost): { save: NarrativeSave; tags: MessageTag[] } {
+export function bindLegacySources(save: NarrativeSave, host: NativeHost, verifyFile = false): { save: NarrativeSave; tags: MessageTag[] } {
   const candidate = structuredClone(save); const namespace = host.namespace(); const chat = host.context().chat;
   if (!namespace || !chat) return { save: candidate, tags: [] };
+  const foreignNamespace = verifyFile && [...candidate.committedNarrativeSources??[],...(candidate.proposals??[]).map(p=>p.sourceKey)].some(key=>{
+    const parts=keyParts(key);return parts&&parts[0]!==namespace;
+  });
+  if (foreignNamespace || typeof candidate.legacySourceScope === 'string' && candidate.legacySourceScope !== host.session()?.scope.key) {
+    candidate.storySync = false; candidate.autoApprove = false;
+    candidate.importedNarrativeSources = structuredClone(candidate.committedNarrativeSources ?? []);
+    candidate.committedNarrativeSources = candidate.committedNarrativeSources?.filter(key=>keyParts(key)?.[1]?.startsWith('tb-source:'));
+    candidate.proposals = candidate.proposals?.map(p => ({ ...p,sourceKey:JSON.stringify(['imported:'+candidate.legacySourceScope,p.source.messageId]),...(p.status==='committed'?{}:{status:'stale' as const,reason:'跨聊天导入，请重新核对来源'}) }));
+    return { save: candidate, tags: [] };
+  }
   const committed = new Set(candidate.committedNarrativeSources ?? []);
   const deleted = new Set(candidate.deletedNarrativeReceipts ?? []);
   const tags: MessageTag[] = [];
@@ -30,6 +41,10 @@ export function bindLegacySources(save: NarrativeSave, host: NativeHost): { save
     const original = proposalFromMessage({ ...source, messageId: String(index) });
     const wasDeleted = original && deleted.has(narrativeReceiptKey(original));
     if (!committed.has(numericKey) && !known.length && !wasDeleted) continue;
+    const fingerprint = (candidate.legacySourceFingerprints as Record<string,string> | undefined)?.[String(index)];
+    if (verifyFile && !fingerprint && !known.length) throw Error('兼容文件只有旧消息序号，缺少可核对的来源正文；请从原聊天重新导出后导入');
+    if (fingerprint && !matchesMessageFingerprint(chat[index]!, fingerprint)) throw Error('兼容存档的来源内容已变化，请核对后再导入');
+    if (!fingerprint && known.some(p => protocolExcerpt(source.text) !== (p.originalText ?? p.source.text))) throw Error('兼容存档来源与当前消息不一致，请核对后再导入');
     const tag = prepareMessageTag(chat, index); tags.push(tag);
     const idSource = { ...source, messageId: tag.id }; const stableKey = messageSourceKey(idSource);
     aliases[numericKey] = stableKey;
@@ -54,7 +69,7 @@ export function invalidateMissingSources(save: NarrativeSave, host: NativeHost):
     if (proposal.status === 'committed' || proposal.status === 'rejected' || proposal.status === 'stale') return proposal;
     if (proposal.origin === 'ai-scan' && namespaceOf(proposal.source) === host.namespace()) return proposal;
     const current = host.messageBySource(proposal.source.messageId);
-    if (current && namespaceOf(current) === namespaceOf(proposal.source)) return proposal;
+    if (current && namespaceOf(current) === namespaceOf(proposal.source) && current.complete && current.swipeId === proposal.source.swipeId && protocolExcerpt(current.text) === (proposal.originalText ?? proposal.source.text)) return proposal;
     changed = true;
     return { ...proposal, status: 'stale', reason: '来源消息已删除或属于其他聊天分支，不能继续提交' };
   });

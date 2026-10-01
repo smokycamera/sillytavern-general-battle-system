@@ -55,7 +55,7 @@ export function learnAbilities(unit: Combatant, specs: BlueprintSpec[], opts: { 
   }
   const key = (a: Ability) => a.definitionId ?? a.id;
   next.abilities = opts.replace
-    ? [...unit.abilities.filter((a) => !skillDefinitionKnown(key(a))).map((a) => structuredClone(a)), ...replacements.values()]
+    ? [...unit.abilities.filter((a) => a.equipmentSourceId || a.itemSourceId || !skillDefinitionKnown(key(a))).map((a) => structuredClone(a)), ...replacements.values()]
     : [...unit.abilities.map((a) => replacements.get(a.id) ?? structuredClone(a)), ...[...replacements].filter(([id]) => !unit.abilities.some((a) => a.id === id)).map(([, a]) => a)];
   if (new Set(next.abilities.map((a) => a.id)).size !== next.abilities.length) throw new Error('技能唯一编号冲突');
   if (opts.prepared) {

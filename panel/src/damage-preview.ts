@@ -15,5 +15,6 @@ export function hitDamageDetails(preview: ActionPreview, unit: string): string {
   const normal = preview.normalHitDamage, critical = preview.criticalHitDamage;
   return (normal === undefined ? '' : '普通命中约' + Number(normal.toFixed(1)) + unit + '。')
     + (critical === undefined ? '' : '暴击约' + Number(critical.toFixed(1)) + unit + '。')
-    + '伤害随骰子波动，已计入目标减伤。';
+    + `整次行动${preview.attackRollCount ?? preview.aggregationSamples ?? 1}组判定，每组命中${Math.round((preview.hitChance??0)*100)}%。至少命中一次时，平均伤害${hitDamageText(preview)}${unit}；计入未命中的平均伤害${Number((preview.expectedDamage??0).toFixed(1))}${unit}。`
+    + (preview.exact === false ? '伤害与减员为有界估算。' : '');
 }

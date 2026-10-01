@@ -1,3 +1,4 @@
+import { legacyMirrorKey } from './contracts.js';
 import { optionalStorage, withAbort } from './browser-compat.js';
 import { sameSession, type ChatScope, type HostSession, type MetadataPort, type MessageTag, type LegacyHandoff } from './contracts.js';
 import { namespaceOf, type MessageEnvelope } from '../../panel/src/narrative-state.js';
@@ -50,6 +51,7 @@ export class NativeHost implements MetadataPort {
   private lastKey?: string;
   private lastMetadata?: Record<string, unknown>;
   private lastChat?: HostMessage[];
+  private lastBranch?: string;
   private stops = new Set<() => void>();
   private generating = false;
   constructor(private host: HostWindow, private account: string, private request: typeof fetch = fetch, readonly legacyStorage: Storage | undefined = optionalStorage()) {}
@@ -67,11 +69,12 @@ export class NativeHost implements MetadataPort {
       this.lastKey = undefined; this.lastMetadata = undefined; this.lastChat = undefined;
       return undefined;
     }
-    const key = JSON.stringify([this.account, avatar, chatId]);
-    if (key !== this.lastKey || context.chatMetadata !== this.lastMetadata || context.chat !== this.lastChat) {
-      this.epoch++; this.lastKey = key; this.lastMetadata = context.chatMetadata; this.lastChat = context.chat;
+    const branchId = context.branchId ?? chatId;
+    const key = JSON.stringify([this.account, avatar, chatId, ...(branchId !== chatId ? [branchId] : [])]);
+    if (key !== this.lastKey || context.chatMetadata !== this.lastMetadata || context.chat !== this.lastChat || branchId !== this.lastBranch) {
+      this.epoch++; this.lastKey = key; this.lastMetadata = context.chatMetadata; this.lastChat = context.chat; this.lastBranch = branchId;
     }
-    return { scope: { key, account: this.account, avatar, chatId, characterName: character?.name ?? context.name2 ?? '' }, epoch: this.epoch };
+    return { scope: { key, account: this.account, avatar, chatId, branchId, characterName: character?.name ?? context.name2 ?? '' }, epoch: this.epoch };
   }
   metadata(): Record<string, unknown> | undefined { return this.context().chatMetadata; }
   namespace(): string | undefined {
@@ -112,12 +115,15 @@ export class NativeHost implements MetadataPort {
   }
   async verifyMessageTags(scope: ChatScope, tags: MessageTag[]): Promise<boolean> {
     const persisted = (await this.readChat(scope)).slice(1);
-    return tags.every(tag => persisted.filter(message => sourceId(message) === tag.id).length === 1);
+    return tags.every(tag => {
+      const matches = persisted.filter(message => sourceId(message) === tag.id);
+      return matches.length === 1 && matchesMessageFingerprint(matches[0]!, tag.fingerprint);
+    });
   }
   async applyLegacyHandoff(session: HostSession, handoff: LegacyHandoff): Promise<void> {
     const metadata = this.metadata();
     if (!metadata || !sameSession(session, this.session()) || this.hasLegacyRuntime()) throw Error('回退目标已变或旧脚本仍在运行');
-    if (handoff.mirrorKey !== `tavern-battle:chat:chat:${session.scope.chatId}:panel` || !this.legacyStorage) throw Error('无法确认旧镜像键或本地存储不可用');
+    if (handoff.mirrorKey !== legacyMirrorKey(session.scope) || !this.legacyStorage) throw Error('无法确认旧镜像键或本地存储不可用');
     const variables = metadata.variables;
     if (variables !== undefined && (!variables || typeof variables !== 'object' || Array.isArray(variables))) throw Error('旧变量容器损坏，不能回退保存');
     this.legacyStorage.setItem(handoff.mirrorKey, handoff.mirrorValue);

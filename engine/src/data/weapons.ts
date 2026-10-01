@@ -1,3 +1,4 @@
+import { diceMean } from '../dice.js';
 /**
  * 武器生成器：与单位生成机制同构——武器原型参数 × 等级曲线 → 公式计算骰子表达式，全程审计。
  *
@@ -186,17 +187,18 @@ export function getWeaponProfile(id?: string): WeaponProfile | undefined {
 /** 2026-09 射程校准：远程分类整体 +1（轻型副武器与爆破保持短距）。
  *  射程是分类的确定性参数而非掷骰结果，旧实例低于当前分类值时补齐到分类射程；
  *  幂等，不重掷任何骰子，近战/长柄（射程带<2）不动。 */
-export function calibrateWeaponRange<T extends { customized?: boolean; range?: number; recipe?: { mechanism?: string } }>(weapon: T | undefined): void {
+export function calibrateWeaponRange<T extends { customized?: boolean; range?: number; recipe?: { mechanism?: string; bonuses?: { range?: number } } }>(weapon: T | undefined): void {
   if (!weapon || weapon.customized) return;
   const mechanism = weapon.recipe?.mechanism;
   const profile = mechanism ? WEAPON_CLASSES[mechanism]?.profile : undefined;
-  if (profile && profile.range >= 2 && (weapon.range ?? 0) < profile.range) weapon.range = profile.range;
+  const points = weapon.recipe?.bonuses?.range ?? 0;
+  const minimum = profile && Math.max(profile.minRange ?? 0,1,profile.range + Math.sign(points)*Math.ceil(Math.abs(points)/5));
+  if (profile && profile.range >= 2 && (weapon.range ?? 0) < minimum!) weapon.range = minimum;
 }
 
 /** 骰子表达式均值（技能蓝图公式共用） */
 export function diceAvg(expr: string): number {
-  const e = parseDice(expr);
-  return e.count * (e.sides + 1) / 2 + e.flat;
+  return diceMean(expr);
 }
 
 /** 按目标均值与骰面重建 NdM+K（flat 非负；count 至少 1）；技能蓝图公式共用 */

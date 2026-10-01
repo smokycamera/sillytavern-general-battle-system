@@ -25,7 +25,7 @@ export function regionalOrder(field: BattlefieldSpec, unit: Combatant, known: Co
   const foes = known.filter(u => u.side !== unit.side && u.hp > 0 && ['ready', 'routing'].includes(u.status));
   const breached = city.frontline.filter(p => !intactStructure(field, p) || intactStructure(field, p)?.gateState === 'open');
   const danger = foes.filter(u => city.core.some(p => gridDistance(field, p, u.pos!) <= 2));
-  const phase = danger.length ? 'core-threat' : breached.length || foes.some(u => city.inside.includes(u.pos!)) ? 'breached' : 'intact';
+  const phase = danger.length || field.objective.kind==='control' && field.objective.attackingSide !== unit.side && known.some(u=>u.side!==unit.side&&u.status==='ready'&&(field.objective.kind==='control'&&(field.objective.cells??[field.objective.cell]).includes(u.pos!))) ? 'core-threat' : breached.length || foes.some(u => city.inside.includes(u.pos!)) ? 'breached' : 'intact';
   const slot = Math.max(0, friends.findIndex(u => u.id === unit.id));
   const ranged = isRangedWeapon(unit.weapon);
   const style = profile?.style ?? 'depth';

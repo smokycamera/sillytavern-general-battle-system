@@ -1,3 +1,4 @@
+import { spendAbility } from '../ability-state.js';
 import { assertBattleCapacity } from '../battle-limits.js';
 import { smallBattleResult } from '../battle-result.js';
 import { prepareGridDeployment } from './spatial.js';
@@ -312,10 +313,8 @@ export class SmallBattle {
         .map((c) => `${c.name}@${c.pos ?? '?'}`)
         .join('，')}`,
     });
-    if (this.rules.resolutionVersion === 'v2' && this.active) {
-      const first = this.active; this.settleMorale(first);
-      if (first.status !== 'ready') { this.feedback?.finishActivation(); this.advanceToNextActor(); }
-    }
+    this.advanceToNextActor();
+    if (this.turnIndex >= this.turnOrder.length && !this.isOver()) this.endTurn();
   }
 
   get active(): Combatant | undefined {
@@ -354,6 +353,12 @@ export class SmallBattle {
   }
 
   movementBudget(actorId: string): number { return movementPoints(this.byId(actorId), this.fieldTags); }
+  flightRisks(actorId: string, airborne: boolean): string[] {
+    if (!airborne) return [];
+    const actor=this.byId(actorId);
+    return this.visibleCombatants(actor.side).filter(foe=>foe.side!==actor.side&&foe.status==='ready'&&!isAirborne(foe)&&this.dist(actor,foe)===1&&!foe.suppression&&!this.reactionSpent.has(foe.id))
+      .filter(foe=>{const weapon=meleeWeapon(foe);return weapon&&!this.weaponContext(foe,actor,{weaponMode:weapon===foe.sidearm?'sidearm':'primary'}).reason;}).map(foe=>foe.name+'可能借机一次');
+  }
   flightReason(actorId: string, airborne: boolean): string | undefined {
     const actor = this.byId(actorId);
     if (!this.battlefield || this.rules.resolutionVersion !== 'v2' || actor.rulesVersion !== 'v2' || actor.status !== 'ready' || !this.isTurnOf(actorId) || this.isOver()) return '当前不能改变空地状态';
@@ -689,10 +694,7 @@ export class SmallBattle {
     if (ability) {
       const cost = abilityCost(actor, ability);
       if (cost) actor.resources[cost.resource] = resourceRound((actor.resources[cost.resource] ?? 0) - cost.amount);
-      const id = ability.cooldownGroup ?? ability.id;
-      let state = actor.abilityState.find(s => s.abilityId === id);
-      if (!state) { state = { abilityId: id, cdLeft: 0, used: 0 }; actor.abilityState.push(state); }
-      state.used++; state.cdLeft = ability.cooldown ?? 0;
+      spendAbility(actor, ability);
       addTacticalEffort(actor, skillExertion(actor, ability)); this.spendAction(actorId, false);
     } else { addTacticalEffort(actor, 1); this.spendAction(actorId); }
     if (weapon && (!ability || ability.damageBasis === 'weapon') && isRangedWeapon(weapon) && weaponReloadTurns(weapon)) this.reloadCd.set(weaponReloadKey(actor, weapon), weaponReloadTurns(weapon) + 1);
@@ -802,7 +804,7 @@ export class SmallBattle {
       else if (goal.defenderWins && unit && (unit.status === 'dead' || unit.status === 'fled' || roundEnd && this.round >= goal.limit)) {
         this.objectiveWinner = unit.side === 'enemy' ? 'ally' : 'enemy';
       }
-    } else if (goal.kind === 'control' && goal.cells && this.battlefield?.layerVersion) {
+    } else if (goal.kind === 'control' && goal.cells && goal.attackingSide && this.battlefield?.layerVersion) {
       const occupants = this.combatants.filter(u => u.status === 'ready' && !isAirborne(u) && !isElevated(u) && goal.cells!.includes(u.pos!) && !u.conditions.some(c => c.dur > 0 && this.conditions.get(c.id)?.skipTurn));
       const attacker = goal.attackingSide ?? 'ally', hasAttacker = occupants.some(u => u.side === attacker), contested = occupants.some(u => u.side !== attacker);
       if (!hasAttacker) { this.controlRounds = { ally: 0, enemy: 0 }; this.controlHold = undefined; }
@@ -814,8 +816,10 @@ export class SmallBattle {
         }
       }
     } else if (goal.kind === 'control') {
-      const occupants = this.combatants.filter((u) => u.status === 'ready' && !isAirborne(u) && u.pos === goal.cell);
-      const sides = new Set(this.combatants.filter((u) => u.status === 'ready' && !isAirborne(u) && gridDistance(this.battlefield!, u.pos!, goal.cell) <= 1).map((u) => u.side));
+      const cells = goal.cells ?? [goal.cell];
+      const eligible = this.combatants.filter(u=>u.status==='ready'&&!isAirborne(u)&&!isElevated(u)&&!u.conditions.some(c=>c.dur>0&&this.conditions.get(c.id)?.skipTurn));
+      const occupants = eligible.filter(u=>cells.includes(u.pos!));
+      const sides = new Set(eligible.filter(u=>cells.some(p=>gridDistance(this.battlefield!,u.pos!,p)<=1)).map(u=>u.side));
       const owner = (['ally', 'enemy'] as const).find((side) => (!goal.attackingSide || goal.attackingSide === side)
         && occupants.some((u) => u.side === side) && sides.size === 1 && sides.has(side));
       if (!owner) { this.controlRounds = { ally: 0, enemy: 0 }; this.controlHold = undefined; }
@@ -1163,6 +1167,7 @@ export class SmallBattle {
     // （濒死可被补刀终结，转 dead 后停手）；多段数随实际使用的武器
     const times = Math.max(1, activeWeapon?.attacks ?? 1);
     let last: AttackResolution | undefined;
+    const shots: AttackResolution[] = [];
     for (let i = 0; i < times; i++) {
       if (target.status !== 'ready' && target.status !== 'dying' && target.status !== 'routing') break;
       if (i > 0 && this.weaponContext(attacker, target, { ...opts, charge: false }).reason) break;
@@ -1184,6 +1189,7 @@ export class SmallBattle {
         advantage: opts.advantage,
       });
       last = res;
+      shots.push(res);
       // 冲锋贴身：无论命中与否都冲至目标坐标
       if (opts.charge && !this.battlefield) {
         attacker.pos = target.pos;
@@ -1206,7 +1212,13 @@ export class SmallBattle {
     this.resolveFlightStates();
     if (reload > 0 && rangedAttack) this.reloadCd.set(weaponReloadKey(attacker, activeWeapon), reload + 1);
     if (!opts.bypassTurn) this.spendAction(attackerId, hasteAction);
-    return last!;
+    if (shots.length < 2) return last!;
+    const first = shots[0]!, total = shots.reduce((sum,r)=>sum+r.finalDamage,0);
+    return { ...last!, hit: shots.some(r=>r.hit), crit: shots.some(r=>r.crit), hpBefore: first.hpBefore, hpAfter: last!.hpAfter,
+      membersBefore: first.membersBefore, membersAfter: last!.membersAfter, defenderStatus: target.status, finalDamage: total,
+      directDamage: shots.reduce((s,r)=>s+(r.directDamage??0),0), splashDamage: shots.reduce((s,r)=>s+(r.splashDamage??0),0),
+      barrierAbsorbed: shots.reduce((s,r)=>s+(r.barrierAbsorbed??0),0), packetCount: shots.reduce((s,r)=>s+(r.packetCount??1),0),packetHits:shots.reduce((s,r)=>s+(r.packetHits??Number(r.hit)),0),packetRolls:shots.flatMap(r=>r.packetRolls??[{hit:r.hit,crit:r.crit,damage:r.finalDamage}]),
+      text: `${attacker.name}→${target.name}：${shots.length}发合计伤害${total}${first.membersBefore!==undefined&&last!.membersAfter!==undefined?`，减员${first.membersBefore-last!.membersAfter}，余员${last!.membersAfter}`:''}` };
   }
 
   /**
@@ -1367,6 +1379,8 @@ export class SmallBattle {
     if (actor.status !== 'ready') {
       return { ok: false, reason: `${actor.name} 无法行动（${actor.status}）`, resolutions: [], log: '' };
     }
+    if (actor.conditions.some(c => c.dur > 0 && this.conditions.get(c.id)?.skipTurn))
+      return { ok: false, reason: '当前状态无法行动', resolutions: [], log: '' };
     const originalAbility = actor.abilities.find((a) => a.id === abilityId);
     const ability = originalAbility && (this.battlefield ? gridAbility(originalAbility) : originalAbility);
     if (!ability) throw new Error(`${actor.name} 没有技能 ${abilityId}`);
@@ -1412,20 +1426,11 @@ export class SmallBattle {
       return { ok: false, reason: '本回合主行动已使用', resolutions: [], log: '' };
     }
     const hasteAction = !opts.bypassTurn && !!ability.itemSourceId && this.usingHaste(actorId);
-    const stateId = ability.cooldownGroup ?? abilityId;
-    const state = actor.abilityState.find((s) => s.abilityId === stateId) ?? {
-      abilityId: stateId,
-      cdLeft: 0,
-      used: 0,
-    };
-    if (!actor.abilityState.some((s) => s.abilityId === stateId)) actor.abilityState.push(state);
-
     if (this.rules.resolutionVersion === 'v2') revealUnit(this.observationContext(), actor);
     // 扣费与计数
     const cost = abilityCost(actor, ability);
     if (cost) actor.resources[cost.resource] = actor.resourceModel && cost.resource === 'SP' ? resourceRound((actor.resources[cost.resource] ?? 0) - cost.amount) : (actor.resources[cost.resource] ?? 0) - cost.amount;
-    state.used += 1;
-    if (ability.cooldown) state.cdLeft = ability.cooldown;
+    spendAbility(actor, ability);
 
     const castTargets = chosenTarget ? this.abilityDamageTargets(actor, chosenTarget, ability, ability.shape === 'burst' || ability.effects.some((e) => 'shape' in e && e.shape === 'burst')) : [actor];
     const effectTargets = (area: boolean) => area ? castTargets : [chosenTarget ?? actor];
@@ -1619,7 +1624,7 @@ export class SmallBattle {
     if (!this.started) throw new Error('战斗尚未开始');
     if (this.rules.resourceModel && this.isOver()) return;
     const ended = this.active;
-    if (ended && ended.status === 'ready') this.settleUnit(ended);
+    if (ended && (ended.status === 'ready' || ended.status === 'routing')) this.settleUnit(ended);
     this.captureFeedback();
     this.feedback?.finishActivation();
 
@@ -1703,7 +1708,7 @@ export class SmallBattle {
       if (goalCells.length && !goalCells.includes(unit.pos!)) {
         const air = { ...unit, airborne: true };
         const cheapest = (actor: Combatant) => Math.min(...goalCells.map((g) => findGridPath(field, unit.pos!, g, (n) => canOccupy(field, known, actor, n), (n, from) => movementStepCost(field, n, actor, this.fieldTags, from))?.cost ?? Infinity));
-        if (cheapest(air) + 1 < cheapest(unit)) this.changeFlight(unitId, true);
+        if (!this.flightRisks(unitId,true).length && cheapest(air) + 1 < cheapest(unit)) this.changeFlight(unitId, true);
       }
       if (unit.status !== 'ready') { if (!this.isOver()) this.endTurn(); return; }
     }
@@ -1724,7 +1729,22 @@ export class SmallBattle {
     const allowed = (cell: number) => canOccupy(field, knownUnits, unit, cell);
     const searchCell = objective.kind === 'annihilation' && !foes.length ? this.searchDestination(unit, knownUnits) : unit.pos!;
     const order = regionalOrder(field, unit, knownUnits, this.commanderProfiles[unit.side === 'ally' ? 'ally' : 'enemy']);
-    const goals = order ? order.goals : objective.kind !== 'annihilation' ? [objective.cell]
+    if (order && field.city?.defender === unit.side && objective.kind === 'control'
+      && this.controlRounds[unit.side === 'ally' ? 'enemy' : 'ally'] > 0) {
+      order.goals = objective.cells ?? [objective.cell]; order.role = 'core'; order.phase = 'core-threat';
+    }
+    const elevatedActor: Combatant = { ...unit, elevation: 1 };
+    const firingPositions = rangedRole && unit.side === field.city?.defender ? field.tiles.flatMap((_,pos) => {
+      if (!intactStructure(field,pos)?.top || !canOccupy(field,knownUnits,elevatedActor,pos)) return [];
+      const actor={...elevatedActor,pos};
+      const hasFire = foes.length ? foes.some(target=>!this.weaponContext(actor,target,{weaponMode:'primary'}).reason)
+        : field.tiles.some((_,cell)=>!field.city!.inside.includes(cell)&&!field.city!.frontline.includes(cell)&&!groundBlocked(field,cell)
+          && gridDistance(field,pos,cell)<=gridWeaponRange(actor.weapon)&&unitLineOfSight(field,actor,{...actor,pos:cell,elevation:undefined,side:unit.side==='ally'?'enemy':'ally'}));
+      return hasFire?[pos]:[];
+    }) : [];
+    const wallRoutes = gridCostsToGoals(field,firingPositions,p=>canOccupy(field,knownUnits,elevatedActor,p),(p,from)=>movementStepCost(field,p,elevatedActor,this.fieldTags,from));
+    const climbApproaches = isElevated(unit) ? firingPositions : [...wallRoutes.keys()].flatMap(p=>neighbors(field,p).filter(n=>canOccupy(field,knownUnits,unit,n)&&!this.climbReason(unitId,p,n)));
+    const goals = climbApproaches.length && !order?.phase.includes('threat') ? climbApproaches : order ? order.goals : objective.kind !== 'annihilation' ? [objective.cell]
       : foes.length ? field.tiles.flatMap((_, cell) => {
         if (!allowed(cell)) return [];
         const actor = { ...unit, pos: cell };
@@ -1738,7 +1758,7 @@ export class SmallBattle {
     const routeCosts = gridCostsToGoals(field, goals, allowed, (cell, from) => movementStepCost(field, cell, unit, this.fieldTags, from));
     const positionScore = (path: GridPath) => {
       const cell = path.cells.at(-1)!;
-      const destinationDistance = order ? Math.min(...order.goals.map(p => gridDistance(field, cell, p))) : objective.kind === 'annihilation'
+      const destinationDistance = order ? Math.min(...goals.map(p => gridDistance(field, cell, p))) : objective.kind === 'annihilation'
         ? foes.length ? Math.min(...foes.map((foe) => gridDistance(field, cell, foe.pos!))) : gridDistance(field, cell, searchCell)
         : gridDistance(field, cell, objective.cell);
       const nearest = foes.length ? Math.min(...foes.map((foe) => gridDistance(field, cell, foe.pos!))) : Infinity;
@@ -1773,6 +1793,39 @@ export class SmallBattle {
         reduction += best;
       }
       return reduction;
+    };
+    const incoming = (actor: Combatant): number => foes.reduce((total,foe) => {
+      const context = this.weaponContext(foe,actor);
+      if (context.reason) return total;
+      return total + Math.min(memberHealth(actor),this.previewAttackWithEnvironment({attacker:foe,defender:actor,rules:this.rules,conditionDefs:this.conditionDefMap(),traitRegistry:this.traitRegistry,
+        weaponOverride:context.weapon,ranged:context.ranged,...this.attackModifiers(foe,actor,context)}).expectedDamage);
+    },0);
+    const arrivals = new Map<GridPath, {actor:Combatant; loss:number; survival:number}>();
+    const arrivalAfterReactions = (path: GridPath) => {
+      const cached=arrivals.get(path);if(cached)return cached;
+      if (!path.cost || !foes.length) return {actor:{...structuredClone(unit),pos:path.cells.at(-1)!},loss:0,survival:1};
+      const results: Combatant[]=[];let loss=0,alive=0;
+      for(let sample=0;sample<8;sample++) {
+        const copy=structuredClone(unit), spent=new Set(this.reactionSpent),rng=new SeededRng('route-risk:'+sample);
+        for(const cell of path.cells.slice(1)) {
+          const previous=copy.pos!;copy.pos=cell;delete copy.tacticalPose;
+          for(const foe of foes) {
+            if(copy.hp<=0||spent.has(foe.id)||foe.status!=='ready'||foe.suppression||foe.conditions.some(c=>c.dur>0&&(this.conditions.get(c.id)?.skipTurn||this.conditions.get(c.id)?.preventAttack&&meleeWeapon(foe)?.recipe?.mechanism!=='natural')))continue;
+            const weapon=meleeWeapon(foe),ridingAway=mountedShooting(copy)&&(Math.floor(cell/field.width)-Math.floor(previous/field.width))*(copy.side==='enemy'?-1:1)>0;
+            const opportunity=!ridingAway&&weapon&&meleeContact(field,foe,{...copy,pos:previous})&&gridDistance(field,foe.pos!,previous)===1&&(gridDistance(field,foe.pos!,cell)>1||!meleeContact(field,foe,copy));
+            const watching=this.overwatch.has(foe.id)&&!this.weaponContext(foe,copy).reason;
+            if(!opportunity&&!watching)continue;
+            spent.add(foe.id);
+            const context=this.weaponContext(foe,copy,{weaponMode:opportunity?weapon===foe.sidearm?'sidearm':'primary':'auto'});
+            resolveAttack(this.environmentContext({attacker:structuredClone(foe),defender:copy,rng,rules:this.rules,conditionDefs:this.conditionDefMap(),traitRegistry:this.traitRegistry,
+              weaponOverride:opportunity?weapon:context.weapon,ranged:!opportunity&&context.ranged,actionDamageScale:!opportunity?this.hasteOverwatch.get(foe.id)??1:1,...this.attackModifiers(foe,copy,context)}));
+          }
+          if(copy.hp<=0)break;
+        }
+        copy.pos=path.cells.at(-1)!;loss+=memberHealth(unit)-memberHealth(copy);alive+=Number(copy.hp>0);results.push(copy);
+      }
+      results.sort((a,b)=>memberHealth(a)-memberHealth(b));
+      const result={actor:results[Math.floor(results.length/2)]!,loss:loss/8,survival:alive/8};arrivals.set(path,result);return result;
     };
     const supportingAttacks = new Map<string, number>();
     const supportingAttackValue = (ally: Combatant) => {
@@ -1821,11 +1874,12 @@ export class SmallBattle {
     const shortlist = field.layerVersion ? [...reachable].sort((a, b) => scored!.get(b)! - scored!.get(a)! || a.cost - b.cost).slice(0, 12) : reachable;
     if (field.layerVersion && !shortlist.some(p => p.cost === 0)) shortlist.push(reachable.find(p => p.cost === 0)!);
     for (const path of shortlist.filter(Boolean)) {
-      const actor = { ...unit, pos: path.cells.at(-1)! };
+      const projected = arrivalAfterReactions(path), actor = projected.actor;
+      if (actor.hp <= 0 || projected.survival < .5) continue;
       const skillContext = { ...this.observationContext(), units: knownUnits.map(u => u.id === actor.id ? actor : u) };
       // 协同单位在通路旁支援，不用自身占位堵住己方护送对象；敌方仍可拦截。
-      if (escortCorridor.has(actor.pos)) continue;
-      const baseScore = scored?.get(path) ?? positionScore(path);
+      if (escortCorridor.has(actor.pos!)) continue;
+      const baseScore = (scored?.get(path) ?? positionScore(path)) - projected.loss * 1.5 - (1-projected.survival)*memberHealth(unit) - incoming(actor)*.3;
       if (field.layerVersion && this.nonSkillActionAvailable(unitId)) {
         const structural = [...new Set([...(order?.breach === undefined ? [] : [order.breach]), ...neighbors(field, actor.pos!).filter(p => {
           const structure = intactStructure(field, p);
@@ -1857,7 +1911,8 @@ export class SmallBattle {
           const goalDistance = Math.min(...goals.map(p => gridDistance(field, cell, p)));
           const currentDistance = Math.min(...goals.map(p => gridDistance(field, actor.pos!, p)));
           const assault = unit.side !== field.city?.defender && !isElevated(unit) && cell === order?.breach;
-          if (assault || goalDistance < currentDistance || isElevated(unit) && !foes.some(f => unitLineOfSight(field, unit, f))) plans.push({ kind: 'climb', path, cell, score: baseScore + (assault ? 32 : 8) + currentDistance - goalDistance });
+          const fireRoute = !isElevated(unit) && wallRoutes.has(cell);
+          if (fireRoute || assault || goalDistance < currentDistance || isElevated(unit) && !foes.some(f => unitLineOfSight(field, unit, f))) plans.push({ kind: 'climb', path, cell, score: baseScore + (fireRoute ? 16-Math.min(8,wallRoutes.get(cell)!) : assault ? 32 : 8) + currentDistance - goalDistance });
         }
         if (path.cost === 0) for (const cell of neighbors(field, actor.pos!)) {
           const door = intactStructure(field, cell);
@@ -1927,11 +1982,13 @@ export class SmallBattle {
       const context = this.weaponContext(unit, target, { charge: true });
       const path = context.reason ? undefined : this.chargePath(unit, target);
       if (!path) continue;
-      const arrival = { ...unit, pos: path.cells.at(-1)!, ...(context.landing ? { airborne: false } : {}) };
+      const projected=arrivalAfterReactions(path);
+      if(projected.actor.hp<=0||projected.survival<.5)continue;
+      const arrival = { ...projected.actor, pos: path.cells.at(-1)!, ...(context.landing ? { airborne: false } : {}) };
       if (escortCorridor.has(arrival.pos)) continue;
       const preview = this.previewAttackWithEnvironment({ attacker: arrival, defender: target, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry,
         weaponOverride: context.weapon, ranged: false, charge: true, actionDamageScale: this.usingHaste(unitId) ? hasteAttackScale(unit) : 1, ...this.attackModifiers(arrival, target, context, { charge: true }) });
-      plans.push({ score: positionScore(path) + preview.expectedDamage + (preview.expectedDamage >= memberHealth(target) ? 4 : 0), offensive: preview.expectedDamage > 0, path, targetId: target.id, kind: 'charge' });
+      plans.push({ score: positionScore(path) - projected.loss*1.5 - (1-projected.survival)*memberHealth(unit) - incoming(arrival)*.6 + preview.expectedDamage + (preview.expectedDamage >= memberHealth(target) ? 4 : 0), offensive: preview.expectedDamage > 0, path, targetId: target.id, kind: 'charge' });
     }
     if (this.nonSkillActionAvailable(unitId)) {
       const stay: GridPath = { cells: [unit.pos!], cost: 0 };
@@ -2025,9 +2082,12 @@ export class SmallBattle {
         && unitLineOfSight(field, observer, { ...observer, pos: cell, airborne: false }))) coverage[cell] = this.round;
     }
     const reachable = gridCostsToGoals(field, [unit.pos!], cell => canOccupy(field, known, unit, cell), (cell, from) => movementStepCost(field, cell, unit, this.fieldTags, from));
-    return [...reachable.keys()].sort((a, b) => (coverage[a] ?? 0) - (coverage[b] ?? 0)
+    const owner = (cell:number) => [...observers].sort((a,b)=>gridDistance(field,a.pos!,cell)-gridDistance(field,b.pos!,cell)||a.id.localeCompare(b.id))[0]?.id;
+    const assigned = [...reachable.keys()].filter(p=>owner(p)===unit.id && (coverage[p]??0)<this.round-1);
+    return (assigned.length?assigned:[...reachable.keys()]).sort((a, b) => (coverage[a] ?? 0) - (coverage[b] ?? 0)
       || reachable.get(a)! - reachable.get(b)! || a - b)[0] ?? unit.pos!;
   }
+  searchedCells(side: Side): number[] { return (this.searchCoverage[side]??[]).flatMap((round,cell)=>round>0&&this.round-round<=3?[cell]:[]); }
 
   private planAutoAction(u: Combatant, foes: Combatant[]): boolean {
     if (!this.nonSkillActionAvailable(u.id)) return false;
@@ -2194,8 +2254,7 @@ export class SmallBattle {
       const u = this.active;
       if (!u) break;
       if (u.status === 'ready' || u.status === 'routing') this.beginFeedbackActivation();
-      if (this.rules.resolutionVersion === 'v2' && u.status === 'routing') this.settleMorale(u);
-      if (u.status !== 'ready') {
+      if (u.status !== 'ready' && u.status !== 'routing') {
         this.captureFeedback(); this.feedback?.finishActivation();
         this.turnIndex += 1;
         continue;
@@ -2203,6 +2262,7 @@ export class SmallBattle {
       this.beginTurn(u);
       this.captureFeedback();
       if (u.status !== 'ready') {
+        if (u.status === 'routing') this.settleUnit(u);
         this.feedback?.finishActivation();
         this.turnIndex += 1;
         continue;

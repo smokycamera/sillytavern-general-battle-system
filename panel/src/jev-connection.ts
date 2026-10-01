@@ -202,7 +202,7 @@ export async function directJevRequest(connection: JevConnection, path: string, 
       ? ' Follow state.commandRules.'
         + (state?.mapRules ? ' When the selected battle is small, follow state.mapRules and return a top-level battlefield.'
           + (protocol === 'battlefield-v2' ? ' Include battlefield.intent; its entities may be empty for an explicitly empty scene.' : '') : '')
-        + ' The top-level commanders object is optional. battlefield and commanders use plain properties, without value/confidence wrappers.' : '';
+        + ' The top-level commanders object is optional. battlefield and commanders use plain properties, without value/confidence wrappers. Correct state.retryErrors when present.' : '';
     const payload = { model, stream: false, response_format: { type: 'json_object' }, messages: [
       { role: 'system', content: instructions + mapLabelInstruction + battlefieldInstruction }, { role: 'user', content: JSON.stringify(body) },
     ] };

@@ -57,6 +57,19 @@ export function saveLlmSettings(settings: LlmSettings): void {
   try { localStorage.setItem(LLM_SETTINGS_KEY, JSON.stringify(settings)); }
   catch { throw Error('模型配置未保存，请检查浏览器存储空间与权限'); }
 }
+export function llmSettingsBackup(): string { return localStorage.getItem(LLM_SETTINGS_KEY) ?? '{}'; }
+export function resetLlmSettings(preserveConnection: boolean): void {
+  const settings = defaults();
+  if (preserveConnection) {
+    let raw: Partial<LlmSettings>;
+    try { raw = JSON.parse(llmSettingsBackup()); }
+    catch { throw Error('原配置无法解析，不能保证保留连接；请先备份原配置，再选择清空配置'); }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw Error('原配置无法解析，请先备份');
+    for (const key of ['url', 'token', 'model'] as const) if (typeof raw[key] === 'string') settings[key] = raw[key];
+    settings.models = Array.isArray(raw.models) ? raw.models.filter((m): m is string => typeof m === 'string') : [];
+  }
+  saveLlmSettings(settings);
+}
 export function llmConnection(settings: LlmSettings): JevConnection {
   if (!settings.url.trim()) throw Error('请先填写 API URL');
   const url = connectionUrl(settings.url);
