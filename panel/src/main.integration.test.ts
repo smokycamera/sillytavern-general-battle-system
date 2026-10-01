@@ -82,7 +82,18 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   expect(button('migration-accept')).not.toBeNull();
   button('migration-accept').click();await idle();
   expect(f.service.snapshot().storage![0]!.snapshot!.damageModel).toBe('wounds-v2');
+  const respond=request.getMockImplementation()!;
+  request.mockImplementationOnce(async(...args)=>{
+    const result=await respond(...args),body=await result.json();
+    const answer=JSON.parse(body.choices[0].message.content);
+    answer.battlefield={scene:'interior',landmarks:[{kind:'forest',anchor:'center'}]};
+    body.choices[0].message.content=JSON.stringify(answer);return new Response(JSON.stringify(body));
+  });
   nav('battle');button('small-start').click();await idle();
+  expect(f.service.snapshot().battle).toBeFalsy();expect(document.querySelector('#toast')?.textContent).toContain('室内地标');
+  nav('battle');button('small-start').click();await idle();
+  const retryRequest=JSON.parse(JSON.parse(String(request.mock.calls.at(-1)![1]?.body)).messages[1].content);
+  expect(retryRequest.state.retryErrors).toEqual([expect.stringContaining('室内地标')]);
   expect(f.service.snapshot().battle, document.querySelector('#toast')?.textContent ?? JSON.stringify(f.service.status())).toBeDefined();
   const selected=SmallBattle.fromSnapshot(f.service.snapshot().battle!.snap);
   expect(selected.commanderProfiles).toEqual({ally:{ability:'master',style:'aggressive',scoring:'tactical-v2'},enemy:{ability:'expert',style:'cautious',scoring:'tactical-v2'}});
@@ -120,7 +131,11 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   localStorage.setItem(LLM_SETTINGS_KEY, 'broken'); await f.service.load(); nav('settings');
   expect(document.body.textContent).toContain('原记录已保留'); nav('battle');
   expect(document.querySelector('[role="alert"]')?.textContent).toContain('原记录已保留');
-  expect(localStorage.getItem(LLM_SETTINGS_KEY)).toBe('broken'); localStorage.setItem(LLM_SETTINGS_KEY, config!);
+  expect(localStorage.getItem(LLM_SETTINGS_KEY)).toBe('broken');
+  await f.service.transact(()=>({...beforeToggle,battle:null,encounterContext:undefined}));request.mockClear();
+  nav('battle');button('small-start').click();await idle();
+  expect(f.service.snapshot().battle).toBeDefined();expect(request).not.toHaveBeenCalled();
+  expect(localStorage.getItem(LLM_SETTINGS_KEY)).toBe('broken');localStorage.setItem(LLM_SETTINGS_KEY, config!);
   // bfcache must not unsubscribe the panel from later archive updates.
   nav('units'); const cachedHide = new Event('pagehide'); Object.defineProperty(cachedHide, 'persisted', { value: true });
   window.dispatchEvent(cachedHide);

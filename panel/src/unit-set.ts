@@ -98,7 +98,7 @@ function gearValue(input: unknown, previous: ItemMechanics | undefined, slot: Eq
     if (spec.kind === 'weapon' && spec.enchantment !== undefined) enumeration(spec.enchantment, ['none','thermal','arcane'], '附魔');
     if (spec.kind === 'armor' && spec.profile !== undefined) enumeration(spec.profile, ['balanced','kinetic','thermal','arcane'], '防护类型');
     const old = previous && previous.kind !== 'consumable' ? previous.value : undefined;
-    mechanics = compileItem({ ...spec, body: spec.body ?? unit.body, quality: spec.quality ?? old?.recipe?.quality }, { id, name: name ?? (old && 'name' in old ? old.name : undefined) ?? slot, seed: old?.recipe?.seed ?? seed, creatingUnit: true });
+    mechanics = compileItem({ ...spec, body: spec.body ?? unit.body, quality: spec.quality ?? old?.recipe?.quality }, { id, name: name ?? (old && 'name' in old ? old.name : undefined) ?? slot, seed: old?.recipe?.seed ?? seed, creatingUnit: true, damageModel: unit.damageModel, variance: old ? old.recipe?.variance ?? false : undefined, noVariance: old?.recipe?.noVariance });
   }
   if (!mechanics || mechanics.kind === 'consumable' || mechanics.kind !== (['primary','sidearm'].includes(slot) ? 'weapon' : slot)) throw Error(slot + '需要匹配槽位的装备规格');
   if (config.values !== undefined) {
@@ -221,7 +221,7 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   const oldProgress = xpProgress(unit)?.current ?? 0;
   const data = structuredClone(patch);
   for (const [alias, key] of Object.entries({state:'status',speed:'speedTier',weapon2:'sidearm'})) if (data[alias] !== undefined) {
-    if (data[key] !== undefined) throw Error(alias + '与' + key + '不能同时指定'); data[key] = data[alias]; delete data[alias];
+    if (data[key] !== undefined && JSON.stringify(data[key]) !== JSON.stringify(data[alias])) throw Error(alias + '与' + key + '不能同时指定'); data[key] = data[alias]; delete data[alias];
   }
   if (object(data.formation)) {
     if (data.formation.members !== undefined) {
@@ -236,7 +236,7 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   }
   for (const key of ['atk','def','spd','hpMax','moraleMax']) if (data[key] !== undefined) {
     data.base ??= {}; const base = requireObject(data.base,'base');
-    if (base[key] !== undefined) throw Error(key + '与base冲突'); base[key] = data[key];
+    if (base[key] !== undefined && base[key] !== data[key]) throw Error(key + '与base冲突'); base[key] = data[key];
   }
   if (data.base !== undefined) keys(requireObject(data.base,'base'), ['atk','def','spd','hpMax','moraleMax'], 'base');
   rebase(unit,data);
@@ -316,32 +316,35 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
     } else { if(old)delete old.equippedTo; delete unit[key]; }
   }
   if (data.skills !== undefined && data.abilities !== undefined) throw Error('skills与abilities不能同时指定');
-  if (data.skills !== undefined) unit.abilities = skillValues(unit,data.skills);
+  const derivedAbilities = unit.abilities.filter(a => a.equipmentSourceId || a.itemSourceId);
+  if (data.skills !== undefined) unit.abilities = [...skillValues(unit,data.skills), ...derivedAbilities];
   if (data.abilities !== undefined) {
     if (!Array.isArray(data.abilities)) throw Error('abilities须为完整技能记录数组');
-    unit.abilities = structuredClone(data.abilities) as Ability[];
-    for(const a of unit.abilities) { keys(requireObject(a,'ability'),['id','definitionId','sourceId','cooldownGroup','recipe','effectVersion','customized',...skillFields],'ability'); a.customized=true; validateAbility(a); }
+    const learned = structuredClone(data.abilities) as Ability[];
+    for(const a of learned) { keys(requireObject(a,'ability'),['id','definitionId','sourceId','cooldownGroup','recipe','effectVersion','customized',...skillFields],'ability'); a.customized=true; validateAbility(a); }
+    unit.abilities = [...learned, ...derivedAbilities];
   }
   if(new Set(unit.abilities.map(a=>a.id)).size!==unit.abilities.length)throw Error('技能id重复');
   const prepared = data.preparedAbilityIds ?? (data.skills !== undefined || data.abilities !== undefined ? unit.abilities.slice(0, MAX_PREPARED_SKILLS).map(a=>a.id) : unit.preparedAbilityIds?.filter(id=>unit.abilities.some(a=>a.id===id)) ?? []);
   strings(prepared,'preparedAbilityIds'); unit.preparedAbilityIds=resolvePreparedSkills(unit.abilities,prepared);
   if (data.resources !== undefined && unit.resources.SP !== undefined) number(unit.resources.SP,'SP',0,spCapacity(unit));
   else if(unit.storyState?.resources&&unit.resources.SP!==undefined)unit.resources.SP=Math.min(unit.resources.SP,spCapacity(unit));
-  if(data.skills!==undefined||data.abilities!==undefined)unit.abilityState=unit.abilityState.filter(s=>unit.abilities.some(a=>(a.cooldownGroup??a.id)===s.abilityId));
+
   if(!Array.isArray(unit.abilityState))throw Error('abilityState须为数组');
-  for(const s of unit.abilityState) { if(!unit.abilities.some(a=>(a.cooldownGroup??a.id)===s.abilityId))throw Error('冷却状态没有对应技能'); number(s.cdLeft,'cdLeft',0,Number.MAX_SAFE_INTEGER,true); number(s.used,'used',0,Number.MAX_SAFE_INTEGER,true); }
+  for(const s of unit.abilityState) { if(typeof s.abilityId!=='string'||!s.abilityId)throw Error('冷却状态缺少技能身份'); number(s.cdLeft,'cdLeft',0,Number.MAX_SAFE_INTEGER,true); number(s.used,'used',0,Number.MAX_SAFE_INTEGER,true); }
   if (['weapon','sidearm','armor','shield','body','scale'].some(key=>Object.hasOwn(data,key))) {
     const reason=equipmentReason(unit); if(reason)throw Error(reason);
   }
   // 校验精确值在写入前执行，避免归档函数的旧档容错替调用者截断或修复。
   combatantFromUnknown(unit);
   const record=unitRecordFromCombatant(unit,previous,{kind:'update',sourceId});
-  record.equipmentManaged=true;
+  if (previous.equipmentManaged) record.equipmentManaged = true;
   record.preparedAbilityIds=[...unit.preparedAbilityIds];
   if(data.status==='ready'&&data.retired===undefined)delete record.retired;
   if(data.retired!==undefined)record.retired=data.retired as boolean;
   if(data.note!==undefined)record.note=data.note===null?undefined:data.note as string;
   next.storage=next.storage!.map(r=>r.id===id?record:r);
+  for (const key of ['protagonistId','commanderId'] as const) if (next[key] === id && unit.side !== 'ally') delete next[key];
   const result=prepareInventoryState(next) as NarrativeSave;
   materializeUnitRecord(result.storage!.find(r=>r.id===id)!,registry);
   return result;

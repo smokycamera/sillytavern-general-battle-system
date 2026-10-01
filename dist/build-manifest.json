@@ -1,49 +1,24 @@
 {
   "format": "tavern-battle-native-build",
   "version": "1.6.1-rc.3",
-  "builtAt": "2026-10-01T02:43:28.667Z",
-  "sourceFingerprint": "b5e3eb8ac80aba4fb381ce7e1edd040e6eadde988691439acc3bb12a29a7a3d0",
+  "builtAt": "2026-10-01T05:44:03.956Z",
+  "sourceFingerprint": "9f2d760d64090ec0209132d9bd5022efeaae2638254b44ffdab92552328479a5",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
-      "path": "LICENSE",
-      "bytes": 35149,
-      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+      "path": "dist/assets/panel-DArw5Q2t.js",
+      "bytes": 428814,
+      "sha256": "3b84e977a4b7572ac35ae9c469c51f39a389860e39b94d3b7de7842646cb06ce"
     },
     {
-      "path": "LICENSE-NOTES.md",
-      "bytes": 1076,
-      "sha256": "3c1102b6cb3f1d12fb603fa36920adf797f79463e7178ae4612782765b87f5cc"
+      "path": "dist/assets/panel-XcL6GjWl.css",
+      "bytes": 29098,
+      "sha256": "e55c8c9d8d405424e9ddedf674f3dcab34e279580920422c209e18419a1b9b7d"
     },
     {
-      "path": "README.md",
-      "bytes": 4946,
-      "sha256": "f71697ee6b0e60d03e809ca9c8d59ec28a7e675429401a6a48a9147301c73ab5"
-    },
-    {
-      "path": "README.zh-CN.md",
-      "bytes": 4522,
-      "sha256": "3130be45ad605546d3db06938901d4ddbade62ca6ed29041b3da6b2ceb73ac8f"
-    },
-    {
-      "path": "THIRD_PARTY_NOTICES.md",
-      "bytes": 1564,
-      "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
-    },
-    {
-      "path": "dist/assets/panel-B_07okxU.js",
-      "bytes": 421691,
-      "sha256": "71ab788752ff8d7e712731c924d8e3d4d5c0586e51c8d713a2a6322a994866e1"
-    },
-    {
-      "path": "dist/assets/panel-By9-9LPe.css",
-      "bytes": 28573,
-      "sha256": "56f39f5edf19a0de4b3123a5e2674973761b05b32f95f6623c1054381324da05"
-    },
-    {
-      "path": "dist/assets/preferences-B51vr7ai.js",
-      "bytes": 672107,
-      "sha256": "12951a581e5b50e0abbf30440e7b4ac2bb171d3a043c479fd133e746e225b8d2"
+      "path": "dist/assets/preferences-DAWMaTCo.js",
+      "bytes": 679810,
+      "sha256": "ef77f436aa4a7cecbe295a490dfe9b4a7a97f79ee3b562e9df3f24a944fe50b8"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -137,8 +112,8 @@
     },
     {
       "path": "docs/jev-integration.md",
-      "bytes": 3059,
-      "sha256": "9ad0090ee15ef84721d43299a94f900af9eacfcad0611426c7c2c20f528dd69c"
+      "bytes": 4082,
+      "sha256": "21c9ca171b3ad553709068ddcf1917570c8e9fdfc8474394809de111515989e0"
     },
     {
       "path": "docs/jev-retry-validation.md",
@@ -237,8 +212,18 @@
     },
     {
       "path": "dist/index.js",
-      "bytes": 82808,
-      "sha256": "9d6725c9288bfa8f475667490434398bba9e50b16eee31cd31910a029ceb2646"
+      "bytes": 84403,
+      "sha256": "7c9a93608511349f0c2e3b47618a3a3605cae023eee21da75ae72b83c845f39a"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 35149,
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "path": "LICENSE-NOTES.md",
+      "bytes": 1076,
+      "sha256": "3c1102b6cb3f1d12fb603fa36920adf797f79463e7178ae4612782765b87f5cc"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -253,7 +238,17 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 46216,
-      "sha256": "f23ca3a1592b24a3e3fbfefd54d43eaccaff967e89496a3f86f42e3315a1c75c"
+      "sha256": "7da0340533c290afc7826f8e3c464c23f6885694ddf6b33093d29328b57fc07c"
+    },
+    {
+      "path": "README.md",
+      "bytes": 4946,
+      "sha256": "f71697ee6b0e60d03e809ca9c8d59ec28a7e675429401a6a48a9147301c73ab5"
+    },
+    {
+      "path": "README.zh-CN.md",
+      "bytes": 4522,
+      "sha256": "3130be45ad605546d3db06938901d4ddbade62ca6ed29041b3da6b2ceb73ac8f"
     },
     {
       "path": "release/current-baseline.json",
@@ -264,6 +259,11 @@
       "path": "scripts/jev-cors-relay.mjs",
       "bytes": 5754,
       "sha256": "c7fb9094f869607e10a45fb46335de4545e14043034f1b56fef937115fca50ca"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "bytes": 1564,
+      "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     }
   ],
   "validation": {

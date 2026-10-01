@@ -85,6 +85,28 @@ describe('ordinary LLM preparation',()=>{
     expect((await c.select({...input(),messages:[]},settings,()=>true)).detail).toContain('沿用');
     expect(request).not.toHaveBeenCalled();
   });
+  it('carries only bounded current-request errors into manual retries and clears them on success or scope change',async()=>{
+    const request=model(),controller=new LlmContextController(request),source={...input(),scope:'chat-a'};
+    await expect(controller.select(source,settings,()=>true,()=>{throw Error('地标部署容量不足');})).rejects.toThrow('容量不足');
+    await expect(controller.select(source,settings,()=>true,()=>{throw Error('正文桥梁数量与实体列表不一致');})).rejects.toThrow('数量');
+    await controller.select(source,settings,()=>true);
+    const body=(n:number)=>JSON.parse(JSON.parse(String(request.mock.calls[n]![1]!.body)).messages[1].content);
+    expect(body(0).state.retryErrors).toBeUndefined();expect(body(1).state.retryErrors).toEqual(['地标部署容量不足']);
+    expect(body(2).state.retryErrors).toEqual(['地标部署容量不足','正文桥梁数量与实体列表不一致']);
+    await controller.select(source,settings,()=>true);expect(body(3).state.retryErrors).toBeUndefined();
+    await expect(controller.select(source,settings,()=>true,()=>{throw Error('地标部署容量不足');})).rejects.toThrow();
+    await controller.select({...source,scope:'chat-b'},settings,()=>true);expect(body(5).state.retryErrors).toBeUndefined();
+  });
+  it('releases the operation lock at the deadline even if the transport never settles',async()=>{
+    vi.useFakeTimers();
+    try {
+      const request=vi.fn<typeof fetch>(()=>new Promise(()=>{})),controller=new LlmContextController(request);
+      const pending=controller.select(input(),settings,()=>true);
+      const rejected=expect(pending).rejects.toThrow('超过45秒');
+      await vi.waitFor(()=>expect(request).toHaveBeenCalled());
+      await vi.advanceTimersByTimeAsync(45001);await rejected;expect(controller.busy).toBe(false);
+    } finally {vi.useRealTimers();}
+  });
   it.each(['small','mass'] as const)('keeps the prepared %s scale when LLM scale selection is disabled',async mode=>{
     const request=model({battle_mode:mode==='small'?'mass':'small',map_layout:'indoor',objective:'escort',field:'urban',lighting:'night',enemy_style:'cautious'});
     const source={...input(),setup:{...input().setup,mode}};

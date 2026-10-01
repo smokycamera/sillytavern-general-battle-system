@@ -156,7 +156,7 @@ it('equipped barrier abilities execute and keep spent uses after restoring eithe
     const b=mode==='small'?grid([a,e]):new MassBattle({combatants:[a,e],rules:V4_OVERFLOW_TW,seed:'shield-mass'});if(b instanceof MassBattle)b.start();
     const before=a.resources.SP!;expect(b.useAbility(a.id,ability.id,a.id).ok).toBe(true);
     if(b instanceof MassBattle){b.issue({unitId:e.id,type:'hold'});b.resolveRound();}
-    expect(a.barrier?.remaining).toBe(18);expect(a.resources.SP).toBe(before-2);expect(a.abilityState.find(s=>s.abilityId===ability.id)?.used).toBe(1);
+    expect(a.barrier?.remaining).toBe(18);expect(a.resources.SP).toBe(before-2);expect(a.abilityState.find(s=>s.abilityId==='uses:'+ability.id)?.used).toBe(1);
     const save=JSON.parse(JSON.stringify(b.toSnapshot())),restored=b instanceof SmallBattle?SmallBattle.fromSnapshot(save):MassBattle.fromSnapshot(save);
     expect(restored.byId(a.id).barrier).toEqual(a.barrier);expect(restored.byId(a.id).abilityState).toEqual(a.abilityState);
   }

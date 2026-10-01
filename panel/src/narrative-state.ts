@@ -232,12 +232,34 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     next = prepareInventoryTransaction(next, { kind: 'discard', id: 'take:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, itemId: event.id, qty: event.qty });
   }
   records = next.storage ?? [];
+  const combined = new Map<string, Record<string, unknown>>();
+  const merge = (target: Record<string, unknown>, source: Record<string, unknown>) => {
+    for (const [key,value] of Object.entries(source)) {
+      if (value === undefined) continue;
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const child = target[key]; target[key] = child && typeof child === 'object' && !Array.isArray(child) ? child : {};
+        merge(target[key] as Record<string,unknown>,value as Record<string,unknown>);
+      } else target[key] = structuredClone(value);
+    }
+  };
+  for (const event of proposal.events) if (event.kind==='unit-set') {
+    const patch=combined.get(event.id)??{}; merge(patch,event.data); combined.set(event.id,patch);
+  }
   for (const event of proposal.events) {
     if (event.kind !== 'unit-update') continue;
+    const combinedPatch=combined.get(event.id!);
+    if (combinedPatch) {
+      merge(combinedPatch,{hp:event.hp,hpMax:event.hpMax,morale:event.morale,status:event.state});
+      if (event.clear?.length) {
+        const conditions = (combinedPatch.conditions ?? records.find(r=>r.id===event.id)?.conditions ?? []) as Combatant['conditions'];
+        combinedPatch.conditions = event.clear.includes('all') || event.clear.includes('全部') ? [] : conditions.filter(c=>!event.clear!.includes(c.id));
+      }
+      continue;
+    }
     records = records.map((r) => r.id === event.id ? updateUnitRecord(r, event, registry, proposal.id) : r);
   }
   next.storage = records;
-  for (const event of proposal.events) if (event.kind === 'unit-set') next = applyUnitSet(next,event.id,event.data,proposal.id);
+  for (const [id,patch] of combined) next = applyUnitSet(next,id,patch,proposal.id);
   let newEquipment = 0;
   const reforged = new Set<string>(), learned = new Set<string>();
   for (const [index, event] of proposal.events.entries()) {

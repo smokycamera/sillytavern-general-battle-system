@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { abilityUsed } from '../src/ability-state.js';
 import { generateUnit, SmallBattle, MassBattle, standardField, traitRegistry, V2_D20, V2_TW, type Combatant, type GenerateInput } from '../src/index.js';
 const registry = traitRegistry();
 function make(id: string, side: 'ally' | 'enemy', extra: Partial<GenerateInput> = {}): Combatant {
@@ -21,7 +22,7 @@ describe('V2 AI与手动动作一致', () => {
     battle.autoAction(healer.id);
     expect(fallen.hp).toBeGreaterThan(0);
     expect(fallen.status).toBe('ready');
-    expect(healer.abilityState.find((s) => s.abilityId === ability.cooldownGroup)?.used).toBe(1);
+    expect(abilityUsed(healer, ability)).toBe(1);
   });
   it('会战自动治疗也能救助濒死的随队人物，消耗所属编队一次任务', () => {
     const healer = make('healer', 'ally', { scale: 'company', weaponClass: 'sword', abilityBlueprints: [{ id: 'generic:buff:heal', level: 7, name: '复苏' }] });
@@ -35,7 +36,7 @@ describe('V2 AI与手动动作一致', () => {
     expect(order).toMatchObject({ type: 'ability', targetId: target.id, abilityId: ability.id });
     expect(battle.issue(order!).ok).toBe(true); battle.issue({ unitId: enemy.id, type: 'hold' }); battle.resolveRound();
     expect(target.hp).toBeGreaterThan(0); expect(target.status).toBe('ready');
-    expect(battle.byId(healer.id).abilityState.find((s) => s.abilityId === ability.cooldownGroup)?.used).toBe(1);
+    expect(abilityUsed(battle.byId(healer.id), ability)).toBe(1);
   });
   it('协同载具主动让出己方护送出口，护送对象能实际抵达；敌方仍可守出口', () => {
     function escortCase(friendly: boolean, mirrored = false) {

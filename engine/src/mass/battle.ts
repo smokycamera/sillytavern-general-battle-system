@@ -1,3 +1,4 @@
+import { spendAbility, abilityUsed } from '../ability-state.js';
 import { assertBattleCapacity } from '../battle-limits.js';
 import { tacticalSkillCost, tacticalRestValue } from '../skill-economy.js';
 import { actionPotential } from '../skill-tactics.js';
@@ -737,7 +738,31 @@ export class MassBattle {
         const result = this.orderPreview(order);
         if (!result.preview) return [];
         const target = foes.find((foe) => foe.id === order.targetId)!;
-        return [{ order, score: (Math.min(memberHealth(target), result.preview.expectedDamage) + (result.preview.conditionValue ?? 0)) }];
+        let score=Math.min(memberHealth(target),result.preview.expectedDamage)+(result.preview.conditionValue??0);
+        if (result.vehicleMove) {
+          const threats=this.takeoffThreats(u,planning).filter(foe=>formationNodeDistance(formationNode(foe),result.vehicleMove!)>1);
+          if (threats.length) {
+            let benefit=0,loss=0;
+            for(let sample=0;sample<8;sample++) {
+              const actor=structuredClone(u),rng=new SeededRng('departure-risk:'+sample);
+              for(const foe of threats) {
+                if(actor.hp<=0)break;
+                resolveAttack(this.environmentContext({attacker:structuredClone(foe),defender:actor,weaponOverride:meleeWeapon(foe),ranged:false,rng,rules:this.rules,conditionDefs:this.conditionMap(),traitRegistry:this.traitRegistry,
+                  participants:sharedParticipants(foe,planning.filter(other=>sameLayer(foe,other)&&formationNode(other).id===formationNode(foe).id),engagementWidth(foe,actor,false,undefined,this.fieldTags),actor)},planning));
+              }
+              loss+=memberHealth(u)-memberHealth(actor);
+              if(actor.hp>0) {
+                actor.formationPosition=result.vehicleMove.id;
+                const world=planning.map(other=>other.id===actor.id?actor:other);
+                const hit=this.previewAttackWithEnvironment(this.orderAttackOptions(order,world),world);
+                const morale=moraleRisk(this.observationContext(world),actor,this.rules.morale.breakAt,this.traitRegistry);
+                benefit+=(Math.min(memberHealth(target),hit.expectedDamage)+(hit.conditionValue??0))*(1-morale.breakChance);
+              }
+            }
+            score=(benefit-loss*1.5)/8;
+          }
+        }
+        return [{ order, score }];
       });
     if (u.shield && !this.v2OrderReason({ unitId, type: 'brace' }, planning)) {
       const guard = { ...u, tacticalPose: bracePose(u, this.braceThreat(u, planning), 'mass') };
@@ -861,7 +886,7 @@ export class MassBattle {
         });
         return Math.max(0, ...focus.flatMap((target) => (['attack', 'volley'] as const).map((type) => {
           const order: Order = { unitId: u.id, type, targetId: target.id };
-          return this.v2OrderReason(order, world) ? 0 : this.previewAttackWithEnvironment(this.orderAttackOptions(order, world), world).expectedDamage;
+          return this.v2OrderReason(order, world) ? 0 : Math.min(memberHealth(target),this.previewAttackWithEnvironment(this.orderAttackOptions(order, world), world).expectedDamage);
         })));
     };
     if (fatiguePenalty(u) > 0 || u.resourceModel && !hasteOnly) {
@@ -1100,10 +1125,7 @@ export class MassBattle {
         revealUnit(this.observationContext(), actualActor);
         const cost = abilityCost(actualActor, ability);
         if (cost) actualActor.resources[cost.resource] = actualActor.resourceModel && cost.resource === 'SP' ? resourceRound((actualActor.resources[cost.resource] ?? 0) - cost.amount) : (actualActor.resources[cost.resource] ?? 0) - cost.amount;
-        const key = ability.cooldownGroup ?? ability.id;
-        const state = actualActor.abilityState.find((s) => s.abilityId === key) ?? { abilityId: key, cdLeft: 0, used: 0 };
-        if (!actualActor.abilityState.includes(state)) actualActor.abilityState.push(state);
-        state.used++; state.cdLeft = (ability.cooldown ?? 0) + 1;
+        spendAbility(actualActor, ability, 1);
         const skillArm = ability.weaponUse ? skillWeapon(actor, ability, formationDistance(actor, target)) : undefined;
         if (skillArm && isRangedWeapon(skillArm) && weaponReloadTurns(skillArm)) this.reloadCd.set(weaponReloadKey(actor, skillArm), weaponReloadTurns(skillArm) + 1);
         for (const effect of ability.effects) {
@@ -1677,7 +1699,7 @@ export class MassBattle {
         const st = u.abilityState.find((s) => s.abilityId === a.id) ?? { abilityId: a.id, cdLeft: 0, used: 0 };
         if (!u.abilityState.some((s) => s.abilityId === a.id)) u.abilityState.push(st);
         if (st.cdLeft > 0) continue;
-        if (a.usesPerBattle !== undefined && st.used >= a.usesPerBattle) continue;
+        if (a.usesPerBattle !== undefined && abilityUsed(u,a) >= a.usesPerBattle) continue;
         if (dmg) {
           const foes = this.readyUnits(u.side === 'ally' ? 'enemy' : 'ally');
           if (!foes.length) continue;
@@ -1727,12 +1749,9 @@ export class MassBattle {
     if (invalidTarget) return { ok: false, reason: invalidTarget };
 
     // 所有合法性检查完成后才创建状态、扣资源，非法施法不会污染存档。
-    const stateId = ability.cooldownGroup ?? abilityId;
-    const state = u.abilityState.find((s) => s.abilityId === stateId) ?? { abilityId: stateId, cdLeft: 0, used: 0 };
-    if (!u.abilityState.some((s) => s.abilityId === stateId)) u.abilityState.push(state);
     const cost = abilityCost(u, ability);
     if (cost) u.resources[cost.resource] = u.resourceModel && cost.resource === 'SP' ? resourceRound((u.resources[cost.resource] ?? 0) - cost.amount) : (u.resources[cost.resource] ?? 0) - cost.amount;
-    state.used += 1;
+    spendAbility(u, ability);
 
     const logBits = [`${this.zoneOf(u)}｜${u.name} 发动【${ability.name}】`];
     for (const eff of ability.effects) {
@@ -1815,7 +1834,7 @@ export class MassBattle {
           break; // resource 由面板层处理
       }
     }
-    if (ability.cooldown) state.cdLeft = ability.cooldown;
+
     this.recordEvent({ round: this.round, kind: 'ability', text: logBits.join('\n') });
     return { ok: true };
   }

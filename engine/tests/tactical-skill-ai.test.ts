@@ -24,7 +24,7 @@ describe('实际行动收益驱动技能选择',()=>{
     const context=b.observationContext();expect(skillEffectValue(context,actor,foe,stun)).toBeGreaterThan(actionPotential(context,actor));
     expect(JSON.stringify(b.toSnapshot())).toBe(before);
     if(b instanceof MassBattle)expect(b.recommendedOrder(actor.id)).toMatchObject({type:'ability',abilityId:stun.id,targetId:foe.id});
-    else {b.autoAction(actor.id);expect(actor.abilityState.find(s=>s.abilityId===stun.cooldownGroup)?.used).toBe(1);}
+    else {b.autoAction(actor.id);expect(actor.abilityState.find(s=>s.abilityId==='uses:'+stun.definitionId)?.used).toBe(1);}
   });
   it('缴械不针对天生武器，沉默不封锁普通法杖，空资源与冷却技能没有虚假威胁',()=>{
     const actor=make('controller','ally'),natural=make('natural','enemy',{weaponClass:'natural',weaponLevel:6}),b=battle([actor,natural]);

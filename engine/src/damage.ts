@@ -189,7 +189,7 @@ export function previewAttack(opts: Omit<AttackOpts, 'rng'>): import('./actions.
   const preview = previewAttackOutcome(opts);
   const chance = preview.anyHitChance ?? preview.hitChance;
   const remaining = opts.rules.combatModel === MEMBER_HEALTH_MODEL ? memberHealth(opts.defender) : opts.defender.hp;
-  return { ...preview, damageOnHit: preview.damageOnHit ?? Math.min(remaining, chance > 0 ? preview.expectedDamage / chance : 0) };
+  return { ...preview, attackRollCount: (preview.aggregationSamples ?? 1) * (opts.abilityDamage ? 1 : (opts.weaponOverride ?? opts.attacker.weapon)?.attacks ?? 1), damageOnHit: preview.damageOnHit ?? Math.min(remaining, chance > 0 ? preview.expectedDamage / chance : 0) };
 }
 
 /** 保留含未命中的期望供战术 AI 使用；玩家展示由上层转换为命中后的损失。 */
@@ -304,8 +304,11 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
     hit=0;for(let n=1;n<=20;n++){const p=opts.advantage==='adv'?(2*n-1)/400:opts.advantage==='dis'?(41-2*n)/400:1/20;if(n>1&&(n>=opts.rules.critMin||n+ctx.netAtk>=ctx.targetDef))hit+=p;if(n>=opts.rules.critMin)critical+=p;}
   }
   const samples=cohortSamples(opts),weight=outcomeScale({...opts,packetShare:1/samples}).multiplier,count=(opts.abilityDamage?1:ctx.weapon?.attacks??1)*samples;
+  const rawMultiplier=memberAreaBudget(opts)*modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level,opts.rules)*instanceMultiplier(opts.attacker.bonuses,'damage',opts.attacker.genAudit?.variance,opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
+  const maxBase=diceDistribution(source?.baseDice,opts.rules.critRule==='doubleDice'?2:1),maxAp=diceDistribution(source?.apDice,opts.rules.critRule==='doubleDice'?2:1);
+  const upper=maxBase&&maxAp ? Math.ceil((Math.max(...maxBase.keys())+Math.max(...maxAp.keys()))*rawMultiplier*Math.ceil(weight))*count : Infinity;
   // 连续攻击共用剩余屏障。固定种子的小样本估计只操作副本，不消耗实战随机数。
-  if ((opts.defender.barrier || opts.rules.damageModel === 'wounds-v2' && hasMemberHealth(opts.defender) && opts.abilityDamage && !opts.abilityDamage.weaponBased && opts.abilityDamage.shape === 'burst') && count > 1) {
+  if (count > 1 && (hasMemberHealth(opts.defender) || opts.defender.barrier || upper>memberHealth(opts.defender)) || !maxBase || !maxAp) {
     const key = sampledPreviewKey(opts);
     let stats = sampledMemberPreviewCache.get(key);
     if (!stats) {
@@ -329,7 +332,6 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
       expectedCasualties:hasMemberHealth(opts.defender)?stats.casualties/SAMPLED_PREVIEW_COUNT:undefined,damageChance:stats.positive/SAMPLED_PREVIEW_COUNT,penetrationFactor:factor,exact:false,
       variance:Math.max(0,stats.squares/SAMPLED_PREVIEW_COUNT-mean*mean),minDamage:0,maxDamage:stats.maximum};
   }
-  const rawMultiplier=memberAreaBudget(opts)*modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level,opts.rules)*instanceMultiplier(opts.attacker.bonuses,'damage',opts.attacker.genAudit?.variance,opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
   const moments=(times:number)=>{
     const key=JSON.stringify([source?.baseDice,source?.apDice,rawMultiplier,times,weight,opts.defender.hp,opts.defender.barrier,opts.defender.formation,ctx.weapon?.splashTargets,ctx.weapon?.splashFactor,opts.abilityDamage?.weaponBased,!!opts.abilityDamage,attackOverflow(opts),opts.rules.overmatch?penetrationContext(opts):undefined]);
     const cached=memberPreviewCache.get(key);if(cached)return cached;

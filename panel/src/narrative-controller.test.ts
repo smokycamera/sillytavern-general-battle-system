@@ -92,7 +92,7 @@ describe('常驻宿主生命周期与故障', () => {
     await generate('<tb><spawn name="法师" side="ally" scale="hero" skills="火花:魔法单体L3,自创未知术L5"/><spawn name="普通人" side="ally" scale="hero" skills="未知技能"/><learn id="a" skills="术弹:魔法单体L3,无此技能"/><learn id="a" skills="全都未知"/></tb>');
     const p = controller.snapshot().proposals!.at(-1)!;
     expect(p.status).toBe('pending'); expect(p.events).toHaveLength(3); expect(p.notices?.join(' ')).toContain('未采用技能「自创未知术L5」（未支持的技能机制）');
-    expect(controller.approve(p.id).status).toBe('saved'); const saved = controller.snapshot();
+    expect((await controller.approve(p.id)).status).toBe('saved'); const saved = controller.snapshot();
     expect(saved.storage!.find((r) => r.name === '法师')!.snapshot!.abilities).toHaveLength(1);
     expect(saved.storage!.find((r) => r.name === '普通人')!.snapshot!.abilities).toHaveLength(0);
     const id = saved.storage!.find((r) => r.name === '法师')!.id;
@@ -104,7 +104,7 @@ describe('常驻宿主生命周期与故障', () => {
   it('空聊天首次正文建档同时部署，面板恢复不会因缺版本丢队伍；已丢名单可原批恢复而不重发奖励', async () => {
     const { controller, generate, message, emit } = setup({});
     await generate('<tb><spawn name="我方" side="ally" scale="hero"/><spawn name="敌方" side="enemy" scale="company" hpMax="20"/></tb>');
-    const p = controller.snapshot().proposals!.at(-1)!; expect(controller.approve(p.id).status).toBe('saved');
+    const p = controller.snapshot().proposals!.at(-1)!; expect((await controller.approve(p.id)).status).toBe('saved');
     const saved = controller.snapshot(); expect(saved.schemaVersion).toBe(2); expect(saved.rosterIds).toHaveLength(2);
     const migrated = migratePanelUnits({ ...saved, schemaVersion: undefined, registry: traitRegistry() });
     expect(migrated.roster).toHaveLength(2); expect(migrated.warnings).toEqual([]);
@@ -127,7 +127,7 @@ describe('常驻宿主生命周期与故障', () => {
     expect(p.id).toBe(old.id); expect(controller.snapshot().proposals).toHaveLength(1);
     expect(p.status).toBe('pending'); expect(p.reason).toBeUndefined(); expect(p.expected?.manualOnly).toBe(true);
     expect(controller.snapshot().storage![0]!.hp).toBe(70);
-    expect(controller.approve(p.id).status).toBe('saved'); expect(controller.snapshot().storage![0]!.hp).toBe(500);
+    expect((await controller.approve(p.id)).status).toBe('saved'); expect(controller.snapshot().storage![0]!.hp).toBe(500);
     await controller.scan(); expect(controller.snapshot().proposals).toHaveLength(1);
     delay(Promise.resolve([{ role: 'assistant', message_id: '2', swipe_id: '0', gen_finished: '2026-09-07', swipes: ['<tb><unit_update id="a" hp="560"/></tb>'] }]));
     await controller.scan(2); const next = controller.snapshot().proposals!.at(-1)!;
@@ -146,7 +146,7 @@ describe('常驻宿主生命周期与故障', () => {
     const refreshed = controller.snapshot().proposals![0]!;
     expect(refreshed.id).toBe(old.id); expect(refreshed.expected?.factRevision).toBe(controller.snapshot().factRevision);
     expect(refreshed.expected?.manualOnly).toBe(true); expect(controller.snapshot().storage![0]!.hp).toBe(70);
-    expect(controller.approve(refreshed.id).status).toBe('saved');
+    expect((await controller.approve(refreshed.id)).status).toBe('saved');
     await controller.scan(undefined, { manual: true });
     expect(controller.snapshot().proposals).toHaveLength(1); expect(controller.snapshot().field).toBe('forest');
   });
@@ -165,7 +165,7 @@ describe('常驻宿主生命周期与故障', () => {
     await generate('<tb><spawn name="矿工" side="ally" scale="company" hpMax="20" traits="射击专家,宇宙无敌矿工"/><spawn name="民兵" side="ally" scale="hero" traits="自创特质"/><bless id="a" name="虚构祝福" traits="无此特质" permanent="true"/></tb>');
     const p = controller.snapshot().proposals!.at(-1)!;
     expect(p.status).toBe('pending'); expect(p.events).toHaveLength(2); expect(p.notices?.join(' ')).toContain('已忽略未支持特质');
-    expect(controller.approve(p.id).status).toBe('saved');
+    expect((await controller.approve(p.id)).status).toBe('saved');
     const records = controller.snapshot().storage!;
     expect(records.find((r) => r.name === '矿工')!.snapshot!.traits).toContain('sharpshooter');
     expect(records.find((r) => r.name === '民兵')).toBeDefined();
@@ -188,7 +188,7 @@ describe('常驻宿主生命周期与故障', () => {
     expect(corrected.status).toBe('pending'); expect(corrected.corrected).toBe(true);
     expect(corrected.originalText).toBe(original.source.text);
     expect(controller.snapshot().storage![0]!.hp).toBe(500);
-    expect(controller.approve(corrected.id).status).toBe('saved');
+    expect((await controller.approve(corrected.id)).status).toBe('saved');
     expect(controller.snapshot().storage![0]!.hp).toBe(560); expect(controller.snapshot().rosterIds).toEqual(['a']);
     expect(() => controller.correctProposal(original.id, draft)).toThrow(/已同步/);
     expect(stores.a!.panel!.proposals!.at(-1)!.source.text).not.toMatch(/继续正文|结束/);
@@ -238,8 +238,8 @@ describe('常驻宿主生命周期与故障', () => {
     u.id = 'a'; stores.a!.panel = { schemaVersion: 2, factRevision: 1, storage: [unitRecordFromCombatant(u)], rosterIds: ['a'] }; emit('CHAT_CHANGED');
     await generate(`<tb><${kind} id="a" name="军神裁定" ${kind === 'bless' ? 'traits="大守护"' : 'effects="诅咒,士气低下"'} battles="2"/></tb>`);
     const pending = controller.snapshot(); const proposal = pending.proposals![0]!;
-    fail(true); expect(controller.approve(proposal.id).status).toBe('failed'); expect(controller.snapshot().storage![0]!.snapshot!.traitSources).toBeUndefined();
-    fail(false); expect(controller.approve(proposal.id).status).not.toBe('failed');
+    fail(true); expect((await controller.approve(proposal.id)).status).toBe('failed'); expect(controller.snapshot().storage![0]!.snapshot!.traitSources).toBeUndefined();
+    fail(false); expect((await controller.approve(proposal.id)).status).not.toBe('failed');
     const saved = controller.snapshot(), sourceId = saved.storage![0]!.snapshot!.traitSources![0]!.id, context = controller.inventoryContext();
     expect(narrativeProjection(saved)).toContain('军神裁定'); expect(narrativeProjection(saved)).toContain('remaining');
     expect(narrativeProjection(saved)).toContain(kind === 'bless' ? '大守护' : '士气低下');
@@ -398,9 +398,9 @@ describe('常驻宿主生命周期与故障', () => {
     fail(true); await generate('<tb><unit_update id="a" hp="560"/></tb>', 2);
     expect(controller.snapshot().storage?.[0]?.hp).toBe(60);
     const p = controller.snapshot().proposals!.at(-1)!; expect(p.status).toBe('failed');
-    fail(false); expect(controller.approve(p.id).status).toBe('saved');
+    fail(false); expect((await controller.approve(p.id)).status).toBe('saved');
     expect(controller.snapshot().storage?.[0]?.hp).toBe(560);
-    expect(() => controller.approve(p.id)).toThrow();
+    await expect(controller.approve(p.id)).rejects.toThrow();
   });
   it('切聊天时丢弃未完成旧读取，清理注入；销毁后没有剩余监听', async () => {
     const { controller, ctx, emit, delay, callbacks, stores } = setup();

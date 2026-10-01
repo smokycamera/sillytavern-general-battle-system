@@ -1,3 +1,4 @@
+import { legacyMirrorKey } from '../../host/src/contracts.js';
 import { expect, it } from 'vitest';
 import { nativeFixture } from './native-fixture.js';
 import { MemorySourceBackups } from '../src/legacy-import.js';
@@ -39,16 +40,16 @@ it('兼容回退携带最新原生进度并同步旧镜像；原生停止写入�
   expect((await f.manager.apply(preview)).status).toBe('confirmed'); expect(f.store.envelope()?.handoff?.target).toBe('helper');
   const panel = (f.disk.get('a')!.variables as { panel: Record<string, unknown> }).panel;
   expect(panel.customValue).toBe('保留'); expect(panel.field).toBe('forest');
-  expect(JSON.parse(decodeSave(f.local.get('tavern-battle:chat:chat:a:panel')!))).toEqual(panel);
+  expect(JSON.parse(decodeSave(f.local.get(legacyMirrorKey(f.host.session()!.scope))!))).toEqual(panel);
   expect((await f.store.commit(f.store.envelope()!.revision, () => ({ field: 'blocked' }))).status).toBe('conflict');
   panel.field = 'urban'; f.context.chatMetadata = structuredClone(f.disk.get('a')!); await f.store.load();
   const resume = await f.manager.previewResume(); await f.manager.apply(resume);
   expect(f.store.snapshot().field).toBe('urban'); expect(f.store.envelope()?.handoff).toBeUndefined();
 });
 it('无法确认镜像归属时拒绝自动回退；回退保存失败保留同一候选可恢复', async () => {
-  const f = await setup(); f.local.set('tavern-battle:chat:chat:a:panel', JSON.stringify({ storage: ['other-chat'] }));
+  const f = await setup(); f.local.set(legacyMirrorKey(f.host.session()!.scope), JSON.stringify({ storage: ['other-chat'] }));
   await expect(f.manager.previewRollback()).rejects.toThrow(/无法确认归属/);
-  f.local.delete('tavern-battle:chat:chat:a:panel'); const preview = await f.manager.previewRollback();
+  f.local.delete(legacyMirrorKey(f.host.session()!.scope)); const preview = await f.manager.previewRollback();
   f.setSave(async () => {}); expect((await f.manager.apply(preview)).status).toBe('pending');
   const id = f.store.pendingOperation()!.candidate.lastOperationId; f.setSave(f.saveNormally);
   expect((await f.store.retry()).status).toBe('confirmed'); expect(f.store.envelope()!.lastOperationId).toBe(id);
@@ -57,4 +58,18 @@ it('空档回退生成旧版真正空档，两边都不会采用历史单位', a
   const f = await setup(); await f.manager.apply(f.manager.previewClear()); await f.manager.apply(await f.manager.previewRollback());
   const panel = (f.disk.get('a')!.variables as { panel: Record<string, unknown> }).panel;
   expect(panel.storage).toEqual([]); expect(panel.inventory).toEqual([]); expect(f.store.envelope()!.state).toBe('cleared');
+});
+it('a same-chat compatibility export/import keeps committed source identity on rescan',async()=>{
+  const f=nativeFixture();await f.service.start();
+  try {
+    f.context.chat!.push({mes:'<tb><spawn name="仅一次" side="ally" scale="hero"/></tb>',is_user:false,swipe_id:0,gen_finished:'done'});
+    await f.service.scan();await f.service.approve(f.service.snapshot().proposals![0]!.id);
+    const manager=new SaveManagement(f.host,f.store,new MemorySourceBackups()),before=f.service.snapshot().storage;
+    const exported=manager.exportLegacy(),preview=await manager.previewFile(JSON.stringify(exported));
+    expect((await manager.apply(preview)).status).toBe('confirmed');await f.service.load();await f.service.scan();
+    expect(f.service.snapshot().storage).toEqual(before);
+    expect(f.service.snapshot().proposals?.filter(p=>p.status==='pending')).toHaveLength(0);
+    expect((await f.service.persistPanel({...f.service.snapshot(),field:'forest'},f.service.snapshot().factRevision??0)).status).toBe('confirmed');
+    await f.service.load();expect(f.service.snapshot().storage).toEqual(before);
+  }finally{f.service.dispose();}
 });

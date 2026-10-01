@@ -14,6 +14,7 @@ import type { NarrativeMessage, ContextSelectionAnswer } from '../../vendor/jev-
 import type { NarrativeIdState } from './narrative-ids.js';
 import { narrativeIds } from './narrative-ids.js';
 import { narrativeMapSources } from './narrative-map-source.js';
+import { sha256, withAbort } from '../../host/src/browser-compat.js';
 
 export interface LlmEncounterContext extends JevEncounterContext, PreparationDesignResult { commanders?: CommanderProfiles }
 export function llmContextSummary(context: LlmEncounterContext): string {
@@ -22,14 +23,15 @@ export function llmContextSummary(context: LlmEncounterContext): string {
 }
 export class LlmContextController {
   private aborter?: AbortController;
+  private retry?: { key: string; errors: string[]; expires: number };
   busy = false;
   constructor(private request: typeof fetch = (url, init) => fetch(url, init)) {}
-  cancel(): void { this.aborter?.abort(); }
+  cancel(clearRetry = true): void { this.aborter?.abort(); if (clearRetry) this.retry = undefined; }
   async models(settings: LlmSettings): Promise<string[]> {
     try { return await fetchJevModels(llmConnection(settings), this.request); }
     catch (error) { throw Error(llmFailure(error)); }
   }
-  async select(input: { roster: Combatant[]; setup: EncounterSetup; messages: NarrativeMessage[]; unitNotes?: Record<string, string>; narrativeIdState?: NarrativeIdState }, settings: LlmSettings, valid: () => boolean): Promise<LlmEncounterContext> {
+  async select(input: { roster: Combatant[]; setup: EncounterSetup; messages: NarrativeMessage[]; unitNotes?: Record<string, string>; narrativeIdState?: NarrativeIdState; scope?: string }, settings: LlmSettings, valid: () => boolean, validate?: (result: LlmEncounterContext) => void): Promise<LlmEncounterContext> {
     if (this.busy) throw Error('正在读取上下文，请稍候');
     const connection = llmConnection(settings);
     if (!connection.model) throw Error('请先拉取并选择模型，或填写模型 ID');
@@ -73,12 +75,21 @@ export class LlmContextController {
         spells: u.abilities.filter(a => a.delivery === 'magic' && a.effects.some(e => e.op === 'damage')).map(a => a.power ?? 1).slice(0, 3) })) } : {}),
     };
     const aborter = new AbortController(); this.aborter = aborter; this.busy = true;
-    const timer = setTimeout(() => aborter.abort(), 45000);
     const check = () => { if (aborter.signal.aborted || !valid()) throw Error('上下文读取已取消或准备信息已变化，尚未开始战斗'); };
     try {
       check();
-      const answer = await directJevRequest(connection, 'select-context', request, aborter.signal, this.request) as ContextSelectionAnswer;
+      const key = await sha256(new TextEncoder().encode(JSON.stringify([input.scope, connection, request])));
       check();
+      if (this.retry?.key !== key || this.retry.expires < Date.now()) this.retry = { key, errors: [], expires: Date.now() + 300000 };
+      if (this.retry.errors.length) request.state = { ...request.state as object, retryErrors: this.retry.errors };
+      const answer = await withAbort({ timeout: 45000, signals: [aborter.signal] }, signal =>
+        directJevRequest(connection, 'select-context', request, signal, this.request)) as ContextSelectionAnswer;
+      check();
+      for (const field of coreRequest.fields) {
+        const selected = answer.selections?.[field.id];
+        if (!selected || !Object.hasOwn(field.options, selected.value) || !Number.isFinite(selected.confidence) || selected.confidence < 0 || selected.confidence > 1)
+          throw new BattlefieldPlanError(`selections.${field.id}须含合法value和0—1的confidence；value可选${Object.keys(field.options).join('|')}`);
+      }
       // Validate supported choices; confidence describes uncertainty, not a fallback threshold.
       const result: LlmEncounterContext = applyEncounterSelection(contextInput, base, coreRequest, answer);
       result.commanders = {};
@@ -90,12 +101,20 @@ export class LlmContextController {
       }
       if (result.commanders.enemy) result.enemy = { ability: result.commanders.enemy.ability, style: { ...STYLE_PRESETS[result.commanders.enemy.style].style }, source: 'context' };
       Object.assign(result, applyPreparationDesign(answer, designRequest, result, input.roster));
+      try { validate?.(result); }
+      catch (error) { throw new BattlefieldPlanError(error instanceof Error ? error.message : '本地地图与部署校验失败'); }
+      check();
+      this.retry = undefined;
       return result;
     } catch (error) {
       check();
-      const detail = llmFailure(error);
+      const detail = error instanceof Error && error.name === 'TimeoutError' ? '模型请求超过45秒，请重试' : llmFailure(error);
+      if (this.retry && (error instanceof BattlefieldPlanError || error instanceof JevConnectionError && /JSON|答案|评分/.test(error.message))) {
+        this.retry.errors = [...new Set([...this.retry.errors, detail.slice(0, 280)])].slice(-4);
+        this.retry.expires = Date.now() + 300000;
+      }
       throw Error(`上下文读取失败：${detail}。尚未开战，可重试或在设置中改为手动配置。`);
-    } finally { clearTimeout(timer); this.busy = false; if (this.aborter === aborter) this.aborter = undefined; }
+    } finally { this.busy = false; if (this.aborter === aborter) this.aborter = undefined; }
   }
 }
 function llmFailure(error: unknown): string {

@@ -19,6 +19,18 @@ export function placePlannedGates(field: BattlefieldSpec, candidates: number[], 
   const left = Math.min(...cells.map(p => p % field.width)), right = Math.max(...cells.map(p => p % field.width));
   const mid = (left + right) / 2;
   for (const spec of specs) {
+    if (['north','south','east','west'].includes(spec.sector)) {
+      const axis = (p: number) => spec.sector === 'north' || spec.sector === 'south' ? Math.floor(p / field.width) : p % field.width;
+      const extreme = (spec.sector === 'north' || spec.sector === 'west' ? Math.min : Math.max)(...cells.map(axis));
+      const edge = [...available].filter(p=>axis(p)===extreme).sort((a,b)=>Math.abs(a%field.width-mid)-Math.abs(b%field.width-mid)||a-b);
+      if (!edge.length) throw new BattlefieldPlanError('指定绝对方位的城门没有可用墙段');
+      const p = edge[0]!; available.delete(p); gates.push(p);
+      const gate = createStructure('gate',level,{top,gateState:spec.state,...(spec.id?{entityId:spec.id}:{}),...(inner.length?{owner:defender}:{}),...(top?{access:neighbors(field,p).filter(n=>inner.includes(n)&&!groundBlocked(field,n))}:{})});
+      if (spec.state==='destroyed') {gate.hp=0;field.overlays![p]=['rubble'];}
+      field.structures![p]=gate;field.tiles[p]='street';
+      for (const n of neighbors(field,p)) if (field.structures![n]?.kind==='building') field.structures![n]=null;
+      continue;
+    }
     const desiredX = spec.sector === 'left' || spec.sector === 'front_left' ? left : spec.sector === 'right' || spec.sector === 'front_right' ? right : mid;
     const desiredD = spec.sector === 'rear' ? rear : spec.sector === 'left' || spec.sector === 'right' ? (front + rear) / 2 : front;
     const matches = (p: number) => spec.sector === 'auto' || spec.sector.startsWith('front') && depth(p) === front

@@ -40,7 +40,7 @@ describe('optional ordinary LLM map/VIP preparation', () => {
     const body = JSON.parse(payload.messages[1].content);
     expect(body.fields).toHaveLength(11); // 9 core + 2 VIP; compact map has no repeated selection wrappers
     expect(body.state.protocol).toBe('battlefield-v2');
-    expect(body.state.mapRules).toContain('ford代表浅水');
+    expect(body.state.mapRules).toContain('ford可涉浅水');
     expect(body.fields.find((f: {id:string}) => f.id === 'vip_enemy').options).not.toHaveProperty('unit_2');
     const field = generatedField('context', 7, 13, ['urban', 'night'], { design: result.mapDesign });
     expect(field.tiles).not.toEqual(generatedField('context', 7, 13, ['urban', 'night']).tiles);
@@ -156,6 +156,7 @@ describe('optional ordinary LLM map/VIP preparation', () => {
     const source = input(), responder = model(); let release!: () => void; let current = true;
     const request = vi.fn<typeof fetch>(async (...args) => { await new Promise<void>(resolve => { release = resolve; }); return responder(...args); });
     const controller = new LlmContextController(request), pending = controller.select(source, settings, () => current);
+    await vi.waitFor(()=>expect(request).toHaveBeenCalled());
     current = false; controller.cancel(); release();
     await expect(pending).rejects.toThrow('尚未开始战斗'); expect(controller.busy).toBe(false);
   });

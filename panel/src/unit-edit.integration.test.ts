@@ -51,5 +51,17 @@ it('managed character editing survives input, skill rerender, preview, confirmat
     await click('[data-action="storage-preview"]'); expect(document.querySelector('[data-role="builder-preview"]')).not.toBeNull();
     await click('[data-action="manage-cancel-edit"]');
     await f.service.load(); expect(f.service.snapshot().storage).toEqual(after.storage); expect(f.service.snapshot().inventory).toEqual(before.inventory);
+    await click(`[data-action="storage-edit"][data-id="${unit.id}"]`);
+    input('name','过期草稿');await click('[data-action="storage-preview"]');
+    const persist=f.service.persistPanel.bind(f.service);
+    vi.spyOn(f.service,'persistPanel').mockImplementationOnce(async(...args)=>{
+      await f.service.transact(saved=>({...saved,factRevision:(saved.factRevision??0)+1,storage:saved.storage!.map(r=>r.id!==unit.id?r:{...r,name:'已接受的新事实',hp:13,revision:(r.revision??0)+1,snapshot:{...r.snapshot!,name:'已接受的新事实',hp:13}})}));
+      return persist(...args);
+    });
+    await click('[data-action="builder-confirm"]');
+    expect(f.service.snapshot().storage![0]).toMatchObject({name:'已接受的新事实',hp:13});
+    await click('[data-action="manage-cancel-edit"]');
+    await click('[data-action="workspace-tab"][data-tab="battle"]');
+    await f.service.load();expect(f.service.snapshot().storage![0]).toMatchObject({name:'已接受的新事实',hp:13});
   } finally { f.service.dispose(); }
 }, 15000);

@@ -191,6 +191,6 @@ export function validateLayers(field: BattlefieldSpec): void {
     || field.city.breaches.some(group => !Array.isArray(group) || group.length < 1 || group.length > 2 || group.some(p => !legalCell(p))
       || group.length === 2 && Math.abs(group[0]! % field.width - group[1]! % field.width) + Math.abs(Math.floor(group[0]! / field.width) - Math.floor(group[1]! / field.width)) !== 1)
     || new Set(field.city.breaches.flat()).size !== field.city.breaches.flat().length)) throw Error('初始破口记录损坏');
-  if (field.landmarks && (!Array.isArray(field.landmarks) || field.landmarks.length > 5 || field.landmarks.some(m => !m
+  if (field.landmarks && (!Array.isArray(field.landmarks) || field.landmarks.length > 12 || field.landmarks.some(m => !m
     || typeof m.label !== 'string' || m.label.length > 64 || !Array.isArray(m.cells) || !m.cells.length || m.cells.some(p => !legalCell(p))))) throw Error('地标记录损坏');
 }

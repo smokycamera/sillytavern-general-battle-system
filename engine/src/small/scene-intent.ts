@@ -55,6 +55,7 @@ const obj = (v: unknown): Record<string, unknown> | undefined => v && typeof v =
 const id = (v: unknown): v is string => typeof v === 'string' && /^[a-zA-Z][a-zA-Z0-9_-]{0,31}$/.test(v) && !['constructor', 'prototype', '__proto__'].includes(v);
 const includes = (xs: readonly string[], v: unknown): v is string => typeof v === 'string' && xs.includes(v);
 function evidence(v: Record<string, unknown>): SceneEvidence {
+    v = { sources: [], basis: 'inferred', ...v };
     if (!['explicit', 'inferred'].includes(String(v.basis)))
         throw Error('场景事实须标明explicit或inferred');
     if (!Array.isArray(v.sources) || v.sources.length > 4 || v.sources.some(s => typeof s !== 'string' || !/^m\d+\.p\d+$/.test(s)))
@@ -67,7 +68,8 @@ function evidence(v: Record<string, unknown>): SceneEvidence {
 export function normalizeSceneIntent(value: unknown): SceneIntent | undefined {
     if (value === undefined)
         return;
-    const v = obj(value);
+    const raw = obj(value);
+    const v: Record<string, unknown> | undefined = raw && { schema: 'scene-intent-v1', entities: [], relations: [], constraints: [], ...raw };
     if (!v || v.schema !== 'scene-intent-v1')
         throw Error('场景意图版本无效');
     if (!Array.isArray(v.entities) || v.entities.length > 12 || !Array.isArray(v.relations) || v.relations.length > 24
@@ -108,6 +110,9 @@ export function normalizeSceneIntent(value: unknown): SceneIntent | undefined {
             if (!includes(['intact', 'open', 'closed', 'destroyed'], e.state))
                 throw Error('场景实体状态无效');
             entity.state = e.state as SceneEntity['state'];
+            if (entity.kind !== 'gate' && (entity.state === 'open' || entity.state === 'closed')
+                || !['gate','bridge','building','tower','fortification','cover','ruins'].includes(entity.kind) && entity.state !== 'intact')
+                throw Error('open/closed仅用于gate；destroyed用于桥、建筑、塔楼、工事或掩体');
         }
         if (e.width === 1 || e.width === 2)
             entity.width = e.width;
@@ -152,7 +157,8 @@ export function validateSceneIntentEvidence(intent: SceneIntent, sources: readon
         if (/^u\d+$/.test(r.subject) && !knownUnits.has(r.subject))
             throw Error('场景部署引用了未参战单位');
 }
-export const SCENE_INTENT_PROMPT = `必填battlefield.intent:{schema:"scene-intent-v1",archetype?:${SCENE_ARCHETYPES.join('|')},entities:[],relations:[],constraints:[]}。
-entities最多12项：{id:短英文ID,kind:${SCENE_ENTITY_KINDS.join('|')},label?:名称,anchor?:${WORLD_ANCHORS.join('|')},scale?:minor|major,height?:0..3,state?:intact|open|closed|destroyed,width?:1|2,basis:explicit|inferred,sources:["m1.p1"]}。正文未说明的位置、名称或数量可补全并标inferred；明确事实须引用narrativeSources中的段落。采用当前已经发生的状态，辨别否定、回忆、假设与计划；最新明确变化优先。
-relations最多24项：{subject:实体ID|ally|enemy|现有u短ID,relation:${SCENE_RELATIONS.join('|')},object:实体ID,region?:north_bank|south_bank|east_bank|west_bank,basis,sources}。guards/occupies把对应部队部署到地标或其合法近旁；approaches_from部署在接近区。east/west/north/south是地图绝对方向；攻守身份不翻转它们。桥用crosses关联河，门/道路用connected_to，高地用higher_than，地点用inside/near及方位关系。
-constraints最多8项：{kind:crossing_count|gate_count,entity:河流ID|城市ID,value:0..4,basis,sources}。数量指本次战区的逻辑设施数量，一座多格桥只计一次。正文指定桥梁为唯一过河点时，保留深水与指定桥梁。城外野战用field且可保留city实体。最多一座城市、一条主河、四座桥、四处门和五个主要地标；桥门实体列表与数量约束一致。正文明确空旷时entities可为空。`;
+export const SCENE_INTENT_PROMPT = `intent:{entities:[],relations:[],constraints:[]}；schema可省略。三类数组省略时为空。可选archetype=${SCENE_ARCHETYPES.join('|')}，按场所用途选择。
+entities总计≤12：{id:短英文ID,kind:${SCENE_ENTITY_KINDS.join('|')},label?:名称,anchor?:${WORLD_ANCHORS.join('|')},scale?:minor|major,height?:0..3,state?:intact|destroyed,width?:1|2,basis?:explicit|inferred,sources?:["m1.p1"]}。gate另可state=open|closed。默认minor；仅主要地形用major。最多一座city、一条river、四座bridge、四处gate；其他实体共享剩余名额。普通同类设施可合并成一个有名称的地标。
+正文明确事实用basis=explicit及narrativeSources中的段落ID；补全用inferred，sources可省略。采用最新实际状态，区分否定、回忆、假设和计划。
+relations≤24：{subject:实体ID|ally|enemy|现有u短ID,relation:${SCENE_RELATIONS.join('|')},object:实体ID,region?:north_bank|south_bank|east_bank|west_bank,basis?,sources?}。部队仅用guards/occupies/approaches_from/inside/near/targets/exits_at；地点用方位/inside/near/connected_to/higher_than/overlooks，桥用crosses。方位为地图绝对方向。只写影响布阵、任务或地形的关系。
+constraints≤8：{kind:crossing_count|gate_count,entity:river或city的ID,value:0..4,basis?,sources?}。只用于明确数量；与桥门实体数一致。唯一过河点保留深水和指定桥。entities已含全部设施，不再重复写landmarks/bridgePlan/gatePlan。正文空旷可为空数组。`;

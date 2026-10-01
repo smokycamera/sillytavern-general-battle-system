@@ -2,6 +2,7 @@ import { DEFAULT_SMALL_ROUND_LIMIT, defaultBattleObjective, type SmallBattle, ne
 import { activeBattleUnits } from '../../engine/src/battle-limits.js';
 import { MAX_SCENE_UNITS, RECOMMENDED_UNITS, GROUPING_HINT } from './narrative-limits.js';
 import {groundBlocked} from '../../engine/src/small/layers.js';
+import { gridCostsToGoals, gridDistance, movementStepCost, prepareGridDeployment } from '../../engine/src/small/spatial.js';
 
 export function battleCapacityIssue(roster: Combatant[]): string | undefined {
   const count = activeBattleUnits(roster).length;
@@ -62,7 +63,7 @@ export function prepareBattleObjective(field: BattlefieldSpec, roster: Combatant
     const siegeScene = field.generation?.scene ? ['city_siege','building_siege'].includes(field.generation.scene) : field.environment?.includes('siege');
     const siege = mode === 'siege' || mode === 'auto' && siegeScene;
     if (siege && field.layerVersion && field.city?.core.length) return { ...field, objective: { kind: 'control', cell: binding?.relation==='targets'?targetCells[0]!:field.city.core[0]!, cells: binding?.relation==='targets'?targetCells:[...field.city.core], attackingSide: binding?.relation==='targets'?binding.side:attackingSide, rounds: 2, limit: field.objective.limit } };
-    if ((mode === 'control' || mode === 'auto' && binding?.relation === 'targets') && !siege) return { ...field, objective: { kind: 'control', cell: binding?.relation==='targets'?targetCells[0]!:field.city?.core[0] ?? field.objective.cell,...(binding?.relation==='targets'?{cells:targetCells}:{}), rounds: 2, limit: field.objective.limit } };
+    if ((mode === 'control' || mode === 'auto' && binding?.relation === 'targets') && !siege) return { ...field, objective: { kind: 'control', cell: binding?.relation==='targets'?targetCells[0]!:neutralControlCell(field,roster),...(binding?.relation==='targets'?{cells:targetCells,attackingSide:binding.side}:{}), rounds: 2, limit: field.objective.limit } };
     const next = defaultBattleObjective(field.width, field.height, siege ? ['siege'] : [], attackingSide);
     if (field.layerVersion && !siege) next.cell = field.city?.core[0] ?? field.objective.cell;
     return { ...field, objective: { ...next, limit: field.objective.limit } };
@@ -75,6 +76,20 @@ export function prepareBattleObjective(field: BattlefieldSpec, roster: Combatant
   return { ...field, objective: { kind: 'escape', unitId: escorted.id,
     cell: binding?.relation==='exits_at'?targetCells[0]!:escapeDestination(field,side),
     limit: field.objective.limit, defenderWins: true } };
+}
+/** Compare the same ground infantry movement costs from both actual deployments. */
+function neutralControlCell(field: BattlefieldSpec, roster: Combatant[]): number {
+  const active = activeBattleUnits(roster);
+  if (!active.some(u=>u.side==='ally') || !active.some(u=>u.side==='enemy')) return field.objective.cell;
+  const deployed = field.initialDeployment ? active.map(u=>({...u,...field.initialDeployment![u.id]})) : prepareGridDeployment(field,active,'neutral-control');
+  const walker = { ...active[0]!, body: 'human' as const, traits: [], traitSources: [], airborne: false, elevation: undefined, mount: false };
+  const costs = (side: 'ally'|'enemy') => gridCostsToGoals(field,deployed.filter(u=>u.side===side).map(u=>u.pos!),p=>!groundBlocked(field,p,walker),
+    (p,from)=>movementStepCost(field,from,walker,field.environment,p));
+  const ally=costs('ally'),enemy=costs('enemy'),center=Math.floor(field.height/2)*field.width+Math.floor(field.width/2);
+  const candidates=[...ally.keys()].filter(p=>enemy.has(p)&&!groundBlocked(field,p,walker));
+  if (!candidates.length) throw Error('中立据点没有双方步兵均可接近的位置');
+  return candidates.sort((a,b)=>Math.abs(ally.get(a)!-enemy.get(a)!)-Math.abs(ally.get(b)!-enemy.get(b)!)
+    || Math.max(ally.get(a)!,enemy.get(a)!)-Math.max(ally.get(b)!,enemy.get(b)!) || gridDistance(field,a,center)-gridDistance(field,b,center) || a-b)[0]!;
 }
 function escapeDestination(field:BattlefieldSpec,side:'ally'|'enemy'):number {
   const edge=field.retreatEdges?.[side];

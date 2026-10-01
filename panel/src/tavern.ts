@@ -1,4 +1,6 @@
 import { encodeSave, decodeSave, compactLocalMirrors } from './storage-codec.js';
+import { createNativeHost, type NativeHost } from '../../host/src/sillytavern.js';
+import { legacyMirrorKey } from '../../host/src/contracts.js';
 /**
  * 酒馆助手（TavernHelper / JS-Slash-Runner）适配层。
  * 在酒馆内运行时使用其真实 API；脱离酒馆（本地开发/预览）自动降级到 localStorage 与剪贴板。
@@ -65,7 +67,7 @@ function chatIdentity(): string {
   try {
     const ctx = stContext();
     const id = ctx?.chatId;
-    if (id !== undefined && id !== null && `${id}` !== '') return `chat:${id}`;
+    if (id !== undefined && id !== null && `${id}` !== '') return JSON.stringify([ctx?.characters?.[ctx?.characterId]?.avatar ?? ctx?.characterId,id,ctx?.branchId??id]);
     // 老版本 ST 无 chatId：用角色名兜底（至少不同角色卡之间不串）
     const name = ctx?.name ?? ctx?.characterId;
     if (name !== undefined && name !== null && `${name}` !== '') return `chr:${name}`;
@@ -200,6 +202,13 @@ function legacyLsKey(key: string, scope: SaveScope): string {
 export function createAdapter(): TavernAdapter {
   const th = getTH();
   const inTavern = !!th?.getVariables;
+  let mirrorHost: NativeHost | undefined;
+  if (inTavern) void createNativeHost(getHost(), (input,init)=>getHost().fetch(input,init)).then(host=>{mirrorHost=host;}).catch(()=>undefined);
+  const scopedKey = (key: string, scope: SaveScope): string | undefined => {
+    if (!inTavern) return lsKey(key,scope);
+    const identity=mirrorHost?.session()?.scope;if(!identity)return;
+    return scope==='chat' ? legacyMirrorKey(identity).replace(/:panel$/,':'+key) : `${LS_PREFIX}character:scope-v2:${JSON.stringify([identity.account,identity.avatar])}:${key}`;
+  };
 
   // ---------- 轮询兜底与去抖 ----------
   // 事件可能三路触发（ST 核心 / TH 桥 / 轮询），同一信号在短窗口内只放行一次
@@ -263,7 +272,7 @@ export function createAdapter(): TavernAdapter {
 
   const self: TavernAdapter = {
     inTavern,
-    identity: chatIdentity,
+    identity: () => JSON.stringify([mirrorHost?.session()?.scope.account ?? null,chatIdentity()]),
     namespace(): string | undefined {
       const ctx = stContext();
       if (ctx?.groupId !== undefined && ctx.groupId !== null) return undefined;
@@ -332,7 +341,8 @@ export function createAdapter(): TavernAdapter {
         }
       }
       try {
-        const raw = localStorage.getItem(lsKey(key, scope));
+        const keyForScope = scopedKey(key,scope);
+        const raw = keyForScope ? localStorage.getItem(keyForScope) : null;
         if (raw) {
           const localValue = JSON.parse(decodeSave(raw)) as T;
           const revision = (value: unknown): number => Number((value as { __tbSaveRevision?: number } | undefined)?.__tbSaveRevision ?? 0);
@@ -374,7 +384,8 @@ export function createAdapter(): TavernAdapter {
         }
       }
       try {
-        const targetKey = lsKey(key, scope);
+        const targetKey = scopedKey(key, scope);
+        if (!targetKey) throw Error('账号身份尚未确认，未读写本地镜像');
         const packed = encodeSave(serialized);
         try { localStorage.setItem(targetKey, packed); }
         catch (error) {

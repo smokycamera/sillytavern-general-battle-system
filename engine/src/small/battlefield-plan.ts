@@ -19,6 +19,7 @@ export interface LandmarkPlan {
   id?: string;
   height?: number;
   edge?: boolean;
+  state?: 'intact' | 'destroyed';
 }
 export interface BridgePlan { id?: string; anchor: WorldAnchor; state: 'intact' | 'destroyed'; width?: 1 | 2 }
 export const GATE_SECTORS = ['auto', 'front_left', 'front_center', 'front_right', 'left', 'right', 'rear','north','south','east','west'] as const;
@@ -118,6 +119,7 @@ export function normalizeBattlefieldPlan(value: unknown): { plan?: BattlefieldPl
         if (typeof m.id==='string' && /^[a-zA-Z][a-zA-Z0-9_-]{0,31}$/.test(m.id)) mark.id=m.id;
         if (Number.isInteger(m.height) && Number(m.height)>=0 && Number(m.height)<=3) mark.height=Number(m.height);
         if(m.edge===true)mark.edge=true;
+        if (m.state === 'intact' || m.state === 'destroyed') mark.state = m.state;
         plan.landmarks.push(mark);
       }
     }
@@ -128,12 +130,9 @@ export function normalizeBattlefieldPlan(value: unknown): { plan?: BattlefieldPl
 export function requireApiLandmarks(plan: BattlefieldPlan | undefined): asserts plan is BattlefieldPlan {
   if (!plan || !plan.intent && !plan.landmarks?.length) throw new BattlefieldPlanError('副API须返回场景意图或1—5个有效地标；本次未返回，不使用保底地标，请重试地图设计或关闭LLM设计地图');
 }
-export const BATTLEFIELD_PLAN_PROMPT = `返回battlefield对象，以正文中的时代、交战地点和当前局势设计战区。
-scene=field野战或城外交战|city_siege城市攻防|city_streets城区巷战|building_siege围攻单栋建筑|interior室内交战|trenches堑壕战。室内由房间和走廊组织；建筑围攻包含目标建筑、可进入的内部或内院及外围；堑壕包含战斗壕、交通壕和无人地带。
-可选布局：size=compact|standard|large；layout=scattered|lanes|crossroads|ring|strongpoint|broken（布局破碎）；shape=front正面战段|enclosure封闭据点|riverside临河|hillside依山；topology=${Object.keys(ROUTE_TOPOLOGIES).join('|')}。城市先道路后整块街区，建筑、掩体和壕线符合场所用途。
-可选细化：orientation=longitudinal|transverse|diagonal；breadth=narrow|normal|broad；relief/cover/obstacles=sparse|balanced|dense；density为cover与obstacles的共用默认。
-water=none|ford|river|moat：none代表无水域；ford代表浅水，可涉水的浅滩；river代表深水河流；moat代表护城河。按正文的深浅和可涉水情况选择；室内不设置室外水系。
-cityPosition=${WORLD_ANCHORS.join('|')}；waterPosition采用同一组绝对方位；waterAxis=horizontal|vertical。
-城防或建筑外围破口可给breaches:{count:0..3,width:1|2,sector:auto|front_left|front_right|left|right|rear}，count=0表示完整。桥梁、城门及地标统一写入intent.entities，各自保留位置、数量和状态。
-fortLevel=1..10：L1临时 L2简易 L3正规 L4重型 L5要塞 L6超凡 L7史诗 L8传奇 L9半神 L10神造。根据材料、建造规格和超常强化选级，不按守军等级抬升建筑。
+export const BATTLEFIELD_PLAN_PROMPT = `battlefield按正文时代、地点与局势设计；未指定部分用不同地形、路网、建筑用途和局部高差补全。
+scene=field野战/城外|city_siege城市攻防|city_streets巷战|building_siege建筑围攻|interior室内|trenches堑壕。
+可省略：size=compact|standard|large；shape=front|enclosure|riverside|hillside；layout=scattered|lanes|crossroads|ring|strongpoint|broken；topology=${Object.keys(ROUTE_TOPOLOGIES).join('|')}；orientation=longitudinal|transverse|diagonal；breadth=narrow|normal|broad；relief/cover/obstacles=sparse|balanced|dense。
+water=none无水|ford可涉浅水|river深水河流|moat护城河；waterAxis=horizontal|vertical。室内无室外水系。
+fortLevel=1..10按工事材料与强化选级。breaches可省略；格式{count:0..3,width:1|2,sector:auto|front_left|front_right|left|right|rear}，0为完整。
 ${SCENE_INTENT_PROMPT}`;

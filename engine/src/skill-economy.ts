@@ -6,6 +6,7 @@ import { fatigueAfter } from './tactics.js';
 import { actionPotential } from './skill-tactics.js';
 import { skillResourceCost } from './skill-runtime.js';
 import { memberHealth } from './member-health.js';
+import { spendAbility } from './ability-state.js';
 
 const defaults = standardConditionMap();
 const FUTURE_DISCOUNT = 0.65;
@@ -21,12 +22,8 @@ export function nextResourceState(context: ObservationContext, source: Combatant
   if (cast) {
     const cost = abilityCost(source, cast);
     if (cost) next.resources[cost.resource] = resourceRound(Math.max(0, (next.resources[cost.resource] ?? 0) - cost.amount));
-    const key = cast.cooldownGroup ?? cast.id;
-    let state = next.abilityState.find(s => s.abilityId === key);
-    if (!state) next.abilityState.push(state = { abilityId: key, used: 0, cdLeft: 0 });
-    state.used++;
     // The mass support phase reserves an additional boundary; preserve each mode's actual contract.
-    state.cdLeft = (cast.cooldown ?? 0) + Number(context.mode === 'mass');
+    spendAbility(next, cast, Number(context.mode === 'mass'));
   }
   if (next.status === 'ready') next.fatigue = fatigueAfter(source, (source.tacticalEffort ?? 0) + (rest ? 0 : cast ? skillExertion(source, cast) : 1), fullRest);
   next.resources.SP = resourceRound((next.resources.SP ?? 0) + spRecovery(next, fullRest, incapacitated));

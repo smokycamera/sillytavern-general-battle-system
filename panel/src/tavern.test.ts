@@ -15,32 +15,41 @@ function host(opts: { failHost?: boolean; failLocal?: boolean; send?: () => Prom
     sendMessageAsUser: opts.send,
     createChatMessages: insert,
   };
-  vi.stubGlobal('window', { TavernHelper: th, SillyTavern: { getContext: () => ({ chatId: 'test' }) }, document: { querySelector: () => draft } });
+  const context={chatId:'test',characterId:0,characters:[{avatar:'char.png'}],chat:[],chatMetadata:{},getRequestHeaders:()=>({})};
+  vi.stubGlobal('window', { TavernHelper: th, SillyTavern: { getContext: () => context }, fetch:async()=>new Response(JSON.stringify({handle:'fixture-user'})), document: { querySelector: () => draft } });
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => local.get(key) ?? null,
     setItem: (key: string, value: string) => { if (opts.failLocal) throw new Error('quota'); local.set(key, value); },
   });
-  return { adapter: createAdapter(), local, values, draft, insert, th };
+  const adapter=createAdapter();
+  return { adapter, local, values, draft, insert, th,context,ready:()=>vi.waitFor(()=>expect(adapter.identity()).toContain('fixture-user')) };
 }
 afterEach(() => vi.unstubAllGlobals());
 
 describe('真实保存与投递回执', () => {
-  it('全部保存失败返回 failed，不宣称成功', () => {
-    const { adapter } = host({ failHost: true, failLocal: true });
+  it('全部保存失败返回 failed，不宣称成功', async () => {
+    const { adapter,ready } = host({ failHost: true, failLocal: true });await ready();
     expect(adapter.save('panel', { hp: 500 })).toMatchObject({ status: 'failed', host: false, local: false });
   });
-  it('宿主失败但镜像成功返回 local-only，恢复不能优先读旧宿主', () => {
-    const { adapter, values } = host({ failHost: true });
+  it('宿主失败但镜像成功返回 local-only，恢复不能优先读旧宿主', async () => {
+    const { adapter, values,ready } = host({ failHost: true });await ready();
     values.panel = { hp: 70 };
     expect(adapter.save('panel', { hp: 500 })).toMatchObject({ status: 'local-only', local: true });
     expect(adapter.load('panel')).toMatchObject({ hp: 500 });
   });
-  it('宿主与本地均确认，读取返回独立副本', () => {
-    const { adapter } = host();
+  it('宿主与本地均确认，读取返回独立副本', async () => {
+    const { adapter,ready } = host();await ready();
     expect(adapter.save('panel', { hp: 70 }).status).toBe('saved');
     const loaded = adapter.load<{ hp: number }>('panel')!;
     loaded.hp = 500;
     expect(adapter.load('panel')).toMatchObject({ hp: 70 });
+  });
+  it('does not load a name-only mirror or a same-named chat on another character',async()=>{
+    const {adapter,local,context,ready}=host({failHost:true});
+    local.set('tavern-battle:chat:chat:test:panel',JSON.stringify({hp:999}));expect(adapter.load('panel')).toBeUndefined();
+    await ready();expect(adapter.load('panel')).toBeUndefined();adapter.save('panel',{hp:70});
+    expect([...local.keys()].some(key=>key.includes('scope-v2')&&key.includes('fixture-user')&&key.includes('char.png'))).toBe(true);
+    context.characters[0]!.avatar='other.png';expect(adapter.load('panel')).toBeUndefined();
   });
   it('发送抛错视为结果未知，不再追加第二条消息或覆盖草稿', async () => {
     const { adapter, draft, insert } = host({ send: async () => { throw new Error('connection lost'); } });

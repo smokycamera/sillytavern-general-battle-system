@@ -95,10 +95,8 @@ export function compileScenePlan(plan: BattlefieldPlan | undefined): Battlefield
             return { ...(gate ? { id: gate.id } : {}), sector, state: gate?.state === 'open' ? 'open' : gate?.state === 'destroyed' ? 'destroyed' : 'closed' };
         });
     const marked = intent.entities.filter(e => !['city', 'river', 'gate', 'bridge'].includes(e.kind));
-    if (marked.length > 5)
-        throw new BattlefieldPlanError('本次战区最多5个主要地标，请合并普通设施');
     result.landmarks = marked.map(e => ({ id: e.id, kind: e.kind as LandmarkPlan['kind'], anchor: anchors.get(e.id) ?? 'center',
-        scale: intent.relations.some(r => r.object === e.id && r.relation === 'exits_at') ? 'minor' : e.scale ?? 'major', ...(e.label ? { label: e.label } : {}), ...(e.height !== undefined ? { height: e.height } : {}), ...(intent.relations.some(r => r.object === e.id && r.relation === 'exits_at') ? { edge: true } : {}) }));
+        scale: intent.relations.some(r => r.object === e.id && r.relation === 'exits_at') ? 'minor' : e.scale ?? 'minor', ...(e.state === 'destroyed' ? { state: 'destroyed' as const } : {}), ...(e.label ? { label: e.label } : {}), ...(e.height !== undefined ? { height: e.height } : {}), ...(intent.relations.some(r => r.object === e.id && r.relation === 'exits_at') ? { edge: true } : {}) }));
     return result;
 }
 export function sceneRegion(field: BattlefieldSpec, id: string): SceneRegion | undefined { return field.scene?.regions.find(r => r.id === id); }
@@ -230,6 +228,11 @@ export function validateSceneFacts(field: BattlefieldSpec, units: readonly Comba
     if (!intent)
         return;
     const fulfilled: string[] = [];
+    for (const e of intent.entities) if (e.state === 'destroyed' || e.state === 'intact') {
+        const region=sceneRegion(field,e.id);
+        const structures=region?.cells.map(p=>field.structures?.[p]).filter(s=>!!s)??[];
+        if (structures.some(s=>e.state==='destroyed'?s!.hp>0:s!.hp<=0)) throw new BattlefieldPlanError(`地点${region!.label}没有保留正文指定状态${e.state}`);
+    }
     for (const e of intent.entities)
         if (e.height !== undefined && e.basis === 'explicit') {
             const region = sceneRegion(field, e.id);

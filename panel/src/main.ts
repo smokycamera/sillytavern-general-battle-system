@@ -1,3 +1,4 @@
+import { abilityUsed } from '../../engine/src/ability-state.js';
 import { assertBattleCapacity } from '../../engine/src/battle-limits.js';
 import { newBattleCommanderProfiles } from '../../engine/src/commander-profile.js';
 import { instanceVarianceLabel } from '../../engine/src/instance-variance.js';
@@ -9,7 +10,7 @@ import { equipmentLoadLabel } from '../../engine/src/body.js';
 import { LlmContextController, llmContextSummary, type LlmEncounterContext } from './llm-context.js';
 import { LlmNarrativeScanController } from './llm-narrative-scan.js';
 import { parseProtocol, recoverProtocol } from './protocol.js';
-import { readLlmSettings, saveLlmSettings, llmConnectionKey, llmSettingsView } from './llm-settings.js';
+import { readLlmSettings, saveLlmSettings, llmConnectionKey, llmSettingsView, llmSettingsBackup, resetLlmSettings } from './llm-settings.js';
 import { renderLlmSettings } from './llm-settings-view.js';
 import { encounterRequest, normalizeContextSettings } from './jev-context.js';
 import { enhancementLabel, trainingEdge, trainingDamage } from '../../engine/src/enhancements.js';
@@ -136,8 +137,8 @@ let workspaceTab: WorkspaceTab = 'battle';
 let workspaceNamespace = adapter.namespace();
 let builderEditDraft: UnitDraft | undefined;
 let builderSeed = randomId();
-let builderPreview: { namespace?: string; signature: string; unit: Combatant; record?: UnitRecord; previousRevision?: number } | undefined;
-let unitConversion: { namespace?: string; before: UnitRecord; after: UnitRecord } | undefined;
+let builderPreview: { namespace?: string; context: string; factRevision: number; signature: string; unit: Combatant; record?: UnitRecord; previousRevision?: number } | undefined;
+let unitConversion: { namespace?: string; context: string; factRevision: number; before: UnitRecord; after: UnitRecord } | undefined;
 let reportRestartPreview: { id: string; revision: number; namespace?: string } | undefined;
 let loadoutSkills: { id: string; revision?: number; namespace?: string; selected: string[]; battleId?: string; factRevision?: number } | undefined;
 
@@ -352,8 +353,8 @@ async function confirmAiScan(): Promise<void> {
   }
   render('view');
 }
-function stopAutomation(): void { automationEpoch++; fullAuto.stop(); llmContext.cancel(); smallResumeRequested = false; }
-window.addEventListener('pagehide', stopAutomation);
+function stopAutomation(clearRetry = true): void { automationEpoch++; fullAuto.stop(); llmContext.cancel(clearRetry); smallResumeRequested = false; }
+window.addEventListener('pagehide', () => stopAutomation());
 window.addEventListener('pagehide', () => narrativeScanner.cancel());
 let battleSaveFailed = false;
 let uiBusy = false;
@@ -378,6 +379,9 @@ async function panelTask(task: () => Promise<void>, allowPending = false, feedba
   }
 }
 async function persist(): Promise<boolean> {
+  const sessionContext=()=>runtime.native?JSON.stringify(JSON.parse(controller.inventoryContext()).slice(0,2)):controller.inventoryContext();
+  const identity=adapter.identity(), namespace=adapter.namespace(), context=sessionContext();
+  for (const key of ['protagonistId','commanderId'] as const) if (state[key] && !state.storage.some(r => r.id === state[key] && r.side === 'ally')) state[key] = undefined;
   // v2 起 storage 是持久权威源；新生成但尚未入 storage 的旧路径在保存前补齐一次。
   for (const unit of state.roster) {
     if (!state.storage.some((r) => r.id === unit.id)) {
@@ -412,6 +416,7 @@ async function persist(): Promise<boolean> {
       unitMigrationBackup: state.unitMigrationBackup,
       battle: battlePersist(),
     }, state.factRevision));
+  if (identity!==adapter.identity() || namespace!==adapter.namespace() || context!==sessionContext()) {battleSaveFailed=true;restore();return false;}
   state.saveReceipt = write.receipt;
   if (write.receipt.status !== 'failed') {
     state.factRevision = write.revision;
@@ -473,10 +478,11 @@ interface SavedPanel {
 
 function restore(): void {
   const resumeRequested = smallResumeRequested;
-  stopAutomation();
+  stopAutomation(false);
   smallResumeRequested = resumeRequested;
   reportRestartPreview=undefined;
   if (workspaceNamespace !== adapter.namespace()) {
+    llmContext.cancel();
     narrativeDrafts.clear(); promptDrafts.clear();
     narrativeErrorIndexes.clear(); narrativeScanner.cancel(); aiScanDialog = undefined;
     workspaceNamespace = adapter.namespace(); workspaceTab = 'battle';
@@ -759,7 +765,7 @@ async function runAuto(): Promise<void> {
       const a = b.active;
       // 反应击杀/失能必须先交还行动权，不能等待已倒下的玩家单位。
       if (!smallActorBlocked(b)) {
-        if (a.id === state.protagonistId) break;
+        if (a.side === 'ally' && a.id === state.protagonistId) break;
         if (a.side !== 'enemy' && !state.autoTurn) break;
       }
       tacticalView.selectedId = a.id; tacticalView.cell = undefined; render('battle');
@@ -927,7 +933,7 @@ function render(scope: RenderScope = 'all', tacticalQuery?: TacticalQuery): void
   if (dirtyWorkspaces.has(workspaceTab) && !(scope === 'battle' && !['battle','reports'].includes(workspaceTab))) {
     let content = '';
     if (workspaceTab === 'battle') {
-      const battleContent = state.small?.battlefield ? renderTacticalBattle(state.small, tacticalView, state.autoTurn, tacticalQuery) : b ? state.mass ? renderMass() : renderSmall() : renderBattlePreparation();
+      const battleContent = state.small?.battlefield ? renderTacticalBattle(state.small, tacticalView, state.autoTurn, tacticalQuery, fullAuto.running) : b ? state.mass ? renderMass() : renderSmall() : renderBattlePreparation();
       content = (b ? renderBattleToolbar(b) : '') + (b?.isOver() ? renderBattleExit(b) : '') + battleContent + renderXp();
     } else if (workspaceTab === 'units') content = renderNarrativeProposals() + renderConfig() + renderRole() + renderManage() + renderUnitConversion() + (state.pending.length ? renderPending() : '');
     else if (workspaceTab === 'inventory') content = inventoryPanel.render();
@@ -1533,7 +1539,7 @@ function renderSmall(): string {
     const primary = weaponOption?.targets?.find((candidate) => candidate.targetId === f.id);
     const sidearm = sidearmOption?.targets?.find((candidate) => candidate.targetId === f.id);
     const preview = primary?.preview;
-    const estimate = preview ? `｜命中率${hitChanceText(preview)}·命中后伤害${hitDamageText(preview)}` : '';
+    const estimate = preview ? `｜至少命中一次${hitChanceText(preview)}·命中后伤害${hitDamageText(preview)}` : '';
     const availability = primary?.enabled
       ? estimate
       : sidearm?.enabled
@@ -1683,12 +1689,12 @@ function renderAbilityDialog(): string {
   const recoveryTarget = targets.find((u) => u.id === selected);
   const effectPreview = massV2 ? b.orderPreview({ unitId: [...b.attached].find(([, id]) => id === actor.id)?.[0] ?? actor.id, type: 'ability', abilityActorId: actor.id, abilityId: ability.id, targetId: selected }) : smallOption?.targets?.find((t) => t.targetId === selected)?.preview;
   const strikePreview = effectPreview && 'preview' in effectPreview ? effectPreview.preview : effectPreview;
-  const damagePreview = strikePreview && 'expectedDamage' in strikePreview && strikePreview.expectedDamage !== undefined ? `<div class="damage-preview">命中率 ${hitChanceText(strikePreview)} · 命中后伤害 ${hitDamageText(strikePreview)}${strikePreview.damageModel === 'member-health' || recoveryTarget?.scale === 'hero' ? '生命' : '人'}${effectPreview?.areaTargets?.length ? ' · 波及' + effectPreview.areaTargets.map(esc).join('、') : ''}</div>` : '';
+  const damagePreview = strikePreview && 'expectedDamage' in strikePreview && strikePreview.expectedDamage !== undefined ? `<div class="damage-preview">至少命中一次 ${hitChanceText(strikePreview)} · 命中后伤害 ${hitDamageText(strikePreview)}${strikePreview.damageModel === 'member-health' || recoveryTarget?.scale === 'hero' ? '生命' : '人'}${effectPreview?.areaTargets?.length ? ' · 波及' + effectPreview.areaTargets.map(esc).join('、') : ''}</div>` : '';
   const healingPreview = effectPreview?.healing;
   const moralePreview = effectPreview?.moraleAfter === undefined ? '' : `<div class="morale-preview">预计有效士气 ${effectPreview.moraleBefore} → ${effectPreview.moraleAfter}${effectPreview.rallyChance !== undefined ? '，基础重整成功率' + Math.round(effectPreview.rallyChance * 100) + '%，仍需合法空位' : '，惊退风险' + Math.round((effectPreview.breakChance ?? 0) * 100) + '%'}</div>`;
   const recoveryPreview = healingPreview === undefined ? '' : `<div class="recovery-preview">预计恢复${recoveryTarget?.scale === 'hero' ? '生命' : '可救伤兵'} ${healingPreview}${recoveryTarget?.scale !== 'hero' ? '，不会补回其余缺员' : ''}</div>`;
   const confirmation = massV2 ? '编入本轮主任务' : '确认释放';
-  const uses = ability.itemSourceId ? '次数受携行余量限制' : ability.usesPerBattle === undefined ? '不限次数' : `剩余 ${Math.max(0, ability.usesPerBattle - (runtime?.used ?? 0))}/${ability.usesPerBattle}`;
+  const uses = ability.itemSourceId ? '次数受携行余量限制' : ability.usesPerBattle === undefined ? '不限次数' : `剩余 ${Math.max(0, ability.usesPerBattle - abilityUsed(actor,ability))}/${ability.usesPerBattle}`;
   const rangeSpec = smallOption?.range ?? ability.range;
   const range = rangeSpec
     ? rangeSpec.metric === 'global' ? '全战场' : rangeSpec.metric === 'self' ? '自身' : `${rangeSpec.min}~${rangeSpec.max} ${massV2 ? '阵距' : '格'}`
@@ -1723,7 +1729,7 @@ function massOrderPreviewText(b: MassBattle, order: Order): string {
   if (result.moraleAfter !== undefined) return `${cost} · 有效士气${result.moraleBefore}→${result.moraleAfter}${result.rallyChance !== undefined ? ' · 基础重整成功率' + Math.round(result.rallyChance * 100) + '%' : ' · 惊退风险' + Math.round((result.breakChance ?? 0) * 100) + '%'}`;
   if (result.healing !== undefined) return `${cost} · 预计恢复${result.healing}，以目标可恢复生命或伤兵为上限`;
   const fall = result.fallDamage !== undefined ? ` · ${result.fallChance !== undefined && result.fallChance < 1 ? '迫降概率' + Math.round(result.fallChance * 100) + '%' : '将迫降'}，额外坠落损失至多${result.fallDamage}${result.forcedLanding ? '，预计落点' + place(result.forcedLanding) : '，已知范围无落点，预计撤出'}` : '';
-  return result.preview ? `${cost}${result.weaponName ? ' · 使用' + result.weaponName : ''}${result.approach && !result.landing ? ' · 冲锋接近至' + place(result.approach) : ''}${result.vehicleMove ? ' · 短移至' + place(result.vehicleMove) + '稳定射击' + (result.reactions?.length ? '，可能遭' + result.reactions.join('、') + '借机' : '') : ''}${result.withdrawal ? ' · 自动后撤至' + place(result.withdrawal) + '射击' : ''}${result.landing ? ' · 先降落至' + place(result.landing) + '扑击' : ''} · 命中率${hitChanceText(result.preview)} · 命中后伤害${hitDamageText(result.preview)}${result.preview.onHit ? ' · ' + result.preview.onHit : ''}${result.areaTargets?.length ? ' · 波及' + result.areaTargets.join('、') : ''}${result.effects?.length ? ' · ' + result.effects.join('；') : ''}${fall}（阶段行动可能改变结果）` : cost + fall + (result.effects?.length ? ' · ' + result.effects.join('；') : '');
+  return result.preview ? `${cost}${result.weaponName ? ' · 使用' + result.weaponName : ''}${result.approach && !result.landing ? ' · 冲锋接近至' + place(result.approach) : ''}${result.vehicleMove ? ' · 短移至' + place(result.vehicleMove) + '稳定射击' + (result.reactions?.length ? '，可能遭' + result.reactions.join('、') + '借机' : '') : ''}${result.withdrawal ? ' · 自动后撤至' + place(result.withdrawal) + '射击' : ''}${result.landing ? ' · 先降落至' + place(result.landing) + '扑击' : ''} · 至少命中一次${hitChanceText(result.preview)} · 命中后伤害${hitDamageText(result.preview)}${result.preview.onHit ? ' · ' + result.preview.onHit : ''}${result.areaTargets?.length ? ' · 波及' + result.areaTargets.join('、') : ''}${result.effects?.length ? ' · ' + result.effects.join('；') : ''}${fall}（阶段行动可能改变结果）` : cost + fall + (result.effects?.length ? ' · ' + result.effects.join('；') : '');
 }
 
 function renderMass(): string {
@@ -1767,7 +1773,7 @@ function renderMass(): string {
       const skillBtns = `<span>${skillSources.flatMap((source) => source.abilities.map((a) => {
             const st = source.abilityState.find((s) => s.abilityId === (a.cooldownGroup ?? a.id));
             const cd = st?.cdLeft ?? 0;
-            const usedOut = a.usesPerBattle !== undefined && (st?.used ?? 0) >= a.usesPerBattle;
+            const usedOut = a.usesPerBattle !== undefined && abilityUsed(source,a) >= a.usesPerBattle;
             const reason = v2 ? abilityUsabilityReason(source, a) ?? (existing ? '所属编队已有主任务，请先撤回' : undefined) : cd > 0 || usedOut ? '冷却或次数耗尽' : undefined;
             return `<button data-action="mass-ability" data-unit="${esc(source.id)}" data-id="${esc(a.id)}" ${reason ? 'disabled' : ''} title="${esc(reason ?? a.desc ?? '')}">${source.id !== u.id ? esc(source.name) + ' · ' : ''}${esc(a.name)}${cd > 0 ? `⏱${cd}` : ''}</button>`;
           })).join('')}</span>`;
@@ -2149,7 +2155,7 @@ async function handleAction(e: Event): Promise<void> {
   if (!el) return;
   const act = el.dataset.action!;
   if (act === 'llm-stop') { llmContext.cancel(); toast('已取消上下文读取'); render('battle'); return; }
-  if (['llm-models'].includes(act)) { try { await actions[act]!(el); } catch (error) { toast(String(error)); } return; }
+  if (['llm-models','llm-settings-backup','llm-settings-reset','llm-settings-clear'].includes(act)) { try { await actions[act]!(el); } catch (error) { toast(String(error)); } return; }
   // Navigation never joins the durable-write queue or alters its failure flag.
   if (act === 'workspace-tab') {
     const tab = el.dataset.tab;
@@ -2289,6 +2295,10 @@ async function handleAction(e: Event): Promise<void> {
     render(); return;
   }
   if (MAP_INSPECTION.includes(act)) { inspectBattleMap(el); return; }
+  if (act === 'grid-flight' || act === 'grid-retreat') {
+    tacticalView.mode = act === 'grid-retreat' ? 'retreat' : el.dataset.airborne === 'true' ? 'flight:takeoff' : 'flight:land';
+    tacticalView.cell = undefined; render('view'); return;
+  }
   // 相机/主题是纯视图操作，不保存、不重新渲染，也不触发自动回合。
   if (act === 'battle-replay' || act === 'battle-highlight') { replayBattleTrace(act === 'battle-highlight' ? Number(el.dataset.event) : undefined); return; }
   if (act === 'grid-command-focus') { document.querySelector('.grid-command')?.scrollIntoView({ block: 'start' }); return; }
@@ -2336,8 +2346,7 @@ async function commitBuilder(): Promise<void> {
   if (controller.migrationReview()) throw Error('请先核对迁移预览，当前不能保存新档案');
   requireArchiveWritable(); captureForm();
   const preview = builderPreview, draft = preview?.record ? builderEditDraft : state.form;
-  if (!preview || preview.namespace !== adapter.namespace() || !draft || preview.signature !== JSON.stringify(draft)) throw Error('配置已变，请重新预览');
-  const original = { manageOpen: state.manageOpen, storage: state.storage, roster: state.roster, mode: state.mode, protagonistId: state.protagonistId, commanderId: state.commanderId };
+  if (!preview || preview.namespace !== adapter.namespace() || preview.context !== controller.inventoryContext() || preview.factRevision !== state.factRevision || !draft || preview.signature !== JSON.stringify(draft)) throw Error('配置已变，请重新预览');
   if (preview.record) {
     const current = state.storage.find((r) => r.id === preview.record!.id);
     if (!current || current.revision !== preview.previousRevision) throw Error('档案已更新，请重新预览');
@@ -2350,7 +2359,7 @@ async function commitBuilder(): Promise<void> {
     if (unit.side === 'ally') { state.protagonistId ??= unit.id; state.commanderId ??= unit.id; }
     state.mode = autoScaleMode();
   }
-  if (!(await persist())) { const receipt = state.saveReceipt; Object.assign(state, original); state.saveReceipt = receipt; throw Error('尚未保存，当前预览保留，可直接重试'); }
+  if (!(await persist())) { throw Error('尚未保存，编辑草稿保留，请重新预览后重试'); }
   const edited = !!preview.record; builderPreview = undefined;
   if (edited) { builderEditDraft = undefined; state.editingUnit = null; state.editingDraft = undefined; }
   if (!edited) { state.genOpen = false; state.form = newUnitDraft(); builderSeed = randomId(); }
@@ -2560,7 +2569,6 @@ async function settleXp(allowUnfinished = false): Promise<void> {
     awards,
     registry: reg,
   });
-  const before = { committedOutcomeIds: state.committedOutcomeIds, storage: state.storage, roster: state.roster, lastBattleUnitIds: state.lastBattleUnitIds, xpSettled: state.xpSettled, reports: state.reports };
   if (!state.reports.some((r) => r.id === id) && !state.deletedReportIds?.includes(id)) {
     state.reports = [...state.reports, {
       id, roundCount: completedBattleRounds(b), epilogue: battleEpilogue(b,state.activeBattleStart), narrativeEvents: narrativeEvents(b), eventCount: b.log.length, card: settlementCard(b.log, b.round, !!state.mass, { wholeBattle: true }),
@@ -2577,7 +2585,6 @@ async function settleXp(allowUnfinished = false): Promise<void> {
   state.xpSettled = true;
   // XP 与战损已经由同一提交入口写回，杜绝旧 roster 覆盖新 XP。
   if (!(await persist())) {
-    Object.assign(state, before);
     throw new Error('战果未保存，档案提交已撤回；战斗存档记录仍在，可重试');
   }
   const levelUps = result.levelUps.map((u) => `${u.name} 等级${u.from}→等级${u.to}`);
@@ -2634,7 +2641,9 @@ async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void>
   prepareRosterForBattle();
   if (!rosterHasBothSides()) throw Error('开战前必须同时有我方与敌方单位');
   let context:LlmEncounterContext|undefined;
-  const v2=state.roster.every(u=>u.rulesVersion==='v2'), settings=readLlmSettings();
+  const v2=state.roster.every(u=>u.rulesVersion==='v2'), settings=llmSettingsView().settings;
+  const seed = randomSeed();
+  let preparedField: ReturnType<typeof generatedLayeredField> | undefined;
   const setup={mode:requestedMode,field:state.field||'plains',lighting:state.lighting,mapLayout:state.mapLayout,objectiveMode:state.objectiveMode,siegeAttacker:state.siegeAttacker};
   if(settings.enabled && v2) {
     const namespace=adapter.namespace(), identity=adapter.identity(), revision=state.factRevision,
@@ -2645,7 +2654,13 @@ async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void>
         && JSON.stringify([state.mode,state.field,state.lighting,state.mapLayout,state.objectiveMode,state.siegeAttacker,state.protagonistId])===setupKey
         && JSON.stringify(recentContextMessages())===messagesKey && (!runtime.canWrite||runtime.canWrite());
     const unitNotes=Object.fromEntries(state.storage.filter(u=>state.roster.some(c=>c.id===u.id)).map(u=>[u.id,u.note??'']));
-    const pending=llmContext.select({roster:state.roster,setup,messages,unitNotes,narrativeIdState:controller.snapshot().narrativeIdState},settings,valid);
+    const pending=llmContext.select({roster:state.roster,setup,messages,unitNotes,narrativeIdState:controller.snapshot().narrativeIdState,scope:JSON.stringify([identity,namespace,generation])},settings,valid, result => {
+      if (result.mode !== 'small') return;
+      const tags = [...new Set([result.field, ...(result.objectiveMode === 'siege' ? ['siege'] : []), ...(result.mapLayout === 'indoor' ? ['indoor'] : [])])];
+      preparedField = generatedLayeredField(seed, result.mapLayout === 'indoor' ? 5 : 7, result.mapLayout === 'indoor' ? 7 : 13, tags,
+        { roster: state.roster, attackingSide: result.siegeAttacker, design: result.mapDesign, plan: result.battlefieldPlan, unitBindings: result.unitBindings });
+      preparedField = prepareBattleObjective(preparedField, state.roster, result.objectiveMode, state.protagonistId, result.siegeAttacker, result.vipId);
+    });
     render('battle');
     context=await pending;
     if (!valid()) throw Error('准备信息已变化，尚未开始战斗');
@@ -2658,19 +2673,18 @@ async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void>
       settings:{...normalizeContextSettings(),enemy:'manual',scene:'manual'},messages:[],windowSize:0,roles:[],phase:'preparation'}).base;
     mode=manual.mode;state.mapLayout=manual.mapLayout;
   }
-  if(mode==='mass')await startMassBattle(context);else await startSmallBattle(context);
+  if(mode==='mass')await startMassBattle(context);else await startSmallBattle(context, preparedField, seed);
 }
 
-async function startSmallBattle(context?:LlmEncounterContext):Promise<void> {
+async function startSmallBattle(context?:LlmEncounterContext, preparedField?: ReturnType<typeof generatedLayeredField>, seed = randomSeed()):Promise<void> {
     const before=captureBattleArchive({...controller.snapshot(),storage:state.storage,inventory:state.inventory,rosterIds:state.roster.map(u=>u.id),protagonistId:state.protagonistId,commanderId:state.commanderId,encounterIds:[...state.encounterIds],lastBattleUnitIds:state.lastBattleUnitIds});
     if (!rosterHasBothSides()) throw new Error('开战前必须同时有我方与敌方单位');
-    const seed = randomSeed();
     const tags = state.objectiveMode === 'siege' ? [...new Set([...plannedFieldTags(), 'siege'])] : plannedFieldTags();
     assertBattleCapacity(state.roster, 'small');
     const v2 = state.roster.every(u => u.rulesVersion === 'v2');
     const fieldOptions = { roster: state.roster, attackingSide: state.siegeAttacker, design: context?.mapDesign, plan: context?.battlefieldPlan,unitBindings:context?.unitBindings };
-    let battlefield = v2 ? (state.mapLayout === 'indoor' ? generatedLayeredField(seed, 5, 7, tags, fieldOptions) : generatedLayeredField(seed, 7, 13, tags, fieldOptions)) : undefined;
-    if (battlefield) battlefield = prepareBattleObjective(battlefield, state.roster, state.objectiveMode, state.protagonistId, state.siegeAttacker, context?.vipId);
+    let battlefield = preparedField ?? (v2 ? (state.mapLayout === 'indoor' ? generatedLayeredField(seed, 5, 7, tags, fieldOptions) : generatedLayeredField(seed, 7, 13, tags, fieldOptions)) : undefined);
+    if (battlefield && !preparedField) battlefield = prepareBattleObjective(battlefield, state.roster, state.objectiveMode, state.protagonistId, state.siegeAttacker, context?.vipId);
     if (context && battlefield?.generation?.notes?.length) context.designDetail = [context.designDetail, ...battlefield.generation.notes].filter(Boolean).join('；');
     if (context?.mapDesign && battlefield?.generation?.source === 'context') context.mapDesign = structuredClone(battlefield.generation.design);
     if (context && battlefield?.objective.kind === 'escape') {
@@ -2739,11 +2753,19 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   },
   'delivery-generate': async el => {
     if (!runtime.retryGeneration || !el.dataset.delivery) throw Error('当前酒馆没有独立重试生成接口');
+    const identity = adapter.identity(), namespace = adapter.namespace(), context = controller.inventoryContext();
     const receipt = await runtime.retryGeneration(el.dataset.delivery);
+    if (identity !== adapter.identity() || namespace !== adapter.namespace() || context !== controller.inventoryContext()) return;
     if (el.dataset.key) finishNarrativeDelivery(state.reportDeliveries, { battleId: el.dataset.battle!, key: el.dataset.key }, receipt);
     else if (el.dataset.label) { const report = state.reports.find(item => item.id === el.dataset.battle); if (report) report.deliveries[el.dataset.label] = receipt; }
     await persist();
   },
+  'llm-settings-backup': () => {
+    const url = URL.createObjectURL(new Blob([llmSettingsBackup()], { type: 'application/json' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'battle-model-settings-backup.json'; link.click(); URL.revokeObjectURL(url);
+  },
+  'llm-settings-reset': () => { resetLlmSettings(true); llmContext.cancel(); llmDiagnostic = '已重置选项，保留原连接'; render('view'); },
+  'llm-settings-clear': () => { resetLlmSettings(false); llmContext.cancel(); llmDiagnostic = '已清空副API配置和Key，使用手动配置'; render('view'); },
   'out-delta': async () => { const batch = makeNarrativeBatch(currentBattle() ?? undefined, reportForOutput(), state.reportDeliveries, 'delta'); void (await sendToAi(batch.text, '新增战况', undefined, batch)); },
   'out-epilogue': async () => { const batch = makeNarrativeBatch(currentBattle() ?? undefined, reportForOutput(), state.reportDeliveries, 'epilogue',state.activeBattleStart); void (await sendToAi(batch.text, '战斗终章', undefined, batch)); },
   'delivery-review': (el) => { finishNarrativeDelivery(state.reportDeliveries, {battleId:el.dataset.battle!,key:el.dataset.key!}, {status:el.dataset.result === 'sent' ? 'sent' : 'failed',detail:'玩家核对聊天后确认'}); },
@@ -2753,7 +2775,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   },
   'unit-conversion-preview': (el) => {
     requireArchiveWritable(); const before = state.storage.find((r) => r.id === el.dataset.id)!;
-    unitConversion = { namespace: adapter.namespace(), before: structuredClone(before), after: previewUnitConversion(before, reg) };
+    unitConversion = { namespace: adapter.namespace(), context: controller.inventoryContext(), factRevision: state.factRevision, before: structuredClone(before), after: previewUnitConversion(before, reg) };
   },
   'unit-conversion-cancel': () => { unitConversion = undefined; },
   'unit-conversion-export': () => {
@@ -2763,21 +2785,20 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   },
   'unit-conversion-commit': async () => {
     requireArchiveWritable(); const review = unitConversion;
-    if (!review || review.namespace !== adapter.namespace()) throw new Error('更新规则预览已经过期');
+    if (!review || review.namespace !== adapter.namespace() || review.context !== controller.inventoryContext() || review.factRevision !== state.factRevision) throw new Error('更新规则预览已经过期');
     const original = state.storage.find((r) => r.id === review.before.id);
     if (!original || JSON.stringify(original) !== JSON.stringify(review.before)) throw new Error('单位已有新战斗记录，请重新预览');
-    const before = { storage: state.storage, roster: state.roster };
     state.storage = state.storage.map((r) => r.id === original.id ? review.after : r);
     state.roster = state.roster.map((u) => u.id === original.id ? materializeUnitRecord(review.after, reg) : u);
-    if (!(await persist())) { Object.assign(state, before); throw new Error('保存失败，更新规则未提交'); }
+    if (!(await persist())) throw new Error('保存失败，更新规则未提交');
     unitConversion = undefined;
   },
   'unit-conversion-undo': async (el) => {
     requireArchiveWritable(); const current = state.storage.find((r) => r.id === el.dataset.id)!;
-    const restored = undoUnitConversion(current); const before = { storage: state.storage, roster: state.roster };
+    const restored = undoUnitConversion(current);
     state.storage = state.storage.map((r) => r.id === current.id ? restored : r);
     state.roster = state.roster.map((u) => u.id === current.id ? materializeUnitRecord(restored, reg) : u);
-    if (!(await persist())) { Object.assign(state, before); throw new Error('保存失败，撤销未提交'); }
+    if (!(await persist())) throw new Error('保存失败，撤销未提交');
   },
   'migration-export': () => {
     const source = controller.migrationReview()?.original ?? controller.snapshot();
@@ -2818,7 +2839,9 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     const actorId = el.dataset.actor;
     if (!actorId || actorId !== b.active?.id) throw new Error('行动者已变化，请重新预览');
     const mode = el.dataset.mode!; const target = el.dataset.target!;
-    if (mode === 'weapon' || mode === 'weapon:sidearm') b.attack(actorId, target, { weaponMode: mode === 'weapon' ? 'primary' : 'sidearm' });
+    if (mode === 'flight:takeoff' || mode === 'flight:land') { b.changeFlight(actorId,mode === 'flight:takeoff'); tacticalView.mode='move'; }
+    else if (mode === 'retreat') { b.retreat(actorId); tacticalView.mode='move'; }
+    else if (mode === 'weapon' || mode === 'weapon:sidearm') b.attack(actorId, target, { weaponMode: mode === 'weapon' ? 'primary' : 'sidearm' });
     else if (mode === 'charge') b.attack(actorId, target, { charge: true });
     else {
       const abilityId = mode.startsWith('ability:') ? mode.slice(8) : mode;
@@ -3127,14 +3150,14 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     requireArchiveWritable(); captureForm();
     const signature = JSON.stringify(state.form);
     if (builderPreview?.signature === signature && !builderPreview.record) return;
-    builderPreview = { namespace: adapter.namespace(), signature, unit: buildUnit(state.form, reg, builderSeed) };
+    builderPreview = { namespace: adapter.namespace(), context: controller.inventoryContext(), factRevision: state.factRevision, signature, unit: buildUnit(state.form, reg, builderSeed) };
   },
   'storage-preview': (el) => {
     requireArchiveWritable(); captureForm();
     const previous = state.storage.find((r) => r.id === el.dataset.id);
     if (!previous || !builderEditDraft || previous.revision !== state.editingDraft?.revision) throw Error('档案已更新，请重新打开编辑');
     const record = editUnitBuild(previous, builderEditDraft, reg);
-    builderPreview = { namespace: adapter.namespace(), signature: JSON.stringify(builderEditDraft), record, previousRevision: previous.revision, unit: record.snapshot! };
+    builderPreview = { namespace: adapter.namespace(), context: controller.inventoryContext(), factRevision: state.factRevision, signature: JSON.stringify(builderEditDraft), record, previousRevision: previous.revision, unit: record.snapshot! };
   },
   'builder-skill-add': (el) => {
     captureForm(); const d = el.dataset.builder === 'gen' ? state.form : builderEditDraft; if (!d) return;

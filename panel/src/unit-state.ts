@@ -838,8 +838,8 @@ export function updateUnitRecord(record: UnitRecord, patch: UnitUpdate, registry
   const hp = record.scale === 'hero' ? capSingleLife(requestedHp, record.snapshot?.damageModel) : requestedHp;
   if (!Number.isSafeInteger(hpMax) || hpMax < 1 || hpMax > 1_000_000_000) throw new Error('上限必须是 1–1000000000 的整数');
   if (!Number.isSafeInteger(hp) || hp < 0 || hp > hpMax) throw new Error('当前值不能超出上限；缩编减员需明确 hp');
-  if (patch.state === 'dead' && hp > 0) throw new Error('阵亡必须明确 hp=0');
-  if (hp === 0 && patch.state && patch.state !== 'dead') throw new Error('0 生命/兵力不能处于可出场状态');
+  if ((patch.state === 'dead' || patch.state === 'dying') && hp > 0) throw new Error('阵亡或濒死必须明确 hp=0');
+  if (hp === 0 && patch.state && !['dead','dying'].includes(patch.state)) throw new Error('0 生命/兵力不能处于可出场状态');
   const unit = materializeUnitRecord(record, registry);
   const wounded = woundedAfterUpdate(unit, hp, hpMax);
   if (wounded !== undefined) unit.recoverableWounded = wounded;
