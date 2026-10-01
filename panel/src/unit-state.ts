@@ -881,6 +881,8 @@ export function learnUnitRecord(record: UnitRecord, skills: NonNullable<Combatan
 /** 编辑档案只重建显式变更的装备/技能；改名、补员、升级不洗其他实例。 */
 export function editUnitRecord(previous: UnitRecord, edited: UnitRecord, registry: Map<string, Trait>, era?: string): UnitRecord {
   edited = clone(edited);
+  // Positive HP cannot keep the dying flag after an explicit archive edit.
+  if (edited.status === 'dying' && edited.hp > 0) edited.status = 'ready';
   const wounded = woundedAfterUpdate(previous, edited.hp, edited.base.hpMax);
   if (wounded !== undefined) edited.recoverableWounded = wounded;
   const keys = {

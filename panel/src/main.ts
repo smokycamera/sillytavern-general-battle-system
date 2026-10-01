@@ -1,9 +1,11 @@
 import { abilityUsed } from '../../engine/src/ability-state.js';
 import { McpPanelBridge } from './mcp-bridge.js';
+import { McpGameApi, executeSmallGameAction, type GameAction } from './mcp-game.js';
+import { recoverUnitRecord } from './post-battle-recovery.js';
+import { buildEncounter, encounterPreview } from './game-encounter.js';
+import { McpSandbox } from './mcp-sandbox.js';
 import { PlayerPreparation } from './player-preparation.js';
 import { narrativeMapSources } from './narrative-map-source.js';
-import { assertBattleCapacity } from '../../engine/src/battle-limits.js';
-import { newBattleCommanderProfiles } from '../../engine/src/commander-profile.js';
 import { instanceVarianceLabel } from '../../engine/src/instance-variance.js';
 import { hitChanceText, hitDamageText, hitDamageDetails } from './damage-preview.js';
 import { version } from '../../package.json';
@@ -15,7 +17,7 @@ import { LlmNarrativeScanController } from './llm-narrative-scan.js';
 import { parseProtocol, recoverProtocol } from './protocol.js';
 import { readLlmSettings, saveLlmSettings, llmConnectionKey, llmSettingsView, llmSettingsBackup, resetLlmSettings } from './llm-settings.js';
 import { renderLlmSettings } from './llm-settings-view.js';
-import { encounterRequest, normalizeContextSettings } from './jev-context.js';
+import { encounterRequest, normalizeContextSettings, type EncounterSetup } from './jev-context.js';
 import { enhancementLabel, trainingEdge, trainingDamage } from '../../engine/src/enhancements.js';
 import { renderReportWorkspace } from './report-view.js';
 import { captureBattleArchive, captureBattleStart, reportRestartReason, type BattleStart, type DeletedReport } from './report-history.js';
@@ -47,9 +49,8 @@ import { PROMPT_SECTIONS, applySettlementPrompt, promptSelected, selectPromptEnt
 import { needsNarrativeDeploymentRestore } from './narrative-state.js';
 import { AutoBattleLoop, yieldBattleFrame } from './auto-battle.js';
 import { newUnitDraft, unitDraftFromRecord, buildUnit, editUnitBuild, type UnitDraft } from './unit-builder.js';
-import { recommendedFormationSlots } from '../../engine/src/mass/formation.js';
 import { MAX_SCENE_UNITS } from './narrative-limits.js';
-import { recommendBattleMode, extendSmallRoundLimit, upgradeDefaultObjective, normalizeObjectiveMode, prepareBattleObjective, battleCapacityIssue, prepareMassRoster, type BattleObjectiveMode } from './battle-setup.js';
+import { recommendBattleMode, extendSmallRoundLimit, upgradeDefaultObjective, normalizeObjectiveMode, prepareBattleObjective, battleCapacityIssue, type BattleObjectiveMode } from './battle-setup.js';
 import { unitForm, captureUnitDraft, buildPreview } from './unit-form.js';
 import { BODY, effectiveProtection, looseFormation, ABILITY_BLUEPRINTS } from '../../engine/src/index.js';
 /**
@@ -64,7 +65,7 @@ import {
   generateUnit, traitCatalog, traitRegistry, resolveTraitId,
   SmallBattle, MassBattle, battleXpAwardsForBothSides, applyXp, xpProgress, xpLabel,
   armorDR, fieldModsFor, LITE_D20,
-  V5_D20, V6_D20, V11_OVERFLOW_D20, V11_OVERFLOW_TW, isAirborne, abilityUsabilityReason,
+  V5_D20, V6_D20, V11_OVERFLOW_D20, isAirborne, abilityUsabilityReason,
   generatedField, generatedLayeredField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
   FORMATION_NODES, formationNode, concealmentLabel,
   type Combatant, type GenerateInput, type Order, type BattleLogEntry, type Side,
@@ -137,6 +138,7 @@ const worldbookDrafts = new Map<string, string>();
 const customWorldbookDrafts = new Map<string, WorldbookDraft>();
 let worldbookDeleting: string | undefined;
 const playerPreparation = new PlayerPreparation();
+let mcpPrepared: McpPrepared | undefined;
 let mcpBridge: McpPanelBridge | undefined;
 let workspaceTab: WorkspaceTab = 'battle';
 let workspaceNamespace = adapter.namespace();
@@ -737,12 +739,15 @@ function requireArchiveWritable(): void {
 
 function prepareRosterForBattle(): void {
   if (currentBattle()) throw new Error('请先收兵归档上一场战斗');
+  state.roster = deployedRoster(state.storage, state.roster.map(u => u.id));
+}
+function deployedRoster(records: UnitRecord[], ids: string[]): Combatant[] {
   let roster: Combatant[] = [];
-  for (const id of new Set(state.roster.map((u) => u.id))) roster = deployUnitRecord(state.storage, roster, id, reg);
+  for (const id of new Set(ids)) roster = deployUnitRecord(records, roster, id, reg);
   const issue = battleCapacityIssue(roster); if (issue) throw new Error(issue);
   // 旧远程实例在开战时补齐到分类新射程（库存权威档案由控制器装载时迁移）。
   for (const unit of roster) { calibrateWeaponRange(unit.weapon); calibrateWeaponRange(unit.sidearm); calibrateAutocannon(unit.weapon); calibrateAutocannon(unit.sidearm); calibrateWeaponHands(unit.weapon); calibrateWeaponHands(unit.sidearm); }
-  state.roster = prepareBattleItems(roster, controller.snapshot());
+  return prepareBattleItems(roster, controller.snapshot());
 }
 
 /**
@@ -993,8 +998,9 @@ function replayBattleTrace(eventIndex?: number): void {
 
 function renderBattlePreparation(): string {
   const llm = llmSettingsView();
-  const visible = state.roster.filter(visibleUnitRecord), allies = visible.filter((u) => u.side === 'ally'), enemies = visible.filter((u) => u.side === 'enemy');
-  const mode = effectiveMode(), capacityIssue = battleCapacityIssue(state.roster), ready = rosterHasBothSides() && !capacityIssue;
+  const preview = mcpPrepared && mcpPrepared.fingerprint === preparationFingerprint() ? mcpPrepared : undefined;
+  const visible = (preview?.roster ?? state.roster).filter(visibleUnitRecord), allies = visible.filter((u) => u.side === 'ally'), enemies = visible.filter((u) => u.side === 'enemy');
+  const mode = preview?.setup.mode ?? effectiveMode(), capacityIssue = battleCapacityIssue(preview?.roster ?? state.roster), ready = !!preview || rosterHasBothSides() && !capacityIssue;
   const escortSide = state.objectiveMode === 'intercept' ? 'enemy' : 'ally';
   const escortCandidates = state.roster.filter((u) => u.side === escortSide && u.hp > 0 && u.status === 'ready');
   const escortUnit = escortCandidates.find((u) => u.id === state.protagonistId) ?? escortCandidates[0];
@@ -1005,6 +1011,7 @@ function renderBattlePreparation(): string {
       : state.objectiveMode === 'control' ? '占旗战：任一方连续控制旗点2个完整回合获胜。'
       : '歼灭战：击溃或消灭敌方全部作战单位，没有占点胜利。';
   return `<section class="battle-preparation"><span class="workspace-eyebrow">下一场交战</span><h2>${ready ? '队伍已集结' : '先集结你的队伍'}</h2>
+    ${preview ? `<p class="notice" data-role="opening-preview">已固定开局预览：${preview.preview.kind === 'small' ? '小战' : '会战'}${preview.preview.map ? ' · 地图 ' + preview.preview.map.width + '×' + preview.preview.map.height : ''} · ${preview.preview.sides.map(s => (s.side === 'ally' ? '我方' : '敌方') + s.cards + '张卡／' + s.personnel + '人').join(' · ')}。点击开始交战会沿用此开局。</p>` : ''}
     ${capacityIssue ? `<p class="notice error" role="alert">${esc(capacityIssue)}</p>` : ''}
     <p>${ready ? esc(recommendBattleMode(state.roster).reason) + '。确认队伍后即可开始。' : '从已有档案选人，或接收正文中的新遭遇。生命、兵员和装备沿用当前记录。'}</p>
     ${mode === 'small' ? `<p class="mission-summary">${esc(missionSummary)}</p>` : ''}
@@ -1339,6 +1346,7 @@ function renderManage(): string {
         ${r.snapshot?.rulesVersion !== 'v2' ? `<button data-action="unit-conversion-preview" data-id="${esc(r.id)}">预览V2更新规则</button>` : r.history?.at(-1)?.sourceId === 'mechanism-v2-conversion' ? `<button data-action="unit-conversion-undo" data-id="${esc(r.id)}">撤销刚才更新规则</button>` : ''}
         <span class="sub">${r.scale === 'hero' ? '生命' : '人数'}/${r.scale === 'hero' ? '生命上限' : '编制上限'}${woundedLabel(r) ? ' · ' + esc(woundedLabel(r)) : ''} · 档案版本 ${r.revision ?? 1} · 历史 ${r.history?.length ?? 0} 条${r.retired ? ' · 已解散' : ''}</span>
         <button data-action="storage-into" data-id="${esc(r.id)}" ${state.roster.some((u) => u.id === r.id) || r.retired || r.hp <= 0 || r.status === 'dying' ? 'disabled' : ''} title="加入本场参战队伍">${state.roster.some((u) => u.id === r.id) ? '已参战' : '→参战队伍'}</button>
+        <button data-action="storage-recover" data-id="${esc(r.id)}" ${currentBattle() || r.retired || r.status === 'dead' ? 'disabled' : ''} title="收兵后治疗可恢复的生命或伤兵、恢复士气并解除濒死；不补回永久阵亡人数">战后恢复</button>
         <button data-action="storage-del" data-id="${esc(r.id)}" class="danger" title="删除档案及参战引用，同时删除已装备的主武器、副武器、护甲和盾牌">直接删除（含已装备）</button>
       </div>`;
     if (!editing) return line;
@@ -2319,11 +2327,20 @@ async function handleAction(e: Event): Promise<void> {
     await scanLastMessage({ manual: true });
     render(); return;
   }
-  const actionBattle = currentBattle();
   try {
-    (await executeAndSave(async () => {
+    await executePanelAction(act, async () => { await actions[act]?.(el); });
+  } catch (err) {
+    toast(`⚠ ${err instanceof Error ? err.message : String(err)}`);
+  }
+  render();
+}
+
+/** Shared by UI buttons and game-level MCP commands, including reactions and durable auto turns. */
+async function executePanelAction(act: string, task: () => void | Promise<void>): Promise<boolean> {
+  const actionBattle = currentBattle();
+  return executeAndSave(async () => {
     if (controller.migrationReview() && !act.startsWith('migration-') && !['log-detail', 'unit-detail', 'units-toggle', 'sec-toggle', 'modal-stop'].includes(act)) throw new Error('先核对迁移预览；预览期间不会改写原档或推进战斗');
-    (await actions[act]?.(el));
+    await task();
     if (battleSaveFailed) { const receipt = state.saveReceipt; restore(); state.saveReceipt = receipt; render(); return; }
     if (state.small?.battlefield && (['grid-endturn', 'grid-mobile-endturn', 'grid-auto', 'small-start', 'mass-start'].includes(act)
       || smallActorBlocked(state.small))) {
@@ -2336,11 +2353,7 @@ async function handleAction(e: Event): Promise<void> {
       (await runAuto());
     }
     if (state.small?.battlefield && state.small.isOver()) (await onBattleEnded());
-    }, async () => battleSaveFailed ? false : (await persist()), () => { if (actionBattle) restore(); }));
-  } catch (err) {
-    toast(`⚠ ${err instanceof Error ? err.message : String(err)}`);
-  }
-  render();
+  }, async () => battleSaveFailed ? false : (await persist()), () => { if (actionBattle) restore(); });
 }
 
 function val(sel: string): string {
@@ -2656,6 +2669,7 @@ function applyPlayerPreparation(input: Record<string, unknown>): void {
   playerPreparation.apply(input, playerPreparationInputs()); render('view');
 }
 async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void> {
+  if (mcpPrepared && mcpPrepared.fingerprint === preparationFingerprint()) { await startMcpPrepared(mcpPrepared); return; }
   if (state.roster.some(u=>u.rulesVersion==='v2'&&u.damageModel!=='wounds-v2')) {
     controller.reviewBalanceUpgrade(); restore(); render(); return;
   }
@@ -2700,29 +2714,8 @@ async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void>
 
 async function startSmallBattle(context?:LlmEncounterContext, preparedField?: ReturnType<typeof generatedLayeredField>, seed = randomSeed()):Promise<void> {
     const before=captureBattleArchive({...controller.snapshot(),storage:state.storage,inventory:state.inventory,rosterIds:state.roster.map(u=>u.id),protagonistId:state.protagonistId,commanderId:state.commanderId,encounterIds:[...state.encounterIds],lastBattleUnitIds:state.lastBattleUnitIds});
-    if (!rosterHasBothSides()) throw new Error('开战前必须同时有我方与敌方单位');
-    const tags = state.objectiveMode === 'siege' ? [...new Set([...plannedFieldTags(), 'siege'])] : plannedFieldTags();
-    assertBattleCapacity(state.roster, 'small');
-    const v2 = state.roster.every(u => u.rulesVersion === 'v2');
-    const fieldOptions = { roster: state.roster, attackingSide: state.siegeAttacker, design: context?.mapDesign, plan: context?.battlefieldPlan,unitBindings:context?.unitBindings };
-    let battlefield = preparedField ?? (v2 ? (state.mapLayout === 'indoor' ? generatedLayeredField(seed, 5, 7, tags, fieldOptions) : generatedLayeredField(seed, 7, 13, tags, fieldOptions)) : undefined);
-    if (battlefield && !preparedField) battlefield = prepareBattleObjective(battlefield, state.roster, state.objectiveMode, state.protagonistId, state.siegeAttacker, context?.vipId);
-    if (context && battlefield?.generation?.notes?.length) context.designDetail = [context.designDetail, ...battlefield.generation.notes].filter(Boolean).join('；');
-    if (context?.mapDesign && battlefield?.generation?.source === 'context') context.mapDesign = structuredClone(battlefield.generation.design);
-    if (context && battlefield?.objective.kind === 'escape') {
-      context.vipId = battlefield.objective.unitId;
-      context.vipName = state.roster.find(u => u.id === context!.vipId)?.name;
-    }
-    const small = new SmallBattle({
-      nonLethal:state.nonLethal,
-      ...(state.roster.every((u) => u.rulesVersion === 'v2') ? { battlefield } : {}),
-      rules: state.roster.every((u) => u.rulesVersion === 'v2') ? V11_OVERFLOW_D20 : LITE_D20,
-      combatants: JSON.parse(JSON.stringify(state.roster)), seed: state.roster.every((u) => u.rulesVersion === 'v2') ? seed : undefined, traitRegistry: reg,
-      summonUnit,
-      field: { tags: state.roster.every((u) => u.rulesVersion === 'v2') ? tags : state.field ? [state.field] : [] },
-    });
-    small.commanderProfiles = newBattleCommanderProfiles(context?.commanders);
-    small.start();
+    const small = buildEncounter({ roster: state.roster, setup: { ...playerPreparationInputs().setup, mode: 'small' }, context, seed,
+      protagonistId: state.protagonistId, commanderId: state.commanderId, nonLethal: state.nonLethal, registry: reg, summonUnit, preparedField }) as SmallBattle;
     state.activeBattleStart=captureBattleStart(small,before);state.selectedReportId=undefined;
     state.small = small;
     state.mass = null;
@@ -2735,23 +2728,8 @@ async function startSmallBattle(context?:LlmEncounterContext, preparedField?: Re
 
 async function startMassBattle(context?:LlmEncounterContext):Promise<void> {
     const before=captureBattleArchive({...controller.snapshot(),storage:state.storage,inventory:state.inventory,rosterIds:state.roster.map(u=>u.id),protagonistId:state.protagonistId,commanderId:state.commanderId,encounterIds:[...state.encounterIds],lastBattleUnitIds:state.lastBattleUnitIds});
-    if (!rosterHasBothSides()) throw new Error('开战前必须同时有我方与敌方单位');
-    assertBattleCapacity(state.roster, 'mass');
-    const clones: Combatant[] = prepareMassRoster(state.roster);
-    const zoneNames = ['左翼', '中军', '右翼'];
-    const mass = new MassBattle({
-      nonLethal:state.nonLethal,
-      formationSlots: recommendedFormationSlots(clones),
-      ...(clones.every((u) => u.rulesVersion === 'v2') ? { rules: V11_OVERFLOW_TW } : {}),
-      combatants: clones,
-      traitRegistry: reg,
-      commanderId: state.commanderId,
-      zones: zoneNames,
-      summonUnit,
-      field: { tags: state.roster.every((u) => u.rulesVersion === 'v2') ? plannedFieldTags() : state.field ? [state.field] : [] },
-    });
-    mass.commanderProfiles = newBattleCommanderProfiles(context?.commanders);
-    mass.start();
+    const mass = buildEncounter({ roster: state.roster, setup: { ...playerPreparationInputs().setup, mode: 'mass' }, context, seed: randomSeed(),
+      protagonistId: state.protagonistId, commanderId: state.commanderId, nonLethal: state.nonLethal, registry: reg, summonUnit }) as MassBattle;
     state.activeBattleStart=captureBattleStart(mass,before);state.selectedReportId=undefined;
     state.mass = mass;
     state.small = null;
@@ -2761,6 +2739,7 @@ async function startMassBattle(context?:LlmEncounterContext):Promise<void> {
 }
 
 const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
+  'storage-recover': async el => { await recoverPlayerUnits([el.dataset.id!], false); toast('战后恢复已保存，可再次加入参战队伍'); },
   'player-preparation-apply': () => applyPlayerPreparation({
     ...(playerPreparation.commanders.trim() ? { commanders: JSON.parse(playerPreparation.commanders) } : {}),
     ...(playerPreparation.battlefield.trim() ? { battlefield: JSON.parse(playerPreparation.battlefield) } : {}),
@@ -3765,8 +3744,171 @@ document.addEventListener('change', e => {
   void panelTask(() => handleChange(e));
 });
 
-// The bridge is inert until explicitly paired. It operates the same player UI.
+async function runMcpGameTask(task: () => Promise<void>): Promise<void> {
+  let entered = false, failure: unknown;
+  await panelTask(async () => {
+    entered = true; battleSaveFailed = false;
+    try { await task(); }
+    catch (error) { failure = error; throw error; }
+    finally { render(); }
+  });
+  if (!entered) throw Error(runtime.writeBlockReason?.() ?? '游戏正在处理其他操作');
+  if (failure) throw failure;
+}
+async function mcpGameAct(actorId: string, action: GameAction): Promise<void> {
+  const b = state.small;
+  if (!b) throw Error('当前不是小战，请使用 battle_orders');
+  const event = b.battlefield ? action.type === 'end_turn' ? 'grid-endturn' : action.type === 'auto' ? 'grid-auto' : 'grid-execute'
+    : action.type === 'end_turn' ? 'small-endturn' : action.type === 'auto' ? 'small-auto-act' : 'small-attack';
+  const saved = await executePanelAction(event, async () => {
+    executeSmallGameAction(b, actorId, action);
+    if (!b.battlefield && ['attack','charge','ability'].includes(action.type)) await afterSmallAction();
+  });
+  if (!saved) throw Error(state.saveReceipt?.error ?? '行动保存尚未确认，请读取状态并核实保存，不要重复执行');
+  tacticalView.selectedId = state.small?.active?.id; tacticalView.cell = undefined;
+}
+interface McpPrepared {
+  previewId: string;
+  fingerprint: string;
+  setup: EncounterSetup;
+  records: UnitRecord[];
+  roster: Combatant[];
+  protagonistId?: string;
+  commanderId?: string;
+  context?: LlmEncounterContext;
+  battle: SmallBattle | MassBattle;
+  preview: ReturnType<typeof encounterPreview>;
+}
+function preparationFingerprint(): string {
+  return JSON.stringify([controller.inventoryContext(), adapter.identity(), adapter.namespace(), state.storage, state.inventory,
+    state.roster, state.protagonistId, state.commanderId, state.mode, state.field, state.lighting, state.mapLayout, state.objectiveMode, state.siegeAttacker, state.nonLethal, playerPreparation.commanders, playerPreparation.battlefield]);
+}
+function prepareMcpEncounter(args: Record<string, unknown>): McpPrepared {
+  if (currentBattle()) throw Error('已有战斗，请先结束并收兵');
+  const rawSetup = args.setup as Record<string, unknown> | undefined;
+  const allowed: Record<string, readonly string[]> = { mode: ['small','mass'], field: Object.keys(FIELD_LABELS), lighting: ['day','night'], mapLayout: ['standard','indoor'], objectiveMode: ['auto','annihilation','siege','control','escort','intercept'], siegeAttacker: ['ally','enemy'] };
+  if (rawSetup) for (const [key, value] of Object.entries(rawSetup)) if (!allowed[key]?.includes(String(value))) throw Error('setup.' + key + ' 无效');
+  const deployment = args.deployment === undefined ? state.roster.map(u => ({ unitId: u.id })) : args.deployment;
+  if (!Array.isArray(deployment) || !deployment.length || deployment.length > 64) throw Error('deployment 须包含1—64个参战单位，每项包含 unitId 和可选 side');
+  const entries = deployment as { unitId: string; side?: 'ally' | 'enemy' }[];
+  if (entries.some(e => !e || typeof e.unitId !== 'string' || e.side !== undefined && !['ally','enemy'].includes(e.side)) || new Set(entries.map(e => e.unitId)).size !== entries.length) throw Error('deployment.unitId 须唯一，side 须为 ally 或 enemy');
+  if (args.recovery !== undefined && args.recovery !== 'none' && args.recovery !== 'recoverable') throw Error('recovery 须为 none 或 recoverable');
+  const records = structuredClone(state.storage);
+  for (const entry of entries) {
+    const index = records.findIndex(r => r.id === entry.unitId); if (index < 0) throw Error('deployment.unitId 不存在：' + entry.unitId);
+    let record = records[index]!;
+    if (args.recovery === 'recoverable') record = recoverUnitRecord(record, reg);
+    if (entry.side && entry.side !== record.side) record = editUnitRecord(record, { ...record, side: entry.side }, reg);
+    records[index] = record;
+  }
+  const roster = deployedRoster(records, entries.map(e => e.unitId));
+  if (roster.some(u => u.rulesVersion === 'v2' && u.damageModel !== 'wounds-v2')) throw Error('参战档案需要先在界面完成规则迁移预览');
+  const setup = { ...playerPreparationInputs().setup, ...(args.deployment !== undefined ? { mode: recommendBattleMode(roster).mode } : {}), ...rawSetup } as EncounterSetup;
+  const role = (key: 'protagonistId' | 'commanderId') => {
+    const requested = args[key] ?? state[key];
+    if (args[key] !== undefined && !roster.some(u => u.id === requested && u.side === 'ally')) throw Error(key + ' 须为参战我方单位 ID');
+    return roster.find(u => u.id === requested && u.side === 'ally')?.id ?? roster.find(u => u.side === 'ally')?.id;
+  };
+  const protagonistId = role('protagonistId'), commanderId = role('commanderId');
+  const draft = new PlayerPreparation(), inputs = playerPreparationInputs(), ids = narrativeIds({ ...controller.snapshot(), storage: records });
+  // A direct MCP preparation is authoritative; omitted intent means the normal random generator.
+  draft.apply(args, { ...inputs, scope: 'mcp-plan', setup, roster, protagonistId, unitBindings: Object.fromEntries(roster.map(u => [ids.publicId(u.id), u.id])) });
+  const context = draft.resolve('mcp-plan');
+  const battle = buildEncounter({ roster, setup, context, protagonistId, commanderId, nonLethal: state.nonLethal, seed: randomSeed(), registry: reg, summonUnit });
+  return { previewId: randomId(), fingerprint: preparationFingerprint(), setup, records, roster, protagonistId, commanderId, context, battle, preview: encounterPreview(battle, setup) };
+}
+async function startMcpPrepared(plan: McpPrepared): Promise<void> {
+  if (currentBattle() || plan.fingerprint !== preparationFingerprint()) throw Error('预览已过期：队伍、任务或档案已变化，请重新 battle_plan');
+  const before = captureBattleArchive({ ...controller.snapshot(), storage: state.storage, inventory: state.inventory, rosterIds: state.roster.map(u => u.id), protagonistId: state.protagonistId, commanderId: state.commanderId, encounterIds: [...state.encounterIds], lastBattleUnitIds: state.lastBattleUnitIds });
+  Object.assign(state, plan.setup); state.storage = plan.records; state.roster = plan.roster;
+  state.protagonistId = plan.protagonistId; state.commanderId = plan.commanderId;
+  state.small = plan.battle instanceof SmallBattle ? plan.battle : null;
+  state.mass = plan.battle instanceof MassBattle ? plan.battle : null;
+  state.activeBattleStart = captureBattleStart(plan.battle, before); state.selectedReportId = undefined;
+  state.encounterContext = plan.context; state.xpSettled = false; state.smallTarget = ''; state.orderDraft = {};
+  tacticalView.selectedId = state.small?.active?.id; tacticalView.cell = undefined;
+  mcpPrepared = undefined; playerPreparation.clear();
+  if (!(await persist())) throw Error(state.saveReceipt?.error ?? '开战保存尚未确认');
+}
+async function mcpGameStart(args: Record<string, unknown>): Promise<void> {
+  let plan: McpPrepared;
+  if (args.previewId !== undefined) {
+    if (!mcpPrepared || args.previewId !== mcpPrepared.previewId) throw Error('previewId 不存在或已使用，请重新 battle_plan');
+    if (['setup','deployment','recovery','commanders','battlefield','protagonistId','commanderId'].some(key => args[key] !== undefined)) throw Error('确认 previewId 时不能同时修改准备参数，请先重新预览');
+    plan = mcpPrepared;
+  } else plan = prepareMcpEncounter(args);
+  const saved = await executePanelAction(plan.setup.mode === 'mass' ? 'mass-start' : 'small-start', () => startMcpPrepared(plan));
+  if (!saved) throw Error(state.saveReceipt?.error ?? '开战保存尚未确认');
+}
+async function mcpGameOrders(orders: Order[], resolve: boolean): Promise<void> {
+  const b = state.mass;
+  if (!b || b.isOver() || b.planningLocked) throw Error('当前不是可下令的会战计划阶段');
+  if (massAutoCommand()) throw Error('当前由系统指挥，玩家没有手动军令权限');
+  const visible = new Set(b.visibleCombatants('ally').map(u => u.id));
+  for (const order of orders) {
+    if (!b.combatants.some(u => u.id === order.unitId && u.side === 'ally') || order.abilityActorId && !b.combatants.some(u => u.id === order.abilityActorId && u.side === 'ally')) throw Error('军令只能操作我方单位');
+    if (order.targetId && !order.targetId.startsWith('zone:') && !visible.has(order.targetId)) throw Error('军令目标不在玩家可见范围内');
+    if (order.type === 'ability' && !battleAbilities(b.byId(order.abilityActorId ?? order.unitId)).some(a => a.id === order.abilityId)) throw Error('军令技能未准备或不属于指定行动者');
+  }
+  const drafts = state.orderDraft;
+  const saved = await executePanelAction('mass-resolve', async () => {
+    if (resolve) {
+      state.orderDraft = Object.fromEntries(orders.map(o => [o.unitId, orderDraft(o)]));
+      try { await resolveMassRound(b.round, b.seed); } catch (error) { state.orderDraft = drafts; throw error; }
+    } else {
+      const result = b.replaceOrders(orders, b.round); if (!result.ok) throw Error(result.reason);
+    }
+  });
+  if (!saved) throw Error(state.saveReceipt?.error ?? '军令或回合结果尚未确认保存');
+}
+async function recoverPlayerUnits(unitIds: string[], deploy: boolean): Promise<void> {
+  const b = currentBattle();
+  if (b && !b.isOver()) throw Error('战斗尚未结束；请使用战斗中的治疗或复苏技能');
+  const ids = [...new Set(unitIds)];
+  if (ids.some(id => !state.storage.some(record => record.id === id))) throw Error('unitIds 包含不存在的档案');
+  // Validate before closing so a malformed recovery request cannot close a valid battle.
+  for (const id of ids) recoverUnitRecord(state.storage.find(record => record.id === id)!, reg);
+  if (b) { await actions['battle-close']!(document.createElement('button')); if (battleSaveFailed) throw Error('收兵保存尚未确认'); }
+  const recovered = new Map(ids.map(id => [id, recoverUnitRecord(state.storage.find(record => record.id === id)!, reg)]));
+  state.storage = state.storage.map(record => recovered.get(record.id) ?? record);
+  for (const id of ids) if (deploy || state.roster.some(unit => unit.id === id)) state.roster = deployUnitRecord(state.storage, state.roster, id, reg);
+  if (!(await persist())) throw Error(state.saveReceipt?.error ?? '战后恢复保存尚未确认');
+}
+function gameScope(): string { return JSON.stringify([adapter.identity(), adapter.namespace(), runtime.native ? JSON.parse(controller.inventoryContext()).slice(0, 2) : undefined]); }
+const liveMcpGame = new McpGameApi({
+  environment: () => 'live', scope: gameScope,
+  context: () => controller.inventoryContext(), battle: currentBattle, roster: () => state.roster,
+  archive: () => state.storage.filter(record => !currentBattle() || record.side === 'ally' || visibleUnitRecord(record)).map(record => ({ id: record.id, name: record.name, side: record.side, hp: record.hp, hpMax: record.base.hpMax, status: record.status, retired: !!record.retired, deployed: state.roster.some(unit => unit.id === record.id), canRecover: !record.retired && record.status !== 'dead' && (record.hp > 0 || record.status === 'dying') })),
+  preparation: () => ({ ...playerPreparation.help(playerPreparationInputs()),
+    preview: mcpPrepared && mcpPrepared.fingerprint === preparationFingerprint() ? { previewId: mcpPrepared.previewId, ...mcpPrepared.preview } : undefined }),
+  busy: () => uiBusy || llmContext.busy || fullAuto.running || !!aiScanDialog?.busy,
+  blockReason: () => runtime.writeBlockReason?.() ?? (controller.migrationReview() ? '请先核对档案迁移预览' : undefined),
+  saveStatus: () => state.saveReceipt, massAutomatic: massAutoCommand,
+  automation: () => ({ running: fullAuto.running, settling: uiBusy }),
+  selection: () => ({ unitId: state.small ? tacticalView.selectedId : formationView.selectedId, cell: tacticalView.inspectedCell }),
+  setAutomation: running => {
+    if (running) {
+      const b = currentBattle(); if (!b || b.isOver()) throw Error('需要进行中的战斗才能启动全自动');
+      battleSaveFailed = false; startFullAuto();
+    } else fullAuto.stop();
+    render('battle');
+  },
+  run: runMcpGameTask, act: mcpGameAct, start: mcpGameStart, orders: mcpGameOrders, recover: recoverPlayerUnits,
+  plan: async args => { mcpPrepared = prepareMcpEncounter(args); return { previewId: mcpPrepared.previewId, ...mcpPrepared.preview }; },
+});
+const mcpSandbox = new McpSandbox(gameScope, () => adapter.namespace() ?? 'standalone', reg, summonUnit);
+window.addEventListener('pagehide', () => mcpSandbox.stop());
+export const mcpGame = {
+  state: (args: Record<string, unknown> = {}) => (mcpSandbox.active ? mcpSandbox.api : liveMcpGame).state(args),
+  handle: async (operation: string, args: Record<string, unknown>) => {
+    if (operation === 'game_sandbox') return mcpSandbox.control(args);
+    return (mcpSandbox.active ? mcpSandbox.api : liveMcpGame).handle(operation, args);
+  },
+};
+
+// The bridge is inert until paired. Original UI tools and the domain API coexist.
 mcpBridge = new McpPanelBridge({
+  game: mcpGame,
   roots: () => {
     const app = document.querySelector<HTMLElement>('#app')!;
     if (!runtime.native || window.parent === window) return [app];

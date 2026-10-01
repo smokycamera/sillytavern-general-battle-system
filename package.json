@@ -8,7 +8,7 @@
   "scripts": {
     "mcp": "node mcp/server.mjs",
     "mcp:stdio": "node mcp/server.mjs --stdio",
-    "test:mcp": "npm test --prefix mcp && vitest run panel/src/mcp-ui.test.ts panel/src/mcp.integration.test.ts panel/src/player-preparation.test.ts",
+    "test:mcp": "npm test --prefix mcp && vitest run panel/src/mcp-ui.test.ts panel/src/mcp.integration.test.ts panel/src/mcp-game.integration.test.ts panel/src/post-battle-recovery.test.ts panel/src/player-preparation.test.ts",
     "smoke:mcp": "vite-node scripts/mcp-browser-fixture.ts && node mcp/browser-smoke.mjs",
     "test": "vitest run",
     "test:watch": "vitest",

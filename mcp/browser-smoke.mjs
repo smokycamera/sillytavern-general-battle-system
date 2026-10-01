@@ -61,7 +61,7 @@ try {
   const call=async(name,args={})=>{const result=await client.callTool({name,arguments:{sessionId,...args}});assert.ok(!result.isError,JSON.stringify(result));return result.structuredContent;};
   const observe=()=>call('battle_observe',{limit:500});
   const click=async predicate=>{const view=await observe(),control=view.controls.find(predicate);assert.ok(control,JSON.stringify(view.controls.map(c=>({label:c.label,action:c.action,tab:c.tab}))));return call('battle_click',{viewId:view.viewId,controlId:control.controlId});};
-  check('protocol advertises eight tools',(await client.listTools()).tools.length===8);
+  check('protocol advertises sixteen tools',(await client.listTools()).tools.length===16);
   const settings=await observe(); check('pairing secret never serialized',!JSON.stringify(settings).includes(token));
   await click(c=>c.action==='workspace-tab'&&c.tab==='battle');
   const view=await observe();check('hidden enemy absent',!JSON.stringify(view).includes('MCP 隐藏敌军'));

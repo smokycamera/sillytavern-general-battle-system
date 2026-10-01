@@ -18,7 +18,7 @@ for (const directory of ['assets', 'licenses', 'docs']) {
 }
 mkdirSync(path.join(output, 'scripts'), { recursive: true });
 mkdirSync(path.join(output, 'mcp'), { recursive: true });
-for (const name of ['package.json', 'package-lock.json', 'server.mjs', 'broker.mjs', 'tools.mjs', 'start.ps1', 'README.md']) copyFileSync(path.join('mcp', name), path.join(output, 'mcp', name));
+for (const name of ['package.json', 'package-lock.json', 'server.mjs', 'broker.mjs', 'tools.mjs', 'start.ps1', 'README.md', 'GAMEPLAY.md']) copyFileSync(path.join('mcp', name), path.join(output, 'mcp', name));
 cpSync('mcp/test', path.join(output, 'mcp/test'), { recursive: true });
 copyFileSync('docs/mcp-player-bridge.md', path.join(output, 'docs/mcp-player-bridge.md'));
 copyFileSync('scripts/jev-cors-relay.mjs', path.join(output, 'scripts/jev-cors-relay.mjs'));
