@@ -294,6 +294,17 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   const marked = new Set<number>();
   const protectedCells = new Set([...core, field.objective.cell, ...gates, ...(options.roster??[]).flatMap(u=>u.pos!==undefined?[u.pos]:[]), ...(field.city?.frontline ?? []),
     ...field.structures.flatMap((s,p)=>s?.kind==='gate'?[p]:[])]);
+  // Cell beside an already built entity (landmark, bridge, gate, city or river), two cells toward the stated side.
+  const besideCell = (near: NonNullable<LandmarkPlan['near']>): number | undefined => {
+    const kind = plan?.intent?.entities.find(e => e.id === near.id)?.kind;
+    const cells = field.landmarks!.find(l => l.id === near.id)?.cells
+      ?? (kind === 'city' ? field.city?.inside : kind === 'river' ? field.tiles.flatMap((t, n) => t === 'deep_water' || t === 'shallow_water' ? [n] : [])
+        : field.structures!.flatMap((s, n) => s?.entityId === near.id ? [n] : []));
+    if (!cells?.length) return undefined;
+    const x = Math.round(cells.reduce((s, n) => s + n % field.width, 0) / cells.length) + (near.side === 'east' ? 2 : near.side === 'west' ? -2 : 0);
+    const y = Math.round(cells.reduce((s, n) => s + Math.floor(n / field.width), 0) / cells.length) + (near.side === 'south' ? 2 : near.side === 'north' ? -2 : 0);
+    return Math.max(0, Math.min(field.height - 1, y)) * field.width + Math.max(0, Math.min(field.width - 1, x));
+  };
   // A supplied plan never inherits random fallback landmarks, including an omitted/empty list.
   for (const mark of (supplied ? plan?.landmarks ?? [] : defaults).slice(0, plan?.intent ? 12 : 5)) {
     if (scene === 'interior' && ['hill','forest','bridge','tower','square','building'].includes(mark.kind))
@@ -301,7 +312,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
     if (mark.kind === 'room' && !['interior','building_siege'].includes(scene))
       throw new BattlefieldPlanError('房间地标需要室内或建筑围攻场景');
     const semanticCore = ['square','position','room'].includes(mark.kind) || scene === 'building_siege' && mark.kind === 'building';
-    let anchor=landmarkAnchorCell(field,mark.anchor,defender,frontDepth,left,right);
+    let anchor=(mark.near && besideCell(mark.near)) ?? landmarkAnchorCell(field,mark.anchor,defender,frontDepth,left,right);
     if(mark.edge){const x=anchor%width,y=Math.floor(anchor/width);anchor=mark.anchor.includes('west')?y*width:mark.anchor.includes('east')?y*width+width-1:mark.anchor.includes('north')?x:mark.anchor.includes('south')?(height-1)*width+x:anchor;}
     let p = anchor;
     if (mark.anchor==='riverbank') p=landmarkCandidates(field,mark,anchor,n=>!protectedCells.has(n)&&!marked.has(n))[0]??-1;
@@ -324,11 +335,14 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
       const waters = field.tiles.flatMap((t, n) => (plan?.bridgePlan!==undefined?field.structures![n]?.kind==='bridge':t === 'deep_water' || t === 'shallow_water') ? [n] : []);
       if (!waters.length) { if (plan) throw new BattlefieldPlanError('桥梁地标需要水域，请在同一设计中选择river、ford或moat'); else continue; }
       p = waters.sort((a, b) => gridDistance(field, a, p) - gridDistance(field, b, p) || a - b)[0]!;
-    } else if (protectedCells.has(p) && !(semanticCore && core.includes(p)) || marked.has(p) || groundBlocked(field,p)||['deep_water','shallow_water'].includes(field.tiles[p]!)) {
-      const candidate = landmarkCandidates(field,mark,anchor,n=>!marked.has(n)&&(!protectedCells.has(n)||semanticCore&&n===field.objective.cell)&&!groundBlocked(field,n)&&!['deep_water','shallow_water'].includes(field.tiles[n]!))[0];
+    } else if (protectedCells.has(p) && !(semanticCore && core.includes(p)) || marked.has(p) || groundBlocked(field,p)||['deep_water','shallow_water'].includes(field.tiles[p]!)
+      || mark.kind === 'tower' && !!field.overlays[p]?.includes('road')) {
+      // A tower never stands on a road; relocate it within the requested area instead of failing.
+      const candidate = landmarkCandidates(field,mark,anchor,n=>!marked.has(n)&&(!protectedCells.has(n)||semanticCore&&n===field.objective.cell)&&!groundBlocked(field,n)&&!['deep_water','shallow_water'].includes(field.tiles[n]!)
+        &&!(mark.kind === 'tower' && field.overlays![n]?.includes('road')))[0];
       if (candidate === undefined) { if(plan) throw new BattlefieldPlanError(`地标${mark.label??mark.kind}在指定区域部署容量不足`); else continue; } p = candidate;
     }
-    if (mark.kind === 'tower' && city && inner.includes(p)) {
+    if (mark.kind === 'tower' && (city || plannedCity) && inner.includes(p)) {
       const plots = landmarkCandidates(field,mark,anchor,n=>inner.includes(n)&&field.structures![n]?.kind==='building'&&!marked.has(n)&&!protectedCells.has(n));
       if (!plots.length) { if (plan) throw new BattlefieldPlanError('塔楼地标部署容量不足，请调整布局或地标'); else continue; }
       // Replace an already closed parcel; never sever an existing alley for a tower.
@@ -367,7 +381,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
     if (!actual.length) {if(supplied)throw new BattlefieldPlanError(`地标${mark.label??mark.kind}没有合法位置，部署容量不足`);else continue;}
     actual.forEach(n => marked.add(n));
     field.landmarks.push({ ...(mark.id?{id:mark.id}:{}), kind: mark.kind, label: safeLandmarkLabel(mark.label) ?? labels[mark.kind], cells: actual, scale: mark.scale ?? 'minor' });
-    if(p!==anchor && mark.anchor!=='riverbank') field.generation!.notes=[...(field.generation!.notes??[]),`地标${mark.label??labels[mark.kind]}在指定区域内调整${gridDistance(field,p,anchor)}格`];
+    if(p!==anchor && mark.anchor!=='riverbank' && !mark.near) field.generation!.notes=[...(field.generation!.notes??[]),`地标${mark.label??labels[mark.kind]}在指定区域内调整${gridDistance(field,p,anchor)}格`];
   }
   if (plan?.landmarks?.length && !field.landmarks.length) throw new BattlefieldPlanError('请求的地标无法落到合法位置，未使用随机地标；请调整设计');
   finishSceneRegions(field,plan,options.unitBindings,options.roster);

@@ -261,6 +261,8 @@ export function gridDeploymentCells(field: BattlefieldSpec, unit: Combatant): nu
   const selected=specific.length?specific:bySide.some(z=>z.landmarkId)?bySide.filter(z=>z.landmarkId):bySide;
   if(selected.length&&(!isElevated(unit)||selected.some(z=>z.landmarkId))) {
     let cells=selected[0]!.cells.filter(p=>selected.every(z=>z.cells.includes(p)));
+    // Several posts for one side that cannot overlap are covered together rather than leaving no cell.
+    if(!cells.length)cells=[...new Set(selected.flatMap(z=>z.cells))];
     if(isElevated(unit))cells=cells.filter(p=>structureAt(field,p)?.top&&structureAt(field,p)!.hp>0);
     if(unit.rulesVersion==='v2'&&activeTraitIds(unit).includes('vanguard')&&!selected.some(z=>z.landmarkId)) {
       const front=[...new Set(cells.flatMap(p=>neighbors(field,p)))].filter(p=>!cells.includes(p)&&!groundBlocked(field,p,unit)
@@ -342,7 +344,9 @@ export function prepareGridDeployment(field: BattlefieldSpec, units: readonly Co
   for(const u of prepared) {
     const frozen=field.initialDeployment&&Object.hasOwn(field.initialDeployment,u.id)?field.initialDeployment[u.id]:undefined;
     if(frozen&&u.pos===undefined){if(frozen.airborne&&(!enableFlight||flightCapabilityReason(u,conditions)))throw Error('冻结部署的飞行状态与实际能力不一致');Object.assign(u,frozen);}
-    const zones=field.deploymentZones?.filter(z=>z.unitId===u.id||!z.unitId&&z.side===u.side)??[];
+    // Same precedence as gridDeploymentCells: a unit's own zones replace its side's zones.
+    const own=field.deploymentZones?.filter(z=>z.unitId===u.id)??[];
+    const zones=own.length?own:field.deploymentZones?.filter(z=>!z.unitId&&z.side===u.side)??[];
     if(zones.some(z=>z.platform)){u.elevation=1;u.airborne=false;}
     else if(zones.some(z=>z.relation==='occupies'||z.relation==='inside'))u.airborne=false;
   }

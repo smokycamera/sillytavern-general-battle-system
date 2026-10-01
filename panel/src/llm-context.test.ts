@@ -102,9 +102,11 @@ describe('ordinary LLM preparation',()=>{
     try {
       const request=vi.fn<typeof fetch>(()=>new Promise(()=>{})),controller=new LlmContextController(request);
       const pending=controller.select(input(),settings,()=>true);
-      const rejected=expect(pending).rejects.toThrow('超过45秒');
+      const rejected=expect(pending).rejects.toThrow('超过120秒');
       await vi.waitFor(()=>expect(request).toHaveBeenCalled());
-      await vi.advanceTimersByTimeAsync(45001);await rejected;expect(controller.busy).toBe(false);
+      // Still waiting just before the deadline; released right after it.
+      await vi.advanceTimersByTimeAsync(119000);expect(controller.busy).toBe(true);
+      await vi.advanceTimersByTimeAsync(1001);await rejected;expect(controller.busy).toBe(false);
     } finally {vi.useRealTimers();}
   });
   it.each(['small','mass'] as const)('keeps the prepared %s scale when LLM scale selection is disabled',async mode=>{
@@ -123,6 +125,17 @@ describe('ordinary LLM preparation',()=>{
     expect(result.mode).toBe('mass');
     const body=JSON.parse(JSON.parse(String(request.mock.calls[0]![1]!.body)).messages[1].content);
     expect(body.fields.find((f:{id:string})=>f.id==='battle_mode').options).toHaveProperty('mass');
+  });
+  it('accepts unambiguous answer variants: hidden reasoning, prose, no wrapper, labels, letter case and loose confidence',async()=>{
+    const request=vi.fn<typeof fetch>(async(_url,init)=>{
+      const payload=JSON.parse(String(init?.body)),body=JSON.parse(payload.messages[1].content);
+      expect(payload.messages[0].content).toContain('Output only the JSON object');
+      const answer:Record<string,unknown>=Object.fromEntries(body.fields.map((f:{id:string;options:Record<string,string>})=>[f.id,Object.keys(f.options)[0]]));
+      Object.assign(answer,{lighting:'夜间/夜战',field:{value:'Forest',confidence:'0.7'},enemy_style:{value:'firepower',confidence:85},ally_ability:{value:'expert'}});
+      return new Response(JSON.stringify({choices:[{message:{content:'<think>先读正文</think>结果如下：\n```json\n'+JSON.stringify(answer)+'\n```\n如需调整请告诉我。'}}]}));
+    });
+    const result=await new LlmContextController(request).select(input(),settings,()=>true);
+    expect(result).toMatchObject({field:'forest',lighting:'night',commanders:{ally:{ability:'expert'},enemy:{style:'firepower'}}});
   });
   it('rejects invented or incomplete choices without applying a partial result',async()=>{
     await expect(new LlmContextController(model({field:'space'})).select(input(),settings,()=>true)).rejects.toThrow('尚未开战');

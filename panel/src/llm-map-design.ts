@@ -5,6 +5,7 @@ import type { EncounterSetup } from './jev-context.js';
 import type { LlmSettings } from './llm-settings.js';
 import { vipCandidates } from './battle-setup.js';
 import { validateSceneIntentEvidence, type NarrativeSource } from '../../engine/src/small/scene-intent.js';
+import { repairBattlefieldAnswer } from './llm-battlefield-repair.js';
 
 type Field = ContextSelectionRequest['fields'][number];
 export interface PreparationDesignRequest {
@@ -82,7 +83,10 @@ export function applyPreparationDesign(answer: ContextSelectionAnswer, request: 
   if (setup.mode !== 'small') return {};
   const result: PreparationDesignResult = {}, notes = [...request.notes];
   if (request.compactMap) {
-    const raw = (answer as ContextSelectionAnswer & { battlefield?: unknown }).battlefield;
+    const names = Object.fromEntries(Object.entries(request.unitBindings ?? {}).map(([id, unitId]) => [id, roster.find(u => u.id === unitId)?.name ?? '']));
+    const repaired = repairBattlefieldAnswer(answer, { sources: request.narrativeSources ?? [], units: names });
+    const raw = repaired.battlefield;
+    notes.push(...repaired.notes);
     const normalized = normalizeBattlefieldPlan(raw);
     result.battlefieldPlan = normalized.plan;
     // Read-only acceptance of an older answer costs no extra outbound fields/tokens.

@@ -205,7 +205,8 @@ export function buildPlannedWater(field: BattlefieldSpec, plan: BattlefieldPlan,
         return;
     if (field.generation?.scene === 'interior')
         throw new BattlefieldPlanError('室内场景不能铺设室外河流');
-    const w = field.width, h = field.height, axis = plan.waterAxis ?? 'horizontal', anchor = plan.waterPosition ?? 'center';
+    const w = field.width, h = field.height, anchor = plan.waterPosition ?? 'center';
+    let axis = plan.waterAxis ?? 'horizontal';
     const cityCells = field.city ? [...field.city.inside, ...field.city.frontline] : [];
     let line = axis === 'horizontal' ? Math.floor(worldAnchorCell(field, anchor) / w) : worldAnchorCell(field, anchor) % w;
     if (cityCells.length && (plan.intent?.entities.some(e => e.kind === 'river') || plan.waterPosition)) {
@@ -218,7 +219,19 @@ export function buildPlannedWater(field: BattlefieldSpec, plan: BattlefieldPlan,
         if (axis === 'horizontal' && anchor.includes('south'))
             line = Math.min(h - 2, Math.max(...cityCells.map(p => Math.floor(p / w))) + 3);
     }
-    const cells = Array.from({ length: axis === 'horizontal' ? w : h }, (_, i) => axis === 'horizontal' ? line * w + i : i * w + line);
+    const lineCells = (n: number, along = axis) => Array.from({ length: along === 'horizontal' ? w : h }, (_, i) => along === 'horizontal' ? n * w + i : i * w + n);
+    let cells = lineCells(line);
+    if (cityCells.length && anchor === 'center' && cells.some(p => field.city!.frontline.includes(p))) {
+        // A river with no stated side cannot cut through the walls: it runs along the city's open side,
+        // across the other axis when the city spans this one.
+        for (const along of [axis, axis === 'horizontal' ? 'vertical' as const : 'horizontal' as const]) {
+            const span = cityCells.map(p => along === 'horizontal' ? Math.floor(p / w) : p % w), size = along === 'horizontal' ? h : w;
+            const open = size - 1 - Math.max(...span) >= Math.min(...span) ? Math.min(size - 2, Math.max(...span) + 3) : Math.max(1, Math.min(...span) - 3);
+            if (lineCells(open, along).some(p => field.city!.frontline.includes(p))) continue;
+            axis = along; line = open; cells = lineCells(open, along);
+            break;
+        }
+    }
     if (cells.some(p => field.city?.frontline.includes(p)))
         throw new BattlefieldPlanError('河流与完整城墙重叠，请调整城市或河流方位');
     const target = field.objective.cell;
@@ -227,10 +240,11 @@ export function buildPlannedWater(field: BattlefieldSpec, plan: BattlefieldPlan,
         field.structures![p] = null;
         delete field.overlays![p];
     }
-    if (cells.includes(target)) {
-        const replacement = neighbors(field, target).filter(p => !cells.includes(p) && !groundBlocked(field, p)).sort((a, b) => a - b)[0];
-        if (replacement === undefined)
-            throw new BattlefieldPlanError('水域覆盖任务目标且没有合法岸上目标');
+    const replacement = cells.includes(target) ? neighbors(field, target).filter(p => !cells.includes(p) && !groundBlocked(field, p)).sort((a, b) => a - b)[0] : undefined;
+    // A ford stays walkable, so the objective may remain in it when no bank cell is free.
+    if (cells.includes(target) && replacement === undefined && plan.water !== 'ford')
+        throw new BattlefieldPlanError('水域覆盖任务目标且没有合法岸上目标');
+    if (replacement !== undefined) {
         field.objective.cell = replacement;
         if (field.objective.kind === 'control')
             field.objective.cells = (field.objective.cells ?? [target]).filter(p => !cells.includes(p));

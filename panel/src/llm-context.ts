@@ -10,7 +10,7 @@ import { encounterRequest, applyEncounterSelection, normalizeContextSettings, AB
 import { llmConnection, type LlmSettings } from './llm-settings.js';
 import type { Combatant } from '../../engine/src/index.js';
 import type { CommanderProfiles, CommanderProfile } from '../../engine/src/commander-profile.js';
-import type { NarrativeMessage, ContextSelectionAnswer } from '../../vendor/jev-core/src/index.js';
+import type { NarrativeMessage, ContextSelectionAnswer, ContextSelectionRequest } from '../../vendor/jev-core/src/index.js';
 import type { NarrativeIdState } from './narrative-ids.js';
 import { narrativeIds } from './narrative-ids.js';
 import { narrativeMapSources } from './narrative-map-source.js';
@@ -21,6 +21,8 @@ export function llmContextSummary(context: LlmEncounterContext): string {
   const commanders = Object.entries(context.commanders ?? {}).map(([side, p]) => `${side === 'ally' ? '我方' : '敌方'}指挥：${ABILITY_LABELS[p!.ability]} · ${STYLE_PRESETS[p!.style].label}`);
   return [...commanders, encounterSummary(context).split('；').slice(1).join('；'), validMapDesign(context.mapDesign) ? '地图：' + mapDesignSummary(context.mapDesign) : '', context.battlefieldPlan ? '战场：' + (context.battlefieldPlan.size ?? '自动尺寸') + ' / ' + (context.battlefieldPlan.shape ?? context.battlefieldPlan.layout ?? '组合布局') + ' / ' + (context.battlefieldPlan.landmarks?.length ?? '自动') + '地标' + (context.battlefieldPlan.breaches ? ' / ' + context.battlefieldPlan.breaches.count + '处破口' : '') : '', context.vipName ? 'VIP：' + context.vipName : '', context.designDetail].filter(Boolean).join('；');
 }
+/** Deadline for one preparation request; long prompts with designed maps can take a minute or more. */
+export const CONTEXT_TIMEOUT_MS = 120000;
 export class LlmContextController {
   private aborter?: AbortController;
   private retry?: { key: string; errors: string[]; expires: number };
@@ -69,7 +71,7 @@ export class LlmContextController {
       protocol: 'battlefield-v2',
       ...(designRequest.compactMap ? { mapRules: BATTLEFIELD_PLAN_PROMPT } : {}),
       ...(designRequest.compactMap ? { narrativeSources:designRequest.narrativeSources?.map(s=>({id:s.id})) } : {}),
-      commandRules: '可返回顶层commanders:{ally:{preferences:{}},enemy:{preferences:{}}}。preferences从reserve预备队/risk冒险/counterattack反击/cohesion协同/breach破障选最多3项，各0—4整数，2为普通。根据当前任务选择偏好，防守结合前沿、机动和纵深防区。',
+      commandRules: '可返回顶层commanders:{ally:{preferences:{}},enemy:{preferences:{}}}，只写preferences；双方能力与风格在selections的ally_ability、ally_style、enemy_ability、enemy_style中选择。preferences从reserve预备队/risk冒险/counterattack反击/cohesion协同/breach破障选最多3项，各0—4整数，2为普通。根据当前任务选择偏好，防守结合前沿、机动和纵深防区。',
       ...(designRequest.compactMap ? { units: activeBattleUnits(input.roster).slice(0, 32).map(u => ({ id:bindings.publicId(u.id),name: u.name.slice(0, 80), side: u.side, body: u.body ?? 'human',
         note: (input.unitNotes?.[u.id] ?? '').slice(0, 160), traits: activeTraitIds(u), ranged: isRangedWeapon(u.weapon), weaponLevel: u.weapon?.level ?? 1,
         spells: u.abilities.filter(a => a.delivery === 'magic' && a.effects.some(e => e.op === 'damage')).map(a => a.power ?? 1).slice(0, 3) })) } : {}),
@@ -82,9 +84,10 @@ export class LlmContextController {
       check();
       if (this.retry?.key !== key || this.retry.expires < Date.now()) this.retry = { key, errors: [], expires: Date.now() + 300000 };
       if (this.retry.errors.length) request.state = { ...request.state as object, retryErrors: this.retry.errors };
-      const answer = await withAbort({ timeout: 45000, signals: [aborter.signal] }, signal =>
+      const answer = await withAbort({ timeout: CONTEXT_TIMEOUT_MS, signals: [aborter.signal] }, signal =>
         directJevRequest(connection, 'select-context', request, signal, this.request)) as ContextSelectionAnswer;
       check();
+      answer.selections = normalizeSelections(answer as unknown as Record<string, unknown>, request.fields);
       for (const field of coreRequest.fields) {
         const selected = answer.selections?.[field.id];
         if (!selected || !Object.hasOwn(field.options, selected.value) || !Number.isFinite(selected.confidence) || selected.confidence < 0 || selected.confidence > 1)
@@ -108,7 +111,7 @@ export class LlmContextController {
       return result;
     } catch (error) {
       check();
-      const detail = error instanceof Error && error.name === 'TimeoutError' ? '模型请求超过45秒，请重试' : llmFailure(error);
+      const detail = error instanceof Error && error.name === 'TimeoutError' ? `模型请求超过${CONTEXT_TIMEOUT_MS / 1000}秒，请重试` : llmFailure(error);
       if (this.retry && (error instanceof BattlefieldPlanError || error instanceof JevConnectionError && /JSON|答案|评分/.test(error.message))) {
         this.retry.errors = [...new Set([...this.retry.errors, detail.slice(0, 280)])].slice(-4);
         this.retry.expires = Date.now() + 300000;
@@ -116,6 +119,28 @@ export class LlmContextController {
       throw Error(`上下文读取失败：${detail}。尚未开战，可重试或在设置中改为手动配置。`);
     } finally { this.busy = false; if (this.aborter === aborter) this.aborter = undefined; }
   }
+}
+const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+/**
+ * Accepts unambiguous answer variants: a bare option key, an exact option label, letter case,
+ * a missing selections wrapper, and a missing or 0–100 confidence. Confidence never gates a
+ * preparation choice, so an unusable one becomes 0.5. Invalid values stay for strict validation.
+ */
+function normalizeSelections(answer: Record<string, unknown>, fields: readonly ContextSelectionRequest['fields'][number][]): ContextSelectionAnswer['selections'] {
+  const wrapped = isRecord(answer.selections), raw = wrapped ? answer.selections as Record<string, unknown> : answer;
+  // Unrequested legacy entries pass through, keeping the read-only fallback for older answers.
+  const selections = (wrapped ? Object.fromEntries(Object.entries(raw).filter(([, v]) => isRecord(v))) : {}) as ContextSelectionAnswer['selections'];
+  for (const field of fields) {
+    const entry = raw[field.id], record = isRecord(entry) ? entry : undefined;
+    const value = typeof entry === 'string' ? entry : record?.value;
+    if (typeof value !== 'string') continue;
+    const text = value.trim(), keys = Object.keys(field.options);
+    const key = keys.find(k => k === text) ?? keys.find(k => k.toLowerCase() === text.toLowerCase()) ?? keys.find(k => field.options[k]!.trim() === text);
+    const parsed = typeof record?.confidence === 'string' && record.confidence.trim() ? Number(record.confidence) : record?.confidence;
+    const confidence = typeof parsed === 'number' && Number.isFinite(parsed) && parsed > 1 && parsed <= 100 ? parsed / 100 : parsed;
+    selections[field.id] = { value: key ?? text, confidence: typeof confidence === 'number' && Number.isFinite(confidence) && confidence >= 0 && confidence <= 1 ? confidence : 0.5 };
+  }
+  return selections;
 }
 function llmFailure(error: unknown): string {
   if (error instanceof BattlefieldPlanError) return error.message;

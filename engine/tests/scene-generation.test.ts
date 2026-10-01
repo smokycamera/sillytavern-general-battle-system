@@ -88,6 +88,70 @@ describe('scene constraints and actual deployment',()=>{
     expect(geometrySignature(a)).toBe(geometrySignature(b));
     expect(measureMap(a).alternativePaths).toBe(0);
   });
+  it('moves a tower off the road it would block instead of rejecting a river town',()=>{
+    const roster=[sceneUnit('a','ally'),sceneUnit('b','ally'),sceneUnit('c','enemy'),sceneUnit('d','enemy')];
+    const intent:SceneIntent={schema:'scene-intent-v1',entities:[entity('river','river'),entity('bridge','bridge'),entity('town','city',{anchor:'north'}),entity('tower','tower',{label:'哨塔'})],
+      relations:[{subject:'bridge',relation:'crosses',object:'river',...evidence},{subject:'town',relation:'north_of',object:'river',...evidence},
+        {subject:'tower',relation:'north_of',object:'bridge',...evidence},{subject:'enemy',relation:'guards',object:'tower',...evidence}],
+      constraints:[{kind:'crossing_count',entity:'river',value:1,...evidence}]};
+    for(const seed of ['tower-1','tower-2','tower-3']) {
+      const field=generatedLayeredField(seed,7,13,['urban'],{plan:{scene:'field',intent},roster});
+      const tower=field.scene!.regions.find(r=>r.id==='tower')!.cells[0]!;
+      expect(field.structures![tower]!.kind).toBe('tower');expect(field.overlays?.[tower]?.includes('road')).toBeFalsy();
+      expect(()=>validateSceneFacts(field,prepareGridDeployment(field,roster,seed))).not.toThrow();
+    }
+  });
+  it('holds a building from its doorways and a tower from its platform',()=>{
+    const roster=[sceneUnit('a','ally'),sceneUnit('c','enemy'),sceneUnit('d','enemy')];
+    const building:SceneIntent={schema:'scene-intent-v1',entities:[entity('inn','building',{label:'客栈'})],relations:[{subject:'enemy',relation:'occupies',object:'inn',...evidence}],constraints:[]};
+    const streets=generatedLayeredField('inn',7,13,['urban'],{plan:{scene:'city_streets',intent:building},roster});
+    const inn=streets.scene!.regions.find(r=>r.id==='inn')!, held=prepareGridDeployment(streets,roster,'inn');
+    expect(held.filter(u=>u.side==='enemy').every(u=>inn.access.includes(u.pos!))).toBe(true);
+    const tower:SceneIntent={schema:'scene-intent-v1',entities:[entity('tower','tower')],relations:[{subject:'enemy',relation:'inside',object:'tower',...evidence}],constraints:[]};
+    const field=generatedLayeredField('tower-inside',7,13,['plains'],{plan:{scene:'field',intent:tower},roster});
+    const top=prepareGridDeployment(field,roster,'tower-inside').filter(u=>u.side==='enemy');
+    expect(top.every(u=>u.elevation===1&&field.scene!.regions.find(r=>r.id==='tower')!.cells.includes(u.pos!))).toBe(true);
+  });
+  it('lets a named unit keep its own post while the rest of its side follows the side-wide relation',()=>{
+    const roster=[sceneUnit('a','ally'),sceneUnit('c','enemy'),sceneUnit('d','enemy')];
+    const intent:SceneIntent={schema:'scene-intent-v1',entities:[entity('hill','hill',{anchor:'north'}),entity('ruin','ruins',{anchor:'south_west'})],
+      relations:[{subject:'enemy',relation:'guards',object:'hill',...evidence},{subject:'u2',relation:'occupies',object:'ruin',...evidence}],constraints:[]};
+    const field=generatedLayeredField('posts',7,13,['plains'],{plan:{scene:'field',intent},roster,unitBindings:{u1:'c',u2:'d'}});
+    const prepared=prepareGridDeployment(field,roster,'posts');
+    expect(field.scene!.regions.find(r=>r.id==='ruin')!.cells).toContain(prepared.find(u=>u.id==='d')!.pos);
+    expect(()=>validateSceneFacts(field,prepared)).not.toThrow();
+  });
+  it('lays a place beside the one it is near, on the stated side',()=>{
+    const roster=[sceneUnit('a','ally'),sceneUnit('c','enemy')];
+    const intent:SceneIntent={schema:'scene-intent-v1',entities:[entity('river','river'),entity('bridge','bridge',{label:'石桥'}),entity('tower','tower',{label:'哨塔'})],
+      relations:[{subject:'bridge',relation:'crosses',object:'river',...evidence},{subject:'tower',relation:'north_of',object:'bridge',...evidence},{subject:'tower',relation:'near',object:'bridge',...evidence}],
+      constraints:[{kind:'crossing_count',entity:'river',value:1,...evidence}]};
+    for(const seed of ['beside-1','beside-2','beside-3']) {
+      const field=generatedLayeredField(seed,7,13,['plains'],{plan:{scene:'field',intent},roster});
+      const tower=field.scene!.regions.find(r=>r.id==='tower')!.cells[0]!,bridge=field.scene!.regions.find(r=>r.id==='bridge')!.cells[0]!;
+      expect(Math.floor(tower/field.width)).toBeLessThan(Math.floor(bridge/field.width));expect(gridDistance(field,tower,bridge)).toBeLessThanOrEqual(3);
+      expect(()=>validateSceneFacts(field,prepareGridDeployment(field,roster,seed))).not.toThrow();
+    }
+  });
+  it('extends a small occupied place to nearby ground for the whole force, and covers posts that cannot overlap',()=>{
+    const roster=[sceneUnit('a','ally'),...['c','d','e','f','g'].map(id=>sceneUnit(id,'enemy'))];
+    const intent:SceneIntent={schema:'scene-intent-v1',entities:[entity('ruin','ruins',{anchor:'north'}),entity('hill','hill',{anchor:'south_east'})],
+      relations:[{subject:'enemy',relation:'occupies',object:'ruin',...evidence}],constraints:[]};
+    const field=generatedLayeredField('held',7,13,['plains'],{plan:{scene:'field',intent},roster});
+    expect(field.generation!.notes!.some(note=>note.includes('占据范围延伸'))).toBe(true);
+    expect(()=>validateSceneFacts(field,prepareGridDeployment(field,roster,'held'))).not.toThrow();
+    const split:SceneIntent={...intent,relations:[{subject:'enemy',relation:'occupies',object:'ruin',basis:'inferred',sources:[]},{subject:'enemy',relation:'near',object:'hill',basis:'inferred',sources:[]}]};
+    expect(()=>generatedLayeredField('split',7,13,['plains'],{plan:{scene:'field',intent:split},roster})).not.toThrow();
+  });
+  it('keeps an unplaced river out of the city walls, switching axis when the city spans the map',()=>{
+    const roster=[sceneUnit('a','ally'),sceneUnit('c','enemy')];
+    for(const entities of [[entity('river','river')],[entity('river','river'),entity('bridge','bridge',{anchor:'south'})]]) {
+      const intent:SceneIntent={schema:'scene-intent-v1',entities,relations:entities.length>1?[{subject:'bridge',relation:'crosses',object:'river',...evidence}]:[],constraints:[]};
+      const field=generatedLayeredField('river-wall',7,13,['siege'],{plan:{scene:'city_siege',intent},roster});
+      const water=field.tiles.flatMap((t,p)=>t==='deep_water'?[p]:[]);
+      expect(water.length).toBeGreaterThan(0);expect(water.some(p=>field.city!.frontline.includes(p))).toBe(false);
+    }
+  });
   it('produces different forest region and route layouts for different archetypes',()=>{
     const path=generatedLayeredField('forest-archetype',7,13,['forest'],{plan:{archetype:'forest_path',water:'none',landmarks:[]}});
     const edge=generatedLayeredField('forest-archetype',7,13,['forest'],{plan:{archetype:'forest_edge',water:'none',landmarks:[]}});

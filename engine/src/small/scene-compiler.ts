@@ -95,8 +95,21 @@ export function compileScenePlan(plan: BattlefieldPlan | undefined): Battlefield
             return { ...(gate ? { id: gate.id } : {}), sector, state: gate?.state === 'open' ? 'open' : gate?.state === 'destroyed' ? 'destroyed' : 'closed' };
         });
     const marked = intent.entities.filter(e => !['city', 'river', 'gate', 'bridge'].includes(e.kind));
+    // A place that is near another one and has no stated anchor is laid out beside it, on the stated side if any.
+    const nearby = (e: SceneEntity): LandmarkPlan['near'] => {
+        const near = e.anchor ? undefined : intent.relations.find(r => r.subject === e.id && r.relation === 'near' && intent.entities.some(x => x.id === r.object));
+        const side = near && intent.relations.find(r => r.subject === e.id && r.object === near.object && directionRelations[r.relation]);
+        return near && { id: near.object, ...(side ? { side: directionRelations[side.relation] as 'north' | 'south' | 'east' | 'west' } : {}) };
+    };
     result.landmarks = marked.map(e => ({ id: e.id, kind: e.kind as LandmarkPlan['kind'], anchor: anchors.get(e.id) ?? 'center',
-        scale: intent.relations.some(r => r.object === e.id && r.relation === 'exits_at') ? 'minor' : e.scale ?? 'minor', ...(e.state === 'destroyed' ? { state: 'destroyed' as const } : {}), ...(e.label ? { label: e.label } : {}), ...(e.height !== undefined ? { height: e.height } : {}), ...(intent.relations.some(r => r.object === e.id && r.relation === 'exits_at') ? { edge: true } : {}) }));
+        scale: intent.relations.some(r => r.object === e.id && r.relation === 'exits_at') ? 'minor' : e.scale ?? 'minor', ...(e.state === 'destroyed' ? { state: 'destroyed' as const } : {}), ...(e.label ? { label: e.label } : {}), ...(e.height !== undefined ? { height: e.height } : {}), ...(intent.relations.some(r => r.object === e.id && r.relation === 'exits_at') ? { edge: true } : {}),
+        ...(nearby(e) ? { near: nearby(e) } : {}) }));
+    // Lay out a referenced landmark before the one placed beside it.
+    for (let pass = 0; pass < result.landmarks.length; pass++) {
+        const i = result.landmarks.findIndex((m, n) => m.near && result.landmarks!.findIndex(o => o.id === m.near!.id) > n);
+        if (i < 0) break;
+        result.landmarks.push(...result.landmarks.splice(i, 1));
+    }
     return result;
 }
 export function sceneRegion(field: BattlefieldSpec, id: string): SceneRegion | undefined { return field.scene?.regions.find(r => r.id === id); }
@@ -173,12 +186,28 @@ export function finishSceneRegions(field: BattlefieldSpec, plan: BattlefieldPlan
             throw new BattlefieldPlanError('部队关系须为驻守、占据或接近地点');
         const region = sceneRegion(field, r.object)!;
         const unitId = unitBindings[r.subject], side = unitId ? undefined : r.subject as 'ally' | 'enemy';
-        let cells = [...region.access], platform = r.relation === 'occupies' && region.cells.every(p => intactStructure(field, p)?.top);
+        // Each cell holds two ordinary units or one large unit.
+        const actors = roster.filter(u => unitId ? u.id === unitId : u.side === side), large = actors.filter(u => u.body && u.body !== 'human' || u.mount).length;
+        const required = large + Math.ceil((actors.length - large) / 2);
+        const distance = (p: number) => Math.min(...region.cells.map(q => gridDistance(field, p, q)));
+        const holds = r.relation === 'occupies' || r.relation === 'inside';
+        let cells = [...region.access], platform = holds && region.cells.every(p => intactStructure(field, p)?.top);
         if (platform)
             cells = [...region.cells];
-        else if (r.relation === 'occupies' || r.relation === 'inside')
-            cells = region.cells.filter(p => !groundBlocked(field, p));
-        if (r.relation !== 'occupies' && r.relation !== 'inside') {
+        else if (holds) {
+            // A solid building or gate is held from its doorways rather than from inside its wall cells.
+            const walkable = region.cells.filter(p => !groundBlocked(field, p));
+            cells = walkable.length ? walkable : [...region.access];
+        }
+        if (holds && cells.length < required) {
+            // A small place cannot hold the whole force: the rest hold the nearest ground around it.
+            platform = false;
+            const ground = field.tiles.map((_, p) => p).filter(p => !groundBlocked(field, p)).sort((a, b) => distance(a) - distance(b) || a - b);
+            const radius = ground.length ? distance(ground[Math.min(required - 1, ground.length - 1)]!) : 0;
+            cells = [...new Set([...cells.filter(p => !groundBlocked(field, p)), ...ground.filter(p => distance(p) <= radius)])];
+            field.generation!.notes = [...(field.generation!.notes ?? []), `为部署完整部队，${region.label}占据范围延伸至${radius}格`];
+        }
+        if (!holds) {
             cells = field.tiles.map((_, p) => p).filter(p => !groundBlocked(field, p));
             if (field.city?.defender && side && side !== field.city.defender && region.kind === 'gate')
                 cells = cells.filter(p => !field.city!.inside.includes(p));
@@ -191,10 +220,8 @@ export function finishSceneRegions(field: BattlefieldSpec, plan: BattlefieldPlan
             const [x, y] = regionCenter(field, region);
             cells = cells.filter(p => r.region === 'north_bank' ? Math.floor(p / field.width) < y : r.region === 'south_bank' ? Math.floor(p / field.width) > y : r.region === 'east_bank' ? p % field.width > x : p % field.width < x);
         }
-        if (r.relation !== 'occupies' && r.relation !== 'inside') {
-            const actors = roster.filter(u => unitId ? u.id === unitId : u.side === side), large = actors.filter(u => u.body && u.body !== 'human' || u.mount).length;
-            const required = large + Math.ceil((actors.length - large) / 2), baseRadius = r.relation === 'approaches_from' ? 3 : 2;
-            const distance = (p: number) => Math.min(...region.cells.map(q => gridDistance(field, p, q)));
+        if (!holds) {
+            const baseRadius = r.relation === 'approaches_from' ? 3 : 2;
             const ranked = [...cells].sort((a, b) => distance(a) - distance(b) || a - b);
             const radius = Math.max(baseRadius, required ? distance(ranked[Math.min(required - 1, ranked.length - 1)] ?? ranked[0] ?? 0) : baseRadius);
             cells = cells.filter(p => distance(p) <= radius);
@@ -287,9 +314,11 @@ export function validateSceneFacts(field: BattlefieldSpec, units: readonly Comba
         }
         else if (units.length && !['targets', 'exits_at'].includes(r.relation)) {
             const id = field.scene?.unitBindings?.[r.subject];
-            const actors = units.filter(u => id ? u.id === id : u.side === r.subject);
+            const side = units.filter(u => id ? u.id === id : u.side === r.subject);
+            // A unit with its own relation deploys in its own zone (gridDeploymentCells), not the side's.
+            const actors = id ? side : side.filter(u => !field.deploymentZones?.some(z => z.unitId === u.id));
             const zones = field.deploymentZones?.filter(z => z.landmarkId === r.object && (id ? z.unitId === id : !z.unitId && z.side === r.subject)) ?? [];
-            ok = actors.length > 0 && actors.every(u => u.pos !== undefined && zones.some(z => z.cells.includes(u.pos!) && (!z.platform || u.elevation === 1)));
+            ok = side.length > 0 && actors.every(u => u.pos !== undefined && zones.some(z => z.cells.includes(u.pos!) && (!z.platform || u.elevation === 1)));
         }
         if (!ok && r.basis === 'explicit')
             throw new BattlefieldPlanError(`无法满足正文关系：${r.subject} ${r.relation} ${r.object}`);

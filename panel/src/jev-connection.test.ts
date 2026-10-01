@@ -160,6 +160,27 @@ describe('remote JEV connections', () => {
     expect(await new JevCommandController(request).testInference({ ...connection, protocol, url: protocol === 'typesafe' ? JEV_API_URL : 'https://gateway.example/v1' })).toContain('推理测试通过');
     expect(request).toHaveBeenCalledTimes(1);
   });
+  it('always asks for the map when map rules are sent, since siege, escort and indoor choices force a small battle', async () => {
+    const systems: string[] = [];
+    const request = vi.fn<typeof fetch>(async (_url, init) => {
+      systems.push(JSON.parse(String(init?.body)).messages[0].content);
+      return response({ choices: [{ message: { content: '{"selections":{"lighting":{"value":"day","confidence":0.9}}}' } }] });
+    });
+    const openai = { ...connection, protocol: 'openai' as const, url: 'https://gateway.example/v1' };
+    const fields = [{ id: 'lighting', question: 'q', options: { day: 'd', night: 'n' } }];
+    await directJevRequest(openai, 'select-context', { messages: [], fields, state: { protocol: 'battlefield-v2', mapRules: 'rules' } }, new AbortController().signal, request);
+    await directJevRequest(openai, 'select-context', { messages: [], fields, state: { protocol: 'battlefield-v2' } }, new AbortController().signal, request);
+    expect(systems[0]).toContain('always include it, even when choosing a mass battle');
+    expect(systems[0]).toContain('"battlefield":{...}');
+    expect(systems[0]).not.toContain('When the selected battle is small');
+    expect(systems[1]).not.toContain('battlefield object');
+  });
+  it('reads a JSON answer after hidden reasoning or inside prose', async () => {
+    const openai = { ...connection, protocol: 'openai' as const, url: 'https://gateway.example/v1' };
+    for (const content of ['<think>{"draft":1}</think>{"scores":{"attack":0.6},"confidence":0.5}', 'Here is the result: {"scores":{"attack":0.6},"confidence":0.5} Thanks.'])
+      expect(await directJevRequest(openai, 'evaluate', { candidates: [{ id: 'attack' }] }, new AbortController().signal,
+        async () => response({ choices: [{ message: { content } }] }))).toMatchObject({ scores: { attack: 0.6 } });
+  });
   it('does not echo malformed model JSON into diagnostic text', async () => {
     await expect(directJevRequest({ ...connection, protocol: 'openai', url: 'https://gateway.example/v1' }, 'evaluate', { candidates: [{ id: 'attack' }] },
       new AbortController().signal, async () => response({ choices: [{ message: { content: 'test-key private narrative' } }] })))
