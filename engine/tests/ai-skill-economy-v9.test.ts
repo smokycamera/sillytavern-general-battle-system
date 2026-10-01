@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { abilityUsed } from '../src/ability-state.js';
 import { SmallBattle, MassBattle, V9_OVERFLOW_D20, V9_OVERFLOW_TW, V8_OVERFLOW_D20, generateUnit, traitRegistry, standardField, compileGenericSkill, type Combatant, type Ability } from '../src/index.js';
 import { nextResourceState, tacticalRestValue, tacticalSkillCost } from '../src/skill-economy.js';
 import { skillResourceCost } from '../src/skill-runtime.js';
@@ -32,9 +33,10 @@ function setup(mode: 'small' | 'mass' = 'small') {
 }
 function chosen(b: SmallBattle | MassBattle, actor: Combatant): string {
   if (b instanceof MassBattle) { const order = b.recommendedOrder(actor.id)!; return order.type === 'ability' ? order.abilityId! : order.type; }
-  const used = actor.abilityState.reduce((n, s) => n + s.used, 0), old = b.log.length;
+  const cast = vi.spyOn(b, 'useAbility'), old = b.log.length;
   b.autoAction(actor.id);
-  if (actor.abilityState.reduce((n, s) => n + s.used, 0) > used) return actor.abilityState.find(s => s.used > 0)!.abilityId;
+  const chosenAbility = cast.mock.calls[0]?.[1]; cast.mockRestore();
+  if (chosenAbility) return chosenAbility;
   return b.log.slice(old).some(e => e.resolution?.attackerId === actor.id) ? 'attack' : 'hold';
 }
 
@@ -73,15 +75,19 @@ describe('V9 SP机会成本与休整反事实', () => {
     const before = JSON.stringify(b.toSnapshot());
     const next = nextResourceState(context, actor, false, weak);
     expect(next.resources.SP).toBe(5);
-    expect(next.abilityState.find(s => s.abilityId === weak.id)).toMatchObject({ used: 1, cdLeft: mode === 'mass' ? 3 : 2 });
+    expect(abilityUsed(next, weak)).toBe(1);
+    expect(next.abilityState.find(s => s.abilityId === weak.id)).toMatchObject({ cdLeft: mode === 'mass' ? 3 : 2 });
     const first = tacticalSkillCost(context, actor, weak); expect(tacticalSkillCost(context, actor, weak)).toBe(first);
     tacticalRestValue(context, actor);
     expect(JSON.stringify(b.toSnapshot())).toBe(before);
   });
-  it('共享冷却组沿用同一份已用次数，不创建同名第二份运行状态', () => {
+  it('资源预测共享冷却但独立记录机制次数，保留旧账本的历史下限', () => {
     const { actor, weak, strong, context } = setup(); weak.cooldownGroup = strong.id; actor.abilityState[0]!.used = 2;
+    strong.definitionId = 'generic:magic-single:fire';
     const next = nextResourceState(context, actor, false, weak);
-    expect(next.abilityState).toHaveLength(1); expect(next.abilityState[0]!.used).toBe(3);
+    expect(abilityUsed(next, weak)).toBe(3); expect(abilityUsed(next, strong)).toBe(2);
+    expect(next.abilityState.filter(s => s.abilityId === strong.id)).toHaveLength(1);
+    expect(abilityUsed(actor, weak)).toBe(2); expect(abilityUsed(actor, strong)).toBe(2);
   });
   it('满SP与低疲劳无空转收益；疲劳阈值、失能和压制沿用恢复规则', () => {
     const { actor, strong, context } = setup(); actor.resources.SP = spCapacity(actor); actor.abilityState = [];

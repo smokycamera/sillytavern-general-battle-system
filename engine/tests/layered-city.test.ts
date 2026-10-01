@@ -129,7 +129,9 @@ describe('layered city and siege maps', () => {
     a.abilities = [{ id: 'bolt', name: '破城术', target: 'enemy', delivery: 'magic', power: 3, range: { min: 0, max: 5, metric: 'grid' }, cost: { resource: 'SP', amount: 2 }, cooldown: 2, effects: [{ op: 'damage', baseDice: '2d6' }] }, { id: 'fear', name: '恐惧', target: 'enemy', effects: [{ op: 'morale', amount: -5 }] }];
     a.preparedAbilityIds = ['bolt', 'fear']; a.resources.SP = 10;
     expect(battle.structurePreview('a', 24, 'ability:fear').reason).toContain('直接伤害'); const preview = battle.structurePreview('a', 24, 'ability:bolt');
-    expect(preview.reason).toBeUndefined(); battle.attackStructure('a', 24, 'ability:bolt'); expect(a.resources.SP).toBeLessThan(10); expect(a.abilityState[0]).toMatchObject({ abilityId: 'bolt', used: 1, cdLeft: 2 });
+    expect(preview.reason).toBeUndefined(); battle.attackStructure('a', 24, 'ability:bolt'); expect(a.resources.SP).toBeLessThan(10);
+    expect(a.abilityState.find(s => s.abilityId === 'uses:bolt')).toMatchObject({ used: 1, cdLeft: 0 });
+    expect(a.abilityState.find(s => s.abilityId === 'bolt')).toMatchObject({ cdLeft: 2 });
   });
   it('city control is a region: moving within it preserves progress and contest pauses instead of erasing', () => {
     const { a, b, battle, field } = layeredFixture(); field.objective = { kind: 'control', cell: 31, cells: [31, 32], attackingSide: 'ally', rounds: 5, limit: 60 };

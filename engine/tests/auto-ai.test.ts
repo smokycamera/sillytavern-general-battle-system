@@ -46,7 +46,7 @@ describe('autoAction utility 评分', () => {
     b.autoAction(healer.id);
     expect(hurt.hp).toBeGreaterThan(before); // 治疗了伤兵
     expect(gob.hp).toBe(7); // 没有去敲哥布林
-    expect(healer.abilityState.some((s) => s.abilityId === 'heal-light' && s.used === 1)).toBe(true);
+    expect(healer.abilityState.some((s) => s.abilityId === 'uses:heal-light' && s.used === 1)).toBe(true);
   });
 
   it('斩杀优先：可击杀的残血敌人优先于高威胁满血敌', () => {

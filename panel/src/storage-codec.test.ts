@@ -9,7 +9,7 @@ it('大存档含中文、表情、重复报告和宽字符无损压缩，兼容�
   expect(decodeSave('{"hp":17}')).toBe('{"hp":17}');
 });
 it('容量满时原子压缩本插件旧镜像，并重新读取最新存档；不清除其他数据',()=>{
-  const oldKey='tavern-battle:chat:chat:old:panel',key='tavern-battle:chat:chat:test:panel';
+  const oldKey='tavern-battle:chat:chat:old:panel',key='tavern-battle:chat:[null,"test","test"]:panel';
   const old=JSON.stringify({reports:['历史战报完整保留'.repeat(30000)]}),values=new Map([[oldKey,old],['unrelated','其他应用数据']]);
   const limit=old.length+500;
   vi.stubGlobal('window',{SillyTavern:{getContext:()=>({chatId:'test'})}});

@@ -113,7 +113,7 @@ describe('通用六类技能配方', () => {
     const choice = heal.b.getActionOptions('a').find((o) => o.id === skill.id)!.targets!.find((t) => t.targetId === 'f')!;
     expect(choice.enabled).toBe(true); expect(choice.preview?.areaTargetIds).toHaveLength(2);
     const auto = SmallBattle.fromSnapshot(structuredClone(heal.b.toSnapshot())); auto.autoAction('a');
-    expect(auto.byId('a').abilityState.some((s) => s.abilityId === 'generic:buff' && s.used > 0)).toBe(true);
+    expect(auto.byId('a').abilityState.some((s) => s.abilityId === 'uses:' + skill.definitionId && s.used > 0)).toBe(true);
     expect(heal.b.useAbility('a', skill.id, 'f').ok).toBe(true); expect(heal.a.hp).toBeGreaterThan(100); expect(heal.f.hp).toBeGreaterThan(100);
     const control = grid('止步:debuff定身L8');
     expect(control.b.useAbility('a', control.a.abilities[0]!.id, 'e').ok).toBe(true);
