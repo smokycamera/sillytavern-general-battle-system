@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "1.6.1-rc.3",
-  "builtAt": "2026-09-30T07:56:26.791Z",
-  "sourceFingerprint": "987fa26a5289d77f7e002e5df8fb4cc1e09020f134450982a075a3ed1e34bb96",
+  "builtAt": "2026-10-01T02:43:28.667Z",
+  "sourceFingerprint": "b5e3eb8ac80aba4fb381ce7e1edd040e6eadde988691439acc3bb12a29a7a3d0",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -31,19 +31,19 @@
       "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     },
     {
-      "path": "dist/assets/panel-BP39RRrs.css",
-      "bytes": 28651,
-      "sha256": "97fa714c7e53b08ae811e605a6e2ef8c97624806780c4105fcae033d4ba80b57"
+      "path": "dist/assets/panel-B_07okxU.js",
+      "bytes": 421691,
+      "sha256": "71ab788752ff8d7e712731c924d8e3d4d5c0586e51c8d713a2a6322a994866e1"
     },
     {
-      "path": "dist/assets/panel-DfOEctvE.js",
-      "bytes": 403833,
-      "sha256": "a5b541e52e9255564c2a83186697d4bec8febe1afb8c25b18cde7b50df2ea43d"
+      "path": "dist/assets/panel-By9-9LPe.css",
+      "bytes": 28573,
+      "sha256": "56f39f5edf19a0de4b3123a5e2674973761b05b32f95f6623c1054381324da05"
     },
     {
-      "path": "dist/assets/preferences-CiKeVAPz.js",
+      "path": "dist/assets/preferences-B51vr7ai.js",
       "bytes": 672107,
-      "sha256": "99f78b1ecafb720b01b9f24b02905cc12888a5a8596642c8f539040ec8b08870"
+      "sha256": "12951a581e5b50e0abbf30440e7b4ac2bb171d3a043c479fd133e746e225b8d2"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -238,7 +238,7 @@
     {
       "path": "dist/index.js",
       "bytes": 82808,
-      "sha256": "10c5b8b723c270c5e4ec43a7795e1c2e5f964b4bb732aa480bc7f2294cc529ac"
+      "sha256": "9d6725c9288bfa8f475667490434398bba9e50b16eee31cd31910a029ceb2646"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -252,8 +252,8 @@
     },
     {
       "path": "dist/panel/index.html",
-      "bytes": 46421,
-      "sha256": "a49eb891c4989e7a8cef70e4a4eae5bd2cca9f21440d1549fa9276a66962d056"
+      "bytes": 46216,
+      "sha256": "f23ca3a1592b24a3e3fbfefd54d43eaccaff967e89496a3f86f42e3315a1c75c"
     },
     {
       "path": "release/current-baseline.json",
