@@ -14,6 +14,7 @@ import { landmarkAnchorCell, landmarkCandidates } from './landmark-placement.js'
 import { compileScenePlan, finishSceneRegions, validateSceneFacts,deriveRetreatEdges } from './scene-compiler.js';
 import { buildPlannedCity, buildPlannedWater, applySceneArchetype, selectSceneArchetype } from './scene-layout-v2.js';
 import { initializeHeightMap } from './height-map.js';
+import { applyPlannedDeployments, withCitySides } from './force-deployment.js';
 
 export interface LayeredGenerationOptions extends FieldGenerationOptions { plan?: BattlefieldPlan; scene?: BattlefieldScene; unitBindings?: Record<string,string> }
 export function recommendedCitySize(roster: readonly Combatant[] = [], size?: BattlefieldPlan['size']): [number, number] {
@@ -323,7 +324,8 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
       p=trench.sort((a,b)=>gridDistance(field,a,p)-gridDistance(field,b,p)||a-b)[0] ?? p;
     } else if (mark.kind === 'building' && scene !== 'building_siege') {
       let plots=landmarkCandidates(field,mark,anchor,n=>field.structures![n]?.kind==='building'&&!marked.has(n)&&!protectedCells.has(n));
-      if (!plots.length && scene === 'field') {
+      // Outdoors a named building with no parcel nearby, such as a mill outside the walls, is built on open ground.
+      if (!plots.length && scene !== 'interior') {
         plots = landmarkCandidates(field, mark, anchor, n => !marked.has(n) && !protectedCells.has(n) && !groundBlocked(field,n) && !field.overlays![n]?.includes('road') && !['deep_water','shallow_water'].includes(field.tiles[n]!));
         if (plots[0] !== undefined) field.structures[plots[0]] = createStructure('building', mark.level ?? wallLevel);
       }
@@ -343,10 +345,13 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
       if (candidate === undefined) { if(plan) throw new BattlefieldPlanError(`地标${mark.label??mark.kind}在指定区域部署容量不足`); else continue; } p = candidate;
     }
     if (mark.kind === 'tower' && (city || plannedCity) && inner.includes(p)) {
-      const plots = landmarkCandidates(field,mark,anchor,n=>inner.includes(n)&&field.structures![n]?.kind==='building'&&!marked.has(n)&&!protectedCells.has(n));
-      if (!plots.length) { if (plan) throw new BattlefieldPlanError('塔楼地标部署容量不足，请调整布局或地标'); else continue; }
       // Replace an already closed parcel; never sever an existing alley for a tower.
-      p = plots.sort((a, b) => gridDistance(field, a, p) - gridDistance(field, b, p) || a - b)[0]!;
+      const plots = landmarkCandidates(field,mark,anchor,n=>inner.includes(n)&&field.structures![n]?.kind==='building'&&!marked.has(n)&&!protectedCells.has(n));
+      // With no parcel to replace, the tower stands on open ground just outside the town instead.
+      const outside = plots.length ? [] : landmarkCandidates(field,mark,anchor,n=>!inner.includes(n)&&!(field.city?.frontline??[]).includes(n)&&!marked.has(n)&&!protectedCells.has(n)
+        &&!groundBlocked(field,n)&&!field.overlays![n]?.includes('road')&&!['deep_water','shallow_water'].includes(field.tiles[n]!));
+      if (!plots.length && !outside.length) { if (plan) throw new BattlefieldPlanError('塔楼地标部署容量不足，请调整布局或地标'); else continue; }
+      p = plots.length ? plots.sort((a, b) => gridDistance(field, a, p) - gridDistance(field, b, p) || a - b)[0]! : outside[0]!;
     }
     const cells = [p];
     if (mark.kind==='building' && scene==='building_siege' && mark.state==='destroyed') cells.push(...(field.city?.frontline??[]));
@@ -376,6 +381,8 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
     if (mark.state === 'destroyed') for (const n of actual) {
       const structure = field.structures[n];
       if (structure) structure.hp = 0;
+      // A ruined compound takes its gate with it; a gate at zero durability is a destroyed gate.
+      if (structure?.kind === 'gate') structure.gateState = 'destroyed';
       field.overlays[n] = [...new Set([...(field.overlays[n] ?? []), 'rubble' as const])];
     }
     if (!actual.length) {if(supplied)throw new BattlefieldPlanError(`地标${mark.label??mark.kind}没有合法位置，部署容量不足`);else continue;}
@@ -385,6 +392,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   }
   if (plan?.landmarks?.length && !field.landmarks.length) throw new BattlefieldPlanError('请求的地标无法落到合法位置，未使用随机地标；请调整设计');
   finishSceneRegions(field,plan,options.unitBindings,options.roster);
+  applyPlannedDeployments(field,plannedCity&&!field.city?.defender?withCitySides(field,plan!):plan,options.roster,options.unitBindings);
   initializeHeightMap(field,plan);
   deriveRetreatEdges(field);
   validateSceneFacts(field);

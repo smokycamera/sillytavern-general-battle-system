@@ -24,6 +24,12 @@ export interface LandmarkPlan {
   near?: { id: string; side?: 'north' | 'south' | 'east' | 'west' };
 }
 export interface BridgePlan { id?: string; anchor: WorldAnchor; state: 'intact' | 'destroyed'; width?: 1 | 2 }
+/** wall/inside/outside choose the defenders' posts in a siege; elsewhere inside/outside choose the city side. */
+export const DEPLOYMENT_POSTS = ['wall', 'inside', 'outside'] as const;
+/** A force's starting area on the 3×3 compass grid. The subject is ally, enemy or a public unit handle (u1…). */
+export interface DeploymentPlan { subject: string; at: WorldAnchor[]; post?: typeof DEPLOYMENT_POSTS[number] }
+/** Two sides plus a bounded number of detachments, within the snapshot's deployment-zone budget. */
+export const MAX_DEPLOYMENT_PLANS = 14;
 export const GATE_SECTORS = ['auto', 'front_left', 'front_center', 'front_right', 'left', 'right', 'rear','north','south','east','west'] as const;
 export interface GatePlan { id?: string; sector: typeof GATE_SECTORS[number]; state: 'closed' | 'open' | 'destroyed' }
 export interface BattlefieldPlan {
@@ -53,6 +59,7 @@ export interface BattlefieldPlan {
   obstacles?: MapDesign['obstacles'];
   breadth?: MapDesign['breadth'];
   landmarks?: LandmarkPlan[];
+  deployments?: DeploymentPlan[];
 }
 const object = (value: unknown): Record<string, unknown> | undefined => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 /** Partial plans degrade field-by-field, never accept coordinates, HP, commands or free-form weights. */
@@ -102,6 +109,18 @@ export function normalizeBattlefieldPlan(value: unknown): { plan?: BattlefieldPl
     // An invalid explicit state must not accidentally inherit legacy broken/random damage.
     plan.breaches ??= { count: 0 };
   }
+  if (input.deployments !== undefined) {
+    const list = input.deployments;
+    if (!Array.isArray(list) || list.length > MAX_DEPLOYMENT_PLANS) throw new BattlefieldPlanError(`deployments须为最多${MAX_DEPLOYMENT_PLANS}项的列表`);
+    plan.deployments = list.map(raw => {
+      const d = object(raw), at = Array.isArray(d?.at) ? d!.at : typeof d?.at === 'string' ? [d.at] : [];
+      if (!d || typeof d.subject !== 'string' || !/^(ally|enemy|u\d{1,3})$/.test(d.subject) || !at.length || at.length > 4
+        || at.some(a => !(WORLD_ANCHORS as readonly unknown[]).includes(a)) || d.post !== undefined && !(DEPLOYMENT_POSTS as readonly unknown[]).includes(d.post))
+        throw new BattlefieldPlanError('部署须写subject（ally、enemy或u短ID）、1—4个九宫格方位at，post可选wall、inside或outside');
+      return { subject: d.subject, at: [...new Set(at as WorldAnchor[])], ...(d.post !== undefined ? { post: d.post as DeploymentPlan['post'] } : {}) };
+    });
+    if (new Set(plan.deployments.map(d => d.subject)).size !== plan.deployments.length) throw new BattlefieldPlanError('同一部队只能写一项部署');
+  }
   if (input.fortLevel !== undefined) {
     if (Number.isInteger(input.fortLevel) && Number(input.fortLevel) >= 1 && Number(input.fortLevel) <= 10) plan.fortLevel = Number(input.fortLevel);
     else notes.push('结构等级无效，采用本地默认');
@@ -138,4 +157,5 @@ scene=field野战/城外|city_siege城市攻防|city_streets巷战|building_sieg
 water=none无水|ford可涉浅水|river深水河流|moat护城河；waterAxis=horizontal|vertical。室内无室外水系；有bridge须有river实体或water=ford|river|moat。
 fortLevel=1..10按工事材料与强化选级。breaches可省略；格式{count:0..3,width:1|2,sector:auto|front_left|front_right|left|right|rear}，0为完整。
 ${SCENE_INTENT_PROMPT}
+deployments可选，按九宫格方位安排开局位置：[{subject:ally|enemy|u短ID,at:[${WORLD_ANCHORS.join('|')}],post?:wall|inside|outside}]，同一部队只写一项。攻城时攻方只在城外开局；守方默认在城内并分兵上墙，post=wall多上城头、inside不上墙、outside出城列阵。城外野战默认在城外，巷战默认在城内。已用relations写部署关系的部队以relations为准。
 示例（仅示格式，内容按正文）：{"scene":"field","intent":{"entities":[{"id":"hill1","kind":"hill","label":"北坡","anchor":"north","basis":"explicit","sources":["m1.p2"]},{"id":"camp1","kind":"position","label":"营地"}],"relations":[{"subject":"enemy","relation":"occupies","object":"hill1","basis":"explicit","sources":["m1.p2"]},{"subject":"camp1","relation":"south_of","object":"hill1"},{"subject":"ally","relation":"approaches_from","object":"camp1"}],"constraints":[]}}`;

@@ -20,13 +20,19 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   b.movementSpent.set('u0', 2); b.actedThisTurn.add('u0');
   await f.service.transact(() => ({schemaVersion:2, storage:units.map(u=>unitRecordFromCombatant(u)), rosterIds:units.map(u=>u.id), jevSettings:{mode:'jev'}, autoTurn:false, protagonistId:'u0', battle:{kind:'small',snap:b.toSnapshot()}}));
   Object.assign(window, {__tavernBattleNative:{service:f.service,messages:{}}, __TAURITAVERN__:{}, SillyTavern:{getContext:()=>f.context}});
-  let release: (() => void) | undefined, delayed = false;
+  let release: (() => void) | undefined, delayed = false, breakLayout = false;
   const request = vi.fn(async (url: unknown, init?: RequestInit) => {
     if (String(url).endsWith('/status')) return new Response(JSON.stringify({data:[{id:'model-one'},{id:'model-two'}]}));
     if (delayed) await new Promise<void>(resolve => { release = resolve; });
-    const payload = JSON.parse(String(init?.body)), body = JSON.parse(payload.messages[1].content);
-    const values:Record<string,string> = {field:'forest',lighting:'night',battle_mode:'small',map_layout:'standard',objective:'intercept',design_layout:'ring',design_orientation:'diagonal',design_relief:'dense',design_cover:'dense',design_obstacles:'sparse',design_route:'flank',design_breadth:'narrow',design_feature:'hill',design_featurezone:'enemy_left',vip_ally:'unit_0',vip_enemy:'unit_0',siege_attacker:'ally',enemy_ability:'expert',enemy_style:'cautious',ally_ability:'master',ally_style:'aggressive'};
-    return new Response(JSON.stringify({model:'remote-alias',choices:[{message:{content:JSON.stringify({battlefield:{layout:'ring',landmarks:[{kind:'hill',anchor:'front_left'}]},selections:Object.fromEntries(body.fields.map((v:{id:string})=>[v.id,{value:values[v.id],confidence:.2}]))})}}]}));
+    const payload = JSON.parse(String(init?.body)), task = payload.messages.at(-1).content as string;
+    if (task.startsWith('【第2步')) {
+      const layout = breakLayout ? '地图如下：无' : JSON.stringify({archetype:'forest_path',places:[{type:'hill',name:'敌左高地',at:'NW',height:2}],ally:{at:['S']},enemy:{at:['N']},objective:'S'});
+      breakLayout = false;
+      return new Response(JSON.stringify({model:'remote-alias',choices:[{message:{content:layout}}]}));
+    }
+    const body = JSON.parse(task.slice(task.lastIndexOf('\n') + 1));
+    const values:Record<string,string> = {field:'forest',lighting:'night',battle_mode:'small',objective:'intercept',scene:'field',size:'standard',vip_ally:'unit_0',vip_enemy:'unit_0',siege_attacker:'ally',enemy_ability:'expert',enemy_style:'cautious',ally_ability:'master',ally_style:'aggressive'};
+    return new Response(JSON.stringify({model:'remote-alias',choices:[{message:{content:JSON.stringify({selections:Object.fromEntries(body.fields.map((v:{id:string})=>[v.id,{value:values[v.id],confidence:.2}]))})}}]}));
   });
   vi.stubGlobal('fetch', request);
   document.body.innerHTML = '<div id="app"></div><div id="toast"></div>';
@@ -82,25 +88,21 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   expect(button('migration-accept')).not.toBeNull();
   button('migration-accept').click();await idle();
   expect(f.service.snapshot().storage![0]!.snapshot!.damageModel).toBe('wounds-v2');
-  const respond=request.getMockImplementation()!;
-  request.mockImplementationOnce(async(...args)=>{
-    const result=await respond(...args),body=await result.json();
-    const answer=JSON.parse(body.choices[0].message.content);
-    answer.battlefield={scene:'interior',landmarks:[{kind:'forest',anchor:'center'}]};
-    body.choices[0].message.content=JSON.stringify(answer);return new Response(JSON.stringify(body));
-  });
+  // A layout answer that is not JSON fails only the second step; the retry carries that error back to it.
+  breakLayout=true;
   nav('battle');button('small-start').click();await idle();
-  expect(f.service.snapshot().battle).toBeFalsy();expect(document.querySelector('#toast')?.textContent).toContain('室内地标');
+  expect(f.service.snapshot().battle).toBeFalsy();expect(document.querySelector('#toast')?.textContent).toMatch(/布置地图.*JSON/);
   nav('battle');button('small-start').click();await idle();
-  const retryRequest=JSON.parse(JSON.parse(String(request.mock.calls.at(-1)![1]?.body)).messages[1].content);
-  expect(retryRequest.state.retryErrors).toEqual([expect.stringContaining('室内地标')]);
+  const retryTask=JSON.parse(String(request.mock.calls.at(-1)![1]?.body)).messages.at(-1).content as string;
+  expect(retryTask).toContain('上次布置未能生成地图，请修正：模型未返回有效决策 JSON');
   expect(f.service.snapshot().battle, document.querySelector('#toast')?.textContent ?? JSON.stringify(f.service.status())).toBeDefined();
   const selected=SmallBattle.fromSnapshot(f.service.snapshot().battle!.snap);
   expect(selected.commanderProfiles).toEqual({ally:{ability:'master',style:'aggressive',scoring:'tactical-v2'},enemy:{ability:'expert',style:'cautious',scoring:'tactical-v2'}});
   expect(f.service.snapshot()).toMatchObject({field:'forest',lighting:'night'});
-  expect(selected.battlefield!.generation).toMatchObject({source:'context',design:{layout:'ring'}});
-  expect(selected.battlefield!.objective).toMatchObject({kind:'escape',unitId:'u1',cell:87});
-  expect(f.service.snapshot().encounterContext).toMatchObject({vipId:'u1',battlefieldPlan:{layout:'ring'}});
+  expect(selected.battlefield!.generation).toMatchObject({source:'context',scene:'field'});
+  expect(selected.battlefield!.objective).toMatchObject({kind:'escape',unitId:'u1'});
+  expect(Math.floor(selected.battlefield!.objective.cell/selected.battlefield!.width)).toBe(selected.battlefield!.height-1);
+  expect(f.service.snapshot().encounterContext).toMatchObject({vipId:'u1',battlefieldPlan:{scene:'field',archetype:'forest_path'}});
   const frozen=structuredClone(f.service.snapshot().battle);
   nav('settings');designToggle().click();vipToggle().click();
   expect(f.service.snapshot().battle).toEqual(frozen);
@@ -108,8 +110,9 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   expect(localStorage.getItem(LLM_SETTINGS_KEY)).toBe(config);
   expect(JSON.stringify(f.service.snapshot())).not.toContain('private-fixture-key');
   const payload=JSON.parse(String(request.mock.calls.at(-1)![1]?.body));
-  expect(payload.model).toBe('model-two');expect(JSON.parse(payload.messages[1].content).messages.map((m:{role:string})=>m.role)).toEqual(['user','assistant']);
-  expect(JSON.parse(payload.messages[1].content).fields.some((field:{id:string})=>field.id==='battle_mode')).toBe(false);
+  expect(payload.model).toBe('model-two');expect(payload.messages[1].content).toMatch(/〔1 · 玩家〕[\s\S]*〔2 · 叙述〕/);
+  const decided=JSON.parse(String(request.mock.calls.at(-2)![1]?.body)).messages.at(-1).content as string;
+  expect(JSON.parse(decided.slice(decided.lastIndexOf('\n')+1)).fields.some((field:{id:string})=>field.id==='battle_mode')).toBe(false);
 
   // Any independent preparation toggle invalidates a pending response, never starts a stale battle.
   const beforeToggle=f.service.snapshot();await f.service.transact(()=>({...beforeToggle,battle:null,encounterContext:undefined}));

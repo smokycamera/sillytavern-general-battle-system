@@ -194,27 +194,32 @@ describe('independent city shape, breaches and legal deployment', () => {
   it('over-capacity LLM preparation omits impossible scale/grid/VIP questions without changing saved preferences', async () => {
     const settings={enabled:true,selectBattleScale:true,designMap:true,selectVip:true,url:'https://api.example/v1',token:'',model:'test',models:[],windowSize:6};
     const request=vi.fn<typeof fetch>(async(_url,init)=>{
-      const body=JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
-      expect(body.fields.some((f:any)=>f.id==='battle_mode'||f.id.startsWith('vip_'))).toBe(false);expect(body.state.mapRules).toBeUndefined();
+      const task=JSON.parse(String(init?.body)).messages.at(-1).content as string,body=JSON.parse(task.slice(task.lastIndexOf('\n')+1));
+      expect(body.fields.some((f:any)=>['battle_mode','scene','size'].includes(f.id)||f.id.startsWith('vip_'))).toBe(false);
       return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({selections:Object.fromEntries(body.fields.map((f:any)=>[f.id,{value:Object.keys(f.options)[0],confidence:1}]))})}}]}));
     });
     const result=await new LlmContextController(request).select({roster:army(32,32),setup,messages:[{id:'m',role:'assistant',completed:true,text:'双方军队展开正面会战。'}]},settings,()=>true);
     expect(result.mode).toBe('mass');expect(result.battlefieldPlan).toBeUndefined();expect(request).toHaveBeenCalledTimes(1);expect(settings.selectBattleScale).toBe(true);
   });
-  it('VIP 31 remains addressable, map damage and commander choices share one model request', async () => {
+  it('VIP 31 remains addressable with commander choices, and map damage follows in the layout step', async () => {
     const roster=army(31,1,'company'),request=vi.fn<typeof fetch>(async(_url,init)=>{
-      const payload=JSON.parse(String(init?.body)),body=JSON.parse(payload.messages[1].content);
+      const task=JSON.parse(String(init?.body)).messages.at(-1).content as string;
+      if(task.startsWith('【第2步')) {
+        expect(task).toContain('breaches');
+        return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({city:{at:'N',breaches:2},water:{type:'river',at:'E'},places:[{type:'fortification',name:'临河城防',at:'NW',size:'large'}],ally:{at:['S']}})}}]}));
+      }
+      const body=JSON.parse(task.slice(task.lastIndexOf('\n')+1));
       expect(body.fields.find((f:any)=>f.id==='vip_ally').options).toHaveProperty('unit_30');
       expect(body.fields.some((f:any)=>f.id==='battle_mode')).toBe(false);
-      expect(body.state.mapRules).toContain('breaches');
-      const values:Record<string,string>={field:'siege',lighting:'day',map_layout:'standard',objective:'escort',siege_attacker:'ally',ally_ability:'expert',ally_style:'siege',enemy_ability:'expert',enemy_style:'depth',vip_ally:'unit_30',vip_enemy:'default'};
+      const values:Record<string,string>={field:'siege',lighting:'day',objective:'escort',siege_attacker:'ally',ally_ability:'expert',ally_style:'siege',enemy_ability:'expert',enemy_style:'depth',vip_ally:'unit_30',vip_enemy:'default',scene:'city_siege',size:'standard'};
       // Choose supported style IDs instead of assuming a label.
       for(const f of body.fields) if(values[f.id]&&!Object.hasOwn(f.options,values[f.id]!)) values[f.id]=Object.keys(f.options)[0]!;
-      return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({selections:Object.fromEntries(body.fields.map((f:any)=>[f.id,{value:values[f.id],confidence:1}])),battlefield:{shape:'riverside',breaches:{count:2,width:2},gates:'single',landmarks:[{kind:'fortification',anchor:'front_left',scale:'major',label:'临河城防'}]}})}}]}));
+      return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({selections:Object.fromEntries(body.fields.map((f:any)=>[f.id,{value:values[f.id],confidence:1}]))})}}]}));
     });
     const result=await new LlmContextController(request).select({roster,setup,messages:[{id:'m',role:'assistant',completed:true,text:'临河城防已有两处宽缺口，护送末尾那支运输队撤离。'}]},{enabled:true,selectBattleScale:false,designMap:true,selectVip:true,url:'https://api.example/v1',token:'',model:'test',models:[],windowSize:6},()=>true);
-    expect(request).toHaveBeenCalledTimes(1);expect(result.battlefieldPlan).toMatchObject({shape:'riverside',breaches:{count:2,width:2}});expect(result.vipId).toBe(roster[30]!.id);
-    const field=generatedLayeredField('VIP',7,13,['siege'],{roster,plan:result.battlefieldPlan});
+    expect(request).toHaveBeenCalledTimes(2);expect(result.battlefieldPlan).toMatchObject({scene:'city_siege',breaches:{count:2},water:'river'});expect(result.vipId).toBe(roster[30]!.id);
+    const field=generatedLayeredField('VIP',7,13,['siege'],{roster,plan:result.battlefieldPlan,unitBindings:result.unitBindings});
+    expect(field.city!.breaches).toHaveLength(2);
     expect(prepareBattleObjective(field,roster,'escort',undefined,'ally',result.vipId).objective).toMatchObject({kind:'escape',unitId:roster[30]!.id});
   });
 });

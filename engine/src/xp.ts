@@ -102,9 +102,6 @@ export function battleXpAwardsForBothSides(combatants: Combatant[], xpByUnit: Ma
 export function preciseXp(value: number): number {
   return Number(Math.max(0, value).toPrecision(12));
 }
-export function xpLabel(value: number): string {
-  return value > 0 && value < 0.0001 ? value.toExponential(2) : String(Number(value.toFixed(4)));
-}
 
 export interface LevelUpResult {
   levelsGained: number;

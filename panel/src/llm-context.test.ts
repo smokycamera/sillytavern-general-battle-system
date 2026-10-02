@@ -14,10 +14,15 @@ const input = () => ({
     {id:'stream',role:'assistant',text:'未完成',completed:false},
   ],
 });
+/** The decision step's request: a shared system and narrative prefix, then the task with its JSON body last. */
+function decision(init?: RequestInit) {
+  const payload=JSON.parse(String(init?.body)), task=payload.messages.at(-1).content as string;
+  return { payload, body: JSON.parse(task.slice(task.lastIndexOf('\n')+1)) };
+}
 function model(values: Record<string,string> = {}, confidence = .95) {
   const selections: Record<string,string> = { battle_mode:'mass',field:'plains',lighting:'day',map_layout:'standard',objective:'annihilation',siege_attacker:'ally',ally_ability:'skilled',ally_style:'balanced',enemy_ability:'skilled',enemy_style:'balanced',...values };
   return vi.fn<typeof fetch>(async (_url,init) => {
-    const payload=JSON.parse(String(init?.body)), body=JSON.parse(payload.messages[1].content);
+    const {body}=decision(init);
     return new Response(JSON.stringify({model:'response-alias',choices:[{message:{content:JSON.stringify({selections:Object.fromEntries(body.fields.map((f:{id:string})=>[f.id,{value:selections[f.id],confidence}]))})}}]}));
   });
 }
@@ -58,16 +63,18 @@ describe('ordinary LLM preparation',()=>{
     const source=input(),before=JSON.stringify(source);
     const result=await new LlmContextController(request).select(source,settings,()=>true);
     expect(result).toMatchObject({mode:'small',field:'urban',lighting:'night',mapLayout:'indoor',objectiveMode:'escort',commanders:{ally:{ability:'regular',style:'cautious'},enemy:{ability:'expert',style:'firepower'}}});
-    const payload=JSON.parse(String(request.mock.calls[0]![1]!.body));
-    const body=JSON.parse(payload.messages[1].content);
+    const {payload,body}=decision(request.mock.calls[0]![1]);
     expect(payload.model).toBe('chosen-model');
-    expect(body.messages.map((m:{id:string})=>m.id)).toEqual(['user','new']);
+    expect(payload.messages.map((m:{role:string})=>m.role)).toEqual(['system','user','user']);
+    const narrative=payload.messages[1].content as string;
+    expect(narrative.indexOf('我们护送目标进入建筑')).toBeGreaterThan(0);
+    expect(narrative.indexOf('夜间室内护送')).toBeGreaterThan(narrative.indexOf('我们护送目标进入建筑'));
     expect(body.state.encounter.units.map((u:{id:string})=>u.id)).toEqual(['u1','u2']);
-    for (const unit of source.roster) expect(payload.messages[1].content).not.toContain(unit.id);
+    for (const unit of source.roster) expect(JSON.stringify(payload.messages)).not.toContain(unit.id);
     expect(body.fields).toHaveLength(10);
     expect(body.fields.every((f:{options:Record<string,string>})=>!Object.hasOwn(f.options,'unknown'))).toBe(true);
-    expect(payload.messages[1].content).not.toMatch(/未明确时不要推断|没有明确依据|战斗中仅明确指挥官/);
-    expect(payload.messages[1].content).not.toMatch(/隐藏推理|未完成|不得发送|旧剧情/);
+    expect(JSON.stringify(payload.messages)).not.toMatch(/未明确时不要推断|没有明确依据|战斗中仅明确指挥官/);
+    expect(JSON.stringify(payload.messages)).not.toMatch(/隐藏推理|未完成|不得发送|旧剧情/);
     expect(request.mock.calls[0]![0]).toBe('https://gateway.example/v1/chat/completions');
     expect(JSON.stringify(source)).toBe(before);
     expect(settings.model).toBe('chosen-model');
@@ -90,7 +97,7 @@ describe('ordinary LLM preparation',()=>{
     await expect(controller.select(source,settings,()=>true,()=>{throw Error('地标部署容量不足');})).rejects.toThrow('容量不足');
     await expect(controller.select(source,settings,()=>true,()=>{throw Error('正文桥梁数量与实体列表不一致');})).rejects.toThrow('数量');
     await controller.select(source,settings,()=>true);
-    const body=(n:number)=>JSON.parse(JSON.parse(String(request.mock.calls[n]![1]!.body)).messages[1].content);
+    const body=(n:number)=>decision(request.mock.calls[n]![1]).body;
     expect(body(0).state.retryErrors).toBeUndefined();expect(body(1).state.retryErrors).toEqual(['地标部署容量不足']);
     expect(body(2).state.retryErrors).toEqual(['地标部署容量不足','正文桥梁数量与实体列表不一致']);
     await controller.select(source,settings,()=>true);expect(body(3).state.retryErrors).toBeUndefined();
@@ -113,7 +120,7 @@ describe('ordinary LLM preparation',()=>{
     const request=model({battle_mode:mode==='small'?'mass':'small',map_layout:'indoor',objective:'escort',field:'urban',lighting:'night',enemy_style:'cautious'});
     const source={...input(),setup:{...input().setup,mode}};
     const result=await new LlmContextController(request).select(source,{...settings,selectBattleScale:false},()=>true);
-    const body=JSON.parse(JSON.parse(String(request.mock.calls[0]![1]!.body)).messages[1].content);
+    const {body}=decision(request.mock.calls[0]![1]);
     expect(body.fields.some((f:{id:string})=>f.id==='battle_mode')).toBe(false);
     expect(result).toMatchObject({mode,field:'urban',lighting:'night',commanders:{enemy:{style:'cautious'}}});
     expect(result).toMatchObject(mode==='mass'?{mapLayout:'standard',objectiveMode:'annihilation'}:{mapLayout:'indoor',objectiveMode:'escort'});
@@ -123,13 +130,13 @@ describe('ordinary LLM preparation',()=>{
     const source={...input(),setup:{...input().setup,mode:'small' as const}};
     const result=await new LlmContextController(request).select(source,settings,()=>true);
     expect(result.mode).toBe('mass');
-    const body=JSON.parse(JSON.parse(String(request.mock.calls[0]![1]!.body)).messages[1].content);
+    const {body}=decision(request.mock.calls[0]![1]);
     expect(body.fields.find((f:{id:string})=>f.id==='battle_mode').options).toHaveProperty('mass');
   });
   it('accepts unambiguous answer variants: hidden reasoning, prose, no wrapper, labels, letter case and loose confidence',async()=>{
     const request=vi.fn<typeof fetch>(async(_url,init)=>{
-      const payload=JSON.parse(String(init?.body)),body=JSON.parse(payload.messages[1].content);
-      expect(payload.messages[0].content).toContain('Output only the JSON object');
+      const {payload,body}=decision(init);
+      expect(payload.messages[0].content).toContain('只输出一个JSON对象');
       const answer:Record<string,unknown>=Object.fromEntries(body.fields.map((f:{id:string;options:Record<string,string>})=>[f.id,Object.keys(f.options)[0]]));
       Object.assign(answer,{lighting:'夜间/夜战',field:{value:'Forest',confidence:'0.7'},enemy_style:{value:'firepower',confidence:85},ally_ability:{value:'expert'}});
       return new Response(JSON.stringify({choices:[{message:{content:'<think>先读正文</think>结果如下：\n```json\n'+JSON.stringify(answer)+'\n```\n如需调整请告诉我。'}}]}));

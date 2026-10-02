@@ -193,10 +193,15 @@ export function buildPlannedCity(field: BattlefieldSpec, plan: BattlefieldPlan, 
         field.city.breaches = breaches.groups;
         field.generation!.notes = [...(field.generation!.notes ?? []), ...breaches.notes];
     }
-    field.objective = siege ? { kind: 'control', cell: coreCell, cells: core, attackingSide, rounds: 2, limit: field.objective.limit } : { kind: 'annihilation', cell: outside ? field.objective.cell : coreCell, limit: field.objective.limit };
+    // An open-field reference cell left under new walls or houses moves to the nearest open ground outside the town.
+    const outsideCell = (cell: number) => !groundBlocked(field, cell) ? cell
+        : field.tiles.map((_, p) => p).filter(p => !all.includes(p) && !groundBlocked(field, p)).sort((a, b) => gridDistance(field, a, cell) - gridDistance(field, b, cell) || a - b)[0] ?? cell;
+    field.objective = siege ? { kind: 'control', cell: coreCell, cells: core, attackingSide, rounds: 2, limit: field.objective.limit } : { kind: 'annihilation', cell: outside ? outsideCell(field.objective.cell) : coreCell, limit: field.objective.limit };
     if (siege) {
-        const attackers = field.tiles.map((_, p) => p).filter(p => !all.includes(p) && !groundBlocked(field, p) && (facing === 'east' ? p % w >= w - 3 : facing === 'west' ? p % w <= 2 : facing === 'north' ? Math.floor(p / w) <= 2 : Math.floor(p / w) >= h - 3));
-        field.deploymentZones = [{ side: defender, cells: inside.filter(p => !groundBlocked(field, p)) }, { side: attackingSide, cells: attackers }];
+        const band = field.tiles.map((_, p) => p).filter(p => !all.includes(p) && !groundBlocked(field, p) && (facing === 'east' ? p % w >= w - 3 : facing === 'west' ? p % w <= 2 : facing === 'north' ? Math.floor(p / w) <= 2 : Math.floor(p / w) >= h - 3));
+        // On a narrow map the approach band can touch the walls; keep a cell clear when the band still has room.
+        const clear = band.filter(p => wallCells.every(q => gridDistance(field, p, q) > 1));
+        field.deploymentZones = [{ side: defender, cells: inside.filter(p => !groundBlocked(field, p)) }, { side: attackingSide, cells: clear.length >= Math.max(4, band.length / 2) ? clear : band }];
     }
 }
 /** Build a continuous water boundary and exactly the declared logical bridge entities. */
@@ -221,13 +226,15 @@ export function buildPlannedWater(field: BattlefieldSpec, plan: BattlefieldPlan,
     }
     const lineCells = (n: number, along = axis) => Array.from({ length: along === 'horizontal' ? w : h }, (_, i) => along === 'horizontal' ? n * w + i : i * w + n);
     let cells = lineCells(line);
-    if (cityCells.length && anchor === 'center' && cells.some(p => field.city!.frontline.includes(p))) {
-        // A river with no stated side cannot cut through the walls: it runs along the city's open side,
+    // A planned city is a placed region, so an unplaced river keeps clear of its streets as well as its walls.
+    const avoided = new Set(field.city?.facing ? cityCells : field.city?.frontline ?? []);
+    if (cityCells.length && anchor === 'center' && cells.some(p => avoided.has(p))) {
+        // A river with no stated side cannot cut through the city: it runs along the city's open side,
         // across the other axis when the city spans this one.
         for (const along of [axis, axis === 'horizontal' ? 'vertical' as const : 'horizontal' as const]) {
             const span = cityCells.map(p => along === 'horizontal' ? Math.floor(p / w) : p % w), size = along === 'horizontal' ? h : w;
             const open = size - 1 - Math.max(...span) >= Math.min(...span) ? Math.min(size - 2, Math.max(...span) + 3) : Math.max(1, Math.min(...span) - 3);
-            if (lineCells(open, along).some(p => field.city!.frontline.includes(p))) continue;
+            if (lineCells(open, along).some(p => avoided.has(p))) continue;
             axis = along; line = open; cells = lineCells(open, along);
             break;
         }

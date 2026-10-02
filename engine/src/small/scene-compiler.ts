@@ -7,6 +7,7 @@ import { gridDistance, neighbors, findGridPath, gridCostsToGoals, unitLineOfSigh
 import { worldAnchorCell } from './landmark-placement.js';
 import type { Combatant } from '../types.js';
 import { surfaceHeightAt } from './height-map.js';
+import { clipRelationZone } from './force-deployment.js';
 export interface SceneRegion {
     id: string;
     kind: string;
@@ -220,20 +221,29 @@ export function finishSceneRegions(field: BattlefieldSpec, plan: BattlefieldPlan
             const [x, y] = regionCenter(field, region);
             cells = cells.filter(p => r.region === 'north_bank' ? Math.floor(p / field.width) < y : r.region === 'south_bank' ? Math.floor(p / field.width) > y : r.region === 'east_bank' ? p % field.width > x : p % field.width < x);
         }
+        let extended: string | undefined;
         if (!holds) {
             const baseRadius = r.relation === 'approaches_from' ? 3 : 2;
             const ranked = [...cells].sort((a, b) => distance(a) - distance(b) || a - b);
             const radius = Math.max(baseRadius, required ? distance(ranked[Math.min(required - 1, ranked.length - 1)] ?? ranked[0] ?? 0) : baseRadius);
             cells = cells.filter(p => distance(p) <= radius);
             if (radius > baseRadius)
-                field.generation!.notes = [...(field.generation!.notes ?? []), `为部署完整部队，${region.label}防区延伸至${radius}格`];
+                extended = `为部署完整部队，${region.label}防区延伸至${radius}格`;
         }
-        if (!cells.length)
-            throw new BattlefieldPlanError(`地点${region.label}没有符合正文关系的部署位置`);
         const zoneSide = side ?? roster.find(u => u.id === unitId)?.side;
-        field.deploymentZones ??= [];
         if (zoneSide !== 'ally' && zoneSide !== 'enemy')
             throw new BattlefieldPlanError('指定正文部队没有合法阵营');
+        // Siege roles outrank the relation's wording: attackers start outside the walls, defenders of the city inside.
+        const clipped = clipRelationZone(field, zoneSide, unitId, r.relation, region, cells, required);
+        if (clipped.cells !== cells)
+            platform = platform && clipped.cells.every(p => region.cells.includes(p));
+        cells = clipped.cells;
+        const note = clipped.note ?? extended;
+        if (note)
+            field.generation!.notes = [...(field.generation!.notes ?? []), note];
+        if (!cells.length)
+            throw new BattlefieldPlanError(`地点${region.label}没有符合正文关系的部署位置`);
+        field.deploymentZones ??= [];
         field.deploymentZones.push({ side: zoneSide, ...(unitId ? { unitId } : {}), cells, landmarkId: r.object, relation: r.relation, ...(platform ? { platform: true } : {}) });
     }
 }

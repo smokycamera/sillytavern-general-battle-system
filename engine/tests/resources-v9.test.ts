@@ -299,7 +299,7 @@ describe('V9 resource tuning: equal area cost and 8-point fatigue', () => {
     const sb = small(5, undefined, legacy), mb = mass(5, undefined, legacy);
     sb.a.fatigue = mb.a.fatigue = legacy ? 3 : 6.25;
     const before = JSON.stringify([sb.b.toSnapshot(), mb.b.toSnapshot()]);
-    const expected = legacy ? '疲劳3/4' : '疲劳6.25/8';
+    const expected = legacy ? '疲劳3/4' : '疲劳≈6.2/8';
     expect(renderTacticalBattle(sb.b, { selectedId: 'a', mode: 'weapon' })).toContain(expected);
     expect(renderFormationBattle(mb.b, { selectedId: 'a' }, {}, false, () => '', () => '')).toContain(expected);
     expect(JSON.stringify([sb.b.toSnapshot(), mb.b.toSnapshot()])).toBe(before);

@@ -192,6 +192,29 @@ function parseOpenAiDecision(content: unknown): Record<string, any> {
   if (!answer || typeof answer !== 'object' || Array.isArray(answer)) throw new JevConnectionError('模型返回无效决策');
   return answer;
 }
+/**
+ * One read-only JSON decision over OpenAI chat completions. Callers that send several steps keep the same leading
+ * messages so providers with automatic prefix caching can reuse them; the answer is parsed with the same tolerance.
+ */
+export async function openAiJsonRequest(connection: JevConnection, messages: { role: 'system' | 'user'; content: string }[], signal: AbortSignal, request: typeof fetch): Promise<Record<string, any>> {
+  const model = connection.model?.trim();
+  if (connection.protocol !== 'openai' || !model) throw new JevConnectionError('请先配置副 API 并选择模型');
+  const payload = { model, stream: false, response_format: { type: 'json_object' }, messages };
+  const send = (requestBody: Record<string, unknown>) => jevJsonRequest(connection, request, apiEndpoint(connection, 'chat/completions'), {
+    method: 'POST', headers: headers(connection), signal, body: JSON.stringify(requestBody),
+  });
+  let response: any;
+  try { response = await send(payload); }
+  catch (error) {
+    // Many OpenAI-compatible gateways do not implement response_format. Retry this read-only
+    // decision once without it, then keep the same strict JSON validation locally.
+    if (!(error instanceof JevConnectionError) || !/HTTP (?:400|422)\b/.test(error.message)) throw error;
+    const { response_format: _responseFormat, ...compatPayload } = payload;
+    response = await send(compatPayload);
+  }
+  const answer = parseOpenAiDecision(response?.choices?.[0]?.message?.content);
+  return { ...answer, model: typeof response.model === 'string' ? response.model : model };
+}
 /** Adapt the host's bounded decisions without changing the vendored command core. */
 export async function directJevRequest(connection: JevConnection, path: string, body: unknown, signal: AbortSignal, request: typeof fetch): Promise<unknown> {
   const model = connection.model?.trim();
@@ -214,23 +237,9 @@ export async function directJevRequest(connection: JevConnection, path: string, 
           + (protocol === 'battlefield-v2' ? ' Put the scene in battlefield.intent; its arrays may be empty for an explicitly empty scene.' : '') : '')
         + ' A top-level commanders object is optional and follows state.commandRules. Shape: {"selections":{...},' + (state?.mapRules ? '"battlefield":{...},' : '') + '"commanders":{...}}.'
         + ' battlefield and commanders use plain properties, without value/confidence wrappers. If state.retryErrors is present, your previous answer failed with those errors; fix each of them.' : '';
-    const payload = { model, stream: false, response_format: { type: 'json_object' }, messages: [
+    return openAiJsonRequest(connection, [
       { role: 'system', content: instructions + mapLabelInstruction + battlefieldInstruction }, { role: 'user', content: JSON.stringify(body) },
-    ] };
-    const send = (requestBody: Record<string, unknown>) => jevJsonRequest(connection, request, apiEndpoint(connection, 'chat/completions'), {
-      method: 'POST', headers: headers(connection), signal, body: JSON.stringify(requestBody),
-    });
-    let response: any;
-    try { response = await send(payload); }
-    catch (error) {
-      // Many OpenAI-compatible gateways do not implement response_format. Retry this read-only
-      // decision once without it, then keep the same strict JSON validation locally.
-      if (!(error instanceof JevConnectionError) || !/HTTP (?:400|422)\b/.test(error.message)) throw error;
-      const { response_format: _responseFormat, ...compatPayload } = payload;
-      response = await send(compatPayload);
-    }
-    const answer = parseOpenAiDecision(response?.choices?.[0]?.message?.content);
-    return { ...answer, model: typeof response.model === 'string' ? response.model : model };
+    ], signal, request);
   }
   if (path === 'context') throw new JevConnectionError('TypeSafe 直连支持开战上下文选择；自由正文目标提取请使用 OpenAI 兼容接口或本地桥接');
   const questions: Record<string, unknown> = {};

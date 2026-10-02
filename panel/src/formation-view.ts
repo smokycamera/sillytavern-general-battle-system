@@ -6,7 +6,7 @@ import { strengthDescription } from '../../engine/src/combat-model.js';
 import { participationText,memberHealthPanel } from './combat-model-view.js';
 import {hasMemberHealth} from '../../engine/src/member-health.js';
 import { renderBattleHighlights, traceOverlay, unitSymbol } from './battle-presentation.js';
-import { weaponReloadKey, FORMATION_NODES, formationNode, isAirborne, moraleLabel, type Combatant, type MassBattle, type Order } from '../../engine/src/index.js';
+import { weaponReloadKey, FORMATION_NODES, formationNode, isAirborne, moraleLabel, approx, type Combatant, type MassBattle, type Order } from '../../engine/src/index.js';
 import { renderFormationFeedback } from './formation-feedback.js';
 import { formationSelection, orderKey, orderLabels, type FormationView, type OrderDrafts } from './formation-orders.js';
 import { battleSkillChangeReason } from './battle-skills.js';
@@ -50,7 +50,7 @@ export function renderFormationBattle(b: MassBattle, view: FormationView, drafts
   const selectedNode = FORMATION_NODES.find((n) => n.id === view.nodeId);
   const inspection = visible.find((u) => u.id === view.inspectedId);
   const unitControls = actor ? `<div class="formation-actor"><span class="sub">${editable ? '正在指挥' : '查看我方编队'}</span><h3>${esc(actor.name)}</h3><p>${strengthDescription(actor)} · ${location(actor)}${isAirborne(actor) ? ' · 空中' : ''}</p></div>${memberHealthPanel(actor)}
-    <div class="formation-status">${[actor.fatigue ? '疲劳' + actor.fatigue + '/' + fatigueLimit(actor) : '', (b.reloadCd.get(actor.id) ?? 0) > 0 ? (tbWeaponShortName(actor.weapon) || '主武器') + '装填中' : '', actor.sidearm && (b.reloadCd.get(weaponReloadKey(actor, actor.sidearm)) ?? 0) > 0 ? (tbWeaponShortName(actor.sidearm) || '副武器') + '装填中' : '', actor.suppression ? '受压制' : '', pressure,
+    <div class="formation-status">${[actor.fatigue ? '疲劳' + approx(actor.fatigue, 1, 'down') + '/' + fatigueLimit(actor) : '', (b.reloadCd.get(actor.id) ?? 0) > 0 ? (tbWeaponShortName(actor.weapon) || '主武器') + '装填中' : '', actor.sidearm && (b.reloadCd.get(weaponReloadKey(actor, actor.sidearm)) ?? 0) > 0 ? (tbWeaponShortName(actor.sidearm) || '副武器') + '装填中' : '', actor.suppression ? '受压制' : '', pressure,
       ...actor.conditions.filter((c) => c.dur > 0).map((c) => (b.conditions.get(c.id)?.name ?? '持续效果') + ' ' + c.dur + '轮')].filter(Boolean).map((t) => '<span>' + esc(t!) + '</span>').join('')}</div>
     <div class="row">${[actor, ...visible.filter(u => u.id === b.attached.get(actor.id))].map(u => `<button data-action="loadout-skills" data-id="${esc(u.id)}" ${battleSkillChangeReason(b, u.id) ? 'disabled' : ''}>${u.id === actor.id ? '技能选择' : '随队技能 · ' + esc(u.name)}</button>`).join('')}</div>
     <div class="formation-current"><span class="tag">${s.draft ? '草案' : s.issued ? '已下达' : '系统建议'}</span><b>${esc(orderName(b, order))}</b>${selectedTarget ? '<p>目标 · ' + esc(selectedTarget.name) + '</p>' : ''}${s.draft && s.issued ? '<small>确认后替换原任务：' + esc(orderName(b, s.issued)) + '</small>' : ''}</div>
@@ -66,7 +66,7 @@ export function renderFormationBattle(b: MassBattle, view: FormationView, drafts
       + (preview?.areaPreviews?.length ? '<div class="formation-area-preview">' + preview.areaPreviews.map((hit) => { const affected = visible.find((u) => u.id === hit.targetId); return affected ? '<p>' + esc(affected.name) + ' · 命中率' + hitChanceText(hit) + ' · 命中后伤害' + hitDamageText(hit) + (affected.scale === 'hero'||hasMemberHealth(affected) ? '生命' : '人') + '</p>' : ''; }).join('') + '</div>' : '')
       + (preview?.preview ? '<details><summary>伤害详情</summary><p>' + hitDamageDetails(preview.preview, preview.preview.damageModel === 'member-health' || selectedTarget && selectedTarget.scale === 'hero' ? '生命' : '人') + '</p></details>' : '')
       + '<p class="' + (preview?.reason ? 'grid-reason' : '') + '">' + esc(previewText(b, order)) + '</p>'
-      + (ability?.cost && source ? '<div class="preview-cost">' + esc(source.name) + ' · ' + (ability.itemSourceId ? '消耗品' : ability.cost.resource === 'SP' ? '精力' : '预备资源') + ' ' + abilityCost(source, ability)!.amount + '/' + (source.resources[ability.cost.resource] ?? 0) + '，支援阶段扣除</div>' : '')
+      + (ability?.cost && source ? '<div class="preview-cost">' + esc(source.name) + ' · ' + (ability.itemSourceId ? '消耗品' : ability.cost.resource === 'SP' ? '精力' : '预备资源') + ' ' + abilityCost(source, ability)!.amount + '/' + approx(source.resources[ability.cost.resource] ?? 0, 1, 'down') + '，支援阶段扣除</div>' : '')
       + '<small>地面对空射程距离额外 +1 阵位，曲射火炮不能对空。基于当前已知信息；前序阶段和未发现的占位可能使后续任务受阻。</small></div>' : ''}
     <div class="formation-submit"><button class="primary" data-action="formation-issue" data-unit="${esc(actor.id)}" data-round="${b.round}" ${editable && order && !preview?.reason ? '' : 'disabled'}>${s.issued ? '确认改令' : '下达此任务'}</button>
       ${s.draft ? '<button data-action="formation-cancel" data-unit="' + esc(actor.id) + '">取消草案</button>' : s.issued ? '<button data-action="formation-revoke" data-unit="' + esc(actor.id) + '" ' + (editable ? '' : 'disabled') + '>撤回军令</button>' : ''}</div>

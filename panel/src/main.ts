@@ -64,7 +64,7 @@ import { BODY, effectiveProtection, looseFormation, ABILITY_BLUEPRINTS } from '.
 
 import {
   generateUnit, traitCatalog, traitRegistry, resolveTraitId,
-  SmallBattle, MassBattle, battleXpAwardsForBothSides, applyXp, xpProgress, xpLabel,
+  SmallBattle, MassBattle, battleXpAwardsForBothSides, applyXp, xpProgress, approx, approxDelta,
   armorDR, fieldModsFor, LITE_D20,
   V5_D20, V6_D20, V11_OVERFLOW_D20, isAirborne, abilityUsabilityReason,
   generatedField, generatedLayeredField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
@@ -968,7 +968,8 @@ function renderBattleToolbar(b: SmallBattle | MassBattle): string {
   return `<div class="battle-toolbar"><span class="tag">本场：${b.nonLethal?'非致命':'致命'}</span>${cannonAmmoControl(actor,b.isOver()||actor?.side!=='ally')}${renderContextStatus()}<label class="battle-auto"><input type="checkbox" aria-label="全自动战斗（含主控）" data-role="full-auto-battle" ${fullAuto.running ? 'checked' : ''} ${b.isOver() ? 'disabled' : ''}>${fullAuto.running ? '自动推进中 · 点击暂停' : '全自动战斗（含主控）'}</label><label>自动策略 <select data-role="battle-tactic" ${b.isOver() || b.rules.resolutionVersion !== 'v2' ? 'disabled' : ''}>${Object.entries(TACTICAL_PREFERENCES).map(([id,name]) => `<option value="${esc(id)}" ${b.allyTactic === id ? 'selected' : ''}>${name}</option>`).join('')}</select></label>${!b.isOver() ? '<div class="battle-finish-actions"><button data-action="battle-finish" data-reason="ceasefire">停止交战并结算</button><button class="danger" data-action="battle-finish" data-reason="surrender">投降并结算</button></div>' : ''}</div>`;
 }
 function renderContextStatus(): string {
-  return llmContext.busy ? '<p role="status">正在读取上下文并选择开战配置… <button data-action="llm-stop">取消读取</button></p>'
+  const step = llmContext.stage?.of === 2 ? llmContext.stage.step === 'layout' ? '正在布置地图（2/2）…' : '正在读取正文（1/2）…' : '正在读取正文…';
+  return llmContext.busy ? `<p role="status">${step} <button data-action="llm-stop">取消读取</button></p>`
     : state.encounterContext ? `<p class="sub">${esc(llmContextSummary(state.encounterContext))}</p>` : '';
 }
 function renderBattleExit(b: SmallBattle | MassBattle): string {
@@ -1018,7 +1019,7 @@ function renderBattlePreparation(): string {
     ${mode === 'small' ? `<p class="mission-summary">${esc(missionSummary)}</p>` : ''}
     <div class="preparation-stats"><div><strong>${allies.length}</strong><span>我方单位</span></div><div><strong>${enemies.length}</strong><span>已知敌方</span></div><div><strong>${mode === 'mass' ? '会战' : '战术'}</strong><span>${esc(fieldLabel(plannedFieldTags()) || '野战')}</span></div></div>
     <label class="battle-auto"><input type="checkbox" data-role="non-lethal" ${state.nonLethal?'checked':''}> 非致命战斗（双方伤害只会造成濒死）</label>
-    ${renderContextStatus()}${llm.error ? '<p role="alert">'+esc(llm.error)+'</p>' : ''}${llm.settings.enabled ? '<p class="sub">开战前将由普通 LLM 读取最近所选层数的正文，选择指挥与场景配置。可在设置中关闭。</p>' : ''}<div class="row"><button class="primary" data-action="${mode === 'mass' ? 'mass-start' : 'small-start'}" ${ready ? '' : 'disabled'}>开始交战</button><button data-action="workspace-tab" data-tab="units">${ready ? '查看队伍' : '集结队伍'}</button><button data-action="workspace-tab" data-tab="inventory">整理配装</button></div>
+    ${renderContextStatus()}${llm.error ? '<p role="alert">'+esc(llm.error)+'</p>' : ''}${llm.settings.enabled ? '<p class="sub">开战前会读取最近的正文来配置本场，可在设置中关闭。</p>' : ''}<div class="row"><button class="primary" data-action="${mode === 'mass' ? 'mass-start' : 'small-start'}" ${ready ? '' : 'disabled'}>开始交战</button><button data-action="workspace-tab" data-tab="units">${ready ? '查看队伍' : '集结队伍'}</button><button data-action="workspace-tab" data-tab="inventory">整理配装</button></div>
     ${state.roster.every((u) => u.rulesVersion === 'v2') ? `<details class="preparation-options" data-detail-id="preparation-options"><summary>任务设置 · ${state.mapLayout === 'indoor' ? '室内' : '野战'} / ${state.objectiveMode === 'escort' ? '护送' : state.objectiveMode === 'intercept' ? '拦截' : state.objectiveMode === 'siege' ? '攻城' : state.objectiveMode === 'control' ? '占旗' : state.objectiveMode === 'annihilation' ? '歼灭' : plannedFieldTags().includes('siege') ? '攻城' : '歼灭'}</summary><div class="row"><label>地形<select data-role="context-field">${Object.entries(FIELD_LABELS).filter(([id])=>id!=='night').map(([id,label])=>`<option value="${id}" ${(state.field||'plains')===id?'selected':''}>${label}</option>`).join('')}</select></label><label>光照<select data-role="context-lighting"><option value="day" ${state.lighting==='day'?'selected':''}>日间</option><option value="night" ${state.lighting==='night'?'selected':''}>夜间</option></select></label><label>地图<select data-role="map-layout"><option value="standard" ${state.mapLayout !== 'indoor' ? 'selected' : ''}>标准野战</option><option value="indoor" ${state.mapLayout === 'indoor' ? 'selected' : ''}>紧凑室内</option></select></label><label>目标<select data-role="objective-mode"><option value="auto" ${state.objectiveMode === 'auto' ? 'selected' : ''}>按环境：野战歼灭／攻城夺点</option><option value="annihilation" ${state.objectiveMode === 'annihilation' ? 'selected' : ''}>歼灭战</option><option value="control" ${state.objectiveMode === 'control' ? 'selected' : ''}>占旗战</option><option value="siege" ${state.objectiveMode === 'siege' ? 'selected' : ''}>攻城战</option><option value="escort" ${state.objectiveMode === 'escort' ? 'selected' : ''}>我方护送</option><option value="intercept" ${state.objectiveMode === 'intercept' ? 'selected' : ''}>拦截敌方护送</option></select></label><label>攻城角色<select data-role="siege-attacker"><option value="ally" ${state.siegeAttacker === 'ally' ? 'selected' : ''}>我方进攻</option><option value="enemy" ${state.siegeAttacker === 'enemy' ? 'selected' : ''}>我方防守</option></select></label></div><p>野战默认歼灭；占旗战任一方连续控制旗点2个完整回合获胜。攻城胜利点在守方纵深，攻方连续控制2个完整回合获胜，守方坚持到60回合获胜。我方护送沿用主控或首个我方单位；拦截以首个敌方单位为护送对象。双方规则相同：抵达出口则护送方胜，目标被消灭、撤离或逾期未抵达则拦截方胜。</p></details>` : ''}
     ${allies.length ? `<div class="preparation-roster">${allies.slice(0, 8).map((u) => `<span><b>${esc(u.name)}</b><small>${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}/${u.base.hpMax}</small></span>`).join('')}${allies.length > 8 ? `<span>另有${allies.length - 8}支单位</span>` : ''}</div>` : ''}
     ${MCP_ENABLED ? playerPreparation.render(playerPreparationScope()) : ''}
@@ -1094,7 +1095,7 @@ function unitHtml(u: Combatant, index: number, inBattle: boolean): string {
   const prog = u.rulesVersion === 'v2' || u.scale !== 'mook' ? xpProgress(u) : null;
   let xpTxt = '';
   if ((u.rulesVersion === 'v2' || u.scale !== 'mook') && u.xp !== undefined && !inBattle) {
-    xpTxt = prog ? `｜本级经验 ${xpLabel(prog.current)}/${prog.next}` : `｜累计经验 ${xpLabel(u.xp ?? 0)}（满级）`;
+    xpTxt = prog ? `｜本级经验 ${xpText(prog.current, 'down')}/${prog.next}` : `｜累计经验 ${xpText(u.xp ?? 0, 'down')}（满级）`;
   }
   const rosterCtl = !inBattle
     ? `<details class="unit-tools"><summary>单位操作</summary><div class="row">
@@ -1107,7 +1108,7 @@ function unitHtml(u: Combatant, index: number, inBattle: boolean): string {
     <div class="nm">${marks}${esc(u.name)}${seq ? `<span class="seq">#${seq}</span>` : ''}${encTag}${statusWord}</div>
     <div class="st">${!inBattle && u.rulesVersion === 'v2' ? `${scaleLabel(u)} · 训练${u.level}${esc(enhancementLabel(u.bonuses))} · ${u.scale === 'hero' ? '生命' : '人数'} <b class="hp-value">${u.hp}/${u.base.hpMax}</b>` : `等级${u.level}${u.archetype ? '·' + archName(u.archetype, true) : ''}｜${u.scale === 'hero' ? '生命' : '人数'} <b class="hp-value">${u.hp}/${u.base.hpMax}</b>${morale}${fat}${engage}${pos}${isAirborne(physical) ? ' · 空中' : ''}${xpTxt}`}</div>
     ${hasMemberHealth(u)?`<div class="sub">${esc(strengthDescription(u))}</div>`:''}${woundedLabel(u) ? `<div class="sub">${esc(woundedLabel(u))}</div>` : ''}
-    ${prog ? `<div class="xpbar" title="本级经验 ${xpLabel(prog.current)}/${prog.next} · 累计${xpLabel(u.xp ?? 0)}"><i style="width:${Math.min(100, Math.round((prog.current / prog.next) * 100))}%"></i></div>` : ''}
+    ${prog ? `<div class="xpbar" title="本级经验 ${xpText(prog.current, 'down')}/${prog.next} · 累计${xpText(u.xp ?? 0, 'down')}"><i style="width:${Math.min(100, Math.round((prog.current / prog.next) * 100))}%"></i></div>` : ''}
     ${concealment ? `<div class="sub">${esc(concealment)}</div>` : ''}
     ${pressure ? `<div class="sub morale-pressure">${esc(pressure)}</div>` : ''}
     <div class="row" style="margin-top:2px"><button data-action="unit-detail" data-id="${esc(u.id)}">${expanded ? '收起详情' : '详情'}</button></div>
@@ -1126,7 +1127,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   rows.push(`<span>攻 <b>${atkPlus}</b></span>`);
   rows.push(`<span>防 <b>${u.base.def}</b></span>`);
   rows.push(`<span>速 <b>${u.base.spd}</b></span>`);
-  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${trainingDamage(u.level,currentBattle()?.rules??V11_OVERFLOW_D20).toFixed(2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
+  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${approx(trainingDamage(u.level,currentBattle()?.rules??V11_OVERFLOW_D20), 2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
   rows.push(`<span>${u.scale === 'hero' ? '生命' : u.body==='vehicle'?'载具数':'人数'} <b>${u.hp}/${u.base.hpMax}</b></span>`);
   if(u.combatModel&&u.scale!=='hero')rows.push(`<span>单个${u.body==='vehicle'?'载具':'成员'}最大生命 <b>${memberDurability(u)}</b></span>`);
   if (u.base.moraleMax !== undefined) rows.push(`<span>士气 <b>${u.base.moraleMax}</b></span>`);
@@ -1175,7 +1176,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   if (u.rulesVersion === 'v2') rows.push(`<div class="sub">${esc(equipmentLoadLabel(u))}</div>`);
   if (u.rulesVersion === 'v2' && u.body && u.body !== 'human') rows.push(`<div class="sub">${({ large: '大型身体', giant: '巨型身体', vehicle: '车辆平台' })[u.body]} · 有效防护 ${protection('kinetic')}/${protection('thermal')}/${protection('arcane')}（动能/热能/奥术） · 负重容量${BODY[u.body].capacity}</div>`);
   if (looseFormation(u)) rows.push('<div class="sub">疏散队形 · 未接敌时范围暴露减半 · 近战展开减半、防御降低1；固守后收拢</div>');
-  if (u.rulesVersion === 'v2') rows.push('<div class="sub">移动 ' + movementLabel(u, plannedFieldTags()) + ' · 基础速度' + (u.speedTier ?? BODY[u.body ?? 'human'].movement) + '档 · 精力 ' + (u.resources.SP ?? 0) + '/' + spCapacity(u) + (u.resourceModel ? ' · 自然恢复 ' + spRecovery({ ...u, status: 'ready', resources: { ...u.resources, SP: 0 } }) + '/轮 · 空过休整恢复×3 · 疲劳 ' + u.fatigue + '/' + fatigueLimit(u) : '') + '</div>');
+  if (u.rulesVersion === 'v2') rows.push('<div class="sub">移动 ' + movementLabel(u, plannedFieldTags()) + ' · 基础速度' + (u.speedTier ?? BODY[u.body ?? 'human'].movement) + '档 · 精力 ' + approx(u.resources.SP ?? 0, 1, 'down') + '/' + spCapacity(u) + (u.resourceModel ? ' · 自然恢复 ' + approx(spRecovery({ ...u, status: 'ready', resources: { ...u.resources, SP: 0 } })) + '/轮 · 空过休整恢复×3 · 疲劳 ' + approx(u.fatigue, 1, 'down') + '/' + fatigueLimit(u) : '') + '</div>');
   if(u.combatModel&&u.scale!=='hero')rows.push('<p class="sub">人数与成员耐久分别结算。参战规模随现员增长，地形与阵位限制展开；减员后火力同步下降。</p>');
   if(u.combatModel&&u.scale==='hero'&&u.moraleState?.damagePenalty)rows.push('<p class="sub">累计受创压力 '+u.moraleState.damagePenalty+'，影响本场士气；不溃能力免疫惊退。</p>');
   if (u.mount) rows.push('<div class="sub">骑乘 · 占格更大 · 机动提高 · 不增加人员或生命</div>');
@@ -1299,7 +1300,7 @@ function roundSnapshotHtml(b: SmallBattle | MassBattle): string {
     const morale = u.morale !== undefined ? ` 士气${u.morale}` : '';
     const hp = mass ? ` 兵力${u.hp}/${u.base.hpMax}` : ` 生命${u.hp}/${u.base.hpMax}`;
     const conds = u.conditions.length ? ` [${u.conditions.map((c) => c.id).join(',')}]` : '';
-    const fatigue = fatiguePenalty(u) > 0 ? ` 疲劳${u.fatigue}` : '';
+    const fatigue = fatiguePenalty(u) > 0 ? ` 疲劳${approx(u.fatigue, 1, 'down')}` : '';
     return `<div class="snapshot-line"><b>${marks}${esc(u.name)}</b> <span class="dim">${geo}${u.side === 'ally' ? '我' : '敌'}${engage}${hp}${morale}${fatigue}${conds}${status}</span></div>`;
   };
   return `<div class="gen-head" data-action="snapshot-toggle">${header}<span class="gen-caret">${state.snapOpen ? '▾' : '▸'}</span></div>
@@ -1458,11 +1459,11 @@ function renderRole(): string {
   if (hero.rulesVersion === 'v2') {
     const current = currentBattle()?.combatants.find((u) => u.id === hero.id) ?? hero;
     const progress = xpProgress(hero), opened = state.expandedUnits.has('role:' + hero.id);
-    return `<section class="role-overview"><h2>主角近况 <small>${esc(hero.name)}</small></h2><p>${current.scale === 'hero' ? '生命' : '人数'} ${current.hp}/${current.base.hpMax} · 训练${hero.level}${progress ? ' · 本级经验' + xpLabel(progress.current) + '/' + progress.next : ''} · 累计经验 ${xpLabel(hero.xp ?? 0)}</p><div class="row"><button data-action="role-detail" data-id="${esc(hero.id)}">${opened ? '收起详情' : '装备与状态'}</button><button data-action="role-inject">发送当前近况</button></div>${opened ? '<div class="role-details">' + unitDetailHtml(current, battleFieldTags()) + '</div>' : ''}</section>`;
+    return `<section class="role-overview"><h2>主角近况 <small>${esc(hero.name)}</small></h2><p>${current.scale === 'hero' ? '生命' : '人数'} ${current.hp}/${current.base.hpMax} · 训练${hero.level}${progress ? ' · 本级经验' + xpText(progress.current, 'down') + '/' + progress.next : ''} · 累计经验 ${xpText(hero.xp ?? 0, 'down')}</p><div class="row"><button data-action="role-detail" data-id="${esc(hero.id)}">${opened ? '收起详情' : '装备与状态'}</button><button data-action="role-inject">发送当前近况</button></div>${opened ? '<div class="role-details">' + unitDetailHtml(current, battleFieldTags()) + '</div>' : ''}</section>`;
   }
   const prog = xpProgress(hero);
   const xpLine = prog
-    ? `本级经验 <b>${xpLabel(prog.current)}</b>/${prog.next}` + (hero.level < 10 ? `（距 ${xpLabel(prog.next - prog.current)} 升级）` : '')
+    ? `本级经验 <b>${xpText(prog.current, 'down')}</b>/${prog.next}` + (hero.level < 10 ? `（距 ${xpText(prog.next - prog.current, 'up')} 升级）` : '')
     : `经验 <b>${hero.xp ?? 0}</b>（满级）`;
   const tierNames = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
   const equip = hero.weapon
@@ -1500,7 +1501,7 @@ function renderRole(): string {
 function logDetailHtml(e: BattleLogEntry): string {
   const r = e.resolution;
   if (!r) return '';
-  if(r.packetCount)return `<b>${esc(r.text)}</b><br><span class="dim">有效参战${r.participants?.toFixed(1)}人 · 各组损失：${r.packetRolls?.map(p=>p.damage).join(' / ')}；实际扣除以目标余量为上限</span>`;
+  if(r.packetCount)return `<b>${esc(r.text)}</b><br><span class="dim">有效参战${approx(r.participants ?? 0)}人 · 各组损失：${r.packetRolls?.map(p=>p.damage).join(' / ')}；实际扣除以目标余量为上限</span>`;
   const lines: string[] = [];
   const head = `<b>${esc(r.attackerName)} → ${esc(r.defenderName)}</b>`;
   if (!r.hit) {
@@ -1698,7 +1699,7 @@ function renderAbilityDialog(): string {
           return `<option value="${esc(u.id)}" ${u.id === selected ? 'selected' : ''}>${esc(unitLabel(u, `（生命${u.hp}/${u.base.hpMax}${distance}）`))}</option>`;
         }).join('')}</select>`
       : '<span class="tag">无需选择</span>';
-  const resource = ability.cost ? `${ability.itemSourceId ? '物品剩余/消耗' : resourceLabel(ability.cost.resource)} ${actor.resources[ability.cost.resource] ?? 0}/${abilityCost(actor, ability)!.amount}` : '无消耗';
+  const resource = ability.cost ? `${ability.itemSourceId ? '物品剩余/消耗' : resourceLabel(ability.cost.resource)} ${approx(actor.resources[ability.cost.resource] ?? 0, 1, 'down')}/${abilityCost(actor, ability)!.amount}` : '无消耗';
   const massV2 = isMassBattle(b) && b.rules.resolutionVersion === 'v2';
   const unavailable = massV2 ? b.abilityOrderReason(actor.id, ability.id, selected) : smallOption?.reason;
   const recoveryTarget = targets.find((u) => u.id === selected);
@@ -1738,7 +1739,7 @@ function massOrderPreviewText(b: MassBattle, order: Order): string {
   const fatigue = resourceRound(fatigueAfter(fatigueUnit, exertion, order.type === 'hold' && !order.haste) - fatigueUnit.fatigue);
   const aerialRange = result.distance !== undefined && result.rangeDistance !== undefined && result.rangeDistance > result.distance
     ? ` · 阵距${result.distance}+对空${result.rangeDistance - result.distance}=射程距离${result.rangeDistance}` : '';
-  const cost = `占用编队本轮任务${aerialRange}${fatigue ? ` · ${fatigueUnit.id !== unit.id ? '使用者' : ''}疲劳${fatigue > 0 ? '+' : ''}${fatigue}` : ''}`;
+  const cost = `占用编队本轮任务${aerialRange}${fatigue ? ` · ${fatigueUnit.id !== unit.id ? '使用者' : ''}疲劳${approxDelta(fatigue)}` : ''}`;
   const place = (node: typeof FORMATION_NODES[number]) => `${node.side === 'ally' ? '我方' : '敌方'}${node.wing}${{ front: '前线', rear: '支援', reserve: '预备' }[node.rank]}`;
   if (result.destination) return `${cost} · 到达${place(result.destination)}${result.layer === 'air' ? '空域' : '地面'}（阶段状态与容量变化可能调整路径）${result.reactions?.length ? ' · 起飞可能遭' + result.reactions.join('、') + '借机' : ''}`;
   if (result.moraleAfter !== undefined) return `${cost} · 有效士气${result.moraleBefore}→${result.moraleAfter}${result.rallyChance !== undefined ? ' · 基础重整成功率' + Math.round(result.rallyChance * 100) + '%' : ' · 惊退风险' + Math.round((result.breakChance ?? 0) * 100) + '%'}`;
@@ -1889,7 +1890,7 @@ function renderXp(): string {
   });
   if (!awards.length) return '';
   const rows = awards
-    .map((a) => `<div class="orderline"><b>${a.side === 'enemy' ? '敌方' : '我方'} · ${esc(a.name)}</b> 原始击杀${a.kills} + 参战${a.participation}${a.command ? ` + 指挥${a.command}` : ''}${a.startMembers !== undefined ? `<br>合计${a.rawTotal} ÷ ${a.populationBasis === 'capacity' ? '旧战编制基数' : '开战实到'}${a.startMembers} × 存活比例${xpLabel((a.survivalRatio ?? 0) * 100)}%（${a.survivingMembers}/${a.startMembers}）` : ''} = <span class="cp">${xpLabel(a.total)} 成长经验</span></div>`)
+    .map((a) => `<div class="orderline"><b>${a.side === 'enemy' ? '敌方' : '我方'} · ${esc(a.name)}</b> 原始击杀${xpText(a.kills)} + 参战${xpText(a.participation)}${a.command ? ` + 指挥${xpText(a.command)}` : ''}${a.startMembers !== undefined ? `<br>合计${xpText(a.rawTotal ?? 0)} ÷ ${a.populationBasis === 'capacity' ? '旧战编制基数' : '开战实到'}${a.startMembers} × 存活比例${approx((a.survivalRatio ?? 0) * 100, 0)}%（${a.survivingMembers}/${a.startMembers}）` : ''} = <span class="cp">${xpText(a.total)} 成长经验</span></div>`)
     .join('');
   return `<section>
     <h2>③ 经验结算</h2>
@@ -1906,7 +1907,7 @@ function buildContextInject(): string {
   const hero = state.roster.find((u) => u.id === state.protagonistId);
   if (hero) {
     const prog = xpProgress(hero);
-    const xpS = prog ? `本级${xpLabel(prog.current)}/${prog.next}，累计${xpLabel(hero.xp ?? 0)}` : `${xpLabel(hero.xp ?? 0)}（满级）`;
+    const xpS = prog ? `本级${xpText(prog.current, 'down')}/${prog.next}，累计${xpText(hero.xp ?? 0, 'down')}` : `${xpText(hero.xp ?? 0, 'down')}（满级）`;
     const eq: string[] = [];
     if (hero.weapon) eq.push(`武器：${hero.weapon.name}(${hero.weapon.baseDice}${hero.weapon.apDice ? '+破甲' + hero.weapon.apDice : ''})`);
     if (hero.armor) eq.push(`护甲：${hero.armor.name}(${hero.armor.tier}档)`);
@@ -2608,9 +2609,9 @@ async function settleXp(allowUnfinished = false): Promise<void> {
     throw new Error('战果未保存，档案提交已撤回；战斗存档记录仍在，可重试');
   }
   const levelUps = result.levelUps.map((u) => `${u.name} 等级${u.from}→等级${u.to}`);
-  const sideXp = (side: 'ally' | 'enemy') => xpLabel(awards.filter(a => a.side === side).reduce((sum, a) => sum + a.total, 0));
+  const sideXp = (side: 'ally' | 'enemy') => { const total = awards.filter(a => a.side === side).reduce((sum, a) => sum + a.total, 0); return total ? approxDelta(total, total < 0.1 ? 2 : 1) : '+0'; };
   toast(result.applied
-    ? `双方成长经验已入账：我方+${sideXp('ally')}／敌方+${sideXp('enemy')} 经验${levelUps.length ? `｜🎉 升级：${levelUps.join('、')}` : ''}`
+    ? `双方成长经验已入账：我方${sideXp('ally')}／敌方${sideXp('enemy')} 经验${levelUps.length ? `｜🎉 升级：${levelUps.join('、')}` : ''}`
     : '本场经验已入账，没有重复结算');
 }
 
@@ -2654,6 +2655,8 @@ async function resolveMassRound(expectedRound: number, expectedSeed?: string): P
 }
 
 
+/** Experience keeps fractions; one decimal is enough to read, two for awards below 0.1 so they do not show as nothing. */
+function xpText(value: number, direction?: 'down' | 'up'): string { return approx(value, value > 0 && value < 0.1 ? 2 : 1, direction); }
 function playerPreparationScope(): string {
   return JSON.stringify([adapter.identity(), adapter.namespace(), state.mode, state.roster, state.field, state.lighting, state.mapLayout, state.objectiveMode, state.siegeAttacker, state.protagonistId]);
 }
@@ -2690,12 +2693,13 @@ async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void>
         && JSON.stringify([state.mode,state.field,state.lighting,state.mapLayout,state.objectiveMode,state.siegeAttacker,state.protagonistId])===setupKey
         && JSON.stringify(recentContextMessages())===messagesKey && (!runtime.canWrite||runtime.canWrite());
     const unitNotes=Object.fromEntries(state.storage.filter(u=>state.roster.some(c=>c.id===u.id)).map(u=>[u.id,u.note??'']));
-    const pending=llmContext.select({roster:state.roster,setup,messages,unitNotes,narrativeIdState:controller.snapshot().narrativeIdState,scope:JSON.stringify([identity,namespace,generation])},settings,valid, result => {
+    const pending=llmContext.select({roster:state.roster,setup,messages,unitNotes,narrativeIdState:controller.snapshot().narrativeIdState,scope:JSON.stringify([identity,namespace,generation]),onStage:()=>render('battle')},settings,valid, result => {
       if (result.mode !== 'small') return;
       const tags = [...new Set([result.field, ...(result.objectiveMode === 'siege' ? ['siege'] : []), ...(result.mapLayout === 'indoor' ? ['indoor'] : [])])];
       preparedField = generatedLayeredField(seed, result.mapLayout === 'indoor' ? 5 : 7, result.mapLayout === 'indoor' ? 7 : 13, tags,
         { roster: state.roster, attackingSide: result.siegeAttacker, design: result.mapDesign, plan: result.battlefieldPlan, unitBindings: result.unitBindings });
       preparedField = prepareBattleObjective(preparedField, state.roster, result.objectiveMode, state.protagonistId, result.siegeAttacker, result.vipId);
+      if (result.layoutNotes?.length) preparedField.generation!.notes = [...result.layoutNotes, ...preparedField.generation!.notes ?? []];
     });
     render('battle');
     context=await pending;

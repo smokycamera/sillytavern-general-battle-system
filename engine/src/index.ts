@@ -45,6 +45,7 @@ export * from './skill-catalog.js';
 export * from './gen/generic-skills.js';
 export * from './inject/format.js';
 export * from './xp.js';
+export * from './display-number.js';
 export * from './battle-feedback.js';
 export * from './mass/feedback.js';
 
@@ -70,4 +71,5 @@ export * from './small/battlefield-plan.js';
 export * from './small/layered-generator.js';
 export * from './small/scene-intent.js';
 export * from './small/scene-compiler.js';
+export * from './small/force-deployment.js';
 export * from './small/height-map.js';

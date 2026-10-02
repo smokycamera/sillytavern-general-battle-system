@@ -36,7 +36,6 @@ export function buildEncounter(input: EncounterBuild): SmallBattle | MassBattle 
   let battlefield = input.preparedField ?? (v2 ? generatedLayeredField(seed, setup.mapLayout === 'indoor' ? 5 : 7, setup.mapLayout === 'indoor' ? 7 : 13, tags,
     { roster, attackingSide: setup.siegeAttacker, design: context?.mapDesign, plan: context?.battlefieldPlan, unitBindings: context?.unitBindings }) : undefined);
   if (battlefield && !input.preparedField) battlefield = prepareBattleObjective(battlefield, roster, setup.objectiveMode, input.protagonistId, setup.siegeAttacker, context?.vipId);
-  if (context && battlefield?.generation?.notes?.length) context.designDetail = [context.designDetail, ...battlefield.generation.notes].filter(Boolean).join('；');
   if (context?.mapDesign && battlefield?.generation?.source === 'context') context.mapDesign = structuredClone(battlefield.generation.design);
   if (context && battlefield?.objective.kind === 'escape') { context.vipId = battlefield.objective.unitId; context.vipName = roster.find(u => u.id === context.vipId)?.name; }
   const battle = new SmallBattle({ nonLethal: input.nonLethal, ...(v2 ? { battlefield } : {}), rules: v2 ? V11_OVERFLOW_D20 : LITE_D20,

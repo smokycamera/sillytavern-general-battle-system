@@ -1,9 +1,9 @@
-import { FORMATION_NODES, type MassBattle, type UnitChange } from '../../engine/src/index.js';
+import { FORMATION_NODES, approxDelta, type MassBattle, type UnitChange } from '../../engine/src/index.js';
 import { orderLabels } from './formation-orders.js';
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const statusLabel: Record<string, string> = { ready: '恢复行动', dying: '濒死', dead: '阵亡', routing: '惊退', fled: '撤离' };
 const frontLabel = { ally: '我方控制', enemy: '敌方控制', contested: '争夺', empty: '空缺' };
-const sign = (n: number) => n > 0 ? '+' + n : String(n);
+const sign = (n: number) => approxDelta(n);
 const at = (index: number) => { const n = FORMATION_NODES[index]; return n ? (n.side === 'ally' ? '我方' : '敌方') + n.wing + ({ front: '前线', rear: '支援', reserve: '预备' })[n.rank] : '原阵位'; };
 function changeText(c: UnitChange): string {
   return [c.lost ? '损失' + c.lost + (c.scale === 'hero' ? '生命' : '人') : '', c.recovered ? '恢复' + c.recovered + (c.scale === 'hero' ? '生命' : '人') : '',

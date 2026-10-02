@@ -272,6 +272,8 @@ export function gridDeploymentCells(field: BattlefieldSpec, unit: Combatant): nu
     }
     return [...new Set(cells)];
   }
+  // Defenders posted in the streets or sallying out do not man the walls.
+  if (isElevated(unit) && selected.some(z => z.relation === 'sector:inside' || z.relation === 'sector:outside')) return [];
   if (field.layerVersion && field.city?.defender === unit.side) {
     const cells = isElevated(unit) ? field.city.frontline.filter(p => structureAt(field, p)?.top && structureAt(field, p)!.hp > 0)
       : [...field.city.inside, ...field.city.reserve].filter(p => !groundBlocked(field, p, unit));
@@ -308,7 +310,8 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
   const probes = [...new Set([forward, middle])].flatMap(y => Array.from({ length: field.width }, (_, x) => y * field.width + x))
     .filter(p => field.layerVersion ? !groundBlocked(field, p, unit) : field.tiles[p] !== 'wall');
   const costs = gridCostsToGoals(field, probes, p => field.layerVersion ? !groundBlocked(field, p, unit) : air || field.tiles[p] !== 'wall', (p,from) => tileCost(field, p, unit)+heightStepCost(field,from,p,unit));
-  const contextual=field.deploymentZones?.some(z=>z.unitId===unit.id||!z.unitId&&z.side===unit.side);
+  // A garrison given only a compass area keeps the siege layout: close to its walls, with a reserve.
+  const contextual=field.deploymentZones?.some(z=>(z.unitId===unit.id||!z.unitId&&z.side===unit.side)&&!(field.city?.defender===unit.side&&z.relation?.startsWith('sector')));
   const emptyConditions = new Map<string, ConditionDef>();
   return (position: number, placed: Combatant[]) => {
     const actor = { ...unit, pos: position }, friends = placed.filter(u => u.id !== unit.id && u.side === unit.side);
@@ -355,7 +358,9 @@ export function prepareGridDeployment(field: BattlefieldSpec, units: readonly Co
       &&gridDeploymentCells(field,{...u,elevation:1}).some(p=>structureAt(field,p)?.top))
       .sort((a,b) => Number(isRangedWeapon(b.weapon)) - Number(isRangedWeapon(a.weapon)) || a.id.localeCompare(b.id));
     const capacity = field.city.frontline.filter(p => structureAt(field,p)?.hp && structureAt(field,p)?.top).length;
-    for (const u of guard.slice(0, Math.min(capacity, Math.floor(guard.length * .4)))) u.elevation = 1;
+    // A narrative that mans the walls lifts most guards onto them; the default keeps a street reserve.
+    const manned = field.deploymentZones?.some(z => !z.unitId && z.side === field.city!.defender && z.relation === 'sector:wall');
+    for (const u of guard.slice(0, Math.min(capacity, Math.floor(guard.length * (manned ? .75 : .4))))) u.elevation = 1;
   }
   const positions = deployOnGrid(field, prepared, seed);
   prepared.forEach((u,i) => { u.pos = positions[i]; });

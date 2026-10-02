@@ -1,5 +1,7 @@
 import type { Side, Scale } from './types.js';
 
+/** Fractional resources are stored to two decimals; summing their differences must not add binary noise such as 0.7699999999999999. */
+const settle = (n: number) => Math.round(n * 1e6) / 1e6;
 /** 仅保存观察者看见的轻量投影，不参与战斗结算。 */
 export interface FeedbackUnit {
   id: string; name: string; side: Side; scale: Scale; hp: number; status: string;
@@ -53,9 +55,9 @@ export class BattleFeedback {
       row.lost += Math.max(0, from.hp - to.hp); row.recovered += Math.max(0, to.hp - from.hp);
       for (const key of unique([...Object.keys(from.resources), ...Object.keys(to.resources)])) {
         const delta = (to.resources[key]?.value ?? 0) - (from.resources[key]?.value ?? 0);
-        if (delta) row.resources[key] = { name: (to.resources[key] ?? from.resources[key])!.name, delta: (row.resources[key]?.delta ?? 0) + delta };
+        if (delta) row.resources[key] = { name: (to.resources[key] ?? from.resources[key])!.name, delta: settle((row.resources[key]?.delta ?? 0) + delta) };
       }
-      row.morale += to.morale - from.morale; row.fatigue += to.fatigue - from.fatigue;
+      row.morale += to.morale - from.morale; row.fatigue = settle(row.fatigue + to.fatigue - from.fatigue);
       if (from.cell !== to.cell) { row.fromCell ??= from.cell; row.toCell = to.cell; }
       row.gained = unique([...row.gained, ...to.effects.filter((e) => !from.effects.includes(e))]);
       row.ended = unique([...row.ended, ...from.effects.filter((e) => !to.effects.includes(e))]);

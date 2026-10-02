@@ -1,8 +1,8 @@
-import { cellLabel, type SmallBattle, type UnitChange, type RoundFeedback } from '../../engine/src/index.js';
+import { cellLabel, approxDelta, type SmallBattle, type UnitChange, type RoundFeedback } from '../../engine/src/index.js';
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const statusNames: Record<string, string> = { ready: '恢复行动', dying: '濒死倒地', dead: '阵亡', routing: '惊退', fled: '撤出战场' };
 const meaningful = (u: UnitChange) => u.lost || u.recovered || u.morale || u.fatigue || u.gained.length || u.ended.length || u.statuses.length || Object.values(u.resources).some((r) => r.delta) || u.sight || u.fromCell !== u.toCell;
-const signed = (n: number) => n > 0 ? '+' + n : String(n);
+const signed = (n: number) => approxDelta(n);
 function detail(battle: SmallBattle, u: UnitChange): string {
   const parts = [
     u.lost ? '损失' + u.lost + (u.scale === 'hero' ? '生命' : '人') : '',
