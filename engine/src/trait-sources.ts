@@ -137,7 +137,9 @@ export function bakedTraitStats(unit: Combatant, registry = traitRegistry()): Tr
 }
 export function traitStatAdjustments(unit: Combatant, registry = traitRegistry()): TraitStats {
   if (unit.rulesVersion !== 'v2') return {};
-  const baked = bakedTraitStats(unit, registry), current = traitStatContributions(unit, activeTraitIds(unit), registry), result: TraitStats = {};
+  // 只读比较，不需要 bakedTraitStats 的副本；每次攻击结算都会经过这里。
+  const baked = unit.bakedTraitStats ?? traitStatContributions(unit, unit.genAudit?.input.traits ?? [], registry, false);
+  const current = traitStatContributions(unit, activeTraitIds(unit), registry), result: TraitStats = {};
   for (const key of ['atk', 'def', 'spd', 'morale'] as const) if ((current[key] ?? 0) !== (baked[key] ?? 0)) result[key] = (current[key] ?? 0) - (baked[key] ?? 0);
   return result;
 }

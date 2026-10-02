@@ -30,7 +30,11 @@ export interface DiceRollDetail {
 
 const RE = /^(\d+)d(\d+)(?:(kh|kl)(\d+))?([+-]\d+)?$/i;
 
+// 解析结果只读：同一表达式在预览抽样中会被反复掷出，冻结后共用。
+const parsed = new Map<string, DiceExpr>();
+
 export function parseDice(expr: string): DiceExpr {
+  const known = parsed.get(expr); if (known) return known;
   const s = expr.replace(/\s+/g, '');
   const m = RE.exec(s);
   if (!m) throw new Error(`无法解析骰子表达式: "${expr}"`);
@@ -44,14 +48,17 @@ export function parseDice(expr: string): DiceExpr {
     throw new Error(`保留数量必须在 1..${count}: ${keepN}`);
   }
   const flat = m[5] ? parseInt(m[5], 10) : 0;
-  return {
+  const result: DiceExpr = Object.freeze({
     count,
     sides,
     keepHigh: keepMode === 'kh' ? keepN : undefined,
     keepLow: keepMode === 'kl' ? keepN : undefined,
     flat,
     source: s,
-  };
+  });
+  if (parsed.size >= 512) parsed.clear();
+  parsed.set(expr, result);
+  return result;
 }
 
 export function rollDice(expr: string, rng: Rng): DiceRollDetail {

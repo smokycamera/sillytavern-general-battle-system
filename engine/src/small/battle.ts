@@ -43,6 +43,7 @@ import type { BattleLogEntry, Combatant, EffectOp, RulePack, Side, Trait } from 
 import type { ConditionDef } from '../types.js';
 import type { Rng } from '../rng.js';
 import { SeededRng, liveRng, randomSeed } from '../rng.js';
+import { cloneData } from '../clone.js';
 import { parseDice, rollDice } from '../dice.js';
 import { resolveAttack, previewAttack, penetrationContext, isRangedCapable, armorDR, qualityGapDR, type AttackResolution, type AttackOpts } from '../damage.js';
 import { sharedParticipants } from '../exposure.js';
@@ -143,6 +144,8 @@ export class SmallBattle {
   overwatch = new Set<string>();
   /** 阵营共享的近距离搜查记录；只由实际可见的己方位置更新。 */
   private searchCoverage: Partial<Record<Side, number[]>> = {};
+  /** 仅在自动行动选择期间存在：战场只读，同一阵营的观测结果复用到执行前。 */
+  private observationMemo?: Map<Combatant['side'], Combatant[]>;
   controlRounds = { ally: 0, enemy: 0 };
   controlHold?: { side: 'ally' | 'enemy'; sinceRound: number; lastCountedRound?: number };
   objectiveWinner?: 'ally' | 'enemy' | 'draw';
@@ -462,7 +465,10 @@ export class SmallBattle {
   visibleLog(side: Side): BattleLogEntry[] { return this.rules.resolutionVersion === 'v2' ? observedLog(this.log, side) : this.log; }
   observationContext(units = this.combatants): ObservationContext { return { units, mode: 'small', fieldTags: this.fieldTags, conditions: this.conditions, battlefield: this.battlefield, rules: this.rules, traitRegistry: this.traitRegistry, reload: this.reloadCd }; }
   visibleCombatants(side: Combatant['side']): Combatant[] {
-    return this.rules.resolutionVersion === 'v2' ? observedUnits(this.observationContext(), side) : this.combatants;
+    if (this.rules.resolutionVersion !== 'v2') return this.combatants;
+    const memo = this.observationMemo, known = memo?.get(side) ?? observedUnits(this.observationContext(), side);
+    if (!memo) return known;
+    memo.set(side, known); return [...known];
   }
   cellVisible(side: Side, cell: number): boolean {
     if (this.rules.resolutionVersion !== 'v2') return true;
@@ -1659,7 +1665,7 @@ export class SmallBattle {
   autoAction(unitId: string): void {
     const current = this.byId(unitId);
     if (this.isTurnOf(unitId) && current.conditions.some(c => c.dur > 0 && this.conditions.get(c.id)?.skipTurn)) { this.recordEvent({ round: this.round, kind: 'condition', participants: [unitId], text: current.name + ' 眩晕，跳过回合' }); this.endTurn(); return; }
-    if (this.battlefield) { this.autoGridAction(unitId); return; }
+    if (this.battlefield) { try { this.autoGridAction(unitId); } finally { this.observationMemo = undefined; } return; }
     const u = this.byId(unitId);
     if (u.status !== 'ready' || !this.isTurnOf(unitId)) return;
     // 索敌优先 ready；只剩濒死敌时列入补刀目标
@@ -1714,6 +1720,7 @@ export class SmallBattle {
       }
       if (unit.status !== 'ready') { if (!this.isOver()) this.endTurn(); return; }
     }
+    this.observationMemo = new Map();
     const plans: { score: number; path: GridPath; offensive?: boolean; selfDefenseScore?: number; targetId?: string; abilityId?: string; weaponMode?: SmallAttackOpts['weaponMode']; cell?: number; structureMode?: string; kind: 'structure' | 'gate' | 'climb' | 'weapon' | 'charge' | 'ability' | 'brace' | 'hold' | 'land' | 'reload' | 'haste-move' | 'haste-flight' }[] = [];
     const knownUnits = this.visibleCombatants(unit.side);
     const objective = field.objective;
@@ -1805,10 +1812,10 @@ export class SmallBattle {
     const arrivals = new Map<GridPath, {actor:Combatant; loss:number; survival:number}>();
     const arrivalAfterReactions = (path: GridPath) => {
       const cached=arrivals.get(path);if(cached)return cached;
-      if (!path.cost || !foes.length) return {actor:{...structuredClone(unit),pos:path.cells.at(-1)!},loss:0,survival:1};
+      if (!path.cost || !foes.length) return {actor:{...cloneData(unit),pos:path.cells.at(-1)!},loss:0,survival:1};
       const results: Combatant[]=[];let loss=0,alive=0;
       for(let sample=0;sample<8;sample++) {
-        const copy=structuredClone(unit), spent=new Set(this.reactionSpent),rng=new SeededRng('route-risk:'+sample);
+        const copy=cloneData(unit), spent=new Set(this.reactionSpent),rng=new SeededRng('route-risk:'+sample);
         for(const cell of path.cells.slice(1)) {
           const previous=copy.pos!;copy.pos=cell;delete copy.tacticalPose;
           for(const foe of foes) {
@@ -1819,7 +1826,7 @@ export class SmallBattle {
             if(!opportunity&&!watching)continue;
             spent.add(foe.id);
             const context=this.weaponContext(foe,copy,{weaponMode:opportunity?weapon===foe.sidearm?'sidearm':'primary':'auto'});
-            resolveAttack(this.environmentContext({attacker:structuredClone(foe),defender:copy,rng,rules:this.rules,conditionDefs:this.conditionDefMap(),traitRegistry:this.traitRegistry,
+            resolveAttack(this.environmentContext({attacker:cloneData(foe),defender:copy,rng,rules:this.rules,conditionDefs:this.conditionDefMap(),traitRegistry:this.traitRegistry,
               weaponOverride:opportunity?weapon:context.weapon,ranged:!opportunity&&context.ranged,actionDamageScale:!opportunity?this.hasteOverwatch.get(foe.id)??1:1,...this.attackModifiers(foe,copy,context)}));
           }
           if(copy.hp<=0)break;
@@ -2035,6 +2042,7 @@ export class SmallBattle {
     const ranked = new Map(candidates.map((plan, i) => [plan, commandScores[i]!]));
     const best = candidates.sort((a, b) => Number(completesEscort(b)) - Number(completesEscort(a))
       || ranked.get(b)! - ranked.get(a)! || a.path.cost - b.path.cost || (a.targetId ?? '').localeCompare(b.targetId ?? ''))[0];
+    this.observationMemo = undefined;
     if (best) {
       if (best.kind === 'haste-move' || best.kind === 'haste-flight') this.selectHaste(unitId, true);
       if (best.path.cost > 0 && best.kind !== 'charge') {

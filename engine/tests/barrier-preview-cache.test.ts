@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { generateUnit, prepareCombatModel, previewAttack, resolveAttack, standardConditionMap, traitRegistry,
-  V8_OVERFLOW_D20, grantBarrier, SeededRng, type AttackOpts } from '../src/index.js';
+  V8_OVERFLOW_D20, grantBarrier, SeededRng, sampledPreviewComputations, type AttackOpts } from '../src/index.js';
 import { memberHealth } from '../src/member-health.js';
 import { bracePose } from '../src/tactics.js';
 let serial = 0;
@@ -16,7 +16,8 @@ function options(scale: 'hero' | 'company' = 'hero'): Omit<AttackOpts, 'rng'> {
   return { attacker: units[0]!, defender: units[1]!, rules: structuredClone(V8_OVERFLOW_D20),
     conditionDefs: standardConditionMap(), traitRegistry: registry, ranged: true, distance: 4 };
 }
-afterEach(() => vi.restoreAllMocks());
+/** 统计一次查询实际执行的96种子抽样次数：命中缓存为0，重新计算为1。 */
+function computed(query: () => unknown): number { const before = sampledPreviewComputations(); query(); return sampledPreviewComputations() - before; }
 describe('屏障多段预览的有界值缓存', () => {
   it.each(['hero', 'company'] as const)('%s 保持原96种子模拟的每项统计与战斗对象不变', scale => {
     const o = options(scale), before = JSON.stringify(o), preview = previewAttack(o);
@@ -34,11 +35,12 @@ describe('屏障多段预览的有界值缓存', () => {
     if (scale === 'company') expect(preview.expectedCasualties).toBe(casualties / 96);
     expect(JSON.stringify(o)).toBe(before); expect(previewAttack(o)).toEqual(preview);
   });
-  it('重复查询与无姿态的等价走位不再克隆96次，返回值修改不污染缓存', () => {
-    const o = options(), spy = vi.spyOn(globalThis, 'structuredClone'), first = previewAttack(o);
-    expect(spy.mock.calls.length).toBeGreaterThanOrEqual(192); spy.mockClear();
+  it('重复查询与无姿态的等价走位不再重新抽样，返回值修改不污染缓存', () => {
+    const o = options(); let first!: ReturnType<typeof previewAttack>;
+    expect(computed(() => { first = previewAttack(o); })).toBe(1);
     o.attacker.pos = 7; o.defender.pos = 35;
-    const again = previewAttack(o); expect(again).toEqual(first); expect(spy.mock.calls.filter(([value]) => (value as { id?: string } | undefined)?.id === o.attacker.id || (value as { id?: string } | undefined)?.id === o.defender.id)).toHaveLength(0);
+    let again!: ReturnType<typeof previewAttack>;
+    expect(computed(() => { again = previewAttack(o); })).toBe(0); expect(again).toEqual(first);
     again.expectedDamage = -999; expect(previewAttack(o)).toEqual(first);
   });
   const changes: [string, (o: Omit<AttackOpts, 'rng'>) => void][] = [
@@ -62,27 +64,32 @@ describe('屏障多段预览的有界值缓存', () => {
   ];
   it.each(changes)('%s变化立即重新计算', (_name, change) => {
     const o = options(); previewAttack(o); change(o);
-    const spy = vi.spyOn(globalThis, 'structuredClone'); previewAttack(o);
-    expect(spy.mock.calls.length).toBeGreaterThanOrEqual(192);
+    expect(computed(() => previewAttack(o))).toBe(1);
   });
-  it('有方向性固守时位置不能合并', () => {
+  it('有方向性固守时只合并固守效果相同的位置', () => {
     const o = options(); o.attacker.pos = 3; o.defender.pos = 24;
     o.defender.tacticalPose = bracePose(o.defender, o.attacker, 'small', 7); previewAttack(o);
-    o.attacker.pos = 45; const spy = vi.spyOn(globalThis, 'structuredClone'); previewAttack(o);
-    expect(spy.mock.calls.length).toBeGreaterThanOrEqual(192);
+    o.attacker.pos = 10; expect(computed(() => previewAttack(o))).toBe(0); // 仍在正面
+    o.attacker.pos = 45; expect(computed(() => previewAttack(o))).toBe(1); // 绕到背后，失去固守加成
+    // 离开锚点后固守失效，与背后同样没有固守加成，可以复用。
+    o.attacker.pos = 10; o.defender.pos = 25; expect(computed(() => previewAttack(o))).toBe(0);
+  });
+  it('疲劳只按惩罚档、距离只按≤1/≥2区分，精力、冷却与攻方屏障不影响样本', () => {
+    const o = options(); previewAttack(o);
+    o.attacker.fatigue = 1; o.distance = 6; o.attacker.resources = { ...o.attacker.resources, SP: 0 }; o.attacker.abilityState = [];
+    o.attacker.barrier = { remaining: 50, duration: 3 };
+    expect(computed(() => previewAttack(o))).toBe(0);
   });
   it('编队伤损分布改变不能复用旧样本', () => {
     const o = options('company'); previewAttack(o);
     o.defender.formation = structuredClone(o.defender.formation);
     // 该字段属于伤损模型的一部分，即使当前同人数也必须重新计算。
     o.defender.formation!.health![0]!.hp--;
-    const spy = vi.spyOn(globalThis, 'structuredClone'); previewAttack(o);
-    expect(spy.mock.calls.length).toBeGreaterThanOrEqual(192);
+    expect(computed(() => previewAttack(o))).toBe(1);
   });
   it('跨过条目上限会淘汰旧结果，不无限积累整个存档历史', () => {
     const o = options(); previewAttack(o);
     for (let i = 0; i < 130; i++) previewAttack({ ...o, actionDamageScale: .01 + i / 1000 });
-    const spy = vi.spyOn(globalThis, 'structuredClone'); previewAttack(o);
-    expect(spy.mock.calls.length).toBeGreaterThanOrEqual(192);
+    expect(computed(() => previewAttack(o))).toBe(1);
   });
 });

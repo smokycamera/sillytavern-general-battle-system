@@ -27,6 +27,8 @@ import { meleeReach } from './melee.js';
 const defaults = standardConditionMap();
 const caches = new WeakMap<ObservationContext, WeakMap<Combatant, Map<Combatant | undefined, number>>>();
 const extraCaches = new WeakMap<ObservationContext, WeakMap<Combatant, Map<Combatant | undefined, number>>>();
+// 可达落点只取决于观测上下文与行动单位，与估值目标无关；同一估值上下文内复用。
+const reachableCaches = new WeakMap<ObservationContext, WeakMap<Combatant, (number | undefined)[]>>();
 const alive = (u: Combatant) => u.hp > 0 && !['dead', 'fled'].includes(u.status);
 function flags(context: ObservationContext, unit: Combatant) {
   return unit.conditions.filter(c => c.dur > 0).map(c => (context.conditions ?? defaults).get(c.id));
@@ -34,6 +36,15 @@ function flags(context: ObservationContext, unit: Combatant) {
 function distance(context: ObservationContext, a: Combatant, b: Combatant) {
   return context.mode === 'mass' ? formationDistance(a, b) : context.battlefield
     ? gridDistance(context.battlefield, a.pos!, b.pos!) : Math.abs((a.pos ?? 0) - (b.pos ?? 0));
+}
+/** 等同于按（距目标、格号）稳定排序后取首项；每格只量一次，不为每次比较复制整名单位。 */
+function nearestCell(context: ObservationContext, origin: Combatant, cells: (number | undefined)[], foe: Combatant) {
+  let best: number | undefined, bestDistance = 0;
+  cells.forEach((cell, index) => {
+    const away = context.mode !== 'mass' && context.battlefield ? gridDistance(context.battlefield, cell!, foe.pos!) : distance(context, { ...origin, pos: cell }, foe);
+    if (!index || ((away - bestDistance) || (cell ?? 0) - (best ?? 0)) < 0) { best = cell; bestDistance = away; }
+  });
+  return best;
 }
 
 /** 一次合法行动的可兑现生命收益；不推演敌军军令，不消耗随机数。
@@ -48,13 +59,18 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
   if (values.has(onlyTarget)) return values.get(onlyTarget)!;
   const origin = positionedUnit(context, source), field = context.battlefield;
   const foes = (onlyTarget ? [onlyTarget] : context.units.filter(u => u.side !== source.side)).filter(alive);
-  const canMove = !flags(context, source).some(d => d?.preventMove) && ![...(context.attached?.values() ?? [])].includes(source.id);
-  const reachable = field && context.mode === 'small' && canMove
-    ? reachableGridPaths(field, origin.pos!, movementPoints(source, context.fieldTags), cell => canOccupy(field, context.units, origin, cell), cell => tileCost(field, cell, origin)).map(p => p.cells.at(-1)!)
-    : [origin.pos];
+  let reachableCache = reachableCaches.get(context); if (!reachableCache) reachableCaches.set(context, reachableCache = new WeakMap());
+  let reachable = reachableCache.get(source);
+  if (!reachable) {
+    const canMove = !flags(context, source).some(d => d?.preventMove) && ![...(context.attached?.values() ?? [])].includes(source.id);
+    reachable = field && context.mode === 'small' && canMove
+      ? reachableGridPaths(field, origin.pos!, movementPoints(source, context.fieldTags), cell => canOccupy(field, context.units, origin, cell), cell => tileCost(field, cell, origin)).map(p => p.cells.at(-1)!)
+      : [origin.pos];
+    reachableCache.set(source, reachable);
+  }
   // 有界战术启发：保留原位及各近敌方向的最近合法落点，避免为每项状态重复穷举整张地图。
   const positions = [...new Set([origin.pos, ...foes.slice().sort((a,b)=>distance(context,origin,a)-distance(context,origin,b)||a.id.localeCompare(b.id)).slice(0,3)
-    .map(foe=>reachable.slice().sort((a,b)=>distance(context,{...origin,pos:a},foe)-distance(context,{...origin,pos:b},foe)||(a??0)-(b??0))[0])])];
+    .map(foe=>nearestCell(context,origin,reachable,foe))])];
   const rules = context.rules ?? (origin.damageModel==='wounds-v2'?(context.mode==='mass'?V6_TW:V6_D20):origin.damageModel==='wounds-v1'?(context.mode==='mass'?V5_TW:V5_D20):(context.mode === 'mass' ? V4_TW : V4_D20));
   const defs = new Map([...defaults].map(([id, def]) => [id, context.conditions?.get(id) ?? def]));
   let best = 0;

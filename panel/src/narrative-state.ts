@@ -162,6 +162,13 @@ function spawnInput(event: Extract<Suggestion, { kind: 'spawn' }>): GenerateInpu
   };
 }
 
+/** hero 生命上限仍由训练/身体/修正推导；正文 hp/hpMax 只按比例表示伤势，新建至少保留1点生命。 */
+function applySpawnWound(unit: Combatant, event: Extract<Suggestion, { kind: 'spawn' }>): void {
+  if (unit.scale !== 'hero' || event.hp === undefined || !event.hpMax || event.hp >= event.hpMax) return;
+  unit.hp = Math.max(1, Math.min(unit.base.hpMax, Math.round(unit.base.hpMax * event.hp / event.hpMax)));
+  if (unit.genAudit) unit.genAudit.input.hp = unit.hp;
+}
+
 /** 同一档案允许互补/相同赋值；真正冲突仍需澄清，不能靠执行顺序暗中覆盖。 */
 function assertCompatibleUnitChanges(events: Suggestion[]): void {
   const changes = new Map<string, Map<string, string>>();
@@ -306,7 +313,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
         if (records.some((r) => r.id === id)) throw new Error('新单位身份已存在');
         const unit = generateUnit(spawnInput(event), { registry, seed: id }).unit;
         unit.id = id;
-        prepareCombatModel(unit,V6_D20); upgradeCombatSkills(unit);
+        prepareCombatModel(unit,V6_D20); upgradeCombatSkills(unit); applySpawnWound(unit, event);
         records.push(unitRecordFromCombatant(unit, undefined, { sourceId: proposal.id }));
         if (unit.hp > 0) roster.push(materializeUnitRecord(records.at(-1)!, registry));
       }

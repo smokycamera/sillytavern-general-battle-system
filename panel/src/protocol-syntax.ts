@@ -155,11 +155,7 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
     result[key] = value;
   }
   if (collectOnly) return result;
-  // Hero creation derives life from training/body/bonuses, even if the narrator supplies it.
-  if (tag.name === 'spawn' && result.scale === 'hero') {
-    delete result.hp;
-    delete result.hpMax;
-  }
+  if (tag.name === 'spawn' && result.scale === 'hero') heroWound(result, warnings);
   if (result.hp?.includes('/')) {
     const parts = result.hp.split('/').map((part) => numeric(part, 'hp'));
     if (parts.length !== 2 || parts.some((part) => !/^\d+$/.test(part))) throw new Error('hp 的当前值/上限写法不明确');
@@ -167,4 +163,20 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
     result.hp = parts[0]!; result.hpMax = parts[1]!; warnings.push('已将生命/人数分数拆为hp和hpMax');
   }
   return result;
+}
+
+/** Hero life is derived from training/body/bonuses; narrated hp/hpMax only set the wound ratio and never block creation. */
+function heroWound(result: Record<string, string>, warnings: string[]): void {
+  const name = result.name ?? '英雄', fraction = result.hp?.includes('/') ? result.hp.split('/').map((part) => numeric(part, 'hp')) : undefined;
+  const [hp, max] = fraction ?? [result.hp, result.hpMax];
+  const conflict = !!fraction && result.hpMax !== undefined && fraction[1] !== result.hpMax;
+  delete result.hp; delete result.hpMax;
+  if (hp === undefined) return; // 只给上限等于满生命，上限本身仍由训练推导。
+  if (max === undefined) { warnings.push(name + '只写了hp，缺少hpMax无法换算伤势，按满生命建档'); return; }
+  const valid = !conflict && (!fraction || fraction.length === 2) && Number(max) >= 1
+    && [hp, max].every((value) => /^\d+$/.test(value) && Number.isSafeInteger(Number(value)));
+  if (!valid) { warnings.push(name + '的hp/hpMax不是一组有效整数，按满生命建档'); return; }
+  if (Number(hp) > Number(max)) warnings.push(name + '的hp高于hpMax，按满生命建档');
+  if (Number(hp) === 0) warnings.push(name + '的hp为0：新建单位至少保留1点生命');
+  result.hp = String(Math.min(Number(hp), Number(max))); result.hpMax = String(Number(max));
 }

@@ -2079,7 +2079,9 @@ function suggestionDesc(s: Suggestion): string {
     case 'spawn': {
       const wep = 'weaponName' in s ? (s.weaponName ?? s.weapon) : undefined;
       const arm = 'armorName' in s ? (s.armorName ?? s.armor) : undefined;
-      return `新增 ${s.name}×${s.count}（训练${s.level}${s.scale ? '·' + scaleLabel({ scale: s.scale, rulesVersion: 'v2' }) : ''}${wep ? `·${wep}` : ''}${arm ? `·${arm}` : ''}${s.skills?.length ? `·技能×${s.skills.length}` : ''}）`;
+      // 个体上限按训练推导，正文 hp/hpMax 只表示建档时的伤势比例。
+      const wound = (s.scale ?? 'hero') === 'hero' && s.hp !== undefined && s.hpMax && s.hp < s.hpMax ? `·当前生命约${Math.max(1, Math.round(s.hp / s.hpMax * 100))}%` : '';
+      return `新增 ${s.name}×${s.count}（训练${s.level}${s.scale ? '·' + scaleLabel({ scale: s.scale, rulesVersion: 'v2' }) : ''}${wep ? `·${wep}` : ''}${arm ? `·${arm}` : ''}${s.skills?.length ? `·技能×${s.skills.length}` : ''}${wound}）`;
     }
   }
 }
