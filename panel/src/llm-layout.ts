@@ -113,8 +113,18 @@ function example(ctx: LayoutContext): Record<string, unknown> {
     places: [{ type: 'hill', name: '北坡', at: 'NE', height: 2 }, { type: 'forest', name: '南林', at: 'SW' }],
     ally: { at: ['S'] }, enemy: { at: ['N'] }, ...(exitSide(ctx) ? { objective: exitSide(ctx) === 'ally' ? 'N' : 'S' } : {}) };
 }
+/** What the next layout request is told about failed ones: the model's own last answer and one note per failure, newest last. */
+export interface LayoutRetry { answer?: unknown; errors: readonly string[] }
+/** The model cannot see its last answer otherwise, so a retry would rewrite the same layout from the same narrative. */
+function retryLines(retry: LayoutRetry): string[] {
+  const answer = retry.answer === undefined ? '' : JSON.stringify(retry.answer), earlier = retry.errors.slice(0, -1);
+  return ['【上次布置未能生成地图】在上次回答的基础上只改与失败有关的项，其余照旧；拿不准的项直接删去，由程序决定。',
+    ...(answer ? ['上次回答：' + (answer.length > 2000 ? answer.slice(0, 2000) + '…' : answer)] : []),
+    '失败原因与改法：' + retry.errors.at(-1),
+    ...(earlier.length ? ['更早的失败，不要重犯：' + earlier.join('；')] : [])];
+}
 /** The user message for the layout step. Shared system and narrative messages precede it. */
-export function layoutTask(ctx: LayoutContext, retryErrors: readonly string[] = []): string {
+export function layoutTask(ctx: LayoutContext, retry?: LayoutRetry): string {
   const siege = besieged(ctx.scene), d = defenderOf(ctx);
   const kinds = placeKinds(ctx.scene).map(k => `${k}${PLACE_NAMES[k]}`).join('|');
   const lines = [
@@ -138,7 +148,7 @@ export function layoutTask(ctx: LayoutContext, retryErrors: readonly string[] = 
     exitSide(ctx) ? '- objective：撤离点，写九宫格方位（放在该方向的地图边缘）或places里的name；省略时按部署方向决定。'
       : ctx.objectiveMode === 'siege' ? `- objective：${sideName(ctx.attacker)}要夺取的地点，写places里的name；省略时为${ctx.scene === 'city_siege' ? '城中心' : '守方后方核心'}。` : '',
     '示例（只示格式，内容按正文）：' + JSON.stringify(example(ctx)),
-    ...(retryErrors.length ? ['上次布置未能生成地图，请修正：' + retryErrors.join('；')] : []),
+    ...(retry?.errors.length ? retryLines(retry) : []),
   ];
   return lines.filter(Boolean).join('\n');
 }
@@ -335,6 +345,92 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
   const strict = normalizeBattlefieldPlan(plan);
   if (!strict.plan || strict.notes.length) throw new BattlefieldPlanError('地图布置未通过本地校验：' + strict.notes.join('；'));
   return { plan: strict.plan, notes: [...notes] };
+}
+
+const ENTITY_NAMES: Record<string, string> = { ...PLACE_NAMES, city: '城市', river: '水系', gate: '城门', bridge: '桥梁' };
+/** The place a local error names, as the generator prints it: the label the answer wrote, or the kind when unnamed. */
+const NAMED_PLACE = /(?:地标|地点)(.+?)(?:没有合法位置|在指定区域|未落在|没有符合|没有保留|未能落实)/;
+/**
+ * One note for the next layout request: the local error in the answer's own terms (its names and compass codes rather
+ * than compiled IDs and anchors), then the change that usually fixes that family of failures.
+ */
+export function layoutRetryNote(error: string, plan?: BattlefieldPlan): string {
+  const entities = plan?.intent?.entities ?? [];
+  const name = (id: string) => {
+    if (id === 'exit' || id === 'target') return 'objective';
+    const e = entities.find(x => x.id === id);
+    return e?.label ? `「${e.label}」` : ENTITY_NAMES[e?.kind ?? id.replace(/\d+$/, '')] ?? id;
+  };
+  const text = error.replace(/，请检查模型是否支持 JSON 输出$/, '')
+    .replace(/\b(?:place\d+|gate\d+|bridge\d+|exit|target|city|river)\b/g, name)
+    .replace(/\b(?:north_west|north_east|south_west|south_east|north|south|east|west|center)\b/g, a => `${CODE_OF[a as WorldAnchor]}（${CODE_NAMES[CODE_OF[a as WorldAnchor]]}）`)
+    .replace(/地标(hill|forest|square|tower|ruins|fortification|building|room|cover|position)\b/g, (_, kind: PlaceKind) => '地标' + PLACE_NAMES[kind]);
+  return `${text}。改法：${layoutAdvice(text, plan)}`;
+}
+function layoutAdvice(error: string, plan?: BattlefieldPlan): string {
+  const goal = plan?.intent?.relations.find(r => r.relation === 'targets' || r.relation === 'exits_at');
+  const place = goal && plan!.intent!.entities.find(e => e.id === goal.object);
+  const written = !place ? '' : place.id === 'exit' || place.id === 'target' ? `（${CODE_OF[place.anchor ?? 'center']}）` : place.label ? `「${place.label}」` : '';
+  if (/JSON|无效布置/.test(error)) return '只输出一个JSON对象，不要附加说明文字、注释或代码块';
+  if (/任务|目标|出口|撤离|关系引用的地点/.test(error)) return goal
+    ? `objective${written}处没有可站立的空地：改写为空旷的地点（如广场空地、营地）或九宫格方位，或省略objective`
+    : '任务目标处被实心地点占住：中央和城中心不要放建筑、塔楼或工事，或用objective指定一处空旷地点';
+  const named = NAMED_PLACE.exec(error)?.[1];
+  if (named || /地标|地点/.test(error)) return `地点${!named ? '' : named.startsWith('「') ? named : `「${named}」`}放不下：换到更空旷的九宫格方位、type改为position或cover，或删去它；不要把几个地点和部队挤在同一格`;
+  if (/桥/.test(error)) return 'bridges少写几座或写[]，桥不写at，由程序放置';
+  if (/门/.test(error)) return 'gates少写几座，门不写at，由程序放在面向攻方的城墙上';
+  if (/河|水/.test(error)) return '水系写在城市对侧或不写water.at；正文没有强调的河流可以删去';
+  if (/开局|部署|容量|名单/.test(error)) return '双方at各写2—3个相邻的空旷方位，不要与对方、城市或地点挤在同一格；删去units里的单独部署';
+  return '删去或改写与这条报错有关的项，拿不准就删去';
+}
+
+interface LayoutPart { present(raw: Json): boolean; drop(raw: Json, ctx: LayoutContext): string }
+const listOf = (v: unknown): unknown[] => Array.isArray(v) ? v : [];
+const placesOf = (raw: Json): unknown[] => Array.isArray(raw.places) ? raw.places : listOf(raw.landmarks);
+const PARTS: Record<'units' | 'objective' | 'places' | 'bridges' | 'gates' | 'water' | 'sides' | 'city' | 'style', LayoutPart> = {
+  units: { present: r => listOf(r.units).length > 0, drop: (r, ctx) => {
+    const names = listOf(r.units).map(u => {
+      const written = object(u) ? String(u.unit ?? u.id ?? u.name ?? '').trim() : '';
+      return ctx.units.find(x => x.id.toLowerCase() === written.toLowerCase())?.name ?? written;
+    }).filter(Boolean);
+    delete r.units; return '未采用单独部署' + (names.length ? '：' + names.join('、') : '');
+  } },
+  objective: { present: r => r.objective !== undefined && r.objective !== null && r.objective !== '', drop: r => {
+    const goal = object(r.objective) ? r.objective.name ?? r.objective.place ?? r.objective.at : r.objective, label = labelOf(goal);
+    delete r.objective; return '未采用任务地点' + (label ? `「${label}」` : '');
+  } },
+  places: { present: r => placesOf(r).length > 0, drop: r => {
+    const names = placesOf(r).map(p => object(p) ? labelOf(p.name ?? p.label) : undefined).filter(Boolean);
+    delete r.places; delete r.landmarks; return '未采用地点' + names.map(n => `「${n}」`).join('');
+  } },
+  bridges: { present: r => object(r.water) && Array.isArray(r.water.bridges), drop: r => { delete (r.water as Json).bridges; return '桥梁改由程序布置'; } },
+  gates: { present: r => object(r.city) && Array.isArray(r.city.gates), drop: r => { delete (r.city as Json).gates; return '城门改由程序布置'; } },
+  water: { present: r => r.water !== undefined, drop: r => { delete r.water; return '未采用水系'; } },
+  sides: { present: r => r.ally !== undefined || r.enemy !== undefined, drop: r => { delete r.ally; delete r.enemy; return '双方开局位置改由程序决定'; } },
+  city: { present: r => r.city !== undefined, drop: r => { delete r.city; return '城市改由程序布置'; } },
+  style: { present: r => r.archetype !== undefined || r.cover !== undefined || r.density !== undefined, drop: r => {
+    delete r.archetype; delete r.cover; delete r.density; return '场所风格与掩体改由程序决定';
+  } },
+};
+/** Errors that point at a part try it first; the order is otherwise from the least essential part to the scene itself. */
+const TARGETS: [RegExp, LayoutPart[]][] = [
+  [/任务|目标|出口|撤离|关系引用的地点/, [PARTS.objective, PARTS.places]], [/地标|地点/, [PARTS.places]], [/桥/, [PARTS.bridges, PARTS.water]],
+  [/门/, [PARTS.gates]], [/河|水/, [PARTS.water]], [/开局|部署|容量|名单/, [PARTS.units, PARTS.sides]],
+];
+const ORDER = [PARTS.units, PARTS.objective, PARTS.places, PARTS.bridges, PARTS.gates, PARTS.water, PARTS.sides, PARTS.city, PARTS.style];
+export interface LayoutReduction { answer: Json; note: string }
+/**
+ * The final try keeps what can be built. Each call leaves out one more part: the place the local error names, else the
+ * part it points to, else the least essential part still present. Undefined once nothing is left to leave out.
+ */
+export function reduceLayout(answer: unknown, error: string, ctx: LayoutContext): LayoutReduction | undefined {
+  const top = object(answer) ? answer : {};
+  const raw = structuredClone(['battlefield', 'layout', 'map'].map(k => top[k]).find(object) ?? top) as Json;
+  const places = placesOf(raw), named = NAMED_PLACE.exec(error)?.[1];
+  const i = named ? places.findIndex(p => object(p) && labelOf(p.name ?? p.label) === named) : -1;
+  if (i >= 0) { places.splice(i, 1); return { answer: raw, note: `未采用地点「${named}」` }; }
+  const part = TARGETS.flatMap(([pattern, parts]) => pattern.test(error) ? parts : []).find(p => p.present(raw)) ?? ORDER.find(p => p.present(raw));
+  return part && { answer: raw, note: part.drop(raw, ctx) };
 }
 
 /** One line for the preparation summary. */

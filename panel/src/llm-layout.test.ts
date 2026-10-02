@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { generateUnit, generatedLayeredField, SmallBattle, V11_OVERFLOW_D20, type Combatant } from '../../engine/src/index.js';
-import { LlmContextController, llmContextSummary } from './llm-context.js';
-import { compileLayout, layoutTask, type LayoutContext } from './llm-layout.js';
+import { AUTO_TRIES, LAYOUT_TRIES, LlmContextController, llmContextSummary } from './llm-context.js';
+import { compileLayout, layoutRetryNote, layoutTask, reduceLayout, type LayoutContext } from './llm-layout.js';
 import { prepareBattleObjective } from './battle-setup.js';
 import { renderTacticalBattle } from './tactical-view.js';
 import type { LlmSettings } from './llm-settings.js';
@@ -55,15 +55,66 @@ describe('two-step preparation with a compass layout', () => {
     const result = await new LlmContextController(request).select(source(), settings, () => true);
     expect(result.mode).toBe('mass'); expect(result.battlefieldPlan).toBeUndefined(); expect(request).toHaveBeenCalledTimes(1);
   });
-  it('sends a failed layout back to the layout step only, and clears it after success', async () => {
-    const request = twoStep({ city: { at: 'N' }, ally: { at: ['S'] } }), controller = new LlmContextController(request), input = { ...source(), scope: 'chat' };
-    await expect(controller.select(input, settings, () => true, () => { throw Error('塔楼地标部署容量不足'); })).rejects.toThrow('（布置地图）');
+  it('asks again for the layout alone, with the answer that failed, and clears the memory after success', async () => {
+    const request = twoStep({ city: { at: 'N' }, ally: { at: ['S'] } }), controller = new LlmContextController(request), stages: string[] = [];
+    const input = { ...source(), scope: 'chat', onStage: () => stages.push(`${controller.stage!.step}#${controller.stage!.attempt}`) };
+    let failures = 1;
+    await controller.select(input, settings, () => true, () => { if (failures-- > 0) throw Error('塔楼地标部署容量不足'); });
+    // One start: the decision is kept and only the layout is asked for again.
+    expect(request).toHaveBeenCalledTimes(3); expect(stages).toEqual(['decide#1', 'layout#1', 'layout#2']);
+    const retried = sent(request, 2).messages[2].content as string;
+    expect(retried).toContain('【上次布置未能生成地图】');
+    expect(retried).toContain('上次回答：{"city":{"at":"N"},"ally":{"at":["S"]}}');
+    expect(retried).toContain('失败原因与改法：塔楼地标部署容量不足。改法：地点放不下');
     await controller.select(input, settings, () => true);
-    const retried = sent(request, 3).messages[2].content as string, decided = sent(request, 2).messages[2].content as string;
-    expect(retried).toContain('上次布置未能生成地图，请修正：塔楼地标部署容量不足');
+    expect(sent(request, 4).messages[2].content).not.toContain('上次布置');
+  });
+  it(`gives up after ${AUTO_TRIES} tries per start, keeps layout errors out of the decision, and does not repeat a transport error`, async () => {
+    const request = twoStep({ city: { at: 'N' } }), controller = new LlmContextController(request), input = { ...source(), scope: 'chat' };
+    await expect(controller.select(input, settings, () => true, () => { throw Error('塔楼地标部署容量不足'); })).rejects.toThrow(`（布置地图）：塔楼地标部署容量不足。已自动尝试${AUTO_TRIES}次，尚未开战`);
+    expect(request).toHaveBeenCalledTimes(1 + AUTO_TRIES);
+    // The next start asks for the decision again, without the layout's errors.
+    await controller.select(input, settings, () => true);
+    const decided = sent(request, 1 + AUTO_TRIES).messages[2].content as string;
     expect(JSON.parse(decided.slice(decided.lastIndexOf('\n') + 1)).state.retryErrors).toBeUndefined();
-    await controller.select(input, settings, () => true);
-    expect(sent(request, 5).messages[2].content).not.toContain('上次布置');
+    const down = vi.fn<typeof fetch>(async () => new Response('upstream down', { status: 500 }));
+    const failed = new LlmContextController(down).select(input, settings, () => true);
+    await expect(failed).rejects.toThrow('HTTP 500'); await expect(failed).rejects.not.toThrow('已自动尝试');
+    expect(down).toHaveBeenCalledTimes(1);
+  });
+  const beacon = { city: { at: 'N', name: '青石城' }, places: [{ type: 'tower', name: '烽火台', at: 'NE' }, { type: 'building', name: '府衙', at: 'N' }], ally: { at: ['S'] }, enemy: { post: 'wall' } };
+  const noBeacon = (r: { battlefieldPlan?: { intent?: { entities: { label?: string }[] } } }) => {
+    if (r.battlefieldPlan?.intent?.entities.some(e => e.label === '烽火台')) throw Error('地标烽火台在指定区域部署容量不足');
+  };
+  it(`builds the ${LAYOUT_TRIES}th failing layout, at the end of the second start, from the parts that can be generated`, async () => {
+    const request = twoStep(beacon), controller = new LlmContextController(request), input = { ...source(), scope: 'chat' };
+    await expect(controller.select(input, settings, () => true, noBeacon)).rejects.toThrow('地标烽火台在指定区域部署容量不足');
+    const result = await controller.select(input, settings, () => true, noBeacon);
+    // Two starts, each one decision and three layouts.
+    expect(request).toHaveBeenCalledTimes(2 * (1 + AUTO_TRIES)); expect(LAYOUT_TRIES).toBe(2 * AUTO_TRIES);
+    const last = JSON.parse(String(request.mock.calls.at(-1)![1]!.body)).messages[2].content as string;
+    expect(last).toContain('失败原因与改法：地标烽火台在指定区域部署容量不足。改法：地点「烽火台」放不下');
+    // The same failure five times is one note, not five.
+    expect(last).not.toContain('更早的失败');
+    expect(result.layoutNotes!.slice(0, 2)).toEqual([`连续${LAYOUT_TRIES}次布置未能生成地图，只采用回答中能生成的部分`, '未采用地点「烽火台」']);
+    expect(result.battlefieldPlan!.intent!.entities.map(e => e.label)).toEqual(['青石城', '府衙']);
+    expect(result.battlefieldPlan!.deployments).toEqual([{ subject: 'ally', at: ['south'] }, { subject: 'enemy', at: ['north'], post: 'wall' }]);
+    // Success clears the count: the next start fails its three tries again.
+    await expect(controller.select(input, settings, () => true, () => { throw Error('无法为完整名单生成合法部署'); })).rejects.toThrow(`已自动尝试${AUTO_TRIES}次`);
+  });
+  it('falls back to the local map when no part of the final answer can be built, and reads an unreadable final answer as empty', async () => {
+    const input = { ...source(), scope: 'chat' }, planless = (r: { battlefieldPlan?: unknown }) => { if (r.battlefieldPlan) throw Error('无法为完整名单生成合法部署'); };
+    const controller = new LlmContextController(twoStep(beacon));
+    await expect(controller.select(input, settings, () => true, planless)).rejects.toThrow('布置地图');
+    const local = await controller.select(input, settings, () => true, planless);
+    expect(local.battlefieldPlan).toBeUndefined(); expect(local.unitBindings).toBeUndefined();
+    expect(local.layoutNotes).toEqual([`连续${LAYOUT_TRIES}次布置未能生成地图，只采用回答中能生成的部分`, '双方开局位置改由程序决定', '未采用地点「烽火台」「府衙」',
+      '城市改由程序布置', '回答中没有能生成的部分，改用本地生成的地图']);
+    const unreadable = new LlmContextController(twoStep('地图如下：无'));
+    await expect(unreadable.select(input, settings, () => true)).rejects.toThrow('模型返回无效布置');
+    const decided = await unreadable.select(input, settings, () => true);
+    expect(decided.battlefieldPlan).toMatchObject({ scene: 'city_siege', size: 'standard' });
+    expect(decided.layoutNotes!.slice(0, 2)).toEqual([`连续${LAYOUT_TRIES}次布置未能生成地图，只采用回答中能生成的部分`, '布置回答无法读取，只按开战决策生成']);
   });
   it('discards a layout that arrives after cancellation', async () => {
     let release!: () => void;
@@ -126,9 +177,38 @@ describe('compass layout compiler', () => {
     expect(details).not.toContain('<li>城门前沿</li>');
   });
   it('describes the roles and an example that matches the defending side', () => {
-    const task = layoutTask(ctx({ attacker: 'enemy' }), ['上次的错误']);
+    const task = layoutTask(ctx({ attacker: 'enemy' }), { answer: { city: { at: 'S' } }, errors: ['更早的错误', '上次的错误'] });
     expect(task).toContain('攻方=敌方（在城外），守方=我方（守城）');
     expect(task).toContain('"ally":{"post":"wall"}');
-    expect(task).toContain('上次布置未能生成地图，请修正：上次的错误');
+    expect(task.split('\n').slice(-4)).toEqual(['【上次布置未能生成地图】在上次回答的基础上只改与失败有关的项，其余照旧；拿不准的项直接删去，由程序决定。',
+      '上次回答：{"city":{"at":"S"}}', '失败原因与改法：上次的错误', '更早的失败，不要重犯：更早的错误']);
+    expect(layoutTask(ctx(), { errors: ['模型返回无效布置'] })).not.toContain('上次回答：');
+  });
+  it('reports a local failure in the answer\'s own terms, with the usual fix', () => {
+    const { plan } = compileLayout({ places: [{ type: 'building', name: '府衙', at: 'N' }, { type: 'tower', at: 'NE' }], objective: '府衙' }, ctx());
+    expect(layoutRetryNote('正文关系引用的地点place1没有生成', plan)).toBe('正文关系引用的地点「府衙」没有生成。改法：objective「府衙」处没有可站立的空地：改写为空旷的地点（如广场空地、营地）或九宫格方位，或省略objective');
+    expect(layoutRetryNote('地点place2未落在正文指定的north_east区域', plan)).toMatch(/^地点塔楼未落在正文指定的NE（东北）区域。改法：地点「塔楼」放不下/);
+    expect(layoutRetryNote('地标tower在指定区域部署容量不足', plan)).toMatch(/^地标塔楼在指定区域部署容量不足。改法：地点「塔楼」放不下/);
+    expect(layoutRetryNote('目标必须是合法可通行格')).toMatch(/改法：任务目标处被实心地点占住/);
+    expect(layoutRetryNote('模型未返回有效布置 JSON，请检查模型是否支持 JSON 输出')).toBe('模型未返回有效布置 JSON。改法：只输出一个JSON对象，不要附加说明文字、注释或代码块');
+    expect(layoutRetryNote('河流与完整城墙重叠，请调整城市或河流方位')).toMatch(/改法：水系写在城市对侧/);
+    expect(layoutRetryNote('我方没有可用的开局位置，请调整部署方位')).toMatch(/改法：双方at各写2—3个相邻的空旷方位/);
+  });
+  it('leaves out the named place first, then the part the error points to, then the least essential part', () => {
+    const answer = { battlefield: { city: { at: 'N', gates: [{ name: '南门' }] }, water: { type: 'river', at: 'E', bridges: [{ at: 'E' }] },
+      places: [{ type: 'tower', name: '烽火台', at: 'NE' }, { type: 'hill', name: '东坡', at: 'E' }], ally: { at: ['S'] }, units: [{ unit: 'u1', at: 'W' }], objective: '东坡', cover: 'dense' } };
+    const steps: string[] = [];
+    let rest: unknown = answer;
+    for (const error of ['地标烽火台在指定区域部署容量不足', '桥梁部署容量不足，无法保留数量、宽度和位置', '正文任务地点没有合法目标格', '我方没有可用的开局位置，请调整部署方位', '其他', '其他', '其他', '其他', '其他', '其他']) {
+      const next = reduceLayout(rest, error, ctx());
+      if (!next) break;
+      steps.push(next.note); rest = next.answer;
+    }
+    expect(steps).toEqual(['未采用地点「烽火台」', '桥梁改由程序布置', '未采用任务地点「东坡」', '未采用单独部署：张辽', '未采用地点「东坡」', '城门改由程序布置', '未采用水系',
+      '双方开局位置改由程序决定', '城市改由程序布置', '场所风格与掩体改由程序决定']);
+    expect(rest).toEqual({});
+    expect(reduceLayout(rest, '其他', ctx())).toBeUndefined();
+    // The original answer is never changed.
+    expect(answer.battlefield.places).toHaveLength(2);
   });
 });

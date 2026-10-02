@@ -171,32 +171,33 @@ export async function openAiTextRequest(connection: JevConnection, messages: { r
   if (!text?.trim() || text.length > 100000) throw new JevConnectionError('模型没有返回有效的事件文本');
   return text;
 }
-function parseJsonObject(text: string): unknown {
+function parseJsonObject(text: string, label: string): unknown {
   try { return JSON.parse(text); }
   catch {
     // Gateways that ignore response_format may wrap the object in a sentence.
     const start = text.indexOf('{'), end = text.lastIndexOf('}');
-    if (start < 0 || end <= start) throw new JevConnectionError('模型未返回有效决策 JSON，请检查模型是否支持 JSON 输出');
+    if (start < 0 || end <= start) throw new JevConnectionError(`模型未返回有效${label} JSON，请检查模型是否支持 JSON 输出`);
     try { return JSON.parse(text.slice(start, end + 1)); }
-    catch { throw new JevConnectionError('模型未返回有效决策 JSON，请检查模型是否支持 JSON 输出'); }
+    catch { throw new JevConnectionError(`模型未返回有效${label} JSON，请检查模型是否支持 JSON 输出`); }
   }
 }
-function parseOpenAiDecision(content: unknown): Record<string, any> {
+function parseOpenAiDecision(content: unknown, label: string): Record<string, any> {
   const raw = completionText(content);
-  if (!raw || raw.length > 100000) throw new JevConnectionError('模型未返回有效决策 JSON');
+  if (!raw || raw.length > 100000) throw new JevConnectionError(`模型未返回有效${label} JSON`);
   // Reasoning models may put their thoughts in the content before the answer.
   let text = raw.replace(/<(think|thinking|analysis|reasoning)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '').trim();
   const fenced = /\`\`\`(?:json)?\s*([\s\S]*?)\s*\`\`\`/i.exec(text);
   if (fenced) text = fenced[1]!.trim();
-  const answer: any = parseJsonObject(text);
-  if (!answer || typeof answer !== 'object' || Array.isArray(answer)) throw new JevConnectionError('模型返回无效决策');
+  const answer: any = parseJsonObject(text, label);
+  if (!answer || typeof answer !== 'object' || Array.isArray(answer)) throw new JevConnectionError(`模型返回无效${label}`);
   return answer;
 }
 /**
  * One read-only JSON decision over OpenAI chat completions. Callers that send several steps keep the same leading
  * messages so providers with automatic prefix caching can reuse them; the answer is parsed with the same tolerance.
+ * `label` names the answer in parse errors, so a failed layout step does not read as a failed decision.
  */
-export async function openAiJsonRequest(connection: JevConnection, messages: { role: 'system' | 'user'; content: string }[], signal: AbortSignal, request: typeof fetch): Promise<Record<string, any>> {
+export async function openAiJsonRequest(connection: JevConnection, messages: { role: 'system' | 'user'; content: string }[], signal: AbortSignal, request: typeof fetch, label = '决策'): Promise<Record<string, any>> {
   const model = connection.model?.trim();
   if (connection.protocol !== 'openai' || !model) throw new JevConnectionError('请先配置副 API 并选择模型');
   const payload = { model, stream: false, response_format: { type: 'json_object' }, messages };
@@ -212,7 +213,7 @@ export async function openAiJsonRequest(connection: JevConnection, messages: { r
     const { response_format: _responseFormat, ...compatPayload } = payload;
     response = await send(compatPayload);
   }
-  const answer = parseOpenAiDecision(response?.choices?.[0]?.message?.content);
+  const answer = parseOpenAiDecision(response?.choices?.[0]?.message?.content, label);
   return { ...answer, model: typeof response.model === 'string' ? response.model : model };
 }
 /** Adapt the host's bounded decisions without changing the vendored command core. */

@@ -92,17 +92,18 @@ describe('ordinary LLM preparation',()=>{
     expect((await c.select({...input(),messages:[]},settings,()=>true)).detail).toContain('沿用');
     expect(request).not.toHaveBeenCalled();
   });
-  it('carries only bounded current-request errors into manual retries and clears them on success or scope change',async()=>{
+  it('carries only bounded current-request errors into automatic and manual retries and clears them on success or scope change',async()=>{
     const request=model(),controller=new LlmContextController(request),source={...input(),scope:'chat-a'};
-    await expect(controller.select(source,settings,()=>true,()=>{throw Error('地标部署容量不足');})).rejects.toThrow('容量不足');
+    const errors=(n:number)=>decision(request.mock.calls[n]![1]).body.state.retryErrors;
+    // Each start tries three times; without a map layout, a failed decision is asked for again.
+    await expect(controller.select(source,settings,()=>true,()=>{throw Error('地标部署容量不足');})).rejects.toThrow('容量不足。已自动尝试3次');
+    expect([0,1,2].map(n=>errors(n))).toEqual([undefined,['地标部署容量不足'],['地标部署容量不足']]);
     await expect(controller.select(source,settings,()=>true,()=>{throw Error('正文桥梁数量与实体列表不一致');})).rejects.toThrow('数量');
-    await controller.select(source,settings,()=>true);
-    const body=(n:number)=>decision(request.mock.calls[n]![1]).body;
-    expect(body(0).state.retryErrors).toBeUndefined();expect(body(1).state.retryErrors).toEqual(['地标部署容量不足']);
-    expect(body(2).state.retryErrors).toEqual(['地标部署容量不足','正文桥梁数量与实体列表不一致']);
-    await controller.select(source,settings,()=>true);expect(body(3).state.retryErrors).toBeUndefined();
+    expect(errors(3)).toEqual(['地标部署容量不足']);expect(errors(4)).toEqual(['地标部署容量不足','正文桥梁数量与实体列表不一致']);
+    await controller.select(source,settings,()=>true);expect(errors(6)).toEqual(['地标部署容量不足','正文桥梁数量与实体列表不一致']);
+    await controller.select(source,settings,()=>true);expect(errors(7)).toBeUndefined();
     await expect(controller.select(source,settings,()=>true,()=>{throw Error('地标部署容量不足');})).rejects.toThrow();
-    await controller.select({...source,scope:'chat-b'},settings,()=>true);expect(body(5).state.retryErrors).toBeUndefined();
+    await controller.select({...source,scope:'chat-b'},settings,()=>true);expect(errors(11)).toBeUndefined();
   });
   it('releases the operation lock at the deadline even if the transport never settles',async()=>{
     vi.useFakeTimers();

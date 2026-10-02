@@ -7,7 +7,8 @@ import { openAiJsonRequest, fetchJevModels, JevConnectionError } from './jev-con
 import { JevTransportError } from './jev-transport.js';
 import { encounterRequest, applyEncounterSelection, normalizeContextSettings, ABILITY_LABELS, STYLE_PRESETS, encounterSummary, type EncounterSetup, type JevEncounterContext } from './jev-context.js';
 import { llmConnection, type LlmSettings } from './llm-settings.js';
-import { SCENE_CHOICES, SIZE_CHOICES, compileLayout, layoutMapSize, layoutSummary, layoutTask, layoutUnits, type LayoutContext, type LayoutSize } from './llm-layout.js';
+import { SCENE_CHOICES, SIZE_CHOICES, compileLayout, layoutMapSize, layoutRetryNote, layoutSummary, layoutTask, layoutUnits, reduceLayout, type LayoutContext, type LayoutSize } from './llm-layout.js';
+import type { BattlefieldPlan } from '../../engine/src/small/battlefield-plan.js';
 import type { Combatant } from '../../engine/src/index.js';
 import type { CommanderProfiles, CommanderProfile } from '../../engine/src/commander-profile.js';
 import type { NarrativeMessage, ContextSelectionAnswer, ContextSelectionRequest } from '../../vendor/jev-core/src/index.js';
@@ -40,12 +41,27 @@ function decisionTask(request: ContextSelectionRequest): string {
     JSON.stringify({ state: request.state, fields: request.fields })].join('\n');
 }
 export type PreparationStep = 'decide' | 'layout';
+/** A bad answer is asked for again automatically, up to this many tries per start. */
+export const AUTO_TRIES = 3;
+/** A layout that still fails on this try is built from the parts of the answer that can be generated. */
+export const LAYOUT_TRIES = 6;
+/** One layout try: the scene it laid out, the answer as read, and the plan compiled from it. */
+interface LaidOut { scene: BattlefieldScene; answer?: unknown; plan?: BattlefieldPlan }
+/** Retries remember, per narrative and settings, what failed and the layout answer that failed. */
+interface RetryMemory {
+  key: string;
+  errors: Record<PreparationStep, string[]>;
+  expires: number;
+  layoutFailures: number;
+  /** The last layout answer, shown back to the model only for the same scene; absent when it could not be read. */
+  layout?: { scene: BattlefieldScene; answer?: unknown };
+}
 export class LlmContextController {
   private aborter?: AbortController;
-  private retry?: { key: string; errors: Record<PreparationStep, string[]>; expires: number };
+  private retry?: RetryMemory;
   busy = false;
-  /** The step in flight, and how many steps this preparation takes. */
-  stage?: { step: PreparationStep; of: 1 | 2 };
+  /** The step in flight, how many steps this preparation takes, and which automatic try of this start it is. */
+  stage?: { step: PreparationStep; of: 1 | 2; attempt: number };
   constructor(private request: typeof fetch = (url, init) => fetch(url, init)) {}
   cancel(clearRetry = true): void { this.aborter?.abort(); if (clearRetry) this.retry = undefined; }
   async models(settings: LlmSettings): Promise<string[]> {
@@ -54,7 +70,8 @@ export class LlmContextController {
   }
   /**
    * Step 1 chooses the commanders, battle form, task, VIP and, with map design on, the scene and its size. Step 2 then
-   * lays the chosen scene out on a compass grid. Both steps share the leading messages; neither retries on its own.
+   * lays the chosen scene out on a compass grid. Both steps share the leading messages. A bad answer is asked for again
+   * up to AUTO_TRIES times per call, with what failed; a failed layout keeps the decision and asks only for the layout.
    */
   async select(input: { roster: Combatant[]; setup: EncounterSetup; messages: NarrativeMessage[]; unitNotes?: Record<string, string>; narrativeIdState?: NarrativeIdState; scope?: string; onStage?: () => void },
     settings: LlmSettings, valid: () => boolean, validate?: (result: LlmEncounterContext) => void): Promise<LlmEncounterContext> {
@@ -97,66 +114,131 @@ export class LlmContextController {
     const shared = [{ role: 'system' as const, content: PREPARATION_SYSTEM }, { role: 'user' as const, content: narrativeMessage(request.messages) }];
     const aborter = new AbortController(); this.aborter = aborter; this.busy = true;
     const check = () => { if (aborter.signal.aborted || !valid()) throw Error('上下文读取已取消或准备信息已变化，尚未开始战斗'); };
-    const ask = (task: string) => withAbort({ timeout: CONTEXT_TIMEOUT_MS, signals: [aborter.signal] }, signal =>
-      openAiJsonRequest(connection, [...shared, { role: 'user', content: task }], signal, this.request));
-    const step = (next: PreparationStep) => { this.stage = { step: next, of: designMap ? 2 : 1 }; input.onStage?.(); };
+    const ask = (task: string, label?: string) => withAbort({ timeout: CONTEXT_TIMEOUT_MS, signals: [aborter.signal] }, signal =>
+      openAiJsonRequest(connection, [...shared, { role: 'user', content: task }], signal, this.request, label));
+    let attempt = 1;
+    const step = (next: PreparationStep) => { this.stage = { step: next, of: designMap ? 2 : 1, attempt }; input.onStage?.(); };
+    // What the layout step answered and compiled, so a failure can be reported to the next try in the answer's own terms.
+    let laidOut: LaidOut | undefined;
+    /** Keeps a failed answer for the next try: the newest failure last, a layout one in the answer's own terms. */
+    const remember = (error: unknown): boolean => {
+      // Only the answer itself can be asked for again; an unreachable or misconfigured service fails the same way every time.
+      const answerError = error instanceof BattlefieldPlanError || error instanceof JevConnectionError && /有效(?:决策|布置) JSON|返回无效(?:决策|布置)|答案|评分/.test(error.message);
+      if (!this.retry || !answerError) return false;
+      const memory = this.retry, failed = this.stage?.step ?? 'decide', detail = llmFailure(error);
+      const note = failed === 'layout' ? layoutRetryNote(detail, laidOut?.plan).slice(0, 400) : detail.slice(0, 280);
+      memory.errors[failed] = [...memory.errors[failed].filter(e => e !== note), note].slice(-4);
+      if (failed === 'layout') { memory.layoutFailures++; if (laidOut) memory.layout = { scene: laidOut.scene, answer: laidOut.answer }; }
+      memory.expires = Date.now() + 300000;
+      return true;
+    };
     try {
       step('decide');
       check();
       const key = await sha256(new TextEncoder().encode(JSON.stringify([input.scope, connection, request])));
       check();
-      if (this.retry?.key !== key || this.retry.expires < Date.now()) this.retry = { key, errors: { decide: [], layout: [] }, expires: Date.now() + 300000 };
-      if (this.retry.errors.decide.length) request.state = { ...request.state as object, retryErrors: this.retry.errors.decide };
-      const answer = await ask(decisionTask(request)) as unknown as ContextSelectionAnswer;
-      check();
-      answer.selections = normalizeSelections(answer as unknown as Record<string, unknown>, request.fields);
-      for (const field of coreRequest.fields) {
-        const selected = answer.selections?.[field.id];
-        if (!selected || !Object.hasOwn(field.options, selected.value) || !Number.isFinite(selected.confidence) || selected.confidence < 0 || selected.confidence > 1)
-          throw new BattlefieldPlanError(`selections.${field.id}须含合法value和0—1的confidence；value可选${Object.keys(field.options).join('|')}`);
-      }
-      const scene = designMap ? answer.selections.scene!.value as BattlefieldScene : undefined;
-      // The scene already says whether the battle is indoors.
-      if (scene) answer.selections.map_layout = { value: scene === 'interior' ? 'indoor' : 'standard', confidence: 1 };
-      // Validate supported choices; confidence describes uncertainty, not a fallback threshold.
-      const result: LlmEncounterContext = applyEncounterSelection(contextInput, base, coreRequest, answer);
-      result.commanders = {};
-      for (const side of ['ally', 'enemy'] as const) {
-        const ability = answer.selections[side + '_ability']!.value;
-        const style = answer.selections[side + '_style']!.value;
-        const raw = (answer as ContextSelectionAnswer & { commanders?: CommanderProfiles }).commanders?.[side];
-        result.commanders[side] = normalizeCommanderProfiles({ [side]: { ability, style, ...(raw?.preferences ? { preferences: raw.preferences } : {}) } })[side] ?? { ability, style } as CommanderProfile;
-      }
-      if (result.commanders.enemy) result.enemy = { ability: result.commanders.enemy.ability, style: { ...STYLE_PRESETS[result.commanders.enemy.style].style }, source: 'context' };
-      Object.assign(result, applyPreparationDesign(answer, designRequest, result, input.roster));
-      if (scene && result.mode === 'small') {
+      if (this.retry?.key !== key || this.retry.expires < Date.now()) this.retry = { key, errors: { decide: [], layout: [] }, expires: Date.now() + 300000, layoutFailures: 0 };
+      const memory = this.retry, state = request.state;
+      const decide = async () => {
+        request.state = memory.errors.decide.length ? { ...state as object, retryErrors: memory.errors.decide } : state;
+        const answer = await ask(decisionTask(request)) as unknown as ContextSelectionAnswer;
+        check();
+        answer.selections = normalizeSelections(answer as unknown as Record<string, unknown>, request.fields);
+        for (const field of coreRequest.fields) {
+          const selected = answer.selections?.[field.id];
+          if (!selected || !Object.hasOwn(field.options, selected.value) || !Number.isFinite(selected.confidence) || selected.confidence < 0 || selected.confidence > 1)
+            throw new BattlefieldPlanError(`selections.${field.id}须含合法value和0—1的confidence；value可选${Object.keys(field.options).join('|')}`);
+        }
+        const scene = designMap ? answer.selections.scene!.value as BattlefieldScene : undefined;
+        // The scene already says whether the battle is indoors.
+        if (scene) answer.selections.map_layout = { value: scene === 'interior' ? 'indoor' : 'standard', confidence: 1 };
+        // Validate supported choices; confidence describes uncertainty, not a fallback threshold.
+        const result: LlmEncounterContext = applyEncounterSelection(contextInput, base, coreRequest, answer);
+        result.commanders = {};
+        for (const side of ['ally', 'enemy'] as const) {
+          const ability = answer.selections[side + '_ability']!.value;
+          const style = answer.selections[side + '_style']!.value;
+          const raw = (answer as ContextSelectionAnswer & { commanders?: CommanderProfiles }).commanders?.[side];
+          result.commanders[side] = normalizeCommanderProfiles({ [side]: { ability, style, ...(raw?.preferences ? { preferences: raw.preferences } : {}) } })[side] ?? { ability, style } as CommanderProfile;
+        }
+        if (result.commanders.enemy) result.enemy = { ability: result.commanders.enemy.ability, style: { ...STYLE_PRESETS[result.commanders.enemy.style].style }, source: 'context' };
+        Object.assign(result, applyPreparationDesign(answer, designRequest, result, input.roster));
+        return { result, scene, size: scene ? answer.selections.size!.value as LayoutSize : undefined };
+      };
+      const finish = (result: LlmEncounterContext) => {
+        try { validate?.(result); }
+        catch (error) { throw new BattlefieldPlanError(error instanceof Error ? error.message : '本地地图与部署校验失败'); }
+      };
+      const layOut = async (result: LlmEncounterContext, scene: BattlefieldScene, size: LayoutSize) => {
         step('layout');
         const ids = narrativeIds({ storage: input.roster, narrativeIdState: input.narrativeIdState });
-        const size = answer.selections.size!.value as LayoutSize;
         const layout: LayoutContext = { scene, size, attacker: result.siegeAttacker, objectiveMode: result.objectiveMode,
           units: layoutUnits(input.roster, ids.publicId, input.unitNotes), ...(result.vipName ? { vipName: result.vipName } : {}), map: layoutMapSize(scene, input.roster, size) };
-        const placed = await ask(layoutTask(layout, this.retry.errors.layout));
+        const final = memory.layoutFailures >= LAYOUT_TRIES - 1, headline = `连续${LAYOUT_TRIES}次布置未能生成地图，只采用回答中能生成的部分`;
+        const tried: LaidOut = { scene }, adjusted: string[] = [];
+        laidOut = tried;
+        let placed: unknown;
+        try {
+          const { model: _model, ...reply } = await ask(layoutTask(layout, { answer: memory.layout?.scene === scene ? memory.layout.answer : undefined, errors: memory.errors.layout }), '布置');
+          placed = tried.answer = reply;
+        } catch (error) {
+          // An unreadable final answer leaves only the decisions above to build from.
+          if (!final || !(error instanceof JevConnectionError && /布置/.test(error.message))) throw error;
+          placed = {}; adjusted.push(headline, '布置回答无法读取，只按开战决策生成');
+        }
         check();
-        const compiled = compileLayout(placed, layout);
-        result.battlefieldPlan = compiled.plan;
-        result.unitBindings = Object.fromEntries(activeBattleUnits(input.roster).map(u => [ids.publicId(u.id), u.id]));
-        if (compiled.notes.length) result.layoutNotes = compiled.notes;
+        const build = (layoutAnswer: unknown) => {
+          tried.plan = undefined;
+          const compiled = compileLayout(layoutAnswer, layout);
+          result.battlefieldPlan = tried.plan = compiled.plan;
+          result.unitBindings = Object.fromEntries(activeBattleUnits(input.roster).map(u => [ids.publicId(u.id), u.id]));
+          const notes = [...adjusted, ...compiled.notes];
+          if (notes.length) result.layoutNotes = notes; else delete result.layoutNotes;
+          finish(result);
+        };
+        try { build(placed); }
+        catch (error) {
+          if (!final || !(error instanceof BattlefieldPlanError)) throw error;
+          if (!adjusted.length) adjusted.push(headline);
+          let rest = placed, failure: unknown = error;
+          for (let next = reduceLayout(rest, error.message, layout); next; next = reduceLayout(rest, (failure as Error).message, layout)) {
+            rest = next.answer; adjusted.push(next.note);
+            // Every try regenerates the map: let the panel repaint and honour a cancel in between.
+            await new Promise(resolve => setTimeout(resolve, 0)); check();
+            try { build(rest); failure = undefined; break; }
+            catch (retried) { if (!(retried instanceof BattlefieldPlanError)) throw retried; failure = retried; }
+          }
+          if (failure) {
+            // Nothing in the answer can be built; the local generator still follows the decisions above.
+            delete result.battlefieldPlan; delete result.unitBindings; tried.plan = undefined;
+            result.layoutNotes = [...adjusted, '回答中没有能生成的部分，改用本地生成的地图'];
+            try { finish(result); } catch { throw error; }
+          }
+        }
+      };
+      // A decision that worked is kept for the rest of this start; a failed layout asks only for the layout again.
+      let decided: Awaited<ReturnType<typeof decide>> | undefined;
+      for (;; attempt++) {
+        try {
+          if (!decided) { if (attempt > 1) step('decide'); decided = await decide(); }
+          const result: LlmEncounterContext = { ...decided.result };
+          if (decided.scene && decided.size && result.mode === 'small') await layOut(result, decided.scene, decided.size);
+          else finish(result);
+          check();
+          this.retry = undefined;
+          return result;
+        } catch (error) {
+          check();
+          // Only a bad answer is worth asking again; transport, timeout and key errors stop at once.
+          if (!remember(error) || attempt >= AUTO_TRIES) throw error;
+          if (this.stage?.step === 'decide') decided = undefined;
+        }
       }
-      try { validate?.(result); }
-      catch (error) { throw new BattlefieldPlanError(error instanceof Error ? error.message : '本地地图与部署校验失败'); }
-      check();
-      this.retry = undefined;
-      return result;
     } catch (error) {
       check();
       const detail = error instanceof Error && error.name === 'TimeoutError' ? `模型请求超过${CONTEXT_TIMEOUT_MS / 1000}秒，请重试` : llmFailure(error);
-      if (this.retry && (error instanceof BattlefieldPlanError || error instanceof JevConnectionError && /JSON|答案|评分|决策/.test(error.message))) {
-        const bucket = this.retry.errors[this.stage?.step ?? 'decide'];
-        this.retry.errors[this.stage?.step ?? 'decide'] = [...new Set([...bucket, detail.slice(0, 280)])].slice(-4);
-        this.retry.expires = Date.now() + 300000;
-      }
       const where = this.stage?.of === 2 ? (this.stage.step === 'decide' ? '（开战决策）' : '（布置地图）') : '';
-      throw Error(`上下文读取失败${where}：${detail}。尚未开战，可重试或改为手动配置。`);
+      throw Error(`上下文读取失败${where}：${detail}。${attempt > 1 ? `已自动尝试${attempt}次，` : ''}尚未开战，可重试或改为手动配置。`);
     } finally { this.busy = false; this.stage = undefined; if (this.aborter === aborter) this.aborter = undefined; }
   }
 }

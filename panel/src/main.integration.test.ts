@@ -20,14 +20,14 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   b.movementSpent.set('u0', 2); b.actedThisTurn.add('u0');
   await f.service.transact(() => ({schemaVersion:2, storage:units.map(u=>unitRecordFromCombatant(u)), rosterIds:units.map(u=>u.id), jevSettings:{mode:'jev'}, autoTurn:false, protagonistId:'u0', battle:{kind:'small',snap:b.toSnapshot()}}));
   Object.assign(window, {__tavernBattleNative:{service:f.service,messages:{}}, __TAURITAVERN__:{}, SillyTavern:{getContext:()=>f.context}});
-  let release: (() => void) | undefined, delayed = false, breakLayout = false;
+  let release: (() => void) | undefined, delayed = false, breakLayout = 0;
   const request = vi.fn(async (url: unknown, init?: RequestInit) => {
     if (String(url).endsWith('/status')) return new Response(JSON.stringify({data:[{id:'model-one'},{id:'model-two'}]}));
     if (delayed) await new Promise<void>(resolve => { release = resolve; });
     const payload = JSON.parse(String(init?.body)), task = payload.messages.at(-1).content as string;
     if (task.startsWith('【第2步')) {
-      const layout = breakLayout ? '地图如下：无' : JSON.stringify({archetype:'forest_path',places:[{type:'hill',name:'敌左高地',at:'NW',height:2}],ally:{at:['S']},enemy:{at:['N']},objective:'S'});
-      breakLayout = false;
+      const layout = breakLayout > 0 ? '地图如下：无' : JSON.stringify({archetype:'forest_path',places:[{type:'hill',name:'敌左高地',at:'NW',height:2}],ally:{at:['S']},enemy:{at:['N']},objective:'S'});
+      breakLayout = Math.max(0, breakLayout - 1);
       return new Response(JSON.stringify({model:'remote-alias',choices:[{message:{content:layout}}]}));
     }
     const body = JSON.parse(task.slice(task.lastIndexOf('\n') + 1));
@@ -88,13 +88,15 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   expect(button('migration-accept')).not.toBeNull();
   button('migration-accept').click();await idle();
   expect(f.service.snapshot().storage![0]!.snapshot!.damageModel).toBe('wounds-v2');
-  // A layout answer that is not JSON fails only the second step; the retry carries that error back to it.
-  breakLayout=true;
+  // A layout answer that is not JSON fails only the second step. One start asks for it three times; the next start
+  // still carries the failure back, even when the page was hidden in between.
+  breakLayout=3;
   nav('battle');button('small-start').click();await idle();
-  expect(f.service.snapshot().battle).toBeFalsy();expect(document.querySelector('#toast')?.textContent).toMatch(/布置地图.*JSON/);
+  expect(f.service.snapshot().battle).toBeFalsy();expect(document.querySelector('#toast')?.textContent).toMatch(/布置地图.*有效布置 JSON.*已自动尝试3次/);
+  window.dispatchEvent(new MessageEvent('message',{source:window.parent,origin:location.origin,data:{type:'tb:panel-hidden'}}));
   nav('battle');button('small-start').click();await idle();
   const retryTask=JSON.parse(String(request.mock.calls.at(-1)![1]?.body)).messages.at(-1).content as string;
-  expect(retryTask).toContain('上次布置未能生成地图，请修正：模型未返回有效决策 JSON');
+  expect(retryTask).toContain('失败原因与改法：模型未返回有效布置 JSON。改法：只输出一个JSON对象');
   expect(f.service.snapshot().battle, document.querySelector('#toast')?.textContent ?? JSON.stringify(f.service.status())).toBeDefined();
   const selected=SmallBattle.fromSnapshot(f.service.snapshot().battle!.snap);
   expect(selected.commanderProfiles).toEqual({ally:{ability:'master',style:'aggressive',scoring:'tactical-v2'},enemy:{ability:'expert',style:'cautious',scoring:'tactical-v2'}});

@@ -361,7 +361,9 @@ async function confirmAiScan(): Promise<void> {
   }
   render('view');
 }
-function stopAutomation(clearRetry = true): void { automationEpoch++; fullAuto.stop(); llmContext.cancel(clearRetry); smallResumeRequested = false; }
+/** Hiding the page or the panel pauses battle automation only; a started preparation finishes and keeps its retry memory. */
+function pauseAutomation(): void { automationEpoch++; fullAuto.stop(); smallResumeRequested = false; }
+function stopAutomation(clearRetry = true): void { pauseAutomation(); llmContext.cancel(clearRetry); }
 window.addEventListener('pagehide', () => stopAutomation());
 window.addEventListener('pagehide', () => narrativeScanner.cancel());
 let battleSaveFailed = false;
@@ -968,7 +970,8 @@ function renderBattleToolbar(b: SmallBattle | MassBattle): string {
   return `<div class="battle-toolbar"><span class="tag">本场：${b.nonLethal?'非致命':'致命'}</span>${cannonAmmoControl(actor,b.isOver()||actor?.side!=='ally')}${renderContextStatus()}<label class="battle-auto"><input type="checkbox" aria-label="全自动战斗（含主控）" data-role="full-auto-battle" ${fullAuto.running ? 'checked' : ''} ${b.isOver() ? 'disabled' : ''}>${fullAuto.running ? '自动推进中 · 点击暂停' : '全自动战斗（含主控）'}</label><label>自动策略 <select data-role="battle-tactic" ${b.isOver() || b.rules.resolutionVersion !== 'v2' ? 'disabled' : ''}>${Object.entries(TACTICAL_PREFERENCES).map(([id,name]) => `<option value="${esc(id)}" ${b.allyTactic === id ? 'selected' : ''}>${name}</option>`).join('')}</select></label>${!b.isOver() ? '<div class="battle-finish-actions"><button data-action="battle-finish" data-reason="ceasefire">停止交战并结算</button><button class="danger" data-action="battle-finish" data-reason="surrender">投降并结算</button></div>' : ''}</div>`;
 }
 function renderContextStatus(): string {
-  const step = llmContext.stage?.of === 2 ? llmContext.stage.step === 'layout' ? '正在布置地图（2/2）…' : '正在读取正文（1/2）…' : '正在读取正文…';
+  const stage = llmContext.stage, retry = stage && stage.attempt > 1 ? `第${stage.attempt}次尝试` : '';
+  const step = stage?.of === 2 ? `${stage.step === 'layout' ? '正在布置地图（2/2' : '正在读取正文（1/2'}${retry ? '，' + retry : ''}）…` : `正在读取正文${retry ? `（${retry}）` : ''}…`;
   return llmContext.busy ? `<p role="status">${step} <button data-action="llm-stop">取消读取</button></p>`
     : state.encounterContext ? `<p class="sub">${esc(llmContextSummary(state.encounterContext))}</p>` : '';
 }
@@ -3946,7 +3949,7 @@ const stopControllerView = controller.listen((_saved: NarrativeSave, receipt?: S
 window.addEventListener('pagehide', event => { if (!event.persisted) stopControllerView(); });
 window.addEventListener('message', (event: MessageEvent) => {
   if (event.source === window.parent && event.origin === location.origin && event.data?.type === 'tb:panel-hidden') {
-    const wasRunning = fullAuto.running; stopAutomation(); if (wasRunning) render('battle');
+    const wasRunning = fullAuto.running; pauseAutomation(); if (wasRunning) render('battle');
   }
 });
 let formationResizeFrame = 0;
