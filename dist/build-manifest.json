@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "1.6.1-rc.3",
-  "builtAt": "2026-10-02T12:39:34.430Z",
-  "sourceFingerprint": "ef48653659d031d9d245b0e2ca4d20d33675142c6db4234068c13aed7b2d8a0e",
+  "builtAt": "2026-10-02T16:57:45.549Z",
+  "sourceFingerprint": "697c5bd9e79463b4da72500206f2966884b4d7a0b621a09e792922405acc7319",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -31,9 +31,9 @@
       "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     },
     {
-      "path": "dist/assets/panel-DCYFOfod.js",
-      "bytes": 486741,
-      "sha256": "e79914da6fb8093ffe167670315a1df4e60526a70d6ae030621602f2b23adb6b"
+      "path": "dist/assets/panel-DoftvIJ2.js",
+      "bytes": 486879,
+      "sha256": "60923095f6edd545b980492979ad681011a19a6544d92eadb14509529282601c"
     },
     {
       "path": "dist/assets/panel-XcL6GjWl.css",
@@ -41,9 +41,9 @@
       "sha256": "e55c8c9d8d405424e9ddedf674f3dcab34e279580920422c209e18419a1b9b7d"
     },
     {
-      "path": "dist/assets/preferences-CoHze8-P.js",
-      "bytes": 690934,
-      "sha256": "5788aa2f506735834e5731e16e03a6913913eaa00ba9991b722036f858f2502d"
+      "path": "dist/assets/preferences-BrgnUOdA.js",
+      "bytes": 694974,
+      "sha256": "ee95a652e27e2431f427fb4c07f07288cc750e4644013292b2f88dfa4f2b077f"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -243,7 +243,7 @@
     {
       "path": "dist/index.js",
       "bytes": 84708,
-      "sha256": "6ba50c30df6c45d3394008b0d1c11f0c4193e5113920cf150006cd826e7e63dc"
+      "sha256": "1c9b11a3e1c4134f985c0a9bbcc9bbc9797cd0908d0f18b628055b1273cb1149"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -308,7 +308,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 46216,
-      "sha256": "b040aa5c846dfccaa21aacb8bbefac3a365aa7a56c7c332b472f89953f64ec58"
+      "sha256": "5e22af45d7c28edcfc10b970ec92d8b7bb7997fb12631655223bc80b63fe2d46"
     },
     {
       "path": "release/current-baseline.json",
