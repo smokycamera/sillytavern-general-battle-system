@@ -2,7 +2,7 @@ import { spendAbility } from '../ability-state.js';
 import { assertBattleCapacity } from '../battle-limits.js';
 import { smallBattleResult } from '../battle-result.js';
 import { prepareGridDeployment } from './spatial.js';
-import { unitHeight } from './height-map.js';
+import { unitHeight, heightDefense, heightReach, standingTerrain } from './height-map.js';
 import { bonusMultiplier } from '../enhancements.js';
 import { regionalOrder } from './team-tactics.js';
 import { groundBlocked, isElevated, intactStructure, canClimbFrom, meleeHeightReason, meleeContact, structureDefense, structureDurability, damageStructure, weaponBreachBudget, STRUCTURE_NAMES } from './layers.js';
@@ -62,6 +62,7 @@ import { canSpot, observedUnits, observeEvent, observedLog, revealUnit, revealCo
 import {
   abilityTargetReason,
   abilityRangeDistance,
+  abilityHeightReach,
   abilityUsabilityReason,
   estimateExpectedDamage,
   estimateHitChance,
@@ -251,9 +252,9 @@ export class SmallBattle {
   }
   private environmentContext<T extends Omit<AttackOpts, 'rng'>>(opts: T): T {
     if (this.rules.resolutionVersion !== 'v2') return opts;
-    opts={...opts,...(this.battlefield?.spatialRulesVersion===2?{heightRules:true,attackerHeight:unitHeight(this.battlefield,opts.attacker),defenderHeight:unitHeight(this.battlefield,opts.defender),heightAdvantage:!isAirborne(opts.defender)&&!isElevated(opts.defender)&&unitHeight(this.battlefield,opts.defender)>unitHeight(this.battlefield,opts.attacker)}:{})};
+    opts={...opts,...(this.battlefield?.spatialRulesVersion===2?{heightRules:true,attackerHeight:unitHeight(this.battlefield,opts.attacker),defenderHeight:unitHeight(this.battlefield,opts.defender),heightAdvantage:heightDefense(this.battlefield,opts.defender,opts.attacker)}:{})};
     const units = this.combatants.map((u) => u.id === opts.attacker.id ? opts.attacker : u.id === opts.defender.id ? opts.defender : u);
-    return { ...opts, extraMods: [...(opts.extraMods ?? []), ...moraleAttackMods(this.observationContext(units), opts.attacker, this.traitRegistry, this.observationContext())], localTerrain: !!this.battlefield?.layerVersion, defenderMods: [...(opts.defenderMods ?? []), ...(this.battlefield?.layerVersion ? [{ source: 'stance' as const, sourceId: 'structure:def', stackGroup: 'posture:def', name: '阵地掩护', kind: 'def' as const, type: 'flat' as const, value: structureDefense(this.battlefield, opts.defender, opts.attacker, !!opts.ranged) }] : [])], fieldTags: this.fieldTags, attackerTerrain: isAirborne(opts.attacker) ? 'open' : this.battlefield?.tiles[opts.attacker.pos!], defenderTerrain: isAirborne(opts.defender) ? 'open' : this.battlefield?.tiles[opts.defender.pos!], distance: this.dist(opts.attacker, opts.defender),
+    return { ...opts, extraMods: [...(opts.extraMods ?? []), ...moraleAttackMods(this.observationContext(units), opts.attacker, this.traitRegistry, this.observationContext())], localTerrain: !!this.battlefield?.layerVersion, defenderMods: [...(opts.defenderMods ?? []), ...(this.battlefield?.layerVersion ? [{ source: 'stance' as const, sourceId: 'structure:def', stackGroup: 'posture:def', name: '阵地掩护', kind: 'def' as const, type: 'flat' as const, value: structureDefense(this.battlefield, opts.defender, opts.attacker, !!opts.ranged) }] : [])], fieldTags: this.fieldTags, attackerTerrain: standingTerrain(this.battlefield, opts.attacker), defenderTerrain: standingTerrain(this.battlefield, opts.defender), distance: this.dist(opts.attacker, opts.defender),
       defenderEngaged: this.combatants.some((u) => u.side !== opts.defender.side && u.status === 'ready' && meleeContact(this.battlefield, u, opts.defender) && this.dist(u, opts.defender) <= (this.battlefield ? 1 : 0)) };
   }
   private resolveAttackWithEnvironment(opts: AttackOpts) {
@@ -866,8 +867,8 @@ export class SmallBattle {
       if (opts.charge) useSidearm = meleeWeapon(actor) === actor.sidearm && !!actor.sidearm;
       else {
         const adapt = (w: Combatant['weapon']) => this.battlefield ? gridWeapon(w, this.rules.combatModel === MEMBER_HEALTH_MODEL) : w;
-        const primaryReason = weaponTargetReason({ actor, target, weapon: adapt(actor.weapon), ranged: primaryRanged, distance, reloadLeft: this.reloadCd.get(actor.id) ?? 0 });
-        const secondaryReason = actor.sidearm && weaponTargetReason({ actor, target, weapon: adapt(actor.sidearm), ranged: isRangedWeapon(actor.sidearm), distance, reloadLeft: this.reloadCd.get(weaponReloadKey(actor, actor.sidearm)) ?? 0 });
+        const primaryReason = weaponTargetReason({ actor, target, weapon: adapt(actor.weapon), ranged: primaryRanged, distance, reloadLeft: this.reloadCd.get(actor.id) ?? 0, field: this.battlefield });
+        const secondaryReason = actor.sidearm && weaponTargetReason({ actor, target, weapon: adapt(actor.sidearm), ranged: isRangedWeapon(actor.sidearm), distance, reloadLeft: this.reloadCd.get(weaponReloadKey(actor, actor.sidearm)) ?? 0, field: this.battlefield });
         useSidearm = !!actor.sidearm && !secondaryReason && (!!primaryReason || primaryRanged && !isRangedWeapon(actor.sidearm) && meleeContact(this.battlefield, actor, target) && distance <= (this.battlefield ? 1 : 0));
       }
     }
@@ -883,6 +884,7 @@ export class SmallBattle {
       distance,
       reloadLeft: this.reloadCd.get(weaponReloadKey(actor, originalWeapon)) ?? 0,
       charge: !!opts.charge,
+      field: this.battlefield,
     });
     if (this.rules.resolutionVersion === 'v2' && !this.visibleCombatants(actor.side).some((u) => u.id === target.id)) reason = opts.charge ? '冲锋目标尚未观测到（视线或距离受限）' : '尚未观测到目标（视线或距离受限）';
     if (!reason && this.battlefield && !opts.charge) reason = this.sightReason(actor, target, weapon?.indirect);
@@ -1019,6 +1021,7 @@ export class SmallBattle {
         ...(reason ? { reason } : {}),
         distance: this.dist(actor, target),
         rangeDistance: context.ranged ? rangedTargetDistance(actor, target, this.dist(actor, target)) : this.dist(actor, target),
+        ...(context.ranged && heightReach(this.battlefield, actor, target) ? { heightReach: heightReach(this.battlefield, actor, target) } : {}),
         ...(!context.reason ? { preview: this.weaponPreview(actor, target, context) } : {}),
       };
     });
@@ -1031,6 +1034,7 @@ export class SmallBattle {
         ...(reason ? { reason } : {}),
         distance: this.dist(actor, target),
         rangeDistance: context.ranged ? rangedTargetDistance(actor, target, this.dist(actor, target)) : this.dist(actor, target),
+        ...(context.ranged && heightReach(this.battlefield, actor, target) ? { heightReach: heightReach(this.battlefield, actor, target) } : {}),
         ...(!context.reason ? { preview: this.weaponPreview(actor, target, context) } : {}),
       };
     }) : [];
@@ -1098,7 +1102,7 @@ export class SmallBattle {
           targetId: affected.id, ...this.previewAttackWithEnvironment({ attacker: actor, defender: affected, rules: this.rules,
             conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(actor, affected, ability, damage) }),
         })) : [];
-        return { targetId: target.id, enabled: !reason, ...(reason ? { reason } : {}), distance: this.dist(actor, target), rangeDistance: abilityRangeDistance(actor, this.battlefield ? gridAbility(ability) : ability, target, this.dist(actor, target)), ...(preview || landing || effects.length ? { preview: { ...preview, ...landing, ...(effects.length ? { effects } : {}), ...(area.length ? { areaTargets: area.map((u) => u.name), areaTargetIds: area.map((u) => u.id), areaPreviews } : {}) } } : {}) };
+        return { targetId: target.id, enabled: !reason, ...(reason ? { reason } : {}), distance: this.dist(actor, target), rangeDistance: abilityRangeDistance(actor, this.battlefield ? gridAbility(ability) : ability, target, this.dist(actor, target)), ...(abilityHeightReach(actor, ability, target, this.dist(actor, target), this.battlefield) ? { heightReach: abilityHeightReach(actor, ability, target, this.dist(actor, target), this.battlefield) } : {}), ...(preview || landing || effects.length ? { preview: { ...preview, ...landing, ...(effects.length ? { effects } : {}), ...(area.length ? { areaTargets: area.map((u) => u.name), areaTargetIds: area.map((u) => u.id), areaPreviews } : {}) } } : {}) };
       });
       const targetlessReason = actorReason ?? (ability.itemSourceId ? !economy.actionAvailable ? '本回合行动已使用' : undefined : this.hasteSelected.has(actorId) ? '加速动作不能使用技能' : this.actedThisTurn.has(actorId) ? '本回合主行动已使用' : undefined) ?? usability;
       const enabled = candidates.length ? targets.some((target) => target.enabled) : !targetlessReason;
@@ -1355,8 +1359,8 @@ export class SmallBattle {
   private skillTargetReason(actor: Combatant, ability: Combatant['abilities'][number], target: Combatant): string | undefined {
     if (this.battlefield?.layerVersion && ability.delivery === 'melee') { const height = meleeHeightReason(this.battlefield, actor, target); if (height) return height; }
     ability = this.battlefield ? gridAbility(ability) : ability;
-    if (ability.target === 'zone') return !this.battlefield || !this.cellVisible(actor.side,target.pos!) ? '请指定可见的地面位置' : abilityTargetReason({actor,ability,target,distance:this.dist(actor,target)}) ?? (unitLineOfSight(this.battlefield,actor,target) ? undefined : '这里被障碍物遮挡');
-    const reason = abilityTargetReason({ actor, ability, target, distance: this.dist(actor, target) })
+    if (ability.target === 'zone') return !this.battlefield || !this.cellVisible(actor.side,target.pos!) ? '请指定可见的地面位置' : abilityTargetReason({actor,ability,target,distance:this.dist(actor,target),field:this.battlefield}) ?? (unitLineOfSight(this.battlefield,actor,target) ? undefined : '这里被障碍物遮挡');
+    const reason = abilityTargetReason({ actor, ability, target, distance: this.dist(actor, target), field: this.battlefield })
       ?? (this.battlefield && !ability.weaponUse ? this.sightReason(actor, target) : undefined);
     if (reason) return reason;
     if (this.battlefield && target.status === 'dying' && ability.effects.some(e => e.op === 'heal')
@@ -1759,7 +1763,7 @@ export class SmallBattle {
         const actor = { ...unit, pos: cell };
         return foes.some(target => rangedRole
           ? [actor.weapon, actor.sidearm].some(weapon => isRangedWeapon(weapon) && !weaponTargetReason({ actor, target,
-              weapon: gridWeapon(weapon, this.rules.combatModel === MEMBER_HEALTH_MODEL), ranged: true, distance: this.dist(actor, target) }) && !this.sightReason(actor, target, weapon?.indirect)
+              weapon: gridWeapon(weapon, this.rules.combatModel === MEMBER_HEALTH_MODEL), ranged: true, distance: this.dist(actor, target), field }) && !this.sightReason(actor, target, weapon?.indirect)
             && !rangedScreen(actor, target, weapon, knownUnits, { mode: 'small', width: field.width, battlefield: field }, this.conditionDefMap()))
           : this.dist(actor, target) <= gridWeaponRange(meleeWeapon(actor), this.rules.combatModel === MEMBER_HEALTH_MODEL)
             && !this.sightReason(actor, target) && (meleeContact(field, actor, target) || isAirborne(actor))) ? [cell] : [];
@@ -2163,7 +2167,7 @@ export class SmallBattle {
 
       if (damageEff) {
         for (const f of foes) {
-          if (abilityTargetReason({ actor: u, ability: a, target: f, distance: this.dist(u, f) })) continue;
+          if (abilityTargetReason({ actor: u, ability: a, target: f, distance: this.dist(u, f), field: this.battlefield })) continue;
           let exp = expDamage(damageEff.baseDice, damageEff.apDice, f);
           if (damageEff.shape === 'burst') {
             // 覆盖形态：邻近敌人的溅射期望（威力减半，至多两目标）
@@ -2184,7 +2188,7 @@ export class SmallBattle {
         );
         for (const t of allies) {
           if (a.target === 'self' && t.id !== u.id) continue;
-          if (abilityTargetReason({ actor: u, ability: a, target: t, distance: this.dist(u, t) })) continue;
+          if (abilityTargetReason({ actor: u, ability: a, target: t, distance: this.dist(u, t), field: this.battlefield })) continue;
           const dying = t.status === 'dying';
           const hpPct = t.hp / Math.max(1, t.base.hpMax);
           if (!dying && hpPct >= 0.5) continue;

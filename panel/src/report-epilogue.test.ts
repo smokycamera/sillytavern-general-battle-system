@@ -62,8 +62,11 @@ describe('终章事实与致命开关',()=>{
  it('旧致命战场的零血濒死结清为阵亡，非致命编队的部分减员全部可救',()=>{
   const b=battle('small',false,[unit('A'),unit('D')]);b.byId('D').hp=0;b.byId('D').status='dying';
   const restored=SmallBattle.fromSnapshot(structuredClone(b.toSnapshot()));expect(restored.byId('D').status).toBe('dead');
-  const company=unit('D','company');battle('small',true,[unit('A','company'),company]);
-  applyHealthLoss(company,4);expect(company.recoverableWounded).toBe(4);expect(applyRecovery(company,10)).toBe(4);
+  const company=unit('D','company'),nonLethal=battle('small',true,[unit('A','company'),company]);
+  applyHealthLoss(company,4);expect(company.recoverableWounded).toBe(4);
+  // 单位提示词已说明治疗不补回永久缺员，终章只给伤兵数。
+  expect(battleEpilogue(nonLethal)).toContain('可救伤兵4');expect(battleEpilogue(nonLethal)).not.toContain('治疗不会补回其余缺员');
+  expect(applyRecovery(company,10)).toBe(4);
  });
  it('停战和投降的真实结束原因不会被任务胜负摘要覆盖',()=>{
   for(const reason of ['ceasefire','surrender'] as const){

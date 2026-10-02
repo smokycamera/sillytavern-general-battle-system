@@ -99,7 +99,7 @@ export interface AttackOpts {
   attackerTerrain?: string;
   localTerrain?: boolean;
   heightRules?: boolean;
-  heightAdvantage?: boolean;
+  heightAdvantage?: number;
   attackerHeight?: number;
   defenderHeight?: number;
   defenderTerrain?: string;
@@ -454,7 +454,7 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
 
   // ---- 收集双方修正 ----
   // 攻击方视角：条件修正看 defender 的标签
-  const ctxAtk = { skillDelivery: opts.abilityDamage?.delivery, attacker, defender, charge: opts.charge, ranged, weapon, fieldTags: opts.fieldTags, localTerrain: opts.localTerrain,heightRules:opts.heightRules,heightAdvantage:false, terrain: opts.attackerTerrain, opponentTerrain: opts.defenderTerrain, distance: opts.distance };
+  const ctxAtk = { skillDelivery: opts.abilityDamage?.delivery, attacker, defender, charge: opts.charge, ranged, weapon, fieldTags: opts.fieldTags, localTerrain: opts.localTerrain,heightRules:opts.heightRules,heightAdvantage:0, terrain: opts.attackerTerrain, opponentTerrain: opts.defenderTerrain, distance: opts.distance };
   const atkMods = collectMods(attacker, ctxAtk, opts.conditionDefs, extraMods, opts.traitRegistry);
   const atkStack = resolveStack(atkMods, 'atk', ctxAtk, { sameNameKeepsHighest: rules.sameNameKeepsHighest, maxFlat: rules.maxFlat });
 

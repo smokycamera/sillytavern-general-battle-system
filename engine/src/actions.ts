@@ -20,6 +20,8 @@ import type { Ability, Combatant, RangeSpec, Weapon } from './types.js';
 import { healingAmount } from './items.js';
 import { activeTraitIds } from './trait-sources.js';
 import { aerialTargetReason, sameLayer, rangedTargetDistance, type AerialRangeSpace } from './aerial.js';
+import { heightReach } from './small/height-map.js';
+import type { BattlefieldSpec } from './small/spatial.js';
 
 export type ActionKind = 'move' | 'weapon' | 'charge' | 'ability' | 'brace' | 'retreat' | 'end-turn';
 
@@ -45,6 +47,8 @@ export interface TargetOption {
   distance?: number;
   /** 包含对空加值的射程距离；distance 仍为几何/接敌距离。 */
   rangeDistance?: number;
+  /** 居高射击额外射程（格）；只用于远程武器与远程武器技法。 */
+  heightReach?: number;
   preview?: ActionPreview;
 }
 
@@ -195,6 +199,8 @@ export function weaponTargetReason(input: {
   reloadLeft?: number;
   charge?: boolean;
   space?: AerialRangeSpace;
+  /** Grid battles pass the field so a shot fired down at a lower target reaches farther. */
+  field?: BattlefieldSpec;
 }): string | undefined {
   const { actor, target, weapon, ranged } = input;
   const distance = ranged ? rangedTargetDistance(actor, target, input.distance, input.space) : input.distance;
@@ -219,9 +225,10 @@ export function weaponTargetReason(input: {
     if (distance === 0 && ranged) return target.name + ' 贴身缠斗，该武器不能抵近射击';
     return '未达最小射程（距离' + distance + ' < 最小射程' + range.min + '）';
   }
-  if (distance > range.max) {
+  const reach = ranged ? heightReach(input.field, actor, target) : 0;
+  if (distance > range.max + reach) {
     return ranged
-      ? '超出射程（距离' + distance + ' > 射程' + range.max + '）'
+      ? '超出射程（距离' + distance + ' > 射程' + range.max + (reach ? '+居高' + reach : '') + '）'
       : '距离不足（距离' + distance + ' > 武器触及' + range.max + '），先移动接近';
   }
   if (distance === 0 && ranged && weapon.pointBlankPolicy === 'forbid') {
@@ -297,6 +304,7 @@ export function abilityTargetReason(input: {
   target?: Combatant;
   distance?: number;
   space?: AerialRangeSpace;
+  field?: BattlefieldSpec;
 }): string | undefined {
   const { actor, ability } = input;
   const target = ability.target === 'self' ? actor : input.target ?? (ability.target === 'ally' ? actor : undefined);
@@ -310,7 +318,7 @@ export function abilityTargetReason(input: {
     const aerial = aerialTargetReason(actor, target, isRangedWeapon(weapon), weapon); if (aerial) return aerial;
     if (!isRangedWeapon(weapon) && !sameLayer(actor, target)) return '接触技能需要处于同一空地层';
     const distance = abilityRangeDistance(actor, ability, target, input.distance ?? 0, input.space);
-    if (distance > skillWeaponReach(actor, weapon) || distance < (weapon.minRange ?? 0)) return '目标超出实际武器射程';
+    if (distance > skillWeaponReach(actor, weapon) + abilityHeightReach(actor, ability, target, input.distance, input.field) || distance < (weapon.minRange ?? 0)) return '目标超出实际武器射程';
     if (isRangedWeapon(weapon) && weapon.pointBlankPolicy === 'forbid' && distance <= 1 && sameLayer(actor, target)) return '实际武器不能抵近射击';
   }
   if (target && ability.recipe && ability.effects.every((e) => e.op === 'trait' && !!skillTraitReason(target, e)
@@ -339,8 +347,14 @@ export function abilityTargetReason(input: {
   }
   if (!target || range.metric === 'global') return undefined;
   const distance = abilityRangeDistance(actor, ability, target, input.distance ?? 0, input.space);
+  const reach = abilityHeightReach(actor, ability, target, input.distance, input.field);
   if (distance === 0 && range.allowEngaged === false) return '该技能不能对贴身目标施放';
   if (distance < range.min) return '未达技能最小射程（距离' + distance + ' < ' + range.min + '）';
-  if (distance > range.max) return '超出技能射程（距离' + distance + ' > ' + range.max + '）';
+  if (distance > range.max + reach) return '超出技能射程（距离' + distance + ' > ' + range.max + (reach ? '+居高' + reach : '') + '）';
   return undefined;
+}
+
+/** 居高射程只随实际远程武器发出的技法生效；独立法术、接触与支援技能的距离不变。 */
+export function abilityHeightReach(actor: Combatant, ability: Ability, target: Combatant, distance?: number, field?: BattlefieldSpec): number {
+  return field && ability.weaponUse && target.side !== actor.side && isRangedWeapon(skillWeapon(actor, ability, distance)) ? heightReach(field, actor, target) : 0;
 }

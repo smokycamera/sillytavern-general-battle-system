@@ -40,7 +40,7 @@ function epilogueUnit(b: Battle, u: Combatant): string {
   const statuses = {ready:'可行动',dying:'濒死',dead:u.scale==='hero'?'阵亡':'编队失去战斗力',routing:'溃退中',fled:'已撤离'};
   const health=u.scale==='hero'?`生命${u.hp}/${u.base.hpMax}`:hasMemberHealth(u)?`现员${u.hp}/${u.base.hpMax}${memberNoun(u)}，总生命${memberHealth(u)}/${memberHealthMax(u)}；${memberHealthSummary(u,Infinity)}`:`现员${u.hp}/${u.base.hpMax}人${u.formation?`，成员耐久${u.formation.memberHp}`:''}`;
   const conditions=u.conditions.filter(c=>c.dur>0).map(c=>`${b.conditions.get(c.id)?.name??c.id}（${c.dur}轮）`);
-  return `${u.side==='ally'?'我方':u.side==='enemy'?'敌方':'中立'} ${u.name}：${health}，${statuses[u.status]}${woundedLabel(u)?'，'+woundedLabel(u):''}${conditions.length?'，'+conditions.join('、'):''}`;
+  return `${u.side==='ally'?'我方':u.side==='enemy'?'敌方':'中立'} ${u.name}：${health}，${statuses[u.status]}${woundedLabel(u,true)?'，'+woundedLabel(u,true):''}${conditions.length?'，'+conditions.join('、'):''}`;
 }
 /** 按真实生命/现员损失累计，过量伤害不计入；来源按稳定id区分。 */
 function epilogueDamage(b: Battle): string[] {

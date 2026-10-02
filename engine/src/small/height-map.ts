@@ -1,7 +1,7 @@
 import { isAirborne } from '../aerial.js';
 import { activeTraitIds } from '../trait-sources.js';
 import type { Combatant } from '../types.js';
-import type { BattlefieldSpec } from './spatial.js';
+import type { BattlefieldSpec, Terrain } from './spatial.js';
 import type { BattlefieldPlan } from './battlefield-plan.js';
 export interface HeightTransition {
     from: number;
@@ -27,7 +27,45 @@ export function surfaceHeightAt(field: BattlefieldSpec, cell: number, unit?: Com
     return ground;
 }
 export function unitHeight(field: BattlefieldSpec, unit: Combatant): number { return surfaceHeightAt(field, unit.pos!, unit); }
-export function eyeHeight(field: BattlefieldSpec, unit: Combatant): number { return unitHeight(field, unit) + .25; }
+/** A height level is about one storey; a standing unit sees and is seen at half a level, the same human height the friendly-screen rule uses. */
+export const EYE_HEIGHT = .5;
+export function eyeHeight(field: BattlefieldSpec, unit: Combatant): number { return unitHeight(field, unit) + EYE_HEIGHT; }
+/** High-ground bonuses grow by one per level of height difference and stop at two, so a tower on a hill stays hittable. */
+export const HEIGHT_EDGE_CAP = 2;
+function heightEdge(field: BattlefieldSpec | undefined, high: Combatant, low: Combatant): number {
+    if (field?.spatialRulesVersion !== 2 || high.pos === undefined || low.pos === undefined)
+        return 0;
+    return Math.max(0, Math.min(HEIGHT_EDGE_CAP, unitHeight(field, high) - unitHeight(field, low)));
+}
+/** Defense for a non-airborne defender standing higher than its attacker, on natural ground or a platform alike. */
+export function heightDefense(field: BattlefieldSpec | undefined, defender: Combatant, attacker: Combatant): number {
+    return isAirborne(defender) ? 0 : heightEdge(field, defender, attacker);
+}
+/** Extra cells of reach for a ranged weapon fired down at a lower ground target; air layers keep their own range budget. */
+export function heightReach(field: BattlefieldSpec | undefined, actor: Combatant, target: Combatant): number {
+    return isAirborne(actor) || isAirborne(target) ? 0 : heightEdge(field, actor, target);
+}
+/** Ground terrain under a unit's feet. The air and an intact bridge deck keep it out of water, mud and undergrowth;
+ * a wall or tower platform keeps the street it stands over for urban fighting but nothing else. */
+export function standingTerrain(field: BattlefieldSpec | undefined, unit: Combatant): Terrain | undefined {
+    if (isAirborne(unit))
+        return 'open';
+    if (!field || unit.pos === undefined)
+        return undefined;
+    const tile = field.tiles[unit.pos], s = field.structures?.[unit.pos];
+    if (s?.hp && s.kind === 'bridge')
+        return 'open';
+    return unit.elevation === 1 && tile !== 'street' ? 'open' : tile;
+}
+/** Display height of a cell: the top of a wall, tower, building, closed gate or rock face, otherwise the walkable surface. */
+export function displayHeightAt(field: BattlefieldSpec, cell: number): number {
+    const ground = groundHeightAt(field, cell), s = field.structures?.[cell], tile = field.tiles[cell];
+    if (s?.hp && s.top)
+        return ground + (s.platformHeight ?? (s.kind === 'tower' ? 2 : 1));
+    const structure = s?.hp ? s.obstructionHeight ?? (['building', 'tower'].includes(s.kind) ? 2 : s.kind === 'wall' || s.kind === 'gate' && s.gateState !== 'open' ? 1 : 0) : 0;
+    const top = ground + Math.max(structure, tile === 'cliff' ? 3 : tile === 'wall' ? 1 : 0);
+    return top > ground ? top : surfaceHeightAt(field, cell);
+}
 export function heightTransition(field: BattlefieldSpec, from: number, to: number): HeightTransition['kind'] | 'flat' | 'slope' {
     const explicit = field.heightTransitions?.find(e => e.from === from && e.to === to || e.from === to && e.to === from);
     if (explicit)
@@ -47,8 +85,8 @@ export function heightStepCost(field: BattlefieldSpec, from: number, to: number,
 export function heightDescription(field: BattlefieldSpec, cell: number): string {
     if (field.spatialRulesVersion !== 2)
         return '';
-    const h = surfaceHeightAt(field, cell);
-    return `高度${h}`;
+    const top = displayHeightAt(field, cell), ground = groundHeightAt(field, cell);
+    return `高度${top}${top !== surfaceHeightAt(field, cell) && ground ? `（地面${ground}）` : ''}`;
 }
 export function initializeHeightMap(field: BattlefieldSpec, plan: BattlefieldPlan | undefined): void {
     field.spatialRulesVersion = 2;

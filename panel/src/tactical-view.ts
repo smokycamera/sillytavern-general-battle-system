@@ -1,5 +1,5 @@
 import { SCENE_NAMES } from '../../engine/src/small/map-design.js';
-import { movementStepCost, structureDisplayName,retreatCells } from '../../engine/src/small/spatial.js';
+import { movementStepCost, structureDisplayName,retreatCells,neighbors } from '../../engine/src/small/spatial.js';
 import { heightDescription,surfaceHeightAt,unitHeight } from '../../engine/src/small/height-map.js';
 import { SCENE_ARCHETYPE_NAMES } from '../../engine/src/small/scene-intent.js';
 import { structureAt, intactStructure, groundBlocked, isElevated } from '../../engine/src/small/layers.js';
@@ -85,21 +85,24 @@ export function selectTacticalElement(battle: SmallBattle, view: TacticalView, i
   return selection.query;
 }
 
+/** 实际高度的统一说明：居高防御与射程按高差计，只有高于双方站立高度的自然地形遮挡视线。 */
+const HEIGHT_RULES = '比对手每高1级，防御+1、远程武器射程+1（各至多+2）；自然地形只有高于双方站立高度才遮挡视线，城墙与建筑按实际高度遮挡；相邻高差超过1级需坡道或阶梯。';
 function terrainDescription(terrain: Terrain, actor?: Combatant,heightRules=false): string {
   const airborne = actor && isAirborne(actor);
   const traits = actor ? activeTraitIds(actor) : [];
+  const footing = '站在其中立足不稳：攻击−1、防御−1，' + difficultEngagementDescription(actor?.damageModel) + '；航渡单位与桥上单位不受影响。';
   const effect = {
     open: '没有额外地形防护。',
     street: '城区街道；巷战大师在此攻击+1、防御+2，建筑与瓦砾效果另外结算。',
-    shallow_water: '可以涉水，通常花费2移动；航渡单位花费1。不能从水中发起地面冲锋。',
+    shallow_water: '可以涉水，通常花费2移动；航渡单位花费1。不能从水中发起地面冲锋。' + (heightRules ? footing : ''),
     deep_water: '地面单位需要航渡或完好桥梁；航渡花费3移动。',
-    swamp: '移动花费3，航渡单位花费2；不适合地面冲锋。',
+    swamp: '移动花费3，航渡单位花费2；不适合地面冲锋。' + (heightRules ? footing : ''),
     cliff: '自然硬障碍，不是可破坏城墙；高障碍也遮挡低空射线。',
     cover: '地面单位被一格以外的武器攻击时，防御提高2。',
     wall: '阻挡地面通行与地面直射；空中单位可越过。',
     rough: '地面移动花费2点，' + difficultEngagementDescription(actor?.damageModel) + '。',
     forest: '地面单位抵御一格以外的远射时防御提高2；' + difficultEngagementDescription(actor?.damageModel) + '。',
-    hill: heightRules?'按实际高度判断：高于攻击者的地面单位防御提高1；台地内部正常移动，上坡额外消耗移动。':'地面单位面对不在山地的攻击者时防御提高1；' + difficultEngagementDescription(actor?.damageModel) + '。',
+    hill: heightRules?'台地：只按实际高度结算居高防御与射程，没有山地额外防御、攻击惩罚或交战限制；台地内部正常移动，上坡额外消耗移动。':'地面单位面对不在山地的攻击者时防御提高1；' + difficultEngagementDescription(actor?.damageModel) + '。',
   }[terrain];
   const penalty = terrain === 'forest' || terrain === 'hill'&&!heightRules
     ? traits.includes(terrain === 'forest' ? 'forest-lore' : 'mountain-born') ? '当前单位适应该地形，免额外移动与攻击惩罚。' : '未适应的地面单位在此攻击降低1。'
@@ -131,12 +134,15 @@ function tileInspector(battle: SmallBattle, view: TacticalView, selection: Retur
     const preview = battle.structurePreview(actor.id, cell, mode);
     return `<button data-action="grid-structure" data-actor="${esc(actor.id)}" data-cell="${cell}" data-mode="${esc(mode!)}" ${preview.reason || !preview.damage ? 'disabled' : ''} title="${esc(preview.reason ?? `破障系数×${preview.coefficient}；约${preview.actions}次有效攻击（不含装填），只伤结构`)}">${esc(label!)}破障${preview.reason ? '' : ' · ' + preview.damage + '（×' + preview.coefficient + '）'}</button>`;
   }).join('') : '';
+  // Entry cost from a cell next to it: the actor's own cell when adjacent, otherwise the cheapest open neighbour.
+  const entry = actor && traversable ? Math.min(Infinity, ...(actor.pos !== undefined && gridDistance(field, actor.pos, cell) === 1 ? [actor.pos]
+    : neighbors(field, cell).filter(n => !groundBlocked(field, n, actor))).map(from => movementStepCost(field, cell, actor, battle.fieldTags, from))) : Infinity;
   const gateReason = actor && structure?.kind === 'gate' ? battle.gateReason(actor.id, cell) : undefined;
   const climbReason = actor ? battle.climbReason(actor.id, cell) : undefined;
-  return `<div class="map-inspector" aria-live="polite"><div class="inspector-heading"><strong>${cellLabel(field, cell)} · ${landmarkAt(field, cell) ? esc(landmarkAt(field, cell)!) + ' · ' : ''}${terrainName(field, cell)}${field.spatialRulesVersion===2?' · '+heightDescription(field,cell):''}</strong><span>${actor && traversable ? Number.isFinite(movementStepCost(field,cell,actor,battle.fieldTags))?'相邻进入花费'+movementStepCost(field,cell,actor,battle.fieldTags)+'移动':'需经坡道或阶梯接近' : terrain === 'wall' || !traversable ? '地面不可通行' : ''}</span></div>
-    <p>${terrainDescription(terrain, actor,field.spatialRulesVersion===2)}${field.spatialRulesVersion===2?' '+heightDescription(field,cell)+'；相邻高差超过1级需坡道或阶梯。':''}</p>
+  return `<div class="map-inspector" aria-live="polite"><div class="inspector-heading"><strong>${cellLabel(field, cell)} · ${landmarkAt(field, cell) ? esc(landmarkAt(field, cell)!) + ' · ' : ''}${terrainName(field, cell)}${field.spatialRulesVersion===2?' · '+heightDescription(field,cell):''}</strong><span>${actor && traversable ? Number.isFinite(entry)?'相邻进入花费'+entry+'移动':'需经坡道或阶梯接近' : terrain === 'wall' || !traversable ? '地面不可通行' : ''}</span></div>
+    <p>${terrainDescription(terrain, actor,field.spatialRulesVersion===2)}${field.spatialRulesVersion===2?' '+heightDescription(field,cell)+'；'+HEIGHT_RULES:''}</p>
     ${structure ? `<p><b>${structureDisplayName(field, cell)} L${structure.level}</b> · 耐久 ${structure.hp}/${structure.hpMax}${structure.top && structure.hp > 0 ? ' · 可登城防平台' : ''}${structure.kind === 'fortification' ? ' · 全向防护' : structure.facing ? ' · 朝向 ' + ({north:'北',south:'南',east:'东',west:'西'}[structure.facing]) : ''}</p>` : ''}
-    ${field.overlays?.[cell]?.length ? '<p>' + field.overlays[cell]!.map(o => o === 'road' ? '道路' : '瓦砾：基础2移动；慢速单位花费整轮基础移动力可前进一步').join(' · ') + '</p>' : ''}
+    ${field.overlays?.[cell]?.length ? '<p>' + field.overlays[cell]!.map(o => o === 'road' ? '道路' : '瓦砾：基础2移动；慢速单位花费整轮基础移动力可前进一步' + (field.spatialRulesVersion === 2 ? '；地面单位抵御一格以外的远射时防御+1' : '')).join(' · ') + '</p>' : ''}
     <div class="structure-actions">${structureActions}
     ${structure?.kind === 'gate' && actor && selection.canControl ? `<button data-action="grid-gate" data-actor="${esc(actor.id)}" data-cell="${cell}" ${gateReason ? 'disabled' : ''} title="${esc(gateReason ?? '消耗主行动')}">${structure.gateState === 'open' ? '关闭城门' : '打开城门'}</button>` : ''}
     ${actor && selection.canControl && (!climbReason || structure?.top && structure.hp > 0) ? `<button data-action="grid-climb" data-actor="${esc(actor.id)}" data-cell="${cell}" ${climbReason ? 'disabled' : ''} title="${esc(climbReason ?? `消耗主行动和${battle.climbMovementCost(actor.id)}移动`)}">${isElevated(actor) ? '下到地面' : '登城'}</button>` : ''}</div>
@@ -288,6 +294,7 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
         <label>使用<select data-role="grid-mode">${options.filter((o) => option?.kind === 'ability' ? o.kind === 'ability' : ['weapon', 'charge'].includes(o.kind)).map((o) => `<option value="${esc(o.id)}" ${o.id === option?.id ? 'selected' : ''}>${esc(o.label)}${o.enabled ? '' : ' · 暂不可用'}</option>`).join('')}</select></label>
         ${option?.targets?.length ? '<label>目标<select data-role="grid-target">' + option.targets.map((t) => '<option value="' + esc(t.targetId) + '" ' + (t.targetId === target?.targetId ? 'selected' : '') + '>' + esc(visible.find((u) => u.id === t.targetId)?.name ?? (t.targetId.startsWith('cell:') ? cellLabel(field,Number(t.targetId.slice(5))) : '未定位目标')) + (t.enabled ? '' : ' · ' + esc(t.reason ?? '不可选')) + '</option>').join('') + '</select></label>' : ''}
         ${target?.rangeDistance !== undefined && target.distance !== undefined && target.rangeDistance > target.distance ? '<p class="aerial-range">距离 ' + target.distance + ' + 对空 ' + (target.rangeDistance - target.distance) + ' = 射程距离 ' + target.rangeDistance + '</p>' : ''}
+        ${target?.heightReach ? '<p class="aerial-range">居高射击：射程 +' + target.heightReach + '</p>' : ''}
         ${actionPreview(battle, target?.preview ?? option?.preview, option, target?.targetId)}
         ${reason ? '<div class="grid-reason">' + esc(reason) + '</div>' : ''}
         <button class="primary" data-action="grid-execute" data-actor="${esc(actor?.id ?? '')}" data-mode="${esc(special ? mode : option?.id ?? 'weapon')}" data-target="${esc(target?.targetId ?? '')}" ${actionReady ? '' : 'disabled'}>确认${esc(option?.label ?? '行动')}</button>`}
@@ -298,7 +305,7 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
         <p>${field.retreatEdges?'本场我方撤离点：'+retreatCells(field,'ally').map(p=>cellLabel(field,p)).join('、')+'。':'我方撤离点：地图最下排标“撤”的格子；敌方从最上排撤离。'}脱离敌人至少2格并保留主行动后可撤离。${esc(s.allOptions.find((o) => o.id === 'retreat')?.reason ?? '')}</p>
         <button data-action="grid-auto" ${canControl ? '' : 'disabled'}>移交当前单位本次行动给AI</button><p>由AI代打当前单位的这次行动，后续回合仍按原控制设置执行。</p>
         <label><input type="checkbox" data-role="auto-turn" ${autoTurn ? 'checked' : ''}>自动非主控单位</label>
-        <p>地面对空射程距离额外 +2 格，曲射火炮不能对空。射程底色只表示平面距离；目标亮边和禁用原因同时考虑视线、接敌、装备、状态与行动成本。暗区可能存在未发现的敌军。</p>
+        <p>地面对空射程距离额外 +2 格，曲射火炮不能对空。远程武器居高射击每高1级射程+1（至多+2）。射程底色只表示平面距离，不含居高加成；目标亮边和禁用原因同时考虑视线、接敌、装备、状态与行动成本。暗区可能存在未发现的敌军。</p>
       </details>
 
       

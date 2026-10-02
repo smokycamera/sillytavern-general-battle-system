@@ -10,7 +10,7 @@ import { isAirborne, sameLayer, flightCapabilityReason, type FlightConditions } 
 import { SeededRng } from '../rng.js';
 import { rangedScreen } from '../guard-screen.js';
 import {validateSceneRecord,type SceneRecord,type DeploymentZone} from './scene-compiler.js';
-import { heightStepCost,validateHeightMap,eyeHeight,unitHeight,heightDescription,type HeightTransition } from './height-map.js';
+import { heightStepCost,validateHeightMap,eyeHeight,unitHeight,groundHeightAt,heightDefense,standingTerrain,type HeightTransition } from './height-map.js';
 import { gridWeaponRange } from './weapon-range.js';
 
 export const DEFAULT_SMALL_ROUND_LIMIT = 60;
@@ -224,10 +224,43 @@ export function meleeLineBlocker(field: BattlefieldSpec, from: Combatant, to: Co
   });
   return blocker;
 }
+/** Natural ground hides a unit only where it rises above both units: whoever stands at least as high as a slope,
+ * terrace or crest sees over it, while a ridge higher than both still hides the far side. Walls, buildings, closed
+ * gates and rock faces stay solid blocks checked against the actual ray at its lowest point inside them, so they
+ * still shelter whoever stands right behind them. Both directions give the same answer. */
+function heightLineOfSight(field: BattlefieldSpec, from: Combatant, to: Combatant): boolean {
+  const fx = from.pos! % field.width, fy = Math.floor(from.pos! / field.width);
+  const dx = to.pos! % field.width - fx, dy = Math.floor(to.pos! / field.width) - fy;
+  const start = eyeHeight(field, from), rise = eyeHeight(field, to) - start;
+  const standing = Math.max(unitHeight(field, from), unitHeight(field, to));
+  const platform = isElevated(from) !== isElevated(to) ? isElevated(from) ? from : to : undefined;
+  const adjacentDiagonal = Math.abs(dx) === 1 && Math.abs(dy) === 1;
+  const forest = new Set<number>();
+  return lineOfSight(field, from.pos!, to.pos!, cell => {
+    if (cell === to.pos || cell === from.pos) return false;
+    const cx = cell % field.width, cy = Math.floor(cell / field.width), ground = groundHeightAt(field, cell), top = obstructionHeight(field, cell);
+    // A wall-top shot at the diagonal foot only grazes the corner of the connected wall segment.
+    if (adjacentDiagonal && platform && structureAt(field, cell)?.top && top <= unitHeight(field, platform)) return false;
+    if (top > ground) {
+      let enter = 0, leave = 1;
+      for (const [origin, delta, centre] of [[fx, dx, cx], [fy, dy, cy]] as const) if (delta !== 0) {
+        const a = (centre - .5 - origin) / delta, b = (centre + .5 - origin) / delta;
+        enter = Math.max(enter, Math.min(a, b)); leave = Math.min(leave, Math.max(a, b));
+      }
+      return top >= start + rise * (rise >= 0 ? enter : leave);
+    }
+    if (ground > standing) return true;
+    // Canopy stands one level above its ground; a ray passing under it counts toward the dense-forest limit.
+    const ray = start + rise * Math.max(0, Math.min(1, ((cx - fx) * dx + (cy - fy) * dy) / Math.max(1, dx * dx + dy * dy)));
+    if (field.tiles[cell] === 'forest' && ray < ground + 1) forest.add(cell);
+    return forest.size > 2;
+  });
+}
 export function unitLineOfSight(field: BattlefieldSpec, from: Combatant, to: Combatant): boolean {
   if (!inBounds(field, from.pos!) || !inBounds(field, to.pos!)) return false;
   if (!field.layerVersion) return isAirborne(from) || isAirborne(to) || lineOfSight(field, from.pos!, to.pos!);
-  const height = (u: Combatant) => field.spatialRulesVersion===2?eyeHeight(field,u):isAirborne(u) ? 2.25 : isElevated(u) ? 1.25 : .25;
+  if (field.spatialRulesVersion === 2) return heightLineOfSight(field, from, to);
+  const height = (u: Combatant) => isAirborne(u) ? 2.25 : isElevated(u) ? 1.25 : .25;
   const distance = Math.max(1, gridDistance(field, from.pos!, to.pos!));
   const adjacentDiagonal = Math.abs(from.pos! % field.width - to.pos! % field.width) === 1
     && Math.abs(Math.floor(from.pos! / field.width) - Math.floor(to.pos! / field.width)) === 1;
@@ -237,20 +270,9 @@ export function unitLineOfSight(field: BattlefieldSpec, from: Combatant, to: Com
     // 墙顶射向斜邻墙脚时，射线只擦过相连的墙顶格角，不应被本段城墙挡住。
     if (adjacentDiagonal && isElevated(from) && !isElevated(to) && gridDistance(field, from.pos!, cell) === 1
       && structureAt(field, cell)?.top && obstructionHeight(field, cell) === 1) return false;
-    const dx=to.pos!%field.width-from.pos!%field.width,dy=Math.floor(to.pos!/field.width)-Math.floor(from.pos!/field.width);
-    const fraction = field.spatialRulesVersion===2?Math.max(0,Math.min(1,((cell%field.width-from.pos!%field.width)*dx+(Math.floor(cell/field.width)-Math.floor(from.pos!/field.width))*dy)/Math.max(1,dx*dx+dy*dy))):Math.min(1, gridDistance(field, from.pos!, cell) / distance);
-    let rayHeight = height(from) + (height(to) - height(from)) * fraction;
-    if(field.spatialRulesVersion===2) {
-      // Use the lowest ray height within the intersected cell, not only the cell centre.
-      let enter=0,leave=1;
-      for(const [start,delta,center] of [[from.pos!%field.width,dx,cell%field.width],[Math.floor(from.pos!/field.width),dy,Math.floor(cell/field.width)]])if(delta!==0) {
-        const a=(center!-.5-start!)/delta!,b=(center!+.5-start!)/delta!;
-        enter=Math.max(enter,Math.min(a,b));leave=Math.min(leave,Math.max(a,b));
-      }
-      const deltaHeight=height(to)-height(from);rayHeight=height(from)+deltaHeight*(deltaHeight>=0?enter:leave);
-    }
+    const rayHeight = height(from) + (height(to) - height(from)) * Math.min(1, gridDistance(field, from.pos!, cell) / distance);
     if (obstructionHeight(field, cell) >= rayHeight) return true;
-    if (field.tiles[cell] === 'forest' && rayHeight < (field.groundHeight?.[cell]??0)+1) forest.add(cell);
+    if (field.tiles[cell] === 'forest' && rayHeight < 1) forest.add(cell);
     return forest.size > 2;
   });
 }
@@ -408,15 +430,20 @@ export function deployOnGrid(field: BattlefieldSpec, units: Combatant[], seed = 
 /** Small positional tie-breaker, using actual rules and observed opponents only. Never a combat modifier. */
 export function terrainTacticalValue(field: BattlefieldSpec, cell: number, actor: Combatant, visibleFoes: Combatant[]): number {
   if (isAirborne(actor) || !inBounds(field, cell)) return 0;
-  const terrain = field.tiles[cell], traits = activeTraitIds(actor);
+  // Real-height maps judge the ground the unit would actually stand on (a platform or bridge deck is not undergrowth or water).
+  const heights = field.spatialRulesVersion === 2, terrain = heights ? standingTerrain(field, { ...actor, pos: cell }) : field.tiles[cell], traits = activeTraitIds(actor);
   const foes = visibleFoes.filter(u => u.side !== actor.side && u.status === 'ready' && u.hp > 0 && u.pos !== undefined);
   let protection = 0;
   for (const foe of foes) {
     const distant = gridDistance(field, cell, foe.pos!) > 1;
-    if (terrain === 'cover' && distant || actor.rulesVersion === 'v2' && terrain === 'forest' && distant && isRangedWeapon(foe.weapon)) protection += 2;
-    else if (actor.rulesVersion === 'v2' && (field.spatialRulesVersion===2?unitHeight(field,{...actor,pos:cell})>unitHeight(field,foe):terrain === 'hill' && (isAirborne(foe) || field.tiles[foe.pos!] !== 'hill'))) protection += 1;
+    const cover = terrain === 'cover' && distant || actor.rulesVersion === 'v2' && terrain === 'forest' && distant && isRangedWeapon(foe.weapon) ? 2 : 0;
+    const height = actor.rulesVersion !== 'v2' ? 0 : heights ? heightDefense(field, { ...actor, pos: cell }, foe)
+      : terrain === 'hill' && (isAirborne(foe) || field.tiles[foe.pos!] !== 'hill') ? 1 : 0;
+    // Real heights stack with cover in combat; older maps keep the first matching protection only.
+    protection += heights ? cover + height : cover || height;
   }
-  const penalty = actor.rulesVersion === 'v2' && (terrain === 'forest' && !traits.includes('forest-lore') || terrain === 'hill' && !traits.includes('mountain-born')) ? .45 : 0;
+  const penalty = actor.rulesVersion === 'v2' && (terrain === 'forest' && !traits.includes('forest-lore') || !heights && terrain === 'hill' && !traits.includes('mountain-born')) ? .45
+    : heights && (terrain === 'shallow_water' || terrain === 'swamp') && !traits.includes('water-crossing') ? 1 : 0;
   const concealment = traits.includes('stalk') && ['cover', 'forest'].includes(terrain ?? '')
     && foes.every(u => gridDistance(field, cell, u.pos!) > 2) ? .25 : 0;
   if (field.layerVersion) protection += foes.reduce((n, f) => n + structureDefense(field, { ...actor, pos: cell }, f, isRangedWeapon(f.weapon)), 0);

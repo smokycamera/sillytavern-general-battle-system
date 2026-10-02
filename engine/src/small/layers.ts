@@ -88,8 +88,12 @@ export function layerMoveCost(field: BattlefieldSpec, cell: number, actor?: Comb
 }
 export function structureDefense(field: BattlefieldSpec, defender: Combatant, attacker: Combatant, ranged: boolean): number {
   if (!field.layerVersion || isAirborne(defender) || defender.pos === undefined || attacker.pos === undefined) return 0;
-  const s = intactStructure(field, defender.pos); if (!s) return 0;
-  if (isElevated(defender)) return field.spatialRulesVersion===2?(unitHeight(field,defender)>unitHeight(field,attacker)?isElevated(attacker)?1:2:0):isElevated(attacker) ? 0 : 2;
+  const s = intactStructure(field, defender.pos);
+  // Real-height maps: broken masonry shelters a ground unit from shots fired from beyond the next cell.
+  if (!s) return field.spatialRulesVersion === 2 && ranged && !isElevated(defender) && !!field.overlays?.[defender.pos]?.includes('rubble')
+    && Math.abs(defender.pos % field.width - attacker.pos % field.width) + Math.abs(Math.floor(defender.pos / field.width) - Math.floor(attacker.pos / field.width)) > 1 ? 1 : 0;
+  // Real heights pay the height itself through the separate high-ground bonus; the parapet adds one against lower attackers.
+  if (isElevated(defender)) return field.spatialRulesVersion===2?(unitHeight(field,defender)>unitHeight(field,attacker)?1:0):isElevated(attacker) ? 0 : 2;
   if (s.kind === 'cover') return ranged ? 2 : 0;
   if (s.kind !== 'fortification') return 0;
   // Facing in an older snapshot is harmless provenance, not a directional protection rule.

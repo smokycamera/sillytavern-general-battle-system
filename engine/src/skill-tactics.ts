@@ -12,6 +12,7 @@ import { skillWeapon } from './skill-runtime.js';
 import { skillAttack } from './skill-attack.js';
 import { gridWeapon } from './small/weapon-range.js';
 import { gridAbility } from './small/skill-range.js';
+import { heightDefense, standingTerrain } from './small/height-map.js';
 import { gridDistance, reachableGridPaths, canOccupy, tileCost, meleeLineBlocker, unitLineOfSight } from './small/spatial.js';
 import { formationDistance, formationNode, formationScreened, formationShotReason } from './mass/formation.js';
 import { rangedScreen } from './guard-screen.js';
@@ -89,14 +90,14 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
       const evaluate = (opts: Partial<Parameters<typeof previewAttack>[0]>) => Math.min(memberHealth(target), previewAttack({
         attacker: actor, defender: target, rules, conditionDefs: defs, traitRegistry: context.traitRegistry,
         fieldTags: context.fieldTags, distance: dist,
-        attackerTerrain: field?.tiles[actor.pos!], defenderTerrain: field?.tiles[target.pos!],
+        attackerTerrain: standingTerrain(field, actor), defenderTerrain: standingTerrain(field, target), heightRules: field?.spatialRulesVersion === 2, heightAdvantage: heightDefense(field, target, actor),
         extraMods: moved && opts.ranged ? [{ source: 'stance', name: '移动射击估计', kind: 'atk', type: 'flat', value: -2 }] : [], ...opts,
       }).expectedDamage);
       for (const rawWeapon of [actor.weapon, actor.sidearm]) {
         if (!rawWeapon || flags(context, actor).some(d => d?.preventAttack) && rawWeapon.recipe?.mechanism !== 'natural') continue;
         const ranged = isRangedWeapon(rawWeapon);
         const weapon = field ? gridWeapon(rawWeapon) : !ranged && actor.combatModel === 'cohort-v2' ? { ...rawWeapon, range: meleeReach(rawWeapon) } : rawWeapon;
-        if (weaponTargetReason({ space: context.mode, actor, target, weapon, ranged, distance: dist, reloadLeft: context.reload?.get(weaponReloadKey(actor, rawWeapon)) }) || shotBlocked(weapon, ranged)) continue;
+        if (weaponTargetReason({ space: context.mode, actor, target, weapon, ranged, distance: dist, reloadLeft: context.reload?.get(weaponReloadKey(actor, rawWeapon)), field }) || shotBlocked(weapon, ranged)) continue;
         const width = engagementWidth(actor, target, ranged, field, context.fieldTags);
         const attached = new Set(context.attached?.values() ?? []);
         const cohort = world.units.filter(u => !attached.has(u.id) && sameLayer(actor, u) && (context.mode === 'mass' ? formationNode(actor).id === formationNode(u).id : u.pos === actor.pos));
@@ -105,7 +106,7 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
       for (const rawAbility of weaponOnly ? [] : actor.abilities) {
         if (!rawAbility.effects.some(e => e.op === 'damage')) continue;
         const ability = field ? gridAbility(rawAbility) : rawAbility;
-        if (abilityUsabilityReason(actor, ability) || abilityTargetReason({ space: context.mode, actor, ability, target, distance: dist })) continue;
+        if (abilityUsabilityReason(actor, ability) || abilityTargetReason({ space: context.mode, actor, ability, target, distance: dist, field })) continue;
         const weapon = skillWeapon(actor, ability, dist);
         if (!weapon && !sighted) continue;
         if (weapon && ((context.reload?.get(weaponReloadKey(actor, weapon)) ?? 0) > 0 || shotBlocked(weapon, isRangedWeapon(weapon)))) continue;
@@ -117,7 +118,7 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
       if (abilityUsabilityReason(actor, ability)) continue;
       for (const target of context.units.filter(u => u.side === actor.side && alive(u))) {
         if (field && !unitLineOfSight(field,actor,positionedUnit(context,target))) continue;
-        if (abilityTargetReason({ space: context.mode, actor, ability: field ? gridAbility(ability) : ability, target, distance: distance(context, actor, positionedUnit(context, target)) })) continue;
+        if (abilityTargetReason({ space: context.mode, actor, ability: field ? gridAbility(ability) : ability, target, distance: distance(context, actor, positionedUnit(context, target)), field })) continue;
         const heal = ability.effects.reduce((sum, e) => e.op === 'heal' ? sum + healingYield(actor, target, e.amount ?? averageDice(e.dice), !!ability.itemSourceId) : sum, 0);
         best = Math.max(best, Math.min(recoveryCapacity(target), heal));
       }

@@ -1,4 +1,3 @@
-import { tbWeaponShortName } from '../weapon-name.js';
 import { smallBattleResult } from '../battle-result.js';
 import { spCapacity } from '../resources.js';
 import { NARRATIVE_TASK } from './narrative-task.js';
@@ -45,10 +44,16 @@ export interface SummaryOpts {
 
 function hpLabel(u: Combatant): string {
   const core = hasMemberHealth(u)?`现员${u.hp}/${u.base.hpMax}${memberNoun(u)} 总生命${memberHealth(u)}/${memberHealthMax(u)}（${memberHealthSummary(u,Infinity)}）`:`${u.scale === 'company' ? '人数' : 'HP '}${u.hp}/${u.base.hpMax}`;
+  return core + stateLabel(u);
+}
+
+/** 士气、持续状态、可救伤兵与离场状态。brief 用于战况摘要：兵力、生命和装备由同时发送的单位提示词提供。 */
+function stateLabel(u: Combatant, brief = false): string {
   const morale = u.morale !== undefined ? ` 士气${u.morale}` : '';
   const defs = standardConditionMap();
   const conds = u.conditions.filter((c) => c.dur > 0).map((c) => (defs.get(c.id)?.name ?? c.id) + c.dur + '轮').join('、');
-  return `${core}${morale}${conds ? ' [' + conds + ']' : ''}${woundedLabel(u) ? '｜' + woundedLabel(u) : ''}${u.scale === 'company' && u.status === 'dead' ? '｜编队失去战斗力' : STATUS_WORD[u.status]}`;
+  const wounded = woundedLabel(u, brief);
+  return `${morale}${conds ? ' [' + conds + ']' : ''}${wounded ? '｜' + wounded : ''}${u.scale === 'company' && u.status === 'dead' ? '｜编队失去战斗力' : STATUS_WORD[u.status]}`;
 }
 
 function traitNames(u: Combatant, registry?: Map<string, import('../types.js').Trait>): string {
@@ -75,7 +80,7 @@ export function smallStateSummary(
     const label = side === 'ally' ? '我方' : '敌方';
     lines.push(
       `${label}：${units
-        .map((u) => `${pc === u.id ? '【主控】' : ''}${u.name}${smallPosition(b, u)} ${hpLabel(u)}${unitReadiness(b, u)}`)
+        .map((u) => `${pc === u.id ? '【主控】' : ''}${u.name}${smallPosition(b, u)}${stateLabel(u, true)}${unitReadiness(b, u)}`)
         .join('；')}`,
     );
   }
@@ -112,7 +117,7 @@ export function massStateSummary(
           const zone = node ? `${node.wing}${({ front: '前列', rear: '后列', reserve: '预备列' })[node.rank]}·` : b.zones ? `${b.zoneOf(u)}·` : '';
           const engage = u.engagedWith.length ? '⚔' : '';
           const marks = `${pc === u.id ? '【主控】' : ''}${side === 'ally' && b.commanderId === u.id ? '【指挥官】' : ''}`;
-          return `${zone}${marks}${u.name}${engage} ${hpLabel(u)}${unitReadiness(b, u)}`;
+          return `${zone}${marks}${u.name}${engage}${stateLabel(u, true)}${unitReadiness(b, u)}`;
         })
         .join('；')}`,
     );
@@ -136,8 +141,7 @@ function smallPosition(b: SmallBattle, u: Combatant): string {
 }
 function unitReadiness(b: SmallBattle | MassBattle, u: Combatant): string {
   if (u.status === 'dead' || u.status === 'fled') return '';
-  const info = [u.weapon?.name ?? '无主武器', isAirborne(u) ? '空中' : '', u.suppression ? '受压制' : '', u.tacticalPose ? '固守' : '',
-    (b.reloadCd.get(u.id) ?? 0) > 0 ? (tbWeaponShortName(u.weapon) || '主武器') + '装填' : '', u.fatigue ? '疲劳' + u.fatigue : ''];
+  const info = [isAirborne(u) ? '空中' : '', u.suppression ? '受压制' : '', u.tacticalPose ? '固守' : '', (b.reloadCd.get(u.id) ?? 0) > 0 ? '装填中' : ''];
   if (u.side === 'ally') {
     info.push('SP' + (u.resources.SP ?? 0) + '/' + spCapacity(u));
     for (const ability of u.abilities.filter((a) => u.preparedAbilityIds?.includes(a.id))) {

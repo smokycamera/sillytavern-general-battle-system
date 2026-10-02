@@ -102,6 +102,7 @@ export function woundedAfterUpdate(unit: Health, hp: number, hpMax: number): num
   return remaining;
 }
 
-export function woundedLabel(unit: Health): string {
-  return (unit.recoverableWounded ?? 0) > 0 ? `可救伤兵${unit.recoverableWounded}，治疗不会补回其余缺员` : '';
+/** brief 只给伤兵数：战报摘要随附的单位提示词已说明治疗不补回永久缺员。 */
+export function woundedLabel(unit: Health, brief = false): string {
+  return (unit.recoverableWounded ?? 0) > 0 ? `可救伤兵${unit.recoverableWounded}${brief ? '' : '，治疗不会补回其余缺员'}` : '';
 }

@@ -7,7 +7,7 @@ import { MassBattle } from '../src/mass/battle';
 import { SmallBattle } from '../src/small/battle';
 import { generateUnit } from '../src/gen/generator';
 import { traitRegistry } from '../src/data/traits';
-import { roundDigest } from '../src/inject/format';
+import { roundDigest, smallStateSummary } from '../src/inject/format';
 
 const reg = traitRegistry();
 
@@ -82,5 +82,15 @@ describe('回合纪要（roundDigest）', () => {
     expect(digest).toContain('逼近');
     expect(digest).toContain('架盾');
     expect(digest).not.toContain('第二人称');
+  });
+  it('状态摘要不重复单位提示词里的兵力、生命、武器与疲劳', () => {
+    const ally = gen({ name: '游侠', scale: 'company', archetype: 'infantry', side: 'ally' });
+    const enemy = gen({ name: '敌兵', scale: 'company', archetype: 'infantry', side: 'enemy' });
+    ally.hp = ally.base.hpMax - 2; ally.recoverableWounded = 2; ally.fatigue = 3;
+    const battle = new SmallBattle({ combatants: [ally, enemy], seed: 'summary-trim', traitRegistry: reg });
+    battle.start();
+    const text = smallStateSummary(battle, 'medieval', reg);
+    expect(text).toContain('游侠'); expect(text).toContain('可救伤兵2');
+    for (const removed of ['现员', '总生命', '人数', 'HP ', '疲劳', '治疗不会补回其余缺员', ally.weapon!.name]) expect(text).not.toContain(removed);
   });
 });
