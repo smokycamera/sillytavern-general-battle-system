@@ -65,12 +65,20 @@ export function regionalOrder(field: BattlefieldSpec, unit: Combatant, known: Co
   }
   // A gap behind water/cliffs is not a usable breach for this unit. Public terrain only.
   const coreReachable = breached.length > 0 && gridCostsToGoals(field, legal(city.core), p => !groundBlocked(field, p, unit), (p,from)=>movementStepCost(field,p,unit,field.environment,from)).has(unit.pos);
-  if (isAirborne(unit) || isElevated(unit) || city.inside.includes(unit.pos) || coreReachable) {
+  // Behind the outer of two walls, the passage is not the town: the inner wall still stands between the unit and the core.
+  const reach = city.terrace?.length ? gridCostsToGoals(field, [unit.pos], p => !groundBlocked(field, p, unit)) : undefined;
+  if (isAirborne(unit) || isElevated(unit) || (reach ? city.core.some(p => reach.has(p)) : city.inside.includes(unit.pos) || coreReachable)) {
     return { role: ranged ? 'fire' : 'advance', goals: legal(city.core).length ? legal(city.core) : city.core, phase: 'advance' };
   }
   const flanking = style === 'flanking' || style === 'infiltration' || slot % 4 === 3;
+  // With two walls, only a wall the unit can reach and that still shields its own side is worth breaking: the outer one
+  // from the field, the inner one once the passage is open. A gate already open is no target.
+  const shields = (p: number) => {
+    const s = intactStructure(field, p), stairs = s?.access ?? [];
+    return !reach || !!stairs.length && s?.gateState !== 'open' && !stairs.some(q => reach.has(q)) && neighbors(field, p).some(q => reach.has(q) && !stairs.includes(q));
+  };
   // Gate/side-wall assignments persist while that opening is intact; no per-round random switching.
-  const candidates = city.frontline.filter(p => intactStructure(field, p) && (!ranged || !isElevated(unit)));
+  const candidates = city.frontline.filter(p => intactStructure(field, p) && (!ranged || !isElevated(unit)) && shields(p));
   candidates.sort((a, b) => {
     const score = (p: number) => gridDistance(field, unit.pos!, p) * .6 + (intactStructure(field, p)?.kind === 'gate' ? -3 : 0)
       + (flanking ? Math.min(p % field.width, field.width - 1 - p % field.width) : Math.abs(p % field.width - field.width / 2)) * .5;
@@ -78,7 +86,8 @@ export function regionalOrder(field: BattlefieldSpec, unit: Combatant, known: Co
   });
   const breach = candidates[0];
   if (breach === undefined) return { role: 'advance', goals: city.core, phase: 'advance' };
-  const goals = legal(neighbors(field, breach).filter(p => !city.inside.includes(p)));
+  const stairs = intactStructure(field, breach)?.access ?? [];
+  const goals = legal(neighbors(field, breach).filter(p => reach ? reach.has(p) && !stairs.includes(p) : !city.inside.includes(p)));
   const engineers = activeTraitIds(unit).includes('siege-breaker') || activeTraitIds(unit).includes('siege-assault');
   return { role: flanking ? 'flank' : ranged && !engineers ? 'fire' : 'breach', goals: goals.length ? goals : [unit.pos], breach, phase: 'intact' };
 }

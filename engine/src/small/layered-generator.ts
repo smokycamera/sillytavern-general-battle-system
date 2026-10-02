@@ -82,7 +82,8 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   if(!supplied) {
     const archetype=selectSceneArchetype(scene,environment.includes('forest')?'forest':environment.includes('mountain')?'mountain':'plains',seed);
     plan={archetype,...(city?{cityPosition:(options.attackingSide??'ally')==='ally'?'north':'south'}:{}),
-      ...(siege?{shape:archetype==='riverside'?'riverside':archetype==='hilltown'?'hillside':'front'}:{}),
+      // A gate front leaves its wall layout to the city builder's seeded choice.
+      ...(siege&&archetype!=='gate_front'?{shape:archetype==='riverside'?'riverside':'hillside'}:{}),
       ...(['river_crossing','forest_stream','riverside'].includes(archetype)?{water:'river',bridgePlan:[{anchor:'center',state:'intact',width:1}],...(archetype==='riverside'?{waterPosition:'east',waterAxis:'vertical'}:{})}:{})};
   }
   // Preserve route-builder variety; it remains useful for streets and ordinary outdoor terrain.
@@ -114,7 +115,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   const wallLevel = plan?.fortLevel ?? 3;
   let inner: number[] = [], frontline: number[] = [], gates: number[] = [], core: number[] = [], reserve: number[] = [];
   let frontDepth = Math.floor(height * .53), left = 0, right = width - 1;
-  const plannedCity=!!plan&&(!!plan.cityPosition||!!plan.intent?.entities.some(e=>e.kind==='city'));
+  const plannedCity=!!plan&&(!!plan.cityPosition||!!plan.intent?.entities.some(e=>e.kind==='city')||siege&&plan.wallLayers!==undefined);
   if(plannedCity) {
     buildPlannedCity(field,plan!,seed,scene,attack);
     inner=field.city!.inside;frontline=field.city!.frontline;gates=field.city!.gates;core=field.city!.core;reserve=field.city!.reserve;
@@ -254,7 +255,8 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   }
   // Water changes routes. Bridges are real structures; no trait is granted to the roster.
   const water = scene === 'interior' ? 'none' : plan?.water ?? (scene !== 'field' ? 'none' : pick(['none', 'none', 'none', 'ford', 'river'] as const));
-  if(plan&&(plan.bridgePlan!==undefined||plan.waterAxis||plan.intent?.entities.some(e=>e.kind==='river'))) {
+  // A placed siege city takes its water from the same builder as narrative rivers: moats before the gates, a ford if unbridged.
+  if(plan&&(plan.bridgePlan!==undefined||plan.waterAxis||plan.intent?.entities.some(e=>e.kind==='river')||plannedCity&&siege&&water!=='none')) {
     buildPlannedWater(field,{...plan,water},seed);
   } else if (water !== 'none' && width > 5) {
     const d = city ? Math.min(height - 4, frontDepth + 2) : Math.floor(height / 2);

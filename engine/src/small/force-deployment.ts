@@ -186,8 +186,8 @@ export function applyPlannedDeployments(field: BattlefieldSpec, plan: Battlefiel
       // An assault forms up beyond the reach of a first rush from the walls, when the map leaves room for it.
       const walls = attacker ? field.city!.frontline : [], wallGap = (p: number) => walls.length ? Math.min(...walls.map(q => gridDistance(field, p, q))) : Infinity;
       const standoff = [3, 2, 0].find(gap => field.tiles.filter((_, p) => legal(p) && !avoid.has(p) && wallGap(p) >= gap).length >= required + 2) ?? 0;
-      // Nobody starts on a bridge: it is the crossing both sides contest.
-      const usable = (p: number) => legal(p) && !avoid.has(p) && wallGap(p) >= standoff && field.structures?.[p]?.kind !== 'bridge';
+      // Nobody starts on a bridge or in a ford: they are the crossings both sides contest.
+      const usable = (p: number) => legal(p) && !avoid.has(p) && wallGap(p) >= standoff && field.structures?.[p]?.kind !== 'bridge' && field.tiles[p] !== 'shallow_water';
       const fits = field.tiles.some((_, p) => usable(p) && toSector(p) === 0);
       // A detachment that cannot start where it was sent stays with its own side.
       if (!fits && r.unitId) { notes.push(`${who}随本方部署`); continue; }

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { generateUnit, generatedLayeredField, SmallBattle, V11_OVERFLOW_D20, type Combatant } from '../../engine/src/index.js';
 import { AUTO_TRIES, LAYOUT_TRIES, LlmContextController, llmContextSummary } from './llm-context.js';
-import { compileLayout, layoutRetryNote, layoutTask, reduceLayout, type LayoutContext } from './llm-layout.js';
+import { compileLayout, layoutRetryNote, layoutSummary, layoutTask, reduceLayout, type LayoutContext } from './llm-layout.js';
 import { prepareBattleObjective } from './battle-setup.js';
 import { renderTacticalBattle } from './tactical-view.js';
 import type { LlmSettings } from './llm-settings.js';
@@ -143,6 +143,27 @@ describe('compass layout compiler', () => {
     expect(plan.intent!.entities.find(e => e.kind === 'river')).toMatchObject({ anchor: 'center' });
     expect(plan).toMatchObject({ water: 'moat' }); expect(plan.intent!.constraints).toContainEqual(expect.objectContaining({ kind: 'crossing_count', value: 1 }));
     expect(notes.join()).toMatch(/守方一侧（南）.*护城河沿城外开阔侧布置/);
+  });
+  it('reads the wall layout in several spellings, rings a central city and shows the layout in the summary', () => {
+    const read = (walls: unknown, at = 'N') => compileLayout({ city: { at, name: '青石城', walls, level: 4 } }, ctx()).plan;
+    expect(read('front')).toMatchObject({ shape: 'front', wallLayers: 1, fortLevel: 4 });
+    expect(read('ring')).toMatchObject({ shape: 'enclosure', wallLayers: 1 });
+    expect(read('double')).toMatchObject({ wallLayers: 2 }); expect(read('double').shape).toBeUndefined();
+    expect(read('两重城墙')).toMatchObject({ wallLayers: 2 }); expect(read('瓮城')).toMatchObject({ wallLayers: 2 }); expect(read('四面城墙')).toMatchObject({ shape: 'enclosure' });
+    const centre = compileLayout({ city: { at: 'C', walls: 'front' } }, ctx());
+    expect(centre.plan.shape).toBe('enclosure'); expect(centre.notes).toContain('城在中央，改为四面城墙');
+    // The older level key and a numeric layer count are still read; a level is never taken for a layer count.
+    expect(compileLayout({ city: { at: 'N', wall: 5, layers: 2 } }, ctx()).plan).toMatchObject({ fortLevel: 5, wallLayers: 2 });
+    expect(compileLayout({ city: { at: 'N', wall: 3 } }, ctx()).plan.wallLayers).toBeUndefined();
+    const unknown = compileLayout({ city: { at: 'N', walls: '螺旋' } }, ctx());
+    expect(unknown.plan.shape).toBeUndefined(); expect(unknown.notes).toContain('城墙形制无效，由程序决定');
+    expect(layoutSummary(read('double'))).toBe('城墙攻防 · 中型 · 青石城在北 · 两重城墙');
+  });
+  it('asks for the wall layout, and for bridges only when the narrative names them', () => {
+    const task = layoutTask(ctx());
+    expect(task).toContain('"walls":城墙形制'); expect(task).toContain('double=内外两重城墙');
+    expect(task).toContain('正文没提到桥就省略bridges'); expect(task).toContain('[]只用于正文明确无桥可用，程序会留一处可涉水的浅滩');
+    expect(layoutTask(ctx({ scene: 'field', objectiveMode: 'annihilation' }))).not.toContain('walls');
   });
   it('turns a siege objective at a town in an open field into a walled siege', () => {
     const { plan } = compileLayout({ city: { at: 'N', name: '坞堡' }, places: [{ type: '府衙', name: '府衙', at: 'N' }, { type: 'building', name: '府衙', at: 'N' }], objective: '府衙' }, ctx({ scene: 'field' }));

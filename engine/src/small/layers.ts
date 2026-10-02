@@ -43,6 +43,8 @@ export interface CityRecord {
   defender?: 'ally' | 'enemy';
   facing?: 'north'|'south'|'east'|'west';
   frontage?: number[];
+  /** Double walls: the passage between the outer and the inner wall, part of inside. Both walls are in frontline. */
+  terrace?: number[];
 }
 export function structureAt(field: BattlefieldSpec, cell: number): FieldStructure | undefined { return field.structures?.[cell] ?? undefined; }
 export function intactStructure(field: BattlefieldSpec, cell: number): FieldStructure | undefined {
@@ -184,9 +186,10 @@ export function validateLayers(field: BattlefieldSpec): void {
     || Object.entries(field.overlays).some(([p, overlays]) => !/^\d+$/.test(p) || !legalCell(+p) || !Array.isArray(overlays)
       || overlays.length > 2 || new Set(overlays).size !== overlays.length || overlays.some(t => !['road', 'rubble'].includes(t))))) throw Error('覆盖层损坏');
   if (field.city && (!['front', 'enclosure', 'riverside', 'hillside', 'broken', 'district'].includes(field.city.shape)
-    || ['inside', 'frontline', 'gates', 'core', 'reserve'].some(key => {
-      const cells = field.city![key as 'inside']; return !Array.isArray(cells) || cells.some(p => !legalCell(p)) || new Set(cells).size !== cells.length;
-    }) || field.city.defender !== undefined && !['ally', 'enemy'].includes(field.city.defender))) throw Error('城区记录损坏');
+    || ['inside', 'frontline', 'gates', 'core', 'reserve', 'terrace'].some(key => {
+      const cells = field.city![key as 'inside']; return (key !== 'terrace' || cells !== undefined) && (!Array.isArray(cells) || cells.some(p => !legalCell(p)) || new Set(cells).size !== cells.length);
+    }) || field.city.terrace?.some(p => !field.city!.inside.includes(p))
+    || field.city.defender !== undefined && !['ally', 'enemy'].includes(field.city.defender))) throw Error('城区记录损坏');
   if (field.city?.breaches !== undefined && (!Array.isArray(field.city.breaches) || field.city.breaches.length > 3
     || field.city.breaches.some(group => !Array.isArray(group) || group.length < 1 || group.length > 2 || group.some(p => !legalCell(p))
       || group.length === 2 && Math.abs(group[0]! % field.width - group[1]! % field.width) + Math.abs(Math.floor(group[0]! / field.width) - Math.floor(group[1]! / field.width)) !== 1)

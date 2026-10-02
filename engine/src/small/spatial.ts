@@ -321,7 +321,8 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
     const distance = probes.length ? Math.min(...probes.map(p => gridDistance(field, position, p))) : 0;
     const detour = Math.max(0, (costs.get(position) ?? distance + 20) - distance);
     const city = field.layerVersion && field.city?.defender === unit.side ? field.city : undefined;
-    const slots = city ? (deploymentNoise(seed, unit.id, 'reserve') < .2 && !isElevated(unit) ? city.reserve : city.frontline) : [];
+    // A ring or a double wall is manned on the face toward the assault, not on the rear or the inner wall.
+    const slots = city ? (deploymentNoise(seed, unit.id, 'reserve') < .2 && !isElevated(unit) ? city.reserve : city.frontage?.length ? city.frontage : city.frontline) : [];
     const lineDistance = slots.length ? Math.min(...slots.map(p => gridDistance(field, p, position))) : 0;
     let score = (contextual?(ranged?1.2:-1.8)*gridDistance(field,position,field.objective.cell):city ? -4 * lineDistance : -5 * Math.abs(y - preferredY)) - 0.45 * Math.abs(x - Math.floor(field.width / 2))
       - 8 * blockingFriends.filter(u => u.pos === position).length

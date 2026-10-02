@@ -711,7 +711,9 @@ export class SmallBattle {
     if (actor.conditions.some(c => c.dur > 0 && this.conditions.get(c.id)?.skipTurn)) return '失能状态不能操作门';
     if (isAirborne(actor) || isElevated(actor) || actor.pos === undefined || gridDistance(field, actor.pos, cell) > 1) return '须在门旁地面操作';
     // Inner-side capture may take control; the exterior cannot remotely unlock a defended closed gate.
-    if (field.generation?.scene !== 'interior' && door.owner !== undefined && door.owner !== actor.side && !field.city?.inside.includes(actor.pos)) return '须从内部夺取门控位置';
+    // Between two walls each gate's inner side is where its stairs are: the passage for the outer gate, the town for the inner one.
+    const innerSide = field.city?.terrace?.length && door.access?.length ? door.access : field.city?.inside;
+    if (field.generation?.scene !== 'interior' && door.owner !== undefined && door.owner !== actor.side && !innerSide?.includes(actor.pos)) return '须从内部夺取门控位置';
     if (this.visibleCombatants(actor.side).some(u => u.side !== actor.side && u.status === 'ready' && !isAirborne(u) && !isElevated(u) && gridDistance(field, u.pos!, cell) <= 1)) return '门区仍有敌军争夺，无法操作';
     if (door.gateState === 'open' && this.combatants.some(u => u.pos === cell && !isAirborne(u) && !isElevated(u) && u.hp > 0 && ['ready', 'routing'].includes(u.status))) return '门洞有人，不能关门';
     return undefined;

@@ -63,10 +63,19 @@ describe('scene constraints and actual deployment',()=>{
     expect(bridges.filter(s=>s!.entityId==='south_bridge').every(s=>s!.hp===0)).toBe(true);
     expect(field.tiles.filter(t=>t==='deep_water').length).toBe(field.height);
   });
-  it('honors zero bridges without leaving an objective protection gap in the river',()=>{
+  it('honors zero bridges with one ford instead of an uncrossable river, leaving no objective gap',()=>{
     const field=generatedLayeredField('no-bridges',7,13,['plains'],{plan:{water:'river',bridgePlan:[],landmarks:[]}});
-    const row=Math.floor(field.height/2);expect(field.tiles.slice(row*field.width,(row+1)*field.width).every(t=>t==='deep_water')).toBe(true);
+    const row=Math.floor(field.height/2),line=field.tiles.slice(row*field.width,(row+1)*field.width);
+    expect(line.filter(t=>t==='deep_water')).toHaveLength(field.width-2);
+    const ford=line.flatMap((t,x)=>t==='shallow_water'?[x]:[]);expect(ford).toHaveLength(2);expect(ford[1]!-ford[0]!).toBe(1);
     expect(field.structures!.some(s=>s?.kind==='bridge')).toBe(false);expect(groundBlocked(field,field.objective.cell)).toBe(false);
+    expect(field.generation!.notes).toContain('水面没有完好的桥，留出一处可涉水的浅滩');
+    // Destroyed bridges stay destroyed; the ford is still the way across.
+    const burnt=generatedLayeredField('burnt-bridge',7,13,['plains'],{plan:{water:'river',bridgePlan:[{anchor:'west',state:'destroyed'}],landmarks:[]}});
+    expect(burnt.structures!.filter(s=>s?.kind==='bridge').every(s=>s!.hp===0)).toBe(true);
+    expect(burnt.tiles.filter(t=>t==='shallow_water')).toHaveLength(2);
+    const kept=generatedLayeredField('one-bridge',7,13,['plains'],{plan:{water:'river',bridgePlan:[{anchor:'west',state:'intact'}],landmarks:[]}});
+    expect(kept.tiles).not.toContain('shallow_water');
   });
   it('rejects conflicting bridge counts and invented evidence identities',()=>{
     const bad=bridgeTownIntent();bad.constraints[0]!.value=2;

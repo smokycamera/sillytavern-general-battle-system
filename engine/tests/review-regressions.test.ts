@@ -85,5 +85,6 @@ it('more than five narrative landmarks fit without erasing deep water or destroy
   expect(field.landmarks).toHaveLength(6);
   const destroyed=field.scene!.regions.find(r=>r.id==='mark0')!;expect(destroyed.cells.every(p=>field.structures![p]!.hp===0)).toBe(true);
   const water=generatedLayeredField('marsh-review',7,13,['swamp'],{plan:{water:'river',bridgePlan:[],landmarks:[]}});
-  expect(water.tiles.slice(6*water.width,7*water.width).every(t=>t==='deep_water')).toBe(true);
+  const line=water.tiles.slice(6*water.width,7*water.width);
+  expect(line.filter(t=>t==='deep_water')).toHaveLength(water.width-2);expect(line.filter(t=>t==='shallow_water')).toHaveLength(2);
 });

@@ -45,6 +45,8 @@ export interface BattlefieldPlan {
   size?: 'compact' | 'standard' | 'large';
   layout?: MapDesign['layout'];
   shape?: CityShape;
+  /** Siege walls: 2 adds an inner wall behind the outer one, with a passage between them. */
+  wallLayers?: 1 | 2;
   topology?: RouteTopology;
   density?: 'sparse' | 'balanced' | 'dense';
   water?: 'none' | 'ford' | 'river' | 'moat';
@@ -121,6 +123,10 @@ export function normalizeBattlefieldPlan(value: unknown): { plan?: BattlefieldPl
     });
     if (new Set(plan.deployments.map(d => d.subject)).size !== plan.deployments.length) throw new BattlefieldPlanError('同一部队只能写一项部署');
   }
+  if (input.wallLayers !== undefined) {
+    if (input.wallLayers === 1 || input.wallLayers === 2) plan.wallLayers = input.wallLayers;
+    else notes.push('城墙层数无效，采用本地默认');
+  }
   if (input.fortLevel !== undefined) {
     if (Number.isInteger(input.fortLevel) && Number(input.fortLevel) >= 1 && Number(input.fortLevel) <= 10) plan.fortLevel = Number(input.fortLevel);
     else notes.push('结构等级无效，采用本地默认');
@@ -153,7 +159,7 @@ export function requireApiLandmarks(plan: BattlefieldPlan | undefined): asserts 
 }
 export const BATTLEFIELD_PLAN_PROMPT = `battlefield按正文时代、地点与局势设计；未指定部分用不同地形、路网、建筑用途和局部高差补全。地图上北下南；未写部署关系时我方在南、敌方在北。
 scene=field野战/城外|city_siege城市攻防|city_streets巷战|building_siege建筑围攻|interior室内|trenches堑壕。
-可省略：size=compact|standard|large；shape=front|enclosure|riverside|hillside；layout=scattered|lanes|crossroads|ring|strongpoint|broken；topology=${Object.keys(ROUTE_TOPOLOGIES).join('|')}；orientation=longitudinal|transverse|diagonal；breadth=narrow|normal|broad；relief/cover/obstacles=sparse|balanced|dense。
+可省略：size=compact|standard|large；shape=front|enclosure|riverside|hillside（攻城时front只在面向战场的一侧筑墙、城区延伸出地图，其余为四面城墙）；wallLayers=1|2（攻城时2为内外两重城墙）；layout=scattered|lanes|crossroads|ring|strongpoint|broken；topology=${Object.keys(ROUTE_TOPOLOGIES).join('|')}；orientation=longitudinal|transverse|diagonal；breadth=narrow|normal|broad；relief/cover/obstacles=sparse|balanced|dense。
 water=none无水|ford可涉浅水|river深水河流|moat护城河；waterAxis=horizontal|vertical。室内无室外水系；有bridge须有river实体或water=ford|river|moat。
 fortLevel=1..10按工事材料与强化选级。breaches可省略；格式{count:0..3,width:1|2,sector:auto|front_left|front_right|left|right|rear}，0为完整。
 ${SCENE_INTENT_PROMPT}

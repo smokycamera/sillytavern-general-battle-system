@@ -52,11 +52,46 @@ function gateTarget(field: BattlefieldSpec, gate: GatePlan, frontage: number[], 
         return perimeter.reduce((best, p) => Math.min(...frontage.map(f => gridDistance(field, p, f))) > Math.min(...frontage.map(f => gridDistance(field, best, f))) ? p : best, perimeter[0]!);
     return ordered[Math.floor(ordered.length / 2)]!;
 }
+type CitySide = 'north' | 'south' | 'east' | 'west';
+/** Tie order for a city's facing, toward the usual attack edges first. */
+const CITY_SIDES: readonly CitySide[] = ['south', 'north', 'west', 'east'];
+/**
+ * How a besieged city is walled. A front city continues past the map edges behind and beside it, so only its sides
+ * toward the battlefield are walled; a ring city stands clear of the edges with walls all round. Two layers put an
+ * inner wall two cells behind the outer one, with a passage between them. An unstated layout is drawn from the seed.
+ */
+export function siegeWallLayout(plan: Pick<BattlefieldPlan, 'shape' | 'wallLayers'>, position: WorldAnchor, seed: string): { ring: boolean; layers: 1 | 2 } {
+    if (plan.shape === undefined && plan.wallLayers === undefined) {
+        const roll = new SeededRng('city-walls-v1:' + seed).next();
+        return { ring: position === 'center' || roll >= .45 && roll < .8, layers: position !== 'center' && roll >= .8 ? 2 : 1 };
+    }
+    return { ring: position === 'center' || (plan.shape ?? 'front') !== 'front', layers: plan.wallLayers ?? 1 };
+}
+/** The walled side an assault faces: where the attackers are said to start, else the widest open ground. */
+function siegeFacing(field: BattlefieldSpec, position: WorldAnchor, walled: Record<CitySide, boolean>, [l, r, t, b]: number[], attackers: readonly WorldAnchor[], attackEdge: CitySide): CitySide {
+    const space: Record<CitySide, number> = { north: t!, south: field.height - 1 - b!, west: l!, east: field.width - 1 - r! };
+    const toward = (s: CitySide) => attackers.filter(a => a.includes(s)).length;
+    return CITY_SIDES.filter(s => walled[s] && !position.includes(s))
+        .sort((a, c) => toward(c) - toward(a) || space[c] - space[a] || Number(c === attackEdge) - Number(a === attackEdge) || CITY_SIDES.indexOf(a) - CITY_SIDES.indexOf(c))[0] ?? attackEdge;
+}
 /** A city footprint is a region in the battlefield, independent of which faction attacks. */
 export function buildPlannedCity(field: BattlefieldSpec, plan: BattlefieldPlan, seed: string, scene: BattlefieldScene, attackingSide: 'ally' | 'enemy'): void {
     const rng = new SeededRng('city-parcels-v2:' + seed), w = field.width, h = field.height, defender = attackingSide === 'ally' ? 'enemy' : 'ally';
     const siege = scene === 'city_siege', outside = scene === 'field', position = plan.cityPosition ?? (defender === 'enemy' ? 'north' : 'south');
     let [l, r, t, b] = bounds(field, position, outside);
+    const layout = siege ? siegeWallLayout(plan, position, seed) : undefined;
+    if (layout && !layout.ring) {
+        // A front city continues past the battlefield: it reaches every map edge except the ones it faces.
+        const alongX = !/east|west/.test(position), alongY = !/north|south/.test(position);
+        if (position.includes('north') || alongY)
+            t = 0;
+        if (position.includes('south') || alongY)
+            b = h - 1;
+        if (position.includes('west') || alongX)
+            l = 0;
+        if (position.includes('east') || alongX)
+            r = w - 1;
+    }
     if (plan.intent?.entities.some(e => e.kind === 'river') || plan.waterPosition) {
         const water = plan.waterPosition ?? 'center';
         if (water.includes('east'))
@@ -71,54 +106,77 @@ export function buildPlannedCity(field: BattlefieldSpec, plan: BattlefieldPlan, 
     if (r - l < 3 || b - t < 3)
         throw new BattlefieldPlanError('城市与水岸部署容量不足，请扩大战区');
     const kind = plan.archetype ?? 'old_town', level = plan.fortLevel ?? 3;
-    const facing: 'north' | 'south' | 'east' | 'west' = position.includes('west') ? 'east' : position.includes('east') ? 'west' : position.includes('south') ? 'north' : 'south';
+    // A besieged city is walled on every side that does not run off the map; depth counts cells in from those walls.
+    const walled: Record<CitySide, boolean> = { north: t > 0, south: b < h - 1, west: l > 0, east: r < w - 1 };
+    const depthAt = (x: number, y: number) => Math.min(walled.west ? x - l : Infinity, walled.east ? r - x : Infinity, walled.north ? y - t : Infinity, walled.south ? b - y : Infinity);
+    const townBox = (n: number) => siege ? [l + (walled.west ? n : 0), r - (walled.east ? n : 0), t + (walled.north ? n : 0), b - (walled.south ? n : 0)] : [l + 1, r - 1, t + 1, b - 1];
+    let layers = layout?.layers ?? 1;
+    // Two walls need the passage between them and a town at least three cells across behind both.
+    if (layers === 2 && (([x0, x1, y0, y1]) => x1! - x0! < 2 || y1! - y0! < 2)(townBox(3))) {
+        layers = 1;
+        field.generation!.notes = [...(field.generation!.notes ?? []), '战区放不下两重城墙，改为一道城墙'];
+    }
+    const [bl, br, bt, bb] = townBox(2 * layers - 1) as [number, number, number, number];
+    const facing: CitySide = siege ? siegeFacing(field, position, walled, [l, r, t, b], plan.deployments?.find(d => d.subject === attackingSide)?.at ?? [], attackingSide === 'ally' ? 'south' : 'north')
+        : position.includes('west') ? 'east' : position.includes('east') ? 'west' : position.includes('south') ? 'north' : 'south';
     field.structures!.forEach((s, p) => { if (s?.kind === 'building') {
         field.structures![p] = null;
         if (field.tiles[p] === 'street')
             field.tiles[p] = 'open';
     } });
+    // town: the streets behind every wall; terrace: the passage between two walls.
     const at = (x: number, y: number) => y * w + x, all: number[] = [], inside: number[] = [], perimeter: number[] = [], frontage: number[] = [];
+    const town: number[] = [], terrace: number[] = [], outerWall: number[] = [], innerWall = new Set<number>();
     for (let y = t; y <= b; y++)
         for (let x = l; x <= r; x++) {
-            const p = at(x, y), edge = x === l || x === r || y === t || y === b;
+            const p = at(x, y), edge = x === l || x === r || y === t || y === b, depth = siege ? depthAt(x, y) : edge ? 0 : 1;
             all.push(p);
             field.tiles[p] = 'street';
             field.structures![p] = null;
             delete field.overlays![p];
             if (edge)
                 perimeter.push(p);
+            if (depth === 0)
+                outerWall.push(p);
+            else if (layers === 2 && depth === 2)
+                innerWall.add(p);
             else
                 inside.push(p);
-            if (facing === 'east' && x === r || facing === 'west' && x === l || facing === 'north' && y === t || facing === 'south' && y === b)
+            if (layers === 2 && depth === 1)
+                terrace.push(p);
+            if (depth >= 2 * layers - 1)
+                town.push(p);
+            if ((!siege || depth === 0) && (facing === 'east' && x === r || facing === 'west' && x === l || facing === 'north' && y === t || facing === 'south' && y === b))
                 frontage.push(p);
         }
     const fortified = siege || outside && (plan.gatePlan !== undefined || plan.shape !== undefined);
-    const shape = plan.shape ?? (position === 'center' ? 'enclosure' : 'front'), wallCells = fortified ? (shape === 'front' ? frontage : perimeter) : [];
-    const coreCell = at(Math.floor((l + r) / 2), Math.floor((t + b) / 2)), core = [coreCell, ...neighbors(field, coreCell)].filter(p => inside.includes(p));
-    const roads = new Set(core), scratch: BattlefieldSpec = { version: 2, width: r - l - 1, height: b - t - 1, tiles: Array((r - l - 1) * (b - t - 1)).fill('street'), objective: { kind: 'annihilation', cell: 0, limit: 60 } };
+    const shape = plan.shape ?? (position === 'center' ? 'enclosure' : 'front'), rim = siege ? outerWall : perimeter;
+    const wallCells = siege ? [...outerWall, ...innerWall] : fortified ? (shape === 'front' ? frontage : perimeter) : [];
+    const coreCell = at(Math.floor((bl + br) / 2), Math.floor((bt + bb) / 2)), core = [coreCell, ...neighbors(field, coreCell)].filter(p => town.includes(p));
+    const roads = new Set(core), scratch: BattlefieldSpec = { version: 2, width: br - bl + 1, height: bb - bt + 1, tiles: Array((br - bl + 1) * (bb - bt + 1)).fill('street'), objective: { kind: 'annihilation', cell: 0, limit: 60 } };
     const graph = buildRouteGraph(scratch, rng, { ...field.generation!.design, ...(plan.topology ? { topology: plan.topology } : {}) });
-    const project = (p: number) => at(l + 1 + p % scratch.width, t + 1 + Math.floor(p / scratch.width));
+    const project = (p: number) => at(bl + p % scratch.width, bt + Math.floor(p / scratch.width));
     field.generation!.routes = { ...graph, nodes: graph.nodes.map(n => ({ ...n, cell: project(n.cell) })), edges: graph.edges.map(e => ({ ...e, cells: e.cells.map(project) })) };
     for (const e of graph.edges)
         for (const p of e.cells)
             roads.add(project(p));
-    const frontCenter = gateTarget(field, { sector: 'front_center', state: 'closed' }, frontage, perimeter);
+    const frontCenter = gateTarget(field, { sector: 'front_center', state: 'closed' }, frontage, rim);
     const approach = findGridPath(field, frontCenter, coreCell, p => all.includes(p), () => 1);
     for (const p of approach?.cells ?? [])
         roads.add(p);
     if (kind === 'market')
-        for (const p of inside)
+        for (const p of town)
             if (gridDistance(field, p, coreCell) <= 2)
                 roads.add(p);
     const parcels = new Set<number>(), density = { sparse: .35, balanced: .65, dense: .85 }[plan.obstacles ?? plan.density ?? 'balanced'];
-    for (let y = t + 1; y < b; y++)
-        for (let x = l + 1; x < r; x++) {
+    for (let y = bt; y <= bb; y++)
+        for (let x = bl; x <= br; x++) {
             const p = at(x, y);
             if (roads.has(p) || parcels.has(p))
                 continue;
             const cells = [p], maxW = kind === 'warehouse' ? 3 : kind === 'old_town' ? 1 : 2, maxH = kind === 'warehouse' ? 3 : 2;
-            for (let dy = 0; dy < maxH && y + dy < b; dy++)
-                for (let dx = 0; dx < maxW && x + dx < r; dx++) {
+            for (let dy = 0; dy < maxH && y + dy <= bb; dy++)
+                for (let dx = 0; dx < maxW && x + dx <= br; dx++) {
                     const q = at(x + dx, y + dy);
                     if (!roads.has(q) && !parcels.has(q) && !cells.includes(q))
                         cells.push(q);
@@ -137,11 +195,19 @@ export function buildPlannedCity(field: BattlefieldSpec, plan: BattlefieldPlan, 
     for (const p of wallCells)
         field.structures![p] = createStructure('wall', level, { owner: defender, top: true });
     const specs = plan.gatePlan ?? (plan.gates === 'none' ? [] : plan.gates === 'double' || plan.gates === 'side' ? [{ sector: 'front_left', state: plan.gateState ?? 'closed' }, { sector: 'front_right', state: plan.gateState ?? 'closed' }] : [{ sector: 'front_center', state: plan.gateState ?? 'closed' }]) as GatePlan[];
-    const gates: number[] = [];
+    const gates: number[] = [], innerGates: number[] = [];
+    const pave = (path?: { cells: number[] }) => { for (const q of path?.cells ?? []) {
+        if (field.structures![q]?.kind === 'building')
+            field.structures![q] = null;
+        roads.add(q);
+    } };
     if (fortified)
         for (const spec of specs) {
-            const desired = gateTarget(field, spec, frontage, perimeter), candidates = wallCells.filter(p => !gates.includes(p) && neighbors(field, p).some(q => inside.includes(q)) && neighbors(field, p).some(q => !all.includes(q)));
-            const p = candidates.sort((a, b) => gridDistance(field, a, desired) - gridDistance(field, b, desired) || a - b)[0];
+            const desired = gateTarget(field, spec, frontage, rim), candidates = wallCells.filter(p => !gates.includes(p) && !innerWall.has(p) && neighbors(field, p).some(q => inside.includes(q)) && neighbors(field, p).some(q => !all.includes(q)));
+            // A gate named for a side opens through the wall on that side when the city has one there.
+            const opensTo = (p: number) => ({ [p - w]: 'north', [p + w]: 'south', [p - 1]: 'west', [p + 1]: 'east' } as Record<number, string>)[neighbors(field, p).find(q => !all.includes(q))!];
+            const sided = candidates.filter(p => opensTo(p) === spec.sector);
+            const p = (sided.length ? sided : candidates).sort((a, b) => gridDistance(field, a, desired) - gridDistance(field, b, desired) || a - b)[0];
             if (p === undefined)
                 throw new BattlefieldPlanError('城门部署容量不足，无法保留请求数量');
             const gate = createStructure('gate', level, { owner: defender, top: true, gateState: spec.state, ...(spec.id ? { entityId: spec.id } : {}) });
@@ -154,13 +220,24 @@ export function buildPlannedCity(field: BattlefieldSpec, plan: BattlefieldPlan, 
             for (const q of neighbors(field, p))
                 if (field.structures![q]?.kind === 'building')
                     field.structures![q] = null;
-            const path = findGridPath(field, p, coreCell, q => all.includes(q) && (!wallCells.includes(q) || q === p), q => field.structures![q]?.kind === 'building' ? 100 : 1);
-            for (const q of path?.cells ?? []) {
-                if (field.structures![q]?.kind === 'building')
-                    field.structures![q] = null;
-                roads.add(q);
-            }
             const outer = neighbors(field, p).find(q => !all.includes(q));
+            if (layers === 2 && outer !== undefined) {
+                // An outer gate leads across the passage to its own gate in the inner wall, which holds even when the outer one fell.
+                const [px, py] = [p % w, Math.floor(p / w)], ideal = at(3 * px - 2 * (outer % w), 3 * py - 2 * Math.floor(outer / w));
+                const into = [...innerWall].filter(q => !innerGates.includes(q) && neighbors(field, q).some(n => terrace.includes(n)) && neighbors(field, q).some(n => town.includes(n)))
+                    .sort((a, c) => gridDistance(field, a, ideal) - gridDistance(field, c, ideal) || a - c)[0];
+                if (into === undefined)
+                    throw new BattlefieldPlanError('城门部署容量不足，无法保留请求数量');
+                field.structures![into] = createStructure('gate', level, { owner: defender, top: true, gateState: spec.state === 'open' ? 'open' : 'closed' });
+                innerGates.push(into);
+                for (const q of neighbors(field, into))
+                    if (field.structures![q]?.kind === 'building')
+                        field.structures![q] = null;
+                pave(findGridPath(field, p, into, q => q === into || terrace.includes(q), () => 1));
+                pave(findGridPath(field, into, coreCell, q => town.includes(q), q => field.structures![q]?.kind === 'building' ? 100 : 1));
+            }
+            else
+                pave(findGridPath(field, p, coreCell, q => all.includes(q) && (!wallCells.includes(q) || q === p), q => field.structures![q]?.kind === 'building' ? 100 : 1));
             if (outer !== undefined) {
                 const edge = facing === 'east' ? Math.floor(outer / w) * w + w - 1 : facing === 'west' ? Math.floor(outer / w) * w : facing === 'north' ? outer % w : (h - 1) * w + outer % w;
                 const path = findGridPath(field, outer, edge, q => !all.includes(q), () => 1);
@@ -171,23 +248,28 @@ export function buildPlannedCity(field: BattlefieldSpec, plan: BattlefieldPlan, 
                 }
             }
         }
+    // Stairs climb each wall from the side it shields: the outer of two walls from the passage, the inner one from the town.
     for (const p of wallCells)
-        field.structures![p]!.access = neighbors(field, p).filter(q => inside.includes(q) && !groundBlocked(field, q));
+        field.structures![p]!.access = neighbors(field, p).filter(q => (innerWall.has(p) ? town : layers === 2 ? terrace : inside).includes(q) && !groundBlocked(field, q));
+    // The passage between two walls stays open ground for the garrison and for an assault that took the outer wall.
+    for (const p of terrace)
+        roads.add(p);
     for (const p of roads)
         if (!field.structures![p])
             field.overlays![p] = ['road'];
     // Preserve parcels while connecting all usable courtyards to the main street.
-    for (const p of inside.filter(p => !groundBlocked(field, p)))
-        if (!findGridPath(field, p, coreCell, q => inside.includes(q) && !groundBlocked(field, q))) {
-            const path = findGridPath(field, p, coreCell, q => inside.includes(q), q => field.structures![q]?.kind === 'building' ? 100 : 1);
+    for (const p of town.filter(p => !groundBlocked(field, p)))
+        if (!findGridPath(field, p, coreCell, q => town.includes(q) && !groundBlocked(field, q))) {
+            const path = findGridPath(field, p, coreCell, q => town.includes(q), q => field.structures![q]?.kind === 'building' ? 100 : 1);
             for (const q of path?.cells ?? [])
                 if (field.structures![q]?.kind === 'building') {
                     field.structures![q] = null;
                     field.overlays![q] = ['road'];
                 }
         }
-    const reserve = inside.filter(p => !groundBlocked(field, p) && !core.includes(p) && gridDistance(field, p, coreCell) <= 3);
-    field.city = { shape: siege ? shape : 'district', inside: siege ? inside : all, frontline: wallCells, gates, core, reserve: reserve.slice(0, Math.max(2, w)), facing, frontage, ...(siege ? { defender } : {}) };
+    const reserve = town.filter(p => !groundBlocked(field, p) && !core.includes(p) && gridDistance(field, p, coreCell) <= 3);
+    const walls = layout?.ring ? plan.shape && plan.shape !== 'front' ? plan.shape : 'enclosure' : 'front';
+    field.city = { shape: siege ? walls : 'district', inside: siege ? inside : all, frontline: wallCells, gates, core, reserve: reserve.slice(0, Math.max(2, w)), facing, frontage, ...(siege ? { defender } : {}), ...(terrace.length ? { terrace } : {}) };
     if (siege) {
         const breaches = carveInitialBreaches(field, wallCells, inside, plan.breaches ?? { count: 0 }, defender, rng);
         field.city.breaches = breaches.groups;
@@ -210,19 +292,21 @@ export function buildPlannedWater(field: BattlefieldSpec, plan: BattlefieldPlan,
         return;
     if (field.generation?.scene === 'interior')
         throw new BattlefieldPlanError('室内场景不能铺设室外河流');
-    const w = field.width, h = field.height, anchor = plan.waterPosition ?? 'center';
+    const w = field.width, h = field.height, anchor = plan.waterPosition ?? 'center', moat = plan.water === 'moat';
+    // A moat keeps one cell of footing below the walls; a river leaves room for a bank road.
+    const gap = moat ? 2 : 3;
     let axis = plan.waterAxis ?? 'horizontal';
     const cityCells = field.city ? [...field.city.inside, ...field.city.frontline] : [];
     let line = axis === 'horizontal' ? Math.floor(worldAnchorCell(field, anchor) / w) : worldAnchorCell(field, anchor) % w;
     if (cityCells.length && (plan.intent?.entities.some(e => e.kind === 'river') || plan.waterPosition)) {
         if (axis === 'vertical' && anchor.includes('east'))
-            line = Math.min(w - 2, Math.max(...cityCells.map(p => p % w)) + 3);
+            line = Math.min(w - 2, Math.max(...cityCells.map(p => p % w)) + gap);
         if (axis === 'vertical' && anchor.includes('west'))
-            line = Math.max(1, Math.min(...cityCells.map(p => p % w)) - 3);
+            line = Math.max(1, Math.min(...cityCells.map(p => p % w)) - gap);
         if (axis === 'horizontal' && anchor.includes('north'))
-            line = Math.max(1, Math.min(...cityCells.map(p => Math.floor(p / w))) - 3);
+            line = Math.max(1, Math.min(...cityCells.map(p => Math.floor(p / w))) - gap);
         if (axis === 'horizontal' && anchor.includes('south'))
-            line = Math.min(h - 2, Math.max(...cityCells.map(p => Math.floor(p / w))) + 3);
+            line = Math.min(h - 2, Math.max(...cityCells.map(p => Math.floor(p / w))) + gap);
     }
     const lineCells = (n: number, along = axis) => Array.from({ length: along === 'horizontal' ? w : h }, (_, i) => along === 'horizontal' ? n * w + i : i * w + n);
     let cells = lineCells(line);
@@ -233,7 +317,7 @@ export function buildPlannedWater(field: BattlefieldSpec, plan: BattlefieldPlan,
         // across the other axis when the city spans this one.
         for (const along of [axis, axis === 'horizontal' ? 'vertical' as const : 'horizontal' as const]) {
             const span = cityCells.map(p => along === 'horizontal' ? Math.floor(p / w) : p % w), size = along === 'horizontal' ? h : w;
-            const open = size - 1 - Math.max(...span) >= Math.min(...span) ? Math.min(size - 2, Math.max(...span) + 3) : Math.max(1, Math.min(...span) - 3);
+            const open = size - 1 - Math.max(...span) >= Math.min(...span) ? Math.min(size - 2, Math.max(...span) + gap) : Math.max(1, Math.min(...span) - gap);
             if (lineCells(open, along).some(p => avoided.has(p))) continue;
             axis = along; line = open; cells = lineCells(open, along);
             break;
@@ -260,10 +344,14 @@ export function buildPlannedWater(field: BattlefieldSpec, plan: BattlefieldPlan,
         if (field.city)
             field.city.core = field.city.core.filter(p => !cells.includes(p));
     }
-    const specs = plan.bridgePlan ?? (plan.water === 'ford' ? [] : [{ anchor: axis === 'horizontal' ? 'west' : 'north', state: 'intact', width: 1 }, { anchor: axis === 'horizontal' ? 'east' : 'south', state: 'intact', width: 1 }]) as NonNullable<BattlefieldPlan['bridgePlan']>;
+    // The water straight out from a cell, such as a gate a moat's bridge serves.
+    const gates = field.city?.gates ?? [], before = (cell: number) => axis === 'horizontal' ? line * w + cell % w : Math.floor(cell / w) * w + line;
+    const specs = plan.bridgePlan ?? (plan.water === 'ford' ? [] : moat && gates.length ? gates.map(() => ({ anchor: 'center', state: 'intact', width: 1 }))
+        : [{ anchor: axis === 'horizontal' ? 'west' : 'north', state: 'intact', width: 1 }, { anchor: axis === 'horizontal' ? 'east' : 'south', state: 'intact', width: 1 }]) as NonNullable<BattlefieldPlan['bridgePlan']>;
     const used = new Set<number>();
     for (const [i, spec] of specs.entries()) {
-        const desired = worldAnchorCell(field, spec.anchor), width = spec.width ?? 1;
+        // A moat bridge without a stated place spans the moat in front of its gate.
+        const desired = moat && spec.anchor === 'center' && gates[i] !== undefined ? before(gates[i]!) : worldAnchorCell(field, spec.anchor), width = spec.width ?? 1;
         const options = cells.filter(p => !used.has(p)).sort((a, b) => gridDistance(field, a, desired) - gridDistance(field, b, desired) || a - b);
         let crossing: number[] | undefined;
         for (const p of options) {
@@ -313,7 +401,19 @@ export function buildPlannedWater(field: BattlefieldSpec, plan: BattlefieldPlan,
                         field.overlays![n] = ['road'];
                 }
         }
-    field.generation!.notes = [...(field.generation!.notes ?? []), `水系${axis === 'horizontal' ? '横向' : '纵向'}布置，${specs.length}座桥`];
+    const notes = [`水系${axis === 'horizontal' ? '横向' : '纵向'}布置，${specs.length}座桥`];
+    // Deep water across the whole battlefield with no standing bridge would split the battle for good: one stretch,
+    // in front of the gate or in line with the objective, stays fordable. No bridge is added.
+    if (plan.water !== 'ford' && ![...used].some(p => (field.structures![p]?.hp ?? 0) > 0)) {
+        const step = axis === 'horizontal' ? 1 : w, ahead = before(moat && gates[0] !== undefined ? gates[0] : field.objective.cell);
+        const ford = cells.filter(p => cells.includes(p + step) && !used.has(p) && !used.has(p + step))
+            .sort((a, b) => gridDistance(field, a, ahead) - gridDistance(field, b, ahead) || a - b)[0];
+        if (ford !== undefined) {
+            field.tiles[ford] = field.tiles[ford + step] = 'shallow_water';
+            notes.push('水面没有完好的桥，留出一处可涉水的浅滩');
+        }
+    }
+    field.generation!.notes = [...(field.generation!.notes ?? []), ...notes];
 }
 export function applySceneArchetype(field: BattlefieldSpec, archetype: SceneArchetype, seed: string): void {
     const w = field.width, h = field.height, rng = new SeededRng('scene-detail-v1:' + seed);

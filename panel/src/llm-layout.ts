@@ -42,6 +42,16 @@ const KIND_ALIASES: Record<string, PlaceKind> = { ridge: 'hill', mountain: 'hill
   塔楼: 'tower', 塔: 'tower', 箭楼: 'tower', 哨塔: 'tower', 钟楼: 'tower', 废墟: 'ruins', 残垣: 'ruins', 工事: 'fortification', 阵地: 'fortification', 壕沟: 'fortification', 堡垒: 'fortification',
   建筑: 'building', 房屋: 'building', 宅院: 'building', 仓库: 'building', 房间: 'room', 掩体: 'cover', 掩体群: 'cover', 要点: 'position', 营地: 'position', 据点: 'position' };
 const DESTROYABLE: readonly string[] = ['building', 'tower', 'fortification', 'cover', 'ruins'];
+/** Siege wall layouts: a stretch of a larger city's wall, a town walled all round, or an inner wall behind the outer one. */
+const WALL_LAYOUTS: Record<string, { ring?: boolean; layers?: 1 | 2 }> = { front: { ring: false, layers: 1 }, line: { ring: false }, section: { ring: false }, single: { layers: 1 },
+  ring: { ring: true, layers: 1 }, enclosure: { ring: true }, enclosed: { ring: true }, closed: { ring: true }, walled: { ring: true },
+  double: { layers: 2 }, two: { layers: 2 }, layered: { layers: 2 }, inner_outer: { layers: 2 }, triple: { layers: 2 }, multiple: { layers: 2 },
+  正面: { ring: false, layers: 1 }, 一面: { ring: false }, 单面: { ring: false }, 一段: { ring: false }, 一道: { layers: 1 }, 单层: { layers: 1 }, 单重: { layers: 1 },
+  环形: { ring: true }, 环城: { ring: true }, 四面: { ring: true }, 四面城墙: { ring: true }, 围墙: { ring: true }, 城堡: { ring: true },
+  双重: { layers: 2 }, 两重: { layers: 2 }, 双层: { layers: 2 }, 两道: { layers: 2 }, 三重: { layers: 2 }, 多重: { layers: 2 }, 内外: { layers: 2 }, 瓮城: { layers: 2 } };
+function wallsOf(v: unknown): { ring?: boolean; layers?: 1 | 2 } | undefined {
+  return typeof v !== 'string' ? undefined : WALL_LAYOUTS[token(v)] ?? WALL_LAYOUTS[v.trim().replace(/(城墙|城)$/, '')];
+}
 const ARCHETYPES: Record<BattlefieldScene, SceneArchetype[]> = {
   field: ['farmland', 'river_crossing', 'rolling_hills', 'forest_path', 'forest_stream', 'forest_edge', 'mountain_pass', 'ridge_valley', 'terraces', 'outskirts'],
   city_siege: ['gate_front', 'old_town', 'market', 'warehouse', 'riverside', 'hilltown'],
@@ -103,11 +113,11 @@ function objectiveLine(ctx: LayoutContext): string {
 }
 function example(ctx: LayoutContext): Record<string, unknown> {
   const d = defenderOf(ctx), a = ctx.attacker;
-  if (ctx.scene === 'city_siege') return { archetype: 'gate_front', cover: 'balanced', city: { at: d === 'enemy' ? 'N' : 'S', name: '青石城', wall: 3, breaches: 0, gates: [{ name: '城门', state: 'closed' }] },
+  if (ctx.scene === 'city_siege') return { archetype: 'gate_front', cover: 'balanced', city: { at: d === 'enemy' ? 'N' : 'S', name: '青石城', level: 3, breaches: 0, gates: [{ name: '城门', state: 'closed' }] },
     places: [{ type: 'building', name: '府衙', at: d === 'enemy' ? 'N' : 'S' }, { type: 'position', name: '攻城营地', at: d === 'enemy' ? 'S' : 'N' }],
     [a]: { at: d === 'enemy' ? ['S', 'SW'] : ['N', 'NE'] }, [d]: { post: 'wall' }, ...(ctx.objectiveMode === 'siege' ? { objective: '府衙' } : {}) };
   if (ctx.scene === 'interior') return { archetype: 'residence', places: [{ type: 'room', name: '书房', at: 'N' }, { type: 'cover', name: '屏风', at: 'C' }], ally: { at: ['S'] }, enemy: { at: ['N'] } };
-  if (ctx.scene === 'building_siege') return { archetype: 'fortress', city: { wall: 3, gates: [{ name: '院门', state: 'closed' }] }, places: [{ type: 'tower', name: '角楼', at: d === 'enemy' ? 'NE' : 'SE' }],
+  if (ctx.scene === 'building_siege') return { archetype: 'fortress', city: { level: 3, gates: [{ name: '院门', state: 'closed' }] }, places: [{ type: 'tower', name: '角楼', at: d === 'enemy' ? 'NE' : 'SE' }],
     [a]: { at: [d === 'enemy' ? 'S' : 'N'] }, [d]: { post: 'inside' } };
   return { archetype: ctx.scene === 'city_streets' ? 'old_town' : 'farmland', cover: 'balanced',
     places: [{ type: 'hill', name: '北坡', at: 'NE', height: 2 }, { type: 'forest', name: '南林', at: 'SW' }],
@@ -137,10 +147,10 @@ export function layoutTask(ctx: LayoutContext, retry?: LayoutRetry): string {
     '只输出一个JSON对象，不需要的项省略。各项：',
     `- archetype：场所风格，可选 ${ARCHETYPES[ctx.scene].map(a => a + SCENE_ARCHETYPE_NAMES[a]).join('|')}。`,
     '- cover：掩体与障碍多少，sparse少|balanced适中|dense多。',
-    ctx.scene === 'city_siege' ? '- city：必须写。{"at":方位,"name":"城名","wall":城墙等级,"breaches":破口数,"gates":[{"name":"门名","state":"closed"}]}。at为N/S/E/W时城市占地图该侧约一半，城墙朝向地图中央；C为四面有墙的城。gates列出本战区可见的城门（省略为一座），state=closed关闭|open开启|destroyed已毁，门由程序放在面向攻方的城墙上。wall=1临时 2简易 3正规 4重型 5要塞 6超凡 7史诗 8传奇 9半神 10神造，按材料与强化选；breaches=开战时已有的城墙破口0-3。'
-      : ctx.scene === 'building_siege' ? '- city：院墙与门，{"wall":院墙等级1-10,"breaches":破口数0-3,"gates":[{"name":"院门","state":"closed|open|destroyed"}]}，院落位置由程序决定。'
+    ctx.scene === 'city_siege' ? '- city：必须写。{"at":方位,"name":"城名","walls":城墙形制,"level":城墙等级,"breaches":破口数,"gates":[{"name":"门名","state":"closed"}]}。at是城区所在方位：N/S/E/W占地图该侧约一半，角落方位占该角，C在地图中央。walls按正文选：front=一道城墙横贯战场，城区延伸出地图（大城的一段城墙）|ring=四面都有城墙，整座城在图内（小城、城堡、营寨）|double=内外两重城墙，中间夹道（多重城墙、内城外郭、瓮城）；正文没写就省略，由程序选。gates列出本战区可见的城门（省略为一座），state=closed关闭|open开启|destroyed已毁，门由程序放在面向攻方的外墙上，两重城墙时内墙配对应的门。level=1临时 2简易 3正规 4重型 5要塞 6超凡 7史诗 8传奇 9半神 10神造，按材料与强化选；breaches=开战时外墙已有的破口0-3。'
+      : ctx.scene === 'building_siege' ? '- city：院墙与门，{"level":院墙等级1-10,"breaches":破口数0-3,"gates":[{"name":"院门","state":"closed|open|destroyed"}]}，院落位置由程序决定。'
       : ctx.scene === 'field' ? '- city：仅当交战地点旁有城镇时写，{"at":方位,"name":"城名","gates":[...]}；双方默认在城外，写gates时会画出朝向战场的城墙与门。' : '',
-    allowsWater(ctx.scene) ? '- water：{"type":"river深水河|ford可涉水浅滩|moat护城河|none无水","at":方位,"bridges":[{"name":"桥名","at":方位,"state":"intact完好|destroyed已断"}]}。只有一条主河；bridges写出全部桥梁，[]表示没有桥，省略则由程序配两座桥。' : '',
+    allowsWater(ctx.scene) ? `- water：{"type":"river深水河|ford可涉水浅滩|moat护城河|none无水","at":方位,"bridges":[{"name":"桥名","at":方位,"state":"intact完好|destroyed已断"}]}。只有一条主河${ctx.scene === 'city_siege' ? '；护城河由程序沿面向攻方的城墙外侧布置，不写at' : ''}。bridges只写正文提到的桥；正文没提到桥就省略bridges，由程序配桥${ctx.scene === 'city_siege' ? '（护城河配在城门前）' : ''}；[]只用于正文明确无桥可用，程序会留一处可涉水的浅滩。` : '',
     `- places：最多${MAX_PLACES}个有战术意义的地点，优先写正文提到的，[{"type":类型,"name":"名称","at":方位,"height":0-3,"state":"destroyed"}]。type=${kinds}。height只给高地等写，2-3为明显高地；state=destroyed表示已毁。普通房屋、树木、杂物由程序补全，不要写。`,
     siege ? `- ally / enemy：双方开局位置。${sideName(ctx.attacker)}是攻方，写{"at":["S"]}这样的1-3个${ctx.scene === 'city_siege' ? '城' : '院'}外方位。${sideName(d)}是守方，默认在${ctx.scene === 'city_siege' ? '城' : '院'}内，只需写post：wall城头为主|inside${ctx.scene === 'city_siege' ? '城内街巷' : '院内'}，不上墙|outside出${ctx.scene === 'city_siege' ? '城' : '院'}列阵（这时再写at为外面的方位）。`
       : `- ally / enemy：双方开局位置，{"at":["S"]}，可写1-3个方位。${ctx.scene === 'city_streets' ? '双方默认在街区内。' : ''}`,
@@ -213,7 +223,7 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
 
   // City walls, gates and their damage.
   if (cityRaw && (allowsCity(scene) || scene === 'building_siege')) {
-    const wall = integer(cityRaw.wall ?? cityRaw.level, 1, 10), breaches = integer(cityRaw.breaches, 0, 3);
+    const wall = integer(cityRaw.level ?? cityRaw.wall, 1, 10), breaches = integer(cityRaw.breaches, 0, 3);
     if (wall !== undefined) plan.fortLevel = wall;
     if (breaches !== undefined && besieged(scene)) plan.breaches = { count: breaches as 0 | 1 | 2 | 3 };
   } else if (cityRaw && scene === 'city_streets') notes.add('巷战不设城市方位');
@@ -222,6 +232,14 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
   if (scene === 'city_siege' && !cityAt) {
     cityAt = defenderOf(ctx) === 'enemy' ? 'north' : 'south';
     notes.add(`城市放在守方一侧（${CODE_NAMES[CODE_OF[cityAt]]}）`);
+  }
+  if (scene === 'city_siege' && cityRaw) {
+    const layers = integer(cityRaw.layers, 1, 2) as 1 | 2 | undefined;
+    const stated = [cityRaw.walls, cityRaw.wall_layout, cityRaw.layout, cityRaw.wall].map(wallsOf).find(Boolean) ?? (layers ? { layers } : undefined);
+    if (stated?.layers) plan.wallLayers = stated.layers;
+    if (stated?.ring !== undefined) plan.shape = stated.ring || cityAt === 'center' ? 'enclosure' : 'front';
+    if (stated?.ring === false && cityAt === 'center') notes.add('城在中央，改为四面城墙');
+    if (!stated && cityRaw.walls !== undefined) notes.add('城墙形制无效，由程序决定');
   }
   if (allowsCity(scene) && cityAt) {
     const label = labelOf(cityRaw?.name ?? cityRaw?.label);
@@ -439,5 +457,6 @@ export function layoutSummary(plan: BattlefieldPlan): string {
   const size = { compact: '小', standard: '中', large: '大' }[plan.size ?? 'standard'];
   const places = plan.intent?.entities.filter(e => !['city', 'river', 'gate', 'bridge'].includes(e.kind)).length ?? plan.landmarks?.length ?? 0;
   const city = plan.intent?.entities.find(e => e.kind === 'city');
-  return [scene, size + '型', city ? `${city.label ?? '城市'}在${CODE_NAMES[CODE_OF[city.anchor ?? 'center']]}` : '', places ? places + '处地点' : ''].filter(Boolean).join(' · ');
+  const walls = plan.scene !== 'city_siege' ? '' : plan.wallLayers === 2 ? '两重城墙' : plan.shape === 'enclosure' ? '四面城墙' : plan.shape === 'front' ? '正面城墙' : '';
+  return [scene, size + '型', city ? `${city.label ?? '城市'}在${CODE_NAMES[CODE_OF[city.anchor ?? 'center']]}` : '', walls, places ? places + '处地点' : ''].filter(Boolean).join(' · ');
 }
