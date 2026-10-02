@@ -74,6 +74,7 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
         attacker: actor, defender: target, rules, conditionDefs: defs, traitRegistry: context.traitRegistry,
         fieldTags: context.fieldTags, distance: dist,
         attackerTerrain: field?.tiles[actor.pos!], defenderTerrain: field?.tiles[target.pos!],
+        fastPreview: context.fastPreview,
         extraMods: moved && opts.ranged ? [{ source: 'stance', name: '移动射击估计', kind: 'atk', type: 'flat', value: -2 }] : [], ...opts,
       }).expectedDamage);
       for (const rawWeapon of [actor.weapon, actor.sidearm]) {

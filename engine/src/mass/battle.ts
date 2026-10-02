@@ -235,7 +235,9 @@ export class MassBattle {
     if (this.rules.resolutionVersion === 'v2' && result.finalDamage > 0) revealUnit(this.observationContext(), this.byId(opts.defender.id));
     return result;
   }
-  private previewAttackWithEnvironment(opts: Parameters<typeof previewAttack>[0], world = this.visibleCombatants(opts.attacker.side)) { return previewAttack(this.environmentContext(opts, world)); }
+  private previewAttackWithEnvironment(opts: Parameters<typeof previewAttack>[0], world = this.visibleCombatants(opts.attacker.side), fastPreview = false) {
+    return previewAttack(this.environmentContext(fastPreview ? { ...opts, fastPreview: true } : opts, world));
+  }
   isAttached(id: string): boolean { return [...this.attached.values()].includes(id); }
   private prepareFormation(): void {
     const units = structuredClone(this.combatants);
@@ -315,7 +317,7 @@ export class MassBattle {
       .sort((a, b) => formationNodeDistance(from, a) - formationNodeDistance(from, b) || a.y - b.y || a.x - b.x)[0];
     return { landing, fallDamage: fallDamage(unit), forcedExit: !landing };
   }
-  private abilityFlightPreview(actor: Combatant, target: Combatant, ability: Ability, units = this.combatants) {
+  private abilityFlightPreview(actor: Combatant, target: Combatant, ability: Ability, units = this.combatants, fastPreview = false) {
     if (!isAirborne(target) || this.isAttached(target.id)) return undefined;
     const affected = structuredClone(target), controls = ability.effects.filter((e): e is Extract<Ability['effects'][number], { op: 'condition' }> =>
       e.op === 'condition' && !!(this.conditions.get(e.conditionId)?.skipTurn || this.conditions.get(e.conditionId)?.preventMove) && conditionChance(target, e) > 0);
@@ -325,7 +327,7 @@ export class MassBattle {
     if (!flightMaintenanceReason(affected, this.conditions)) return undefined;
     const damage = ability.effects.find((e) => e.op === 'damage');
     const known = this.visibleCombatants(actor.side, units);
-    const preview = damage ? this.previewAttackWithEnvironment({ attacker: actor, defender: target, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(known, actor, target, ability, damage) }, known) : undefined;
+    const preview = damage ? this.previewAttackWithEnvironment({ attacker: actor, defender: target, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(known, actor, target, ability, damage) }, known, fastPreview) : undefined;
     const hit = preview?.anyHitChance ?? preview?.hitChance ?? 1;
     const fallChance = dispelled ? 1 : 1 - controls.reduce((chance, e) => chance * (1 - conditionChance(target, e) * (e.onDamage ? preview?.damageChance ?? 0 : e.onHit ? hit : 1)), 1);
     const result = this.landingOutcome(affected, this.visibleCombatants(actor.side, units));
@@ -448,7 +450,7 @@ export class MassBattle {
       this.frontControl[wing] = sides.size > 1 ? 'contested' : sides.has('ally') ? 'ally' : sides.has('enemy') ? 'enemy' : 'empty';
     }
   }
-  private rangedWeaponFor(actor: Combatant, target: Combatant, units = this.combatants, mobileOnly: false | 'riding' | 'vehicle' = false) {
+  private rangedWeaponFor(actor: Combatant, target: Combatant, units = this.combatants, mobileOnly: false | 'riding' | 'vehicle' = false, fastPreview = false) {
     const weapons = [actor.weapon, actor.sidearm].filter((weapon) =>
       isRangedWeapon(weapon) && (!mobileOnly || (mobileOnly === 'riding' ? mobileRangedWeapon(weapon) : vehicleShooting(actor, weapon))) && !(this.reloadCd.get(weaponReloadKey(actor, weapon)) ?? 0)
       && !formationShotReason({ ...actor, weapon }, target, units.filter((u) => !this.isAttached(u.id)))
@@ -457,26 +459,26 @@ export class MassBattle {
     const world = units.map(unit => unit.id === actor.id ? actor : unit.id === target.id ? target : unit);
     // 两槽都能射击时按当前目标的实际收益选武器，不能固定优先主槽的弱武器。
     return weapons.map(weapon => {
-      const options = this.orderAttackOptions({ unitId: actor.id, type: 'volley', targetId: target.id }, world, false, weapon);
-      const preview = this.previewAttackWithEnvironment(options, world);
+      const options = this.orderAttackOptions({ unitId: actor.id, type: 'volley', targetId: target.id }, world, false, weapon, fastPreview);
+      const preview = this.previewAttackWithEnvironment(options, world, fastPreview);
       return { weapon, score: preview.expectedDamage + (preview.conditionValue ?? 0) };
     }).sort((a, b) => b.score - a.score)[0]!.weapon;
   }
-  private mountedShotDestination(actor: Combatant, target: Combatant, units = this.combatants) {
+  private mountedShotDestination(actor: Combatant, target: Combatant, units = this.combatants, fastPreview = false) {
     if (!mountedShooting(actor) || formationDistance(actor, target) > 1 || !sameLayer(actor, target)
       || activeConditionIds(actor).some((id) => this.conditions.get(id)?.preventMove)) return undefined;
     const from = formationNode(actor), node = FORMATION_NODES.find((n) => n.x === from.x && n.y === from.y + (actor.side === 'enemy' ? -1 : 1));
     if (!node || !formationCanOccupy(units, actor, node, this.attached, this.formationSlots ?? 3)) return undefined;
     const future = { ...actor, formationPosition: node.id };
-    return this.rangedWeaponFor(future, target, units, 'riding') ? node : undefined;
+    return this.rangedWeaponFor(future, target, units, 'riding', fastPreview) ? node : undefined;
   }
-  private vehicleShotDestination(actor: Combatant, target: Combatant, units = this.combatants) {
+  private vehicleShotDestination(actor: Combatant, target: Combatant, units = this.combatants, fastPreview = false) {
     if (!vehicleShooting(actor) || activeConditionIds(actor).some((id) => id === 'slowed' || this.conditions.get(id)?.preventMove)) return undefined;
     // 已有合法射击就保持阵位；只有稳定装置允许在同一主任务内短移找射界。
-    if (this.rangedWeaponFor(actor, target, units)) return undefined;
+    if (this.rangedWeaponFor(actor, target, units, false, fastPreview)) return undefined;
     const from = formationNode(actor), to = formationNode(target);
     return FORMATION_NODES.filter((n) => formationNodeDistance(from, n) === 1 && (n.side === actor.side || actor.formationPosition !== undefined)
-      && formationCanOccupy(units, actor, n, this.attached, this.formationSlots ?? 3) && this.rangedWeaponFor({ ...actor, formationPosition: n.id }, target, units, 'vehicle'))
+      && formationCanOccupy(units, actor, n, this.attached, this.formationSlots ?? 3) && this.rangedWeaponFor({ ...actor, formationPosition: n.id }, target, units, 'vehicle', fastPreview))
       .sort((a, b) => formationNodeDistance(a, to) - formationNodeDistance(b, to) || a.y - b.y || a.x - b.x)[0];
   }
   private vehicleDepartureReactions(actor: Combatant, destination: typeof FORMATION_NODES[number], spent: Set<string>): void {
@@ -495,7 +497,7 @@ export class MassBattle {
     const actor = this.combatants.find((u) => u.id === order.unitId);
     return actor ? this.visibleCombatants(actor.side) : [];
   }
-  private v2OrderReason(order: Order, units = this.combatants): string | undefined {
+  private v2OrderReason(order: Order, units = this.combatants, fastPreview = false): string | undefined {
     const u = units.find((c) => c.id === order.unitId);
     if (!u || u.status !== 'ready') return '单位不存在或无法行动';
     if (u.conditions.some((c) => this.conditions.get(c.id)?.skipTurn)) return '状态令本轮无法行动';
@@ -550,7 +552,7 @@ export class MassBattle {
     if (!this.visibleCombatants(u.side, units).some((c) => c.id === target.id)) return '尚未观测到目标';
     const aerial = aerialTargetReason(u, target, order.type === 'volley'); if (aerial) return aerial;
     if (order.type === 'volley') {
-      if (this.rangedWeaponFor(u, target, units) || this.mountedShotDestination(u, target, this.visibleCombatants(u.side, units)) || this.vehicleShotDestination(u, target, this.visibleCombatants(u.side, units))) return undefined;
+      if (this.rangedWeaponFor(u, target, units, false, fastPreview) || this.mountedShotDestination(u, target, this.visibleCombatants(u.side, units), fastPreview) || this.vehicleShotDestination(u, target, this.visibleCombatants(u.side, units), fastPreview)) return undefined;
       const rangedWeapons = [u.weapon, u.sidearm].filter(isRangedWeapon);
       if (rangedWeapons.length && rangedWeapons.every((w) => (this.reloadCd.get(weaponReloadKey(u, w)) ?? 0) > 0)) return '武器装填中';
       const weapon = rangedWeapons.find((w) => !(this.reloadCd.get(weaponReloadKey(u, w)) ?? 0)) ?? u.weapon;
@@ -636,17 +638,17 @@ export class MassBattle {
       .sort((a, b) => a.id.localeCompare(b.id))].slice(0, 2);
   }
   /** 与阶段执行共享武器/展开/特质/环境；预览不读取尚未执行的敌方军令。 */
-  private orderAttackOptions(order: Order, units: Combatant[], projectMovement = true, usedWeapon?: Combatant['weapon']): Omit<AttackOpts, 'rng'> {
+  private orderAttackOptions(order: Order, units: Combatant[], projectMovement = true, usedWeapon?: Combatant['weapon'], fastPreview = false): Omit<AttackOpts, 'rng'> {
     const source = units.find((u) => u.id === order.unitId)!;
     const target = units.find((u) => u.id === order.targetId)!;
     const known = this.visibleCombatants(source.side, units);
-    const withdrawal = projectMovement && order.type === 'volley' ? this.mountedShotDestination(source, target, known) : undefined;
-    const vehicleMove = projectMovement && order.type === 'volley' ? this.vehicleShotDestination(source, target, known) : undefined;
+    const withdrawal = projectMovement && order.type === 'volley' ? this.mountedShotDestination(source, target, known, fastPreview) : undefined;
+    const vehicleMove = projectMovement && order.type === 'volley' ? this.vehicleShotDestination(source, target, known, fastPreview) : undefined;
     const approach = projectMovement && order.type === 'charge' ? this.chargeDestination(source, target, known) : withdrawal ?? vehicleMove;
     const landing = projectMovement && order.type !== 'volley' && isAirborne(source) && !isAirborne(target) ? approach ?? this.diveDestination(source, target, known) : undefined;
     const actor = approach || landing ? { ...source, ...(landing ? { airborne: false } : {}), formationPosition: (approach ?? landing)!.id } : source;
     const ranged = order.type === 'volley';
-    const weapon = usedWeapon ?? (ranged ? this.rangedWeaponFor(actor, target, units, withdrawal ? 'riding' : vehicleMove ? 'vehicle' : false) : meleeWeapon(actor));
+    const weapon = usedWeapon ?? (ranged ? this.rangedWeaponFor(actor, target, units, withdrawal ? 'riding' : vehicleMove ? 'vehicle' : false, fastPreview) : meleeWeapon(actor));
     const close = pointBlankModifier(weapon, ranged, sameLayer(actor, target) && formationDistance(actor, target) <= 1 ? 0 : formationDistance(actor, target), actor);
     return { attacker: actor, defender: target, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry,
       weaponOverride: weapon, ranged, charge: order.type === 'charge',
@@ -654,8 +656,8 @@ export class MassBattle {
       extraMods: [...this.stanceMods(actor, target, { charge: order.type === 'charge' }), ...(close ? [{ source: 'stance' as const, name: '抵近射击', kind: 'atk' as const, type: 'flat' as const, value: close }] : [])],
       defenderMods: this.defModsFor(target) };
   }
-  orderPreview(order: Order): { distance?: number; rangeDistance?: number; effects?: string[]; fallChance?: number; areaTargets?: string[]; areaTargetIds?: string[]; areaPreviews?: import('../actions.js').ActionPreview['areaPreviews']; vehicleMove?: typeof FORMATION_NODES[number]; withdrawal?: typeof FORMATION_NODES[number]; weaponName?: string; approach?: typeof FORMATION_NODES[number]; moraleBefore?: number; moraleAfter?: number; breakChance?: number; rallyChance?: number; healing?: number; reason?: string; preview?: ReturnType<typeof previewAttack>; landing?: typeof FORMATION_NODES[number]; extraFatigue?: number; forcedLanding?: typeof FORMATION_NODES[number]; fallDamage?: number; forcedExit?: boolean; reactions?: string[]; layer?: 'air' | 'ground'; destination?: typeof FORMATION_NODES[number] } {
-    const known = this.planningUnits(order), reason = this.v2OrderReason(order, known);
+  orderPreview(order: Order, fastPreview = false): { distance?: number; rangeDistance?: number; effects?: string[]; fallChance?: number; areaTargets?: string[]; areaTargetIds?: string[]; areaPreviews?: import('../actions.js').ActionPreview['areaPreviews']; vehicleMove?: typeof FORMATION_NODES[number]; withdrawal?: typeof FORMATION_NODES[number]; weaponName?: string; approach?: typeof FORMATION_NODES[number]; moraleBefore?: number; moraleAfter?: number; breakChance?: number; rallyChance?: number; healing?: number; reason?: string; preview?: ReturnType<typeof previewAttack>; landing?: typeof FORMATION_NODES[number]; extraFatigue?: number; forcedLanding?: typeof FORMATION_NODES[number]; fallDamage?: number; forcedExit?: boolean; reactions?: string[]; layer?: 'air' | 'ground'; destination?: typeof FORMATION_NODES[number] } {
+    const known = this.planningUnits(order), reason = this.v2OrderReason(order, known, fastPreview);
     if (reason) return { reason };
     if (order.type === 'reload') return { effects: ['消耗一次行动，实际武器装填时间减少1轮'] };
     if (['shift-left', 'shift-right', 'rank-forward', 'rank-back'].includes(order.type)) return { destination: this.maneuverDestination(order, known), layer: isAirborne(this.byId(order.unitId)) ? 'air' : 'ground' };
@@ -667,13 +669,13 @@ export class MassBattle {
       const actor = this.effectiveUnit(this.byId(order.abilityActorId ?? order.unitId), known), ability = actor.abilities.find((a) => a.id === order.abilityId)!;
       const target = ability.target === 'self' ? actor : ability.target === 'zone' ? zoneTarget(this.observationContext(known),actor,order.targetId) : known.find((u) => u.id === order.targetId);
       const healing = ability.effects.find((e) => e.op === 'heal'), morale = ability.effects.find((e) => e.op === 'morale'), damage = ability.effects.find((e) => e.op === 'damage');
-      const strike = target && damage ? this.previewAttackWithEnvironment({ attacker: actor, defender: this.effectiveUnit(target, known), rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(known, actor, target, ability, damage) }, known) : undefined;
+      const strike = target && damage ? this.previewAttackWithEnvironment({ attacker: actor, defender: this.effectiveUnit(target, known), rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(known, actor, target, ability, damage) }, known, fastPreview) : undefined;
       const area = target && (damage?.shape ?? ability.shape) === 'burst' ? this.supportTargets(actor, ability, target, known) : [];
       const areaPreviews = damage ? area.map((affected) => ({
         targetId: affected.id,
         ...this.previewAttackWithEnvironment({ attacker: actor, defender: this.effectiveUnit(affected, known), rules: this.rules,
           conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry,
-          ...this.skillAttackOptions(known, actor, affected, ability, damage) }, known),
+          ...this.skillAttackOptions(known, actor, affected, ability, damage) }, known, fastPreview),
       })) : [];
       return target ? {
         distance: formationDistance(actor, target),
@@ -681,7 +683,7 @@ export class MassBattle {
         effects: skillEffectLines(this.observationContext(known), actor, target, ability),
         ...(strike ? { preview: strike } : {}),
         ...(area.length ? { areaTargets: area.map((u) => u.name), areaTargetIds: area.map((u) => u.id), areaPreviews } : {}),
-        ...this.abilityFlightPreview(actor, target, ability, known),
+        ...this.abilityFlightPreview(actor, target, ability, known, fastPreview),
         ...(morale ? moraleChangePreview(this.observationContext(known), target, morale.amount, this.rules.morale.breakAt,
           this.traitRegistry, ability.effects.flatMap((e) => e.op === 'condition' ? [{ id: e.conditionId, dur: e.dur }] : [])) : {}),
         ...(healing ? { healing: Math.min(recoveryCapacity(target), healingYield(actor,target,healing.amount ?? diceAvg(healing.dice!),!!ability.itemSourceId)) } : {}),
@@ -691,12 +693,12 @@ export class MassBattle {
     const landing = ['attack', 'charge'].includes(order.type) && target && isAirborne(actor) && !isAirborne(target) ? this.diveDestination(actor, target, known) : undefined;
     const approach = order.type === 'charge' && target ? this.chargeDestination(actor, target, known) : undefined;
     if (!['attack', 'charge', 'volley'].includes(order.type)) return {};
-    const attack = { ...this.orderAttackOptions(order, known), actionDamageScale: order.haste ? hasteAttackScale(actor) : 1 };
-    const vehicleMove = order.type === 'volley' && target ? this.vehicleShotDestination(actor, target, known) : undefined;
+    const attack = { ...this.orderAttackOptions(order, known, true, undefined, fastPreview), actionDamageScale: order.haste ? hasteAttackScale(actor) : 1 };
+    const vehicleMove = order.type === 'volley' && target ? this.vehicleShotDestination(actor, target, known, fastPreview) : undefined;
     return { distance: formationDistance(attack.attacker, attack.defender),
       rangeDistance: attack.ranged ? rangedTargetDistance(attack.attacker, attack.defender, formationDistance(attack.attacker, attack.defender), 'mass') : formationDistance(attack.attacker, attack.defender),
-      ...(vehicleMove ? { vehicleMove, reactions: this.takeoffThreats(actor, known).filter((u) => formationNodeDistance(formationNode(u), vehicleMove) > 1).map((u) => u.name) } : {}), preview: this.previewAttackWithEnvironment(attack, known), weaponName: attack.weaponOverride?.name,
-      ...(approach ? { approach } : {}), ...(order.type === 'volley' && target && this.mountedShotDestination(actor, target, known) ? { withdrawal: this.mountedShotDestination(actor, target, known) } : {}), ...(landing ? { landing: approach ?? landing, extraFatigue: 1 } : {}) };
+      ...(vehicleMove ? { vehicleMove, reactions: this.takeoffThreats(actor, known).filter((u) => formationNodeDistance(formationNode(u), vehicleMove) > 1).map((u) => u.name) } : {}), preview: this.previewAttackWithEnvironment(attack, known, fastPreview), weaponName: attack.weaponOverride?.name,
+      ...(approach ? { approach } : {}), ...(order.type === 'volley' && target && this.mountedShotDestination(actor, target, known, fastPreview) ? { withdrawal: this.mountedShotDestination(actor, target, known, fastPreview) } : {}), ...(landing ? { landing: approach ?? landing, extraFatigue: 1 } : {}) };
   }
   /** UI默认方案与自动军令共用；只读取当前可观察事实，不下令、不消耗RNG。 */
   private braceThreat(unit: Combatant, units = this.visibleCombatants(unit.side)): Combatant | undefined {
@@ -711,12 +713,12 @@ export class MassBattle {
     if (!u || u.status !== 'ready' || this.isAttached(u.id) || u.bornRound === this.round || this.isOver()) return undefined;
     const side = u.side, planning = this.visibleCombatants(side);
     const remembered = this.previousOrders.get(u.id);
-    if (allowAbilities && remembered && !remembered.automatic && !this.v2OrderReason(remembered, planning)) return { ...remembered };
+    if (allowAbilities && remembered && !remembered.automatic && !this.v2OrderReason(remembered, planning, true)) return { ...remembered };
     const destinations = new Map<string, { node: typeof FORMATION_NODES[number]; airborne: boolean } | undefined>();
     const destinationOf = (order: Order) => {
       const key = JSON.stringify(order);
       if (!destinations.has(key)) {
-        const preview = this.orderPreview(order), actor = this.byId(order.unitId);
+        const preview = this.orderPreview(order, true), actor = this.byId(order.unitId);
         const node = preview.destination ?? preview.approach ?? preview.landing ?? preview.vehicleMove ?? preview.withdrawal;
         destinations.set(key, node ? { node, airborne: order.type === 'takeoff' || isAirborne(actor) && order.type !== 'land' && !preview.landing } : undefined);
       }
@@ -735,7 +737,7 @@ export class MassBattle {
     const foes = planning.filter((t) => t.side !== side && ['ready', 'routing'].includes(t.status) && !this.isAttached(t.id));
     const candidates: { order: Order; score: number }[] = foes.flatMap((target) => (['volley', 'attack', 'charge'] as const).map((type) => ({ unitId: u.id, type, targetId: target.id, ...(hasteOnly ? { haste: true } : {}) })))
       .flatMap((order) => {
-        const result = this.orderPreview(order);
+        const result = this.orderPreview(order, true);
         if (!result.preview) return [];
         const target = foes.find((foe) => foe.id === order.targetId)!;
         let score=Math.min(memberHealth(target),result.preview.expectedDamage)+(result.preview.conditionValue??0);
@@ -754,7 +756,7 @@ export class MassBattle {
               if(actor.hp>0) {
                 actor.formationPosition=result.vehicleMove.id;
                 const world=planning.map(other=>other.id===actor.id?actor:other);
-                const hit=this.previewAttackWithEnvironment(this.orderAttackOptions(order,world),world);
+                const hit=this.previewAttackWithEnvironment(this.orderAttackOptions(order,world,true,undefined,true),world,true);
                 const morale=moraleRisk(this.observationContext(world),actor,this.rules.morale.breakAt,this.traitRegistry);
                 benefit+=(Math.min(memberHealth(target),hit.expectedDamage)+(hit.conditionValue??0))*(1-morale.breakChance);
               }
@@ -764,12 +766,12 @@ export class MassBattle {
         }
         return [{ order, score }];
       });
-    if (u.shield && !this.v2OrderReason({ unitId, type: 'brace' }, planning)) {
+    if (u.shield && !this.v2OrderReason({ unitId, type: 'brace' }, planning, true)) {
       const guard = { ...u, tacticalPose: bracePose(u, this.braceThreat(u, planning), 'mass') };
       const before = planning.map(other => {
         if (other.id === u.id) return { ...u, tacticalPose: undefined };
         const assigned = !hasteOnly && other.side === side ? this.orders.get(other.id) : undefined;
-        if (!assigned || this.v2OrderReason(assigned, planning)) return other;
+        if (!assigned || this.v2OrderReason(assigned, planning, true)) return other;
         return { ...other, tacticalPose: assigned.type === 'brace' ? bracePose(other, this.braceThreat(other, planning), 'mass') : undefined };
       });
       const after = before.map(other => other.id === u.id ? guard : other);
@@ -778,18 +780,18 @@ export class MassBattle {
       for (const foe of foes) {
         let saved = 0;
         for (const ally of planning.filter(other => other.side === side && other.id !== u.id && other.status === 'ready' && !this.isAttached(other.id))) {
-          const weapon = this.rangedWeaponFor(foe, ally, before);
+          const weapon = this.rangedWeaponFor(foe, ally, before, false, true);
           if (!weapon || rangedScreen(foe, ally, weapon, after, { mode: 'mass' }, this.conditionMap())?.id !== u.id) continue;
           if (!supportingAttacks.has(ally.id)) {
             const value = Math.max(0, ...foes.flatMap(target => (['attack', 'volley'] as const).map(type => {
               const order: Order = { unitId: ally.id, type, targetId: target.id };
-              return this.v2OrderReason(order, before) ? 0 : Math.min(memberHealth(target), this.previewAttackWithEnvironment(this.orderAttackOptions(order, before), before).expectedDamage);
+              return this.v2OrderReason(order, before, true) ? 0 : Math.min(memberHealth(target), this.previewAttackWithEnvironment(this.orderAttackOptions(order, before, true, undefined, true), before, true).expectedDamage);
             })));
             supportingAttacks.set(ally.id, value);
           }
           supportingDamage = Math.max(supportingDamage, supportingAttacks.get(ally.id)!);
-          const attack = this.orderAttackOptions({ unitId: foe.id, type: 'volley', targetId: ally.id }, before, false, weapon);
-          saved = Math.max(saved, this.previewAttackWithEnvironment(attack, before).expectedDamage);
+          const attack = this.orderAttackOptions({ unitId: foe.id, type: 'volley', targetId: ally.id }, before, false, weapon, true);
+          saved = Math.max(saved, this.previewAttackWithEnvironment(attack, before, true).expectedDamage);
         }
         protectedDamage += saved;
       }
@@ -803,7 +805,7 @@ export class MassBattle {
     for (const assigned of hasteOnly ? [] : this.orders.values()) {
       if (assigned.unitId === unitId || assigned.type !== 'ability') continue;
       const source = planning.find(other => other.id === (assigned.abilityActorId ?? assigned.unitId) && other.side === side);
-      if (!source || this.v2OrderReason(assigned, planning)) continue;
+      if (!source || this.v2OrderReason(assigned, planning, true)) continue;
       const actor = this.effectiveUnit(source, planning), ability = actor.abilities.find(a => a.id === assigned.abilityId)!;
       const target = ability.target === 'self' ? actor : planning.find(other => other.id === assigned.targetId) ?? actor;
       for (const effect of ability.effects) if (effect.op === 'trait' || effect.op === 'barrier' || effect.op === 'condition' && !effect.onHit && !effect.onDamage && effect.saveDC === undefined) {
@@ -821,8 +823,8 @@ export class MassBattle {
       }
     }
     const reloadHelps = [u.weapon, u.sidearm].some(w => { const left = this.reloadCd.get(weaponReloadKey(u, w)) ?? 0; return left > 1 || left === 1 && !hasteOnly && hasteMagnitude(u) > 0; });
-    if (reloadHelps && !this.v2OrderReason({ unitId, type: 'reload' }, planning)) candidates.push({ order: { unitId, type: 'reload' }, score: Math.max(1, ...candidates.map(c => c.score)) * 0.4 });
-    const skillContext = this.observationContext(planning.map(u => reservedSupport.get(u.id) ?? u));
+    if (reloadHelps && !this.v2OrderReason({ unitId, type: 'reload' }, planning, true)) candidates.push({ order: { unitId, type: 'reload' }, score: Math.max(1, ...candidates.map(c => c.score)) * 0.4 });
+    const skillContext = { ...this.observationContext(planning.map(u => reservedSupport.get(u.id) ?? u)), fastPreview: true };
     const sources = allowAbilities || hasteOnly ? [u, ...planning.filter((hero) => hero.id === this.attached.get(u.id))].map((actor) => this.effectiveUnit(actor, planning)) : [];
     for (const actor of sources) for (const ability of actor.abilities) {
       if (hasteOnly && !ability.itemSourceId) continue;
@@ -830,20 +832,20 @@ export class MassBattle {
         && (['ready', 'routing'].includes(u.status) || u.status === 'dying' && ability.effects.some((e) => e.op === 'heal'))) : foes;
       for (const target of targets) {
         const order: Order = { unitId: u.id, type: 'ability', abilityActorId: actor.id, abilityId: ability.id, targetId: target.id };
-        if (this.v2OrderReason(order, planning)) continue;
+        if (this.v2OrderReason(order, planning, true)) continue;
         let score = 0, expectedDamage = 0;
         const plannedHealing = new Map(reservedHealing);
         const damageForControl = ability.effects.find((e) => e.op === 'damage');
         const controlPreviews = new Map<string, ReturnType<MassBattle['previewAttackWithEnvironment']>>();
         const controlChance = (affected: Combatant, needsDamage: boolean) => {
           if (!damageForControl) return 1;
-          if (!controlPreviews.has(affected.id)) controlPreviews.set(affected.id, this.previewAttackWithEnvironment({ attacker: actor, defender: affected, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(planning, actor, affected, ability, damageForControl) }));
+          if (!controlPreviews.has(affected.id)) controlPreviews.set(affected.id, this.previewAttackWithEnvironment({ attacker: actor, defender: affected, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(planning, actor, affected, ability, damageForControl) }, planning, true));
           const preview = controlPreviews.get(affected.id)!;
           return needsDamage ? preview.damageChance ?? (preview.expectedDamage > 0 ? preview.hitChance : 0) : preview.anyHitChance ?? preview.hitChance;
         };
         for (const effect of ability.effects) {
           if (effect.op === 'damage') for (const t of this.supportTargets(actor, ability, target, planning)) {
-            const preview = this.previewAttackWithEnvironment({ attacker: actor, defender: t, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(planning, actor, t, ability, effect) });
+            const preview = this.previewAttackWithEnvironment({ attacker: actor, defender: t, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(planning, actor, t, ability, effect) }, planning, true);
             score += preview.expectedDamage + (preview.conditionValue ?? 0);
             if (t.side !== actor.side) expectedDamage += preview.expectedDamage;
           }
@@ -862,7 +864,7 @@ export class MassBattle {
           }
         }
         for (const affected of this.supportTargets(actor, ability, target, planning)) score += skillEffectValue(skillContext, actor, reservedSupport.get(affected.id) ?? affected, { ...ability, effects: ability.effects.filter(e => e.op === 'condition') }, controlChance(affected, false), controlChance(affected, true)) * Math.max(0, 1 - (controlPreviews.get(affected.id)?.expectedDamage ?? 0) / Math.max(1, memberHealth(affected)));
-        const falling = this.abilityFlightPreview(actor, target, ability, planning); if (falling) score += falling.fallDamage * (falling.fallChance ?? 1);
+        const falling = this.abilityFlightPreview(actor, target, ability, planning, true); if (falling) score += falling.fallDamage * (falling.fallChance ?? 1);
         for (const affected of this.supportTargets(actor, ability, target, planning)) score += skillEffectValue(skillContext, actor, reservedSupport.get(affected.id) ?? affected, { ...ability, effects: ability.effects.filter(e => e.op === 'resource') });
         score -= tacticalSkillCost(skillContext, actor, ability, expectedDamage);
         if (score > 0) candidates.push({ order, score: score - 0.25 });
@@ -870,7 +872,7 @@ export class MassBattle {
     }
     const known = planning, currentRisk = moraleRisk({ ...this.observationContext(planning), units: known }, u, this.rules.morale.breakAt, this.traitRegistry).breakChance;
     if (currentRisk > 0) for (const type of ['rank-back', 'shift-left', 'shift-right'] as const) {
-      const order: Order = { unitId: u.id, type }; if (this.v2OrderReason(order, planning)) continue;
+      const order: Order = { unitId: u.id, type }; if (this.v2OrderReason(order, planning, true)) continue;
       const future = { ...u, formationPosition: this.maneuverDestination(order, planning).id };
       const after = moraleRisk({ ...this.observationContext(planning), units: known.map((x) => x.id === u.id ? future : x) }, future, this.rules.morale.breakAt, this.traitRegistry);
       candidates.push({ order, score: (currentRisk - after.breakChance) * 12 - 1 });
@@ -886,22 +888,22 @@ export class MassBattle {
         });
         return Math.max(0, ...focus.flatMap((target) => (['attack', 'volley'] as const).map((type) => {
           const order: Order = { unitId: u.id, type, targetId: target.id };
-          return this.v2OrderReason(order, world) ? 0 : Math.min(memberHealth(target),this.previewAttackWithEnvironment(this.orderAttackOptions(order, world), world).expectedDamage);
+          return this.v2OrderReason(order, world, true) ? 0 : Math.min(memberHealth(target),this.previewAttackWithEnvironment(this.orderAttackOptions(order, world, true, undefined, true), world, true).expectedDamage);
         })));
     };
     if (fatiguePenalty(u) > 0 || u.resourceModel && !hasteOnly) {
       const rested = { ...u, fatigue: fatigueAfter(u, 0) };
-      const context = { ...this.observationContext(planning), units: known };
+      const context = { ...this.observationContext(planning), units: known, fastPreview: true };
       const gain = u.resourceModel ? tacticalRestValue(context, u) : (futureValue(rested) - futureValue(u)) * 1.5;
       if (gain > 0) candidates.push({ order: { unitId: u.id, type: 'hold' }, score: gain });
     }
     if (hasFlightAbility(u) || isAirborne(u) || isRangedWeapon(u.weapon) || isRangedWeapon(u.sidearm)) {
       const pinnedRanged = isRangedWeapon(u.weapon) && foes.some(target => {
         const volley: Order = { unitId: u.id, type: 'volley', targetId: target.id };
-        return this.v2OrderReason(volley, planning)?.includes('牵制');
+        return this.v2OrderReason(volley, planning, true)?.includes('牵制');
       });
       for (const type of ['rank-forward', 'rank-back', 'shift-left', 'shift-right'] as const) {
-        const order: Order = { unitId: u.id, type }; if (this.v2OrderReason(order, planning)) continue;
+        const order: Order = { unitId: u.id, type }; if (this.v2OrderReason(order, planning, true)) continue;
         const destination = this.maneuverDestination(order, planning);
         const fire = futureValue({ ...u, formationPosition: destination.id, fatigue: fatigueAfter(u, 1) });
         // 被贴身压制的远程单位应优先脱离到后排重新建立射界；横移作为后排被堵时的次选。
@@ -909,7 +911,7 @@ export class MassBattle {
         candidates.push({ order, score: fire * 0.6 - 0.5 + disengage });
       }
       const transition: Order = { unitId: u.id, type: isAirborne(u) ? 'land' : 'takeoff' };
-      if (!this.v2OrderReason(transition, planning)) {
+      if (!this.v2OrderReason(transition, planning, true)) {
         const future = { ...u, airborne: !isAirborne(u), formationPosition: formationNode(u).id, fatigue: fatigueAfter(u, 1) };
         let score = futureValue(future) * 0.6 - 0.5;
         if (transition.type === 'land' && formationNode(u).rank === 'front') score = Math.max(score, 2);
@@ -920,8 +922,8 @@ export class MassBattle {
     if (canReconceal(this.observationContext(planning), u)) candidates.push({ order: { unitId: u.id, type: 'hold' }, score: 4 });
     const tactic = u.side === 'ally' ? this.allyTactic : 'balanced';
     if (tactic === 'aggressive') for (const candidate of candidates) if (['attack','volley','charge'].includes(candidate.order.type)) candidate.score += candidate.order.type === 'charge' ? 3 : 1.5;
-    const eligible = tactic === 'defensive' ? candidates.filter(c => { const p = this.orderPreview(c.order); return !p.approach && !p.destination && !p.vehicleMove && !p.withdrawal && !['charge','rank-forward','rank-back','shift-left','shift-right','takeoff','land'].includes(c.order.type); }) : candidates;
-    if (tactic === 'defensive' && !eligible.some(c => c.score > 0)) return {unitId:u.id,type:this.v2OrderReason({unitId:u.id,type:'brace'},planning)?'hold':'brace',automatic:true};
+    const eligible = tactic === 'defensive' ? candidates.filter(c => { const p = this.orderPreview(c.order, true); return !p.approach && !p.destination && !p.vehicleMove && !p.withdrawal && !['charge','rank-forward','rank-back','shift-left','shift-right','takeoff','land'].includes(c.order.type); }) : candidates;
+    if (tactic === 'defensive' && !eligible.some(c => c.score > 0)) return {unitId:u.id,type:this.v2OrderReason({unitId:u.id,type:'brace'},planning,true)?'hold':'brace',automatic:true};
     const legal = eligible.filter(c => c.score > 0 && canReserve(c.order));
     const commandScores = commanderScores(legal.map(c => ({
       key: JSON.stringify(c.order), score: c.score,
@@ -949,7 +951,7 @@ export class MassBattle {
       const patrol = [...FORMATION_NODES].sort((a, b) => a.y - b.y || (a.y % 2 ? b.x - a.x : a.x - b.x));
       const destination = foes.length ? formationNode([...foes].sort((a, b) => formationDistance(u, a) - formationDistance(u, b))[0]!) : patrol[(this.round - 1) % patrol.length]!;
       const moves = (['rank-forward', 'rank-back', 'shift-left', 'shift-right'] as const).map((type) => ({ unitId: u.id, type }))
-        .filter((o) => !this.v2OrderReason(o, planning) && canReserve(o)).sort((a, b) => formationNodeDistance(this.maneuverDestination(a, planning), destination) - formationNodeDistance(this.maneuverDestination(b, planning), destination));
+        .filter((o) => !this.v2OrderReason(o, planning, true) && canReserve(o)).sort((a, b) => formationNodeDistance(this.maneuverDestination(a, planning), destination) - formationNodeDistance(this.maneuverDestination(b, planning), destination));
       if (isRangedWeapon(u.weapon) && (u.weapon?.range ?? 0) > 2 && foes.length) {
         // 装填或暂时无射界时仍保持射距，不能按近战巡逻逻辑主动挤向敌人。
         const desired = Math.min(u.weapon!.range ?? 3, 4);
@@ -959,7 +961,7 @@ export class MassBattle {
           return Math.abs(distance - desired) + Math.max(0, 2 - distance) * 2;
         };
         order = [{ unitId: u.id, type: 'hold' } as Order, ...moves].sort((a, b) => spacing(a) - spacing(b))[0]!;
-        if (order.type === 'hold' && !this.v2OrderReason({ unitId: u.id, type: 'brace' }, planning)) order.type = 'brace';
+        if (order.type === 'hold' && !this.v2OrderReason({ unitId: u.id, type: 'brace' }, planning, true)) order.type = 'brace';
       } else if (foes.length && !isAirborne(u)) {
         const from = formationNode(u), to = destination;
         // 两军分别趋向相邻会合点，不能同时穿过对方旧前线再反向追逐。
@@ -973,7 +975,7 @@ export class MassBattle {
         order = formationNodeDistance(from, to) <= 1 || !approach ? { unitId: u.id, type: 'brace' } : approach;
       } else order = moves[0] ?? { unitId: u.id, type: 'hold' };
     }
-    return this.v2OrderReason(order, planning) || !canReserve(order) ? undefined : { ...order, automatic: true };
+    return this.v2OrderReason(order, planning, true) || !canReserve(order) ? undefined : { ...order, automatic: true };
   }
   private autoV2Orders(side: 'ally' | 'enemy', reserved: readonly string[] = []): number {
     let count = 0;

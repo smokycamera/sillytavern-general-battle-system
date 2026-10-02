@@ -23,6 +23,8 @@ export interface ObservationContext {
   rules?: import('./types.js').RulePack;
   traitRegistry?: Map<string, import('./types.js').Trait>;
   reload?: ReadonlyMap<string, number>;
+  /** Tactical AI may request the bounded damage preview path. */
+  fastPreview?: boolean;
 }
 function hostOf(context: ObservationContext, unit: Combatant): Combatant | undefined {
   const hostId = [...(context.attached ?? [])].find(([, hero]) => hero === unit.id)?.[0];

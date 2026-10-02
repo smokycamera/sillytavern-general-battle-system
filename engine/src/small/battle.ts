@@ -960,12 +960,12 @@ export class SmallBattle {
   }
 
   /** 当前公开属性下的无随机数攻击预览；实际结算仍走 resolveAttack。 */
-  private weaponPreview(actor: Combatant, target: Combatant, context: WeaponContext): NonNullable<ActionOption['preview']> {
+  private weaponPreview(actor: Combatant, target: Combatant, context: WeaponContext, fastPreview = false): NonNullable<ActionOption['preview']> {
     if (this.rules.resolutionVersion === 'v2') {
       const arrival = context.landing ? { ...actor, airborne: false } : actor;
       return { ...this.previewAttackWithEnvironment({ attacker: arrival, defender: target, rules: this.rules,
         conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, weaponOverride: context.weapon,
-        ranged: context.ranged, actionDamageScale: this.usingHaste(actor.id) ? hasteAttackScale(actor) : 1, ...this.attackModifiers(arrival, target, context) }), ...(context.landing ? { movementCost: 1, lands: true } : {}) };
+        ranged: context.ranged, actionDamageScale: this.usingHaste(actor.id) ? hasteAttackScale(actor) : 1, ...(fastPreview ? { fastPreview: true } : {}), ...this.attackModifiers(arrival, target, context) }), ...(context.landing ? { movementCost: 1, lands: true } : {}) };
     }
     const movedPenalty = context.ranged
       && this.movedThisTurn.has(actor.id)
@@ -1787,7 +1787,7 @@ export class SmallBattle {
           const context = this.weaponContext(foe, before, { charge }); if (context.reason) continue;
           const path = charge ? this.chargePath(foe, before) : undefined;
           const attacker = path ? { ...foe, pos: path.cells.at(-1)! } : foe;
-          const params = { attacker, defender: before, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ranged: context.ranged, charge, weaponOverride: context.weapon, ...this.attackModifiers(attacker, before, context, { charge }) };
+          const params = { attacker, defender: before, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ranged: context.ranged, charge, weaponOverride: context.weapon, fastPreview: true, ...this.attackModifiers(attacker, before, context, { charge }) };
           best = Math.max(best, this.previewAttackWithEnvironment(params).expectedDamage - this.previewAttackWithEnvironment({ ...params, defender: after }).expectedDamage);
         }
         reduction += best;
@@ -1797,7 +1797,7 @@ export class SmallBattle {
     const incoming = (actor: Combatant): number => foes.reduce((total,foe) => {
       const context = this.weaponContext(foe,actor);
       if (context.reason) return total;
-      return total + Math.min(memberHealth(actor),this.previewAttackWithEnvironment({attacker:foe,defender:actor,rules:this.rules,conditionDefs:this.conditionDefMap(),traitRegistry:this.traitRegistry,
+      return total + Math.min(memberHealth(actor),this.previewAttackWithEnvironment({attacker:foe,defender:actor,rules:this.rules,conditionDefs:this.conditionDefMap(),traitRegistry:this.traitRegistry,fastPreview:true,
         weaponOverride:context.weapon,ranged:context.ranged,...this.attackModifiers(foe,actor,context)}).expectedDamage);
     },0);
     const arrivals = new Map<GridPath, {actor:Combatant; loss:number; survival:number}>();
@@ -1834,7 +1834,7 @@ export class SmallBattle {
         for (const target of foes) for (const weaponMode of ['primary', 'sidearm'] as const) {
           const context = this.weaponContext(ally, target, { weaponMode }); if (context.reason) continue;
           const preview = this.previewAttackWithEnvironment({ attacker: ally, defender: target, rules: this.rules,
-            conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, weaponOverride: context.weapon,
+            conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, weaponOverride: context.weapon, fastPreview: true,
             ranged: context.ranged, ...this.attackModifiers(ally, target, context) });
           value = Math.max(value, Math.min(memberHealth(target), preview.expectedDamage));
         }
@@ -1855,7 +1855,7 @@ export class SmallBattle {
             if (context.reason || !context.ranged || rangedScreen(foe, ally, context.weapon, after, { mode: 'small', width: field.width, battlefield: field }, this.conditionDefMap())?.id !== unitId) continue;
             supportingDamage = Math.max(supportingDamage, supportingAttackValue(ally));
             protectedDamage = Math.max(protectedDamage, this.previewAttackWithEnvironment({ attacker: foe, defender: ally, rules: this.rules,
-              conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, weaponOverride: context.weapon, ranged: true, ...this.attackModifiers(foe, ally, context) }).expectedDamage);
+              conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, weaponOverride: context.weapon, ranged: true, fastPreview: true, ...this.attackModifiers(foe, ally, context) }).expectedDamage);
           }
         }
         value += protectedDamage;
@@ -1865,7 +1865,7 @@ export class SmallBattle {
     };
     let restValue = 0;
     if (unit.resourceModel && !this.actedThisTurn.has(unitId) && !this.movedThisTurn.has(unitId) && this.hasteSpent.get(unitId) !== this.round) {
-      const context = { ...this.observationContext(), units: knownUnits };
+      const context = { ...this.observationContext(), units: knownUnits, fastPreview: true };
       if (!this.reactionSpent.has(unitId)) restValue = tacticalRestValue(context, unit);
     }
     const reachable = this.reachableCells(unitId);
@@ -1876,7 +1876,7 @@ export class SmallBattle {
     for (const path of shortlist.filter(Boolean)) {
       const projected = arrivalAfterReactions(path), actor = projected.actor;
       if (actor.hp <= 0 || projected.survival < .5) continue;
-      const skillContext = { ...this.observationContext(), units: knownUnits.map(u => u.id === actor.id ? actor : u) };
+      const skillContext = { ...this.observationContext(), units: knownUnits.map(u => u.id === actor.id ? actor : u), fastPreview: true };
       // 协同单位在通路旁支援，不用自身占位堵住己方护送对象；敌方仍可拦截。
       if (escortCorridor.has(actor.pos!)) continue;
       const baseScore = (scored?.get(path) ?? positionScore(path)) - projected.loss * 1.5 - (1-projected.survival)*memberHealth(unit) - incoming(actor)*.3;
@@ -1937,7 +1937,7 @@ export class SmallBattle {
         const arrival = context.landing ? { ...actor, airborne: false } : actor;
         const mods = this.attackModifiers(arrival, target, context);
         if (path.cost > 0 && context.ranged && !this.movedThisTurn.has(unitId) && !steadyMovingShot(actor, context.weapon)) mods.extraMods.push({ source: 'stance', name: '移动射击', kind: 'atk', type: 'flat', value: -2 });
-        const preview = this.previewAttackWithEnvironment({ attacker: arrival, defender: target, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, weaponOverride: context.weapon, ranged: context.ranged, actionDamageScale: this.usingHaste(unitId) ? hasteAttackScale(unit) : 1, ...mods });
+        const preview = this.previewAttackWithEnvironment({ attacker: arrival, defender: target, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, weaponOverride: context.weapon, ranged: context.ranged, actionDamageScale: this.usingHaste(unitId) ? hasteAttackScale(unit) : 1, fastPreview: true, ...mods });
         // 预览已经包含整轮速射；再次乘段数会高估自动武器并压低技能的选择机会。
         const volleyDamage = Math.min(memberHealth(target), preview.expectedDamage);
         plans.push({ score: baseScore + volleyDamage + (preview.conditionValue ?? 0) + (volleyDamage >= memberHealth(target) ? 4 : 0), offensive: volleyDamage + (preview.conditionValue ?? 0) > 0, path, targetId: target.id, weaponMode, kind: 'weapon' });
@@ -1954,13 +1954,13 @@ export class SmallBattle {
           const controlPreviews = new Map<string, ReturnType<SmallBattle['previewAttackWithEnvironment']>>();
           const controlChance = (affected: Combatant, needsDamage: boolean) => {
             if (!damageForControl) return 1;
-            if (!controlPreviews.has(affected.id)) controlPreviews.set(affected.id, this.previewAttackWithEnvironment({ attacker: actor, defender: affected, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(actor, affected, ability, damageForControl, path.cost > 0) }));
+            if (!controlPreviews.has(affected.id)) controlPreviews.set(affected.id, this.previewAttackWithEnvironment({ attacker: actor, defender: affected, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, fastPreview: true, ...this.skillAttackOptions(actor, affected, ability, damageForControl, path.cost > 0) }));
             const preview = controlPreviews.get(affected.id)!;
             return needsDamage ? preview.damageChance ?? (preview.expectedDamage > 0 ? preview.hitChance : 0) : preview.anyHitChance ?? preview.hitChance;
           };
           for (const effect of ability.effects) {
             if (effect.op === 'damage') for (const affected of this.abilityDamageTargets(actor, target, ability, effect.shape === 'burst')) {
-              const preview = this.previewAttackWithEnvironment({ attacker: actor, defender: affected, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(actor, affected, ability, effect, path.cost > 0) });
+              const preview = this.previewAttackWithEnvironment({ attacker: actor, defender: affected, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, fastPreview: true, ...this.skillAttackOptions(actor, affected, ability, effect, path.cost > 0) });
               benefit += preview.expectedDamage + (preview.conditionValue ?? 0);
               if (affected.side !== actor.side) expectedDamage += preview.expectedDamage;
             }
@@ -1986,7 +1986,7 @@ export class SmallBattle {
       if(projected.actor.hp<=0||projected.survival<.5)continue;
       const arrival = { ...projected.actor, pos: path.cells.at(-1)!, ...(context.landing ? { airborne: false } : {}) };
       if (escortCorridor.has(arrival.pos)) continue;
-      const preview = this.previewAttackWithEnvironment({ attacker: arrival, defender: target, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry,
+      const preview = this.previewAttackWithEnvironment({ attacker: arrival, defender: target, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, fastPreview: true,
         weaponOverride: context.weapon, ranged: false, charge: true, actionDamageScale: this.usingHaste(unitId) ? hasteAttackScale(unit) : 1, ...this.attackModifiers(arrival, target, context, { charge: true }) });
       plans.push({ score: positionScore(path) - projected.loss*1.5 - (1-projected.survival)*memberHealth(unit) - incoming(arrival)*.3 + Math.min(memberHealth(target), preview.expectedDamage) + (preview.expectedDamage >= memberHealth(target) ? 4 : 0), offensive: preview.expectedDamage > 0, path, targetId: target.id, kind: 'charge' });
     }
@@ -2101,7 +2101,7 @@ export class SmallBattle {
 
     // —— 估值辅助 ——
     const hitChanceOf = (f: Combatant): number => {
-      if (this.rules.resolutionVersion === 'v2') return this.weaponPreview(u, f, this.weaponContext(u, f)).hitChance ?? 0;
+      if (this.rules.resolutionVersion === 'v2') return this.weaponPreview(u, f, this.weaponContext(u, f), true).hitChance ?? 0;
       const netAtk = u.base.atk + counterMod(this.rules, u.archetype, f.archetype);
       if (this.rules.hitMode === 'tw') {
         const diff = netAtk - (f.base.def - this.rules.tw.defOffset);

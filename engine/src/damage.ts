@@ -90,6 +90,8 @@ export interface AttackResolution {
 export interface AttackOpts {
   /** 行动本身的伤害预算，不改变参战人数、段数或抽样次数。 */
   actionDamageScale?: number;
+  /** 战术 AI 评分使用快速解析预览，避免为每个候选动作重复做 96 次成员伤损抽样。 */
+  fastPreview?: boolean;
   packetShare?: number;
   fieldTags?: string[];
   attackerTerrain?: string;
@@ -277,14 +279,14 @@ const SAMPLED_PREVIEW_COUNT = 96;
 const sampledMemberPreviewCache = new Map<string, SampledMemberPreview>();
 const SAMPLE_CACHE_ENTRIES = 128, SAMPLE_CACHE_CHARS = 2 * 1024 * 1024;
 let sampledPreviewChars = 0;
-function sampledPreviewKey(opts: Omit<AttackOpts, 'rng'>): string {
+function sampledPreviewKey(opts: Omit<AttackOpts, 'rng'>, sampleCount: number): string {
   // Damage receives terrain, distance, participants and external modifiers explicitly.
   // Coordinates only affect directional brace. Do not merge positions when either
   // combatant has a pose; HP, barrier power/duration, equipment, traits, fatigue,
   // rules and mutable registry *contents* remain in the key (not just object IDs).
   const positional = !!(opts.attacker.tacticalPose || opts.defender.tacticalPose);
   const unit = (u: Combatant) => positional ? u : { ...u, pos: undefined, formationPosition: undefined };
-  return JSON.stringify({ ...opts, attacker: unit(opts.attacker), defender: unit(opts.defender),
+  return JSON.stringify({ sampleCount, ...opts, attacker: unit(opts.attacker), defender: unit(opts.defender),
     conditionDefs: [...opts.conditionDefs], traitRegistry: opts.traitRegistry ? [...opts.traitRegistry] : undefined });
 }
 function rememberSampledPreview(key: string, value: SampledMemberPreview): void {
@@ -307,13 +309,14 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   const rawMultiplier=memberAreaBudget(opts)*modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level,opts.rules)*instanceMultiplier(opts.attacker.bonuses,'damage',opts.attacker.genAudit?.variance,opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
   const maxBase=diceDistribution(source?.baseDice,opts.rules.critRule==='doubleDice'?2:1),maxAp=diceDistribution(source?.apDice,opts.rules.critRule==='doubleDice'?2:1);
   const upper=maxBase&&maxAp ? Math.ceil((Math.max(...maxBase.keys())+Math.max(...maxAp.keys()))*rawMultiplier*Math.ceil(weight))*count : Infinity;
+  const sampleCount = opts.fastPreview ? 8 : SAMPLED_PREVIEW_COUNT;
   // 连续攻击共用剩余屏障。固定种子的小样本估计只操作副本，不消耗实战随机数。
   if (count > 1 && (hasMemberHealth(opts.defender) || opts.defender.barrier || upper>memberHealth(opts.defender)) || !maxBase || !maxAp) {
-    const key = sampledPreviewKey(opts);
+    const key = sampledPreviewKey(opts, sampleCount);
     let stats = sampledMemberPreviewCache.get(key);
     if (!stats) {
       stats = { sum: 0, squares: 0, positive: 0, casualties: 0, maximum: 0, hits: 0 };
-      for (let i = 0; i < SAMPLED_PREVIEW_COUNT; i++) {
+      for (let i = 0; i < sampleCount; i++) {
         const defender = structuredClone(opts.defender), attacker = structuredClone(opts.attacker);
         const rng = new SeededRng('barrier-preview:' + i), before = memberHealth(defender), members = defender.hp;
         let hitAny = false;
@@ -327,10 +330,10 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
       }
       rememberSampledPreview(key, stats);
     }
-    const mean = stats.sum / SAMPLED_PREVIEW_COUNT;
+    const mean = stats.sum / sampleCount;
     return {...diagnostics,damageModel:'member-health' as const,...(opts.rules.overmatch?{weaponOverflow:hasMemberHealth(opts.defender)&&attackOverflow(opts)}:{}),hitChance:hit,anyHitChance:1-(1-hit)**count,expectedDamage:mean,damageOnHit:stats.hits?stats.sum/stats.hits:0,
-      expectedCasualties:hasMemberHealth(opts.defender)?stats.casualties/SAMPLED_PREVIEW_COUNT:undefined,damageChance:stats.positive/SAMPLED_PREVIEW_COUNT,penetrationFactor:factor,exact:false,
-      variance:Math.max(0,stats.squares/SAMPLED_PREVIEW_COUNT-mean*mean),minDamage:0,maxDamage:stats.maximum};
+      expectedCasualties:hasMemberHealth(opts.defender)?stats.casualties/sampleCount:undefined,damageChance:stats.positive/sampleCount,penetrationFactor:factor,exact:false,
+      variance:Math.max(0,stats.squares/sampleCount-mean*mean),minDamage:0,maxDamage:stats.maximum};
   }
   const moments=(times:number)=>{
     const key=JSON.stringify([source?.baseDice,source?.apDice,rawMultiplier,times,weight,opts.defender.hp,opts.defender.barrier,opts.defender.formation,ctx.weapon?.splashTargets,ctx.weapon?.splashFactor,opts.abilityDamage?.weaponBased,!!opts.abilityDamage,attackOverflow(opts),opts.rules.overmatch?penetrationContext(opts):undefined]);
