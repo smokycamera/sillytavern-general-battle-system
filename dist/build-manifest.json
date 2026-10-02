@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "1.6.1-rc.3",
-  "builtAt": "2026-10-01T14:22:23.360Z",
-  "sourceFingerprint": "85d1a24f4ce5e320a4f93d29d86b878fe5bf87b2d89ff183f7571cf0ad67c31e",
+  "builtAt": "2026-10-02T04:21:20.730Z",
+  "sourceFingerprint": "24a9f02e7c07c88704d00376b8eedb886860fc653eae7fe3794f58f9e5e78d99",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -17,13 +17,13 @@
     },
     {
       "path": "README.md",
-      "bytes": 4946,
-      "sha256": "f71697ee6b0e60d03e809ca9c8d59ec28a7e675429401a6a48a9147301c73ab5"
+      "bytes": 5229,
+      "sha256": "2a834648939fb4d42c04eaaaadfaf7cfb64f100531ef633466cd2fb197667f13"
     },
     {
       "path": "README.zh-CN.md",
-      "bytes": 4522,
-      "sha256": "3130be45ad605546d3db06938901d4ddbade62ca6ed29041b3da6b2ceb73ac8f"
+      "bytes": 4775,
+      "sha256": "59a8c0614ccd723b307889f8b0a3473742e9c3130a3e8f09a6d17fe9cf5f0316"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -31,9 +31,9 @@
       "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     },
     {
-      "path": "dist/assets/panel-BqIszQfr.js",
-      "bytes": 470108,
-      "sha256": "07614a00fa9d7c7fed7c62674ffa39e37db32b21fc0c69ed28658fe62dc3fe26"
+      "path": "dist/assets/panel-BWmBLSWi.js",
+      "bytes": 475119,
+      "sha256": "af445dfb13bda16685fd41ac539816bbf214c96275df55b1f3e29798266882f2"
     },
     {
       "path": "dist/assets/panel-XcL6GjWl.css",
@@ -41,9 +41,9 @@
       "sha256": "e55c8c9d8d405424e9ddedf674f3dcab34e279580920422c209e18419a1b9b7d"
     },
     {
-      "path": "dist/assets/preferences-Bk1DooJC.js",
-      "bytes": 682491,
-      "sha256": "a708c8109c784f39930b570419611f6e1f7c481dd110c7c5de1a858b94cc9169"
+      "path": "dist/assets/preferences-q3ZPapkj.js",
+      "bytes": 690153,
+      "sha256": "ec9c920d820d3271bf176a30f11e69cd1403bfde63801777f9233b682c56581d"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -137,8 +137,8 @@
     },
     {
       "path": "docs/jev-integration.md",
-      "bytes": 4979,
-      "sha256": "8c7b999df9dc6d8e71c3ad76afd9ecf36553d0117a99a6ed3a26ea4f16c960fd"
+      "bytes": 5221,
+      "sha256": "88bc1b9d305ab4d6b442a118f0adf9acafd67d2e8413ec5c987e76618b4b612c"
     },
     {
       "path": "docs/jev-retry-validation.md",
@@ -243,7 +243,7 @@
     {
       "path": "dist/index.js",
       "bytes": 84708,
-      "sha256": "643a92c33f39779359da242c0ddc9ff7a0cf84cfb3a166d9b9cb3fe332648391"
+      "sha256": "71ba0fd2b3e5a62678959959302e4086d567eac968b039ea271ae7752de9dc45"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -308,7 +308,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 46216,
-      "sha256": "2abba6b6b104f7e95f7850e9667d9a52faa2e234f57060f38020d45dd556a26c"
+      "sha256": "89c9a4ef9e3bb5b212b96c232f355a4247a530d0b455e4b6e858aedbc00c44d4"
     },
     {
       "path": "release/current-baseline.json",
