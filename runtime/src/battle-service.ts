@@ -2,7 +2,7 @@ import { randomId } from '../../host/src/browser-compat.js';
 import type { PersistReceipt, HostSession, MessageTag } from '../../host/src/contracts.js';
 import { sameSession } from '../../host/src/contracts.js';
 import { NativeHost } from '../../host/src/sillytavern.js';
-import { NativeStore } from './native-store.js';
+import { errorText, NativeStore, type DiscardResult } from './native-store.js';
 import { assertInventoryPanelWrite, deleteUnitArchive, prepareInventoryTransaction, type InventoryAction, type InventoryIntent } from '../../panel/src/inventory-state.js';
 import { assertTraitSourcePanelWrite, prepareBlessingRevocation } from '../../panel/src/trait-state.js';
 import { prepareBattleItemWrite } from '../../panel/src/battle-items.js';
@@ -52,9 +52,9 @@ export class BattleService {
     if (this.host.hasLegacyRuntime()) return '旧战阵脚本仍在运行，请停用旧脚本后重新打开';
     if (!this.host.session()) return '当前聊天尚未载入，请先打开角色聊天';
     if (this.phase === 'loading') return '正在读取当前聊天档案';
-    if (this.phase === 'error') return this.error ?? '档案读取失败，请重新读取档案';
-    if (!sameSession(this.store.session(), this.host.session())) return '聊天信息已刷新，请重新读取档案或重新扫描';
-    if (this.phase === 'pending' || this.store.hasPending()) return '上一笔保存尚待核实，请先核实并重试保存';
+    if (this.phase === 'error') return this.error ?? '存档读取失败，请点“重新读取存档”';
+    if (!sameSession(this.store.session(), this.host.session())) return '聊天已刷新，请点“重新读取存档”或重新扫描';
+    if (this.phase === 'pending' || this.store.hasPending()) return '上一次保存还没确认成功，请先处理上方提示';
     if (this.phase === 'import') return '发现旧战阵存档，请先选择采用旧档或从空档开始';
     if (this.phase === 'handoff') return '档案已交回旧脚本，请先在存档管理中迁回原生版';
     return undefined;
@@ -102,7 +102,7 @@ export class BattleService {
       this.project(); this.notify();
     } catch (error) {
       if (this.disposed || epoch !== this.loadEpoch) return;
-      this.phase = 'error'; this.error = String(error); this.notify();
+      this.phase = 'error'; this.error = errorText(error); this.notify();
     }
   }
   async start(): Promise<void> {
@@ -178,6 +178,8 @@ export class BattleService {
       this.notify();
     }
     if (receipt.code === 'source-changed' && sameSession(session, this.host.session()) && this.canWrite()) {
+      // An undone first archive leaves none; reload so the initializer offers the import choice again.
+      if (!this.store.head() && this.initialize) { await this.load(); return receipt; }
       this.binding = undefined;
       await this.scan();
       // Return the new scan's receipt (and its own operation ID), so the panel
@@ -186,7 +188,7 @@ export class BattleService {
     }
     return receipt;
   }
-  async discardPending(): Promise<void> { await this.store.discardPending(); await this.load(); }
+  async discardPending(): Promise<DiscardResult> { const result = await this.store.discardPending(); await this.load(); return result; }
   persistPanel(next: NarrativeSave, expectedRevision: number): Promise<PersistReceipt> {
     const candidate = structuredClone(next);
     return this.transact(before => {
@@ -345,7 +347,7 @@ export class BattleService {
       if (receipt.code === 'source-changed' && !refreshed) await run(true);
     };
     const next = this.scanQueue.then(() => run(), () => run()).catch(error => {
-      if (!this.disposed && sameSession(session, this.store.session())) { this.error = String(error); this.notify(); }
+      if (!this.disposed && sameSession(session, this.store.session())) { this.error = errorText(error); this.notify(); }
       if (options.manual) throw error;
     });
     this.scanQueue = next; return next;

@@ -79,7 +79,7 @@ try {
   });
   check('复现旧候选部分落盘而消息标签缺失',partial.phase==='pending'&&disk.get('a').metadata.tavernBattle.lastOperationId===partial.candidate.lastOperationId&&!disk.get('a').chat[0].extra?.tavernBattleSourceId);
   await page.reload();await page.waitForFunction(()=>window.__tavernBattleNative?.service.status().phase==='pending');
-  await page.locator('#tavern-battle-native-entry').click();await page.getByRole('button',{name:'核实并重试保存',exact:true}).click();await ready();
+  await page.locator('#tavern-battle-native-entry').click();await page.getByRole('button',{name:'重试保存',exact:true}).click();await ready();
   check('旧 pending 刷新后以原操作身份完整保存并解锁',await page.evaluate(id=>!__tavernBattleNative.service.store.hasPending()&&__tavernBattleNative.service.store.envelope().lastOperationId===id,partial.candidate.lastOperationId));
   check('来源消息标签经过服务端独立读回确认',typeof disk.get('a').chat[0].extra?.tavernBattleSourceId==='string');
   await frame.locator('[data-action="workspace-tab"][data-tab="units"]').first().click();await idle(frame);
@@ -171,7 +171,7 @@ try {
   const pending=await page.evaluate(async()=>{window.__failure=true;const receipt=await __tavernBattleNative.service.setPromptSettings({sections:{facts:{template:'待确认事实 {{content}}'}}});return {receipt,candidate:__tavernBattleNative.service.store.pendingOperation().candidate};});
   check('保存接口吞错时保持原事实并进入待核实',pending.receipt.status==='pending'&&JSON.stringify(await state())===JSON.stringify(before));
   await page.reload();await page.waitForFunction(()=>window.__tavernBattleNative?.service.status().phase==='pending');
-  await page.locator('#tavern-battle-native-entry').click();await page.getByRole('button',{name:'核实并重试保存',exact:true}).click();await ready();
+  await page.locator('#tavern-battle-native-entry').click();await page.getByRole('button',{name:'重试保存',exact:true}).click();await ready();
   check('刷新后恢复同一候选，不重算业务',await page.evaluate(id=>__tavernBattleNative.service.store.envelope().lastOperationId===id,pending.candidate.lastOperationId));
   const delivered=await page.evaluate(async()=>{const a=document.getElementById('send_textarea').value,b=document.getElementById('pending-file').value;const runtime=__tavernBattleNative;const first=await runtime.messages.send('战报 | /send {{literal}}',{deliveryId:'smoke-delivery',generate:false});await runtime.messages.send('战报 | /send {{literal}}',{deliveryId:'smoke-delivery',generate:false});return {first,count:context.chat.filter(x=>x.extra?.tavernBattleDeliveryId==='smoke-delivery').length,draft:a===document.getElementById('send_textarea').value,attachment:b===document.getElementById('pending-file').value,generations:__generations}});
   check('战报去重且不消费草稿附件',delivered.first.status==='inserted'&&delivered.count===1&&delivered.draft&&delivered.attachment&&delivered.generations===0);
@@ -231,11 +231,32 @@ try {
   check('复现rc.4来源已变化但候选未落盘的恢复记录',oldSourcePending);
   await page.reload();await ready();await page.evaluate(()=>switchChat('source-race'));await page.waitForFunction(()=>window.__tavernBattleNative?.service.status().phase==='pending');
   await page.locator('#tavern-battle-native-entry').click();
-  await page.getByRole('button',{name:'核实并重试保存',exact:true}).click();await ready();
+  await page.getByRole('button',{name:'重试保存',exact:true}).click();await ready();
   await page.waitForFunction(()=>__tavernBattleNative.service.snapshot().proposals?.some(p=>p.source.text.includes('重试后的最新回复')));
   await page.evaluate(()=>__tavernBattleNative.service.scan());
   await page.waitForFunction(()=>{const s=__tavernBattleNative.service;return context.chatId==='source-race'&&s.status().phase==='ready'&&!s.store.hasPending()&&s.snapshot().proposals?.length===2;});
   check('旧来源冲突只需点击重试即可解锁并重扫，重复扫描不重复候选',await page.evaluate(()=>{const s=__tavernBattleNative.service;return !s.store.hasPending()&&s.snapshot().proposals.length===2&&!s.snapshot().storage?.length}));
+  // Reported deadlock: the archive reached disk without its message tag, then the reply was regenerated.
+  await page.evaluate(()=>switchChat('half-saved'));await ready();
+  const halfSaved=await page.evaluate(async()=>{
+    const service=__tavernBattleNative.service,full=context.saveChat;
+    context.chat.push({is_user:false,mes:'<tb><spawn name="半存档回复" side="ally" scale="hero"/></tb>',swipe_id:0,gen_finished:'complete'});await full();
+    context.saveChat=()=>persistFixture(false);
+    try { await service.scan(); } finally { context.saveChat=full; }
+    const candidate=service.store.pendingOperation()?.candidate.lastOperationId;
+    context.chat[0].mes='<tb><spawn name="重新生成的回复" side="ally" scale="hero"/></tb>';context.chat[0].swipe_id=1;await full();
+    return candidate;
+  });
+  check('复现存档已写入、消息标记未保存且回复已重新生成',!!halfSaved&&disk.get('half-saved').metadata.tavernBattle.lastOperationId===halfSaved);
+  await page.reload();await ready();await page.evaluate(()=>switchChat('half-saved'));await page.waitForFunction(()=>window.__tavernBattleNative?.service.status().phase==='pending');
+  await page.locator('#tavern-battle-native-entry').click();
+  check('待处理提示用白话说明并提供撤销',await page.evaluate(()=>{const text=document.querySelector('.tb-status').textContent;return text.includes('还没有确认保存成功')&&!/Error|落盘|核实/.test(text);})&&await page.getByRole('button',{name:'撤销这次改动',exact:true}).count()===1);
+  await page.getByRole('button',{name:'撤销这次改动',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.tb-status').textContent.includes('已撤销这次改动'));
+  check('撤销这次改动写回上一版存档并解锁，不再报部分落盘',await page.evaluate(id=>{const s=__tavernBattleNative.service;return s.status().phase==='ready'&&!s.store.hasPending()&&s.canWrite()&&s.store.envelope().lastOperationId!==id&&!s.snapshot().proposals?.length;},halfSaved)&&disk.get('half-saved').metadata.tavernBattle.lastOperationId!==halfSaved);
+  await page.evaluate(()=>__tavernBattleNative.service.scan());
+  await page.waitForFunction(()=>__tavernBattleNative.service.snapshot().proposals?.some(p=>p.source.text.includes('重新生成的回复')));
+  check('撤销后重扫只得到新回复的人工候选',await page.evaluate(()=>{const s=__tavernBattleNative.service;return !s.store.hasPending()&&s.snapshot().proposals.length===1&&!s.snapshot().storage?.length;}));
   await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(artifacts,'mobile.png')});
   check('390px窗口不横向溢出',await page.evaluate(()=>document.getElementById('tavern-battle-native-panel').getBoundingClientRect().width<=390));
   await page.evaluate(()=>__tavernBattleNative.close());

@@ -24,6 +24,24 @@ describe('原生保存：独立读回与恢复记录', () => {
     f.disk.set('a', structuredClone(f.metadata()));
     const result = await f.store.discardPending(); expect(result.discarded).toBe(false); expect(result.receipt?.status).toBe('confirmed'); expect(f.store.snapshot().factRevision).toBe(2);
   });
+  it('首次建档只写入一半（消息标记未保存）时，撤销会删掉半份存档，回到无档状态', async () => {
+    const f = fixture(); await f.store.load();
+    Object.assign(f.host, { saveChat: () => f.host.saveMetadata(), applyMessageTags: async () => {}, verifyMessageTags: async () => false });
+    const receipt = await f.store.commit(0, () => ({ factRevision: 1 }), { messageTags: [{ index: 0, id: 'tb-source:one', fingerprint: '[]' }] });
+    expect(receipt).toMatchObject({ status: 'pending', error: '存档已写入，但对应聊天消息的标记还没保存成功' });
+    expect(f.disk.get('a')?.tavernBattle).toBeDefined();
+    expect(await f.store.discardPending()).toEqual({ discarded: true });
+    expect(f.disk.get('a')?.tavernBattle).toBeUndefined(); expect(f.disk.get('a')?.otherExtension).toEqual({ keep: true });
+    expect(f.store.envelope()).toBeUndefined(); expect(f.store.hasPending()).toBe(false); expect(await f.journal.get('a')).toBeUndefined();
+    await f.store.load(); expect(f.store.hasPending()).toBe(false); expect(f.store.envelope()).toBeUndefined();
+  });
+  it('交回旧脚本的保存不能撤销，只能重试完成；报错不带 Error 前缀', async () => {
+    const f = fixture(); await f.store.load(); await f.store.commit(0, () => ({ factRevision: 1 }));
+    const receipt = await f.store.commit(1, before => before, { legacyHandoff: { panel: {}, mirrorKey: 'k', mirrorValue: 'v' } });
+    expect(receipt).toMatchObject({ status: 'pending', error: '当前酒馆不支持把存档交回旧版战阵脚本' });
+    await expect(f.store.discardPending()).rejects.toThrow('这一步不能撤销');
+    expect(f.store.hasPending()).toBe(true);
+  });
   it('完成读回才发布新状态，并保留其他扩展元数据', async () => {
     const f = fixture(); await f.store.load();
     const result = await f.store.commit(0, () => ({ factRevision: 1 }), { operationId: 'one' });

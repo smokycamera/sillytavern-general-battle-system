@@ -32,7 +32,7 @@ it('loads native archives, saves on HTTP and still rejects corrupted persisted d
   expect(envelope.payloadHash).toBe(createHash('sha256').update(serialized(envelope.payload)).digest('hex'));
   vi.stubGlobal('crypto', webcrypto); await f.store.load(); expect(f.store.snapshot().factRevision).toBe(4);
   (f.disk.get('a')!.tavernBattle as typeof envelope).payload = { factRevision: 999 };
-  httpCrypto(); await expect(f.store.load()).rejects.toThrow('存档校验失败');
+  httpCrypto(); await expect(f.store.load()).rejects.toThrow('没有通过完整性检查');
 });
 
 it('cancels without modern AbortSignal methods and cleans listeners/timers on success and timeout', async () => {

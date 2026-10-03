@@ -934,7 +934,7 @@ function render(scope: RenderScope = 'all', tacticalQuery?: TacticalQuery): void
   if (nav.innerHTML !== navHtml) nav.innerHTML = navHtml;
   const blocked = runtime.writeBlockReason?.();
   const saveMessage = blocked ? esc(blocked) : state.saveReceipt?.status === 'failed' ? '未保存：' + esc(state.saveReceipt.error ?? '存储不可用') : state.saveReceipt?.status === 'local-only' ? '已保存本地 · 酒馆待确认' : state.saveReceipt ? '已保存' : '准备就绪';
-  const statusHtml = `<span data-role="save-status" class="${blocked || state.saveReceipt?.status === 'failed' ? 'save-failed' : ''}">${saveMessage}</span>${state.saveReceipt?.status === 'failed' ? '<button data-action="save-retry">重试保存</button>' : ''}${blocked && runtime.reloadArchive ? '<button data-action="archive-reload">重新读取档案</button>' : ''}<button data-action="theme-toggle" aria-label="切换深浅主题">明暗</button>`;
+  const statusHtml = `<span data-role="save-status" class="${blocked || state.saveReceipt?.status === 'failed' ? 'save-failed' : ''}">${saveMessage}</span>${state.saveReceipt?.status === 'failed' ? '<button data-action="save-retry">重试保存</button>' : ''}${blocked && runtime.reloadArchive ? '<button data-action="archive-reload">重新读取存档</button>' : ''}<button data-action="theme-toggle" aria-label="切换深浅主题">明暗</button>`;
   const status = app.querySelector('.app-state')!; if(status.innerHTML !== statusHtml)status.innerHTML=statusHtml;
   const latest = state.proposals.at(-1), failure = latest && ['rejected','stale','unresolved'].includes(latest.status) ? latest.reason : undefined;
   const notices = app.querySelector<HTMLElement>('#workspace-notices')!;
@@ -1035,7 +1035,7 @@ function renderEmbeddedWorldbookSettings(): string {
 function renderWorkspaceSettings(): string {
   const saved = controller.snapshot(), view = llmSettingsView();
   return `${mcpBridge?.render() ?? ''}${renderLlmSettings(view.settings, view.error ?? llmDiagnostic)}${renderEmbeddedWorldbookSettings()}${promptScopeControls(saved.promptSettings, narrativeProjectionDetails(saved, adapter.recentPromptText?.() ?? ''), (saved.storage ?? []).filter(visibleUnitRecord))}${renderPromptSettings(saved.promptSettings, promptDrafts)}<section><h2>显示与操作</h2><p>战场形式由参战队伍确定，环境沿用剧情声明。</p><button data-action="theme-toggle">切换深浅主题</button></section>
-    <section><h2>保存与恢复</h2><p>${state.saveReceipt?.status === 'local-only' ? '目前仅确认本地副本，酒馆尚未确认保存。' : '单位档案和战报随当前聊天保存。保存失败时会在顶部显示。'}</p><button data-action="save-retry">核实并重试保存</button>${controller.migrationReview() ? '' : renderMigrationReview()}</section>
+    <section><h2>保存与恢复</h2><p>${state.saveReceipt?.status === 'local-only' ? '目前仅确认本地副本，酒馆尚未确认保存。' : '单位档案和战报随当前聊天保存。保存失败时会在顶部显示。'}</p><button data-action="save-retry">重试保存</button>${controller.migrationReview() ? '' : renderMigrationReview()}</section>
     <details class="workspace-diagnostics"><summary>版本与运行信息</summary><p>战斗结果由本设备计算。伤害、命中和状态的详细过程可在战报中查看。</p><p>${controller.capabilities.injection ? '已支持在续写剧情时参考当前战斗进度。' : '当前酒馆暂不支持自动提供剧情参考。'}</p></details>`;
 }
 function renderMigrationReview(): string {

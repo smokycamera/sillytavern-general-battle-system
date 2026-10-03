@@ -1,6 +1,6 @@
 import { createNativeHost, type HostWindow } from '../../host/src/sillytavern.js';
 import { NativeMessages } from '../../host/src/messages.js';
-import { NativeStore } from '../../runtime/src/native-store.js';
+import { errorText, NativeStore } from '../../runtime/src/native-store.js';
 import { IndexedDbJournal } from '../../runtime/src/recovery-journal.js';
 import { LegacyImporter, IndexedDbSourceBackups, type ImportPreview } from '../../runtime/src/legacy-import.js';
 import { BattleService } from '../../runtime/src/battle-service.js';
@@ -105,7 +105,7 @@ async function startRuntime() {
       const file = input.files?.[0]; if (!file) return;
       input.disabled = true;
       try { showChange(await management.previewFile(await file.text())); }
-      catch (error) { panel.showStatus(String(error), [{ label: '返回存档管理', run: showManagement }], true); }
+      catch (error) { panel.showStatus(errorText(error), [{ label: '返回存档管理', run: showManagement }], true); }
       finally { input.disabled = false; }
     }, { once: true });
     panel.showStatus('选择 JSON 存档文件，读取后先预览变更，再确认导入。', [{ label: '返回存档管理', run: showManagement }], true);
@@ -123,6 +123,23 @@ async function startRuntime() {
     ], true);
   }
   panel.setManagementHandler(showManagement);
+  function showPending(reason?: string) {
+    const handoff = !!store.pendingOperation()?.legacyHandoff;
+    // A failed button keeps this explanation and only updates the reason line.
+    const act = (run: () => Promise<void>) => async () => { try { await run(); } catch (error) { showPending(errorText(error)); } };
+    panel.showStatus(['战阵最近一次改动（例如扫描 AI 回复、确认事件或战斗行动）还没有确认保存成功。为免弄乱存档，已暂停其他操作。', ...(reason ? ['原因：' + reason] : []),
+      handoff ? '· 重试保存：继续把存档交回旧版战阵脚本。' : '· 重试保存：再保存一次这次改动。',
+      ...(handoff ? [] : ['· 撤销这次改动：放弃这次改动，回到上一次保存成功的存档。']),
+      '· 导出存档备份：下载上一次保存成功的存档。'].join('\n'), [
+      { label: '重试保存', run: act(async () => { const receipt = await current.retry(); if (receipt.status === 'confirmed') await current.load(); }) },
+      ...(handoff ? [] : [{ label: '撤销这次改动', run: act(async () => {
+        const result = await current.discardPending();
+        if (['ready', 'review'].includes(current.status().phase)) panel.showStatus(result.discarded ? '已撤销这次改动，存档回到上一次保存成功的状态。' : '检查后发现这次改动其实已经保存成功，已保留。');
+      }) }]),
+      { label: '重新读取存档', run: act(reload) },
+      { label: '导出存档备份', run: exportCurrent },
+    ]);
+  }
   const adopt = async (choice: 'import' | 'empty') => {
     if (!preview) throw Error('迁移预览已失效，请重新读取');
     const receipt = await importer.adopt(preview, choice);
@@ -138,11 +155,9 @@ async function startRuntime() {
       panel.showStatus(`当前聊天发现旧战阵存档：${info?.units ?? 0} 个单位、${info?.inventory ?? 0} 项库存、${info?.reports ?? 0} 份战报${info?.battle ? '，含进行中的战斗' : ''}。采用前会保存原档备份。${details ? '\n需要核对的调整：' + details : ''}`, [
         { label: '导出原档备份', run: exportCurrent }, { label: '采用当前聊天旧档', run: () => adopt('import') }, { label: '从空档开始', run: () => adopt('empty') },
       ], true);
-    } else if (state.phase === 'pending') panel.showStatus('上一笔保存尚待核实，已保留待确认内容并暂停后续操作。' + (state.receipt?.error ? '\n原因：' + state.receipt.error : ''), [{ label: '核实并重试保存', run: async () => { const receipt = await current.retry(); if (receipt.status === 'confirmed') await current.load(); } },
-      ...(!store.pendingOperation()?.legacyHandoff ? [{ label: '放弃未落盘待确认内容', run: async () => { await current.discardPending(); } }] : []),
-      { label: '导出已确认档案', run: exportCurrent }]);
+    } else if (state.phase === 'pending') showPending(state.receipt?.error);
     else if (state.phase === 'handoff') panel.showStatus('最新进度已确认保存旧脚本的当前聊天存档和镜像，原生保存已停止。可以停用原生扩展后启用旧战阵脚本；再次使用原生版时先停用旧脚本，再预览迁回。', [{ label: '导出完整原生存档', run: exportCurrent }, { label: '预览迁回原生', run: async () => showChange(await management.previewResume()) }], true);
-    else if (state.phase === 'error') panel.showStatus(state.error ?? '档案暂不可用', [{ label: '重新读取', run: reload }, { label: '导出原始数据', run: exportCurrent }], true);
+    else if (state.phase === 'error') panel.showStatus(state.error ?? '存档暂时读不出来', [{ label: '重新读取存档', run: reload }, { label: '导出原始数据', run: exportCurrent }], true);
     else if (state.phase === 'ready' || state.phase === 'review') { panel.showStatus(''); panel.showPanel(); }
   });
   await current.start();
@@ -154,7 +169,7 @@ function start(): Promise<void> {
   starting = startRuntime().catch(error => {
     stopRuntime();
     if (windowHost.__tavernBattleNative?.dispose === dispose) delete windowHost.__tavernBattleNative;
-    if (!disposed) panel.showStatus(String(error), [{ label: '重新初始化', run: start }], true);
+    if (!disposed) panel.showStatus(errorText(error), [{ label: '重新初始化', run: start }], true);
   }).finally(() => { starting = undefined; });
   return starting;
 }

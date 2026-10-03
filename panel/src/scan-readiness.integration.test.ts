@@ -50,7 +50,7 @@ it('扫描按钮恢复失效会话，读取失败显示原因并可重试，全�
   const pending = f.store.pendingOperation();
   expect(pending).toBeDefined();
   await click('[data-action="narrative-scan"]');
-  expect(document.querySelector('#toast')?.textContent).toContain('上一笔保存尚待核实');
+  expect(document.querySelector('#toast')?.textContent).toContain('上一次保存还没确认成功');
   expect(f.store.pendingOperation()).toEqual(pending);
   expect(f.service.snapshot().field).toBe('forest');
   f.setSave(f.saveNormally);
