@@ -154,7 +154,8 @@ try {
   await page.evaluate(()=>{__tavernBattleNative.close();__tavernBattleNative.open()});
   check('关闭重开保留模型连接',await frame.locator('[data-role="llm-model"]').inputValue()==='smoke-model');
   await frame.locator('[data-action="workspace-tab"][data-tab="battle"]').first().click();
-  await frame.locator('[data-role="full-auto-battle"]').check();await idle(frame);
+  // The toolbar, command bar and mobile shortcuts each render a full-auto toggle; use the toolbar one.
+  await frame.locator('[data-role="full-auto-battle"]').first().check();await idle(frame);
   await page.waitForTimeout(850);await page.evaluate(()=>__tavernBattleNative.close());await page.waitForTimeout(500);
   const paused=await state();await page.waitForTimeout(800);check('收起面板后全自动暂停',JSON.stringify((await state()).battle)===JSON.stringify(paused.battle));
   await page.evaluate(()=>__tavernBattleNative.open());
