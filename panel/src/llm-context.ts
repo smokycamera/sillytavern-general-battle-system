@@ -14,6 +14,7 @@ import type { CommanderProfiles, CommanderProfile } from '../../engine/src/comma
 import type { NarrativeMessage, ContextSelectionAnswer, ContextSelectionRequest } from '../../vendor/jev-core/src/index.js';
 import type { NarrativeIdState } from './narrative-ids.js';
 import { narrativeIds } from './narrative-ids.js';
+import { stripThinking } from './protocol-syntax.js';
 import { sha256, withAbort } from '../../host/src/browser-compat.js';
 
 export interface LlmEncounterContext extends JevEncounterContext, PreparationDesignResult {
@@ -79,7 +80,7 @@ export class LlmContextController {
     const connection = llmConnection(settings);
     if (!connection.model) throw Error('请先拉取并选择模型，或填写模型 ID');
     // One layer = one completed user/assistant message, in the host's chronological order.
-    const messages = input.messages.map(m => ({ ...m, text: m.text.replace(/<(think|analysis|reasoning)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi, '').trim() }));
+    const messages = input.messages.map(m => ({ ...m, text: stripThinking(m.text).trim() }));
     // Never ask the model to choose an impossible >32-card grid, or spend tokens designing one.
     assertBattleCapacity(input.roster,'mass');
     const forcedMass = activeBattleUnits(input.roster).length > MAX_SMALL_UNITS;

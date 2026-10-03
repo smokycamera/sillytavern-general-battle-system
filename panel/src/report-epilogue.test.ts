@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {generateUnit,traitRegistry,SmallBattle,MassBattle,V3_D20,V3_TW,standardField,applyRecovery,applyHealthLoss,type Combatant} from '../../engine/src/index.js';
+import {generateUnit,traitRegistry,SmallBattle,MassBattle,V3_D20,V3_TW,V6_D20,V6_TW,standardField,applyRecovery,applyHealthLoss,type Combatant} from '../../engine/src/index.js';
 import {captureBattleStart,captureBattleArchive} from './report-history.js';
 import {unitRecordFromCombatant,materializeUnitRecord,commitBattleState,updateUnitRecord} from './unit-state.js';
 import {battleEpilogue,makeNarrativeBatch,battleIdOf,publicBattleEvents,type BattleReport} from './battle-reports.js';
@@ -53,7 +53,7 @@ describe('终章事实与致命开关',()=>{
   const result=b.useAbility('A',b.byId('A').abilities[0]!.id,'D',{bypassTurn:true});expect(result.ok,result.reason).toBe(true);expect(result.resolutions.length).toBeGreaterThan(1);
   if(!b.isOver())b.finishBattle('ceasefire');
   const text=battleEpilogue(b,start);
-  expect(text).toContain('【开局单位状态与血量】');expect(text).toContain(`敌方 D：生命${records[1]!.hp}/${records[1]!.base.hpMax}，可行动`);
+  expect(text).toContain('【开局单位状态与血量】');expect(text).toContain(`敌方 D：血量${records[1]!.hp}/${records[1]!.base.hpMax}，可行动`);
   for(const target of ['D','E']){const loss=result.resolutions.filter(r=>r.defenderId===target).reduce((n,r)=>n+r.hpBefore-r.hpAfter,0);expect(loss).toBeGreaterThan(0);expect(text).toContain(`A → ${target}：累计造成${loss}生命损失`);}
   const report:BattleReport={id:battleIdOf(b),card:'',digest:'',summary:'',deliveries:{},epilogue:text,start};
   expect(makeNarrativeBatch(undefined,JSON.parse(JSON.stringify(report)),{},'epilogue').text).toBe(text);
@@ -75,5 +75,43 @@ describe('终章事实与致命开关',()=>{
    expect(publicBattleEvents(b).filter(e=>e.entry.kind==='battle-end').at(-1)!.entry.text).toBe(recorded);
    expect(battleEpilogue(b)).toContain(recorded);expect(makeNarrativeBatch(b,undefined,{},'delta').text).toContain(recorded);
   }
+ });
+});
+describe('终章伤害来源的减员人数',()=>{
+ function member(id:string,scale:'hero'|'company',body:'human'|'vehicle'='human') {
+  const u=generateUnit({rulesVersion:'v2',damageModel:'wounds-v2',name:id,side:id==='A'?'ally':'enemy',scale,body,level:5,weaponClass:'rifle',weaponLevel:5,armorTier:0,traits:[],...(scale==='company'?{hpMax:30}:{})},{seed:id,registry,noVariance:true}).unit;
+  u.id=id;u.morale=100;u.base.moraleMax=100;return u;
+ }
+ function fight(mode:'small'|'mass',units:Combatant[]) {
+  const opts={combatants:units,nonLethal:false,rng,seed:'members',traitRegistry:registry};
+  const b=mode==='small'?new SmallBattle({...opts,rules:V6_D20,battlefield:standardField()}):new MassBattle({...opts,rules:V6_TW});b.start();return b;
+ }
+ const line=(b:SmallBattle|MassBattle,head:string)=>battleEpilogue(b).split(/\r?\n/).find(l=>l.startsWith(head));
+ it('攻击的减员写在生命损失后，与状态行的剩余总人数一致',()=>{
+  const b=fight('small',[member('A','company'),member('D','company'),member('H','hero')]) as SmallBattle;
+  b.byId('A').pos=28;b.byId('D').pos=21;expect(b.attack('A','D',{bypassTurn:true}).hit).toBe(true);
+  const lost=30-b.byId('D').hp;expect(lost).toBeGreaterThan(0);
+  expect(line(b,'A → D')).toMatch(new RegExp('^A → D：累计造成\\d+生命损失，减员'+lost+'人$'));
+  expect(battleEpilogue(b)).toContain(`敌方 D：剩余总人数${b.byId('D').hp}/30`);
+ });
+ it.each(['small','mass'] as const)('%s持续伤害记录减员数；旧记录缺少时只写下限',mode=>{
+  const b=fight(mode,[member('A','company'),member('D','company'),member('H','hero')]),target=b.byId('D');
+  target.formation!.health=[{hp:1,count:target.formation!.members}];
+  target.conditions=[{id:'burning',dur:3,sourceId:'A'}];
+  if(b instanceof SmallBattle){b.turnOrder=['A','D','H'];b.turnIndex=0;b.endTurn();}
+  else {for(const id of ['A','D','H'])b.issue({unitId:id,type:'hold'});b.resolveRound();}
+  const dot=b.log.find(e=>e.damage?.targetId==='D')!.damage!,lost=30-target.hp;
+  expect(dot).toMatchObject({sourceId:'A',unit:'life',members:lost});expect(lost).toBeGreaterThan(0);
+  expect(line(b,'A → D')).toMatch(new RegExp('^A → D：累计造成\\d+生命损失（含灼伤），减员'+lost+'人$'));
+  delete dot.members;expect(line(b,'A → D')).toMatch(new RegExp('^A → D：累计造成\\d+生命损失（含灼伤），减员至少0人$'));
+ });
+ it('载具按辆计，英雄只写生命损失',()=>{
+  const b=fight('small',[member('A','company'),member('D','company','vehicle')]) as SmallBattle;
+  b.byId('A').pos=28;b.byId('D').pos=21;expect(b.attack('A','D',{bypassTurn:true}).hit).toBe(true);
+  expect(line(b,'A → D')).toMatch(new RegExp('^A → D：累计造成\\d+生命损失，减员'+(30-b.byId('D').hp)+'辆$'));
+  expect(battleEpilogue(b)).toContain(`敌方 D：剩余总数${b.byId('D').hp}/30辆`);
+  const h=fight('small',[member('A','company'),member('H','hero')]) as SmallBattle;
+  h.byId('A').pos=28;h.byId('H').pos=21;expect(h.attack('A','H',{bypassTurn:true}).hit).toBe(true);
+  expect(line(h,'A → H')).toMatch(/^A → H：累计造成\d+生命损失$/);expect(battleEpilogue(h)).toContain(`敌方 H：血量${h.byId('H').hp}/${h.byId('H').base.hpMax}`);
  });
 });

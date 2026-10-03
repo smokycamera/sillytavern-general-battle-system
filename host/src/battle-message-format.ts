@@ -1,5 +1,5 @@
 import { randomId } from './browser-compat.js';
-import { decodeEntities, scanProtocolTags } from '../../panel/src/protocol-syntax.js';
+import { blankThinking, decodeEntities, scanProtocolTags } from '../../panel/src/protocol-syntax.js';
 
 export const BATTLE_DETAILS_CLASS = 'tb-native-events';
 export interface BattleDisplayBlock { start: number; end: number; text: string; count: number }
@@ -8,13 +8,16 @@ const escaped = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt
 
 /** 只展示完整事件块。思考、注释、已有折叠和代码示例保持原显示方式。 */
 export function battleDisplayBlocks(text: string): BattleDisplayBlock[] {
-  const protectedRanges = [...text.matchAll(/<!--[\s\S]*?(?:-->|$(?![\s\S]))|<(think|thinking|analysis|reasoning|details|pre|code)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$(?![\s\S]))|^\s*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^\s*\2\s*$|$(?![\s\S]))|(`+)[^\n]*?\3/gim)]
+  // 思考区等长遮盖，块位置仍对应原文。
+  const source = blankThinking(text);
+  const protectedRanges = [...source.matchAll(/<!--[\s\S]*?(?:-->|$(?![\s\S]))|<(details|pre|code)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$(?![\s\S]))|^\s*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^\s*\2\s*$|$(?![\s\S]))|(`+)[^\n]*?\3/gim)]
     .map(match => [match.index!, match.index! + match[0].length] as const);
   let visible = '', cursor = 0;
-  for (const [start, end] of protectedRanges) { visible += text.slice(cursor, start) + ' '.repeat(end - start); cursor = end; }
-  visible += text.slice(cursor);
+  for (const [start, end] of protectedRanges) { visible += source.slice(cursor, start) + ' '.repeat(end - start); cursor = end; }
+  visible += source.slice(cursor);
   const blocks: BattleDisplayBlock[] = [];
-  const pattern = /<tb\s*>[\s\S]*?<\/tb\s*>|&lt;tb\s*&gt;[\s\S]*?&lt;\/tb\s*&gt;/gi;
+  // 正文里提到的“输出<tb>规格”后面不是事件，不能当作块起点吞掉整段正文。
+  const pattern = /<tb\s*>(?=\s*(?:<|&lt;))[\s\S]*?<\/tb\s*>|&lt;tb\s*&gt;(?=\s*(?:<|&lt;))[\s\S]*?&lt;\/tb\s*&gt;/gi;
   for (const match of visible.matchAll(pattern)) {
     const start = match.index!, end = start + match[0].length;
     const original = text.slice(start, end), body = original.startsWith('&') ? decodeEntities(original) : original;

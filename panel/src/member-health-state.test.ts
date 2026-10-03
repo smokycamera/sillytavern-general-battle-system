@@ -22,13 +22,14 @@ describe('成员生命的本地档案与重战',()=>{
   const repaired=materializeUnitRecord(after.storage![0]!,registry);expect(repaired.hp).toBe(12);expect(memberHealth(repaired)).toBeGreaterThan(1154);expect(memberHealth(repaired)).toBeLessThan(1200);expect(after.inventory![0]!.qty).toBe(1);
   expect(memberHealthPanel(repaired)).toContain('12/12辆');expect(memberHealthPanel(repaired)).toContain('生命');
  });
- it('非零伤损进入终章和AI事实；提交与原局重战保留开局受伤成员',()=>{
+ it('终章只列剩余车辆数，非零伤损进入AI事实；提交与原局重战保留开局受伤成员',()=>{
   const a=vehicle(),d=vehicle('敌军','enemy');applyCombatDamage(a,27,1);
   const records=[a,d].map(u=>unitRecordFromCombatant(u)),before=prepareInventoryState({storage:records,rosterIds:records.map(r=>r.id),inventory:[],factRevision:1});
   const b=new SmallBattle({combatants:[a,d],rules:V6_D20,battlefield:standardField(),seed:'health-replay',traitRegistry:registry});b.start();
   const start=captureBattleStart(b,captureBattleArchive(before));applyCombatDamage(a,19,1);b.finishBattle('ceasefire');
   const id=battleIdOf(b),result=commitBattleOutcome({battleId:id,committedIds:[],records,roster:[a,d],combatants:b.combatants,awards:[],registry});
-  const epilogue=battleEpilogue(b,start);expect(epilogue).toContain('73/100生命');expect(epilogue).toContain('54/100生命');
+  // 成员生命分组由单位资料提供；终章状态行只写剩余总数。
+  const epilogue=battleEpilogue(b,start);expect(epilogue).toContain('我方 车辆：剩余总数12/12辆，可行动');expect(epilogue).not.toMatch(/总生命|\/100生命/);
   const after={...before,storage:result.records,factRevision:2,committedOutcomeIds:result.committedIds,battle:{kind:'small' as const,snap:structuredClone(b.toSnapshot())},reports:[{id,card:'',digest:'',summary:'',epilogue,deliveries:{},start}]};
   stampNewBattleReports(before,after);const replay=prepareReportRestart(after,id,2,'health-retry');
   const restored=SmallBattle.fromSnapshot(replay.battle!.snap);expect(restored.byId(a.id).formation!.health![0]).toEqual({hp:73,count:1});

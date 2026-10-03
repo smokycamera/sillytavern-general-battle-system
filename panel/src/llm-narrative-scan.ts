@@ -3,12 +3,13 @@ import type { NarrativeMessage } from '../../vendor/jev-core/src/index.js';
 import { narrativeProjection } from './narrative-controller.js';
 import type { NarrativeSave } from './narrative-state.js';
 import { protocolExcerpt } from './protocol.js';
+import { stripThinking } from './protocol-syntax.js';
 import { llmConnection, type LlmSettings } from './llm-settings.js';
 import { openAiTextRequest } from './jev-connection.js';
 
 export function narrativeScanMessages(input: { save: NarrativeSave; messages: NarrativeMessage[]; requirements?: string; rules?: string[] }, settings: LlmSettings) {
   const narrative = input.messages.filter(m => m.completed && ['user', 'assistant'].includes(m.role)).slice(-settings.windowSize)
-    .map(m => ({ role: m.role, text: m.text.replace(/<(think|thinking|analysis|reasoning)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi, '').trim() })).filter(m => m.text);
+    .map(m => ({ role: m.role, text: stripThinking(m.text).trim() })).filter(m => m.text);
   if (!narrative.length) throw Error('当前扫描范围没有已完成的正文，请调整扫描范围');
   const rules = (input.rules?.length ? input.rules : [book.entries['0'].content, book.entries['1'].content, book.entries['5'].content, book.entries['8'].content]).map(rule => {
     if (rule.includes('<battle_contract>')) { const at = rule.indexOf('## 输出契约'); if (at >= 0) rule = rule.slice(at).replace('</battle_contract>', ''); }

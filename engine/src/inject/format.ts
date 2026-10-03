@@ -1,5 +1,4 @@
 import { smallBattleResult } from '../battle-result.js';
-import { spCapacity } from '../resources.js';
 import { NARRATIVE_TASK } from './narrative-task.js';
 import { standardConditionMap } from '../conditions.js';
 import { isAirborne } from '../aerial.js';
@@ -47,7 +46,13 @@ function hpLabel(u: Combatant): string {
   return core + stateLabel(u);
 }
 
-/** 士气、持续状态、可救伤兵与离场状态。brief 用于战况摘要：兵力、生命和装备由同时发送的单位提示词提供。 */
+/** 战报状态行的兵力：编队写剩余总人数（载具编队按辆），个体写血量。成员生命分组、装备和精力由单位提示词提供。 */
+export function reportStrengthLabel(u: Combatant): string {
+  if (u.scale === 'hero') return `血量${u.hp}/${u.base.hpMax}`;
+  return u.body === 'vehicle' ? `剩余总数${u.hp}/${u.base.hpMax}辆` : `剩余总人数${u.hp}/${u.base.hpMax}`;
+}
+
+/** 士气、持续状态、可救伤兵与离场状态。brief 用于战报状态行：只写可救伤兵数，兵力另由 reportStrengthLabel 给出。 */
 function stateLabel(u: Combatant, brief = false): string {
   const morale = u.morale !== undefined ? ` 士气${u.morale}` : '';
   const defs = standardConditionMap();
@@ -80,7 +85,7 @@ export function smallStateSummary(
     const label = side === 'ally' ? '我方' : '敌方';
     lines.push(
       `${label}：${units
-        .map((u) => `${pc === u.id ? '【主控】' : ''}${u.name}${smallPosition(b, u)}${stateLabel(u, true)}${unitReadiness(b, u)}`)
+        .map((u) => `${pc === u.id ? '【主控】' : ''}${u.name}${smallPosition(b, u)} ${reportStrengthLabel(u)}${stateLabel(u, true)}${unitReadiness(b, u)}`)
         .join('；')}`,
     );
   }
@@ -117,7 +122,7 @@ export function massStateSummary(
           const zone = node ? `${node.wing}${({ front: '前列', rear: '后列', reserve: '预备列' })[node.rank]}·` : b.zones ? `${b.zoneOf(u)}·` : '';
           const engage = u.engagedWith.length ? '⚔' : '';
           const marks = `${pc === u.id ? '【主控】' : ''}${side === 'ally' && b.commanderId === u.id ? '【指挥官】' : ''}`;
-          return `${zone}${marks}${u.name}${engage}${stateLabel(u, true)}${unitReadiness(b, u)}`;
+          return `${zone}${marks}${u.name}${engage} ${reportStrengthLabel(u)}${stateLabel(u, true)}${unitReadiness(b, u)}`;
         })
         .join('；')}`,
     );
@@ -143,7 +148,6 @@ function unitReadiness(b: SmallBattle | MassBattle, u: Combatant): string {
   if (u.status === 'dead' || u.status === 'fled') return '';
   const info = [isAirborne(u) ? '空中' : '', u.suppression ? '受压制' : '', u.tacticalPose ? '固守' : '', (b.reloadCd.get(u.id) ?? 0) > 0 ? '装填中' : ''];
   if (u.side === 'ally') {
-    info.push('SP' + (u.resources.SP ?? 0) + '/' + spCapacity(u));
     for (const ability of u.abilities.filter((a) => u.preparedAbilityIds?.includes(a.id))) {
       const cd = u.abilityState.find((s) => s.abilityId === (ability.cooldownGroup ?? ability.id))?.cdLeft ?? 0;
       info.push(ability.name + (cd > 0 ? '冷却' + cd : ''));

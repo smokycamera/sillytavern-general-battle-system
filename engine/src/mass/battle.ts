@@ -343,7 +343,7 @@ export class MassBattle {
       const outcome = this.landingOutcome(unit), source = this.combatants.find((u) => u.id === this.flightCauses.get(unit.id));
       unit.formationPosition ??= formationNode(unit).id; unit.airborne = false; delete unit.tacticalPose;
       if (outcome.landing) setFormation(unit, outcome.landing);
-      const hp=memberHealth(unit), damage = this.applyFlightLoss(unit, source);
+      const hp=memberHealth(unit), members=unit.hp, damage = this.applyFlightLoss(unit, source);
       if (!outcome.landing && unit.hp > 0) unit.status = 'fled';
       this.syncPassenger(unit); revealUnit(this.observationContext(), unit); fallen.push(unit);
       const hero = this.combatants.find((u) => u.id === this.attached.get(unit.id));
@@ -352,7 +352,7 @@ export class MassBattle {
         this.recordEvent({ round: this.round, kind: 'condition', participants: [hero.id], damage:{sourceId:source?.id,targetId:hero.id,amount:heroHp-hero.hp,cause:'坠落'}, text: `${hero.name} 随运输平台迫降，损失${loss}` });
       }
       const location = outcome.landing ? `${outcome.landing.side === 'ally' ? '我方' : '敌方'}${outcome.landing.wing}${{ front: '前线', rear: '支援', reserve: '预备' }[outcome.landing.rank]}` : '附近无落点，紧急迫降离场';
-      this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], damage:{sourceId:source?.id,targetId:unit.id,amount:hp-memberHealth(unit),cause:'坠落',...(hasMemberHealth(unit)?{unit:'life' as const}:{})}, text: `${unit.name} ${reason}，迫降：${location}，坠落损失${damage}${hasMemberHealth(unit)?'生命':''}` });
+      this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], damage:{sourceId:source?.id,targetId:unit.id,amount:hp-memberHealth(unit),cause:'坠落',...(hasMemberHealth(unit)?{unit:'life' as const,members:members-unit.hp}:{})}, text: `${unit.name} ${reason}，迫降：${location}，坠落损失${damage}${hasMemberHealth(unit)?'生命':''}` });
     }
 
   }
@@ -1262,8 +1262,8 @@ export class MassBattle {
           if (dot && u.status === 'ready') {
             const rolled = rollDice(dot.dice, this.rng).total;
             let damage = this.rules.combatModel ? roundDamage(conditionDamage(u,rolled,condition),this.rng) : condition.id === 'poisoned' ? poisonDamage(u, rolled * (condition.magnitude ?? 1)) : condition.magnitude !== undefined ? Math.max(0, Math.round(rolled * condition.magnitude / (u.scale === 'hero' ? 1 : 4))) : Math.max(0, Math.floor(rolled / (u.scale === 'hero' ? 1 : 10)));
-            const lost=hasMemberHealth(u)?applyCombatDamage(u,damage,condition.affectedMembers??10):applyHealthLoss(u,damage); if(this.rules.combatModel)damage=lost;
-            this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], damage: {sourceId:condition.sourceId,targetId:u.id,amount:lost,cause:dot.label ?? this.conditions.get(condition.id)!.name,...(hasMemberHealth(u)?{unit:'life' as const}:{})}, text: `${u.name} ${dot.label}损失${damage}${hasMemberHealth(u)?'生命':''}` });
+            const members=u.hp,lost=hasMemberHealth(u)?applyCombatDamage(u,damage,condition.affectedMembers??10):applyHealthLoss(u,damage); if(this.rules.combatModel)damage=lost;
+            this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], damage: {sourceId:condition.sourceId,targetId:u.id,amount:lost,cause:dot.label ?? this.conditions.get(condition.id)!.name,...(hasMemberHealth(u)?{unit:'life' as const,members:members-u.hp}:{})}, text: `${u.name} ${dot.label}损失${damage}${hasMemberHealth(u)?'生命':''}` });
             this.defeatUnit(u, this.combatants.find((source) => source.id === condition.sourceId));
           }
         }

@@ -497,8 +497,8 @@ export type LogKind =
   | 'battle-end';
 
 export interface BattleLogEntry {
-  /** 持续伤害/坠落的实际损失与来源；普通攻击由resolution记录，不能重复累计。 */
-  damage?: { sourceId?: string; targetId: string; amount: number; cause: string; unit?:'life' };
+  /** 持续伤害/坠落的实际损失与来源；普通攻击由resolution记录，不能重复累计。members是成员生命编队这次的减员数。 */
+  damage?: { sourceId?: string; targetId: string; amount: number; cause: string; unit?:'life'; members?: number };
   /** 同一技能的全部伤害结算；resolution保留首条供旧展示兼容。 */
   resolutions?: AttackResolution[];
   /** 事件发生时的位置，用于本地演出；观测裁剪后不可见的事件不公开这些坐标。 */

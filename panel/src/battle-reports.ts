@@ -1,10 +1,10 @@
 import { SmallBattle, type MassBattle, type BattleLogEntry, type Combatant, woundedLabel } from '../../engine/src/index.js';
 import { observedLog } from '../../engine/src/observation.js';
 import { smallBattleResult } from '../../engine/src/battle-result.js';
-import { compactEvents } from '../../engine/src/inject/format.js';
+import { compactEvents, reportStrengthLabel } from '../../engine/src/inject/format.js';
 import { NARRATIVE_TASK } from '../../engine/src/inject/narrative-task.js';
 import type { DeliveryReceipt } from './tavern.js';
-import {hasMemberHealth,memberHealth,memberHealthMax,memberHealthSummary,memberNoun} from '../../engine/src/member-health.js';
+import {memberNoun} from '../../engine/src/member-health.js';
 
 export type Battle = SmallBattle | MassBattle;
 export interface NarrativeEvent { index: number; round: number; text: string }
@@ -38,13 +38,12 @@ export function knownBattleState(b: Battle): string {
 }
 function epilogueUnit(b: Battle, u: Combatant): string {
   const statuses = {ready:'可行动',dying:'濒死',dead:u.scale==='hero'?'阵亡':'编队失去战斗力',routing:'溃退中',fled:'已撤离'};
-  const health=u.scale==='hero'?`生命${u.hp}/${u.base.hpMax}`:hasMemberHealth(u)?`现员${u.hp}/${u.base.hpMax}${memberNoun(u)}，总生命${memberHealth(u)}/${memberHealthMax(u)}；${memberHealthSummary(u,Infinity)}`:`现员${u.hp}/${u.base.hpMax}人${u.formation?`，成员耐久${u.formation.memberHp}`:''}`;
   const conditions=u.conditions.filter(c=>c.dur>0).map(c=>`${b.conditions.get(c.id)?.name??c.id}（${c.dur}轮）`);
-  return `${u.side==='ally'?'我方':u.side==='enemy'?'敌方':'中立'} ${u.name}：${health}，${statuses[u.status]}${woundedLabel(u,true)?'，'+woundedLabel(u,true):''}${conditions.length?'，'+conditions.join('、'):''}`;
+  return `${u.side==='ally'?'我方':u.side==='enemy'?'敌方':'中立'} ${u.name}：${reportStrengthLabel(u)}，${statuses[u.status]}${woundedLabel(u,true)?'，'+woundedLabel(u,true):''}${conditions.length?'，'+conditions.join('、'):''}`;
 }
-/** 按真实生命/现员损失累计，过量伤害不计入；来源按稳定id区分。 */
+/** 按真实生命/现员损失累计，过量伤害不计入；来源按稳定id区分。成员生命编队另记减员人数。 */
 function epilogueDamage(b: Battle): string[] {
-  const totals=new Map<string,{source?:string;target:string;amount:number;life:boolean;causes:Set<string>;sourceName?:string;targetName?:string}>();
+  const totals=new Map<string,{source?:string;target:string;amount:number;life:boolean;members:number;membersPartial:boolean;causes:Set<string>;sourceName?:string;targetName?:string}>();
   for(const e of b.isOver()?b.log:publicBattleEvents(b).map(e=>e.entry)) {
     for (const r of e.resolutions?.length?e.resolutions:[e.resolution]) {
     const d=e.damage;
@@ -53,13 +52,17 @@ function epilogueDamage(b: Battle): string[] {
     const source=r?.attackerId??d?.sourceId,target=r?.defenderId??d?.targetId;if(!target)continue;
     const life=r?.damageModel==='member-health'||d?.unit==='life';
     const key=JSON.stringify([source??null,target,life]);
-    const row=totals.get(key)??{source,target,amount:0,life,causes:new Set<string>(),sourceName:r?.attackerName,targetName:r?.defenderName};
+    const row=totals.get(key)??{source,target,amount:0,life,members:0,membersPartial:false,causes:new Set<string>(),sourceName:r?.attackerName,targetName:r?.defenderName};
     row.amount+=amount;if(d?.cause)row.causes.add(d.cause);totals.set(key,row);
+    // 更新前保存的持续伤害记录没有减员数，只能给出下限。
+    const members=r?r.membersBefore!==undefined&&r.membersAfter!==undefined?r.membersBefore-r.membersAfter:undefined:d?.members;
+    if(members===undefined)row.membersPartial=true;else row.members+=Math.max(0,members);
     }
   }
   return [...totals.values()].map(row=>{
     const source=b.combatants.find(u=>u.id===row.source),target=b.combatants.find(u=>u.id===row.target);
-    return `${source?.name??row.sourceName??'来源未记录'} → ${target?.name??row.targetName??row.target}：累计造成${row.amount}${row.life||target?.scale==='hero'?'生命损失':target?memberNoun(target)+'减员':'点损失'}${row.causes.size?'（含'+[...row.causes].join('、')+'）':''}`;
+    const members=row.life&&target&&target.scale!=='hero'?`，${row.membersPartial?'减员至少':'减员'}${row.members}${memberNoun(target)}`:'';
+    return `${source?.name??row.sourceName??'来源未记录'} → ${target?.name??row.targetName??row.target}：累计造成${row.amount}${row.life||target?.scale==='hero'?'生命损失':target?memberNoun(target)+'减员':'点损失'}${row.causes.size?'（含'+[...row.causes].join('、')+'）':''}${members}`;
   });
 }
 export function battleEpilogue(b: Battle, start?: BattleReport['start']): string {

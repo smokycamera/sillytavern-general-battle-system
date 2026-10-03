@@ -1,6 +1,7 @@
 import { encodeSave, decodeSave, compactLocalMirrors } from './storage-codec.js';
 import { createNativeHost, type NativeHost } from '../../host/src/sillytavern.js';
 import { legacyMirrorKey } from '../../host/src/contracts.js';
+import { stripThinking } from './protocol-syntax.js';
 /**
  * 酒馆助手（TavernHelper / JS-Slash-Runner）适配层。
  * 在酒馆内运行时使用其真实 API；脱离酒馆（本地开发/预览）自动降级到 localStorage 与剪贴板。
@@ -510,7 +511,7 @@ export function createAdapter(): TavernAdapter {
       return chat.slice(-3).flatMap((value: unknown) => {
         if (!value || typeof value !== 'object') return [];
         const m = value as { is_system?: boolean; is_hidden?: boolean; mes?: unknown };
-        return !m.is_system && !m.is_hidden && typeof m.mes === 'string' ? [m.mes.replace(/<tb>[\s\S]*?(?:<\/tb>|$)/gi, '').slice(-1600)] : [];
+        return !m.is_system && !m.is_hidden && typeof m.mes === 'string' ? [stripThinking(m.mes).replace(/<tb\s*>(?=\s*(?:<|$))[\s\S]*?(?:<\/tb\s*>|$)/gi, '').slice(-1600)] : [];
       }).join('\n');
     },
     injectPrompts(prompts: { id: string; content: string }[]): boolean {
