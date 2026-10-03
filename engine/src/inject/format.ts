@@ -2,8 +2,10 @@ import { smallBattleResult } from '../battle-result.js';
 import { NARRATIVE_TASK } from './narrative-task.js';
 import { standardConditionMap } from '../conditions.js';
 import { isAirborne } from '../aerial.js';
-import { cellLabel, terrainCellLabel } from '../small/spatial.js';
-import { landmarkAt, landmarkCells } from '../small/map-design.js';
+import { cellLabel, reportPlace, terrainName, type BattlefieldSpec } from '../small/spatial.js';
+import { safeLandmarkLabel } from '../small/map-design.js';
+import { displayHeightAt, reportsHeights } from '../small/height-map.js';
+import { environmentLabel } from '../environment.js';
 import { formationNode } from '../mass/formation.js';
 import { woundedLabel } from '../recovery.js';
 import {hasMemberHealth,memberHealth,memberHealthMax,memberHealthSummary,memberNoun} from '../member-health.js';
@@ -13,6 +15,7 @@ import {hasMemberHealth,memberHealth,memberHealthMax,memberHealthSummary,memberN
  */
 
 import type { BattleLogEntry, Combatant } from '../types.js';
+import type { AttackResolution } from '../damage.js';
 import type { SmallBattle } from '../small/battle.js';
 import type { MassBattle } from '../mass/battle.js';
 import { bandLabel } from '../small/battle.js';
@@ -139,37 +142,59 @@ function narrativeDirectives(): string[] {
   return [NARRATIVE_TASK];
 }
 
+/** 位置写格子、地标、地形，有高低差的地图写站立高度；距敌只在战斗进行中写，撤离单位不写位置。 */
 function smallPosition(b: SmallBattle, u: Combatant): string {
-  const distance = b.distToNearestFoe(u);
-  return b.battlefield && u.pos !== undefined ? '(' + terrainCellLabel(b.battlefield, u.pos, u) + (Number.isFinite(distance) ? '·距已知敌' + distance + '格' : '·未定位敌军') + ')'
-    : Number.isFinite(distance) ? '(距敌' + bandLabel(distance) + ')' : '(未定位敌军)';
+  if (u.status === 'fled') return '';
+  const distance = b.isOver() ? NaN : b.distToNearestFoe(u), near = b.isOver() ? '' : Number.isFinite(distance) ? '距已知敌' + distance + '格' : '未定位敌军';
+  if (b.battlefield && u.pos !== undefined) return '(' + [reportPlaceText(b.battlefield, u.pos, u), near].filter(Boolean).join('·') + ')';
+  return b.isOver() ? '' : Number.isFinite(distance) ? '(距敌' + bandLabel(distance) + ')' : '(未定位敌军)';
 }
+/** 状态行里的位置：C10·崎岖地·高度1。 */
+export function reportPlaceText(field: BattlefieldSpec, cell: number, unit?: Combatant): string {
+  const place = reportPlace(field, cell, unit);
+  return [place.cell, ...place.details].join('·');
+}
+/** 战报只写当前姿态：空中、压制、固守、装填。已准备的技能和冷却属于单位资料，不在战况里列出，免得被当成已经使用；战斗结束后只保留空中。 */
 function unitReadiness(b: SmallBattle | MassBattle, u: Combatant): string {
   if (u.status === 'dead' || u.status === 'fled') return '';
-  const info = [isAirborne(u) ? '空中' : '', u.suppression ? '受压制' : '', u.tacticalPose ? '固守' : '', (b.reloadCd.get(u.id) ?? 0) > 0 ? '装填中' : ''];
-  if (u.side === 'ally') {
-    for (const ability of u.abilities.filter((a) => u.preparedAbilityIds?.includes(a.id))) {
-      const cd = u.abilityState.find((s) => s.abilityId === (ability.cooldownGroup ?? ability.id))?.cdLeft ?? 0;
-      info.push(ability.name + (cd > 0 ? '冷却' + cd : ''));
-    }
-  }
-  return info.some(Boolean) ? '｜' + info.filter(Boolean).join('·') : '';
+  const over = b.isOver();
+  const info = [isAirborne(u) ? '空中' : '', !over && u.suppression ? '受压制' : '', !over && u.tacticalPose ? '固守' : '', !over && (b.reloadCd.get(u.id) ?? 0) > 0 ? '装填中' : ''].filter(Boolean);
+  return info.length ? '｜' + info.join('·') : '';
+}
+/** 环境与地标：状态摘要、逐轮战报与战斗终章共用。高度说明只在有高低差的地图出现。 */
+export function fieldFacts(b: SmallBattle | MassBattle, field = isMass(b) ? undefined : b.battlefield): string[] {
+  const lines: string[] = [], relief = reportsHeights(field);
+  if (b.fieldTags.length || relief) lines.push([b.fieldTags.length ? '环境：' + environmentLabel(b.fieldTags) : '', relief ? HEIGHT_LEGEND : ''].filter(Boolean).join('｜'));
+  const marks = field ? landmarkSummary(field) : [];
+  if (marks.length) lines.push('地标：' + marks.join('；'));
+  return lines;
 }
 function battleSituation(b: SmallBattle | MassBattle): string[] {
-  const lines: string[] = [];
-  if (b.fieldTags.length) lines.push('环境：' + b.fieldTags.join('/'));
+  const lines = fieldFacts(b);
   if (!isMass(b) && b.battlefield) {
-    const cells = landmarkCells(b.battlefield);
-    if (cells.length) {
-      const label = landmarkAt(b.battlefield, cells[0]!);
-      if (label) lines.push('地标：' + label + '｜' + cells.map(p => terrainCellLabel(b.battlefield!, p)).join('、'));
-    }
     const goal = b.battlefield.objective;
     lines.push(goal.kind === 'annihilation' ? '任务：歼灭敌军' : goal.kind === 'control'
       ? '任务：' + (goal.attackingSide === 'enemy' ? '敌方' : '我方') + '攻占' + cellLabel(b.battlefield, goal.cell) + '，连续控制' + b.controlRounds[goal.attackingSide ?? 'ally'] + '/' + goal.rounds + '轮'
       : '任务：护送' + (b.visibleCombatants('ally').find((u) => u.id === goal.unitId)?.name ?? '未定位目标') + '至' + cellLabel(b.battlefield, goal.cell));
   }
   return lines;
+}
+
+/** 有高低差的地图在战报里说明高度的含义，单位与地标随后只写数字。 */
+export const HEIGHT_LEGEND = '高度按层计，约一层楼，0为地面';
+/** 每个地标一项：名称、至多4个格子、地形与高度范围。旧存档的地标记录可能残缺，无效项略去。 */
+function landmarkSummary(field: BattlefieldSpec): string[] {
+  const marks: { label?: unknown; cells?: unknown }[] = field.landmarks?.length ? field.landmarks : field.generation?.landmark ? [field.generation.landmark] : [];
+  return marks.flatMap((mark) => {
+    const label = safeLandmarkLabel(mark.label);
+    const cells = Array.isArray(mark.cells) ? [...new Set(mark.cells.filter((p): p is number => Number.isInteger(p) && p >= 0 && p < field.tiles.length))] : [];
+    if (!label || !cells.length) return [];
+    const terrains = [...new Set(cells.filter((p) => field.tiles[p] !== 'open').map((p) => terrainName(field, p)))].slice(0, 2);
+    const heights = reportsHeights(field) ? cells.map((p) => displayHeightAt(field, p)) : [];
+    const low = Math.min(...heights), high = Math.max(...heights);
+    const details = [...terrains, ...(heights.length ? ['高度' + low + (high > low ? '–' + high : '')] : [])];
+    return [label + ' ' + cells.slice(0, 4).map((p) => cellLabel(field, p)).join('、') + (cells.length > 4 ? '等' + cells.length + '格' : '') + (details.length ? '（' + details.join('·') + '）' : '')];
+  });
 }
 
 /** 结算卡：把若干日志条目格式化为可插入聊天/注入的文本块。
@@ -207,6 +232,20 @@ const DIGEST_KINDS = new Set<BattleLogEntry['kind']>([
   'battle-end',
 ]);
 
+/** 有高低差的地图上双方高度不同时注明居高或仰攻；空中与平地不写。 */
+function heightTag(r: AttackResolution): string {
+  const a = r.attackerHeight, d = r.defenderHeight;
+  return a === undefined || d === undefined || a === d ? '' : `${a > d ? '居高' : '仰攻'}（高度${a}→${d}），`;
+}
+/** 命中/未中、生命损失与成员减员；技能与普通攻击共用。 */
+function hitText(r: AttackResolution): string {
+  return r.hit
+    ? `${r.crit ? '✦暴击' : '命中'}${r.finalDamage}${r.damageModel==='member-health'?'生命':''}（${r.hpBefore}→${r.hpAfter}）${r.damageModel==='member-health'&&r.defenderScale!=='hero'&&r.membersBefore!==undefined&&r.membersAfter!==undefined?`，减员${r.membersBefore-r.membersAfter}`:''}`
+    : '未中';
+}
+function fellMark(r: AttackResolution): string {
+  return r.hpAfter <= 0 ? r.defenderStatus === 'dying' ? '（濒死）' : '†' : '';
+}
 /** 单条攻击的纪要行：从结构化 resolution 压缩（不含骰面与伤害构成，那是结算卡的职责）。
  *  前缀（战区/骑射反击/齐射段数/借机攻击）取原文去掉尾部结算文本的剩余段。 */
 function digestAttackLine(e: BattleLogEntry): string | undefined {
@@ -215,12 +254,15 @@ function digestAttackLine(e: BattleLogEntry): string | undefined {
   const prefix = e.text.endsWith(res.text)
     ? e.text.slice(0, e.text.length - res.text.length).replace(/｜$/, '')
     : '';
-  const head = `${res.attackerName}→${res.defenderName}`;
-  const body = res.hit
-    ? `${res.crit ? '✦暴击' : '命中'}${res.finalDamage}${res.damageModel==='member-health'?'生命':''}（${res.hpBefore}→${res.hpAfter}）${res.damageModel==='member-health'&&res.defenderScale!=='hero'&&res.membersBefore!==undefined&&res.membersAfter!==undefined?`，减员${res.membersBefore-res.membersAfter}`:''}`
-    : '未中';
-  const fell = res.hpAfter <= 0 ? res.defenderStatus === 'dying' ? '（濒死）' : '†' : '';
-  return `${prefix ? `${prefix}｜` : ''}${head} ${body}${fell}`;
+  return `${prefix ? `${prefix}｜` : ''}${res.attackerName}→${res.defenderName} ${heightTag(res)}${hitText(res)}${fellMark(res)}`;
+}
+/** 速射合并行：段数、命中数、总损失；成员生命编队另写减员。 */
+function volleyLine(volley: BattleLogEntry[]): string {
+  const first = volley[0]!.resolution!, last = volley.at(-1)!.resolution!;
+  const hits = volley.filter((v) => v.resolution!.hit).length, damage = volley.reduce((n, v) => n + v.resolution!.finalDamage, 0);
+  const life = first.damageModel === 'member-health';
+  const members = life && first.defenderScale !== 'hero' && first.membersBefore !== undefined && last.membersAfter !== undefined ? '，减员' + (first.membersBefore - last.membersAfter) : '';
+  return `${first.attackerName}→${first.defenderName} ${heightTag(first)}${volley.length}段/${hits}中，损失${damage}${life ? '生命' : ''}（${first.hpBefore}→${last.hpAfter}）${members}${fellMark(last)}${volley.some((v) => v.resolution!.crit) ? '·含暴击' : ''}`;
 }
 
 /** 技能日志只保留“谁释放了什么”和紧凑效果；完整骰面仍留在结算卡。 */
@@ -228,7 +270,7 @@ function digestAbilityLines(e: BattleLogEntry): string[] {
   const raw = e.text.split('\n').filter(Boolean);
   const lines = raw.length ? [raw[0]!] : [];
   if (e.resolution) {
-    for(const r of e.resolutions?.length?e.resolutions:[e.resolution])lines.push(`${r.attackerName}→${r.defenderName} ${r.hit ? `${r.crit ? '✦暴击' : '命中'}${r.finalDamage}${r.damageModel==='member-health'?'生命':''}（${r.hpBefore}→${r.hpAfter}）${r.damageModel === 'member-health' && r.defenderScale !== 'hero' && r.membersBefore !== undefined && r.membersAfter !== undefined ? `，减员${r.membersBefore - r.membersAfter}` : ''}` : '未中'}`);
+    for(const r of e.resolutions?.length?e.resolutions:[e.resolution])lines.push(`${r.attackerName}→${r.defenderName} ${heightTag(r)}${hitText(r)}`);
   }
   for (const line of raw.slice(1)) {
     if (/d20\[|命中率\d+%|^伤害 /.test(line)) continue;
@@ -237,11 +279,22 @@ function digestAbilityLines(e: BattleLogEntry): string[] {
   return [...new Set(lines)];
 }
 
-/** 相邻同一攻击者/目标的速射合并；状态、借机与其他行动的顺序保留。 */
-export function compactEvents(entries: BattleLogEntry[]): string[] {
-  const lines: string[] = [];
+/** 记录了起止格的连续逐格移动合为一行：首步的起点（高度有变时附起点高度）接末步的落点。 */
+function mergedMove(first: BattleLogEntry, last: BattleLogEntry): string | undefined {
+  const head = /^(.* )([A-Z]\d+)(?:\(高度\d+\))?$/.exec(first.text.slice(0, first.text.lastIndexOf('→')));
+  if (!head || last.text.lastIndexOf('→') < 0) return undefined;
+  const start = first.move!.fromHeight, end = last.move!.toHeight;
+  return head[1]! + head[2]! + (start !== undefined && start !== end ? '(高度' + start + ')' : '') + last.text.slice(last.text.lastIndexOf('→'));
+}
+export interface CompactEvent { text: string; first: number; last: number }
+/**
+ * 相邻同一攻击者/目标的速射合并，同一单位连续的逐格移动合并为起止两端；状态、借机与其他行动的顺序保留。
+ * 每行带上它覆盖的条目序号，供分段投递。unresolvedAttacks 保留装填、未定位攻击等没有结算的攻击行（叙述增量用）。
+ */
+export function compactEventGroups(entries: BattleLogEntry[], opts: { unresolvedAttacks?: boolean } = {}): CompactEvent[] {
+  const groups: CompactEvent[] = [];
   for (let i = 0; i < entries.length; i++) {
-    const e = entries[i]!;
+    const e = entries[i]!, first = i;
     if (e.kind === 'attack' && e.resolution) {
       const volley = [e];
       while (!/借机|反击|反应/.test(e.text) && entries[i + 1]?.kind === 'attack' && entries[i + 1]?.resolution
@@ -249,30 +302,39 @@ export function compactEvents(entries: BattleLogEntry[]): string[] {
         && entries[i + 1]!.resolution!.attackerId === e.resolution.attackerId
         && entries[i + 1]!.resolution!.defenderId === e.resolution.defenderId
         && entries[i + 1]!.round === e.round) volley.push(entries[++i]!);
-      if (volley.length === 1) lines.push(digestAttackLine(e)!);
-      else {
-        const hits = volley.filter((v) => v.resolution!.hit).length, last = volley.at(-1)!.resolution!;
-        const damage = volley.reduce((n, v) => n + v.resolution!.finalDamage, 0);
-        lines.push(e.resolution.attackerName + '→' + e.resolution.defenderName + ' ' + volley.length + '段/' + hits + '中，损失' + damage + '（' + e.resolution.hpBefore + '→' + last.hpAfter + '）' + (volley.some((v) => v.resolution!.crit) ? '·含暴击' : ''));
-      }
-    } else if (e.kind === 'ability') lines.push(...digestAbilityLines(e));
-    else if (e.kind !== 'attack') {
+      groups.push({ text: volley.length === 1 ? digestAttackLine(e)! : volleyLine(volley), first, last: i });
+    } else if (e.kind === 'ability') groups.push(...digestAbilityLines(e).map((text) => ({ text, first, last: i })));
+    else if (e.kind === 'attack') { if (opts.unresolvedAttacks && e.text) groups.push({ text: e.text, first, last: i }); }
+    else {
       // 仅合并真实连续格子移动，保留起终点；借机、起飞、撤离等事件打断该段。
       let text = e.text.split('\n').filter((line) => !/d20\[|^伤害 /.test(line)).join('；');
-      const move = /^(.* )([A-Z]\d+)→([A-Z]\d+)$/.exec(text);
-      if (e.kind === 'move' && move && e.participants?.length) {
-        let end = move[3]!;
-        while (entries[i + 1]?.kind === 'move' && entries[i + 1]?.round === e.round && e.participants.join() === entries[i + 1]?.participants?.join()) {
-          const next = /^(.* )([A-Z]\d+)→([A-Z]\d+)$/.exec(entries[i + 1]!.text);
-          if (!next || next[1] !== move[1] || next[2] !== end) break;
-          end = next[3]!; i++;
+      if (e.kind === 'move' && e.move && e.participants?.length === 1) {
+        let end = i;
+        while (entries[end + 1]?.kind === 'move' && entries[end + 1]!.move && entries[end + 1]!.round === e.round
+          && entries[end + 1]!.participants?.join() === e.participants.join() && entries[end + 1]!.move!.from === entries[end]!.move!.to) end++;
+        const merged = end > i ? mergedMove(e, entries[end]!) : undefined;
+        if (merged) { text = merged; i = end; }
+      } else {
+        const move = /^(.* )([A-Z]\d+)→([A-Z]\d+)$/.exec(text);
+        if (e.kind === 'move' && move && e.participants?.length) {
+          let end = move[3]!;
+          while (entries[i + 1]?.kind === 'move' && entries[i + 1]?.round === e.round && e.participants.join() === entries[i + 1]?.participants?.join()) {
+            const next = /^(.* )([A-Z]\d+)→([A-Z]\d+)$/.exec(entries[i + 1]!.text);
+            if (!next || next[1] !== move[1] || next[2] !== end) break;
+            end = next[3]!; i++;
+          }
+          text = move[1]! + move[2]! + '→' + end;
         }
-        text = move[1]! + move[2]! + '→' + end;
       }
-      if (text && lines.at(-1) !== text) lines.push(text);
+      if (text && groups.at(-1)?.text !== text) groups.push({ text, first, last: i });
+      else if (text) groups.at(-1)!.last = i;
     }
   }
-  return lines;
+  return groups;
+}
+/** 回合纪要与状态摘要用的压缩行。 */
+export function compactEvents(entries: BattleLogEntry[]): string[] {
+  return compactEventGroups(entries).map((group) => group.text);
 }
 function recentEvents(b: SmallBattle | MassBattle): string[] {
   const log = (b.isOver() ? b.log : b.visibleLog('ally')).filter((e) => DIGEST_KINDS.has(e.kind));
@@ -375,7 +437,7 @@ export function battleIntroSummary(
     );
   }
   if (b.fieldTags?.length) {
-    lines.push(`环境：${b.fieldTags.join('/')}`);
+    lines.push(`环境：${environmentLabel(b.fieldTags)}`);
   }
   lines.push(...narrativeDirectives());
   return lines.join('\n');

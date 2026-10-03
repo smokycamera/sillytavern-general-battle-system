@@ -10,7 +10,7 @@ import { isAirborne, sameLayer, flightCapabilityReason, type FlightConditions } 
 import { SeededRng } from '../rng.js';
 import { rangedScreen } from '../guard-screen.js';
 import {validateSceneRecord,type SceneRecord,type DeploymentZone} from './scene-compiler.js';
-import { heightStepCost,validateHeightMap,eyeHeight,unitHeight,groundHeightAt,heightDefense,standingTerrain,type HeightTransition } from './height-map.js';
+import { heightStepCost,validateHeightMap,eyeHeight,unitHeight,groundHeightAt,heightDefense,standingTerrain,surfaceHeightAt,reportsHeights,type HeightTransition } from './height-map.js';
 import { gridWeaponRange } from './weapon-range.js';
 
 export const DEFAULT_SMALL_ROUND_LIMIT = 60;
@@ -108,6 +108,23 @@ export function terrainName(field: BattlefieldSpec, cell: number): string {
 export function terrainCellLabel(field: BattlefieldSpec, cell: number, actor?: Combatant): string {
   const terrain = field.tiles[cell];
   return cellLabel(field, cell) + (landmarkAt(field, cell) ? '〔' + landmarkAt(field, cell) + '〕' : '') + (terrain && terrain !== 'open' ? '(' + terrainName(field, cell) + (actor && isAirborne(actor) ? '上空' : '') + ')' : '');
+}
+/** A place in a report: the cell with its landmark, then terrain details. Maps with relief add the height a unit stands at
+ * (or the cell's surface) and name a wall or tower top; the air carries no number, since it keeps its own rules. */
+export function reportPlace(field: BattlefieldSpec, cell: number, unit?: Combatant): { cell: string; details: string[] } {
+  const terrain = field.tiles[cell], airborne = !!unit && isAirborne(unit), relief = reportsHeights(field);
+  const details = terrain && terrain !== 'open' ? [terrainName(field, cell) + (airborne ? '上空' : '')] : airborne && relief ? ['上空'] : [];
+  if (relief && !airborne) {
+    const s = structureAt(field, cell);
+    if (unit && isElevated(unit) && s) details.push(s.kind === 'tower' ? '塔顶' : structureDisplayName(field, cell) === '城墙' ? '城头' : '墙头');
+    details.push('高度' + surfaceHeightAt(field, cell, unit));
+  }
+  return { cell: cellLabel(field, cell) + (landmarkAt(field, cell) ? '〔' + landmarkAt(field, cell) + '〕' : ''), details };
+}
+/** Event-line form, D3〔北坡〕(山地·高度2); without relief it equals terrainCellLabel. */
+export function reportPlaceLabel(field: BattlefieldSpec, cell: number, unit?: Combatant): string {
+  const place = reportPlace(field, cell, unit);
+  return place.cell + (place.details.length ? '(' + place.details.join('·') + ')' : '');
 }
 export function neighbors(field: BattlefieldSpec, cell: number): number[] {
   return [cell - field.width, cell - 1, cell + 1, cell + field.width].filter((n) => inBounds(field, n) && gridDistance(field, cell, n) === 1);

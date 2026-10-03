@@ -29,7 +29,7 @@ describe('成员生命的本地档案与重战',()=>{
   const start=captureBattleStart(b,captureBattleArchive(before));applyCombatDamage(a,19,1);b.finishBattle('ceasefire');
   const id=battleIdOf(b),result=commitBattleOutcome({battleId:id,committedIds:[],records,roster:[a,d],combatants:b.combatants,awards:[],registry});
   // 成员生命分组由单位资料提供；终章状态行只写剩余总数。
-  const epilogue=battleEpilogue(b,start);expect(epilogue).toContain('我方 车辆：剩余总数12/12辆，可行动');expect(epilogue).not.toMatch(/总生命|\/100生命/);
+  const epilogue=battleEpilogue(b,start);expect(epilogue).toMatch(/我方 车辆\([A-Z]\d+[^)]*\)：剩余总数12\/12辆，可行动/);expect(epilogue).not.toMatch(/总生命|\/100生命/);
   const after={...before,storage:result.records,factRevision:2,committedOutcomeIds:result.committedIds,battle:{kind:'small' as const,snap:structuredClone(b.toSnapshot())},reports:[{id,card:'',digest:'',summary:'',epilogue,deliveries:{},start}]};
   stampNewBattleReports(before,after);const replay=prepareReportRestart(after,id,2,'health-retry');
   const restored=SmallBattle.fromSnapshot(replay.battle!.snap);expect(restored.byId(a.id).formation!.health![0]).toEqual({hp:73,count:1});

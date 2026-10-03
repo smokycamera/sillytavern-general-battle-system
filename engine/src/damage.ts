@@ -65,6 +65,9 @@ export interface AttackResolution {
   defenderId: string;
   attackerName: string;
   defenderName: string;
+  /** 有高低差的实际高度地图上双方的站立高度；空中单位不记。战报据此写居高或仰攻。 */
+  attackerHeight?: number;
+  defenderHeight?: number;
   defenderScale?: Combatant['scale'];
   hit: boolean;
   crit: boolean;

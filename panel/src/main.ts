@@ -35,7 +35,7 @@ import './terrain-painted.css';
 import { updateRegion, BattleCamera } from './view-dom.js';
 import { executeMassPlan, executeAndSaveAsync as executeAndSave } from './battle-execution.js';
 import { TACTICAL_PREFERENCES, normalizeTactic } from '../../engine/src/tactical-preference.js';
-import { battleIdOf, publicBattleEvents, battleEpilogue, narrativeEvents, makeNarrativeBatch, beginNarrativeDelivery, finishNarrativeDelivery, completedBattleRounds, type BattleReport, type BattleDeliveries, type NarrativeBatch } from './battle-reports.js';
+import { battleIdOf, publicBattleEvents, battleEpilogue, archivedNarrativeEvents, makeNarrativeBatch, beginNarrativeDelivery, finishNarrativeDelivery, completedBattleRounds, type BattleReport, type BattleDeliveries, type NarrativeBatch } from './battle-reports.js';
 import { lastBattleAction, traceLocations } from './battle-presentation.js';
 import { promptScopeControls } from './prompt-settings.js';
 import { narrativeProjectionDetails } from './narrative-controller.js';
@@ -2597,7 +2597,7 @@ async function settleXp(allowUnfinished = false): Promise<void> {
   });
   if (!state.reports.some((r) => r.id === id) && !state.deletedReportIds?.includes(id)) {
     state.reports = [...state.reports, {
-      id, roundCount: completedBattleRounds(b), epilogue: battleEpilogue(b,state.activeBattleStart), narrativeEvents: narrativeEvents(b), eventCount: b.log.length, card: settlementCard(b.log, b.round, !!state.mass, { wholeBattle: true }),
+      id, roundCount: completedBattleRounds(b), epilogue: battleEpilogue(b,state.activeBattleStart), narrativeEvents: archivedNarrativeEvents(b, state.reportDeliveries), eventCount: b.log.length, card: settlementCard(b.log, b.round, !!state.mass, { wholeBattle: true }),
       digest: roundDigest(b, state.era, reg, { wholeBattle: true, protagonistId: state.protagonistId }),
       summary: state.small ? smallStateSummary(state.small, state.era, reg) : massStateSummary(state.mass!, state.era, reg),
       deliveries: {}, ...(state.activeBattleStart?.battleId===id?{start:structuredClone(state.activeBattleStart)}:{}),

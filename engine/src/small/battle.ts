@@ -2,7 +2,7 @@ import { spendAbility } from '../ability-state.js';
 import { assertBattleCapacity } from '../battle-limits.js';
 import { smallBattleResult } from '../battle-result.js';
 import { prepareGridDeployment } from './spatial.js';
-import { unitHeight, heightDefense, heightReach, standingTerrain } from './height-map.js';
+import { unitHeight, heightDefense, heightReach, standingTerrain, surfaceHeightAt, reportsHeights } from './height-map.js';
 import { bonusMultiplier } from '../enhancements.js';
 import { regionalOrder } from './team-tactics.js';
 import { groundBlocked, isElevated, intactStructure, canClimbFrom, meleeHeightReason, meleeContact, structureDefense, structureDurability, damageStructure, weaponBreachBudget, STRUCTURE_NAMES } from './layers.js';
@@ -58,7 +58,7 @@ import { bracePose, movementPoints, settleFatigue, addTacticalEffort, validateTa
 import { rangedTargetDistance, isAirborne, sameLayer, flightCapabilityReason, flightMaintenanceReason, fallDamage, validateFlightState } from '../aerial.js';
 import { environmentTags } from '../environment.js';
 import { traitRegistry as defaultTraitRegistry } from '../data/traits.js';
-import { meleeLineBlocker, terrainTacticalValue, canOccupy, cellLabel, terrainCellLabel, deployOnGrid, findGridPath, reachableGridPaths, gridCostsToGoals, gridDistance, lineOfSight, unitLineOfSight, neighbors, movementStepCost, retreatCells, validateField, type BattlefieldSpec, type GridPath } from './spatial.js';
+import { meleeLineBlocker, terrainTacticalValue, canOccupy, cellLabel, reportPlaceLabel, deployOnGrid, findGridPath, reachableGridPaths, gridCostsToGoals, gridDistance, lineOfSight, unitLineOfSight, neighbors, movementStepCost, retreatCells, validateField, type BattlefieldSpec, type GridPath } from './spatial.js';
 import { canSpot, observedUnits, observeEvent, observedLog, revealUnit, revealContacts, settleConcealment, canReconceal, validateConcealment, type ObservationContext } from '../observation.js';
 import {
   abilityTargetReason,
@@ -260,7 +260,9 @@ export class SmallBattle {
   }
   private resolveAttackWithEnvironment(opts: AttackOpts) {
     if (this.rules.resolutionVersion === 'v2') revealUnit(this.observationContext(), this.byId(opts.attacker.id));
-    const result = resolveAttack(this.environmentContext(opts));
+    const result = resolveAttack(this.environmentContext(opts)), field = this.battlefield;
+    if (reportsHeights(field) && opts.attacker.pos !== undefined && opts.defender.pos !== undefined && !isAirborne(opts.attacker) && !isAirborne(opts.defender))
+      Object.assign(result, { attackerHeight: unitHeight(field, opts.attacker), defenderHeight: unitHeight(field, opts.defender) });
     if (this.rules.resolutionVersion === 'v2' && result.finalDamage > 0) revealUnit(this.observationContext(), this.byId(opts.defender.id));
     return result;
   }
@@ -315,7 +317,7 @@ export class SmallBattle {
       kind: 'move',
       participants: this.combatants.map((u) => u.id), text: `布阵：${this.combatants
         .filter((c) => c.status !== 'dead')
-        .map((c) => `${c.name}@${c.pos ?? '?'}`)
+        .map((c) => this.battlefield && c.pos !== undefined ? `${c.name} ${reportPlaceLabel(this.battlefield, c.pos, c)}` : `${c.name}@${c.pos ?? '?'}`)
         .join('，')}`,
     });
     this.advanceToNextActor();
@@ -542,7 +544,8 @@ export class SmallBattle {
       if (gridDistance(field, actor.pos!, next) !== 1 || stepCost > this.movementLeft(actorId)) break;
       if (!canOccupy(field, this.combatants, actor, next)) break;
       if (!attackMovement) this.activateHasteMovement(actorId);
-      const previous = actor.pos!;
+      const previous = actor.pos!, heights = reportsHeights(field) && !isAirborne(actor);
+      const fromHeight = heights ? surfaceHeightAt(field, previous, actor) : undefined;
       delete actor.tacticalPose;
       actor.pos = next;
       this.movementSpent.set(actorId, (this.movementSpent.get(actorId) ?? 0) + stepCost);
@@ -550,7 +553,9 @@ export class SmallBattle {
       this.settleAreaEffects(); if (actor.status !== 'ready') break;
       this.checkGridObjective(false);
       if (this.rules.resolutionVersion === 'v2') revealContacts(this.observationContext());
-      this.recordEvent({ round: this.round, kind: 'move', participants: [actor.id], text: `${actor.name} ${cellLabel(field, previous)}→${terrainCellLabel(field, next, actor)}` });
+      const toHeight = heights ? surfaceHeightAt(field, next, actor) : undefined;
+      this.recordEvent({ round: this.round, kind: 'move', participants: [actor.id], move: { from: previous, to: next, ...(heights ? { fromHeight, toHeight } : {}) },
+        text: `${actor.name} ${cellLabel(field, previous)}${fromHeight !== toHeight ? '(高度' + fromHeight + ')' : ''}→${reportPlaceLabel(field, next, actor)}` });
       for (const foe of [...this.combatants].sort((a, b) => a.id.localeCompare(b.id))) {
         if (actor.status !== 'ready') break;
         if (foe.side === actor.side || foe.status !== 'ready' || foe.suppression || this.reactionSpent.has(foe.id) || foe.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack && meleeWeapon(foe)?.recipe?.mechanism !== 'natural')) continue;
@@ -764,7 +769,7 @@ export class SmallBattle {
     }
     if (actor.status !== 'ready') return;
     actor.elevation = arrival.elevation; actor.pos = cell; this.movedThisTurn.add(actorId); delete actor.tacticalPose;
-    this.recordEvent({ round: this.round, kind: 'move', participants: [actorId], text: `${actor.name} ${isElevated(actor) ? '登上城防平台' : '下至地面'} ${cellLabel(field, cell)}，消耗主行动与${climbCost}移动` });
+    this.recordEvent({ round: this.round, kind: 'move', participants: [actorId], text: `${actor.name} ${isElevated(actor) ? '登上城防平台' : '下至地面'} ${cellLabel(field, cell)}${reportsHeights(field) ? '(高度' + unitHeight(field, actor) + ')' : ''}，消耗主行动与${climbCost}移动` });
     this.settleAreaEffects(); revealContacts(this.observationContext());
     for (const foe of [...this.combatants].sort((a, b) => a.id.localeCompare(b.id))) {
       if (actor.status !== 'ready') break;
