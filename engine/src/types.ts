@@ -274,6 +274,8 @@ export interface Combatant {
   damageModel?: 'wounds-v1' | 'wounds-v2';
   /** Versioned reserve: V9–V10 endurance-v1; V11 endurance-v2. Costs/fatigue/recovery are shared. */
   resourceModel?: 'endurance-v1' | 'endurance-v2';
+  /** V12 weapon/armor calibration, projected from the battle rules; absent keeps the frozen V11 behaviour. */
+  armsModel?: 'arms-v1';
   battleZones?: import('./area-effects.js').BattleZone[];
   barrier?: { remaining: number; duration: number; sourceId?: string; defenses?: { power: number; duration: number }[] };
   accessories?: Partial<Record<'accessory1' | 'accessory2', import('./items.js').AccessoryItem>>;
@@ -528,6 +530,8 @@ export interface RulePack {
   damageModel?: 'wounds-v1' | 'wounds-v2';
   /** Versioned reserve: V9–V10 endurance-v1; V11 endurance-v2. Costs/fatigue/recovery are shared. */
   resourceModel?: 'endurance-v1' | 'endurance-v2';
+  /** V12 weapon/armor calibration (crew, demolition, light armor, reach, grid ranges); absent keeps V11. */
+  armsModel?: 'arms-v1';
   combatModel?: 'cohort-v1' | 'cohort-v2';
   /** 武器直击余伤100%在目标编队内传递；旧规则缺省关闭。 */
   weaponOverflow?: boolean;

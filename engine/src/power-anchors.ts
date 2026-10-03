@@ -10,6 +10,7 @@ import {BODY} from './body.js';
 import {meleeProfile} from './melee.js';
 import {hasMemberHealth,damageMemberGroups} from './member-health.js';
 import { barrierDefensePower, validDefensePower } from './barrier.js';
+import { armorTierOffset } from './arms.js';
 
 /** 装备P与训练T分离；高阶增加战术毁伤与覆盖规模，不追加随机骰数量。 */
 export const POWER_ANCHORS=[
@@ -87,14 +88,14 @@ export function anchoredWeapon(weapon:Weapon|undefined,ammo:'he'|'ap'='he',model
     penetration:Math.max(0,2*power+(['cannon','indirect-cannon','autocannon','demolition'].includes(mechanism)?2:mechanism==='heavy-rifle'?2:['firearm','rifle','energy'].includes(mechanism)?1:0)+(melee?.penetration??0)+(artillery&&ammo==='ap'?2:0)+instanceRating(weapon.recipe?.bonuses,'penetration',weapon.customized?undefined:weapon.recipe?.variance,weapon.channel??'kinetic')),
     splashTargets:splash,splashFactor:mechanism==='demolition'?0.6:0.4};
 }
-export function anchoredProtection(unit:Pick<Combatant,'armor'|'body'|'shield'|'damageModel'>,channel:DamageChannel):number {
+export function anchoredProtection(unit:Pick<Combatant,'armor'|'body'|'shield'|'damageModel'|'armsModel'>,channel:DamageChannel):number {
   const armor=unit.armor,innate=BODY[unit.body??'human'].protection[channel];
   const armorBonus=armor?.recipe?.bonuses,shieldBonus=isWoundModel(unit.damageModel)?undefined:unit.shield?.recipe?.bonuses;
   const adjustment=bonusRating({protection:bonusPoints(armorBonus,'protection')+channelPoints(armorBonus,'protection',channel)+bonusPoints(shieldBonus,'protection')+channelPoints(shieldBonus,'protection',channel)},'protection');
   if(!armor)return Math.max(innate,adjustment);
   if(armor.protectionOverride&&armor.protection)return Math.max(BODY[unit.body??'human'].protection[channel],armor.protection[channel]);
   const power=armor.recipe?.power??armor.level??5,tier=armor.tier;
-  const base=tier===0?0:Math.max(0,2*power+tier-2);
+  const base=tier===0?0:Math.max(0,2*power+armorTierOffset(tier,unit.armsModel));
   const protection={kinetic:base,thermal:Math.max(0,base-1),arcane:Math.max(0,base-2)};
   const focus=armor.recipe?.protectionProfile;
   if(focus&&focus!=='balanced'){
@@ -113,7 +114,7 @@ export function armorPowerScale(unit:Pick<Combatant,'armor'|'shield'|'damageMode
   return Math.max(armor,unit.shield?shield:0)*bonusMultiplier(unit.shield?.recipe?.bonuses,'power');
 }
 /** 强度只改变部分穿透时的吸能；完全穿透/无法穿透不被另加减伤。 */
-export function armorTransmission(unit:Pick<Combatant,'armor'|'body'|'shield'|'damageModel'>,channel:DamageChannel,penetration:number):number {
+export function armorTransmission(unit:Pick<Combatant,'armor'|'body'|'shield'|'damageModel'|'armsModel'>,channel:DamageChannel,penetration:number):number {
   const through=penetrationThrough(penetration,anchoredProtection(unit,channel));
   const armorDominates=anchoredProtection({...unit,body:'human'},channel)>=BODY[unit.body??'human'].protection[channel];
   return isWoundModel(unit.damageModel)&&unit.armor&&armorDominates ? through**instanceMultiplier(unit.armor.recipe?.bonuses,'power',unit.armor.recipe?.variance) : through;
@@ -134,12 +135,12 @@ export function shieldTransmission(unit:Pick<Combatant,'shield'|'status'>,channe
  * Type/channel offsets preserve ordinary same/adjacent-grade loadouts. Explicit overrides,
  * focus and signed protection modifiers are reflected through the actual resistance.
  * An absent/zero channel grants no protection merely because a recipe has a high L. */
-export function protectionPower(unit:Pick<Combatant,'armor'|'body'|'shield'|'damageModel'>,channel:DamageChannel):number {
+export function protectionPower(unit:Pick<Combatant,'armor'|'body'|'shield'|'damageModel'|'armsModel'>,channel:DamageChannel):number {
   const resistance=anchoredProtection(unit,channel),armor=unit.armor;
   if(resistance<=0)return 0;
   const innate=BODY[unit.body??'human'].protection[channel];
   if(!armor?.tier||anchoredProtection({...unit,body:'human'},channel)<innate)return resistance/2;
-  const offset=armor.tier-2-({kinetic:0,thermal:1,arcane:2}[channel]);
+  const offset=armorTierOffset(armor.tier,unit.armsModel)-({kinetic:0,thermal:1,arcane:2}[channel]);
   return Math.max(0,(resistance-offset)/2);
 }
 function continuousPowerBudget(power:number):number {
@@ -168,7 +169,7 @@ export function gradeOvermatch(power:number|undefined,defensePower:number,penetr
   const extra=Math.sqrt(continuousPowerBudget(power)/continuousPowerBudget(defensePower+1))-1;
   return 1+extra*Math.max(0,Math.min(1,penetration-resistance));
 }
-type DefensiveTarget = Pick<Combatant,'level'|'armor'|'body'|'shield'|'status'|'damageModel'> & Partial<Pick<Combatant,'conditions'|'barrier'>>;
+type DefensiveTarget = Pick<Combatant,'level'|'armor'|'body'|'shield'|'status'|'damageModel'> & Partial<Pick<Combatant,'conditions'|'barrier'|'armsModel'>>;
 /** 单位等级、无甲装备规格、实际防护与守护取高；屏障仅在吸收时参与，不改写通道抗穿。 */
 export function defensePower(unit:DefensiveTarget,channel:DamageChannel,includeBarrier=false):number {
   const wards=(unit.conditions??[]).filter(c=>c.id==='blessed'&&c.dur>0&&validDefensePower(c.defensePower)).map(c=>c.defensePower!);

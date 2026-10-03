@@ -6,6 +6,7 @@ import { validateEnhancements, validateChannelProtection, type Enhancements } fr
 import { synchronizePersonnel, validateCombatModel } from '../../engine/src/combat-model.js';
 import { capSingleLife, limitCombatantLife } from '../../engine/src/health-limits.js';
 import { isEnduranceModel, spCapacity } from '../../engine/src/resources.js';
+import { validateArmsModel } from '../../engine/src/arms.js';
 import { traitRegistry } from '../../engine/src/data/traits.js';
 import { skillMechanismFromId } from '../../engine/src/data/skill-mechanisms.js';
 /**
@@ -196,6 +197,7 @@ function validateRuntimeMetadata(value: Record<string, unknown>): void {
     if (condition.defensePower !== undefined && (condition.id !== 'blessed' || !validDefensePower(condition.defensePower))) throw new Error('守护防御规格记录损坏');
   }
   if (value.resourceModel !== undefined && !isEnduranceModel(value.resourceModel)) throw new Error('资源规则版本损坏');
+  validateArmsModel(value.armsModel);
   validateTacticalEffort(value.tacticalEffort, value.resourceModel);
   validateConcealment(value.tacticalRevealed);
   validateFlightState(value.airborne);

@@ -10,6 +10,7 @@ import { tbWeaponShortName } from '../weapon-name.js';
 import { casualtyXp, initialXpStrength } from '../casualty-xp.js';
 import { roundDamage } from '../probability.js';
 import { prepareCombatModel, healingYield } from '../combat-model.js';
+import { prepareArmsModel } from '../arms.js';
 import { upgradeCombatSkills } from '../skill-upgrade.js';
 import { normalizeTactic, type TacticalPreference } from '../tactical-preference.js';
 import { calibrateAutocannon, calibrateWeaponHands } from '../gen/equipment.js';
@@ -203,7 +204,7 @@ export class MassBattle {
     for (const unit of this.combatants) { validateConcealment(unit.tacticalRevealed); validateVanguardOrigin(unit.vanguardOrigin, unit.side); }
     this.rules = opts.rules ?? MASS_TW;
     if(this.rules.combatModel)for(const unit of this.combatants){prepareCombatModel(unit,this.rules);upgradeCombatSkills(unit);}
-    for (const unit of this.combatants) prepareResourceModel(unit, this.rules);
+    for (const unit of this.combatants) { prepareResourceModel(unit, this.rules); prepareArmsModel(unit, this.rules); }
     for (const u of this.combatants) { validateFlightState(u.airborne); validateFormationPosition(u.formationPosition); validateWounded(u); validateBarrier(u.barrier); validateAreas(u); validateAccessories(u); validateMount(u); validateMoraleState(u.moraleState); }
     for (const unit of this.combatants) reconcileDamageMorale(unit);
     if (this.rules.resolutionVersion !== 'v2' && this.combatants.some((u) => u.airborne || u.formationPosition !== undefined
@@ -1097,7 +1098,7 @@ export class MassBattle {
             try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'mass', ability.bonuses, this.rules.damageModel) ?? this.summonUnit?.(effect.templateId, actor.side, id); } catch { invalid = true; break; }
             const node = FORMATION_NODES.find((node) => node.side === actor.side && node.wing === formationNode(actor).wing && node.rank === 'reserve')!;
             if (!unit || [...this.combatants, ...stagedBirths, ...born].filter((u) => !this.isAttached(u.id) && u.status === 'ready' && formationNode(u).id === node.id).length >= (this.formationSlots ?? 3)) { invalid = true; break; }
-            prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules);
+            prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules);
             unit.id = id; unit.summonerId = actor.id; unit.bornRound = this.round;
             if (conjuredTemplate(effect.templateId)) unit.name = `${actor.name}的${unit.name}`;
             setFormation(unit, node); born.push(unit);

@@ -22,6 +22,8 @@ import { activeTraitIds } from './trait-sources.js';
 import { aerialTargetReason, sameLayer, rangedTargetDistance, type AerialRangeSpace } from './aerial.js';
 import { heightReach } from './small/height-map.js';
 import type { BattlefieldSpec } from './small/spatial.js';
+import { gridWeaponRange } from './small/weapon-range.js';
+import { isArmsModel } from './arms.js';
 
 export type ActionKind = 'move' | 'weapon' | 'charge' | 'ability' | 'brace' | 'retreat' | 'end-turn';
 
@@ -237,10 +239,13 @@ export function weaponTargetReason(input: {
   return undefined;
 }
 
-export function fallbackAbilityRange(actor: Combatant, ability: Ability): RangeSpec {
+/** grid=true for grid battles. V12 ranged weapon techniques reach as far as the weapon itself on either scale. */
+export function fallbackAbilityRange(actor: Combatant, ability: Ability, grid = false): RangeSpec {
   if (ability.weaponUse) {
     const weapon = skillWeapon(actor, ability);
-    return { min: 0, max: weapon ? Math.min(ability.range?.max ?? 7, skillWeaponReach(actor, weapon)) : 0, metric: 'grid', allowEngaged: true };
+    const reach = weapon ? skillWeaponReach(actor, weapon, grid) : 0;
+    const full = !!weapon && isArmsModel(actor.armsModel) && isRangedWeapon(weapon);
+    return { min: 0, max: weapon ? full ? reach : Math.min(ability.range?.max ?? 7, reach) : 0, metric: 'grid', allowEngaged: true };
   }
   if (actor.rulesVersion === 'v2' && ability.requires === 'melee' && ability.range) return { ...ability.range, max: Math.max(1, ability.range.max) };
   if (ability.range) return ability.range;
@@ -257,8 +262,9 @@ export function fallbackAbilityRange(actor: Combatant, ability: Ability): RangeS
   return { min: 0, max: Math.max(0, actor.weapon?.range ?? 0), metric: 'grid', allowEngaged: true };
 }
 
-function skillWeaponReach(actor: Combatant, weapon: Weapon): number {
-  return actor.combatModel === 'cohort-v2' && !isRangedWeapon(weapon) ? meleeReach(weapon) : Math.max(1, weapon.range ?? 0);
+function skillWeaponReach(actor: Combatant, weapon: Weapon, grid = false): number {
+  if (actor.combatModel === 'cohort-v2' && !isRangedWeapon(weapon)) return meleeReach(weapon);
+  return grid && isArmsModel(actor.armsModel) && isRangedWeapon(weapon) ? gridWeaponRange(weapon, true, actor.armsModel) : Math.max(1, weapon.range ?? 0);
 }
 
 /** 有限射程的敌对远程技法/法术计入高度；接触、友方支援、自身与区域不变。 */
@@ -318,7 +324,7 @@ export function abilityTargetReason(input: {
     const aerial = aerialTargetReason(actor, target, isRangedWeapon(weapon), weapon); if (aerial) return aerial;
     if (!isRangedWeapon(weapon) && !sameLayer(actor, target)) return '接触技能需要处于同一空地层';
     const distance = abilityRangeDistance(actor, ability, target, input.distance ?? 0, input.space);
-    if (distance > skillWeaponReach(actor, weapon) + abilityHeightReach(actor, ability, target, input.distance, input.field) || distance < (weapon.minRange ?? 0)) return '目标超出实际武器射程';
+    if (distance > skillWeaponReach(actor, weapon, !!input.field) + abilityHeightReach(actor, ability, target, input.distance, input.field) || distance < (weapon.minRange ?? 0)) return '目标超出实际武器射程';
     if (isRangedWeapon(weapon) && weapon.pointBlankPolicy === 'forbid' && distance <= 1 && sameLayer(actor, target)) return '实际武器不能抵近射击';
   }
   if (target && ability.recipe && ability.effects.every((e) => e.op === 'trait' && !!skillTraitReason(target, e)
@@ -341,7 +347,7 @@ export function abilityTargetReason(input: {
     try { for (const effect of ability.effects) if (effect.op === 'heal' && effect.amount !== undefined) healingAmount(target, effect.amount); }
     catch (error) { return error instanceof Error ? error.message : String(error); }
   }
-  const range = fallbackAbilityRange(actor, ability);
+  const range = fallbackAbilityRange(actor, ability, !!input.field);
   if (range.metric === 'self') {
     return target && target.id !== actor.id ? '该技能只能对自己施放' : undefined;
   }

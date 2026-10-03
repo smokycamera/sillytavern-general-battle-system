@@ -12,6 +12,7 @@ import { meleeProfile } from './melee.js';
 import { meleeWeapon, isCannonWeapon } from './loadout.js';
 import { cloneData } from './clone.js';
 import { fatiguePenalty } from './resources.js';
+import { weaponCrew, demolitionPackets, humanSizedIndividual, loneHeavyOperator, LONE_AUTOCANNON_SHARE, ARTILLERY_SMALL_TARGET } from './arms.js';
 /**
  * 伤害管线：命中判定 + 分段伤害。
  *
@@ -182,7 +183,8 @@ export function penetrationContext(opts: Pick<AttackOpts, 'attacker' | 'defender
   const channel = opts.abilityDamage?.channel ?? weapon?.channel ?? 'kinetic';
   const base = opts.abilityDamage?.penetration ?? weapon?.penetration ?? 1 + Math.floor((weapon?.level ?? 5) / 2);
   const penetration = base + (opts.abilityDamage && !opts.abilityDamage.weaponBased ? 0 : traitPenetrationBonus(opts.attacker, weapon, opts.ranged ?? !!weapon?.tags?.includes('ranged'), base));
-  const target={...opts.defender,damageModel:opts.rules?.damageModel};
+  // The battle rules, not a possibly stale unit field, decide the armor projection.
+  const target={...opts.defender,damageModel:opts.rules?.damageModel,armsModel:opts.rules?opts.rules.armsModel:opts.defender.armsModel};
   const resistance = modern?anchoredProtection(target,channel):effectiveProtection(target, channel);
   const wounds=isWoundModel(opts.rules?.damageModel);
   const armorFactor=wounds?armorTransmission(target,channel,penetration):penetrationFactor(penetration,resistance);
@@ -387,8 +389,10 @@ function outcomeScale(opts: Omit<AttackOpts, 'rng'>, resolved?: ResolvedWeapon):
   if(opts.rules.combatModel===MEMBER_HEALTH_MODEL){
     const a=opts.attacker,d=opts.defender,ranged=opts.ranged??isRangedCapable(a),weapon=resolved?resolved.weapon:combatWeapon(opts.weaponOverride??a.weapon,a,d,opts.rules.weaponOverflow,opts.rules.damageModel,opts.rules.overmatch,opts.rules.overmatchCurve);
     const count=a.scale==='hero'?1:a.body==='vehicle'?personnel(a):Math.min(personnel(a),opts.participants??engagementWidth(a,d,ranged,undefined,opts.fieldTags)*Math.max(1,personnel(a)/COHORT_REFERENCE));
-    const crew=a.scale!=='hero'&&(a.body??'human')==='human'&&!opts.abilityDamage?.delivery?.startsWith('magic')?(isCannonWeapon(weapon)?4:weapon?.recipe?.mechanism==='autocannon'?3:1):1;
-    const participants=Math.max(0,count/crew)*(!ranged&&looseFormation(a)?0.5:1);
+    const crew=a.scale!=='hero'&&(a.body??'human')==='human'&&!opts.abilityDamage?.delivery?.startsWith('magic')?weaponCrew(weapon,opts.rules.armsModel):1;
+    const loose=Math.max(0,count/crew)*(!ranged&&looseFormation(a)?0.5:1);
+    // V12: a formation throws one demolition charge per three participants instead of one per member.
+    const participants=opts.rules.armsModel&&a.scale!=='hero'&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&weapon?.tags?.includes('blast')?demolitionPackets(loose):loose;
     const area=hasMemberHealth(d)&&opts.abilityDamage&&!opts.abilityDamage.weaponBased&&opts.abilityDamage.shape==='burst'?Math.min(d.hp,opts.abilityDamage.areaExposure??4):1;
     return {participants,multiplier:participants*area*(opts.packetShare??1)};
   }
@@ -428,9 +432,15 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
   if (rules.combatModel === MEMBER_HEALTH_MODEL && !ranged && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) {
     const melee = meleeProfile(weapon);
     if (melee?.accuracy) extraMods.push({ source: 'intrinsic', name: '近战武器操控', kind: 'atk', type: 'flat', value: melee.accuracy });
-    if (melee?.closePenalty && opts.distance !== undefined && opts.distance <= 1) {
-      extraMods.push({ source: 'intrinsic', name: '长柄贴身受限', kind: 'atk', type: 'flat', value: melee.closePenalty });
+    const close = rules.armsModel ? melee?.armsClosePenalty ?? melee?.closePenalty : melee?.closePenalty;
+    if (close && opts.distance !== undefined && opts.distance <= 1) {
+      extraMods.push({ source: 'intrinsic', name: '长柄贴身受限', kind: 'atk', type: 'flat', value: close });
     }
+  }
+  if (rules.armsModel && ranged && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) {
+    // V12 heavy weapons: guns cannot easily lay on one person; one person cannot serve an autocannon at full rate.
+    if (isCannonWeapon(weapon) && humanSizedIndividual(defender)) extraMods.push({ source: 'intrinsic', name: '火炮瞄准单兵', kind: 'atk', type: 'flat', value: ARTILLERY_SMALL_TARGET });
+    if (loneHeavyOperator(attacker, weapon)) extraMods.push({ source: 'intrinsic', name: '单人操作机炮', kind: 'dmg', type: 'mult', value: LONE_AUTOCANNON_SHARE });
   }
   // 实际投送距离共用于预览、普通攻击、警戒与武器技能；独立法术不借用武器修正。
   if (rules.resolutionVersion === 'v2' && ranged && (!opts.abilityDamage || opts.abilityDamage.weaponBased)

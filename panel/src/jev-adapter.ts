@@ -122,7 +122,7 @@ export class TavernJevAdapter implements BattleAdapter {
       attack: u.weapon ? diceAvg(u.weapon.baseDice) : 1,
       range:
         small && field
-          ? gridWeaponRange(u.weapon)
+          ? gridWeaponRange(u.weapon, true, u.armsModel)
           : Math.max(1, u.weapon?.range ?? 1),
       ap:
         u.side === this.side &&

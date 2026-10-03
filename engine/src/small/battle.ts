@@ -18,6 +18,7 @@ import { grantBarrier, decayBarrier, validateBarrier } from '../barrier.js';
 import { casualtyXp, initialXpStrength } from '../casualty-xp.js';
 import { roundDamage } from '../probability.js';
 import { prepareCombatModel, healingYield } from '../combat-model.js';
+import { prepareArmsModel } from '../arms.js';
 import { upgradeCombatSkills } from '../skill-upgrade.js';
 import { normalizeTactic, type TacticalPreference } from '../tactical-preference.js';
 import { calibrateAutocannon, calibrateWeaponHands } from '../gen/equipment.js';
@@ -234,7 +235,7 @@ export class SmallBattle {
     }
     this.rules = opts.rules ?? LITE_D20;
     if(this.rules.combatModel)for(const unit of this.combatants){prepareCombatModel(unit,this.rules);upgradeCombatSkills(unit);reconcileDamageMorale(unit);}
-    for (const unit of this.combatants) { prepareResourceModel(unit, this.rules); validateTacticalEffort(unit.tacticalEffort, unit.resourceModel); }
+    for (const unit of this.combatants) { prepareResourceModel(unit, this.rules); prepareArmsModel(unit, this.rules); validateTacticalEffort(unit.tacticalEffort, unit.resourceModel); }
     if (this.combatants.some((u) => u.airborne) && (!this.battlefield || this.rules.resolutionVersion !== 'v2')) throw new Error('空中状态需要V2二维战场');
     this.seed = opts.seed ?? randomSeed();
     this.rng = opts.rng ?? (opts.seed || this.rules.resolutionVersion === 'v2' ? new SeededRng(this.seed) : liveRng());
@@ -649,7 +650,7 @@ export class SmallBattle {
     if (!ranged && (isElevated(actor) || isAirborne(actor))) return fail('高处近战破障须先下至合法地面');
     let budget = 0, coefficient = 1;
     if (usesWeapon) {
-      const adapted = gridWeapon(weapon, this.rules.combatModel === MEMBER_HEALTH_MODEL);
+      const adapted = gridWeapon(weapon, this.rules.combatModel === MEMBER_HEALTH_MODEL, this.rules.armsModel);
       const range = weaponRangeSpec(adapted, ranged);
       if (distance < range.min || distance > range.max) return fail('结构不在武器射程内');
       if ((this.reloadCd.get(weaponReloadKey(actor, weapon)) ?? 0) > 0) return fail('武器尚在装填');
@@ -659,7 +660,7 @@ export class SmallBattle {
       if (!ability.effects.some(e => e.op === 'damage') || ability.target === 'self' || ability.target === 'ally' || ability.damageBasis === 'shield') return fail('此技能没有可用于破障的直接伤害');
       if (this.actedThisTurn.has(actorId) || this.hasteSelected.has(actorId)) return fail('破障施法需要未使用的主行动');
       const reason = abilityUsabilityReason(actor, ability); if (reason) return fail(reason);
-      const range = fallbackAbilityRange(actor, gridAbility(ability));
+      const range = fallbackAbilityRange(actor, gridAbility(ability), true);
       if (range && (distance < range.min || distance > range.max)) return fail('结构不在技能射程内');
       const level = ability.power ?? ability.recipe?.power ?? 1;
       if (usesWeapon) {
@@ -866,14 +867,14 @@ export class SmallBattle {
     if (this.rules.resolutionVersion === 'v2' && mode === 'auto') {
       if (opts.charge) useSidearm = meleeWeapon(actor) === actor.sidearm && !!actor.sidearm;
       else {
-        const adapt = (w: Combatant['weapon']) => this.battlefield ? gridWeapon(w, this.rules.combatModel === MEMBER_HEALTH_MODEL) : w;
+        const adapt = (w: Combatant['weapon']) => this.battlefield ? gridWeapon(w, this.rules.combatModel === MEMBER_HEALTH_MODEL, this.rules.armsModel) : w;
         const primaryReason = weaponTargetReason({ actor, target, weapon: adapt(actor.weapon), ranged: primaryRanged, distance, reloadLeft: this.reloadCd.get(actor.id) ?? 0, field: this.battlefield });
         const secondaryReason = actor.sidearm && weaponTargetReason({ actor, target, weapon: adapt(actor.sidearm), ranged: isRangedWeapon(actor.sidearm), distance, reloadLeft: this.reloadCd.get(weaponReloadKey(actor, actor.sidearm)) ?? 0, field: this.battlefield });
         useSidearm = !!actor.sidearm && !secondaryReason && (!!primaryReason || primaryRanged && !isRangedWeapon(actor.sidearm) && meleeContact(this.battlefield, actor, target) && distance <= (this.battlefield ? 1 : 0));
       }
     }
     const originalWeapon = useSidearm ? actor.sidearm : actor.weapon;
-    const weapon = this.battlefield ? gridWeapon(originalWeapon, this.rules.combatModel === MEMBER_HEALTH_MODEL) : originalWeapon;
+    const weapon = this.battlefield ? gridWeapon(originalWeapon, this.rules.combatModel === MEMBER_HEALTH_MODEL, this.rules.armsModel) : originalWeapon;
     const ranged = this.rules.resolutionVersion === 'v2' ? isRangedWeapon(originalWeapon) : useSidearm ? isRangedWeapon(originalWeapon) : primaryRanged;
     const blocked = actor.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack && weapon?.recipe?.mechanism !== 'natural');
     let reason = (blocked ? '当前状态禁止武器攻击' : undefined) ?? weaponTargetReason({
@@ -1057,7 +1058,7 @@ export class SmallBattle {
         enabled: attackTargets.some((target) => target.enabled),
         ...(!attackTargets.some((target) => target.enabled) ? { reason: attackTargets[0]?.reason ?? actorReason ?? '没有合法目标' } : {}),
         targets: attackTargets,
-        range: weaponRangeSpec(this.battlefield ? gridWeapon(actor.weapon, this.rules.combatModel === MEMBER_HEALTH_MODEL) : actor.weapon, isRangedCapable(actor)),
+        range: weaponRangeSpec(this.battlefield ? gridWeapon(actor.weapon, this.rules.combatModel === MEMBER_HEALTH_MODEL, this.rules.armsModel) : actor.weapon, isRangedCapable(actor)),
         preview: {
           ...(this.movedThisTurn.has(actor.id) && isRangedCapable(actor) && !(actor.rulesVersion === 'v2' && steadyMovingShot(actor, actor.weapon)) ? { movePenalty: -2 } : {}),
         },
@@ -1067,7 +1068,7 @@ export class SmallBattle {
         enabled: sidearmTargets.some((target) => target.enabled),
         ...(!sidearmTargets.some((target) => target.enabled) ? { reason: sidearmTargets[0]?.reason ?? actorReason ?? '没有合法目标' } : {}),
         targets: sidearmTargets,
-        range: weaponRangeSpec(this.battlefield ? gridWeapon(actor.sidearm, this.rules.combatModel === MEMBER_HEALTH_MODEL) : actor.sidearm, this.rules.resolutionVersion === 'v2' && isRangedWeapon(actor.sidearm)),
+        range: weaponRangeSpec(this.battlefield ? gridWeapon(actor.sidearm, this.rules.combatModel === MEMBER_HEALTH_MODEL, this.rules.armsModel) : actor.sidearm, this.rules.resolutionVersion === 'v2' && isRangedWeapon(actor.sidearm)),
       }] : []),
       {
         id: 'charge', kind: 'charge', label: '冲锋',
@@ -1113,7 +1114,7 @@ export class SmallBattle {
         enabled,
         ...(!enabled ? { reason: targets[0]?.reason ?? targetlessReason ?? '没有合法目标' } : {}),
         ...(targets.length ? { targets } : {}),
-        range: fallbackAbilityRange(actor, this.battlefield ? gridAbility(ability) : ability),
+        range: fallbackAbilityRange(actor, this.battlefield ? gridAbility(ability) : ability, !!this.battlefield),
         ...(ability.cost
           ? { preview: { resource: { name: ability.itemSourceId ? '物品' : ability.cost.resource, cost: abilityCost(actor, ability)!.amount, available: actor.resources[ability.cost.resource] ?? 0 } } }
           : {}),
@@ -1425,7 +1426,7 @@ export class SmallBattle {
           try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'small', ability.bonuses, this.rules.damageModel) ?? this.summonUnit?.(effect.templateId, actor.side, id); }
           catch { return { ok: false, reason: '召唤模板生成失败，未扣费', resolutions: [], log: '' }; }
           if (!unit) return { ok: false, reason: '召唤模板不可用，未扣费', resolutions: [], log: '' };
-          prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules);
+          prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules);
           unit.id = id; unit.summonerId = actor.id; unit.bornRound = this.round;
           if (conjuredTemplate(effect.templateId)) unit.name = `${actor.name}的${unit.name}`;
           const cell = neighbors(this.battlefield, actor.pos!).find((n) => canOccupy(this.battlefield!, [...this.combatants, ...summons], unit, n));
@@ -1735,10 +1736,10 @@ export class SmallBattle {
     const escortCorridor = new Set(escorted ? [objective.cell, ...(escortPath?.cells.slice(1) ?? [])] : []);
     const foes = knownUnits.filter((u) => u.side !== unit.side && ['ready', 'routing'].includes(u.status));
     const hasFear = foes.some((u) => activeTraitIds(u).some((id) => this.traitRegistry.get(id)?.effects.some((e) => e.kind === 'moraleAura' && e.scope === 'enemySide')));
-    const rangedRole = isRangedWeapon(unit.weapon) && gridWeaponRange(unit.weapon) > 2;
+    const rangedRole = isRangedWeapon(unit.weapon) && gridWeaponRange(unit.weapon, true, this.rules.armsModel) > 2;
     const meleeThreats = foes.filter((foe) => foe.status === 'ready' && meleeWeapon(foe) && (meleeContact(field, unit, foe) || isAirborne(foe)));
-    const safeDistance = Math.min(gridWeaponRange(unit.weapon), meleeThreats.length
-      ? Math.max(4, ...meleeThreats.map((foe) => movementPoints(foe, this.fieldTags) + 2)) : gridWeaponRange(unit.weapon));
+    const safeDistance = Math.min(gridWeaponRange(unit.weapon, true, this.rules.armsModel), meleeThreats.length
+      ? Math.max(4, ...meleeThreats.map((foe) => movementPoints(foe, this.fieldTags) + 2)) : gridWeaponRange(unit.weapon, true, this.rules.armsModel));
     const allowed = (cell: number) => canOccupy(field, knownUnits, unit, cell);
     const searchCell = objective.kind === 'annihilation' && !foes.length ? this.searchDestination(unit, knownUnits) : unit.pos!;
     const order = regionalOrder(field, unit, knownUnits, this.commanderProfiles[unit.side === 'ally' ? 'ally' : 'enemy']);
@@ -1752,7 +1753,7 @@ export class SmallBattle {
       const actor={...elevatedActor,pos};
       const hasFire = foes.length ? foes.some(target=>!this.weaponContext(actor,target,{weaponMode:'primary'}).reason)
         : field.tiles.some((_,cell)=>!field.city!.inside.includes(cell)&&!field.city!.frontline.includes(cell)&&!groundBlocked(field,cell)
-          && gridDistance(field,pos,cell)<=gridWeaponRange(actor.weapon)&&unitLineOfSight(field,actor,{...actor,pos:cell,elevation:undefined,side:unit.side==='ally'?'enemy':'ally'}));
+          && gridDistance(field,pos,cell)<=gridWeaponRange(actor.weapon, true, this.rules.armsModel)&&unitLineOfSight(field,actor,{...actor,pos:cell,elevation:undefined,side:unit.side==='ally'?'enemy':'ally'}));
       return hasFire?[pos]:[];
     }) : [];
     const wallRoutes = gridCostsToGoals(field,firingPositions,p=>canOccupy(field,knownUnits,elevatedActor,p),(p,from)=>movementStepCost(field,p,elevatedActor,this.fieldTags,from));
@@ -1763,9 +1764,9 @@ export class SmallBattle {
         const actor = { ...unit, pos: cell };
         return foes.some(target => rangedRole
           ? [actor.weapon, actor.sidearm].some(weapon => isRangedWeapon(weapon) && !weaponTargetReason({ actor, target,
-              weapon: gridWeapon(weapon, this.rules.combatModel === MEMBER_HEALTH_MODEL), ranged: true, distance: this.dist(actor, target), field }) && !this.sightReason(actor, target, weapon?.indirect)
+              weapon: gridWeapon(weapon, this.rules.combatModel === MEMBER_HEALTH_MODEL, this.rules.armsModel), ranged: true, distance: this.dist(actor, target), field }) && !this.sightReason(actor, target, weapon?.indirect)
             && !rangedScreen(actor, target, weapon, knownUnits, { mode: 'small', width: field.width, battlefield: field }, this.conditionDefMap()))
-          : this.dist(actor, target) <= gridWeaponRange(meleeWeapon(actor), this.rules.combatModel === MEMBER_HEALTH_MODEL)
+          : this.dist(actor, target) <= gridWeaponRange(meleeWeapon(actor), this.rules.combatModel === MEMBER_HEALTH_MODEL, this.rules.armsModel)
             && !this.sightReason(actor, target) && (meleeContact(field, actor, target) || isAirborne(actor))) ? [cell] : [];
       }) : [searchCell];
     const routeCosts = gridCostsToGoals(field, goals, allowed, (cell, from) => movementStepCost(field, cell, unit, this.fieldTags, from));

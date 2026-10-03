@@ -326,7 +326,7 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
   const enemy = unit.side === 'enemy', ranged = isRangedWeapon(unit.weapon), air = isAirborne(unit);
   const forward = enemy ? 3 : field.height - 4;
   const vanguard = activeTraitIds(unit).includes('vanguard');
-  const preferredDepth = ranged ? gridWeaponRange(unit.weapon) <= 4 ? 1 : 0 : 2;
+  const preferredDepth = ranged ? gridWeaponRange(unit.weapon, true, unit.armsModel) <= 4 ? 1 : 0 : 2;
   const preferredY = vanguard ? forward : enemy ? preferredDepth : field.height - 1 - preferredDepth;
   const middle = Math.floor(field.height / 2);
   const probes = [...new Set([forward, middle])].flatMap(y => Array.from({ length: field.width }, (_, x) => y * field.width + x))
@@ -353,7 +353,7 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
       + (terrain === 'cover' ? 1.4 : terrain === 'forest' ? 0.4 : 0)
       + 1.5 * deploymentNoise(seed, unit.id, String(position));
     if (ranged && !unit.weapon?.indirect) {
-      const targets = probes.filter(p => p !== position && gridDistance(field, position, p) <= gridWeaponRange(unit.weapon));
+      const targets = probes.filter(p => p !== position && gridDistance(field, position, p) <= gridWeaponRange(unit.weapon, true, unit.armsModel));
       const clear = targets.filter(p => {
         const target = { ...actor, id: '@deployment-probe', side: enemy ? 'ally' as const : 'enemy' as const, pos: p, airborne: false };
         return unitLineOfSight(field, actor, target) && !rangedScreen(actor, target, unit.weapon, friends, { mode: 'small', width: field.width,battlefield:field }, emptyConditions);

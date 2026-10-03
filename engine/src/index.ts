@@ -50,6 +50,7 @@ export * from './battle-feedback.js';
 export * from './mass/feedback.js';
 
 export * from './resources.js';
+export * from './arms.js';
 export * from './small/weapon-range.js';
 
 export * from './small/skill-range.js';

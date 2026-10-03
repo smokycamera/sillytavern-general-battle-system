@@ -215,13 +215,15 @@ export function weaponClassKey(name: string): string | undefined {
   const n = (name ?? '').trim().toLowerCase();
   if (!n) return undefined;
   const rules: { cls: string; kws: string[] }[] = [
-    { cls: 'light-ranged', kws: ['轻型投射', '手弩', '手枪', '短铳'] },
+    { cls: 'throwing', kws: ['标枪', '飞刀', '投矛', '飞斧', '投斧'] },
+    { cls: 'light-ranged', kws: ['轻型投射', '手弩', '手枪', '短铳', '投石索'] },
+    { cls: 'heavy-rifle', kws: ['重步枪', '反器材', '狙击'] },
     { cls: 'sword', kws: ['剑', '刀', '长剑', '短剑', '巨剑', '武士刀'] },
     { cls: 'axe', kws: ['斧', '战斧', '巨斧', '手斧'] },
     { cls: 'spear', kws: ['长枪', '长兵器', '长矛', '枪矛', '矛', '戟', '长柄', '骑枪'] },
     { cls: 'bow', kws: ['弓', '弩', '长弓', '短弓', '弓箭', '复合弓'] },
     { cls: 'firearm', kws: ['火枪', '燧发枪', '火绳枪', '火铳', '滑膛枪', '铳'] },
-    { cls: 'rifle', kws: ['步枪', '机枪', '突击步枪', '卡宾', '狙击枪', 'hk416', 'hk-416', 'ak', '自动枪', '枪'] },
+    { cls: 'rifle', kws: ['步枪', '机枪', '突击步枪', '卡宾', 'hk416', 'hk-416', 'ak', '自动枪', '枪'] },
     { cls: 'autocannon', kws: ['机炮', '机关炮', '自动炮', 'autocannon', 'auto cannon'] },
     { cls: 'indirect-cannon', kws: ['曲射', '间接火炮', '榴弹炮', '迫击炮', '投石机', '抛石机', 'howitzer', 'mortar'] },
     { cls: 'cannon', kws: ['炮', '火炮', '舰炮', '野战炮', '坦克炮'] },
@@ -240,8 +242,8 @@ export function weaponClassKey(name: string): string | undefined {
 const ARMOR_TIER_NAMES = ['无甲', '轻甲', '中甲', '重甲', '超重甲'] as const;
 const ARMOR_TIER_ALIASES: { tier: 0 | 1 | 2 | 3 | 4; kws: string[] }[] = [
   { tier: 0, kws: ['布甲', '便装'] },
-  { tier: 1, kws: ['皮甲', '软甲', '链甲'] },
-  { tier: 2, kws: ['鳞甲', '板条甲', '镶片甲'] },
+  { tier: 1, kws: ['皮甲', '软甲'] },
+  { tier: 2, kws: ['鳞甲', '板条甲', '镶片甲', '链甲', '锁子甲', '锁甲'] },
   { tier: 3, kws: ['全身甲', '札甲'] },
 ];
 

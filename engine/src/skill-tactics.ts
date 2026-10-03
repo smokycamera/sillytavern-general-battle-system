@@ -96,7 +96,7 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
       for (const rawWeapon of [actor.weapon, actor.sidearm]) {
         if (!rawWeapon || flags(context, actor).some(d => d?.preventAttack) && rawWeapon.recipe?.mechanism !== 'natural') continue;
         const ranged = isRangedWeapon(rawWeapon);
-        const weapon = field ? gridWeapon(rawWeapon) : !ranged && actor.combatModel === 'cohort-v2' ? { ...rawWeapon, range: meleeReach(rawWeapon) } : rawWeapon;
+        const weapon = field ? gridWeapon(rawWeapon, true, rules.armsModel) : !ranged && actor.combatModel === 'cohort-v2' ? { ...rawWeapon, range: meleeReach(rawWeapon) } : rawWeapon;
         if (weaponTargetReason({ space: context.mode, actor, target, weapon, ranged, distance: dist, reloadLeft: context.reload?.get(weaponReloadKey(actor, rawWeapon)), field }) || shotBlocked(weapon, ranged)) continue;
         const width = engagementWidth(actor, target, ranged, field, context.fieldTags);
         const attached = new Set(context.attached?.values() ?? []);

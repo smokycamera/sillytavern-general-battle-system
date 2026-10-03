@@ -95,7 +95,7 @@ it('line, cone, ring and chain select different targets with bounded, determinis
   expect(select('line')).toEqual(['p','inline']);expect(select('cone')).toContain('wide');expect(select('ring')).not.toContain('p');expect(select('chain')).toHaveLength(3);
 });
 it('keeps the existing weapon classes plus the three user-approved additions and accepts broad names without extra required fields',()=>{
-  for(const [name,id] of [['狙击枪','rifle'],['机枪','rifle'],['冲锋枪','rifle'],['霰弹枪','rifle'],['匕首','sword'],['投掷武器','throwing'],['枪械','rifle'],['法器','magic']])expect(resolveWeaponClass(name!)).toBe(id);
+  for(const [name,id] of [['狙击枪','heavy-rifle'],['机枪','rifle'],['冲锋枪','rifle'],['霰弹枪','rifle'],['匕首','sword'],['投掷武器','throwing'],['枪械','rifle'],['法器','magic']])expect(resolveWeaponClass(name!)).toBe(id);
   expect(parseItemSpecification('回能药剂L3').kind).toBe('consumable');expect(parseItemSpecification('夜视镜L3').kind).toBe('accessory');
 });
 
