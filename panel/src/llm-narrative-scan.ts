@@ -18,7 +18,7 @@ export function narrativeScanMessages(input: { save: NarrativeSave; messages: Na
   });
   const settingsForFacts = { ...input.save, promptSettings: { sections: { reminder: { enabled: false } } } };
   return [
-    { role: 'system', content: '根据正文内容重新生成参战双方单位及相关战外事件，使用以下内置世界书的格式规范和等级锚定。已有档案沿用当前资料中的编号，新单位使用spawn。只输出一个<tb>事件块。\n\n' + rules.join('\n\n') },
+    { role: 'system', content: '根据正文内容重新生成参战双方单位及相关战外事件，使用以下内置世界书的格式规范和等级锚定。已有档案沿用当前资料中的编号，资料里没有的单位不自编编号，新单位使用spawn且不写id。只输出一个<tb>事件块。\n\n' + rules.join('\n\n') },
     { role: 'user', content: JSON.stringify({ 正文: narrative, 当前资料: narrativeProjection(settingsForFacts, '单位 技能 装备'), ...(input.requirements?.trim() ? { 玩家要求: input.requirements.trim() } : {}) }) },
   ];
 }

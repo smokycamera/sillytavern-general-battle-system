@@ -12,6 +12,7 @@ import { createInventoryItem, prepareInventoryState, prepareInventoryTransaction
 import { assertNarrativeCapacity, hasNarrativeDeployment, MAX_SCENE_UNITS } from './narrative-limits.js';
 import { applyUnitSet } from './unit-set.js';
 import { mapNarrativeReferences, narrativeIds, prepareNarrativeIds, type NarrativeIdState } from './narrative-ids.js';
+import { newUnitId, planNewUnits, type NewUnitPlan } from './narrative-new-units.js';
 
 export interface MessageEnvelope {
   characterId: string;
@@ -198,6 +199,73 @@ function assertCompatibleUnitChanges(events: Suggestion[]): void {
   }
 }
 
+type Registry = ReturnType<typeof traitRegistry>;
+function mergePatch(target: Record<string, unknown>, source: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined) continue;
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const child = target[key]; target[key] = child && typeof child === 'object' && !Array.isArray(child) ? child : {};
+      mergePatch(target[key] as Record<string, unknown>, value as Record<string, unknown>);
+    } else target[key] = structuredClone(value);
+  }
+}
+/** 补员/状态与单位字段：同一档案的 unit_set 合并后一次赋值，unit_update 并入其中或单独更新。 */
+function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: Map<string, Record<string, unknown>>, proposalId: string, registry: Registry): NarrativeSave {
+  let next = save, records = next.storage ?? [];
+  for (const event of events) if (event.kind === 'unit-set') {
+    const patch = combined.get(event.id) ?? {}; mergePatch(patch, event.data); combined.set(event.id, patch);
+  }
+  for (const event of events) {
+    if (event.kind !== 'unit-update') continue;
+    const combinedPatch = combined.get(event.id!);
+    if (combinedPatch) {
+      mergePatch(combinedPatch, { hp: event.hp, hpMax: event.hpMax, morale: event.morale, status: event.state });
+      if (event.clear?.length) {
+        const conditions = (combinedPatch.conditions ?? records.find(r => r.id === event.id)?.conditions ?? []) as Combatant['conditions'];
+        combinedPatch.conditions = event.clear.includes('all') || event.clear.includes('全部') ? [] : conditions.filter(c => !event.clear!.includes(c.id));
+      }
+      continue;
+    }
+    records = records.map((r) => r.id === event.id ? updateUnitRecord(r, event, registry, proposalId) : r);
+  }
+  next.storage = records;
+  for (const [id, patch] of combined) next = applyUnitSet(next, id, patch, proposalId);
+  return next;
+}
+/** 学习技能与剧情效果来源；来源编号带事件序号，同一回复重复学习需合并。 */
+function applyUnitEffect(storage: UnitRecord[], event: Extract<Suggestion, { kind: 'learn' | 'bless' | 'unbless' | 'affect' | 'unaffect' }>, index: number, proposalId: string, registry: Registry, learned: Set<string>): UnitRecord[] {
+  if (event.kind === 'learn') {
+    if (learned.has(event.id)) throw new Error('同一回复请合并对同一档案的技能学习');
+    learned.add(event.id);
+    return storage.map((record) => record.id === event.id ? learnUnitRecord(record, event.skills.map((s) => ({ id: s.blueprintId, level: s.level, name: s.name, bonuses: s.bonuses })), registry, `learn:${proposalId}:${index}`) : record);
+  }
+  const record: UnitRecord = storage.find((r) => r.id === event.id)!;
+  if (record.retired || record.hp <= 0 || record.status === 'dead') throw new Error('不能通过效果来源复活阵亡或解散档案');
+  const unit = materializeUnitRecord(record, registry);
+  if (event.kind === 'bless') grantTraitSource(unit, { id: `bless:${proposalId}:${index}`, name: event.name, kind: 'blessing', traitIds: event.traitIds, duration: event.duration });
+  else if (event.kind === 'affect') grantTraitSource(unit, { id: `affect:${proposalId}:${index}`, name: event.name, kind: 'effect', traitIds: [], conditionIds: event.conditionIds, duration: event.duration });
+  else {
+    const kind = unit.traitSources?.find((s) => s.id === event.sourceId)?.kind;
+    if (!kind || kind === 'equipment' || event.kind === 'unbless' && kind !== 'blessing') throw new Error('只能解除本单位的明确剧情效果来源');
+    revokeTraitSource(unit, event.sourceId);
+  }
+  return storage.map((r) => r.id === record.id ? unitRecordFromCombatant(unit, record, { sourceId: proposalId, kind: 'update' }) : r);
+}
+/** 同批新建单位建档之后再执行指向它们的修改，阶段顺序与已有单位相同。 */
+function applyToNewUnits(save: NarrativeSave, events: Suggestion[], fresh: NewUnitPlan, proposalId: string, registry: Registry, deploys: string[]): NarrativeSave {
+  const isNew = (event: Suggestion) => 'id' in event && !!event.id && fresh.created.has(event.id);
+  let next = applyUnitChanges(save, events.filter(isNew), new Map([...fresh.patches].map(([id, patch]) => [id, structuredClone(patch)])), proposalId, registry);
+  const learned = new Set<string>();
+  for (const [index, event] of events.entries()) {
+    if (!isNew(event)) continue;
+    if (event.kind === 'unbless' || event.kind === 'unaffect') throw new Error('新建单位还没有可解除的效果来源');
+    if (event.kind === 'learn' || event.kind === 'bless' || event.kind === 'affect') next.storage = applyUnitEffect(next.storage!, event, index, proposalId, registry, learned);
+  }
+  const fit = (id: string) => next.storage!.some((r) => r.id === id && r.hp > 0 && !r.retired && r.status !== 'dead');
+  next.rosterIds = [...new Set([...next.rosterIds ?? [], ...deploys])].filter((id) => !fresh.created.has(id) || fit(id));
+  return next;
+}
+
 /** 整包准备与校验；调用方持久化成功后才替换当前事实。 */
 export function prepareNarrativeTransaction(save: NarrativeSave, proposal: NarrativeProposal, namespace: string, manual = false): NarrativeSave {
   if (proposal.status === 'unresolved') throw new Error('还有待补全的事件，请先修正草稿或明确仅保留已识别部分');
@@ -211,8 +279,11 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (!(save.committedOutcomeIds ?? []).includes(id)) throw new Error('战内与未结算战果只能由引擎更新');
   }
   if (save.committedNarrativeSources?.includes(proposal.sourceKey) || (save.proposals ?? []).some((p) => p.sourceKey === proposal.sourceKey && p.status === 'committed')) throw new Error('此消息已经提交，编辑/重生成不会重复执行');
-  const { realId } = narrativeIds({ ...prepareInventoryState(save), narrativeIdState: expected.narrativeIdState ?? save.narrativeIdState });
-  proposal = { ...proposal, events: mapNarrativeReferences(proposal.events, realId) };
+  const ids = narrativeIds({ ...prepareInventoryState(save), narrativeIdState: expected.narrativeIdState ?? save.narrativeIdState });
+  // 正文给新单位自编的编号只在本批指代该新单位；已有编号照常还原为存档身份。
+  const fresh = planNewUnits(save, proposal.id, mapNarrativeReferences(proposal.events, ids.realId), ids);
+  proposal = { ...proposal, events: fresh.events };
+  const isNew = (event: Suggestion) => 'id' in event && !!event.id && fresh.created.has(event.id);
   if (!manual && expected.manualOnly) throw new Error('此消息需要预览确认后提交');
   if (!manual && !narrativeAutoApproval(save)) throw new Error('自动批准未开启，需要确认后提交');
   assertNarrativeCapacity(save, proposal.events);
@@ -220,13 +291,18 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   let next = structuredClone(save);
   // 只清候选副本的出场选择，档案/装备/战果保持；校验或保存失败仍保留旧事实。
   if (replacesRoster) next.rosterIds = [];
+  // 先占用正文写给新单位的空闲编号，本批其他新实例不会抢到它。
+  if (fresh.handles.size) next.narrativeIdState = { aliases: { ...next.narrativeIdState?.aliases, ...Object.fromEntries(fresh.handles) } };
   const registry = traitRegistry();
   let records = next.storage ?? [];
-  assertCompatibleUnitChanges(proposal.events);
+  assertCompatibleUnitChanges([...proposal.events, ...[...fresh.patches].map(([id, data]): Suggestion => ({ kind: 'unit-set', id, data, raw: '' }))]);
   for (const event of proposal.events) {
     if (event.kind !== 'unit-set' && event.kind !== 'unit-update' && event.kind !== 'deploy' && event.kind !== 'bless' && event.kind !== 'unbless' && event.kind !== 'affect' && event.kind !== 'unaffect' && event.kind !== 'learn') continue;
+    if (isNew(event)) continue;
     const record = records.find((r) => r.id === event.id);
-    if (!record || !event.id || expected.unitVersions[event.id] !== (record.revision ?? 1)) throw new Error(`档案 ${event.id} 缺失或版本过期`);
+    // 缺失与过期分开说明：编错编号需要改草稿，过期才需要重新扫描。
+    if (!record || !event.id) throw new Error(`档案 ${ids.publicId(event.id ?? '')} 缺失：这个编号不是已有单位。修改已有单位请用单位资料里的编号，新单位用 spawn 新建`);
+    if (expected.unitVersions[event.id] !== (record.revision ?? 1)) throw new Error(`档案 ${ids.publicId(event.id)}（${record.name}）在这条回复之后已有改动，版本过期，请重新扫描`);
   }
   // 固定阶段：移除旧实物 → 补员/状态 → 单位字段 → 实物改造/学习/效果 → 部署。
   // 版本只对批次开始前的事实校验；后续任一步失败只丢弃此候选副本。
@@ -238,54 +314,12 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (item.equippedTo) next = prepareInventoryTransaction(next, { kind: 'unequip', id: 'take-unequip:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, ...item.equippedTo });
     next = prepareInventoryTransaction(next, { kind: 'discard', id: 'take:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, itemId: event.id, qty: event.qty });
   }
-  records = next.storage ?? [];
-  const combined = new Map<string, Record<string, unknown>>();
-  const merge = (target: Record<string, unknown>, source: Record<string, unknown>) => {
-    for (const [key,value] of Object.entries(source)) {
-      if (value === undefined) continue;
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        const child = target[key]; target[key] = child && typeof child === 'object' && !Array.isArray(child) ? child : {};
-        merge(target[key] as Record<string,unknown>,value as Record<string,unknown>);
-      } else target[key] = structuredClone(value);
-    }
-  };
-  for (const event of proposal.events) if (event.kind==='unit-set') {
-    const patch=combined.get(event.id)??{}; merge(patch,event.data); combined.set(event.id,patch);
-  }
-  for (const event of proposal.events) {
-    if (event.kind !== 'unit-update') continue;
-    const combinedPatch=combined.get(event.id!);
-    if (combinedPatch) {
-      merge(combinedPatch,{hp:event.hp,hpMax:event.hpMax,morale:event.morale,status:event.state});
-      if (event.clear?.length) {
-        const conditions = (combinedPatch.conditions ?? records.find(r=>r.id===event.id)?.conditions ?? []) as Combatant['conditions'];
-        combinedPatch.conditions = event.clear.includes('all') || event.clear.includes('全部') ? [] : conditions.filter(c=>!event.clear!.includes(c.id));
-      }
-      continue;
-    }
-    records = records.map((r) => r.id === event.id ? updateUnitRecord(r, event, registry, proposal.id) : r);
-  }
-  next.storage = records;
-  for (const [id,patch] of combined) next = applyUnitSet(next,id,patch,proposal.id);
+  next = applyUnitChanges(next, proposal.events.filter((event) => !isNew(event)), new Map(), proposal.id, registry);
   let newEquipment = 0;
   const reforged = new Set<string>(), learned = new Set<string>();
   for (const [index, event] of proposal.events.entries()) {
-    if (event.kind === 'learn') {
-      if (learned.has(event.id)) throw new Error('同一回复请合并对同一档案的技能学习');
-      learned.add(event.id);
-      next.storage = next.storage!.map((record) => record.id === event.id ? learnUnitRecord(record, event.skills.map((s) => ({ id: s.blueprintId, level: s.level, name: s.name, bonuses: s.bonuses })), registry, `learn:${proposal.id}:${index}`) : record);
-    } else if (event.kind === 'bless' || event.kind === 'unbless' || event.kind === 'affect' || event.kind === 'unaffect') {
-      const record: UnitRecord = next.storage!.find((r) => r.id === event.id)!;
-      if (record.retired || record.hp <= 0 || record.status === 'dead') throw new Error('不能通过效果来源复活阵亡或解散档案');
-      const unit = materializeUnitRecord(record, registry);
-      if (event.kind === 'bless') grantTraitSource(unit, { id: `bless:${proposal.id}:${index}`, name: event.name, kind: 'blessing', traitIds: event.traitIds, duration: event.duration });
-      else if (event.kind === 'affect') grantTraitSource(unit, { id: `affect:${proposal.id}:${index}`, name: event.name, kind: 'effect', traitIds: [], conditionIds: event.conditionIds, duration: event.duration });
-      else {
-        const kind = unit.traitSources?.find((s) => s.id === event.sourceId)?.kind;
-        if (!kind || kind === 'equipment' || event.kind === 'unbless' && kind !== 'blessing') throw new Error('只能解除本单位的明确剧情效果来源');
-        revokeTraitSource(unit, event.sourceId);
-      }
-      next.storage = next.storage!.map((r) => r.id === record.id ? unitRecordFromCombatant(unit, record, { sourceId: proposal.id, kind: 'update' }) : r);
+    if (event.kind === 'learn' || event.kind === 'bless' || event.kind === 'unbless' || event.kind === 'affect' || event.kind === 'unaffect') {
+      if (!isNew(event)) next.storage = applyUnitEffect(next.storage!, event, index, proposal.id, registry, learned);
     } else if (event.kind === 'give') {
       const id = `loot-${proposal.id}-${index}`;
       if (!event.spec) next.inventory = [...(next.inventory ?? []), { id, name: event.item, qty: event.qty, lootType: event.lootType, note: event.note }];
@@ -305,17 +339,18 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   }
   records = next.storage!;
   let roster: Combatant[] = (next.rosterIds ?? []).map((id) => records.find((r) => r.id === id)).filter((r): r is UnitRecord => !!r && r.hp > 0 && !r.retired).map((r) => materializeUnitRecord(r, registry));
+  const newDeploys: string[] = [];
   for (const [index, event] of proposal.events.entries()) {
-    if (event.kind === 'deploy') roster = deployUnitRecord(records, roster, event.id, registry);
+    if (event.kind === 'deploy') { if (isNew(event)) newDeploys.push(event.id); else roster = deployUnitRecord(records, roster, event.id, registry); }
     else if (event.kind === 'spawn') {
       for (let i = 0; i < event.count; i++) {
-        const id = `unit-${proposal.id}-${index}-${i}`;
+        const id = newUnitId(proposal.id, index, i);
         if (records.some((r) => r.id === id)) throw new Error('新单位身份已存在');
         const unit = generateUnit(spawnInput(event), { registry, seed: id }).unit;
         unit.id = id;
         prepareCombatModel(unit,V6_D20); upgradeCombatSkills(unit); applySpawnWound(unit, event);
         records.push(unitRecordFromCombatant(unit, undefined, { sourceId: proposal.id }));
-        if (unit.hp > 0) roster.push(materializeUnitRecord(records.at(-1)!, registry));
+        if (unit.hp > 0 && !event.archiveOnly) roster.push(materializeUnitRecord(records.at(-1)!, registry));
       }
     } else if (event.kind === 'field') { next.field = event.env; next.lighting = event.light ?? (event.env === 'night' ? 'night' : 'day'); }
     else if (!['unit-set', 'unit-update', 'take', 'give', 'reforge', 'learn', 'bless', 'unbless', 'affect', 'unaffect'].includes(event.kind)) throw new Error('不支持此类正文写回');
@@ -323,8 +358,10 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   next.schemaVersion = PANEL_SAVE_SCHEMA_VERSION;
   next.storage = records;
   next.rosterIds = [...new Set(roster.map((u) => u.id))];
+  if (fresh.created.size) next = applyToNewUnits(next, proposal.events, fresh, proposal.id, registry, newDeploys);
+  const deployed = next.rosterIds ?? [];
   const oldDeployedAlive = (save.storage ?? []).filter(r=>(save.rosterIds ?? []).includes(r.id)&&r.hp>0&&!r.retired).length;
-  if (next.rosterIds.length > MAX_SCENE_UNITS && (replacesRoster || next.rosterIds.length > oldDeployedAlive)) throw Error(`本场参战单位卡上限${MAX_SCENE_UNITS}，整批未应用`);
+  if (deployed.length > MAX_SCENE_UNITS && (replacesRoster || deployed.length > oldDeployedAlive)) throw Error(`本场参战单位卡上限${MAX_SCENE_UNITS}，整批未应用`);
   next.factRevision = (save.factRevision ?? 0) + 1;
   next.proposals = [...(save.proposals ?? []).filter((p) => p.id !== proposal.id), { ...structuredClone(proposal), status: 'committed', reason: undefined }];
   return prepareNarrativeIds(next);
@@ -335,8 +372,8 @@ export function narrativeDeploymentIds(save: NarrativeSave, proposalId: string):
   const selected = save.proposals?.find((p) => p.id === proposalId);
   const committed = selected && save.proposals?.find((p) => p.sourceKey === selected.sourceKey && p.status === 'committed');
   if (!committed) return [];
-  const ids = committed.events.flatMap((event, index) => event.kind === 'deploy' ? [event.id] : event.kind === 'spawn'
-    ? Array.from({ length: event.count }, (_, n) => `unit-${committed.id}-${index}-${n}`) : []);
+  const ids = committed.events.flatMap((event, index) => event.kind === 'deploy' ? [event.id] : event.kind === 'spawn' && !event.archiveOnly
+    ? Array.from({ length: event.count }, (_, n) => newUnitId(committed.id, index, n)) : []);
   return [...new Set(ids)].filter((id) => save.storage?.some((r) => r.id === id && r.hp > 0 && !r.retired && r.status !== 'dead' && r.status !== 'dying'));
 }
 /** 已有本批全部单位但夹带旧单位时，也应允许从历史记录修复名单。 */

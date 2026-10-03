@@ -81,9 +81,12 @@ export function narrativeIds(save: NarrativeIdentitySave) {
     legacyIds.set(handle, id);
   }
   return { state, publicId: (id: string) => publicIds.get(id) ?? id,
-    realId: (id: string) => realIds.get(id) ?? (reserved.has(id) ? id : realIds.get(normalizeHandle(id)) ?? legacyIds.get(id)) ?? id };
+    realId: (id: string) => realIds.get(id) ?? (reserved.has(id) ? id : realIds.get(normalizeHandle(id)) ?? legacyIds.get(id)) ?? id,
+    /** A handle already names a saved or deleted identity, or a raw id that looks like a handle. */
+    taken: (handle: string) => realIds.has(handle) || reserved.has(handle) || legacyIds.has(handle) };
 }
-function normalizeHandle(id: string): string {
+/** Case, full-width digits and leading zeros do not make a different handle (`U09` is `u9`). */
+export function normalizeHandle(id: string): string {
   const value = id.trim().replace(/[０-９Ａ-Ｚａ-ｚ]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xfee0)).toLowerCase();
   return /^[uwaciksg]0*\d+$/.test(value) ? value[0] + String(Number(value.slice(1))) : id;
 }

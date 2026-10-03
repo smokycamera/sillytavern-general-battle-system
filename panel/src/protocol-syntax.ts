@@ -150,7 +150,7 @@ const enumAliases: Record<string, Record<string, string>> = {
 };
 export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[], warnings: string[], positions?: ProtocolAttribute[], collectOnly = false): Record<string, string> {
   const aliases: Record<string, string> = { ref: 'id', unitid: 'id', itemid: 'id', equipmentid: 'id', sourceid: 'source', maxhp: 'hpMax', max: 'hpMax', currenthp: 'hp',
-    abilities: 'skills', skill: 'skills', sidearm: 'weapon2', secondaryweapon: 'weapon2', primaryweapon: 'weapon', trait: 'traits', armour: 'armor', lv: 'level',
+    abilities: 'skills', skill: 'skills', sidearm: 'weapon2', secondaryweapon: 'weapon2', primaryweapon: 'weapon', trait: 'traits', armour: 'armor', lv: 'level', training: 'level',
     quantity: tag.name === 'spawn' ? 'count' : 'qty', environment: 'env', lighting: 'light',
     ...(tag.name === 'give' ? { name: 'item' } : tag.name === 'field' ? { name: 'env' } : {}) };
   const result: Record<string, string> = Object.create(null);
