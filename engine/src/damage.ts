@@ -295,7 +295,34 @@ const SAMPLE_CACHE_ENTRIES = 128, SAMPLE_CACHE_CHARS = 2 * 1024 * 1024;
 let sampledPreviewChars = 0, sampledPreviewRuns = 0;
 /** 成员伤损抽样预览实际执行的次数（缓存命中不计）；供测试确认缓存命中与失效。 */
 export function sampledPreviewComputations(): number { return sampledPreviewRuns; }
-function sampledPreviewKey(opts: Omit<AttackOpts, 'rng'>): string {
+
+// One AI decision previews thousands of what-if pairs against unchanged state and trait tables.
+// A 30-card skill valuation needs a few hundred distinct samples, while the shared cache above
+// keeps about a hundred ~20 KB keys and silently recomputes evicted ones. Inside a scope samples
+// also go to a scope-local cache keyed by short table ids and dropped with the scope; a scope miss
+// still consults the shared cache (earlier decisions) with the full key, whose table text is
+// serialized once per table and scope. Callers must not change table contents inside a scope;
+// values are the same either way, only their reuse differs.
+interface ScopeTable { id: string; text: string }
+interface PreviewScope { samples: Map<string, SampledMemberPreview>; chars: number; tables: WeakMap<object, ScopeTable>; ids: Map<string, string>; epoch: number }
+const SCOPE_CACHE_ENTRIES = 4096, SCOPE_CACHE_CHARS = 8 * 1024 * 1024;
+let previewScope: PreviewScope | undefined, previewScopes = 0;
+/** 开始一次只读估值（AI 选择行动）；结束前不得修改状态表或特质表内容。 */
+export function beginPreviewScope(): void { previewScope = { samples: new Map(), chars: 0, tables: new WeakMap(), ids: new Map(), epoch: ++previewScopes }; }
+export function endPreviewScope(): void { previewScope = undefined; }
+/** 当前估值范围的编号；范围外为 undefined。供其他估值模块在同一范围内复用只读派生表。 */
+export function previewScopeEpoch(): number | undefined { return previewScope?.epoch; }
+function scopeTable(scope: PreviewScope, table: Map<string, unknown>): ScopeTable {
+  let entry = scope.tables.get(table);
+  if (!entry) {
+    const text = JSON.stringify([...table]);
+    let id = scope.ids.get(text);
+    if (id === undefined) { id = '#' + scope.ids.size; scope.ids.set(text, id); }
+    scope.tables.set(table, entry = { id, text });
+  }
+  return entry;
+}
+function sampledPreviewBase(opts: Omit<AttackOpts, 'rng'>): string {
   // Damage receives terrain, distance, participants and external modifiers explicitly.
   // Coordinates only affect directional brace: whether the pose is still held and whether
   // the opponent stands in its front arc. The key keeps exactly those brace modifiers (and
@@ -312,7 +339,26 @@ function sampledPreviewKey(opts: Omit<AttackOpts, 'rng'>): string {
     ...(attacker ? { barrier: undefined } : {}) });
   const distance = opts.distance === undefined ? undefined : opts.distance <= 1 ? 1 : opts.distance >= 2 ? 2 : opts.distance;
   return JSON.stringify({ ...opts, distance, attacker: unit(opts.attacker, opts.defender, true), defender: unit(opts.defender, opts.attacker, false),
-    conditionDefs: [...opts.conditionDefs], traitRegistry: opts.traitRegistry ? [...opts.traitRegistry] : undefined });
+    conditionDefs: undefined, traitRegistry: undefined });
+}
+/** The state and trait tables follow the JSON object; JSON text has no raw newline, so the parts cannot run together. */
+function sampledPreviewKeys(opts: Omit<AttackOpts, 'rng'>, scope: PreviewScope | undefined): { key: string; shared: () => string } {
+  const base = sampledPreviewBase(opts);
+  if (!scope) {
+    const key = base + '\n' + JSON.stringify([...opts.conditionDefs]) + '\n' + (opts.traitRegistry ? JSON.stringify([...opts.traitRegistry]) : '');
+    return { key, shared: () => key };
+  }
+  const defs = scopeTable(scope, opts.conditionDefs), registry = opts.traitRegistry && scopeTable(scope, opts.traitRegistry);
+  return { key: base + '\n' + defs.id + '\n' + (registry?.id ?? ''), shared: () => base + '\n' + defs.text + '\n' + (registry?.text ?? '') };
+}
+function rememberScopedPreview(scope: PreviewScope, key: string, value: SampledMemberPreview): void {
+  if (key.length > SCOPE_CACHE_CHARS) return;
+  while (scope.samples.size >= SCOPE_CACHE_ENTRIES || scope.chars + key.length > SCOPE_CACHE_CHARS) {
+    const oldest = scope.samples.keys().next().value;
+    if (oldest === undefined) break;
+    scope.chars -= oldest.length; scope.samples.delete(oldest);
+  }
+  scope.samples.set(key, value); scope.chars += key.length;
 }
 function rememberSampledPreview(key: string, value: SampledMemberPreview): void {
   if (key.length > SAMPLE_CACHE_CHARS) return;
@@ -336,8 +382,10 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   const upper=maxBase&&maxAp ? Math.ceil((Math.max(...maxBase.keys())+Math.max(...maxAp.keys()))*rawMultiplier*Math.ceil(weight))*count : Infinity;
   // 连续攻击共用剩余屏障。固定种子的小样本估计只操作副本，不消耗实战随机数。
   if (count > 1 && (hasMemberHealth(opts.defender) || opts.defender.barrier || upper>memberHealth(opts.defender)) || !maxBase || !maxAp) {
-    const key = sampledPreviewKey(opts);
-    let stats = sampledMemberPreviewCache.get(key);
+    const scope = previewScope, { key, shared } = sampledPreviewKeys(opts, scope);
+    let stats = (scope?.samples ?? sampledMemberPreviewCache).get(key);
+    const sharedKey = scope && !stats ? shared() : key;
+    if (scope && !stats && (stats = sampledMemberPreviewCache.get(sharedKey))) rememberScopedPreview(scope, key, stats);
     if (!stats) {
       stats = { sum: 0, squares: 0, positive: 0, casualties: 0, maximum: 0, hits: 0 }; sampledPreviewRuns++;
       // 结算只改守方；攻方副本由全部抽样共用，守方每次从原状态重新复制。
@@ -354,7 +402,8 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
         stats.sum += loss; stats.squares += loss * loss; stats.positive += Number(loss > 0);
         stats.casualties += members - defender.hp; stats.maximum = Math.max(stats.maximum, loss);
       }
-      rememberSampledPreview(key, stats);
+      rememberSampledPreview(sharedKey, stats);
+      if (scope) rememberScopedPreview(scope, key, stats);
     }
     const mean = stats.sum / SAMPLED_PREVIEW_COUNT;
     return {...diagnostics,damageModel:'member-health' as const,...(opts.rules.overmatch?{weaponOverflow:hasMemberHealth(opts.defender)&&attackOverflow(opts,protection,resolved)}:{}),hitChance:hit,anyHitChance:1-(1-hit)**count,expectedDamage:mean,damageOnHit:stats.hits?stats.sum/stats.hits:0,

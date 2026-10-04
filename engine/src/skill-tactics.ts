@@ -1,9 +1,9 @@
 import { hasteMagnitude, hasteAttackScale } from './haste.js';
 import { V6_D20, V6_TW } from './rules.js';
-import type { Combatant, Weapon } from './types.js';
+import type { Combatant, ConditionDef, Weapon } from './types.js';
 import type { ObservationContext } from './observation.js';
 import { positionedUnit, canSpot } from './observation.js';
-import { previewAttack } from './damage.js';
+import { previewAttack, previewScopeEpoch } from './damage.js';
 import { standardConditionMap } from './conditions.js';
 import { V4_D20, V4_TW, V5_D20, V5_TW } from './rules.js';
 import { abilityTargetReason, abilityUsabilityReason, averageDice, weaponTargetReason } from './actions.js';
@@ -30,6 +30,15 @@ const caches = new WeakMap<ObservationContext, WeakMap<Combatant, Map<Combatant 
 const extraCaches = new WeakMap<ObservationContext, WeakMap<Combatant, Map<Combatant | undefined, number>>>();
 // 可达落点只取决于观测上下文与行动单位，与估值目标无关；同一估值上下文内复用。
 const reachableCaches = new WeakMap<ObservationContext, WeakMap<Combatant, (number | undefined)[]>>();
+// Within one read-only AI evaluation the condition source does not change; reuse its merged table.
+const scopedDefinitions = new WeakMap<object, { epoch: number; defs: Map<string, ConditionDef> }>();
+function definitionTable(context: ObservationContext): Map<string, ConditionDef> {
+  const epoch = previewScopeEpoch(), owner = context.conditions ?? defaults, cached = scopedDefinitions.get(owner);
+  if (epoch !== undefined && cached?.epoch === epoch) return cached.defs;
+  const defs = new Map([...defaults].map(([id, def]) => [id, context.conditions?.get(id) ?? def]));
+  if (epoch !== undefined) scopedDefinitions.set(owner, { epoch, defs });
+  return defs;
+}
 const alive = (u: Combatant) => u.hp > 0 && !['dead', 'fled'].includes(u.status);
 function flags(context: ObservationContext, unit: Combatant) {
   return unit.conditions.filter(c => c.dur > 0).map(c => (context.conditions ?? defaults).get(c.id));
@@ -73,7 +82,7 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
   const positions = [...new Set([origin.pos, ...foes.slice().sort((a,b)=>distance(context,origin,a)-distance(context,origin,b)||a.id.localeCompare(b.id)).slice(0,3)
     .map(foe=>nearestCell(context,origin,reachable,foe))])];
   const rules = context.rules ?? (origin.damageModel==='wounds-v2'?(context.mode==='mass'?V6_TW:V6_D20):origin.damageModel==='wounds-v1'?(context.mode==='mass'?V5_TW:V5_D20):(context.mode === 'mass' ? V4_TW : V4_D20));
-  const defs = new Map([...defaults].map(([id, def]) => [id, context.conditions?.get(id) ?? def]));
+  const defs = definitionTable(context);
   let best = 0;
   for (const pos of positions) {
     const actor = { ...origin, pos }, moved = pos !== origin.pos;

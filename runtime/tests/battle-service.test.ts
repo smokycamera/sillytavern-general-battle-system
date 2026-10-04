@@ -35,6 +35,16 @@ it('持久化等待期间只发布旧事实，失败后重试沿用库存候选�
   expect((await f.service.commitInventoryPreview(preview)).status).toBe('confirmed');
   expect(f.service.snapshot().inventory?.find(i => i.id === 'potion')?.qty).toBe(2);
 });
+it('通知只在读取时复制存档，内容仍是通知那一刻的版本且与服务隔离', async () => {
+  const f = await setup(), states: { save: { field?: string } }[] = [];
+  f.service.listen(state => { states.push(state); });
+  await f.service.transact(before => ({ ...before, field: 'forest' }));
+  await f.service.transact(before => ({ ...before, field: 'mountain' }));
+  const [first, second] = states.slice(-2);
+  expect(first!.save.field).toBe('forest'); expect(second!.save.field).toBe('mountain');
+  expect(second!.save).toBe(second!.save);
+  second!.save.field = 'urban'; expect(f.service.snapshot().field).toBe('mountain');
+});
 it('同版本并发命令只接受一笔，旧聊天的预览不能跨上下文提交', async () => {
   const f = await setup(); const version = f.service.version();
   const receipts = await Promise.all([f.service.transact(before => ({ ...before, field: 'forest' }), { version }), f.service.transact(before => ({ ...before, field: 'mountain' }), { version })]);

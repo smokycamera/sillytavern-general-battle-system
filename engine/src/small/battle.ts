@@ -46,7 +46,7 @@ import type { Rng } from '../rng.js';
 import { SeededRng, liveRng, randomSeed } from '../rng.js';
 import { cloneData } from '../clone.js';
 import { parseDice, rollDice } from '../dice.js';
-import { resolveAttack, previewAttack, penetrationContext, isRangedCapable, armorDR, qualityGapDR, type AttackResolution, type AttackOpts } from '../damage.js';
+import { resolveAttack, previewAttack, penetrationContext, isRangedCapable, armorDR, qualityGapDR, beginPreviewScope, endPreviewScope, type AttackResolution, type AttackOpts } from '../damage.js';
 import { sharedParticipants } from '../exposure.js';
 import { diceAvg, rebuildDice } from '../data/weapons.js';
 import { ConditionRegistry } from '../conditions.js';
@@ -1675,7 +1675,7 @@ export class SmallBattle {
   autoAction(unitId: string): void {
     const current = this.byId(unitId);
     if (this.isTurnOf(unitId) && current.conditions.some(c => c.dur > 0 && this.conditions.get(c.id)?.skipTurn)) { this.recordEvent({ round: this.round, kind: 'condition', participants: [unitId], text: current.name + ' 眩晕，跳过回合' }); this.endTurn(); return; }
-    if (this.battlefield) { try { this.autoGridAction(unitId); } finally { this.observationMemo = undefined; } return; }
+    if (this.battlefield) { try { this.autoGridAction(unitId); } finally { this.observationMemo = undefined; endPreviewScope(); } return; }
     const u = this.byId(unitId);
     if (u.status !== 'ready' || !this.isTurnOf(unitId)) return;
     // 索敌优先 ready；只剩濒死敌时列入补刀目标
@@ -1730,7 +1730,8 @@ export class SmallBattle {
       }
       if (unit.status !== 'ready') { if (!this.isOver()) this.endTurn(); return; }
     }
-    this.observationMemo = new Map();
+    // Read-only evaluation: observations and preview samples are reused until an action is chosen.
+    this.observationMemo = new Map(); beginPreviewScope();
     const plans: { score: number; path: GridPath; offensive?: boolean; selfDefenseScore?: number; targetId?: string; abilityId?: string; weaponMode?: SmallAttackOpts['weaponMode']; cell?: number; structureMode?: string; kind: 'structure' | 'gate' | 'climb' | 'weapon' | 'charge' | 'ability' | 'brace' | 'hold' | 'land' | 'reload' | 'haste-move' | 'haste-flight' }[] = [];
     const knownUnits = this.visibleCombatants(unit.side);
     const objective = field.objective;
@@ -2052,7 +2053,7 @@ export class SmallBattle {
     const ranked = new Map(candidates.map((plan, i) => [plan, commandScores[i]!]));
     const best = candidates.sort((a, b) => Number(completesEscort(b)) - Number(completesEscort(a))
       || ranked.get(b)! - ranked.get(a)! || a.path.cost - b.path.cost || (a.targetId ?? '').localeCompare(b.targetId ?? ''))[0];
-    this.observationMemo = undefined;
+    this.observationMemo = undefined; endPreviewScope();
     if (best) {
       if (best.kind === 'haste-move' || best.kind === 'haste-flight') this.selectHaste(unitId, true);
       if (best.path.cost > 0 && best.kind !== 'charge') {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generateUnit, prepareCombatModel, previewAttack, resolveAttack, standardConditionMap, traitRegistry,
-  V8_OVERFLOW_D20, grantBarrier, SeededRng, sampledPreviewComputations, type AttackOpts } from '../src/index.js';
+  V8_OVERFLOW_D20, grantBarrier, SeededRng, sampledPreviewComputations, beginPreviewScope, endPreviewScope, previewScopeEpoch, type AttackOpts } from '../src/index.js';
 import { memberHealth } from '../src/member-health.js';
 import { bracePose } from '../src/tactics.js';
 let serial = 0;
@@ -91,5 +91,37 @@ describe('屏障多段预览的有界值缓存', () => {
     const o = options(); previewAttack(o);
     for (let i = 0; i < 130; i++) previewAttack({ ...o, actionDamageScale: .01 + i / 1000 });
     expect(computed(() => previewAttack(o))).toBe(1);
+  });
+});
+describe('AI 单次估值范围内的样本复用', () => {
+  it('范围内超过共享上限的样本仍复用，数值与范围外逐项相同，结束后释放', () => {
+    const o = options(), variants = Array.from({ length: 140 }, (_, i) => ({ ...o, actionDamageScale: .01 + i / 1000 }));
+    const outside = variants.map(v => previewAttack(v));
+    beginPreviewScope();
+    try {
+      expect(previewScopeEpoch()).toBeTypeOf('number');
+      // 每张新建但内容相同的状态表都与原表等价，不因对象身份不同而重算。
+      expect(computed(() => variants.forEach((v, i) => expect(previewAttack({ ...v, conditionDefs: standardConditionMap() })).toEqual(outside[i])))).toBe(140);
+      expect(computed(() => variants.forEach((v, i) => expect(previewAttack({ ...v, conditionDefs: standardConditionMap() })).toEqual(outside[i])))).toBe(0);
+    } finally { endPreviewScope(); }
+    expect(previewScopeEpoch()).toBeUndefined();
+    // 范围外仍是原有界缓存：前面的条目已被淘汰。
+    expect(computed(() => previewAttack(variants[0]!))).toBe(1);
+  });
+  it('范围内仍复用之前决策留在共享缓存里的样本', () => {
+    const o = options(); previewAttack(o); beginPreviewScope();
+    try { expect(computed(() => previewAttack({ ...o, conditionDefs: standardConditionMap() }))).toBe(0); }
+    finally { endPreviewScope(); }
+  });
+  it('范围内状态与特质内容不同的表不共用样本', () => {
+    const o = options(); beginPreviewScope();
+    try {
+      previewAttack(o);
+      const conditions = standardConditionMap(); const d = conditions.get('stunned')!; conditions.set('stunned', { ...d, name: 'changed' });
+      expect(computed(() => previewAttack({ ...o, conditionDefs: conditions }))).toBe(1);
+      const registry = new Map(o.traitRegistry!); const [id, t] = [...registry][0]!; registry.set(id, { ...t, name: 'changed' });
+      expect(computed(() => previewAttack({ ...o, traitRegistry: registry }))).toBe(1);
+      expect(computed(() => previewAttack({ ...o, conditionDefs: standardConditionMap(), traitRegistry: new Map(o.traitRegistry!) }))).toBe(0);
+    } finally { endPreviewScope(); }
   });
 });
