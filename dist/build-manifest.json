@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "2.0.0",
-  "builtAt": "2026-10-04T09:25:42.497Z",
-  "sourceFingerprint": "7ecc88dea4fc9582bb956a7b155c4f042f66a6aa7438a4d3d44195babaf47b4c",
+  "builtAt": "2026-10-04T11:12:18.313Z",
+  "sourceFingerprint": "347da08af2fbf5d22990d6abde66eeb5d73e670167eb01e4ea236b3cbd52a71e",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
