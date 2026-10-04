@@ -4,9 +4,9 @@ import { equipmentReason } from '../../engine/src/items.js';
 import { captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type MessageEnvelope, type NarrativeSave } from './narrative-state.js';
 import { materializeUnitRecord } from './unit-state.js';
 
-it('用户的刘芮杞九单位事件完整建档，配装限制只在建档放宽', () => {
+it('用户的李华九单位事件完整建档，配装限制只在建档放宽', () => {
   const text = `<tb>
-<spawn archetype="infantry" armor="轻甲L4" body="human" level="4" name="流民大军统帅刘芮杞" protection="kinetic" quality="2" scale="hero" side="ally" weapon="斩马刀:剑L6" weapon2="自卫短铳:火枪L3"/>
+<spawn archetype="infantry" armor="轻甲L4" body="human" level="4" name="流民大军统帅李华" protection="kinetic" quality="2" scale="hero" side="ally" weapon="斩马刀:剑L6" weapon2="自卫短铳:火枪L3"/>
 <spawn archetype="infantry" armor="轻甲L2" hpMax="400" level="2" name="民兵矛阵一营" quality="1" scale="company" side="ally" weapon="削尖长矛:长兵器L3"/>
 <spawn archetype="infantry" armor="轻甲L2" hpMax="400" level="2" name="民兵矛阵二营" quality="1" scale="company" side="ally" weapon="削尖长矛:长兵器L3"/>
 <spawn archetype="infantry" armor="轻甲L2" hpMax="400" level="2" name="民兵矛阵三营" quality="1" scale="company" side="ally" weapon="削尖长矛:长兵器L3"/>
