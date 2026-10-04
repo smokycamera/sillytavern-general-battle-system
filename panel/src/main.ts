@@ -35,11 +35,11 @@ import './terrain-painted.css';
 import { updateRegion, BattleCamera } from './view-dom.js';
 import { executeMassPlan, executeAndSaveAsync as executeAndSave } from './battle-execution.js';
 import { TACTICAL_PREFERENCES, normalizeTactic } from '../../engine/src/tactical-preference.js';
-import { battleIdOf, publicBattleEvents, battleEpilogue, narrativeEvents, makeNarrativeBatch, beginNarrativeDelivery, finishNarrativeDelivery, completedBattleRounds, type BattleReport, type BattleDeliveries, type NarrativeBatch } from './battle-reports.js';
+import { battleIdOf, publicBattleEvents, battleEpilogue, archivedNarrativeEvents, makeNarrativeBatch, beginNarrativeDelivery, finishNarrativeDelivery, completedBattleRounds, type BattleReport, type BattleDeliveries, type NarrativeBatch } from './battle-reports.js';
 import { lastBattleAction, traceLocations } from './battle-presentation.js';
 import { promptScopeControls } from './prompt-settings.js';
 import { narrativeProjectionDetails } from './narrative-controller.js';
-import { narrativeIds } from './narrative-ids.js';
+import { narrativeIds, normalizeHandle } from './narrative-ids.js';
 import { calibrateAutocannon, calibrateWeaponHands } from '../../engine/src/gen/equipment.js';
 import { gridWeaponRange } from '../../engine/src/small/weapon-range.js';
 import { formationWeaponRange } from '../../engine/src/melee.js';
@@ -1986,7 +1986,7 @@ async function sendToAi(text: string, label: string, reportId?: string, batch?: 
 /** AI 建议待审队列 + 物品清单 */
 function renderPending(): string {
   const items = state.pending
-    .map((s, i) => `<div class="orderline"><span class="tag">${suggestionLabel(s)}</span> ${esc(suggestionDesc(s))}
+    .map((s, i) => `<div class="orderline"><span class="tag">${suggestionLabel(s)}</span> ${esc(suggestionDesc(s, state.pending))}
       <button data-action="pending-approve" data-i="${i}">批准</button>
       <button data-action="pending-reject" data-i="${i}">拒绝</button></div>`)
     .join('');
@@ -2034,7 +2034,7 @@ function renderNarrativeProposals(): string {
   const unresolved = state.proposals.filter((p) => !['committed', 'rejected'].includes(p.status)).slice().reverse();
   const history = state.proposals.filter((p) => ['committed', 'rejected'].includes(p.status)).slice(-12).reverse();
   const proposal = (p: NarrativeProposal) => `<div class="narrative-proposal" data-proposal="${esc(p.id)}"><span class="tag">${labels[p.status]}</span>
-    <p>${p.events.map((e) => esc(suggestionDesc(e))).join('；')}</p>${p.corrected ? '<p class="sub">本地修正草稿，原聊天未修改。</p>' : ''}${p.reason ? '<p class="grid-reason">' + esc(p.reason) + '</p>' : ''}
+    <p>${p.events.map((e) => esc(suggestionDesc(e, p.events))).join('；')}</p>${p.corrected ? '<p class="sub">本地修正草稿，原聊天未修改。</p>' : ''}${p.reason ? '<p class="grid-reason">' + esc(p.reason) + '</p>' : ''}
     ${p.notices?.length ? '<details><summary>识别与格式整理说明</summary><p class="sub">' + p.notices.map(esc).join('；') + '</p></details>' : ''}
     <div class="row">${['pending', 'failed'].includes(p.status) ? '<button class="primary" data-action="narrative-approve" data-id="' + esc(p.id) + '">' + (p.events.some((e) => e.kind === 'spawn' || e.kind === 'deploy') ? '确认入库并上场' : '确认本批变更') + '</button>' : ''}
     ${needsNarrativeDeploymentRestore({ proposals: state.proposals, storage: state.storage, rosterIds: state.roster.map((u) => u.id) }, p.id) ? '<button class="primary" data-action="narrative-restore-roster" data-id="' + esc(p.id) + '">恢复本批参战单位</button>' : ''}
@@ -2054,8 +2054,14 @@ function suggestionLabel(s: Suggestion): string {
   return { take: '减少物品', learn: '学习技能', give: '掉落', reforge: '装备改造', bless: '明确祝福', unbless: '撤销祝福', affect: '增减益', unaffect: '解除效果', status: '状态', xp: '经验', field: '环境', spawn: '遭遇', deploy: '选择编制', 'unit-update': '编制更新', 'unit-set': '完整单位修改' }[s.kind];
 }
 
-function suggestionDesc(s: Suggestion): string {
-  const unitName = (id?: string, name?: string) => { const record = storageRecordByRef(id, name); return record && visibleUnitRecord(record) ? record.name : name ?? '指定单位'; };
+function suggestionDesc(s: Suggestion, batch: Suggestion[] = []): string {
+  // unit_set 用不存在的编号新建时，同批其他事件的同一编号按入账规则显示为那个新单位。
+  const fresh = (id?: string) => {
+    if (!id || storageRecordByRef(id)) return undefined;
+    const created = batch.find((e): e is Extract<Suggestion, { kind: 'unit-set' }> => e.kind === 'unit-set' && normalizeHandle(e.id) === normalizeHandle(id) && typeof e.data.name === 'string' && !!e.data.side && !!e.data.scale);
+    return created ? `「${created.data.name as string}」（本批新建）` : undefined;
+  };
+  const unitName = (id?: string, name?: string) => { const record = storageRecordByRef(id, name); return record && visibleUnitRecord(record) ? record.name : fresh(id) ?? name ?? '指定单位'; };
   const ids = narrativeIds({ ...controller.snapshot(), storage: state.storage, inventory: state.inventory });
   switch (s.kind) {
     case 'take': return `减少物品「${state.inventory.find(i => i.id === ids.realId(s.id))?.name ?? ids.publicId(s.id)}」×${s.qty}${s.note ? '——' + s.note : ''}`;
@@ -2070,7 +2076,12 @@ function suggestionDesc(s: Suggestion): string {
     case 'xp': return `剧情经验 +${s.amount} 经验${s.reason ? `（${s.reason}）` : ''}`;
     case 'field': return `战场环境设为「${FIELD_LABELS[s.env] ?? s.env}${s.light === 'night' && s.env !== 'night' ? ' / 夜间' : ''}」（开战时生效）${s.note ? `——${s.note}` : ''}`;
     case 'deploy': return `让${unitName(s.id, s.name)}参战`;
-    case 'unit-set': return `${unitName(s.id)}：${JSON.stringify(s.data)}${s.reason ? `（${s.reason}）` : ''}`;
+    case 'unit-set': {
+      // 编号不在档案里时按入账规则说明：同名档案优先，否则写全新单位字段的会新建入档。
+      const name = typeof s.data.name === 'string' ? s.data.name : undefined, known = storageRecordByRef(s.id) ?? storageRecordByRef(undefined, name);
+      const label = known ? unitName(known.id) : name && s.data.side && s.data.scale ? `新建档案「${name}」（不改出场名单）` : unitName(s.id);
+      return `${label}：${JSON.stringify(s.data)}${s.reason ? `（${s.reason}）` : ''}`;
+    }
     case 'unit-update': return `${unitName(s.id, s.name)}：${[
       s.hp !== undefined ? `当前兵力=${s.hp}` : '', s.hpMax !== undefined ? `上限=${s.hpMax}` : '',
       s.morale !== undefined ? `士气=${s.morale}` : '', s.state ? `状态=${s.state}` : '',
@@ -2081,7 +2092,7 @@ function suggestionDesc(s: Suggestion): string {
       const arm = 'armorName' in s ? (s.armorName ?? s.armor) : undefined;
       // 个体上限按训练推导，正文 hp/hpMax 只表示建档时的伤势比例。
       const wound = (s.scale ?? 'hero') === 'hero' && s.hp !== undefined && s.hpMax && s.hp < s.hpMax ? `·当前生命约${Math.max(1, Math.round(s.hp / s.hpMax * 100))}%` : '';
-      return `新增 ${s.name}×${s.count}（训练${s.level}${s.scale ? '·' + scaleLabel({ scale: s.scale, rulesVersion: 'v2' }) : ''}${wep ? `·${wep}` : ''}${arm ? `·${arm}` : ''}${s.skills?.length ? `·技能×${s.skills.length}` : ''}${wound}）`;
+      return `${s.archiveOnly ? '新建档案' : '新增'} ${s.name}×${s.count}（训练${s.level}${s.scale ? '·' + scaleLabel({ scale: s.scale, rulesVersion: 'v2' }) : ''}${wep ? `·${wep}` : ''}${arm ? `·${arm}` : ''}${s.skills?.length ? `·技能×${s.skills.length}` : ''}${wound}）`;
     }
   }
 }
@@ -2597,7 +2608,7 @@ async function settleXp(allowUnfinished = false): Promise<void> {
   });
   if (!state.reports.some((r) => r.id === id) && !state.deletedReportIds?.includes(id)) {
     state.reports = [...state.reports, {
-      id, roundCount: completedBattleRounds(b), epilogue: battleEpilogue(b,state.activeBattleStart), narrativeEvents: narrativeEvents(b), eventCount: b.log.length, card: settlementCard(b.log, b.round, !!state.mass, { wholeBattle: true }),
+      id, roundCount: completedBattleRounds(b), epilogue: battleEpilogue(b,state.activeBattleStart), narrativeEvents: archivedNarrativeEvents(b, state.reportDeliveries), eventCount: b.log.length, card: settlementCard(b.log, b.round, !!state.mass, { wholeBattle: true }),
       digest: roundDigest(b, state.era, reg, { wholeBattle: true, protagonistId: state.protagonistId }),
       summary: state.small ? smallStateSummary(state.small, state.era, reg) : massStateSummary(state.mass!, state.era, reg),
       deliveries: {}, ...(state.activeBattleStart?.battleId===id?{start:structuredClone(state.activeBattleStart)}:{}),

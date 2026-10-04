@@ -19,6 +19,8 @@ export class NativeStore {
   private pending?: RecoveryRecord;
   constructor(private host: MetadataPort, private journal: RecoveryJournal) {}
   snapshot(): NarrativeSave { return structuredClone(this.current?.payload ?? {}); }
+  /** The current head as of this call, copied on first read; heads are replaced on commit, never edited in place. */
+  snapshotLater(): () => NarrativeSave { const payload = this.current?.payload; let copy: NarrativeSave | undefined; return () => copy ??= structuredClone(payload ?? {}); }
   envelope(): NativeEnvelope | undefined { return structuredClone(this.current); }
   head(): Omit<NativeEnvelope, 'payload'> | undefined { if (!this.current) return undefined; const { payload: _payload, ...head } = this.current; return structuredClone(head); }
   session(): HostSession | undefined { return structuredClone(this.active); }

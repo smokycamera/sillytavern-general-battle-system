@@ -82,6 +82,12 @@ export function heightStepCost(field: BattlefieldSpec, from: number, to: number,
         return Infinity;
     return Math.max(0, rise) * (actor && activeTraitIds(actor).includes('mountain-born') ? 0 : 1);
 }
+/** Reports print heights only where something stands above the ground floor: raised ground, a wall or tower platform,
+ * or a raised bridge deck. Flat real-height maps and tile-only maps keep plain places. */
+export function reportsHeights(field: BattlefieldSpec | undefined): field is BattlefieldSpec {
+    return field?.spatialRulesVersion === 2 && (!!field.groundHeight?.some(h => h > 0)
+        || !!field.structures?.some(s => !!s && (s.top === true || (s.deckHeight ?? 0) > 0)));
+}
 export function heightDescription(field: BattlefieldSpec, cell: number): string {
     if (field.spatialRulesVersion !== 2)
         return '';

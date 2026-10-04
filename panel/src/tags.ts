@@ -111,6 +111,8 @@ export type Suggestion =
       traits?: string[];
       /** 敌方首领（可选）：附加统率+精锐特质 */
       leader?: boolean;
+      /** 由不存在编号的 unit_set 新建：只入档，不替换出场名单。 */
+      archiveOnly?: boolean;
       raw: string;
     };
 

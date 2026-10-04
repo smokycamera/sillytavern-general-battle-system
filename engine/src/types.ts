@@ -503,6 +503,8 @@ export interface BattleLogEntry {
   resolutions?: AttackResolution[];
   /** 事件发生时的位置，用于本地演出；观测裁剪后不可见的事件不公开这些坐标。 */
   locations?: Record<string, number>;
+  /** 逐格移动的起止格；有高低差的实际高度地图另记两端站立高度（空中不记）。战报据此合并连续移动。 */
+  move?: { from: number; to: number; fromHeight?: number; toHeight?: number };
   /** 事件涉及的单位与当时可观察阵营；旧无观测元数据日志不用于V2战内泄露事实。 */
   participants?: string[];
   observedBy?: Side[];

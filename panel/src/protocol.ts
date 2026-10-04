@@ -8,6 +8,7 @@ import { scanProtocolTags, normalizedAttributes, serializeEvent, type ProtocolTa
 import { parseUnitSet, UNIT_SET_ATTRIBUTES } from './unit-set.js';
 import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-tolerance.js';
 import { parseItemSpecification } from './item-spec.js';
+import { normalizeHandle } from './narrative-ids.js';
 
 export interface ProtocolDiagnostic { message: string; start: number; end: number; field?: string; event: string }
 export interface ProtocolBatch { events: Suggestion[]; canonical: string; errors: string[]; warnings: string[]; diagnostics: ProtocolDiagnostic[] }
@@ -16,7 +17,7 @@ const ATTRIBUTES: Record<string, readonly string[]> = {
   deploy: ['id'],
   learn: ['id', 'skills'],
   unit_update: ['id', 'hp', 'hpMax', 'morale', 'state', 'clear', 'reason'],
-  spawn: ['name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'speed', 'stabilized', 'protection', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits'],
+  spawn: ['id', 'name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'speed', 'stabilized', 'protection', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits'],
   field: ['env', 'light', 'note'],
   take: ['id', 'qty', 'note'],
   give: ['item', 'note', 'qty', 'type', 'spec', 'body', 'quality', 'enchant', 'stabilized', 'protection'],
@@ -48,7 +49,7 @@ export function protocolExcerpt(text: string): string {
 
 export function parseProtocol(text: string, options: { diagnostics?: boolean } = {}): ProtocolBatch {
   const scanned = scanProtocolTags(text, known), warnings = scanned.warnings, errors: string[] = [];
-  const events: Suggestion[] = [], seen = new Map<string, number>();
+  const events: Suggestion[] = [], seen = new Map<string, number>(), spawnIds = new Set<string>();
   const scanLimit = MAX_PROTOCOL_EVENTS * 8;
   if (scanned.tags.length > scanLimit) errors.push('待确认内容标签过多，请先减少重复内容；尚未入账');
   if (scanned.tags.reduce((n, tag) => n + tag.raw.length, 0) > MAX_PROTOCOL_CHARS) errors.push('事件内容超过' + MAX_PROTOCOL_CHARS + '字符，先精简事件草稿；正文长度不受此限制');
@@ -57,6 +58,7 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
       if (!known.has(tag.name)) throw new Error('暂不支持事件 ' + tag.name + '，请补成已支持的效果；引擎战果无需正文重复发放');
       if (!tag.complete) throw new Error(tag.name + ' 事件被截断，属性值尚不完整');
       const attrs = normalizedAttributes(tag, ATTRIBUTES[tag.name]!, warnings);
+      if (tag.name === 'spawn' && attrs.id?.trim()) spawnIds.add(normalizeHandle(attrs.id.trim()));
       const hadOptionalList = !!(attrs.skills || attrs.traits);
       if (['spawn', 'bless', 'unit_set'].includes(tag.name) && attrs.traits) {
         const names = attrs.traits.split(/[,，、;；|]/).map((name) => name.trim()).filter(Boolean);
@@ -116,6 +118,13 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
       }
       events.push(event);
     } catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
+  }
+  // spawn 写的 id 不作编号。同一回复再用它：出场是多余的（新单位自动上场），其余修改落不到新单位上。
+  for (let i = events.length - 1; i >= 0 && spawnIds.size; i--) {
+    const event = events[i]!;
+    if (!['deploy', 'unit-update', 'unit-set', 'learn', 'bless', 'affect', 'unbless', 'unaffect'].includes(event.kind) || !('id' in event) || !event.id || !spawnIds.has(normalizeHandle(event.id))) continue;
+    if (event.kind === 'deploy') { events.splice(i, 1); warnings.push(`已略过 deploy ${event.id}：这是本回复 spawn 自编的编号，新单位会自动上场`); }
+    else errors.push(`${event.id} 是本回复 spawn 自编的编号，新单位的编号由插件分配；要设置新单位请写进 spawn，或在下一次回复按单位资料里的编号修改`);
   }
   const spawned = events.reduce((n, event) => n + (event.kind === 'spawn' ? event.count : 0), 0);
   if (events.length > MAX_PROTOCOL_EVENTS) errors.push('合并重复内容后共有' + events.length + '项事件，最多' + MAX_PROTOCOL_EVENTS + '项；请调整草稿，尚未入账');
@@ -277,6 +286,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     if (attrs.spec === undefined && ['body', 'quality', 'enchant', 'stabilized', 'protection'].some((key) => attrs[key] !== undefined)) throw new Error('有效果的物品需要明确spec，不能只靠名称或附魔提示猜测');
   }
   if (kind === 'spawn') {
+    delete attrs.id; // 新单位编号一律由插件分配，正文写的 id 不参与建档或引用。
     if(attrs.level)parseEnhancementSuffix('L'+attrs.level.replace(/^[lL]/,''),'unit');
     if (attrs.scale === 'mook') attrs.scale = 'company'; // 旧正文别名，不产生第三套V2规则。
     if (!attrs.name?.trim() || !['ally', 'enemy'].includes(attrs.side ?? '') || !['hero', 'company', 'mook'].includes(attrs.scale ?? '')) throw new Error('新单位需要 name、side、scale');

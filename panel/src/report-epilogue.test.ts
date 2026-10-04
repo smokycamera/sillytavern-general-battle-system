@@ -4,7 +4,7 @@ import {captureBattleStart,captureBattleArchive} from './report-history.js';
 import {unitRecordFromCombatant,materializeUnitRecord,commitBattleState,updateUnitRecord} from './unit-state.js';
 import {battleEpilogue,makeNarrativeBatch,battleIdOf,publicBattleEvents,type BattleReport} from './battle-reports.js';
 import {skillDefinitionId} from '../../engine/src/skill-catalog.js';
-import {compactEvents} from '../../engine/src/inject/format.js';
+import {compactEvents,reportPlaceText} from '../../engine/src/inject/format.js';
 const registry=traitRegistry(),rng={seed:'fixed',next:()=>0,d:(sides:number)=>sides};
 function unit(id:string,scale:'hero'|'company'='hero',area=false) {
  const u=generateUnit({rulesVersion:'v2',name:id,side:id==='A'?'ally':'enemy',scale,body:'large',level:5,weaponClass:'sword',armorTier:0,traits:[],...(scale==='company'?{hpMax:10}:{}),...(area?{abilityBlueprints:[{id:skillDefinitionId('魔法范围')!,level:5}]}:{})},{seed:id,registry,noVariance:true}).unit;
@@ -53,7 +53,8 @@ describe('终章事实与致命开关',()=>{
   const result=b.useAbility('A',b.byId('A').abilities[0]!.id,'D',{bypassTurn:true});expect(result.ok,result.reason).toBe(true);expect(result.resolutions.length).toBeGreaterThan(1);
   if(!b.isOver())b.finishBattle('ceasefire');
   const text=battleEpilogue(b,start);
-  expect(text).toContain('【开局单位状态与血量】');expect(text).toContain(`敌方 D：血量${records[1]!.hp}/${records[1]!.base.hpMax}，可行动`);
+  const openingD=(start.snapshot.combatants as Combatant[]).find(u=>u.id==='D')!;
+  expect(text).toContain('【开局单位状态与血量】');expect(text).toContain(`敌方 D(${reportPlaceText(b.battlefield!,openingD.pos!)})：血量${records[1]!.hp}/${records[1]!.base.hpMax}，可行动`);
   for(const target of ['D','E']){const loss=result.resolutions.filter(r=>r.defenderId===target).reduce((n,r)=>n+r.hpBefore-r.hpAfter,0);expect(loss).toBeGreaterThan(0);expect(text).toContain(`A → ${target}：累计造成${loss}生命损失`);}
   const report:BattleReport={id:battleIdOf(b),card:'',digest:'',summary:'',deliveries:{},epilogue:text,start};
   expect(makeNarrativeBatch(undefined,JSON.parse(JSON.stringify(report)),{},'epilogue').text).toBe(text);
@@ -92,7 +93,7 @@ describe('终章伤害来源的减员人数',()=>{
   b.byId('A').pos=28;b.byId('D').pos=21;expect(b.attack('A','D',{bypassTurn:true}).hit).toBe(true);
   const lost=30-b.byId('D').hp;expect(lost).toBeGreaterThan(0);
   expect(line(b,'A → D')).toMatch(new RegExp('^A → D：累计造成\\d+生命损失，减员'+lost+'人$'));
-  expect(battleEpilogue(b)).toContain(`敌方 D：剩余总人数${b.byId('D').hp}/30`);
+  expect(battleEpilogue(b)).toContain(`敌方 D(${reportPlaceText(b.battlefield!,21)})：剩余总人数${b.byId('D').hp}/30`);
  });
  it.each(['small','mass'] as const)('%s持续伤害记录减员数；旧记录缺少时只写下限',mode=>{
   const b=fight(mode,[member('A','company'),member('D','company'),member('H','hero')]),target=b.byId('D');
@@ -109,9 +110,9 @@ describe('终章伤害来源的减员人数',()=>{
   const b=fight('small',[member('A','company'),member('D','company','vehicle')]) as SmallBattle;
   b.byId('A').pos=28;b.byId('D').pos=21;expect(b.attack('A','D',{bypassTurn:true}).hit).toBe(true);
   expect(line(b,'A → D')).toMatch(new RegExp('^A → D：累计造成\\d+生命损失，减员'+(30-b.byId('D').hp)+'辆$'));
-  expect(battleEpilogue(b)).toContain(`敌方 D：剩余总数${b.byId('D').hp}/30辆`);
+  expect(battleEpilogue(b)).toContain(`敌方 D(${reportPlaceText(b.battlefield!,21)})：剩余总数${b.byId('D').hp}/30辆`);
   const h=fight('small',[member('A','company'),member('H','hero')]) as SmallBattle;
   h.byId('A').pos=28;h.byId('H').pos=21;expect(h.attack('A','H',{bypassTurn:true}).hit).toBe(true);
-  expect(line(h,'A → H')).toMatch(/^A → H：累计造成\d+生命损失$/);expect(battleEpilogue(h)).toContain(`敌方 H：血量${h.byId('H').hp}/${h.byId('H').base.hpMax}`);
+  expect(line(h,'A → H')).toMatch(/^A → H：累计造成\d+生命损失$/);expect(battleEpilogue(h)).toContain(`敌方 H(${reportPlaceText(h.battlefield!,21)})：血量${h.byId('H').hp}/${h.byId('H').base.hpMax}`);
  });
 });

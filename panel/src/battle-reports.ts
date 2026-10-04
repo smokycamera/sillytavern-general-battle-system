@@ -1,7 +1,10 @@
 import { SmallBattle, type MassBattle, type BattleLogEntry, type Combatant, woundedLabel } from '../../engine/src/index.js';
 import { observedLog } from '../../engine/src/observation.js';
 import { smallBattleResult } from '../../engine/src/battle-result.js';
-import { compactEvents, reportStrengthLabel } from '../../engine/src/inject/format.js';
+import { compactEventGroups, fieldFacts, reportPlaceText, reportStrengthLabel, HEIGHT_LEGEND } from '../../engine/src/inject/format.js';
+import { reportsHeights } from '../../engine/src/small/height-map.js';
+import { formationNode } from '../../engine/src/mass/formation.js';
+import type { BattlefieldSpec } from '../../engine/src/small/spatial.js';
 import { NARRATIVE_TASK } from '../../engine/src/inject/narrative-task.js';
 import type { DeliveryReceipt } from './tavern.js';
 import {memberNoun} from '../../engine/src/member-health.js';
@@ -27,19 +30,33 @@ export function publicBattleEvents(b: Battle): { index: number; entry: BattleLog
   return b.log.flatMap((entry, index) => (b.rules.resolutionVersion === 'v2' ? observedLog([entry], 'ally') : [entry]).map(entry => ({index,
     entry: entry.kind === 'battle-end' && b instanceof SmallBattle && b.objectiveWinner ? { ...entry, text: smallBattleResult(b) ?? entry.text } : entry })));
 }
-export function narrativeEvents(b: Battle): NarrativeEvent[] {
-  return publicBattleEvents(b).filter(({entry}) => !['initiative','round'].includes(entry.kind) && !/^布阵/.test(entry.text)).flatMap(({index,entry}) => {
-    const text = compactEvents([entry]).join('；') || (entry.kind === 'attack' && !entry.resolution ? entry.text : '');
-    return text ? [{index,round:entry.round,text}] : [];
-  });
+/** 日志区间[from,to)内可叙述的事件；连续逐格移动与速射在区间内合并，不跨过已发送的游标。 */
+export function narrativeEvents(b: Battle, from = 0, to = b.log.length): NarrativeEvent[] {
+  const picked = publicBattleEvents(b).filter(({index,entry}) => index >= from && index < to && !['initiative','round'].includes(entry.kind) && !/^布阵/.test(entry.text));
+  return compactEventGroups(picked.map(p => p.entry), { unresolvedAttacks: true })
+    .map(group => ({ index: picked[group.first]!.index, round: picked[group.first]!.entry.round, text: group.text }));
+}
+/** 归档时按已发送的游标分两段合并，之后从归档补发的增量不重复已经发出的移动。 */
+export function archivedNarrativeEvents(b: Battle, deliveries: BattleDeliveries): NarrativeEvent[] {
+  const cursor = Math.max(0, Math.min(deliveries[battleIdOf(b)]?.cursor ?? 0, b.log.length));
+  return [...narrativeEvents(b, 0, cursor), ...narrativeEvents(b, cursor)];
 }
 export function knownBattleState(b: Battle): string {
-  return ['【最新状态】', ...(b instanceof SmallBattle && b.isOver() ? [smallBattleResult(b)!] : []), ...b.visibleCombatants('ally').map(u=>epilogueUnit(b,u))].join('\n');
+  const field = b instanceof SmallBattle ? b.battlefield : undefined;
+  return ['【最新状态】' + (reportsHeights(field) ? '（' + HEIGHT_LEGEND + '）' : ''), ...(b instanceof SmallBattle && b.isOver() ? [smallBattleResult(b)!] : []), ...b.visibleCombatants('ally').map(u=>epilogueUnit(b,u,field))].join('\n');
 }
-function epilogueUnit(b: Battle, u: Combatant): string {
+const RANK_NAMES = { front: '前列', rear: '后列', reserve: '预备列' } as const;
+/** 小战写格子、地形与高度，会战写阵位；撤离的单位和没有位置的旧记录不写。 */
+function unitPlace(b: Battle, u: Combatant, field?: BattlefieldSpec): string {
+  if (u.status === 'fled') return '';
+  if (b instanceof SmallBattle) return field && Number.isInteger(u.pos) && u.pos! >= 0 && u.pos! < field.tiles.length ? '(' + reportPlaceText(field, u.pos!, u) + ')' : '';
+  if (u.rulesVersion !== 'v2') return '';
+  try { const node = formationNode(b.effectiveUnit(u)); return '(' + node.wing + RANK_NAMES[node.rank] + ')'; } catch { return ''; }
+}
+function epilogueUnit(b: Battle, u: Combatant, field?: BattlefieldSpec): string {
   const statuses = {ready:'可行动',dying:'濒死',dead:u.scale==='hero'?'阵亡':'编队失去战斗力',routing:'溃退中',fled:'已撤离'};
   const conditions=u.conditions.filter(c=>c.dur>0).map(c=>`${b.conditions.get(c.id)?.name??c.id}（${c.dur}轮）`);
-  return `${u.side==='ally'?'我方':u.side==='enemy'?'敌方':'中立'} ${u.name}：${reportStrengthLabel(u)}，${statuses[u.status]}${woundedLabel(u,true)?'，'+woundedLabel(u,true):''}${conditions.length?'，'+conditions.join('、'):''}`;
+  return `${u.side==='ally'?'我方':u.side==='enemy'?'敌方':'中立'} ${u.name}${unitPlace(b,u,field)}：${reportStrengthLabel(u)}，${statuses[u.status]}${woundedLabel(u,true)?'，'+woundedLabel(u,true):''}${conditions.length?'，'+conditions.join('、'):''}`;
 }
 /** 按真实生命/现员损失累计，过量伤害不计入；来源按稳定id区分。成员生命编队另记减员人数。 */
 function epilogueDamage(b: Battle): string[] {
@@ -68,14 +85,18 @@ function epilogueDamage(b: Battle): string[] {
 export function battleEpilogue(b: Battle, start?: BattleReport['start']): string {
   const visible=b.isOver()?b.combatants:b.visibleCombatants('ally'),ids=new Set(visible.map(u=>u.id));
   const opening=start?.battleId===battleIdOf(b)&&Array.isArray(start.snapshot.combatants)?(start.snapshot.combatants as Combatant[]).filter(u=>ids.has(u.id)):undefined;
+  // 开局位置按开战快照里的地图写，之后城墙被毁等变化不回写到开局。
+  const openingField=b instanceof SmallBattle&&opening&&start!.snapshot.battlefield&&typeof start!.snapshot.battlefield==='object'?start!.snapshot.battlefield as BattlefieldSpec:undefined;
+  const field=b instanceof SmallBattle?b.battlefield:undefined,facts=fieldFacts(b);
   const damage=epilogueDamage(b);
   const goal = b instanceof SmallBattle && b.battlefield?.objective;
   const mission = goal ? goal.kind === 'annihilation' ? '歼灭战' : goal.kind === 'control' ? goal.attackingSide ? goal.attackingSide === 'ally' ? '攻城战' : '守城战' : '占旗战' : '护送/拦截' : '军团会战';
   return [`【战阵·战斗终章】${mission}，共${completedBattleRounds(b)}轮；${b.isOver() ? b.winner()==='ally'?'我方胜利':b.winner()==='enemy'?'我方失利':'停战/僵持':'尚未结束'}`,
     ...(b instanceof SmallBattle && b.isOver() ? ['【胜负原因】' + smallBattleResult(b)] : []),
     `【本场规则】${b.nonLethal?'非致命：双方生命归零只会濒死失能，不视为死亡；编队减员为可救伤兵。':'致命：生命归零按阵亡结算。'}`,
-    '【开局单位状态与血量】',...(opening?.length?opening.map(u=>epilogueUnit(b,u)):['这场旧战斗没有开局存档记录，开局状态与血量未记录，不推测。']),
-    '【结束单位状态与血量】',...visible.map(u=>epilogueUnit(b,u)),
+    ...(facts.length?['【战场】',...facts]:[]),
+    '【开局单位状态与血量】',...(opening?.length?opening.map(u=>epilogueUnit(b,u,openingField)):['这场旧战斗没有开局存档记录，开局状态与血量未记录，不推测。']),
+    '【结束单位状态与血量】',...visible.map(u=>epilogueUnit(b,u,field)),
     '【伤害来源】',...(damage.length?damage:['没有记录到可核实的伤害。']),
     NARRATIVE_TASK].join('\n');
 }
@@ -87,7 +108,7 @@ export function makeNarrativeBatch(b: Battle | undefined, report: BattleReport |
   }
   const from=deliveries[id]?.cursor??0,to=b?.log.length??report?.eventCount??0;
   if(!b && !report?.narrativeEvents)throw Error('这份旧战报没有事件游标，可发送完整战报或状态摘要');
-  const events=(b?narrativeEvents(b):report!.narrativeEvents!).filter(e=>e.index>=from && e.index<to);
+  const events=(b?narrativeEvents(b,from,to):report!.narrativeEvents!).filter(e=>e.index>=from && e.index<to);
   if(!events.length)throw Error('没有新的可叙述事件');
   let round=-1;const lines:string[]=[];
   for(const e of events){if(e.round!==round){round=e.round;lines.push(`【第${round}轮】`);}lines.push('▸ '+e.text);}

@@ -12,7 +12,7 @@ export const GROUPING_HINT = '普通人员按同阵营、相近装备和训练�
 
 /** spawn/deploy 明确指定本批完整出场名单；纯战外修改不改变选择。 */
 export function hasNarrativeDeployment(events: Suggestion[]): boolean {
-  return events.some((event) => event.kind === 'spawn' || event.kind === 'deploy');
+  return events.some((event) => event.kind === 'spawn' && !event.archiveOnly || event.kind === 'deploy');
 }
 
 /** 在生成装备/单位或复制整份存档前检查，拒绝时整批事实不变。 */
@@ -27,6 +27,6 @@ export function assertNarrativeCapacity(save: NarrativeSave, events: Suggestion[
   const deployed = new Set(events.filter((e): e is Extract<Suggestion, { kind: 'deploy' }> => e.kind === 'deploy').map((e) => e.id));
   const updates = new Map(events.filter((e): e is Extract<Suggestion, { kind: 'unit-update' }> => e.kind === 'unit-update').map((e) => [e.id, e.hp]));
   const alive = (save.storage ?? []).filter((r) => deployed.has(r.id) && !r.retired && r.status !== 'dead' && (updates.get(r.id) ?? r.hp) > 0).length;
-  const joining = spawns.reduce((n, e) => n + (e.hp === 0 ? 0 : e.count), 0);
+  const joining = spawns.reduce((n, e) => n + (e.hp === 0 || e.archiveOnly ? 0 : e.count), 0);
   if (alive + joining > MAX_SCENE_UNITS) throw new Error(`本场合计将达${alive + joining}个参战单位，上限${MAX_SCENE_UNITS}；本批未提交。${GROUPING_HINT}`);
 }

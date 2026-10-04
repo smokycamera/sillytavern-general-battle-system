@@ -28,7 +28,7 @@ const registry = traitRegistry();
 function setup(text: string, managed = false) {
   const unit = generateUnit({ rulesVersion: 'v2', damageModel: 'wounds-v2', name: '红石游击连', side: 'ally', scale: 'company', level: 2, hp: 20, hpMax: 30, traits: [], weaponClass: 'rifle', weaponLevel: 3 }, { seed: 'reforge-deploy', registry }).unit;
   unit.id = id; unit.weapon!.id = itemId;
-  const leader = generateUnit({ rulesVersion: 'v2', damageModel: 'wounds-v2', name: '刘芮杞', side: 'ally', scale: 'hero', level: 3, traits: [] }, { seed: 'reforge-leader', registry }).unit;
+  const leader = generateUnit({ rulesVersion: 'v2', damageModel: 'wounds-v2', name: '李华', side: 'ally', scale: 'hero', level: 3, traits: [] }, { seed: 'reforge-leader', registry }).unit;
   leader.id = leaderId;
   let save: NarrativeSave = { storage: [unitRecordFromCombatant(unit), unitRecordFromCombatant(leader)], rosterIds: [], factRevision: 1, storySync: true };
   if (managed) save = prepareInventoryState(save);

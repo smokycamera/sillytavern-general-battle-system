@@ -61,7 +61,14 @@ export class BattleService {
   }
   status(): ServiceState { return { phase: this.phase, save: this.snapshot(), receipt: structuredClone(this.receipt), error: this.error }; }
   listen(listener: Listener): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
-  private notify(): void { for (const listener of this.listeners) { try { listener(this.status()); } catch (error) { console.error('战阵视图更新失败', error); } } }
+  // The entry ignores the save and the panel skips its own commits: copy the archive only when a listener reads it.
+  private notify(): void {
+    for (const listener of this.listeners) {
+      const save = this.store.snapshotLater();
+      const state: ServiceState = { phase: this.phase, get save() { return save(); }, receipt: structuredClone(this.receipt), error: this.error };
+      try { listener(state); } catch (error) { console.error('战阵视图更新失败', error); }
+    }
+  }
   version(): CommandVersion {
     const session = this.store.session();
     if (!session || !sameSession(session, this.host.session()) || this.phase !== 'ready' && this.phase !== 'review') throw Error('当前档案尚未就绪');
