@@ -124,7 +124,9 @@ const FATIGUE_COND = ['', 'fat-1', 'fat-2', 'fat-3', 'fat-4'];
 
 export class MassBattle {
   readonly formationSlots?: number;
-  readonly nonLethal: boolean;
+  /** 致命规则，战中经 setNonLethal 切换；单位上的 nonLethal 与之同步，供减员记账使用。 */
+  get nonLethal(): boolean { return this.nonLethalRule; }
+  private nonLethalRule: boolean;
   defeatedIds = new Set<string>();
   allyTactic: TacticalPreference = 'balanced';
   commanderProfiles: CommanderProfiles = {};
@@ -191,7 +193,7 @@ export class MassBattle {
   private started = false;
 
   constructor(opts: MassBattleOpts) {
-    this.nonLethal = opts.nonLethal === true;
+    this.nonLethalRule = opts.nonLethal === true;
     if (opts.formationSlots !== undefined && (!Number.isInteger(opts.formationSlots) || opts.formationSlots < 3 || opts.formationSlots > 7)) throw Error('会战阵位容量损坏');
     this.formationSlots = opts.formationSlots;
     if (opts.roundLimit !== undefined && ![20, 40].includes(opts.roundLimit)) throw new Error('会战轮次期限损坏');
@@ -2160,6 +2162,15 @@ export class MassBattle {
     this.forcedWinner = reason === 'surrender' ? 'enemy' : 'draw';
     this.orders.clear();
     this.recordEvent({ round: this.round, kind: 'battle-end', text: reason === 'surrender' ? '我方投降，敌方获胜；保留实际伤亡，存活者不视为死亡或成功撤离' : '玩家停止交战，按当前伤亡结算为停战；倒地者未被补杀，未判定俘虏或敌方投降' });
+  }
+  /** 回合之间切换致命/非致命：只改之后的倒地与减员，已阵亡、已濒死、已撤离的保持原状。 */
+  setNonLethal(on: boolean): void {
+    if (!this.started || this.isOver() || this.locked) throw new Error('只能在进行中的会战回合之间修改致命规则');
+    if (on === this.nonLethalRule) return;
+    this.nonLethalRule = on;
+    for (const unit of this.combatants) unit.nonLethal = on;
+    this.recordEvent({ round: this.round, kind: 'rule', rule: { nonLethal: on },
+      text: on ? '改为非致命：此后双方生命归零只会濒死失能，编队减员算可救伤兵' : '改为致命：此后生命归零按阵亡结算，已经濒死的单位保持濒死' });
   }
   private remainingUnits(side: 'ally' | 'enemy'): Combatant[] {
     return this.combatants.filter((u) => u.side === side && (u.status === 'ready' || this.rules.resolutionVersion === 'v2' && u.status === 'routing'));

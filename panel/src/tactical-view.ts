@@ -181,24 +181,34 @@ const MAP_KEY = `<details class="map-key" data-detail-id="map-key"><summary>图�
 ] as const).map(([key, text]) => `<span><i class="key key-${key}"></i>${text}</span>`).join('')}<span><i class="key key-exit">︾</i>撤离方向：我方下沿，敌方上沿</span><span><i class="key key-token-hero"></i>人物</span><span><i class="key key-token-company"></i>编队</span></div></details>`;
 
 /** 棋子：阵营色底 + 兵种符号 + 名称 + 实际生命/人数数值。数值始终显示，颜色随剩余比例变化。 */
-function gridPiece(battle: SmallBattle, u: Combatant, isActor: boolean): string {
+function gridPiece(battle: SmallBattle, u: Combatant, isActor: boolean, ai = false): string {
   const name = [...u.name], ratio = u.base.hpMax > 0 ? Math.max(0, Math.min(1, u.hp / u.base.hpMax)) : 0;
   const health = ratio >= .6 ? 'hp-high' : ratio >= .3 ? 'hp-mid' : 'hp-low';
   const side = u.side === 'ally' || u.side === 'enemy' ? u.side : 'neutral';
-  const badges = [isAirborne(u) ? '空' : isElevated(u) ? '顶' : '', u.suppression ? '压' : '', battle.overwatch.has(u.id) ? '警' : ''].filter(Boolean);
-  const status = [isAirborne(u) ? '空中' : isElevated(u) ? '墙顶' : '', u.suppression ? '受压' : '', battle.overwatch.has(u.id) ? '警戒' : ''].filter(Boolean).join(' ');
+  const badges = [ai ? 'AI' : '', isAirborne(u) ? '空' : isElevated(u) ? '顶' : '', u.suppression ? '压' : '', battle.overwatch.has(u.id) ? '警' : ''].filter(Boolean);
+  const status = [ai ? 'AI托管' : '', isAirborne(u) ? '空中' : isElevated(u) ? '墙顶' : '', u.suppression ? '受压' : '', battle.overwatch.has(u.id) ? '警戒' : ''].filter(Boolean).join(' ');
   return `<span class="grid-piece ${side} ${u.scale === 'hero' ? 'hero' : 'company'} ${health}${u.status !== 'ready' ? ' status-' + u.status : ''}${isActor ? ' actor' : ''}${isAirborne(u) ? ' airborne' : ''}">`
     + `<span class="grid-token">${unitSymbol(u)}${badges.length ? '<span class="grid-badges">' + badges.map(b => '<i>' + b + '</i>').join('') + '</span>' : ''}</span>`
     + `<span class="grid-piece-name"><span>${esc(name.slice(0, -2).join(''))}</span><span>${esc(name.slice(-2).join(''))}</span></span>`
     + `<span class="grid-hp"><span class="grid-affiliation">${u.side === 'ally' ? '我' : u.side === 'enemy' ? '敌' : '中'}</span><b>${u.hp}</b>/${u.base.hpMax}${status ? '<span class="grid-status"> ' + status + '</span>' : ''}</span></span>`;
 }
 
-export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, autoTurn = false, query?: TacticalQuery, fullAuto = false): string {
+/** 面板算好的AI托管状态：哪些我方单位轮到时交给AI，以及「托管非主控」和全自动开关。 */
+export interface TacticalAutomation { aiUnitIds: ReadonlySet<string>; nonProtagonist: boolean; fullAuto: boolean }
+const MANUAL: TacticalAutomation = { aiUnitIds: new Set(), nonProtagonist: false, fullAuto: false };
+
+export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, automation: TacticalAutomation = MANUAL, query?: TacticalQuery): string {
   const field = battle.battlefield!, s = tacticalSelection(battle, view, query);
   const { visible, actor, options, option, target, canControl } = s;
-  const autoToggle = `<label class="fixed-auto"><input type="checkbox" data-role="full-auto-battle" ${fullAuto ? 'checked' : ''} ${battle.isOver() ? 'disabled' : ''}>全自动</label>`;
   const active = visible.find((u) => u.id === battle.active?.id), over = battle.isOver();
   const activeLabel = active?.name ?? (battle.active?.side === 'enemy' ? '尚未发现的敌方单位' : '未定位单位');
+  const autoToggle = `<label class="fixed-auto" title="含主控在内全部交给AI连续推进，取消勾选即暂停"><input type="checkbox" data-role="full-auto-battle" ${automation.fullAuto ? 'checked' : ''} ${over ? 'disabled' : ''}>全自动</label>`;
+  const actorAi = !!actor && automation.aiUnitIds.has(actor.id);
+  // 三档托管范围由小到大排在一起：此单位 → 非主控 → 全自动（含主控）；「代打本次」只做一次，不改设置。
+  const aiTakeover = `<div class="ai-takeover" role="group" aria-label="AI托管"><span>AI托管</span>`
+    + `<label title="${actor ? esc(actor.name) + '之后每次轮到都由AI行动，取消勾选即收回手动' : '没有可托管的我方单位'}"><input type="checkbox" data-role="ally-ai" data-id="${esc(actor?.id ?? '')}" ${actorAi ? 'checked' : ''} ${actor && !over ? '' : 'disabled'}>此单位</label>`
+    + `<label title="除主控外的我方单位都由AI行动，之后的战斗沿用；勾选或取消会覆盖单位的单独设置"><input type="checkbox" data-role="auto-turn" ${automation.nonProtagonist ? 'checked' : ''} ${over ? 'disabled' : ''}>非主控</label>`
+    + autoToggle + `</div>`;
   const events = over ? battle.log : battle.visibleLog('ally');
   const special = view.mode.startsWith('flight:') || view.mode === 'retreat';
   const mode = special || view.mode === 'move' || view.mode === 'guard' ? view.mode : option?.id ?? 'weapon';
@@ -235,7 +245,7 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
     const height = field.spatialRulesVersion === 2 ? surfaceHeightAt(field, cell) : 0;
     const terrainLabel = inspected && !occupants.length;
     const inner = (height ? '<span class="grid-height" aria-hidden="true">高' + height + '</span>' : '') + (landmark ? '<span class="grid-landmark" aria-hidden="true">◇</span>' : '') + (goalCell === cell ? '<span class="grid-goal" aria-hidden="true">旗</span>' : '')
-      + occupants.map((u) => gridPiece(battle, u, u.id === actor?.id)).join('')
+      + occupants.map((u) => gridPiece(battle, u, u.id === actor?.id, automation.aiUnitIds.has(u.id))).join('')
       + (occupants.length > 1 ? '<span class="grid-stack-count">' + occupants.length + '队</span>' : '')
       + (structure?.hp && !terrainLabel && (structure.hp < structure.hpMax || inspected) ? `<span class="structure-hp${occupants.length || zones.length ? ' raised' : ''}" aria-hidden="true">${structure.hp}/${structure.hpMax}</span>` : '')
       + (zones.length ? '<span class="grid-zone">' + zones.map(z => ZONE_NAMES[z.kind]).join('·') + '</span>' : '')
@@ -277,8 +287,8 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
       <div class="grid-camera" tabindex="0" aria-label="战场地图，可横向和纵向滚动"><div class="grid-stage" style="--columns:${field.width};--rows:${field.height}">${rulers}<div class="grid-stage-body">${rows}<div class="grid-board" style="--columns:${field.width}">${terrainLayer(field)}${cells}${traceOverlay(battle)}</div></div></div></div>
       ${searched.size ? '<p class="sub">近3轮已搜索 '+searched.size+'格 · 点状标记为已排查区域，敌情仍受视野限制。</p>' : ''}${renderRoundFeedback(battle)}${tileInspector(battle, view, s)}
     </div><div class="grid-command">
-      <div class="command-finish">${executeCommand}<button data-action="grid-endturn" ${canControl ? '' : 'disabled'}>结束行动</button><button data-action="grid-auto" ${over ? 'disabled' : ''}>自动当前行动</button>${autoToggle}</div>
-      <div class="command-actor"><span class="sub">${canControl ? '正在指挥' : '我方单位'}</span><h3>${esc(actor?.name ?? '没有可用单位')}</h3>${actor ? '<span>' + strengthDescription(actor) + '</span>' : ''}</div>${actor?memberHealthPanel(actor):''}
+      <div class="command-finish">${executeCommand}<button data-action="grid-endturn" ${canControl ? '' : 'disabled'}>结束行动</button><button data-action="grid-auto" ${over ? 'disabled' : ''} title="只让AI完成${esc(activeLabel)}的这一次行动，不改变托管设置">AI代打本次</button>${aiTakeover}</div>
+      <div class="command-actor"><span class="sub">${canControl ? '正在指挥' : '我方单位'}${actorAi ? ' · AI托管中' : ''}</span><h3>${esc(actor?.name ?? '没有可用单位')}</h3>${actor ? '<span>' + strengthDescription(actor) + '</span>' : ''}</div>${actor?memberHealthPanel(actor):''}
       ${canControl && actor && battle.hasteAvailable(actor.id) ? `<button data-action="grid-haste" aria-pressed="${battle.hasteSelected.has(actor.id)}">${battle.hasteSelected.has(actor.id) ? '取消加速动作选择' : '下一次使用加速动作'}</button><small>可攻击、机动、起落、装填、固守或警戒，技能使用主行动。</small>` : ''}
       <div class="sub">${actor ? movementLabel(actor, battle.fieldTags) + ' · 精力 ' + approx(actor.resources.SP ?? 0, 1, 'down') + '/' + spCapacity(actor) : ''}</div><div class="grid-budgets">${canControl && actor ? '移动 ' + battle.movementLeft(actor.id) + '/' + battle.movementBudget(actor.id) + ' · 主行动 ' + Number(!battle.actedThisTurn.has(actor.id)) + ' · 加速动作 ' + Number(battle.hasteAvailable(actor.id)) + ' · 反应 ' + Number(!battle.reactionSpent.has(actor.id) && !actor.suppression) : '待行动 · 可查看装备与行动'}</div>
       <div class="sub mission-summary">${objectiveDetails(battle)}</div>
@@ -303,8 +313,7 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
         ${actor && (isAirborne(actor) || activeTraitIds(actor).includes('flying')) ? `<p>${esc(battle.flightReason(actor.id, !isAirborne(actor)) ?? '起飞离开接敌可能触发借机；扑击会先降落。')}</p>` : ''}
         <p class="suppression-description">消耗1次主行动和1点战技点，需要合法射击目标；不造成生命伤害。目标攻击命中 -2，停用借机与警戒反应、取消现有警戒，且不能固守或冲锋；持续到目标完成2次行动结算。</p>${actor && battle.suppressReason(actor.id, target?.targetId) ? '<p class="grid-reason">' + esc(battle.suppressReason(actor.id, target?.targetId)!) + '</p>' : ''}
         <p>${field.retreatEdges?'本场我方撤离点：'+retreatCells(field,'ally').map(p=>cellLabel(field,p)).join('、')+'。':'我方撤离点：地图最下排标“撤”的格子；敌方从最上排撤离。'}脱离敌人至少2格并保留主行动后可撤离。${esc(s.allOptions.find((o) => o.id === 'retreat')?.reason ?? '')}</p>
-        <button data-action="grid-auto" ${canControl ? '' : 'disabled'}>移交当前单位本次行动给AI</button><p>由AI代打当前单位的这次行动，后续回合仍按原控制设置执行。</p>
-        <label><input type="checkbox" data-role="auto-turn" ${autoTurn ? 'checked' : ''}>自动非主控单位</label>
+        <p class="ai-takeover-help">AI托管：勾选「此单位」后，当前选中的单位之后每次轮到都由AI行动（地图上标AI）；「非主控」把主控以外的我方单位全部交给AI；「全自动」连主控一起连续推进，取消即暂停。「AI代打本次」只替当前行动单位做这一次。</p>
         <p>地面对空射程距离额外 +2 格，曲射火炮不能对空。远程武器居高射击每高1级射程+1（至多+2）。射程底色只表示平面距离，不含居高加成；目标亮边和禁用原因同时考虑视线、接敌、装备、状态与行动成本。暗区可能存在未发现的敌军。</p>
       </details>
 

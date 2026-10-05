@@ -82,6 +82,14 @@ function epilogueDamage(b: Battle): string[] {
     return `${source?.name??row.sourceName??'来源未记录'} → ${target?.name??row.targetName??row.target}：累计造成${row.amount}${row.life||target?.scale==='hero'?'生命损失':target?memberNoun(target)+'减员':'点损失'}${row.causes.size?'（含'+[...row.causes].join('、')+'）':''}${members}`;
   });
 }
+/** 致命规则；战中切换过时写明开局规则和每次切换的轮次，单位按倒下时的规则记录。 */
+function lethalityRule(b: Battle): string {
+  const changes = b.log.filter(e => e.kind === 'rule' && e.rule);
+  if (!changes.length) return b.nonLethal ? '非致命：双方生命归零只会濒死失能，不视为死亡；编队减员为可救伤兵。' : '致命：生命归零按阵亡结算。';
+  const name = (nonLethal: boolean) => nonLethal ? '非致命' : '致命';
+  return `开局${name(!changes[0]!.rule!.nonLethal)}，${changes.map(e => `第${e.round}轮起改为${name(e.rule!.nonLethal)}`).join('，')}。`
+    + '单位按倒下时的规则记录：致命阶段生命归零即阵亡；非致命阶段只会濒死失能，不视为死亡，编队减员为可救伤兵。';
+}
 export function battleEpilogue(b: Battle, start?: BattleReport['start']): string {
   const visible=b.isOver()?b.combatants:b.visibleCombatants('ally'),ids=new Set(visible.map(u=>u.id));
   const opening=start?.battleId===battleIdOf(b)&&Array.isArray(start.snapshot.combatants)?(start.snapshot.combatants as Combatant[]).filter(u=>ids.has(u.id)):undefined;
@@ -93,7 +101,7 @@ export function battleEpilogue(b: Battle, start?: BattleReport['start']): string
   const mission = goal ? goal.kind === 'annihilation' ? '歼灭战' : goal.kind === 'control' ? goal.attackingSide ? goal.attackingSide === 'ally' ? '攻城战' : '守城战' : '占旗战' : '护送/拦截' : '军团会战';
   return [`【战阵·战斗终章】${mission}，共${completedBattleRounds(b)}轮；${b.isOver() ? b.winner()==='ally'?'我方胜利':b.winner()==='enemy'?'我方失利':'停战/僵持':'尚未结束'}`,
     ...(b instanceof SmallBattle && b.isOver() ? ['【胜负原因】' + smallBattleResult(b)] : []),
-    `【本场规则】${b.nonLethal?'非致命：双方生命归零只会濒死失能，不视为死亡；编队减员为可救伤兵。':'致命：生命归零按阵亡结算。'}`,
+    `【本场规则】${lethalityRule(b)}`,
     ...(facts.length?['【战场】',...facts]:[]),
     '【开局单位状态与血量】',...(opening?.length?opening.map(u=>epilogueUnit(b,u,openingField)):['这场旧战斗没有开局存档记录，开局状态与血量未记录，不推测。']),
     '【结束单位状态与血量】',...visible.map(u=>epilogueUnit(b,u,field)),

@@ -65,11 +65,11 @@ describe('战术地图查看与确认', () => {
     const { b } = tacticalFixture(), view: TacticalView = { mode: 'weapon', selectedId: 'a' };
     const spy = vi.spyOn(b, 'getActionOptions');
     const query = selectTacticalElement(b, view, { cell: 31 });
-    const reused = renderTacticalBattle(b, view, false, query);
+    const reused = renderTacticalBattle(b, view, undefined, query);
     expect(spy).toHaveBeenCalledTimes(1);
     expect(renderTacticalBattle(b, view)).toBe(reused);
     expect(spy).toHaveBeenCalledTimes(2);
-    view.selectedId = 'c'; renderTacticalBattle(b, view, false, query);
+    view.selectedId = 'c'; renderTacticalBattle(b, view, undefined, query);
     expect(spy).toHaveBeenLastCalledWith('c');
     view.selectedId = 'a'; b.byId('a').conditions.push({ id: 'stunned', dur: 2 });
     renderTacticalBattle(b, view);

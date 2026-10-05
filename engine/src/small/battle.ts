@@ -137,8 +137,14 @@ function halveDice(expr: string): string {
 }
 
 export class SmallBattle {
-  readonly nonLethal: boolean;
+  /** 致命规则，战中经 setNonLethal 切换；单位上的 nonLethal 与之同步，供减员记账使用。 */
+  get nonLethal(): boolean { return this.nonLethalRule; }
+  private nonLethalRule: boolean;
+  /** 改回致命时已经濒死的单位：倒在非致命阶段，战斗结束时不按旧战场补记阵亡。 */
+  private sparedIds = new Set<string>();
   allyTactic: TacticalPreference = 'balanced';
+  /** 玩家逐个单位设置的AI托管（单位 id → true 托管 / false 手动）；未列出的单位按面板默认。引擎只负责随战斗保存。 */
+  allyAiControl = new Map<string, boolean>();
   commanderProfiles: CommanderProfiles = {};
   readonly battlefield?: BattlefieldSpec;
   movementSpent = new Map<string, number>();
@@ -219,7 +225,7 @@ export class SmallBattle {
   private feedback?: BattleFeedback;
 
   constructor(opts: SmallBattleOpts) {
-    this.nonLethal = opts.nonLethal === true;
+    this.nonLethalRule = opts.nonLethal === true;
     if (opts.battlefield) validateField(opts.battlefield);
     this.battlefield = opts.battlefield ? structuredClone(opts.battlefield) : undefined;
     this.combatants = opts.combatants;
@@ -2490,10 +2496,24 @@ export class SmallBattle {
     this.recordEvent({ round: this.round, kind: 'battle-end', text: reason === 'surrender' ? '我方投降，敌方获胜；保留实际伤亡，存活者不视为死亡或成功撤离' : '玩家停止交战，按当前伤亡结算为停战；倒地者未被补杀，未判定俘虏或敌方投降' });
   }
 
-  /** 兼容旧战场中尚未结清的零生命濒死状态；不重复发放击败经验。 */
+  /**
+   * 战中切换致命/非致命：只改之后的倒地与减员。已阵亡、已撤离的不变，已记的可救伤兵不变；
+   * 改回致命时已经濒死的单位保持濒死，此后再受伤害才会阵亡。
+   */
+  setNonLethal(on: boolean): void {
+    if (!this.started || this.isOver()) throw new Error('只能在进行中的战斗里修改致命规则');
+    if (on === this.nonLethalRule) return;
+    if (!on) for (const unit of this.combatants) if (unit.status === 'dying') this.sparedIds.add(unit.id);
+    this.nonLethalRule = on;
+    for (const unit of this.combatants) unit.nonLethal = on;
+    this.recordEvent({ round: this.round, kind: 'rule', rule: { nonLethal: on },
+      text: on ? '改为非致命：此后双方生命归零只会濒死失能，编队减员算可救伤兵' : '改为致命：此后生命归零按阵亡结算，已经濒死的单位保持濒死' });
+  }
+
+  /** 兼容旧战场中尚未结清的零生命濒死状态；不重复发放击败经验。非致命阶段倒下的单位不补记。 */
   finalizeCasualties(): void {
     if (this.nonLethal || !this.isOver()) return;
-    for (const unit of this.combatants) if (unit.hp <= 0 && unit.status === 'dying') {
+    for (const unit of this.combatants) if (unit.hp <= 0 && unit.status === 'dying' && !this.sparedIds.has(unit.id)) {
       unit.status = 'dead';
       this.recordEvent({round:this.round,kind:'death',participants:[unit.id],text:`${unit.name} 阵亡（生命归零）`});
     }
@@ -2532,6 +2552,8 @@ export class SmallBattle {
   toSnapshot(): Record<string, unknown> {
     return {
       v: 1, allyTactic: this.allyTactic, commanderProfiles: this.commanderProfiles, nonLethal: this.nonLethal,
+      ...(this.allyAiControl.size ? { allyAiControl: [...this.allyAiControl] } : {}),
+      ...(this.sparedIds.size ? { sparedIds: [...this.sparedIds] } : {}),
       battlefield: this.battlefield,
       searchCoverage: this.searchCoverage,
       ...(this.feedback ? { feedback: this.feedback.snapshot() } : {}),
@@ -2586,6 +2608,9 @@ export class SmallBattle {
       field: { tags: snap.fieldTags ?? snap.battlefield?.environment ?? [] },
     });
     b.allyTactic = normalizeTactic(snap.allyTactic);
+    b.allyAiControl = new Map(Array.isArray(snap.allyAiControl)
+      ? snap.allyAiControl.filter((e: unknown): e is [string, boolean] => Array.isArray(e) && typeof e[0] === 'string' && typeof e[1] === 'boolean') : []);
+    b.sparedIds = new Set(Array.isArray(snap.sparedIds) ? snap.sparedIds.filter((id: unknown): id is string => typeof id === 'string') : []);
     b.commanderProfiles = normalizeCommanderProfiles(snap.commanderProfiles);
     b.round = snap.round ?? 1;
     b.searchCoverage = structuredClone(snap.searchCoverage ?? {});

@@ -89,7 +89,7 @@ export function observedUnits(context: ObservationContext, side: Side): Combatan
 }
 export function observeEvent(context: ObservationContext, entry: BattleLogEntry): BattleLogEntry {
   const ids = entry.participants ?? (entry.resolution ? [entry.resolution.attackerId, entry.resolution.defenderId] : []);
-  const global = !ids.length && ['round', 'battle-end'].includes(entry.kind);
+  const global = !ids.length && ['round', 'rule', 'battle-end'].includes(entry.kind);
   const observedBy: Side[] = [], observedText: Partial<Record<Side, string>> = {};
   for (const side of ['ally', 'enemy', 'neutral'] as const) {
     const visible = new Set(observedUnits(context, side).map((u) => u.id));
@@ -104,5 +104,5 @@ export function observeEvent(context: ObservationContext, entry: BattleLogEntry)
 export function observedLog(log: BattleLogEntry[], side: Side): BattleLogEntry[] {
   return log.flatMap((entry) => entry.observedBy?.includes(side) ? [entry] : entry.observedText?.[side]
     ? [{ round: entry.round, kind: entry.kind, text: entry.observedText[side]! }]
-    : !entry.observedBy && ['round', 'battle-end'].includes(entry.kind) ? [entry] : []);
+    : !entry.observedBy && ['round', 'rule', 'battle-end'].includes(entry.kind) ? [entry] : []);
 }

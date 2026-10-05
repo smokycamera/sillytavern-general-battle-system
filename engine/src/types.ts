@@ -494,6 +494,7 @@ export type LogKind =
   | 'routing'
   | 'move'
   | 'round'
+  | 'rule'
   | 'battle-end';
 
 export interface BattleLogEntry {
@@ -512,6 +513,8 @@ export interface BattleLogEntry {
   round: number;
   kind: LogKind;
   text: string;
+  /** kind=rule：战中改致命规则后的新规则，此后的倒地与减员按它结算。 */
+  rule?: { nonLethal: boolean };
   /** 完整结算明细（伤害管线产物），供面板悬浮与审计 */
   resolution?: AttackResolution;
   ts?: number;

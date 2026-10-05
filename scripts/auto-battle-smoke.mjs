@@ -24,7 +24,7 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   for (const fixture of fixtures) {
     await page.evaluate(({ fixture, html }) => { window.loadFixture(fixture); document.querySelector('#panel').srcdoc = html; }, { fixture, html });
-    const panel = page.frameLocator('#panel'), toggle = panel.locator('[data-role="full-auto-battle"]');
+    const panel = page.frameLocator('#panel'), toggle = panel.locator('[data-role="full-auto-battle"]').first(); // 战术地图另有手机底栏快捷开关
     await toggle.waitFor(); assert.equal(await toggle.isChecked(), false);
     const before = fixture.battle.snap;
     await toggle.check();

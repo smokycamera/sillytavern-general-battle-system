@@ -57,6 +57,11 @@ button[data-processing="true"] { outline: 2px solid var(--accent, #cdbb86); opac
 .structure-actions button { white-space:normal; }
 
 .grid-command>.command-finish{position:sticky;top:0;z-index:15;margin:0 0 12px;padding:8px 0;background:var(--card);grid-template-columns:repeat(3,minmax(0,1fr));}
-.command-finish>.fixed-auto{grid-column:1/-1;margin:0;min-height:28px;display:flex;align-items:center;gap:6px;}
 .fixed-auto{white-space:nowrap;font-size:12px;display:flex;align-items:center;gap:4px;}
+/* AI托管：此单位 / 非主控 / 全自动 同排，跟在「AI代打本次」下方。 */
+.ai-takeover{display:inline-flex;flex-wrap:wrap;align-items:center;gap:2px 12px;font-size:12px;}
+.ai-takeover>span{color:var(--dim);}
+.ai-takeover label,.command-finish>.ai-takeover label{display:flex;align-items:center;gap:4px;margin:0;min-height:28px;white-space:nowrap;font-size:12px;color:var(--txt);}
+.command-finish>.ai-takeover{grid-column:1/-1;}
+.battle-toolbar .battle-tactic{margin-left:auto;}
 .grid-cell.recently-searched::after{content:'';position:absolute;right:3px;bottom:3px;width:4px;height:4px;border-radius:50%;background:var(--ally);pointer-events:none;}

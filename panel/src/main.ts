@@ -90,7 +90,8 @@ import { WORKSPACES, workspaceNavigation, workspacePage, showWorkspace, type Wor
 import { renderFormationBattle } from './formation-view.js';
 import { battleAbilities, battleSkillChangeReason, learnedSkills, removedSkillOrder, setBattlePreparedSkills } from './battle-skills.js';
 import { formationSelection, selectFormationUnit, setFormationChoice, orderDraft, type FormationView, type OrderDrafts } from './formation-orders.js';
-import { renderTacticalBattle, selectTacticalElement, MAP_ZOOM_LABELS, type MapZoom, type TacticalView, type TacticalQuery } from './tactical-view.js';
+import { renderTacticalBattle, selectTacticalElement, MAP_ZOOM_LABELS, type MapZoom, type TacticalView, type TacticalQuery, type TacticalAutomation } from './tactical-view.js';
+import { aiActsFor, aiControlledAllyIds, resetNonProtagonistAi, setUnitAi, type AllyControlDefaults } from './ally-control.js';
 import {
   PANEL_SAVE_SCHEMA_VERSION,
   battleOutcomeId,
@@ -203,7 +204,7 @@ interface AppState {
   protagonistId?: string;
   /** 我方主指挥单位 id（军团；主控非指挥官时军令自动） */
   commanderId?: string;
-  /** 自动行动开关：自动扮演非主控单位（未设主控时仅自动敌方） */
+  /** 「AI托管·非主控」：主控以外的我方单位默认交给AI（未设主控时即全部我方）；单位的单独托管设置随战斗保存 */
   autoTurn: boolean;
   /** 保存作用域：chat=每聊天一份；character=跟随角色卡 */
   saveScope: SaveScope;
@@ -324,6 +325,8 @@ const fullAuto = new AutoBattleLoop();
 const llmContext = new LlmContextController();
 let llmDiagnostic = "";
 let smallResumeRequested = false;
+/** AI连续行动期间改过托管开关、尚未写入存档。 */
+let allyControlUnsaved = false;
 let automationEpoch = 0;
 function recentContextMessages() { return (runtime.recentNarrative?.()??[]).filter(m=>m.completed); }
 
@@ -489,7 +492,7 @@ interface SavedPanel {
 function restore(): void {
   const resumeRequested = smallResumeRequested;
   stopAutomation(false);
-  smallResumeRequested = resumeRequested;
+  smallResumeRequested = resumeRequested; allyControlUnsaved = false;
   reportRestartPreview=undefined;
   if (workspaceNamespace !== adapter.namespace()) {
     llmContext.cancel();
@@ -753,11 +756,21 @@ function deployedRoster(records: UnitRecord[], ids: string[]): Combatant[] {
   return prepareBattleItems(roster, controller.snapshot());
 }
 
+function allyControlDefaults(): AllyControlDefaults { return { nonProtagonist: state.autoTurn, protagonistId: state.protagonistId }; }
+/** AI托管开关：「非主控」覆盖全部非主控单位的单独设置，「此单位」只改选中的我方单位。 */
+function applyAllyControl(role: string, checked: boolean, id?: string): void {
+  const b = state.small;
+  if (role === 'auto-turn') { state.autoTurn = checked; if (b) resetNonProtagonistAi(b, allyControlDefaults()); }
+  else if (b && !b.isOver() && b.combatants.some(u => u.id === id && u.side === 'ally')) setUnitAi(b, id!, checked, allyControlDefaults());
+}
+function tacticalAutomation(b: SmallBattle): TacticalAutomation {
+  const defaults = allyControlDefaults();
+  return { aiUnitIds: aiControlledAllyIds(b, defaults), nonProtagonist: defaults.nonProtagonist, fullAuto: fullAuto.running };
+}
+
 /**
- * 自动行动（小规模）：依次替「引擎接管方」的单位执行 autoAction，直到轮到玩家手动方或战斗结束。
- * 规则：敌方单位**始终**由引擎自动行动（无论是否设主控、是否勾选自动行动）；玩家只操控我方。
- * 友方仅在开了「自动行动」且当前不是主控时由引擎代打；否则停下让玩家手动。
- * （autoTurn 关闭时：敌方仍自动、我方全手动。）
+ * 自动行动（小规模）：依次替AI一方的单位执行 autoAction，直到轮到玩家手动的我方单位或战斗结束。
+ * 敌方与中立单位始终由AI行动；我方单位按 AI 托管设置（单位单独设置 > 「非主控」），见 ally-control。
  */
 async function autoSmall(b: SmallBattle): Promise<void> {
   if (!b.active || b.isOver()) return;
@@ -777,10 +790,7 @@ async function runAuto(): Promise<void> {
     while (epoch === automationEpoch && state.small === b && !b.isOver() && b.active && guard++ < 200) {
       const a = b.active;
       // 反应击杀/失能必须先交还行动权，不能等待已倒下的玩家单位。
-      if (!smallActorBlocked(b)) {
-        if (a.side === 'ally' && a.id === state.protagonistId) break;
-        if (a.side !== 'enemy' && !state.autoTurn) break;
-      }
+      if (!smallActorBlocked(b) && !aiActsFor(b, a, allyControlDefaults())) break;
       tacticalView.selectedId = a.id; tacticalView.cell = undefined; render('battle');
       await yieldBattleFrame();
       if (epoch !== automationEpoch || state.small !== b) return;
@@ -810,11 +820,13 @@ async function resumeSmallTurnIfNeeded(): Promise<void> {
   smallResumeRequested = true;
   if (uiBusy || fullAuto.running) return;
   smallResumeRequested = false;
-  const b = state.small;
-  if (!b || b.isOver() || !b.active || (!smallActorBlocked(b) && b.active.side !== 'enemy')
-    || battleSaveFailed || (runtime.canWrite && !runtime.canWrite())) return;
+  const b = state.small, unsaved = allyControlUnsaved;
+  if (!b || battleSaveFailed || (runtime.canWrite && !runtime.canWrite())) return;
+  if (!unsaved && (b.isOver() || !b.active || (!smallActorBlocked(b) && !aiActsFor(b, b.active, allyControlDefaults())))) return;
   await panelTask(async () => {
+    allyControlUnsaved = false;
     await runAuto();
+    if (unsaved) (await persist());
     render('battle');
   });
 }
@@ -946,7 +958,7 @@ function render(scope: RenderScope = 'all', tacticalQuery?: TacticalQuery): void
   if (dirtyWorkspaces.has(workspaceTab) && !(scope === 'battle' && !['battle','reports'].includes(workspaceTab))) {
     let content = '';
     if (workspaceTab === 'battle') {
-      const battleContent = state.small?.battlefield ? renderTacticalBattle(state.small, tacticalView, state.autoTurn, tacticalQuery, fullAuto.running) : b ? state.mass ? renderMass() : renderSmall() : renderBattlePreparation();
+      const battleContent = state.small?.battlefield ? renderTacticalBattle(state.small, tacticalView, tacticalAutomation(state.small), tacticalQuery) : b ? state.mass ? renderMass() : renderSmall() : renderBattlePreparation();
       content = (b ? renderBattleToolbar(b) : '') + (b?.isOver() ? renderBattleExit(b) : '') + battleContent + renderXp();
     } else if (workspaceTab === 'units') content = renderNarrativeProposals() + renderConfig() + renderRole() + renderManage() + renderUnitConversion() + (state.pending.length ? renderPending() : '');
     else if (workspaceTab === 'inventory') content = inventoryPanel.render();
@@ -967,7 +979,7 @@ function render(scope: RenderScope = 'all', tacticalQuery?: TacticalQuery): void
 }
 function renderBattleToolbar(b: SmallBattle | MassBattle): string {
   const actor=b instanceof SmallBattle?b.active:b.combatants.find(u=>u.id===formationView.selectedId)??b.combatants.find(u=>u.side==='ally'&&u.status==='ready'&&!b.isAttached(u.id));
-  return `<div class="battle-toolbar"><span class="tag">本场：${b.nonLethal?'非致命':'致命'}</span>${cannonAmmoControl(actor,b.isOver()||actor?.side!=='ally')}${renderContextStatus()}<label class="battle-auto"><input type="checkbox" aria-label="全自动战斗（含主控）" data-role="full-auto-battle" ${fullAuto.running ? 'checked' : ''} ${b.isOver() ? 'disabled' : ''}>${fullAuto.running ? '自动推进中 · 点击暂停' : '全自动战斗（含主控）'}</label><label>自动策略 <select data-role="battle-tactic" ${b.isOver() || b.rules.resolutionVersion !== 'v2' ? 'disabled' : ''}>${Object.entries(TACTICAL_PREFERENCES).map(([id,name]) => `<option value="${esc(id)}" ${b.allyTactic === id ? 'selected' : ''}>${name}</option>`).join('')}</select></label>${!b.isOver() ? '<div class="battle-finish-actions"><button data-action="battle-finish" data-reason="ceasefire">停止交战并结算</button><button class="danger" data-action="battle-finish" data-reason="surrender">投降并结算</button></div>' : ''}</div>`;
+  return `<div class="battle-toolbar"><label class="battle-lethality" title="本场此后双方生命归零只会濒死失能，编队减员算可救伤兵；取消勾选改回致命。已阵亡的不会复活，已经濒死的保持濒死。"><input type="checkbox" data-role="non-lethal" ${b.nonLethal?'checked':''} ${b.isOver()?'disabled':''}>非致命</label>${cannonAmmoControl(actor,b.isOver()||actor?.side!=='ally')}${renderContextStatus()}${b instanceof SmallBattle && b.battlefield ? '' : `<label class="battle-auto"><input type="checkbox" aria-label="全自动战斗（含主控）" data-role="full-auto-battle" ${fullAuto.running ? 'checked' : ''} ${b.isOver() ? 'disabled' : ''}>${fullAuto.running ? '自动推进中 · 点击暂停' : '全自动战斗（含主控）'}</label>`}<label class="battle-tactic" title="AI替我方单位行动时的取舍：托管、代打本次和全自动都按它">AI策略 <select data-role="battle-tactic" ${b.isOver() || b.rules.resolutionVersion !== 'v2' ? 'disabled' : ''}>${Object.entries(TACTICAL_PREFERENCES).map(([id,name]) => `<option value="${esc(id)}" ${b.allyTactic === id ? 'selected' : ''}>${name}</option>`).join('')}</select></label>${!b.isOver() ? '<div class="battle-finish-actions"><button data-action="battle-finish" data-reason="ceasefire">停止交战并结算</button><button class="danger" data-action="battle-finish" data-reason="surrender">投降并结算</button></div>' : ''}</div>`;
 }
 function renderContextStatus(): string {
   const stage = llmContext.stage, retry = stage && stage.attempt > 1 ? `第${stage.attempt}次尝试` : '';
@@ -1602,8 +1614,8 @@ function renderSmall(): string {
            <button data-action="small-move" data-dir="withdraw" ${withdrawOption?.enabled ? '' : 'disabled'} title="${esc(withdrawOption?.reason ?? '消耗移动额度，不消耗主行动')}">后撤 ▶</button>
            <button data-action="small-retreat" ${retreatOption?.enabled ? '' : 'disabled'} title="${esc(retreatOption?.reason ?? '与所有敌人距离≥2；消耗主行动')}">撤离战场</button>
           <button data-action="small-endturn">结束回合</button>
-          <button data-action="small-auto-act" title="引擎替当前行动者自动选择目标并行动（自动选目标）">🤖 自动行动</button>
-          <label><input type="checkbox" data-role="auto-turn" ${state.autoTurn ? 'checked' : ''}> 友军自动战斗（自动选目标代打）</label>
+          <button data-action="small-auto-act" title="只让AI完成当前行动单位的这一次行动，不改变托管设置">AI代打本次</button>
+          <span class="ai-takeover" role="group" aria-label="AI托管"><span>AI托管</span><label title="${act?.side === 'ally' ? esc(act.name) + '之后每次轮到都由AI行动，取消勾选即收回手动' : '当前不是我方单位'}"><input type="checkbox" data-role="ally-ai" data-id="${esc(act?.id ?? '')}" ${act?.side === 'ally' && aiActsFor(b, act, allyControlDefaults()) ? 'checked' : ''} ${act?.side === 'ally' ? '' : 'disabled'}>此单位</label><label title="除主控外的我方单位都由AI行动，之后的战斗沿用；勾选或取消会覆盖单位的单独设置"><input type="checkbox" data-role="auto-turn" ${state.autoTurn ? 'checked' : ''}>非主控</label></span>
         </div>
         <div class="sub">先攻顺序：${b.turnOrder.map((id) => esc(unitLabel(b.byId(id)))).join(' → ')}｜移动后射击 −2（骑射免疫）</div>`}
   </section>`;
@@ -3575,8 +3587,13 @@ async function handleChange(e: Event): Promise<void> {
     const previous=unit.cannonAmmo;unit.cannonAmmo=e.target.value==='auto'?undefined:e.target.value as 'he'|'ap';if(!(await persist()))unit.cannonAmmo=previous;render('battle');return;
   }
   if (e.target instanceof HTMLInputElement && e.target.dataset.role === 'non-lethal') {
-    if (currentBattle()) return;
-    const previous=state.nonLethal;state.nonLethal=e.target.checked;
+    const checked = e.target.checked, b = currentBattle();
+    if (b) {
+      // 战中切换只改之后的倒地与减员（见 setNonLethal），同时作为下一场的默认。
+      if (!b.isOver()) await executePanelAction('battle-non-lethal', () => { b.setNonLethal(checked); state.nonLethal = checked; });
+      render('battle'); return;
+    }
+    const previous=state.nonLethal;state.nonLethal=checked;
     if(!(await persist()))state.nonLethal=previous;
     render('battle');return;
   }
@@ -3640,10 +3657,12 @@ async function handleChange(e: Event): Promise<void> {
     try { if ((el as HTMLInputElement).checked) { battleSaveFailed = false; startFullAuto(); } else fullAuto.stop(); }
     catch (error) { fullAuto.stop(); toast(error instanceof Error ? error.message : String(error)); }
     render();
-  } else if (role === 'auto-turn') {
-    state.autoTurn = (el as HTMLInputElement).checked;
-    if (state.small?.battlefield) (await runAuto());
-    (await persist());
+  } else if (role === 'auto-turn' || role === 'ally-ai') {
+    const b = state.small;
+    await executePanelAction(role, async () => {
+      applyAllyControl(role, (el as HTMLInputElement).checked, el.dataset.id);
+      if (b && !b.isOver()) (await runAuto()); // 轮到托管单位时立即交给AI
+    });
     render();
   } else if (role === 'auto-approve') {
     state.autoApprove = (el as HTMLInputElement).checked;
@@ -3755,6 +3774,11 @@ document.addEventListener('change', e => {
 
   if (e.target instanceof HTMLInputElement && e.target.dataset.role === 'full-auto-battle' && !e.target.checked) {
     stopAutomation(); render('battle'); return;
+  }
+  // AI连续行动时托管开关也立即生效：下一个单位按新设置决定是否继续，行动结束后补存。
+  if (e.target instanceof HTMLInputElement && ['auto-turn', 'ally-ai'].includes(e.target.dataset.role ?? '') && uiBusy && !controller.migrationReview()) {
+    applyAllyControl(e.target.dataset.role!, e.target.checked, e.target.dataset.id);
+    allyControlUnsaved = smallResumeRequested = true; render('battle'); return;
   }
   // Text/number drafts are captured on input. Making the document inert during
   // their blur/change steals focus from the next field before typing begins.
