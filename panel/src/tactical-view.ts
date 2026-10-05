@@ -178,7 +178,7 @@ const MAP_KEY = `<details class="map-key" data-detail-id="map-key"><summary>图�
   ['grass', '开阔地'], ['forest', '森林'], ['hill', '山地'], ['rough', '崎岖地'], ['rock', '岩壁 / 巨石'], ['swamp', '沼泽'], ['shallow', '浅水'], ['deep', '深水'],
   ['paving', '街道'], ['road', '道路'], ['roof', '建筑'], ['wall', '城墙 / 塔楼'], ['gate', '城门 / 门'], ['trench', '工事'], ['cover', '掩体'], ['bridge', '桥梁'], ['rubble', '瓦砾'],
   ['zone', '占领区'], ['reach', '可到达'], ['range', '射程'], ['target', '可选目标'], ['fog', '未观测'],
-] as const).map(([key, text]) => `<span><i class="key key-${key}"></i>${text}</span>`).join('')}<span><i class="key key-exit">︾</i>撤离方向：我方下沿，敌方上沿</span><span><i class="key key-token-hero"></i>人物</span><span><i class="key key-token-company"></i>编队</span></div></details>`;
+] as const).map(([key, text]) => `<span><i class="key key-${key}"></i>${text}</span>`).join('')}<span><i class="key key-exit">︾</i>撤离方向：我方下沿，敌方上沿</span><span><i class="key key-token-hero"></i>人物</span><span><i class="key key-token-company"></i>编队</span><span><i class="key key-last-seen">?</i>敌军最后目击</span></div></details>`;
 
 /** 棋子：阵营色底 + 兵种符号 + 名称 + 实际生命/人数数值。数值始终显示，颜色随剩余比例变化。 */
 function gridPiece(battle: SmallBattle, u: Combatant, isActor: boolean, ai = false): string {
@@ -224,8 +224,13 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
   // 每次渲染只算一遍的查询：占位、可见格、持续区域。避免逐格重复扫描全体单位与视线。
   const occupantsAt = new Map<number, Combatant[]>();
   for (const u of visible) if (u.pos !== undefined) { const list = occupantsAt.get(u.pos); if (list) list.push(u); else occupantsAt.set(u.pos, [u]); }
-  const seen = field.tiles.map((_, cell) => battle.cellVisible('ally', cell));
+  const seen = battle.visibleCells('ally');
   const searched = new Set(battle.searchedCells('ally'));
+  // 我方共享敌情：此刻看不见的敌军最后被看见的格子，以及近几轮遭到未定位攻击的位置。
+  const intel = over ? { traces: [], clues: [] } : battle.enemyIntel('ally', visible);
+  const lastSeen = new Map<number, typeof intel.traces>();
+  for (const trace of intel.traces) if (trace.cell !== undefined) lastSeen.set(trace.cell, [...(lastSeen.get(trace.cell) ?? []), trace]);
+  const ago = (round: number) => battle.round - round ? (battle.round - round) + '轮前' : '本轮';
   const liveZones = battle.combatants.flatMap(u => u.battleZones ?? []).filter(z => z.mode === 'small' && (z.kind !== 'trap' || z.side === 'ally'));
   const goalCell = field.objective.kind !== 'annihilation' ? field.objective.cell : undefined;
   const inspectedMark=field.landmarks?.find(m=>m.cells.includes(view.inspectedCell??-1));
@@ -240,13 +245,16 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
       goalCell === cell ? 'objective' : '', inRange ? 'in-range' : '', (targets.has('cell:'+cell) || occupants.some((u) => targets.has(u.id))) ? 'legal-target' + (occupants.some((u) => targets.has(u.id) && u.side === 'ally') ? ' legal-ally' : '') : '',
       (target?.targetId==='cell:'+cell || occupants.some((u) => u.id === target?.targetId)) && mode !== 'move' && mode !== 'guard' ? 'targeted' : '', occupants.some((u) => area.has(u.id)) ? 'area-hit' : '', occupants.length > 1 ? 'stacked' : ''].filter(Boolean).join(' ');
     const zones = seen[cell] ? liveZones.filter(z => Math.abs(z.x - cell % field.width) + Math.abs(z.y - Math.floor(cell / field.width)) <= z.radius) : [];
-    const label = zones.map(z=>ZONE_NAMES[z.kind]).join('、')+' '+cellLabel(field, cell) + ' ' + (landmark ?? '') + ' ' + terrainName(field, cell) + ' '+heightDescription(field,cell)+' ' + occupants.map((u) => (u.side === 'ally' ? '我方' : u.side === 'enemy' ? '敌方' : '中立') + u.name).join('、');
+    const ghosts = lastSeen.get(cell) ?? [];
+    const ghostText = ghosts.map((t) => '最后目击敌方' + t.name + '（' + ago(t.round) + '）').join('、');
+    const label = zones.map(z=>ZONE_NAMES[z.kind]).join('、')+' '+cellLabel(field, cell) + ' ' + (landmark ?? '') + ' ' + terrainName(field, cell) + ' '+heightDescription(field,cell)+' ' + occupants.map((u) => (u.side === 'ally' ? '我方' : u.side === 'enemy' ? '敌方' : '中立') + u.name).join('、') + (ghostText ? ' ' + ghostText : '');
     // 地形与结构由底图表达；格内只放单位、状态与被查看格的名称。高度0为默认地表，只标注抬高的格子。
     const height = field.spatialRulesVersion === 2 ? surfaceHeightAt(field, cell) : 0;
     const terrainLabel = inspected && !occupants.length;
     const inner = (height ? '<span class="grid-height" aria-hidden="true">高' + height + '</span>' : '') + (landmark ? '<span class="grid-landmark" aria-hidden="true">◇</span>' : '') + (goalCell === cell ? '<span class="grid-goal" aria-hidden="true">旗</span>' : '')
       + occupants.map((u) => gridPiece(battle, u, u.id === actor?.id, automation.aiUnitIds.has(u.id))).join('')
       + (occupants.length > 1 ? '<span class="grid-stack-count">' + occupants.length + '队</span>' : '')
+      + (ghosts.length ? `<span class="grid-last-seen${occupants.length ? ' raised' : ''}" aria-hidden="true" title="${esc(ghostText)}">?${ghosts.length > 1 ? ghosts.length : ''}<small>${esc(ago(Math.max(...ghosts.map((t) => t.round))))}</small></span>` : '')
       + (structure?.hp && !terrainLabel && (structure.hp < structure.hpMax || inspected) ? `<span class="structure-hp${occupants.length || zones.length ? ' raised' : ''}" aria-hidden="true">${structure.hp}/${structure.hpMax}</span>` : '')
       + (zones.length ? '<span class="grid-zone">' + zones.map(z => ZONE_NAMES[z.kind]).join('·') + '</span>' : '')
       + (terrainLabel ? '<span class="grid-terrain">' + (structure ? structureDisplayName(field, cell) + (structure.hp ? ' L' + structure.level + ' · ' + structure.hp + '/' + structure.hpMax : '·残骸') : field.generation?.scene === 'interior' && terrain === 'street' ? '室内地面' : terrainNames[terrain]) + '</span>' : '');
@@ -285,7 +293,7 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
       ${field.landmarks?.length ? '<div class="map-landmark">' + field.landmarks.map(m => '<button data-action="grid-cell" data-cell="'+m.cells[0]+'">◇ '+esc(m.label)+'</button> ' + m.cells.map(p => cellLabel(field, p)).join('、')).join(' · ') + '</div>' : markedCells.length && landmarkAt(field, markedCells[0]!) ? '<div class="map-landmark">◇ ' + esc(landmarkAt(field, markedCells[0]!)!) + ' · ' + markedCells.map(p => cellLabel(field, p)).join('、') + '</div>' : ''}
       ${field.scene ? '<details class="map-context"><summary>'+esc(field.scene.archetype?SCENE_ARCHETYPE_NAMES[field.scene.archetype]:'场景关系')+' · 上北下南 · 查看布局依据</summary><ul>'+[...field.scene.fulfilled,...layoutNotes(field)].map(text=>'<li>'+esc(text)+'</li>').join('')+'</ul></details>' : ''}
       <div class="grid-camera" tabindex="0" aria-label="战场地图，可横向和纵向滚动"><div class="grid-stage" style="--columns:${field.width};--rows:${field.height}">${rulers}<div class="grid-stage-body">${rows}<div class="grid-board" style="--columns:${field.width}">${terrainLayer(field)}${cells}${traceOverlay(battle)}</div></div></div></div>
-      ${searched.size ? '<p class="sub">近3轮已搜索 '+searched.size+'格 · 点状标记为已排查区域，敌情仍受视野限制。</p>' : ''}${renderRoundFeedback(battle)}${tileInspector(battle, view, s)}
+      ${searched.size ? '<p class="sub">近3轮已搜索 '+searched.size+'格 · 点状标记为已排查区域，敌情仍受视野限制。</p>' : ''}${intel.traces.length || intel.clues.length ? '<p class="sub intel-memory">敌情记忆：' + [...intel.traces.map((t) => esc(t.name) + ' 最后见于' + (t.cell === undefined ? '' : cellLabel(field, t.cell)) + '（' + ago(t.round) + '）'), ...intel.clues.map((c) => esc(c.victim) + (c.cell === undefined ? '' : '在' + cellLabel(field, c.cell)) + '遭未定位攻击（' + ago(c.round) + '）')].join('；') + ' · 全队共享，位置可能已变。</p>' : ''}${renderRoundFeedback(battle)}${tileInspector(battle, view, s)}
     </div><div class="grid-command">
       <div class="command-finish">${executeCommand}<button data-action="grid-endturn" ${canControl ? '' : 'disabled'}>结束行动</button><button data-action="grid-auto" ${over ? 'disabled' : ''} title="只让AI完成${esc(activeLabel)}的这一次行动，不改变托管设置">AI代打本次</button>${aiTakeover}</div>
       <div class="command-actor"><span class="sub">${canControl ? '正在指挥' : '我方单位'}${actorAi ? ' · AI托管中' : ''}</span><h3>${esc(actor?.name ?? '没有可用单位')}</h3>${actor ? '<span>' + strengthDescription(actor) + '</span>' : ''}</div>${actor?memberHealthPanel(actor):''}

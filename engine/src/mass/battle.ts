@@ -59,9 +59,10 @@ import { bracePose, formationMarchSteps, settleFatigue, fatigueAfter } from '../
 import { environmentTags, macroTerrain } from '../environment.js';
 import { traitRegistry as defaultTraitRegistry } from '../data/traits.js';
 import { pointBlankModifier, abilityRangeDistance, abilityTargetReason, abilityUsabilityReason } from '../actions.js';
-import { positionedUnit, observedUnits, observeEvent, observedLog, revealUnit, revealContacts, settleConcealment, canReconceal, validateConcealment, type ObservationContext } from '../observation.js';
-import { FORMATION_NODES, RANKS, formationNode, formationDistance, formationShotReason, formationScreened, formationCanOccupy, formationNodeDistance, validateFormationPosition, setFormation } from './formation.js';
+import { positionedUnit, observedUnits, observeEvent, sideViews, observedLog, revealUnit, revealContacts, settleConcealment, canReconceal, validateConcealment, type ObservationContext } from '../observation.js';
+import { FORMATION_NODES, RANKS, formationNode, formationDistance, formationShotReason, formationScreened, formationCanOccupy, formationNodeDistance, validateFormationPosition, setFormation, type FormationNode } from './formation.js';
 import { previewAttack, formatResolution, type AttackResolution, type AttackOpts } from '../damage.js';
+import { noteSightings, noteClue, liveTraces, liveClues, restoreIntel, intelView, type IntelBook, type IntelView } from '../intel.js';
 
 export type OrderType =
   | 'reload'
@@ -134,6 +135,8 @@ export class MassBattle {
   previousOrders = new Map<string, Order>();
   resolvedRounds = new Set<number>();
   exposedHeroes = new Set<string>();
+  /** 阵营共享敌情记忆：最后目击阵位与未定位来袭线索，只由各阵营当时的实际观测写入。 */
+  private intel: IntelBook = {};
   lastPhases: string[] = [];
   frontControl: Record<string, 'ally' | 'enemy' | 'contested' | 'empty'> = {};
   private locked = false;
@@ -583,7 +586,17 @@ export class MassBattle {
   private recordEvent(entry: BattleLogEntry): void {
     for(const result of entry.resolutions?.length?entry.resolutions:[entry.resolution]) if(result&&result.hpAfter<=0) result.defenderStatus=this.nonLethal?'dying':'dead';
     entry.locations ??= Object.fromEntries((entry.participants ?? []).flatMap(id => { const u = this.combatants.find(c => c.id === id); return u ? [[id, FORMATION_NODES.findIndex(n => n.id === formationNode(this.effectiveUnit(u)).id)]] : []; }));
-    this.log.push(this.rules.resolutionVersion === 'v2' ? observeEvent(this.observationContext(), entry) : entry);
+    if (this.rules.resolutionVersion !== 'v2') this.log.push(entry);
+    else {
+      const context = this.observationContext(), views = sideViews(context);
+      this.log.push(observeEvent(context, entry, views));
+      noteSightings(this.intel, this.combatants, views, entry.round, (u) => ({ node: formationNode(this.effectiveUnit(u)).id, ...(isAirborne(u) ? { layer: 'air' as const } : {}) }));
+      for (const result of entry.resolutions?.length ? entry.resolutions : [entry.resolution]) {
+        const victim = result && this.combatants.find((u) => u.id === result.defenderId);
+        if (!victim || victim.side === this.combatants.find((u) => u.id === result!.attackerId)?.side || views.get(victim.side)?.has(result!.attackerId)) continue;
+        noteClue(this.intel, victim.side, { round: entry.round, victimId: victim.id, node: formationNode(this.effectiveUnit(victim)).id });
+      }
+    }
     this.captureFeedback();
   }
   private feedbackUnits(): FeedbackUnit[] {
@@ -935,9 +948,10 @@ export class MassBattle {
     const ranked = new Map(legal.map((c, i) => [c, commandScores[i]!]));
     const best = legal.sort((a, b) => ranked.get(b)! - ranked.get(a)! || JSON.stringify(a.order).localeCompare(JSON.stringify(b.order)))[0];
     let order: Order = best?.order ?? { unitId: u.id, type: formationNode(u).rank !== 'front' ? 'rank-forward' : 'brace' };
+    const lead = !best && !foes.length ? this.intelLead(u, planning) : undefined;
     if (!best && !foes.length && formationNode(u).rank === 'front') {
-      // 沿三翼巡视，不读取未发现敌军的位置，也不永远在中军空等。
-      const searchWing = [0, 1, 2, 1][(this.round - 1) % 4]!;
+      // 先去本阵营最后目击或受击的一翼；没有线索才沿三翼巡视。不读取未发现敌军的位置，也不永远在中军空等。
+      const searchWing = lead?.x ?? [0, 1, 2, 1][(this.round - 1) % 4]!;
       const dx = searchWing - formationNode(u).x;
       if (dx) order = { unitId: u.id, type: dx < 0 ? 'shift-left' : 'shift-right' };
     }
@@ -950,7 +964,7 @@ export class MassBattle {
     }
     if (!best && (isAirborne(u) || u.formationPosition !== undefined)) {
       const patrol = [...FORMATION_NODES].sort((a, b) => a.y - b.y || (a.y % 2 ? b.x - a.x : a.x - b.x));
-      const destination = foes.length ? formationNode([...foes].sort((a, b) => formationDistance(u, a) - formationDistance(u, b))[0]!) : patrol[(this.round - 1) % patrol.length]!;
+      const destination = foes.length ? formationNode([...foes].sort((a, b) => formationDistance(u, a) - formationDistance(u, b))[0]!) : lead ?? patrol[(this.round - 1) % patrol.length]!;
       const moves = (['rank-forward', 'rank-back', 'shift-left', 'shift-right'] as const).map((type) => ({ unitId: u.id, type }))
         .filter((o) => !this.v2OrderReason(o, planning) && canReserve(o)).sort((a, b) => formationNodeDistance(this.maneuverDestination(a, planning), destination) - formationNodeDistance(this.maneuverDestination(b, planning), destination));
       if (isRangedWeapon(u.weapon) && (u.weapon?.range ?? 0) > 2 && foes.length) {
@@ -977,6 +991,20 @@ export class MassBattle {
       } else order = moves[0] ?? { unitId: u.id, type: 'hold' };
     }
     return this.v2OrderReason(order, planning) || !canReserve(order) ? undefined : { ...order, automatic: true };
+  }
+  /** 面板用：本阵营记得、此刻看不见的敌军最后阵位，以及近几轮的未定位来袭。 */
+  enemyIntel(side: Side, known: readonly Combatant[] = this.visibleCombatants(side)): IntelView {
+    if (this.isOver()) return { traces: [], clues: [] };
+    return intelView(this.intel, side, this.round, new Set(known.map((u) => u.id)), (id) => this.combatants.find((u) => u.id === id)?.name);
+  }
+  /** 看不见敌军时的线索阵位：最新的最后目击，其次未定位来袭时受击的阵位；己方已贴近查过的阵位不再算线索。 */
+  private intelLead(unit: Combatant, known: Combatant[]): FormationNode | undefined {
+    const visible = new Set(known.map((u) => u.id)), from = formationNode(unit);
+    const posts = known.filter((u) => u.side === unit.side && u.status === 'ready' && !this.isAttached(u.id)).map((u) => formationNode(u));
+    return [...liveTraces(this.intel, unit.side, this.round, visible).map((t) => ({ id: t.node, age: this.round - t.round })),
+      ...liveClues(this.intel, unit.side, this.round).map((c) => ({ id: c.node, age: this.round - c.round }))]
+      .flatMap((lead) => { const node = FORMATION_NODES.find((n) => n.id === lead.id); return node && !posts.some((p) => formationNodeDistance(p, node) <= 1) ? [{ node, age: lead.age }] : []; })
+      .sort((a, b) => a.age - b.age || formationNodeDistance(from, a.node) - formationNodeDistance(from, b.node) || a.node.id.localeCompare(b.node.id))[0]?.node;
   }
   private autoV2Orders(side: 'ally' | 'enemy', reserved: readonly string[] = []): number {
     let count = 0;
@@ -2237,6 +2265,7 @@ export class MassBattle {
       fieldTags: this.fieldTags,
       reloadCd: [...this.reloadCd],
       zones: this.zones,
+      intel: this.intel,
       started: this.started,
     };
   }
@@ -2282,6 +2311,7 @@ export class MassBattle {
     b.lastPhases = snap.lastPhases ?? []; b.frontControl = snap.frontControl ?? {};
     b.lastReport = restoreMassReport(snap.roundReport, b.round, b.combatants);
     b.log = [...(snap.log ?? [])];
+    b.intel = restoreIntel(snap.intel, undefined, new Set(FORMATION_NODES.map((n) => n.id)));
     for (const unit of b.combatants) {
       const before = lifeBefore.get(unit.id), maximum = unit.scale === 'hero' ? unit.base.hpMax : unit.formation?.memberHp;
       if (before?.maximum !== undefined && before.maximum !== maximum) b.recordEvent({ round: b.round, kind: 'condition', participants: [unit.id],

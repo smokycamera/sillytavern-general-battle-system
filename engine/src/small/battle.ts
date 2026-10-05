@@ -59,7 +59,8 @@ import { rangedTargetDistance, isAirborne, sameLayer, flightCapabilityReason, fl
 import { environmentTags } from '../environment.js';
 import { traitRegistry as defaultTraitRegistry } from '../data/traits.js';
 import { meleeLineBlocker, terrainTacticalValue, canOccupy, cellLabel, reportPlaceLabel, deployOnGrid, findGridPath, reachableGridPaths, gridCostsToGoals, gridDistance, lineOfSight, unitLineOfSight, neighbors, movementStepCost, retreatCells, validateField, type BattlefieldSpec, type GridPath } from './spatial.js';
-import { canSpot, observedUnits, observeEvent, observedLog, revealUnit, revealContacts, settleConcealment, canReconceal, validateConcealment, type ObservationContext } from '../observation.js';
+import { canSpot, observedUnits, observeEvent, sideViews, observedLog, revealUnit, revealContacts, settleConcealment, canReconceal, validateConcealment, type ObservationContext } from '../observation.js';
+import { noteSightings, noteClue, liveTraces, liveClues, restoreIntel, intelView, CLUE_RANGE, SPREAD_ROUNDS, type IntelBook, type IntelView } from '../intel.js';
 import {
   abilityTargetReason,
   abilityRangeDistance,
@@ -107,6 +108,8 @@ export interface SmallAttackOpts extends Partial<AttackOpts> {
   weaponMode?: 'auto' | 'primary' | 'sidearm';
 }
 
+/** AI 估算假想落点时的观测：某个单位、或某阵营的已知单位，能否看见站在那里的目标。 */
+interface HypotheticalSight { sees(observer: Combatant, target: Combatant): boolean; side(side: Side, target: Combatant): boolean }
 interface WeaponContext {
   weapon: Combatant['weapon'];
   ranged: boolean;
@@ -116,6 +119,8 @@ interface WeaponContext {
   landing?: boolean;
 }
 
+/** 走回上次出发格的额外代价，约等于少前进一格（位置评分里每格路程 1.5）。 */
+const BACKTRACK_COST = 1.5;
 /** 开战阵位（一维战场 0~5）：我方左列、敌方右列 */
 const START_POS: Record<'ally' | 'enemy' | 'neutral', Record<string, number>> = {
   ally: { infantry: 2, mobile: 1, ranged: 0 },
@@ -152,6 +157,10 @@ export class SmallBattle {
   overwatch = new Set<string>();
   /** 阵营共享的近距离搜查记录；只由实际可见的己方位置更新。 */
   private searchCoverage: Partial<Record<Side, number[]>> = {};
+  /** 阵营共享敌情记忆：最后目击与未定位来袭线索，只由各阵营当时的实际观测写入。 */
+  private intel: IntelBook = {};
+  /** 每个单位本次与上一次激活开始时所在格；AI 据此识别“走回上次出发的格子”。 */
+  private activationStarts = new Map<string, { at: number; before?: number }>();
   /** 仅在自动行动选择期间存在：战场只读，同一阵营的观测结果复用到执行前。 */
   private observationMemo?: Map<Combatant['side'], Combatant[]>;
   controlRounds = { ally: 0, enemy: 0 };
@@ -446,8 +455,24 @@ export class SmallBattle {
   private recordEvent(entry: BattleLogEntry): void {
     for(const result of entry.resolutions?.length?entry.resolutions:[entry.resolution]) if(result&&result.hpAfter<=0) result.defenderStatus=this.nonLethal?'dying':'dead';
     entry.locations ??= Object.fromEntries((entry.participants ?? []).flatMap(id => { const u = this.combatants.find(c => c.id === id); return u?.pos === undefined ? [] : [[id, u.pos]]; }));
-    this.log.push(this.rules.resolutionVersion === 'v2' ? observeEvent(this.observationContext(), entry) : entry);
+    if (this.rules.resolutionVersion !== 'v2') this.log.push(entry);
+    else {
+      const context = this.observationContext(), views = sideViews(context);
+      this.log.push(observeEvent(context, entry, views));
+      this.noteIntel(entry, views);
+    }
     this.captureFeedback();
+  }
+  /** 阵营共享敌情：本事件里各阵营看得见的敌军刷新最后目击；看不见来源的命中留下来袭线索。 */
+  private noteIntel(entry: BattleLogEntry, views: ReadonlyMap<Side, ReadonlySet<string>>): void {
+    if (!this.battlefield) return;
+    noteSightings(this.intel, this.combatants, views, entry.round,
+      (u) => ({ cell: u.pos, ...(isAirborne(u) ? { layer: 'air' as const } : isElevated(u) ? { layer: 'top' as const } : {}) }), (u) => movementPoints(u, this.fieldTags));
+    for (const result of entry.resolutions?.length ? entry.resolutions : [entry.resolution]) {
+      const victim = result && this.combatants.find((u) => u.id === result.defenderId);
+      if (!victim || victim.pos === undefined || victim.side === this.combatants.find((u) => u.id === result!.attackerId)?.side || views.get(victim.side)?.has(result!.attackerId)) continue;
+      noteClue(this.intel, victim.side, { round: entry.round, victimId: victim.id, cell: victim.pos });
+    }
   }
   private feedbackUnits(): FeedbackUnit[] {
     return this.visibleCombatants('ally').map((u) => ({
@@ -480,9 +505,22 @@ export class SmallBattle {
     if (!memo) return known;
     memo.set(side, known); return [...known];
   }
+  /** 一名不潜伏的地面敌兵站在该格时本阵营能否看见；地图未观察遮罩与AI搜索用同一判定。 */
   cellVisible(side: Side, cell: number): boolean {
     if (this.rules.resolutionVersion !== 'v2') return true;
-    return this.combatants.some((u) => u.side === side && u.status === 'ready' && canSpot(this.observationContext(), u, { ...u, id: '', traits: [], traitSources: [], side: side === 'enemy' ? 'ally' : 'enemy', pos: cell, airborne: false, elevation: this.battlefield && intactStructure(this.battlefield, cell)?.top ? 1 : undefined }));
+    const context = this.observationContext(), probe = this.sightProbe(side, cell);
+    return this.combatants.some((u) => u.side === side && u.status === 'ready' && canSpot(context, u, probe));
+  }
+  /** 整张地图一次算完的 cellVisible。 */
+  visibleCells(side: Side): boolean[] {
+    const field = this.battlefield; if (!field) return [];
+    if (this.rules.resolutionVersion !== 'v2') return field.tiles.map(() => true);
+    const context = this.observationContext(), observers = this.combatants.filter((u) => u.side === side && u.status === 'ready');
+    return field.tiles.map((_, cell) => { const probe = this.sightProbe(side, cell); return observers.some((u) => canSpot(context, u, probe)); });
+  }
+  private sightProbe(side: Side, cell: number): Combatant {
+    return makeCombatant({ id: '', name: '', side: side === 'enemy' ? 'ally' : 'enemy', pos: cell, airborne: false,
+      elevation: this.battlefield && intactStructure(this.battlefield, cell)?.top ? 1 : undefined });
   }
   movementLeft(actorId: string, includeHaste = true): number {
     const unit = this.byId(actorId);
@@ -496,8 +534,14 @@ export class SmallBattle {
     const known = this.visibleCombatants(actor.side);
     return reachableGridPaths(field, actor.pos!, this.movementLeft(actorId), (n) => canOccupy(field, known, actor, n), (n, from) => movementStepCost(field, n, actor, this.fieldTags, from));
   }
-  private sightReason(actor: Combatant, target: Combatant, indirect = false): string | undefined {
-    if (this.rules.resolutionVersion === 'v2') {
+  /** sight：AI 估算假想落点时由调用方判断谁能在那里看见目标（只用已知单位）；缺省按此刻的实际观测。 */
+  private sightReason(actor: Combatant, target: Combatant, indirect = false, sight?: HypotheticalSight): string | undefined {
+    if (this.rules.resolutionVersion === 'v2' && sight) {
+      // 攻击者自己看得见就同时满足“阵营已观测”；直射看不见即不能打，只有曲射才需要别的观察者。
+      const own = actor.side === target.side || sight.sees(actor, target);
+      if (!own && !indirect) return '当前单位无法观测目标';
+      if (!own && !sight.side(actor.side, target)) return '间接火力缺少可见目标的观察者';
+    } else if (this.rules.resolutionVersion === 'v2') {
       const context = this.observationContext();
       if (actor.side !== target.side && !this.visibleCombatants(actor.side).some((u) => u.id === target.id)) return '尚未观测到目标';
       if (actor.side !== target.side && !canSpot(context, actor, target) && !indirect) return '当前单位无法观测目标';
@@ -865,6 +909,7 @@ export class SmallBattle {
     target: Combatant,
     opts: Pick<SmallAttackOpts, 'charge' | 'ranged' | 'weaponMode'> = {},
     shieldingUnits = this.visibleCombatants(actor.side),
+    sight?: HypotheticalSight,
   ): WeaponContext {
     const distance = this.dist(actor, target);
     const primaryRanged = this.rules.resolutionVersion === 'v2' ? isRangedWeapon(actor.weapon) : opts.ranged ?? isRangedCapable(actor);
@@ -898,8 +943,8 @@ export class SmallBattle {
       charge: !!opts.charge,
       field: this.battlefield,
     });
-    if (this.rules.resolutionVersion === 'v2' && !this.visibleCombatants(actor.side).some((u) => u.id === target.id)) reason = opts.charge ? '冲锋目标尚未观测到（视线或距离受限）' : '尚未观测到目标（视线或距离受限）';
-    if (!reason && this.battlefield && !opts.charge) reason = this.sightReason(actor, target, weapon?.indirect);
+    if (this.rules.resolutionVersion === 'v2' && (sight ? opts.charge && !sight.sees(actor, target) && !sight.side(actor.side, target) : !this.visibleCombatants(actor.side).some((u) => u.id === target.id))) reason = opts.charge ? '冲锋目标尚未观测到（视线或距离受限）' : '尚未观测到目标（视线或距离受限）';
+    if (!reason && this.battlefield && !opts.charge) reason = this.sightReason(actor, target, weapon?.indirect, sight);
     if (!reason && this.battlefield && !ranged && !opts.charge && this.rules.combatModel === MEMBER_HEALTH_MODEL) {
       const blocker = meleeLineBlocker(this.battlefield, actor, target, shieldingUnits);
       if (blocker) reason = `近战攻击被${blocker.name}阻挡；长兵器可越过友军，不能越过存活敌军`;
@@ -1096,7 +1141,7 @@ export class SmallBattle {
           ? this.combatants.filter((c) => c.side === actor.side && c.status !== 'dead' && c.status !== 'fled')
           : ability.target === 'self'
             ? [actor]
-            : ability.effects.some(e=>e.op==='zone') && this.battlefield ? this.battlefield.tiles.flatMap((_tile,cell)=>{ const at=zoneTarget(this.observationContext(),actor,'cell:'+cell); return at && this.cellVisible(actor.side,cell)?[at]:[]; }) : [];
+            : ability.effects.some(e=>e.op==='zone') && this.battlefield ? (() => { const context=this.observationContext(), view=this.visibleCells(actor.side); return this.battlefield!.tiles.flatMap((_tile,cell)=>{ const at=view[cell]&&zoneTarget(context,actor,'cell:'+cell); return at?[at]:[]; }); })() : [];
       const targets = candidates.map((target) => {
         const targetReason = this.skillTargetReason(actor, ability, target);
         const reason = actorReason ?? (ability.itemSourceId ? !economy.actionAvailable ? '本回合行动已使用' : undefined : this.hasteSelected.has(actorId) ? '加速动作不能使用技能' : this.actedThisTurn.has(actorId) ? '本回合主行动已使用' : undefined) ?? usability ?? targetReason;
@@ -1753,7 +1798,25 @@ export class SmallBattle {
     const safeDistance = Math.min(gridWeaponRange(unit.weapon, true, this.rules.armsModel), meleeThreats.length
       ? Math.max(4, ...meleeThreats.map((foe) => movementPoints(foe, this.fieldTags) + 2)) : gridWeaponRange(unit.weapon, true, this.rules.armsModel));
     const allowed = (cell: number) => canOccupy(field, knownUnits, unit, cell);
-    const searchCell = objective.kind === 'annihilation' && !foes.length ? this.searchDestination(unit, knownUnits) : unit.pos!;
+    const lastOrigin = this.activationStarts.get(unitId)?.before;
+    const hunt = objective.kind === 'annihilation' && !foes.length ? this.huntPlan(unit, knownUnits) : undefined;
+    // 刚看见的敌人多半还在原处：追索时把它们算进落点危险，避免冲上去一看又退回来。
+    const presumed = hunt ? this.presumedFoes(unit.side, knownUnits) : [];
+    // 射手追线索时停在两三格外、看得到线索格的位置，由视野先确认，不直接踩进最后目击点。
+    const lookout = (cell: number) => unitLineOfSight(field, { ...unit, pos: cell, airborne: false, elevation: undefined }, { ...unit, side: unit.side === 'enemy' ? 'ally' : 'enemy', pos: hunt!.focus, airborne: false, elevation: undefined });
+    const standoff = hunt?.lead && rangedRole ? field.tiles.flatMap((_, cell) => [2, 3].includes(gridDistance(field, cell, hunt.focus)) && allowed(cell) && lookout(cell) ? [cell] : []) : [];
+    const huntGoals = standoff.length ? standoff : hunt?.goals ?? [unit.pos!];
+    // 估算自己在假想落点会不会挨打时，看已知敌人能否在那里看见自己；此刻藏在暗处不代表走过去也看不见。
+    const sightContext = this.observationContext(), seen = new Map<string, boolean>(), spotters = [...knownUnits, ...presumed];
+    const place = (u: Combatant) => `${u.pos}:${isAirborne(u) ? 'air' : isElevated(u) ? 'top' : 'ground'}`;
+    const sightAt: HypotheticalSight = {
+      sees: (observer, target) => {
+        const key = `${observer.id}@${place(observer)}>${target.id}@${place(target)}${target.tacticalRevealed ? ':revealed' : ''}`;
+        if (!seen.has(key)) seen.set(key, canSpot(sightContext, observer, target));
+        return seen.get(key)!;
+      },
+      side: (side, target) => spotters.some((o) => o.side === side && o.status === 'ready' && sightAt.sees(o, target)),
+    };
     const order = regionalOrder(field, unit, knownUnits, this.commanderProfiles[unit.side === 'ally' ? 'ally' : 'enemy']);
     if (order && field.city?.defender === unit.side && objective.kind === 'control'
       && this.controlRounds[unit.side === 'ally' ? 'enemy' : 'ally'] > 0) {
@@ -1780,12 +1843,12 @@ export class SmallBattle {
             && !rangedScreen(actor, target, weapon, knownUnits, { mode: 'small', width: field.width, battlefield: field }, this.conditionDefMap()))
           : this.dist(actor, target) <= gridWeaponRange(meleeWeapon(actor), this.rules.combatModel === MEMBER_HEALTH_MODEL, this.rules.armsModel)
             && !this.sightReason(actor, target) && (meleeContact(field, actor, target) || isAirborne(actor))) ? [cell] : [];
-      }) : [searchCell];
+      }) : huntGoals;
     const routeCosts = gridCostsToGoals(field, goals, allowed, (cell, from) => movementStepCost(field, cell, unit, this.fieldTags, from));
     const positionScore = (path: GridPath) => {
       const cell = path.cells.at(-1)!;
       const destinationDistance = order ? Math.min(...goals.map(p => gridDistance(field, cell, p))) : objective.kind === 'annihilation'
-        ? foes.length ? Math.min(...foes.map((foe) => gridDistance(field, cell, foe.pos!))) : gridDistance(field, cell, searchCell)
+        ? foes.length ? Math.min(...foes.map((foe) => gridDistance(field, cell, foe.pos!))) : Math.min(...huntGoals.map((p) => gridDistance(field, cell, p)))
         : gridDistance(field, cell, objective.cell);
       const nearest = foes.length ? Math.min(...foes.map((foe) => gridDistance(field, cell, foe.pos!))) : Infinity;
       // 远程保持有效射程；近战逼近、占领与护送仍以各自目标为准。
@@ -1798,8 +1861,10 @@ export class SmallBattle {
         ? -Math.abs(nearest - safeDistance) * 1.5 - (route ?? destinationDistance) * 2
         : -(route ?? destinationDistance) * 1.5;
       const exposure = rangedRole ? meleeThreats.reduce((sum, foe) => sum + Math.max(0, movementPoints(foe, this.fieldTags) + 2 - gridDistance(field, cell, foe.pos!)) * 2, 0) : 0;
+      // 走回上次激活出发的格子要多付约一格进度的代价：真有威胁照样后撤，分差很小的来回踱步被压住。
+      const backtrack = field.layerVersion && cell === lastOrigin && cell !== unit.pos ? BACKTRACK_COST : 0;
       // Old frozen maps/replays keep their previous positional tie-breaker.
-      return spacing - exposure + coordination + (field.layerVersion || field.generation?.version === 4 ? terrainTacticalValue(field, cell, unit, foes) : field.tiles[cell] === 'cover' ? .5 : 0)
+      return spacing - exposure - backtrack + coordination + (field.layerVersion || field.generation?.version === 4 ? terrainTacticalValue(field, cell, unit, foes) : field.tiles[cell] === 'cover' ? .5 : 0)
         - path.cost * 0.1 - (field.layerVersion ? meleeThreats.filter(f => gridDistance(field, unit.pos!, f.pos!) <= 1 && gridDistance(field, cell, f.pos!) > 1).length : this.pathPreview(unitId, cell).risks.length) * 2
         - (hasFear ? moraleRisk({ ...this.observationContext(), units: knownUnits.map((u) => u.id === unit.id ? { ...unit, pos: cell } : u) }, { ...unit, pos: cell }, this.rules.morale.breakAt, this.traitRegistry).breakChance * 6 : 0);
     };
@@ -1810,7 +1875,7 @@ export class SmallBattle {
       for (const foe of threats) {
         let best = 0;
         for (const charge of [false, true]) {
-          const context = this.weaponContext(foe, before, { charge }); if (context.reason) continue;
+          const context = this.weaponContext(foe, before, { charge }, undefined, sightAt); if (context.reason) continue;
           const path = charge ? this.chargePath(foe, before) : undefined;
           const attacker = path ? { ...foe, pos: path.cells.at(-1)! } : foe;
           const params = { attacker, defender: before, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ranged: context.ranged, charge, weaponOverride: context.weapon, ...this.attackModifiers(attacker, before, context, { charge }) };
@@ -1820,8 +1885,8 @@ export class SmallBattle {
       }
       return reduction;
     };
-    const incoming = (actor: Combatant): number => foes.reduce((total,foe) => {
-      const context = this.weaponContext(foe,actor);
+    const incoming = (actor: Combatant): number => [...foes, ...presumed].reduce((total,foe) => {
+      const context = this.weaponContext(foe,actor,{},undefined,sightAt);
       if (context.reason) return total;
       return total + Math.min(memberHealth(actor),this.previewAttackWithEnvironment({attacker:foe,defender:actor,rules:this.rules,conditionDefs:this.conditionDefMap(),traitRegistry:this.traitRegistry,
         weaponOverride:context.weapon,ranged:context.ranged,...this.attackModifiers(foe,actor,context)}).expectedDamage);
@@ -1839,10 +1904,10 @@ export class SmallBattle {
             if(copy.hp<=0||spent.has(foe.id)||foe.status!=='ready'||foe.suppression||foe.conditions.some(c=>c.dur>0&&(this.conditions.get(c.id)?.skipTurn||this.conditions.get(c.id)?.preventAttack&&meleeWeapon(foe)?.recipe?.mechanism!=='natural')))continue;
             const weapon=meleeWeapon(foe),ridingAway=mountedShooting(copy)&&(Math.floor(cell/field.width)-Math.floor(previous/field.width))*(copy.side==='enemy'?-1:1)>0;
             const opportunity=!ridingAway&&weapon&&meleeContact(field,foe,{...copy,pos:previous})&&gridDistance(field,foe.pos!,previous)===1&&(gridDistance(field,foe.pos!,cell)>1||!meleeContact(field,foe,copy));
-            const watching=this.overwatch.has(foe.id)&&!this.weaponContext(foe,copy).reason;
+            const watching=this.overwatch.has(foe.id)&&!this.weaponContext(foe,copy,{},undefined,sightAt).reason;
             if(!opportunity&&!watching)continue;
             spent.add(foe.id);
-            const context=this.weaponContext(foe,copy,{weaponMode:opportunity?weapon===foe.sidearm?'sidearm':'primary':'auto'});
+            const context=this.weaponContext(foe,copy,{weaponMode:opportunity?weapon===foe.sidearm?'sidearm':'primary':'auto'},undefined,sightAt);
             resolveAttack(this.environmentContext({attacker:cloneData(foe),defender:copy,rng,rules:this.rules,conditionDefs:this.conditionDefMap(),traitRegistry:this.traitRegistry,
               weaponOverride:opportunity?weapon:context.weapon,ranged:!opportunity&&context.ranged,actionDamageScale:!opportunity?this.hasteOverwatch.get(foe.id)??1:1,...this.attackModifiers(foe,copy,context)}));
           }
@@ -2099,6 +2164,69 @@ export class SmallBattle {
     if (!this.isOver()) this.endTurn();
   }
 
+  /** 看不见敌军时的去向，只用本阵营已知事实：最后目击 → 未定位来袭的方向 → 朝敌方来向扫视近两轮没看过的地格；
+   *  白天开阔地全图在望仍无敌踪时，才回到两格近距搜查潜伏者。 */
+  private huntPlan(unit: Combatant, known: Combatant[]): { goals: number[]; focus: number; lead: boolean } {
+    const field = this.battlefield!, side = unit.side;
+    // 每次盲区决策照旧刷新两格搜查记录（地图上的已搜索标记）；它的目标只在最后一档使用。
+    const close = this.searchDestination(unit, known), view = this.visibleCells(side);
+    const memory = this.intel[side] ??= { traces: [], clues: [] };
+    const viewed = memory.viewed?.length === view.length ? memory.viewed : memory.viewed = Array<number>(view.length).fill(0);
+    view.forEach((seen, cell) => { if (seen) viewed[cell] = this.round; });
+    const reach = gridCostsToGoals(field, [unit.pos!], (cell) => canOccupy(field, known, unit, cell), (cell, from) => movementStepCost(field, cell, unit, this.fieldTags, from));
+    const cost = (cell: number) => reach.get(cell) ?? 1000 + gridDistance(field, unit.pos!, cell);
+    const unseen = (cell: number) => !view[cell] && !groundBlocked(field, cell);
+    const fresh = (cell: number) => unseen(cell) && viewed[cell]! <= Math.max(0, this.round - 2);
+    const nearest = (cells: number[], score = cost) => cells.reduce((best, cell) => score(cell) < score(best) || score(cell) === score(best) && cell < best ? cell : best);
+    const leads: { focus: number; age: number }[] = [];
+    for (const trace of liveTraces(this.intel, side, this.round, new Set(known.map((u) => u.id)))) {
+      if (trace.cell === undefined) continue;
+      const age = this.round - trace.round, origin = trace.cell;
+      // 最后目击点一旦亲眼查过没人就记下，之后不再因它暂时出了视野而折回。
+      if (view[origin]) trace.checked = true;
+      if (!trace.checked) { leads.push({ focus: origin, age }); continue; }
+      if (age > SPREAD_ROUNDS) continue;
+      // 查过无人：搜它这几轮走得到、近两轮又没看过的地方，离目击点越近越先查。
+      const radius = (age + 1) * Math.max(1, trace.mp ?? 3);
+      const cells = field.tiles.flatMap((_, cell) => fresh(cell) && gridDistance(field, origin, cell) <= radius ? [cell] : []);
+      if (cells.length) leads.push({ focus: nearest(cells, (cell) => gridDistance(field, origin, cell) + cost(cell) / 2), age });
+    }
+    for (const clue of liveClues(this.intel, side, this.round)) {
+      if (clue.cell === undefined) continue;
+      const victim = makeCombatant({ id: '', name: '', side, pos: clue.cell, airborne: false });
+      const cells = field.tiles.flatMap((_, cell) => unseen(cell) && cell !== clue.cell && gridDistance(field, cell, clue.cell!) <= CLUE_RANGE
+        && unitLineOfSight(field, { ...victim, pos: cell, side: side === 'enemy' ? 'ally' : 'enemy' }, victim) ? [cell] : []);
+      if (cells.length) leads.push({ focus: nearest(cells), age: this.round - clue.round });
+    }
+    // 新线索优先：每旧一轮相当于多走两格。
+    const lead = leads.sort((a, b) => cost(a.focus) + a.age * 2 - cost(b.focus) - b.age * 2 || a.focus - b.focus)[0];
+    if (lead) return { goals: [lead.focus], focus: lead.focus, lead: true };
+    // 敌方从其撤离边一侧进场，每轮至多推进约三格：先扫它们此时可能已到达、近两轮又没看过的地格。
+    const edge = side === 'neutral' ? [] : retreatCells(field, side === 'ally' ? 'enemy' : 'ally');
+    const edgeDistance = new Map<number, number>(), fromEdge = (cell: number) => {
+      if (!edge.length) return 0;
+      if (!edgeDistance.has(cell)) edgeDistance.set(cell, Math.min(...edge.map((p) => gridDistance(field, cell, p))));
+      return edgeDistance.get(cell)!;
+    };
+    const open = [...reach.keys()].filter(fresh);
+    const likely = open.filter((cell) => fromEdge(cell) <= 3 * (this.round + 1));
+    const sweep = likely.length ? likely : open;
+    if (!sweep.length) return { goals: [close], focus: close, lead: false };
+    const focus = nearest(sweep, (cell) => cost(cell) + fromEdge(cell) / 2);
+    return { goals: [focus], focus, lead: false };
+  }
+  /** 本轮或上一轮刚看见、最后位置还没查过的敌人（不含溃退），估算落点危险时当作仍在原处；属性沿用该单位。 */
+  private presumedFoes(side: Side, known: Combatant[]): Combatant[] {
+    return liveTraces(this.intel, side, this.round, new Set(known.map((u) => u.id))).flatMap((trace) => {
+      const unit = trace.cell === undefined || trace.checked || trace.routing || this.round - trace.round > 1 ? undefined : this.combatants.find((u) => u.id === trace.id);
+      return unit ? [{ ...unit, pos: trace.cell, status: 'ready' as const, airborne: trace.layer === 'air', elevation: trace.layer === 'top' ? 1 : undefined }] : [];
+    });
+  }
+  /** 面板用：本阵营记得、此刻看不见的敌军最后位置，以及近几轮的未定位来袭。 */
+  enemyIntel(side: Side, known: readonly Combatant[] = this.visibleCombatants(side)): IntelView {
+    if (!this.battlefield || this.isOver()) return { traces: [], clues: [] };
+    return intelView(this.intel, side, this.round, new Set(known.map((u) => u.id)), (id) => this.combatants.find((u) => u.id === id)?.name);
+  }
   private searchDestination(unit: Combatant, known: Combatant[]): number {
     const field = this.battlefield!;
     const coverage = this.searchCoverage[unit.side] ??= Array(field.tiles.length).fill(0);
@@ -2341,6 +2469,8 @@ export class SmallBattle {
 
   /** 回合开始效果：清移动标记、装填递减、持续伤害与死亡判定 */
   private beginTurn(u: Combatant): void {
+    const previous = this.activationStarts.get(u.id);
+    if (u.pos !== undefined) this.activationStarts.set(u.id, { at: u.pos, ...(previous ? { before: previous.at } : {}) });
     delete u.tacticalPose;
     delete u.tacticalEffort;
     this.movementSpent.delete(u.id); this.reactionSpent.delete(u.id); this.overwatch.delete(u.id); this.hasteOverwatch.delete(u.id);
@@ -2556,6 +2686,8 @@ export class SmallBattle {
       ...(this.sparedIds.size ? { sparedIds: [...this.sparedIds] } : {}),
       battlefield: this.battlefield,
       searchCoverage: this.searchCoverage,
+      intel: this.intel,
+      ...(this.activationStarts.size ? { activationStarts: [...this.activationStarts] } : {}),
       ...(this.feedback ? { feedback: this.feedback.snapshot() } : {}),
       movementSpent: [...this.movementSpent], reactionSpent: [...this.reactionSpent], overwatch: [...this.overwatch],
       controlRounds: this.controlRounds, controlHold: this.controlHold, objectiveWinner: this.objectiveWinner,
@@ -2614,6 +2746,10 @@ export class SmallBattle {
     b.commanderProfiles = normalizeCommanderProfiles(snap.commanderProfiles);
     b.round = snap.round ?? 1;
     b.searchCoverage = structuredClone(snap.searchCoverage ?? {});
+    b.intel = restoreIntel(snap.intel, b.battlefield?.tiles.length);
+    const cell = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) < (b.battlefield?.tiles.length ?? 0);
+    b.activationStarts = new Map((Array.isArray(snap.activationStarts) ? snap.activationStarts : []).filter((entry: unknown): entry is [string, { at: number; before?: number }] => Array.isArray(entry)
+      && typeof entry[0] === 'string' && !!entry[1] && cell(entry[1].at) && (entry[1].before === undefined || cell(entry[1].before))).map(([id, start]: [string, { at: number; before?: number }]) => [id, { at: start.at, ...(start.before !== undefined ? { before: start.before } : {}) }]));
     b.movementSpent = new Map(snap.movementSpent ?? []); b.reactionSpent = new Set(snap.reactionSpent ?? []);
     b.overwatch = new Set(snap.overwatch ?? []); b.controlRounds = snap.controlRounds ?? { ally: 0, enemy: 0 };
     b.objectiveWinner = snap.objectiveWinner; b.controlHold = snap.controlHold ? { ...snap.controlHold } : undefined;

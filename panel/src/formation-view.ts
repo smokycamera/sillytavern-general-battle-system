@@ -12,7 +12,8 @@ import { formationSelection, orderKey, orderLabels, type FormationView, type Ord
 import { battleSkillChangeReason } from './battle-skills.js';
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const rankName = { front: '前线', rear: '支援', reserve: '预备' };
-const location = (u: Combatant) => { const n = formationNode(u); return (n.side === 'ally' ? '我方' : '敌方') + n.wing + rankName[n.rank]; };
+const nodeLabel = (n: typeof FORMATION_NODES[number]) => (n.side === 'ally' ? '我方' : '敌方') + n.wing + rankName[n.rank];
+const location = (u: Combatant) => nodeLabel(formationNode(u));
 function orderName(b: MassBattle, order: Order | undefined): string {
   if (!order) return '尚未下令';
   if (order.type !== 'ability') return orderLabels[order.type];
@@ -31,6 +32,9 @@ export function renderFormationBattle(b: MassBattle, view: FormationView, drafts
   const invalidDrafts = Object.entries(drafts).filter(([unitId, draft]) => b.orderPreview({ unitId, ...draft }).reason);
   const pendingCount = Object.keys(drafts).length, issuedCount = s.hosts.filter((u) => b.orders.has(u.id)).length;
   const zones=visibleBattleZones(b.observationContext(),'ally');
+  // 我方共享敌情：此刻看不见的敌军最后被看见的阵位，以及近几轮遭到未定位攻击的编队。
+  const intel = over ? { traces: [], clues: [] } : b.enemyIntel('ally', visible);
+  const ago = (round: number) => b.round - round ? (b.round - round) + '轮前' : '本轮';
   const nodes = [...FORMATION_NODES].sort((a, b) => a.y - b.y || a.x - b.x).map((node) => {
     const occupants = visible.filter((u) => !b.isAttached(u.id) && !['dead', 'fled'].includes(u.status) && formationNode(u).id === node.id);
     return `<div class="formation-node ${node.side} ${actor && formationNode(actor).id === node.id ? 'selected' : ''} ${node.id === destination?.id ? 'destination' : ''}" data-formation="${node.id}">${zones.filter(z=>Math.abs(z.x-node.x)+Math.abs(z.y-node.y)<=z.radius).map(z=>'<span class="zone-label">'+ZONE_NAMES[z.kind]+'</span>').join('')}
@@ -41,7 +45,7 @@ export function renderFormationBattle(b: MassBattle, view: FormationView, drafts
           ${unitSymbol(u)}<b>${u.side === 'ally' ? '我' : '敌'} · ${esc(u.name)}</b><span>${u.hp}/${u.base.hpMax}${u.scale === 'hero' ? '生命' : '人'}${isAirborne(u) ? ' · 空中' : ''}${u.barrier?' · 屏障'+u.barrier.remaining:''}</span>
           ${u.side === 'ally' ? '<small>' + (draft ? '草案 · ' + esc(orderName(b, { unitId: u.id, ...draft })) : assigned ? '已下达 · ' + esc(orderName(b, assigned)) : '待安排') + '</small>' : ''}
           ${passenger ? '<small>随队 · ' + esc(passenger.name) + '</small>' : ''}</button>`;
-      }).join('') || '<span class="formation-empty">' + (node.side === 'ally' ? '空位' : '未定位') + '</span>'}${occupants.length > 1 ? '</details>' : ''}
+      }).join('') || '<span class="formation-empty">' + (node.side === 'ally' ? '空位' : '未定位') + '</span>'}${occupants.length > 1 ? '</details>' : ''}${intel.traces.filter((t) => t.node === node.id).map((t) => '<span class="formation-last-seen">? 最后目击 · ' + esc(t.name) + ' · ' + ago(t.round) + '</span>').join('')}
     </div>`;
   }).join('');
   const source = actor && (order?.type === 'ability' ? visible.find((u) => u.id === (order.abilityActorId ?? actor.id)) : actor);
@@ -77,6 +81,7 @@ export function renderFormationBattle(b: MassBattle, view: FormationView, drafts
     <div class="mass-controls">${actor ? '<button class="formation-mobile-summary" data-action="formation-command-focus"><b>' + esc(actor.name) + '</b><span>' + esc(orderName(b, order)) + (selectedTarget ? ' → ' + esc(selectedTarget.name) : '') + '</span><small>查看任务</small></button>' : ''}<button data-action="formation-fill" ${editable ? '' : 'disabled'}>补齐空缺</button><button class="primary" data-action="mass-resolve" data-round="${b.round}" data-seed="${esc(b.seed)}" ${over || b.planningLocked || invalidDrafts.length || automatic && pendingCount ? 'disabled' : ''}>锁定并执行本轮</button><span class="sub">${invalidDrafts.length ? invalidDrafts.length + '份草案需要调整' : automatic && pendingCount ? '旧草案需取消后再交由系统执行' : '空缺按系统建议执行，可先补齐预览'}</span></div>
     ${renderBattleHighlights(b)}
     <div class="formation-columns"><div class="formation-map-column"><div class="formation-wings"><b>左翼</b><b>中军</b><b>右翼</b></div><div class="formation-map-camera" tabindex="0" aria-label="军团阵位图，可滚动浏览双方前线与后方"><div class="formation-grid">${nodes}${traceOverlay(b)}</div></div>
+      ${intel.traces.length || intel.clues.length ? '<p class="sub intel-memory">敌情记忆：' + [...intel.traces.map((t) => esc(t.name) + ' 最后见于' + (FORMATION_NODES.find((n) => n.id === t.node) ? nodeLabel(FORMATION_NODES.find((n) => n.id === t.node)!) : '未知阵位') + '（' + ago(t.round) + '）'), ...intel.clues.map((c) => esc(c.victim) + '遭未定位攻击（' + ago(c.round) + '）')].join('；') + ' · 全队共享，位置可能已变。</p>' : ''}
       ${renderFormationFeedback(b)}<div class="formation-front">${Object.entries(b.frontControl).map(([wing, side]) => '<span>' + wing + ' · ' + ({ ally: '我方控制', enemy: '敌方控制', contested: '争夺中', empty: '空缺' })[side] + '</span>').join('')}</div>
       ${selectedNode ? '<div class="map-inspector"><b>' + (selectedNode.side === 'ally' ? '我方' : '敌方') + selectedNode.wing + rankName[selectedNode.rank] + '</b>' + (destination?.id === selectedNode.id ? '<p>当前任务预计到达此处，确认下令后执行。</p>' : '') + '<details><summary>阵位规则</summary><p>地面与空中每层最多' + (b.formationSlots ?? 3) + '支独立单位，随队人物共用所在编队位置。未发现的占位可能使机动受阻。</p></details></div>' : ''}
       ${inspection && inspection.side !== 'ally' ? '<details class="formation-inspection" data-detail-id="formation-inspection"><summary>查看目标 · ' + esc(inspection.name) + '</summary>' + details(inspection) + '</details>' : ''}

@@ -12,6 +12,7 @@
 .unit-symbol{width:17px;height:17px;flex-shrink:0;display:inline-block;vertical-align:middle;color:currentColor;}.unit-symbol .f{fill:currentColor;stroke:none;}.unit-symbol .s{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;}
 .formation-stack{min-width:0;}.formation-stack>summary{color:var(--gold);cursor:pointer;padding:8px 4px;min-height:44px;}.formation-stack[open] .formation-piece{width:100%;box-shadow:2px 2px 0 var(--line);}
 .formation-piece .unit-symbol{margin-right:5px;}.formation-node{position:relative;}
+.formation-last-seen{display:block;margin-top:3px;padding:2px 4px;border:1px dashed var(--enemy);border-radius:4px;font-size:10px;color:var(--enemy);opacity:.85;text-align:center;}
 .battle-trace{position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none;opacity:0;color:var(--gold);overflow:visible;}
 .battle-trace line{stroke:currentColor;stroke-width:2.5;}.trace-attack{color:var(--enemy);}.trace-move line{stroke-dasharray:5 4;}
 .trace-active{animation:trace-show 2.2s ease-out forwards;}.trace-pulse{animation:trace-pulse 2.2s ease-out;}

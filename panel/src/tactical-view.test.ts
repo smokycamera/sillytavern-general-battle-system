@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { generatedField, generateUnit, generatedLayeredField, SmallBattle, V11_OVERFLOW_D20 } from '../../engine/src/index.js';
+import { generatedField, generateUnit, generatedLayeredField, SmallBattle, V11_OVERFLOW_D20, V12_OVERFLOW_D20, standardField, traitRegistry } from '../../engine/src/index.js';
 import { TavernJevAdapter } from './jev-adapter.js';
 import { tacticalFixture } from '../../scripts/p4-tactical-fixture.js';
 import { renderTacticalBattle, selectTacticalElement, tacticalSelection, type TacticalView } from './tactical-view.js';
@@ -126,5 +126,25 @@ describe('战术地图查看与确认', () => {
     expect(movement.pathPreview('a', 46).risks).toHaveLength(1);
     foe.conditions.push({ id: 'stunned', dur: 2 });
     expect(movement.pathPreview('a', 46).risks).toHaveLength(0);
+  });
+  it('地图标出我方记得的敌军最后位置，名字转义，战斗结束后不再显示', () => {
+    const registry = traitRegistry();
+    const make = (id: string, name: string, side: 'ally' | 'enemy') => { const u = generateUnit({ name, side, scale: 'hero', rulesVersion: 'v2', level: 3, hpMax: 500, weaponClass: 'sword', weaponLevel: 5, armorTier: 1, traits: [] }, { registry, seed: id, noVariance: true }).unit; u.id = id; return u; };
+    const scout = make('scout', '斥候', 'ally'), enemy = make('enemy', '<img src=x>夜袭队', 'enemy');
+    const field = standardField(); field.tiles.fill('open');
+    const b = new SmallBattle({ rules: V12_OVERFLOW_D20, combatants: [scout, enemy], battlefield: field, field: { tags: ['night'] }, seed: 'intel-view', traitRegistry: registry });
+    b.start(); scout.pos = 31; enemy.pos = 17; b.turnOrder = ['scout', 'enemy']; b.turnIndex = 0;
+    b.moveTo('scout', 24);
+    enemy.pos = 0;
+    expect(b.visibleCombatants('ally').map(u => u.id)).not.toContain('enemy');
+    const html = renderTacticalBattle(b, { mode: 'weapon', selectedId: 'scout' });
+    const cellHtml = (coordinate: string) => html.match(new RegExp('<button[^>]*data-coordinate="' + coordinate + '"[^>]*>(.*?)</button>'))?.[1] ?? '';
+    expect(cellHtml('D3')).toContain('grid-last-seen');
+    expect(cellHtml('A1')).not.toContain('grid-last-seen');
+    expect(html).toContain('敌情记忆：&lt;img src=x&gt;夜袭队 最后见于D3（本轮）');
+    expect(html).not.toContain('<img src=x>');
+    enemy.hp = 0; enemy.status = 'dead'; b.endTurn();
+    expect(b.isOver()).toBe(true);
+    expect(renderTacticalBattle(b, { mode: 'weapon', selectedId: 'scout' })).not.toContain('grid-last-seen');
   });
 });

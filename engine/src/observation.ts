@@ -43,12 +43,15 @@ function canConceal(context: ObservationContext, unit: Combatant): boolean {
 export function canSpot(context: ObservationContext, observer: Combatant, target: Combatant): boolean {
   if (observer.side === target.side) return true;
   if (observer.status !== 'ready') return false;
+  // 夜间先按最远夜视（夜战专长）剪掉远处的配对，不必追视线或查特质；白天照旧先判视线。判定结果不变。
+  const night = context.fieldTags.includes('night'), early = night ? distanceBetween(context, observer, target) : undefined;
+  if (early !== undefined && early > (context.mode === 'small' ? 6 : 4)) return false;
   const from = positionedUnit(context, observer), to = positionedUnit(context, target);
   const field = context.battlefield;
   if (field && !unitLineOfSight(field, from, to) || smokeBlocks(context,from,to)) return false;
-  const distance = distanceBetween(context, observer, target), subject = hostOf(context, target) ?? target;
+  const distance = early ?? distanceBetween(context, observer, target), subject = hostOf(context, target) ?? target;
   if (canConceal(context, subject) && !subject.tacticalRevealed && distance > (context.mode === 'small' ? 2 : 1)) return false;
-  if (!context.fieldTags.includes('night')) return true;
+  if (!night) return true;
   const range = activeTraitIds(observer).includes('night-fighter') ? (context.mode === 'small' ? 6 : 4) : (context.mode === 'small' ? 3 : 2);
   return distance <= range;
 }
@@ -87,12 +90,16 @@ export function observedUnits(context: ObservationContext, side: Side): Combatan
   const observers = context.units.filter((u) => u.side === side && u.status === 'ready');
   return context.units.filter((target) => target.side === side || observers.some((observer) => canSpot(context, observer, target)));
 }
-export function observeEvent(context: ObservationContext, entry: BattleLogEntry): BattleLogEntry {
+/** 一次算出三个阵营各自看得见的单位；同一事件的战报裁剪与敌情记忆共用。 */
+export function sideViews(context: ObservationContext): Map<Side, Set<string>> {
+  return new Map((['ally', 'enemy', 'neutral'] as const).map((side) => [side, new Set(observedUnits(context, side).map((u) => u.id))]));
+}
+export function observeEvent(context: ObservationContext, entry: BattleLogEntry, views: ReadonlyMap<Side, ReadonlySet<string>> = sideViews(context)): BattleLogEntry {
   const ids = entry.participants ?? (entry.resolution ? [entry.resolution.attackerId, entry.resolution.defenderId] : []);
   const global = !ids.length && ['round', 'rule', 'battle-end'].includes(entry.kind);
   const observedBy: Side[] = [], observedText: Partial<Record<Side, string>> = {};
   for (const side of ['ally', 'enemy', 'neutral'] as const) {
-    const visible = new Set(observedUnits(context, side).map((u) => u.id));
+    const visible = views.get(side)!;
     if (global || ids.length && ids.every((id) => visible.has(id))) observedBy.push(side);
     else if (entry.resolution) {
       const victim = context.units.find((u) => u.id === entry.resolution!.defenderId && u.side === side);
