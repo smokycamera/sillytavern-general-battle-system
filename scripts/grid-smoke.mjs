@@ -141,7 +141,8 @@ try {
   night.battle.snap.combatants.find((u) => u.id === 'b').pos = 0;
   for (const u of night.battle.snap.combatants.filter((u) => u.side === 'enemy')) u.name = '夜间隐藏目标';
   for (const r of night.storage.filter((u) => u.side === 'enemy')) { r.name = '夜间隐藏目标'; if (r.snapshot) r.snapshot.name = '夜间隐藏目标'; }
-  night.battle.snap.log = [];
+  // 构造“从未被看见”的夜战：清掉白天留下的日志与阵营敌情记忆（最后目击会如实显示看见过的敌军）。
+  night.battle.snap.log = []; night.battle.snap.intel = {};
   await page.evaluate(({ save, html }) => { window.loadFixture(save); document.querySelector('#panel').srcdoc = html; }, { save: night, html });
   await p.locator('.grid-board').waitFor();
   assert.ok(!(await p.locator('body').innerText()).includes('夜间隐藏目标'), '地图以外的编制/库存/摘要也不能泄漏隐藏敌军');
