@@ -39,8 +39,8 @@ export class BattleService {
   private loadEpoch = 0;
   private migration?: MigrationReview;
   private binding?: GenerationBinding;
-  private receivedId?: number;
-  private generationEnded = false;
+  /** 进行中的一次生成：收到的消息序号，以及生成是否已结束。两者都到齐才扫描这条回复。 */
+  private generation?: { receivedId?: number; ended: boolean };
   private scanQueue: Promise<unknown> = Promise.resolve();
   private loading?: { session?: HostSession; promise: Promise<void> };
   readonly capabilities = { beforeGeneration: false, generationEnded: false, messageIdentity: false, injection: false };
@@ -91,7 +91,7 @@ export class BattleService {
   private async loadCurrent(): Promise<void> {
     const epoch = ++this.loadEpoch;
     this.phase = 'loading'; this.error = undefined; this.receipt = undefined; this.migration = undefined;
-    this.binding = undefined; this.receivedId = undefined; this.generationEnded = false;
+    this.binding = undefined; this.generation = undefined;
     this.host.clearInjection(PROMPT_ID);
     const loading = this.store.load(); this.notify();
     try {
@@ -127,26 +127,23 @@ export class BattleService {
     const afterCommands = bind('GENERATION_AFTER_COMMANDS', before);
     const started = bind('GENERATION_STARTED', (...args) => { if (!afterCommands) before(...args); });
     this.capabilities.beforeGeneration = afterCommands || started;
+    // 生成中的回复要等“收到消息”和“生成结束”都到了才扫描。酒馆流式输出先发生成结束、非流式先发收到消息，
+    // 别的扩展的监听也会打乱顺序，所以哪个后到由哪个收尾。
     bind('MESSAGE_RECEIVED', value => {
-      const id = messageId(value);
-      if (this.binding && id !== undefined) {
-        this.receivedId = id;
-        const sourceId = this.host.message(id)?.messageId;
-        if (this.generationEnded && (!this.binding.messageId || this.binding.messageId === sourceId)) {
-          this.binding.complete = true; this.binding.messageId = sourceId; void this.scan(id);
-        }
+      const id = messageId(value), generation = this.generation;
+      if (generation && id !== undefined) {
+        generation.receivedId = id;
+        if (generation.ended) this.finishGeneration();
       } else void this.scan(id);
     });
-    this.capabilities.generationEnded = bind('GENERATION_ENDED', value => {
-      this.generationEnded = true;
-      const id = messageId(value) ?? this.receivedId;
-      if (this.binding) {
-        this.binding.complete = id !== undefined && (this.receivedId === undefined || id === this.receivedId);
-        this.binding.messageId = this.binding.complete ? this.host.message(id)?.messageId : undefined;
-      }
-      void this.scan(id);
+    // 酒馆这里传的是 chat.length（消息条数），不是刚生成那条的序号，所以不读它；只认收到消息时给的序号。
+    this.capabilities.generationEnded = bind('GENERATION_ENDED', () => {
+      const generation = this.generation;
+      if (!generation) return;
+      generation.ended = true;
+      if (generation.receivedId !== undefined) this.finishGeneration();
     });
-    bind('GENERATION_STOPPED', () => { this.binding = undefined; this.receivedId = undefined; void this.scan(); });
+    bind('GENERATION_STOPPED', () => { this.binding = undefined; this.generation = undefined; void this.scan(); });
     for (const event of ['MESSAGE_EDITED', 'MESSAGE_SWIPED']) bind(event, value => { this.binding = undefined; void this.scan(messageId(value)); });
     bind('MESSAGE_DELETED', () => { this.binding = undefined; void this.reconcileDeletedMessages(); });
     bind('CHAT_CHANGED', () => { void this.load(); });
@@ -295,11 +292,18 @@ export class BattleService {
     }).then(async receipt => { if (receipt.status === 'confirmed' && sameSession(receipt.session, this.host.session())) await this.load(); return receipt; });
   }
   beginGeneration(): void {
-    this.receivedId = undefined; this.generationEnded = false; this.binding = undefined;
+    this.generation = { ended: false }; this.binding = undefined;
     if (this.phase !== 'ready' || !sameSession(this.store.session(), this.host.session())) { this.project(); return; }
     const namespace = this.host.namespace();
     this.binding = namespace ? captureGeneration(this.snapshot(), namespace, randomId()) : undefined;
     this.project();
+  }
+  /** 这次生成的回复已收到、生成也已结束：把绑定落到这条消息上再扫描。 */
+  private finishGeneration(): void {
+    const id = this.generation!.receivedId!;
+    this.generation = undefined;
+    if (this.binding) { this.binding.complete = true; this.binding.messageId = this.host.message(id)?.messageId; }
+    void this.scan(id);
   }
   scan(messageId?: number, options: { manual?: boolean } = {}): Promise<void> {
     const session = this.host.session(); let binding = structuredClone(this.binding);

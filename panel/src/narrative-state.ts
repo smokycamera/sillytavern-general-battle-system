@@ -10,7 +10,7 @@ import { parseProtocol, protocolExcerpt } from './protocol.js';
 import type { Suggestion } from './tags.js';
 import { createInventoryItem, prepareInventoryState, prepareInventoryTransaction, type InventoryItem } from './inventory-state.js';
 import { assertNarrativeCapacity, hasNarrativeDeployment, MAX_SCENE_UNITS } from './narrative-limits.js';
-import { applyUnitSet } from './unit-set.js';
+import { applyUnitSet, type UnitSetContext } from './unit-set.js';
 import { mapNarrativeReferences, narrativeIds, prepareNarrativeIds, type NarrativeIdState } from './narrative-ids.js';
 import { newUnitId, planNewUnits, type NewUnitPlan } from './narrative-new-units.js';
 
@@ -210,7 +210,7 @@ function mergePatch(target: Record<string, unknown>, source: Record<string, unkn
   }
 }
 /** 补员/状态与单位字段：同一档案的 unit_set 合并后一次赋值，unit_update 并入其中或单独更新。 */
-function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: Map<string, Record<string, unknown>>, proposalId: string, registry: Registry): NarrativeSave {
+function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: Map<string, Record<string, unknown>>, proposalId: string, registry: Registry, context: UnitSetContext): NarrativeSave {
   let next = save, records = next.storage ?? [];
   for (const event of events) if (event.kind === 'unit-set') {
     const patch = combined.get(event.id) ?? {}; mergePatch(patch, event.data); combined.set(event.id, patch);
@@ -229,7 +229,7 @@ function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: M
     records = records.map((r) => r.id === event.id ? updateUnitRecord(r, event, registry, proposalId) : r);
   }
   next.storage = records;
-  for (const [id, patch] of combined) next = applyUnitSet(next, id, patch, proposalId);
+  for (const [id, patch] of combined) next = applyUnitSet(next, id, patch, proposalId, context);
   return next;
 }
 /** 学习技能与剧情效果来源；来源编号带事件序号，同一回复重复学习需合并。 */
@@ -252,9 +252,9 @@ function applyUnitEffect(storage: UnitRecord[], event: Extract<Suggestion, { kin
   return storage.map((r) => r.id === record.id ? unitRecordFromCombatant(unit, record, { sourceId: proposalId, kind: 'update' }) : r);
 }
 /** 同批新建单位建档之后再执行指向它们的修改，阶段顺序与已有单位相同。 */
-function applyToNewUnits(save: NarrativeSave, events: Suggestion[], fresh: NewUnitPlan, proposalId: string, registry: Registry, deploys: string[]): NarrativeSave {
+function applyToNewUnits(save: NarrativeSave, events: Suggestion[], fresh: NewUnitPlan, proposalId: string, registry: Registry, deploys: string[], context: UnitSetContext): NarrativeSave {
   const isNew = (event: Suggestion) => 'id' in event && !!event.id && fresh.created.has(event.id);
-  let next = applyUnitChanges(save, events.filter(isNew), new Map([...fresh.patches].map(([id, patch]) => [id, structuredClone(patch)])), proposalId, registry);
+  let next = applyUnitChanges(save, events.filter(isNew), new Map([...fresh.patches].map(([id, patch]) => [id, structuredClone(patch)])), proposalId, registry, context);
   const learned = new Set<string>();
   for (const [index, event] of events.entries()) {
     if (!isNew(event)) continue;
@@ -304,7 +304,8 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (!record || !event.id) throw new Error(`档案 ${ids.publicId(event.id ?? '')} 缺失：这个编号不是已有单位。修改已有单位请用单位资料里的编号，新单位用 spawn 新建`);
     if (expected.unitVersions[event.id] !== (record.revision ?? 1)) throw new Error(`档案 ${ids.publicId(event.id)}（${record.name}）在这条回复之后已有改动，版本过期，请重新扫描`);
   }
-  // 固定阶段：移除旧实物 → 补员/状态 → 单位字段 → 实物改造/学习/效果 → 部署。
+  // 固定阶段：移除旧实物 → 新入库实物 → 补员/状态 → 单位字段 → 实物改造/学习/效果 → 部署。
+  // 新入库排在单位字段之前：unit_set 换上的若正是同一回复 give 的那件，直接取用而不另造一件。
   // 版本只对批次开始前的事实校验；后续任一步失败只丢弃此候选副本。
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind !== 'take') continue;
@@ -314,23 +315,27 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (item.equippedTo) next = prepareInventoryTransaction(next, { kind: 'unequip', id: 'take-unequip:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, ...item.equippedTo });
     next = prepareInventoryTransaction(next, { kind: 'discard', id: 'take:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, itemId: event.id, qty: event.qty });
   }
-  next = applyUnitChanges(next, proposal.events.filter((event) => !isNew(event)), new Map(), proposal.id, registry);
   let newEquipment = 0;
+  const given = new Set<string>(), notices: string[] = [];
+  for (const [index, event] of proposal.events.entries()) {
+    if (event.kind !== 'give') continue;
+    const id = `loot-${proposal.id}-${index}`;
+    if (!event.spec) { next.inventory = [...(next.inventory ?? []), { id, name: event.item, qty: event.qty, lootType: event.lootType, note: event.note }]; given.add(id); }
+    else if (event.spec.kind === 'consumable') next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(id, event.item, event.spec, id, event.qty), note: event.note }];
+    else {
+      if ((newEquipment += event.qty) > 64) throw new Error('单批机械装备最多64件，请拆分');
+      for (let i = 0; i < event.qty; i++) {
+        const itemId = event.qty === 1 ? id : `${id}-${i}`;
+        next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(itemId, event.item, event.spec, itemId), note: event.note }];
+        given.add(itemId);
+      }
+    }
+  }
+  next = applyUnitChanges(next, proposal.events.filter((event) => !isNew(event)), new Map(), proposal.id, registry, { given, notices });
   const reforged = new Set<string>(), learned = new Set<string>();
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind === 'learn' || event.kind === 'bless' || event.kind === 'unbless' || event.kind === 'affect' || event.kind === 'unaffect') {
       if (!isNew(event)) next.storage = applyUnitEffect(next.storage!, event, index, proposal.id, registry, learned);
-    } else if (event.kind === 'give') {
-      const id = `loot-${proposal.id}-${index}`;
-      if (!event.spec) next.inventory = [...(next.inventory ?? []), { id, name: event.item, qty: event.qty, lootType: event.lootType, note: event.note }];
-      else if (event.spec.kind === 'consumable') next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(id, event.item, event.spec, id, event.qty), note: event.note }];
-      else {
-        if ((newEquipment += event.qty) > 64) throw new Error('单批机械装备最多64件，请拆分');
-        for (let i = 0; i < event.qty; i++) {
-          const itemId = event.qty === 1 ? id : `${id}-${i}`;
-          next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(itemId, event.item, event.spec, itemId), note: event.note }];
-        }
-      }
     } else if (event.kind === 'reforge') {
       if (reforged.has(event.id)) throw new Error('同一回复请合并对同一装备的改造');
       reforged.add(event.id);
@@ -358,12 +363,13 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   next.schemaVersion = PANEL_SAVE_SCHEMA_VERSION;
   next.storage = records;
   next.rosterIds = [...new Set(roster.map((u) => u.id))];
-  if (fresh.created.size) next = applyToNewUnits(next, proposal.events, fresh, proposal.id, registry, newDeploys);
+  if (fresh.created.size) next = applyToNewUnits(next, proposal.events, fresh, proposal.id, registry, newDeploys, { given, notices });
   const deployed = next.rosterIds ?? [];
   const oldDeployedAlive = (save.storage ?? []).filter(r=>(save.rosterIds ?? []).includes(r.id)&&r.hp>0&&!r.retired).length;
   if (deployed.length > MAX_SCENE_UNITS && (replacesRoster || deployed.length > oldDeployedAlive)) throw Error(`本场参战单位卡上限${MAX_SCENE_UNITS}，整批未应用`);
   next.factRevision = (save.factRevision ?? 0) + 1;
-  next.proposals = [...(save.proposals ?? []).filter((p) => p.id !== proposal.id), { ...structuredClone(proposal), status: 'committed', reason: undefined }];
+  next.proposals = [...(save.proposals ?? []).filter((p) => p.id !== proposal.id), { ...structuredClone(proposal), status: 'committed', reason: undefined,
+    ...(notices.length ? { notices: [...notices, ...proposal.notices ?? []] } : {}) }];
   return prepareNarrativeIds(next);
 }
 

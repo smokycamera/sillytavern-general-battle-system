@@ -135,8 +135,8 @@ export class NarrativeController {
   private identity: string;
   private epoch = 0;
   private binding?: GenerationBinding;
-  private receivedId?: number;
-  private generationEnded = false;
+  /** 进行中的一次生成：收到的消息序号，以及生成是否已结束。两者都到齐才扫描这条回复。 */
+  private generation?: { receivedId?: number; ended: boolean };
   private disposers: (() => void)[] = [];
   private listeners = new Set<Listener>();
   private active = true;
@@ -159,25 +159,22 @@ export class NarrativeController {
     const before = (...args: unknown[]) => { if (args[2] !== true) this.beginGeneration(); };
     this.capabilities.beforeGeneration = bind('GENERATION_AFTER_COMMANDS', before);
     if (!this.capabilities.beforeGeneration) this.capabilities.beforeGeneration = bind('GENERATION_STARTED', before);
+    // 生成中的回复要等“收到消息”和“生成结束”都到了才扫描：流式输出先发生成结束、非流式先发收到消息，哪个后到由哪个收尾。
     bind('MESSAGE_RECEIVED', (value) => {
-      const id = eventMessageId(value);
-      if (this.binding && id !== undefined) {
-        this.receivedId = id;
-        if (this.generationEnded && (!this.binding.messageId || this.binding.messageId === String(id))) {
-          this.binding.complete = true; this.binding.messageId = String(id); void this.scan(id);
-        }
+      const id = eventMessageId(value), generation = this.generation;
+      if (generation && id !== undefined) {
+        generation.receivedId = id;
+        if (generation.ended) this.finishGeneration();
       } else void this.scan(id);
     });
-    this.capabilities.generationEnded = bind('GENERATION_ENDED', (value) => {
-      this.generationEnded = true;
-      const id = eventMessageId(value) ?? this.receivedId;
-      if (this.binding) {
-        this.binding.complete = id !== undefined && (this.receivedId === undefined || id === this.receivedId);
-        this.binding.messageId = this.binding.complete ? String(id) : undefined;
-      }
-      void this.scan(id);
+    // 酒馆这里传的是 chat.length（消息条数），不是刚生成那条的序号，所以不读它。
+    this.capabilities.generationEnded = bind('GENERATION_ENDED', () => {
+      const generation = this.generation;
+      if (!generation) return;
+      generation.ended = true;
+      if (generation.receivedId !== undefined) this.finishGeneration();
     });
-    bind('GENERATION_STOPPED', () => { this.binding = undefined; this.receivedId = undefined; void this.scan(); });
+    bind('GENERATION_STOPPED', () => { this.binding = undefined; this.generation = undefined; void this.scan(); });
     bind('MESSAGE_EDITED', () => { this.binding = undefined; void this.invalidateSources().then(() => this.scan()); });
     bind('MESSAGE_SWIPED', () => { this.binding = undefined; void this.invalidateSources().then(() => this.scan()); });
     bind('MESSAGE_DELETED', () => { this.binding = undefined; void this.invalidateSources(); });
@@ -226,7 +223,7 @@ export class NarrativeController {
   private notify(): void { for (const listener of this.listeners) listener(this.snapshot(), this.lastReceipt); }
   private project(): void { this.capabilities.injection = this.adapter.injectPrompts([{ id: PROMPT_ID, content: this.migration ? '【战阵】旧存档或坏项正等待玩家核对迁移预览；暂不执行正文档案事件。' : narrativeProjection(this.state, this.adapter.recentPromptText?.() ?? '') }]); }
   private switchContext(): void {
-    this.epoch++; this.binding = undefined; this.receivedId = undefined;
+    this.epoch++; this.binding = undefined; this.generation = undefined;
     this.queuedScan = undefined;
     this.adapter.uninjectPrompts(PROMPT_ID);
     this.identity = this.adapter.identity(); this.namespace = this.adapter.namespace();
@@ -291,11 +288,18 @@ export class NarrativeController {
     return this.inventoryAction(preview.intent);
   }
   beginGeneration(): void {
-    if (!this.active || this.migration) return;
-    if (this.identity !== this.adapter.identity() || this.namespace !== this.adapter.namespace()) this.switchContext();
-    this.receivedId = undefined; this.generationEnded = false;
-    this.binding = this.namespace ? captureGeneration(this.state, this.namespace, randomId()) : undefined;
-    this.project();
+    if (!this.active) return;
+    if (!this.migration && (this.identity !== this.adapter.identity() || this.namespace !== this.adapter.namespace())) this.switchContext();
+    this.generation = { ended: false };
+    this.binding = !this.migration && this.namespace ? captureGeneration(this.state, this.namespace, randomId()) : undefined;
+    if (!this.migration) this.project();
+  }
+  /** 这次生成的回复已收到、生成也已结束：把绑定落到这条消息上再扫描。 */
+  private finishGeneration(): void {
+    const id = this.generation!.receivedId!;
+    this.generation = undefined;
+    if (this.binding) { this.binding.complete = true; this.binding.messageId = String(id); }
+    void this.scan(id);
   }
   async scan(messageId?: number, options: { manual?: boolean } = {}): Promise<void> {
     if (!this.active || this.migration || this.adapter.isGenerating()) return;

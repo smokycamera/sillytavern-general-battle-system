@@ -150,10 +150,12 @@ describe('常驻宿主生命周期与故障', () => {
     await controller.scan(undefined, { manual: true });
     expect(controller.snapshot().proposals).toHaveLength(1); expect(controller.snapshot().field).toBe('forest');
   });
-  it.each(['no-received', 'no-ended-id', 'ended-first'])('兼容生命周期缺参数与顺序差异（%s）', async (mode) => {
+  it.each(['non-streaming', 'streaming', 'no-ended-id', 'ended-first'])('兼容生命周期缺参数与顺序差异（%s）', async (mode) => {
     const { controller, message, emit } = setup(); emit('GENERATION_AFTER_COMMANDS');
     message('<tb><unit_update id="a" hp="500"/></tb>');
-    if (mode === 'no-received') emit('GENERATION_ENDED', '1');
+    // 酒馆的生成结束事件带 chat.length（这里是2），不是刚生成那条的序号1。
+    if (mode === 'non-streaming') { emit('MESSAGE_RECEIVED', 1, 'normal'); emit('GENERATION_ENDED', 2); }
+    if (mode === 'streaming') { emit('GENERATION_ENDED', 2); await flush(); emit('MESSAGE_RECEIVED', 1, 'normal'); }
     if (mode === 'no-ended-id') { emit('MESSAGE_RECEIVED', { message_id: 1 }); emit('GENERATION_ENDED'); }
     if (mode === 'ended-first') { emit('GENERATION_ENDED'); await flush(); emit('MESSAGE_RECEIVED', '1'); }
     await flush(); expect(controller.snapshot().storage![0]!.hp).toBe(500);
