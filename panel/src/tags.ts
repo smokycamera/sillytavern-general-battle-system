@@ -27,7 +27,7 @@ import { CATEGORY_LABELS } from '../../engine/src/data/ability-blueprints.js';
  * 非法标签仅展示原文供玩家核查，不影响其余解析。
  */
 
-import { WEAPON_CLASSES, resolveWeaponClass, ABILITY_BLUEPRINTS, DEFAULT_BLUEPRINTS, categoryLabel, type Category, resolveTraitId, standardConditionMap, validateTraitSource, type TraitDuration, type BodyKind, type ItemSpecification } from '../../engine/src/index.js';
+import { WEAPON_CLASSES, resolveWeaponClass, ABILITY_BLUEPRINTS, DEFAULT_BLUEPRINTS, categoryLabel, type Category, narrativeTrait, standardConditionMap, validateTraitSource, type TraitDuration, type BodyKind, type ItemSpecification } from '../../engine/src/index.js';
 import { parseItemSpecification, splitItemSpecification } from './item-spec.js';
 
 export type LootType = 'weapon' | 'armor' | 'consumable' | 'accessory' | 'material' | 'quest' | 'misc';
@@ -431,7 +431,7 @@ export function parseSuggestionTags(text: string): ParseResult {
           const name = a.name?.trim() || (kind === 'bless' ? '剧情祝福' : names.join('、'));
           const life = duration.kind !== 'permanent' ? { remaining: duration.count } : {};
           if (kind === 'bless') {
-            const traitIds = names.map((name) => resolveTraitId(name) ?? name);
+            const traitIds = names.map((name) => { const parsed = narrativeTrait(name); return parsed.kind === 'trait' ? parsed.id : name; });
             validateTraitSource({ id: 'parse', name, kind: 'blessing', traitIds, duration, ...life });
             suggestions.push({ kind: 'bless', id: a.id.trim(), name, traitIds, duration, raw });
           } else {

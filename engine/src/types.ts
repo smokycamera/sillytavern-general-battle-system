@@ -223,6 +223,12 @@ export interface Trait {
   /** 外部来源的执行链已接通；未完成项仍保留在全特质矩阵中继续实施。 */
   v2SourceReady?: boolean;
   v2Desc?: string;
+  /** V12 及以前战斗的说明；V13 改了效果的特质才有。 */
+  v12Desc?: string;
+  /** 停用：已有单位继续生效，正文与配装不再提供；replacement 是正文旧写法的新去处。 */
+  legacy?: { note: string; replacement?: string };
+  /** 由身体或装备自动产生，不能手写或授予。 */
+  derived?: string;
   id: string;
   name: string;
   desc: string;
@@ -276,6 +282,8 @@ export interface Combatant {
   resourceModel?: 'endurance-v1' | 'endurance-v2';
   /** V12 weapon/armor calibration, projected from the battle rules; absent keeps the frozen V11 behaviour. */
   armsModel?: 'arms-v1';
+  /** V13 trait overhaul, projected from the battle rules; absent keeps the frozen V12 trait rules. */
+  traitModel?: 'traits-v1';
   battleZones?: import('./area-effects.js').BattleZone[];
   barrier?: { remaining: number; duration: number; sourceId?: string; defenses?: { power: number; duration: number }[] };
   accessories?: Partial<Record<'accessory1' | 'accessory2', import('./items.js').AccessoryItem>>;
@@ -306,6 +314,8 @@ export interface Combatant {
   tacticalRevealed?: boolean;
   /** 先锋前出前的会战部署偏好，仅本场保存，归档还原。 */
   vanguardOrigin?: string;
+  /** V13 工事据守的位置（小战格子或会战阵位）；离开即失效，原地完整休整后改为新位置。只在战斗快照里。 */
+  entrenchedAt?: number | string;
   legacyScale?: 'mook';
   /** base已包含的永久特质属性，用于撤销/改学后的净修正；不包含装备或祝福。 */
   bakedTraitStats?: Partial<Record<'atk' | 'def' | 'spd' | 'morale', number>>;
@@ -537,6 +547,8 @@ export interface RulePack {
   resourceModel?: 'endurance-v1' | 'endurance-v2';
   /** V12 weapon/armor calibration (crew, demolition, light armor, reach, grid ranges); absent keeps V11. */
   armsModel?: 'arms-v1';
+  /** V13 trait overhaul (工事据守、工兵、拒马、散兵单体与步枪编队自动散兵); absent keeps V12. */
+  traitModel?: 'traits-v1';
   combatModel?: 'cohort-v1' | 'cohort-v2';
   /** 武器直击余伤100%在目标编队内传递；旧规则缺省关闭。 */
   weaponOverflow?: boolean;

@@ -1,5 +1,5 @@
 import { isEnduranceModel, resourceRound, fatigueLimit, fatiguePenalty } from './resources.js';
-import { bodyMovement, humanEncumbered } from './body.js';
+import { bodyMovement, humanEncumbered, armorBurdenTier } from './body.js';
 import type { Combatant, ConditionDef, Trait } from './types.js';
 import type { Modifier, ResolveContext } from './bonus.js';
 import { activeTraitIds, activeConditionIds, traitPrerequisiteReason } from './trait-sources.js';
@@ -21,7 +21,7 @@ export function movementPoints(unit: Combatant, tags: string[] = []): number {
   const vehicle = unit.body === 'vehicle';
   const light = ['human', 'large'].includes(unit.body ?? 'human') && (unit.armor?.tier ?? 0) <= 2;
   const mobility = unit.mount === true || ids.includes('fast') || ids.includes('skirmisher') && light || ids.includes('mechanized') || ids.includes('plains-runner') && tags.includes('plains') ? 1 : 0;
-  const armor = !vehicle && (unit.armor?.tier ?? 0) >= 3 ? 1 : 0;
+  const armor = !vehicle && armorBurdenTier(unit) >= 3 ? 1 : 0;
   const night = tags.includes('night') && !ids.includes('night-fighter') ? 1 : 0;
   const normal = Math.max(1, Math.min(5, bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - armor - night - fatiguePenalty(unit) - Number(humanEncumbered(unit))));
   return Math.min(5, normal + Number(unit.status === 'routing'));
@@ -29,7 +29,8 @@ export function movementPoints(unit: Combatant, tags: string[] = []): number {
 export function formationMarchSteps(unit: Combatant, tags: string[] = []): number {
   if (isAirborne(unit)) return Math.max(1, Math.min(2, movementPoints(unit, tags) - 1));
   const traits = activeTraitIds(unit);
-  if (tags.includes('forest') && !traits.includes('forest-lore') || tags.includes('mountain') && !traits.includes('mountain-born')) return 1;
+  const agile = traits.includes('agile') && !traitPrerequisiteReason(unit, 'agile');
+  if (!agile && (tags.includes('forest') && !traits.includes('forest-lore') || tags.includes('mountain') && !traits.includes('mountain-born'))) return 1;
   return movementPoints(unit, tags) >= (unit.body === 'vehicle' ? 3 : 4) ? 2 : 1;
 }
 /** 疲劳只在激活/阶段边界结算，避免途中追溯减少已经使用的移动额度。 */

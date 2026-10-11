@@ -1,5 +1,5 @@
 import { parseEnhancementSuffix, enhancementLabel, type Enhancements, type BonusKind } from '../../engine/src/enhancements.js';
-import { resolveTraitId } from '../../engine/src/index.js';
+import { narrativeTrait } from '../../engine/src/index.js';
 /** V2正文：全文提取、格式容错、逐项诊断；真实身份和数值由事务层最终核对。 */
 import { parseAbilitySpec, parseSuggestionTags, type Suggestion } from './tags.js';
 import { resolveWeaponClass } from '../../engine/src/data/weapons.js';
@@ -59,16 +59,36 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
       if (!tag.complete) throw new Error(tag.name + ' 事件被截断，属性值尚不完整');
       const attrs = normalizedAttributes(tag, ATTRIBUTES[tag.name]!, warnings);
       if (tag.name === 'spawn' && attrs.id?.trim()) spawnIds.add(normalizeHandle(attrs.id.trim()));
+      // 天生护甲是特质不是护甲种类：armor写成“龙鳞:天生护甲L8”或“天生重甲L6”时，按所写或按身体补出的种类建档，并加上天生护甲。
+      if (['spawn', 'unit_set'].includes(tag.name) && attrs.armor) {
+        // 改已有单位时不知道它的身体，没写种类也没写body就保留原护甲，不猜轻重。
+        const natural = naturalArmorSpec(attrs.armor, tag.name === 'spawn' ? attrs.body ?? 'human' : attrs.body), who = attrs.name || tag.name;
+        if (natural && !natural.tier) { delete attrs.armor; warnings.push(`${who}：「${natural.written}」不是护甲种类，保留原护甲；天生护甲请写在traits，armor照常写轻甲/中甲/重甲`); }
+        else if (natural) {
+          attrs.armor = natural.armor;
+          const addTrait = tag.name === 'spawn' || attrs.traits !== undefined;
+          if (addTrait) attrs.traits = [attrs.traits, '天生护甲'].filter(Boolean).join(',');
+          warnings.push(`${who}：「${natural.written}」不是护甲种类，已按${natural.tier}处理${addTrait ? '并加上天生护甲特质' : '；需要天生护甲请在traits写上'}`);
+        }
+      }
       const hadOptionalList = !!(attrs.skills || attrs.traits);
       if (['spawn', 'bless', 'unit_set'].includes(tag.name) && attrs.traits) {
         const names = attrs.traits.split(/[,，、;；|]/).map((name) => name.trim()).filter(Boolean);
-        const unknown = names.filter((name) => !resolveTraitId(name));
-        if (unknown.length) warnings.push(`${attrs.name || tag.name}：${tag.name === 'unit_set' ? '保留原特质，未采用含未知项的特质列表' : '已忽略未支持特质'} ${unknown.join('、')}`);
-        const supported = [...new Set(names.map((name) => resolveTraitId(name)).filter((id): id is string => !!id))];
+        const parsed = names.map((name) => narrativeTrait(name)), who = attrs.name || tag.name;
+        const unknown = parsed.flatMap((p) => p.kind === 'unknown' ? [p.name] : []);
+        if (unknown.length) warnings.push(`${who}：${tag.name === 'unit_set' ? '保留原特质，未采用含未知项的特质列表' : '已忽略未支持特质'} ${unknown.join('、')}`);
+        // 停用项与身体/装备项不建档；训练和移动快慢改由 level/speed 表达，正文没写时代为换算。
+        for (const p of parsed) if (p.kind === 'ignored') {
+          const speed = p.speed !== undefined && tag.name !== 'bless' && attrs.speed === undefined, level = p.level !== undefined && tag.name === 'spawn' && attrs.level === undefined;
+          if (speed) attrs.speed = String(p.speed);
+          if (level) attrs.level = String(p.level);
+          warnings.push(`${who}：「${p.name}」${p.reason}，不再作为特质${speed ? `，已按speed=${p.speed}` : level ? `，已按level=${p.level}` : ''}`);
+        }
+        const supported = [...new Set(parsed.flatMap((p) => p.kind === 'trait' ? [p.id] : []))];
         if (tag.name === 'unit_set' && unknown.length) delete attrs.traits;
         else if (supported.length) attrs.traits = supported.join(',');
-        else if (tag.name === 'spawn') delete attrs.traits;
-        else if (unknown.length) continue; // 空祝福不创建无效果来源，也不阻断其他事件。
+        else if (tag.name !== 'bless') delete attrs.traits;
+        else continue; // 空祝福不创建无效果来源，也不阻断其他事件。
       }
       if (['spawn', 'learn', 'unit_set'].includes(tag.name) && attrs.skills) {
         const names = attrs.skills.split(/[,，、;；]/).map((name) => name.trim()).filter(Boolean);
@@ -206,7 +226,7 @@ export function recoverProtocol(text: string): { text: string; diagnostics: Prot
               catch { normalized = repairSpecification(part, 'skill', true, message => add(message, token, part)); }
               if (parseAbilitySpec(normalized).length !== 1) throw Error('未支持技能 ' + part);
               for (const note of notes) if (/忽略|未支持/.test(note)) add(note, token, part);
-            } else if (key === 'traits' && !resolveTraitId(part)) throw Error('未支持特质 ' + part);
+            } else if (key === 'traits' && narrativeTrait(part).kind !== 'trait') throw Error('未支持特质 ' + part);
             const result = parseProtocol(serializeEvent(tag.name, { ...probe, [key]: normalized }), { diagnostics: false });
             if (result.errors.length || !result.events.length) throw Error(result.errors[0] ?? '未支持' + key + ' ' + part);
             parts.push(normalized);
@@ -262,6 +282,16 @@ function repairSpecification(text: string, kind: BonusKind, skill: boolean, remo
     catch (error) { removed('已移除修正 ' + part[0] + '：' + (error instanceof Error ? error.message : String(error))); }
   }
   return retained;
+}
+
+const NATURAL_ARMOR_TIERS = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
+/** “龙鳞:天生护甲L8+6防护”→“龙鳞:重甲L8+6防护”。写了种类（天生重甲）照用；只写天生护甲时按身体补：巨型重甲、大型中甲、人形和载具轻甲，身体不明时不补。 */
+function naturalArmorSpec(armor: string, body?: string): { armor: string; written: string; tier?: string } | undefined {
+  const at = armor.search(/[:：·｜|/／]/), name = at >= 0 ? armor.slice(0, at + 1) : '', spec = armor.slice(at + 1).trim();
+  const match = spec.match(/^天生(无甲|轻甲|中甲|重甲|超重甲|护甲|装甲|甲)(?=\s*[lL]\s*\d|$)/);
+  if (!match) return undefined;
+  const tier = NATURAL_ARMOR_TIERS.includes(match[1]!) ? match[1]! : body === 'giant' ? '重甲' : body === 'large' ? '中甲' : body ? '轻甲' : undefined;
+  return { armor: name + (tier ?? '') + spec.slice(match[0].length), written: match[0], tier };
 }
 
 function validatedEvent(kind: string, attrs: Record<string, string>, warnings: string[]): Suggestion {

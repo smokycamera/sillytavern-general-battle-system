@@ -1,4 +1,5 @@
-import { physicalTraitIds } from './body.js';
+import { physicalTraitIds, armorBurdenTier, hasNaturalArmor } from './body.js';
+import { traitsV13 } from './trait-model.js';
 /** 特质知识与外部授予分离；持续期/来源身份属于引擎，不交给正文重写。 */
 import type { Combatant, Trait, Weapon } from './types.js';
 import { traitRegistry } from './data/traits.js';
@@ -61,9 +62,19 @@ export function traitSourceActive(unit: Combatant, source: TraitSource): boolean
 export function armorTraitId(tier?: number): string | undefined {
   return tier === 4 ? 'super-heavy' : tier === 3 ? 'heavy-armor' : undefined;
 }
-export function equipmentTraitIds(unit: Pick<Combatant, 'rulesVersion' | 'armor'>): string[] {
-  const id = unit.rulesVersion === 'v2' ? armorTraitId(unit.armor?.tier) : undefined;
-  return id ? [id] : [];
+/** V13：主武器是步枪、单发重步枪或能量武器的轻中装地面人形编队，按散兵线作战。 */
+const DISPERSED_ARMS = ['rifle', 'heavy-rifle', 'energy'];
+export function autoLooseFormation(unit: Pick<Combatant, 'rulesVersion' | 'armor' | 'scale' | 'body' | 'mount' | 'weapon'> & Partial<Pick<Combatant, 'traitModel' | 'traits' | 'traitSources'>>): boolean {
+  return unit.rulesVersion === 'v2' && traitsV13(unit) && unit.scale !== 'hero' && (unit.body ?? 'human') === 'human' && !unit.mount
+    && (unit.armor?.tier ?? 0) <= 2 && DISPERSED_ARMS.includes(unit.weapon?.recipe?.mechanism ?? '');
+}
+/** 装备或编制自动产生的特质在界面上的简短说明。 */
+export function autoTraitLabel(id: string): string {
+  return id === 'super-heavy' ? '超重装甲（先攻−2，无额外防御）' : id === 'heavy-armor' ? '重甲（先攻−1，无额外防御）' : id === 'loose-formation' ? '散兵（步枪类编队自动疏散）' : id;
+}
+export function equipmentTraitIds(unit: Pick<Combatant, 'rulesVersion' | 'armor'> & Partial<Pick<Combatant, 'traitModel' | 'traits' | 'traitSources' | 'scale' | 'body' | 'mount' | 'weapon'>>): string[] {
+  const id = unit.rulesVersion === 'v2' ? armorTraitId(armorBurdenTier(unit)) : undefined;
+  return [...(id ? [id] : []), ...(unit.scale !== undefined && autoLooseFormation(unit as Combatant) ? ['loose-formation'] : [])];
 }
 export function activeTraitIds(unit: Combatant): string[] {
   return [...new Set([...unit.traits, ...physicalTraitIds(unit), ...equipmentTraitIds(unit), ...Object.values(unit.accessories ?? {}).flatMap(item => item?.traitId ? [item.traitId] : []), ...(unit.rulesVersion === 'v2' ? unit.traitSources?.filter((s) => traitSourceActive(unit, s)).flatMap((s) => s.traitIds) ?? [] : [])])];
@@ -76,6 +87,7 @@ export function actualTargetTag(unit: Combatant, tag: string): boolean {
   if (unit.rulesVersion !== 'v2') return unit.tags.includes(tag);
   if (tag === 'large') return unit.mount === true || ['large', 'giant', 'vehicle'].includes(unit.body ?? 'human');
   if (tag === 'mounted') return unit.mount === true;
+  if (tag === 'airborne') return unit.airborne === true;
   if (tag === 'titan') return unit.body === 'giant';
   if (tag === 'infantry') return (unit.body ?? 'human') === 'human' && !unit.mount && !unit.airborne;
   if (tag === 'mobile') return unit.mount === true || unit.body === 'vehicle' || unit.archetype === 'mobile';
@@ -91,19 +103,22 @@ export function bodyRank(unit: Pick<Combatant, 'body' | 'mount'>): number { retu
 export function traitPrerequisiteReason(unit: Combatant, id: string, context: TraitContext = {}): string | undefined {
   if (unit.rulesVersion !== 'v2') return undefined;
   const weapon = context.weapon ?? unit.weapon;
-  if (id === 'loose-formation' && (unit.scale === 'hero' || !['human', 'large'].includes(unit.body ?? 'human') || unit.mount || unit.airborne || (unit.armor?.tier ?? 0) > 2)) return '疏散需要轻中装地面多人编队，骑乘、重型平台或单个个体不能展开';
+  if (id === 'loose-formation' && traitsV13(unit) && (!['human', 'large'].includes(unit.body ?? 'human') || unit.mount || unit.airborne || (unit.armor?.tier ?? 0) > 2)) return '疏散需要轻中装、地面、不骑乘的人形或大型身体';
+  if (id === 'loose-formation' && !traitsV13(unit) && (unit.scale === 'hero' || !['human', 'large'].includes(unit.body ?? 'human') || unit.mount || unit.airborne || (unit.armor?.tier ?? 0) > 2)) return '疏散需要轻中装地面多人编队，骑乘、重型平台或单个个体不能展开';
+  if (id === 'agile' && (!['human', 'large'].includes(unit.body ?? 'human') || (unit.armor?.tier ?? 0) > 2)) return '身法需要轻中装的人形或大型身体';
   if (id === 'large' && !['large', 'giant'].includes(unit.body ?? 'human')) return '大型特质由实际大型或巨型身体提供';
   if (id === 'titan' && unit.body !== 'giant') return '泰坦特质需要实际巨型身体';
+  if (['heavy-armor', 'super-heavy'].includes(id) && hasNaturalArmor(unit)) return '天生护甲没有重甲负担';
   if (id === 'heavy-armor' && (unit.armor?.tier ?? 0) < 3) return '需要实际重甲或超重甲';
   if (id === 'super-heavy' && unit.armor?.tier !== 4) return '需要实际超重甲';
   if (id === 'mounted-archer' && unit.mount !== true) return '需要明确坐骑，骑射不适用于装甲车辆';
   if (id === 'mounted-archer' && ![unit.weapon, unit.sidearm].some((w) => w?.tags?.includes('ranged') && (w.load ?? 99) <= 2 && !w.reload)) return '需要适于移动投射的实际轻便武器';
   if (id === 'skirmisher' && (!['human', 'large'].includes(unit.body ?? 'human') || (unit.armor?.tier ?? 0) > 2)) return '游击需要轻装或中装的人形/大型身体';
-  if (id === 'anti-mobile' && (weapon?.recipe?.mechanism !== 'spear' || context.ranged)) return '需要实际长柄近战武器';
+  if (id === 'anti-mobile' && !traitsV13(unit) && (weapon?.recipe?.mechanism !== 'spear' || context.ranged)) return '需要实际长柄近战武器';
   if (id === 'armor-piercing-shot' && (!context.ranged || !weapon?.tags?.includes('ranged') || weapon.channel !== 'kinetic')) return '需要真实动能投射动作';
   if (['ap-weapon', 'ap-master'].includes(id) && (!weapon || weapon.channel !== 'kinetic')) return '需要可利用弱点的动能武器';
   if (id === 'shield-wall' && !unit.shield) return '需要实际盾牌';
-  if (id === 'pike-wall' && weapon?.recipe?.mechanism !== 'spear') return '需要实际长柄反冲锋武器';
+  if (id === 'pike-wall' && !traitsV13(unit) && weapon?.recipe?.mechanism !== 'spear') return '需要实际长柄反冲锋武器';
   return undefined;
 }
 export function traitPenetrationBonus(unit: Combatant, weapon: Weapon | undefined, ranged: boolean, base: number): number {
@@ -112,8 +127,10 @@ export function traitPenetrationBonus(unit: Combatant, weapon: Weapon | undefine
   const rank = ids.includes('ap-master') ? 2 : ids.includes('ap-weapon') || ids.includes('armor-piercing-shot') ? 1 : 0;
   return Math.min(rank, Math.max(0, Math.floor(base / 3)));
 }
-export function traitDescription(trait: Trait, unit?: Pick<Combatant, 'rulesVersion'>): string {
-  return unit?.rulesVersion === 'v2' ? trait.v2Desc ?? trait.desc : trait.desc;
+/** V13 改了效果的特质，在旧规则战斗里继续显示旧说明。 */
+export function traitDescription(trait: Trait, unit?: Pick<Combatant, 'rulesVersion'> & Partial<Pick<Combatant, 'traitModel'>>): string {
+  if (unit?.rulesVersion !== 'v2') return trait.desc;
+  return (traitsV13(unit) ? trait.v2Desc : trait.v12Desc ?? trait.v2Desc) ?? trait.desc;
 }
 
 type TraitStats = NonNullable<Combatant['bakedTraitStats']>;

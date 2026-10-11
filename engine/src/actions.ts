@@ -314,7 +314,7 @@ export function abilityTargetReason(input: {
 }): string | undefined {
   const { actor, ability } = input;
   const target = ability.target === 'self' ? actor : input.target ?? (ability.target === 'ally' ? actor : undefined);
-  if (target && ability.targetBody && target.body !== ability.targetBody) return '维修用品只能修理车辆';
+  if (target && ability.targetBody && target.body !== ability.targetBody && !(target.rulesVersion === 'v2' && activeTraitIds(target).includes('inorganic'))) return '维修用品只能修理车辆或非生物';
   if (target && ability.effects.length && ability.effects.every(e => e.op === 'barrier' && (target.barrier?.remaining ?? 0) >= e.amount && (target.barrier?.duration ?? 0) >= e.dur
     && (!(e.defensePower ?? ability.power) || target.barrier?.defenses?.some(d => d.power >= (e.defensePower ?? ability.power)! && d.duration >= e.dur))
     || e.op === 'resource' && !skillResourceChange(target, e))) return '目标已经有足够的屏障或精力';

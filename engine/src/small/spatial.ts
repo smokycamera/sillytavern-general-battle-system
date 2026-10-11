@@ -4,7 +4,7 @@ import { layerMoveCost, groundBlocked, obstructionHeight, structureAt, STRUCTURE
 import { landmarkAt, BATTLEFIELD_SCENES, type MapGenerationRecord } from './map-design.js';
 import { isRangedWeapon } from '../loadout.js';
 import type { Combatant, ConditionDef } from '../types.js';
-import { activeTraitIds } from '../trait-sources.js';
+import { activeTraitIds, traitPrerequisiteReason } from '../trait-sources.js';
 import { environmentTags } from '../environment.js';
 import { isAirborne, sameLayer, flightCapabilityReason, type FlightConditions } from '../aerial.js';
 import { SeededRng } from '../rng.js';
@@ -134,6 +134,7 @@ export function tileCost(field: BattlefieldSpec, cell: number, actor?: Combatant
   if (layered !== undefined) return layered;
   if (actor && isAirborne(actor)) return 1;
   const terrain = field.tiles[cell], traits = actor?.rulesVersion === 'v2' ? activeTraitIds(actor) : [];
+  if (traits.includes('agile') && !traitPrerequisiteReason(actor!, 'agile')) return 1;
   if (terrain === 'forest') return traits.includes('forest-lore') ? 1 : 2;
   if (terrain === 'hill') return traits.includes('mountain-born') ? 1 : 2;
   return terrain === 'rough' ? 2 : 1;

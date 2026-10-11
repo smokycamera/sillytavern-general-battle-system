@@ -1,29 +1,30 @@
 /**
- * 特质库（全面战争机制转译，机制中立、全时代通用）。
+ * 特质库（机制中立、各题材通用）。
  * 每个特质 = 数据包：内在修正 / 条件克制 / 行为旗标 / 授予标签。
  * 新执行机制须补齐执行器与验证，不能只添加名字或数据项。
+ * 停用的特质（legacy）留在库里：已有单位与旧战斗照常结算，正文和配装不再提供。
  */
 
 import type { Trait } from '../types.js';
 
 export const TRAITS: Trait[] = [
-  // ---------- 反制类 ----------
+  // ---------- 攻击 ----------
   {
     id: 'ap-weapon', name: '破甲', desc: '普通段伤害的 50% 转为破甲段，无视护甲减伤',
     v2SourceReady: true,
-    v2Desc: '动能武器利用弱点提高穿透，最多+1且不超过原穿透的三分之一；穿透不足仍可零伤害',
+    v2Desc: '善于寻找护甲弱点：动能武器（刀剑、箭矢、子弹）穿透最多+1，不超过原穿透的三分之一；穿透不足仍可零伤害',
     effects: [{ kind: 'apShare', percent: 50 }],
   },
   {
     id: 'ap-master', name: '破甲大师', desc: '普通段伤害的 80% 转为破甲段',
     v2SourceReady: true,
-    v2Desc: '动能弱点利用最多提高穿透2，受原武器三分之一上限；与破甲/穿甲箭取较强项',
+    v2Desc: '动能武器穿透最多+2，受原穿透三分之一上限；与破甲取较强项',
     effects: [{ kind: 'apShare', percent: 80 }],
   },
   {
     id: 'anti-infantry', name: '克制步兵', desc: '对步兵目标攻击 +2、伤害 ×1.25',
     v2SourceReady: true,
-    v2Desc: '对地面未骑乘的人形目标攻击+2、伤害×1.25；远程步兵仍按实际身体识别，车辆、骑乘、空中和大型身体不算步兵，不按默认原型误判',
+    v2Desc: '对地面未骑乘的人形目标攻击+2、伤害×1.25；远程步兵仍按实际身体识别，车辆、骑乘、空中和大型身体不算步兵',
     effects: [
       { kind: 'conditionalAtk', vsTag: 'infantry', value: 2 },
       { kind: 'conditionalDmgMult', vsTag: 'infantry', mult: 1.25 },
@@ -32,58 +33,84 @@ export const TRAITS: Trait[] = [
   {
     id: 'anti-large', name: '克制大型', desc: '对大型目标攻击 +2、伤害 ×1.25',
     v2SourceReady: true,
-    v2Desc: '针对实际大型/巨型/载具或骑乘目标：攻击+2、伤害×1.25；与屠兽者取较强项',
+    v2Desc: '对大型、巨型、载具或骑乘目标攻击+2、伤害×1.25（反坦克、猎巨兽）；与屠兽者、对空取较强项',
     effects: [
       { kind: 'conditionalAtk', vsTag: 'large', value: 2 },
       { kind: 'conditionalDmgMult', vsTag: 'large', mult: 1.25 },
     ],
   },
   {
-    id: 'anti-mobile', name: '克制机动', desc: '对机动目标攻击 +2、伤害 ×1.25（枪阵类）',
+    id: 'monster-hunter', name: '屠兽者', desc: '对大型目标攻击 +3、伤害 ×1.4——巨兽猎人的传承',
     v2SourceReady: true,
-    v2Desc: '实际长柄近战武器对明确骑乘、车辆或机动原型攻击+2、伤害×1.25；仍须穿透实际防护，不自动授予武器',
-    grantsTags: ['spear'],
+    v2Desc: '对大型、巨型、载具或骑乘目标攻击+3、伤害×1.4；与克制大型、对空取较强项',
     effects: [
-      { kind: 'conditionalAtk', vsTag: 'mobile', value: 2 },
-      { kind: 'conditionalDmgMult', vsTag: 'mobile', mult: 1.25 },
+      { kind: 'conditionalAtk', vsTag: 'large', value: 3 },
+      { kind: 'conditionalDmgMult', vsTag: 'large', mult: 1.4 },
     ],
   },
   {
-    id: 'pike-wall', name: '拒马', desc: '受到冲锋攻击时伤害减半',
+    id: 'anti-air', name: '对空', desc: '对空中目标攻击 +2、伤害 ×1.25，地对空射击不额外损耗射程',
     v2SourceReady: true,
-    v2Desc: '实际长柄武器配合固守姿态，对正面近战冲锋伤害减半；移动、侧后袭或失能使其失效',
-    grantsTags: ['spear'],
-    effects: [{ kind: 'counterChargeDR', percent: 50 }],
-  },
-  // ---------- 防御类 ----------
-  {
-    id: 'heavy-armor', name: '重甲', desc: '护甲等级 +1，速度 -1',
-    v2SourceReady: true,
-    v2Desc: '装备重甲自动体现负担：先攻降低1，不提供额外防御。与手动或外部来源不重复计入，与超重装甲取较重代价；换成轻中甲或卸甲即撤销。实际护甲仍提供通道防护及既有机动代价',
-    effects: [{ kind: 'armorTier', value: 1 }, { kind: 'stat', stat: 'spd', value: -1 }],
+    v2Desc: '对空中目标攻击+2、伤害×1.25，地面射击空中目标不额外损耗射程（防空炮、猎龙弩、点防御）；与克制大型、屠兽者取较强项',
+    effects: [
+      { kind: 'conditionalAtk', vsTag: 'airborne', value: 2 },
+      { kind: 'conditionalDmgMult', vsTag: 'airborne', mult: 1.25 },
+    ],
   },
   {
-    id: 'super-heavy', name: '超重装甲', desc: '护甲等级 +2，速度 -2',
+    id: 'berserk', name: '狂暴', desc: '攻击 +2，防御 -1',
     v2SourceReady: true,
-    v2Desc: '装备超重甲自动体现负担：先攻降低2，不提供额外防御。与手动或外部来源不重复计入，与重甲取较重代价；卸下或更换类型即撤销。实际护甲仍提供通道防护及既有机动代价',
-    effects: [{ kind: 'armorTier', value: 2 }, { kind: 'stat', stat: 'spd', value: -2 }],
+    effects: [{ kind: 'stat', stat: 'atk', value: 2 }, { kind: 'stat', stat: 'def', value: -1 }],
   },
   {
-    id: 'shield-wall', name: '盾墙', desc: '受到远程攻击时伤害 -40%',
+    id: 'poison-strike', name: '淬毒', desc: '命中时使目标中毒 3 回合',
     v2SourceReady: true,
-    v2Desc: '实际盾牌配合固守姿态，对正面远程生命伤害降低40%；移动、侧后袭、卸盾或失能使其失效',
-    effects: [{ kind: 'rangedGuardDR', percent: 40 }],
+    v2Desc: '刀剑、爪牙、箭矢等动能接触武器或轻型投射造成实际损伤后中毒3轮；每种毒性一份且重复命中不续期。中毒攻击降低1，生物体型降低毒伤，封闭车辆与非生物免疫；法术、能量与重炮不能借此涂毒，毒性法术请用中毒技能',
+    effects: [{ kind: 'onHitCondition', conditionId: 'poisoned', dur: 3 }],
   },
+  {
+    id: 'sneak-attack', name: '偷袭', desc: '从潜伏中出手，或目标正与己方另一单位近战时，伤害 ×1.5',
+    v2SourceReady: true,
+    v2Desc: '从潜伏中出手，或目标正与己方另一单位近战时，武器攻击与物理技能伤害×1.5；独立魔法技能不受影响',
+    effects: [{ kind: 'flag', flag: 'sneak-attack', value: 1.5 }],
+  },
+  {
+    id: 'lifesteal', name: '吸血', desc: '造成实际生命伤害后回复其中 25%',
+    v2SourceReady: true,
+    v2Desc: '造成实际生命伤害后回复其中25%：个体回复生命，编队只能救回已有的可救伤兵；对非生物与载具无效',
+    effects: [{ kind: 'flag', flag: 'lifesteal', value: 0.25 }],
+  },
+  {
+    id: 'melee-master', name: '近战特化', desc: '近身攻击 +2、近战伤害 ×1.15',
+    v2SourceReady: true,
+    effects: [
+      { kind: 'attackStyle', style: 'melee', atk: 2 },
+      { kind: 'attackStyle', style: 'melee', dmgMult: 1.15 },
+    ],
+  },
+  {
+    id: 'sharpshooter', name: '射击专家', desc: '射击攻击 +2',
+    v2SourceReady: true,
+    v2Desc: '远程武器攻击命中+2（弓弩、火器、能量武器、投掷）；独立魔法技能不受影响',
+    effects: [{ kind: 'attackStyle', style: 'ranged', atk: 2 }],
+  },
+  {
+    id: 'versatile', name: '抵近射击', desc: '远程武器近身挥击不受「武器不善近战」惩罚——枪上刺刀，弓抡弓杆',
+    v2SourceReady: true,
+    v2Desc: '贴身时远程武器不吃抵近射击惩罚；不能绕过长弓贴身禁射、最小射程、装填或可用行动，近战与冲锋仍需要真实近战武器',
+    effects: [{ kind: 'flag', flag: 'no-melee-penalty' }],
+  },
+  // ---------- 防护 ----------
   {
     id: 'guardian', name: '守护', desc: '受到的全伤害 -25%（不可被破甲绕过）',
     v2SourceReady: true,
-    v2Desc: '合法生命伤害降低25%；同源/同组守护取强，不重复相乘；不减免士气或控制',
+    v2Desc: '超常护体（法术、神佑、力场、护体罡气）：合法生命伤害降低25%；同组取强，不减免士气或控制。普通护甲写在armor里',
     effects: [{ kind: 'ward', percent: 25 }],
   },
   {
     id: 'guardian-greater', name: '大守护', desc: '受到的全伤害 -40%',
     v2SourceReady: true,
-    v2Desc: '合法生命伤害降低40%；与守护及同组重复来源取强，不无限叠加',
+    v2Desc: '超常护体：合法生命伤害降低40%；与守护及同组重复来源取强，不无限叠加',
     effects: [{ kind: 'ward', percent: 40 }],
   },
   {
@@ -92,24 +119,69 @@ export const TRAITS: Trait[] = [
     v2Desc: '小战行动末或会战重整末最多恢复3生命或3名可救伤兵；失能、濒死和离场暂停，编队只消耗已记账伤兵，不能补回永久伤亡，多来源取强',
     effects: [{ kind: 'regen', perRound: 3 }],
   },
-  // ---------- 攻击与士气类 ----------
   {
-    id: 'berserk', name: '狂暴', desc: '攻击 +2，防御 -1',
+    id: 'tenacity', name: '坚韧', desc: '控制类效果的抵抗 +4，不会被击退或拉拽',
     v2SourceReady: true,
-    effects: [{ kind: 'stat', stat: 'atk', value: 2 }, { kind: 'stat', stat: 'def', value: -1 }],
+    v2Desc: '抗控制：眩晕、定身、沉默、缴械、减速、惊惧的抵抗+4（约多两成机会扛住），不会被击退或拉拽；不影响伤害、中毒与士气',
+    effects: [{ kind: 'flag', flag: 'tenacity', value: 4 }],
   },
   {
-    id: 'poison-strike', name: '毒击', desc: '命中时使目标中毒 3 回合',
+    id: 'agile', name: '身法', desc: '脱离近战不受借机攻击，困难地形不额外消耗移动',
     v2SourceReady: true,
-    v2Desc: '适用动能接触武器或轻型投射/弓弩造成实际损伤后中毒3轮；每种毒性一份且重复命中不续期。中毒攻击降低1，生物体型降低毒伤，封闭车辆免疫；热能、奥术与重炮不能借此涂毒，持续伤亡由引擎记账',
-    effects: [{ kind: 'onHitCondition', conditionId: 'poisoned', dur: 3 }],
+    v2Desc: '轻中装的人形或大型身体：脱离近战不受借机攻击；森林、丘陵、碎石、浅水、沼泽不额外消耗移动。不越过墙体、悬崖、深水或敌军占据的位置',
+    effects: [{ kind: 'flag', flag: 'agile' }],
   },
   {
-    id: 'trample', name: '践踏', desc: '旧规则对指定轻型编队伤害 ×2',
+    id: 'natural-armor', name: '天生护甲', desc: '护甲即肉身或鳞片：护甲的减益无效',
     v2SourceReady: true,
-    v2Desc: '以实际较大身体完成合法近战冲锋时，冲击伤害×1.25；普通攻击、同等或更大体型不受此影响，展开与行动上限照常',
-    effects: [{ kind: 'conditionalDmgMult', vsTag: 'mook', mult: 2 }],
+    v2Desc: '护甲即肉身或鳞片（炼体、兽皮、龙鳞、甲壳、皮下装甲）：所写护甲的减益无效，不计负重，没有重甲的先攻与移动惩罚；防护和轻重档位仍按所写护甲，游击、散兵、身法等轻装前提照常',
+    effects: [{ kind: 'flag', flag: 'natural-armor' }],
   },
+  {
+    id: 'indomitable', name: '不屈', desc: '个体每战一次以1点生命挺过致命伤；编队每战一次溃逃时当场重整',
+    v2SourceReady: true,
+    v2Desc: '个体：每战一次，受到致命伤害时以1点生命坚持。编队：每战一次，本该溃逃时当场重整并恢复士气',
+    effects: [{ kind: 'flag', flag: 'indomitable' }],
+  },
+  {
+    id: 'fortification', name: '工事', desc: '攻城战（siege）：防御 +3，受到射击伤害 -30%——城墙与箭塔掩护',
+    v2SourceReady: true,
+    v12Desc: '防御提高3、受到远程伤害降低30%，不受战场、姿态、方向、体型或失能限制；与固守、盾墙的同类防护取强',
+    v2Desc: '据守阵地（城墙、战壕、碉堡、阵法）：防御+3、受远程伤害降低30%，与固守、盾墙取强；只在开战或获得工事时的位置生效（离开即失效，回到原位恢复），在别处原地完整休整一轮可重新构筑；工兵的攻击无视工事',
+    effects: [
+      { kind: 'fieldMod', field: 'siege', def: 3 },
+      { kind: 'rangedGuardDR', percent: 30 },
+    ],
+  },
+  {
+    id: 'shield-wall', name: '盾墙', desc: '受到远程攻击时伤害 -40%',
+    v2SourceReady: true,
+    v2Desc: '实际盾牌配合固守姿态，对正面远程生命伤害降低40%；移动、侧后袭、卸盾或失能使其失效',
+    effects: [{ kind: 'rangedGuardDR', percent: 40 }],
+  },
+  {
+    id: 'pike-wall', name: '拒马', desc: '受到冲锋攻击时伤害减半',
+    v2SourceReady: true,
+    v12Desc: '实际长柄武器配合固守姿态，对正面近战冲锋伤害减半；移动、侧后袭或失能使其失效',
+    v2Desc: '阻挡冲击（枪阵、拒马桩、反坦克障碍）：对骑乘、载具与机动目标攻击+2、伤害×1.25；固守时正面受冲锋伤害减半，移动、侧后袭或失能使减伤失效',
+    grantsTags: ['spear'],
+    effects: [{ kind: 'counterChargeDR', percent: 50 }],
+  },
+  {
+    id: 'loose-formation', name: '散兵', desc: '受到范围伤害减半',
+    v2SourceReady: true,
+    v12Desc: '轻中装地面多人编队自动疏散，未被近敌牵制时范围伤害减半；代价是近战展开减半且近战防御降低1。固守收拢、重装、骑乘、空中、重型平台、失能或被压制时不能疏散；同来源不叠加',
+    v2Desc: '个体：未被近敌牵制时范围伤害减半。编队：未被近敌牵制时范围伤害减半、榴弹溅射波及人数减半，代价是近战展开减半、近战防御降低1。都需要轻中装、地面、不骑乘的人形或大型身体；固守、受压制或失能时不能疏散。主武器为步枪、单发重步枪或能量武器的轻中装人形编队自动获得',
+    grantsTags: ['loose'],
+    effects: [{ kind: 'flag', flag: 'aoeResist', value: 0.5 }],
+  },
+  {
+    id: 'inorganic', name: '非生物', desc: '免疫中毒、流血与惊惧，不会士气崩溃',
+    v2SourceReady: true,
+    v2Desc: '机器人、构装体、亡灵、傀儡等：免疫中毒、流血与惊惧，不会士气崩溃；可用维修包修复。仍受燃烧、眩晕、定身等影响',
+    effects: [{ kind: 'immuneMorale' }, { kind: 'flag', flag: 'inorganic' }],
+  },
+  // ---------- 士气 ----------
   {
     id: 'fear', name: '恐惧', desc: '在场时敌方全员士气 -8',
     v2SourceReady: true,
@@ -142,12 +214,18 @@ export const TRAITS: Trait[] = [
     v2Desc: '小战3格或会战1阵位内友军获得10点士气支援并抵消恐惧压力，多位指挥同组取强；需要通畅视线和可行动来源，随队使用所在编队位置，离场失效；提高附近友军的重整机会，成功重整后恢复指挥资格',
     effects: [{ kind: 'moraleAura', value: 10, scope: 'side' }],
   },
-  // ---------- 机动与部署类 ----------
+  // ---------- 机动 ----------
   {
     id: 'charge-strong', name: '冲锋强化', desc: '冲锋攻击 +3',
     v2SourceReady: true,
     v2Desc: '沿合法路径接近后冲锋攻击提高3；小战支付移动和主行动，会战真实前出一阵位并用本轮主任务；相邻、受阻、疲劳、定身或压制时不能冲锋',
     effects: [{ kind: 'chargeBonus', value: 3 }],
+  },
+  {
+    id: 'trample', name: '践踏', desc: '旧规则对指定轻型编队伤害 ×2',
+    v2SourceReady: true,
+    v2Desc: '以实际较大身体完成合法近战冲锋时，冲击伤害×1.25；普通攻击、同等或更大体型不受此影响，展开与行动上限照常',
+    effects: [{ kind: 'conditionalDmgMult', vsTag: 'mook', mult: 2 }],
   },
   {
     id: 'skirmisher', name: '游击', desc: '速度 +2，受到远程攻击伤害 -25%',
@@ -163,13 +241,6 @@ export const TRAITS: Trait[] = [
     effects: [{ kind: 'flag', flag: 'mounted-archer' }],
   },
   {
-    id: 'armor-piercing-shot', name: '穿甲箭', desc: '射击类攻击普通段伤害的 35% 转为破甲段（无视护甲）',
-    v2SourceReady: true,
-    v2Desc: '真实动能投射最多提高穿透1，受原穿透三分之一上限；与破甲专长取强，近战不生效',
-    grantsTags: ['ranged-capable'],
-    effects: [{ kind: 'apShare', percent: 35 }],
-  },
-  {
     id: 'vanguard', name: '先锋部署', desc: '开战时可部署于侧翼',
     v2SourceReady: true,
     v2Desc: '小战可前出1排，狭窄地图只占己方先遣侧翼；会战在己方前移1层，已在中军前线则先遣至空闲侧翼。系统选择合法空位，不消耗首轮行动；不越过敌方部署区，随队个人不带所在编队免费前出',
@@ -178,39 +249,14 @@ export const TRAITS: Trait[] = [
   {
     id: 'stalk', name: '潜伏', desc: '部署时隐匿，接敌前不被发现',
     v2SourceReady: true,
-    v2Desc: '小战2格内或会战相邻阵位可被侦察；贴身接敌、攻击或施法暴露，失败命中也暴露。在掩护或夜间且脱离近敌后完整休整，可自动重新潜伏；随队不能把专长复制给所在编队',
+    v2Desc: '小战2格内或会战相邻阵位可被侦察（侦察特质为4格或2阵位）；贴身接敌、攻击或施法暴露，失败命中也暴露。在掩护或夜间且脱离近敌后完整休整，可自动重新潜伏；随队不能把专长复制给所在编队',
     effects: [{ kind: 'flag', flag: 'stalk' }],
   },
   {
-    id: 'fast', name: '快速', desc: '速度 +3',
+    id: 'recon', name: '侦察', desc: '识破潜伏的距离翻倍；己方曲射火力打它看得见的目标命中 +2',
     v2SourceReady: true,
-    v2Desc: '先攻速度提高3、实际移动点提高1；轻装会战编队可一次纵深调动两阵位，受疲劳和路径容量限制',
-    effects: [{ kind: 'stat', stat: 'spd', value: 3 }],
-  },
-  // ---------- 环境与规模类 ----------
-  {
-    id: 'forest-lore', name: '林间行者', desc: '森林地形无惩罚',
-    v2SourceReady: true,
-    v2Desc: '免除森林的额外移动代价和行动惩罚；会战保留正常纵深机动，不绕过墙体、人数展开或阵位容量',
-    effects: [{ kind: 'flag', flag: 'terrain-forest' }],
-  },
-  {
-    id: 'mountain-born', name: '山地子民', desc: '山地地形无惩罚',
-    v2SourceReady: true,
-    v2Desc: '免除山地的额外移动代价和行动惩罚；会战保留正常纵深机动，不绕过硬障碍或阵位容量',
-    effects: [{ kind: 'flag', flag: 'terrain-mountain' }],
-  },
-  {
-    id: 'night-fighter', name: '夜战', desc: '夜战无惩罚',
-    v2SourceReady: true,
-    v2Desc: '夜间观测由小战3格延至6格、会战2阵位延至4阵位，免夜间攻击和移动惩罚；不能穿墙，随队者按所在编队位置观察',
-    effects: [{ kind: 'flag', flag: 'night' }],
-  },
-  {
-    id: 'large', name: '大型', desc: '体格庞大：HP +10，被克制大型针对',
-    v2Desc: '由实际大型身体自动提供：默认个体生命与负重/近战规格按身体生成，动能结构防护至少1，二维占格2并被反大型针对；巨型身体包含大型性质，结构与护甲同通道取强，不重复加生命或扩编',
-    grantsTags: ['large'],
-    effects: [{ kind: 'stat', stat: 'hpMax', value: 10 }],
+    v2Desc: '侦察兵、斥候、观察员：识破潜伏的距离翻倍（小战4格、会战2阵位）；己方曲射火力攻击它能看见的目标时命中+2（校射，多名侦察不叠加）',
+    effects: [{ kind: 'flag', flag: 'recon' }],
   },
   {
     id: 'flying', name: '飞行', desc: '可越过战线接敌，仅受远程与飞行单位攻击',
@@ -220,31 +266,12 @@ export const TRAITS: Trait[] = [
     effects: [{ kind: 'flag', flag: 'flying' }],
   },
   {
-    id: 'loose-formation', name: '散兵', desc: '受到范围伤害减半',
+    id: 'mechanized', name: '机械化', desc: '载具输送：速度 +2、护甲 +1 档',
     v2SourceReady: true,
-    v2Desc: '轻中装地面多人编队自动疏散，未被近敌牵制时范围伤害减半；代价是近战展开减半且近战防御降低1。固守收拢、重装、骑乘、空中、重型平台、失能或被压制时不能疏散；同来源不叠加',
-    grantsTags: ['loose'],
-    effects: [{ kind: 'flag', flag: 'aoeResist', value: 0.5 }],
-  },
-  // ---------- 精英类 ----------
-  {
-    id: 'veteran', name: '老练', desc: '攻击/防御 +1，士气 +10',
-    v2SourceReady: true,
+    v2Desc: '乘车机动或动力化的单位：先攻提高2、机动提高1，装有护甲时防御提高1；可与大型或巨型身体组合为机器人。行进稳定仍由实际武器装置决定，随队人物不向所在编队复制专长',
     effects: [
-      { kind: 'stat', stat: 'atk', value: 1 },
-      { kind: 'stat', stat: 'def', value: 1 },
-      { kind: 'stat', stat: 'morale', value: 10 },
-    ],
-  },
-  {
-    id: 'elite', name: '精锐', desc: '攻击/防御 +2，HP +8',
-    v2SourceReady: true,
-    v2Desc: '攻击和防御提高2，来源不重复叠加；初建个体使用自动生命时含8点精锐体能，显式生命上限为最终值。编队人数与任何已建档生命不因授予、撤销或重开改变，训练升级只应用既定成长差值',
-    grantsTags: ['elite'],
-    effects: [
-      { kind: 'stat', stat: 'atk', value: 2 },
-      { kind: 'stat', stat: 'def', value: 2 },
-      { kind: 'stat', stat: 'hpMax', value: 8 },
+      { kind: 'stat', stat: 'spd', value: 2 },
+      { kind: 'armorTier', value: 1 },
     ],
   },
   {
@@ -253,7 +280,40 @@ export const TRAITS: Trait[] = [
     v2Desc: '进攻、施法、长距离移动等实际疲劳积累减半，休整仍正常恢复；不免疫疲劳惩罚',
     effects: [{ kind: 'flag', flag: 'fatigue-resist', value: 0.5 }],
   },
-  // ---------- 战场环境类 ----------
+  // ---------- 地形与工程 ----------
+  {
+    id: 'forest-lore', name: '林地专精', desc: '森林地形无惩罚',
+    v2SourceReady: true,
+    v2Desc: '免除森林、丛林的额外移动代价和行动惩罚；会战保留正常纵深机动，不绕过墙体、人数展开或阵位容量',
+    effects: [{ kind: 'flag', flag: 'terrain-forest' }],
+  },
+  {
+    id: 'mountain-born', name: '山地专精', desc: '山地地形无惩罚',
+    v2SourceReady: true,
+    v2Desc: '免除山地、丘陵与爬坡的额外移动代价和行动惩罚；会战保留正常纵深机动，不绕过硬障碍或阵位容量',
+    effects: [{ kind: 'flag', flag: 'terrain-mountain' }],
+  },
+  {
+    id: 'plains-runner', name: '平原专精', desc: '野战（plains）：速度 +2、攻击 +1——开阔地机动为王',
+    v2SourceReady: true,
+    v2Desc: '平原环境下攻击提高1、先攻速度提高2、机动可用上限提高1；非平原不生效，困难地形成本照常',
+    effects: [
+      { kind: 'fieldMod', field: 'plains', atk: 1 },
+      { kind: 'flag', flag: 'plains-spd', value: 2 },
+    ],
+  },
+  {
+    id: 'urban-fighter', name: '巷战专精', desc: '巷战（urban）：攻击 +1、防御 +2——废墟与街垒是他们的主场',
+    v2SourceReady: true,
+    v2Desc: '城镇环境或街道格上攻击提高1、防御提高2；废墟与街垒是他们的主场',
+    effects: [{ kind: 'fieldMod', field: 'urban', atk: 1, def: 2 }],
+  },
+  {
+    id: 'night-fighter', name: '夜战专精', desc: '夜战无惩罚',
+    v2SourceReady: true,
+    v2Desc: '夜间观测由小战3格延至6格、会战2阵位延至4阵位，免夜间攻击和移动惩罚（夜视、黑暗视觉）；不能穿墙，随队者按所在编队位置观察',
+    effects: [{ kind: 'flag', flag: 'night' }],
+  },
   {
     id: 'water-crossing', name: '航渡', desc: '具备游泳、舟艇或两栖渡河手段；允许进入深水并降低涉水成本，不改变单位装备或赋予飞行',
     v2SourceReady: true, effects: [{ kind: 'flag', flag: 'water-crossing' }],
@@ -263,79 +323,89 @@ export const TRAITS: Trait[] = [
     v2SourceReady: true, effects: [{ kind: 'flag', flag: 'siege-assault' }],
   },
   {
-    id: 'urban-fighter', name: '巷战大师', desc: '巷战（urban）：攻击 +1、防御 +2——废墟与街垒是他们的主场',
+    id: 'siege-breaker', name: '工兵', desc: '攻城战（siege）：攻击 +2——破门锤与坑道作业的行家',
     v2SourceReady: true,
-    effects: [{ kind: 'fieldMod', field: 'urban', atk: 1, def: 2 }],
-  },
-  {
-    id: 'siege-breaker', name: '攻城工兵', desc: '攻城战（siege）：攻击 +2——破门锤与坑道作业的行家',
-    v2SourceReady: true,
+    v12Desc: '攻城环境攻击+2；对城墙、城门、掩体等结构伤害×1.5',
+    v2Desc: '爆破、拆除与工程作业：对城墙、城门、掩体等结构伤害×1.5，攻击时无视目标的工事加成',
     effects: [{ kind: 'fieldMod', field: 'siege', atk: 2 }],
   },
+  // ---------- 后勤 ----------
   {
-    id: 'fortification', name: '守城工事', desc: '攻城战（siege）：防御 +3，受到射击伤害 -30%——城墙与箭塔掩护',
+    id: 'medic', name: '医护', desc: '施放的治疗 ×1.25；编队伤亡中可救伤兵由一半提高到四分之三',
     v2SourceReady: true,
-    v2Desc: '防御提高3、受到远程伤害降低30%，不受战场、姿态、方向、体型或失能限制；与固守、盾墙的同类防护取强',
+    v2Desc: '施放的治疗技能、治疗区域与治疗品效果×1.25；编队自身伤亡中可救伤兵由一半提高到四分之三（卫生兵、军医、医修）',
+    effects: [{ kind: 'flag', flag: 'medic' }],
+  },
+  // ---------- 停用（已有单位继续生效） ----------
+  {
+    id: 'veteran', name: '老练', desc: '攻击/防御 +1，士气 +10',
+    v2SourceReady: true, legacy: { note: '训练程度由level表达' },
     effects: [
-      { kind: 'fieldMod', field: 'siege', def: 3 },
-      { kind: 'rangedGuardDR', percent: 30 },
+      { kind: 'stat', stat: 'atk', value: 1 },
+      { kind: 'stat', stat: 'def', value: 1 },
+      { kind: 'stat', stat: 'morale', value: 10 },
     ],
   },
   {
-    id: 'plains-runner', name: '原野游骑', desc: '野战（plains）：速度 +2、攻击 +1——开阔地机动为王',
-    v2SourceReady: true,
-    v2Desc: '野战环境下攻击提高1、先攻速度提高2、机动可用上限提高1；非野战不生效，困难地形成本照常',
+    id: 'elite', name: '精锐', desc: '攻击/防御 +2，HP +8',
+    v2SourceReady: true, legacy: { note: '训练程度由level表达' },
+    v2Desc: '攻击和防御提高2，来源不重复叠加；初建个体使用自动生命时含8点精锐体能，显式生命上限为最终值。编队人数与任何已建档生命不因授予、撤销或重开改变，训练升级只应用既定成长差值',
+    grantsTags: ['elite'],
     effects: [
-      { kind: 'fieldMod', field: 'plains', atk: 1 },
-      { kind: 'flag', flag: 'plains-spd', value: 2 },
-    ],
-  },
-  // ---------- 角色风格类 ----------
-  {
-    id: 'melee-master', name: '近战特化', desc: '近身攻击 +2、近战伤害 ×1.15——贴脸即是处刑',
-    v2SourceReady: true,
-    effects: [
-      { kind: 'attackStyle', style: 'melee', atk: 2 },
-      { kind: 'attackStyle', style: 'melee', dmgMult: 1.15 },
+      { kind: 'stat', stat: 'atk', value: 2 },
+      { kind: 'stat', stat: 'def', value: 2 },
+      { kind: 'stat', stat: 'hpMax', value: 8 },
     ],
   },
   {
-    id: 'sharpshooter', name: '射击专家', desc: '射击攻击 +2——八百米外一枪一个',
-    v2SourceReady: true,
-    effects: [{ kind: 'attackStyle', style: 'ranged', atk: 2 }],
+    id: 'fast', name: '快速', desc: '速度 +3',
+    v2SourceReady: true, legacy: { note: '移动快慢由speed表达' },
+    v2Desc: '先攻速度提高3、实际移动点提高1；轻装会战编队可一次纵深调动两阵位，受疲劳和路径容量限制',
+    effects: [{ kind: 'stat', stat: 'spd', value: 3 }],
   },
   {
-    id: 'versatile', name: '远近双全', desc: '远程武器近身挥击不受「武器不善近战」惩罚——枪上刺刀，弓抡弓杆',
-    v2SourceReady: true,
-    v2Desc: '减免实际武器允许的抵近射击惩罚；不能绕过长弓贴身禁射、最小射程、装填或可用行动，近战与冲锋仍需要真实近战武器',
-    effects: [{ kind: 'flag', flag: 'no-melee-penalty' }],
+    id: 'armor-piercing-shot', name: '穿甲箭', desc: '射击类攻击普通段伤害的 35% 转为破甲段（无视护甲）',
+    v2SourceReady: true, legacy: { note: '已并入破甲', replacement: 'ap-weapon' },
+    v2Desc: '真实动能投射最多提高穿透1，受原穿透三分之一上限；与破甲专长取强，近战不生效',
+    grantsTags: ['ranged-capable'],
+    effects: [{ kind: 'apShare', percent: 35 }],
   },
   {
-    id: 'mechanized', name: '机械化', desc: '载具输送：速度 +2、护甲 +1 档——步兵战车里的步兵',
-    v2SourceReady: true,
-    v2Desc: '适用于任何身体与单位类型：先攻提高2、机动提高1，装有护甲时防御提高1；可与大型或巨型身体组合为机器人。行进稳定仍由实际武器装置决定，随队人物不向所在编队复制专长',
+    id: 'anti-mobile', name: '克制机动', desc: '对机动目标攻击 +2、伤害 ×1.25（枪阵类）',
+    v2SourceReady: true, legacy: { note: '已并入拒马', replacement: 'pike-wall' },
+    v2Desc: '实际长柄近战武器对明确骑乘、车辆或机动原型攻击+2、伤害×1.25；仍须穿透实际防护，不自动授予武器',
+    grantsTags: ['spear'],
     effects: [
-      { kind: 'stat', stat: 'spd', value: 2 },
-      { kind: 'armorTier', value: 1 },
+      { kind: 'conditionalAtk', vsTag: 'mobile', value: 2 },
+      { kind: 'conditionalDmgMult', vsTag: 'mobile', mult: 1.25 },
     ],
   },
-  // ---------- 巨兽类（large=巨兽本体，anti-large/monster-hunter=反巨兽） ----------
+  // ---------- 身体与装备自动产生 ----------
   {
-    id: 'titan', name: '泰坦巨兽', desc: '如山移动：HP +25、护甲 +1 档，被克制大型针对',
+    id: 'heavy-armor', name: '重甲', desc: '护甲等级 +1，速度 -1', derived: '由护甲决定',
+    v2SourceReady: true,
+    v2Desc: '装备重甲自动体现负担：先攻降低1，不提供额外防御。与手动或外部来源不重复计入，与超重装甲取较重代价；换成轻中甲、卸甲或天生护甲即撤销。实际护甲仍提供通道防护及既有机动代价',
+    effects: [{ kind: 'armorTier', value: 1 }, { kind: 'stat', stat: 'spd', value: -1 }],
+  },
+  {
+    id: 'super-heavy', name: '超重装甲', desc: '护甲等级 +2，速度 -2', derived: '由护甲决定',
+    v2SourceReady: true,
+    v2Desc: '装备超重甲自动体现负担：先攻降低2，不提供额外防御。与手动或外部来源不重复计入，与重甲取较重代价；卸下、更换类型或天生护甲即撤销。实际护甲仍提供通道防护及既有机动代价',
+    effects: [{ kind: 'armorTier', value: 2 }, { kind: 'stat', stat: 'spd', value: -2 }],
+  },
+  {
+    id: 'large', name: '大型', desc: '体格庞大：HP +10，被克制大型针对', derived: '由body决定',
+    v2Desc: '由实际大型身体自动提供：默认个体生命与负重/近战规格按身体生成，动能结构防护至少1，二维占格2并被反大型针对；巨型身体包含大型性质，结构与护甲同通道取强，不重复加生命或扩编',
+    grantsTags: ['large'],
+    effects: [{ kind: 'stat', stat: 'hpMax', value: 10 }],
+  },
+  {
+    id: 'titan', name: '泰坦巨兽', desc: '如山移动：HP +25、护甲 +1 档，被克制大型针对', derived: '由body决定',
     v2Desc: '由实际巨型身体自动提供：默认个体生命按巨型结构、近战规格和负重生成，结构防护至少动能2/热能1，基础移动2、二维独占一格并被反大型针对；与护甲取强，不再额外叠生命或护甲档，无法凭名称免伤',
     grantsTags: ['large', 'titan'],
     effects: [
       { kind: 'stat', stat: 'hpMax', value: 25 },
       { kind: 'armorTier', value: 1 },
-    ],
-  },
-  {
-    id: 'monster-hunter', name: '屠兽者', desc: '对大型目标攻击 +3、伤害 ×1.4——巨兽猎人的传承',
-    v2SourceReady: true,
-    v2Desc: '针对实际大型/巨型/载具或骑乘目标：攻击+3、伤害×1.4；与克制大型取强',
-    effects: [
-      { kind: 'conditionalAtk', vsTag: 'large', value: 3 },
-      { kind: 'conditionalDmgMult', vsTag: 'large', mult: 1.4 },
     ],
   },
 ];
@@ -344,9 +414,70 @@ export function traitRegistry(): Map<string, Trait> {
   return new Map(TRAITS.map((t) => [t.id, t]));
 }
 
-/** 只读兼容旧称；目录与对正文输出统一使用无标点名称。 */
+/** 旧称、并入项与各题材常见说法；目录与对正文输出统一使用规范名称。 */
+export const TRAIT_ALIASES: Readonly<Record<string, string>> = {
+  '狂战士': 'berserk', '狂怒': 'berserk', '野蛮': 'berserk',
+  '克制·步兵': 'anti-infantry', '反步兵': 'anti-infantry',
+  '克制·大型': 'anti-large', '反坦克': 'anti-large', '反装甲': 'anti-large', '反载具': 'anti-large',
+  '克制·机动': 'pike-wall', '克制机动': 'pike-wall', '枪阵': 'pike-wall', '反骑兵': 'pike-wall',
+  '穿甲箭': 'ap-weapon', '穿甲弹': 'ap-weapon',
+  '防空': 'anti-air',
+  '毒击': 'poison-strike', '涂毒': 'poison-strike',
+  '背刺': 'sneak-attack', '伏击': 'sneak-attack', '暗杀': 'sneak-attack',
+  '噬血': 'lifesteal', '吞噬': 'lifesteal', '汲取': 'lifesteal',
+  '远近双全': 'versatile',
+  '狙击': 'sharpshooter', '神射手': 'sharpshooter', '精确射击': 'sharpshooter',
+  '护体': 'guardian',
+  '韧性': 'tenacity', '霸体': 'tenacity', '道心': 'tenacity', '意志坚定': 'tenacity',
+  '轻功': 'agile', '遁术': 'agile',
+  '炼体': 'natural-armor', '金身': 'natural-armor', '鳞片': 'natural-armor', '鳞甲': 'natural-armor', '甲壳': 'natural-armor', '天生装甲': 'natural-armor',
+  '坚韧不屈': 'indomitable',
+  '守城工事': 'fortification', '掩体': 'fortification', '战壕': 'fortification', '据守': 'fortification',
+  '机器人': 'inorganic', '构装体': 'inorganic', '构装': 'inorganic', '亡灵': 'inorganic', '傀儡': 'inorganic', '机械体': 'inorganic', '无机体': 'inorganic',
+  '威压': 'fear', '龙威': 'fear',
+  '无畏': 'steadfast', '死战': 'steadfast', '狂热': 'steadfast',
+  '顽强': 'stubborn',
+  '指挥': 'commander', '指挥官': 'commander',
+  '伪装': 'stalk', '隐匿': 'stalk', '潜行': 'stalk', '隐身': 'stalk', '敛息': 'stalk',
+  '侦查': 'recon', '斥候': 'recon', '观察员': 'recon', '神识': 'recon', '灵觉': 'recon', '真实视觉': 'recon',
+  '御剑': 'flying', '御空': 'flying', '御剑飞行': 'flying',
+  '林间行者': 'forest-lore', '林地作战': 'forest-lore', '丛林作战': 'forest-lore', '丛林战': 'forest-lore',
+  '山地子民': 'mountain-born', '山地作战': 'mountain-born', '山地战': 'mountain-born',
+  '原野游骑': 'plains-runner', '平原作战': 'plains-runner',
+  '巷战大师': 'urban-fighter', '巷战': 'urban-fighter', '城市作战': 'urban-fighter', '城镇作战': 'urban-fighter',
+  '夜战': 'night-fighter', '夜视': 'night-fighter', '黑暗视觉': 'night-fighter',
+  '两栖': 'water-crossing', '泅渡': 'water-crossing',
+  '攀登': 'siege-assault', '攀爬': 'siege-assault',
+  '攻城工兵': 'siege-breaker', '工程兵': 'siege-breaker',
+  '军医': 'medic', '卫生兵': 'medic', '医疗兵': 'medic', '医疗': 'medic', '救护': 'medic', '医修': 'medic',
+};
+
+/** 改名前的正式名称：旧技能写法（如 buff+守城工事）继续能解析。 */
+export const TRAIT_FORMER_NAMES: Readonly<Record<string, readonly string[]>> = {
+  'forest-lore': ['林间行者'], 'mountain-born': ['山地子民'], 'plains-runner': ['原野游骑'], 'urban-fighter': ['巷战大师'], 'night-fighter': ['夜战'],
+  fortification: ['守城工事'], 'siege-breaker': ['攻城工兵'], versatile: ['远近双全'], 'poison-strike': ['毒击'],
+};
+
+/** 只读兼容旧称；规范 id、别名、现名依次匹配，停用特质的原名仍能找到原 id 供旧档使用。 */
 export function resolveTraitId(value: string, registry = traitRegistry()): string | undefined {
   const name = value.trim();
-  const aliases: Record<string, string> = { '狂战士': 'berserk', '狂怒': 'berserk', '克制·步兵': 'anti-infantry', '克制·大型': 'anti-large', '克制·机动': 'anti-mobile' };
-  return registry.has(name) ? name : [...registry.values()].find((t) => t.name === name)?.id ?? (registry.has(aliases[name] ?? '') ? aliases[name] : undefined);
+  if (registry.has(name)) return name;
+  const alias = TRAIT_ALIASES[name];
+  if (alias && registry.has(alias)) return alias;
+  return [...registry.values()].find((t) => t.name === name)?.id;
+}
+
+export type NarrativeTrait =
+  | { kind: 'trait'; id: string; renamed?: string }
+  | { kind: 'ignored'; name: string; reason: string; speed?: number; level?: number }
+  | { kind: 'unknown'; name: string };
+/** 正文写的特质名：停用项与身体/装备项不建档，并给出原因及可代替的 speed/level。 */
+export function narrativeTrait(value: string, registry = traitRegistry()): NarrativeTrait {
+  const name = value.trim(), id = resolveTraitId(name, registry), trait = id ? registry.get(id) : undefined;
+  if (!id || !trait) return { kind: 'unknown', name };
+  if (trait.derived) return { kind: 'ignored', name, reason: trait.derived };
+  if (trait.legacy?.replacement) return { kind: 'trait', id: trait.legacy.replacement, renamed: registry.get(trait.legacy.replacement)?.name };
+  if (trait.legacy) return { kind: 'ignored', name, reason: trait.legacy.note,
+    ...(id === 'fast' ? { speed: 4 } : id === 'veteran' ? { level: 3 } : id === 'elite' ? { level: 4 } : {}) };
+  return { kind: 'trait', id, ...(trait.name !== name && registry.get(id) ? { renamed: trait.name } : {}) };
 }

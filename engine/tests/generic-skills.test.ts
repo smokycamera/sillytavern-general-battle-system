@@ -68,7 +68,8 @@ describe('通用六类技能配方', () => {
     }
     expect([...covered].sort()).toEqual(['barrier', 'condition', 'damage', 'dispel', 'heal', 'morale', 'push', 'resource', 'summon', 'trait', 'zone']);
     expect([...conditions].sort()).toEqual(STANDARD_CONDITIONS.map((c) => c.id).sort());
-    expect([...traits].sort()).toEqual(TRAITS.filter((t) => t.v2SourceReady).map((t) => t.id).sort());
+    // 停用特质与身体/装备自动特质只保留旧技能 id，新技能不再提供。
+    expect([...traits].sort()).toEqual(TRAITS.filter((t) => t.v2SourceReady && !t.legacy && !t.derived).map((t) => t.id).sort());
     expect(parseSkillMechanism('物理单体近战+射击')!.modifiers).toEqual(['ranged']);
     expect(parseSkillMechanism('魔法范围热能+奥术')!.modifiers).toEqual(['arcane']);
     expect(parseSkillMechanism('魔法范围扇形+直线')!.modifiers).toEqual(['line']);

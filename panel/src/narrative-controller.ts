@@ -9,7 +9,7 @@ import { prepareReportDeletion, prepareReportRestore, prepareReportRestart, stam
 import type { SaveReceipt, TavernAdapter } from './tavern.js';
 import { prepareBattleItemWrite } from './battle-items.js';
 import { assertTraitSourcePanelWrite, prepareBlessingRevocation } from './trait-state.js';
-import { moraleLabel, woundedLabel, isAirborne, positionedUnit, observedUnits, concealmentLabel, formationNode, type ObservationContext, traitSourceActive, traitRegistry, standardConditionMap, STANDARD_CONDITIONS, postureLabel, type Combatant } from '../../engine/src/index.js';
+import { moraleLabel, woundedLabel, isAirborne, positionedUnit, observedUnits, concealmentLabel, worksLabel, formationNode, type ObservationContext, traitSourceActive, traitRegistry, standardConditionMap, STANDARD_CONDITIONS, postureLabel, type Combatant } from '../../engine/src/index.js';
 import { reviewMigration, type MigrationReview } from './migration-review.js';
 import { assertInventoryPanelWrite, calibrateSavedWeaponRanges, deleteUnitArchive, prepareInventoryState, prepareInventoryTransaction, type InventoryAction, type InventoryIntent, type InventorySave } from './inventory-state.js';
 import { cellLabel, type BattlefieldSpec } from '../../engine/src/small/spatial.js';
@@ -81,6 +81,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
       ...(physical?.airborne !== undefined ? { layer: isAirborne(physical) ? '空中' : '地面' } : {}),
       ...(live && concealmentLabel(observation, live) ? { concealment: concealmentLabel(observation, live) } : {}),
       ...(unit?.tacticalPose ? { posture: postureLabel(unit, standardConditionMap()) } : {}),
+      ...(live && worksLabel(live) ? { works: worksLabel(live) } : {}),
       ...(live && observation.mode === 'mass' && live.rulesVersion === 'v2' ? { formation: (formationNode(physical ?? live).side === 'ally' ? '我方阵地/' : '敌方阵地/') + formationNode(physical ?? live).wing + '/' + ({ front: '前线', rear: '支援', reserve: '预备' }[formationNode(live).rank]) } : {}),
       ...(field && live?.pos !== undefined ? { position: cellLabel(field, live.pos), suppressed: !!live.suppression } : {}),
       ...(live?.conditions.some((c) => c.dur > 0) ? { conditions: live.conditions.filter((c) => c.dur > 0).map((c) => (standardConditionMap().get(c.id)?.name ?? c.id) + c.dur + '轮') } : {}),

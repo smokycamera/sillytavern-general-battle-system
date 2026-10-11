@@ -4,7 +4,7 @@ import { V6_D20 } from '../../engine/src/rules.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import type { PromptSettings } from './prompt-settings.js';
 import { PANEL_SAVE_SCHEMA_VERSION, learnUnitRecord } from './unit-state.js';
-import { generateUnit, grantTraitSource, revokeTraitSource, traitRegistry, resolveTraitId, type Combatant, type GenerateInput } from '../../engine/src/index.js';
+import { generateUnit, grantTraitSource, revokeTraitSource, traitRegistry, narrativeTrait, type Combatant, type GenerateInput } from '../../engine/src/index.js';
 import { deployUnitRecord, materializeUnitRecord, unitRecordFromCombatant, updateUnitRecord, type UnitRecord } from './unit-state.js';
 import { parseProtocol, protocolExcerpt } from './protocol.js';
 import type { Suggestion } from './tags.js';
@@ -150,7 +150,7 @@ export function shouldRefreshNarrativeProposal(previous: NarrativeProposal | und
 function spawnInput(event: Extract<Suggestion, { kind: 'spawn' }>): GenerateInput {
   const registry = traitRegistry();
   // 兼容更新前已保存的候选：未知特质不会令建档再次失败。
-  const traits = [...new Set((event.traits ?? []).map((name) => resolveTraitId(name, registry)).filter((id): id is string => !!id))];
+  const traits = [...new Set((event.traits ?? []).flatMap((name) => { const parsed = narrativeTrait(name, registry); return parsed.kind === 'trait' ? [parsed.id] : []; }))];
   return {
     rulesVersion: 'v2', damageModel: 'wounds-v2', body: event.body, mount: event.mount, speedTier: event.speedTier, quality: event.quality, shield: event.shield,
     ...((event.scale ?? 'hero') === 'hero' ? {} : { hp: event.hp, hpMax: event.hpMax }),

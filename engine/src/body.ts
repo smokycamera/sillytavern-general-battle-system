@@ -7,10 +7,19 @@ export const BODY: Record<BodyKind, { hp: number; strength: number; capacity: nu
   vehicle: { hp: 6, strength: 1, capacity: 24, movement: 3, protection: { kinetic: 0, thermal: 0, arcane: 0 } },
   giant: { hp: 10, strength: 1.8, capacity: 24, movement: 2, protection: { kinetic: 2, thermal: 1, arcane: 0 } },
 };
-type EquippedLoad = Pick<Combatant, 'weapon' | 'sidearm' | 'armor' | 'shield' | 'accessories'>;
+type EquippedLoad = Pick<Combatant, 'weapon' | 'sidearm' | 'armor' | 'shield' | 'accessories'> & Partial<Pick<Combatant, 'rulesVersion' | 'traits' | 'traitSources'>>;
+/** 天生护甲（炼体、兽皮、鳞片、甲壳）：护甲就是身体，只看本身特质与仍有效的来源，装备授予不算。 */
+export function hasNaturalArmor(unit: Partial<Pick<Combatant, 'rulesVersion' | 'traits' | 'traitSources'>>): boolean {
+  return unit.rulesVersion === 'v2' && (!!unit.traits?.includes('natural-armor') || !!unit.traitSources?.some((s) => !s.revoked && s.kind !== 'equipment'
+    && s.traitIds.includes('natural-armor') && (s.duration.kind === 'permanent' || (s.remaining ?? 0) > 0)));
+}
+/** 产生护甲减益（重甲先攻与移动惩罚、载具重装减速）的护甲档位；天生护甲没有这些减益。轻装前提与防护仍按实际档位。 */
+export function armorBurdenTier(unit: Pick<Combatant, 'armor'> & Partial<Pick<Combatant, 'rulesVersion' | 'traits' | 'traitSources'>>): number {
+  return hasNaturalArmor(unit) ? 0 : unit.armor?.tier ?? 0;
+}
 /** 主副武器、护甲、盾和两个配件共同占用身体容量。 */
 export function equipmentLoad(unit: EquippedLoad): number {
-  return (unit.weapon?.load ?? 0) + (unit.sidearm?.load ?? 0) + (unit.armor?.load ?? 0) + (unit.shield?.load ?? 0)
+  return (unit.weapon?.load ?? 0) + (unit.sidearm?.load ?? 0) + (hasNaturalArmor(unit) ? 0 : unit.armor?.load ?? 0) + (unit.shield?.load ?? 0)
     + Object.values(unit.accessories ?? {}).reduce((sum, item) => sum + (item?.load ?? 0), 0);
 }
 /** 实时从实际配装推导，卸装/改变身体后不残留状态，也不改写基础属性。 */
@@ -39,7 +48,7 @@ export function canShootOverAlly(attacker: Combatant, ally: Combatant): boolean 
 export function bodyMovement(unit: Combatant): number {
   const body = unit.body ?? 'human';
   // 装甲车与重型火炮平台共用车体；重装或重型投送让出一格机动。
-  return (unit.speedTier ?? BODY[body].movement) - Number(body === 'vehicle' && ((unit.armor?.tier ?? 0) >= 3 || [unit.weapon, unit.sidearm].some((w) => (w?.load ?? 0) >= 6)));
+  return (unit.speedTier ?? BODY[body].movement) - Number(body === 'vehicle' && (armorBurdenTier(unit) >= 3 || [unit.weapon, unit.sidearm].some((w) => (w?.load ?? 0) >= 6)));
 }
 export function effectiveProtection(unit: Combatant, channel: DamageChannel): number {
   return Math.max(bodyProtection(unit, channel), unit.armor?.protection?.[channel] ?? unit.armor?.tier ?? 0);

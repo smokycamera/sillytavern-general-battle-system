@@ -7,6 +7,7 @@ import { synchronizePersonnel, validateCombatModel } from '../../engine/src/comb
 import { capSingleLife, limitCombatantLife } from '../../engine/src/health-limits.js';
 import { isEnduranceModel, spCapacity } from '../../engine/src/resources.js';
 import { validateArmsModel } from '../../engine/src/arms.js';
+import { validateTraitModel } from '../../engine/src/trait-model.js';
 import { traitRegistry } from '../../engine/src/data/traits.js';
 import { skillMechanismFromId } from '../../engine/src/data/skill-mechanisms.js';
 /**
@@ -198,6 +199,7 @@ function validateRuntimeMetadata(value: Record<string, unknown>): void {
   }
   if (value.resourceModel !== undefined && !isEnduranceModel(value.resourceModel)) throw new Error('资源规则版本损坏');
   validateArmsModel(value.armsModel);
+  validateTraitModel(value.traitModel);
   validateTacticalEffort(value.tacticalEffort, value.resourceModel);
   validateConcealment(value.tacticalRevealed);
   validateFlightState(value.airborne);
@@ -439,6 +441,7 @@ export function unitRecordFromCombatant(
   delete c.moraleState;
   delete c.tacticalEffort;
   delete c.tacticalRevealed;
+  delete c.entrenchedAt;
   delete c.airborne; delete c.elevation;
   normalizeV2Scale(c);
   synchronizePersonnel(c, true);
@@ -656,6 +659,7 @@ export function materializeUnitRecord(
   delete generated.formationPosition;
   delete generated.vanguardOrigin;
   delete generated.pos;
+  delete generated.entrenchedAt;
   if (!generated.storyState?.resources) {
     if (generated.rulesVersion === 'v2') generated.resources = { ...generated.resources, SP: spCapacity(generated) };
     else if (generated.scale === 'hero') generated.resources = { ...generated.resources, SP: 3 + generated.level };

@@ -23,6 +23,8 @@ export interface MoraleState {
   personal?: number;
   damage?: number;
   damagePenalty?: number;
+  /** 不屈本战已用（个体挺过致命伤或编队当场重整）；随战斗快照，不写回档案。 */
+  indomitable?: boolean;
 }
 export const MAX_RALLY_ATTEMPTS = 3;
 
@@ -35,7 +37,13 @@ export function validateMoraleState(value: unknown): void {
     || [s.routedRound, s.lastRallyRound, s.ralliedRound].some((n) => n !== undefined && (!Number.isSafeInteger(n) || n! < 0))
     || s.personal !== undefined && (!Number.isFinite(s.personal) || s.personal < 0 || s.personal > 100)
     || [s.damage, s.damagePenalty].some((n) => n !== undefined && (!Number.isSafeInteger(n) || n! < 0))
-    || s.cause !== undefined && !['terror', 'morale'].includes(s.cause)) throw new Error('惊退来源或重整机会记录损坏');
+    || s.cause !== undefined && !['terror', 'morale'].includes(s.cause) || s.indomitable !== undefined && s.indomitable !== true) throw new Error('惊退来源或重整机会记录损坏');
+}
+/** 不屈每战一次：可用时记为已用并返回 true。 */
+export function spendIndomitable(unit: Combatant): boolean {
+  if (unit.rulesVersion !== 'v2' || unit.moraleState?.indomitable || !activeTraitIds(unit).includes('indomitable')) return false;
+  (unit.moraleState ??= emptyState()).indomitable = true;
+  return true;
 }
 /** 仅供新战斗 start 调用；零士气的可行动单位恢复半数上限。 */
 export function recoverEntryMorale(unit: Combatant): number {
@@ -175,6 +183,11 @@ export function decideMorale(context: ObservationContext, unit: Combatant, round
   }
   if (!cause) return { kind: 'none' };
   state.terrorSeen = [...new Set([...state.terrorSeen, ...risk.terror.map((s) => s.id)])];
+  // 不屈（编队）：本战第一次本该溃逃时当场重整，按成功重整恢复士气，不计溃退次数。
+  if (unit.scale !== 'hero' && !state.indomitable && activeTraitIds(unit).includes('indomitable')) {
+    state.indomitable = true; state.ralliedRound = round;
+    return { kind: 'rallied', state, effective: risk.effective, text: `${unit.name} 不屈，濒临溃散时当场重整` };
+  }
   state.routs = Math.min(3, state.routs + 1); state.attempts = 0; state.routedRound = round; state.cause = cause;
   return { kind: state.routs >= 3 ? 'fled' : 'routed', state, text: `${unit.name} ${state.routs >= 3 ? '第三次溃退，彻底溃散离场' : cause === 'terror' ? '受到恐怖惊退，退出当前战线等待重整' : `有效士气${risk.effective}，士气崩溃，退出当前战线等待重整`}` };
 }

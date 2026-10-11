@@ -72,10 +72,10 @@ describe('unit_set 写了不存在的编号', () => {
   it('同一回复用这个编号学习、祝福、补字段与出场，都落到新单位上', () => {
     const save = fixture();
     const next = commit(save, ['<unit_set id="u12" name="王芳" side="ally" scale="hero" level="4"/>', '<learn id="u12" skills="呼叫炮击:物理范围+射击L6"/>',
-      '<bless id="u12" traits="快速" battles="2"/>', '<unit_set id="u12" note="新到的游侠"/>', '<deploy id="u12"/>'].join('\n'));
+      '<bless id="u12" traits="侦察" battles="2"/>', '<unit_set id="u12" note="新到的游侠"/>', '<deploy id="u12"/>'].join('\n'));
     const [record] = byName(next, '王芳'), unit = materializeUnitRecord(record!, registry);
     expect(handle(next, '王芳')).toBe('u12');
-    expect(unit.abilities.map(a => a.name)).toContain('呼叫炮击'); expect(unit.traitSources?.flatMap(s => s.traitIds)).toContain(resolveTraitId('快速'));
+    expect(unit.abilities.map(a => a.name)).toContain('呼叫炮击'); expect(unit.traitSources?.flatMap(s => s.traitIds)).toContain(resolveTraitId('侦察'));
     expect(record!.note).toBe('新到的游侠'); expect(next.rosterIds).toEqual([record!.id]);
   });
   it('编号指向已有同名档案时修改原档案，不重复建档', () => {

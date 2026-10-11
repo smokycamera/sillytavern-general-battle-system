@@ -11,6 +11,8 @@ import { casualtyXp, initialXpStrength } from '../casualty-xp.js';
 import { roundDamage } from '../probability.js';
 import { prepareCombatModel, healingYield } from '../combat-model.js';
 import { prepareArmsModel } from '../arms.js';
+import { prepareTraitModel, validateTraitModel, validateEntrenchment } from '../trait-model.js';
+import { entrench, entrenched } from '../entrenchment.js';
 import { upgradeCombatSkills } from '../skill-upgrade.js';
 import { normalizeTactic, type TacticalPreference } from '../tactical-preference.js';
 import { calibrateAutocannon, calibrateWeaponHands } from '../gen/equipment.js';
@@ -27,7 +29,7 @@ import { applyWeaponConditions, poisonDamage, poisonFactor, conditionDamage } fr
 import { isRangedWeapon, meleeWeapon, weaponReloadKey, weaponReloadTurns, validateMount, mountedShooting, mobileRangedWeapon, vehicleShooting } from '../loadout.js';
 import { meleeReach } from '../melee.js';
 import { MAX_RALLY_ATTEMPTS, moraleProfile, moraleAttackMods, decideMorale, changeMorale, validateMoraleState, moraleRisk, moraleChangePreview, reconcileDamageMorale, recoverEntryMorale } from '../morale.js';
-import { applyHealthLoss, applyCombatDamage, applyRecovery, recoveryCapacity, regenerationAmount, validateWounded } from '../recovery.js';
+import { applyHealthLoss, applyCombatDamage, applyRecovery, recoveryCapacity, regenerationAmount, validateWounded, lifestealRecovery } from '../recovery.js';
 import {hasMemberHealth,memberHealth,MEMBER_HEALTH_MODEL} from '../member-health.js';
 import { diceAvg } from '../data/weapons.js';
 /**
@@ -54,12 +56,13 @@ import { grantBarrier, decayBarrier, validateBarrier } from '../barrier.js';
 import { ConditionRegistry } from '../conditions.js';
 import { MASS_TW, counterMod, rulesById } from '../rules.js';
 import { traitRuntimeMods, getTrait, fieldModsFor, collectMods, resolveStack } from '../bonus.js';
+import { situationalTraitMods } from '../situational-traits.js';
 import { activeTraitIds, activeConditionIds, expireTraitSources, traitSourceActive } from '../trait-sources.js';
 import { bracePose, formationMarchSteps, settleFatigue, fatigueAfter } from '../tactics.js';
 import { environmentTags, macroTerrain } from '../environment.js';
 import { traitRegistry as defaultTraitRegistry } from '../data/traits.js';
 import { pointBlankModifier, abilityRangeDistance, abilityTargetReason, abilityUsabilityReason } from '../actions.js';
-import { positionedUnit, observedUnits, observeEvent, sideViews, observedLog, revealUnit, revealContacts, settleConcealment, canReconceal, validateConcealment, type ObservationContext } from '../observation.js';
+import { positionedUnit, concealedUnit, observedUnits, observeEvent, sideViews, observedLog, revealUnit, revealContacts, settleConcealment, canReconceal, validateConcealment, type ObservationContext } from '../observation.js';
 import { FORMATION_NODES, RANKS, formationNode, formationDistance, formationShotReason, formationScreened, formationCanOccupy, formationNodeDistance, validateFormationPosition, setFormation, type FormationNode } from './formation.js';
 import { previewAttack, formatResolution, type AttackResolution, type AttackOpts } from '../damage.js';
 import { noteSightings, noteClue, liveTraces, liveClues, restoreIntel, intelView, type IntelBook, type IntelView } from '../intel.js';
@@ -209,7 +212,7 @@ export class MassBattle {
     for (const unit of this.combatants) { validateConcealment(unit.tacticalRevealed); validateVanguardOrigin(unit.vanguardOrigin, unit.side); }
     this.rules = opts.rules ?? MASS_TW;
     if(this.rules.combatModel)for(const unit of this.combatants){prepareCombatModel(unit,this.rules);upgradeCombatSkills(unit);}
-    for (const unit of this.combatants) { prepareResourceModel(unit, this.rules); prepareArmsModel(unit, this.rules); }
+    for (const unit of this.combatants) { prepareResourceModel(unit, this.rules); prepareArmsModel(unit, this.rules); prepareTraitModel(unit, this.rules); validateTraitModel(unit.traitModel); validateEntrenchment(unit.entrenchedAt); }
     for (const u of this.combatants) { validateFlightState(u.airborne); validateFormationPosition(u.formationPosition); validateWounded(u); validateBarrier(u.barrier); validateAreas(u); validateAccessories(u); validateMount(u); validateMoraleState(u.moraleState); }
     for (const unit of this.combatants) reconcileDamageMorale(unit);
     if (this.rules.resolutionVersion !== 'v2' && this.combatants.some((u) => u.airborne || u.formationPosition !== undefined
@@ -231,13 +234,18 @@ export class MassBattle {
   private environmentContext<T extends Omit<AttackOpts, 'rng'>>(opts: T, world = this.combatants): T {
     if (this.rules.resolutionVersion !== 'v2') return opts;
     const terrain = macroTerrain(this.fieldTags);
-    const units = world.map((u) => u.id === opts.attacker.id ? opts.attacker : u.id === opts.defender.id ? opts.defender : u);
-    return { ...opts, extraMods: [...(opts.extraMods ?? []), ...moraleAttackMods(this.observationContext(units), opts.attacker, this.traitRegistry, this.observationContext(world))], fieldTags: this.fieldTags, attackerTerrain: isAirborne(opts.attacker) ? 'open' : terrain, defenderTerrain: isAirborne(opts.defender) ? 'open' : terrain, distance: formationDistance(opts.attacker, opts.defender),
+    const units = world.map((u) => u.id === opts.attacker.id ? opts.attacker : u.id === opts.defender.id ? opts.defender : u), context = this.observationContext(units);
+    const situational = situationalTraitMods(context, opts.attacker, opts.defender, { ambush: (opts as { ambush?: boolean }).ambush ?? concealedUnit(context, opts.attacker),
+      magic: opts.abilityDamage?.delivery === 'magic', ranged: !!opts.ranged, weapon: opts.weaponOverride ?? opts.attacker.weapon,
+      flanked: () => units.some((u) => u.side === opts.attacker.side && u.id !== opts.attacker.id && u.status === 'ready' && !this.isAttached(u.id) && sameLayer(u, opts.defender) && formationDistance(u, opts.defender) <= 1) });
+    return { ...opts, extraMods: [...(opts.extraMods ?? []), ...moraleAttackMods(context, opts.attacker, this.traitRegistry, this.observationContext(world)), ...situational], fieldTags: this.fieldTags, attackerTerrain: isAirborne(opts.attacker) ? 'open' : terrain, defenderTerrain: isAirborne(opts.defender) ? 'open' : terrain, distance: formationDistance(opts.attacker, opts.defender),
       defenderEngaged: sameLayer(opts.attacker, opts.defender) && formationDistance(opts.attacker, opts.defender) <= 1 || units.some((u) => u.side !== opts.defender.side && u.status === 'ready' && !this.isAttached(u.id) && sameLayer(u, opts.defender) && formationDistance(u, opts.defender) <= 1) };
   }
   private resolveAttackWithEnvironment(opts: AttackOpts) {
+    // 偷袭看出手前是否仍在潜伏，出手即暴露。
+    const ambush = this.rules.resolutionVersion === 'v2' && concealedUnit(this.observationContext(), this.byId(opts.attacker.id));
     if (this.rules.resolutionVersion === 'v2') revealUnit(this.observationContext(), this.byId(opts.attacker.id));
-    const result = resolveAttack(this.environmentContext(opts));
+    const result = resolveAttack(this.environmentContext({ ...opts, ambush } as AttackOpts));
     if (this.rules.resolutionVersion === 'v2' && result.finalDamage > 0) revealUnit(this.observationContext(), this.byId(opts.defender.id));
     return result;
   }
@@ -1128,7 +1136,7 @@ export class MassBattle {
             try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'mass', ability.bonuses, this.rules.damageModel) ?? this.summonUnit?.(effect.templateId, actor.side, id); } catch { invalid = true; break; }
             const node = FORMATION_NODES.find((node) => node.side === actor.side && node.wing === formationNode(actor).wing && node.rank === 'reserve')!;
             if (!unit || [...this.combatants, ...stagedBirths, ...born].filter((u) => !this.isAttached(u.id) && u.status === 'ready' && formationNode(u).id === node.id).length >= (this.formationSlots ?? 3)) { invalid = true; break; }
-            prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules);
+            prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules); prepareTraitModel(unit,this.rules);
             unit.id = id; unit.summonerId = actor.id; unit.bornRound = this.round;
             if (conjuredTemplate(effect.templateId)) unit.name = `${actor.name}的${unit.name}`;
             setFormation(unit, node); born.push(unit);
@@ -1298,6 +1306,9 @@ export class MassBattle {
           }
         }
         if (u.bornRound !== this.round) recoverSp(u, fullRest, incapacitated);
+        // V13 工事：离开阵地（或开战时没能构筑）后原地完整休整一轮，在所在阵位构筑。
+        const firstWorks = u.entrenchedAt === undefined;
+        if (fullRest && !entrenched(u) && !this.isAttached(u.id) && entrench(u, 'mass')) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 原地休整，${firstWorks ? '' : '重新'}构筑工事` });
         const regeneration = regenerationAmount(u, this.traitRegistry, this.conditionMap());
         for (const condition of u.conditions) if (condition.dur !== undefined) condition.dur--;
         u.conditions = u.conditions.filter((c) => c.dur === undefined || c.dur > 0);
@@ -1363,6 +1374,8 @@ export class MassBattle {
     this.updateFrontControl();
     this.refreshCp();
     if (this.rules.resolutionVersion === 'v2') revealContacts(this.observationContext());
+    // V13 工事：开战阵位即阵地。
+    for (const unit of this.combatants) if (!this.isAttached(unit.id)) entrench(unit, 'mass');
     this.recordEvent({ round: 1, kind: 'round', text: `—— 会战开始（${this.zones ? this.zones.join('/') : '单一战线'}）——` });
   }
 
@@ -1956,6 +1969,10 @@ export class MassBattle {
     return this.rules.resolutionVersion === 'v2' ? [] : fieldModsFor(t, this.fieldTags, this.traitRegistry).filter((m) => m.kind === 'def');
   }
 
+  private applyLifesteal(attacker: Combatant, target: Combatant, lifeDamage: number): void {
+    const restored = lifestealRecovery(this.byId(attacker.id), target, lifeDamage);
+    if (restored) this.recordEvent({ round: this.round, kind: 'condition', participants: [attacker.id], text: `${attacker.name} 吸血，回复${restored}${attacker.scale === 'hero' ? '生命' : '名可救伤兵'}` });
+  }
   private recordAttack(u: Combatant, t: Combatant, res: import('../damage.js').AttackResolution, label = ''): void {
     this.recordEvent({
       round: this.round,
@@ -1966,6 +1983,7 @@ export class MassBattle {
     if (res.finalDamage > 0) {
       this.damageTaken.set(t.id, (this.damageTaken.get(t.id) ?? 0) + (this.rules.resolutionVersion === 'v2' ? res.hpBefore - res.hpAfter : res.finalDamage));
     }
+    if (this.rules.resolutionVersion === 'v2' && res.hit) this.applyLifesteal(u, t, res.hpBefore - res.hpAfter);
     if (this.rules.resolutionVersion === 'v2') {
       applyWeaponConditions(t, res.onHitConditions);
       if (res.onHitConditions?.some((condition) => this.conditions.get(condition.id)?.skipTurn || this.conditions.get(condition.id)?.preventMove)) this.flightCauses.set(t.id, u.id);

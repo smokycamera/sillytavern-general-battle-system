@@ -1,4 +1,4 @@
-import { TRAITS } from './traits.js';
+import { TRAITS, TRAIT_FORMER_NAMES } from './traits.js';
 
 export const SKILL_CATEGORIES = [
   { id: 'physical-single', name: '物理单体' }, { id: 'physical-area', name: '物理范围' },
@@ -70,10 +70,13 @@ export const SKILL_MODIFIERS: SkillModifier[] = [
   { id: 'push', name: '击退', allowed: 'hostile' }, { id: 'pull', name: '拉拽', allowed: 'hostile' },
   ...TRAITS.filter((t) => t.v2SourceReady).map((t): SkillModifier => ({ id: 'trait-' + t.id, name: '特质' + t.name, allowed: 'buff', trait: t.id })),
 ];
+const TRAIT_BY_ID = new Map(TRAITS.map((t) => [t.id, t]));
+/** 停用特质与身体/装备特质只为旧技能的 id 保留，新技能不能再选。 */
+const retiredTraitModifier = (m: SkillModifier) => !!m.trait && !!(TRAIT_BY_ID.get(m.trait)?.legacy || TRAIT_BY_ID.get(m.trait)?.derived);
 export function allowedSkillModifiers(category: SkillCategory): SkillModifier[] {
   const physical = category.startsWith('physical'), magic = category.startsWith('magic'), damage = physical || magic;
-  return SKILL_MODIFIERS.filter((m) => m.allowed === 'support' ? !damage : m.allowed === 'buff' ? category === 'buff' : m.allowed === 'hostile' ? category !== 'buff'
-    : m.allowed === 'physical' ? physical : m.allowed === 'magic' ? magic : damage);
+  return SKILL_MODIFIERS.filter((m) => !retiredTraitModifier(m) && (m.allowed === 'support' ? !damage : m.allowed === 'buff' ? category === 'buff' : m.allowed === 'hostile' ? category !== 'buff'
+    : m.allowed === 'physical' ? physical : m.allowed === 'magic' ? magic : damage));
 }
 /** 结构参数仍只有一个槽位；冲突时采用最后声明，效果词本身全部保留。 */
 function normalizeModifiers(input: string[]): string[] {
@@ -116,7 +119,9 @@ export function parseSkillMechanism(text: string): SkillMechanism | undefined {
   const areaWord = source.match(/^(?:群体范围|范围|群体(?!召唤))/)?.[0];
   const area = category.endsWith('area') || !!areaWord; if (areaWord) source = source.slice(areaWord.length);
   const preferred=allowedSkillModifiers(category);
-  const modifiers: string[] = [], choices = [...preferred,...SKILL_MODIFIERS.filter(m=>!preferred.includes(m))].flatMap((m) => [m.name, ...(SKILL_MODIFIER_ALIASES[m.id] ?? []), ...(m.trait ? [m.name.slice(2)] : [])].map((name) => ({ id: m.id, name }))).sort((a, b) => b.name.length - a.name.length);
+  // 停用特质与身体/装备特质只保留旧技能 id 的解析，新写法不能再选；改名特质的旧称照样识别。
+  const modifiers: string[] = [], choices = [...preferred,...SKILL_MODIFIERS.filter(m=>!preferred.includes(m))].filter((m) => !retiredTraitModifier(m))
+    .flatMap((m) => [m.name, ...(SKILL_MODIFIER_ALIASES[m.id] ?? []), ...(m.trait ? [m.name.slice(2), ...(TRAIT_FORMER_NAMES[m.trait] ?? [])] : [])].map((name) => ({ id: m.id, name }))).sort((a, b) => b.name.length - a.name.length);
   while (source) {
     source = source.replace(/^[+\s]+/, ''); if (!source) break;
     const modifier = choices.find((m) => source.startsWith(m.name)); if (!modifier) return undefined;

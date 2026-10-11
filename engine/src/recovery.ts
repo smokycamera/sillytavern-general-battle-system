@@ -3,7 +3,7 @@ import { absorbBarrier } from './barrier.js';
 import { activeConditionIds, activeTraitIds } from './trait-sources.js';
 import { standardConditionMap } from './conditions.js';
 import { traitRegistry } from './data/traits.js';
-import { moraleOnDamage } from './morale.js';
+import { moraleOnDamage, spendIndomitable } from './morale.js';
 import { isCohort, setStrength, personnel, COHORT_REFERENCE } from './combat-model.js';
 import {hasMemberHealth,memberHealth,damageMemberGroups,memberRecoveryCapacity,healMemberGroups} from './member-health.js';
 import { overmatchMultiplier } from './power-anchors.js';
@@ -21,14 +21,23 @@ function barrierRatio(unit:Combatant,context?:DamageOvermatch):number {
 export function applyCombatDamage(unit:Combatant,amount:number,targets=1,overmatch?:DamageOvermatch):number {
   return applyMemberDamage(unit,amount,targets,false,overmatch).health;
 }
+/** 伤亡中可救伤兵的比例：常规每2名救1名；医护编队每4名救3名。 */
+function woundedShare(unit: Combatant): [number, number] {
+  return unit.rulesVersion === 'v2' && unit.scale !== 'hero' && activeTraitIds(unit).includes('medic') ? [3, 4] : [1, 2];
+}
+/** 余量是尚未凑满一组的伤亡；只按累计总数取整，连续小额伤亡不会丢失或重复。 */
+function woundedFromLoss(unit: Combatant, loss: number, remainder: number): { recoverable: number; remainder: number } {
+  const [kept, group] = woundedShare(unit), carried = remainder % group, total = loss + carried;
+  return { recoverable: Math.floor(kept * total / group) - Math.floor(kept * carried / group), remainder: total % group };
+}
 function applyMemberDamage(unit:Combatant,amount:number,targets:number,overflow=false,overmatch?:DamageOvermatch):{health:number;overflow:number} {
   if(!hasMemberHealth(unit))return {health:applyHealthLoss(unit,amount,unit.rulesVersion==='v2',overmatch),overflow:0};
   const result=damageMemberGroups(unit,targets > 0 ? absorbBarrier(unit,amount,barrierRatio(unit,overmatch)) : 0,targets,overflow);
   if(result.health)moraleOnDamage(unit,result.health);
   if(result.casualties){
-    const wounded=result.casualties+(unit.formation!.woundedRemainder??0);
-    unit.recoverableWounded=unit.nonLethal?(unit.recoverableWounded??0)+result.casualties:unit.hp>0?(unit.recoverableWounded??0)+Math.floor(wounded/2):0;
-    unit.formation!.woundedRemainder=unit.nonLethal||unit.hp===0?0:wounded%2;
+    const wounded=woundedFromLoss(unit,result.casualties,unit.formation!.woundedRemainder??0);
+    unit.recoverableWounded=unit.nonLethal?(unit.recoverableWounded??0)+result.casualties:unit.hp>0?(unit.recoverableWounded??0)+wounded.recoverable:0;
+    unit.formation!.woundedRemainder=unit.nonLethal||unit.hp===0?0:wounded.remainder;
   }
   return result;
 }
@@ -50,7 +59,9 @@ export function validateWounded(unit: Health): void {
 
 /** 实际损失唯一记账入口；V3跨分组累计半数伤兵余量，避免连发逐次取整丢失。 */
 export function applyHealthLoss(unit: Combatant, amount: number, v2 = unit.rulesVersion === 'v2', overmatch?:DamageOvermatch): number {
-  const loss = Math.min(unit.hp, absorbBarrier(unit, amount,barrierRatio(unit,overmatch)));
+  let loss = Math.min(unit.hp, absorbBarrier(unit, amount,barrierRatio(unit,overmatch)));
+  // 不屈（个体）：每战一次，致命伤以1点生命坚持。
+  if (v2 && unit.scale === 'hero' && loss > 0 && loss >= unit.hp && unit.status === 'ready' && spendIndomitable(unit)) loss = unit.hp - 1;
   setStrength(unit, unit.hp - loss);
   if (v2) moraleOnDamage(unit, loss);
   if (v2 && unit.scale !== 'hero' && loss > 0) {
@@ -59,9 +70,9 @@ export function applyHealthLoss(unit: Combatant, amount: number, v2 = unit.rules
       if (unit.formation) unit.formation.woundedRemainder = 0;
       return loss;
     }
-    const wounded = loss + (isCohort(unit) ? unit.formation?.woundedRemainder ?? 0 : 0);
-    unit.recoverableWounded = unit.hp > 0 ? (unit.recoverableWounded ?? 0) + Math.floor(wounded / 2) : 0;
-    if (unit.formation) unit.formation.woundedRemainder = unit.hp > 0 ? wounded % 2 : 0;
+    const wounded = woundedFromLoss(unit, loss, isCohort(unit) ? unit.formation?.woundedRemainder ?? 0 : 0);
+    unit.recoverableWounded = unit.hp > 0 ? (unit.recoverableWounded ?? 0) + wounded.recoverable : 0;
+    if (unit.formation) unit.formation.woundedRemainder = unit.hp > 0 ? wounded.remainder : 0;
   }
   return loss;
 }
@@ -86,6 +97,12 @@ export function applyRecovery(unit: Combatant, amount: number): number {
   return restored;
 }
 
+/** 吸血：造成实际生命伤害后回复其中25%；非生物与载具目标不提供，编队只救回已有的可救伤兵。 */
+export function lifestealRecovery(attacker: Combatant, target: Combatant, lifeDamage: number): number {
+  if (attacker.rulesVersion !== 'v2' || !(lifeDamage > 0) || attacker.status !== 'ready' || attacker.hp <= 0 || target.body === 'vehicle'
+    || !activeTraitIds(attacker).includes('lifesteal') || activeTraitIds(target).includes('inorganic')) return 0;
+  return applyRecovery(attacker, Math.floor(lifeDamage * 0.25));
+}
 /** 被动再生不花主行动；失能、濒死与离场时暂停，同源或同类再生只取最高。 */
 export function regenerationAmount(unit: Combatant, registry: Map<string, Trait> = traitRegistry(), conditions: Map<string, ConditionDef> = standardConditionMap()): number {
   if (unit.status !== 'ready' || unit.hp <= 0 || activeConditionIds(unit).some((id) => conditions.get(id)?.skipTurn)) return 0;

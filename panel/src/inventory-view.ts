@@ -6,8 +6,9 @@ import { ACCESSORY_NAMES, CONSUMABLE_NAMES, type EquipmentSlot } from '../../eng
 import { promptSelected, type PromptSettings } from './prompt-settings.js';
 import { gridWeaponRange } from '../../engine/src/small/weapon-range.js';
 import { ARMS_MODEL } from '../../engine/src/arms.js';
+import { TRAIT_MODEL } from '../../engine/src/trait-model.js';
 import { formationWeaponRange } from '../../engine/src/melee.js';
-import { armorTraitId, equipmentTraitIds } from '../../engine/src/trait-sources.js';
+import { armorTraitId, equipmentTraitIds, autoTraitLabel } from '../../engine/src/trait-sources.js';
 import { weaponReloadTurns } from '../../engine/src/loadout.js';
 import { equipmentDraft, equipmentFields, equipmentSpecification, captureEquipment, type EquipmentDraft } from './equipment-form.js';
 import { equipmentReason, effectiveProtection, abilityUsabilityReason, traitRegistry, WEAPON_CLASSES, type BodyKind, type ItemSpecification } from '../../engine/src/index.js';
@@ -51,11 +52,11 @@ function itemDescriptionBase(item: InventoryItem): string {
   return `L${w.level??5}${enhancementLabel(w.recipe?.bonuses)} · ${anchoredWeaponLabel(w,'wounds-v2')} · ${channelNames[w.channel ?? 'kinetic']} · 格子射程${gridWeaponRange(w,true,ARMS_MODEL)}／会战${formationWeaponRange(w)}阵距 · ${w.hands===0?'不占双手':(w.hands??1)+'手'} · 负重${w.load ?? 0}${w.reload ? ' · 装填' + w.reload : ''}${w.tags?.includes('blast') ? ' · 距离1正常，距离2命中−2' : ''}${w.recipe?.stabilized ? ' · 车载行进稳定，火力让出15%' : ''}`;
 }
 function gearText(record: UnitRecord | undefined): string {
-  const u = record?.snapshot ? { ...record.snapshot, armsModel: ARMS_MODEL } : undefined;
+  const u = record?.snapshot ? { ...record.snapshot, armsModel: ARMS_MODEL, traitModel: TRAIT_MODEL } : undefined;
   if (!u) return '无装备资料';
   return [u.weapon ? `${u.weapon.name} ${anchoredWeaponLabel(u.weapon,u.damageModel)}${u.weapon.recipe?.stabilized ? ' / 行进稳定' : ''}` : '主手空置',
     u.sidearm ? `副武器 ${u.sidearm.name}` : '',
-    ...equipmentTraitIds(u).map(id => '装备自动特质：' + (id === 'super-heavy' ? '超重装甲（先攻−2，无额外防御）' : '重甲（先攻−1，无额外防御）')),
+    ...equipmentTraitIds(u).map(id => '装备自动特质：' + autoTraitLabel(id)),
     `有效防护 ${anchoredProtection(u, 'kinetic')}/${anchoredProtection(u, 'thermal')}/${anchoredProtection(u, 'arcane')}（动能/热能/奥术） · ${armorEffectLabel(u)}`,
     u.shield ? '携盾' : '无盾',
     equipmentLoadLabel(u)].filter(Boolean).join(' · ');

@@ -8,6 +8,8 @@ import { zoneAmount, zoneEffectDescription } from './zone-skills.js';
 import type { Ability, ActiveCondition, Combatant, EffectOp } from './types.js';
 import type { Rng } from './rng.js';
 import { activeTraitIds, bodyRank, traitSourceActive, grantTraitSource, traitPrerequisiteReason } from './trait-sources.js';
+import { traitsV13 } from './trait-model.js';
+import { canEntrench, entrench, entrenched } from './entrenchment.js';
 import { traitRegistry } from './data/traits.js';
 import { skillResourceChange, summonProfile, conjureSkillUnit, summonedMemberLife } from './skill-runtime.js';
 import { standardConditionMap } from './conditions.js';
@@ -50,11 +52,17 @@ const positive = new Set(['empowered', 'inspired', 'blessed', 'encouraged', 'con
 export function isPositiveCondition(id: string): boolean { return positive.has(id); }
 const negative = new Set(['inaccurate', 'exposed', 'poisoned', 'bleeding', 'burning', 'silenced', 'stunned', 'restrained', 'disarmed', 'fearful', 'slowed', 'cursed', 'demoralized', 'weakened', 'vulnerable', 'wounded']);
 export function conditionImmunity(target: Combatant, id: string): string | undefined {
-  if (id === 'poisoned' && !poisonFactor(target)) return '封闭车体免疫中毒';
+  if (id === 'poisoned' && !poisonFactor(target)) return target.body === 'vehicle' ? '封闭车体免疫中毒' : '非生物免疫中毒';
   if (id === 'fearful' && activeTraitIds(target).includes('steadfast')) return '不溃抵抗惊惧';
+  if (['bleeding', 'fearful'].includes(id) && target.rulesVersion === 'v2' && activeTraitIds(target).includes('inorganic')) return '非生物免疫' + (id === 'bleeding' ? '流血' : '惊惧');
   return undefined;
 }
-export function controlBonus(target: Combatant): number { return Math.floor(target.level / 2) + bodyRank(target) - 1; }
+/** 坚韧只帮助抵抗这些控制效果；伤害、中毒与士气照常。 */
+const CONTROL_CONDITIONS = new Set(['stunned', 'restrained', 'silenced', 'disarmed', 'slowed', 'fearful']);
+export function controlBonus(target: Combatant, conditionId?: string): number {
+  const tenacity = conditionId && CONTROL_CONDITIONS.has(conditionId) && target.rulesVersion === 'v2' && activeTraitIds(target).includes('tenacity') ? 4 : 0;
+  return Math.floor(target.level / 2) + bodyRank(target) - 1 + tenacity;
+}
 export function conditionChance(target: Combatant, effect: ConditionEffect): number {
   if (target.hp <= 0 || ['dead', 'fled'].includes(target.status) || conditionImmunity(target, effect.conditionId)) return 0;
   if (effect.saveDC === undefined) {
@@ -66,14 +74,14 @@ export function conditionChance(target: Combatant, effect: ConditionEffect): num
     return 1;
   }
   if (target.conditions.some((c) => c.id === effect.conditionId && c.dur > 0)) return 0;
-  return Array.from({ length: 20 }, (_, i) => i + 1).filter((n) => n === 1 || n !== 20 && n + controlBonus(target) < effect.saveDC!).length / 20;
+  return Array.from({ length: 20 }, (_, i) => i + 1).filter((n) => n === 1 || n !== 20 && n + controlBonus(target, effect.conditionId) < effect.saveDC!).length / 20;
 }
 export function prepareCondition(actor: Combatant, target: Combatant, effect: ConditionEffect, rng: Rng): { condition?: ActiveCondition; text: string } {
   const name = definitions.get(effect.conditionId)?.name ?? effect.conditionId;
   if (!conditionChance(target, effect)) return { text: `${target.name}：${conditionImmunity(target, effect.conditionId) ?? '已有同类效果或已离场'}，未追加${name}` };
   if (effect.saveDC !== undefined) {
-    const roll = rng.d(20), total = roll + controlBonus(target);
-    if (roll === 20 || roll !== 1 && total >= effect.saveDC) return { text: `${target.name} 抵抗${name}（${roll}+${controlBonus(target)}对抗${effect.saveDC}）` };
+    const bonus = controlBonus(target, effect.conditionId), roll = rng.d(20), total = roll + bonus;
+    if (roll === 20 || roll !== 1 && total >= effect.saveDC) return { text: `${target.name} 抵抗${name}（${roll}+${bonus}对抗${effect.saveDC}）` };
   }
   return { condition: { id: effect.conditionId, dur: effect.dur, sourceId: actor.id, ...(effect.conditionId === 'blessed' && effect.defensePower !== undefined ? { defensePower: effect.defensePower } : {}), ...(isCohort(target)&&target.scale!=='hero'&&definitions.get(effect.conditionId)?.dot?{affectedMembers:conditionExposure(actor,target,effect.shape==='burst')}:{}), ...(effect.potency !== undefined ? { potency: effect.potency } : {}), ...(effect.magnitude !== undefined ? { magnitude: effect.magnitude } : {}) }, text: `${target.name} 获得${name}，持续${effect.dur}次状态结算` };
 }
@@ -113,6 +121,7 @@ export function pushPreview(context: ObservationContext, actor: Combatant, targe
   if (target.hp <= 0 || target.status === 'dead' || target.status === 'fled') return { reason: '目标已离场' };
   if ([...(context.attached?.values() ?? [])].includes(target.id)) return { reason: '随队人物不能独立推离所属编队' };
   const force = pushStrength(actor, effect);
+  if (target.rulesVersion === 'v2' && activeTraitIds(target).includes('tenacity')) return { reason: '坚韧，不受击退或拉拽' };
   if (bodyRank(target) + Number(!!target.tacticalPose) > force) return { reason: '目标体量或稳固姿态超过推力' };
   const source = positionedUnit(context, actor), unit = positionedUnit(context, target);
   const field = context.battlefield;
@@ -147,6 +156,8 @@ export function applyPush(context: ObservationContext, actor: Combatant, target:
 }
 export function skillTraitReason(target: Combatant, effect: Extract<EffectOp, { op: 'trait' }>): string | undefined {
   const prerequisite = traitPrerequisiteReason(target, effect.traitId); if (prerequisite) return prerequisite;
+  // V13 工事是阵地：已有工事但离开了阵地时，可以在新位置重新构筑。
+  if (effect.traitId === 'fortification' && traitsV13(target) && !entrenched(target) && canEntrench(target)) return undefined;
   if (target.traits.includes(effect.traitId) || (target.traitSources ?? []).some((s) => traitSourceActive(target, s) && s.traitIds.includes(effect.traitId)
     && (s.duration.kind !== 'rounds' || (s.remaining ?? 0) >= effect.dur))) return '已有同等或更持久的能力来源';
   return undefined;
@@ -156,6 +167,7 @@ export function applySkillTrait(actor: Combatant, target: Combatant, ability: Ab
   if (reason) return `${target.name}：${reason}`;
   grantTraitSource(target, { id: 'skill:' + castId + ':' + actor.id + ':' + ability.id + ':' + effect.traitId, name: ability.name,
     kind: 'blessing', traitIds: [effect.traitId], duration: { kind: 'rounds', count: effect.dur }, battleOnly: true });
+  if (effect.traitId === 'fortification') entrench(target, target.pos !== undefined ? 'small' : 'mass');
   return `${target.name} 获得${name}，至多${effect.dur}轮，战斗归档时结束`;
 }
 export function skillEffectLines(context: ObservationContext, actor: Combatant, target: Combatant, ability: Ability): string[] {

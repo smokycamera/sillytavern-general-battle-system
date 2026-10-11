@@ -7,7 +7,8 @@ import { memberDurability } from '../../engine/src/combat-model.js';
 import {memberHealthSummary,memberHealth,memberHealthMax,memberNoun,hasMemberHealth} from '../../engine/src/member-health.js';
 import {anchoredWeaponLabel,anchoredProtection,armorEffectLabel} from '../../engine/src/power-anchors.js';
 import { fallbackAbilityRange } from '../../engine/src/actions.js';
-import { armorTraitId, equipmentTraitIds } from '../../engine/src/trait-sources.js';
+import { armorTraitId, equipmentTraitIds, autoTraitLabel } from '../../engine/src/trait-sources.js';
+import { TRAIT_MODEL } from '../../engine/src/trait-model.js';
 import { SKILL_CATEGORIES, skillMechanismName } from '../../engine/src/data/skill-mechanisms.js';
 import { skillDefinitionName, skillDefinitionId } from '../../engine/src/skill-catalog.js';
 import { WEAPON_CLASSES, ABILITY_BLUEPRINTS, traitCatalog, traitDescription, type Trait, type Combatant, abilityUsabilityReason, effectiveProtection, equipmentReason } from '../../engine/src/index.js';
@@ -35,7 +36,10 @@ export function unitForm(prefix: string, d: UnitDraft, registry: Map<string, Tra
   const select = (key: string, options: [string, string][], disabled = false) => selectField(prefix + '-' + key, String(d[key as keyof UnitDraft]), options, disabled);
   const input = (key: string, extra = '') => `<input data-role="${prefix}-${key}" value="${esc(d[key as keyof UnitDraft])}" ${extra}>`;
   const disabled = opts.managed ? 'disabled' : '';
-  const armorTrait = armorTraitId(Number(d.armor.tier));
+  const armorTrait = d.traits.includes('natural-armor') ? undefined : armorTraitId(Number(d.armor.tier));
+  const describe = (t: Trait) => traitDescription(t, { rulesVersion: 'v2', traitModel: TRAIT_MODEL });
+  const listed = new Set(traitCatalog(registry).flatMap((g) => g.traits.map((t) => t.id)));
+  const legacy = d.traits.filter((id) => !listed.has(id)).flatMap((id) => registry.get(id) ? [registry.get(id)!] : []);
   const armorTraitDefinition = armorTrait ? registry.get(armorTrait) : undefined;
   return `<div data-builder-form="${prefix}" class="unit-builder"><div class="builder-basics">
     <label>名称${input('name', 'placeholder="角色或编队名称"')}</label><label>归属${select('side', [['ally', '我方'], ['enemy', '敌方']])}</label>
@@ -50,7 +54,7 @@ export function unitForm(prefix: string, d: UnitDraft, registry: Map<string, Tra
       <fieldset ${disabled}><legend>主武器</legend>${equipmentFields(prefix + '-primary', d.primary, { disabled: opts.managed })}</fieldset>
       <label class="check-field"><input type="checkbox" data-role="${prefix}-sidearmEnabled" ${d.sidearmEnabled ? 'checked' : ''} ${disabled}>携带副武器</label>
       ${d.sidearmEnabled ? `<fieldset ${disabled}><legend>副武器</legend>${equipmentFields(prefix + '-sidearm', d.sidearm, { disabled: opts.managed, sidearm: true })}</fieldset>` : ''}
-      <fieldset ${disabled}><legend>护甲</legend>${equipmentFields(prefix + '-armor', d.armor, { disabled: opts.managed })}${armorTrait ? `<p class="sub" data-role="equipment-traits">装备自动特质：${esc(armorTraitDefinition?.name ?? armorTrait)}。${esc(armorTraitDefinition ? traitDescription(armorTraitDefinition, { rulesVersion: 'v2' }) : '')}</p>` : ''}</fieldset>
+      <fieldset ${disabled}><legend>护甲</legend>${equipmentFields(prefix + '-armor', d.armor, { disabled: opts.managed })}${armorTrait ? `<p class="sub" data-role="equipment-traits">装备自动特质：${esc(armorTraitDefinition?.name ?? armorTrait)}。${esc(armorTraitDefinition ? describe(armorTraitDefinition) : '')}</p>` : ''}</fieldset>
       <label class="check-field"><input type="checkbox" data-role="${prefix}-shield" ${d.shield ? 'checked' : ''} ${disabled}>携带盾牌</label>
       ${d.shield ? `<fieldset ${disabled}><legend>盾牌</legend>${equipmentFields(prefix + '-shieldGear', d.shieldGear, { disabled: opts.managed })}</fieldset>` : ''}
     </details>
@@ -62,7 +66,7 @@ export function unitForm(prefix: string, d: UnitDraft, registry: Map<string, Tra
       <button data-action="builder-skill-add" data-builder="${prefix}">添加技能</button><div class="control-presets" aria-label="快速添加控制技能"><span>控制效果</span>${[['眩晕','stun'],['定身','root'],['沉默','silence'],['缴械','disarm'],['惊惧','fear'],['减速','slow'],['击退','push'],['拉拽','pull']].map(([name,id])=>'<button data-action="builder-skill-add" data-builder="'+prefix+'" data-mechanism="generic:debuff:'+id+'" data-name="'+name+'">'+name+'</button>').join('')}</div><p class="sub">眩晕会跳过下一次行动；定身只限制移动；沉默限制魔法；缴械限制手持武器。目标可以抵抗，净化可以解除。</p>${d.skills.some((s) => s.id === 'bp-call-reinforce') ? `<label>预备份额${input('reserves', 'type="number" min="0" max="2"')}</label>` : ''}
       <p class="sub">填写自定义名称、效果类型与等级。六类为物理单体、物理范围、魔法单体、魔法范围、增益、减益；需要具体效果时在效果后加治疗、加速、定身等。最多准备${MAX_PREPARED_SKILLS}项，同种效果共享冷却。旧记录名称仅用于保留原效果。</p>
     </details>
-    <details class="builder-section" data-detail-id="${prefix}-traits"><summary>特质 <span>${d.traits.length ? d.traits.length + '项' : '可选专长'}</span></summary><div class="builder-traits">${traitCatalog(registry).map((g) => `<div><h4>${g.group}</h4>${g.traits.filter((t) => !['large', 'titan'].includes(t.id)).map((t) => `<label title="${esc(traitDescription(t, { rulesVersion: 'v2' }))}"><input type="checkbox" data-role="${prefix}-trait" value="${t.id}" ${d.traits.includes(t.id) ? 'checked' : ''}>${t.name}</label>`).join('')}</div>`).join('')}</div><p class="sub">体量性质由身体提供；骑射、盾墙等专长仍需要实际坐骑或装备。</p></details>
+    <details class="builder-section" data-detail-id="${prefix}-traits"><summary>特质 <span>${d.traits.length ? d.traits.length + '项' : '可选专长'}</span></summary><div class="builder-traits">${[...traitCatalog(registry), ...(legacy.length ? [{ group: '旧特质（已停用，可取消）', traits: legacy }] : [])].map((g) => `<div><h4>${g.group}</h4>${g.traits.map((t) => `<label title="${esc(t.legacy ? t.legacy.note + '：' + describe(t) : t.derived ? t.derived : describe(t))}"><input type="checkbox" data-role="${prefix}-trait" value="${t.id}" ${d.traits.includes(t.id) ? 'checked' : ''}>${t.name}</label>`).join('')}</div>`).join('')}</div><p class="sub">体量与重甲由身体和护甲自动提供，训练程度用训练等级，快慢用速度档；骑射需要实际坐骑，盾墙需要实际盾牌。</p></details>
     ${d.scale==='company'?`<label>单个${d.body==='vehicle'?'载具':'成员'}最大生命${input('memberHp','type="number" min="1" max="'+singleLifeLimit(d.damageModel)+'" placeholder="按同模板个体生命计算"')}</label><p class="sub">现员与成员生命分别保存。伤害先扣成员当前生命，归零后才减员；已有较低生命不会补满。</p>`:''}
     <p class="sub">个体与每名成员生命硬上限${singleLifeLimit(d.damageModel)}，超出自动截断；编队人数和总生命不受此单体上限限制。</p>
     <details class="builder-section" data-detail-id="${prefix}-notes"><summary>备注与自定义生命</summary><label>备注${input('note')}</label>${!opts.editing && d.scale === 'hero' ? `<div class="builder-basics"><label>生命上限${input('hpMax', 'type="number" min="1" max="'+singleLifeLimit(d.damageModel)+'" placeholder="系统计算"')}</label><label>当前生命${input('hp', 'type="number" min="0" max="'+singleLifeLimit(d.damageModel)+'" placeholder="首次默认满生命"')}</label></div><p class="sub">高生命个体也会因持续受创降低士气，具备不溃能力时继续作战。</p>` : ''}</details>
@@ -74,7 +78,7 @@ export function buildPreview(unit: Combatant, before?: Combatant): string {
   return `<div class="builder-preview" data-role="builder-preview"><h3>${before ? '确认档案变化' : '确认加入队伍'}</h3><b>${esc(unit.name)}</b><p>${change(`${unit.hp}/${unit.base.hpMax}`, before && `${before.hp}/${before.base.hpMax}`)} ${unit.scale === 'hero' ? '生命' : '人数'} · 训练${unit.level}${unit.scale!=='hero'?' · 成员耐久 '+memberDurability(unit):''}</p><p>${change(gear(unit), before && gear(before))}</p>
     ${hasMemberHealth(unit)?`<p>总生命 ${memberHealth(unit)}/${memberHealthMax(unit)} · ${esc(memberHealthSummary(unit))}</p>`:''}
     <p>${esc(anchoredWeaponLabel(unit.weapon,unit.damageModel))}</p><p>${esc(equipmentLoadLabel(unit))} · 防护 动能${anchoredProtection(unit, 'kinetic')} / 热能${anchoredProtection(unit, 'thermal')} / 奥术${anchoredProtection(unit, 'arcane')} · ${esc(armorEffectLabel(unit))}</p>
-    ${equipmentTraitIds(unit).length ? `<p data-role="equipment-traits">装备自动特质：${equipmentTraitIds(unit).map(id => esc(id === 'super-heavy' ? '超重装甲（先攻−2，无额外防御）' : '重甲（先攻−1，无额外防御）')).join('、')}，无需另行勾选。</p>` : ''}
+    ${equipmentTraitIds(unit).length ? `<p data-role="equipment-traits">装备自动特质：${equipmentTraitIds(unit).map(id => esc(autoTraitLabel(id))).join('、')}，无需另行勾选。</p>` : ''}
     ${equipmentReason(unit) ? `<p class="grid-reason">${esc(equipmentReason(unit))}</p>` : ''}
     ${unit.abilities.length ? `<div class="builder-skills-preview">${unit.abilities.map((a) => `<p><b>${esc(a.name)}</b> · ${esc(skillDefinitionName(a.definitionId ?? a.id))} L${a.power ?? 5}${esc(enhancementLabel(a.bonuses))}<br><small>格子射程${fallbackAbilityRange(unit, gridAbility(a), true).min}–${fallbackAbilityRange(unit, gridAbility(a), true).max}／会战${fallbackAbilityRange(unit, a).min}–${fallbackAbilityRange(unit, a).max}阵距 · ${a.cost ? (a.cost.resource==='SP'?'精力':a.cost.resource) + ' ' + a.cost.amount : '无资源消耗'} · 冷却${a.cooldown ?? 0} · ${esc(abilityUsabilityReason(unit, a) ?? '已准备，可用')}</small></p>`).join('')}</div>` : ''}
     <div class="row"><button class="primary" data-action="builder-confirm">确认${before ? '保存修改' : '加入队伍'}</button><button data-action="builder-cancel-preview">返回调整</button></div></div>`;

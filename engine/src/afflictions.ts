@@ -14,13 +14,14 @@ export function conditionDamage(unit: Combatant, roll: number, condition: Active
 }
 
 export function poisonFactor(unit: Combatant): number {
+  if (unit.rulesVersion === 'v2' && activeTraitIds(unit).includes('inorganic')) return 0;
   return unit.body === 'vehicle' ? 0 : unit.body === 'giant' ? 0.25 : unit.body === 'large' ? 0.5 : 1;
 }
 export function poisonDamage(unit: Combatant, roll: number): number {
   return Math.max(0, Math.round(roll * poisonFactor(unit) * (unit.scale === 'hero' ? 1 : 0.25)));
 }
 export function poisonDeliveryReason(target: Combatant, weapon?: Weapon): string | undefined {
-  if (!poisonFactor(target)) return '封闭车体不受生物毒性影响';
+  if (!poisonFactor(target)) return target.body === 'vehicle' ? '封闭车体不受生物毒性影响' : '非生物不受毒性影响';
   if (weapon?.channel !== 'kinetic' || !['sword', 'axe', 'spear', 'throwing', 'natural', 'bow', 'light-ranged', 'blunt'].includes(weapon?.recipe?.mechanism ?? '')) return '毒击需要接触武器或适用投射，热能、奥术和重炮不携带涂毒';
   return undefined;
 }

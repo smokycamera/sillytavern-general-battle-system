@@ -77,8 +77,13 @@ export const V11_OVERFLOW_TW: RulePack = { ...V10_OVERFLOW_TW, id: 'v11-overflow
 export const V12_OVERFLOW_D20: RulePack = { ...V11_OVERFLOW_D20, id: 'v12-overflow-d20', name: 'V12 武器与护甲校准', armsModel: 'arms-v1' };
 export const V12_OVERFLOW_TW: RulePack = { ...V11_OVERFLOW_TW, id: 'v12-overflow-tw', name: 'V12 武器与护甲校准会战', armsModel: 'arms-v1' };
 
+/** V13 only opts new battles into the trait overhaul; V2–V12 snapshots keep their trait rules. */
+export const V13_OVERFLOW_D20: RulePack = { ...V12_OVERFLOW_D20, id: 'v13-overflow-d20', name: 'V13 特质翻修', traitModel: 'traits-v1' };
+export const V13_OVERFLOW_TW: RulePack = { ...V12_OVERFLOW_TW, id: 'v13-overflow-tw', name: 'V13 特质翻修会战', traitModel: 'traits-v1' };
+
 /** id → 规则包（战斗快照恢复用；面板只用默认两包） */
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V13_OVERFLOW_D20.id]: V13_OVERFLOW_D20, [V13_OVERFLOW_TW.id]: V13_OVERFLOW_TW,
   [V12_OVERFLOW_D20.id]: V12_OVERFLOW_D20, [V12_OVERFLOW_TW.id]: V12_OVERFLOW_TW,
   [V11_OVERFLOW_D20.id]: V11_OVERFLOW_D20, [V11_OVERFLOW_TW.id]: V11_OVERFLOW_TW,
   [V10_OVERFLOW_D20.id]: V10_OVERFLOW_D20, [V10_OVERFLOW_TW.id]: V10_OVERFLOW_TW,

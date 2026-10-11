@@ -4,6 +4,8 @@ import { bonusMultiplier, bonusSteps, trainingEdge, trainingDamage } from './enh
 import { barrierAmount } from './barrier.js';
 import { weaponConditions, poisonHint, poisonValue } from './afflictions.js';
 import { defensivePostureMods, looseFormation } from './tactics.js';
+import { traitsV13 } from './trait-model.js';
+import { entrenched } from './entrenchment.js';
 import { effectiveProtection } from './body.js';
 import { applyHealthLoss, applyDamagePlan, type MemberDamagePlan } from './recovery.js';
 import { MEMBER_HEALTH_MODEL, hasMemberHealth, memberHealth, damageMemberGroups } from './member-health.js';
@@ -261,7 +263,9 @@ function memberAreaBudget(opts: Omit<AttackOpts,'rng'>): number {
 /** resolved/penetration 须来自同一输入且守方尚未受损；缺省时自行计算。 */
 function memberPlan(opts:Omit<AttackOpts,'rng'>,direct:number,targets:number,resolved?:ResolvedWeapon,penetration?:ReturnType<typeof penetrationContext>):MemberDamagePlan {
   const weapon=resolved?resolved.weapon:combatWeapon(opts.weaponOverride??opts.attacker.weapon,opts.attacker,opts.defender,opts.rules.weaponOverflow,opts.rules.damageModel,opts.rules.overmatch,opts.rules.overmatchCurve);
-  const extra=hasMemberHealth(opts.defender)&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)?Math.min(opts.defender.hp,weapon?.splashTargets??0):0;
+  const rawExtra=hasMemberHealth(opts.defender)&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)?Math.min(opts.defender.hp,weapon?.splashTargets??0):0;
+  // V13 散兵：疏散的编队未被近敌牵制时，榴弹溅射波及的人数减半。
+  const extra=rawExtra&&traitsV13(opts.defender)&&!opts.defenderEngaged&&looseFormation(opts.defender)?Math.floor(rawExtra/2):rawExtra;
   const members=hasMemberHealth(opts.defender),directTargets=members?Math.min(opts.defender.hp,targets):targets>0?1:0,splashTargets=Math.min(opts.defender.hp,targets*extra),max=members?opts.defender.formation!.memberHp:opts.defender.base.hpMax;
   const overflow=members&&attackOverflow(opts,penetration,resolved);
   const cappedDirect=overflow&&directTargets>0?direct:Math.min(direct,max*directTargets);
@@ -324,9 +328,10 @@ function scopeTable(scope: PreviewScope, table: Map<string, unknown>): ScopeTabl
 }
 function sampledPreviewBase(opts: Omit<AttackOpts, 'rng'>): string {
   // Damage receives terrain, distance, participants and external modifiers explicitly.
-  // Coordinates only affect directional brace: whether the pose is still held and whether
-  // the opponent stands in its front arc. The key keeps exactly those brace modifiers (and
-  // pose presence, which cancels loose formation) instead of absolute cells and anchors.
+  // Coordinates only affect directional brace (whether the pose is still held and whether
+  // the opponent stands in its front arc) and V13 works (whether the unit still stands on its
+  // anchored spot). The key keeps exactly those brace modifiers (and pose presence, which
+  // cancels loose formation) and an on-works flag instead of absolute cells and anchors.
   // HP, barrier power/duration, equipment, traits, fatigue, rules and mutable registry
   // *contents* remain in the key (not just object IDs).
   // The resolution chain reads fatigue only as its penalty step and distance only as
@@ -334,6 +339,7 @@ function sampledPreviewBase(opts: Omit<AttackOpts, 'rng'>): string {
   // barrier never enter hit or loss, so AI what-if copies differing only there share samples.
   const ranged = opts.ranged ?? isRangedCapable(opts.attacker);
   const unit = (u: Combatant, opponent: Combatant, attacker: boolean) => ({ ...u, pos: undefined, formationPosition: undefined,
+    entrenchedAt: u.entrenchedAt === undefined ? undefined : entrenched(u),
     tacticalPose: u.tacticalPose ? defensivePostureMods(u, { defender: opponent, ranged, charge: opts.charge }, opts.conditionDefs, opts.traitRegistry) : undefined,
     fatigue: fatiguePenalty(u), resources: undefined, abilityState: undefined, tacticalEffort: undefined, engagedWith: undefined, battleZones: undefined,
     ...(attacker ? { barrier: undefined } : {}) });
@@ -561,7 +567,10 @@ export function recordAppliedDamage(result: AttackResolution, loss: number): voi
 export function applyResolutionDamage(target:Combatant,result:AttackResolution):number {
   const shieldBefore = barrierAmount(target);
   if(result.damageModel!=='member-health'){
-    result.hpBefore=target.hp;const loss=applyHealthLoss(target,result.unshieldedDamage ?? result.finalDamage);result.hpAfter=target.hp;if(shieldBefore)result.barrierAbsorbed=shieldBefore-barrierAmount(target);else delete result.barrierAbsorbed;return loss;
+    const stood=target.moraleState?.indomitable;
+    result.hpBefore=target.hp;const loss=applyHealthLoss(target,result.unshieldedDamage ?? result.finalDamage);result.hpAfter=target.hp;if(shieldBefore)result.barrierAbsorbed=shieldBefore-barrierAmount(target);else delete result.barrierAbsorbed;
+    if(!stood&&target.moraleState?.indomitable&&result.text)result.text+=INDOMITABLE_NOTE(target);
+    return loss;
   }
   result.hpBefore=memberHealth(target);result.membersBefore=target.hp;
   let direct=0,splash=0,overflow=0;
@@ -731,13 +740,15 @@ export function resolveAttack(opts: AttackOpts): AttackResolution {
   res.dmgMult = dmgMult*sourceScale;
   res.wardMult = wardMult;
   res.finalDamage = final;
+  const stood = defender.moraleState?.indomitable;
   if(modern){res.damagePlans=[memberPlan(opts,final,targets,resolved,penetration)];applyResolutionDamage(defender,res);}
   else {const actualLoss = applyHealthLoss(defender, final, v2);if (rules.combatModel===COHORT_MODEL || shieldBefore) res.finalDamage = actualLoss;res.hpAfter = defender.hp;if(shieldBefore){res.unshieldedDamage=final;res.barrierAbsorbed=shieldBefore-barrierAmount(defender);}}
   if (v2 && !opts.previewMemo && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) { const conditions = weaponConditions(attacker, defender, weapon, res.finalDamage, opts.traitRegistry); if (conditions.length) res.onHitConditions = conditions; }
 
-  res.text = formatResolution(res, defender);
+  res.text = formatResolution(res, defender) + (!stood && defender.moraleState?.indomitable ? INDOMITABLE_NOTE(defender) : '');
   return res;
 }
+const INDOMITABLE_NOTE = (unit: Combatant) => `｜${unit.name} 不屈，以1点生命坚持`;
 
 function apShareOf(unit: Combatant, ranged: boolean, registry?: Map<string, import('./types.js').Trait>): number {
   let pct = 0;

@@ -40,6 +40,10 @@ function canConceal(context: ObservationContext, unit: Combatant): boolean {
   return unit.rulesVersion === 'v2' && activeTraitIds(unit).includes('stalk') && unit.status === 'ready' && !unit.suppression && !isAirborne(unit)
     && !unit.conditions.some((c) => c.dur > 0 && (context.conditions ?? defaultConditions).get(c.id)?.skipTurn);
 }
+/** 此刻仍处在潜伏中（未暴露）；偷袭在出手暴露之前读取。 */
+export function concealedUnit(context: ObservationContext, unit: Combatant): boolean {
+  return canConceal(context, unit) && !unit.tacticalRevealed;
+}
 export function canSpot(context: ObservationContext, observer: Combatant, target: Combatant): boolean {
   if (observer.side === target.side) return true;
   if (observer.status !== 'ready') return false;
@@ -50,7 +54,8 @@ export function canSpot(context: ObservationContext, observer: Combatant, target
   const field = context.battlefield;
   if (field && !unitLineOfSight(field, from, to) || smokeBlocks(context,from,to)) return false;
   const distance = early ?? distanceBetween(context, observer, target), subject = hostOf(context, target) ?? target;
-  if (canConceal(context, subject) && !subject.tacticalRevealed && distance > (context.mode === 'small' ? 2 : 1)) return false;
+  // 侦察（斥候、观察员、神识）识破潜伏的距离翻倍；只在目标确实隐匿时才查观察者特质。
+  if (canConceal(context, subject) && !subject.tacticalRevealed && distance > (context.mode === 'small' ? 2 : 1) * (activeTraitIds(observer).includes('recon') ? 2 : 1)) return false;
   if (!night) return true;
   const range = activeTraitIds(observer).includes('night-fighter') ? (context.mode === 'small' ? 6 : 4) : (context.mode === 'small' ? 3 : 2);
   return distance <= range;

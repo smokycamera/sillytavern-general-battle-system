@@ -1,4 +1,4 @@
-import { activeTraitIds, activeConditionIds } from './trait-sources.js';
+import { activeTraitIds, activeConditionIds, traitPrerequisiteReason } from './trait-sources.js';
 import type { Combatant, Weapon } from './types.js';
 
 export function isRangedWeapon(weapon?: Weapon): boolean { return !!weapon?.tags?.includes('ranged'); }
@@ -38,6 +38,11 @@ export function mountedShooting(unit: Combatant, weapon?: Weapon): boolean {
     && activeTraitIds(unit).includes('mounted-archer') && !unit.airborne && !unit.suppression
     && !activeConditionIds(unit).some((id) => ['slowed', 'stunned', 'restrained'].includes(id))
     && (weapon ? mobileRangedWeapon(weapon) : [unit.weapon, unit.sidearm].some(mobileRangedWeapon));
+}
+/** 身法：轻中装人形或大型身体，脱离近战不受借机攻击；压制、减速、定身、眩晕与空中时不能借此脱离，仍受警戒。 */
+export function agileDisengage(unit: Combatant): boolean {
+  return unit.rulesVersion === 'v2' && unit.status === 'ready' && !unit.airborne && !unit.suppression && activeTraitIds(unit).includes('agile')
+    && !traitPrerequisiteReason(unit, 'agile') && !activeConditionIds(unit).some((id) => ['slowed', 'stunned', 'restrained'].includes(id));
 }
 export function mobileRangedWeapon(weapon?: Weapon): boolean {
   return isRangedWeapon(weapon) && (weapon?.load ?? 99) <= 2 && !weaponReloadTurns(weapon);

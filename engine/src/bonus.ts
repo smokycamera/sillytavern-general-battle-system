@@ -11,6 +11,8 @@ import { fatiguePenalty } from './resources.js';
 import { humanEncumbered } from './body.js';
 import { defensivePostureMods, looseFormation } from './tactics.js';
 import { activeTraitIds, actualTargetTag, traitPrerequisiteReason, traitStatAdjustments, bodyRank, traitSourceActive } from './trait-sources.js';
+import { traitsV13 } from './trait-model.js';
+import { entrenched } from './entrenchment.js';
 
 export type ModSource = 'intrinsic' | 'stance' | 'condition' | 'hero' | 'temp' | 'command';
 export type ModKind = 'atk' | 'def' | 'dmg' | 'morale' | 'spd' | 'ward';
@@ -185,11 +187,20 @@ export function hasFlag(unit: Combatant, flag: string, registry?: Map<string, Tr
 export function traitRuntimeMods(traitIds: string[], registry?: Map<string, Trait>, unit?: Combatant, context: ResolveContext = {}): Modifier[] {
   const out: Modifier[] = [];
   for (const id of unit ? activeTraitIds(unit) : [...new Set(traitIds)]) {
+    // V13 拒马：不再要求长兵器，并接过原克制机动对骑乘、载具与机动目标的打击加成（与旧克制机动同组取强）。
+    if (unit && traitsV13(unit) && id === 'pike-wall') {
+      const name = getTrait(id, registry)?.name ?? '拒马';
+      out.push({ source: 'intrinsic', sourceId: 'pike-wall:atk', stackGroup: 'counter-mobile:atk', name, kind: 'atk', type: 'flat', value: 2, cond: { vsTag: 'mobile' } });
+      out.push({ source: 'intrinsic', sourceId: 'pike-wall:dmg', stackGroup: 'counter-mobile:dmg', name, kind: 'dmg', type: 'mult', value: 1.25, cond: { vsTag: 'mobile' } });
+      continue;
+    }
     if (unit?.rulesVersion === 'v2' && ['large', 'titan', 'flying', 'shield-wall', 'pike-wall'].includes(id)) continue;
     const t = getTrait(id, registry);
     if (!t) continue;
     if (unit && traitPrerequisiteReason(unit, id, context)) continue;
     if (unit?.rulesVersion === 'v2' && id === 'fortification') {
+      // V13：只在据守位置生效；工兵的攻击（防守视角里 context.defender 是出手方）无视工事。
+      if (traitsV13(unit) && (!entrenched(unit) || context.defender && activeTraitIds(context.defender).includes('siege-breaker'))) continue;
       out.push({ source: 'intrinsic', sourceId: 'fortification:def', stackGroup: 'posture:def', name: t.name, kind: 'def', type: 'flat', value: 3 });
       if (context.ranged) out.push({ source: 'intrinsic', sourceId: 'fortification:ward', stackGroup: 'posture:ward', name: t.name, kind: 'ward', type: 'mult', value: 0.7 });
       continue;
@@ -197,7 +208,8 @@ export function traitRuntimeMods(traitIds: string[], registry?: Map<string, Trai
     if (unit?.rulesVersion === 'v2' && id === 'loose-formation') {
       if (looseFormation(unit)) {
         if (context.area && !context.engaged) out.push({ source: 'intrinsic', sourceId: 'loose:area', name: '疏散减轻范围暴露', kind: 'ward', type: 'mult', value: 0.5 });
-        if (!context.ranged && (context.distance ?? 0) <= 1) out.push({ source: 'intrinsic', sourceId: 'loose:melee', name: '疏散近战薄弱', kind: 'def', type: 'flat', value: -1 });
+        // V13 个体散兵没有阵形可散，不承担编队的近战代价。
+        if (!context.ranged && (context.distance ?? 0) <= 1 && !(traitsV13(unit) && unit.scale === 'hero')) out.push({ source: 'intrinsic', sourceId: 'loose:melee', name: '疏散近战薄弱', kind: 'def', type: 'flat', value: -1 });
       }
       continue;
     }
@@ -222,7 +234,8 @@ export function traitRuntimeMods(traitIds: string[], registry?: Map<string, Trai
       if (m && unit?.rulesVersion === 'v2') {
         m.sourceId = `${id}:${index}`;
         if (id === 'guardian' || id === 'guardian-greater') m.stackGroup = 'guardian:' + m.kind;
-        if (id === 'anti-large' || id === 'monster-hunter') m.stackGroup = 'counter-large:' + m.kind;
+        if (id === 'anti-large' || id === 'monster-hunter' || id === 'anti-air') m.stackGroup = 'counter-large:' + m.kind;
+        if (id === 'anti-mobile' && traitsV13(unit)) m.stackGroup = 'counter-mobile:' + m.kind;
       }
       if (m) out.push(m);
     }
@@ -297,7 +310,7 @@ export function conditionMods(
   for (const c of conds) {
     if (unit?.rulesVersion === 'v2' && c.dur <= 0) continue;
     if (unit?.rulesVersion === 'v2' && c.id === 'fearful' && activeTraitIds(unit).some((id) => getTrait(id, registry)?.effects.some((e) => e.kind === 'immuneMorale'))) continue;
-    if (unit?.rulesVersion === 'v2' && c.id === 'poisoned' && unit.body === 'vehicle') continue;
+    if (unit?.rulesVersion === 'v2' && c.id === 'poisoned' && (unit.body === 'vehicle' || activeTraitIds(unit).includes('inorganic'))) continue;
     const def = conditionDefs.get(c.id);
     if (!def?.mods) continue;
     for (const [index, m] of def.mods.entries()) out.push({ ...m, duration: c.dur,
@@ -351,6 +364,8 @@ export function fieldModsFor(unit: Combatant, fieldTags: string[], registry?: Ma
     const t = getTrait(id, registry);
     if (!t) continue;
     if (unit.rulesVersion === 'v2' && id === 'fortification') continue;
+    // V13 工兵靠拆除与破工事立功，不再在攻城环境里凭空加攻击。
+    if (traitsV13(unit) && id === 'siege-breaker') continue;
     if (unit.rulesVersion === 'v2' && id === 'plains-runner' && fieldTags.includes('plains')) out.push({ source: 'stance', sourceId: 'plains-runner:spd', name: t.name, kind: 'spd', type: 'flat', value: 2 });
     for (const e of t.effects) {
       if (e.kind !== 'fieldMod' || !fieldTags.includes(e.field)) continue;

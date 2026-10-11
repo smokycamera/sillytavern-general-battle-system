@@ -306,14 +306,14 @@ describe('战场环境标签', () => {
       sb.start();
       return { res: sb.attack(a.id, d.id, { bypassTurn: true }), defBase: d.base.def, atkBase: a.base.atk };
     };
-    // 野战：攻方「原野游骑」生效（atk +1），守方「守城工事」不生效
+    // 野战：攻方「平原专精」生效（atk +1），守方「工事」不生效
     const plains = run(['plains']);
-    expect(plains.res.atkDetail).toContain('原野游骑·plains');
+    expect(plains.res.atkDetail).toContain('平原专精·plains');
     expect(plains.res.netAtk).toBe(plains.atkBase + 1);
     expect(plains.res.targetDef).toBe(plains.defBase);
-    // 攻城：守方「守城工事」生效（def +3），攻方特质不触发
+    // 攻城：守方「工事」生效（def +3），攻方特质不触发
     const siege = run(['siege']);
-    expect(siege.res.atkDetail).not.toContain('原野游骑');
+    expect(siege.res.atkDetail).not.toContain('平原专精');
     expect(siege.res.targetDef).toBe(siege.defBase + 3);
     // 无环境标签：双方修正都不注入
     const none = run([]);

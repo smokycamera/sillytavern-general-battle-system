@@ -1,5 +1,6 @@
 import { isWoundModel } from './balance.js';
 import { instanceMultiplier, validateInstanceVariance } from './instance-variance.js';
+import { activeTraitIds } from './trait-sources.js';
 import type { Combatant, RulePack } from './types.js';
 import { BODY, bodyProfile } from './body.js';
 import { limitCombatantLife, singleLifeLimit } from './health-limits.js';
@@ -19,7 +20,7 @@ export function validateCombatModel(u: Combatant): void {
   if(u.scale==='hero'){if(u.formation!==undefined)throw Error('个体不能携带编队人数');return;}
   const f=u.formation;
   if(!f||!Number.isSafeInteger(f.members)||f.members<0||!Number.isSafeInteger(f.capacity)||f.capacity<1||f.members>f.capacity||!Number.isFinite(f.memberHp)||f.memberHp<=0||f.memberHp>1e6
-    ||f.woundedRemainder!==undefined&&![0,1].includes(f.woundedRemainder)||f.members!==u.hp||f.capacity!==u.base.hpMax)throw Error('编队人数、成员耐久或兼容记录损坏');
+    ||f.woundedRemainder!==undefined&&![0,1,2,3].includes(f.woundedRemainder)||f.members!==u.hp||f.capacity!==u.base.hpMax)throw Error('编队人数、成员耐久或兼容记录损坏');
   if(u.combatModel===MEMBER_HEALTH_MODEL)validateMemberHealth(u);
 }
 export function personnel(u: Combatant): number { return u.formation?.members ?? u.hp; }
@@ -30,7 +31,7 @@ export function synchronizePersonnel(u: Combatant, fromLegacy = false): void {
   if (!u.formation) u.formation = {members:u.hp,capacity:u.base.hpMax,memberHp:10*BODY[u.body??'human'].hp};
   if (fromLegacy) { resizeMemberHealth(u,u.hp);u.formation.members=u.hp; u.formation.capacity=u.base.hpMax; }
   const f=u.formation;
-  if(f.woundedRemainder!==undefined&&![0,1].includes(f.woundedRemainder))throw Error('编队伤员余量损坏');
+  if(f.woundedRemainder!==undefined&&![0,1,2,3].includes(f.woundedRemainder))throw Error('编队伤员余量损坏');
   if (!Number.isSafeInteger(f.members)||f.members<0||!Number.isSafeInteger(f.capacity)||f.capacity<1||f.members>f.capacity||!Number.isFinite(f.memberHp)||f.memberHp<=0) throw Error('编队人数或成员耐久损坏');
   u.hp=f.members;u.base.hpMax=f.capacity;
 }
@@ -74,6 +75,8 @@ export function upgradeUnifiedLife(u: Combatant): void {
 }
 /** 本地医疗按实际执行单位换算；物品为单份，不随服用者人数放大。 */
 export function healingYield(source: Combatant, target: Combatant, amount: number, item = false): number {
+  // 医护：施放的治疗技能与使用的治疗品效果×1.25。
+  if(source.rulesVersion==='v2'&&activeTraitIds(source).includes('medic'))amount*=1.25;
   if(!isCohort(target)||target.scale==='hero')return amount;
   const teams=!item&&source.scale!=='hero'?Math.min(personnel(source),Math.max(1,personnel(source)/COHORT_REFERENCE)*10):1;
   return amount*teams/(target.combatModel===MEMBER_HEALTH_MODEL?1:memberDurability(target));
