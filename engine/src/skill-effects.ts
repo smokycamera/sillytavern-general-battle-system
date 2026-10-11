@@ -21,6 +21,7 @@ import { canOccupy, terrainCellLabel } from './small/spatial.js';
 import { formationNode, FORMATION_NODES, formationCanOccupy } from './mass/formation.js';
 import { actionPotential, incomingPotential, tacticalStateValue } from './skill-tactics.js';
 import { grantBarrier } from './barrier.js';
+import { moveEffectDescription } from './skill-movement.js';
 
 type ConditionEffect = Extract<EffectOp, { op: 'condition' }>;
 type PushEffect = Extract<EffectOp, { op: 'push' }>;
@@ -177,6 +178,7 @@ export function skillEffectLines(context: ObservationContext, actor: Combatant, 
       return p ? [`${p.group ? `群体召唤：一支${p.members}名成员的编队` : '单体召唤：一个个体'}，等级L${p.power}；召唤武器L${p.power}，${p.range > 1 ? '远程' : '近战'}距离${p.range}；在施法者附近出现，下轮行动；群体分摊同级单体的生命和武器伤害预算`] : [];
     }
     if (effect.op === 'zone') return [zoneEffectDescription(effect)];
+    if (effect.op === 'move') return [moveEffectDescription(effect, ability)];
     if (effect.op === 'barrier') return [`屏障最多吸收${effect.amount}点伤害，持续${effect.dur}轮${effect.defensePower ? `，防御规格L${effect.defensePower}` : ''}；重复施放取较强保护`];
     if (effect.op === 'trait') return [skillTraitReason(target, effect) ?? `${traitRegistry().get(effect.traitId)?.name}持续${effect.dur}轮，战斗归档时结束`];
     if (effect.op === 'resource') return [`${effect.resource==='SP'?'精力':effect.resource}变化${skillResourceChange(target, effect)}，受当前资源与上限约束`];

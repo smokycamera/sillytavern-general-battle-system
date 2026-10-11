@@ -223,9 +223,9 @@ describe('AI 建议标签解析', () => {
     );
     const s = r.suggestions[0] as Extract<(typeof r.suggestions)[number], { kind: 'spawn' }>;
     expect(s.skills).toEqual([
-      { blueprintId: 'bp-firestorm', level: 6, name: '焚天' },
-      { blueprintId: 'bp-iron-guard', name: undefined },
-      { blueprintId: 'bp-mending', level: 4, name: undefined },
+      { blueprintId: 'generic:magic-area:thermal', level: 6, name: '焚天' }, // 旧技能名换成对应的通用机制
+      { blueprintId: 'generic:buff:defense', name: undefined },
+      { blueprintId: 'generic:buff:heal', level: 4, name: undefined },
     ]);
     expect(r.invalid).toHaveLength(0); // 未命中的技能条目静默跳过，不算非法标签
   });
@@ -238,8 +238,8 @@ describe('AI 建议标签解析', () => {
     const s = r.suggestions[0] as Extract<(typeof r.suggestions)[number], { kind: 'spawn' }>;
     const ids = (s.skills ?? []).map((k) => k.blueprintId);
     expect(ids).toContain('generic:magic-single'); // 通用类别同义词直接进入六类公式；其余旧蓝图保留兼容。
-    expect(ids).toContain('bp-battle-hymn'); // 士气鼓舞 → 战歌
-    expect(ids).toContain('bp-iron-guard'); // 防御 → 铁壁
+    expect(ids).toContain('generic:buff:attack+morale-up'); // 旧简称士气鼓舞 → 增益攻击+士气（不再是旧蓝图战歌）
+    expect(ids).toContain('generic:buff:defense'); // 旧简称防御 → 增益防御（不再是必须持盾的铁壁）
     expect(r.invalid).toHaveLength(0);
   });
 

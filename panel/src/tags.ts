@@ -1,5 +1,6 @@
 import { parseEnhancementSuffix, enhancementLabel, type Enhancements } from '../../engine/src/enhancements.js';
 import { parseSkillMechanism, skillMechanismId } from '../../engine/src/data/skill-mechanisms.js';
+import { legacySkillEquivalent } from '../../engine/src/skill-catalog.js';
 import { decodeEntities } from './protocol-syntax.js';
 import { CATEGORY_LABELS } from '../../engine/src/data/ability-blueprints.js';
 /**
@@ -323,21 +324,18 @@ export interface SkillSpec {
   name?: string;
 }
 
-/** 蓝图段 → 蓝图 id：精确 id/名称/类别名 → 名称双向包含兜底（"烈焰"→烈焰风暴） */
+/** 蓝图段 → 技能定义 id：通用机制 → 精确 bp id（存档内部） → 旧技能名/九类简称/名称包含兜底，后三者一律换成对应的通用机制。 */
 function blueprintKey(spec: string): string | undefined {
   const n = spec.trim();
   if (!n) return undefined;
   const generic = parseSkillMechanism(n); if (generic) return skillMechanismId(generic);
   if (/^(?:generic:|物理|魔法|buff|debuff|增益|减益|范围buff|范围debuff)/i.test(n)) return undefined;
-  for (const bp of Object.values(ABILITY_BLUEPRINTS)) {
-    if (bp.id === n || bp.name === n) return bp.id;
-  }
+  if (ABILITY_BLUEPRINTS[n]) return n;
+  const legacy = (name: string) => legacySkillEquivalent(name)?.id ?? Object.values(ABILITY_BLUEPRINTS).find((bp) => bp.name === name)?.id;
+  for (const bp of Object.values(ABILITY_BLUEPRINTS)) if (bp.name === n) return legacy(bp.name);
   const category = (Object.keys(DEFAULT_BLUEPRINTS) as Category[]).find((c) => categoryLabel(c) === n || CATEGORY_LABELS[c] === n);
-  if (category) return DEFAULT_BLUEPRINTS[category];
-  for (const bp of Object.values(ABILITY_BLUEPRINTS)) {
-    if (bp.name.includes(n) || n.includes(bp.name)) return bp.id;
-  }
-  return undefined;
+  if (category) return legacySkillEquivalent(CATEGORY_LABELS[category])?.id ?? legacy(ABILITY_BLUEPRINTS[DEFAULT_BLUEPRINTS[category]]!.name);
+  return legacySkillEquivalent(n, true)?.id ?? Object.values(ABILITY_BLUEPRINTS).find((bp) => bp.name.includes(n) || n.includes(bp.name))?.id;
 }
 
 /** 单条技能：可选 "名字:" 前缀 + 蓝图（必命中才有效）+ 可选 L等级 */

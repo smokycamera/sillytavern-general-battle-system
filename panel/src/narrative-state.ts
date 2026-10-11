@@ -1,6 +1,7 @@
 import { prepareCombatModel } from '../../engine/src/combat-model.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
-import { V6_D20 } from '../../engine/src/rules.js';
+import { V6_D20, V14_OVERFLOW_D20 } from '../../engine/src/rules.js';
+import { prepareSkillModel } from '../../engine/src/skill-model.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import type { PromptSettings } from './prompt-settings.js';
 import { PANEL_SAVE_SCHEMA_VERSION, learnUnitRecord } from './unit-state.js';
@@ -353,7 +354,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
         if (records.some((r) => r.id === id)) throw new Error('新单位身份已存在');
         const unit = generateUnit(spawnInput(event), { registry, seed: id }).unit;
         unit.id = id;
-        prepareCombatModel(unit,V6_D20); upgradeCombatSkills(unit); applySpawnWound(unit, event);
+        prepareSkillModel(unit,V14_OVERFLOW_D20); prepareCombatModel(unit,V6_D20); upgradeCombatSkills(unit); applySpawnWound(unit, event);
         records.push(unitRecordFromCombatant(unit, undefined, { sourceId: proposal.id }));
         if (unit.hp > 0 && !event.archiveOnly) roster.push(materializeUnitRecord(records.at(-1)!, registry));
       }

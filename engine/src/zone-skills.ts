@@ -5,6 +5,7 @@ import { standardConditionMap } from './conditions.js';
 import { traitRegistry } from './data/traits.js';
 import { parseDice } from './dice.js';
 import { validDefensePower } from './barrier.js';
+import type { SkillModel } from './skill-model.js';
 
 type ZoneEffect = Extract<EffectOp, { op: 'zone' }>;
 type ZoneStrength = Pick<ZoneEffect, 'power' | 'amount' | 'penetration'>;
@@ -33,8 +34,8 @@ export function validateZoneStrength(zone: { amount?: unknown; penetration?: unk
 }
 
 /** 区域不经过普通伤害技能公式；从原配方升级一次，保留身份、冷却与已布置区域。 */
-export function upgradeZoneSkill(ability: Ability, model?: Combatant['damageModel']): boolean {
-  const version = model === 'wounds-v2' ? 'skill-zone-v3' : 'skill-zone-v1';
+export function upgradeZoneSkill(ability: Ability, model?: Combatant['damageModel'], formula?: SkillModel): boolean {
+  const version = model === 'wounds-v2' ? formula ? 'skill-zone-v4' : 'skill-zone-v3' : 'skill-zone-v1';
   let zones = ability.effects.filter((e): e is ZoneEffect => e.op === 'zone');
   if (!zones.length) return false;
   if (!ability.recipe || zones.some(effect => !ability.recipe!.modifiers.includes('zone-' + effect.kind))
@@ -45,7 +46,7 @@ export function upgradeZoneSkill(ability: Ability, model?: Combatant['damageMode
     && ability.range?.metric === 'grid' && ability.range.min === 0 && ability.range.max === 2 + Math.floor(ability.recipe.power / 3))) return true;
   if (model === 'wounds-v2' && ability.definitionId) {
     // Rebuild the pristine recipe before applying modifiers, including nested healing payloads.
-    const rebuilt = compileGenericSkill(ability.definitionId, ability.power ?? ability.recipe.power, ability.sourceId ?? '', ability.name, model);
+    const rebuilt = compileGenericSkill(ability.definitionId, ability.power ?? ability.recipe.power, ability.sourceId ?? '', ability.name, model, formula);
     ability.effects = rebuilt.effects; ability.range = rebuilt.range;
     zones = ability.effects.filter((e): e is ZoneEffect => e.op === 'zone');
   }

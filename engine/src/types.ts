@@ -126,10 +126,12 @@ export type EffectOp =
   | { op: 'dispel'; polarity: 'positive' | 'negative'; count: 1 | 2 }
   | { op: 'resource'; resource: string; amount: number; maximum?: 'training' }
   | { op: 'morale'; amount: number }
-  | { op: 'summon'; templateId: string; count: number };
+  | { op: 'summon'; templateId: string; count: number }
+  /** 施术者自身位移：dash 沿可走路线突进、blink 闪现到可见落点（两者在效果之前），withdraw 出手后后撤；reach 为格数。 */
+  | { op: 'move'; mode: 'dash' | 'blink' | 'withdraw'; reach: number };
 
-/** 区域携带实际效果；不递归生成区域或每轮无限召唤。召唤仍在施放时执行。 */
-export type ZonePayload = Exclude<EffectOp, { op: 'zone' | 'damage' | 'summon' }>;
+/** 区域携带实际效果；不递归生成区域或每轮无限召唤。召唤与施术者位移仍在施放时执行。 */
+export type ZonePayload = Exclude<EffectOp, { op: 'zone' | 'damage' | 'summon' | 'move' }>;
 
 export interface Ability {
   area?: { shape: 'cone' | 'line' | 'ring' | 'chain' | 'circle'; radius: number; maxTargets: number };
@@ -138,7 +140,7 @@ export interface Ability {
   /** 显式编辑的效果与数值不被入场公式重建。 */
   customized?: boolean;
   bonuses?: Enhancements;
-    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3' | 'skill-v5.0' | 'skill-v6.0' | 'skill-v6.1' | 'skill-zone-v1' | 'skill-zone-v2' | 'skill-zone-v3';
+    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3' | 'skill-v5.0' | 'skill-v6.0' | 'skill-v6.1' | 'skill-v7.0' | 'skill-zone-v1' | 'skill-zone-v2' | 'skill-zone-v3' | 'skill-zone-v4';
     damageScale?: number;
   recipe?: import('./data/skill-mechanisms.js').SkillRecipe;
   weaponUse?: 'auto' | 'melee' | 'ranged';
@@ -284,6 +286,8 @@ export interface Combatant {
   armsModel?: 'arms-v1';
   /** V13 trait overhaul, projected from the battle rules; absent keeps the frozen V12 trait rules. */
   traitModel?: 'traits-v1';
+  /** V14 skill pricing (composite states priced per stat), projected from the battle rules; absent keeps V13 skill numbers. */
+  skillModel?: 'skills-v1';
   battleZones?: import('./area-effects.js').BattleZone[];
   barrier?: { remaining: number; duration: number; sourceId?: string; defenses?: { power: number; duration: number }[] };
   accessories?: Partial<Record<'accessory1' | 'accessory2', import('./items.js').AccessoryItem>>;
@@ -549,6 +553,8 @@ export interface RulePack {
   armsModel?: 'arms-v1';
   /** V13 trait overhaul (工事据守、工兵、拒马、散兵单体与步枪编队自动散兵); absent keeps V12. */
   traitModel?: 'traits-v1';
+  /** V14 skill pricing: 同时改两项属性的状态按两项附加效果计价; absent keeps V13. */
+  skillModel?: 'skills-v1';
   combatModel?: 'cohort-v1' | 'cohort-v2';
   /** 武器直击余伤100%在目标编队内传递；旧规则缺省关闭。 */
   weaponOverflow?: boolean;

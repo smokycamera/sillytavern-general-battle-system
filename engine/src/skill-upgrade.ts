@@ -8,18 +8,21 @@ import { compileSkill, skillDefinitionKnown } from './skill-catalog.js';
 import { balanceGenericSkill, genericEffectCount, BUFF_CONDITIONS } from './skill-balance.js';
 import { upgradeZoneSkill } from './zone-skills.js';
 import { attachDefensePower } from './barrier.js';
+import { SKILL_MODEL, skillsV14, conditionEffectWeight } from './skill-model.js';
 /** V3只在新规则入场时升级；原技能身份、P与已支付的账本都保留。 */
 export function upgradeCombatSkills(unit: Combatant): void {
   const modern=unit.combatModel==='cohort-v2';
+  // V14 只在新的统一伤害模型下重建技能：同时改两项属性的状态按两项计价。
+  const formula = unit.damageModel==='wounds-v2' && skillsV14(unit) ? SKILL_MODEL : undefined;
   for(const a of unit.abilities){
-    if (upgradeZoneSkill(a,unit.damageModel)) { attachDefensePower(a); continue; }
+    if (upgradeZoneSkill(a,unit.damageModel,formula)) { attachDefensePower(a); continue; }
     const generic=a.definitionId?.startsWith('generic:')??false;
     const wounds=isWoundModel(unit.damageModel), unified=unit.damageModel==='wounds-v2';
-    const version=unified?'skill-v6.1':wounds?'skill-v5.0':modern?'skill-v4.3':'skill-v3.0';
+    const version=unified?formula?'skill-v7.0':'skill-v6.1':wounds?'skill-v5.0':modern?'skill-v4.3':'skill-v3.0';
     if(a.customized||a.itemSourceId||a.fixedPower||a.effectVersion===version) { attachDefensePower(a); continue; }
     const previousGroup=a.cooldownGroup??a.id;
     if(modern&&a.definitionId&&skillDefinitionKnown(a.definitionId)) {
-      const rebuilt=compileSkill({id:a.definitionId!,name:a.name,bonuses:a.bonuses,instanceId:a.id},a.power??5,unit.id);
+      const rebuilt=compileSkill({id:a.definitionId!,name:a.name,bonuses:a.bonuses,instanceId:a.id},a.power??5,unit.id,formula);
       // 从原始配方重建一次，避免旧战斗倍率/强化再次相乘；身份和支付账本不重置。
       const sourceId=a.sourceId,id=a.id;
       Object.assign(a,rebuilt,{sourceId,id});
@@ -28,7 +31,7 @@ export function upgradeCombatSkills(unit: Combatant): void {
     const power=a.power??5, curve=curveAt(power), base=modern?combatPowerBudget(power,unit.damageModel):diceAvg(curve.dmgBase)+(curve.dmgAp?diceAvg(curve.dmgAp):0);
     const damaging=a.effects.some(e=>e.op==='damage'), area=a.shape==='burst';
     if(modern&&area&&!a.damageBasis&&damaging)a.areaExposure=unified?UNIFIED_AREA[powerIndex(power)]:power>=10?1e9:power>=9?128:power>=8?16:power>=7?8:4;
-    const controls=a.effects.filter(e=>!['damage'].includes(e.op)).length;
+    const controls=a.effects.filter(e=>!['damage'].includes(e.op)).reduce((sum,e)=>sum+(e.op==='condition'?conditionEffectWeight(e.conditionId,formula):1),0);
     if(damaging){
       const share=(area?1.05:unified&&!a.damageBasis?1.5:2.2)*Math.pow(.9,Math.min(3,controls));
       const scaled=scaledPowerDice(base*share*bonusMultiplier(a.bonuses,'damage',a.damageBasis?undefined:a.channel??'kinetic'));
@@ -54,8 +57,8 @@ export function upgradeCombatSkills(unit: Combatant): void {
       if(restored?.op==='resource'&&a.cost?.resource==='SP')a.cost.amount=Math.max(a.cost.amount,restored.amount*(area?2:1));
     }
     const healingScale=wounds?(area ? 0.65 : 1):(area ? 0.8 : 1.5);
-    if(modern)a.effects=a.effects.map(e=>e.op==='heal'?{op:'heal',amount:Math.max(1,Math.round(base*healingScale*bonusMultiplier(a.bonuses,'healing')/(generic?genericEffectCount(a):1)))}:e);
-    if(modern)balanceGenericSkill(a);
+    if(modern)a.effects=a.effects.map(e=>e.op==='heal'?{op:'heal',amount:Math.max(1,Math.round(base*healingScale*bonusMultiplier(a.bonuses,'healing')/(generic?genericEffectCount(a,formula):1)))}:e);
+    if(modern)balanceGenericSkill(a,formula);
     const oldGroup=previousGroup;
     a.cooldownGroup='skill-mechanism:'+(a.definitionId??a.id);
     const old=unit.abilityState.find(s=>s.abilityId===oldGroup);

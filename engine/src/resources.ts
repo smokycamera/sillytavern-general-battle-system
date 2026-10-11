@@ -1,4 +1,5 @@
 import { ABILITY_BLUEPRINTS } from './data/ability-blueprints.js';
+import { SKILL_MODEL, skillsV14, conditionEffectWeight } from './skill-model.js';
 import type { Ability, Combatant, EffectOp, RulePack } from './types.js';
 
 type ReserveUnit = Pick<Combatant, 'level' | 'rulesVersion' | 'resourceModel' | 'weapon' | 'sidearm' | 'abilities' | 'preparedAbilityIds'>;
@@ -46,14 +47,17 @@ function primitives(ability: Ability): EffectOp[] {
   return ability.effects.flatMap<EffectOp>(e => e.op === 'zone' ? [e, ...(e.effects ?? [])] : [e]);
 }
 /** A runtime quote shared by UI, legality, AI, preview and payment. Never mutate saved skill recipes. */
-export function abilityCost(actor: Pick<Combatant, 'resourceModel'>, ability: Ability): Ability['cost'] {
+export function abilityCost(actor: Pick<Combatant, 'resourceModel'> & Partial<Pick<Combatant, 'skillModel'>>, ability: Ability): Ability['cost'] {
   const original = ability.cost;
   if (!original || original.resource !== 'SP' || !managedSkill(actor, ability)) return original;
   const effects = primitives(ability), area = ability.shape === 'burst' || !!ability.area || effects.some(e => e.op === 'zone');
   const power = Math.max(1, Math.min(10, ability.power ?? ability.recipe?.power ?? 1));
   const hardControl = effects.some(e => e.op === 'condition' && ['stunned', 'restrained', 'disarmed', 'silenced'].includes(e.conditionId));
   const summon = effects.some(e => e.op === 'summon');
-  const computed = 2 + Math.ceil(power / 2) + Math.max(0, effects.length - 1) + Number(hardControl) + (summon ? 2 : 0);
+  // V14：同时改两项属性的状态按两项计。
+  const formula = skillsV14(actor) ? SKILL_MODEL : undefined;
+  const count = effects.reduce((n, e) => n + (e.op === 'condition' ? conditionEffectWeight(e.conditionId, formula) : 1), 0);
+  const computed = 2 + Math.ceil(power / 2) + Math.max(0, count - 1) + Number(hardControl) + (summon ? 2 : 0);
   // Energy transfer retains its existing budget floor and finite uses; it is not a free self-rest action.
   const transferred = ability.effects.reduce((n, e) => n + (e.op === 'resource' && e.resource === 'SP' && e.amount > 0 ? e.amount : 0), 0);
   const transferFloor = transferred * (ability.area?.maxTargets ?? (area ? 2 : 1));

@@ -66,14 +66,16 @@ describe('通用六类技能配方', () => {
         expect(restored.abilities[0]!.effects).toEqual(a.effects);
       }
     }
-    expect([...covered].sort()).toEqual(['barrier', 'condition', 'damage', 'dispel', 'heal', 'morale', 'push', 'resource', 'summon', 'trait', 'zone']);
+    expect([...covered].sort()).toEqual(['barrier', 'condition', 'damage', 'dispel', 'heal', 'morale', 'move', 'push', 'resource', 'summon', 'trait', 'zone']);
     expect([...conditions].sort()).toEqual(STANDARD_CONDITIONS.map((c) => c.id).sort());
-    // 停用特质与身体/装备自动特质只保留旧技能 id，新技能不再提供。
-    expect([...traits].sort()).toEqual(TRAITS.filter((t) => t.v2SourceReady && !t.legacy && !t.derived).map((t) => t.id).sort());
+    // 停用特质与身体/装备自动特质只保留旧技能 id，新技能不再提供；先锋部署只在开战时生效，守护/大守护改用随等级缩放的增益守护。
+    expect([...traits].sort()).toEqual(TRAITS.filter((t) => t.v2SourceReady && !t.legacy && !t.derived && !['vanguard', 'guardian', 'guardian-greater'].includes(t.id)).map((t) => t.id).sort());
     expect(parseSkillMechanism('物理单体近战+射击')!.modifiers).toEqual(['ranged']);
     expect(parseSkillMechanism('魔法范围热能+奥术')!.modifiers).toEqual(['arcane']);
     expect(parseSkillMechanism('魔法范围扇形+直线')!.modifiers).toEqual(['line']);
-    expect(parseSkillMechanism('魔法范围治疗+中毒+减速')!.modifiers).toEqual(['heal','poison','slow']);
+    expect(parseSkillMechanism('魔法范围燃烧+中毒+减速')!.modifiers).toEqual(['burn','poison','slow']);
+    // 攻击技能附带治疗会治疗被打的敌人：严格解析不接受。
+    expect(parseSkillMechanism('魔法范围治疗+中毒+减速')).toBeUndefined();
     expect(parseSkillMechanism('debuff不存在')).toBeUndefined();
     expect(parseProtocol('<tb><learn id="a" skills="破空:物理单体L99"/></tb>').events).toEqual([]);
     expect(parseProtocol('<tb><learn id="a" skills="烈焰风暴:buff不存在L5"/></tb>').events).toEqual([]);

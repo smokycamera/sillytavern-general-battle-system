@@ -120,7 +120,9 @@ describe('正文原子事务', () => {
     const { save, proposal, ns } = setup('<spawn name="术士" side="ally" scale="company" hpMax="30" level="3" reserves="1" skills="缠根:束缚术L7,净化L6,呼叫援军"/>');
     const next = prepareNarrativeTransaction(save, proposal, ns, true), record = next.storage!.find((r) => r.name === '术士')!;
     const restored = materializeUnitRecord(JSON.parse(JSON.stringify(record)), reg);
-    expect(restored.resources.reserve).toBe(1); expect(restored.abilities[0]!.effects[0]).toMatchObject({ op: 'condition', conditionId: 'restrained', saveDC: 12 });
+    // 旧技能名“束缚术”换成通用的减益定身：抵抗难度按通用公式 8+L。
+    expect(restored.resources.reserve).toBe(1); expect(restored.abilities[0]!.definitionId).toBe('generic:debuff:root');
+    expect(restored.abilities[0]!.effects[0]).toMatchObject({ op: 'condition', conditionId: 'restrained', saveDC: 15 });
     expect(restored.abilities[1]!.effects[0]).toMatchObject({ op: 'dispel', count: 2 }); expect(restored.abilities[2]!.fixedPower).toBe(true);
     expect(restored.preparedAbilityIds).toHaveLength(3); expect(restored.abilities).toHaveLength(3);
     const bad = JSON.parse(JSON.stringify(record)); bad.snapshot.abilities[0].effects[0].saveDC = 'bad';

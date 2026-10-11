@@ -3,6 +3,8 @@ export * from './balance.js';
 export * from './skill-learning.js';
 export * from './skill-attack.js';
 export * from './skill-effects.js';
+export * from './skill-movement.js';
+export * from './skill-model.js';
 export * from './afflictions.js';
 export * from './body.js';
 /**
