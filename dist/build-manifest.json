@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "2.0.0",
-  "builtAt": "2026-10-12T02:16:01.925Z",
-  "sourceFingerprint": "61203184050a99d7411be85888f5ca1cc3d2177eb73be5dbd0adf921da5f0df5",
+  "builtAt": "2026-10-12T12:14:18.292Z",
+  "sourceFingerprint": "f9ecfb447afb413d8f6ee75cfd7c6a142f87a0b4a51dadc8349a201081a28276",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -31,19 +31,19 @@
       "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     },
     {
-      "path": "dist/assets/panel-B8mHGlo8.js",
-      "bytes": 502680,
-      "sha256": "f76c5ec1a84850e1705fb9e07ba5fa9cb8eb83eb364104a9833e83aa7524c9d3"
-    },
-    {
       "path": "dist/assets/panel-BE7tz2KP.css",
       "bytes": 30539,
       "sha256": "a25360509c47fbb2b39aab978563101ed028804465d9d025c82cc6d45538116f"
     },
     {
-      "path": "dist/assets/preferences-GAjgZZzQ.js",
-      "bytes": 802061,
-      "sha256": "1e89d83619841f55001083ec1082244e907bb0c68320d6b51e6096d50a5d296e"
+      "path": "dist/assets/panel-D2oKLmmn.js",
+      "bytes": 503733,
+      "sha256": "9482f7340a3baf588e8d56cf2a81f8703aa51fe07b7c1a5fd2afa22301e0b2be"
+    },
+    {
+      "path": "dist/assets/preferences-C_n9_r-r.js",
+      "bytes": 809786,
+      "sha256": "9d6e54194f5fa616bbc5ee9ebfc20a5231efa715e392c3580c024b25b6c2f2d8"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -52,13 +52,13 @@
     },
     {
       "path": "assets/worldbook/!通用战斗系统约束.json",
-      "bytes": 20739,
-      "sha256": "224e1fe4c45ff783af782b28df8db1be87f17ccb7c8cdb3a4aa6560f36f3d339"
+      "bytes": 20874,
+      "sha256": "fddf711299fe6148e4449659244e74473d94a848e0ed4c04c18f8542dd7c80b5"
     },
     {
       "path": "assets/worldbook/lorebook system explain.md",
-      "bytes": 61779,
-      "sha256": "3117bdd55ad3444cfd6bb07d60327f7b5f522a29424c828707fdba3bdbd791db"
+      "bytes": 64004,
+      "sha256": "a315c95ce8294e2e7f24df81dfa38c95acec78214ef4a5ad38a85887687ae166"
     },
     {
       "path": "docs/armor-v5-design.md",
@@ -242,8 +242,8 @@
     },
     {
       "path": "dist/index.js",
-      "bytes": 87763,
-      "sha256": "a6d526193b39f4b26751b02feaa7abfdd361a3ca9bc1d6280f50501cc9e86d2d"
+      "bytes": 88378,
+      "sha256": "2cc81253fac0115162afd1c86ab624dbf5d15dc97b68235c53cc4fc2b6442dd8"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -308,7 +308,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 46252,
-      "sha256": "12b31808b092febf84b74cc7c0ed0f6959d0d101f6524a753516d83bf2c523e1"
+      "sha256": "62fee4f5b957fc1a1246d75fc224eda5a78a524ca3bf849ef4f1d0db94355617"
     },
     {
       "path": "release/current-baseline.json",
