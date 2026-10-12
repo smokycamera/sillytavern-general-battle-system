@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { generateUnit, traitRegistry, SmallBattle, MassBattle, standardField, formationNode, V13_OVERFLOW_D20, V14_OVERFLOW_D20, V14_OVERFLOW_TW,
+import { generateUnit, traitRegistry, SmallBattle, MassBattle, standardField, formationNode, V13_OVERFLOW_D20, V14_OVERFLOW_D20, V14_OVERFLOW_TW, V15_OVERFLOW_D20,
   parseSkillMechanism, parseSkillMechanismParts, skillMechanismId, skillMechanismName, compileSkill, skillDefinitionId, upgradeCombatSkills, abilityCost, type Combatant, type GenerateInput } from '../src/index.js';
 import { parseProtocol } from '../../panel/src/protocol.js';
 import { parseAbilitySpec } from '../../panel/src/tags.js';
+import { compactEvents } from '../src/inject/format.js';
 const registry = traitRegistry();
 const specs = (text: string) => parseAbilitySpec(text).map((s) => ({ id: s.blueprintId, name: s.name, level: s.level }));
 function unit(id: string, side: 'ally' | 'enemy', skills = '', input: Partial<GenerateInput> = {}): Combatant {
@@ -97,6 +98,41 @@ describe('技能位移：突进（冲锋）、闪现、后撤', () => {
     expect(b.log.slice(abilityAt + 1).filter((l) => l.kind === 'move' && l.participants?.includes('a')).length).toBe(3);
   });
 
+  it('战报：技能名先写，出手前的突进/闪现并在其后，途中反应插在中间；先走几步再冲锋分开写，后撤排在结果之后', () => {
+    // a 在 D5，敌人 e 在 D2；g 默认远在 A1，需要借机时挪到 a 旁边。
+    const scene = (skills: string, input: Partial<GenerateInput> = {}) => {
+      const g = unit('g', 'enemy', '', { weaponClass: 'spear' }), { b, a, ability } = grid(skills, input), start = b.log.length;
+      b.combatants.push(g); b.turnOrder.push('g'); g.pos = 0;
+      return { b, a, g, ability, start, report: () => compactEvents(b.log.slice(start)) };
+    };
+    const charge = scene('冲锋:冲锋L5');
+    expect(charge.b.useAbility('a', charge.ability.id, 'e').ok).toBe(true);
+    expect(charge.report()).toEqual(['a 使用【冲锋】：突进 D5→D3，冲锋', expect.stringMatching(/^a→e 命中/)]);
+    const walked = scene('冲锋:冲锋L5'); walked.a.pos = 45;
+    walked.b.moveTo('a', 31); expect(walked.b.useAbility('a', walked.ability.id, 'e').ok).toBe(true);
+    expect(walked.report().slice(0, 2)).toEqual(['a D7→D5', 'a 使用【冲锋】：突进 D5→D3，冲锋']);
+    const provoked = scene('冲锋:冲锋L5'); provoked.g.pos = 32;
+    expect(provoked.b.useAbility('a', provoked.ability.id, 'e').ok).toBe(true);
+    expect(provoked.report()).toEqual(['a 使用【冲锋】：突进 D5→D4', expect.stringMatching(/^借机反应｜g→a 命中/), 'a 突进 D4→D3，冲锋', expect.stringMatching(/^a→e 命中/)]);
+    // 途中被打倒：不写冲锋，结果行写明是谁的技能没有生效。
+    const stopped = scene('冲锋:冲锋L5'); stopped.g.pos = 32; stopped.a.hp = 1;
+    expect(stopped.b.useAbility('a', stopped.ability.id, 'e').ok).toBe(true);
+    expect(stopped.report()[0]).toBe('a 使用【冲锋】：突进 D5→D4');
+    expect(stopped.report().at(-1)).toBe('a的【冲锋】位移途中受阻或被反应打断，技能未生效');
+    expect(stopped.b.log.find((l) => l.kind === 'ability')!.text).not.toContain('，冲锋');
+    const shot = scene('回马箭:物理单体射击+后撤L5', { weaponClass: 'bow' }); shot.b.byId('e').pos = 17;
+    expect(shot.b.useAbility('a', shot.ability.id, 'e').ok).toBe(true);
+    expect(shot.report()).toEqual(['a 使用【回马箭】', expect.stringMatching(/^a→e 命中/), 'a 后撤 D5→D8']);
+    for (const [skills, cell, line] of [['瞬身:闪现L6', 52, 'a 使用【瞬身】：闪现 D5→D8'], ['撤步:后撤L5', 52, 'a 使用【撤步】：后撤 D5→D8'], ['疾行:突进L5', 17, 'a 使用【疾行】：突进 D5→D3']] as const) {
+      const only = scene(skills);
+      expect(only.b.useAbility('a', only.ability.id, 'cell:' + cell).ok).toBe(true);
+      expect(only.report()).toEqual([line]);
+    }
+    // 旧日志的移动没有技能标记：保持原来的写法。
+    const legacy = charge.b.log.slice(charge.start).map((l) => l.move ? { ...l, move: { from: l.move.from, to: l.move.to }, text: l.text.replace(' 突进 ', ' ') } : l);
+    expect(compactEvents(legacy).slice(0, 2)).toEqual(['a D5→D3', 'a 使用【冲锋】']);
+  });
+
   it('AI：够不着时用冲锋技能接敌；只有位移技能时被贴身的远程单位闪现脱离', () => {
     const charge = grid('', {}, 24, { abilityBlueprints: specs('冲锋:冲锋L5') });
     charge.b.turnOrder = ['e', 'a', 'f']; charge.b.turnIndex = 0;
@@ -108,6 +144,19 @@ describe('技能位移：突进（冲锋）、闪现、后撤', () => {
     expect(archer.b.log.some((l) => l.kind === 'ability' && l.text.includes('使用【瞬身】'))).toBe(true);
     expect(archer.b.log.some((l) => l.text.startsWith('借机反应'))).toBe(false);
   });
+
+  it('AI：编队骑兵估算冲锋时途中被借机减员，落点受击估计不再因人数与成员生命不同源而报错', () => {
+    // 骑兵连贴着枪兵连，冲锋向3格外的敌人要离开接触；落点在步枪连（每回合两段）射程内。
+    const company = (id: string, side: 'ally' | 'enemy', skills: string, input: Partial<GenerateInput>) => unit(id, side, skills, { scale: 'company', hpMax: 20, ...input });
+    const cavalry = company('a', 'ally', '冲锋:冲锋L5', { mount: true, archetype: 'mobile', speedTier: 4, weaponClass: 'spear' });
+    const guard = company('g', 'enemy', '', { hpMax: 30, weaponClass: 'spear' }), target = company('t', 'enemy', '', {}), rifles = company('r', 'enemy', '', { weaponClass: 'rifle' });
+    const field = standardField(); field.tiles.fill('open');
+    const b = new SmallBattle({ combatants: [cavalry, guard, target, rifles], battlefield: field, rules: V15_OVERFLOW_D20, traitRegistry: registry, seed: 'skill-move-company' });
+    b.start(); b.turnOrder = ['a', 'g', 't', 'r']; b.turnIndex = 0;
+    b.byId('a').pos = 31; b.byId('g').pos = 38; b.byId('t').pos = 10; b.byId('r').pos = 14;
+    expect(() => b.autoAction('a')).not.toThrow();
+    expect(b.active?.id).not.toBe('a');
+  }, 20000);
 
   it('会战：突进一个阵位接敌并冲锋，闪现可越两层，后撤出手后退一层，随队人物不能独立位移', () => {
     const charge = mass('冲锋:冲锋L5');

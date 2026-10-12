@@ -523,8 +523,9 @@ export interface BattleLogEntry {
   resolutions?: AttackResolution[];
   /** 事件发生时的位置，用于本地演出；观测裁剪后不可见的事件不公开这些坐标。 */
   locations?: Record<string, number>;
-  /** 逐格移动的起止格；有高低差的实际高度地图另记两端站立高度（空中不记）。战报据此合并连续移动。 */
-  move?: { from: number; to: number; fromHeight?: number; toHeight?: number };
+  /** 逐格移动的起止格；有高低差的实际高度地图另记两端站立高度（空中不记）。战报据此合并连续移动。
+   *  skill 标记技能自带的位移：before 是出手前的突进/闪现与单纯位移技能（战报并入其后的技能行，技能名先写），after 是出手后的后撤。 */
+  move?: { from: number; to: number; fromHeight?: number; toHeight?: number; skill?: 'before' | 'after' };
   /** 事件涉及的单位与当时可观察阵营；旧无观测元数据日志不用于V2战内泄露事实。 */
   participants?: string[];
   observedBy?: Side[];

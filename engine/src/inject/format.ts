@@ -265,10 +265,14 @@ function volleyLine(volley: BattleLogEntry[]): string {
   return `${first.attackerName}→${first.defenderName} ${heightTag(first)}${volley.length}段/${hits}中，损失${damage}${life ? '生命' : ''}（${first.hpBefore}→${last.hpAfter}）${members}${fellMark(last)}${volley.some((v) => v.resolution!.crit) ? '·含暴击' : ''}`;
 }
 
-/** 技能日志只保留“谁释放了什么”和紧凑效果；完整骰面仍留在结算卡。 */
-function digestAbilityLines(e: BattleLogEntry): string[] {
+/** 技能自身位移受阻、技能因此没有生效的说明；位移本身由逐格移动写出。 */
+const SKILL_SETBACK = /未能离开原位|未能位移|原地出手|技能未生效/;
+/** 技能日志只保留“谁释放了什么”和紧凑效果；完整骰面仍留在结算卡。
+ *  技能名已随出手前的位移写出（headerShown）时不再重复，受阻说明写成“某某的【技能】……”。 */
+function digestAbilityLines(e: BattleLogEntry, headerShown = false): string[] {
   const raw = e.text.split('\n').filter(Boolean);
-  const lines = raw.length ? [raw[0]!] : [];
+  const lines = raw.length && !headerShown ? [raw[0]!] : [];
+  for (const line of raw.slice(1)) if (SKILL_SETBACK.test(line)) lines.push((headerShown ? raw[0]!.replace(' 使用【', '的【') : '') + line);
   if (e.resolution) {
     for(const r of e.resolutions?.length?e.resolutions:[e.resolution])lines.push(`${r.attackerName}→${r.defenderName} ${heightTag(r)}${hitText(r)}`);
   }
@@ -287,12 +291,27 @@ function mergedMove(first: BattleLogEntry, last: BattleLogEntry): string | undef
   return head[1]! + head[2]! + (start !== undefined && start !== end ? '(高度' + start + ')' : '') + last.text.slice(last.text.lastIndexOf('→'));
 }
 export interface CompactEvent { text: string; first: number; last: number }
+/** 出手前的技能位移（突进、闪现与单纯位移技能）记在技能之前；找出每一步属于其后同一单位本回合的哪条技能记录。 */
+function skillMoveOwners(entries: BattleLogEntry[]): Map<number, number> {
+  const owners = new Map<number, number>();
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i]!;
+    if (e.kind !== 'move' || e.move?.skill !== 'before' || e.participants?.length !== 1) continue;
+    for (let j = i + 1; j < entries.length && entries[j]!.round === e.round; j++) {
+      if (entries[j]!.kind === 'ability' && entries[j]!.participants?.[0] === e.participants[0]) { owners.set(i, j); break; }
+    }
+  }
+  return owners;
+}
 /**
  * 相邻同一攻击者/目标的速射合并，同一单位连续的逐格移动合并为起止两端；状态、借机与其他行动的顺序保留。
+ * 技能自带的出手前位移按叙述顺序写：先写“某某 使用【技能】：突进 A→B”，途中反应照常插在中间，最后写技能结果。
  * 每行带上它覆盖的条目序号，供分段投递。unresolvedAttacks 保留装填、未定位攻击等没有结算的攻击行（叙述增量用）。
  */
 export function compactEventGroups(entries: BattleLogEntry[], opts: { unresolvedAttacks?: boolean } = {}): CompactEvent[] {
   const groups: CompactEvent[] = [];
+  const owners = skillMoveOwners(entries), lastMove = new Map<number, number>(), headerShown = new Set<number>();
+  for (const [i, j] of owners) lastMove.set(j, Math.max(lastMove.get(j) ?? i, i));
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i]!, first = i;
     if (e.kind === 'attack' && e.resolution) {
@@ -303,17 +322,26 @@ export function compactEventGroups(entries: BattleLogEntry[], opts: { unresolved
         && entries[i + 1]!.resolution!.defenderId === e.resolution.defenderId
         && entries[i + 1]!.round === e.round) volley.push(entries[++i]!);
       groups.push({ text: volley.length === 1 ? digestAttackLine(e)! : volleyLine(volley), first, last: i });
-    } else if (e.kind === 'ability') groups.push(...digestAbilityLines(e).map((text) => ({ text, first, last: i })));
+    } else if (e.kind === 'ability') groups.push(...digestAbilityLines(e, headerShown.has(i)).map((text) => ({ text, first, last: i })));
     else if (e.kind === 'attack') { if (opts.unresolvedAttacks && e.text) groups.push({ text: e.text, first, last: i }); }
     else {
       // 仅合并真实连续格子移动，保留起终点；借机、起飞、撤离等事件打断该段。
       let text = e.text.split('\n').filter((line) => !/d20\[|^伤害 /.test(line)).join('；');
       if (e.kind === 'move' && e.move && e.participants?.length === 1) {
         let end = i;
+        // 普通移动与技能位移各自成段：先走几步再冲锋时分开写。
         while (entries[end + 1]?.kind === 'move' && entries[end + 1]!.move && entries[end + 1]!.round === e.round
-          && entries[end + 1]!.participants?.join() === e.participants.join() && entries[end + 1]!.move!.from === entries[end]!.move!.to) end++;
+          && entries[end + 1]!.participants?.join() === e.participants.join() && entries[end + 1]!.move!.from === entries[end]!.move!.to
+          && entries[end + 1]!.move!.skill === e.move.skill) end++;
         const merged = end > i ? mergedMove(e, entries[end]!) : undefined;
         if (merged) { text = merged; i = end; }
+        // 出手前的技能位移：技能名写在第一段前面；以冲锋接敌时“冲锋”写在最后一段末尾。
+        const owner = owners.get(first), skill = owner === undefined ? undefined : entries[owner]!.text.split('\n');
+        if (skill) {
+          const at = skill[0]!.indexOf(' 使用【');
+          if (!headerShown.has(owner!) && at > 0 && text.startsWith(skill[0]!.slice(0, at) + ' ')) { text = skill[0]! + '：' + text.slice(at + 1); headerShown.add(owner!); }
+          if (i >= lastMove.get(owner!)! && skill.some((line) => /^突进至.*，冲锋$/.test(line))) text += '，冲锋';
+        }
       } else {
         const move = /^(.* )([A-Z]\d+)→([A-Z]\d+)$/.exec(text);
         if (e.kind === 'move' && move && e.participants?.length) {

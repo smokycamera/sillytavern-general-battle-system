@@ -610,7 +610,7 @@ export class SmallBattle {
   }
   /** 沿已规划路线逐格移动，逐格结算区域、目标、侦察与反应。普通移动消耗移动点；技能位移按路线自带格数，
    *  不动用移动点；后撤（opportunity=false）不触发近战借机，仍受警戒。 */
-  private walkPath(actorId: string, path: GridPath, opts: { spend: boolean; haste: boolean; opportunity: boolean }): void {
+  private walkPath(actorId: string, path: GridPath, opts: { spend: boolean; haste: boolean; opportunity: boolean; skill?: { verb: string; phase: 'before' | 'after' } }): void {
     const actor = this.byId(actorId); const field = this.battlefield!;
     let budget = path.cost;
     for (const next of path.cells.slice(1)) {
@@ -629,8 +629,8 @@ export class SmallBattle {
       this.checkGridObjective(false);
       if (this.rules.resolutionVersion === 'v2') revealContacts(this.observationContext());
       const toHeight = heights ? surfaceHeightAt(field, next, actor) : undefined;
-      this.recordEvent({ round: this.round, kind: 'move', participants: [actor.id], move: { from: previous, to: next, ...(heights ? { fromHeight, toHeight } : {}) },
-        text: `${actor.name} ${cellLabel(field, previous)}${fromHeight !== toHeight ? '(高度' + fromHeight + ')' : ''}→${reportPlaceLabel(field, next, actor)}` });
+      this.recordEvent({ round: this.round, kind: 'move', participants: [actor.id], move: { from: previous, to: next, ...(heights ? { fromHeight, toHeight } : {}), ...(opts.skill ? { skill: opts.skill.phase } : {}) },
+        text: `${actor.name} ${opts.skill ? opts.skill.verb + ' ' : ''}${cellLabel(field, previous)}${fromHeight !== toHeight ? '(高度' + fromHeight + ')' : ''}→${reportPlaceLabel(field, next, actor)}` });
       for (const foe of [...this.combatants].sort((a, b) => a.id.localeCompare(b.id))) {
         if (actor.status !== 'ready') break;
         if (foe.side === actor.side || foe.status !== 'ready' || foe.suppression || this.reactionSpent.has(foe.id) || foe.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack && meleeWeapon(foe)?.recipe?.mechanism !== 'natural')) continue;
@@ -1551,12 +1551,13 @@ export class SmallBattle {
       && !this.skillTargetReasonAt(actor, ability, u))
       .sort((a, b) => a.id.localeCompare(b.id))].slice(0, 2);
   }
-  /** 执行技能位移：突进/后撤沿路线逐格走（后撤不触发近战借机），闪现直接落位；返回战报短句。 */
-  private executeSkillMove(actor: Combatant, mode: MoveMode, cell: number, path?: GridPath): string {
+  /** 执行技能位移：突进/后撤沿路线逐格走（后撤不触发近战借机），闪现直接落位；返回战报短句。
+   *  phase 标在移动记录上：出手前的位移由战报并入其后的技能行，出手后的后撤照常排在技能之后。 */
+  private executeSkillMove(actor: Combatant, mode: MoveMode, cell: number, path: GridPath | undefined, phase: 'before' | 'after'): string {
     const field = this.battlefield!, from = actor.pos!;
     if (mode !== 'blink') {
       if (!path) return '位移路线已失效，原地出手';
-      this.walkPath(actor.id, path, { spend: false, haste: false, opportunity: mode === 'dash' });
+      this.walkPath(actor.id, path, { spend: false, haste: false, opportunity: mode === 'dash', skill: { verb: mode === 'dash' ? '突进' : '后撤', phase } });
       return actor.pos === from ? '位移受阻，未能离开原位' : (mode === 'dash' ? '突进' : '后撤') + '至' + reportPlaceLabel(field, actor.pos!, actor);
     }
     if (!canOccupy(field, this.combatants, actor, cell)) return '闪现落点已被占据，未能位移';
@@ -1564,7 +1565,7 @@ export class SmallBattle {
     const fromHeight = heights ? surfaceHeightAt(field, from, actor) : undefined;
     delete actor.tacticalPose; actor.pos = cell; this.movedThisTurn.add(actor.id);
     const toHeight = heights ? surfaceHeightAt(field, cell, actor) : undefined;
-    this.recordEvent({ round: this.round, kind: 'move', participants: [actor.id], move: { from, to: cell, ...(heights ? { fromHeight, toHeight } : {}) },
+    this.recordEvent({ round: this.round, kind: 'move', participants: [actor.id], move: { from, to: cell, ...(heights ? { fromHeight, toHeight } : {}), skill: phase },
       text: `${actor.name} 闪现 ${cellLabel(field, from)}${fromHeight !== toHeight ? '(高度' + fromHeight + ')' : ''}→${reportPlaceLabel(field, cell, actor)}` });
     this.settleAreaEffects(); this.checkGridObjective(false);
     if (this.rules.resolutionVersion === 'v2') revealContacts(this.observationContext());
@@ -1641,19 +1642,20 @@ export class SmallBattle {
     spendAbility(actor, ability);
 
     const logBits: string[] = [`${actor.name} 使用【${ability.name}】`];
-    // 出手前的突进/闪现先于技能本体记入战报；只有位移的技能在这里走完。
+    // 出手前的突进/闪现逐格记入日志（标为技能位移，战报把它们并到技能名之后），技能本体随后记录；只有位移的技能在这里走完。
     let interrupted: string | undefined, charge = false;
     if (movementOnly && chosenTarget) {
       const { before, after } = moveEffects(ability), effect = before ?? after!;
       const moved = this.executeSkillMove(actor, effect.mode, chosenTarget.pos!, effect.mode === 'blink' ? undefined
-        : effect.mode === 'withdraw' ? this.skillWithdrawPath(actor, ability, effect, chosenTarget.pos).path : this.skillPaths(actor, effectiveMoveReach(actor, ability, effect, this.conditions)).find((p) => p.cost > 0 && p.cells.at(-1) === chosenTarget.pos));
+        : effect.mode === 'withdraw' ? this.skillWithdrawPath(actor, ability, effect, chosenTarget.pos).path : this.skillPaths(actor, effectiveMoveReach(actor, ability, effect, this.conditions)).find((p) => p.cost > 0 && p.cells.at(-1) === chosenTarget.pos), 'before');
       logBits.push(moved);
     } else if (movePlan.move) {
-      const move = movePlan.move;
-      logBits.push(this.executeSkillMove(actor, move.mode, move.to, move.path) + (move.charge ? '，冲锋' : ''));
+      const move = movePlan.move, moved = this.executeSkillMove(actor, move.mode, move.to, move.path, 'before');
       if (actor.status !== 'ready' || actor.pos !== move.to || actor.conditions.some((c) => c.dur > 0 && (this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventMove && move.mode === 'dash'))) interrupted = '位移途中受阻或被反应打断，技能未生效';
       else if (chosenTarget && this.skillTargetReasonAt(actor, ability, chosenTarget)) interrupted = '到位后目标已不可选，技能未生效';
       charge = move.charge && !interrupted;
+      // 被打断时没有冲锋，日志不写“冲锋”。
+      logBits.push(moved + (charge ? '，冲锋' : ''));
     }
     if (interrupted) logBits.push(interrupted);
 
@@ -1839,7 +1841,7 @@ export class SmallBattle {
     const withdraw = moveEffects(ability).after;
     if (withdraw && !movementOnly && !interrupted && actor.status === 'ready' && !this.isOver()) {
       const retreat = this.skillWithdrawPath(actor, ability, withdraw);
-      if (retreat.path) this.executeSkillMove(actor, 'withdraw', retreat.path.cells.at(-1)!, retreat.path);
+      if (retreat.path) this.executeSkillMove(actor, 'withdraw', retreat.path.cells.at(-1)!, retreat.path, 'after');
     }
     if ((this.battlefield || actor.resourceModel) && actor.rulesVersion === 'v2' && !opts.bypassTurn) addTacticalEffort(actor, skillExertion(actor, ability) + (charge ? 1 : 0));
     if (!opts.bypassTurn) { if (quickItemAction(actor, ability)) this.spendAction(actorId, hasteAction); else this.actedThisTurn.add(actorId); }
@@ -2242,7 +2244,9 @@ export class SmallBattle {
             const dash = move.path ? arrivalAfterReactions(move.path) : { actor: { ...cloneData(unit), pos: move.to }, loss: 0, survival: 1 };
             const survival = projected.survival * dash.survival;
             if (dash.actor.hp <= 0 || survival < .5) continue;
-            caster = { ...actor, hp: Math.min(actor.hp, dash.actor.hp), pos: move.to };
+            // 编队的人数与成员生命分组须取自同一份副本，不能只换人数：取两段路线里伤得更重的那一份。
+            caster = hasMemberHealth(actor) ? { ...(memberHealth(dash.actor) < memberHealth(actor) ? dash.actor : actor), pos: move.to }
+              : { ...actor, hp: Math.min(actor.hp, dash.actor.hp), pos: move.to };
             moveScore = positionScore({ cells: [unit.pos!, move.to], cost: path.cost }) + (move.mode === 'blink' && path.cost === 0 ? leaveRefund(move.to) : 0) - (projected.loss + dash.loss) * 1.5
               - (1 - survival) * memberHealth(unit) - incoming(caster) * .3 - worksCost(move.to);
           }
