@@ -2104,7 +2104,9 @@ function suggestionDesc(s: Suggestion, batch: Suggestion[] = []): string {
       // 编号不在档案里时按入账规则说明：同名档案优先，否则写全新单位字段的会新建入档。
       const name = typeof s.data.name === 'string' ? s.data.name : undefined, known = storageRecordByRef(s.id) ?? storageRecordByRef(undefined, name);
       const label = known ? unitName(known.id) : name && s.data.side && s.data.scale ? `新建档案「${name}」（不改出场名单）` : unitName(s.id);
-      return `${label}：${JSON.stringify(s.data)}${s.reason ? `（${s.reason}）` : ''}`;
+      // 交给单位的道具单列：只增不减，佩戴、充能道具会装上。
+      const items = s.items?.length ? '交给道具 ' + s.items.map((i) => i.name + (i.qty > 1 ? '×' + i.qty : '') + (i.spec ? '（' + itemSpecificationLabel(i.spec) + '）' : '')).join('、') : '';
+      return `${label}：${[Object.keys(s.data).length ? JSON.stringify(s.data) : '', items].filter(Boolean).join('；')}${s.reason ? `（${s.reason}）` : ''}`;
     }
     case 'unit-update': return `${unitName(s.id, s.name)}：${[
       s.hp !== undefined ? `当前兵力=${s.hp}` : '', s.hpMax !== undefined ? `上限=${s.hpMax}` : '',

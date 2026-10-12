@@ -36,7 +36,8 @@ import { parseItemSpecification, splitItemSpecification, parseSpawnItem, splitSp
 export type LootType = 'weapon' | 'armor' | 'item' | 'consumable' | 'accessory' | 'material' | 'quest' | 'misc';
 
 export type Suggestion =
-  | { kind: 'unit-set'; id: string; data: Record<string, unknown>; reason?: string; raw: string }
+  /** items：交给这个单位的道具，只增不减；只交道具时 data 为空。 */
+  | { kind: 'unit-set'; id: string; data: Record<string, unknown>; items?: SpawnItem[]; reason?: string; raw: string }
   | { kind: 'learn'; id: string; skills: SkillSpec[]; raw: string }
   | { kind: 'take'; id: string; qty: number; note?: string; raw: string }
   | { kind: 'give'; item: string; note?: string; qty: number; lootType: LootType; spec?: ItemSpecification; raw: string }

@@ -19,7 +19,7 @@ export function resolveBonusStat(label: string): BonusStat | undefined {
   return (Object.hasOwn(BONUS_ALIASES, label) ? BONUS_ALIASES[label] : undefined) ?? Object.entries(BONUS_NAMES).find(([key, name]) => key.toLowerCase() === label.toLowerCase() || name === label)?.[0] as BonusStat | undefined;
 }
 export type Enhancements = Partial<Record<BonusStat, number>>;
-/** gear：佩戴道具给单位的修正（不含生命与强度）。一次性与充能道具的修正与技能相同。 */
+/** gear：佩戴道具给单位的修正（不含生命与强度；防护与护甲、盾的防护相加抗穿）。一次性与充能道具的修正与技能相同。 */
 export type BonusKind = 'unit' | 'weapon' | 'armor' | 'shield' | 'gear' | 'skill';
 const damageChannels: BonusStat[] = ['kineticDamage','thermalDamage','arcaneDamage'];
 const penetrationChannels: BonusStat[] = ['kineticPenetration','thermalPenetration','arcanePenetration'];
@@ -28,7 +28,7 @@ export const ENHANCEMENT_STATS: Record<BonusKind, BonusStat[]> = {
   unit: ['power', 'damage', 'accuracy', 'defense', 'health', 'speed', 'morale', ...damageChannels],
   weapon: ['power', 'damage', 'accuracy', 'defense', 'penetration', 'range', ...damageChannels, ...penetrationChannels],
   armor: ['power', 'defense', 'protection', ...protectionChannels], shield: ['power', 'defense', 'protection', ...protectionChannels],
-  gear: ['damage', 'accuracy', 'defense', 'speed', 'morale', ...damageChannels],
+  gear: ['damage', 'accuracy', 'defense', 'speed', 'morale', ...damageChannels, 'protection', ...protectionChannels],
   skill: ['power', 'damage', 'accuracy', 'penetration', 'range', 'healing', 'duration', 'resource', 'morale', ...damageChannels, ...penetrationChannels],
 };
 export function validateEnhancements(value: Enhancements | undefined, kind: BonusKind): void {

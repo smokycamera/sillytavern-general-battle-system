@@ -15,6 +15,8 @@ import { assertNarrativeCapacity, hasNarrativeDeployment, MAX_SCENE_UNITS } from
 import { applyUnitSet, type UnitSetContext } from './unit-set.js';
 import { mapNarrativeReferences, narrativeIds, prepareNarrativeIds, type NarrativeIdState } from './narrative-ids.js';
 import { newUnitId, planNewUnits, type NewUnitPlan } from './narrative-new-units.js';
+import { handOverItems, type HandOver } from './item-handover.js';
+import { weaponItemSpecification } from './item-spec.js';
 
 export interface MessageEnvelope {
   characterId: string;
@@ -218,7 +220,8 @@ function mergePatch(target: Record<string, unknown>, source: Record<string, unkn
 /** 补员/状态与单位字段：同一档案的 unit_set 合并后一次赋值，unit_update 并入其中或单独更新。 */
 function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: Map<string, Record<string, unknown>>, proposalId: string, registry: Registry, context: UnitSetContext): NarrativeSave {
   let next = save, records = next.storage ?? [];
-  for (const event of events) if (event.kind === 'unit-set') {
+  // 只交道具（items）的 unit_set 不改档案字段，道具在入账最后交出。
+  for (const event of events) if (event.kind === 'unit-set' && Object.keys(event.data).length) {
     const patch = combined.get(event.id) ?? {}; mergePatch(patch, event.data); combined.set(event.id, patch);
   }
   for (const event of events) {
@@ -322,18 +325,19 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     next = prepareInventoryTransaction(next, { kind: 'discard', id: 'take:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, itemId: event.id, qty: event.qty });
   }
   let newEquipment = 0;
-  const given = new Set<string>(), notices: string[] = [];
+  // given：换装可取用的同一回复实物；handed：同一回复 give 的全部实物，unit_set 的 items 先从这里交出。
+  const given = new Set<string>(), handed = new Set<string>(), notices: string[] = [];
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind !== 'give') continue;
     const id = `loot-${proposal.id}-${index}`;
-    if (!event.spec) { next.inventory = [...(next.inventory ?? []), { id, name: event.item, qty: event.qty, lootType: event.lootType, note: event.note }]; given.add(id); }
-    else if (event.spec.kind === 'item' && event.spec.form === 'single') next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(id, event.item, event.spec, id, event.qty), note: event.note }];
+    if (!event.spec) { next.inventory = [...(next.inventory ?? []), { id, name: event.item, qty: event.qty, lootType: event.lootType, note: event.note }]; given.add(id); handed.add(id); }
+    else if (event.spec.kind === 'item' && event.spec.form === 'single') { next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(id, event.item, event.spec, id, event.qty), note: event.note }]; handed.add(id); }
     else {
       if ((newEquipment += event.qty) > 64) throw new Error('单批机械装备最多64件，请拆分');
       for (let i = 0; i < event.qty; i++) {
         const itemId = event.qty === 1 ? id : `${id}-${i}`;
         next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(itemId, event.item, event.spec, itemId), note: event.note }];
-        given.add(itemId);
+        given.add(itemId); handed.add(itemId);
       }
     }
   }
@@ -345,7 +349,10 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     } else if (event.kind === 'reforge') {
       if (reforged.has(event.id)) throw new Error('同一回复请合并对同一装备的改造');
       reforged.add(event.id);
-      next = prepareInventoryTransaction(next, { kind: 'reforge', id: `reforge:${proposal.id}:${index}`, expectedRevision: next.factRevision ?? 0, itemId: event.id, name: event.name, spec: event.spec });
+      // 改造道具时写的武器词条换成对应道具，形态不变。
+      const target = next.inventory?.find((i) => i.id === event.id)?.mechanics;
+      const spec = target?.kind === 'item' && event.spec.kind === 'weapon' ? weaponItemSpecification(event.spec, target.value.recipe.form === 'charged' ? 'charged' : undefined, notices) : event.spec;
+      next = prepareInventoryTransaction(next, { kind: 'reforge', id: `reforge:${proposal.id}:${index}`, expectedRevision: next.factRevision ?? 0, itemId: event.id, name: event.name, spec });
     }
   }
   records = next.storage!;
@@ -387,6 +394,10 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   if (spawnedGear) { next = prepareInventoryState(next) as NarrativeSave; records = next.storage!; }
   next.rosterIds = [...new Set(roster.map((u) => u.id))];
   if (fresh.created.size) next = applyToNewUnits(next, proposal.events, fresh, proposal.id, registry, newDeploys, { given, notices });
+  // unit_set 的 items 最后交出：此时同一回复 give 的已入库，新建单位也已建档。
+  const handovers: HandOver[] = [...proposal.events.entries()].flatMap(([index, event]) => event.kind === 'unit-set' && event.items?.length ? [{ unitId: event.id, items: event.items, index }] : []);
+  for (const [unitId, items] of fresh.items) handovers.push({ unitId, items, index: proposal.events.length + handovers.length });
+  next = handOverItems(next, handovers, { proposalId: proposal.id, given: handed, notices, equipment: { count: newEquipment } });
   const deployed = next.rosterIds ?? [];
   const oldDeployedAlive = (save.storage ?? []).filter(r=>(save.rosterIds ?? []).includes(r.id)&&r.hp>0&&!r.retired).length;
   if (deployed.length > MAX_SCENE_UNITS && (replacesRoster || deployed.length > oldDeployedAlive)) throw Error(`本场参战单位卡上限${MAX_SCENE_UNITS}，整批未应用`);

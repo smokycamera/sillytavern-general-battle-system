@@ -1,5 +1,5 @@
-import { parseEnhancementSuffix, enhancementLabel, type Enhancements } from '../../engine/src/enhancements.js';
-import { WEAPON_CLASSES, resolveWeaponClass, parseSkillMechanism, skillMechanismId, skillMechanismFromId, narrativeTrait, isGradedTrait, ITEM_FORM_NAMES, itemSpecText,
+import { parseEnhancementSuffix, enhancementLabel, resolveBonusStat, BONUS_NAMES, type Enhancements } from '../../engine/src/enhancements.js';
+import { WEAPON_CLASSES, resolveWeaponClass, parseSkillMechanism, skillMechanismId, skillMechanismFromId, narrativeTrait, isGradedTrait, ITEM_FORM_NAMES, itemSpecText, compileItem, traitPoints,
   type BodyKind, type ItemForm, type ItemSpecification } from '../../engine/src/index.js';
 import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-tolerance.js';
 
@@ -76,39 +76,109 @@ function passiveSpecification(base: string, power: number, suffix: string): Extr
   const bonuses = parseEnhancementSuffix('L' + power + suffix, 'gear').bonuses;
   return { kind: 'item', form: 'worn', power, traits: [...new Set(ids)].map((id) => ({ id, ...(isGradedTrait(id) ? { level: power } : {}) })), ...(bonuses ? { bonuses } : {}) };
 }
+/** 佩戴道具把修正方向写在等级前（佩戴热能防护L5+4）时，方向挪到点数后面（佩戴L5+4热能防护）。 */
+function wornBonusFirst(base: string, power: number, suffix: string): { spec: Extract<ItemSpecification, { kind: 'item' }>; text: string } | undefined {
+  const stat = resolveBonusStat(base), points = suffix.match(/^([+-])\s*(\d{1,2})$/);
+  if (!stat || !points) return undefined;
+  const moved = points[1]! + points[2]! + BONUS_NAMES[stat], spec = passiveSpecification('佩戴', power, moved);
+  return spec && { spec, text: '佩戴L' + power + moved };
+}
+/**
+ * 道具位置上写了武器词条（items 清单、带形态词的 spec、要交给单位的 give），换成用这件武器打一次的道具：
+ * 爆炸物与火炮是物理范围投射，其余远程武器是物理单体投射（道具自带动能，持有者不需要远程武器），
+ * 法杖与魔杖是魔法单体、默认充能。近战、天生与召唤武器没有对应道具。
+ */
+const WEAPON_ITEM_EFFECTS: Readonly<Record<string, { mechanism: string; form?: 'charged' }>> = {
+  demolition: { mechanism: '物理范围投射' }, cannon: { mechanism: '物理范围投射' }, 'indirect-cannon': { mechanism: '物理范围投射' },
+  throwing: { mechanism: '物理单体投射' }, 'light-ranged': { mechanism: '物理单体投射' }, bow: { mechanism: '物理单体投射' }, firearm: { mechanism: '物理单体投射' },
+  rifle: { mechanism: '物理单体投射' }, 'heavy-rifle': { mechanism: '物理单体投射' }, autocannon: { mechanism: '物理单体投射' }, energy: { mechanism: '物理单体投射' },
+  magic: { mechanism: '魔法单体', form: 'charged' },
+};
+function weaponItem(weapon: string, power: number, suffix: string, form: 'single' | 'charged' | undefined, notes: string[] | undefined, written: string): Extract<ItemSpecification, { kind: 'item' }> {
+  const target = WEAPON_ITEM_EFFECTS[weapon];
+  if (!target) throw new Error(`「${WEAPON_CLASSES[weapon]?.name ?? weapon}」没有对应的道具写法；武器写在weapon、weapon2`);
+  // 修正与效果词（+2穿透、+中毒）照技能写法理解；道具没有的修正略去并说明。
+  const tolerance: string[] = [];
+  const normalized = normalizeNarrativeSkill(target.mechanism + 'L' + power + suffix, tolerance);
+  const match = normalized.match(/^(.*?)[lL](\d{1,2})((?:[+-].*)?)$/), mechanism = match ? parseSkillMechanism(match[1]!) : undefined;
+  if (!mechanism) throw new Error(`「${written}」换成道具后无法识别`);
+  const bonuses = parseEnhancementSuffix('L' + match![2] + match![3], 'skill').bonuses;
+  const spec: Extract<ItemSpecification, { kind: 'item' }> = { kind: 'item', form: form ?? target.form ?? 'single', power, active: skillMechanismId(mechanism),
+    ...(bonuses && Object.keys(bonuses).length ? { bonuses } : {}) };
+  notes?.push(`「${written}」是武器写法，按道具「${itemSpecificationText(spec)}」`, ...tolerance);
+  return spec;
+}
+/** 改造道具时写的武器规格：同样换成对应道具。 */
+export function weaponItemSpecification(weapon: Extract<ItemSpecification, { kind: 'weapon' }>, form: 'single' | 'charged' | undefined, notes?: string[]): Extract<ItemSpecification, { kind: 'item' }> {
+  const suffix = enhancementLabel(weapon.bonuses);
+  return weaponItem(weapon.mechanism, weapon.power, suffix, form, notes, (WEAPON_CLASSES[weapon.mechanism]?.name ?? weapon.mechanism) + 'L' + weapon.power + suffix);
+}
+/**
+ * 正文写的佩戴修正超出等级预算（佩戴L5+8防御）时，从最大的一项起逐点降到预算内并说明，道具保留；
+ * 特质本身就超出预算的照旧建不了档。手工表单不经过这里，照常提示预算。
+ */
+export function fitWornBudget(spec: ItemSpecification, notes?: string[], written?: string): ItemSpecification {
+  if (spec.kind !== 'item' || spec.form !== 'worn' || spec.legacy || !spec.bonuses) return spec;
+  const traits = (spec.traits ?? []).reduce((sum, grant) => sum + traitPoints(grant, spec.power), 0);
+  let over = traits + Object.values(spec.bonuses).reduce((sum, points) => sum + Math.max(0, points ?? 0), 0) - spec.power;
+  if (over <= 0 || traits > spec.power) return spec;
+  const bonuses: Enhancements = { ...spec.bonuses };
+  for (; over > 0; over--) {
+    const [stat] = (Object.entries(bonuses) as [keyof Enhancements, number][]).filter(([, points]) => points > 0).sort((a, b) => b[1] - a[1])[0]!;
+    if (!--bonuses[stat]!) delete bonuses[stat];
+  }
+  const fitted = { ...spec, bonuses };
+  notes?.push(`「${written ?? itemSpecificationText(spec)}」超出L${spec.power}的佩戴预算，按「${itemSpecificationText(fitted)}」`);
+  return fitted;
+}
+/** 道具能不能建档（佩戴预算、效果组合）：正文解析时先编译一次，建不了的一项按略过处理，不拖到入账时整批失败。 */
+export function assertItemCompiles(spec: ItemSpecification, name = '道具'): void {
+  compileItem(spec, { id: 'item-check', name, seed: 'item-check', damageModel: 'wounds-v2' });
+}
 /** 技能机制：先按严格写法解析，正文写法再经容错（单词简写、旧技能名）解析一次；容错的说明写进 notes。 */
 function activeSpecification(base: string, power: number, suffix: string, form: 'single' | 'charged', notes: string[] = []): Extract<ItemSpecification, { kind: 'item' }> | undefined {
   const strict = parseSkillMechanism(base);
-  let id = strict ? skillMechanismId(strict) : undefined, bonuses: Enhancements | undefined;
-  if (id) bonuses = parseEnhancementSuffix('L' + power + suffix, 'skill').bonuses;
-  else {
+  let id = strict ? skillMechanismId(strict) : undefined, bonuses: Enhancements | undefined, strictError: unknown;
+  // 等级后写了效果词（buff治疗L3+振奋）时严格写法读不出修正，同样走正文容错；容错也读不出就报原来的错。
+  if (id) try { bonuses = parseEnhancementSuffix('L' + power + suffix, 'skill').bonuses; } catch (error) { strictError = error; id = undefined; }
+  if (!id) {
     try {
       const tolerance: string[] = [];
       const normalized = normalizeNarrativeSkill(base + 'L' + power + suffix, tolerance);
       const match = normalized.match(/^(.*?)[lL](\d{1,2})((?:[+-].*)?)$/);
       const mechanism = match ? parseSkillMechanism(match[1]!) : undefined;
-      if (!mechanism) return undefined;
+      if (!mechanism) { if (strictError) throw strictError; return undefined; }
       id = skillMechanismId(mechanism); bonuses = parseEnhancementSuffix('L' + match![2] + match![3], 'skill').bonuses;
       notes.push(...tolerance);
-    } catch { return undefined; }
+    } catch { if (strictError) throw strictError; return undefined; }
   }
   if (!skillMechanismFromId(id)) return undefined;
   return { kind: 'item', form, power, active: id, ...(bonuses && Object.keys(bonuses).length ? { bonuses } : {}) };
 }
 type SpecAttributes = { type?: string; quality?: string; body?: string; enchant?: string; stabilized?: string; protection?: string };
 
-/** 正文与面板共用：装备写“机制L规格+修正”；道具写技能机制（可加“充能”）、特质或“佩戴L等级+修正”。属性、骰子、身份与版本由插件计算。 */
-export function parseItemSpecification(text: string, attrs: SpecAttributes = {}, notes?: string[]): ItemSpecification {
+/**
+ * 正文与面板共用：装备写“机制L规格+修正”；道具写技能机制（可加“充能”）、特质或“佩戴L等级+修正”。属性、骰子、身份与版本由插件计算。
+ * item：这里只能是道具（items 清单、要交给单位的 give），武器词条换成对应道具，护甲与盾不收。
+ */
+export function parseItemSpecification(text: string, attrs: SpecAttributes = {}, notes?: string[], options: { item?: boolean } = {}): ItemSpecification {
   const split = splitItemSpecification(text);
   let form: ItemForm | undefined = split.name ? FORM_WORDS[split.name] : undefined;
   let spec = split.spec.trim();
-  const prefix = spec.match(/^(充能|一次性|消耗品)\s*[+·:：]?\s*/);
-  if (prefix && spec.length > prefix[0].length) { form = FORM_WORDS[prefix[1]!]; spec = spec.slice(prefix[0].length); }
+  // 形态词可写在效果前。“佩戴L4+4防御”的佩戴就是效果本身，“佩戴破甲L5”的佩戴才是形态词。
+  const prefix = spec.match(/^(充能|一次性|消耗品|佩戴|饰品)\s*[+·:：]?\s*/);
+  if (prefix && spec.length > prefix[0].length && !(FORM_WORDS[prefix[1]!] === 'worn' && /^[lL]\s*\d/.test(spec.slice(prefix[0].length)))) { form = FORM_WORDS[prefix[1]!]; spec = spec.slice(prefix[0].length); }
   const level = spec.match(/^(.*?)\s*[lL]\s*(\d{1,2})((?:[+-].*)?)$/);
   if (!level) throw new Error('道具与装备都写“效果L等级”，如buff治疗L3、物理范围投射L4、夜战专精L5、步枪L5');
-  let base = level[1]!.trim();
-  const power = Number(level[2]), suffix = level[3] ?? '';
+  let base = level[1]!.trim(), suffix = level[3] ?? '';
+  const power = Number(level[2]);
   if (!Number.isInteger(power) || power < 1 || power > 10) throw new Error('物品强度必须为1–10');
+  // 带点数的修正写在等级前（物理单体射击+6穿透L5）：挪到等级后。没有点数的“+减速”是效果词，不动。
+  const misplaced = base.match(/^(.*?)((?:[+-]\d{1,2}[^\d+\-]+)+)$/);
+  if (misplaced && misplaced[1]!.trim() && [...misplaced[2]!.matchAll(/[+-]\d{1,2}([^\d+\-]+)/g)].every((m) => resolveBonusStat(m[1]!.trim()))) {
+    base = misplaced[1]!.trim(); suffix = misplaced[2]! + suffix;
+    notes?.push(`「${text.trim()}」按「${base}L${power}${suffix}」理解`);
+  }
   const legacy = LEGACY_NAMES[base];
   if (legacy) {
     const charged = legacy.startsWith('充能');
@@ -116,7 +186,11 @@ export function parseItemSpecification(text: string, attrs: SpecAttributes = {},
     base = charged ? legacy.slice(2) : legacy;
   }
   if (!form) {
+    // 道具位置上的武器词条先换成对应道具，后面的修正与效果词照技能写法理解。
+    const weapon = options.item ? resolveWeaponClass(base) : undefined;
+    if (weapon) return weaponItem(weapon, power, suffix, undefined, notes, text.trim());
     const equipment = equipmentSpecification(base, power, suffix, attrs);
+    if (equipment && options.item) throw new Error('这里只写道具；护甲与盾写在armor、shieldSpec');
     if (equipment) {
       const type = equipment.kind === 'shield' ? 'armor' : equipment.kind;
       if (attrs.type !== undefined && attrs.type !== type) throw new Error('物品种类与物品属性冲突');
@@ -130,9 +204,17 @@ export function parseItemSpecification(text: string, attrs: SpecAttributes = {},
     if (form && form !== 'worn') throw new Error('特质写在佩戴道具里；一次性或充能道具写技能机制，如buff夜战专精L5');
     return passive;
   }
-  if (form === 'worn') throw new Error('佩戴道具写特质或“佩戴L等级+修正”，如夜战专精L5、佩戴L4+4防御');
+  if (form === 'worn') {
+    const moved = wornBonusFirst(base, power, suffix);
+    if (!moved) throw new Error('佩戴道具写特质或“佩戴L等级+修正”，如夜战专精L5、佩戴L4+4防御');
+    notes?.push(`「${text.trim()}」按「${moved.text}」理解`);
+    return moved.spec;
+  }
   const active = activeSpecification(base, power, suffix, form === 'charged' ? 'charged' : 'single', notes);
   if (active) return active;
+  // 写了形态词的武器（充能魔杖L5、一次性炸药L3）也是道具。
+  const weapon = resolveWeaponClass(base);
+  if (weapon && form) return weaponItem(weapon, power, suffix, form === 'charged' ? 'charged' : 'single', notes, text.trim());
   throw new Error(`未知道具效果「${base}」：spec 写效果而不是名称，如buff治疗L3、物理范围投射L4、夜战专精L5${nameHint(base)}`);
 }
 
@@ -158,7 +240,15 @@ export function splitSpawnItems(value: string): string[] {
   }
   return entries;
 }
-/** “名称:道具spec×件数”；件数省略为1，也接受 x、X、*。武器护甲照旧写在 weapon、armor。没写名称时取等级前的文字。 */
+/** items 一项写的名称，不解析效果；与 parseSpawnItem 取的名称相同。 */
+export function spawnItemName(entry: string): string {
+  let text = entry.trim();
+  const count = text.match(ITEM_COUNT);
+  if (count) text = text.slice(0, count.index).trim();
+  const at = text.search(/[:：]/);
+  return at > 0 ? text.slice(0, at).trim() : text.replace(/^[:：]/, '').replace(/\s*[lL]\s*\d.*$/, '').trim();
+}
+/** “名称:道具spec×件数”；件数省略为1，也接受 x、X、*。武器词条换成对应道具，护甲照旧写在 armor。没写名称时取等级前的文字。 */
 export function parseSpawnItem(entry: string, notes?: string[]): SpawnItem {
   let text = entry.trim(), qty = 1;
   const count = text.match(ITEM_COUNT);
@@ -168,12 +258,14 @@ export function parseSpawnItem(entry: string, notes?: string[]): SpawnItem {
   const name = at > 0 ? text.slice(0, at).trim() : '', specText = (at >= 0 ? text.slice(at + 1) : text).trim();
   if (!specText && !name) throw new Error('缺少道具名称');
   if (!hasLevel(specText)) return { name: name || specText, qty };
-  const spec = parseItemSpecification(specText.split('、').map(normalizeNarrativeSpec).join('、'), {}, notes);
+  const spec = parseItemSpecification(specText.split('、').map(normalizeNarrativeSpec).join('、'), {}, notes, { item: true });
   if (spec.kind !== 'item') throw new Error('武器、护甲与盾写在weapon、weapon2、armor、shield，items只写道具');
   return { name: name || specText.replace(/\s*[lL]\s*\d.*$/, '').trim() || itemSpecificationText(spec), qty, spec };
 }
-const itemSpecificationText = (spec: Extract<ItemSpecification, { kind: 'item' }>) =>
-  itemSpecText({ version: 'items-v1', form: spec.form, power: spec.power, seed: '', active: spec.active, traits: spec.traits, bonuses: spec.bonuses });
+/** 道具 spec 的规范写法，再解析得到同一个道具。 */
+export function itemSpecificationText(spec: Extract<ItemSpecification, { kind: 'item' }>): string {
+  return itemSpecText({ version: 'items-v1', form: spec.form, power: spec.power, seed: '', active: spec.active, traits: spec.traits, bonuses: spec.bonuses });
+}
 /** 规范写法，与 parseSpawnItem 互逆；各项之间用英文逗号连接。 */
 export function spawnItemText(item: SpawnItem): string {
   return item.name.replace(/[,，、;；:：×]/g, ' ').trim() + (item.spec ? ':' + itemSpecificationText(item.spec) : '') + (item.qty > 1 ? '×' + item.qty : '');

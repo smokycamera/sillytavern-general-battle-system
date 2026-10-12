@@ -5,9 +5,9 @@ import { parseAbilitySpec, parseSuggestionTags, type Suggestion } from './tags.j
 import { resolveWeaponClass } from '../../engine/src/data/weapons.js';
 import { MAX_PROTOCOL_CHARS, MAX_PROTOCOL_EVENTS, MAX_SCENE_UNITS, MAX_SPAWN_COUNT, GROUPING_HINT } from './narrative-limits.js';
 import { scanProtocolTags, normalizedAttributes, serializeEvent, type ProtocolTag, type ProtocolAttribute } from './protocol-syntax.js';
-import { parseUnitSet, UNIT_SET_ATTRIBUTES } from './unit-set.js';
+import { parseUnitSet, itemKey, UNIT_SET_ATTRIBUTES } from './unit-set.js';
 import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-tolerance.js';
-import { parseItemSpecification, parseSpawnItem, splitSpawnItems, spawnItemText } from './item-spec.js';
+import { parseItemSpecification, parseSpawnItem, splitSpawnItems, spawnItemText, spawnItemName, splitItemSpecification, itemSpecificationText, assertItemCompiles, fitWornBudget } from './item-spec.js';
 import { normalizeHandle } from './narrative-ids.js';
 
 export interface ProtocolDiagnostic { message: string; start: number; end: number; field?: string; event: string }
@@ -29,6 +29,34 @@ const ATTRIBUTES: Record<string, readonly string[]> = {
 };
 
 const known = new Set(Object.keys(ATTRIBUTES));
+/** 同一回复里 unit_set 的 items 交给单位的道具名，以及 spawn、unit_set 写进 weapon、weapon2 的武器名。 */
+function itemPlacements(tags: ProtocolTag[]): { handed: Set<string>; armed: Set<string> } {
+  const handed = new Set<string>(), armed = new Set<string>();
+  for (const tag of tags) {
+    if (!['unit_set', 'spawn'].includes(tag.name) || !tag.complete) continue;
+    try {
+      const attrs = normalizedAttributes(tag, ATTRIBUTES[tag.name]!, []);
+      if (tag.name === 'unit_set' && attrs.items) for (const entry of splitSpawnItems(attrs.items)) handed.add(itemKey(spawnItemName(entry)));
+      for (const key of ['weapon', 'weapon2']) { const name = attrs[key] ? splitItemSpecification(attrs[key]!).name : undefined; if (name) armed.add(itemKey(name)); }
+    } catch { /* 主循环会报告这个事件。 */ }
+  }
+  return { handed, armed };
+}
+const WEAPON_ONLY = ['quality', 'body', 'enchant', 'stabilized', 'protection'];
+/**
+ * give 的 spec 是不是道具：type 写明道具；或者没写种类、没有武器专属属性、同一回复没把它当武器换上，
+ * 而且 unit_set 的 items 正把它交给单位，或者写的是用掉就没的爆炸物（爆破装置）。
+ */
+function giveAsItem(attrs: Record<string, string>, handed: ReadonlySet<string>, armed: ReadonlySet<string>): boolean {
+  if (['item', 'consumable', 'accessory'].includes(attrs.type ?? '')) return true;
+  const name = itemKey(attrs.item ?? '');
+  if (attrs.type !== undefined || WEAPON_ONLY.some((key) => attrs[key] !== undefined) || armed.has(name)) return false;
+  if (handed.has(name)) return true;
+  try {
+    const level = splitItemSpecification(attrs.spec ?? '').spec.match(/^(.*?)\s*[lL]\s*\d/);
+    return !!level && resolveWeaponClass(level[1]!.trim()) === 'demolition';
+  } catch { return false; }
+}
 /** 记录与编辑器只保留事件标签；不复制正文、代码围栏或思考内容。 */
 export function protocolExcerpt(text: string): string {
   const { tags } = scanProtocolTags(text, known);
@@ -48,11 +76,12 @@ export function protocolExcerpt(text: string): string {
 }
 
 export function parseProtocol(text: string, options: { diagnostics?: boolean } = {}): ProtocolBatch {
-  const scanned = scanProtocolTags(text, known), warnings = scanned.warnings, errors: string[] = [];
+  const scanned = scanProtocolTags(text, known), warnings = scanned.warnings, errors: string[] = [], skipped: string[] = [];
   const events: Suggestion[] = [], seen = new Map<string, number>(), spawnIds = new Set<string>();
   const scanLimit = MAX_PROTOCOL_EVENTS * 8;
   if (scanned.tags.length > scanLimit) errors.push('待确认内容标签过多，请先减少重复内容；尚未入账');
   if (scanned.tags.reduce((n, tag) => n + tag.raw.length, 0) > MAX_PROTOCOL_CHARS) errors.push('事件内容超过' + MAX_PROTOCOL_CHARS + '字符，先精简事件草稿；正文长度不受此限制');
+  const { handed, armed } = itemPlacements(scanned.tags.slice(0, scanLimit));
   for (const tag of scanned.tags.slice(0, scanLimit)) {
     try {
       if (!known.has(tag.name)) throw new Error('暂不支持事件 ' + tag.name + '，请补成已支持的效果；引擎战果无需正文重复发放');
@@ -117,19 +146,38 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
         else if (tag.name === 'spawn') delete attrs.skills;
         else if (unknown.length) continue;
       }
-      if (tag.name === 'spawn' && attrs.items !== undefined) {
-        // 写不出效果的一项单独略过并说明，不让整条 spawn 作废。
+      const hadItems = attrs.items !== undefined;
+      if (['spawn', 'unit_set'].includes(tag.name) && hadItems) {
+        // 写不出效果的一项单独略过并说明，不让整条 spawn、unit_set 作废。
         const kept: string[] = [];
-        for (const entry of splitSpawnItems(attrs.items)) {
-          try { kept.push(spawnItemText(parseSpawnItem(entry, warnings))); }
-          catch (error) { warnings.push(`${attrs.name || 'spawn'}：未采用道具「${entry}」（${error instanceof Error ? error.message : String(error)}）`); }
+        for (const entry of splitSpawnItems(attrs.items!)) {
+          try {
+            const notes: string[] = [], parsed = parseSpawnItem(entry, notes);
+            const item = parsed.spec ? { ...parsed, spec: fitWornBudget(parsed.spec, notes, entry) as typeof parsed.spec } : parsed;
+            if (item.spec) assertItemCompiles(item.spec, item.name);
+            kept.push(spawnItemText(item)); warnings.push(...notes);
+          } catch (error) { skipped.push(`${attrs.name || attrs.id || tag.name}：未采用道具「${entry}」（${error instanceof Error ? error.message : String(error)}）`); }
         }
         if (kept.length) attrs.items = kept.join(','); else delete attrs.items;
+      }
+      if (tag.name === 'give' && attrs.spec !== undefined) {
+        // 写不出效果的道具单独略过；要当道具用的武器词条换成对应道具。
+        const notes: string[] = [], consumable = giveAsItem(attrs, handed, armed);
+        try {
+          const parsed = parseItemSpecification(attrs.spec, consumable ? { type: attrs.type } : attrs, notes, { item: consumable });
+          const spec = fitWornBudget(parsed, notes, attrs.spec);
+          assertItemCompiles(spec, attrs.item);
+          // 换了写法（当道具用的武器词条、降到预算内的修正）就改成规范写法交给后面的校验；说明与 items 里同一项的相同，合并显示。
+          if (spec.kind === 'item' && (consumable || spec !== parsed)) { attrs.spec = itemSpecificationText(spec); warnings.push(...notes); }
+        } catch (error) {
+          skipped.push(`未采用道具「${attrs.item ?? ''}」（${error instanceof Error ? error.message : String(error)}）`);
+          continue;
+        }
       }
       // 原型只剩建档基础属性一个用途：unit_set 写了不认识的值时保留原值，不让整条修改失败。
       const unitSetArchetype = tag.name === 'unit_set' && attrs.archetype !== undefined && !['infantry', 'ranged', 'mobile'].includes(attrs.archetype);
       if (unitSetArchetype) { warnings.push(`${attrs.name || attrs.id || 'unit_set'}：archetype只认infantry/ranged/mobile，保留原值，未采用「${attrs.archetype}」`); delete attrs.archetype; }
-      if (tag.name === 'unit_set' && (hadOptionalList || unitSetArchetype) && !Object.keys(attrs).some(key => !['id', 'reason'].includes(key))) continue;
+      if (tag.name === 'unit_set' && (hadOptionalList || unitSetArchetype || hadItems) && !Object.keys(attrs).some(key => !['id', 'reason'].includes(key))) continue;
       const event = validatedEvent(tag.name, attrs, warnings);
       const earlier = seen.get(event.raw);
       if (earlier !== undefined && (earlier !== tag.block || ['deploy', 'unit-update'].includes(event.kind))) {
@@ -169,6 +217,9 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
   const spawned = events.reduce((n, event) => n + (event.kind === 'spawn' ? event.count : 0), 0);
   if (events.length > MAX_PROTOCOL_EVENTS) errors.push('合并重复内容后共有' + events.length + '项事件，最多' + MAX_PROTOCOL_EVENTS + '项；请调整草稿，尚未入账');
   if (spawned > MAX_SCENE_UNITS) errors.push('本批新建单位超过' + MAX_SCENE_UNITS + '，请调整草稿；' + GROUPING_HINT);
+  // 略过的道具排在提示最前；整条回复只剩写不出的道具时作为待补全，不让它悄悄消失。
+  if (skipped.length && !events.length && !errors.length) errors.push(skipped[0]!);
+  warnings.unshift(...skipped);
   // 格式变换提示较多时，优先展示跳过内容/保留旧值的实质诊断。
   const uniqueWarnings = [...new Set(warnings)];
   const orderedWarnings = [...uniqueWarnings.filter(w => !w.startsWith('已规范化 ')), ...uniqueWarnings.filter(w => w.startsWith('已规范化 '))];
@@ -288,6 +339,8 @@ export function recoverProtocol(text: string): { text: string; diagnostics: Prot
     // Even an incomplete unit remains in the draft so its name and valid fields can be filled in.
     const recovered = serializeEvent(tag.name, retained);
     if (!diagnostics.some(d => d.start >= (tag.start ?? 0) && d.end <= (tag.end ?? text.length))) add(full.errors[0] ?? full.warnings[0] ?? '事件需要补全');
+    // A unit_set left with only its id changes nothing and would itself be an error.
+    if (tag.name === 'unit_set' && !Object.keys(retained).some(key => !['id', 'reason'].includes(key))) continue;
     lines.push(recovered);
   }
   const unique = [...new Map(diagnostics.map(d => [d.start + ':' + d.end + ':' + d.message, d])).values()].sort((a, b) => a.start - b.start || a.end - b.end);
@@ -325,7 +378,12 @@ function naturalArmorSpec(armor: string, body?: string): { armor: string; writte
 }
 
 function validatedEvent(kind: string, attrs: Record<string, string>, warnings: string[]): Suggestion {
-  if (kind === 'unit_set') return { kind:'unit-set', id:attrs.id!, data:parseUnitSet(attrs), reason:attrs.reason, raw:serializeEvent(kind,attrs) };
+  if (kind === 'unit_set') {
+    // items 交给单位的道具不是档案字段；只交道具时不改档案。
+    const items = attrs.items ? splitSpawnItems(attrs.items).map((entry) => parseSpawnItem(entry)) : [];
+    const fields = Object.keys(attrs).some((key) => !['id', 'reason', 'items'].includes(key));
+    return { kind:'unit-set', id:attrs.id!, data:fields || !items.length ? parseUnitSet(attrs) : {}, ...(items.length ? { items } : {}), reason:attrs.reason, raw:serializeEvent(kind,attrs) };
+  }
   const integer = (key: string, min: number, max: number) => attrs[key] === undefined || (/^\d+$/.test(attrs[key]!) && Number.isSafeInteger(Number(attrs[key])) && Number(attrs[key]) >= min && Number(attrs[key]) <= max);
   if (!integer('count', 1, MAX_SPAWN_COUNT)) throw new Error(`count是单位卡数量，须为1–${MAX_SPAWN_COUNT}；人数写hpMax。${GROUPING_HINT}`);
   const lifeInputMax = kind === 'unit_update' || kind === 'spawn' && attrs.scale === 'hero' ? Number.MAX_SAFE_INTEGER : 1e9;

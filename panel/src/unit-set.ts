@@ -17,7 +17,8 @@ import { parseAbilitySpec } from './tags.js';
 import type { NarrativeSave } from './narrative-state.js';
 
 type ObjectData = Record<string, unknown>;
-export const UNIT_SET_ATTRIBUTES = ['id', 'data', 'reason', 'name', 'side', 'scale', 'archetype', 'level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'state', 'body', 'mount', 'speed', 'weapon', 'weapon2', 'armor', 'shieldSpec', 'skills', 'traits', 'retired', 'note'] as const;
+/** items 不是档案字段：交给单位的道具在入账时另行处理（item-handover.ts）。 */
+export const UNIT_SET_ATTRIBUTES = ['id', 'data', 'reason', 'name', 'side', 'scale', 'archetype', 'level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'state', 'body', 'mount', 'speed', 'weapon', 'weapon2', 'armor', 'shieldSpec', 'skills', 'traits', 'retired', 'note', 'items'] as const;
 const direct = ['name', 'side', 'scale', 'archetype', 'level', 'xp', 'xpValue', 'hp', 'morale', 'status', 'body', 'mount', 'speedTier', 'tags', 'base', 'bonuses', 'resources', 'conditions', 'traits', 'traitLevels', 'traitSources', 'recoverableWounded', 'formation', 'abilityState', 'fatigue'] as const;
 const special = ['xpProgress', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'moraleMax', 'state', 'speed', 'weapon2', 'weapon', 'sidearm', 'armor', 'shield', 'skills', 'abilities', 'preparedAbilityIds', 'retired', 'note'];
 const object = (value: unknown): value is ObjectData => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -50,7 +51,7 @@ export function parseUnitSet(attrs: Record<string, string>): ObjectData {
   if (!attrs.id?.trim()) throw Error('unit_set需要已有单位id');
   const data = attrs.data === undefined ? {} : requireObject(JSON.parse(attrs.data), 'data');
   for (const [key, text] of Object.entries(attrs)) {
-    if (['id', 'data', 'reason'].includes(key)) continue;
+    if (['id', 'data', 'reason', 'items'].includes(key)) continue;
     const field = ({ weapon2: 'sidearm', shieldSpec: 'shield', state: 'status', speed: 'speedTier' } as Record<string,string>)[key] ?? key;
     let value: unknown = text;
     if (['level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'speedTier'].includes(field)) {
@@ -138,7 +139,8 @@ function wantedGear(input: unknown): WantedGear | undefined {
   } catch { /* See gearValue. */ }
   return { name: name?.trim() || undefined, spec, values: config.values !== undefined };
 }
-const itemKey = (name: string) => name.replace(/\s+/g, '').toLowerCase();
+/** 实物同名比较：忽略空白与大小写。 */
+export const itemKey = (name: string) => name.replace(/\s+/g, '').toLowerCase();
 const bonusKey = (bonuses?: Enhancements) => JSON.stringify(Object.entries(bonuses ?? {}).filter(([, value]) => value).sort(([a], [b]) => a.localeCompare(b)));
 /** 只比较正文写出的部分；相同时直接换上这件，不重铸、不丢附魔等写不出的属性。 */
 function sameGear(mechanics: ItemMechanics | undefined, spec: ItemSpecification | undefined): boolean {

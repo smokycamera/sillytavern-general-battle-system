@@ -5,6 +5,7 @@
  */
 import type { Suggestion } from './tags.js';
 import type { NarrativeSave } from './narrative-state.js';
+import type { SpawnItem } from './item-spec.js';
 import { normalizeHandle, type narrativeIds } from './narrative-ids.js';
 import { parseProtocol } from './protocol.js';
 import { serializeEvent } from './protocol-syntax.js';
@@ -19,6 +20,8 @@ export interface NewUnitPlan {
   handles: Map<string, string>;
   /** Created unit → unit_set fields spawn cannot express (experience, note, shield spec, data…). */
   patches: Map<string, Record<string, unknown>>;
+  /** Created unit → items its creating unit_set hands over, after the unit exists. */
+  items: Map<string, SpawnItem[]>;
 }
 
 /** The engine identity of the n-th card created by the event at `index`. */
@@ -50,7 +53,7 @@ function spawnFromUnitSet(event: UnitSet): { spawn: Suggestion; rest: Record<str
 
 export function planNewUnits(save: NarrativeSave, proposalId: string, input: Suggestion[], ids: Ids): NewUnitPlan {
   const records = save.storage ?? [], existing = new Set(records.map(r => r.id));
-  const events = [...input], created = new Set<string>(), handles = new Map<string, string>(), patches = new Map<string, Record<string, unknown>>();
+  const events = [...input], created = new Set<string>(), handles = new Map<string, string>(), patches = new Map<string, Record<string, unknown>>(), items = new Map<string, SpawnItem[]>();
   const aliases = new Map<string, number>();
   const named = (name: unknown): string[] => {
     if (typeof name !== 'string' || !name.trim()) return [];
@@ -68,9 +71,10 @@ export function planNewUnits(save: NarrativeSave, proposalId: string, input: Sug
     if (matches.length === 1) { for (const i of indexes) events[i] = { ...events[i] as UnitSet, id: matches[0]! }; continue; }
     const creator = indexes.find(i => creatable(events[i] as UnitSet));
     if (creator === undefined) continue; // Left to the missing-record error.
-    const { spawn, rest } = spawnFromUnitSet(events[creator] as UnitSet), id = newUnitId(proposalId, creator);
+    const { spawn, rest } = spawnFromUnitSet(events[creator] as UnitSet), id = newUnitId(proposalId, creator), handed = (events[creator] as UnitSet).items;
     events[creator] = spawn; created.add(id); aliases.set(alias, creator);
     if (Object.keys(rest).length) patches.set(id, rest);
+    if (handed?.length) items.set(id, handed);
     if (/^u[1-9]\d*$/.test(key(written)) && !ids.taken(key(written))) handles.set(id, key(written));
   }
   for (const [index, event] of events.entries()) {
@@ -82,5 +86,5 @@ export function planNewUnits(save: NarrativeSave, proposalId: string, input: Sug
       if (matches.length === 1) events[index] = { ...event, id: matches[0]! };
     }
   }
-  return { events, created, handles, patches };
+  return { events, created, handles, patches, items };
 }
