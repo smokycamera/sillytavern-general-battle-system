@@ -262,7 +262,7 @@ describe('常驻宿主生命周期与故障', () => {
       unit.id = side; return unit;
     });
     stores.a!.panel = { schemaVersion: 2, factRevision: 1, storage: units.map((u) => unitRecordFromCombatant(u)), rosterIds: units.map((u) => u.id),
-      inventory: [{ ...createInventoryItem('dose', '药剂', { kind: 'consumable', mechanism: 'heal', power: 3 }, 'dose', 3), assignedTo: 'ally' }] };
+      inventory: [{ ...createInventoryItem('dose', '药剂', { kind: 'item', form: 'single', power: 3, active: 'generic:buff:heal' }, 'dose', 3), assignedTo: 'ally' }] };
     emit('CHAT_CHANGED');
     const b = new SmallBattle({ rules: V2_D20, battlefield: standardField(), combatants: prepareBattleItems(units, controller.snapshot()), seed: 'battle-items', traitRegistry: reg });
     b.start(); while (b.active?.id !== 'ally') b.endTurn();
@@ -277,12 +277,12 @@ describe('常驻宿主生命周期与故障', () => {
     expect(controller.persistPanel(forged, saved.factRevision!).receipt.status).toBe('failed'); expect(controller.snapshot()).toEqual(saved);
     const result = commitBattleOutcome({ battleId: 'small:battle-items', committedIds: [], records: saved.storage!, roster: units, combatants: b.combatants, awards: [], registry: reg });
     expect(controller.persistPanel({ ...saved, storage: result.records, committedOutcomeIds: result.committedIds }, saved.factRevision!).receipt.status).not.toBe('failed');
-    const ended = controller.snapshot(); expect(ended.storage![0]!.hp).toBe(23);
+    const ended = controller.snapshot(); expect(ended.storage![0]!.hp).toBe(34);
     expect(ended.storage![0]!.snapshot!.abilities.some((a) => a.itemSourceId)).toBe(false);
     controller.inventoryAction({ id: 'post-battle-dose', kind: 'use', itemId: 'dose', unitId: 'ally', expectedRevision: ended.factRevision! });
     const later = controller.snapshot(); expect(later.inventory![0]!.qty).toBe(1);
     expect(controller.persistPanel(later, later.factRevision!).receipt.status).not.toBe('failed');
-    expect(controller.snapshot().storage![0]!.hp).toBe(36);
+    expect(controller.snapshot().storage![0]!.hp).toBe(40);
     const nextUnits = prepareBattleItems(later.storage!.map((r) => r.snapshot!), later);
     expect(nextUnits[0]!.resources['item:dose']).toBe(1);
     expect(nextUnits[1]!.resources['item:dose']).toBeUndefined();
@@ -290,14 +290,14 @@ describe('常驻宿主生命周期与故障', () => {
   it('库存预览不保存；聊天切换即使版本相同也拒绝旧确认，保存失败可重试同一预览', () => {
     const { controller, stores, ctx, emit, fail } = setup();
     const before = controller.snapshot();
-    const preview = controller.previewInventory({ kind: 'create', itemId: 'preview-item', name: '药剂', spec: { kind: 'consumable', mechanism: 'heal', power: 3 } }, 'stable-preview');
+    const preview = controller.previewInventory({ kind: 'create', itemId: 'preview-item', name: '药剂', spec: { kind: 'item', form: 'single', power: 3, active: 'generic:buff:heal' } }, 'stable-preview');
     expect(controller.snapshot()).toEqual(before);
     expect(controller.previewInventory(preview.action, preview.intent.id).after).toEqual(preview.after);
     fail(true); expect(controller.commitInventoryPreview(preview).status).toBe('failed'); expect(controller.snapshot()).toEqual(before);
     fail(false); expect(controller.commitInventoryPreview(preview).status).not.toBe('failed');
     const next = controller.snapshot();
     controller.commitInventoryPreview(preview); expect(controller.snapshot()).toEqual(next);
-    const oldContext = controller.previewInventory({ kind: 'create', itemId: 'other', name: '旧聊天药剂', spec: { kind: 'consumable', mechanism: 'heal', power: 3 } });
+    const oldContext = controller.previewInventory({ kind: 'create', itemId: 'other', name: '旧聊天药剂', spec: { kind: 'item', form: 'single', power: 3, active: 'generic:buff:heal' } });
     stores.b!.panel = structuredClone(next); ctx.chatId = 'b'; emit('CHAT_CHANGED');
     expect(() => controller.commitInventoryPreview(oldContext)).toThrow(/聊天|上下文/);
     expect(controller.snapshot()).toEqual(next);
@@ -307,7 +307,7 @@ describe('常驻宿主生命周期与故障', () => {
     const unit = generateUnit({ name: '测试携行者', side: 'ally', scale: 'hero', rulesVersion: 'v2', level: 3, traits: [], hp: 18, hpMax: 40 }, { seed: 'item-carrier', registry: traitRegistry() }).unit;
     stores.a!.panel = { schemaVersion: 2, factRevision: 1, storage: [unitRecordFromCombatant(unit)], rosterIds: [unit.id], inventory: [
       createInventoryItem('blade', '新武器', { kind: 'weapon', mechanism: 'axe', power: 8 }, 'blade'),
-      createInventoryItem('dose', '补给', { kind: 'consumable', mechanism: 'heal', power: 3 }, 'dose', 2),
+      createInventoryItem('dose', '补给', { kind: 'item', form: 'single', power: 3, active: 'generic:buff:heal' }, 'dose', 2),
     ] };
     emit('CHAT_CHANGED');
     const equip = { id: 'equip', expectedRevision: 1, kind: 'equip' as const, unitId: unit.id, itemId: 'blade', slot: 'primary' as const };

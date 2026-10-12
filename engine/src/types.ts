@@ -94,15 +94,6 @@ export interface Armor {
   level?: number;
 }
 
-/** 饰品：授予特质 */
-export interface Trinket {
-  id: string;
-  name: string;
-  /** 授予的特质 id */
-  grantsTrait: string;
-  desc?: string;
-}
-
 // ---------- 技能（通用资源模型，无法术位） ----------
 
 export type AbilityTarget = 'enemy' | 'ally' | 'self' | 'zone';
@@ -154,6 +145,12 @@ export interface Ability {
   fixedPower?: boolean;
   /** 战斗携行实物产生的临时行动；不属于已学/准备技能。 */
   itemSourceId?: string;
+  /** V15 一次性道具：喝、敷、注射的单体增益与治疗可用加速动作。 */
+  itemQuick?: boolean;
+  /** V15 一次性道具对编队的件数口径：member 每人一份，object 一件一个效果。 */
+  itemScaling?: 'member' | 'object';
+  /** 编队本次齐用实际消耗的件数；只存在于单次使用的派生行动，不写入存档。 */
+  itemDoses?: number;
   definitionId?: string;
   sourceId?: string;
   cooldownGroup?: string;
@@ -288,9 +285,16 @@ export interface Combatant {
   traitModel?: 'traits-v1';
   /** V14 skill pricing (composite states priced per stat), projected from the battle rules; absent keeps V13 skill numbers. */
   skillModel?: 'skills-v1';
+  /** V15 item system (graded specialisations, item action economy and per-piece formation use), projected from the battle rules. */
+  itemModel?: 'items-v1';
   battleZones?: import('./area-effects.js').BattleZone[];
   barrier?: { remaining: number; duration: number; sourceId?: string; defenses?: { power: number; duration: number }[] };
-  accessories?: Partial<Record<'accessory1' | 'accessory2', import('./items.js').AccessoryItem>>;
+  /** 旧版两格配件；只出现在 V15 之前开始、尚未结束的战斗快照里，新档一律用 gear。 */
+  accessories?: Partial<Record<'accessory1' | 'accessory2', import('./items.js').LegacyAccessory>>;
+  /** 已装备的佩戴、充能道具；与武器护甲一样是库存实物的投影，件数不限。 */
+  gear?: import('./items.js').GearItem[];
+  /** 单位自带专精的等级（L1–10），缺省 L5；只记录五项专精。 */
+  traitLevels?: Record<string, number>;
   /** 战外明确设置的初始状态；战果归档后恢复通常的出场重置规则。 */
   storyState?: { resources?: boolean; abilityState?: boolean; fatigue?: boolean };
   bonuses?: Enhancements;
@@ -357,7 +361,6 @@ export interface Combatant {
   /** 副武器（spawn weapon2 显式声明）：支持全部武器种类，共用主行动，独立装填 */
   sidearm?: Weapon;
   armor?: Armor;
-  trinkets?: Trinket[];
   abilities: Ability[];
   abilityState: AbilityState[];
   /** 资源池：体力/怒气/充能，键自定义 */
@@ -434,6 +437,8 @@ export interface GenerateInput {
   /** 威胁等级 1~10 */
   level: number;
   traits: string[];
+  /** 专精等级 L1–10（只记录五项专精），缺省 L5。 */
+  traitLevels?: Record<string, number>;
   side: Side;
   /** 时代皮肤 id，纯术语层 */
   era?: string;
@@ -555,6 +560,8 @@ export interface RulePack {
   traitModel?: 'traits-v1';
   /** V14 skill pricing: 同时改两项属性的状态按两项附加效果计价; absent keeps V13. */
   skillModel?: 'skills-v1';
+  /** V15 道具系统：专精十级、道具行动与编队件数、AI 保留价值、冲锋与远程看实际配装; absent keeps V14. */
+  itemModel?: 'items-v1';
   combatModel?: 'cohort-v1' | 'cohort-v2';
   /** 武器直击余伤100%在目标编队内传递；旧规则缺省关闭。 */
   weaponOverflow?: boolean;

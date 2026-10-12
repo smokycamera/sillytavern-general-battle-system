@@ -21,7 +21,7 @@ it('AI扫描结果独立保存，人工确认和自动批准均可提交，原�
 });
 it('持久化等待期间只发布旧事实，失败后重试沿用库存候选且只扣一次', async () => {
   const f = await setup();
-  await f.service.inventoryAction({ id: 'create', expectedRevision: 0, kind: 'create', itemId: 'potion', name: '药剂', qty: 3, spec: { kind: 'consumable', mechanism: 'heal', power: 3 } });
+  await f.service.inventoryAction({ id: 'create', expectedRevision: 0, kind: 'create', itemId: 'potion', name: '药剂', qty: 3, spec: { kind: 'item', form: 'single', power: 3, active: 'generic:buff:heal' } });
   const before = f.service.snapshot(); const preview = f.service.previewInventory({ kind: 'discard', itemId: 'potion', qty: 1 }, 'discard');
   f.setSave(async () => {});
   const listener = vi.fn(); f.service.listen(listener);

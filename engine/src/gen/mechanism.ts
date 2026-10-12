@@ -11,7 +11,7 @@ import type { GenOptions, GenResult } from './generator.js';
 import { curveAt, ARCHETYPE_MODS } from '../data/curves.js';
 import { diceAvg, rebuildDice } from '../data/weapons.js';
 import { ABILITY_BLUEPRINTS, abilityFromBlueprint } from '../data/ability-blueprints.js';
-import { traitRegistry } from '../data/traits.js';
+import { traitRegistry, validateTraitLevels } from '../data/traits.js';
 import { randomSeed } from '../rng.js';
 import { rollInstanceVariance, instanceMultiplier } from '../instance-variance.js';
 import { BODY, FORMULA_VERSION as EQUIPMENT_FORMULA_VERSION, compileArmor, compileWeapon } from './equipment.js';
@@ -66,6 +66,10 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   const hpMax = group ? requestedMax : capSingleLife(requestedMax, raw.damageModel), hp = Math.min(requestedHp, hpMax);
   if (hpMax !== requestedMax) warnings.push(`单体生命上限${requestedMax}超过硬上限，已限制为${singleLifeLimit(raw.damageModel)}`);
   const traits = [...new Set(raw.traits)];
+  // 只保留单位确实拥有、且不是标准 L5 的专精等级。
+  validateTraitLevels(raw.traitLevels);
+  const levelEntries = Object.entries(raw.traitLevels ?? {}).filter(([id, level]) => traits.includes(id) && level !== 5);
+  const traitLevels = levelEntries.length ? Object.fromEntries(levelEntries) as Record<string, number> : undefined;
   const base = { atk: curve.atk + archMod.atk, def: curve.def + archMod.def, spd: Math.max(1, curve.spd + archMod.spd + bonusSteps(raw.bonuses, 'speed', 5)), hpMax,
     ...(group ? { moraleMax: curve.morale + bonusSteps(raw.bonuses, 'morale') } : {}) };
   const tags = new Set<string>([arch, raw.scale, body]);
@@ -107,7 +111,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
     weaponLevel: weapon.level, sidearmLevel: sidearm?.level, armorTier: tier, armorLevel: armorPower, hpMax: base.hpMax, hp: currentHp, preparedAbilityIds: prepared,
     abilityBlueprints: (raw.abilityBlueprints ?? []).map((s) => typeof s === 'string' ? { id: s, level: 5 } : { ...s, level: s.level ?? 5 }) };
   const unit: Combatant = { id, name: raw.name, side: raw.side, scale: raw.scale, archetype: arch, level: training,
-    rulesVersion: 'v2', ...(raw.damageModel ? {damageModel:raw.damageModel} : {}), bonuses: raw.bonuses, body, ...(raw.speedTier !== undefined ? { speedTier: raw.speedTier } : {}), ...(raw.mount ? { mount: true } : {}), base, hp: currentHp, tags: [...tags], traits,
+    rulesVersion: 'v2', ...(raw.damageModel ? {damageModel:raw.damageModel} : {}), bonuses: raw.bonuses, body, ...(raw.speedTier !== undefined ? { speedTier: raw.speedTier } : {}), ...(raw.mount ? { mount: true } : {}), base, hp: currentHp, tags: [...tags], traits, ...(traitLevels ? { traitLevels } : {}),
     weapon, sidearm, armor, shield: raw.shield ? { id: `${id}:shield`, load: 2 } : undefined,
     abilities, preparedAbilityIds: preparedIds,
     conditions: [], abilityState: [], resources: { SP: 6 + Math.floor(training / 2), reserve: integer(raw.reserves ?? 0, 0, 2, '随队预备份额') },

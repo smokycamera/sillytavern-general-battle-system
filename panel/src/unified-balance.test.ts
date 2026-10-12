@@ -55,15 +55,16 @@ describe('V6 archive, skill families and signed modifier round trips',()=>{
    const e=skill(name,10,{duration:10}).abilities[0]!.effects.find(e=>e.op==='condition')!;expect(e.op==='condition'&&e.dur).toBe(1);
   }
  });
- it('new consumables and nested zone healing use current life; saved old items remain frozen',()=>{
+ it('item healing and thrown damage equal the same skill after battle entry, signed modifiers included; nested zone healing uses current life',()=>{
   for(const points of [-10,0,10]){
-   const bonuses={power:points,healing:points},spec={kind:'consumable' as const,mechanism:'heal' as const,power:10,bonuses};
-   const old=compileItem(spec,{id:'old',seed:'old'}),next=compileItem(spec,{id:'new',seed:'new',damageModel:'wounds-v2'});
-   expect(old.kind==='consumable'&&old.effect).toEqual({op:'heal',amount:Math.round(21*(points<0?.5:points>0?2:1))});
-   expect(next.kind==='consumable'&&next.effect).toEqual({op:'heal',amount:Math.round(41*(points<0?.5:points>0?2:1))});
-   const bomb=compileItem({kind:'consumable',mechanism:'grenade',power:10,bonuses:{power:points}},{id:'bomb',seed:'bomb',damageModel:'wounds-v2'});
-   if(bomb.kind!=='consumable')throw Error();
-   expect(carriedItemAbility({id:'bomb',name:'bomb',quantity:1,revision:1,mechanics:bomb}).damageScale).toBe(1+points*.05);
+   const bonuses={power:points,healing:points};
+   const dose=compileItem({kind:'item',form:'single',power:10,active:'generic:buff:heal',bonuses},{id:'dose',seed:'dose'});
+   if(dose.kind!=='item')throw Error();
+   expect(dose.value.ability!.effects).toEqual(skill('buff治疗',10,bonuses).abilities[0]!.effects);
+   const bomb=compileItem({kind:'item',form:'single',power:10,active:'generic:physical-area:projectile',bonuses:{power:points}},{id:'bomb',seed:'bomb'});
+   if(bomb.kind!=='item')throw Error();
+   const thrown=skill('物理范围投射',10,{power:points}).abilities[0]!, carried=carriedItemAbility({id:'bomb',name:'bomb',quantity:1,revision:1,mechanics:bomb});
+   expect(carried.damageScale).toBe(thrown.damageScale); expect(carried.effects).toEqual(thrown.effects);
   }
   const e=skill('治疗区域+治疗',10).abilities[0]!.effects.find(e=>e.op==='zone')!;
   expect(e.op==='zone'&&e.effects?.find(e=>e.op==='heal')).toEqual({op:'heal',amount:21});

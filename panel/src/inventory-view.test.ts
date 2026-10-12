@@ -13,7 +13,7 @@ function fixture() {
     const unit = generateUnit({ name: id, side: id === 'enemy' ? 'enemy' : 'ally', scale: 'hero', rulesVersion: 'v2', level: 3, weaponClass: 'sword', traits: [] }, { seed: id }).unit;
     unit.id = id; return unitRecordFromCombatant(unit);
   });
-  const potion = (id: string, assignedTo?: string) => ({ ...createInventoryItem(id, id, { kind: 'consumable', mechanism: 'heal', power: 3 }, id, 2), assignedTo });
+  const potion = (id: string, assignedTo?: string) => ({ ...createInventoryItem(id, id, { kind: 'item', form: 'single', power: 3, active: 'generic:buff:heal' }, id, 2), assignedTo });
   return prepareInventoryState({ schemaVersion: 2, factRevision: 1, storage, inventory: [potion('public'), potion('b-bag', 'b'), potion('a-bag', 'a'), { ...potion('empty'), qty: 0 }] });
 }
 

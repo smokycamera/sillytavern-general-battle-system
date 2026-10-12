@@ -13,7 +13,7 @@ function finished(mode:'small'|'mass'='small') {
   const unit=generateUnit({rulesVersion:'v2',name:id,side:id==='A'?'ally':'enemy',scale:'company',hp:90,hpMax:100,level:3,weaponClass:'rifle',traits:[]},{seed:id,registry,noVariance:true}).unit;
   unit.id=id;return unitRecordFromCombatant(unit);
  });
- const before=prepareInventoryState({schemaVersion:2,factRevision:1,storage,rosterIds:['A','D'],protagonistId:'A',inventory:[{...createInventoryItem('dose','急救剂',{kind:'consumable',mechanism:'heal',power:3},'dose',3),assignedTo:'A'}]}) as NarrativeSave;
+ const before=prepareInventoryState({schemaVersion:2,factRevision:1,storage,rosterIds:['A','D'],protagonistId:'A',inventory:[{...createInventoryItem('dose','急救剂',{kind:'item',form:'single',power:3,active:'generic:buff:heal'},'dose',3),assignedTo:'A'}]}) as NarrativeSave;
  const units=prepareBattleItems(before.storage!.map(r=>materializeUnitRecord(r,registry)),before);
  const battle=mode==='small'?new SmallBattle({combatants:units,seed:'original',rules:V3_D20,battlefield:standardField(),traitRegistry:registry}):new MassBattle({combatants:units,seed:'original',rules:V3_TW,traitRegistry:registry});
  battle.start();const start=captureBattleStart(battle,captureBattleArchive(before)),initial={...before,battle:{kind:mode,snap:structuredClone(battle.toSnapshot())}};

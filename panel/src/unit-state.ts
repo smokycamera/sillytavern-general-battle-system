@@ -1,14 +1,15 @@
 import { validateAreas } from '../../engine/src/area-effects.js';
 import { validateZoneStrength } from '../../engine/src/zone-skills.js';
 import { validateBarrier, validDefensePower } from '../../engine/src/barrier.js';
-import { validateAccessories } from '../../engine/src/items.js';
+import { validateGear } from '../../engine/src/items.js';
 import { validateEnhancements, validateChannelProtection, type Enhancements } from '../../engine/src/enhancements.js';
 import { synchronizePersonnel, validateCombatModel } from '../../engine/src/combat-model.js';
 import { capSingleLife, limitCombatantLife } from '../../engine/src/health-limits.js';
 import { isEnduranceModel, spCapacity } from '../../engine/src/resources.js';
 import { validateArmsModel } from '../../engine/src/arms.js';
 import { validateTraitModel } from '../../engine/src/trait-model.js';
-import { traitRegistry } from '../../engine/src/data/traits.js';
+import { validateItemModel } from '../../engine/src/item-model.js';
+import { traitRegistry, validateTraitLevels } from '../../engine/src/data/traits.js';
 import { skillMechanismFromId } from '../../engine/src/data/skill-mechanisms.js';
 /**
  * 面板单位持久化与战后提交。
@@ -200,6 +201,8 @@ function validateRuntimeMetadata(value: Record<string, unknown>): void {
   if (value.resourceModel !== undefined && !isEnduranceModel(value.resourceModel)) throw new Error('资源规则版本损坏');
   validateArmsModel(value.armsModel);
   validateTraitModel(value.traitModel);
+  validateItemModel(value.itemModel);
+  validateTraitLevels(value.traitLevels);
   validateTacticalEffort(value.tacticalEffort, value.resourceModel);
   validateConcealment(value.tacticalRevealed);
   validateFlightState(value.airborne);
@@ -251,7 +254,7 @@ export function combatantFromUnknown(value: unknown): Combatant {
   if (typeof value.scale !== 'string' || !['hero', 'mook', 'company'].includes(value.scale)) throw new Error('scale 非法');
   validateBase(value.base);
   validateRuntimeMetadata(value);
-  validateBarrier(value.barrier as Combatant['barrier']); validateAreas(value as unknown as Combatant); validateAccessories(value as unknown as Combatant);
+  validateBarrier(value.barrier as Combatant['barrier']); validateAreas(value as unknown as Combatant); validateGear(value as unknown as Combatant);
   for (const slot of ['weapon', 'sidearm']) {
     const item = value[slot]; if (item === undefined) continue;
     if (!isRecordObject(item) || typeof item.name !== 'string' || typeof item.baseDice !== 'string') throw new Error(slot + ' 结构损坏');

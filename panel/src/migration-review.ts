@@ -2,10 +2,10 @@ import { prepareCombatModel } from '../../engine/src/combat-model.js';
 import { V6_D20 } from '../../engine/src/rules.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
 import { unitRecordFromCombatant, materializeUnitRecord } from './unit-state.js';
-import { SmallBattle, MassBattle, traitRegistry, rulesById, validateTraitSource, validateTacticalPose, validateTacticalEffort, validateConcealment, validateFlightState, validateWounded, validateMoraleState, validateVanguardOrigin, validateFormationPosition, normalizeV2Scale, type Combatant } from '../../engine/src/index.js';
+import { SmallBattle, MassBattle, traitRegistry, rulesById, validateTraitSource, validateTacticalPose, validateTacticalEffort, validateConcealment, validateFlightState, validateWounded, validateMoraleState, validateVanguardOrigin, validateFormationPosition, normalizeV2Scale, ITEM_FORM_NAMES, itemSpecText, type Combatant } from '../../engine/src/index.js';
 import { combatantFromUnknown, migratePanelUnits } from './unit-state.js';
 import type { NarrativeSave } from './narrative-state.js';
-import { prepareInventoryState, validateInventoryItem, fitsEquipmentSlot } from './inventory-state.js';
+import { prepareInventoryState, validateInventoryItem, fitsEquipmentSlot, migrateLegacyInventory, type InventoryItem } from './inventory-state.js';
 import { prepareBattleItemWrite } from './battle-items.js';
 
 export interface MigrationReview { original: NarrativeSave; candidate: NarrativeSave; changes: string[]; quarantined: number }
@@ -64,7 +64,18 @@ export function reviewMigration(raw: NarrativeSave, unifiedBalance = false): Mig
     record.scale = 'company'; normalizeV2Scale(record.snapshot); oldMookIds.add(record.id);
   }
   let quarantined = units.backup.length;
-  const items = Array.isArray(raw.inventory) ? raw.inventory : [];
+  // 旧版药剂与护符逐件按对照表转换（V15）；转换不了的与其他坏项一样隔离，原件留在备份里。
+  let converted = 0;
+  const items = (Array.isArray(raw.inventory) ? raw.inventory : []).map((item: InventoryItem) => {
+    try {
+      const next = migrateLegacyInventory([item])?.[0] ?? item;
+      if (next === item) return item;
+      converted++;
+      const m = next.mechanics;
+      if (m?.kind === 'item') changes.push(`旧版道具「${next.name}」转为${ITEM_FORM_NAMES[m.value.recipe.form]}道具 ${itemSpecText(m.value.recipe)}${next.equippedTo?.slot === 'gear' ? '，仍装备在原单位' : ''}`);
+      return next;
+    } catch { return item; }
+  });
   const badItems: unknown[] = [];
   candidate.inventory = items.filter((item, index) => {
     try {
@@ -75,12 +86,17 @@ export function reviewMigration(raw: NarrativeSave, unifiedBalance = false): Mig
         const { unitId, slot } = item.equippedTo;
         if (item.assignedTo !== unitId || !units.records.some((r) => r.id === unitId && r.equipmentManaged)
           || !item.mechanics || !fitsEquipmentSlot(item.mechanics,slot)) throw new Error('装备关系与持有者/槽位不一致');
-        if (items.some((other, n) => n !== index && other?.equippedTo?.unitId === unitId && other.equippedTo.slot === slot)) throw new Error('同一槽位有多件实物，不能猜测保留');
+        if (slot !== 'gear' && items.some((other, n) => n !== index && other?.equippedTo?.unitId === unitId && other.equippedTo.slot === slot)) throw new Error('同一槽位有多件实物，不能猜测保留');
       }
       return true;
     } catch (error) { changes.push(`库存[${index}]已隔离：${String(error)}`); badItems.push(item); return false; }
   });
   if (raw.inventory !== undefined && !Array.isArray(raw.inventory)) { changes.push('库存容器已隔离：不是数组'); badItems.push(raw.inventory); }
+  if (converted && !badItems.length) {
+    // 原配件栏的投影换成已佩戴道具；单位档案的其他内容不变。
+    const projected = prepareInventoryState(candidate, false);
+    candidate.inventory = projected.inventory; candidate.storage = projected.storage;
+  }
   if (badItems.length) {
     quarantined += badItems.length; candidate.inventoryMigrationBackup = badItems;
     // 只重投影受库存管理的档案；隔离的实物不再提供效果，原实例仍在完整备份中。

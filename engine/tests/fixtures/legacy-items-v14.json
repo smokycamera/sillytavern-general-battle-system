@@ -1,0 +1,3112 @@
+{
+ "source": "0dbfcc5 (V14) panel/src/inventory-state.ts createInventoryItem + transactions",
+ "items": [
+  {
+   "id": "c-heal-3",
+   "name": "治疗药剂",
+   "qty": 2,
+   "revision": 1,
+   "lootType": "consumable",
+   "mechanics": {
+    "kind": "consumable",
+    "recipe": {
+     "balanceVersion": "unified-v1",
+     "version": "mechanism-v2.3",
+     "mechanism": "heal",
+     "power": 3,
+     "size": "human",
+     "quality": 3,
+     "seed": "c-heal-3"
+    },
+    "effect": {
+     "op": "heal",
+     "amount": 13
+    }
+   }
+  },
+  {
+   "id": "c-heal-5",
+   "name": "治疗药剂",
+   "qty": 2,
+   "revision": 1,
+   "lootType": "consumable",
+   "mechanics": {
+    "kind": "consumable",
+    "recipe": {
+     "balanceVersion": "unified-v1",
+     "version": "mechanism-v2.3",
+     "mechanism": "heal",
+     "power": 5,
+     "size": "human",
+     "quality": 3,
+     "seed": "c-heal-5"
+    },
+    "effect": {
+     "op": "heal",
+     "amount": 21
+    }
+   }
+  },
+  {
+   "id": "c-restore-3",
+   "name": "回能药剂",
+   "qty": 2,
+   "revision": 1,
+   "lootType": "consumable",
+   "mechanics": {
+    "kind": "consumable",
+    "recipe": {
+     "balanceVersion": "unified-v1",
+     "version": "mechanism-v2.3",
+     "mechanism": "restore",
+     "power": 3,
+     "size": "human",
+     "quality": 3,
+     "seed": "c-restore-3"
+    },
+    "effect": {
+     "op": "resource",
+     "resource": "SP",
+     "amount": 4,
+     "maximum": "training"
+    }
+   }
+  },
+  {
+   "id": "c-restore-5",
+   "name": "回能药剂",
+   "qty": 2,
+   "revision": 1,
+   "lootType": "consumable",
+   "mechanics": {
+    "kind": "consumable",
+    "recipe": {
+     "balanceVersion": "unified-v1",
+     "version": "mechanism-v2.3",
+     "mechanism": "restore",
+     "power": 5,
+     "size": "human",
+     "quality": 3,
+     "seed": "c-restore-5"
+    },
+    "effect": {
+     "op": "resource",
+     "resource": "SP",
+     "amount": 5,
+     "maximum": "training"
+    }
+   }
+  },
+  {
+   "id": "c-cleanse-3",
+   "name": "净化药剂",
+   "qty": 2,
+   "revision": 1,
+   "lootType": "consumable",
+   "mechanics": {
+    "kind": "consumable",
+    "recipe": {
+     "balanceVersion": "unified-v1",
+     "version": "mechanism-v2.3",
+     "mechanism": "cleanse",
+     "power": 3,
+     "size": "human",
+     "quality": 3,
+     "seed": "c-cleanse-3"
+    },
+    "effect": {
+     "op": "dispel",
+     "polarity": "negative",
+     "count": 1
+    }
+   }
+  },
+  {
+   "id": "c-cleanse-5",
+   "name": "净化药剂",
+   "qty": 2,
+   "revision": 1,
+   "lootType": "consumable",
+   "mechanics": {
+    "kind": "consumable",
+    "recipe": {
+     "balanceVersion": "unified-v1",
+     "version": "mechanism-v2.3",
+     "mechanism": "cleanse",
+     "power": 5,
+     "size": "human",
+     "quality": 3,
+     "seed": "c-cleanse-5"
+    },
+    "effect": {
+     "op": "dispel",
+     "polarity": "negative",
+     "count": 1
+    }
+   }
+  },
+  {
+   "id": "c-empower-3",
+   "name": "强攻药剂",
+   "qty": 2,
+   "revision": 1,
+   "lootType": "consumable",
+   "mechanics": {
+    "kind": "consumable",
+    "recipe": {
+     "balanceVersion": "unified-v1",
+     "version": "mechanism-v2.3",
+     "mechanism": "empower",
+     "power": 3,
+     "size": "human",
+     "quality": 3,
+     "seed": "c-empower-3"
+    },
+    "effect": {
+     "op": "condition",
+     "conditionId": "empowered",
+     "dur": 3,
+     "magnitude": 1
+    }
+   }
+  },
+  {
+   "id": "c-empower-5",
+   "name": "强攻药剂",
+   "qty": 2,
+   "revision": 1,
+   "lootType": "consumable",
+   "mechanics": {
+    "kind": "consumable",
+    "recipe": {
+     "balanceVersion": "unified-v1",
+     "version": "mechanism-v2.3",
+     "mechanism": "empower",
+     "power": 5,
+     "size": "human",
+     "quality": 3,
+     "seed": "c-empower-5"
+    },
+    "effect": {
+     "op": "condition",
+     "conditionId": "empowered",
+     "dur": 3,
+     "magnitude": 1
+    }
+   }
+  },
+  {
+   "id": "c-barrier-3",
+   "name": "屏障药剂",
+   "qty": 2,
+   "revision": 1,
+   "lootType": "consumable",
+   "mechanics": {
+    "kind": "consumable",
+    "recipe": {
+     "balanceVersion": "unified-v1",
+     "version": "mechanism-v2.3",
+     "mechanism": "barrier",
+     "power": 3,
+     "size": "human",
+     "quality": 3,
+     "seed": "c-barrier-3"
+    },
+    "effect": {
+     "op": "barrier",
+     "amount": 26,
+     "dur": 3
+    }
+   }
+  },
+  {
+   "id": "c-barrier-5",
+   "name": "屏障药剂",
+   "qty": 2,
+   "revision": 1,
+   "lootType": "consumable",
+   "mechanics": {
+    "kind": "consumable",
+    "recipe": {
+     "balanceVersion": "unified-v1",
+     "version": "mechanism-v2.3",
+     "mechanism": "barrier",
+     "power": 5,
+     "size": "human",
+     "quality": 3,
+     "seed": "c-barrier-5"
+    },
+    "effect": {
+     "op": "barrier",
+     "amount": 42,
+     "dur": 3
+    }
+   }
+  },
+  {
+   "id": "c-grenade-3",
+   "name": "投掷炸弹",
+   "qty": 2,
+   "revision": 1,
+   "lootType": "consumable",
+   "mechanics": {
+    "kind": "consumable",
+    "recipe": {
+     "balanceVersion": "unified-v1",
+     "version": "mechanism-v2.3",
+     "mechanism": "grenade",
+     "power": 3,
+     "size": "human",
+     "quality": 3,
+     "seed": "c-grenade-3"
+    },
+    "effect": {
+     "op": "damage",
+     "baseDice": "2d6",
+     "shape": "burst"
+    }
+   }
+  },
+  {
+   "id": "c-grenade-5",
+   "name": "投掷炸弹",
+   "qty": 2,
+   "revision": 1,
+   "lootType": "consumable",
+   "mechanics": {
+    "kind": "consumable",
+    "recipe": {
+     "balanceVersion": "unified-v1",
+     "version": "mechanism-v2.3",
+     "mechanism": "grenade",
+     "power": 5,
+     "size": "human",
+     "quality": 3,
+     "seed": "c-grenade-5"
+    },
+    "effect": {
+     "op": "damage",
+     "baseDice": "3d6",
+     "shape": "burst"
+    }
+   }
+  },
+  {
+   "id": "c-repair-3",
+   "name": "维修包",
+   "qty": 2,
+   "revision": 1,
+   "lootType": "consumable",
+   "mechanics": {
+    "kind": "consumable",
+    "recipe": {
+     "balanceVersion": "unified-v1",
+     "version": "mechanism-v2.3",
+     "mechanism": "repair",
+     "power": 3,
+     "size": "human",
+     "quality": 3,
+     "seed": "c-repair-3"
+    },
+    "effect": {
+     "op": "heal",
+     "amount": 13
+    }
+   }
+  },
+  {
+   "id": "c-repair-5",
+   "name": "维修包",
+   "qty": 2,
+   "revision": 1,
+   "lootType": "consumable",
+   "mechanics": {
+    "kind": "consumable",
+    "recipe": {
+     "balanceVersion": "unified-v1",
+     "version": "mechanism-v2.3",
+     "mechanism": "repair",
+     "power": 5,
+     "size": "human",
+     "quality": 3,
+     "seed": "c-repair-5"
+    },
+    "effect": {
+     "op": "heal",
+     "amount": 21
+    }
+   }
+  },
+  {
+   "id": "a-guardian",
+   "name": "守护护符",
+   "qty": 1,
+   "revision": 1,
+   "lootType": "accessory",
+   "mechanics": {
+    "kind": "accessory",
+    "value": {
+     "id": "a-guardian",
+     "name": "守护护符",
+     "load": 1,
+     "recipe": {
+      "balanceVersion": "unified-v1",
+      "version": "mechanism-v2.3",
+      "mechanism": "accessory:guardian",
+      "power": 3,
+      "size": "human",
+      "quality": 3,
+      "seed": "a-guardian"
+     },
+     "traitId": "guardian"
+    }
+   }
+  },
+  {
+   "id": "a-night",
+   "name": "夜视镜",
+   "qty": 1,
+   "revision": 1,
+   "lootType": "accessory",
+   "mechanics": {
+    "kind": "accessory",
+    "value": {
+     "id": "a-night",
+     "name": "夜视镜",
+     "load": 1,
+     "recipe": {
+      "balanceVersion": "unified-v1",
+      "version": "mechanism-v2.3",
+      "mechanism": "accessory:night",
+      "power": 3,
+      "size": "human",
+      "quality": 3,
+      "seed": "a-night"
+     },
+     "traitId": "night-fighter"
+    }
+   }
+  },
+  {
+   "id": "a-woodland",
+   "name": "林行靴",
+   "qty": 1,
+   "revision": 1,
+   "lootType": "accessory",
+   "mechanics": {
+    "kind": "accessory",
+    "value": {
+     "id": "a-woodland",
+     "name": "林行靴",
+     "load": 1,
+     "recipe": {
+      "balanceVersion": "unified-v1",
+      "version": "mechanism-v2.3",
+      "mechanism": "accessory:woodland",
+      "power": 3,
+      "size": "human",
+      "quality": 3,
+      "seed": "a-woodland"
+     },
+     "traitId": "forest-lore"
+    }
+   }
+  },
+  {
+   "id": "a-endurance",
+   "name": "耐力护符",
+   "qty": 1,
+   "revision": 1,
+   "lootType": "accessory",
+   "mechanics": {
+    "kind": "accessory",
+    "value": {
+     "id": "a-endurance",
+     "name": "耐力护符",
+     "load": 1,
+     "recipe": {
+      "balanceVersion": "unified-v1",
+      "version": "mechanism-v2.3",
+      "mechanism": "accessory:endurance",
+      "power": 3,
+      "size": "human",
+      "quality": 3,
+      "seed": "a-endurance"
+     },
+     "traitId": "fatigue-trained"
+    }
+   }
+  },
+  {
+   "id": "a-healing",
+   "name": "治疗护符",
+   "qty": 1,
+   "revision": 1,
+   "lootType": "accessory",
+   "mechanics": {
+    "kind": "accessory",
+    "value": {
+     "id": "a-healing",
+     "name": "治疗护符",
+     "load": 1,
+     "recipe": {
+      "balanceVersion": "unified-v1",
+      "version": "mechanism-v2.3",
+      "mechanism": "accessory:healing",
+      "power": 3,
+      "size": "human",
+      "quality": 3,
+      "seed": "a-healing"
+     },
+     "ability": {
+      "id": "equipment:a-healing",
+      "equipmentSourceId": "a-healing",
+      "name": "治疗护符",
+      "customized": true,
+      "category": "装备能力",
+      "target": "ally",
+      "delivery": "magic",
+      "power": 3,
+      "desc": "装备时可用，每场战斗最多使用两次，每次消耗2点精力。",
+      "cost": {
+       "resource": "SP",
+       "amount": 2
+      },
+      "usesPerBattle": 2,
+      "range": {
+       "min": 0,
+       "max": 3,
+       "metric": "grid",
+       "allowEngaged": true,
+       "requiresLineOfSight": true
+      },
+      "effects": [
+       {
+        "op": "heal",
+        "amount": 13
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "a-barrier",
+   "name": "屏障护符",
+   "qty": 1,
+   "revision": 1,
+   "lootType": "accessory",
+   "mechanics": {
+    "kind": "accessory",
+    "value": {
+     "id": "a-barrier",
+     "name": "屏障护符",
+     "load": 1,
+     "recipe": {
+      "balanceVersion": "unified-v1",
+      "version": "mechanism-v2.3",
+      "mechanism": "accessory:barrier",
+      "power": 3,
+      "size": "human",
+      "quality": 3,
+      "seed": "a-barrier"
+     },
+     "ability": {
+      "id": "equipment:a-barrier",
+      "equipmentSourceId": "a-barrier",
+      "name": "屏障护符",
+      "customized": true,
+      "category": "装备能力",
+      "target": "ally",
+      "delivery": "magic",
+      "power": 3,
+      "desc": "装备时可用，每场战斗最多使用两次，每次消耗2点精力。",
+      "cost": {
+       "resource": "SP",
+       "amount": 2
+      },
+      "usesPerBattle": 2,
+      "range": {
+       "min": 0,
+       "max": 3,
+       "metric": "grid",
+       "allowEngaged": true,
+       "requiresLineOfSight": true
+      },
+      "effects": [
+       {
+        "op": "barrier",
+        "amount": 18,
+        "dur": 3
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "a-cleansing",
+   "name": "净化护符",
+   "qty": 1,
+   "revision": 1,
+   "lootType": "accessory",
+   "mechanics": {
+    "kind": "accessory",
+    "value": {
+     "id": "a-cleansing",
+     "name": "净化护符",
+     "load": 1,
+     "recipe": {
+      "balanceVersion": "unified-v1",
+      "version": "mechanism-v2.3",
+      "mechanism": "accessory:cleansing",
+      "power": 3,
+      "size": "human",
+      "quality": 3,
+      "seed": "a-cleansing"
+     },
+     "ability": {
+      "id": "equipment:a-cleansing",
+      "equipmentSourceId": "a-cleansing",
+      "name": "净化护符",
+      "customized": true,
+      "category": "装备能力",
+      "target": "ally",
+      "delivery": "magic",
+      "power": 3,
+      "desc": "装备时可用，每场战斗最多使用两次，每次消耗2点精力。",
+      "cost": {
+       "resource": "SP",
+       "amount": 2
+      },
+      "usesPerBattle": 2,
+      "range": {
+       "min": 0,
+       "max": 3,
+       "metric": "grid",
+       "allowEngaged": true,
+       "requiresLineOfSight": true
+      },
+      "effects": [
+       {
+        "op": "dispel",
+        "polarity": "negative",
+        "count": 1
+       }
+      ]
+     }
+    }
+   }
+  }
+ ],
+ "save": {
+  "schemaVersion": 2,
+  "factRevision": 5,
+  "storage": [
+   {
+    "id": "hero",
+    "equipmentManaged": true,
+    "preparedAbilityIds": [],
+    "revision": 3,
+    "history": [
+     {
+      "revision": 1,
+      "kind": "created",
+      "hp": 71,
+      "hpMax": 71,
+      "level": 4,
+      "xp": 0,
+      "status": "ready"
+     },
+     {
+      "revision": 2,
+      "kind": "edit",
+      "sourceId": "equip-night",
+      "hp": 71,
+      "hpMax": 71,
+      "level": 4,
+      "xp": 0,
+      "status": "ready"
+     },
+     {
+      "revision": 3,
+      "kind": "edit",
+      "sourceId": "equip-charm",
+      "hp": 71,
+      "hpMax": 71,
+      "level": 4,
+      "xp": 0,
+      "status": "ready"
+     }
+    ],
+    "name": "护符骑士",
+    "level": 4,
+    "side": "ally",
+    "scale": "hero",
+    "archetype": "infantry",
+    "base": {
+     "atk": 6,
+     "def": 16,
+     "spd": 2,
+     "hpMax": 71
+    },
+    "hp": 71,
+    "status": "ready",
+    "conditions": [],
+    "weaponName": "剑",
+    "weaponClass": "sword",
+    "weaponLevel": 1,
+    "armorName": "轻甲",
+    "armorTier": 1,
+    "armorLevel": 5,
+    "skills": [],
+    "traits": [],
+    "xp": 0,
+    "snapshot": {
+     "id": "hero",
+     "name": "护符骑士",
+     "side": "ally",
+     "scale": "hero",
+     "archetype": "infantry",
+     "level": 4,
+     "rulesVersion": "v2",
+     "damageModel": "wounds-v2",
+     "body": "human",
+     "base": {
+      "atk": 6,
+      "def": 16,
+      "spd": 2,
+      "hpMax": 71
+     },
+     "hp": 71,
+     "tags": [
+      "infantry",
+      "hero",
+      "human"
+     ],
+     "traits": [],
+     "abilities": [
+      {
+       "id": "equipment:charm",
+       "equipmentSourceId": "charm",
+       "name": "治疗护符",
+       "customized": true,
+       "category": "装备能力",
+       "target": "ally",
+       "delivery": "magic",
+       "power": 3,
+       "desc": "装备时可用，每场战斗最多使用两次，每次消耗2点精力。",
+       "cost": {
+        "resource": "SP",
+        "amount": 2
+       },
+       "usesPerBattle": 2,
+       "range": {
+        "min": 0,
+        "max": 3,
+        "metric": "grid",
+        "allowEngaged": true,
+        "requiresLineOfSight": true
+       },
+       "effects": [
+        {
+         "op": "heal",
+         "amount": 13
+        }
+       ]
+      }
+     ],
+     "preparedAbilityIds": [],
+     "conditions": [],
+     "abilityState": [],
+     "resources": {
+      "SP": 8,
+      "reserve": 0
+     },
+     "engagedWith": [],
+     "status": "ready",
+     "fatigue": 0,
+     "xpValue": 200,
+     "generationWarnings": [],
+     "genAudit": {
+      "seed": "hero",
+      "variance": {
+       "version": "enhancement-bands-v1",
+       "rolls": {
+        "damage": -1,
+        "health": -1
+       }
+      },
+      "deltas": {},
+      "formulaVersion": "mechanism-v2.3+traits-v2+unified-v1",
+      "input": {
+       "name": "护符骑士",
+       "side": "ally",
+       "scale": "hero",
+       "rulesVersion": "v2",
+       "damageModel": "wounds-v2",
+       "level": 4,
+       "traits": [],
+       "weaponClass": "sword",
+       "armorTier": 1,
+       "body": "human",
+       "quality": 3,
+       "weaponLevel": 1,
+       "armorLevel": 5,
+       "hpMax": 71,
+       "hp": 71,
+       "preparedAbilityIds": [],
+       "abilityBlueprints": [],
+       "weaponName": "剑",
+       "armorName": "轻甲",
+       "shield": false,
+       "armorProfile": "balanced"
+      },
+      "abilities": []
+     },
+     "bakedTraitStats": {},
+     "combatModel": "cohort-v2",
+     "accessories": {
+      "accessory1": {
+       "id": "night",
+       "name": "夜视镜",
+       "load": 1,
+       "recipe": {
+        "balanceVersion": "unified-v1",
+        "version": "mechanism-v2.3",
+        "mechanism": "accessory:night",
+        "power": 3,
+        "size": "human",
+        "quality": 3,
+        "seed": "night"
+       },
+       "traitId": "night-fighter"
+      },
+      "accessory2": {
+       "id": "charm",
+       "name": "治疗护符",
+       "load": 1,
+       "recipe": {
+        "balanceVersion": "unified-v1",
+        "version": "mechanism-v2.3",
+        "mechanism": "accessory:healing",
+        "power": 3,
+        "size": "human",
+        "quality": 3,
+        "seed": "charm"
+       },
+       "ability": {
+        "id": "equipment:charm",
+        "equipmentSourceId": "charm",
+        "name": "治疗护符",
+        "customized": true,
+        "category": "装备能力",
+        "target": "ally",
+        "delivery": "magic",
+        "power": 3,
+        "desc": "装备时可用，每场战斗最多使用两次，每次消耗2点精力。",
+        "cost": {
+         "resource": "SP",
+         "amount": 2
+        },
+        "usesPerBattle": 2,
+        "range": {
+         "min": 0,
+         "max": 3,
+         "metric": "grid",
+         "allowEngaged": true,
+         "requiresLineOfSight": true
+        },
+        "effects": [
+         {
+          "op": "heal",
+          "amount": 13
+         }
+        ]
+       }
+      }
+     },
+     "weapon": {
+      "id": "unit:hero:primary",
+      "name": "剑",
+      "baseDice": "1d6+1",
+      "recipe": {
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "damage": -2,
+         "penetration": 0
+        }
+       },
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "sword",
+       "power": 1,
+       "size": "human",
+       "quality": 3,
+       "seed": "hero:primary"
+      },
+      "channel": "kinetic",
+      "penetration": 1,
+      "range": 0,
+      "minRange": 0,
+      "pointBlankPolicy": "allow",
+      "attacks": 1,
+      "level": 1,
+      "hands": 1,
+      "load": 1,
+      "tags": [
+       "mechanism:sword"
+      ]
+     },
+     "armor": {
+      "id": "unit:hero:armor",
+      "name": "轻甲",
+      "tier": 1,
+      "level": 5,
+      "recipe": {
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "protection": 0,
+         "power": 2
+        }
+       },
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "armor:1",
+       "power": 5,
+       "size": "human",
+       "quality": 3,
+       "seed": "hero:armor",
+       "protectionProfile": "balanced"
+      },
+      "protection": {
+       "kinetic": 2,
+       "thermal": 1,
+       "arcane": 0
+      },
+      "load": 1,
+      "drScale": 1
+     }
+    }
+   },
+   {
+    "id": "foe",
+    "preparedAbilityIds": [],
+    "revision": 1,
+    "history": [
+     {
+      "revision": 1,
+      "kind": "created",
+      "hp": 72,
+      "hpMax": 72,
+      "level": 4,
+      "xp": 0,
+      "status": "ready"
+     }
+    ],
+    "name": "敌兵",
+    "level": 4,
+    "side": "enemy",
+    "scale": "hero",
+    "archetype": "infantry",
+    "base": {
+     "atk": 6,
+     "def": 16,
+     "spd": 2,
+     "hpMax": 72
+    },
+    "hp": 72,
+    "status": "ready",
+    "conditions": [],
+    "weaponName": "剑",
+    "weaponClass": "sword",
+    "weaponLevel": 1,
+    "armorName": "轻甲",
+    "armorTier": 1,
+    "armorLevel": 5,
+    "skills": [],
+    "traits": [],
+    "xp": 0,
+    "snapshot": {
+     "id": "foe",
+     "name": "敌兵",
+     "side": "enemy",
+     "scale": "hero",
+     "archetype": "infantry",
+     "level": 4,
+     "rulesVersion": "v2",
+     "damageModel": "wounds-v2",
+     "body": "human",
+     "base": {
+      "atk": 6,
+      "def": 16,
+      "spd": 2,
+      "hpMax": 72
+     },
+     "hp": 72,
+     "tags": [
+      "infantry",
+      "hero",
+      "human"
+     ],
+     "traits": [],
+     "abilities": [],
+     "preparedAbilityIds": [],
+     "conditions": [],
+     "abilityState": [],
+     "resources": {
+      "SP": 8,
+      "reserve": 0
+     },
+     "engagedWith": [],
+     "status": "ready",
+     "fatigue": 0,
+     "xpValue": 200,
+     "generationWarnings": [],
+     "genAudit": {
+      "seed": "foe",
+      "variance": {
+       "version": "enhancement-bands-v1",
+       "rolls": {
+        "damage": -2,
+        "health": 0
+       }
+      },
+      "deltas": {},
+      "formulaVersion": "mechanism-v2.3+traits-v2+unified-v1",
+      "input": {
+       "name": "敌兵",
+       "side": "enemy",
+       "scale": "hero",
+       "rulesVersion": "v2",
+       "damageModel": "wounds-v2",
+       "level": 4,
+       "traits": [],
+       "weaponClass": "sword",
+       "armorTier": 1,
+       "body": "human",
+       "quality": 3,
+       "weaponLevel": 1,
+       "armorLevel": 5,
+       "hpMax": 72,
+       "hp": 72,
+       "preparedAbilityIds": [],
+       "abilityBlueprints": [],
+       "weaponName": "剑",
+       "armorName": "轻甲",
+       "shield": false,
+       "armorProfile": "balanced"
+      },
+      "abilities": []
+     },
+     "bakedTraitStats": {},
+     "combatModel": "cohort-v2",
+     "weapon": {
+      "id": "unit:foe:primary",
+      "name": "剑",
+      "baseDice": "1d6+1",
+      "recipe": {
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "damage": 1,
+         "penetration": -2
+        }
+       },
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "sword",
+       "power": 1,
+       "size": "human",
+       "quality": 3,
+       "seed": "foe:primary"
+      },
+      "channel": "kinetic",
+      "penetration": 1,
+      "range": 0,
+      "minRange": 0,
+      "pointBlankPolicy": "allow",
+      "attacks": 1,
+      "level": 1,
+      "hands": 1,
+      "load": 1,
+      "tags": [
+       "mechanism:sword"
+      ]
+     },
+     "armor": {
+      "id": "unit:foe:armor",
+      "name": "轻甲",
+      "tier": 1,
+      "level": 5,
+      "recipe": {
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "protection": 1,
+         "power": 2
+        }
+       },
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "armor:1",
+       "power": 5,
+       "size": "human",
+       "quality": 3,
+       "seed": "foe:armor",
+       "protectionProfile": "balanced"
+      },
+      "protection": {
+       "kinetic": 2,
+       "thermal": 1,
+       "arcane": 0
+      },
+      "load": 1,
+      "drScale": 1
+     }
+    },
+    "equipmentManaged": true
+   }
+  ],
+  "rosterIds": [
+   "hero",
+   "foe"
+  ],
+  "inventory": [
+   {
+    "id": "night",
+    "name": "夜视镜",
+    "qty": 1,
+    "revision": 1,
+    "lootType": "accessory",
+    "mechanics": {
+     "kind": "accessory",
+     "value": {
+      "id": "night",
+      "name": "夜视镜",
+      "load": 1,
+      "recipe": {
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "accessory:night",
+       "power": 3,
+       "size": "human",
+       "quality": 3,
+       "seed": "night"
+      },
+      "traitId": "night-fighter"
+     }
+    },
+    "assignedTo": "hero",
+    "equippedTo": {
+     "unitId": "hero",
+     "slot": "accessory1"
+    }
+   },
+   {
+    "id": "charm",
+    "name": "治疗护符",
+    "qty": 1,
+    "revision": 1,
+    "lootType": "accessory",
+    "mechanics": {
+     "kind": "accessory",
+     "value": {
+      "id": "charm",
+      "name": "治疗护符",
+      "load": 1,
+      "recipe": {
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "accessory:healing",
+       "power": 3,
+       "size": "human",
+       "quality": 3,
+       "seed": "charm"
+      },
+      "ability": {
+       "id": "equipment:charm",
+       "equipmentSourceId": "charm",
+       "name": "治疗护符",
+       "customized": true,
+       "category": "装备能力",
+       "target": "ally",
+       "delivery": "magic",
+       "power": 3,
+       "desc": "装备时可用，每场战斗最多使用两次，每次消耗2点精力。",
+       "cost": {
+        "resource": "SP",
+        "amount": 2
+       },
+       "usesPerBattle": 2,
+       "range": {
+        "min": 0,
+        "max": 3,
+        "metric": "grid",
+        "allowEngaged": true,
+        "requiresLineOfSight": true
+       },
+       "effects": [
+        {
+         "op": "heal",
+         "amount": 13
+        }
+       ]
+      }
+     }
+    },
+    "assignedTo": "hero",
+    "equippedTo": {
+     "unitId": "hero",
+     "slot": "accessory2"
+    }
+   },
+   {
+    "id": "dose",
+    "name": "治疗药剂",
+    "qty": 3,
+    "revision": 1,
+    "lootType": "consumable",
+    "mechanics": {
+     "kind": "consumable",
+     "recipe": {
+      "balanceVersion": "unified-v1",
+      "version": "mechanism-v2.3",
+      "mechanism": "heal",
+      "power": 3,
+      "size": "human",
+      "quality": 3,
+      "seed": "dose"
+     },
+     "effect": {
+      "op": "heal",
+      "amount": 13
+     }
+    },
+    "assignedTo": "hero"
+   },
+   {
+    "id": "bomb",
+    "name": "投掷炸弹",
+    "qty": 2,
+    "revision": 1,
+    "lootType": "consumable",
+    "mechanics": {
+     "kind": "consumable",
+     "recipe": {
+      "balanceVersion": "unified-v1",
+      "version": "mechanism-v2.3",
+      "mechanism": "grenade",
+      "power": 4,
+      "size": "human",
+      "quality": 3,
+      "seed": "bomb"
+     },
+     "effect": {
+      "op": "damage",
+      "baseDice": "2d6",
+      "shape": "burst"
+     }
+    },
+    "assignedTo": "hero"
+   },
+   {
+    "id": "unit:hero:primary",
+    "name": "剑",
+    "qty": 1,
+    "lootType": "weapon",
+    "mechanics": {
+     "kind": "weapon",
+     "value": {
+      "id": "unit:hero:primary",
+      "name": "剑",
+      "baseDice": "1d6+1",
+      "recipe": {
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "damage": -2,
+         "penetration": 0
+        }
+       },
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "sword",
+       "power": 1,
+       "size": "human",
+       "quality": 3,
+       "seed": "hero:primary"
+      },
+      "channel": "kinetic",
+      "penetration": 1,
+      "range": 0,
+      "minRange": 0,
+      "pointBlankPolicy": "allow",
+      "attacks": 1,
+      "level": 1,
+      "hands": 1,
+      "load": 1,
+      "tags": [
+       "mechanism:sword"
+      ]
+     }
+    },
+    "revision": 1,
+    "assignedTo": "hero",
+    "equippedTo": {
+     "unitId": "hero",
+     "slot": "primary"
+    }
+   },
+   {
+    "id": "unit:hero:armor",
+    "name": "轻甲",
+    "qty": 1,
+    "lootType": "armor",
+    "mechanics": {
+     "kind": "armor",
+     "value": {
+      "id": "unit:hero:armor",
+      "name": "轻甲",
+      "tier": 1,
+      "level": 5,
+      "recipe": {
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "protection": 0,
+         "power": 2
+        }
+       },
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "armor:1",
+       "power": 5,
+       "size": "human",
+       "quality": 3,
+       "seed": "hero:armor",
+       "protectionProfile": "balanced"
+      },
+      "protection": {
+       "kinetic": 2,
+       "thermal": 1,
+       "arcane": 0
+      },
+      "load": 1,
+      "drScale": 1
+     }
+    },
+    "revision": 1,
+    "assignedTo": "hero",
+    "equippedTo": {
+     "unitId": "hero",
+     "slot": "armor"
+    }
+   },
+   {
+    "id": "unit:foe:primary",
+    "name": "剑",
+    "qty": 1,
+    "lootType": "weapon",
+    "mechanics": {
+     "kind": "weapon",
+     "value": {
+      "id": "unit:foe:primary",
+      "name": "剑",
+      "baseDice": "1d6+1",
+      "recipe": {
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "damage": 1,
+         "penetration": -2
+        }
+       },
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "sword",
+       "power": 1,
+       "size": "human",
+       "quality": 3,
+       "seed": "foe:primary"
+      },
+      "channel": "kinetic",
+      "penetration": 1,
+      "range": 0,
+      "minRange": 0,
+      "pointBlankPolicy": "allow",
+      "attacks": 1,
+      "level": 1,
+      "hands": 1,
+      "load": 1,
+      "tags": [
+       "mechanism:sword"
+      ]
+     }
+    },
+    "revision": 1,
+    "assignedTo": "foe",
+    "equippedTo": {
+     "unitId": "foe",
+     "slot": "primary"
+    }
+   },
+   {
+    "id": "unit:foe:armor",
+    "name": "轻甲",
+    "qty": 1,
+    "lootType": "armor",
+    "mechanics": {
+     "kind": "armor",
+     "value": {
+      "id": "unit:foe:armor",
+      "name": "轻甲",
+      "tier": 1,
+      "level": 5,
+      "recipe": {
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "protection": 1,
+         "power": 2
+        }
+       },
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "armor:1",
+       "power": 5,
+       "size": "human",
+       "quality": 3,
+       "seed": "foe:armor",
+       "protectionProfile": "balanced"
+      },
+      "protection": {
+       "kinetic": 2,
+       "thermal": 1,
+       "arcane": 0
+      },
+      "load": 1,
+      "drScale": 1
+     }
+    },
+    "revision": 1,
+    "assignedTo": "foe",
+    "equippedTo": {
+     "unitId": "foe",
+     "slot": "armor"
+    }
+   }
+  ],
+  "narrativeIdState": {
+   "aliases": {
+    "hero": "u1",
+    "foe": "u2",
+    "night": "i1",
+    "charm": "i2",
+    "dose": "c1",
+    "bomb": "c2",
+    "unit:hero:primary": "w1",
+    "unit:hero:armor": "a1",
+    "unit:foe:primary": "w2",
+    "unit:foe:armor": "a2",
+    "equipment:charm": "k1"
+   }
+  },
+  "inventoryOperations": [
+   {
+    "id": "equip-night",
+    "fingerprint": "{\"itemId\":\"night\",\"kind\":\"equip\",\"slot\":\"accessory1\",\"unitId\":\"hero\"}"
+   },
+   {
+    "id": "equip-charm",
+    "fingerprint": "{\"itemId\":\"charm\",\"kind\":\"equip\",\"slot\":\"accessory2\",\"unitId\":\"hero\"}"
+   },
+   {
+    "id": "assign-dose",
+    "fingerprint": "{\"itemId\":\"dose\",\"kind\":\"assign\",\"unitId\":\"hero\"}"
+   },
+   {
+    "id": "assign-bomb",
+    "fingerprint": "{\"itemId\":\"bomb\",\"kind\":\"assign\",\"unitId\":\"hero\"}"
+   }
+  ]
+ },
+ "inBattle": {
+  "schemaVersion": 2,
+  "factRevision": 5,
+  "storage": [
+   {
+    "id": "hero",
+    "equipmentManaged": true,
+    "preparedAbilityIds": [],
+    "revision": 3,
+    "history": [
+     {
+      "revision": 1,
+      "kind": "created",
+      "hp": 71,
+      "hpMax": 71,
+      "level": 4,
+      "xp": 0,
+      "status": "ready"
+     },
+     {
+      "revision": 2,
+      "kind": "edit",
+      "sourceId": "equip-night",
+      "hp": 71,
+      "hpMax": 71,
+      "level": 4,
+      "xp": 0,
+      "status": "ready"
+     },
+     {
+      "revision": 3,
+      "kind": "edit",
+      "sourceId": "equip-charm",
+      "hp": 71,
+      "hpMax": 71,
+      "level": 4,
+      "xp": 0,
+      "status": "ready"
+     }
+    ],
+    "name": "护符骑士",
+    "level": 4,
+    "side": "ally",
+    "scale": "hero",
+    "archetype": "infantry",
+    "base": {
+     "atk": 6,
+     "def": 16,
+     "spd": 2,
+     "hpMax": 71
+    },
+    "hp": 71,
+    "status": "ready",
+    "conditions": [],
+    "weaponName": "剑",
+    "weaponClass": "sword",
+    "weaponLevel": 1,
+    "armorName": "轻甲",
+    "armorTier": 1,
+    "armorLevel": 5,
+    "skills": [],
+    "traits": [],
+    "xp": 0,
+    "snapshot": {
+     "id": "hero",
+     "name": "护符骑士",
+     "side": "ally",
+     "scale": "hero",
+     "archetype": "infantry",
+     "level": 4,
+     "rulesVersion": "v2",
+     "damageModel": "wounds-v2",
+     "body": "human",
+     "base": {
+      "atk": 6,
+      "def": 16,
+      "spd": 2,
+      "hpMax": 71
+     },
+     "hp": 71,
+     "tags": [
+      "infantry",
+      "hero",
+      "human"
+     ],
+     "traits": [],
+     "abilities": [
+      {
+       "id": "equipment:charm",
+       "equipmentSourceId": "charm",
+       "name": "治疗护符",
+       "customized": true,
+       "category": "装备能力",
+       "target": "ally",
+       "delivery": "magic",
+       "power": 3,
+       "desc": "装备时可用，每场战斗最多使用两次，每次消耗2点精力。",
+       "cost": {
+        "resource": "SP",
+        "amount": 2
+       },
+       "usesPerBattle": 2,
+       "range": {
+        "min": 0,
+        "max": 3,
+        "metric": "grid",
+        "allowEngaged": true,
+        "requiresLineOfSight": true
+       },
+       "effects": [
+        {
+         "op": "heal",
+         "amount": 13
+        }
+       ]
+      }
+     ],
+     "preparedAbilityIds": [],
+     "conditions": [],
+     "abilityState": [],
+     "resources": {
+      "SP": 8,
+      "reserve": 0
+     },
+     "engagedWith": [],
+     "status": "ready",
+     "fatigue": 0,
+     "xpValue": 200,
+     "generationWarnings": [],
+     "genAudit": {
+      "seed": "hero",
+      "variance": {
+       "version": "enhancement-bands-v1",
+       "rolls": {
+        "damage": -1,
+        "health": -1
+       }
+      },
+      "deltas": {},
+      "formulaVersion": "mechanism-v2.3+traits-v2+unified-v1",
+      "input": {
+       "name": "护符骑士",
+       "side": "ally",
+       "scale": "hero",
+       "rulesVersion": "v2",
+       "damageModel": "wounds-v2",
+       "level": 4,
+       "traits": [],
+       "weaponClass": "sword",
+       "armorTier": 1,
+       "body": "human",
+       "quality": 3,
+       "weaponLevel": 1,
+       "armorLevel": 5,
+       "hpMax": 71,
+       "hp": 71,
+       "preparedAbilityIds": [],
+       "abilityBlueprints": [],
+       "weaponName": "剑",
+       "armorName": "轻甲",
+       "shield": false,
+       "armorProfile": "balanced"
+      },
+      "abilities": []
+     },
+     "bakedTraitStats": {},
+     "combatModel": "cohort-v2",
+     "accessories": {
+      "accessory1": {
+       "id": "night",
+       "name": "夜视镜",
+       "load": 1,
+       "recipe": {
+        "balanceVersion": "unified-v1",
+        "version": "mechanism-v2.3",
+        "mechanism": "accessory:night",
+        "power": 3,
+        "size": "human",
+        "quality": 3,
+        "seed": "night"
+       },
+       "traitId": "night-fighter"
+      },
+      "accessory2": {
+       "id": "charm",
+       "name": "治疗护符",
+       "load": 1,
+       "recipe": {
+        "balanceVersion": "unified-v1",
+        "version": "mechanism-v2.3",
+        "mechanism": "accessory:healing",
+        "power": 3,
+        "size": "human",
+        "quality": 3,
+        "seed": "charm"
+       },
+       "ability": {
+        "id": "equipment:charm",
+        "equipmentSourceId": "charm",
+        "name": "治疗护符",
+        "customized": true,
+        "category": "装备能力",
+        "target": "ally",
+        "delivery": "magic",
+        "power": 3,
+        "desc": "装备时可用，每场战斗最多使用两次，每次消耗2点精力。",
+        "cost": {
+         "resource": "SP",
+         "amount": 2
+        },
+        "usesPerBattle": 2,
+        "range": {
+         "min": 0,
+         "max": 3,
+         "metric": "grid",
+         "allowEngaged": true,
+         "requiresLineOfSight": true
+        },
+        "effects": [
+         {
+          "op": "heal",
+          "amount": 13
+         }
+        ]
+       }
+      }
+     },
+     "weapon": {
+      "id": "unit:hero:primary",
+      "name": "剑",
+      "baseDice": "1d6+1",
+      "recipe": {
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "damage": -2,
+         "penetration": 0
+        }
+       },
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "sword",
+       "power": 1,
+       "size": "human",
+       "quality": 3,
+       "seed": "hero:primary"
+      },
+      "channel": "kinetic",
+      "penetration": 1,
+      "range": 0,
+      "minRange": 0,
+      "pointBlankPolicy": "allow",
+      "attacks": 1,
+      "level": 1,
+      "hands": 1,
+      "load": 1,
+      "tags": [
+       "mechanism:sword"
+      ]
+     },
+     "armor": {
+      "id": "unit:hero:armor",
+      "name": "轻甲",
+      "tier": 1,
+      "level": 5,
+      "recipe": {
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "protection": 0,
+         "power": 2
+        }
+       },
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "armor:1",
+       "power": 5,
+       "size": "human",
+       "quality": 3,
+       "seed": "hero:armor",
+       "protectionProfile": "balanced"
+      },
+      "protection": {
+       "kinetic": 2,
+       "thermal": 1,
+       "arcane": 0
+      },
+      "load": 1,
+      "drScale": 1
+     }
+    }
+   },
+   {
+    "id": "foe",
+    "preparedAbilityIds": [],
+    "revision": 1,
+    "history": [
+     {
+      "revision": 1,
+      "kind": "created",
+      "hp": 72,
+      "hpMax": 72,
+      "level": 4,
+      "xp": 0,
+      "status": "ready"
+     }
+    ],
+    "name": "敌兵",
+    "level": 4,
+    "side": "enemy",
+    "scale": "hero",
+    "archetype": "infantry",
+    "base": {
+     "atk": 6,
+     "def": 16,
+     "spd": 2,
+     "hpMax": 72
+    },
+    "hp": 72,
+    "status": "ready",
+    "conditions": [],
+    "weaponName": "剑",
+    "weaponClass": "sword",
+    "weaponLevel": 1,
+    "armorName": "轻甲",
+    "armorTier": 1,
+    "armorLevel": 5,
+    "skills": [],
+    "traits": [],
+    "xp": 0,
+    "snapshot": {
+     "id": "foe",
+     "name": "敌兵",
+     "side": "enemy",
+     "scale": "hero",
+     "archetype": "infantry",
+     "level": 4,
+     "rulesVersion": "v2",
+     "damageModel": "wounds-v2",
+     "body": "human",
+     "base": {
+      "atk": 6,
+      "def": 16,
+      "spd": 2,
+      "hpMax": 72
+     },
+     "hp": 72,
+     "tags": [
+      "infantry",
+      "hero",
+      "human"
+     ],
+     "traits": [],
+     "abilities": [],
+     "preparedAbilityIds": [],
+     "conditions": [],
+     "abilityState": [],
+     "resources": {
+      "SP": 8,
+      "reserve": 0
+     },
+     "engagedWith": [],
+     "status": "ready",
+     "fatigue": 0,
+     "xpValue": 200,
+     "generationWarnings": [],
+     "genAudit": {
+      "seed": "foe",
+      "variance": {
+       "version": "enhancement-bands-v1",
+       "rolls": {
+        "damage": -2,
+        "health": 0
+       }
+      },
+      "deltas": {},
+      "formulaVersion": "mechanism-v2.3+traits-v2+unified-v1",
+      "input": {
+       "name": "敌兵",
+       "side": "enemy",
+       "scale": "hero",
+       "rulesVersion": "v2",
+       "damageModel": "wounds-v2",
+       "level": 4,
+       "traits": [],
+       "weaponClass": "sword",
+       "armorTier": 1,
+       "body": "human",
+       "quality": 3,
+       "weaponLevel": 1,
+       "armorLevel": 5,
+       "hpMax": 72,
+       "hp": 72,
+       "preparedAbilityIds": [],
+       "abilityBlueprints": [],
+       "weaponName": "剑",
+       "armorName": "轻甲",
+       "shield": false,
+       "armorProfile": "balanced"
+      },
+      "abilities": []
+     },
+     "bakedTraitStats": {},
+     "combatModel": "cohort-v2",
+     "weapon": {
+      "id": "unit:foe:primary",
+      "name": "剑",
+      "baseDice": "1d6+1",
+      "recipe": {
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "damage": 1,
+         "penetration": -2
+        }
+       },
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "sword",
+       "power": 1,
+       "size": "human",
+       "quality": 3,
+       "seed": "foe:primary"
+      },
+      "channel": "kinetic",
+      "penetration": 1,
+      "range": 0,
+      "minRange": 0,
+      "pointBlankPolicy": "allow",
+      "attacks": 1,
+      "level": 1,
+      "hands": 1,
+      "load": 1,
+      "tags": [
+       "mechanism:sword"
+      ]
+     },
+     "armor": {
+      "id": "unit:foe:armor",
+      "name": "轻甲",
+      "tier": 1,
+      "level": 5,
+      "recipe": {
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "protection": 1,
+         "power": 2
+        }
+       },
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "armor:1",
+       "power": 5,
+       "size": "human",
+       "quality": 3,
+       "seed": "foe:armor",
+       "protectionProfile": "balanced"
+      },
+      "protection": {
+       "kinetic": 2,
+       "thermal": 1,
+       "arcane": 0
+      },
+      "load": 1,
+      "drScale": 1
+     }
+    },
+    "equipmentManaged": true
+   }
+  ],
+  "rosterIds": [
+   "hero",
+   "foe"
+  ],
+  "inventory": [
+   {
+    "id": "night",
+    "name": "夜视镜",
+    "qty": 1,
+    "revision": 1,
+    "lootType": "accessory",
+    "mechanics": {
+     "kind": "accessory",
+     "value": {
+      "id": "night",
+      "name": "夜视镜",
+      "load": 1,
+      "recipe": {
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "accessory:night",
+       "power": 3,
+       "size": "human",
+       "quality": 3,
+       "seed": "night"
+      },
+      "traitId": "night-fighter"
+     }
+    },
+    "assignedTo": "hero",
+    "equippedTo": {
+     "unitId": "hero",
+     "slot": "accessory1"
+    }
+   },
+   {
+    "id": "charm",
+    "name": "治疗护符",
+    "qty": 1,
+    "revision": 1,
+    "lootType": "accessory",
+    "mechanics": {
+     "kind": "accessory",
+     "value": {
+      "id": "charm",
+      "name": "治疗护符",
+      "load": 1,
+      "recipe": {
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "accessory:healing",
+       "power": 3,
+       "size": "human",
+       "quality": 3,
+       "seed": "charm"
+      },
+      "ability": {
+       "id": "equipment:charm",
+       "equipmentSourceId": "charm",
+       "name": "治疗护符",
+       "customized": true,
+       "category": "装备能力",
+       "target": "ally",
+       "delivery": "magic",
+       "power": 3,
+       "desc": "装备时可用，每场战斗最多使用两次，每次消耗2点精力。",
+       "cost": {
+        "resource": "SP",
+        "amount": 2
+       },
+       "usesPerBattle": 2,
+       "range": {
+        "min": 0,
+        "max": 3,
+        "metric": "grid",
+        "allowEngaged": true,
+        "requiresLineOfSight": true
+       },
+       "effects": [
+        {
+         "op": "heal",
+         "amount": 13
+        }
+       ]
+      }
+     }
+    },
+    "assignedTo": "hero",
+    "equippedTo": {
+     "unitId": "hero",
+     "slot": "accessory2"
+    }
+   },
+   {
+    "id": "dose",
+    "name": "治疗药剂",
+    "qty": 2,
+    "revision": 1,
+    "lootType": "consumable",
+    "mechanics": {
+     "kind": "consumable",
+     "recipe": {
+      "balanceVersion": "unified-v1",
+      "version": "mechanism-v2.3",
+      "mechanism": "heal",
+      "power": 3,
+      "size": "human",
+      "quality": 3,
+      "seed": "dose"
+     },
+     "effect": {
+      "op": "heal",
+      "amount": 13
+     }
+    },
+    "assignedTo": "hero"
+   },
+   {
+    "id": "bomb",
+    "name": "投掷炸弹",
+    "qty": 2,
+    "revision": 1,
+    "lootType": "consumable",
+    "mechanics": {
+     "kind": "consumable",
+     "recipe": {
+      "balanceVersion": "unified-v1",
+      "version": "mechanism-v2.3",
+      "mechanism": "grenade",
+      "power": 4,
+      "size": "human",
+      "quality": 3,
+      "seed": "bomb"
+     },
+     "effect": {
+      "op": "damage",
+      "baseDice": "2d6",
+      "shape": "burst"
+     }
+    },
+    "assignedTo": "hero"
+   },
+   {
+    "id": "unit:hero:primary",
+    "name": "剑",
+    "qty": 1,
+    "lootType": "weapon",
+    "mechanics": {
+     "kind": "weapon",
+     "value": {
+      "id": "unit:hero:primary",
+      "name": "剑",
+      "baseDice": "1d6+1",
+      "recipe": {
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "damage": -2,
+         "penetration": 0
+        }
+       },
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "sword",
+       "power": 1,
+       "size": "human",
+       "quality": 3,
+       "seed": "hero:primary"
+      },
+      "channel": "kinetic",
+      "penetration": 1,
+      "range": 0,
+      "minRange": 0,
+      "pointBlankPolicy": "allow",
+      "attacks": 1,
+      "level": 1,
+      "hands": 1,
+      "load": 1,
+      "tags": [
+       "mechanism:sword"
+      ]
+     }
+    },
+    "revision": 1,
+    "assignedTo": "hero",
+    "equippedTo": {
+     "unitId": "hero",
+     "slot": "primary"
+    }
+   },
+   {
+    "id": "unit:hero:armor",
+    "name": "轻甲",
+    "qty": 1,
+    "lootType": "armor",
+    "mechanics": {
+     "kind": "armor",
+     "value": {
+      "id": "unit:hero:armor",
+      "name": "轻甲",
+      "tier": 1,
+      "level": 5,
+      "recipe": {
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "protection": 0,
+         "power": 2
+        }
+       },
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "armor:1",
+       "power": 5,
+       "size": "human",
+       "quality": 3,
+       "seed": "hero:armor",
+       "protectionProfile": "balanced"
+      },
+      "protection": {
+       "kinetic": 2,
+       "thermal": 1,
+       "arcane": 0
+      },
+      "load": 1,
+      "drScale": 1
+     }
+    },
+    "revision": 1,
+    "assignedTo": "hero",
+    "equippedTo": {
+     "unitId": "hero",
+     "slot": "armor"
+    }
+   },
+   {
+    "id": "unit:foe:primary",
+    "name": "剑",
+    "qty": 1,
+    "lootType": "weapon",
+    "mechanics": {
+     "kind": "weapon",
+     "value": {
+      "id": "unit:foe:primary",
+      "name": "剑",
+      "baseDice": "1d6+1",
+      "recipe": {
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "damage": 1,
+         "penetration": -2
+        }
+       },
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "sword",
+       "power": 1,
+       "size": "human",
+       "quality": 3,
+       "seed": "foe:primary"
+      },
+      "channel": "kinetic",
+      "penetration": 1,
+      "range": 0,
+      "minRange": 0,
+      "pointBlankPolicy": "allow",
+      "attacks": 1,
+      "level": 1,
+      "hands": 1,
+      "load": 1,
+      "tags": [
+       "mechanism:sword"
+      ]
+     }
+    },
+    "revision": 1,
+    "assignedTo": "foe",
+    "equippedTo": {
+     "unitId": "foe",
+     "slot": "primary"
+    }
+   },
+   {
+    "id": "unit:foe:armor",
+    "name": "轻甲",
+    "qty": 1,
+    "lootType": "armor",
+    "mechanics": {
+     "kind": "armor",
+     "value": {
+      "id": "unit:foe:armor",
+      "name": "轻甲",
+      "tier": 1,
+      "level": 5,
+      "recipe": {
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "protection": 1,
+         "power": 2
+        }
+       },
+       "balanceVersion": "unified-v1",
+       "version": "mechanism-v2.3",
+       "mechanism": "armor:1",
+       "power": 5,
+       "size": "human",
+       "quality": 3,
+       "seed": "foe:armor",
+       "protectionProfile": "balanced"
+      },
+      "protection": {
+       "kinetic": 2,
+       "thermal": 1,
+       "arcane": 0
+      },
+      "load": 1,
+      "drScale": 1
+     }
+    },
+    "revision": 1,
+    "assignedTo": "foe",
+    "equippedTo": {
+     "unitId": "foe",
+     "slot": "armor"
+    }
+   }
+  ],
+  "narrativeIdState": {
+   "aliases": {
+    "hero": "u1",
+    "foe": "u2",
+    "night": "i1",
+    "charm": "i2",
+    "dose": "c1",
+    "bomb": "c2",
+    "unit:hero:primary": "w1",
+    "unit:hero:armor": "a1",
+    "unit:foe:primary": "w2",
+    "unit:foe:armor": "a2",
+    "equipment:charm": "k1"
+   }
+  },
+  "inventoryOperations": [
+   {
+    "id": "equip-night",
+    "fingerprint": "{\"itemId\":\"night\",\"kind\":\"equip\",\"slot\":\"accessory1\",\"unitId\":\"hero\"}"
+   },
+   {
+    "id": "equip-charm",
+    "fingerprint": "{\"itemId\":\"charm\",\"kind\":\"equip\",\"slot\":\"accessory2\",\"unitId\":\"hero\"}"
+   },
+   {
+    "id": "assign-dose",
+    "fingerprint": "{\"itemId\":\"dose\",\"kind\":\"assign\",\"unitId\":\"hero\"}"
+   },
+   {
+    "id": "assign-bomb",
+    "fingerprint": "{\"itemId\":\"bomb\",\"kind\":\"assign\",\"unitId\":\"hero\"}"
+   }
+  ],
+  "battle": {
+   "kind": "small",
+   "snap": {
+    "v": 1,
+    "allyTactic": "balanced",
+    "commanderProfiles": {},
+    "nonLethal": false,
+    "battlefield": {
+     "version": 2,
+     "width": 7,
+     "height": 9,
+     "tiles": [
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open"
+     ],
+     "environment": [
+      "plains"
+     ],
+     "objective": {
+      "kind": "annihilation",
+      "cell": 31,
+      "limit": 60
+     }
+    },
+    "searchCoverage": {},
+    "intel": {
+     "ally": {
+      "traces": [
+       {
+        "id": "foe",
+        "round": 1,
+        "cell": 17,
+        "mp": 3
+       }
+      ],
+      "clues": []
+     },
+     "enemy": {
+      "traces": [
+       {
+        "id": "hero",
+        "round": 1,
+        "cell": 45,
+        "mp": 3
+       }
+      ],
+      "clues": []
+     }
+    },
+    "activationStarts": [
+     [
+      "hero",
+      {
+       "at": 45
+      }
+     ]
+    ],
+    "feedback": {
+     "version": 2,
+     "seen": [
+      {
+       "id": "hero",
+       "name": "护符骑士",
+       "side": "ally",
+       "scale": "hero",
+       "hp": 64,
+       "status": "ready",
+       "morale": 100,
+       "fatigue": 0,
+       "cell": 45,
+       "resources": {
+        "SP": {
+         "name": "战技点",
+         "value": 8
+        },
+        "reserve": {
+         "name": "预备兵力",
+         "value": 0
+        },
+        "item:dose": {
+         "name": "使用治疗药剂",
+         "value": 2
+        },
+        "item:bomb": {
+         "name": "使用投掷炸弹",
+         "value": 2
+        }
+       },
+       "effects": []
+      },
+      {
+       "id": "foe",
+       "name": "敌兵",
+       "side": "enemy",
+       "scale": "hero",
+       "hp": 72,
+       "status": "ready",
+       "morale": 100,
+       "fatigue": 0,
+       "cell": 17,
+       "resources": {
+        "SP": {
+         "name": "战技点",
+         "value": 8
+        },
+        "reserve": {
+         "name": "预备兵力",
+         "value": 0
+        }
+       },
+       "effects": []
+      }
+     ],
+     "current": {
+      "round": 1,
+      "changes": [
+       {
+        "id": "hero",
+        "name": "护符骑士",
+        "side": "ally",
+        "scale": "hero",
+        "lost": 7,
+        "recovered": 0,
+        "morale": 0,
+        "fatigue": 0,
+        "gained": [],
+        "ended": [],
+        "statuses": [],
+        "resources": {
+         "item:dose": {
+          "name": "使用治疗药剂",
+          "delta": -1
+         }
+        }
+       }
+      ]
+     },
+     "objective": {
+      "ally": 0,
+      "enemy": 0
+     },
+     "activation": {
+      "round": 1,
+      "actorName": "护符骑士",
+      "changes": [
+       {
+        "id": "hero",
+        "name": "护符骑士",
+        "side": "ally",
+        "scale": "hero",
+        "lost": 7,
+        "recovered": 0,
+        "morale": 0,
+        "fatigue": 0,
+        "gained": [],
+        "ended": [],
+        "statuses": [],
+        "resources": {
+         "item:dose": {
+          "name": "使用治疗药剂",
+          "delta": -1
+         }
+        }
+       }
+      ]
+     }
+    },
+    "movementSpent": [],
+    "reactionSpent": [],
+    "overwatch": [],
+    "controlRounds": {
+     "ally": 0,
+     "enemy": 0
+    },
+    "defeatedIds": [],
+    "combatants": [
+     {
+      "id": "hero",
+      "name": "护符骑士",
+      "side": "ally",
+      "scale": "hero",
+      "archetype": "infantry",
+      "level": 4,
+      "rulesVersion": "v2",
+      "damageModel": "wounds-v2",
+      "body": "human",
+      "base": {
+       "atk": 6,
+       "def": 16,
+       "spd": 2,
+       "hpMax": 71
+      },
+      "hp": 64,
+      "tags": [
+       "infantry",
+       "hero",
+       "human"
+      ],
+      "traits": [],
+      "abilities": [
+       {
+        "id": "equipment:charm",
+        "equipmentSourceId": "charm",
+        "name": "治疗护符",
+        "customized": true,
+        "category": "装备能力",
+        "target": "ally",
+        "delivery": "magic",
+        "power": 3,
+        "desc": "装备时可用，每场战斗最多使用两次，每次消耗2点精力。",
+        "cost": {
+         "resource": "SP",
+         "amount": 2
+        },
+        "usesPerBattle": 2,
+        "range": {
+         "min": 0,
+         "max": 3,
+         "metric": "grid",
+         "allowEngaged": true,
+         "requiresLineOfSight": true
+        },
+        "effects": [
+         {
+          "op": "heal",
+          "amount": 13
+         }
+        ]
+       },
+       {
+        "id": "item:dose",
+        "itemSourceId": "dose",
+        "name": "使用治疗药剂",
+        "category": "物品",
+        "desc": "消耗1件，最多恢复生命或可救伤兵13；占主行动，友方相邻或自身",
+        "cost": {
+         "resource": "item:dose",
+         "amount": 1
+        },
+        "target": "ally",
+        "range": {
+         "min": 0,
+         "max": 1,
+         "metric": "grid",
+         "allowEngaged": true,
+         "requiresLineOfSight": true
+        },
+        "effects": [
+         {
+          "op": "heal",
+          "amount": 13
+         }
+        ]
+       },
+       {
+        "id": "item:bomb",
+        "itemSourceId": "bomb",
+        "name": "使用投掷炸弹",
+        "category": "物品",
+        "customized": true,
+        "desc": "消耗1件投掷炸弹，占用本次主要行动",
+        "cost": {
+         "resource": "item:bomb",
+         "amount": 1
+        },
+        "target": "enemy",
+        "range": {
+         "min": 0,
+         "max": 3,
+         "metric": "grid",
+         "allowEngaged": true,
+         "requiresLineOfSight": true
+        },
+        "delivery": "ranged",
+        "channel": "kinetic",
+        "penetration": 8,
+        "shape": "burst",
+        "damageScale": 1,
+        "effects": [
+         {
+          "op": "damage",
+          "baseDice": "2d6",
+          "shape": "burst"
+         }
+        ]
+       }
+      ],
+      "preparedAbilityIds": [],
+      "conditions": [],
+      "abilityState": [
+       {
+        "abilityId": "uses:equipment:charm",
+        "cdLeft": 0,
+        "used": 0
+       },
+       {
+        "abilityId": "item:dose",
+        "cdLeft": 0,
+        "used": 1
+       },
+       {
+        "abilityId": "item:bomb",
+        "cdLeft": 0,
+        "used": 0
+       }
+      ],
+      "resources": {
+       "SP": 8,
+       "reserve": 0,
+       "item:dose": 2,
+       "item:bomb": 2
+      },
+      "engagedWith": [],
+      "status": "ready",
+      "fatigue": 0,
+      "xpValue": 200,
+      "generationWarnings": [],
+      "genAudit": {
+       "seed": "hero",
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "damage": -1,
+         "health": -1
+        }
+       },
+       "deltas": {},
+       "formulaVersion": "mechanism-v2.3+traits-v2+unified-v1",
+       "input": {
+        "name": "护符骑士",
+        "side": "ally",
+        "scale": "hero",
+        "rulesVersion": "v2",
+        "damageModel": "wounds-v2",
+        "level": 4,
+        "traits": [],
+        "weaponClass": "sword",
+        "armorTier": 1,
+        "body": "human",
+        "quality": 3,
+        "weaponLevel": 1,
+        "armorLevel": 5,
+        "hpMax": 71,
+        "hp": 71,
+        "preparedAbilityIds": [],
+        "abilityBlueprints": [],
+        "weaponName": "剑",
+        "armorName": "轻甲",
+        "shield": false,
+        "armorProfile": "balanced"
+       },
+       "abilities": []
+      },
+      "bakedTraitStats": {},
+      "combatModel": "cohort-v2",
+      "accessories": {
+       "accessory1": {
+        "id": "night",
+        "name": "夜视镜",
+        "load": 1,
+        "recipe": {
+         "balanceVersion": "unified-v1",
+         "version": "mechanism-v2.3",
+         "mechanism": "accessory:night",
+         "power": 3,
+         "size": "human",
+         "quality": 3,
+         "seed": "night"
+        },
+        "traitId": "night-fighter"
+       },
+       "accessory2": {
+        "id": "charm",
+        "name": "治疗护符",
+        "load": 1,
+        "recipe": {
+         "balanceVersion": "unified-v1",
+         "version": "mechanism-v2.3",
+         "mechanism": "accessory:healing",
+         "power": 3,
+         "size": "human",
+         "quality": 3,
+         "seed": "charm"
+        },
+        "ability": {
+         "id": "equipment:charm",
+         "equipmentSourceId": "charm",
+         "name": "治疗护符",
+         "customized": true,
+         "category": "装备能力",
+         "target": "ally",
+         "delivery": "magic",
+         "power": 3,
+         "desc": "装备时可用，每场战斗最多使用两次，每次消耗2点精力。",
+         "cost": {
+          "resource": "SP",
+          "amount": 2
+         },
+         "usesPerBattle": 2,
+         "range": {
+          "min": 0,
+          "max": 3,
+          "metric": "grid",
+          "allowEngaged": true,
+          "requiresLineOfSight": true
+         },
+         "effects": [
+          {
+           "op": "heal",
+           "amount": 13
+          }
+         ]
+        }
+       }
+      },
+      "weapon": {
+       "id": "unit:hero:primary",
+       "name": "剑",
+       "baseDice": "1d6+1",
+       "recipe": {
+        "variance": {
+         "version": "enhancement-bands-v1",
+         "rolls": {
+          "damage": -2,
+          "penetration": 0
+         }
+        },
+        "balanceVersion": "unified-v1",
+        "version": "mechanism-v2.3",
+        "mechanism": "sword",
+        "power": 1,
+        "size": "human",
+        "quality": 3,
+        "seed": "hero:primary"
+       },
+       "channel": "kinetic",
+       "penetration": 1,
+       "range": 0,
+       "minRange": 0,
+       "pointBlankPolicy": "allow",
+       "attacks": 1,
+       "level": 1,
+       "hands": 1,
+       "load": 1,
+       "tags": [
+        "mechanism:sword"
+       ]
+      },
+      "armor": {
+       "id": "unit:hero:armor",
+       "name": "轻甲",
+       "tier": 1,
+       "level": 5,
+       "recipe": {
+        "variance": {
+         "version": "enhancement-bands-v1",
+         "rolls": {
+          "protection": 0,
+          "power": 2
+         }
+        },
+        "balanceVersion": "unified-v1",
+        "version": "mechanism-v2.3",
+        "mechanism": "armor:1",
+        "power": 5,
+        "size": "human",
+        "quality": 3,
+        "seed": "hero:armor",
+        "protectionProfile": "balanced"
+       },
+       "protection": {
+        "kinetic": 2,
+        "thermal": 1,
+        "arcane": 0
+       },
+       "load": 1,
+       "drScale": 1
+      },
+      "recordRevision": 3,
+      "xp": 0,
+      "carriedItems": [
+       {
+        "id": "dose",
+        "name": "治疗药剂",
+        "quantity": 3,
+        "revision": 1,
+        "mechanics": {
+         "kind": "consumable",
+         "recipe": {
+          "balanceVersion": "unified-v1",
+          "version": "mechanism-v2.3",
+          "mechanism": "heal",
+          "power": 3,
+          "size": "human",
+          "quality": 3,
+          "seed": "dose"
+         },
+         "effect": {
+          "op": "heal",
+          "amount": 13
+         }
+        }
+       },
+       {
+        "id": "bomb",
+        "name": "投掷炸弹",
+        "quantity": 2,
+        "revision": 1,
+        "mechanics": {
+         "kind": "consumable",
+         "recipe": {
+          "balanceVersion": "unified-v1",
+          "version": "mechanism-v2.3",
+          "mechanism": "grenade",
+          "power": 4,
+          "size": "human",
+          "quality": 3,
+          "seed": "bomb"
+         },
+         "effect": {
+          "op": "damage",
+          "baseDice": "2d6",
+          "shape": "burst"
+         }
+        }
+       }
+      ],
+      "nonLethal": false,
+      "skillModel": "skills-v1",
+      "resourceModel": "endurance-v2",
+      "armsModel": "arms-v1",
+      "traitModel": "traits-v1",
+      "pos": 45,
+      "tacticalEffort": 1
+     },
+     {
+      "id": "foe",
+      "name": "敌兵",
+      "side": "enemy",
+      "scale": "hero",
+      "archetype": "infantry",
+      "level": 4,
+      "rulesVersion": "v2",
+      "damageModel": "wounds-v2",
+      "body": "human",
+      "base": {
+       "atk": 6,
+       "def": 16,
+       "spd": 2,
+       "hpMax": 72
+      },
+      "hp": 72,
+      "tags": [
+       "infantry",
+       "hero",
+       "human"
+      ],
+      "traits": [],
+      "abilities": [],
+      "preparedAbilityIds": [],
+      "conditions": [],
+      "abilityState": [],
+      "resources": {
+       "SP": 8,
+       "reserve": 0
+      },
+      "engagedWith": [],
+      "status": "ready",
+      "fatigue": 0,
+      "xpValue": 200,
+      "generationWarnings": [],
+      "genAudit": {
+       "seed": "foe",
+       "variance": {
+        "version": "enhancement-bands-v1",
+        "rolls": {
+         "damage": -2,
+         "health": 0
+        }
+       },
+       "deltas": {},
+       "formulaVersion": "mechanism-v2.3+traits-v2+unified-v1",
+       "input": {
+        "name": "敌兵",
+        "side": "enemy",
+        "scale": "hero",
+        "rulesVersion": "v2",
+        "damageModel": "wounds-v2",
+        "level": 4,
+        "traits": [],
+        "weaponClass": "sword",
+        "armorTier": 1,
+        "body": "human",
+        "quality": 3,
+        "weaponLevel": 1,
+        "armorLevel": 5,
+        "hpMax": 72,
+        "hp": 72,
+        "preparedAbilityIds": [],
+        "abilityBlueprints": [],
+        "weaponName": "剑",
+        "armorName": "轻甲",
+        "shield": false,
+        "armorProfile": "balanced"
+       },
+       "abilities": []
+      },
+      "bakedTraitStats": {},
+      "combatModel": "cohort-v2",
+      "weapon": {
+       "id": "unit:foe:primary",
+       "name": "剑",
+       "baseDice": "1d6+1",
+       "recipe": {
+        "variance": {
+         "version": "enhancement-bands-v1",
+         "rolls": {
+          "damage": 1,
+          "penetration": -2
+         }
+        },
+        "balanceVersion": "unified-v1",
+        "version": "mechanism-v2.3",
+        "mechanism": "sword",
+        "power": 1,
+        "size": "human",
+        "quality": 3,
+        "seed": "foe:primary"
+       },
+       "channel": "kinetic",
+       "penetration": 1,
+       "range": 0,
+       "minRange": 0,
+       "pointBlankPolicy": "allow",
+       "attacks": 1,
+       "level": 1,
+       "hands": 1,
+       "load": 1,
+       "tags": [
+        "mechanism:sword"
+       ]
+      },
+      "armor": {
+       "id": "unit:foe:armor",
+       "name": "轻甲",
+       "tier": 1,
+       "level": 5,
+       "recipe": {
+        "variance": {
+         "version": "enhancement-bands-v1",
+         "rolls": {
+          "protection": 1,
+          "power": 2
+         }
+        },
+        "balanceVersion": "unified-v1",
+        "version": "mechanism-v2.3",
+        "mechanism": "armor:1",
+        "power": 5,
+        "size": "human",
+        "quality": 3,
+        "seed": "foe:armor",
+        "protectionProfile": "balanced"
+       },
+       "protection": {
+        "kinetic": 2,
+        "thermal": 1,
+        "arcane": 0
+       },
+       "load": 1,
+       "drScale": 1
+      },
+      "recordRevision": 1,
+      "xp": 0,
+      "nonLethal": false,
+      "skillModel": "skills-v1",
+      "resourceModel": "endurance-v2",
+      "armsModel": "arms-v1",
+      "traitModel": "traits-v1",
+      "pos": 17
+     }
+    ],
+    "rulesId": "v14-overflow-d20",
+    "seed": "legacy-items",
+    "rngState": 3926376589,
+    "round": 1,
+    "turnOrder": [
+     "hero",
+     "foe"
+    ],
+    "turnIndex": 0,
+    "log": [
+     {
+      "round": 1,
+      "kind": "initiative",
+      "participants": [
+       "hero",
+       "foe"
+      ],
+      "text": "先攻顺序：护符骑士 14 > 敌兵 11",
+      "locations": {
+       "hero": 45,
+       "foe": 17
+      },
+      "observedBy": [
+       "ally",
+       "enemy"
+      ]
+     },
+     {
+      "round": 1,
+      "kind": "move",
+      "participants": [
+       "hero",
+       "foe"
+      ],
+      "text": "布阵：护符骑士 D7，敌兵 D3",
+      "locations": {
+       "hero": 45,
+       "foe": 17
+      },
+      "observedBy": [
+       "ally",
+       "enemy"
+      ]
+     },
+     {
+      "round": 1,
+      "kind": "ability",
+      "participants": [
+       "hero",
+       "hero"
+      ],
+      "text": "护符骑士 使用【使用治疗药剂】\n治疗 13 → 护符骑士 生命 51→64",
+      "resolutions": [],
+      "locations": {
+       "hero": 45
+      },
+      "observedBy": [
+       "ally",
+       "enemy"
+      ]
+     }
+    ],
+    "xpGained": 0,
+    "xpMinimum": [
+     [
+      "hero",
+      1
+     ],
+     [
+      "foe",
+      1
+     ]
+    ],
+    "xpInitialStrength": [
+     [
+      "hero",
+      1
+     ],
+     [
+      "foe",
+      1
+     ]
+    ],
+    "xpByUnit": [],
+    "movedThisTurn": [],
+    "actedThisTurn": [
+     "hero"
+    ],
+    "hasteOverwatch": [],
+    "hasteSpent": [],
+    "hasteMovement": [],
+    "hasteSelected": [],
+    "fieldTags": [
+     "plains"
+    ],
+    "reloadCd": [],
+    "started": true
+   }
+  }
+ }
+}

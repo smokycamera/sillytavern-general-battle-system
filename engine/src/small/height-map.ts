@@ -1,5 +1,6 @@
 import { isAirborne } from '../aerial.js';
 import { activeTraitIds, traitPrerequisiteReason } from '../trait-sources.js';
+import { traitLevel, climbFactor } from '../trait-levels.js';
 import type { Combatant } from '../types.js';
 import type { BattlefieldSpec, Terrain } from './spatial.js';
 import type { BattlefieldPlan } from './battlefield-plan.js';
@@ -80,7 +81,10 @@ export function heightStepCost(field: BattlefieldSpec, from: number, to: number,
     const rise = surfaceHeightAt(field, to, actor) - surfaceHeightAt(field, from, actor);
     if (transition === 'cliff' && !(actor?.elevation === 1 && Math.abs(rise) <= 1))
         return Infinity;
-    return Math.max(0, rise) * (actor && (activeTraitIds(actor).includes('mountain-born') || activeTraitIds(actor).includes('agile') && !traitPrerequisiteReason(actor, 'agile')) ? 0 : 1);
+    if (!actor || rise <= 0) return Math.max(0, rise);
+    // 身法免除爬坡；山地专精 L2–4 为 ×0.75/×0.5/×0.25，L5 起免除（旧规则一律 L5）。
+    const traits = activeTraitIds(actor);
+    return traits.includes('agile') && !traitPrerequisiteReason(actor, 'agile') ? 0 : rise * climbFactor(traitLevel(actor, 'mountain-born', traits));
 }
 /** Reports print heights only where something stands above the ground floor: raised ground, a wall or tower platform,
  * or a raised bridge deck. Flat real-height maps and tile-only maps keep plain places. */

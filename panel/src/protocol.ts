@@ -1,5 +1,5 @@
 import { parseEnhancementSuffix, enhancementLabel, type Enhancements, type BonusKind } from '../../engine/src/enhancements.js';
-import { narrativeTrait } from '../../engine/src/index.js';
+import { narrativeTraitLevel, traitLevelToken, traitRegistry, inferArchetype, type BodyKind } from '../../engine/src/index.js';
 /** V2正文：全文提取、格式容错、逐项诊断；真实身份和数值由事务层最终核对。 */
 import { parseAbilitySpec, parseSuggestionTags, type Suggestion } from './tags.js';
 import { resolveWeaponClass } from '../../engine/src/data/weapons.js';
@@ -7,7 +7,7 @@ import { MAX_PROTOCOL_CHARS, MAX_PROTOCOL_EVENTS, MAX_SCENE_UNITS, MAX_SPAWN_COU
 import { scanProtocolTags, normalizedAttributes, serializeEvent, type ProtocolTag, type ProtocolAttribute } from './protocol-syntax.js';
 import { parseUnitSet, UNIT_SET_ATTRIBUTES } from './unit-set.js';
 import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-tolerance.js';
-import { parseItemSpecification } from './item-spec.js';
+import { parseItemSpecification, parseSpawnItem, splitSpawnItems, spawnItemText } from './item-spec.js';
 import { normalizeHandle } from './narrative-ids.js';
 
 export interface ProtocolDiagnostic { message: string; start: number; end: number; field?: string; event: string }
@@ -17,7 +17,7 @@ const ATTRIBUTES: Record<string, readonly string[]> = {
   deploy: ['id'],
   learn: ['id', 'skills'],
   unit_update: ['id', 'hp', 'hpMax', 'morale', 'state', 'clear', 'reason'],
-  spawn: ['id', 'name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'speed', 'stabilized', 'protection', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits'],
+  spawn: ['id', 'name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'speed', 'stabilized', 'protection', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits', 'items'],
   field: ['env', 'light', 'note'],
   take: ['id', 'qty', 'note'],
   give: ['item', 'note', 'qty', 'type', 'spec', 'body', 'quality', 'enchant', 'stabilized', 'protection'],
@@ -74,7 +74,7 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
       const hadOptionalList = !!(attrs.skills || attrs.traits);
       if (['spawn', 'bless', 'unit_set'].includes(tag.name) && attrs.traits) {
         const names = attrs.traits.split(/[,，、;；|]/).map((name) => name.trim()).filter(Boolean);
-        const parsed = names.map((name) => narrativeTrait(name)), who = attrs.name || tag.name;
+        const parsed = names.map((name) => narrativeTraitLevel(name)), who = attrs.name || tag.name;
         const unknown = parsed.flatMap((p) => p.kind === 'unknown' ? [p.name] : []);
         if (unknown.length) warnings.push(`${who}：${tag.name === 'unit_set' ? '保留原特质，未采用含未知项的特质列表' : '已忽略未支持特质'} ${unknown.join('、')}`);
         // 停用项与身体/装备项不建档；训练和移动快慢改由 level/speed 表达，正文没写时代为换算。
@@ -84,7 +84,15 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
           if (level) attrs.level = String(p.level);
           warnings.push(`${who}：「${p.name}」${p.reason}，不再作为特质${speed ? `，已按speed=${p.speed}` : level ? `，已按level=${p.level}` : ''}`);
         }
-        const supported = [...new Set(parsed.flatMap((p) => p.kind === 'trait' ? [p.id] : []))];
+        // 五项专精可带 L1–10，同一专精写了多次取最高；其余特质写了等级只保留特质。
+        const levels = new Map<string, number>();
+        for (const p of parsed) if (p.kind === 'trait') {
+          const name = traitRegistry().get(p.id)?.name ?? p.id;
+          if (p.droppedLevel !== undefined) warnings.push(`${who}：只有五项专精分L1–10，「${name}L${p.droppedLevel}」按${name}建档`);
+          if (p.writtenLevel !== undefined) warnings.push(`${who}：专精等级为L1–10，「${name}L${p.writtenLevel}」按L${p.level}`);
+          if (p.level !== undefined) levels.set(p.id, Math.max(levels.get(p.id) ?? 0, p.level));
+        }
+        const supported = [...new Set(parsed.flatMap((p) => p.kind === 'trait' ? [p.id] : []))].map((id) => traitLevelToken(id, levels.get(id)));
         if (tag.name === 'unit_set' && unknown.length) delete attrs.traits;
         else if (supported.length) attrs.traits = supported.join(',');
         else if (tag.name !== 'bless') delete attrs.traits;
@@ -109,7 +117,19 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
         else if (tag.name === 'spawn') delete attrs.skills;
         else if (unknown.length) continue;
       }
-      if (tag.name === 'unit_set' && hadOptionalList && !Object.keys(attrs).some(key => !['id', 'reason'].includes(key))) continue;
+      if (tag.name === 'spawn' && attrs.items !== undefined) {
+        // 写不出效果的一项单独略过并说明，不让整条 spawn 作废。
+        const kept: string[] = [];
+        for (const entry of splitSpawnItems(attrs.items)) {
+          try { kept.push(spawnItemText(parseSpawnItem(entry, warnings))); }
+          catch (error) { warnings.push(`${attrs.name || 'spawn'}：未采用道具「${entry}」（${error instanceof Error ? error.message : String(error)}）`); }
+        }
+        if (kept.length) attrs.items = kept.join(','); else delete attrs.items;
+      }
+      // 原型只剩建档基础属性一个用途：unit_set 写了不认识的值时保留原值，不让整条修改失败。
+      const unitSetArchetype = tag.name === 'unit_set' && attrs.archetype !== undefined && !['infantry', 'ranged', 'mobile'].includes(attrs.archetype);
+      if (unitSetArchetype) { warnings.push(`${attrs.name || attrs.id || 'unit_set'}：archetype只认infantry/ranged/mobile，保留原值，未采用「${attrs.archetype}」`); delete attrs.archetype; }
+      if (tag.name === 'unit_set' && (hadOptionalList || unitSetArchetype) && !Object.keys(attrs).some(key => !['id', 'reason'].includes(key))) continue;
       const event = validatedEvent(tag.name, attrs, warnings);
       const earlier = seen.get(event.raw);
       if (earlier !== undefined && (earlier !== tag.block || ['deploy', 'unit-update'].includes(event.kind))) {
@@ -226,11 +246,20 @@ export function recoverProtocol(text: string): { text: string; diagnostics: Prot
               catch { normalized = repairSpecification(part, 'skill', true, message => add(message, token, part)); }
               if (parseAbilitySpec(normalized).length !== 1) throw Error('未支持技能 ' + part);
               for (const note of notes) if (/忽略|未支持/.test(note)) add(note, token, part);
-            } else if (key === 'traits' && narrativeTrait(part).kind !== 'trait') throw Error('未支持特质 ' + part);
+            } else if (key === 'traits' && narrativeTraitLevel(part).kind !== 'trait') throw Error('未支持特质 ' + part);
             const result = parseProtocol(serializeEvent(tag.name, { ...probe, [key]: normalized }), { diagnostics: false });
             if (result.errors.length || !result.events.length) throw Error(result.errors[0] ?? '未支持' + key + ' ' + part);
             parts.push(normalized);
           } catch (error) { add(error instanceof Error ? error.message : String(error), token, part); }
+        }
+        value = parts.join(',');
+        if (!value) continue;
+      }
+      if (key === 'items' && value) {
+        const parts: string[] = [];
+        for (const part of splitSpawnItems(value)) {
+          try { parts.push(spawnItemText(parseSpawnItem(part))); }
+          catch (error) { add(error instanceof Error ? error.message : String(error), token, part); }
         }
         value = parts.join(',');
         if (!value) continue;
@@ -284,6 +313,7 @@ function repairSpecification(text: string, kind: BonusKind, skill: boolean, remo
   return retained;
 }
 
+const ARCHETYPE_NAMES = { infantry: '步兵', ranged: '远程', mobile: '机动' } as const;
 const NATURAL_ARMOR_TIERS = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
 /** “龙鳞:天生护甲L8+6防护”→“龙鳞:重甲L8+6防护”。写了种类（天生重甲）照用；只写天生护甲时按身体补：巨型重甲、大型中甲、人形和载具轻甲，身体不明时不补。 */
 function naturalArmorSpec(armor: string, body?: string): { armor: string; written: string; tier?: string } | undefined {
@@ -308,11 +338,11 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
   if (kind === 'reforge' && (!attrs.id?.trim() || !attrs.spec?.trim())) throw new Error('reforge 需要真实装备id与明确spec');
   if ((kind === 'reforge' || kind === 'give') && attrs.spec !== undefined) {
     // 先保留具体错误原因，避免旧标签解析器将所有规格错误折叠成“无法解析”。
-    const spec = parseItemSpecification(attrs.spec, attrs);
-    if (kind === 'reforge' && spec.kind === 'consumable') throw new Error('消耗品不能重铸');
+    const spec = parseItemSpecification(attrs.spec, attrs, warnings);
+    if (kind === 'reforge' && spec.kind === 'item' && spec.form === 'single') throw new Error('一次性道具不能改造；可以take后重新give');
   }
   if (kind === 'give') {
-    if (attrs.type !== undefined && !['weapon', 'armor', 'consumable', 'accessory', 'material', 'quest', 'misc'].includes(attrs.type)) throw new Error('未知物品种类');
+    if (attrs.type !== undefined && !['weapon', 'armor', 'item', 'consumable', 'accessory', 'material', 'quest', 'misc'].includes(attrs.type)) throw new Error('未知物品种类');
     if (attrs.spec === undefined && ['body', 'quality', 'enchant', 'stabilized', 'protection'].some((key) => attrs[key] !== undefined)) throw new Error('有效果的物品需要明确spec，不能只靠名称或附魔提示猜测');
   }
   if (kind === 'spawn') {
@@ -323,7 +353,6 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     if (attrs.scale !== 'hero' && attrs.hpMax === undefined) throw new Error('群体首次建档必须明确 hpMax 编制上限；count 表示单位个数');
     if (attrs.hp !== undefined && attrs.hpMax === undefined) throw new Error('新单位提供 hp 时也需要 hpMax');
     if (attrs.hp !== undefined && Number(attrs.hp) > Number(attrs.hpMax)) throw new Error('新单位当前值不能超过上限');
-    if (attrs.archetype === undefined) attrs.archetype = 'infantry';
     if (attrs.weapon?.match(/[,，、;；]/)) {
       const weapons = attrs.weapon.split(/[,，、;；]/).map((v) => v.trim());
       if (weapons.length !== 2 || weapons.some((v) => !v) || attrs.weapon2) throw new Error('weapon最多列两件武器；或分别使用weapon主武器与weapon2副武器');
@@ -343,6 +372,11 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
       if (!mechanism) throw new Error(`${attrs.name}的${key}“${attrs[key]}”缺少支持的效果；请写“自定义名:剑L7”或“激光枪:能量武器L3”，副武器用weapon2`);
     }
     if (attrs.armor && /[lL]\s*\d/.test(attrs.armor.split(/[:：·｜|/／]/).at(-1)!)) parseItemSpecification(attrs.armor, { type: 'armor' });
+    // 正文写的原型不再采用：按真实坐骑、快速载具与主武器推断，任何写法都不会让 spawn 作废。
+    const weaponClass = attrs.weapon ? resolveWeaponClass(parseEnhancementSuffix(attrs.weapon.split(/[:：·｜|/／]/).at(-1)!, 'weapon').text.replace(/[lL]\s*\d+$/, '').trim()) : undefined;
+    const inferred = inferArchetype({ mount: attrs.mount === 'true', body: attrs.body as BodyKind | undefined, speedTier: /^\d+$/.test(attrs.speed ?? '') ? Number(attrs.speed) : undefined, weaponClass });
+    if (attrs.archetype !== undefined && attrs.archetype !== inferred) warnings.push(`${attrs.name || 'spawn'}：原型由插件按配装定为${ARCHETYPE_NAMES[inferred]}，正文写的「${attrs.archetype}」不再使用`);
+    attrs.archetype = inferred;
   }
   const normalized = serializeEvent(kind, attrs);
   const parsed = parseSuggestionTags(normalized);

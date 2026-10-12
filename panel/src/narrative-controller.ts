@@ -9,7 +9,7 @@ import { prepareReportDeletion, prepareReportRestore, prepareReportRestart, stam
 import type { SaveReceipt, TavernAdapter } from './tavern.js';
 import { prepareBattleItemWrite } from './battle-items.js';
 import { assertTraitSourcePanelWrite, prepareBlessingRevocation } from './trait-state.js';
-import { moraleLabel, woundedLabel, isAirborne, positionedUnit, observedUnits, concealmentLabel, worksLabel, formationNode, type ObservationContext, traitSourceActive, traitRegistry, standardConditionMap, STANDARD_CONDITIONS, postureLabel, type Combatant } from '../../engine/src/index.js';
+import { moraleLabel, woundedLabel, isAirborne, positionedUnit, observedUnits, concealmentLabel, worksLabel, formationNode, type ObservationContext, traitSourceActive, traitRegistry, standardConditionMap, STANDARD_CONDITIONS, postureLabel, ITEM_FORM_NAMES, itemSpecText, traitLevelToken, type Combatant } from '../../engine/src/index.js';
 import { reviewMigration, type MigrationReview } from './migration-review.js';
 import { assertInventoryPanelWrite, calibrateSavedWeaponRanges, deleteUnitArchive, prepareInventoryState, prepareInventoryTransaction, type InventoryAction, type InventoryIntent, type InventorySave } from './inventory-state.js';
 import { cellLabel, type BattlefieldSpec } from '../../engine/src/small/spatial.js';
@@ -67,11 +67,11 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     const unit = live ?? record.snapshot;
     const physical = live && positionedUnit(observation, live);
     const effects = unit?.traitSources?.filter((s) => traitSourceActive(unit, s)).map((s) => ({ source: s.id, name: s.name,
-      ...(s.traitIds.length ? { traits: s.traitIds.map((id) => traitRegistry().get(id)?.name ?? id) } : {}),
+      ...(s.traitIds.length ? { traits: s.traitIds.map((id) => (traitRegistry().get(id)?.name ?? id) + (s.traitLevels?.[id] ? 'L' + s.traitLevels[id] : '')) } : {}),
       ...(s.conditionIds?.length ? { effects: s.conditionIds.map((id) => standardConditionMap().get(id)?.name ?? id) } : {}),
       duration: s.duration.kind, remaining: s.remaining }));
     const line = promptJson({ id: record.id, name: record.name, side: record.side, training:record.level, bonuses:unit?.bonuses,
-      ...(!battleOpen ? { level:record.level,xp:record.xp ?? 0,xpProgress:unit?xpProgress(unit)?.current:undefined,base:record.base,status:record.status,retired:record.retired,resources:unit?.resources,traits:unit?.traits,speedTier:unit?.speedTier,conditions:record.conditions,preparedAbilityIds:unit?.preparedAbilityIds } : {}),
+      ...(!battleOpen ? { level:record.level,xp:record.xp ?? 0,xpProgress:unit?xpProgress(unit)?.current:undefined,base:record.base,status:record.status,retired:record.retired,resources:unit?.resources,traits:unit?.traits.map((id) => traitLevelToken(id, unit.traitLevels?.[id])),speedTier:unit?.speedTier,conditions:record.conditions,preparedAbilityIds:unit?.preparedAbilityIds } : {}),
       semantics: record.scale === 'hero' ? '生命' : unit?.body==='vehicle'?'载具数量':'人数', hp: live?.hp ?? record.hp, hpMax: live?.base.hpMax ?? record.base.hpMax,
       // Wound groups are engine bookkeeping: the chat model gets a readable summary, never raw {hp,count} records to echo or rewrite.
       ...(unit&&hasMemberHealth(unit)?{memberHpMax:unit.formation!.memberHp,totalLife:memberHealth(unit),totalLifeMax:memberHealthMax(unit),memberHealth:memberHealthSummary(unit,4)}:{}),
@@ -86,10 +86,10 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
       ...(field && live?.pos !== undefined ? { position: cellLabel(field, live.pos), suppressed: !!live.suppression } : {}),
       ...(live?.conditions.some((c) => c.dur > 0) ? { conditions: live.conditions.filter((c) => c.dur > 0).map((c) => (standardConditionMap().get(c.id)?.name ?? c.id) + c.dur + '轮') } : {}),
       ...(live?.side === 'ally' ? { SP: `${live.resources.SP ?? 0}/${spCapacity(live)}` } : {}),
-      skills: unit?.rulesVersion === 'v2' && unit.abilities.length ? unit.abilities.filter((a) => !a.itemSourceId && (!battleOpen || /学习|技能|learn/.test(requestText) || unit.preparedAbilityIds?.includes(a.id))).map((a) => battleOpen && !/学习|技能|learn/.test(requestText)
+      skills: unit?.rulesVersion === 'v2' && unit.abilities.length ? unit.abilities.filter((a) => !a.itemSourceId && !a.equipmentSourceId && (!battleOpen || /学习|技能|learn/.test(requestText) || unit.preparedAbilityIds?.includes(a.id))).map((a) => battleOpen && !/学习|技能|learn/.test(requestText)
         ? { name: a.name, cooldown: unit.abilityState.find((s) => s.abilityId === (a.cooldownGroup ?? a.id))?.cdLeft || undefined }
         : { id:a.id, definitionId:a.definitionId, name: a.name, mechanism: skillMechanismName(a.definitionId ?? '') || a.definitionId, power: a.fixedPower ? undefined : a.power, bonuses:a.bonuses, prepared: unit.preparedAbilityIds?.includes(a.id) }) : undefined,
-      ...(!battleOpen && EDIT_REQUEST.test(requestText) ? { editable: { formation:unit?.formation&&{...unit.formation,health:undefined},abilities:unit?.abilities,traitSources:unit?.traitSources,trinkets:unit?.trinkets,abilityState:unit?.abilityState,fatigue:unit?.fatigue,weapon:unit?.weapon,sidearm:unit?.sidearm,armor:unit?.armor,shield:unit?.shield,xpValue:unit?.xpValue } } : {}),
+      ...(!battleOpen && EDIT_REQUEST.test(requestText) ? { editable: { formation:unit?.formation&&{...unit.formation,health:undefined},abilities:unit?.abilities,traitSources:unit?.traitSources,abilityState:unit?.abilityState,fatigue:unit?.fatigue,weapon:unit?.weapon,sidearm:unit?.sidearm,armor:unit?.armor,shield:unit?.shield,xpValue:unit?.xpValue } } : {}),
       body: unit?.rulesVersion === 'v2' && unit.body !== 'human' ? unit.body : undefined, mount: unit?.mount || undefined,
       weapon: unit?.weapon?.name, sidearm: unit?.sidearm?.name, armor: unit?.armor?.name, ...(effects?.length ? { effects } : {}) }, publicId);
     blocks.units.push(line);
@@ -100,10 +100,13 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     // 战内禁止物品档案事件，装备名称已随单位给出；仅按明确查询展开库存规格。
     if (battleOpen && !relevant(item) && !/物品|背包|库存|装备|配装/.test(requestText)) continue;
     const m = item.mechanics;
-    const recipe = m?.kind === 'consumable' ? m.recipe : m?.value.recipe;
+    // 道具给出形态与规范写法（与 give 的 spec 相同），装备照旧列出机制与规格。
+    if (m?.kind === 'item') blocks.items.push(promptJson({ id: item.id, name: item.name, qty: item.qty, owner: item.assignedTo, slot: item.equippedTo?.slot,
+      kind: ITEM_FORM_NAMES[m.value.recipe.form] + '道具', spec: itemSpecText(m.value.recipe), charges: m.value.ability?.usesPerBattle, note: item.note }, publicId));
+    else { const recipe = m?.value.recipe;
     blocks.items.push(promptJson({ id: item.id, name: item.name, qty: item.qty, owner: item.assignedTo, slot: item.equippedTo?.slot,
       kind: m?.kind ?? item.lootType, mechanism: recipe?.mechanism, power: recipe?.power, bonuses:recipe?.bonuses, enchant: recipe?.enchantment,
-      quality: recipe?.quality, body: recipe?.size, stabilized: recipe?.stabilized, protection: recipe?.protectionProfile, note: item.note }, publicId));
+      quality: recipe?.quality, body: recipe?.size, stabilized: recipe?.stabilized, protection: recipe?.protectionProfile, note: item.note }, publicId)); }
     details?.items.push({id: item.id, name: item.name, reason: item.assignedTo && roster.has(item.assignedTo) ? '参战队伍携行' : relevant(item) ? '正文提及' : '手动勾选'});
   }
   blocks.phase.push(battleOpen ? '当前战斗/战果待提交，正文不能更新档案。' : '当前可进行战外档案事件。');

@@ -37,7 +37,7 @@ describe('AI 建议标签解析', () => {
     expect(r.suggestions[3]).toMatchObject({ kind: 'spawn', archetype: 'mobile', level: 3, count: 2 });
   });
 
-  it('非法标签降级为 invalid：缺属性/坏原型/坏经验', () => {
+  it('非法标签降级为 invalid：缺属性/坏经验；写错的原型不再让单位作废', () => {
     const text = [
       '<give note="没有物品名"/>',
       '<xp amount="abc"/>',
@@ -46,8 +46,8 @@ describe('AI 建议标签解析', () => {
       '<made-up-tag foo="1"/>', // 不认识的标签直接被正则忽略
     ].join('\n');
     const r = parseSuggestionTags(text);
-    expect(r.suggestions).toHaveLength(0);
-    expect(r.invalid).toHaveLength(4); // 前四个解析失败，第五个根本不匹配
+    expect(r.suggestions).toEqual([expect.objectContaining({ kind: 'spawn', name: '怪', archetype: 'infantry' })]);
+    expect(r.invalid).toHaveLength(3); // give、xp、status 解析失败，最后一个根本不匹配
     expect(r.invalid[0]).toContain('give');
   });
 
@@ -170,14 +170,20 @@ describe('AI 建议标签解析', () => {
     expect(plain.weapon2Name).toBeUndefined();
   });
 
-  it('世界书格式与战报演出常驻，七个完整短例均通过正式解析，80人不展开为80张卡', () => {
+  it('世界书格式与战报演出常驻，八个完整短例均通过正式解析，80人不展开为80张卡，道具示例全部采用', () => {
     const entries = Object.values(wbJson.entries);
     expect(entries.filter((e) => e.constant).map((e) => e.uid)).toEqual([0, 1, 5, 8]);
     const blocks = entries.flatMap((e) => e.content.match(/<tb>(?:\s*<[a-z_]+\s[^<>]*\/>\s*)+<\/tb>/g) ?? []);
-    expect(blocks).toHaveLength(7);
-    const events = blocks.flatMap((block) => { const result = parseProtocol(block); expect(result.errors).toEqual([]); return result.events; });
+    expect(blocks).toHaveLength(8);
+    const events = blocks.flatMap((block) => {
+      const result = parseProtocol(block);
+      expect(result.errors).toEqual([]); expect(result.warnings.filter((w) => /未采用|未支持|忽略|不再使用/.test(w))).toEqual([]);
+      return result.events;
+    });
     expect(events.find((e) => e.kind === 'unit-update')).toMatchObject({ hp: 500 });
     expect(events.find((e) => e.kind === 'spawn')).toMatchObject({ scale: 'company', hpMax: 80, count: 1, weaponClass: 'rifle', weaponLevel: 5 });
+    expect(events.find((e) => e.kind === 'spawn' && e.name === '掷弹兵连')).toMatchObject({ items: [{ name: '手雷', qty: 60, spec: { form: 'single' } }, { name: '夜视镜', qty: 1, spec: { form: 'worn' } }] });
+    expect(events.filter((e) => e.kind === 'give').map((e) => e.kind === 'give' && [e.item, e.qty, e.spec?.kind === 'item' ? e.spec.form : e.spec?.kind])).toEqual([['手雷', 6, 'single'], ['治疗药水', 3, 'single'], ['火球魔杖', 1, 'charged']]);
   });
 
   it('武器种类段无效时整串按纯名字处理；旧格式 "剑L5" 仍解析', () => {

@@ -10,7 +10,7 @@ import { participationText,memberHealthPanel } from './combat-model-view.js';
 import {hasMemberHealth} from '../../engine/src/member-health.js';
 import { difficultEngagementDescription } from '../../engine/src/exposure.js';
 import { renderBattleHighlights, traceOverlay, traceLocations, unitSymbol } from './battle-presentation.js';
-import { weaponReloadKey, terrainName, landmarkAt, landmarkCells, cellLabel, gridDistance, inBounds, moraleLabel, isAirborne, activeTraitIds, postureLabel, concealmentLabel, worksLabel, entrenched, standardConditionMap, approx, type SmallBattle, type ActionOption, type ActionPreview, type BattlefieldSpec, type Combatant, type Terrain, TERRAIN_NAMES } from '../../engine/src/index.js';
+import { weaponReloadKey, terrainName, landmarkAt, landmarkCells, cellLabel, gridDistance, inBounds, moraleLabel, isAirborne, activeTraitIds, postureLabel, concealmentLabel, worksLabel, entrenched, standardConditionMap, approx, itemUseAbility, type SmallBattle, type ActionOption, type ActionPreview, type BattlefieldSpec, type Combatant, type Terrain, TERRAIN_NAMES } from '../../engine/src/index.js';
 
 import { renderRoundFeedback } from './round-feedback.js';
 import { movementLabel } from '../../engine/src/tactics.js';
@@ -164,11 +164,14 @@ function actionPreview(battle: SmallBattle, preview: ActionPreview | undefined, 
   const resistance = p?.penetrationFactor !== undefined
     ? `<div class="penetration-preview ${p.penetrationFactor === 0 ? 'grid-reason' : ''}">${p.channel ? { kinetic: '物理', thermal: '热能', arcane: '魔法' }[p.channel] : ''}穿透 ${p.penetration} 对防护 ${p.resistance} · ${p.penetrationFactor === 0 ? '无法穿透，不造成生命或人数损失' : (p.armorFactor===undefined?'穿透通过':'防护后保留') + Math.round(p.penetrationFactor * 100) + '%'}${p.shieldFactor!==undefined&&p.shieldFactor<1?' · 盾牌掩护减伤'+Math.round((1-p.shieldFactor)*100)+'%':''}${(p.armorScale??1)>1?' · 装甲等效耐久×'+Number(p.armorScale!.toFixed(2)):''}</div>` : '';
   const cost = option?.preview?.resource;
+  // V15 编队齐用按件数：对所选目标本次实际消耗的件数（英雄与旧规则为 1 件）。
+  const actor = battle.active, item = option?.kind === 'ability' && actor ? actor.abilities.find((a) => a.id === option.id && a.itemSourceId) : undefined;
+  const itemCost = item && actor ? itemUseAbility(actor, item, target ?? (item.target === 'self' ? actor : undefined)).ability.cost?.amount : undefined;
   return `<div class="action-preview" aria-live="polite">${target ? '<div class="preview-target">' + esc(target.name) + ' · ' + strengthDescription(target) + '</div>'+memberHealthPanel(target) : ''}${primary}${resistance}${p?.participants!==undefined ? `<p class="sub">${participationText(p)}</p>` : ''}
     ${p?.effects?.length ? '<div class="preview-effects">' + p.effects.map(esc).join('；') + '</div>' : ''}
     ${p?.areaTargets?.length ? '<div class="area-preview">实际波及：' + p.areaTargets.map(esc).join('、') + (p.areaPreviews?.length ? '<div>' + p.areaPreviews.map((hit) => { const affected = battle.visibleCombatants('ally').find((u) => u.id === hit.targetId); return affected ? '<div>' + esc(affected.name) + ' · 至少命中一次' + hitChanceText(hit) + ' · 命中后伤害' + hitDamageText(hit) + (affected.scale === 'hero'||hasMemberHealth(affected) ? '生命' : '人') + '</div>' : ''; }).join('') + '</div>' : '') + '</div>' : ''}
     ${p?.onHit ? '<div>' + esc(p.onHit) + '</div>' : ''}
-    <div class="preview-cost">主行动1${cost ? ' · ' + esc(cost.name === 'SP' ? '战技点' : cost.name) + ' ' + cost.cost + '/' + cost.available : ''}${p?.movementCost ? ' · 另用移动' + p.movementCost + (p.lands ? '，先降落接敌' : '') : ''}</div>
+    <div class="preview-cost">主行动1${cost ? item ? ' · 道具 本次' + (itemCost ?? cost.cost) + '件，剩余' + cost.available + '件' : ' · ' + esc(cost.name === 'SP' ? '战技点' : cost.name) + ' ' + cost.cost + '/' + cost.available : ''}${p?.movementCost ? ' · 另用移动' + p.movementCost + (p.lands ? '，先降落接敌' : '') : ''}</div>
     ${p?.fallDamage !== undefined ? `<div>${p.fallChance !== undefined && p.fallChance < 1 ? '迫降概率' + Math.round(p.fallChance * 100) + '%' : '将迫降'}，额外坠落损失至多${p.fallDamage}${p.forcedExit ? ' · 已知范围无落点，预计撤出' : p.landingCell !== undefined ? ' · 预计落点' + cellLabel(battle.battlefield!, p.landingCell) : ''}；未发现占位可能改变落点</div>` : ''}
     ${p?.expectedDamage !== undefined ? `<details data-detail-id="grid-calculation"><summary>伤害详情</summary><p>${p.weaponName ? '使用' + esc(p.weaponName) + '。' : ''}${hitDamageDetails(p, unit)}</p>${p.attackScore !== undefined ? '<p>攻击合计' + p.attackScore + '，防御合计' + p.defenseScore + '。</p><p>攻击修正：' + esc(p.attackModifiers || '无') + '</p><p>防御修正：' + esc(p.defenseModifiers || '无') + '</p>' : ''}</details>` : ''}
   </div>`;

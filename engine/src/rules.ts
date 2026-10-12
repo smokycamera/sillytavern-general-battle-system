@@ -85,8 +85,13 @@ export const V13_OVERFLOW_TW: RulePack = { ...V12_OVERFLOW_TW, id: 'v13-overflow
 export const V14_OVERFLOW_D20: RulePack = { ...V13_OVERFLOW_D20, id: 'v14-overflow-d20', name: 'V14 技能补全', skillModel: 'skills-v1' };
 export const V14_OVERFLOW_TW: RulePack = { ...V13_OVERFLOW_TW, id: 'v14-overflow-tw', name: 'V14 技能补全会战', skillModel: 'skills-v1' };
 
+/** V15 only opts new battles into the item system rules (see item-model.ts); V2–V14 snapshots keep their item, trait and archetype rules. */
+export const V15_OVERFLOW_D20: RulePack = { ...V14_OVERFLOW_D20, id: 'v15-overflow-d20', name: 'V15 道具系统', itemModel: 'items-v1' };
+export const V15_OVERFLOW_TW: RulePack = { ...V14_OVERFLOW_TW, id: 'v15-overflow-tw', name: 'V15 道具系统会战', itemModel: 'items-v1' };
+
 /** id → 规则包（战斗快照恢复用；面板只用默认两包） */
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V15_OVERFLOW_D20.id]: V15_OVERFLOW_D20, [V15_OVERFLOW_TW.id]: V15_OVERFLOW_TW,
   [V14_OVERFLOW_D20.id]: V14_OVERFLOW_D20, [V14_OVERFLOW_TW.id]: V14_OVERFLOW_TW,
   [V13_OVERFLOW_D20.id]: V13_OVERFLOW_D20, [V13_OVERFLOW_TW.id]: V13_OVERFLOW_TW,
   [V12_OVERFLOW_D20.id]: V12_OVERFLOW_D20, [V12_OVERFLOW_TW.id]: V12_OVERFLOW_TW,

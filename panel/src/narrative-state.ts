@@ -1,11 +1,12 @@
 import { prepareCombatModel } from '../../engine/src/combat-model.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
-import { V6_D20, V14_OVERFLOW_D20 } from '../../engine/src/rules.js';
+import { V6_D20, V15_OVERFLOW_D20 } from '../../engine/src/rules.js';
 import { prepareSkillModel } from '../../engine/src/skill-model.js';
+import { prepareItemModel } from '../../engine/src/item-model.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import type { PromptSettings } from './prompt-settings.js';
 import { PANEL_SAVE_SCHEMA_VERSION, learnUnitRecord } from './unit-state.js';
-import { generateUnit, grantTraitSource, revokeTraitSource, traitRegistry, narrativeTrait, type Combatant, type GenerateInput } from '../../engine/src/index.js';
+import { generateUnit, grantTraitSource, revokeTraitSource, traitRegistry, narrativeTraitLevel, type Combatant, type GenerateInput } from '../../engine/src/index.js';
 import { deployUnitRecord, materializeUnitRecord, unitRecordFromCombatant, updateUnitRecord, type UnitRecord } from './unit-state.js';
 import { parseProtocol, protocolExcerpt } from './protocol.js';
 import type { Suggestion } from './tags.js';
@@ -150,9 +151,13 @@ export function shouldRefreshNarrativeProposal(previous: NarrativeProposal | und
 
 function spawnInput(event: Extract<Suggestion, { kind: 'spawn' }>): GenerateInput {
   const registry = traitRegistry();
-  // 兼容更新前已保存的候选：未知特质不会令建档再次失败。
-  const traits = [...new Set((event.traits ?? []).flatMap((name) => { const parsed = narrativeTrait(name, registry); return parsed.kind === 'trait' ? [parsed.id] : []; }))];
+  // 兼容更新前已保存的候选：未知特质不会令建档再次失败。专精等级随特质写在一起（forest-loreL8）。
+  const parsed = (event.traits ?? []).map((name) => narrativeTraitLevel(name, registry));
+  const traits = [...new Set(parsed.flatMap((p) => p.kind === 'trait' ? [p.id] : []))];
+  const levels: Record<string, number> = {};
+  for (const p of parsed) if (p.kind === 'trait' && p.level !== undefined) levels[p.id] = Math.max(levels[p.id] ?? 0, p.level);
   return {
+    ...(Object.keys(levels).length ? { traitLevels: levels } : {}),
     rulesVersion: 'v2', damageModel: 'wounds-v2', body: event.body, mount: event.mount, speedTier: event.speedTier, quality: event.quality, shield: event.shield,
     ...((event.scale ?? 'hero') === 'hero' ? {} : { hp: event.hp, hpMax: event.hpMax }),
     name: event.name, scale: event.scale ?? 'hero', archetype: event.archetype, level: event.level, side: event.side ?? 'enemy',
@@ -243,7 +248,7 @@ function applyUnitEffect(storage: UnitRecord[], event: Extract<Suggestion, { kin
   const record: UnitRecord = storage.find((r) => r.id === event.id)!;
   if (record.retired || record.hp <= 0 || record.status === 'dead') throw new Error('不能通过效果来源复活阵亡或解散档案');
   const unit = materializeUnitRecord(record, registry);
-  if (event.kind === 'bless') grantTraitSource(unit, { id: `bless:${proposalId}:${index}`, name: event.name, kind: 'blessing', traitIds: event.traitIds, duration: event.duration });
+  if (event.kind === 'bless') grantTraitSource(unit, { id: `bless:${proposalId}:${index}`, name: event.name, kind: 'blessing', traitIds: event.traitIds, ...(event.traitLevels ? { traitLevels: event.traitLevels } : {}), duration: event.duration });
   else if (event.kind === 'affect') grantTraitSource(unit, { id: `affect:${proposalId}:${index}`, name: event.name, kind: 'effect', traitIds: [], conditionIds: event.conditionIds, duration: event.duration });
   else {
     const kind = unit.traitSources?.find((s) => s.id === event.sourceId)?.kind;
@@ -322,7 +327,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (event.kind !== 'give') continue;
     const id = `loot-${proposal.id}-${index}`;
     if (!event.spec) { next.inventory = [...(next.inventory ?? []), { id, name: event.item, qty: event.qty, lootType: event.lootType, note: event.note }]; given.add(id); }
-    else if (event.spec.kind === 'consumable') next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(id, event.item, event.spec, id, event.qty), note: event.note }];
+    else if (event.spec.kind === 'item' && event.spec.form === 'single') next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(id, event.item, event.spec, id, event.qty), note: event.note }];
     else {
       if ((newEquipment += event.qty) > 64) throw new Error('单批机械装备最多64件，请拆分');
       for (let i = 0; i < event.qty; i++) {
@@ -346,6 +351,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   records = next.storage!;
   let roster: Combatant[] = (next.rosterIds ?? []).map((id) => records.find((r) => r.id === id)).filter((r): r is UnitRecord => !!r && r.hp > 0 && !r.retired).map((r) => materializeUnitRecord(r, registry));
   const newDeploys: string[] = [];
+  let spawnedGear = false;
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind === 'deploy') { if (isNew(event)) newDeploys.push(event.id); else roster = deployUnitRecord(records, roster, event.id, registry); }
     else if (event.kind === 'spawn') {
@@ -354,15 +360,31 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
         if (records.some((r) => r.id === id)) throw new Error('新单位身份已存在');
         const unit = generateUnit(spawnInput(event), { registry, seed: id }).unit;
         unit.id = id;
-        prepareSkillModel(unit,V14_OVERFLOW_D20); prepareCombatModel(unit,V6_D20); upgradeCombatSkills(unit); applySpawnWound(unit, event);
+        prepareSkillModel(unit,V15_OVERFLOW_D20); prepareCombatModel(unit,V6_D20); upgradeCombatSkills(unit); prepareItemModel(unit,V15_OVERFLOW_D20); applySpawnWound(unit, event);
         records.push(unitRecordFromCombatant(unit, undefined, { sourceId: proposal.id }));
         if (unit.hp > 0 && !event.archiveOnly) roster.push(materializeUnitRecord(records.at(-1)!, registry));
+        // 随身道具每张卡各一套，归这张卡；佩戴、充能道具装上（编队一件即整卡配发），一次性道具开战时随身携带。
+        for (const [n, entry] of (event.items ?? []).entries()) {
+          const itemId = `spawn-item-${proposal.id}-${index}-${i}-${n}`;
+          if (!entry.spec) { next.inventory = [...(next.inventory ?? []), { id: itemId, name: entry.name, qty: entry.qty, lootType: 'misc', assignedTo: id }]; continue; }
+          if (entry.spec.form === 'single') { next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(itemId, entry.name, entry.spec, itemId, entry.qty), assignedTo: id }]; continue; }
+          const pieces = unit.scale === 'hero' ? entry.qty : 1;
+          if (pieces < entry.qty && i === 0) notices.push(`${event.name}是编队，佩戴、充能道具一件就是整张单位卡的配发，「${entry.name}」按每卡1件建档`);
+          if ((newEquipment += pieces) > 64) throw new Error('单批机械装备与佩戴、充能道具最多64件，请拆分');
+          for (let piece = 0; piece < pieces; piece++) {
+            const pieceId = pieces === 1 ? itemId : `${itemId}-${piece}`;
+            next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(pieceId, entry.name, entry.spec, pieceId), assignedTo: id, equippedTo: { unitId: id, slot: 'gear' } }];
+          }
+          spawnedGear = true;
+        }
       }
     } else if (event.kind === 'field') { next.field = event.env; next.lighting = event.light ?? (event.env === 'night' ? 'night' : 'day'); }
     else if (!['unit-set', 'unit-update', 'take', 'give', 'reforge', 'learn', 'bless', 'unbless', 'affect', 'unaffect'].includes(event.kind)) throw new Error('不支持此类正文写回');
   }
   next.schemaVersion = PANEL_SAVE_SCHEMA_VERSION;
   next.storage = records;
+  // 新单位装上的佩戴、充能道具立即投影进档案，开战时随单位生效。
+  if (spawnedGear) { next = prepareInventoryState(next) as NarrativeSave; records = next.storage!; }
   next.rosterIds = [...new Set(roster.map((u) => u.id))];
   if (fresh.created.size) next = applyToNewUnits(next, proposal.events, fresh, proposal.id, registry, newDeploys, { given, notices });
   const deployed = next.rosterIds ?? [];

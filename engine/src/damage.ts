@@ -34,6 +34,8 @@ import { averageDice, estimateHitChance } from './actions.js';
 import { damageMoments, diceDistribution, v2DamageAmount, roundDamage } from './probability.js';
 import { engagementWidth } from './exposure.js';
 import { activeTraitIds, traitPenetrationBonus } from './trait-sources.js';
+import { combatBonuses } from './gear-bonuses.js';
+import { itemsV15 } from './item-model.js';
 import { COHORT_MODEL, COHORT_REFERENCE, personnel, memberDurability } from './combat-model.js';
 
 export interface AttackResolution {
@@ -343,7 +345,9 @@ function sampledPreviewBase(opts: Omit<AttackOpts, 'rng'>): string {
     tacticalPose: u.tacticalPose ? defensivePostureMods(u, { defender: opponent, ranged, charge: opts.charge }, opts.conditionDefs, opts.traitRegistry) : undefined,
     fatigue: fatiguePenalty(u), resources: undefined, abilityState: undefined, tacticalEffort: undefined, engagedWith: undefined, battleZones: undefined,
     ...(attacker ? { barrier: undefined } : {}) });
-  const distance = opts.distance === undefined ? undefined : opts.distance <= 1 ? 1 : opts.distance >= 2 ? 2 : opts.distance;
+  // V15 巷战专精的“2格内射击”还区分 2 格与更远，只有带巷战专精的攻击方保留到 3 格。
+  const closeShots = itemsV15(opts.attacker) && activeTraitIds(opts.attacker).includes('urban-fighter');
+  const distance = opts.distance === undefined ? undefined : opts.distance <= 1 ? 1 : closeShots ? Math.min(3, opts.distance) : opts.distance >= 2 ? 2 : opts.distance;
   return JSON.stringify({ ...opts, distance, attacker: unit(opts.attacker, opts.defender, true), defender: unit(opts.defender, opts.attacker, false),
     conditionDefs: undefined, traitRegistry: undefined });
 }
@@ -383,7 +387,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
     hit=0;for(let n=1;n<=20;n++){const p=opts.advantage==='adv'?(2*n-1)/400:opts.advantage==='dis'?(41-2*n)/400:1/20;if(n>1&&(n>=opts.rules.critMin||n+ctx.netAtk>=ctx.targetDef))hit+=p;if(n>=opts.rules.critMin)critical+=p;}
   }
   const samples=cohortSamples(opts,resolved),weight=outcomeScale({...opts,packetShare:1/samples},resolved).multiplier,count=(opts.abilityDamage?1:ctx.weapon?.attacks??1)*samples;
-  const rawMultiplier=memberAreaBudget(opts)*modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level,opts.rules)*instanceMultiplier(opts.attacker.bonuses,'damage',opts.attacker.genAudit?.variance,opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
+  const rawMultiplier=memberAreaBudget(opts)*modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level,opts.rules)*instanceMultiplier(combatBonuses(opts.attacker),'damage',opts.attacker.genAudit?.variance,opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
   const maxBase=diceDistribution(source?.baseDice,opts.rules.critRule==='doubleDice'?2:1),maxAp=diceDistribution(source?.apDice,opts.rules.critRule==='doubleDice'?2:1);
   const upper=maxBase&&maxAp ? Math.ceil((Math.max(...maxBase.keys())+Math.max(...maxAp.keys()))*rawMultiplier*Math.ceil(weight))*count : Infinity;
   // 连续攻击共用剩余屏障。固定种子的小样本估计只操作副本，不消耗实战随机数。
@@ -522,7 +526,8 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
 
   // ---- 收集双方修正 ----
   // 攻击方视角：条件修正看 defender 的标签
-  const ctxAtk = { skillDelivery: opts.abilityDamage?.delivery, attacker, defender, charge: opts.charge, ranged, weapon, fieldTags: opts.fieldTags, localTerrain: opts.localTerrain,heightRules:opts.heightRules,heightAdvantage:0, terrain: opts.attackerTerrain, opponentTerrain: opts.defenderTerrain, distance: opts.distance };
+  const ctxAtk = { skillDelivery: opts.abilityDamage?.delivery, attacker, defender, charge: opts.charge, ranged, weapon, fieldTags: opts.fieldTags, localTerrain: opts.localTerrain,heightRules:opts.heightRules,heightAdvantage:0, terrain: opts.attackerTerrain, opponentTerrain: opts.defenderTerrain, distance: opts.distance,
+    attackerHigher: opts.heightRules ? (opts.attackerHeight ?? 0) > (opts.defenderHeight ?? 0) : opts.attackerTerrain === 'hill' && opts.defenderTerrain !== 'hill' };
   const atkMods = collectMods(attacker, ctxAtk, opts.conditionDefs, extraMods, opts.traitRegistry);
   const atkStack = resolveStack(atkMods, 'atk', ctxAtk, { sameNameKeepsHighest: rules.sameNameKeepsHighest, maxFlat: rules.maxFlat });
 
@@ -544,8 +549,8 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
   const defStack = resolveStack(defMods, 'def', ctxDef, { sameNameKeepsHighest: rules.sameNameKeepsHighest, maxFlat: rules.maxFlat });
 
   const modern = rules.combatModel === MEMBER_HEALTH_MODEL;
-  const precision = modern ? trainingEdge(attacker.level) + bonusSteps(attacker.bonuses,'accuracy') + (opts.abilityDamage?.accuracy??0) + (!opts.abilityDamage || opts.abilityDamage.weaponBased ? bonusSteps(weapon?.recipe?.bonuses,'accuracy') : 0) : 0;
-  const evasion = modern ? trainingEdge(defender.level) + bonusSteps(defender.bonuses,'defense') + bonusSteps(defender.armor?.recipe?.bonuses,'defense') + bonusSteps(defender.shield?.recipe?.bonuses,'defense') : 0;
+  const precision = modern ? trainingEdge(attacker.level) + bonusSteps(combatBonuses(attacker),'accuracy') + (opts.abilityDamage?.accuracy??0) + (!opts.abilityDamage || opts.abilityDamage.weaponBased ? bonusSteps(weapon?.recipe?.bonuses,'accuracy') : 0) : 0;
+  const evasion = modern ? trainingEdge(defender.level) + bonusSteps(combatBonuses(defender),'defense') + bonusSteps(defender.armor?.recipe?.bonuses,'defense') + bonusSteps(defender.shield?.recipe?.bonuses,'defense') : 0;
   const netAtk = attacker.base.atk + atkStack.flatTotal + precision;
   const targetDef = defender.base.def + defStack.flatTotal + evasion;
 
@@ -717,7 +722,7 @@ export function resolveAttack(opts: AttackOpts): AttackResolution {
 
   // 展开规模与伤害系数另按分段份额与现员复用（范围技能暴露人数随现员变化）。
   const modern=rules.combatModel===MEMBER_HEALTH_MODEL, sizeKey=opts.previewMemo&&modern?opts.packetShare+'|'+defender.hp:undefined;
-  const size=(sizeKey===undefined?undefined:basis.sizes?.get(sizeKey))??{scale:outcomeScale(opts, resolved),sourceScale:modern?memberAreaBudget(opts)*(opts.abilityDamage?opts.abilityDamage.damageScale??1:weapon?.damageScale??1)/(penetration?.armorScale??1)*trainingDamage(attacker.level,rules)*instanceMultiplier(attacker.bonuses,'damage',attacker.genAudit?.variance,penetration?.channel??'kinetic')*(penetration?.overmatchMultiplier??1):1};
+  const size=(sizeKey===undefined?undefined:basis.sizes?.get(sizeKey))??{scale:outcomeScale(opts, resolved),sourceScale:modern?memberAreaBudget(opts)*(opts.abilityDamage?opts.abilityDamage.damageScale??1:weapon?.damageScale??1)/(penetration?.armorScale??1)*trainingDamage(attacker.level,rules)*instanceMultiplier(combatBonuses(attacker),'damage',attacker.genAudit?.variance,penetration?.channel??'kinetic')*(penetration?.overmatchMultiplier??1):1};
   if (sizeKey!==undefined) (basis.sizes??=new Map()).set(sizeKey,size);
   const { scale, sourceScale } = size;
   const targets=modern?roundDamage(scale.multiplier,rng):0;

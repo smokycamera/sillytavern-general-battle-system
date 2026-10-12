@@ -6,6 +6,7 @@ import { generateUnit } from './gen/generator.js';
 import { compileWeapon } from './gen/equipment.js';
 import { ENHANCEMENT_STATS, type Enhancements, type BonusStat } from './enhancements.js';
 import { nominalLife } from './combat-model.js';
+import { itemReserveCost } from './items.js';
 
 export function skillWeapon(actor: Combatant, ability: Ability, distance?: number): Weapon | undefined {
   if (ability.damageBasis !== 'weapon') return undefined;
@@ -24,7 +25,10 @@ export function skillResourceCost(ability: Ability, actor?: Combatant): number {
   if (!cost) return 0;
   const restoresPayment = ability.effects.some(e => e.op === 'resource' && e.resource === cost.resource && e.amount > 0);
   const reserve = actor ? (actor.resources[cost.resource] ?? 0) : Infinity;
-  return cost.amount * (restoresPayment ? 1.5 : 0.5) * (reserve <= cost.amount ? 2 : reserve <= cost.amount * 2 ? 1.5 : 1);
+  const base = cost.amount * (restoresPayment ? 1.5 : 0.5) * (reserve <= cost.amount ? 2 : reserve <= cost.amount * 2 ? 1.5 : 1);
+  // V15 一次性道具另计保留价值（治疗品、投掷物），不低于通用资源价格。
+  const kept = actor ? itemReserveCost(actor, ability) : undefined;
+  return kept === undefined ? base : Math.max(base, kept);
 }
 export function conjuredTemplate(template: string): boolean { return /^conjured:(?:(?:single|group):)?(?:[1-9]|10)$/.test(template); }
 export function summonProfile(template: string, mode: 'small' | 'mass', bonuses?: Enhancements) {

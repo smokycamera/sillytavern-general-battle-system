@@ -10,7 +10,8 @@ import type { Rng } from './rng.js';
 import { activeTraitIds, bodyRank, traitSourceActive, grantTraitSource, traitPrerequisiteReason } from './trait-sources.js';
 import { traitsV13 } from './trait-model.js';
 import { canEntrench, entrench, entrenched } from './entrenchment.js';
-import { traitRegistry } from './data/traits.js';
+import { traitRegistry, isGradedTrait, validTraitLevel } from './data/traits.js';
+import { itemsV15 } from './item-model.js';
 import { skillResourceChange, summonProfile, conjureSkillUnit, summonedMemberLife } from './skill-runtime.js';
 import { standardConditionMap } from './conditions.js';
 import { conditionMods } from './bonus.js';
@@ -166,8 +167,10 @@ export function skillTraitReason(target: Combatant, effect: Extract<EffectOp, { 
 export function applySkillTrait(actor: Combatant, target: Combatant, ability: Ability, effect: Extract<EffectOp, { op: 'trait' }>, castId: string): string {
   const reason = skillTraitReason(target, effect), name = traitRegistry().get(effect.traitId)!.name;
   if (reason) return `${target.name}：${reason}`;
+  // 授予专精时按技能或道具自身的等级定级；只在 V15 记录，旧规则一律按 L5，快照也保持原样。
+  const level = isGradedTrait(effect.traitId) && validTraitLevel(ability.power) && itemsV15(target) ? ability.power : undefined;
   grantTraitSource(target, { id: 'skill:' + castId + ':' + actor.id + ':' + ability.id + ':' + effect.traitId, name: ability.name,
-    kind: 'blessing', traitIds: [effect.traitId], duration: { kind: 'rounds', count: effect.dur }, battleOnly: true });
+    kind: 'blessing', traitIds: [effect.traitId], duration: { kind: 'rounds', count: effect.dur }, battleOnly: true, ...(level !== undefined ? { traitLevels: { [effect.traitId]: level } } : {}) });
   if (effect.traitId === 'fortification') entrench(target, target.pos !== undefined ? 'small' : 'mass');
   return `${target.name} 获得${name}，至多${effect.dur}轮，战斗归档时结束`;
 }

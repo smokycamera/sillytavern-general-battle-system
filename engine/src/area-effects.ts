@@ -1,4 +1,5 @@
 import type { Ability, Combatant, EffectOp } from './types.js';
+import { traitLevel, nightSight } from './trait-levels.js';
 import type { ObservationContext } from './observation.js';
 import { formationNode, FORMATION_NODES } from './mass/formation.js';
 import { applyCombatDamage, applyRecovery, recoveryCapacity } from './recovery.js';
@@ -30,7 +31,7 @@ const distance = (a: Point, b: Point) => Math.abs(a.x - b.x) + Math.abs(a.y - b.
 export function visibleBattleZones(context: ObservationContext, side: Combatant['side']): BattleZone[] {
   return context.units.flatMap(u=>u.battleZones??[]).filter(zone=>zone.mode===context.mode&&zone.remaining>0&&(zone.side===side || zone.kind!=='trap'&&context.units.some(observer=>{
     if(observer.side!==side||observer.status!=='ready')return false;
-    const range=activeTraitIds(observer).includes('night-fighter')?(context.mode==='small'?6:4):(context.mode==='small'?3:2);
+    const range=nightSight(traitLevel(observer,'night-fighter'),context.mode);
     if(context.fieldTags.includes('night')&&distance(areaPosition(context,observer),zone)>range)return false;
     return !context.battlefield||unitLineOfSight(context.battlefield,observer,{...observer,airborne:false,pos:zone.y*context.battlefield.width+zone.x});
   })));

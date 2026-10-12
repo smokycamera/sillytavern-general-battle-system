@@ -3,6 +3,7 @@ import { bodyProfile } from '../body.js';
 /** Layered maps are opt-in on new fields. Frozen version-2 tile-only saves retain their rules. */
 import type { Combatant, Weapon } from '../types.js';
 import { activeTraitIds, traitPrerequisiteReason } from '../trait-sources.js';
+import { traitLevel, roughGroundCost } from '../trait-levels.js';
 import { isAirborne } from '../aerial.js';
 import type { BattlefieldSpec } from './spatial.js';
 import { groundHeightAt,unitHeight,heightTransition } from './height-map.js';
@@ -80,8 +81,8 @@ export function layerMoveCost(field: BattlefieldSpec, cell: number, actor?: Comb
   const agile = traits.includes('agile') && !traitPrerequisiteReason(actor!, 'agile');
   let cost = agile && t !== 'deep_water' ? 1 : t === 'shallow_water' ? traits.includes('water-crossing') ? 1 : 2
     : t === 'deep_water' ? 3 : t === 'swamp' ? traits.includes('water-crossing') ? 2 : 3
-      : t === 'forest' ? traits.includes('forest-lore') ? 1 : 2
-        : t === 'hill' ? field.spatialRulesVersion===2||traits.includes('mountain-born') ? 1 : 2 : t === 'rough' ? 2 : 1;
+      : t === 'forest' ? actor ? roughGroundCost(traitLevel(actor, 'forest-lore', traits)) : 2
+        : t === 'hill' ? field.spatialRulesVersion===2 ? 1 : actor ? roughGroundCost(traitLevel(actor, 'mountain-born', traits)) : 2 : t === 'rough' ? 2 : 1;
   // A road changes ground cost, not a barricade, water or rubble sitting on it.
   if (overlays.includes('road') && !['deep_water', 'shallow_water', 'swamp'].includes(t ?? '')) cost = 1;
   if (overlays.includes('rubble') && !agile) cost = Math.max(cost, 2);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateUnit, traitRegistry, SmallBattle, MassBattle, standardField, V6_D20, V6_TW,
   equipmentLoad, equipmentReason, humanEncumbered, movementPoints, formationMarchSteps,
-  collectMods, resolveStack, standardConditionMap, compileItem, type GenerateInput } from '../src/index.js';
+  collectMods, resolveStack, standardConditionMap, compileItem, gearItem, type GenerateInput } from '../src/index.js';
 
 const registry = traitRegistry();
 function unit(id: string, extra: Partial<GenerateInput> = {}) {
@@ -37,19 +37,22 @@ describe('人形重武器与满载边界', () => {
     expect(loaded.base).toEqual(before);
   });
 
-  it('人形允许14但拒绝15，大型允许18但拒绝19，两个配件均计入负重', () => {
+  it('人形允许14但拒绝15，大型允许18但拒绝19；佩戴、充能道具件数不限也不计负重', () => {
     const u = unit('actor', { sidearmClass: 'sword', shield: true }); // 6+5+1+2
     expect(equipmentLoad(u)).toBe(14); expect(equipmentReason(u)).toBeUndefined();
-    const accessory = (id: string, mechanism: 'night' | 'woodland') => {
-      const item = compileItem({ kind: 'accessory', mechanism, power: 1 }, { id, seed: id });
-      if (item.kind !== 'accessory') throw Error('fixture'); return item.value;
+    const gear = (id: string, spec: Parameters<typeof compileItem>[0]) => {
+      const item = compileItem(spec, { id, seed: id });
+      if (item.kind !== 'item') throw Error('fixture'); return gearItem(id, id, item.value);
     };
-    u.accessories = { accessory1: accessory('a1', 'night') };
+    u.gear = [gear('g1', { kind: 'item', form: 'worn', power: 5, traits: [{ id: 'night-fighter', level: 5 }] }), gear('g2', { kind: 'item', form: 'worn', power: 6, traits: [{ id: 'forest-lore', level: 6 }] }),
+      ...[1, 2, 3].map((n) => gear('wand' + n, { kind: 'item', form: 'charged', power: 5, active: 'generic:magic-area:thermal' }))];
+    expect(equipmentLoad(u)).toBe(14); expect(equipmentReason(u)).toBeUndefined();
+    u.sidearm = unit('spare', { weaponClass: 'bow' }).weapon; // 6+5+2+2
     expect(equipmentReason(u)).toMatch(/负重 15.*容量 14/);
-    u.body = 'large'; u.sidearm = unit('spare').weapon; delete u.shield; // 6+6+5+1
+    u.body = 'large'; u.sidearm = unit('spare').weapon; u.armor = unit('plate', { armorTier: 3 }).armor; // 6+6+4+2
     expect(equipmentLoad(u)).toBe(18); expect(equipmentReason(u)).toBeUndefined();
     expect(humanEncumbered(u)).toBe(false);
-    u.accessories.accessory2 = accessory('a2', 'woodland');
+    u.armor = unit('plate', { armorTier: 4 }).armor; // 6+6+5+2
     expect(equipmentReason(u)).toMatch(/负重 19.*容量 18/);
     for (const body of ['giant', 'vehicle'] as const) { u.body = body; expect(equipmentReason(u)).toBeUndefined(); expect(humanEncumbered(u)).toBe(false); }
   });

@@ -3,7 +3,7 @@ import { generateUnit, SmallBattle, MassBattle, standardField, V4_OVERFLOW_D20, 
 import { applyCombatDamage, applyDamagePlan } from '../src/recovery.js';
 import { resolveAttack, previewAttack } from '../src/damage.js';
 import { standardConditionMap } from '../src/conditions.js';
-import { syncAccessoryAbilities } from '../src/items.js';
+import { syncGearAbilities, gearItem } from '../src/items.js';
 import { placeZone, visibleBattleZones } from '../src/area-effects.js';
 import { unitRecordFromCombatant, combatantFromUnknown } from '../../panel/src/unit-state.js';
 import { prepareInventoryState, prepareInventoryTransaction, createInventoryItem, type InventorySave, type InventoryAction } from '../../panel/src/inventory-state.js';
@@ -21,38 +21,40 @@ function grid(units: Combatant[]) {
 }
 function learn(u: Combatant, id: string): Ability { const a=compileGenericSkill(id,3,u.id);u.abilities.push(a);(u.preparedAbilityIds??=[]).push(a.id);return a; }
 
-it('equips two different accessories, grants an active skill without a preparation slot and revokes it on removal',()=>{
-  let save:InventorySave=prepareInventoryState({schemaVersion:2,factRevision:1,storage:[unitRecordFromCombatant(unit('a'))],inventory:[createInventoryItem('night','夜视镜',{kind:'accessory',mechanism:'night',power:3},'night'),createInventoryItem('charm','屏障护符',{kind:'accessory',mechanism:'barrier',power:3},'charm')]});
+it('equips worn and charged items without a slot limit, grants item actions without a preparation slot and revokes them on removal',()=>{
+  const charm=(id:string)=>createInventoryItem(id,'屏障护符',{kind:'item',form:'charged',power:3,active:'generic:buff:barrier'},id);
+  let save:InventorySave=prepareInventoryState({schemaVersion:2,factRevision:1,storage:[unitRecordFromCombatant(unit('a'))],inventory:[createInventoryItem('night','夜视镜',{kind:'item',form:'worn',power:5,traits:[{id:'night-fighter',level:5}]},'night'),charm('charm'),charm('charm2')]});
   const apply=(action:InventoryAction)=>{save=prepareInventoryTransaction(save,{...action,id:crypto.randomUUID(),expectedRevision:save.factRevision!});};
-  apply({kind:'equip',itemId:'night',unitId:'a',slot:'accessory1'});apply({kind:'equip',itemId:'charm',unitId:'a',slot:'accessory2'});
+  for(const itemId of ['night','charm','charm2'])apply({kind:'equip',itemId,unitId:'a',slot:'gear'});
   let actor=save.storage![0]!.snapshot!;
-  expect(activeTraitIds(actor)).toContain('night-fighter');
+  expect(activeTraitIds(actor)).toContain('night-fighter');expect(actor.gear!.map(g=>g.id)).toEqual(['night','charm','charm2']);
   const ability=actor.abilities.find(a=>a.equipmentSourceId==='charm')!;
+  expect(actor.abilities.filter(a=>a.equipmentSourceId)).toHaveLength(2);
   expect(actor.preparedAbilityIds).not.toContain(ability.id);expect(abilityUsabilityReason(actor,ability)).toBeUndefined();
-  const restored=prepareInventoryState(JSON.parse(JSON.stringify(save)));expect(restored.storage![0]!.snapshot!.abilities.filter(a=>a.equipmentSourceId)).toHaveLength(1);
+  const restored=prepareInventoryState(JSON.parse(JSON.stringify(save)));expect(restored.storage![0]!.snapshot!.abilities.filter(a=>a.equipmentSourceId)).toHaveLength(2);
   expect(reviewMigration(JSON.parse(JSON.stringify(save)))).toBeUndefined();
-  apply({kind:'unequip',unitId:'a',slot:'accessory2'});actor=save.storage![0]!.snapshot!;
-  expect(actor.abilities.some(a=>a.equipmentSourceId==='charm')).toBe(false);expect(abilityUsabilityReason(actor,ability)).toContain('卸下');
-  apply({kind:'unequip',unitId:'a',slot:'accessory1'});expect(activeTraitIds(save.storage![0]!.snapshot!)).not.toContain('night-fighter');
+  apply({kind:'unequip',unitId:'a',slot:'gear',itemId:'charm'});actor=save.storage![0]!.snapshot!;
+  expect(actor.abilities.some(a=>a.equipmentSourceId==='charm')).toBe(false);expect(actor.abilities.some(a=>a.equipmentSourceId==='charm2')).toBe(true);
+  expect(abilityUsabilityReason(actor,ability)).toContain('卸下');
+  apply({kind:'unequip',unitId:'a',slot:'gear',itemId:'night'});expect(activeTraitIds(save.storage![0]!.snapshot!)).not.toContain('night-fighter');
 });
 
 it('restores the selected ally resource and consumes one physical item, with no repeated spend after restore',()=>{
-  const mechanics=compileItem({kind:'consumable',mechanism:'restore',power:3},{id:'dose',name:'回能药剂',seed:'dose'});
-  if(mechanics.kind!=='consumable')throw Error('fixture');
+  const mechanics=compileItem({kind:'item',form:'single',power:3,active:'generic:buff:restore'},{id:'dose',name:'回能药剂',seed:'dose'});
+  if(mechanics.kind!=='item')throw Error('fixture');
   const a=attachCarriedItems(unit('a'),[{id:'dose',name:'回能药剂',quantity:2,revision:1,mechanics}]),f=unit('f'),e=unit('e','enemy');
   const b=grid([a,f,e]);f.resources.SP=0;const before=a.resources.SP;
-  expect(b.useAbility(a.id,'item:dose',f.id).ok).toBe(true);expect(f.resources.SP).toBe(4);expect(a.resources.SP).toBe(before);expect(a.resources['item:dose']).toBe(1);
+  expect(b.useAbility(a.id,'item:dose',f.id).ok).toBe(true);expect(f.resources.SP).toBe(2);expect(a.resources.SP).toBe(before);expect(a.resources['item:dose']).toBe(1);
   const restored=SmallBattle.fromSnapshot(JSON.parse(JSON.stringify(b.toSnapshot())));
   expect(restored.useAbility(a.id,'item:dose',f.id).ok).toBe(false);expect(restored.byId(a.id).resources['item:dose']).toBe(1);
 });
 
-it('cleanses a carried medicine target and refuses vehicle repair on people without consuming it',()=>{
-  for(const mechanism of ['cleanse','repair'] as const){
-    const mechanics=compileItem({kind:'consumable',mechanism,power:3},{id:'dose',seed:'dose'});if(mechanics.kind!=='consumable')throw Error('fixture');
-    const a=attachCarriedItems(unit('a'),[{id:'dose',name:'药剂',quantity:1,revision:1,mechanics}]),b=grid([a,unit('e','enemy')]);a.conditions.push({id:'poisoned',dur:3});a.hp=50;
-    const result=b.useAbility(a.id,'item:dose',a.id);
-    expect(result.ok).toBe(mechanism==='cleanse');expect(a.resources['item:dose']).toBe(mechanism==='cleanse'?0:1);
-    if(mechanism==='cleanse')expect(a.conditions).toEqual([]);
+it('cleanses a carried medicine target; one healing item serves people and vehicles alike',()=>{
+  for(const [active,body] of [['generic:buff:cleanse','human'],['generic:buff:heal','human'],['generic:buff:heal','vehicle']] as const){
+    const mechanics=compileItem({kind:'item',form:'single',power:3,active},{id:'dose',seed:'dose'});if(mechanics.kind!=='item')throw Error('fixture');
+    const a=attachCarriedItems(unit('a'),[{id:'dose',name:'药剂',quantity:1,revision:1,mechanics}]),b=grid([a,unit('e','enemy')]);a.body=body;a.conditions.push({id:'poisoned',dur:3});a.hp=50;
+    expect(b.useAbility(a.id,'item:dose',a.id).ok).toBe(true);expect(a.resources['item:dose']).toBe(0);
+    if(active==='generic:buff:cleanse')expect(a.conditions).toEqual([]);else expect(a.hp).toBeGreaterThan(50);
   }
 });
 
@@ -96,7 +98,7 @@ it('line, cone, ring and chain select different targets with bounded, determinis
 });
 it('keeps the existing weapon classes plus the three user-approved additions and accepts broad names without extra required fields',()=>{
   for(const [name,id] of [['狙击枪','heavy-rifle'],['机枪','rifle'],['冲锋枪','rifle'],['霰弹枪','rifle'],['匕首','sword'],['投掷武器','throwing'],['枪械','rifle'],['法器','magic']])expect(resolveWeaponClass(name!)).toBe(id);
-  expect(parseItemSpecification('回能药剂L3').kind).toBe('consumable');expect(parseItemSpecification('夜视镜L3').kind).toBe('accessory');
+  expect(parseItemSpecification('回能药剂L3')).toMatchObject({kind:'item',form:'single'});expect(parseItemSpecification('夜视镜L3')).toMatchObject({kind:'item',form:'worn'});
 });
 
 it('the three approved weapon types differ without creating a large extra catalogue',()=>{
@@ -151,12 +153,12 @@ it('mass combat refuses orders from stunned units and corrupted new effect state
 it('equipped barrier abilities execute and keep spent uses after restoring either battle mode',()=>{
   for(const mode of ['small','mass']) {
     const a=unit('a','ally',mode==='mass'),e=unit('e','enemy',mode==='mass');
-    const item=compileItem({kind:'accessory',mechanism:'barrier',power:3},{id:'charm',seed:'charm'});if(item.kind!=='accessory')throw Error('fixture');
-    a.accessories={accessory1:item.value};syncAccessoryAbilities(a);const ability=a.abilities.find(s=>s.equipmentSourceId==='charm')!;
+    const item=compileItem({kind:'item',form:'charged',power:3,active:'generic:buff:barrier'},{id:'charm',seed:'charm'});if(item.kind!=='item')throw Error('fixture');
+    a.gear=[gearItem('charm','屏障护符',item.value)];syncGearAbilities(a);const ability=a.abilities.find(s=>s.equipmentSourceId==='charm')!;
     const b=mode==='small'?grid([a,e]):new MassBattle({combatants:[a,e],rules:V4_OVERFLOW_TW,seed:'shield-mass'});if(b instanceof MassBattle)b.start();
     const before=a.resources.SP!;expect(b.useAbility(a.id,ability.id,a.id).ok).toBe(true);
     if(b instanceof MassBattle){b.issue({unitId:e.id,type:'hold'});b.resolveRound();}
-    expect(a.barrier?.remaining).toBe(18);expect(a.resources.SP).toBe(before-2);expect(a.abilityState.find(s=>s.abilityId==='uses:'+ability.id)?.used).toBe(1);
+    expect(a.barrier?.remaining).toBe(23);expect(a.resources.SP).toBe(before);expect(a.abilityState.find(s=>s.abilityId==='uses:'+ability.id)?.used).toBe(1);
     const save=JSON.parse(JSON.stringify(b.toSnapshot())),restored=b instanceof SmallBattle?SmallBattle.fromSnapshot(save):MassBattle.fromSnapshot(save);
     expect(restored.byId(a.id).barrier).toEqual(a.barrier);expect(restored.byId(a.id).abilityState).toEqual(a.abilityState);
   }

@@ -78,7 +78,7 @@ describe('named reforge specifications and pre-deployment batches', () => {
     expect(parseItemSpecification(`制式步枪${separator}步枪 L4+1伤害`)).toMatchObject({ kind: 'weapon', mechanism: 'rifle', power: 4, bonuses: { damage: 1 } });
     expect(parseItemSpecification(`精制板甲${separator}重甲L3+2防护`)).toMatchObject({ kind: 'armor', tier: 3, power: 3, bonuses: { protection: 2 } });
     expect(parseItemSpecification(`圆盾${separator}盾L2+1防御`)).toMatchObject({ kind: 'shield', power: 2, bonuses: { defense: 1 } });
-    expect(parseItemSpecification(`药瓶${separator}治疗L3`)).toMatchObject({ kind: 'consumable', mechanism: 'heal', power: 3 });
+    expect(parseItemSpecification(`药瓶${separator}治疗L3`)).toMatchObject({ kind: 'item', form: 'single', active: 'generic:buff:heal', power: 3 });
   });
   it('preserves punctuation inside an explicit name before the colon', () => {
     expect(parseItemSpecification('制式·甲型/乙型:步枪L4')).toMatchObject({ kind: 'weapon', mechanism: 'rifle', power: 4 });

@@ -5,6 +5,8 @@ export * from './skill-attack.js';
 export * from './skill-effects.js';
 export * from './skill-movement.js';
 export * from './skill-model.js';
+export * from './item-model.js';
+export * from './trait-levels.js';
 export * from './afflictions.js';
 export * from './body.js';
 /**

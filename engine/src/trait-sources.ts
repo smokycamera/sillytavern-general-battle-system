@@ -2,7 +2,7 @@ import { physicalTraitIds, armorBurdenTier, hasNaturalArmor } from './body.js';
 import { traitsV13 } from './trait-model.js';
 /** 特质知识与外部授予分离；持续期/来源身份属于引擎，不交给正文重写。 */
 import type { Combatant, Trait, Weapon } from './types.js';
-import { traitRegistry } from './data/traits.js';
+import { traitRegistry, validateTraitLevels } from './data/traits.js';
 import { standardConditionMap } from './conditions.js';
 
 export type TraitDuration = { kind: 'permanent' } | { kind: 'rounds' | 'battles'; count: number };
@@ -11,10 +11,13 @@ export interface TraitSourceInput {
   id: string; name: string; kind: 'blessing' | 'equipment' | 'effect'; traitIds: string[];
   conditionIds?: string[];
   duration: TraitDuration; equipmentId?: string;
+  /** 专精等级（L1–10）；只记录五项专精，缺省 L5。 */
+  traitLevels?: Record<string, number>;
 }
 export interface TraitSource extends TraitSourceInput { remaining?: number; revoked?: boolean }
 function signature(source: TraitSourceInput): string {
-  return JSON.stringify([source.kind, source.name, [...new Set(source.traitIds)].sort(), [...new Set(source.conditionIds ?? [])].sort(), source.duration.kind, source.duration.kind === 'permanent' ? undefined : source.duration.count, source.equipmentId, source.battleOnly]);
+  return JSON.stringify([source.kind, source.name, [...new Set(source.traitIds)].sort(), [...new Set(source.conditionIds ?? [])].sort(), source.duration.kind, source.duration.kind === 'permanent' ? undefined : source.duration.count, source.equipmentId, source.battleOnly,
+    ...(source.traitLevels && Object.keys(source.traitLevels).length ? [Object.entries(source.traitLevels).sort(([a], [b]) => a.localeCompare(b))] : [])]);
 }
 export function validateTraitSource(source: TraitSource, registry = traitRegistry()): void {
   if (source?.battleOnly !== undefined && typeof source.battleOnly !== 'boolean') throw new Error('技能临时来源标记损坏');
@@ -29,6 +32,8 @@ export function validateTraitSource(source: TraitSource, registry = traitRegistr
   if (source.duration.kind !== 'permanent' && (!Number.isSafeInteger(source.duration.count) || source.duration.count < 1 || source.duration.count > 99
     || !Number.isSafeInteger(source.remaining) || source.remaining! < 0 || source.remaining! > source.duration.count)) throw new Error('特质来源剩余期限损坏');
   if (source.kind === 'equipment' && !source.equipmentId) throw new Error('装备授予缺少物品编号');
+  validateTraitLevels(source.traitLevels);
+  if (Object.keys(source.traitLevels ?? {}).some((id) => !source.traitIds.includes(id))) throw new Error('专精等级只能对应该来源授予的专精');
   if (source.traitIds.some((id) => ['large', 'titan'].includes(id))) throw new Error('身体特质由明确体型自动生效，不能用祝福凭空改变身体与生命');
   if (source.traitIds.some((id) => !registry.get(id)?.v2SourceReady)) throw new Error('该特质的外部来源处理过程尚未完成，不能只授予名字');
   if (source.traitIds.some((id) => id !== 'elite' && registry.get(id)?.effects.some((e) => e.kind === 'stat' && e.stat === 'hpMax'))) throw new Error('体量/生命上限特质需要明确身体与上限事务，不能用临时来源暗改上限');
@@ -56,7 +61,7 @@ export function expireTraitSources(unit: Combatant, boundary: 'rounds' | 'battle
 }
 export function traitSourceActive(unit: Combatant, source: TraitSource): boolean {
   if (source.revoked || source.duration.kind !== 'permanent' && !(source.remaining! > 0)) return false;
-  return source.kind !== 'equipment' || [unit.weapon?.id, unit.sidearm?.id, unit.armor?.id, unit.shield?.id, ...(unit.trinkets ?? []).map((t) => t.id)].includes(source.equipmentId);
+  return source.kind !== 'equipment' || [unit.weapon?.id, unit.sidearm?.id, unit.armor?.id, unit.shield?.id, ...(unit.gear ?? []).map((item) => item.id)].includes(source.equipmentId);
 }
 /** 构型而非物品名称决定重装性质；只派生当前装备，不写入永久特质或外部来源。 */
 export function armorTraitId(tier?: number): string | undefined {
@@ -77,7 +82,7 @@ export function equipmentTraitIds(unit: Pick<Combatant, 'rulesVersion' | 'armor'
   return [...(id ? [id] : []), ...(unit.scale !== undefined && autoLooseFormation(unit as Combatant) ? ['loose-formation'] : [])];
 }
 export function activeTraitIds(unit: Combatant): string[] {
-  return [...new Set([...unit.traits, ...physicalTraitIds(unit), ...equipmentTraitIds(unit), ...Object.values(unit.accessories ?? {}).flatMap(item => item?.traitId ? [item.traitId] : []), ...(unit.rulesVersion === 'v2' ? unit.traitSources?.filter((s) => traitSourceActive(unit, s)).flatMap((s) => s.traitIds) ?? [] : [])])];
+  return [...new Set([...unit.traits, ...physicalTraitIds(unit), ...equipmentTraitIds(unit), ...Object.values(unit.accessories ?? {}).flatMap(item => item?.traitId ? [item.traitId] : []), ...(unit.gear ?? []).flatMap(item => item.passive?.traits.map(grant => grant.id) ?? []), ...(unit.rulesVersion === 'v2' ? unit.traitSources?.filter((s) => traitSourceActive(unit, s)).flatMap((s) => s.traitIds) ?? [] : [])])];
 }
 export function activeConditionIds(unit: Combatant): string[] {
   return [...new Set([...unit.conditions.filter((c) => c.dur > 0).map((c) => c.id),

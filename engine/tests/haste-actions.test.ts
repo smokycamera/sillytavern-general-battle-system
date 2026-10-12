@@ -67,8 +67,8 @@ describe('每轮一次非技能加速动作',()=>{
   expect(b.issue({unitId:a.id,type:'ability',abilityId:haste.id,targetId:a.id}).ok).toBe(true);
   b.issue({unitId:'d',type:'hold'});b.setHasteOrder({unitId:a.id,type:'brace'},a.id);b.resolveRound();
   expect(a.tacticalPose?.kind).toBe('brace');expect(b.roundReport()?.orders.filter(o=>o.status==='executed')).toHaveLength(2);
-  const mechanics=compileItem({kind:'consumable',mechanism:'restore',power:1},{id:'potion',seed:'potion'});
-  if(mechanics.kind!=='consumable')throw Error('missing item');
+  const mechanics=compileItem({kind:'item',form:'single',power:1,active:'generic:buff:restore'},{id:'potion',seed:'potion'});
+  if(mechanics.kind!=='item')throw Error('missing item');
   const carried={id:'potion',name:'药剂',quantity:1,revision:0,mechanics};
   const item=carriedItemAbility(carried);a.carriedItems=[carried];a.abilities=[item];a.resources.SP=0;a.resources['item:potion']=1;
   b.issue({unitId:a.id,type:'hold'});b.issue({unitId:'d',type:'hold'});

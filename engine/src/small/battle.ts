@@ -11,7 +11,8 @@ import { isEnduranceModel, fatiguePenalty, abilityCost, prepareResourceModel, re
 import { actionPotential } from '../skill-tactics.js';
 import { hasteMagnitude, hasteAttackScale } from '../haste.js';
 import { commanderScores, normalizeCommanderProfiles, type CommanderProfiles } from '../commander-profile.js';
-import { validateAccessories } from '../items.js';
+import { validateGear, quickItemAction, itemUseAbility, itemEmergency, ITEM_EMERGENCY_DISCOUNT } from '../items.js';
+import { prepareItemModel, validateItemModel, itemsV15 } from '../item-model.js';
 import { areaTargets, zoneTarget, placeZone, settleZones, validateAreas, ZONE_NAMES } from '../area-effects.js';
 import { tbWeaponShortName } from '../weapon-name.js';
 import { grantBarrier, decayBarrier, validateBarrier } from '../barrier.js';
@@ -248,7 +249,7 @@ export class SmallBattle {
     for (const unit of this.combatants) unit.nonLethal = this.nonLethal;
     for (const unit of this.combatants) { calibrateAutocannon(unit.weapon); calibrateAutocannon(unit.sidearm); calibrateWeaponHands(unit.weapon); calibrateWeaponHands(unit.sidearm); }
     for (const unit of this.combatants) {
-      validateConcealment(unit.tacticalRevealed); validateFlightState(unit.airborne); validateWounded(unit); validateBarrier(unit.barrier); validateAreas(unit); validateAccessories(unit); validateMount(unit); validateMoraleState(unit.moraleState);
+      validateConcealment(unit.tacticalRevealed); validateFlightState(unit.airborne); validateWounded(unit); validateBarrier(unit.barrier); validateAreas(unit); validateGear(unit); validateMount(unit); validateMoraleState(unit.moraleState);
       if (unit.elevation !== undefined && (unit.elevation !== 1 || !this.battlefield?.layerVersion || unit.airborne || unit.pos !== undefined && !intactStructure(this.battlefield, unit.pos)?.top)) throw Error('平台站位数据不合法');
       if (unit.formationPosition !== undefined) throw new Error('实际会战阵位不能放入小战存档记录');
       if (unit.vanguardOrigin !== undefined) throw new Error('会战先锋来源不能放入小战存档记录');
@@ -256,7 +257,7 @@ export class SmallBattle {
     this.rules = opts.rules ?? LITE_D20;
     for (const unit of this.combatants) { validateSkillModel(unit.skillModel); prepareSkillModel(unit, this.rules); }
     if(this.rules.combatModel)for(const unit of this.combatants){prepareCombatModel(unit,this.rules);upgradeCombatSkills(unit);reconcileDamageMorale(unit);}
-    for (const unit of this.combatants) { prepareResourceModel(unit, this.rules); prepareArmsModel(unit, this.rules); prepareTraitModel(unit, this.rules); validateTraitModel(unit.traitModel); validateEntrenchment(unit.entrenchedAt); validateTacticalEffort(unit.tacticalEffort, unit.resourceModel); }
+    for (const unit of this.combatants) { prepareResourceModel(unit, this.rules); prepareArmsModel(unit, this.rules); prepareTraitModel(unit, this.rules); validateTraitModel(unit.traitModel); validateEntrenchment(unit.entrenchedAt); validateTacticalEffort(unit.tacticalEffort, unit.resourceModel); validateItemModel(unit.itemModel); prepareItemModel(unit, this.rules); }
     if (this.combatants.some((u) => u.airborne) && (!this.battlefield || this.rules.resolutionVersion !== 'v2')) throw new Error('空中状态需要V2二维战场');
     this.seed = opts.seed ?? randomSeed();
     this.rng = opts.rng ?? (opts.seed || this.rules.resolutionVersion === 'v2' ? new SeededRng(this.seed) : liveRng());
@@ -1157,7 +1158,8 @@ export class SmallBattle {
         targets: chargeTargets,
       },
     ];
-    for (const ability of actor.abilities) {
+    for (const listedAbility of actor.abilities) {
+      const ability = listedAbility;
       const usability = abilityUsabilityReason(actor, ability) ?? this.summonReason(actor, ability);
       const candidates = ability.target === 'enemy'
         ? foes
@@ -1168,8 +1170,10 @@ export class SmallBattle {
             : movementOnlySkill(ability) && this.battlefield ? (() => { const context = this.observationContext(); return this.skillLandingCells(actor, ability).flatMap((cell) => { const at = zoneTarget(context, actor, 'cell:' + cell); return at ? [at] : []; }); })()
             : ability.effects.some(e=>e.op==='zone') && this.battlefield ? (() => { const context=this.observationContext(), view=this.visibleCells(actor.side); return this.battlefield!.tiles.flatMap((_tile,cell)=>{ const at=view[cell]&&zoneTarget(context,actor,'cell:'+cell); return at?[at]:[]; }); })() : [];
       const targets = candidates.map((target) => {
+        // V15 编队用道具按件数折算；预览与实际使用同一份派生行动。
+        const itemUse = itemUseAbility(actor, listedAbility, target), ability = itemUse.ability;
         const targetReason = this.skillTargetReason(actor, ability, target);
-        const reason = actorReason ?? (ability.itemSourceId ? !economy.actionAvailable ? '本回合行动已使用' : undefined : this.hasteSelected.has(actorId) ? '加速动作不能使用技能' : this.actedThisTurn.has(actorId) ? '本回合主行动已使用' : undefined) ?? usability ?? targetReason;
+        const reason = actorReason ?? (quickItemAction(actor, ability) ? !economy.actionAvailable ? '本回合行动已使用' : undefined : this.hasteSelected.has(actorId) ? ability.itemSourceId ? '加速动作只能使用喝、敷类道具' : '加速动作不能使用技能' : this.actedThisTurn.has(actorId) ? '本回合主行动已使用' : undefined) ?? usability ?? targetReason ?? itemUse.reason;
         const damage = ability.effects.find((e) => e.op === 'damage');
         const healing = ability.effects.find((e) => e.op === 'heal');
         const moraleEffect = ability.effects.find((e) => e.op === 'morale');
@@ -1190,7 +1194,7 @@ export class SmallBattle {
         })) : [];
         return { targetId: target.id, enabled: !reason, ...(reason ? { reason } : {}), distance: this.dist(actor, target), rangeDistance: abilityRangeDistance(actor, this.battlefield ? gridAbility(ability) : ability, target, this.dist(actor, target)), ...(abilityHeightReach(actor, ability, target, this.dist(actor, target), this.battlefield) ? { heightReach: abilityHeightReach(actor, ability, target, this.dist(actor, target), this.battlefield) } : {}), ...(preview || landing || effects.length ? { preview: { ...preview, ...landing, ...(effects.length ? { effects } : {}), ...(area.length ? { areaTargets: area.map((u) => u.name), areaTargetIds: area.map((u) => u.id), areaPreviews } : {}) } } : {}) };
       });
-      const targetlessReason = actorReason ?? (ability.itemSourceId ? !economy.actionAvailable ? '本回合行动已使用' : undefined : this.hasteSelected.has(actorId) ? '加速动作不能使用技能' : this.actedThisTurn.has(actorId) ? '本回合主行动已使用' : undefined) ?? usability;
+      const targetlessReason = actorReason ?? (quickItemAction(actor, ability) ? !economy.actionAvailable ? '本回合行动已使用' : undefined : this.hasteSelected.has(actorId) ? ability.itemSourceId ? '加速动作只能使用喝、敷类道具' : '加速动作不能使用技能' : this.actedThisTurn.has(actorId) ? '本回合主行动已使用' : undefined) ?? usability;
       const enabled = candidates.length ? targets.some((target) => target.enabled) : !targetlessReason;
       options.push({
         id: ability.id,
@@ -1578,17 +1582,21 @@ export class SmallBattle {
     if (actor.conditions.some(c => c.dur > 0 && this.conditions.get(c.id)?.skipTurn))
       return { ok: false, reason: '当前状态无法行动', resolutions: [], log: '' };
     const originalAbility = actor.abilities.find((a) => a.id === abilityId);
-    const ability = originalAbility && (this.battlefield ? gridAbility(originalAbility) : originalAbility);
-    if (!ability) throw new Error(`${actor.name} 没有技能 ${abilityId}`);
-    if (ability.target === 'self' && targetId && targetId !== actor.id) {
+    const listed = originalAbility && (this.battlefield ? gridAbility(originalAbility) : originalAbility);
+    if (!listed) throw new Error(`${actor.name} 没有技能 ${abilityId}`);
+    if (listed.target === 'self' && targetId && targetId !== actor.id) {
       return { ok: false, reason: '该技能只能对自己施放', resolutions: [], log: '' };
     }
-    const chosenTarget = ability.target === 'self'
+    const chosenTarget = listed.target === 'self'
       ? actor
       : targetId
-        ? ability.target === 'zone' ? zoneTarget(this.observationContext(),actor,targetId) : this.byId(targetId)
-        : ability.target === 'ally' ? actor : undefined;
-    if (ability.target === 'zone' && !chosenTarget) return { ok:false, reason:'请指定有效地面位置', resolutions:[], log:'' };
+        ? listed.target === 'zone' ? zoneTarget(this.observationContext(),actor,targetId) : this.byId(targetId)
+        : listed.target === 'ally' ? actor : undefined;
+    if (listed.target === 'zone' && !chosenTarget) return { ok:false, reason:'请指定有效地面位置', resolutions:[], log:'' };
+    // V15：编队使用每人一份的道具时，按件数得到本次实际消耗与效果。
+    const itemUse = itemUseAbility(actor, listed, chosenTarget);
+    if (itemUse.reason) return { ok: false, reason: itemUse.reason, resolutions: [], log: '' };
+    const ability = itemUse.ability;
     const usabilityReason = abilityUsabilityReason(actor, ability);
     if (usabilityReason) return { ok: false, reason: usabilityReason, resolutions: [], log: '' };
     const targetReason = chosenTarget ? this.skillTargetReason(actor, ability, chosenTarget) : abilityTargetReason({ actor, ability });
@@ -1609,7 +1617,7 @@ export class SmallBattle {
           try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'small', ability.bonuses, this.rules.damageModel) ?? this.summonUnit?.(effect.templateId, actor.side, id); }
           catch { return { ok: false, reason: '召唤模板生成失败，未扣费', resolutions: [], log: '' }; }
           if (!unit) return { ok: false, reason: '召唤模板不可用，未扣费', resolutions: [], log: '' };
-          prepareSkillModel(unit, this.rules); prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules); prepareTraitModel(unit,this.rules);
+          prepareSkillModel(unit, this.rules); prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules); prepareTraitModel(unit,this.rules); prepareItemModel(unit,this.rules);
           unit.id = id; unit.summonerId = actor.id; unit.bornRound = this.round;
           if (conjuredTemplate(effect.templateId)) unit.name = `${actor.name}的${unit.name}`;
           const cell = neighbors(this.battlefield, actor.pos!).find((n) => canOccupy(this.battlefield!, [...this.combatants, ...summons], unit, n));
@@ -1618,10 +1626,10 @@ export class SmallBattle {
         }
       }
     }
-    if (!opts.bypassTurn && (ability.itemSourceId ? !this.nonSkillActionAvailable(actorId) : this.actedThisTurn.has(actorId) || this.hasteSelected.has(actorId))) {
+    if (!opts.bypassTurn && (quickItemAction(actor, ability) ? !this.nonSkillActionAvailable(actorId) : this.actedThisTurn.has(actorId) || this.hasteSelected.has(actorId))) {
       return { ok: false, reason: '本回合主行动已使用', resolutions: [], log: '' };
     }
-    const hasteAction = !opts.bypassTurn && !!ability.itemSourceId && this.usingHaste(actorId);
+    const hasteAction = !opts.bypassTurn && quickItemAction(actor, ability) && this.usingHaste(actorId);
     // 位移在扣费前规划：找不到落点时整次不扣费。
     const movementOnly = movementOnlySkill(ability);
     const movePlan = chosenTarget && !movementOnly ? this.skillMovePlan(actor, ability, chosenTarget) : {};
@@ -1834,7 +1842,7 @@ export class SmallBattle {
       if (retreat.path) this.executeSkillMove(actor, 'withdraw', retreat.path.cells.at(-1)!, retreat.path);
     }
     if ((this.battlefield || actor.resourceModel) && actor.rulesVersion === 'v2' && !opts.bypassTurn) addTacticalEffort(actor, skillExertion(actor, ability) + (charge ? 1 : 0));
-    if (!opts.bypassTurn) { if (ability.itemSourceId) this.spendAction(actorId, hasteAction); else this.actedThisTurn.add(actorId); }
+    if (!opts.bypassTurn) { if (quickItemAction(actor, ability)) this.spendAction(actorId, hasteAction); else this.actedThisTurn.add(actorId); }
     return { ok: true, resolutions, heal, log: text };
   }
 
@@ -2201,8 +2209,9 @@ export class SmallBattle {
         const volleyDamage = Math.min(memberHealth(target), preview.expectedDamage);
         plans.push({ score: baseScore + volleyDamage + (preview.conditionValue ?? 0) + (volleyDamage >= memberHealth(target) ? 4 : 0), offensive: volleyDamage + (preview.conditionValue ?? 0) > 0, path, targetId: target.id, weaponMode, kind: 'weapon' });
       }
-      for (const ability of actor.abilities) {
-        if (!ability.itemSourceId && (this.actedThisTurn.has(unitId) || this.hasteSelected.has(unitId))) continue;
+      for (const listedAbility of actor.abilities) {
+        const ability = listedAbility;
+        if (!quickItemAction(actor, ability) && (this.actedThisTurn.has(unitId) || this.hasteSelected.has(unitId))) continue;
         if (failedAbilities.has(ability.id) || abilityUsabilityReason(actor, ability) || this.summonReason(actor, ability)) continue;
         if (movementOnlySkill(ability)) continue;
         const candidates = ability.target === 'zone' ? this.visibleCombatants(actor.side).filter(u=>u.status==='ready') : ability.target === 'self' ? [actor] : ability.target === 'enemy' ? foes : this.combatants.filter((target) => target.side === actor.side
@@ -2219,6 +2228,10 @@ export class SmallBattle {
           return retreats.get(from.pos!)!;
         };
         for (const target of candidates) {
+          // V15 编队用道具按件数折算；与实际使用同一份派生行动。
+          const itemUse = itemUseAbility(actor, listedAbility, target);
+          if (itemUse.reason) continue;
+          const ability = itemUse.ability;
           // 突进/闪现只从当前位置估算：从落点出手，计入途中反应、落点受击与冲锋。
           let caster = actor, moveScore: number | undefined, move: ReturnType<SmallBattle['skillMovePlan']>['move'];
           if (this.skillTargetReasonAt(actor, ability, target)) {
@@ -2258,7 +2271,9 @@ export class SmallBattle {
           const landing = this.abilityFlightPreview(caster, target, ability);
           if (landing) benefit += Math.min(target.hp, landing.fallDamage) * (landing.fallChance ?? 1);
           for (const affected of ability.recipe || ability.itemSourceId || ability.equipmentSourceId ? this.abilityDamageTargets(caster, target, ability, ability.shape === 'burst') : [caster]) benefit += skillEffectValue(casterContext, caster, affected, { ...ability, effects: ability.effects.filter(e => e.op === 'resource') });
-          const cost = tacticalSkillCost(skillContext, actor, ability, expectedDamage);
+          // V15：治疗品对濒死或伤重的目标放开使用。
+          const cost = tacticalSkillCost(skillContext, actor, ability, expectedDamage)
+            * (ability.itemSourceId && itemsV15(actor) && ability.effects.some((e) => e.op === 'heal') && itemEmergency(target) ? ITEM_EMERGENCY_DISCOUNT : 1);
           if (benefit > cost) plans.push({ score: (moveScore ?? baseScore) + benefit - cost + retreatValue(caster), offensive: target.side !== actor.side, path, targetId: target.id, abilityId: ability.id, kind: 'ability' });
         }
       }
@@ -2518,7 +2533,7 @@ export class SmallBattle {
 
     // —— 技能候选（冷却/次数/资源门禁；射程门禁与 useAbility 同构）——
     for (const a of u.abilities) {
-      if ((!a.itemSourceId && (this.actedThisTurn.has(u.id) || this.hasteSelected.has(u.id))) || !this.abilityUsable(u, a)) continue;
+      if ((!quickItemAction(u, a) && (this.actedThisTurn.has(u.id) || this.hasteSelected.has(u.id))) || !this.abilityUsable(u, a)) continue;
       const damageEff = a.effects.find((e): e is Extract<EffectOp, { op: 'damage' }> => e.op === 'damage');
       const healEff = a.effects.find((e): e is Extract<EffectOp, { op: 'heal' }> => e.op === 'heal');
       const cost = (abilityCost(u, a)?.amount ?? 0) * 0.5; // 资源机会成本

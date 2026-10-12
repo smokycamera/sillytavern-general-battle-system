@@ -215,7 +215,7 @@ describe('正文原子事务', () => {
     const next = prepareNarrativeTransaction(save, proposal, ns, true);
     const weapons = next.inventory!.filter((i) => i.mechanics?.kind === 'weapon');
     expect(weapons).toHaveLength(2); expect(new Set(weapons.map((i) => i.id)).size).toBe(2);
-    expect(next.inventory!.find((i) => i.name === '急救剂')).toMatchObject({ qty: 3, mechanics: { kind: 'consumable' } });
+    expect(next.inventory!.find((i) => i.name === '急救剂')).toMatchObject({ qty: 3, lootType: 'item', mechanics: { kind: 'item', value: { recipe: { form: 'single', active: 'generic:buff:heal', power: 3 } } } });
     expect(next.inventory!.find((i) => i.name === '未知遗物')!.mechanics).toBeUndefined();
     expect(prepareNarrativeTransaction(save, proposal, ns, true)).toEqual(next);
   });

@@ -33,7 +33,7 @@ describe('存档迁移预览与回退', () => {
     expect(reviewMigration(review.candidate)).toBeUndefined();
   });
   it('坏库存与重复实物逐条隔离，未知名称不生成效果，冻结好物品不重算', () => {
-    const valid = createInventoryItem('good', '冻结药剂', { kind: 'consumable', mechanism: 'heal', power: 3 }, 'fixed', 2);
+    const valid = createInventoryItem('good', '冻结药剂', { kind: 'item', form: 'single', power: 3, active: 'generic:buff:heal' }, 'fixed', 2);
     const duplicate = { id: 'duplicate', name: '同名重复', qty: 1, lootType: 'misc' };
     const raw: NarrativeSave = { schemaVersion: 2, storage: [], rosterIds: [], inventory: [valid,
       { id: 'bad', name: '坏治疗', qty: 1, lootType: 'consumable', mechanics: { kind: 'consumable', effect: { op: 'heal', amount: -50 } } as never },

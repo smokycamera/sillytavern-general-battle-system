@@ -10,7 +10,8 @@ import { conditionChance } from '../engine/src/skill-effects.js';
 import { anchoredProtection, armorPowerScale } from '../engine/src/power-anchors.js';
 import { skillAttack } from '../engine/src/skill-attack.js';
 import { skillResourceChange } from '../engine/src/skill-runtime.js';
-import { compileItem, CONSUMABLE_NAMES, ACCESSORY_NAMES, type ConsumableKind, type AccessoryKind } from '../engine/src/items.js';
+import { compileItem, type ItemSpecification } from '../engine/src/items.js';
+import { parseSkillMechanism, skillMechanismId } from '../engine/src/data/skill-mechanisms.js';
 import type { Combatant, RulePack, Scale } from '../engine/src/types.js';
 
 const registry = traitRegistry(), conditionDefs = standardConditionMap();
@@ -57,10 +58,15 @@ for(const rules of [V4_D20,V4_TW])for(let power=1;power<=10;power++)for(const id
 }
 const output=process.argv.find(a=>a.startsWith('--output='))?.slice(9)??'engine/sim/out/equipment-balance.json';
 const items=[];
-for(let power=1;power<=10;power++) {
-  for(const mechanism of Object.keys(CONSUMABLE_NAMES) as ConsumableKind[])items.push({kind:'consumable',mechanism,power,mechanics:compileItem({kind:'consumable',mechanism,power},{id:mechanism,seed:'balance'})});
-  for(const mechanism of Object.keys(ACCESSORY_NAMES) as AccessoryKind[])items.push({kind:'accessory',mechanism,power,mechanics:compileItem({kind:'accessory',mechanism,power},{id:mechanism,seed:'balance'})});
-}
+// V15 道具：旧版 14 种药剂与护符的对照效果，按形态编译。
+const active=(text:string)=>skillMechanismId(parseSkillMechanism(text)!);
+const ITEM_SPECS:[string,Omit<Extract<ItemSpecification,{kind:'item'}>,'power'>][]=[
+  ...['增益治疗','增益回能','增益净化','增益伤害','增益屏障','物理范围投射'].map((text):[string,Omit<Extract<ItemSpecification,{kind:'item'}>,'power'>]=>[text,{kind:'item',form:'single',active:active(text)}]),
+  ...['增益治疗','增益屏障','增益净化'].map((text):[string,Omit<Extract<ItemSpecification,{kind:'item'}>,'power'>]=>['充能'+text,{kind:'item',form:'charged',active:active(text)}]),
+  ...[['守护','guardian'],['夜战专精','night-fighter'],['林地专精','forest-lore'],['耐力训练','fatigue-trained']].map(([name,id]):[string,Omit<Extract<ItemSpecification,{kind:'item'}>,'power'>]=>[name!,{kind:'item',form:'worn',traits:[{id:id!}],legacy:'audit'}]),
+];
+for(let power=1;power<=10;power++) for(const [name,spec] of ITEM_SPECS)
+  items.push({name,form:spec.form,power,mechanics:compileItem({...spec,power,...(spec.traits?{traits:spec.traits.map(t=>({...t,...(['night-fighter','forest-lore'].includes(t.id)?{level:power}:{})}))}:{})},{id:name,seed:'balance'})});
 mkdirSync(output.slice(0,output.lastIndexOf('/')),{recursive:true});
 writeFileSync(output,JSON.stringify({commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),
   method:'T5, deterministic generated equipment, P1–10; 4 V4 rule packs incl. overflow, hero/company(100), 5 armor tiers. Fixed firing positions, no movement/cover/skills. Per-action analytical previews; multi-hit/cohort results are approximations, NOT match win rates. sustained=damage/(reload+1), no sidearm during reload. Armor 4 profiles. Skill T5 human target, heavy armor, actual V4 upgrade.',

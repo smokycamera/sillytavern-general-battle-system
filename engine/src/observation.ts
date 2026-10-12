@@ -5,6 +5,9 @@ import type { BattleLogEntry, Combatant, ConditionDef, Side } from './types.js';
 import { standardConditionMap } from './conditions.js';
 const defaultConditions = standardConditionMap();
 import { activeTraitIds } from './trait-sources.js';
+import { traitLevel, nightSight, terrainStalks, MAX_NIGHT_SIGHT } from './trait-levels.js';
+import { itemsV15 } from './item-model.js';
+import { standingTerrain } from './small/height-map.js';
 import { formationDistance } from './mass/formation.js';
 import { gridDistance, lineOfSight, type BattlefieldSpec } from './small/spatial.js';
 import { unitLineOfSight } from './small/spatial.js';
@@ -36,8 +39,28 @@ function distanceBetween(context: ObservationContext, a: Combatant, b: Combatant
   const from = positionedUnit(context, a), to = positionedUnit(context, b), field = context.battlefield;
   return context.mode === 'mass' ? formationDistance(from, to) : field ? gridDistance(field, from.pos!, to.pos!) : Math.abs((from.pos ?? 0) - (to.pos ?? 0));
 }
+/** 单位脚下的地形：小战看格子（建筑格算建筑），会战看战场环境。 */
+function terrainsOf(context: ObservationContext, unit: Combatant): string[] {
+  if (context.mode === 'mass') return context.fieldTags;
+  const field = context.battlefield, at = positionedUnit(context, unit);
+  if (!field || at.pos === undefined) return [];
+  return [intactStructure(field, at.pos)?.kind === 'building' ? 'building' : standingTerrain(field, at) ?? ''];
+}
+/** 有潜伏特质，或 V15 专精够级且站在对应地形中（林地、山地 L8，巷战 L9）。 */
+const TERRAIN_STALK_TRAITS = ['forest-lore', 'mountain-born', 'urban-fighter'];
+function stalking(context: ObservationContext, unit: Combatant): boolean {
+  const traits = activeTraitIds(unit);
+  if (traits.includes('stalk')) return true;
+  // 观测每次配对都会经过这里：没有这三项专精的单位不必再查脚下地形。
+  return itemsV15(unit) && traits.some((id) => TERRAIN_STALK_TRAITS.includes(id)) && terrainsOf(context, unit).some((terrain) => terrainStalks(unit, terrain, traits));
+}
+/** 出手是否会暴露：能潜伏的单位都记一次暴露，之后离开或回到对应地形也要重新潜伏。 */
+function stalkCapable(unit: Combatant): boolean {
+  const traits = activeTraitIds(unit);
+  return traits.includes('stalk') || itemsV15(unit) && (['forest', 'hill', 'street'] as const).some((terrain) => terrainStalks(unit, terrain, traits));
+}
 function canConceal(context: ObservationContext, unit: Combatant): boolean {
-  return unit.rulesVersion === 'v2' && activeTraitIds(unit).includes('stalk') && unit.status === 'ready' && !unit.suppression && !isAirborne(unit)
+  return unit.rulesVersion === 'v2' && stalking(context, unit) && unit.status === 'ready' && !unit.suppression && !isAirborne(unit)
     && !unit.conditions.some((c) => c.dur > 0 && (context.conditions ?? defaultConditions).get(c.id)?.skipTurn);
 }
 /** 此刻仍处在潜伏中（未暴露）；偷袭在出手暴露之前读取。 */
@@ -49,7 +72,7 @@ export function canSpot(context: ObservationContext, observer: Combatant, target
   if (observer.status !== 'ready') return false;
   // 夜间先按最远夜视（夜战专长）剪掉远处的配对，不必追视线或查特质；白天照旧先判视线。判定结果不变。
   const night = context.fieldTags.includes('night'), early = night ? distanceBetween(context, observer, target) : undefined;
-  if (early !== undefined && early > (context.mode === 'small' ? 6 : 4)) return false;
+  if (early !== undefined && early > MAX_NIGHT_SIGHT[context.mode]) return false;
   const from = positionedUnit(context, observer), to = positionedUnit(context, target);
   const field = context.battlefield;
   if (field && !unitLineOfSight(field, from, to) || smokeBlocks(context,from,to)) return false;
@@ -57,12 +80,11 @@ export function canSpot(context: ObservationContext, observer: Combatant, target
   // 侦察（斥候、观察员、神识）识破潜伏的距离翻倍；只在目标确实隐匿时才查观察者特质。
   if (canConceal(context, subject) && !subject.tacticalRevealed && distance > (context.mode === 'small' ? 2 : 1) * (activeTraitIds(observer).includes('recon') ? 2 : 1)) return false;
   if (!night) return true;
-  const range = activeTraitIds(observer).includes('night-fighter') ? (context.mode === 'small' ? 6 : 4) : (context.mode === 'small' ? 3 : 2);
-  return distance <= range;
+  return distance <= nightSight(traitLevel(observer, 'night-fighter'), context.mode);
 }
 export function revealUnit(context: ObservationContext, unit: Combatant): void {
   for (const subject of [unit, hostOf(context, unit)].filter((u): u is Combatant => !!u)) {
-    if (subject.rulesVersion === 'v2' && activeTraitIds(subject).includes('stalk')) subject.tacticalRevealed = true;
+    if (subject.rulesVersion === 'v2' && stalkCapable(subject)) subject.tacticalRevealed = true;
   }
 }
 export function revealContacts(context: ObservationContext): void {
@@ -73,7 +95,7 @@ export function revealContacts(context: ObservationContext): void {
 }
 export function canReconceal(context: ObservationContext, unit: Combatant): boolean {
   if (!canConceal(context, unit) || !unit.tacticalRevealed || hostOf(context, unit)) return false;
-  const cover = context.mode === 'small' ? (['forest', 'cover'].includes(context.battlefield?.tiles[unit.pos!] ?? '') || !!context.battlefield?.layerVersion && (['cover', 'fortification'].includes(intactStructure(context.battlefield, unit.pos!)?.kind ?? '') || !!context.battlefield.overlays?.[unit.pos!]?.includes('rubble'))) : context.fieldTags.some((tag) => ['forest', 'urban', 'siege'].includes(tag));
+  const cover = itemsV15(unit) && !activeTraitIds(unit).includes('stalk') ? true : context.mode === 'small' ? (['forest', 'cover'].includes(context.battlefield?.tiles[unit.pos!] ?? '') || !!context.battlefield?.layerVersion && (['cover', 'fortification'].includes(intactStructure(context.battlefield, unit.pos!)?.kind ?? '') || !!context.battlefield.overlays?.[unit.pos!]?.includes('rubble'))) : context.fieldTags.some((tag) => ['forest', 'urban', 'siege'].includes(tag));
   if (!cover && !context.fieldTags.includes('night')) return false;
   return !context.units.some((foe) => foe.side !== unit.side && foe.status === 'ready' && distanceBetween(context, unit, foe) <= (context.mode === 'small' ? 2 : 1)
     && (!context.battlefield || unitLineOfSight(context.battlefield, positionedUnit(context, unit), positionedUnit(context, foe))));
@@ -83,7 +105,7 @@ export function settleConcealment(context: ObservationContext, unit: Combatant, 
   delete unit.tacticalRevealed; return true;
 }
 export function concealmentLabel(context: ObservationContext, unit: Combatant): string | undefined {
-  if (!activeTraitIds(unit).includes('stalk') || unit.rulesVersion !== 'v2') return undefined;
+  if (unit.rulesVersion !== 'v2' || !stalkCapable(unit)) return undefined;
   if (hostOf(context, unit)) return '随队隐蔽以所在编队为准';
   if (unit.tacticalRevealed) return canReconceal(context, unit) ? '已暴露，原地休整可重新潜伏' : '已暴露，需要掩护并脱离近敌';
   return canConceal(context, unit) ? '潜伏中，近距离仍会被侦察' : '潜伏受压制或失能影响';

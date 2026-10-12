@@ -144,7 +144,7 @@ const enumAliases: Record<string, Record<string, string>> = {
   archetype: { 步兵: 'infantry', 近战: 'infantry', 射手: 'ranged', 远程: 'ranged', 机动: 'mobile', 骑兵: 'mobile' },
   body: { 人类: 'human', 人形: 'human', 大型: 'large', 载具: 'vehicle', 巨型: 'giant', 巨兽: 'giant' },
   light: { 白天: 'day', 日间: 'day', 夜晚: 'night', 夜间: 'night' },
-  type: { 武器: 'weapon', 护甲: 'armor', 消耗品: 'consumable', 材料: 'material', 任务: 'quest', 杂物: 'misc' },
+  type: { 武器: 'weapon', 护甲: 'armor', 道具: 'item', 消耗品: 'item', 配件: 'item', consumable: 'item', accessory: 'item', 材料: 'material', 任务: 'quest', 杂物: 'misc' },
   protection: { 均衡: 'balanced', 动能: 'kinetic', 热能: 'thermal', 奥术: 'arcane' },
   enchant: { 无: 'none', 热能: 'thermal', 奥术: 'arcane' },
 };

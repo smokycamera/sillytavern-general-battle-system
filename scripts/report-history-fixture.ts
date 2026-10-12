@@ -11,7 +11,7 @@ const storage=['A','D'].map(id=>{
  u.id=id;if(id==='A')u.recoverableWounded=50;return unitRecordFromCombatant(u);
 });
 const before=prepareInventoryState({schemaVersion:2,factRevision:1,storage,rosterIds:['A','D'],protagonistId:'A',commanderId:'A',autoTurn:false,autoAllyOrders:false,autoSettleXp:true,
- inventory:[{...createInventoryItem('dose','重战急救剂',{kind:'consumable',mechanism:'heal',power:3},'dose',2),assignedTo:'A'}]}) as NarrativeSave;
+ inventory:[{...createInventoryItem('dose','重战急救剂',{kind:'item',form:'single',power:3,active:'generic:buff:heal'},'dose',2),assignedTo:'A'}]}) as NarrativeSave;
 const units=prepareBattleItems(before.storage!.map(r=>materializeUnitRecord(r,registry)),before);
 const b=mass?new MassBattle({combatants:units,rules:V3_TW,seed:'report-original',traitRegistry:registry,commanderId:'A'}):new SmallBattle({combatants:units,rules:V3_D20,seed:'report-original',battlefield:standardField(),traitRegistry:registry});
 b.start();const start=captureBattleStart(b,captureBattleArchive(before)),initial={...before,battle:{kind:start.kind,snap:structuredClone(b.toSnapshot())}};

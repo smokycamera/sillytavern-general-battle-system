@@ -45,7 +45,7 @@ import { calibrateAutocannon, calibrateWeaponHands } from '../../engine/src/gen/
 import { gridWeaponRange } from '../../engine/src/small/weapon-range.js';
 import { formationWeaponRange } from '../../engine/src/melee.js';
 import { movementLabel } from '../../engine/src/tactics.js';
-const resourceLabel = (key: string) => key === 'SP' ? '精力' : key === 'reserve' ? '预备兵力' : key.startsWith('item:') ? '消耗品' : key;
+const resourceLabel = (key: string) => key === 'SP' ? '精力' : key === 'reserve' ? '预备兵力' : key.startsWith('item:') ? '道具' : key;
 import { spCapacity, abilityCost, spRecovery, prepareResourceModel, skillExertion, resourceRound } from '../../engine/src/resources.js';
 import { PROMPT_SECTIONS, applySettlementPrompt, promptSelected, selectPromptEntries, renderPromptSettings, type PromptSectionId } from './prompt-settings.js';
 import { needsNarrativeDeploymentRestore } from './narrative-state.js';
@@ -54,7 +54,7 @@ import { newUnitDraft, unitDraftFromRecord, buildUnit, editUnitBuild, type UnitD
 import { MAX_SCENE_UNITS } from './narrative-limits.js';
 import { recommendBattleMode, extendSmallRoundLimit, upgradeDefaultObjective, normalizeObjectiveMode, prepareBattleObjective, battleCapacityIssue, type BattleObjectiveMode } from './battle-setup.js';
 import { unitForm, captureUnitDraft, buildPreview } from './unit-form.js';
-import { BODY, effectiveProtection, looseFormation, ABILITY_BLUEPRINTS } from '../../engine/src/index.js';
+import { BODY, effectiveProtection, looseFormation, ABILITY_BLUEPRINTS, itemSpecText, itemsV15, isGradedTrait, traitLevel, traitLadderSummary, traitDisplayName, itemUseAbility, type Trait } from '../../engine/src/index.js';
 /**
  * 战阵 · 面板主程序
  * 编排：编制管理（造怪器）→ 小规模战斗 / 军团会战 → 结算卡与状态输出；
@@ -67,7 +67,7 @@ import {
   generateUnit, traitCatalog, traitRegistry, resolveTraitId,
   SmallBattle, MassBattle, battleXpAwardsForBothSides, applyXp, xpProgress, approx, approxDelta,
   armorDR, fieldModsFor, LITE_D20,
-  V5_D20, V6_D20, V11_OVERFLOW_D20, V12_OVERFLOW_D20, V14_OVERFLOW_D20, prepareArmsModel, prepareTraitModel, prepareSkillModel, isAirborne, abilityUsabilityReason,
+  V5_D20, V6_D20, V11_OVERFLOW_D20, V12_OVERFLOW_D20, V15_OVERFLOW_D20, prepareArmsModel, prepareTraitModel, prepareSkillModel, prepareItemModel, isAirborne, abilityUsabilityReason,
   generatedField, generatedLayeredField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
   FORMATION_NODES, formationNode, concealmentLabel,
   type Combatant, type GenerateInput, type Order, type BattleLogEntry, type Side,
@@ -610,7 +610,7 @@ function restore(): void {
   }
   // 旧存档已结算标记也封口，不能因旧版缺少完整战果 id 而重写最新档案。
   const restoredBattle = currentBattle();
-  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V14_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V12_OVERFLOW_D20);prepareTraitModel(unit,V14_OVERFLOW_D20);}
+  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V15_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V12_OVERFLOW_D20);prepareTraitModel(unit,V15_OVERFLOW_D20);prepareItemModel(unit,V15_OVERFLOW_D20);}
   if (restoredBattle && state.xpSettled) {
     const id = battleOutcomeId(state.mass ? 'mass' : 'small', restoredBattle.seed);
     if (!state.committedOutcomeIds.includes(id)) state.committedOutcomeIds.push(id);
@@ -679,7 +679,7 @@ function defaultRank(u: Pick<Combatant, 'archetype'>): 'front' | 'rear' | 'reser
 async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {}): Promise<void> {
   // 特质去重：AI 标签/面板勾选可能重复给同一特质
   const { unit } = generateUnit({ ...input, rulesVersion: 'v2', damageModel: 'wounds-v2', era: undefined, traits: [...new Set(input.traits)] }, { registry: reg });
-  prepareSkillModel(unit, V14_OVERFLOW_D20); prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit); prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V12_OVERFLOW_D20); prepareTraitModel(unit, V14_OVERFLOW_D20);
+  prepareSkillModel(unit, V15_OVERFLOW_D20); prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit); prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V12_OVERFLOW_D20); prepareTraitModel(unit, V15_OVERFLOW_D20); prepareItemModel(unit, V15_OVERFLOW_D20);
   // id 去重
   state.idSeq++;
   state.roster.push(unit);
@@ -693,7 +693,7 @@ async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {})
 /** 储存器档案实体化为本场编制，保留稳定 id、当前兵力、状态和玩家编辑过的基础属性。 */
 function materializeStorageUnit(r0: RosterUnit): Combatant {
   const unit=materializeUnitRecord(r0, reg, { era: state.era });
-  if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V14_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V12_OVERFLOW_D20);prepareTraitModel(unit,V14_OVERFLOW_D20);}
+  if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V15_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V12_OVERFLOW_D20);prepareTraitModel(unit,V15_OVERFLOW_D20);prepareItemModel(unit,V15_OVERFLOW_D20);}
   return unit;
 }
 
@@ -1145,7 +1145,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   rows.push(`<span>攻 <b>${atkPlus}</b></span>`);
   rows.push(`<span>防 <b>${u.base.def}</b></span>`);
   rows.push(`<span>速 <b>${u.base.spd}</b></span>`);
-  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${approx(trainingDamage(u.level,currentBattle()?.rules??V14_OVERFLOW_D20), 2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
+  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${approx(trainingDamage(u.level,currentBattle()?.rules??V15_OVERFLOW_D20), 2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
   rows.push(`<span>${u.scale === 'hero' ? '生命' : u.body==='vehicle'?'载具数':'人数'} <b>${u.hp}/${u.base.hpMax}</b></span>`);
   if(u.combatModel&&u.scale!=='hero')rows.push(`<span>单个${u.body==='vehicle'?'载具':'成员'}最大生命 <b>${memberDurability(u)}</b></span>`);
   if (u.base.moraleMax !== undefined) rows.push(`<span>士气 <b>${u.base.moraleMax}</b></span>`);
@@ -1180,8 +1180,8 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
     rows.push(`<div class="eq"><b>护甲</b> ${esc(u.armor.name)}：${tierNames[u.armor.tier] ?? u.armor.tier}档${u.armor.drScale && u.armor.drScale !== 1 ? `（效率×${u.armor.drScale}）` : ''}｜实际减伤 <b>${dr}%</b>${gapHint}${overflow ? '<span class="dim">（特质护甲加成超出4档上限，溢出无效）</span>' : ''}</div>`);
     }
   }
-  if (u.trinkets?.length) {
-    rows.push(`<div class="eq"><b>饰品</b> ${u.trinkets.map((t) => esc(t.name)).join('、')}</div>`);
+  if (u.gear?.length) {
+    rows.push(`<div class="eq"><b>佩戴</b> ${u.gear.map((g) => esc(g.name) + '（' + esc(itemSpecText(g.recipe)) + '）').join('、')}</div>`);
   }
 
   // 技能
@@ -1209,9 +1209,12 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   if (activeTraitIds(u).length) {
     // 前提不满足的特质照常列出，但标明未生效及原因（如个体写了骑射却没有坐骑）。
     const inactive = (id: string) => u.rulesVersion === 'v2' ? traitPrerequisiteReason(u, id) : undefined;
-    const names = activeTraitIds(u).map((id) => (reg.get(id)?.name ?? id) + (inactive(id) ? '（未生效）' : '')).join('、');
+    const active = activeTraitIds(u), shown = (id: string) => traitDisplayName(u, id, reg.get(id)?.name ?? id, active);
+    const names = active.map((id) => shown(id) + (inactive(id) ? '（未生效）' : '')).join('、');
     rows.push(`<div class="eq"><b>特质</b> ${esc(names)}</div>`);
-    rows.push(`<details><summary>特质效果</summary>${activeTraitIds(u).map((id) => { const trait = reg.get(id), reason = inactive(id); return `<div>${esc(trait?.name ?? id)}：${reason ? `<b>未生效：${esc(reason)}</b>。` : ''}${esc(trait ? (trait.legacy ? trait.legacy.note + '，旧特质继续生效：' : '') + traitDescription(trait, u) : '未知定义')}</div>`; }).join('')}</details>`);
+    // V15 的五项专精按等级说明累计效果；其余特质沿用规则版本对应的描述。
+    const effect = (id: string, trait: Trait) => isGradedTrait(id) && itemsV15(u) ? traitLadderSummary(id, traitLevel(u, id, active)).replace(/^L\d+：/, '') : traitDescription(trait, u);
+    rows.push(`<details><summary>特质效果</summary>${active.map((id) => { const trait = reg.get(id), reason = inactive(id); return `<div>${esc(shown(id))}：${reason ? `<b>未生效：${esc(reason)}</b>。` : ''}${esc(trait ? (trait.legacy ? trait.legacy.note + '，旧特质继续生效：' : '') + effect(id, trait) : '未知定义')}</div>`; }).join('')}</details>`);
   }
   if (u.traitSources?.length) {
     rows.push(`<div class="trait-sources" data-role="trait-sources">${u.traitSources.map((source) => {
@@ -1492,7 +1495,7 @@ function renderRole(): string {
   const armor = hero.armor
     ? `<div class="eq"><b>护甲</b> ${esc(hero.armor.name)}（${tierNames[hero.armor.tier] ?? hero.armor.tier}档${hero.armor.drScale && hero.armor.drScale !== 1 ? ` 效率×${hero.armor.drScale}` : ''}）</div>`
     : '';
-  const trinket = hero.trinkets?.length ? `<div class="eq"><b>饰品</b> ${hero.trinkets.map((t) => esc(t.name)).join('、')}</div>` : '';
+  const trinket = hero.gear?.length ? `<div class="eq"><b>佩戴</b> ${hero.gear.map((g) => esc(g.name)).join('、')}</div>` : '';
   const conds = hero.conditions.length ? `<div class="eq"><b>状态</b> ${hero.conditions.map((c) => esc(c.id) + '(' + c.dur + ')').join('、')}</div>` : '';
   const traits = hero.traits.length ? `<div class="eq"><b>特质</b> ${esc(hero.traits.map((id) => reg.get(id)?.name ?? id).join('·'))}</div>` : '';
   const opened = state.expandedUnits.has(`role:${hero.id}`);
@@ -1720,7 +1723,10 @@ function renderAbilityDialog(): string {
           return `<option value="${esc(u.id)}" ${u.id === selected ? 'selected' : ''}>${esc(unitLabel(u, `（生命${u.hp}/${u.base.hpMax}${distance}）`))}</option>`;
         }).join('')}</select>`
       : '<span class="tag">无需选择</span>';
-  const resource = ability.cost ? `${ability.itemSourceId ? '物品剩余/消耗' : resourceLabel(ability.cost.resource)} ${approx(actor.resources[ability.cost.resource] ?? 0, 1, 'down')}/${abilityCost(actor, ability)!.amount}` : '无消耗';
+  // V15 编队齐用按件数：显示对所选目标本次实际消耗的件数。
+  const itemUse = ability.itemSourceId ? itemUseAbility(actor, ability, ability.target === 'self' ? actor : targets.find((u) => u.id === selected)) : undefined;
+  const resource = ability.cost ? itemUse ? `道具剩余 ${approx(actor.resources[ability.cost.resource] ?? 0, 1, 'down')} 件，本次消耗 ${itemUse.ability.cost?.amount ?? ability.cost.amount} 件`
+    : `${resourceLabel(ability.cost.resource)} ${approx(actor.resources[ability.cost.resource] ?? 0, 1, 'down')}/${abilityCost(actor, ability)!.amount}` : '无消耗';
   const massV2 = isMassBattle(b) && b.rules.resolutionVersion === 'v2';
   const unavailable = massV2 ? b.abilityOrderReason(actor.id, ability.id, selected) : smallOption?.reason;
   const recoveryTarget = targets.find((u) => u.id === selected);
@@ -1932,7 +1938,7 @@ function buildContextInject(): string {
     const eq: string[] = [];
     if (hero.weapon) eq.push(`武器：${hero.weapon.name}(${hero.weapon.baseDice}${hero.weapon.apDice ? '+破甲' + hero.weapon.apDice : ''})`);
     if (hero.armor) eq.push(`护甲：${hero.armor.name}(${hero.armor.tier}档)`);
-    if (hero.trinkets?.length) eq.push(`饰品：${hero.trinkets.map((t) => t.name).join('、')}`);
+    if (hero.gear?.length) eq.push(`佩戴：${hero.gear.map((g) => g.name).join('、')}`);
     lines.push(`【战阵·角色状态】name=${hero.name}（等级${hero.level}）`);
     lines.push(`属性：攻${hero.base.atk}/防${hero.base.def}/速${hero.base.spd}/生命${hero.hp}/${hero.base.hpMax}｜经验 ${xpS}`);
     if (eq.length) lines.push(`装备：${eq.join('；')}`);
@@ -2110,7 +2116,9 @@ function suggestionDesc(s: Suggestion, batch: Suggestion[] = []): string {
       const arm = 'armorName' in s ? (s.armorName ?? s.armor) : undefined;
       // 个体上限按训练推导，正文 hp/hpMax 只表示建档时的伤势比例。
       const wound = (s.scale ?? 'hero') === 'hero' && s.hp !== undefined && s.hpMax && s.hp < s.hpMax ? `·当前生命约${Math.max(1, Math.round(s.hp / s.hpMax * 100))}%` : '';
-      return `${s.archiveOnly ? '新建档案' : '新增'} ${s.name}×${s.count}（训练${s.level}${s.scale ? '·' + scaleLabel({ scale: s.scale, rulesVersion: 'v2' }) : ''}${wep ? `·${wep}` : ''}${arm ? `·${arm}` : ''}${s.skills?.length ? `·技能×${s.skills.length}` : ''}${wound}）`;
+      // 随身道具每张卡各一套：列名称与件数，佩戴、充能道具会自动装上。
+      const items = s.items?.length ? '·随身' + s.items.map((i) => i.name + (i.qty > 1 ? '×' + i.qty : '')).join('、') : '';
+      return `${s.archiveOnly ? '新建档案' : '新增'} ${s.name}×${s.count}（训练${s.level}${s.scale ? '·' + scaleLabel({ scale: s.scale, rulesVersion: 'v2' }) : ''}${wep ? `·${wep}` : ''}${arm ? `·${arm}` : ''}${s.skills?.length ? `·技能×${s.skills.length}` : ''}${items}${wound}）`;
     }
   }
 }
