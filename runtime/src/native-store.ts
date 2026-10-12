@@ -16,6 +16,9 @@ export class NativeStore {
   private current?: NativeEnvelope;
   private active?: HostSession;
   private queue: Promise<unknown> = Promise.resolve();
+  /** Queued reads and writes not yet settled; a swapped-in host context is only adopted while idle. */
+  private busy = 0;
+  private loads = 0;
   private pending?: RecoveryRecord;
   constructor(private host: MetadataPort, private journal: RecoveryJournal) {}
   snapshot(): NarrativeSave { return structuredClone(this.current?.payload ?? {}); }
@@ -30,10 +33,25 @@ export class NativeStore {
     return { status, session, operationId, ...(error === undefined ? {} : { error: errorText(error) }) };
   }
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
-    const result = this.queue.then(task, task); this.queue = result.catch(() => undefined); return result;
+    this.busy++;
+    const result = this.queue.then(task, task).finally(() => { this.busy--; }); this.queue = result.catch(() => undefined); return result;
+  }
+  /**
+   * The host can swap in a new metadata or chat object for the same chat without CHAT_CHANGED
+   * (TauriTavern's updateChatMetadata, other extensions). While idle, keep the loaded archive
+   * when the new object still holds exactly this head; anything else still needs a reload.
+   */
+  adoptContext(): boolean {
+    const active = this.active, session = this.host.session();
+    if (!active || !session) return false;
+    if (sameSession(active, session)) return true;
+    if (this.busy || this.pending || active.scope.key !== session.scope.key) return false;
+    const shown: unknown = this.host.metadata()?.tavernBattle;
+    if (this.current ? !(shown && typeof shown === 'object' && matches(shown as NativeEnvelope, this.current)) : shown !== undefined) return false;
+    this.active = session; return true;
   }
   load(): Promise<void> {
-    const session = this.host.session();
+    const session = this.host.session(), load = ++this.loads;
     this.current = undefined; this.active = undefined; this.pending = undefined;
     return this.enqueue(async () => {
     if (!session) throw Error('无法确认当前是哪个角色聊天，暂时不能读取战阵存档');
@@ -42,8 +60,11 @@ export class NativeStore {
     if (envelope && await payloadHash(envelope.payload) !== envelope.payloadHash) throw Error(CORRUPT + '，没有读取');
     const pending = await this.journal.get(session.scope.key);
     if (pending && (pending.session.scope.key !== session.scope.key || await payloadHash(pending.candidate.payload) !== pending.candidate.payloadHash)) throw Error('浏览器里记录的未完成保存已损坏，无法继续使用');
-    if (!sameSession(session, this.host.session())) return;
-    this.current = envelope; this.active = session;
+    // A metadata object swapped in for the same chat during the read leaves the file read valid;
+    // a later load (another chat, or back again) owns the result instead.
+    const now = this.host.session();
+    if (load !== this.loads || now?.scope.key !== session.scope.key) return;
+    this.current = envelope; this.active = now;
     if (pending && matches(envelope, pending.candidate)) {
       if (await this.effectsVerified(session, pending)) await this.journal.remove(session.scope.key, pending.candidate.lastOperationId);
       else { this.current = structuredClone(pending.previous); this.pending = pending; }

@@ -18,6 +18,8 @@ import { prepareNarrativeIds } from '../../panel/src/narrative-ids.js';
 import { narrativeAutoApproval, prepareAiScanProposal } from '../../panel/src/narrative-state.js';
 
 const PROMPT_ID = 'tavern-battle-native:context';
+/** Shown on a reply that waits for confirmation although auto-approve is on. */
+const AUTO_APPROVE_SKIPPED = '自动批准只处理档案就绪后生成并直接收到的回复；这条不符合（例如刚进聊天时档案还在读取，或回复被编辑、切换过），请核对后确认';
 export interface CommandVersion { session: HostSession; revision: number; generation?: string }
 export interface ServiceState {
   phase: 'loading' | 'import' | 'handoff' | 'ready' | 'pending' | 'review' | 'error' | 'disposed';
@@ -46,14 +48,16 @@ export class BattleService {
   readonly capabilities = { beforeGeneration: false, generationEnded: false, messageIdentity: false, injection: false };
   constructor(readonly host: NativeHost, readonly store: NativeStore, private initialize?: () => Promise<boolean>) {}
   snapshot(): NarrativeSave { return this.store.snapshot(); }
-  canWrite(): boolean { return ['ready', 'review'].includes(this.phase) && !this.store.hasPending() && sameSession(this.store.session(), this.host.session()) && !this.host.hasLegacyRuntime(); }
+  /** The archive belongs to the host's current context; a same-chat object swap that still holds it is adopted. */
+  private inSync(): boolean { return sameSession(this.store.session(), this.host.session()) || this.store.adoptContext(); }
+  canWrite(): boolean { return ['ready', 'review'].includes(this.phase) && !this.store.hasPending() && this.inSync() && !this.host.hasLegacyRuntime(); }
   writeBlockReason(): string | undefined {
     if (this.disposed) return '战阵服务已关闭，请重新打开战阵';
     if (this.host.hasLegacyRuntime()) return '旧战阵脚本仍在运行，请停用旧脚本后重新打开';
     if (!this.host.session()) return '当前聊天尚未载入，请先打开角色聊天';
     if (this.phase === 'loading') return '正在读取当前聊天档案';
     if (this.phase === 'error') return this.error ?? '存档读取失败，请点“重新读取存档”';
-    if (!sameSession(this.store.session(), this.host.session())) return '聊天已刷新，请点“重新读取存档”或重新扫描';
+    if (!this.inSync()) return '聊天已刷新，请点“重新读取存档”或重新扫描';
     if (this.phase === 'pending' || this.store.hasPending()) return '上一次保存还没确认成功，请先处理上方提示';
     if (this.phase === 'import') return '发现旧战阵存档，请先选择采用旧档或从空档开始';
     if (this.phase === 'handoff') return '档案已交回旧脚本，请先在存档管理中迁回原生版';
@@ -70,12 +74,13 @@ export class BattleService {
     }
   }
   version(): CommandVersion {
-    const session = this.store.session();
-    if (!session || !sameSession(session, this.host.session()) || this.phase !== 'ready' && this.phase !== 'review') throw Error('当前档案尚未就绪');
+    const session = this.inSync() ? this.store.session() : undefined;
+    if (!session || this.phase !== 'ready' && this.phase !== 'review') throw Error('当前档案尚未就绪');
     const envelope = this.store.head();
     return { session, revision: envelope?.revision ?? 0, generation: envelope?.generation };
   }
   inventoryContext(): string {
+    this.inSync();
     const session = this.store.session();
     return JSON.stringify([session?.scope.key, session?.epoch, this.store.head()?.generation]);
   }
@@ -97,7 +102,7 @@ export class BattleService {
     try {
       await loading;
       if (this.disposed || epoch !== this.loadEpoch) return;
-      if (!sameSession(this.store.session(), this.host.session())) throw Error('载入时聊天已切换');
+      if (!this.inSync()) throw Error('载入时聊天已切换');
       if (this.store.head()?.handoff && !this.store.pendingOperation()) { this.phase = 'handoff'; this.notify(); return; }
       if (!this.store.envelope() && !this.store.pendingOperation() && this.initialize) {
         const initialized = await this.initialize();
@@ -151,7 +156,7 @@ export class BattleService {
     await this.load();
   }
   private project(): void {
-    if (this.disposed || this.host.hasLegacyRuntime() || !sameSession(this.store.session(), this.host.session()) || this.phase === 'loading' || this.phase === 'import' || this.phase === 'handoff' || this.phase === 'error') {
+    if (this.disposed || this.host.hasLegacyRuntime() || !this.inSync() || this.phase === 'loading' || this.phase === 'import' || this.phase === 'handoff' || this.phase === 'error') {
       this.host.clearInjection(PROMPT_ID); this.capabilities.injection = false; return;
     }
     const text = this.migration ? '【战阵】当前档案需要核对迁移预览；暂不执行正文档案事件。'
@@ -273,7 +278,7 @@ export class BattleService {
   deleteRecords(ids?: string[]): Promise<PersistReceipt> { return this.transact(before => deleteNarrativeRecords(before, ids)); }
   reviewBalanceUpgrade(): void {
     this.version();
-    if (this.phase !== 'ready' || this.migration || !sameSession(this.store.session(), this.host.session())) throw Error('请先核实保存或处理当前迁移预览');
+    if (this.phase !== 'ready' || this.migration || !this.inSync()) throw Error('请先核实保存或处理当前迁移预览');
     this.migration = reviewMigration(this.snapshot(), true);
     if (this.migration) { this.phase = 'review'; this.binding = undefined; this.project(); this.notify(); }
   }
@@ -293,7 +298,7 @@ export class BattleService {
   }
   beginGeneration(): void {
     this.generation = { ended: false }; this.binding = undefined;
-    if (this.phase !== 'ready' || !sameSession(this.store.session(), this.host.session())) { this.project(); return; }
+    if (this.phase !== 'ready' || !this.inSync()) { this.project(); return; }
     const namespace = this.host.namespace();
     this.binding = namespace ? captureGeneration(this.snapshot(), namespace, randomId()) : undefined;
     this.project();
@@ -306,18 +311,21 @@ export class BattleService {
     void this.scan(id);
   }
   scan(messageId?: number, options: { manual?: boolean } = {}): Promise<void> {
-    const session = this.host.session(); let binding = structuredClone(this.binding);
+    const chat = this.host.session()?.scope.key; let binding = structuredClone(this.binding);
+    // Only another chat cancels the scan: the host may swap this chat's objects at any time.
+    const sameChat = () => chat !== undefined && this.host.session()?.scope.key === chat;
     const run = async (refreshed = false): Promise<void> => {
-      if (this.disposed || this.host.isGenerating() || !sameSession(session, this.host.session())) return;
+      if (this.disposed || this.host.isGenerating() || !sameChat()) return;
       if (this.loading) await this.loading.promise;
-      if (!sameSession(session, this.host.session())) return;
-      // updateChatMetadata can replace the context without CHAT_CHANGED. Re-read
-      // this captured chat before making a new preview; never carry old bindings.
-      if (!sameSession(session, this.store.session()) || this.phase === 'error') {
+      if (!sameChat()) return;
+      // updateChatMetadata can replace the context without CHAT_CHANGED. An object that still
+      // holds this archive keeps the generation binding; otherwise re-read the chat and never
+      // carry old bindings.
+      if (this.phase === 'error' || !this.inSync()) {
         binding = undefined;
         await this.load();
       }
-      if (!sameSession(session, this.host.session())) return;
+      if (!sameChat()) return;
       if (this.phase !== 'ready' || !this.canWrite()) {
         if (options.manual) throw Error(this.writeBlockReason() ?? '请先核对并接受迁移预览');
         return;
@@ -339,6 +347,7 @@ export class BattleService {
       if (!(expected?.complete && expected.messageId === message.messageId) && message.complete && this.capabilities.messageIdentity) expected = { ...captureGeneration(before, namespace, randomId()), complete: true, manualOnly: !(options.manual && narrativeAutoApproval(before)), messageId: message.messageId };
       if (expected?.complete && this.capabilities.messageIdentity) message.generationId = expected.id;
       const proposal = proposalFromMessage(message, expected); if (!proposal) return;
+      if (proposal.status === 'pending' && proposal.expected?.manualOnly && !options.manual && narrativeAutoApproval(before)) proposal.reason = AUTO_APPROVE_SKIPPED;
       if (sourceCommitted(before, proposal.sourceKey) || before.deletedNarrativeReceipts?.includes(narrativeReceiptKey(proposal))) return;
       const existing = (before.proposals ?? []).filter(p => sameSource(p.sourceKey, proposal.sourceKey));
       const same = existing.find(p => (p.canonical === proposal.canonical || p.status === 'committed' && parseProtocol(p.source.text).canonical === proposal.canonical) && p.source.swipeId === message.swipeId && (!!proposal.canonical || p.source.text === proposal.source.text));
@@ -358,7 +367,7 @@ export class BattleService {
       if (receipt.code === 'source-changed' && !refreshed) await run(true);
     };
     const next = this.scanQueue.then(() => run(), () => run()).catch(error => {
-      if (!this.disposed && sameSession(session, this.store.session())) { this.error = errorText(error); this.notify(); }
+      if (!this.disposed && chat !== undefined && this.store.session()?.scope.key === chat) { this.error = errorText(error); this.notify(); }
       if (options.manual) throw error;
     });
     this.scanQueue = next; return next;

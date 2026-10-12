@@ -23,9 +23,10 @@ it('扫描按钮恢复失效会话，读取失败显示原因并可重试，全�
     button!.click(); await idle();
   };
   await click('[data-action="workspace-tab"][data-tab="units"]');
-  f.context.chatMetadata = { ...f.context.chatMetadata, variablePlugin: { count: 1 } };
   f.context.chat!.push({ mes: '<tb><spawn name="本轮新单位" side="enemy" scale="hero"/></tb>', is_user: false, swipe_id: 0, gen_finished: 'done' });
   await f.saveNormally();
+  // A swapped-in object that still holds the archive is adopted; one without it needs the reread.
+  f.context.chatMetadata = { variablePlugin: { count: 1 } };
   expect(f.service.canWrite()).toBe(false);
   await click('[data-action="narrative-scan"]');
   expect(f.service.canWrite()).toBe(true);
