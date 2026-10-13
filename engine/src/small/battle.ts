@@ -1642,6 +1642,7 @@ export class SmallBattle {
     spendAbility(actor, ability);
 
     const logBits: string[] = [`${actor.name} 使用【${ability.name}】`];
+    if (ability.itemSourceId && cost) logBits.push(`消耗${cost.amount}件，剩余${actor.resources[cost.resource]}件`);
     // 出手前的突进/闪现逐格记入日志（标为技能位移，战报把它们并到技能名之后），技能本体随后记录；只有位移的技能在这里走完。
     let interrupted: string | undefined, charge = false;
     if (movementOnly && chosenTarget) {
@@ -1839,7 +1840,7 @@ export class SmallBattle {
     this.log.push(...consequentEvents);
     // 出手后后撤：排在技能本体之后，不触发近战借机。
     const withdraw = moveEffects(ability).after;
-    if (withdraw && !movementOnly && !interrupted && actor.status === 'ready' && !this.isOver()) {
+    if (withdraw && (!movementOnly || moveEffects(ability).before) && !interrupted && actor.status === 'ready' && !this.isOver()) {
       const retreat = this.skillWithdrawPath(actor, ability, withdraw);
       if (retreat.path) this.executeSkillMove(actor, 'withdraw', retreat.path.cells.at(-1)!, retreat.path, 'after');
     }
@@ -2282,8 +2283,11 @@ export class SmallBattle {
         }
       }
       // 单纯位移技能：只从当前位置估算；先按位置评分粗筛，再对少数落点计算途中反应与落点受击。用后仍可走剩余移动点。
-      if (path.cost === 0 && !this.actedThisTurn.has(unitId) && !this.hasteSelected.has(unitId)) for (const ability of actor.abilities) {
-        if (!movementOnlySkill(ability) || failedAbilities.has(ability.id) || abilityUsabilityReason(actor, ability)) continue;
+      if (path.cost === 0 && !this.actedThisTurn.has(unitId) && !this.hasteSelected.has(unitId)) for (const listed of actor.abilities) {
+        if (!movementOnlySkill(listed) || failedAbilities.has(listed.id)) continue;
+        const itemUse = itemUseAbility(actor, listed);
+        if (itemUse.reason || abilityUsabilityReason(actor, itemUse.ability)) continue;
+        const ability = itemUse.ability;
         const { before, after } = moveEffects(ability), effect = (before ?? after)!;
         const reach = effectiveMoveReach(actor, ability, effect, this.conditions);
         if (!reach || moveBlockReason(actor, this.conditions)) continue;

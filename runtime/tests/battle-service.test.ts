@@ -78,9 +78,10 @@ it('原生正文产生候选，人工确认入账后编辑和重扫均不重复�
   f.service.dispose(); expect([...f.handlers.values()].every(set => set.size === 0)).toBe(true);
 });
 // 酒馆的生成结束事件带 chat.length，不是消息序号；非流式先“收到消息”后“生成结束”，流式反过来。
-it.each(['non-streaming', 'streaming'])('自动批准按酒馆真实事件顺序入账（%s）', async mode => {
+it.each(['non-streaming', 'streaming', 'started-only', 'commands-only'])('自动批准按酒馆真实事件顺序入账（%s）', async mode => {
   const f = await setup(); await f.service.setStorySync(true);
-  await f.emit('GENERATION_STARTED', 'normal', {}, false); await f.emit('GENERATION_AFTER_COMMANDS', 'normal', {}, false);
+  if (mode !== 'commands-only') await f.emit('GENERATION_STARTED', 'normal', {}, false);
+  if (mode !== 'started-only') await f.emit('GENERATION_AFTER_COMMANDS', 'normal', {}, false);
   f.context.chat!.push({ mes: '<tb><spawn name="测试卫兵" side="ally" scale="hero"/></tb>', is_user: false, swipe_id: 0, gen_finished: 'finished' });
   const index = f.context.chat!.length - 1;
   if (mode === 'streaming') { await f.emit('GENERATION_ENDED', f.context.chat!.length); await f.emit('MESSAGE_RECEIVED', index, 'normal'); }

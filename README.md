@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.0.0**. Narrative spatial relationships now guide city and outside-city layouts, landmarks and deployment. New maps use actual elevation and explicit bridge/gate counts, positions and states. Secondary API prompts are shorter and explicitly identify ford as shallow water. See [implementation and validation](docs/battlefield-refactor-implementation.md). Export your saves before updating, and do not enable both stable and test installations at once.
+Current version: **2.1.0**. This release fixes repeated archive reads in the panel, generation-event compatibility for automatic approval, exhausted item actions, formation item damage and effect scaling, movement skill execution and range, and clipped flight markers on mobile. `give` now accepts an optional unit `id` for direct delivery. Narrative spatial relationships guide city and outside-city layouts, landmarks and deployment; see [implementation and validation](docs/battlefield-refactor-implementation.md). Export your saves before updating, and do not enable both stable and test installations at once.
 
 The loadout header now includes **技能选择** beside **新增物品**. Choose a unit, select up to five learned skills, and save; preparation retains skill effects, cooldowns, resources, and equipment.
 

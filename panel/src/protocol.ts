@@ -20,7 +20,7 @@ const ATTRIBUTES: Record<string, readonly string[]> = {
   spawn: ['id', 'name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'speed', 'stabilized', 'protection', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits', 'items'],
   field: ['env', 'light', 'note'],
   take: ['id', 'qty', 'note'],
-  give: ['item', 'note', 'qty', 'type', 'spec', 'body', 'quality', 'enchant', 'stabilized', 'protection'],
+  give: ['id', 'item', 'note', 'qty', 'type', 'spec', 'body', 'quality', 'enchant', 'stabilized', 'protection'],
   reforge: ['id', 'name', 'spec', 'body', 'quality', 'enchant', 'stabilized', 'protection'],
   bless: ['id', 'name', 'traits', 'rounds', 'battles', 'permanent'],
   unbless: ['id', 'source'],
@@ -210,7 +210,7 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
   // spawn 写的 id 不作编号。同一回复再用它：出场是多余的（新单位自动上场），其余修改落不到新单位上。
   for (let i = events.length - 1; i >= 0 && spawnIds.size; i--) {
     const event = events[i]!;
-    if (!['deploy', 'unit-update', 'unit-set', 'learn', 'bless', 'affect', 'unbless', 'unaffect'].includes(event.kind) || !('id' in event) || !event.id || !spawnIds.has(normalizeHandle(event.id))) continue;
+    if (!['deploy', 'unit-update', 'unit-set', 'learn', 'bless', 'affect', 'unbless', 'unaffect', 'give'].includes(event.kind) || !('id' in event) || !event.id || !spawnIds.has(normalizeHandle(event.id))) continue;
     if (event.kind === 'deploy') { events.splice(i, 1); warnings.push(`已略过 deploy ${event.id}：这是本回复 spawn 自编的编号，新单位会自动上场`); }
     else errors.push(`${event.id} 是本回复 spawn 自编的编号，新单位的编号由插件分配；要设置新单位请写进 spawn，或在下一次回复按单位资料里的编号修改`);
   }
@@ -400,6 +400,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     if (kind === 'reforge' && spec.kind === 'item' && spec.form === 'single') throw new Error('一次性道具不能改造；可以take后重新give');
   }
   if (kind === 'give') {
+    if (attrs.id !== undefined && !attrs.id.trim()) throw new Error('give 的 id 需要填写接收单位的真实编号，入公共库存请省略 id');
     if (attrs.type !== undefined && !['weapon', 'armor', 'item', 'consumable', 'accessory', 'material', 'quest', 'misc'].includes(attrs.type)) throw new Error('未知物品种类');
     if (attrs.spec === undefined && ['body', 'quality', 'enchant', 'stabilized', 'protection'].some((key) => attrs[key] !== undefined)) throw new Error('有效果的物品需要明确spec，不能只靠名称或附魔提示猜测');
   }

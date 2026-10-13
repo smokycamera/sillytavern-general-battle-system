@@ -12,6 +12,7 @@ import { parseSkillMechanism, skillMechanismFromId, skillMechanismId, skillMecha
 import { TRAITS, traitRegistry, isGradedTrait, validTraitLevel } from './data/traits.js';
 import { itemsV15 } from './item-model.js';
 import { isCohort, personnel } from './combat-model.js';
+import { resourceRound } from './resources.js';
 
 /**
  * 道具 = 形态 × 效果 × 等级。
@@ -366,10 +367,10 @@ export function itemUseAbility(actor: Combatant, ability: Ability, target?: Comb
   scaled.cost = { ...scaled.cost!, amount: doses }; scaled.itemDoses = doses;
   scaled.effects = scaled.effects.map((e): EffectOp => {
     if (e.op === 'heal') return e.amount !== undefined ? { op: 'heal', amount: Math.max(1, Math.round(e.amount * (support ? doses : 1))) } : e;
+    if (e.op === 'condition') return { ...e, magnitude: (e.magnitude ?? 1) * share };
     if (!support) return e;
-    if (e.op === 'condition') return { ...e, magnitude: Math.max(0.25, (e.magnitude ?? 1) * share) };
     if (e.op === 'barrier') return { ...e, amount: Math.max(1, Math.round(e.amount * share)) };
-    if (e.op === 'resource') return { ...e, amount: Math.sign(e.amount) * Math.max(1, Math.round(Math.abs(e.amount) * share)) };
+    if (e.op === 'resource') return { ...e, amount: e.resource === 'SP' ? resourceRound(e.amount * share) : Math.sign(e.amount) * Math.max(1, Math.round(Math.abs(e.amount) * share)) };
     if (e.op === 'morale') return { ...e, amount: Math.round(e.amount * share) };
     return e;
   });

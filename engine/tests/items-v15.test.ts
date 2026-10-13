@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { generateUnit, SmallBattle, standardField, traitRegistry, V14_OVERFLOW_D20, V15_OVERFLOW_D20, compileItem, gearItem, syncGearAbilities, attachCarriedItems,
+import { generateUnit, SmallBattle, MassBattle, standardField, traitRegistry, V14_OVERFLOW_D20, V15_OVERFLOW_D20, V15_OVERFLOW_TW, compileItem, gearItem, syncGearAbilities, attachCarriedItems,
   itemUseAbility, quickItemAction, itemReserveCost, itemEmergency, combatBonuses, gearBonuses, activeTraitIds, traitLevel, tileCost, movementPoints, formationMarchSteps,
   canSpot, collectMods, resolveStack, standardConditionMap, migrateLegacyItem, chargeCapable, rangedArchetype, inferArchetype, prepareItemModel, nightSight, terrainStalks,
   traitLadderSummary, parseSkillMechanism, skillMechanismId, equipmentReason, type Combatant, type GenerateInput, type ItemSpecification, type LegacyItemMechanics } from '../src/index.js';
 import { prepareCombatModel } from '../src/combat-model.js';
 import { V6_D20 } from '../src/rules.js';
 import legacy from './fixtures/legacy-items-v14.json';
+import { materializeUnitRecord, unitRecordFromCombatant } from '../../panel/src/unit-state.js';
 
 const registry = traitRegistry(), conditions = standardConditionMap();
 const active = (text: string) => skillMechanismId(parseSkillMechanism(text)!);
@@ -103,6 +104,62 @@ describe('旧版药剂与护符的转换', () => {
 
 describe('V15 编队件数、加速动作与 AI 保留价值', () => {
   const company = (id: string, side: Combatant['side'], members: number) => unit(id, side, { scale: 'company', hpMax: members, weaponClass: 'rifle' });
+  it('编队位移道具件数不足时会战预览与下令立即拒绝，足额时正常使用', () => {
+    for (const quantity of [1, 40]) {
+      const actor = carry(company('a', 'ally', 40), 'blink', { form: 'single', power: 7, active: active('闪现') }, quantity), enemy = company('e', 'enemy', 40);
+      for (const u of [actor, enemy]) u.tags.push('zone:中军', 'rank:front');
+      const battle = new MassBattle({ combatants: [actor, enemy], rules: V15_OVERFLOW_TW, seed: 'item-blink', traitRegistry: registry }); battle.start();
+      const targetId = 'zone:ally:中军:rear';
+      const preview = battle.orderPreview({ unitId: actor.id, type: 'ability', abilityId: 'item:blink', targetId });
+      const before = structuredClone(battle.toSnapshot());
+      const result = battle.useAbility(actor.id, 'item:blink', targetId);
+      expect(result.ok).toBe(quantity === 40);
+      if (quantity === 1) { expect(preview.reason).toContain('需要40件'); expect(battle.toSnapshot()).toEqual(before); }
+      else { battle.resolveRound(1); expect(battle.byId(actor.id).resources['item:blink']).toBe(0); expect(battle.byId(actor.id).formationPosition).toBe('ally:中军:rear'); }
+    }
+  });
+  it('少量道具的增益、减益和回能按覆盖比例缩放，低于25%的状态可保存并恢复', () => {
+    const actor = carry(company('a', 'ally', 40), 'buff', { form: 'single', power: 3, active: active('buff伤害') }, 1), enemy = company('e', 'enemy', 40);
+    const battle = grid([actor, enemy]), listed = actor.abilities.find(a => a.itemSourceId)!;
+    const original = listed.effects.find(e => e.op === 'condition')!;
+    if (original.op !== 'condition') throw Error('fixture');
+    expect(battle.useAbility(actor.id, listed.id, actor.id).ok).toBe(true);
+    expect(actor.conditions.find(c => c.id === original.conditionId)?.magnitude).toBeCloseTo(original.magnitude! / 40);
+    const restored = materializeUnitRecord(unitRecordFromCombatant(actor), registry);
+    expect(restored.conditions.find(c => c.id === original.conditionId)?.magnitude).toBeCloseTo(original.magnitude! / 40);
+    const debuffer = carry(company('d', 'ally', 40), 'debuff', { form: 'single', power: 3, active: active('debuff攻击') }, 1), debuff = debuffer.abilities.find(a => a.itemSourceId)!;
+    const base = debuff.effects.find(e => e.op === 'condition')!, scaled = itemUseAbility(debuffer, debuff, enemy).ability.effects.find(e => e.op === 'condition')!;
+    if (base.op !== 'condition' || scaled.op !== 'condition') throw Error('fixture');
+    expect(scaled.magnitude).toBeCloseTo(base.magnitude! / 40);
+    const restorer = carry(company('r', 'ally', 40), 'restore', { form: 'single', power: 3, active: active('buff回能') }, 1), restore = restorer.abilities.find(a => a.itemSourceId)!;
+    const resource = itemUseAbility(restorer, restore, restorer).ability.effects.find(e => e.op === 'resource')!;
+    expect(resource).toMatchObject({ resource: 'SP', amount: 0.05 });
+  });
+  it.each(['rifle', 'cannon'] as const)('30人编队齐投的伤害人数与消耗件数相同，不受所持%s武器炮组人数折减', weaponClass => {
+    const actor = carry(unit('grenadiers', 'ally', { scale: 'company', hpMax: 30, weaponClass }), 'bomb', { form: 'single', power: 4, active: active('物理范围投射') }, 60);
+    const target = company('target', 'enemy', 300), battle = grid([actor, target]);
+    actor.pos = 40; target.pos = 26;
+    const option = battle.getActionOptions(actor.id).find(o => o.id === 'item:bomb')!.targets!.find(t => t.targetId === target.id)!;
+    expect(option.enabled).toBe(true);
+    expect(option.preview?.participants).toBe(30);
+    const result = battle.useAbility(actor.id, 'item:bomb', target.id);
+    expect(result.ok).toBe(true);
+    expect(result.resolutions[0]?.participants).toBe(30);
+    expect(actor.resources['item:bomb']).toBe(30);
+  });
+  it('会战齐投同样按30人结算，并记录实际消耗和剩余件数', () => {
+    const actor = carry(company('grenadiers', 'ally', 30), 'bomb', { form: 'single', power: 4, active: active('物理范围投射') }, 60);
+    const target = company('target', 'enemy', 300);
+    for (const u of [actor, target]) u.tags.push('zone:中军', 'rank:front');
+    const battle = new MassBattle({ combatants: [actor, target], rules: V15_OVERFLOW_TW, seed: 'mass-item-volley', traitRegistry: registry });
+    battle.start();
+    expect(battle.orderPreview({ unitId: actor.id, type: 'ability', abilityId: 'item:bomb', targetId: target.id }).preview?.participants).toBe(30);
+    expect(battle.useAbility(actor.id, 'item:bomb', target.id).ok).toBe(true);
+    battle.resolveRound(1);
+    expect(battle.byId(actor.id).resources['item:bomb']).toBe(30);
+    expect(battle.log.find(e => e.resolution?.attackerId === actor.id)?.resolution?.participants).toBe(30);
+    expect(battle.log.some(e => e.text.includes('消耗30件，剩余30件'))).toBe(true);
+  });
   it('编队齐用每人一份的道具最多消耗本次参与人数的件数，效果按件数折算；区域道具一次一件；V14 编队照旧一份', () => {
     const a = carry(carry(company('a', 'ally', 40), 'bomb', { form: 'single', power: 4, active: active('物理范围投射') }, 10), 'smoke', { form: 'single', power: 3, active: active('烟幕') }, 5);
     const target = company('e', 'enemy', 40), friend = company('f', 'ally', 40);

@@ -194,7 +194,9 @@ function validateRuntimeMetadata(value: Record<string, unknown>): void {
     if (!isRecordObject(condition) || typeof condition.id !== 'string' || !condition.id || !Number.isSafeInteger(condition.dur) || Number(condition.dur) < 0) throw new Error('状态持续时间或结构损坏');
     if(isRecordObject(condition)&&condition.affectedMembers!==undefined&&(!Number.isFinite(condition.affectedMembers)||Number(condition.affectedMembers)<0||Number(condition.affectedMembers)>1e9))throw Error('状态波及人数损坏');
     if (isRecordObject(condition) && condition.potency !== undefined && (!Number.isInteger(condition.potency) || Number(condition.potency) < 1 || Number(condition.potency) > 3)) throw new Error('状态强度记录损坏');
-    if (isRecordObject(condition) && condition.magnitude !== undefined && (!Number.isFinite(condition.magnitude) || Number(condition.magnitude) < 0.25 || Number(condition.magnitude) > 1.5)) throw new Error('状态效力记录损坏');
+    // Partial item coverage can produce a weaker active condition than the
+    // minimum compiled skill potency; it must remain valid through save/load.
+    if (isRecordObject(condition) && condition.magnitude !== undefined && (!Number.isFinite(condition.magnitude) || Number(condition.magnitude) <= 0 || Number(condition.magnitude) > 1.5)) throw new Error('状态效力记录损坏');
     if (isRecordObject(condition) && condition.sourceId !== undefined && typeof condition.sourceId !== 'string') throw new Error('状态来源记录损坏');
     if (condition.defensePower !== undefined && (condition.id !== 'blessed' || !validDefensePower(condition.defensePower))) throw new Error('守护防御规格记录损坏');
   }

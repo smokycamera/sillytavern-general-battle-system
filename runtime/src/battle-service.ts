@@ -130,7 +130,9 @@ export class BattleService {
     };
     const before = (...args: unknown[]) => { if (args[2] !== true) this.beginGeneration(); };
     const afterCommands = bind('GENERATION_AFTER_COMMANDS', before);
-    const started = bind('GENERATION_STARTED', (...args) => { if (!afterCommands) before(...args); });
+    // Some hosts expose AFTER_COMMANDS in eventTypes without emitting it on every
+    // generation path. STARTED must still capture the archive for those replies.
+    const started = bind('GENERATION_STARTED', before);
     this.capabilities.beforeGeneration = afterCommands || started;
     // 生成中的回复要等“收到消息”和“生成结束”都到了才扫描。酒馆流式输出先发生成结束、非流式先发收到消息，
     // 别的扩展的监听也会打乱顺序，所以哪个后到由哪个收尾。

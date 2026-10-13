@@ -40,7 +40,7 @@ export type Suggestion =
   | { kind: 'unit-set'; id: string; data: Record<string, unknown>; items?: SpawnItem[]; reason?: string; raw: string }
   | { kind: 'learn'; id: string; skills: SkillSpec[]; raw: string }
   | { kind: 'take'; id: string; qty: number; note?: string; raw: string }
-  | { kind: 'give'; item: string; note?: string; qty: number; lootType: LootType; spec?: ItemSpecification; raw: string }
+  | { kind: 'give'; id?: string; item: string; note?: string; qty: number; lootType: LootType; spec?: ItemSpecification; raw: string }
   | { kind: 'reforge'; id: string; name?: string; spec: ItemSpecification; raw: string }
   | { kind: 'bless'; id: string; name: string; traitIds: string[]; traitLevels?: Record<string, number>; duration: TraitDuration; raw: string }
   | { kind: 'affect'; id: string; name: string; conditionIds: string[]; duration: TraitDuration; raw: string }
@@ -488,6 +488,7 @@ export function parseSuggestionTags(text: string): ParseResult {
         catch { invalid.push(raw); break; }
         suggestions.push({
           kind: 'give', item, note: (a.note ?? '').trim() || undefined,
+          ...(a.id?.trim() ? { id: a.id.trim() } : {}),
           qty: clampInt(a.qty, 1, 9999, 1), lootType: spec ? spec.kind === 'shield' ? 'armor' : spec.kind : lootType,
           ...(spec ? { spec } : {}), raw,
         });

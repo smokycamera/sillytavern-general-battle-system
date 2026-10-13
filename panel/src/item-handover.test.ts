@@ -8,6 +8,23 @@ import { captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFr
 
 // 2026-10-12：正文自创的道具——写法容错、道具位置上的武器词条、写不出效果的单独略过、unit_set 的 items 交给单位、佩戴防护。
 const reg = traitRegistry();
+it('give 可按单位编号直接交付道具，兼容无引号属性；同批 items 不重复创建', () => {
+  const parsed = parseProtocol('<give id=u1 item=手雷 spec=物理范围投射L4 qty=3/>');
+  expect(parsed.errors).toEqual([]); expect(parsed.events[0]).toMatchObject({ kind: 'give', id: 'u1', qty: 3 });
+  const before = setup(), after = transact(before, '<give id="u1" item="手雷" spec="物理范围投射L4" qty="3"/><unit_set id="u1" items="手雷:物理范围投射L4×3"/><give id="u1" item="夜视镜" spec="夜战专精L5"/><give item="公共药水" spec="buff治疗L3"/>');
+  expect(after.inventory!.filter(i => i.name === '手雷')).toHaveLength(1);
+  expect(carried(after, 'a')).toEqual([['手雷', 3, '-'], ['夜视镜', 1, 'gear']]);
+  expect(after.inventory!.find(i => i.name === '公共药水')?.assignedTo).toBeUndefined();
+  expect(materializeUnitRecord(after.storage!.find(r => r.id === 'a')!, reg).gear?.some(g => g.name === '夜视镜')).toBe(true);
+  expect(() => transact(before, '<give id="u999" item="错误收件道具" spec="buff治疗L3"/>')).toThrow(/档案.*缺失/);
+  expect(before.inventory!.some(i => i.name === '错误收件道具')).toBe(false);
+});
+it('give 可引用同批 unit_set 新建的单位，spawn 自编编号仍不接受', () => {
+  const after = transact(setup(), '<give id="u9" item="手雷" spec="物理范围投射L4" qty="2"/><unit_set id="u9" name="新兵" side="ally" scale="hero"/>');
+  const created = after.storage!.find(r => r.name === '新兵')!;
+  expect(after.inventory!.find(i => i.name === '手雷')).toMatchObject({ assignedTo: created.id, qty: 2 });
+  expect(parseProtocol('<spawn id="u9" name="新兵" side="ally" scale="hero"/><give id="u9" item="手雷" spec="物理范围投射L4"/>').errors.join()).toContain('spawn 自编的编号');
+});
 function unit(id: string, name: string, side: 'ally' | 'enemy' = 'ally', scale: 'hero' | 'company' = 'hero') {
   const generated = generateUnit({ name, side, scale, rulesVersion: 'v2', level: 4, traits: [], weaponClass: 'sword', weaponLevel: 3, armorTier: 1, armorLevel: 3,
     ...(scale === 'company' ? { hp: 40, hpMax: 40 } : {}) }, { seed: 'handover-' + id, registry: reg }).unit;

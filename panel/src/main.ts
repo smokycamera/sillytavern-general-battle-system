@@ -933,7 +933,22 @@ const dirtyWorkspaces = new Set<WorkspaceTab>(WORKSPACES.map(([id]) => id));
 const battleCamera = new BattleCamera();
 let renderedNamespace: string | undefined;
 let lastTraceKey = '';
+// Render helpers share one private snapshot and one ID index for this synchronous
+// render only. Large reports/backups must not be cloned once per narrative event.
+let renderSave: ReturnType<typeof controller.snapshot> | undefined;
+let renderIds: ReturnType<typeof narrativeIds> | undefined;
+let rendering = false;
+function viewSave() { return rendering ? renderSave ??= controller.snapshot() : controller.snapshot(); }
+function viewIds() {
+  const build = () => narrativeIds({ ...viewSave(), storage: state.storage, inventory: state.inventory });
+  return rendering ? renderIds ??= build() : build();
+}
 function render(scope: RenderScope = 'all', tacticalQuery?: TacticalQuery): void {
+  rendering = true;
+  try { renderWorkspace(scope, tacticalQuery); }
+  finally { rendering = false; renderSave = undefined; renderIds = undefined; }
+}
+function renderWorkspace(scope: RenderScope, tacticalQuery?: TacticalQuery): void {
   const app = $('#app'), winScroll = window.scrollY;
   const contextChanged = renderedNamespace !== workspaceNamespace;
   if (contextChanged) { renderedNamespace = workspaceNamespace; dirtyWorkspaces.clear(); WORKSPACES.forEach(([id]) => dirtyWorkspaces.add(id)); battleCamera.reset(); lastTraceKey = ''; app.replaceChildren(); }
@@ -1046,7 +1061,7 @@ function renderEmbeddedWorldbookSettings(): string {
   return view ? renderWorldbookSettings(view, worldbookDrafts, customWorldbookDrafts, worldbookDeleting) : '';
 }
 function renderWorkspaceSettings(): string {
-  const saved = controller.snapshot(), view = llmSettingsView();
+  const saved = viewSave(), view = llmSettingsView();
   return `${mcpBridge?.render() ?? ''}${renderLlmSettings(view.settings, view.error ?? llmDiagnostic)}${renderEmbeddedWorldbookSettings()}${promptScopeControls(saved.promptSettings, narrativeProjectionDetails(saved, adapter.recentPromptText?.() ?? ''), (saved.storage ?? []).filter(visibleUnitRecord))}${renderPromptSettings(saved.promptSettings, promptDrafts)}<section><h2>显示与操作</h2><p>战场形式由参战队伍确定，环境沿用剧情声明。</p><button data-action="theme-toggle">切换深浅主题</button></section>
     <section><h2>保存与恢复</h2><p>${state.saveReceipt?.status === 'local-only' ? '目前仅确认本地副本，酒馆尚未确认保存。' : '单位档案和战报随当前聊天保存。保存失败时会在顶部显示。'}</p><button data-action="save-retry">重试保存</button>${controller.migrationReview() ? '' : renderMigrationReview()}</section>
     <details class="workspace-diagnostics"><summary>版本与运行信息</summary><p>战斗结果由本设备计算。伤害、命中和状态的详细过程可在战报中查看。</p><p>${controller.capabilities.injection ? '已支持在续写剧情时参考当前战斗进度。' : '当前酒馆暂不支持自动提供剧情参考。'}</p></details>`;
@@ -1059,7 +1074,7 @@ function renderMigrationReview(): string {
     <div class="row"><button data-action="migration-export">下载原档备份</button><button class="primary" data-action="migration-accept">接受此预览并保存备份</button></div></section>`;
   const upgrade = !currentBattle() && state.storage.some(r=>r.snapshot?.rulesVersion==='v2'&&r.snapshot.damageModel!=='wounds-v2')
     ? '<section><h3>统一规则升级</h3><p>新战斗采用V6统一生命、技能与编队展开。先查看各档案变化，确认后保存原档备份；进行中的旧战斗保持原规则。</p><button data-action="migration-balance">预览统一数值升级</button></section>' : '';
-  const backups = controller.snapshot().migrationBackups;
+  const backups = viewSave().migrationBackups;
   return upgrade + (Array.isArray(backups) && backups.length ? `<details><summary>迁移备份与恢复</summary><p>恢复会替换当前聊天的战阵战斗记录，回到最近一次迁移前。请先下载当前存档。</p><button data-action="migration-export">下载当前完整存档</button><button data-action="migration-restore">恢复最近迁移前备份</button></details>` : '');
 }
 
@@ -1349,7 +1364,7 @@ function isMassBattle(b: SmallBattle | MassBattle): b is MassBattle {
 /** 编制管理子界面：编制单位与战场遭遇（AI spawn 投放）分栏管理，可展开查看/编辑详细属性与装备。
  *  仅在非战斗时可用（战斗态单位是快照，不应就地改）。 */
 function renderManage(): string {
-  const saved = controller.snapshot(), promptSettings = saved.promptSettings;
+  const saved = viewSave(), promptSettings = saved.promptSettings;
   const { publicId } = narrativeIds({ ...saved, storage: state.storage, inventory: state.inventory });
   const tierNames = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
   const catKeys = Object.keys(CATEGORY_LABELS) as Category[];
@@ -1813,7 +1828,7 @@ function renderMass(): string {
         .join('');
       // 军团技能按钮（支援阶段手动释放）：目标取本行的军令目标下拉；冷却/次数尽灰禁
       const skillSources = [u, ...(v2 ? b.combatants.filter((h) => h.id === b.attached.get(u.id)) : [])];
-      const skillBtns = `<span>${skillSources.flatMap((source) => source.abilities.map((a) => {
+      const skillBtns = `<span>${skillSources.flatMap((source) => battleAbilities(source).map((a) => {
             const st = source.abilityState.find((s) => s.abilityId === (a.cooldownGroup ?? a.id));
             const cd = st?.cdLeft ?? 0;
             const usedOut = a.usesPerBattle !== undefined && abilityUsed(source,a) >= a.usesPerBattle;
@@ -2086,10 +2101,10 @@ function suggestionDesc(s: Suggestion, batch: Suggestion[] = []): string {
     return created ? `「${created.data.name as string}」（本批新建）` : undefined;
   };
   const unitName = (id?: string, name?: string) => { const record = storageRecordByRef(id, name); return record && visibleUnitRecord(record) ? record.name : fresh(id) ?? name ?? '指定单位'; };
-  const ids = narrativeIds({ ...controller.snapshot(), storage: state.storage, inventory: state.inventory });
+  const ids = viewIds();
   switch (s.kind) {
     case 'take': return `减少物品「${state.inventory.find(i => i.id === ids.realId(s.id))?.name ?? ids.publicId(s.id)}」×${s.qty}${s.note ? '——' + s.note : ''}`;
-    case 'give': return `获得物品「${s.item}」×${s.qty}${s.spec ? ' · ' + itemSpecificationLabel(s.spec) : ' · 叙事记录'}${s.note ? `——${s.note}` : ''}`;
+    case 'give': return `获得物品「${s.item}」×${s.qty}${s.id ? ' → ' + unitName(s.id) : ''}${s.spec ? ' · ' + itemSpecificationLabel(s.spec) : ' · 叙事记录'}${s.note ? `——${s.note}` : ''}`;
     case 'learn': return `${unitName(s.id)} 学习或更新：${s.skills.map((skill) => (skill.name ?? ABILITY_BLUEPRINTS[skill.blueprintId]?.name ?? skill.blueprintId) + (skill.level === undefined ? '' : ' L' + skill.level)).join('、')}；其余记录保留`;
     case 'reforge': return `改造「${s.name ?? state.inventory.find((i) => i.id === ids.realId(s.id))?.name ?? '指定装备'}」为 ${itemSpecificationLabel(s.spec)}`;
     case 'bless': return `${unitName(s.id)} 获得「${s.name}」：${s.traitIds.map((id) => reg.get(id)?.name ?? id).join('、')} · ${s.duration.kind === 'permanent' ? '永久' : s.duration.count + (s.duration.kind === 'rounds' ? '个战斗整轮' : '场战斗')}`;
@@ -2127,7 +2142,7 @@ function suggestionDesc(s: Suggestion, batch: Suggestion[] = []): string {
 
 function storageRecordByRef(id?: string, name?: string): RosterUnit | undefined {
   if (id) {
-    const realId = narrativeIds({ ...controller.snapshot(), storage: state.storage, inventory: state.inventory }).realId(id);
+    const realId = viewIds().realId(id);
     return state.storage.find((r) => r.id === realId);
   }
   if (!name) return undefined;
@@ -2163,9 +2178,9 @@ function applyUnitUpdate(s: Extract<Suggestion, { kind: 'unit-update' }>): void 
 function renderLog(): string {
   const report=reportForOutput();
   return renderReportWorkspace(currentBattle(), state.reports, state.selectedReportId, state.reportDeliveries, renderLogEntries, {
-    promptSettings:controller.snapshot().promptSettings,
+    promptSettings:viewSave().promptSettings,
     start:state.activeBattleStart,
-    restartReason:report?reportRestartReason(controller.snapshot(),report):undefined,
+    restartReason:report?reportRestartReason(viewSave(),report):undefined,
     restartPreview:reportRestartPreview?.id===report?.id?reportRestartPreview:undefined,
     canUndo:!!state.deletedReport,
     native: runtime.native,

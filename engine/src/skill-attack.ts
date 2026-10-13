@@ -25,7 +25,9 @@ export function skillAttack(context: ObservationContext, actor: Combatant, targe
     const width=engagementWidth(actor,target,ability.delivery!=='melee',context.battlefield,context.fieldTags);
     const attached=new Set(context.attached?.values()??[]);
     const cohort=context.units.filter(u=>!attached.has(u.id)&&sameLayer(actor,u)&&(context.mode==='mass'?formationNode(actor).id===formationNode(u).id:u.pos===actor.pos));
-    return {participants:itemParticipants(ability,sharedParticipants(actor,cohort,width,target)),abilityDamage:{power:ability.power,accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect,damageScale:ability.damageScale,channel:ability.channel,penetration:ability.penetration,delivery:ability.delivery,areaExposure:ability.areaExposure},ranged:ability.delivery!=='melee'};
+    // Independent consumables already paid for each participant. Applying the
+    // held weapon's frontage again would discard part of the volley's damage.
+    return {participants:ability.itemDoses ?? sharedParticipants(actor,cohort,width,target),abilityDamage:{power:ability.power,accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect,damageScale:ability.damageScale,channel:ability.channel,penetration:ability.penetration,delivery:ability.delivery,areaExposure:ability.areaExposure},ranged:ability.delivery!=='melee'};
   }
   if (actor.rulesVersion !== 'v2' || !ability.damageBasis) return { abilityDamage: { power:ability.power,accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect, damageScale:ability.damageScale,channel: ability.channel, penetration: ability.penetration, delivery: ability.delivery, areaExposure: ability.areaExposure }, ranged: ability.delivery ? ability.delivery !== 'melee' : effect.tag === 'ranged' ? true : undefined };
   let weapon: Weapon | undefined;

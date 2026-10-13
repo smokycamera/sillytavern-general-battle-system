@@ -16,7 +16,7 @@ import { prepareTraitModel, validateTraitModel, validateEntrenchment } from '../
 import { prepareSkillModel, validateSkillModel } from '../skill-model.js';
 import { entrench, entrenched } from '../entrenchment.js';
 import { upgradeCombatSkills } from '../skill-upgrade.js';
-import { moveEffects, movementOnlySkill, hasSkillMovement, moveBlockReason, massMoveReach, type MoveMode } from '../skill-movement.js';
+import { moveEffects, movementOnlySkill, hasSkillMovement, moveBlockReason, effectiveMoveReach, massMoveReach, type MoveMode } from '../skill-movement.js';
 import { normalizeTactic, type TacticalPreference } from '../tactical-preference.js';
 import { calibrateAutocannon, calibrateWeaponHands } from '../gen/equipment.js';
 import { rangedScreen, rangedScreenReason } from '../guard-screen.js';
@@ -529,7 +529,7 @@ export class MassBattle {
       const originalActor = units.find((c) => c.id === (order.abilityActorId ?? u.id));
       const actor = originalActor && this.effectiveUnit(originalActor, units);
       if (!actor || actor.status !== 'ready' || actor.id !== u.id && this.attached.get(u.id) !== actor.id) return '技能来源不属于此编队';
-      const ability = actor.abilities.find((a) => a.id === order.abilityId);
+      let ability = actor.abilities.find((a) => a.id === order.abilityId);
       if (!ability) return '技能不存在';
       if (order.haste && !quickItemAction(actor, ability)) return ability.itemSourceId ? '加速任务只能使用喝、敷类道具' : '加速任务不能使用技能';
       if (actor.conditions.some((c) => this.conditions.get(c.id)?.skipTurn)) return '技能来源本轮无法行动';
@@ -538,6 +538,9 @@ export class MassBattle {
       if (ability.target === 'zone' && !target) return '请指定地面阵位';
       if (target && ability.target !== 'zone' && !this.visibleCombatants(actor.side, units).some((u) => u.id === target.id)) return '尚未观测到目标';
       if (target && target.side !== actor.side && this.isAttached(target.id)) return '随队人物受编队掩护';
+      const itemUse = itemUseAbility(actor, ability, target);
+      if (itemUse.reason) return itemUse.reason;
+      ability = itemUse.ability;
       const usable = abilityUsabilityReason(actor, ability); if (usable) return usable;
       // 只有位移的技能选择阵位；带突进/闪现的技能原位够不着时，以位移后的阵位判断。
       let reason = movementOnlySkill(ability) ? this.skillLandingNodeReason(actor, ability, target, units) : this.abilityTargetCheck(actor, ability, target, units);
@@ -612,7 +615,7 @@ export class MassBattle {
     const effect = moveEffects(ability).before;
     if (!effect || !this.abilityTargetCheck(actor, ability, target, units)) return {};
     const blocked = this.skillMoveBlock(actor); if (blocked) return { reason: blocked };
-    const from = formationNode(actor), reach = massMoveReach(effect);
+    const from = formationNode(actor), reach = massMoveReach({ ...effect, reach: effectiveMoveReach(actor, ability, effect, this.conditions) });
     const node = FORMATION_NODES.filter((n) => n.id !== from.id && formationNodeDistance(from, n) <= reach && formationCanOccupy(units, actor, n, this.attached, this.formationSlots ?? 3))
       .sort((a, b) => formationNodeDistance(from, a) - formationNodeDistance(from, b) || Math.abs(a.x - from.x) - Math.abs(b.x - from.x) || a.y - b.y || a.x - b.x)
       .find((n) => !this.abilityTargetCheck({ ...actor, formationPosition: n.id }, ability, target, units));
@@ -638,7 +641,7 @@ export class MassBattle {
     const { before, after } = moveEffects(ability), effect = (before ?? after)!;
     if (!target || target.formationPosition === undefined) return '请指定阵位';
     const blocked = this.skillMoveBlock(actor); if (blocked) return blocked;
-    const from = formationNode(actor), to = formationNode(target), reach = massMoveReach(effect);
+    const from = formationNode(actor), to = formationNode(target), reach = massMoveReach({ ...effect, reach: effectiveMoveReach(actor, ability, effect, this.conditions) });
     if (to.id === from.id) return '已在该阵位';
     if (formationNodeDistance(from, to) > reach) return (effect.mode === 'blink' ? '闪现' : effect.mode === 'dash' ? '突进' : '后撤') + '只能到' + reach + '个阵位内';
     if (!formationCanOccupy(units, actor, to, this.attached, this.formationSlots ?? 3)) return '该阵位容量不足或有敌军';
@@ -1023,8 +1026,11 @@ export class MassBattle {
       }
     }
     // 单纯位移技能按机动估值（同 rank/shift 机动口径），再减去技能消耗；随队人物不能独立位移。
-    for (const actor of sources) if (actor.id === u.id && !hasteOnly) for (const ability of actor.abilities) {
-      if (!movementOnlySkill(ability)) continue;
+    for (const actor of sources) if (actor.id === u.id && !hasteOnly) for (const listed of actor.abilities) {
+      if (!movementOnlySkill(listed)) continue;
+      const itemUse = itemUseAbility(actor, listed);
+      if (itemUse.reason) continue;
+      const ability = itemUse.ability;
       for (const node of FORMATION_NODES) {
         const order: Order = { unitId: u.id, type: 'ability', abilityActorId: actor.id, abilityId: ability.id, targetId: 'zone:' + node.id };
         if (this.v2OrderReason(order, planning)) continue;
@@ -1259,6 +1265,7 @@ export class MassBattle {
         const cost = abilityCost(actualActor, ability);
         if (cost) actualActor.resources[cost.resource] = actualActor.resourceModel && cost.resource === 'SP' ? resourceRound((actualActor.resources[cost.resource] ?? 0) - cost.amount) : (actualActor.resources[cost.resource] ?? 0) - cost.amount;
         spendAbility(actualActor, ability, 1);
+        if (ability.itemSourceId && cost) this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id], text: `${actor.name} 使用【${ability.name}】：消耗${cost.amount}件，剩余${actualActor.resources[cost.resource]}件` });
         // 技能自带位移按任务顺序立即改写支援快照，后续任务看到的是到位后的阵位；实际落位与效果一起生效。
         const relocate = (node: FormationNode, verb: string) => {
           const staged = support.find((u) => u.id === actor.id)!; staged.formationPosition = node.id; delete staged.tacticalPose;
@@ -1268,6 +1275,10 @@ export class MassBattle {
         if (movementOnlySkill(ability)) {
           const { before, after } = moveEffects(ability), mode = (before ?? after)!.mode;
           relocate(formationNode(target), mode === 'dash' ? '突进' : mode === 'blink' ? '闪现' : '后撤');
+          if (before && after) {
+            const back = this.skillWithdrawNode({ ...actor, formationPosition: formationNode(target).id }, support);
+            if (back) relocate(back, '后撤');
+          }
           exertion.set(actor.id, skillExertion(actor, ability));
           this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id], text: `${actor.name} 的【${ability.name}】占用所属编队${order.haste ? '加速任务' : '本轮主任务'}` });
           continue;

@@ -306,7 +306,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   let records = next.storage ?? [];
   assertCompatibleUnitChanges([...proposal.events, ...[...fresh.patches].map(([id, data]): Suggestion => ({ kind: 'unit-set', id, data, raw: '' }))]);
   for (const event of proposal.events) {
-    if (event.kind !== 'unit-set' && event.kind !== 'unit-update' && event.kind !== 'deploy' && event.kind !== 'bless' && event.kind !== 'unbless' && event.kind !== 'affect' && event.kind !== 'unaffect' && event.kind !== 'learn') continue;
+    if (event.kind !== 'unit-set' && event.kind !== 'unit-update' && event.kind !== 'deploy' && event.kind !== 'bless' && event.kind !== 'unbless' && event.kind !== 'affect' && event.kind !== 'unaffect' && event.kind !== 'learn' && !(event.kind === 'give' && event.id)) continue;
     if (isNew(event)) continue;
     const record = records.find((r) => r.id === event.id);
     // 缺失与过期分开说明：编错编号需要改草稿，过期才需要重新扫描。
@@ -327,9 +327,13 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   let newEquipment = 0;
   // given：换装可取用的同一回复实物；handed：同一回复 give 的全部实物，unit_set 的 items 先从这里交出。
   const given = new Set<string>(), handed = new Set<string>(), notices: string[] = [];
+  const directGives = new Map<string, string>();
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind !== 'give') continue;
     const id = `loot-${proposal.id}-${index}`;
+    if (event.id) for (let i = 0; i < (event.spec && !(event.spec.kind === 'item' && event.spec.form === 'single') ? event.qty : 1); i++) {
+      directGives.set(event.spec && !(event.spec.kind === 'item' && event.spec.form === 'single') && event.qty !== 1 ? `${id}-${i}` : id, event.id);
+    }
     if (!event.spec) { next.inventory = [...(next.inventory ?? []), { id, name: event.item, qty: event.qty, lootType: event.lootType, note: event.note }]; given.add(id); handed.add(id); }
     else if (event.spec.kind === 'item' && event.spec.form === 'single') { next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(id, event.item, event.spec, id, event.qty), note: event.note }]; handed.add(id); }
     else {
@@ -394,6 +398,17 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   if (spawnedGear) { next = prepareInventoryState(next) as NarrativeSave; records = next.storage!; }
   next.rosterIds = [...new Set(roster.map((u) => u.id))];
   if (fresh.created.size) next = applyToNewUnits(next, proposal.events, fresh, proposal.id, registry, newDeploys, { given, notices });
+  // Apply explicit recipients after this batch's new units exist. The given
+  // items keep their original identity and are never created a second time.
+  for (const [itemId, unitId] of directGives) {
+    const item = next.inventory?.find(i => i.id === itemId), record = next.storage?.find(r => r.id === unitId);
+    if (!item || !record) throw new Error('give 的接收单位或新物品不存在');
+    if (item.assignedTo && item.assignedTo !== unitId || item.equippedTo && item.equippedTo.unitId !== unitId) throw new Error('give 的接收单位与同批物品分配冲突');
+    item.assignedTo = unitId;
+    handed.delete(itemId); // Already owned: items lists count it as held instead of creating it again.
+    if (item.mechanics?.kind === 'item' && item.mechanics.value.recipe.form !== 'single') item.equippedTo = { unitId, slot: 'gear' };
+  }
+  if (directGives.size) next = prepareInventoryState(next) as NarrativeSave;
   // unit_set 的 items 最后交出：此时同一回复 give 的已入库，新建单位也已建档。
   const handovers: HandOver[] = [...proposal.events.entries()].flatMap(([index, event]) => event.kind === 'unit-set' && event.items?.length ? [{ unitId: event.id, items: event.items, index }] : []);
   for (const [unitId, items] of fresh.items) handovers.push({ unitId, items, index: proposal.events.length + handovers.length });

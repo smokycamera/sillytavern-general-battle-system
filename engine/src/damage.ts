@@ -451,7 +451,7 @@ function outcomeScale(opts: Omit<AttackOpts, 'rng'>, resolved?: ResolvedWeapon):
   if(opts.rules.combatModel===MEMBER_HEALTH_MODEL){
     const a=opts.attacker,d=opts.defender,ranged=opts.ranged??isRangedCapable(a),weapon=resolved?resolved.weapon:combatWeapon(opts.weaponOverride??a.weapon,a,d,opts.rules.weaponOverflow,opts.rules.damageModel,opts.rules.overmatch,opts.rules.overmatchCurve);
     const count=a.scale==='hero'?1:a.body==='vehicle'?personnel(a):Math.min(personnel(a),opts.participants??engagementWidth(a,d,ranged,undefined,opts.fieldTags)*Math.max(1,personnel(a)/COHORT_REFERENCE));
-    const crew=a.scale!=='hero'&&(a.body??'human')==='human'&&!opts.abilityDamage?.delivery?.startsWith('magic')?weaponCrew(weapon,opts.rules.armsModel):1;
+    const crew=a.scale!=='hero'&&(a.body??'human')==='human'&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&!opts.abilityDamage?.delivery?.startsWith('magic')?weaponCrew(weapon,opts.rules.armsModel):1;
     const loose=Math.max(0,count/crew)*(!ranged&&looseFormation(a)?0.5:1);
     // V12: a formation throws one demolition charge per three participants instead of one per member.
     const participants=opts.rules.armsModel&&a.scale!=='hero'&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&weapon?.tags?.includes('blast')?demolitionPackets(loose):loose;

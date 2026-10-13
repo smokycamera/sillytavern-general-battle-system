@@ -30,6 +30,21 @@ function mass(skills: string, rank = 'rear', input: Partial<GenerateInput> = {})
 }
 
 describe('技能位移：突进（冲锋）、闪现、后撤', () => {
+  it('纯突进加后撤在小战和会战都执行后撤，强化射程能延长会战闪现', () => {
+    const small = grid('往返:突进+后撤L5');
+    expect(small.b.useAbility('a', small.ability.id, 'cell:24').ok).toBe(true);
+    expect(small.a.pos).not.toBe(24);
+    expect(small.b.log.some(e => e.move?.skill === 'after')).toBe(true);
+    const large = mass('往返:突进+后撤L5');
+    expect(large.b.useAbility('a', large.ability.id, 'zone:ally:中军:front').ok).toBe(true);
+    large.b.resolveRound();
+    expect(formationNode(large.b.byId('a')).rank).not.toBe('front');
+    expect(large.b.log.some(e => e.kind === 'move' && e.text.includes('后撤'))).toBe(true);
+    const blink = mass('瞬身:闪现L5', 'front'); blink.ability.bonuses = { range: 5 };
+    expect(blink.b.useAbility('a', blink.ability.id, 'zone:ally:中军:reserve').ok).toBe(true);
+    blink.b.resolveRound();
+    expect(formationNode(blink.b.byId('a')).rank).toBe('reserve');
+  });
   it('写法：冲锋默认近战突进，单写位移词只移动自己；突进与闪现只取一个', () => {
     expect(skillMechanismName(parseSkillMechanism('冲锋')!)).toBe('物理单体近战+突进');
     expect(skillMechanismName(parseSkillMechanism('物理单体+冲锋+击退')!)).toBe('物理单体近战+击退+突进');
