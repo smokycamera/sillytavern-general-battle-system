@@ -194,12 +194,12 @@ try {
   check('会战结算和报告保留',(await state()).reports.length===1&&(await state()).committedOutcomeIds.length===1);
   const exported=await page.evaluate(()=>({format:'tavern-battle-export',version:1,envelope:__tavernBattleNative.service.store.envelope()}));
   await page.getByRole('button',{name:'存档管理',exact:true}).click();
-  await page.getByRole('button',{name:'预览回退旧脚本',exact:true}).click();
-  await page.getByRole('button',{name:'确认把最新进度交回旧脚本',exact:true}).click();
+  await page.getByRole('button',{name:'预览切换到脚本模式',exact:true}).click();
+  await page.getByRole('button',{name:'确认把最新进度切换到脚本模式',exact:true}).click();
   await page.waitForFunction(()=>__tavernBattleNative.service.status().phase==='handoff');
   check('管理界面回退最新会战进度并停止原生写入',await page.evaluate(()=>context.chatMetadata.variables.panel.reports.length===1&&!__tavernBattleNative.service.canWrite()));
   await page.getByRole('button',{name:'预览迁回原生',exact:true}).click();
-  await page.getByRole('button',{name:'确认采用旧脚本阶段进度并迁回原生',exact:true}).click();await ready();
+  await page.getByRole('button',{name:'确认导入脚本模式进度并迁回原生',exact:true}).click();await ready();
   check('管理界面重新迁回保留进度',(await state()).reports.length===1);
   await page.getByRole('button',{name:'存档管理',exact:true}).click();await page.getByRole('button',{name:'预览清空当前战阵',exact:true}).click();
   await page.getByRole('button',{name:'确认清空当前聊天战阵数据',exact:true}).click();await page.getByRole('button',{name:'确认清空当前聊天战阵数据',exact:true}).waitFor({state:'detached'});await ready();
