@@ -4,7 +4,8 @@ import { layerMoveCost, groundBlocked, obstructionHeight, structureAt, STRUCTURE
 import { landmarkAt, BATTLEFIELD_SCENES, type MapGenerationRecord } from './map-design.js';
 import { isRangedWeapon } from '../loadout.js';
 import type { Combatant, ConditionDef } from '../types.js';
-import { activeTraitIds } from '../trait-sources.js';
+import { activeTraitIds, traitPrerequisiteReason } from '../trait-sources.js';
+import { traitLevel, roughGroundCost, ignoresGroundPenalty, terrainStalks } from '../trait-levels.js';
 import { environmentTags } from '../environment.js';
 import { isAirborne, sameLayer, flightCapabilityReason, type FlightConditions } from '../aerial.js';
 import { SeededRng } from '../rng.js';
@@ -65,7 +66,7 @@ export function standardField(width = 7, height = 9, tags: string[] = []): Battl
 }
 export function validateField(field: BattlefieldSpec): void {
   if (field.generation?.scene !== undefined && !BATTLEFIELD_SCENES.includes(field.generation.scene)) throw Error('场景记录损坏');
-  if (field.version !== 2 || ![[7, 9], [5, 7], [7, 11], [7, 13], [9, 15], [11, 17], [13, 19]].some(([w, h]) => field.width === w && field.height === h)) throw new Error('地图尺寸不支持（野战7×13，城区9×15/11×17/13×19，或旧地图）');
+  if (field.version !== 2 || ![[7, 9], [5, 7], [7, 11], [7, 13], [9, 15], [11, 17], [13, 19]].some(([w, h]) => field.width === w && field.height === h)) throw new Error('地图尺寸不支持（野战7×13，城区9×15/11×17/13×19）');
   if (field.tiles.length !== field.width * field.height || field.tiles.some((t) => !Object.hasOwn(TERRAIN_NAMES, t))) throw new Error('地形数据不完整');
   validateLayers(field);
   validateHeightMap(field);
@@ -134,8 +135,10 @@ export function tileCost(field: BattlefieldSpec, cell: number, actor?: Combatant
   if (layered !== undefined) return layered;
   if (actor && isAirborne(actor)) return 1;
   const terrain = field.tiles[cell], traits = actor?.rulesVersion === 'v2' ? activeTraitIds(actor) : [];
-  if (terrain === 'forest') return traits.includes('forest-lore') ? 1 : 2;
-  if (terrain === 'hill') return traits.includes('mountain-born') ? 1 : 2;
+  if (traits.includes('agile') && !traitPrerequisiteReason(actor!, 'agile')) return 1;
+  // 林地、山地专精按等级降低代价：L2–4 为 1.75/1.5/1.25，L5 起为 1（旧规则一律 L5）。
+  if (terrain === 'forest') return actor ? roughGroundCost(traitLevel(actor, 'forest-lore', traits)) : 2;
+  if (terrain === 'hill') return actor ? roughGroundCost(traitLevel(actor, 'mountain-born', traits)) : 2;
   return terrain === 'rough' ? 2 : 1;
 }
 /** Difficult but traversable ground cannot permanently trap a slow unit. A step costs
@@ -459,9 +462,9 @@ export function terrainTacticalValue(field: BattlefieldSpec, cell: number, actor
     // Real heights stack with cover in combat; older maps keep the first matching protection only.
     protection += heights ? cover + height : cover || height;
   }
-  const penalty = actor.rulesVersion === 'v2' && (terrain === 'forest' && !traits.includes('forest-lore') || !heights && terrain === 'hill' && !traits.includes('mountain-born')) ? .45
+  const penalty = actor.rulesVersion === 'v2' && (terrain === 'forest' && !ignoresGroundPenalty(traitLevel(actor, 'forest-lore', traits)) || !heights && terrain === 'hill' && !ignoresGroundPenalty(traitLevel(actor, 'mountain-born', traits))) ? .45
     : heights && (terrain === 'shallow_water' || terrain === 'swamp') && !traits.includes('water-crossing') ? 1 : 0;
-  const concealment = traits.includes('stalk') && ['cover', 'forest'].includes(terrain ?? '')
+  const concealment = (traits.includes('stalk') && ['cover', 'forest'].includes(terrain ?? '') || terrainStalks(actor, terrain, traits))
     && foes.every(u => gridDistance(field, cell, u.pos!) > 2) ? .25 : 0;
   if (field.layerVersion) protection += foes.reduce((n, f) => n + structureDefense(field, { ...actor, pos: cell }, f, isRangedWeapon(f.weapon)), 0);
   return Math.min(field.layerVersion ? 2.2 : 1.2, protection / Math.max(1, foes.length) * .55) - penalty + concealment;

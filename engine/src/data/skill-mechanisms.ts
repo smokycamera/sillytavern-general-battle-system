@@ -1,4 +1,4 @@
-import { TRAITS } from './traits.js';
+import { TRAITS, TRAIT_FORMER_NAMES } from './traits.js';
 
 export const SKILL_CATEGORIES = [
   { id: 'physical-single', name: '物理单体' }, { id: 'physical-area', name: '物理范围' },
@@ -25,10 +25,14 @@ export const SKILL_MODIFIER_ALIASES: Record<string, string[]> = {
   disarm: ['解除武装'], silence: ['禁言', '封魔'], fear: ['恐惧', '恐吓'], 'morale-down': ['降低士气', '打击士气'],
   demoralize: ['士气低落', '沮丧'], wound: ['伤势恶化'], poison: ['毒伤', '毒素'], bleed: ['出血'], burn: ['灼烧', '烧伤'],
   dispel: ['解除增益', '驱除增益'], drain: ['消耗能量', '能量削减'], push: ['推开', '推离'], pull: ['拉近', '牵引'],
+  dash: ['冲锋', '冲刺', '突击', '飞扑', '扑击', '前冲'], blink: ['瞬移', '传送', '闪烁', '瞬步', '缩地', '影步'],
+  withdraw: ['撤步', '后跳', '跃退', '脱离', '翻滚', '后退'],
 };
 export interface SkillMechanism { category: SkillCategory; area: boolean; modifiers: string[] }
+/** 施术者自身位移的效果词。 */
+export const MOVEMENT_MODIFIERS: readonly string[] = ['dash', 'blink', 'withdraw'];
 export interface SkillRecipe extends SkillMechanism { version: 'skill-formula-v1' | 'skill-formula-v2'; power: number }
-export interface SkillModifier { id: string; name: string; allowed: 'damage' | 'physical' | 'magic' | 'buff' | 'hostile' | 'support'; condition?: string; trait?: string }
+export interface SkillModifier { id: string; name: string; allowed: 'damage' | 'physical' | 'magic' | 'buff' | 'hostile' | 'support' | 'any'; condition?: string; trait?: string }
 export const SKILL_MODIFIERS: SkillModifier[] = [
   { id: 'melee', name: '近战', allowed: 'physical' }, { id: 'ranged', name: '射击', allowed: 'physical' },
   { id: 'shield', name: '盾牌', allowed: 'physical' }, { id: 'projectile', name: '投射', allowed: 'physical' },
@@ -68,16 +72,34 @@ export const SKILL_MODIFIERS: SkillModifier[] = [
   { id: 'burn', name: '燃烧', allowed: 'hostile', condition: 'burning' },
   { id: 'dispel', name: '驱散', allowed: 'hostile' }, { id: 'drain', name: '耗能', allowed: 'hostile' },
   { id: 'push', name: '击退', allowed: 'hostile' }, { id: 'pull', name: '拉拽', allowed: 'hostile' },
+  // 施术者自身位移：突进、闪现在效果之前，后撤在效果之后；任何类别都可附加。
+  { id: 'dash', name: '突进', allowed: 'any' }, { id: 'blink', name: '闪现', allowed: 'any' }, { id: 'withdraw', name: '后撤', allowed: 'any' },
   ...TRAITS.filter((t) => t.v2SourceReady).map((t): SkillModifier => ({ id: 'trait-' + t.id, name: '特质' + t.name, allowed: 'buff', trait: t.id })),
 ];
-export function allowedSkillModifiers(category: SkillCategory): SkillModifier[] {
+const TRAIT_BY_ID = new Map(TRAITS.map((t) => [t.id, t]));
+/** 停用特质与身体/装备特质只为旧技能的 id 保留，新技能不能再选。 */
+const retiredTraitModifier = (m: SkillModifier) => !!m.trait && !!(TRAIT_BY_ID.get(m.trait)?.legacy || TRAIT_BY_ID.get(m.trait)?.derived);
+/** 新技能不再授予的特质：先锋部署只在开战部署时生效，战中授予没有作用；守护、大守护与随等级缩放的增益守护是同一种减伤，
+ *  写成技能效果时改用增益守护。已学技能的旧 id 照常结算。 */
+export const SKILL_GRANT_REPLACEMENTS: Readonly<Record<string, string | undefined>> = { 'trait-vanguard': undefined, 'trait-guardian': 'ward', 'trait-guardian-greater': 'ward' };
+const offeredModifier = (m: SkillModifier) => !retiredTraitModifier(m) && !(m.id in SKILL_GRANT_REPLACEMENTS);
+function modifierAllowed(m: SkillModifier, category: SkillCategory): boolean {
   const physical = category.startsWith('physical'), magic = category.startsWith('magic'), damage = physical || magic;
-  return SKILL_MODIFIERS.filter((m) => m.allowed === 'support' ? !damage : m.allowed === 'buff' ? category === 'buff' : m.allowed === 'hostile' ? category !== 'buff'
+  return m.allowed === 'any' || (m.allowed === 'support' ? !damage : m.allowed === 'buff' ? category === 'buff' : m.allowed === 'hostile' ? category !== 'buff'
     : m.allowed === 'physical' ? physical : m.allowed === 'magic' ? magic : damage);
 }
-/** 结构参数仍只有一个槽位；冲突时采用最后声明，效果词本身全部保留。 */
+/** 召唤、烟幕、治疗区域与陷阱按阵营或在施术者身旁生效，与技能目标是谁无关，任何类别都可以附带。 */
+const SIDE_AWARE = new Set(['summon', 'summon-single', 'summon-group', 'zone-smoke', 'zone-healing', 'zone-trap']);
+/** 作用在目标身上的效果与类别方向相反：攻击/减益技能附带治疗、增益或授予特质会给敌人，增益技能附带伤害或控制会打在友军身上。 */
+function polarityConflict(m: SkillModifier, category: SkillCategory): boolean {
+  return !SIDE_AWARE.has(m.id) && (category === 'buff' ? m.allowed === 'hostile' : m.allowed === 'buff');
+}
+export function allowedSkillModifiers(category: SkillCategory): SkillModifier[] {
+  return SKILL_MODIFIERS.filter((m) => offeredModifier(m) && modifierAllowed(m, category));
+}
+/** 结构参数仍只有一个槽位；冲突时采用最后声明，效果词本身全部保留。突进与闪现都是出手前的接近方式，同样只取一个。 */
 function normalizeModifiers(input: string[]): string[] {
-  const groups=[['melee','ranged','shield','projectile'],['thermal','arcane'],['cone','line','ring','chain'],['summon','summon-single','summon-group']];
+  const groups=[['melee','ranged','shield','projectile'],['thermal','arcane'],['cone','line','ring','chain'],['summon','summon-single','summon-group'],['dash','blink']];
   return [...new Set(input)].filter(id=>!groups.some(group=>group.includes(id)&&[...input].reverse().find(value=>group.includes(value))!==id));
 }
 export function skillMechanismId(mechanism: SkillMechanism): string {
@@ -94,20 +116,29 @@ export function skillMechanismFromId(id: string): SkillMechanism | undefined {
   if (modifiers.some((id) => !SKILL_MODIFIERS.some((m) => m.id === id))) return undefined;
   return { category, area, modifiers };
 }
-/** 通用机制直接解析；自定义名称不进入机制推断，不匹配预制技能名。 */
-export function parseSkillMechanism(text: string): SkillMechanism | undefined {
-  const controls:Record<string,string> = {眩晕:'stun',定身:'root',沉默:'silence',缴械:'disarm',减速:'slow',惊惧:'fear',击退:'push',拉拽:'pull'};
-  const simple:Record<string,[SkillCategory,string]> = {单体召唤:['buff','summon-single'],群体召唤:['buff','summon-group'],召唤:['buff','summon'],屏障:['buff','barrier'],治疗:['buff','heal'],净化:['buff','cleanse'],回能:['buff','restore'],火墙:['magic-area','zone-fire'],毒雾:['magic-area','zone-poison'],烟幕:['buff','zone-smoke'],治疗区域:['buff','zone-healing'],陷阱:['debuff','zone-trap']};
+const CHARGE_WORDS = ['冲锋', '突击', '飞扑', '扑击'];
+/** 单词简写展开为完整机制：控制词默认减益；冲锋类默认以实际近战武器出手；单写位移词只移动自己。 */
+const SHORTHAND: Record<string, [SkillCategory, ...string[]]> = {
+  单体召唤: ['buff', 'summon-single'], 群体召唤: ['buff', 'summon-group'], 召唤: ['buff', 'summon'], 屏障: ['buff', 'barrier'], 治疗: ['buff', 'heal'],
+  净化: ['buff', 'cleanse'], 回能: ['buff', 'restore'], 火墙: ['magic-area', 'zone-fire'], 毒雾: ['magic-area', 'zone-poison'], 烟幕: ['buff', 'zone-smoke'],
+  治疗区域: ['buff', 'zone-healing'], 陷阱: ['debuff', 'zone-trap'],
+  眩晕: ['debuff', 'stun'], 定身: ['debuff', 'root'], 沉默: ['debuff', 'silence'], 缴械: ['debuff', 'disarm'], 减速: ['debuff', 'slow'], 惊惧: ['debuff', 'fear'],
+  击退: ['debuff', 'push'], 拉拽: ['debuff', 'pull'],
+  冲锋: ['physical-single', 'melee', 'dash'], 突击: ['physical-single', 'melee', 'dash'], 飞扑: ['physical-single', 'melee', 'dash'], 扑击: ['physical-single', 'melee', 'dash'],
+  ...Object.fromEntries(([['dash', '突进', '冲刺', '前冲'], ['blink', '闪现', ...SKILL_MODIFIER_ALIASES.blink!], ['withdraw', '后撤', ...SKILL_MODIFIER_ALIASES.withdraw!]] as string[][])
+    .flatMap(([id, ...words]) => words.map((word) => [word, ['buff', id!]]))),
+};
+/** 剔除原因：deployment 开战部署才生效；retired 停用特质；enemy 友方效果写进攻击/减益会作用到敌人；ally 伤害/控制写进增益会作用到友军。 */
+export type DroppedSkillWord = { name: string; reason: 'deployment' | 'retired' | 'enemy' | 'ally' };
+export interface SkillMechanismParts { mechanism?: SkillMechanism; dropped: DroppedSkillWord[]; replaced: [string, string][] }
+/** 宽松解析：识别全部登记词，再剔除在该类别不能成立的效果，例如攻击技能里的治疗只会治疗被打的敌人、增益技能里的眩晕会晕倒友军。
+ *  正文容错据此给出诊断；面板与正文的严格解析只接受没有剔除的写法。 */
+export function parseSkillMechanismParts(text: string): SkillMechanismParts | undefined {
   const short = text.trim().replace(/^控制[：:]?/, '');
-  if(simple[short]) { const [category,id]=simple[short]!;return {category,area:category.endsWith('area'),modifiers:[id]}; }
-  if(controls[short]) return {category:'debuff',area:false,modifiers:[controls[short]!]};
-  let source = text.trim().replace(/^(?:范围|群体)(buff|debuff|增益|减益)/i, '$1范围');
-  const shorthand = Object.keys(simple).find(name => source.startsWith(name + '+'));
-  if (shorthand) source = SKILL_CATEGORIES.find(c => c.id === simple[shorthand]![0])!.name + '+' + source;
-  else {
-    const control = Object.keys(controls).find(name => source.startsWith(name + '+'));
-    if (control) source = 'debuff+' + source;
-  }
+  const expand = (word: string) => { const [category, ...ids] = SHORTHAND[word]!; return [SKILL_CATEGORIES.find((c) => c.id === category)!.name, ...ids.map((id) => SKILL_MODIFIERS.find((m) => m.id === id)!.name)].join('+'); };
+  let source = SHORTHAND[short] ? expand(short) : text.trim().replace(/^(?:范围|群体)(buff|debuff|增益|减益)/i, '$1范围');
+  const shorthand = Object.keys(SHORTHAND).sort((a, b) => b.length - a.length).find(name => source.startsWith(name + '+'));
+  if (shorthand) source = expand(shorthand) + source.slice(shorthand.length);
   const prefix = SKILL_CATEGORIES.flatMap((c) => [c.name, ...SKILL_CATEGORY_ALIASES[c.id]].map((name) => ({ id: c.id, name })))
     .sort((a, b) => b.name.length - a.name.length).find((c) => source.toLowerCase().startsWith(c.name.toLowerCase()));
   if (!prefix) return undefined;
@@ -115,19 +146,45 @@ export function parseSkillMechanism(text: string): SkillMechanism | undefined {
   source = source.slice(prefix.name.length).trim();
   const areaWord = source.match(/^(?:群体范围|范围|群体(?!召唤))/)?.[0];
   const area = category.endsWith('area') || !!areaWord; if (areaWord) source = source.slice(areaWord.length);
-  const preferred=allowedSkillModifiers(category);
-  const modifiers: string[] = [], choices = [...preferred,...SKILL_MODIFIERS.filter(m=>!preferred.includes(m))].flatMap((m) => [m.name, ...(SKILL_MODIFIER_ALIASES[m.id] ?? []), ...(m.trait ? [m.name.slice(2)] : [])].map((name) => ({ id: m.id, name }))).sort((a, b) => b.name.length - a.name.length);
+  const preferred = allowedSkillModifiers(category);
+  // 停用特质与身体/装备特质只保留旧技能 id 的结算，新写法识别后剔除；改名特质的旧称照样识别。
+  const found: SkillModifier[] = [], choices = [...preferred, ...SKILL_MODIFIERS.filter(m => !preferred.includes(m))]
+    .flatMap((m) => [m.name, ...(SKILL_MODIFIER_ALIASES[m.id] ?? []), ...(m.trait ? [m.name.slice(2), ...(TRAIT_FORMER_NAMES[m.trait] ?? [])] : [])].map((name) => ({ modifier: m, name }))).sort((a, b) => b.name.length - a.name.length);
+  let charge = false;
   while (source) {
     source = source.replace(/^[+\s]+/, ''); if (!source) break;
-    const modifier = choices.find((m) => source.startsWith(m.name)); if (!modifier) return undefined;
-    modifiers.push(modifier.id); source = source.slice(modifier.name.length);
+    const choice = choices.find((m) => source.startsWith(m.name)); if (!choice) return undefined;
+    found.push(choice.modifier); source = source.slice(choice.name.length);
+    charge ||= CHARGE_WORDS.includes(choice.name);
   }
-  return skillMechanismFromId(skillMechanismId({ category, area, modifiers }));
+  // 冲锋类词表示贴身出手：物理技能未写投送方式时按实际近战武器。
+  if (charge && category.startsWith('physical') && !found.some((m) => ['melee', 'ranged', 'shield', 'projectile'].includes(m.id))) found.unshift(SKILL_MODIFIERS.find((m) => m.id === 'melee')!);
+  const modifiers: string[] = [], dropped: DroppedSkillWord[] = [], replaced: [string, string][] = [];
+  const why = (m: SkillModifier): DroppedSkillWord['reason'] => m.id in SKILL_GRANT_REPLACEMENTS && !SKILL_GRANT_REPLACEMENTS[m.id] ? 'deployment' : retiredTraitModifier(m) ? 'retired'
+    : m.allowed === 'buff' || m.id in SKILL_GRANT_REPLACEMENTS ? 'enemy' : 'ally';
+  for (const m of found) {
+    const replacement = m.id in SKILL_GRANT_REPLACEMENTS ? SKILL_MODIFIERS.find((r) => r.id === SKILL_GRANT_REPLACEMENTS[m.id]) : m;
+    if (replacement && replacement !== m && !polarityConflict(replacement, category)) { modifiers.push(replacement.id); replaced.push([m.name.replace(/^特质/, ''), replacement.name]); }
+    else if (replacement === m && !retiredTraitModifier(m) && !polarityConflict(m, category)) modifiers.push(m.id);
+    else dropped.push({ name: m.name.replace(/^特质/, ''), reason: why(m) });
+  }
+  // 增益/减益没有附加效果时会补默认效果；全部剔除后不能悄悄换成另一种技能。
+  const effects = modifiers.filter((id) => !['melee', 'ranged', 'shield', 'projectile', 'thermal', 'arcane', 'martial', 'cone', 'line', 'ring', 'chain'].includes(id));
+  if (dropped.length && !effects.length && !category.startsWith('physical') && !category.startsWith('magic')) return { dropped, replaced };
+  const mechanism = skillMechanismFromId(skillMechanismId({ category, area, modifiers }));
+  return mechanism ? { mechanism, dropped, replaced } : undefined;
+}
+/** 通用机制直接解析；自定义名称不进入机制推断，不匹配预制技能名。与类别冲突的效果不成立。 */
+export function parseSkillMechanism(text: string): SkillMechanism | undefined {
+  const parsed = parseSkillMechanismParts(text);
+  return parsed?.mechanism && !parsed.dropped.length ? parsed.mechanism : undefined;
 }
 export function skillMechanismName(value: SkillMechanism | string): string {
   const mechanism = typeof value === 'string' ? skillMechanismFromId(value) : value;
   if (!mechanism) return '';
   return SKILL_CATEGORIES.find((c) => c.id === mechanism.category)!.name
     + (mechanism.area && !mechanism.category.endsWith('area') ? '范围' : '')
-    + mechanism.modifiers.map((id) => SKILL_MODIFIERS.find((m) => m.id === id)!.name).join('+');
+    // 自身位移写在最后，读作“物理单体近战+突进”；其余顺序不变，已有技能的显示名不受影响。
+    + [...mechanism.modifiers].sort((a, b) => Number(MOVEMENT_MODIFIERS.includes(a)) - Number(MOVEMENT_MODIFIERS.includes(b)))
+      .map((id) => SKILL_MODIFIERS.find((m) => m.id === id)!.name).join('+');
 }

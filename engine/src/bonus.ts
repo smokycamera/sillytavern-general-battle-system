@@ -11,6 +11,12 @@ import { fatiguePenalty } from './resources.js';
 import { humanEncumbered } from './body.js';
 import { defensivePostureMods, looseFormation } from './tactics.js';
 import { activeTraitIds, actualTargetTag, traitPrerequisiteReason, traitStatAdjustments, bodyRank, traitSourceActive } from './trait-sources.js';
+import { traitsV13 } from './trait-model.js';
+import { entrenched } from './entrenchment.js';
+import { gearBonuses } from './gear-bonuses.js';
+import { bonusSteps } from './enhancements.js';
+import { traitLevel, nightAttack, nightDefense, ignoresGroundPenalty, forestDefense, forestAttack, highGroundDefense, highGroundAttack,
+  plainsInitiative, plainsAttack, plainsChargeAttack, plainsDefense, urbanAttack, urbanDefense, urbanMeleeAttack, urbanCloseShotAttack, urbanInitiative } from './trait-levels.js';
 
 export type ModSource = 'intrinsic' | 'stance' | 'condition' | 'hero' | 'temp' | 'command';
 export type ModKind = 'atk' | 'def' | 'dmg' | 'morale' | 'spd' | 'ward';
@@ -26,6 +32,8 @@ export interface ModCond {
   vsTag?: string;
   /** 仅对某刻度目标生效 */
   vsScale?: Combatant['scale'];
+  /** 仅在距离不超过此值时生效（巷战近距射击） */
+  maxDistance?: number;
 }
 
 export interface Modifier {
@@ -81,6 +89,8 @@ export interface ResolveContext {
   charge?: boolean;
   /** 是否远程攻击 */
   ranged?: boolean;
+  /** 攻击方站得比目标高（实际高差或丘陵对平地） */
+  attackerHigher?: boolean;
   /** 地形等环境修正（由管线组装好传入） */
   stanceMods?: Modifier[];
 }
@@ -98,6 +108,7 @@ function condMet(cond: ModCond | undefined, ctx: ResolveContext): boolean {
     const target = ctx.defender;
     if (!target || target.scale !== cond.vsScale) return false;
   }
+  if (cond.maxDistance !== undefined && (ctx.distance === undefined || ctx.distance > cond.maxDistance)) return false;
   return true;
 }
 
@@ -185,11 +196,20 @@ export function hasFlag(unit: Combatant, flag: string, registry?: Map<string, Tr
 export function traitRuntimeMods(traitIds: string[], registry?: Map<string, Trait>, unit?: Combatant, context: ResolveContext = {}): Modifier[] {
   const out: Modifier[] = [];
   for (const id of unit ? activeTraitIds(unit) : [...new Set(traitIds)]) {
+    // V13 拒马：不再要求长兵器，并接过原克制机动对骑乘、载具与机动目标的打击加成（与旧克制机动同组取强）。
+    if (unit && traitsV13(unit) && id === 'pike-wall') {
+      const name = getTrait(id, registry)?.name ?? '拒马';
+      out.push({ source: 'intrinsic', sourceId: 'pike-wall:atk', stackGroup: 'counter-mobile:atk', name, kind: 'atk', type: 'flat', value: 2, cond: { vsTag: 'mobile' } });
+      out.push({ source: 'intrinsic', sourceId: 'pike-wall:dmg', stackGroup: 'counter-mobile:dmg', name, kind: 'dmg', type: 'mult', value: 1.25, cond: { vsTag: 'mobile' } });
+      continue;
+    }
     if (unit?.rulesVersion === 'v2' && ['large', 'titan', 'flying', 'shield-wall', 'pike-wall'].includes(id)) continue;
     const t = getTrait(id, registry);
     if (!t) continue;
     if (unit && traitPrerequisiteReason(unit, id, context)) continue;
     if (unit?.rulesVersion === 'v2' && id === 'fortification') {
+      // V13：只在据守位置生效；工兵的攻击（防守视角里 context.defender 是出手方）无视工事。
+      if (traitsV13(unit) && (!entrenched(unit) || context.defender && activeTraitIds(context.defender).includes('siege-breaker'))) continue;
       out.push({ source: 'intrinsic', sourceId: 'fortification:def', stackGroup: 'posture:def', name: t.name, kind: 'def', type: 'flat', value: 3 });
       if (context.ranged) out.push({ source: 'intrinsic', sourceId: 'fortification:ward', stackGroup: 'posture:ward', name: t.name, kind: 'ward', type: 'mult', value: 0.7 });
       continue;
@@ -197,7 +217,8 @@ export function traitRuntimeMods(traitIds: string[], registry?: Map<string, Trai
     if (unit?.rulesVersion === 'v2' && id === 'loose-formation') {
       if (looseFormation(unit)) {
         if (context.area && !context.engaged) out.push({ source: 'intrinsic', sourceId: 'loose:area', name: '疏散减轻范围暴露', kind: 'ward', type: 'mult', value: 0.5 });
-        if (!context.ranged && (context.distance ?? 0) <= 1) out.push({ source: 'intrinsic', sourceId: 'loose:melee', name: '疏散近战薄弱', kind: 'def', type: 'flat', value: -1 });
+        // V13 个体散兵没有阵形可散，不承担编队的近战代价。
+        if (!context.ranged && (context.distance ?? 0) <= 1 && !(traitsV13(unit) && unit.scale === 'hero')) out.push({ source: 'intrinsic', sourceId: 'loose:melee', name: '疏散近战薄弱', kind: 'def', type: 'flat', value: -1 });
       }
       continue;
     }
@@ -222,7 +243,8 @@ export function traitRuntimeMods(traitIds: string[], registry?: Map<string, Trai
       if (m && unit?.rulesVersion === 'v2') {
         m.sourceId = `${id}:${index}`;
         if (id === 'guardian' || id === 'guardian-greater') m.stackGroup = 'guardian:' + m.kind;
-        if (id === 'anti-large' || id === 'monster-hunter') m.stackGroup = 'counter-large:' + m.kind;
+        if (id === 'anti-large' || id === 'monster-hunter' || id === 'anti-air') m.stackGroup = 'counter-large:' + m.kind;
+        if (id === 'anti-mobile' && traitsV13(unit)) m.stackGroup = 'counter-mobile:' + m.kind;
       }
       if (m) out.push(m);
     }
@@ -297,7 +319,7 @@ export function conditionMods(
   for (const c of conds) {
     if (unit?.rulesVersion === 'v2' && c.dur <= 0) continue;
     if (unit?.rulesVersion === 'v2' && c.id === 'fearful' && activeTraitIds(unit).some((id) => getTrait(id, registry)?.effects.some((e) => e.kind === 'immuneMorale'))) continue;
-    if (unit?.rulesVersion === 'v2' && c.id === 'poisoned' && unit.body === 'vehicle') continue;
+    if (unit?.rulesVersion === 'v2' && c.id === 'poisoned' && (unit.body === 'vehicle' || activeTraitIds(unit).includes('inorganic'))) continue;
     const def = conditionDefs.get(c.id);
     if (!def?.mods) continue;
     for (const [index, m] of def.mods.entries()) out.push({ ...m, duration: c.dur,
@@ -320,13 +342,30 @@ export function collectMods(
   if (unit.rulesVersion === 'v2') {
     const traits = activeTraitIds(unit);
     if (humanEncumbered(unit)) equipment.push({ source: 'intrinsic', sourceId: 'equipment:encumbrance', name: '人形重载', kind: 'spd', type: 'flat', value: -2 });
-    if (ctx.fieldTags?.includes('night') && !traits.includes('night-fighter')) equipment.push({ source: 'stance', sourceId: 'environment:night', name: '夜间行动', kind: 'atk', type: 'flat', value: -2 });
-    if (ctx.terrain === 'forest' && !traits.includes('forest-lore') || !ctx.heightRules&&ctx.terrain === 'hill' && !traits.includes('mountain-born')) equipment.push({ source: 'stance', sourceId: 'environment:ground', name: '困难地形', kind: 'atk', type: 'flat', value: -1 });
+    // 五项专精按等级（V15 起 L1–10，旧规则一律 L5）；L5 与无专精时产生的修正与以前完全相同。
+    const forest = traitLevel(unit, 'forest-lore', traits), mountain = traitLevel(unit, 'mountain-born', traits), night = traitLevel(unit, 'night-fighter', traits);
+    if (ctx.fieldTags?.includes('night')) {
+      const attack = nightAttack(night);
+      if (attack < 0) equipment.push({ source: 'stance', sourceId: 'environment:night', name: '夜间行动', kind: 'atk', type: 'flat', value: attack });
+      if (attack > 0) equipment.push({ source: 'stance', sourceId: 'trait:night-fighter:atk', name: '夜战专精', kind: 'atk', type: 'flat', value: attack });
+      if (nightDefense(night)) equipment.push({ source: 'stance', sourceId: 'trait:night-fighter:def', name: '夜战专精', kind: 'def', type: 'flat', value: nightDefense(night) });
+    }
+    if (ctx.terrain === 'forest' && !ignoresGroundPenalty(forest) || !ctx.heightRules&&ctx.terrain === 'hill' && !ignoresGroundPenalty(mountain)) equipment.push({ source: 'stance', sourceId: 'environment:ground', name: '困难地形', kind: 'atk', type: 'flat', value: -1 });
+    if (ctx.terrain === 'forest' && forestDefense(forest)) equipment.push({ source: 'stance', sourceId: 'trait:forest-lore:def', name: '林地专精', kind: 'def', type: 'flat', value: forestDefense(forest) });
+    if (ctx.terrain === 'forest' && forestAttack(forest)) equipment.push({ source: 'stance', sourceId: 'trait:forest-lore:atk', name: '林地专精', kind: 'atk', type: 'flat', value: forestAttack(forest) });
+    if (ctx.attackerHigher && highGroundAttack(mountain)) equipment.push({ source: 'stance', sourceId: 'trait:mountain-born:atk', name: '山地专精·居高', kind: 'atk', type: 'flat', value: highGroundAttack(mountain) });
     if (ctx.ranged && (ctx.distance ?? 0) > 1 && ctx.terrain === 'forest') equipment.push({ source: 'stance', sourceId: 'environment:forest-cover', name: '林木掩护', kind: 'def', type: 'flat', value: 2 });
     // Real-height maps: fighting knee-deep in a ford or a bog costs footing both ways, unless the unit can cross water.
     if (ctx.heightRules && (ctx.terrain === 'shallow_water' || ctx.terrain === 'swamp') && !traits.includes('water-crossing')) for (const kind of ['atk', 'def'] as const)
       equipment.push({ source: 'stance', sourceId: 'environment:footing:' + kind, name: '立足不稳', kind, type: 'flat', value: -1 });
-    if (ctx.heightRules ? ctx.heightAdvantage : ctx.terrain === 'hill' && ctx.opponentTerrain !== 'hill') equipment.push({ source: 'stance', sourceId: 'environment:high-ground', name: ctx.heightRules ? '居高' : '高地', kind: 'def', type: 'flat', value: ctx.heightRules ? ctx.heightAdvantage! : 1 });
+    if (ctx.heightRules ? ctx.heightAdvantage : ctx.terrain === 'hill' && ctx.opponentTerrain !== 'hill') {
+      equipment.push({ source: 'stance', sourceId: 'environment:high-ground', name: ctx.heightRules ? '居高' : '高地', kind: 'def', type: 'flat', value: ctx.heightRules ? ctx.heightAdvantage! : 1 });
+      if (highGroundDefense(mountain)) equipment.push({ source: 'stance', sourceId: 'trait:mountain-born:def', name: '山地专精·居高', kind: 'def', type: 'flat', value: highGroundDefense(mountain) });
+    }
+    // 佩戴道具的速度与士气修正（同方向取最高）；伤害、精度、防御在伤害结算里合并。
+    const gear = gearBonuses(unit);
+    if (gear?.speed) equipment.push({ source: 'intrinsic', sourceId: 'gear:speed', name: '佩戴道具', kind: 'spd', type: 'flat', value: bonusSteps(gear, 'speed', 5) });
+    if (gear?.morale) equipment.push({ source: 'intrinsic', sourceId: 'gear:morale', name: '佩戴道具', kind: 'morale', type: 'flat', value: bonusSteps(gear, 'morale') });
     equipment.push(...fieldModsFor(unit, ctx.localTerrain ? [...(ctx.fieldTags ?? []).filter(t => t !== 'urban'), ...(ctx.terrain === 'street' ? ['urban'] : [])] : ctx.fieldTags ?? [], registry));
   }
   if (unit.rulesVersion === 'v2' && fatiguePenalty(unit) > 0) equipment.push({ source: 'condition', sourceId: 'fatigue:atk', name: '持续作战疲劳', kind: 'atk', type: 'flat', value: -fatiguePenalty(unit) });
@@ -351,13 +390,35 @@ export function fieldModsFor(unit: Combatant, fieldTags: string[], registry?: Ma
     const t = getTrait(id, registry);
     if (!t) continue;
     if (unit.rulesVersion === 'v2' && id === 'fortification') continue;
-    if (unit.rulesVersion === 'v2' && id === 'plains-runner' && fieldTags.includes('plains')) out.push({ source: 'stance', sourceId: 'plains-runner:spd', name: t.name, kind: 'spd', type: 'flat', value: 2 });
+    // V13 工兵靠拆除与破工事立功，不再在攻城环境里凭空加攻击。
+    if (traitsV13(unit) && id === 'siege-breaker') continue;
+    if (unit.rulesVersion === 'v2' && (id === 'plains-runner' || id === 'urban-fighter')) { out.push(...gradedFieldMods(unit, id, t.name, fieldTags)); continue; }
     for (const e of t.effects) {
       if (e.kind !== 'fieldMod' || !fieldTags.includes(e.field)) continue;
       for (const kind of ['atk', 'def', 'morale'] as const) if (e[kind]) out.push({ source: 'stance',
         name: unit.rulesVersion === 'v2' ? t.name : `${t.name}·${e.field}`,
         ...(unit.rulesVersion === 'v2' ? { sourceId: `field:${id}:${kind}` } : {}), kind, type: 'flat', value: e[kind]! });
     }
+  }
+  return out;
+}
+
+/** 平原与巷战专精按等级产生环境修正；L5 时与原来的平原（先攻+2、攻击+1）和巷战（攻击+1、防御+2）逐项相同。 */
+function gradedFieldMods(unit: Combatant, id: 'plains-runner' | 'urban-fighter', name: string, fieldTags: string[]): Modifier[] {
+  const level = traitLevel(unit, id), out: Modifier[] = [];
+  const push = (key: string, kind: ModKind, value: number, cond?: ModCond) => { if (value) out.push({ source: 'stance', sourceId: key, name, kind, type: 'flat', value, ...(cond ? { cond } : {}) }); };
+  if (id === 'plains-runner' && fieldTags.includes('plains')) {
+    push('plains-runner:spd', 'spd', plainsInitiative(level));
+    push('field:plains-runner:atk', 'atk', plainsAttack(level));
+    push('field:plains-runner:charge', 'atk', plainsChargeAttack(level) - plainsAttack(level), { charge: true });
+    push('field:plains-runner:def', 'def', plainsDefense(level));
+  }
+  if (id === 'urban-fighter' && fieldTags.includes('urban')) {
+    push('field:urban-fighter:atk', 'atk', urbanAttack(level));
+    push('field:urban-fighter:def', 'def', urbanDefense(level));
+    push('field:urban-fighter:melee', 'atk', urbanMeleeAttack(level) - urbanAttack(level), { ranged: false });
+    push('field:urban-fighter:close', 'atk', urbanCloseShotAttack(level) - urbanAttack(level), { ranged: true, maxDistance: 2 });
+    push('field:urban-fighter:spd', 'spd', urbanInitiative(level));
   }
   return out;
 }

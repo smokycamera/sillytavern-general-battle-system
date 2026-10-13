@@ -11,7 +11,7 @@ import type { GenOptions, GenResult } from './generator.js';
 import { curveAt, ARCHETYPE_MODS } from '../data/curves.js';
 import { diceAvg, rebuildDice } from '../data/weapons.js';
 import { ABILITY_BLUEPRINTS, abilityFromBlueprint } from '../data/ability-blueprints.js';
-import { traitRegistry } from '../data/traits.js';
+import { traitRegistry, validateTraitLevels } from '../data/traits.js';
 import { randomSeed } from '../rng.js';
 import { rollInstanceVariance, instanceMultiplier } from '../instance-variance.js';
 import { BODY, FORMULA_VERSION as EQUIPMENT_FORMULA_VERSION, compileArmor, compileWeapon } from './equipment.js';
@@ -41,8 +41,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   const curve = curveAt(training, raw.damageModel); const archMod = ARCHETYPE_MODS[arch];
   const id = `unit:${encodeURIComponent(seed)}`;
   const warnings: string[] = [];
-  if (oldScale) warnings.push('旧刻度输入已归为编队，保留指定人数、装备和训练');
-  if (raw.era) warnings.push('旧 era 只保留为迁移信息，未参与 V2 数值');
+  if (oldScale) warnings.push('人数形式已整理为编队，保留指定人数、装备和训练');
   if (raw.weaponName && !raw.weaponClass && !raw.weaponId) warnings.push('武器仅指定名称：使用显示的默认效果，未按名称推断特殊能力');
   if (raw.armorName && raw.armorTier === undefined && !raw.armorId) warnings.push('护甲仅指定名称：默认轻甲类型，特殊防护需明确规格');
   const weaponFor = (slot: 'primary' | 'sidearm'): Weapon | undefined => {
@@ -66,6 +65,10 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   const hpMax = group ? requestedMax : capSingleLife(requestedMax, raw.damageModel), hp = Math.min(requestedHp, hpMax);
   if (hpMax !== requestedMax) warnings.push(`单体生命上限${requestedMax}超过硬上限，已限制为${singleLifeLimit(raw.damageModel)}`);
   const traits = [...new Set(raw.traits)];
+  // 只保留单位确实拥有、且不是标准 L5 的专精等级。
+  validateTraitLevels(raw.traitLevels);
+  const levelEntries = Object.entries(raw.traitLevels ?? {}).filter(([id, level]) => traits.includes(id) && level !== 5);
+  const traitLevels = levelEntries.length ? Object.fromEntries(levelEntries) as Record<string, number> : undefined;
   const base = { atk: curve.atk + archMod.atk, def: curve.def + archMod.def, spd: Math.max(1, curve.spd + archMod.spd + bonusSteps(raw.bonuses, 'speed', 5)), hpMax,
     ...(group ? { moraleMax: curve.morale + bonusSteps(raw.bonuses, 'morale') } : {}) };
   const tags = new Set<string>([arch, raw.scale, body]);
@@ -82,13 +85,13 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
         else if (effect.stat === 'hpMax' && !group && raw.hpMax === undefined) base.hpMax += effect.value;
         else if (effect.stat === 'morale' && base.moraleMax !== undefined) base.moraleMax += effect.value;
       }
-      if (effect.kind === 'armorTier' && !['heavy-armor', 'super-heavy', 'mechanized'].includes(traitId)) warnings.push(`${trait.name} 不代替装备，不额外提高 V2 防护`);
+      if (effect.kind === 'armorTier' && !['heavy-armor', 'super-heavy', 'mechanized'].includes(traitId)) warnings.push(`${trait.name} 不代替装备，不额外提高防护`);
     }
     for (const tag of trait.grantsTags ?? []) if (!['large', 'titan', 'flying', 'spear', 'ranged-capable', 'mounted'].includes(tag)) tags.add(tag);
   }
   if (!group) base.hpMax = capSingleLife(base.hpMax, raw.damageModel);
   const currentHp = raw.hp === undefined ? base.hpMax : Math.min(hp, base.hpMax);
-  if (raw.abilityIds?.length) throw new Error('旧固定技能需先迁移为明确效果配方，不能直接进入 V2');
+  if (raw.abilityIds?.length) throw new Error('请先将技能更新为明确效果配方');
   const abilities: Ability[] = []; const abilityAudit: { blueprintId: string; power: number }[] = [];
   for (const spec of raw.abilityBlueprints ?? []) {
     const definitionId = typeof spec === 'string' ? spec : spec.id;
@@ -107,7 +110,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
     weaponLevel: weapon.level, sidearmLevel: sidearm?.level, armorTier: tier, armorLevel: armorPower, hpMax: base.hpMax, hp: currentHp, preparedAbilityIds: prepared,
     abilityBlueprints: (raw.abilityBlueprints ?? []).map((s) => typeof s === 'string' ? { id: s, level: 5 } : { ...s, level: s.level ?? 5 }) };
   const unit: Combatant = { id, name: raw.name, side: raw.side, scale: raw.scale, archetype: arch, level: training,
-    rulesVersion: 'v2', ...(raw.damageModel ? {damageModel:raw.damageModel} : {}), bonuses: raw.bonuses, body, ...(raw.speedTier !== undefined ? { speedTier: raw.speedTier } : {}), ...(raw.mount ? { mount: true } : {}), base, hp: currentHp, tags: [...tags], traits,
+    rulesVersion: 'v2', ...(raw.damageModel ? {damageModel:raw.damageModel} : {}), bonuses: raw.bonuses, body, ...(raw.speedTier !== undefined ? { speedTier: raw.speedTier } : {}), ...(raw.mount ? { mount: true } : {}), base, hp: currentHp, tags: [...tags], traits, ...(traitLevels ? { traitLevels } : {}),
     weapon, sidearm, armor, shield: raw.shield ? { id: `${id}:shield`, load: 2 } : undefined,
     abilities, preparedAbilityIds: preparedIds,
     conditions: [], abilityState: [], resources: { SP: 6 + Math.floor(training / 2), reserve: integer(raw.reserves ?? 0, 0, 2, '随队预备份额') },

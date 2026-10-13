@@ -3,6 +3,7 @@ import { isWoundModel, UNIFIED_WOUNDS, UNIFIED_SPLASH, powerIndex } from './bala
 import { compileWeapon } from './gen/equipment.js';
 import { isCannonWeapon, isRangedWeapon } from './loadout.js';
 import { bonusMultiplier, bonusRating, bonusPoints, channelPoints } from './enhancements.js';
+import { gearBonuses } from './gear-bonuses.js';
 import type {Armor,Combatant,DamageChannel,Weapon,RulePack} from './types.js';
 import {curveAt} from './data/curves.js';
 import {diceAvg} from './data/weapons.js';
@@ -88,10 +89,12 @@ export function anchoredWeapon(weapon:Weapon|undefined,ammo:'he'|'ap'='he',model
     penetration:Math.max(0,2*power+(['cannon','indirect-cannon','autocannon','demolition'].includes(mechanism)?2:mechanism==='heavy-rifle'?2:['firearm','rifle','energy'].includes(mechanism)?1:0)+(melee?.penetration??0)+(artillery&&ammo==='ap'?2:0)+instanceRating(weapon.recipe?.bonuses,'penetration',weapon.customized?undefined:weapon.recipe?.variance,weapon.channel??'kinetic')),
     splashTargets:splash,splashFactor:mechanism==='demolition'?0.6:0.4};
 }
-export function anchoredProtection(unit:Pick<Combatant,'armor'|'body'|'shield'|'damageModel'|'armsModel'>,channel:DamageChannel):number {
+export function anchoredProtection(unit:Pick<Combatant,'armor'|'body'|'shield'|'damageModel'|'armsModel'>&Partial<Pick<Combatant,'gear'>>,channel:DamageChannel):number {
   const armor=unit.armor,innate=BODY[unit.body??'human'].protection[channel];
-  const armorBonus=armor?.recipe?.bonuses,shieldBonus=isWoundModel(unit.damageModel)?undefined:unit.shield?.recipe?.bonuses;
-  const adjustment=bonusRating({protection:bonusPoints(armorBonus,'protection')+channelPoints(armorBonus,'protection',channel)+bonusPoints(shieldBonus,'protection')+channelPoints(shieldBonus,'protection',channel)},'protection');
+  const armorBonus=armor?.recipe?.bonuses,shieldBonus=isWoundModel(unit.damageModel)?undefined:unit.shield?.recipe?.bonuses,gear=gearBonuses(unit);
+  // 佩戴道具的防护（同方向取最高一件）与护甲、盾的防护修正相加，合计仍限 ±10 点。
+  const own=bonusPoints(armorBonus,'protection')+channelPoints(armorBonus,'protection',channel)+bonusPoints(shieldBonus,'protection')+channelPoints(shieldBonus,'protection',channel);
+  const adjustment=bonusRating({protection:own+bonusPoints(gear,'protection')+channelPoints(gear,'protection',channel)},'protection');
   if(!armor)return Math.max(innate,adjustment);
   if(armor.protectionOverride&&armor.protection)return Math.max(BODY[unit.body??'human'].protection[channel],armor.protection[channel]);
   const power=armor.recipe?.power??armor.level??5,tier=armor.tier;
@@ -102,8 +105,9 @@ export function anchoredProtection(unit:Pick<Combatant,'armor'|'body'|'shield'|'
     let left=2;for(const key of (['kinetic','thermal','arcane'] as const).filter(k=>k!==focus).sort((a,b)=>protection[b]-protection[a])){const n=Math.min(protection[key],left);protection[key]-=n;protection[focus]+=n;left-=n;}
   }
   const nominal = protection[channel] + adjustment;
-  // Zero protection stays zero: generation does not conjure armor onto bare skin.
-  const variation = nominal > 0 ? instanceRating(armorBonus, 'protection', armor.recipe?.variance, channel) - bonusRating(armorBonus, 'protection', channel) : 0;
+  // Zero protection stays zero: generation does not conjure armor onto bare skin. The armor's own
+  // instance variance follows only its own protection, never a worn charm's.
+  const variation = protection[channel] + bonusRating({protection:own},'protection') > 0 ? instanceRating(armorBonus, 'protection', armor.recipe?.variance, channel) - bonusRating(armorBonus, 'protection', channel) : 0;
   return Math.max(innate,armor.recipe?.variance?Number((nominal + variation).toPrecision(12)):nominal);
 }
 /** 高阶材料/护场提供等效耐久；24为固定同代交战基准，避免提高攻击曲线后同档全部秒杀。 */
@@ -188,8 +192,8 @@ export function overmatchMultiplier(power:number|undefined,unit:DefensiveTarget,
 }
 export function armorEffectLabel(unit:Pick<Combatant,'armor'|'shield'|'damageModel'>):string {
   return isWoundModel(unit.damageModel)
-    ? `部分穿透吸能强度×${Number(instanceMultiplier(unit.armor?.recipe?.bonuses,'power',unit.armor?.recipe?.variance).toFixed(2))}；充分穿透后无额外减伤${unit.armor?.powerScale!==undefined||unit.shield?.powerScale!==undefined?'（旧耐久覆盖不参与新规则）':''}`
-    : `装甲等效耐久×${Number(armorPowerScale(unit).toFixed(2))}（旧规则）`;
+    ? `部分穿透吸能强度×${Number(instanceMultiplier(unit.armor?.recipe?.bonuses,'power',unit.armor?.recipe?.variance).toFixed(2))}；充分穿透后无额外减伤`
+    : `装甲等效耐久×${Number(armorPowerScale(unit).toFixed(2))}`;
 }
 /** 没有手动指定时，火炮按公开目标防护和人数选择有效毁伤较高的弹种。 */
 export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Combatant,weaponOverflow=false,model=actor.damageModel,overmatch=false,curve?:RulePack['overmatchCurve']):Weapon|undefined {

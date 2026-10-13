@@ -17,7 +17,7 @@ describe('成员生命的本地档案与重战',()=>{
   const u=vehicle();applyCombatDamage(u,46,1);const record=unitRecordFromCombatant(u);
   const draft=unitDraftFromRecord(record);draft.name='重命名车辆';draft.memberHp='120';const edited=editUnitBuild(record,draft,registry),loaded=materializeUnitRecord(edited,registry);
   expect(loaded.formation!.memberHp).toBe(120);expect(memberHealth(loaded)).toBe(1154);expect(loaded.formation!.health![0]).toEqual({hp:54,count:1});
-  const before=prepareInventoryState({storage:[record],rosterIds:[record.id],inventory:[createInventoryItem('aid','修理包',{kind:'consumable',mechanism:'heal',power:3},'aid',2)],factRevision:1});
+  const before=prepareInventoryState({storage:[record],rosterIds:[record.id],inventory:[createInventoryItem('aid','修理包',{kind:'item',form:'single',power:3,active:'generic:buff:heal'},'aid',2)],factRevision:1});
   const after=prepareInventoryTransaction(before,{id:'repair',kind:'use',itemId:'aid',unitId:record.id,expectedRevision:1});
   const repaired=materializeUnitRecord(after.storage![0]!,registry);expect(repaired.hp).toBe(12);expect(memberHealth(repaired)).toBeGreaterThan(1154);expect(memberHealth(repaired)).toBeLessThan(1200);expect(after.inventory![0]!.qty).toBe(1);
   expect(memberHealthPanel(repaired)).toContain('12/12辆');expect(memberHealthPanel(repaired)).toContain('生命');
@@ -46,6 +46,7 @@ describe('成员生命的本地档案与重战',()=>{
   expect(inventory.inventory).toHaveLength(1);
   // 通用机制名称通过正式解析生成，检查升级后的范围参数能够通过档案验证。
   const caster=buildUnit(d,registry,'caster'),loaded=materializeUnitRecord(unitRecordFromCombatant(caster),registry);
-  expect(loaded.abilities[0]!.effectVersion).toBe('skill-v6.1');expect(loaded.abilities[0]!.areaExposure).toBe(24);
+  // 新建单位按 V14 默认规则准备技能（skills-v1 → skill-v7.0）；纯范围伤害不涉及复合状态，参数与 V13 相同。
+  expect(loaded.abilities[0]!.effectVersion).toBe('skill-v7.0');expect(loaded.abilities[0]!.areaExposure).toBe(24);
  });
 });

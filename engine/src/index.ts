@@ -3,6 +3,10 @@ export * from './balance.js';
 export * from './skill-learning.js';
 export * from './skill-attack.js';
 export * from './skill-effects.js';
+export * from './skill-movement.js';
+export * from './skill-model.js';
+export * from './item-model.js';
+export * from './trait-levels.js';
 export * from './afflictions.js';
 export * from './body.js';
 /**
@@ -51,6 +55,9 @@ export * from './mass/feedback.js';
 
 export * from './resources.js';
 export * from './arms.js';
+export * from './trait-model.js';
+export * from './entrenchment.js';
+export * from './situational-traits.js';
 export * from './small/weapon-range.js';
 
 export * from './small/skill-range.js';

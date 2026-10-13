@@ -104,7 +104,7 @@ try {
   console.log('✓ 正式面板：附魔/重铸保留实物与历史，卸下→转移→重新装备→重开保持精确实例');
   await root.locator('[data-role="inventory-unit"]').selectOption('a');
   await root.locator('[data-action="inventory-new"]').click();
-  await root.locator('[data-role="inventory-kind"]').selectOption('consumable');
+  await root.locator('[data-role="inventory-kind"]').selectOption('item');
   await root.locator('[data-role="inventory-name"]').fill('恢复剂');
   await root.locator('[data-role="inventory-power"]').fill('3');
   await root.locator('[data-role="inventory-qty"]').fill('2');

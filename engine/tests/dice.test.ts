@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDice, rollDice } from '../src/dice';
+import { parseDice, rollDice, rollDicePortion, rollDicePortionTotal } from '../src/dice';
 import { SeededRng } from '../src/rng';
 
 describe('parseDice', () => {
@@ -21,6 +21,16 @@ describe('parseDice', () => {
 });
 
 describe('rollDice', () => {
+  it('仅取总值与完整记录在普通、保留骰、暴击和固定加减值下保持总值与随机状态一致', () => {
+    for (const expr of ['1d20', '2d6+3', '3d8-5', '2d20kh1', '2d20kl1', '4d6kh3+2', '4d6kl3-2', '2d6kh2']) {
+      const full = new SeededRng(expr), compact = new SeededRng(expr);
+      for (let i = 0; i < 32; i++) {
+        const times = i % 2 + 1;
+        expect(rollDicePortionTotal(expr, compact, times)).toBe(rollDicePortion(expr, full, times).total);
+        expect(compact.getState()).toBe(full.getState());
+      }
+    }
+  });
   it('kh 保留最高', () => {
     const rng = new SeededRng('kh-test');
     // 找一组 2d20 使两次骰面不同

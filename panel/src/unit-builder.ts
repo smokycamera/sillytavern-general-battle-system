@@ -1,5 +1,8 @@
-import { V11_OVERFLOW_D20, V12_OVERFLOW_D20 } from '../../engine/src/rules.js';
+import { V11_OVERFLOW_D20, V12_OVERFLOW_D20, V15_OVERFLOW_D20 } from '../../engine/src/rules.js';
+import { prepareSkillModel } from '../../engine/src/skill-model.js';
+import { prepareItemModel } from '../../engine/src/item-model.js';
 import { prepareArmsModel } from '../../engine/src/arms.js';
+import { prepareTraitModel } from '../../engine/src/trait-model.js';
 import { spCapacity, prepareResourceModel } from '../../engine/src/resources.js';
 import { prepareCombatModel,nominalLife } from '../../engine/src/combat-model.js';
 import { capSingleLife } from '../../engine/src/health-limits.js';
@@ -52,9 +55,9 @@ function setGear(u: Combatant, d: UnitDraft, oldDraft?: UnitDraft): void {
     if (!old && before && ['primary', 'armor'].includes(slot) && JSON.stringify(before) === JSON.stringify(draft)) continue;
     if (!enabled) { if (slot === 'sidearm') delete u.sidearm; if (slot === 'shieldGear') delete u.shield; continue; }
     const unchanged = old && before && JSON.stringify({ ...before, name: '' }) === JSON.stringify({ ...draft, name: '' });
-    const result = unchanged ? structuredClone(old) : compileItem(equipmentSpecification(draft), { id: old && old.kind !== 'consumable' ? old.value.id : u.id + ':' + (slot === 'shieldGear' ? 'shield' : slot), name: draft.name.trim() || undefined,
-      seed: old && old.kind !== 'consumable' ? old.value.recipe?.seed ?? (u.genAudit?.seed ?? u.id) + ':' + slot : (u.genAudit?.seed ?? u.id) + ':' + slot, creatingUnit: !oldDraft, damageModel: u.damageModel, ...(oldDraft && old && old.kind !== 'consumable' ? { noVariance: old.value.recipe?.noVariance, variance: old.value.recipe?.variance ?? false } : {}) });
-    if (result.kind === 'consumable') throw Error('配装槽不能装入消耗品');
+    const result = unchanged ? structuredClone(old) : compileItem(equipmentSpecification(draft), { id: old && old.kind !== 'item' ? old.value.id : u.id + ':' + (slot === 'shieldGear' ? 'shield' : slot), name: draft.name.trim() || undefined,
+      seed: old && old.kind !== 'item' ? old.value.recipe?.seed ?? (u.genAudit?.seed ?? u.id) + ':' + slot : (u.genAudit?.seed ?? u.id) + ':' + slot, creatingUnit: !oldDraft, damageModel: u.damageModel, ...(oldDraft && old && old.kind !== 'item' ? { noVariance: old.value.recipe?.noVariance, variance: old.value.recipe?.variance ?? false } : {}) });
+    if (result.kind === 'item') throw Error('配装槽不能装入道具；道具在装备与物品页添加');
     if (unchanged && draft.name.trim()) result.value.name = draft.name.trim();
     if (slot === 'primary' && result.kind === 'weapon') u.weapon = result.value;
     if (slot === 'sidearm' && result.kind === 'weapon') u.sidearm = result.value;
@@ -73,8 +76,8 @@ export function buildUnit(d: UnitDraft, registry: Map<string, Trait>, seed: stri
   if (weapon.kind !== 'weapon' || armor.kind !== 'armor') throw Error('装备类型无效');
   let unit = generateUnit({ ...input, weaponClass: weapon.mechanism, weaponLevel: weapon.power, armorTier: armor.tier, armorLevel: armor.power, preparedAbilityIds: [] }, { seed, registry }).unit;
   setGear(unit, d); unit = learnAbilities(unit, [], { prepared: d.autoPrepare ? undefined : d.skills.filter((s) => s.prepared).map((s) => unit.abilities.find((a) => a.id === s.instanceId || a.definitionId === s.id && a.name === (s.name.trim() || skillDefinitionName(s.id)))?.id ?? s.id) });
-  prepareCombatModel(unit,V6_D20,(d.memberHp??'').trim()?capSingleLife(integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命'), d.damageModel):undefined); upgradeCombatSkills(unit);
-  prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V12_OVERFLOW_D20);
+  prepareSkillModel(unit, V15_OVERFLOW_D20); prepareCombatModel(unit,V6_D20,(d.memberHp??'').trim()?capSingleLife(integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命'), d.damageModel):undefined); upgradeCombatSkills(unit);
+  prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V12_OVERFLOW_D20); prepareTraitModel(unit, V15_OVERFLOW_D20); prepareItemModel(unit, V15_OVERFLOW_D20);
   unit.resources.SP = spCapacity(unit); normalizeBakedTraitStats(unit, registry); return unit;
 }
 /** 只编译变更的配方；名称、体型和训练显示不重掷其他实物。 */
@@ -89,6 +92,8 @@ export function editUnitBuild(previous: UnitRecord, d: UnitDraft, registry: Map<
   const edited = structuredClone(previous); edited.name = input.name; edited.side = input.side; edited.hp = input.hp ?? previous.hp; edited.base.hpMax = input.hpMax ?? previous.base.hpMax; edited.note = d.note;
   edited.traits = [...input.traits];
   const next = editUnitRecord(previous, edited, registry), unit = next.snapshot!;
+  // 去掉的专精不留等级；保留下来的专精沿用原等级。
+  if (unit.traitLevels) { unit.traitLevels = Object.fromEntries(Object.entries(unit.traitLevels).filter(([id]) => unit.traits.includes(id))); if (!Object.keys(unit.traitLevels).length) delete unit.traitLevels; }
   unit.body = input.body; unit.mount = input.mount; unit.speedTier = input.speedTier; validateMount(unit);
   prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);
   if(unit.formation&&(d.memberHp??'').trim())setMemberMaximum(unit,integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命'));

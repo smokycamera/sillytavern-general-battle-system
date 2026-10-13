@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generateUnit, prepareCombatModel, previewAttack, resolveAttack, standardConditionMap, traitRegistry,
-  V8_OVERFLOW_D20, grantBarrier, SeededRng, sampledPreviewComputations, beginPreviewScope, endPreviewScope, previewScopeEpoch, type AttackOpts } from '../src/index.js';
+  V8_OVERFLOW_D20, V8_OVERFLOW_TW, grantBarrier, SeededRng, sampledPreviewComputations, beginPreviewScope, endPreviewScope, previewScopeEpoch, type AttackOpts } from '../src/index.js';
 import { memberHealth } from '../src/member-health.js';
 import { bracePose } from '../src/tactics.js';
 let serial = 0;
@@ -19,13 +19,23 @@ function options(scale: 'hero' | 'company' = 'hero'): Omit<AttackOpts, 'rng'> {
 /** 统计一次查询实际执行的96种子抽样次数：命中缓存为0，重新计算为1。 */
 function computed(query: () => unknown): number { const before = sampledPreviewComputations(); query(); return sampledPreviewComputations() - before; }
 describe('屏障多段预览的有界值缓存', () => {
-  it.each(['hero', 'company'] as const)('%s 保持原96种子模拟的每项统计与战斗对象不变', scale => {
-    const o = options(scale), before = JSON.stringify(o), preview = previewAttack(o);
+  const scenarios: [string, 'hero' | 'company', (o: Omit<AttackOpts, 'rng'>) => void][] = [
+    ['个体连击', 'hero', () => {}],
+    ['编队连击', 'company', () => {}],
+    ['优势与扩大暴击', 'company', o => { o.advantage = 'adv'; o.rules.critMin = 15; }],
+    ['劣势与伤害保留骰', 'company', o => { o.advantage = 'dis'; o.attacker.weapon!.baseDice = '4d6kl3+2'; }],
+    ['概率命中与溅射', 'company', o => { o.rules = V8_OVERFLOW_TW; o.attacker.weapon!.splashTargets = 3; o.attacker.weapon!.splashFactor = .5; }],
+    ['范围法术与屏障', 'company', o => { o.abilityDamage = { baseDice: '2d6kh1+5', apDice: '2d4-1', shape: 'burst', areaExposure: 4, channel: 'arcane', penetration: 10 }; }],
+    ['目标耗尽', 'hero', o => { o.defender.hp = 1; o.defender.barrier = undefined; }],
+  ];
+  it.each(scenarios)('%s 保持原96种子模拟的每项统计与战斗对象不变', (_name, scale, configure) => {
+    const o = options(scale); configure(o);
+    const before = JSON.stringify(o), preview = previewAttack(o);
     let sum = 0, squares = 0, positive = 0, casualties = 0, maximum = 0, hits = 0;
     for (let i = 0; i < 96; i++) {
       const attacker = structuredClone(o.attacker), defender = structuredClone(o.defender), hp = memberHealth(defender), count = defender.hp;
       const rng = new SeededRng('barrier-preview:' + i); let hit = false;
-      for (let j = 0; j < o.attacker.weapon!.attacks! && defender.hp > 0; j++) hit = resolveAttack({ ...o, attacker, defender, rng }).hit || hit;
+      for (let j = 0; j < (o.abilityDamage ? 1 : o.attacker.weapon!.attacks!) && defender.hp > 0; j++) hit = resolveAttack({ ...o, attacker, defender, rng }).hit || hit;
       const loss = hp - memberHealth(defender); sum += loss; squares += loss * loss; positive += Number(loss > 0);
       casualties += count - defender.hp; maximum = Math.max(maximum, loss); hits += Number(hit);
     }

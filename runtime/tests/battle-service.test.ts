@@ -21,7 +21,7 @@ it('AI扫描结果独立保存，人工确认和自动批准均可提交，原�
 });
 it('持久化等待期间只发布旧事实，失败后重试沿用库存候选且只扣一次', async () => {
   const f = await setup();
-  await f.service.inventoryAction({ id: 'create', expectedRevision: 0, kind: 'create', itemId: 'potion', name: '药剂', qty: 3, spec: { kind: 'consumable', mechanism: 'heal', power: 3 } });
+  await f.service.inventoryAction({ id: 'create', expectedRevision: 0, kind: 'create', itemId: 'potion', name: '药剂', qty: 3, spec: { kind: 'item', form: 'single', power: 3, active: 'generic:buff:heal' } });
   const before = f.service.snapshot(); const preview = f.service.previewInventory({ kind: 'discard', itemId: 'potion', qty: 1 }, 'discard');
   f.setSave(async () => {});
   const listener = vi.fn(); f.service.listen(listener);
@@ -77,6 +77,18 @@ it('原生正文产生候选，人工确认入账后编辑和重扫均不重复�
   expect(f.service.snapshot().storage).toHaveLength(1);
   f.service.dispose(); expect([...f.handlers.values()].every(set => set.size === 0)).toBe(true);
 });
+// 酒馆的生成结束事件带 chat.length，不是消息序号；非流式先“收到消息”后“生成结束”，流式反过来。
+it.each(['non-streaming', 'streaming', 'started-only', 'commands-only'])('自动批准按酒馆真实事件顺序入账（%s）', async mode => {
+  const f = await setup(); await f.service.setStorySync(true);
+  if (mode !== 'commands-only') await f.emit('GENERATION_STARTED', 'normal', {}, false);
+  if (mode !== 'started-only') await f.emit('GENERATION_AFTER_COMMANDS', 'normal', {}, false);
+  f.context.chat!.push({ mes: '<tb><spawn name="测试卫兵" side="ally" scale="hero"/></tb>', is_user: false, swipe_id: 0, gen_finished: 'finished' });
+  const index = f.context.chat!.length - 1;
+  if (mode === 'streaming') { await f.emit('GENERATION_ENDED', f.context.chat!.length); await f.emit('MESSAGE_RECEIVED', index, 'normal'); }
+  else { await f.emit('MESSAGE_RECEIVED', index, 'normal'); await f.emit('GENERATION_ENDED', f.context.chat!.length); }
+  await vi.waitFor(() => expect(f.service.snapshot().proposals?.[0]?.status).toBe('committed'));
+  expect(f.service.snapshot().storage?.map(u => u.name)).toEqual(['测试卫兵']);
+});
 it('启动后仅扫描完整历史消息会标记为人工预览，不自动入账', async () => {
   const f = await setup(); await f.service.setStorySync(true);
   f.context.chat!.push({ mes: '<tb><field env="forest"/></tb>', is_user: false, swipe_id: 0, gen_finished: 'finished' });
@@ -87,21 +99,56 @@ it.each(['manual', 'message-event'])('同聊天附加信息对象被宿主替换
   const f = await setup();
   await f.service.transact(() => ({ schemaVersion: 2, field: 'forest', storySync: true, rosterIds: [], storage: [] }));
   const documentId = f.store.envelope()!.documentId, generation = f.store.envelope()!.generation;
-  // TauriTavern updateChatMetadata merges into a new object without CHAT_CHANGED.
+  // TauriTavern updateChatMetadata merges into a new object without CHAT_CHANGED; the archive is still in it.
   f.context.chatMetadata = { ...f.context.chatMetadata, unrelatedExtension: { enabled: true } };
   f.context.chat!.push({ mes: '<tb><spawn name="新回复单位" side="ally" scale="hero"/></tb>', is_user: false, swipe_id: 0, gen_finished: 'done' });
   await f.saveNormally();
-  expect(f.service.status().phase).toBe('ready'); expect(f.service.canWrite()).toBe(false);
+  expect(f.service.status().phase).toBe('ready'); expect(f.service.canWrite()).toBe(true); expect(f.service.writeBlockReason()).toBeUndefined();
   if (mode === 'manual') await f.service.scan(undefined, { manual: true });
   else { await f.emit('MESSAGE_RECEIVED', 0); await f.service.scan(0); }
   expect(f.service.canWrite()).toBe(true);
   expect(f.service.snapshot().proposals).toHaveLength(1);
   expect(f.service.snapshot().proposals![0]!.source.text).toContain('新回复单位');
+  // No generation start was seen for this reply, so even with auto-approve it waits, and says why.
   expect(f.service.snapshot().proposals![0]!.expected?.manualOnly).toBe(mode !== 'manual');
   expect(f.service.snapshot().proposals![0]!.status).toBe(mode === 'manual' ? 'committed' : 'pending');
+  if (mode !== 'manual') expect(f.service.snapshot().proposals![0]!.reason).toContain('自动批准只处理档案就绪后生成');
   expect(f.service.snapshot().field).toBe('forest');
   expect(f.store.envelope()).toMatchObject({ documentId, generation });
   expect(f.context.chatMetadata.unrelatedExtension).toEqual({ enabled: true });
+});
+it('宿主换入的附加信息对象不含当前存档时仍重新读取，回复只出人工确认', async () => {
+  const f = await setup();
+  await f.service.transact(() => ({ schemaVersion: 2, field: 'forest', storySync: true, rosterIds: [], storage: [] }));
+  f.context.chatMetadata = { unrelatedExtension: { enabled: true } };
+  expect(f.service.canWrite()).toBe(false); expect(f.service.writeBlockReason()).toContain('聊天已刷新');
+  await f.emit('GENERATION_STARTED', 'normal', {}, false); await f.emit('GENERATION_AFTER_COMMANDS', 'normal', {}, false);
+  f.context.chat!.push({ mes: '<tb><spawn name="换档后回复" side="ally" scale="hero"/></tb>', is_user: false, swipe_id: 0, gen_finished: 'finished' });
+  await f.emit('MESSAGE_RECEIVED', 0, 'normal'); await f.emit('GENERATION_ENDED', f.context.chat!.length);
+  await vi.waitFor(() => expect(f.service.snapshot().proposals).toHaveLength(1));
+  expect(f.service.canWrite()).toBe(true); expect(f.service.snapshot().field).toBe('forest');
+  expect(f.service.snapshot().proposals![0]).toMatchObject({ status: 'pending', expected: { manualOnly: true } });
+  expect(f.service.snapshot().storage).toEqual([]);
+});
+// 重进聊天时 TauriTavern 在“聊天已切换”之后（可能正在读档）又换入同一聊天的附加信息对象。
+it.each(['after-load', 'during-load'])('重进聊天后宿主换入附加信息对象，第一条回复照常自动批准（%s）', async timing => {
+  const f = await setup(); await f.service.setStorySync(true);
+  await f.saveNormally();
+  f.switchTo('b'); await f.emit('CHAT_CHANGED', 'b');
+  await vi.waitFor(() => expect(f.service.status().phase).toBe('ready'));
+  f.switchTo('a');
+  const swap = () => { f.context.chatMetadata = { ...f.context.chatMetadata, unrelatedExtension: { enabled: true } }; };
+  const entered = f.emit('CHAT_CHANGED', 'a');
+  if (timing === 'during-load') swap();
+  await entered; await vi.waitFor(() => expect(f.service.status().phase).toBe('ready'));
+  if (timing === 'after-load') swap();
+  expect(f.service.canWrite()).toBe(true); expect(f.service.snapshot().autoApprove).toBe(true);
+  await f.emit('GENERATION_STARTED', 'normal', {}, false); await f.emit('GENERATION_AFTER_COMMANDS', 'normal', {}, false);
+  f.context.chat!.push({ mes: '<tb><spawn name="重进后回复" side="ally" scale="hero"/></tb>', is_user: false, swipe_id: 0, gen_finished: 'finished' });
+  await f.emit('MESSAGE_RECEIVED', f.context.chat!.length - 1, 'normal'); await f.emit('GENERATION_ENDED', f.context.chat!.length);
+  await vi.waitFor(() => expect(f.service.snapshot().proposals?.[0]?.status).toBe('committed'));
+  expect(f.service.snapshot().storage?.map(u => u.name)).toEqual(['重进后回复']);
+  expect(f.context.chatMetadata?.unrelatedExtension).toEqual({ enabled: true });
 });
 it('扫描恢复读取期间切换聊天，旧扫描不会提交到新聊天', async () => {
   const f = await setup();

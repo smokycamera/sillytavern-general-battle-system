@@ -2,9 +2,18 @@ import { expect, it } from 'vitest';
 import { SmallBattle, MassBattle, traitRegistry, standardField, V7_OVERFLOW_D20, V7_OVERFLOW_TW, type Combatant } from '../../engine/src/index.js';
 import { buildUnit, newUnitDraft } from './unit-builder.js';
 import { commitBattleOutcome, unitRecordFromCombatant } from './unit-state.js';
-import { battleSkillChangeReason, setBattlePreparedSkills } from './battle-skills.js';
+import { battleAbilities, battleSkillChangeReason, setBattlePreparedSkills } from './battle-skills.js';
 
 const registry = traitRegistry();
+it('耗尽的一次性道具从战斗行动列表消失，内部记录保留以便结算', () => {
+  const actor = unit('items');
+  const item = { ...actor.abilities[0]!, id: 'item:bomb', itemSourceId: 'bomb', cost: { resource: 'item:bomb', amount: 1 } };
+  actor.abilities.push(item); actor.resources['item:bomb'] = 1;
+  expect(battleAbilities(actor)).toContain(item);
+  actor.resources['item:bomb'] = 0;
+  expect(battleAbilities(actor)).not.toContain(item);
+  expect(actor.abilities).toContain(item);
+});
 function unit(id: string, company = false) {
   const u = buildUnit({ ...newUnitDraft(), name: id, side: id === 'enemy' ? 'enemy' : 'ally', scale: company ? 'company' : 'hero',
     hpMax: '100', skills: Array.from({ length: 6 }, (_, i) => ({ id: 'generic:magic-single', name: id + i, power: '1', prepared: i < 5 })) }, registry, id);

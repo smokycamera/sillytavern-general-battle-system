@@ -37,7 +37,7 @@ export function equipmentRecipe(mechanism: string, power: number, context: Equip
   const size = context.body ?? 'human';
   if (!BODY[size]) throw new Error('不支持的身体/平台');
   if (!context.id || !context.seed) throw new Error('物品缺少唯一编号或随机记录号');
-  validateEnhancements(context.bonuses, mechanism.startsWith('accessory:') ? 'accessory' : mechanism.startsWith('armor:') ? 'armor' : mechanism === 'heal' ? 'consumable' : mechanism === 'shield' ? 'shield' : 'weapon');
+  validateEnhancements(context.bonuses, mechanism.startsWith('armor:') ? 'armor' : mechanism === 'shield' ? 'shield' : 'weapon');
   const stats: VarianceStat[] = mechanism.startsWith('armor:') || mechanism === 'shield' ? ['protection', 'power'] : Object.hasOwn(WEAPON_CLASSES, mechanism) ? ['damage', 'penetration'] : [];
   if (context.variance !== false) validateInstanceVariance(context.variance);
   const variance = context.damageModel === 'wounds-v2' && !context.noVariance && context.variance !== false && stats.length

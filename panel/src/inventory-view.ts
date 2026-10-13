@@ -2,24 +2,26 @@ import { instanceVarianceLabel } from '../../engine/src/instance-variance.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import { equipmentLoadLabel } from '../../engine/src/body.js';
 import { enhancementLabel, bonusMultiplier } from '../../engine/src/enhancements.js';
-import { ACCESSORY_NAMES, CONSUMABLE_NAMES, type EquipmentSlot } from '../../engine/src/items.js';
+import { gearItem, ITEM_FORM_NAMES, type EquipmentSlot } from '../../engine/src/items.js';
+import { itemValueSummary, overshadowedGear } from './item-description.js';
 import { promptSelected, type PromptSettings } from './prompt-settings.js';
 import { gridWeaponRange } from '../../engine/src/small/weapon-range.js';
 import { ARMS_MODEL } from '../../engine/src/arms.js';
+import { TRAIT_MODEL } from '../../engine/src/trait-model.js';
 import { formationWeaponRange } from '../../engine/src/melee.js';
-import { armorTraitId, equipmentTraitIds } from '../../engine/src/trait-sources.js';
+import { armorTraitId, equipmentTraitIds, autoTraitLabel } from '../../engine/src/trait-sources.js';
 import { weaponReloadTurns } from '../../engine/src/loadout.js';
 import { equipmentDraft, equipmentFields, equipmentSpecification, captureEquipment, type EquipmentDraft } from './equipment-form.js';
 import { equipmentReason, effectiveProtection, abilityUsabilityReason, traitRegistry, WEAPON_CLASSES, type BodyKind, type ItemSpecification } from '../../engine/src/index.js';
 import { materializeUnitRecord, type UnitRecord } from './unit-state.js';
 import {anchoredWeapon,anchoredWeaponLabel,anchoredProtection,armorEffectLabel,shieldProtection} from '../../engine/src/power-anchors.js';
-import { prepareInventoryState, type InventoryAction, type InventoryItem, type InventorySave } from './inventory-state.js';
+import { prepareInventoryState, outOfBattleUse, type InventoryAction, type InventoryItem, type InventorySave } from './inventory-state.js';
 import type { InventoryPreview } from './narrative-controller.js';
 import type { PanelController } from './controller-port.js';
 import { narrativeIds } from './narrative-ids.js';
 
 const esc = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const slotNames = { primary: '主武器', sidearm: '副武器', armor: '护甲', shield: '盾牌', accessory1: '配件一', accessory2: '配件二' };
+const slotNames = { primary: '主武器', sidearm: '副武器', armor: '护甲', shield: '盾牌', gear: '佩戴' };
 const bodyNames = { human: '普通人形', large: '大型生物', vehicle: '载具平台', giant: '巨型生物' };
 const channelNames = { kinetic: '动能', thermal: '热能', arcane: '奥术' };
 interface Draft extends EquipmentDraft {
@@ -29,51 +31,56 @@ function newDraft(body = 'human'): Draft {
   return { ...equipmentDraft('weapon', body), mode: 'create', id: randomId(), qty: '1' };
 }
 export function itemDescription(item: InventoryItem): string {
-  const mechanics = item.mechanics, variance = mechanics && mechanics.kind !== 'consumable' ? mechanics.value.recipe?.variance : undefined;
+  const mechanics = item.mechanics, variance = mechanics && mechanics.kind !== 'item' ? mechanics.value.recipe?.variance : undefined;
   return itemDescriptionBase(item) + (variance ? ' · ' + instanceVarianceLabel(variance) : '');
 }
 function itemDescriptionBase(item: InventoryItem): string {
   const m = item.mechanics;
   if (!m) return '剧情物品 · 尚未设置战斗用途';
-  if (m.kind === 'consumable') {
-    const e = m.effect;
-    if (e.op === 'heal') return `${m.recipe.mechanism === 'repair' ? '修理车辆' : '治疗'}：恢复${e.amount ?? e.dice}点生命，不超过实际损伤`;
-    if (e.op === 'resource') return `恢复${e.amount}点精力，不超过上限`;
-    if (e.op === 'dispel') return `清除至多${e.count}项不利状态`;
-    if (e.op === 'barrier') return `屏障吸收${e.amount}点伤害，持续${e.dur}轮`;
-    if (e.op === 'condition') return `提高伤害，持续${e.dur}轮`;
-    return `投掷炸弹基础伤害${e.baseDice}${m.recipe.balanceVersion==='unified-v1'?' ×'+bonusMultiplier(m.recipe.bonuses,'power'):''}；命中、防护与目标范围按战斗规则结算`;
-  }
-  if (m.kind === 'accessory') return m.value.traitId ? `装备后获得${traitRegistry().get(m.value.traitId)?.name ?? '特殊能力'}；卸下即失效` : m.value.ability?.desc ?? '装备后可使用附带能力';
+  if (m.kind === 'item') return itemValueSummary(m.value);
   if (m.kind === 'shield') return `盾牌 L${m.value.recipe?.power??3}${enhancementLabel(m.value.recipe?.bonuses)} · 负重${m.value.load} · 通道防护${shieldProtection({shield:m.value},'kinetic')}/${shieldProtection({shield:m.value},'thermal')}/${shieldProtection({shield:m.value},'arcane')} · 掩护单体攻击，范围与充分穿透绕过 · 满足盾类技能前提`;
   if (m.kind === 'armor') {const u={armor:m.value,body:m.value.recipe?.size,damageModel:'wounds-v2' as const,armsModel:ARMS_MODEL},trait=armorTraitId(m.value.tier);return `动能${anchoredProtection(u,'kinetic')} / 热能${anchoredProtection(u,'thermal')} / 奥术${anchoredProtection(u,'arcane')} · ${armorEffectLabel(u)} · 负重${m.value.load ?? 0}${trait ? ' · 装备自动特质：' + (trait === 'super-heavy' ? '超重装甲（先攻−2，无额外防御）' : '重甲（先攻−1，无额外防御）') : ''}`;}
   const w = m.value;
   return `L${w.level??5}${enhancementLabel(w.recipe?.bonuses)} · ${anchoredWeaponLabel(w,'wounds-v2')} · ${channelNames[w.channel ?? 'kinetic']} · 格子射程${gridWeaponRange(w,true,ARMS_MODEL)}／会战${formationWeaponRange(w)}阵距 · ${w.hands===0?'不占双手':(w.hands??1)+'手'} · 负重${w.load ?? 0}${w.reload ? ' · 装填' + w.reload : ''}${w.tags?.includes('blast') ? ' · 距离1正常，距离2命中−2' : ''}${w.recipe?.stabilized ? ' · 车载行进稳定，火力让出15%' : ''}`;
 }
 function gearText(record: UnitRecord | undefined): string {
-  const u = record?.snapshot ? { ...record.snapshot, armsModel: ARMS_MODEL } : undefined;
+  const u = record?.snapshot ? { ...record.snapshot, armsModel: ARMS_MODEL, traitModel: TRAIT_MODEL } : undefined;
   if (!u) return '无装备资料';
   return [u.weapon ? `${u.weapon.name} ${anchoredWeaponLabel(u.weapon,u.damageModel)}${u.weapon.recipe?.stabilized ? ' / 行进稳定' : ''}` : '主手空置',
     u.sidearm ? `副武器 ${u.sidearm.name}` : '',
-    ...equipmentTraitIds(u).map(id => '装备自动特质：' + (id === 'super-heavy' ? '超重装甲（先攻−2，无额外防御）' : '重甲（先攻−1，无额外防御）')),
+    ...equipmentTraitIds(u).map(id => '装备自动特质：' + autoTraitLabel(id)),
     `有效防护 ${anchoredProtection(u, 'kinetic')}/${anchoredProtection(u, 'thermal')}/${anchoredProtection(u, 'arcane')}（动能/热能/奥术） · ${armorEffectLabel(u)}`,
     u.shield ? '携盾' : '无盾',
+    u.gear?.length ? '佩戴 ' + u.gear.map((g) => g.name).join('、') : '',
     equipmentLoadLabel(u)].filter(Boolean).join(' · ');
 }
 function gearComparison(before: UnitRecord | undefined, after: UnitRecord): string {
   const rows: string[] = [];
+  const compare = (label: string, a: unknown, b: unknown) => {
+    if (a !== b) rows.push(`<tr><td>${label}</td><td>${esc(a)}</td><td>${esc(b)}</td></tr>`);
+  };
   for (const slot of ['weapon', 'sidearm'] as const) {
     const old = before?.snapshot?.[slot], next = after.snapshot?.[slot];
     if (JSON.stringify(old) === JSON.stringify(next)) continue;
     const label = slot === 'weapon' ? '主武器' : '副武器';
     for (const [name, a, b] of [
+      ['装备', old?.name ?? '空置', next?.name ?? '空置'],
       ['格子射程', old ? gridWeaponRange(old,true,ARMS_MODEL) : '—', next ? gridWeaponRange(next,true,ARMS_MODEL) : '—'],
       ['会战阵距', old ? formationWeaponRange(old) : '—', next ? formationWeaponRange(next) : '—'],
       ['装填回合', old ? weaponReloadTurns(old) : '—', next ? weaponReloadTurns(next) : '—'],
       ['穿透', anchoredWeapon(old,undefined,before?.snapshot?.damageModel)?.penetration ?? '—', anchoredWeapon(next,undefined,after.snapshot?.damageModel)?.penetration ?? '—'],
       ['命中杀伤',old?anchoredWeaponLabel(old,before?.snapshot?.damageModel):'—',next?anchoredWeaponLabel(next,after.snapshot?.damageModel):'—'],
-    ]) rows.push(`<tr><td>${label} · ${name}</td><td>${esc(a)}</td><td>${esc(b)}</td></tr>`);
+    ]) compare(`${label} · ${name}`, a, b);
   }
+  compare('护甲', before?.snapshot?.armor?.name ?? '空置', after.snapshot?.armor?.name ?? '空置');
+  const shieldLabel = (record?: UnitRecord) => record?.snapshot?.shield ? '盾牌 L' + (record.snapshot.shield.recipe?.power ?? 3) : '空置';
+  compare('盾牌', shieldLabel(before), shieldLabel(after));
+  compare('佩戴', before?.snapshot?.gear?.map(g => g.name).join('、') || '无', after.snapshot?.gear?.map(g => g.name).join('、') || '无');
+  for (const channel of ['kinetic', 'thermal', 'arcane'] as const) {
+    compare(channelNames[channel] + '防护', before?.snapshot ? anchoredProtection(before.snapshot, channel) : '—', after.snapshot ? anchoredProtection(after.snapshot, channel) : '—');
+    compare('盾牌 · ' + channelNames[channel] + '防护', before?.snapshot ? shieldProtection(before.snapshot, channel) : '—', after.snapshot ? shieldProtection(after.snapshot, channel) : '—');
+  }
+  compare('负重', before?.snapshot ? equipmentLoadLabel(before.snapshot) : '—', after.snapshot ? equipmentLoadLabel(after.snapshot) : '—');
   return rows.length ? `<table class="gear-comparison"><thead><tr><th>变化</th><th>当前</th><th>装备后</th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '';
 }
 function previewHtml(preview: InventoryPreview): string {
@@ -88,7 +95,7 @@ function previewHtml(preview: InventoryPreview): string {
   const itemId = 'itemId' in intent ? intent.itemId : undefined;
   const afterItem = preview.after.inventory?.find((i) => i.id === itemId);
   const beforeItem = preview.before.inventory?.find((i) => i.id === itemId);
-  const labels: Record<InventoryAction['kind'], string> = { create: '新增物品', define: '设置物品效果', reforge: '改造装备', assign: '调整归属', equip: '更换装备', unequip: '卸下装备', use: '使用物品', discard: '移出库存', 'discard-many': '批量删除' };
+  const labels: Record<InventoryAction['kind'], string> = { create: '新增物品', define: '设置物品效果', reforge: '编辑装备', assign: '调整归属', equip: '更换装备', unequip: '卸下装备', use: '使用物品', discard: '移出库存', 'discard-many': '批量删除', collect: '收缴道具' };
   const units = changed.map((record) => {
     const before = preview.before.storage?.find((r) => r.id === record.id);
     const registry = traitRegistry();
@@ -100,15 +107,22 @@ function previewHtml(preview: InventoryPreview): string {
       const reason = abilityUsabilityReason(current, a) ?? '可用';
       return previousReason === reason ? '' : `${a.name}：${previousReason} → ${reason}`;
     }).filter(Boolean).join('；');
-    return `<div class="inventory-difference"><b>${esc(record.name)}</b>${gearComparison(before, record)}<p>${esc(gearText(before))}<br>→ ${esc(gearText(record))}</p><div>生命/人数 ${before?.hp ?? '—'}/${before?.base.hpMax ?? '—'} → ${record.hp}/${record.base.hpMax} · 训练${record.level}</div>${skills ? `<p>${esc(skills)}</p>` : ''}</div>`;
+    const lifeChanged = !before || before.hp !== record.hp || before.base.hpMax !== record.base.hpMax;
+    const levelChanged = !before || before.level !== record.level;
+    const beforeGear = gearText(before), afterGear = gearText(record);
+    return `<div class="inventory-difference"><b>${esc(record.name)}</b>${gearComparison(before, record)}${lifeChanged ? `<p>${record.scale === 'hero' ? '生命' : '人数'} ${before?.hp ?? '—'}/${before?.base.hpMax ?? '—'} → ${record.hp}/${record.base.hpMax}</p>` : ''}${levelChanged ? `<p>训练 ${before?.level ?? '—'} → ${record.level}</p>` : ''}${skills ? `<p>${esc(skills)}</p>` : ''}${beforeGear !== afterGear ? `<details data-detail-id="gear-preview-${esc(record.id)}"><summary>查看完整配装</summary><p>当前：${esc(beforeGear)}<br>装备后：${esc(afterGear)}</p></details>` : ''}</div>`;
   }).join('');
   const created = intent.kind === 'define' ? preview.after.inventory?.find((i) => i.sourceItemId === intent.itemId && i.id !== intent.itemId && !preview.before.inventory?.some((old) => old.id === i.id)) : undefined;
   const selected = created ?? afterItem;
   const owner = afterItem?.assignedTo ? preview.after.storage?.find((r) => r.id === afterItem.assignedTo)?.name : '未分配';
+  const itemChanges = beforeItem && afterItem ? [beforeItem.qty !== afterItem.qty ? `数量 ${beforeItem.qty} → ${afterItem.qty}` : '', beforeItem.assignedTo !== afterItem.assignedTo ? '归属：' + (owner ?? '未分配') : ''].filter(Boolean).join(' · ') : '';
+  // 收缴：列出从该单位转入公共库存的物品。
+  const collected = intent.kind === 'collect' ? (preview.before.inventory ?? []).filter((item) => item.assignedTo === intent.unitId && !preview.after.inventory?.find((i) => i.id === item.id)?.assignedTo) : [];
   return `<div class="inventory-preview" data-role="inventory-preview"><h3>${labels[intent.kind]} · 确认前预览</h3>
+    ${collected.length ? `<div class="inventory-delete-list" data-role="collect-list"><p>转入公共库存：</p>${collected.map((item) => `<div>${esc(item.name)} ×${item.qty}</div>`).join('')}</div>` : ''}
     ${selected ? `<b>${esc(selected.name)}</b><p>${esc(itemDescription(selected))}</p>` : ''}
-    ${intent.kind === 'reforge' && beforeItem ? `<p>改造前：${esc(itemDescription(beforeItem))}</p>` : ''}
-    ${beforeItem && afterItem ? `<div>该条目数量 ${beforeItem.qty} → ${afterItem.qty} · 归属：${esc(owner)}</div>` : ''}
+    ${intent.kind === 'reforge' && beforeItem ? `<details data-detail-id="item-before-edit"><summary>查看编辑前属性</summary><p>${esc(itemDescription(beforeItem))}</p></details>` : ''}
+    ${itemChanges ? `<div>${esc(itemChanges)}</div>` : ''}
     ${intent.kind === 'unequip' ? '<p>实物返回持有者库存，可以继续转移或装备。</p>' : ''}${units}
     <div class="row"><button class="primary" data-action="inventory-confirm">确认${labels[intent.kind]}</button><button data-action="inventory-cancel">取消预览</button></div></div>`;
 }
@@ -171,21 +185,34 @@ export class InventoryPanel {
     this.preview = undefined; this.error = undefined;
     const role = (target as HTMLElement).dataset.role;
     if (role === 'inventory-kind' && this.draft) {
-      const choices = this.draft.kind === 'consumable' ? CONSUMABLE_NAMES : this.draft.kind === 'accessory' ? ACCESSORY_NAMES : WEAPON_CLASSES;
-      if (!Object.hasOwn(choices, this.draft.mechanism)) this.draft.mechanism = Object.keys(choices)[0]!;
-      if (this.draft.kind === 'accessory') this.draft.bonuses = undefined;
+      if (this.draft.kind === 'weapon' && !Object.hasOwn(WEAPON_CLASSES, this.draft.mechanism)) this.draft.mechanism = Object.keys(WEAPON_CLASSES)[0]!;
+      if (this.draft.kind === 'item' && !this.draft.effect) { this.draft.form = 'single'; this.draft.effect = 'buff治疗'; }
+      this.draft.bonuses = undefined;
     }
-    if (role === 'inventory-kind' || role === 'inventory-unit') this.draw();
+    if (role === 'inventory-form' && this.draft) this.draft.bonuses = undefined;
+    if (role === 'inventory-kind' || role === 'inventory-unit' || role === 'inventory-form') this.draw();
     else document.querySelector('[data-role="inventory-feedback"]')?.replaceChildren();
     return true;
   }
   private draftAction(): InventoryAction {
     const d = this.draft!;
     const spec = equipmentSpecification(d);
-    const name=d.name.trim() || (d.kind==='weapon'?WEAPON_CLASSES[d.mechanism]?.name:d.kind==='consumable'?CONSUMABLE_NAMES[d.mechanism as keyof typeof CONSUMABLE_NAMES]:d.kind==='accessory'?ACCESSORY_NAMES[d.mechanism as keyof typeof ACCESSORY_NAMES]:d.kind==='shield'?'盾牌':'护甲') || '物品';
+    const name=d.name.trim() || (d.kind==='weapon'?WEAPON_CLASSES[d.mechanism]?.name:d.kind==='item'?d.effect.trim()||'道具':d.kind==='shield'?'盾牌':'护甲') || '物品';
     if (d.mode === 'define') return { kind: 'define', itemId: d.itemId!, spec };
     if (d.mode === 'reforge') return { kind: 'reforge', itemId: d.itemId!, name, spec };
-    return { kind: 'create', itemId: `item:${d.id}`, name, spec, qty: d.kind === 'consumable' ? Number(d.qty) : 1 };
+    return { kind: 'create', itemId: `item:${d.id}`, name, spec, qty: d.kind === 'item' && d.form === 'single' ? Number(d.qty) : 1 };
+  }
+  private async commitPreview(preview: InventoryPreview): Promise<void> {
+    const context = this.controller.inventoryContext(), shownPreview = this.preview;
+    this.committing = true; this.draw();
+    try {
+      const receipt = await this.controller.commitInventoryPreview(preview);
+      // A late acknowledgement must not clear another chat or a newly selected form.
+      if (context !== this.controller.inventoryContext() || this.preview !== shownPreview) return;
+      if (receipt.status === 'failed') throw new Error(receipt.error ?? '尚未保存，请重试');
+      this.preview = undefined; this.draft = undefined;
+      if (preview.intent.kind === 'discard-many') { this.bulkDelete = false; this.selectedItems.clear(); }
+    } finally { this.committing = false; this.draw(); }
   }
   async handleAction(element: HTMLElement): Promise<boolean> {
     const action = element.dataset.action ?? '';
@@ -212,16 +239,7 @@ export class InventoryPanel {
       else if (action === 'inventory-close-draft') { this.draft = undefined; this.preview = undefined; }
       else if (action === 'inventory-confirm') {
         if (!this.preview) throw new Error('请先预览');
-        const preview = this.preview, context = this.controller.inventoryContext();
-        this.committing = true; this.draw();
-        try {
-          const receipt = await this.controller.commitInventoryPreview(preview);
-          // A late acknowledgement from an old chat must not clear a new chat's form.
-          if (context !== this.controller.inventoryContext() || this.preview !== preview) return true;
-          if (receipt.status === 'failed') throw new Error(receipt.error ?? '尚未保存，可重试当前预览');
-          this.preview = undefined; this.draft = undefined;
-          if (preview.intent.kind === 'discard-many') { this.bulkDelete = false; this.selectedItems.clear(); }
-        } finally { this.committing = false; this.draw(); }
+        await this.commitPreview(this.preview);
       } else if (action === 'inventory-preview-draft') {
         if (!this.draft) throw new Error('请先填写规格');
         this.preview = this.controller.previewInventory(this.draftAction(), this.draft.id);
@@ -229,21 +247,27 @@ export class InventoryPanel {
         this.editorScroll = window.scrollY;
         if (!item) throw new Error('物品不存在');
         const m = item.mechanics;
-        const recipe = m?.kind === 'consumable' ? m.recipe : m?.value.recipe;
-        this.draft = { ...newDraft(), ...equipmentDraft(m?.kind ?? (['weapon', 'armor', 'consumable'].includes(item.lootType) ? item.lootType : 'weapon'), 'human', m, item.name), mode: action === 'inventory-edit' ? 'reforge' : 'define', itemId: item.id };
+        const kind = m?.kind ?? (['weapon', 'armor'].includes(item.lootType) ? item.lootType : ['item', 'consumable', 'accessory', 'misc', 'material', 'quest'].includes(item.lootType) ? 'item' : 'weapon');
+        this.draft = { ...newDraft(), ...equipmentDraft(kind, 'human', m, item.name), mode: action === 'inventory-edit' ? 'reforge' : 'define', itemId: item.id };
         this.preview = undefined;
+      } else if (action === 'inventory-collect') {
+        this.preview = this.controller.previewInventory({ kind: 'collect', unitId: element.dataset.id ?? '' });
       } else {
         if (!item) throw new Error('物品不存在');
         let intent: InventoryAction;
         if (action === 'inventory-assign') intent = { kind: 'assign', itemId: item.id, unitId: this.selectedUnit || undefined };
         else if (action === 'inventory-unassign') intent = { kind: 'assign', itemId: item.id };
         else if (action === 'inventory-equip') intent = { kind: 'equip', itemId: item.id, unitId: this.selectedUnit ?? '', slot: element.dataset.slot as EquipmentSlot };
-        else if (action === 'inventory-unequip') intent = { kind: 'unequip', unitId: item.equippedTo!.unitId, slot: item.equippedTo!.slot };
+        else if (action === 'inventory-unequip') intent = { kind: 'unequip', unitId: item.equippedTo!.unitId, slot: item.equippedTo!.slot, ...(item.equippedTo!.slot === 'gear' ? { itemId: item.id } : {}) };
         else if (action === 'inventory-use') intent = { kind: 'use', itemId: item.id, unitId: this.selectedUnit ?? '' };
         else if (action === 'inventory-discard') intent = { kind: 'discard', itemId: item.id, qty: 1 };
         else if (action === 'inventory-delete') intent = { kind: 'discard', itemId: item.id, qty: item.qty };
         else throw new Error('未知库存操作');
-        this.preview = this.controller.previewInventory(intent);
+        const preview = this.controller.previewInventory(intent);
+        if (intent.kind === 'equip' || intent.kind === 'unequip') {
+          this.preview = undefined;
+          await this.commitPreview(preview);
+        } else this.preview = preview;
       }
     } catch (error) {
       if (actionContext === this.controller.inventoryContext()) this.error = error instanceof Error ? error.message : String(error);
@@ -271,17 +295,21 @@ export class InventoryPanel {
     const removedSelection = [...this.selectedItems].some(id => !eligibleIds.has(id));
     if (removedSelection || locked) { this.selectedItems = new Set([...this.selectedItems].filter(id => !locked && eligibleIds.has(id))); if (this.preview?.intent.kind === 'discard-many') this.preview = undefined; }
     const allSelected = eligible.length > 0 && eligible.every(item => this.selectedItems.has(item.id));
+    // 阵亡、撤离或解散的敌方单位身上剩余的道具可以收缴进公共库存。
+    const collectible = !!current && current.side === 'enemy' && (current.status === 'dead' || current.status === 'fled' || current.hp <= 0 || !!current.retired)
+      && items.some((item) => item.assignedTo === current.id && (!item.mechanics || item.mechanics.kind === 'item'));
     const d = this.draft, disabled = locked || this.committing ? 'disabled' : '';
     const select = (role: string, value: string, choices: [string, string][], disabled = false) => `<select data-role="inventory-${role}" ${disabled ? 'disabled' : ''}>${choices.map(([id, name]) => `<option value="${esc(id)}" ${id === value ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select>`;
     const feedback = `<div data-role="inventory-feedback" aria-live="polite">${this.error ? `<p class="grid-reason">${esc(this.error)}</p>` : ''}${this.preview ? previewHtml(this.preview).replaceAll('data-action="inventory-confirm"', 'data-action="inventory-confirm"' + (this.committing ? ' disabled' : '')) : ''}</div>`;
     const card = (item: InventoryItem): string => {
       const m = item.mechanics, equipped = item.equippedTo, itemData = `data-item="${esc(item.id)}"`;
-      const slots: EquipmentSlot[] = m?.kind === 'weapon' ? ['primary', 'sidearm'] : m?.kind === 'accessory' ? ['accessory1', 'accessory2'] : m && m.kind !== 'consumable' ? [m.kind] : [];
-      const gearOptions = slots.map(slot => ({ slot, reason: !actor ? '请先选择使用者' : equipmentReason(slot.startsWith('accessory') ? { ...actor, accessories: { ...actor.accessories, [slot]: m?.kind === 'accessory' ? m.value : undefined } } : { ...actor, [slot === 'primary' ? 'weapon' : slot]: m && m.kind !== 'consumable' ? m.value : undefined }) }));
+      const single = m?.kind === 'item' && m.value.recipe.form === 'single';
+      const slots: EquipmentSlot[] = m?.kind === 'weapon' ? ['primary', 'sidearm'] : m?.kind === 'item' ? single ? [] : ['gear'] : m ? [m.kind] : [];
+      const gearOptions = slots.map(slot => ({ slot, reason: !actor ? '请先选择使用者' : equipmentReason(slot === 'gear' && m?.kind === 'item' ? { ...actor, gear: [...(actor.gear ?? []), gearItem(item.id, item.name, m.value)] } : { ...actor, [slot === 'primary' ? 'weapon' : slot]: m && m.kind !== 'item' ? m.value : undefined }) }));
       const complement = m?.kind === 'weapon' && actor?.weapon && !actor.sidearm && !!m.value.tags?.includes('ranged') !== !!actor.weapon.tags?.includes('ranged');
-      const recommended = m?.kind === 'accessory' ? gearOptions.find(o => !actor?.accessories?.[o.slot as 'accessory1' | 'accessory2'] && !o.reason) ?? gearOptions[0] : (complement && gearOptions.find(o => o.slot === 'sidearm' && !o.reason)) || gearOptions.find(o => !o.reason) || gearOptions[0];
+      const recommended = (complement && gearOptions.find(o => o.slot === 'sidearm' && !o.reason)) || gearOptions.find(o => !o.reason) || gearOptions[0];
       const details: string[] = [];
-      if (m && m.kind !== 'consumable') details.push(`<button data-action="inventory-edit" ${itemData} ${disabled}>改造</button>`);
+      if (m && !single) details.push(`<button data-action="inventory-edit" ${itemData} ${disabled}>编辑装备</button>`);
       if (!m) details.push(`<button data-action="inventory-define" ${itemData} ${disabled}>设置物品效果</button>`);
       if (!equipped) {
         details.push(...gearOptions.filter(o => o.slot !== recommended?.slot).map(o => `<button data-action="inventory-equip" ${itemData} data-slot="${o.slot}" title="${esc(o.reason ?? '')}" ${locked || !actor || o.reason ? 'disabled' : ''}>装备为${slotNames[o.slot]}</button>`));
@@ -297,12 +325,15 @@ export class InventoryPanel {
         const unit = { armor: m.value, body: m.value.recipe?.size, damageModel:'wounds-v2' as const, armsModel: ARMS_MODEL };
         stats.push(['动能防护', String(anchoredProtection(unit, 'kinetic'))], ['热能防护', String(anchoredProtection(unit, 'thermal'))], ['奥术防护', String(anchoredProtection(unit, 'arcane'))], ['负重', String(m.value.load ?? 0)]);
       }
-      const battleOnly = m?.kind === 'consumable' && !['heal', 'repair', 'restore', 'cleanse'].includes(m.recipe.mechanism);
+      const battleOnly = single && !outOfBattleUse(item);
+      // 不叠加：同方向修正只取最高一件、同一特质只算一次，被盖过的效果在卡片上注明。
+      const shadowed = equipped?.slot === 'gear' && actor ? overshadowedGear(actor, item.id) : [];
       return `<article class="inventory-card" data-inventory-id="${esc(item.id)}"><div class="inventory-card-heading"><div>${this.bulkDelete ? `<input type="checkbox" class="inventory-select" data-role="inventory-select" ${itemData} aria-label="选择${esc(item.name)}" ${this.selectedItems.has(item.id) ? 'checked' : ''} ${locked || equipped || this.committing ? 'disabled' : ''}>` : ''}<b>${esc(item.name)}</b><span class="sub">${esc(publicId(item.id))}</span><span class="item-quantity">×${item.qty}</span></div>${this.bulkDelete ? '' : `<label class="item-prompt"><input type="checkbox" data-role="prompt-item" data-id="${esc(item.id)}" ${promptSelected(save.promptSettings as PromptSettings | undefined, 'item', item.id) ? 'checked' : ''}><span>供剧情参考</span></label>`}</div>
-        <div class="item-location">${equipped ? slotNames[equipped.slot] + ' · 已装备' : item.assignedTo ? '随身物品' : '公共库存'}${m && m.kind !== 'consumable' ? ' · 等级' + (m.value.recipe?.power ?? 1) : ''}</div>
+        <div class="item-location">${equipped ? (equipped.slot === 'gear' ? '已装备' : slotNames[equipped.slot] + ' · 已装备') : item.assignedTo ? '随身物品' : '公共库存'}${m?.kind === 'item' ? ' · ' + ITEM_FORM_NAMES[m.value.recipe.form] + '道具 · 等级' + m.value.recipe.power : m ? ' · 等级' + (m.value.recipe?.power ?? 1) : ''}</div>
+        ${shadowed.length ? `<p class="sub" data-role="gear-overshadowed">被更高的一件覆盖：${esc(shadowed.join('、'))}</p>` : ''}
         ${stats.length ? `<dl class="item-stats">${stats.map(([key, value]) => `<div><dt>${key}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl><details class="item-rules" data-detail-id="rules-${esc(item.id)}"><summary>查看完整属性与规则</summary><p>${esc(itemDescription(item))}</p></details>` : `<p>${esc(itemDescription(item))}</p>`}
         <div class="item-actions" ${this.bulkDelete ? 'hidden' : ''}>${equipped ? `<button class="primary" data-action="inventory-unequip" ${itemData} ${disabled}>卸下</button>` : recommended ? `<button class="primary" data-action="inventory-equip" ${itemData} data-slot="${recommended.slot}" ${locked || !actor || recommended.reason ? 'disabled' : ''}>装备为${slotNames[recommended.slot]}</button>${recommended.reason ? '<span class="grid-reason">' + esc(recommended.reason) + '</span>' : ''}` : ''}
-        ${m?.kind === 'consumable' ? `<button class="primary" data-action="inventory-use" ${itemData} title="${battleOnly ? '请在战场的行动列表中使用' : ''}" ${locked || !actor || battleOnly ? 'disabled' : ''}>${battleOnly ? '战斗中使用' : '使用1件'}</button>` : ''}
+        ${single ? `<button class="primary" data-action="inventory-use" ${itemData} title="${battleOnly ? '请在战场的行动列表中使用' : ''}" ${locked || !actor || battleOnly ? 'disabled' : ''}>${battleOnly ? '战斗中使用' : '使用1件'}</button>` : ''}
         ${!equipped && !item.assignedTo && actor ? `<button data-action="inventory-assign" ${itemData} ${disabled}>交给${esc(current!.name)}</button>` : ''}</div>
         ${!this.bulkDelete && details.length ? `<details class="inventory-more" data-detail-id="more-${esc(item.id)}"><summary>其他操作</summary><div class="row">${details.join('')}</div></details>` : ''}
         ${item.note || item.history?.length ? `<details data-detail-id="history-${esc(item.id)}"><summary>来源与改造记录</summary>${item.note ? '<p>' + esc(item.note) + '</p>' : ''}${item.history?.map(h => '<p>第' + h.revision + '次记录：' + esc(h.name) + ' · ' + esc(itemDescription({ ...item, mechanics: h.mechanics })) + '</p>').join('') ?? ''}</details>` : ''}</article>`;
@@ -312,13 +343,13 @@ export class InventoryPanel {
       { name: '随身物品', items: items.filter(item => item.assignedTo && !item.equippedTo) },
       { name: '公共库存', items: items.filter(item => !item.assignedTo) },
     ];
-    return `<section id="inventory-panel"><div class="inventory-title"><h2>装备与物品 <small class="sub">${items.length}种物品</small></h2><div class="inventory-title-actions">${this.bulkDelete ? `<button data-action="inventory-select-all" ${locked || !eligible.length || this.committing ? 'disabled' : ''}>${allSelected ? '取消全选' : '全选'}</button><button class="danger" data-action="inventory-delete-selected" ${locked || !this.selectedItems.size || this.committing ? 'disabled' : ''}>删除（${this.selectedItems.size}）</button><button data-action="inventory-bulk-cancel" ${this.committing ? 'disabled' : ''}>取消</button>` : `<button data-action="inventory-bulk" ${locked || !eligible.length ? 'disabled' : ''}>批量删除</button><button data-action="loadout-skills" data-id="${esc(current?.id ?? '')}" ${!actor || actor.rulesVersion !== 'v2' || current?.retired || current?.status === 'dead' || locked && actor.side !== 'ally' ? 'disabled' : ''}>技能选择</button><button data-action="inventory-new" ${disabled}>新增物品</button>`}</div></div>
+    return `<section id="inventory-panel"><div class="inventory-title"><h2>装备与物品 <small class="sub">${items.length}种物品</small></h2><div class="inventory-title-actions">${this.bulkDelete ? `<button data-action="inventory-select-all" ${locked || !eligible.length || this.committing ? 'disabled' : ''}>${allSelected ? '取消全选' : '全选'}</button><button class="danger" data-action="inventory-delete-selected" ${locked || !this.selectedItems.size || this.committing ? 'disabled' : ''}>删除（${this.selectedItems.size}）</button><button data-action="inventory-bulk-cancel" ${this.committing ? 'disabled' : ''}>取消</button>` : `<button data-action="inventory-bulk" ${locked || !eligible.length ? 'disabled' : ''}>批量删除</button><button data-action="loadout-skills" data-id="${esc(current?.id ?? '')}" ${!actor || actor.rulesVersion !== 'v2' || current?.retired || current?.status === 'dead' || locked && actor.side !== 'ally' ? 'disabled' : ''}>技能选择</button><button data-action="inventory-new" ${disabled}>新增物品</button>${collectible ? `<button data-action="inventory-collect" data-id="${esc(current!.id)}" ${disabled}>收缴道具</button>` : ''}`}</div></div>
       <div class="inventory-unit-choice"><label>查看单位 ${select('unit', this.selectedUnit, [['', '无主物品'], ...records.map((r): [string, string] => [r.id, `${r.name} · ${r.side === 'ally' ? '我方' : '敌方'} · ${r.hp}/${r.base.hpMax}`])])}</label></div>
       ${current ? `<div class="loadout-current"><h3>${esc(current.name)} · 当前装备</h3><div class="loadout-slots">${items.filter(i => i.equippedTo).map(i => '<span><small>' + slotNames[i.equippedTo!.slot] + '</small>' + esc(i.name) + '</span>').join('') || '<span>尚未装备物品</span>'}</div><details data-detail-id="loadout-summary"><summary>查看整体防护与负重</summary><p>${esc(gearText(current))}</p></details></div>` : ''}
       ${locked ? '<p class="grid-reason">战斗中不能更换装备。请在战场的行动列表中使用随身物品。</p>' : ''}
       ${!d ? feedback : ''}
       <details class="inventory-send" data-detail-id="send-options"><summary>剧情参考设置</summary><div class="row"><button data-action="prompt-select-items" data-selected="true">全部加入参考</button><button data-action="prompt-select-items" data-selected="false">全部移出参考</button></div><p class="sub">只影响当前显示的物品。勾选后，写剧情时会参考这些物品。</p></details>
       ${groups.filter(group => group.items.length).map(group => '<div class="inventory-group"><h3>' + group.name + '<span>' + group.items.length + '</span></h3><div class="inventory-list">' + group.items.map(card).join('') + '</div></div>').join('') || '<p class="inventory-empty">这里还没有物品，可以新增，或在剧情中获得。</p>'}
-      ${d ? `<div class="inventory-editor-shade"></div><aside class="inventory-editor" role="dialog" aria-modal="true" aria-label="编辑物品"><header><div><h3>${d.mode === 'reforge' ? '改造装备' : d.mode === 'define' ? '设置物品效果' : '新增物品'}</h3><p class="sub">${current ? esc(current.name) : '公共库存'} · ${esc(d.name || '未命名物品')}</p></div><button data-action="inventory-close-draft" aria-label="关闭物品编辑">关闭</button></header><div class="inventory-editor-body"><div class="inventory-form"><div class="inventory-fields"><label>种类${select('kind', d.kind, [['weapon', '武器'], ['armor', '护甲'], ['shield', '盾牌'], ['accessory', '配件与工具'], ['consumable', '消耗品']], d.mode === 'reforge')}</label>${d.kind === 'consumable' && d.mode === 'create' ? `<label>数量<input data-role="inventory-qty" type="number" min="1" max="9999" value="${esc(d.qty)}"></label>` : ''}</div>${equipmentFields('inventory', d, { nameReadonly: d.mode === 'define' })}</div>${feedback}</div><footer><button class="primary" data-action="inventory-preview-draft">预览结果</button><button data-action="inventory-close-draft">取消</button></footer></aside>` : ''}</section>`;
+      ${d ? `<div class="inventory-editor-shade"></div><aside class="inventory-editor" role="dialog" aria-modal="true" aria-label="编辑物品"><header><div><h3>${d.mode === 'reforge' ? '编辑装备' : d.mode === 'define' ? '设置物品效果' : '新增物品'}</h3><p class="sub">${current ? esc(current.name) : '公共库存'} · ${esc(d.name || '未命名物品')}</p></div><button data-action="inventory-close-draft" aria-label="关闭物品编辑">关闭</button></header><div class="inventory-editor-body"><div class="inventory-form"><div class="inventory-fields"><label>种类${select('kind', d.kind, [['weapon', '武器'], ['armor', '护甲'], ['shield', '盾牌'], ['item', '道具']], d.mode === 'reforge')}</label>${d.kind === 'item' && d.form === 'single' && d.mode === 'create' ? `<label>数量<input data-role="inventory-qty" type="number" min="1" max="9999" value="${esc(d.qty)}"></label>` : ''}</div>${equipmentFields('inventory', d, { nameReadonly: d.mode === 'define' })}</div>${feedback}</div><footer><button class="primary" data-action="inventory-preview-draft">预览结果</button><button data-action="inventory-close-draft">取消</button></footer></aside>` : ''}</section>`;
   }
 }

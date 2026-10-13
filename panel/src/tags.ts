@@ -1,5 +1,6 @@
 import { parseEnhancementSuffix, enhancementLabel, type Enhancements } from '../../engine/src/enhancements.js';
 import { parseSkillMechanism, skillMechanismId } from '../../engine/src/data/skill-mechanisms.js';
+import { legacySkillEquivalent } from '../../engine/src/skill-catalog.js';
 import { decodeEntities } from './protocol-syntax.js';
 import { CATEGORY_LABELS } from '../../engine/src/data/ability-blueprints.js';
 /**
@@ -11,9 +12,10 @@ import { CATEGORY_LABELS } from '../../engine/src/data/ability-blueprints.js';
  *   <deploy id="持久单位id"/>
  *   <unit_update id="持久单位id" hp="500" hpMax="560" state="ready" clear="中毒" reason="补员"/>
  *   <field env="野战|巷战|攻城|夜战"/>
- *   <spawn name="敌人名" archetype="infantry|ranged|mobile" level="3" count="2"
+ *   <spawn name="敌人名" level="3" count="2"
  *          weapon="裂颅者:斧L6" weapon2="短剑:剑L3" armor="龙鳞宝铠:重甲L6" skills="焚天:烈焰风暴L6"
- *          traits="破甲,恐惧" leader="true"/>
+ *          traits="破甲,恐惧" items="手雷:物理范围投射L4×6" leader="true"/>
+ *   archetype 由正文层按坐骑、载具与主武器推断（infantry|ranged|mobile），正文写的值不采用。
  * spawn 可选属性让生成结果与正文描述对应：
  *   weapon=任意名字＋武器种类＋等级（"名字:种类L等级"，如 裂颅者:斧L6）——名字只用于面板显示，
  *          伤害与射程由种类+等级计算；也兼容旧写法 "剑L5"（种类L等级）与纯名字 "双手巨斧"（按关键词猜种类）
@@ -22,23 +24,25 @@ import { CATEGORY_LABELS } from '../../engine/src/data/ability-blueprints.js';
  *   armor=同格式 "名字:种类L等级"（如 龙鳞宝铠:重甲L6）——种类限 无甲/轻甲/中甲/重甲/超重甲，
  *          等级 L1~L10 定防护品质（L5=标准）；也兼容纯档位名/具体护甲名（板甲/防弹衣……）
  *   skills=逗号分隔的技能条目，每条 "名字:类别L等级"（如 焚天:烈焰风暴L6）或裸蓝图名/类别名；等级可省略
- *   traits=特质名或id 逗号分隔；leader=敌方首领标记
+ *   traits=特质名或id 逗号分隔，五项专精可带等级（林地专精L8）；items=随身道具，见 item-spec.ts；leader=敌方首领标记
  * 解析容错：属性缺失/数值越界 → 降级为 invalid 记录，永不抛错；
  * 非法标签仅展示原文供玩家核查，不影响其余解析。
  */
 
-import { WEAPON_CLASSES, resolveWeaponClass, ABILITY_BLUEPRINTS, DEFAULT_BLUEPRINTS, categoryLabel, type Category, resolveTraitId, standardConditionMap, validateTraitSource, type TraitDuration, type BodyKind, type ItemSpecification } from '../../engine/src/index.js';
-import { parseItemSpecification, splitItemSpecification } from './item-spec.js';
+import { WEAPON_CLASSES, resolveWeaponClass, ABILITY_BLUEPRINTS, DEFAULT_BLUEPRINTS, categoryLabel, type Category, narrativeTraitLevel, standardConditionMap, validateTraitSource, type TraitDuration, type BodyKind, type ItemSpecification } from '../../engine/src/index.js';
+import { parseItemSpecification, splitItemSpecification, parseSpawnItem, splitSpawnItems, type SpawnItem } from './item-spec.js';
 
-export type LootType = 'weapon' | 'armor' | 'consumable' | 'accessory' | 'material' | 'quest' | 'misc';
+/** consumable、accessory 只在旧候选里出现；新道具一律 item。 */
+export type LootType = 'weapon' | 'armor' | 'item' | 'consumable' | 'accessory' | 'material' | 'quest' | 'misc';
 
 export type Suggestion =
-  | { kind: 'unit-set'; id: string; data: Record<string, unknown>; reason?: string; raw: string }
+  /** items：交给这个单位的道具，只增不减；只交道具时 data 为空。 */
+  | { kind: 'unit-set'; id: string; data: Record<string, unknown>; items?: SpawnItem[]; reason?: string; raw: string }
   | { kind: 'learn'; id: string; skills: SkillSpec[]; raw: string }
   | { kind: 'take'; id: string; qty: number; note?: string; raw: string }
-  | { kind: 'give'; item: string; note?: string; qty: number; lootType: LootType; spec?: ItemSpecification; raw: string }
+  | { kind: 'give'; id?: string; item: string; note?: string; qty: number; lootType: LootType; spec?: ItemSpecification; raw: string }
   | { kind: 'reforge'; id: string; name?: string; spec: ItemSpecification; raw: string }
-  | { kind: 'bless'; id: string; name: string; traitIds: string[]; duration: TraitDuration; raw: string }
+  | { kind: 'bless'; id: string; name: string; traitIds: string[]; traitLevels?: Record<string, number>; duration: TraitDuration; raw: string }
   | { kind: 'affect'; id: string; name: string; conditionIds: string[]; duration: TraitDuration; raw: string }
   | { kind: 'unbless' | 'unaffect'; id: string; sourceId: string; raw: string }
   | { kind: 'status'; target: string; conditionId: string; dur: number; raw: string }
@@ -107,8 +111,10 @@ export type Suggestion =
       armorLevel?: number;
       /** 从 skills 解析出的技能条目（蓝图+威力等级+自定义名） */
       skills?: SkillSpec[];
-      /** 正文特质（可选）：特质名或 id */
+      /** 正文特质（可选）：特质名或 id；五项专精可带等级（林地专精L8） */
       traits?: string[];
+      /** 随身道具：每张卡各一套，入库归该卡；佩戴、充能道具自动装上 */
+      items?: SpawnItem[];
       /** 敌方首领（可选）：附加统率+精锐特质 */
       leader?: boolean;
       /** 由不存在编号的 unit_set 新建：只入档，不替换出场名单。 */
@@ -323,21 +329,18 @@ export interface SkillSpec {
   name?: string;
 }
 
-/** 蓝图段 → 蓝图 id：精确 id/名称/类别名 → 名称双向包含兜底（"烈焰"→烈焰风暴） */
+/** 蓝图段 → 技能定义 id：通用机制 → 精确 bp id（存档内部） → 旧技能名/九类简称/名称包含兜底，后三者一律换成对应的通用机制。 */
 function blueprintKey(spec: string): string | undefined {
   const n = spec.trim();
   if (!n) return undefined;
   const generic = parseSkillMechanism(n); if (generic) return skillMechanismId(generic);
   if (/^(?:generic:|物理|魔法|buff|debuff|增益|减益|范围buff|范围debuff)/i.test(n)) return undefined;
-  for (const bp of Object.values(ABILITY_BLUEPRINTS)) {
-    if (bp.id === n || bp.name === n) return bp.id;
-  }
+  if (ABILITY_BLUEPRINTS[n]) return n;
+  const legacy = (name: string) => legacySkillEquivalent(name)?.id ?? Object.values(ABILITY_BLUEPRINTS).find((bp) => bp.name === name)?.id;
+  for (const bp of Object.values(ABILITY_BLUEPRINTS)) if (bp.name === n) return legacy(bp.name);
   const category = (Object.keys(DEFAULT_BLUEPRINTS) as Category[]).find((c) => categoryLabel(c) === n || CATEGORY_LABELS[c] === n);
-  if (category) return DEFAULT_BLUEPRINTS[category];
-  for (const bp of Object.values(ABILITY_BLUEPRINTS)) {
-    if (bp.name.includes(n) || n.includes(bp.name)) return bp.id;
-  }
-  return undefined;
+  if (category) return legacySkillEquivalent(CATEGORY_LABELS[category])?.id ?? legacy(ABILITY_BLUEPRINTS[DEFAULT_BLUEPRINTS[category]]!.name);
+  return legacySkillEquivalent(n, true)?.id ?? Object.values(ABILITY_BLUEPRINTS).find((bp) => bp.name.includes(n) || n.includes(bp.name))?.id;
 }
 
 /** 单条技能：可选 "名字:" 前缀 + 蓝图（必命中才有效）+ 可选 L等级 */
@@ -431,9 +434,12 @@ export function parseSuggestionTags(text: string): ParseResult {
           const name = a.name?.trim() || (kind === 'bless' ? '剧情祝福' : names.join('、'));
           const life = duration.kind !== 'permanent' ? { remaining: duration.count } : {};
           if (kind === 'bless') {
-            const traitIds = names.map((name) => resolveTraitId(name) ?? name);
-            validateTraitSource({ id: 'parse', name, kind: 'blessing', traitIds, duration, ...life });
-            suggestions.push({ kind: 'bless', id: a.id.trim(), name, traitIds, duration, raw });
+            const parsed = names.map((name) => narrativeTraitLevel(name)), levels: Record<string, number> = {};
+            const traitIds = parsed.map((p, i) => p.kind === 'trait' ? p.id : names[i]!);
+            for (const p of parsed) if (p.kind === 'trait' && p.level !== undefined && p.level !== 5) levels[p.id] = Math.max(levels[p.id] ?? 0, p.level);
+            const traitLevels = Object.keys(levels).length ? levels : undefined;
+            validateTraitSource({ id: 'parse', name, kind: 'blessing', traitIds, ...(traitLevels ? { traitLevels } : {}), duration, ...life });
+            suggestions.push({ kind: 'bless', id: a.id.trim(), name, traitIds, ...(traitLevels ? { traitLevels } : {}), duration, raw });
           } else {
             const registry = standardConditionMap();
             const conditionIds = names.map((name) => [...registry.values()].find((c) => c.id === name || c.name === name)?.id ?? name);
@@ -459,7 +465,7 @@ export function parseSuggestionTags(text: string): ParseResult {
         try {
           if (!a.id?.trim() || !a.spec?.trim()) throw new Error('缺少装备引用或规格');
           const spec = parseItemSpecification(a.spec, a);
-          if (spec.kind === 'consumable') throw new Error('消耗品不能重铸');
+          if (spec.kind === 'item' && spec.form === 'single') throw new Error('一次性道具不能改造');
           suggestions.push({ kind: 'reforge', id: a.id.trim(), name: a.name?.trim() || splitItemSpecification(a.spec).name, spec, raw });
         } catch { invalid.push(raw); }
         break;
@@ -475,13 +481,14 @@ export function parseSuggestionTags(text: string): ParseResult {
           invalid.push(raw);
           break;
         }
-        const lootTypes: LootType[] = ['weapon', 'armor', 'consumable', 'accessory', 'material', 'quest', 'misc'];
-        const lootType = lootTypes.includes((a.type ?? '') as LootType) ? (a.type as LootType) : 'misc';
+        const lootTypes: LootType[] = ['weapon', 'armor', 'item', 'material', 'quest', 'misc'];
+        const lootType = ['consumable', 'accessory'].includes(a.type ?? '') ? 'item' : lootTypes.includes((a.type ?? '') as LootType) ? (a.type as LootType) : 'misc';
         let spec: ItemSpecification | undefined;
         try { if (a.spec !== undefined) spec = parseItemSpecification(a.spec, a); }
         catch { invalid.push(raw); break; }
         suggestions.push({
           kind: 'give', item, note: (a.note ?? '').trim() || undefined,
+          ...(a.id?.trim() ? { id: a.id.trim() } : {}),
           qty: clampInt(a.qty, 1, 9999, 1), lootType: spec ? spec.kind === 'shield' ? 'armor' : spec.kind : lootType,
           ...(spec ? { spec } : {}), raw,
         });
@@ -551,8 +558,9 @@ export function parseSuggestionTags(text: string): ParseResult {
       }
       case 'spawn': {
         const name = (a.name ?? '').trim();
-        const arch = (a.archetype ?? '').trim();
-        if (!name || !(ARCHETYPES as readonly string[]).includes(arch)) {
+        // 原型由正文层按配装推断后写入；缺失或不认识时按步兵，不让单位作废。
+        const written = (a.archetype ?? '').trim(), arch = (ARCHETYPES as readonly string[]).includes(written) ? written : 'infantry';
+        if (!name) {
           invalid.push(raw);
           break;
         }
@@ -572,6 +580,8 @@ export function parseSuggestionTags(text: string): ParseResult {
         // 技能：逗号分隔 "名字:蓝图L等级"
         const skillsRaw = (a.skills ?? a.abilities ?? '').trim();
         const skills = skillsRaw ? parseAbilitySpec(skillsRaw) : [];
+        // 随身道具：规范写法由正文层整理过，这里仍逐项容错，坏的一项不影响其余。
+        const items = (a.items ?? '').trim() ? splitSpawnItems(a.items!).flatMap((entry) => { try { return [parseSpawnItem(entry)]; } catch { return []; } }) : [];
         // 刻度：scale=hero|mook|company（连队=军团会战编制）；缺省由面板按当前战斗规模决定
         const training = parseEnhancementSuffix('L'+(a.level??'1').replace(/^[lL]/,''),'unit');
         const scaleRaw = (a.scale ?? '').trim().toLowerCase();
@@ -600,6 +610,7 @@ export function parseSuggestionTags(text: string): ParseResult {
           ...(armSpec?.level ? { armorLevel: armSpec.level } : {}),
           ...(skills.length ? { skills } : {}),
           ...(splitList(a.traits) ? { traits: splitList(a.traits) } : {}),
+          ...(items.length ? { items } : {}),
           ...((a.leader ?? '').trim() === 'true' ? { leader: true } : {}),
           raw,
         });

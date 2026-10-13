@@ -9,7 +9,7 @@ import { prepareReportDeletion, prepareReportRestore, prepareReportRestart, stam
 import type { SaveReceipt, TavernAdapter } from './tavern.js';
 import { prepareBattleItemWrite } from './battle-items.js';
 import { assertTraitSourcePanelWrite, prepareBlessingRevocation } from './trait-state.js';
-import { moraleLabel, woundedLabel, isAirborne, positionedUnit, observedUnits, concealmentLabel, formationNode, type ObservationContext, traitSourceActive, traitRegistry, standardConditionMap, STANDARD_CONDITIONS, postureLabel, type Combatant } from '../../engine/src/index.js';
+import { moraleLabel, woundedLabel, isAirborne, positionedUnit, observedUnits, concealmentLabel, worksLabel, formationNode, type ObservationContext, traitSourceActive, traitRegistry, standardConditionMap, STANDARD_CONDITIONS, postureLabel, ITEM_FORM_NAMES, itemSpecText, traitLevelToken, type Combatant } from '../../engine/src/index.js';
 import { reviewMigration, type MigrationReview } from './migration-review.js';
 import { assertInventoryPanelWrite, calibrateSavedWeaponRanges, deleteUnitArchive, prepareInventoryState, prepareInventoryTransaction, type InventoryAction, type InventoryIntent, type InventorySave } from './inventory-state.js';
 import { cellLabel, type BattlefieldSpec } from '../../engine/src/small/spatial.js';
@@ -52,14 +52,14 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
   const records = allRecords.filter((r) => promptSelected(settings, 'unit', r.id)
     && unitInPromptScope(settings, r.id, roster.has(r.id), relevant(r))
     && (!battleOpen || combatants.some((u) => u.id === r.id) || relevant(r) || settings?.pinnedUnitIds?.includes(r.id))).sort((a, b) => Number(relevant(b)) - Number(relevant(a)) || Number(roster.has(b.id)) - Number(roster.has(a.id)) || (b.revision ?? 1) - (a.revision ?? 1));
-  lines.push(`本场${limited ? '已知' : ''}参战${allRecords.filter((r) => roster.has(r.id)).length}张单位卡；编队人数另计，旧档仓库数量不等于参战数量。`);
+  lines.push(`本场${limited ? '已知' : ''}参战${allRecords.filter((r) => roster.has(r.id)).length}张单位卡；编队人数另计。`);
   lines.push(`环境：${battleOpen ? (save.battle?.snap.fieldTags as string[] | undefined)?.join('/') ?? 'plains' : (save.field || 'plains') + (save.lighting === 'night' && save.field !== 'night' ? '/night' : '')}；本场场景以存档记录为准。`);
   if (battleOpen && field) {
     const goal = field.objective;
     const owner = goal.kind === 'escape' ? combatants.find((u) => u.id === goal.unitId)?.side : undefined;
     blocks.mission.push(`当前地图${field.width}×${field.height}${goal.kind === 'annihilation' ? '' : '，任务格' + cellLabel(field, goal.cell)}，第${save.battle?.snap.round ?? 1}/${goal.limit}轮；移动/位置以引擎为准。`);
     blocks.mission.push(goal.kind === 'annihilation' ? '任务：歼灭战，使敌方全部失去作战能力获胜，无占点胜利。' : goal.kind === 'control' ? `任务：${goal.attackingSide ? (goal.attackingSide === 'ally' ? '我方进攻、敌方防守' : '我方防守、敌方进攻') + '；仅攻方可占点获胜，守方坚持至期限获胜' : '双方争夺'}，占领当轮不计，连续控制${goal.rounds}个完整回合可胜；当前进展${promptJson(save.battle?.snap.controlRounds ?? {})}。`
-      : `任务：${owner === 'enemy' ? '我方拦截敌方护送' : '我方护送、敌方拦截'}；对象${visible.has(goal.unitId) ? promptJson(publicId(goal.unitId)) : '尚未观测'}，地面抵达则护送方胜；${goal.defenderWins ? '消灭、撤离或逾期则拦截方胜' : '旧规则逾期僵持'}。`);
+      : `任务：${owner === 'enemy' ? '我方拦截敌方护送' : '我方护送、敌方拦截'}；对象${visible.has(goal.unitId) ? promptJson(publicId(goal.unitId)) : '尚未观测'}，地面抵达则护送方胜；${goal.defenderWins ? '消灭、撤离或逾期则拦截方胜' : '任务逾期僵持'}。`);
   }
   if (limited) blocks.mission.push('仅列我方与当前已观测敌军；未列出的敌军位置、兵力与行动未知，不补写隐藏战斗记录。');
   for (const record of records) {
@@ -67,11 +67,11 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     const unit = live ?? record.snapshot;
     const physical = live && positionedUnit(observation, live);
     const effects = unit?.traitSources?.filter((s) => traitSourceActive(unit, s)).map((s) => ({ source: s.id, name: s.name,
-      ...(s.traitIds.length ? { traits: s.traitIds.map((id) => traitRegistry().get(id)?.name ?? id) } : {}),
+      ...(s.traitIds.length ? { traits: s.traitIds.map((id) => (traitRegistry().get(id)?.name ?? id) + (s.traitLevels?.[id] ? 'L' + s.traitLevels[id] : '')) } : {}),
       ...(s.conditionIds?.length ? { effects: s.conditionIds.map((id) => standardConditionMap().get(id)?.name ?? id) } : {}),
       duration: s.duration.kind, remaining: s.remaining }));
     const line = promptJson({ id: record.id, name: record.name, side: record.side, training:record.level, bonuses:unit?.bonuses,
-      ...(!battleOpen ? { level:record.level,xp:record.xp ?? 0,xpProgress:unit?xpProgress(unit)?.current:undefined,base:record.base,status:record.status,retired:record.retired,resources:unit?.resources,traits:unit?.traits,speedTier:unit?.speedTier,conditions:record.conditions,preparedAbilityIds:unit?.preparedAbilityIds } : {}),
+      ...(!battleOpen ? { level:record.level,xp:record.xp ?? 0,xpProgress:unit?xpProgress(unit)?.current:undefined,base:record.base,status:record.status,retired:record.retired,resources:unit?.resources,traits:unit?.traits.map((id) => traitLevelToken(id, unit.traitLevels?.[id])),speedTier:unit?.speedTier,conditions:record.conditions,preparedAbilityIds:unit?.preparedAbilityIds } : {}),
       semantics: record.scale === 'hero' ? '生命' : unit?.body==='vehicle'?'载具数量':'人数', hp: live?.hp ?? record.hp, hpMax: live?.base.hpMax ?? record.base.hpMax,
       // Wound groups are engine bookkeeping: the chat model gets a readable summary, never raw {hp,count} records to echo or rewrite.
       ...(unit&&hasMemberHealth(unit)?{memberHpMax:unit.formation!.memberHp,totalLife:memberHealth(unit),totalLifeMax:memberHealthMax(unit),memberHealth:memberHealthSummary(unit,4)}:{}),
@@ -81,14 +81,15 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
       ...(physical?.airborne !== undefined ? { layer: isAirborne(physical) ? '空中' : '地面' } : {}),
       ...(live && concealmentLabel(observation, live) ? { concealment: concealmentLabel(observation, live) } : {}),
       ...(unit?.tacticalPose ? { posture: postureLabel(unit, standardConditionMap()) } : {}),
+      ...(live && worksLabel(live) ? { works: worksLabel(live) } : {}),
       ...(live && observation.mode === 'mass' && live.rulesVersion === 'v2' ? { formation: (formationNode(physical ?? live).side === 'ally' ? '我方阵地/' : '敌方阵地/') + formationNode(physical ?? live).wing + '/' + ({ front: '前线', rear: '支援', reserve: '预备' }[formationNode(live).rank]) } : {}),
       ...(field && live?.pos !== undefined ? { position: cellLabel(field, live.pos), suppressed: !!live.suppression } : {}),
       ...(live?.conditions.some((c) => c.dur > 0) ? { conditions: live.conditions.filter((c) => c.dur > 0).map((c) => (standardConditionMap().get(c.id)?.name ?? c.id) + c.dur + '轮') } : {}),
       ...(live?.side === 'ally' ? { SP: `${live.resources.SP ?? 0}/${spCapacity(live)}` } : {}),
-      skills: unit?.rulesVersion === 'v2' && unit.abilities.length ? unit.abilities.filter((a) => !a.itemSourceId && (!battleOpen || /学习|技能|learn/.test(requestText) || unit.preparedAbilityIds?.includes(a.id))).map((a) => battleOpen && !/学习|技能|learn/.test(requestText)
+      skills: unit?.rulesVersion === 'v2' && unit.abilities.length ? unit.abilities.filter((a) => !a.itemSourceId && !a.equipmentSourceId && (!battleOpen || /学习|技能|learn/.test(requestText) || unit.preparedAbilityIds?.includes(a.id))).map((a) => battleOpen && !/学习|技能|learn/.test(requestText)
         ? { name: a.name, cooldown: unit.abilityState.find((s) => s.abilityId === (a.cooldownGroup ?? a.id))?.cdLeft || undefined }
         : { id:a.id, definitionId:a.definitionId, name: a.name, mechanism: skillMechanismName(a.definitionId ?? '') || a.definitionId, power: a.fixedPower ? undefined : a.power, bonuses:a.bonuses, prepared: unit.preparedAbilityIds?.includes(a.id) }) : undefined,
-      ...(!battleOpen && EDIT_REQUEST.test(requestText) ? { editable: { formation:unit?.formation&&{...unit.formation,health:undefined},abilities:unit?.abilities,traitSources:unit?.traitSources,trinkets:unit?.trinkets,abilityState:unit?.abilityState,fatigue:unit?.fatigue,weapon:unit?.weapon,sidearm:unit?.sidearm,armor:unit?.armor,shield:unit?.shield,xpValue:unit?.xpValue } } : {}),
+      ...(!battleOpen && EDIT_REQUEST.test(requestText) ? { editable: { formation:unit?.formation&&{...unit.formation,health:undefined},abilities:unit?.abilities,traitSources:unit?.traitSources,abilityState:unit?.abilityState,fatigue:unit?.fatigue,weapon:unit?.weapon,sidearm:unit?.sidearm,armor:unit?.armor,shield:unit?.shield,xpValue:unit?.xpValue } } : {}),
       body: unit?.rulesVersion === 'v2' && unit.body !== 'human' ? unit.body : undefined, mount: unit?.mount || undefined,
       weapon: unit?.weapon?.name, sidearm: unit?.sidearm?.name, armor: unit?.armor?.name, ...(effects?.length ? { effects } : {}) }, publicId);
     blocks.units.push(line);
@@ -99,10 +100,13 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     // 战内禁止物品档案事件，装备名称已随单位给出；仅按明确查询展开库存规格。
     if (battleOpen && !relevant(item) && !/物品|背包|库存|装备|配装/.test(requestText)) continue;
     const m = item.mechanics;
-    const recipe = m?.kind === 'consumable' ? m.recipe : m?.value.recipe;
+    // 道具给出形态与规范写法（与 give 的 spec 相同），装备照旧列出机制与规格。
+    if (m?.kind === 'item') blocks.items.push(promptJson({ id: item.id, name: item.name, qty: item.qty, owner: item.assignedTo, slot: item.equippedTo?.slot,
+      kind: ITEM_FORM_NAMES[m.value.recipe.form] + '道具', spec: itemSpecText(m.value.recipe), charges: m.value.ability?.usesPerBattle, note: item.note }, publicId));
+    else { const recipe = m?.value.recipe;
     blocks.items.push(promptJson({ id: item.id, name: item.name, qty: item.qty, owner: item.assignedTo, slot: item.equippedTo?.slot,
       kind: m?.kind ?? item.lootType, mechanism: recipe?.mechanism, power: recipe?.power, bonuses:recipe?.bonuses, enchant: recipe?.enchantment,
-      quality: recipe?.quality, body: recipe?.size, stabilized: recipe?.stabilized, protection: recipe?.protectionProfile, note: item.note }, publicId));
+      quality: recipe?.quality, body: recipe?.size, stabilized: recipe?.stabilized, protection: recipe?.protectionProfile, note: item.note }, publicId)); }
     details?.items.push({id: item.id, name: item.name, reason: item.assignedTo && roster.has(item.assignedTo) ? '参战队伍携行' : relevant(item) ? '正文提及' : '手动勾选'});
   }
   blocks.phase.push(battleOpen ? '当前战斗/战果待提交，正文不能更新档案。' : '当前可进行战外档案事件。');
@@ -134,8 +138,8 @@ export class NarrativeController {
   private identity: string;
   private epoch = 0;
   private binding?: GenerationBinding;
-  private receivedId?: number;
-  private generationEnded = false;
+  /** 进行中的一次生成：收到的消息序号，以及生成是否已结束。两者都到齐才扫描这条回复。 */
+  private generation?: { receivedId?: number; ended: boolean };
   private disposers: (() => void)[] = [];
   private listeners = new Set<Listener>();
   private active = true;
@@ -158,25 +162,22 @@ export class NarrativeController {
     const before = (...args: unknown[]) => { if (args[2] !== true) this.beginGeneration(); };
     this.capabilities.beforeGeneration = bind('GENERATION_AFTER_COMMANDS', before);
     if (!this.capabilities.beforeGeneration) this.capabilities.beforeGeneration = bind('GENERATION_STARTED', before);
+    // 生成中的回复要等“收到消息”和“生成结束”都到了才扫描：流式输出先发生成结束、非流式先发收到消息，哪个后到由哪个收尾。
     bind('MESSAGE_RECEIVED', (value) => {
-      const id = eventMessageId(value);
-      if (this.binding && id !== undefined) {
-        this.receivedId = id;
-        if (this.generationEnded && (!this.binding.messageId || this.binding.messageId === String(id))) {
-          this.binding.complete = true; this.binding.messageId = String(id); void this.scan(id);
-        }
+      const id = eventMessageId(value), generation = this.generation;
+      if (generation && id !== undefined) {
+        generation.receivedId = id;
+        if (generation.ended) this.finishGeneration();
       } else void this.scan(id);
     });
-    this.capabilities.generationEnded = bind('GENERATION_ENDED', (value) => {
-      this.generationEnded = true;
-      const id = eventMessageId(value) ?? this.receivedId;
-      if (this.binding) {
-        this.binding.complete = id !== undefined && (this.receivedId === undefined || id === this.receivedId);
-        this.binding.messageId = this.binding.complete ? String(id) : undefined;
-      }
-      void this.scan(id);
+    // 酒馆这里传的是 chat.length（消息条数），不是刚生成那条的序号，所以不读它。
+    this.capabilities.generationEnded = bind('GENERATION_ENDED', () => {
+      const generation = this.generation;
+      if (!generation) return;
+      generation.ended = true;
+      if (generation.receivedId !== undefined) this.finishGeneration();
     });
-    bind('GENERATION_STOPPED', () => { this.binding = undefined; this.receivedId = undefined; void this.scan(); });
+    bind('GENERATION_STOPPED', () => { this.binding = undefined; this.generation = undefined; void this.scan(); });
     bind('MESSAGE_EDITED', () => { this.binding = undefined; void this.invalidateSources().then(() => this.scan()); });
     bind('MESSAGE_SWIPED', () => { this.binding = undefined; void this.invalidateSources().then(() => this.scan()); });
     bind('MESSAGE_DELETED', () => { this.binding = undefined; void this.invalidateSources(); });
@@ -223,9 +224,9 @@ export class NarrativeController {
   }
   listen(callback: Listener): () => void { this.listeners.add(callback); return () => this.listeners.delete(callback); }
   private notify(): void { for (const listener of this.listeners) listener(this.snapshot(), this.lastReceipt); }
-  private project(): void { this.capabilities.injection = this.adapter.injectPrompts([{ id: PROMPT_ID, content: this.migration ? '【战阵】旧存档或坏项正等待玩家核对迁移预览；暂不执行正文档案事件。' : narrativeProjection(this.state, this.adapter.recentPromptText?.() ?? '') }]); }
+  private project(): void { this.capabilities.injection = this.adapter.injectPrompts([{ id: PROMPT_ID, content: this.migration ? '【战阵】存档正等待玩家核对迁移预览；暂不执行正文档案事件。' : narrativeProjection(this.state, this.adapter.recentPromptText?.() ?? '') }]); }
   private switchContext(): void {
-    this.epoch++; this.binding = undefined; this.receivedId = undefined;
+    this.epoch++; this.binding = undefined; this.generation = undefined;
     this.queuedScan = undefined;
     this.adapter.uninjectPrompts(PROMPT_ID);
     this.identity = this.adapter.identity(); this.namespace = this.adapter.namespace();
@@ -290,11 +291,18 @@ export class NarrativeController {
     return this.inventoryAction(preview.intent);
   }
   beginGeneration(): void {
-    if (!this.active || this.migration) return;
-    if (this.identity !== this.adapter.identity() || this.namespace !== this.adapter.namespace()) this.switchContext();
-    this.receivedId = undefined; this.generationEnded = false;
-    this.binding = this.namespace ? captureGeneration(this.state, this.namespace, randomId()) : undefined;
-    this.project();
+    if (!this.active) return;
+    if (!this.migration && (this.identity !== this.adapter.identity() || this.namespace !== this.adapter.namespace())) this.switchContext();
+    this.generation = { ended: false };
+    this.binding = !this.migration && this.namespace ? captureGeneration(this.state, this.namespace, randomId()) : undefined;
+    if (!this.migration) this.project();
+  }
+  /** 这次生成的回复已收到、生成也已结束：把绑定落到这条消息上再扫描。 */
+  private finishGeneration(): void {
+    const id = this.generation!.receivedId!;
+    this.generation = undefined;
+    if (this.binding) { this.binding.complete = true; this.binding.messageId = String(id); }
+    void this.scan(id);
   }
   async scan(messageId?: number, options: { manual?: boolean } = {}): Promise<void> {
     if (!this.active || this.migration || this.adapter.isGenerating()) return;

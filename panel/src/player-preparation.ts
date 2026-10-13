@@ -36,7 +36,7 @@ export class PlayerPreparation {
   apply(value: Record<string, unknown>, input: PreparationInputs): void {
     this.sync(input.scope);
     if (value.clear === true) { this.clear(); return; }
-    if (!input.roster.length || input.roster.some(u => u.rulesVersion !== 'v2')) throw Error('指挥与地图准备需要 V2 单位');
+    if (!input.roster.length || input.roster.some(u => u.rulesVersion !== 'v2')) throw Error('请先更新单位规则，再准备指挥与地图');
     const context: LlmEncounterContext = encounterRequest({ roster: input.roster, setup: input.setup,
       settings: { ...normalizeContextSettings(), enemy: 'manual', scene: 'manual' }, messages: [], windowSize: 0, roles: [], phase: 'preparation' }).base;
     if (value.commanders !== undefined) {

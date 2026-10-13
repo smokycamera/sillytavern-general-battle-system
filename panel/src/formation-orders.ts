@@ -61,7 +61,9 @@ export function selectFormationUnit(b: MassBattle, view: FormationView, drafts: 
 export function setFormationChoice(b: MassBattle, view: FormationView, drafts: OrderDrafts, key: string): void {
   const s = formationSelection(b, view, drafts); if (!s.actor) return;
   const choice = s.choices.find((c) => c.key === key); if (!choice) throw Error('任务选项已经变化');
-  const target = choice.targets.find((t) => t.id === s.order?.targetId && !t.preview.reason)
-    ?? choice.targets.find((t) => !t.preview.reason) ?? choice.targets[0];
-  drafts[s.actor.id] = orderDraft(target?.order ?? choice.order);
+  const targetId = s.order?.targetId;
+  const order = targetId !== undefined && choice.targets.some((t) => t.id !== undefined)
+    ? choice.targets.find((t) => t.id === targetId)?.order ?? { ...choice.order, targetId }
+    : choice.targets.find((t) => !t.preview.reason)?.order ?? choice.targets[0]?.order ?? choice.order;
+  drafts[s.actor.id] = orderDraft(order);
 }

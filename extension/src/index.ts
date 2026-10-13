@@ -90,7 +90,7 @@ async function startRuntime() {
     ? { format: 'tavern-battle-export', version: 1, exportedAt: new Date().toISOString(), scope: host.session()?.scope, legacy: preview.source }
     : management.exportCurrent());
   const showChange = (change: SaveChangePreview) => {
-    const label = ({ clear: '清空当前聊天战阵数据', file: '导入文件并替换当前档案', rollback: '把最新进度交回旧脚本', resume: '采用旧脚本阶段进度并迁回原生' })[change.kind];
+    const label = ({ clear: '清空当前聊天战阵数据', file: '导入文件并替换当前档案', rollback: '把最新进度切换到脚本模式', resume: '导入脚本模式进度并迁回原生' })[change.kind];
     const counts = (value: SaveChangePreview['before']) => `${value.units} 个单位、${value.inventory} 项库存、${value.reports} 份战报${value.battle ? '，含战斗' : ''}`;
     panel.showStatus(`${label}\n当前：${counts(change.before)}\n操作后：${counts(change.after)}${change.sourceChat ? '\n文件来源聊天：' + change.sourceChat : ''}\n${change.changes.join('\n')}\n操作前会保存并核实当前档案备份。`, [
       { label: '导出当前档案', run: exportCurrent },
@@ -116,8 +116,8 @@ async function startRuntime() {
     panel.showStatus('存档操作只针对当前聊天。导入、清空和回退均先预览、备份，再核实保存结果。', [
       { label: '导出完整原生存档', run: exportCurrent },
       { label: '导入存档文件', run: chooseFile },
-      { label: '导出旧版兼容存档', run: () => exportData('tavern-battle-legacy-panel.json', management.exportLegacy()) },
-      { label: store.envelope()?.handoff ? '预览迁回原生' : '预览回退旧脚本', run: async () => showChange(await (store.envelope()?.handoff ? management.previewResume() : management.previewRollback())) },
+      { label: '导出脚本格式存档', run: () => exportData('tavern-battle-legacy-panel.json', management.exportLegacy()) },
+      { label: store.envelope()?.handoff ? '预览迁回原生' : '预览切换到脚本模式', run: async () => showChange(await (store.envelope()?.handoff ? management.previewResume() : management.previewRollback())) },
       { label: '预览清空当前战阵', run: () => showChange(management.previewClear()) },
       { label: '返回面板', run: reload },
     ], true);
@@ -128,7 +128,7 @@ async function startRuntime() {
     // A failed button keeps this explanation and only updates the reason line.
     const act = (run: () => Promise<void>) => async () => { try { await run(); } catch (error) { showPending(errorText(error)); } };
     panel.showStatus(['战阵最近一次改动（例如扫描 AI 回复、确认事件或战斗行动）还没有确认保存成功。为免弄乱存档，已暂停其他操作。', ...(reason ? ['原因：' + reason] : []),
-      handoff ? '· 重试保存：继续把存档交回旧版战阵脚本。' : '· 重试保存：再保存一次这次改动。',
+      handoff ? '· 重试保存：继续把存档交回脚本版战阵。' : '· 重试保存：再保存一次这次改动。',
       ...(handoff ? [] : ['· 撤销这次改动：放弃这次改动，回到上一次保存成功的存档。']),
       '· 导出存档备份：下载上一次保存成功的存档。'].join('\n'), [
       { label: '重试保存', run: act(async () => { const receipt = await current.retry(); if (receipt.status === 'confirmed') await current.load(); }) },
@@ -147,16 +147,16 @@ async function startRuntime() {
     await reload();
   };
   stop = current.listen(state => {
-    if (host.hasLegacyRuntime()) { panel.showStatus('检测到旧战阵脚本仍在运行。停用该脚本后刷新页面，再使用原生扩展。', [{ label: '导出当前档案', run: exportCurrent }], true); return; }
+    if (host.hasLegacyRuntime()) { panel.showStatus('检测到脚本版战阵仍在运行。停用该脚本后刷新页面，再使用原生扩展。', [{ label: '导出当前档案', run: exportCurrent }], true); return; }
     if (state.phase === 'loading') panel.showStatus('正在读取当前聊天档案…', [], true);
     else if (state.phase === 'import') {
       const info = preview?.counts;
       const details = preview?.review?.changes.join('；');
-      panel.showStatus(`当前聊天发现旧战阵存档：${info?.units ?? 0} 个单位、${info?.inventory ?? 0} 项库存、${info?.reports ?? 0} 份战报${info?.battle ? '，含进行中的战斗' : ''}。采用前会保存原档备份。${details ? '\n需要核对的调整：' + details : ''}`, [
-        { label: '导出原档备份', run: exportCurrent }, { label: '采用当前聊天旧档', run: () => adopt('import') }, { label: '从空档开始', run: () => adopt('empty') },
+      panel.showStatus(`当前聊天发现脚本存档：${info?.units ?? 0} 个单位、${info?.inventory ?? 0} 项库存、${info?.reports ?? 0} 份战报${info?.battle ? '，含进行中的战斗' : ''}。采用前会保存原档备份。${details ? '\n需要核对的调整：' + details : ''}`, [
+        { label: '导出原档备份', run: exportCurrent }, { label: '导入当前聊天脚本存档', run: () => adopt('import') }, { label: '从空档开始', run: () => adopt('empty') },
       ], true);
     } else if (state.phase === 'pending') showPending(state.receipt?.error);
-    else if (state.phase === 'handoff') panel.showStatus('最新进度已确认保存旧脚本的当前聊天存档和镜像，原生保存已停止。可以停用原生扩展后启用旧战阵脚本；再次使用原生版时先停用旧脚本，再预览迁回。', [{ label: '导出完整原生存档', run: exportCurrent }, { label: '预览迁回原生', run: async () => showChange(await management.previewResume()) }], true);
+    else if (state.phase === 'handoff') panel.showStatus('最新进度已确认保存到脚本模式的当前聊天存档和镜像，原生保存已停止。可以停用原生扩展后启用脚本版战阵；再次使用原生扩展时先停用脚本版战阵，再预览迁回。', [{ label: '导出完整原生存档', run: exportCurrent }, { label: '预览迁回原生', run: async () => showChange(await management.previewResume()) }], true);
     else if (state.phase === 'error') panel.showStatus(state.error ?? '存档暂时读不出来', [{ label: '重新读取存档', run: reload }, { label: '导出原始数据', run: exportCurrent }], true);
     else if (state.phase === 'ready' || state.phase === 'review') { panel.showStatus(''); panel.showPanel(); }
   });

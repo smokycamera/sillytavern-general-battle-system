@@ -23,7 +23,7 @@ describe('伤兵持久化与后续更新', () => {
   });
   it('战外用药按实际伤兵扣量，重放与耗尽后拒绝均不重复恢复；正文显示独立伤兵语义', () => {
     const a = unit(); applyHealthLoss(a, 20); const record = unitRecordFromCombatant(a);
-    const save = { storage: [record], inventory: [createInventoryItem('dose', '急救剂', { kind: 'consumable', mechanism: 'heal', power: 3 }, 'dose', 3)], factRevision: 1 };
+    const save = { storage: [record], inventory: [createInventoryItem('dose', '急救剂', { kind: 'item', form: 'single', power: 3, active: 'generic:buff:heal' }, 'dose', 3)], factRevision: 1 };
     const next = prepareInventoryTransaction(save, { id: 'heal-one', kind: 'use', unitId: a.id, itemId: 'dose', expectedRevision: 1 });
     expect(next.storage![0]).toMatchObject({ hp: 60, recoverableWounded: 0 }); expect(next.inventory![0]!.qty).toBe(2);
     const final = next;

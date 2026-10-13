@@ -169,25 +169,25 @@ describe('armor="名字:种类L等级" 端到端', () => {
 });
 
 describe('skills="名字:蓝图L等级" 端到端', () => {
-  it('焚天:烈焰风暴L6 → 技能名 焚天，威力按 L6 曲线（强于 L2）', () => {
+  it('焚天:烈焰风暴L6 → 技能名 焚天，旧技能名换成魔法范围热能，威力按 L6（强于 L2）', () => {
     const r = parseSuggestionTags(
       '<spawn name="焰法师" side="enemy" archetype="ranged" level="2" skills="焚天:烈焰风暴L6"/>',
     );
     const s = r.suggestions[0] as SpawnSug;
+    // 旧技能名“烈焰风暴”换成魔法范围热能；正文建档只走 V2。
     const input = {
-      name: s.name, side: 'enemy' as const, archetype: s.archetype as 'ranged', scale: 'hero' as const,
-      level: s.level, traits: [], era: 'medieval',
+      rulesVersion: 'v2' as const, name: s.name, side: 'enemy' as const, archetype: s.archetype as 'ranged', scale: 'hero' as const,
+      level: s.level, traits: [], weaponClass: 'magic',
       abilityBlueprints: s.skills!.map((k) => ({ id: k.blueprintId, ...(k.level ? { level: k.level } : {}), ...(k.name ? { name: k.name } : {}) })),
     };
     const { unit } = generateUnit(input, { noVariance: true });
-    const ability = unit.abilities.find((a) => a.id === 'bp-firestorm')!;
-    expect(ability.name).toBe('焚天');
-    // 对照：不带等级（按单位 L2）生成的同名蓝图骰面更小
-    const { unit: baseline } = generateUnit({ ...input, abilityBlueprints: ['bp-firestorm'] }, { noVariance: true });
-    const bAbility = baseline.abilities.find((a) => a.id === 'bp-firestorm')!;
-    const apOf = (a: { effects: { op: string; apDice?: string }[] }) =>
-      a.effects.find((e) => e.op === 'damage')?.apDice ?? '';
-    const diceSum = (expr: string) => expr.split(/[d+]/).reduce((sum, x) => sum + (parseInt(x, 10) || 0), 0);
-    expect(diceSum(apOf(ability))).toBeGreaterThan(diceSum(apOf(bAbility)));
+    const ability = unit.abilities.find((a) => a.definitionId === 'generic:magic-area:thermal')!;
+    expect(ability.name).toBe('焚天'); expect(ability.power).toBe(6);
+    // 对照：同一机制 L2 的伤害骰更小
+    const { unit: baseline } = generateUnit({ ...input, abilityBlueprints: [{ id: 'generic:magic-area:thermal', level: 2 }] }, { noVariance: true });
+    const bAbility = baseline.abilities.find((a) => a.definitionId === 'generic:magic-area:thermal')!;
+    const diceOf = (a: { effects: { op: string; baseDice?: string }[] }) => a.effects.find((e) => e.op === 'damage')?.baseDice ?? '';
+    const diceMeanOf = (expr: string) => { const [, n, m, k] = expr.match(/^(\d+)d(\d+)(?:\+(\d+))?$/)!; return Number(n) * (Number(m) + 1) / 2 + Number(k ?? 0); };
+    expect(diceMeanOf(diceOf(ability))).toBeGreaterThan(diceMeanOf(diceOf(bAbility)));
   });
 });

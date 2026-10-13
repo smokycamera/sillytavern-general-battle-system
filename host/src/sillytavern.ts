@@ -122,12 +122,12 @@ export class NativeHost implements MetadataPort {
   }
   async applyLegacyHandoff(session: HostSession, handoff: LegacyHandoff): Promise<void> {
     const metadata = this.metadata();
-    if (!metadata || !sameSession(session, this.session()) || this.hasLegacyRuntime()) throw Error('回退目标已变或旧脚本仍在运行');
-    if (handoff.mirrorKey !== legacyMirrorKey(session.scope) || !this.legacyStorage) throw Error('无法确认旧镜像键或本地存储不可用');
+    if (!metadata || !sameSession(session, this.session()) || this.hasLegacyRuntime()) throw Error('回退目标已变或脚本版战阵仍在运行');
+    if (handoff.mirrorKey !== legacyMirrorKey(session.scope) || !this.legacyStorage) throw Error('无法确认脚本镜像键或本地存储不可用');
     const variables = metadata.variables;
-    if (variables !== undefined && (!variables || typeof variables !== 'object' || Array.isArray(variables))) throw Error('旧变量容器损坏，不能回退保存');
+    if (variables !== undefined && (!variables || typeof variables !== 'object' || Array.isArray(variables))) throw Error('脚本变量容器损坏，不能回退保存');
     this.legacyStorage.setItem(handoff.mirrorKey, handoff.mirrorValue);
-    if (this.legacyStorage.getItem(handoff.mirrorKey) !== handoff.mirrorValue) throw Error('旧镜像保存未确认');
+    if (this.legacyStorage.getItem(handoff.mirrorKey) !== handoff.mirrorValue) throw Error('脚本镜像保存未确认');
     metadata.variables = { ...variables as Record<string, unknown> | undefined, panel: structuredClone(handoff.panel) };
   }
   async verifyLegacyHandoff(scope: ChatScope, handoff: LegacyHandoff): Promise<boolean> {

@@ -45,7 +45,7 @@ it('80人按一支编队表达；大量单位、错误count和超长事件整批
     expect(result.errors.join('')).toMatch(/编队|人数|单位|事件/);
   }
   const examples = [CORE_PROTOCOL, ...PROMPT_CARDS.map((c) => c.content)].flatMap((text) => text.match(/<tb>(?:\s*<[a-z_]+\s[^<>]*\/>\s*)+<\/tb>/g) ?? []);
-  expect(examples).toHaveLength(7);
+  expect(examples).toHaveLength(8);
   for (const text of examples) expect(parseProtocol(text).errors, text).toEqual([]);
 });
 
@@ -65,13 +65,40 @@ it('通用增减益只收支持的纯文字效果和唯一时效，禁止正文�
   for (const attrs of ['effects="灭世" rounds="1"', 'effects="诅咒"', 'effects="眩晕" rounds="2"', 'effects="诅咒" rounds="2" battles="1"']) expect(parseProtocol(`<tb><affect id="a" ${attrs}/></tb>`).errors.length).toBeGreaterThan(0);
 });
 
-it('正文特质名称使用纯文字，改名前的正文仍映射同一机制', () => {
+it('正文特质名称使用纯文字，改名前的正文仍映射同一机制，克制机动并入拒马', () => {
   expect(TRAITS.every((t) => /^[\p{Script=Han}]+$/u.test(t.name))).toBe(true);
   for (const names of ['克制步兵,克制大型,克制机动', '克制·步兵,克制·大型,克制·机动']) {
     const result = parseProtocol(`<tb><bless id="a" traits="${names}" battles="1"/></tb>`);
     expect(result.errors).toEqual([]);
-    expect(result.events[0]).toMatchObject({ traitIds: ['anti-infantry', 'anti-large', 'anti-mobile'] });
+    expect(result.events[0]).toMatchObject({ traitIds: ['anti-infantry', 'anti-large', 'pike-wall'] });
   }
+});
+
+it('停用特质不建档：老练/精锐改按训练等级、快速改按速度档，写了的不覆盖；重甲由护甲决定', () => {
+  const spawn = parseProtocol('<tb><spawn name="游骑" side="ally" scale="hero" traits="老练,快速,射击专家,重甲"/></tb>');
+  expect(spawn.errors).toEqual([]);
+  expect(spawn.events[0]).toMatchObject({ kind: 'spawn', traits: ['sharpshooter'], level: 3, speedTier: 4 });
+  expect(spawn.warnings.join(' ')).toMatch(/「老练」训练程度由level表达，不再作为特质，已按level=3/);
+  expect(spawn.warnings.join(' ')).toMatch(/「快速」移动快慢由speed表达，不再作为特质，已按speed=4/);
+  expect(spawn.warnings.join(' ')).toMatch(/「重甲」由护甲决定/);
+  const explicit = parseProtocol('<tb><spawn name="禁军" side="ally" scale="hero" level="6" speed="2" traits="精锐,快速"/></tb>');
+  expect(explicit.events[0]).toMatchObject({ level: 6, speedTier: 2 }); expect((explicit.events[0] as { traits?: string[] }).traits ?? []).toEqual([]);
+  expect(parseProtocol('<tb><bless id="a" traits="老练" battles="1"/></tb>').events).toEqual([]);
+  const set = parseProtocol('<tb><unit_set id="u1" traits="精锐,工事,御剑"/></tb>');
+  expect(set.errors).toEqual([]); expect(JSON.stringify(set.events[0])).toContain('fortification'); expect(JSON.stringify(set.events[0])).toContain('flying');
+});
+
+it('天生护甲写进armor时按所写或按身体补出种类并加上特质，改已有单位不知身体时保留原护甲', () => {
+  const dragon = parseProtocol('<tb><spawn name="红龙" side="enemy" scale="hero" body="giant" weapon="利爪:天生武器L6" armor="远古龙鳞:天生护甲L8+6防护" traits="飞行"/></tb>');
+  expect(dragon.errors).toEqual([]);
+  expect(dragon.events[0]).toMatchObject({ kind: 'spawn', armor: '远古龙鳞:重甲L8+6防护', armorTier: 3, armorLevel: 8, traits: ['flying', 'natural-armor'] });
+  expect(dragon.warnings.join(' ')).toMatch(/「天生护甲」不是护甲种类，已按重甲处理并加上天生护甲特质/);
+  expect(parseProtocol('<tb><spawn name="巨魔" side="enemy" scale="hero" body="large" armor="厚皮:天生护甲L5"/></tb>').events[0]).toMatchObject({ armorTier: 2, traits: ['natural-armor'] });
+  expect(parseProtocol('<tb><spawn name="体修" side="ally" scale="hero" armor="肉身:天生护甲L6+4防护"/></tb>').events[0]).toMatchObject({ armorTier: 1 });
+  expect(parseProtocol('<tb><spawn name="龙" side="enemy" scale="hero" body="giant" armor="龙鳞:天生中甲L6"/></tb>').events[0]).toMatchObject({ armorTier: 2, traits: ['natural-armor'] });
+  const set = parseProtocol('<tb><unit_set id="u4" armor="龙鳞:天生护甲L7" traits="飞行"/></tb>');
+  expect(set.errors).toEqual([]); expect(JSON.stringify(set.events[0])).not.toContain('armor');
+  expect(set.warnings.join(' ')).toMatch(/保留原护甲/);
 });
 
 it('祝福必须给出明确特质与唯一期限，不能按神名猜效果或引入未执行的能力', () => {

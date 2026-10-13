@@ -41,19 +41,19 @@ describe('可救伤兵与再生守恒', () => {
   it('物品可救已记账伤兵，预览与实际同上限，同一行动扣量，旧缺员仍拒绝', () => {
     for (const mode of ['small', 'mass']) {
       let a = unit('a'); const b = unit('b', 'enemy'); injure(a);
-      const mechanics = compileItem({ kind: 'consumable', mechanism: 'heal', power: 3 }, { id: 'dose', seed: 'dose' }); if (mechanics.kind !== 'consumable') throw new Error('fixture');
+      const mechanics = compileItem({ kind: 'item', form: 'single', power: 3, active: 'generic:buff:heal' }, { id: 'dose', seed: 'dose' }); if (mechanics.kind !== 'item') throw new Error('fixture');
       a = attachCarriedItems(a, [{ id: 'dose', name: '急救剂', quantity: 2, revision: 1, mechanics }]);
       const hp = a.hp, pool = woundCount(a), ability = a.abilities.find((x) => x.itemSourceId)!;
       if (mode === 'small') {
         const battle = new SmallBattle({ combatants: [a, b], rules: V2_D20, battlefield: standardField(), traitRegistry: registry, seed: 'triage' }); battle.start(); while (battle.active?.id !== a.id) battle.endTurn();
         const before = structuredClone(battle.toSnapshot()); const option = battle.getActionOptions(a.id).find((o) => o.id === ability.id)!;
-        expect(option.targets!.find((t) => t.targetId === a.id)!.preview!.healing).toBe(Math.min(7, pool)); expect(battle.toSnapshot()).toEqual(before);
+        expect(option.targets!.find((t) => t.targetId === a.id)!.preview!.healing).toBe(Math.min(24, pool)); expect(battle.toSnapshot()).toEqual(before);
         expect(battle.useAbility(a.id, ability.id, a.id).ok).toBe(true);
       } else {
         const battle = new MassBattle({ combatants: [a, b], rules: V2_TW, traitRegistry: registry, seed: 'triage' }); battle.start();
         expect(battle.useAbility(a.id, ability.id, a.id).ok).toBe(true); expect(a.hp).toBe(hp); battle.issue({ unitId: b.id, type: 'hold' }); battle.resolveRound(1);
       }
-      expect(a.hp).toBe(hp + Math.min(7, pool)); expect(woundCount(a)).toBe(pool - Math.min(7, pool)); expect(a.resources['item:dose']).toBe(1);
+      expect(a.hp).toBe(hp + Math.min(24, pool)); expect(woundCount(a)).toBe(pool - Math.min(24, pool)); expect(a.resources['item:dose']).toBe(1);
     }
   });
   it('实际会战攻击只记真实减员一次，不按预览副本重复入池；阶段异常彻底回退新增字段', () => {

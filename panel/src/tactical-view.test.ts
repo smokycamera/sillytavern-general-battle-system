@@ -5,6 +5,36 @@ import { tacticalFixture } from '../../scripts/p4-tactical-fixture.js';
 import { renderTacticalBattle, selectTacticalElement, tacticalSelection, type TacticalView } from './tactical-view.js';
 
 describe('战术地图查看与确认', () => {
+  it('切换武器、技能和模式保留目标，目标不适用时等待重新选择', () => {
+    const { b } = tacticalFixture(), actor = b.byId('a');
+    actor.sidearm = structuredClone(actor.weapon);
+    const fire = actor.abilities.find(a => a.definitionId === 'bp-firestorm')!;
+    const heal = actor.abilities.find(a => a.definitionId === 'bp-mending')!;
+    const before = JSON.stringify(b.toSnapshot());
+    const view: TacticalView = { mode: 'weapon', selectedId: actor.id };
+    const initial = tacticalSelection(b, view).target!.targetId;
+    selectTacticalElement(b, view, { mode: fire.id });
+    expect(view.targetId).toBe(initial);
+    selectTacticalElement(b, view, { unitId: 'd' });
+    for (const mode of ['sidearm', 'weapon', fire.id, 'move', 'guard', 'weapon']) {
+      const query = selectTacticalElement(b, view, { mode });
+      expect(view.targetId).toBe('d');
+      expect(tacticalSelection(b, view, query).target?.targetId).toBe('d');
+    }
+    selectTacticalElement(b, view, { mode: heal.id });
+    expect(view.targetId).toBe('d');
+    expect(tacticalSelection(b, view).target).toBeUndefined();
+    const html = renderTacticalBattle(b, view);
+    expect(html).toContain('value="d" selected disabled');
+    expect(html).toContain('所选目标不适用于此行动');
+    expect(html).toMatch(/data-action="grid-execute"[^>]*disabled/);
+    selectTacticalElement(b, view, { mode: fire.id });
+    expect(tacticalSelection(b, view).target?.targetId).toBe('d');
+    selectTacticalElement(b, view, { mode: heal.id });
+    selectTacticalElement(b, view, { unitId: 'c' });
+    expect(tacticalSelection(b, view).target?.targetId).toBe('c');
+    expect(JSON.stringify(b.toSnapshot())).toBe(before);
+  });
   it('查看友军后点击当前行动单位直接恢复操作，优先于移动和治疗选点', () => {
     const { b } = tacticalFixture(), actor = b.byId('a'), friend = b.byId('c');
     friend.abilities = structuredClone(actor.abilities);

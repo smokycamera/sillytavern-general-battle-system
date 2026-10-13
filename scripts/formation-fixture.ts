@@ -18,7 +18,7 @@ const storage = [
   u.tags.push('zone:中军', id === 'reserve' ? 'rank:reserve' : 'rank:front');
   return unitRecordFromCombatant(u);
 });
-const inventory = withItems ? [{ ...createInventoryItem('mass-dose', '随队恢复剂', { kind: 'consumable', mechanism: 'heal', power: 3 }, 'mass-dose', 2), assignedTo: 'hero' }] : [];
+const inventory = withItems ? [{ ...createInventoryItem('mass-dose', '随队恢复剂', { kind: 'item', form: 'single', power: 3, active: 'generic:buff:heal' }, 'mass-dose', 2), assignedTo: 'hero' }] : [];
 const b = new MassBattle({ combatants: prepareBattleItems(storage.map((r) => materializeUnitRecord(r, registry)), { inventory }), rules: V2_TW, seed: 'formation-visual', zones: ['左翼', '中军', '右翼'], commanderId: 'hero', traitRegistry: registry });
 b.start();
 if (withPanic) { b.byId('a').morale = 45; b.byId('enemy').traits.push('terror'); (b.rng as SeededRng).setState(9); for (const u of b.combatants.filter((u) => !b.isAttached(u.id))) b.issue({ unitId: u.id, type: 'hold' }); }

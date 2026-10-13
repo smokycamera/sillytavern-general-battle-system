@@ -61,7 +61,7 @@ export class SaveManagement {
   exportLegacy(): NarrativeSave { return legacyCompatibleSave(this.store.snapshot(), this.host); }
   private current(): { session: HostSession; previous: NativeEnvelope } {
     const session = this.store.session(), previous = this.store.envelope();
-    if (!session || !previous || !sameSession(session, this.host.session()) || this.store.pendingOperation() || this.host.hasLegacyRuntime()) throw Error('当前档案尚未确认、聊天已切换或旧脚本仍在运行');
+    if (!session || !previous || !sameSession(session, this.host.session()) || this.store.pendingOperation() || this.host.hasLegacyRuntime()) throw Error('当前档案尚未确认、聊天已切换或脚本版战阵仍在运行');
     return { session, previous };
   }
   private remember(kind: SaveChangePreview['kind'], candidate: NarrativeSave, changes: string[], sourceHash: string, extra: Partial<Change> = {}, sourceChat?: string): SaveChangePreview {
@@ -70,7 +70,7 @@ export class SaveManagement {
     this.previews.set(preview, { preview: structuredClone(preview), session, previous, candidate: structuredClone(candidate), sourceHash, ...extra });
     return preview;
   }
-  previewClear(): SaveChangePreview { return this.remember('clear', {}, ['清空本聊天的单位、库存、战斗和战报，记录新数据代次；旧变量和旧镜像不会自动补回。'], ''); }
+  previewClear(): SaveChangePreview { return this.remember('clear', {}, ['清空本聊天的单位、库存、战斗和战报，记录新数据代次；脚本变量和脚本镜像不会自动补回。'], ''); }
   async previewFile(text: string): Promise<SaveChangePreview> {
     const captured = this.current();
     const raw: unknown = JSON.parse(text); if (!object(raw)) throw Error('存档文件必须是 JSON 对象');
@@ -92,19 +92,19 @@ export class SaveManagement {
     return this.remember('file', candidate, review?.changes ?? [], await payloadHash(raw), { fileSource: raw }, sourceChat);
   }
   async previewRollback(): Promise<SaveChangePreview> {
-    const { session, previous } = this.current(); if (previous.handoff) throw Error('此档案已经回退到旧脚本');
+    const { session, previous } = this.current(); if (previous.handoff) throw Error('此档案已经回退到脚本版战阵');
     const metadata = await this.host.readPersisted(session.scope); const original = legacySource(metadata);
     const mirrorKey = legacyMirrorKey(session.scope);
     if (!this.host.legacyStorage) throw Error('本地镜像存储不可用，只能先导出兼容存档');
     const mirror = this.host.legacyStorage.getItem(mirrorKey);
-    if (mirror !== null && (!original || serialized(JSON.parse(decodeSave(mirror))) !== serialized(original))) throw Error('旧镜像与当前聊天旧变量不一致，无法确认归属；请先导出兼容存档，不自动覆盖该镜像');
+    if (mirror !== null && (!original || serialized(JSON.parse(decodeSave(mirror))) !== serialized(original))) throw Error('脚本镜像与当前聊天脚本变量不一致，无法确认归属；请先导出兼容存档，不自动覆盖该镜像');
     const candidate = legacyCompatibleSave(previous.payload ?? {}, this.host);
     const revision = Math.max(Date.now(), Number(original?.__tbSaveRevision ?? 0) + 1);
-    if (!Number.isSafeInteger(revision)) throw Error('旧存档的镜像版本值损坏');
+    if (!Number.isSafeInteger(revision)) throw Error('脚本存档的镜像版本值损坏');
     candidate.__tbSaveRevision = revision;
     const handoff = { panel: candidate, mirrorKey, mirrorValue: encodeSave(JSON.stringify(candidate)) };
     if (!sameSession(session, this.host.session()) || !matches(previous, this.store.envelope())) throw Error('回退预览期间档案已变化');
-    return this.remember('rollback', candidate, ['将原生阶段的最新进度同步到当前聊天旧变量及已确认归属的旧镜像。确认完成后停用原生扩展，再启用旧战阵脚本。'], await payloadHash(candidate), { handoff, legacySourceHash: await payloadHash(original ?? null) });
+    return this.remember('rollback', candidate, ['将原生阶段的最新进度同步到当前聊天的脚本变量及已确认归属的镜像。确认完成后停用原生扩展，再启用脚本版战阵。'], await payloadHash(candidate), { handoff, legacySourceHash: await payloadHash(original ?? null) });
   }
   async previewResume(): Promise<SaveChangePreview> {
     const { session, previous } = this.current(); if (!previous.handoff) throw Error('当前没有已回退的档案');
@@ -129,7 +129,7 @@ export class SaveManagement {
       const file = await this.backups.get(fileKey);
       if (!file || await payloadHash(file.fileSource) !== change.sourceHash) throw Error('导入源备份尚未确认');
     }
-    if (change.legacySourceHash !== undefined && await payloadHash(legacySource(metadata) ?? null) !== change.legacySourceHash) throw Error('旧变量在预览后已变化');
+    if (change.legacySourceHash !== undefined && await payloadHash(legacySource(metadata) ?? null) !== change.legacySourceHash) throw Error('脚本变量在预览后已变化');
   }
   async apply(preview: SaveChangePreview): Promise<PersistReceipt> {
     const change = this.previews.get(preview); if (!change) throw Error('预览已失效，请重新预览');

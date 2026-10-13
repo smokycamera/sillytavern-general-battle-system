@@ -11,7 +11,8 @@ import { isEnduranceModel, fatiguePenalty, abilityCost, prepareResourceModel, re
 import { actionPotential } from '../skill-tactics.js';
 import { hasteMagnitude, hasteAttackScale } from '../haste.js';
 import { commanderScores, normalizeCommanderProfiles, type CommanderProfiles } from '../commander-profile.js';
-import { validateAccessories } from '../items.js';
+import { validateGear, quickItemAction, itemUseAbility, itemEmergency, ITEM_EMERGENCY_DISCOUNT } from '../items.js';
+import { prepareItemModel, validateItemModel, itemsV15 } from '../item-model.js';
 import { areaTargets, zoneTarget, placeZone, settleZones, validateAreas, ZONE_NAMES } from '../area-effects.js';
 import { tbWeaponShortName } from '../weapon-name.js';
 import { grantBarrier, decayBarrier, validateBarrier } from '../barrier.js';
@@ -19,6 +20,9 @@ import { casualtyXp, initialXpStrength } from '../casualty-xp.js';
 import { roundDamage } from '../probability.js';
 import { prepareCombatModel, healingYield } from '../combat-model.js';
 import { prepareArmsModel } from '../arms.js';
+import { prepareTraitModel, validateTraitModel, validateEntrenchment, traitsV13 } from '../trait-model.js';
+import { prepareSkillModel, validateSkillModel } from '../skill-model.js';
+import { entrench, entrenched } from '../entrenchment.js';
 import { upgradeCombatSkills } from '../skill-upgrade.js';
 import { normalizeTactic, type TacticalPreference } from '../tactical-preference.js';
 import { calibrateAutocannon, calibrateWeaponHands } from '../gen/equipment.js';
@@ -29,11 +33,12 @@ import { engagementWidth } from '../exposure.js';
 import { skillWeapon, skillResourceChange, conjureSkillUnit, conjuredTemplate, summonedMemberLife } from '../skill-runtime.js';
 import { applySkillTrait, isPositiveCondition } from '../skill-effects.js';
 import { skillAttack } from '../skill-attack.js';
+import { moveEffects, movementOnlySkill, hasSkillMovement, moveBlockReason, effectiveMoveReach, type MoveEffect, type MoveMode } from '../skill-movement.js';
 import { prepareCondition, applySkillCondition, dispelCandidates, applyDispel, applyPush, pushPreview, skillEffectLines, skillEffectValue, summonValue, conditionChance } from '../skill-effects.js';
 import { applyWeaponConditions, poisonDamage, poisonFactor, conditionDamage } from '../afflictions.js';
-import { isRangedWeapon, weaponReloadKey, weaponReloadTurns, meleeWeapon, validateMount, mountedShooting, steadyMovingShot } from '../loadout.js';
+import { isRangedWeapon, weaponReloadKey, weaponReloadTurns, meleeWeapon, validateMount, mountedShooting, steadyMovingShot, agileDisengage } from '../loadout.js';
 import { moraleProfile, moraleAttackMods, decideMorale, changeMorale, validateMoraleState, moraleRisk, moraleChangePreview, reconcileDamageMorale, recoverEntryMorale } from '../morale.js';
-import { applyHealthLoss, applyCombatDamage, applyRecovery, recoveryCapacity, regenerationAmount, validateWounded } from '../recovery.js';
+import { applyHealthLoss, applyCombatDamage, applyRecovery, recoveryCapacity, regenerationAmount, validateWounded, lifestealRecovery } from '../recovery.js';
 import {hasMemberHealth,memberHealth,memberHealthMax,MEMBER_HEALTH_MODEL} from '../member-health.js';
 /**
  * 小规模战斗管线：先攻队列 → 交替行动 → 回合末结算。
@@ -46,12 +51,13 @@ import type { Rng } from '../rng.js';
 import { SeededRng, liveRng, randomSeed } from '../rng.js';
 import { cloneData } from '../clone.js';
 import { parseDice, rollDice } from '../dice.js';
-import { resolveAttack, previewAttack, penetrationContext, isRangedCapable, armorDR, qualityGapDR, beginPreviewScope, endPreviewScope, type AttackResolution, type AttackOpts } from '../damage.js';
+import { resolveAttack, previewAttack, penetrationContext, isRangedCapable, armorDR, qualityGapDR, beginPreviewScope, endPreviewScope, previewScopeEpoch, type AttackResolution, type AttackOpts } from '../damage.js';
 import { sharedParticipants } from '../exposure.js';
 import { diceAvg, rebuildDice } from '../data/weapons.js';
 import { ConditionRegistry } from '../conditions.js';
 import { LITE_D20, counterMod, rulesById } from '../rules.js';
 import { getTrait, hasFlag, fieldModsFor, collectMods, resolveStack } from '../bonus.js';
+import { situationalTraitMods } from '../situational-traits.js';
 import { BattleFeedback, type FeedbackUnit, type RoundFeedback } from '../battle-feedback.js';
 import { activeTraitIds, activeConditionIds, expireTraitSources, traitSourceActive } from '../trait-sources.js';
 import { bracePose, movementPoints, settleFatigue, addTacticalEffort, validateTacticalEffort } from '../tactics.js';
@@ -59,7 +65,7 @@ import { rangedTargetDistance, isAirborne, sameLayer, flightCapabilityReason, fl
 import { environmentTags } from '../environment.js';
 import { traitRegistry as defaultTraitRegistry } from '../data/traits.js';
 import { meleeLineBlocker, terrainTacticalValue, canOccupy, cellLabel, reportPlaceLabel, deployOnGrid, findGridPath, reachableGridPaths, gridCostsToGoals, gridDistance, lineOfSight, unitLineOfSight, neighbors, movementStepCost, retreatCells, validateField, type BattlefieldSpec, type GridPath } from './spatial.js';
-import { canSpot, observedUnits, observeEvent, sideViews, observedLog, revealUnit, revealContacts, settleConcealment, canReconceal, validateConcealment, type ObservationContext } from '../observation.js';
+import { canSpot, concealedUnit, observedUnits, observeEvent, sideViews, observedLog, revealUnit, revealContacts, settleConcealment, canReconceal, validateConcealment, type ObservationContext } from '../observation.js';
 import { noteSightings, noteClue, liveTraces, liveClues, restoreIntel, intelView, CLUE_RANGE, SPREAD_ROUNDS, type IntelBook, type IntelView } from '../intel.js';
 import {
   abilityTargetReason,
@@ -161,8 +167,10 @@ export class SmallBattle {
   private intel: IntelBook = {};
   /** 每个单位本次与上一次激活开始时所在格；AI 据此识别“走回上次出发的格子”。 */
   private activationStarts = new Map<string, { at: number; before?: number }>();
-  /** 仅在自动行动选择期间存在：战场只读，同一阵营的观测结果复用到执行前。 */
+  /** 仅在同步只读菜单查询或自动行动选择期间存在；执行前释放。 */
   private observationMemo?: Map<Combatant['side'], Combatant[]>;
+  /** Routes belong to one read-only query/decision, keyed by actor and movement budget. */
+  private gridPathsMemo?: WeakMap<Combatant, Map<number, { paths: GridPath[]; byCell: Map<number, GridPath> }>>;
   controlRounds = { ally: 0, enemy: 0 };
   controlHold?: { side: 'ally' | 'enemy'; sinceRound: number; lastCountedRound?: number };
   objectiveWinner?: 'ally' | 'enemy' | 'draw';
@@ -243,15 +251,16 @@ export class SmallBattle {
     for (const unit of this.combatants) unit.nonLethal = this.nonLethal;
     for (const unit of this.combatants) { calibrateAutocannon(unit.weapon); calibrateAutocannon(unit.sidearm); calibrateWeaponHands(unit.weapon); calibrateWeaponHands(unit.sidearm); }
     for (const unit of this.combatants) {
-      validateConcealment(unit.tacticalRevealed); validateFlightState(unit.airborne); validateWounded(unit); validateBarrier(unit.barrier); validateAreas(unit); validateAccessories(unit); validateMount(unit); validateMoraleState(unit.moraleState);
+      validateConcealment(unit.tacticalRevealed); validateFlightState(unit.airborne); validateWounded(unit); validateBarrier(unit.barrier); validateAreas(unit); validateGear(unit); validateMount(unit); validateMoraleState(unit.moraleState);
       if (unit.elevation !== undefined && (unit.elevation !== 1 || !this.battlefield?.layerVersion || unit.airborne || unit.pos !== undefined && !intactStructure(this.battlefield, unit.pos)?.top)) throw Error('平台站位数据不合法');
       if (unit.formationPosition !== undefined) throw new Error('实际会战阵位不能放入小战存档记录');
       if (unit.vanguardOrigin !== undefined) throw new Error('会战先锋来源不能放入小战存档记录');
     }
     this.rules = opts.rules ?? LITE_D20;
+    for (const unit of this.combatants) { validateSkillModel(unit.skillModel); prepareSkillModel(unit, this.rules); }
     if(this.rules.combatModel)for(const unit of this.combatants){prepareCombatModel(unit,this.rules);upgradeCombatSkills(unit);reconcileDamageMorale(unit);}
-    for (const unit of this.combatants) { prepareResourceModel(unit, this.rules); prepareArmsModel(unit, this.rules); validateTacticalEffort(unit.tacticalEffort, unit.resourceModel); }
-    if (this.combatants.some((u) => u.airborne) && (!this.battlefield || this.rules.resolutionVersion !== 'v2')) throw new Error('空中状态需要V2二维战场');
+    for (const unit of this.combatants) { prepareResourceModel(unit, this.rules); prepareArmsModel(unit, this.rules); prepareTraitModel(unit, this.rules); validateTraitModel(unit.traitModel); validateEntrenchment(unit.entrenchedAt); validateTacticalEffort(unit.tacticalEffort, unit.resourceModel); validateItemModel(unit.itemModel); prepareItemModel(unit, this.rules); }
+    if (this.combatants.some((u) => u.airborne) && (!this.battlefield || this.rules.resolutionVersion !== 'v2')) throw new Error('空中状态需要二维战场');
     this.seed = opts.seed ?? randomSeed();
     this.rng = opts.rng ?? (opts.seed || this.rules.resolutionVersion === 'v2' ? new SeededRng(this.seed) : liveRng());
     this.conditions = new ConditionRegistry(opts.extraConditions ?? []);
@@ -269,17 +278,27 @@ export class SmallBattle {
   private environmentContext<T extends Omit<AttackOpts, 'rng'>>(opts: T): T {
     if (this.rules.resolutionVersion !== 'v2') return opts;
     opts={...opts,...(this.battlefield?.spatialRulesVersion===2?{heightRules:true,attackerHeight:unitHeight(this.battlefield,opts.attacker),defenderHeight:unitHeight(this.battlefield,opts.defender),heightAdvantage:heightDefense(this.battlefield,opts.defender,opts.attacker)}:{})};
-    const units = this.combatants.map((u) => u.id === opts.attacker.id ? opts.attacker : u.id === opts.defender.id ? opts.defender : u);
-    return { ...opts, extraMods: [...(opts.extraMods ?? []), ...moraleAttackMods(this.observationContext(units), opts.attacker, this.traitRegistry, this.observationContext())], localTerrain: !!this.battlefield?.layerVersion, defenderMods: [...(opts.defenderMods ?? []), ...(this.battlefield?.layerVersion ? [{ source: 'stance' as const, sourceId: 'structure:def', stackGroup: 'posture:def', name: '阵地掩护', kind: 'def' as const, type: 'flat' as const, value: structureDefense(this.battlefield, opts.defender, opts.attacker, !!opts.ranged) }] : [])], fieldTags: this.fieldTags, attackerTerrain: standingTerrain(this.battlefield, opts.attacker), defenderTerrain: standingTerrain(this.battlefield, opts.defender), distance: this.dist(opts.attacker, opts.defender),
+    const units = this.combatants.map((u) => u.id === opts.attacker.id ? opts.attacker : u.id === opts.defender.id ? opts.defender : u), context = this.observationContext(units);
+    const situational = situationalTraitMods(context, opts.attacker, opts.defender, { ambush: (opts as { ambush?: boolean }).ambush ?? concealedUnit(context, opts.attacker),
+      magic: opts.abilityDamage?.delivery === 'magic', ranged: !!opts.ranged, weapon: opts.weaponOverride ?? opts.attacker.weapon,
+      flanked: () => units.some((u) => u.side === opts.attacker.side && u.id !== opts.attacker.id && u.status === 'ready' && meleeContact(this.battlefield, u, opts.defender) && this.dist(u, opts.defender) <= (this.battlefield ? 1 : 0)) });
+    return { ...opts, extraMods: [...(opts.extraMods ?? []), ...moraleAttackMods(context, opts.attacker, this.traitRegistry, this.observationContext()), ...situational], localTerrain: !!this.battlefield?.layerVersion, defenderMods: [...(opts.defenderMods ?? []), ...(this.battlefield?.layerVersion ? [{ source: 'stance' as const, sourceId: 'structure:def', stackGroup: 'posture:def', name: '阵地掩护', kind: 'def' as const, type: 'flat' as const, value: structureDefense(this.battlefield, opts.defender, opts.attacker, !!opts.ranged) }] : [])], fieldTags: this.fieldTags, attackerTerrain: standingTerrain(this.battlefield, opts.attacker), defenderTerrain: standingTerrain(this.battlefield, opts.defender), distance: this.dist(opts.attacker, opts.defender),
       defenderEngaged: this.combatants.some((u) => u.side !== opts.defender.side && u.status === 'ready' && meleeContact(this.battlefield, u, opts.defender) && this.dist(u, opts.defender) <= (this.battlefield ? 1 : 0)) };
   }
   private resolveAttackWithEnvironment(opts: AttackOpts) {
+    // 偷袭看出手前是否仍在潜伏，出手即暴露。
+    const ambush = this.rules.resolutionVersion === 'v2' && concealedUnit(this.observationContext(), this.byId(opts.attacker.id));
     if (this.rules.resolutionVersion === 'v2') revealUnit(this.observationContext(), this.byId(opts.attacker.id));
-    const result = resolveAttack(this.environmentContext(opts)), field = this.battlefield;
+    const result = resolveAttack(this.environmentContext({ ...opts, ambush } as AttackOpts)), field = this.battlefield;
     if (reportsHeights(field) && opts.attacker.pos !== undefined && opts.defender.pos !== undefined && !isAirborne(opts.attacker) && !isAirborne(opts.defender))
       Object.assign(result, { attackerHeight: unitHeight(field, opts.attacker), defenderHeight: unitHeight(field, opts.defender) });
     if (this.rules.resolutionVersion === 'v2' && result.finalDamage > 0) revealUnit(this.observationContext(), this.byId(opts.defender.id));
+    if (this.rules.resolutionVersion === 'v2' && result.hit) this.applyLifesteal(this.byId(opts.attacker.id), opts.defender, result.hpBefore - result.hpAfter);
     return result;
+  }
+  private applyLifesteal(attacker: Combatant, target: Combatant, lifeDamage: number): void {
+    const restored = lifestealRecovery(attacker, target, lifeDamage);
+    if (restored) this.recordEvent({ round: this.round, kind: 'condition', participants: [attacker.id], text: `${attacker.name} 吸血，回复${restored}${attacker.scale === 'hero' ? '生命' : '名可救伤兵'}` });
   }
   private previewAttackWithEnvironment(opts: Parameters<typeof previewAttack>[0]) { return previewAttack(this.environmentContext(opts)); }
 
@@ -310,6 +329,8 @@ export class SmallBattle {
       }
     }
     if (this.rules.resolutionVersion === 'v2') revealContacts(this.observationContext());
+    // V13 工事：开战位置即阵地。
+    for (const unit of this.combatants) entrench(unit, 'small');
     const rolls = this.combatants
       .filter((c) => c.status === 'ready')
       .map((c) => {
@@ -531,8 +552,21 @@ export class SmallBattle {
     const field = this.battlefield; if (!field) return [];
     const actor = this.byId(actorId);
     if (actor.status !== 'ready' || (this.started && !this.isTurnOf(actorId))) return [];
-    const known = this.visibleCombatants(actor.side);
-    return reachableGridPaths(field, actor.pos!, this.movementLeft(actorId), (n) => canOccupy(field, known, actor, n), (n, from) => movementStepCost(field, n, actor, this.fieldTags, from));
+    return this.gridPaths(actor, this.movementLeft(actorId)).paths;
+  }
+  private gridPaths(actor: Combatant, budget: number): { paths: GridPath[]; byCell: Map<number, GridPath> } {
+    let budgets = this.gridPathsMemo?.get(actor), entry = budgets?.get(budget);
+    if (!entry) {
+      const field = this.battlefield!, known = this.visibleCombatants(actor.side);
+      const paths = reachableGridPaths(field, actor.pos!, budget, n => canOccupy(field, known, actor, n),
+        (n, from) => movementStepCost(field, n, actor, this.fieldTags, from));
+      entry = { paths, byCell: new Map(paths.map(p => [p.cells.at(-1)!, p])) };
+      if (this.gridPathsMemo) {
+        if (!budgets) { budgets = new Map(); this.gridPathsMemo.set(actor, budgets); }
+        budgets.set(budget, entry);
+      }
+    }
+    return entry;
   }
   /** sight：AI 估算假想落点时由调用方判断谁能在那里看见目标（只用已知单位）；缺省按此刻的实际观测。 */
   private sightReason(actor: Combatant, target: Combatant, indirect = false, sight?: HypotheticalSight): string | undefined {
@@ -552,10 +586,13 @@ export class SmallBattle {
     return indirect ? '间接火力缺少可见目标的观察者' : '硬遮挡阻断视线';
   }
   private chargePath(actor: Combatant, target: Combatant): GridPath | undefined {
-    if (!this.battlefield) return undefined;
-    if (this.battlefield.layerVersion && !isAirborne(actor) && (meleeHeightReason(this.battlefield, actor, target) || ['deep_water', 'shallow_water', 'swamp'].includes(this.battlefield.tiles[actor.pos!]!))) return undefined;
-    return neighbors(this.battlefield, target.pos!).map((cell) => findGridPath(this.battlefield!, actor.pos!, cell, (n) => canOccupy(this.battlefield!, this.visibleCombatants(actor.side), actor, n), (n, from) => movementStepCost(this.battlefield!, n, actor, this.fieldTags, from)))
-      .filter((p): p is GridPath => !!p && (!this.battlefield!.layerVersion || isAirborne(actor) || p.cells.every(n => !['deep_water', 'shallow_water', 'swamp'].includes(this.battlefield!.tiles[n]!) && !this.battlefield!.overlays?.[n]?.includes('rubble') && intactStructure(this.battlefield!, n)?.kind !== 'fortification')) && p.cost + (isAirborne(actor) && !isAirborne(target) ? 1 : 0) <= this.movementLeft(actor.id, false) && (sameLayer(actor, target) || canOccupy(this.battlefield!, this.visibleCombatants(actor.side), { ...actor, airborne: false }, p.cells.at(-1)!)))
+    const field = this.battlefield; if (!field) return undefined;
+    if (field.layerVersion && !isAirborne(actor) && (meleeHeightReason(field, actor, target) || ['deep_water', 'shallow_water', 'swamp'].includes(field.tiles[actor.pos!]!))) return undefined;
+    const known = this.visibleCombatants(actor.side), budget = this.movementLeft(actor.id, false);
+    // Validate charging terrain after the normal shortest-route search, preserving its ties.
+    const paths = this.gridPaths(actor, budget).byCell;
+    return neighbors(field, target.pos!).map(cell => paths.get(cell))
+      .filter((p): p is GridPath => !!p && (!field.layerVersion || isAirborne(actor) || p.cells.every(n => !['deep_water', 'shallow_water', 'swamp'].includes(field.tiles[n]!) && !field.overlays?.[n]?.includes('rubble') && intactStructure(field, n)?.kind !== 'fortification')) && p.cost + (isAirborne(actor) && !isAirborne(target) ? 1 : 0) <= budget && (sameLayer(actor, target) || canOccupy(field, known, { ...actor, airborne: false }, p.cells.at(-1)!)))
       .sort((a, b) => a.cost - b.cost || a.cells.at(-1)! - b.cells.at(-1)!)[0];
   }
   private summonReason(actor: Combatant, ability: Combatant['abilities'][number]): string | undefined {
@@ -577,7 +614,7 @@ export class SmallBattle {
     if (path.cost > this.movementLeft(actorId)) return { reason: '移动点不足', risks: [] };
     const risks = known.filter((u) => u.side !== actor.side && u.status === 'ready' && !this.reactionSpent.has(u.id) && !u.suppression && !u.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack)
       && path.cells.slice(1).some((n, i) => {
-        const previous = path.cells[i]!, ridingAway = mountedShooting(actor) && (Math.floor(n / field.width) - Math.floor(previous / field.width)) * (actor.side === 'enemy' ? -1 : 1) > 0;
+        const previous = path.cells[i]!, ridingAway = agileDisengage(actor) || mountedShooting(actor) && (Math.floor(n / field.width) - Math.floor(previous / field.width)) * (actor.side === 'enemy' ? -1 : 1) > 0;
         return !ridingAway && !!meleeWeapon(u) && meleeContact(field,u,{...actor,pos:previous}) && gridDistance(field, u.pos!, previous) === 1 && (gridDistance(field, u.pos!, n) > 1||!meleeContact(field,u,{...actor,pos:n}))
           || this.overwatch.has(u.id) && !this.weaponContext(u, { ...actor, pos: n }).reason;
       }))
@@ -587,30 +624,36 @@ export class SmallBattle {
   moveTo(actorId: string, cell: number, attackMovement = false): void {
     const preview = this.pathPreview(actorId, cell);
     if (!preview.path) throw new Error(preview.reason ?? '不能移动');
+    this.walkPath(actorId, preview.path, { spend: true, haste: !attackMovement, opportunity: true });
+  }
+  /** 沿已规划路线逐格移动，逐格结算区域、目标、侦察与反应。普通移动消耗移动点；技能位移按路线自带格数，
+   *  不动用移动点；后撤（opportunity=false）不触发近战借机，仍受警戒。 */
+  private walkPath(actorId: string, path: GridPath, opts: { spend: boolean; haste: boolean; opportunity: boolean; skill?: { verb: string; phase: 'before' | 'after' } }): void {
     const actor = this.byId(actorId); const field = this.battlefield!;
-    for (const next of preview.path.cells.slice(1)) {
+    let budget = path.cost;
+    for (const next of path.cells.slice(1)) {
       if (actor.status !== 'ready' || actor.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventMove)) break;
-      const stepCost = movementStepCost(field, next, actor, this.fieldTags);
-      if (gridDistance(field, actor.pos!, next) !== 1 || stepCost > this.movementLeft(actorId)) break;
+      const stepCost = opts.spend ? movementStepCost(field, next, actor, this.fieldTags) : movementStepCost(field, next, actor, this.fieldTags, actor.pos);
+      if (gridDistance(field, actor.pos!, next) !== 1 || stepCost > (opts.spend ? this.movementLeft(actorId) : budget)) break;
       if (!canOccupy(field, this.combatants, actor, next)) break;
-      if (!attackMovement) this.activateHasteMovement(actorId);
+      if (opts.haste) this.activateHasteMovement(actorId);
       const previous = actor.pos!, heights = reportsHeights(field) && !isAirborne(actor);
       const fromHeight = heights ? surfaceHeightAt(field, previous, actor) : undefined;
       delete actor.tacticalPose;
       actor.pos = next;
-      this.movementSpent.set(actorId, (this.movementSpent.get(actorId) ?? 0) + stepCost);
+      if (opts.spend) this.movementSpent.set(actorId, (this.movementSpent.get(actorId) ?? 0) + stepCost); else budget -= stepCost;
       this.movedThisTurn.add(actorId);
       this.settleAreaEffects(); if (actor.status !== 'ready') break;
       this.checkGridObjective(false);
       if (this.rules.resolutionVersion === 'v2') revealContacts(this.observationContext());
       const toHeight = heights ? surfaceHeightAt(field, next, actor) : undefined;
-      this.recordEvent({ round: this.round, kind: 'move', participants: [actor.id], move: { from: previous, to: next, ...(heights ? { fromHeight, toHeight } : {}) },
-        text: `${actor.name} ${cellLabel(field, previous)}${fromHeight !== toHeight ? '(高度' + fromHeight + ')' : ''}→${reportPlaceLabel(field, next, actor)}` });
+      this.recordEvent({ round: this.round, kind: 'move', participants: [actor.id], move: { from: previous, to: next, ...(heights ? { fromHeight, toHeight } : {}), ...(opts.skill ? { skill: opts.skill.phase } : {}) },
+        text: `${actor.name} ${opts.skill ? opts.skill.verb + ' ' : ''}${cellLabel(field, previous)}${fromHeight !== toHeight ? '(高度' + fromHeight + ')' : ''}→${reportPlaceLabel(field, next, actor)}` });
       for (const foe of [...this.combatants].sort((a, b) => a.id.localeCompare(b.id))) {
         if (actor.status !== 'ready') break;
         if (foe.side === actor.side || foe.status !== 'ready' || foe.suppression || this.reactionSpent.has(foe.id) || foe.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack && meleeWeapon(foe)?.recipe?.mechanism !== 'natural')) continue;
         const reactionWeapon = this.rules.resolutionVersion === 'v2' ? meleeWeapon(foe) : foe.sidearm ?? (!isRangedCapable(foe) ? foe.weapon : undefined);
-        const ridingAway = mountedShooting(actor) && (Math.floor(next / field.width) - Math.floor(previous / field.width)) * (actor.side === 'enemy' ? -1 : 1) > 0;
+        const ridingAway = !opts.opportunity || agileDisengage(actor) || mountedShooting(actor) && (Math.floor(next / field.width) - Math.floor(previous / field.width)) * (actor.side === 'enemy' ? -1 : 1) > 0;
         const opportunity = !ridingAway && !!reactionWeapon && meleeContact(field,foe,{...actor,pos:previous}) && gridDistance(field, foe.pos!, previous) === 1 && (gridDistance(field, foe.pos!, next) > 1||!meleeContact(field,foe,actor));
         const watching = this.overwatch.has(foe.id) && !this.weaponContext(foe, actor).reason;
         if (!opportunity && !watching) continue;
@@ -1059,8 +1102,28 @@ export class SmallBattle {
     };
   }
 
+  /** 同步只读查询共用观测、路线和抽样参数；回调内不得执行动作、修改战场或等待异步操作。 */
+  withReadOnlyQueries<T>(query: () => T): T {
+    // Menu queries also evaluate every charge target. Share one bounded route search
+    // and table serialization across those previews, just as AI evaluation does.
+    // Keep an enclosing evaluation's caches; only dispose scopes created here.
+    const ownObservation = !this.observationMemo, ownRoutes = !this.gridPathsMemo;
+    const ownPreviews = previewScopeEpoch() === undefined;
+    if (ownObservation) this.observationMemo = new Map();
+    if (ownRoutes) this.gridPathsMemo = new WeakMap();
+    if (ownPreviews) beginPreviewScope();
+    try { return query(); }
+    finally {
+      if (ownObservation) this.observationMemo = undefined;
+      if (ownRoutes) this.gridPathsMemo = undefined;
+      if (ownPreviews) endPreviewScope();
+    }
+  }
   /** 面板/AI 的结构化动作菜单；不可用项保留并附原因。 */
   getActionOptions(actorId: string): ActionOption[] {
+    return this.withReadOnlyQueries(() => this.buildActionOptions(actorId));
+  }
+  private buildActionOptions(actorId: string): ActionOption[] {
     const actor = this.byId(actorId);
     const economy = this.getTurnEconomy(actorId);
     const actorReason = actor.status !== 'ready'
@@ -1133,7 +1196,8 @@ export class SmallBattle {
         targets: chargeTargets,
       },
     ];
-    for (const ability of actor.abilities) {
+    for (const listedAbility of actor.abilities) {
+      const ability = listedAbility;
       const usability = abilityUsabilityReason(actor, ability) ?? this.summonReason(actor, ability);
       const candidates = ability.target === 'enemy'
         ? foes
@@ -1141,27 +1205,34 @@ export class SmallBattle {
           ? this.combatants.filter((c) => c.side === actor.side && c.status !== 'dead' && c.status !== 'fled')
           : ability.target === 'self'
             ? [actor]
+            : movementOnlySkill(ability) && this.battlefield ? (() => { const context = this.observationContext(); return this.skillLandingCells(actor, ability).flatMap((cell) => { const at = zoneTarget(context, actor, 'cell:' + cell); return at ? [at] : []; }); })()
             : ability.effects.some(e=>e.op==='zone') && this.battlefield ? (() => { const context=this.observationContext(), view=this.visibleCells(actor.side); return this.battlefield!.tiles.flatMap((_tile,cell)=>{ const at=view[cell]&&zoneTarget(context,actor,'cell:'+cell); return at?[at]:[]; }); })() : [];
       const targets = candidates.map((target) => {
+        // V15 编队用道具按件数折算；预览与实际使用同一份派生行动。
+        const itemUse = this.itemUse(actor, listedAbility, target), ability = itemUse.ability;
         const targetReason = this.skillTargetReason(actor, ability, target);
-        const reason = actorReason ?? (ability.itemSourceId ? !economy.actionAvailable ? '本回合行动已使用' : undefined : this.hasteSelected.has(actorId) ? '加速动作不能使用技能' : this.actedThisTurn.has(actorId) ? '本回合主行动已使用' : undefined) ?? usability ?? targetReason;
+        const reason = actorReason ?? (quickItemAction(actor, ability) ? !economy.actionAvailable ? '本回合行动已使用' : undefined : this.hasteSelected.has(actorId) ? ability.itemSourceId ? '加速动作只能使用喝、敷类道具' : '加速动作不能使用技能' : this.actedThisTurn.has(actorId) ? '本回合主行动已使用' : undefined) ?? usability ?? targetReason ?? itemUse.reason;
         const damage = ability.effects.find((e) => e.op === 'damage');
         const healing = ability.effects.find((e) => e.op === 'heal');
         const moraleEffect = ability.effects.find((e) => e.op === 'morale');
         const landing = !reason ? this.abilityFlightPreview(actor, target, ability) : undefined;
-        const effects = !reason && this.rules.resolutionVersion === 'v2' ? skillEffectLines({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, actor, target, ability) : [];
-        const preview = !reason && this.rules.resolutionVersion === 'v2' && damage ? this.previewAttackWithEnvironment({ attacker: actor, defender: target, rules: this.rules,
+        // 带突进/闪现的技能从落点出手：预览、范围与描述都按到位后的施术者计算。
+        const move = !reason && !movementOnlySkill(ability) ? this.skillMovePlan(actor, ability, target).move : undefined;
+        const caster = move ? { ...actor, pos: move.to } : actor;
+        const effects = !reason && this.rules.resolutionVersion === 'v2' ? [...(move && this.battlefield ? [(move.mode === 'dash' ? '先突进至' : '先闪现至') + reportPlaceLabel(this.battlefield, move.to, actor) + (move.charge ? '，以冲锋接敌' : '')] : []),
+          ...skillEffectLines({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, caster, target, ability)] : [];
+        const preview = !reason && this.rules.resolutionVersion === 'v2' && damage ? this.previewAttackWithEnvironment({ attacker: caster, defender: target, rules: this.rules,
           conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ranged: damage.tag === 'ranged' ? true : undefined,
-          ...this.skillAttackOptions(actor, target, ability, damage) })
+          ...this.skillAttackOptions(caster, target, ability, damage, !!move, move?.charge) })
           : healing && !reason ? { healing: Math.min(recoveryCapacity(target), healingYield(actor,target,healing.amount ?? diceAvg(healing.dice!),!!ability.itemSourceId)) } : moraleEffect && !reason ? moraleChangePreview({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, target, moraleEffect.amount, this.rules.morale.breakAt, this.traitRegistry, ability.effects.flatMap((e) => e.op === 'condition' ? [{ id: e.conditionId, dur: e.dur }] : [])) : undefined;
-        const area = (damage?.shape ?? ability.shape) === 'burst' && !reason ? this.abilityDamageTargets(actor, target, ability, true) : [];
+        const area = (damage?.shape ?? ability.shape) === 'burst' && !reason ? this.abilityDamageTargets(caster, target, ability, true) : [];
         const areaPreviews = damage && this.rules.resolutionVersion === 'v2' ? area.map((affected) => ({
-          targetId: affected.id, ...this.previewAttackWithEnvironment({ attacker: actor, defender: affected, rules: this.rules,
-            conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(actor, affected, ability, damage) }),
+          targetId: affected.id, ...this.previewAttackWithEnvironment({ attacker: caster, defender: affected, rules: this.rules,
+            conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(caster, affected, ability, damage, !!move, move?.charge && affected.id === target.id) }),
         })) : [];
         return { targetId: target.id, enabled: !reason, ...(reason ? { reason } : {}), distance: this.dist(actor, target), rangeDistance: abilityRangeDistance(actor, this.battlefield ? gridAbility(ability) : ability, target, this.dist(actor, target)), ...(abilityHeightReach(actor, ability, target, this.dist(actor, target), this.battlefield) ? { heightReach: abilityHeightReach(actor, ability, target, this.dist(actor, target), this.battlefield) } : {}), ...(preview || landing || effects.length ? { preview: { ...preview, ...landing, ...(effects.length ? { effects } : {}), ...(area.length ? { areaTargets: area.map((u) => u.name), areaTargetIds: area.map((u) => u.id), areaPreviews } : {}) } } : {}) };
       });
-      const targetlessReason = actorReason ?? (ability.itemSourceId ? !economy.actionAvailable ? '本回合行动已使用' : undefined : this.hasteSelected.has(actorId) ? '加速动作不能使用技能' : this.actedThisTurn.has(actorId) ? '本回合主行动已使用' : undefined) ?? usability;
+      const targetlessReason = actorReason ?? (quickItemAction(actor, ability) ? !economy.actionAvailable ? '本回合行动已使用' : undefined : this.hasteSelected.has(actorId) ? ability.itemSourceId ? '加速动作只能使用喝、敷类道具' : '加速动作不能使用技能' : this.actedThisTurn.has(actorId) ? '本回合主行动已使用' : undefined) ?? usability;
       const enabled = candidates.length ? targets.some((target) => target.enabled) : !targetlessReason;
       options.push({
         id: ability.id,
@@ -1405,15 +1476,94 @@ export class SmallBattle {
     this.checkGridObjective(false);
   }
 
-  private skillAttackOptions(actor: Combatant, target: Combatant, ability: Combatant['abilities'][number], effect: Parameters<typeof skillAttack>[4], plannedMove = false) {
+  private skillAttackOptions(actor: Combatant, target: Combatant, ability: Combatant['abilities'][number], effect: Parameters<typeof skillAttack>[4], plannedMove = false, charge = false) {
     const base = skillAttack(this.observationContext(), actor, target, ability, effect, this.rules);
     if (!ability.weaponUse || !base.weaponOverride) return base;
     const context = this.weaponContext(actor, target, { weaponMode: base.weaponOverride.id === actor.sidearm?.id ? 'sidearm' : 'primary' });
-    const modifiers = this.attackModifiers(actor, target, context);
+    const modifiers = this.attackModifiers(actor, target, context, charge ? { charge } : {});
     if (plannedMove && context.ranged && !this.movedThisTurn.has(actor.id) && !steadyMovingShot(actor, context.weapon)) modifiers.extraMods.push({ source: 'stance', name: '移动射击', kind: 'atk', type: 'flat', value: -2 });
-    return { ...base, ...modifiers };
+    return { ...base, ...modifiers, ...(charge ? { charge } : {}) };
   }
+  /** 技能目标是否可选；带突进/闪现的技能在原位够不着时，以位移后的落点判断。只有位移的技能选择落点。 */
   private skillTargetReason(actor: Combatant, ability: Combatant['abilities'][number], target: Combatant): string | undefined {
+    if (movementOnlySkill(ability)) return this.skillLandingReason(actor, ability, target);
+    const direct = this.skillTargetReasonAt(actor, ability, target);
+    if (!direct || !moveEffects(ability).before) return direct;
+    const plan = this.skillMovePlan(actor, ability, target);
+    return plan.reason ? direct + '；' + plan.reason : undefined;
+  }
+  /** 沿可走路线在 reach 格内可到的位置（只看本阵营已知单位；执行时逐格按实际占位走）。 */
+  private skillPaths(actor: Combatant, reach: number): GridPath[] {
+    const field = this.battlefield!, known = this.visibleCombatants(actor.side);
+    return reachableGridPaths(field, actor.pos!, reach, (n) => canOccupy(field, known, actor, n), (n, from) => movementStepCost(field, n, actor, this.fieldTags, from));
+  }
+  /** 闪现落点：reach 格内、施术者视线可及、按自身空地层可落脚的位置；不跨平台层。 */
+  private skillBlinkCells(actor: Combatant, reach: number): number[] {
+    const field = this.battlefield!, known = this.visibleCombatants(actor.side);
+    return field.tiles.flatMap((_tile, cell) => cell !== actor.pos && gridDistance(field, actor.pos!, cell) <= reach && canOccupy(field, known, actor, cell)
+      && unitLineOfSight(field, actor, { ...actor, pos: cell }) ? [cell] : []);
+  }
+  /** 出手前位移（突进/闪现）：原位已能出手则不动；否则取最近的、能对目标出手的落点。 */
+  skillMovePlan(actor: Combatant, ability: Combatant['abilities'][number], target: Combatant): { reason?: string; move?: { mode: MoveMode; to: number; path?: GridPath; charge: boolean } } {
+    const effect = moveEffects(ability).before;
+    if (!effect || !this.skillTargetReasonAt(actor, ability, target)) return {};
+    const field = this.battlefield;
+    if (!field || actor.pos === undefined) return { reason: '位移技能需要二维战场' };
+    const blocked = moveBlockReason(actor, this.conditions); if (blocked) return { reason: blocked };
+    const reach = effectiveMoveReach(actor, ability, effect, this.conditions);
+    // 只检查技能射程附近的落点；接触技能只看目标身边。
+    const span = fallbackAbilityRange(actor, gridAbility(ability), true).max + 2;
+    const near = (cell: number) => gridDistance(field, cell, target.pos!) <= span;
+    const candidates: GridPath[] = effect.mode === 'dash' ? this.skillPaths(actor, reach).filter((p) => p.cost > 0 && near(p.cells.at(-1)!))
+      : this.skillBlinkCells(actor, reach).filter(near).map((cell) => ({ cells: [actor.pos!, cell], cost: gridDistance(field, actor.pos!, cell) }));
+    const best = candidates.sort((a, b) => a.cost - b.cost || a.cells.at(-1)! - b.cells.at(-1)!)
+      .find((p) => !this.skillTargetReasonAt({ ...actor, pos: p.cells.at(-1)! }, ability, target));
+    if (!best) return { reason: (effect.mode === 'dash' ? '突进' : '闪现') + reach + '格内没有能对目标出手的落点' };
+    // 以实际近战武器从非接触距离突进接敌、路线没有涉水碎石等阻滞，且未疲劳/受压制/减速，按冲锋结算。
+    const weapon = ability.damageBasis === 'weapon' ? skillWeapon(actor, ability) : undefined;
+    const clearRun = !field.layerVersion || isAirborne(actor) || best.cells.every((n) => !['deep_water', 'shallow_water', 'swamp'].includes(field.tiles[n]!)
+      && !field.overlays?.[n]?.includes('rubble') && intactStructure(field, n)?.kind !== 'fortification');
+    const charge = effect.mode === 'dash' && !!weapon && !isRangedWeapon(weapon) && target.side !== actor.side && this.dist(actor, target) >= 2 && clearRun
+      && !fatiguePenalty(actor) && !actor.suppression && !actor.conditions.some((c) => c.dur > 0 && c.id === 'slowed');
+    return { move: { mode: effect.mode, to: best.cells.at(-1)!, ...(effect.mode === 'dash' ? { path: best } : {}), charge } };
+  }
+  /** 出手后后撤：可走范围内离已知敌人最远（其次相邻敌人最少）的落点；拉不开距离就留在原地。指定落点时只校验可达。 */
+  skillWithdrawPath(actor: Combatant, ability: Combatant['abilities'][number], effect: MoveEffect, cell?: number): { reason?: string; path?: GridPath } {
+    const field = this.battlefield;
+    if (!field || actor.pos === undefined) return { reason: '位移技能需要二维战场' };
+    const blocked = moveBlockReason(actor, this.conditions); if (blocked) return { reason: blocked };
+    const paths = this.skillPaths(actor, effectiveMoveReach(actor, ability, effect, this.conditions)).filter((p) => p.cost > 0);
+    if (cell !== undefined) { const path = paths.find((p) => p.cells.at(-1) === cell); return path ? { path } : { reason: '后撤可走范围内到不了这里' }; }
+    const foes = this.visibleCombatants(actor.side).filter((u) => u.side !== actor.side && u.status === 'ready' && u.pos !== undefined);
+    if (!foes.length) return {};
+    const nearest = (at: number) => Math.min(...foes.map((f) => gridDistance(field, at, f.pos!)));
+    const adjacent = (at: number) => foes.filter((f) => gridDistance(field, at, f.pos!) <= 1).length;
+    // 同样远时朝己方后方撤，而不是横移到侧翼。
+    const edge = retreatCells(field, actor.side), home = (at: number) => edge.length ? Math.min(...edge.map((c) => gridDistance(field, at, c))) : 0;
+    const best = paths.sort((a, b) => nearest(b.cells.at(-1)!) - nearest(a.cells.at(-1)!) || adjacent(a.cells.at(-1)!) - adjacent(b.cells.at(-1)!)
+      || home(a.cells.at(-1)!) - home(b.cells.at(-1)!) || a.cost - b.cost || a.cells.at(-1)! - b.cells.at(-1)!)[0];
+    return best && nearest(best.cells.at(-1)!) > nearest(actor.pos) ? { path: best } : {};
+  }
+  /** 只有位移的技能：落点须在本技能的位移方式与格数之内。 */
+  private skillLandingReason(actor: Combatant, ability: Combatant['abilities'][number], target: Combatant): string | undefined {
+    const { before, after } = moveEffects(ability), effect = before ?? after!;
+    const field = this.battlefield;
+    if (!field || actor.pos === undefined || target.pos === undefined || !/^cell:\d+$/.test(target.id)) return '请在二维战场上指定落点';
+    const blocked = moveBlockReason(actor, this.conditions); if (blocked) return blocked;
+    const reach = effectiveMoveReach(actor, ability, effect, this.conditions);
+    if (effect.mode === 'blink') return this.skillBlinkCells(actor, reach).includes(target.pos) ? undefined : '闪现只能落到' + reach + '格内视线可及的落脚处';
+    return effect.mode === 'withdraw' ? this.skillWithdrawPath(actor, ability, effect, target.pos).reason
+      : this.skillPaths(actor, reach).some((p) => p.cost > 0 && p.cells.at(-1) === target.pos) ? undefined : '突进可走' + reach + '格内到不了这里';
+  }
+  /** 只有位移的技能可选的落点。 */
+  private skillLandingCells(actor: Combatant, ability: Combatant['abilities'][number]): number[] {
+    const { before, after } = moveEffects(ability), effect = before ?? after!;
+    if (!this.battlefield || actor.pos === undefined || moveBlockReason(actor, this.conditions)) return [];
+    const reach = effectiveMoveReach(actor, ability, effect, this.conditions);
+    return effect.mode === 'blink' ? this.skillBlinkCells(actor, reach) : this.skillPaths(actor, reach).filter((p) => p.cost > 0).map((p) => p.cells.at(-1)!);
+  }
+  /** 不考虑技能位移、按施术者当前位置判断目标是否可选。 */
+  private skillTargetReasonAt(actor: Combatant, ability: Combatant['abilities'][number], target: Combatant): string | undefined {
     if (this.battlefield?.layerVersion && ability.delivery === 'melee') { const height = meleeHeightReason(this.battlefield, actor, target); if (height) return height; }
     ability = this.battlefield ? gridAbility(ability) : ability;
     if (ability.target === 'zone') return !this.battlefield || !this.cellVisible(actor.side,target.pos!) ? '请指定可见的地面位置' : abilityTargetReason({actor,ability,target,distance:this.dist(actor,target),field:this.battlefield}) ?? (unitLineOfSight(this.battlefield,actor,target) ? undefined : '这里被障碍物遮挡');
@@ -1430,14 +1580,40 @@ export class SmallBattle {
     if (ability.effects.every((e) => e.op === 'push')) return pushPreview({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, actor, target, ability.effects[0] as Extract<EffectOp, { op: 'push' }>).reason;
     return undefined;
   }
+  /** 道具的派生行动供预览、确认框、AI 与执行共用；范围治疗按实际波及伤员计算件数。 */
+  itemUse(actor: Combatant, ability: Combatant['abilities'][number], target?: Combatant): ReturnType<typeof itemUseAbility> {
+    const healingTargets = target && ability.itemSourceId && (ability.area || ability.shape === 'burst') && ability.effects.every(e => e.op === 'heal')
+      ? this.abilityDamageTargets(actor, target, ability, true) : undefined;
+    return itemUseAbility(actor, ability, target, healingTargets);
+  }
   private abilityDamageTargets(actor: Combatant, target: Combatant, ability: Combatant['abilities'][number], burst: boolean): Combatant[] {
-    if (ability.area) return areaTargets({ ...this.observationContext(), units: this.visibleCombatants(actor.side) },actor,target,ability,u=>!this.skillTargetReason(actor,ability,u));
+    if (ability.area) return areaTargets({ ...this.observationContext(), units: this.visibleCombatants(actor.side) },actor,target,ability,u=>!this.skillTargetReasonAt(actor,ability,u));
     if (!burst) return [target];
     ability = this.battlefield ? gridAbility(ability) : ability;
     const pivot = ability.recipe?.category === 'physical-area' && ability.damageBasis && !isRangedWeapon(skillWeapon(actor, ability)) ? actor : target;
     return [target, ...this.visibleCombatants(actor.side).filter((u) => u.id !== target.id && u.side === target.side && u.status === 'ready' && this.dist(u, pivot) <= 1
-      && !this.skillTargetReason(actor, ability, u))
+      && !this.skillTargetReasonAt(actor, ability, u))
       .sort((a, b) => a.id.localeCompare(b.id))].slice(0, 2);
+  }
+  /** 执行技能位移：突进/后撤沿路线逐格走（后撤不触发近战借机），闪现直接落位；返回战报短句。
+   *  phase 标在移动记录上：出手前的位移由战报并入其后的技能行，出手后的后撤照常排在技能之后。 */
+  private executeSkillMove(actor: Combatant, mode: MoveMode, cell: number, path: GridPath | undefined, phase: 'before' | 'after'): string {
+    const field = this.battlefield!, from = actor.pos!;
+    if (mode !== 'blink') {
+      if (!path) return '位移路线已失效，原地出手';
+      this.walkPath(actor.id, path, { spend: false, haste: false, opportunity: mode === 'dash', skill: { verb: mode === 'dash' ? '突进' : '后撤', phase } });
+      return actor.pos === from ? '位移受阻，未能离开原位' : (mode === 'dash' ? '突进' : '后撤') + '至' + reportPlaceLabel(field, actor.pos!, actor);
+    }
+    if (!canOccupy(field, this.combatants, actor, cell)) return '闪现落点已被占据，未能位移';
+    const heights = reportsHeights(field) && !isAirborne(actor);
+    const fromHeight = heights ? surfaceHeightAt(field, from, actor) : undefined;
+    delete actor.tacticalPose; actor.pos = cell; this.movedThisTurn.add(actor.id);
+    const toHeight = heights ? surfaceHeightAt(field, cell, actor) : undefined;
+    this.recordEvent({ round: this.round, kind: 'move', participants: [actor.id], move: { from, to: cell, ...(heights ? { fromHeight, toHeight } : {}), skill: phase },
+      text: `${actor.name} 闪现 ${cellLabel(field, from)}${fromHeight !== toHeight ? '(高度' + fromHeight + ')' : ''}→${reportPlaceLabel(field, cell, actor)}` });
+    this.settleAreaEffects(); this.checkGridObjective(false);
+    if (this.rules.resolutionVersion === 'v2') revealContacts(this.observationContext());
+    return '闪现至' + reportPlaceLabel(field, cell, actor);
   }
   /** 使用技能 */
   useAbility(actorId: string, abilityId: string, targetId?: string, opts: { bypassTurn?: boolean } = {}): AbilityUseResult {
@@ -1451,17 +1627,21 @@ export class SmallBattle {
     if (actor.conditions.some(c => c.dur > 0 && this.conditions.get(c.id)?.skipTurn))
       return { ok: false, reason: '当前状态无法行动', resolutions: [], log: '' };
     const originalAbility = actor.abilities.find((a) => a.id === abilityId);
-    const ability = originalAbility && (this.battlefield ? gridAbility(originalAbility) : originalAbility);
-    if (!ability) throw new Error(`${actor.name} 没有技能 ${abilityId}`);
-    if (ability.target === 'self' && targetId && targetId !== actor.id) {
+    const listed = originalAbility && (this.battlefield ? gridAbility(originalAbility) : originalAbility);
+    if (!listed) throw new Error(`${actor.name} 没有技能 ${abilityId}`);
+    if (listed.target === 'self' && targetId && targetId !== actor.id) {
       return { ok: false, reason: '该技能只能对自己施放', resolutions: [], log: '' };
     }
-    const chosenTarget = ability.target === 'self'
+    const chosenTarget = listed.target === 'self'
       ? actor
       : targetId
-        ? ability.target === 'zone' ? zoneTarget(this.observationContext(),actor,targetId) : this.byId(targetId)
-        : ability.target === 'ally' ? actor : undefined;
-    if (ability.target === 'zone' && !chosenTarget) return { ok:false, reason:'请指定有效地面位置', resolutions:[], log:'' };
+        ? listed.target === 'zone' ? zoneTarget(this.observationContext(),actor,targetId) : this.byId(targetId)
+        : listed.target === 'ally' ? actor : undefined;
+    if (listed.target === 'zone' && !chosenTarget) return { ok:false, reason:'请指定有效地面位置', resolutions:[], log:'' };
+    // V15：编队使用每人一份的道具时，按件数得到本次实际消耗与效果。
+    const itemUse = this.itemUse(actor, listed, chosenTarget);
+    if (itemUse.reason) return { ok: false, reason: itemUse.reason, resolutions: [], log: '' };
+    const ability = itemUse.ability;
     const usabilityReason = abilityUsabilityReason(actor, ability);
     if (usabilityReason) return { ok: false, reason: usabilityReason, resolutions: [], log: '' };
     const targetReason = chosenTarget ? this.skillTargetReason(actor, ability, chosenTarget) : abilityTargetReason({ actor, ability });
@@ -1482,7 +1662,7 @@ export class SmallBattle {
           try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'small', ability.bonuses, this.rules.damageModel) ?? this.summonUnit?.(effect.templateId, actor.side, id); }
           catch { return { ok: false, reason: '召唤模板生成失败，未扣费', resolutions: [], log: '' }; }
           if (!unit) return { ok: false, reason: '召唤模板不可用，未扣费', resolutions: [], log: '' };
-          prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules);
+          prepareSkillModel(unit, this.rules); prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules); prepareTraitModel(unit,this.rules); prepareItemModel(unit,this.rules);
           unit.id = id; unit.summonerId = actor.id; unit.bornRound = this.round;
           if (conjuredTemplate(effect.templateId)) unit.name = `${actor.name}的${unit.name}`;
           const cell = neighbors(this.battlefield, actor.pos!).find((n) => canOccupy(this.battlefield!, [...this.combatants, ...summons], unit, n));
@@ -1491,27 +1671,50 @@ export class SmallBattle {
         }
       }
     }
-    if (!opts.bypassTurn && (ability.itemSourceId ? !this.nonSkillActionAvailable(actorId) : this.actedThisTurn.has(actorId) || this.hasteSelected.has(actorId))) {
+    if (!opts.bypassTurn && (quickItemAction(actor, ability) ? !this.nonSkillActionAvailable(actorId) : this.actedThisTurn.has(actorId) || this.hasteSelected.has(actorId))) {
       return { ok: false, reason: '本回合主行动已使用', resolutions: [], log: '' };
     }
-    const hasteAction = !opts.bypassTurn && !!ability.itemSourceId && this.usingHaste(actorId);
+    const hasteAction = !opts.bypassTurn && quickItemAction(actor, ability) && this.usingHaste(actorId);
+    // 位移在扣费前规划：找不到落点时整次不扣费。
+    const movementOnly = movementOnlySkill(ability);
+    const movePlan = chosenTarget && !movementOnly ? this.skillMovePlan(actor, ability, chosenTarget) : {};
+    if (movePlan.reason) return { ok: false, reason: movePlan.reason, resolutions: [], log: '' };
     if (this.rules.resolutionVersion === 'v2') revealUnit(this.observationContext(), actor);
     // 扣费与计数
     const cost = abilityCost(actor, ability);
     if (cost) actor.resources[cost.resource] = actor.resourceModel && cost.resource === 'SP' ? resourceRound((actor.resources[cost.resource] ?? 0) - cost.amount) : (actor.resources[cost.resource] ?? 0) - cost.amount;
     spendAbility(actor, ability);
 
-    const castTargets = chosenTarget ? this.abilityDamageTargets(actor, chosenTarget, ability, ability.shape === 'burst' || ability.effects.some((e) => 'shape' in e && e.shape === 'burst')) : [actor];
+    const logBits: string[] = [`${actor.name} 使用【${ability.name}】`];
+    if (ability.itemSourceId && cost) logBits.push(`消耗${cost.amount}件，剩余${actor.resources[cost.resource]}件`);
+    // 出手前的突进/闪现逐格记入日志（标为技能位移，战报把它们并到技能名之后），技能本体随后记录；只有位移的技能在这里走完。
+    let interrupted: string | undefined, charge = false;
+    if (movementOnly && chosenTarget) {
+      const { before, after } = moveEffects(ability), effect = before ?? after!;
+      const moved = this.executeSkillMove(actor, effect.mode, chosenTarget.pos!, effect.mode === 'blink' ? undefined
+        : effect.mode === 'withdraw' ? this.skillWithdrawPath(actor, ability, effect, chosenTarget.pos).path : this.skillPaths(actor, effectiveMoveReach(actor, ability, effect, this.conditions)).find((p) => p.cost > 0 && p.cells.at(-1) === chosenTarget.pos), 'before');
+      logBits.push(moved);
+    } else if (movePlan.move) {
+      const move = movePlan.move, moved = this.executeSkillMove(actor, move.mode, move.to, move.path, 'before');
+      if (actor.status !== 'ready' || actor.pos !== move.to || actor.conditions.some((c) => c.dur > 0 && (this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventMove && move.mode === 'dash'))) interrupted = '位移途中受阻或被反应打断，技能未生效';
+      else if (chosenTarget && this.skillTargetReasonAt(actor, ability, chosenTarget)) interrupted = '到位后目标已不可选，技能未生效';
+      charge = move.charge && !interrupted;
+      // 被打断时没有冲锋，日志不写“冲锋”。
+      logBits.push(moved + (charge ? '，冲锋' : ''));
+    }
+    if (interrupted) logBits.push(interrupted);
+
+    const castTargets = chosenTarget && !interrupted && !movementOnly ? this.abilityDamageTargets(actor, chosenTarget, ability, ability.shape === 'burst' || ability.effects.some((e) => 'shape' in e && e.shape === 'burst')) : [actor];
     const effectTargets = (area: boolean) => area ? castTargets : [chosenTarget ?? actor];
     const resolutions: AttackResolution[] = [];
     let summonsSubmitted = false;
     let heal = 0;
-    const logBits: string[] = [`${actor.name} 使用【${ability.name}】`];
     // 技能内部会立即产生阵亡、迫降、任务结束等派生事件；结算完成后把这些事件排在技能本体之后，保持因果顺序。
     const consequentEventStart = this.log.length;
 
-    for (const eff of ability.effects) {
+    for (const eff of interrupted || movementOnly ? [] : ability.effects) {
       switch (eff.op) {
+        case 'move': break;
         case 'zone': { if (chosenTarget) { placeZone(this.observationContext(),actor,chosenTarget,eff,this.round,ability.id); logBits.push('布置'+ZONE_NAMES[eff.kind]+'，持续'+eff.dur+'轮'); } break; }
         case 'barrier': {
           for (const target of effectTargets(ability.shape === 'burst')) { grantBarrier(target, eff.amount, eff.dur, actor.id, eff.defensePower ?? ability.power); logBits.push(`${target.name} 获得屏障，可吸收${target.barrier?.remaining ?? 0}点伤害，持续${eff.dur}轮`); }
@@ -1523,7 +1726,7 @@ export class SmallBattle {
           if (this.rules.resolutionVersion === 'v2') {
             for (const affected of effectTargets(eff.shape === 'burst')) {
               const result = this.resolveAttackWithEnvironment({ attacker: actor, defender: affected, rng: this.rng, rules: this.rules,
-                conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(actor, affected, ability, eff) });
+                conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(actor, affected, ability, eff, false, charge && affected.id === chosenTarget?.id) });
               applyWeaponConditions(affected, result.onHitConditions); resolutions.push(result); logBits.push(result.text); this.checkDeath(affected, actor); this.checkInjury(affected, result.finalDamage);
             }
             break;
@@ -1672,15 +1875,21 @@ export class SmallBattle {
       }
     }
 
-    const usedWeapon = ability.weaponUse && chosenTarget ? skillWeapon(actor, ability, this.dist(actor, chosenTarget)) : undefined;
+    const usedWeapon = ability.weaponUse && chosenTarget && !interrupted ? skillWeapon(actor, ability, this.dist(actor, chosenTarget)) : undefined;
     if (usedWeapon && isRangedWeapon(usedWeapon) && weaponReloadTurns(usedWeapon)) this.reloadCd.set(weaponReloadKey(actor, usedWeapon), weaponReloadTurns(usedWeapon) + 1);
     this.settleAreaEffects(); this.resolveFlightStates(); this.flightCauses.clear(); this.checkGridObjective(false);
     const consequentEvents = this.log.splice(consequentEventStart);
     const text = logBits.join('\n');
     this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id, ...(chosenTarget ? [chosenTarget.id] : []), ...resolutions.map((r) => r.defenderId)], text, resolution: resolutions[0], resolutions });
     this.log.push(...consequentEvents);
-    if ((this.battlefield || actor.resourceModel) && actor.rulesVersion === 'v2' && !opts.bypassTurn) addTacticalEffort(actor, skillExertion(actor, ability));
-    if (!opts.bypassTurn) { if (ability.itemSourceId) this.spendAction(actorId, hasteAction); else this.actedThisTurn.add(actorId); }
+    // 出手后后撤：排在技能本体之后，不触发近战借机。
+    const withdraw = moveEffects(ability).after;
+    if (withdraw && (!movementOnly || moveEffects(ability).before) && !interrupted && actor.status === 'ready' && !this.isOver()) {
+      const retreat = this.skillWithdrawPath(actor, ability, withdraw);
+      if (retreat.path) this.executeSkillMove(actor, 'withdraw', retreat.path.cells.at(-1)!, retreat.path, 'after');
+    }
+    if ((this.battlefield || actor.resourceModel) && actor.rulesVersion === 'v2' && !opts.bypassTurn) addTacticalEffort(actor, skillExertion(actor, ability) + (charge ? 1 : 0));
+    if (!opts.bypassTurn) { if (quickItemAction(actor, ability)) this.spendAction(actorId, hasteAction); else this.actedThisTurn.add(actorId); }
     return { ok: true, resolutions, heal, log: text };
   }
 
@@ -1726,7 +1935,7 @@ export class SmallBattle {
   autoAction(unitId: string): void {
     const current = this.byId(unitId);
     if (this.isTurnOf(unitId) && current.conditions.some(c => c.dur > 0 && this.conditions.get(c.id)?.skipTurn)) { this.recordEvent({ round: this.round, kind: 'condition', participants: [unitId], text: current.name + ' 眩晕，跳过回合' }); this.endTurn(); return; }
-    if (this.battlefield) { try { this.autoGridAction(unitId); } finally { this.observationMemo = undefined; endPreviewScope(); } return; }
+    if (this.battlefield) { try { this.autoGridAction(unitId); } finally { this.observationMemo = undefined; this.gridPathsMemo = undefined; endPreviewScope(); } return; }
     const u = this.byId(unitId);
     if (u.status !== 'ready' || !this.isTurnOf(unitId)) return;
     // 索敌优先 ready；只剩濒死敌时列入补刀目标
@@ -1782,7 +1991,7 @@ export class SmallBattle {
       if (unit.status !== 'ready') { if (!this.isOver()) this.endTurn(); return; }
     }
     // Read-only evaluation: observations and preview samples are reused until an action is chosen.
-    this.observationMemo = new Map(); beginPreviewScope();
+    this.observationMemo = new Map(); this.gridPathsMemo = new WeakMap(); beginPreviewScope();
     const plans: { score: number; path: GridPath; offensive?: boolean; selfDefenseScore?: number; targetId?: string; abilityId?: string; weaponMode?: SmallAttackOpts['weaponMode']; cell?: number; structureMode?: string; kind: 'structure' | 'gate' | 'climb' | 'weapon' | 'charge' | 'ability' | 'brace' | 'hold' | 'land' | 'reload' | 'haste-move' | 'haste-flight' }[] = [];
     const knownUnits = this.visibleCombatants(unit.side);
     const objective = field.objective;
@@ -1802,10 +2011,20 @@ export class SmallBattle {
     const hunt = objective.kind === 'annihilation' && !foes.length ? this.huntPlan(unit, knownUnits) : undefined;
     // 刚看见的敌人多半还在原处：追索时把它们算进落点危险，避免冲上去一看又退回来。
     const presumed = hunt ? this.presumedFoes(unit.side, knownUnits) : [];
+    // V13 工事：据守单位离开阵地就失去工事。离开的代价按威胁最大的已知敌人（含刚失去视线的）打它一次时工事挡下的伤害估；
+    // 看不见敌人时不出去搜索，留在阵地等敌人来。敌人打得到它、它在阵地上却打不到任何敌人时（被压制），不计这项代价，照常权衡出击或后撤。
+    const onWorks = traitsV13(unit) && entrenched(unit);
+    const outgunned = onWorks && foes.some((foe) => foe.status === 'ready' && !this.weaponContext(foe, unit).reason)
+      && !foes.some((foe) => (['primary', 'sidearm'] as const).some((weaponMode) => (weaponMode === 'primary' || unit.sidearm) && !this.weaponContext(unit, foe, { weaponMode }).reason));
+    const worksValue = onWorks && !outgunned ? [...foes, ...presumed].filter((foe) => foe.status === 'ready').reduce((best, foe) => {
+      const weapon = foe.weapon ?? foe.sidearm, opts = { attacker: foe, defender: unit, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, weaponOverride: weapon, ranged: isRangedWeapon(weapon) };
+      return Math.max(best, this.previewAttackWithEnvironment({ ...opts, defender: { ...unit, entrenchedAt: undefined } }).expectedDamage - this.previewAttackWithEnvironment(opts).expectedDamage);
+    }, 0) : 0;
+    const worksCost = (cell: number) => worksValue > 0 && cell !== unit.entrenchedAt ? worksValue : 0;
     // 射手追线索时停在两三格外、看得到线索格的位置，由视野先确认，不直接踩进最后目击点。
     const lookout = (cell: number) => unitLineOfSight(field, { ...unit, pos: cell, airborne: false, elevation: undefined }, { ...unit, side: unit.side === 'enemy' ? 'ally' : 'enemy', pos: hunt!.focus, airborne: false, elevation: undefined });
     const standoff = hunt?.lead && rangedRole ? field.tiles.flatMap((_, cell) => [2, 3].includes(gridDistance(field, cell, hunt.focus)) && allowed(cell) && lookout(cell) ? [cell] : []) : [];
-    const huntGoals = standoff.length ? standoff : hunt?.goals ?? [unit.pos!];
+    const huntGoals = onWorks ? [unit.pos!] : standoff.length ? standoff : hunt?.goals ?? [unit.pos!];
     // 估算自己在假想落点会不会挨打时，看已知敌人能否在那里看见自己；此刻藏在暗处不代表走过去也看不见。
     const sightContext = this.observationContext(), seen = new Map<string, boolean>(), spotters = [...knownUnits, ...presumed];
     const place = (u: Combatant) => `${u.pos}:${isAirborne(u) ? 'air' : isElevated(u) ? 'top' : 'ground'}`;
@@ -1885,6 +2104,9 @@ export class SmallBattle {
       }
       return reduction;
     };
+    // 闪现与后撤不触发近战借机：退回位置评分里离开接触的估计代价（与 positionScore 同一口径）。
+    const leaveRefund = (cell: number) => (field.layerVersion ? meleeThreats.filter(f => gridDistance(field, unit.pos!, f.pos!) <= 1 && gridDistance(field, cell, f.pos!) > 1).length
+      : this.pathPreview(unitId, cell).risks.length) * 2;
     const incoming = (actor: Combatant): number => [...foes, ...presumed].reduce((total,foe) => {
       const context = this.weaponContext(foe,actor,{},undefined,sightAt);
       if (context.reason) return total;
@@ -1898,11 +2120,12 @@ export class SmallBattle {
       const results: Combatant[]=[];let loss=0,alive=0;
       for(let sample=0;sample<8;sample++) {
         const copy=cloneData(unit), spent=new Set(this.reactionSpent),rng=new SeededRng('route-risk:'+sample);
+        copy.pos=path.cells[0]!;
         for(const cell of path.cells.slice(1)) {
           const previous=copy.pos!;copy.pos=cell;delete copy.tacticalPose;
           for(const foe of foes) {
             if(copy.hp<=0||spent.has(foe.id)||foe.status!=='ready'||foe.suppression||foe.conditions.some(c=>c.dur>0&&(this.conditions.get(c.id)?.skipTurn||this.conditions.get(c.id)?.preventAttack&&meleeWeapon(foe)?.recipe?.mechanism!=='natural')))continue;
-            const weapon=meleeWeapon(foe),ridingAway=mountedShooting(copy)&&(Math.floor(cell/field.width)-Math.floor(previous/field.width))*(copy.side==='enemy'?-1:1)>0;
+            const weapon=meleeWeapon(foe),ridingAway=agileDisengage(copy)||mountedShooting(copy)&&(Math.floor(cell/field.width)-Math.floor(previous/field.width))*(copy.side==='enemy'?-1:1)>0;
             const opportunity=!ridingAway&&weapon&&meleeContact(field,foe,{...copy,pos:previous})&&gridDistance(field,foe.pos!,previous)===1&&(gridDistance(field,foe.pos!,cell)>1||!meleeContact(field,foe,copy));
             const watching=this.overwatch.has(foe.id)&&!this.weaponContext(foe,copy,{},undefined,sightAt).reason;
             if(!opportunity&&!watching)continue;
@@ -1970,7 +2193,7 @@ export class SmallBattle {
       const skillContext = { ...this.observationContext(), units: knownUnits.map(u => u.id === actor.id ? actor : u) };
       // 协同单位在通路旁支援，不用自身占位堵住己方护送对象；敌方仍可拦截。
       if (escortCorridor.has(actor.pos!)) continue;
-      const baseScore = (scored?.get(path) ?? positionScore(path)) - projected.loss * 1.5 - (1-projected.survival)*memberHealth(unit) - incoming(actor)*.3;
+      const baseScore = (scored?.get(path) ?? positionScore(path)) - projected.loss * 1.5 - (1-projected.survival)*memberHealth(unit) - incoming(actor)*.3 - worksCost(actor.pos!);
       if (field.layerVersion && this.nonSkillActionAvailable(unitId)) {
         const structural = [...new Set([...(order?.breach === undefined ? [] : [order.breach]), ...neighbors(field, actor.pos!).filter(p => {
           const structure = intactStructure(field, p);
@@ -2033,39 +2256,96 @@ export class SmallBattle {
         const volleyDamage = Math.min(memberHealth(target), preview.expectedDamage);
         plans.push({ score: baseScore + volleyDamage + (preview.conditionValue ?? 0) + (volleyDamage >= memberHealth(target) ? 4 : 0), offensive: volleyDamage + (preview.conditionValue ?? 0) > 0, path, targetId: target.id, weaponMode, kind: 'weapon' });
       }
-      for (const ability of actor.abilities) {
-        if (!ability.itemSourceId && (this.actedThisTurn.has(unitId) || this.hasteSelected.has(unitId))) continue;
+      for (const listedAbility of actor.abilities) {
+        const ability = listedAbility;
+        if (!quickItemAction(actor, ability) && (this.actedThisTurn.has(unitId) || this.hasteSelected.has(unitId))) continue;
         if (failedAbilities.has(ability.id) || abilityUsabilityReason(actor, ability) || this.summonReason(actor, ability)) continue;
+        if (movementOnlySkill(ability)) continue;
         const candidates = ability.target === 'zone' ? this.visibleCombatants(actor.side).filter(u=>u.status==='ready') : ability.target === 'self' ? [actor] : ability.target === 'enemy' ? foes : this.combatants.filter((target) => target.side === actor.side
           && (['ready', 'routing'].includes(target.status) || target.status === 'dying' && ability.effects.some((e) => e.op === 'heal')));
+        const withdraw = moveEffects(ability).after, retreats = new Map<number, number>();
+        // 出手后后撤：按后撤落点与原地的位置评分、受击估计之差计入（与是否值得用这招一起比较）。
+        const retreatValue = (from: Combatant): number => {
+          if (!withdraw) return 0;
+          if (!retreats.has(from.pos!)) {
+            const landing = this.skillWithdrawPath(from, ability, withdraw).path?.cells.at(-1);
+            retreats.set(from.pos!, landing === undefined ? 0 : positionScore({ cells: [from.pos!, landing], cost: 0 }) + leaveRefund(landing) - incoming({ ...from, pos: landing }) * .3 - worksCost(landing)
+              - (positionScore({ cells: [from.pos!], cost: 0 }) - incoming(from) * .3 - worksCost(from.pos!)));
+          }
+          return retreats.get(from.pos!)!;
+        };
         for (const target of candidates) {
-          if (this.skillTargetReason(actor, ability, target)) continue;
+          // V15 编队用道具按件数折算；与实际使用同一份派生行动。
+          const itemUse = this.itemUse(actor, listedAbility, target);
+          if (itemUse.reason) continue;
+          const ability = itemUse.ability;
+          // 突进/闪现只从当前位置估算：从落点出手，计入途中反应、落点受击与冲锋。
+          let caster = actor, moveScore: number | undefined, move: ReturnType<SmallBattle['skillMovePlan']>['move'];
+          if (this.skillTargetReasonAt(actor, ability, target)) {
+            // 突进/闪现：先走到这个位置、再从这里位移出手；只看位移加射程够得着的目标。
+            const before = moveEffects(ability).before;
+            if (!before || gridDistance(field, actor.pos!, target.pos!) > before.reach + fallbackAbilityRange(actor, gridAbility(ability), true).max + 1) continue;
+            move = this.skillMovePlan(actor, ability, target).move; if (!move) continue;
+            const dash = move.path ? arrivalAfterReactions(move.path) : { actor: { ...cloneData(unit), pos: move.to }, loss: 0, survival: 1 };
+            const survival = projected.survival * dash.survival;
+            if (dash.actor.hp <= 0 || survival < .5) continue;
+            // 编队的人数与成员生命分组须取自同一份副本，不能只换人数：取两段路线里伤得更重的那一份。
+            caster = hasMemberHealth(actor) ? { ...(memberHealth(dash.actor) < memberHealth(actor) ? dash.actor : actor), pos: move.to }
+              : { ...actor, hp: Math.min(actor.hp, dash.actor.hp), pos: move.to };
+            moveScore = positionScore({ cells: [unit.pos!, move.to], cost: path.cost }) + (move.mode === 'blink' && path.cost === 0 ? leaveRefund(move.to) : 0) - (projected.loss + dash.loss) * 1.5
+              - (1 - survival) * memberHealth(unit) - incoming(caster) * .3 - worksCost(move.to);
+          }
+          const moved = path.cost > 0 || !!move, casterContext = move ? { ...skillContext, units: skillContext.units.map(u => u.id === caster.id ? caster : u) } : skillContext;
           let benefit = 0, expectedDamage = 0;
           const damageForControl = ability.effects.find((e) => e.op === 'damage');
           const controlPreviews = new Map<string, ReturnType<SmallBattle['previewAttackWithEnvironment']>>();
           const controlChance = (affected: Combatant, needsDamage: boolean) => {
             if (!damageForControl) return 1;
-            if (!controlPreviews.has(affected.id)) controlPreviews.set(affected.id, this.previewAttackWithEnvironment({ attacker: actor, defender: affected, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(actor, affected, ability, damageForControl, path.cost > 0) }));
+            if (!controlPreviews.has(affected.id)) controlPreviews.set(affected.id, this.previewAttackWithEnvironment({ attacker: caster, defender: affected, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(caster, affected, ability, damageForControl, moved, !!move?.charge && affected.id === target.id) }));
             const preview = controlPreviews.get(affected.id)!;
             return needsDamage ? preview.damageChance ?? (preview.expectedDamage > 0 ? preview.hitChance : 0) : preview.anyHitChance ?? preview.hitChance;
           };
           for (const effect of ability.effects) {
-            if (effect.op === 'damage') for (const affected of this.abilityDamageTargets(actor, target, ability, effect.shape === 'burst')) {
-              const preview = this.previewAttackWithEnvironment({ attacker: actor, defender: affected, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(actor, affected, ability, effect, path.cost > 0) });
+            if (effect.op === 'damage') for (const affected of this.abilityDamageTargets(caster, target, ability, effect.shape === 'burst')) {
+              const preview = this.previewAttackWithEnvironment({ attacker: caster, defender: affected, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(caster, affected, ability, effect, moved, !!move?.charge && affected.id === target.id) });
               benefit += preview.expectedDamage + (preview.conditionValue ?? 0);
               if (affected.side !== actor.side) expectedDamage += preview.expectedDamage;
             }
-            if (effect.op === 'heal') for (const affected of this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst')) benefit += Math.min(recoveryCapacity(affected), healingYield(actor,affected,effect.amount ?? diceAvg(effect.dice!),!!ability.itemSourceId));
-            if (effect.op === 'summon') benefit += summonValue(skillContext, actor, ability, effect);
-            if (effect.op === 'zone' || effect.op === 'barrier' || effect.op === 'push' || effect.op === 'dispel' || effect.op === 'trait') for (const affected of this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst')) benefit += skillEffectValue(skillContext, actor, affected, { ...ability, effects: [effect] }, controlChance(affected, false));
-            if (effect.op === 'morale') for (const affected of this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst')) benefit += moraleChangePreview({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, affected, effect.amount, this.rules.morale.breakAt, this.traitRegistry, ability.effects.flatMap((e) => e.op === 'condition' ? [{ id: e.conditionId, dur: e.dur }] : [])).value * (affected.side === actor.side ? 1 : -1);
+            if (effect.op === 'heal') for (const affected of this.abilityDamageTargets(caster, target, ability, ability.shape === 'burst')) benefit += Math.min(recoveryCapacity(affected), healingYield(actor,affected,effect.amount ?? diceAvg(effect.dice!),!!ability.itemSourceId));
+            if (effect.op === 'summon') benefit += summonValue(casterContext, caster, ability, effect);
+            if (effect.op === 'zone' || effect.op === 'barrier' || effect.op === 'push' || effect.op === 'dispel' || effect.op === 'trait') for (const affected of this.abilityDamageTargets(caster, target, ability, ability.shape === 'burst')) benefit += skillEffectValue(casterContext, caster, affected, { ...ability, effects: [effect] }, controlChance(affected, false));
+            if (effect.op === 'morale') for (const affected of this.abilityDamageTargets(caster, target, ability, ability.shape === 'burst')) benefit += moraleChangePreview({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, affected, effect.amount, this.rules.morale.breakAt, this.traitRegistry, ability.effects.flatMap((e) => e.op === 'condition' ? [{ id: e.conditionId, dur: e.dur }] : [])).value * (affected.side === actor.side ? 1 : -1);
           }
-          for (const affected of this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst')) benefit += skillEffectValue(skillContext, actor, affected, { ...ability, effects: ability.effects.filter(e => e.op === 'condition') }, controlChance(affected, false), controlChance(affected, true)) * Math.max(0, 1 - (controlPreviews.get(affected.id)?.expectedDamage ?? 0) / Math.max(1, memberHealth(affected)));
-          const landing = this.abilityFlightPreview(actor, target, ability);
+          for (const affected of this.abilityDamageTargets(caster, target, ability, ability.shape === 'burst')) benefit += skillEffectValue(casterContext, caster, affected, { ...ability, effects: ability.effects.filter(e => e.op === 'condition') }, controlChance(affected, false), controlChance(affected, true)) * Math.max(0, 1 - (controlPreviews.get(affected.id)?.expectedDamage ?? 0) / Math.max(1, memberHealth(affected)));
+          const landing = this.abilityFlightPreview(caster, target, ability);
           if (landing) benefit += Math.min(target.hp, landing.fallDamage) * (landing.fallChance ?? 1);
-          for (const affected of ability.recipe || ability.itemSourceId || ability.equipmentSourceId ? this.abilityDamageTargets(actor, target, ability, ability.shape === 'burst') : [actor]) benefit += skillEffectValue(skillContext, actor, affected, { ...ability, effects: ability.effects.filter(e => e.op === 'resource') });
-          const cost = tacticalSkillCost(skillContext, actor, ability, expectedDamage);
-          if (benefit > cost) plans.push({ score: baseScore + benefit - cost, offensive: target.side !== actor.side, path, targetId: target.id, abilityId: ability.id, kind: 'ability' });
+          for (const affected of ability.recipe || ability.itemSourceId || ability.equipmentSourceId ? this.abilityDamageTargets(caster, target, ability, ability.shape === 'burst') : [caster]) benefit += skillEffectValue(casterContext, caster, affected, { ...ability, effects: ability.effects.filter(e => e.op === 'resource') });
+          // V15：治疗品对濒死或伤重的目标放开使用。
+          const cost = tacticalSkillCost(skillContext, actor, ability, expectedDamage)
+            * (ability.itemSourceId && itemsV15(actor) && ability.effects.some((e) => e.op === 'heal') && itemEmergency(target) ? ITEM_EMERGENCY_DISCOUNT : 1);
+          if (benefit > cost) plans.push({ score: (moveScore ?? baseScore) + benefit - cost + retreatValue(caster), offensive: target.side !== actor.side, path, targetId: target.id, abilityId: ability.id, kind: 'ability' });
+        }
+      }
+      // 单纯位移技能：只从当前位置估算；先按位置评分粗筛，再对少数落点计算途中反应与落点受击。用后仍可走剩余移动点。
+      if (path.cost === 0 && !this.actedThisTurn.has(unitId) && !this.hasteSelected.has(unitId)) for (const listed of actor.abilities) {
+        if (!movementOnlySkill(listed) || failedAbilities.has(listed.id)) continue;
+        const itemUse = this.itemUse(actor, listed);
+        if (itemUse.reason || abilityUsabilityReason(actor, itemUse.ability)) continue;
+        const ability = itemUse.ability;
+        const { before, after } = moveEffects(ability), effect = (before ?? after)!;
+        const reach = effectiveMoveReach(actor, ability, effect, this.conditions);
+        if (!reach || moveBlockReason(actor, this.conditions)) continue;
+        const landings = effect.mode === 'blink' ? this.skillBlinkCells(actor, reach).map((cell) => ({ cell, route: undefined as GridPath | undefined }))
+          : this.skillPaths(actor, reach).filter((p) => p.cost > 0).map((p) => ({ cell: p.cells.at(-1)!, route: p as GridPath | undefined }));
+        const cost = tacticalSkillCost(skillContext, actor, ability);
+        const shortlist = landings.map((l) => ({ ...l, pre: positionScore({ cells: [actor.pos!, l.cell], cost: 0 }) + (effect.mode === 'dash' ? 0 : leaveRefund(l.cell)) - worksCost(l.cell) }))
+          .filter((l) => !escortCorridor.has(l.cell)).sort((a, b) => b.pre - a.pre || a.cell - b.cell).slice(0, 6);
+        for (const landing of shortlist) {
+          // 后撤只受警戒射击，按无借机估算；突进途中照常估算借机与警戒。
+          const projected = effect.mode === 'dash' && landing.route ? arrivalAfterReactions(landing.route) : { actor: { ...cloneData(unit), pos: landing.cell }, loss: 0, survival: 1 };
+          if (projected.actor.hp <= 0 || projected.survival < .5) continue;
+          const score = landing.pre - projected.loss * 1.5 - (1 - projected.survival) * memberHealth(unit) - incoming({ ...projected.actor, pos: landing.cell }) * .3 - cost;
+          plans.push({ score, path, targetId: 'cell:' + landing.cell, abilityId: ability.id, kind: 'ability' });
         }
       }
     }
@@ -2079,7 +2359,7 @@ export class SmallBattle {
       if (escortCorridor.has(arrival.pos)) continue;
       const preview = this.previewAttackWithEnvironment({ attacker: arrival, defender: target, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry,
         weaponOverride: context.weapon, ranged: false, charge: true, actionDamageScale: this.usingHaste(unitId) ? hasteAttackScale(unit) : 1, ...this.attackModifiers(arrival, target, context, { charge: true }) });
-      plans.push({ score: positionScore(path) - projected.loss*1.5 - (1-projected.survival)*memberHealth(unit) - incoming(arrival)*.3 + Math.min(memberHealth(target), preview.expectedDamage) + (preview.expectedDamage >= memberHealth(target) ? 4 : 0), offensive: preview.expectedDamage > 0, path, targetId: target.id, kind: 'charge' });
+      plans.push({ score: positionScore(path) - projected.loss*1.5 - (1-projected.survival)*memberHealth(unit) - incoming(arrival)*.3 - worksCost(arrival.pos!) + Math.min(memberHealth(target), preview.expectedDamage) + (preview.expectedDamage >= memberHealth(target) ? 4 : 0), offensive: preview.expectedDamage > 0, path, targetId: target.id, kind: 'charge' });
     }
     if (this.nonSkillActionAvailable(unitId)) {
       const stay: GridPath = { cells: [unit.pos!], cost: 0 };
@@ -2091,11 +2371,11 @@ export class SmallBattle {
       }
       if (this.actedThisTurn.has(unitId) && this.hasteAvailable(unitId)) {
         const extraPaths = reachableGridPaths(field, unit.pos!, this.movementLeft(unitId) + this.movementBudget(unitId), allowed, (n, from) => movementStepCost(field, n, unit, this.fieldTags, from));
-        for (const path of extraPaths.filter(p => p.cost > this.movementLeft(unitId))) plans.push({ kind: 'haste-move', path, score: positionScore(path) - 0.25 });
+        for (const path of extraPaths.filter(p => p.cost > this.movementLeft(unitId))) plans.push({ kind: 'haste-move', path, score: positionScore(path) - 0.25 - worksCost(path.cells.at(-1)!) });
         const flying = { ...unit, airborne: !isAirborne(unit) };
         if ((isAirborne(unit) || !flightCapabilityReason(unit, this.conditions)) && canOccupy(field, knownUnits, flying, flying.pos!)) {
           const value = incomingReduction(unit, flying) * 0.5 + (isAirborne(unit) && objective.kind !== 'annihilation' && unit.pos === field.objective.cell ? 6 : 0);
-          if (value > 0) plans.push({ kind: 'haste-flight', path: stay, score: positionScore(stay) + value });
+          if (value > 0) plans.push({ kind: 'haste-flight', path: stay, score: positionScore(stay) + value - worksValue });
         }
       }
     }
@@ -2118,13 +2398,13 @@ export class SmallBattle {
       && plan.path.cells.at(-1) === objective.cell && (!isAirborne(unit) || plan.kind === 'land');
     const commandScores = commanderScores(candidates.map(plan => ({
       key: JSON.stringify(field.layerVersion ? [plan.kind, plan.path.cells, plan.targetId, plan.abilityId, plan.weaponMode, plan.cell, plan.structureMode] : [plan.kind, plan.path.cells, plan.targetId, plan.abilityId, plan.weaponMode]), score: plan.score,
-      attack: !!plan.offensive, breach: plan.kind === 'structure', ranged: plan.kind === 'structure' ? plan.structureMode?.startsWith('ability:') ? unit.abilities.find(a => a.id === plan.structureMode!.slice(8))?.delivery !== 'melee' : isRangedWeapon(plan.structureMode === 'sidearm' ? unit.sidearm : unit.weapon) : plan.kind === 'weapon' ? isRangedWeapon(plan.weaponMode === 'sidearm' ? unit.sidearm : unit.weapon) : plan.kind === 'ability' && (unit.abilities.find(a => a.id === plan.abilityId)?.range?.max ?? 0) > 1,
-      move: plan.path.cost > 0, defend: plan.kind === 'brace' || plan.kind === 'hold' || plan.kind === 'ability' && !!unit.abilities.find(a => a.id === plan.abilityId)?.effects.some(e => e.op === 'barrier' || e.op === 'heal' || e.op === 'dispel' && e.polarity === 'negative' || e.op === 'condition' && ['blessed','encouraged'].includes(e.conditionId)),
+      attack: !!plan.offensive, breach: plan.kind === 'structure', ranged: plan.kind === 'structure' ? plan.structureMode?.startsWith('ability:') ? unit.abilities.find(a => a.id === plan.structureMode!.slice(8))?.delivery !== 'melee' : isRangedWeapon(plan.structureMode === 'sidearm' ? unit.sidearm : unit.weapon) : plan.kind === 'weapon' ? isRangedWeapon(plan.weaponMode === 'sidearm' ? unit.sidearm : unit.weapon) : plan.kind === 'ability' && !movementOnlySkill(unit.abilities.find(a => a.id === plan.abilityId) ?? { effects: [] }) && (unit.abilities.find(a => a.id === plan.abilityId)?.range?.max ?? 0) > 1,
+      move: plan.path.cost > 0 || plan.kind === 'ability' && hasSkillMovement(unit.abilities.find(a => a.id === plan.abilityId) ?? { effects: [] }), defend: plan.kind === 'brace' || plan.kind === 'hold' || plan.kind === 'ability' && !!unit.abilities.find(a => a.id === plan.abilityId)?.effects.some(e => e.op === 'barrier' || e.op === 'heal' || e.op === 'dispel' && e.polarity === 'negative' || e.op === 'condition' && ['blessed','encouraged'].includes(e.conditionId)),
     })), this.commanderProfiles[unit.side === 'ally' ? 'ally' : 'enemy'], `${this.seed}:${this.round}:${unitId}`, !!field.layerVersion);
     const ranked = new Map(candidates.map((plan, i) => [plan, commandScores[i]!]));
     const best = candidates.sort((a, b) => Number(completesEscort(b)) - Number(completesEscort(a))
       || ranked.get(b)! - ranked.get(a)! || a.path.cost - b.path.cost || (a.targetId ?? '').localeCompare(b.targetId ?? ''))[0];
-    this.observationMemo = undefined; endPreviewScope();
+    this.observationMemo = undefined; this.gridPathsMemo = undefined; endPreviewScope();
     if (best) {
       if (best.kind === 'haste-move' || best.kind === 'haste-flight') this.selectHaste(unitId, true);
       if (best.path.cost > 0 && best.kind !== 'charge') {
@@ -2145,6 +2425,10 @@ export class SmallBattle {
           if (!result.ok && !this.actedThisTurn.has(unitId)) {
             failedAbilities.add(best.abilityId);
             this.autoGridAction(unitId, reconsidered, failedAbilities); return;
+          }
+          // 单纯位移不占移动点：落位后照常用剩余移动点走位。
+          if (result.ok && movementOnlySkill(unit.abilities.find(a => a.id === best.abilityId) ?? { effects: [] }) && unit.status === 'ready' && !this.isOver() && this.movementLeft(unitId) > 0) {
+            this.autoGridAction(unitId, true, failedAbilities); return;
           }
         }
         else if (best.kind === 'haste-move') { /* 额外机动已在上方执行。 */ }
@@ -2301,7 +2585,7 @@ export class SmallBattle {
 
     // —— 技能候选（冷却/次数/资源门禁；射程门禁与 useAbility 同构）——
     for (const a of u.abilities) {
-      if ((!a.itemSourceId && (this.actedThisTurn.has(u.id) || this.hasteSelected.has(u.id))) || !this.abilityUsable(u, a)) continue;
+      if ((!quickItemAction(u, a) && (this.actedThisTurn.has(u.id) || this.hasteSelected.has(u.id))) || !this.abilityUsable(u, a)) continue;
       const damageEff = a.effects.find((e): e is Extract<EffectOp, { op: 'damage' }> => e.op === 'damage');
       const healEff = a.effects.find((e): e is Extract<EffectOp, { op: 'heal' }> => e.op === 'heal');
       const cost = (abilityCost(u, a)?.amount ?? 0) * 0.5; // 资源机会成本
@@ -2521,6 +2805,9 @@ export class SmallBattle {
       delete u.tacticalEffort;
     }
     recoverSp(u, fullRest, incapacitated);
+    // V13 工事：离开阵地（或开战时没能构筑）后原地完整休整一轮，在所在位置构筑。
+    const firstWorks = u.entrenchedAt === undefined;
+    if (fullRest && !entrenched(u) && entrench(u, 'small')) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 原地休整，${firstWorks ? '' : '重新'}构筑工事` });
     if (u.suppression) u.suppression = Math.max(0, u.suppression - 1);
     const expired: string[] = [];
     for (const c of [...u.conditions]) {

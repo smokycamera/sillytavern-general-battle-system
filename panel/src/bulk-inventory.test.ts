@@ -10,7 +10,7 @@ function fixture() {
   const u=generateUnit({name:'owner',side:'ally',scale:'hero',rulesVersion:'v2',damageModel:'wounds-v2',level:3,weaponClass:'sword',armorTier:1,traits:[]},{seed:'bulk',registry}).unit; u.id='owner';
   return prepareInventoryState({factRevision:1,schemaVersion:2,storage:[unitRecordFromCombatant(u)],inventory:[
     createInventoryItem('a','剑',{kind:'weapon',mechanism:'sword',power:3},'a'),
-    createInventoryItem('b','药',{kind:'consumable',mechanism:'heal',power:3},'b',99),
+    createInventoryItem('b','药',{kind:'item',form:'single',power:3,active:'generic:buff:heal'},'b',99),
     {id:'story',name:'战利品',qty:24,lootType:'misc'},
   ]});
 }

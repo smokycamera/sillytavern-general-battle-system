@@ -1,13 +1,15 @@
 import { validateAreas } from '../../engine/src/area-effects.js';
 import { validateZoneStrength } from '../../engine/src/zone-skills.js';
 import { validateBarrier, validDefensePower } from '../../engine/src/barrier.js';
-import { validateAccessories } from '../../engine/src/items.js';
+import { validateGear } from '../../engine/src/items.js';
 import { validateEnhancements, validateChannelProtection, type Enhancements } from '../../engine/src/enhancements.js';
 import { synchronizePersonnel, validateCombatModel } from '../../engine/src/combat-model.js';
 import { capSingleLife, limitCombatantLife } from '../../engine/src/health-limits.js';
 import { isEnduranceModel, spCapacity } from '../../engine/src/resources.js';
 import { validateArmsModel } from '../../engine/src/arms.js';
-import { traitRegistry } from '../../engine/src/data/traits.js';
+import { validateTraitModel } from '../../engine/src/trait-model.js';
+import { validateItemModel } from '../../engine/src/item-model.js';
+import { traitRegistry, validateTraitLevels } from '../../engine/src/data/traits.js';
 import { skillMechanismFromId } from '../../engine/src/data/skill-mechanisms.js';
 /**
  * 面板单位持久化与战后提交。
@@ -192,12 +194,17 @@ function validateRuntimeMetadata(value: Record<string, unknown>): void {
     if (!isRecordObject(condition) || typeof condition.id !== 'string' || !condition.id || !Number.isSafeInteger(condition.dur) || Number(condition.dur) < 0) throw new Error('状态持续时间或结构损坏');
     if(isRecordObject(condition)&&condition.affectedMembers!==undefined&&(!Number.isFinite(condition.affectedMembers)||Number(condition.affectedMembers)<0||Number(condition.affectedMembers)>1e9))throw Error('状态波及人数损坏');
     if (isRecordObject(condition) && condition.potency !== undefined && (!Number.isInteger(condition.potency) || Number(condition.potency) < 1 || Number(condition.potency) > 3)) throw new Error('状态强度记录损坏');
-    if (isRecordObject(condition) && condition.magnitude !== undefined && (!Number.isFinite(condition.magnitude) || Number(condition.magnitude) < 0.25 || Number(condition.magnitude) > 1.5)) throw new Error('状态效力记录损坏');
+    // Partial item coverage can produce a weaker active condition than the
+    // minimum compiled skill potency; it must remain valid through save/load.
+    if (isRecordObject(condition) && condition.magnitude !== undefined && (!Number.isFinite(condition.magnitude) || Number(condition.magnitude) <= 0 || Number(condition.magnitude) > 1.5)) throw new Error('状态效力记录损坏');
     if (isRecordObject(condition) && condition.sourceId !== undefined && typeof condition.sourceId !== 'string') throw new Error('状态来源记录损坏');
     if (condition.defensePower !== undefined && (condition.id !== 'blessed' || !validDefensePower(condition.defensePower))) throw new Error('守护防御规格记录损坏');
   }
   if (value.resourceModel !== undefined && !isEnduranceModel(value.resourceModel)) throw new Error('资源规则版本损坏');
   validateArmsModel(value.armsModel);
+  validateTraitModel(value.traitModel);
+  validateItemModel(value.itemModel);
+  validateTraitLevels(value.traitLevels);
   validateTacticalEffort(value.tacticalEffort, value.resourceModel);
   validateConcealment(value.tacticalRevealed);
   validateFlightState(value.airborne);
@@ -249,7 +256,7 @@ export function combatantFromUnknown(value: unknown): Combatant {
   if (typeof value.scale !== 'string' || !['hero', 'mook', 'company'].includes(value.scale)) throw new Error('scale 非法');
   validateBase(value.base);
   validateRuntimeMetadata(value);
-  validateBarrier(value.barrier as Combatant['barrier']); validateAreas(value as unknown as Combatant); validateAccessories(value as unknown as Combatant);
+  validateBarrier(value.barrier as Combatant['barrier']); validateAreas(value as unknown as Combatant); validateGear(value as unknown as Combatant);
   for (const slot of ['weapon', 'sidearm']) {
     const item = value[slot]; if (item === undefined) continue;
     if (!isRecordObject(item) || typeof item.name !== 'string' || typeof item.baseDice !== 'string') throw new Error(slot + ' 结构损坏');
@@ -268,14 +275,15 @@ export function combatantFromUnknown(value: unknown): Combatant {
         || typeof a.definitionId !== 'string' || !skillMechanismFromId(a.definitionId) || JSON.stringify(skillMechanismFromId(a.definitionId)) !== JSON.stringify({ category: a.recipe.category, area: a.recipe.area, modifiers: a.recipe.modifiers })) throw new Error('通用技能配方损坏');
     }
     if (a.area !== undefined && (!isRecordObject(a.area) || !['cone','line','ring','chain','circle'].includes(String(a.area.shape)) || !Number.isInteger(a.area.radius) || Number(a.area.radius)<1 || Number(a.area.radius)>3 || !Number.isInteger(a.area.maxTargets) || Number(a.area.maxTargets)<1 || Number(a.area.maxTargets)>8)) throw Error('技能范围不正确');
-    if (a.areaExposure !== undefined && (!Number.isInteger(a.areaExposure) || Number(a.areaExposure) < 1 || Number(a.areaExposure) > (['skill-v4.0','skill-v4.1','skill-v4.2','skill-v4.3','skill-v5.0','skill-v6.0','skill-v6.1'].includes(String(a.effectVersion))?1e9:4) || a.shape !== 'burst' || a.damageBasis !== undefined)) throw new Error('技能范围暴露参数损坏');
-    if (a.damageBasis !== undefined && !['weapon', 'shield'].includes(String(a.damageBasis)) || a.weaponDamageMult !== undefined && (!Number.isFinite(a.weaponDamageMult) || Number(a.weaponDamageMult) <= 0 || Number(a.weaponDamageMult) > (['skill-v3.0','skill-v4.0','skill-v4.1','skill-v4.2','skill-v4.3','skill-v5.0','skill-v6.0','skill-v6.1'].includes(String(a.effectVersion)) ? 4.4 : 2)) || a.delivery !== undefined && !['melee', 'ranged', 'magic'].includes(String(a.delivery))) throw new Error('技能装备基准损坏');
+    if (a.areaExposure !== undefined && (!Number.isInteger(a.areaExposure) || Number(a.areaExposure) < 1 || Number(a.areaExposure) > (['skill-v4.0','skill-v4.1','skill-v4.2','skill-v4.3','skill-v5.0','skill-v6.0','skill-v6.1','skill-v7.0'].includes(String(a.effectVersion))?1e9:4) || a.shape !== 'burst' || a.damageBasis !== undefined)) throw new Error('技能范围暴露参数损坏');
+    if (a.damageBasis !== undefined && !['weapon', 'shield'].includes(String(a.damageBasis)) || a.weaponDamageMult !== undefined && (!Number.isFinite(a.weaponDamageMult) || Number(a.weaponDamageMult) <= 0 || Number(a.weaponDamageMult) > (['skill-v3.0','skill-v4.0','skill-v4.1','skill-v4.2','skill-v4.3','skill-v5.0','skill-v6.0','skill-v6.1','skill-v7.0'].includes(String(a.effectVersion)) ? 4.4 : 2)) || a.delivery !== undefined && !['melee', 'ranged', 'magic'].includes(String(a.delivery))) throw new Error('技能装备基准损坏');
     if(a.damageScale!==undefined&&(!Number.isFinite(a.damageScale)||Number(a.damageScale)<=0||Number(a.damageScale)>1e6))throw Error('技能等级倍率损坏');
     for (const effect of a.effects.flatMap(effect => [effect,...(isRecordObject(effect) && effect.op === 'zone' && Array.isArray(effect.effects) ? effect.effects : [])])) {
       if (isRecordObject(effect) && effect.op === 'zone' && (!['fire','poison','smoke','healing','trap'].includes(String(effect.kind)) || !Number.isInteger(effect.power) || Number(effect.power)<1 || Number(effect.power)>10 || !Number.isInteger(effect.dur) || Number(effect.dur)<1 || Number(effect.dur)>99 || !Number.isInteger(effect.radius) || Number(effect.radius)<0 || Number(effect.radius)>3)) throw Error('持续区域的范围或时间不正确');
       if (isRecordObject(effect) && effect.op === 'zone') validateZoneStrength(effect);
       if (isRecordObject(effect) && effect.op === 'barrier') validateBarrier({ remaining: effect.amount as number, duration: effect.dur as number });
-      if (!isRecordObject(effect) || !['damage', 'heal', 'condition', 'trait', 'push', 'dispel', 'resource', 'morale', 'summon', 'barrier', 'zone'].includes(String(effect.op))) throw new Error('技能包含未支持的效果处理');
+      if (!isRecordObject(effect) || !['damage', 'heal', 'condition', 'trait', 'push', 'dispel', 'resource', 'morale', 'summon', 'barrier', 'zone', 'move'].includes(String(effect.op))) throw new Error('技能包含未支持的效果处理');
+      if (effect.op === 'move' && (!['dash', 'blink', 'withdraw'].includes(String(effect.mode)) || !Number.isInteger(effect.reach) || Number(effect.reach) < 1 || Number(effect.reach) > 20)) throw new Error('技能位移参数损坏');
       if (effect.defensePower !== undefined && (!validDefensePower(effect.defensePower) || effect.op !== 'barrier' && !(effect.op === 'condition' && effect.conditionId === 'blessed'))) throw new Error('技能防御规格记录损坏');
       if (effect.magnitude !== undefined && (!Number.isFinite(effect.magnitude) || Number(effect.magnitude) < 0.25 || Number(effect.magnitude) > 1.5) || effect.onDamage !== undefined && typeof effect.onDamage !== 'boolean') throw new Error('技能效力或损伤前提损坏');
       if (effect.op === 'trait' && (!traitRegistry().get(String(effect.traitId))?.v2SourceReady || !Number.isInteger(effect.dur) || Number(effect.dur) < 1 || Number(effect.dur) > 99)) throw new Error('技能授予来源损坏');
@@ -439,6 +447,7 @@ export function unitRecordFromCombatant(
   delete c.moraleState;
   delete c.tacticalEffort;
   delete c.tacticalRevealed;
+  delete c.entrenchedAt;
   delete c.airborne; delete c.elevation;
   normalizeV2Scale(c);
   synchronizePersonnel(c, true);
@@ -567,13 +576,13 @@ export function unitRecordToGenerateInput(r: UnitRecord, era = 'medieval'): Gene
 
 /** 转制只生成可审查副本；不改源记录、不自动扩编或补满。 */
 export function previewUnitConversion(record: UnitRecord, registry: Map<string, Trait>): UnitRecord {
-  if (record.snapshot?.rulesVersion === 'v2') throw new Error('该单位已使用V2效果');
-  if (record.traits.some((id) => ['large', 'titan', 'flying'].includes(id))) throw new Error('旧体量/飞行标签不能猜测转换，请先明确身体效果');
+  if (record.snapshot?.rulesVersion === 'v2') throw new Error('该单位规则已更新');
+  if (record.traits.some((id) => ['large', 'titan', 'flying'].includes(id))) throw new Error('请先明确身体与飞行效果，再更新单位规则');
   const input = unitRecordToGenerateInput(record);
   const source = record.snapshot;
   const weaponId = input.weaponId ?? source?.genAudit?.weapon?.profileId;
-  if (!weaponId && !input.weaponClass) throw new Error('旧武器缺少明确效果来源，请先编辑武器类型再更新规则');
-  if (source?.abilities.some((a) => !a.definitionId?.startsWith('bp-') && !a.id.startsWith('bp-'))) throw new Error('旧固定技能缺少明确配方，请先在编辑中替换为已支持的技能');
+  if (!weaponId && !input.weaponClass) throw new Error('武器缺少明确效果来源，请先编辑武器类型');
+  if (source?.abilities.some((a) => !a.definitionId?.startsWith('bp-') && !a.id.startsWith('bp-'))) throw new Error('技能缺少明确配方，请在编辑中选择支持的效果');
   const unit = generateUnit({ ...input, rulesVersion: 'v2', era: undefined,
     weaponId,
     weaponLevel: source?.weapon?.level ?? record.weaponLevel ?? 5,
@@ -656,6 +665,7 @@ export function materializeUnitRecord(
   delete generated.formationPosition;
   delete generated.vanguardOrigin;
   delete generated.pos;
+  delete generated.entrenchedAt;
   if (!generated.storyState?.resources) {
     if (generated.rulesVersion === 'v2') generated.resources = { ...generated.resources, SP: spCapacity(generated) };
     else if (generated.scale === 'hero') generated.resources = { ...generated.resources, SP: 3 + generated.level };
@@ -911,7 +921,7 @@ export function editUnitRecord(previous: UnitRecord, edited: UnitRecord, registr
     }
   }
   if (unit.rulesVersion === 'v2' && changed(keys.abilities)) {
-    if (changed(['abilityIds']) && edited.abilityIds?.length) throw new Error('V2学习需要明确技能蓝图');
+    if (changed(['abilityIds']) && edited.abilityIds?.length) throw new Error('学习技能需要明确效果定义');
     if (previous.snapshot) { unit.abilityState = clone(previous.snapshot.abilityState); unit.resources = clone(previous.snapshot.resources); }
     const specs = changed(['skills']) ? (edited.skills ?? []).map((skill) => {
       const id = skill.blueprintId ?? blueprintIdForCategory(skill.category), oldSpec = previous.skills?.find((s) => (s.blueprintId ?? blueprintIdForCategory(s.category)) === id);

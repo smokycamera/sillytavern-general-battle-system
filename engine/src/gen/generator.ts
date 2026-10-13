@@ -276,20 +276,18 @@ export function generateUnit(input: GenerateInput, opts: GenOptions = {}): GenRe
   return { unit, audit: unit.genAudit! };
 }
 
-/** 造怪器可用特质清单（按用途分组，面板选择器用） */
+/** 可选特质清单（与内置世界书同一分组，面板选择器用）；停用项与身体/装备自动项不在其中。 */
+export const TRAIT_GROUPS: Readonly<Record<string, readonly string[]>> = {
+  攻击: ['ap-weapon', 'ap-master', 'anti-infantry', 'anti-large', 'monster-hunter', 'anti-air', 'berserk', 'poison-strike', 'sneak-attack', 'lifesteal', 'melee-master', 'sharpshooter', 'versatile'],
+  防护: ['guardian', 'guardian-greater', 'regen', 'tenacity', 'agile', 'natural-armor', 'indomitable', 'fortification', 'shield-wall', 'pike-wall', 'loose-formation', 'inorganic'],
+  士气: ['fear', 'terror', 'steadfast', 'stubborn', 'commander'],
+  机动: ['charge-strong', 'trample', 'skirmisher', 'mounted-archer', 'vanguard', 'stalk', 'recon', 'flying', 'mechanized', 'fatigue-trained'],
+  地形与工程: ['forest-lore', 'mountain-born', 'plains-runner', 'urban-fighter', 'night-fighter', 'water-crossing', 'siege-assault', 'siege-breaker'],
+  后勤: ['medic'],
+};
 export function traitCatalog(registry?: Map<string, Trait>): { group: string; traits: Trait[] }[] {
   const reg = registry ?? traitRegistry();
-  const groups: Record<string, string[]> = {
-    反制: ['ap-weapon', 'ap-master', 'armor-piercing-shot', 'anti-infantry', 'anti-large', 'anti-mobile', 'pike-wall', 'monster-hunter'],
-    防御: ['heavy-armor', 'super-heavy', 'shield-wall', 'guardian', 'guardian-greater', 'regen'],
-    攻击: ['berserk', 'poison-strike', 'trample'],
-    士气: ['fear', 'terror', 'steadfast', 'stubborn', 'commander'],
-    机动: ['charge-strong', 'mounted-archer', 'skirmisher', 'vanguard', 'stalk', 'fast'],
-    风格: ['melee-master', 'sharpshooter', 'versatile', 'mechanized'],
-    环境: ['urban-fighter', 'siege-breaker', 'fortification', 'plains-runner', 'forest-lore', 'mountain-born', 'night-fighter', 'water-crossing', 'siege-assault'],
-    规模: ['large', 'titan', 'flying', 'loose-formation'],
-    精英: ['veteran', 'elite', 'fatigue-trained'],
-  };
+  const groups = TRAIT_GROUPS;
   return Object.entries(groups).map(([group, ids]) => ({
     group,
     traits: ids.map((id) => reg.get(id)).filter((t): t is Trait => !!t),

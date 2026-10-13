@@ -16,6 +16,8 @@ import { sharedParticipants, engagementWidth } from './exposure.js';
 import { formationNode } from './mass/formation.js';
 import { sameLayer, isAirborne } from './aerial.js';
 
+/** V15 编队用道具时，实际出手人数不超过本次消耗的件数。 */
+const itemParticipants = (ability: Ability, participants: number) => ability.itemDoses === undefined ? participants : Math.min(participants, ability.itemDoses);
 type DamageEffect = Pick<Extract<EffectOp, { op: 'damage' }>, 'baseDice' | 'apDice' | 'shape' | 'tag'>;
 /** 技法与合法基础攻击共用实际武器、通道、穿透和展开，技能P只限制其可发挥预算。 */
 export function skillAttack(context: ObservationContext, actor: Combatant, target: Combatant, ability: Ability, effect: DamageEffect, rules?:AttackOpts['rules']): Pick<AttackOpts, 'abilityDamage' | 'weaponOverride' | 'participants' | 'ranged'> {
@@ -23,7 +25,9 @@ export function skillAttack(context: ObservationContext, actor: Combatant, targe
     const width=engagementWidth(actor,target,ability.delivery!=='melee',context.battlefield,context.fieldTags);
     const attached=new Set(context.attached?.values()??[]);
     const cohort=context.units.filter(u=>!attached.has(u.id)&&sameLayer(actor,u)&&(context.mode==='mass'?formationNode(actor).id===formationNode(u).id:u.pos===actor.pos));
-    return {participants:sharedParticipants(actor,cohort,width,target),abilityDamage:{power:ability.power,accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect,damageScale:ability.damageScale,channel:ability.channel,penetration:ability.penetration,delivery:ability.delivery,areaExposure:ability.areaExposure},ranged:ability.delivery!=='melee'};
+    // Independent consumables already paid for each participant. Applying the
+    // held weapon's frontage again would discard part of the volley's damage.
+    return {participants:ability.itemDoses ?? sharedParticipants(actor,cohort,width,target),abilityDamage:{power:ability.power,accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect,damageScale:ability.damageScale,channel:ability.channel,penetration:ability.penetration,delivery:ability.delivery,areaExposure:ability.areaExposure},ranged:ability.delivery!=='melee'};
   }
   if (actor.rulesVersion !== 'v2' || !ability.damageBasis) return { abilityDamage: { power:ability.power,accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect, damageScale:ability.damageScale,channel: ability.channel, penetration: ability.penetration, delivery: ability.delivery, areaExposure: ability.areaExposure }, ranged: ability.delivery ? ability.delivery !== 'melee' : effect.tag === 'ranged' ? true : undefined };
   let weapon: Weapon | undefined;
@@ -50,7 +54,7 @@ export function skillAttack(context: ObservationContext, actor: Combatant, targe
   const attached = new Set(context.attached?.values() ?? []);
   const cohort = context.units.filter((u) => !attached.has(u.id) && sameLayer(actor, u) && (context.mode === 'mass' ? formationNode(actor).id === formationNode(u).id : u.pos === actor.pos));
   const budget=isCohort(actor)?equipmentBudget*Math.min(1,combatPowerBudget(ability.power??5,actor.damageModel)/combatPowerBudget(weapon.level??5,actor.damageModel)):Math.min(skillBudget,equipmentBudget),scaled=scaledPowerDice(budget);
-  return { weaponOverride: weapon, ranged: isRangedWeapon(weapon), participants: sharedParticipants(actor, cohort, width, target),
+  return { weaponOverride: weapon, ranged: isRangedWeapon(weapon), participants: itemParticipants(ability, sharedParticipants(actor, cohort, width, target)),
     abilityDamage: { accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect, baseDice:actor.combatModel==='cohort-v2'?scaled.dice:cappedDice(budget),damageScale:actor.combatModel==='cohort-v2'?scaled.scale:undefined,apDice: undefined, channel, penetration: Math.max(0,(weapon.penetration ?? 1 + Math.floor((weapon.level ?? 5) / 2)) + bonusRating(ability.bonuses,'penetration',channel)), weaponBased: true } };
 }
 /** 低预算不能被最少一枚d6抬高；向下选取可表达且不超过预算的均值。 */

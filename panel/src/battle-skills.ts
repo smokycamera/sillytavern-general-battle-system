@@ -7,7 +7,9 @@ export function learnedSkills(unit: Combatant) {
 
 /** 施放列表只列已准备技能，物品与装备提供的能力不占技能位。 */
 export function battleAbilities(unit: Combatant) {
-  return unit.abilities.filter(a => unit.rulesVersion !== 'v2' || a.itemSourceId || a.equipmentSourceId || unit.preparedAbilityIds?.includes(a.id));
+  return unit.abilities.filter(a => a.itemSourceId
+    ? !!a.cost && (unit.resources[a.cost.resource] ?? 0) > 0
+    : unit.rulesVersion !== 'v2' || a.equipmentSourceId || unit.preparedAbilityIds?.includes(a.id));
 }
 
 export function battleSkillChangeReason(battle: SmallBattle | MassBattle, unitId: string): string | undefined {

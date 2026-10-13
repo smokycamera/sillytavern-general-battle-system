@@ -94,15 +94,6 @@ export interface Armor {
   level?: number;
 }
 
-/** 饰品：授予特质 */
-export interface Trinket {
-  id: string;
-  name: string;
-  /** 授予的特质 id */
-  grantsTrait: string;
-  desc?: string;
-}
-
 // ---------- 技能（通用资源模型，无法术位） ----------
 
 export type AbilityTarget = 'enemy' | 'ally' | 'self' | 'zone';
@@ -126,10 +117,12 @@ export type EffectOp =
   | { op: 'dispel'; polarity: 'positive' | 'negative'; count: 1 | 2 }
   | { op: 'resource'; resource: string; amount: number; maximum?: 'training' }
   | { op: 'morale'; amount: number }
-  | { op: 'summon'; templateId: string; count: number };
+  | { op: 'summon'; templateId: string; count: number }
+  /** 施术者自身位移：dash 沿可走路线突进、blink 闪现到可见落点（两者在效果之前），withdraw 出手后后撤；reach 为格数。 */
+  | { op: 'move'; mode: 'dash' | 'blink' | 'withdraw'; reach: number };
 
-/** 区域携带实际效果；不递归生成区域或每轮无限召唤。召唤仍在施放时执行。 */
-export type ZonePayload = Exclude<EffectOp, { op: 'zone' | 'damage' | 'summon' }>;
+/** 区域携带实际效果；不递归生成区域或每轮无限召唤。召唤与施术者位移仍在施放时执行。 */
+export type ZonePayload = Exclude<EffectOp, { op: 'zone' | 'damage' | 'summon' | 'move' }>;
 
 export interface Ability {
   area?: { shape: 'cone' | 'line' | 'ring' | 'chain' | 'circle'; radius: number; maxTargets: number };
@@ -138,7 +131,7 @@ export interface Ability {
   /** 显式编辑的效果与数值不被入场公式重建。 */
   customized?: boolean;
   bonuses?: Enhancements;
-    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3' | 'skill-v5.0' | 'skill-v6.0' | 'skill-v6.1' | 'skill-zone-v1' | 'skill-zone-v2' | 'skill-zone-v3';
+    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3' | 'skill-v5.0' | 'skill-v6.0' | 'skill-v6.1' | 'skill-v7.0' | 'skill-zone-v1' | 'skill-zone-v2' | 'skill-zone-v3' | 'skill-zone-v4';
     damageScale?: number;
   recipe?: import('./data/skill-mechanisms.js').SkillRecipe;
   weaponUse?: 'auto' | 'melee' | 'ranged';
@@ -152,6 +145,12 @@ export interface Ability {
   fixedPower?: boolean;
   /** 战斗携行实物产生的临时行动；不属于已学/准备技能。 */
   itemSourceId?: string;
+  /** V15 一次性道具：喝、敷、注射的单体增益与治疗可用加速动作。 */
+  itemQuick?: boolean;
+  /** V15 一次性道具对编队的件数口径：member 每人一份，object 一件一个效果。 */
+  itemScaling?: 'member' | 'object';
+  /** 编队本次齐用实际消耗的件数；只存在于单次使用的派生行动，不写入存档。 */
+  itemDoses?: number;
   definitionId?: string;
   sourceId?: string;
   cooldownGroup?: string;
@@ -223,6 +222,12 @@ export interface Trait {
   /** 外部来源的执行链已接通；未完成项仍保留在全特质矩阵中继续实施。 */
   v2SourceReady?: boolean;
   v2Desc?: string;
+  /** V12 及以前战斗的说明；V13 改了效果的特质才有。 */
+  v12Desc?: string;
+  /** 停用：已有单位继续生效，正文与配装不再提供；replacement 是正文旧写法的新去处。 */
+  legacy?: { note: string; replacement?: string };
+  /** 由身体或装备自动产生，不能手写或授予。 */
+  derived?: string;
   id: string;
   name: string;
   desc: string;
@@ -276,9 +281,20 @@ export interface Combatant {
   resourceModel?: 'endurance-v1' | 'endurance-v2';
   /** V12 weapon/armor calibration, projected from the battle rules; absent keeps the frozen V11 behaviour. */
   armsModel?: 'arms-v1';
+  /** V13 trait overhaul, projected from the battle rules; absent keeps the frozen V12 trait rules. */
+  traitModel?: 'traits-v1';
+  /** V14 skill pricing (composite states priced per stat), projected from the battle rules; absent keeps V13 skill numbers. */
+  skillModel?: 'skills-v1';
+  /** V15 item system (graded specialisations, item action economy and per-piece formation use), projected from the battle rules. */
+  itemModel?: 'items-v1';
   battleZones?: import('./area-effects.js').BattleZone[];
   barrier?: { remaining: number; duration: number; sourceId?: string; defenses?: { power: number; duration: number }[] };
-  accessories?: Partial<Record<'accessory1' | 'accessory2', import('./items.js').AccessoryItem>>;
+  /** 旧版两格配件；只出现在 V15 之前开始、尚未结束的战斗快照里，新档一律用 gear。 */
+  accessories?: Partial<Record<'accessory1' | 'accessory2', import('./items.js').LegacyAccessory>>;
+  /** 已装备的佩戴、充能道具；与武器护甲一样是库存实物的投影，件数不限。 */
+  gear?: import('./items.js').GearItem[];
+  /** 单位自带专精的等级（L1–10），缺省 L5；只记录五项专精。 */
+  traitLevels?: Record<string, number>;
   /** 战外明确设置的初始状态；战果归档后恢复通常的出场重置规则。 */
   storyState?: { resources?: boolean; abilityState?: boolean; fatigue?: boolean };
   bonuses?: Enhancements;
@@ -306,6 +322,8 @@ export interface Combatant {
   tacticalRevealed?: boolean;
   /** 先锋前出前的会战部署偏好，仅本场保存，归档还原。 */
   vanguardOrigin?: string;
+  /** V13 工事据守的位置（小战格子或会战阵位）；离开即失效，原地完整休整后改为新位置。只在战斗快照里。 */
+  entrenchedAt?: number | string;
   legacyScale?: 'mook';
   /** base已包含的永久特质属性，用于撤销/改学后的净修正；不包含装备或祝福。 */
   bakedTraitStats?: Partial<Record<'atk' | 'def' | 'spd' | 'morale', number>>;
@@ -343,7 +361,6 @@ export interface Combatant {
   /** 副武器（spawn weapon2 显式声明）：支持全部武器种类，共用主行动，独立装填 */
   sidearm?: Weapon;
   armor?: Armor;
-  trinkets?: Trinket[];
   abilities: Ability[];
   abilityState: AbilityState[];
   /** 资源池：体力/怒气/充能，键自定义 */
@@ -420,6 +437,8 @@ export interface GenerateInput {
   /** 威胁等级 1~10 */
   level: number;
   traits: string[];
+  /** 专精等级 L1–10（只记录五项专精），缺省 L5。 */
+  traitLevels?: Record<string, number>;
   side: Side;
   /** 时代皮肤 id，纯术语层 */
   era?: string;
@@ -504,8 +523,9 @@ export interface BattleLogEntry {
   resolutions?: AttackResolution[];
   /** 事件发生时的位置，用于本地演出；观测裁剪后不可见的事件不公开这些坐标。 */
   locations?: Record<string, number>;
-  /** 逐格移动的起止格；有高低差的实际高度地图另记两端站立高度（空中不记）。战报据此合并连续移动。 */
-  move?: { from: number; to: number; fromHeight?: number; toHeight?: number };
+  /** 逐格移动的起止格；有高低差的实际高度地图另记两端站立高度（空中不记）。战报据此合并连续移动。
+   *  skill 标记技能自带的位移：before 是出手前的突进/闪现与单纯位移技能（战报并入其后的技能行，技能名先写），after 是出手后的后撤。 */
+  move?: { from: number; to: number; fromHeight?: number; toHeight?: number; skill?: 'before' | 'after' };
   /** 事件涉及的单位与当时可观察阵营；旧无观测元数据日志不用于V2战内泄露事实。 */
   participants?: string[];
   observedBy?: Side[];
@@ -537,6 +557,12 @@ export interface RulePack {
   resourceModel?: 'endurance-v1' | 'endurance-v2';
   /** V12 weapon/armor calibration (crew, demolition, light armor, reach, grid ranges); absent keeps V11. */
   armsModel?: 'arms-v1';
+  /** V13 trait overhaul (工事据守、工兵、拒马、散兵单体与步枪编队自动散兵); absent keeps V12. */
+  traitModel?: 'traits-v1';
+  /** V14 skill pricing: 同时改两项属性的状态按两项附加效果计价; absent keeps V13. */
+  skillModel?: 'skills-v1';
+  /** V15 道具系统：专精十级、道具行动与编队件数、AI 保留价值、冲锋与远程看实际配装; absent keeps V14. */
+  itemModel?: 'items-v1';
   combatModel?: 'cohort-v1' | 'cohort-v2';
   /** 武器直击余伤100%在目标编队内传递；旧规则缺省关闭。 */
   weaponOverflow?: boolean;

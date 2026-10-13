@@ -5,13 +5,13 @@ interface IdentityUnit {
   snapshot?: IdentityUnit;
   weapon?: { id: string }; sidearm?: { id: string }; armor?: { id: string }; shield?: { id: string };
   accessories?: Record<string, { id: string } | undefined>;
-  trinkets?: { id: string }[];
+  gear?: { id: string }[];
   abilities?: { id: string; cooldownGroup?: string }[];
   traitSources?: { id: string }[];
 }
 export interface NarrativeIdentitySave {
   storage?: IdentityUnit[];
-  inventory?: { id: string; mechanics?: { kind: string }; lootType?: string }[];
+  inventory?: { id: string; mechanics?: { kind: string; value?: unknown }; lootType?: string }[];
   battle?: { snap: Record<string, unknown> } | null;
   narrativeIdState?: NarrativeIdState;
 }
@@ -24,13 +24,14 @@ export function narrativeIds(save: NarrativeIdentitySave) {
   for (const unit of units) register(unit.id, 'u');
   for (const item of save.inventory ?? []) {
     const kind = item.mechanics?.kind ?? item.lootType;
-    register(item.id, kind === 'weapon' ? 'w' : kind === 'armor' || kind === 'shield' ? 'a' : kind === 'consumable' ? 'c' : 'i');
+    const single = kind === 'item' && (item.mechanics?.value as { recipe?: { form?: string } } | undefined)?.recipe?.form === 'single';
+    register(item.id, kind === 'weapon' ? 'w' : kind === 'armor' || kind === 'shield' ? 'a' : kind === 'consumable' || single ? 'c' : 'i');
   }
   for (const record of units) {
     const unit = record.snapshot ?? record;
     for (const gear of [unit.weapon, unit.sidearm]) register(gear?.id, 'w');
     for (const gear of [unit.armor, unit.shield]) register(gear?.id, 'a');
-    for (const gear of [...Object.values(unit.accessories ?? {}), ...(unit.trinkets ?? [])]) register(gear?.id, 'i');
+    for (const gear of [...Object.values(unit.accessories ?? {}), ...(unit.gear ?? [])]) register(gear?.id, 'i');
     for (const ability of unit.abilities ?? []) {
       register(ability.id, 'k');
       if (ability.cooldownGroup !== ability.id) register(ability.cooldownGroup, 'g');

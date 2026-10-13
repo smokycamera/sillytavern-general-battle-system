@@ -6,8 +6,8 @@ const hero = (id: string, side: 'ally' | 'enemy' = 'ally') => {
   unit.id = id; unit.tags.push('zone:中军', 'rank:front'); return unit;
 };
 function carrier() {
-  const mechanics = compileItem({ kind: 'consumable', mechanism: 'heal', power: 3 }, { id: 'dose', seed: 'dose' });
-  if (mechanics.kind !== 'consumable') throw new Error('fixture');
+  const mechanics = compileItem({ kind: 'item', form: 'single', power: 3, active: 'generic:buff:heal' }, { id: 'dose', seed: 'dose' });
+  if (mechanics.kind !== 'item') throw new Error('fixture');
   return attachCarriedItems(hero('a'), [{ id: 'dose', name: '急救剂', quantity: 2, revision: 1, mechanics }]);
 }
 describe('实物战内行动', () => {
@@ -18,10 +18,10 @@ describe('实物战内行动', () => {
     expect(a.preparedAbilityIds).not.toContain(ability.id);
     const before = structuredClone(b.toSnapshot());
     const option = b.getActionOptions(a.id).find((o) => o.id === ability.id)!;
-    expect(option.targets!.find((t) => t.targetId === a.id)!.preview!.healing).toBe(7);
+    expect(option.targets!.find((t) => t.targetId === a.id)!.preview!.healing).toBe(24);
     expect(b.toSnapshot()).toEqual(before);
     expect(b.useAbility(a.id, ability.id, a.id).ok).toBe(true);
-    expect(a.hp).toBe(17); expect(a.resources['item:dose']).toBe(1);
+    expect(a.hp).toBe(34); expect(a.resources['item:dose']).toBe(1);
     const after = structuredClone(b.toSnapshot());
     expect(b.useAbility(a.id, ability.id, a.id).ok).toBe(false); expect(b.toSnapshot()).toEqual(after);
     const restored = SmallBattle.fromSnapshot(after, { traitRegistry: registry });
@@ -50,7 +50,7 @@ describe('实物战内行动', () => {
     expect(b.useAbility(a.id, ability.id, a.id).ok).toBe(true);
     expect(a.resources['item:dose']).toBe(2); expect(b.orders.get(host.id)?.type).toBe('ability');
     expect(b.issue({ unitId: host.id, type: 'attack', targetId: e.id }).ok).toBe(false);
-    b.resolveRound(1); expect(a.hp).toBe(17); expect(a.resources['item:dose']).toBe(1);
+    b.resolveRound(1); expect(a.hp).toBe(34); expect(a.resources['item:dose']).toBe(1);
     const after = structuredClone(b.toSnapshot()); expect(() => b.resolveRound(1)).toThrow(/过期/); expect(b.toSnapshot()).toEqual(after);
   });
 });

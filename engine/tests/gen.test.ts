@@ -132,10 +132,11 @@ describe('特质库与皮肤', () => {
     expect(new Set(TRAITS.map((t) => t.id)).size).toBe(TRAITS.length);
   });
 
-  it('目录分组覆盖全部特质', () => {
+  it('目录分组覆盖全部可选特质，停用项与身体/装备自动项不在其中', () => {
     const cat = traitCatalog();
     const listed = cat.flatMap((g) => g.traits.map((t) => t.id));
-    expect(new Set(listed).size).toBe(TRAITS.length);
+    expect(new Set(listed).size).toBe(listed.length);
+    expect(new Set(listed)).toEqual(new Set(TRAITS.filter((t) => !t.legacy && !t.derived).map((t) => t.id)));
   });
 
   it('四套时代皮肤齐备且术语映射有效', () => {

@@ -13,7 +13,7 @@ function fixture() {
     const unit = generateUnit({ name: id, side: id === 'enemy' ? 'enemy' : 'ally', scale: 'hero', rulesVersion: 'v2', level: 3, weaponClass: 'sword', traits: [] }, { seed: id }).unit;
     unit.id = id; return unitRecordFromCombatant(unit);
   });
-  const potion = (id: string, assignedTo?: string) => ({ ...createInventoryItem(id, id, { kind: 'consumable', mechanism: 'heal', power: 3 }, id, 2), assignedTo });
+  const potion = (id: string, assignedTo?: string) => ({ ...createInventoryItem(id, id, { kind: 'item', form: 'single', power: 3, active: 'generic:buff:heal' }, id, 2), assignedTo });
   return prepareInventoryState({ schemaVersion: 2, factRevision: 1, storage, inventory: [potion('public'), potion('b-bag', 'b'), potion('a-bag', 'a'), { ...potion('empty'), qty: 0 }] });
 }
 
@@ -69,9 +69,14 @@ it('keeps the public-only selection across redraws and resets it on a chat chang
 it('supports unequip, return to public storage and transfer without exposing another unit inventory', async () => {
   const f = mount();
   const gear = f.save().inventory!.find(i => i.equippedTo?.unitId === 'a' && i.equippedTo.slot === 'primary')!;
-  await f.action('unequip', gear.id); await f.action('confirm');
+  await f.action('unequip', gear.id);
   expect(f.save().inventory!.find(i => i.id === gear.id)!.assignedTo).toBe('a');
   expect(f.save().inventory!.find(i => i.id === gear.id)!.equippedTo).toBeUndefined();
+  expect(document.querySelector('[data-action="inventory-confirm"]')).toBeNull();
+  await f.action('equip', gear.id);
+  expect(f.save().inventory!.find(i => i.id === gear.id)!.equippedTo).toEqual({ unitId: 'a', slot: 'primary' });
+  expect(document.querySelector('[data-action="inventory-confirm"]')).toBeNull();
+  await f.action('unequip', gear.id);
   f.choose('b'); expect(f.ids()).not.toContain(gear.id);
   f.choose('a'); await f.action('unassign', gear.id);
   expect(f.save().inventory!.find(i => i.id === gear.id)!.assignedTo).toBe('a');
@@ -79,6 +84,25 @@ it('supports unequip, return to public storage and transfer without exposing ano
   await f.action('assign', gear.id); await f.action('confirm');
   expect(f.save().inventory!.find(i => i.id === gear.id)!.assignedTo).toBe('b');
   f.choose('a'); expect(f.ids()).not.toContain(gear.id);
+});
+
+it('direct equipment saves block duplicate clicks and can retry a failed save without confirmation', async () => {
+  const f = mount(), before = structuredClone(f.save());
+  const gear = f.save().inventory!.find(i => i.equippedTo?.unitId === 'a' && i.equippedTo.slot === 'primary')!;
+  let release!: (value: any) => void;
+  const commit = vi.spyOn(f.controller, 'commitInventoryPreview').mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+  const button = document.querySelector<HTMLElement>(`[data-action="inventory-unequip"][data-item="${gear.id}"]`)!;
+  const pending = f.panel.handleAction(button);
+  await f.panel.handleAction(button);
+  expect(commit).toHaveBeenCalledTimes(1);
+  expect(document.querySelector('[data-action="inventory-confirm"]')).toBeNull();
+  release({ status: 'failed', error: 'save failed' }); await pending;
+  expect(f.save()).toEqual(before);
+  expect(document.querySelector('[data-role="inventory-feedback"]')!.textContent).toContain('save failed');
+  await f.action('unequip', gear.id);
+  expect(f.save().inventory!.find(i => i.id === gear.id)!.equippedTo).toBeUndefined();
+  expect(f.save().factRevision).toBe(before.factRevision! + 1);
+  expect(document.querySelector('[data-action="inventory-confirm"]')).toBeNull();
 });
 
 it('limits bulk prompt selection to visible items and preserves observation restrictions', () => {

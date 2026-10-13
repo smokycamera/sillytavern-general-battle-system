@@ -17,7 +17,8 @@ import { recoveryCapacity } from './recovery.js';
  */
 
 import type { Ability, Combatant, RangeSpec, Weapon } from './types.js';
-import { healingAmount } from './items.js';
+import { healingAmount, equippedSourceIds } from './items.js';
+import { chargeCapable, itemsV15, rangedArchetype } from './item-model.js';
 import { activeTraitIds } from './trait-sources.js';
 import { aerialTargetReason, sameLayer, rangedTargetDistance, type AerialRangeSpace } from './aerial.js';
 import { heightReach } from './small/height-map.js';
@@ -214,8 +215,8 @@ export function weaponTargetReason(input: {
   if (input.charge) {
     if (actor.rulesVersion === 'v2' && ranged) return '冲锋需要近战武器';
     if (distance < 2) return '距离太近，无从冲锋（需 ≥2 带）';
-    if (actor.archetype !== 'mobile' && !activeTraitIds(actor).includes('charge-strong')) {
-      return '只有机动单位（或带冲锋特质）可以冲锋';
+    if (!chargeCapable(actor, activeTraitIds(actor))) {
+      return itemsV15(actor) ? '只有骑乘、快速载具或带冲锋强化的单位可以冲锋' : '只有机动单位（或带冲锋特质）可以冲锋';
     }
     return undefined;
   }
@@ -256,7 +257,7 @@ export function fallbackAbilityRange(actor: Combatant, ability: Ability, grid = 
   if (damage.tag === 'ranged') {
     return { min: 1, max: Math.max(1, actor.weapon?.range ?? 3), metric: 'grid', allowEngaged: false };
   }
-  if (actor.weapon?.tags?.includes('ranged') || actor.archetype === 'ranged') {
+  if (actor.weapon?.tags?.includes('ranged') || rangedArchetype(actor)) {
     return { min: 0, max: Math.max(1, actor.weapon?.range ?? 3), metric: 'grid', allowEngaged: true };
   }
   return { min: 0, max: Math.max(0, actor.weapon?.range ?? 0), metric: 'grid', allowEngaged: true };
@@ -284,7 +285,7 @@ export function abilityUsabilityReason(actor: Combatant, ability: Ability): stri
     if (ability.damageBasis && skillWeapon(actor,ability)?.recipe?.mechanism !== 'natural' && actor.conditions.some((c) => c.dur > 0 && standardConditionMap().get(c.id)?.preventAttack)) return '缴械状态不能使用武器技法';
     if (ability.delivery === 'magic' && actor.conditions.some((c) => c.dur > 0 && standardConditionMap().get(c.id)?.preventMagic)) return '沉默状态不能施放魔法技能';
     if (ability.itemSourceId && !actor.carriedItems?.some((i) => i.id === ability.itemSourceId)) return '携行物品来源已失效';
-    if (ability.equipmentSourceId && !Object.values(actor.accessories ?? {}).some(item => item?.id === ability.equipmentSourceId)) return '提供这项能力的配件已卸下';
+    if (ability.equipmentSourceId && !equippedSourceIds(actor).includes(ability.equipmentSourceId)) return '提供这项能力的配件或道具已卸下';
     if (!ability.itemSourceId && !ability.equipmentSourceId && !actor.preparedAbilityIds?.includes(ability.id)) return '已学但尚未准备';
     if (ability.requires === 'shield' && !actor.shield) return '需要实际盾牌';
     if (ability.requires === 'melee' && !meleeWeapon(actor)) return '需要近战武器';
@@ -314,7 +315,7 @@ export function abilityTargetReason(input: {
 }): string | undefined {
   const { actor, ability } = input;
   const target = ability.target === 'self' ? actor : input.target ?? (ability.target === 'ally' ? actor : undefined);
-  if (target && ability.targetBody && target.body !== ability.targetBody) return '维修用品只能修理车辆';
+  if (target && ability.targetBody && target.body !== ability.targetBody && !(target.rulesVersion === 'v2' && activeTraitIds(target).includes('inorganic'))) return '维修用品只能修理车辆或非生物';
   if (target && ability.effects.length && ability.effects.every(e => e.op === 'barrier' && (target.barrier?.remaining ?? 0) >= e.amount && (target.barrier?.duration ?? 0) >= e.dur
     && (!(e.defensePower ?? ability.power) || target.barrier?.defenses?.some(d => d.power >= (e.defensePower ?? ability.power)! && d.duration >= e.dur))
     || e.op === 'resource' && !skillResourceChange(target, e))) return '目标已经有足够的屏障或精力';

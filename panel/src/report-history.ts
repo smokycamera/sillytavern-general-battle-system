@@ -53,7 +53,7 @@ export function stampNewBattleReports(previous: NarrativeSave, next: NarrativeSa
 }
 
 export function reportRestartReason(save: NarrativeSave, report: BattleReport): string | undefined {
-  if(!report.start || report.start.version!==1)return '这份旧战报没有开局存档记录；新版开战后保存的战报支持原局重战';
+  if(!report.start || report.start.version!==1)return '这份战报缺少开局记录，无法恢复原局重战';
   if(report.supersededBy)return '这份战果已被重战替代，请选择最近一次战报';
   if((save.committedOutcomeIds??[]).at(-1)!==report.id)return '仅可重打最近一场已结算战斗';
   if(save.battle && `${save.battle.kind}:${String(save.battle.snap.seed)}`!==report.id)return '请先结束并收兵当前战斗';

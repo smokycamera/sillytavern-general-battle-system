@@ -1,8 +1,11 @@
 import { normalizeNarrativeSpec } from './spec-tolerance.js';
 import { simplifiedChinese, simplifiedSpecification } from './traditional-chinese.js';
 /** 正文格式层：只提取标签并修正常见书写差异，不生成缺失身份或战斗数值。 */
-export interface ProtocolTag { name: string; attrs: string; raw: string; complete: boolean; block: number; start?: number; end?: number; attrsStart?: number }
-export interface ProtocolAttribute { key: string; raw: string; start: number; end: number; value: string }
+export interface ProtocolTag { name: string; attrs: string; raw: string; complete: boolean; block: number; start?: number; end?: number; attrsStart?: number; attrsOffsets?: number[] }
+export interface ProtocolAttribute { key: string; raw: string; start: number; end: number; value: string; valueOffsets: number[] }
+export class ProtocolSyntaxError extends Error {
+  constructor(message: string, public start: number, public end: number, public field?: string) { super(message); }
+}
 const compactKey = (value: string) => value.toLowerCase().replace(/[-_]/g, '');
 export function protocolName(value: string): string {
   const key = compactKey(value);
@@ -118,7 +121,8 @@ export function scanProtocolTags(text: string, known: ReadonlySet<string>): { ta
     // 事件自闭合或带“名称=值”属性；<options>、<type> 等包装标签和规则里提到的 <spawn> 都不是事件。
     const eventLike = /\/\s*$/.test(attrText) || /(?:^|[\s,，;；])[a-z][a-z0-9_-]*\s*[=＝:：]/i.test(attrs);
     if (known.has(name) ? !block && !eventLike : !block || !eventLike || HTML_TAGS.has(name)) continue;
-    tags.push({ name, attrs, raw, complete, block, start: offsets[found.index], end: (offsets[end - 1] ?? offsets[found.index]!) + 1, attrsStart: offsets[attrsStart] ?? offsets[found.index] });
+    tags.push({ name, attrs, raw, complete, block, start: offsets[found.index], end: (offsets[end - 1] ?? offsets[found.index]!) + 1, attrsStart: offsets[attrsStart] ?? offsets[found.index],
+      attrsOffsets: [...offsets.slice(attrsStart, attrsStart + attrs.length), offsets[attrsStart + attrs.length] ?? (offsets[end - 1] ?? text.length - 1) + 1] });
   }
   return { tags, warnings };
 }
@@ -144,7 +148,7 @@ const enumAliases: Record<string, Record<string, string>> = {
   archetype: { 步兵: 'infantry', 近战: 'infantry', 射手: 'ranged', 远程: 'ranged', 机动: 'mobile', 骑兵: 'mobile' },
   body: { 人类: 'human', 人形: 'human', 大型: 'large', 载具: 'vehicle', 巨型: 'giant', 巨兽: 'giant' },
   light: { 白天: 'day', 日间: 'day', 夜晚: 'night', 夜间: 'night' },
-  type: { 武器: 'weapon', 护甲: 'armor', 消耗品: 'consumable', 材料: 'material', 任务: 'quest', 杂物: 'misc' },
+  type: { 武器: 'weapon', 护甲: 'armor', 道具: 'item', 消耗品: 'item', 配件: 'item', consumable: 'item', accessory: 'item', 材料: 'material', 任务: 'quest', 杂物: 'misc' },
   protection: { 均衡: 'balanced', 动能: 'kinetic', 热能: 'thermal', 奥术: 'arcane' },
   enchant: { 无: 'none', 热能: 'thermal', 奥术: 'arcane' },
 };
@@ -154,45 +158,69 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
     quantity: tag.name === 'spawn' ? 'count' : 'qty', environment: 'env', lighting: 'light',
     ...(tag.name === 'give' ? { name: 'item' } : tag.name === 'field' ? { name: 'env' } : {}) };
   const result: Record<string, string> = Object.create(null);
+  const offset = (index: number) => tag.attrsOffsets?.[index] ?? (tag.attrsStart ?? 0) + index;
+  const syntaxError = (message: string, start: number, field?: string) => new ProtocolSyntaxError(message, offset(start), offset(tag.attrs.length), field);
   let rest = tag.attrs;
   while (rest.trim()) {
     rest = rest.replace(/^[\s,，;；]+/, '');
     const attrStart = tag.attrs.length - rest.length;
     const attr = rest.match(/^([a-z][a-z0-9_-]*)\s*[=＝:：]\s*/i);
-    if (!attr) throw new Error(tag.name + ' 属性缺少明确的名称或值：' + rest.slice(0, 45));
+    if (!attr) throw syntaxError(tag.name + ' 属性缺少明确的名称或值：' + rest.slice(0, 45), attrStart);
     const originalKey = attr[1]!, lookup = compactKey(originalKey);
     const key = allowed.find((key) => compactKey(key) === lookup) ?? aliases[lookup];
     rest = rest.slice(attr[0].length);
+    let valueStart = tag.attrs.length - rest.length;
     const quote = rest[0], pair: Record<string, string> = { '"': '"', "'": "'", '“': '”', '‘': '’', '「': '」', '『': '』' };
     const escapedQuote = rest.match(/^&(?:quot|apos|#34|#39|#x22|#x27);/i)?.[0];
     let value: string;
     if (escapedQuote) {
       const end = rest.toLowerCase().indexOf(escapedQuote.toLowerCase(), escapedQuote.length);
-      if (end < 0) throw new Error(tag.name + ' 的 ' + originalKey + ' 安全显示引号未闭合');
+      if (end < 0) throw syntaxError(tag.name + ' 的 ' + originalKey + ' 安全显示引号未闭合', attrStart, key ?? originalKey);
+      valueStart += escapedQuote.length;
       value = rest.slice(escapedQuote.length, end); rest = rest.slice(end + escapedQuote.length);
     } else if (quote && pair[quote]) {
       const end = rest.indexOf(pair[quote]!, 1);
-      if (end < 0) throw new Error(tag.name + ' 的 ' + originalKey + ' 引号未闭合，值尚不明确');
+      if (end < 0) throw syntaxError(tag.name + ' 的 ' + originalKey + ' 引号未闭合，值尚不明确', attrStart, key ?? originalKey);
+      valueStart++;
       value = rest.slice(1, end); rest = rest.slice(end + 1);
     } else {
       const next = rest.search(/[\s,，;；]+(?=[a-z][a-z0-9_-]*\s*[=＝:：])/i);
-      value = (next < 0 ? rest : rest.slice(0, next)).trim(); rest = next < 0 ? '' : rest.slice(next);
-      if (!value) throw new Error(tag.name + ' 的 ' + originalKey + ' 缺少值');
+      const unquoted = next < 0 ? rest : rest.slice(0, next);
+      valueStart += unquoted.length - unquoted.trimStart().length;
+      value = unquoted.trim(); rest = next < 0 ? '' : rest.slice(next);
+      if (!value) throw syntaxError(tag.name + ' 的 ' + originalKey + ' 缺少值', attrStart, key ?? originalKey);
     }
     const originalValue = value;
-    positions?.push({ key: key ?? originalKey, raw: tag.attrs.slice(attrStart, tag.attrs.length - rest.length),
-      start: (tag.attrsStart ?? 0) + attrStart, end: (tag.attrsStart ?? 0) + tag.attrs.length - rest.length, value: decodeEntities(value).trim() });
+    if (positions) {
+      let decoded = '', cursor = 0; const valueOffsets: number[] = [];
+      for (const entity of value.matchAll(/&(?:amp|quot|apos|lt|gt|#\d+|#x[0-9a-f]+);/gi)) {
+        const at = entity.index!, replacement = decodeEntities(entity[0]);
+        decoded += value.slice(cursor, at) + replacement;
+        for (let i = cursor; i < at; i++) valueOffsets.push(offset(valueStart + i));
+        for (let i = 0; i < replacement.length; i++) valueOffsets.push(offset(valueStart + at));
+        cursor = at + entity[0].length;
+      }
+      decoded += value.slice(cursor);
+      for (let i = cursor; i < value.length; i++) valueOffsets.push(offset(valueStart + i));
+      valueOffsets.push(offset(valueStart + value.length));
+      const leading = decoded.length - decoded.trimStart().length, trimmed = decoded.trim();
+      positions.push({ key: key ?? originalKey, raw: tag.attrs.slice(attrStart, tag.attrs.length - rest.length),
+        start: offset(attrStart), end: offset(tag.attrs.length - rest.length), value: trimmed, valueOffsets: valueOffsets.slice(leading, leading + trimmed.length + 1) });
+    }
     if (collectOnly) continue;
     value = decodeEntities(value).trim();
     if (!key || !allowed.includes(key)) { if(tag.name==='unit_set')throw Error('unit_set未知属性 '+originalKey+'，复杂字段请写data'); warnings.push(tag.name + ' 未使用额外属性 ' + originalKey); continue; }
     // 繁体正文先换成简体再查词表；名称、说明、编号和 data 保留原文。
     if (!textKeys.has(key)) value = specKeys.has(key) ? simplifiedSpecification(value) : simplifiedChinese(value);
     if (numericKeys.has(key)) value = numeric(value, key);
-    if (tag.name === 'spawn' && key === 'level') value = normalizeNarrativeSpec('L' + value).replace(/^L/i, '');
+    if (tag.name === 'spawn' && key === 'level') value = normalizeNarrativeSpec('L' + value, 'unit').replace(/^L/i, '');
     if (booleanKeys.has(key)) value = ({ '1': 'true', '0': 'false', yes: 'true', no: 'false', 是: 'true', 否: 'false', 有: 'true', 无: 'false' } as Record<string, string>)[value.toLowerCase()] ?? value.toLowerCase();
     if (enumAliases[key]) value = enumAliases[key]![value.toLowerCase()] ?? value.toLowerCase();
     if (key === 'env') value = value.toLowerCase();
-    if (['weapon', 'weapon2', 'armor', 'shieldSpec', 'spec'].includes(key)) value = value.split(/[,，、;；]/).map(normalizeNarrativeSpec).join(',');
+    if (['weapon', 'weapon2', 'armor', 'shieldSpec', 'spec'].includes(key)) {
+      const kind = key === 'armor' ? 'armor' : key === 'shieldSpec' ? 'shield' : ['weapon', 'weapon2'].includes(key) ? 'weapon' : undefined;
+      value = value.split(/[,，、;；]/).map(part => normalizeNarrativeSpec(part, kind)).join(',');
+    }
     if (['skills', 'traits', 'effects', 'clear'].includes(key)) {
       if (value.startsWith('[')) {
         const list: unknown = JSON.parse(value);

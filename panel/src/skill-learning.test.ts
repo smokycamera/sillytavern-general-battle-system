@@ -31,7 +31,10 @@ describe('逐项学习与冻结实例', () => {
       const ns = namespaceOf(source), binding = captureGeneration(save, ns, 'g'); binding.complete = true;
       const proposal = proposalFromMessage(source, binding)!, before = structuredClone(save);
       const next = prepareNarrativeTransaction(save, proposal, ns, true); expect(save).toEqual(before); expect(next.rosterIds).toEqual(['a']);
-      const restored = materializeUnitRecord(JSON.parse(JSON.stringify(next.storage![0])), registry); expect(restored.abilities[0]).toMatchObject({ name: '新击法', power: 7 }); expect(restored.abilities.slice(1)).toEqual(record.snapshot!.abilities.slice(1)); expect(restored.weapon).toEqual(record.snapshot!.weapon); expect(restored.hp).toBe(70);
+      // 旧技能名换成通用机制：换了名字就是新学一项，原有三项保持不变（写原名“原技法:重击L7”才会就地更新那一项）。
+      const restored = materializeUnitRecord(JSON.parse(JSON.stringify(next.storage![0])), registry);
+      expect(restored.abilities.find((a) => a.name === '新击法')).toMatchObject({ power: 7, definitionId: 'generic:physical-single:melee' });
+      expect(restored.abilities.filter((a) => a.name !== '新击法')).toEqual(record.snapshot!.abilities); expect(restored.weapon).toEqual(record.snapshot!.weapon); expect(restored.hp).toBe(70);
       expect(() => prepareNarrativeTransaction(next, proposal, ns, true)).toThrow(/过期|已经/);
       expect(() => prepareNarrativeTransaction({ ...save, battle: { kind: 'small', snap: { seed: 'active' } } }, proposal, ns, true)).toThrow(/战内/);
       const bad = proposalFromMessage({ ...source, text: '<tb><learn id="a" skills="重击L8"/><learn id="missing" skills="束缚术L5"/></tb>' }, binding)!;

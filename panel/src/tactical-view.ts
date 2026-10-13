@@ -10,7 +10,7 @@ import { participationText,memberHealthPanel } from './combat-model-view.js';
 import {hasMemberHealth} from '../../engine/src/member-health.js';
 import { difficultEngagementDescription } from '../../engine/src/exposure.js';
 import { renderBattleHighlights, traceOverlay, traceLocations, unitSymbol } from './battle-presentation.js';
-import { weaponReloadKey, terrainName, landmarkAt, landmarkCells, cellLabel, gridDistance, inBounds, moraleLabel, isAirborne, activeTraitIds, postureLabel, concealmentLabel, standardConditionMap, approx, type SmallBattle, type ActionOption, type ActionPreview, type BattlefieldSpec, type Combatant, type Terrain, TERRAIN_NAMES } from '../../engine/src/index.js';
+import { weaponReloadKey, terrainName, landmarkAt, landmarkCells, cellLabel, gridDistance, inBounds, moraleLabel, isAirborne, activeTraitIds, postureLabel, concealmentLabel, worksLabel, entrenched, standardConditionMap, approx, type SmallBattle, type ActionOption, type ActionPreview, type BattlefieldSpec, type Combatant, type Terrain, TERRAIN_NAMES } from '../../engine/src/index.js';
 
 import { renderRoundFeedback } from './round-feedback.js';
 import { movementLabel } from '../../engine/src/tactics.js';
@@ -43,8 +43,8 @@ export function tacticalSelection(battle: SmallBattle, view: TacticalView, query
   const abilityIds = new Set(actor ? battleAbilities(actor).map(a => a.id) : []);
   const options = allOptions.filter((o) => o.kind === 'ability' ? abilityIds.has(o.id) : ['weapon', 'charge'].includes(o.kind));
   const option = options.find((o) => o.id === view.mode) ?? options.find((o) => o.id === 'weapon');
-  const target = option?.targets?.find((t) => t.targetId === view.targetId)
-    ?? option?.targets?.find((t) => t.enabled) ?? option?.targets?.[0];
+  const target = view.targetId !== undefined ? option?.targets?.find((t) => t.targetId === view.targetId)
+    : option?.targets?.find((t) => t.enabled) ?? option?.targets?.[0];
   const canControl = !!actor && actor.id === battle.active?.id && actor.status === 'ready' && !battle.isOver();
   return { visible, actor, allOptions, options, option, target, canControl, query: actor ? { battle, actor, options: allOptions } : undefined };
 }
@@ -54,7 +54,12 @@ export function tacticalSelection(battle: SmallBattle, view: TacticalView, query
 export function selectTacticalElement(battle: SmallBattle, view: TacticalView, input: { cell?: number; unitId?: string; mode?: string; actor?: boolean }): TacticalQuery | undefined {
   const field = battle.battlefield;
   if (!field) return;
-  if (input.mode !== undefined) { view.mode = input.mode; view.cell = undefined; view.targetId = undefined; return; }
+  if (input.mode !== undefined) {
+    // Remember even the initially displayed target before changing the action.
+    const selection = tacticalSelection(battle, view);
+    view.targetId ??= selection.target?.targetId;
+    view.mode = input.mode; view.cell = undefined; return selection.query;
+  }
   const selection = tacticalSelection(battle, view);
   const cell = input.cell ?? selection.visible.find((u) => u.id === input.unitId)?.pos;
   if (cell === undefined || !inBounds(field, cell)) return selection.query;
@@ -97,12 +102,12 @@ function terrainDescription(terrain: Terrain, actor?: Combatant,heightRules=fals
     shallow_water: '可以涉水，通常花费2移动；航渡单位花费1。不能从水中发起地面冲锋。' + (heightRules ? footing : ''),
     deep_water: '地面单位需要航渡或完好桥梁；航渡花费3移动。',
     swamp: '移动花费3，航渡单位花费2；不适合地面冲锋。' + (heightRules ? footing : ''),
-    cliff: '自然硬障碍，不是可破坏城墙；高障碍也遮挡低空射线。',
+    cliff: '不可破坏的自然障碍，按高度遮挡低空射线。',
     cover: '地面单位被一格以外的武器攻击时，防御提高2。',
     wall: '阻挡地面通行与地面直射；空中单位可越过。',
     rough: '地面移动花费2点，' + difficultEngagementDescription(actor?.damageModel) + '。',
     forest: '地面单位抵御一格以外的远射时防御提高2；' + difficultEngagementDescription(actor?.damageModel) + '。',
-    hill: heightRules?'台地：只按实际高度结算居高防御与射程，没有山地额外防御、攻击惩罚或交战限制；台地内部正常移动，上坡额外消耗移动。':'地面单位面对不在山地的攻击者时防御提高1；' + difficultEngagementDescription(actor?.damageModel) + '。',
+    hill: heightRules?'台地内部正常移动，上坡额外消耗移动；居高加成按高度结算。':'地面单位面对不在山地的攻击者时防御提高1；' + difficultEngagementDescription(actor?.damageModel) + '。',
   }[terrain];
   const penalty = terrain === 'forest' || terrain === 'hill'&&!heightRules
     ? traits.includes(terrain === 'forest' ? 'forest-lore' : 'mountain-born') ? '当前单位适应该地形，免额外移动与攻击惩罚。' : '未适应的地面单位在此攻击降低1。'
@@ -112,12 +117,24 @@ function terrainDescription(terrain: Terrain, actor?: Combatant,heightRules=fals
 
 function objectiveDetails(battle: SmallBattle): string {
   const goal = battle.battlefield!.objective;
-  if (goal.kind === 'annihilation') return '歼灭战：使敌方全部失去作战能力获胜，不存在占点胜利。达到期限仍未分胜负则僵持。';
-  if (goal.kind === 'control' && goal.cells && goal.attackingSide) return `${goal.attackingSide === 'enemy' ? '我方防守' : '我方进攻'}。旗区内攻方独占时每完整轮累计一次，共需${goal.rounds}轮；争夺暂停，攻方全部离开清零。墙顶、空中、失能和溃退单位不能占领。守方坚持到第${goal.limit}轮结束获胜。<div class="objective-progress">攻方占领 ${battle.controlRounds[goal.attackingSide ?? 'ally']}/${goal.rounds}</div>`;
-  if (goal.kind === 'control') return `${goal.attackingSide ? (goal.attackingSide === 'ally' ? '我方进攻，敌方防守。' : '我方防守，敌方进攻。') + '仅攻方累计占领；守方坚持至第' + goal.limit + '轮结束获胜。' : ''}轮末由可行动的地面单位站在目标格，且目标及相邻一格没有其他阵营的可行动地面单位，才累计占领。占领当轮不计，之后连续守住${goal.rounds}个完整回合；任何中断归零。<div class="objective-progress">我方 ${battle.controlRounds.ally}/${goal.rounds} · 敌方 ${battle.controlRounds.enemy}/${goal.rounds}</div>`;
+  if (goal.kind === 'annihilation') return '使敌方全部失去作战能力获胜。达到期限仍未分胜负则僵持。';
+  if (goal.kind === 'control' && goal.cells && goal.attackingSide) return `${goal.attackingSide === 'enemy' ? '我方防守' : '我方进攻'}。旗区内攻方独占时每完整轮累计一次，共需${goal.rounds}轮；争夺暂停，攻方全部离开清零。墙顶、空中、失能和溃退单位不能占领。守方坚持到第${goal.limit}轮结束获胜。`;
+  if (goal.kind === 'control') return `${goal.attackingSide ? (goal.attackingSide === 'ally' ? '我方进攻，敌方防守。' : '我方防守，敌方进攻。') + '仅攻方累计占领；守方坚持至第' + goal.limit + '轮结束获胜。' : ''}轮末由可行动的地面单位站在目标格，且目标及相邻一格没有其他阵营的可行动地面单位，才累计占领。占领当轮不计，之后连续守住${goal.rounds}个完整回合；任何中断归零。`;
   const escorted = battle.visibleCombatants('ally').find((u) => u.id === goal.unitId);
   const enemyEscort = battle.combatants.find((u) => u.id === goal.unitId)?.side === 'enemy';
-  return `${enemyEscort ? '我方拦截，敌方护送' : '我方护送，敌方拦截'}。${esc(escorted?.name ?? '指定护送单位')}须以可行动的地面状态进入此格，抵达则${enemyEscort ? '敌方' : '我方'}获胜。<div>期限：第${goal.limit}轮结束前。${goal.defenderWins ? '目标被消灭、从其他位置撤离或逾期未抵达，拦截方获胜；濒死仍可救援。' : '旧任务逾期未决则僵持。'}</div>`;
+  return `${enemyEscort ? '我方拦截，敌方护送' : '我方护送，敌方拦截'}。${esc(escorted?.name ?? '指定护送单位')}须以可行动的地面状态进入此格，抵达则${enemyEscort ? '敌方' : '我方'}获胜。<div>期限：第${goal.limit}轮结束前。${goal.defenderWins ? '目标被消灭、从其他位置撤离或逾期未抵达，拦截方获胜；濒死仍可救援。' : '任务逾期未决则僵持。'}</div>`;
+}
+
+function objectiveSummary(battle: SmallBattle): string {
+  const goal = battle.battlefield!.objective;
+  if (goal.kind === 'annihilation') return '使敌方全部失去作战能力获胜。';
+  if (goal.kind === 'control') {
+    const sides = goal.attackingSide ? goal.attackingSide === 'enemy' ? '我方防守，敌方进攻。' : '我方进攻，敌方防守。' : '';
+    if (goal.cells && goal.attackingSide) return `${sides}攻方独占旗区累计${goal.rounds}轮获胜；守方坚持至第${goal.limit}轮获胜。`;
+    return `${sides}${goal.attackingSide ? '攻方' : '任一方'}连续守住${goal.rounds}个完整回合获胜。`;
+  }
+  const enemyEscort = battle.combatants.find(u => u.id === goal.unitId)?.side === 'enemy';
+  return enemyEscort ? '阻止护送对象在期限内抵达出口。' : '护送对象须在期限内抵达出口。';
 }
 
 function tileInspector(battle: SmallBattle, view: TacticalView, selection: ReturnType<typeof tacticalSelection>): string {
@@ -140,7 +157,8 @@ function tileInspector(battle: SmallBattle, view: TacticalView, selection: Retur
   const gateReason = actor && structure?.kind === 'gate' ? battle.gateReason(actor.id, cell) : undefined;
   const climbReason = actor ? battle.climbReason(actor.id, cell) : undefined;
   return `<div class="map-inspector" aria-live="polite"><div class="inspector-heading"><strong>${cellLabel(field, cell)} · ${landmarkAt(field, cell) ? esc(landmarkAt(field, cell)!) + ' · ' : ''}${terrainName(field, cell)}${field.spatialRulesVersion===2?' · '+heightDescription(field,cell):''}</strong><span>${actor && traversable ? Number.isFinite(entry)?'相邻进入花费'+entry+'移动':'需经坡道或阶梯接近' : terrain === 'wall' || !traversable ? '地面不可通行' : ''}</span></div>
-    <p>${terrainDescription(terrain, actor,field.spatialRulesVersion===2)}${field.spatialRulesVersion===2?' '+heightDescription(field,cell)+'；'+HEIGHT_RULES:''}</p>
+    <p>${terrainDescription(terrain, actor,field.spatialRulesVersion===2)}</p>
+    ${field.spatialRulesVersion===2?'<details data-detail-id="height-rules"><summary>高度规则</summary><p>'+HEIGHT_RULES+'</p></details>':''}
     ${structure ? `<p><b>${structureDisplayName(field, cell)} L${structure.level}</b> · 耐久 ${structure.hp}/${structure.hpMax}${structure.top && structure.hp > 0 ? ' · 可登城防平台' : ''}${structure.kind === 'fortification' ? ' · 全向防护' : structure.facing ? ' · 朝向 ' + ({north:'北',south:'南',east:'东',west:'西'}[structure.facing]) : ''}</p>` : ''}
     ${field.overlays?.[cell]?.length ? '<p>' + field.overlays[cell]!.map(o => o === 'road' ? '道路' : '瓦砾：基础2移动；慢速单位花费整轮基础移动力可前进一步' + (field.spatialRulesVersion === 2 ? '；地面单位抵御一格以外的远射时防御+1' : '')).join(' · ') + '</p>' : ''}
     <div class="structure-actions">${structureActions}
@@ -164,13 +182,16 @@ function actionPreview(battle: SmallBattle, preview: ActionPreview | undefined, 
   const resistance = p?.penetrationFactor !== undefined
     ? `<div class="penetration-preview ${p.penetrationFactor === 0 ? 'grid-reason' : ''}">${p.channel ? { kinetic: '物理', thermal: '热能', arcane: '魔法' }[p.channel] : ''}穿透 ${p.penetration} 对防护 ${p.resistance} · ${p.penetrationFactor === 0 ? '无法穿透，不造成生命或人数损失' : (p.armorFactor===undefined?'穿透通过':'防护后保留') + Math.round(p.penetrationFactor * 100) + '%'}${p.shieldFactor!==undefined&&p.shieldFactor<1?' · 盾牌掩护减伤'+Math.round((1-p.shieldFactor)*100)+'%':''}${(p.armorScale??1)>1?' · 装甲等效耐久×'+Number(p.armorScale!.toFixed(2)):''}</div>` : '';
   const cost = option?.preview?.resource;
+  // V15 编队齐用按件数：对所选目标本次实际消耗的件数（英雄与旧规则为 1 件）。
+  const actor = battle.active, item = option?.kind === 'ability' && actor ? actor.abilities.find((a) => a.id === option.id && a.itemSourceId) : undefined;
+  const itemCost = item && actor ? battle.itemUse(actor, item, target ?? (item.target === 'self' ? actor : undefined)).ability.cost?.amount : undefined;
   return `<div class="action-preview" aria-live="polite">${target ? '<div class="preview-target">' + esc(target.name) + ' · ' + strengthDescription(target) + '</div>'+memberHealthPanel(target) : ''}${primary}${resistance}${p?.participants!==undefined ? `<p class="sub">${participationText(p)}</p>` : ''}
     ${p?.effects?.length ? '<div class="preview-effects">' + p.effects.map(esc).join('；') + '</div>' : ''}
     ${p?.areaTargets?.length ? '<div class="area-preview">实际波及：' + p.areaTargets.map(esc).join('、') + (p.areaPreviews?.length ? '<div>' + p.areaPreviews.map((hit) => { const affected = battle.visibleCombatants('ally').find((u) => u.id === hit.targetId); return affected ? '<div>' + esc(affected.name) + ' · 至少命中一次' + hitChanceText(hit) + ' · 命中后伤害' + hitDamageText(hit) + (affected.scale === 'hero'||hasMemberHealth(affected) ? '生命' : '人') + '</div>' : ''; }).join('') + '</div>' : '') + '</div>' : ''}
     ${p?.onHit ? '<div>' + esc(p.onHit) + '</div>' : ''}
-    <div class="preview-cost">主行动1${cost ? ' · ' + esc(cost.name === 'SP' ? '战技点' : cost.name) + ' ' + cost.cost + '/' + cost.available : ''}${p?.movementCost ? ' · 另用移动' + p.movementCost + (p.lands ? '，先降落接敌' : '') : ''}</div>
+    <div class="preview-cost">主行动1${cost ? item ? ' · 道具 本次' + (itemCost ?? cost.cost) + '件，剩余' + cost.available + '件' : ' · ' + esc(cost.name === 'SP' ? '战技点' : cost.name) + ' ' + cost.cost + '/' + cost.available : ''}${p?.movementCost ? ' · 另用移动' + p.movementCost + (p.lands ? '，先降落接敌' : '') : ''}</div>
     ${p?.fallDamage !== undefined ? `<div>${p.fallChance !== undefined && p.fallChance < 1 ? '迫降概率' + Math.round(p.fallChance * 100) + '%' : '将迫降'}，额外坠落损失至多${p.fallDamage}${p.forcedExit ? ' · 已知范围无落点，预计撤出' : p.landingCell !== undefined ? ' · 预计落点' + cellLabel(battle.battlefield!, p.landingCell) : ''}；未发现占位可能改变落点</div>` : ''}
-    ${p?.expectedDamage !== undefined ? `<details data-detail-id="grid-calculation"><summary>伤害详情</summary><p>${p.weaponName ? '使用' + esc(p.weaponName) + '。' : ''}${hitDamageDetails(p, unit)}</p>${p.attackScore !== undefined ? '<p>攻击合计' + p.attackScore + '，防御合计' + p.defenseScore + '。</p><p>攻击修正：' + esc(p.attackModifiers || '无') + '</p><p>防御修正：' + esc(p.defenseModifiers || '无') + '</p>' : ''}</details>` : ''}
+    ${p?.expectedDamage !== undefined ? `<details data-detail-id="grid-calculation"><summary>伤害详情</summary><p>${p.weaponName ? '使用' + esc(p.weaponName) + '。' : ''}${hitDamageDetails(p, unit)}</p>${p.participants!==undefined?'<p>'+esc(participationText(p,true))+'</p>':''}${p.attackScore !== undefined ? '<p>攻击合计' + p.attackScore + '，防御合计' + p.defenseScore + '。</p><p>攻击修正：' + esc(p.attackModifiers || '无') + '</p><p>防御修正：' + esc(p.defenseModifiers || '无') + '</p>' : ''}</details>` : ''}
   </div>`;
 }
 
@@ -188,7 +209,7 @@ function gridPiece(battle: SmallBattle, u: Combatant, isActor: boolean, ai = fal
   const badges = [ai ? 'AI' : '', isAirborne(u) ? '空' : isElevated(u) ? '顶' : '', u.suppression ? '压' : '', battle.overwatch.has(u.id) ? '警' : ''].filter(Boolean);
   const status = [ai ? 'AI托管' : '', isAirborne(u) ? '空中' : isElevated(u) ? '墙顶' : '', u.suppression ? '受压' : '', battle.overwatch.has(u.id) ? '警戒' : ''].filter(Boolean).join(' ');
   return `<span class="grid-piece ${side} ${u.scale === 'hero' ? 'hero' : 'company'} ${health}${u.status !== 'ready' ? ' status-' + u.status : ''}${isActor ? ' actor' : ''}${isAirborne(u) ? ' airborne' : ''}">`
-    + `<span class="grid-token">${unitSymbol(u)}${badges.length ? '<span class="grid-badges">' + badges.map(b => '<i>' + b + '</i>').join('') + '</span>' : ''}</span>`
+    + `<span class="grid-token">${unitSymbol(u)}${badges.length ? '<span class="grid-badges">' + badges.map(b => '<i' + (b === '空' ? ' class="flight-badge"' : '') + '>' + b + '</i>').join('') + '</span>' : ''}</span>`
     + `<span class="grid-piece-name"><span>${esc(name.slice(0, -2).join(''))}</span><span>${esc(name.slice(-2).join(''))}</span></span>`
     + `<span class="grid-hp"><span class="grid-affiliation">${u.side === 'ally' ? '我' : u.side === 'enemy' ? '敌' : '中'}</span><b>${u.hp}</b>/${u.base.hpMax}${status ? '<span class="grid-status"> ' + status + '</span>' : ''}</span></span>`;
 }
@@ -198,8 +219,13 @@ export interface TacticalAutomation { aiUnitIds: ReadonlySet<string>; nonProtago
 const MANUAL: TacticalAutomation = { aiUnitIds: new Set(), nonProtagonist: false, fullAuto: false };
 
 export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, automation: TacticalAutomation = MANUAL, query?: TacticalQuery): string {
+  return battle.withReadOnlyQueries(() => renderTacticalContent(battle, view, automation, query));
+}
+function renderTacticalContent(battle: SmallBattle, view: TacticalView, automation: TacticalAutomation, query?: TacticalQuery): string {
   const field = battle.battlefield!, s = tacticalSelection(battle, view, query);
   const { visible, actor, options, option, target, canControl } = s;
+  const targetMismatch = view.targetId !== undefined && !!option?.targets?.length && !target;
+  const targetReason = targetMismatch ? '所选目标不适用于此行动，请重新选择目标' : target?.reason;
   const active = visible.find((u) => u.id === battle.active?.id), over = battle.isOver();
   const activeLabel = active?.name ?? (battle.active?.side === 'enemy' ? '尚未发现的敌方单位' : '未定位单位');
   const autoToggle = `<label class="fixed-auto" title="含主控在内全部交给AI连续推进，取消勾选即暂停"><input type="checkbox" data-role="full-auto-battle" ${automation.fullAuto ? 'checked' : ''} ${over ? 'disabled' : ''}>全自动</label>`;
@@ -213,7 +239,7 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
   const special = view.mode.startsWith('flight:') || view.mode === 'retreat';
   const mode = special || view.mode === 'move' || view.mode === 'guard' ? view.mode : option?.id ?? 'weapon';
   const specialReason = actor ? mode === 'retreat' ? s.allOptions.find(o=>o.id==='retreat')?.reason : special ? battle.flightReason(actor.id,mode==='flight:takeoff') : undefined : '没有可用单位';
-  const specialDetail = mode === 'retreat' ? '撤出本场战斗，消耗主行动1。确认后该单位不再参战。' : '消耗移动1；' + (actor ? battle.flightRisks(actor.id,mode==='flight:takeoff').join('；') || '已知敌军没有可触发的起落反应。' : '');
+  const specialDetail = !special ? '' : mode === 'retreat' ? '撤出本场战斗，消耗主行动1。确认后该单位不再参战。' : '消耗移动1；' + (actor ? battle.flightRisks(actor.id,mode==='flight:takeoff').join('；') || '已知敌军没有可触发的起落反应。' : '');
   const movement = actor && view.cell !== undefined ? battle.pathPreview(actor.id, view.cell) : undefined;
   const paths = new Set(movement?.path?.cells ?? []);
   const reachable = new Set(canControl && actor && mode === 'move' ? battle.reachableCells(actor.id).map((p) => p.cells.at(-1)!) : []);
@@ -275,14 +301,14 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
   const actionReady = canControl && !!option?.enabled && (!option.targets?.length || !!target?.enabled);
   const executeReady = special ? canControl && !specialReason : mode === 'move' ? canControl && !!movement?.path && movement.path.cost > 0 : mode !== 'guard' && actionReady;
   const executeCommand = `<button class="primary" data-action="${mode === 'move' ? 'grid-move' : 'grid-execute'}" data-actor="${esc(actor?.id ?? '')}" data-mode="${esc(special ? mode : option?.id ?? 'weapon')}" data-target="${esc(target?.targetId ?? '')}" ${executeReady ? '' : 'disabled'} title="${mode === 'guard' ? '请在守备面板选择固守或警戒' : mode === 'move' ? '执行已预览的移动' : '执行已预览的攻击或技能'}">${mode === 'move' ? '执行移动' : '执行命令'}</button>`;
-  const targetUnit = visible.find(u => u.id === target?.targetId);
+  const targetUnit = visible.find(u => u.id === (target?.targetId ?? view.targetId));
   const preview = target?.preview ?? option?.preview;
   const commandTitle = special ? mode==='retreat'?'确认撤离':mode==='flight:takeoff'?'确认起飞':'确认降落' : mode === 'move' ? (view.cell === undefined ? '选择移动落点' : '移动 → ' + cellLabel(field, view.cell)) : mode === 'guard' ? '选择固守或警戒' : (option?.label ?? '行动') + (targetUnit ? ' → ' + targetUnit.name : '');
-  const commandDetail = special ? specialReason ?? specialDetail : !executeReady ? (!canControl ? '当前不可下令' : mode === 'move' ? movement?.reason ?? '请选择可达落点' : target?.reason ?? option?.reason ?? '请在下方选择守备') : mode === 'move' ? movement?.path ? '花费' + movement.path.cost + '移动 · 保留主行动' : movement?.reason ?? '点击可达地块' : preview?.healing !== undefined ? '预计恢复' + preview.healing : preview?.expectedDamage !== undefined ? '至少命中一次' + hitChanceText(preview) + ' · 命中后伤害' + hitDamageText(preview) + (preview.damageModel==='member-health'||targetUnit?.scale === 'hero' ? '生命' : '人') + ' · 主行动1' : preview?.resource ? '消耗' + preview.resource.cost + preview.resource.name : reasonText();
+  const commandDetail = special ? specialReason ?? specialDetail : !executeReady ? (!canControl ? '当前不可下令' : mode === 'move' ? movement?.reason ?? '请选择可达落点' : targetReason ?? option?.reason ?? '请在下方选择守备') : mode === 'move' ? movement?.path ? '花费' + movement.path.cost + '移动 · 保留主行动' : movement?.reason ?? '点击可达地块' : preview?.healing !== undefined ? '预计恢复' + preview.healing : preview?.expectedDamage !== undefined ? '至少命中一次' + hitChanceText(preview) + ' · 命中后伤害' + hitDamageText(preview) + (preview.damageModel==='member-health'||targetUnit?.scale === 'hero' ? '生命' : '人') + ' · 主行动1' : preview?.resource ? '消耗' + preview.resource.cost + preview.resource.name : reasonText();
   function reasonText(): string { return canControl ? '请查看行动预览' : '当前不可下令'; }
-  const reason = !canControl ? '当前行动者为' + activeLabel + '，可先查看战场。' : target?.reason ?? option?.reason;
+  const reason = !canControl ? '当前行动者为' + activeLabel + '，可先查看战场。' : targetReason ?? option?.reason;
   const movePanel = `<div class="move-preview">${movement ? movement.path ? '到' + cellLabel(field, view.cell!) + ' · 花费' + movement.path.cost + '移动，余' + (battle.movementLeft(actor!.id) - movement.path.cost) : esc(movement.reason ?? '') : '点击蓝边可达格，空格、队友格或濒死单位所在格均可预览移动；濒死单位不占容量，存活敌军仍阻路。'}
-    ${movement?.path && movement.path.cost > 0 ? '<div class="sub">' + (movement.risks.length ? movement.risks.map(esc).join('；') : '已知敌军没有可触发的移动反应。') + '</div>' : ''}
+    ${movement?.path && movement.path.cost > 0 ? '<div class="sub">' + (actor && entrenched(actor) && movement.path.cells.at(-1) !== actor.entrenchedAt ? '离开工事阵地，工事随之失效；' : '') + (movement.risks.length ? movement.risks.map(esc).join('；') : '已知敌军没有可触发的移动反应。') + '</div>' : ''}
     <button class="primary" data-action="grid-move" data-actor="${esc(actor?.id ?? '')}" ${canControl && movement?.path && movement.path.cost > 0 ? '' : 'disabled'}>确认移动${movement?.path ? ' · ' + movement.path.cost + '点' : ''}</button></div>`;
   return `<section class="tactical-workspace" data-ended="${over}" data-map-zoom="${zoom}">
     <div class="tactical-heading"><div><span class="sub">战术交战${battle.fieldTags.includes('night') ? ' · 夜间' : ''}${over ? '' : ' · <span class="turn-indicator"' + (active && active.pos !== undefined ? ' data-current-unit="' + esc(active.id) + '" data-current-position="' + active.pos + '" data-current-coordinate="' + cellLabel(field, active.pos) + '"' : '') + '>当前行动 <b>' + esc(activeLabel) + '</b></span>'}</span><h2>${goal}</h2></div><button class="objective-status" ${mission.kind === 'annihilation' ? 'disabled' : 'data-action="grid-cell" data-cell="' + mission.cell + '"'}>第${battle.round}/${field.objective.limit}轮${mission.kind === 'control' ? '<small>' + (mission.attackingSide ? '攻方占领 '+battle.controlRounds[mission.attackingSide] : '我方 '+battle.controlRounds.ally+' · 敌方 '+battle.controlRounds.enemy) + '/' + mission.rounds + '</small>' : ''}</button></div>
@@ -299,9 +325,10 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
       <div class="command-actor"><span class="sub">${canControl ? '正在指挥' : '我方单位'}${actorAi ? ' · AI托管中' : ''}</span><h3>${esc(actor?.name ?? '没有可用单位')}</h3>${actor ? '<span>' + strengthDescription(actor) + '</span>' : ''}</div>${actor?memberHealthPanel(actor):''}
       ${canControl && actor && battle.hasteAvailable(actor.id) ? `<button data-action="grid-haste" aria-pressed="${battle.hasteSelected.has(actor.id)}">${battle.hasteSelected.has(actor.id) ? '取消加速动作选择' : '下一次使用加速动作'}</button><small>可攻击、机动、起落、装填、固守或警戒，技能使用主行动。</small>` : ''}
       <div class="sub">${actor ? movementLabel(actor, battle.fieldTags) + ' · 精力 ' + approx(actor.resources.SP ?? 0, 1, 'down') + '/' + spCapacity(actor) : ''}</div><div class="grid-budgets">${canControl && actor ? '移动 ' + battle.movementLeft(actor.id) + '/' + battle.movementBudget(actor.id) + ' · 主行动 ' + Number(!battle.actedThisTurn.has(actor.id)) + ' · 加速动作 ' + Number(battle.hasteAvailable(actor.id)) + ' · 反应 ' + Number(!battle.reactionSpent.has(actor.id) && !actor.suppression) : '待行动 · 可查看装备与行动'}</div>
-      <div class="sub mission-summary">${objectiveDetails(battle)}</div>
+      <div class="sub mission-summary">${objectiveSummary(battle)}</div>
+      ${mission.kind==='annihilation'?'<details data-detail-id="objective-rules"><summary>任务规则</summary><p>'+objectiveDetails(battle)+'</p></details>':''}
       ${canControl && actor ? [false, true].filter(sidearm => !battle.reloadReason(actor.id, sidearm)).map(sidearm => `<button data-action="grid-reload" data-sidearm="${sidearm}">${sidearm ? '副武器' : '主武器'}装填 · 行动1</button>`).join('') : ''}
-      ${actor ? '<div class="actor-status">' + [(battle.reloadCd.get(actor.id) ?? 0) > 0 ? (tbWeaponShortName(actor.weapon) || '主武器') + '装填中' : '', actor.sidearm && (battle.reloadCd.get(weaponReloadKey(actor, actor.sidearm)) ?? 0) > 0 ? (tbWeaponShortName(actor.sidearm) || '副武器') + '装填中' : '', actor.fatigue ? '疲劳' + approx(actor.fatigue, 1, 'down') + '/' + fatigueLimit(actor) : '', concealment, pressure, isAirborne(actor) ? '空中，不能占领地面目标' : '', actor.tacticalPose ? postureLabel(actor, standardConditionMap()) : '', ...actor.conditions.filter((c) => c.dur > 0).map((c) => (battle.conditions.get(c.id)?.name ?? '持续效果') + ' ' + c.dur + '回合')].filter(Boolean).map((v) => '<span' + (v === pressure ? ' class="morale-pressure"' : '') + '>' + esc(v!) + '</span>').join('') + '</div>' : ''}
+      ${actor ? '<div class="actor-status">' + [(battle.reloadCd.get(actor.id) ?? 0) > 0 ? (tbWeaponShortName(actor.weapon) || '主武器') + '装填中' : '', actor.sidearm && (battle.reloadCd.get(weaponReloadKey(actor, actor.sidearm)) ?? 0) > 0 ? (tbWeaponShortName(actor.sidearm) || '副武器') + '装填中' : '', actor.fatigue ? '疲劳' + approx(actor.fatigue, 1, 'down') + '/' + fatigueLimit(actor) : '', concealment, pressure, isAirborne(actor) ? '空中，不能占领地面目标' : '', actor.tacticalPose ? postureLabel(actor, standardConditionMap()) : '', worksLabel(actor) ?? '', ...actor.conditions.filter((c) => c.dur > 0).map((c) => (battle.conditions.get(c.id)?.name ?? '持续效果') + ' ' + c.dur + '回合')].filter(Boolean).map((v) => '<span' + (v === pressure ? ' class="morale-pressure"' : '') + '>' + esc(v!) + '</span>').join('') + '</div>' : ''}
       <div class="command-modes" aria-label="行动类型">${[['move', '移动'], [weapon?.id ?? 'weapon', '攻击'], [skill?.id ?? '', '技能'], ['guard', '守备']].map(([id, label]) => `<button data-action="grid-mode" data-mode="${esc(id!)}" aria-pressed="${mode === id || label === '攻击' && !!option && ['weapon', 'charge'].includes(option.kind) && !['move', 'guard'].includes(mode) || label === '技能' && option?.kind === 'ability' && !['move', 'guard'].includes(mode)}" ${!id ? 'disabled' : ''}>${label}</button>`).join('')}
         ${actor && (isAirborne(actor) || activeTraitIds(actor).includes('flying')) ? `<button data-action="grid-flight" data-actor="${esc(actor.id)}" data-airborne="${!isAirborne(actor)}" ${!canControl || battle.flightReason(actor.id, !isAirborne(actor)) ? 'disabled' : ''} title="${esc(battle.flightReason(actor.id, !isAirborne(actor)) ?? '消耗移动1')}">${isAirborne(actor) ? '降落' : '起飞'}</button>` : ''}
         <button data-action="grid-suppress" data-target="${esc(target?.targetId ?? '')}" ${canControl && actor && !battle.suppressReason(actor.id, target?.targetId) ? '' : 'disabled'} title="${esc(actor ? battle.suppressReason(actor.id, target?.targetId) ?? '压制所选目标，消耗主行动1和战技点1' : '没有可用单位')}">压制</button>
@@ -310,7 +337,7 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
       </div>
       ${special ? '<div class="action-preview"><b>'+esc(commandTitle)+'</b><p>'+esc(specialReason??specialDetail)+'</p>'+executeCommand+'</div>' : mode === 'move' ? movePanel : mode === 'guard' ? `<div class="guard-options"><button data-action="grid-brace" ${canControl && actor && !battle.braceReason(actor.id) ? '' : 'disabled'}>固守 · 行动1</button><p>${esc(actor ? battle.braceReason(actor.id) ?? battle.braceDescription(actor.id) : '')}</p><button data-action="grid-watch" ${canControl && actor && !battle.overwatchReason(actor.id) ? '' : 'disabled'}>警戒 · 行动1</button><p>${esc(actor ? battle.overwatchReason(actor.id) ?? '用一次行动准备武器反应，与借机共用本轮反应额度。' : '')}</p></div>` : `
         <label>使用<select data-role="grid-mode">${options.filter((o) => option?.kind === 'ability' ? o.kind === 'ability' : ['weapon', 'charge'].includes(o.kind)).map((o) => `<option value="${esc(o.id)}" ${o.id === option?.id ? 'selected' : ''}>${esc(o.label)}${o.enabled ? '' : ' · 暂不可用'}</option>`).join('')}</select></label>
-        ${option?.targets?.length ? '<label>目标<select data-role="grid-target">' + option.targets.map((t) => '<option value="' + esc(t.targetId) + '" ' + (t.targetId === target?.targetId ? 'selected' : '') + '>' + esc(visible.find((u) => u.id === t.targetId)?.name ?? (t.targetId.startsWith('cell:') ? cellLabel(field,Number(t.targetId.slice(5))) : '未定位目标')) + (t.enabled ? '' : ' · ' + esc(t.reason ?? '不可选')) + '</option>').join('') + '</select></label>' : ''}
+        ${option?.targets?.length ? '<label>目标<select data-role="grid-target">' + (targetMismatch ? '<option value="' + esc(view.targetId!) + '" selected disabled>' + esc(targetUnit?.name ?? '所选目标') + ' · 不适用于此行动</option>' : '') + option.targets.map((t) => '<option value="' + esc(t.targetId) + '" ' + (t.targetId === target?.targetId ? 'selected' : '') + '>' + esc(visible.find((u) => u.id === t.targetId)?.name ?? (t.targetId.startsWith('cell:') ? cellLabel(field,Number(t.targetId.slice(5))) : '未定位目标')) + (t.enabled ? '' : ' · ' + esc(t.reason ?? '不可选')) + '</option>').join('') + '</select></label>' : ''}
         ${target?.rangeDistance !== undefined && target.distance !== undefined && target.rangeDistance > target.distance ? '<p class="aerial-range">距离 ' + target.distance + ' + 对空 ' + (target.rangeDistance - target.distance) + ' = 射程距离 ' + target.rangeDistance + '</p>' : ''}
         ${target?.heightReach ? '<p class="aerial-range">居高射击：射程 +' + target.heightReach + '</p>' : ''}
         ${actionPreview(battle, target?.preview ?? option?.preview, option, target?.targetId)}

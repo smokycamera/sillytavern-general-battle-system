@@ -12,7 +12,7 @@ function initial(): InventorySave {
   });
   return { schemaVersion: 2, storage: records, rosterIds: ['a'], inventory: [
     createInventoryItem('prize', '缴获战斧', { kind: 'weapon', mechanism: 'axe', power: 8 }, 'prize'),
-    createInventoryItem('potion', '急救剂', { kind: 'consumable', mechanism: 'heal', power: 3 }, 'potion', 2),
+    createInventoryItem('potion', '急救剂', { kind: 'item', form: 'single', power: 3, active: 'generic:buff:heal' }, 'potion', 2),
   ], factRevision: 1 };
 }
 describe('物品与档案的原子事务', () => {

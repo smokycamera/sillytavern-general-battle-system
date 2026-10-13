@@ -32,4 +32,33 @@ describe('草稿字段恢复与错误定位', () => {
       expect(source.slice(errors.at(-1)!.start, errors.at(-1)!.end)).toBe('未知技能');
     }
   });
+  it('整批冲突只定位引发冲突的事件，不把其他合法事件标成错误', () => {
+    const text = '<tb>\n<give item="补给"/>\n<unit_update id="u1" hp="10"/>\n<unit_update id="u1" hp="20"/>\n</tb>';
+    const parsed = parseProtocol(text);
+    expect(parsed.errors.join('')).toContain('更新冲突');
+    expect(parsed.diagnostics).toHaveLength(1);
+    expect(text.slice(parsed.diagnostics[0]!.start, parsed.diagnostics[0]!.end)).toContain('hp="20"');
+    expect(parsed.diagnostics[0]!.start).toBeGreaterThan(text.indexOf('hp="10"'));
+  });
+  it('列表坏项的原文位置保留繁体、全角写法和HTML实体，重复项逐个定位', () => {
+    const text = '<tb>\n<spawn name="甲" side="ally" scale="hero" skills="治療Ｌ３,壞技能Ｌ９９,未&#x77e5;技能,未&#x77e5;技能"/>\n</tb>';
+    for (const source of [text, text.replaceAll('<', '&lt;').replaceAll('>', '&gt;')]) {
+      const errors = parseProtocol(source).diagnostics;
+      expect(errors.map(d => source.slice(d.start, d.end))).toEqual(['壞技能Ｌ９９', '未&#x77e5;技能', '未&#x77e5;技能']);
+    }
+  });
+  it('引号不完整时定位到残缺属性，跨字段生命冲突指向生命字段', () => {
+    const incomplete = '<spawn name="甲" side="ally" scale="hero" weapon="剑L3';
+    const diagnostic = parseProtocol(incomplete).diagnostics[0]!;
+    expect(incomplete.slice(diagnostic.start, diagnostic.end)).toBe('weapon="剑L3');
+    const conflict = '<spawn name="乙" side="ally" scale="company" hp="80" hpMax="40"/>';
+    const errors = parseProtocol(conflict).diagnostics;
+    expect(errors.map(d => conflict.slice(d.start, d.end))).toEqual(['hp="80"']);
+  });
+  it('文字数组中的技能、合并特质的道具清单仍定位原文中的各个坏项', () => {
+    const source = '<spawn name="甲" side="ally" scale="hero" skills=\'["治療Ｌ３", "壞技能Ｌ９９"]\' '
+      + 'items="斗篷:潛伏，未知特質L6,壞藥:未知效果L3,壞藥:未知效果L3"/>';
+    const errors = parseProtocol(source).diagnostics;
+    expect(errors.map(d => source.slice(d.start, d.end))).toEqual(['壞技能Ｌ９９', '斗篷:潛伏，未知特質L6', '壞藥:未知效果L3', '壞藥:未知效果L3']);
+  });
 });

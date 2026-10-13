@@ -3,9 +3,10 @@ import type { ActionPreview } from '../../engine/src/actions.js';
 import type {Combatant} from '../../engine/src/types.js';
 import {hasMemberHealth,memberHealth,memberHealthMax,memberNoun} from '../../engine/src/member-health.js';
 import {htmlText as esc} from './equipment-form.js';
-export function participationText(preview?: ActionPreview): string {
+export function participationText(preview?: ActionPreview, detailed = false): string {
   if(preview?.participants===undefined)return '';
-  return `有效攻击 ${Number(preview.participants.toFixed(1))} 份${preview.memberHp!==undefined?' · 目标单位最大生命 '+preview.memberHp:''}${preview.expectedCasualties!==undefined?' · 预计减员 '+preview.expectedCasualties.toFixed(1):''}${(preview.overmatchMultiplier??1)>1?' · 跨代毁伤×'+Number(preview.overmatchMultiplier!.toFixed(2)):''}${preview.weaponOverflow?' · 余伤在目标编队内传递':''}${(preview.aggregationSamples??1)>1?' · 每发 '+preview.aggregationSamples+' 组，每组命中 '+Math.round((preview.hitChance??0)*100)+'%':''}`;
+  if (!detailed) return `有效攻击数 ${Number(preview.participants.toFixed(1))}${preview.expectedCasualties!==undefined?' · 预计减员 '+preview.expectedCasualties.toFixed(1):''}`;
+  return `有效攻击 ${Number(preview.participants.toFixed(1))} 份${preview.memberHp!==undefined?' · 目标单位最大生命 '+preview.memberHp:''}${(preview.overmatchMultiplier??1)>1?' · 跨代毁伤×'+Number(preview.overmatchMultiplier!.toFixed(2)):''}${preview.weaponOverflow?' · 余伤在目标编队内传递':''}`;
 }
 export function memberHealthPanel(unit:Combatant):string {
   if(!hasMemberHealth(unit))return '';

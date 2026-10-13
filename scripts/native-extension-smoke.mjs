@@ -19,7 +19,7 @@ eventSource:{on(k,cb){const a=handlers.get(k)||new Set();a.add(cb);handlers.set(
 getRequestHeaders:()=>({'Content-Type':'application/json'}),saveSettingsDebounced(){},
 async saveMetadata(){window.__metadataSaves++;await persistFixture(${metadataMode === 'legacy-full'})},
 async saveChat(){window.__fullSaves++;await persistFixture(true)},
-setExtensionPrompt(id,value){__prompts[id]=value},addOneMessage(message){const p=document.createElement('p');p.textContent=message.mes;document.getElementById('chat').append(p)},async generate(type,options){window.__generations++;window.__generationType=type;if(type==='normal'){document.getElementById('send_textarea').value='';document.getElementById('pending-file').value=''}await context.eventSource.emit('GENERATION_STARTED',type,options,false);await context.eventSource.emit('GENERATION_AFTER_COMMANDS',type,options,false);context.chat.push({is_user:false,mes:'合成宿主的完整叙述回复',swipe_id:0,gen_finished:'complete'});await context.saveChat();await context.eventSource.emit('MESSAGE_RECEIVED',context.chat.length-1);await context.eventSource.emit('GENERATION_ENDED',context.chat.length-1)}};
+setExtensionPrompt(id,value){__prompts[id]=value},addOneMessage(message){const p=document.createElement('p');p.textContent=message.mes;document.getElementById('chat').append(p)},async generate(type,options){window.__generations++;window.__generationType=type;if(type==='normal'){document.getElementById('send_textarea').value='';document.getElementById('pending-file').value=''}await context.eventSource.emit('GENERATION_STARTED',type,options,false);await context.eventSource.emit('GENERATION_AFTER_COMMANDS',type,options,false);context.chat.push({is_user:false,mes:'合成宿主的完整叙述回复',swipe_id:0,gen_finished:'complete'});await context.saveChat();await context.eventSource.emit('MESSAGE_RECEIVED',context.chat.length-1);await context.eventSource.emit('GENERATION_ENDED',context.chat.length)}};
 window.SillyTavern={getContext:()=>context};
 window.switchChat=async id=>{const response=await fetch('/api/chats/get',{method:'POST',body:JSON.stringify({file_name:id})});const data=await response.json();context.chatId=id;context.chatMetadata=data[0]?.chat_metadata||{};context.chat=data.slice(1);await context.eventSource.emit('CHAT_CHANGED')};
 awaitReady();async function awaitReady(){await switchChat('a');await import('/extension/index.js');}
@@ -146,7 +146,7 @@ try {
   await frame.locator('[data-action="workspace-tab"][data-tab="settings"]').first().click();
   // isDisabled() follows the wrapping label to its enabled select in Playwright.
   // Inspect this option's native disabled state rather than the enclosing control.
-  check('设置保留 JEV 未完成禁用提示',await frame.locator('[data-role="llm-mode"] option[value="jev"]').evaluate(option=>option.disabled&&option.textContent.includes('未完成')));
+  check('设置保留 JEV 暂不可用禁用提示',await frame.locator('[data-role="llm-mode"] option[value="jev"]').evaluate(option=>option.disabled&&option.textContent.includes('暂不可用')));
   await frame.locator('[data-role="llm-url"]').fill('https://gateway.example/v1');
   await frame.locator('[data-role="llm-token"]').fill('smoke-token');
   await frame.locator('[data-role="llm-model"]').fill('smoke-model');
@@ -194,12 +194,12 @@ try {
   check('会战结算和报告保留',(await state()).reports.length===1&&(await state()).committedOutcomeIds.length===1);
   const exported=await page.evaluate(()=>({format:'tavern-battle-export',version:1,envelope:__tavernBattleNative.service.store.envelope()}));
   await page.getByRole('button',{name:'存档管理',exact:true}).click();
-  await page.getByRole('button',{name:'预览回退旧脚本',exact:true}).click();
-  await page.getByRole('button',{name:'确认把最新进度交回旧脚本',exact:true}).click();
+  await page.getByRole('button',{name:'预览切换到脚本模式',exact:true}).click();
+  await page.getByRole('button',{name:'确认把最新进度切换到脚本模式',exact:true}).click();
   await page.waitForFunction(()=>__tavernBattleNative.service.status().phase==='handoff');
   check('管理界面回退最新会战进度并停止原生写入',await page.evaluate(()=>context.chatMetadata.variables.panel.reports.length===1&&!__tavernBattleNative.service.canWrite()));
   await page.getByRole('button',{name:'预览迁回原生',exact:true}).click();
-  await page.getByRole('button',{name:'确认采用旧脚本阶段进度并迁回原生',exact:true}).click();await ready();
+  await page.getByRole('button',{name:'确认导入脚本模式进度并迁回原生',exact:true}).click();await ready();
   check('管理界面重新迁回保留进度',(await state()).reports.length===1);
   await page.getByRole('button',{name:'存档管理',exact:true}).click();await page.getByRole('button',{name:'预览清空当前战阵',exact:true}).click();
   await page.getByRole('button',{name:'确认清空当前聊天战阵数据',exact:true}).click();await page.getByRole('button',{name:'确认清空当前聊天战阵数据',exact:true}).waitFor({state:'detached'});await ready();

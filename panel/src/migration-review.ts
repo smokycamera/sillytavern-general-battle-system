@@ -2,10 +2,10 @@ import { prepareCombatModel } from '../../engine/src/combat-model.js';
 import { V6_D20 } from '../../engine/src/rules.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
 import { unitRecordFromCombatant, materializeUnitRecord } from './unit-state.js';
-import { SmallBattle, MassBattle, traitRegistry, rulesById, validateTraitSource, validateTacticalPose, validateTacticalEffort, validateConcealment, validateFlightState, validateWounded, validateMoraleState, validateVanguardOrigin, validateFormationPosition, normalizeV2Scale, type Combatant } from '../../engine/src/index.js';
+import { SmallBattle, MassBattle, traitRegistry, rulesById, validateTraitSource, validateTacticalPose, validateTacticalEffort, validateConcealment, validateFlightState, validateWounded, validateMoraleState, validateVanguardOrigin, validateFormationPosition, normalizeV2Scale, ITEM_FORM_NAMES, itemSpecText, type Combatant } from '../../engine/src/index.js';
 import { combatantFromUnknown, migratePanelUnits } from './unit-state.js';
 import type { NarrativeSave } from './narrative-state.js';
-import { prepareInventoryState, validateInventoryItem, fitsEquipmentSlot } from './inventory-state.js';
+import { prepareInventoryState, validateInventoryItem, fitsEquipmentSlot, migrateLegacyInventory, type InventoryItem } from './inventory-state.js';
 import { prepareBattleItemWrite } from './battle-items.js';
 
 export interface MigrationReview { original: NarrativeSave; candidate: NarrativeSave; changes: string[]; quarantined: number }
@@ -39,7 +39,7 @@ function validateBattle(save: NarrativeSave): void {
     }
     if (!Array.isArray(u.abilities) || !Array.isArray(u.tags) || !Array.isArray(u.conditions) || !u.resources) throw new Error('战斗单位状态缺失');
   }
-  if (rules.resolutionVersion === 'v2' && (!Number.isInteger(snap.rngState) || units.some((u) => u.rulesVersion !== 'v2'))) throw new Error('V2存档记录缺少可恢复随机状态或混入旧规则单位');
+  if (rules.resolutionVersion === 'v2' && (!Number.isInteger(snap.rngState) || units.some((u) => u.rulesVersion !== 'v2'))) throw new Error('存档缺少可恢复随机状态，或单位规则不一致');
   if (kind === 'small') {
     const b = SmallBattle.fromSnapshot(structuredClone(snap));
     if (b.turnOrder.some((id) => !ids.has(id))) throw new Error('行动顺序引用缺失单位');
@@ -53,7 +53,7 @@ export function reviewMigration(raw: NarrativeSave, unifiedBalance = false): Mig
   const units = migratePanelUnits({ schemaVersion: raw.schemaVersion, storage: raw.storage, roster: raw.roster, rosterIds: raw.rosterIds, registry: traitRegistry() });
   const changes = [...units.warnings];
   const legacy = raw.schemaVersion !== 2 && (Array.isArray(raw.roster) || Array.isArray(raw.storage) && raw.storage.length > 0);
-  if (legacy) changes.unshift('转换旧单位容器为档案+参战id；保留原装备、人员、训练和进行中战斗规则');
+  if (legacy) changes.unshift('整理单位档案与参战名单；保留装备、人员、训练和进行中的战斗');
   const candidate = structuredClone(raw);
   candidate.storage = units.records; candidate.rosterIds = units.roster.map((u) => u.id);
   const oldMookIds = new Set([
@@ -64,7 +64,18 @@ export function reviewMigration(raw: NarrativeSave, unifiedBalance = false): Mig
     record.scale = 'company'; normalizeV2Scale(record.snapshot); oldMookIds.add(record.id);
   }
   let quarantined = units.backup.length;
-  const items = Array.isArray(raw.inventory) ? raw.inventory : [];
+  // 旧版药剂与护符逐件按对照表转换（V15）；转换不了的与其他坏项一样隔离，原件留在备份里。
+  let converted = 0;
+  const items = (Array.isArray(raw.inventory) ? raw.inventory : []).map((item: InventoryItem) => {
+    try {
+      const next = migrateLegacyInventory([item])?.[0] ?? item;
+      if (next === item) return item;
+      converted++;
+      const m = next.mechanics;
+      if (m?.kind === 'item') changes.push(`道具「${next.name}」转为${ITEM_FORM_NAMES[m.value.recipe.form]}道具 ${itemSpecText(m.value.recipe)}${next.equippedTo?.slot === 'gear' ? '，仍装备在原单位' : ''}`);
+      return next;
+    } catch { return item; }
+  });
   const badItems: unknown[] = [];
   candidate.inventory = items.filter((item, index) => {
     try {
@@ -75,18 +86,23 @@ export function reviewMigration(raw: NarrativeSave, unifiedBalance = false): Mig
         const { unitId, slot } = item.equippedTo;
         if (item.assignedTo !== unitId || !units.records.some((r) => r.id === unitId && r.equipmentManaged)
           || !item.mechanics || !fitsEquipmentSlot(item.mechanics,slot)) throw new Error('装备关系与持有者/槽位不一致');
-        if (items.some((other, n) => n !== index && other?.equippedTo?.unitId === unitId && other.equippedTo.slot === slot)) throw new Error('同一槽位有多件实物，不能猜测保留');
+        if (slot !== 'gear' && items.some((other, n) => n !== index && other?.equippedTo?.unitId === unitId && other.equippedTo.slot === slot)) throw new Error('同一槽位有多件实物，不能猜测保留');
       }
       return true;
     } catch (error) { changes.push(`库存[${index}]已隔离：${String(error)}`); badItems.push(item); return false; }
   });
   if (raw.inventory !== undefined && !Array.isArray(raw.inventory)) { changes.push('库存容器已隔离：不是数组'); badItems.push(raw.inventory); }
+  if (converted && !badItems.length) {
+    // 原配件栏的投影换成已佩戴道具；单位档案的其他内容不变。
+    const projected = prepareInventoryState(candidate, false);
+    candidate.inventory = projected.inventory; candidate.storage = projected.storage;
+  }
   if (badItems.length) {
     quarantined += badItems.length; candidate.inventoryMigrationBackup = badItems;
     // 只重投影受库存管理的档案；隔离的实物不再提供效果，原实例仍在完整备份中。
     const projected = prepareInventoryState(candidate, false);
     candidate.inventory = projected.inventory; candidate.storage = projected.storage;
-    changes.push('隔离实物的装备效果将解除；保留其他实物、训练、生命与原始备份，不重算旧配方');
+    changes.push('隔离物品的装备效果将解除；保留其他物品、训练、生命与原始备份');
   }
   try {
     validateBattle(raw);
@@ -100,7 +116,7 @@ export function reviewMigration(raw: NarrativeSave, unifiedBalance = false): Mig
     changes.push('战斗已隔离：' + String(error));
     candidate.battle = null; quarantined++;
   }
-  if (oldMookIds.size) changes.push(`旧V2刻度归为编队（${oldMookIds.size}个身份）；保留人数、训练、已保存的物品与战斗随机进度，恢复正常成长`);
+  if (oldMookIds.size) changes.push(`人数形式整理为编队（${oldMookIds.size}个身份）；保留人数、训练、已保存的物品与战斗随机进度，恢复正常成长`);
   if (candidate.battle && badItems.length) {
     try {
       const combatants = candidate.battle.snap.combatants as Combatant[];
@@ -114,7 +130,7 @@ export function reviewMigration(raw: NarrativeSave, unifiedBalance = false): Mig
     catch (error) { changes.push('受损库存关联战斗已隔离：' + String(error)); candidate.battle = null; quarantined++; }
   }
   if (unifiedBalance) {
-    if (raw.battle) throw Error('请先收兵归档；进行中的旧战斗继续使用原规则');
+    if (raw.battle) throw Error('请先收兵归档，再更新档案');
     candidate.storage = (candidate.storage ?? []).map(record => {
       const snapshot = record.snapshot;
       if (!snapshot || snapshot.rulesVersion !== 'v2' || snapshot.damageModel === 'wounds-v2') return record;
@@ -127,10 +143,10 @@ export function reviewMigration(raw: NarrativeSave, unifiedBalance = false): Mig
       const before = unit.scale === 'hero' ? unit.base.hpMax : unit.formation?.memberHp;
       prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit);
       const after = unit.scale === 'hero' ? unit.base.hpMax : unit.formation?.memberHp;
-      changes.push(`${unit.name}：升级V6，${unit.scale==='hero'?'生命上限':'成员生命'} ${before ?? '旧制'} → ${after}；保留身份、人数、伤损、资源与冷却，自定义上限保留`);
+      changes.push(`${unit.name}：${unit.scale==='hero'?'生命上限':'成员生命'} ${before ?? '未记录'} → ${after}；保留身份、人数、伤损、资源与冷却，自定义上限保留`);
       return unitRecordFromCombatant(unit, record, {kind:'edit', sourceId:'balance:unified-v1'});
     });
-    if (changes.length) changes.push('新生命按原伤损点数换算，零生命不复活；较低新上限下存活者最低保留1生命。物品实例、旧战报与已保存战斗均不重掷；新战使用统一的武器与技能公式。');
+    if (changes.length) changes.push('新生命按原伤损点数换算，零生命不复活；较低新上限下存活者最低保留1生命。保留物品、战报与已保存的战斗。');
   }
   if (!changes.length) return undefined;
   candidate.schemaVersion = 2;

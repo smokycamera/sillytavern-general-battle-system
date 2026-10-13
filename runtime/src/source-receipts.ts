@@ -42,7 +42,7 @@ export function bindLegacySources(save: NarrativeSave, host: NativeHost, verifyF
     const wasDeleted = original && deleted.has(narrativeReceiptKey(original));
     if (!committed.has(numericKey) && !known.length && !wasDeleted) continue;
     const fingerprint = (candidate.legacySourceFingerprints as Record<string,string> | undefined)?.[String(index)];
-    if (verifyFile && !fingerprint && !known.length) throw Error('兼容文件只有旧消息序号，缺少可核对的来源正文；请从原聊天重新导出后导入');
+    if (verifyFile && !fingerprint && !known.length) throw Error('存档文件只有消息序号，缺少可核对的来源正文；请从原聊天重新导出后导入');
     if (fingerprint && !matchesMessageFingerprint(chat[index]!, fingerprint)) throw Error('兼容存档的来源内容已变化，请核对后再导入');
     if (!fingerprint && known.some(p => protocolExcerpt(source.text) !== (p.originalText ?? p.source.text))) throw Error('兼容存档来源与当前消息不一致，请核对后再导入');
     const tag = prepareMessageTag(chat, index); tags.push(tag);

@@ -22,7 +22,8 @@ export type AerialRangeSpace = 'small' | 'mass';
 export const GROUND_TO_AIR_RANGE_COST = { small: 2, mass: 1 } as const;
 /** 仅用于远程选敌的射程预算，不改变移动、接敌、视线或范围效果半径。 */
 export function groundToAirRangePenalty(actor: Combatant, target: Combatant, space: AerialRangeSpace = 'small'): number {
-  return !isAirborne(actor) && isAirborne(target) ? GROUND_TO_AIR_RANGE_COST[space] : 0;
+  // 对空：防空火力专为仰射设计，地对空不额外损耗射程。
+  return !isAirborne(actor) && isAirborne(target) && !activeTraitIds(actor).includes('anti-air') ? GROUND_TO_AIR_RANGE_COST[space] : 0;
 }
 export function rangedTargetDistance(actor: Combatant, target: Combatant, distance: number, space: AerialRangeSpace = 'small'): number {
   return distance + groundToAirRangePenalty(actor, target, space);
