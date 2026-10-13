@@ -137,18 +137,6 @@ function objectiveSummary(battle: SmallBattle): string {
   return enemyEscort ? '阻止护送对象在期限内抵达出口。' : '护送对象须在期限内抵达出口。';
 }
 
-function objectiveSummary(battle: SmallBattle): string {
-  const goal = battle.battlefield!.objective;
-  if (goal.kind === 'annihilation') return '使敌方全部失去作战能力获胜。';
-  if (goal.kind === 'control') {
-    const sides = goal.attackingSide ? goal.attackingSide === 'enemy' ? '我方防守，敌方进攻。' : '我方进攻，敌方防守。' : '';
-    if (goal.cells && goal.attackingSide) return `${sides}攻方独占旗区累计${goal.rounds}轮获胜；守方坚持至第${goal.limit}轮获胜。`;
-    return `${sides}${goal.attackingSide ? '攻方' : '任一方'}连续守住${goal.rounds}个完整回合获胜。`;
-  }
-  const enemyEscort = battle.combatants.find(u => u.id === goal.unitId)?.side === 'enemy';
-  return enemyEscort ? '阻止护送对象在期限内抵达出口。' : '护送对象须在期限内抵达出口。';
-}
-
 function tileInspector(battle: SmallBattle, view: TacticalView, selection: ReturnType<typeof tacticalSelection>): string {
   const cell = view.inspectedCell, field = battle.battlefield!;
   if (cell === undefined || !inBounds(field, cell)) return '<div class="map-inspector muted-inspector">点选单位查看或选目标；要移动到队友所在格，请先切到「移动」，再点该格。</div>';
