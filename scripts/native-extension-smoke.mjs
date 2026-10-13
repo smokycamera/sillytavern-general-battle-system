@@ -146,7 +146,7 @@ try {
   await frame.locator('[data-action="workspace-tab"][data-tab="settings"]').first().click();
   // isDisabled() follows the wrapping label to its enabled select in Playwright.
   // Inspect this option's native disabled state rather than the enclosing control.
-  check('设置保留 JEV 未完成禁用提示',await frame.locator('[data-role="llm-mode"] option[value="jev"]').evaluate(option=>option.disabled&&option.textContent.includes('未完成')));
+  check('设置保留 JEV 暂不可用禁用提示',await frame.locator('[data-role="llm-mode"] option[value="jev"]').evaluate(option=>option.disabled&&option.textContent.includes('暂不可用')));
   await frame.locator('[data-role="llm-url"]').fill('https://gateway.example/v1');
   await frame.locator('[data-role="llm-token"]').fill('smoke-token');
   await frame.locator('[data-role="llm-model"]').fill('smoke-model');
