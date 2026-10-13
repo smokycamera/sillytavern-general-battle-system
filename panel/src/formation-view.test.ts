@@ -123,6 +123,12 @@ describe('军团地图与任务闭环', () => {
     b.issue({ unitId: 'a', type: 'volley', targetId: 'enemy' });
     const choice = formationSelection(b, view, drafts).choices.find((c) => c.order.abilityActorId === 'hero')!;
     setFormationChoice(b, view, drafts, choice.key);
+    expect(drafts.a?.targetId).toBe('enemy');
+    expect(formationSelection(b, view, drafts).preview?.reason).toBeDefined();
+    expect(renderFormationBattle(b, view, drafts, true, u => u.name, (_b, order) => order.type)).toContain('value="enemy" selected disabled');
+    setFormationChoice(b, view, drafts, 'volley');
+    expect(drafts.a?.targetId).toBe('enemy');
+    setFormationChoice(b, view, drafts, choice.key);
     selectFormationUnit(b, view, drafts, 'hero', true);
     expect(drafts.a).toMatchObject({ type: 'ability', abilityActorId: 'hero', targetId: 'hero' });
     const hp = b.byId('hero').hp, points = b.byId('hero').resources.SP!, cost = b.byId('hero').abilities[0]!.cost!.amount;

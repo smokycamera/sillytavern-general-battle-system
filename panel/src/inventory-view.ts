@@ -202,6 +202,18 @@ export class InventoryPanel {
     if (d.mode === 'reforge') return { kind: 'reforge', itemId: d.itemId!, name, spec };
     return { kind: 'create', itemId: `item:${d.id}`, name, spec, qty: d.kind === 'item' && d.form === 'single' ? Number(d.qty) : 1 };
   }
+  private async commitPreview(preview: InventoryPreview): Promise<void> {
+    const context = this.controller.inventoryContext(), shownPreview = this.preview;
+    this.committing = true; this.draw();
+    try {
+      const receipt = await this.controller.commitInventoryPreview(preview);
+      // A late acknowledgement must not clear another chat or a newly selected form.
+      if (context !== this.controller.inventoryContext() || this.preview !== shownPreview) return;
+      if (receipt.status === 'failed') throw new Error(receipt.error ?? '尚未保存，请重试');
+      this.preview = undefined; this.draft = undefined;
+      if (preview.intent.kind === 'discard-many') { this.bulkDelete = false; this.selectedItems.clear(); }
+    } finally { this.committing = false; this.draw(); }
+  }
   async handleAction(element: HTMLElement): Promise<boolean> {
     const action = element.dataset.action ?? '';
     if (!action.startsWith('inventory-')) return false;
@@ -227,16 +239,7 @@ export class InventoryPanel {
       else if (action === 'inventory-close-draft') { this.draft = undefined; this.preview = undefined; }
       else if (action === 'inventory-confirm') {
         if (!this.preview) throw new Error('请先预览');
-        const preview = this.preview, context = this.controller.inventoryContext();
-        this.committing = true; this.draw();
-        try {
-          const receipt = await this.controller.commitInventoryPreview(preview);
-          // A late acknowledgement from an old chat must not clear a new chat's form.
-          if (context !== this.controller.inventoryContext() || this.preview !== preview) return true;
-          if (receipt.status === 'failed') throw new Error(receipt.error ?? '尚未保存，可重试当前预览');
-          this.preview = undefined; this.draft = undefined;
-          if (preview.intent.kind === 'discard-many') { this.bulkDelete = false; this.selectedItems.clear(); }
-        } finally { this.committing = false; this.draw(); }
+        await this.commitPreview(this.preview);
       } else if (action === 'inventory-preview-draft') {
         if (!this.draft) throw new Error('请先填写规格');
         this.preview = this.controller.previewInventory(this.draftAction(), this.draft.id);
@@ -260,7 +263,11 @@ export class InventoryPanel {
         else if (action === 'inventory-discard') intent = { kind: 'discard', itemId: item.id, qty: 1 };
         else if (action === 'inventory-delete') intent = { kind: 'discard', itemId: item.id, qty: item.qty };
         else throw new Error('未知库存操作');
-        this.preview = this.controller.previewInventory(intent);
+        const preview = this.controller.previewInventory(intent);
+        if (intent.kind === 'equip' || intent.kind === 'unequip') {
+          this.preview = undefined;
+          await this.commitPreview(preview);
+        } else this.preview = preview;
       }
     } catch (error) {
       if (actionContext === this.controller.inventoryContext()) this.error = error instanceof Error ? error.message : String(error);
