@@ -24,12 +24,12 @@ function object(value: unknown): value is Record<string, unknown> { return !!val
 export function legacySource(metadata: Record<string, unknown>): NarrativeSave | undefined {
   const variables = metadata.variables;
   if (variables === undefined) return undefined;
-  if (!object(variables)) throw Error('当前聊天的旧变量容器损坏，需要人工核对');
+  if (!object(variables)) throw Error('当前聊天的脚本变量容器损坏，需要人工核对');
   const value = variables.panel;
   if (value === undefined) return undefined;
-  if (!object(value)) throw Error('当前聊天的旧战阵存档不是对象，需要人工核对');
-  if (value.schemaVersion !== undefined && value.schemaVersion !== 1 && value.schemaVersion !== 2) throw Error('旧战阵存档版本未知，不能自动改用备用方式');
-  if (value.factRevision !== undefined && (!Number.isSafeInteger(value.factRevision) || Number(value.factRevision) < 0)) throw Error('旧档战斗记录版本损坏');
+  if (!object(value)) throw Error('当前聊天的脚本存档格式不完整，需要人工核对');
+  if (value.schemaVersion !== undefined && value.schemaVersion !== 1 && value.schemaVersion !== 2) throw Error('脚本存档格式无法识别，请核对原始数据');
+  if (value.factRevision !== undefined && (!Number.isSafeInteger(value.factRevision) || Number(value.factRevision) < 0)) throw Error('脚本存档的战斗记录格式损坏');
   // Invalid arrays and units are handled by the existing explicit review, never silently repaired here.
   return structuredClone(value) as NarrativeSave;
 }
@@ -45,7 +45,7 @@ export class LegacyImporter {
   async preview(): Promise<ImportPreview> {
     const session = this.host.session(); if (!session) throw Error('当前聊天身份不完整');
     const metadata = await this.host.readPersisted(session.scope);
-    if (!sameSession(session, this.host.session())) throw Error('读取旧档期间聊天已切换');
+    if (!sameSession(session, this.host.session())) throw Error('读取脚本存档期间聊天已切换');
     const native = envelopeFrom(metadata.tavernBattle);
     if (native) {
       if (await payloadHash(native.payload) !== native.payloadHash) throw Error('原生存档校验失败');
@@ -61,7 +61,7 @@ export class LegacyImporter {
   async adopt(preview: ImportPreview, choice: 'import' | 'empty'): Promise<PersistReceipt> {
     if (!this.previews.has(preview) || preview.kind === 'native' || preview.kind === 'cleared') throw Error('请重新取得当前聊天的迁移预览');
     const session = preview.session;
-    if (!sameSession(session, this.host.session()) || !sameSession(session, this.store.session()) || this.host.hasLegacyRuntime()) throw Error('聊天已切换或旧脚本仍在运行');
+    if (!sameSession(session, this.host.session()) || !sameSession(session, this.store.session()) || this.host.hasLegacyRuntime()) throw Error('聊天已切换或脚本版战阵仍在运行');
     if (this.store.envelope() || this.store.pendingOperation()) throw Error('已经存在原生状态或待恢复操作，不能覆盖');
     // A caller cannot turn a changed source/candidate into an approved preview.
     const current = await this.host.readPersisted(session.scope);

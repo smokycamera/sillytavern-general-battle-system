@@ -26,7 +26,7 @@ export function connectionUrl(value: string): string {
 export function validateJevProtocol(connection: JevConnection): void {
   const url = new URL(connectionUrl(connection.url));
   if (url.hostname.toLowerCase().replace(/\.$/, '') === 'api.typesafe.ai' && connection.protocol !== 'typesafe')
-    throw new JevConnectionError('TypeSafe 官方 JEV 使用 /v1/systemone；连接方式请选择“TypeSafe / JEV API”，不能使用 OpenAI 兼容接口或旧桥接。跨域问题请通过请求通道解决，不要切换 API 协议');
+    throw new JevConnectionError('TypeSafe 官方 JEV 使用 /v1/systemone；连接方式请选择“TypeSafe / JEV API”，不能使用 OpenAI 兼容接口。跨域问题请通过请求通道解决，不要切换 API 协议');
 }
 export function apiEndpoint(connection: JevConnection, path: string): string {
   validateJevProtocol(connection);

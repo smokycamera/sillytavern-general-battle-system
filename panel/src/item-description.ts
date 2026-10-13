@@ -4,11 +4,6 @@ import { enhancementLabel } from '../../engine/src/enhancements.js';
 
 const ZONES: Record<string, string> = { fire: '火墙', poison: '毒雾', smoke: '烟幕', healing: '治疗区域', trap: '陷阱' };
 const MOVES: Record<string, string> = { dash: '突进', blink: '闪现', withdraw: '后撤' };
-const LEGACY: Record<string, string> = {
-  'consumable:heal': '治疗药剂', 'consumable:repair': '维修包', 'consumable:restore': '回能药剂', 'consumable:cleanse': '净化药剂', 'consumable:empower': '强攻药剂',
-  'consumable:barrier': '屏障药剂', 'consumable:grenade': '投掷炸弹', 'accessory:guardian': '守护护符', 'accessory:night': '夜视镜', 'accessory:woodland': '林行靴',
-  'accessory:endurance': '耐力护符', 'accessory:healing': '治疗护符', 'accessory:barrier': '屏障护符', 'accessory:cleansing': '净化护符',
-};
 function effectText(e: EffectOp): string {
   switch (e.op) {
     case 'heal': return `恢复${e.amount ?? e.dice}生命或可救伤兵`;
@@ -30,7 +25,9 @@ export function itemAbilitySummary(a: Ability): string {
   return [a.itemQuick ? '自身或相邻友军，可用加速动作' : a.usesPerBattle ? `装备后每战${a.usesPerBattle}次，占主行动` : '占主行动',
     a.range && a.range.max > 1 ? `射程${a.range.max}格` : '', ...a.effects.map(effectText), a.delivery === 'magic' ? '魔法' : '',
     // 件数口径只对一次性道具有意义；充能道具不消耗件数。
-    a.usesPerBattle ? '' : a.itemScaling === 'member' ? '编队齐用时每次最多消耗现员数件' : a.itemScaling === 'object' ? '一件一个效果' : ''].filter(Boolean).join('，');
+    a.usesPerBattle ? '' : a.itemScaling === 'member' ? '编队齐用时每次最多消耗现员数件' : a.itemScaling === 'object' ? '一件一个效果' : '',
+    !a.usesPerBattle && a.itemScaling === 'member' && a.effects.length && a.effects.every(e => e.op === 'heal') ? '按实际伤量使用所需件数' : '',
+    !a.usesPerBattle && a.itemScaling === 'member' && a.effects.some(e => e.op === 'barrier') ? '护盾容量按本次件数累加，全队共用；重复施放取较强保护' : ''].filter(Boolean).join('，');
 }
 export function itemPassiveSummary(p: ItemPassive): string {
   const traits = p.traits.map((t) => {
@@ -42,8 +39,7 @@ export function itemPassiveSummary(p: ItemPassive): string {
 /** 库存卡片、审批预览与事实清单共用的一句话说明。 */
 export function itemValueSummary(value: ItemValue): string {
   const r = value.recipe;
-  return [ITEM_FORM_NAMES[r.form] + ' · ' + itemSpecText(r), value.ability ? itemAbilitySummary(value.ability) : '', value.passive ? itemPassiveSummary(value.passive) : '',
-    r.legacy ? '由旧版' + (LEGACY[r.legacy] ?? r.legacy) + '转换' : ''].filter(Boolean).join(' · ');
+  return [ITEM_FORM_NAMES[r.form] + ' · ' + itemSpecText(r), value.ability ? itemAbilitySummary(value.ability) : '', value.passive ? itemPassiveSummary(value.passive) : ''].filter(Boolean).join(' · ');
 }
 
 /**

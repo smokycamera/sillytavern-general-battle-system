@@ -103,7 +103,7 @@ export function battleEpilogue(b: Battle, start?: BattleReport['start']): string
     ...(b instanceof SmallBattle && b.isOver() ? ['【胜负原因】' + smallBattleResult(b)] : []),
     `【本场规则】${lethalityRule(b)}`,
     ...(facts.length?['【战场】',...facts]:[]),
-    '【开局单位状态与血量】',...(opening?.length?opening.map(u=>epilogueUnit(b,u,openingField)):['这场旧战斗没有开局存档记录，开局状态与血量未记录，不推测。']),
+    '【开局单位状态与血量】',...(opening?.length?opening.map(u=>epilogueUnit(b,u,openingField)):['开局状态与血量未记录。']),
     '【结束单位状态与血量】',...visible.map(u=>epilogueUnit(b,u,field)),
     '【伤害来源】',...(damage.length?damage:['没有记录到可核实的伤害。']),
     NARRATIVE_TASK].join('\n');
@@ -115,7 +115,7 @@ export function makeNarrativeBatch(b: Battle | undefined, report: BattleReport |
     return {battleId:id,kind,key:'epilogue',from:0,to:b?.log.length??report?.eventCount??0,text:b?battleEpilogue(b,start??report?.start):report?.epilogue??report?.summary??''};
   }
   const from=deliveries[id]?.cursor??0,to=b?.log.length??report?.eventCount??0;
-  if(!b && !report?.narrativeEvents)throw Error('这份旧战报没有事件游标，可发送完整战报或状态摘要');
+  if(!b && !report?.narrativeEvents)throw Error('这份战报缺少事件游标，可发送完整战报或状态摘要');
   const events=(b?narrativeEvents(b,from,to):report!.narrativeEvents!).filter(e=>e.index>=from && e.index<to);
   if(!events.length)throw Error('没有新的可叙述事件');
   let round=-1;const lines:string[]=[];

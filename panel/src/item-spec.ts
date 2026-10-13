@@ -228,15 +228,19 @@ const traitList = (text: string) => text.split('、').every((name) => narrativeT
  * 按逗号分项。“名称:”之后还没写到等级时，逗号或顿号只是佩戴特质之间的分隔（精灵斗篷:潜伏，林地专精L6），
  * 并回前一项；否则另起一项，所以“手雷:…L4×6、治疗药水:…L3”也能分开。
  */
-export function splitSpawnItems(value: string): string[] {
+export function splitSpawnItems(value: string, ranges?: [number, number][]): string[] {
   const entries: string[] = [];
-  for (const raw of value.split(/[,，、;；\n]/)) {
+  for (const match of value.matchAll(/[^,，、;；\n]+/g)) {
+    const raw = match[0];
     const part = raw.trim();
     if (!part) continue;
+    const start = match.index! + raw.length - raw.trimStart().length, end = start + part.length;
     const last = entries.at(-1), at = last?.search(/[:：]/) ?? -1;
     const open = last !== undefined && !ITEM_COUNT.test(last) && !hasLevel(at >= 0 ? last.slice(at + 1) : last) && (at >= 0 || traitList(last));
-    if (open && !/[:：]/.test(part)) entries[entries.length - 1] = last + '、' + part;
-    else entries.push(part);
+    if (open && !/[:：]/.test(part)) {
+      entries[entries.length - 1] = last + '、' + part;
+      if (ranges) ranges[ranges.length - 1]![1] = end;
+    } else { entries.push(part); ranges?.push([start, end]); }
   }
   return entries;
 }
@@ -258,7 +262,7 @@ export function parseSpawnItem(entry: string, notes?: string[]): SpawnItem {
   const name = at > 0 ? text.slice(0, at).trim() : '', specText = (at >= 0 ? text.slice(at + 1) : text).trim();
   if (!specText && !name) throw new Error('缺少道具名称');
   if (!hasLevel(specText)) return { name: name || specText, qty };
-  const spec = parseItemSpecification(specText.split('、').map(normalizeNarrativeSpec).join('、'), {}, notes, { item: true });
+  const spec = parseItemSpecification(specText.split('、').map(part => normalizeNarrativeSpec(part)).join('、'), {}, notes, { item: true });
   if (spec.kind !== 'item') throw new Error('武器、护甲与盾写在weapon、weapon2、armor、shield，items只写道具');
   return { name: name || specText.replace(/\s*[lL]\s*\d.*$/, '').trim() || itemSpecificationText(spec), qty, spec };
 }

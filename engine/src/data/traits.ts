@@ -222,7 +222,7 @@ export const TRAITS: Trait[] = [
     effects: [{ kind: 'chargeBonus', value: 3 }],
   },
   {
-    id: 'trample', name: '践踏', desc: '旧规则对指定轻型编队伤害 ×2',
+    id: 'trample', name: '践踏', desc: '对指定轻型编队伤害 ×2',
     v2SourceReady: true,
     v2Desc: '以实际较大身体完成合法近战冲锋时，冲击伤害×1.25；普通攻击、同等或更大体型不受此影响，展开与行动上限照常',
     effects: [{ kind: 'conditionalDmgMult', vsTag: 'mook', mult: 2 }],

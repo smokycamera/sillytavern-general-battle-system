@@ -8,7 +8,7 @@ describe('global ordinary LLM settings',()=>{
     const data=storage(),s={...readLlmSettings(),url:'https://gateway.example/v1',token:'test-key',model:'chosen',models:['chosen','other'],enabled:true,selectBattleScale:false,windowSize:18};
     saveLlmSettings(s);expect(readLlmSettings()).toEqual(s);expect([...data.keys()]).toEqual([LLM_SETTINGS_KEY]);
     expect(llmConnection(s)).toEqual({url:s.url,token:s.token,model:s.model,protocol:'openai',transport:'auto'});
-    const html=renderLlmSettings(s);expect(html).toContain('<option value="jev" disabled>jev指挥功能(未完成，勿选)</option>');expect(html).not.toMatch(/data-role="jev-|转发地址|连接途径/);
+    const html=renderLlmSettings(s);expect(html).toContain('<option value="jev" disabled>JEV 指挥（暂不可用）</option>');expect(html).not.toMatch(/data-role="jev-|转发地址|连接途径/);
   });
   it('defaults scale selection off and disables the control outside LLM mode',()=>{
     const data=storage();

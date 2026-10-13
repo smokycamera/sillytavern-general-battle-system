@@ -192,8 +192,8 @@ export function overmatchMultiplier(power:number|undefined,unit:DefensiveTarget,
 }
 export function armorEffectLabel(unit:Pick<Combatant,'armor'|'shield'|'damageModel'>):string {
   return isWoundModel(unit.damageModel)
-    ? `部分穿透吸能强度×${Number(instanceMultiplier(unit.armor?.recipe?.bonuses,'power',unit.armor?.recipe?.variance).toFixed(2))}；充分穿透后无额外减伤${unit.armor?.powerScale!==undefined||unit.shield?.powerScale!==undefined?'（旧耐久覆盖不参与新规则）':''}`
-    : `装甲等效耐久×${Number(armorPowerScale(unit).toFixed(2))}（旧规则）`;
+    ? `部分穿透吸能强度×${Number(instanceMultiplier(unit.armor?.recipe?.bonuses,'power',unit.armor?.recipe?.variance).toFixed(2))}；充分穿透后无额外减伤`
+    : `装甲等效耐久×${Number(armorPowerScale(unit).toFixed(2))}`;
 }
 /** 没有手动指定时，火炮按公开目标防护和人数选择有效毁伤较高的弹种。 */
 export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Combatant,weaponOverflow=false,model=actor.damageModel,overmatch=false,curve?:RulePack['overmatchCurve']):Weapon|undefined {

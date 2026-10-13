@@ -11,7 +11,7 @@ import { SKILL_MODEL } from './skill-model.js';
 import { parseSkillMechanism, skillMechanismFromId, skillMechanismId, skillMechanismName } from './data/skill-mechanisms.js';
 import { TRAITS, traitRegistry, isGradedTrait, validTraitLevel } from './data/traits.js';
 import { itemsV15 } from './item-model.js';
-import { isCohort, personnel } from './combat-model.js';
+import { healingYield, isCohort, personnel } from './combat-model.js';
 import { resourceRound } from './resources.js';
 
 /**
@@ -203,7 +203,7 @@ const legacyMechanism = (text: string) => skillMechanismId(parseSkillMechanism(t
 export function migrateLegacyItem(mechanics: LegacyItemMechanics, name: string, seed: string): Extract<ItemMechanics, { kind: 'item' }> {
   if (mechanics.kind === 'consumable') {
     const mechanism = String(mechanics.recipe.mechanism), active = LEGACY_CONSUMABLES[mechanism];
-    if (!active) throw new Error('旧版消耗品用途未知，不能转换：' + mechanism);
+    if (!active) throw new Error('消耗品用途未知，不能转换：' + mechanism);
     const bonuses = mechanics.recipe.bonuses && Object.keys(mechanics.recipe.bonuses).length ? { ...mechanics.recipe.bonuses } : undefined;
     return compileItem({ kind: 'item', form: 'single', power: mechanics.recipe.power, active: legacyMechanism(active), ...(bonuses ? { bonuses } : {}), legacy: 'consumable:' + mechanism }, { id: seed, name, seed: mechanics.recipe.seed || seed }) as Extract<ItemMechanics, { kind: 'item' }>;
   }
@@ -211,7 +211,7 @@ export function migrateLegacyItem(mechanics: LegacyItemMechanics, name: string, 
   const trait = LEGACY_ACCESSORY_TRAITS[kind], skill = LEGACY_ACCESSORY_SKILLS[kind];
   if (trait) return compileItem({ kind: 'item', form: 'worn', power, traits: [{ id: trait, ...(isGradedTrait(trait) ? { level: 5 } : {}) }], legacy: 'accessory:' + kind }, { id: seed, name, seed: mechanics.value.recipe?.seed || seed }) as Extract<ItemMechanics, { kind: 'item' }>;
   if (skill) return compileItem({ kind: 'item', form: 'charged', power, active: legacyMechanism(skill), legacy: 'accessory:' + kind }, { id: seed, name, seed: mechanics.value.recipe?.seed || seed }) as Extract<ItemMechanics, { kind: 'item' }>;
-  throw new Error('旧版配件用途未知，不能转换：' + kind);
+  throw new Error('配件用途未知，不能转换：' + kind);
 }
 export const isLegacyItemMechanics = (value: { kind?: unknown } | undefined): value is LegacyItemMechanics => value?.kind === 'consumable' || value?.kind === 'accessory';
 
@@ -349,17 +349,27 @@ const BINARY_EFFECTS = new Set(['trait', 'dispel', 'push', 'move']);
 const membersOf = (unit: Combatant) => unit.scale !== 'hero' && isCohort(unit) ? Math.max(1, personnel(unit)) : 1;
 /**
  * V15：编队使用“每人一份”的一次性道具，一次最多消耗现员数件；给友方用时还不超过目标需要的件数。
- * 件数不足时伤害按实际件数的投掷人数结算，治疗按件数累加，状态、屏障、精力和士气按覆盖比例折算；
+ * 纯治疗按实际可恢复伤量限制件数，范围治疗取各目标所需件数的最大值；屏障容量按件数累加。
+ * 件数不足时伤害按实际件数的投掷人数结算，治疗按件数累加，状态、精力和士气按覆盖比例折算；
  * 授予特质、驱散与位移这类“有/无”的效果需要覆盖全员。英雄、旧规则与一件一个效果的道具不变。
  */
-export function itemUseAbility(actor: Combatant, ability: Ability, target?: Combatant): { ability: Ability; reason?: string } {
+export function itemUseAbility(actor: Combatant, ability: Ability, target?: Combatant, healingTargets?: readonly Combatant[]): { ability: Ability; reason?: string } {
   if (!ability.itemSourceId || !itemsV15(actor) || ability.itemScaling !== 'member' || !ability.cost) return { ability };
   const have = Math.max(0, actor.resources[ability.cost.resource] ?? 0);
   const support = ability.target === 'ally' || ability.target === 'self';
   const recipient = support ? target ?? actor : undefined;
   const need = recipient ? membersOf(recipient) : membersOf(actor);
   const users = membersOf(actor);
-  const doses = Math.max(1, Math.min(have, users, need));
+  let doses = Math.max(1, Math.min(have, users, need));
+  // 只裁减纯治疗品；复合道具的其他效果仍可能需要覆盖全员。
+  if (recipient && ability.effects.length && ability.effects.every(e => e.op === 'heal' && e.amount !== undefined)) {
+    const healing = ability.effects.reduce((sum, e) => e.op === 'heal' ? sum + (e.amount ?? 0) : sum, 0);
+    if (healing > 0) {
+      const required = Math.max(0, ...(healingTargets ?? [recipient]).map(affected =>
+        Math.ceil(recoveryCapacity(affected) / healingYield(actor, affected, healing, true))));
+      doses = Math.max(1, Math.min(doses, required));
+    }
+  }
   if (doses <= 1 && need <= 1) return { ability };
   const share = Math.min(1, doses / need);
   if (share < 1 && ability.effects.some((e) => BINARY_EFFECTS.has(e.op))) return { ability, reason: `件数不足以覆盖全队（需要${need}件）` };
@@ -369,7 +379,7 @@ export function itemUseAbility(actor: Combatant, ability: Ability, target?: Comb
     if (e.op === 'heal') return e.amount !== undefined ? { op: 'heal', amount: Math.max(1, Math.round(e.amount * (support ? doses : 1))) } : e;
     if (e.op === 'condition') return { ...e, magnitude: (e.magnitude ?? 1) * share };
     if (!support) return e;
-    if (e.op === 'barrier') return { ...e, amount: Math.max(1, Math.round(e.amount * share)) };
+    if (e.op === 'barrier') return { ...e, amount: Math.max(1, Math.round(e.amount * doses)) };
     if (e.op === 'resource') return { ...e, amount: e.resource === 'SP' ? resourceRound(e.amount * share) : Math.sign(e.amount) * Math.max(1, Math.round(Math.abs(e.amount) * share)) };
     if (e.op === 'morale') return { ...e, amount: Math.round(e.amount * share) };
     return e;

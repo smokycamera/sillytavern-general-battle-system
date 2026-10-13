@@ -66,7 +66,7 @@ export function standardField(width = 7, height = 9, tags: string[] = []): Battl
 }
 export function validateField(field: BattlefieldSpec): void {
   if (field.generation?.scene !== undefined && !BATTLEFIELD_SCENES.includes(field.generation.scene)) throw Error('场景记录损坏');
-  if (field.version !== 2 || ![[7, 9], [5, 7], [7, 11], [7, 13], [9, 15], [11, 17], [13, 19]].some(([w, h]) => field.width === w && field.height === h)) throw new Error('地图尺寸不支持（野战7×13，城区9×15/11×17/13×19，或旧地图）');
+  if (field.version !== 2 || ![[7, 9], [5, 7], [7, 11], [7, 13], [9, 15], [11, 17], [13, 19]].some(([w, h]) => field.width === w && field.height === h)) throw new Error('地图尺寸不支持（野战7×13，城区9×15/11×17/13×19）');
   if (field.tiles.length !== field.width * field.height || field.tiles.some((t) => !Object.hasOwn(TERRAIN_NAMES, t))) throw new Error('地形数据不完整');
   validateLayers(field);
   validateHeightMap(field);

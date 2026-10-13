@@ -202,7 +202,7 @@ describe('技能位移：突进（冲锋）、闪现、后撤', () => {
       skillMechanismId(parseSkillMechanism('减益范围惊惧+士气')!), skillMechanismId(parseSkillMechanism('冲锋')!)]);
     expect(batch.warnings.join('\n')).toMatch(/已忽略「治疗」——写在攻击\/减益技能里会作用到敌人/);
     expect(batch.warnings.join('\n')).toMatch(/未采用「先锋部署」——只在开战部署时生效/);
-    expect(batch.warnings.join('\n')).toMatch(/旧技能名「士气伤害」按减益范围惊惧\+士气理解/);
+    expect(batch.warnings.join('\n')).toMatch(/技能名「士气伤害」按减益范围惊惧\+士气理解/);
   });
 
   it('V14：同时改两项属性的状态按两项计价，与分别写两个单项一致；V13 与旧战斗数值不变', () => {

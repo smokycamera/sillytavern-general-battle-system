@@ -44,7 +44,7 @@ export function prepareCombatModel(u: Combatant, rules: RulePack, memberHp?:numb
   for(const c of u.conditions)if(c.affectedMembers!==undefined&&(!Number.isFinite(c.affectedMembers)||c.affectedMembers<0||c.affectedMembers>1e9))throw Error('状态波及人数损坏');
   if(u.combatModel!==undefined||u.formation!==undefined)validateCombatModel(u);
   // 旧快照依旧版本运行；只有显式进入V4才创建成员生命，不能在恢复时重置伤损。
-  if (u.damageModel === 'wounds-v2' && rules.damageModel !== 'wounds-v2') throw Error('统一规则单位不能无损降级到旧战斗规则');
+  if (u.damageModel === 'wounds-v2' && rules.damageModel !== 'wounds-v2') throw Error('单位与战斗规则不一致，无法转换');
   if (rules.damageModel === 'wounds-v2') upgradeUnifiedLife(u);
   const fresh=!u.formation;
   u.combatModel=rules.combatModel;

@@ -123,7 +123,7 @@ export function executeSmallGameAction(b: SmallBattle, actorId: string, a: GameA
   switch (a.type) {
     case 'move':
       if (b.battlefield) b.moveTo(actorId, gameCell(b, a.cell));
-      else { if (a.direction !== 'advance' && a.direction !== 'withdraw') throw Error('旧战场移动须提供 direction'); b.move(actorId, a.direction); }
+      else { if (a.direction !== 'advance' && a.direction !== 'withdraw') throw Error('此战场的移动指令需要 direction'); b.move(actorId, a.direction); }
       break;
     case 'attack': b.attack(actorId, target(), { weaponMode: a.weaponMode ?? 'primary' }); break;
     case 'charge': b.attack(actorId, target(), { charge: true }); break;

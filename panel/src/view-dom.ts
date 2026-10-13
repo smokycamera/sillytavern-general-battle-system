@@ -1,4 +1,29 @@
 import { hydrateTerrain } from './terrain-layer.js';
+
+/** 用文本框的实际排版定位选区，包含自动折行、缩放、字体与内边距。 */
+export function selectTextareaRange(draft: HTMLTextAreaElement, start: number, end: number): void {
+  draft.focus({ preventScroll: true });
+  draft.setSelectionRange(start, end);
+  const style = getComputedStyle(draft), mirror = document.createElement('div'), marker = document.createElement('span');
+  for (const property of ['font-family', 'font-size', 'font-weight', 'font-style', 'line-height', 'letter-spacing', 'word-spacing',
+    'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'text-indent', 'text-transform', 'tab-size', 'word-break', 'overflow-wrap']) {
+    mirror.style.setProperty(property, style.getPropertyValue(property));
+  }
+  Object.assign(mirror.style, { position: 'fixed', left: '0', top: '0', visibility: 'hidden', pointerEvents: 'none',
+    boxSizing: 'border-box', width: draft.clientWidth + 'px', whiteSpace: draft.wrap === 'off' ? 'pre' : 'pre-wrap', overflowWrap: 'break-word' });
+  mirror.append(document.createTextNode(draft.value.slice(0, start)), marker, document.createTextNode(draft.value.slice(end) + ' '));
+  marker.textContent = draft.value.slice(start, end) || ' ';
+  document.body.append(mirror);
+  try {
+    const rect = marker.getClientRects()[0];
+    if (rect && draft.clientHeight) {
+      const top = rect.top - mirror.getBoundingClientRect().top;
+      draft.scrollTop = Math.max(0, top - (draft.clientHeight - rect.height) / 2);
+      draft.scrollLeft = Math.max(0, rect.left - mirror.getBoundingClientRect().left - draft.clientWidth / 2);
+    }
+  } finally { mirror.remove(); }
+  draft.scrollIntoView({ block: 'nearest' });
+}
 /** 战场在原位更新节点；格子、滚动容器和下拉框不因查看目标而离开文档。 */
 function battleNodeKey(node: Node): string | undefined {
   if (!(node instanceof Element)) return undefined;
@@ -64,8 +89,9 @@ export function updateRegion(root: HTMLElement, html: string): void {
   const open = new Set([...root.querySelectorAll<HTMLDetailsElement>('details[open][data-detail-id]')].map(d => d.dataset.detailId));
   const existing = new Set([...root.querySelectorAll<HTMLDetailsElement>('details[data-detail-id]')].map(d => d.dataset.detailId));
   const focus = root.contains(document.activeElement) ? document.activeElement as HTMLInputElement : undefined;
-  const role = focus?.dataset.role, id = focus?.id, section = focus?.dataset.section;
+  const role = focus?.dataset.role, id = focus?.id, section = focus?.dataset.section, dataId = focus?.dataset.id;
   const selection = focus && ['INPUT', 'TEXTAREA'].includes(focus.tagName) ? [focus.selectionStart, focus.selectionEnd] : undefined;
+  const textScroll = focus instanceof HTMLTextAreaElement ? { top: focus.scrollTop, left: focus.scrollLeft } : undefined;
   if (root.dataset.workspace === 'battle') {
     // 文档里已有同签名的格子不再解析：只留同键空壳，打补丁时按签名整格跳过。
     const live = new Set([...root.querySelectorAll('button.grid-cell[data-static]')].map(el => el.getAttribute('data-static')));
@@ -101,11 +127,12 @@ export function updateRegion(root: HTMLElement, html: string): void {
   if (oldCamera?.isConnected) { oldCamera.scrollLeft = Number(oldCamera.dataset.restoreLeft); oldCamera.scrollTop = Number(oldCamera.dataset.restoreTop); }
   const log = root.querySelector('#logview'); if (log && logScroll !== undefined) log.scrollTop = logScroll;
   const nextFocus = id ? root.querySelector<HTMLElement>('#' + CSS.escape(id)) : role
-    ? [...root.querySelectorAll<HTMLElement>('[data-role]')].find(el => el.dataset.role === role && (!section || el.dataset.section === section)) : undefined;
+    ? [...root.querySelectorAll<HTMLElement>('[data-role]')].find(el => el.dataset.role === role && (!section || el.dataset.section === section) && (dataId === undefined || el.dataset.id === dataId)) : undefined;
   nextFocus?.focus({ preventScroll: true });
   if (selection && nextFocus && 'setSelectionRange' in nextFocus && selection[0] !== null && selection[1] !== null) {
     try { (nextFocus as HTMLInputElement).setSelectionRange(selection[0]!, selection[1]!); } catch { /* number/select无文本选区 */ }
   }
+  if (textScroll && nextFocus instanceof HTMLTextAreaElement) { nextFocus.scrollTop = textScroll.top; nextFocus.scrollLeft = textScroll.left; }
 }
 
 export class BattleCamera {

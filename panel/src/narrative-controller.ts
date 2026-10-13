@@ -52,14 +52,14 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
   const records = allRecords.filter((r) => promptSelected(settings, 'unit', r.id)
     && unitInPromptScope(settings, r.id, roster.has(r.id), relevant(r))
     && (!battleOpen || combatants.some((u) => u.id === r.id) || relevant(r) || settings?.pinnedUnitIds?.includes(r.id))).sort((a, b) => Number(relevant(b)) - Number(relevant(a)) || Number(roster.has(b.id)) - Number(roster.has(a.id)) || (b.revision ?? 1) - (a.revision ?? 1));
-  lines.push(`本场${limited ? '已知' : ''}参战${allRecords.filter((r) => roster.has(r.id)).length}张单位卡；编队人数另计，旧档仓库数量不等于参战数量。`);
+  lines.push(`本场${limited ? '已知' : ''}参战${allRecords.filter((r) => roster.has(r.id)).length}张单位卡；编队人数另计。`);
   lines.push(`环境：${battleOpen ? (save.battle?.snap.fieldTags as string[] | undefined)?.join('/') ?? 'plains' : (save.field || 'plains') + (save.lighting === 'night' && save.field !== 'night' ? '/night' : '')}；本场场景以存档记录为准。`);
   if (battleOpen && field) {
     const goal = field.objective;
     const owner = goal.kind === 'escape' ? combatants.find((u) => u.id === goal.unitId)?.side : undefined;
     blocks.mission.push(`当前地图${field.width}×${field.height}${goal.kind === 'annihilation' ? '' : '，任务格' + cellLabel(field, goal.cell)}，第${save.battle?.snap.round ?? 1}/${goal.limit}轮；移动/位置以引擎为准。`);
     blocks.mission.push(goal.kind === 'annihilation' ? '任务：歼灭战，使敌方全部失去作战能力获胜，无占点胜利。' : goal.kind === 'control' ? `任务：${goal.attackingSide ? (goal.attackingSide === 'ally' ? '我方进攻、敌方防守' : '我方防守、敌方进攻') + '；仅攻方可占点获胜，守方坚持至期限获胜' : '双方争夺'}，占领当轮不计，连续控制${goal.rounds}个完整回合可胜；当前进展${promptJson(save.battle?.snap.controlRounds ?? {})}。`
-      : `任务：${owner === 'enemy' ? '我方拦截敌方护送' : '我方护送、敌方拦截'}；对象${visible.has(goal.unitId) ? promptJson(publicId(goal.unitId)) : '尚未观测'}，地面抵达则护送方胜；${goal.defenderWins ? '消灭、撤离或逾期则拦截方胜' : '旧规则逾期僵持'}。`);
+      : `任务：${owner === 'enemy' ? '我方拦截敌方护送' : '我方护送、敌方拦截'}；对象${visible.has(goal.unitId) ? promptJson(publicId(goal.unitId)) : '尚未观测'}，地面抵达则护送方胜；${goal.defenderWins ? '消灭、撤离或逾期则拦截方胜' : '任务逾期僵持'}。`);
   }
   if (limited) blocks.mission.push('仅列我方与当前已观测敌军；未列出的敌军位置、兵力与行动未知，不补写隐藏战斗记录。');
   for (const record of records) {
@@ -224,7 +224,7 @@ export class NarrativeController {
   }
   listen(callback: Listener): () => void { this.listeners.add(callback); return () => this.listeners.delete(callback); }
   private notify(): void { for (const listener of this.listeners) listener(this.snapshot(), this.lastReceipt); }
-  private project(): void { this.capabilities.injection = this.adapter.injectPrompts([{ id: PROMPT_ID, content: this.migration ? '【战阵】旧存档或坏项正等待玩家核对迁移预览；暂不执行正文档案事件。' : narrativeProjection(this.state, this.adapter.recentPromptText?.() ?? '') }]); }
+  private project(): void { this.capabilities.injection = this.adapter.injectPrompts([{ id: PROMPT_ID, content: this.migration ? '【战阵】存档正等待玩家核对迁移预览；暂不执行正文档案事件。' : narrativeProjection(this.state, this.adapter.recentPromptText?.() ?? '') }]); }
   private switchContext(): void {
     this.epoch++; this.binding = undefined; this.generation = undefined;
     this.queuedScan = undefined;

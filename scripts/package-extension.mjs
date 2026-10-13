@@ -21,6 +21,7 @@ mkdirSync(path.join(output, 'mcp'), { recursive: true });
 for (const name of ['package.json', 'package-lock.json', 'server.mjs', 'broker.mjs', 'tools.mjs', 'start.ps1', 'README.md', 'GAMEPLAY.md']) copyFileSync(path.join('mcp', name), path.join(output, 'mcp', name));
 cpSync('mcp/test', path.join(output, 'mcp/test'), { recursive: true });
 copyFileSync('docs/mcp-player-bridge.md', path.join(output, 'docs/mcp-player-bridge.md'));
+copyFileSync('docs/player-update-2.1.0-20261013.md', path.join(output, 'docs/player-update-2.1.0-20261013.md'));
 copyFileSync('scripts/jev-cors-relay.mjs', path.join(output, 'scripts/jev-cors-relay.mjs'));
 const files = [];
 function visit(dir) { for (const name of readdirSync(dir, { withFileTypes: true })) { const file = path.join(dir, name.name); if (name.isDirectory()) visit(file); else files.push(file); } }

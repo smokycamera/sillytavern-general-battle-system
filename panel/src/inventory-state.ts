@@ -354,7 +354,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       if (record.retired || record.status === 'dead') throw new Error('阵亡或解散目标不能装备/使用物品');
       if (item.assignedTo && item.assignedTo !== record.id) throw new Error(item.equippedTo ? '物品已装备，请先卸下并转移' : '物品属于其他单位，请先分配');
       if (action.kind === 'equip') {
-        if (!record.equipmentManaged || !record.snapshot) throw new Error('请先预览更新规则为V2再使用新配装');
+        if (!record.equipmentManaged || !record.snapshot) throw new Error('请先预览并更新单位规则，再使用配装');
         if (!item.mechanics || !fitsEquipmentSlot(item.mechanics, action.slot)) throw new Error(item.mechanics?.kind === 'item' && item.mechanics.value.recipe.form === 'single' ? '一次性道具不用装备，交给单位后在战斗中使用' : '缺少可装备规格或槽位不匹配');
         if (item.equippedTo) throw new Error('物品已装备，请先卸下');
         if (action.slot !== 'gear') for (const old of inventory) if (old.equippedTo?.unitId === record.id && old.equippedTo.slot === action.slot) delete old.equippedTo;

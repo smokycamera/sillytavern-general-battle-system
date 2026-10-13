@@ -10,5 +10,5 @@ export function normalizeV2Scale(unit: Combatant): void {
   if (unit.genAudit?.input) unit.genAudit.input.scale = 'company';
 }
 export function scaleLabel(unit: Pick<Combatant, 'scale'> & Partial<Pick<Combatant, 'rulesVersion'>>): string {
-  return unit.scale === 'hero' ? '个体' : unit.scale === 'mook' && unit.rulesVersion !== 'v2' ? '编队（旧规则）' : '编队';
+  return unit.scale === 'hero' ? '个体' : '编队';
 }

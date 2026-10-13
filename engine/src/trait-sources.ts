@@ -39,7 +39,7 @@ export function validateTraitSource(source: TraitSource, registry = traitRegistr
   if (source.traitIds.some((id) => id !== 'elite' && registry.get(id)?.effects.some((e) => e.kind === 'stat' && e.stat === 'hpMax'))) throw new Error('体量/生命上限特质需要明确身体与上限事务，不能用临时来源暗改上限');
 }
 export function grantTraitSource(unit: Combatant, input: TraitSourceInput, registry = traitRegistry()): void {
-  if (unit.rulesVersion !== 'v2') throw new Error('特质来源需要先更新规则为V2');
+  if (unit.rulesVersion !== 'v2') throw new Error('请先更新单位规则，再添加特质来源');
   const source: TraitSource = { ...structuredClone(input), traitIds: [...new Set(input.traitIds)],
     ...(input.conditionIds ? { conditionIds: [...new Set(input.conditionIds)] } : {}),
     ...(input.duration.kind !== 'permanent' ? { remaining: input.duration.count } : {}) };

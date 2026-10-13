@@ -3,7 +3,7 @@ import type { LlmSettings } from './llm-settings.js';
 export function renderLlmSettings(c: LlmSettings, status = ''): string {
   const models = [...new Set([...(c.model ? [c.model] : []), ...c.models])];
   return `<section><h2>上下文与开战配置</h2>
-    <label>配置方式 <select data-role="llm-mode"><option value="manual" ${c.enabled ? '' : 'selected'}>手动配置 · 内置自动战斗</option><option value="llm" ${c.enabled ? 'selected' : ''}>普通 LLM 读取上下文</option><option value="jev" disabled>jev指挥功能(未完成，勿选)</option></select></label>
+    <label>配置方式 <select data-role="llm-mode"><option value="manual" ${c.enabled ? '' : 'selected'}>手动配置 · 内置自动战斗</option><option value="llm" ${c.enabled ? 'selected' : ''}>普通 LLM 读取上下文</option><option value="jev" disabled>JEV 指挥（暂不可用）</option></select></label>
     <p>开战前读取最近的正文，由模型选择双方指挥、任务与战场。指挥配置只影响自动行动。</p>
     <label><input data-role="llm-battle-scale" type="checkbox" ${c.selectBattleScale ? 'checked' : ''} ${c.enabled ? '' : 'disabled'}>由 LLM 选择战场规模</label>
     <p class="sub">关闭时按卡数决定：32张及以下为小战，更多为会战。</p>

@@ -40,7 +40,7 @@ describe('道具 spec 解析与容错', () => {
     expect(parseItemSpecification('步枪L5')).toMatchObject({ kind: 'weapon', mechanism: 'rifle' });
     const notes: string[] = [];
     expect(parseItemSpecification('手雷L4', {}, notes)).toMatchObject({ form: 'single', active: 'generic:physical-area:projectile' });
-    expect(notes.join()).toContain('旧技能名');
+    expect(notes.join()).toContain('技能名');
     expect(() => parseItemSpecification('炸弹L3')).toThrow(/可改为“物理范围投射L等级”/);
     expect(() => parseItemSpecification('急救包L3')).toThrow(/可改为“buff治疗L等级”/);
     expect(() => parseItemSpecification('充能夜战专精L5')).toThrow(/特质写在佩戴道具里/);
@@ -152,9 +152,9 @@ describe('旧档转换与战外使用', () => {
   it('读档预览把旧版药剂与护符逐件转换，不当作损坏物品隔离；配件栏改为已佩戴，旧技能不再耗精力', () => {
     const review = reviewMigration(structuredClone(legacy.save) as unknown as NarrativeSave)!;
     expect(review.quarantined).toBe(0);
-    expect(review.changes.filter((c) => c.startsWith('旧版道具'))).toEqual([
-      '旧版道具「夜视镜」转为佩戴道具 夜战专精L5，仍装备在原单位', '旧版道具「治疗护符」转为充能道具 充能增益治疗L3，仍装备在原单位',
-      '旧版道具「治疗药剂」转为一次性道具 增益治疗L3', '旧版道具「投掷炸弹」转为一次性道具 物理范围投射L4']);
+    expect(review.changes.filter((c) => c.startsWith('道具'))).toEqual([
+      '道具「夜视镜」转为佩戴道具 夜战专精L5，仍装备在原单位', '道具「治疗护符」转为充能道具 充能增益治疗L3，仍装备在原单位',
+      '道具「治疗药剂」转为一次性道具 增益治疗L3', '道具「投掷炸弹」转为一次性道具 物理范围投射L4']);
     expect(review.candidate.inventory!.filter((i) => i.mechanics?.kind === 'item').map((i) => [i.name, i.mechanics?.kind === 'item' && i.mechanics.value.recipe.form, i.equippedTo?.slot]))
       .toEqual([['夜视镜', 'worn', 'gear'], ['治疗护符', 'charged', 'gear'], ['治疗药剂', 'single', undefined], ['投掷炸弹', 'single', undefined]]);
     const hero = review.candidate.storage!.find((r) => r.id === 'hero')!.snapshot!;

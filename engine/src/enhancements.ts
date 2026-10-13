@@ -15,7 +15,12 @@ const BONUS_ALIASES: Record<string, BonusStat> = {
   距离: 'range', 攻击距离: 'range', 持续时间: 'duration', 持续回合: 'duration',
   治疗量: 'healing', 恢复能量: 'resource', 生命值: 'health', 防御力: 'defense', 防护值: 'protection',
 };
-export function resolveBonusStat(label: string): BonusStat | undefined {
+export function resolveBonusStat(label: string, kind?: BonusKind): BonusStat | undefined {
+  const channel = ({ 动能: 'kinetic', 热能: 'thermal', 奥术: 'arcane', kinetic: 'kinetic', thermal: 'thermal', arcane: 'arcane' } as Record<string, string>)[label.toLowerCase()];
+  if (channel && kind) {
+    const direction = ['armor', 'shield'].includes(kind) ? 'Protection' : ['unit', 'weapon', 'skill', 'gear'].includes(kind) ? 'Damage' : undefined;
+    if (direction) return (channel + direction) as BonusStat;
+  }
   return (Object.hasOwn(BONUS_ALIASES, label) ? BONUS_ALIASES[label] : undefined) ?? Object.entries(BONUS_NAMES).find(([key, name]) => key.toLowerCase() === label.toLowerCase() || name === label)?.[0] as BonusStat | undefined;
 }
 export type Enhancements = Partial<Record<BonusStat, number>>;
@@ -46,9 +51,10 @@ export function parseEnhancementSuffix(text: string, kind: BonusKind): { text: s
   if (parts.map(m=>m[0]).join('')!==match[2]) throw Error('强化使用L5+3伤害-2精度，每项-10至+10');
   for (const m of parts) {
     const label = m[3] || '强度';
-    const key = resolveBonusStat(label);
+    // 技能的无点数“+热能”等是机制后缀，交给技能容错层处理；带点数才是通道伤害修正。
+    const key = resolveBonusStat(label, kind === 'skill' && !m[2] ? undefined : kind);
     if (!key || bonuses[key] !== undefined) throw Error('强化方向未知或重复：' + label);
-    if (!m[2] && (m[1] !== '+' || !m[3])) throw Error('强化使用L5+3伤害-2精度，每项-10至+10');
+    if (!m[2] && !m[3]) throw Error('强化使用L5+3伤害-2精度，每项-10至+10');
     bonuses[key] = Number(m[2] ?? 1) * (m[1]==='-'?-1:1);
   }
   validateEnhancements(bonuses, kind);

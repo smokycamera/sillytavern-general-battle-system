@@ -576,13 +576,13 @@ export function unitRecordToGenerateInput(r: UnitRecord, era = 'medieval'): Gene
 
 /** 转制只生成可审查副本；不改源记录、不自动扩编或补满。 */
 export function previewUnitConversion(record: UnitRecord, registry: Map<string, Trait>): UnitRecord {
-  if (record.snapshot?.rulesVersion === 'v2') throw new Error('该单位已使用V2效果');
-  if (record.traits.some((id) => ['large', 'titan', 'flying'].includes(id))) throw new Error('旧体量/飞行标签不能猜测转换，请先明确身体效果');
+  if (record.snapshot?.rulesVersion === 'v2') throw new Error('该单位规则已更新');
+  if (record.traits.some((id) => ['large', 'titan', 'flying'].includes(id))) throw new Error('请先明确身体与飞行效果，再更新单位规则');
   const input = unitRecordToGenerateInput(record);
   const source = record.snapshot;
   const weaponId = input.weaponId ?? source?.genAudit?.weapon?.profileId;
-  if (!weaponId && !input.weaponClass) throw new Error('旧武器缺少明确效果来源，请先编辑武器类型再更新规则');
-  if (source?.abilities.some((a) => !a.definitionId?.startsWith('bp-') && !a.id.startsWith('bp-'))) throw new Error('旧固定技能缺少明确配方，请先在编辑中替换为已支持的技能');
+  if (!weaponId && !input.weaponClass) throw new Error('武器缺少明确效果来源，请先编辑武器类型');
+  if (source?.abilities.some((a) => !a.definitionId?.startsWith('bp-') && !a.id.startsWith('bp-'))) throw new Error('技能缺少明确配方，请在编辑中选择支持的效果');
   const unit = generateUnit({ ...input, rulesVersion: 'v2', era: undefined,
     weaponId,
     weaponLevel: source?.weapon?.level ?? record.weaponLevel ?? 5,
@@ -921,7 +921,7 @@ export function editUnitRecord(previous: UnitRecord, edited: UnitRecord, registr
     }
   }
   if (unit.rulesVersion === 'v2' && changed(keys.abilities)) {
-    if (changed(['abilityIds']) && edited.abilityIds?.length) throw new Error('V2学习需要明确技能蓝图');
+    if (changed(['abilityIds']) && edited.abilityIds?.length) throw new Error('学习技能需要明确效果定义');
     if (previous.snapshot) { unit.abilityState = clone(previous.snapshot.abilityState); unit.resources = clone(previous.snapshot.resources); }
     const specs = changed(['skills']) ? (edited.skills ?? []).map((skill) => {
       const id = skill.blueprintId ?? blueprintIdForCategory(skill.category), oldSpec = previous.skills?.find((s) => (s.blueprintId ?? blueprintIdForCategory(s.category)) === id);

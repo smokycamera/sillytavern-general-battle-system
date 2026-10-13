@@ -4,7 +4,7 @@ import { narrativeTraitLevel, traitLevelToken, traitRegistry, inferArchetype, ty
 import { parseAbilitySpec, parseSuggestionTags, type Suggestion } from './tags.js';
 import { resolveWeaponClass } from '../../engine/src/data/weapons.js';
 import { MAX_PROTOCOL_CHARS, MAX_PROTOCOL_EVENTS, MAX_SCENE_UNITS, MAX_SPAWN_COUNT, GROUPING_HINT } from './narrative-limits.js';
-import { scanProtocolTags, normalizedAttributes, serializeEvent, type ProtocolTag, type ProtocolAttribute } from './protocol-syntax.js';
+import { scanProtocolTags, normalizedAttributes, serializeEvent, ProtocolSyntaxError, type ProtocolTag, type ProtocolAttribute } from './protocol-syntax.js';
 import { parseUnitSet, itemKey, UNIT_SET_ATTRIBUTES } from './unit-set.js';
 import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-tolerance.js';
 import { parseItemSpecification, parseSpawnItem, splitSpawnItems, spawnItemText, spawnItemName, splitItemSpecification, itemSpecificationText, assertItemCompiles, fitWornBudget } from './item-spec.js';
@@ -29,6 +29,21 @@ const ATTRIBUTES: Record<string, readonly string[]> = {
 };
 
 const known = new Set(Object.keys(ATTRIBUTES));
+const actionableNotice = (message: string) => /未采用|未支持|未使用|保留原|忽略/.test(message);
+function eventDiagnostic(tag: ProtocolTag, message: string): ProtocolDiagnostic {
+  const positions: ProtocolAttribute[] = [];
+  try { normalizedAttributes(tag, ATTRIBUTES[tag.name] ?? [], [], positions, true); }
+  catch (error) {
+    if (error instanceof ProtocolSyntaxError) return { message: error.message, start: error.start, end: error.end, field: error.field, event: tag.name };
+  }
+  // 跨字段/事件的错误不能靠单字段恢复发现，按实际错误所指的字段定位。
+  const explicit = positions.find(token => new RegExp('(?:^|[^a-zA-Z])' + token.key + '(?:$|[^a-zA-Z])').test(message));
+  const inferred = /当前值不能超过上限|生命.*上限|人数.*上限/.test(message) ? 'hp'
+    : /自编的编号/.test(message) ? 'id' : undefined;
+  const token = explicit ?? positions.find(token => token.key === inferred)
+    ?? (/更新冲突/.test(message) ? positions.find(token => ['hp', 'hpMax', 'morale', 'state'].includes(token.key)) : undefined);
+  return { message, start: token?.start ?? tag.start ?? 0, end: token?.end ?? tag.end ?? 0, field: token?.key, event: tag.name };
+}
 /** 同一回复里 unit_set 的 items 交给单位的道具名，以及 spawn、unit_set 写进 weapon、weapon2 的武器名。 */
 function itemPlacements(tags: ProtocolTag[]): { handed: Set<string>; armed: Set<string> } {
   const handed = new Set<string>(), armed = new Set<string>();
@@ -78,11 +93,13 @@ export function protocolExcerpt(text: string): string {
 export function parseProtocol(text: string, options: { diagnostics?: boolean } = {}): ProtocolBatch {
   const scanned = scanProtocolTags(text, known), warnings = scanned.warnings, errors: string[] = [], skipped: string[] = [];
   const events: Suggestion[] = [], seen = new Map<string, number>(), spawnIds = new Set<string>();
+  const issues = new Map<ProtocolTag, string>(), eventTags = new Map<Suggestion, ProtocolTag>(), batchDiagnostics: ProtocolDiagnostic[] = [];
   const scanLimit = MAX_PROTOCOL_EVENTS * 8;
   if (scanned.tags.length > scanLimit) errors.push('待确认内容标签过多，请先减少重复内容；尚未入账');
   if (scanned.tags.reduce((n, tag) => n + tag.raw.length, 0) > MAX_PROTOCOL_CHARS) errors.push('事件内容超过' + MAX_PROTOCOL_CHARS + '字符，先精简事件草稿；正文长度不受此限制');
   const { handed, armed } = itemPlacements(scanned.tags.slice(0, scanLimit));
   for (const tag of scanned.tags.slice(0, scanLimit)) {
+    const warningsStart = warnings.length, skippedStart = skipped.length;
     try {
       if (!known.has(tag.name)) throw new Error('暂不支持事件 ' + tag.name + '，请补成已支持的效果；引擎战果无需正文重复发放');
       if (!tag.complete) throw new Error(tag.name + ' 事件被截断，属性值尚不完整');
@@ -205,18 +222,39 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
         }
       }
       events.push(event);
-    } catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
+      eventTags.set(event, tag);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(message); issues.set(tag, message);
+    } finally {
+      const message = skipped.slice(skippedStart)[0] ?? warnings.slice(warningsStart).find(actionableNotice);
+      if (message && !issues.has(tag)) issues.set(tag, message);
+    }
   }
   // spawn 写的 id 不作编号。同一回复再用它：出场是多余的（新单位自动上场），其余修改落不到新单位上。
   for (let i = events.length - 1; i >= 0 && spawnIds.size; i--) {
     const event = events[i]!;
     if (!['deploy', 'unit-update', 'unit-set', 'learn', 'bless', 'affect', 'unbless', 'unaffect', 'give'].includes(event.kind) || !('id' in event) || !event.id || !spawnIds.has(normalizeHandle(event.id))) continue;
     if (event.kind === 'deploy') { events.splice(i, 1); warnings.push(`已略过 deploy ${event.id}：这是本回复 spawn 自编的编号，新单位会自动上场`); }
-    else errors.push(`${event.id} 是本回复 spawn 自编的编号，新单位的编号由插件分配；要设置新单位请写进 spawn，或在下一次回复按单位资料里的编号修改`);
+    else {
+      const message = `${event.id} 是本回复 spawn 自编的编号，新单位的编号由插件分配；要设置新单位请写进 spawn，或在下一次回复按单位资料里的编号修改`;
+      errors.push(message); issues.set(eventTags.get(event)!, message);
+    }
   }
   const spawned = events.reduce((n, event) => n + (event.kind === 'spawn' ? event.count : 0), 0);
   if (events.length > MAX_PROTOCOL_EVENTS) errors.push('合并重复内容后共有' + events.length + '项事件，最多' + MAX_PROTOCOL_EVENTS + '项；请调整草稿，尚未入账');
   if (spawned > MAX_SCENE_UNITS) errors.push('本批新建单位超过' + MAX_SCENE_UNITS + '，请调整草稿；' + GROUPING_HINT);
+  // 批量限制指向触发限制的事件；不把首条错误复制到全部合法事件。
+  if (scanned.tags.length > scanLimit) batchDiagnostics.push(eventDiagnostic(scanned.tags[scanLimit]!, errors[0]!));
+  if (scanned.tags.reduce((n, tag) => n + tag.raw.length, 0) > MAX_PROTOCOL_CHARS && scanned.tags.length) {
+    let size = 0; const tag = scanned.tags.find(tag => (size += tag.raw.length) > MAX_PROTOCOL_CHARS)!;
+    batchDiagnostics.push(eventDiagnostic(tag, '事件内容超过' + MAX_PROTOCOL_CHARS + '字符，请精简草稿'));
+  }
+  if (events.length > MAX_PROTOCOL_EVENTS) batchDiagnostics.push(eventDiagnostic(eventTags.get(events[MAX_PROTOCOL_EVENTS]!)!, '事件超过' + MAX_PROTOCOL_EVENTS + '项，请精简草稿'));
+  if (spawned > MAX_SCENE_UNITS) {
+    let count = 0; const event = events.find(event => event.kind === 'spawn' && (count += event.count) > MAX_SCENE_UNITS)!;
+    batchDiagnostics.push(eventDiagnostic(eventTags.get(event)!, '本批新建单位超过' + MAX_SCENE_UNITS + '；' + GROUPING_HINT));
+  }
   // 略过的道具排在提示最前；整条回复只剩写不出的道具时作为待补全，不让它悄悄消失。
   if (skipped.length && !events.length && !errors.length) errors.push(skipped[0]!);
   warnings.unshift(...skipped);
@@ -224,9 +262,13 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
   const uniqueWarnings = [...new Set(warnings)];
   const orderedWarnings = [...uniqueWarnings.filter(w => !w.startsWith('已规范化 ')), ...uniqueWarnings.filter(w => w.startsWith('已规范化 '))];
   const batch: ProtocolBatch = { events, canonical: events.map((e) => e.raw).join('\n'), errors: [...new Set(errors)], warnings: orderedWarnings.slice(0, 12), diagnostics: [] };
-  if (options.diagnostics !== false && (errors.length || warnings.some(w => /未采用|未支持|未使用|保留原|忽略/.test(w)))) {
-    batch.diagnostics = recoverProtocol(text).diagnostics;
-    if (!batch.diagnostics.length && errors.length) batch.diagnostics = scanned.tags.map(tag => ({ message: errors[0]!, start: tag.start ?? 0, end: tag.end ?? text.length, event: tag.name }));
+  if (options.diagnostics !== false && (issues.size || batchDiagnostics.length)) {
+    const recovered = recoverProtocol(text).diagnostics;
+    for (const [tag, message] of issues) {
+      const matches = recovered.filter(d => d.start >= (tag.start ?? 0) && d.end <= (tag.end ?? text.length));
+      batchDiagnostics.push(...(matches.length ? matches : [eventDiagnostic(tag, message)]));
+    }
+    batch.diagnostics = batchDiagnostics.sort((a, b) => a.start - b.start || a.end - b.end);
   }
   return batch;
 }
@@ -239,14 +281,36 @@ const repairProbes: Record<string, Record<string, string>> = {
   affect: { id: '校验', effects: '诅咒', battles: '1' }, unbless: { id: '校验', source: '校验' }, unaffect: { id: '校验', source: '校验' },
 };
 
+function attributeParts(token: ProtocolAttribute, key: string): [number, number][] {
+  const ranges: [number, number][] = [];
+  const push = (start: number, end: number) => {
+    const part = token.value.slice(start, end), leading = part.length - part.trimStart().length;
+    if (part.trim()) ranges.push([token.valueOffsets[start + leading]!, token.valueOffsets[start + leading + part.trim().length]!]);
+  };
+  if (key === 'items') {
+    const items: [number, number][] = [];
+    splitSpawnItems(token.value, items);
+    for (const [start, end] of items) push(start, end);
+  } else if (token.value.startsWith('[')) {
+    for (const match of token.value.matchAll(/"(?:\\.|[^"\\])*"/g)) push(match.index! + 1, match.index! + match[0].length - 1);
+  } else {
+    const separator = key === 'skills' ? /[,，、;；\n]+/g : /[,，、;；|+＋\n]+/g;
+    let cursor = 0;
+    for (const match of token.value.matchAll(separator)) { push(cursor, match.index!); cursor = match.index! + match[0].length; }
+    push(cursor, token.value.length);
+  }
+  return ranges;
+}
+
 /** Explicit draft recovery only: remove bad fields/suffixes, retain the unit and all usable data. */
 export function recoverProtocol(text: string): { text: string; diagnostics: ProtocolDiagnostic[] } {
   const tags = scanProtocolTags(text, known).tags, lines: string[] = [], diagnostics: ProtocolDiagnostic[] = [];
   for (const tag of tags) {
-    const add = (message: string, token?: ProtocolAttribute, needle?: string) => {
-      const relative = needle ? token?.raw.indexOf(needle) ?? -1 : -1;
-      const start = relative >= 0 ? token!.start + relative : token?.start ?? tag.start ?? 0;
-      diagnostics.push({ message, start, end: relative >= 0 ? start + needle!.length : token?.end ?? tag.end ?? text.length, field: token?.key, event: tag.name });
+    const add = (message: string, token?: ProtocolAttribute, needle?: string, range?: [number, number]) => {
+      const relative = needle ? token?.value.indexOf(needle) ?? -1 : -1;
+      const start = range?.[0] ?? (relative >= 0 ? token!.valueOffsets[relative]! : token?.start ?? tag.start ?? 0);
+      const end = range?.[1] ?? (relative >= 0 ? token!.valueOffsets[relative + needle!.length]! : token?.end ?? tag.end ?? text.length);
+      diagnostics.push({ message, start, end, field: token?.key, event: tag.name });
     };
     if (!known.has(tag.name)) { add('未支持事件 ' + tag.name); continue; }
     const full = parseProtocol(tag.raw, { diagnostics: false });
@@ -254,7 +318,10 @@ export function recoverProtocol(text: string): { text: string; diagnostics: Prot
     const positions: ProtocolAttribute[] = [];
     let attrs: Record<string, string> = {};
     try { normalizedAttributes(tag, ATTRIBUTES[tag.name]!, [], positions, true); }
-    catch (error) { add(error instanceof Error ? error.message : String(error)); }
+    catch (error) {
+      if (error instanceof ProtocolSyntaxError) diagnostics.push({ message: error.message, start: error.start, end: error.end, field: error.field, event: tag.name });
+      else add(error instanceof Error ? error.message : String(error));
+    }
     for (const token of positions) {
       try { Object.assign(attrs, normalizedAttributes({ ...tag, attrs: token.raw }, ATTRIBUTES[tag.name]!, [])); } catch { /* Diagnose each field below. */ }
     }
@@ -288,29 +355,32 @@ export function recoverProtocol(text: string): { text: string; diagnostics: Prot
       }
       if (['skills', 'traits', 'effects'].includes(key) && value) {
         const parts: string[] = [];
-        for (const part of value.split(/[,，、;；]/).filter(Boolean)) {
+        const ranges = attributeParts(token, key);
+        for (const [index, part] of value.split(/[,，、;；]/).filter(Boolean).entries()) {
+          const range = ranges[index];
           try {
             let normalized = part;
             if (key === 'skills') {
               const notes: string[] = [];
               try { normalized = normalizeNarrativeSkill(part, notes); }
-              catch { normalized = repairSpecification(part, 'skill', true, message => add(message, token, part)); }
+              catch { normalized = repairSpecification(part, 'skill', true, message => add(message, token, part, range)); }
               if (parseAbilitySpec(normalized).length !== 1) throw Error('未支持技能 ' + part);
-              for (const note of notes) if (/忽略|未支持/.test(note)) add(note, token, part);
+              for (const note of notes) if (/忽略|未支持/.test(note)) add(note, token, part, range);
             } else if (key === 'traits' && narrativeTraitLevel(part).kind !== 'trait') throw Error('未支持特质 ' + part);
             const result = parseProtocol(serializeEvent(tag.name, { ...probe, [key]: normalized }), { diagnostics: false });
             if (result.errors.length || !result.events.length) throw Error(result.errors[0] ?? '未支持' + key + ' ' + part);
             parts.push(normalized);
-          } catch (error) { add(error instanceof Error ? error.message : String(error), token, part); }
+          } catch (error) { add(error instanceof Error ? error.message : String(error), token, part, range); }
         }
         value = parts.join(',');
         if (!value) continue;
       }
       if (key === 'items' && value) {
         const parts: string[] = [];
-        for (const part of splitSpawnItems(value)) {
+        const ranges = attributeParts(token, key);
+        for (const [index, part] of splitSpawnItems(value).entries()) {
           try { parts.push(spawnItemText(parseSpawnItem(part))); }
-          catch (error) { add(error instanceof Error ? error.message : String(error), token, part); }
+          catch (error) { add(error instanceof Error ? error.message : String(error), token, part, ranges[index]); }
         }
         value = parts.join(',');
         if (!value) continue;
@@ -338,7 +408,7 @@ export function recoverProtocol(text: string): { text: string; diagnostics: Prot
     }
     // Even an incomplete unit remains in the draft so its name and valid fields can be filled in.
     const recovered = serializeEvent(tag.name, retained);
-    if (!diagnostics.some(d => d.start >= (tag.start ?? 0) && d.end <= (tag.end ?? text.length))) add(full.errors[0] ?? full.warnings[0] ?? '事件需要补全');
+    if (!diagnostics.some(d => d.start >= (tag.start ?? 0) && d.end <= (tag.end ?? text.length))) diagnostics.push(eventDiagnostic(tag, full.errors[0] ?? full.warnings.find(actionableNotice) ?? '事件需要补全'));
     // A unit_set left with only its id changes nothing and would itself be an error.
     if (tag.name === 'unit_set' && !Object.keys(retained).some(key => !['id', 'reason'].includes(key))) continue;
     lines.push(recovered);

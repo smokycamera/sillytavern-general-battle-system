@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.1.0**. This release fixes repeated archive reads in the panel, generation-event compatibility for automatic approval, exhausted item actions, formation item damage and effect scaling, movement skill execution and range, and clipped flight markers on mobile. `give` now accepts an optional unit `id` for direct delivery. Narrative spatial relationships guide city and outside-city layouts, landmarks and deployment; see [implementation and validation](docs/battlefield-refactor-implementation.md). Export your saves before updating, and do not enable both stable and test installations at once.
+Current version: **2.1.0**. This release updates items, movement skills, traits and graded terrain specialisations. Formation healing uses only the doses needed for recoverable injuries, and barrier capacity scales with the pieces used. Cavalry actions, map clicks, player-facing copy, narrative parsing, archive reads and automatic approval are improved. See the [player update announcement](docs/player-update-2.1.0-20261013.md). Narrative spatial relationships guide city and outside-city layouts, landmarks and deployment; see [implementation and validation](docs/battlefield-refactor-implementation.md). Export your saves before updating, and do not enable both stable and test installations at once.
 
 The loadout header now includes **技能选择** beside **新增物品**. Choose a unit, select up to five learned skills, and save; preparation retains skill effects, cooldowns, resources, and equipment.
 

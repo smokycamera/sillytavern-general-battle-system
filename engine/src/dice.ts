@@ -98,6 +98,29 @@ export function rollDicePortion(expr: string, rng: Rng, times = 1): DiceRollDeta
   return merged;
 }
 
+/** 与完整伤害掷骰消耗相同的随机序列，预估只取总值，不分配审计记录。 */
+export function rollDicePortionTotal(expr: string, rng: Rng, times = 1): number {
+  const e = parseDice(expr), keep = e.keepHigh ?? e.keepLow ?? e.count;
+  let total = e.flat;
+  for (let t = 0; t < times; t++) {
+    if (keep === e.count) {
+      for (let i = 0; i < e.count; i++) total += rng.d(e.sides);
+    } else if (keep === 1) {
+      let selected = rng.d(e.sides);
+      for (let i = 1; i < e.count; i++) {
+        const face = rng.d(e.sides);
+        selected = e.keepHigh !== undefined ? Math.max(selected, face) : Math.min(selected, face);
+      }
+      total += selected;
+    } else {
+      const rolls = Array.from({ length: e.count }, () => rng.d(e.sides));
+      rolls.sort(e.keepHigh !== undefined ? (a, b) => b - a : (a, b) => a - b);
+      for (let i = 0; i < keep; i++) total += rolls[i]!;
+    }
+  }
+  return total;
+}
+
 function suffix(e: DiceExpr): string {
   if (e.keepHigh !== undefined) return `kh${e.keepHigh}`;
   if (e.keepLow !== undefined) return `kl${e.keepLow}`;

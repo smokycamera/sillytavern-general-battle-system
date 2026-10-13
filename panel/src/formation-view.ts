@@ -6,7 +6,7 @@ import { strengthDescription } from '../../engine/src/combat-model.js';
 import { participationText,memberHealthPanel } from './combat-model-view.js';
 import {hasMemberHealth} from '../../engine/src/member-health.js';
 import { renderBattleHighlights, traceOverlay, unitSymbol } from './battle-presentation.js';
-import { weaponReloadKey, FORMATION_NODES, formationNode, isAirborne, moraleLabel, approx, itemUseAbility, type Combatant, type MassBattle, type Order } from '../../engine/src/index.js';
+import { weaponReloadKey, FORMATION_NODES, formationNode, isAirborne, moraleLabel, approx, type Combatant, type MassBattle, type Order } from '../../engine/src/index.js';
 import { renderFormationFeedback } from './formation-feedback.js';
 import { formationSelection, orderKey, orderLabels, type FormationView, type OrderDrafts } from './formation-orders.js';
 import { battleSkillChangeReason } from './battle-skills.js';
@@ -68,11 +68,11 @@ export function renderFormationBattle(b: MassBattle, view: FormationView, drafts
       + (preview?.preview?.penetrationFactor !== undefined ? '<p class="' + (preview.preview.penetrationFactor === 0 ? 'grid-reason' : '') + '">' + ({ kinetic: '物理', thermal: '热能', arcane: '魔法' })[preview.preview.channel ?? 'kinetic'] + '穿透' + preview.preview.penetration + ' 对防护' + preview.preview.resistance + ' · ' + (preview.preview.penetrationFactor === 0 ? '无法穿透，不造成生命损失' : (preview.preview.armorFactor===undefined?'穿透通过':'防护后保留') + Math.round(preview.preview.penetrationFactor * 100) + '%') + (preview.preview.shieldFactor!==undefined&&preview.preview.shieldFactor<1?' · 盾牌掩护减伤'+Math.round((1-preview.preview.shieldFactor)*100)+'%':'') + ((preview.preview.armorScale??1)>1?' · 装甲等效耐久×'+Number(preview.preview.armorScale!.toFixed(2)):'')+'</p>' : '')
       + (preview?.preview?.participants!==undefined ? '<p class="sub">'+participationText(preview.preview)+'</p>' : '')
       + (preview?.areaPreviews?.length ? '<div class="formation-area-preview">' + preview.areaPreviews.map((hit) => { const affected = visible.find((u) => u.id === hit.targetId); return affected ? '<p>' + esc(affected.name) + ' · 命中率' + hitChanceText(hit) + ' · 命中后伤害' + hitDamageText(hit) + (affected.scale === 'hero'||hasMemberHealth(affected) ? '生命' : '人') + '</p>' : ''; }).join('') + '</div>' : '')
-      + (preview?.preview ? '<details><summary>伤害详情</summary><p>' + hitDamageDetails(preview.preview, preview.preview.damageModel === 'member-health' || selectedTarget && selectedTarget.scale === 'hero' ? '生命' : '人') + '</p></details>' : '')
+      + (preview?.preview ? '<details><summary>伤害详情</summary><p>' + hitDamageDetails(preview.preview, preview.preview.damageModel === 'member-health' || selectedTarget && selectedTarget.scale === 'hero' ? '生命' : '人') + '</p><p>' + esc(participationText(preview.preview, true)) + '</p></details>' : '')
       + '<p class="' + (preview?.reason ? 'grid-reason' : '') + '">' + esc(previewText(b, order)) + '</p>'
       + (ability?.cost && source ? '<div class="preview-cost">' + esc(source.name) + ' · ' + (ability.itemSourceId ? '道具' : ability.cost.resource === 'SP' ? '精力' : '预备资源') + ' '
         // V15 编队齐用按件数：对所选目标本次实际消耗的件数。
-        + (ability.itemSourceId ? itemUseAbility(source, ability, ability.target === 'self' ? source : selectedTarget || undefined).ability.cost?.amount ?? ability.cost.amount : abilityCost(source, ability)!.amount)
+        + (ability.itemSourceId ? b.itemUse(source, ability, ability.target === 'self' ? source : selectedTarget || undefined).ability.cost?.amount ?? ability.cost.amount : abilityCost(source, ability)!.amount)
         + '/' + approx(source.resources[ability.cost.resource] ?? 0, 1, 'down') + '，支援阶段扣除</div>' : '')
       + '<small>地面对空射程距离额外 +1 阵位，曲射火炮不能对空。基于当前已知信息；前序阶段和未发现的占位可能使后续任务受阻。</small></div>' : ''}
     <div class="formation-submit"><button class="primary" data-action="formation-issue" data-unit="${esc(actor.id)}" data-round="${b.round}" ${editable && order && !preview?.reason ? '' : 'disabled'}>${s.issued ? '确认改令' : '下达此任务'}</button>

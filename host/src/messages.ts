@@ -11,7 +11,7 @@ export class NativeMessages {
     const session = this.host.session();
     const deliveryId = options.deliveryId ?? randomId();
     const run = async (): Promise<DeliveryReceipt> => {
-      if (!session || !sameSession(session, this.host.session()) || this.host.hasLegacyRuntime() || !this.canSend()) return { status: 'failed', detail: '发送目标已切换、档案保存尚待核实或旧战阵脚本仍在运行' };
+      if (!session || !sameSession(session, this.host.session()) || this.host.hasLegacyRuntime() || !this.canSend()) return { status: 'failed', detail: '发送目标已切换、档案保存尚待核实或脚本版战阵仍在运行' };
       const ctx = this.host.context(); const chat = ctx.chat;
       if (!chat || !ctx.addOneMessage || !ctx.eventSource?.emit) return { status: 'failed', detail: '酒馆缺少消息插入或渲染接口' };
       const existing = chat.find(message => message.extra?.tavernBattleDeliveryId === deliveryId);

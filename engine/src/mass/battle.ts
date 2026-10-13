@@ -223,7 +223,7 @@ export class MassBattle {
     for (const u of this.combatants) { validateFlightState(u.airborne); validateFormationPosition(u.formationPosition); validateWounded(u); validateBarrier(u.barrier); validateAreas(u); validateGear(u); validateMount(u); validateMoraleState(u.moraleState); }
     for (const unit of this.combatants) reconcileDamageMorale(unit);
     if (this.rules.resolutionVersion !== 'v2' && this.combatants.some((u) => u.airborne || u.formationPosition !== undefined
-      && (this.formationSlots === undefined || formationNode(u).side !== u.side))) throw new Error('空域/跨阵营位置需要V2会战规则；新容量规则仅兼容己方地面阵位');
+      && (this.formationSlots === undefined || formationNode(u).side !== u.side))) throw new Error('此战场不支持空域或跨阵营位置；仅支持己方地面阵位');
     this.seed = opts.seed ?? randomSeed();
     this.rng = opts.rng ?? (opts.seed || this.rules.resolutionVersion === 'v2' ? new SeededRng(this.seed) : liveRng());
     this.conditions = new ConditionRegistry([
@@ -538,7 +538,7 @@ export class MassBattle {
       if (ability.target === 'zone' && !target) return '请指定地面阵位';
       if (target && ability.target !== 'zone' && !this.visibleCombatants(actor.side, units).some((u) => u.id === target.id)) return '尚未观测到目标';
       if (target && target.side !== actor.side && this.isAttached(target.id)) return '随队人物受编队掩护';
-      const itemUse = itemUseAbility(actor, ability, target);
+      const itemUse = this.itemUse(actor, ability, target, units);
       if (itemUse.reason) return itemUse.reason;
       ability = itemUse.ability;
       const usable = abilityUsabilityReason(actor, ability); if (usable) return usable;
@@ -712,6 +712,12 @@ export class MassBattle {
     const close = pointBlankModifier(base.weaponOverride, !!base.ranged, sameLayer(actor, target) && formationDistance(actor, target) <= 1 ? 0 : formationDistance(actor, target), actor);
     return { ...base, extraMods: [...this.stanceMods(actor, target, charge ? { charge } : {}), ...(close ? [{ source: 'stance' as const, name: '抵近射击', kind: 'atk' as const, type: 'flat' as const, value: close }] : [])], defenderMods: this.defModsFor(target), ...(charge ? { charge } : {}) };
   }
+  /** 与会战预览、确认框及执行共享实际目标集合，避免范围治疗按单一目标过少或过量扣费。 */
+  itemUse(actor: Combatant, ability: Ability, target?: Combatant, units = this.combatants): ReturnType<typeof itemUseAbility> {
+    const healingTargets = target && ability.itemSourceId && (ability.area || ability.shape === 'burst') && ability.effects.every(e => e.op === 'heal')
+      ? this.supportTargets(actor, ability, target, units) : undefined;
+    return itemUseAbility(actor, ability, target, healingTargets);
+  }
   private supportTargets(actor: Combatant, ability: Ability, primary: Combatant, units: Combatant[]): Combatant[] {
     if (ability.area) return areaTargets({...this.observationContext(units),units:this.visibleCombatants(actor.side,units)},actor,primary,ability,u=>!this.isAttached(u.id)
       && !abilityTargetReason({space:'mass',actor,ability,target:u,distance:formationDistance(actor,u)})
@@ -756,7 +762,7 @@ export class MassBattle {
     if (order.type === 'ability') {
       const source = this.effectiveUnit(this.byId(order.abilityActorId ?? order.unitId), known), listed = source.abilities.find((a) => a.id === order.abilityId)!;
       const target = listed.target === 'self' ? source : listed.target === 'zone' ? zoneTarget(this.observationContext(known),source,order.targetId) : known.find((u) => u.id === order.targetId);
-      const itemUse = itemUseAbility(source, listed, target);
+      const itemUse = this.itemUse(source, listed, target, known);
       if (itemUse.reason) return { reason: itemUse.reason };
       const ability = itemUse.ability;
       if (target && movementOnlySkill(ability)) return { destination: formationNode(target), layer: isAirborne(source) ? 'air' : 'ground', effects: skillEffectLines(this.observationContext(known), source, target, ability) };
@@ -932,7 +938,7 @@ export class MassBattle {
         const order: Order = { unitId: u.id, type: 'ability', abilityActorId: actor.id, abilityId: listedAbility.id, targetId: target.id };
         if (this.v2OrderReason(order, planning)) continue;
         // V15 编队用道具按件数折算；与实际执行同一份派生行动。
-        const itemUse = itemUseAbility(actor, listedAbility, target);
+        const itemUse = this.itemUse(actor, listedAbility, target, planning);
         if (itemUse.reason) continue;
         const ability = itemUse.ability;
         // 带突进/闪现的技能从位移后的阵位估算；召唤仍落在原翼预备阵位。
@@ -1028,7 +1034,7 @@ export class MassBattle {
     // 单纯位移技能按机动估值（同 rank/shift 机动口径），再减去技能消耗；随队人物不能独立位移。
     for (const actor of sources) if (actor.id === u.id && !hasteOnly) for (const listed of actor.abilities) {
       if (!movementOnlySkill(listed)) continue;
-      const itemUse = itemUseAbility(actor, listed);
+      const itemUse = this.itemUse(actor, listed);
       if (itemUse.reason) continue;
       const ability = itemUse.ability;
       for (const node of FORMATION_NODES) {
@@ -1221,7 +1227,7 @@ export class MassBattle {
         const listed = actor.abilities.find((a) => a.id === order.abilityId)!;
         const target = listed.target === 'self' ? actor : this.effectiveUnit((listed.target === 'zone' ? zoneTarget(this.observationContext(support),actor,order.targetId) : support.find((u) => u.id === order.targetId)) ?? actor, support);
         // V15：编队使用每人一份的道具时按件数得到本次实际消耗与效果。
-        const itemUse = itemUseAbility(actor, listed, target);
+        const itemUse = this.itemUse(actor, listed, target, support);
         if (itemUse.reason) { this.orderReceipt(order, '支援', 'blocked', itemUse.reason); this.recordEvent({ round: this.round, kind: 'ability', participants: [order.unitId], text: '支援未执行：' + itemUse.reason }); continue; }
         const ability = itemUse.ability;
         const hits = new Map<string, AttackResolution>();
@@ -1297,6 +1303,9 @@ export class MassBattle {
             changes.push(() => { const t = this.byId(affected.id);const loss=applyResolutionDamage(t,result);if(this.rules.combatModel)recordAppliedDamage(result,loss);result.text = formatResolution(result, t); this.recordAttack(actualActor, t, result, order.haste ? '加速' : '支援'); });
           } else if (effect.op === 'heal') for (const affected of this.supportTargets(actor, ability, target, support)) {
             const amount = Math.min(recoveryCapacity(affected), healingYield(actor,affected,effect.amount ?? rollDice(effect.dice!, this.rng).total,!!ability.itemSourceId));
+            // 后续治疗按已安排恢复后的伤量用药，避免同阶段重复消耗；真实生命仍在 changes 中统一提交。
+            const staged = support.find(u => u.id === affected.id);
+            if (staged) applyRecovery(staged, amount);
             changes.push(() => { const t = this.byId(affected.id); if (t.hp > 0 || t.status === 'dying') {
               const before = memberHealth(t),restored=applyRecovery(t, amount);
               if (t.status === 'dying' && t.hp > 0) t.status = 'ready';

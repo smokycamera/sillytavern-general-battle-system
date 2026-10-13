@@ -38,7 +38,7 @@ describe('原生保存：独立读回与恢复记录', () => {
   it('交回旧脚本的保存不能撤销，只能重试完成；报错不带 Error 前缀', async () => {
     const f = fixture(); await f.store.load(); await f.store.commit(0, () => ({ factRevision: 1 }));
     const receipt = await f.store.commit(1, before => before, { legacyHandoff: { panel: {}, mirrorKey: 'k', mirrorValue: 'v' } });
-    expect(receipt).toMatchObject({ status: 'pending', error: '当前酒馆不支持把存档交回旧版战阵脚本' });
+    expect(receipt).toMatchObject({ status: 'pending', error: '当前酒馆不支持把存档交回脚本版战阵' });
     await expect(f.store.discardPending()).rejects.toThrow('这一步不能撤销');
     expect(f.store.hasPending()).toBe(true);
   });

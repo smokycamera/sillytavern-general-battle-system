@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { generateUnit, SmallBattle, MassBattle, standardField, traitRegistry, V14_OVERFLOW_D20, V15_OVERFLOW_D20, V15_OVERFLOW_TW, compileItem, gearItem, syncGearAbilities, attachCarriedItems,
   itemUseAbility, quickItemAction, itemReserveCost, itemEmergency, combatBonuses, gearBonuses, activeTraitIds, traitLevel, tileCost, movementPoints, formationMarchSteps,
   canSpot, collectMods, resolveStack, standardConditionMap, migrateLegacyItem, chargeCapable, rangedArchetype, inferArchetype, prepareItemModel, nightSight, terrainStalks,
-  traitLadderSummary, parseSkillMechanism, skillMechanismId, equipmentReason, type Combatant, type GenerateInput, type ItemSpecification, type LegacyItemMechanics } from '../src/index.js';
+  traitLadderSummary, parseSkillMechanism, skillMechanismId, equipmentReason, applyCombatDamage, type Combatant, type GenerateInput, type ItemSpecification, type LegacyItemMechanics } from '../src/index.js';
 import { prepareCombatModel } from '../src/combat-model.js';
 import { V6_D20 } from '../src/rules.js';
 import legacy from './fixtures/legacy-items-v14.json';
@@ -169,6 +169,7 @@ describe('V15 编队件数、加速动作与 AI 保留价值', () => {
     expect(itemUseAbility(a, smoke).ability).toBe(smoke);
     const healer = carry(company('h', 'ally', 40), 'dose', { form: 'single', power: 3, active: active('buff治疗') }, 8), dose = healer.abilities.find((x) => x.itemSourceId)!;
     const heal = (dose.effects.find((e) => e.op === 'heal') as { amount: number }).amount;
+    applyCombatDamage(friend, heal * 8, 8);
     expect(itemUseAbility(healer, dose, friend).ability.effects.find((e) => e.op === 'heal')).toEqual({ op: 'heal', amount: heal * 8 });
     const cloak = carry(company('c', 'ally', 40), 'cloak', { form: 'single', power: 5, active: active('buff潜伏') }, 8), stealth = cloak.abilities.find((x) => x.itemSourceId)!;
     expect(itemUseAbility(cloak, stealth, friend).reason).toMatch(/需要40件/);

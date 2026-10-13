@@ -53,14 +53,14 @@ export class BattleService {
   canWrite(): boolean { return ['ready', 'review'].includes(this.phase) && !this.store.hasPending() && this.inSync() && !this.host.hasLegacyRuntime(); }
   writeBlockReason(): string | undefined {
     if (this.disposed) return '战阵服务已关闭，请重新打开战阵';
-    if (this.host.hasLegacyRuntime()) return '旧战阵脚本仍在运行，请停用旧脚本后重新打开';
+    if (this.host.hasLegacyRuntime()) return '脚本版战阵仍在运行，请停用脚本版战阵后重新打开';
     if (!this.host.session()) return '当前聊天尚未载入，请先打开角色聊天';
     if (this.phase === 'loading') return '正在读取当前聊天档案';
     if (this.phase === 'error') return this.error ?? '存档读取失败，请点“重新读取存档”';
     if (!this.inSync()) return '聊天已刷新，请点“重新读取存档”或重新扫描';
     if (this.phase === 'pending' || this.store.hasPending()) return '上一次保存还没确认成功，请先处理上方提示';
-    if (this.phase === 'import') return '发现旧战阵存档，请先选择采用旧档或从空档开始';
-    if (this.phase === 'handoff') return '档案已交回旧脚本，请先在存档管理中迁回原生版';
+    if (this.phase === 'import') return '发现脚本存档，请先选择导入或从空档开始';
+    if (this.phase === 'handoff') return '档案已切换到脚本模式，请先在存档管理中迁回原生扩展';
     return undefined;
   }
   status(): ServiceState { return { phase: this.phase, save: this.snapshot(), receipt: structuredClone(this.receipt), error: this.error }; }

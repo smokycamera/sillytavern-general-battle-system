@@ -19,6 +19,39 @@ function transact(save: NarrativeSave, text: string, messageId = '1'): Narrative
 const registry = traitRegistry();
 
 describe('正文技能规格兼容和局部恢复', () => {
+  it('通道简写按武器伤害和防具防护解析，正负修正可省略一点', () => {
+    const text = spawn('治疗L3', { weapon: '热刃:剑Ｌ５＋３热能－奥术', armor: '重甲L5-热能+2动能' })
+      + '<give item="备用甲" type="armor" spec="轻甲L4-热能"/>'
+      + '<reforge id="w1" spec="步枪L5+4热能"/>'
+      + '<unit_set id="u1" shieldSpec="盾牌L3-热能"/>';
+    const parsed = parseProtocol(text);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.events).toMatchObject([
+      { weaponBonuses: { thermalDamage: 3, arcaneDamage: -1 }, armorBonuses: { thermalProtection: -1, kineticProtection: 2 } },
+      { spec: { kind: 'armor', bonuses: { thermalProtection: -1 } } },
+      { spec: { kind: 'weapon', bonuses: { thermalDamage: 4 } } },
+      { data: { shield: '盾牌L3-1热能防护' } },
+    ]);
+    expect(parseProtocol(parsed.canonical).canonical).toBe(parsed.canonical);
+    expect(parseProtocol(spawn('', { weapon: '剑L5+11热能' })).errors.length).toBeGreaterThan(0);
+    expect(parseProtocol(spawn('', { armor: '重甲L5-未知' })).errors.length).toBeGreaterThan(0);
+  });
+  it('各类属性与别名共用正负简写，不将不适用的属性换成其他效果', () => {
+    const parsed = parseProtocol(spawn('治疗L3-治疗量+持续时间,射击:物理单体射击L4-命中+距离', {
+      level: 'L5-生命值+速度-士气+动能', weapon: '步枪L5-伤害+精准-破甲+距离+奥术', armor: '重甲L5-防御力+防护值-奥术',
+    }));
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.events[0]).toMatchObject({
+      bonuses: { health: -1, speed: 1, morale: -1, kineticDamage: 1 },
+      weaponBonuses: { damage: -1, accuracy: 1, penetration: -1, range: 1, arcaneDamage: 1 },
+      armorBonuses: { defense: -1, protection: 1, arcaneProtection: -1 },
+      skills: [{ bonuses: { healing: -1, duration: 1 } }, { bonuses: { accuracy: -1, range: 1 } }],
+    });
+    const invalid: Record<string, string>[] = [{ armor: '重甲L5+伤害' }, { weapon: '剑L5+防护' }, { weapon: '剑L5+3未知' }];
+    for (const extra of invalid) {
+      expect(parseProtocol(spawn('', extra)).errors.length).toBeGreaterThan(0);
+    }
+  });
   it('同义词、省略+1和混合顺序规范化后仍能再次解析', () => {
     expect(normalizeNarrativeSpec('步枪L5+1精度 伤害+3 穿甲+2 距离+1')).toBe('步枪L5+1精度+3伤害+2穿透+1射程');
     const text = spawn('推击:物理单体L5+击退+破甲+距离', { weapon: '步枪Lv.5 + 1 命中 伤害+3 +穿甲 +距离', level: 'Ｌｖ．５＋生命值' });
@@ -27,7 +60,7 @@ describe('正文技能规格兼容和局部恢复', () => {
     expect(result.events[0]).toMatchObject({ bonuses: { health: 1 }, weaponBonuses: { accuracy: 1, damage: 3, penetration: 1, range: 1 },
       skills: [{ blueprintId: 'generic:physical-single:push', bonuses: { penetration: 1, range: 1 } }] });
     expect(parseProtocol(result.canonical).canonical).toBe(result.canonical);
-    expect(parseProtocol(spawn('坏:物理单体L3-伤害,治疗L3')).events[0]).toMatchObject({ skills: [{ blueprintId: 'generic:buff:heal' }] });
+    expect(parseProtocol(spawn('简写:物理单体L3-伤害,治疗L3')).events[0]).toMatchObject({ skills: [{ blueprintId: 'generic:physical-single', bonuses: { damage: -1 } }, { blueprintId: 'generic:buff:heal' }] });
   });
   it.each(['剑Ｌ５＋３命中－２伤害', '剑 Lv. 5 + 3 精准 - 2 伤害', '剑（level 5 +3accuracy -2damage）', '剑L5  精度+3 伤害-2', '剑L5（+3命中-2伤害）'])('等价装备写法保留精确数值：%s', text => {
     expect(normalizeNarrativeSpec(text)).toBe('剑L5+3精度-2伤害');

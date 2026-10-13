@@ -1,6 +1,8 @@
 import { BONUS_NAMES, ENHANCEMENT_STATS, enhancementLabel, parseEnhancementSuffix, resolveBonusStat as bonusKey, type BonusStat, type Enhancements } from '../../engine/src/enhancements.js';
 import { parseSkillMechanism, parseSkillMechanismParts, skillMechanismName, skillMechanismFromId, type SkillMechanism } from '../../engine/src/data/skill-mechanisms.js';
 import { legacySkillEquivalent } from '../../engine/src/skill-catalog.js';
+import { resolveWeaponClass } from '../../engine/src/data/weapons.js';
+import type { BonusKind } from '../../engine/src/enhancements.js';
 
 /** Read either sign/number/name or name/sign/number, without borrowing the next bonus's sign. */
 function enhancementOrder(text: string): string | undefined {
@@ -23,7 +25,7 @@ function enhancementOrder(text: string): string | undefined {
 }
 
 /** 仅用于正文输入；不放宽存档、手工表单和引擎数值校验。 */
-export function normalizeNarrativeSpec(text: string): string {
+export function normalizeNarrativeSpec(text: string, kind?: BonusKind): string {
   const separator = text.search(/[:：·｜|/／]/);
   const prefix = separator > 0 ? text.slice(0, separator).trim() + ':' : '';
   let spec = separator > 0 ? text.slice(separator + 1) : text;
@@ -37,18 +39,21 @@ export function normalizeNarrativeSpec(text: string): string {
     (_all, level: string) => 'L' + (/^\d+\.0+$/.test(level) ? String(Number(level)) : level));
   const match = spec.match(/^(.*?[lL][+-]?\d+(?:\.\d+)?)(.*)$/);
   if (!match) return prefix + spec;
+  const base = match[1]!.replace(/[lL][+-]?\d+(?:\.\d+)?$/, '').trim();
+  kind ??= ['无甲', '轻甲', '中甲', '重甲', '超重甲'].includes(base) ? 'armor'
+    : ['盾', '盾牌', 'shield'].includes(base) ? 'shield' : resolveWeaponClass(base) ? 'weapon' : undefined;
   let suffix = match[2]!.trim();
   // “伤害+3”与“+3伤害”只交换明确的名称/数值，不猜没有符号的数值。
   suffix = enhancementOrder(suffix) ?? suffix;
   suffix = suffix.replace(/\s+/g, '');
   suffix = suffix.replace(/([+-])(\d+(?:\.0+)?)([^+\-\d]*)/g, (_all, sign: string, points: string, label: string) => {
-    const key = bonusKey(label);
+    const key = bonusKey(label, kind);
     return sign + String(Number(points)) + (key ? BONUS_NAMES[key] : label);
   });
-  // 仅已知强化方向允许省略点数；技能效果如“+击退”仍作为机制处理。
-  suffix = suffix.replace(/\+([^+\-\d]+)/g, (whole, label: string) => {
-    const key = bonusKey(label);
-    return key ? '+1' + BONUS_NAMES[key] : whole;
+  // 已知属性的正负修正都可省略一点；技能效果如“+击退”仍作为机制处理。
+  suffix = suffix.replace(/([+-])([^+\-\d]+)/g, (whole, sign: string, label: string) => {
+    const key = bonusKey(label, kind);
+    return key ? sign + '1' + BONUS_NAMES[key] : whole;
   });
   return prefix + match[1]!.trim().replace(/\s+(?=[lL][+-]?\d)/g, '') + suffix;
 }
@@ -69,7 +74,7 @@ function mechanism(text: string, warnings: string[] = [], source = text): SkillM
   const single = [parseSkillMechanism('buff+' + text), control].find((m) => m?.modifiers.length === 1);
   if (single) return single;
   const legacy = legacySkillEquivalent(text, true);
-  if (legacy) { warnings.push(`${source}：旧技能名「${legacy.legacy}」按${skillMechanismName(legacy.id)}理解`); return skillMechanismFromId(legacy.id); }
+  if (legacy) { warnings.push(`${source}：技能名「${legacy.legacy}」按${skillMechanismName(legacy.id)}理解`); return skillMechanismFromId(legacy.id); }
   return undefined;
 }
 
@@ -98,8 +103,7 @@ export function normalizeNarrativeSkill(text: string, warnings: string[]): strin
     if (number === undefined && !label) throw Error('技能强化格式不完整');
     const points = number === undefined ? undefined : Number(number) * (sign === '-' ? -1 : 1);
     if (points !== undefined && (!Number.isInteger(points) || Math.abs(points) > 10)) throw Error('技能强化须为-10至+10整数');
-    const key = label ? bonusKey(label) : 'power';
-    if (points === undefined && key) throw Error('负修正需要明确点数，只有+方向可省略为+1');
+    const key = label ? bonusKey(label, points === undefined ? undefined : 'skill') : 'power';
     if (points !== undefined && key && ENHANCEMENT_STATS.skill.includes(key)) { add(key, points); continue; }
     // 防御、护盾和加速等原本由“强度”缩放；同义强化只在对应机制确实存在时换写。
     const targets = key === 'defense' ? ['defense', 'defense-down', 'barrier', 'ward']

@@ -19,7 +19,7 @@ function canPrepare(unit: Combatant, ability: Ability): boolean {
 }
 /** 逐项学习/替换。未涉及的实例保留；改名、删除后重学都不清除当前冷却/次数账本。 */
 export function learnAbilities(unit: Combatant, specs: BlueprintSpec[], opts: { replace?: boolean; prepared?: string[]; rebuildRequested?: boolean } = {}): Combatant {
-  if (unit.rulesVersion !== 'v2') throw new Error('学习新技能需要V2档案');
+  if (unit.rulesVersion !== 'v2') throw new Error('请先更新单位规则，再学习技能');
   const ids = specs.map((s) => typeof s === 'string' ? s : s.instanceId ?? (s.id.startsWith('generic:') ? 'name:' + (s.name?.trim() || skillDefinitionName(s.id)) : s.id));
   if (new Set(ids).size !== ids.length) throw new Error('同一技能请合并为一项学习规格');
   const next = structuredClone(unit), replacements = new Map<string, Ability>();
