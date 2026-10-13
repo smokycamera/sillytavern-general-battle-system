@@ -219,6 +219,9 @@ export interface TacticalAutomation { aiUnitIds: ReadonlySet<string>; nonProtago
 const MANUAL: TacticalAutomation = { aiUnitIds: new Set(), nonProtagonist: false, fullAuto: false };
 
 export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, automation: TacticalAutomation = MANUAL, query?: TacticalQuery): string {
+  return battle.withReadOnlyQueries(() => renderTacticalContent(battle, view, automation, query));
+}
+function renderTacticalContent(battle: SmallBattle, view: TacticalView, automation: TacticalAutomation, query?: TacticalQuery): string {
   const field = battle.battlefield!, s = tacticalSelection(battle, view, query);
   const { visible, actor, options, option, target, canControl } = s;
   const targetMismatch = view.targetId !== undefined && !!option?.targets?.length && !target;
@@ -236,7 +239,7 @@ export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, au
   const special = view.mode.startsWith('flight:') || view.mode === 'retreat';
   const mode = special || view.mode === 'move' || view.mode === 'guard' ? view.mode : option?.id ?? 'weapon';
   const specialReason = actor ? mode === 'retreat' ? s.allOptions.find(o=>o.id==='retreat')?.reason : special ? battle.flightReason(actor.id,mode==='flight:takeoff') : undefined : '没有可用单位';
-  const specialDetail = mode === 'retreat' ? '撤出本场战斗，消耗主行动1。确认后该单位不再参战。' : '消耗移动1；' + (actor ? battle.flightRisks(actor.id,mode==='flight:takeoff').join('；') || '已知敌军没有可触发的起落反应。' : '');
+  const specialDetail = !special ? '' : mode === 'retreat' ? '撤出本场战斗，消耗主行动1。确认后该单位不再参战。' : '消耗移动1；' + (actor ? battle.flightRisks(actor.id,mode==='flight:takeoff').join('；') || '已知敌军没有可触发的起落反应。' : '');
   const movement = actor && view.cell !== undefined ? battle.pathPreview(actor.id, view.cell) : undefined;
   const paths = new Set(movement?.path?.cells ?? []);
   const reachable = new Set(canControl && actor && mode === 'move' ? battle.reachableCells(actor.id).map((p) => p.cells.at(-1)!) : []);

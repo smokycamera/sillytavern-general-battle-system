@@ -2226,11 +2226,14 @@ function renderLogEntries(b: SmallBattle | MassBattle): string {
 /** 点选格子、单位或切换行动类型只改查看状态：同步渲染，不进入保存队列，也不切换整页忙碌样式。 */
 const MAP_INSPECTION = ['grid-cell', 'grid-inspect-unit', 'grid-mode'];
 function inspectBattleMap(el: HTMLElement): void {
-  if (!state.small?.battlefield) return;
-  const act = el.dataset.action;
-  const query = selectTacticalElement(state.small, tacticalView, act === 'grid-cell' ? { cell: Number(el.dataset.cell) }
-    : act === 'grid-mode' ? { mode: el.dataset.mode } : { unitId: el.dataset.unit });
-  render('view', query);
+  const battle = state.small;
+  if (!battle?.battlefield) return;
+  battle.withReadOnlyQueries(() => {
+    const act = el.dataset.action;
+    const query = selectTacticalElement(battle, tacticalView, act === 'grid-cell' ? { cell: Number(el.dataset.cell) }
+      : act === 'grid-mode' ? { mode: el.dataset.mode } : { unitId: el.dataset.unit });
+    render('view', query);
+  });
 }
 
 async function handleAction(e: Event): Promise<void> {
@@ -3677,9 +3680,13 @@ async function handleChange(e: Event): Promise<void> {
     render('view'); return;
   }
   if (role === 'grid-unit' || role === 'grid-mode' || role === 'grid-target') {
-    const query = state.small?.battlefield ? selectTacticalElement(state.small, tacticalView,
-      role === 'grid-mode' ? { mode: (el as HTMLSelectElement).value } : { unitId: (el as HTMLSelectElement).value, actor: role === 'grid-unit' }) : undefined;
-    render('view', query);
+    const battle = state.small;
+    if (battle?.battlefield) battle.withReadOnlyQueries(() => {
+      const query = selectTacticalElement(battle, tacticalView,
+        role === 'grid-mode' ? { mode: (el as HTMLSelectElement).value } : { unitId: (el as HTMLSelectElement).value, actor: role === 'grid-unit' });
+      render('view', query);
+    });
+    else render('view');
   } else if (role === 'ability-confirm-target' && state.abilityDialog) {
     state.abilityDialog.suggestedTargetId = (el as HTMLSelectElement).value; render();
   } else if (role === 'story-sync') {
