@@ -39,7 +39,7 @@ describe('V6 unified formulas and bounded signed enhancements',()=>{
   prepareCombatModel(g,V6_D20);expect(g.hp).toBe(count);expect(g.formation!.health).toEqual([{hp:74,count:1},{hp:84,count:99}]);
   const custom=unit({hpMax:777,hp:20},true);prepareCombatModel(custom,V6_D20);expect([custom.hp,custom.base.hpMax]).toEqual([20,777]);
   const dead=unit({},true);dead.hp=0;dead.status='dead';prepareCombatModel(dead,V6_D20);expect(dead.hp).toBe(0);expect(dead.status).toBe('dead');
-  expect(()=>prepareCombatModel(a,V5_D20)).toThrow('降级');
+  expect(()=>prepareCombatModel(a,V5_D20)).toThrow('无法转换');
  });
  it('giant weapon projection keeps seed and equipment intact, follows new strength, and leaves ranged/custom gear alone',()=>{
   for(let power=1;power<=10;power++)for(const noVariance of [true,false])for(const mechanism of ['sword','axe','spear','natural','rifle']) {
