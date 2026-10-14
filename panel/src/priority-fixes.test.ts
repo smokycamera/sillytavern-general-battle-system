@@ -47,7 +47,10 @@ it('军团允许射击溃退目标', () => {
 });
 it('结算提示词使用指定短句，可替换或关闭而保留事实', () => {
   const input = '【结算记录】事实\n【叙述任务】旧提示';
-  expect(applySettlementPrompt(input)).toBe('【结算记录】事实\n根据战斗情况描写战斗过程，不得出现血量，骰子点数等词');
+  expect(applySettlementPrompt(input)).toBe('【结算记录】事实\n根据战斗情况描写战斗过程，不得出现血量，骰子点数，字母坐标，回合数等词。谨慎使用物品、单位全名，人数等具体数值。');
+  const oldDefault = '根据战斗情况描写战斗过程，不得出现血量，骰子点数等词';
+  expect(applySettlementPrompt(input, { sections: { settlement: { template: oldDefault } } })).toBe(applySettlementPrompt(input));
+  expect(applySettlementPrompt(input, { sections: { settlement: { template: oldDefault + '，以骑士视角叙述' } } })).toBe('【结算记录】事实\n' + oldDefault + '，以骑士视角叙述');
   expect(applySettlementPrompt(input, { sections: { settlement: { enabled: false } } })).toBe('【结算记录】事实');
   expect(applySettlementPrompt(input, { sections: { settlement: { template: '自定义提示' } } })).toBe('【结算记录】事实\n自定义提示');
 });

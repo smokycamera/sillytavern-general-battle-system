@@ -1,24 +1,24 @@
 {
   "format": "tavern-battle-native-build",
   "version": "2.1.0",
-  "builtAt": "2026-10-14T14:25:59.501Z",
-  "sourceFingerprint": "ec965a083a6153dfa65f836b4431247212ea0feb08f0976fb649f53fb79be177",
+  "builtAt": "2026-10-14T14:31:15.493Z",
+  "sourceFingerprint": "d9db5b46e827ae683c7550234cdede0a5ef1c38fcafb58aa5cc9362a3c45db62",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
-    {
-      "path": "dist/assets/panel-BeMJTOVL.js",
-      "bytes": 507520,
-      "sha256": "ebce55300dd5d76e83f38442894a28025af4f0c518f32eedb36ee335200f2b46"
-    },
     {
       "path": "dist/assets/panel-Ca2W74WV.css",
       "bytes": 30823,
       "sha256": "29ecf3e6233e4d9abd64b009985079574db4a000c56e3f1aa8964e4994bae412"
     },
     {
-      "path": "dist/assets/preferences-gdD5hlzY.js",
-      "bytes": 817526,
-      "sha256": "d21ffb2a02b50314dd118aca4336b350b7005a9d945b15acd06d9504dbe9ec3a"
+      "path": "dist/assets/panel-DuLx0fBk.js",
+      "bytes": 507520,
+      "sha256": "d84a02e6475ab35179973151f7f37bedfc19d2708c0d69bf3d833285985a2d98"
+    },
+    {
+      "path": "dist/assets/preferences-C-GJHPWt.js",
+      "bytes": 817752,
+      "sha256": "c8fac16efc6949ea79b306be3cbfe874d925bbf14a3d5952865bc075c5f9e49f"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -82,8 +82,8 @@
     },
     {
       "path": "docs/embedded-worldbook.md",
-      "bytes": 5998,
-      "sha256": "311c2b2f52d96d5f498adb6e3c0f4edfa5ae3aea2341dc70ce5f744f5e2ee676"
+      "bytes": 6294,
+      "sha256": "be94f659c008d4b65ffde4beca37bf78a83463ca38bf9aa22343fa6e85ed6c97"
     },
     {
       "path": "docs/extension-migration-assessment-20260919.md",
@@ -223,7 +223,7 @@
     {
       "path": "dist/index.js",
       "bytes": 88299,
-      "sha256": "1842dbad18ec835d083e4475e78f39e95c582765a0308f8eb765bfc8046b01e2"
+      "sha256": "c67ea9e2ed6a52a84e8a49b8f9b2de3ef9a79fae8c13be98ff53c8c5c68fccf5"
     },
     {
       "path": "LICENSE",
@@ -298,7 +298,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 46252,
-      "sha256": "32c941841cb82b0a005b1d6f25a87cf2627eff69d23c488280f9d5e18b9fba14"
+      "sha256": "66f277c7d4db7db2220c7fec336f4921cfa5f8493c0556cc5d36ec79bf5ec5a3"
     },
     {
       "path": "README.md",
