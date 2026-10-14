@@ -78,6 +78,7 @@ it('advances after lethal player movement, restores stalled saves, and preserves
   // Reload the exact stale pointer produced by the old version, including a dead protagonist with auto allies enabled.
   const stalled = reactionBattle(); stalled.moveTo('victim', 65);
   expect(stalled.active?.id).toBe('victim'); expect(stalled.active?.status).toBe('dead');
+  stalled.allyAiControl.set('survivor', false); // 手动行动独立设置，不依赖主控身份。
   await load(stalled, 'survivor', true);
   expect(snapshot().active?.id).toBe('survivor');
   expect(snapshot().log.filter(l => l.text.startsWith('警戒反应'))).toHaveLength(1);

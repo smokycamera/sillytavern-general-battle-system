@@ -44,7 +44,7 @@
 }
 ```
 
-`deployment` 是完整参战名单，省略沿用当前名单；每项 `side` 省略沿用档案阵营。可指定参战我方 `protagonistId`、`commanderId`。`recovery` 默认 `none`；`recoverable` 在确认开战时恢复所选单位的可恢复生命/伤兵与士气。
+`deployment` 是完整参战名单，省略沿用当前名单；每项 `side` 省略沿用档案阵营。可指定已建档我方 `protagonistId`（仅锁满士气，可暂不参战）和参战我方 `commanderId`（实际指挥官）；省略主控时保留原绑定，不自动换绑。`recovery` 默认 `none`；`recoverable` 在确认开战时恢复所选单位的可恢复生命/伤兵与士气。
 
 普通随机地图省略 `battlefield` 或其中的 `intent` 即可，不需要空意图。也可提供 `{ "scene":"field" }` 或地标配置；复杂场景格式与单位代号见 `battle_state.preparation` / `battle_help`。错误会标出参数位置，例如 `battlefield.landmarks[0].anchor`、`commanders.ally.style`。
 

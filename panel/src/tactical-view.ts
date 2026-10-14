@@ -214,9 +214,9 @@ function gridPiece(battle: SmallBattle, u: Combatant, isActor: boolean, ai = fal
     + `<span class="grid-hp"><span class="grid-affiliation">${u.side === 'ally' ? '我' : u.side === 'enemy' ? '敌' : '中'}</span><b>${u.hp}</b>/${u.base.hpMax}${status ? '<span class="grid-status"> ' + status + '</span>' : ''}</span></span>`;
 }
 
-/** 面板算好的AI托管状态：哪些我方单位轮到时交给AI，以及「托管非主控」和全自动开关。 */
-export interface TacticalAutomation { aiUnitIds: ReadonlySet<string>; nonProtagonist: boolean; fullAuto: boolean }
-const MANUAL: TacticalAutomation = { aiUnitIds: new Set(), nonProtagonist: false, fullAuto: false };
+/** 面板算好的AI托管状态：哪些我方单位轮到时交给AI，以及「托管我方」和全自动开关。 */
+export interface TacticalAutomation { aiUnitIds: ReadonlySet<string>; allAllies: boolean; fullAuto: boolean }
+const MANUAL: TacticalAutomation = { aiUnitIds: new Set(), allAllies: false, fullAuto: false };
 
 export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, automation: TacticalAutomation = MANUAL, query?: TacticalQuery): string {
   return battle.withReadOnlyQueries(() => renderTacticalContent(battle, view, automation, query));
@@ -228,12 +228,12 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
   const targetReason = targetMismatch ? '所选目标不适用于此行动，请重新选择目标' : target?.reason;
   const active = visible.find((u) => u.id === battle.active?.id), over = battle.isOver();
   const activeLabel = active?.name ?? (battle.active?.side === 'enemy' ? '尚未发现的敌方单位' : '未定位单位');
-  const autoToggle = `<label class="fixed-auto" title="含主控在内全部交给AI连续推进，取消勾选即暂停"><input type="checkbox" data-role="full-auto-battle" ${automation.fullAuto ? 'checked' : ''} ${over ? 'disabled' : ''}>全自动</label>`;
+  const autoToggle = `<label class="fixed-auto" title="敌我全部交给AI连续推进，取消勾选即暂停"><input type="checkbox" data-role="full-auto-battle" ${automation.fullAuto ? 'checked' : ''} ${over ? 'disabled' : ''}>全自动</label>`;
   const actorAi = !!actor && automation.aiUnitIds.has(actor.id);
-  // 三档托管范围由小到大排在一起：此单位 → 非主控 → 全自动（含主控）；「代打本次」只做一次，不改设置。
+  // 三档托管范围由小到大排在一起：此单位 → 我方 → 全自动；「代打本次」只做一次，不改设置。
   const aiTakeover = `<div class="ai-takeover" role="group" aria-label="AI托管"><span>AI托管</span>`
     + `<label title="${actor ? esc(actor.name) + '之后每次轮到都由AI行动，取消勾选即收回手动' : '没有可托管的我方单位'}"><input type="checkbox" data-role="ally-ai" data-id="${esc(actor?.id ?? '')}" ${actorAi ? 'checked' : ''} ${actor && !over ? '' : 'disabled'}>此单位</label>`
-    + `<label title="除主控外的我方单位都由AI行动，之后的战斗沿用；勾选或取消会覆盖单位的单独设置"><input type="checkbox" data-role="auto-turn" ${automation.nonProtagonist ? 'checked' : ''} ${over ? 'disabled' : ''}>非主控</label>`
+    + `<label title="全部我方单位都由AI行动，之后的战斗沿用；勾选或取消会覆盖单位的单独设置"><input type="checkbox" data-role="auto-turn" ${automation.allAllies ? 'checked' : ''} ${over ? 'disabled' : ''}>我方</label>`
     + autoToggle + `</div>`;
   const events = over ? battle.log : battle.visibleLog('ally');
   const special = view.mode.startsWith('flight:') || view.mode === 'retreat';
@@ -348,7 +348,7 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
         ${actor && (isAirborne(actor) || activeTraitIds(actor).includes('flying')) ? `<p>${esc(battle.flightReason(actor.id, !isAirborne(actor)) ?? '起飞离开接敌可能触发借机；扑击会先降落。')}</p>` : ''}
         <p class="suppression-description">消耗1次主行动和1点战技点，需要合法射击目标；不造成生命伤害。目标攻击命中 -2，停用借机与警戒反应、取消现有警戒，且不能固守或冲锋；持续到目标完成2次行动结算。</p>${actor && battle.suppressReason(actor.id, target?.targetId) ? '<p class="grid-reason">' + esc(battle.suppressReason(actor.id, target?.targetId)!) + '</p>' : ''}
         <p>${field.retreatEdges?'本场我方撤离点：'+retreatCells(field,'ally').map(p=>cellLabel(field,p)).join('、')+'。':'我方撤离点：地图最下排标“撤”的格子；敌方从最上排撤离。'}脱离敌人至少2格并保留主行动后可撤离。${esc(s.allOptions.find((o) => o.id === 'retreat')?.reason ?? '')}</p>
-        <p class="ai-takeover-help">AI托管：勾选「此单位」后，当前选中的单位之后每次轮到都由AI行动（地图上标AI）；「非主控」把主控以外的我方单位全部交给AI；「全自动」连主控一起连续推进，取消即暂停。「AI代打本次」只替当前行动单位做这一次。</p>
+        <p class="ai-takeover-help">AI托管：勾选「此单位」后，当前选中的单位之后每次轮到都由AI行动（地图上标AI）；「我方」把我方单位全部交给AI；「全自动」让整场战斗连续推进，取消即暂停。「AI代打本次」只替当前行动单位做这一次。</p>
         <p>地面对空射程距离额外 +2 格，曲射火炮不能对空。远程武器居高射击每高1级射程+1（至多+2）。射程底色只表示平面距离，不含居高加成；目标亮边和禁用原因同时考虑视线、接敌、装备、状态与行动成本。暗区可能存在未发现的敌军。</p>
       </details>
 

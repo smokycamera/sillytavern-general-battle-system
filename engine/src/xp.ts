@@ -184,7 +184,7 @@ function recomputeFromCurve(unit: Combatant, fromLevel: number, registry?: Map<s
   if (unit.base.moraleMax !== undefined) {
     const moraleMax = curve.morale + bonusSteps(unit.bonuses,'morale') + (traitStats.morale ?? 0);
     unit.base.moraleMax = moraleMax;
-    unit.morale = Math.min(unit.morale ?? moraleMax, moraleMax);
+    unit.morale = unit.moraleLocked ? moraleMax : Math.min(unit.morale ?? moraleMax, moraleMax);
   }
   unit.xpValue = Math.round(curve.xp * scaleMod.xpMult);
   if (unit.rulesVersion === 'v2') {

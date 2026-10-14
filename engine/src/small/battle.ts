@@ -1835,7 +1835,10 @@ export class SmallBattle {
         case 'morale': {
           const primary = chosenTarget ?? actor;
           const targets = this.rules.resolutionVersion === 'v2' ? effectTargets(ability.shape === 'burst') : [primary];
-          for (const target of targets) if (target.morale !== undefined || target.rulesVersion === 'v2') { changeMorale(target, eff.amount); logBits.push(`${target.name} 士气${eff.amount >= 0 ? '+' : ''}${eff.amount} → ${moraleProfile(this.observationContext(), target, this.traitRegistry).effective}`); }
+          for (const target of targets) if (target.morale !== undefined || target.rulesVersion === 'v2') {
+            changeMorale(target, eff.amount);
+            logBits.push(target.moraleLocked ? `${target.name} 满士气锁定，士气不变` : `${target.name} 士气${eff.amount >= 0 ? '+' : ''}${eff.amount} → ${moraleProfile(this.observationContext(), target, this.traitRegistry).effective}`);
+          }
           break;
         }
         case 'summon': {

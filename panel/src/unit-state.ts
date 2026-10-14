@@ -209,6 +209,7 @@ function validateRuntimeMetadata(value: Record<string, unknown>): void {
   validateConcealment(value.tacticalRevealed);
   validateFlightState(value.airborne);
   validateMoraleState(value.moraleState);
+  if (value.moraleLocked !== undefined && value.moraleLocked !== true) throw new Error('士气锁定记录损坏');
   validateWounded(value as unknown as Combatant);
   validateMount(value as unknown as Combatant);
   validateFormationPosition(value.formationPosition);
@@ -445,6 +446,8 @@ export function unitRecordFromCombatant(
   restoreDeploymentPreference(c);
   delete c.tacticalPose;
   delete c.moraleState;
+  delete c.moraleLocked;
+  if (c.base.moraleMax === undefined) delete c.morale;
   delete c.tacticalEffort;
   delete c.tacticalRevealed;
   delete c.entrenchedAt;

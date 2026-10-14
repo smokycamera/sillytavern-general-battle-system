@@ -2,6 +2,7 @@ import { SmallBattle, MassBattle, V15_OVERFLOW_D20, V15_OVERFLOW_TW, LITE_D20, g
   environmentTags, recommendedFormationSlots, cellLabel, personnel, type Combatant, type Trait } from '../../engine/src/index.js';
 import { assertBattleCapacity } from '../../engine/src/battle-limits.js';
 import { newBattleCommanderProfiles } from '../../engine/src/commander-profile.js';
+import { setMoraleLock } from '../../engine/src/morale.js';
 import { prepareBattleObjective, prepareMassRoster } from './battle-setup.js';
 import type { EncounterSetup } from './jev-context.js';
 import type { LlmEncounterContext } from './llm-context.js';
@@ -28,6 +29,7 @@ export function buildEncounter(input: EncounterBuild): SmallBattle | MassBattle 
   const tags = environmentTags([setup.field, ...(setup.lighting === 'night' ? ['night'] : []), ...(setup.mode === 'small' && setup.objectiveMode === 'siege' ? ['siege'] : [])]);
   if (setup.mode === 'mass') {
     const combatants = prepareMassRoster(roster);
+    for (const unit of combatants) setMoraleLock(unit, unit.side === 'ally' && unit.id === input.protagonistId);
     const battle = new MassBattle({ nonLethal: input.nonLethal, seed: v2 ? seed : undefined,
       formationSlots: recommendedFormationSlots(combatants), ...(v2 ? { rules: V15_OVERFLOW_TW } : {}),
       combatants, traitRegistry, commanderId: input.commanderId, zones: ['左翼','中军','右翼'], summonUnit, field: { tags: v2 ? tags : setup.field ? [setup.field] : [] } });
@@ -38,8 +40,10 @@ export function buildEncounter(input: EncounterBuild): SmallBattle | MassBattle 
   if (battlefield && !input.preparedField) battlefield = prepareBattleObjective(battlefield, roster, setup.objectiveMode, input.protagonistId, setup.siegeAttacker, context?.vipId);
   if (context?.mapDesign && battlefield?.generation?.source === 'context') context.mapDesign = structuredClone(battlefield.generation.design);
   if (context && battlefield?.objective.kind === 'escape') { context.vipId = battlefield.objective.unitId; context.vipName = roster.find(u => u.id === context.vipId)?.name; }
+  const combatants = structuredClone(roster);
+  for (const unit of combatants) setMoraleLock(unit, unit.side === 'ally' && unit.id === input.protagonistId);
   const battle = new SmallBattle({ nonLethal: input.nonLethal, ...(v2 ? { battlefield } : {}), rules: v2 ? V15_OVERFLOW_D20 : LITE_D20,
-    combatants: structuredClone(roster), seed: v2 ? seed : undefined, traitRegistry, summonUnit, field: { tags: v2 ? tags : setup.field ? [setup.field] : [] } });
+    combatants, seed: v2 ? seed : undefined, traitRegistry, summonUnit, field: { tags: v2 ? tags : setup.field ? [setup.field] : [] } });
   battle.commanderProfiles = newBattleCommanderProfiles(context?.commanders); battle.start(); return battle;
 }
 

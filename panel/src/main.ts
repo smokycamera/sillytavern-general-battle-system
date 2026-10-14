@@ -4,6 +4,7 @@ import { MCP_ENABLED } from './mcp-flag.js';
 import { McpGameApi, executeSmallGameAction, type GameAction } from './mcp-game.js';
 import { recoverUnitRecord } from './post-battle-recovery.js';
 import { buildEncounter, encounterPreview } from './game-encounter.js';
+import { setMoraleLock } from '../../engine/src/morale.js';
 import { McpSandbox } from './mcp-sandbox.js';
 import { PlayerPreparation } from './player-preparation.js';
 import { narrativeMapSources } from './narrative-map-source.js';
@@ -92,7 +93,7 @@ import { renderFormationBattle } from './formation-view.js';
 import { battleAbilities, battleSkillChangeReason, learnedSkills, removedSkillOrder, setBattlePreparedSkills } from './battle-skills.js';
 import { formationSelection, selectFormationUnit, setFormationChoice, orderDraft, type FormationView, type OrderDrafts } from './formation-orders.js';
 import { renderTacticalBattle, selectTacticalElement, MAP_ZOOM_LABELS, type MapZoom, type TacticalView, type TacticalQuery, type TacticalAutomation } from './tactical-view.js';
-import { aiActsFor, aiControlledAllyIds, resetNonProtagonistAi, setUnitAi, type AllyControlDefaults } from './ally-control.js';
+import { aiActsFor, aiControlledAllyIds, resetAllyAi, setUnitAi, type AllyControlDefaults } from './ally-control.js';
 import {
   PANEL_SAVE_SCHEMA_VERSION,
   battleOutcomeId,
@@ -201,11 +202,11 @@ interface AppState {
   mass: MassBattle | null;
   smallTarget: string;
   idSeq: number;
-  /** 主控单位 id（视角标记 + 指挥权门禁 + 经验入账默认目标） */
+  /** 持久主控绑定：只赋予满士气锁定，标记供展示。 */
   protagonistId?: string;
-  /** 我方主指挥单位 id（军团；主控非指挥官时军令自动） */
+  /** 我方主指挥单位 id，独立于主控。 */
   commanderId?: string;
-  /** 「AI托管·非主控」：主控以外的我方单位默认交给AI（未设主控时即全部我方）；单位的单独托管设置随战斗保存 */
+  /** 「AI托管·我方」：我方单位默认交给AI；单位的单独设置随战斗保存。 */
   autoTurn: boolean;
   /** 保存作用域：chat=每聊天一份；character=跟随角色卡 */
   saveScope: SaveScope;
@@ -395,7 +396,6 @@ async function panelTask(task: () => Promise<void>, allowPending = false, feedba
 async function persist(): Promise<boolean> {
   const sessionContext=()=>runtime.native?JSON.stringify(JSON.parse(controller.inventoryContext()).slice(0,2)):controller.inventoryContext();
   const identity=adapter.identity(), namespace=adapter.namespace(), context=sessionContext();
-  for (const key of ['protagonistId','commanderId'] as const) if (state[key] && !state.storage.some(r => r.id === state[key] && r.side === 'ally')) state[key] = undefined;
   // v2 起 storage 是持久权威源；新生成但尚未入 storage 的旧路径在保存前补齐一次。
   for (const unit of state.roster) {
     if (!state.storage.some((r) => r.id === unit.id)) {
@@ -404,6 +404,8 @@ async function persist(): Promise<boolean> {
       );
     }
   }
+  for (const key of ['protagonistId','commanderId'] as const) if (state[key] && !state.storage.some(r => r.id === state[key] && r.side === 'ally')) state[key] = undefined;
+  synchronizeMoraleLock();
   const write = (await controller.persistPanel({
       schemaVersion: PANEL_SAVE_SCHEMA_VERSION,
       encounterContext: state.encounterContext,
@@ -618,6 +620,20 @@ function restore(): void {
   // 无进行中战斗时规模由编制推导（出现连队→军团）；有战斗则跟随战斗刻度
   state.mode = state.small ? 'small' : state.mass ? 'mass' : (saved.mode ?? autoScaleMode());
   if (!state.small && !state.mass) state.mode = autoScaleMode();
+  synchronizeMoraleLock();
+}
+
+function synchronizeMoraleLock(): void {
+  if (state.protagonistId && !state.storage.some(r => r.id === state.protagonistId && r.side === 'ally')) state.protagonistId = undefined;
+  for (const unit of [...state.roster, ...(currentBattle()?.combatants ?? [])]) setMoraleLock(unit, unit.side === 'ally' && unit.id === state.protagonistId);
+}
+
+/** 离场、濒死和阵亡仍能查看已绑定的持久档案。 */
+function protagonistUnit(): Combatant | undefined {
+  const record = state.storage.find(r => r.id === state.protagonistId && r.side === 'ally');
+  const unit = state.roster.find(u => u.id === record?.id) ?? (record && materializeStorageUnit(record));
+  if (unit) setMoraleLock(unit, true);
+  return unit;
 }
 
 // ---------- 工具 ----------
@@ -757,21 +773,21 @@ function deployedRoster(records: UnitRecord[], ids: string[]): Combatant[] {
   return prepareBattleItems(roster, controller.snapshot());
 }
 
-function allyControlDefaults(): AllyControlDefaults { return { nonProtagonist: state.autoTurn, protagonistId: state.protagonistId }; }
-/** AI托管开关：「非主控」覆盖全部非主控单位的单独设置，「此单位」只改选中的我方单位。 */
+function allyControlDefaults(): AllyControlDefaults { return { allAllies: state.autoTurn }; }
+/** AI托管开关：「我方」覆盖所有单位的单独设置，「此单位」只改选中的我方单位。 */
 function applyAllyControl(role: string, checked: boolean, id?: string): void {
   const b = state.small;
-  if (role === 'auto-turn') { state.autoTurn = checked; if (b) resetNonProtagonistAi(b, allyControlDefaults()); }
+  if (role === 'auto-turn') { state.autoTurn = checked; if (b) resetAllyAi(b); }
   else if (b && !b.isOver() && b.combatants.some(u => u.id === id && u.side === 'ally')) setUnitAi(b, id!, checked, allyControlDefaults());
 }
 function tacticalAutomation(b: SmallBattle): TacticalAutomation {
   const defaults = allyControlDefaults();
-  return { aiUnitIds: aiControlledAllyIds(b, defaults), nonProtagonist: defaults.nonProtagonist, fullAuto: fullAuto.running };
+  return { aiUnitIds: aiControlledAllyIds(b, defaults), allAllies: defaults.allAllies, fullAuto: fullAuto.running };
 }
 
 /**
  * 自动行动（小规模）：依次替AI一方的单位执行 autoAction，直到轮到玩家手动的我方单位或战斗结束。
- * 敌方与中立单位始终由AI行动；我方单位按 AI 托管设置（单位单独设置 > 「非主控」），见 ally-control。
+ * 敌方与中立单位始终由AI行动；我方单位按 AI 托管设置（单位单独设置 > 「我方」），见 ally-control。
  */
 async function autoSmall(b: SmallBattle): Promise<void> {
   if (!b.active || b.isOver()) return;
@@ -889,12 +905,11 @@ async function onBattleEnded(): Promise<void> {
   }
 }
 
-/** 军团：当前是否自动军令（主控非指挥官，或主帅倒下） */
+/** 军团：仅实际指挥者无法下令时自动军令。 */
 function massAutoCommand(): boolean {
   const b = state.mass;
   if (!b) return false;
-  if (!b.manualCommandAllowed) return true;
-  return !!state.protagonistId && state.protagonistId !== b.commanderId;
+  return !b.manualCommandAllowed;
 }
 
 /** 军团命令记忆落地：为所有无令我方单位重发上次指令（目标阵亡时自动换最近敌军） */
@@ -1036,7 +1051,7 @@ function renderBattlePreparation(): string {
   const mode = preview?.setup.mode ?? effectiveMode(), capacityIssue = battleCapacityIssue(preview?.roster ?? state.roster), ready = !!preview || rosterHasBothSides() && !capacityIssue;
   const escortSide = state.objectiveMode === 'intercept' ? 'enemy' : 'ally';
   const escortCandidates = state.roster.filter((u) => u.side === escortSide && u.hp > 0 && u.status === 'ready');
-  const escortUnit = escortCandidates.find((u) => u.id === state.protagonistId) ?? escortCandidates[0];
+  const escortUnit = escortCandidates[0];
   const missionSummary = state.objectiveMode === 'escort' || state.objectiveMode === 'intercept'
     ? `${escortSide === 'ally' ? '我方护送，敌方拦截' : '敌方护送，我方拦截'}；护送对象：${escortUnit?.name ?? '尚未集结'}。`
     : state.objectiveMode === 'siege' || state.objectiveMode === 'auto' && plannedFieldTags().includes('siege')
@@ -1044,7 +1059,7 @@ function renderBattlePreparation(): string {
       : state.objectiveMode === 'control' ? '占旗战：任一方连续控制旗点2个完整回合获胜。'
        : '歼灭战：击溃或消灭敌方全部作战单位获胜。';
   const missionDetails = state.objectiveMode === 'escort' || state.objectiveMode === 'intercept'
-    ? `${state.objectiveMode === 'escort' ? '护送对象沿用主控或首个我方单位' : '护送对象为首个敌方单位'}。抵达出口则护送方胜；目标被消灭、撤离或逾期未抵达则拦截方胜。`
+    ? `${state.objectiveMode === 'escort' ? '护送对象为首个我方单位，或正文明确选定的单位' : '护送对象为首个敌方单位'}。抵达出口则护送方胜；目标被消灭、撤离或逾期未抵达则拦截方胜。`
     : state.objectiveMode === 'siege' || state.objectiveMode === 'auto' && plannedFieldTags().includes('siege')
       ? '攻方连续控制胜利点2个完整回合获胜；胜利点位于守方纵深，守方坚持到60回合获胜。'
       : state.objectiveMode === 'control' ? '占领当轮不计，之后连续控制旗点2个完整回合获胜；控制中断后重新计数。'
@@ -1136,7 +1151,7 @@ function unitHtml(u: Combatant, index: number, inBattle: boolean): string {
   }
   const rosterCtl = !inBattle
     ? `<details class="unit-tools"><summary>单位操作</summary><div class="row">
-        ${u.side === 'ally' ? `<button data-action="roster-proto" data-id="${esc(u.id)}">${u.id === state.protagonistId ? '当前主控' : '设为主控'}</button><button data-action="roster-commander" data-id="${esc(u.id)}">${u.id === state.commanderId ? '当前指挥' : '设为指挥'}</button>` : ''}
+        ${u.side === 'ally' ? `<button data-action="roster-proto" data-id="${esc(u.id)}">${u.id === state.protagonistId ? '主控·满士气锁定（点击取消）' : '设为主控（锁满士气）'}</button><button data-action="roster-commander" data-id="${esc(u.id)}">${u.id === state.commanderId ? '当前指挥' : '设为指挥'}</button>` : ''}
         <button data-action="roster-del" data-i="${index}">移出参战名单</button>
       </div></details>`
     : '';
@@ -1491,14 +1506,13 @@ function renderManage(): string {
   </section>`;
 }
 
-/** 角色子界面：主控英雄(user)的等级/属性/经验/装备展示。
- *  数据源 = ★主控 hero 单位；未设主控时提示从编制选。升级沿用自动按曲线重算（不加点）。 */
+/** 角色子界面展示主控绑定档案；离场也保留近况，主控只赋予满士气锁定。 */
 function renderRole(): string {
-  const hero = state.roster.find((u) => u.id === state.protagonistId && u.side === 'ally');
+  const hero = protagonistUnit();
   if (!hero) {
     return `<section>
       <h2>👤 角色</h2>
-      <span class="sub">在队伍的单位操作中设定主控后，可查看近况并发送给正文AI。</span>
+      <span class="sub">在队伍的单位操作中设定主控，锁定该单位满士气，并可查看近况。</span>
     </section>`;
   }
   if (hero.rulesVersion === 'v2') {
@@ -1645,7 +1659,7 @@ function renderSmall(): string {
            <button data-action="small-retreat" ${retreatOption?.enabled ? '' : 'disabled'} title="${esc(retreatOption?.reason ?? '与所有敌人距离≥2；消耗主行动')}">撤离战场</button>
           <button data-action="small-endturn">结束回合</button>
           <button data-action="small-auto-act" title="只让AI完成当前行动单位的这一次行动，不改变托管设置">AI代打本次</button>
-          <span class="ai-takeover" role="group" aria-label="AI托管"><span>AI托管</span><label title="${act?.side === 'ally' ? esc(act.name) + '之后每次轮到都由AI行动，取消勾选即收回手动' : '当前不是我方单位'}"><input type="checkbox" data-role="ally-ai" data-id="${esc(act?.id ?? '')}" ${act?.side === 'ally' && aiActsFor(b, act, allyControlDefaults()) ? 'checked' : ''} ${act?.side === 'ally' ? '' : 'disabled'}>此单位</label><label title="除主控外的我方单位都由AI行动，之后的战斗沿用；勾选或取消会覆盖单位的单独设置"><input type="checkbox" data-role="auto-turn" ${state.autoTurn ? 'checked' : ''}>非主控</label></span>
+          <span class="ai-takeover" role="group" aria-label="AI托管"><span>AI托管</span><label title="${act?.side === 'ally' ? esc(act.name) + '之后每次轮到都由AI行动，取消勾选即收回手动' : '当前不是我方单位'}"><input type="checkbox" data-role="ally-ai" data-id="${esc(act?.id ?? '')}" ${act?.side === 'ally' && aiActsFor(b, act, allyControlDefaults()) ? 'checked' : ''} ${act?.side === 'ally' ? '' : 'disabled'}>此单位</label><label title="全部我方单位都由AI行动，之后的战斗沿用；勾选或取消会覆盖单位的单独设置"><input type="checkbox" data-role="auto-turn" ${state.autoTurn ? 'checked' : ''}>我方</label></span>
         </div>
         <div class="sub">先攻顺序：${b.turnOrder.map((id) => esc(unitLabel(b.byId(id)))).join(' → ')}｜移动后射击 −2（骑射免疫）</div>`}
   </section>`;
@@ -1803,7 +1817,7 @@ function renderMass(): string {
   if (!b) {
     return `<section><h2>② 军团会战</h2>
       <button class="primary" data-action="mass-start" ${!rosterHasBothSides() ? 'disabled' : ''}>开战（需双方编制）</button>
-      <span class="sub">连队 hp=兵员数｜指挥点限制冲锋/撤退｜主控非指挥官时军令自动下达</span>
+      <span class="sub">连队 hp=兵员数｜指挥点限制冲锋/撤退｜实际指挥者无法下令时军令自动下达</span>
     </section>`;
   }
   const over = b.isOver();
@@ -1814,7 +1828,7 @@ function renderMass(): string {
   const allyCount = alive.filter((c) => c.side === 'ally').length;
   const enemyCount = alive.filter((c) => c.side === 'enemy').length;
   const auto = massAutoCommand();
-  const autoReason = !b.manualCommandAllowed ? v2 ? '指挥者或随队编队当前无法下令' : '主帅倒下，指挥点减半' : '主控非指挥官（士兵视角）';
+  const autoReason = v2 ? '指挥者或随队编队当前无法下令' : '主帅倒下，指挥点减半';
   const orderLines = b.combatants
     .filter((u) => u.side === 'ally' && u.status === 'ready' && !(b.rules.resolutionVersion === 'v2' && b.isAttached(u.id)))
     .map((u) => {
@@ -1855,12 +1869,11 @@ function renderMass(): string {
       </div>`;
     })
     .join('');
-  const protoUnit = state.protagonistId ? b.combatants.find((c) => c.id === state.protagonistId) : undefined;
-  const alreadyAttached = state.protagonistId ? [...b.attached.values()].includes(state.protagonistId) : false;
-  const attachable = protoUnit && protoUnit.scale === 'hero' && protoUnit.status === 'ready' && !alreadyAttached;
+  const attachable = b.combatants.filter(c => c.side === 'ally' && c.scale === 'hero' && c.status === 'ready' && ![...b.attached.values()].includes(c.id));
   const companies = b.combatants.filter((c) => c.side === 'ally' && c.scale === 'company' && c.status === 'ready' && !b.attached.get(c.id));
-  const attachCtl = attachable && companies.length
-    ? `<div class="row"><span class="sub">主控嵌入连队（攻击+1，随队征战）：</span>
+  const attachCtl = attachable.length && companies.length
+    ? `<div class="row"><span class="sub">人物嵌入连队（攻击+1，随队征战）：</span>
+        <select data-role="attach-hero">${attachable.map(c => `<option value="${esc(c.id)}">${esc(unitLabel(c))}</option>`).join('')}</select>
         <select data-role="attach-target">${companies.map((c) => `<option value="${esc(c.id)}">${esc(unitLabel(c))}</option>`).join('')}</select>
         <button data-action="mass-attach">嵌入</button></div>`
     : '';
@@ -1954,7 +1967,7 @@ function renderXp(): string {
 /** 构造【战阵·角色状态】+【战场存活单位】注入文案：给 AI 每次回复前看的上下文 */
 function buildContextInject(): string {
   const lines: string[] = [];
-  const hero = state.roster.find((u) => u.id === state.protagonistId);
+  const hero = protagonistUnit();
   if (hero) {
     const prog = xpProgress(hero);
     const xpS = prog ? `本级${xpText(prog.current, 'down')}/${prog.next}，累计${xpText(hero.xp ?? 0, 'down')}` : `${xpText(hero.xp ?? 0, 'down')}（满级）`;
@@ -1967,7 +1980,7 @@ function buildContextInject(): string {
     if (eq.length) lines.push(`装备：${eq.join('；')}`);
     if (hero.traits.length) lines.push(`特质：${hero.traits.map((id) => reg.get(id)?.name ?? id).join('、')}`);
   } else {
-    lines.push('【战阵·角色状态】（尚未设主控，无玩家角色视角）');
+    lines.push('【战阵·角色状态】（尚未设置主控士气锁定对象）');
   }
   const b = currentBattle();
   const alive = b
@@ -2446,7 +2459,7 @@ async function commitBuilder(): Promise<void> {
     if (state.storage.some((r) => r.id === preview.unit.id)) throw Error('此单位已加入，不重复创建');
     const unit = structuredClone(preview.unit);
     state.storage = [...state.storage, unitRecordFromCombatant(unit)]; state.roster = [...state.roster, unit];
-    if (unit.side === 'ally') { state.protagonistId ??= unit.id; state.commanderId ??= unit.id; }
+    if (unit.side === 'ally') state.commanderId ??= unit.id;
     state.mode = autoScaleMode();
   }
   if (!(await persist())) { throw Error('尚未保存，编辑草稿保留，请重新预览后重试'); }
@@ -2528,9 +2541,9 @@ async function approveSuggestion(s: Suggestion): Promise<void> {
     }
     case 'xp': {
       requireArchiveWritable();
-      const rosterTarget =
-        (state.protagonistId && state.roster.find((u) => u.id === state.protagonistId)) ||
-        state.roster.find((u) => u.side === 'ally' && u.scale === 'hero');
+      const candidates = state.roster.filter(u => u.side === 'ally' && u.scale === 'hero');
+      if (candidates.length !== 1) throw Error('经验事件需要唯一我方个体；请通过unit_set的真实id指定经验目标');
+      const rosterTarget = candidates[0];
       const target = rosterTarget && state.storage.some((r) => r.id === rosterTarget.id)
         ? materializeStorageUnit(state.storage.find((r) => r.id === rosterTarget.id)!)
         : undefined;
@@ -3254,7 +3267,6 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     state.storage = state.storage.filter((r) => !r.transient && visibleUnitRecord(r));
     state.small = null;
     state.mass = null;
-    state.protagonistId = undefined;
     state.commanderId = undefined;
     state.mode = 'small';
     state.encounterIds.clear();
@@ -3283,7 +3295,6 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
       state.encounterIds.delete(id);
       state.storage = state.storage.filter((r) => r.id !== id || !r.transient);
     }
-    if (id && state.protagonistId === id) state.protagonistId = undefined;
     if (id && state.commanderId === id) state.commanderId = undefined;
     state.mode = autoScaleMode();
     (await persist());
@@ -3361,10 +3372,11 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   'mass-start': async () => startContextualBattle('mass'),
   'mass-attach': async () => {
     const b = state.mass!;
-    if (!state.protagonistId) throw new Error('未设主控');
+    const heroId = val('attach-hero');
+    if (!heroId) throw new Error('选择要随队的人物');
     const target = val('attach-target');
     if (!target) throw new Error('选择要嵌入的连队');
-    b.attachHero(state.protagonistId, target);
+    b.attachHero(heroId, target);
     (await persist());
   },
   'battle-finish': async (el) => {
@@ -3388,7 +3400,6 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     // 编制：覆没者删除；撤离者离开上场编制但保留权威档案。
     state.roster = state.roster.filter((u) => !lostIds.has(u.id) && !withdrawnIds.has(u.id));
     const rosterIds = new Set(state.roster.map((u) => u.id));
-    if (state.protagonistId && !rosterIds.has(state.protagonistId)) state.protagonistId = undefined;
     if (state.commanderId && !rosterIds.has(state.commanderId)) state.commanderId = undefined;
     // 遭遇单位只在首次入战前是 transient；一旦活着离开战场就成为普通档案。
     for (const c of b.combatants) state.encounterIds.delete(c.id);
@@ -3405,7 +3416,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   },
   'order-issue': async (el) => {
     const b = state.mass!;
-    if (massAutoCommand()) throw new Error('军令自动模式：主控非指挥官，无法手动下令');
+    if (massAutoCommand()) throw new Error('实际指挥者当前无法手动下令');
     const uid = el.dataset.unit!;
     const type = (document.querySelector(`[data-role="order-type"][data-unit="${CSS.escape(uid)}"]`) as HTMLSelectElement)?.value as Order['type'];
     const target = (document.querySelector(`[data-role="order-target"][data-unit="${CSS.escape(uid)}"]`) as HTMLSelectElement)?.value;
@@ -3441,7 +3452,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   },
   'mass-orders-all': async () => {
     const b = state.mass!;
-    if (massAutoCommand()) throw new Error('军令自动模式：主控非指挥官，无法手动下令');
+    if (massAutoCommand()) throw new Error('实际指挥者当前无法手动下令');
     // 遍历所有 ally ready 单位，把各自的草稿（下拉当前选择）一次性全部下达
     let issued = 0;
     for (const u of b.combatants) {
@@ -3470,7 +3481,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   },
   'mass-ability': (el) => {
     const b = state.mass!;
-    if (massAutoCommand()) throw new Error('军令自动模式：主控非指挥官，无法手动下令');
+    if (massAutoCommand()) throw new Error('实际指挥者当前无法手动下令');
     // 目标取同一军令行的目标下拉（召唤/自军增益类可不选）
     const targetSel = el.closest('.orderline')?.querySelector<HTMLSelectElement>('[data-role="order-target"]');
     const actor = b.byId(el.dataset.unit!);
@@ -3482,14 +3493,14 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     };
   },
   'mass-orders-memory': async () => {
-    if (massAutoCommand()) throw new Error('军令自动模式：主控非指挥官，无法手动下令');
+    if (massAutoCommand()) throw new Error('实际指挥者当前无法手动下令');
     const n = issueMemoryOrders();
     toast(n ? `已按记忆重发 ${n} 条军令` : '没有可重发的记忆指令（先手动下达过一次）');
     (await persist());
   },
   'mass-orders-auto': async () => {
     const b = state.mass!;
-    if (massAutoCommand()) throw new Error('军令自动模式：主控非指挥官，无法手动下令');
+    if (massAutoCommand()) throw new Error('实际指挥者当前无法手动下令');
     const n = issueMemoryOrders() + b.autoOrders('ally');
     toast(`我方自动军令 ${n} 条已下达（记忆优先，无记忆的按引擎启发）`);
     (await persist());
@@ -3894,12 +3905,11 @@ function prepareMcpEncounter(args: Record<string, unknown>): McpPrepared {
   const roster = deployedRoster(records, entries.map(e => e.unitId));
   if (roster.some(u => u.rulesVersion === 'v2' && u.damageModel !== 'wounds-v2')) throw Error('参战档案需要先在界面完成规则迁移预览');
   const setup = { ...playerPreparationInputs().setup, ...(args.deployment !== undefined ? { mode: recommendBattleMode(roster).mode } : {}), ...rawSetup } as EncounterSetup;
-  const role = (key: 'protagonistId' | 'commanderId') => {
-    const requested = args[key] ?? state[key];
-    if (args[key] !== undefined && !roster.some(u => u.id === requested && u.side === 'ally')) throw Error(key + ' 须为参战我方单位 ID');
-    return roster.find(u => u.id === requested && u.side === 'ally')?.id ?? roster.find(u => u.side === 'ally')?.id;
-  };
-  const protagonistId = role('protagonistId'), commanderId = role('commanderId');
+  const protagonistId = args.protagonistId === undefined ? state.protagonistId : String(args.protagonistId);
+  if (protagonistId && !records.some(r => r.id === protagonistId && r.side === 'ally')) throw Error('protagonistId 须为已建档我方单位 ID');
+  const requestedCommander = args.commanderId ?? state.commanderId;
+  if (args.commanderId !== undefined && !roster.some(u => u.id === requestedCommander && u.side === 'ally')) throw Error('commanderId 须为参战我方单位 ID');
+  const commanderId = roster.find(u => u.id === requestedCommander && u.side === 'ally')?.id ?? roster.find(u => u.side === 'ally')?.id;
   const draft = new PlayerPreparation(), inputs = playerPreparationInputs(), ids = narrativeIds({ ...controller.snapshot(), storage: records });
   // A direct MCP preparation is authoritative; omitted intent means the normal random generator.
   draft.apply(args, { ...inputs, scope: 'mcp-plan', setup, roster, protagonistId, unitBindings: Object.fromEntries(roster.map(u => [ids.publicId(u.id), u.id])) });

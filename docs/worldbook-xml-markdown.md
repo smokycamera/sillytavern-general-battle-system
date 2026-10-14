@@ -13,9 +13,9 @@
 ## 叙述边界
 
 - 以本次事实清单、战报顺序和最新状态为准，覆盖主控、友军及已观测敌军；无变化者合并简述，不重复旧战况。
-- 命中、伤损、移动、地空位置和士气以记录为准。命中无伤不制造伤口；阵亡明确为死亡，濒死仍存活。
-- 叙述时禁止出现血量，骰子结果，回合数等词。
-- 主控不是指挥官时不写其下令、调兵。战外正常叙述
+- 命中、伤损、移动、地空位置和士气以记录为准。
+- 叙述时禁止出现血量，骰子结果，字母坐标，回合数等词。谨慎使用物品、单位全名，人数等具体数值。
+- 主控只锁定满士气，不代表指挥官；下令、调兵以实际指挥官身份为准。战外正常叙述
 - 在你认为即将进入战斗时必须停止正文剧情推进并输出参战双方详细单位
 ## 事件启用
 
@@ -33,12 +33,12 @@
 
 - 已有单位id、实物id和效果来源id不要瞎猜，不要偷懒，需要原封不动输出；不猜id、不用spawn重建同名档案。战斗开始时spawn单位不用deploy
 - hero的hp/hpMax是生命/最大生命；company的是现员/编制数，载具编队按车辆数，非装甲炮兵归为人形单位。不把总生命当人数。
-- deploy必填id。unit_update必填id及hp、hpMax至少一项
-- 仅扩编只写hpMax，不自动补员；扩编并补员同时写hpMax、hp。
+- deploy必填id。unit_update必填id及hp、hpMax、morale、state、clear至少一项；morale填写恢复后的士气绝对值，不超过当前moraleMax
+- 仅扩编只写hpMax，不自动补员；扩编并补员同时写hpMax、hp。休整等情况需要在恢复hp的同时恢复士气。
 - 同单位的unit_update、learn各合并一条，同实物的reforge合并一条；更新后可同时deploy。
 - count是1—20张单位卡，人数写hpMax。单场上限64张。不同编制/用途单位必须分开建档，重要人物可保留个体，已有档案不自动合并。
 -已有单位可用unit_set修改双方全部情况；必填真实id，另填便捷属性或data，reason可选。如补员，休整，获得/使用物品，改造等；
-- 便捷属性：name、side、scale、level、xpProgress、hp、hpMax、state、body、mount、weapon、weapon2、armor、shieldSpec、skills、traits、items、retired、note。state=ready/dying/dead/routing/fled；side=ally/enemy；scale=hero/company；items把道具交给该单位，写法同spawn的items，只增不减，收回用take
+- 便捷属性：name、side、scale、level、xpProgress、hp、hpMax、morale、state、body、mount、weapon、weapon2、armor、shieldSpec、skills、traits、items、retired、note。state=ready/dying/dead/routing/fled；side=ally/enemy；scale=hero/company；items把道具交给该单位，写法同spawn的items，只增不减，收回用take
 
 ## 环境
 
@@ -97,7 +97,6 @@
 - 充能：一次性写法前加“充能”，装备后每战可用1—2次，如火球魔杖充能魔法范围热能L5。
 - 佩戴：写特质或单位修正，如夜视镜夜战专精L5、攀城钩登城L3、守护戒指佩戴L4+4防御。
 - 金币、材料、钥匙、信件等不写spec。
-- 件数写实物数量；编队齐用时每次最多消耗与参战人数相同的件数。纯治疗品按实际可恢复伤量使用最少件数；屏障道具容量按本次件数累加，全队共用，持续时间不累加，重复施放取较强保护。
 
 ## 共用可选配置
 

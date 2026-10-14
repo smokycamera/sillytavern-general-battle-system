@@ -71,7 +71,8 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
       ...(s.conditionIds?.length ? { effects: s.conditionIds.map((id) => standardConditionMap().get(id)?.name ?? id) } : {}),
       duration: s.duration.kind, remaining: s.remaining }));
     const line = promptJson({ id: record.id, name: record.name, side: record.side, training:record.level, bonuses:unit?.bonuses,
-      ...(!battleOpen ? { level:record.level,xp:record.xp ?? 0,xpProgress:unit?xpProgress(unit)?.current:undefined,base:record.base,status:record.status,retired:record.retired,resources:unit?.resources,traits:unit?.traits.map((id) => traitLevelToken(id, unit.traitLevels?.[id])),speedTier:unit?.speedTier,conditions:record.conditions,preparedAbilityIds:unit?.preparedAbilityIds } : {}),
+      ...(!battleOpen ? { level:record.level,xp:record.xp ?? 0,xpProgress:unit?xpProgress(unit)?.current:undefined,base:record.base,morale:record.id===save.protagonistId?(record.base.moraleMax??100):record.morale,status:record.status,retired:record.retired,resources:unit?.resources,traits:unit?.traits.map((id) => traitLevelToken(id, unit.traitLevels?.[id])),speedTier:unit?.speedTier,conditions:record.conditions,preparedAbilityIds:unit?.preparedAbilityIds } : {}),
+      ...(record.id===save.protagonistId?{moraleLocked:true}:{}),
       semantics: record.scale === 'hero' ? '生命' : unit?.body==='vehicle'?'载具数量':'人数', hp: live?.hp ?? record.hp, hpMax: live?.base.hpMax ?? record.base.hpMax,
       // Wound groups are engine bookkeeping: the chat model gets a readable summary, never raw {hp,count} records to echo or rewrite.
       ...(unit&&hasMemberHealth(unit)?{memberHpMax:unit.formation!.memberHp,totalLife:memberHealth(unit),totalLifeMax:memberHealthMax(unit),memberHealth:memberHealthSummary(unit,4)}:{}),

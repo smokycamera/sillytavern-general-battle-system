@@ -33,7 +33,7 @@ export function preparationDesignRequest(roster: Combatant[], settings: LlmSetti
     if (candidates.length > 31 || new Set(candidates.map(u => u.id)).size !== candidates.length) {
       result.notes.push(`${side === 'ally' ? '我方' : '敌方'}VIP候选名单过多或ID重复，沿用默认对象`); continue;
     }
-    const ids: Record<string, string> = {}, options: Record<string, string> = { default: '正文未能确定对象，沿用主控优先／首个合法单位的默认选择' };
+    const ids: Record<string, string> = {}, options: Record<string, string> = { default: '正文未能确定对象，沿用首个合法单位的默认选择' };
     candidates.forEach((u, n) => {
       const key = 'unit_' + n;
       ids[key] = u.id;

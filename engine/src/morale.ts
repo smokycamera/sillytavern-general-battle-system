@@ -29,6 +29,18 @@ export interface MoraleState {
 export const MAX_RALLY_ATTEMPTS = 3;
 
 const emptyState = (): MoraleState => ({ terrorSeen: [], routs: 0, attempts: 0 });
+/** 个体未设置持久士气上限时，主控锁定使用心理量表上限100。 */
+export function fullMorale(unit: Combatant): number { return unit.base.moraleMax ?? 100; }
+export function setMoraleLock(unit: Combatant, locked: boolean): void {
+  if (locked) { unit.moraleLocked = true; unit.morale = fullMorale(unit); }
+  else if (unit.moraleLocked) {
+    delete unit.moraleLocked;
+    if (unit.base.moraleMax === undefined) {
+      (unit.moraleState ??= emptyState()).personal = Math.min(100, unit.morale ?? 100);
+      delete unit.morale;
+    }
+  }
+}
 export function validateMoraleState(value: unknown): void {
   if (value === undefined) return;
   const s = value as MoraleState;
@@ -47,12 +59,14 @@ export function spendIndomitable(unit: Combatant): boolean {
 }
 /** 仅供新战斗 start 调用；零士气的可行动单位恢复半数上限。 */
 export function recoverEntryMorale(unit: Combatant): number {
+  if (unit.moraleLocked) { unit.morale = fullMorale(unit); return 0; }
   if (unit.hp <= 0 || unit.status !== 'ready' || unit.morale !== 0) return 0;
   const maximum = unit.base.moraleMax ?? curveAt(unit.level).morale;
   unit.morale = Math.max(0, Math.min(maximum, Math.ceil(maximum / 2)));
   return unit.morale;
 }
 export function changeMorale(unit: Combatant, amount: number): number {
+  if (unit.moraleLocked) { unit.morale = fullMorale(unit); return 0; }
   const before = unit.morale ?? unit.moraleState?.personal ?? curveAt(unit.level).morale;
   const after = Math.max(0, Math.min(unit.base.moraleMax ?? 100, before + amount));
   if (unit.morale !== undefined) unit.morale = after;
@@ -66,6 +80,7 @@ function damagePressure(unit: Combatant, damage: number): number {
 }
 /** 校正旧V4快照可追溯的受创项，不撤销死亡/撤离或历史战果。 */
 export function reconcileDamageMorale(unit: Combatant): void {
+  if (unit.moraleLocked) return;
   const state = unit.moraleState;
   if (unit.combatModel !== MEMBER_HEALTH_MODEL || unit.scale !== 'hero' || !state || state.damage === undefined || state.damagePenalty === undefined) return;
   const corrected = damagePressure(unit, state.damage), difference = state.damagePenalty - corrected;
@@ -76,6 +91,7 @@ export function reconcileDamageMorale(unit: Combatant): void {
 }
 /** 累计真实损伤占实际最大生命的比例，只扣新增压力，避免连发逐次取整。 */
 export function moraleOnDamage(unit: Combatant, loss: number): void {
+  if (unit.moraleLocked) return;
   if ((unit.scale === 'hero' && !isCohort(unit)) || loss <= 0) return;
   reconcileDamageMorale(unit);
   unit.moraleState ??= emptyState(); const state = unit.moraleState;
@@ -101,7 +117,7 @@ export function moraleProfile(context: ObservationContext, unit: Combatant, regi
   const conditions = standardConditionMap();
   if (context.conditions) for (const id of activeConditionIds(unit)) { const def = context.conditions.get(id); if (def) conditions.set(id, def); }
   const traits = activeTraitIds(unit).flatMap((id) => registry.get(id) ?? []);
-  const immune = traits.some((t) => t.effects.some((e) => e.kind === 'immuneMorale'));
+  const immune = !!unit.moraleLocked || traits.some((t) => t.effects.some((e) => e.kind === 'immuneMorale'));
   const resilience = Math.max(0, traits.reduce((sum, trait) => sum + trait.effects.reduce((n, e) => n + (e.kind === 'stat' && e.stat === 'morale' ? e.value : 0), 0), 0));
   const sources: MoraleProfile['sources'] = [];
   const from = positionedUnit(context, unit), range = context.mode === 'small' ? 3 : 1;
@@ -127,7 +143,7 @@ export function moraleProfile(context: ObservationContext, unit: Combatant, regi
   const personal = unit.scale === 'hero' ? resilience : 0;
   const flat = resolveStack(collectMods(unit, { fieldTags: context.fieldTags }, conditions, auraMods, registry), 'morale', {}, { maxFlat: 100 }).flatTotal;
   const injury = unit.scale === 'hero' ? Math.round((1 - unit.hp / unit.base.hpMax) * 40) : 0;
-  const effective = Math.max(0, Math.min(100, (unit.morale ?? unit.moraleState?.personal ?? curveAt(unit.level).morale) + personal + flat - injury));
+  const effective = unit.moraleLocked ? Math.min(100, fullMorale(unit)) : Math.max(0, Math.min(100, (unit.morale ?? unit.moraleState?.personal ?? curveAt(unit.level).morale) + personal + flat - injury));
   const attackPenalty = immune ? 0 : Math.min(2, Math.ceil(Math.max(0, fear - command - resilience) / 8));
   return { effective, fear, command, resilience, immune, attackPenalty, sources, auraMods };
 }
@@ -142,6 +158,7 @@ export function moraleAttackMods(context: ObservationContext, unit: Combatant, r
 
 export function moraleLabel(context: ObservationContext, unit: Combatant, registry?: Map<string, Trait>, breakAt = 25): string {
   const profile = moraleRisk(context, unit, breakAt, registry);
+  if (unit.moraleLocked) return `满士气锁定，有效士气${profile.effective}`;
   if (!profile.sources.length && !profile.immune && unit.status !== 'routing' && !unit.moraleState?.routs && !(isCohort(unit) && unit.moraleState?.damagePenalty)) return '';
   return [unit.status === 'routing' ? `等待重整，剩余${Math.max(0, MAX_RALLY_ATTEMPTS - (unit.moraleState?.attempts ?? 0))}次机会，基础成功率${Math.round(profile.rallyChance * 100)}%且需要合法空位` : profile.breakChance > 0 && unit.status === 'ready' ? `下次士气结算惊退风险${Math.round(profile.breakChance * 100)}%` : '', profile.immune ? '不溃' : '', profile.fear ? `恐惧压力${profile.fear}` : '', profile.command ? `附近统率${profile.command}` : '', profile.attackPenalty ? `攻击降低${profile.attackPenalty}` : '', `有效士气${profile.effective}`].filter(Boolean).join('，');
 }

@@ -1961,7 +1961,7 @@ export class MassBattle {
           const mt = t ?? u;
           if (mt.morale !== undefined) {
             const before = mt.morale;
-            mt.morale = Math.max(0, Math.min(mt.base.moraleMax ?? 100, mt.morale + eff.amount));
+            changeMorale(mt, eff.amount);
             logBits.push(`${mt.name} 士气 ${before}→${mt.morale}`);
           }
           break;
@@ -2246,6 +2246,7 @@ export class MassBattle {
 
   /** 临时增减益只改变当前有效士气，不烘焙到长期档案。 */
   effectiveMorale(u: Combatant): number {
+    if (u.moraleLocked) return Math.min(100, u.base.moraleMax ?? 100);
     if (this.rules.resolutionVersion === 'v2') return moraleProfile(this.observationContext(), u, this.traitRegistry).effective;
     const flat = resolveStack(collectMods(u, {}, this.conditionMap(), [...this.auraModsFor(u), ...fieldModsFor(u, this.fieldTags, this.traitRegistry)], this.traitRegistry), 'morale', {}, { maxFlat: 100 }).flatTotal;
     return Math.max(0, Math.min(100, (u.morale ?? 0) + flat));
@@ -2253,7 +2254,7 @@ export class MassBattle {
 
   /** 士气检定：d20 + 士气/10 + 修正 vs DC。返回是否溃逃。 */
   moraleCheck(u: Combatant, dc: number, cause: string): boolean {
-    if (this.hasTraitEffect(u, 'immuneMorale')) {
+    if (u.moraleLocked || this.hasTraitEffect(u, 'immuneMorale')) {
       this.recordEvent({ round: this.round, kind: 'morale', participants: [u.id], text: `${u.name} 不溃——无视士气检定（${cause}）` });
       return false;
     }

@@ -21,7 +21,7 @@ function battle(): SmallBattle {
   return b;
 }
 
-it('战斗界面控件：AI托管按单位和「非主控」生效并随存档续行，非致命可在战中切换', async () => {
+it('战斗界面控件：AI托管按单位和「我方」生效并随存档续行，非致命可在战中切换', async () => {
   const f = nativeFixture(); await f.service.start(); localStorage.clear();
   Object.assign(window, { __tavernBattleNative: { service: f.service, messages: {} }, __TAURITAVERN__: {}, SillyTavern: { getContext: () => f.context } });
   vi.stubGlobal('fetch', vi.fn());
@@ -66,16 +66,17 @@ it('战斗界面控件：AI托管按单位和「非主控」生效并随存档�
   await endTurn();
   expect(snapshot().active?.id).toBe('a2'); expect(unitBox().checked).toBe(false);
 
-  // 「非主控」：a2、下一轮的 a1 都交给AI，停在第2轮的主控；单独设置被清掉。
-  toggle('auto-turn', true); await idle();
+  // 「我方」默认全部托管；显式把lead收回手动才会停在lead，与其主控身份无关。
+  const all = battle(); all.turnIndex = 2; all.allyAiControl.set('lead', false);
+  await load(all, true);
   s = snapshot();
   expect(s.round).toBe(2); expect(s.active?.id).toBe('lead');
-  expect(s.allyAiControl.size).toBe(0); expect(saved().autoTurn).toBe(true);
+  expect([...s.allyAiControl]).toEqual([['lead', false]]); expect(saved().autoTurn).toBe(true);
 
-  // 在「非主控」下单独收回 a1：下一轮轮到 a1 时停下等玩家。
+  // 在「我方」下单独收回a1，保留lead的独立手动设置。
   await select('a1'); expect(unitBox().checked).toBe(true);
   toggle('ally-ai', false); await idle();
-  expect([...snapshot().allyAiControl]).toEqual([['a1', false]]); expect(snapshot().active?.id).toBe('lead');
+  expect([...snapshot().allyAiControl]).toEqual([['lead', false], ['a1', false]]); expect(snapshot().active?.id).toBe('lead');
   await endTurn();
   s = snapshot(); expect(s.round).toBe(3); expect(s.active?.id).toBe('a1');
 
@@ -84,8 +85,8 @@ it('战斗界面控件：AI托管按单位和「非主控」生效并随存档�
   await load(restored);
   expect(snapshot().active?.id).toBe('lead');
 
-  // 连续行动中取消「非主控」：保存还没结束也立即生效，并写入存档。
-  const chain = battle(); chain.turnIndex = 1;
+  // 连续行动中取消「我方」：保存还没结束也立即生效，并写入存档。
+  const chain = battle(); chain.turnIndex = 1; chain.allyAiControl.set('lead', false);
   await load(chain, true);
   let release!: () => void;
   const blocked = new Promise<void>(resolve => { release = resolve; });

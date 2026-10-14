@@ -169,6 +169,6 @@ export function traitStatAdjustments(unit: Combatant, registry = traitRegistry()
 export function normalizeBakedTraitStats(unit: Combatant, registry = traitRegistry()): void {
   const old = bakedTraitStats(unit, registry), current = traitStatContributions(unit, unit.traits, registry);
   for (const key of ['atk', 'def', 'spd'] as const) unit.base[key] += (current[key] ?? 0) - (old[key] ?? 0);
-  if (unit.base.moraleMax !== undefined) { unit.base.moraleMax += (current.morale ?? 0) - (old.morale ?? 0); unit.morale = Math.min(unit.morale ?? unit.base.moraleMax, unit.base.moraleMax); }
+  if (unit.base.moraleMax !== undefined) { unit.base.moraleMax += (current.morale ?? 0) - (old.morale ?? 0); unit.morale = unit.moraleLocked ? unit.base.moraleMax : Math.min(unit.morale ?? unit.base.moraleMax, unit.base.moraleMax); }
   unit.bakedTraitStats = current;
 }

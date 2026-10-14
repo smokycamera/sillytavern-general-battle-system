@@ -55,7 +55,7 @@ export function vipCandidates(roster: Combatant[], side: 'ally' | 'enemy'): Comb
 }
 
 /** 只准备下一场任务；对象和规则随战场快照冻结。 */
-export function prepareBattleObjective(field: BattlefieldSpec, roster: Combatant[], mode: BattleObjectiveMode, protagonistId?: string, attackingSide: 'ally' | 'enemy' = 'ally', selectedVipId?: string): BattlefieldSpec {
+export function prepareBattleObjective(field: BattlefieldSpec, roster: Combatant[], mode: BattleObjectiveMode, _protagonistId?: string, attackingSide: 'ally' | 'enemy' = 'ally', selectedVipId?: string): BattlefieldSpec {
   const binding=field.scene?.objectiveRegion,region=binding?field.scene?.regions.find(r=>r.id===binding.id):undefined;
   const targetCells=region?.access.filter(p=>!groundBlocked(field,p))??[];
   if(binding&&!targetCells.length)throw new Error('正文任务地点没有合法目标格');
@@ -70,7 +70,7 @@ export function prepareBattleObjective(field: BattlefieldSpec, roster: Combatant
   }
   const side = mode === 'intercept' ? 'enemy' : 'ally';
   const eligible = vipCandidates(roster, side);
-  const escorted = eligible.find(u => u.id === selectedVipId) ?? eligible.find((u) => u.id === protagonistId) ?? eligible[0];
+  const escorted = eligible.find(u => u.id === selectedVipId) ?? eligible[0];
   if (!escorted) throw new Error(side === 'enemy' ? '拦截任务需要可参战的敌方护送对象' : '护送任务需要可参战的我方单位');
   if(binding?.relation==='exits_at'&&(binding.side!==side||binding.unitId&&binding.unitId!==escorted.id))throw new Error('正文出口所属部队与护送对象不一致');
   return { ...field, objective: { kind: 'escape', unitId: escorted.id,

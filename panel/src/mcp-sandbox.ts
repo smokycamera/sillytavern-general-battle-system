@@ -146,9 +146,12 @@ export class McpSandbox {
     const setup = { mode: roster.length > 32 ? 'mass' : 'small', field: 'plains', lighting: 'day', mapLayout: 'standard', objectiveMode: 'annihilation', siegeAttacker: 'ally', ...(args.setup as object ?? {}) } as EncounterSetup;
     const choices: Record<string, readonly string[]> = { mode: ['small','mass'], field: ['plains','urban','siege','forest','mountain'], lighting: ['day','night'], mapLayout: ['standard','indoor'], objectiveMode: ['auto','annihilation','siege','control','escort','intercept'], siegeAttacker: ['ally','enemy'] };
     for (const [key, value] of Object.entries(setup)) if (!choices[key]?.includes(value)) throw Error('setup.' + key + ' 无效');
-    const protagonistId = roster.find(u => u.side === 'ally')?.id, draft = new PlayerPreparation();
+    const commanderId = roster.find(u => u.side === 'ally')?.id;
+    const protagonistId = typeof args.protagonistId === 'string' ? args.protagonistId : undefined;
+    if (protagonistId && !roster.some(u => u.id === protagonistId && u.side === 'ally')) throw Error('protagonistId 须为测试我方单位 ID');
+    const draft = new PlayerPreparation();
     draft.apply(args, { scope: 'sandbox', setup, roster, protagonistId, unitBindings: Object.fromEntries(roster.map((u,i) => ['u'+(i+1), u.id])), sources: [] });
-    const battle = buildEncounter({ roster, setup, context: draft.resolve('sandbox'), protagonistId, commanderId: protagonistId,
+    const battle = buildEncounter({ roster, setup, context: draft.resolve('sandbox'), protagonistId, commanderId,
       nonLethal: args.nonLethal !== false, seed, registry: this.registry, summonUnit: this.summonUnit });
     return { kind: battle instanceof SmallBattle ? 'small' : 'mass', snapshot: battle.toSnapshot(), setup, opening: encounterPreview(battle, setup) };
   }

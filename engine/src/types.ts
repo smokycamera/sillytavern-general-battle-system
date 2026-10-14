@@ -355,6 +355,8 @@ export interface Combatant {
   base: Stats;
   hp: number;
   morale?: number;
+  /** 本场由主控绑定赋予满士气锁定；不写入单位永久档案。 */
+  moraleLocked?: true;
   conditions: ActiveCondition[];
   /** hero 刻度装备 */
   weapon?: Weapon;
