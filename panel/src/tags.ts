@@ -24,7 +24,7 @@ import { CATEGORY_LABELS } from '../../engine/src/data/ability-blueprints.js';
  *   armor=同格式 "名字:种类L等级"（如 龙鳞宝铠:重甲L6）——种类限 无甲/轻甲/中甲/重甲/超重甲，
  *          等级 L1~L10 定防护品质（L5=标准）；也兼容纯档位名/具体护甲名（板甲/防弹衣……）
  *   skills=逗号分隔的技能条目，每条 "名字:类别L等级"（如 焚天:烈焰风暴L6）或裸蓝图名/类别名；等级可省略
- *   traits=特质名或id 逗号分隔，五项专精可带等级（林地专精L8）；items=随身道具，见 item-spec.ts；leader=敌方首领标记
+ *   traits=特质名或id 逗号分隔，已完成分级的特质可带等级（林地专精L8）；items=随身道具，见 item-spec.ts；leader=敌方首领标记
  * 解析容错：属性缺失/数值越界 → 降级为 invalid 记录，永不抛错；
  * 非法标签仅展示原文供玩家核查，不影响其余解析。
  */
@@ -114,7 +114,7 @@ export type Suggestion =
       armorLevel?: number;
       /** 从 skills 解析出的技能条目（蓝图+威力等级+自定义名） */
       skills?: SkillSpec[];
-      /** 正文特质（可选）：特质名或 id；五项专精可带等级（林地专精L8） */
+      /** 正文特质（可选）：特质名或 id；已完成分级的特质可带等级（林地专精L8） */
       traits?: string[];
       /** 随身道具：每张卡各一套，入库归该卡；佩戴、充能道具自动装上 */
       items?: SpawnItem[];
@@ -348,6 +348,7 @@ function blueprintKey(spec: string): string | undefined {
 
 /** 单条技能：可选 "名字:" 前缀 + 蓝图（必命中才有效）+ 可选 L等级 */
 function parseSkillItem(item: string): SkillSpec | undefined {
+  if ((item.match(/[lL]\s*\d+/g) ?? []).length > 1) throw Error('每个技能末尾只写一个L，若要不同等级请拆成两项技能');
   const parsed = parseEnhancementSuffix(item,'skill');
   if(parsed.bonuses){const skill=parseSkillItem(parsed.text);return skill?{...skill,bonuses:parsed.bonuses}:undefined;}
   const s = item.trim();
@@ -438,9 +439,10 @@ export function parseSuggestionTags(text: string): ParseResult {
           const life = duration.kind !== 'permanent' ? { remaining: duration.count } : {};
           if (kind === 'bless') {
             const parsed = names.map((name) => narrativeTraitLevel(name)), levels: Record<string, number> = {};
-            const traitIds = parsed.map((p, i) => p.kind === 'trait' ? p.id : names[i]!);
-            for (const p of parsed) if (p.kind === 'trait' && p.level !== undefined && p.level !== 5) levels[p.id] = Math.max(levels[p.id] ?? 0, p.level);
-            const traitLevels = Object.keys(levels).length ? levels : undefined;
+            const traitIds = [...new Set(parsed.map((p, i) => p.kind === 'trait' ? p.id : names[i]!))];
+            for (const p of parsed) if (p.kind === 'trait' && p.level !== undefined) levels[p.id] = Math.max(levels[p.id] ?? 0, p.level);
+            const entries = Object.entries(levels);
+            const traitLevels = entries.length ? Object.fromEntries(entries) : undefined;
             validateTraitSource({ id: 'parse', name, kind: 'blessing', traitIds, ...(traitLevels ? { traitLevels } : {}), duration, ...life });
             suggestions.push({ kind: 'bless', id: a.id.trim(), name, traitIds, ...(traitLevels ? { traitLevels } : {}), duration, raw });
           } else {

@@ -2,6 +2,9 @@ import type { ActiveCondition, Combatant, Trait, Weapon } from './types.js';
 import { activeTraitIds } from './trait-sources.js';
 import { TRAITS } from './data/traits.js';
 import { isCohort, personnel, memberDurability, COHORT_REFERENCE } from './combat-model.js';
+import { phase2Traits } from './trait-level-model.js';
+import { effectiveTraitLevel } from './trait-sources.js';
+import { traitParameter } from './trait-parameters.js';
 
 export function conditionExposure(source: Combatant, target: Combatant, area = false): number {
   const count=source.scale==='hero'?1:Math.min(personnel(source),10*Math.max(1,personnel(source)/COHORT_REFERENCE));
@@ -31,6 +34,7 @@ export function weaponConditions(attacker: Combatant, target: Combatant, weapon:
   for (const id of activeTraitIds(attacker)) for (const effect of (registry?.get(id) ?? TRAITS.find((t) => t.id === id))?.effects ?? []) {
     if (effect.kind !== 'onHitCondition' || effect.conditionId === 'poisoned' && (damage <= 0 || poisonDeliveryReason(target, weapon))) continue;
     result.set(effect.conditionId, { id: effect.conditionId, dur: Math.max(effect.dur, result.get(effect.conditionId)?.dur ?? 0), sourceId: attacker.id,
+      ...(effect.conditionId === 'poisoned' && phase2Traits(attacker) ? { magnitude: traitParameter('woundRatio', effectiveTraitLevel(attacker, 'poison-strike')) } : {}),
       ...(isCohort(target)&&target.scale!=='hero'?{affectedMembers:conditionExposure(attacker,target)}:{}) });
   }
   return [...result.values()];
@@ -42,11 +46,12 @@ export function applyWeaponConditions(target: Combatant, conditions: ActiveCondi
 }
 export function poisonHint(attacker: Combatant, target: Combatant, weapon?: Weapon): string | undefined {
   if (!activeTraitIds(attacker).includes('poison-strike')) return undefined;
-  return poisonDeliveryReason(target, weapon) ?? '造成损伤后中毒3轮，不叠层；体型影响毒伤';
+  return poisonDeliveryReason(target, weapon) ?? `造成损伤后中毒3次，不叠层、不续期、不替换；冻结毒伤×${phase2Traits(attacker) ? traitParameter('woundRatio', effectiveTraitLevel(attacker, 'poison-strike')) : 1}；体型影响毒伤`;
 }
 /** AI的有界后续收益估值，独立于界面展示的即时伤害；不是额外伤害结算。 */
 export function poisonValue(attacker: Combatant, target: Combatant, weapon: Weapon | undefined, hitChance: number): number {
   if (!activeTraitIds(attacker).includes('poison-strike') || poisonDeliveryReason(target, weapon) || target.conditions.some((c) => c.id === 'poisoned' && c.dur > 0)) return 0;
-  const average = [1, 2, 3, 4].reduce((n, roll) => n + (isCohort(target)?conditionDamage(target,roll,{id:'poisoned',dur:3,affectedMembers:conditionExposure(attacker,target)}):poisonDamage(target, roll)), 0) / 4;
+  const magnitude = phase2Traits(attacker) ? traitParameter('woundRatio', effectiveTraitLevel(attacker, 'poison-strike')) : 1;
+  const average = [1, 2, 3, 4].reduce((n, roll) => n + (isCohort(target)?conditionDamage(target,roll,{id:'poisoned',dur:3,magnitude,affectedMembers:conditionExposure(attacker,target)}):poisonDamage(target, roll * magnitude)), 0) / 4;
   return Math.min(target.hp, average * 3 + 1) * hitChance;
 }

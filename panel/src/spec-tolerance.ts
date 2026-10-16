@@ -80,6 +80,7 @@ function mechanism(text: string, warnings: string[] = [], source = text): SkillM
 
 /** 将等级后的效果词归回机制段；无法实现的可选强化留下诊断，不废掉基础技能。 */
 export function normalizeNarrativeSkill(text: string, warnings: string[]): string {
+  if ((text.match(/[lL]\s*\d+/g) ?? []).length > 1) throw Error('每个技能末尾只写一个L，若要不同等级请拆成两项技能');
   const normalized = normalizeNarrativeSpec(text);
   const separator = normalized.search(/[:：·｜|/／]/);
   const prefix = separator > 0 ? normalized.slice(0, separator) + ':' : '';

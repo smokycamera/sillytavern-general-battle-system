@@ -41,8 +41,9 @@ export function prepareBattleItemWrite(previous: InventorySave, next: InventoryS
   // 已归档快照只用于旧战报；后续战外用药/获得不能被旧快照重新结算。
   if (sameBattle && (previous.committedOutcomeIds ?? []).includes(`${next.battle.kind}:${String(next.battle.snap.seed)}`)) return next;
   const old = sameBattle ? ledger(previous) : new Map<string, { item: CarriedItem; actorId: string; left: number }>();
-  const current = ledger(next), output = structuredClone(next);
-  output.inventory = migrateLegacyInventory(output.inventory);
+  // Only inventory is changed here; the caller already owns its battle candidate.
+  const current = ledger(next), output = { ...next };
+  output.inventory = migrateLegacyInventory(structuredClone(next.inventory));
   const previousInventory = migrateLegacyInventory(previous.inventory) ?? [];
   if (sameBattle && [...old.keys()].some((id) => !current.has(id))) throw new Error('进行中战斗不能移除物品来源记录');
   for (const [id, entry] of current) {

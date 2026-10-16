@@ -1,3 +1,4 @@
+import { prepareTraitLevelModel } from '../../engine/src/trait-level-model.js';
 import { abilityUsed } from '../../engine/src/ability-state.js';
 import { McpPanelBridge } from './mcp-bridge.js';
 import { MCP_ENABLED } from './mcp-flag.js';
@@ -51,11 +52,14 @@ import { spCapacity, abilityCost, spRecovery, prepareResourceModel, skillExertio
 import { PROMPT_SECTIONS, applySettlementPrompt, promptSelected, selectPromptEntries, renderPromptSettings, type PromptSectionId } from './prompt-settings.js';
 import { needsNarrativeDeploymentRestore } from './narrative-state.js';
 import { AutoBattleLoop, yieldBattleFrame } from './auto-battle.js';
+import { BattleWorker } from './battle-worker.js';
+import { applyBattleStep, seededReinforcement } from './battle-step.js';
+import { SeededRng } from '../../engine/src/rng.js';
 import { newUnitDraft, unitDraftFromRecord, buildUnit, editUnitBuild, type UnitDraft } from './unit-builder.js';
 import { MAX_SCENE_UNITS } from './narrative-limits.js';
 import { recommendBattleMode, extendSmallRoundLimit, upgradeDefaultObjective, normalizeObjectiveMode, prepareBattleObjective, battleCapacityIssue, type BattleObjectiveMode } from './battle-setup.js';
 import { unitForm, captureUnitDraft, buildPreview } from './unit-form.js';
-import { BODY, effectiveProtection, looseFormation, ABILITY_BLUEPRINTS, itemSpecText, itemsV15, isGradedTrait, traitLevel, traitLadderSummary, traitDisplayName, type Trait } from '../../engine/src/index.js';
+import { BODY, effectiveProtection, looseFormation, ABILITY_BLUEPRINTS, itemSpecText, itemsV15, isGradedTrait, gradedTraitEnabled, traitLevelSources, traitLevel, traitLadderSummary, traitDisplayName, traitPenetrationBonus, postureActive, type Trait } from '../../engine/src/index.js';
 /**
  * 战阵 · 面板主程序
  * 编排：编制管理（造怪器）→ 小规模战斗 / 军团会战 → 结算卡与状态输出；
@@ -68,7 +72,7 @@ import {
   generateUnit, traitCatalog, traitRegistry, resolveTraitId,
   SmallBattle, MassBattle, battleXpAwardsForBothSides, applyXp, xpProgress, approx, approxDelta,
   armorDR, fieldModsFor, LITE_D20,
-  V5_D20, V6_D20, V11_OVERFLOW_D20, V12_OVERFLOW_D20, V15_OVERFLOW_D20, prepareArmsModel, prepareTraitModel, prepareSkillModel, prepareItemModel, isAirborne, abilityUsabilityReason,
+  V5_D20, V6_D20, V11_OVERFLOW_D20, V12_OVERFLOW_D20, V17_OVERFLOW_D20, prepareArmsModel, prepareTraitModel, prepareSkillModel, prepareItemModel, isAirborne, abilityUsabilityReason,
   generatedField, generatedLayeredField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
   FORMATION_NODES, formationNode, concealmentLabel,
   type Combatant, type GenerateInput, type Order, type BattleLogEntry, type Side,
@@ -327,6 +331,9 @@ const state: AppState = {
 };
 
 const fullAuto = new AutoBattleLoop();
+const battleWorker = new BattleWorker();
+let battleWorkerEpoch = 0;
+window.addEventListener('pagehide', () => { battleWorkerEpoch++; battleWorker.dispose(); });
 const llmContext = new LlmContextController();
 let llmDiagnostic = "";
 let smallResumeRequested = false;
@@ -375,9 +382,11 @@ function stopAutomation(clearRetry = true): void { pauseAutomation(); llmContext
 window.addEventListener('pagehide', () => stopAutomation());
 window.addEventListener('pagehide', () => narrativeScanner.cancel());
 let battleSaveFailed = false;
+let battleSaving = false;
+let openingSavedFor: SmallBattle | MassBattle | undefined;
 let uiBusy = false;
 async function panelTask(task: () => Promise<void>, allowPending = false, feedback?: HTMLElement, battleUnchanged = false): Promise<void> {
-  if (uiBusy) { toast('正在保存上一项操作，请稍候…'); return; }
+  if (uiBusy) { toast('正在处理上一项操作，请稍候…'); return; }
   if (!allowPending && runtime.canWrite && !runtime.canWrite()) { toast(runtime.writeBlockReason?.() ?? '当前档案尚未就绪，请先核实保存或重新读取。'); render('view'); return; }
   if (!battleUnchanged) clearBattleQueries();
   const identity = adapter.identity(), namespace = adapter.namespace();
@@ -399,6 +408,7 @@ async function panelTask(task: () => Promise<void>, allowPending = false, feedba
 }
 async function persist(options: { battleUnchanged?: boolean } = {}): Promise<boolean> {
   if (!options.battleUnchanged) clearBattleQueries();
+  const battle = currentBattle(), memoryOnly = !!battle && !battle.isOver() && openingSavedFor === battle;
   const sessionContext=()=>runtime.native?JSON.stringify(JSON.parse(controller.inventoryContext()).slice(0,2)):controller.inventoryContext();
   const identity=adapter.identity(), namespace=adapter.namespace(), context=sessionContext();
   // v2 起 storage 是持久权威源；新生成但尚未入 storage 的旧路径在保存前补齐一次。
@@ -436,12 +446,13 @@ async function persist(options: { battleUnchanged?: boolean } = {}): Promise<boo
       unitMigrationWarnings: state.unitMigrationWarnings,
       unitMigrationBackup: state.unitMigrationBackup,
       battle: battlePersist(),
-    }, state.factRevision));
+    }, state.factRevision, { memoryOnly }));
   if (identity!==adapter.identity() || namespace!==adapter.namespace() || context!==sessionContext()) {battleSaveFailed=true;restore();return false;}
   state.saveReceipt = write.receipt;
   if (write.receipt.status !== 'failed') {
+    if (!write.receipt.memoryOnly) openingSavedFor = battle ?? undefined;
     state.factRevision = write.revision;
-    const saved=controller.snapshot();
+    const saved=controller.snapshot(['inventory', 'reports']);
     state.inventory = saved.inventory ?? [];
     state.reports = saved.reports ?? [];
   } else {
@@ -460,6 +471,23 @@ function battlePersist(): { kind: 'small' | 'mass'; snap: Record<string, unknown
   if (state.small) return { kind: 'small', snap: state.small.toSnapshot() };
   if (state.mass) return { kind: 'mass', snap: state.mass.toSnapshot() };
   return null;
+}
+
+/** Show the completed action before the host's durable write, keeping the pending state explicit. */
+async function persistBattleResult(): Promise<boolean> {
+  const battle = currentBattle(), valid = battle && battleStepGuard(battle);
+  if (battle && !battle.isOver() && openingSavedFor === battle) {
+    const accepted = await persist({ battleUnchanged: true });
+    render('battle');
+    return accepted;
+  }
+  battleSaving = true;
+  try {
+    render('battle');
+    await yieldBattleFrame();
+    if (!valid?.()) return false;
+    return await persist({ battleUnchanged: true });
+  } finally { battleSaving = false; }
 }
 
 interface SavedPanel {
@@ -618,7 +646,8 @@ function restore(): void {
   }
   // 旧存档已结算标记也封口，不能因旧版缺少完整战果 id 而重写最新档案。
   const restoredBattle = currentBattle();
-  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V15_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V12_OVERFLOW_D20);prepareTraitModel(unit,V15_OVERFLOW_D20);prepareItemModel(unit,V15_OVERFLOW_D20);}
+  openingSavedFor = restoredBattle ?? undefined;
+  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V17_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V12_OVERFLOW_D20);prepareTraitModel(unit,V17_OVERFLOW_D20);prepareItemModel(unit,V17_OVERFLOW_D20);prepareTraitLevelModel(unit,V17_OVERFLOW_D20);}
   if (restoredBattle && state.xpSettled) {
     const id = battleOutcomeId(state.mass ? 'mass' : 'small', restoredBattle.seed);
     if (!state.committedOutcomeIds.includes(id)) state.committedOutcomeIds.push(id);
@@ -700,8 +729,8 @@ function defaultRank(u: Pick<Combatant, 'archetype'>): 'front' | 'rear' | 'reser
 
 async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {}): Promise<void> {
   // 特质去重：AI 标签/面板勾选可能重复给同一特质
-  const { unit } = generateUnit({ ...input, rulesVersion: 'v2', damageModel: 'wounds-v2', era: undefined, traits: [...new Set(input.traits)] }, { registry: reg });
-  prepareSkillModel(unit, V15_OVERFLOW_D20); prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit); prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V12_OVERFLOW_D20); prepareTraitModel(unit, V15_OVERFLOW_D20); prepareItemModel(unit, V15_OVERFLOW_D20);
+  const { unit } = generateUnit({ ...input, rulesVersion: 'v2', damageModel: 'wounds-v2', era: undefined, traits: [...new Set(input.traits)] }, { registry: reg, skillModel: 'skills-v2' });
+  prepareSkillModel(unit, V17_OVERFLOW_D20); prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit); prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V12_OVERFLOW_D20); prepareTraitModel(unit, V17_OVERFLOW_D20); prepareItemModel(unit, V17_OVERFLOW_D20); prepareTraitLevelModel(unit, V17_OVERFLOW_D20);
   // id 去重
   state.idSeq++;
   state.roster.push(unit);
@@ -715,7 +744,7 @@ async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {})
 /** 储存器档案实体化为本场编制，保留稳定 id、当前兵力、状态和玩家编辑过的基础属性。 */
 function materializeStorageUnit(r0: RosterUnit): Combatant {
   const unit=materializeUnitRecord(r0, reg, { era: state.era });
-  if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V15_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V12_OVERFLOW_D20);prepareTraitModel(unit,V15_OVERFLOW_D20);prepareItemModel(unit,V15_OVERFLOW_D20);}
+  if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V17_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V12_OVERFLOW_D20);prepareTraitModel(unit,V17_OVERFLOW_D20);prepareItemModel(unit,V17_OVERFLOW_D20);prepareTraitLevelModel(unit,V17_OVERFLOW_D20);}
   return unit;
 }
 
@@ -723,7 +752,7 @@ function materializeStorageUnit(r0: RosterUnit): Combatant {
  *  模板按「reinforcement」返回一个默认援军单位；成功后不写入持久编制（临场召唤物）。 */
 function summonUnit(templateId: string, side: Side, seed?: string): Combatant | null {
   if (templateId !== 'reinforcement') return null;
-  if (seed) return generateUnit({ name: '随队预备', side, scale: seed.startsWith('mass:') ? 'company' : 'hero', hpMax: seed.startsWith('mass:') ? 10 : undefined, level: 3, rulesVersion: 'v2', traits: [], weaponClass: 'sword', weaponLevel: 4, armorTier: 2 }, { registry: reg, seed }).unit;
+  if (seed) return seededReinforcement(templateId, side, seed, reg);
   const { unit } = generateUnit(
     {
       name: '援军营',
@@ -799,7 +828,23 @@ async function autoSmall(b: SmallBattle): Promise<void> {
   clearBattleQueries();
   if (!b.active || b.isOver()) return;
   if (b.active.status !== 'ready') b.endTurn();
-  else b.autoAction(b.active.id);
+  else {
+    const valid = battleStepGuard(b);
+    const result = b.rules.resolutionVersion === 'v2' && b.rng instanceof SeededRng ? await battleWorker.run({ kind: 'small',
+      snap: b.toSnapshot(), rules: b.rules, traits: b.traitRegistry, conditions: b.conditions.all(), summons: !!b.summonUnit, actorId: b.active.id }) : undefined;
+    if (!valid()) return;
+    clearBattleQueries();
+    if (result) applyBattleStep(b, result); else b.autoAction(b.active.id);
+  }
+}
+/** A completed background step belongs only to the exact archive and battle that requested it. */
+function battleStepGuard(battle: SmallBattle | MassBattle): () => boolean {
+  const identity = adapter.identity(), namespace = adapter.namespace(), context = controller.inventoryContext(), revision = state.factRevision;
+  const workerEpoch = battleWorkerEpoch;
+  const round = battle.round, turn = battle instanceof SmallBattle ? battle.turnIndex : undefined;
+  return () => currentBattle() === battle && identity === adapter.identity() && namespace === adapter.namespace()
+    && context === controller.inventoryContext() && revision === state.factRevision && round === battle.round && workerEpoch === battleWorkerEpoch
+    && (!(battle instanceof SmallBattle) || turn === battle.turnIndex);
 }
 function smallActorBlocked(b: SmallBattle): boolean {
   return !!b.active && (b.active.status !== 'ready' || b.active.conditions.some(c => c.dur > 0 && b.conditions.get(c.id)?.skipTurn));
@@ -821,8 +866,8 @@ async function runAuto(): Promise<void> {
       const progress = `${b.round}:${b.turnIndex}`;
       await autoSmall(b);
       if (!b.isOver() && progress === `${b.round}:${b.turnIndex}`) throw Error('自动行动未推进回合，已暂停');
-      // Each completed activation is durable before the next remote decision.
-      if (state.small !== b || !(await persist())) return;
+      // Activations update session memory; only opening and final results reach storage.
+      if (state.small !== b || !(await persistBattleResult())) return;
     }
   }
   if (state.small !== b) return;
@@ -857,7 +902,7 @@ async function resumeSmallTurnIfNeeded(): Promise<void> {
 
 /** 全自动只在当前面板/战斗有效，恢复或切聊天后需重新开启。 */
 function startFullAuto(): void {
-  const battle = currentBattle(), context = controller.inventoryContext();
+  const battle = currentBattle(), context = controller.inventoryContext(), workerEpoch = battleWorkerEpoch;
   if (!battle || battle.isOver()) return;
   if (controller.migrationReview()) throw Error('请先完成档案迁移预览');
   state.abilityDialog = null;
@@ -878,7 +923,7 @@ function startFullAuto(): void {
       // 复用手动执行的草案校验、自动补令、阶段结算和失败回滚。
       (await resolveMassRound(battle.round, battle.seed));
     }
-    if (battleSaveFailed || currentBattle() !== battle) return false;
+    if (battleSaveFailed || currentBattle() !== battle || workerEpoch !== battleWorkerEpoch) return false;
     if (battle.isOver()) {
       fullAuto.stop();
       if (battle instanceof SmallBattle) (await runAuto()); else (await onBattleEnded());
@@ -960,9 +1005,12 @@ let lastTraceKey = '';
 let renderSave: ReturnType<typeof controller.snapshot> | undefined;
 let renderIds: ReturnType<typeof narrativeIds> | undefined;
 let rendering = false;
-function viewSave() { return rendering ? renderSave ??= controller.snapshot() : controller.snapshot(); }
+function viewSave() {
+  const read = () => controller.snapshot(workspaceTab === 'battle' ? ['promptSettings', 'narrativeIdState'] : undefined);
+  return rendering ? renderSave ??= read() : read();
+}
 function viewIds() {
-  const build = () => narrativeIds({ ...viewSave(), storage: state.storage, inventory: state.inventory });
+  const build = () => narrativeIds({ ...viewSave(), battle: battlePersist(), storage: state.storage, inventory: state.inventory });
   return rendering ? renderIds ??= build() : build();
 }
 function render(scope: RenderScope = 'all', tacticalQuery?: TacticalQuerySource): void {
@@ -983,7 +1031,7 @@ function renderWorkspace(scope: RenderScope, tacticalQuery?: TacticalQuerySource
   const navHtml = workspaceNavigation(workspaceTab, pendingCount);
   if (nav.innerHTML !== navHtml) nav.innerHTML = navHtml;
   const blocked = runtime.writeBlockReason?.();
-  const saveMessage = blocked ? esc(blocked) : state.saveReceipt?.status === 'failed' ? '未保存：' + esc(state.saveReceipt.error ?? '存储不可用') : state.saveReceipt?.status === 'local-only' ? '已保存本地 · 酒馆待确认' : state.saveReceipt ? '已保存' : '准备就绪';
+  const saveMessage = battleSaving ? '保存中…' : blocked ? esc(blocked) : state.saveReceipt?.status === 'failed' ? '未保存：' + esc(state.saveReceipt.error ?? '存储不可用') : state.saveReceipt?.memoryOnly ? '开局已保存' : state.saveReceipt?.status === 'local-only' ? '已保存本地 · 酒馆待确认' : state.saveReceipt ? '已保存' : '准备就绪';
   const statusHtml = `<span data-role="save-status" class="${blocked || state.saveReceipt?.status === 'failed' ? 'save-failed' : ''}">${saveMessage}</span>${state.saveReceipt?.status === 'failed' ? '<button data-action="save-retry">重试保存</button>' : ''}${blocked && runtime.reloadArchive ? '<button data-action="archive-reload">重新读取存档</button>' : ''}<button data-action="theme-toggle" aria-label="切换深浅主题">明暗</button>`;
   const status = app.querySelector('.app-state')!; if(status.innerHTML !== statusHtml)status.innerHTML=statusHtml;
   const latest = state.proposals.at(-1), failure = latest && ['rejected','stale','unresolved'].includes(latest.status) ? latest.reason : undefined;
@@ -1190,7 +1238,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   rows.push(`<span>攻 <b>${atkPlus}</b></span>`);
   rows.push(`<span>防 <b>${u.base.def}</b></span>`);
   rows.push(`<span>速 <b>${u.base.spd}</b></span>`);
-  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${approx(trainingDamage(u.level,currentBattle()?.rules??V15_OVERFLOW_D20), 2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
+  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${approx(trainingDamage(u.level,currentBattle()?.rules??V17_OVERFLOW_D20), 2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
   rows.push(`<span>${u.scale === 'hero' ? '生命' : u.body==='vehicle'?'载具数':'人数'} <b>${u.hp}/${u.base.hpMax}</b></span>`);
   if(u.combatModel&&u.scale!=='hero')rows.push(`<span>单个${u.body==='vehicle'?'载具':'成员'}最大生命 <b>${memberDurability(u)}</b></span>`);
   if (u.base.moraleMax !== undefined) rows.push(`<span>士气 <b>${u.base.moraleMax}</b></span>`);
@@ -1253,20 +1301,24 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   if (traitAdjustments.length) rows.push(`<div class="eq"><b>当前特质修正</b> ${traitAdjustments.map(([key, value]) => `${({ atk: '攻击', def: '防御', spd: '先攻速度', morale: '士气' } as Record<string, string>)[key]}${value > 0 ? '+' : ''}${value}`).join(' · ')}</div>`);
   if (activeTraitIds(u).length) {
     // 前提不满足的特质照常列出，但标明未生效及原因（如个体写了骑射却没有坐骑）。
-    const inactive = (id: string) => u.rulesVersion === 'v2' ? traitPrerequisiteReason(u, id) : undefined;
+    const currentWeapon = anchoredWeapon(u.weapon, u.cannonAmmo, u.damageModel) ?? u.weapon;
+    const penetrationBonus = () => traitPenetrationBonus(u, currentWeapon, !!currentWeapon?.tags?.includes('ranged'), currentWeapon?.penetration ?? 0);
+    const inactive = (id: string) => u.rulesVersion === 'v2' ? traitPrerequisiteReason(u, id)
+      ?? (id === 'shield-wall' && !postureActive(u, standardConditionMap()) ? '尚未有效固守或当前不能行动；仅正面远程命中触发'
+        : id === 'ap-weapon' && penetrationBonus() === 0 ? '基础穿透不足3，floor(基础穿透/3)上限为0' : undefined) : undefined;
     const active = activeTraitIds(u), shown = (id: string) => traitDisplayName(u, id, reg.get(id)?.name ?? id, active);
     const names = active.map((id) => shown(id) + (inactive(id) ? '（未生效）' : '')).join('、');
     rows.push(`<div class="eq"><b>特质</b> ${esc(names)}</div>`);
-    // V15 的五项专精按等级说明累计效果；其余特质沿用规则版本对应的描述。
-    const effect = (id: string, trait: Trait) => isGradedTrait(id) && itemsV15(u) ? traitLadderSummary(id, traitLevel(u, id, active)).replace(/^L\d+：/, '') : traitDescription(trait, u);
-    rows.push(`<details><summary>特质效果</summary>${active.map((id) => { const trait = reg.get(id), reason = inactive(id); return `<div>${esc(shown(id))}：${reason ? `<b>未生效：${esc(reason)}</b>。` : ''}${esc(trait ? effect(id, trait) : '未知定义')}</div>`; }).join('')}</details>`);
+    // 已完成分级的特质按各自规则门控显示累计效果。
+    const effect = (id: string, trait: Trait) => gradedTraitEnabled(u, id) ? traitLadderSummary(id, traitLevel(u, id, active)).replace(/^L\d+：/, '') + (id === 'ap-weapon' ? `；当前主武器实际穿透+${penetrationBonus()}` : '') : traitDescription(trait, u);
+    rows.push(`<details><summary>特质效果</summary>${active.map((id) => { const trait = reg.get(id), reason = inactive(id); return `<div>${esc(shown(id))}：${reason ? `<b>未生效：${esc(reason)}</b>。` : ''}${esc(trait ? effect(id, trait) : '未知定义')}${gradedTraitEnabled(u, id) ? '<small> · 等级来源：' + traitLevelSources(u, id).map(s => esc(s.name) + ' L' + s.level + (s.remaining === undefined ? '' : '（剩' + s.remaining + '轮）') + (s.level < traitLevel(u, id, active) ? '，被较高等级覆盖' : '')).join('；') + '</small>' : ''}</div>`; }).join('')}</details>`);
   }
   if (u.traitSources?.length) {
     rows.push(`<div class="trait-sources" data-role="trait-sources">${u.traitSources.map((source) => {
       const active = traitSourceActive(u, source);
       const duration = source.revoked ? '已撤销' : source.duration.kind === 'permanent' ? '永久' : source.remaining! <= 0 ? '已到期' : `剩余${source.remaining}${source.duration.kind === 'rounds' ? '个战斗整轮' : '场战斗'}`;
       const effects = (source.conditionIds ?? []).map((id) => { const def = standardConditionMap().get(id); return `<div><b>${esc(def?.name ?? id)}</b>：${esc(def?.desc ?? '')}</div>`; }).join('');
-      return `<div><b>${esc(source.name)}</b> · ${duration}${!active && !source.revoked && (source.remaining === undefined || source.remaining > 0) ? ' · 来源未装备' : ''}<div>${source.traitIds.map((id) => esc(reg.get(id)?.name ?? id)).join('、')}</div>${effects}${active && source.kind !== 'equipment' && !currentBattle() ? `<button data-action="trait-source-revoke" data-unit="${esc(u.id)}" data-source="${esc(source.id)}" data-revision="${state.factRevision}" data-context="${esc(controller.inventoryContext())}">解除此效果</button>` : ''}</div>`;
+      return `<div><b>${esc(source.name)}</b> · ${duration}${!active && !source.revoked && (source.remaining === undefined || source.remaining > 0) ? ' · 来源未装备' : ''}<div>${source.traitIds.map((id) => esc(reg.get(id)?.name ?? id) + (source.traitLevels?.[id] === undefined ? '' : 'L' + source.traitLevels[id])).join('、')}</div>${effects}${active && source.kind !== 'equipment' && !currentBattle() ? `<button data-action="trait-source-revoke" data-unit="${esc(u.id)}" data-source="${esc(source.id)}" data-revision="${state.factRevision}" data-context="${esc(controller.inventoryContext())}">解除此效果</button>` : ''}</div>`;
     }).join('')}</div>`);
   }
 
@@ -2430,26 +2482,32 @@ async function handleAction(e: Event): Promise<void> {
     await scanLastMessage({ manual: true });
     render(); return;
   }
+  let completed = false;
   try {
-    await executePanelAction(act, async () => { await actions[act]?.(el); });
+    completed = await executePanelAction(act, async () => { await actions[act]?.(el); });
   } catch (err) {
     toast(`⚠ ${err instanceof Error ? err.message : String(err)}`);
   }
-  render();
+  render(EARLY_BATTLE_RESULT.includes(act) && completed ? 'none' : 'all');
 }
 
 /** Shared by UI buttons and game-level MCP commands, including reactions and durable auto turns. */
+const EARLY_BATTLE_RESULT = ['grid-execute', 'grid-move', 'grid-endturn', 'grid-mobile-endturn', 'grid-auto', 'mass-resolve'];
 async function executePanelAction(act: string, task: () => void | Promise<void>): Promise<boolean> {
   clearBattleQueries();
   const actionBattle = currentBattle();
+  const identity = adapter.identity(), namespace = adapter.namespace(), context = controller.inventoryContext(), workerEpoch = battleWorkerEpoch;
+  const valid = () => identity === adapter.identity() && namespace === adapter.namespace() && context === controller.inventoryContext()
+    && workerEpoch === battleWorkerEpoch && (!actionBattle || currentBattle() === actionBattle);
   return executeAndSave(async () => {
     if (controller.migrationReview() && !act.startsWith('migration-') && !['log-detail', 'unit-detail', 'units-toggle', 'sec-toggle', 'modal-stop'].includes(act)) throw new Error('先核对迁移预览；预览期间不会改写原档或推进战斗');
     await task();
+    if (!valid()) return;
     if (battleSaveFailed) { const receipt = state.saveReceipt; restore(); state.saveReceipt = receipt; render(); return; }
     if (state.small?.battlefield && (['grid-endturn', 'grid-mobile-endturn', 'grid-auto', 'small-start', 'mass-start'].includes(act)
       || smallActorBlocked(state.small))) {
       // 先保存动作及反应结果，再跳过失能行动者并执行后续自动回合。
-      if (!(await persist())) return;
+      if (!(await persistBattleResult())) return;
       (await runAuto()); tacticalView.selectedId = state.small.active?.id; tacticalView.cell = undefined;
     }
     if (!state.small?.battlefield && ['small-start', 'mass-start', 'small-attack', 'small-sidearm', 'small-charge', 'small-move', 'small-retreat', 'small-auto-act', 'small-endturn', 'ability-confirm'].includes(act)) {
@@ -2457,7 +2515,7 @@ async function executePanelAction(act: string, task: () => void | Promise<void>)
       (await runAuto());
     }
     if (state.small?.battlefield && state.small.isOver()) (await onBattleEnded());
-  }, async () => battleSaveFailed ? false : (await persist()), () => { if (actionBattle) restore(); });
+  }, async () => battleSaveFailed || !valid() ? false : EARLY_BATTLE_RESULT.includes(act) && currentBattle() ? await persistBattleResult() : await persist(), () => { if (actionBattle) restore(); });
 }
 
 function val(sel: string): string {
@@ -2722,11 +2780,17 @@ async function resolveMassRound(expectedRound: number, expectedSeed?: string): P
     const b = state.mass!;
     if (expectedRound !== b.round || expectedSeed && expectedSeed !== b.seed) throw new Error('旧回合按钮已失效');
     if (b.rules.resolutionVersion === 'v2') {
-      const snapshot = structuredClone(b.toSnapshot()), drafts = structuredClone(state.orderDraft);
+      const snapshot = structuredClone(b.toSnapshot()), drafts = structuredClone(state.orderDraft), valid = battleStepGuard(b);
       try {
-        executeMassPlan(b, drafts, massAutoCommand(), expectedRound);
+        const result = b.rng instanceof SeededRng ? await battleWorker.run({ kind: 'mass', snap: snapshot, rules: b.rules,
+          traits: b.traitRegistry, conditions: b.conditions.all(), summons: !!b.summonUnit,
+          drafts, automatic: massAutoCommand(), expectedRound }) : undefined;
+        if (!valid()) return;
+        clearBattleQueries();
+        if (result) applyBattleStep(b, result); else executeMassPlan(b, drafts, massAutoCommand(), expectedRound);
         state.orderDraft = {};
       } catch (error) {
+        if (!valid()) return;
         state.mass = MassBattle.fromSnapshot(snapshot, { traitRegistry: reg, summonUnit }); state.orderDraft = drafts;
         throw error;
       }
@@ -2967,6 +3031,11 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   'grid-watch': () => { state.small!.setOverwatch(state.small!.active!.id); },
   'grid-haste': () => { const b = state.small!, id = b.active!.id; b.selectHaste(id, !b.hasteSelected.has(id)); },
   'grid-reload': (el) => { state.small!.reloadWeapon(state.small!.active!.id, el.dataset.sidearm === 'true'); },
+  'trait-formation-choice': (el) => {
+    const battle = currentBattle(); if (!battle || !el.dataset.unit || !['loose','closed'].includes(el.dataset.choice ?? '')) return;
+    const result = battle.chooseLooseFormation(el.dataset.unit, el.dataset.choice as 'loose' | 'closed');
+    if (!result.ok) throw Error(result.reason);
+  },
   'grid-brace': () => { state.small!.brace(state.small!.active!.id); },
   'grid-suppress': (el) => { state.small!.suppress(state.small!.active!.id, el.dataset.target!); },
   'grid-retreat': () => { state.small!.retreat(state.small!.active!.id); },
@@ -3276,7 +3345,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   'builder-skill-add': (el) => {
     captureForm(); const d = el.dataset.builder === 'gen' ? state.form : builderEditDraft; if (!d) return;
     const baseName = el.dataset.name ?? '技能'; const name = !d.skills.some(s=>s.name===baseName) ? baseName : Array.from({length:100},(_,i)=>baseName+(i+1)).find(name=>!d.skills.some(s=>s.name===name))!;
-    d.skills.push({ id: el.dataset.mechanism ?? 'generic:physical-single', name, power: '5', prepared: false }); builderPreview = undefined;
+    d.skills.push({ id: el.dataset.mechanism ?? 'generic:physical-single', name, power: '1', prepared: false }); builderPreview = undefined;
   },
   'builder-skill-remove': (el) => {
     captureForm(); const d = el.dataset.builder === 'gen' ? state.form : builderEditDraft; if (d) d.skills.splice(Number(el.dataset.index), 1); builderPreview = undefined;

@@ -26,6 +26,8 @@ export interface NativeEnvelope {
   handoff?: { target: 'helper'; sourceHash: string };
 }
 export interface PersistReceipt {
+  /** Live battle state accepted in memory, without advancing the persisted head. */
+  memoryOnly?: boolean;
   status: 'confirmed' | 'pending' | 'conflict' | 'failed';
   operationId: string;
   code?: 'source-changed';

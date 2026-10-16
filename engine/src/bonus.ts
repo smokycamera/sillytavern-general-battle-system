@@ -1,3 +1,5 @@
+import { phase2Traits } from './trait-level-model.js';
+import { phase2Value, phase2WeaponMods } from './phase2-traits.js';
 /**
  * 加成栈（Modifier Stack）：所有加成统一为一个模型，
  * 攻击/防御/伤害/士气结算全部走同一套收集与合成规则，
@@ -37,6 +39,7 @@ export interface ModCond {
 }
 
 export interface Modifier {
+  category?: 'cover' | 'movement';
   sourceId?: string;
   stackGroup?: string;
   source: ModSource;
@@ -69,6 +72,7 @@ export interface StackLine {
 }
 
 export interface ResolveContext {
+  moved?: boolean; maxRange?: number; chargeStraight?: boolean;
   skillDelivery?: 'melee' | 'ranged' | 'magic';
   area?: boolean;
   fieldTags?: string[];
@@ -168,6 +172,8 @@ export function describeStack(r: StackResult): string {
 
 // ---------- 从特质与状态收集修正 ----------
 
+import { traitValue } from './trait-levels.js';
+import { traitLevelsV16 } from './trait-level-model.js';
 const TRAIT_REGISTRY_DEFAULT = new Map<string, Trait>();
 const SOURCE_CONDITIONS = standardConditionMap();
 
@@ -199,36 +205,39 @@ export function traitRuntimeMods(traitIds: string[], registry?: Map<string, Trai
     // V13 拒马：不再要求长兵器，并接过原克制机动对骑乘、载具与机动目标的打击加成（与旧克制机动同组取强）。
     if (unit && traitsV13(unit) && id === 'pike-wall') {
       const name = getTrait(id, registry)?.name ?? '拒马';
-      out.push({ source: 'intrinsic', sourceId: 'pike-wall:atk', stackGroup: 'counter-mobile:atk', name, kind: 'atk', type: 'flat', value: 2, cond: { vsTag: 'mobile' } });
-      out.push({ source: 'intrinsic', sourceId: 'pike-wall:dmg', stackGroup: 'counter-mobile:dmg', name, kind: 'dmg', type: 'mult', value: 1.25, cond: { vsTag: 'mobile' } });
+      out.push({ source: 'intrinsic', sourceId: 'pike-wall:atk', stackGroup: 'counter-mobile:atk', name, kind: 'atk', type: 'flat', value: phase2Value(unit, id, 'counterAttack', 2), cond: { vsTag: 'mobile' } });
+      out.push({ source: 'intrinsic', sourceId: 'pike-wall:dmg', stackGroup: 'counter-mobile:dmg', name, kind: 'dmg', type: 'mult', value: phase2Value(unit, id, 'counterMultiplier', 1.25), cond: { vsTag: 'mobile' } });
       continue;
     }
     if (unit?.rulesVersion === 'v2' && ['large', 'titan', 'flying', 'shield-wall', 'pike-wall'].includes(id)) continue;
     const t = getTrait(id, registry);
     if (!t) continue;
+    if (unit && phase2Traits(unit) && ['melee-master','sharpshooter','charge-strong'].includes(id)) continue;
     if (unit && traitPrerequisiteReason(unit, id, context)) continue;
     if (unit?.rulesVersion === 'v2' && id === 'fortification') {
       // V13：只在据守位置生效；工兵的攻击（防守视角里 context.defender 是出手方）无视工事。
-      if (traitsV13(unit) && (!entrenched(unit) || context.defender && activeTraitIds(context.defender).includes('siege-breaker'))) continue;
-      out.push({ source: 'intrinsic', sourceId: 'fortification:def', stackGroup: 'posture:def', name: t.name, kind: 'def', type: 'flat', value: 3 });
-      if (context.ranged) out.push({ source: 'intrinsic', sourceId: 'fortification:ward', stackGroup: 'posture:ward', name: t.name, kind: 'ward', type: 'mult', value: 0.7 });
+      if (traitsV13(unit) && (!entrenched(unit) || !phase2Traits(unit) && context.defender && activeTraitIds(context.defender).includes('siege-breaker'))) continue;
+      const suppression = context.defender && activeTraitIds(context.defender).includes('siege-breaker') ? phase2Value(context.defender, 'siege-breaker', 'engineerSuppression', 1) : 0;
+      out.push({ source: 'intrinsic', sourceId: 'fortification:def', stackGroup: 'posture:def', name: t.name, kind: 'def', type: 'flat', value: Math.ceil(phase2Value(unit, id, 'worksDefense', 3) * (1 - suppression)) });
+      if (context.ranged) out.push({ source: 'intrinsic', sourceId: 'fortification:ward', stackGroup: 'posture:ward', name: t.name, kind: 'ward', type: 'mult', value: 1 - phase2Value(unit, id, 'worksReduction', .3) * (1 - suppression) });
       continue;
     }
     if (unit?.rulesVersion === 'v2' && id === 'loose-formation') {
       if (looseFormation(unit)) {
-        if (context.area && !context.engaged) out.push({ source: 'intrinsic', sourceId: 'loose:area', name: '疏散减轻范围暴露', kind: 'ward', type: 'mult', value: 0.5 });
+        if (context.area && !context.engaged) out.push({ source: 'intrinsic', sourceId: 'loose:area', name: '疏散减轻范围暴露', kind: 'ward', type: 'mult', value: 1 - phase2Value(unit, id, 'formationReduction', .5) });
         // V13 个体散兵没有阵形可散，不承担编队的近战代价。
         if (!context.ranged && (context.distance ?? 0) <= 1 && !(traitsV13(unit) && unit.scale === 'hero')) out.push({ source: 'intrinsic', sourceId: 'loose:melee', name: '疏散近战薄弱', kind: 'def', type: 'flat', value: -1 });
       }
       continue;
     }
     if (unit?.rulesVersion === 'v2' && id === 'trample') {
-      if (context.charge && !context.ranged && context.defender && bodyRank(unit) > bodyRank(context.defender)) out.push({ source: 'intrinsic', sourceId: 'trample:impact', name: t.name, kind: 'dmg', type: 'mult', value: 1.25 });
+      if (context.charge && !context.ranged && context.defender && bodyRank(unit) > bodyRank(context.defender)) out.push({ source: 'intrinsic', sourceId: 'trample:impact', name: t.name, kind: 'dmg', type: 'mult', value: traitValue(unit, id, 'trampleMultiplier', 1.25) });
       continue;
     }
     for (const [index, e] of t.effects.entries()) {
       if (unit?.rulesVersion === 'v2') {
         if (e.kind === 'stat') continue;
+        if (phase2Traits(unit) && id === 'skirmisher' && e.kind === 'rangedGuardDR') { if (context.ranged && !context.engaged && (context.distance ?? 0) > 1) out.push({ source: 'intrinsic', name: t.name, kind: 'ward', type: 'mult', value: 1 - phase2Value(unit, id, 'skirmishReduction', .25) }); continue; }
         if (id === 'skirmisher' && e.kind === 'rangedGuardDR' && (context.engaged || (context.distance ?? 0) <= 1)) continue;
         if (id === 'shield-wall' && !unit.shield) continue;
         if (id === 'pike-wall' && unit.weapon?.recipe?.mechanism !== 'spear') continue;
@@ -239,7 +248,10 @@ export function traitRuntimeMods(traitIds: string[], registry?: Map<string, Trai
           continue;
         }
       }
-      const m = traitEffectToMod(e, t.name);
+      const effect = unit && traitLevelsV16(unit) && id === 'guardian' && e.kind === 'ward' ? { ...e, percent: 100 * traitValue(unit, id, 'guardianReduction', .25) }
+        : unit && traitLevelsV16(unit) && ['anti-infantry', 'anti-large', ...(phase2Traits(unit) ? ['anti-air'] : [])].includes(id) && e.kind === 'conditionalAtk' ? { ...e, value: traitValue(unit, id, 'counterAttack', 2) }
+        : unit && traitLevelsV16(unit) && ['anti-infantry', 'anti-large', ...(phase2Traits(unit) ? ['anti-air'] : [])].includes(id) && e.kind === 'conditionalDmgMult' ? { ...e, mult: traitValue(unit, id, 'counterMultiplier', 1.25) } : e;
+      const m = traitEffectToMod(effect, t.name);
       if (m && unit?.rulesVersion === 'v2') {
         m.sourceId = `${id}:${index}`;
         if (id === 'guardian' || id === 'guardian-greater') m.stackGroup = 'guardian:' + m.kind;
@@ -249,6 +261,7 @@ export function traitRuntimeMods(traitIds: string[], registry?: Map<string, Trai
       if (m) out.push(m);
     }
   }
+  if (unit) out.push(...phase2WeaponMods(unit, context));
   if (unit?.rulesVersion === 'v2') for (const [kind, value] of Object.entries(traitStatAdjustments(unit, registry))) {
     out.push({ source: 'intrinsic', sourceId: 'trait-current:' + kind, name: '当前特质与原基础的净修正', kind: kind as ModKind, type: 'flat', value });
   }
@@ -317,6 +330,7 @@ export function conditionMods(
 ): Modifier[] {
   const out: Modifier[] = [];
   for (const c of conds) {
+    if (c.controlPending) continue;
     if (unit?.rulesVersion === 'v2' && c.dur <= 0) continue;
     if (unit?.rulesVersion === 'v2' && c.id === 'fearful' && activeTraitIds(unit).some((id) => getTrait(id, registry)?.effects.some((e) => e.kind === 'immuneMorale'))) continue;
     if (unit?.rulesVersion === 'v2' && c.id === 'poisoned' && (unit.body === 'vehicle' || activeTraitIds(unit).includes('inorganic'))) continue;
@@ -354,7 +368,7 @@ export function collectMods(
     if (ctx.terrain === 'forest' && forestDefense(forest)) equipment.push({ source: 'stance', sourceId: 'trait:forest-lore:def', name: '林地专精', kind: 'def', type: 'flat', value: forestDefense(forest) });
     if (ctx.terrain === 'forest' && forestAttack(forest)) equipment.push({ source: 'stance', sourceId: 'trait:forest-lore:atk', name: '林地专精', kind: 'atk', type: 'flat', value: forestAttack(forest) });
     if (ctx.attackerHigher && highGroundAttack(mountain)) equipment.push({ source: 'stance', sourceId: 'trait:mountain-born:atk', name: '山地专精·居高', kind: 'atk', type: 'flat', value: highGroundAttack(mountain) });
-    if (ctx.ranged && (ctx.distance ?? 0) > 1 && ctx.terrain === 'forest') equipment.push({ source: 'stance', sourceId: 'environment:forest-cover', name: '林木掩护', kind: 'def', type: 'flat', value: 2 });
+    if (ctx.ranged && (ctx.distance ?? 0) > 1 && ctx.terrain === 'forest') equipment.push({ source: 'stance', sourceId: 'environment:forest-cover', category: 'cover', name: '林木掩护', kind: 'def', type: 'flat', value: 2 });
     // Real-height maps: fighting knee-deep in a ford or a bog costs footing both ways, unless the unit can cross water.
     if (ctx.heightRules && (ctx.terrain === 'shallow_water' || ctx.terrain === 'swamp') && !traits.includes('water-crossing')) for (const kind of ['atk', 'def'] as const)
       equipment.push({ source: 'stance', sourceId: 'environment:footing:' + kind, name: '立足不稳', kind, type: 'flat', value: -1 });
@@ -389,6 +403,7 @@ export function fieldModsFor(unit: Combatant, fieldTags: string[], registry?: Ma
   for (const id of activeTraitIds(unit)) {
     const t = getTrait(id, registry);
     if (!t) continue;
+    if (unit && phase2Traits(unit) && ['melee-master','sharpshooter','charge-strong'].includes(id)) continue;
     if (unit.rulesVersion === 'v2' && id === 'fortification') continue;
     // V13 工兵靠拆除与破工事立功，不再在攻城环境里凭空加攻击。
     if (traitsV13(unit) && id === 'siege-breaker') continue;

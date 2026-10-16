@@ -6,6 +6,7 @@
  */
 
 import type { Trait } from '../types.js';
+import { TERRAIN_GRADED_TRAITS, P1_GRADED_TRAITS, P2_GRADED_TRAITS, TRAIT_LEVEL_ALIASES, DEFAULT_NEW_TRAIT_LEVEL } from '../trait-parameters.js';
 
 export const TRAITS: Trait[] = [
   // ---------- 攻击 ----------
@@ -482,15 +483,15 @@ export function narrativeTrait(value: string, registry = traitRegistry()): Narra
   return { kind: 'trait', id, ...(trait.name !== name && registry.get(id) ? { renamed: trait.name } : {}) };
 }
 
-/** 五项专精按 L1–10 逐级生效（V15，见 trait-levels.ts）；其余特质只有“有/无”。 */
-export const GRADED_TRAITS: readonly string[] = ['forest-lore', 'mountain-born', 'night-fighter', 'plains-runner', 'urban-fighter'];
+/** 原五项专精由V15门控；P1十一类由独立V16门控。其余仍只有“有/无”。 */
+export const GRADED_TRAITS: readonly string[] = [...TERRAIN_GRADED_TRAITS, ...P1_GRADED_TRAITS, ...P2_GRADED_TRAITS];
 export const isGradedTrait = (id: string): boolean => GRADED_TRAITS.includes(id);
 export const validTraitLevel = (level: unknown): level is number => Number.isSafeInteger(level) && (level as number) >= 1 && (level as number) <= 10;
-/** 单位或来源记录的专精等级表：只允许五项专精、L1–10 整数。 */
+/** 单位或来源记录的专精等级表：只允许已完成分级特质、L1–10 整数。 */
 export function validateTraitLevels(value: unknown): void {
   if (value === undefined) return;
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('专精等级记录损坏');
-  for (const [id, level] of Object.entries(value)) if (!isGradedTrait(id) || !validTraitLevel(level)) throw new Error('专精等级只适用于五项专精，须为L1–10整数');
+  for (const [id, level] of Object.entries(value)) if (!isGradedTrait(id) || !validTraitLevel(level)) throw new Error('特质等级只适用于已完成分级的特质，须为L1–10整数');
 }
 /** “林地专精L8”拆成名称与等级；没有等级后缀时 level 缺省。 */
 export function splitTraitLevel(value: string): { name: string; level?: number } {
@@ -504,10 +505,26 @@ export function splitTraitLevel(value: string): { name: string; level?: number }
 export function narrativeTraitLevel(value: string, registry = traitRegistry()): NarrativeTrait & { level?: number; droppedLevel?: number; writtenLevel?: number } {
   const { name, level } = splitTraitLevel(value);
   const parsed = narrativeTrait(level === undefined ? value : name, registry);
-  if (level === undefined || parsed.kind !== 'trait') return parsed;
+  if (parsed.kind === 'trait' && TRAIT_LEVEL_ALIASES[parsed.id]) {
+    const alias = TRAIT_LEVEL_ALIASES[parsed.id]!;
+    return { ...parsed, id: alias.id, level: level === undefined ? alias.level : Math.max(1, Math.min(10, level)), renamed: registry.get(alias.id)?.name, ...(level === undefined || level >= 1 && level <= 10 ? {} : { writtenLevel: level }) };
+  }
+  if (parsed.kind !== 'trait') return parsed;
+  if (level === undefined) return isGradedTrait(parsed.id) ? { ...parsed, level: DEFAULT_NEW_TRAIT_LEVEL } : parsed;
   if (!isGradedTrait(parsed.id)) return { ...parsed, droppedLevel: level };
   const clamped = Math.max(1, Math.min(10, level));
   return { ...parsed, level: clamped, ...(clamped !== level ? { writtenLevel: level } : {}) };
 }
-/** 特质的规范写法：专精带非标准等级时加 L（forest-loreL8），其余只写 id。与 narrativeTraitLevel 互逆。 */
-export const traitLevelToken = (id: string, level?: number): string => isGradedTrait(id) && level !== undefined && level !== 5 ? id + 'L' + level : id;
+/** 新输入省略代表L1；历史省略编码是L5，导出必须显式写L5以保证再次导入不漂移。 */
+export const traitLevelToken = (id: string, level?: number): string => isGradedTrait(id) && level !== DEFAULT_NEW_TRAIT_LEVEL ? id + 'L' + (level ?? 5) : id;
+
+/** 新输入列表统一归一/取最高。未写等级为L1；历史记录的省略值仍由来源层按L5读取。 */
+export function narrativeTraitList(values: readonly string[], registry = traitRegistry()): { traits: string[]; traitLevels?: Record<string, number> } {
+  const levels = new Map<string, number>();
+  for (const value of values) {
+    const p = narrativeTraitLevel(value, registry);
+    if (p.kind === 'trait') levels.set(p.id, Math.max(levels.get(p.id) ?? 0, p.level ?? 5));
+  }
+  const entries = [...levels].filter(([id]) => isGradedTrait(id));
+  return { traits: [...levels.keys()], ...(entries.length ? { traitLevels: Object.fromEntries(entries) } : {}) };
+}

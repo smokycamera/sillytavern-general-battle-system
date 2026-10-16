@@ -108,20 +108,20 @@ describe('spawn 携带道具与收缴', () => {
 });
 
 describe('专精等级与 archetype 的正文写法', () => {
-  it('spawn、unit_set、bless 都可写“林地专精L8”；unit_set 是绝对赋值，不写等级回到 L5；非专精写了等级只保留特质', () => {
+  it('spawn、unit_set、bless 都可写“林地专精L8”；unit_set 是绝对赋值，新输入不写等级为L1，破甲也保留显式等级', () => {
     let { save, notices } = commit(empty(), '<spawn name="游侠" side="ally" scale="hero" level="4" weapon="弓弩L4" traits="林地专精L8,破甲L3,夜战专精L12"/>');
     const id = save.storage![0]!.id;
-    expect(save.storage![0]!.snapshot).toMatchObject({ traits: expect.arrayContaining(['forest-lore', 'ap-weapon', 'night-fighter']), traitLevels: { 'forest-lore': 8, 'night-fighter': 10 } });
-    expect(notices.join()).toMatch(/「破甲L3」按破甲建档.*「夜战专精L12」按L10|「夜战专精L12」按L10.*「破甲L3」按破甲建档/);
-    expect(narrativeProjection(save, '')).toContain('"traits":["forest-loreL8","ap-weapon","night-fighterL10"]');
+    expect(save.storage![0]!.snapshot).toMatchObject({ traits: expect.arrayContaining(['forest-lore', 'ap-weapon', 'night-fighter']), traitLevels: { 'forest-lore': 8, 'ap-weapon': 3, 'night-fighter': 10 } });
+    expect(notices.join()).toContain('「夜战专精L12」按L10');
+    expect(narrativeProjection(save, '')).toContain('"traits":["forest-loreL8","ap-weaponL3","night-fighterL10"]');
     save = commit(save, '<unit_set id="u1" traits="林地专精L6,夜战专精"/>').save;
-    expect(save.storage!.find((r) => r.id === id)!.snapshot!.traitLevels).toEqual({ 'forest-lore': 6 });
+    expect(save.storage!.find((r) => r.id === id)!.snapshot!.traitLevels).toEqual({ 'forest-lore': 6, 'night-fighter': 1 });
     save = commit(save, '<unit_set id="u1" traits="林地专精"/>').save;
-    expect(save.storage!.find((r) => r.id === id)!.snapshot!.traitLevels).toBeUndefined();
+    expect(save.storage!.find((r) => r.id === id)!.snapshot!.traitLevels).toEqual({ 'forest-lore': 1 });
     save = commit(save, '<bless id="u1" traits="夜战专精L9" battles="2"/>').save;
     const unit = materializeUnitRecord(save.storage!.find((r) => r.id === id)!, registry);
     expect(unit.traitSources!.at(-1)).toMatchObject({ traitIds: ['night-fighter'], traitLevels: { 'night-fighter': 9 } });
-    prepareItemModel(unit, V15_OVERFLOW_D20); expect(traitLevel(unit, 'night-fighter')).toBe(9); expect(traitLevel(unit, 'forest-lore')).toBe(5);
+    prepareItemModel(unit, V15_OVERFLOW_D20); expect(traitLevel(unit, 'night-fighter')).toBe(9); expect(traitLevel(unit, 'forest-lore')).toBe(1);
   });
   it('spawn 的原型按配装推断，写错或写了别的值都照常建档并提示；unit_set 写了不认识的原型保留原值', () => {
     const parsed = parseProtocol('<tb><spawn name="骑兵" side="enemy" scale="company" hpMax="40" mount="true" archetype="infantry" weapon="骑枪:长兵器L3"/><spawn name="炮兵" side="enemy" scale="company" hpMax="12" body="vehicle" archetype="artillery" weapon="曲射火炮L6"/><spawn name="步兵" side="enemy" scale="company" hpMax="30" archetype="cavalry" weapon="剑L3"/></tb>');
@@ -139,10 +139,10 @@ describe('专精等级与 archetype 的正文写法', () => {
 describe('已佩戴列表的不叠加标注', () => {
   it('同方向修正只取最高一件、同一特质只算一次，被盖过的效果逐项列出；单位自带特质也算覆盖', () => {
     const worn = (id: string, spec: string) => { const parsed = parseItemSpecification(spec); const m = compileItem(parsed, { id, seed: id }); if (m.kind !== 'item') throw Error('fixture'); return gearItem(id, id, m.value); };
-    const unit = { traits: ['stalk'], gear: [worn('ring', '佩戴L4+4防御'), worn('charm', '佩戴L3+2防御+1伤害'), worn('cloak', '潜伏、林地专精L6'), worn('boots', '林地专精L4'), worn('ring2', '佩戴L4+4防御')] };
+    const unit = { traits: ['stalk'], traitLevels:{stalk:6}, gear: [worn('ring', '佩戴L4+4防御'), worn('charm', '佩戴L3+2防御+1伤害'), worn('cloak', '潜伏、林地专精L6'), worn('boots', '林地专精L4'), worn('ring2', '佩戴L4+4防御')] };
     expect(overshadowedGear(unit, 'ring')).toEqual([]);
     expect(overshadowedGear(unit, 'charm')).toEqual(['+2防御']);
-    expect(overshadowedGear(unit, 'cloak')).toEqual(['潜伏']);
+    expect(overshadowedGear(unit, 'cloak')).toEqual(['潜伏L6']);
     expect(overshadowedGear(unit, 'boots')).toEqual(['林地专精L4']);
     expect(overshadowedGear(unit, 'ring2')).toEqual(['+4防御']);
   });

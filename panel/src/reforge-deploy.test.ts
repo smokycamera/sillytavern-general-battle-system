@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeTraitIds, generateUnit, traitRegistry } from '../../engine/src/index.js';
+import { activeTraitIds, traitLevel, generateUnit, traitRegistry } from '../../engine/src/index.js';
 import { nativeFixture } from '../../runtime/tests/native-fixture.js';
 import { parseProtocol } from './protocol.js';
 import { parseItemSpecification } from './item-spec.js';
@@ -127,7 +127,7 @@ describe('named reforge specifications and pre-deployment batches', () => {
     const next = prepareNarrativeTransaction(save, proposal, ns, true);
     const unit = materializeUnitRecord(next.storage![0]!, registry);
     expect(unit.abilities.some(ability => ability.name === '精确射击')).toBe(true);
-    expect(activeTraitIds(unit)).toContain('guardian-greater');
+    expect(activeTraitIds(unit)).toContain('guardian');expect(traitLevel(unit,'guardian')).toBe(8);
     expect(next.rosterIds).toEqual([id]);
   });
   it('rolls back the whole batch if the equipment reference is missing', () => {

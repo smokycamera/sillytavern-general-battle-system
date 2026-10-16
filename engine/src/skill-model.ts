@@ -9,8 +9,9 @@ import type { Combatant, RulePack } from './types.js';
 import { standardConditionMap } from './conditions.js';
 
 export const SKILL_MODEL = 'skills-v1' as const;
-export type SkillModel = typeof SKILL_MODEL;
-export const isSkillModel = (model: unknown): model is SkillModel => model === SKILL_MODEL;
+export const PHASE2_SKILL_MODEL = 'skills-v2' as const;
+export type SkillModel = typeof SKILL_MODEL | typeof PHASE2_SKILL_MODEL;
+export const isSkillModel = (model: unknown): model is SkillModel => model === SKILL_MODEL || model === PHASE2_SKILL_MODEL;
 export const skillsV14 = (unit: Pick<Combatant, 'skillModel'> | undefined): boolean => isSkillModel(unit?.skillModel);
 
 export function validateSkillModel(value: unknown): void {

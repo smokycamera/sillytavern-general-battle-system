@@ -1,6 +1,6 @@
 import { isCannonWeapon } from '../../engine/src/loadout.js';
 import { parseEnhancementSuffix, enhancementLabel, ENHANCEMENT_STATS, BONUS_NAMES, type BonusKind, type Enhancements } from '../../engine/src/enhancements.js';
-import { WEAPON_CLASSES, ITEM_FORM_NAMES, skillMechanismName, traitRegistry, passiveCost, type BodyKind, type ItemForm, type ItemMechanics, type ItemSpecification } from '../../engine/src/index.js';
+import { WEAPON_CLASSES, ITEM_FORM_NAMES, skillMechanismName, traitRegistry, type BodyKind, type ItemForm, type ItemMechanics, type ItemSpecification } from '../../engine/src/index.js';
 import {POWER_ANCHORS} from '../../engine/src/power-anchors.js';
 import { parseItemSpecification } from './item-spec.js';
 export const bodyChoices: [string, string][] = [['human', '普通人形'], ['large', '大型生物'], ['vehicle', '车辆平台'], ['giant', '巨型生物']];
@@ -67,17 +67,12 @@ export function equipmentFields(prefix: string, d: EquipmentDraft, opts: { disab
   const weapons = Object.values(WEAPON_CLASSES).map((w): [string, string] => [w.id, w.name]);
   const item = d.kind === 'item';
   const anchor = `<p class="sub power-anchor">L${htmlText(d.power)} · ${htmlText(POWER_ANCHORS[Number(d.power)-1]?.name??'请选择1–10')}：${htmlText(POWER_ANCHORS[Number(d.power)-1]?.example??'')}</p>`;
-  // 佩戴道具的点数预算随表单重绘更新；写法有误时直接给出原因。
-  const budget = item && d.form === 'worn' ? (() => {
-    try { const spec = equipmentSpecification(d); return spec.kind === 'item' ? `佩戴预算 ${passiveCost({ traits: spec.traits ?? [], bonuses: spec.bonuses }, spec.power)}/${spec.power} 点` : ''; }
-    catch (error) { return error instanceof Error ? error.message : String(error); }
-  })() : '';
   return `<div class="equipment-fields"><label>名称<input data-role="${prefix}-name" value="${htmlText(d.name)}" placeholder="留空采用类型名称" ${ro}></label>
     ${d.kind === 'weapon' ? `<label>武器${select('mechanism', weapons)}</label><p class="sub">${htmlText(WEAPON_CLASSES[d.mechanism]?.profile.desc ?? '')}</p>` : d.kind === 'armor' ? `<label>护甲${select('tier', armorChoices)}</label>`
       : item ? `<label>形态${select('form', (Object.entries(ITEM_FORM_NAMES) as [string, string][]))}</label><label>效果<input data-role="${prefix}-effect" list="${prefix}-effect-examples" value="${htmlText(d.effect)}" placeholder="如buff治疗、物理范围投射、夜战专精" ${disabled ? 'readonly' : ''}><datalist id="${prefix}-effect-examples">${EFFECT_EXAMPLES.map((e) => `<option value="${htmlText(e)}"></option>`).join('')}</datalist></label>
         <p class="sub">${d.form==='single'?'使用后消耗，喝、敷类可用加速动作。效果写法与技能相同。':d.form==='charged'?'装备后每战可使用1–2次。效果写法与技能相同。':'装备后被动生效，件数不限。效果填写特质或“佩戴”加修正。'}</p>` : ''}
     <label>规格<input data-role="${prefix}-power" type="number" min="1" max="10" value="${htmlText(d.power)}" ${disabled ? 'readonly' : ''}></label></div>
-    ${d.kind==='weapon'||item?anchor:''}${budget ? `<p class="sub" data-role="${prefix}-budget">${htmlText(budget)}</p><details data-detail-id="${prefix}-budget-help"><summary>预算规则</summary><p>总预算为等级L点：普通特质3点，强力特质6点，专精占等级一半，正向修正每点1点。</p></details>` : ''}
+    ${d.kind==='weapon'||item?anchor:''}
     <details class="equipment-advanced" data-detail-id="${prefix}-advanced"><summary>${item ? '属性修正' : '特殊配置与品质'}</summary><div class="equipment-fields">
     <label>属性修正（每项−10至+10）<input data-role="${prefix}-bonuses" value="${htmlText(enhancementLabel(d.bonuses))}" placeholder="如+3伤害-2精度；留空清除" ${disabled?'readonly':''}></label><p class="sub">${htmlText((ENHANCEMENT_STATS[bonusKind(d)]??[]).map(k=>BONUS_NAMES[k]).join('、'))}。单通道修正只影响该通道；穿透与防护每点0.2档。</p>
     ${item ? '' : `<label>品质<input data-role="${prefix}-quality" type="number" min="1" max="5" value="${htmlText(d.quality)}" ${disabled ? 'readonly' : ''}></label><label>装备体量${select('body', bodyChoices)}</label>`}

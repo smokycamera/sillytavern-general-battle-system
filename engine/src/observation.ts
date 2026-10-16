@@ -1,3 +1,6 @@
+import { controlCondition } from './battle-control.js';
+import { phase2Traits } from './trait-level-model.js';
+import { reconDistance } from './trait-parameters.js';
 import { intactStructure } from './small/layers.js';
 import { meleeContact } from './small/layers.js';
 import { smokeBlocks } from './area-effects.js';
@@ -68,7 +71,10 @@ export function concealedUnit(context: ObservationContext, unit: Combatant): boo
   return canConceal(context, unit) && !unit.tacticalRevealed;
 }
 export function canSpot(context: ObservationContext, observer: Combatant, target: Combatant): boolean {
-  if (observer.side === target.side) return true;
+  if (observer.id === target.id) return true;
+  const personal = ['blinded','charmed','confused'].some(id => controlCondition(observer, id));
+  if (!personal && observer.side === target.side) return true;
+  if (controlCondition(observer, 'blinded') && distanceBetween(context, observer, target) > 1) return false;
   if (observer.status !== 'ready') return false;
   // 夜间先按最远夜视（夜战专长）剪掉远处的配对，不必追视线或查特质；白天照旧先判视线。判定结果不变。
   const night = context.fieldTags.includes('night'), early = night ? distanceBetween(context, observer, target) : undefined;
@@ -78,7 +84,12 @@ export function canSpot(context: ObservationContext, observer: Combatant, target
   if (field && !unitLineOfSight(field, from, to) || smokeBlocks(context,from,to)) return false;
   const distance = early ?? distanceBetween(context, observer, target), subject = hostOf(context, target) ?? target;
   // 侦察（斥候、观察员、神识）识破潜伏的距离翻倍；只在目标确实隐匿时才查观察者特质。
-  if (canConceal(context, subject) && !subject.tacticalRevealed && distance > (context.mode === 'small' ? 2 : 1) * (activeTraitIds(observer).includes('recon') ? 2 : 1)) return false;
+  if (canConceal(context, subject) && !subject.tacticalRevealed) {
+    if (controlCondition(observer, 'blinded')) return false;
+    const S = Math.max(traitLevel(subject, 'stalk'), terrainsOf(context, subject).some(t => terrainStalks(subject, t)) ? 5 : 0);
+    const radius = phase2Traits(subject) || phase2Traits(observer) ? reconDistance(S, traitLevel(observer, 'recon'), context.mode) : (context.mode === 'small' ? 2 : 1) * (activeTraitIds(observer).includes('recon') ? 2 : 1);
+    if (distance > radius) return false;
+  }
   if (!night) return true;
   return distance <= nightSight(traitLevel(observer, 'night-fighter'), context.mode);
 }
@@ -89,7 +100,7 @@ export function revealUnit(context: ObservationContext, unit: Combatant): void {
 }
 export function revealContacts(context: ObservationContext): void {
   for (const unit of context.units.filter((u) => canConceal(context, u) && !u.tacticalRevealed)) {
-    if (context.units.some((foe) => foe.side !== unit.side && foe.status === 'ready' && meleeContact(context.battlefield,unit,foe) && distanceBetween(context, unit, foe) <= 1
+    if (context.units.some((foe) => foe.side !== unit.side && foe.status === 'ready' && !controlCondition(foe, 'blinded') && meleeContact(context.battlefield,unit,foe) && distanceBetween(context, unit, foe) <= 1
       && (!context.battlefield || unitLineOfSight(context.battlefield, positionedUnit(context, unit), positionedUnit(context, foe))))) revealUnit(context, unit);
   }
 }

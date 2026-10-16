@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SmallBattle } from '../../engine/src/index.js';
+import { SmallBattle, prepareTraitLevelModel, V17_OVERFLOW_D20 } from '../../engine/src/index.js';
 import { tacticalFixture } from '../../scripts/p4-tactical-fixture.js';
 import { aiActsFor, aiControlledAllyIds, resetAllyAi, setUnitAi } from './ally-control.js';
 import { renderTacticalBattle } from './tactical-view.js';
@@ -7,6 +7,16 @@ import { renderTacticalBattle } from './tactical-view.js';
 describe('AI托管', () => {
   // 夹具：我方 a（主控）、c；敌方 b、d、e。
   const manual = { allAllies: false, protagonistId: 'a' }, allAllies = { allAllies: true, protagonistId: 'a' };
+
+  it('魅惑与混乱在本次激活强制使用受约束AI，到期恢复原托管设置',()=>{
+    const {b}=tacticalFixture(),a=b.byId('a');prepareTraitLevelModel(a,V17_OVERFLOW_D20);
+    b.allyAiControl.set(a.id,false);
+    for(const id of ['charmed','confused']) {
+      a.conditions=[{id,dur:1,sourceId:'b',controlPending:true}];expect(aiActsFor(b,a,manual)).toBe(false);
+      delete a.conditions[0]!.controlPending;expect(aiActsFor(b,a,manual)).toBe(true);
+    }
+    a.conditions=[];expect(aiActsFor(b,a,manual)).toBe(false);expect(b.allyAiControl.get(a.id)).toBe(false);
+  });
 
   it('「除主控」保留绑定主控手动，单位单独设置可覆盖，敌方始终由AI', () => {
     const { b } = tacticalFixture();

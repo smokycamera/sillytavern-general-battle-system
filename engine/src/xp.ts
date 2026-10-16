@@ -188,7 +188,8 @@ function recomputeFromCurve(unit: Combatant, fromLevel: number, registry?: Map<s
   }
   unit.xpValue = Math.round(curve.xp * scaleMod.xpMult);
   if (unit.rulesVersion === 'v2') {
-    unit.bakedTraitStats = traitStatContributions(unit, unit.traits, registry, false);
+    // 上方重建先使用历史固定属性，再以净修正烘焙本体等级；临时来源不能计入基础。
+    unit.bakedTraitStats = traitStatContributions(unit, unit.traits, registry, false, 'historical');
     normalizeBakedTraitStats(unit, registry);
   }
 

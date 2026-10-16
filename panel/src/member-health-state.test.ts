@@ -46,7 +46,7 @@ describe('成员生命的本地档案与重战',()=>{
   expect(inventory.inventory).toHaveLength(1);
   // 通用机制名称通过正式解析生成，检查升级后的范围参数能够通过档案验证。
   const caster=buildUnit(d,registry,'caster'),loaded=materializeUnitRecord(unitRecordFromCombatant(caster),registry);
-  // 新建单位按 V14 默认规则准备技能（skills-v1 → skill-v7.0）；纯范围伤害不涉及复合状态，参数与 V13 相同。
-  expect(loaded.abilities[0]!.effectVersion).toBe('skill-v7.0');expect(loaded.abilities[0]!.areaExposure).toBe(24);
+  // 新建单位按 V17 默认规则准备技能（skills-v2 → skill-v8.0）；纯范围伤害不涉及复合状态，参数与 V13 相同。
+  expect(loaded.abilities[0]!.effectVersion).toBe('skill-v8.0');expect(loaded.abilities[0]!.areaExposure).toBe(24);
  });
 });

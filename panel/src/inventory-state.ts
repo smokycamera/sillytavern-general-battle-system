@@ -237,7 +237,9 @@ export function assertInventoryPanelWrite(previous: InventorySave, next: Invento
   if (nextItems.some((i) => i.mechanics && !previousItems.some((old) => old.id === i.id && old.mechanics))) throw new Error('新有效果的物品须先预览并通过库存事务入库');
   for (const old of previous.storage ?? []) if (old.equipmentManaged && !next.storage?.some((r) => r.id === old.id && r.equipmentManaged)) throw new Error('不能移除装备档案的库存绑定');
   if (!(next.storage ?? []).some((r) => r.equipmentManaged)) return;
-  const projected = prepareInventoryState(next);
+  // This check projects archive equipment only. Battle history and reports do not
+  // participate and copying them on every action grows with the entire fight.
+  const projected = prepareInventoryState({ storage: next.storage, inventory: next.inventory, narrativeIdState: next.narrativeIdState });
   for (const record of next.storage ?? []) {
     if (!record.equipmentManaged || !record.snapshot) continue;
     const expected = projected.storage!.find((r) => r.id === record.id)!.snapshot!;

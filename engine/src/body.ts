@@ -1,3 +1,4 @@
+import { combatHostile } from './battle-control.js';
 import type { BodyKind, Combatant, DamageChannel } from './types.js';
 
 /** 实际身体统一决定结构与装备容量；体量特质只是这些事实的投影。 */
@@ -41,9 +42,9 @@ export function physicalTraitIds(unit: Combatant): string[] {
   return unit.body === 'giant' ? ['large', 'titan'] : unit.body === 'large' ? ['large'] : [];
 }
 /** 直射高度只比较实际体型；载具按大型，骑乘至少大型，不改变践踏、生命或负重。 */
-export function canShootOverAlly(attacker: Combatant, ally: Combatant): boolean {
+export function canShootOverAlly(attacker: Combatant, ally: Combatant, units: readonly Combatant[] = [attacker,ally]): boolean {
   const height = (unit: Combatant) => Math.max(unit.mount ? 2 : 1, { human: 1, large: 2, vehicle: 2, giant: 3 }[unit.body ?? 'human']);
-  return ally.side === attacker.side && height(attacker) > height(ally);
+  return !combatHostile(attacker,ally,units) && height(attacker) > height(ally);
 }
 export function bodyMovement(unit: Combatant): number {
   const body = unit.body ?? 'human';

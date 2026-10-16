@@ -13,12 +13,14 @@ import { SKILL_MODEL, skillsV14, conditionEffectWeight } from './skill-model.js'
 export function upgradeCombatSkills(unit: Combatant): void {
   const modern=unit.combatModel==='cohort-v2';
   // V14 只在新的统一伤害模型下重建技能：同时改两项属性的状态按两项计价。
-  const formula = unit.damageModel==='wounds-v2' && skillsV14(unit) ? SKILL_MODEL : undefined;
+  const formula = unit.damageModel==='wounds-v2' && skillsV14(unit) ? unit.skillModel : undefined;
   for(const a of unit.abilities){
+    // P2 不重写冻结旧技能。只有新编译配方进入新公式；主动重编会生成v3配方。
+    if (formula === 'skills-v2' && a.recipe?.version !== 'skill-formula-v3') continue;
     if (upgradeZoneSkill(a,unit.damageModel,formula)) { attachDefensePower(a); continue; }
     const generic=a.definitionId?.startsWith('generic:')??false;
     const wounds=isWoundModel(unit.damageModel), unified=unit.damageModel==='wounds-v2';
-    const version=unified?formula?'skill-v7.0':'skill-v6.1':wounds?'skill-v5.0':modern?'skill-v4.3':'skill-v3.0';
+    const version=unified?formula==='skills-v2'?'skill-v8.0':formula?'skill-v7.0':'skill-v6.1':wounds?'skill-v5.0':modern?'skill-v4.3':'skill-v3.0';
     if(a.customized||a.itemSourceId||a.fixedPower||a.effectVersion===version) { attachDefensePower(a); continue; }
     const previousGroup=a.cooldownGroup??a.id;
     if(modern&&a.definitionId&&skillDefinitionKnown(a.definitionId)) {
@@ -47,8 +49,9 @@ export function upgradeCombatSkills(unit: Combatant): void {
       if(a.range && a.range.max>1 && !a.effects.some(e=>e.op==='summon')) a.range.max=Math.max(a.range.min,1,a.range.max+bonusSteps(a.bonuses,'range',5));
       a.effects=a.effects.map(e=>{
         if(wounds&&e.op==='barrier')return {...e,amount:Math.max(1,Math.round(e.amount*bonusMultiplier(a.bonuses,'power'))),dur:Math.max(1,Math.min(99,(unified?power:e.dur)+bonusSteps(a.bonuses,'duration',5)))};
+        if(e.op==='condition' && ['taunted','charmed','confused','blinded'].includes(e.conditionId)) return {...e, saveDC: Math.max(1,Math.min(30,(e.saveDC ?? 8+power)+bonusSteps(a.bonuses,'accuracy'))), magnitude:1};
         if(e.op==='condition')return {...e,...(e.saveDC!==undefined?{saveDC:Math.max(1,Math.min(30,e.saveDC+bonusSteps(a.bonuses,'accuracy')))}:{}),dur:Math.max(1,(unified&&BUFF_CONDITIONS.has(e.conditionId)?power:e.dur)+(['stunned','restrained','disarmed','silenced'].includes(e.conditionId)?Math.min(0,bonusSteps(a.bonuses,'duration',5)):bonusSteps(a.bonuses,'duration',5))),magnitude:Math.max(unified?.25:0,Math.min(1.5,(e.magnitude??1)*bonusMultiplier(a.bonuses,'power')))};
-        if(e.op==='trait')return {...e,dur:Math.max(1,(unified?power:e.dur)+bonusSteps(a.bonuses,'duration',5))};
+        if(e.op==='trait')return {...e,dur:Math.max(1,(formula==='skills-v2'?1+Math.floor((power-1)/4):unified?power:e.dur)+bonusSteps(a.bonuses,'duration',5))};
         if(e.op==='resource')return {...e,amount:Math.sign(e.amount)*Math.max(0,Math.abs(e.amount)+bonusSteps(a.bonuses,'resource',5))};
         if(e.op==='morale')return {...e,amount:Math.round(e.amount*bonusMultiplier(a.bonuses,'morale'))};
         return e;
@@ -57,7 +60,7 @@ export function upgradeCombatSkills(unit: Combatant): void {
       if(restored?.op==='resource'&&a.cost?.resource==='SP')a.cost.amount=Math.max(a.cost.amount,restored.amount*(area?2:1));
     }
     const healingScale=wounds?(area ? 0.65 : 1):(area ? 0.8 : 1.5);
-    if(modern)a.effects=a.effects.map(e=>e.op==='heal'?{op:'heal',amount:Math.max(1,Math.round(base*healingScale*bonusMultiplier(a.bonuses,'healing')/(generic?genericEffectCount(a,formula):1)))}:e);
+    if(modern)a.effects=a.effects.map(e=>e.op==='heal'?{op:'heal',...(formula==='skills-v2'?{power}:{}),amount:formula==='skills-v2'?Math.max(1,base*healingScale*bonusMultiplier(a.bonuses,'healing')/(generic?genericEffectCount(a,formula):1)):Math.max(1,Math.round(base*healingScale*bonusMultiplier(a.bonuses,'healing')/(generic?genericEffectCount(a,formula):1)))}:e);
     if(modern)balanceGenericSkill(a,formula);
     const oldGroup=previousGroup;
     a.cooldownGroup='skill-mechanism:'+(a.definitionId??a.id);

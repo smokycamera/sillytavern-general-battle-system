@@ -1,3 +1,8 @@
+import { V17_OVERFLOW_D20, prepareSkillModel } from '../../engine/src/index.js';
+import { validateBattleControlState } from '../../engine/src/battle-control.js';
+import { validateRecoveryRemainders } from '../../engine/src/recovery.js';
+import { validateHealingModel } from '../../engine/src/healing.js';
+import { validTraitLevel } from '../../engine/src/data/traits.js';
 import { validateAreas } from '../../engine/src/area-effects.js';
 import { validateZoneStrength } from '../../engine/src/zone-skills.js';
 import { validateBarrier, validDefensePower } from '../../engine/src/barrier.js';
@@ -8,8 +13,9 @@ import { capSingleLife, limitCombatantLife } from '../../engine/src/health-limit
 import { isEnduranceModel, spCapacity } from '../../engine/src/resources.js';
 import { validateArmsModel } from '../../engine/src/arms.js';
 import { validateTraitModel } from '../../engine/src/trait-model.js';
+import { validateTraitLevelModel } from '../../engine/src/trait-level-model.js';
 import { validateItemModel } from '../../engine/src/item-model.js';
-import { traitRegistry, validateTraitLevels } from '../../engine/src/data/traits.js';
+import { traitRegistry, validateTraitLevels, isGradedTrait } from '../../engine/src/data/traits.js';
 import { skillMechanismFromId } from '../../engine/src/data/skill-mechanisms.js';
 /**
  * 面板单位持久化与战后提交。
@@ -196,7 +202,7 @@ function validateRuntimeMetadata(value: Record<string, unknown>): void {
     if (isRecordObject(condition) && condition.potency !== undefined && (!Number.isInteger(condition.potency) || Number(condition.potency) < 1 || Number(condition.potency) > 3)) throw new Error('状态强度记录损坏');
     // Partial item coverage can produce a weaker active condition than the
     // minimum compiled skill potency; it must remain valid through save/load.
-    if (isRecordObject(condition) && condition.magnitude !== undefined && (!Number.isFinite(condition.magnitude) || Number(condition.magnitude) <= 0 || Number(condition.magnitude) > 1.5)) throw new Error('状态效力记录损坏');
+    if (isRecordObject(condition) && condition.magnitude !== undefined && (!Number.isFinite(condition.magnitude) || Number(condition.magnitude) <= 0 || Number(condition.magnitude) > (condition.id === 'poisoned' && value.traitLevelModel === 'traits-levels-v2' ? 2 : 1.5))) throw new Error('状态效力记录损坏');
     if (isRecordObject(condition) && condition.sourceId !== undefined && typeof condition.sourceId !== 'string') throw new Error('状态来源记录损坏');
     if (condition.defensePower !== undefined && (condition.id !== 'blessed' || !validDefensePower(condition.defensePower))) throw new Error('守护防御规格记录损坏');
   }
@@ -204,6 +210,10 @@ function validateRuntimeMetadata(value: Record<string, unknown>): void {
   validateArmsModel(value.armsModel);
   validateTraitModel(value.traitModel);
   validateItemModel(value.itemModel);
+  validateTraitLevelModel(value.traitLevelModel);
+  validateHealingModel(value.healingModel);
+  validateRecoveryRemainders(value as unknown as Combatant);
+  validateBattleControlState(value as unknown as Combatant);
   validateTraitLevels(value.traitLevels);
   validateTacticalEffort(value.tacticalEffort, value.resourceModel);
   validateConcealment(value.tacticalRevealed);
@@ -272,12 +282,12 @@ export function combatantFromUnknown(value: unknown): Combatant {
     if(a.penetration!==undefined&&(typeof a.penetration!=='number'||!Number.isFinite(a.penetration)||a.penetration<0))throw Error('技能穿透须为非负有限数');
     if (a.weaponUse !== undefined && (!['auto', 'melee', 'ranged'].includes(String(a.weaponUse)) || a.damageBasis !== 'weapon')) throw new Error('技能选用武器记录损坏');
     if (a.recipe !== undefined) {
-      if (!isRecordObject(a.recipe) || !['skill-formula-v1','skill-formula-v2'].includes(String(a.recipe.version)) || !Number.isInteger(a.recipe.power) || Number(a.recipe.power) < 1 || Number(a.recipe.power) > 10 || a.recipe.power !== a.power
+      if (!isRecordObject(a.recipe) || !['skill-formula-v1','skill-formula-v2','skill-formula-v3'].includes(String(a.recipe.version)) || !Number.isInteger(a.recipe.power) || Number(a.recipe.power) < 1 || Number(a.recipe.power) > 10 || a.recipe.power !== a.power
         || typeof a.definitionId !== 'string' || !skillMechanismFromId(a.definitionId) || JSON.stringify(skillMechanismFromId(a.definitionId)) !== JSON.stringify({ category: a.recipe.category, area: a.recipe.area, modifiers: a.recipe.modifiers })) throw new Error('通用技能配方损坏');
     }
     if (a.area !== undefined && (!isRecordObject(a.area) || !['cone','line','ring','chain','circle'].includes(String(a.area.shape)) || !Number.isInteger(a.area.radius) || Number(a.area.radius)<1 || Number(a.area.radius)>3 || !Number.isInteger(a.area.maxTargets) || Number(a.area.maxTargets)<1 || Number(a.area.maxTargets)>8)) throw Error('技能范围不正确');
-    if (a.areaExposure !== undefined && (!Number.isInteger(a.areaExposure) || Number(a.areaExposure) < 1 || Number(a.areaExposure) > (['skill-v4.0','skill-v4.1','skill-v4.2','skill-v4.3','skill-v5.0','skill-v6.0','skill-v6.1','skill-v7.0'].includes(String(a.effectVersion))?1e9:4) || a.shape !== 'burst' || a.damageBasis !== undefined)) throw new Error('技能范围暴露参数损坏');
-    if (a.damageBasis !== undefined && !['weapon', 'shield'].includes(String(a.damageBasis)) || a.weaponDamageMult !== undefined && (!Number.isFinite(a.weaponDamageMult) || Number(a.weaponDamageMult) <= 0 || Number(a.weaponDamageMult) > (['skill-v3.0','skill-v4.0','skill-v4.1','skill-v4.2','skill-v4.3','skill-v5.0','skill-v6.0','skill-v6.1','skill-v7.0'].includes(String(a.effectVersion)) ? 4.4 : 2)) || a.delivery !== undefined && !['melee', 'ranged', 'magic'].includes(String(a.delivery))) throw new Error('技能装备基准损坏');
+    if (a.areaExposure !== undefined && (!Number.isInteger(a.areaExposure) || Number(a.areaExposure) < 1 || Number(a.areaExposure) > (['skill-v4.0','skill-v4.1','skill-v4.2','skill-v4.3','skill-v5.0','skill-v6.0','skill-v6.1','skill-v7.0','skill-v8.0'].includes(String(a.effectVersion))?1e9:4) || a.shape !== 'burst' || a.damageBasis !== undefined)) throw new Error('技能范围暴露参数损坏');
+    if (a.damageBasis !== undefined && !['weapon', 'shield'].includes(String(a.damageBasis)) || a.weaponDamageMult !== undefined && (!Number.isFinite(a.weaponDamageMult) || Number(a.weaponDamageMult) <= 0 || Number(a.weaponDamageMult) > (['skill-v3.0','skill-v4.0','skill-v4.1','skill-v4.2','skill-v4.3','skill-v5.0','skill-v6.0','skill-v6.1','skill-v7.0','skill-v8.0'].includes(String(a.effectVersion)) ? 4.4 : 2)) || a.delivery !== undefined && !['melee', 'ranged', 'magic'].includes(String(a.delivery))) throw new Error('技能装备基准损坏');
     if(a.damageScale!==undefined&&(!Number.isFinite(a.damageScale)||Number(a.damageScale)<=0||Number(a.damageScale)>1e6))throw Error('技能等级倍率损坏');
     for (const effect of a.effects.flatMap(effect => [effect,...(isRecordObject(effect) && effect.op === 'zone' && Array.isArray(effect.effects) ? effect.effects : [])])) {
       if (isRecordObject(effect) && effect.op === 'zone' && (!['fire','poison','smoke','healing','trap'].includes(String(effect.kind)) || !Number.isInteger(effect.power) || Number(effect.power)<1 || Number(effect.power)>10 || !Number.isInteger(effect.dur) || Number(effect.dur)<1 || Number(effect.dur)>99 || !Number.isInteger(effect.radius) || Number(effect.radius)<0 || Number(effect.radius)>3)) throw Error('持续区域的范围或时间不正确');
@@ -287,6 +297,8 @@ export function combatantFromUnknown(value: unknown): Combatant {
       if (effect.op === 'move' && (!['dash', 'blink', 'withdraw'].includes(String(effect.mode)) || !Number.isInteger(effect.reach) || Number(effect.reach) < 1 || Number(effect.reach) > 20)) throw new Error('技能位移参数损坏');
       if (effect.defensePower !== undefined && (!validDefensePower(effect.defensePower) || effect.op !== 'barrier' && !(effect.op === 'condition' && effect.conditionId === 'blessed'))) throw new Error('技能防御规格记录损坏');
       if (effect.magnitude !== undefined && (!Number.isFinite(effect.magnitude) || Number(effect.magnitude) < 0.25 || Number(effect.magnitude) > 1.5) || effect.onDamage !== undefined && typeof effect.onDamage !== 'boolean') throw new Error('技能效力或损伤前提损坏');
+      if (effect.level !== undefined && (effect.op !== 'trait' || !validTraitLevel(effect.level) || isRecordObject(a.recipe) && a.recipe.version === 'skill-formula-v3' && Number(effect.level) > Number(a.power))) throw Error('技能授予等级损坏');
+      if (effect.op === 'heal' && effect.power !== undefined && !validTraitLevel(effect.power)) throw Error('治疗规格损坏');
       if (effect.op === 'trait' && (!traitRegistry().get(String(effect.traitId))?.v2SourceReady || !Number.isInteger(effect.dur) || Number(effect.dur) < 1 || Number(effect.dur) > 99)) throw new Error('技能授予来源损坏');
       if (effect.direction !== undefined && !['away', 'towards'].includes(String(effect.direction)) || effect.maximum !== undefined && effect.maximum !== 'training') throw new Error('技能位移或资源边界损坏');
       if (effect.onHit !== undefined && typeof effect.onHit !== 'boolean' || effect.shape !== undefined && !['single', 'burst'].includes(String(effect.shape))) throw new Error('技能触发或范围参数损坏');
@@ -294,7 +306,7 @@ export function combatantFromUnknown(value: unknown): Combatant {
       if (effect.op === 'dispel' && (!['positive', 'negative'].includes(String(effect.polarity)) || !Number.isInteger(effect.count) || ![1, 2].includes(Number(effect.count)))) throw new Error('解除参数损坏');
       if (effect.op === 'condition' && (effect.potency !== undefined && (!Number.isInteger(effect.potency) || Number(effect.potency) < 1 || Number(effect.potency) > 3) || effect.saveDC !== undefined && (!Number.isInteger(effect.saveDC) || Number(effect.saveDC) < 1 || Number(effect.saveDC) > 30))) throw new Error('技能状态强度或抵抗参数损坏');
       if (effect.op === 'heal' && effect.amount !== undefined) {
-        if (!Number.isSafeInteger(effect.amount) || Number(effect.amount) < 1 || effect.dice !== undefined) throw new Error('治疗量损坏');
+        if (!Number.isFinite(effect.amount) || Number(effect.amount) < 1 || effect.dice !== undefined) throw new Error('治疗量损坏');
       } else if (effect.op === 'damage' || effect.op === 'heal') {
         const dice = effect.op === 'damage' ? effect.baseDice : effect.dice;
         if (typeof dice !== 'string') throw new Error('技能骰子缺失'); parseDice(dice);
@@ -438,8 +450,8 @@ export function unitRecordFromCombatant(
   previous?: UnitRecord,
   opts: { transient?: boolean; kind?: UnitHistoryEntry['kind']; sourceId?: string } = {},
 ): UnitRecord {
-  c = stripCarriedItems(c); delete c.barrier; delete c.battleZones;
-  if(opts.kind==='battle')delete c.storyState;
+  c = stripCarriedItems(c); delete c.barrier; delete c.battleZones; delete c.regenerationRemainder; delete c.controlActivation; delete c.movedDuringActivation; delete c.looseChoiceLocked;
+  if(opts.kind==='battle'){ delete c.storyState; c.conditions = c.conditions.filter(condition => !['taunted','charmed','blinded','confused'].includes(condition.id)); }
   limitCombatantLife(c);
   delete c.nonLethal;delete c.cannonAmmo;
   delete c.airborne; delete c.elevation; delete c.formationPosition;
@@ -549,6 +561,8 @@ export function unitRecordToGenerateInput(r: UnitRecord, era = 'medieval'): Gene
     archetype: r.archetype,
     level: r.level,
     traits: [...r.traits],
+    // 这里读取历史记录；显式写回旧缺省L5，防止新生成器把省略项解释成L1。
+    traitLevels: Object.fromEntries(r.traits.filter(isGradedTrait).map(id => [id, r.snapshot?.traitLevels?.[id] ?? 5])),
     side: r.side,
     era,
     ...(r.loadout ? { loadout: r.loadout } : {}),
@@ -889,6 +903,7 @@ export function learnUnitRecord(record: UnitRecord, skills: NonNullable<Combatan
   if (record.retired || record.hp <= 0 || record.status === 'dead') throw new Error('阵亡或解散档案不能学习');
   const unit = materializeUnitRecord(record, registry);
   if (record.snapshot) { unit.abilityState = clone(record.snapshot.abilityState); unit.resources = clone(record.snapshot.resources); }
+  prepareSkillModel(unit, V17_OVERFLOW_D20);
   const learned = learnAbilities(unit, skills ?? [], { rebuildRequested: true });
   return unitRecordFromCombatant(learned, record, { kind: 'edit', sourceId });
 }

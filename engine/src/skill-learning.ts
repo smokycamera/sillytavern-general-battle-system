@@ -36,10 +36,10 @@ export function learnAbilities(unit: Combatant, specs: BlueprintSpec[], opts: { 
     if (id === 'bp-raise-dead') { if (!old) throw new Error('尸体苏生不在当前学习范围'); replacements.set(old.id, structuredClone(old)); continue; }
     const requested = typeof spec === 'string' ? undefined : spec.level;
     if (requested !== undefined && (!Number.isSafeInteger(requested) || requested < 1 || requested > 10)) throw new Error('技能等级必须为1–10整数');
-    const power = bp?.fixedPower ? 1 : requested ?? (old ? abilityPower(unit, old) : 5);
+    const power = bp?.fixedPower ? 1 : requested ?? (old ? abilityPower(unit, old) : unit.skillModel === 'skills-v2' ? 1 : 5);
     const name = (typeof spec === 'string' ? undefined : spec.name)?.trim() || old?.name || skillDefinitionName(id);
     const rebuild = typeof spec !== 'string' && spec.bonuses !== undefined && JSON.stringify(spec.bonuses) !== JSON.stringify(old?.bonuses) || !old || old.definitionId !== id || power !== abilityPower(unit, old) || opts.rebuildRequested && requested !== undefined;
-    const ability = rebuild ? compileSkill(typeof spec === 'string' ? { id, name } : { ...spec, bonuses: spec.bonuses ?? old?.bonuses, name }, power, unit.id) : { ...structuredClone(old!), name };
+    const ability = rebuild ? compileSkill(typeof spec === 'string' ? { id, name } : { ...spec, bonuses: spec.bonuses ?? old?.bonuses, name }, power, unit.id, unit.skillModel) : { ...structuredClone(old!), name };
     if (!generic && !old && unit.genAudit?.seed) ability.id = `unit:${encodeURIComponent(unit.genAudit.seed)}:${id}`;
     if (old) {
       ability.id = old.id; ability.sourceId = old.sourceId ?? unit.id;

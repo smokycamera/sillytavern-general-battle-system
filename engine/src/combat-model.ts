@@ -1,3 +1,4 @@
+import { resolveHealingBudget } from './healing.js';
 import { isWoundModel } from './balance.js';
 import { instanceMultiplier, validateInstanceVariance } from './instance-variance.js';
 import { activeTraitIds } from './trait-sources.js';
@@ -74,7 +75,8 @@ export function upgradeUnifiedLife(u: Combatant): void {
   if (u.genAudit) { u.genAudit.input.damageModel = 'wounds-v2'; u.genAudit.formulaVersion += '+unified-v1'; }
 }
 /** 本地医疗按实际执行单位换算；物品为单份，不随服用者人数放大。 */
-export function healingYield(source: Combatant, target: Combatant, amount: number, item = false): number {
+export function healingYield(source: Combatant, target: Combatant, amount: number, item = false, power?: number): number {
+  if (target.healingModel) return resolveHealingBudget({ source, target, baseAmount: amount, power, delivery: item ? 'item' : 'skill' });
   // 医护：施放的治疗技能与使用的治疗品效果×1.25。
   if(source.rulesVersion==='v2'&&activeTraitIds(source).includes('medic'))amount*=1.25;
   if(!isCohort(target)||target.scale==='hero')return amount;

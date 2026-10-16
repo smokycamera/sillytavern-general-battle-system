@@ -11,7 +11,8 @@ import type { GenOptions, GenResult } from './generator.js';
 import { curveAt, ARCHETYPE_MODS } from '../data/curves.js';
 import { diceAvg, rebuildDice } from '../data/weapons.js';
 import { ABILITY_BLUEPRINTS, abilityFromBlueprint } from '../data/ability-blueprints.js';
-import { traitRegistry, validateTraitLevels } from '../data/traits.js';
+import { traitRegistry, validateTraitLevels, isGradedTrait } from '../data/traits.js';
+import { DEFAULT_NEW_TRAIT_LEVEL } from '../trait-parameters.js';
 import { randomSeed } from '../rng.js';
 import { rollInstanceVariance, instanceMultiplier } from '../instance-variance.js';
 import { BODY, FORMULA_VERSION as EQUIPMENT_FORMULA_VERSION, compileArmor, compileWeapon, equipmentRecipe } from './equipment.js';
@@ -72,7 +73,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   const traits = [...new Set(raw.traits)];
   // 只保留单位确实拥有、且不是标准 L5 的专精等级。
   validateTraitLevels(raw.traitLevels);
-  const levelEntries = Object.entries(raw.traitLevels ?? {}).filter(([id, level]) => traits.includes(id) && level !== 5);
+  const levelEntries = traits.filter(isGradedTrait).map(id => [id, raw.traitLevels?.[id] ?? DEFAULT_NEW_TRAIT_LEVEL] as const).filter(([, level]) => level !== 5);
   const traitLevels = levelEntries.length ? Object.fromEntries(levelEntries) as Record<string, number> : undefined;
   const base = { atk: curve.atk + archMod.atk, def: curve.def + archMod.def, spd: Math.max(1, curve.spd + archMod.spd + bonusSteps(raw.bonuses, 'speed', 5)), hpMax,
     ...(group ? { moraleMax: curve.morale + bonusSteps(raw.bonuses, 'morale') } : {}) };
@@ -102,8 +103,8 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
     const definitionId = typeof spec === 'string' ? spec : spec.id;
     if (!definitionId.startsWith('generic:') && abilities.some((a) => a.definitionId === definitionId)) throw new Error('同源技能重复，请明确保留一个等级');
     const bp = ABILITY_BLUEPRINTS[definitionId];
-    const power = integer((typeof spec === 'string' ? undefined : spec.level) ?? 5, 1, 10, '技能强度P');
-    const ability = compileSkill(spec, power, id);
+    const power = integer((typeof spec === 'string' ? undefined : spec.level) ?? (opts.skillModel === 'skills-v2' ? 1 : 5), 1, 10, '技能强度P');
+    const ability = compileSkill(spec, power, id, opts.skillModel);
     if (abilities.some((a) => a.id === ability.id || ability.recipe && a.name === ability.name)) throw new Error('同名技能请合并为一项，不能重复创建');
     if (bp?.fixedPower && typeof spec !== 'string' && spec.level !== undefined) warnings.push(`${bp.name}使用固定预备来源，技能等级不改变援军`);
     abilities.push(ability); abilityAudit.push({ blueprintId: definitionId, power: ability.power! });
@@ -113,7 +114,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   if (!raw.preparedAbilityIds && abilities.length > MAX_PREPARED_SKILLS) warnings.push(`仅默认准备前${MAX_PREPARED_SKILLS}个技能，其余已学保留，需在配装中选择`);
   const input: GenerateInput = { ...raw, era: undefined, body, quality, level: training, weaponClass: weapon.recipe!.mechanism,
     weaponLevel: weapon.level, sidearmLevel: sidearm?.level, armorTier: tier, armorLevel: armorPower, hpMax: base.hpMax, hp: currentHp, preparedAbilityIds: prepared,
-    abilityBlueprints: (raw.abilityBlueprints ?? []).map((s) => typeof s === 'string' ? { id: s, level: 5 } : { ...s, level: s.level ?? 5 }) };
+    abilityBlueprints: (raw.abilityBlueprints ?? []).map((s) => typeof s === 'string' ? { id: s, level: opts.skillModel === 'skills-v2' ? 1 : 5 } : { ...s, level: s.level ?? (opts.skillModel === 'skills-v2' ? 1 : 5) }) };
   const unit: Combatant = { id, name: raw.name, side: raw.side, scale: raw.scale, archetype: arch, level: training,
     rulesVersion: 'v2', ...(raw.damageModel ? {damageModel:raw.damageModel} : {}), bonuses: raw.bonuses, body, ...(raw.speedTier !== undefined ? { speedTier: raw.speedTier } : {}), ...(raw.mount ? { mount: true } : {}), base, hp: currentHp, tags: [...tags], traits, ...(traitLevels ? { traitLevels } : {}),
     weapon, sidearm, armor, shield,

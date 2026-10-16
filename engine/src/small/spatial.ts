@@ -1,3 +1,5 @@
+import { combatHostile } from '../battle-control.js';
+import { agileCost } from '../phase2-traits.js';
 import { movementPoints } from '../tactics.js';
 import { GridQueue } from './grid-queue.js';
 import { layerMoveCost, groundBlocked, obstructionHeight, structureAt, STRUCTURE_NAMES, validateLayers, isElevated, structureDefense, type FieldStructure, type GroundOverlay, type FieldLandmark, type CityRecord } from './layers.js';
@@ -135,11 +137,11 @@ export function tileCost(field: BattlefieldSpec, cell: number, actor?: Combatant
   if (layered !== undefined) return layered;
   if (actor && isAirborne(actor)) return 1;
   const terrain = field.tiles[cell], traits = actor?.rulesVersion === 'v2' ? activeTraitIds(actor) : [];
-  if (traits.includes('agile') && !traitPrerequisiteReason(actor!, 'agile')) return 1;
+  const agile = agileCost(actor, terrain === 'forest' || terrain === 'hill' || terrain === 'rough' ? 2 : 1);
   // 林地、山地专精按等级降低代价：L2–4 为 1.75/1.5/1.25，L5 起为 1（旧规则一律 L5）。
-  if (terrain === 'forest') return actor ? roughGroundCost(traitLevel(actor, 'forest-lore', traits)) : 2;
-  if (terrain === 'hill') return actor ? roughGroundCost(traitLevel(actor, 'mountain-born', traits)) : 2;
-  return terrain === 'rough' ? 2 : 1;
+  if (terrain === 'forest') return Math.min(agile, actor ? roughGroundCost(traitLevel(actor, 'forest-lore', traits)) : 2);
+  if (terrain === 'hill') return Math.min(agile, actor ? roughGroundCost(traitLevel(actor, 'mountain-born', traits)) : 2);
+  return agile;
 }
 /** Difficult but traversable ground cannot permanently trap a slow unit. A step costs
  * at most its FULL normal allowance, never its remaining allowance. Thus a 2-MP unit
@@ -235,7 +237,7 @@ export function lineOfSight(field: BattlefieldSpec, from: number, to: number, bl
 /** 本版障碍只有地面高度，空中可越过；昼夜观测仍由观测模块约束。 */
 export function meleeLineBlocker(field: BattlefieldSpec, from: Combatant, to: Combatant, units: Combatant[]): Combatant | undefined {
   if (!sameLayer(from, to)) return undefined;
-  const blockers = units.filter(u => u.id !== from.id && u.id !== to.id && u.side !== from.side
+  const blockers = units.filter(u => u.id !== from.id && u.id !== to.id && combatHostile(u, from, units)
     && u.hp > 0 && (u.status === 'ready' || u.status === 'routing') && sameLayer(from, u)
     && u.pos !== from.pos && u.pos !== to.pos);
   let blocker: Combatant | undefined;

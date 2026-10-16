@@ -67,6 +67,9 @@ function buildFormationChoices(b: MassBattle, host: Combatant, cache?: Formation
   return choices;
 }
 export function formationSelection(b: MassBattle, view: FormationView, drafts: OrderDrafts, cache?: FormationQueryCache) {
+  return b.withReadOnlyQueries(() => buildFormationSelection(b, view, drafts, cache));
+}
+function buildFormationSelection(b: MassBattle, view: FormationView, drafts: OrderDrafts, cache?: FormationQueryCache) {
   const visible = b.visibleCombatants('ally');
   const hosts = visible.filter((u) => u.side === 'ally' && !b.isAttached(u.id) && !['dead', 'fled'].includes(u.status));
   const actor = hosts.find((u) => u.id === view.selectedId) ?? hosts.find((u) => u.status === 'ready') ?? hosts[0];

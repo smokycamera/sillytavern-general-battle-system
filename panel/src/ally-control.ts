@@ -1,4 +1,5 @@
 import type { Combatant, SmallBattle } from '../../engine/src/index.js';
+import { controlPolicy } from '../../engine/src/battle-control.js';
 
 /** 「除主控」默认托管其余我方单位；主控仍可通过「此单位」单独托管。 */
 export interface AllyControlDefaults { allAllies: boolean; protagonistId?: string }
@@ -7,6 +8,8 @@ const defaultAi = (d: AllyControlDefaults, id: string) => d.allAllies && id !== 
 
 /** 敌方与中立始终由AI；我方单位的单独设置优先于「除主控」。 */
 export function aiActsFor(b: SmallBattle, unit: Pick<Combatant, 'id' | 'side'>, d: AllyControlDefaults): boolean {
+  const current=b.combatants.find(u=>u.id===unit.id), policy=current&&controlPolicy(current);
+  if(policy==='charmed'||policy==='confused')return true;
   return unit.side !== 'ally' || (b.allyAiControl.get(unit.id) ?? defaultAi(d, unit.id));
 }
 

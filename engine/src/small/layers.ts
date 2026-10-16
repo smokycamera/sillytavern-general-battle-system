@@ -1,3 +1,4 @@
+import { agileCost, phase2Value } from '../phase2-traits.js';
 import { instanceMultiplier } from '../instance-variance.js';
 import { bodyProfile } from '../body.js';
 /** Layered maps are opt-in on new fields. Frozen version-2 tile-only saves retain their rules. */
@@ -79,13 +80,17 @@ export function layerMoveCost(field: BattlefieldSpec, cell: number, actor?: Comb
   if (s?.kind === 'bridge') return 1;
   // 身法：森林、丘陵、碎石、浅水与沼泽都按平地走；深水、工事和墙体照常。
   const agile = traits.includes('agile') && !traitPrerequisiteReason(actor!, 'agile');
-  let cost = agile && t !== 'deep_water' ? 1 : t === 'shallow_water' ? traits.includes('water-crossing') ? 1 : 2
+  let cost = t === 'shallow_water' ? traits.includes('water-crossing') ? 1 : 2
     : t === 'deep_water' ? 3 : t === 'swamp' ? traits.includes('water-crossing') ? 2 : 3
       : t === 'forest' ? actor ? roughGroundCost(traitLevel(actor, 'forest-lore', traits)) : 2
         : t === 'hill' ? field.spatialRulesVersion===2 ? 1 : actor ? roughGroundCost(traitLevel(actor, 'mountain-born', traits)) : 2 : t === 'rough' ? 2 : 1;
   // A road changes ground cost, not a barricade, water or rubble sitting on it.
   if (overlays.includes('road') && !['deep_water', 'shallow_water', 'swamp'].includes(t ?? '')) cost = 1;
-  if (overlays.includes('rubble') && !agile) cost = Math.max(cost, 2);
+  if (overlays.includes('rubble')) cost = Math.max(cost, 2);
+  if (agile && t !== 'deep_water') {
+    const base = t === 'swamp' ? traits.includes('water-crossing') ? 2 : 3 : t === 'shallow_water' ? traits.includes('water-crossing') ? 1 : 2 : ['forest','rough'].includes(t ?? '') || t === 'hill' && field.spatialRulesVersion !== 2 || overlays.includes('rubble') ? 2 : 1;
+    cost = Math.min(cost, agileCost(actor, base));
+  }
   if (s?.kind === 'fortification') cost = Math.max(cost, 3);
   return cost;
 }
@@ -149,7 +154,7 @@ export function weaponBreachBudget(actor: Combatant, weapon: Weapon | undefined)
   const ranged = weapon.tags?.includes('ranged');
   const coefficient = BREACH_COEFFICIENTS[mechanism] ?? (weapon.tags?.includes('blast') ? 1.5 : ranged ? .16 : .45);
   const enhancement = instanceMultiplier(weapon.recipe?.bonuses, 'damage', weapon.recipe?.variance, weapon.channel ?? 'kinetic');
-  const engineers = activeTraitIds(actor).includes('siege-breaker') ? 1.5 : 1;
+  const engineers = activeTraitIds(actor).includes('siege-breaker') ? phase2Value(actor, 'siege-breaker', 'engineerDamage', 1.5) : 1;
   const frontage = actor.scale === 'company' ? Math.min(3, Math.max(1, Math.sqrt(Math.max(0, actor.hp) / 10))) : 1;
   // Strong arms help melee demolition, not firearm/explosive projectile energy.
   const strength = ranged ? 1 : bodyProfile(actor.body, actor.damageModel).strength;

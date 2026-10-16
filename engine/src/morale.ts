@@ -1,3 +1,7 @@
+import { combatHostile, combatSide, controlActionReason, controlCondition } from './battle-control.js';
+import { phase2Traits } from './trait-level-model.js';
+import { effectiveTraitLevel } from './trait-sources.js';
+import { traitParameter } from './trait-parameters.js';
 import type { Combatant, Trait } from './types.js';
 import { activeConditionIds, activeTraitIds } from './trait-sources.js';
 import { collectMods, resolveStack, type Modifier } from './bonus.js';
@@ -10,6 +14,7 @@ import { gridDistance, unitLineOfSight } from './small/spatial.js';
 import type { Rng } from './rng.js';
 import { isCohort, nominalLife } from './combat-model.js';
 import { MEMBER_HEALTH_MODEL, memberHealthMax } from './member-health.js';
+import { traitValue } from './trait-levels.js';
 
 export interface MoraleState {
   terrorSeen: string[];
@@ -108,7 +113,7 @@ export interface MoraleProfile {
   resilience: number;
   immune: boolean;
   attackPenalty: number;
-  sources: { id: string; name: string; trait: string; traitId: string; value: number }[];
+  sources: { id: string; name: string; trait: string; traitId: string; value: number; terrorDC?: number }[];
   auraMods: Modifier[];
 }
 
@@ -118,7 +123,7 @@ export function moraleProfile(context: ObservationContext, unit: Combatant, regi
   if (context.conditions) for (const id of activeConditionIds(unit)) { const def = context.conditions.get(id); if (def) conditions.set(id, def); }
   const traits = activeTraitIds(unit).flatMap((id) => registry.get(id) ?? []);
   const immune = !!unit.moraleLocked || traits.some((t) => t.effects.some((e) => e.kind === 'immuneMorale'));
-  const resilience = Math.max(0, traits.reduce((sum, trait) => sum + trait.effects.reduce((n, e) => n + (e.kind === 'stat' && e.stat === 'morale' ? e.value : 0), 0), 0));
+  const resilience = Math.max(0, traits.reduce((sum, trait) => sum + trait.effects.reduce((n, e) => n + (e.kind === 'stat' && e.stat === 'morale' ? trait.id === 'stubborn' ? traitValue(unit, trait.id, 'resilience', e.value) : e.value : 0), 0), 0));
   const sources: MoraleProfile['sources'] = [];
   const from = positionedUnit(context, unit), range = context.mode === 'small' ? 3 : 1;
   if (unit.rulesVersion === 'v2') for (const other of context.units) {
@@ -132,8 +137,8 @@ export function moraleProfile(context: ObservationContext, unit: Combatant, regi
     for (const id of activeTraitIds(other)) {
       const trait = registry.get(id); if (!trait) continue;
       for (const effect of trait.effects) {
-        if (effect.kind !== 'moraleAura' || effect.scope === 'side' && other.side !== unit.side || effect.scope === 'enemySide' && (other.side === unit.side || immune)) continue;
-        sources.push({ id: other.id, name: other.name, trait: trait.name, traitId: id, value: effect.value });
+        if (effect.kind !== 'moraleAura' || effect.scope === 'side' && combatHostile(other, unit, context.units) || effect.scope === 'enemySide' && (!combatHostile(other, unit, context.units) || immune)) continue;
+        sources.push({ id: other.id, name: other.name, trait: trait.name, traitId: id, ...(phase2Traits(other) && id === 'fear' && effectiveTraitLevel(other, 'fear') >= 8 ? { terrorDC: 12 + 2 * (effectiveTraitLevel(other, 'fear') - 8) } : {}), value: id === 'fear' && phase2Traits(other) ? -traitParameter('fearPressure', effectiveTraitLevel(other, 'fear')) : id === 'commander' ? traitValue(other, id, 'command', effect.value) : effect.value });
       }
     }
   }
@@ -150,7 +155,7 @@ export function moraleProfile(context: ObservationContext, unit: Combatant, regi
 
 export function moraleAttackMods(context: ObservationContext, unit: Combatant, registry?: Map<string, Trait>, knownContext = context): Modifier[] {
   const catalog = registry ?? traitRegistry();
-  if (!context.units.some((other) => other.side !== unit.side && other.status === 'ready' && activeTraitIds(other).some((id) => catalog.get(id)?.effects.some((e) => e.kind === 'moraleAura' && e.scope === 'enemySide' && e.value < 0)))) return [];
+  if (!context.units.some((other) => combatHostile(other, unit, context.units) && other.status === 'ready' && activeTraitIds(other).some((id) => catalog.get(id)?.effects.some((e) => e.kind === 'moraleAura' && e.scope === 'enemySide' && e.value < 0)))) return [];
   const known = new Set(observedUnits(knownContext, unit.side).map((u) => u.id));
   const pressure = moraleProfile({ ...context, units: context.units.filter((u) => known.has(u.id)) }, unit, catalog);
   return pressure.attackPenalty ? [{ source: 'condition', sourceId: 'morale:fear', stackGroup: 'condition:atk:flat:negative', name: '恐惧压制', kind: 'atk', type: 'flat', value: -pressure.attackPenalty }] : [];
@@ -165,12 +170,13 @@ export function moraleLabel(context: ObservationContext, unit: Combatant, regist
 
 export function moraleRisk(context: ObservationContext, unit: Combatant, breakAt: number, registry?: Map<string, Trait>) {
   const profile = moraleProfile(context, unit, registry), state = unit.moraleState;
-  const terror = profile.sources.filter((s) => s.traitId === 'terror' && !state?.terrorSeen.includes(s.id));
+  const terror = profile.sources.filter((s) => (s.traitId === 'terror' || s.terrorDC !== undefined) && !state?.terrorSeen.includes(s.id));
+  const terrorDC = Math.max(12, ...terror.map(s => s.terrorDC ?? 12));
   const threshold = 12 + Math.max(0, (state?.routs ?? 1) - 1) * 3;
   const bonus = Math.floor(profile.effective / 10) + (profile.command > 0 ? 2 : 0);
   const success = Math.max(0, Math.min(1, (21 + bonus - threshold) / 20));
-  return { ...profile, terror,
-    breakChance: profile.immune ? 0 : profile.effective <= breakAt ? 1 : terror.length && profile.effective <= 50 ? 1 - Math.max(0, Math.min(1, (21 + Math.floor(profile.effective / 10) - 12) / 20)) : 0,
+  return { ...profile, terror, terrorDC,
+    breakChance: profile.immune ? 0 : profile.effective <= breakAt ? 1 : terror.length && profile.effective <= 50 ? 1 - Math.max(0, Math.min(1, (21 + Math.floor(profile.effective / 10) - terrorDC) / 20)) : 0,
     rallyChance: profile.immune ? 1 : profile.effective <= breakAt ? 0 : success, rallyDC: threshold, rallyBonus: bonus };
 }
 export interface MoraleDecision {
@@ -195,7 +201,7 @@ export function decideMorale(context: ObservationContext, unit: Combatant, round
   let cause: 'terror' | 'morale' | undefined = risk.effective <= breakAt ? 'morale' : undefined;
   if (!cause && risk.terror.length && risk.effective <= 50) {
     state.terrorSeen = [...new Set([...state.terrorSeen, ...risk.terror.map((s) => s.id)])];
-    if (rng.d(20) + Math.floor(risk.effective / 10) >= 12) return { kind: 'resisted', state, text: `${unit.name} 顶住恐怖，同一来源本战不会再次触发惊退` };
+    if (rng.d(20) + Math.floor(risk.effective / 10) >= risk.terrorDC) return { kind: 'resisted', state, text: `${unit.name} 顶住恐怖，同一来源本战不会再次触发惊退` };
     cause = 'terror';
   }
   if (!cause) return { kind: 'none' };

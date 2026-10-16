@@ -11,7 +11,7 @@ import { armorTraitId, equipmentTraitIds, autoTraitLabel } from '../../engine/sr
 import { TRAIT_MODEL } from '../../engine/src/trait-model.js';
 import { SKILL_CATEGORIES, skillMechanismName } from '../../engine/src/data/skill-mechanisms.js';
 import { skillDefinitionName, skillDefinitionId } from '../../engine/src/skill-catalog.js';
-import { WEAPON_CLASSES, ABILITY_BLUEPRINTS, traitCatalog, traitDescription, type Trait, type Combatant, abilityUsabilityReason, effectiveProtection, equipmentReason } from '../../engine/src/index.js';
+import { WEAPON_CLASSES, ABILITY_BLUEPRINTS, traitCatalog, traitDescription, isGradedTrait, traitLadderSummary, type Trait, type Combatant, abilityUsabilityReason, effectiveProtection, equipmentReason } from '../../engine/src/index.js';
 import { bodyChoices, equipmentFields, captureEquipment, selectField, htmlText as esc } from './equipment-form.js';
 import type { UnitDraft } from './unit-builder.js';
 export function captureUnitDraft(prefix: string, d: UnitDraft, opts: { managed?: boolean } = {}): UnitDraft {
@@ -26,6 +26,13 @@ export function captureUnitDraft(prefix: string, d: UnitDraft, opts: { managed?:
     for (const slot of ['primary', 'sidearm', 'armor', 'shieldGear'] as const) next[slot] = captureEquipment(prefix + '-' + slot, d[slot]);
   }
   next.traits = [...d.traits.filter((id) => ['large', 'titan'].includes(id)), ...root.querySelectorAll<HTMLInputElement>(`[data-role="${prefix}-trait"]:checked`)].map((el) => typeof el === 'string' ? el : el.value);
+  next.traitLevels = {};
+  for (const id of next.traits) if (isGradedTrait(id)) {
+    const value = root.querySelector<HTMLInputElement>(`[data-role="${prefix}-trait-level"][data-trait="${id}"]`)?.value;
+    const level = Number(value ?? d.traitLevels?.[id] ?? 1);
+    next.traitLevels[id] = level;
+  }
+  if (!Object.keys(next.traitLevels).length && d.traitLevels === undefined) delete next.traitLevels;
   // 未改动的效果名沿用已存的定义：旧记录里现已不再提供的写法（例如攻击技能附带治疗）照常保留。
   next.skills = [...root.querySelectorAll<HTMLInputElement>(`[data-role="${prefix}-skill"]`)].map((el, i) => ({ id: d.skills[i] && el.value.trim() === skillDefinitionName(d.skills[i]!.id) ? d.skills[i]!.id : skillDefinitionId(el.value.trim()) ?? 'invalid:' + el.value, instanceId: d.skills[i]?.instanceId,
     name: root.querySelector<HTMLInputElement>(`[data-role="${prefix}-skill-name"][data-index="${i}"]`)?.value ?? '',
@@ -39,10 +46,15 @@ export function unitForm(prefix: string, d: UnitDraft, registry: Map<string, Tra
   const disabled = opts.managed ? 'disabled' : '';
   const armorTrait = d.traits.includes('natural-armor') ? undefined : armorTraitId(Number(d.armor.tier));
   const describe = (t: Trait) => traitDescription(t, { rulesVersion: 'v2', traitModel: TRAIT_MODEL });
+  const choice = (t: Trait) => {
+    const level = d.traitLevels?.[t.id] ?? 1, graded = isGradedTrait(t.id);
+    return `<label title="${esc(t.derived ?? (graded ? traitLadderSummary(t.id, level) : describe(t)))}"><input type="checkbox" data-role="${prefix}-trait" value="${t.id}" ${d.traits.includes(t.id) ? 'checked' : ''}>${t.name}${graded ? `<input type="number" min="1" max="10" value="${level}" data-role="${prefix}-trait-level" data-trait="${t.id}" aria-label="${t.name}等级">` : ''}</label>`;
+  };
   const listed = new Set(traitCatalog(registry).flatMap((g) => g.traits.map((t) => t.id)));
   const legacy = d.traits.filter((id) => !listed.has(id)).flatMap((id) => registry.get(id) ? [registry.get(id)!] : []);
   const armorTraitDefinition = armorTrait ? registry.get(armorTrait) : undefined;
   const controlRules = [
+    ['嘲讽','taunt','一次正常激活中敌对行动指向施加者，可接近、固守或自保'], ['致盲','blind','两次正常激活，自身感知/直接点名限1格或阵位，攻击−4、防御−2'], ['混乱','confuse','一次正常激活，按保存的随机目标普通攻击，加速不重选'], ['魅惑','charm','仅未随队独立个体，一次正常激活由AI按施术者一方行动，真实归属不变'],
     ['眩晕', 'stun', '跳过下一次行动'], ['定身', 'root', '限制移动'], ['沉默', 'silence', '限制魔法'], ['缴械', 'disarm', '限制手持武器'],
     ['惊惧', 'fear', '降低攻击与士气'], ['减速', 'slow', '降低先攻与移动，会战不能冲锋'], ['击退', 'push', '推离目标'], ['拉拽', 'pull', '拉近目标'],
   ];
@@ -73,7 +85,7 @@ export function unitForm(prefix: string, d: UnitDraft, registry: Map<string, Tra
       <p class="sub">最多准备${MAX_PREPARED_SKILLS}项，同种效果共享冷却。效果可填“增益治疗”或“物理单体近战+突进”。</p>
       <details data-detail-id="${prefix}-skill-help"><summary>效果写法示例</summary><p>类型：物理单体、物理范围、魔法单体、魔法范围、增益、减益。可添加治疗、加速、定身等具体效果。</p><p>突进（冲锋）、闪现在出手前接近目标；后撤在出手后拉开距离。单写突进、闪现、后撤时，只移动自己。</p></details>
     </details>
-    <details class="builder-section" data-detail-id="${prefix}-traits"><summary>特质 <span>${d.traits.length ? d.traits.length + '项' : '可选专长'}</span></summary><div class="builder-traits">${[...traitCatalog(registry), ...(legacy.length ? [{ group: '已有特质（可取消）', traits: legacy }] : [])].map((g) => `<div><h4>${g.group}</h4>${g.traits.map((t) => `<label title="${esc(t.derived ? t.derived : describe(t))}"><input type="checkbox" data-role="${prefix}-trait" value="${t.id}" ${d.traits.includes(t.id) ? 'checked' : ''}>${t.name}</label>`).join('')}</div>`).join('')}</div><p class="sub">体量与重甲由身体和护甲自动提供，训练程度用训练等级，快慢用速度档；骑射需要实际坐骑，盾墙需要实际盾牌。</p></details>
+    <details class="builder-section" data-detail-id="${prefix}-traits"><summary>特质 <span>${d.traits.length ? d.traits.length + '项' : '可选专长'}</span></summary><div class="builder-traits">${[...traitCatalog(registry), ...(legacy.length ? [{ group: '已有特质（可取消）', traits: legacy }] : [])].map((g) => `<div><h4>${g.group}</h4>${g.traits.map(choice).join('')}</div>`).join('')}</div><p class="sub">体量与重甲由身体和护甲自动提供，训练程度用训练等级，快慢用速度档；骑射需要实际坐骑，盾墙需要实际盾牌。</p></details>
     ${d.scale==='company'?`<label>单个${d.body==='vehicle'?'载具':'成员'}最大生命${input('memberHp','type="number" min="1" max="'+singleLifeLimit(d.damageModel)+'" placeholder="按同模板个体生命计算"')}</label><p class="sub">现员与成员生命分别保存。伤害先扣成员当前生命，归零后才减员；已有较低生命不会补满。</p>`:''}
     <p class="sub">个体与每名成员生命硬上限${singleLifeLimit(d.damageModel)}，超出自动截断；编队人数和总生命不受此单体上限限制。</p>
     <details class="builder-section" data-detail-id="${prefix}-notes"><summary>备注与自定义生命</summary><label>备注${input('note')}</label>${!opts.editing && d.scale === 'hero' ? `<div class="builder-basics"><label>生命上限${input('hpMax', 'type="number" min="1" max="'+singleLifeLimit(d.damageModel)+'" placeholder="系统计算"')}</label><label>当前生命${input('hp', 'type="number" min="0" max="'+singleLifeLimit(d.damageModel)+'" placeholder="首次默认满生命"')}</label></div><p class="sub">高生命个体也会因持续受创降低士气，具备不溃能力时继续作战。</p>` : ''}</details>

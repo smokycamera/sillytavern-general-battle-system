@@ -34,6 +34,7 @@ it('会战查看不重算已展示建议或写档，保存草案后复用预览�
   select('u0'); select('u1'); expect(recommendation).not.toHaveBeenCalled();
   document.querySelector<HTMLButtonElement>('[data-action="formation-issue"]')!.click(); await idle();
   expect(MassBattle.fromSnapshot(f.service.snapshot().battle!.snap).orders.get('u1')?.type).toBe('hold');
+  expect(write).not.toHaveBeenCalled();
   recommendation.mockClear(); select('u0'); expect(recommendation).toHaveBeenCalledWith('u0');
   f.service.dispose();
 }, 30000);

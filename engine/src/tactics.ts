@@ -1,10 +1,12 @@
+import { phase2Traits } from './trait-level-model.js';
+import { phase2Value, agileCost } from './phase2-traits.js';
 import { isEnduranceModel, resourceRound, fatigueLimit, fatiguePenalty } from './resources.js';
 import { bodyMovement, humanEncumbered, armorBurdenTier } from './body.js';
 import type { Combatant, ConditionDef, Trait } from './types.js';
 import type { Modifier, ResolveContext } from './bonus.js';
 import { activeTraitIds, activeConditionIds, traitPrerequisiteReason } from './trait-sources.js';
 import { isAirborne } from './aerial.js';
-import { traitLevel, plainsMobility, nightMovePenalty, freeMarch } from './trait-levels.js';
+import { traitLevel, traitValue, plainsMobility, nightMovePenalty, freeMarch, roughGroundCost } from './trait-levels.js';
 import { formationNode } from './mass/formation.js';
 
 export interface TacticalPose {
@@ -23,7 +25,7 @@ export function movementPoints(unit: Combatant, tags: string[] = []): number {
   const light = ['human', 'large'].includes(unit.body ?? 'human') && (unit.armor?.tier ?? 0) <= 2;
   // 平原专精 L2 起机动+1、L9 起+2（旧规则一律 L5 即+1），与坐骑、快速等其他来源取较大值。
   const plains = tags.includes('plains') ? plainsMobility(traitLevel(unit, 'plains-runner', ids)) : 0;
-  const mobility = Math.max(unit.mount === true || ids.includes('fast') || ids.includes('skirmisher') && light || ids.includes('mechanized') ? 1 : 0, plains);
+  const mobility = Math.max(unit.mount === true || ids.includes('fast') || ids.includes('mechanized') ? 1 : 0, ids.includes('skirmisher') && light ? phase2Value(unit, 'skirmisher', 'skirmishMobility', 1) : 0, ids.includes('agile') && light ? phase2Value(unit, 'agile', 'agileMobility', 0) : 0, plains);
   const armor = !vehicle && armorBurdenTier(unit) >= 3 ? 1 : 0;
   const night = tags.includes('night') ? nightMovePenalty(traitLevel(unit, 'night-fighter', ids)) : 0;
   const normal = Math.max(1, Math.min(5, bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - armor - night - fatiguePenalty(unit) - Number(humanEncumbered(unit))));
@@ -32,9 +34,16 @@ export function movementPoints(unit: Combatant, tags: string[] = []): number {
 export function formationMarchSteps(unit: Combatant, tags: string[] = []): number {
   if (isAirborne(unit)) return Math.max(1, Math.min(2, movementPoints(unit, tags) - 1));
   const traits = activeTraitIds(unit);
-  const agile = traits.includes('agile') && !traitPrerequisiteReason(unit, 'agile');
+  const agile = traits.includes('agile') && !traitPrerequisiteReason(unit, 'agile') && (!phase2Traits(unit) || traitLevel(unit, 'agile', traits) >= 5);
   if (!agile && (tags.includes('forest') && !freeMarch(traitLevel(unit, 'forest-lore', traits)) || tags.includes('mountain') && !freeMarch(traitLevel(unit, 'mountain-born', traits)))) return 1;
   return movementPoints(unit, tags) >= (unit.body === 'vehicle' ? 3 : 4) ? 2 : 1;
+}
+/** 会战困难地形的额外行军负担；同域减免各自求成本后取低，不叠乘。 */
+export function formationMarchCost(unit: Combatant, tags: string[]): number {
+  if (!phase2Traits(unit)) return 1;
+  const rough = tags.some(tag => ['forest','mountain'].includes(tag)); if (!rough) return 1;
+  const specialized = Math.max(...tags.filter(tag => ['forest','mountain'].includes(tag)).map(tag => roughGroundCost(traitLevel(unit, tag === 'forest' ? 'forest-lore' : 'mountain-born'))));
+  return Math.min(specialized, agileCost(unit, 2));
 }
 /** 疲劳只在激活/阶段边界结算，避免途中追溯减少已经使用的移动额度。 */
 export function settleFatigue(unit: Combatant, exertion: number, fullRest = false): void {
@@ -42,7 +51,7 @@ export function settleFatigue(unit: Combatant, exertion: number, fullRest = fals
   unit.fatigue = fatigueAfter(unit, exertion, fullRest);
 }
 export function fatigueAfter(unit: Combatant, exertion: number, fullRest = false): number {
-  const resistance = activeTraitIds(unit).includes('fatigue-trained') ? 0.5 : 1;
+  const resistance = activeTraitIds(unit).includes('fatigue-trained') ? traitValue(unit, 'fatigue-trained', 'fatigueMultiplier', .5) : 1;
   if (isEnduranceModel(unit.resourceModel)) {
     const gain = exertion > 0 ? exertion * 0.5 * resistance / (1 + 0.1 * (unit.level - 1))
       : -(fullRest ? 2 + 0.1 * (unit.level - 1) : 1);
@@ -103,7 +112,7 @@ export function defensivePostureMods(unit: Combatant, ctx: ResolveContext, defs:
   const mods: Modifier[] = [{ source: 'stance', sourceId: 'brace:def', stackGroup: 'posture:def', name: '正面固守', kind: 'def', type: 'flat', value: 2 }];
   for (const id of activeTraitIds(unit)) {
     if (traitPrerequisiteReason(unit, id)) continue;
-    const mult = id === 'shield-wall' && ctx.ranged ? 0.6 : id === 'pike-wall' && ctx.charge && !ctx.ranged ? 0.5 : undefined;
+    const mult = id === 'shield-wall' && ctx.ranged ? 1 - traitValue(unit, id, 'shieldReduction', .4) : id === 'pike-wall' && ctx.charge && !ctx.ranged ? 1 - phase2Value(unit, id, 'formationReduction', .5) : undefined;
     if (mult !== undefined) mods.push({ source: 'stance', sourceId: id + ':posture', stackGroup: 'posture:ward', name: registry?.get(id)?.name ?? (id === 'pike-wall' ? '拒马' : '盾墙'), kind: 'ward', type: 'mult', value: mult });
   }
   return mods;
@@ -111,6 +120,7 @@ export function defensivePostureMods(unit: Combatant, ctx: ResolveContext, defs:
 /** 疏散由编队与装备条件决定，固守会收拢阵形；不增加另一种编队类型。 */
 export function looseFormation(unit: Combatant): boolean {
   return unit.rulesVersion === 'v2' && activeTraitIds(unit).includes('loose-formation') && !traitPrerequisiteReason(unit, 'loose-formation')
-    && unit.status === 'ready' && unit.hp > 1 && !unit.tacticalPose && !unit.suppression
+    && (!phase2Traits(unit) || unit.looseFormationChoice !== 'closed')
+    && unit.status === 'ready' && (unit.hp > 1 || unit.scale === 'hero') && !unit.tacticalPose && !unit.suppression
     && !activeConditionIds(unit).includes('stunned');
 }

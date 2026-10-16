@@ -1,3 +1,4 @@
+import { attackHostile, combatHostile } from './battle-control.js';
 import type { Combatant, ConditionDef, Weapon } from './types.js';
 import { isAirborne } from './aerial.js';
 import { isRangedWeapon, ignoresFriendlyScreen } from './loadout.js';
@@ -29,12 +30,12 @@ export function shieldGuardActive(unit: Combatant, defs: Map<string, ConditionDe
 /** 仅使用调用方提供的可见单位。屏障保护同格及身后两格内队友，不遮住盾卫自身。 */
 export function shieldScreen(attacker: Combatant, target: Combatant, weapon: Weapon | undefined,
   units: Combatant[], space: GuardSpace, defs: Map<string, ConditionDef>): Combatant | undefined {
-  if (attacker.side === target.side || !isRangedWeapon(weapon) || weapon?.indirect || isAirborne(attacker) || isAirborne(target)) return undefined;
+  if (!attackHostile(attacker, target, units) || !isRangedWeapon(weapon) || weapon?.indirect || isAirborne(attacker) || isAirborne(target)) return undefined;
   const from = coordinates(attacker, space), to = coordinates(target, space);
   const dx = to.x - from.x, dy = to.y - from.y, lengthSquared = dx * dx + dy * dy;
   if (!lengthSquared) return undefined;
   return units.filter(guard => {
-    if (guard.id === target.id || guard.side !== target.side || rayClearsUnit(attacker,target,guard,space) || !shieldGuardActive(guard, defs)
+    if (guard.id === target.id || combatHostile(guard, target, units) || rayClearsUnit(attacker,target,guard,space) || !shieldGuardActive(guard, defs)
       || guard.tacticalPose!.mode !== space.mode || space.mode === 'small' && guard.tacticalPose!.width !== space.width) return false;
     const at = coordinates(guard, space), facing = guard.tacticalPose!.facing;
     const backX = to.x - at.x, backY = to.y - at.y;
@@ -67,8 +68,8 @@ export function rangedScreen(attacker: Combatant, target: Combatant, weapon: Wea
   if (!lengthSquared) return undefined;
   const bypassFriends = ignoresFriendlyScreen(weapon);
   const blockers = units.filter(unit => {
-    if (bypassFriends && unit.side === attacker.side || rayClearsUnit(attacker,target,unit,space)
-      || canShootOverAlly(attacker, unit)&&(!space.battlefield||space.battlefield.spatialRulesVersion!==2||unitHeight(space.battlefield,attacker)>=unitHeight(space.battlefield,unit))) return false;
+    if (bypassFriends && !combatHostile(unit, attacker, units) || rayClearsUnit(attacker,target,unit,space)
+      || canShootOverAlly(attacker, unit, units)&&(!space.battlefield||space.battlefield.spatialRulesVersion!==2||unitHeight(space.battlefield,attacker)>=unitHeight(space.battlefield,unit))) return false;
     if (unit.id === attacker.id || unit.id === target.id || isAirborne(unit) || unit.hp <= 0 || !['ready', 'routing'].includes(unit.status)) return false;
     const at = coordinates(unit, space), x = at.x - from.x, y = at.y - from.y;
     const along = x * dx + y * dy, cross = x * dy - y * dx;

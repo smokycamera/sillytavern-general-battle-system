@@ -1,3 +1,6 @@
+import { phase2Traits } from './trait-level-model.js';
+import { effectiveTraitLevel } from './trait-sources.js';
+import { phase2Value } from './phase2-traits.js';
 import { isWoundModel } from './balance.js';
 import { instanceMultiplier } from './instance-variance.js';
 import { bonusMultiplier, bonusSteps, trainingEdge, trainingDamage } from './enhancements.js';
@@ -98,6 +101,7 @@ export interface AttackResolution {
 }
 
 export interface AttackOpts {
+  moved?: boolean; chargeStraight?: boolean; opportunity?: boolean;
   /** 行动本身的伤害预算，不改变参战人数、段数或抽样次数。 */
   actionDamageScale?: number;
   /** 仅限成员伤损抽样预览：守方可变状态相同的攻击段共用确定部分，并省略结算文字。 */
@@ -267,7 +271,7 @@ function memberPlan(opts:Omit<AttackOpts,'rng'>,direct:number,targets:number,res
   const weapon=resolved?resolved.weapon:combatWeapon(opts.weaponOverride??opts.attacker.weapon,opts.attacker,opts.defender,opts.rules.weaponOverflow,opts.rules.damageModel,opts.rules.overmatch,opts.rules.overmatchCurve);
   const rawExtra=hasMemberHealth(opts.defender)&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)?Math.min(opts.defender.hp,weapon?.splashTargets??0):0;
   // V13 散兵：疏散的编队未被近敌牵制时，榴弹溅射波及的人数减半。
-  const extra=rawExtra&&traitsV13(opts.defender)&&!opts.defenderEngaged&&looseFormation(opts.defender)?Math.floor(rawExtra/2):rawExtra;
+  const extra=rawExtra&&traitsV13(opts.defender)&&!opts.defenderEngaged&&looseFormation(opts.defender)?Math.floor(rawExtra * (1 - phase2Value(opts.defender, 'loose-formation', 'formationReduction', .5))):rawExtra;
   const members=hasMemberHealth(opts.defender),directTargets=members?Math.min(opts.defender.hp,targets):targets>0?1:0,splashTargets=Math.min(opts.defender.hp,targets*extra),max=members?opts.defender.formation!.memberHp:opts.defender.base.hpMax;
   const overflow=members&&attackOverflow(opts,penetration,resolved);
   const cappedDirect=overflow&&directTargets>0?direct:Math.min(direct,max*directTargets);
@@ -526,8 +530,12 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
 
   // ---- 收集双方修正 ----
   // 攻击方视角：条件修正看 defender 的标签
-  const ctxAtk = { skillDelivery: opts.abilityDamage?.delivery, attacker, defender, charge: opts.charge, ranged, weapon, fieldTags: opts.fieldTags, localTerrain: opts.localTerrain,heightRules:opts.heightRules,heightAdvantage:0, terrain: opts.attackerTerrain, opponentTerrain: opts.defenderTerrain, distance: opts.distance,
+  const moved = opts.moved ?? attacker.movedDuringActivation ?? extraMods.some(m => m.category === 'movement');
+  const ctxAtk = { moved, maxRange: weaponRange(weapon), chargeStraight: opts.chargeStraight, skillDelivery: opts.abilityDamage?.delivery, attacker, defender, charge: opts.charge, ranged, weapon, fieldTags: opts.fieldTags, localTerrain: opts.localTerrain,heightRules:opts.heightRules,heightAdvantage:0, terrain: opts.attackerTerrain, opponentTerrain: opts.defenderTerrain, distance: opts.distance,
     attackerHigher: opts.heightRules ? (opts.attackerHeight ?? 0) > (opts.defenderHeight ?? 0) : opts.attackerTerrain === 'hill' && opts.defenderTerrain !== 'hill' };
+  if (phase2Traits(attacker) && effectiveTraitLevel(attacker, 'sharpshooter') >= 10 && ranged && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) {
+    let mitigation = 1; for (let i = 0; i < extraMods.length && mitigation > 0; i++) if (extraMods[i]!.category === 'movement' && extraMods[i]!.kind === 'atk' && extraMods[i]!.value < 0) { const n = Math.min(mitigation, -extraMods[i]!.value); extraMods[i] = { ...extraMods[i]!, value: extraMods[i]!.value + n }; mitigation -= n; }
+  }
   const atkMods = collectMods(attacker, ctxAtk, opts.conditionDefs, extraMods, opts.traitRegistry);
   const atkStack = resolveStack(atkMods, 'atk', ctxAtk, { sameNameKeepsHighest: rules.sameNameKeepsHighest, maxFlat: rules.maxFlat });
 
@@ -546,6 +554,11 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
     }
   }
   const defMods = collectMods(defender, ctxDef, opts.conditionDefs, defenderMods, opts.traitRegistry);
+  if (phase2Traits(attacker) && ranged && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) {
+    const level = effectiveTraitLevel(attacker, 'sharpshooter'); let remaining = level >= 8 ? 2 : level >= 6 ? 1 : 0;
+    for (let i = 0; i < defMods.length && remaining > 0; i++) if (defMods[i]!.category === 'cover' && defMods[i]!.kind === 'def' && defMods[i]!.value > 0) { const n = Math.min(remaining, defMods[i]!.value); defMods[i] = { ...defMods[i]!, value: defMods[i]!.value - n }; remaining -= n; }
+  }
+  if (phase2Traits(defender) && opts.opportunity && effectiveTraitLevel(defender, 'agile')) defMods.push({ source: 'intrinsic', name: '身法减轻借机伤害', kind: 'ward', type: 'mult', value: 1 - phase2Value(defender, 'agile', 'agileReactionReduction', 1) });
   const defStack = resolveStack(defMods, 'def', ctxDef, { sameNameKeepsHighest: rules.sameNameKeepsHighest, maxFlat: rules.maxFlat });
 
   const modern = rules.combatModel === MEMBER_HEALTH_MODEL;

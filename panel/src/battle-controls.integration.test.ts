@@ -115,13 +115,13 @@ it('战斗界面控件：「除主控」自动停在主控，全自动包含主�
   await load(restored);
   expect(snapshot().active?.id).toBe('lead');
 
-  // 连续行动中取消「除主控」：保存还没结束也立即生效，并写入存档。
+  // 连续行动中取消「除主控」：内存更新尚未结束也立即生效，全程不写档。
   const chain = battle(); chain.turnIndex = 1; chain.allyAiControl.set('lead', false);
   await load(chain, true);
   let release!: () => void;
   const blocked = new Promise<void>(resolve => { release = resolve; });
-  const put = f.journal.put.bind(f.journal);
-  const write = vi.spyOn(f.journal, 'put').mockImplementationOnce(async (...args) => { await blocked; await put(...args); });
+  const publish = f.service.persistPanel.bind(f.service), diskWrite = vi.spyOn(f.journal, 'put');
+  const write = vi.spyOn(f.service, 'persistPanel').mockImplementationOnce(async (...args) => { await blocked; return publish(...args); });
   document.querySelector<HTMLButtonElement>('[data-action="grid-endturn"]')!.click();
   await vi.waitFor(() => expect(write).toHaveBeenCalled());
   expect(document.body.getAttribute('aria-busy')).toBe('true');
@@ -130,7 +130,7 @@ it('战斗界面控件：「除主控」自动停在主控，全自动包含主�
   release(); await idle();
   await vi.waitFor(() => expect(saved().autoTurn).toBe(false));
   expect(snapshot().active?.id).toBe('a2');
-  write.mockRestore();
+  expect(diskWrite).not.toHaveBeenCalled(); write.mockRestore(); diskWrite.mockRestore();
 
   // 非致命在战斗工具栏里切换：改本场之后的规则，也记为下一场的默认。
   await load(battle());

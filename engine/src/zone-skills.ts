@@ -25,7 +25,7 @@ export function validateZoneStrength(zone: { amount?: unknown; penetration?: unk
       || e.potency!==undefined&&!integer(e.potency,1,3) || e.magnitude!==undefined&&(!Number.isFinite(e.magnitude)||e.magnitude<.25||e.magnitude>1.5))) throw Error('持续区域的附加状态损坏');
     if(e.op==='trait'&&!traitRegistry().get(e.traitId)?.v2SourceReady)throw Error('持续区域的特质损坏');
     if(e.op==='barrier'&&!integer(e.amount,1,1e6))throw Error('持续区域的屏障损坏');
-    if(e.op==='heal') { if(e.amount!==undefined) { if(!integer(e.amount,1,1e6)||e.dice!==undefined)throw Error('持续区域的治疗量损坏'); } else parseDice(e.dice); }
+    if(e.op==='heal') { if(e.amount!==undefined) { if(!Number.isFinite(e.amount)||e.amount<1||e.amount>1e6||e.dice!==undefined)throw Error('持续区域的治疗量损坏'); } else parseDice(e.dice); }
     if(e.op==='resource'&&(!e.resource||typeof e.resource!=='string'||!Number.isFinite(e.amount)||e.maximum!==undefined&&e.maximum!=='training'))throw Error('持续区域的资源效果损坏');
     if(e.op==='morale'&&!Number.isFinite(e.amount))throw Error('持续区域的士气效果损坏');
     if(e.op==='dispel'&&(!['positive','negative'].includes(e.polarity)||![1,2].includes(e.count)))throw Error('持续区域的驱散效果损坏');
@@ -35,13 +35,13 @@ export function validateZoneStrength(zone: { amount?: unknown; penetration?: unk
 
 /** 区域不经过普通伤害技能公式；从原配方升级一次，保留身份、冷却与已布置区域。 */
 export function upgradeZoneSkill(ability: Ability, model?: Combatant['damageModel'], formula?: SkillModel): boolean {
-  const version = model === 'wounds-v2' ? formula ? 'skill-zone-v4' : 'skill-zone-v3' : 'skill-zone-v1';
+  const version = model === 'wounds-v2' ? formula === 'skills-v2' ? 'skill-zone-v5' : formula ? 'skill-zone-v4' : 'skill-zone-v3' : 'skill-zone-v1';
   let zones = ability.effects.filter((e): e is ZoneEffect => e.op === 'zone');
   if (!zones.length) return false;
   if (!ability.recipe || zones.some(effect => !ability.recipe!.modifiers.includes('zone-' + effect.kind))
     || ability.itemSourceId || ability.fixedPower || ability.effectVersion === version) return true;
   // 旧编译器把所有区域都标成 customized；只接管仍与旧模板一致的实例。
-  if (ability.customized && !(ability.effectVersion === 'skill-v2.4' && zones.every(effect => effect.power === ability.recipe!.power
+  if (ability.customized && !(['skill-v2.4','skill-v2.5'].includes(ability.effectVersion ?? '') && zones.every(effect => effect.power === ability.recipe!.power
     && effect.dur === 3 && effect.radius === (effect.kind === 'trap' ? 0 : 1) && effect.amount === undefined && effect.penetration === undefined)
     && ability.range?.metric === 'grid' && ability.range.min === 0 && ability.range.max === 2 + Math.floor(ability.recipe.power / 3))) return true;
   if (model === 'wounds-v2' && ability.definitionId) {
@@ -68,6 +68,7 @@ export function upgradeZoneSkill(ability: Ability, model?: Combatant['damageMode
       : bonusSteps(bonuses, 'duration', 5);
     effect.dur = Math.max(1, Math.min(99, effect.dur + duration));
     effect.effects = effect.effects?.map(e => {
+      if (e.op === 'condition' && ['taunted','blinded','confused','charmed'].includes(e.conditionId)) return { ...e, magnitude: 1 };
       if (e.op === 'condition') return { ...e, dur: Math.max(1,Math.min(99,e.dur + (['stunned','restrained','disarmed','silenced'].includes(e.conditionId) ? Math.min(0,bonusSteps(bonuses,'duration',5)) : bonusSteps(bonuses,'duration',5)))),
         magnitude: Math.max(.25,Math.min(1.5,(e.magnitude ?? 1)*bonusMultiplier(bonuses,'power'))),
         ...(e.saveDC === undefined ? {} : {saveDC:Math.max(1,Math.min(30,e.saveDC+bonusSteps(bonuses,'accuracy')))}) };

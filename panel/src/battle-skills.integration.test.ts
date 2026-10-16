@@ -68,10 +68,10 @@ it('saves battle skill changes from battle and loadout, preserves live ledgers a
     expect(f.service.snapshot().battle).toEqual(expected);
     expect(f.service.snapshot().storage).toEqual(before.storage); expect(f.service.snapshot().inventory ?? []).toEqual(before.inventory ?? []);
 
-    // Reload reads the live prepared list rather than the unchanged pre-battle archive.
+    // Reload resumes the opening checkpoint, discarding battle-only skill changes.
     await f.service.load(); await tab('inventory'); await click('loadout-skills');
-    expect(skill(0).checked).toBe(false); expect(skill(5).checked).toBe(true);
-    skill(5).click(); skill(0).click(); await click('loadout-skills-save');
+    expect(skill(0).checked).toBe(true); expect(skill(5).checked).toBe(false);
+    document.querySelector<HTMLButtonElement>('.loadout-skill-dialog [data-action="loadout-skills-close"]')!.click(); await idle();
     expect(new Set(savedUnit().preparedAbilityIds)).toEqual(new Set(ids.slice(0, 5))); expect(savedUnit().abilityState).toEqual(actor.abilityState);
 
     // A failed durable write must not keep an in-memory swap.

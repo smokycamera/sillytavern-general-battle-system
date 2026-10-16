@@ -1,3 +1,4 @@
+import { combatHostile } from '../battle-control.js';
 import { ignoresFriendlyScreen } from '../loadout.js';
 import { canShootOverAlly } from '../body.js';
 import type { Combatant } from '../types.js';
@@ -58,7 +59,7 @@ export function formationCanOccupy(units: Combatant[], actor: Combatant, node: F
 export function formationScreened(actor: Combatant, target: Combatant, units: Combatant[]): boolean {
   if (isAirborne(actor) || isAirborne(target)) return false;
   const from = formationNode(actor), to = formationNode(target);
-  return to.rank !== 'front' && units.some((u) => u.side === target.side && u.status === 'ready' && !isAirborne(u) && formationNode(u).wing === to.wing
+  return to.rank !== 'front' && units.some((u) => !combatHostile(u, target, units) && u.status === 'ready' && !isAirborne(u) && formationNode(u).wing === to.wing
     && formationNode(u).rank === 'front' && formationNode(u).y > Math.min(from.y, to.y) && formationNode(u).y < Math.max(from.y, to.y));
 }
 export function validateVanguardOrigin(value: unknown, side?: Combatant['side']): void {
@@ -98,9 +99,9 @@ export function formationShotReason(actor: Combatant, target: Combatant, units: 
   const distance = rangedTargetDistance(actor, target, formationDistance(actor, target), 'mass');
   if (distance < (weapon.minRange ?? 0) || distance > (weapon.range ?? 3)) return `阵位距离${distance}不在武器射程内`;
   if (isAirborne(actor) || isAirborne(target)) return undefined;
-  if (weapon.pointBlankPolicy === 'forbid' && units.some((u) => u.side !== actor.side && u.status === 'ready' && sameLayer(actor, u) && formationDistance(actor, u) <= 1)) return '被相邻敌人牵制，该武器不能抵近射击';
-  const frontline = units.filter((u) => u.id !== actor.id && u.status === 'ready' && u.side === actor.side && formationNode(u).wing === from.wing && formationNode(u).rank === 'front');
+  if (weapon.pointBlankPolicy === 'forbid' && units.some((u) => combatHostile(u, actor, units) && u.status === 'ready' && sameLayer(actor, u) && formationDistance(actor, u) <= 1)) return '被相邻敌人牵制，该武器不能抵近射击';
+  const frontline = units.filter((u) => u.id !== actor.id && u.status === 'ready' && !combatHostile(u, actor, units) && formationNode(u).wing === from.wing && formationNode(u).rank === 'front');
   if (from.rank === 'reserve' && from.wing === to.wing && frontline.some(u => !canShootOverAlly(actor, u)) && !weapon.indirect && !ignoresFriendlyScreen(weapon)) return '前线遮挡预备队直射';
-  if (weapon.indirect && frontline.length && !units.some((u) => u.side === actor.side && u.status === 'ready' && formationNode(u).rank === 'front' && Math.abs(formationNode(u).x - to.x) <= 1)) return '间接火力缺少前线观察者';
+  if (weapon.indirect && frontline.length && !units.some((u) => !combatHostile(u, actor, units) && u.status === 'ready' && formationNode(u).rank === 'front' && Math.abs(formationNode(u).x - to.x) <= 1)) return '间接火力缺少前线观察者';
   return undefined;
 }

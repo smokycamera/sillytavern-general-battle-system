@@ -1,3 +1,8 @@
+import { formationMarchCost } from '../tactics.js';
+import { canSpot } from '../observation.js';
+import { ACTIVATION_CONTROLS, validateBattleControlState, controlReactionAllowed, controlPolicy, beginControlActivation, finishControlActivation, reconcileBattleControls, breakCharmOnDamage } from '../battle-control.js';
+import { attackHostile, combatHostile, combatSide, controlActionReason, controlCondition } from '../battle-control.js';
+import { healingEffectGroups } from '../healing.js';
 import { spendAbility, abilityUsed } from '../ability-state.js';
 import { itemUseLog, captureItemEffects, type ItemUseLog } from '../item-use-log.js';
 import { assertBattleCapacity } from '../battle-limits.js';
@@ -7,6 +12,7 @@ import { hasteMagnitude, hasteAttackScale } from '../haste.js';
 import { commanderScores, normalizeCommanderProfiles, type CommanderProfiles } from '../commander-profile.js';
 import { validateGear, quickItemAction, itemUseAbility, itemEmergency, ITEM_EMERGENCY_DISCOUNT } from '../items.js';
 import { prepareItemModel, validateItemModel, itemsV15, chargeCapable, mobileUnit } from '../item-model.js';
+import { prepareTraitLevelModel, validateTraitLevelModel } from '../trait-level-model.js';
 import { areaTargets, zoneTarget, placeZone, settleZones, validateAreas, ZONE_NAMES } from '../area-effects.js';
 import { tbWeaponShortName } from '../weapon-name.js';
 import { casualtyXp, initialXpStrength } from '../casualty-xp.js';
@@ -33,7 +39,7 @@ import { applyWeaponConditions, poisonDamage, poisonFactor, conditionDamage } fr
 import { isRangedWeapon, meleeWeapon, weaponReloadKey, weaponReloadTurns, validateMount, mountedShooting, mobileRangedWeapon, vehicleShooting } from '../loadout.js';
 import { meleeReach } from '../melee.js';
 import { MAX_RALLY_ATTEMPTS, moraleProfile, moraleAttackMods, decideMorale, changeMorale, validateMoraleState, moraleRisk, moraleChangePreview, reconcileDamageMorale, recoverEntryMorale } from '../morale.js';
-import { applyHealthLoss, applyCombatDamage, applyRecovery, recoveryCapacity, regenerationAmount, validateWounded, lifestealRecovery } from '../recovery.js';
+import { applyHealthLoss, applyCombatDamage, applyRecovery, recoveryCapacity, regenerationAmount, settleRegeneration, validateWounded, lifestealRecovery } from '../recovery.js';
 import {hasMemberHealth,memberHealth,MEMBER_HEALTH_MODEL} from '../member-health.js';
 import { diceAvg } from '../data/weapons.js';
 /**
@@ -55,7 +61,7 @@ import { SeededRng, liveRng, randomSeed } from '../rng.js';
 import { rollDice } from '../dice.js';
 import { isAirborne, sameLayer, hasFlightAbility, flightCapabilityReason, flightMaintenanceReason, aerialTargetReason, rangedTargetDistance, fallDamage, validateFlightState } from '../aerial.js';
 import { sharedParticipants, engagementWidth } from '../exposure.js';
-import { resolveAttack, isRangedCapable, recordAppliedDamage, applyResolutionDamage } from '../damage.js';
+import { resolveAttack, isRangedCapable, recordAppliedDamage, applyResolutionDamage, beginPreviewScope, endPreviewScope, previewScopeEpoch } from '../damage.js';
 import { grantBarrier, decayBarrier, validateBarrier } from '../barrier.js';
 import { ConditionRegistry } from '../conditions.js';
 import { MASS_TW, counterMod, rulesById } from '../rules.js';
@@ -140,6 +146,8 @@ export class MassBattle {
   defeatedIds = new Set<string>();
   allyTactic: TacticalPreference = 'balanced';
   commanderProfiles: CommanderProfiles = {};
+  /** Optional diagnostic observer. Detached values only; never persisted or used by decisions. */
+  aiTrace?: (event: Record<string, unknown>) => void;
   private flightCauses = new Map<string, string>();
   previousOrders = new Map<string, Order>();
   resolvedRounds = new Set<number>();
@@ -220,8 +228,8 @@ export class MassBattle {
     this.rules = opts.rules ?? MASS_TW;
     for (const unit of this.combatants) { validateSkillModel(unit.skillModel); prepareSkillModel(unit, this.rules); }
     if(this.rules.combatModel)for(const unit of this.combatants){prepareCombatModel(unit,this.rules);upgradeCombatSkills(unit);}
-    for (const unit of this.combatants) { prepareResourceModel(unit, this.rules); prepareArmsModel(unit, this.rules); prepareTraitModel(unit, this.rules); validateTraitModel(unit.traitModel); validateEntrenchment(unit.entrenchedAt); validateItemModel(unit.itemModel); prepareItemModel(unit, this.rules); }
-    for (const u of this.combatants) { validateFlightState(u.airborne); validateFormationPosition(u.formationPosition); validateWounded(u); validateBarrier(u.barrier); validateAreas(u); validateGear(u); validateMount(u); validateMoraleState(u.moraleState); }
+    for (const unit of this.combatants) { prepareResourceModel(unit, this.rules); prepareArmsModel(unit, this.rules); prepareTraitModel(unit, this.rules); validateTraitModel(unit.traitModel); validateEntrenchment(unit.entrenchedAt); validateItemModel(unit.itemModel); prepareItemModel(unit, this.rules); validateTraitLevelModel(unit.traitLevelModel); prepareTraitLevelModel(unit, this.rules); }
+    for (const u of this.combatants) { validateFlightState(u.airborne); validateFormationPosition(u.formationPosition); validateBattleControlState(u); validateWounded(u); validateBarrier(u.barrier); validateAreas(u); validateGear(u); validateMount(u); validateMoraleState(u.moraleState); }
     for (const unit of this.combatants) reconcileDamageMorale(unit);
     if (this.rules.resolutionVersion !== 'v2' && this.combatants.some((u) => u.airborne || u.formationPosition !== undefined
       && (this.formationSlots === undefined || formationNode(u).side !== u.side))) throw new Error('此战场不支持空域或跨阵营位置；仅支持己方地面阵位');
@@ -245,9 +253,9 @@ export class MassBattle {
     const units = world.map((u) => u.id === opts.attacker.id ? opts.attacker : u.id === opts.defender.id ? opts.defender : u), context = this.observationContext(units);
     const situational = situationalTraitMods(context, opts.attacker, opts.defender, { ambush: (opts as { ambush?: boolean }).ambush ?? concealedUnit(context, opts.attacker),
       magic: opts.abilityDamage?.delivery === 'magic', ranged: !!opts.ranged, weapon: opts.weaponOverride ?? opts.attacker.weapon,
-      flanked: () => units.some((u) => u.side === opts.attacker.side && u.id !== opts.attacker.id && u.status === 'ready' && !this.isAttached(u.id) && sameLayer(u, opts.defender) && formationDistance(u, opts.defender) <= 1) });
+      flanked: () => units.some((u) => !combatHostile(u, opts.attacker, units) && u.id !== opts.attacker.id && u.status === 'ready' && !this.isAttached(u.id) && sameLayer(u, opts.defender) && formationDistance(u, opts.defender) <= 1) });
     return { ...opts, extraMods: [...(opts.extraMods ?? []), ...moraleAttackMods(context, opts.attacker, this.traitRegistry, this.observationContext(world)), ...situational], fieldTags: this.fieldTags, attackerTerrain: isAirborne(opts.attacker) ? 'open' : terrain, defenderTerrain: isAirborne(opts.defender) ? 'open' : terrain, distance: formationDistance(opts.attacker, opts.defender),
-      defenderEngaged: sameLayer(opts.attacker, opts.defender) && formationDistance(opts.attacker, opts.defender) <= 1 || units.some((u) => u.side !== opts.defender.side && u.status === 'ready' && !this.isAttached(u.id) && sameLayer(u, opts.defender) && formationDistance(u, opts.defender) <= 1) };
+      defenderEngaged: sameLayer(opts.attacker, opts.defender) && formationDistance(opts.attacker, opts.defender) <= 1 || units.some((u) => combatHostile(u, opts.defender, units) && u.status === 'ready' && !this.isAttached(u.id) && sameLayer(u, opts.defender) && formationDistance(u, opts.defender) <= 1) };
   }
   private resolveAttackWithEnvironment(opts: AttackOpts) {
     // 偷袭看出手前是否仍在潜伏，出手即暴露。
@@ -341,7 +349,7 @@ export class MassBattle {
     if (!isAirborne(target) || this.isAttached(target.id)) return undefined;
     const affected = structuredClone(target), controls = ability.effects.filter((e): e is Extract<Ability['effects'][number], { op: 'condition' }> =>
       e.op === 'condition' && !!(this.conditions.get(e.conditionId)?.skipTurn || this.conditions.get(e.conditionId)?.preventMove) && conditionChance(target, e) > 0);
-    for (const effect of ability.effects) if (effect.op === 'dispel') applyDispel(affected, dispelCandidates(affected, effect));
+    for (const effect of healingEffectGroups(ability)) if (effect.op === 'dispel') applyDispel(affected, dispelCandidates(affected, effect));
     const dispelled = !!flightMaintenanceReason(affected, this.conditions);
     affected.conditions.push(...controls.map((e) => ({ id: e.conditionId, dur: e.dur })));
     if (!flightMaintenanceReason(affected, this.conditions)) return undefined;
@@ -422,14 +430,14 @@ export class MassBattle {
     } while (cancelled);
   }
   private takeoffThreats(actor: Combatant, units = this.combatants): Combatant[] {
-    return units.filter((foe) => foe.side !== actor.side && foe.status === 'ready' && !this.isAttached(foe.id) && !isAirborne(foe) && formationDistance(foe, actor) <= 1
+    return units.filter((foe) => combatHostile(foe, actor, this.combatants) && foe.status === 'ready' && !this.isAttached(foe.id) && !isAirborne(foe) && formationDistance(foe, actor) <= 1
       && meleeWeapon(foe) && !foe.suppression && !foe.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack && meleeWeapon(foe)?.recipe?.mechanism !== 'natural'));
   }
   private takeoffReactions(actor: Combatant, spent: Set<string>): void {
     for (const foe of this.takeoffThreats(actor).sort((a, b) => a.id.localeCompare(b.id))) {
       if (actor.status !== 'ready' || flightCapabilityReason(actor, this.conditions)) break;
       const weapon = meleeWeapon(foe);
-      if (foe.side === actor.side || foe.status !== 'ready' || this.isAttached(foe.id) || isAirborne(foe) || formationDistance(foe, actor) > 1 || !weapon || foe.suppression || spent.has(foe.id)
+      if (!controlReactionAllowed(foe, actor, this.combatants, formationDistance(foe,actor)) || !combatHostile(foe, actor, this.combatants) || foe.status !== 'ready' || this.isAttached(foe.id) || isAirborne(foe) || formationDistance(foe, actor) > 1 || !weapon || foe.suppression || spent.has(foe.id)
         || foe.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack && meleeWeapon(foe)?.recipe?.mechanism !== 'natural')) continue;
       spent.add(foe.id);
       const result = this.resolveAttackWithEnvironment({ attacker: foe, defender: actor, rng: this.rng, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry,
@@ -450,7 +458,7 @@ export class MassBattle {
     for (const [id, plan] of plans) {
       const actor = this.byId(id);
       if (plan.airborne && !isAirborne(actor)) {
-        exertion.set(id, 1); this.takeoffReactions(actor, reactions);
+        exertion.set(id, formationMarchCost(actor, this.fieldTags)); this.takeoffReactions(actor, reactions);
         if (flightCapabilityReason(actor, this.conditions)) { plans.delete(id); this.recordEvent({ round: this.round, kind: 'move', participants: [id], text: `${actor.name} 起飞被反应中断，主任务已使用` }); }
       }
     }
@@ -459,7 +467,7 @@ export class MassBattle {
       const actor = this.byId(id); if (actor.status !== 'ready') continue;
       const changedLayer = isAirborne(actor) !== plan.airborne;
       if (changedLayer || actor.formationPosition !== undefined) { actor.formationPosition ??= formationNode(actor).id; actor.airborne = plan.airborne; }
-      setFormation(actor, plan.node); this.syncPassenger(actor); exertion.set(id, 1);
+      if (this.rules.traitLevelModel === 'traits-levels-v2') actor.movedDuringActivation = true; setFormation(actor, plan.node); this.syncPassenger(actor); exertion.set(id, formationMarchCost(actor, this.fieldTags));
       const intent = orders.find((o) => o.unitId === id); if (intent) this.orderReceipt(intent, '机动', 'executed');
       this.recordEvent({ round: this.round, kind: 'move', participants: [id], text: `${actor.name} ${changedLayer ? plan.airborne ? '起飞' : '降落' : '机动'}至${plan.node.side === 'ally' ? '我方' : '敌方'}${plan.node.wing}${{ front: '前线', rear: '支援', reserve: '预备' }[plan.node.rank]}${plan.airborne ? '空域' : '地面'}` });
     }
@@ -504,7 +512,7 @@ export class MassBattle {
   private vehicleDepartureReactions(actor: Combatant, destination: typeof FORMATION_NODES[number], spent: Set<string>): void {
     for (const foe of this.takeoffThreats(actor).filter((u) => formationNodeDistance(formationNode(u), destination) > 1).sort((a, b) => a.id.localeCompare(b.id))) {
       if (actor.status !== 'ready') break;
-      if (spent.has(foe.id)) continue;
+      if (spent.has(foe.id) || !controlReactionAllowed(foe,actor,this.combatants,formationDistance(foe,actor))) continue;
       spent.add(foe.id);
       const result = this.resolveAttackWithEnvironment({ attacker: foe, defender: actor, weaponOverride: meleeWeapon(foe), ranged: false, rng: this.rng,
         rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry,
@@ -520,6 +528,14 @@ export class MassBattle {
   private v2OrderReason(order: Order, units = this.combatants): string | undefined {
     const u = units.find((c) => c.id === order.unitId);
     if (!u || u.status !== 'ready') return '单位不存在或无法行动';
+    const source = units.find(c => c.id === (order.abilityActorId ?? u.id)) ?? u;
+    const controlTarget = units.find(c => c.id === order.targetId);
+    if (['attack','volley','charge','ability','suppress'].includes(order.type)) {
+      const ability = source.abilities.find(a => a.id === order.abilityId);
+      const reason = controlActionReason(source, controlTarget, this.combatants, ['ability','charge','suppress'].includes(order.type) ? 'skill' : 'weapon', ability?.target === 'ally' || ability?.target === 'self', ability && controlTarget && (ability.area || ability.shape === 'burst' || ability.effects.some(e => e.op === 'damage' && e.shape === 'burst')) ? this.supportTargets(source, ability, controlTarget, units).map(t => t.id) : undefined); if (reason) return reason;
+      if (controlTarget && ['blinded','charmed','confused'].some(id => controlCondition(source, id)) && !canSpot(this.observationContext(units), source, controlTarget)) return '必须以自身感知直接观测目标';
+      if (ability?.effects.some(e => e.op === 'condition' && e.conditionId === 'charmed') && (controlTarget?.scale !== 'hero' || this.isAttached(controlTarget.id))) return '魅惑首版仅支持未随队独立个体';
+    }
     if (u.conditions.some((c) => this.conditions.get(c.id)?.skipTurn)) return '状态令本轮无法行动';
     if (this.isAttached(u.id)) return '随队人物不能另获独立主任务';
     if (u.bornRound !== undefined && u.bornRound >= this.round) return '新生单位下轮才能行动';
@@ -538,7 +554,7 @@ export class MassBattle {
       const target = rawTarget && this.effectiveUnit(rawTarget, units);
       if (ability.target === 'zone' && !target) return '请指定地面阵位';
       if (target && ability.target !== 'zone' && !this.visibleCombatants(actor.side, units).some((u) => u.id === target.id)) return '尚未观测到目标';
-      if (target && target.side !== actor.side && this.isAttached(target.id)) return '随队人物受编队掩护';
+      if (target && combatHostile(target, actor, this.combatants) && this.isAttached(target.id)) return '随队人物受编队掩护';
       const itemUse = this.itemUse(actor, ability, target, units);
       if (itemUse.reason) return itemUse.reason;
       ability = itemUse.ability;
@@ -560,7 +576,7 @@ export class MassBattle {
     if (['shift-left', 'shift-right', 'rank-forward', 'rank-back'].includes(order.type)) return this.maneuverDestination(order, units).id === node.id ? '机动路线受阻或已到边界' : undefined;
     const target = units.find((c) => c.id === order.targetId);
     if (!target && order.targetId) return '尚未观测到目标';
-    if (!target || target.side === u.side || !['ready', 'routing', 'dying'].includes(target.status) || this.isAttached(target.id)) return '需要合法敌方独立编队';
+    if (!target || !attackHostile(u, target, this.combatants) || !['ready', 'routing', 'dying'].includes(target.status) || this.isAttached(target.id)) return '需要合法敌方独立编队';
     if (!this.visibleCombatants(u.side, units).some((c) => c.id === target.id)) return '尚未观测到目标';
     const aerial = aerialTargetReason(u, target, order.type === 'volley'); if (aerial) return aerial;
     if (order.type === 'volley') {
@@ -588,7 +604,7 @@ export class MassBattle {
   }
   /** 不考虑技能位移、按施术者当前阵位判断目标是否可选。 */
   private abilityTargetCheck(actor: Combatant, ability: Ability, target: Combatant | undefined, units: Combatant[]): string | undefined {
-    const reason = abilityTargetReason({ space: 'mass', actor, ability, target, distance: target ? formationDistance(actor, target) : undefined });
+    const reason = abilityTargetReason({ space: 'mass', actor, ability, target, units, controlAreaIds: target && controlPolicy(actor) === 'taunted' && (ability.area || ability.shape === 'burst' || ability.effects.some(e => e.op === 'damage' && e.shape === 'burst')) ? this.supportTargets(actor, ability, target, units).map(t => t.id) : undefined, distance: target ? formationDistance(actor, target) : undefined });
     if (reason) return reason;
     if (ability.weaponUse && target) {
       const weapon = skillWeapon(actor, ability, formationDistance(actor, target));
@@ -622,14 +638,14 @@ export class MassBattle {
       .find((n) => !this.abilityTargetCheck({ ...actor, formationPosition: n.id }, ability, target, units));
     if (!node) return { reason: (effect.mode === 'dash' ? '突进' : '闪现') + reach + '个阵位内没有能对目标出手的位置' };
     const weapon = ability.damageBasis === 'weapon' ? skillWeapon(actor, ability) : undefined;
-    const charge = effect.mode === 'dash' && !!weapon && !isRangedWeapon(weapon) && target.side !== actor.side && formationDistance(actor, target) >= 2
+    const charge = effect.mode === 'dash' && !!weapon && !isRangedWeapon(weapon) && combatHostile(target, actor, this.combatants) && formationDistance(actor, target) >= 2
       && !fatiguePenalty(actor) && !actor.suppression && !activeConditionIds(actor).includes('slowed');
     return { node, mode: effect.mode, charge };
   }
   /** 出手后后撤：相邻可占阵位中离已知敌军最远者，同样远时朝本方纵深；拉不开距离就不动。 */
   private skillWithdrawNode(actor: Combatant, units: Combatant[]): FormationNode | undefined {
     if (this.skillMoveBlock(actor)) return undefined;
-    const from = formationNode(actor), foes = this.visibleCombatants(actor.side, units).filter((u) => u.side !== actor.side && u.status === 'ready' && !this.isAttached(u.id));
+    const from = formationNode(actor), foes = this.visibleCombatants(actor.side, units).filter((u) => combatHostile(u, actor, this.combatants) && u.status === 'ready' && !this.isAttached(u.id));
     if (!foes.length) return undefined;
     const nearest = (n: FormationNode) => Math.min(...foes.map((f) => formationNodeDistance(n, formationNode(f))));
     const depth = (n: FormationNode) => n.side === actor.side ? RANKS.indexOf(n.rank) : -1 - RANKS.indexOf(n.rank);
@@ -647,7 +663,7 @@ export class MassBattle {
     if (formationNodeDistance(from, to) > reach) return (effect.mode === 'blink' ? '闪现' : effect.mode === 'dash' ? '突进' : '后撤') + '只能到' + reach + '个阵位内';
     if (!formationCanOccupy(units, actor, to, this.attached, this.formationSlots ?? 3)) return '该阵位容量不足或有敌军';
     if (effect.mode === 'withdraw') {
-      const foes = this.visibleCombatants(actor.side, units).filter((u) => u.side !== actor.side && u.status === 'ready' && !this.isAttached(u.id));
+      const foes = this.visibleCombatants(actor.side, units).filter((u) => combatHostile(u, actor, this.combatants) && u.status === 'ready' && !this.isAttached(u.id));
       const nearest = (n: FormationNode) => Math.min(Infinity, ...foes.map((f) => formationNodeDistance(n, formationNode(f))));
       if (foes.length && nearest(to) <= nearest(from)) return '后撤须拉开与敌军的距离';
     }
@@ -659,6 +675,7 @@ export class MassBattle {
     return this.orders.has(host) ? '所属编队已有主任务，请先撤回' : this.v2OrderReason(order, this.planningUnits(order));
   }
   private recordEvent(entry: BattleLogEntry): void {
+    reconcileBattleControls(this.combatants);
     for(const result of entry.resolutions?.length?entry.resolutions:[entry.resolution]) if(result&&result.hpAfter<=0) result.defenderStatus=this.nonLethal?'dying':'dead';
     entry.locations ??= Object.fromEntries((entry.participants ?? []).flatMap(id => { const u = this.combatants.find(c => c.id === id); return u ? [[id, FORMATION_NODES.findIndex(n => n.id === formationNode(this.effectiveUnit(u)).id)]] : []; }));
     if (this.rules.resolutionVersion !== 'v2') this.log.push(entry);
@@ -689,7 +706,7 @@ export class MassBattle {
   }
   private captureFeedback(): void { if (this.feedback) this.feedback.capture(this.pendingReport!.round, this.feedbackUnits()); }
   private finishPhase(phase: MassPhase): void {
-    for(const result of settleZones(this.observationContext(),this.round,phase==='重整',this.rng)) { if(result.control&&result.source)this.flightCauses.set(result.target.id,result.source.id); this.recordEvent({round:this.round,kind:'condition',participants:[result.target.id],text:result.text}); this.defeatUnit(result.target,result.source); }
+    for(const result of settleZones(this.observationContext(),this.round,phase==='重整',this.rng)) { breakCharmOnDamage(this.combatants,result.target,result.source,result.damage); if(result.control&&result.source)this.flightCauses.set(result.target.id,result.source.id); this.recordEvent({round:this.round,kind:'condition',participants:[result.target.id],text:result.text}); this.defeatUnit(result.target,result.source); }
     if (!this.feedback || !this.pendingReport) return;
     this.captureFeedback(); this.feedback.finishActivation();
     const summary = this.feedback.activation();
@@ -698,6 +715,7 @@ export class MassBattle {
   private beginPhase(phase: MassPhase): void { this.feedback?.beginActivation(this.round, phase); }
   private orderReceipt(order: Order, phase: MassPhase, status: 'executed' | 'blocked', reason?: string): void {
     if (order.haste) phase = '加速';
+    this.aiTrace?.(structuredClone({ stage: 'receipt', mode: 'mass', unitId: order.unitId, round: this.round, order, phase, status, reason }));
     const receipt = this.pendingReport?.orders.find((p) => p.order.unitId === order.unitId && !!p.order.haste === !!order.haste);
     if (receipt) { receipt.phase = phase; receipt.status = status; receipt.reason = reason; }
   }
@@ -721,13 +739,13 @@ export class MassBattle {
   }
   private supportTargets(actor: Combatant, ability: Ability, primary: Combatant, units: Combatant[]): Combatant[] {
     if (ability.area) return areaTargets({...this.observationContext(units),units:this.visibleCombatants(actor.side,units)},actor,primary,ability,u=>!this.isAttached(u.id)
-      && !abilityTargetReason({space:'mass',actor,ability,target:u,distance:formationDistance(actor,u)})
+      && !abilityTargetReason({space:'mass',actor,ability,target:u,units,controlRecipient:true,distance:formationDistance(actor,u)})
       && (this.rules.combatModel !== MEMBER_HEALTH_MODEL || !ability.weaponUse || isRangedWeapon(skillWeapon(actor, ability)) || !formationScreened(actor,u,units))
       && (!ability.weaponUse || !rangedScreen(actor,u,skillWeapon(actor,ability,formationDistance(actor,u)),units.filter(c=>!this.isAttached(c.id)),{mode:'mass'},this.conditionMap())));
     if (ability.shape !== 'burst' && !ability.effects.some((e) => e.op === 'damage' && e.shape === 'burst')) return [primary];
     const pivot = ability.recipe?.category === 'physical-area' && ability.damageBasis && !isRangedWeapon(skillWeapon(actor, ability)) ? actor : primary;
-    return [primary, ...this.visibleCombatants(actor.side, units).filter((u) => u.id !== primary.id && u.side === primary.side && u.status === 'ready' && !this.isAttached(u.id)
-      && formationDistance(pivot, u) <= 1 && !abilityTargetReason({ space: 'mass', actor, ability, target: u, distance: formationDistance(actor, u) })
+    return [primary, ...this.visibleCombatants(actor.side, units).filter((u) => u.id !== primary.id && !combatHostile(u, primary, units) && u.status === 'ready' && !this.isAttached(u.id)
+      && formationDistance(pivot, u) <= 1 && !abilityTargetReason({ space: 'mass', actor, ability, target: u, units, controlRecipient:true, distance: formationDistance(actor, u) })
       && (this.rules.combatModel !== MEMBER_HEALTH_MODEL || !ability.weaponUse || isRangedWeapon(skillWeapon(actor, ability)) || !formationScreened(actor, u, units))
       && (!ability.weaponUse || !rangedScreen(actor, u, skillWeapon(actor, ability, formationDistance(actor, u)), units.filter(c => !this.isAttached(c.id)), { mode: 'mass' }, this.conditionMap())))
       .sort((a, b) => a.id.localeCompare(b.id))].slice(0, 2);
@@ -746,7 +764,7 @@ export class MassBattle {
     const weapon = usedWeapon ?? (ranged ? this.rangedWeaponFor(actor, target, units, withdrawal ? 'riding' : vehicleMove ? 'vehicle' : false) : meleeWeapon(actor));
     const close = pointBlankModifier(weapon, ranged, sameLayer(actor, target) && formationDistance(actor, target) <= 1 ? 0 : formationDistance(actor, target), actor);
     return { attacker: actor, defender: target, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry,
-      weaponOverride: weapon, ranged, charge: order.type === 'charge',
+      weaponOverride: weapon, ranged, ...(this.rules.traitLevelModel === 'traits-levels-v2' ? { moved: !!approach || !!vehicleMove || !!withdrawal || source.movedDuringActivation, chargeStraight: formationNode(source).x === formationNode(target).x } : {}), charge: order.type === 'charge',
       participants: sharedParticipants(actor, units.filter((u) => sameLayer(u, actor) && formationNode(u).id === formationNode(actor).id), engagementWidth(actor, target, ranged, undefined, this.fieldTags), target),
       extraMods: [...this.stanceMods(actor, target, { charge: order.type === 'charge' }), ...(close ? [{ source: 'stance' as const, name: '抵近射击', kind: 'atk' as const, type: 'flat' as const, value: close }] : [])],
       defenderMods: this.defModsFor(target) };
@@ -790,7 +808,7 @@ export class MassBattle {
         ...this.abilityFlightPreview(actor, target, ability, known),
         ...(morale ? moraleChangePreview(this.observationContext(known), target, morale.amount, this.rules.morale.breakAt,
           this.traitRegistry, ability.effects.flatMap((e) => e.op === 'condition' ? [{ id: e.conditionId, dur: e.dur }] : [])) : {}),
-        ...(healing ? { healing: Math.min(recoveryCapacity(target), healingYield(actor,target,healing.amount ?? diceAvg(healing.dice!),!!ability.itemSourceId)) } : {}),
+        ...(healing ? { healing: Math.min(recoveryCapacity(target), healingYield(actor, target, healing.amount ?? diceAvg(healing.dice!), !!ability.itemSourceId, healing.power)) } : {}),
       } : {};
     }
     const actor = this.byId(order.unitId), target = known.find((u) => u.id === order.targetId);
@@ -806,18 +824,36 @@ export class MassBattle {
   }
   /** UI默认方案与自动军令共用；只读取当前可观察事实，不下令、不消耗RNG。 */
   private braceThreat(unit: Combatant, units = this.visibleCombatants(unit.side)): Combatant | undefined {
-    return units.filter(other => other.side !== unit.side && other.status === 'ready' && !this.isAttached(other.id))
+    return units.filter(other => combatHostile(other, unit, this.combatants) && other.status === 'ready' && !this.isAttached(other.id))
       .sort((a, b) => formationDistance(unit, a) - formationDistance(unit, b) || a.id.localeCompare(b.id))[0];
   }
   recommendedOrder(unitId: string): Order | undefined {
     return this.recommendV2Order(unitId);
   }
+  private queryConditions?: Map<string, ConditionDef>;
+  /** Only synchronous, read-only evaluation may share condition tables and damage samples. */
+  withReadOnlyQueries<T>(query: () => T): T {
+    const ownConditions = !this.queryConditions, ownPreviews = previewScopeEpoch() === undefined;
+    if (ownConditions) this.queryConditions = this.conditionMap();
+    if (ownPreviews) beginPreviewScope();
+    try { return query(); }
+    finally {
+      if (ownConditions) this.queryConditions = undefined;
+      if (ownPreviews) endPreviewScope();
+    }
+  }
   private recommendV2Order(unitId: string, allowAbilities = true, hasteOnly = false): Order | undefined {
+    return this.withReadOnlyQueries(() => this.buildV2Recommendation(unitId, allowAbilities, hasteOnly));
+  }
+  private buildV2Recommendation(unitId: string, allowAbilities: boolean, hasteOnly: boolean): Order | undefined {
     const u = this.combatants.find((u) => u.id === unitId);
     if (!u || u.status !== 'ready' || this.isAttached(u.id) || u.bornRound === this.round || this.isOver()) return undefined;
-    const side = u.side, planning = this.visibleCombatants(side);
+    const side = u.side, planning = this.visibleCombatants(side).filter(t => !['charmed','confused'].includes(controlPolicy(u) ?? '') || t.id === u.id || canSpot(this.observationContext(),u,t));
     const remembered = this.previousOrders.get(u.id);
-    if (allowAbilities && remembered && !remembered.automatic && !this.v2OrderReason(remembered, planning)) return { ...remembered };
+    if (allowAbilities && remembered && !remembered.automatic && !this.v2OrderReason(remembered, planning)) {
+      this.aiTrace?.(structuredClone({ stage: 'remembered', mode: 'mass', unitId, round: this.round, order: remembered }));
+      return { ...remembered };
+    }
     const destinations = new Map<string, { node: typeof FORMATION_NODES[number]; airborne: boolean } | undefined>();
     const destinationOf = (order: Order) => {
       const key = JSON.stringify(order);
@@ -838,11 +874,14 @@ export class MassBattle {
       });
       return occupants.length < (this.formationSlots ?? 3) && !occupants.some(other => other.side !== side);
     };
-    const foes = planning.filter((t) => t.side !== side && ['ready', 'routing'].includes(t.status) && !this.isAttached(t.id));
+    const foes = planning.filter((t) => combatHostile(u,t,planning) && ['ready', 'routing'].includes(t.status) && !this.isAttached(t.id));
     const candidates: { order: Order; score: number }[] = foes.flatMap((target) => (['volley', 'attack', 'charge'] as const).map((type) => ({ unitId: u.id, type, targetId: target.id, ...(hasteOnly ? { haste: true } : {}) })))
       .flatMap((order) => {
         const result = this.orderPreview(order);
-        if (!result.preview) return [];
+        if (!result.preview) {
+          this.aiTrace?.(structuredClone({ stage: 'generation-filter', mode: 'mass', unitId, round: this.round, order, reason: result.reason ?? 'no-attack-preview' }));
+          return [];
+        }
         const target = foes.find((foe) => foe.id === order.targetId)!;
         let score=Math.min(memberHealth(target),result.preview.expectedDamage)+(result.preview.conditionValue??0);
         if (result.vehicleMove) {
@@ -868,6 +907,7 @@ export class MassBattle {
             score=(benefit-loss*1.5)/8;
           }
         }
+        this.aiTrace?.(structuredClone({ stage: 'attack-value', mode: 'mass', unitId, round: this.round, order, score, expectedDamage: result.preview.expectedDamage, conditionValue: result.preview.conditionValue ?? 0, targetHealth: memberHealth(target), vehicleMove: result.vehicleMove }));
         return [{ order, score }];
       });
     if (u.shield && !this.v2OrderReason({ unitId, type: 'brace' }, planning)) {
@@ -912,7 +952,7 @@ export class MassBattle {
       if (!source || this.v2OrderReason(assigned, planning)) continue;
       const actor = this.effectiveUnit(source, planning), ability = actor.abilities.find(a => a.id === assigned.abilityId)!;
       const target = ability.target === 'self' ? actor : planning.find(other => other.id === assigned.targetId) ?? actor;
-      for (const effect of ability.effects) if (effect.op === 'trait' || effect.op === 'barrier' || effect.op === 'condition' && !effect.onHit && !effect.onDamage && effect.saveDC === undefined) {
+      for (const effect of healingEffectGroups(ability)) if (effect.op === 'trait' || effect.op === 'barrier' || effect.op === 'condition' && !effect.onHit && !effect.onDamage && effect.saveDC === undefined) {
         for (const affected of this.supportTargets(actor, ability, target, planning).filter(u => u.side === side)) {
           const projected = reservedSupport.get(affected.id) ?? structuredClone(affected);
           if (effect.op === 'barrier') grantBarrier(projected, effect.amount, effect.dur, actor.id, effect.defensePower ?? ability.power);
@@ -921,8 +961,8 @@ export class MassBattle {
           reservedSupport.set(affected.id, projected);
         }
       }
-      for (const effect of ability.effects) if (effect.op === 'heal') for (const affected of this.supportTargets(actor, ability, target, planning)) {
-        const amount = healingYield(actor, affected, effect.amount ?? diceAvg(effect.dice!), !!ability.itemSourceId);
+      for (const effect of healingEffectGroups(ability)) if (effect.op === 'heal') for (const affected of this.supportTargets(actor, ability, target, planning)) {
+        const amount = healingYield(actor, affected, effect.amount ?? diceAvg(effect.dice!), !!ability.itemSourceId, effect.power);
         reservedHealing.set(affected.id, Math.min(recoveryCapacity(affected), (reservedHealing.get(affected.id) ?? 0) + amount));
       }
     }
@@ -933,8 +973,8 @@ export class MassBattle {
     for (const actor of sources) for (const listedAbility of actor.abilities) {
       const ability = listedAbility;
       if (hasteOnly && !quickItemAction(actor, ability) || movementOnlySkill(ability)) continue;
-      const targets = ability.target === 'zone' ? planning.filter(u=>u.status==='ready') : ability.target === 'self' ? [actor] : ability.target === 'ally' ? planning.filter((u) => u.side === side
-        && (['ready', 'routing'].includes(u.status) || u.status === 'dying' && ability.effects.some((e) => e.op === 'heal'))) : foes;
+      const targets = ability.target === 'zone' ? planning.filter(u=>u.status==='ready') : ability.target === 'self' ? [actor] : ability.target === 'ally' ? planning.filter((t) => !combatHostile(actor,t,planning)
+        && (['ready', 'routing'].includes(t.status) || t.status === 'dying' && ability.effects.some((e) => e.op === 'heal'))) : foes;
       for (const target of targets) {
         const order: Order = { unitId: u.id, type: 'ability', abilityActorId: actor.id, abilityId: listedAbility.id, targetId: target.id };
         if (this.v2OrderReason(order, planning)) continue;
@@ -954,18 +994,18 @@ export class MassBattle {
           const preview = controlPreviews.get(affected.id)!;
           return needsDamage ? preview.damageChance ?? (preview.expectedDamage > 0 ? preview.hitChance : 0) : preview.anyHitChance ?? preview.hitChance;
         };
-        for (const effect of ability.effects) {
+        for (const effect of healingEffectGroups(ability)) {
           if (effect.op === 'damage') for (const t of this.supportTargets(caster, ability, target, planning)) {
             const preview = this.previewAttackWithEnvironment({ attacker: caster, defender: t, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(planning, caster, t, ability, effect, charge && t.id === target.id) });
             score += preview.expectedDamage + (preview.conditionValue ?? 0);
-            if (t.side !== actor.side) expectedDamage += preview.expectedDamage;
+            if (combatHostile(t, actor, this.combatants)) expectedDamage += preview.expectedDamage;
           }
           if (effect.op === 'heal') for (const affected of this.supportTargets(caster, ability, target, planning)) {
             const reserved = plannedHealing.get(affected.id) ?? 0;
-            const amount = Math.min(Math.max(0, recoveryCapacity(affected) - reserved), healingYield(actor, affected, effect.amount ?? diceAvg(effect.dice!), !!ability.itemSourceId));
+            const amount = Math.min(Math.max(0, recoveryCapacity(affected) - reserved), healingYield(actor, affected, effect.amount ?? diceAvg(effect.dice!), !!ability.itemSourceId, effect.power));
             score += amount; plannedHealing.set(affected.id, reserved + amount);
           }
-          if (effect.op === 'morale') for (const affected of this.supportTargets(caster, ability, target, planning)) score += moraleChangePreview({ ...this.observationContext(planning), units: planning }, affected, effect.amount, this.rules.morale.breakAt, this.traitRegistry, ability.effects.flatMap((e) => e.op === 'condition' ? [{ id: e.conditionId, dur: e.dur }] : [])).value * (affected.side === actor.side ? 1 : -1);
+          if (effect.op === 'morale') for (const affected of this.supportTargets(caster, ability, target, planning)) score += moraleChangePreview({ ...this.observationContext(planning), units: planning }, affected, effect.amount, this.rules.morale.breakAt, this.traitRegistry, ability.effects.flatMap((e) => e.op === 'condition' ? [{ id: e.conditionId, dur: e.dur }] : [])).value * (!combatHostile(affected,actor,planning) ? 1 : -1);
           if (effect.op === 'zone' || effect.op === 'barrier' || effect.op === 'push' || effect.op === 'dispel' || effect.op === 'trait') for (const affected of this.supportTargets(caster, ability, target, planning)) score += skillEffectValue(skillContext, caster, reservedSupport.get(affected.id) ?? affected, { ...ability, effects: [effect] }, controlChance(affected, false));
           if (effect.op === 'summon') {
             const node = FORMATION_NODES.find((n) => n.side === actor.side && n.wing === formationNode(actor).wing && n.rank === 'reserve')!;
@@ -978,9 +1018,13 @@ export class MassBattle {
         const falling = this.abilityFlightPreview(caster, target, ability, planning); if (falling) score += falling.fallDamage * (falling.fallChance ?? 1);
         for (const affected of this.supportTargets(caster, ability, target, planning)) score += skillEffectValue(skillContext, caster, reservedSupport.get(affected.id) ?? affected, { ...ability, effects: ability.effects.filter(e => e.op === 'resource') });
         // V15：治疗品对濒死或伤重的目标放开使用。
-        score -= tacticalSkillCost(skillContext, actor, ability, expectedDamage)
+        const benefitBeforeCost = score;
+        const resourceCost = tacticalSkillCost(skillContext, actor, ability, expectedDamage)
           * (ability.itemSourceId && itemsV15(actor) && ability.effects.some((e) => e.op === 'heal') && itemEmergency(target) ? ITEM_EMERGENCY_DISCOUNT : 1);
+        score -= resourceCost;
+        this.aiTrace?.(structuredClone({ stage: 'ability-value', mode: 'mass', unitId, round: this.round, order, benefit: benefitBeforeCost, resourceCost, netScore: score }));
         if (score > 0) candidates.push({ order, score: score - 0.25 });
+        else this.aiTrace?.(structuredClone({ stage: 'ability-filter', mode: 'mass', unitId, round: this.round, order, score, reason: 'nonpositive-benefit-minus-resource' }));
       }
     }
     const known = planning, currentRisk = moraleRisk({ ...this.observationContext(planning), units: known }, u, this.rules.morale.breakAt, this.traitRegistry).breakChance;
@@ -1048,14 +1092,19 @@ export class MassBattle {
     const tactic = u.side === 'ally' ? this.allyTactic : 'balanced';
     if (tactic === 'aggressive') for (const candidate of candidates) if (['attack','volley','charge'].includes(candidate.order.type)) candidate.score += candidate.order.type === 'charge' ? 3 : 1.5;
     const eligible = tactic === 'defensive' ? candidates.filter(c => { const p = this.orderPreview(c.order); return !p.approach && !p.destination && !p.vehicleMove && !p.withdrawal && !['charge','rank-forward','rank-back','shift-left','shift-right','takeoff','land'].includes(c.order.type); }) : candidates;
-    if (tactic === 'defensive' && !eligible.some(c => c.score > 0)) return {unitId:u.id,type:this.v2OrderReason({unitId:u.id,type:'brace'},planning)?'hold':'brace',automatic:true};
+    if (tactic === 'defensive' && !eligible.some(c => c.score > 0)) {
+      const order: Order = {unitId:u.id,type:this.v2OrderReason({unitId:u.id,type:'brace'},planning)?'hold':'brace',automatic:true};
+      this.aiTrace?.(structuredClone({ stage: 'decision', mode: 'mass', unitId, side, round: this.round, tactic, candidates, eligible, legal: [], best: order, reason: 'defensive-no-positive' }));
+      return order;
+    }
     const legal = eligible.filter(c => c.score > 0 && canReserve(c.order));
     const commandScores = commanderScores(legal.map(c => ({
       key: JSON.stringify(c.order), score: c.score,
       attack: ['attack', 'volley', 'charge'].includes(c.order.type) || c.order.type === 'ability' && !!c.order.targetId && this.byId(c.order.targetId).side !== side,
       ranged: c.order.type === 'volley' || c.order.type === 'ability' && (sources.find(a => a.id === (c.order.abilityActorId ?? c.order.unitId))?.abilities.find(a => a.id === c.order.abilityId)?.range?.max ?? 0) > 1, move: !!destinationOf(c.order) || c.order.type === 'charge',
       defend: c.order.type === 'brace' || c.order.type === 'hold' || c.order.type === 'ability' && !!sources.find(a => a.id === (c.order.abilityActorId ?? c.order.unitId))?.abilities.find(a => a.id === c.order.abilityId)?.effects.some(e => e.op === 'barrier' || e.op === 'heal' || e.op === 'dispel' && e.polarity === 'negative' || e.op === 'condition' && ['blessed','encouraged'].includes(e.conditionId)),
-    })), this.commanderProfiles[side === 'ally' ? 'ally' : 'enemy'], `${this.seed}:${this.round}:${u.id}`);
+    })), this.commanderProfiles[side === 'ally' ? 'ally' : 'enemy'], `${this.seed}:${this.round}:${u.id}`, false,
+      this.aiTrace ? event => this.aiTrace!({ stage: 'scores', mode: 'mass', unitId, round: this.round, ...event }) : undefined);
     const ranked = new Map(legal.map((c, i) => [c, commandScores[i]!]));
     const best = legal.sort((a, b) => ranked.get(b)! - ranked.get(a)! || JSON.stringify(a.order).localeCompare(JSON.stringify(b.order)))[0];
     let order: Order = best?.order ?? { unitId: u.id, type: formationNode(u).rank !== 'front' ? 'rank-forward' : 'brace' };
@@ -1101,7 +1150,13 @@ export class MassBattle {
         order = formationNodeDistance(from, to) <= 1 || !approach ? { unitId: u.id, type: 'brace' } : approach;
       } else order = moves[0] ?? { unitId: u.id, type: 'hold' };
     }
-    return this.v2OrderReason(order, planning) || !canReserve(order) ? undefined : { ...order, automatic: true };
+    const finalReason = this.v2OrderReason(order, planning) || (!canReserve(order) ? 'reservation-full' : undefined);
+    this.aiTrace?.(structuredClone({ stage: 'decision', mode: 'mass', unitId, side, round: this.round, tactic, hasteOnly,
+      known: planning.map(c => ({ id: c.id, side: c.side, hp: c.hp, status: c.status, formationPosition: c.formationPosition })),
+      resources: u.resources, plannedFriendly: [...this.orders.values()].filter(o => this.byId(o.unitId).side === side),
+      candidates: candidates.map(c => ({ ...c, eligible: eligible.includes(c), positive: c.score > 0, candidate: ranked.has(c), finalScore: ranked.get(c) })),
+      selectedScored: best?.order, best: order, finalReason }));
+    return finalReason ? undefined : { ...order, automatic: true };
   }
   /** 面板用：本阵营记得、此刻看不见的敌军最后阵位，以及近几轮的未定位来袭。 */
   enemyIntel(side: Side, known: readonly Combatant[] = this.visibleCombatants(side)): IntelView {
@@ -1111,7 +1166,7 @@ export class MassBattle {
   /** 看不见敌军时的线索阵位：最新的最后目击，其次未定位来袭时受击的阵位；己方已贴近查过的阵位不再算线索。 */
   private intelLead(unit: Combatant, known: Combatant[]): FormationNode | undefined {
     const visible = new Set(known.map((u) => u.id)), from = formationNode(unit);
-    const posts = known.filter((u) => u.side === unit.side && u.status === 'ready' && !this.isAttached(u.id)).map((u) => formationNode(u));
+    const posts = known.filter((u) => !combatHostile(u, unit, this.combatants) && u.status === 'ready' && !this.isAttached(u.id)).map((u) => formationNode(u));
     return [...liveTraces(this.intel, unit.side, this.round, visible).map((t) => ({ id: t.node, age: this.round - t.round })),
       ...liveClues(this.intel, unit.side, this.round).map((c) => ({ id: c.node, age: this.round - c.round }))]
       .flatMap((lead) => { const node = FORMATION_NODES.find((n) => n.id === lead.id); return node && !posts.some((p) => formationNodeDistance(p, node) <= 1) ? [{ node, age: lead.age }] : []; })
@@ -1122,6 +1177,7 @@ export class MassBattle {
     const protectedUnits = new Set(reserved);
     for (const u of [...this.readyUnits(side)].sort((a, b) => a.id.localeCompare(b.id))) {
       if (this.orders.has(u.id) || protectedUnits.has(u.id)) continue;
+      if (!u.looseChoiceLocked) this.chooseLooseFormation(u.id, this.visibleCombatants(u.side).some(t => combatHostile(u,t,this.combatants) && t.status === 'ready' && formationDistance(u,t) <= 1) ? 'closed' : 'loose');
       const order = this.recommendedOrder(u.id);
       if (order && this.issue(order).ok) count++;
     }
@@ -1143,6 +1199,12 @@ export class MassBattle {
   }
   private resolveV2Round(expectedRound: number): void {
     if (!this.started || this.locked || this.isOver() || expectedRound !== this.round || this.resolvedRounds.has(expectedRound)) throw new Error('回合已结束、已执行或计划版本过期');
+    reconcileBattleControls(this.combatants);
+    for (const unit of this.combatants.filter(u => u.status === 'ready')) {
+      beginControlActivation(unit, this.rng, () => this.combatants.filter(t => t.id !== unit.id && canSpot(this.observationContext(), unit, t) && this.confusedOrder(unit, t)).map(t => t.id));
+      if (controlPolicy(unit) === 'confused') { const target = this.combatants.find(t => t.id === unit.controlActivation?.targetId); this.orders.set(unit.id, target && this.confusedOrder(unit, target) || { unitId: unit.id, type: 'hold', automatic: true }); }
+      else if (controlPolicy(unit) === 'charmed') this.orders.set(unit.id, { ...(this.recommendedOrder(unit.id) ?? { unitId: unit.id, type: 'hold' }), automatic: true });
+    }
     this.autoV2Orders('enemy');
     // 缺少我方军令时保持原地；面板自动军令开关决定是否补齐进攻任务。
     for (const u of this.readyUnits('ally')) if (!this.isAttached(u.id) && !this.orders.has(u.id)) this.orders.set(u.id, { unitId: u.id, type: 'hold', automatic: true });
@@ -1178,7 +1240,7 @@ export class MassBattle {
       }
       this.pruneArrivals(arrivals);
       for (const [id, plan] of arrivals) if (vehicleMoves.has(id)) {
-        const actor = this.byId(id); exertion.set(id, 1); this.vehicleDepartureReactions(actor, plan.node, reactions);
+        const actor = this.byId(id); exertion.set(id, formationMarchCost(actor, this.fieldTags)); this.vehicleDepartureReactions(actor, plan.node, reactions);
         if (actor.status !== 'ready' || actor.suppression || activeConditionIds(actor).some((c) => this.conditions.get(c)?.skipTurn || this.conditions.get(c)?.preventMove)) arrivals.delete(id);
       }
       this.pruneArrivals(arrivals);
@@ -1235,7 +1297,7 @@ export class MassBattle {
         const resourceTargets = new Map<string, Combatant>();
         const born: Combatant[] = [];
         let invalid = false;
-        for (const effect of ability.effects) if (effect.op === 'summon') {
+        for (const effect of healingEffectGroups(ability)) if (effect.op === 'summon') {
           if (effect.count < 1 || effect.count > 2 || [...this.combatants, ...stagedBirths, ...born].filter((u) => u.summonerId === actor.id && u.status === 'ready').length + effect.count > 2) { invalid = true; break; }
           for (let n = 0; n < effect.count; n++) {
             const id = `mass:${this.seed}:summon:${actor.id}:${this.round}:${born.length}`;
@@ -1243,7 +1305,7 @@ export class MassBattle {
             try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'mass', ability.bonuses, this.rules.damageModel) ?? this.summonUnit?.(effect.templateId, actor.side, id); } catch { invalid = true; break; }
             const node = FORMATION_NODES.find((node) => node.side === actor.side && node.wing === formationNode(actor).wing && node.rank === 'reserve')!;
             if (!unit || [...this.combatants, ...stagedBirths, ...born].filter((u) => !this.isAttached(u.id) && u.status === 'ready' && formationNode(u).id === node.id).length >= (this.formationSlots ?? 3)) { invalid = true; break; }
-            prepareSkillModel(unit, this.rules); prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules); prepareTraitModel(unit,this.rules); prepareItemModel(unit,this.rules);
+            prepareSkillModel(unit, this.rules); prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules); prepareTraitModel(unit,this.rules); prepareItemModel(unit,this.rules); prepareTraitLevelModel(unit,this.rules);
             unit.id = id; unit.summonerId = actor.id; unit.bornRound = this.round;
             if (conjuredTemplate(effect.templateId)) unit.name = `${actor.name}的${unit.name}`;
             setFormation(unit, node); born.push(unit);
@@ -1285,7 +1347,7 @@ export class MassBattle {
         // 技能自带位移按任务顺序立即改写支援快照，后续任务看到的是到位后的阵位；实际落位与效果一起生效。
         const relocate = (node: FormationNode, verb: string) => {
           const staged = support.find((u) => u.id === actor.id)!; staged.formationPosition = node.id; delete staged.tacticalPose;
-          changes.push(() => { const unit = this.byId(actor.id); unit.formationPosition = node.id; delete unit.tacticalPose; this.syncPassenger(unit); revealUnit(this.observationContext(), unit);
+          changes.push(() => { const unit = this.byId(actor.id); if (this.rules.traitLevelModel === 'traits-levels-v2') unit.movedDuringActivation = true; unit.formationPosition = node.id; delete unit.tacticalPose; this.syncPassenger(unit); revealUnit(this.observationContext(), unit);
             this.recordEvent({ round: this.round, kind: 'move', participants: [actor.id], text: `${actor.name} ${verb}至${nodeLabel(node)}` }); });
         };
         if (movementOnlySkill(ability)) {
@@ -1305,7 +1367,7 @@ export class MassBattle {
         const charge = !!move.charge;
         const skillArm = ability.weaponUse ? skillWeapon(actor, ability, formationDistance(actor, target)) : undefined;
         if (skillArm && isRangedWeapon(skillArm) && weaponReloadTurns(skillArm)) this.reloadCd.set(weaponReloadKey(actor, skillArm), weaponReloadTurns(skillArm) + 1);
-        for (const effect of ability.effects) {
+        for (const effect of healingEffectGroups(ability)) {
           if (effect.op === 'zone') { changes.push(()=>{ const zone = placeZone(this.observationContext(),this.byId(actor.id),target,effect,this.round,ability.id); itemLog?.effects.push(`布置${ZONE_NAMES[zone.kind]}，持续${zone.remaining}轮`); }); }
           else if (effect.op === 'damage') for (const affected of this.supportTargets(actor, ability, target, support)) {
             const result = this.resolveAttackWithEnvironment({ attacker: actor, defender: structuredClone(affected), rng: this.rng, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry,
@@ -1313,7 +1375,7 @@ export class MassBattle {
             hits.set(affected.id, result);
             changes.push(() => { const t = this.byId(affected.id);const loss=applyResolutionDamage(t,result);if(this.rules.combatModel)recordAppliedDamage(result,loss);result.text = formatResolution(result, t); this.recordAttack(actualActor, t, result, order.haste ? '加速' : '支援'); });
           } else if (effect.op === 'heal') for (const affected of this.supportTargets(actor, ability, target, support)) {
-            const amount = Math.min(recoveryCapacity(affected), healingYield(actor,affected,effect.amount ?? rollDice(effect.dice!, this.rng).total,!!ability.itemSourceId));
+            const amount = Math.min(recoveryCapacity(affected), healingYield(actor, affected, effect.amount ?? rollDice(effect.dice!, this.rng).total, !!ability.itemSourceId, effect.power));
             // 后续治疗按已安排恢复后的伤量用药，避免同阶段重复消耗；真实生命仍在 changes 中统一提交。
             const staged = support.find(u => u.id === affected.id);
             if (staged) applyRecovery(staged, amount);
@@ -1334,7 +1396,7 @@ export class MassBattle {
             const hit = hits.get(affected.id);
             if (effect.onDamage && !(hit && hit.finalDamage > 0)) continue;
             if (effect.onHit && (!hit?.hit || hit.hpAfter <= 0)) continue;
-            const outcome = prepareCondition(actor, affected, effect, this.rng);
+            const outcome = prepareCondition(actor, affected, effect, this.rng, this.combatants);
             changes.push(() => {
               const unit = this.byId(affected.id); if(effect.onDamage && !(hits.get(affected.id)?.finalDamage ?? 0)) return; applySkillCondition(unit, outcome.condition);
               if (outcome.condition && (this.conditions.get(effect.conditionId)?.skipTurn || this.conditions.get(effect.conditionId)?.preventMove)) this.flightCauses.set(unit.id, actor.id);
@@ -1386,7 +1448,7 @@ export class MassBattle {
       for (const [id] of pushed) if (this.byId(id).hp <= 0 || this.byId(id).status === 'fled') pushed.delete(id);
       this.pruneArrivals(pushed);
       for (const [id, movement] of pushed) {
-        const unit = this.byId(id); unit.formationPosition = movement.node.id; delete unit.tacticalPose; this.syncPassenger(unit);
+        const unit = this.byId(id); if (this.rules.traitLevelModel === 'traits-levels-v2') unit.movedDuringActivation = true; unit.formationPosition = movement.node.id; delete unit.tacticalPose; this.syncPassenger(unit);
         revealUnit(this.observationContext(), unit);
         captureItemEffects(this.log, movement.itemLog, () => this.recordEvent({ round: this.round, kind: 'move', participants: [movement.sourceId, id], text: unit.name + ' 被推至' + movement.node.wing + '/' + movement.node.rank + '，不触发借机或额外碰撞伤害' }));
       }
@@ -1408,7 +1470,8 @@ export class MassBattle {
       // 主任务后的独立额外行动：同轮新获得加速也能使用，不能再施法。
       const hastePlans: Order[] = [];
       for (const actor of this.combatants.filter(u => u.status === 'ready' && !this.isAttached(u.id) && u.bornRound !== this.round && hasteMagnitude(u) > 0)) {
-        const chosen = this.hasteOrders.get(actor.id) ?? this.recommendV2Order(actor.id, false, true);
+        const confusedTarget = this.combatants.find(t => t.id === actor.controlActivation?.targetId);
+        const chosen = controlPolicy(actor) === 'confused' ? confusedTarget && this.confusedOrder(actor, confusedTarget) : this.hasteOrders.get(actor.id) ?? this.recommendV2Order(actor.id, false, true);
         if (chosen) hastePlans.push({ ...chosen, haste: true });
       }
       const mainExertion = new Map(exertion);
@@ -1449,6 +1512,7 @@ export class MassBattle {
             const rolled = rollDice(dot.dice, this.rng).total;
             let damage = this.rules.combatModel ? roundDamage(conditionDamage(u,rolled,condition),this.rng) : condition.id === 'poisoned' ? poisonDamage(u, rolled * (condition.magnitude ?? 1)) : condition.magnitude !== undefined ? Math.max(0, Math.round(rolled * condition.magnitude / (u.scale === 'hero' ? 1 : 4))) : Math.max(0, Math.floor(rolled / (u.scale === 'hero' ? 1 : 10)));
             const members=u.hp,lost=hasMemberHealth(u)?applyCombatDamage(u,damage,condition.affectedMembers??10):applyHealthLoss(u,damage); if(this.rules.combatModel)damage=lost;
+            breakCharmOnDamage(this.combatants,u,this.combatants.find(source=>source.id===condition.sourceId),lost);
             this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], damage: {sourceId:condition.sourceId,targetId:u.id,amount:lost,cause:dot.label ?? this.conditions.get(condition.id)!.name,...(hasMemberHealth(u)?{unit:'life' as const,members:members-u.hp}:{})}, text: `${u.name} ${dot.label}损失${damage}${hasMemberHealth(u)?'生命':''}` });
             this.defeatUnit(u, this.combatants.find((source) => source.id === condition.sourceId));
           }
@@ -1458,10 +1522,11 @@ export class MassBattle {
         const firstWorks = u.entrenchedAt === undefined;
         if (fullRest && !entrenched(u) && !this.isAttached(u.id) && entrench(u, 'mass')) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 原地休整，${firstWorks ? '' : '重新'}构筑工事` });
         const regeneration = regenerationAmount(u, this.traitRegistry, this.conditionMap());
-        for (const condition of u.conditions) if (condition.dur !== undefined) condition.dur--;
+        for (const condition of u.conditions) if (condition.dur !== undefined && !ACTIVATION_CONTROLS.has(condition.id)) condition.dur--;
+        finishControlActivation(u);
         u.conditions = u.conditions.filter((c) => c.dur === undefined || c.dur > 0);
-        if (u.status === 'ready' && regeneration > 0) {
-          const restored = applyRecovery(u, regeneration);
+        if (this.rules.traitLevelModel === 'traits-levels-v2' || u.status === 'ready' && regeneration > 0) {
+          const restored = settleRegeneration(u, regeneration);
           if (restored) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 再生 +${restored} → ${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}${u.scale !== 'hero' ? `，剩余可救伤兵${u.recoverableWounded ?? 0}` : ''}` });
         }
         this.checkCommanderLost(u);
@@ -1472,14 +1537,14 @@ export class MassBattle {
         if (host.status === 'routing') { this.syncPassenger(host); continue; }
         if (host.status === 'fled') { hero.status = 'fled'; continue; }
         this.exposedHeroes.add(heroId);
-        const retreat = this.combatants.some((u) => u.id !== hostId && u.side === hero.side && !this.isAttached(u.id) && u.status === 'ready' && this.rankOf(u) === 'reserve');
+        const retreat = this.combatants.some((u) => u.id !== hostId && !combatHostile(u, hero, this.combatants) && !this.isAttached(u.id) && u.status === 'ready' && this.rankOf(u) === 'reserve');
         const hpBefore=hero.hp;
         hero.hp = retreat ? Math.max(1, Math.floor(hero.hp * 0.75)) : 0; hero.status = retreat ? 'fled' : this.nonLethal ? 'dying' : 'dead';
         this.recordEvent({ round: this.round, kind: 'death', participants: [hero.id], damage:{targetId:hero.id,amount:hpBefore-hero.hp,cause:'随队暴露'}, text: `${hero.name} 随队暴露：${retreat ? '预备队掩护，受伤撤出' : this.nonLethal ? '无退路，濒死失能' : '无退路，阵亡'}` });
       }
       for (const [id, left] of this.reloadCd) { if (left <= 1) this.reloadCd.delete(id); else this.reloadCd.set(id, left - 1); }
       this.previousOrders = new Map(plans.filter((p) => !['ability', 'takeoff', 'land'].includes(p.type)).map((p) => [p.unitId, p]));
-      for (const unit of this.combatants) { expireTraitSources(unit, 'rounds'); decayBarrier(unit); }
+      for (const unit of this.combatants) { delete unit.looseChoiceLocked; delete unit.movedDuringActivation; expireTraitSources(unit, 'rounds'); decayBarrier(unit); }
       this.resolveFlightStates(); this.updateFrontControl(); this.finishPhase('重整');
       if (this.pendingReport && this.feedback) {
         this.pendingReport.total = this.feedback.rounds()[0]!;
@@ -1510,6 +1575,7 @@ export class MassBattle {
   }
 
   start(): void {
+    for (const unit of this.combatants) delete unit.regenerationRemainder;
     if (this.started) return;
     assertBattleCapacity(this.combatants, 'mass');
     if (this.rules.resolutionVersion === 'v2' || this.formationSlots !== undefined) this.prepareFormation();
@@ -1567,7 +1633,19 @@ export class MassBattle {
   }
 
   /** 下达指令（面板调用）。特殊指令消耗指挥点。 */
+  private confusedOrder(unit: Combatant, target: Combatant): Order | undefined {
+    if (target.hp <= 0 || ['dead','fled'].includes(target.status)) return undefined;
+    for (const type of ['attack','volley'] as const) { const order: Order = { unitId: unit.id, targetId: target.id, type, automatic: true }; if (!this.v2OrderReason(order)) return order; }
+    return undefined;
+  }
+  chooseLooseFormation(unitId: string, choice: 'loose' | 'closed'): { ok: boolean; reason?: string } {
+    const unit = this.byId(unitId);
+    if (this.rules.traitLevelModel !== 'traits-levels-v2' || !activeTraitIds(unit).includes('loose-formation')) return { ok: false, reason: '没有可切换的散兵特质' };
+    if (this.round > 0 && (unit.looseChoiceLocked || this.orders.has(unitId) || this.hasteOrders.has(unitId))) return { ok: false, reason: '只能在本轮正常激活开始、下军令前选择一次疏散/收拢' };
+    unit.looseFormationChoice = choice; if (this.round > 0) unit.looseChoiceLocked = true; return { ok: true };
+  }
   issue(order: Order): { ok: boolean; reason?: string } {
+    if (controlPolicy(this.byId(order.unitId)) === 'charmed' && !order.automatic) return { ok: false, reason: '魅惑期间由受约束AI行动' };
     if (this.rules.resolutionVersion === 'v2') {
       if (order.haste) return { ok: false, reason: '加速任务须单独指定' };
       if (!this.started || this.isOver()) return { ok: false, reason: '会战未开始或已结束' };
@@ -1587,7 +1665,7 @@ export class MassBattle {
     // 翼门禁：近战/冲锋只能打同翼或相邻翼的目标（远程齐射/魔法不受翼限制）
     if ((order.type === 'attack' || order.type === 'charge') && order.targetId) {
       const target = this.byId(order.targetId);
-      if (target.side === u.side) return { ok: false, reason: '不能攻击友军' };
+      if (!combatHostile(target, u, this.combatants)) return { ok: false, reason: '不能攻击友军' };
       if (target.status === 'ready' && !this.canMeleeReach(u, target)) {
         return { ok: false, reason: `${target.name} 不在本机翼可及前线，或正受前排掩护` };
       }
@@ -1906,7 +1984,7 @@ export class MassBattle {
             this.useAbility(u.id, a.id, undefined);
           } else {
             const wounded = this.combatants
-              .filter((c) => c.side === u.side && c.status === 'ready' && c.hp / Math.max(1, c.base.hpMax) < 0.5)
+              .filter((c) => !combatHostile(c, u, this.combatants) && c.status === 'ready' && c.hp / Math.max(1, c.base.hpMax) < 0.5)
               .sort((x, y) => x.hp / Math.max(1, x.base.hpMax) - y.hp / Math.max(1, y.base.hpMax));
             if (!wounded.length) continue;
             this.useAbility(u.id, a.id, wounded[0]!.id);
@@ -1946,7 +2024,7 @@ export class MassBattle {
     spendAbility(u, ability);
 
     const logBits = [`${this.zoneOf(u)}｜${u.name} 发动【${ability.name}】`];
-    for (const eff of ability.effects) {
+    for (const eff of healingEffectGroups(ability)) {
       const t = chosenTarget;
       switch (eff.op) {
         case 'damage': {
@@ -2122,6 +2200,7 @@ export class MassBattle {
     if (restored) this.recordEvent({ round: this.round, kind: 'condition', participants: [attacker.id], text: `${attacker.name} 吸血，回复${restored}${attacker.scale === 'hero' ? '生命' : '名可救伤兵'}` });
   }
   private recordAttack(u: Combatant, t: Combatant, res: import('../damage.js').AttackResolution, label = ''): void {
+    breakCharmOnDamage(this.combatants, t, u, res.hpBefore - res.hpAfter);
     this.recordEvent({
       round: this.round,
       kind: 'attack',
@@ -2314,8 +2393,8 @@ export class MassBattle {
         for (const e of t.effects) {
           if (e.kind !== 'moraleAura') continue;
           const applies =
-            (e.scope === 'enemySide' && other.side !== u.side) ||
-            (e.scope === 'side' && other.side === u.side);
+            (e.scope === 'enemySide' && combatHostile(other, u, this.combatants)) ||
+            (e.scope === 'side' && !combatHostile(other, u, this.combatants));
           if (applies) {
             out.push({ source: 'stance', name: `${t.name}·${other.name}`, kind: 'morale', type: 'flat', value: e.value });
           }
@@ -2398,6 +2477,7 @@ export class MassBattle {
   }
 
   private conditionMap(): Map<string, ConditionDef> {
+    if (this.queryConditions) return this.queryConditions;
     const m = new Map<string, ConditionDef>();
     for (const c of this.conditions.all()) m.set(c.id, c);
     return m;

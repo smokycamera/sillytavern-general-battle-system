@@ -206,7 +206,8 @@ describe('正文原子事务', () => {
     expect(() => prepareNarrativeTransaction({ ...save, autoApprove: false }, proposal, ns)).toThrow(/自动批准/);
     const next = prepareNarrativeTransaction(save, proposal, ns, true);
     const deployed = materializeUnitRecord(next.storage![0]!, reg);
-    expect(deployed.hp).toBe(70); expect(deployed.traits).toEqual([]); expect(activeTraitIds(deployed)).toEqual(['guardian-greater']);
+    expect(deployed.hp).toBe(70); expect(deployed.traits).toEqual([]); expect(activeTraitIds(deployed)).toEqual(['guardian']);
+    expect(deployed.traitSources![0]!.traitLevels).toEqual({ guardian: 8 });
     expect(deployed.traitSources![0]).toMatchObject({ name: '神灵庇佑', remaining: 2, kind: 'blessing' });
     expect(() => prepareNarrativeTransaction(next, proposal, ns, true)).toThrow();
     expect(save.storage![0]!.snapshot!.traitSources).toBeUndefined();

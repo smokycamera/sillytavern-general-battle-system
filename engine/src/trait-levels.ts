@@ -1,5 +1,5 @@
 /**
- * 五项专精的十级阶梯（V15）。L5 就是 V14 及以前的效果，省略等级时按 L5；V14 及更早的战斗不论记录多少级都按 L5。
+ * 五项专精的十级阶梯（V15）。L5 就是 V14 及以前的效果，历史记录省略等级按L5，新输入默认L1；V14 及更早的战斗不论记录多少级都按 L5。
  * 每一级比上一级多一项：L1–4 逐级减轻环境惩罚，L6–10 逐级获得环境优势。来源（自带、bless、技能、佩戴品）取最高一级，不叠加。
  *
  * | L | 林地 | 山地 | 夜战 | 平原 | 巷战 |
@@ -17,24 +17,21 @@
  * 移动减免按代价逐级递减而不是“每次移动前N格”，拆成多段移动也拿不到额外好处。会战观测阵位为小战格数×2/3向上取整。
  */
 import type { Combatant } from './types.js';
-import { activeTraitIds, traitSourceActive } from './trait-sources.js';
+import { activeTraitIds, effectiveTraitLevel } from './trait-sources.js';
 import { itemsV15 } from './item-model.js';
 import { isGradedTrait } from './data/traits.js';
+import { gradedTraitEnabled, traitLevelsV16 } from './trait-level-model.js';
+import { traitParameter, type TraitParameter } from './trait-parameters.js';
 
 export const STANDARD_TRAIT_LEVEL = 5;
 
-/** 单位当前的专精等级，没有该专精为 0。traits 可传入已算好的 activeTraitIds 以免重复计算。 */
+/** 单位当前的有效特质等级，没有该专精为 0。traits 可传入已算好的 activeTraitIds 以免重复计算。 */
 export function traitLevel(unit: Combatant, id: string, traits: readonly string[] = activeTraitIds(unit)): number {
-  if (!traits.includes(id)) return 0;
-  if (unit.rulesVersion !== 'v2' || !itemsV15(unit)) return STANDARD_TRAIT_LEVEL;
-  let level = 0;
-  const take = (value: number | undefined) => { level = Math.max(level, value ?? STANDARD_TRAIT_LEVEL); };
-  if (unit.traits.includes(id)) take(unit.traitLevels?.[id]);
-  for (const source of unit.traitSources ?? []) if (source.traitIds.includes(id) && traitSourceActive(unit, source)) take(source.traitLevels?.[id]);
-  for (const item of unit.gear ?? []) for (const grant of item.passive?.traits ?? []) if (grant.id === id) take(grant.level);
-  for (const item of Object.values(unit.accessories ?? {})) if (item?.traitId === id) take(undefined);
-  // 由身体或装备派生的同名特质（目前没有）按标准等级。
-  return level || STANDARD_TRAIT_LEVEL;
+  return effectiveTraitLevel(unit, id, traits);
+}
+/** 执行器的单一参数入口；旧规则直接返回历史值。调用者检查适用前提。 */
+export function traitValue(unit: Combatant, id: string, parameter: TraitParameter, legacy: number): number {
+  return traitLevelsV16(unit) ? traitParameter(parameter, traitLevel(unit, id)) : legacy;
 }
 
 // ---- 林地与山地：移动、攻击惩罚、会战行军 ----
@@ -114,12 +111,43 @@ export function traitLadderSummary(id: string, level: number): string {
   } else if (id === 'urban-fighter') {
     add(true, `巷战防御+${urbanDefense(L)}`); add(urbanAttack(L) > 0, `所有攻击+${urbanAttack(L)}`); add(urbanMeleeAttack(L) > urbanAttack(L), `近战攻击+${urbanMeleeAttack(L)}`);
     add(urbanCloseShotAttack(L) > urbanAttack(L), `2格内射击攻击+${urbanCloseShotAttack(L)}`); add(urbanInitiative(L) > 0, `先攻+${urbanInitiative(L)}`); add(urbanStalk(L), '在街道与建筑中视同潜伏');
-  } else return '';
+  } else {
+    const pct = (p: TraitParameter) => Number((traitParameter(p, L) * 100).toFixed(2));
+    if (id === 'guardian') parts.push(`全伤害减免${pct('guardianReduction')}%，同组取强；V17起同时提供防御规格L${L}，不增加实物抗穿`);
+    else if (id === 'lifesteal') parts.push(`实际生命伤害的${pct('lifestealRatio')}%转为恢复，受合法伤口/伤兵上限限制；护盾、过量伤害、非生物及载具不提供恢复`);
+    else if (id === 'sneak-attack') parts.push(`潜伏出手或友军缠斗时伤害×${traitParameter('sneakMultiplier', L)}，独立魔法不触发`);
+    else if (id === 'fatigue-trained') parts.push(`疲劳获得×${traitParameter('fatigueMultiplier', L)}，休整不变`);
+    else if (id === 'trample') parts.push(`合法近战冲锋对更小身体伤害×${traitParameter('trampleMultiplier', L)}`);
+    else if (id === 'shield-wall') parts.push(`持实际盾牌、可行动且固守时，正面远程伤害减免${pct('shieldReduction')}%`);
+    else if (id === 'ap-weapon') parts.push(`动能穿透最多+${traitParameter('penetrationBudget', L)}，受floor(基础穿透/3)上限限制；上限吞掉的等级差异不生效`);
+    else if (id === 'anti-infantry' || id === 'anti-large') parts.push(`对${id === 'anti-infantry' ? '地面未骑乘人形' : '大型、巨型、载具或骑乘'}目标攻击+${traitParameter('counterAttack', L)}、伤害×${traitParameter('counterMultiplier', L)}${id === 'anti-large' ? '，与对空同组取强' : ''}`);
+    else if (id === 'stubborn') parts.push(`自身士气韧性${traitParameter('resilience', L)}，编队只计一次，个体参与心理对抗`);
+    else if (id === 'commander') parts.push(`小战3格/会战1阵位内友军士气支援${traitParameter('command', L)}，需要视线、可见且来源可行动，多位统率取强`);
+    else if (id === 'regen') parts.push(`每合法周期基础再生${3 * traitParameter('woundRatio', L)}，再按自身level计算治疗跨代；不足1的余量保存，满血/失去全部来源清零，失能暂停，加速不增加周期，不乘施放医护`);
+    else if (id === 'medic') parts.push(`施放治疗×${traitParameter('medicHealing', L)}，自身编队新伤亡可救${traitParameter('medicRescue', L)}%；不重算过去永久伤亡，不抬高治疗规格`);
+    else if (id === 'poison-strike') parts.push(`合法动能攻击造成真实损伤后施加普通毒，基础毒伤×${traitParameter('woundRatio', L)}，冻结效力与波及人数，结算3次；存续时不叠层、不续期、不替换，攻击降低1`);
+    else if (id === 'fear') parts.push(`小战3格/会战1阵位恐惧压力${traitParameter('fearPressure', L)}；残余压力扣附近统率与自身韧性，攻击至多降低2${L >= 8 ? `；有效士气≤50时额外惊退DC${12 + 2 * (L - 8)}，按本体来源本战只应对一次` : '，没有额外恐怖惊退'}`);
+    else if (id === 'fortification') parts.push(`在据守位置防御+${traitParameter('worksDefense', L)}、远程伤害减免${pct('worksReduction')}%；离开失效，工兵仅削减此来源`);
+    else if (id === 'pike-wall') parts.push(`对机动目标攻击+${traitParameter('counterAttack', L)}、伤害×${traitParameter('counterMultiplier', L)}，正面固守时抗合法冲锋减伤${pct('formationReduction')}%`);
+    else if (id === 'loose-formation') parts.push(`疏散时未被近敌牵制的范围伤害减免${pct('formationReduction')}%，溅射暴露剩余${100-pct('formationReduction')}%；编队近战展开×0.5、近战防御−1；可在正常激活开始选择疏散/收拢，额外动作不切换`);
+    else if (id === 'skirmisher') parts.push(`合法轻中装先攻+${traitParameter('skirmishInitiative', L)}、机动+${traitParameter('skirmishMobility', L)}，脱离近敌时远程减伤${pct('skirmishReduction')}%`);
+    else if (id === 'tenacity') parts.push(`控制抵抗+${traitParameter('controlResistance', L)}，${L >= 5 ? '完全阻挡推拉' : `完全阻挡实际force≤${traitParameter('pushLimit', L)}的推拉`}，不免疫已经施加的失能`);
+    else if (id === 'agile') parts.push(`合法地形额外成本剩余${pct('agileTerrain')}%，${L >= 5 ? '脱离近战免借机触发' : `仍触发借机，伤害减免${pct('agileReactionReduction')}%，不免附带状态`}；先攻+${traitParameter('agileInitiative', L)}、机动+${traitParameter('agileMobility', L)}；会战困难地形行军使用同一成本，不跨墙/深水资格`);
+    else if (id === 'siege-breaker') parts.push(`结构伤害×${traitParameter('engineerDamage', L)}，攻击时削减目标工事提供的防御/远程减伤${pct('engineerSuppression')}%，不削真实护甲、盾牌或结构本体`);
+    else if (id === 'melee-master') parts.push(`近战武器与物理技法攻击+${traitParameter('meleeAttack', L)}、伤害×${traitParameter('meleeDamage', L)}，独立魔法不生效`);
+    else if (id === 'anti-air') parts.push(`对空攻击+${traitParameter('counterAttack', L)}、伤害×${traitParameter('counterMultiplier', L)}；地对空额外射程成本小战${traitParameter('antiAirRangeSmall', L)}格/会战${traitParameter('antiAirRangeMass', L)}阵位，不授予新投送方式`);
+    else if (id === 'sharpshooter') parts.push(L === 1 ? '静止且半射程内射击攻击+1' : L === 2 ? '半射程内射击攻击+1，允许移动' : L === 3 ? '全合法射程射击攻击+1' : L === 4 ? '静止射击+2、已移动+1' : `全合法射击攻击+${L>=9?4:L>=7?3:2}${L>=6?`，仅减轻明确掩护${L>=8?2:1}点`:''}${L===10?'，另减轻1点移动命中惩罚':''}`);
+    else if (id === 'charge-strong') parts.push(`${L===1?'仅直线合法冲锋攻击+1':L===3?'直线冲锋+2，其他合法冲锋+1':`任何合法冲锋攻击+${traitParameter('chargeAttack', L)}`}，合法冲锋伤害×${traitParameter('chargeDamage', L)}，不授予穿障碍资格`);
+    else if (id === 'berserk') parts.push(`固定防御−1；${L===1?'近战武器攻击+1':L===2?'所有武器攻击+1':L===3?'所有攻击+1':L===4?'武器攻击+2、独立魔法+1':`所有攻击+${traitParameter('berserkAttack', L)}`}，合法攻击伤害×${traitParameter('berserkDamage', L)}，不影响治疗、毒DOT或士气`);
+    else if (id === 'stalk') parts.push(`潜伏规格L${L}参与确定性侦察对抗；仍需合法隐蔽条件，攻击/施法/近敌接触照常暴露，不穿墙或空间移动`);
+    else if (id === 'recon') parts.push(`侦察规格L${L}参与确定性反隐，真实可见目标曲射校射攻击+${traitParameter('reconSpotting', L)}，多来源取强；不提供额外夜视或穿墙，致盲时不反隐/校射`);
+    else return '';
+  }
   return 'L' + L + '：' + parts.join('，');
 }
 /** 面板显示：V15 下专精带上当前等级（林地专精L8），其余特质原样。 */
 export function traitDisplayName(unit: Combatant, id: string, name: string, traits?: readonly string[]): string {
-  return isGradedTrait(id) && unit.rulesVersion === 'v2' && itemsV15(unit) ? name + 'L' + traitLevel(unit, id, traits) : name;
+  return isGradedTrait(id) && gradedTraitEnabled(unit, id) ? name + 'L' + traitLevel(unit, id, traits) : name;
 }
 
 /** 站在对应地形中视同潜伏：林地 L8 在森林，山地 L8 在丘陵与山地，巷战 L9 在街道、建筑与城镇。旧规则从不生效。 */

@@ -10,6 +10,25 @@ import { createInventoryItem } from './inventory-state.js';
 import { protocolExcerpt } from './protocol.js';
 import { narrativeIds } from './narrative-ids.js';
 const disposers: (() => void)[] = [];
+
+it('开局检查点在战中保持不变，内存进度切聊天后丢弃，结束时才写最终结果', () => {
+  const units = ['ally', 'enemy'].map((side, i) => {
+    const unit = generateUnit({ name: side, side: side as 'ally' | 'enemy', scale: 'hero', level: 3, rulesVersion: 'v2', traits: [] }, { seed: side }).unit;
+    unit.id = 'session' + i; return unit;
+  });
+  const b = new SmallBattle({ combatants: units, battlefield: standardField(), rules: V2_D20, seed: 'legacy-session' }); b.start();
+  const initial: NarrativeSave = { schemaVersion: 2, factRevision: 0, storage: units.map(u => unitRecordFromCombatant(u)), rosterIds: units.map(u => u.id), battle: { kind: 'small', snap: b.toSnapshot() } };
+  const { controller, stores, ctx, emit } = setup(structuredClone(initial));
+  const stage = () => { const before = controller.snapshot(); return controller.persistPanel({ ...before, battle: { kind: 'small', snap: b.toSnapshot() } }, before.factRevision ?? 0, { memoryOnly: true }); };
+  b.round = 3; expect(stage().receipt.memoryOnly).toBe(true);
+  expect(controller.snapshot().battle!.snap.round).toBe(3); expect(stores.a!.panel!.battle!.snap.round).toBe(1);
+  ctx.chatId = 'b'; emit('CHAT_CHANGED'); ctx.chatId = 'a'; emit('CHAT_CHANGED');
+  expect(controller.snapshot().battle!.snap.round).toBe(1);
+  b.round = 4; stage(); b.finishBattle('ceasefire');
+  const before = controller.snapshot();
+  expect(controller.persistPanel({ ...before, battle: { kind: 'small', snap: b.toSnapshot() } }, before.factRevision ?? 0).receipt.memoryOnly).not.toBe(true);
+  expect(SmallBattle.fromSnapshot(stores.a!.panel!.battle!.snap).isOver()).toBe(true);
+});
 afterEach(() => { disposers.splice(0).forEach((f) => f()); vi.unstubAllGlobals(); });
 async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
 function setup(initialOverride?: NarrativeSave) {
@@ -244,7 +263,7 @@ describe('常驻宿主生命周期与故障', () => {
     fail(false); expect((await controller.approve(proposal.id)).status).not.toBe('failed');
     const saved = controller.snapshot(), sourceId = saved.storage![0]!.snapshot!.traitSources![0]!.id, context = controller.inventoryContext();
     expect(narrativeProjection(saved)).toContain('军神裁定'); expect(narrativeProjection(saved)).toContain('remaining');
-    expect(narrativeProjection(saved)).toContain(kind === 'bless' ? '大守护' : '士气低下');
+    expect(narrativeProjection(saved)).toContain(kind === 'bless' ? '守护L8' : '士气低下');
     const forged = structuredClone(saved); forged.storage![0]!.snapshot!.traitSources = [];
     expect(controller.persistPanel(forged, saved.factRevision!).receipt.status).toBe('failed');
     fail(true); expect(controller.revokeBlessing('a', sourceId, saved.factRevision!, context).status).toBe('failed'); expect(controller.snapshot()).toEqual(saved);

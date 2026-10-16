@@ -1,12 +1,13 @@
+import { prepareTraitLevelModel } from '../../engine/src/trait-level-model.js';
 import { prepareCombatModel } from '../../engine/src/combat-model.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
-import { V6_D20, V15_OVERFLOW_D20 } from '../../engine/src/rules.js';
+import { V6_D20, V17_OVERFLOW_D20 } from '../../engine/src/rules.js';
 import { prepareSkillModel } from '../../engine/src/skill-model.js';
 import { prepareItemModel } from '../../engine/src/item-model.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import type { PromptSettings } from './prompt-settings.js';
 import { PANEL_SAVE_SCHEMA_VERSION, learnUnitRecord } from './unit-state.js';
-import { generateUnit, grantTraitSource, revokeTraitSource, traitRegistry, narrativeTraitLevel, type Combatant, type GenerateInput } from '../../engine/src/index.js';
+import { generateUnit, grantTraitSource, revokeTraitSource, traitRegistry, narrativeTraitLevel, isGradedTrait, type Combatant, type GenerateInput } from '../../engine/src/index.js';
 import { deployUnitRecord, materializeUnitRecord, unitRecordFromCombatant, updateUnitRecord, type UnitRecord } from './unit-state.js';
 import { parseProtocol, protocolExcerpt } from './protocol.js';
 import type { Suggestion } from './tags.js';
@@ -157,7 +158,7 @@ function spawnInput(event: Extract<Suggestion, { kind: 'spawn' }>): GenerateInpu
   const parsed = (event.traits ?? []).map((name) => narrativeTraitLevel(name, registry));
   const traits = [...new Set(parsed.flatMap((p) => p.kind === 'trait' ? [p.id] : []))];
   const levels: Record<string, number> = {};
-  for (const p of parsed) if (p.kind === 'trait' && p.level !== undefined) levels[p.id] = Math.max(levels[p.id] ?? 0, p.level);
+  for (const p of parsed) if (p.kind === 'trait' && isGradedTrait(p.id)) levels[p.id] = Math.max(levels[p.id] ?? 0, p.level ?? 5);
   return {
     ...(Object.keys(levels).length ? { traitLevels: levels } : {}),
     rulesVersion: 'v2', damageModel: 'wounds-v2', body: event.body, mount: event.mount, speedTier: event.speedTier, quality: event.quality, shield: event.shield,
@@ -252,6 +253,7 @@ function applyUnitEffect(storage: UnitRecord[], event: Extract<Suggestion, { kin
   const record: UnitRecord = storage.find((r) => r.id === event.id)!;
   if (record.retired || record.hp <= 0 || record.status === 'dead') throw new Error('不能通过效果来源复活阵亡或解散档案');
   const unit = materializeUnitRecord(record, registry);
+  prepareTraitLevelModel(unit, V17_OVERFLOW_D20);
   if (event.kind === 'bless') grantTraitSource(unit, { id: `bless:${proposalId}:${index}`, name: event.name, kind: 'blessing', traitIds: event.traitIds, ...(event.traitLevels ? { traitLevels: event.traitLevels } : {}), duration: event.duration });
   else if (event.kind === 'affect') grantTraitSource(unit, { id: `affect:${proposalId}:${index}`, name: event.name, kind: 'effect', traitIds: [], conditionIds: event.conditionIds, duration: event.duration });
   else {
@@ -370,9 +372,9 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
       for (let i = 0; i < event.count; i++) {
         const id = newUnitId(proposal.id, index, i);
         if (records.some((r) => r.id === id)) throw new Error('新单位身份已存在');
-        const unit = generateUnit(spawnInput(event), { registry, seed: id }).unit;
+        const unit = generateUnit(spawnInput(event), { registry, seed: id, skillModel: 'skills-v2' }).unit;
         unit.id = id;
-        prepareSkillModel(unit,V15_OVERFLOW_D20); prepareCombatModel(unit,V6_D20); upgradeCombatSkills(unit); prepareItemModel(unit,V15_OVERFLOW_D20); applySpawnWound(unit, event);
+        prepareSkillModel(unit,V17_OVERFLOW_D20); prepareCombatModel(unit,V6_D20); upgradeCombatSkills(unit); prepareItemModel(unit,V17_OVERFLOW_D20);prepareTraitLevelModel(unit,V17_OVERFLOW_D20); applySpawnWound(unit, event);
         records.push(unitRecordFromCombatant(unit, undefined, { sourceId: proposal.id }));
         if (unit.hp > 0 && !event.archiveOnly) roster.push(materializeUnitRecord(records.at(-1)!, registry));
         // 随身道具每张卡各一套，归这张卡；佩戴、充能道具装上（编队一件即整卡配发），一次性道具开战时随身携带。

@@ -1,4 +1,4 @@
-import { ITEM_FORM_NAMES, itemSpecText, traitRegistry, standardConditionMap, isGradedTrait, traitLadderSummary,
+import { ITEM_FORM_NAMES, itemSpecText, traitRegistry, standardConditionMap, isGradedTrait, traitLadderSummary, traitLevelsV16, canonicalTraitId, sourceTraitLevel,
   type Ability, type Combatant, type EffectOp, type ItemPassive, type ItemValue } from '../../engine/src/index.js';
 import { enhancementLabel } from '../../engine/src/enhancements.js';
 
@@ -46,16 +46,18 @@ export function itemValueSummary(value: ItemValue): string {
  * 同一单位已佩戴的道具里被更高的一件覆盖的效果：同方向修正只取最高的一件，同一特质只算一次、专精取最高一级；
  * 打平时先装上的那件生效。单位自带的特质也算作已覆盖。
  */
-export function overshadowedGear(unit: Pick<Combatant, 'gear' | 'traits' | 'traitLevels'>, itemId: string): string[] {
+export function overshadowedGear(unit: Pick<Combatant, 'gear' | 'traits' | 'traitLevels'> & Partial<Pick<Combatant, 'rulesVersion' | 'traitLevelModel'>>, itemId: string): string[] {
   const gear = unit.gear ?? [], index = gear.findIndex((g) => g.id === itemId), item = gear[index];
   if (!item?.passive) return [];
   const beats = (other: number, otherIndex: number, mine: number) => other > mine || other === mine && otherIndex < index;
   const covered: string[] = [];
+  const canonical = (id: string) => traitLevelsV16(unit) ? canonicalTraitId(id) : id;
+  const grade = (id: string, level?: number) => traitLevelsV16(unit) ? sourceTraitLevel(id, level) : level ?? 5;
   for (const grant of item.passive.traits) {
-    const level = grant.level ?? 5, name = traitRegistry().get(grant.id)?.name ?? grant.id;
-    const own = unit.traits.includes(grant.id) && (!isGradedTrait(grant.id) || (unit.traitLevels?.[grant.id] ?? 5) >= level);
-    const better = gear.some((other, n) => n !== index && other.passive?.traits.some((t) => t.id === grant.id && beats(t.level ?? 5, n, level)));
-    if (own || better) covered.push(isGradedTrait(grant.id) ? name + 'L' + level : name);
+    const id = canonical(grant.id), level = grade(grant.id, grant.level), name = traitRegistry().get(id)?.name ?? id;
+    const own = unit.traits.some(raw => canonical(raw) === id && (!isGradedTrait(id) || grade(raw, unit.traitLevels?.[raw]) >= level));
+    const better = gear.some((other, n) => n !== index && other.passive?.traits.some((t) => canonical(t.id) === id && beats(grade(t.id, t.level), n, level)));
+    if (own || better) covered.push(isGradedTrait(id) ? name + 'L' + level : name);
   }
   for (const [stat, points] of Object.entries(item.passive.bonuses ?? {}) as [keyof NonNullable<ItemPassive['bonuses']>, number][]) {
     if (points <= 0) continue;

@@ -89,8 +89,17 @@ export const V14_OVERFLOW_TW: RulePack = { ...V13_OVERFLOW_TW, id: 'v14-overflow
 export const V15_OVERFLOW_D20: RulePack = { ...V14_OVERFLOW_D20, id: 'v15-overflow-d20', name: 'V15 道具系统', itemModel: 'items-v1' };
 export const V15_OVERFLOW_TW: RulePack = { ...V14_OVERFLOW_TW, id: 'v15-overflow-tw', name: 'V15 道具系统会战', itemModel: 'items-v1' };
 
+/** P1 十一类特质分级。旧规则 id 和进行中的战斗保持冻结。 */
+export const V16_OVERFLOW_D20: RulePack = { ...V15_OVERFLOW_D20, id: 'v16-overflow-d20', name: 'V16 特质分级', traitLevelModel: 'traits-levels-v1' };
+export const V16_OVERFLOW_TW: RulePack = { ...V15_OVERFLOW_TW, id: 'v16-overflow-tw', name: 'V16 特质分级会战', traitLevelModel: 'traits-levels-v1' };
+
+export const V17_OVERFLOW_D20: RulePack = { ...V16_OVERFLOW_D20, id: 'v17-overflow-d20', name: 'V17 特质第二阶段', traitLevelModel: 'traits-levels-v2', skillModel: 'skills-v2', healingModel: 'healing-grades-v1', controlModel: 'activation-controls-v1' };
+export const V17_OVERFLOW_TW: RulePack = { ...V16_OVERFLOW_TW, id: 'v17-overflow-tw', name: 'V17 特质第二阶段会战', traitLevelModel: 'traits-levels-v2', skillModel: 'skills-v2', healingModel: 'healing-grades-v1', controlModel: 'activation-controls-v1' };
+
 /** id → 规则包（战斗快照恢复用；面板只用默认两包） */
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V17_OVERFLOW_D20.id]: V17_OVERFLOW_D20, [V17_OVERFLOW_TW.id]: V17_OVERFLOW_TW,
+  [V16_OVERFLOW_D20.id]: V16_OVERFLOW_D20, [V16_OVERFLOW_TW.id]: V16_OVERFLOW_TW,
   [V15_OVERFLOW_D20.id]: V15_OVERFLOW_D20, [V15_OVERFLOW_TW.id]: V15_OVERFLOW_TW,
   [V14_OVERFLOW_D20.id]: V14_OVERFLOW_D20, [V14_OVERFLOW_TW.id]: V14_OVERFLOW_TW,
   [V13_OVERFLOW_D20.id]: V13_OVERFLOW_D20, [V13_OVERFLOW_TW.id]: V13_OVERFLOW_TW,

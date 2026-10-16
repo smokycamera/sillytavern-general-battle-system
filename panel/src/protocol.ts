@@ -7,7 +7,7 @@ import { MAX_PROTOCOL_CHARS, MAX_PROTOCOL_EVENTS, MAX_SCENE_UNITS, MAX_SPAWN_COU
 import { scanProtocolTags, normalizedAttributes, serializeEvent, ProtocolSyntaxError, type ProtocolTag, type ProtocolAttribute } from './protocol-syntax.js';
 import { parseUnitSet, itemKey, UNIT_SET_ATTRIBUTES } from './unit-set.js';
 import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-tolerance.js';
-import { parseItemSpecification, parseSpawnItem, splitSpawnItems, spawnItemText, spawnItemName, splitItemSpecification, itemSpecificationText, assertItemCompiles, fitWornBudget } from './item-spec.js';
+import { parseItemSpecification, parseSpawnItem, splitSpawnItems, spawnItemText, spawnItemName, splitItemSpecification, itemSpecificationText, assertItemCompiles } from './item-spec.js';
 import { normalizeHandle } from './narrative-ids.js';
 
 export interface ProtocolDiagnostic { message: string; start: number; end: number; field?: string; event: string }
@@ -130,13 +130,15 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
           if (level) attrs.level = String(p.level);
           warnings.push(`${who}：「${p.name}」${p.reason}，不再作为特质${speed ? `，已按speed=${p.speed}` : level ? `，已按level=${p.level}` : ''}`);
         }
-        // 五项专精可带 L1–10，同一专精写了多次取最高；其余特质写了等级只保留特质。
+        // 已完成分级的特质可带 L1–10，同一专精写了多次取最高；其余特质写了等级只保留特质。
         const levels = new Map<string, number>();
         for (const p of parsed) if (p.kind === 'trait') {
           const name = traitRegistry().get(p.id)?.name ?? p.id;
-          if (p.droppedLevel !== undefined) warnings.push(`${who}：只有五项专精分L1–10，「${name}L${p.droppedLevel}」按${name}建档`);
+          if (p.droppedLevel !== undefined) warnings.push(p.level !== undefined
+            ? `${who}：旧强名称固定按${name}L${p.level}；指定其他等级请用规范名称`
+            : `${who}：只有已完成分级的特质可分L1–10，「${name}L${p.droppedLevel}」按${name}建档`);
           if (p.writtenLevel !== undefined) warnings.push(`${who}：专精等级为L1–10，「${name}L${p.writtenLevel}」按L${p.level}`);
-          if (p.level !== undefined) levels.set(p.id, Math.max(levels.get(p.id) ?? 0, p.level));
+          levels.set(p.id, Math.max(levels.get(p.id) ?? 0, p.level ?? 5));
         }
         const supported = [...new Set(parsed.flatMap((p) => p.kind === 'trait' ? [p.id] : []))].map((id) => traitLevelToken(id, levels.get(id)));
         if (tag.name === 'unit_set' && unknown.length) delete attrs.traits;
@@ -170,7 +172,7 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
         for (const entry of splitSpawnItems(attrs.items!)) {
           try {
             const notes: string[] = [], parsed = parseSpawnItem(entry, notes);
-            const item = parsed.spec ? { ...parsed, spec: fitWornBudget(parsed.spec, notes, entry) as typeof parsed.spec } : parsed;
+            const item = parsed;
             if (item.spec) assertItemCompiles(item.spec, item.name);
             kept.push(spawnItemText(item)); warnings.push(...notes);
           } catch (error) { skipped.push(`${attrs.name || attrs.id || tag.name}：未采用道具「${entry}」（${error instanceof Error ? error.message : String(error)}）`); }
@@ -182,9 +184,9 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
         const notes: string[] = [], consumable = giveAsItem(attrs, handed, armed);
         try {
           const parsed = parseItemSpecification(attrs.spec, consumable ? { type: attrs.type } : attrs, notes, { item: consumable });
-          const spec = fitWornBudget(parsed, notes, attrs.spec);
+          const spec = parsed;
           assertItemCompiles(spec, attrs.item);
-          // 换了写法（当道具用的武器词条、降到预算内的修正）就改成规范写法交给后面的校验；说明与 items 里同一项的相同，合并显示。
+          // 换了写法（当道具用的武器词条）就改成规范写法交给后面的校验；说明与 items 里同一项的相同，合并显示。
           if (spec.kind === 'item' && (consumable || spec !== parsed)) { attrs.spec = itemSpecificationText(spec); warnings.push(...notes); }
         } catch (error) {
           skipped.push(`未采用道具「${attrs.item ?? ''}」（${error instanceof Error ? error.message : String(error)}）`);

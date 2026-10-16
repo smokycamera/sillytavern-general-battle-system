@@ -1,3 +1,5 @@
+import { phase2Traits } from './trait-level-model.js';
+import { effectiveTraitLevel } from './trait-sources.js';
 import { instanceMultiplier, instanceRating } from './instance-variance.js';
 import { isWoundModel, UNIFIED_WOUNDS, UNIFIED_SPLASH, powerIndex } from './balance.js';
 import { compileWeapon } from './gen/equipment.js';
@@ -173,12 +175,13 @@ export function gradeOvermatch(power:number|undefined,defensePower:number,penetr
   const extra=Math.sqrt(continuousPowerBudget(power)/continuousPowerBudget(defensePower+1))-1;
   return 1+extra*Math.max(0,Math.min(1,penetration-resistance));
 }
-type DefensiveTarget = Pick<Combatant,'level'|'armor'|'body'|'shield'|'status'|'damageModel'> & Partial<Pick<Combatant,'conditions'|'barrier'|'armsModel'>>;
+type DefensiveTarget = Pick<Combatant,'level'|'armor'|'body'|'shield'|'status'|'damageModel'> & Partial<Pick<Combatant,'conditions'|'barrier'|'armsModel'|'rulesVersion'|'traitLevelModel'|'traits'|'traitLevels'|'traitSources'|'gear'|'accessories'|'weapon'|'sidearm'|'itemModel'>>;
 /** 单位等级、无甲装备规格、实际防护与守护取高；屏障仅在吸收时参与，不改写通道抗穿。 */
 export function defensePower(unit:DefensiveTarget,channel:DamageChannel,includeBarrier=false):number {
   const wards=(unit.conditions??[]).filter(c=>c.id==='blessed'&&c.dur>0&&validDefensePower(c.defensePower)).map(c=>c.defensePower!);
   const unarmoredPower=unit.armor?.tier===0?(unit.armor.recipe?.power??unit.armor.level??0):0;
-  return Math.max(unit.level,unarmoredPower,protectionPower(unit,channel),...wards,includeBarrier?barrierDefensePower(unit):0);
+  const guardian = phase2Traits(unit) && unit.traits ? effectiveTraitLevel(unit as Combatant, 'guardian') : 0;
+  return Math.max(unit.level,unarmoredPower,protectionPower(unit,channel),guardian,...wards,includeBarrier?barrierDefensePower(unit):0);
 }
 export function overmatchMultiplier(power:number|undefined,unit:DefensiveTarget,channel:DamageChannel,penetration:number,area=false,canBlock=true,includeBarrier=false,curve?:RulePack['overmatchCurve']):number {
   const armor=gradeOvermatch(power,defensePower(unit,channel,includeBarrier),penetration,anchoredProtection(unit,channel),curve);

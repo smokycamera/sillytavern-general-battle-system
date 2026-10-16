@@ -1,3 +1,4 @@
+import { activationControlDuration, controlPolicy } from '../../engine/src/battle-control.js';
 import { SCENE_NAMES } from '../../engine/src/small/map-design.js';
 import { movementStepCost, structureDisplayName,retreatCells,neighbors } from '../../engine/src/small/spatial.js';
 import { heightDescription,surfaceHeightAt,unitHeight } from '../../engine/src/small/height-map.js';
@@ -69,7 +70,7 @@ export function tacticalSelection(battle: SmallBattle, view: TacticalView, query
   const option = options.find((o) => o.id === view.mode) ?? options.find((o) => o.id === 'weapon');
   const target = view.targetId !== undefined ? option?.targets?.find((t) => t.targetId === view.targetId)
     : option?.targets?.find((t) => t.enabled) ?? option?.targets?.[0];
-  const canControl = !!actor && actor.id === battle.active?.id && actor.status === 'ready' && !battle.isOver();
+  const canControl = !!actor && !['charmed','confused'].includes(controlPolicy(actor)??'') && actor.id === battle.active?.id && actor.status === 'ready' && !battle.isOver();
   return { visible, actor, allOptions, options, option, target, canControl, query: query instanceof TacticalQueryCache ? query : actor ? { battle, actor, options: allOptions } : undefined };
 }
 
@@ -353,7 +354,8 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
       <div class="sub mission-summary">${objectiveSummary(battle)}</div>
       ${mission.kind==='annihilation'?'<details data-detail-id="objective-rules"><summary>任务规则</summary><p>'+objectiveDetails(battle)+'</p></details>':''}
       ${canControl && actor ? [false, true].filter(sidearm => !battle.reloadReason(actor.id, sidearm)).map(sidearm => `<button data-action="grid-reload" data-sidearm="${sidearm}">${sidearm ? '副武器' : '主武器'}装填 · 行动1</button>`).join('') : ''}
-      ${actor ? '<div class="actor-status">' + [(battle.reloadCd.get(actor.id) ?? 0) > 0 ? (tbWeaponShortName(actor.weapon) || '主武器') + '装填中' : '', actor.sidearm && (battle.reloadCd.get(weaponReloadKey(actor, actor.sidearm)) ?? 0) > 0 ? (tbWeaponShortName(actor.sidearm) || '副武器') + '装填中' : '', actor.fatigue ? '疲劳' + approx(actor.fatigue, 1, 'down') + '/' + fatigueLimit(actor) : '', concealment, pressure, isAirborne(actor) ? '空中，不能占领地面目标' : '', actor.tacticalPose ? postureLabel(actor, standardConditionMap()) : '', worksLabel(actor) ?? '', ...actor.conditions.filter((c) => c.dur > 0).map((c) => (battle.conditions.get(c.id)?.name ?? '持续效果') + ' ' + c.dur + '回合')].filter(Boolean).map((v) => '<span' + (v === pressure ? ' class="morale-pressure"' : '') + '>' + esc(v!) + '</span>').join('') + '</div>' : ''}
+      ${actor ? '<div class="actor-status">' + [(battle.reloadCd.get(actor.id) ?? 0) > 0 ? (tbWeaponShortName(actor.weapon) || '主武器') + '装填中' : '', actor.sidearm && (battle.reloadCd.get(weaponReloadKey(actor, actor.sidearm)) ?? 0) > 0 ? (tbWeaponShortName(actor.sidearm) || '副武器') + '装填中' : '', actor.fatigue ? '疲劳' + approx(actor.fatigue, 1, 'down') + '/' + fatigueLimit(actor) : '', concealment, pressure, isAirborne(actor) ? '空中，不能占领地面目标' : '', actor.tacticalPose ? postureLabel(actor, standardConditionMap()) : '', worksLabel(actor) ?? '', ...actor.conditions.filter((c) => c.dur > 0).map((c) => (battle.conditions.get(c.id)?.name ?? '持续效果') + ' ' + (activationControlDuration(c) ?? c.dur + '回合'))].filter(Boolean).map((v) => '<span' + (v === pressure ? ' class="morale-pressure"' : '') + '>' + esc(v!) + '</span>').join('') + '</div>' : ''}
+      ${canControl && actor && battle.rules.traitLevelModel === 'traits-levels-v2' && activeTraitIds(actor).includes('loose-formation') ? '<div class="formation-choice" aria-label="散兵阵形">' + (['loose','closed'] as const).map(choice => '<button data-action="trait-formation-choice" data-unit="'+esc(actor.id)+'" data-choice="'+choice+'" aria-pressed="'+((actor.looseFormationChoice ?? 'loose')===choice)+'" '+(actor.looseChoiceLocked || battle.actedThisTurn.has(actor.id) || battle.movedThisTurn.has(actor.id) ? 'disabled' : '')+'>'+(choice==='loose'?'疏散':'收拢')+'</button>').join('')+'<small>正常激活开始可选一次，保持到下次正常激活。</small></div>' : ''}
       <div class="command-modes" aria-label="行动类型">${[['move', '移动'], [weapon?.id ?? 'weapon', '攻击'], [skill?.id ?? '', '技能'], ['guard', '守备']].map(([id, label]) => `<button data-action="grid-mode" data-mode="${esc(id!)}" aria-pressed="${mode === id || label === '攻击' && !!option && ['weapon', 'charge'].includes(option.kind) && !['move', 'guard'].includes(mode) || label === '技能' && option?.kind === 'ability' && !['move', 'guard'].includes(mode)}" ${!id ? 'disabled' : ''}>${label}</button>`).join('')}
         ${actor && (isAirborne(actor) || activeTraitIds(actor).includes('flying')) ? `<button data-action="grid-flight" data-actor="${esc(actor.id)}" data-airborne="${!isAirborne(actor)}" ${!canControl || battle.flightReason(actor.id, !isAirborne(actor)) ? 'disabled' : ''} title="${esc(battle.flightReason(actor.id, !isAirborne(actor)) ?? '消耗移动1')}">${isAirborne(actor) ? '降落' : '起飞'}</button>` : ''}
         <button data-action="grid-suppress" data-target="${esc(target?.targetId ?? '')}" ${canControl && actor && !battle.suppressReason(actor.id, target?.targetId) ? '' : 'disabled'} title="${esc(actor ? battle.suppressReason(actor.id, target?.targetId) ?? '压制所选目标，消耗主行动1和战技点1' : '没有可用单位')}">压制</button>
@@ -373,8 +375,7 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
         ${actor && (isAirborne(actor) || activeTraitIds(actor).includes('flying')) ? `<p>${esc(battle.flightReason(actor.id, !isAirborne(actor)) ?? '起飞离开接敌可能触发借机；扑击会先降落。')}</p>` : ''}
         <p class="suppression-description">消耗1次主行动和1点战技点，需要合法射击目标；不造成生命伤害。目标攻击命中 -2，停用借机与警戒反应、取消现有警戒，且不能固守或冲锋；持续到目标完成2次行动结算。</p>${actor && battle.suppressReason(actor.id, target?.targetId) ? '<p class="grid-reason">' + esc(battle.suppressReason(actor.id, target?.targetId)!) + '</p>' : ''}
         <p>${field.retreatEdges?'本场我方撤离点：'+retreatCells(field,'ally').map(p=>cellLabel(field,p)).join('、')+'。':'我方撤离点：地图最下排标“撤”的格子；敌方从最上排撤离。'}脱离敌人至少2格并保留主行动后可撤离。${esc(s.allOptions.find((o) => o.id === 'retreat')?.reason ?? '')}</p>
-        <p class="ai-takeover-help">AI托管：勾选「此单位」后，当前选中的单位之后每次轮到都由AI行动（主控也可单独托管，地图上标AI）；「除主控」让主控保持手动，其余我方单位交给AI，未绑定主控时托管全部我方；「全自动」包含主控，让整场战斗连续推进，取消即暂停。「AI代打本次」只替当前行动单位做这一次。</p>
-        <p>地面对空射程距离额外 +2 格，曲射火炮不能对空。远程武器居高射击每高1级射程+1（至多+2）。射程底色只表示平面距离，不含居高加成；目标亮边和禁用原因同时考虑视线、接敌、装备、状态与行动成本。暗区可能存在未发现的敌军。</p>
+        <p>地面对空距离 +2，曲射火炮不能对空。居高射程每级 +1，至多 +2。暗区可能有敌军。</p>
       </details>
 
       

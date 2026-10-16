@@ -16,6 +16,7 @@ import { parseDice } from '../dice.js';
 import { generateMechanismUnit } from './mechanism.js';
 
 export interface GenOptions {
+  skillModel?: import('../skill-model.js').SkillModel;
   seed?: string;
   registry?: Map<string, Trait>;
   /** 关闭随机浮动（基准值直出） */
@@ -290,6 +291,6 @@ export function traitCatalog(registry?: Map<string, Trait>): { group: string; tr
   const groups = TRAIT_GROUPS;
   return Object.entries(groups).map(([group, ids]) => ({
     group,
-    traits: ids.map((id) => reg.get(id)).filter((t): t is Trait => !!t),
+    traits: ids.map((id) => reg.get(id)).filter((t): t is Trait => !!t && !['guardian-greater', 'ap-master', 'monster-hunter', 'terror'].includes(t.id)),
   }));
 }

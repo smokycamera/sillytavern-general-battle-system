@@ -1,6 +1,6 @@
 import { parseEnhancementSuffix, enhancementLabel, resolveBonusStat, BONUS_NAMES, type Enhancements } from '../../engine/src/enhancements.js';
-import { WEAPON_CLASSES, resolveWeaponClass, parseSkillMechanism, skillMechanismId, skillMechanismFromId, narrativeTrait, isGradedTrait, ITEM_FORM_NAMES, itemSpecText, compileItem, traitPoints,
-  type BodyKind, type ItemForm, type ItemSpecification } from '../../engine/src/index.js';
+import { WEAPON_CLASSES, resolveWeaponClass, parseSkillMechanism, skillMechanismId, skillMechanismFromId, narrativeTrait, isGradedTrait, ITEM_FORM_NAMES, itemSpecText, compileItem,
+  canonicalTraitId, TRAIT_LEVEL_ALIASES, type BodyKind, type ItemForm, type ItemSpecification } from '../../engine/src/index.js';
 import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-tolerance.js';
 
 const ARMOR_TIERS = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
@@ -74,7 +74,12 @@ function passiveSpecification(base: string, power: number, suffix: string): Extr
     ids.push(parsed.id);
   }
   const bonuses = parseEnhancementSuffix('L' + power + suffix, 'gear').bonuses;
-  return { kind: 'item', form: 'worn', power, traits: [...new Set(ids)].map((id) => ({ id, ...(isGradedTrait(id) ? { level: power } : {}) })), ...(bonuses ? { bonuses } : {}) };
+  const grants = new Map<string, { id: string; level?: number }>();
+  for (const raw of ids) {
+    const id = canonicalTraitId(raw), level = TRAIT_LEVEL_ALIASES[raw]?.level ?? power;
+    if (!grants.has(id) || level > (grants.get(id)!.level ?? 5)) grants.set(id, { id, ...(isGradedTrait(id) ? { level } : {}) });
+  }
+  return { kind: 'item', form: 'worn', power, traits: [...grants.values()], ...(bonuses ? { bonuses } : {}) };
 }
 /** 佩戴道具把修正方向写在等级前（佩戴热能防护L5+4）时，方向挪到点数后面（佩戴L5+4热能防护）。 */
 function wornBonusFirst(base: string, power: number, suffix: string): { spec: Extract<ItemSpecification, { kind: 'item' }>; text: string } | undefined {
@@ -113,25 +118,7 @@ export function weaponItemSpecification(weapon: Extract<ItemSpecification, { kin
   const suffix = enhancementLabel(weapon.bonuses);
   return weaponItem(weapon.mechanism, weapon.power, suffix, form, notes, (WEAPON_CLASSES[weapon.mechanism]?.name ?? weapon.mechanism) + 'L' + weapon.power + suffix);
 }
-/**
- * 正文写的佩戴修正超出等级预算（佩戴L5+8防御）时，从最大的一项起逐点降到预算内并说明，道具保留；
- * 特质本身就超出预算的照旧建不了档。手工表单不经过这里，照常提示预算。
- */
-export function fitWornBudget(spec: ItemSpecification, notes?: string[], written?: string): ItemSpecification {
-  if (spec.kind !== 'item' || spec.form !== 'worn' || spec.legacy || !spec.bonuses) return spec;
-  const traits = (spec.traits ?? []).reduce((sum, grant) => sum + traitPoints(grant, spec.power), 0);
-  let over = traits + Object.values(spec.bonuses).reduce((sum, points) => sum + Math.max(0, points ?? 0), 0) - spec.power;
-  if (over <= 0 || traits > spec.power) return spec;
-  const bonuses: Enhancements = { ...spec.bonuses };
-  for (; over > 0; over--) {
-    const [stat] = (Object.entries(bonuses) as [keyof Enhancements, number][]).filter(([, points]) => points > 0).sort((a, b) => b[1] - a[1])[0]!;
-    if (!--bonuses[stat]!) delete bonuses[stat];
-  }
-  const fitted = { ...spec, bonuses };
-  notes?.push(`「${written ?? itemSpecificationText(spec)}」超出L${spec.power}的佩戴预算，按「${itemSpecificationText(fitted)}」`);
-  return fitted;
-}
-/** 道具能不能建档（佩戴预算、效果组合）：正文解析时先编译一次，建不了的一项按略过处理，不拖到入账时整批失败。 */
+/** 道具能不能建档（效果类型、参数与组合）：正文解析时先编译一次，建不了的一项按略过处理，不拖到入账时整批失败。 */
 export function assertItemCompiles(spec: ItemSpecification, name = '道具'): void {
   compileItem(spec, { id: 'item-check', name, seed: 'item-check', damageModel: 'wounds-v2' });
 }

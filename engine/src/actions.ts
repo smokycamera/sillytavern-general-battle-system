@@ -1,3 +1,4 @@
+import { attackHostile, combatHostile, combatSide, controlActionReason, controlCondition } from './battle-control.js';
 import { abilityUsed } from './ability-state.js';
 import { diceMean } from './dice.js';
 import { abilityCost } from './resources.js';
@@ -201,13 +202,17 @@ export function weaponTargetReason(input: {
   distance: number;
   reloadLeft?: number;
   charge?: boolean;
+  units?: readonly Combatant[];
+  controlRecipient?: boolean;
   space?: AerialRangeSpace;
   /** Grid battles pass the field so a shot fired down at a lower target reaches farther. */
   field?: BattlefieldSpec;
 }): string | undefined {
   const { actor, target, weapon, ranged } = input;
   const distance = ranged ? rangedTargetDistance(actor, target, input.distance, input.space) : input.distance;
-  if (target.side === actor.side) return '武器攻击只能选择敌方目标';
+  if (!attackHostile(actor, target, input.units ?? [actor, target])) return '武器攻击只能选择敌方目标';
+  const controlled = controlActionReason(actor, target, input.units ?? [actor, target], input.charge ? 'skill' : 'weapon', false, undefined, input.controlRecipient); if (controlled) return controlled;
+  if (controlCondition(actor, 'blinded') && input.distance > 1) return '致盲只能直接选择1格/阵位内目标';
   if (target.status === 'dead' || target.status === 'fled') return target.name + ' 已离场';
   if (target.status !== 'ready' && target.status !== 'dying' && target.status !== 'routing') return target.name + ' 当前无法作为攻击目标';
   if (!weapon) return actor.name + ' 没有可用武器';
@@ -271,7 +276,7 @@ function skillWeaponReach(actor: Combatant, weapon: Weapon, grid = false): numbe
 /** 有限射程的敌对远程技法/法术计入高度；接触、友方支援、自身与区域不变。 */
 export function abilityRangeDistance(actor: Combatant, ability: Ability, target: Combatant, distance: number, space: AerialRangeSpace = 'small'): number {
   if (ability.weaponUse) return isRangedWeapon(skillWeapon(actor, ability, distance)) ? rangedTargetDistance(actor, target, distance, space) : distance;
-  if (target.side === actor.side || ability.target === 'self' || ability.target === 'zone'
+  if (!combatHostile(target, actor, [actor, target]) || ability.target === 'self' || ability.target === 'zone'
     || ability.requires === 'melee' || ability.requires === 'shield') return distance;
   const range = fallbackAbilityRange(actor, ability);
   return range.metric === 'self' || range.metric === 'global' ? distance : rangedTargetDistance(actor, target, distance, space);
@@ -310,11 +315,16 @@ export function abilityTargetReason(input: {
   ability: Ability;
   target?: Combatant;
   distance?: number;
+  units?: readonly Combatant[];
+  controlAreaIds?: readonly string[];
+  controlRecipient?: boolean;
   space?: AerialRangeSpace;
   field?: BattlefieldSpec;
 }): string | undefined {
   const { actor, ability } = input;
   const target = ability.target === 'self' ? actor : input.target ?? (ability.target === 'ally' ? actor : undefined);
+  const controlled = controlActionReason(actor, target, input.units ?? (target ? [actor, target] : [actor]), 'skill', ability.target === 'ally' || ability.target === 'self' && !ability.effects.some(e => e.op === 'zone' || e.op === 'summon'), input.controlAreaIds, input.controlRecipient); if (controlled) return controlled;
+  if (target && controlCondition(actor, 'blinded') && (input.distance ?? 0) > 1) return '致盲只能直接选择1格/阵位内目标';
   if (target && ability.targetBody && target.body !== ability.targetBody && !(target.rulesVersion === 'v2' && activeTraitIds(target).includes('inorganic'))) return '维修用品只能修理车辆或非生物';
   if (target && ability.effects.length && ability.effects.every(e => e.op === 'barrier' && (target.barrier?.remaining ?? 0) >= e.amount && (target.barrier?.duration ?? 0) >= e.dur
     && (!(e.defensePower ?? ability.power) || target.barrier?.defenses?.some(d => d.power >= (e.defensePower ?? ability.power)! && d.duration >= e.dur))
@@ -328,16 +338,16 @@ export function abilityTargetReason(input: {
     if (distance > skillWeaponReach(actor, weapon, !!input.field) + abilityHeightReach(actor, ability, target, input.distance, input.field) || distance < (weapon.minRange ?? 0)) return '目标超出实际武器射程';
     if (isRangedWeapon(weapon) && weapon.pointBlankPolicy === 'forbid' && distance <= 1 && sameLayer(actor, target)) return '实际武器不能抵近射击';
   }
-  if (target && ability.recipe && ability.effects.every((e) => e.op === 'trait' && !!skillTraitReason(target, e)
+  if (target && ability.recipe && ability.effects.every((e) => e.op === 'trait' && !!skillTraitReason(target, e, ability)
     || e.op === 'resource' && (!skillResourceChange(target, e) || target.id === actor.id && e.amount > 0 && (abilityCost(actor, ability)?.amount ?? 0) >= e.amount))) return '目标没有可生效的能力或资源变化';
   if (target && !sameLayer(actor, target) && (ability.requires === 'melee' || ability.requires === 'shield')) return '接触技能需要处于同一空地层';
   if (target && actor.rulesVersion === 'v2' && ability.effects.length && ability.effects.every((e) => e.op === 'dispel' && !dispelCandidates(target, e).length || e.op === 'condition' && !conditionChance(target, e))) return '目标没有可解除的效果，或已免疫/处于同类控制';
   if (target && ability.itemSourceId && actor.id !== target.id && !sameLayer(actor, target)) return '向他人使用携行物品需要处于同一空地层';
   if (actor.rulesVersion === 'v2' && ability.effects.every((e) => e.op === 'heal') && target && !recoveryCapacity(target)) return target.scale === 'hero' ? '当前目标没有可恢复损伤或已离场' : '群体治疗需要可救伤员记录，不能凭技能招募新兵';
-  if (ability.target === 'enemy' && (!target || target.side === actor.side)) {
+  if (ability.target === 'enemy' && (!target || !combatHostile(target, actor, input.units ?? [actor, target]))) {
     return '该技能必须指定一名敌方目标';
   }
-  if (ability.target === 'ally' && target && target.side !== actor.side) {
+  if (ability.target === 'ally' && target && combatHostile(target, actor, input.units ?? [actor, target])) {
     return '该技能只能以友方单位为目标';
   }
   if (ability.target === 'self' && input.target && input.target.id !== actor.id) {
@@ -363,5 +373,5 @@ export function abilityTargetReason(input: {
 
 /** 居高射程只随实际远程武器发出的技法生效；独立法术、接触与支援技能的距离不变。 */
 export function abilityHeightReach(actor: Combatant, ability: Ability, target: Combatant, distance?: number, field?: BattlefieldSpec): number {
-  return field && ability.weaponUse && target.side !== actor.side && isRangedWeapon(skillWeapon(actor, ability, distance)) ? heightReach(field, actor, target) : 0;
+  return field && ability.weaponUse && combatHostile(target, actor, [actor, target]) && isRangedWeapon(skillWeapon(actor, ability, distance)) ? heightReach(field, actor, target) : 0;
 }
