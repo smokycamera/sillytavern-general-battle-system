@@ -75,6 +75,9 @@ export type Suggestion =
       armorProfile?: import('../../engine/src/types.js').ItemRecipe['protectionProfile'];
       quality?: number;
       shield?: boolean;
+      shieldName?: string;
+      shieldLevel?: number;
+      shieldBonuses?: Enhancements;
       hp?: number;
       hpMax?: number;
       name: string;
@@ -577,6 +580,9 @@ export function parseSuggestionTags(text: string): ParseResult {
         // 护甲：同格式 "龙鳞宝铠:重甲L6"（名字＋档位种类＋品质等级）
         const armorRaw = (a.armor ?? '').trim();
         const armSpec = armorRaw ? parseArmorSpec(armorRaw) : undefined;
+        const shieldRaw = (a.shield ?? '').trim();
+        const shieldSpec = shieldRaw && !['true', 'false'].includes(shieldRaw) ? parseItemSpecification(shieldRaw) : undefined;
+        if (shieldSpec && shieldSpec.kind !== 'shield') throw new Error('shield 需要盾牌规格');
         // 技能：逗号分隔 "名字:蓝图L等级"
         const skillsRaw = (a.skills ?? a.abilities ?? '').trim();
         const skills = skillsRaw ? parseAbilitySpec(skillsRaw) : [];
@@ -608,6 +614,8 @@ export function parseSuggestionTags(text: string): ParseResult {
           ...(armSpec?.tier !== undefined ? { armorTier: armSpec.tier } : {}),
           armorBonuses: armSpec?.bonuses,
           ...(armSpec?.level ? { armorLevel: armSpec.level } : {}),
+          ...(shieldRaw ? { shield: shieldRaw === 'true' || !!shieldSpec } : {}),
+          ...(shieldSpec ? { shieldName: splitItemSpecification(shieldRaw).name, shieldLevel: shieldSpec.power, shieldBonuses: shieldSpec.bonuses } : {}),
           ...(skills.length ? { skills } : {}),
           ...(splitList(a.traits) ? { traits: splitList(a.traits) } : {}),
           ...(items.length ? { items } : {}),

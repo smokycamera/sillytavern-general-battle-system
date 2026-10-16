@@ -1,4 +1,5 @@
 import { spendAbility } from '../ability-state.js';
+import { itemUseLog } from '../item-use-log.js';
 import { assertBattleCapacity } from '../battle-limits.js';
 import { smallBattleResult } from '../battle-result.js';
 import { prepareGridDeployment } from './spatial.js';
@@ -1883,7 +1884,9 @@ export class SmallBattle {
     this.settleAreaEffects(); this.resolveFlightStates(); this.flightCauses.clear(); this.checkGridObjective(false);
     const consequentEvents = this.log.splice(consequentEventStart);
     const text = logBits.join('\n');
-    this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id, ...(chosenTarget ? [chosenTarget.id] : []), ...resolutions.map((r) => r.defenderId)], text, resolution: resolutions[0], resolutions });
+    const itemLog = itemUseLog(actor, ability, cost?.amount);
+    if (itemLog) itemLog.effects = logBits.slice(ability.itemSourceId && cost ? 2 : 1);
+    this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id, ...(chosenTarget ? [chosenTarget.id] : []), ...resolutions.map((r) => r.defenderId)], text, resolution: resolutions[0], resolutions, ...(itemLog ? { itemUse: itemLog } : {}) });
     this.log.push(...consequentEvents);
     // 出手后后撤：排在技能本体之后，不触发近战借机。
     const withdraw = moveEffects(ability).after;

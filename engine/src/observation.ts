@@ -136,7 +136,9 @@ export function observeEvent(context: ObservationContext, entry: BattleLogEntry,
   return { ...entry, observedBy, ...(Object.keys(observedText).length ? { observedText } : {}) };
 }
 export function observedLog(log: BattleLogEntry[], side: Side): BattleLogEntry[] {
-  return log.flatMap((entry) => entry.observedBy?.includes(side) ? [entry] : entry.observedText?.[side]
+  // 道具汇总在终章读取完整日志；战内仍逐条裁剪效果，不能借可见的使用者公开未见目标的结果。
+  const publicEntry = ({ itemUse: _itemUse, ...entry }: BattleLogEntry): BattleLogEntry => entry;
+  return log.flatMap((entry) => entry.observedBy?.includes(side) ? [entry.itemUse ? publicEntry(entry) : entry] : entry.observedText?.[side]
     ? [{ round: entry.round, kind: entry.kind, text: entry.observedText[side]! }]
     : !entry.observedBy && ['round', 'rule', 'battle-end'].includes(entry.kind) ? [entry] : []);
 }

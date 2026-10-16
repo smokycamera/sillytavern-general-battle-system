@@ -213,7 +213,7 @@ function projectEquipment(record: UnitRecord, inventory: InventoryItem[]): void 
     armorId: undefined, armorName: unit.armor?.name, armorTier: unit.armor?.tier, armorLevel: unit.armor?.level,
   };
   Object.assign(record, fields);
-  if (unit.genAudit) Object.assign(unit.genAudit.input, fields, { shield: !!unit.shield, weaponStabilized: unit.weapon?.recipe?.stabilized, sidearmStabilized: unit.sidearm?.recipe?.stabilized, armorProfile: unit.armor?.recipe?.protectionProfile, weaponEnchantment: unit.weapon?.recipe?.enchantment, sidearmEnchantment: unit.sidearm?.recipe?.enchantment });
+  if (unit.genAudit) Object.assign(unit.genAudit.input, fields, { shield: !!unit.shield, shieldName: unit.shield?.name, shieldLevel: unit.shield?.recipe?.power, shieldBonuses: unit.shield?.recipe?.bonuses, weaponStabilized: unit.weapon?.recipe?.stabilized, sidearmStabilized: unit.sidearm?.recipe?.stabilized, armorProfile: unit.armor?.recipe?.protectionProfile, weaponEnchantment: unit.weapon?.recipe?.enchantment, sidearmEnchantment: unit.sidearm?.recipe?.enchantment });
 }
 function requireOutOfBattle(save: InventorySave): void {
   if (save.battle && !(save.committedOutcomeIds ?? []).includes(`${save.battle.kind}:${String(save.battle.snap.seed)}`)) throw new Error('战内物品必须通过引擎行动使用；未结算前不能换装或修改档案');

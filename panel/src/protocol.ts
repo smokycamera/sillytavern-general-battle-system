@@ -390,9 +390,9 @@ export function recoverProtocol(text: string): { text: string; diagnostics: Prot
       if (['rounds', 'battles', 'permanent'].includes(key)) { delete fieldProbe.rounds; delete fieldProbe.battles; delete fieldProbe.permanent; }
       const test = (input: string) => parseProtocol(serializeEvent(tag.name, { ...fieldProbe, [key]: input }), { diagnostics: false });
       let result = test(value);
-      if (result.errors.length && ['weapon', 'weapon2', 'armor', 'shieldSpec', 'spec', 'level'].includes(key)) {
+      if (result.errors.length && ['weapon', 'weapon2', 'armor', 'shield', 'shieldSpec', 'spec', 'level'].includes(key)) {
         try {
-          const kind: BonusKind = key === 'level' ? 'unit' : key === 'armor' ? 'armor' : key === 'shieldSpec' ? 'shield' : 'weapon';
+          const kind: BonusKind = key === 'level' ? 'unit' : key === 'armor' ? 'armor' : ['shield', 'shieldSpec'].includes(key) ? 'shield' : 'weapon';
           const repaired = repairSpecification(key === 'level' ? 'L' + value : value, kind, false, message => add(message, token));
           value = key === 'level' ? repaired.replace(/^L/i, '') : repaired;
           result = test(value);
@@ -501,6 +501,11 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
       if (!mechanism) throw new Error(`${attrs.name}的${key}“${attrs[key]}”缺少支持的效果；请写“自定义名:剑L7”或“激光枪:能量武器L3”，副武器用weapon2`);
     }
     if (attrs.armor && /[lL]\s*\d/.test(attrs.armor.split(/[:：·｜|/／]/).at(-1)!)) parseItemSpecification(attrs.armor, { type: 'armor' });
+    if (attrs.shield !== undefined && !['true', 'false'].includes(attrs.shield)) {
+      try {
+        if (parseItemSpecification(attrs.shield).kind !== 'shield') throw new Error('需要盾牌规格，如“塔盾:盾L5+2防御”');
+      } catch (error) { throw new Error('shield：' + (error instanceof Error ? error.message : String(error))); }
+    }
     // 正文写的原型不再采用：按真实坐骑、快速载具与主武器推断，任何写法都不会让 spawn 作废。
     const weaponClass = attrs.weapon ? resolveWeaponClass(parseEnhancementSuffix(attrs.weapon.split(/[:：·｜|/／]/).at(-1)!, 'weapon').text.replace(/[lL]\s*\d+$/, '').trim()) : undefined;
     const inferred = inferArchetype({ mount: attrs.mount === 'true', body: attrs.body as BodyKind | undefined, speedTier: /^\d+$/.test(attrs.speed ?? '') ? Number(attrs.speed) : undefined, weaponClass });
@@ -514,7 +519,6 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
   if (event.kind === 'spawn') {
     if (attrs.body !== undefined && !['human', 'large', 'vehicle', 'giant'].includes(attrs.body)) throw new Error('未知身体/平台');
     if (!integer('quality', 1, 5)) throw new Error('品质必须为1–5');
-    if (attrs.shield !== undefined && !['true', 'false'].includes(attrs.shield)) throw new Error('shield 必须是 true/false');
     if (attrs.mount !== undefined && !['true', 'false'].includes(attrs.mount)) throw new Error('mount 必须是 true/false');
     event.mount = attrs.mount === 'true';
     if (!integer('speed', 1, 5)) throw new Error('速度档位需要1–5整数');
@@ -527,7 +531,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     event.armorProfile = attrs.protection as typeof event.armorProfile;
     event.body = attrs.body as typeof event.body;
     event.quality = attrs.quality === undefined ? undefined : Number(attrs.quality);
-    event.shield = attrs.shield === 'true';
+    event.shield = event.shield ?? false;
     if (attrs.hpMax !== undefined) event.hpMax = Number(attrs.hpMax);
     if (attrs.hp !== undefined) event.hp = Number(attrs.hp);
     if (attrs.skills && (event.skills?.length ?? 0) !== attrs.skills.split(/[,，、;；]/).length) throw new Error('存在未支持的技能，未执行整批');

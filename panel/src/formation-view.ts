@@ -8,8 +8,9 @@ import {hasMemberHealth} from '../../engine/src/member-health.js';
 import { renderBattleHighlights, traceOverlay, unitSymbol } from './battle-presentation.js';
 import { weaponReloadKey, FORMATION_NODES, formationNode, isAirborne, moraleLabel, approx, type Combatant, type MassBattle, type Order } from '../../engine/src/index.js';
 import { renderFormationFeedback } from './formation-feedback.js';
-import { formationSelection, orderKey, orderLabels, type FormationView, type OrderDrafts } from './formation-orders.js';
+import { formationSelection, orderKey, orderLabels, type FormationView, type OrderDrafts, type FormationQueryCache } from './formation-orders.js';
 import { battleSkillChangeReason } from './battle-skills.js';
+import { withBattleReportQueries } from './battle-reports.js';
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const rankName = { front: '前线', rear: '支援', reserve: '预备' };
 const nodeLabel = (n: typeof FORMATION_NODES[number]) => (n.side === 'ally' ? '我方' : '敌方') + n.wing + rankName[n.rank];
@@ -21,15 +22,19 @@ function orderName(b: MassBattle, order: Order | undefined): string {
   return (source?.id !== order.unitId ? (source?.name ?? '随队人物') + ' · ' : '') + (source?.abilities.find((a) => a.id === order.abilityId)?.name ?? '技能已失效');
 }
 export function renderFormationBattle(b: MassBattle, view: FormationView, drafts: OrderDrafts, automatic: boolean,
-  details: (u: Combatant) => string, previewText: (b: MassBattle, order: Order) => string): string {
-  const s = formationSelection(b, view, drafts), { actor, order, preview, visible, choices } = s;
+  details: (u: Combatant) => string, previewText: (b: MassBattle, order: Order) => string, cache?: FormationQueryCache): string {
+  return withBattleReportQueries(() => renderFormationContent(b, view, drafts, automatic, details, previewText, cache));
+}
+function renderFormationContent(b: MassBattle, view: FormationView, drafts: OrderDrafts, automatic: boolean,
+  details: (u: Combatant) => string, previewText: (b: MassBattle, order: Order) => string, cache?: FormationQueryCache): string {
+  const s = formationSelection(b, view, drafts, cache), { actor, order, preview, visible, choices } = s;
   const over = b.isOver(), editable = !automatic && !over && !b.planningLocked;
   const selfTarget = order?.type === 'ability' && visible.find((u) => u.id === (order.abilityActorId ?? order.unitId))?.abilities.find((a) => a.id === order.abilityId)?.target === 'self';
   const selectedTarget = !selfTarget && order?.targetId ? visible.find((u) => u.id === order.targetId) : undefined;
   const targets = new Set(s.choice?.targets.filter((t) => !t.preview.reason && t.id).map((t) => t.id));
   const area = new Set(preview?.areaTargetIds ?? []);
   const destination = preview?.destination ?? preview?.vehicleMove ?? preview?.withdrawal ?? preview?.approach ?? preview?.landing;
-  const invalidDrafts = Object.entries(drafts).filter(([unitId, draft]) => b.orderPreview({ unitId, ...draft }).reason);
+  const invalidDrafts = Object.entries(drafts).filter(([unitId, draft]) => (cache ? cache.preview(b, { unitId, ...draft }) : b.orderPreview({ unitId, ...draft })).reason);
   const pendingCount = Object.keys(drafts).length, issuedCount = s.hosts.filter((u) => b.orders.has(u.id)).length;
   const zones=visibleBattleZones(b.observationContext(),'ally');
   // 我方共享敌情：此刻看不见的敌军最后被看见的阵位，以及近几轮遭到未定位攻击的编队。

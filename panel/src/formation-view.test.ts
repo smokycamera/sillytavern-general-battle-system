@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { formationNode, generateUnit, MassBattle, traitRegistry, V2_TW, type GenerateInput } from '../../engine/src/index.js';
-import { formationSelection, selectFormationUnit, setFormationChoice, type FormationView, type OrderDrafts } from './formation-orders.js';
+import { formationSelection, selectFormationUnit, setFormationChoice, FormationQueryCache, type FormationView, type OrderDrafts } from './formation-orders.js';
 import { renderFormationBattle } from './formation-view.js';
 const registry = traitRegistry();
 function fixture(hidden = false) {
@@ -15,6 +15,24 @@ function fixture(hidden = false) {
   b.start(); return b;
 }
 describe('军团地图与任务闭环', () => {
+  it('查看和切换草案复用建议、目标预览；下令失效后和换战场重新计算', () => {
+    const b = fixture(), cache = new FormationQueryCache(), view: FormationView = { selectedId: 'a' }, drafts: OrderDrafts = {};
+    const before = JSON.stringify(b.toSnapshot()), fresh = formationSelection(b, view, drafts);
+    const recommend = vi.spyOn(b, 'recommendedOrder'), preview = vi.spyOn(b, 'orderPreview');
+    expect(formationSelection(b, view, drafts, cache)).toEqual(fresh);
+    recommend.mockClear(); preview.mockClear();
+    selectFormationUnit(b, view, drafts, 'enemy', false, false, cache);
+    formationSelection(b, view, drafts, cache);
+    expect(recommend).not.toHaveBeenCalled(); expect(preview).not.toHaveBeenCalled();
+    expect(JSON.stringify(b.toSnapshot())).toBe(before);
+    setFormationChoice(b, view, drafts, 'hold', cache);
+    expect(formationSelection(b, view, drafts, cache).order?.type).toBe('hold'); expect(recommend).not.toHaveBeenCalled(); expect(preview).not.toHaveBeenCalled();
+    expect(b.replaceOrders([{ unitId: 'a', type: 'hold' }]).ok).toBe(true); delete drafts.a; cache.clear();
+    expect(formationSelection(b, view, drafts, cache)).toEqual(formationSelection(b, view, drafts));
+    const restored = MassBattle.fromSnapshot(b.toSnapshot()), restoredPreview = vi.spyOn(restored, 'orderPreview');
+    expect(formationSelection(restored, view, drafts, cache).order?.type).toBe('hold'); expect(restoredPreview).toHaveBeenCalled();
+    recommend.mockRestore(); preview.mockRestore(); restoredPreview.mockRestore();
+  });
   it('未发现占位不改变机动预览和建议，执行遇敌才停步并发现；已知占位立即反映', () => {
     function ambush(near: boolean) {
       const units = ['scout', 'hidden'].map((id) => {

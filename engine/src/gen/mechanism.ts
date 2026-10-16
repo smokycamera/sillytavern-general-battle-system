@@ -14,7 +14,7 @@ import { ABILITY_BLUEPRINTS, abilityFromBlueprint } from '../data/ability-bluepr
 import { traitRegistry, validateTraitLevels } from '../data/traits.js';
 import { randomSeed } from '../rng.js';
 import { rollInstanceVariance, instanceMultiplier } from '../instance-variance.js';
-import { BODY, FORMULA_VERSION as EQUIPMENT_FORMULA_VERSION, compileArmor, compileWeapon } from './equipment.js';
+import { BODY, FORMULA_VERSION as EQUIPMENT_FORMULA_VERSION, compileArmor, compileWeapon, equipmentRecipe } from './equipment.js';
 import { equipmentReason } from '../items.js';
 import { normalizeBakedTraitStats } from '../trait-sources.js';
 
@@ -57,7 +57,12 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   const hasArmor = raw.armorTier !== undefined || !!raw.armorId || !!raw.armorName?.trim();
   const armor = compileArmor({ bonuses: raw.armorBonuses, tier: hasArmor ? raw.armorTier : 0, profile: raw.armorProfile, armorId: raw.armorId, power: raw.armorLevel }, { id: `${id}:armor`, name: raw.armorName, seed: seed + ':armor', body, quality, noVariance: opts.noVariance, damageModel: raw.damageModel });
   const tier = armor.tier, armorPower = armor.level!;
-  const conflict = equipmentReason({ body, scale: raw.scale, weapon, sidearm, armor, shield: raw.shield ? { id: `${id}:shield`, load: 2 } : undefined });
+  const shield: Combatant['shield'] = raw.shield ? { id: `${id}:shield`, load: 2 } : undefined;
+  if (shield && (raw.shieldLevel !== undefined || raw.shieldName !== undefined || raw.shieldBonuses !== undefined)) {
+    shield.name = raw.shieldName ?? '盾牌';
+    shield.recipe = equipmentRecipe('shield', raw.shieldLevel ?? 3, { id: shield.id, seed: seed + ':shield', name: shield.name, body, quality, bonuses: raw.shieldBonuses, noVariance: opts.noVariance, damageModel: raw.damageModel });
+  }
+  const conflict = equipmentReason({ body, scale: raw.scale, weapon, sidearm, armor, shield });
   if (conflict) warnings.push('建档已保留配装：' + conflict + '；实际使用由战斗规则判定');
   const group = raw.scale !== 'hero';
   const requestedMax = integer(raw.hpMax ?? (group ? 50 : Math.round((curve.hp * bodyProfile(body, raw.damageModel).hp + archMod.hp) * instanceMultiplier(raw.bonuses, 'health', variance))), 1, group ? 1e9 : Number.MAX_SAFE_INTEGER, group ? '编制上限' : '生命上限');
@@ -111,7 +116,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
     abilityBlueprints: (raw.abilityBlueprints ?? []).map((s) => typeof s === 'string' ? { id: s, level: 5 } : { ...s, level: s.level ?? 5 }) };
   const unit: Combatant = { id, name: raw.name, side: raw.side, scale: raw.scale, archetype: arch, level: training,
     rulesVersion: 'v2', ...(raw.damageModel ? {damageModel:raw.damageModel} : {}), bonuses: raw.bonuses, body, ...(raw.speedTier !== undefined ? { speedTier: raw.speedTier } : {}), ...(raw.mount ? { mount: true } : {}), base, hp: currentHp, tags: [...tags], traits, ...(traitLevels ? { traitLevels } : {}),
-    weapon, sidearm, armor, shield: raw.shield ? { id: `${id}:shield`, load: 2 } : undefined,
+    weapon, sidearm, armor, shield,
     abilities, preparedAbilityIds: preparedIds,
     conditions: [], abilityState: [], resources: { SP: 6 + Math.floor(training / 2), reserve: integer(raw.reserves ?? 0, 0, 2, '随队预备份额') },
     morale: base.moraleMax, engagedWith: [], status: hp > 0 ? 'ready' : 'dead', fatigue: 0,

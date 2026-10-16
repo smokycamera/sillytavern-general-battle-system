@@ -37,7 +37,7 @@ import './terrain-painted.css';
 import { updateRegion, BattleCamera, selectTextareaRange } from './view-dom.js';
 import { executeMassPlan, executeAndSaveAsync as executeAndSave } from './battle-execution.js';
 import { TACTICAL_PREFERENCES, normalizeTactic } from '../../engine/src/tactical-preference.js';
-import { battleIdOf, publicBattleEvents, battleEpilogue, archivedNarrativeEvents, makeNarrativeBatch, beginNarrativeDelivery, finishNarrativeDelivery, completedBattleRounds, type BattleReport, type BattleDeliveries, type NarrativeBatch } from './battle-reports.js';
+import { battleIdOf, publicBattleEvents, withBattleReportQueries, battleEpilogue, archivedNarrativeEvents, makeNarrativeBatch, beginNarrativeDelivery, finishNarrativeDelivery, completedBattleRounds, type BattleReport, type BattleDeliveries, type NarrativeBatch } from './battle-reports.js';
 import { lastBattleAction, traceLocations } from './battle-presentation.js';
 import { promptScopeControls } from './prompt-settings.js';
 import { narrativeProjectionDetails } from './narrative-controller.js';
@@ -91,8 +91,8 @@ import { itemSpecificationLabel } from './item-spec.js';
 import { WORKSPACES, workspaceNavigation, workspacePage, showWorkspace, type WorkspaceTab } from './workspace-view.js';
 import { renderFormationBattle } from './formation-view.js';
 import { battleAbilities, battleSkillChangeReason, learnedSkills, removedSkillOrder, setBattlePreparedSkills } from './battle-skills.js';
-import { formationSelection, selectFormationUnit, setFormationChoice, orderDraft, type FormationView, type OrderDrafts } from './formation-orders.js';
-import { renderTacticalBattle, selectTacticalElement, MAP_ZOOM_LABELS, type MapZoom, type TacticalView, type TacticalQuery, type TacticalAutomation } from './tactical-view.js';
+import { formationSelection, selectFormationUnit, setFormationChoice, orderDraft, FormationQueryCache, type FormationView, type OrderDrafts } from './formation-orders.js';
+import { renderTacticalBattle, selectTacticalElement, TacticalQueryCache, MAP_ZOOM_LABELS, type MapZoom, type TacticalView, type TacticalQuerySource, type TacticalAutomation } from './tactical-view.js';
 import { aiActsFor, aiControlledAllyIds, resetAllyAi, setUnitAi, type AllyControlDefaults } from './ally-control.js';
 import {
   PANEL_SAVE_SCHEMA_VERSION,
@@ -132,6 +132,9 @@ function storedMapZoom(): MapZoom {
   try { const value = localStorage.getItem(MAP_ZOOM_KEY); return value && Object.hasOwn(MAP_ZOOM_LABELS, value) ? value as MapZoom : 'fit'; } catch { return 'fit'; }
 }
 const tacticalView: TacticalView = { mode: 'weapon', zoom: storedMapZoom() };
+const tacticalQueries = new TacticalQueryCache();
+const formationQueries = new FormationQueryCache();
+function clearBattleQueries(): void { tacticalQueries.clear(); formationQueries.clear(); }
 const formationView: FormationView = {};
 const narrativeDrafts = new Map<string, string>();
 const narrativeErrorIndexes = new Map<string, number>();
@@ -373,9 +376,10 @@ window.addEventListener('pagehide', () => stopAutomation());
 window.addEventListener('pagehide', () => narrativeScanner.cancel());
 let battleSaveFailed = false;
 let uiBusy = false;
-async function panelTask(task: () => Promise<void>, allowPending = false, feedback?: HTMLElement): Promise<void> {
+async function panelTask(task: () => Promise<void>, allowPending = false, feedback?: HTMLElement, battleUnchanged = false): Promise<void> {
   if (uiBusy) { toast('正在保存上一项操作，请稍候…'); return; }
   if (!allowPending && runtime.canWrite && !runtime.canWrite()) { toast(runtime.writeBlockReason?.() ?? '当前档案尚未就绪，请先核实保存或重新读取。'); render('view'); return; }
+  if (!battleUnchanged) clearBattleQueries();
   const identity = adapter.identity(), namespace = adapter.namespace();
   uiBusy = true; document.body.setAttribute('aria-busy', 'true');
   feedback?.setAttribute('data-processing', 'true');
@@ -393,7 +397,8 @@ async function panelTask(task: () => Promise<void>, allowPending = false, feedba
     if (smallResumeRequested) void resumeSmallTurnIfNeeded();
   }
 }
-async function persist(): Promise<boolean> {
+async function persist(options: { battleUnchanged?: boolean } = {}): Promise<boolean> {
+  if (!options.battleUnchanged) clearBattleQueries();
   const sessionContext=()=>runtime.native?JSON.stringify(JSON.parse(controller.inventoryContext()).slice(0,2)):controller.inventoryContext();
   const identity=adapter.identity(), namespace=adapter.namespace(), context=sessionContext();
   // v2 起 storage 是持久权威源；新生成但尚未入 storage 的旧路径在保存前补齐一次。
@@ -493,6 +498,7 @@ interface SavedPanel {
 }
 
 function restore(): void {
+  clearBattleQueries();
   const resumeRequested = smallResumeRequested;
   stopAutomation(false);
   smallResumeRequested = resumeRequested; allyControlUnsaved = false;
@@ -773,8 +779,8 @@ function deployedRoster(records: UnitRecord[], ids: string[]): Combatant[] {
   return prepareBattleItems(roster, controller.snapshot());
 }
 
-function allyControlDefaults(): AllyControlDefaults { return { allAllies: state.autoTurn }; }
-/** AI托管开关：「我方」覆盖所有单位的单独设置，「此单位」只改选中的我方单位。 */
+function allyControlDefaults(): AllyControlDefaults { return { allAllies: state.autoTurn, protagonistId: state.protagonistId }; }
+/** AI托管开关：「除主控」重置单独设置，「此单位」只改选中的我方单位。 */
 function applyAllyControl(role: string, checked: boolean, id?: string): void {
   const b = state.small;
   if (role === 'auto-turn') { state.autoTurn = checked; if (b) resetAllyAi(b); }
@@ -787,9 +793,10 @@ function tacticalAutomation(b: SmallBattle): TacticalAutomation {
 
 /**
  * 自动行动（小规模）：依次替AI一方的单位执行 autoAction，直到轮到玩家手动的我方单位或战斗结束。
- * 敌方与中立单位始终由AI行动；我方单位按 AI 托管设置（单位单独设置 > 「我方」），见 ally-control。
+ * 敌方与中立单位始终由AI行动；我方单位按 AI 托管设置（单位单独设置 > 「除主控」），见 ally-control。
  */
 async function autoSmall(b: SmallBattle): Promise<void> {
+  clearBattleQueries();
   if (!b.active || b.isOver()) return;
   if (b.active.status !== 'ready') b.endTurn();
   else b.autoAction(b.active.id);
@@ -958,12 +965,12 @@ function viewIds() {
   const build = () => narrativeIds({ ...viewSave(), storage: state.storage, inventory: state.inventory });
   return rendering ? renderIds ??= build() : build();
 }
-function render(scope: RenderScope = 'all', tacticalQuery?: TacticalQuery): void {
+function render(scope: RenderScope = 'all', tacticalQuery?: TacticalQuerySource): void {
   rendering = true;
-  try { renderWorkspace(scope, tacticalQuery); }
+  try { withBattleReportQueries(() => renderWorkspace(scope, tacticalQuery)); }
   finally { rendering = false; renderSave = undefined; renderIds = undefined; }
 }
-function renderWorkspace(scope: RenderScope, tacticalQuery?: TacticalQuery): void {
+function renderWorkspace(scope: RenderScope, tacticalQuery?: TacticalQuerySource): void {
   const app = $('#app'), winScroll = window.scrollY;
   const contextChanged = renderedNamespace !== workspaceNamespace;
   if (contextChanged) { renderedNamespace = workspaceNamespace; dirtyWorkspaces.clear(); WORKSPACES.forEach(([id]) => dirtyWorkspaces.add(id)); battleCamera.reset(); lastTraceKey = ''; app.replaceChildren(); }
@@ -983,13 +990,15 @@ function renderWorkspace(scope: RenderScope, tacticalQuery?: TacticalQuery): voi
   const notices = app.querySelector<HTMLElement>('#workspace-notices')!;
   const noticeHtml = (controller.migrationReview() ? renderMigrationReview() : '') + (pendingCount ? `<div class="workspace-notice"><span>剧情带来 ${pendingCount} 项待处理变更</span><button data-action="workspace-tab" data-tab="units">查看变更</button></div>` : '') + (failure ? `<div class="workspace-notice narrative-alert" role="alert"><span>${esc(failure.slice(0,160))}</span><button data-action="narrative-review">查看记录</button></div>` : '');
   if (notices.innerHTML !== noticeHtml) updateRegion(notices, noticeHtml);
-  for (const page of app.querySelectorAll<HTMLElement>('[data-workspace]')) page.hidden = page.dataset.workspace !== workspaceTab;
+  for (const page of app.querySelectorAll<HTMLElement>('[data-workspace]')) {
+    const hidden = page.dataset.workspace !== workspaceTab; if (page.hidden !== hidden) page.hidden = hidden;
+  }
   const b = currentBattle();
   // 自动推进时不打断其他页的输入；其内容在返回/主动操作时刷新。
   if (dirtyWorkspaces.has(workspaceTab) && !(scope === 'battle' && !['battle','reports'].includes(workspaceTab))) {
     let content = '';
     if (workspaceTab === 'battle') {
-      const battleContent = state.small?.battlefield ? renderTacticalBattle(state.small, tacticalView, tacticalAutomation(state.small), tacticalQuery) : b ? state.mass ? renderMass() : renderSmall() : renderBattlePreparation();
+      const battleContent = state.small?.battlefield ? renderTacticalBattle(state.small, tacticalView, tacticalAutomation(state.small), tacticalQuery ?? tacticalQueries) : b ? state.mass ? renderMass() : renderSmall() : renderBattlePreparation();
       content = (b ? renderBattleToolbar(b) : '') + (b?.isOver() ? renderBattleExit(b) : '') + battleContent + renderXp();
     } else if (workspaceTab === 'units') content = renderNarrativeProposals() + renderConfig() + renderRole() + renderManage() + renderUnitConversion() + (state.pending.length ? renderPending() : '');
     else if (workspaceTab === 'inventory') content = inventoryPanel.render();
@@ -1659,7 +1668,7 @@ function renderSmall(): string {
            <button data-action="small-retreat" ${retreatOption?.enabled ? '' : 'disabled'} title="${esc(retreatOption?.reason ?? '与所有敌人距离≥2；消耗主行动')}">撤离战场</button>
           <button data-action="small-endturn">结束回合</button>
           <button data-action="small-auto-act" title="只让AI完成当前行动单位的这一次行动，不改变托管设置">AI代打本次</button>
-          <span class="ai-takeover" role="group" aria-label="AI托管"><span>AI托管</span><label title="${act?.side === 'ally' ? esc(act.name) + '之后每次轮到都由AI行动，取消勾选即收回手动' : '当前不是我方单位'}"><input type="checkbox" data-role="ally-ai" data-id="${esc(act?.id ?? '')}" ${act?.side === 'ally' && aiActsFor(b, act, allyControlDefaults()) ? 'checked' : ''} ${act?.side === 'ally' ? '' : 'disabled'}>此单位</label><label title="全部我方单位都由AI行动，之后的战斗沿用；勾选或取消会覆盖单位的单独设置"><input type="checkbox" data-role="auto-turn" ${state.autoTurn ? 'checked' : ''}>我方</label></span>
+          <span class="ai-takeover" role="group" aria-label="AI托管"><span>AI托管</span><label title="${act?.side === 'ally' ? esc(act.name) + '之后每次轮到都由AI行动，取消勾选即收回手动' : '当前不是我方单位'}"><input type="checkbox" data-role="ally-ai" data-id="${esc(act?.id ?? '')}" ${act?.side === 'ally' && aiActsFor(b, act, allyControlDefaults()) ? 'checked' : ''} ${act?.side === 'ally' ? '' : 'disabled'}>此单位</label><label title="主控保持手动，其余我方单位由AI行动，之后的战斗沿用；勾选或取消会清除单位的单独设置"><input type="checkbox" data-role="auto-turn" ${state.autoTurn ? 'checked' : ''}>除主控</label></span>
         </div>
         <div class="sub">先攻顺序：${b.turnOrder.map((id) => esc(unitLabel(b.byId(id)))).join(' → ')}｜移动后射击 −2（骑射免疫）</div>`}
   </section>`;
@@ -1793,7 +1802,7 @@ function renderAbilityDialog(): string {
 }
 
 function massOrderPreviewText(b: MassBattle, order: Order): string {
-  const result = b.orderPreview(order);
+  const result = formationQueries.preview(b, order);
   if (result.reason) return '不可下达：' + result.reason;
   const unit = b.byId(order.unitId);
   const fatigueUnit = order.type === 'ability' && order.abilityActorId ? b.byId(order.abilityActorId) : unit;
@@ -1813,7 +1822,7 @@ function massOrderPreviewText(b: MassBattle, order: Order): string {
 
 function renderMass(): string {
   const b = state.mass;
-  if (b?.rules.resolutionVersion === 'v2') return renderFormationBattle(b, formationView, state.orderDraft, massAutoCommand(), (u) => unitDetailHtml(u, battleFieldTags()), massOrderPreviewText);
+  if (b?.rules.resolutionVersion === 'v2') return renderFormationBattle(b, formationView, state.orderDraft, massAutoCommand(), (u) => unitDetailHtml(u, battleFieldTags()), massOrderPreviewText, formationQueries);
   if (!b) {
     return `<section><h2>② 军团会战</h2>
       <button class="primary" data-action="mass-start" ${!rosterHasBothSides() ? 'disabled' : ''}>开战（需双方编制）</button>
@@ -2011,6 +2020,7 @@ async function sendToAi(text: string, label: string, reportId?: string, batch?: 
   if (['新增战况', '战斗终章', '结算卡（整场）', '回合纪要（整场）', '状态摘要'].includes(label)) {
     text = text.trimEnd() + '\n\n本次回复应根据战报对战斗过程进行详细描写，禁止输出<tb>内容';
   }
+  if (label === '战斗终章') text += '\n终章最后补充本场道具使用及实际效果；只依据记录，未使用或效果缺失时如实说明，不补造道具、消耗或效果。';
   const identity = adapter.identity();
   const namespace = adapter.namespace();
   const report = !batch && reportId ? state.reports.find((r) => r.id === reportId) : undefined;
@@ -2243,7 +2253,7 @@ function inspectBattleMap(el: HTMLElement): void {
   battle.withReadOnlyQueries(() => {
     const act = el.dataset.action;
     const query = selectTacticalElement(battle, tacticalView, act === 'grid-cell' ? { cell: Number(el.dataset.cell) }
-      : act === 'grid-mode' ? { mode: el.dataset.mode } : { unitId: el.dataset.unit });
+      : act === 'grid-mode' ? { mode: el.dataset.mode } : { unitId: el.dataset.unit }, tacticalQueries);
     render('view', query);
   });
 }
@@ -2329,6 +2339,13 @@ async function handleAction(e: Event): Promise<void> {
     else { try { requireArchiveWritable(); aiScanDialog = { requirements: '', busy: false }; } catch (error) { toast(error instanceof Error ? error.message : String(error)); } }
     render('view'); return;
   }
+  // 单纯查看编队不经过异步物品分发，点击内完成选中与渲染，避免连续点选排成微任务队列。
+  if (act === 'formation-select-actor') {
+    const b = state.mass;
+    if (!b || b.rules.resolutionVersion !== 'v2') return;
+    selectFormationUnit(b, formationView, state.orderDraft, el.dataset.id!, false, true, formationQueries);
+    render('view'); return;
+  }
   if ((await inventoryPanel.handleAction(el))) return;
   battleSaveFailed = false;
   if (act === 'save-retry') { await actions[act]?.(el); render(); return; }
@@ -2364,17 +2381,19 @@ async function handleAction(e: Event): Promise<void> {
     if (!b || b.rules.resolutionVersion !== 'v2') return;
     const before = JSON.stringify(state.orderDraft), editable = !massAutoCommand() && !b.isOver() && !b.planningLocked;
     try {
-      if (act !== 'formation-cell') selectFormationUnit(b, formationView, state.orderDraft, el.dataset.id!, editable, act === 'formation-select-actor');
+      if (act !== 'formation-cell') selectFormationUnit(b, formationView, state.orderDraft, el.dataset.id!, editable, act === 'formation-select-actor', formationQueries);
       else {
         const node = FORMATION_NODES.find((n) => n.id === el.dataset.node);
         if (node) {
           formationView.nodeId = node.id;
-          const selected = formationSelection(b, formationView, state.orderDraft);
+          const selected = formationSelection(b, formationView, state.orderDraft, formationQueries);
           const move = selected.choices.flatMap((c) => c.targets).find((t) => !t.id && t.preview.destination?.id === node.id && ['rank-forward', 'rank-back', 'shift-left', 'shift-right'].includes(t.order.type));
           if (editable && selected.actor && move) state.orderDraft[selected.actor.id] = orderDraft(move.order);
         }
       }
-      if (JSON.stringify(state.orderDraft) !== before) { render('view'); (await persist()); }
+      if (JSON.stringify(state.orderDraft) !== before) {
+        render('view'); const saved = await persist({ battleUnchanged: true }); render(saved ? 'none' : 'view'); return;
+      }
     } catch (error) { toast(error instanceof Error ? error.message : String(error)); }
     render('view'); return;
   }
@@ -2421,6 +2440,7 @@ async function handleAction(e: Event): Promise<void> {
 
 /** Shared by UI buttons and game-level MCP commands, including reactions and durable auto turns. */
 async function executePanelAction(act: string, task: () => void | Promise<void>): Promise<boolean> {
+  clearBattleQueries();
   const actionBattle = currentBattle();
   return executeAndSave(async () => {
     if (controller.migrationReview() && !act.startsWith('migration-') && !['log-detail', 'unit-detail', 'units-toggle', 'sec-toggle', 'modal-stop'].includes(act)) throw new Error('先核对迁移预览；预览期间不会改写原档或推进战斗');
@@ -2698,6 +2718,7 @@ async function settleXp(allowUnfinished = false): Promise<void> {
 }
 
 async function resolveMassRound(expectedRound: number, expectedSeed?: string): Promise<void> {
+    clearBattleQueries();
     const b = state.mass!;
     if (expectedRound !== b.round || expectedSeed && expectedSeed !== b.seed) throw new Error('旧回合按钮已失效');
     if (b.rules.resolutionVersion === 'v2') {
@@ -3431,7 +3452,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   'formation-issue': (el) => {
     const b = state.mass!;
     if (massAutoCommand()) throw Error('当前由系统指挥，不能手动改令');
-    const selected = formationSelection(b, formationView, state.orderDraft);
+    const selected = formationSelection(b, formationView, state.orderDraft, formationQueries);
     if (!selected.order || !selected.actor || selected.actor.id !== el.dataset.unit) throw Error('所选编队已经变化');
     const result = b.replaceOrders([{ ...selected.order, automatic: false }], Number(el.dataset.round));
     if (!result.ok) throw Error(result.reason);
@@ -3593,7 +3614,12 @@ document.addEventListener('click', e => {
   // reachable when a host metadata refresh invalidates the old panel session.
   const viewOnly = ['save-retry', 'archive-reload', 'narrative-scan', 'pending-scan', 'workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'grid-inspect-unit', 'grid-cell', 'grid-mode', 'narrative-review', 'log-detail', 'unit-detail', 'role-detail', 'modal-stop', 'migration-export', 'loadout-skills', 'loadout-skills-close'].includes(action);
   const feedback = !viewOnly && /^(grid-|small-|mass-|formation-)/.test(action) ? (e.target as HTMLElement).closest<HTMLElement>('[data-action]') ?? undefined : undefined;
-  void panelTask(() => handleAction(e), viewOnly, feedback);
+  if (action === 'formation-select-actor') {
+    if (uiBusy) { toast('正在保存上一项操作，请稍候…'); return; }
+    void handleAction(e).catch(error => { restore(); toast(error instanceof Error ? error.message : String(error)); render(); });
+    return;
+  }
+  void panelTask(() => handleAction(e), viewOnly, feedback, ['formation-unit', 'formation-cell'].includes(action));
 });
 let cameraPointer: {x:number;y:number} | undefined;
 document.addEventListener('pointerdown', event => { cameraPointer = event.target instanceof Element && event.target.closest('.grid-camera, .formation-map-camera') ? {x:event.clientX,y:event.clientY} : undefined; }, {passive:true});
@@ -3676,16 +3702,16 @@ async function handleChange(e: Event): Promise<void> {
   }
   if (role === 'formation-haste' && state.mass) {
     if (massAutoCommand() || state.mass.isOver() || state.mass.planningLocked) return;
-    const actor = formationSelection(state.mass, formationView, state.orderDraft).actor;
+    const actor = formationSelection(state.mass, formationView, state.orderDraft, formationQueries).actor;
     if (actor) { const value = (el as HTMLSelectElement).value; const [type, targetId, abilityId, abilityActorId] = value ? JSON.parse(value) : []; state.mass.setHasteOrder(value ? { unitId: actor.id, type, targetId, abilityId, abilityActorId } : undefined, actor.id); await persist(); render('view'); }
     return;
   }
   if ((role === 'formation-order' || role === 'formation-target') && state.mass?.rules.resolutionVersion === 'v2') {
     if (massAutoCommand() || state.mass.isOver() || state.mass.planningLocked) return;
     try {
-      if (role === 'formation-order') setFormationChoice(state.mass, formationView, state.orderDraft, (el as HTMLSelectElement).value);
-      else selectFormationUnit(state.mass, formationView, state.orderDraft, (el as HTMLSelectElement).value, true);
-      render('view'); (await persist());
+      if (role === 'formation-order') setFormationChoice(state.mass, formationView, state.orderDraft, (el as HTMLSelectElement).value, formationQueries);
+      else selectFormationUnit(state.mass, formationView, state.orderDraft, (el as HTMLSelectElement).value, true, false, formationQueries);
+      render('view'); const saved = await persist({ battleUnchanged: true }); render(saved ? 'none' : 'view'); return;
     } catch (error) { toast(error instanceof Error ? error.message : String(error)); }
     render('view'); return;
   }
@@ -3693,7 +3719,7 @@ async function handleChange(e: Event): Promise<void> {
     const battle = state.small;
     if (battle?.battlefield) battle.withReadOnlyQueries(() => {
       const query = selectTacticalElement(battle, tacticalView,
-        role === 'grid-mode' ? { mode: (el as HTMLSelectElement).value } : { unitId: (el as HTMLSelectElement).value, actor: role === 'grid-unit' });
+        role === 'grid-mode' ? { mode: (el as HTMLSelectElement).value } : { unitId: (el as HTMLSelectElement).value, actor: role === 'grid-unit' }, tacticalQueries);
       render('view', query);
     });
     else render('view');
@@ -3842,7 +3868,13 @@ document.addEventListener('change', e => {
     if (e.target.closest('[data-builder-form]')) return;
     if (inventoryPanel.handleChange(e.target)) return;
   }
-  void panelTask(() => handleChange(e));
+  // 地图下拉选择与点选按钮走同一只读路径，不清缓存、不进入保存锁。
+  if (e.target instanceof HTMLSelectElement && ['grid-unit', 'grid-mode', 'grid-target'].includes(e.target.dataset.role ?? '')) {
+    if (uiBusy) { toast('正在保存上一项操作，请稍候…'); return; }
+    void handleChange(e).catch(error => { restore(); toast(error instanceof Error ? error.message : String(error)); render(); });
+    return;
+  }
+  void panelTask(() => handleChange(e), false, undefined, e.target instanceof HTMLSelectElement && ['formation-order', 'formation-target'].includes(e.target.dataset.role ?? ''));
 });
 
 async function runMcpGameTask(task: () => Promise<void>): Promise<void> {

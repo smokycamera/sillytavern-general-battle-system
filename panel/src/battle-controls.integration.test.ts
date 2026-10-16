@@ -21,7 +21,7 @@ function battle(): SmallBattle {
   return b;
 }
 
-it('战斗界面控件：AI托管按单位和「我方」生效并随存档续行，非致命可在战中切换', async () => {
+it('战斗界面控件：「除主控」自动停在主控，全自动包含主控，托管随存档续行', async () => {
   const f = nativeFixture(); await f.service.start(); localStorage.clear();
   Object.assign(window, { __tavernBattleNative: { service: f.service, messages: {} }, __TAURITAVERN__: {}, SillyTavern: { getContext: () => f.context } });
   vi.stubGlobal('fetch', vi.fn());
@@ -53,6 +53,23 @@ it('战斗界面控件：AI托管按单位和「我方」生效并随存档续�
   expect(document.querySelector('.battle-toolbar [data-role="full-auto-battle"]')).toBeNull();
   expect(snapshot().active?.id).toBe('a1');
 
+  // 点选和下拉都同步响应，同一状态不重算菜单，也不写档；真正行动后必须重新查询。
+  const menu = vi.spyOn(SmallBattle.prototype, 'getActionOptions'), beforeInspection = JSON.stringify(saved().battle);
+  for (const mode of ['move', 'guard', 'weapon']) {
+    document.querySelector<HTMLButtonElement>(`[data-action="grid-mode"][data-mode="${mode}"]`)!.click();
+    expect(document.body.getAttribute('aria-busy')).not.toBe('true');
+  }
+  await select('a2'); await select('a1');
+  expect(menu).toHaveBeenCalledTimes(1); expect(menu).toHaveBeenLastCalledWith('a2');
+  expect(JSON.stringify(saved().battle)).toBe(beforeInspection);
+  await endTurn();
+  expect(menu).toHaveBeenCalledWith('lead');
+  await select('a1');
+  expect(document.querySelector<HTMLButtonElement>('[data-action="grid-endturn"]')!.disabled).toBe(true);
+  await load(battle()); menu.mockClear();
+  document.querySelector<HTMLButtonElement>('[data-action="grid-mode"][data-mode="guard"]')!.click();
+  expect(menu).not.toHaveBeenCalled(); menu.mockRestore();
+
   // 托管当前单位：立刻替它行动，之后停在手动的主控。
   toggle('ally-ai', true); await idle();
   let s = snapshot();
@@ -66,17 +83,30 @@ it('战斗界面控件：AI托管按单位和「我方」生效并随存档续�
   await endTurn();
   expect(snapshot().active?.id).toBe('a2'); expect(unitBox().checked).toBe(false);
 
-  // 「我方」默认全部托管；显式把lead收回手动才会停在lead，与其主控身份无关。
-  const all = battle(); all.turnIndex = 2; all.allyAiControl.set('lead', false);
+  // 从界面开启「除主控」后推进其余单位，自然停在主控，无需给主控单独设为手动。
+  toggle('auto-turn', true); await idle();
+  expect(snapshot().active?.id).toBe('lead');
+  expect(unitBox().checked).toBe(false);
+  expect(snapshot().allyAiControl.size).toBe(0);
+  expect(document.querySelector('.command-finish [data-role="auto-turn"]')!.parentElement!.textContent).toBe('除主控');
+
+  // 全自动包含主控，取消后暂停在下一个单位。
+  toggle('full-auto-battle', true);
+  await vi.waitFor(() => expect(snapshot().active?.id).toBe('a2'), { timeout: 10000 });
+  toggle('full-auto-battle', false); await idle();
+  expect(snapshot().active?.id).toBe('a2');
+
+  // 旧存档 autoTurn=true 沿用为「除主控」，恢复后也会停在主控。
+  const all = battle(); all.turnIndex = 2;
   await load(all, true);
   s = snapshot();
   expect(s.round).toBe(2); expect(s.active?.id).toBe('lead');
-  expect([...s.allyAiControl]).toEqual([['lead', false]]); expect(saved().autoTurn).toBe(true);
+  expect([...s.allyAiControl]).toEqual([]); expect(saved().autoTurn).toBe(true);
 
-  // 在「我方」下单独收回a1，保留lead的独立手动设置。
+  // 在「除主控」下仍可单独收回a1。
   await select('a1'); expect(unitBox().checked).toBe(true);
   toggle('ally-ai', false); await idle();
-  expect([...snapshot().allyAiControl]).toEqual([['lead', false], ['a1', false]]); expect(snapshot().active?.id).toBe('lead');
+  expect([...snapshot().allyAiControl]).toEqual([['a1', false]]); expect(snapshot().active?.id).toBe('lead');
   await endTurn();
   s = snapshot(); expect(s.round).toBe(3); expect(s.active?.id).toBe('a1');
 
@@ -85,7 +115,7 @@ it('战斗界面控件：AI托管按单位和「我方」生效并随存档续�
   await load(restored);
   expect(snapshot().active?.id).toBe('lead');
 
-  // 连续行动中取消「我方」：保存还没结束也立即生效，并写入存档。
+  // 连续行动中取消「除主控」：保存还没结束也立即生效，并写入存档。
   const chain = battle(); chain.turnIndex = 1; chain.allyAiControl.set('lead', false);
   await load(chain, true);
   let release!: () => void;

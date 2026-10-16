@@ -338,7 +338,7 @@ export interface Combatant {
   speedTier?: number;
   /** 明确骑乘平台；专长本身不会创建坐骑或增加人员/生命。 */
   mount?: boolean;
-  shield?: { id: string; load: number; recipe?: ItemRecipe; powerScale?: number };
+  shield?: { id: string; name?: string; load: number; recipe?: ItemRecipe; powerScale?: number };
   preparedAbilityIds?: string[];
   generationWarnings?: string[];
   /** 参战时持久档案版本；战后提交必须仍匹配，战内不自行递增。 */
@@ -432,6 +432,10 @@ export interface GenerateInput {
   hp?: number;
   hpMax?: number;
   shield?: boolean;
+  /** 盾牌名称、独立规格与修正；仅旧布尔写法省略规格时保留原默认盾。 */
+  shieldName?: string;
+  shieldLevel?: number;
+  shieldBonuses?: Enhancements;
   preparedAbilityIds?: string[];
   name: string;
   scale: Scale;
@@ -519,6 +523,8 @@ export type LogKind =
   | 'battle-end';
 
 export interface BattleLogEntry {
+  /** 已实际执行的道具使用；效果只记本次结算，不从道具说明或战后状态反推。 */
+  itemUse?: { actorId: string; actorName: string; itemId: string; itemName: string; form: 'single' | 'charged'; consumed: number; effects: string[] };
   /** 持续伤害/坠落的实际损失与来源；普通攻击由resolution记录，不能重复累计。members是成员生命编队这次的减员数。 */
   damage?: { sourceId?: string; targetId: string; amount: number; cause: string; unit?:'life'; members?: number };
   /** 同一技能的全部伤害结算；resolution保留首条供旧展示兼容。 */

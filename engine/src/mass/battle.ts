@@ -1,4 +1,5 @@
 import { spendAbility, abilityUsed } from '../ability-state.js';
+import { itemUseLog, captureItemEffects, type ItemUseLog } from '../item-use-log.js';
 import { assertBattleCapacity } from '../battle-limits.js';
 import { tacticalSkillCost, tacticalRestValue } from '../skill-economy.js';
 import { actionPotential } from '../skill-tactics.js';
@@ -1218,7 +1219,7 @@ export class MassBattle {
       const support = structuredClone(this.combatants);
       const changes: (() => void)[] = [];
       const resourceDeltas = new Map<string, { unitId: string; resource: string; amount: number; capped: boolean }>();
-      const pushed = new Map<string, { node: typeof FORMATION_NODES[number]; airborne: boolean; sourceId: string; force: number }>();
+      const pushed = new Map<string, { node: typeof FORMATION_NODES[number]; airborne: boolean; sourceId: string; force: number; itemLog?: ItemUseLog }>();
       const stagedBirths: Combatant[] = [];
       for (const order of supportPlans.filter((p) => p.type === 'ability')) {
         const reason = this.v2OrderReason(order, support);
@@ -1271,7 +1272,16 @@ export class MassBattle {
         const cost = abilityCost(actualActor, ability);
         if (cost) actualActor.resources[cost.resource] = actualActor.resourceModel && cost.resource === 'SP' ? resourceRound((actualActor.resources[cost.resource] ?? 0) - cost.amount) : (actualActor.resources[cost.resource] ?? 0) - cost.amount;
         spendAbility(actualActor, ability, 1);
-        if (ability.itemSourceId && cost) this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id], text: `${actor.name} 使用【${ability.name}】：消耗${cost.amount}件，剩余${actualActor.resources[cost.resource]}件` });
+        const itemLog = itemUseLog(actualActor, ability, cost?.amount);
+        if (itemLog) this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id], itemUse: itemLog,
+          text: ability.itemSourceId && cost ? `${actor.name} 使用【${ability.name}】：消耗${cost.amount}件，剩余${actualActor.resources[cost.resource]}件` : `${actor.name} 使用充能道具【${itemLog.itemName}】` });
+        const changeStart = changes.length;
+        const trackEffects = () => {
+          if (itemLog) for (let i = changeStart; i < changes.length; i++) {
+            const apply = changes[i]!;
+            changes[i] = () => captureItemEffects(this.log, itemLog, apply);
+          }
+        };
         // 技能自带位移按任务顺序立即改写支援快照，后续任务看到的是到位后的阵位；实际落位与效果一起生效。
         const relocate = (node: FormationNode, verb: string) => {
           const staged = support.find((u) => u.id === actor.id)!; staged.formationPosition = node.id; delete staged.tacticalPose;
@@ -1287,6 +1297,7 @@ export class MassBattle {
           }
           exertion.set(actor.id, skillExertion(actor, ability));
           this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id], text: `${actor.name} 的【${ability.name}】占用所属编队${order.haste ? '加速任务' : '本轮主任务'}` });
+          trackEffects();
           continue;
         }
         const move = this.skillMoveNode(actor, ability, target, support);
@@ -1295,7 +1306,7 @@ export class MassBattle {
         const skillArm = ability.weaponUse ? skillWeapon(actor, ability, formationDistance(actor, target)) : undefined;
         if (skillArm && isRangedWeapon(skillArm) && weaponReloadTurns(skillArm)) this.reloadCd.set(weaponReloadKey(actor, skillArm), weaponReloadTurns(skillArm) + 1);
         for (const effect of ability.effects) {
-          if (effect.op === 'zone') { changes.push(()=>placeZone(this.observationContext(),this.byId(actor.id),target,effect,this.round,ability.id)); }
+          if (effect.op === 'zone') { changes.push(()=>{ const zone = placeZone(this.observationContext(),this.byId(actor.id),target,effect,this.round,ability.id); itemLog?.effects.push(`布置${ZONE_NAMES[zone.kind]}，持续${zone.remaining}轮`); }); }
           else if (effect.op === 'damage') for (const affected of this.supportTargets(actor, ability, target, support)) {
             const result = this.resolveAttackWithEnvironment({ attacker: actor, defender: structuredClone(affected), rng: this.rng, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry,
               ...this.skillAttackOptions(support, actor, affected, ability, effect, charge && affected.id === target.id) });
@@ -1315,7 +1326,10 @@ export class MassBattle {
             const unit = this.byId(affected.id); grantBarrier(unit, effect.amount, effect.dur, actor.id, effect.defensePower ?? ability.power);
             this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id, unit.id], text: `${unit.name} 获得屏障，可吸收${unit.barrier?.remaining ?? 0}点伤害，持续${effect.dur}轮` });
           });
-          else if (effect.op === 'morale') for (const affected of this.supportTargets(actor, ability, target, support)) changes.push(() => changeMorale(this.byId(affected.id), effect.amount));
+          else if (effect.op === 'morale') for (const affected of this.supportTargets(actor, ability, target, support)) changes.push(() => {
+            const unit = this.byId(affected.id), before = unit.morale;
+            changeMorale(unit, effect.amount); itemLog?.effects.push(`${unit.name} 士气 ${before}→${unit.morale}`);
+          });
           else if (effect.op === 'condition') for (const affected of effect.shape === 'burst' ? this.supportTargets(actor, ability, target, support) : [target]) {
             const hit = hits.get(affected.id);
             if (effect.onDamage && !(hit && hit.finalDamage > 0)) continue;
@@ -1333,7 +1347,7 @@ export class MassBattle {
             const result = pushPreview(this.observationContext(support), actor, affected, effect);
             if (result.nodeId) {
               const prior = pushed.get(affected.id), force = pushStrength(actor, effect);
-              if (!prior || force > prior.force) pushed.set(affected.id, { node: FORMATION_NODES.find((n) => n.id === result.nodeId)!, airborne: isAirborne(affected), sourceId: actor.id, force });
+              if (!prior || force > prior.force) pushed.set(affected.id, { node: FORMATION_NODES.find((n) => n.id === result.nodeId)!, airborne: isAirborne(affected), sourceId: actor.id, force, ...(itemLog ? { itemLog } : {}) });
             } else changes.push(() => this.recordEvent({ round: this.round, kind: 'move', participants: [actor.id, affected.id], text: affected.name + '：' + result.reason }));
           } else if (effect.op === 'dispel') for (const affected of this.supportTargets(actor, ability, target, support)) {
             const chosen = dispelCandidates(affected, effect);
@@ -1350,16 +1364,18 @@ export class MassBattle {
             }
             const paid = resourceTargets.get(affected.id)!, amount = skillResourceChange(paid, effect);
             paid.resources[effect.resource] = (paid.resources[effect.resource] ?? 0) + amount;
+            itemLog?.effects.push(`${affected.name} ${effect.resource === 'SP' ? '精力' : effect.resource}${amount >= 0 ? '+' : ''}${amount}`);
             const key = JSON.stringify([affected.id, effect.resource]), prior = resourceDeltas.get(key);
             resourceDeltas.set(key, { unitId: affected.id, resource: effect.resource,
               amount: (prior?.amount ?? 0) + amount, capped: !!prior?.capped || effect.maximum === 'training' });
           }
         }
-        changes.push(() => {for(const unit of born)unit.nonLethal=this.nonLethal;this.combatants.push(...born);});
+        changes.push(() => {for(const unit of born)unit.nonLethal=this.nonLethal;this.combatants.push(...born);if(born.length)itemLog?.effects.push(`调入预备 ${born.length} 个单位，下轮行动，不进入永久库存`);});
         // 出手后后撤一个阵位，排在本技能效果之后。
         if (moveEffects(ability).after) { const back = this.skillWithdrawNode(actor, support); if (back) relocate(back, '后撤'); }
         exertion.set(actor.id, skillExertion(actor, ability) + (charge ? 1 : 0));
         this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id], text: `${actor.name} 的【${ability.name}】占用所属编队${order.haste ? '加速任务' : '本轮主任务'}` });
+        trackEffects();
       }
       changes.forEach((apply) => apply());
       for (const delta of resourceDeltas.values()) {
@@ -1372,7 +1388,7 @@ export class MassBattle {
       for (const [id, movement] of pushed) {
         const unit = this.byId(id); unit.formationPosition = movement.node.id; delete unit.tacticalPose; this.syncPassenger(unit);
         revealUnit(this.observationContext(), unit);
-        this.recordEvent({ round: this.round, kind: 'move', participants: [movement.sourceId, id], text: unit.name + ' 被推至' + movement.node.wing + '/' + movement.node.rank + '，不触发借机或额外碰撞伤害' });
+        captureItemEffects(this.log, movement.itemLog, () => this.recordEvent({ round: this.round, kind: 'move', participants: [movement.sourceId, id], text: unit.name + ' 被推至' + movement.node.wing + '/' + movement.node.rank + '，不触发借机或额外碰撞伤害' }));
       }
       this.resolveFlightStates();
     };

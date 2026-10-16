@@ -161,6 +161,7 @@ function spawnInput(event: Extract<Suggestion, { kind: 'spawn' }>): GenerateInpu
   return {
     ...(Object.keys(levels).length ? { traitLevels: levels } : {}),
     rulesVersion: 'v2', damageModel: 'wounds-v2', body: event.body, mount: event.mount, speedTier: event.speedTier, quality: event.quality, shield: event.shield,
+    shieldName: event.shieldName, shieldLevel: event.shieldLevel, shieldBonuses: event.shieldBonuses,
     ...((event.scale ?? 'hero') === 'hero' ? {} : { hp: event.hp, hpMax: event.hpMax }),
     name: event.name, scale: event.scale ?? 'hero', archetype: event.archetype, level: event.level, side: event.side ?? 'enemy',
     traits: traits as string[], weaponName: event.weaponName ?? event.weapon, weaponClass: event.weaponClass,
