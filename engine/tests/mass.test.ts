@@ -43,6 +43,32 @@ describe('F3 已承诺火力', () => {
   });
 });
 
+describe('F4 会战失败补令', () => {
+  it('同轮同军令第二次补令跳过失败单位', () => {
+    const battle = fireBudgetBattle();
+    for (const u of battle.readyUnits('enemy')) u.bornRound = battle.round;
+    const recommend = vi.spyOn(battle, 'recommendedOrder');
+    battle.autoOrders('enemy'); const first = recommend.mock.calls.length;
+    recommend.mockClear(); battle.autoOrders('enemy');
+    expect([first, recommend.mock.calls.length]).toEqual([2, 0]);
+  });
+  it('插入同阵营军令后恢复估值', () => {
+    const battle = fireBudgetBattle(); battle.byId('B0').bornRound = battle.round;
+    battle.autoOrders('enemy', ['B1']);
+    battle.issue({ unitId: 'B1', type: 'hold' });
+    const recommend = vi.spyOn(battle, 'recommendedOrder'); battle.autoOrders('enemy');
+    expect(recommend.mock.calls).toEqual([['B0']]);
+  });
+  it('失败之后下达移动军令时只按原顺序重试一次', () => {
+    const battle = fireBudgetBattle(); let attempts = 0;
+    const recommend = vi.spyOn(battle, 'recommendedOrder').mockImplementation(id => id === 'B0'
+      ? ++attempts === 1 ? undefined : { unitId: id, type: 'hold' }
+      : { unitId: id, type: 'rank-back' });
+    battle.autoOrders('enemy');
+    expect(recommend.mock.calls).toEqual([['B0'], ['B1'], ['B0']]);
+  });
+});
+
 const reg = traitRegistry();
 
 function army(seedPrefix: string) {

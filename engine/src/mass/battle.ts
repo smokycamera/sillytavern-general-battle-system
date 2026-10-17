@@ -155,6 +155,7 @@ export class MassBattle {
   exposedHeroes = new Set<string>();
   /** 阵营共享敌情记忆：最后目击阵位与未定位来袭线索，只由各阵营当时的实际观测写入。 */
   private intel: IntelBook = {};
+  private autoOrderFailures: Partial<Record<'ally' | 'enemy', { round: number; key: string; failed: string[] }>> = {};
   lastPhases: string[] = [];
   frontControl: Record<string, 'ally' | 'enemy' | 'contested' | 'empty'> = {};
   private locked = false;
@@ -1183,12 +1184,28 @@ export class MassBattle {
   private autoV2Orders(side: 'ally' | 'enemy', reserved: readonly string[] = []): number {
     let count = 0;
     const protectedUnits = new Set(reserved);
-    for (const u of [...this.readyUnits(side)].sort((a, b) => a.id.localeCompare(b.id))) {
-      if (this.orders.has(u.id) || protectedUnits.has(u.id)) continue;
+    const key = () => JSON.stringify([...this.orders.values()].filter(order => this.byId(order.unitId).side === side).sort((a, b) => a.unitId.localeCompare(b.unitId)));
+    const previous = this.autoOrderFailures[side];
+    const skipped = new Set(previous?.round === this.round && previous.key === key() ? previous.failed : []);
+    const units = [...this.readyUnits(side)].sort((a, b) => a.id.localeCompare(b.id));
+    const failed: string[] = [];
+    let retryThrough = 0;
+    const issueFor = (id: string) => {
+      const u = this.byId(id);
       if (!u.looseChoiceLocked) this.chooseLooseFormation(u.id, this.visibleCombatants(u.side).some(t => combatHostile(u,t,this.combatants) && t.status === 'ready' && formationDistance(u,t) <= 1) ? 'closed' : 'loose');
       const order = this.recommendedOrder(u.id);
-      if (order && this.issue(order).ok) count++;
+      if (!order || !this.issue(order).ok) return false;
+      count++;
+      const preview = this.orderPreview(order);
+      if (preview.destination || preview.approach || preview.landing || preview.vehicleMove || preview.withdrawal) retryThrough = failed.length;
+      return true;
+    };
+    for (const u of units) {
+      if (this.orders.has(u.id) || protectedUnits.has(u.id) || skipped.has(u.id)) continue;
+      if (!issueFor(u.id)) failed.push(u.id);
     }
+    for (const id of failed.slice(0, retryThrough)) issueFor(id);
+    this.autoOrderFailures[side] = { round: this.round, key: key(), failed: units.filter(u => !this.orders.has(u.id) && !protectedUnits.has(u.id)).map(u => u.id) };
     return count;
   }
   get planningLocked(): boolean { return this.locked; }
