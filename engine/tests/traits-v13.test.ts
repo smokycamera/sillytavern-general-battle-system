@@ -213,9 +213,10 @@ describe('战斗接入', () => {
     battle.autoAction('e-hold');
     return battle.byId('e-hold');
   }
-  it('AI：据守单位看不见敌人时守在工事里，不出去搜索；没有工事的同一单位会去搜', () => {
-    expect(holdBattle('rifle', true, 87, ['plains', 'night'])).toMatchObject({ pos: 3, entrenchedAt: 3 });
-    expect(holdBattle('rifle', false, 87, ['plains', 'night']).pos).not.toBe(3);
+  it('F1 AI：据守单位看不见敌人时照常搜索，离开后失去工事', () => {
+    const unit = holdBattle('rifle', true, 87, ['plains', 'night']);
+    expect(unit.pos).not.toBe(3);
+    expect(entrenched(unit)).toBe(false);
   });
   it('AI：据守弓手与射程内的弓手对射时留在工事里；近战据守单位被打不到的弓手压制时出击', () => {
     const archer = holdBattle('bow', true, 38, ['plains']);

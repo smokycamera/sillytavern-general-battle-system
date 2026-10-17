@@ -15,6 +15,8 @@ describe('V5 saved battles and V6 prototype replay compatibility',()=>{
   }
   expect(last).toBe(f.rounds);expect(steps).toBe(f.steps);expect(b.winner()).toBe(f.winner);
   expect(b.combatants.map(u=>[u.id,u.hp,memberHealth(u),u.status])).toEqual(f.final);
-  expect(createHash('sha256').update(JSON.stringify(b.log.map(e=>[e.round,e.kind,e.text]))).digest('hex')).toBe(f.logSha256);
+  // §6 历史日志哈希排除新增迁移提示，其内容与幂等性由快照必测验证。
+  const originalLog = b.log.filter(e => !(e.kind === 'rule' && e.text.startsWith('AI 已更新（修订 1）：')));
+  expect(createHash('sha256').update(JSON.stringify(originalLog.map(e=>[e.round,e.kind,e.text]))).digest('hex')).toBe(f.logSha256);
  },20000);
 });
