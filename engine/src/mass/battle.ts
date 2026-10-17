@@ -2514,7 +2514,7 @@ export class MassBattle {
    *  含种子随机状态：种子源战斗恢复后掷骰序列与快照时刻一致（审计回放）。 */
   toSnapshot(): Record<string, unknown> {
     return {
-      v: 1, allyTactic: this.allyTactic, commanderProfiles: this.commanderProfiles, nonLethal: this.nonLethal, defeatedIds: [...this.defeatedIds],
+      v: 1, aiRevision: 1, allyTactic: this.allyTactic, commanderProfiles: this.commanderProfiles, nonLethal: this.nonLethal, defeatedIds: [...this.defeatedIds],
       previousOrders: [...this.previousOrders], resolvedRounds: [...this.resolvedRounds], exposedHeroes: [...this.exposedHeroes],
       lastPhases: this.lastPhases, frontControl: this.frontControl, ...(this.lastReport ? { roundReport: structuredClone(this.lastReport) } : {}),
       combatants: this.combatants,
@@ -2583,6 +2583,7 @@ export class MassBattle {
     b.lastPhases = snap.lastPhases ?? []; b.frontControl = snap.frontControl ?? {};
     b.lastReport = restoreMassReport(snap.roundReport, b.round, b.combatants);
     b.log = [...(snap.log ?? [])];
+    if (snap.aiRevision === undefined) b.log.push({ round: b.round, kind: 'rule', text: 'AI 已更新（修订 1）：工事中失联会继续搜索，推定敌人只用看见时的情报，会战攻击会避开已被确定击倒的目标' });
     b.intel = restoreIntel(snap.intel, undefined, new Set(FORMATION_NODES.map((n) => n.id)));
     for (const unit of b.combatants) {
       const before = lifeBefore.get(unit.id), maximum = unit.scale === 'hero' ? unit.base.hpMax : unit.formation?.memberHp;
