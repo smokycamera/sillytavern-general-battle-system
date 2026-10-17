@@ -96,8 +96,12 @@ export const V16_OVERFLOW_TW: RulePack = { ...V15_OVERFLOW_TW, id: 'v16-overflow
 export const V17_OVERFLOW_D20: RulePack = { ...V16_OVERFLOW_D20, id: 'v17-overflow-d20', name: 'V17 特质第二阶段', traitLevelModel: 'traits-levels-v2', skillModel: 'skills-v2', healingModel: 'healing-grades-v1', controlModel: 'activation-controls-v1' };
 export const V17_OVERFLOW_TW: RulePack = { ...V16_OVERFLOW_TW, id: 'v17-overflow-tw', name: 'V17 特质第二阶段会战', traitLevelModel: 'traits-levels-v2', skillModel: 'skills-v2', healingModel: 'healing-grades-v1', controlModel: 'activation-controls-v1' };
 
+export const V18_OVERFLOW_D20: RulePack = { ...V17_OVERFLOW_D20, id: 'v18-overflow-d20', name: 'V18 百兵谱', armsModel: 'arms-v2', barrierModel: 'barrier-grades-v1' };
+export const V18_OVERFLOW_TW: RulePack = { ...V17_OVERFLOW_TW, id: 'v18-overflow-tw', name: 'V18 百兵谱会战', armsModel: 'arms-v2', barrierModel: 'barrier-grades-v1' };
+
 /** id → 规则包（战斗快照恢复用；面板只用默认两包） */
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V18_OVERFLOW_D20.id]: V18_OVERFLOW_D20, [V18_OVERFLOW_TW.id]: V18_OVERFLOW_TW,
   [V17_OVERFLOW_D20.id]: V17_OVERFLOW_D20, [V17_OVERFLOW_TW.id]: V17_OVERFLOW_TW,
   [V16_OVERFLOW_D20.id]: V16_OVERFLOW_D20, [V16_OVERFLOW_TW.id]: V16_OVERFLOW_TW,
   [V15_OVERFLOW_D20.id]: V15_OVERFLOW_D20, [V15_OVERFLOW_TW.id]: V15_OVERFLOW_TW,

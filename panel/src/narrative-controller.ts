@@ -1,3 +1,6 @@
+import { prepareClassMigration } from './arms-v2.js';
+import { instanceQuality } from '../../engine/src/instance-variance.js';
+import { WEAPON_CLASSES, SHIELD_CLASSES, type ShieldClass } from '../../engine/src/data/weapons.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import { PROMPT_SECTIONS, formatPromptSection, promptSelected, unitInPromptScope, itemInPromptScope, type ProjectionDetails, type PromptSettings, type PromptSectionId } from './prompt-settings.js';
 import { skillMechanismName } from '../../engine/src/data/skill-mechanisms.js';
@@ -35,6 +38,14 @@ function storyEquipment(value: Combatant['weapon'] | Combatant['armor'] | Combat
   } };
 }
 
+function equipmentFact(value: Combatant['weapon'] | Combatant['armor'] | Combatant['shield']): string | undefined {
+  if (!value) return undefined;
+  const mechanism = value.recipe?.mechanism, quality = instanceQuality(value.recipe?.variance);
+  const label = mechanism && (WEAPON_CLASSES[mechanism]?.name ?? SHIELD_CLASSES[mechanism as ShieldClass]?.name);
+  // §1.4/§5 叙事事实：装备带类别名，品相不是普通时也带上，如“RPG-7（火箭筒）”“长剑（剑，优良）”。
+  const notes = [label, quality === '普通' ? undefined : quality].filter(Boolean);
+  return (value.name ?? '盾牌') + (notes.length ? '（' + notes.join('，') + '）' : '');
+}
 const PROMPT_ID = 'tavern-battle:context';
 export function narrativeProjection(save: NarrativeSave, requestText = '', details?: ProjectionDetails, audience: 'story' | 'scan' = 'story'): string {
   const detailed = audience === 'scan';
@@ -103,7 +114,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
         : { id:a.id, definitionId:a.definitionId, name: a.name, mechanism: skillMechanismName(a.definitionId ?? '') || a.definitionId, power: a.fixedPower ? undefined : a.power, bonuses:a.bonuses, prepared: unit.preparedAbilityIds?.includes(a.id) }) : undefined,
       ...(!battleOpen && EDIT_REQUEST.test(requestText) ? { editable: { formation:unit?.formation&&{...unit.formation,health:undefined},abilities:unit?.abilities,traitSources:unit?.traitSources,abilityState:unit?.abilityState,fatigue:unit?.fatigue,weapon:detailed?unit?.weapon:storyEquipment(unit?.weapon),sidearm:detailed?unit?.sidearm:storyEquipment(unit?.sidearm),armor:detailed?unit?.armor:storyEquipment(unit?.armor),shield:detailed?unit?.shield:storyEquipment(unit?.shield),xpValue:unit?.xpValue } } : {}),
       body: unit?.rulesVersion === 'v2' && unit.body !== 'human' ? unit.body : undefined, mount: unit?.mount || undefined,
-      weapon: unit?.weapon?.name, sidearm: unit?.sidearm?.name, armor: unit?.armor?.name, ...(effects?.length ? { effects } : {}) }, publicId);
+      weapon: equipmentFact(unit?.weapon), sidearm: equipmentFact(unit?.sidearm), armor: equipmentFact(unit?.armor), shield: equipmentFact(unit?.shield), ...(effects?.length ? { effects } : {}) }, publicId);
     blocks.units.push(line);
     details?.units.push({id: record.id, name: record.name, reason: settings?.pinnedUnitIds?.includes(record.id) ? '固定关注' : roster.has(record.id) ? '当前参战' : relevant(record) ? '正文提及' : '手动勾选'});
   }
@@ -116,7 +127,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     if (m?.kind === 'item') blocks.items.push(promptJson({ id: item.id, name: item.name, qty: item.qty, owner: item.assignedTo, slot: item.equippedTo?.slot,
       kind: ITEM_FORM_NAMES[m.value.recipe.form] + '道具', spec: itemSpecText(m.value.recipe), charges: m.value.ability?.usesPerBattle, note: item.note }, publicId));
     else { const recipe = m?.value.recipe;
-    blocks.items.push(promptJson({ id: item.id, name: item.name, qty: item.qty, owner: item.assignedTo, slot: item.equippedTo?.slot,
+    blocks.items.push(promptJson({ id: item.id, name: m ? equipmentFact(m.value) : item.name, qty: item.qty, owner: item.assignedTo, slot: item.equippedTo?.slot,
       kind: m?.kind ?? item.lootType, mechanism: recipe?.mechanism, power: recipe?.power, bonuses:recipe?.bonuses, enchant: recipe?.enchantment,
       quality: recipe?.quality, ...(detailed ? { body: recipe?.size, stabilized: recipe?.stabilized, protection: recipe?.protectionProfile } : {}), note: item.note }, publicId)); }
     details?.items.push({id: item.id, name: item.name, reason: item.assignedTo && roster.has(item.assignedTo) ? '参战队伍携行' : relevant(item) ? '正文提及' : '手动勾选'});
@@ -271,7 +282,7 @@ export class NarrativeController {
     const changed = factsOf(next) !== factsOf(this.state);
     next = { ...next, promptSettings: this.state.promptSettings, proposals: this.state.proposals ?? [], storySync: this.state.storySync ?? false,
       committedNarrativeSources: this.state.committedNarrativeSources, deletedNarrativeReceipts: this.state.deletedNarrativeReceipts,
-      inventoryOperations: this.state.inventoryOperations,
+      inventoryOperations: this.state.inventoryOperations, classMigration: this.state.classMigration,
       ...(this.state.inventoryMigrationBackup ? { inventoryMigrationBackup: this.state.inventoryMigrationBackup } : {}),
       ...(this.state.migrationBackups ? { migrationBackups: this.state.migrationBackups } : {}),
       factRevision: (this.state.factRevision ?? 0) + (changed ? 1 : 0) };
@@ -290,6 +301,10 @@ export class NarrativeController {
   revokeBlessing(unitId: string, sourceId: string, expectedRevision: number, context: string): SaveReceipt {
     if (context !== this.inventoryContext() || expectedRevision !== (this.state.factRevision ?? 0)) throw new Error('祝福操作属于旧上下文/版本，请重新查看');
     return this.write(prepareBlessingRevocation(this.state, unitId, sourceId));
+  }
+  migrateWeaponClasses(selected: string[], revision: number): SaveReceipt {
+    if (revision !== (this.state.factRevision ?? 0)) throw Error('档案已变化，请重新查看类别更新');
+    return this.write(prepareClassMigration(this.state, selected, randomId()));
   }
   inventoryAction(intent: InventoryIntent): SaveReceipt {
     return this.write(prepareInventoryTransaction(this.state, intent));

@@ -1,4 +1,18 @@
-import type { Ability, Combatant, EffectOp } from './types.js';
+import type { Ability, Combatant, EffectOp, RulePack } from './types.js';
+import { healingGradeMultiplier, HEALING_MODEL } from './healing.js';
+
+export const BARRIER_MODEL = 'barrier-grades-v1' as const;
+export function validateBarrierModel(value: unknown): void {
+  if (value !== undefined && value !== BARRIER_MODEL) throw Error('屏障模型版本损坏');
+}
+export function prepareBarrierModel(unit: Combatant, rules: Pick<RulePack, 'barrierModel'>): void {
+  validateBarrierModel(rules.barrierModel);
+  if (rules.barrierModel) unit.barrierModel = rules.barrierModel; else delete unit.barrierModel;
+}
+/** R19 护盾术跨等级：规格高于受术者训练+1时与治疗同一倍率；是否生效只看 barrierModel。 */
+export function barrierGradeMultiplier(unit: Pick<Combatant, 'barrierModel' | 'level'>, power?: number): number {
+  return unit.barrierModel === BARRIER_MODEL ? healingGradeMultiplier(power, unit.level, HEALING_MODEL) : 1;
+}
 
 export function validDefensePower(power: unknown): power is number { return Number.isSafeInteger(power) && Number(power) >= 1 && Number(power) <= 10; }
 /** 只使用技能自身的L；不根据人物训练、名称或攻击技能推断。 */
@@ -24,6 +38,8 @@ export function grantBarrier(unit: Combatant, amount: number, duration: number, 
   if (!Number.isSafeInteger(amount) || amount < 1 || !Number.isSafeInteger(duration) || duration < 1 || duration > 99) throw Error('屏障强度或持续回合不正确');
   if (defensePower !== undefined && !validDefensePower(defensePower)) throw Error('屏障防御规格须为1–10整数');
   if (unit.hp <= 0 || ['dead', 'fled'].includes(unit.status)) return 0;
+  // R19 只在授予时换算一次；取较强时比较的是换算后的数值，防御规格不变。
+  amount = Math.max(1, Math.round(amount * barrierGradeMultiplier(unit, defensePower)));
   const before = barrierAmount(unit);
   // 重复施放取较强保护，不把多件护符或同一技能无限相加。
   const defenses = (unit.barrier?.defenses ?? []).map(d => ({ ...d }));

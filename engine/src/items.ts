@@ -2,7 +2,7 @@ import { validateEnhancements, enhancementLabel, type Enhancements, type BonusSt
 import { recoveryCapacity } from './recovery.js';
 import { equipmentLoad } from './body.js';
 import { hasMemberHealth, memberHealth, memberHealthMax } from './member-health.js';
-import { diceAvg } from './data/weapons.js';
+import { diceAvg, SHIELD_CLASSES, type ShieldClass } from './data/weapons.js';
 import type { Ability, Armor, BodyKind, Combatant, EffectOp, ItemRecipe, Weapon } from './types.js';
 import { BODY, compileArmor, compileWeapon, equipmentRecipe, type EquipmentContext } from './gen/equipment.js';
 import { compileSkill } from './skill-catalog.js';
@@ -57,7 +57,7 @@ type ItemSpecificationBase = { bonuses?: Enhancements; power: number; quality?: 
 export type ItemSpecification = ItemSpecificationBase & (
   | { kind: 'weapon'; mechanism: string; enchantment?: 'none' | 'thermal' | 'arcane'; stabilized?: boolean }
   | { kind: 'armor'; tier: Armor['tier']; profile?: ItemRecipe['protectionProfile'] }
-  | { kind: 'shield' }
+  | { kind: 'shield'; mechanism?: ShieldClass }
   | { kind: 'item'; form: ItemForm; active?: string; traits?: ItemTraitGrant[]; legacy?: string }
 );
 export type ItemMechanics =
@@ -184,7 +184,7 @@ export function compileItem(spec: ItemSpecification, identity: Pick<EquipmentCon
   switch (spec.kind) {
     case 'weapon': return { kind: 'weapon', value: compileWeapon(spec, context) };
     case 'armor': return { kind: 'armor', value: compileArmor(spec, context) };
-    case 'shield': return { kind: 'shield', value: { id: identity.id, name: identity.name ?? '盾牌', load: 2, recipe: equipmentRecipe('shield', spec.power, context) } };
+    case 'shield': return { kind: 'shield', value: { id: identity.id, name: identity.name ?? '盾牌', load: SHIELD_CLASSES[spec.mechanism ?? 'shield'].load, recipe: equipmentRecipe(spec.mechanism ?? 'shield', spec.power, context) } };
     default: throw new Error('不支持的物品用途');
   }
 }
@@ -286,8 +286,7 @@ export function equipmentReason(unit: Pick<Combatant, 'body' | 'scale' | 'weapon
     if (weapon?.recipe?.stabilized && unit.body !== 'vehicle') return '稳定车载武器需要实际车辆平台，不能由步行或骑乘单位装备';
   }
   if (new Set((unit.gear ?? []).map((item) => item.id)).size !== (unit.gear ?? []).length) return '同一件道具不能重复装备';
-  const load = equipmentLoad(unit);
-  return load > body.capacity ? `负重 ${load} 超过身体容量 ${body.capacity}` : undefined;
+  return undefined;
 }
 
 const definition = (a: Ability | undefined) => a ? JSON.stringify({ ...a, name: undefined, desc: undefined, category: undefined }, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)

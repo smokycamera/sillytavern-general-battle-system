@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { rollInstanceVariance, instanceMultiplier, instanceRating, instanceOffset, validateInstanceVariance, instanceVarianceLabel, INSTANCE_VARIANCE_VERSION, type InstanceVariance } from '../src/instance-variance.js';
+const LEGACY_VARIANCE_VERSION = 'enhancement-bands-v1' as const;
+import { rollInstanceVariance, instanceMultiplier, instanceRating, instanceOffset, validateInstanceVariance, instanceVarianceLabel, type InstanceVariance } from '../src/instance-variance.js';
 import { bonusMultiplier, bonusRating } from '../src/enhancements.js';
 import { compileItem } from '../src/items.js';
 import { compileWeapon, compileArmor } from '../src/gen/equipment.js';
@@ -11,7 +12,7 @@ import { XP_LEVEL_COSTS } from '../src/data/curves.js';
 import { previewAttack, resolveAttack } from '../src/damage.js';
 import { SeededRng } from '../src/rng.js';
 
-const variance = (n: number): InstanceVariance => ({ version: INSTANCE_VARIANCE_VERSION, rolls: { damage:n, health:n, penetration:n, protection:n, power:n } });
+const variance = (n: number): InstanceVariance => ({ version: LEGACY_VARIANCE_VERSION, rolls: { damage:n, health:n, penetration:n, protection:n, power:n } });
 const ctx = {id:'test',seed:'test',damageModel:'wounds-v2' as const};
 const mean = (u: NonNullable<Combatant['weapon']>) => diceAvg(u.baseDice)*(u.damageScale??1);
 const registry = traitRegistry(), conditionDefs = standardConditionMap();
@@ -47,17 +48,17 @@ describe('frozen five-point enhancement bands', () => {
     expect(instanceRating({protection:-10,kineticProtection:-10},'protection',variance(2),'kinetic')).toBe(-2);
   });
   it('domain-separated rolls repeat after JSON restore and do not depend on naming or axis order', () => {
-    const a=rollInstanceVariance('id:123',['damage','penetration']);
-    expect(a).toEqual(rollInstanceVariance('id:123',['damage','penetration']));
-    expect(a.rolls).toEqual(rollInstanceVariance('id:123',['penetration','damage']).rolls);
-    expect(a.rolls.damage).toBe(rollInstanceVariance('id:123',['health','damage']).rolls.damage);
+    const a=rollInstanceVariance('id:123', ['damage','penetration'], 'enhancement-bands-v1');
+    expect(a).toEqual(rollInstanceVariance('id:123', ['damage','penetration'], 'enhancement-bands-v1'));
+    expect(a.rolls).toEqual(rollInstanceVariance('id:123', ['penetration','damage'], 'enhancement-bands-v1').rolls);
+    expect(a.rolls.damage).toBe(rollInstanceVariance('id:123', ['health','damage'], 'enhancement-bands-v1').rolls.damage);
     expect(instanceMultiplier({damage:2},'damage',JSON.parse(JSON.stringify(a)))).toBe(instanceMultiplier({damage:2},'damage',a));
     const counts=[0,0,0,0,0];
-    for(let i=0;i<10000;i++) counts[rollInstanceVariance(`distribution:${i}`,['damage']).rolls.damage!+2]!++;
+    for(let i=0;i<10000;i++) counts[rollInstanceVariance(`distribution:${i}`, ['damage'], 'enhancement-bands-v1').rolls.damage!+2]!++;
     expect(counts.every(n=>n>1700 && n<2300)).toBe(true);
-    expect(()=>rollInstanceVariance('',['damage'])).toThrow();
+    expect(()=>rollInstanceVariance('', ['damage'], 'enhancement-bands-v1')).toThrow();
   });
-  it.each([null,[],{}, {version:'future',rolls:{}}, {version:INSTANCE_VARIANCE_VERSION,rolls:[]}, ...[3,-3,0.1,NaN,Infinity,'1'].map(roll=>({version:INSTANCE_VARIANCE_VERSION,rolls:{damage:roll}})), {version:INSTANCE_VARIANCE_VERSION,rolls:{speed:1}}].map(bad=>({bad})))('rejects corrupt frozen rolls: %j', ({bad}) => {
+  it.each([null,[],{}, {version:'future',rolls:{}}, {version:LEGACY_VARIANCE_VERSION,rolls:[]}, ...[3,-3,0.1,NaN,Infinity,'1'].map(roll=>({version:LEGACY_VARIANCE_VERSION,rolls:{damage:roll}})), {version:LEGACY_VARIANCE_VERSION,rolls:{speed:1}}].map(bad=>({bad})))('rejects corrupt frozen rolls: %j', ({bad}) => {
     expect(()=>validateInstanceVariance(bad)).toThrow(/固定浮动/);
   });
   it('old or explicitly neutral instances have exactly the old multipliers and no new marker', () => {

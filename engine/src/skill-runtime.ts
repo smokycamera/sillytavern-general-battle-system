@@ -7,6 +7,7 @@ import { compileWeapon } from './gen/equipment.js';
 import { ENHANCEMENT_STATS, type Enhancements, type BonusStat } from './enhancements.js';
 import { nominalLife } from './combat-model.js';
 import { itemReserveCost } from './items.js';
+import { baseMechanism } from './data/weapons.js';
 
 export function skillWeapon(actor: Combatant, ability: Ability, distance?: number): Weapon | undefined {
   if (ability.damageBasis !== 'weapon') return undefined;
@@ -40,7 +41,7 @@ export function summonProfile(template: string, mode: 'small' | 'mass', bonuses?
 }
 /** 群体分摊同级单体的生命池；取整后的总生命不会因人数成倍增加。 */
 export function summonedMemberLife(unit: Combatant): number | undefined {
-  return unit.scale !== 'hero' && unit.weapon?.recipe?.mechanism === 'summon'
+  return unit.scale !== 'hero' && baseMechanism(unit.weapon) === 'summon'
     ? Math.max(1, Math.floor(nominalLife(unit) / unit.base.hpMax)) : undefined;
 }
 export function conjureSkillUnit(template: string, side: Combatant['side'], id: string, mode: 'small' | 'mass', bonuses?: Enhancements, damageModel?: Combatant['damageModel']): Combatant | undefined {

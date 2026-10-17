@@ -1,6 +1,7 @@
 import { ITEM_FORM_NAMES, itemSpecText, traitRegistry, standardConditionMap, isGradedTrait, traitLadderSummary, traitLevelsV16, canonicalTraitId, sourceTraitLevel,
   type Ability, type Combatant, type EffectOp, type ItemPassive, type ItemValue } from '../../engine/src/index.js';
 import { enhancementLabel } from '../../engine/src/enhancements.js';
+import { gridAbility } from '../../engine/src/small/skill-range.js';
 
 const ZONES: Record<string, string> = { fire: '火墙', poison: '毒雾', smoke: '烟幕', healing: '治疗区域', trap: '陷阱' };
 const MOVES: Record<string, string> = { dash: '突进', blink: '闪现', withdraw: '后撤' };
@@ -23,7 +24,7 @@ function effectText(e: EffectOp): string {
 /** 行动道具：怎么用、多远、效果；编队件数口径另注。 */
 export function itemAbilitySummary(a: Ability): string {
   return [a.itemQuick ? '自身或相邻友军，可用加速动作' : a.usesPerBattle ? `装备后每战${a.usesPerBattle}次，占主行动` : '占主行动',
-    a.range && a.range.max > 1 ? `射程${a.range.max}格` : '', ...a.effects.map(effectText), a.delivery === 'magic' ? '魔法' : '',
+    a.range && a.range.max > 1 ? `射程${gridAbility(a, 'arms-v2').range!.max}格` : '', ...a.effects.map(effectText), a.delivery === 'magic' ? '魔法' : '',
     // 件数口径只对一次性道具有意义；充能道具不消耗件数。
     a.usesPerBattle ? '' : a.itemScaling === 'member' ? '编队齐用时每次最多消耗现员数件' : a.itemScaling === 'object' ? '一件一个效果' : '',
     !a.usesPerBattle && a.itemScaling === 'member' && a.effects.length && a.effects.every(e => e.op === 'heal') ? '按实际伤量使用所需件数' : '',

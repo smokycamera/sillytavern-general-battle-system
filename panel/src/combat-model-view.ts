@@ -16,5 +16,7 @@ export function memberHealthPanel(unit:Combatant):string {
 }
 export function cannonAmmoControl(unit:Combatant|undefined,disabled=false):string {
   if(!unit||unit.combatModel!=='cohort-v2'||![unit.weapon,unit.sidearm].some(isCannonWeapon))return '';
-  return `<label class="cannon-ammo">${esc(unit.name)} · 火炮弹种<select data-role="cannon-ammo" data-unit="${esc(unit.id)}" ${disabled?'disabled':''}><option value="auto" ${!unit.cannonAmmo?'selected':''}>自动按目标选弹</option><option value="he" ${unit.cannonAmmo==='he'?'selected':''}>榴弹 · 直击与爆炸</option><option value="ap" ${unit.cannonAmmo==='ap'?'selected':''}>穿甲弹 · 穿透+2，无爆炸</option></select></label>`;
+  const cannons = [unit.weapon,unit.sidearm].filter(isCannonWeapon), rocket = cannons.some(w => w!.recipe?.mechanism === 'rocket'), regular = cannons.some(w => w!.recipe?.mechanism !== 'rocket');
+  const label = rocket && !regular ? '火箭筒弹种' : '火炮弹种', penetration = rocket ? regular ? '+2（火箭筒+3）' : '+3' : '+2';
+  return `<label class="cannon-ammo">${esc(unit.name)} · ${label}<select data-role="cannon-ammo" data-unit="${esc(unit.id)}" ${disabled?'disabled':''}><option value="auto" ${!unit.cannonAmmo?'selected':''}>自动按目标选弹</option><option value="he" ${unit.cannonAmmo==='he'?'selected':''}>榴弹 · 直击与爆炸</option><option value="ap" ${unit.cannonAmmo==='ap'?'selected':''}>穿甲弹 · 穿透${penetration}，无爆炸</option></select></label>`;
 }

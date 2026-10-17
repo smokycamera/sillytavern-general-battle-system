@@ -1,3 +1,4 @@
+import { prepareClassMigration } from '../../panel/src/arms-v2.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import type { PersistReceipt, HostSession, MessageTag } from '../../host/src/contracts.js';
 import { sameSession } from '../../host/src/contracts.js';
@@ -243,7 +244,7 @@ export class BattleService {
       const changed = factsOf(prepared) !== factsOf(before);
       prepared = { ...before, ...prepared, promptSettings: before.promptSettings, proposals: before.proposals ?? [], storySync: before.storySync ?? false,
         committedNarrativeSources: before.committedNarrativeSources, deletedNarrativeReceipts: before.deletedNarrativeReceipts,
-        inventoryOperations: before.inventoryOperations, inventoryMigrationBackup: before.inventoryMigrationBackup, migrationBackups: before.migrationBackups,
+        inventoryOperations: before.inventoryOperations, classMigration: before.classMigration, inventoryMigrationBackup: before.inventoryMigrationBackup, migrationBackups: before.migrationBackups,
         factRevision: (before.factRevision ?? 0) + Number(changed) };
       return prepared;
     }, { memoryOnly: options.memoryOnly, durable: !options.memoryOnly });
@@ -256,6 +257,10 @@ export class BattleService {
   commitInventoryPreview(preview: InventoryPreview): Promise<PersistReceipt> {
     if (preview.context !== this.inventoryContext()) throw Error('库存预览属于旧聊天，请重新预览');
     return this.inventoryAction(preview.intent);
+  }
+  migrateWeaponClasses(selected: string[], expectedRevision: number): Promise<PersistReceipt> {
+    const ids = [...selected], id = randomId();
+    return this.transact(before => { if (expectedRevision !== (before.factRevision ?? 0)) throw Error('档案已变化，请重新查看类别更新'); return prepareClassMigration(before, ids, id); });
   }
   inventoryAction(intent: InventoryIntent): Promise<PersistReceipt> {
     const copy = structuredClone(intent); return this.transact(before => prepareInventoryTransaction(before, copy), { operationId: copy.id });

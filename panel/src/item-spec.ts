@@ -1,3 +1,4 @@
+import { baseMechanism, SHIELD_CLASSES, classMismatchHint, type ShieldClass } from '../../engine/src/data/weapons.js';
 import { parseEnhancementSuffix, enhancementLabel, resolveBonusStat, BONUS_NAMES, type Enhancements } from '../../engine/src/enhancements.js';
 import { WEAPON_CLASSES, resolveWeaponClass, parseSkillMechanism, skillMechanismId, skillMechanismFromId, narrativeTrait, isGradedTrait, ITEM_FORM_NAMES, itemSpecText, compileItem,
   canonicalTraitId, TRAIT_LEVEL_ALIASES, type BodyKind, type ItemForm, type ItemSpecification } from '../../engine/src/index.js';
@@ -6,7 +7,7 @@ import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-toleranc
 const ARMOR_TIERS = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
 export function itemSpecificationLabel(spec: ItemSpecification): string {
   if (spec.kind === 'item') return ITEM_FORM_NAMES[spec.form] + '·' + itemSpecText({ version: 'items-v1', form: spec.form, power: spec.power, seed: '', active: spec.active, traits: spec.traits, bonuses: spec.bonuses });
-  const name = spec.kind === 'weapon' ? WEAPON_CLASSES[spec.mechanism]?.name ?? spec.mechanism : spec.kind === 'armor' ? ARMOR_TIERS[spec.tier] : '盾牌';
+  const name = spec.kind === 'weapon' ? WEAPON_CLASSES[spec.mechanism]?.name ?? spec.mechanism : spec.kind === 'armor' ? ARMOR_TIERS[spec.tier] : SHIELD_CLASSES[spec.mechanism ?? 'shield'].name;
   return `${name}L${spec.power}${enhancementLabel(spec.bonuses)}${spec.kind === 'weapon' && spec.enchantment && spec.enchantment !== 'none' ? ' · ' + (spec.enchantment === 'arcane' ? '奥术转化' : '热能转化') : ''}`;
 }
 
@@ -41,7 +42,7 @@ function nameHint(base: string): string {
 }
 function equipmentSpecification(base: string, power: number, suffix: string, attrs: SpecAttributes): ItemSpecification | undefined {
   const weaponId = resolveWeaponClass(base), weapon = weaponId ? WEAPON_CLASSES[weaponId] : undefined;
-  const tier = ARMOR_TIERS.indexOf(base), shield = ['盾', '盾牌', 'shield'].includes(base);
+  const tier = ARMOR_TIERS.indexOf(base), shield = weaponId !== undefined && Object.hasOwn(SHIELD_CLASSES, weaponId);
   if (!weapon && tier < 0 && !shield) return undefined;
   const kind = weapon ? 'weapon' : tier >= 0 ? 'armor' : 'shield';
   const bonuses = parseEnhancementSuffix('L' + power + suffix, kind).bonuses;
@@ -60,7 +61,7 @@ function equipmentSpecification(base: string, power: number, suffix: string, att
   if (attrs.enchant !== undefined) throw new Error('此附魔字段只适用于武器');
   if (tier >= 0) return { kind: 'armor', tier: tier as 0 | 1 | 2 | 3 | 4, ...common, ...(attrs.protection === undefined ? {} : { profile: attrs.protection as 'balanced' | 'kinetic' | 'thermal' | 'arcane' }) };
   if (attrs.protection !== undefined) throw new Error('防护类型只适用于护甲');
-  return { kind: 'shield', ...common };
+  return { kind: 'shield', mechanism: weaponId as ShieldClass, ...common };
 }
 /** 特质（一项或用、分隔的多项）或“佩戴”：佩戴道具；专精的等级就是道具等级。 */
 function passiveSpecification(base: string, power: number, suffix: string): Extract<ItemSpecification, { kind: 'item' }> | undefined {
@@ -100,7 +101,7 @@ const WEAPON_ITEM_EFFECTS: Readonly<Record<string, { mechanism: string; form?: '
   magic: { mechanism: '魔法单体', form: 'charged' },
 };
 function weaponItem(weapon: string, power: number, suffix: string, form: 'single' | 'charged' | undefined, notes: string[] | undefined, written: string): Extract<ItemSpecification, { kind: 'item' }> {
-  const target = WEAPON_ITEM_EFFECTS[weapon];
+  const target = weapon === 'sprayer' ? { mechanism: '物理范围投射+扇形+燃烧' } : WEAPON_ITEM_EFFECTS[baseMechanism({recipe:{mechanism:weapon}})!];
   if (!target) throw new Error(`「${WEAPON_CLASSES[weapon]?.name ?? weapon}」没有对应的道具写法；武器写在weapon、weapon2`);
   // 修正与效果词（+2穿透、+中毒）照技能写法理解；道具没有的修正略去并说明。
   const tolerance: string[] = [];
@@ -175,12 +176,14 @@ export function parseItemSpecification(text: string, attrs: SpecAttributes = {},
   if (!form) {
     // 道具位置上的武器词条先换成对应道具，后面的修正与效果词照技能写法理解。
     const weapon = options.item ? resolveWeaponClass(base) : undefined;
-    if (weapon) return weaponItem(weapon, power, suffix, undefined, notes, text.trim());
+    if (weapon && WEAPON_CLASSES[weapon]) return weaponItem(weapon, power, suffix, undefined, notes, text.trim());
     const equipment = equipmentSpecification(base, power, suffix, attrs);
     if (equipment && options.item) throw new Error('这里只写道具；护甲与盾写在armor、shieldSpec');
     if (equipment) {
       const type = equipment.kind === 'shield' ? 'armor' : equipment.kind;
       if (attrs.type !== undefined && attrs.type !== type) throw new Error('物品种类与物品属性冲突');
+      const hint = equipment.kind !== 'item' && equipment.kind !== 'armor' && split.name ? classMismatchHint(split.name, equipment.kind === 'weapon' ? equipment.mechanism : equipment.mechanism ?? 'shield') : '';
+      if (hint) notes?.push(hint);
       return equipment;
     }
   }

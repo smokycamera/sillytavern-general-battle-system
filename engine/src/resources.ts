@@ -1,6 +1,7 @@
 import { ABILITY_BLUEPRINTS } from './data/ability-blueprints.js';
 import { SKILL_MODEL, skillsV14, conditionEffectWeight } from './skill-model.js';
 import type { Ability, Combatant, EffectOp, RulePack } from './types.js';
+import { baseMechanism } from './data/weapons.js';
 
 type ReserveUnit = Pick<Combatant, 'level' | 'rulesVersion' | 'resourceModel' | 'weapon' | 'sidearm' | 'abilities' | 'preparedAbilityIds'>;
 /** Both versions share fatigue, costs and recovery; V11 only changes capacity. */
@@ -17,7 +18,7 @@ export function fatiguePenalty(unit: Pick<Combatant, 'resourceModel' | 'fatigue'
 
 /** Read actual, equipped/prepared magic. Labels, armor, inventory and unprepared skills do not count. */
 export function casterReserve(unit: ReserveUnit): boolean {
-  return [unit.weapon, unit.sidearm].some(w => w?.recipe?.mechanism === 'magic')
+  return [unit.weapon, unit.sidearm].some(w => baseMechanism(w) === 'magic')
     || unit.abilities.some(a => a.delivery === 'magic' && !a.itemSourceId && !a.equipmentSourceId && unit.preparedAbilityIds?.includes(a.id));
 }
 /** Training determines reserve, not skill or equipment power. Changing loadout never refills it. */
@@ -27,7 +28,7 @@ export function spCapacity(unit: ReserveUnit): number {
   // Frozen V9–V10 reserve; saved battles retain their original economy.
   if (unit.resourceModel === 'endurance-v1') return casterReserve(unit) ? 10 + 3 * unit.level : 6 + 2 * unit.level;
   // Frozen pre-V9 classification and capacity.
-  const caster = unit.weapon?.recipe?.mechanism === 'magic'
+  const caster = baseMechanism(unit.weapon) === 'magic'
     || unit.abilities.some(a => a.delivery === 'magic' && !a.itemSourceId && unit.preparedAbilityIds?.includes(a.id));
   return caster ? 12 + unit.level * 2 : 6 + Math.floor(unit.level / 2);
 }

@@ -1,7 +1,7 @@
 import { prepareTraitLevelModel } from '../../engine/src/trait-level-model.js';
 import { prepareCombatModel } from '../../engine/src/combat-model.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
-import { V6_D20, V17_OVERFLOW_D20 } from '../../engine/src/rules.js';
+import { V6_D20, V18_OVERFLOW_D20 } from '../../engine/src/rules.js';
 import { prepareSkillModel } from '../../engine/src/skill-model.js';
 import { prepareItemModel } from '../../engine/src/item-model.js';
 import { randomId } from '../../host/src/browser-compat.js';
@@ -57,6 +57,7 @@ export interface NarrativeProposal {
   originalText?: string;
 }
 export interface NarrativeSave {
+  classMigration?: 'arms-v2';
   reports?: import('./battle-reports.js').BattleReport[];
   activeBattleStart?: import('./report-history.js').BattleStart;
   deletedReport?: import('./report-history.js').DeletedReport;
@@ -104,6 +105,7 @@ export function narrativeReceiptKey(proposal: NarrativeProposal): string {
   return state.map((n) => (n >>> 0).toString(16).padStart(8, '0')).join('');
 }
 export function compactNarrativeSources(save: NarrativeSave): NarrativeSave {
+  if (save.classMigration !== undefined && save.classMigration !== 'arms-v2') throw Error('武器类别更新标记损坏');
   return prepareNarrativeIds({ ...save, ...(Array.isArray(save.proposals) ? { proposals: save.proposals.map((p) => ({ ...p, source: { ...p.source, text: protocolExcerpt(p.source.text) },
     ...(p.originalText !== undefined ? { originalText: protocolExcerpt(p.originalText) } : {}) })) } : {}) });
 }
@@ -162,7 +164,7 @@ function spawnInput(event: Extract<Suggestion, { kind: 'spawn' }>): GenerateInpu
   return {
     ...(Object.keys(levels).length ? { traitLevels: levels } : {}),
     rulesVersion: 'v2', damageModel: 'wounds-v2', body: event.body, mount: event.mount, speedTier: event.speedTier, quality: event.quality, shield: event.shield,
-    shieldName: event.shieldName, shieldLevel: event.shieldLevel, shieldBonuses: event.shieldBonuses,
+    shieldName: event.shieldName, shieldLevel: event.shieldLevel, shieldClass: event.shieldClass, shieldBonuses: event.shieldBonuses,
     ...((event.scale ?? 'hero') === 'hero' ? {} : { hp: event.hp, hpMax: event.hpMax }),
     name: event.name, scale: event.scale ?? 'hero', archetype: event.archetype, level: event.level, side: event.side ?? 'enemy',
     traits: traits as string[], weaponName: event.weaponName ?? event.weapon, weaponClass: event.weaponClass,
@@ -253,7 +255,7 @@ function applyUnitEffect(storage: UnitRecord[], event: Extract<Suggestion, { kin
   const record: UnitRecord = storage.find((r) => r.id === event.id)!;
   if (record.retired || record.hp <= 0 || record.status === 'dead') throw new Error('不能通过效果来源复活阵亡或解散档案');
   const unit = materializeUnitRecord(record, registry);
-  prepareTraitLevelModel(unit, V17_OVERFLOW_D20);
+  prepareTraitLevelModel(unit, V18_OVERFLOW_D20);
   if (event.kind === 'bless') grantTraitSource(unit, { id: `bless:${proposalId}:${index}`, name: event.name, kind: 'blessing', traitIds: event.traitIds, ...(event.traitLevels ? { traitLevels: event.traitLevels } : {}), duration: event.duration });
   else if (event.kind === 'affect') grantTraitSource(unit, { id: `affect:${proposalId}:${index}`, name: event.name, kind: 'effect', traitIds: [], conditionIds: event.conditionIds, duration: event.duration });
   else {
@@ -374,7 +376,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
         if (records.some((r) => r.id === id)) throw new Error('新单位身份已存在');
         const unit = generateUnit(spawnInput(event), { registry, seed: id, skillModel: 'skills-v2' }).unit;
         unit.id = id;
-        prepareSkillModel(unit,V17_OVERFLOW_D20); prepareCombatModel(unit,V6_D20); upgradeCombatSkills(unit); prepareItemModel(unit,V17_OVERFLOW_D20);prepareTraitLevelModel(unit,V17_OVERFLOW_D20); applySpawnWound(unit, event);
+        prepareSkillModel(unit,V18_OVERFLOW_D20); prepareCombatModel(unit,V6_D20); upgradeCombatSkills(unit); prepareItemModel(unit,V18_OVERFLOW_D20);prepareTraitLevelModel(unit,V18_OVERFLOW_D20); applySpawnWound(unit, event);
         records.push(unitRecordFromCombatant(unit, undefined, { sourceId: proposal.id }));
         if (unit.hp > 0 && !event.archiveOnly) roster.push(materializeUnitRecord(records.at(-1)!, registry));
         // 随身道具每张卡各一套，归这张卡；佩戴、充能道具装上（编队一件即整卡配发），一次性道具开战时随身携带。

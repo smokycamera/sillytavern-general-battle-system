@@ -1,7 +1,8 @@
+import { isArmsV2, shieldUsable, shieldClass } from './arms.js';
 import { phase2Traits } from './trait-level-model.js';
 import { phase2Value, agileCost } from './phase2-traits.js';
 import { isEnduranceModel, resourceRound, fatigueLimit, fatiguePenalty } from './resources.js';
-import { bodyMovement, humanEncumbered, armorBurdenTier } from './body.js';
+import { bodyMovement, equipmentBurden, armorBurdenTier } from './body.js';
 import type { Combatant, ConditionDef, Trait } from './types.js';
 import type { Modifier, ResolveContext } from './bonus.js';
 import { activeTraitIds, activeConditionIds, traitPrerequisiteReason } from './trait-sources.js';
@@ -28,7 +29,7 @@ export function movementPoints(unit: Combatant, tags: string[] = []): number {
   const mobility = Math.max(unit.mount === true || ids.includes('fast') || ids.includes('mechanized') ? 1 : 0, ids.includes('skirmisher') && light ? phase2Value(unit, 'skirmisher', 'skirmishMobility', 1) : 0, ids.includes('agile') && light ? phase2Value(unit, 'agile', 'agileMobility', 0) : 0, plains);
   const armor = !vehicle && armorBurdenTier(unit) >= 3 ? 1 : 0;
   const night = tags.includes('night') ? nightMovePenalty(traitLevel(unit, 'night-fighter', ids)) : 0;
-  const normal = Math.max(1, Math.min(5, bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - armor - night - fatiguePenalty(unit) - Number(humanEncumbered(unit))));
+  const normal = Math.max(1, Math.min(5, bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - armor - night - fatiguePenalty(unit) - equipmentBurden(unit) - Number(isArmsV2(unit.armsModel) && shieldUsable(unit) && shieldClass(unit) === 'tower-shield')));
   return Math.min(5, normal + Number(unit.status === 'routing'));
 }
 export function formationMarchSteps(unit: Combatant, tags: string[] = []): number {

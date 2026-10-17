@@ -8,6 +8,7 @@ import { traitLevel, roughGroundCost } from '../trait-levels.js';
 import { isAirborne } from '../aerial.js';
 import type { BattlefieldSpec } from './spatial.js';
 import { groundHeightAt,unitHeight,heightTransition } from './height-map.js';
+import { baseMechanism } from '../data/weapons.js';
 
 export const STRUCTURE_NAMES = { cover: '掩体', fortification: '工事', wall: '城墙', gate: '城门', building: '建筑', tower: '塔楼', bridge: '桥梁' } as const;
 export type StructureKind = keyof typeof STRUCTURE_NAMES;
@@ -150,7 +151,7 @@ export const BREACH_COEFFICIENTS: Readonly<Record<string, number>> = Object.free
 export interface BreachBudget { damage: number; coefficient: number; enhancement: number; engineers: number; frontage: number; strength: number }
 export function weaponBreachBudget(actor: Combatant, weapon: Weapon | undefined): BreachBudget {
   if (!weapon) return { damage: 0, coefficient: 0, enhancement: 1, engineers: 1, frontage: 1, strength: 1 };
-  const mechanism = weapon.recipe?.mechanism ?? weapon.tags?.find(t => t.startsWith('mechanism:'))?.slice(10) ?? '';
+  const mechanism = baseMechanism(weapon) ?? '';
   const ranged = weapon.tags?.includes('ranged');
   const coefficient = BREACH_COEFFICIENTS[mechanism] ?? (weapon.tags?.includes('blast') ? 1.5 : ranged ? .16 : .45);
   const enhancement = instanceMultiplier(weapon.recipe?.bonuses, 'damage', weapon.recipe?.variance, weapon.channel ?? 'kinetic');

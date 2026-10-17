@@ -1,3 +1,5 @@
+import { equipmentBurden } from './equipment-load.js';
+import { armsWeaponReason, shieldUnavailableReason } from './arms.js';
 import { attackHostile, combatHostile, combatSide, controlActionReason, controlCondition } from './battle-control.js';
 import { abilityUsed } from './ability-state.js';
 import { diceMean } from './dice.js';
@@ -26,6 +28,7 @@ import { heightReach } from './small/height-map.js';
 import type { BattlefieldSpec } from './small/spatial.js';
 import { gridWeaponRange } from './small/weapon-range.js';
 import { isArmsModel } from './arms.js';
+import { baseMechanism } from './data/weapons.js';
 
 export type ActionKind = 'move' | 'weapon' | 'charge' | 'ability' | 'brace' | 'retreat' | 'end-turn';
 
@@ -57,6 +60,7 @@ export interface TargetOption {
 }
 
 export interface ActionPreview {
+  critChance?: number;
   attackRollCount?: number;
   overmatchMultiplier?:number;
   attackPower?:number;
@@ -220,6 +224,7 @@ export function weaponTargetReason(input: {
   if (input.charge) {
     if (actor.rulesVersion === 'v2' && ranged) return '冲锋需要近战武器';
     if (distance < 2) return '距离太近，无从冲锋（需 ≥2 带）';
+    if (equipmentBurden(actor) === 2) return '超载，不能冲锋';
     if (!chargeCapable(actor, activeTraitIds(actor))) {
       return itemsV15(actor) ? '只有骑乘、快速载具或带冲锋强化的单位可以冲锋' : '只有机动单位（或带冲锋特质）可以冲锋';
     }
@@ -284,15 +289,17 @@ export function abilityRangeDistance(actor: Combatant, ability: Ability, target:
 
 export function abilityUsabilityReason(actor: Combatant, ability: Ability): string | undefined {
   if (actor.status !== 'ready' || actor.conditions.some(c => c.dur > 0 && standardConditionMap().get(c.id)?.skipTurn)) return '当前状态无法行动';
+  if (equipmentBurden(actor) === 2 && ability.effects.some(e=>e.op==='move'&&e.mode==='dash')) return '超载，不能突进';
   if (ability.unavailableReason) return ability.unavailableReason;
   if (actor.rulesVersion === 'v2') {
+    if (ability.weaponUse && armsWeaponReason(actor, skillWeapon(actor, ability))) return armsWeaponReason(actor, skillWeapon(actor, ability));
     if (ability.weaponUse && !skillWeapon(actor, ability)) return ability.weaponUse === 'ranged' ? '需要实际远程武器' : '需要实际可用武器';
-    if (ability.damageBasis && skillWeapon(actor,ability)?.recipe?.mechanism !== 'natural' && actor.conditions.some((c) => c.dur > 0 && standardConditionMap().get(c.id)?.preventAttack)) return '缴械状态不能使用武器技法';
+    if (ability.damageBasis && baseMechanism(skillWeapon(actor,ability)) !== 'natural' && actor.conditions.some((c) => c.dur > 0 && standardConditionMap().get(c.id)?.preventAttack)) return '缴械状态不能使用武器技法';
     if (ability.delivery === 'magic' && actor.conditions.some((c) => c.dur > 0 && standardConditionMap().get(c.id)?.preventMagic)) return '沉默状态不能施放魔法技能';
     if (ability.itemSourceId && !actor.carriedItems?.some((i) => i.id === ability.itemSourceId)) return '携行物品来源已失效';
     if (ability.equipmentSourceId && !equippedSourceIds(actor).includes(ability.equipmentSourceId)) return '提供这项能力的配件或道具已卸下';
     if (!ability.itemSourceId && !ability.equipmentSourceId && !actor.preparedAbilityIds?.includes(ability.id)) return '已学但尚未准备';
-    if (ability.requires === 'shield' && !actor.shield) return '需要实际盾牌';
+    if (ability.requires === 'shield' && shieldUnavailableReason(actor)) return shieldUnavailableReason(actor);
     if (ability.requires === 'melee' && !meleeWeapon(actor)) return '需要近战武器';
   }
   const state = actor.abilityState.find((item) => item.abilityId === (ability.cooldownGroup ?? ability.id));

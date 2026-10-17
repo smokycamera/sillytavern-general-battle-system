@@ -21,12 +21,13 @@ import { skillResourceChange, summonProfile, conjureSkillUnit, summonedMemberLif
 import { standardConditionMap } from './conditions.js';
 import { conditionMods } from './bonus.js';
 import { poisonFactor, conditionExposure } from './afflictions.js';
-import { isCohort } from './combat-model.js';
+import { isCohort, personnel } from './combat-model.js';
+import { isArmsV2 } from './arms-model.js';
 import { positionedUnit, revealUnit, type ObservationContext } from './observation.js';
 import { canOccupy, terrainCellLabel } from './small/spatial.js';
 import { formationNode, FORMATION_NODES, formationCanOccupy } from './mass/formation.js';
 import { actionPotential, incomingPotential, tacticalStateValue } from './skill-tactics.js';
-import { grantBarrier } from './barrier.js';
+import { grantBarrier, barrierGradeMultiplier } from './barrier.js';
 import { moveEffectDescription } from './skill-movement.js';
 import { moraleChangePreview } from './morale.js';
 
@@ -61,7 +62,7 @@ const positive = new Set(['empowered', 'inspired', 'blessed', 'encouraged', 'con
 export function isPositiveCondition(id: string): boolean { return positive.has(id); }
 const negative = new Set(['taunted','charmed','blinded','confused','inaccurate', 'exposed', 'poisoned', 'bleeding', 'burning', 'silenced', 'stunned', 'restrained', 'disarmed', 'fearful', 'slowed', 'cursed', 'demoralized', 'weakened', 'vulnerable', 'wounded']);
 export function conditionImmunity(target: Combatant, id: string): string | undefined {
-  if (id === 'charmed' && target.scale !== 'hero') return '魅惑首版仅支持未随队独立个体，不支持编队';
+  if (id === 'charmed' && target.scale !== 'hero' && !isArmsV2(target.armsModel)) return '魅惑首版仅支持未随队独立个体，不支持编队';
   if (id === 'poisoned' && !poisonFactor(target)) return target.body === 'vehicle' ? '封闭车体免疫中毒' : '非生物免疫中毒';
   if (id === 'fearful' && activeTraitIds(target).includes('steadfast')) return '不溃抵抗惊惧';
   if (['bleeding', 'fearful'].includes(id) && target.rulesVersion === 'v2' && activeTraitIds(target).includes('inorganic')) return '非生物免疫' + (id === 'bleeding' ? '流血' : '惊惧');
@@ -71,7 +72,9 @@ export function conditionImmunity(target: Combatant, id: string): string | undef
 const CONTROL_CONDITIONS = new Set(['taunted','charmed','blinded','confused','stunned', 'restrained', 'silenced', 'disarmed', 'slowed', 'fearful']);
 export function controlBonus(target: Combatant, conditionId?: string): number {
   const tenacity = conditionId && CONTROL_CONDITIONS.has(conditionId) && target.rulesVersion === 'v2' && activeTraitIds(target).includes('tenacity') ? phase2Value(target, 'tenacity', 'controlResistance', 4) : 0;
-  return Math.floor(target.level / 2) + bodyRank(target) - 1 + tenacity;
+  // R25 人多难迷：编队现员每翻一倍，抵抗魅惑+1。
+  const crowd = conditionId === 'charmed' && target.scale !== 'hero' && isArmsV2(target.armsModel) ? Math.floor(Math.log2(Math.max(1, personnel(target)))) : 0;
+  return Math.floor(target.level / 2) + bodyRank(target) - 1 + tenacity + crowd;
 }
 export function conditionChance(target: Combatant, effect: ConditionEffect): number {
   if (target.hp <= 0 || ['dead', 'fled'].includes(target.status) || conditionImmunity(target, effect.conditionId)) return 0;
@@ -205,7 +208,7 @@ export function skillEffectLines(context: ObservationContext, actor: Combatant, 
     }
     if (effect.op === 'zone') return [zoneEffectDescription(effect)];
     if (effect.op === 'move') return [moveEffectDescription(effect, ability)];
-    if (effect.op === 'barrier') return [`屏障最多吸收${effect.amount}点伤害，持续${effect.dur}轮${effect.defensePower ? `，防御规格L${effect.defensePower}` : ''}；重复施放取较强保护`];
+    if (effect.op === 'barrier') { const grade = barrierGradeMultiplier(target, effect.defensePower ?? ability.power); return [`屏障最多吸收${Math.max(1, Math.round(effect.amount * grade))}点伤害${grade > 1 ? `（跨等级×${Number(grade.toFixed(2))}）` : ''}，持续${effect.dur}轮${effect.defensePower ? `，防御规格L${effect.defensePower}` : ''}；重复施放取较强保护`]; }
     if (effect.op === 'trait') { const grant = skillTraitGrant(target, ability, effect); return [skillTraitReason(target, effect, ability) ?? `${traitRegistry().get(grant.id)?.name}${grant.level === undefined ? '' : 'L' + grant.level}持续${effect.dur}轮，战斗归档时结束`]; }
     if (effect.op === 'resource') return [`${effect.resource==='SP'?'精力':effect.resource}变化${skillResourceChange(target, effect)}，受当前资源与上限约束`];
     if (effect.op === 'damage' && ability.areaExposure && target.scale !== 'hero') return [isCohort(actor)?'范围伤害按参战规模与成员耐久折算；疏散可减轻伤害':`每编队至多${Math.min(target.hp, ability.areaExposure)}名成员暴露；疏散可减轻范围伤害`];
@@ -268,7 +271,7 @@ export function skillEffectValue(context: ObservationContext, actor: Combatant, 
         const future = structuredClone(target); grantBarrier(future, effect.amount, effect.dur, actor.id, effect.defensePower ?? ability.power);
         return sum + Math.max(0, tacticalStateValue(context, future) - tacticalStateValue(context, target)) * polarity;
       }
-      return sum + Math.min(Math.max(0, effect.amount - (target.barrier?.remaining ?? 0)), incomingPotential(context, target)) * polarity;
+      return sum + Math.min(Math.max(0, Math.max(1, Math.round(effect.amount * barrierGradeMultiplier(target, effect.defensePower ?? ability.power))) - (target.barrier?.remaining ?? 0)), incomingPotential(context, target)) * polarity;
     }
     if (effect.op === 'trait') {
       if (skillTraitReason(target, effect, ability)) return sum;

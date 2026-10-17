@@ -1,3 +1,4 @@
+import { equipmentBurden } from './equipment-load.js';
 /**
  * V15 道具系统（items-v1）。只由新战斗规则开启；旧战斗快照没有该标记，携行物品、专精与原型照原规则结算。
  *
@@ -28,7 +29,8 @@ export function prepareItemModel(unit: Combatant, rules: Pick<RulePack, 'itemMod
 /** 快速及以上的载具（装甲车、摩托、悬浮车等）可以冲锋。 */
 export const fastVehicle = (unit: Pick<Combatant, 'body' | 'speedTier'>): boolean => unit.body === 'vehicle' && (unit.speedTier ?? 0) >= 4;
 /** 冲锋资格：V15 看真实坐骑、快速载具或冲锋强化；旧规则沿用机动原型。 */
-export function chargeCapable(unit: Pick<Combatant, 'itemModel' | 'archetype' | 'mount' | 'body' | 'speedTier'>, traits: readonly string[]): boolean {
+export function chargeCapable(unit: Pick<Combatant, 'itemModel' | 'archetype' | 'mount' | 'body' | 'speedTier'> & Partial<Combatant>, traits: readonly string[]): boolean {
+  if (unit.armsModel === 'arms-v2' && equipmentBurden(unit as Combatant) === 2) return false;
   if (traits.includes('charge-strong')) return true;
   return itemsV15(unit) ? unit.mount === true || fastVehicle(unit) : unit.archetype === 'mobile';
 }

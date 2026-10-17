@@ -1,3 +1,7 @@
+import { armsStatusLabels, shieldDetail, isArmsV2, energyOverloadThreshold } from '../../engine/src/arms.js';
+import { diceAvg } from '../../engine/src/data/weapons.js';
+import { classMigrationCandidates } from './arms-v2.js';
+import { classMismatchHint } from '../../engine/src/data/weapons.js';
 import { prepareTraitLevelModel } from '../../engine/src/trait-level-model.js';
 import { abilityUsed } from '../../engine/src/ability-state.js';
 import { McpPanelBridge } from './mcp-bridge.js';
@@ -72,7 +76,7 @@ import {
   generateUnit, traitCatalog, traitRegistry, resolveTraitId,
   SmallBattle, MassBattle, battleXpAwardsForBothSides, applyXp, xpProgress, approx, approxDelta,
   armorDR, fieldModsFor, LITE_D20,
-  V5_D20, V6_D20, V11_OVERFLOW_D20, V12_OVERFLOW_D20, V17_OVERFLOW_D20, prepareArmsModel, prepareTraitModel, prepareSkillModel, prepareItemModel, isAirborne, abilityUsabilityReason,
+  V5_D20, V6_D20, V11_OVERFLOW_D20, V12_OVERFLOW_D20, V18_OVERFLOW_D20, prepareArmsModel, prepareTraitModel, prepareSkillModel, prepareItemModel, isAirborne, abilityUsabilityReason,
   generatedField, generatedLayeredField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
   FORMATION_NODES, formationNode, concealmentLabel,
   type Combatant, type GenerateInput, type Order, type BattleLogEntry, type Side,
@@ -647,7 +651,7 @@ function restore(): void {
   // 旧存档已结算标记也封口，不能因旧版缺少完整战果 id 而重写最新档案。
   const restoredBattle = currentBattle();
   openingSavedFor = restoredBattle ?? undefined;
-  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V17_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V12_OVERFLOW_D20);prepareTraitModel(unit,V17_OVERFLOW_D20);prepareItemModel(unit,V17_OVERFLOW_D20);prepareTraitLevelModel(unit,V17_OVERFLOW_D20);}
+  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V18_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V18_OVERFLOW_D20);prepareTraitModel(unit,V18_OVERFLOW_D20);prepareItemModel(unit,V18_OVERFLOW_D20);prepareTraitLevelModel(unit,V18_OVERFLOW_D20);}
   if (restoredBattle && state.xpSettled) {
     const id = battleOutcomeId(state.mass ? 'mass' : 'small', restoredBattle.seed);
     if (!state.committedOutcomeIds.includes(id)) state.committedOutcomeIds.push(id);
@@ -730,7 +734,7 @@ function defaultRank(u: Pick<Combatant, 'archetype'>): 'front' | 'rear' | 'reser
 async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {}): Promise<void> {
   // 特质去重：AI 标签/面板勾选可能重复给同一特质
   const { unit } = generateUnit({ ...input, rulesVersion: 'v2', damageModel: 'wounds-v2', era: undefined, traits: [...new Set(input.traits)] }, { registry: reg, skillModel: 'skills-v2' });
-  prepareSkillModel(unit, V17_OVERFLOW_D20); prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit); prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V12_OVERFLOW_D20); prepareTraitModel(unit, V17_OVERFLOW_D20); prepareItemModel(unit, V17_OVERFLOW_D20); prepareTraitLevelModel(unit, V17_OVERFLOW_D20);
+  prepareSkillModel(unit, V18_OVERFLOW_D20); prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit); prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V18_OVERFLOW_D20); prepareTraitModel(unit, V18_OVERFLOW_D20); prepareItemModel(unit, V18_OVERFLOW_D20); prepareTraitLevelModel(unit, V18_OVERFLOW_D20);
   // id 去重
   state.idSeq++;
   state.roster.push(unit);
@@ -744,7 +748,7 @@ async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {})
 /** 储存器档案实体化为本场编制，保留稳定 id、当前兵力、状态和玩家编辑过的基础属性。 */
 function materializeStorageUnit(r0: RosterUnit): Combatant {
   const unit=materializeUnitRecord(r0, reg, { era: state.era });
-  if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V17_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V12_OVERFLOW_D20);prepareTraitModel(unit,V17_OVERFLOW_D20);prepareItemModel(unit,V17_OVERFLOW_D20);prepareTraitLevelModel(unit,V17_OVERFLOW_D20);}
+  if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V18_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V18_OVERFLOW_D20);prepareTraitModel(unit,V18_OVERFLOW_D20);prepareItemModel(unit,V18_OVERFLOW_D20);prepareTraitLevelModel(unit,V18_OVERFLOW_D20);}
   return unit;
 }
 
@@ -1238,7 +1242,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   rows.push(`<span>攻 <b>${atkPlus}</b></span>`);
   rows.push(`<span>防 <b>${u.base.def}</b></span>`);
   rows.push(`<span>速 <b>${u.base.spd}</b></span>`);
-  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${approx(trainingDamage(u.level,currentBattle()?.rules??V17_OVERFLOW_D20), 2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
+  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${approx(trainingDamage(u.level,currentBattle()?.rules??V18_OVERFLOW_D20), 2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
   rows.push(`<span>${u.scale === 'hero' ? '生命' : u.body==='vehicle'?'载具数':'人数'} <b>${u.hp}/${u.base.hpMax}</b></span>`);
   if(u.combatModel&&u.scale!=='hero')rows.push(`<span>单个${u.body==='vehicle'?'载具':'成员'}最大生命 <b>${memberDurability(u)}</b></span>`);
   if (u.base.moraleMax !== undefined) rows.push(`<span>士气 <b>${u.base.moraleMax}</b></span>`);
@@ -1249,10 +1253,14 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   if (u.combatModel && u.scale !== 'hero') rows.push('<details><summary>编队规则</summary><p>人数与成员耐久分别结算。参战规模随现员增长，地形与阵位限制展开；减员后火力同步下降。</p></details>');
 
   // 装备（武器/护甲，hero 刻度）
+  for(const label of armsStatusLabels(u, false))rows.push('<div class="sub">'+esc(label)+'</div>');
   if (u.weapon) {
     const atkTimes = u.weapon.attacks && u.weapon.attacks > 1 ? ` ×${u.weapon.attacks}` : '';
     const reload = u.weapon.reload ? ` 装填${u.weapon.reload}` : '';
-    if(modern)rows.push(`<div class="eq"><b>武器</b> ${esc(u.weapon.name)} L${u.weapon.level??5}${esc(enhancementLabel(u.weapon.recipe?.bonuses))}：${esc(anchoredWeaponLabel(anchoredWeapon(u.weapon,u.cannonAmmo,u.damageModel)))} · 格子射程${gridWeaponRange(u.weapon,true,u.armsModel)}／会战${formationWeaponRange(u.weapon)}阵距${reload}</div>`);
+    const projected = anchoredWeapon(u.weapon,u.cannonAmmo,u.damageModel)!, segment = (diceAvg(projected.baseDice)+(projected.apDice?diceAvg(projected.apDice):0))*(projected.damageScale??1);
+    // R15 重击：基础单段命中均值不低于同级能量盾的过载阈值。
+    const overload = isArmsV2(u.armsModel) && segment >= energyOverloadThreshold(u.weapon.recipe?.power ?? u.weapon.level ?? 5) ? ' · 能让能量盾过载' : '';
+    if(modern)rows.push(`<div class="eq"><b>武器</b> ${esc(u.weapon.name)} L${u.weapon.level??5}${esc(enhancementLabel(u.weapon.recipe?.bonuses))}：${esc(anchoredWeaponLabel(projected))}${overload} · 格子射程${gridWeaponRange(u.weapon,true,u.armsModel)}／会战${formationWeaponRange(u.weapon)}阵距${reload}</div>`);
     else rows.push(`<div class="eq"><b>武器</b> ${esc(u.weapon.name)}：${esc(u.weapon.baseDice)}${u.weapon.apDice ? ` +破甲${esc(u.weapon.apDice)}` : ''}｜射程${u.rulesVersion === 'v2' ? gridWeaponRange(u.weapon, false) + '格／会战' + (u.weapon.range ?? 0) + '阵距' : u.weapon.range ?? 0}${atkTimes}${reload}${u.rulesVersion === 'v2' ? ' · 穿透' + (u.weapon.penetration ?? 0) + ' · ' + ({ kinetic: '动能', thermal: '热能', arcane: '奥术' })[u.weapon.channel ?? 'kinetic'] : u.weapon.tags?.length ? '｜' + esc(u.weapon.tags.join(',')) : ''}</div>`);
   }
   if (u.armor) {
@@ -1274,6 +1282,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
     rows.push(`<div class="eq"><b>护甲</b> ${esc(u.armor.name)}：${tierNames[u.armor.tier] ?? u.armor.tier}档${u.armor.drScale && u.armor.drScale !== 1 ? `（效率×${u.armor.drScale}）` : ''}｜实际减伤 <b>${dr}%</b>${gapHint}${overflow ? '<span class="dim">（特质护甲加成超出4档上限，溢出无效）</span>' : ''}</div>`);
     }
   }
+  if (u.shield && u.rulesVersion === 'v2') rows.push(`<div class="eq"><b>盾</b> ${esc(u.shield.name ?? '盾牌')}${esc(enhancementLabel(u.shield.recipe?.bonuses))}：${esc(shieldDetail(u))}</div>`);
   if (u.gear?.length) {
     rows.push(`<div class="eq"><b>佩戴</b> ${u.gear.map((g) => esc(g.name) + '（' + esc(itemSpecText(g.recipe)) + '）').join('、')}</div>`);
   }
@@ -1291,6 +1300,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   if (u.rulesVersion === 'v2') rows.push('<div class="sub">移动 ' + movementLabel(u, plannedFieldTags()) + ' · 基础速度' + (u.speedTier ?? BODY[u.body ?? 'human'].movement) + '档 · 精力 ' + approx(u.resources.SP ?? 0, 1, 'down') + '/' + spCapacity(u) + (u.resourceModel ? ' · 自然恢复 ' + approx(spRecovery({ ...u, status: 'ready', resources: { ...u.resources, SP: 0 } })) + '/轮 · 空过休整恢复×3 · 疲劳 ' + approx(u.fatigue, 1, 'down') + '/' + fatigueLimit(u) : '') + '</div>');
   if(u.combatModel&&u.scale==='hero'&&u.moraleState?.damagePenalty)rows.push('<p class="sub">累计受创压力 '+u.moraleState.damagePenalty+'，影响本场士气；不溃能力免疫惊退。</p>');
   if (u.mount) rows.push('<div class="sub">骑乘 · 占格更大 · 机动提高</div>');
+  for (const gear of [u.weapon, u.sidearm, u.shield]) if (gear?.recipe && gear.name) { const hint = classMismatchHint(gear.name, gear.recipe.mechanism); if (hint) rows.push('<div class="sub">' + esc(hint) + '</div>'); if (gear.recipe.variance) rows.push('<div class="sub">' + esc(gear.name + ' · ' + instanceVarianceLabel(gear.recipe.variance)) + '</div>'); }
   if (u.weapon?.recipe) rows.push(`<details><summary>装备属性</summary><div class="sub">训练${u.level} · 装备等级${u.weapon.recipe.power}${esc(enhancementLabel(u.weapon.recipe.bonuses))} · 体型${({human:'普通人形',large:'大型生物',giant:'巨型生物',vehicle:'车辆'})[u.body??'human']} · 品质${u.weapon.recipe.quality} · ${esc(WEAPON_CLASSES[u.weapon.recipe.mechanism]?.name ?? u.weapon.recipe.mechanism)} · 穿透${modern?anchoredWeapon(u.weapon,u.cannonAmmo,u.damageModel)?.penetration:u.weapon.penetration} · 物品编号 ${esc(u.weapon.id)}</div></details>`);
   if (u.generationWarnings?.length) rows.push(`<details><summary>生成说明</summary><div class="sub">${u.generationWarnings.map(esc).join('；')}</div></details>`);
 
@@ -1445,6 +1455,11 @@ function isMassBattle(b: SmallBattle | MassBattle): b is MassBattle {
 
 /** 编制管理子界面：编制单位与战场遭遇（AI spawn 投放）分栏管理，可展开查看/编辑详细属性与装备。
  *  仅在非战斗时可用（战斗态单位是快照，不应就地改）。 */
+let classMigrationDismissed = false;
+function renderClassMigration(): string {
+  const candidates = classMigrationDismissed ? [] : classMigrationCandidates(viewSave());
+  return candidates.length ? '<section><h3>武器类别更新（2.2）</h3>' + candidates.map(c => '<label class="check-field" style="display:flex;gap:.5em;margin:.5em 0"><input type="checkbox" data-role="class-migration-item" value="' + esc(c.item.id) + '" checked>' + esc(c.owner + '·' + c.item.name + '：' + c.from + ' → ' + c.to) + '</label>').join('') + '<div class="row"><button data-action="class-migration-apply">应用所选</button><button data-action="class-migration-none">全部不改</button><button data-action="class-migration-later">以后再说</button></div></section>' : '';
+}
 function renderManage(): string {
   const saved = viewSave(), promptSettings = saved.promptSettings;
   const { publicId } = narrativeIds({ ...saved, storage: state.storage, inventory: state.inventory });
@@ -1562,7 +1577,7 @@ function renderManage(): string {
       <details><summary>调整当前参战名单</summary>${rosterBlock}</details>
       <div style="margin-top:12px"><b style="color:var(--dim)">全部档案（${storedRecords.length}）</b><div class="row"><button data-action="prompt-select-units" data-selected="true">全选参考</button><button data-action="prompt-select-units" data-selected="false">取消全选</button><span class="sub">勾选的档案用于剧情参考。</span></div>
         <details data-detail-id="archive-help"><summary>档案说明</summary><p>阵亡和解散的单位保留历史档案；召唤单位不自动建档。</p></details></div>
-      ${storageBlock}
+      ${renderClassMigration()}${storageBlock}
     </div>` : ''}
   </section>`;
 }
@@ -2747,9 +2762,12 @@ async function settleXp(allowUnfinished = false): Promise<void> {
     records: state.storage,
     roster: state.roster,
     combatants: b.combatants,
+    inventory: state.inventory,
     awards,
     registry: reg,
   });
+  if (result.applied) for (const text of result.brokenShieldNotes ?? []) b.log.push({round:b.round,kind:'condition',text});
+  if (result.inventory) state.inventory = result.inventory;
   if (!state.reports.some((r) => r.id === id) && !state.deletedReportIds?.includes(id)) {
     state.reports = [...state.reports, {
       id, roundCount: completedBattleRounds(b), epilogue: battleEpilogue(b,state.activeBattleStart), narrativeEvents: archivedNarrativeEvents(b, state.reportDeliveries), eventCount: b.log.length, card: settlementCard(b.log, b.round, !!state.mass, { wholeBattle: true }),
@@ -2987,6 +3005,9 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     link.click(); URL.revokeObjectURL(url);
   },
   'migration-balance': () => { controller.reviewBalanceUpgrade(); restore(); render(); },
+  'class-migration-apply': async () => { const receipt = await controller.migrateWeaponClasses([...document.querySelectorAll<HTMLInputElement>('[data-role="class-migration-item"]:checked')].map(el => el.value), viewSave().factRevision ?? 0); if (receipt.status === 'failed') throw Error(receipt.error); restore(); },
+  'class-migration-none': async () => { const receipt = await controller.migrateWeaponClasses([], viewSave().factRevision ?? 0); if (receipt.status === 'failed') throw Error(receipt.error); restore(); },
+  'class-migration-later': () => { classMigrationDismissed = true; },
   'migration-accept': async () => { const receipt = (await controller.acceptMigration()); if (receipt.status === 'failed') throw new Error(receipt.error); restore(); state.saveReceipt = receipt; },
   'migration-restore': async () => { const receipt = (await controller.restoreMigrationBackup()); if (receipt.status === 'failed') throw new Error(receipt.error); restore(); state.saveReceipt = receipt; },
   'grid-structure': (el) => {
@@ -3683,7 +3704,7 @@ document.addEventListener('click', e => {
   }
   // Scan/reload validate the refreshed service themselves; they must remain
   // reachable when a host metadata refresh invalidates the old panel session.
-  const viewOnly = ['save-retry', 'archive-reload', 'narrative-scan', 'pending-scan', 'workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'grid-inspect-unit', 'grid-cell', 'grid-mode', 'narrative-review', 'log-detail', 'unit-detail', 'role-detail', 'modal-stop', 'migration-export', 'loadout-skills', 'loadout-skills-close'].includes(action);
+  const viewOnly = ['class-migration-later','save-retry', 'archive-reload', 'narrative-scan', 'pending-scan', 'workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'grid-inspect-unit', 'grid-cell', 'grid-mode', 'narrative-review', 'log-detail', 'unit-detail', 'role-detail', 'modal-stop', 'migration-export', 'loadout-skills', 'loadout-skills-close'].includes(action);
   const feedback = !viewOnly && /^(grid-|small-|mass-|formation-)/.test(action) ? (e.target as HTMLElement).closest<HTMLElement>('[data-action]') ?? undefined : undefined;
   if (action === 'formation-select-actor') {
     if (uiBusy) { toast('正在保存上一项操作，请稍候…'); return; }

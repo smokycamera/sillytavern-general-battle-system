@@ -291,7 +291,8 @@ export interface Combatant {
   /** Versioned reserve: V9–V10 endurance-v1; V11 endurance-v2. Costs/fatigue/recovery are shared. */
   resourceModel?: 'endurance-v1' | 'endurance-v2';
   /** V12 weapon/armor calibration, projected from the battle rules; absent keeps the frozen V11 behaviour. */
-  armsModel?: 'arms-v1';
+  armsModel?: import('./arms.js').ArmsModel;
+  barrierModel?: 'barrier-grades-v1';
   /** V13 trait overhaul, projected from the battle rules; absent keeps the frozen V12 trait rules. */
   traitModel?: 'traits-v1';
   /** V14 skill pricing (composite states priced per stat), projected from the battle rules; absent keeps V13 skill numbers. */
@@ -316,6 +317,20 @@ export interface Combatant {
   /** 当前战斗的非致命规则，由战场传入；不作为永久单位属性。 */
   nonLethal?: boolean;
   combatModel?: 'cohort-v1' | 'cohort-v2';
+  /** R2 本次冲锋被拒止打断，冲锋加成全部取消；R7 本次冲锋的实际移动格数。激活结束清除。 */
+  chargeInterrupted?: true;
+  chargeDistance?: number;
+  /** R2 本轮已触发拒止的移动者；随快照保存。 */
+  denialTriggered?: { round: number; targets: string[] };
+  /** R20 实体盾剩余耐久，战后清除。 */
+  shieldDurability?: { remaining: number };
+  /** R15 能量盾：剩余总量与本次回充前已过载的份数（英雄只有0或1）。 */
+  energyShield?: { remaining: number; overloaded: number };
+  /** R16 喷射武器剩余燃料（按武器 id，缺省为满）与本轮已破裂的油箱。 */
+  sprayerFuel?: Record<string, number>;
+  tankRupturedRound?: number;
+  /** R24 能量武器连续开火计数，按武器 id。 */
+  weaponHeat?: Record<string, { streak: number; fired?: boolean; cooling?: boolean }>;
   /** 本场火炮弹种，默认榴弹；不改变库存实物。 */
   cannonAmmo?: 'he' | 'ap';
   formation?: import('./combat-model.js').FormationStrength;
@@ -450,6 +465,7 @@ export interface GenerateInput {
   /** 盾牌名称、独立规格与修正；仅旧布尔写法省略规格时保留原默认盾。 */
   shieldName?: string;
   shieldLevel?: number;
+  shieldClass?: import('./data/weapons.js').ShieldClass;
   shieldBonuses?: Enhancements;
   preparedAbilityIds?: string[];
   name: string;
@@ -579,7 +595,8 @@ export interface RulePack {
   /** Versioned reserve: V9–V10 endurance-v1; V11 endurance-v2. Costs/fatigue/recovery are shared. */
   resourceModel?: 'endurance-v1' | 'endurance-v2';
   /** V12 weapon/armor calibration (crew, demolition, light armor, reach, grid ranges); absent keeps V11. */
-  armsModel?: 'arms-v1';
+  armsModel?: import('./arms.js').ArmsModel;
+  barrierModel?: 'barrier-grades-v1';
   /** V13 trait overhaul (工事据守、工兵、拒马、散兵单体与步枪编队自动散兵); absent keeps V12. */
   traitModel?: 'traits-v1';
   /** V14 skill pricing: 同时改两项属性的状态按两项附加效果计价; absent keeps V13. */

@@ -46,6 +46,7 @@ export function createPanelRuntime(): PanelRuntime {
     deleteBattleReport: id => convert(service.deleteBattleReport(id)), restoreBattleReport: () => convert(service.restoreBattleReport()),
     restartBattleReport: (id, revision, seed) => convert(service.restartBattleReport(id, revision, seed)),
     revokeBlessing: (id, source, revision, context) => convert(service.revokeBlessing(id, source, revision, context)),
+    migrateWeaponClasses: (selected, revision) => convert(service.migrateWeaponClasses(selected, revision)),
     inventoryAction: intent => convert(service.inventoryAction(intent)), commitInventoryPreview: preview => convert(service.commitInventoryPreview(preview)),
     deleteUnit: id => convert(service.deleteUnit(id)), restoreDeployment: id => convert(service.restoreDeployment(id)), approve: id => convert(service.approve(id)),
     correctProposal: (id, text) => convert(service.correctProposal(id, text)), reject: id => convert(service.reject(id)), deleteRecords: ids => convert(service.deleteRecords(ids)),

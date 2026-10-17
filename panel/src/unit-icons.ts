@@ -1,3 +1,4 @@
+import { baseMechanism } from '../../engine/src/data/weapons.js';
 /** 兵种图标：24×24 的实心剪影，按单位实际装备的武器机制选择，载具与骑乘优先。
  * 只读取装备上已经记录的机制（recipe.mechanism / mechanism: 标签），不按名称猜测。 */
 import type { Combatant, Weapon } from '../../engine/src/types.js';
@@ -39,7 +40,7 @@ export const UNIT_ICONS: Record<string, string> = {
 };
 
 export const UNIT_ICON_NAMES: Record<string, string> = {
-  sword: '剑', axe: '斧', spear: '长兵器', blunt: '钝器', natural: '天生武器', throwing: '投掷', bow: '弓弩', 'light-ranged': '轻型投射',
+  sword: '剑', axe: '斧', spear: '长兵器', blunt: '钝器', natural: '天生武器', throwing: '投掷', bow: '弓', 'light-ranged': '轻型投射',
   firearm: '火枪', rifle: '步枪', 'heavy-rifle': '重步枪', autocannon: '机炮', cannon: '直射火炮', 'indirect-cannon': '曲射火炮',
   energy: '能量武器', magic: '法杖', demolition: '爆破', summon: '召唤', cavalry: '骑乘', vehicle: '载具', shield: '其他',
 };
@@ -51,7 +52,7 @@ export function weaponMechanism(weapon?: Weapon): string | undefined {
 export function unitIconKey(u: Pick<Combatant, 'body' | 'mount' | 'weapon'>): string {
   if (u.body === 'vehicle') return 'vehicle';
   if (u.mount) return 'cavalry';
-  const mechanism = weaponMechanism(u.weapon);
+  const mechanism = baseMechanism(u.weapon);
   if (mechanism && UNIT_ICONS[mechanism]) return mechanism;
   if (!u.weapon) return 'shield';
   return u.weapon.tags?.includes('ranged') ? 'bow' : 'sword';

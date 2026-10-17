@@ -1,7 +1,7 @@
 import { BONUS_NAMES, ENHANCEMENT_STATS, enhancementLabel, parseEnhancementSuffix, resolveBonusStat as bonusKey, type BonusStat, type Enhancements } from '../../engine/src/enhancements.js';
 import { parseSkillMechanism, parseSkillMechanismParts, skillMechanismName, skillMechanismFromId, type SkillMechanism } from '../../engine/src/data/skill-mechanisms.js';
 import { legacySkillEquivalent } from '../../engine/src/skill-catalog.js';
-import { resolveWeaponClass } from '../../engine/src/data/weapons.js';
+import { resolveWeaponClass, SHIELD_CLASSES } from '../../engine/src/data/weapons.js';
 import type { BonusKind } from '../../engine/src/enhancements.js';
 
 /** Read either sign/number/name or name/sign/number, without borrowing the next bonus's sign. */
@@ -41,7 +41,7 @@ export function normalizeNarrativeSpec(text: string, kind?: BonusKind): string {
   if (!match) return prefix + spec;
   const base = match[1]!.replace(/[lL][+-]?\d+(?:\.\d+)?$/, '').trim();
   kind ??= ['无甲', '轻甲', '中甲', '重甲', '超重甲'].includes(base) ? 'armor'
-    : ['盾', '盾牌', 'shield'].includes(base) ? 'shield' : resolveWeaponClass(base) ? 'weapon' : undefined;
+    : Object.hasOwn(SHIELD_CLASSES, resolveWeaponClass(base) ?? '') ? 'shield' : resolveWeaponClass(base) ? 'weapon' : undefined;
   let suffix = match[2]!.trim();
   // “伤害+3”与“+3伤害”只交换明确的名称/数值，不猜没有符号的数值。
   suffix = enhancementOrder(suffix) ?? suffix;

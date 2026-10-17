@@ -16,6 +16,7 @@ import { parseDice } from '../dice.js';
 import { generateMechanismUnit } from './mechanism.js';
 
 export interface GenOptions {
+  varianceVersion?: import('../instance-variance.js').InstanceVariance['version'];
   skillModel?: import('../skill-model.js').SkillModel;
   seed?: string;
   registry?: Map<string, Trait>;

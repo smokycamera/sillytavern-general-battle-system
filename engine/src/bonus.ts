@@ -1,3 +1,4 @@
+import { shieldGuardUsable } from './arms.js';
 import { phase2Traits } from './trait-level-model.js';
 import { phase2Value, phase2WeaponMods } from './phase2-traits.js';
 /**
@@ -10,7 +11,7 @@ import type { Combatant, Trait, TraitEffect } from './types.js';
 import type { ConditionDef } from './types.js';
 import { standardConditionMap } from './conditions.js';
 import { fatiguePenalty } from './resources.js';
-import { humanEncumbered } from './body.js';
+import { equipmentBurden } from './body.js';
 import { defensivePostureMods, looseFormation } from './tactics.js';
 import { activeTraitIds, actualTargetTag, traitPrerequisiteReason, traitStatAdjustments, bodyRank, traitSourceActive } from './trait-sources.js';
 import { traitsV13 } from './trait-model.js';
@@ -75,6 +76,8 @@ export interface ResolveContext {
   moved?: boolean; maxRange?: number; chargeStraight?: boolean;
   skillDelivery?: 'melee' | 'ranged' | 'magic';
   area?: boolean;
+  /** R16 喷射武器：按范围攻击处理，不计工事的远程减伤。 */
+  spray?: boolean;
   fieldTags?: string[];
   terrain?: string;
   localTerrain?: boolean;
@@ -174,6 +177,7 @@ export function describeStack(r: StackResult): string {
 
 import { traitValue } from './trait-levels.js';
 import { traitLevelsV16 } from './trait-level-model.js';
+import { baseMechanism } from './data/weapons.js';
 const TRAIT_REGISTRY_DEFAULT = new Map<string, Trait>();
 const SOURCE_CONDITIONS = standardConditionMap();
 
@@ -219,7 +223,7 @@ export function traitRuntimeMods(traitIds: string[], registry?: Map<string, Trai
       if (traitsV13(unit) && (!entrenched(unit) || !phase2Traits(unit) && context.defender && activeTraitIds(context.defender).includes('siege-breaker'))) continue;
       const suppression = context.defender && activeTraitIds(context.defender).includes('siege-breaker') ? phase2Value(context.defender, 'siege-breaker', 'engineerSuppression', 1) : 0;
       out.push({ source: 'intrinsic', sourceId: 'fortification:def', stackGroup: 'posture:def', name: t.name, kind: 'def', type: 'flat', value: Math.ceil(phase2Value(unit, id, 'worksDefense', 3) * (1 - suppression)) });
-      if (context.ranged) out.push({ source: 'intrinsic', sourceId: 'fortification:ward', stackGroup: 'posture:ward', name: t.name, kind: 'ward', type: 'mult', value: 1 - phase2Value(unit, id, 'worksReduction', .3) * (1 - suppression) });
+      if (context.ranged && !context.spray) out.push({ source: 'intrinsic', sourceId: 'fortification:ward', stackGroup: 'posture:ward', name: t.name, kind: 'ward', type: 'mult', value: 1 - phase2Value(unit, id, 'worksReduction', .3) * (1 - suppression) });
       continue;
     }
     if (unit?.rulesVersion === 'v2' && id === 'loose-formation') {
@@ -239,8 +243,8 @@ export function traitRuntimeMods(traitIds: string[], registry?: Map<string, Trai
         if (e.kind === 'stat') continue;
         if (phase2Traits(unit) && id === 'skirmisher' && e.kind === 'rangedGuardDR') { if (context.ranged && !context.engaged && (context.distance ?? 0) > 1) out.push({ source: 'intrinsic', name: t.name, kind: 'ward', type: 'mult', value: 1 - phase2Value(unit, id, 'skirmishReduction', .25) }); continue; }
         if (id === 'skirmisher' && e.kind === 'rangedGuardDR' && (context.engaged || (context.distance ?? 0) <= 1)) continue;
-        if (id === 'shield-wall' && !unit.shield) continue;
-        if (id === 'pike-wall' && unit.weapon?.recipe?.mechanism !== 'spear') continue;
+        if (id === 'shield-wall' && !shieldGuardUsable(unit)) continue;
+        if (id === 'pike-wall' && baseMechanism(unit.weapon) !== 'spear') continue;
         if (e.kind === 'attackStyle') {
           if (context.skillDelivery === 'magic') continue;
           if (e.atk) out.push({ source: 'intrinsic', sourceId: `${id}:${index}:atk`, name: t.name, kind: 'atk', type: 'flat', value: e.atk, cond: { ranged: e.style === 'ranged' } });
@@ -355,7 +359,7 @@ export function collectMods(
   const equipment: Modifier[] = [];
   if (unit.rulesVersion === 'v2') {
     const traits = activeTraitIds(unit);
-    if (humanEncumbered(unit)) equipment.push({ source: 'intrinsic', sourceId: 'equipment:encumbrance', name: '人形重载', kind: 'spd', type: 'flat', value: -2 });
+    if (equipmentBurden(unit)) equipment.push({ source: 'intrinsic', sourceId: 'equipment:encumbrance', name: unit.armsModel === 'arms-v2' ? equipmentBurden(unit) === 2 ? '超载' : '重载' : '人形重载', kind: 'spd', type: 'flat', value: -2*equipmentBurden(unit) });
     // 五项专精按等级（V15 起 L1–10，旧规则一律 L5）；L5 与无专精时产生的修正与以前完全相同。
     const forest = traitLevel(unit, 'forest-lore', traits), mountain = traitLevel(unit, 'mountain-born', traits), night = traitLevel(unit, 'night-fighter', traits);
     if (ctx.fieldTags?.includes('night')) {

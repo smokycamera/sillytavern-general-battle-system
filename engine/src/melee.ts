@@ -6,6 +6,10 @@ export const MELEE_PROFILES: Record<string, {
   /** closePenalty applies to frozen pre-V12 battles; armsClosePenalty to V12 (arms-v1) battles. */
   closePenalty?: number; armsClosePenalty?: number; description: string;
 }> = {
+  greatsword: { reach: 1, accuracy: 0, parry: 1, penetration: 0, damageScale: 1, description: '双手破阵：触及1，格挡+1，拒止攻击命中−4' },
+  dagger: { reach: 1, accuracy: 1, penetration: -1, damageScale: 1, description: '两段快刺：触及1，命中+1，暴击19起，趁控制破绽暴击' },
+  'great-weapon': { reach: 1, accuracy: -1, penetration: 1, damageScale: 1, description: '双手重击：触及1，命中−1，穿透+1，无视实体盾' },
+  'heavy-polearm': { reach: 2, accuracy: 0, penetration: 1, damageScale: 1, description: '重型长柄：触及2，穿透+1，拒止与钩拽，没有贴身惩罚' },
   sword: { reach: 1, accuracy: 1, parry: 1, penetration: 0, damageScale: 1,
     description: '剑术攻守：触及1格／1阵距，命中+1、对近战武器防御+1；缴械或失能时不能格挡' },
   axe: { reach: 1, accuracy: -1, penetration: 1, damageScale: 1,

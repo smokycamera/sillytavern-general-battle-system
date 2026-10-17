@@ -76,6 +76,7 @@ export type Suggestion =
       quality?: number;
       shield?: boolean;
       shieldName?: string;
+      shieldClass?: import('../../engine/src/data/weapons.js').ShieldClass;
       shieldLevel?: number;
       shieldBonuses?: Enhancements;
       hp?: number;
@@ -617,7 +618,7 @@ export function parseSuggestionTags(text: string): ParseResult {
           armorBonuses: armSpec?.bonuses,
           ...(armSpec?.level ? { armorLevel: armSpec.level } : {}),
           ...(shieldRaw ? { shield: shieldRaw === 'true' || !!shieldSpec } : {}),
-          ...(shieldSpec ? { shieldName: splitItemSpecification(shieldRaw).name, shieldLevel: shieldSpec.power, shieldBonuses: shieldSpec.bonuses } : {}),
+          ...(shieldSpec ? { shieldName: splitItemSpecification(shieldRaw).name, shieldLevel: shieldSpec.power, shieldClass: shieldSpec.mechanism, shieldBonuses: shieldSpec.bonuses } : {}),
           ...(skills.length ? { skills } : {}),
           ...(splitList(a.traits) ? { traits: splitList(a.traits) } : {}),
           ...(items.length ? { items } : {}),

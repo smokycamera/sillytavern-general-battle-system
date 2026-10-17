@@ -16,7 +16,7 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
   if (!Number.isSafeInteger(power) || power < 1 || power > 10) throw new Error('技能等级必须为1–10整数');
   const phase2 = formula === 'skills-v2';
   if (mechanism.modifiers.some(id => ['taunt','blind','confuse','charm'].includes(id)) && !phase2) throw Error('新控制需要V17技能规则');
-  if (mechanism.modifiers.includes('charm') && mechanism.area) throw Error('魅惑首版仅单体、未随队独立个体');
+  if (mechanism.modifiers.includes('charm') && mechanism.area) throw Error('魅惑只做单体技能，不能加范围');
   const physical = mechanism.category.startsWith('physical'), magic = mechanism.category.startsWith('magic'), damage = physical || magic;
   const geometry = mechanism.modifiers.find(id => ['cone','line','ring','chain'].includes(id)) as NonNullable<Ability['area']>['shape'] | undefined;
   const zoneKinds = mechanism.modifiers.filter(id => id.startsWith('zone-')).map(id => id.slice(5)) as Extract<EffectOp,{op:'zone'}>['kind'][];

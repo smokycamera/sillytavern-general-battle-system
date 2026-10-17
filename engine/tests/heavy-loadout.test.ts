@@ -37,7 +37,7 @@ describe('人形重武器与满载边界', () => {
     expect(loaded.base).toEqual(before);
   });
 
-  it('人形允许14但拒绝15，大型允许18但拒绝19；佩戴、充能道具件数不限也不计负重', () => {
+  it('V18 起负重超过容量不再拒绝建档（R21）；佩戴、充能道具件数不限也不计负重', () => {
     const u = unit('actor', { sidearmClass: 'sword', shield: true }); // 6+5+1+2
     expect(equipmentLoad(u)).toBe(14); expect(equipmentReason(u)).toBeUndefined();
     const gear = (id: string, spec: Parameters<typeof compileItem>[0]) => {
@@ -48,12 +48,12 @@ describe('人形重武器与满载边界', () => {
       ...[1, 2, 3].map((n) => gear('wand' + n, { kind: 'item', form: 'charged', power: 5, active: 'generic:magic-area:thermal' }))];
     expect(equipmentLoad(u)).toBe(14); expect(equipmentReason(u)).toBeUndefined();
     u.sidearm = unit('spare', { weaponClass: 'bow' }).weapon; // 6+5+2+2
-    expect(equipmentReason(u)).toMatch(/负重 15.*容量 14/);
+    expect(equipmentReason(u)).toBeUndefined();
     u.body = 'large'; u.sidearm = unit('spare').weapon; u.armor = unit('plate', { armorTier: 3 }).armor; // 6+6+4+2
     expect(equipmentLoad(u)).toBe(18); expect(equipmentReason(u)).toBeUndefined();
     expect(humanEncumbered(u)).toBe(false);
     u.armor = unit('plate', { armorTier: 4 }).armor; // 6+6+5+2
-    expect(equipmentReason(u)).toMatch(/负重 19.*容量 18/);
+    expect(equipmentReason(u)).toBeUndefined();
     for (const body of ['giant', 'vehicle'] as const) { u.body = body; expect(equipmentReason(u)).toBeUndefined(); expect(humanEncumbered(u)).toBe(false); }
   });
 

@@ -54,7 +54,7 @@ export function unitForm(prefix: string, d: UnitDraft, registry: Map<string, Tra
   const legacy = d.traits.filter((id) => !listed.has(id)).flatMap((id) => registry.get(id) ? [registry.get(id)!] : []);
   const armorTraitDefinition = armorTrait ? registry.get(armorTrait) : undefined;
   const controlRules = [
-    ['嘲讽','taunt','一次正常激活中敌对行动指向施加者，可接近、固守或自保'], ['致盲','blind','两次正常激活，自身感知/直接点名限1格或阵位，攻击−4、防御−2'], ['混乱','confuse','一次正常激活，按保存的随机目标普通攻击，加速不重选'], ['魅惑','charm','仅未随队独立个体，一次正常激活由AI按施术者一方行动，真实归属不变'],
+    ['嘲讽','taunt','一次正常激活中敌对行动指向施加者，可接近、固守或自保'], ['致盲','blind','两次正常激活，自身感知/直接点名限1格或阵位，攻击−4、防御−2'], ['混乱','confuse','一次正常激活，按保存的随机目标普通攻击，加速不重选'], ['魅惑','charm','一次正常激活由AI按施术者一方行动，真实归属不变；可施给编队，现员每翻一倍抵抗+1；随队人物不能单独魅惑'],
     ['眩晕', 'stun', '跳过下一次行动'], ['定身', 'root', '限制移动'], ['沉默', 'silence', '限制魔法'], ['缴械', 'disarm', '限制手持武器'],
     ['惊惧', 'fear', '降低攻击与士气'], ['减速', 'slow', '降低先攻与移动，会战不能冲锋'], ['击退', 'push', '推离目标'], ['拉拽', 'pull', '拉近目标'],
   ];
@@ -74,7 +74,7 @@ export function unitForm(prefix: string, d: UnitDraft, registry: Map<string, Tra
       ${d.sidearmEnabled ? `<fieldset ${disabled}><legend>副武器</legend>${equipmentFields(prefix + '-sidearm', d.sidearm, { disabled: opts.managed, sidearm: true })}</fieldset>` : ''}
       <fieldset ${disabled}><legend>护甲</legend>${equipmentFields(prefix + '-armor', d.armor, { disabled: opts.managed })}${armorTrait ? `<p class="sub" data-role="equipment-traits">装备自动特质：${esc(armorTraitDefinition?.name ?? armorTrait)}。${esc(armorTraitDefinition ? describe(armorTraitDefinition) : '')}</p>` : ''}</fieldset>
       <label class="check-field"><input type="checkbox" data-role="${prefix}-shield" ${d.shield ? 'checked' : ''} ${disabled}>携带盾牌</label>
-      ${d.shield ? `<fieldset ${disabled}><legend>盾牌</legend>${equipmentFields(prefix + '-shieldGear', d.shieldGear, { disabled: opts.managed })}</fieldset>` : ''}
+      ${d.shield ? `<fieldset ${disabled}><legend>盾牌</legend>${equipmentFields(prefix + '-shieldGear', d.shieldGear, { disabled: opts.managed, primaryHands: ['greatsword','great-weapon','heavy-polearm'].includes(d.primary.mechanism) || (WEAPON_CLASSES[d.primary.mechanism]!.profile.range > 1 && !['throwing','light-ranged'].includes(d.primary.mechanism)) || d.primary.mechanism === 'sprayer' ? 2 : 1 })}</fieldset>` : ''}
     </details>
     <details class="builder-section" data-detail-id="${prefix}-skills"><summary>技能 <span>${d.skills.length ? d.skills.length + '项已学' : '按需要添加'}</span></summary>
       <label class="check-field"><input type="checkbox" data-role="${prefix}-autoPrepare" ${d.autoPrepare ? 'checked' : ''}>系统保留准备技能并补齐空缺</label>
@@ -99,6 +99,6 @@ export function buildPreview(unit: Combatant, before?: Combatant): string {
     <p>${esc(anchoredWeaponLabel(unit.weapon,unit.damageModel))}</p><p>${esc(equipmentLoadLabel(unit))} · 防护 动能${anchoredProtection(unit, 'kinetic')} / 热能${anchoredProtection(unit, 'thermal')} / 奥术${anchoredProtection(unit, 'arcane')} · ${esc(armorEffectLabel(unit))}</p>
     ${equipmentTraitIds(unit).length ? `<p data-role="equipment-traits">装备自动特质：${equipmentTraitIds(unit).map(id => esc(autoTraitLabel(id))).join('、')}，无需另行勾选。</p>` : ''}
     ${equipmentReason(unit) ? `<p class="grid-reason">${esc(equipmentReason(unit))}</p>` : ''}
-    ${unit.abilities.length ? `<div class="builder-skills-preview">${unit.abilities.map((a) => `<p><b>${esc(a.name)}</b> · ${esc(skillDefinitionName(a.definitionId ?? a.id))} L${a.power ?? 5}${esc(enhancementLabel(a.bonuses))}<br><small>格子射程${fallbackAbilityRange(unit, gridAbility(a), true).min}–${fallbackAbilityRange(unit, gridAbility(a), true).max}／会战${fallbackAbilityRange(unit, a).min}–${fallbackAbilityRange(unit, a).max}阵距 · ${a.cost ? (a.cost.resource==='SP'?'精力':a.cost.resource) + ' ' + a.cost.amount : '无资源消耗'} · 冷却${a.cooldown ?? 0} · ${esc(abilityUsabilityReason(unit, a) ?? '已准备，可用')}</small></p>`).join('')}</div>` : ''}
+    ${unit.abilities.length ? `<div class="builder-skills-preview">${unit.abilities.map((a) => `<p><b>${esc(a.name)}</b> · ${esc(skillDefinitionName(a.definitionId ?? a.id))} L${a.power ?? 5}${esc(enhancementLabel(a.bonuses))}<br><small>格子射程${fallbackAbilityRange(unit, gridAbility(a, unit.armsModel), true).min}–${fallbackAbilityRange(unit, gridAbility(a, unit.armsModel), true).max}／会战${fallbackAbilityRange(unit, a).min}–${fallbackAbilityRange(unit, a).max}阵距 · ${a.cost ? (a.cost.resource==='SP'?'精力':a.cost.resource) + ' ' + a.cost.amount : '无资源消耗'} · 冷却${a.cooldown ?? 0} · ${esc(abilityUsabilityReason(unit, a) ?? '已准备，可用')}</small></p>`).join('')}</div>` : ''}
     <div class="row"><button class="primary" data-action="builder-confirm">确认${before ? '保存修改' : '加入队伍'}</button><button data-action="builder-cancel-preview">返回调整</button></div></div>`;
 }

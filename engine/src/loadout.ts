@@ -2,15 +2,16 @@ import { phase2Traits } from './trait-level-model.js';
 import { effectiveTraitLevel } from './trait-sources.js';
 import { activeTraitIds, activeConditionIds, traitPrerequisiteReason } from './trait-sources.js';
 import type { Combatant, Weapon } from './types.js';
+import { baseMechanism } from './data/weapons.js';
 
 export function isRangedWeapon(weapon?: Weapon): boolean { return !!weapon?.tags?.includes('ranged'); }
 /** 按实际机制识别火炮，兼容旧装备标签；显示名不改变遮挡规则。 */
 export function isCannonWeapon(weapon?: Weapon): boolean {
-  return ['cannon', 'indirect-cannon'].includes(weapon?.recipe?.mechanism ?? weapon?.tags?.find(tag => tag.startsWith('mechanism:'))?.slice(10) ?? '');
+  return ['cannon', 'indirect-cannon'].includes(baseMechanism(weapon) ?? '');
 }
 /** 弹道由装备机制决定，不用名称猜测；兼容旧直射炮的 indirect 标记。 */
 export function isIndirectCannonWeapon(weapon?: Weapon): boolean {
-  const mechanism = weapon?.recipe?.mechanism ?? weapon?.tags?.find(tag => tag.startsWith('mechanism:'))?.slice(10);
+  const mechanism = baseMechanism(weapon);
   return mechanism === 'indirect-cannon' || !!weapon?.indirect && isCannonWeapon(weapon);
 }
 /** 弓弩与法杖可越过友方占位；不授予穿墙或越过敌军的间接火力性质。 */
@@ -23,7 +24,7 @@ export function weaponReloadKey(unit: Pick<Combatant, 'id' | 'sidearm'>, weapon?
 }
 /** 缺省火枪装填/投掷取用一回合；显式 reload=0 的自定义装备仍受尊重。 */
 export function weaponReloadTurns(weapon?: Weapon): number {
-  return weapon?.reload ?? (['firearm','throwing'].includes(weapon?.recipe?.mechanism??'') ? 1 : 0);
+  return weapon?.reload ?? (['firearm','throwing'].includes(baseMechanism(weapon)??'') ? 1 : 0);
 }
 /** 近战只能来自真实近战武器，副槽不等于近战，也不能把炮管当剑。 */
 export function meleeWeapon(unit: Pick<Combatant, 'weapon' | 'sidearm'>): Weapon | undefined {

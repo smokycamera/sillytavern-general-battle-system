@@ -5,6 +5,8 @@ import { isCohort, personnel, memberDurability, COHORT_REFERENCE } from './comba
 import { phase2Traits } from './trait-level-model.js';
 import { effectiveTraitLevel } from './trait-sources.js';
 import { traitParameter } from './trait-parameters.js';
+import { baseMechanism } from './data/weapons.js';
+import { isArmsV2 } from './arms-model.js';
 
 export function conditionExposure(source: Combatant, target: Combatant, area = false): number {
   const count=source.scale==='hero'?1:Math.min(personnel(source),10*Math.max(1,personnel(source)/COHORT_REFERENCE));
@@ -25,7 +27,7 @@ export function poisonDamage(unit: Combatant, roll: number): number {
 }
 export function poisonDeliveryReason(target: Combatant, weapon?: Weapon): string | undefined {
   if (!poisonFactor(target)) return target.body === 'vehicle' ? '封闭车体不受生物毒性影响' : '非生物不受毒性影响';
-  if (weapon?.channel !== 'kinetic' || !['sword', 'axe', 'spear', 'throwing', 'natural', 'bow', 'light-ranged', 'blunt'].includes(weapon?.recipe?.mechanism ?? '')) return '毒击需要接触武器或适用投射，热能、奥术和重炮不携带涂毒';
+  if (weapon?.channel !== 'kinetic' || !['sword', 'axe', 'spear', 'throwing', 'natural', 'bow', 'light-ranged', 'blunt'].includes(baseMechanism(weapon) ?? '')) return '毒击需要接触武器或适用投射，热能、奥术和重炮不携带涂毒';
   return undefined;
 }
 export function weaponConditions(attacker: Combatant, target: Combatant, weapon: Weapon | undefined, damage: number, registry?: Map<string, Trait>): ActiveCondition[] {
@@ -37,6 +39,9 @@ export function weaponConditions(attacker: Combatant, target: Combatant, weapon:
       ...(effect.conditionId === 'poisoned' && phase2Traits(attacker) ? { magnitude: traitParameter('woundRatio', effectiveTraitLevel(attacker, 'poison-strike')) } : {}),
       ...(isCohort(target)&&target.scale!=='hero'?{affectedMembers:conditionExposure(attacker,target)}:{}) });
   }
+  // R16 喷射武器：造成实际生命损失的目标燃烧2轮，编队按范围接触人数。
+  if (isArmsV2(attacker.armsModel) && weapon?.recipe?.mechanism === 'sprayer' && damage > 0 && !result.has('burning'))
+    result.set('burning', { id: 'burning', dur: 2, sourceId: attacker.id, ...(isCohort(target)&&target.scale!=='hero'?{affectedMembers:conditionExposure(attacker,target,true)}:{}) });
   return [...result.values()];
 }
 /** 每种毒性只保留一份，重复命中不叠层、不刷新旧毒的期限。 */

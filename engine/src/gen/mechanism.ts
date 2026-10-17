@@ -30,7 +30,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   const oldScale = raw.scale === 'mook';
   if (oldScale) raw = { ...raw, scale: 'company', hpMax: raw.hpMax ?? 10 };
   const seed = opts.seed ?? randomSeed();
-  const variance = raw.damageModel === 'wounds-v2' && !opts.noVariance ? rollInstanceVariance(seed, ['damage', 'health']) : undefined;
+  const variance = raw.damageModel === 'wounds-v2' && !opts.noVariance ? rollInstanceVariance(seed, ['damage', 'health'], opts.varianceVersion) : undefined;
   const registry = opts.registry ?? traitRegistry();
   validateMount(raw);
   const body = raw.body ?? 'human';
@@ -52,16 +52,16 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
     if (slot === 'sidearm' && !weaponId && !classId && !name) return undefined;
     const mechanism = classId ?? (weaponId ? undefined : slot === 'sidearm' ? 'sword' : raw.loadout === 'ranged' || arch === 'ranged' ? 'bow' : 'sword');
     return compileWeapon({ mechanism, weaponId, bonuses: slot === 'primary' ? raw.weaponBonuses : raw.sidearmBonuses, power: (slot === 'primary' ? raw.weaponLevel : raw.sidearmLevel) ?? 1, stabilized: slot === 'primary' ? raw.weaponStabilized : raw.sidearmStabilized, enchantment: slot === 'primary' ? raw.weaponEnchantment : raw.sidearmEnchantment },
-      { id: `${id}:${slot}`, name, seed: seed + ':' + slot, body, quality, noVariance: opts.noVariance, creatingUnit: true, damageModel: raw.damageModel });
+      { id: `${id}:${slot}`, name, seed: seed + ':' + slot, body, quality, noVariance: opts.noVariance, varianceVersion: opts.varianceVersion, creatingUnit: true, damageModel: raw.damageModel });
   };
   const weapon = weaponFor('primary')!; const sidearm = weaponFor('sidearm');
   const hasArmor = raw.armorTier !== undefined || !!raw.armorId || !!raw.armorName?.trim();
-  const armor = compileArmor({ bonuses: raw.armorBonuses, tier: hasArmor ? raw.armorTier : 0, profile: raw.armorProfile, armorId: raw.armorId, power: raw.armorLevel }, { id: `${id}:armor`, name: raw.armorName, seed: seed + ':armor', body, quality, noVariance: opts.noVariance, damageModel: raw.damageModel });
+  const armor = compileArmor({ bonuses: raw.armorBonuses, tier: hasArmor ? raw.armorTier : 0, profile: raw.armorProfile, armorId: raw.armorId, power: raw.armorLevel }, { id: `${id}:armor`, name: raw.armorName, seed: seed + ':armor', body, quality, noVariance: opts.noVariance, varianceVersion: opts.varianceVersion, damageModel: raw.damageModel });
   const tier = armor.tier, armorPower = armor.level!;
-  const shield: Combatant['shield'] = raw.shield ? { id: `${id}:shield`, load: 2 } : undefined;
-  if (shield && (raw.shieldLevel !== undefined || raw.shieldName !== undefined || raw.shieldBonuses !== undefined)) {
+  const shield: Combatant['shield'] = raw.shield ? { id: `${id}:shield`, load: ({ buckler: 1, shield: 2, 'tower-shield': 3, 'energy-shield': 1 })[raw.shieldClass ?? 'shield'] } : undefined;
+  if (shield && (raw.shieldClass !== undefined || raw.shieldLevel !== undefined || raw.shieldName !== undefined || raw.shieldBonuses !== undefined)) {
     shield.name = raw.shieldName ?? '盾牌';
-    shield.recipe = equipmentRecipe('shield', raw.shieldLevel ?? 3, { id: shield.id, seed: seed + ':shield', name: shield.name, body, quality, bonuses: raw.shieldBonuses, noVariance: opts.noVariance, damageModel: raw.damageModel });
+    shield.recipe = equipmentRecipe(raw.shieldClass ?? 'shield', raw.shieldLevel ?? 3, { id: shield.id, seed: seed + ':shield', name: shield.name, body, quality, bonuses: raw.shieldBonuses, noVariance: opts.noVariance, varianceVersion: opts.varianceVersion, damageModel: raw.damageModel });
   }
   const conflict = equipmentReason({ body, scale: raw.scale, weapon, sidearm, armor, shield });
   if (conflict) warnings.push('建档已保留配装：' + conflict + '；实际使用由战斗规则判定');

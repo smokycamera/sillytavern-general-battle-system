@@ -1,5 +1,6 @@
 import type { Combatant, ConditionDef, Trait } from './types.js';
 import { absorbBarrier } from './barrier.js';
+import { absorbEnergyShield } from './shield-state.js';
 import { activeConditionIds, activeTraitIds } from './trait-sources.js';
 import { standardConditionMap } from './conditions.js';
 import { traitRegistry } from './data/traits.js';
@@ -17,7 +18,7 @@ type Health = Pick<Combatant, 'hp' | 'base' | 'scale'> & Partial<Pick<Combatant,
 
 /** 保留攻击规格和已乘倍率，屏障可在同时行动实际结算前才获得。 */
 export interface DamageOvermatch { power?:number; channel:import('./types.js').DamageChannel; penetration:number; area:boolean; canBlock:boolean; multiplier:number; curve?:import('./types.js').RulePack['overmatchCurve'] }
-export interface MemberDamagePlan { direct:number; targets:number; overflow?:boolean; splash?:number; splashTargets?:number; incomingDirect?:number; incomingSplash?:number; overmatch?:DamageOvermatch }
+export interface MemberDamagePlan { direct:number; targets:number; overflow?:boolean; splash?:number; splashTargets?:number; incomingDirect?:number; incomingSplash?:number; overmatch?:DamageOvermatch; heavy?:true }
 function barrierRatio(unit:Combatant,context?:DamageOvermatch):number {
   if(!unit.barrier||!context)return 1;
   return Math.min(1,overmatchMultiplier(context.power,unit,context.channel,context.penetration,context.area,context.canBlock,true,context.curve)/context.multiplier);
@@ -52,10 +53,11 @@ function applyMemberDamage(unit:Combatant,amount:number,targets:number,overflow=
   }
   return result;
 }
-export function applyDamagePlan(unit:Combatant,plan:MemberDamagePlan):{direct:number;splash:number;overflow:number} {
+export function applyDamagePlan(unit:Combatant,planned:MemberDamagePlan):{direct:number;splash:number;overflow:number;energyAbsorbed?:number;energyOverloaded?:number} {
+  const energy=absorbEnergyShield(unit,planned),plan=energy.plan;
   const direct=applyMemberDamage(unit,unit.barrier ? plan.incomingDirect ?? plan.direct : plan.direct,plan.targets,plan.overflow,plan.overmatch);
   const splash=plan.splash&&plan.splashTargets?applyCombatDamage(unit,unit.barrier ? plan.incomingSplash ?? plan.splash : plan.splash,plan.splashTargets,plan.overmatch):0;
-  return {direct:direct.health,splash,overflow:direct.overflow};
+  return {direct:direct.health,splash,overflow:direct.overflow,...(energy.absorbed||energy.overloaded?{energyAbsorbed:energy.absorbed,energyOverloaded:energy.overloaded}:{})};
 }
 
 /** 旧档缺省为零；只接受本规则留下的完整人数，不推测历史伤亡。 */

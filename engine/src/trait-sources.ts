@@ -1,3 +1,4 @@
+import { shieldGuardUsable } from './arms.js';
 import { physicalTraitIds, armorBurdenTier, hasNaturalArmor } from './body.js';
 import { traitsV13 } from './trait-model.js';
 /** 特质知识与外部授予分离；持续期/来源身份属于引擎，不交给正文重写。 */
@@ -6,6 +7,7 @@ import { traitRegistry, validateTraitLevels, isGradedTrait } from './data/traits
 import { standardConditionMap } from './conditions.js';
 import { canonicalTraitId, sourceTraitLevel, traitParameter } from './trait-parameters.js';
 import { gradedTraitEnabled, traitLevelsV16, phase2Traits } from './trait-level-model.js';
+import { baseMechanism } from './data/weapons.js';
 
 export type TraitDuration = { kind: 'permanent' } | { kind: 'rounds' | 'battles'; count: number };
 export interface TraitSourceInput {
@@ -80,7 +82,7 @@ export function armorTraitId(tier?: number): string | undefined {
 const DISPERSED_ARMS = ['rifle', 'heavy-rifle', 'energy'];
 export function autoLooseFormation(unit: Pick<Combatant, 'rulesVersion' | 'armor' | 'scale' | 'body' | 'mount' | 'weapon'> & Partial<Pick<Combatant, 'traitModel' | 'traits' | 'traitSources'>>): boolean {
   return unit.rulesVersion === 'v2' && traitsV13(unit) && unit.scale !== 'hero' && (unit.body ?? 'human') === 'human' && !unit.mount
-    && (unit.armor?.tier ?? 0) <= 2 && DISPERSED_ARMS.includes(unit.weapon?.recipe?.mechanism ?? '');
+    && (unit.armor?.tier ?? 0) <= 2 && DISPERSED_ARMS.includes(baseMechanism(unit.weapon) ?? '');
 }
 /** 装备或编制自动产生的特质在界面上的简短说明。 */
 export function autoTraitLabel(id: string): string {
@@ -151,11 +153,11 @@ export function traitPrerequisiteReason(unit: Combatant, id: string, context: Tr
   if (id === 'mounted-archer' && unit.mount !== true) return '需要明确坐骑，骑射不适用于装甲车辆';
   if (id === 'mounted-archer' && ![unit.weapon, unit.sidearm].some((w) => w?.tags?.includes('ranged') && (w.load ?? 99) <= 2 && !w.reload)) return '需要适于移动投射的实际轻便武器';
   if (id === 'skirmisher' && (!['human', 'large'].includes(unit.body ?? 'human') || (unit.armor?.tier ?? 0) > 2)) return '游击需要轻装或中装的人形/大型身体';
-  if (id === 'anti-mobile' && !traitsV13(unit) && (weapon?.recipe?.mechanism !== 'spear' || context.ranged)) return '需要实际长柄近战武器';
+  if (id === 'anti-mobile' && !traitsV13(unit) && (baseMechanism(weapon) !== 'spear' || context.ranged)) return '需要实际长柄近战武器';
   if (id === 'armor-piercing-shot' && (!context.ranged || !weapon?.tags?.includes('ranged') || weapon.channel !== 'kinetic')) return '需要真实动能投射动作';
   if (['ap-weapon', 'ap-master'].includes(id) && (!weapon || weapon.channel !== 'kinetic')) return '需要可利用弱点的动能武器';
-  if (id === 'shield-wall' && !unit.shield) return '需要实际盾牌';
-  if (id === 'pike-wall' && !traitsV13(unit) && weapon?.recipe?.mechanism !== 'spear') return '需要实际长柄反冲锋武器';
+  if (id === 'shield-wall' && !shieldGuardUsable(unit)) return '需要实际盾牌';
+  if (id === 'pike-wall' && !traitsV13(unit) && baseMechanism(weapon) !== 'spear') return '需要实际长柄反冲锋武器';
   return undefined;
 }
 export function traitPenetrationBonus(unit: Combatant, weapon: Weapon | undefined, ranged: boolean, base: number): number {

@@ -1,3 +1,4 @@
+import { shieldGuardUsable } from './arms.js';
 import { attackHostile, combatHostile } from './battle-control.js';
 import type { Combatant, ConditionDef, Weapon } from './types.js';
 import { isAirborne } from './aerial.js';
@@ -24,7 +25,7 @@ function coordinates(unit: Combatant, space: GuardSpace) {
 
 /** V4持盾固守形成实际射击屏障；沿用姿态快照、方向和失效条件。 */
 export function shieldGuardActive(unit: Combatant, defs: Map<string, ConditionDef>): boolean {
-  return unit.combatModel === MEMBER_HEALTH_MODEL && !!unit.shield && postureActive(unit, defs);
+  return unit.combatModel === MEMBER_HEALTH_MODEL && shieldGuardUsable(unit) && postureActive(unit, defs);
 }
 
 /** 仅使用调用方提供的可见单位。屏障保护同格及身后两格内队友，不遮住盾卫自身。 */

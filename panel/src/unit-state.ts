@@ -1,17 +1,17 @@
-import { V17_OVERFLOW_D20, prepareSkillModel } from '../../engine/src/index.js';
+import { V18_OVERFLOW_D20, prepareSkillModel } from '../../engine/src/index.js';
 import { validateBattleControlState } from '../../engine/src/battle-control.js';
 import { validateRecoveryRemainders } from '../../engine/src/recovery.js';
 import { validateHealingModel } from '../../engine/src/healing.js';
 import { validTraitLevel } from '../../engine/src/data/traits.js';
 import { validateAreas } from '../../engine/src/area-effects.js';
 import { validateZoneStrength } from '../../engine/src/zone-skills.js';
-import { validateBarrier, validDefensePower } from '../../engine/src/barrier.js';
+import { validateBarrier, validDefensePower, validateBarrierModel } from '../../engine/src/barrier.js';
 import { validateGear } from '../../engine/src/items.js';
 import { validateEnhancements, validateChannelProtection, type Enhancements } from '../../engine/src/enhancements.js';
 import { synchronizePersonnel, validateCombatModel } from '../../engine/src/combat-model.js';
 import { capSingleLife, limitCombatantLife } from '../../engine/src/health-limits.js';
 import { isEnduranceModel, spCapacity } from '../../engine/src/resources.js';
-import { validateArmsModel } from '../../engine/src/arms.js';
+import { validateArmsModel, validateArmsState, isArmsV2 } from '../../engine/src/arms.js';
 import { validateTraitModel } from '../../engine/src/trait-model.js';
 import { validateTraitLevelModel } from '../../engine/src/trait-level-model.js';
 import { validateItemModel } from '../../engine/src/item-model.js';
@@ -131,7 +131,7 @@ export interface ApplyBattleXpResult {
   levelUps: { name: string; from: number; to: number }[];
 }
 
-export interface CommitBattleOutcomeResult extends CommitBattleStateResult, ApplyBattleXpResult {}
+export interface CommitBattleOutcomeResult extends CommitBattleStateResult, ApplyBattleXpResult { inventory?: import('./inventory-state.js').InventoryItem[]; brokenShieldNotes?: string[] }
 
 export interface UnitSaveMigrationResult {
   records: UnitRecord[];
@@ -207,7 +207,7 @@ function validateRuntimeMetadata(value: Record<string, unknown>): void {
     if (condition.defensePower !== undefined && (condition.id !== 'blessed' || !validDefensePower(condition.defensePower))) throw new Error('守护防御规格记录损坏');
   }
   if (value.resourceModel !== undefined && !isEnduranceModel(value.resourceModel)) throw new Error('资源规则版本损坏');
-  validateArmsModel(value.armsModel);
+  validateArmsModel(value.armsModel); validateBarrierModel(value.barrierModel); validateArmsState(value as unknown as Combatant);
   validateTraitModel(value.traitModel);
   validateItemModel(value.itemModel);
   validateTraitLevelModel(value.traitLevelModel);
@@ -450,7 +450,7 @@ export function unitRecordFromCombatant(
   previous?: UnitRecord,
   opts: { transient?: boolean; kind?: UnitHistoryEntry['kind']; sourceId?: string } = {},
 ): UnitRecord {
-  c = stripCarriedItems(c); delete c.barrier; delete c.battleZones; delete c.regenerationRemainder; delete c.controlActivation; delete c.movedDuringActivation; delete c.looseChoiceLocked;
+  c = stripCarriedItems(c); delete c.barrier; delete c.weaponHeat; delete c.shieldDurability; delete c.energyShield; delete c.sprayerFuel; delete c.tankRupturedRound; delete c.chargeInterrupted; delete c.chargeDistance; delete c.denialTriggered; delete c.battleZones; delete c.regenerationRemainder; delete c.controlActivation; delete c.movedDuringActivation; delete c.looseChoiceLocked;
   if(opts.kind==='battle'){ delete c.storyState; c.conditions = c.conditions.filter(condition => !['taunted','charmed','blinded','confused'].includes(condition.id)); }
   limitCombatantLife(c);
   delete c.nonLethal;delete c.cannonAmmo;
@@ -727,6 +727,7 @@ export function applyBattleXpOnce(opts: {
   committedIds: string[];
   combatants: Combatant[];
   awards: XpAward[];
+  inventory?: import('./inventory-state.js').InventoryItem[];
   registry: Map<string, Trait>;
 }): ApplyBattleXpResult {
   if (opts.committedIds.includes(opts.battleId)) {
@@ -811,6 +812,7 @@ export function commitBattleState(opts: {
  * 同一结果写回记录和编制。调用方只需一次替换全部返回字段。
  */
 export function commitBattleOutcome(opts: {
+  inventory?: import('./inventory-state.js').InventoryItem[];
   battleId: string;
   committedIds: string[];
   records: UnitRecord[];
@@ -822,7 +824,7 @@ export function commitBattleOutcome(opts: {
   // 必须在任何 HP/状态/XP 写回之前检查完整结果；历史 id 不能滚动淘汰后再次生效。
   if (opts.committedIds.includes(opts.battleId)) {
     return {
-      records: clone(opts.records), roster: clone(opts.roster),
+      records: clone(opts.records), roster: clone(opts.roster), inventory: opts.inventory && clone(opts.inventory),
       survivingIds: [], lostIds: [], applied: false,
       committedIds: [...opts.committedIds], total: 0, levelUps: [],
     };
@@ -842,6 +844,9 @@ export function commitBattleOutcome(opts: {
     awards: opts.awards,
     registry: opts.registry,
   });
+  const broken = combatants.filter(u => isArmsV2(u.armsModel) && u.shield && u.shieldDurability?.remaining === 0);
+  const brokenIds = broken.map(u => u.shield!.id), brokenShieldNotes = broken.map(u => u.name + '的' + (u.shield!.name ?? '盾牌') + '碎了，已移出装备');
+  for (const unit of broken) delete unit.shield;
   for (const unit of combatants) expireTraitSources(unit, 'battles');
   const committed = commitBattleState({
     battleId: opts.battleId,
@@ -849,7 +854,7 @@ export function commitBattleOutcome(opts: {
     roster: opts.roster,
     combatants,
   });
-  return { ...committed, ...xp };
+  return { ...committed, ...xp, inventory: opts.inventory?.filter(i => !brokenIds.includes(i.id)).map(i => clone(i)), brokenShieldNotes };
 }
 
 export type UnitUpdate = {
@@ -903,7 +908,7 @@ export function learnUnitRecord(record: UnitRecord, skills: NonNullable<Combatan
   if (record.retired || record.hp <= 0 || record.status === 'dead') throw new Error('阵亡或解散档案不能学习');
   const unit = materializeUnitRecord(record, registry);
   if (record.snapshot) { unit.abilityState = clone(record.snapshot.abilityState); unit.resources = clone(record.snapshot.resources); }
-  prepareSkillModel(unit, V17_OVERFLOW_D20);
+  prepareSkillModel(unit, V18_OVERFLOW_D20);
   const learned = learnAbilities(unit, skills ?? [], { rebuildRequested: true });
   return unitRecordFromCombatant(learned, record, { kind: 'edit', sourceId });
 }

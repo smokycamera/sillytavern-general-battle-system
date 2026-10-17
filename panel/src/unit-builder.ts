@@ -1,5 +1,5 @@
 import { prepareTraitLevelModel } from '../../engine/src/trait-level-model.js';
-import { V11_OVERFLOW_D20, V12_OVERFLOW_D20, V17_OVERFLOW_D20 } from '../../engine/src/rules.js';
+import { V11_OVERFLOW_D20, V12_OVERFLOW_D20, V18_OVERFLOW_D20 } from '../../engine/src/rules.js';
 import { prepareSkillModel } from '../../engine/src/skill-model.js';
 import { prepareItemModel } from '../../engine/src/item-model.js';
 import { prepareArmsModel } from '../../engine/src/arms.js';
@@ -79,8 +79,8 @@ export function buildUnit(d: UnitDraft, registry: Map<string, Trait>, seed: stri
   if (weapon.kind !== 'weapon' || armor.kind !== 'armor') throw Error('装备类型无效');
   let unit = generateUnit({ ...input, weaponClass: weapon.mechanism, weaponLevel: weapon.power, armorTier: armor.tier, armorLevel: armor.power, preparedAbilityIds: [] }, { seed, registry, skillModel: 'skills-v2' }).unit;
   setGear(unit, d); unit = learnAbilities(unit, [], { prepared: d.autoPrepare ? undefined : d.skills.filter((s) => s.prepared).map((s) => unit.abilities.find((a) => a.id === s.instanceId || a.definitionId === s.id && a.name === (s.name.trim() || skillDefinitionName(s.id)))?.id ?? s.id) });
-  prepareSkillModel(unit, V17_OVERFLOW_D20); prepareCombatModel(unit,V6_D20,(d.memberHp??'').trim()?capSingleLife(integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命'), d.damageModel):undefined); upgradeCombatSkills(unit);
-  prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V12_OVERFLOW_D20); prepareTraitModel(unit, V17_OVERFLOW_D20); prepareItemModel(unit, V17_OVERFLOW_D20); prepareTraitLevelModel(unit, V17_OVERFLOW_D20);
+  prepareSkillModel(unit, V18_OVERFLOW_D20); prepareCombatModel(unit,V6_D20,(d.memberHp??'').trim()?capSingleLife(integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命'), d.damageModel):undefined); upgradeCombatSkills(unit);
+  prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V18_OVERFLOW_D20); prepareTraitModel(unit, V18_OVERFLOW_D20); prepareItemModel(unit, V18_OVERFLOW_D20); prepareTraitLevelModel(unit, V18_OVERFLOW_D20);
   unit.resources.SP = spCapacity(unit); normalizeBakedTraitStats(unit, registry); return unit;
 }
 /** 只编译变更的配方；名称、体型和训练显示不重掷其他实物。 */

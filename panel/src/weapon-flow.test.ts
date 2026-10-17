@@ -59,7 +59,7 @@ describe('weapon="名字:种类L等级" 端到端', () => {
     expect(unit.weapon!.tags).toContain('ranged');
   });
 
-  it('旧格式回退：纯名字「双手巨斧」→ 关键词猜斧分类、等级随单位；「剑L5」→ 显示名用原文', () => {
+  it('旧格式回退：纯名字「双手巨斧」→ 按别名归巨型冷兵器、等级随单位；「剑L5」→ 显示名用原文', () => {
     const r = parseSuggestionTags(
       [
         '<spawn name="A" side="enemy" archetype="infantry" level="4" weapon="双手巨斧"/>',
@@ -71,7 +71,7 @@ describe('weapon="名字:种类L等级" 端到端', () => {
       ...weaponInput(r.suggestions[0] as SpawnSug, 4),
     }, { noVariance: true }).unit;
     expect(a.weapon!.name).toBe('双手巨斧');
-    expect(a.genAudit!.input.weaponClass).toBe('axe');
+    expect(a.genAudit!.input.weaponClass).toBe('great-weapon');
     expect(a.genAudit!.input.weaponLevel).toBe(4); // 未给等级 → 单位等级
 
     const b = generateUnit({

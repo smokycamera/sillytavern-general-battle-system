@@ -1,3 +1,4 @@
+import { equipmentBurden } from './equipment-load.js';
 /**
  * 技能自带的施术者位移（突进 / 闪现 / 后撤）。
  *
@@ -35,7 +36,7 @@ export function moveBlockReason(actor: Combatant, conditions: { get(id: string):
 }
 /** 实际可走格数：射程强化同样延长位移，减速时突进与后撤少1格（至少1格）。 */
 export function effectiveMoveReach(actor: Combatant, ability: Pick<Ability, 'bonuses'>, effect: MoveEffect, conditions: { get(id: string): ConditionDef | undefined }): number {
-  if (moveBlockReason(actor, conditions)) return 0;
+  if (moveBlockReason(actor, conditions) || effect.mode === 'dash' && equipmentBurden(actor) === 2) return 0;
   const slowed = effect.mode !== 'blink' && actor.conditions.some(c => c.dur > 0 && c.id === 'slowed');
   return Math.max(1, effect.reach + bonusSteps(ability.bonuses, 'range', 5) - (slowed ? 1 : 0));
 }
