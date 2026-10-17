@@ -2768,6 +2768,8 @@ async function settleXp(allowUnfinished = false): Promise<void> {
   if (!(await persist())) {
     throw new Error('战果未保存，档案提交已撤回；战斗存档记录仍在，可重试');
   }
+  // 入账回执确认后立即同步按钮和战果状态；外层操作仍可能等待后续保存。
+  render('battle');
   const levelUps = result.levelUps.map((u) => `${u.name} 等级${u.from}→等级${u.to}`);
   const sideXp = (side: 'ally' | 'enemy') => { const total = awards.filter(a => a.side === side).reduce((sum, a) => sum + a.total, 0); return total ? approxDelta(total, total < 0.1 ? 2 : 1) : '+0'; };
   toast(result.applied

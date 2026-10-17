@@ -1,8 +1,47 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { MassBattle } from '../src/mass/battle';
 import { generateUnit } from '../src/gen/generator';
 import { traitRegistry } from '../src/data/traits';
 import { MASS_TW } from '../src/rules';
+import { V17_OVERFLOW_TW } from '../src/rules.js';
+import { killProbability } from '../src/fire-budget.js';
+
+function fireBudgetBattle() {
+  const units = (['ally', 'enemy'] as const).flatMap(side => [0, 1].map(i => {
+    const u = generateUnit({ name: side + i, side, scale: 'company', hpMax: 1, rulesVersion: 'v2', level: 4,
+      weaponClass: 'rifle', traits: [] }, { seed: side + i, noVariance: true, registry: reg }).unit;
+    u.id = (side === 'ally' ? 'A' : 'B') + i;
+    if (side === 'ally') { u.base.atk = 100; u.weapon!.baseDice = '1d2+1000'; u.weapon!.apDice = undefined; }
+    else { delete u.weapon; delete u.sidearm; u.abilities = []; }
+    return u;
+  }));
+  const battle = new MassBattle({ combatants: units, rules: V17_OVERFLOW_TW, seed: 'fire-budget', traitRegistry: reg });
+  battle.start();
+  for (const u of units) u.formationPosition = u.side + ':中军:' + (u.side === 'ally' ? 'rear' : 'front');
+  battle.commanderProfiles = { ally: { ability: 'master', style: 'balanced', scoring: 'tactical-v2' } };
+  return battle;
+}
+
+describe('F3 已承诺火力', () => {
+  it('killProbability 按均值与方差累计击杀概率', () => {
+    for (const [previews, health, expected, tolerance] of [
+      [[], 8, 0, 0], [[{ expectedDamage: 8, variance: 0 }], 8, 1, 0],
+      [[{ expectedDamage: 7, variance: 0 }], 8, 0, 0],
+      [[{ expectedDamage: 8, variance: 100 }], 20, 0.115, 0.005],
+      [[{ expectedDamage: 8, variance: 100 }, { expectedDamage: 8, variance: 100 }], 20, 0.389, 0.005],
+    ] as const) expect(Math.abs(killProbability(previews, health) - expected)).toBeLessThanOrEqual(tolerance);
+  });
+  it('两名必中射手分别攻击两个一击必倒的单成员目标', () => {
+    const battle = fireBudgetBattle(); battle.autoOrders('ally');
+    expect([...battle.orders.values()].map(o => o.targetId).sort()).toEqual(['B0', 'B1']);
+  });
+  it('下令者失能后该军令不再计入火力', () => {
+    const battle = fireBudgetBattle(), order = { unitId: 'A0', type: 'volley' as const, targetId: 'B0' };
+    battle.issue(order); battle.byId('A0').conditions.push({ id: 'stunned', dur: 9 });
+    expect((battle as unknown as { v2OrderReason(assigned: typeof order): string | undefined }).v2OrderReason(order)).toBeTruthy();
+    expect(battle.recommendedOrder('A1')?.targetId).toBe('B0');
+  });
+});
 
 const reg = traitRegistry();
 

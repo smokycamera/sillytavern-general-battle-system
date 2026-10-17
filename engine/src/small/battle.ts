@@ -2076,7 +2076,7 @@ export class SmallBattle {
     // 刚看见的敌人多半还在原处：追索时把它们算进落点危险，避免冲上去一看又退回来。
     const presumed = hunt ? this.presumedFoes(unit.side, knownUnits) : [];
     // V13 工事：据守单位离开阵地就失去工事。离开的代价按威胁最大的已知敌人（含刚失去视线的）打它一次时工事挡下的伤害估；
-    // 看不见敌人时不出去搜索，留在阵地等敌人来。敌人打得到它、它在阵地上却打不到任何敌人时（被压制），不计这项代价，照常权衡出击或后撤。
+    // F1 看不见敌人时照常搜索；离开阵地的代价只在有已知或刚失联的敌人时计入。被压制时不计这项代价。
     const onWorks = traitsV13(unit) && entrenched(unit);
     const outgunned = onWorks && foes.some((foe) => foe.status === 'ready' && !this.weaponContext(foe, unit).reason)
       && !foes.some((foe) => (['primary', 'sidearm'] as const).some((weaponMode) => (weaponMode === 'primary' || unit.sidearm) && !this.weaponContext(unit, foe, { weaponMode }).reason));
@@ -2088,7 +2088,7 @@ export class SmallBattle {
     // 射手追线索时停在两三格外、看得到线索格的位置，由视野先确认，不直接踩进最后目击点。
     const lookout = (cell: number) => unitLineOfSight(field, { ...unit, pos: cell, airborne: false, elevation: undefined }, { ...unit, side: unit.side === 'enemy' ? 'ally' : 'enemy', pos: hunt!.focus, airborne: false, elevation: undefined });
     const standoff = hunt?.lead && rangedRole ? field.tiles.flatMap((_, cell) => [2, 3].includes(gridDistance(field, cell, hunt.focus)) && allowed(cell) && lookout(cell) ? [cell] : []) : [];
-    const huntGoals = onWorks ? [unit.pos!] : standoff.length ? standoff : hunt?.goals ?? [unit.pos!];
+    const huntGoals = standoff.length ? standoff : hunt?.goals ?? [unit.pos!];
     // 估算自己在假想落点会不会挨打时，看已知敌人能否在那里看见自己；此刻藏在暗处不代表走过去也看不见。
     const sightContext = this.observationContext(), seen = new Map<string, boolean>(), spotters = [...knownUnits, ...presumed];
     const place = (u: Combatant) => `${u.pos}:${isAirborne(u) ? 'air' : isElevated(u) ? 'top' : 'ground'}`;
@@ -2525,7 +2525,7 @@ export class SmallBattle {
     }
     // 扑击脱离：落地后仍贴近持械地面近战且还能起飞时升空规避（起飞借机是已知代价）
     if (best?.kind !== 'land' && !(unit.resourceModel && best?.kind === 'hold') && !isAirborne(unit) && unit.status === 'ready' && !this.isOver() && !this.flightReason(unitId, true)
-      && this.combatants.some((foe) => combatHostile(foe, unit, this.combatants) && foe.status === 'ready' && !isAirborne(foe) && !!meleeWeapon(foe) && this.dist(unit, foe) === 1)) {
+      && this.visibleCombatants(unit.side).some((foe) => combatHostile(foe, unit, this.combatants) && foe.status === 'ready' && !isAirborne(foe) && !!meleeWeapon(foe) && this.dist(unit, foe) === 1)) {
       this.changeFlight(unitId, true);
     }
     if (!this.isOver() && unit.status === 'ready' && this.nonSkillActionAvailable(unitId) && actionBefore !== `${this.actedThisTurn.has(unitId)}:${this.hasteSpent.get(unitId)}`) { this.autoGridAction(unitId, true, failedAbilities); return; }
@@ -2583,10 +2583,10 @@ export class SmallBattle {
     const focus = nearest(sweep, (cell) => cost(cell) + fromEdge(cell) / 2);
     return { goals: [focus], focus, lead: false };
   }
-  /** 本轮或上一轮刚看见、最后位置还没查过的敌人（不含溃退），估算落点危险时当作仍在原处；属性沿用该单位。 */
+  // F2 推定敌人只沿用离开视野时的属性。
   private presumedFoes(side: Side, known: Combatant[]): Combatant[] {
     return liveTraces(this.intel, side, this.round, new Set(known.map((u) => u.id))).flatMap((trace) => {
-      const unit = trace.cell === undefined || trace.checked || trace.routing || this.round - trace.round > 1 ? undefined : this.combatants.find((u) => u.id === trace.id);
+      const unit = trace.cell === undefined || trace.checked || trace.routing || this.round - trace.round > 1 ? undefined : trace.seen;
       return unit ? [{ ...unit, pos: trace.cell, status: 'ready' as const, airborne: trace.layer === 'air', elevation: trace.layer === 'top' ? 1 : undefined }] : [];
     });
   }

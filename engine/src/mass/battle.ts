@@ -1,4 +1,5 @@
 import { formationMarchCost } from '../tactics.js';
+import { killProbability } from '../fire-budget.js';
 import { canSpot } from '../observation.js';
 import { ACTIVATION_CONTROLS, validateBattleControlState, controlReactionAllowed, controlPolicy, beginControlActivation, finishControlActivation, reconcileBattleControls, breakCharmOnDamage } from '../battle-control.js';
 import { attackHostile, combatHostile, combatSide, controlActionReason, controlCondition } from '../battle-control.js';
@@ -875,6 +876,12 @@ export class MassBattle {
       return occupants.length < (this.formationSlots ?? 3) && !occupants.some(other => other.side !== side);
     };
     const foes = planning.filter((t) => combatHostile(u,t,planning) && ['ready', 'routing'].includes(t.status) && !this.isAttached(t.id));
+    const committed = new Map<string, { expectedDamage: number; variance?: number }[]>();
+    for (const order of hasteOnly ? [] : this.orders.values()) {
+      if (order.unitId === unitId || !['attack', 'volley', 'charge'].includes(order.type) || this.byId(order.unitId).side !== side || this.v2OrderReason(order, planning)) continue;
+      const preview = this.orderPreview(order).preview;
+      if (preview) committed.set(order.targetId!, [...(committed.get(order.targetId!) ?? []), preview]);
+    }
     const candidates: { order: Order; score: number }[] = foes.flatMap((target) => (['volley', 'attack', 'charge'] as const).map((type) => ({ unitId: u.id, type, targetId: target.id, ...(hasteOnly ? { haste: true } : {}) })))
       .flatMap((order) => {
         const result = this.orderPreview(order);
@@ -883,7 +890,8 @@ export class MassBattle {
           return [];
         }
         const target = foes.find((foe) => foe.id === order.targetId)!;
-        let score=Math.min(memberHealth(target),result.preview.expectedDamage)+(result.preview.conditionValue??0);
+        const survival = 1 - killProbability(committed.get(target.id) ?? [], memberHealth(target));
+        let score=(Math.min(memberHealth(target),result.preview.expectedDamage)+(result.preview.conditionValue??0))*survival;
         if (result.vehicleMove) {
           const threats=this.takeoffThreats(u,planning).filter(foe=>formationNodeDistance(formationNode(foe),result.vehicleMove!)>1);
           if (threats.length) {
@@ -904,7 +912,7 @@ export class MassBattle {
                 benefit+=(Math.min(memberHealth(target),hit.expectedDamage)+(hit.conditionValue??0))*(1-morale.breakChance);
               }
             }
-            score=(benefit-loss*1.5)/8;
+            score=(benefit*survival-loss*1.5)/8;
           }
         }
         this.aiTrace?.(structuredClone({ stage: 'attack-value', mode: 'mass', unitId, round: this.round, order, score, expectedDamage: result.preview.expectedDamage, conditionValue: result.preview.conditionValue ?? 0, targetHealth: memberHealth(target), vehicleMove: result.vehicleMove }));
