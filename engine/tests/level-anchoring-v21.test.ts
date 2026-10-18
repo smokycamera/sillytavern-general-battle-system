@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateUnit, prepareCombatModel, prepareArmsModel, prepareSkillModel, upgradeCombatSkills, resolveAttack, rechargeEnergyShield, energyHeavyHit, energyShieldCapacity,
+import { generateUnit, prepareCombatModel, prepareArmsModel, prepareSkillModel, prepareTraitLevelModel, prepareTraitModel, previewAttack, upgradeCombatSkills, resolveAttack, rechargeEnergyShield, energyHeavyHit, energyShieldCapacity,
   shieldDurabilityMax, gradeOvermatch, compileSkill, skillDefinitionId, standardConditionMap, SmallBattle, V6_D20, V18_OVERFLOW_D20, V20_OVERFLOW_D20, V21_OVERFLOW_D20, V21_OVERFLOW_TW,
   RULES_BY_ID, type Combatant, type AttackOpts, type GenerateInput } from '../src/index.js';
 
@@ -49,6 +49,18 @@ describe('V21 等级锚定：能量盾', () => {
     d.energyShield = { remaining: 10.5, overloaded: 1 };
     const b = new SmallBattle({ combatants: [a, d], rules: V18_OVERFLOW_D20, seed: 'fraction' });
     expect(SmallBattle.fromSnapshot(structuredClone(b.toSnapshot())).combatants.find(u => u.id === 'd')!.energyShield).toEqual({ remaining: 10.5, overloaded: 1 });
+  });
+});
+
+describe('V21 个体散兵', () => {
+  it('个体疏散不再让近战伤害减半；旧规则保持原结算', () => {
+    const expected = (rules: typeof V21_OVERFLOW_D20, choice: 'loose' | 'closed') => {
+      const a = unit('a', { weaponClass: 'sword', armorTier: 1, traits: ['loose-formation'] }, rules), d = unit('d', { weaponClass: 'sword', armorTier: 1 }, rules);
+      prepareTraitModel(a, rules); prepareTraitLevelModel(a, rules); a.looseFormationChoice = choice; a.pos = 0;
+      return previewAttack({ attacker: a, defender: d, distance: 1, ranged: false, rules, conditionDefs: defs }).expectedDamage;
+    };
+    expect(expected(V21_OVERFLOW_D20, 'loose')).toBeCloseTo(expected(V21_OVERFLOW_D20, 'closed'), 6);
+    expect(expected(V20_OVERFLOW_D20, 'loose')).toBeLessThan(expected(V20_OVERFLOW_D20, 'closed') * .6);
   });
 });
 

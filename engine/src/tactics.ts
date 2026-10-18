@@ -1,4 +1,5 @@
 import { isArmsV2, shieldUsable, shieldClass } from './arms.js';
+import { isArmsV3 } from './arms-model.js';
 import { phase2Traits } from './trait-level-model.js';
 import { phase2Value, agileCost } from './phase2-traits.js';
 import { isEnduranceModel, resourceRound, fatigueLimit, fatiguePenalty } from './resources.js';
@@ -118,10 +119,10 @@ export function defensivePostureMods(unit: Combatant, ctx: ResolveContext, defs:
   }
   return mods;
 }
-/** 疏散由编队与装备条件决定，固守会收拢阵形；不增加另一种编队类型。 */
+/** 疏散由编队与装备条件决定，固守会收拢阵形；不增加另一种编队类型。V21 起个体疏散没有代价，不看收拢选择。 */
 export function looseFormation(unit: Combatant): boolean {
   return unit.rulesVersion === 'v2' && activeTraitIds(unit).includes('loose-formation') && !traitPrerequisiteReason(unit, 'loose-formation')
-    && (!phase2Traits(unit) || unit.looseFormationChoice !== 'closed')
+    && (!phase2Traits(unit) || unit.looseFormationChoice !== 'closed' || unit.scale === 'hero' && isArmsV3(unit.armsModel))
     && unit.status === 'ready' && (unit.hp > 1 || unit.scale === 'hero') && !unit.tacticalPose && !unit.suppression
     && !activeConditionIds(unit).includes('stunned');
 }
