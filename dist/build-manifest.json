@@ -1,10 +1,35 @@
 {
   "format": "tavern-battle-native-build",
   "version": "2.5.0",
-  "builtAt": "2026-10-18T19:45:55.699Z",
+  "builtAt": "2026-10-18T19:49:58.673Z",
   "sourceFingerprint": "dfe3820ea78b61b604f9d8adc467fa7f7e03173f6272190698ea07c9a2482cc2",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
+    {
+      "path": "LICENSE",
+      "bytes": 35149,
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "path": "LICENSE-NOTES.md",
+      "bytes": 1076,
+      "sha256": "3c1102b6cb3f1d12fb603fa36920adf797f79463e7178ae4612782765b87f5cc"
+    },
+    {
+      "path": "README.md",
+      "bytes": 5531,
+      "sha256": "ea335f52928bcc1048808538cdcb16934245459acffce245bca38d5d3d38ec14"
+    },
+    {
+      "path": "README.zh-CN.md",
+      "bytes": 4967,
+      "sha256": "a994fd62cb78036ed352a0f13a77fe8738300b8f252298c271d4db0751a3dfe2"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "bytes": 1564,
+      "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
+    },
     {
       "path": "dist/assets/panel-B6qjwXwC.js",
       "bytes": 1358801,
@@ -226,16 +251,6 @@
       "sha256": "b476629a8bd5bf83187b016aa3ed5d456bb32e7f515d8ef3dde77b5b84ed320d"
     },
     {
-      "path": "LICENSE",
-      "bytes": 35149,
-      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
-    },
-    {
-      "path": "LICENSE-NOTES.md",
-      "bytes": 1076,
-      "sha256": "3c1102b6cb3f1d12fb603fa36920adf797f79463e7178ae4612782765b87f5cc"
-    },
-    {
       "path": "licenses/Vite-LICENSE.md",
       "bytes": 162419,
       "sha256": "04d9940b3b8b372bff74437c3b153eda8a89642669c4209a4f67135eb3132bc9"
@@ -246,14 +261,19 @@
       "sha256": "f71211cf8f9bedeb38ab762f3febac927c7be5f65a2c9177c2ab3c6135207291"
     },
     {
-      "path": "mcp/broker.mjs",
-      "bytes": 3326,
-      "sha256": "420bc4a6edd74362ea5e2a16847844173e529e59d773cca338eeef2270948783"
-    },
-    {
       "path": "mcp/GAMEPLAY.md",
       "bytes": 6554,
       "sha256": "80ef81e9d2ed7031057e339b58abb550c628f7293600ca38a77ddaf433f0a5d3"
+    },
+    {
+      "path": "mcp/README.md",
+      "bytes": 8919,
+      "sha256": "d2793765368337dc0ae84ff55bbd24cec2dd2b64aefec4f0e02496fa22ac9c31"
+    },
+    {
+      "path": "mcp/broker.mjs",
+      "bytes": 3326,
+      "sha256": "420bc4a6edd74362ea5e2a16847844173e529e59d773cca338eeef2270948783"
     },
     {
       "path": "mcp/package-lock.json",
@@ -264,11 +284,6 @@
       "path": "mcp/package.json",
       "bytes": 388,
       "sha256": "33904dc07d85b28ad6e2f15ec9f472c7403ca054924cd88c039002996cdd7c24"
-    },
-    {
-      "path": "mcp/README.md",
-      "bytes": 8919,
-      "sha256": "d2793765368337dc0ae84ff55bbd24cec2dd2b64aefec4f0e02496fa22ac9c31"
     },
     {
       "path": "mcp/server.mjs",
@@ -301,16 +316,6 @@
       "sha256": "d247deeae8ee55a71461f8f8e5751fadf936aac62c320685c225fa47ecb47b82"
     },
     {
-      "path": "README.md",
-      "bytes": 5531,
-      "sha256": "ea335f52928bcc1048808538cdcb16934245459acffce245bca38d5d3d38ec14"
-    },
-    {
-      "path": "README.zh-CN.md",
-      "bytes": 4967,
-      "sha256": "a994fd62cb78036ed352a0f13a77fe8738300b8f252298c271d4db0751a3dfe2"
-    },
-    {
       "path": "release/current-baseline.json",
       "bytes": 2532,
       "sha256": "8dfb3599bec3e692d47ebf6fd631647326cf5fdeab8c592637c0463aa614e8c5"
@@ -319,11 +324,6 @@
       "path": "scripts/jev-cors-relay.mjs",
       "bytes": 5754,
       "sha256": "c7fb9094f869607e10a45fb46335de4545e14043034f1b56fef937115fca50ca"
-    },
-    {
-      "path": "THIRD_PARTY_NOTICES.md",
-      "bytes": 1564,
-      "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     }
   ],
   "validation": {
