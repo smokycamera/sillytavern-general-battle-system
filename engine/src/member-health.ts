@@ -14,6 +14,21 @@ export function memberHealthMax(unit:Partial<Combatant>):number {
   return hasMemberHealth(unit)?(unit.base?.hpMax??0)*(unit.formation?.memberHp??1):unit.base?.hpMax??0;
 }
 export function mergeHealth(groups:MemberHealthGroup[]):MemberHealthGroup[] {
+  // Most damage packets already have sorted groups. Merge those in one pass without Map/sort.
+  let previous = 0, sorted = true;
+  for (const g of groups) if (g.count > 0 && g.hp > 0) {
+    if (g.hp < previous) { sorted = false; break; }
+    previous = g.hp;
+  }
+  if (sorted) {
+    const merged: MemberHealthGroup[] = [];
+    for (const g of groups) if (g.count > 0 && g.hp > 0) {
+      const last = merged[merged.length - 1];
+      if (last?.hp === g.hp) last.count += g.count;
+      else merged.push({ hp: g.hp, count: g.count });
+    }
+    return merged;
+  }
   const counts=new Map<number,number>();
   for(const g of groups)if(g.count>0&&g.hp>0)counts.set(g.hp,(counts.get(g.hp)??0)+g.count);
   return [...counts].sort((a,b)=>a[0]-b[0]).map(([hp,count])=>({hp,count}));

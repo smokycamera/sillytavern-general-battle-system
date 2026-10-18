@@ -681,9 +681,19 @@ interface AttackBasis { context: ReturnType<typeof attackContext>; resolved: Res
 interface PreviewMemo { bases: Map<string, AttackBasis>; samples?: number; penetration?: ReturnType<typeof penetrationContext>; loose?: boolean }
 /** 抽样副本：伤损只改写生命基数、状态、成员分组、屏障、盾耐久、能量盾与士气记录；其余数据与原单位共享且只读。 */
 function damageCopy(unit: Combatant): Combatant {
-  return { ...unit, base: { ...unit.base }, conditions: unit.conditions.map((c) => ({ ...c })),
-    ...(unit.formation ? { formation: { ...unit.formation, ...(unit.formation.health ? { health: unit.formation.health.map((g) => ({ ...g })) } : {}) } } : {}),
-    ...(unit.barrier ? { barrier: cloneData(unit.barrier) } : {}), ...(unit.shieldDurability ? { shieldDurability: {...unit.shieldDurability} } : {}), ...(unit.energyShield ? { energyShield: {...unit.energyShield} } : {}), ...(unit.moraleState ? { moraleState: cloneData(unit.moraleState) } : {}) };
+  // Copy once, then replace mutable branches; avoid repeatedly spreading the large unit object.
+  const copy = { ...unit };
+  copy.base = { ...unit.base };
+  copy.conditions = unit.conditions.map((c) => ({ ...c }));
+  if (unit.formation) {
+    copy.formation = { ...unit.formation };
+    if (unit.formation.health) copy.formation.health = unit.formation.health.map((g) => ({ ...g }));
+  }
+  if (unit.barrier) copy.barrier = cloneData(unit.barrier);
+  if (unit.shieldDurability) copy.shieldDurability = { ...unit.shieldDurability };
+  if (unit.energyShield) copy.energyShield = { ...unit.energyShield };
+  if (unit.moraleState) copy.moraleState = cloneData(unit.moraleState);
+  return copy;
 }
 /** 非火炮的结算武器与目标状态无关；其穿透只看守方装备、等级与状态，在整次预览中不变。 */
 function basisPenetration(opts: AttackOpts, basis: AttackBasis): ReturnType<typeof penetrationContext> {
