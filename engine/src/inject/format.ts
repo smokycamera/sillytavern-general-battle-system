@@ -8,6 +8,7 @@ import { displayHeightAt, reportsHeights } from '../small/height-map.js';
 import { environmentLabel } from '../environment.js';
 import { formationNode } from '../mass/formation.js';
 import { woundedLabel } from '../recovery.js';
+import { energyShieldCapacity } from '../shield-state.js';
 import {hasMemberHealth,memberHealth,memberHealthMax,memberHealthSummary,memberNoun} from '../member-health.js';
 /**
  * 注入文案层：引擎状态 → 提示词文本（单向投影）。
@@ -55,6 +56,14 @@ export function reportStrengthLabel(u: Combatant): string {
   return u.body === 'vehicle' ? `剩余总数${u.hp}/${u.base.hpMax}辆` : `剩余总人数${u.hp}/${u.base.hpMax}`;
 }
 
+/** 战报状态行的能量盾：剩余/容量（取整）与过载份数；只在战斗进行中写，倒下的单位不写。 */
+export function reportShieldLabel(u: Combatant): string {
+  const state = u.energyShield;
+  if (!state || u.hp <= 0 || u.status === 'dead' || u.status === 'fled') return '';
+  const overload = state.overloaded ? u.scale === 'hero' ? ' 能量盾过载' : ` ${state.overloaded}${memberNoun(u)}能量盾过载` : '';
+  return ` 能量盾${Math.round(state.remaining)}/${energyShieldCapacity(u)}${overload}`;
+}
+
 /** 士气、持续状态、可救伤兵与离场状态。brief 用于战报状态行：只写可救伤兵数，兵力另由 reportStrengthLabel 给出。 */
 function stateLabel(u: Combatant, brief = false): string {
   const morale = u.morale !== undefined ? ` 士气${u.morale}` : '';
@@ -88,7 +97,7 @@ export function smallStateSummary(
     const label = side === 'ally' ? '我方' : '敌方';
     lines.push(
       `${label}：${units
-        .map((u) => `${pc === u.id ? '【主控】' : ''}${u.name}${smallPosition(b, u)} ${reportStrengthLabel(u)}${stateLabel(u, true)}${unitReadiness(b, u)}`)
+        .map((u) => `${pc === u.id ? '【主控】' : ''}${u.name}${smallPosition(b, u)} ${reportStrengthLabel(u)}${b.isOver() ? '' : reportShieldLabel(u)}${stateLabel(u, true)}${unitReadiness(b, u)}`)
         .join('；')}`,
     );
   }
@@ -125,7 +134,7 @@ export function massStateSummary(
           const zone = node ? `${node.wing}${({ front: '前列', rear: '后列', reserve: '预备列' })[node.rank]}·` : b.zones ? `${b.zoneOf(u)}·` : '';
           const engage = u.engagedWith.length ? '⚔' : '';
           const marks = `${pc === u.id ? '【主控】' : ''}${side === 'ally' && b.commanderId === u.id ? '【指挥官】' : ''}`;
-          return `${zone}${marks}${u.name}${engage} ${reportStrengthLabel(u)}${stateLabel(u, true)}${unitReadiness(b, u)}`;
+          return `${zone}${marks}${u.name}${engage} ${reportStrengthLabel(u)}${b.isOver() ? '' : reportShieldLabel(u)}${stateLabel(u, true)}${unitReadiness(b, u)}`;
         })
         .join('；')}`,
     );

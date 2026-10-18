@@ -9,6 +9,7 @@ import {hasMemberHealth} from '../../engine/src/member-health.js';
 import { renderBattleHighlights, commandHeaderHtml, traceOverlay, unitSymbol } from './battle-presentation.js';
 import { activeTraitIds, weaponReloadKey, FORMATION_NODES, formationNode, isAirborne, moraleLabel, approx, type Combatant, type MassBattle, type Order } from '../../engine/src/index.js';
 import { renderFormationFeedback } from './formation-feedback.js';
+import { defenseLayerLabels } from '../../engine/src/arms.js';
 import { looseFormationChoiceHtml } from './loose-formation-view.js';
 import { formationSelection, orderKey, orderLabels, type FormationView, type OrderDrafts, type FormationQueryCache } from './formation-orders.js';
 import { battleSkillChangeReason } from './battle-skills.js';
@@ -49,7 +50,7 @@ function renderFormationContent(b: MassBattle, view: FormationView, drafts: Orde
       ${occupants.length > 1 ? '<details class="formation-stack" data-detail-id="stack-' + node.id + '"' + (occupants.some(u => u.id === actor?.id) ? ' open' : '') + '><summary>' + occupants.length + '支编队 · 展开筹码</summary>' : ''}${occupants.map((u) => {
         const assigned = b.orders.get(u.id), draft = drafts[u.id], passenger = visible.find((h) => h.id === b.attached.get(u.id));
         return `<button class="formation-piece ${u.side} ${u.id === actor?.id ? 'active' : ''} ${targets.has(u.id) ? 'legal-target' : ''} ${u.id === order?.targetId ? 'targeted' : ''} ${area.has(u.id) ? 'area-hit' : ''}" data-action="formation-unit" data-id="${esc(u.id)}" aria-pressed="${u.id === actor?.id}">
-          ${unitSymbol(u)}<b>${u.side === 'ally' ? '我' : '敌'} · ${esc(u.name)}</b><span>${u.hp}/${u.base.hpMax}${u.scale === 'hero' ? '生命' : '人'}${isAirborne(u) ? ' · 空中' : ''}${u.barrier?' · 屏障'+u.barrier.remaining:''}</span>
+          ${unitSymbol(u)}<b>${u.side === 'ally' ? '我' : '敌'} · ${esc(u.name)}</b><span>${u.hp}/${u.base.hpMax}${u.scale === 'hero' ? '生命' : '人'}${isAirborne(u) ? ' · 空中' : ''}${defenseLayerLabels(u).map((label) => ' · ' + esc(label)).join('')}</span>
           ${u.side === 'ally' ? '<small>' + (draft ? '草案 · ' + esc(orderName(b, { unitId: u.id, ...draft })) : assigned ? '已下达 · ' + esc(orderName(b, assigned)) : '待安排') + '</small>' : ''}
           ${passenger ? '<small>随队 · ' + esc(passenger.name) + '</small>' : ''}</button>`;
       }).join('') || '<span class="formation-empty">' + (node.side === 'ally' ? '空位' : '未定位') + '</span>'}${occupants.length > 1 ? '</details>' : ''}${intel.traces.filter((t) => t.node === node.id).map((t) => '<span class="formation-last-seen">? 最后目击 · ' + esc(t.name) + ' · ' + ago(t.round) + '</span>').join('')}

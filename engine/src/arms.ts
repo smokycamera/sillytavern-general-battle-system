@@ -132,6 +132,10 @@ export function shieldStatusLabels(unit: Combatant): string[] {
   }
   return labels;
 }
+/** 战斗界面的防护层：盾耐久或能量盾剩余（含过载），再加技能屏障剩余。 */
+export function defenseLayerLabels(unit: Combatant): string[] {
+  return [...shieldStatusLabels(unit), ...(unit.barrier ? ['屏障 ' + unit.barrier.remaining] : [])];
+}
 
 export function shieldUsable(unit: ShieldBearer, incoming?: Weapon): boolean {
   if (!unit.shield) return false;
