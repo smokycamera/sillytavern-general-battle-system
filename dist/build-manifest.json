@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "2.5.0",
-  "builtAt": "2026-10-18T18:11:22.204Z",
-  "sourceFingerprint": "6dd88fccf2fb40274d970b77b0d6144c3a1e958ca5417de6b3e9d40689362800",
+  "builtAt": "2026-10-18T18:32:15.985Z",
+  "sourceFingerprint": "4425fbdc5fc72d4d8af920114ac757b974f82327071d6b813383bc7b5901883b",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -31,9 +31,9 @@
       "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     },
     {
-      "path": "dist/assets/panel-BGZfe9dm.js",
-      "bytes": 1358160,
-      "sha256": "3b344bd4d38bdf05a7477401814a972fc31f08295f558941d2b035fa88711d17"
+      "path": "dist/assets/panel-BMhUc9Vj.js",
+      "bytes": 1358485,
+      "sha256": "5790d2682af6b2f4b868ce29128ce159b410b3abe71c5a496d3d80a3d0b0fe7a"
     },
     {
       "path": "dist/assets/panel-Ca2W74WV.css",
@@ -313,7 +313,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 46806,
-      "sha256": "cbbac50f454f0f4aacafc875c60431e4746ed999d7b033b16e759d0029c9df12"
+      "sha256": "a5ee9e063875aa98b752a78bd6cab7fc62264d72924f304a5ed8b7c0866b0538"
     },
     {
       "path": "release/current-baseline.json",
