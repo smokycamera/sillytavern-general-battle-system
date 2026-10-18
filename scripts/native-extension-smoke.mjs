@@ -183,13 +183,14 @@ try {
   await frame.locator('[data-action="workspace-tab"][data-tab="battle"]').first().click();await idle(frame);
   await frame.locator('[data-action="mass-start"]').first().click();await idle(frame);
   const massRound=(await state()).battle.snap.round;
+  const massCheckpoint = await page.evaluate(()=>JSON.stringify(context.chatMetadata.tavernBattle));
   const commandSaves = await page.evaluate(()=>{__delay=600;return __metadataSaves+__fullSaves});
   await frame.locator('[data-action="mass-resolve"]').first().click();
-  check('战斗命令保存期间立即显示处理中',await frame.locator('body[aria-busy="true"]').count()===1&&await frame.locator('[data-action="mass-resolve"][data-processing="true"]').count()===1);
+  check('会战计算期间立即显示处理中',await frame.locator('body[aria-busy="true"]').count()===1&&await frame.locator('[data-action="mass-resolve"][data-processing="true"]').count()===1);
   await frame.locator('[data-action="mass-resolve"]').first().evaluate(el=>el.click());
   await idle(frame);await page.evaluate(()=>{__delay=0});
-  check('命令处理中重复点击不会重复执行或保存',await page.evaluate(n=>__metadataSaves+__fullSaves===n+1,commandSaves));
-  check('会战通过面板执行一轮并保存',(await state()).battle.kind==='mass'&&(await state()).battle.snap.round>massRound);
+  check('战中重复点击不写入存档且开局检查点不变',await page.evaluate(({saves,checkpoint})=>__metadataSaves+__fullSaves===saves&&JSON.stringify(context.chatMetadata.tavernBattle)===checkpoint,{saves:commandSaves,checkpoint:massCheckpoint}));
+  check('会战通过面板仅执行一轮',(await state()).battle.kind==='mass'&&(await state()).battle.snap.round===massRound+1);
   await frame.locator('[data-action="battle-finish"][data-reason="ceasefire"]').click();await idle(frame);
   check('会战结算和报告保留',(await state()).reports.length===1&&(await state()).committedOutcomeIds.length===1);
   const exported=await page.evaluate(()=>({format:'tavern-battle-export',version:1,envelope:__tavernBattleNative.service.store.envelope()}));
