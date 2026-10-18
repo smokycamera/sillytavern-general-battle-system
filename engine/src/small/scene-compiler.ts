@@ -1,6 +1,6 @@
-import { MAX_DEPLOYMENT_ZONES, type BattlefieldPlan, type LandmarkPlan, type GatePlan } from './battlefield-plan.js';
+import type { BattlefieldPlan, LandmarkPlan, GatePlan } from './battlefield-plan.js';
 import { BattlefieldPlanError } from './battlefield-error.js';
-import { WORLD_ANCHORS, SCENE_ARCHETYPE_NAMES, type SceneIntent, type SceneEntity, type WorldAnchor, type SceneArchetype } from './scene-intent.js';
+import { MAX_DEPLOYMENT_ZONES, WORLD_ANCHORS, SCENE_ARCHETYPE_NAMES, type SceneIntent, type SceneEntity, type WorldAnchor, type SceneArchetype } from './scene-intent.js';
 import { SCENE_ARCHETYPES, normalizeSceneIntent } from './scene-intent.js';
 import { groundBlocked, intactStructure } from './layers.js';
 import { gridDistance, neighbors, findGridPath, gridCostsToGoals, unitLineOfSight, type BattlefieldSpec } from './spatial.js';

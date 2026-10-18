@@ -37,13 +37,15 @@ npx vitest run engine/tests/small-three-way.test.ts panel/src/llm-layout.test.ts
 npx vitest run panel/src/llm-layout.test.ts
 ```
 
-最终相关测试文件全部通过，类型检查通过，无剩余已知失败。未使用真实副API。
+本次功能相关测试文件全部通过，类型检查通过。未使用真实副API。
 
 32项布局与最新test合并后的验证：
 
 ```text
 npx vitest run engine/tests/small-three-way.test.ts panel/src/llm-layout.test.ts panel/src/battle-setup.test.ts panel/src/protocol.test.ts panel/src/battle-settlement.integration.test.ts engine/tests/command-v2.test.ts
 npx vitest run panel/src/siege-objectives.test.ts
+npx vitest run engine/tests/field-generator.test.ts engine/tests/gen.test.ts panel/src/llm-layout.test.ts
+npx vitest run host/tests/battle-message-display.test.ts
 npm run typecheck
 npm run build:extension
 node scripts/package-extension.mjs
@@ -52,6 +54,8 @@ npm run verify:dist
 
 新增32项布局用例及最新test整合验证无失败。据点旧断言改为只匹配其验证的两方计数，允许新增neutral计数。安装包首次校验因构建后更新该面板测试文件导致源码指纹变化而失败；运行原封装脚本刷新封装后校验通过。
 
+PR #79首次CI（39138088562）发现预算常量的循环导入，使field-generator、narrative-draft-view、view-dom三个入口加载失败；常量移至既有纯契约模块后，field-generator与布局入口复测通过。宿主显示用例有一次25ms等待后的断言失败，未修改该源码，单独复跑通过。
+
 ## 交付范围
 
 生产改动限于小战及其输入、准备、结算链路；共享函数的默认两方会战行为保留。未修改会战引擎或JEV文件，未在本地运行全量套件。基于最新origin/test（0ebf908）的独立工作区合并，保留远端已有功能及D:\gbs未提交修改；源码与安装包一并更新test。
@@ -59,3 +63,5 @@ npm run verify:dist
 ## 未覆盖情况
 
 未增加方案之外的机制、场景矩阵或测试文件；本次唯一新增测试文件为 `engine/tests/small-three-way.test.ts`。
+
+规格外既有失败：test上一次成功CI（39133882548）已有gen、layered-review、systems、vehicle-armor-v2四个文件在health-limits.ts:7加载失败，以及unified-replay的5项和life-limit-state的2项断言失败。本地gen复测仍为相同加载错误；未改这些规则或放宽CI基线。

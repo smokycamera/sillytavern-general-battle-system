@@ -1,10 +1,10 @@
 import { safeLandmarkLabel, MAP_DESIGN_OPTIONS, BATTLEFIELD_SCENES, type BattlefieldScene, type MapDesign } from './map-design.js';
-import { MAX_SMALL_UNITS } from '../battle-limits.js';
 import { ROUTE_TOPOLOGIES, type RouteTopology } from './route-graph.js';
 import type { CityShape } from './layers.js';
 import {BattlefieldPlanError} from './battlefield-error.js';
 export {BattlefieldPlanError} from './battlefield-error.js';
-import { normalizeSceneIntent, MAX_SCENE_RELATIONS, SCENE_ARCHETYPES, WORLD_ANCHORS, SCENE_INTENT_PROMPT, type SceneIntent, type SceneArchetype, type WorldAnchor } from './scene-intent.js';
+import { normalizeSceneIntent, MAX_DEPLOYMENT_PLANS, SCENE_ARCHETYPES, WORLD_ANCHORS, SCENE_INTENT_PROMPT, type SceneIntent, type SceneArchetype, type WorldAnchor } from './scene-intent.js';
+export { MAX_DEPLOYMENT_PLANS, MAX_DEPLOYMENT_ZONES } from './scene-intent.js';
 export const BREACH_SECTORS = ['auto', 'front_left', 'front_right', 'left', 'right', 'rear'] as const;
 export interface BreachPlan { count: 0 | 1 | 2 | 3; width?: 1 | 2; sector?: typeof BREACH_SECTORS[number] }
 export const CITY_SHAPES = ['front', 'enclosure', 'riverside', 'hillside', 'broken'] as const;
@@ -29,8 +29,6 @@ export interface BridgePlan { id?: string; anchor: WorldAnchor; state: 'intact' 
 export const DEPLOYMENT_POSTS = ['wall', 'inside', 'outside'] as const;
 /** A force's starting area on the 3×3 compass grid. The subject is ally, enemy or a public unit handle (u1…). */
 export interface DeploymentPlan { subject: string; at: WorldAnchor[]; post?: typeof DEPLOYMENT_POSTS[number] }
-export const MAX_DEPLOYMENT_PLANS = MAX_SMALL_UNITS + 3;
-export const MAX_DEPLOYMENT_ZONES = MAX_DEPLOYMENT_PLANS + MAX_SCENE_RELATIONS;
 export const GATE_SECTORS = ['auto', 'front_left', 'front_center', 'front_right', 'left', 'right', 'rear','north','south','east','west'] as const;
 export interface GatePlan { id?: string; sector: typeof GATE_SECTORS[number]; state: 'closed' | 'open' | 'destroyed' }
 export interface BattlefieldPlan {

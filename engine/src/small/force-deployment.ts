@@ -1,6 +1,6 @@
 import { BattlefieldPlanError } from './battlefield-error.js';
-import { MAX_DEPLOYMENT_ZONES, type BattlefieldPlan, type DeploymentPlan } from './battlefield-plan.js';
-import type { WorldAnchor } from './scene-intent.js';
+import type { BattlefieldPlan, DeploymentPlan } from './battlefield-plan.js';
+import { MAX_DEPLOYMENT_ZONES, type WorldAnchor } from './scene-intent.js';
 import type { Combatant } from '../types.js';
 import type { SceneRegion } from './scene-compiler.js';
 import { groundBlocked, intactStructure } from './layers.js';
