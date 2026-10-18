@@ -11,10 +11,12 @@ import type { GenOptions, GenResult } from './generator.js';
 import { curveAt, ARCHETYPE_MODS } from '../data/curves.js';
 import { diceAvg, rebuildDice } from '../data/weapons.js';
 import { ABILITY_BLUEPRINTS, abilityFromBlueprint } from '../data/ability-blueprints.js';
-import { traitRegistry, validateTraitLevels } from '../data/traits.js';
+import { traitRegistry, validateTraitLevels, isGradedTrait } from '../data/traits.js';
+import { DEFAULT_NEW_TRAIT_LEVEL } from '../trait-parameters.js';
+import { skillsPhase2 } from '../skill-model.js';
 import { randomSeed } from '../rng.js';
 import { rollInstanceVariance, instanceMultiplier } from '../instance-variance.js';
-import { BODY, FORMULA_VERSION as EQUIPMENT_FORMULA_VERSION, compileArmor, compileWeapon } from './equipment.js';
+import { BODY, FORMULA_VERSION as EQUIPMENT_FORMULA_VERSION, compileArmor, compileWeapon, equipmentRecipe } from './equipment.js';
 import { equipmentReason } from '../items.js';
 import { normalizeBakedTraitStats } from '../trait-sources.js';
 
@@ -29,7 +31,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   const oldScale = raw.scale === 'mook';
   if (oldScale) raw = { ...raw, scale: 'company', hpMax: raw.hpMax ?? 10 };
   const seed = opts.seed ?? randomSeed();
-  const variance = raw.damageModel === 'wounds-v2' && !opts.noVariance ? rollInstanceVariance(seed, ['damage', 'health']) : undefined;
+  const variance = raw.damageModel === 'wounds-v2' && !opts.noVariance ? rollInstanceVariance(seed, ['damage', 'health'], opts.varianceVersion) : undefined;
   const registry = opts.registry ?? traitRegistry();
   validateMount(raw);
   const body = raw.body ?? 'human';
@@ -51,13 +53,18 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
     if (slot === 'sidearm' && !weaponId && !classId && !name) return undefined;
     const mechanism = classId ?? (weaponId ? undefined : slot === 'sidearm' ? 'sword' : raw.loadout === 'ranged' || arch === 'ranged' ? 'bow' : 'sword');
     return compileWeapon({ mechanism, weaponId, bonuses: slot === 'primary' ? raw.weaponBonuses : raw.sidearmBonuses, power: (slot === 'primary' ? raw.weaponLevel : raw.sidearmLevel) ?? 1, stabilized: slot === 'primary' ? raw.weaponStabilized : raw.sidearmStabilized, enchantment: slot === 'primary' ? raw.weaponEnchantment : raw.sidearmEnchantment },
-      { id: `${id}:${slot}`, name, seed: seed + ':' + slot, body, quality, noVariance: opts.noVariance, creatingUnit: true, damageModel: raw.damageModel });
+      { id: `${id}:${slot}`, name, seed: seed + ':' + slot, body, quality, noVariance: opts.noVariance, varianceVersion: opts.varianceVersion, creatingUnit: true, damageModel: raw.damageModel });
   };
   const weapon = weaponFor('primary')!; const sidearm = weaponFor('sidearm');
   const hasArmor = raw.armorTier !== undefined || !!raw.armorId || !!raw.armorName?.trim();
-  const armor = compileArmor({ bonuses: raw.armorBonuses, tier: hasArmor ? raw.armorTier : 0, profile: raw.armorProfile, armorId: raw.armorId, power: raw.armorLevel }, { id: `${id}:armor`, name: raw.armorName, seed: seed + ':armor', body, quality, noVariance: opts.noVariance, damageModel: raw.damageModel });
+  const armor = compileArmor({ bonuses: raw.armorBonuses, tier: hasArmor ? raw.armorTier : 0, profile: raw.armorProfile, armorId: raw.armorId, power: raw.armorLevel }, { id: `${id}:armor`, name: raw.armorName, seed: seed + ':armor', body, quality, noVariance: opts.noVariance, varianceVersion: opts.varianceVersion, damageModel: raw.damageModel });
   const tier = armor.tier, armorPower = armor.level!;
-  const conflict = equipmentReason({ body, scale: raw.scale, weapon, sidearm, armor, shield: raw.shield ? { id: `${id}:shield`, load: 2 } : undefined });
+  const shield: Combatant['shield'] = raw.shield ? { id: `${id}:shield`, load: ({ buckler: 1, shield: 2, 'tower-shield': 3, 'energy-shield': 1 })[raw.shieldClass ?? 'shield'] } : undefined;
+  if (shield && (raw.shieldClass !== undefined || raw.shieldLevel !== undefined || raw.shieldName !== undefined || raw.shieldBonuses !== undefined)) {
+    shield.name = raw.shieldName ?? '盾牌';
+    shield.recipe = equipmentRecipe(raw.shieldClass ?? 'shield', raw.shieldLevel ?? 3, { id: shield.id, seed: seed + ':shield', name: shield.name, body, quality, bonuses: raw.shieldBonuses, noVariance: opts.noVariance, varianceVersion: opts.varianceVersion, damageModel: raw.damageModel });
+  }
+  const conflict = equipmentReason({ body, scale: raw.scale, weapon, sidearm, armor, shield });
   if (conflict) warnings.push('建档已保留配装：' + conflict + '；实际使用由战斗规则判定');
   const group = raw.scale !== 'hero';
   const requestedMax = integer(raw.hpMax ?? (group ? 50 : Math.round((curve.hp * bodyProfile(body, raw.damageModel).hp + archMod.hp) * instanceMultiplier(raw.bonuses, 'health', variance))), 1, group ? 1e9 : Number.MAX_SAFE_INTEGER, group ? '编制上限' : '生命上限');
@@ -67,7 +74,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   const traits = [...new Set(raw.traits)];
   // 只保留单位确实拥有、且不是标准 L5 的专精等级。
   validateTraitLevels(raw.traitLevels);
-  const levelEntries = Object.entries(raw.traitLevels ?? {}).filter(([id, level]) => traits.includes(id) && level !== 5);
+  const levelEntries = traits.filter(isGradedTrait).map(id => [id, raw.traitLevels?.[id] ?? DEFAULT_NEW_TRAIT_LEVEL] as const).filter(([, level]) => level !== 5);
   const traitLevels = levelEntries.length ? Object.fromEntries(levelEntries) as Record<string, number> : undefined;
   const base = { atk: curve.atk + archMod.atk, def: curve.def + archMod.def, spd: Math.max(1, curve.spd + archMod.spd + bonusSteps(raw.bonuses, 'speed', 5)), hpMax,
     ...(group ? { moraleMax: curve.morale + bonusSteps(raw.bonuses, 'morale') } : {}) };
@@ -97,8 +104,8 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
     const definitionId = typeof spec === 'string' ? spec : spec.id;
     if (!definitionId.startsWith('generic:') && abilities.some((a) => a.definitionId === definitionId)) throw new Error('同源技能重复，请明确保留一个等级');
     const bp = ABILITY_BLUEPRINTS[definitionId];
-    const power = integer((typeof spec === 'string' ? undefined : spec.level) ?? 5, 1, 10, '技能强度P');
-    const ability = compileSkill(spec, power, id);
+    const power = integer((typeof spec === 'string' ? undefined : spec.level) ?? (skillsPhase2(opts.skillModel) ? 1 : 5), 1, 10, '技能强度P');
+    const ability = compileSkill(spec, power, id, opts.skillModel);
     if (abilities.some((a) => a.id === ability.id || ability.recipe && a.name === ability.name)) throw new Error('同名技能请合并为一项，不能重复创建');
     if (bp?.fixedPower && typeof spec !== 'string' && spec.level !== undefined) warnings.push(`${bp.name}使用固定预备来源，技能等级不改变援军`);
     abilities.push(ability); abilityAudit.push({ blueprintId: definitionId, power: ability.power! });
@@ -108,10 +115,10 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   if (!raw.preparedAbilityIds && abilities.length > MAX_PREPARED_SKILLS) warnings.push(`仅默认准备前${MAX_PREPARED_SKILLS}个技能，其余已学保留，需在配装中选择`);
   const input: GenerateInput = { ...raw, era: undefined, body, quality, level: training, weaponClass: weapon.recipe!.mechanism,
     weaponLevel: weapon.level, sidearmLevel: sidearm?.level, armorTier: tier, armorLevel: armorPower, hpMax: base.hpMax, hp: currentHp, preparedAbilityIds: prepared,
-    abilityBlueprints: (raw.abilityBlueprints ?? []).map((s) => typeof s === 'string' ? { id: s, level: 5 } : { ...s, level: s.level ?? 5 }) };
+    abilityBlueprints: (raw.abilityBlueprints ?? []).map((s) => typeof s === 'string' ? { id: s, level: skillsPhase2(opts.skillModel) ? 1 : 5 } : { ...s, level: s.level ?? (skillsPhase2(opts.skillModel) ? 1 : 5) }) };
   const unit: Combatant = { id, name: raw.name, side: raw.side, scale: raw.scale, archetype: arch, level: training,
     rulesVersion: 'v2', ...(raw.damageModel ? {damageModel:raw.damageModel} : {}), bonuses: raw.bonuses, body, ...(raw.speedTier !== undefined ? { speedTier: raw.speedTier } : {}), ...(raw.mount ? { mount: true } : {}), base, hp: currentHp, tags: [...tags], traits, ...(traitLevels ? { traitLevels } : {}),
-    weapon, sidearm, armor, shield: raw.shield ? { id: `${id}:shield`, load: 2 } : undefined,
+    weapon, sidearm, armor, shield,
     abilities, preparedAbilityIds: preparedIds,
     conditions: [], abilityState: [], resources: { SP: 6 + Math.floor(training / 2), reserve: integer(raw.reserves ?? 0, 0, 2, '随队预备份额') },
     morale: base.moraleMax, engagedWith: [], status: hp > 0 ? 'ready' : 'dead', fatigue: 0,

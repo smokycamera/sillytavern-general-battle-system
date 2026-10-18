@@ -6,6 +6,7 @@
  */
 
 import type { Trait } from '../types.js';
+import { TERRAIN_GRADED_TRAITS, P1_GRADED_TRAITS, P2_GRADED_TRAITS, TRAIT_LEVEL_ALIASES, DEFAULT_NEW_TRAIT_LEVEL } from '../trait-parameters.js';
 
 export const TRAITS: Trait[] = [
   // ---------- 攻击 ----------
@@ -136,6 +137,24 @@ export const TRAITS: Trait[] = [
     v2SourceReady: true,
     v2Desc: '护甲即肉身或鳞片（炼体、兽皮、龙鳞、甲壳、皮下装甲）：所写护甲的减益无效，不计负重，没有重甲的先攻与移动惩罚；防护和轻重档位仍按所写护甲，游击、散兵、身法等轻装前提照常',
     effects: [{ kind: 'flag', flag: 'natural-armor' }],
+  },
+  {
+    id: 'kinetic-resist', name: '动能抵抗', desc: '动能防护按等级额外增加，与护甲相加',
+    v2SourceReady: true,
+    v2Desc: '刀剑、箭矢、子弹、冲击等动能伤害的抗性（岩石之躯、魔像、刀枪不入）：动能防护+0.5至+4（L5为+2，约等于高一级护甲），与护甲、身体结构相加；不影响热能、奥术',
+    effects: [{ kind: 'flag', flag: 'kinetic-resist' }],
+  },
+  {
+    id: 'thermal-resist', name: '热能抵抗', desc: '热能防护按等级额外增加，与护甲相加',
+    v2SourceReady: true,
+    v2Desc: '火焰、冰霜、能量束等热能伤害的抗性（火元素、耐火体质、抗火药剂）：热能防护+0.5至+4（L5为+2，约等于高一级护甲），与护甲、身体结构相加；不影响动能、奥术',
+    effects: [{ kind: 'flag', flag: 'thermal-resist' }],
+  },
+  {
+    id: 'arcane-resist', name: '奥术抵抗', desc: '奥术防护按等级额外增加，与护甲相加',
+    v2SourceReady: true,
+    v2Desc: '法术与奥术伤害的抗性（抗魔体质、反魔法甲壳、神佑之躯）：奥术防护+0.5至+4（L5为+2，约等于高一级护甲），与护甲、身体结构相加；不影响动能、热能',
+    effects: [{ kind: 'flag', flag: 'arcane-resist' }],
   },
   {
     id: 'indomitable', name: '不屈', desc: '个体每战一次以1点生命挺过致命伤；编队每战一次溃逃时当场重整',
@@ -431,6 +450,9 @@ export const TRAIT_ALIASES: Readonly<Record<string, string>> = {
   '韧性': 'tenacity', '霸体': 'tenacity', '道心': 'tenacity', '意志坚定': 'tenacity',
   '轻功': 'agile', '遁术': 'agile',
   '炼体': 'natural-armor', '金身': 'natural-armor', '鳞片': 'natural-armor', '鳞甲': 'natural-armor', '甲壳': 'natural-armor', '天生装甲': 'natural-armor',
+  '物理抗性': 'kinetic-resist', '动能抗性': 'kinetic-resist', '刀枪不入': 'kinetic-resist',
+  '火焰抗性': 'thermal-resist', '热能抗性': 'thermal-resist', '抗火': 'thermal-resist', '耐火': 'thermal-resist', '抗寒': 'thermal-resist', '耐寒': 'thermal-resist',
+  '魔法抗性': 'arcane-resist', '法术抗性': 'arcane-resist', '奥术抗性': 'arcane-resist', '抗魔': 'arcane-resist', '魔抗': 'arcane-resist',
   '坚韧不屈': 'indomitable',
   '守城工事': 'fortification', '掩体': 'fortification', '战壕': 'fortification', '据守': 'fortification',
   '机器人': 'inorganic', '构装体': 'inorganic', '构装': 'inorganic', '亡灵': 'inorganic', '傀儡': 'inorganic', '机械体': 'inorganic', '无机体': 'inorganic',
@@ -482,15 +504,15 @@ export function narrativeTrait(value: string, registry = traitRegistry()): Narra
   return { kind: 'trait', id, ...(trait.name !== name && registry.get(id) ? { renamed: trait.name } : {}) };
 }
 
-/** 五项专精按 L1–10 逐级生效（V15，见 trait-levels.ts）；其余特质只有“有/无”。 */
-export const GRADED_TRAITS: readonly string[] = ['forest-lore', 'mountain-born', 'night-fighter', 'plains-runner', 'urban-fighter'];
+/** 原五项专精由V15门控；P1十一类由独立V16门控。其余仍只有“有/无”。 */
+export const GRADED_TRAITS: readonly string[] = [...TERRAIN_GRADED_TRAITS, ...P1_GRADED_TRAITS, ...P2_GRADED_TRAITS];
 export const isGradedTrait = (id: string): boolean => GRADED_TRAITS.includes(id);
 export const validTraitLevel = (level: unknown): level is number => Number.isSafeInteger(level) && (level as number) >= 1 && (level as number) <= 10;
-/** 单位或来源记录的专精等级表：只允许五项专精、L1–10 整数。 */
+/** 单位或来源记录的专精等级表：只允许已完成分级特质、L1–10 整数。 */
 export function validateTraitLevels(value: unknown): void {
   if (value === undefined) return;
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('专精等级记录损坏');
-  for (const [id, level] of Object.entries(value)) if (!isGradedTrait(id) || !validTraitLevel(level)) throw new Error('专精等级只适用于五项专精，须为L1–10整数');
+  for (const [id, level] of Object.entries(value)) if (!isGradedTrait(id) || !validTraitLevel(level)) throw new Error('特质等级只适用于已完成分级的特质，须为L1–10整数');
 }
 /** “林地专精L8”拆成名称与等级；没有等级后缀时 level 缺省。 */
 export function splitTraitLevel(value: string): { name: string; level?: number } {
@@ -504,10 +526,26 @@ export function splitTraitLevel(value: string): { name: string; level?: number }
 export function narrativeTraitLevel(value: string, registry = traitRegistry()): NarrativeTrait & { level?: number; droppedLevel?: number; writtenLevel?: number } {
   const { name, level } = splitTraitLevel(value);
   const parsed = narrativeTrait(level === undefined ? value : name, registry);
-  if (level === undefined || parsed.kind !== 'trait') return parsed;
+  if (parsed.kind === 'trait' && TRAIT_LEVEL_ALIASES[parsed.id]) {
+    const alias = TRAIT_LEVEL_ALIASES[parsed.id]!;
+    return { ...parsed, id: alias.id, level: level === undefined ? alias.level : Math.max(1, Math.min(10, level)), renamed: registry.get(alias.id)?.name, ...(level === undefined || level >= 1 && level <= 10 ? {} : { writtenLevel: level }) };
+  }
+  if (parsed.kind !== 'trait') return parsed;
+  if (level === undefined) return isGradedTrait(parsed.id) ? { ...parsed, level: DEFAULT_NEW_TRAIT_LEVEL } : parsed;
   if (!isGradedTrait(parsed.id)) return { ...parsed, droppedLevel: level };
   const clamped = Math.max(1, Math.min(10, level));
   return { ...parsed, level: clamped, ...(clamped !== level ? { writtenLevel: level } : {}) };
 }
-/** 特质的规范写法：专精带非标准等级时加 L（forest-loreL8），其余只写 id。与 narrativeTraitLevel 互逆。 */
-export const traitLevelToken = (id: string, level?: number): string => isGradedTrait(id) && level !== undefined && level !== 5 ? id + 'L' + level : id;
+/** 新输入省略代表L1；历史省略编码是L5，导出必须显式写L5以保证再次导入不漂移。 */
+export const traitLevelToken = (id: string, level?: number): string => isGradedTrait(id) && level !== DEFAULT_NEW_TRAIT_LEVEL ? id + 'L' + (level ?? 5) : id;
+
+/** 新输入列表统一归一/取最高。未写等级为L1；历史记录的省略值仍由来源层按L5读取。 */
+export function narrativeTraitList(values: readonly string[], registry = traitRegistry()): { traits: string[]; traitLevels?: Record<string, number> } {
+  const levels = new Map<string, number>();
+  for (const value of values) {
+    const p = narrativeTraitLevel(value, registry);
+    if (p.kind === 'trait') levels.set(p.id, Math.max(levels.get(p.id) ?? 0, p.level ?? 5));
+  }
+  const entries = [...levels].filter(([id]) => isGradedTrait(id));
+  return { traits: [...levels.keys()], ...(entries.length ? { traitLevels: Object.fromEntries(entries) } : {}) };
+}

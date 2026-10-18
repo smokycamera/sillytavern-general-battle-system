@@ -21,7 +21,13 @@ export class NativeStore {
   private loads = 0;
   private pending?: RecoveryRecord;
   constructor(private host: MetadataPort, private journal: RecoveryJournal) {}
-  snapshot(): NarrativeSave { return structuredClone(this.current?.payload ?? {}); }
+  snapshot(keys?: readonly (keyof NarrativeSave)[], battleFields?: readonly string[]): NarrativeSave {
+    const save = this.current?.payload ?? {};
+    const selected: NarrativeSave = keys ? Object.fromEntries(keys.filter(key => key in save).map(key => [key, save[key]])) : { ...save };
+    if (battleFields && selected.battle) selected.battle = { kind: selected.battle.kind,
+      snap: Object.fromEntries(battleFields.filter(key => key in selected.battle!.snap).map(key => [key, selected.battle!.snap[key]])) };
+    return structuredClone(selected);
+  }
   /** The current head as of this call, copied on first read; heads are replaced on commit, never edited in place. */
   snapshotLater(): () => NarrativeSave { const payload = this.current?.payload; let copy: NarrativeSave | undefined; return () => copy ??= structuredClone(payload ?? {}); }
   envelope(): NativeEnvelope | undefined { return structuredClone(this.current); }

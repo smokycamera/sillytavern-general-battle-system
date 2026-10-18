@@ -1,3 +1,7 @@
+export { hasNaturalArmor, equipmentLoad, humanEncumbered, equipmentCapacity, equipmentBurden, overloadPenalty } from './equipment-load.js';
+import { hasNaturalArmor, equipmentLoad, equipmentCapacity, equipmentBurden, overloadPenalty, type BurdenUnit } from './equipment-load.js';
+import { isArmsV2 } from './arms-model.js';
+import { combatHostile } from './battle-control.js';
 import type { BodyKind, Combatant, DamageChannel } from './types.js';
 
 /** 实际身体统一决定结构与装备容量；体量特质只是这些事实的投影。 */
@@ -7,28 +11,13 @@ export const BODY: Record<BodyKind, { hp: number; strength: number; capacity: nu
   vehicle: { hp: 6, strength: 1, capacity: 24, movement: 3, protection: { kinetic: 0, thermal: 0, arcane: 0 } },
   giant: { hp: 10, strength: 1.8, capacity: 24, movement: 2, protection: { kinetic: 2, thermal: 1, arcane: 0 } },
 };
-type EquippedLoad = Pick<Combatant, 'weapon' | 'sidearm' | 'armor' | 'shield' | 'accessories'> & Partial<Pick<Combatant, 'rulesVersion' | 'traits' | 'traitSources' | 'gear'>>;
-/** 天生护甲（炼体、兽皮、鳞片、甲壳）：护甲就是身体，只看本身特质与仍有效的来源，装备授予不算。 */
-export function hasNaturalArmor(unit: Partial<Pick<Combatant, 'rulesVersion' | 'traits' | 'traitSources'>>): boolean {
-  return unit.rulesVersion === 'v2' && (!!unit.traits?.includes('natural-armor') || !!unit.traitSources?.some((s) => !s.revoked && s.kind !== 'equipment'
-    && s.traitIds.includes('natural-armor') && (s.duration.kind === 'permanent' || (s.remaining ?? 0) > 0)));
-}
 /** 产生护甲减益（重甲先攻与移动惩罚、载具重装减速）的护甲档位；天生护甲没有这些减益。轻装前提与防护仍按实际档位。 */
 export function armorBurdenTier(unit: Pick<Combatant, 'armor'> & Partial<Pick<Combatant, 'rulesVersion' | 'traits' | 'traitSources'>>): number {
   return hasNaturalArmor(unit) ? 0 : unit.armor?.tier ?? 0;
 }
-/** 主副武器、护甲、盾和两个配件共同占用身体容量。 */
-export function equipmentLoad(unit: EquippedLoad): number {
-  return (unit.weapon?.load ?? 0) + (unit.sidearm?.load ?? 0) + (hasNaturalArmor(unit) ? 0 : unit.armor?.load ?? 0) + (unit.shield?.load ?? 0)
-    + Object.values(unit.accessories ?? {}).reduce((sum, item) => sum + (item?.load ?? 0), 0) + (unit.gear ?? []).reduce((sum, item) => sum + item.load, 0);
-}
-/** 实时从实际配装推导，卸装/改变身体后不残留状态，也不改写基础属性。 */
-export function humanEncumbered(unit: EquippedLoad & Pick<Combatant, 'body' | 'rulesVersion'>): boolean {
-  return unit.rulesVersion === 'v2' && (unit.body ?? 'human') === 'human' && equipmentLoad(unit) >= 12;
-}
-export function equipmentLoadLabel(unit: EquippedLoad & Pick<Combatant, 'body' | 'rulesVersion'>): string {
-  const load = equipmentLoad(unit), capacity = BODY[unit.body ?? 'human'].capacity;
-  return `负重 ${load}/${capacity}${load > capacity ? ' · 超出容量' : ''}${humanEncumbered(unit) ? ' · 重载：移动−1、先攻−2（与护甲减益叠加，移动最低1）' : ''}`;
+export function equipmentLoadLabel(unit: BurdenUnit): string {
+  const load = equipmentLoad(unit), capacity = isArmsV2(unit.armsModel) ? equipmentCapacity({body:unit.body,level:unit.level!}) : BODY[unit.body ?? 'human'].capacity, burden = equipmentBurden(unit);
+  return '负重 '+load+'/'+capacity+'（'+Math.round(load/capacity*100)+'%）' + (burden === 2 ? ' · 超载：移动−2、先攻−4、命中和闪避−'+overloadPenalty(unit)+'，不能冲锋和突进' : burden === 1 ? ' · 重载：移动−1、先攻−2' : '');
 }
 export function bodyProfile(body: BodyKind = 'human', model?: Combatant['damageModel']) {
   return model === 'wounds-v2' && body === 'giant' ? { ...BODY.giant, hp: 6, strength: 3 } : BODY[body];
@@ -41,9 +30,9 @@ export function physicalTraitIds(unit: Combatant): string[] {
   return unit.body === 'giant' ? ['large', 'titan'] : unit.body === 'large' ? ['large'] : [];
 }
 /** 直射高度只比较实际体型；载具按大型，骑乘至少大型，不改变践踏、生命或负重。 */
-export function canShootOverAlly(attacker: Combatant, ally: Combatant): boolean {
+export function canShootOverAlly(attacker: Combatant, ally: Combatant, units: readonly Combatant[] = [attacker,ally]): boolean {
   const height = (unit: Combatant) => Math.max(unit.mount ? 2 : 1, { human: 1, large: 2, vehicle: 2, giant: 3 }[unit.body ?? 'human']);
-  return ally.side === attacker.side && height(attacker) > height(ally);
+  return !combatHostile(attacker,ally,units) && height(attacker) > height(ally);
 }
 export function bodyMovement(unit: Combatant): number {
   const body = unit.body ?? 'human';

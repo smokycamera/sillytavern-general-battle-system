@@ -2,17 +2,19 @@ import { validateEnhancements, enhancementLabel, type Enhancements, type BonusSt
 import { recoveryCapacity } from './recovery.js';
 import { equipmentLoad } from './body.js';
 import { hasMemberHealth, memberHealth, memberHealthMax } from './member-health.js';
-import { diceAvg } from './data/weapons.js';
+import { diceAvg, SHIELD_CLASSES, type ShieldClass } from './data/weapons.js';
 import type { Ability, Armor, BodyKind, Combatant, EffectOp, ItemRecipe, Weapon } from './types.js';
 import { BODY, compileArmor, compileWeapon, equipmentRecipe, type EquipmentContext } from './gen/equipment.js';
 import { compileSkill } from './skill-catalog.js';
 import { upgradeCombatSkills } from './skill-upgrade.js';
-import { SKILL_MODEL } from './skill-model.js';
+import { PHASE3_SKILL_MODEL } from './skill-model.js';
 import { parseSkillMechanism, skillMechanismFromId, skillMechanismId, skillMechanismName } from './data/skill-mechanisms.js';
 import { TRAITS, traitRegistry, isGradedTrait, validTraitLevel } from './data/traits.js';
 import { itemsV15 } from './item-model.js';
 import { healingYield, isCohort, personnel } from './combat-model.js';
 import { resourceRound } from './resources.js';
+import { TRAIT_LEVEL_MODEL, PHASE2_TRAIT_LEVEL_MODEL } from './trait-level-model.js';
+import { TERRAIN_GRADED_TRAITS, P2_GRADED_TRAITS, TRAIT_LEVEL_ALIASES, canonicalTraitId, gradedTraitCost } from './trait-parameters.js';
 
 /**
  * 道具 = 形态 × 效果 × 等级。
@@ -27,9 +29,11 @@ export const ITEM_FORM_NAMES: Readonly<Record<ItemForm, string>> = { single: '�
 export const ITEM_VERSION = 'items-v1' as const;
 export interface ItemTraitGrant { id: string; level?: number }
 export interface ItemPassive { traits: ItemTraitGrant[]; bonuses?: Enhancements }
-/** 道具实物的冻结配方；有 legacy 的是旧版药剂与护符转换来的，保留原效果、不受佩戴预算限制。 */
+/** 道具实物的冻结配方；有 legacy 的是旧版药剂与护符转换来的，保留原效果、冻结原参数。 */
 export interface ItemEffectRecipe {
   version: typeof ITEM_VERSION; form: ItemForm; power: number; seed: string;
+  /** 缺省是历史预算和历史非分级授予；读取时不得套新价格。 */
+  traitBudgetModel?: typeof TRAIT_LEVEL_MODEL | typeof PHASE2_TRAIT_LEVEL_MODEL;
   /** 一次性、充能：通用技能机制 id。 */
   active?: string;
   /** 佩戴：授予的特质；专精的等级就是道具等级。 */
@@ -53,7 +57,7 @@ type ItemSpecificationBase = { bonuses?: Enhancements; power: number; quality?: 
 export type ItemSpecification = ItemSpecificationBase & (
   | { kind: 'weapon'; mechanism: string; enchantment?: 'none' | 'thermal' | 'arcane'; stabilized?: boolean }
   | { kind: 'armor'; tier: Armor['tier']; profile?: ItemRecipe['protectionProfile'] }
-  | { kind: 'shield' }
+  | { kind: 'shield'; mechanism?: ShieldClass }
   | { kind: 'item'; form: ItemForm; active?: string; traits?: ItemTraitGrant[]; legacy?: string }
 );
 export type ItemMechanics =
@@ -73,8 +77,8 @@ export interface CarriedItem {
   action?: Ability;
 }
 
-// ---------- 佩戴预算 ----------
-/** 强力特质占 6 点，专精占 ⌈L/2⌉ 点，其余特质 3 点；正向修正每点 1 点，负面修正不返还。 */
+// ---------- 特质授予与效果权重（不限制佩戴品总点数） ----------
+/** 旧强力特质占 6 点，原五项专精占 ⌈L/2⌉ 点，P1按锚点插值，其余特质3点；正向修正每点 1 点，负面修正不返还。 */
 export const STRONG_TRAITS: readonly string[] = ['flying', 'terror', 'guardian-greater', 'regen', 'indomitable', 'steadfast', 'ap-master'];
 const BODY_TRAITS = new Set(['natural-armor', 'inorganic']);
 /** 佩戴道具可以授予的特质：外部来源已接通、未停用、不由身体或装备派生，且不是身体本身的特质。 */
@@ -82,12 +86,13 @@ export function wornTraitAllowed(id: string): boolean {
   const trait = traitRegistry().get(id);
   return !!trait?.v2SourceReady && !trait.legacy && !trait.derived && !BODY_TRAITS.has(id);
 }
-export const WORN_TRAITS: readonly string[] = TRAITS.filter((t) => wornTraitAllowed(t.id)).map((t) => t.id);
-export function traitPoints(grant: ItemTraitGrant, power: number): number {
-  return isGradedTrait(grant.id) ? Math.ceil((grant.level ?? power) / 2) : STRONG_TRAITS.includes(grant.id) ? 6 : 3;
+export const WORN_TRAITS: readonly string[] = TRAITS.filter((t) => wornTraitAllowed(t.id) && !TRAIT_LEVEL_ALIASES[t.id]).map((t) => t.id);
+export function traitPoints(grant: ItemTraitGrant, power: number, modern: boolean | 'p1' = true): number {
+  return modern && isGradedTrait(canonicalTraitId(grant.id)) && (modern !== 'p1' || !P2_GRADED_TRAITS.includes(canonicalTraitId(grant.id))) ? gradedTraitCost(grant.id, grant.level ?? power)
+    : TERRAIN_GRADED_TRAITS.includes(grant.id) ? Math.ceil((grant.level ?? power) / 2) : STRONG_TRAITS.includes(grant.id) ? 6 : 3;
 }
-export function passiveCost(passive: ItemPassive, power: number): number {
-  return passive.traits.reduce((sum, grant) => sum + traitPoints(grant, power), 0)
+export function passiveCost(passive: ItemPassive, power: number, modern: boolean | 'p1' = true): number {
+  return passive.traits.reduce((sum, grant) => sum + traitPoints(grant, power, modern), 0)
     + Object.values(passive.bonuses ?? {}).reduce((sum, points) => sum + Math.max(0, points ?? 0), 0);
 }
 
@@ -109,13 +114,13 @@ export function chargedUses(a: Ability): number {
 function templateHost(ability: Ability, power: number): Combatant {
   return { id: 'item', name: '道具', side: 'ally', scale: 'hero', level: power, tags: [], base: { atk: 0, def: 0, spd: 0, hpMax: 1 }, hp: 1, conditions: [],
     abilities: [ability], abilityState: [], resources: {}, traits: [], engagedWith: [], status: 'ready', fatigue: 0,
-    rulesVersion: 'v2', damageModel: 'wounds-v2', combatModel: 'cohort-v2', skillModel: SKILL_MODEL };
+    rulesVersion: 'v2', damageModel: 'wounds-v2', combatModel: 'cohort-v2', skillModel: PHASE3_SKILL_MODEL };
 }
 /** 与已学技能走同一条编译与入场升级路径，再改成道具：不耗精力、单独计冷却、默认非魔法。 */
 export function itemAbilityTemplate(id: string, power: number, bonuses: Enhancements | undefined, form: 'single' | 'charged', name = '道具'): Ability {
   const mechanism = skillMechanismFromId(id);
   if (!mechanism) throw new Error('未知或矛盾的道具效果');
-  const host = templateHost(compileSkill({ id, name, bonuses }, power, 'item', SKILL_MODEL), power);
+  const host = templateHost(compileSkill({ id, name, bonuses }, power, 'item', PHASE3_SKILL_MODEL), power);
   upgradeCombatSkills(host);
   const a = host.abilities[0]!;
   a.id = 'item'; delete a.sourceId; delete a.cost; delete a.cooldownGroup;
@@ -135,17 +140,23 @@ function integerPower(power: number): number {
   if (!Number.isSafeInteger(power) || power < 1 || power > 10) throw new Error('道具等级必须为L1–L10整数');
   return power;
 }
-export function normalizeTraitGrants(traits: readonly ItemTraitGrant[], power: number, legacy = false): ItemTraitGrant[] {
+export function normalizeTraitGrants(traits: readonly ItemTraitGrant[], power: number, legacy = false, modern: boolean | 'p1' = true): ItemTraitGrant[] {
   const ids = new Set<string>();
-  return traits.map((grant) => {
+  const normalized = traits.map((input) => {
+    const alias = modern && !(modern === 'p1' && input?.id === 'terror') ? TRAIT_LEVEL_ALIASES[input?.id] : undefined;
+    const grant = alias ? { id: alias.id, level: input.level ?? alias.level } : input;
     if (!grant || typeof grant.id !== 'string' || !(legacy ? traitRegistry().get(grant.id)?.v2SourceReady : wornTraitAllowed(grant.id))) throw new Error('佩戴道具不能授予这个特质：' + (traitRegistry().get(grant?.id)?.name ?? grant?.id));
-    if (ids.has(grant.id)) throw new Error('同一道具重复授予特质：' + traitRegistry().get(grant.id)?.name);
+    if (!modern && ids.has(grant.id)) throw new Error('同一道具重复授予特质：' + traitRegistry().get(grant.id)?.name);
     ids.add(grant.id);
-    if (!isGradedTrait(grant.id)) { if (grant.level !== undefined) throw new Error('只有五项专精可以带等级'); return { id: grant.id }; }
+    if (!(modern ? isGradedTrait(grant.id) && (modern !== 'p1' || !P2_GRADED_TRAITS.includes(grant.id)) : TERRAIN_GRADED_TRAITS.includes(grant.id))) { if (grant.level !== undefined) throw new Error('该特质尚未完成分级，不能带等级'); return { id: grant.id }; }
     const level = grant.level ?? power;
     if (!validTraitLevel(level)) throw new Error('专精等级须为L1–L10整数');
     return { id: grant.id, level };
   });
+  if (!modern) return normalized;
+  const byId = new Map<string, ItemTraitGrant>();
+  for (const grant of normalized) if (!byId.has(grant.id) || (grant.level ?? 5) > (byId.get(grant.id)!.level ?? 5)) byId.set(grant.id, grant);
+  return [...byId.values()];
 }
 function compileItemValue(spec: Extract<ItemSpecification, { kind: 'item' }>, seed: string, name?: string): ItemValue {
   const power = integerPower(spec.power);
@@ -153,13 +164,11 @@ function compileItemValue(spec: Extract<ItemSpecification, { kind: 'item' }>, se
   if (spec.form === 'worn') {
     if (spec.active) throw new Error('佩戴道具写特质或修正；主动效果请写成一次性或充能道具');
     validateEnhancements(spec.bonuses, 'gear');
-    const traits = normalizeTraitGrants(spec.traits ?? [], power, !!spec.legacy);
+    const traits = normalizeTraitGrants(spec.traits ?? [], power, !!spec.legacy, !spec.legacy);
     const bonuses = spec.bonuses && Object.values(spec.bonuses).some((v) => v) ? Object.fromEntries(Object.entries(spec.bonuses).filter(([, v]) => v)) as Enhancements : undefined;
     if (!traits.length && !bonuses) throw new Error('佩戴道具需要特质或单位修正');
     const passive: ItemPassive = { traits, ...(bonuses ? { bonuses } : {}) };
-    const need = passiveCost(passive, power);
-    if (!spec.legacy && need > power) throw new Error(`佩戴效果需要${need}点，L${power}只有${power}点（普通特质3点、强力特质6点、专精占等级的一半，正向修正每点1点）`);
-    return { recipe: { version: ITEM_VERSION, form: 'worn', power, seed, ...(traits.length ? { traits } : {}), ...(bonuses ? { bonuses } : {}), ...(spec.legacy ? { legacy: spec.legacy } : {}) }, passive };
+    return { recipe: { version: ITEM_VERSION, form: 'worn', power, seed, ...(!spec.legacy ? { traitBudgetModel: PHASE2_TRAIT_LEVEL_MODEL } : {}), ...(traits.length ? { traits } : {}), ...(bonuses ? { bonuses } : {}), ...(spec.legacy ? { legacy: spec.legacy } : {}) }, passive };
   }
   if (!spec.active || spec.traits?.length) throw new Error('一次性与充能道具写技能机制，如buff治疗L3、物理范围投射L4');
   validateEnhancements(spec.bonuses, 'skill');
@@ -175,7 +184,7 @@ export function compileItem(spec: ItemSpecification, identity: Pick<EquipmentCon
   switch (spec.kind) {
     case 'weapon': return { kind: 'weapon', value: compileWeapon(spec, context) };
     case 'armor': return { kind: 'armor', value: compileArmor(spec, context) };
-    case 'shield': return { kind: 'shield', value: { id: identity.id, name: identity.name ?? '盾牌', load: 2, recipe: equipmentRecipe('shield', spec.power, context) } };
+    case 'shield': return { kind: 'shield', value: { id: identity.id, name: identity.name ?? '盾牌', load: SHIELD_CLASSES[spec.mechanism ?? 'shield'].load, recipe: equipmentRecipe(spec.mechanism ?? 'shield', spec.power, context) } };
     default: throw new Error('不支持的物品用途');
   }
 }
@@ -209,7 +218,7 @@ export function migrateLegacyItem(mechanics: LegacyItemMechanics, name: string, 
   }
   const kind = String(mechanics.value.recipe?.mechanism ?? '').replace(/^accessory:/, ''), power = mechanics.value.recipe?.power ?? 1;
   const trait = LEGACY_ACCESSORY_TRAITS[kind], skill = LEGACY_ACCESSORY_SKILLS[kind];
-  if (trait) return compileItem({ kind: 'item', form: 'worn', power, traits: [{ id: trait, ...(isGradedTrait(trait) ? { level: 5 } : {}) }], legacy: 'accessory:' + kind }, { id: seed, name, seed: mechanics.value.recipe?.seed || seed }) as Extract<ItemMechanics, { kind: 'item' }>;
+  if (trait) return compileItem({ kind: 'item', form: 'worn', power, traits: [{ id: trait, ...(TERRAIN_GRADED_TRAITS.includes(trait) ? { level: 5 } : {}) }], legacy: 'accessory:' + kind }, { id: seed, name, seed: mechanics.value.recipe?.seed || seed }) as Extract<ItemMechanics, { kind: 'item' }>;
   if (skill) return compileItem({ kind: 'item', form: 'charged', power, active: legacyMechanism(skill), legacy: 'accessory:' + kind }, { id: seed, name, seed: mechanics.value.recipe?.seed || seed }) as Extract<ItemMechanics, { kind: 'item' }>;
   throw new Error('配件用途未知，不能转换：' + kind);
 }
@@ -220,7 +229,7 @@ function itemAction(id: string, name: string, template: Ability): Ability {
   return { ...structuredClone(template), id: 'item:' + id, itemSourceId: id, name: '使用' + name, cost: { resource: 'item:' + id, amount: 1 }, cooldownGroup: 'item:' + id };
 }
 export function carriedItemAbility(item: CarriedItem): Ability {
-  if (!item.id || !Number.isSafeInteger(item.quantity) || item.quantity < 1 || item.quantity > 9999) throw new Error('携行物品规格损坏');
+  if (!item.id || !Number.isSafeInteger(item.quantity) || item.quantity < 1) throw new Error('携行物品规格损坏');
   if (item.action) return structuredClone(item.action);
   const m = item.mechanics;
   if (m.kind !== 'item' || m.value.recipe.form !== 'single' || !m.value.ability) throw new Error('只有一次性道具可以携带进战斗使用');
@@ -277,8 +286,7 @@ export function equipmentReason(unit: Pick<Combatant, 'body' | 'scale' | 'weapon
     if (weapon?.recipe?.stabilized && unit.body !== 'vehicle') return '稳定车载武器需要实际车辆平台，不能由步行或骑乘单位装备';
   }
   if (new Set((unit.gear ?? []).map((item) => item.id)).size !== (unit.gear ?? []).length) return '同一件道具不能重复装备';
-  const load = equipmentLoad(unit);
-  return load > body.capacity ? `负重 ${load} 超过身体容量 ${body.capacity}` : undefined;
+  return undefined;
 }
 
 const definition = (a: Ability | undefined) => a ? JSON.stringify({ ...a, name: undefined, desc: undefined, category: undefined }, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
@@ -288,15 +296,15 @@ const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 export function validateItemValue(value: unknown): asserts value is ItemValue {
   if (!object(value) || !object(value.recipe)) throw new Error('道具配方损坏');
   const r = value.recipe;
+  if (r.traitBudgetModel !== undefined && r.traitBudgetModel !== TRAIT_LEVEL_MODEL && r.traitBudgetModel !== PHASE2_TRAIT_LEVEL_MODEL) throw new Error('佩戴特质等级版本损坏');
   if (r.version !== ITEM_VERSION || !['single', 'charged', 'worn'].includes(String(r.form)) || !Number.isSafeInteger(r.power) || Number(r.power) < 1 || Number(r.power) > 10
     || typeof r.seed !== 'string' || !r.seed || r.legacy !== undefined && typeof r.legacy !== 'string') throw new Error('道具配方版本、形态或等级损坏');
   if (r.form === 'worn') {
     if (r.active !== undefined || value.ability !== undefined || !object(value.passive) || !Array.isArray(value.passive.traits)) throw new Error('佩戴道具的效果记录损坏');
     validateEnhancements(value.passive.bonuses as Enhancements | undefined, 'gear');
-    const traits = normalizeTraitGrants(value.passive.traits as ItemTraitGrant[], Number(r.power), !!r.legacy);
+    const traits = normalizeTraitGrants(value.passive.traits as ItemTraitGrant[], Number(r.power), !!r.legacy, r.traitBudgetModel === PHASE2_TRAIT_LEVEL_MODEL ? true : r.traitBudgetModel === TRAIT_LEVEL_MODEL ? 'p1' : false);
     if (JSON.stringify(traits) !== JSON.stringify(value.passive.traits) || JSON.stringify(r.traits ?? []) !== JSON.stringify(value.passive.traits)
       || JSON.stringify(r.bonuses ?? null) !== JSON.stringify(value.passive.bonuses ?? null)) throw new Error('佩戴道具的特质或修正与配方不一致');
-    if (!r.legacy && passiveCost(value.passive as unknown as ItemPassive, Number(r.power)) > Number(r.power)) throw new Error('佩戴道具超出等级预算');
     return;
   }
   if (typeof r.active !== 'string' || !skillMechanismFromId(r.active) || r.traits !== undefined || value.passive !== undefined) throw new Error('道具效果机制损坏');
@@ -337,7 +345,7 @@ export function validateGear(unit: Combatant): void {
 }
 
 // 战斗中的佩戴修正见 gear-bonuses.ts（被修正栈引用，保持为叶子模块）。
-export { gearBonuses, combatBonuses } from './gear-bonuses.js';
+export { gearBonuses, combatBonuses, wornItemBonuses, wornLevelScale } from './gear-bonuses.js';
 
 // ---------- V15 一次性道具的使用 ----------
 /** 能否用加速动作（非技能行动）使用：V15 只限喝、敷、注射类；旧规则所有携行物品都可以。 */
@@ -366,7 +374,7 @@ export function itemUseAbility(actor: Combatant, ability: Ability, target?: Comb
     const healing = ability.effects.reduce((sum, e) => e.op === 'heal' ? sum + (e.amount ?? 0) : sum, 0);
     if (healing > 0) {
       const required = Math.max(0, ...(healingTargets ?? [recipient]).map(affected =>
-        Math.ceil(recoveryCapacity(affected) / healingYield(actor, affected, healing, true))));
+        Math.ceil(recoveryCapacity(affected) / healingYield(actor, affected, healing, true, ability.effects.find(e => e.op === 'heal')?.power))));
       doses = Math.max(1, Math.min(doses, required));
     }
   }
@@ -376,7 +384,7 @@ export function itemUseAbility(actor: Combatant, ability: Ability, target?: Comb
   const scaled = structuredClone(ability);
   scaled.cost = { ...scaled.cost!, amount: doses }; scaled.itemDoses = doses;
   scaled.effects = scaled.effects.map((e): EffectOp => {
-    if (e.op === 'heal') return e.amount !== undefined ? { op: 'heal', amount: Math.max(1, Math.round(e.amount * (support ? doses : 1))) } : e;
+    if (e.op === 'heal') return e.amount !== undefined ? { ...e, amount: Math.max(1, e.amount * (support ? doses : 1)) } : e;
     if (e.op === 'condition') return { ...e, magnitude: (e.magnitude ?? 1) * share };
     if (!support) return e;
     if (e.op === 'barrier') return { ...e, amount: Math.max(1, Math.round(e.amount * doses)) };
@@ -409,7 +417,7 @@ export function itemEmergency(target: Combatant): boolean {
 
 /** 同一恢复语义供物品、战外事务和后续引擎动作使用；不处理资源扣费。 */
 export function healingAmount(target: Pick<Combatant, 'hp' | 'base' | 'scale' | 'status' | 'rulesVersion' | 'recoverableWounded'> & Partial<Pick<Combatant,'combatModel'|'formation'>>, amount: number): number {
-  if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('恢复量必须是正整数');
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('恢复预算必须是正有限数');
   if (target.scale !== 'hero' && !hasMemberHealth(target) && (target.rulesVersion !== 'v2' || !target.recoverableWounded)) throw new Error('群体恢复需要可恢复伤员记录，不能凭空生成兵员');
   if (target.status === 'dead' || target.hp <= 0 && target.status !== 'dying') throw new Error('普通治疗不能复活阵亡目标');
   if (!hasMemberHealth(target)&&target.hp >= target.base.hpMax) throw new Error('生命已满，无需消耗物品');

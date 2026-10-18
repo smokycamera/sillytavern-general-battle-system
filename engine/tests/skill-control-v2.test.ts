@@ -21,7 +21,7 @@ describe('有界技能控制与位移', () => {
     for (const mode of ['small', 'mass']) for (const roll of [1, 20]) {
       const a = unit('a', ['bp-binding']), b = unit('b'), combat = battle(mode, [a, b], roll), sp = a.resources.SP!, before = structuredClone(combat.toSnapshot());
       const preview = combat instanceof SmallBattle ? combat.getActionOptions(a.id).find((o) => o.id === a.abilities[0]!.id)!.targets![0]!.preview : combat.orderPreview({ unitId: a.id, type: 'ability', abilityId: a.abilities[0]!.id, targetId: b.id });
-      expect(preview?.effects?.join()).toContain('生效机会'); expect(combat.toSnapshot()).toEqual(before);
+      expect(preview?.effects?.join()).toContain('60%生效'); expect(combat.toSnapshot()).toEqual(before);
       if (combat instanceof MassBattle) combat.issue({ unitId: b.id, type: 'rank-back' });
       cast(combat, a, b); expect(a.resources.SP).toBe(sp - a.abilities[0]!.cost!.amount);
       if (combat instanceof SmallBattle) {

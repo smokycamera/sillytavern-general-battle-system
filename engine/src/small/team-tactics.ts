@@ -1,6 +1,7 @@
 /** Deterministic regional orders. Only friendly units, public terrain and observed enemies enter here. */
 import type { Combatant } from '../types.js';
 import type { CommanderProfile } from '../commander-profile.js';
+import { COMMAND_STYLES } from '../command-v2.js';
 import { activeTraitIds } from '../trait-sources.js';
 import { isAirborne } from '../aerial.js';
 import { isRangedWeapon } from '../loadout.js';
@@ -10,14 +11,16 @@ export interface RegionalOrder {
   role: 'front' | 'fire' | 'reserve' | 'core' | 'breach' | 'flank' | 'advance';
   goals: number[];
   breach?: number;
-  phase: 'intact' | 'breached' | 'core-threat' | 'advance';
+  /** 正文"驻守/占据"地点的防区。 */
+  hold?: boolean;
+  phase: 'intact' | 'breached' | 'core-threat' | 'advance' | 'sortie';
 }
 function hash(s: string): number { let n = 2166136261; for (const c of s) n = Math.imul(n ^ c.charCodeAt(0), 16777619); return n >>> 0; }
-export function regionalOrder(field: BattlefieldSpec, unit: Combatant, known: Combatant[], profile?: CommanderProfile): RegionalOrder | undefined {
+export function regionalOrder(field: BattlefieldSpec, unit: Combatant, known: Combatant[], profile?: CommanderProfile, commandV2 = false): RegionalOrder | undefined {
   const assigned=field.deploymentZones?.filter(z=>(z.unitId===unit.id||!z.unitId&&z.side===unit.side)&&['guards','occupies'].includes(z.relation??''))??[];
   if(assigned.length&&unit.pos!==undefined&&(!field.city?.core.some(p=>known.some(u=>u.side!==unit.side&&u.status==='ready'&&gridDistance(field,p,u.pos!)<=2)))) {
     const goals=[...new Set(assigned.flatMap(z=>z.cells))].filter(p=>!groundBlocked(field,p,unit));
-    if(goals.length)return {role:isRangedWeapon(unit.weapon)?'fire':'front',goals,phase:'intact'};
+    if(goals.length)return {role:isRangedWeapon(unit.weapon)?'fire':'front',goals,hold:true,phase:'intact'};
   }
   if (!field.layerVersion || !field.city?.defender || field.objective.kind !== 'control' || unit.pos === undefined) return;
   const city = field.city;
@@ -32,7 +35,8 @@ export function regionalOrder(field: BattlefieldSpec, unit: Combatant, known: Co
   const legal = (cells: number[]) => [...new Set(cells)].filter(p => !groundBlocked(field, p, unit));
   if (unit.side === city.defender) {
     const coreSlots = friends.length >= 5 ? Math.max(1, Math.round(friends.length * (style === 'core' ? .3 : .15))) : 0;
-    const reserveDefault = style === 'forward' ? 0 : ['depth', 'mobile'].includes(style) ? 3 : 2;
+    // V19 §3.1 预备档按风格表；V18 及以前保留原默认。
+    const reserveDefault = commandV2 ? COMMAND_STYLES[style].reserve : style === 'forward' ? 0 : ['depth', 'mobile'].includes(style) ? 3 : 2;
     const reserveFraction = (profile?.preferences?.reserve ?? reserveDefault) * .06 + .04;
     const reserves = friends.length >= 5 ? Math.min(friends.length - coreSlots - 1, Math.round(friends.length * reserveFraction)) : 0;
     const role = slot < coreSlots ? 'core' : slot < coreSlots + reserves ? 'reserve' : ranged ? 'fire' : 'front';

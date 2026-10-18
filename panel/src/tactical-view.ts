@@ -1,3 +1,4 @@
+import { activationControlDuration, controlPolicy } from '../../engine/src/battle-control.js';
 import { SCENE_NAMES } from '../../engine/src/small/map-design.js';
 import { movementStepCost, structureDisplayName,retreatCells,neighbors } from '../../engine/src/small/spatial.js';
 import { heightDescription,surfaceHeightAt,unitHeight } from '../../engine/src/small/height-map.js';
@@ -9,7 +10,7 @@ import { strengthDescription } from '../../engine/src/combat-model.js';
 import { participationText,memberHealthPanel } from './combat-model-view.js';
 import {hasMemberHealth} from '../../engine/src/member-health.js';
 import { difficultEngagementDescription } from '../../engine/src/exposure.js';
-import { renderBattleHighlights, traceOverlay, traceLocations, unitSymbol } from './battle-presentation.js';
+import { renderBattleHighlights, commandHeaderHtml, traceOverlay, traceLocations, unitSymbol } from './battle-presentation.js';
 import { weaponReloadKey, terrainName, landmarkAt, landmarkCells, cellLabel, gridDistance, inBounds, moraleLabel, isAirborne, activeTraitIds, postureLabel, concealmentLabel, worksLabel, entrenched, standardConditionMap, approx, type SmallBattle, type ActionOption, type ActionPreview, type BattlefieldSpec, type Combatant, type Terrain, TERRAIN_NAMES } from '../../engine/src/index.js';
 
 import { renderRoundFeedback } from './round-feedback.js';
@@ -18,6 +19,7 @@ import { spCapacity, fatigueLimit } from '../../engine/src/resources.js';
 import { battleAbilities, battleSkillChangeReason } from './battle-skills.js';
 import { hitChanceText, hitDamageText, hitDamageDetails } from './damage-preview.js';
 import { terrainLayer, signature } from './terrain-layer.js';
+import { withBattleReportQueries } from './battle-reports.js';
 
 export type MapZoom = 'fit' | 'large' | 'compact';
 export const MAP_ZOOM_LABELS: Record<MapZoom, string> = { fit: '适应', large: '放大', compact: '紧凑' };
@@ -29,38 +31,61 @@ function layoutNotes(field: BattlefieldSpec): string[] {
 }
 /** 仅在一次同步点选→渲染中复用；不能跨动作或异步保存缓存。 */
 export interface TacticalQuery { battle: SmallBattle; actor: Combatant; options: ActionOption[] }
+/** 面板持有的只读菜单缓存；事实操作、保存和恢复前必须 clear，不能供 AI 决策使用。 */
+export class TacticalQueryCache {
+  private battle?: SmallBattle;
+  private queries = new Map<string, TacticalQuery>();
+  private scene = new Map<string, unknown>();
+  clear(): void { this.battle = undefined; this.queries.clear(); this.scene.clear(); }
+  read<T>(battle: SmallBattle, key: string, query: () => T): T {
+    if (this.battle !== battle) { this.clear(); this.battle = battle; }
+    if (!this.scene.has(key)) this.scene.set(key, query());
+    return this.scene.get(key) as T;
+  }
+  get(battle: SmallBattle, actor: Combatant): ActionOption[] {
+    if (this.battle !== battle) { this.clear(); this.battle = battle; }
+    let query = this.queries.get(actor.id);
+    if (query?.actor !== actor) {
+      query = { battle, actor, options: battle.getActionOptions(actor.id) };
+      this.queries.set(actor.id, query);
+    }
+    return query.options;
+  }
+}
+export type TacticalQuerySource = TacticalQuery | TacticalQueryCache;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const terrainNames = TERRAIN_NAMES;
 const present = (u: Combatant) => !['dead', 'fled'].includes(u.status);
 
 /** 查看敌军不切换到敌军观测口径；所有动作始终属于我方单位。 */
-export function tacticalSelection(battle: SmallBattle, view: TacticalView, query?: TacticalQuery) {
-  const visible = battle.visibleCombatants('ally').filter(present);
+export function tacticalSelection(battle: SmallBattle, view: TacticalView, query?: TacticalQuerySource) {
+  const visible = query instanceof TacticalQueryCache ? query.read(battle, 'visible', () => battle.visibleCombatants('ally').filter(present)) : battle.visibleCombatants('ally').filter(present);
   const actor = visible.find((u) => u.id === view.selectedId && u.side === 'ally')
     ?? visible.find((u) => u.id === battle.active?.id && u.side === 'ally')
     ?? visible.find((u) => u.side === 'ally' && u.status === 'ready');
-  const allOptions = actor ? query?.battle === battle && query.actor === actor ? query.options : battle.getActionOptions(actor.id) : [];
+  const allOptions = actor ? query instanceof TacticalQueryCache ? query.get(battle, actor)
+    : query?.battle === battle && query.actor === actor ? query.options : battle.getActionOptions(actor.id) : [];
   const abilityIds = new Set(actor ? battleAbilities(actor).map(a => a.id) : []);
   const options = allOptions.filter((o) => o.kind === 'ability' ? abilityIds.has(o.id) : ['weapon', 'charge'].includes(o.kind));
   const option = options.find((o) => o.id === view.mode) ?? options.find((o) => o.id === 'weapon');
   const target = view.targetId !== undefined ? option?.targets?.find((t) => t.targetId === view.targetId)
     : option?.targets?.find((t) => t.enabled) ?? option?.targets?.[0];
-  const canControl = !!actor && actor.id === battle.active?.id && actor.status === 'ready' && !battle.isOver();
-  return { visible, actor, allOptions, options, option, target, canControl, query: actor ? { battle, actor, options: allOptions } : undefined };
+  const canControl = !!actor && !['charmed','confused'].includes(controlPolicy(actor)??'') && actor.id === battle.active?.id && actor.status === 'ready' && !battle.isOver();
+  return { visible, actor, allOptions, options, option, target, canControl, query: query instanceof TacticalQueryCache ? query : actor ? { battle, actor, options: allOptions } : undefined };
 }
 
 /** 只改短暂选择，不提交存档、动作或随机数。友方治疗目标优先于切换行动者。
  *  敌我不共格是阻挡设计：点选敌人格即视为选定攻击目标，不做移动落点。 */
-export function selectTacticalElement(battle: SmallBattle, view: TacticalView, input: { cell?: number; unitId?: string; mode?: string; actor?: boolean }): TacticalQuery | undefined {
+export function selectTacticalElement(battle: SmallBattle, view: TacticalView, input: { cell?: number; unitId?: string; mode?: string; actor?: boolean }, query?: TacticalQuerySource): TacticalQuerySource | undefined {
   const field = battle.battlefield;
   if (!field) return;
   if (input.mode !== undefined) {
     // Remember even the initially displayed target before changing the action.
-    const selection = tacticalSelection(battle, view);
+    const selection = tacticalSelection(battle, view, query);
     view.targetId ??= selection.target?.targetId;
     view.mode = input.mode; view.cell = undefined; return selection.query;
   }
-  const selection = tacticalSelection(battle, view);
+  const selection = tacticalSelection(battle, view, query);
   const cell = input.cell ?? selection.visible.find((u) => u.id === input.unitId)?.pos;
   if (cell === undefined || !inBounds(field, cell)) return selection.query;
   view.inspectedCell = cell; view.cell = undefined;
@@ -68,7 +93,7 @@ export function selectTacticalElement(battle: SmallBattle, view: TacticalView, i
   const active = occupants.find(u => u.side === 'ally' && u.id === battle.active?.id);
   // Returning from another unit's inspection takes precedence over its move or healing targets.
   if (active && selection.actor?.id !== active.id && (!input.unitId || input.unitId === active.id)) {
-    view.selectedId = active.id; view.targetId = undefined; return;
+    view.selectedId = active.id; view.targetId = undefined; return query instanceof TacticalQueryCache ? query : undefined;
   }
   if (selection.option?.targets?.some(t=>t.targetId==='cell:'+cell) && !input.actor) { view.targetId='cell:'+cell; return selection.query; }
   const unit = input.unitId ? occupants.find((u) => u.id === input.unitId)
@@ -179,19 +204,20 @@ function actionPreview(battle: SmallBattle, preview: ActionPreview | undefined, 
     : p?.healing !== undefined ? `预计恢复 ${p.healing}${target?.scale === 'hero'||target&&hasMemberHealth(target) ? '生命' : '名可救伤兵'}`
     : p?.expectedDamage !== undefined ? `<div class="preview-numbers"><span>至少命中一次<b>${hitChanceText(p)}</b></span><span>命中后伤害<b>${hitDamageText(p)}<small>${unit}</small></b></span></div>`
     : '查看目标和效果后确认';
-  const resistance = p?.penetrationFactor !== undefined
-    ? `<div class="penetration-preview ${p.penetrationFactor === 0 ? 'grid-reason' : ''}">${p.channel ? { kinetic: '物理', thermal: '热能', arcane: '魔法' }[p.channel] : ''}穿透 ${p.penetration} 对防护 ${p.resistance} · ${p.penetrationFactor === 0 ? '无法穿透，不造成生命或人数损失' : (p.armorFactor===undefined?'穿透通过':'防护后保留') + Math.round(p.penetrationFactor * 100) + '%'}${p.shieldFactor!==undefined&&p.shieldFactor<1?' · 盾牌掩护减伤'+Math.round((1-p.shieldFactor)*100)+'%':''}${(p.armorScale??1)>1?' · 装甲等效耐久×'+Number(p.armorScale!.toFixed(2)):''}</div>` : '';
+  // 主区只在打不穿时提醒；穿透与防护的数字放进伤害详情。
+  const resistance = p?.penetrationFactor === 0 ? '<div class="penetration-preview grid-reason">无法穿透，不造成伤害</div>' : '';
+  const resistanceDetail = p?.penetrationFactor ? `<p>${p.channel ? { kinetic: '物理', thermal: '热能', arcane: '魔法' }[p.channel] : ''}穿透 ${p.penetration} 对防护 ${p.resistance}，保留${Math.round(p.penetrationFactor * 100)}%${p.shieldFactor!==undefined&&p.shieldFactor<1?'，盾牌掩护减伤'+Math.round((1-p.shieldFactor)*100)+'%':''}</p>` : '';
   const cost = option?.preview?.resource;
   // V15 编队齐用按件数：对所选目标本次实际消耗的件数（英雄与旧规则为 1 件）。
   const actor = battle.active, item = option?.kind === 'ability' && actor ? actor.abilities.find((a) => a.id === option.id && a.itemSourceId) : undefined;
   const itemCost = item && actor ? battle.itemUse(actor, item, target ?? (item.target === 'self' ? actor : undefined)).ability.cost?.amount : undefined;
-  return `<div class="action-preview" aria-live="polite">${target ? '<div class="preview-target">' + esc(target.name) + ' · ' + strengthDescription(target) + '</div>'+memberHealthPanel(target) : ''}${primary}${resistance}${p?.participants!==undefined ? `<p class="sub">${participationText(p)}</p>` : ''}
+  return `<div class="action-preview" aria-live="polite">${target ? '<div class="preview-target">' + esc(target.name) + ' · ' + strengthDescription(target) + '</div>'+(target.formation?.health?.some(g => g.hp < (target.formation?.memberHp ?? 0)) ? memberHealthPanel(target) : '') : ''}${primary}${resistance}${participationText(p) ? `<p class="sub">${participationText(p)}</p>` : ''}
     ${p?.effects?.length ? '<div class="preview-effects">' + p.effects.map(esc).join('；') + '</div>' : ''}
     ${p?.areaTargets?.length ? '<div class="area-preview">实际波及：' + p.areaTargets.map(esc).join('、') + (p.areaPreviews?.length ? '<div>' + p.areaPreviews.map((hit) => { const affected = battle.visibleCombatants('ally').find((u) => u.id === hit.targetId); return affected ? '<div>' + esc(affected.name) + ' · 至少命中一次' + hitChanceText(hit) + ' · 命中后伤害' + hitDamageText(hit) + (affected.scale === 'hero'||hasMemberHealth(affected) ? '生命' : '人') + '</div>' : ''; }).join('') + '</div>' : '') + '</div>' : ''}
     ${p?.onHit ? '<div>' + esc(p.onHit) + '</div>' : ''}
     <div class="preview-cost">主行动1${cost ? item ? ' · 道具 本次' + (itemCost ?? cost.cost) + '件，剩余' + cost.available + '件' : ' · ' + esc(cost.name === 'SP' ? '战技点' : cost.name) + ' ' + cost.cost + '/' + cost.available : ''}${p?.movementCost ? ' · 另用移动' + p.movementCost + (p.lands ? '，先降落接敌' : '') : ''}</div>
     ${p?.fallDamage !== undefined ? `<div>${p.fallChance !== undefined && p.fallChance < 1 ? '迫降概率' + Math.round(p.fallChance * 100) + '%' : '将迫降'}，额外坠落损失至多${p.fallDamage}${p.forcedExit ? ' · 已知范围无落点，预计撤出' : p.landingCell !== undefined ? ' · 预计落点' + cellLabel(battle.battlefield!, p.landingCell) : ''}；未发现占位可能改变落点</div>` : ''}
-    ${p?.expectedDamage !== undefined ? `<details data-detail-id="grid-calculation"><summary>伤害详情</summary><p>${p.weaponName ? '使用' + esc(p.weaponName) + '。' : ''}${hitDamageDetails(p, unit)}</p>${p.participants!==undefined?'<p>'+esc(participationText(p,true))+'</p>':''}${p.attackScore !== undefined ? '<p>攻击合计' + p.attackScore + '，防御合计' + p.defenseScore + '。</p><p>攻击修正：' + esc(p.attackModifiers || '无') + '</p><p>防御修正：' + esc(p.defenseModifiers || '无') + '</p>' : ''}</details>` : ''}
+    ${p?.expectedDamage !== undefined ? `<details data-detail-id="grid-calculation"><summary>伤害详情</summary><p>${p.weaponName ? '使用' + esc(p.weaponName) + '。' : ''}${hitDamageDetails(p, unit)}</p>${resistanceDetail}${participationText(p,true)?'<p>'+esc(participationText(p,true))+'</p>':''}${p.attackScore !== undefined ? '<p>攻击合计' + p.attackScore + '，防御合计' + p.defenseScore + '。</p><p>攻击修正：' + esc(p.attackModifiers || '无') + '</p><p>防御修正：' + esc(p.defenseModifiers || '无') + '</p>' : ''}</details>` : ''}
   </div>`;
 }
 
@@ -211,17 +237,18 @@ function gridPiece(battle: SmallBattle, u: Combatant, isActor: boolean, ai = fal
   return `<span class="grid-piece ${side} ${u.scale === 'hero' ? 'hero' : 'company'} ${health}${u.status !== 'ready' ? ' status-' + u.status : ''}${isActor ? ' actor' : ''}${isAirborne(u) ? ' airborne' : ''}">`
     + `<span class="grid-token">${unitSymbol(u)}${badges.length ? '<span class="grid-badges">' + badges.map(b => '<i' + (b === '空' ? ' class="flight-badge"' : '') + '>' + b + '</i>').join('') + '</span>' : ''}</span>`
     + `<span class="grid-piece-name"><span>${esc(name.slice(0, -2).join(''))}</span><span>${esc(name.slice(-2).join(''))}</span></span>`
-    + `<span class="grid-hp"><span class="grid-affiliation">${u.side === 'ally' ? '我' : u.side === 'enemy' ? '敌' : '中'}</span><b>${u.hp}</b>/${u.base.hpMax}${status ? '<span class="grid-status"> ' + status + '</span>' : ''}</span></span>`;
+    + `<span class="grid-hp"><span class="grid-affiliation">${u.side === 'ally' ? '我' : u.side === 'enemy' ? '敌' : '三'}</span><b>${u.hp}</b>/${u.base.hpMax}${status ? '<span class="grid-status"> ' + status + '</span>' : ''}</span></span>`;
 }
 
-/** 面板算好的AI托管状态：哪些我方单位轮到时交给AI，以及「托管我方」和全自动开关。 */
+/** 面板算好的AI托管状态：哪些我方单位轮到时交给AI，以及「除主控」和全自动开关。 */
 export interface TacticalAutomation { aiUnitIds: ReadonlySet<string>; allAllies: boolean; fullAuto: boolean }
 const MANUAL: TacticalAutomation = { aiUnitIds: new Set(), allAllies: false, fullAuto: false };
 
-export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, automation: TacticalAutomation = MANUAL, query?: TacticalQuery): string {
-  return battle.withReadOnlyQueries(() => renderTacticalContent(battle, view, automation, query));
+export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, automation: TacticalAutomation = MANUAL, query?: TacticalQuerySource): string {
+  return withBattleReportQueries(() => battle.withReadOnlyQueries(() => renderTacticalContent(battle, view, automation, query)));
 }
-function renderTacticalContent(battle: SmallBattle, view: TacticalView, automation: TacticalAutomation, query?: TacticalQuery): string {
+function renderTacticalContent(battle: SmallBattle, view: TacticalView, automation: TacticalAutomation, query?: TacticalQuerySource): string {
+  const read = <T>(key: string, get: () => T): T => query instanceof TacticalQueryCache ? query.read(battle, key, get) : get();
   const field = battle.battlefield!, s = tacticalSelection(battle, view, query);
   const { visible, actor, options, option, target, canControl } = s;
   const targetMismatch = view.targetId !== undefined && !!option?.targets?.length && !target;
@@ -230,19 +257,19 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
   const activeLabel = active?.name ?? (battle.active?.side === 'enemy' ? '尚未发现的敌方单位' : '未定位单位');
   const autoToggle = `<label class="fixed-auto" title="敌我全部交给AI连续推进，取消勾选即暂停"><input type="checkbox" data-role="full-auto-battle" ${automation.fullAuto ? 'checked' : ''} ${over ? 'disabled' : ''}>全自动</label>`;
   const actorAi = !!actor && automation.aiUnitIds.has(actor.id);
-  // 三档托管范围由小到大排在一起：此单位 → 我方 → 全自动；「代打本次」只做一次，不改设置。
+  // 此单位可单独设置（包括主控）；除主控保留主控手动；全自动含主控连续推进。
   const aiTakeover = `<div class="ai-takeover" role="group" aria-label="AI托管"><span>AI托管</span>`
     + `<label title="${actor ? esc(actor.name) + '之后每次轮到都由AI行动，取消勾选即收回手动' : '没有可托管的我方单位'}"><input type="checkbox" data-role="ally-ai" data-id="${esc(actor?.id ?? '')}" ${actorAi ? 'checked' : ''} ${actor && !over ? '' : 'disabled'}>此单位</label>`
-    + `<label title="全部我方单位都由AI行动，之后的战斗沿用；勾选或取消会覆盖单位的单独设置"><input type="checkbox" data-role="auto-turn" ${automation.allAllies ? 'checked' : ''} ${over ? 'disabled' : ''}>我方</label>`
+    + `<label title="主控保持手动，其余我方单位由AI行动，之后的战斗沿用；勾选或取消会清除单位的单独设置"><input type="checkbox" data-role="auto-turn" ${automation.allAllies ? 'checked' : ''} ${over ? 'disabled' : ''}>除主控</label>`
     + autoToggle + `</div>`;
-  const events = over ? battle.log : battle.visibleLog('ally');
+  const events = read('events', () => over ? battle.log : battle.visibleLog('ally'));
   const special = view.mode.startsWith('flight:') || view.mode === 'retreat';
   const mode = special || view.mode === 'move' || view.mode === 'guard' ? view.mode : option?.id ?? 'weapon';
   const specialReason = actor ? mode === 'retreat' ? s.allOptions.find(o=>o.id==='retreat')?.reason : special ? battle.flightReason(actor.id,mode==='flight:takeoff') : undefined : '没有可用单位';
   const specialDetail = !special ? '' : mode === 'retreat' ? '撤出本场战斗，消耗主行动1。确认后该单位不再参战。' : '消耗移动1；' + (actor ? battle.flightRisks(actor.id,mode==='flight:takeoff').join('；') || '已知敌军没有可触发的起落反应。' : '');
-  const movement = actor && view.cell !== undefined ? battle.pathPreview(actor.id, view.cell) : undefined;
+  const movement = actor && view.cell !== undefined ? read(`path:${actor.id}:${view.cell}`, () => battle.pathPreview(actor.id, view.cell!)) : undefined;
   const paths = new Set(movement?.path?.cells ?? []);
-  const reachable = new Set(canControl && actor && mode === 'move' ? battle.reachableCells(actor.id).map((p) => p.cells.at(-1)!) : []);
+  const reachable = canControl && actor && mode === 'move' ? read('reachable:' + actor.id, () => new Set(battle.reachableCells(actor.id).map(p => p.cells.at(-1)!))) : new Set<number>();
   const targets = new Set(canControl && mode !== 'move' && mode !== 'guard' ? option?.targets?.filter((t) => t.enabled).map((t) => t.targetId) : []);
   const area = new Set(mode !== 'move' && mode !== 'guard' ? target?.preview?.areaTargetIds ?? [] : []);
   const range = mode !== 'move' && mode !== 'guard' ? option?.range : undefined;
@@ -250,10 +277,10 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
   // 每次渲染只算一遍的查询：占位、可见格、持续区域。避免逐格重复扫描全体单位与视线。
   const occupantsAt = new Map<number, Combatant[]>();
   for (const u of visible) if (u.pos !== undefined) { const list = occupantsAt.get(u.pos); if (list) list.push(u); else occupantsAt.set(u.pos, [u]); }
-  const seen = battle.visibleCells('ally');
+  const seen = read('seen', () => battle.visibleCells('ally'));
   const searched = new Set(battle.searchedCells('ally'));
   // 我方共享敌情：此刻看不见的敌军最后被看见的格子，以及近几轮遭到未定位攻击的位置。
-  const intel = over ? { traces: [], clues: [] } : battle.enemyIntel('ally', visible);
+  const intel = read('intel', () => over ? { traces: [], clues: [] } : battle.enemyIntel('ally', visible));
   const lastSeen = new Map<number, typeof intel.traces>();
   for (const trace of intel.traces) if (trace.cell !== undefined) lastSeen.set(trace.cell, [...(lastSeen.get(trace.cell) ?? []), trace]);
   const ago = (round: number) => battle.round - round ? (battle.round - round) + '轮前' : '本轮';
@@ -273,7 +300,7 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
     const zones = seen[cell] ? liveZones.filter(z => Math.abs(z.x - cell % field.width) + Math.abs(z.y - Math.floor(cell / field.width)) <= z.radius) : [];
     const ghosts = lastSeen.get(cell) ?? [];
     const ghostText = ghosts.map((t) => '最后目击敌方' + t.name + '（' + ago(t.round) + '）').join('、');
-    const label = zones.map(z=>ZONE_NAMES[z.kind]).join('、')+' '+cellLabel(field, cell) + ' ' + (landmark ?? '') + ' ' + terrainName(field, cell) + ' '+heightDescription(field,cell)+' ' + occupants.map((u) => (u.side === 'ally' ? '我方' : u.side === 'enemy' ? '敌方' : '中立') + u.name).join('、') + (ghostText ? ' ' + ghostText : '');
+    const label = zones.map(z=>ZONE_NAMES[z.kind]).join('、')+' '+cellLabel(field, cell) + ' ' + (landmark ?? '') + ' ' + terrainName(field, cell) + ' '+heightDescription(field,cell)+' ' + occupants.map((u) => (u.side === 'ally' ? '我方' : u.side === 'enemy' ? '敌方' : '第三方') + u.name).join('、') + (ghostText ? ' ' + ghostText : '');
     // 地形与结构由底图表达；格内只放单位、状态与被查看格的名称。高度0为默认地表，只标注抬高的格子。
     const height = field.spatialRulesVersion === 2 ? surfaceHeightAt(field, cell) : 0;
     const terrainLabel = inspected && !occupants.length;
@@ -311,8 +338,8 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
     ${movement?.path && movement.path.cost > 0 ? '<div class="sub">' + (actor && entrenched(actor) && movement.path.cells.at(-1) !== actor.entrenchedAt ? '离开工事阵地，工事随之失效；' : '') + (movement.risks.length ? movement.risks.map(esc).join('；') : '已知敌军没有可触发的移动反应。') + '</div>' : ''}
     <button class="primary" data-action="grid-move" data-actor="${esc(actor?.id ?? '')}" ${canControl && movement?.path && movement.path.cost > 0 ? '' : 'disabled'}>确认移动${movement?.path ? ' · ' + movement.path.cost + '点' : ''}</button></div>`;
   return `<section class="tactical-workspace" data-ended="${over}" data-map-zoom="${zoom}">
-    <div class="tactical-heading"><div><span class="sub">战术交战${battle.fieldTags.includes('night') ? ' · 夜间' : ''}${over ? '' : ' · <span class="turn-indicator"' + (active && active.pos !== undefined ? ' data-current-unit="' + esc(active.id) + '" data-current-position="' + active.pos + '" data-current-coordinate="' + cellLabel(field, active.pos) + '"' : '') + '>当前行动 <b>' + esc(activeLabel) + '</b></span>'}</span><h2>${goal}</h2></div><button class="objective-status" ${mission.kind === 'annihilation' ? 'disabled' : 'data-action="grid-cell" data-cell="' + mission.cell + '"'}>第${battle.round}/${field.objective.limit}轮${mission.kind === 'control' ? '<small>' + (mission.attackingSide ? '攻方占领 '+battle.controlRounds[mission.attackingSide] : '我方 '+battle.controlRounds.ally+' · 敌方 '+battle.controlRounds.enemy) + '/' + mission.rounds + '</small>' : ''}</button></div>
-    ${over ? '<div class="banner">' + (battle.winner() === 'ally' ? '任务胜利' : battle.winner() === 'enemy' ? '任务失败' : '任务结束：僵持') + '</div>' : ''}
+    <div class="tactical-heading"><div><span class="sub">战术交战${battle.fieldTags.includes('night') ? ' · 夜间' : ''}${over ? '' : ' · <span class="turn-indicator"' + (active && active.pos !== undefined ? ' data-current-unit="' + esc(active.id) + '" data-current-position="' + active.pos + '" data-current-coordinate="' + cellLabel(field, active.pos) + '"' : '') + '>当前行动 <b>' + esc(activeLabel) + '</b></span>'}</span><h2>${goal}</h2>${commandHeaderHtml(battle)}</div><button class="objective-status" ${mission.kind === 'annihilation' ? 'disabled' : 'data-action="grid-cell" data-cell="' + mission.cell + '"'}>第${battle.round}/${field.objective.limit}轮${mission.kind === 'control' ? '<small>' + (mission.attackingSide ? '攻方占领 '+battle.controlRounds[mission.attackingSide] : '我方 '+battle.controlRounds.ally+' · 敌方 '+battle.controlRounds.enemy+(battle.combatants.some(u=>u.side==='neutral')?' · 第三方 '+battle.controlRounds.neutral:'')) + '/' + mission.rounds + '</small>' : ''}</button></div>
+    ${over ? '<div class="banner">' + (battle.winner() === 'ally' ? '任务胜利' : battle.winner() === 'neutral' ? '第三方获胜，我方失败' : battle.winner() === 'enemy' ? '任务失败' : '任务结束：僵持') + '</div>' : ''}
     ${renderBattleHighlights(battle)}
     <div class="tactical-columns"><div class="tactical-map-column">
       <div class="map-toolbar"><span class="map-legend">${mode === 'move' ? '蓝底可到达 · 金点为路径' : mode === 'guard' ? '选择固守或警戒' : '浅蓝底为射程 · 红框为可选目标'}</span><div class="map-tools">${field.retreatEdges?MAP_KEY.replace('撤离方向：我方下沿，敌方上沿','撤离方向：以本场边缘标记为准'):MAP_KEY}<button data-action="grid-zoom" aria-label="切换地图缩放，当前${MAP_ZOOM_LABELS[zoom]}">缩放 · ${MAP_ZOOM_LABELS[zoom]}</button><button data-action="grid-focus">定位我方</button></div></div>
@@ -328,14 +355,15 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
       <div class="sub mission-summary">${objectiveSummary(battle)}</div>
       ${mission.kind==='annihilation'?'<details data-detail-id="objective-rules"><summary>任务规则</summary><p>'+objectiveDetails(battle)+'</p></details>':''}
       ${canControl && actor ? [false, true].filter(sidearm => !battle.reloadReason(actor.id, sidearm)).map(sidearm => `<button data-action="grid-reload" data-sidearm="${sidearm}">${sidearm ? '副武器' : '主武器'}装填 · 行动1</button>`).join('') : ''}
-      ${actor ? '<div class="actor-status">' + [(battle.reloadCd.get(actor.id) ?? 0) > 0 ? (tbWeaponShortName(actor.weapon) || '主武器') + '装填中' : '', actor.sidearm && (battle.reloadCd.get(weaponReloadKey(actor, actor.sidearm)) ?? 0) > 0 ? (tbWeaponShortName(actor.sidearm) || '副武器') + '装填中' : '', actor.fatigue ? '疲劳' + approx(actor.fatigue, 1, 'down') + '/' + fatigueLimit(actor) : '', concealment, pressure, isAirborne(actor) ? '空中，不能占领地面目标' : '', actor.tacticalPose ? postureLabel(actor, standardConditionMap()) : '', worksLabel(actor) ?? '', ...actor.conditions.filter((c) => c.dur > 0).map((c) => (battle.conditions.get(c.id)?.name ?? '持续效果') + ' ' + c.dur + '回合')].filter(Boolean).map((v) => '<span' + (v === pressure ? ' class="morale-pressure"' : '') + '>' + esc(v!) + '</span>').join('') + '</div>' : ''}
+      ${actor ? '<div class="actor-status">' + [(battle.reloadCd.get(actor.id) ?? 0) > 0 ? (tbWeaponShortName(actor.weapon) || '主武器') + '装填中' : '', actor.sidearm && (battle.reloadCd.get(weaponReloadKey(actor, actor.sidearm)) ?? 0) > 0 ? (tbWeaponShortName(actor.sidearm) || '副武器') + '装填中' : '', actor.fatigue ? '疲劳' + approx(actor.fatigue, 1, 'down') + '/' + fatigueLimit(actor) : '', concealment, pressure, isAirborne(actor) ? '空中，不能占领地面目标' : '', actor.tacticalPose ? postureLabel(actor, standardConditionMap()) : '', worksLabel(actor) ?? '', ...actor.conditions.filter((c) => c.dur > 0).map((c) => (battle.conditions.get(c.id)?.name ?? '持续效果') + ' ' + (activationControlDuration(c) ?? c.dur + '回合'))].filter(Boolean).map((v) => '<span' + (v === pressure ? ' class="morale-pressure"' : '') + '>' + esc(v!) + '</span>').join('') + '</div>' : ''}
+      ${canControl && actor && battle.rules.traitLevelModel === 'traits-levels-v2' && activeTraitIds(actor).includes('loose-formation') ? '<div class="formation-choice" aria-label="散兵阵形">' + (['loose','closed'] as const).map(choice => '<button data-action="trait-formation-choice" data-unit="'+esc(actor.id)+'" data-choice="'+choice+'" aria-pressed="'+((actor.looseFormationChoice ?? 'loose')===choice)+'" '+(actor.looseChoiceLocked || battle.actedThisTurn.has(actor.id) || battle.movedThisTurn.has(actor.id) ? 'disabled' : '')+'>'+(choice==='loose'?'疏散':'收拢')+'</button>').join('')+'<small>正常激活开始可选一次，保持到下次正常激活。</small></div>' : ''}
       <div class="command-modes" aria-label="行动类型">${[['move', '移动'], [weapon?.id ?? 'weapon', '攻击'], [skill?.id ?? '', '技能'], ['guard', '守备']].map(([id, label]) => `<button data-action="grid-mode" data-mode="${esc(id!)}" aria-pressed="${mode === id || label === '攻击' && !!option && ['weapon', 'charge'].includes(option.kind) && !['move', 'guard'].includes(mode) || label === '技能' && option?.kind === 'ability' && !['move', 'guard'].includes(mode)}" ${!id ? 'disabled' : ''}>${label}</button>`).join('')}
         ${actor && (isAirborne(actor) || activeTraitIds(actor).includes('flying')) ? `<button data-action="grid-flight" data-actor="${esc(actor.id)}" data-airborne="${!isAirborne(actor)}" ${!canControl || battle.flightReason(actor.id, !isAirborne(actor)) ? 'disabled' : ''} title="${esc(battle.flightReason(actor.id, !isAirborne(actor)) ?? '消耗移动1')}">${isAirborne(actor) ? '降落' : '起飞'}</button>` : ''}
         <button data-action="grid-suppress" data-target="${esc(target?.targetId ?? '')}" ${canControl && actor && !battle.suppressReason(actor.id, target?.targetId) ? '' : 'disabled'} title="${esc(actor ? battle.suppressReason(actor.id, target?.targetId) ?? '压制所选目标，消耗主行动1和战技点1' : '没有可用单位')}">压制</button>
         ${actor ? `<button data-action="loadout-skills" data-id="${esc(actor.id)}" ${battleSkillChangeReason(battle, actor.id) ? 'disabled' : ''}>技能选择</button>` : ''}
         <button data-action="grid-retreat" ${canControl && actor && s.allOptions.find((o) => o.id === 'retreat')?.enabled ? '' : 'disabled'} title="${esc(s.allOptions.find((o) => o.id === 'retreat')?.reason ?? '从地图边缘撤离，消耗主行动1')}">撤离</button>
       </div>
-      ${special ? '<div class="action-preview"><b>'+esc(commandTitle)+'</b><p>'+esc(specialReason??specialDetail)+'</p>'+executeCommand+'</div>' : mode === 'move' ? movePanel : mode === 'guard' ? `<div class="guard-options"><button data-action="grid-brace" ${canControl && actor && !battle.braceReason(actor.id) ? '' : 'disabled'}>固守 · 行动1</button><p>${esc(actor ? battle.braceReason(actor.id) ?? battle.braceDescription(actor.id) : '')}</p><button data-action="grid-watch" ${canControl && actor && !battle.overwatchReason(actor.id) ? '' : 'disabled'}>警戒 · 行动1</button><p>${esc(actor ? battle.overwatchReason(actor.id) ?? '用一次行动准备武器反应，与借机共用本轮反应额度。' : '')}</p></div>` : `
+      ${special ? '<div class="action-preview"><b>'+esc(commandTitle)+'</b><p>'+esc(specialReason??specialDetail)+'</p>'+executeCommand+'</div>' : mode === 'move' ? movePanel : mode === 'guard' ? `<div class="guard-options"><button data-action="grid-brace" ${canControl && actor && !battle.braceReason(actor.id) ? '' : 'disabled'}>固守 · 行动1</button><p>${esc(actor ? battle.braceReason(actor.id) ?? battle.braceDescription(actor.id) : '')}</p><button data-action="grid-watch" ${canControl && actor && !battle.overwatchReason(actor.id) ? '' : 'disabled'}>警戒 · 行动1</button><p>${esc(actor ? battle.overwatchReason(actor.id) ?? '敌人进入射程时开火，占用本轮反应。' : '')}</p></div>` : `
         <label>使用<select data-role="grid-mode">${options.filter((o) => option?.kind === 'ability' ? o.kind === 'ability' : ['weapon', 'charge'].includes(o.kind)).map((o) => `<option value="${esc(o.id)}" ${o.id === option?.id ? 'selected' : ''}>${esc(o.label)}${o.enabled ? '' : ' · 暂不可用'}</option>`).join('')}</select></label>
         ${option?.targets?.length ? '<label>目标<select data-role="grid-target">' + (targetMismatch ? '<option value="' + esc(view.targetId!) + '" selected disabled>' + esc(targetUnit?.name ?? '所选目标') + ' · 不适用于此行动</option>' : '') + option.targets.map((t) => '<option value="' + esc(t.targetId) + '" ' + (t.targetId === target?.targetId ? 'selected' : '') + '>' + esc(visible.find((u) => u.id === t.targetId)?.name ?? (t.targetId.startsWith('cell:') ? cellLabel(field,Number(t.targetId.slice(5))) : '未定位目标')) + (t.enabled ? '' : ' · ' + esc(t.reason ?? '不可选')) + '</option>').join('') + '</select></label>' : ''}
         ${target?.rangeDistance !== undefined && target.distance !== undefined && target.rangeDistance > target.distance ? '<p class="aerial-range">距离 ' + target.distance + ' + 对空 ' + (target.rangeDistance - target.distance) + ' = 射程距离 ' + target.rangeDistance + '</p>' : ''}
@@ -346,10 +374,9 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
       <details class="command-more" data-detail-id="grid-more"><summary>更多操作与单位</summary>
         <label>查看我方单位<select data-role="grid-unit">${visible.filter((u) => u.side === 'ally').map((u) => '<option value="' + esc(u.id) + '" ' + (u.id === actor?.id ? 'selected' : '') + '>' + esc(u.name) + (u.id === battle.active?.id ? ' · 当前' : '') + '</option>').join('')}</select></label>
         ${actor && (isAirborne(actor) || activeTraitIds(actor).includes('flying')) ? `<p>${esc(battle.flightReason(actor.id, !isAirborne(actor)) ?? '起飞离开接敌可能触发借机；扑击会先降落。')}</p>` : ''}
-        <p class="suppression-description">消耗1次主行动和1点战技点，需要合法射击目标；不造成生命伤害。目标攻击命中 -2，停用借机与警戒反应、取消现有警戒，且不能固守或冲锋；持续到目标完成2次行动结算。</p>${actor && battle.suppressReason(actor.id, target?.targetId) ? '<p class="grid-reason">' + esc(battle.suppressReason(actor.id, target?.targetId)!) + '</p>' : ''}
+        <p class="suppression-description">主行动1 · 战技点1。不造成伤害；目标命中−2，不能反应、固守或冲锋，持续2次行动。</p>${actor && battle.suppressReason(actor.id, target?.targetId) ? '<p class="grid-reason">' + esc(battle.suppressReason(actor.id, target?.targetId)!) + '</p>' : ''}
         <p>${field.retreatEdges?'本场我方撤离点：'+retreatCells(field,'ally').map(p=>cellLabel(field,p)).join('、')+'。':'我方撤离点：地图最下排标“撤”的格子；敌方从最上排撤离。'}脱离敌人至少2格并保留主行动后可撤离。${esc(s.allOptions.find((o) => o.id === 'retreat')?.reason ?? '')}</p>
-        <p class="ai-takeover-help">AI托管：勾选「此单位」后，当前选中的单位之后每次轮到都由AI行动（地图上标AI）；「我方」把我方单位全部交给AI；「全自动」让整场战斗连续推进，取消即暂停。「AI代打本次」只替当前行动单位做这一次。</p>
-        <p>地面对空射程距离额外 +2 格，曲射火炮不能对空。远程武器居高射击每高1级射程+1（至多+2）。射程底色只表示平面距离，不含居高加成；目标亮边和禁用原因同时考虑视线、接敌、装备、状态与行动成本。暗区可能存在未发现的敌军。</p>
+        <p>地面对空距离 +2，曲射火炮不能对空。居高射程每级 +1，至多 +2。暗区可能有敌军。</p>
       </details>
 
       

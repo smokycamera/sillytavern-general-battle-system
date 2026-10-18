@@ -1,3 +1,4 @@
+import { WEAPON_CLASSES } from '../../engine/src/data/weapons.js';
 import { parseEnhancementSuffix, enhancementLabel, type Enhancements, type BonusKind } from '../../engine/src/enhancements.js';
 import { narrativeTraitLevel, traitLevelToken, traitRegistry, inferArchetype, type BodyKind } from '../../engine/src/index.js';
 /** V2正文：全文提取、格式容错、逐项诊断；真实身份和数值由事务层最终核对。 */
@@ -7,7 +8,7 @@ import { MAX_PROTOCOL_CHARS, MAX_PROTOCOL_EVENTS, MAX_SCENE_UNITS, MAX_SPAWN_COU
 import { scanProtocolTags, normalizedAttributes, serializeEvent, ProtocolSyntaxError, type ProtocolTag, type ProtocolAttribute } from './protocol-syntax.js';
 import { parseUnitSet, itemKey, UNIT_SET_ATTRIBUTES } from './unit-set.js';
 import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-tolerance.js';
-import { parseItemSpecification, parseSpawnItem, splitSpawnItems, spawnItemText, spawnItemName, splitItemSpecification, itemSpecificationText, assertItemCompiles, fitWornBudget } from './item-spec.js';
+import { parseItemSpecification, parseSpawnItem, splitSpawnItems, spawnItemText, spawnItemName, splitItemSpecification, itemSpecificationText, assertItemCompiles } from './item-spec.js';
 import { normalizeHandle } from './narrative-ids.js';
 
 export interface ProtocolDiagnostic { message: string; start: number; end: number; field?: string; event: string }
@@ -130,13 +131,15 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
           if (level) attrs.level = String(p.level);
           warnings.push(`${who}：「${p.name}」${p.reason}，不再作为特质${speed ? `，已按speed=${p.speed}` : level ? `，已按level=${p.level}` : ''}`);
         }
-        // 五项专精可带 L1–10，同一专精写了多次取最高；其余特质写了等级只保留特质。
+        // 已完成分级的特质可带 L1–10，同一专精写了多次取最高；其余特质写了等级只保留特质。
         const levels = new Map<string, number>();
         for (const p of parsed) if (p.kind === 'trait') {
           const name = traitRegistry().get(p.id)?.name ?? p.id;
-          if (p.droppedLevel !== undefined) warnings.push(`${who}：只有五项专精分L1–10，「${name}L${p.droppedLevel}」按${name}建档`);
+          if (p.droppedLevel !== undefined) warnings.push(p.level !== undefined
+            ? `${who}：旧强名称固定按${name}L${p.level}；指定其他等级请用规范名称`
+            : `${who}：只有已完成分级的特质可分L1–10，「${name}L${p.droppedLevel}」按${name}建档`);
           if (p.writtenLevel !== undefined) warnings.push(`${who}：专精等级为L1–10，「${name}L${p.writtenLevel}」按L${p.level}`);
-          if (p.level !== undefined) levels.set(p.id, Math.max(levels.get(p.id) ?? 0, p.level));
+          levels.set(p.id, Math.max(levels.get(p.id) ?? 0, p.level ?? 5));
         }
         const supported = [...new Set(parsed.flatMap((p) => p.kind === 'trait' ? [p.id] : []))].map((id) => traitLevelToken(id, levels.get(id)));
         if (tag.name === 'unit_set' && unknown.length) delete attrs.traits;
@@ -170,7 +173,7 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
         for (const entry of splitSpawnItems(attrs.items!)) {
           try {
             const notes: string[] = [], parsed = parseSpawnItem(entry, notes);
-            const item = parsed.spec ? { ...parsed, spec: fitWornBudget(parsed.spec, notes, entry) as typeof parsed.spec } : parsed;
+            const item = parsed;
             if (item.spec) assertItemCompiles(item.spec, item.name);
             kept.push(spawnItemText(item)); warnings.push(...notes);
           } catch (error) { skipped.push(`${attrs.name || attrs.id || tag.name}：未采用道具「${entry}」（${error instanceof Error ? error.message : String(error)}）`); }
@@ -182,9 +185,9 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
         const notes: string[] = [], consumable = giveAsItem(attrs, handed, armed);
         try {
           const parsed = parseItemSpecification(attrs.spec, consumable ? { type: attrs.type } : attrs, notes, { item: consumable });
-          const spec = fitWornBudget(parsed, notes, attrs.spec);
+          const spec = parsed;
           assertItemCompiles(spec, attrs.item);
-          // 换了写法（当道具用的武器词条、降到预算内的修正）就改成规范写法交给后面的校验；说明与 items 里同一项的相同，合并显示。
+          // 换了写法（当道具用的武器词条）就改成规范写法交给后面的校验；说明与 items 里同一项的相同，合并显示。
           if (spec.kind === 'item' && (consumable || spec !== parsed)) { attrs.spec = itemSpecificationText(spec); warnings.push(...notes); }
         } catch (error) {
           skipped.push(`未采用道具「${attrs.item ?? ''}」（${error instanceof Error ? error.message : String(error)}）`);
@@ -390,9 +393,9 @@ export function recoverProtocol(text: string): { text: string; diagnostics: Prot
       if (['rounds', 'battles', 'permanent'].includes(key)) { delete fieldProbe.rounds; delete fieldProbe.battles; delete fieldProbe.permanent; }
       const test = (input: string) => parseProtocol(serializeEvent(tag.name, { ...fieldProbe, [key]: input }), { diagnostics: false });
       let result = test(value);
-      if (result.errors.length && ['weapon', 'weapon2', 'armor', 'shieldSpec', 'spec', 'level'].includes(key)) {
+      if (result.errors.length && ['weapon', 'weapon2', 'armor', 'shield', 'shieldSpec', 'spec', 'level'].includes(key)) {
         try {
-          const kind: BonusKind = key === 'level' ? 'unit' : key === 'armor' ? 'armor' : key === 'shieldSpec' ? 'shield' : 'weapon';
+          const kind: BonusKind = key === 'level' ? 'unit' : key === 'armor' ? 'armor' : ['shield', 'shieldSpec'].includes(key) ? 'shield' : 'weapon';
           const repaired = repairSpecification(key === 'level' ? 'L' + value : value, kind, false, message => add(message, token));
           value = key === 'level' ? repaired.replace(/^L/i, '') : repaired;
           result = test(value);
@@ -457,7 +460,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
   const integer = (key: string, min: number, max: number) => attrs[key] === undefined || (/^\d+$/.test(attrs[key]!) && Number.isSafeInteger(Number(attrs[key])) && Number(attrs[key]) >= min && Number(attrs[key]) <= max);
   if (!integer('count', 1, MAX_SPAWN_COUNT)) throw new Error(`count是单位卡数量，须为1–${MAX_SPAWN_COUNT}；人数写hpMax。${GROUPING_HINT}`);
   const lifeInputMax = kind === 'unit_update' || kind === 'spawn' && attrs.scale === 'hero' ? Number.MAX_SAFE_INTEGER : 1e9;
-  if (!integer('hp', 0, lifeInputMax) || !integer('hpMax', 1, lifeInputMax) || (attrs.level !== undefined && !/^[lL]?(?:10|[1-9])(?:[+-].*)?$/.test(attrs.level)) || !integer('qty', 1, 9999)) throw new Error(`${kind} 数值必须是范围内的完整整数`);
+  if (!integer('hp', 0, lifeInputMax) || !integer('hpMax', 1, lifeInputMax) || (attrs.level !== undefined && !/^[lL]?(?:10|[1-9])(?:[+-].*)?$/.test(attrs.level)) || !integer('qty', 1, Number.MAX_SAFE_INTEGER)) throw new Error(`${kind} 数值必须是范围内的完整整数`);
   if (kind === 'unit_update') {
     if (!attrs.id?.trim() || !['hp', 'hpMax', 'morale', 'state', 'clear'].some(key => attrs[key]?.trim())) throw new Error('unit_update 需要 id 与明确的生命/人数、士气、状态或清除效果');
     if (!integer('morale', 0, 1e9)) throw new Error('unit_update 士气必须是非负整数');
@@ -478,7 +481,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     delete attrs.id; // 新单位编号一律由插件分配，正文写的 id 不参与建档或引用。
     if(attrs.level)parseEnhancementSuffix('L'+attrs.level.replace(/^[lL]/,''),'unit');
     if (attrs.scale === 'mook') attrs.scale = 'company'; // 旧正文别名，不产生第三套V2规则。
-    if (!attrs.name?.trim() || !['ally', 'enemy'].includes(attrs.side ?? '') || !['hero', 'company', 'mook'].includes(attrs.scale ?? '')) throw new Error('新单位需要 name、side、scale');
+    if (!attrs.name?.trim() || !['ally', 'enemy', 'neutral'].includes(attrs.side ?? '') || !['hero', 'company', 'mook'].includes(attrs.scale ?? '')) throw new Error('新单位需要 name、side、scale');
     if (attrs.scale !== 'hero' && attrs.hpMax === undefined) throw new Error('群体首次建档必须明确 hpMax 编制上限；count 表示单位个数');
     if (attrs.hp !== undefined && attrs.hpMax === undefined) throw new Error('新单位提供 hp 时也需要 hpMax');
     if (attrs.hp !== undefined && Number(attrs.hp) > Number(attrs.hpMax)) throw new Error('新单位当前值不能超过上限');
@@ -498,9 +501,15 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
       if (!attrs[key]) continue;
       const spec = parseEnhancementSuffix(attrs[key]!.split(/[:：·｜|/／]/).at(-1)!, 'weapon').text.replace(/[lL]\s*\d+$/, '').trim();
       const mechanism = resolveWeaponClass(spec);
-      if (!mechanism) throw new Error(`${attrs.name}的${key}“${attrs[key]}”缺少支持的效果；请写“自定义名:剑L7”或“激光枪:能量武器L3”，副武器用weapon2`);
+      if (!mechanism || !WEAPON_CLASSES[mechanism]) throw new Error(`${attrs.name}的${key}“${attrs[key]}”缺少支持的效果；请写“自定义名:剑L7”或“激光枪:能量武器L3”，副武器用weapon2`);
     }
+    for (const key of ['weapon', 'weapon2', 'shield']) if (attrs[key] && /[lL]\s*\d/.test(attrs[key]!)) parseItemSpecification(attrs[key]!, {}, warnings);
     if (attrs.armor && /[lL]\s*\d/.test(attrs.armor.split(/[:：·｜|/／]/).at(-1)!)) parseItemSpecification(attrs.armor, { type: 'armor' });
+    if (attrs.shield !== undefined && !['true', 'false'].includes(attrs.shield)) {
+      try {
+        if (parseItemSpecification(attrs.shield).kind !== 'shield') throw new Error('需要盾牌规格，如“塔盾:大盾L5+2防御”');
+      } catch (error) { throw new Error('shield：' + (error instanceof Error ? error.message : String(error))); }
+    }
     // 正文写的原型不再采用：按真实坐骑、快速载具与主武器推断，任何写法都不会让 spawn 作废。
     const weaponClass = attrs.weapon ? resolveWeaponClass(parseEnhancementSuffix(attrs.weapon.split(/[:：·｜|/／]/).at(-1)!, 'weapon').text.replace(/[lL]\s*\d+$/, '').trim()) : undefined;
     const inferred = inferArchetype({ mount: attrs.mount === 'true', body: attrs.body as BodyKind | undefined, speedTier: /^\d+$/.test(attrs.speed ?? '') ? Number(attrs.speed) : undefined, weaponClass });
@@ -514,7 +523,6 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
   if (event.kind === 'spawn') {
     if (attrs.body !== undefined && !['human', 'large', 'vehicle', 'giant'].includes(attrs.body)) throw new Error('未知身体/平台');
     if (!integer('quality', 1, 5)) throw new Error('品质必须为1–5');
-    if (attrs.shield !== undefined && !['true', 'false'].includes(attrs.shield)) throw new Error('shield 必须是 true/false');
     if (attrs.mount !== undefined && !['true', 'false'].includes(attrs.mount)) throw new Error('mount 必须是 true/false');
     event.mount = attrs.mount === 'true';
     if (!integer('speed', 1, 5)) throw new Error('速度档位需要1–5整数');
@@ -527,7 +535,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     event.armorProfile = attrs.protection as typeof event.armorProfile;
     event.body = attrs.body as typeof event.body;
     event.quality = attrs.quality === undefined ? undefined : Number(attrs.quality);
-    event.shield = attrs.shield === 'true';
+    event.shield = event.shield ?? false;
     if (attrs.hpMax !== undefined) event.hpMax = Number(attrs.hpMax);
     if (attrs.hp !== undefined) event.hp = Number(attrs.hp);
     if (attrs.skills && (event.skills?.length ?? 0) !== attrs.skills.split(/[,，、;；]/).length) throw new Error('存在未支持的技能，未执行整批');

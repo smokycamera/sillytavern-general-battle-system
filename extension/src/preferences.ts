@@ -11,11 +11,16 @@ export interface DisplayPreferences {
 export function preferences(host: HostWindow): { read(): DisplayPreferences; write(value: DisplayPreferences): void } {
   return {
     read() {
-      const raw = host.SillyTavern?.getContext().extensionSettings?.tavernBattle;
+      const context = host.SillyTavern?.getContext();
+      const raw = context?.extensionSettings?.tavernBattle;
       if (!raw || typeof raw !== 'object') return {};
       const value = raw as DisplayPreferences; const geometry = value.geometry; const entryPosition = value.entryPosition;
       const rawWorldbook = value.worldbook && typeof value.worldbook === 'object' ? value.worldbook : undefined;
       const worldbook = rawWorldbook ? normalizeEmbeddedWorldbookSettings(rawWorldbook) : undefined;
+      if (worldbook && rawWorldbook?.builtinRevision !== worldbook.builtinRevision) {
+        context!.extensionSettings!.tavernBattle = { ...value, worldbook };
+        context!.saveSettingsDebounced?.();
+      }
       return {
         ...(entryPosition && Number.isFinite(entryPosition.left) && Number.isFinite(entryPosition.top) ? { entryPosition: { ...entryPosition } } : {}),
         theme: value.theme === 'light' ? 'light' : 'dark',

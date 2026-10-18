@@ -1,9 +1,13 @@
+import { shieldGuardUsable } from './arms.js';
 import { physicalTraitIds, armorBurdenTier, hasNaturalArmor } from './body.js';
 import { traitsV13 } from './trait-model.js';
 /** 特质知识与外部授予分离；持续期/来源身份属于引擎，不交给正文重写。 */
 import type { Combatant, Trait, Weapon } from './types.js';
-import { traitRegistry, validateTraitLevels } from './data/traits.js';
+import { traitRegistry, validateTraitLevels, isGradedTrait } from './data/traits.js';
 import { standardConditionMap } from './conditions.js';
+import { canonicalTraitId, sourceTraitLevel, traitParameter } from './trait-parameters.js';
+import { gradedTraitEnabled, traitLevelsV16, phase2Traits } from './trait-level-model.js';
+import { baseMechanism } from './data/weapons.js';
 
 export type TraitDuration = { kind: 'permanent' } | { kind: 'rounds' | 'battles'; count: number };
 export interface TraitSourceInput {
@@ -11,7 +15,7 @@ export interface TraitSourceInput {
   id: string; name: string; kind: 'blessing' | 'equipment' | 'effect'; traitIds: string[];
   conditionIds?: string[];
   duration: TraitDuration; equipmentId?: string;
-  /** 专精等级（L1–10）；只记录五项专精，缺省 L5。 */
+  /** 已完成分级特质的等级（L1–10）；新V16输入默认L1，历史记录省略仍L5。 */
   traitLevels?: Record<string, number>;
 }
 export interface TraitSource extends TraitSourceInput { remaining?: number; revoked?: boolean }
@@ -33,18 +37,22 @@ export function validateTraitSource(source: TraitSource, registry = traitRegistr
     || !Number.isSafeInteger(source.remaining) || source.remaining! < 0 || source.remaining! > source.duration.count)) throw new Error('特质来源剩余期限损坏');
   if (source.kind === 'equipment' && !source.equipmentId) throw new Error('装备授予缺少物品编号');
   validateTraitLevels(source.traitLevels);
-  if (Object.keys(source.traitLevels ?? {}).some((id) => !source.traitIds.includes(id))) throw new Error('专精等级只能对应该来源授予的专精');
+  if (Object.keys(source.traitLevels ?? {}).some((id) => !source.traitIds.includes(id))) throw new Error('特质等级只能对应该来源授予的特质');
   if (source.traitIds.some((id) => ['large', 'titan'].includes(id))) throw new Error('身体特质由明确体型自动生效，不能用祝福凭空改变身体与生命');
   if (source.traitIds.some((id) => !registry.get(id)?.v2SourceReady)) throw new Error('该特质的外部来源处理过程尚未完成，不能只授予名字');
   if (source.traitIds.some((id) => id !== 'elite' && registry.get(id)?.effects.some((e) => e.kind === 'stat' && e.stat === 'hpMax'))) throw new Error('体量/生命上限特质需要明确身体与上限事务，不能用临时来源暗改上限');
 }
 export function grantTraitSource(unit: Combatant, input: TraitSourceInput, registry = traitRegistry()): void {
   if (unit.rulesVersion !== 'v2') throw new Error('请先更新单位规则，再添加特质来源');
+  const existing = unit.traitSources?.find((s) => s.id === input.id);
+  // 新V16来源省略等级为L1。已有来源重放保留其历史缺省编码，不能把旧L5解释成新L1。
+  const levels = { ...input.traitLevels };
+  if (traitLevelsV16(unit)) for (const id of input.traitIds) if (isGradedTrait(id) && levels[id] === undefined && !(existing && existing.traitLevels?.[id] === undefined)) levels[id] = 1;
   const source: TraitSource = { ...structuredClone(input), traitIds: [...new Set(input.traitIds)],
+    ...(Object.keys(levels).length ? { traitLevels: levels } : {}),
     ...(input.conditionIds ? { conditionIds: [...new Set(input.conditionIds)] } : {}),
     ...(input.duration.kind !== 'permanent' ? { remaining: input.duration.count } : {}) };
   validateTraitSource(source, registry);
-  const existing = unit.traitSources?.find((s) => s.id === source.id);
   if (existing) {
     if (signature(existing) !== signature(source)) throw new Error('同一特质来源对应不同内容');
     return; // 已到期/被撤销的原消息也不能续期。
@@ -54,10 +62,13 @@ export function grantTraitSource(unit: Combatant, input: TraitSourceInput, regis
 export function revokeTraitSource(unit: Combatant, sourceId: string): void {
   const source = unit.traitSources?.find((s) => s.id === sourceId);
   if (!source) throw new Error('特质来源不存在'); source.revoked = true;
+  if (phase2Traits(unit) && !activeTraitIds(unit).includes('regen')) unit.regenerationRemainder = 0;
 }
 export function expireTraitSources(unit: Combatant, boundary: 'rounds' | 'battles'): void {
   for (const source of unit.traitSources ?? []) if (!source.revoked && source.duration.kind === boundary && source.remaining! > 0) source.remaining!--;
   if (boundary === 'battles') for (const source of unit.traitSources ?? []) if (source.battleOnly) source.revoked = true;
+  if (phase2Traits(unit) && (boundary === 'battles' || !activeTraitIds(unit).includes('regen'))) unit.regenerationRemainder = 0;
+  if (phase2Traits(unit) && !activeTraitIds(unit).includes('regen')) unit.regenerationRemainder = 0;
 }
 export function traitSourceActive(unit: Combatant, source: TraitSource): boolean {
   if (source.revoked || source.duration.kind !== 'permanent' && !(source.remaining! > 0)) return false;
@@ -71,7 +82,7 @@ export function armorTraitId(tier?: number): string | undefined {
 const DISPERSED_ARMS = ['rifle', 'heavy-rifle', 'energy'];
 export function autoLooseFormation(unit: Pick<Combatant, 'rulesVersion' | 'armor' | 'scale' | 'body' | 'mount' | 'weapon'> & Partial<Pick<Combatant, 'traitModel' | 'traits' | 'traitSources'>>): boolean {
   return unit.rulesVersion === 'v2' && traitsV13(unit) && unit.scale !== 'hero' && (unit.body ?? 'human') === 'human' && !unit.mount
-    && (unit.armor?.tier ?? 0) <= 2 && DISPERSED_ARMS.includes(unit.weapon?.recipe?.mechanism ?? '');
+    && (unit.armor?.tier ?? 0) <= 2 && DISPERSED_ARMS.includes(baseMechanism(unit.weapon) ?? '');
 }
 /** 装备或编制自动产生的特质在界面上的简短说明。 */
 export function autoTraitLabel(id: string): string {
@@ -82,7 +93,30 @@ export function equipmentTraitIds(unit: Pick<Combatant, 'rulesVersion' | 'armor'
   return [...(id ? [id] : []), ...(unit.scale !== undefined && autoLooseFormation(unit as Combatant) ? ['loose-formation'] : [])];
 }
 export function activeTraitIds(unit: Combatant): string[] {
-  return [...new Set([...unit.traits, ...physicalTraitIds(unit), ...equipmentTraitIds(unit), ...Object.values(unit.accessories ?? {}).flatMap(item => item?.traitId ? [item.traitId] : []), ...(unit.gear ?? []).flatMap(item => item.passive?.traits.map(grant => grant.id) ?? []), ...(unit.rulesVersion === 'v2' ? unit.traitSources?.filter((s) => traitSourceActive(unit, s)).flatMap((s) => s.traitIds) ?? [] : [])])];
+  const ids = [...unit.traits, ...physicalTraitIds(unit), ...equipmentTraitIds(unit), ...Object.values(unit.accessories ?? {}).flatMap(item => item?.traitId ? [item.traitId] : []), ...(unit.gear ?? []).flatMap(item => item.passive?.traits.map(grant => grant.id) ?? []), ...(unit.rulesVersion === 'v2' ? unit.traitSources?.filter((s) => traitSourceActive(unit, s)).flatMap((s) => s.traitIds) ?? [] : [])];
+  return [...new Set(traitLevelsV16(unit) ? ids.map(id => canonicalTraitId(id, phase2Traits(unit))) : ids)];
+}
+export interface TraitLevelSource { id: string; name: string; level: number; remaining?: number }
+/** 来源先投影别名再取强；查询不改写身份、期限或本体。 */
+export function traitLevelSources(unit: Combatant, id: string, horizon = 0): TraitLevelSource[] {
+  const modern = traitLevelsV16(unit), canonical = modern ? canonicalTraitId(id, phase2Traits(unit)) : id;
+  const result: TraitLevelSource[] = [];
+  const take = (raw: string, level: number | undefined, sourceId: string, name: string, remaining?: number) => {
+    if ((modern ? canonicalTraitId(raw, phase2Traits(unit)) : raw) !== canonical) return;
+    result.push({ id: sourceId, name, level: gradedTraitEnabled(unit, canonical) ? sourceTraitLevel(raw, level) : 5, ...(remaining === undefined ? {} : { remaining }) });
+  };
+  for (const raw of unit.traits) take(raw, unit.traitLevels?.[raw], 'intrinsic', '本体');
+  if (unit.rulesVersion === 'v2') for (const source of unit.traitSources ?? []) if (traitSourceActive(unit, source) && (source.duration.kind !== 'rounds' || source.remaining! > horizon))
+    for (const raw of source.traitIds) take(raw, source.traitLevels?.[raw], source.id, source.name, source.duration.kind === 'rounds' ? source.remaining : undefined);
+  for (const item of unit.gear ?? []) for (const grant of item.passive?.traits ?? []) take(grant.id, grant.level, item.id, item.name);
+  for (const item of Object.values(unit.accessories ?? {})) if (item?.traitId) take(item.traitId, undefined, item.id, item.name);
+  for (const raw of [...physicalTraitIds(unit), ...equipmentTraitIds(unit)]) take(raw, undefined, 'automatic', '身体/装备自动来源');
+  return result;
+}
+export function effectiveTraitLevel(unit: Combatant, id: string, traits?: readonly string[], horizon = 0): number {
+  const canonical = traitLevelsV16(unit) ? canonicalTraitId(id, phase2Traits(unit)) : id;
+  if (traits && !traits.includes(canonical)) return 0;
+  return Math.max(0, ...traitLevelSources(unit, canonical, horizon).map((s) => s.level));
 }
 export function activeConditionIds(unit: Combatant): string[] {
   return [...new Set([...unit.conditions.filter((c) => c.dur > 0).map((c) => c.id),
@@ -119,17 +153,19 @@ export function traitPrerequisiteReason(unit: Combatant, id: string, context: Tr
   if (id === 'mounted-archer' && unit.mount !== true) return '需要明确坐骑，骑射不适用于装甲车辆';
   if (id === 'mounted-archer' && ![unit.weapon, unit.sidearm].some((w) => w?.tags?.includes('ranged') && (w.load ?? 99) <= 2 && !w.reload)) return '需要适于移动投射的实际轻便武器';
   if (id === 'skirmisher' && (!['human', 'large'].includes(unit.body ?? 'human') || (unit.armor?.tier ?? 0) > 2)) return '游击需要轻装或中装的人形/大型身体';
-  if (id === 'anti-mobile' && !traitsV13(unit) && (weapon?.recipe?.mechanism !== 'spear' || context.ranged)) return '需要实际长柄近战武器';
+  if (id === 'anti-mobile' && !traitsV13(unit) && (baseMechanism(weapon) !== 'spear' || context.ranged)) return '需要实际长柄近战武器';
   if (id === 'armor-piercing-shot' && (!context.ranged || !weapon?.tags?.includes('ranged') || weapon.channel !== 'kinetic')) return '需要真实动能投射动作';
   if (['ap-weapon', 'ap-master'].includes(id) && (!weapon || weapon.channel !== 'kinetic')) return '需要可利用弱点的动能武器';
-  if (id === 'shield-wall' && !unit.shield) return '需要实际盾牌';
-  if (id === 'pike-wall' && !traitsV13(unit) && weapon?.recipe?.mechanism !== 'spear') return '需要实际长柄反冲锋武器';
+  if (id === 'shield-wall' && !shieldGuardUsable(unit)) return '需要实际盾牌';
+  if (id === 'pike-wall' && !traitsV13(unit) && baseMechanism(weapon) !== 'spear') return '需要实际长柄反冲锋武器';
   return undefined;
 }
 export function traitPenetrationBonus(unit: Combatant, weapon: Weapon | undefined, ranged: boolean, base: number): number {
   if (unit.rulesVersion !== 'v2' || !weapon || weapon.channel !== 'kinetic') return 0;
   const ids = activeTraitIds(unit).filter((id) => !traitPrerequisiteReason(unit, id, { weapon, ranged }));
-  const rank = ids.includes('ap-master') ? 2 : ids.includes('ap-weapon') || ids.includes('armor-piercing-shot') ? 1 : 0;
+  const level = effectiveTraitLevel(unit, 'ap-weapon', ids);
+  const rank = traitLevelsV16(unit) ? Math.max(level ? traitParameter('penetrationBudget', level) : 0, ids.includes('armor-piercing-shot') ? 1 : 0)
+    : ids.includes('ap-master') ? 2 : ids.includes('ap-weapon') || ids.includes('armor-piercing-shot') ? 1 : 0;
   return Math.min(rank, Math.max(0, Math.floor(base / 3)));
 }
 /** V13 改了效果的特质，在旧规则战斗里继续显示旧说明。 */
@@ -139,7 +175,7 @@ export function traitDescription(trait: Trait, unit?: Pick<Combatant, 'rulesVers
 }
 
 type TraitStats = NonNullable<Combatant['bakedTraitStats']>;
-export function traitStatContributions(unit: Combatant, ids: string[], registry = traitRegistry(), respectPrerequisites = true): TraitStats {
+export function traitStatContributions(unit: Combatant, ids: string[], registry = traitRegistry(), respectPrerequisites = true, levelMode: 'effective' | 'permanent' | 'historical' = 'effective'): TraitStats {
   const result: TraitStats = {}, armorSpeed: number[] = [];
   for (const id of new Set(ids)) {
     if (['large', 'titan', 'flying'].includes(id) || respectPrerequisites && traitPrerequisiteReason(unit, id)) continue;
@@ -147,27 +183,32 @@ export function traitStatContributions(unit: Combatant, ids: string[], registry 
     for (const effect of registry.get(id)?.effects ?? []) {
       if (effect.kind !== 'stat' || effect.stat === 'hpMax' || effect.stat === 'morale' && unit.scale === 'hero') continue;
       if (respectPrerequisites && effect.stat === 'spd' && ['heavy-armor', 'super-heavy'].includes(id)) { armorSpeed.push(effect.value); continue; }
-      result[effect.stat] = (result[effect.stat] ?? 0) + effect.value;
+      const value = phase2Traits(unit) && levelMode !== 'historical' && id === 'berserk' && effect.stat === 'atk' ? 0
+        : phase2Traits(unit) && levelMode !== 'historical' && id === 'skirmisher' && effect.stat === 'spd' ? traitParameter('skirmishInitiative', levelMode === 'permanent' ? unit.traitLevels?.[id] ?? 5 : effectiveTraitLevel(unit, id))
+        : id === 'stubborn' && effect.stat === 'morale' && levelMode !== 'historical' && traitLevelsV16(unit)
+        ? traitParameter('resilience', levelMode === 'permanent' ? unit.traitLevels?.[id] ?? 5 : effectiveTraitLevel(unit, id)) : effect.value;
+      result[effect.stat] = (result[effect.stat] ?? 0) + value;
     }
   }
+  if (phase2Traits(unit) && ids.includes('agile') && !traitPrerequisiteReason(unit, 'agile') && levelMode !== 'historical') result.spd = (result.spd ?? 0) + traitParameter('agileInitiative', levelMode === 'permanent' ? unit.traitLevels?.agile ?? 5 : effectiveTraitLevel(unit, 'agile'));
   if (armorSpeed.length) result.spd = (result.spd ?? 0) + Math.min(...armorSpeed);
   return result;
 }
 /** 旧v2.1/v2.2的永久属性曾在生成时烘焙；只读取旧审计，不重掷其装备/基础值。 */
 export function bakedTraitStats(unit: Combatant, registry = traitRegistry()): TraitStats {
-  return structuredClone(unit.bakedTraitStats ?? traitStatContributions(unit, unit.genAudit?.input.traits ?? [], registry, false));
+  return structuredClone(unit.bakedTraitStats ?? traitStatContributions(unit, unit.genAudit?.input.traits ?? [], registry, false, 'historical'));
 }
 export function traitStatAdjustments(unit: Combatant, registry = traitRegistry()): TraitStats {
   if (unit.rulesVersion !== 'v2') return {};
   // 只读比较，不需要 bakedTraitStats 的副本；每次攻击结算都会经过这里。
-  const baked = unit.bakedTraitStats ?? traitStatContributions(unit, unit.genAudit?.input.traits ?? [], registry, false);
+  const baked = unit.bakedTraitStats ?? traitStatContributions(unit, unit.genAudit?.input.traits ?? [], registry, false, 'historical');
   const current = traitStatContributions(unit, activeTraitIds(unit), registry), result: TraitStats = {};
   for (const key of ['atk', 'def', 'spd', 'morale'] as const) if ((current[key] ?? 0) !== (baked[key] ?? 0)) result[key] = (current[key] ?? 0) - (baked[key] ?? 0);
   return result;
 }
 /** 新生成/升级时把永久合法效果计入一次；临时授予始终留在运行时。 */
 export function normalizeBakedTraitStats(unit: Combatant, registry = traitRegistry()): void {
-  const old = bakedTraitStats(unit, registry), current = traitStatContributions(unit, unit.traits, registry);
+  const old = bakedTraitStats(unit, registry), current = traitStatContributions(unit, unit.traits, registry, true, 'permanent');
   for (const key of ['atk', 'def', 'spd'] as const) unit.base[key] += (current[key] ?? 0) - (old[key] ?? 0);
   if (unit.base.moraleMax !== undefined) { unit.base.moraleMax += (current.morale ?? 0) - (old.morale ?? 0); unit.morale = unit.moraleLocked ? unit.base.moraleMax : Math.min(unit.morale ?? unit.base.moraleMax, unit.base.moraleMax); }
   unit.bakedTraitStats = current;

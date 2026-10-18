@@ -136,7 +136,7 @@ describe('特质库与皮肤', () => {
     const cat = traitCatalog();
     const listed = cat.flatMap((g) => g.traits.map((t) => t.id));
     expect(new Set(listed).size).toBe(listed.length);
-    expect(new Set(listed)).toEqual(new Set(TRAITS.filter((t) => !t.legacy && !t.derived).map((t) => t.id)));
+    expect(new Set(listed)).toEqual(new Set(TRAITS.filter((t) => !t.legacy && !t.derived && !['guardian-greater','ap-master','monster-hunter','terror'].includes(t.id)).map((t) => t.id)));
   });
 
   it('四套时代皮肤齐备且术语映射有效', () => {

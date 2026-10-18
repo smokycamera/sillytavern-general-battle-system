@@ -1,5 +1,6 @@
 import type { Combatant, ConditionDef, Trait } from './types.js';
 import { absorbBarrier } from './barrier.js';
+import { absorbEnergyShield } from './shield-state.js';
 import { activeConditionIds, activeTraitIds } from './trait-sources.js';
 import { standardConditionMap } from './conditions.js';
 import { traitRegistry } from './data/traits.js';
@@ -7,12 +8,17 @@ import { moraleOnDamage, spendIndomitable } from './morale.js';
 import { isCohort, setStrength, personnel, COHORT_REFERENCE } from './combat-model.js';
 import {hasMemberHealth,memberHealth,damageMemberGroups,memberRecoveryCapacity,healMemberGroups} from './member-health.js';
 import { overmatchMultiplier } from './power-anchors.js';
+import { traitValue } from './trait-levels.js';
+import { phase2Traits } from './trait-level-model.js';
+import { effectiveTraitLevel } from './trait-sources.js';
+import { traitParameter } from './trait-parameters.js';
+import { healingGradeMultiplier } from './healing.js';
 
 type Health = Pick<Combatant, 'hp' | 'base' | 'scale'> & Partial<Pick<Combatant, 'status' | 'rulesVersion' | 'recoverableWounded' | 'combatModel' | 'formation'>>;
 
 /** 保留攻击规格和已乘倍率，屏障可在同时行动实际结算前才获得。 */
 export interface DamageOvermatch { power?:number; channel:import('./types.js').DamageChannel; penetration:number; area:boolean; canBlock:boolean; multiplier:number; curve?:import('./types.js').RulePack['overmatchCurve'] }
-export interface MemberDamagePlan { direct:number; targets:number; overflow?:boolean; splash?:number; splashTargets?:number; incomingDirect?:number; incomingSplash?:number; overmatch?:DamageOvermatch }
+export interface MemberDamagePlan { direct:number; targets:number; overflow?:boolean; splash?:number; splashTargets?:number; incomingDirect?:number; incomingSplash?:number; overmatch?:DamageOvermatch; heavy?:true }
 function barrierRatio(unit:Combatant,context?:DamageOvermatch):number {
   if(!unit.barrier||!context)return 1;
   return Math.min(1,overmatchMultiplier(context.power,unit,context.channel,context.penetration,context.area,context.canBlock,true,context.curve)/context.multiplier);
@@ -27,6 +33,12 @@ function woundedShare(unit: Combatant): [number, number] {
 }
 /** 余量是尚未凑满一组的伤亡；只按累计总数取整，连续小额伤亡不会丢失或重复。 */
 function woundedFromLoss(unit: Combatant, loss: number, remainder: number): { recoverable: number; remainder: number } {
+  if (phase2Traits(unit)) {
+    const level = effectiveTraitLevel(unit, 'medic'), percent = level ? traitParameter('medicRescue', level) : 50;
+    const total = (unit.woundedPercentRemainder ?? 0) + loss * percent;
+    unit.woundedPercentRemainder = unit.hp > 0 ? total % 100 : 0;
+    return { recoverable: Math.floor(total / 100), remainder }; // 旧余量封存
+  }
   const [kept, group] = woundedShare(unit), carried = remainder % group, total = loss + carried;
   return { recoverable: Math.floor(kept * total / group) - Math.floor(kept * carried / group), remainder: total % group };
 }
@@ -41,14 +53,16 @@ function applyMemberDamage(unit:Combatant,amount:number,targets:number,overflow=
   }
   return result;
 }
-export function applyDamagePlan(unit:Combatant,plan:MemberDamagePlan):{direct:number;splash:number;overflow:number} {
+export function applyDamagePlan(unit:Combatant,planned:MemberDamagePlan):{direct:number;splash:number;overflow:number;energyAbsorbed?:number;energyOverloaded?:number} {
+  const energy=absorbEnergyShield(unit,planned),plan=energy.plan;
   const direct=applyMemberDamage(unit,unit.barrier ? plan.incomingDirect ?? plan.direct : plan.direct,plan.targets,plan.overflow,plan.overmatch);
   const splash=plan.splash&&plan.splashTargets?applyCombatDamage(unit,unit.barrier ? plan.incomingSplash ?? plan.splash : plan.splash,plan.splashTargets,plan.overmatch):0;
-  return {direct:direct.health,splash,overflow:direct.overflow};
+  return {direct:direct.health,splash,overflow:direct.overflow,...(energy.absorbed||energy.overloaded?{energyAbsorbed:energy.absorbed,energyOverloaded:energy.overloaded}:{})};
 }
 
 /** 旧档缺省为零；只接受本规则留下的完整人数，不推测历史伤亡。 */
 export function validateWounded(unit: Health): void {
+  validateRecoveryRemainders(unit as Combatant);
   const count = unit.recoverableWounded;
   if (count === undefined) return;
   if (!Number.isSafeInteger(count) || count < 0 || unit.scale === 'hero' && count !== 0
@@ -99,16 +113,41 @@ export function applyRecovery(unit: Combatant, amount: number): number {
 
 /** 吸血：造成实际生命伤害后回复其中25%；非生物与载具目标不提供，编队只救回已有的可救伤兵。 */
 export function lifestealRecovery(attacker: Combatant, target: Combatant, lifeDamage: number): number {
+  const amount = lifestealAmount(attacker, target, lifeDamage);
+  return amount > 0 ? applyRecovery(attacker, amount) : 0;
+}
+/** 无副作用的恢复估计供面板/AI 使用；输入须为护盾及过量截断后的生命伤害。 */
+export function lifestealAmount(attacker: Combatant, target: Combatant, lifeDamage: number): number {
   if (attacker.rulesVersion !== 'v2' || !(lifeDamage > 0) || attacker.status !== 'ready' || attacker.hp <= 0 || target.body === 'vehicle'
     || !activeTraitIds(attacker).includes('lifesteal') || activeTraitIds(target).includes('inorganic')) return 0;
-  return applyRecovery(attacker, Math.floor(lifeDamage * 0.25));
+  return Math.min(recoveryCapacity(attacker), Math.floor(lifeDamage * traitValue(attacker, 'lifesteal', 'lifestealRatio', .25)));
 }
 /** 被动再生不花主行动；失能、濒死与离场时暂停，同源或同类再生只取最高。 */
 export function regenerationAmount(unit: Combatant, registry: Map<string, Trait> = traitRegistry(), conditions: Map<string, ConditionDef> = standardConditionMap()): number {
   if (unit.status !== 'ready' || unit.hp <= 0 || activeConditionIds(unit).some((id) => conditions.get(id)?.skipTurn)) return 0;
   let amount = 0;
   for (const id of activeTraitIds(unit)) for (const effect of registry.get(id)?.effects ?? []) if (effect.kind === 'regen') amount = Math.max(amount, effect.perRound);
-  return Math.min(recoveryCapacity(unit), amount * (isCohort(unit) && unit.scale !== 'hero' ? Math.max(1,personnel(unit)/COHORT_REFERENCE) : 1));
+  if (phase2Traits(unit) && amount > 0) {
+    const level = effectiveTraitLevel(unit, 'regen');
+    amount = 3 * traitParameter('woundRatio', level) * healingGradeMultiplier(level, unit.level, unit.healingModel);
+  }
+  return Math.min(recoveryCapacity(unit), amount * (isCohort(unit) && unit.scale !== 'hero' ? Math.max(1,personnel(unit)/COHORT_REFERENCE) : 1) + (phase2Traits(unit) && amount > 0 ? (unit.regenerationRemainder ?? 0) / 10000 : 0));
+}
+
+/** amount为本周期只读预算（含旧余量）；不能由额外动作或预览调用此提交入口。 */
+export function settleRegeneration(unit: Combatant, amount: number): number {
+  if (!phase2Traits(unit)) return applyRecovery(unit, amount);
+  if (!activeTraitIds(unit).includes('regen') || ['dead', 'fled'].includes(unit.status) || recoveryCapacity(unit) <= 0) { unit.regenerationRemainder = 0; return 0; }
+  if (amount <= 0) return 0; // 失能/临时濒死暂停，保留不足1的既有余量
+  const ticks = Math.round(amount * 10000), restored = applyRecovery(unit, Math.floor(ticks / 10000));
+  unit.regenerationRemainder = recoveryCapacity(unit) > 0 ? ticks % 10000 : 0;
+  return restored;
+}
+
+export function validateRecoveryRemainders(unit: Combatant): void {
+  for (const [key, max] of [['regenerationRemainder', 9999], ['woundedPercentRemainder', 99]] as const) {
+    const value = unit[key]; if (value !== undefined && (!Number.isSafeInteger(value) || value < 0 || value > max)) throw Error('恢复余量记录损坏');
+  }
 }
 
 /** 明确战外现员更新先消耗已有伤兵；减少现员不凭叙事数字创造可救来源。 */

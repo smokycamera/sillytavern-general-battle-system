@@ -34,6 +34,7 @@ export interface WeaponProfile {
   apShare: number;
   /** 射程带：近战 0 / 长柄 1 / 枪械 3 / 重火力 4 */
   range: number;
+  critMin?: number;
   minRange?: number;
   pointBlankPolicy?: Weapon['pointBlankPolicy'];
   pointBlankPenalty?: number;
@@ -59,6 +60,14 @@ export interface WeaponClassProfile {
 }
 
 export const WEAPON_CLASSES: Record<string, WeaponClassProfile> = {
+  'greatsword': { id: 'greatsword', name: '巨剑', profile: {"id":"cls-greatsword","name":"巨剑","dmgMult":1.3,"apShare":1,"range":0} },
+  'dagger': { id: 'dagger', name: '短兵器', profile: {"id":"cls-dagger","name":"短兵器","critMin":19,"dmgMult":1.2,"apShare":0.6,"range":0,"attacks":2} },
+  'great-weapon': { id: 'great-weapon', name: '巨型冷兵器', profile: {"id":"cls-great-weapon","name":"巨型冷兵器","dmgMult":1.35,"apShare":1.1,"range":0} },
+  'heavy-polearm': { id: 'heavy-polearm', name: '重型长兵器', profile: {"id":"cls-heavy-polearm","name":"重型长兵器","dmgMult":1.15,"apShare":1.15,"range":1} },
+  'crossbow': { id: 'crossbow', name: '弩', profile: {"id":"cls-crossbow","name":"弩","dmgMult":1.25,"apShare":1,"range":4,"minRange":1,"pointBlankPolicy":"forbid","reload":1} },
+  'shotgun': { id: 'shotgun', name: '霰弹枪', profile: {"id":"cls-shotgun","name":"霰弹枪","dmgMult":1.6,"apShare":0.6,"range":2,"pointBlankPolicy":"allow"} },
+  'rocket': { id: 'rocket', name: '火箭筒', profile: {"id":"cls-rocket","name":"火箭筒","dmgMult":1.6,"apShare":1.2,"range":3,"minRange":1,"pointBlankPolicy":"forbid","reload":1} },
+  'sprayer': { id: 'sprayer', name: '喷射武器', profile: {"id":"cls-sprayer","name":"喷射武器","dmgMult":1,"apShare":1,"range":1,"pointBlankPolicy":"allow"} },
   summon: { id: 'summon', name: '召唤武器', profile: { id: 'cls-summon', name: '召唤武器', dmgMult: 1, apShare: 1, range: 1, pointBlankPolicy: 'penalty', pointBlankPenalty: -2, desc: '召唤物统一攻击；不占手和负重，默认距离1，射程修正使距离超过1时按直射远程武器结算' } },
   throwing: { id:'throwing',name:'投掷冷兵器',profile:{id:'cls-throwing',name:'投掷冷兵器',dmgMult:1,apShare:.8,range:3,reload:1,pointBlankPolicy:'allow',desc:'标枪、飞刀等短距单手投掷；可抵近使用，投出后准备一回合；单发强于轻型投射，持续火力较低'} },
   'heavy-rifle': { id:'heavy-rifle',name:'单发重步枪',profile:{id:'cls-heavy-rifle',name:'单发重步枪',dmgMult:1.6,apShare:1.2,range:5,minRange:1,reload:1,pointBlankPolicy:'penalty',pointBlankPenalty:-3,desc:'狙击枪、反器材步枪等高威力单发：穿透比普通步枪高1、射程更远；射后装填一回合，抵近命中降低3'} },
@@ -68,7 +77,7 @@ export const WEAPON_CLASSES: Record<string, WeaponClassProfile> = {
   sword: { id: 'sword', name: '剑', profile: { id: 'cls-sword', name: '剑', dmgMult: 1.0, apShare: 1.0, range: 0, desc: MELEE_PROFILES.sword!.description } },
   axe: { id: 'axe', name: '斧', profile: { id: 'cls-axe', name: '斧', dmgMult: 1.15, apShare: 1.1, range: 0, desc: MELEE_PROFILES.axe!.description } },
   spear: { id: 'spear', name: '长兵器', profile: { id: 'cls-spear', name: '长兵器', dmgMult: 1.05, apShare: 1.15, range: 1, desc: MELEE_PROFILES.spear!.description } },
-  bow: { id: 'bow', name: '弓弩', profile: { id: 'cls-bow', name: '弓弩', dmgMult: 1.0, apShare: 1.0, range: 4, minRange: 1, pointBlankPolicy: 'forbid', desc: '远程射击：可越过友军，不能越过墙体或存活敌方前排' } },
+  bow: { id: 'bow', name: '弓', profile: { id: 'cls-bow', name: '弓', dmgMult: 1.0, apShare: 1.0, range: 4, minRange: 1, pointBlankPolicy: 'forbid', desc: '远程射击：可越过友军，不能越过墙体或存活敌方前排' } },
   firearm: { id: 'firearm', name: '火枪', profile: { id: 'cls-firearm', name: '火枪', dmgMult: 1.5, apShare: 1.05, range: 4, minRange: 0, pointBlankPolicy: 'penalty', pointBlankPenalty: -2, reload: 1, desc: '单发火枪：高单发威力、穿透额外+1，射后装填一回合' } },
   rifle: { id: 'rifle', name: '步枪', profile: { id: 'cls-rifle', name: '步枪', dmgMult: 1.2, apShare: 1.1, range: 4, minRange: 0, pointBlankPolicy: 'penalty', pointBlankPenalty: -2, attacks: 2, desc: '自动步枪：每回合两段速射' } },
   autocannon: { id: 'autocannon', name: '机炮', profile: { id: 'cls-autocannon', name: '机炮', dmgMult: 1.4, apShare: 1.15, range: 5, minRange: 0, pointBlankPolicy: 'penalty', pointBlankPenalty: -3, attacks: 3, desc: '直射连续点射：三段分摊火力，穿透额外+2，擅长连续火力和装甲交战；人形编队两人操作一门，人形个体单人操作只能维持三分之二火力；允许非载具使用，按实际总负重判定配装' } },
@@ -79,19 +88,35 @@ export const WEAPON_CLASSES: Record<string, WeaponClassProfile> = {
   blunt: { id: 'blunt', name: '钝器', profile: { id: 'cls-blunt', name: '钝器', dmgMult: 1.1, apShare: 1.2, range: 0, desc: MELEE_PROFILES.blunt!.description } },
 };
 
+/** §2.2 盾类型：覆盖率基础/上限、负重与手数；能量盾没有覆盖率（R15）。 */
+export const SHIELD_CLASSES = {
+  buckler: { name: '小盾', load: 1, hands: 1, coverage: .15, limit: .3 },
+  shield: { name: '中盾', load: 2, hands: 1, coverage: .35, limit: .5 },
+  'tower-shield': { name: '大盾', load: 3, hands: 1, coverage: .5, limit: .6 },
+  'energy-shield': { name: '能量盾', load: 1, hands: 0, coverage: 0, limit: 0 },
+} as const;
+export type ShieldClass = keyof typeof SHIELD_CLASSES;
+const BASE_MECHANISMS: Record<string, string> = { greatsword: 'sword', dagger: 'sword', 'great-weapon': 'axe', 'heavy-polearm': 'spear', crossbow: 'bow', shotgun: 'rifle', rocket: 'cannon', buckler: 'shield', 'tower-shield': 'shield', 'energy-shield': 'shield' };
+export function baseMechanism(weapon?: { recipe?: { mechanism: string }; tags?: string[] }): string | undefined {
+  const mechanism = weapon?.recipe?.mechanism ?? weapon?.tags?.find(t => t.startsWith('mechanism:'))?.slice(10);
+  return mechanism ? BASE_MECHANISMS[mechanism] ?? mechanism : undefined;
+}
 /** 新正文的明确同义词。只选择既有机制，不附送名称暗示的额外效果。 */
 export const WEAPON_CLASS_ALIASES: Record<string, string[]> = {
+  greatsword: ['双手剑', '大剑'], dagger: ['短刃', '匕首', '短匕', '短刀'],
+  'great-weapon': ['巨斧', '双手斧', '双手巨斧', '大锤', '巨锤', '双手锤'], 'heavy-polearm': ['戟', '长戟'],
+  crossbow: ['十字弩', 'crossbow'], shotgun: ['散弹枪'], rocket: ['火箭发射器'], sprayer: ['喷火器', '火焰喷射器'], shield: ['盾', '盾牌'],
   throwing:['投掷武器','标枪','飞刀','投矛','投斧','throwing weapon'],
   'heavy-rifle':['重步枪','单发步枪','反器材步枪','重型单发步枪','狙击枪','狙击步枪','反器材狙击步枪','heavy rifle','sniper rifle','anti-materiel rifle'],
   natural:['拳脚','爪牙','徒手','獠牙','利爪','自然武器','natural weapon'],
   demolition: ['爆破', '炸药', '炸药包', '爆破包', '火药桶', '矿用火药桶', '炸药桶', 'powder keg', 'explosive', 'explosives'],
-  sword: ['近战武器', '短刀', '匕首', '短匕', '刀', '长剑', '短剑', '巨剑', '双手剑', '战刃', '鞭剑', '军刀', '马刀', '武士刀', '链锯剑', '单分子刀', 'saber', 'blade'],
-  axe: ['战斧', '巨斧', '手斧', '双手斧', '双手巨斧'],
-  spear: ['长柄武器', '矛', '长矛', '长枪', '枪矛', '戟', '长戟', '长柄', '骑枪', '长杆武器', 'pike', 'lance'],
-  bow: ['投射武器', '弓', '弩', '长弓', '短弓', '弓箭', '复合弓', '十字弩', 'crossbow'],
+  sword: ['近战武器', '刀', '长剑', '短剑', '战刃', '鞭剑', '军刀', '马刀', '武士刀', '链锯剑', '单分子刀', 'saber', 'blade'],
+  axe: ['战斧', '手斧'],
+  spear: ['长柄武器', '矛', '长矛', '长枪', '超长枪', '枪矛', '长柄', '骑枪', '长杆武器', 'pike', 'lance'],
+  bow: ['投射武器', '弓弩', '长弓', '短弓', '弓箭', '复合弓'],
   'light-ranged': ['投石索', '手枪', '手弩', '短铳', '左轮手枪', '投石带', '弹弓', 'pistol', 'sling', 'hand crossbow'],
   firearm: ['燧发枪', '火绳枪', '火铳', '滑膛枪', '前装枪', 'musket'],
-  rifle: ['枪械', '轻型枪械', '霰弹枪', '散弹枪', '机枪', '突击步枪', '自动步枪', '卡宾枪', '精确射手步枪', '爆弹枪', '冲锋枪', '车载机枪', 'assault rifle', 'machine gun'],
+  rifle: ['枪械', '轻型枪械', '机枪', '突击步枪', '自动步枪', '卡宾枪', '精确射手步枪', '爆弹枪', '冲锋枪', '车载机枪', 'assault rifle', 'machine gun'],
   autocannon: ['自动炮', '车载机炮', '转管机炮', '机关炮', 'autocannon', 'auto cannon'],
   'indirect-cannon': ['曲射炮', '间接火炮', '间接火力', '榴弹炮', '迫击炮', '投石机', '抛石机', 'howitzer', 'mortar'],
   cannon: ['重型枪炮', '火炮', '直射炮', '炮', '大炮', '坦克炮', '舰炮', '加农炮', '轨道炮', '电磁炮', '直射火炮', 'railgun'],
@@ -102,37 +127,14 @@ export const WEAPON_CLASS_ALIASES: Record<string, string[]> = {
 export function resolveWeaponClass(name: string): string | undefined {
   const value = name.trim().toLowerCase();
   return Object.values(WEAPON_CLASSES).find((c) => c.id === value || c.name === value)?.id
+    ?? Object.entries(SHIELD_CLASSES).find(([id, c]) => id === value || c.name === value)?.[0]
     ?? Object.entries(WEAPON_CLASS_ALIASES).find(([, names]) => names.includes(value))?.[0];
 }
 
-/** AI 描述的武器名 → 分类（关键词映射）。命中分类后按「分类×武器等级」计算数值。 */
-const CLASS_KEYWORDS: { cls: string; kws: string[] }[] = [
-  { cls: 'demolition', kws: ['爆破装置', '火药桶', '炸药桶', '爆破包', '炸药包'] },
-  { cls: 'throwing', kws: ['标枪', '飞刀', '投矛', '飞斧', '投斧'] },
-  { cls: 'light-ranged', kws: ['轻型投射', '手弩', '手枪', '短铳', '投石索'] },
-  { cls: 'heavy-rifle', kws: ['重步枪', '反器材', '狙击'] },
-  { cls: 'sword', kws: ['剑', '刀', '长剑', '短剑', '巨剑', '武士刀'] },
-  { cls: 'axe', kws: ['斧', '战斧', '巨斧', '手斧'] },
-  { cls: 'spear', kws: ['长枪', '长兵器', '长矛', '枪矛', '戟', '长柄', '骑枪'] },
-  { cls: 'bow', kws: ['弓', '弩', '长弓', '短弓', '弓箭', '复合弓'] },
-  { cls: 'firearm', kws: ['火枪', '燧发枪', '火绳枪', '火铳', '铳枪', '滑膛枪'] },
-  { cls: 'rifle', kws: ['步枪', '机枪', '突击步枪', '卡宾', 'hk416', '自动枪', '枪', '车载机枪'] },
-  { cls: 'autocannon', kws: ['机炮', '机关炮', '自动炮', 'autocannon', 'auto cannon'] },
-  { cls: 'indirect-cannon', kws: ['曲射', '间接火炮', '榴弹炮', '迫击炮', '投石机', '抛石机', 'howitzer', 'mortar'] },
-  { cls: 'cannon', kws: ['炮', '火炮', '舰炮', '野战炮', '坦克炮'] },
-  { cls: 'energy', kws: ['等离子', '激光', '轨道炮', '脉冲', '能量', '光剑', '电浆', '粒子'] },
-  { cls: 'magic', kws: ['法杖', '魔杖', '魔杖', '魔法', '法术', '魔杖'] },
-  { cls: 'blunt', kws: ['棍', '棒', '锤', '钝器', '钉头锤', '权杖'] },
-];
-
-/** 依据 AI 描述的武器名推断分类（未命中返回 undefined）。 */
-export function weaponClassFromName(name: string): string | undefined {
-  const n = (name ?? '').trim().toLowerCase();
-  if (!n) return undefined;
-  for (const { cls, kws } of CLASS_KEYWORDS) {
-    if (kws.some((k) => n.includes(k.toLowerCase()))) return cls;
-  }
-  return undefined;
+const NAME_CLASS_HINTS: readonly (readonly [string, readonly string[], readonly string[]])[] = [["dagger",["匕首","短匕","短刀","小刀","苦无","战术刀","格斗刀","猎刀","蝴蝶刀","三棱刺","峨眉刺","kunai","dagger","knife","dirk","stiletto"],[]],["greatsword",["巨剑","大剑","双手剑","重剑","斩马刀","野太刀","大太刀","苗刀","双手刀","巨刃","claymore","zweihander","greatsword","flamberge"],[]],["great-weapon",["巨斧","大斧","双手斧","开山斧","丹麦斧","大锤","巨锤","双手锤","重锤","链枷","greataxe","great axe","maul","flail"],[]],["heavy-polearm",["戟","斧枪","钩镰","关刀","偃月刀","薙刀","长柄刀","长柄斧","长柄锤","朴刀","陌刀","halberd","glaive","poleaxe","bardiche"],[]],["crossbow",["弩","神臂弓","crossbow","arbalest"],["弓弩"]],["shotgun",["霰弹","散弹","喷子","泵动","双管","shotgun"],["冲锋枪","smg"]],["rocket",["火箭筒","火箭发射器","火箭弹","反坦克火箭","单兵火箭","铁拳","巴祖卡","无后坐力","rpg","bazooka","panzerfaust","recoilless","at4"],["导弹"]],["sprayer",["喷火","火焰喷射","喷射器","flamethrower"],[]],["energy-shield",["能量盾","力场","能量护盾","护盾发生器","偏导","个人护盾","光盾","deflector","force field","energy shield"],[]],["tower-shield",["大盾","塔盾","巨盾","长盾","大橹","立盾","防暴盾","防弹盾","突击盾","战术盾","pavise","tower"],[]],["buckler",["小盾","小圆盾","臂盾","拳盾","手盾","扣盾","buckler"],[]]];
+export function nameClassHint(name: string): string | undefined {
+  const value = name.toLowerCase();
+  return NAME_CLASS_HINTS.find(([, words, excludes]) => !excludes.some(word => value.includes(word)) && words.some(word => value.includes(word)))?.[0];
 }
 
 /** 取分类的原型（供 generateUnit 用）；未知名回退剑。 */
@@ -283,4 +285,10 @@ export function buildWeaponDice(opts: BuildWeaponOpts): BuiltWeaponDice {
     ...(profile.reload ? { reload: profile.reload } : {}),
     audit: { profileId: profile.id, dmgMult: profile.dmgMult, apShare: profile.apShare, baseAvg, apAvg },
   };
+}
+
+export function classMismatchHint(name: string, mechanism: string): string {
+  const hint = nameClassHint(name);
+  const label = (id: string) => WEAPON_CLASSES[id]?.name ?? SHIELD_CLASSES[id as ShieldClass].name;
+  return hint && hint !== mechanism ? '名称像' + label(hint) + '，当前按' + label(mechanism) + '结算，可在面板修改' : '';
 }

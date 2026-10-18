@@ -24,7 +24,7 @@ import { CATEGORY_LABELS } from '../../engine/src/data/ability-blueprints.js';
  *   armor=同格式 "名字:种类L等级"（如 龙鳞宝铠:重甲L6）——种类限 无甲/轻甲/中甲/重甲/超重甲，
  *          等级 L1~L10 定防护品质（L5=标准）；也兼容纯档位名/具体护甲名（板甲/防弹衣……）
  *   skills=逗号分隔的技能条目，每条 "名字:类别L等级"（如 焚天:烈焰风暴L6）或裸蓝图名/类别名；等级可省略
- *   traits=特质名或id 逗号分隔，五项专精可带等级（林地专精L8）；items=随身道具，见 item-spec.ts；leader=敌方首领标记
+ *   traits=特质名或id 逗号分隔，已完成分级的特质可带等级（林地专精L8）；items=随身道具，见 item-spec.ts；leader=敌方首领标记
  * 解析容错：属性缺失/数值越界 → 降级为 invalid 记录，永不抛错；
  * 非法标签仅展示原文供玩家核查，不影响其余解析。
  */
@@ -75,6 +75,10 @@ export type Suggestion =
       armorProfile?: import('../../engine/src/types.js').ItemRecipe['protectionProfile'];
       quality?: number;
       shield?: boolean;
+      shieldName?: string;
+      shieldClass?: import('../../engine/src/data/weapons.js').ShieldClass;
+      shieldLevel?: number;
+      shieldBonuses?: Enhancements;
       hp?: number;
       hpMax?: number;
       name: string;
@@ -84,7 +88,7 @@ export type Suggestion =
       /** 编制刻度：hero=个体，company=编队；mook仅供旧消息读取。 */
       scale?: 'hero' | 'mook' | 'company';
       /** 阵营：enemy=敌方（默认）/ ally=我方（可生成玩家自己/友军） */
-      side?: 'ally' | 'enemy';
+      side?: 'ally' | 'enemy' | 'neutral';
       /** 正文装备描述（可选）：weapon 原文（如 "裂颅者:斧L6"） */
       weapon?: string;
       /** 武器显示名：weapon="名字:种类L等级" 的名字段（旧格式无名字段时不落此键） */
@@ -111,7 +115,7 @@ export type Suggestion =
       armorLevel?: number;
       /** 从 skills 解析出的技能条目（蓝图+威力等级+自定义名） */
       skills?: SkillSpec[];
-      /** 正文特质（可选）：特质名或 id；五项专精可带等级（林地专精L8） */
+      /** 正文特质（可选）：特质名或 id；已完成分级的特质可带等级（林地专精L8） */
       traits?: string[];
       /** 随身道具：每张卡各一套，入库归该卡；佩戴、充能道具自动装上 */
       items?: SpawnItem[];
@@ -345,6 +349,7 @@ function blueprintKey(spec: string): string | undefined {
 
 /** 单条技能：可选 "名字:" 前缀 + 蓝图（必命中才有效）+ 可选 L等级 */
 function parseSkillItem(item: string): SkillSpec | undefined {
+  if ((item.match(/[lL]\s*\d+/g) ?? []).length > 1) throw Error('每个技能末尾只写一个L，若要不同等级请拆成两项技能');
   const parsed = parseEnhancementSuffix(item,'skill');
   if(parsed.bonuses){const skill=parseSkillItem(parsed.text);return skill?{...skill,bonuses:parsed.bonuses}:undefined;}
   const s = item.trim();
@@ -435,9 +440,10 @@ export function parseSuggestionTags(text: string): ParseResult {
           const life = duration.kind !== 'permanent' ? { remaining: duration.count } : {};
           if (kind === 'bless') {
             const parsed = names.map((name) => narrativeTraitLevel(name)), levels: Record<string, number> = {};
-            const traitIds = parsed.map((p, i) => p.kind === 'trait' ? p.id : names[i]!);
-            for (const p of parsed) if (p.kind === 'trait' && p.level !== undefined && p.level !== 5) levels[p.id] = Math.max(levels[p.id] ?? 0, p.level);
-            const traitLevels = Object.keys(levels).length ? levels : undefined;
+            const traitIds = [...new Set(parsed.map((p, i) => p.kind === 'trait' ? p.id : names[i]!))];
+            for (const p of parsed) if (p.kind === 'trait' && p.level !== undefined) levels[p.id] = Math.max(levels[p.id] ?? 0, p.level);
+            const entries = Object.entries(levels);
+            const traitLevels = entries.length ? Object.fromEntries(entries) : undefined;
             validateTraitSource({ id: 'parse', name, kind: 'blessing', traitIds, ...(traitLevels ? { traitLevels } : {}), duration, ...life });
             suggestions.push({ kind: 'bless', id: a.id.trim(), name, traitIds, ...(traitLevels ? { traitLevels } : {}), duration, raw });
           } else {
@@ -471,7 +477,7 @@ export function parseSuggestionTags(text: string): ParseResult {
         break;
       }
       case 'take': {
-        if (!a.id?.trim() || a.qty !== undefined && (!/^\d+$/.test(a.qty) || Number(a.qty) < 1 || Number(a.qty) > 9999)) { invalid.push(raw); break; }
+        if (!a.id?.trim() || a.qty !== undefined && (!/^\d+$/.test(a.qty) || Number(a.qty) < 1 || !Number.isSafeInteger(Number(a.qty)))) { invalid.push(raw); break; }
         suggestions.push({ kind: 'take', id: a.id.trim(), qty: Number(a.qty ?? 1), note: a.note, raw });
         break;
       }
@@ -489,7 +495,7 @@ export function parseSuggestionTags(text: string): ParseResult {
         suggestions.push({
           kind: 'give', item, note: (a.note ?? '').trim() || undefined,
           ...(a.id?.trim() ? { id: a.id.trim() } : {}),
-          qty: clampInt(a.qty, 1, 9999, 1), lootType: spec ? spec.kind === 'shield' ? 'armor' : spec.kind : lootType,
+          qty: clampInt(a.qty, 1, Number.MAX_SAFE_INTEGER, 1), lootType: spec ? spec.kind === 'shield' ? 'armor' : spec.kind : lootType,
           ...(spec ? { spec } : {}), raw,
         });
         break;
@@ -577,6 +583,9 @@ export function parseSuggestionTags(text: string): ParseResult {
         // 护甲：同格式 "龙鳞宝铠:重甲L6"（名字＋档位种类＋品质等级）
         const armorRaw = (a.armor ?? '').trim();
         const armSpec = armorRaw ? parseArmorSpec(armorRaw) : undefined;
+        const shieldRaw = (a.shield ?? '').trim();
+        const shieldSpec = shieldRaw && !['true', 'false'].includes(shieldRaw) ? parseItemSpecification(shieldRaw) : undefined;
+        if (shieldSpec && shieldSpec.kind !== 'shield') throw new Error('shield 需要盾牌规格');
         // 技能：逗号分隔 "名字:蓝图L等级"
         const skillsRaw = (a.skills ?? a.abilities ?? '').trim();
         const skills = skillsRaw ? parseAbilitySpec(skillsRaw) : [];
@@ -592,7 +601,7 @@ export function parseSuggestionTags(text: string): ParseResult {
           level: clampInt(training.text.slice(1), 1, 10, 1), bonuses: training.bonuses,
           count: clampInt(a.count, 1, 20, 1),
           ...((SCALES as readonly string[]).includes(scaleRaw) ? { scale: scaleRaw as (typeof SCALES)[number] } : {}),
-          ...((a.side ?? '').trim() === 'ally' ? { side: 'ally' as const } : {}),
+          ...(['ally', 'neutral'].includes((a.side ?? '').trim()) ? { side: a.side!.trim() as 'ally' | 'neutral' } : {}),
           ...(weaponRaw ? { weapon: weaponRaw } : {}),
           ...(wepSpec?.classKey ? { weaponClass: wepSpec.classKey } : {}),
           weaponBonuses: wepSpec?.bonuses,
@@ -608,6 +617,8 @@ export function parseSuggestionTags(text: string): ParseResult {
           ...(armSpec?.tier !== undefined ? { armorTier: armSpec.tier } : {}),
           armorBonuses: armSpec?.bonuses,
           ...(armSpec?.level ? { armorLevel: armSpec.level } : {}),
+          ...(shieldRaw ? { shield: shieldRaw === 'true' || !!shieldSpec } : {}),
+          ...(shieldSpec ? { shieldName: splitItemSpecification(shieldRaw).name, shieldLevel: shieldSpec.power, shieldClass: shieldSpec.mechanism, shieldBonuses: shieldSpec.bonuses } : {}),
           ...(skills.length ? { skills } : {}),
           ...(splitList(a.traits) ? { traits: splitList(a.traits) } : {}),
           ...(items.length ? { items } : {}),

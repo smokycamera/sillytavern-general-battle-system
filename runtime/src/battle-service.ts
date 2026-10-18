@@ -1,3 +1,4 @@
+import { prepareClassMigration } from '../../panel/src/arms-v2.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import type { PersistReceipt, HostSession, MessageTag } from '../../host/src/contracts.js';
 import { sameSession } from '../../host/src/contracts.js';
@@ -29,7 +30,7 @@ export interface ServiceState {
 }
 type Listener = (state: ServiceState) => void;
 
-/** The store is the only authority. Every reducer runs on a private candidate. */
+/** The store owns durable checkpoints; a battle may advance on a private session candidate. */
 export class BattleService {
   private phase: ServiceState['phase'] = 'loading';
   private error?: string;
@@ -45,9 +46,23 @@ export class BattleService {
   private generation?: { receivedId?: number; ended: boolean };
   private scanQueue: Promise<unknown> = Promise.resolve();
   private loading?: { session?: HostSession; promise: Promise<void> };
+  private memoryPanel?: { save: NarrativeSave; session: HostSession; revision: number; generation?: string };
   readonly capabilities = { beforeGeneration: false, generationEnded: false, messageIdentity: false, injection: false };
   constructor(readonly host: NativeHost, readonly store: NativeStore, private initialize?: () => Promise<boolean>) {}
-  snapshot(): NarrativeSave { return this.store.snapshot(); }
+  private livePanel(): NarrativeSave | undefined {
+    const panel = this.memoryPanel, head = this.store.head();
+    if (!panel || panel.revision !== (head?.revision ?? 0) || panel.generation !== head?.generation || !this.inSync()) return undefined;
+    const session = this.store.session();
+    if (!session || panel.session.scope.key !== session.scope.key) return undefined;
+    // An adopted metadata object still holds this exact durable checkpoint.
+    // Preserve the live fight when the host replaces that same-chat object.
+    panel.session = session;
+    return panel.save;
+  }
+  snapshot(keys?: readonly (keyof NarrativeSave)[]): NarrativeSave {
+    const live = this.livePanel();
+    return live ? structuredClone(keys ? Object.fromEntries(keys.filter(key => key in live).map(key => [key, live[key]])) : live) : this.store.snapshot(keys);
+  }
   /** The archive belongs to the host's current context; a same-chat object swap that still holds it is adopted. */
   private inSync(): boolean { return sameSession(this.store.session(), this.host.session()) || this.store.adoptContext(); }
   canWrite(): boolean { return ['ready', 'review'].includes(this.phase) && !this.store.hasPending() && this.inSync() && !this.host.hasLegacyRuntime(); }
@@ -68,7 +83,9 @@ export class BattleService {
   // The entry ignores the save and the panel skips its own commits: copy the archive only when a listener reads it.
   private notify(): void {
     for (const listener of this.listeners) {
-      const save = this.store.snapshotLater();
+      const live = this.livePanel();
+      let copy: NarrativeSave | undefined;
+      const save = live ? () => copy ??= structuredClone(live) : this.store.snapshotLater();
       const state: ServiceState = { phase: this.phase, get save() { return save(); }, receipt: structuredClone(this.receipt), error: this.error };
       try { listener(state); } catch (error) { console.error('战阵视图更新失败', error); }
     }
@@ -94,6 +111,7 @@ export class BattleService {
     return loading.promise;
   }
   private async loadCurrent(): Promise<void> {
+    this.memoryPanel = undefined;
     const epoch = ++this.loadEpoch;
     this.phase = 'loading'; this.error = undefined; this.receipt = undefined; this.migration = undefined;
     this.binding = undefined; this.generation = undefined;
@@ -162,18 +180,35 @@ export class BattleService {
       this.host.clearInjection(PROMPT_ID); this.capabilities.injection = false; return;
     }
     const text = this.migration ? '【战阵】当前档案需要核对迁移预览；暂不执行正文档案事件。'
-      : narrativeProjection(this.snapshot(), this.host.recentPromptText());
+      : narrativeProjection(this.livePanel() ?? this.store.snapshot(['storage', 'inventory', 'rosterIds', 'protagonistId', 'committedOutcomeIds', 'field', 'lighting', 'promptSettings', 'narrativeIdState', 'battle'],
+        ['seed', 'round', 'combatants', 'battlefield', 'attached', 'fieldTags']), this.host.recentPromptText());
     this.capabilities.injection = this.host.inject(PROMPT_ID, text);
   }
   /** Caller versions are captured before awaiting; queued old intentions cannot follow a chat switch. */
-  async transact(update: (before: NarrativeSave) => NarrativeSave, options: { version?: CommandVersion; operationId?: string; allowReview?: boolean; clear?: boolean; messageTags?: MessageTag[] } = {}): Promise<PersistReceipt> {
+  async transact(update: (before: NarrativeSave) => NarrativeSave, options: { version?: CommandVersion; operationId?: string; allowReview?: boolean; clear?: boolean; messageTags?: MessageTag[]; memoryOnly?: boolean; durable?: boolean } = {}): Promise<PersistReceipt> {
     const version = options.version ?? this.version();
     const reject = (error: string): PersistReceipt => ({ status: 'conflict', operationId: options.operationId ?? '', session: version.session, error });
     if (this.disposed || !sameSession(version.session, this.store.session()) || !sameSession(version.session, this.host.session()) || version.generation !== this.store.head()?.generation) return reject('聊天或存档代次已变化');
     if (this.migration && !options.allowReview) return reject('请先核对档案迁移预览');
-    const receipt = await this.store.commit(version.revision, before => compactNarrativeSources(update(prepareNarrativeIds(before))), { operationId: options.operationId, clear: options.clear, messageTags: options.messageTags });
+    const live = this.livePanel(), previousMemory = this.memoryPanel;
+    const prepare = (before: NarrativeSave) => compactNarrativeSources(update(prepareNarrativeIds(before)));
+    let candidate: NarrativeSave | undefined;
+    try { if (options.memoryOnly || live) candidate = structuredClone(prepare(this.snapshot())); }
+    catch (error) { return { ...reject(errorText(error)), status: 'failed' }; }
+    const sameBattle = live?.battle && candidate?.battle && live.battle.kind === candidate.battle.kind && live.battle.snap.seed === candidate.battle.snap.seed;
+    if ((options.memoryOnly || sameBattle && !options.durable) && !options.clear && !options.messageTags?.length) {
+      if (!this.canWrite()) return reject('当前档案尚未就绪');
+      this.memoryPanel = { save: candidate!, session: structuredClone(version.session), revision: version.revision, generation: version.generation };
+      const receipt: PersistReceipt = { status: 'confirmed', memoryOnly: true, operationId: options.operationId ?? randomId(), session: version.session };
+      this.receipt = receipt; this.notify(); return receipt;
+    }
+    const receipt = await this.store.commit(version.revision, before => {
+      if (live && this.memoryPanel !== previousMemory) throw Error('战斗内存状态已更新，请重新保存');
+      return candidate ?? prepare(before);
+    }, { operationId: options.operationId, clear: options.clear, messageTags: options.messageTags });
     if (!this.disposed && sameSession(version.session, this.store.session()) && sameSession(version.session, this.host.session())) {
       this.receipt = receipt;
+      if (receipt.status === 'confirmed') this.memoryPanel = undefined;
       if (receipt.status === 'confirmed') this.error = undefined;
       this.phase = this.store.pendingOperation() ? 'pending' : this.migration ? 'review' : 'ready';
       if (receipt.status === 'confirmed') this.project();
@@ -200,7 +235,7 @@ export class BattleService {
     return receipt;
   }
   async discardPending(): Promise<DiscardResult> { const result = await this.store.discardPending(); await this.load(); return result; }
-  persistPanel(next: NarrativeSave, expectedRevision: number): Promise<PersistReceipt> {
+  persistPanel(next: NarrativeSave, expectedRevision: number, options: { memoryOnly?: boolean } = {}): Promise<PersistReceipt> {
     const candidate = structuredClone(next);
     return this.transact(before => {
       if (expectedRevision !== (before.factRevision ?? 0)) throw Error('面板已过期，请重新载入最新档案');
@@ -209,10 +244,10 @@ export class BattleService {
       const changed = factsOf(prepared) !== factsOf(before);
       prepared = { ...before, ...prepared, promptSettings: before.promptSettings, proposals: before.proposals ?? [], storySync: before.storySync ?? false,
         committedNarrativeSources: before.committedNarrativeSources, deletedNarrativeReceipts: before.deletedNarrativeReceipts,
-        inventoryOperations: before.inventoryOperations, inventoryMigrationBackup: before.inventoryMigrationBackup, migrationBackups: before.migrationBackups,
+        inventoryOperations: before.inventoryOperations, classMigration: before.classMigration, inventoryMigrationBackup: before.inventoryMigrationBackup, migrationBackups: before.migrationBackups,
         factRevision: (before.factRevision ?? 0) + Number(changed) };
       return prepared;
-    });
+    }, { memoryOnly: options.memoryOnly, durable: !options.memoryOnly });
   }
   previewInventory(action: InventoryAction, id: string = randomId()): InventoryPreview {
     this.version(); if (this.migration) throw Error('请先核对档案迁移预览');
@@ -222,6 +257,10 @@ export class BattleService {
   commitInventoryPreview(preview: InventoryPreview): Promise<PersistReceipt> {
     if (preview.context !== this.inventoryContext()) throw Error('库存预览属于旧聊天，请重新预览');
     return this.inventoryAction(preview.intent);
+  }
+  migrateWeaponClasses(selected: string[], expectedRevision: number): Promise<PersistReceipt> {
+    const ids = [...selected], id = randomId();
+    return this.transact(before => { if (expectedRevision !== (before.factRevision ?? 0)) throw Error('档案已变化，请重新查看类别更新'); return prepareClassMigration(before, ids, id); });
   }
   inventoryAction(intent: InventoryIntent): Promise<PersistReceipt> {
     const copy = structuredClone(intent); return this.transact(before => prepareInventoryTransaction(before, copy), { operationId: copy.id });
@@ -388,6 +427,7 @@ export class BattleService {
   }
   dispose(): void {
     if (this.disposed) return;
+    this.memoryPanel = undefined;
     this.disposed = true; this.loadEpoch++; this.binding = undefined; this.phase = 'disposed';
     for (const stop of this.stops.splice(0)) stop();
     this.host.clearInjection(PROMPT_ID); this.notify(); this.listeners.clear();

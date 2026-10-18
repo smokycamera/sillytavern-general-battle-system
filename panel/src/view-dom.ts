@@ -45,10 +45,20 @@ function patchBattleNode(old: Node, next: Node): void {
   // 静态底图：同一 id 的内容不变，整棵子树跳过；id 变化时清空，交给 hydrateTerrain 重画。
   const island = next.getAttribute('data-static');
   if (island !== null && island === old.getAttribute('data-static')) return;
+  // 相同的显示子树交给原生比较后整段保留；表单的实时属性不属于 DOM 属性，仍须同步以支持保存失败回滚。
+  if (old.isEqualNode(next)) {
+    syncBattleControl(old, next);
+    const controls = old.querySelectorAll('input, textarea, select'), values = next.querySelectorAll('input, textarea, select');
+    for (let i = 0; i < controls.length; i++) syncBattleControl(controls[i]!, values[i]!);
+    return;
+  }
   const keepOpen = old instanceof HTMLDetailsElement && old.hasAttribute('data-detail-id');
   for (const attr of [...old.attributes]) if (!(keepOpen && attr.name === 'open') && !next.hasAttribute(attr.name)) old.removeAttribute(attr.name);
   for (const attr of [...next.attributes]) if (!(keepOpen && attr.name === 'open') && old.getAttribute(attr.name) !== attr.value) old.setAttribute(attr.name, attr.value);
   patchBattleChildren(old, next);
+  syncBattleControl(old, next);
+}
+function syncBattleControl(old: Element, next: Element): void {
   if (old instanceof HTMLInputElement && next instanceof HTMLInputElement) {
     if (old.value !== next.value) old.value = next.value;
     old.checked = next.checked;
@@ -86,12 +96,6 @@ function patchBattleChildren(parent: Node, next: Node): void {
 
 /** 更新工作区：战场只修改变化部分，其余工作区保留原有表单恢复逻辑。 */
 export function updateRegion(root: HTMLElement, html: string): void {
-  const open = new Set([...root.querySelectorAll<HTMLDetailsElement>('details[open][data-detail-id]')].map(d => d.dataset.detailId));
-  const existing = new Set([...root.querySelectorAll<HTMLDetailsElement>('details[data-detail-id]')].map(d => d.dataset.detailId));
-  const focus = root.contains(document.activeElement) ? document.activeElement as HTMLInputElement : undefined;
-  const role = focus?.dataset.role, id = focus?.id, section = focus?.dataset.section, dataId = focus?.dataset.id;
-  const selection = focus && ['INPUT', 'TEXTAREA'].includes(focus.tagName) ? [focus.selectionStart, focus.selectionEnd] : undefined;
-  const textScroll = focus instanceof HTMLTextAreaElement ? { top: focus.scrollTop, left: focus.scrollLeft } : undefined;
   if (root.dataset.workspace === 'battle') {
     // 文档里已有同签名的格子不再解析：只留同键空壳，打补丁时按签名整格跳过。
     const live = new Set([...root.querySelectorAll('button.grid-cell[data-static]')].map(el => el.getAttribute('data-static')));
@@ -106,6 +110,13 @@ export function updateRegion(root: HTMLElement, html: string): void {
     for (const {el,left,top} of scroll) if (el.isConnected) { el.scrollLeft=left; el.scrollTop=top; }
     return;
   }
+  // 战场保留原节点，不需要执行下面整页替换用的详情、焦点和选区扫描。
+  const open = new Set([...root.querySelectorAll<HTMLDetailsElement>('details[open][data-detail-id]')].map(d => d.dataset.detailId));
+  const existing = new Set([...root.querySelectorAll<HTMLDetailsElement>('details[data-detail-id]')].map(d => d.dataset.detailId));
+  const focus = root.contains(document.activeElement) ? document.activeElement as HTMLInputElement : undefined;
+  const role = focus?.dataset.role, id = focus?.id, section = focus?.dataset.section, dataId = focus?.dataset.id;
+  const selection = focus && ['INPUT', 'TEXTAREA'].includes(focus.tagName) ? [focus.selectionStart, focus.selectionEnd] : undefined;
+  const textScroll = focus instanceof HTMLTextAreaElement ? { top: focus.scrollTop, left: focus.scrollLeft } : undefined;
   const oldCamera = root.querySelector<HTMLElement>('.grid-camera, .formation-map-camera');
   const nextCamera = fragment.content.querySelector<HTMLElement>('.grid-camera, .formation-map-camera');
   const logScroll = root.querySelector('#logview')?.scrollTop;

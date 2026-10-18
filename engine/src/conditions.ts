@@ -6,6 +6,10 @@
 import type { ConditionDef } from './types.js';
 
 export const STANDARD_CONDITIONS: ConditionDef[] = [
+  { id: 'taunted', name: '嘲讽', desc: '一次正常激活中，敌对行为指向施加者；可接近、固守或自保' },
+  { id: 'blinded', name: '致盲', desc: '两次正常激活；自身观测/直接点名距离1，攻击−4、防御−2', mods: [{ source: 'condition', name: '致盲', kind: 'atk', type: 'flat', value: -4 }, { source: 'condition', name: '致盲', kind: 'def', type: 'flat', value: -2 }] },
+  { id: 'confused', name: '混乱', desc: '一次正常激活，等概率选择自身可感知且可用普通武器攻击的单位；决定保存，加速不重选' },
+  { id: 'charmed', name: '魅惑', desc: '一次正常激活按施术者一方作战，由AI行动；真实归属不变，受到施术者一方实际生命伤害解除；编队现员每翻一倍抵抗+1，随队人物不能单独魅惑（V17及以前只限未随队独立个体）' },
   { id: 'empowered', name: '强击', desc: '提高已能造成的伤害，不绕过防护', mods: [{ source: 'condition', name: '强击', kind: 'dmg', type: 'mult', value: 1.2 }] },
   { id: 'inaccurate', name: '失准', desc: '攻击命中下降', mods: [{ source: 'condition', name: '失准', kind: 'atk', type: 'flat', value: -2 }] },
   { id: 'exposed', name: '破绽', desc: '防御下降，不更改实物护甲', mods: [{ source: 'condition', name: '破绽', kind: 'def', type: 'flat', value: -2 }] },

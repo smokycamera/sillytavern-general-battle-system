@@ -50,13 +50,13 @@ const potion = (id: string, qty: number, assignedTo?: string): InventoryItem => 
 
 describe('道具写法容错与武器词条', () => {
   it('“佩戴”写在特质前、修正方向写在等级前都按规范写法理解；“佩戴L4+4防御”照旧', () => {
-    expect(parseItemSpecification('佩戴破甲L5')).toEqual({ kind: 'item', form: 'worn', power: 5, traits: [{ id: 'ap-weapon' }] });
+    expect(parseItemSpecification('佩戴破甲L5')).toEqual({ kind: 'item', form: 'worn', power: 5, traits: [{ id: 'ap-weapon', level: 5 }] });
     const notes: string[] = [];
     expect(parseItemSpecification('佩戴热能防护L5+4', {}, notes)).toEqual({ kind: 'item', form: 'worn', power: 5, traits: [], bonuses: { thermalProtection: 4 } });
     expect(notes).toEqual(['「佩戴热能防护L5+4」按「佩戴L5+4热能防护」理解']);
     expect(parseItemSpecification('佩戴L4+4防御')).toEqual({ kind: 'item', form: 'worn', power: 4, traits: [], bonuses: { defense: 4 } });
-    // 防护照样占佩戴预算，建档时检查。
-    expect(() => createInventoryItem('x', '护符', parseItemSpecification('佩戴L3+4热能防护'), 'x')).toThrow(/需要4点，L3只有3点/);
+    // 佩戴效果不受总点数上限裁剪。
+    expect(() => createInventoryItem('x', '护符', parseItemSpecification('佩戴L3+4热能防护'), 'x')).not.toThrow();
   });
   it('道具位置上的武器词条换成用这件武器打一次的道具；近战武器与护甲没有对应道具', () => {
     const notes: string[] = [];
@@ -97,17 +97,16 @@ describe('写不出效果的道具单独略过', () => {
     const only = parseProtocol('<tb><give item="冰风暴卷轴" spec="魔法范围寒冷L5"/><unit_set id="u1" items="冰风暴卷轴:魔法范围寒冷L5"/></tb>');
     expect(only.events).toEqual([]); expect(only.errors).toEqual([expect.stringContaining('未采用道具「冰风暴卷轴」')]);
   });
-  it('佩戴修正超出预算时逐点降到预算内并保留道具；特质本身超出预算的在解析时就略过，不拖到入账时整批失败', () => {
+  it('佩戴品无总点数上限，正文保留全部修正与合法特质，并可完成入库', () => {
     const body = '<give item="陶瓷插板" spec="佩戴L5+8防御"/><give item="斗篷" spec="潜伏、林地专精L4"/><give item="手雷" spec="物理范围投射L4" qty="2"/>'
       + '<unit_set id="u1" items="赤鳞护符:佩戴L5+4热能防护+4防御,手雷:物理范围投射L4×2"/>';
     const parsed = parseProtocol(`<tb>${body}</tb>`);
     expect(parsed.errors).toEqual([]);
-    expect(parsed.warnings).toEqual(expect.arrayContaining(['「佩戴L5+8防御」超出L5的佩戴预算，按「佩戴L5+5防御」',
-      '「赤鳞护符:佩戴L5+4热能防护+4防御」超出L5的佩戴预算，按「佩戴L5+2热能防护+3防御」', expect.stringContaining('未采用道具「斗篷」（佩戴效果需要5点，L4只有4点')]));
+    expect(parsed.warnings.join()).not.toMatch(/预算|未采用道具/);
     const next = transact(setup(), body);
     expect(carried(next, 'a')).toEqual([['手雷', 2, '-'], ['赤鳞护符', 1, 'gear']]);
-    expect(next.inventory!.find((i) => i.name === '陶瓷插板')!.mechanics).toMatchObject({ value: { recipe: { form: 'worn', power: 5, bonuses: { defense: 5 } } } });
-    expect(next.inventory!.some((i) => i.name === '斗篷')).toBe(false);
+    expect(next.inventory!.find((i) => i.name === '陶瓷插板')!.mechanics).toMatchObject({ value: { recipe: { form: 'worn', power: 5, bonuses: { defense: 8 } } } });
+    expect(next.inventory!.some((i) => i.name === '斗篷')).toBe(true);
     // 修正写在等级前、效果词写在等级后，也按规范写法理解。
     expect(parseItemSpecification('物理单体射击+6穿透L5')).toMatchObject({ form: 'single', active: skillMechanismId(parseSkillMechanism('物理单体射击')!), bonuses: { penetration: 6 } });
     expect(parseItemSpecification('buff治疗L3+振奋')).toMatchObject({ form: 'single', active: skillMechanismId(parseSkillMechanism('buff治疗+振奋')!) });

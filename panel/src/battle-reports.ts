@@ -8,6 +8,7 @@ import type { BattlefieldSpec } from '../../engine/src/small/spatial.js';
 import { NARRATIVE_TASK } from '../../engine/src/inject/narrative-task.js';
 import type { DeliveryReceipt } from './tavern.js';
 import {memberNoun} from '../../engine/src/member-health.js';
+import { itemUseReport } from './item-use-report.js';
 
 export type Battle = SmallBattle | MassBattle;
 export interface NarrativeEvent { index: number; round: number; text: string }
@@ -26,9 +27,18 @@ export function completedBattleRounds(b: Battle): number {
   // 会战结算完成后计数器已走到下一轮计划；展示实际执行过的轮数。
   return b instanceof SmallBattle ? b.round : b.roundReport()?.round ?? b.round;
 }
+let renderEvents: Map<Battle, { index: number; entry: BattleLogEntry }[]> | undefined;
+/** 一次同步渲染共用可公开日志；不跨动作或异步操作缓存。 */
+export function withBattleReportQueries<T>(query: () => T): T {
+  const own = !renderEvents;
+  if (own) renderEvents = new Map();
+  try { return query(); } finally { if (own) renderEvents = undefined; }
+}
 export function publicBattleEvents(b: Battle): { index: number; entry: BattleLogEntry }[] {
-  return b.log.flatMap((entry, index) => (b.rules.resolutionVersion === 'v2' ? observedLog([entry], 'ally') : [entry]).map(entry => ({index,
+  const cached = renderEvents?.get(b); if (cached) return cached;
+  const events = b.log.flatMap((entry, index) => (b.rules.resolutionVersion === 'v2' ? observedLog([entry], 'ally') : [entry]).map(entry => ({index,
     entry: entry.kind === 'battle-end' && b instanceof SmallBattle && b.objectiveWinner ? { ...entry, text: smallBattleResult(b) ?? entry.text } : entry })));
+  renderEvents?.set(b, events); return events;
 }
 /** 日志区间[from,to)内可叙述的事件；连续逐格移动与速射在区间内合并，不跨过已发送的游标。 */
 export function narrativeEvents(b: Battle, from = 0, to = b.log.length): NarrativeEvent[] {
@@ -56,7 +66,7 @@ function unitPlace(b: Battle, u: Combatant, field?: BattlefieldSpec): string {
 function epilogueUnit(b: Battle, u: Combatant, field?: BattlefieldSpec): string {
   const statuses = {ready:'可行动',dying:'濒死',dead:u.scale==='hero'?'阵亡':'编队失去战斗力',routing:'溃退中',fled:'已撤离'};
   const conditions=u.conditions.filter(c=>c.dur>0).map(c=>`${b.conditions.get(c.id)?.name??c.id}（${c.dur}轮）`);
-  return `${u.side==='ally'?'我方':u.side==='enemy'?'敌方':'中立'} ${u.name}${unitPlace(b,u,field)}：${reportStrengthLabel(u)}，${statuses[u.status]}${woundedLabel(u,true)?'，'+woundedLabel(u,true):''}${conditions.length?'，'+conditions.join('、'):''}`;
+  return `${u.side==='ally'?'我方':u.side==='enemy'?'敌方':'第三方'} ${u.name}${unitPlace(b,u,field)}：${reportStrengthLabel(u)}，${statuses[u.status]}${woundedLabel(u,true)?'，'+woundedLabel(u,true):''}${conditions.length?'，'+conditions.join('、'):''}`;
 }
 /** 按真实生命/现员损失累计，过量伤害不计入；来源按稳定id区分。成员生命编队另记减员人数。 */
 function epilogueDamage(b: Battle): string[] {
@@ -97,15 +107,17 @@ export function battleEpilogue(b: Battle, start?: BattleReport['start']): string
   const openingField=b instanceof SmallBattle&&opening&&start!.snapshot.battlefield&&typeof start!.snapshot.battlefield==='object'?start!.snapshot.battlefield as BattlefieldSpec:undefined;
   const field=b instanceof SmallBattle?b.battlefield:undefined,facts=fieldFacts(b);
   const damage=epilogueDamage(b);
+  const items = b.isOver() ? itemUseReport(b.combatants, b.log) : [];
   const goal = b instanceof SmallBattle && b.battlefield?.objective;
   const mission = goal ? goal.kind === 'annihilation' ? '歼灭战' : goal.kind === 'control' ? goal.attackingSide ? goal.attackingSide === 'ally' ? '攻城战' : '守城战' : '占旗战' : '护送/拦截' : '军团会战';
-  return [`【战阵·战斗终章】${mission}，共${completedBattleRounds(b)}轮；${b.isOver() ? b.winner()==='ally'?'我方胜利':b.winner()==='enemy'?'我方失利':'停战/僵持':'尚未结束'}`,
+  return [`【战阵·战斗终章】${mission}，共${completedBattleRounds(b)}轮；${b.isOver() ? b.winner()==='ally'?'我方胜利':b.winner()==='neutral'?'第三方获胜，我方失败':b.winner()==='enemy'?'我方失利':'停战/僵持':'尚未结束'}`,
     ...(b instanceof SmallBattle && b.isOver() ? ['【胜负原因】' + smallBattleResult(b)] : []),
     `【本场规则】${lethalityRule(b)}`,
     ...(facts.length?['【战场】',...facts]:[]),
     '【开局单位状态与血量】',...(opening?.length?opening.map(u=>epilogueUnit(b,u,openingField)):['开局状态与血量未记录。']),
     '【结束单位状态与血量】',...visible.map(u=>epilogueUnit(b,u,field)),
     '【伤害来源】',...(damage.length?damage:['没有记录到可核实的伤害。']),
+    '【道具使用和效果】',...(items.length ? items : [b.isOver() ? '本场没有记录到道具使用。' : '战斗尚未结束，道具使用与效果将在终章汇总。']),
     NARRATIVE_TASK].join('\n');
 }
 export function makeNarrativeBatch(b: Battle | undefined, report: BattleReport | undefined, deliveries: BattleDeliveries, kind: NarrativeBatch['kind'], start?: BattleReport['start']): NarrativeBatch {

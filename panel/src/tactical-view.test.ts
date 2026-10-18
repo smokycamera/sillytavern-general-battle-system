@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { generatedField, generateUnit, generatedLayeredField, SmallBattle, V11_OVERFLOW_D20, V12_OVERFLOW_D20, standardField, traitRegistry } from '../../engine/src/index.js';
 import { TavernJevAdapter } from './jev-adapter.js';
 import { tacticalFixture } from '../../scripts/p4-tactical-fixture.js';
-import { renderTacticalBattle, selectTacticalElement, tacticalSelection, type TacticalView } from './tactical-view.js';
+import { renderTacticalBattle, selectTacticalElement, tacticalSelection, TacticalQueryCache, type TacticalView } from './tactical-view.js';
 
 describe('战术地图查看与确认', () => {
   it('切换武器、技能和模式保留目标，目标不适用时等待重新选择', () => {
@@ -107,6 +107,32 @@ describe('战术地图查看与确认', () => {
     expect(spy).toHaveBeenLastCalledWith('a');
     spy.mockRestore();
   });
+  it('同一战场状态跨点选复用菜单，行动失效后以及换战场重新计算', () => {
+    const { b } = tacticalFixture(), view: TacticalView = { mode: 'weapon', selectedId: 'a' }, cache = new TacticalQueryCache();
+    const before = JSON.stringify(b.toSnapshot()), spy = vi.spyOn(b, 'getActionOptions');
+    renderTacticalBattle(b, view, undefined, cache);
+    for (const input of [{ mode: 'move' }, { cell: 46 }, { mode: 'weapon' }, { cell: 31 }, { mode: 'guard' }]) {
+      const query = selectTacticalElement(b, view, input, cache);
+      expect(renderTacticalBattle(b, view, undefined, query)).toBe(renderTacticalBattle(b, view));
+    }
+    // 未缓存的对照每轮各查一次；缓存路径始终只查询首次菜单。
+    expect(spy).toHaveBeenCalledTimes(6);
+    expect(JSON.stringify(b.toSnapshot())).toBe(before);
+    spy.mockClear();
+    view.selectedId = 'c'; renderTacticalBattle(b, view, undefined, cache);
+    const activeQuery = selectTacticalElement(b, view, { cell: 45 }, cache);
+    renderTacticalBattle(b, view, undefined, activeQuery);
+    expect(view.selectedId).toBe('a');
+    expect(spy).toHaveBeenCalledTimes(1); expect(spy).toHaveBeenLastCalledWith('c');
+    b.moveTo('a', 46); expect(b.byId('a').pos).toBe(46);
+    cache.clear();
+    expect(renderTacticalBattle(b, view, undefined, cache)).toBe(renderTacticalBattle(b, view));
+    expect(spy).toHaveBeenCalledTimes(3);
+    const restored = SmallBattle.fromSnapshot(b.toSnapshot()), restoredSpy = vi.spyOn(restored, 'getActionOptions');
+    renderTacticalBattle(restored, view, undefined, cache);
+    expect(restoredSpy).toHaveBeenCalledTimes(1); expect(restoredSpy).toHaveBeenLastCalledWith('a');
+    spy.mockRestore(); restoredSpy.mockRestore();
+  });
   it('点选与渲染不改事实；敌军不成为查询者，治疗可点友军，同格友军可预览移动', () => {
     const { b } = tacticalFixture(), view: TacticalView = { mode: 'weapon', selectedId: 'a' };
     const before = JSON.stringify(b.toSnapshot()), query = vi.spyOn(b, 'getActionOptions');
@@ -116,7 +142,7 @@ describe('战术地图查看与确认', () => {
     expect(html).toContain('命中后伤害');
     expect(html).not.toContain('主目标预计损失');
     expect(html).not.toContain('期望已包含未命中');
-    expect(html).toContain('无法穿透，不造成生命或人数损失');
+    expect(html).toContain('无法穿透，不造成伤害');
     expect(html).toContain('连续守住2个完整回合');
     expect(html).not.toContain('未发现的伏兵');
     expect(tacticalSelection(b, view).target?.preview).toMatchObject({ penetrationFactor: 0, expectedDamage: 0 });

@@ -1,3 +1,4 @@
+import { activationControlDuration, controlPolicy } from '../../engine/src/battle-control.js';
 import { abilityCost, fatigueLimit } from '../../engine/src/resources.js';
 import { hitChanceText, hitDamageText, hitDamageDetails } from './damage-preview.js';
 import { ZONE_NAMES, visibleBattleZones } from '../../engine/src/area-effects.js';
@@ -5,11 +6,12 @@ import { tbWeaponShortName } from '../../engine/src/weapon-name.js';
 import { strengthDescription } from '../../engine/src/combat-model.js';
 import { participationText,memberHealthPanel } from './combat-model-view.js';
 import {hasMemberHealth} from '../../engine/src/member-health.js';
-import { renderBattleHighlights, traceOverlay, unitSymbol } from './battle-presentation.js';
-import { weaponReloadKey, FORMATION_NODES, formationNode, isAirborne, moraleLabel, approx, type Combatant, type MassBattle, type Order } from '../../engine/src/index.js';
+import { renderBattleHighlights, commandHeaderHtml, traceOverlay, unitSymbol } from './battle-presentation.js';
+import { activeTraitIds, weaponReloadKey, FORMATION_NODES, formationNode, isAirborne, moraleLabel, approx, type Combatant, type MassBattle, type Order } from '../../engine/src/index.js';
 import { renderFormationFeedback } from './formation-feedback.js';
-import { formationSelection, orderKey, orderLabels, type FormationView, type OrderDrafts } from './formation-orders.js';
+import { formationSelection, orderKey, orderLabels, type FormationView, type OrderDrafts, type FormationQueryCache } from './formation-orders.js';
 import { battleSkillChangeReason } from './battle-skills.js';
+import { withBattleReportQueries } from './battle-reports.js';
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const rankName = { front: '前线', rear: '支援', reserve: '预备' };
 const nodeLabel = (n: typeof FORMATION_NODES[number]) => (n.side === 'ally' ? '我方' : '敌方') + n.wing + rankName[n.rank];
@@ -21,15 +23,19 @@ function orderName(b: MassBattle, order: Order | undefined): string {
   return (source?.id !== order.unitId ? (source?.name ?? '随队人物') + ' · ' : '') + (source?.abilities.find((a) => a.id === order.abilityId)?.name ?? '技能已失效');
 }
 export function renderFormationBattle(b: MassBattle, view: FormationView, drafts: OrderDrafts, automatic: boolean,
-  details: (u: Combatant) => string, previewText: (b: MassBattle, order: Order) => string): string {
-  const s = formationSelection(b, view, drafts), { actor, order, preview, visible, choices } = s;
+  details: (u: Combatant) => string, previewText: (b: MassBattle, order: Order) => string, cache?: FormationQueryCache): string {
+  return withBattleReportQueries(() => renderFormationContent(b, view, drafts, automatic, details, previewText, cache));
+}
+function renderFormationContent(b: MassBattle, view: FormationView, drafts: OrderDrafts, automatic: boolean,
+  details: (u: Combatant) => string, previewText: (b: MassBattle, order: Order) => string, cache?: FormationQueryCache): string {
+  const s = formationSelection(b, view, drafts, cache), { actor, order, preview, visible, choices } = s;
   const over = b.isOver(), editable = !automatic && !over && !b.planningLocked;
   const selfTarget = order?.type === 'ability' && visible.find((u) => u.id === (order.abilityActorId ?? order.unitId))?.abilities.find((a) => a.id === order.abilityId)?.target === 'self';
   const selectedTarget = !selfTarget && order?.targetId ? visible.find((u) => u.id === order.targetId) : undefined;
   const targets = new Set(s.choice?.targets.filter((t) => !t.preview.reason && t.id).map((t) => t.id));
   const area = new Set(preview?.areaTargetIds ?? []);
   const destination = preview?.destination ?? preview?.vehicleMove ?? preview?.withdrawal ?? preview?.approach ?? preview?.landing;
-  const invalidDrafts = Object.entries(drafts).filter(([unitId, draft]) => b.orderPreview({ unitId, ...draft }).reason);
+  const invalidDrafts = Object.entries(drafts).filter(([unitId, draft]) => (cache ? cache.preview(b, { unitId, ...draft }) : b.orderPreview({ unitId, ...draft })).reason);
   const pendingCount = Object.keys(drafts).length, issuedCount = s.hosts.filter((u) => b.orders.has(u.id)).length;
   const zones=visibleBattleZones(b.observationContext(),'ally');
   // 我方共享敌情：此刻看不见的敌军最后被看见的阵位，以及近几轮遭到未定位攻击的编队。
@@ -55,13 +61,14 @@ export function renderFormationBattle(b: MassBattle, view: FormationView, drafts
   const inspection = visible.find((u) => u.id === view.inspectedId);
   const unitControls = actor ? `<div class="formation-actor"><span class="sub">${editable ? '正在指挥' : '查看我方编队'}</span><h3>${esc(actor.name)}</h3><p>${strengthDescription(actor)} · ${location(actor)}${isAirborne(actor) ? ' · 空中' : ''}</p></div>${memberHealthPanel(actor)}
     <div class="formation-status">${[actor.fatigue ? '疲劳' + approx(actor.fatigue, 1, 'down') + '/' + fatigueLimit(actor) : '', (b.reloadCd.get(actor.id) ?? 0) > 0 ? (tbWeaponShortName(actor.weapon) || '主武器') + '装填中' : '', actor.sidearm && (b.reloadCd.get(weaponReloadKey(actor, actor.sidearm)) ?? 0) > 0 ? (tbWeaponShortName(actor.sidearm) || '副武器') + '装填中' : '', actor.suppression ? '受压制' : '', pressure,
-      ...actor.conditions.filter((c) => c.dur > 0).map((c) => (b.conditions.get(c.id)?.name ?? '持续效果') + ' ' + c.dur + '轮')].filter(Boolean).map((t) => '<span>' + esc(t!) + '</span>').join('')}</div>
+      ...actor.conditions.filter((c) => c.dur > 0).map((c) => (b.conditions.get(c.id)?.name ?? '持续效果') + ' ' + (activationControlDuration(c) ?? c.dur + '轮'))].filter(Boolean).map((t) => '<span>' + esc(t!) + '</span>').join('')}</div>
     <div class="row">${[actor, ...visible.filter(u => u.id === b.attached.get(actor.id))].map(u => `<button data-action="loadout-skills" data-id="${esc(u.id)}" ${battleSkillChangeReason(b, u.id) ? 'disabled' : ''}>${u.id === actor.id ? '技能选择' : '随队技能 · ' + esc(u.name)}</button>`).join('')}</div>
+    ${b.rules.traitLevelModel === 'traits-levels-v2' && activeTraitIds(actor).includes('loose-formation') ? '<div class="formation-choice" aria-label="散兵阵形">'+(['loose','closed'] as const).map(choice=>'<button data-action="trait-formation-choice" data-unit="'+esc(actor.id)+'" data-choice="'+choice+'" aria-pressed="'+((actor.looseFormationChoice??'loose')===choice)+'" '+(!editable || actor.looseChoiceLocked || b.orders.has(actor.id) || b.hasteOrders.has(actor.id)?'disabled':'')+'>'+(choice==='loose'?'疏散':'收拢')+'</button>').join('')+'<small>下军令前可选一次，额外动作沿用。</small></div>':''}
     <div class="formation-current"><span class="tag">${s.draft ? '草案' : s.issued ? '已下达' : '系统建议'}</span><b>${esc(orderName(b, order))}</b>${selectedTarget ? '<p>目标 · ' + esc(selectedTarget.name) + '</p>' : ''}${s.draft && s.issued ? '<small>确认后替换原任务：' + esc(orderName(b, s.issued)) + '</small>' : ''}</div>
     <details class="formation-adjust" data-detail-id="formation-adjust"><summary>调整任务或目标</summary>
       <label>任务<select data-role="formation-order" ${editable ? '' : 'disabled'}>${choices.map((c) => '<option value="' + esc(c.key) + '" ' + (order && c.key === orderKey(order) ? 'selected' : '') + '>' + esc(c.label) + (c.enabled ? '' : ' · 暂不可用') + '</option>').join('')}</select></label>
       ${s.choice?.targets.some((t) => t.id) ? '<label>目标<select data-role="formation-target" ' + (editable ? '' : 'disabled') + '>' + (order?.targetId && !s.choice.targets.some(t => t.id === order.targetId) ? '<option value="' + esc(order.targetId) + '" selected disabled>' + esc(selectedTarget?.name ?? '所选目标') + ' · 不适用于此行动</option>' : '') + s.choice.targets.filter((t) => t.id).map((t) => '<option value="' + esc(t.id!) + '" ' + (t.id === order?.targetId ? 'selected' : '') + '>' + esc(visible.find((u) => u.id === t.id)?.name ?? (t.id?.startsWith('zone:') ? t.id.slice(5).replace('ally','我方').replace('enemy','敌方').replace('front','前线').replace('rear','后方').replace('reserve','预备') : '未定位目标')) + (t.preview.reason ? ' · ' + esc(t.preview.reason) : '') + '</option>').join('') + '</select></label>' : ''}
-      <p>随队人物的技能也使用这支编队的一个主任务。确认改令会替换原任务。</p>
+      <p>随队技能占用编队主任务。</p>
       <label>加速任务<select data-role="formation-haste" ${editable ? '' : 'disabled'}><option value="">自动选择</option>${choices.filter(c => c.order.type !== 'ability' || b.byId(c.order.abilityActorId ?? actor.id).abilities.find(a => a.id === c.order.abilityId)?.itemSourceId).flatMap(c => (c.targets.length ? c.targets : [{order:c.order,id:undefined,preview:{}}]).map(t => ({...t,label:c.label}))).map(t => { const chosen=b.hasteOrders.get(actor.id), key=(o: typeof t.order)=>JSON.stringify([o.type,o.targetId,o.abilityId,o.abilityActorId]), value=key(t.order); return `<option value="${esc(value)}" ${chosen && key(chosen)===value ? 'selected' : ''}>${esc(t.label)}${t.id ? ' → ' + esc(visible.find(u=>u.id===t.id)?.name ?? '') : ''}</option>`; }).join('')}</select></label><small>有加速时，在主任务后执行一次；届时重新检查距离、状态与装填。技能不能用加速任务。</small>
     </details>
     ${order ? '<div class="formation-preview" aria-live="polite">' + (preview?.preview ? '<div class="preview-numbers"><span>命中率<b>' + hitChanceText(preview.preview) + '</b></span><span>命中后伤害<b>' + hitDamageText(preview.preview) + (preview.preview.damageModel==='member-health'?'生命':'')+'</b></span></div>' : '')
@@ -78,7 +85,7 @@ export function renderFormationBattle(b: MassBattle, view: FormationView, drafts
     <div class="formation-submit"><button class="primary" data-action="formation-issue" data-unit="${esc(actor.id)}" data-round="${b.round}" ${editable && order && !preview?.reason ? '' : 'disabled'}>${s.issued ? '确认改令' : '下达此任务'}</button>
       ${s.draft ? '<button data-action="formation-cancel" data-unit="' + esc(actor.id) + '">取消草案</button>' : s.issued ? '<button data-action="formation-revoke" data-unit="' + esc(actor.id) + '" ' + (editable ? '' : 'disabled') + '>撤回军令</button>' : ''}</div>
     <details class="formation-unit-details" data-detail-id="formation-unit-details"><summary>编队与随队人物详情</summary>${details(actor)}${visible.filter((u) => u.id === b.attached.get(actor.id)).map((u) => '<h4>随队 · ' + esc(u.name) + '</h4>' + details(u)).join('')}</details>` : '<p>没有可指挥的我方编队。</p>';
-  return `<section class="formation-workspace"><div class="tactical-heading"><div><span class="sub">军团会战 · 每独立单位一个主任务</span><h2>${over ? b.winner() === 'ally' ? '会战胜利' : b.winner() === 'enemy' ? '会战失利' : '会战结束' : '第' + b.round + '轮计划'}</h2></div><span class="planning-state">${over ? '已结束' : b.planningLocked ? '已锁定' : pendingCount ? pendingCount + '份草案' : '计划中'} · ${issuedCount}/${s.hosts.length}已下达</span></div>
+  return `<section class="formation-workspace"><div class="tactical-heading"><div><span class="sub">军团会战 · 每独立单位一个主任务</span><h2>${over ? b.winner() === 'ally' ? '会战胜利' : b.winner() === 'enemy' ? '会战失利' : '会战结束' : '第' + b.round + '轮计划'}</h2>${commandHeaderHtml(b)}</div><span class="planning-state">${over ? '已结束' : b.planningLocked ? '已锁定' : pendingCount ? pendingCount + '份草案' : '计划中'} · ${issuedCount}/${s.hosts.length}已下达</span></div>
     ${b.endingReason() === 'round-limit' ? '<p class="sub">' + b.roundLimit + '轮期限已到，双方仍有独立主力，判为僵持。</p>' : ''}
     ${automatic && !over ? '<p class="grid-reason">当前由系统指挥：实际指挥者已无法下令。仍可查看任务与战况。</p>' : ''}
     <div class="mass-controls">${actor ? '<button class="formation-mobile-summary" data-action="formation-command-focus"><b>' + esc(actor.name) + '</b><span>' + esc(orderName(b, order)) + (selectedTarget ? ' → ' + esc(selectedTarget.name) : '') + '</span><small>查看任务</small></button>' : ''}<button data-action="formation-fill" ${editable ? '' : 'disabled'}>补齐空缺</button><button class="primary" data-action="mass-resolve" data-round="${b.round}" data-seed="${esc(b.seed)}" ${over || b.planningLocked || invalidDrafts.length || automatic && pendingCount ? 'disabled' : ''}>锁定并执行本轮</button><span class="sub">${invalidDrafts.length ? invalidDrafts.length + '份草案需要调整' : automatic && pendingCount ? '旧草案需取消后再交由系统执行' : '空缺按系统建议执行，可先补齐预览'}</span></div>

@@ -1,3 +1,4 @@
+import {clampShieldDurability,clampEnergyShield} from './shield-state.js';
 import type {Combatant} from './types.js';
 import { capSingleLife } from './health-limits.js';
 
@@ -71,6 +72,7 @@ export function damageMemberGroups(unit:Combatant,amount:number,targets:number,o
     f.health=mergeHealth(survivors);
   }
   unit.hp-=casualties;f.members=unit.hp;
+  if(casualties){clampShieldDurability(unit);clampEnergyShield(unit);}
   return {health:health+overflowDamage,casualties,overflow:overflowDamage};
 }
 export function memberRecoveryCapacity(unit:Combatant):number {

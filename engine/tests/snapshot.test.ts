@@ -3,8 +3,46 @@ import { SmallBattle, makeCombatant } from '../src/small/battle';
 import { MassBattle } from '../src/mass/battle';
 import { traitRegistry } from '../src/data/traits';
 import { SeededRng } from '../src/rng';
+import { generateUnit, standardField, V17_OVERFLOW_D20, V17_OVERFLOW_TW } from '../src/index.js';
 
 const reg = traitRegistry();
+
+function revisionBattle(mode: 'small' | 'mass') {
+  const units = (['ally', 'enemy'] as const).map(side => {
+    const u = generateUnit({ name: side, side, scale: mode === 'small' ? 'hero' : 'company', hpMax: mode === 'small' ? 300 : 20,
+      rulesVersion: 'v2', level: 4, weaponClass: 'sword', traits: [] }, { seed: side, noVariance: true, registry: reg }).unit;
+    u.id = side; return u;
+  });
+  const field = standardField(); field.tiles.fill('open');
+  const battle = mode === 'small' ? new SmallBattle({ combatants: units, battlefield: field, rules: V17_OVERFLOW_D20, seed: 'ai-revision', traitRegistry: reg })
+    : new MassBattle({ combatants: units, rules: V17_OVERFLOW_TW, seed: 'ai-revision', traitRegistry: reg });
+  battle.start(); return battle;
+}
+function advanceRevisionBattle(battle: SmallBattle | MassBattle) {
+  if (battle instanceof SmallBattle) battle.autoAction(battle.active!.id);
+  else { battle.autoOrders('enemy'); battle.autoOrders('ally'); battle.resolveRound(battle.round); }
+}
+
+describe('§6 AI 修订号', () => {
+  it.each(['small', 'mass'] as const)('%s 旧快照只追加一条修订日志，再次读入不重复', mode => {
+    const battle = revisionBattle(mode), snap = structuredClone(battle.toSnapshot()); delete snap.aiRevision;
+    const Class = mode === 'small' ? SmallBattle : MassBattle;
+    const restored = Class.fromSnapshot(snap, { traitRegistry: reg });
+    expect(restored.toSnapshot().aiRevision).toBe(1);
+    expect(restored.log.slice(battle.log.length)).toEqual([{ round: battle.round, kind: 'rule', text: 'AI 已更新（修订 1）：工事中失联会继续搜索，推定敌人只用看见时的情报，会战攻击会避开已被确定击倒的目标' }]);
+    expect(Class.fromSnapshot(structuredClone(restored.toSnapshot()), { traitRegistry: reg }).log).toHaveLength(restored.log.length);
+  });
+  it.each(['small', 'mass'] as const)('%s 中途存读档后逐步重放到结束', mode => {
+    const battle = revisionBattle(mode); advanceRevisionBattle(battle);
+    const Class = mode === 'small' ? SmallBattle : MassBattle;
+    const restored = Class.fromSnapshot(JSON.parse(JSON.stringify(battle.toSnapshot())), { traitRegistry: reg });
+    expect(battle.isOver()).toBe(false);
+    while (!battle.isOver()) {
+      advanceRevisionBattle(battle); advanceRevisionBattle(restored);
+      expect(JSON.parse(JSON.stringify(restored.toSnapshot()))).toEqual(JSON.parse(JSON.stringify(battle.toSnapshot())));
+    }
+  });
+});
 
 describe('战斗快照持久化（面板关窗恢复用）', () => {
   it('SmallBattle 快照 JSON 往返：状态/日志/经验/轮转完整保留，恢复后可继续推进', () => {

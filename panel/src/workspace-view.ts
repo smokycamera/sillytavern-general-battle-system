@@ -10,7 +10,11 @@ export function workspacePage(tab: WorkspaceTab, selected: WorkspaceTab, content
 }
 /** 切页只改变可见性，保留未保存的表单、相机位置与预览；不调用引擎或存档。 */
 export function showWorkspace(tab: WorkspaceTab): void {
-  for (const page of document.querySelectorAll<HTMLElement>('[data-workspace]')) page.hidden = page.dataset.workspace !== tab;
-  for (const button of document.querySelectorAll<HTMLElement>('.workspace-nav [data-tab]')) button.setAttribute('aria-current', button.dataset.tab === tab ? 'page' : 'false');
+  for (const page of document.querySelectorAll<HTMLElement>('[data-workspace]')) {
+    const hidden = page.dataset.workspace !== tab; if (page.hidden !== hidden) page.hidden = hidden;
+  }
+  for (const button of document.querySelectorAll<HTMLElement>('.workspace-nav [data-tab]')) {
+    const current = button.dataset.tab === tab ? 'page' : 'false'; if (button.getAttribute('aria-current') !== current) button.setAttribute('aria-current', current);
+  }
   window.scrollTo(0, 0);
 }

@@ -1,3 +1,4 @@
+import { canonicalTraitId, TRAIT_LEVEL_ALIASES } from '../trait-parameters.js';
 import { TRAITS, TRAIT_FORMER_NAMES } from './traits.js';
 
 export const SKILL_CATEGORIES = [
@@ -31,7 +32,7 @@ export const SKILL_MODIFIER_ALIASES: Record<string, string[]> = {
 export interface SkillMechanism { category: SkillCategory; area: boolean; modifiers: string[] }
 /** 施术者自身位移的效果词。 */
 export const MOVEMENT_MODIFIERS: readonly string[] = ['dash', 'blink', 'withdraw'];
-export interface SkillRecipe extends SkillMechanism { version: 'skill-formula-v1' | 'skill-formula-v2'; power: number }
+export interface SkillRecipe extends SkillMechanism { version: 'skill-formula-v1' | 'skill-formula-v2' | 'skill-formula-v3'; power: number }
 export interface SkillModifier { id: string; name: string; allowed: 'damage' | 'physical' | 'magic' | 'buff' | 'hostile' | 'support' | 'any'; condition?: string; trait?: string }
 export const SKILL_MODIFIERS: SkillModifier[] = [
   { id: 'melee', name: '近战', allowed: 'physical' }, { id: 'ranged', name: '射击', allowed: 'physical' },
@@ -60,6 +61,10 @@ export const SKILL_MODIFIERS: SkillModifier[] = [
   { id: 'slow', name: '减速', allowed: 'hostile', condition: 'slowed' },
   { id: 'root', name: '定身', allowed: 'hostile', condition: 'restrained' },
   { id: 'stun', name: '眩晕', allowed: 'hostile', condition: 'stunned' },
+  { id: 'taunt', name: '嘲讽', allowed: 'hostile', condition: 'taunted' },
+  { id: 'blind', name: '致盲', allowed: 'hostile', condition: 'blinded' },
+  { id: 'confuse', name: '混乱', allowed: 'hostile', condition: 'confused' },
+  { id: 'charm', name: '魅惑', allowed: 'hostile', condition: 'charmed' },
   { id: 'disarm', name: '缴械', allowed: 'hostile', condition: 'disarmed' },
   { id: 'silence', name: '沉默', allowed: 'hostile', condition: 'silenced' },
   { id: 'curse', name: '诅咒', allowed: 'hostile', condition: 'cursed' },
@@ -82,7 +87,7 @@ const retiredTraitModifier = (m: SkillModifier) => !!m.trait && !!(TRAIT_BY_ID.g
 /** 新技能不再授予的特质：先锋部署只在开战部署时生效，战中授予没有作用；守护、大守护与随等级缩放的增益守护是同一种减伤，
  *  写成技能效果时改用增益守护。已学技能的旧 id 照常结算。 */
 export const SKILL_GRANT_REPLACEMENTS: Readonly<Record<string, string | undefined>> = { 'trait-vanguard': undefined, 'trait-guardian': 'ward', 'trait-guardian-greater': 'ward' };
-const offeredModifier = (m: SkillModifier) => !retiredTraitModifier(m) && !(m.id in SKILL_GRANT_REPLACEMENTS);
+const offeredModifier = (m: SkillModifier) => !retiredTraitModifier(m) && !(m.trait && TRAIT_LEVEL_ALIASES[m.trait]) && !(m.id in SKILL_GRANT_REPLACEMENTS);
 function modifierAllowed(m: SkillModifier, category: SkillCategory): boolean {
   const physical = category.startsWith('physical'), magic = category.startsWith('magic'), damage = physical || magic;
   return m.allowed === 'any' || (m.allowed === 'support' ? !damage : m.allowed === 'buff' ? category === 'buff' : m.allowed === 'hostile' ? category !== 'buff'
@@ -163,7 +168,8 @@ export function parseSkillMechanismParts(text: string): SkillMechanismParts | un
   const why = (m: SkillModifier): DroppedSkillWord['reason'] => m.id in SKILL_GRANT_REPLACEMENTS && !SKILL_GRANT_REPLACEMENTS[m.id] ? 'deployment' : retiredTraitModifier(m) ? 'retired'
     : m.allowed === 'buff' || m.id in SKILL_GRANT_REPLACEMENTS ? 'enemy' : 'ally';
   for (const m of found) {
-    const replacement = m.id in SKILL_GRANT_REPLACEMENTS ? SKILL_MODIFIERS.find((r) => r.id === SKILL_GRANT_REPLACEMENTS[m.id]) : m;
+    const normalized = m.trait && canonicalTraitId(m.trait) !== m.trait ? SKILL_MODIFIERS.find(r => r.trait === canonicalTraitId(m.trait!))! : m;
+    const replacement = normalized.id in SKILL_GRANT_REPLACEMENTS ? SKILL_MODIFIERS.find((r) => r.id === SKILL_GRANT_REPLACEMENTS[normalized.id]!) : normalized;
     if (replacement && replacement !== m && !polarityConflict(replacement, category)) { modifiers.push(replacement.id); replaced.push([m.name.replace(/^特质/, ''), replacement.name]); }
     else if (replacement === m && !retiredTraitModifier(m) && !polarityConflict(m, category)) modifiers.push(m.id);
     else dropped.push({ name: m.name.replace(/^特质/, ''), reason: why(m) });

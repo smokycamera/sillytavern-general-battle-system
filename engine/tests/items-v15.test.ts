@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { generateUnit, SmallBattle, MassBattle, standardField, traitRegistry, V14_OVERFLOW_D20, V15_OVERFLOW_D20, V15_OVERFLOW_TW, compileItem, gearItem, syncGearAbilities, attachCarriedItems,
   itemUseAbility, quickItemAction, itemReserveCost, itemEmergency, combatBonuses, gearBonuses, activeTraitIds, traitLevel, tileCost, movementPoints, formationMarchSteps,
   canSpot, collectMods, resolveStack, standardConditionMap, migrateLegacyItem, chargeCapable, rangedArchetype, inferArchetype, prepareItemModel, nightSight, terrainStalks,
-  traitLadderSummary, parseSkillMechanism, skillMechanismId, equipmentReason, applyCombatDamage, type Combatant, type GenerateInput, type ItemSpecification, type LegacyItemMechanics } from '../src/index.js';
+  traitLadderSummary, parseSkillMechanism, skillMechanismId, equipmentReason, applyCombatDamage, validateItemValue, type Combatant, type GenerateInput, type ItemSpecification, type LegacyItemMechanics } from '../src/index.js';
 import { prepareCombatModel } from '../src/combat-model.js';
 import { V6_D20 } from '../src/rules.js';
 import legacy from './fixtures/legacy-items-v14.json';
@@ -48,17 +48,21 @@ describe('V15 道具编译与形态', () => {
     expect(battle.byId('a').abilities.find((x) => x.itemSourceId)).toEqual(action);
     expect(compileItem({ kind: 'item', form: 'single', power: 3, active: active('buff治疗') }, { id: 'y', seed: 'y' })).toEqual(compileItem({ kind: 'item', form: 'single', power: 3, active: active('buff治疗') }, { id: 'y', seed: 'y' }));
   });
-  it('佩戴预算：普通特质3点、强力6点、专精占等级一半、正向修正每点1点，负面修正不返还', () => {
+  it('佩戴品没有总效果点数上限，特质等级和修正完整保留', () => {
+    const over=item({form:'worn',power:1,traits:[{id:'guardian',level:8},{id:'regen',level:10}],bonuses:{defense:8,damage:6}});
+    const saved=JSON.parse(JSON.stringify(over));expect(()=>validateItemValue(saved)).not.toThrow();
+    expect(saved.passive).toEqual({traits:[{id:'guardian',level:8},{id:'regen',level:10}],bonuses:{defense:8,damage:6}});
     expect(() => item({ form: 'worn', power: 5, traits: [{ id: 'night-fighter', level: 5 }], bonuses: { defense: 2 } })).not.toThrow();
-    expect(() => item({ form: 'worn', power: 5, traits: [{ id: 'night-fighter', level: 5 }], bonuses: { defense: 3 } })).toThrow(/需要6点/);
-    expect(() => item({ form: 'worn', power: 5, traits: [{ id: 'flying' }] })).toThrow(/需要6点/);
+    expect(() => item({ form: 'worn', power: 5, traits: [{ id: 'night-fighter', level: 5 }], bonuses: { defense: 3 } })).not.toThrow();
+    expect(() => item({ form: 'worn', power: 5, traits: [{ id: 'flying' }] })).not.toThrow();
     expect(() => item({ form: 'worn', power: 6, traits: [{ id: 'flying' }] })).not.toThrow();
     expect(() => item({ form: 'worn', power: 4, traits: [{ id: 'berserk' }], bonuses: { damage: 1, defense: -3 } })).not.toThrow();
-    expect(() => item({ form: 'worn', power: 5, traits: [{ id: 'stalk' }, { id: 'forest-lore', level: 6 }] })).toThrow(/需要6点/);
-    expect(() => item({ form: 'worn', power: 6, traits: [{ id: 'stalk' }, { id: 'forest-lore', level: 6 }] })).not.toThrow();
+    expect(() => item({ form: 'worn', power: 5, traits: [{ id: 'stalk' }, { id: 'forest-lore', level: 6 }] })).not.toThrow();
+    expect(() => item({ form: 'worn', power: 6, traits: [{ id: 'stalk', level: 5 }, { id: 'forest-lore', level: 6 }] })).not.toThrow();
     expect(() => item({ form: 'worn', power: 9, bonuses: { health: 1 } })).toThrow();
     expect(() => item({ form: 'worn', power: 9, traits: [{ id: 'natural-armor' }] })).toThrow(/不能授予/);
-    expect(() => item({ form: 'worn', power: 5, traits: [{ id: 'guardian', level: 5 }] })).toThrow(/只有五项专精/);
+    // 新编译的佩戴品已采用 V16 预算；旧战斗的运行时门控仍由其快照决定。
+    expect(() => item({ form: 'worn', power: 5, traits: [{ id: 'guardian', level: 5 }] })).not.toThrow();
   });
   it('佩戴、充能道具件数不限、不计负重；同一特质只算一次，专精取最高一级；同方向修正取最高一件，与训练修正合计限±10', () => {
     const u = unit('a'); u.bonuses = { defense: 7 };
@@ -170,7 +174,7 @@ describe('V15 编队件数、加速动作与 AI 保留价值', () => {
     const healer = carry(company('h', 'ally', 40), 'dose', { form: 'single', power: 3, active: active('buff治疗') }, 8), dose = healer.abilities.find((x) => x.itemSourceId)!;
     const heal = (dose.effects.find((e) => e.op === 'heal') as { amount: number }).amount;
     applyCombatDamage(friend, heal * 8, 8);
-    expect(itemUseAbility(healer, dose, friend).ability.effects.find((e) => e.op === 'heal')).toEqual({ op: 'heal', amount: heal * 8 });
+    expect(itemUseAbility(healer, dose, friend).ability.effects.find((e) => e.op === 'heal')).toEqual({ op: 'heal', power: 3, amount: heal * 8 });
     const cloak = carry(company('c', 'ally', 40), 'cloak', { form: 'single', power: 5, active: active('buff潜伏') }, 8), stealth = cloak.abilities.find((x) => x.itemSourceId)!;
     expect(itemUseAbility(cloak, stealth, friend).reason).toMatch(/需要40件/);
     delete a.itemModel; expect(itemUseAbility(a, bomb, target).ability).toBe(bomb);
@@ -229,10 +233,10 @@ describe('五项专精十级', () => {
     return [mods(u, 'atk', { fieldTags: ['urban'], ranged: false, distance: 1 }), mods(u, 'atk', { fieldTags: ['urban'], ranged: true, distance: 2 }), mods(u, 'atk', { fieldTags: ['urban'], ranged: true, distance: 4 }),
       mods(u, 'def', { fieldTags: ['urban'] }), mods(u, 'spd', { fieldTags: ['urban'] }), terrainStalks(u, 'street')];
   }
-  for (const id of ['forest-lore', 'mountain-born', 'night-fighter', 'plains-runner', 'urban-fighter']) it(`${id}：L1–10 每级都比上一级多一项，省略等级即 L5 且与 V14 相同`, () => {
+  for (const id of ['forest-lore', 'mountain-born', 'night-fighter', 'plains-runner', 'urban-fighter']) it(`${id}：L1–10 每级都比上一级多一项，新输入省略为L1，V14冻结L5`, () => {
     const ladder = [signature(id, undefined), ...Array.from({ length: 10 }, (_, i) => signature(id, i + 1))];
     for (let level = 1; level <= 10; level++) expect(ladder[level], `L${level}`).not.toEqual(ladder[level - 1]);
-    expect(signature(id, 0 as never)).toEqual(ladder[5]); // traits 写了专精但没写等级
+    expect(signature(id, 0 as never)).toEqual(ladder[1]); // 新建特质没写等级为L1；历史存档缺省L5另测。
     expect(signature(id, 0 as never, false)).toEqual(ladder[5]);
     expect(signature(id, 9, false)).toEqual(ladder[5]); // V14 记录了等级也按 L5
     expect(traitLadderSummary(id, 5)).toMatch(/^L5：/);

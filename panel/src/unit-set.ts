@@ -1,7 +1,7 @@
 import { singleLifeLimit } from '../../engine/src/health-limits.js';
 /** 正文战外绝对赋值。所有修改先在副本校验，装备实物与档案一起提交。 */
 import type { Ability, Combatant, EquipmentSlot, ItemMechanics, ItemSpecification } from '../../engine/src/index.js';
-import { compileItem, equipmentReason, resolveTraitId, traitRegistry, standardConditionMap, parseDice, generateUnit, narrativeTraitLevel, validateTraitLevels, type GenerateInput } from '../../engine/src/index.js';
+import { compileItem, equipmentReason, resolveTraitId, traitRegistry, standardConditionMap, parseDice, generateUnit, narrativeTraitLevel, isGradedTrait, validateTraitLevels, type GenerateInput } from '../../engine/src/index.js';
 import { validateEnhancements, validateChannelProtection, type Enhancements } from '../../engine/src/enhancements.js';
 import { anchoredWeapon } from '../../engine/src/power-anchors.js';
 import { MAX_PREPARED_SKILLS, compileSkill, resolvePreparedSkills, skillDefinitionId } from '../../engine/src/skill-catalog.js';
@@ -146,7 +146,7 @@ const bonusKey = (bonuses?: Enhancements) => JSON.stringify(Object.entries(bonus
 function sameGear(mechanics: ItemMechanics | undefined, spec: ItemSpecification | undefined): boolean {
   if (!mechanics || !spec || mechanics.kind === 'item' || spec.kind === 'item' || mechanics.kind !== spec.kind) return false;
   const recipe = mechanics.value.recipe;
-  const mechanism = spec.kind === 'weapon' ? spec.mechanism : spec.kind === 'armor' ? 'armor:' + spec.tier : 'shield';
+  const mechanism = spec.kind === 'weapon' ? spec.mechanism : spec.kind === 'armor' ? 'armor:' + spec.tier : spec.mechanism ?? 'shield';
   return !!recipe && recipe.mechanism === mechanism && recipe.power === spec.power && bonusKey(recipe.bonuses) === bonusKey(spec.bonuses)
     && (spec.quality === undefined || spec.quality === recipe.quality) && (spec.body === undefined || spec.body === recipe.size)
     && (spec.kind !== 'weapon' || (spec.enchantment === undefined || (recipe.enchantment ?? 'none') === spec.enchantment) && (spec.stabilized === undefined || !!recipe.stabilized === spec.stabilized))
@@ -184,7 +184,7 @@ function skillValues(unit: Combatant, input: unknown): Ability[] {
       const definition = skillDefinitionId(String(spec.id)); if (!definition) throw Error('未知技能效果');
       const power = spec.level ?? ability?.power ?? 5; number(power, '技能等级', 1, 10, true);
       const old = ability;
-      ability = compileSkill({ id: definition, name: spec.name as string | undefined, bonuses: spec.bonuses as Enhancements | undefined }, power, unit.id);
+      ability = compileSkill({ id: definition, name: spec.name as string | undefined, bonuses: spec.bonuses as Enhancements | undefined }, power, unit.id, unit.skillModel);
       ability.id = old?.id ?? `${unit.id}:story-skill:${index}:${ability.id}`;
       const carrier = { ...unit, combatModel: 'cohort-v2' as const, damageModel:unit.damageModel ?? 'wounds-v1' as const, abilities: [ability] }; upgradeCombatSkills(carrier);
     }
@@ -268,11 +268,13 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
     data.traits = data.traits.map((name) => {
       if (typeof name !== 'string') return name;
       const parsed = narrativeTraitLevel(name, registry);
-      if (parsed.kind !== 'trait' || parsed.level === undefined && parsed.droppedLevel === undefined) return name;
-      if (parsed.level !== undefined && parsed.level !== 5) levels[parsed.id] = parsed.level;
+      if (parsed.kind !== 'trait') return name;
+      if (isGradedTrait(parsed.id)) levels[parsed.id] = Math.max(levels[parsed.id] ?? 0, parsed.level ?? 5);
       return parsed.id;
     });
-    data.traitLevels = Object.keys(levels).length ? levels : null;
+    data.traits = [...new Set(data.traits as unknown[])];
+    const entries = Object.entries(levels).filter(([, level]) => level !== 5);
+    data.traitLevels = entries.length ? Object.fromEntries(entries) : null;
   }
   for (const [alias, key] of Object.entries({state:'status',speed:'speedTier',weapon2:'sidearm'})) if (data[alias] !== undefined) {
     if (data[key] !== undefined && JSON.stringify(data[key]) !== JSON.stringify(data[alias])) throw Error(alias + '与' + key + '不能同时指定'); data[key] = data[alias]; delete data[alias];

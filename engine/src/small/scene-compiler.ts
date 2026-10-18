@@ -1,6 +1,6 @@
 import type { BattlefieldPlan, LandmarkPlan, GatePlan } from './battlefield-plan.js';
 import { BattlefieldPlanError } from './battlefield-error.js';
-import { WORLD_ANCHORS, SCENE_ARCHETYPE_NAMES, type SceneIntent, type SceneEntity, type WorldAnchor, type SceneArchetype } from './scene-intent.js';
+import { MAX_DEPLOYMENT_ZONES, WORLD_ANCHORS, SCENE_ARCHETYPE_NAMES, type SceneIntent, type SceneEntity, type WorldAnchor, type SceneArchetype } from './scene-intent.js';
 import { SCENE_ARCHETYPES, normalizeSceneIntent } from './scene-intent.js';
 import { groundBlocked, intactStructure } from './layers.js';
 import { gridDistance, neighbors, findGridPath, gridCostsToGoals, unitLineOfSight, type BattlefieldSpec } from './spatial.js';
@@ -18,7 +18,7 @@ export interface SceneRegion {
     sources?: string[];
 }
 export interface DeploymentZone {
-    side: 'ally' | 'enemy';
+    side: Combatant['side'];
     unitId?: string;
     cells: number[];
     landmarkId?: string;
@@ -35,7 +35,7 @@ export interface SceneRecord {
     objectiveRegion?: {
         id: string;
         relation: 'targets' | 'exits_at';
-        side: 'ally' | 'enemy';
+        side: Combatant['side'];
         unitId?: string;
     };
 }
@@ -172,11 +172,11 @@ export function finishSceneRegions(field: BattlefieldSpec, plan: BattlefieldPlan
             field.scene.regions.push({ id, kind: mark.kind, label: mark.label, cells: [...mark.cells], access: [...new Set(mark.cells.flatMap(p => groundBlocked(field, p) ? neighbors(field, p) : [p]))].filter(p => !groundBlocked(field, p)) });
         }
     for (const r of intent?.relations ?? []) {
-        if (!['ally', 'enemy'].includes(r.subject) && !unitBindings[r.subject])
+        if (!['ally', 'enemy', 'neutral'].includes(r.subject) && !unitBindings[r.subject])
             continue;
         if (r.relation === 'targets' || r.relation === 'exits_at') {
             const unitId = unitBindings[r.subject], side = unitId ? roster.find(u => u.id === unitId)?.side : r.subject;
-            if (side !== 'ally' && side !== 'enemy')
+            if (side !== 'ally' && side !== 'enemy' && side !== 'neutral')
                 throw new BattlefieldPlanError('任务地点引用了非法部队');
             if (field.scene.objectiveRegion && field.scene.objectiveRegion.id !== r.object)
                 throw new BattlefieldPlanError('本场只支持一个任务目标区域');
@@ -186,7 +186,7 @@ export function finishSceneRegions(field: BattlefieldSpec, plan: BattlefieldPlan
         if (!['guards', 'occupies', 'approaches_from', 'inside', 'near'].includes(r.relation))
             throw new BattlefieldPlanError('部队关系须为驻守、占据或接近地点');
         const region = sceneRegion(field, r.object)!;
-        const unitId = unitBindings[r.subject], side = unitId ? undefined : r.subject as 'ally' | 'enemy';
+        const unitId = unitBindings[r.subject], side = unitId ? undefined : r.subject as Combatant['side'];
         // Each cell holds two ordinary units or one large unit.
         const actors = roster.filter(u => unitId ? u.id === unitId : u.side === side), large = actors.filter(u => u.body && u.body !== 'human' || u.mount).length;
         const required = large + Math.ceil((actors.length - large) / 2);
@@ -231,7 +231,7 @@ export function finishSceneRegions(field: BattlefieldSpec, plan: BattlefieldPlan
                 extended = `为部署完整部队，${region.label}防区延伸至${radius}格`;
         }
         const zoneSide = side ?? roster.find(u => u.id === unitId)?.side;
-        if (zoneSide !== 'ally' && zoneSide !== 'enemy')
+        if (zoneSide !== 'ally' && zoneSide !== 'enemy' && zoneSide !== 'neutral')
             throw new BattlefieldPlanError('指定正文部队没有合法阵营');
         // Siege roles outrank the relation's wording: attackers start outside the walls, defenders of the city inside.
         const clipped = clipRelationZone(field, zoneSide, unitId, r.relation, region, cells, required);
@@ -251,7 +251,7 @@ export function deriveRetreatEdges(field: BattlefieldSpec): void {
     if (!field.deploymentZones?.length)
         return;
     field.retreatEdges = {};
-    for (const side of ['ally', 'enemy'] as const) {
+    for (const side of ['ally', 'enemy', 'neutral'] as const) {
         const cells = field.deploymentZones.filter(z => z.side === side).flatMap(z => z.cells);
         if (!cells.length)
             continue;
@@ -351,11 +351,11 @@ export function sceneSummary(field: BattlefieldSpec): string {
 export function validateSceneRecord(field: BattlefieldSpec): void {
     const legal = (p: unknown) => Number.isInteger(p) && Number(p) >= 0 && Number(p) < field.tiles.length;
     const cellList = (v: unknown) => Array.isArray(v) && v.length <= field.tiles.length && v.every(legal) && new Set(v).size === v.length;
-    if (field.deploymentZones !== undefined && (!Array.isArray(field.deploymentZones) || field.deploymentZones.length > 26
-        || field.deploymentZones.some(z => !z || !['ally', 'enemy'].includes(z.side) || !cellList(z.cells) || !z.cells.length
+    if (field.deploymentZones !== undefined && (!Array.isArray(field.deploymentZones) || field.deploymentZones.length > MAX_DEPLOYMENT_ZONES
+        || field.deploymentZones.some(z => !z || !['ally', 'enemy', 'neutral'].includes(z.side) || !cellList(z.cells) || !z.cells.length
             || z.unitId !== undefined && (typeof z.unitId !== 'string' || z.unitId.length > 200) || z.platform !== undefined && typeof z.platform !== 'boolean')))
         throw Error('场景部署区损坏');
-    if (field.retreatEdges !== undefined && (!field.retreatEdges || typeof field.retreatEdges !== 'object' || Object.entries(field.retreatEdges).some(([side, cells]) => !['ally', 'enemy'].includes(side) || !cellList(cells)
+    if (field.retreatEdges !== undefined && (!field.retreatEdges || typeof field.retreatEdges !== 'object' || Object.entries(field.retreatEdges).some(([side, cells]) => !['ally', 'enemy', 'neutral'].includes(side) || !cellList(cells)
         || (cells as number[]).some(p => p % field.width !== 0 && p % field.width !== field.width - 1 && Math.floor(p / field.width) !== 0 && Math.floor(p / field.width) !== field.height - 1))))
         throw Error('撤离边缘损坏');
     if (field.initialDeployment !== undefined && (!field.initialDeployment || typeof field.initialDeployment !== 'object' || Array.isArray(field.initialDeployment)
@@ -377,7 +377,7 @@ export function validateSceneRecord(field: BattlefieldSpec): void {
         throw Error('场景区域记录损坏');
     const objective = field.scene.objectiveRegion;
     if (objective !== undefined && (!objective || !['targets', 'exits_at'].includes(objective.relation)
-        || !['ally', 'enemy'].includes(objective.side) || !field.scene.regions.some(r => r.id === objective.id)
+        || !['ally', 'enemy', 'neutral'].includes(objective.side) || !field.scene.regions.some(r => r.id === objective.id)
         || objective.unitId !== undefined && (typeof objective.unitId !== 'string' || objective.unitId.length > 200)))
         throw Error('正文任务区域记录损坏');
 }

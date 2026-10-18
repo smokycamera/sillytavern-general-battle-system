@@ -27,6 +27,8 @@ export type SaveScope = 'chat' | 'character';
 
 export interface SaveReceipt {
   status: 'saved' | 'local-only' | 'failed';
+  /** Accepted in this session; no browser/host persistence has occurred. */
+  memoryOnly?: boolean;
   host: boolean;
   local: boolean;
   error?: string;

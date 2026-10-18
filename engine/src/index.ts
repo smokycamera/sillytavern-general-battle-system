@@ -7,6 +7,8 @@ export * from './skill-movement.js';
 export * from './skill-model.js';
 export * from './item-model.js';
 export * from './trait-levels.js';
+export * from './trait-level-model.js';
+export * from './trait-parameters.js';
 export * from './afflictions.js';
 export * from './body.js';
 /**
@@ -29,6 +31,7 @@ export * from './damage.js';
 export * from './actions.js';
 export * from './conditions.js';
 export * from './rules.js';
+export * from './command-v2.js';
 export * from './small/battle.js';
 export * from './small/spatial.js';
 export * from './small/field-generator.js';
@@ -81,3 +84,8 @@ export * from './small/scene-intent.js';
 export * from './small/scene-compiler.js';
 export * from './small/force-deployment.js';
 export * from './small/height-map.js';
+
+export * from './healing.js';
+
+export * from './battle-control.js';
+export * from './phase2-traits.js';

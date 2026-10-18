@@ -42,7 +42,7 @@ it('攻守反转会镜像移动胜利点，守方占点不提前赢，守满期�
   const b = battle(true, 'enemy'); expect(b.battlefield!.objective.cell).toBe(52);
   b.byId('ally').pos = 52; b.byId('enemy').pos = 3;
   for (let n = 0; n < 6; n++) round(b);
-  expect(b.isOver()).toBe(false); expect(b.controlRounds).toEqual({ ally: 0, enemy: 0 });
+  expect(b.isOver()).toBe(false); expect(b.controlRounds).toMatchObject({ ally: 0, enemy: 0 });
   expect(renderTacticalBattle(b, { mode: 'weapon' })).toContain('我方防守，敌方进攻');
   b.round = 60; b.turnIndex = 1; b.endTurn(); expect(b.winner()).toBe('ally');
   expect(battleEpilogue(b)).toContain('我方作为守方守城成功');

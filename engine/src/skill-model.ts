@@ -9,9 +9,16 @@ import type { Combatant, RulePack } from './types.js';
 import { standardConditionMap } from './conditions.js';
 
 export const SKILL_MODEL = 'skills-v1' as const;
-export type SkillModel = typeof SKILL_MODEL;
-export const isSkillModel = (model: unknown): model is SkillModel => model === SKILL_MODEL;
+export const PHASE2_SKILL_MODEL = 'skills-v2' as const;
+/** V20：组合控制每多一项效果，普通控制的抵抗难度 −1（skills-v2 为 −2）；其余与 skills-v2 相同。 */
+export const PHASE3_SKILL_MODEL = 'skills-v3' as const;
+export type SkillModel = typeof SKILL_MODEL | typeof PHASE2_SKILL_MODEL | typeof PHASE3_SKILL_MODEL;
+export const isSkillModel = (model: unknown): model is SkillModel => model === SKILL_MODEL || model === PHASE2_SKILL_MODEL || model === PHASE3_SKILL_MODEL;
 export const skillsV14 = (unit: Pick<Combatant, 'skillModel'> | undefined): boolean => isSkillModel(unit?.skillModel);
+/** V17 起的技能公式（新授予期限、治疗规格、默认 L1 等）；V20 沿用。 */
+export const skillsPhase2 = (model: unknown): boolean => model === PHASE2_SKILL_MODEL || model === PHASE3_SKILL_MODEL;
+/** 组合技能每多一项效果，普通控制的抵抗难度降低多少；嘲讽、致盲、混乱、魅惑不降，按精力计价。 */
+export const controlSavePenalty = (model: unknown): number => model === PHASE3_SKILL_MODEL ? 1 : 2;
 
 export function validateSkillModel(value: unknown): void {
   if (value !== undefined && !isSkillModel(value)) throw new Error('技能规则版本损坏');

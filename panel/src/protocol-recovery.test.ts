@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { parseProtocol, recoverProtocol } from './protocol.js';
 
 describe('草稿字段恢复与错误定位', () => {
+  it('盾牌坏修正可逐项修复，保留名称、等级和合法修正', () => {
+    const text = '<spawn name="卫兵" side="ally" scale="hero" shield="塔盾:盾L5+99防御+2防护"/>';
+    const recovered = recoverProtocol(text), parsed = parseProtocol(recovered.text);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.events[0]).toMatchObject({ shield: true, shieldName: '塔盾', shieldLevel: 5, shieldBonuses: { protection: 2 } });
+    expect(recovered.diagnostics.some(d => d.field === 'shield')).toBe(true);
+  });
   it('保留整个单位和合法字段，只移除坏装备、坏技能及坏修正', () => {
     const text = '<tb>\n<spawn name="卫兵" side="ally" scale="company" hpMax="40" weapon="剑L5+99伤害+穿甲" weapon2="陌生武器L3" armor="重甲L4" skills="治疗L3,火花:魔法单体L4+99伤害+2精度" traits="快速,不存在的特质"/>\n</tb>';
     const repaired = recoverProtocol(text), parsed = parseProtocol(repaired.text);

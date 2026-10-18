@@ -141,7 +141,7 @@ function numeric(value: string, key: string): string {
 const numericKeys = new Set(['hp', 'hpMax', 'level', 'count', 'qty', 'quality', 'rounds', 'battles', 'reserves', 'speed', 'morale', 'xp', 'xpProgress', 'xpValue', 'memberHp', 'atk', 'def', 'spd', 'moraleMax']);
 const booleanKeys = new Set(['shield', 'mount', 'stabilized', 'permanent', 'retired']);
 const textKeys = new Set(['name', 'item', 'note', 'reason', 'id', 'source', 'data']);
-const specKeys = new Set(['weapon', 'weapon2', 'armor', 'shieldSpec', 'spec', 'skills']);
+const specKeys = new Set(['weapon', 'weapon2', 'armor', 'shield', 'shieldSpec', 'spec', 'skills']);
 const enumAliases: Record<string, Record<string, string>> = {
   side: { 我方: 'ally', 友方: 'ally', 友军: 'ally', allied: 'ally', friendly: 'ally', 敌方: 'enemy', 敌军: 'enemy', hostile: 'enemy' },
   scale: { 个体: 'hero', 英雄: 'hero', 人物: 'hero', 编队: 'company', 连队: 'company', 军团: 'company', 小队: 'company', mook: 'company' },
@@ -214,11 +214,11 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
     if (!textKeys.has(key)) value = specKeys.has(key) ? simplifiedSpecification(value) : simplifiedChinese(value);
     if (numericKeys.has(key)) value = numeric(value, key);
     if (tag.name === 'spawn' && key === 'level') value = normalizeNarrativeSpec('L' + value, 'unit').replace(/^L/i, '');
-    if (booleanKeys.has(key)) value = ({ '1': 'true', '0': 'false', yes: 'true', no: 'false', 是: 'true', 否: 'false', 有: 'true', 无: 'false' } as Record<string, string>)[value.toLowerCase()] ?? value.toLowerCase();
+    if (booleanKeys.has(key) && (key !== 'shield' || /^(?:true|false|1|0|yes|no|是|否|有|无)$/i.test(value))) value = ({ '1': 'true', '0': 'false', yes: 'true', no: 'false', 是: 'true', 否: 'false', 有: 'true', 无: 'false' } as Record<string, string>)[value.toLowerCase()] ?? value.toLowerCase();
     if (enumAliases[key]) value = enumAliases[key]![value.toLowerCase()] ?? value.toLowerCase();
     if (key === 'env') value = value.toLowerCase();
-    if (['weapon', 'weapon2', 'armor', 'shieldSpec', 'spec'].includes(key)) {
-      const kind = key === 'armor' ? 'armor' : key === 'shieldSpec' ? 'shield' : ['weapon', 'weapon2'].includes(key) ? 'weapon' : undefined;
+    if (['weapon', 'weapon2', 'armor', 'shield', 'shieldSpec', 'spec'].includes(key)) {
+      const kind = key === 'armor' ? 'armor' : ['shield', 'shieldSpec'].includes(key) ? 'shield' : ['weapon', 'weapon2'].includes(key) ? 'weapon' : undefined;
       value = value.split(/[,，、;；]/).map(part => normalizeNarrativeSpec(part, kind)).join(',');
     }
     if (['skills', 'traits', 'effects', 'clear'].includes(key)) {

@@ -16,6 +16,7 @@ export interface NativeRuntime {
   worldbook?: { view(): WorldbookEditorState; update(update: WorldbookEditorUpdate): WorldbookEditorState };
 }
 export function legacyReceipt(receipt: PersistReceipt): SaveReceipt {
+  if (receipt.memoryOnly) return { status: 'saved', host: false, local: false, memoryOnly: true };
   const confirmed = receipt.status === 'confirmed';
   return { status: confirmed ? 'saved' : 'failed', host: confirmed, local: confirmed || receipt.status === 'pending', nativeStatus: receipt.status,
     ...(confirmed ? {} : { error: receipt.status === 'pending' ? '这次改动还没确认保存成功，已暂停其他操作；请先处理上方提示。' + (receipt.error ? '原因：' + receipt.error : '') : receipt.error ?? '当前操作未保存' }) };
@@ -33,18 +34,19 @@ export function createPanelRuntime(): PanelRuntime {
   };
   const controller: PanelController = {
     capabilities: service.capabilities,
-    snapshot: () => service.snapshot(), migrationReview: () => service.migrationReview(),
+    snapshot: keys => service.snapshot(keys), migrationReview: () => service.migrationReview(),
     inventoryContext: () => service.inventoryContext(), previewInventory: (action, id) => service.previewInventory(action, id),
     listen: listener => service.listen(state => { if (!panelCommit) listener(state.save, state.receipt ? legacyReceipt(state.receipt) : undefined); }),
-    async persistPanel(next, revision) {
+    async persistPanel(next, revision, options) {
       panelCommit++;
-      try { const receipt = await convert(service.persistPanel(next, revision)); return { receipt, revision: service.snapshot().factRevision ?? 0 }; }
+      try { const receipt = await convert(service.persistPanel(next, revision, options)); return { receipt, revision: service.snapshot(['factRevision']).factRevision ?? 0 }; }
       finally { panelCommit--; }
     },
     setPromptSettings: settings => convert(service.setPromptSettings(settings)), setStorySync: enabled => convert(service.setStorySync(enabled)),
     deleteBattleReport: id => convert(service.deleteBattleReport(id)), restoreBattleReport: () => convert(service.restoreBattleReport()),
     restartBattleReport: (id, revision, seed) => convert(service.restartBattleReport(id, revision, seed)),
     revokeBlessing: (id, source, revision, context) => convert(service.revokeBlessing(id, source, revision, context)),
+    migrateWeaponClasses: (selected, revision) => convert(service.migrateWeaponClasses(selected, revision)),
     inventoryAction: intent => convert(service.inventoryAction(intent)), commitInventoryPreview: preview => convert(service.commitInventoryPreview(preview)),
     deleteUnit: id => convert(service.deleteUnit(id)), restoreDeployment: id => convert(service.restoreDeployment(id)), approve: id => convert(service.approve(id)),
     correctProposal: (id, text) => convert(service.correctProposal(id, text)), reject: id => convert(service.reject(id)), deleteRecords: ids => convert(service.deleteRecords(ids)),

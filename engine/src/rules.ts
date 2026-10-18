@@ -89,8 +89,31 @@ export const V14_OVERFLOW_TW: RulePack = { ...V13_OVERFLOW_TW, id: 'v14-overflow
 export const V15_OVERFLOW_D20: RulePack = { ...V14_OVERFLOW_D20, id: 'v15-overflow-d20', name: 'V15 道具系统', itemModel: 'items-v1' };
 export const V15_OVERFLOW_TW: RulePack = { ...V14_OVERFLOW_TW, id: 'v15-overflow-tw', name: 'V15 道具系统会战', itemModel: 'items-v1' };
 
+/** P1 十一类特质分级。旧规则 id 和进行中的战斗保持冻结。 */
+export const V16_OVERFLOW_D20: RulePack = { ...V15_OVERFLOW_D20, id: 'v16-overflow-d20', name: 'V16 特质分级', traitLevelModel: 'traits-levels-v1' };
+export const V16_OVERFLOW_TW: RulePack = { ...V15_OVERFLOW_TW, id: 'v16-overflow-tw', name: 'V16 特质分级会战', traitLevelModel: 'traits-levels-v1' };
+
+export const V17_OVERFLOW_D20: RulePack = { ...V16_OVERFLOW_D20, id: 'v17-overflow-d20', name: 'V17 特质第二阶段', traitLevelModel: 'traits-levels-v2', skillModel: 'skills-v2', healingModel: 'healing-grades-v1', controlModel: 'activation-controls-v1' };
+export const V17_OVERFLOW_TW: RulePack = { ...V16_OVERFLOW_TW, id: 'v17-overflow-tw', name: 'V17 特质第二阶段会战', traitLevelModel: 'traits-levels-v2', skillModel: 'skills-v2', healingModel: 'healing-grades-v1', controlModel: 'activation-controls-v1' };
+
+export const V18_OVERFLOW_D20: RulePack = { ...V17_OVERFLOW_D20, id: 'v18-overflow-d20', name: 'V18 百兵谱', armsModel: 'arms-v2', barrierModel: 'barrier-grades-v1' };
+export const V18_OVERFLOW_TW: RulePack = { ...V17_OVERFLOW_TW, id: 'v18-overflow-tw', name: 'V18 百兵谱会战', armsModel: 'arms-v2', barrierModel: 'barrier-grades-v1' };
+
+/** V19 统帅：只有新战斗启用；V18 及以前的战斗保留原指挥评分。 */
+export const V19_OVERFLOW_D20: RulePack = { ...V18_OVERFLOW_D20, id: 'v19-overflow-d20', name: 'V19 统帅', commandModel: 'command-v2' };
+export const V19_OVERFLOW_TW: RulePack = { ...V18_OVERFLOW_TW, id: 'v19-overflow-tw', name: 'V19 统帅会战', commandModel: 'command-v2' };
+
+/** V20：组合控制每多一项效果抵抗难度 −1（原 −2）；佩戴修正按道具 L 换算。只有新战斗启用，V19 及以前的战斗按原规则。 */
+export const V20_OVERFLOW_D20: RulePack = { ...V19_OVERFLOW_D20, id: 'v20-overflow-d20', name: 'V20 组合控制与佩戴等级', skillModel: 'skills-v3', itemModel: 'items-v2' };
+export const V20_OVERFLOW_TW: RulePack = { ...V19_OVERFLOW_TW, id: 'v20-overflow-tw', name: 'V20 组合控制与佩戴等级会战', skillModel: 'skills-v3', itemModel: 'items-v2' };
+
 /** id → 规则包（战斗快照恢复用；面板只用默认两包） */
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V20_OVERFLOW_D20.id]: V20_OVERFLOW_D20, [V20_OVERFLOW_TW.id]: V20_OVERFLOW_TW,
+  [V19_OVERFLOW_D20.id]: V19_OVERFLOW_D20, [V19_OVERFLOW_TW.id]: V19_OVERFLOW_TW,
+  [V18_OVERFLOW_D20.id]: V18_OVERFLOW_D20, [V18_OVERFLOW_TW.id]: V18_OVERFLOW_TW,
+  [V17_OVERFLOW_D20.id]: V17_OVERFLOW_D20, [V17_OVERFLOW_TW.id]: V17_OVERFLOW_TW,
+  [V16_OVERFLOW_D20.id]: V16_OVERFLOW_D20, [V16_OVERFLOW_TW.id]: V16_OVERFLOW_TW,
   [V15_OVERFLOW_D20.id]: V15_OVERFLOW_D20, [V15_OVERFLOW_TW.id]: V15_OVERFLOW_TW,
   [V14_OVERFLOW_D20.id]: V14_OVERFLOW_D20, [V14_OVERFLOW_TW.id]: V14_OVERFLOW_TW,
   [V13_OVERFLOW_D20.id]: V13_OVERFLOW_D20, [V13_OVERFLOW_TW.id]: V13_OVERFLOW_TW,

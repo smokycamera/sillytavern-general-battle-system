@@ -5,8 +5,10 @@ import {hasMemberHealth,memberHealth,memberHealthMax,memberNoun} from '../../eng
 import {htmlText as esc} from './equipment-form.js';
 export function participationText(preview?: ActionPreview, detailed = false): string {
   if(preview?.participants===undefined)return '';
-  if (!detailed) return `有效攻击数 ${Number(preview.participants.toFixed(1))}${preview.expectedCasualties!==undefined?' · 预计减员 '+preview.expectedCasualties.toFixed(1):''}`;
-  return `有效攻击 ${Number(preview.participants.toFixed(1))} 份${preview.memberHp!==undefined?' · 目标单位最大生命 '+preview.memberHp:''}${(preview.overmatchMultiplier??1)>1?' · 跨代毁伤×'+Number(preview.overmatchMultiplier!.toFixed(2)):''}${preview.weaponOverflow?' · 余伤在目标编队内传递':''}`;
+  // 单人出手不写参战人数；编队写有效攻击数，能估出减员时一并写。
+  const attackers = preview.participants > 1 ? `有效攻击 ${Number(preview.participants.toFixed(1))} 份` : '';
+  if (!detailed) return [attackers, preview.expectedCasualties!==undefined ? '预计减员 '+preview.expectedCasualties.toFixed(1) : ''].filter(Boolean).join(' · ');
+  return [attackers, (preview.overmatchMultiplier??1)>1 ? '跨代毁伤×'+Number(preview.overmatchMultiplier!.toFixed(2)) : ''].filter(Boolean).join(' · ');
 }
 export function memberHealthPanel(unit:Combatant):string {
   if(!hasMemberHealth(unit))return '';
@@ -16,5 +18,7 @@ export function memberHealthPanel(unit:Combatant):string {
 }
 export function cannonAmmoControl(unit:Combatant|undefined,disabled=false):string {
   if(!unit||unit.combatModel!=='cohort-v2'||![unit.weapon,unit.sidearm].some(isCannonWeapon))return '';
-  return `<label class="cannon-ammo">${esc(unit.name)} · 火炮弹种<select data-role="cannon-ammo" data-unit="${esc(unit.id)}" ${disabled?'disabled':''}><option value="auto" ${!unit.cannonAmmo?'selected':''}>自动按目标选弹</option><option value="he" ${unit.cannonAmmo==='he'?'selected':''}>榴弹 · 直击与爆炸</option><option value="ap" ${unit.cannonAmmo==='ap'?'selected':''}>穿甲弹 · 穿透+2，无爆炸</option></select></label>`;
+  const cannons = [unit.weapon,unit.sidearm].filter(isCannonWeapon), rocket = cannons.some(w => w!.recipe?.mechanism === 'rocket'), regular = cannons.some(w => w!.recipe?.mechanism !== 'rocket');
+  const label = rocket && !regular ? '火箭筒弹种' : '火炮弹种', penetration = rocket ? regular ? '+2（火箭筒+3）' : '+3' : '+2';
+  return `<label class="cannon-ammo">${esc(unit.name)} · ${label}<select data-role="cannon-ammo" data-unit="${esc(unit.id)}" ${disabled?'disabled':''}><option value="auto" ${!unit.cannonAmmo?'selected':''}>自动按目标选弹</option><option value="he" ${unit.cannonAmmo==='he'?'selected':''}>榴弹 · 直击与爆炸</option><option value="ap" ${unit.cannonAmmo==='ap'?'selected':''}>穿甲弹 · 穿透${penetration}，无爆炸</option></select></label>`;
 }

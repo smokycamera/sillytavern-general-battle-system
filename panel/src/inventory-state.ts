@@ -21,6 +21,7 @@ export interface InventoryItem {
   history?: { revision: number; name: string; mechanics: ItemMechanics; sourceId: string }[];
 }
 export interface InventorySave {
+  classMigration?: 'arms-v2';
   schemaVersion?: number; storage?: UnitRecord[]; rosterIds?: string[]; inventory?: InventoryItem[]; factRevision?: number;
   narrativeIdState?: NarrativeIdState;
   inventoryOperations?: { id: string; fingerprint: string }[];
@@ -93,7 +94,7 @@ export function validateInventoryItem(value: unknown): asserts value is Inventor
   if (m.kind === 'item') {
     validateItemValue(m.value);
     const form = (m.value as { recipe: { form: string } }).recipe.form;
-    if (form === 'single' ? Number(value.qty) > 9999 || value.equippedTo !== undefined : Number(value.qty) > 1) throw new Error(form === 'single' ? '一次性道具数量为0–9999，不能装备' : '佩戴、充能道具必须逐件建档');
+    if (form === 'single' ? value.equippedTo !== undefined : Number(value.qty) > 1) throw new Error(form === 'single' ? '一次性道具不能装备' : '佩戴、充能道具必须逐件建档');
     if (value.equippedTo !== undefined && (!object(value.equippedTo) || value.equippedTo.slot !== 'gear')) throw new Error('道具只能装在佩戴位');
   } else {
     const recipe = object(m.value) ? m.value.recipe : undefined;
@@ -132,7 +133,7 @@ function fingerprint(value: unknown): string {
 const stackable = (spec: ItemSpecification) => spec.kind === 'item' && spec.form === 'single';
 export function createInventoryItem(id: string, name: string, spec: ItemSpecification, seed: string, qty = 1): InventoryItem {
   if (!id || !name.trim()) throw new Error('物品缺少身份或名称');
-  if (!Number.isSafeInteger(qty) || qty < 1 || qty > 9999 || !stackable(spec) && qty !== 1) throw new Error('装备与佩戴、充能道具逐件建档；一次性道具数量为1–9999');
+  if (!Number.isSafeInteger(qty) || qty < 1 || !stackable(spec) && qty !== 1) throw new Error('装备与佩戴、充能道具逐件建档；一次性道具数量须为正整数');
   return { id, name: name.trim(), qty, revision: 1, lootType: spec.kind === 'shield' ? 'armor' : spec.kind,
     mechanics: compileItem(spec, { id, name: name.trim(), seed, damageModel:'wounds-v2' }) };
 }
@@ -152,6 +153,7 @@ export function fitsEquipmentSlot(mechanics: ItemMechanics, slot: EquipmentSlot)
 
 /** 首次接入只登记已有V2精确实例，绝不按名称生成或重掷旧装备。 */
 export function prepareInventoryState(save: InventorySave, adoptExisting = true): InventorySave {
+  if (save.classMigration !== undefined && save.classMigration !== 'arms-v2') throw Error('武器类别更新标记损坏');
   const next = clone(prepareNarrativeIds(save));
   calibrateSavedWeaponRanges(next);
   next.inventory = migrateLegacyInventory(next.inventory) ?? []; next.storage ??= [];
@@ -213,7 +215,7 @@ function projectEquipment(record: UnitRecord, inventory: InventoryItem[]): void 
     armorId: undefined, armorName: unit.armor?.name, armorTier: unit.armor?.tier, armorLevel: unit.armor?.level,
   };
   Object.assign(record, fields);
-  if (unit.genAudit) Object.assign(unit.genAudit.input, fields, { shield: !!unit.shield, weaponStabilized: unit.weapon?.recipe?.stabilized, sidearmStabilized: unit.sidearm?.recipe?.stabilized, armorProfile: unit.armor?.recipe?.protectionProfile, weaponEnchantment: unit.weapon?.recipe?.enchantment, sidearmEnchantment: unit.sidearm?.recipe?.enchantment });
+  if (unit.genAudit) Object.assign(unit.genAudit.input, fields, { shield: !!unit.shield, shieldName: unit.shield?.name, shieldLevel: unit.shield?.recipe?.power, shieldClass: unit.shield?.recipe?.mechanism, shieldBonuses: unit.shield?.recipe?.bonuses, weaponStabilized: unit.weapon?.recipe?.stabilized, sidearmStabilized: unit.sidearm?.recipe?.stabilized, armorProfile: unit.armor?.recipe?.protectionProfile, weaponEnchantment: unit.weapon?.recipe?.enchantment, sidearmEnchantment: unit.sidearm?.recipe?.enchantment });
 }
 function requireOutOfBattle(save: InventorySave): void {
   if (save.battle && !(save.committedOutcomeIds ?? []).includes(`${save.battle.kind}:${String(save.battle.snap.seed)}`)) throw new Error('战内物品必须通过引擎行动使用；未结算前不能换装或修改档案');
@@ -230,14 +232,18 @@ function rewriteRecord(next: InventorySave, record: UnitRecord, sourceId: string
 /** 普通面板保存不能绕过物品事务，或把失去库存绑定的旧投影写回。旧版道具先按同一对照表转换再比较。 */
 export function assertInventoryPanelWrite(previous: InventorySave, next: InventorySave): void {
   const previousItems = migrateLegacyInventory(previous.inventory) ?? [], nextItems = migrateLegacyInventory(next.inventory) ?? [];
+  const outcome = next.battle && next.committedOutcomeIds?.includes(next.battle.kind + ':' + String(next.battle.snap.seed));
+  const broken = outcome ? (next.battle!.snap.combatants as Combatant[]).filter(u => u.armsModel === 'arms-v2' && u.shieldDurability?.remaining === 0 && u.shield).map(u => u.shield!.id) : [];
   for (const item of previousItems.filter((i) => i.mechanics)) {
     const incoming = nextItems.find((i) => i.id === item.id);
-    if (fingerprint(incoming) !== fingerprint(item)) throw new Error('装备与物品数量/归属须通过库存事务修改');
+    if (fingerprint(incoming) !== fingerprint(item) && !(incoming === undefined && broken.includes(item.id))) throw new Error('装备与物品数量/归属须通过库存事务修改');
   }
   if (nextItems.some((i) => i.mechanics && !previousItems.some((old) => old.id === i.id && old.mechanics))) throw new Error('新有效果的物品须先预览并通过库存事务入库');
   for (const old of previous.storage ?? []) if (old.equipmentManaged && !next.storage?.some((r) => r.id === old.id && r.equipmentManaged)) throw new Error('不能移除装备档案的库存绑定');
   if (!(next.storage ?? []).some((r) => r.equipmentManaged)) return;
-  const projected = prepareInventoryState(next);
+  // This check projects archive equipment only. Battle history and reports do not
+  // participate and copying them on every action grows with the entire fight.
+  const projected = prepareInventoryState({ storage: next.storage, inventory: next.inventory, narrativeIdState: next.narrativeIdState });
   for (const record of next.storage ?? []) {
     if (!record.equipmentManaged || !record.snapshot) continue;
     const expected = projected.storage!.find((r) => r.id === record.id)!.snapshot!;

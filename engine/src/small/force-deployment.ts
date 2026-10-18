@@ -1,15 +1,13 @@
 import { BattlefieldPlanError } from './battlefield-error.js';
 import type { BattlefieldPlan, DeploymentPlan } from './battlefield-plan.js';
-import type { WorldAnchor } from './scene-intent.js';
+import { MAX_DEPLOYMENT_ZONES, type WorldAnchor } from './scene-intent.js';
 import type { Combatant } from '../types.js';
 import type { SceneRegion } from './scene-compiler.js';
 import { groundBlocked, intactStructure } from './layers.js';
 import { footprint, gridDistance, type BattlefieldSpec } from './spatial.js';
 
-type Side = 'ally' | 'enemy';
+type Side = Combatant['side'];
 type Post = DeploymentPlan['post'];
-/** Snapshot budget for deployment zones (validateSceneRecord). */
-const MAX_ZONES = 26;
 
 /** Thirds of the battlefield, the same split for every map size; the compass names the 3×3 cell. */
 function band(size: number, index: number): [number, number] {
@@ -90,18 +88,19 @@ function defaultArea(field: BattlefieldSpec, side: Side, post?: Post): number[] 
     const walls = field.city.frontline;
     return nearestRings(field, p => Math.min(...walls.map(q => gridDistance(field, p, q))), legal, 0);
   }
-  return nearestRings(field, p => sectorDistance(field, p, side === 'enemy' ? ['north_west', 'north', 'north_east'] : ['south_west', 'south', 'south_east']), legal, 0);
+  return nearestRings(field, p => sectorDistance(field, p, side === 'neutral' ? ['east'] : side === 'enemy' ? ['north_west', 'north', 'north_east'] : ['south_west', 'south', 'south_east']), legal, 0);
 }
 
 /**
  * Beside an unwalled city each side without a stated position starts at its own map edge, on the scene's side of the
  * city (outside it in open-field battles, inside it in street fighting), instead of on fixed rows that may cross it.
  */
-export function withCitySides(field: BattlefieldSpec, plan: BattlefieldPlan): BattlefieldPlan {
+export function withCitySides(field: BattlefieldSpec, plan: BattlefieldPlan, thirdParty = false): BattlefieldPlan {
   const placed = (side: Side) => plan.deployments?.some(d => d.subject === side) || field.deploymentZones?.some(z => z.side === side && !z.unitId);
-  const missing = (['enemy', 'ally'] as const).filter(side => !placed(side));
+  const sides: Side[] = thirdParty ? ['enemy', 'ally', 'neutral'] : ['enemy', 'ally'];
+  const missing = sides.filter(side => !placed(side));
   return missing.length ? { ...plan, deployments: [...plan.deployments ?? [], ...missing.map(side => ({ subject: side,
-    at: side === 'enemy' ? ['north_west', 'north', 'north_east'] as WorldAnchor[] : ['south_west', 'south', 'south_east'] as WorldAnchor[] }))] } : plan;
+    at: side === 'neutral' ? ['east'] as WorldAnchor[] : side === 'enemy' ? ['north_west', 'north', 'north_east'] as WorldAnchor[] : ['south_west', 'south', 'south_east'] as WorldAnchor[] }))] } : plan;
 }
 
 /**
@@ -150,9 +149,9 @@ export function applyPlannedDeployments(field: BattlefieldSpec, plan: Battlefiel
   const active = roster.filter(u => u.hp > 0 && u.status === 'ready'), notes: string[] = [];
   const zones = field.deploymentZones ??= [];
   const resolved = plans.map(d => {
-    if (d.subject === 'ally' || d.subject === 'enemy') return { plan: d, side: d.subject as Side };
+    if (d.subject === 'ally' || d.subject === 'enemy' || d.subject === 'neutral') return { plan: d, side: d.subject as Side };
     const unitId = unitBindings[d.subject], unit = roster.find(u => u.id === unitId);
-    if (!unitId || !unit || (unit.side !== 'ally' && unit.side !== 'enemy')) throw new BattlefieldPlanError('部署引用了未参战单位');
+    if (!unitId || !unit) throw new BattlefieldPlanError('部署引用了未参战单位');
     return { plan: d, side: unit.side as Side, unitId, name: unit.name };
   });
   // A force whose position a narrative relation already fixes keeps that relation.
@@ -164,7 +163,7 @@ export function applyPlannedDeployments(field: BattlefieldSpec, plan: Battlefiel
   const ordered = [...resolved].sort((a, b) => Number(!!a.unitId) - Number(!!b.unitId) || Number(a.side !== first) - Number(b.side !== first));
   for (const r of ordered) {
     if (related(r.side, r.unitId)) continue;
-    const who = r.unitId ? r.name! : r.side === 'ally' ? '我方' : '敌方', attacker = !!defender && defender !== r.side;
+    const who = r.unitId ? r.name! : r.side === 'ally' ? '我方' : r.side === 'neutral' ? '第三方' : '敌方', attacker = !!defender && defender !== r.side;
     const post = attacker && r.plan.post !== 'outside' ? undefined : r.plan.post;
     const actors = r.unitId ? active.filter(u => u.id === r.unitId) : active.filter(u => u.side === r.side && !detached.has(u.id));
     // Keep one empty cell between opposing forces at the start.
@@ -209,6 +208,6 @@ export function applyPlannedDeployments(field: BattlefieldSpec, plan: Battlefiel
     if (!r.unitId) { const kept = zones.filter(z => z.side !== r.side || !!z.unitId || !!z.landmarkId); zones.length = 0; zones.push(...kept); }
     zones.push({ side: r.side, ...(r.unitId ? { unitId: r.unitId } : {}), cells, relation: post ? 'sector:' + post : 'sector', ...(platform ? { platform: true } : {}) });
   }
-  if (zones.length > MAX_ZONES) throw new BattlefieldPlanError('单独部署的单位过多，请合并为整方部署');
+  if (zones.length > MAX_DEPLOYMENT_ZONES) throw new BattlefieldPlanError('单独部署的单位过多，请合并为整方部署');
   if (notes.length) field.generation!.notes = [...(field.generation!.notes ?? []), ...notes];
 }

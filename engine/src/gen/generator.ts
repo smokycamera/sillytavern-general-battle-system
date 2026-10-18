@@ -16,6 +16,8 @@ import { parseDice } from '../dice.js';
 import { generateMechanismUnit } from './mechanism.js';
 
 export interface GenOptions {
+  varianceVersion?: import('../instance-variance.js').InstanceVariance['version'];
+  skillModel?: import('../skill-model.js').SkillModel;
   seed?: string;
   registry?: Map<string, Trait>;
   /** 关闭随机浮动（基准值直出） */
@@ -279,7 +281,7 @@ export function generateUnit(input: GenerateInput, opts: GenOptions = {}): GenRe
 /** 可选特质清单（与内置世界书同一分组，面板选择器用）；停用项与身体/装备自动项不在其中。 */
 export const TRAIT_GROUPS: Readonly<Record<string, readonly string[]>> = {
   攻击: ['ap-weapon', 'ap-master', 'anti-infantry', 'anti-large', 'monster-hunter', 'anti-air', 'berserk', 'poison-strike', 'sneak-attack', 'lifesteal', 'melee-master', 'sharpshooter', 'versatile'],
-  防护: ['guardian', 'guardian-greater', 'regen', 'tenacity', 'agile', 'natural-armor', 'indomitable', 'fortification', 'shield-wall', 'pike-wall', 'loose-formation', 'inorganic'],
+  防护: ['guardian', 'guardian-greater', 'regen', 'tenacity', 'agile', 'natural-armor', 'kinetic-resist', 'thermal-resist', 'arcane-resist', 'indomitable', 'fortification', 'shield-wall', 'pike-wall', 'loose-formation', 'inorganic'],
   士气: ['fear', 'terror', 'steadfast', 'stubborn', 'commander'],
   机动: ['charge-strong', 'trample', 'skirmisher', 'mounted-archer', 'vanguard', 'stalk', 'recon', 'flying', 'mechanized', 'fatigue-trained'],
   地形与工程: ['forest-lore', 'mountain-born', 'plains-runner', 'urban-fighter', 'night-fighter', 'water-crossing', 'siege-assault', 'siege-breaker'],
@@ -290,6 +292,6 @@ export function traitCatalog(registry?: Map<string, Trait>): { group: string; tr
   const groups = TRAIT_GROUPS;
   return Object.entries(groups).map(([group, ids]) => ({
     group,
-    traits: ids.map((id) => reg.get(id)).filter((t): t is Trait => !!t),
+    traits: ids.map((id) => reg.get(id)).filter((t): t is Trait => !!t && !['guardian-greater', 'ap-master', 'monster-hunter', 'terror'].includes(t.id)),
   }));
 }

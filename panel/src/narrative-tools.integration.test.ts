@@ -38,6 +38,7 @@ it('AI扫描确认/取消、要求输入、顺序错误跳转及字段恢复可�
     const recovered = document.querySelector<HTMLTextAreaElement>('[data-role="narrative-draft"]')!.value;
     expect(parseProtocol(recovered).events).toHaveLength(2); expect(recovered).toContain('name="友军"'); expect(recovered).not.toContain('未知');
     click('narrative-correct'); await vi.waitFor(() => expect(f.service.snapshot().proposals!.at(-1)!.status).toBe('pending'));
+    await vi.waitFor(() => expect(document.body.hasAttribute('aria-busy')).toBe(false));
     click('narrative-approve'); await vi.waitFor(() => expect(f.service.snapshot().storage).toHaveLength(2));
     await vi.waitFor(() => expect(document.body.hasAttribute('aria-busy')).toBe(false));
     const toggle = document.querySelector<HTMLInputElement>('[data-role="story-sync"]')!; toggle.click();

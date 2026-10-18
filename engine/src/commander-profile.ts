@@ -7,11 +7,11 @@ export interface CommanderProfile {
   ability: typeof COMMANDER_ABILITIES[number];
   style: typeof COMMANDER_STYLES[number];
 }
-export type CommanderProfiles = Partial<Record<'ally' | 'enemy', CommanderProfile>>;
+export type CommanderProfiles = Partial<Record<'ally' | 'enemy' | 'neutral', CommanderProfile>>;
 export function normalizeCommanderProfiles(value: unknown): CommanderProfiles {
   const result: CommanderProfiles = {};
   if (!value || typeof value !== 'object') return result;
-  for (const side of ['ally', 'enemy'] as const) {
+  for (const side of ['ally', 'enemy', 'neutral'] as const) {
     const p = (value as CommanderProfiles)[side];
     if (p && COMMANDER_ABILITIES.includes(p.ability) && COMMANDER_STYLES.includes(p.style)) result[side] = { ability: p.ability, style: p.style, ...(p.scoring === 'tactical-v2' ? { scoring: p.scoring } : {}), ...(p.preferences ? { preferences: Object.fromEntries(Object.entries(p.preferences).filter(([k, v]) => ['reserve', 'risk', 'counterattack', 'cohesion', 'breach'].includes(k) && Number.isInteger(v) && v >= 0 && v <= 4).slice(0, 3)) } : {}) };
   }
@@ -34,11 +34,23 @@ export interface CommandChoice {
 /** Bounded preferences on already legal, observed candidates; no dice or unit-stat changes.
  * Ability reduces deterministic estimation error. The hash never consumes battle RNG.
  */
-export function commanderScores(choices: CommandChoice[], profile: CommanderProfile | undefined, turnKey: string, layered = false): number[] {
-  if (!profile) return choices.map(c => c.score);
+export type CommanderScoreTrace = { choices: CommandChoice[]; profile?: CommanderProfile; turnKey: string; layered: boolean; scale: number; bias: number[]; noise: number[]; scores: number[] };
+/** 确定性估值扰动（−1..1）：按回合与候选取哈希，不消耗战斗随机数。 */
+export function commandNoise(turnKey: string, key: string): number {
+  let hash = 2166136261;
+  for (const char of turnKey + ':' + key) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+  return (hash >>> 0) / 0xffffffff * 2 - 1;
+}
+export function commanderScores(choices: CommandChoice[], profile: CommanderProfile | undefined, turnKey: string, layered = false, trace?: (event: CommanderScoreTrace) => void): number[] {
+  if (!profile) {
+    const scores = choices.map(c => c.score);
+    trace?.(structuredClone({ choices, profile, turnKey, layered, scale: Math.max(1, ...scores), bias: scores.map(() => 0), noise: scores.map(() => 0), scores }));
+    return scores;
+  }
   const scale = Math.max(1, ...choices.map(c => c.score));
   const error = { novice: .18, regular: .10, skilled: .05, expert: .02, master: 0 }[profile.ability];
-  return choices.map(c => {
+  const biases: number[] = [], noises: number[] = [];
+  const scores = choices.map(c => {
     let bias = 0;
     if (profile.style === 'aggressive') bias = c.attack ? .06 : 0;
     if (profile.style === 'cautious') bias = c.defend ? .06 : c.move && c.attack ? -.03 : 0;
@@ -57,9 +69,10 @@ export function commanderScores(choices: CommandChoice[], profile: CommanderProf
       if (c.attack) bias += ((profile.preferences?.risk ?? 2) - 2) * .025;
       if (c.move && c.attack) bias += ((profile.preferences?.counterattack ?? 2) - 2) * .025;
     }
-    let hash = 2166136261;
-    for (const char of turnKey + ':' + c.key) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
-    const noise = ((hash >>> 0) / 0xffffffff * 2 - 1) * error;
+    const noise = commandNoise(turnKey, c.key) * error;
+    if (trace) { biases.push(bias); noises.push(noise); }
     return c.score + scale * (bias + noise);
   });
+  trace?.(structuredClone({ choices, profile, turnKey, layered, scale, bias: biases, noise: noises, scores }));
+  return scores;
 }

@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { parseProtocol, protocolExcerpt } from './protocol.js';
-import { TRAITS } from '../../engine/src/index.js';
+import { TRAITS, generateUnit } from '../../engine/src/index.js';
 import { CORE_PROTOCOL, PROMPT_CARDS } from './narrative-prompt.js';
+
+it('spawn neutral retains third-party ownership through parsing and generation', () => {
+  const parsed = parseProtocol('<tb><spawn name="第三军" side="neutral" scale="hero"/></tb>');
+  expect(parsed.errors).toEqual([]);
+  const event = parsed.events[0]!;
+  if (event.kind !== 'spawn') throw Error('expected spawn');
+  const unit = generateUnit({ name: event.name, side: event.side!, scale: 'hero', level: 3, rulesVersion: 'v2', traits: [] }, { seed: 'third-party-spawn' }).unit;
+  expect([event.side, unit.side]).toEqual(['neutral', 'neutral']);
+});
 
 it('新建装备的显式等级越界时保留诊断，不钳制等级或退回默认装备', () => {
   for (const [key, mechanism] of [['weapon', '剑'], ['weapon2', '剑'], ['armor', '重甲']]) {
@@ -32,6 +41,31 @@ it('思考区示例不计入正文块，支持标签显示转义和缩进，原�
   expect(parseProtocol('<tb><deploy id="d1"/>').events[0]).toMatchObject({ kind: 'deploy', id: 'd1' });
   expect(parseProtocol("<tb><spawn name='双刃' side='ally' scale='hero' weapon='战刃:剑L7,鞭剑:剑L6'/></tb>").events[0]).toMatchObject({ weaponClass: 'sword', weapon2Class: 'sword', weapon2Level: 6 });
   expect(parseProtocol('<tb><spawn name="卫兵" side="enemy" scale="hero" weapon="激光枪L3"/></tb>').events[0]).toMatchObject({ weaponClass: 'energy', weaponLevel: 3 });
+});
+
+it('spawn盾牌读取名称、独立规格和修正，名称大小写及繁体保留，旧布尔写法兼容', () => {
+  for (const shield of ['AEGIS塔盾:盾L5+2防御-3热能防护', 'AEGIS塔盾：盾牌Ｌ５＋２防禦－３熱能防護']) {
+    const parsed = parseProtocol(`<spawn name="卫兵" side="ally" scale="hero" level="1" shield="${shield}"/>`);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.events[0]).toMatchObject({ kind: 'spawn', level: 1, shield: true, shieldName: 'AEGIS塔盾', shieldLevel: 5, shieldBonuses: { defense: 2, thermalProtection: -3 } });
+    expect(parseProtocol(parsed.canonical).events).toEqual(parsed.events);
+  }
+  expect(parseProtocol('<spawn name="卫兵" side="ally" scale="hero" shield="盾L7"/>').events[0]).toMatchObject({ shield: true, shieldLevel: 7 });
+  for (const [value, shield] of [['true', true], ['false', false], ['是', true], ['无', false]] as const) {
+    expect(parseProtocol(`<spawn name="旧卫兵" side="ally" scale="hero" shield="${value}"/>`).events[0]).toMatchObject({ shield });
+  }
+  expect(parseProtocol('<spawn name="轻兵" side="ally" scale="hero"/>').events[0]).toMatchObject({ shield: false });
+});
+
+it('错误盾牌规格定位到shield，不把武器、护甲或道具误当盾牌', () => {
+  for (const spec of ['塔盾', '塔盾:盾L0', '塔盾:盾L11', '塔盾:盾L5+11防御', '塔盾:盾L5+2伤害', '塔盾:剑L5', '塔盾:重甲L5', '塔盾:buff屏障L5', '']) {
+    const text = `<spawn name="卫兵" side="ally" scale="hero" shield="${spec}"/>`;
+    const parsed = parseProtocol(text);
+    expect(parsed.errors.length, spec).toBeGreaterThan(0);
+    expect(parsed.events, spec).toEqual([]);
+    expect(parsed.diagnostics[0]?.field, spec).toBe('shield');
+    expect(text.slice(parsed.diagnostics[0]!.start, parsed.diagnostics[0]!.end), spec).toContain('shield=');
+  }
 });
 
 it('80人按一支编队表达；大量单位、错误count和超长事件整批拒绝，规范短例均可解析', () => {

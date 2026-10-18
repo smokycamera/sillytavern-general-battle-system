@@ -1,6 +1,7 @@
 /** 阵营共享敌情记忆：本阵营任何单位实际看见过的敌军最后位置（看见者阵亡、溃退后仍保留），
  * 以及己方遭到看不见的攻击时留下的来袭线索。只在事件发生时按本阵营观测写入，不读取隐藏事实。 */
 import type { Combatant, Side } from './types.js';
+import { cloneData } from './clone.js';
 
 /** 最后目击作为追索线索的回合数；更早的位置只说明“曾在附近”，交给扫视。 */
 export const TRACE_ROUNDS = 6;
@@ -14,6 +15,7 @@ export const CLUE_RANGE = 9;
 
 export interface EnemyTrace {
   id: string;
+  seen?: Combatant;
   /** 最后一次看见的回合。 */
   round: number;
   /** 小战格；会战用阵位 node。 */
@@ -55,6 +57,11 @@ export function noteSightings(intel: IntelBook, units: readonly Combatant[], vie
       const trace: EnemyTrace = { id: unit.id, round, ...where, ...(unit.status === 'routing' ? { routing: true as const } : {}), ...(mp ? { mp: mp(unit) } : {}) };
       if (index >= 0) traces![index] = trace; else book(intel, side).traces.push(trace);
     }
+    for (const trace of intel[side]?.traces ?? []) {
+      if (seen.has(trace.id)) continue;
+      if (round - trace.round > 1) delete trace.seen;
+      else if (!trace.seen) trace.seen = cloneData(units.find(unit => unit.id === trace.id)!);
+    }
   }
 }
 export function noteClue(intel: IntelBook, side: Side, clue: AttackClue): void {
@@ -89,7 +96,9 @@ export function restoreIntel(value: unknown, cells?: number, nodes?: ReadonlySet
       && (t.layer === undefined || t.layer === 'air' || t.layer === 'top') && (t.routing === undefined || t.routing === true) && (t.checked === undefined || t.checked === true) && (t.mp === undefined || Number.isFinite(t.mp)));
     const clues = (Array.isArray(raw.clues) ? raw.clues : []).filter((c: Record<string, unknown>) => c && typeof c.victimId === 'string' && isIndex(c.round) && place(c)).slice(-CLUE_LIMIT);
     const viewed = Array.isArray(raw.viewed) && raw.viewed.length === cells && raw.viewed.every(r => isIndex(r)) ? [...raw.viewed as number[]] : undefined;
-    result[side] = { traces: structuredClone(traces), clues: structuredClone(clues), ...(viewed ? { viewed } : {}) };
+    const restoredTraces = structuredClone(traces);
+    for (const trace of restoredTraces) if (!trace.seen || typeof trace.seen !== 'object' || trace.seen.id !== trace.id) delete trace.seen;
+    result[side] = { traces: restoredTraces, clues: structuredClone(clues), ...(viewed ? { viewed } : {}) };
   }
   return result;
 }

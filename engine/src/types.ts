@@ -108,11 +108,11 @@ export interface RangeSpec {
 
 export type EffectOp =
   | { op: 'barrier'; amount: number; dur: number; defensePower?: number }
-  | { op: 'zone'; kind: 'fire' | 'poison' | 'smoke' | 'healing' | 'trap'; power: number; dur: number; radius: number; amount?: number; penetration?: number; effects?: ZonePayload[] }
+  | { op: 'zone'; kind: 'fire' | 'poison' | 'smoke' | 'healing' | 'trap'; power: number; healingModel?: import('./healing.js').HealingModel; dur: number; radius: number; amount?: number; penetration?: number; effects?: ZonePayload[] }
   | { op: 'damage'; baseDice: string; apDice?: string; tag?: string; shape?: 'single' | 'burst' }
-  | ({ op: 'heal' } & ({ dice: string; amount?: never } | { amount: number; dice?: never }))
+  | ({ op: 'heal'; power?: number } & ({ dice: string; amount?: never } | { amount: number; dice?: never }))
   | { op: 'condition'; conditionId: string; dur: number; potency?: number; magnitude?: number; defensePower?: number; saveDC?: number; onHit?: boolean; onDamage?: boolean; shape?: 'single' | 'burst' }
-  | { op: 'trait'; traitId: string; dur: number; shape?: 'single' | 'burst' }
+  | { op: 'trait'; traitId: string; level?: number; dur: number; shape?: 'single' | 'burst' }
   | { op: 'push'; force: number; steps: 1; physical?: boolean; onHit?: boolean; direction?: 'away' | 'towards' }
   | { op: 'dispel'; polarity: 'positive' | 'negative'; count: 1 | 2 }
   | { op: 'resource'; resource: string; amount: number; maximum?: 'training' }
@@ -131,7 +131,7 @@ export interface Ability {
   /** 显式编辑的效果与数值不被入场公式重建。 */
   customized?: boolean;
   bonuses?: Enhancements;
-    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3' | 'skill-v5.0' | 'skill-v6.0' | 'skill-v6.1' | 'skill-v7.0' | 'skill-zone-v1' | 'skill-zone-v2' | 'skill-zone-v3' | 'skill-zone-v4';
+    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3' | 'skill-v5.0' | 'skill-v6.0' | 'skill-v6.1' | 'skill-v7.0' | 'skill-v2.5' | 'skill-v8.0' | 'skill-v9.0' | 'skill-zone-v5' | 'skill-zone-v6' | 'skill-zone-v1' | 'skill-zone-v2' | 'skill-zone-v3' | 'skill-zone-v4';
     damageScale?: number;
   recipe?: import('./data/skill-mechanisms.js').SkillRecipe;
   weaponUse?: 'auto' | 'melee' | 'ranged';
@@ -256,6 +256,9 @@ export interface ConditionDef {
 }
 
 export interface ActiveCondition {
+  controlPending?: boolean;
+  controlActive?: boolean;
+  controlSide?: Side;
   /** 施放守护的技能规格；只参与跨代毁伤，不增加抗穿。 */
   defensePower?: number;
   /** 小队自身激活中施加的增益，跳过当次回合末递减；随战斗快照保存。 */
@@ -275,25 +278,38 @@ export interface ActiveCondition {
 export type UnitStatus = 'ready' | 'dying' | 'dead' | 'routing' | 'fled';
 
 export interface Combatant {
+  controlActivation?: { sequence: number; targetId?: string };
+  /** 固定万分之一恢复单位；只在合法再生周期兑现，满血/离场/失去全部来源清零。 */
+  regenerationRemainder?: number;
+  movedDuringActivation?: boolean;
+  looseFormationChoice?: 'loose' | 'closed';
+  looseChoiceLocked?: boolean;
+  /** P2百分比伤兵余量；首次转换封存旧2/4组余量，不重算已有永久伤亡。 */
+  woundedPercentRemainder?: number;
   /** 由战斗规则投影；旧快照缺省使用旧伤害模型。 */
   damageModel?: 'wounds-v1' | 'wounds-v2';
   /** Versioned reserve: V9–V10 endurance-v1; V11 endurance-v2. Costs/fatigue/recovery are shared. */
   resourceModel?: 'endurance-v1' | 'endurance-v2';
   /** V12 weapon/armor calibration, projected from the battle rules; absent keeps the frozen V11 behaviour. */
-  armsModel?: 'arms-v1';
+  armsModel?: import('./arms.js').ArmsModel;
+  barrierModel?: 'barrier-grades-v1';
   /** V13 trait overhaul, projected from the battle rules; absent keeps the frozen V12 trait rules. */
   traitModel?: 'traits-v1';
-  /** V14 skill pricing (composite states priced per stat), projected from the battle rules; absent keeps V13 skill numbers. */
-  skillModel?: 'skills-v1';
-  /** V15 item system (graded specialisations, item action economy and per-piece formation use), projected from the battle rules. */
-  itemModel?: 'items-v1';
+  /** V14 skill pricing (composite states priced per stat), projected from the battle rules; absent keeps V13 skill numbers. V20 skills-v3 lowers combined-control save DCs by 1 per extra effect instead of 2. */
+  skillModel?: 'skills-v1' | 'skills-v2' | 'skills-v3';
+  /** V15 item system (graded specialisations, item action economy and per-piece formation use), projected from the battle rules. V20 items-v2 scales worn modifiers by item L. */
+  itemModel?: 'items-v1' | 'items-v2';
+  /** V16 特质分级独立门控；旧战斗缺省保持原效果。 */
+  traitLevelModel?: 'traits-levels-v1' | 'traits-levels-v2';
+  healingModel?: import('./healing.js').HealingModel;
+  controlModel?: 'activation-controls-v1';
   battleZones?: import('./area-effects.js').BattleZone[];
   barrier?: { remaining: number; duration: number; sourceId?: string; defenses?: { power: number; duration: number }[] };
   /** 旧版两格配件；只出现在 V15 之前开始、尚未结束的战斗快照里，新档一律用 gear。 */
   accessories?: Partial<Record<'accessory1' | 'accessory2', import('./items.js').LegacyAccessory>>;
   /** 已装备的佩戴、充能道具；与武器护甲一样是库存实物的投影，件数不限。 */
   gear?: import('./items.js').GearItem[];
-  /** 单位自带专精的等级（L1–10），缺省 L5；只记录五项专精。 */
+  /** 已完成分级执行器的特质等级（L1–10），缺省 L5；规则门控决定是否生效。 */
   traitLevels?: Record<string, number>;
   /** 战外明确设置的初始状态；战果归档后恢复通常的出场重置规则。 */
   storyState?: { resources?: boolean; abilityState?: boolean; fatigue?: boolean };
@@ -301,6 +317,20 @@ export interface Combatant {
   /** 当前战斗的非致命规则，由战场传入；不作为永久单位属性。 */
   nonLethal?: boolean;
   combatModel?: 'cohort-v1' | 'cohort-v2';
+  /** R2 本次冲锋被拒止打断，冲锋加成全部取消；R7 本次冲锋的实际移动格数。激活结束清除。 */
+  chargeInterrupted?: true;
+  chargeDistance?: number;
+  /** R2 本轮已触发拒止的移动者；随快照保存。 */
+  denialTriggered?: { round: number; targets: string[] };
+  /** R20 实体盾剩余耐久，战后清除。 */
+  shieldDurability?: { remaining: number };
+  /** R15 能量盾：剩余总量与本次回充前已过载的份数（英雄只有0或1）。 */
+  energyShield?: { remaining: number; overloaded: number };
+  /** R16 喷射武器剩余燃料（按武器 id，缺省为满）与本轮已破裂的油箱。 */
+  sprayerFuel?: Record<string, number>;
+  tankRupturedRound?: number;
+  /** R24 能量武器连续开火计数，按武器 id。 */
+  weaponHeat?: Record<string, { streak: number; fired?: boolean; cooling?: boolean }>;
   /** 本场火炮弹种，默认榴弹；不改变库存实物。 */
   cannonAmmo?: 'he' | 'ap';
   formation?: import('./combat-model.js').FormationStrength;
@@ -338,7 +368,7 @@ export interface Combatant {
   speedTier?: number;
   /** 明确骑乘平台；专长本身不会创建坐骑或增加人员/生命。 */
   mount?: boolean;
-  shield?: { id: string; load: number; recipe?: ItemRecipe; powerScale?: number };
+  shield?: { id: string; name?: string; load: number; recipe?: ItemRecipe; powerScale?: number };
   preparedAbilityIds?: string[];
   generationWarnings?: string[];
   /** 参战时持久档案版本；战后提交必须仍匹配，战内不自行递增。 */
@@ -432,6 +462,11 @@ export interface GenerateInput {
   hp?: number;
   hpMax?: number;
   shield?: boolean;
+  /** 盾牌名称、独立规格与修正；仅旧布尔写法省略规格时保留原默认盾。 */
+  shieldName?: string;
+  shieldLevel?: number;
+  shieldClass?: import('./data/weapons.js').ShieldClass;
+  shieldBonuses?: Enhancements;
   preparedAbilityIds?: string[];
   name: string;
   scale: Scale;
@@ -439,7 +474,7 @@ export interface GenerateInput {
   /** 威胁等级 1~10 */
   level: number;
   traits: string[];
-  /** 专精等级 L1–10（只记录五项专精），缺省 L5。 */
+  /** 已完成分级的特质等级 L1–10，缺省 L5。 */
   traitLevels?: Record<string, number>;
   side: Side;
   /** 时代皮肤 id，纯术语层 */
@@ -519,6 +554,8 @@ export type LogKind =
   | 'battle-end';
 
 export interface BattleLogEntry {
+  /** 已实际执行的道具使用；效果只记本次结算，不从道具说明或战后状态反推。 */
+  itemUse?: { actorId: string; actorName: string; itemId: string; itemName: string; form: 'single' | 'charged'; consumed: number; effects: string[] };
   /** 持续伤害/坠落的实际损失与来源；普通攻击由resolution记录，不能重复累计。members是成员生命编队这次的减员数。 */
   damage?: { sourceId?: string; targetId: string; amount: number; cause: string; unit?:'life'; members?: number };
   /** 同一技能的全部伤害结算；resolution保留首条供旧展示兼容。 */
@@ -558,13 +595,20 @@ export interface RulePack {
   /** Versioned reserve: V9–V10 endurance-v1; V11 endurance-v2. Costs/fatigue/recovery are shared. */
   resourceModel?: 'endurance-v1' | 'endurance-v2';
   /** V12 weapon/armor calibration (crew, demolition, light armor, reach, grid ranges); absent keeps V11. */
-  armsModel?: 'arms-v1';
+  armsModel?: import('./arms.js').ArmsModel;
+  barrierModel?: 'barrier-grades-v1';
+  /** V19 统帅：指挥水平与风格只改变 AI 决策（command-v2.ts）；缺省保留 V18 及以前的指挥评分。 */
+  commandModel?: 'command-v2';
   /** V13 trait overhaul (工事据守、工兵、拒马、散兵单体与步枪编队自动散兵); absent keeps V12. */
   traitModel?: 'traits-v1';
-  /** V14 skill pricing: 同时改两项属性的状态按两项附加效果计价; absent keeps V13. */
-  skillModel?: 'skills-v1';
-  /** V15 道具系统：专精十级、道具行动与编队件数、AI 保留价值、冲锋与远程看实际配装; absent keeps V14. */
-  itemModel?: 'items-v1';
+  /** V14 skill pricing: 同时改两项属性的状态按两项附加效果计价; absent keeps V13. V20 skills-v3：组合控制每多一项抵抗难度 −1（原 −2）。 */
+  skillModel?: 'skills-v1' | 'skills-v2' | 'skills-v3';
+  /** V15 道具系统：专精十级、道具行动与编队件数、AI 保留价值、冲锋与远程看实际配装; absent keeps V14. V20 items-v2：佩戴修正按道具 L 换算。 */
+  itemModel?: 'items-v1' | 'items-v2';
+  /** V16 新增特质分级；独立于 V15 五项专精。 */
+  traitLevelModel?: 'traits-levels-v1' | 'traits-levels-v2';
+  healingModel?: import('./healing.js').HealingModel;
+  controlModel?: 'activation-controls-v1';
   combatModel?: 'cohort-v1' | 'cohort-v2';
   /** 武器直击余伤100%在目标编队内传递；旧规则缺省关闭。 */
   weaponOverflow?: boolean;

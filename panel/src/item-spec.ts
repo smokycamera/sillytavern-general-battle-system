@@ -1,12 +1,13 @@
+import { baseMechanism, SHIELD_CLASSES, classMismatchHint, type ShieldClass } from '../../engine/src/data/weapons.js';
 import { parseEnhancementSuffix, enhancementLabel, resolveBonusStat, BONUS_NAMES, type Enhancements } from '../../engine/src/enhancements.js';
-import { WEAPON_CLASSES, resolveWeaponClass, parseSkillMechanism, skillMechanismId, skillMechanismFromId, narrativeTrait, isGradedTrait, ITEM_FORM_NAMES, itemSpecText, compileItem, traitPoints,
-  type BodyKind, type ItemForm, type ItemSpecification } from '../../engine/src/index.js';
+import { WEAPON_CLASSES, resolveWeaponClass, parseSkillMechanism, skillMechanismId, skillMechanismFromId, narrativeTrait, isGradedTrait, ITEM_FORM_NAMES, itemSpecText, compileItem,
+  canonicalTraitId, TRAIT_LEVEL_ALIASES, type BodyKind, type ItemForm, type ItemSpecification } from '../../engine/src/index.js';
 import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-tolerance.js';
 
 const ARMOR_TIERS = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
 export function itemSpecificationLabel(spec: ItemSpecification): string {
   if (spec.kind === 'item') return ITEM_FORM_NAMES[spec.form] + '·' + itemSpecText({ version: 'items-v1', form: spec.form, power: spec.power, seed: '', active: spec.active, traits: spec.traits, bonuses: spec.bonuses });
-  const name = spec.kind === 'weapon' ? WEAPON_CLASSES[spec.mechanism]?.name ?? spec.mechanism : spec.kind === 'armor' ? ARMOR_TIERS[spec.tier] : '盾牌';
+  const name = spec.kind === 'weapon' ? WEAPON_CLASSES[spec.mechanism]?.name ?? spec.mechanism : spec.kind === 'armor' ? ARMOR_TIERS[spec.tier] : SHIELD_CLASSES[spec.mechanism ?? 'shield'].name;
   return `${name}L${spec.power}${enhancementLabel(spec.bonuses)}${spec.kind === 'weapon' && spec.enchantment && spec.enchantment !== 'none' ? ' · ' + (spec.enchantment === 'arcane' ? '奥术转化' : '热能转化') : ''}`;
 }
 
@@ -41,7 +42,7 @@ function nameHint(base: string): string {
 }
 function equipmentSpecification(base: string, power: number, suffix: string, attrs: SpecAttributes): ItemSpecification | undefined {
   const weaponId = resolveWeaponClass(base), weapon = weaponId ? WEAPON_CLASSES[weaponId] : undefined;
-  const tier = ARMOR_TIERS.indexOf(base), shield = ['盾', '盾牌', 'shield'].includes(base);
+  const tier = ARMOR_TIERS.indexOf(base), shield = weaponId !== undefined && Object.hasOwn(SHIELD_CLASSES, weaponId);
   if (!weapon && tier < 0 && !shield) return undefined;
   const kind = weapon ? 'weapon' : tier >= 0 ? 'armor' : 'shield';
   const bonuses = parseEnhancementSuffix('L' + power + suffix, kind).bonuses;
@@ -60,7 +61,7 @@ function equipmentSpecification(base: string, power: number, suffix: string, att
   if (attrs.enchant !== undefined) throw new Error('此附魔字段只适用于武器');
   if (tier >= 0) return { kind: 'armor', tier: tier as 0 | 1 | 2 | 3 | 4, ...common, ...(attrs.protection === undefined ? {} : { profile: attrs.protection as 'balanced' | 'kinetic' | 'thermal' | 'arcane' }) };
   if (attrs.protection !== undefined) throw new Error('防护类型只适用于护甲');
-  return { kind: 'shield', ...common };
+  return { kind: 'shield', mechanism: weaponId as ShieldClass, ...common };
 }
 /** 特质（一项或用、分隔的多项）或“佩戴”：佩戴道具；专精的等级就是道具等级。 */
 function passiveSpecification(base: string, power: number, suffix: string): Extract<ItemSpecification, { kind: 'item' }> | undefined {
@@ -74,7 +75,12 @@ function passiveSpecification(base: string, power: number, suffix: string): Extr
     ids.push(parsed.id);
   }
   const bonuses = parseEnhancementSuffix('L' + power + suffix, 'gear').bonuses;
-  return { kind: 'item', form: 'worn', power, traits: [...new Set(ids)].map((id) => ({ id, ...(isGradedTrait(id) ? { level: power } : {}) })), ...(bonuses ? { bonuses } : {}) };
+  const grants = new Map<string, { id: string; level?: number }>();
+  for (const raw of ids) {
+    const id = canonicalTraitId(raw), level = TRAIT_LEVEL_ALIASES[raw]?.level ?? power;
+    if (!grants.has(id) || level > (grants.get(id)!.level ?? 5)) grants.set(id, { id, ...(isGradedTrait(id) ? { level } : {}) });
+  }
+  return { kind: 'item', form: 'worn', power, traits: [...grants.values()], ...(bonuses ? { bonuses } : {}) };
 }
 /** 佩戴道具把修正方向写在等级前（佩戴热能防护L5+4）时，方向挪到点数后面（佩戴L5+4热能防护）。 */
 function wornBonusFirst(base: string, power: number, suffix: string): { spec: Extract<ItemSpecification, { kind: 'item' }>; text: string } | undefined {
@@ -95,7 +101,7 @@ const WEAPON_ITEM_EFFECTS: Readonly<Record<string, { mechanism: string; form?: '
   magic: { mechanism: '魔法单体', form: 'charged' },
 };
 function weaponItem(weapon: string, power: number, suffix: string, form: 'single' | 'charged' | undefined, notes: string[] | undefined, written: string): Extract<ItemSpecification, { kind: 'item' }> {
-  const target = WEAPON_ITEM_EFFECTS[weapon];
+  const target = weapon === 'sprayer' ? { mechanism: '物理范围投射+扇形+燃烧' } : WEAPON_ITEM_EFFECTS[baseMechanism({recipe:{mechanism:weapon}})!];
   if (!target) throw new Error(`「${WEAPON_CLASSES[weapon]?.name ?? weapon}」没有对应的道具写法；武器写在weapon、weapon2`);
   // 修正与效果词（+2穿透、+中毒）照技能写法理解；道具没有的修正略去并说明。
   const tolerance: string[] = [];
@@ -113,25 +119,7 @@ export function weaponItemSpecification(weapon: Extract<ItemSpecification, { kin
   const suffix = enhancementLabel(weapon.bonuses);
   return weaponItem(weapon.mechanism, weapon.power, suffix, form, notes, (WEAPON_CLASSES[weapon.mechanism]?.name ?? weapon.mechanism) + 'L' + weapon.power + suffix);
 }
-/**
- * 正文写的佩戴修正超出等级预算（佩戴L5+8防御）时，从最大的一项起逐点降到预算内并说明，道具保留；
- * 特质本身就超出预算的照旧建不了档。手工表单不经过这里，照常提示预算。
- */
-export function fitWornBudget(spec: ItemSpecification, notes?: string[], written?: string): ItemSpecification {
-  if (spec.kind !== 'item' || spec.form !== 'worn' || spec.legacy || !spec.bonuses) return spec;
-  const traits = (spec.traits ?? []).reduce((sum, grant) => sum + traitPoints(grant, spec.power), 0);
-  let over = traits + Object.values(spec.bonuses).reduce((sum, points) => sum + Math.max(0, points ?? 0), 0) - spec.power;
-  if (over <= 0 || traits > spec.power) return spec;
-  const bonuses: Enhancements = { ...spec.bonuses };
-  for (; over > 0; over--) {
-    const [stat] = (Object.entries(bonuses) as [keyof Enhancements, number][]).filter(([, points]) => points > 0).sort((a, b) => b[1] - a[1])[0]!;
-    if (!--bonuses[stat]!) delete bonuses[stat];
-  }
-  const fitted = { ...spec, bonuses };
-  notes?.push(`「${written ?? itemSpecificationText(spec)}」超出L${spec.power}的佩戴预算，按「${itemSpecificationText(fitted)}」`);
-  return fitted;
-}
-/** 道具能不能建档（佩戴预算、效果组合）：正文解析时先编译一次，建不了的一项按略过处理，不拖到入账时整批失败。 */
+/** 道具能不能建档（效果类型、参数与组合）：正文解析时先编译一次，建不了的一项按略过处理，不拖到入账时整批失败。 */
 export function assertItemCompiles(spec: ItemSpecification, name = '道具'): void {
   compileItem(spec, { id: 'item-check', name, seed: 'item-check', damageModel: 'wounds-v2' });
 }
@@ -188,12 +176,14 @@ export function parseItemSpecification(text: string, attrs: SpecAttributes = {},
   if (!form) {
     // 道具位置上的武器词条先换成对应道具，后面的修正与效果词照技能写法理解。
     const weapon = options.item ? resolveWeaponClass(base) : undefined;
-    if (weapon) return weaponItem(weapon, power, suffix, undefined, notes, text.trim());
+    if (weapon && WEAPON_CLASSES[weapon]) return weaponItem(weapon, power, suffix, undefined, notes, text.trim());
     const equipment = equipmentSpecification(base, power, suffix, attrs);
     if (equipment && options.item) throw new Error('这里只写道具；护甲与盾写在armor、shieldSpec');
     if (equipment) {
       const type = equipment.kind === 'shield' ? 'armor' : equipment.kind;
       if (attrs.type !== undefined && attrs.type !== type) throw new Error('物品种类与物品属性冲突');
+      const hint = equipment.kind !== 'item' && equipment.kind !== 'armor' && split.name ? classMismatchHint(split.name, equipment.kind === 'weapon' ? equipment.mechanism : equipment.mechanism ?? 'shield') : '';
+      if (hint) notes?.push(hint);
       return equipment;
     }
   }
@@ -257,7 +247,7 @@ export function parseSpawnItem(entry: string, notes?: string[]): SpawnItem {
   let text = entry.trim(), qty = 1;
   const count = text.match(ITEM_COUNT);
   if (count) { qty = Number(count[1]); text = text.slice(0, count.index).trim(); }
-  if (!Number.isSafeInteger(qty) || qty < 1 || qty > 9999) throw new Error('件数须为1–9999');
+  if (!Number.isSafeInteger(qty) || qty < 1) throw new Error('件数须为正整数');
   const at = text.search(/[:：]/);
   const name = at > 0 ? text.slice(0, at).trim() : '', specText = (at >= 0 ? text.slice(at + 1) : text).trim();
   if (!specText && !name) throw new Error('缺少道具名称');

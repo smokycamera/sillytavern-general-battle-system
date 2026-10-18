@@ -4,7 +4,7 @@ export { BODY } from '../body.js';
 /** 单位生成与独立库存物品共用的装备编译器。上下文的 seed 已包含稳定实例/槽位域。 */
 import type { Armor, BodyKind, DamageChannel, ItemRecipe, Weapon } from '../types.js';
 import { curveAt } from '../data/curves.js';
-import { WEAPON_CLASSES, WEAPON_LIBRARY, diceAvg, rebuildDice } from '../data/weapons.js';
+import { WEAPON_CLASSES, WEAPON_LIBRARY, SHIELD_CLASSES, diceAvg, rebuildDice } from '../data/weapons.js';
 import { ARMOR_LIBRARY } from '../data/armors.js';
 import { SeededRng } from '../rng.js';
 import { rollInstanceVariance, validateInstanceVariance, type InstanceVariance, type VarianceStat } from '../instance-variance.js';
@@ -24,6 +24,7 @@ const ARMOR_ALIASES: Record<string, 0 | 1 | 2 | 3 | 4> = {
 export interface EquipmentContext {
   /** false preserves an older recipe; an existing record preserves its rolls on reforge. */
   variance?: InstanceVariance | false;
+  varianceVersion?: InstanceVariance['version'];
   bonuses?: Enhancements; id: string; name?: string; seed: string; body?: BodyKind; quality?: number; noVariance?: boolean;
   /** 仅建档使用：接受明确声明的装备组合，不改变战斗使用规则。 */
   creatingUnit?: boolean;
@@ -37,11 +38,11 @@ export function equipmentRecipe(mechanism: string, power: number, context: Equip
   const size = context.body ?? 'human';
   if (!BODY[size]) throw new Error('不支持的身体/平台');
   if (!context.id || !context.seed) throw new Error('物品缺少唯一编号或随机记录号');
-  validateEnhancements(context.bonuses, mechanism.startsWith('armor:') ? 'armor' : mechanism === 'shield' ? 'shield' : 'weapon');
-  const stats: VarianceStat[] = mechanism.startsWith('armor:') || mechanism === 'shield' ? ['protection', 'power'] : Object.hasOwn(WEAPON_CLASSES, mechanism) ? ['damage', 'penetration'] : [];
+  validateEnhancements(context.bonuses, mechanism.startsWith('armor:') ? 'armor' : Object.hasOwn(SHIELD_CLASSES, mechanism) ? 'shield' : 'weapon');
+  const stats: VarianceStat[] = mechanism.startsWith('armor:') || Object.hasOwn(SHIELD_CLASSES, mechanism) ? ['protection', 'power'] : Object.hasOwn(WEAPON_CLASSES, mechanism) ? ['damage', 'penetration'] : [];
   if (context.variance !== false) validateInstanceVariance(context.variance);
   const variance = context.damageModel === 'wounds-v2' && !context.noVariance && context.variance !== false && stats.length
-    ? context.variance ?? rollInstanceVariance(context.seed, stats) : undefined;
+    ? context.variance ?? rollInstanceVariance(context.seed, stats, context.varianceVersion) : undefined;
   return { ...(variance ? { variance: structuredClone(variance) } : {}), ...(context.damageModel === 'wounds-v2' ? { balanceVersion: 'unified-v1' as const } : {}), ...(context.damageModel === 'wounds-v2' && context.noVariance ? { noVariance: true } : {}), bonuses: context.bonuses, version: FORMULA_VERSION, mechanism, power: integer(power, 1, 10, '装备等级'), size,
     quality: integer(context.quality ?? 3, 1, 5, '品质'), seed: context.seed };
 }
@@ -58,7 +59,7 @@ export function compileWeapon(spec: { mechanism?: string; weaponId?: string; pow
     recipe.enchantment = spec.enchantment;
   }
   const summonRange = mechanism === 'summon' ? Math.max(1, 1 + (recipe.bonuses?.range ?? 0)) : undefined;
-  const powerCurve = curveAt(recipe.power), ranged = (summonRange ?? profile.range) > 1;
+  const powerCurve = curveAt(recipe.power), ranged = mechanism === 'sprayer' || (summonRange ?? profile.range) > 1;
   if (spec.stabilized !== undefined && typeof spec.stabilized !== 'boolean') throw new Error('武器稳定配置损坏');
   if (spec.stabilized) {
     if (!context.creatingUnit && (recipe.size !== 'vehicle' || !ranged)) throw new Error('稳定装置需要实际载具规格的射击武器');
@@ -70,12 +71,12 @@ export function compileWeapon(spec: { mechanism?: string; weaponId?: string; pow
   const attacks = Math.max(1, Math.min(3, profile.attacks ?? 1));
   return { id: context.id, name: context.name?.trim() || profile.name,
     baseDice: rebuildDice(budget / attacks, budget / attacks < 3.5 ? 2 : 6), recipe,
-    channel: recipe.enchantment ?? (mechanism === 'energy' ? 'thermal' : mechanism === 'magic' ? 'arcane' : 'kinetic'),
-    penetration: 1 + Math.floor(recipe.power / 2) + (['cannon', 'indirect-cannon', 'demolition', 'autocannon'].includes(mechanism) ? 2 : mechanism === 'heavy-rifle' ? 2 : ['firearm', 'rifle', 'energy'].includes(mechanism) ? 1 : 0),
+    channel: recipe.enchantment ?? (['energy', 'sprayer'].includes(mechanism) ? 'thermal' : mechanism === 'magic' ? 'arcane' : 'kinetic'),
+    penetration: 1 + Math.floor(recipe.power / 2) + (['cannon', 'indirect-cannon', 'demolition', 'autocannon', 'rocket'].includes(mechanism) ? 2 : mechanism === 'heavy-rifle' ? 2 : mechanism === 'crossbow' ? 1 : ['firearm', 'rifle', 'energy'].includes(mechanism) ? 1 : 0),
     range: summonRange ?? Math.max(profile.minRange??0,ranged?1:profile.range,profile.range + (ranged ? bonusSteps(recipe.bonuses, 'range', 5) : 0)), minRange: profile.minRange ?? 0,
     pointBlankPolicy: profile.pointBlankPolicy ?? 'allow', pointBlankPenalty: profile.pointBlankPenalty,
     indirect: profile.indirect, attacks, reload: profile.reload, level: recipe.power,
-    hands: ['natural','summon'].includes(mechanism) ? 0 : ['light-ranged','throwing'].includes(mechanism) ? 1 : ranged ? 2 : 1, load: ['natural','summon'].includes(mechanism) ? 0 : ['light-ranged','throwing'].includes(mechanism) ? 1 : ['cannon', 'indirect-cannon', 'autocannon'].includes(mechanism) ? 6 : ranged ? 2 : 1,
+    hands: ['greatsword', 'great-weapon', 'heavy-polearm'].includes(mechanism) ? 2 : ['natural','summon'].includes(mechanism) ? 0 : ['light-ranged','throwing'].includes(mechanism) ? 1 : ranged ? 2 : 1, load: mechanism === 'sprayer' ? 3 : ['greatsword', 'great-weapon', 'heavy-polearm'].includes(mechanism) ? 2 : ['natural','summon'].includes(mechanism) ? 0 : ['light-ranged','throwing'].includes(mechanism) ? 1 : ['cannon', 'indirect-cannon', 'autocannon'].includes(mechanism) ? 6 : ranged ? 2 : 1,
     tags: [...(ranged ? ['ranged'] : []), ...(profile.blast ? ['blast'] : []), 'mechanism:' + mechanism] };
 }
 /** 旧长兵器改为单手；保留明确自定义值，不重掷装备。 */

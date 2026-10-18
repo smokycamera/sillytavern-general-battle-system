@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generateUnit, SmallBattle, MassBattle, standardField, traitRegistry, V12_OVERFLOW_D20, V2_TW, gridDistance, type Combatant } from '../src/index.js';
+import { noteSightings, restoreIntel, type IntelBook } from '../src/intel.js';
 const registry = traitRegistry();
 function unit(id: string, side: Combatant['side'], extra: Record<string, unknown> = {}): Combatant {
   const u = generateUnit({ name: id, side, scale: 'hero', rulesVersion: 'v2', level: 3, hpMax: 500, weaponClass: 'sword', weaponLevel: 5, armorTier: 1, traits: [], ...extra },
@@ -17,7 +18,73 @@ function night(units: Combatant[], positions: Record<string, number>) {
 }
 const at = (x: number, y: number) => y * 7 + x;
 
+function lostContact() {
+  const a = unit('A0', 'ally'), b = unit('B0', 'enemy');
+  const battle = night([a, b], { A0: at(3, 8), B0: at(3, 6) });
+  const intel: IntelBook = {};
+  const views = (visible: boolean) => new Map([['ally' as const, new Set(visible ? ['A0', 'B0'] : ['A0'])]]);
+  noteSightings(intel, [a, b], views(true), battle.round, u => ({ cell: u.pos }));
+  b.pos = at(6, 0);
+  noteSightings(intel, [a, b], views(false), battle.round, u => ({ cell: u.pos }));
+  (battle as unknown as { intel: IntelBook }).intel = intel;
+  const presumed = () => (battle as unknown as { presumedFoes(side: 'ally', known: Combatant[]): Combatant[] }).presumedFoes('ally', battle.visibleCombatants('ally'));
+  return { battle, a, b, intel, views, presumed };
+}
+
 describe('阵营共享敌情记忆', () => {
+  it('F2 失联后改强隐藏武器不改变推定属性与全部候选 finalScore', () => {
+    const { battle, b, presumed } = lostContact();
+    const original = b.weapon!.baseDice;
+    const snap = JSON.parse(JSON.stringify(battle.toSnapshot()));
+    b.weapon!.baseDice = '20d6+100';
+    expect(presumed()[0]!.weapon!.baseDice).toBe(original);
+    const decisions = [snap, JSON.parse(JSON.stringify(battle.toSnapshot()))].map(snapshot => {
+      const replay = SmallBattle.fromSnapshot(snapshot, { traitRegistry: registry }), scores: number[][] = [];
+      replay.aiTrace = e => { if (e.stage === 'decision') scores.push((e.plans as { finalScore?: number }[]).flatMap(p => p.finalScore === undefined ? [] : [p.finalScore])); };
+      replay.autoAction('A0');
+      return scores;
+    });
+    expect(decisions[0]![0]!.length).toBeGreaterThan(0);
+    expect(decisions[1]).toEqual(decisions[0]);
+  });
+  it('F2 重新目击后整条记录重写并清除 seen', () => {
+    const { battle, a, b, intel, views } = lostContact();
+    noteSightings(intel, [a, b], views(true), battle.round, u => ({ cell: u.pos }));
+    expect(intel.ally!.traces[0]).not.toHaveProperty('seen');
+  });
+  it('F2 没有 seen 的旧记录不产生推定敌人', () => {
+    const { intel, presumed } = lostContact();
+    delete intel.ally!.traces[0]!.seen;
+    expect(presumed()).toEqual([]);
+  });
+  it('F2 restoreIntel 仅丢弃 id 不符的 seen', () => {
+    const { intel } = lostContact(), trace = intel.ally!.traces[0]!;
+    trace.seen!.id = 'wrong';
+    const { seen, ...record } = trace;
+    expect(restoreIntel(intel, 63).ally!.traces).toEqual([record]);
+  });
+  it('F2 看不见的相邻潜伏近战敌人不触发起飞规避', () => {
+    const flyer = unit('flyer', 'ally', { traits: ['flying'] }), hidden = unit('hidden', 'enemy', { traits: ['stalk'] });
+    const battle = night([flyer, hidden], { flyer: at(3, 8), hidden: at(4, 8) });
+    flyer.airborne = false;
+    flyer.traitLevelModel = 'traits-levels-v2';
+    delete flyer.resourceModel;
+    delete hidden.tacticalRevealed;
+    flyer.conditions.push({ id: 'blinded', dur: 9 });
+    battle.battlefield!.deploymentZones = [{ side: 'ally', relation: 'guards', cells: [flyer.pos!] }];
+    expect(battle.visibleCombatants('ally').map(u => u.id)).not.toContain(hidden.id);
+    expect(battle.flightReason(flyer.id, true)).toBeUndefined();
+    battle.autoAction(flyer.id);
+    expect(flyer.airborne).toBe(false);
+  });
+  it('F1 没有敌情时仍遵守 guards 分配格', () => {
+    const guard = unit('guard', 'ally'), foe = unit('foe', 'enemy');
+    const battle = night([guard, foe], { guard: at(3, 8), foe: at(3, 0) });
+    const cells = [at(2, 8), at(3, 8), at(4, 8)];
+    battle.battlefield!.deploymentZones = [{ side: 'ally', relation: 'guards', cells }];
+    battle.autoAction(guard.id);
+    expect(cells).toContain(guard.pos);
+  });
   function sighting(scoutSees: boolean) {
     // 侦察兵在右后方看见渗透的敌人后阵亡；左侧队友自己从未看见它。
     const scout = unit('scout', 'ally'), runner = unit('runner', 'ally'), enemy = unit('enemy', 'enemy');

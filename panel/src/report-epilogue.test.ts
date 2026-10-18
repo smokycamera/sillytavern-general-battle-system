@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {generateUnit,traitRegistry,SmallBattle,MassBattle,V3_D20,V3_TW,V6_D20,V6_TW,standardField,applyRecovery,applyHealthLoss,type Combatant} from '../../engine/src/index.js';
 import {captureBattleStart,captureBattleArchive} from './report-history.js';
 import {unitRecordFromCombatant,materializeUnitRecord,commitBattleState,updateUnitRecord} from './unit-state.js';
-import {battleEpilogue,makeNarrativeBatch,battleIdOf,publicBattleEvents,type BattleReport} from './battle-reports.js';
+import {battleEpilogue,makeNarrativeBatch,battleIdOf,publicBattleEvents,withBattleReportQueries,type BattleReport} from './battle-reports.js';
 import {skillDefinitionId} from '../../engine/src/skill-catalog.js';
 import {compactEvents,reportPlaceText} from '../../engine/src/inject/format.js';
 const registry=traitRegistry(),rng={seed:'fixed',next:()=>0,d:(sides:number)=>sides};
@@ -19,6 +19,18 @@ function hit(b:SmallBattle|MassBattle,actor:string,target:string) {
  else {expect(b.issue({unitId:actor,type:'attack',targetId:target}).ok).toBe(true);b.issue({unitId:target,type:'hold'});b.resolveRound();}
 }
 describe('终章事实与致命开关',()=>{
+ it('公开日志仅在同步渲染范围内复用，嵌套与异常退出后仍读取最新记录',()=>{
+  const b=battle('small',false,[unit('A'),unit('D')]);
+  const first=withBattleReportQueries(()=>{
+   const events=publicBattleEvents(b);expect(publicBattleEvents(b)).toBe(events);
+   withBattleReportQueries(()=>expect(publicBattleEvents(b)).toBe(events));return events;
+  });
+  b.log.push({round:b.round,kind:'ability',text:'新记录',observedBy:['ally']});
+  expect(publicBattleEvents(b).at(-1)?.entry.text).toBe('新记录');expect(publicBattleEvents(b)).not.toBe(first);
+  expect(()=>withBattleReportQueries(()=>{publicBattleEvents(b);throw Error('退出');})).toThrow('退出');
+  b.log.push({round:b.round,kind:'ability',text:'异常后的记录',observedBy:['ally']});
+  expect(withBattleReportQueries(()=>publicBattleEvents(b)).at(-1)?.entry.text).toBe('异常后的记录');
+ });
  it.each(['small','mass'] as const)('%s双方、个体和编队遵守开关，濒死可归档恢复且击败经验不重复',mode=>{
   for(const nonLethal of [false,true])for(const scale of ['hero','company'] as const)for(const attacker of ['A','D']){
    const units=[unit('A',scale),unit('D',scale)],records=units.map(u=>unitRecordFromCombatant(u));

@@ -1,3 +1,4 @@
+import { equipmentBurden } from './equipment-load.js';
 /**
  * 技能自带的施术者位移（突进 / 闪现 / 后撤）。
  *
@@ -35,7 +36,7 @@ export function moveBlockReason(actor: Combatant, conditions: { get(id: string):
 }
 /** 实际可走格数：射程强化同样延长位移，减速时突进与后撤少1格（至少1格）。 */
 export function effectiveMoveReach(actor: Combatant, ability: Pick<Ability, 'bonuses'>, effect: MoveEffect, conditions: { get(id: string): ConditionDef | undefined }): number {
-  if (moveBlockReason(actor, conditions)) return 0;
+  if (moveBlockReason(actor, conditions) || effect.mode === 'dash' && equipmentBurden(actor) === 2) return 0;
   const slowed = effect.mode !== 'blink' && actor.conditions.some(c => c.dur > 0 && c.id === 'slowed');
   return Math.max(1, effect.reach + bonusSteps(ability.bonuses, 'range', 5) - (slowed ? 1 : 0));
 }
@@ -47,8 +48,7 @@ export function massMoveReach(effect: MoveEffect): number {
 export function moveEffectDescription(effect: MoveEffect, ability: Pick<Ability, 'effects' | 'damageBasis' | 'weaponUse'>): string {
   const movementOnly = movementOnlySkill(ability), cells = `至多${effect.reach}格`;
   const melee = ability.damageBasis === 'weapon' && ability.weaponUse !== 'ranged';
-  if (effect.mode === 'dash') return (movementOnly ? '沿可走路线突进' : '出手前沿可走路线突进') + cells + '（会战一个阵位）；地形照常计价，途中照常触发借机与警戒'
-    + (melee ? '；从非接触距离以近战武器突进接敌按冲锋结算' : '');
-  if (effect.mode === 'blink') return (movementOnly ? '闪现到' : '出手前闪现到') + cells + '内视线可及的落脚处（会战' + massMoveReach(effect) + '个阵位）；不经过路线、不触发反应、不换平台层';
-  return (movementOnly ? '沿可走路线后撤' : '出手后沿可走路线后撤') + cells + '（会战一个阵位），优先远离敌人；不触发近战借机，仍受警戒射击';
+  if (effect.mode === 'dash') return (movementOnly ? '突进' : '出手前突进') + cells + (melee ? '，接敌按冲锋结算' : '');
+  if (effect.mode === 'blink') return (movementOnly ? '闪现' : '出手前闪现') + cells + '，不触发反应';
+  return (movementOnly ? '后撤' : '出手后后撤') + cells + '，不触发近战借机';
 }

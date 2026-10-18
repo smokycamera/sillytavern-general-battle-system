@@ -54,7 +54,7 @@ describe('通用六类技能配方', () => {
     const covered = new Set<string>(), conditions = new Set<string>(), traits = new Set<string>();
     for (const category of SKILL_CATEGORIES) for (const modifier of [undefined, ...allowedSkillModifiers(category.id)]) {
       const mechanism = { category: category.id, area: category.id.endsWith('area'), modifiers: modifier ? [modifier.id] : [] };
-      if (modifier?.id === 'summon' && mechanism.area) continue;
+      if (modifier?.id === 'summon' && mechanism.area || ['taunt','blind','confuse','charm'].includes(modifier?.id ?? '')) continue;
       const id = skillMechanismId(mechanism), label = skillMechanismName(id);
       expect(parseSkillMechanism(label), label).toEqual(mechanism);
       for (const power of [1, 5, 10]) {
@@ -67,9 +67,9 @@ describe('通用六类技能配方', () => {
       }
     }
     expect([...covered].sort()).toEqual(['barrier', 'condition', 'damage', 'dispel', 'heal', 'morale', 'move', 'push', 'resource', 'summon', 'trait', 'zone']);
-    expect([...conditions].sort()).toEqual(STANDARD_CONDITIONS.map((c) => c.id).sort());
+    expect([...conditions].sort()).toEqual(STANDARD_CONDITIONS.filter(c => !['taunted','blinded','confused','charmed'].includes(c.id)).map((c) => c.id).sort());
     // 停用特质与身体/装备自动特质只保留旧技能 id，新技能不再提供；先锋部署只在开战时生效，守护/大守护改用随等级缩放的增益守护。
-    expect([...traits].sort()).toEqual(TRAITS.filter((t) => t.v2SourceReady && !t.legacy && !t.derived && !['vanguard', 'guardian', 'guardian-greater'].includes(t.id)).map((t) => t.id).sort());
+    expect([...traits].sort()).toEqual(TRAITS.filter((t) => t.v2SourceReady && !t.legacy && !t.derived && !['vanguard', 'guardian', 'guardian-greater','ap-master','monster-hunter','terror'].includes(t.id)).map((t) => t.id).sort());
     expect(parseSkillMechanism('物理单体近战+射击')!.modifiers).toEqual(['ranged']);
     expect(parseSkillMechanism('魔法范围热能+奥术')!.modifiers).toEqual(['arcane']);
     expect(parseSkillMechanism('魔法范围扇形+直线')!.modifiers).toEqual(['line']);

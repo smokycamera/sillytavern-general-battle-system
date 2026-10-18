@@ -37,9 +37,9 @@ describe('正文特质名', () => {
   });
   it('配装与世界书同一分组和名称，停用项与自动项不出现', () => {
     expect(traitCatalog().map((g) => `${g.group}：${g.traits.map((t) => t.name).join('、')}`)).toEqual([
-      '攻击：破甲、破甲大师、克制步兵、克制大型、屠兽者、对空、狂暴、淬毒、偷袭、吸血、近战特化、射击专家、抵近射击',
-      '防护：守护、大守护、再生、坚韧、身法、天生护甲、不屈、工事、盾墙、拒马、散兵、非生物',
-      '士气：恐惧、恐怖、不溃、顽固、统率',
+      '攻击：破甲、克制步兵、克制大型、对空、狂暴、淬毒、偷袭、吸血、近战特化、射击专家、抵近射击',
+      '防护：守护、再生、坚韧、身法、天生护甲、动能抵抗、热能抵抗、奥术抵抗、不屈、工事、盾墙、拒马、散兵、非生物',
+      '士气：恐惧、不溃、顽固、统率',
       '机动：冲锋强化、践踏、游击、骑射、先锋部署、潜伏、侦察、飞行、机械化、耐力训练',
       '地形与工程：林地专精、山地专精、平原专精、巷战专精、夜战专精、航渡、登城、工兵',
       '后勤：医护',
@@ -213,9 +213,10 @@ describe('战斗接入', () => {
     battle.autoAction('e-hold');
     return battle.byId('e-hold');
   }
-  it('AI：据守单位看不见敌人时守在工事里，不出去搜索；没有工事的同一单位会去搜', () => {
-    expect(holdBattle('rifle', true, 87, ['plains', 'night'])).toMatchObject({ pos: 3, entrenchedAt: 3 });
-    expect(holdBattle('rifle', false, 87, ['plains', 'night']).pos).not.toBe(3);
+  it('F1 AI：据守单位看不见敌人时照常搜索，离开后失去工事', () => {
+    const unit = holdBattle('rifle', true, 87, ['plains', 'night']);
+    expect(unit.pos).not.toBe(3);
+    expect(entrenched(unit)).toBe(false);
   });
   it('AI：据守弓手与射程内的弓手对射时留在工事里；近战据守单位被打不到的弓手压制时出击', () => {
     const archer = holdBattle('bow', true, 38, ['plains']);

@@ -152,6 +152,22 @@ describe('正文原子事务', () => {
     expect(restored.mount).toBe(true); expect(restored.sidearm).toEqual(gear); expect(restored.base.hpMax).toBe(80);
   });
 
+  it('正文盾牌名称、规格和修正生成真实实物，存档重开和升级保留同一配方', () => {
+    const { save, proposal, ns } = setup('<spawn name="持盾卫队" side="ally" scale="company" hpMax="30" level="1" shield="AEGIS塔盾:盾L5+2防御-3热能防护"/>');
+    const next = prepareNarrativeTransaction(save, proposal, ns, true);
+    const record = next.storage!.find(r => r.name === '持盾卫队')!;
+    const unit = materializeUnitRecord(JSON.parse(JSON.stringify(record)), reg);
+    expect(unit.level).toBe(1);
+    expect(unit.shield).toMatchObject({ name: 'AEGIS塔盾', load: 2, recipe: { mechanism: 'shield', power: 5, bonuses: { defense: 2, thermalProtection: -3 }, size: 'human' } });
+    expect(unit.genAudit!.input).toMatchObject({ shield: true, shieldName: 'AEGIS塔盾', shieldLevel: 5, shieldBonuses: { defense: 2, thermalProtection: -3 } });
+    const inventory = prepareInventoryState(next);
+    expect(inventory.inventory!.find(i => i.id === unit.shield!.id)).toMatchObject({ name: 'AEGIS塔盾', equippedTo: { unitId: record.id, slot: 'shield' }, mechanics: { kind: 'shield', value: unit.shield } });
+    const shield = structuredClone(unit.shield);
+    applyXp(unit, 9999, reg);
+    expect(materializeUnitRecord(unitRecordFromCombatant(unit), reg).shield).toEqual(shield);
+    expect(save.storage).toHaveLength(1);
+  });
+
   it('森林与夜间同批固化为下一战场景，战内拒绝且旧绑定不能覆盖新场景', () => {
     const { save, proposal, ns } = setup('<field env="forest" light="night"/>');
     const next = prepareNarrativeTransaction(save, proposal, ns, true);
@@ -190,7 +206,8 @@ describe('正文原子事务', () => {
     expect(() => prepareNarrativeTransaction({ ...save, autoApprove: false }, proposal, ns)).toThrow(/自动批准/);
     const next = prepareNarrativeTransaction(save, proposal, ns, true);
     const deployed = materializeUnitRecord(next.storage![0]!, reg);
-    expect(deployed.hp).toBe(70); expect(deployed.traits).toEqual([]); expect(activeTraitIds(deployed)).toEqual(['guardian-greater']);
+    expect(deployed.hp).toBe(70); expect(deployed.traits).toEqual([]); expect(activeTraitIds(deployed)).toEqual(['guardian']);
+    expect(deployed.traitSources![0]!.traitLevels).toEqual({ guardian: 8 });
     expect(deployed.traitSources![0]).toMatchObject({ name: '神灵庇佑', remaining: 2, kind: 'blessing' });
     expect(() => prepareNarrativeTransaction(next, proposal, ns, true)).toThrow();
     expect(save.storage![0]!.snapshot!.traitSources).toBeUndefined();

@@ -24,7 +24,7 @@ export interface LlmEncounterContext extends JevEncounterContext, PreparationDes
 }
 /** The one-line summary shows what was chosen; layout adjustments live under the map's layout details. */
 export function llmContextSummary(context: LlmEncounterContext): string {
-  const commanders = Object.entries(context.commanders ?? {}).map(([side, p]) => `${side === 'ally' ? '我方' : '敌方'}指挥：${ABILITY_LABELS[p!.ability]} · ${STYLE_PRESETS[p!.style].label}`);
+  const commanders = Object.entries(context.commanders ?? {}).map(([side, p]) => `${side === 'ally' ? '我方' : side === 'neutral' ? '第三方' : '敌方'}指挥：${ABILITY_LABELS[p!.ability]} · ${STYLE_PRESETS[p!.style].label}`);
   return [...commanders, encounterSummary(context).split('；').slice(1).join('；'), validMapDesign(context.mapDesign) ? '地图：' + mapDesignSummary(context.mapDesign) : '', context.battlefieldPlan ? '战场：' + layoutSummary(context.battlefieldPlan) : '', context.vipName ? 'VIP：' + context.vipName : ''].filter(Boolean).join('；');
 }
 /** Deadline for each preparation request; flash models answer far sooner, slow gateways still get a full minute and more. */
@@ -37,8 +37,9 @@ export function narrativeMessage(messages: readonly NarrativeMessage[]): string 
     ...messages.map((m, i) => `〔${i + 1} · ${m.role === 'user' ? '玩家' : '叙述'}〕\n${m.text}`)].join('\n\n');
 }
 function decisionTask(request: ContextSelectionRequest): string {
+  const commanders = { ally: { preferences: {} }, enemy: { preferences: {} }, ...(request.fields.some(f => f.id === 'neutral_ability') ? { neutral: { preferences: {} } } : {}) };
   return ['【第1步：开战决策】为fields中的每个字段选择一个选项。明确设定优先；正文没写的细节，结合身份、经历、组织、局势与任务合理推断。',
-    '只输出：{"selections":{"字段id":{"value":"选项键","confidence":0到1的数}},"commanders":{"ally":{"preferences":{}},"enemy":{"preferences":{}}}}。value必须是该字段options中的键（不是说明文字），每个字段都要写；commanders可省略，规则见state.commandRules。若有state.retryErrors，表示上次回答出错，请逐条修正。',
+    `只输出：{"selections":{"字段id":{"value":"选项键","confidence":0到1的数}},"commanders":${JSON.stringify(commanders)}}。value必须是该字段options中的键（不是说明文字），每个字段都要写；commanders可省略，规则见state.commandRules。若有state.retryErrors，表示上次回答出错，请逐条修正。`,
     JSON.stringify({ state: request.state, fields: request.fields })].join('\n');
 }
 export type PreparationStep = 'decide' | 'layout';
@@ -92,17 +93,18 @@ export class LlmContextController {
       return { ...base, detail: '所选范围没有可读取的已完成正文，沿用准备设置' };
     }
     const fixedMass = forcedMass || settings.selectBattleScale === false && input.setup.mode === 'mass';
+    const sides = !fixedMass && activeBattleUnits(input.roster).some(u => u.side === 'neutral') ? ['ally', 'enemy', 'neutral'] as const : ['ally', 'enemy'] as const;
     const designMap = settings.designMap === true && !fixedMass;
     request.fields = request.fields.filter(f => f.id !== 'enemy_ability' && !f.id.startsWith('style_') && !(designMap && f.id === 'map_layout'));
     // Preparation needs a concrete choice even when the narrative only provides indirect clues.
     for (const field of request.fields) delete field.options.unknown;
-    for (const side of ['ally', 'enemy']) {
-      const who = side === 'ally' ? '我方实际指挥官（主控不一定是指挥官）' : '敌方实际指挥官';
+    for (const side of sides) {
+      const who = side === 'ally' ? '我方实际指挥官（主控不一定是指挥官）' : side === 'neutral' ? '第三方实际指挥官' : '敌方实际指挥官';
       request.fields.push({ id: side + '_ability', question: `结合身份、经历、组织与行动表现，判断${who}的指挥能力；不把战斗等级、人数或胜负直接等同于指挥能力。`, options: { ...ABILITY_LABELS } });
       request.fields.push({ id: side + '_style', question: `结合行为倾向、当前任务与处境，选择${who}的指挥风格。`, options: Object.fromEntries(Object.entries(STYLE_PRESETS).map(([k, v]) => [k, v.label])) });
     }
     if (designMap) {
-      request.fields.push({ id: 'scene', question: '若是小规模战术战斗，本场在哪类战场交战？它决定双方与城墙的位置：攻城时攻方在城外、守方在城内；巷战双方都在城内；野外交战双方都在城外。', options: { ...SCENE_CHOICES } });
+      request.fields.push({ id: 'scene', question: '若是小规模战术战斗，本场在哪类战场交战？它决定各参战阵营与城墙的位置：攻城时攻方在城外、守方在城内；巷战各方都在城内；野外交战各方都在城外。', options: { ...SCENE_CHOICES } });
       request.fields.push({ id: 'size', question: '战场范围大小。', options: { ...SIZE_CHOICES } });
     }
     const coreRequest = { ...request, fields: [...request.fields] };
@@ -110,7 +112,7 @@ export class LlmContextController {
     request.fields.push(...designRequest.fields);
     request.state = {
       encounter: request.state,
-      commandRules: '可返回顶层commanders:{ally:{preferences:{}},enemy:{preferences:{}}}，只写preferences；双方能力与风格在selections的ally_ability、ally_style、enemy_ability、enemy_style中选择。preferences从reserve预备队/risk冒险/counterattack反击/cohesion协同/breach破障选最多3项，各0—4整数，2为普通。根据当前任务选择偏好，防守结合前沿、机动和纵深防区。',
+      commandRules: `可返回顶层commanders:{${sides.map(side => `${side}:{preferences:{}}`).join(',')}}，只写preferences；${sides.length === 3 ? '各方' : '双方'}能力与风格在selections的${sides.flatMap(side => [side + '_ability', side + '_style']).join('、')}中选择。preferences从reserve预备队/risk冒险/counterattack反击/cohesion协同/breach破障选最多3项，各0—4整数，2为普通。根据当前任务选择偏好，防守结合前沿、机动和纵深防区。`,
     };
     const shared = [{ role: 'system' as const, content: PREPARATION_SYSTEM }, { role: 'user' as const, content: narrativeMessage(request.messages) }];
     const aborter = new AbortController(); this.aborter = aborter; this.busy = true;
@@ -156,7 +158,7 @@ export class LlmContextController {
         // Validate supported choices; confidence describes uncertainty, not a fallback threshold.
         const result: LlmEncounterContext = applyEncounterSelection(contextInput, base, coreRequest, answer);
         result.commanders = {};
-        for (const side of ['ally', 'enemy'] as const) {
+        for (const side of sides.filter(side => result.mode === 'small' || side !== 'neutral')) {
           const ability = answer.selections[side + '_ability']!.value;
           const style = answer.selections[side + '_style']!.value;
           const raw = (answer as ContextSelectionAnswer & { commanders?: CommanderProfiles }).commanders?.[side];
