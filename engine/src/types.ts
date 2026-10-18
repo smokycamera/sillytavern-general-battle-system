@@ -597,6 +597,8 @@ export interface RulePack {
   /** V12 weapon/armor calibration (crew, demolition, light armor, reach, grid ranges); absent keeps V11. */
   armsModel?: import('./arms.js').ArmsModel;
   barrierModel?: 'barrier-grades-v1';
+  /** V19 统帅：指挥水平与风格只改变 AI 决策（command-v2.ts）；缺省保留 V18 及以前的指挥评分。 */
+  commandModel?: 'command-v2';
   /** V13 trait overhaul (工事据守、工兵、拒马、散兵单体与步枪编队自动散兵); absent keeps V12. */
   traitModel?: 'traits-v1';
   /** V14 skill pricing: 同时改两项属性的状态按两项附加效果计价; absent keeps V13. */

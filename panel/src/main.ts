@@ -78,7 +78,7 @@ import {
   armorDR, fieldModsFor, LITE_D20,
   V5_D20, V6_D20, V11_OVERFLOW_D20, V12_OVERFLOW_D20, V18_OVERFLOW_D20, prepareArmsModel, prepareTraitModel, prepareSkillModel, prepareItemModel, isAirborne, abilityUsabilityReason,
   generatedField, generatedLayeredField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
-  FORMATION_NODES, formationNode, concealmentLabel,
+  FORMATION_NODES, formationNode, concealmentLabel, isCommandV2, commandLabel, DEFAULT_COMMAND, COMMAND_STYLE_LABELS, COMMAND_STYLE_DESCRIPTIONS,
   type Combatant, type GenerateInput, type Order, type BattleLogEntry, type Side,
   type Category, type Ability, categoryLabel, CATEGORY_LABELS,
   smallStateSummary, massStateSummary, settlementCard, unitCardLine,
@@ -961,6 +961,14 @@ async function onBattleEnded(): Promise<void> {
   }
 }
 
+/** V19 §4 战斗头部：双方指挥水平·风格，悬停显示打法说明。 */
+function commandHeaderHtml(b: SmallBattle | MassBattle): string {
+  if (!isCommandV2(b.rules)) return '';
+  return `<div class="sub" data-role="command-header">${(['ally', 'enemy'] as const).map(side => {
+    const profile = b.commanderProfiles[side] ?? DEFAULT_COMMAND;
+    return `<span title="${esc(COMMAND_STYLE_LABELS[profile.style] + '：' + COMMAND_STYLE_DESCRIPTIONS[profile.style])}">${side === 'ally' ? '我方' : '敌方'}指挥：${esc(commandLabel(profile))}</span>`;
+  }).join('｜')}</div>`;
+}
 /** 军团：仅实际指挥者无法下令时自动军令。 */
 function massAutoCommand(): boolean {
   const b = state.mass;
@@ -1712,6 +1720,7 @@ function renderSmall(): string {
   const envTag = b.fieldTags.length ? `｜🌐 ${esc(fieldLabel(b.fieldTags))}` : '';
   return `<section>
     <h2>② 小规模战斗 ${over ? '（已结束）' : `· 第${b.round}回合`}${envTag}</h2>
+    ${commandHeaderHtml(b)}
     ${banner}
     ${renderSmallMap(b)}
     ${renderUnitsBlock(units, allyCount, enemyCount)}
@@ -1956,6 +1965,7 @@ function renderMass(): string {
   const envTag = b.fieldTags.length ? `｜🌐 ${esc(fieldLabel(b.fieldTags))}` : '';
   return `<section>
     <h2>② 军团会战 ${over ? '（已结束）' : v2 ? `· 第${b.round}轮｜每编队一个主任务` : `· 第${b.round}回合｜我方指挥点 <span class="cp">${b.cp.ally}</span>｜敌方 <span class="cp">${b.cp.enemy}</span>`}${envTag}</h2>
+    ${commandHeaderHtml(b)}
     ${banner}
     ${b.rules.resolutionVersion === 'v2' ? `<div class="mass-controls"><button data-action="mass-orders-auto">自动军令（只补空缺）</button><button class="primary" data-action="mass-resolve" data-round="${b.round}" ${over ? 'disabled' : ''}>锁定并执行第${b.round}轮</button><span class="sub">${b.lastPhases.join(' → ') || '计划 → 支援 → 机动 → 交战 → 重整'}</span></div>` : ''}
     ${renderMassMap(b)}

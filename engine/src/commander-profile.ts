@@ -35,6 +35,12 @@ export interface CommandChoice {
  * Ability reduces deterministic estimation error. The hash never consumes battle RNG.
  */
 export type CommanderScoreTrace = { choices: CommandChoice[]; profile?: CommanderProfile; turnKey: string; layered: boolean; scale: number; bias: number[]; noise: number[]; scores: number[] };
+/** 确定性估值扰动（−1..1）：按回合与候选取哈希，不消耗战斗随机数。 */
+export function commandNoise(turnKey: string, key: string): number {
+  let hash = 2166136261;
+  for (const char of turnKey + ':' + key) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+  return (hash >>> 0) / 0xffffffff * 2 - 1;
+}
 export function commanderScores(choices: CommandChoice[], profile: CommanderProfile | undefined, turnKey: string, layered = false, trace?: (event: CommanderScoreTrace) => void): number[] {
   if (!profile) {
     const scores = choices.map(c => c.score);
@@ -63,9 +69,7 @@ export function commanderScores(choices: CommandChoice[], profile: CommanderProf
       if (c.attack) bias += ((profile.preferences?.risk ?? 2) - 2) * .025;
       if (c.move && c.attack) bias += ((profile.preferences?.counterattack ?? 2) - 2) * .025;
     }
-    let hash = 2166136261;
-    for (const char of turnKey + ':' + c.key) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
-    const noise = ((hash >>> 0) / 0xffffffff * 2 - 1) * error;
+    const noise = commandNoise(turnKey, c.key) * error;
     if (trace) { biases.push(bias); noises.push(noise); }
     return c.score + scale * (bias + noise);
   });

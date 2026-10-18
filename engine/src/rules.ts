@@ -99,8 +99,13 @@ export const V17_OVERFLOW_TW: RulePack = { ...V16_OVERFLOW_TW, id: 'v17-overflow
 export const V18_OVERFLOW_D20: RulePack = { ...V17_OVERFLOW_D20, id: 'v18-overflow-d20', name: 'V18 百兵谱', armsModel: 'arms-v2', barrierModel: 'barrier-grades-v1' };
 export const V18_OVERFLOW_TW: RulePack = { ...V17_OVERFLOW_TW, id: 'v18-overflow-tw', name: 'V18 百兵谱会战', armsModel: 'arms-v2', barrierModel: 'barrier-grades-v1' };
 
+/** V19 统帅：只有新战斗启用；V18 及以前的战斗保留原指挥评分。 */
+export const V19_OVERFLOW_D20: RulePack = { ...V18_OVERFLOW_D20, id: 'v19-overflow-d20', name: 'V19 统帅', commandModel: 'command-v2' };
+export const V19_OVERFLOW_TW: RulePack = { ...V18_OVERFLOW_TW, id: 'v19-overflow-tw', name: 'V19 统帅会战', commandModel: 'command-v2' };
+
 /** id → 规则包（战斗快照恢复用；面板只用默认两包） */
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V19_OVERFLOW_D20.id]: V19_OVERFLOW_D20, [V19_OVERFLOW_TW.id]: V19_OVERFLOW_TW,
   [V18_OVERFLOW_D20.id]: V18_OVERFLOW_D20, [V18_OVERFLOW_TW.id]: V18_OVERFLOW_TW,
   [V17_OVERFLOW_D20.id]: V17_OVERFLOW_D20, [V17_OVERFLOW_TW.id]: V17_OVERFLOW_TW,
   [V16_OVERFLOW_D20.id]: V16_OVERFLOW_D20, [V16_OVERFLOW_TW.id]: V16_OVERFLOW_TW,

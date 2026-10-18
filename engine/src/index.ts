@@ -31,6 +31,7 @@ export * from './damage.js';
 export * from './actions.js';
 export * from './conditions.js';
 export * from './rules.js';
+export * from './command-v2.js';
 export * from './small/battle.js';
 export * from './small/spatial.js';
 export * from './small/field-generator.js';
