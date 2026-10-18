@@ -7,7 +7,7 @@ import { commandNoise, type CommanderProfile, type CommanderProfiles } from './c
 import type { BattleLogEntry, Combatant, RulePack } from './types.js';
 
 /** §5.1、§5.2 旋钮：全局风格权重 s、新手估值误差、大师比较阈值、大师来袭估值系数。 */
-export const COMMAND_KNOBS = { styleWeight: 1, noviceError: .18, masterCompare: .10, masterIncoming: 1.5 };
+export const COMMAND_KNOBS = { styleWeight: 1.5, noviceError: .18, masterCompare: .10, masterIncoming: 1.5 };
 export const isCommandV2 = (rules: Pick<RulePack, 'commandModel'>): boolean => rules.commandModel === 'command-v2';
 export const DEFAULT_COMMAND: CommanderProfile = { ability: 'regular', style: 'balanced' };
 type Ability = CommanderProfile['ability'];
