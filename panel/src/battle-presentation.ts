@@ -1,4 +1,4 @@
-import { SmallBattle, FORMATION_NODES, type Combatant, type BattleLogEntry } from '../../engine/src/index.js';
+import { SmallBattle, FORMATION_NODES, isCommandV2, commandLabel, DEFAULT_COMMAND, COMMAND_STYLE_LABELS, COMMAND_STYLE_DESCRIPTIONS, type Combatant, type BattleLogEntry } from '../../engine/src/index.js';
 import { publicBattleEvents, battleIdOf, type Battle } from './battle-reports.js';
 import { unitIcon, unitIconKey } from './unit-icons.js';
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
@@ -21,6 +21,14 @@ export function lastBattleAction(b: Battle) {
     volley.unshift(previous.entry);
   }
   return {index:last.index,entry:{...last.entry,resolution:{...r,hit:volley.some(e=>e.resolution!.hit),crit:volley.some(e=>e.resolution!.crit),hpBefore:volley[0]!.resolution!.hpBefore,finalDamage:volley.reduce((n,e)=>n+e.resolution!.finalDamage,0)}}};
+}
+/** V19 §4 战斗头部：双方指挥水平·风格，悬停显示打法说明。 */
+export function commandHeaderHtml(b: Battle): string {
+  if (!isCommandV2(b.rules)) return '';
+  return `<div class="sub" data-role="command-header">${(['ally', 'enemy'] as const).map(side => {
+    const profile = b.commanderProfiles[side] ?? DEFAULT_COMMAND;
+    return `<span title="${escapeHtml(COMMAND_STYLE_LABELS[profile.style] + '：' + COMMAND_STYLE_DESCRIPTIONS[profile.style])}">${side === 'ally' ? '我方' : '敌方'}指挥：${escapeHtml(commandLabel(profile))}</span>`;
+  }).join('｜')}</div>`;
 }
 export function renderBattleHighlights(b: Battle): string {
   const last=lastBattleAction(b),events=publicBattleEvents(b).filter(({entry:e})=>e.round>=Math.max(1,b.round-1));
