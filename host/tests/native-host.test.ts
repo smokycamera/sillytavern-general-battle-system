@@ -1,6 +1,9 @@
 import { expect, it, vi } from 'vitest';
 import { createNativeHost, NativeHost, type HostContext } from '../src/sillytavern.js';
 import { NativeMessages } from '../src/messages.js';
+import { prepareMessageTag } from '../src/message-identity.js';
+import { NativeStore } from '../../runtime/src/native-store.js';
+import { MemoryJournal } from '../../runtime/src/recovery-journal.js';
 
 function fixture() {
   const handlers = new Map<string, Set<(...args: unknown[]) => void>>();
@@ -60,6 +63,68 @@ it('读回使用捕获的目标身份而不是当前聊天', async () => {
   const f = fixture(); const session = f.host.session()!;
   f.context.chatId = 'different'; await f.host.readPersisted(session.scope);
   expect(JSON.parse(f.request.mock.calls[0]![1]!.body as string).file_name).toBe('chat');
+});
+it('Tauri metadata API reads the captured avatar/chat from disk on every call, without fetching history', async () => {
+  const f = fixture();
+  f.context.characters![0] = { avatar: ' Hero.v2.png', name: 'Different display name' };
+  const session = f.host.session()!;
+  const get = vi.fn().mockResolvedValueOnce({ revision: 1 }).mockResolvedValueOnce({ revision: 2 });
+  const open = vi.fn(() => ({ metadata: { get } }));
+  Object.assign(f.window, { __TAURITAVERN__: { api: { chat: { open } } } });
+  f.context.chatId = 'other-chat';
+  expect(await f.host.readPersisted(session.scope)).toEqual({ revision: 1 });
+  expect(await f.host.readPersisted(session.scope)).toEqual({ revision: 2 });
+  expect(open).toHaveBeenCalledWith({ kind: 'character', characterId: ' Hero.v2', fileName: 'chat' });
+  expect(get).toHaveBeenCalledTimes(2);
+  expect(f.request).not.toHaveBeenCalled();
+});
+it('Tauri fast reads reject invalid data and backend errors, falling back only when the API is absent', async () => {
+  const f = fixture(), session = f.host.session()!;
+  const get = vi.fn();
+  const open = vi.fn(() => ({ metadata: { get } }));
+  Object.assign(f.window, { __TAURITAVERN__: { api: { chat: { open } } } });
+  for (const value of [null, undefined, [], 'invalid']) {
+    get.mockResolvedValueOnce(value);
+    await expect(f.host.readPersisted(session.scope)).rejects.toThrow('聊天附加记录头缺失');
+  }
+  get.mockRejectedValueOnce(Error('disk unavailable'));
+  await expect(f.host.readPersisted(session.scope)).rejects.toThrow('disk unavailable');
+  expect(f.request).not.toHaveBeenCalled();
+  Object.assign(f.window, { __TAURITAVERN__: { api: { chat: {} } } });
+  expect(await f.host.readPersisted(session.scope)).toEqual({});
+  expect(f.request).toHaveBeenCalledTimes(1);
+});
+it('Tauri load and archive commit use metadata reads while still detecting swallowed save failures', async () => {
+  const f = fixture(); let persisted: Record<string, unknown> = {};
+  const get = vi.fn(async () => structuredClone(persisted));
+  Object.assign(f.window, { __TAURITAVERN__: { api: { chat: { open: () => ({ metadata: { get } }) } } } });
+  f.context.saveMetadata = async () => { persisted = structuredClone(f.context.chatMetadata!); };
+  const store = new NativeStore(f.host, new MemoryJournal());
+  await store.load();
+  expect((await store.commit(0, () => ({ factRevision: 1 }))).status).toBe('confirmed');
+  expect(get).toHaveBeenCalledTimes(3);
+  expect(f.request).not.toHaveBeenCalled();
+  f.context.saveMetadata = async () => {};
+  f.context.saveChat = async () => {};
+  expect((await store.commit(1, () => ({ factRevision: 2 }))).status).toBe('pending');
+  expect(store.snapshot().factRevision).toBe(1);
+  expect(f.request).not.toHaveBeenCalled();
+});
+it('combined verification reads once and rejects changed or duplicate persisted source tags', async () => {
+  const f = fixture(), session = f.host.session()!;
+  f.context.chat!.push({ mes: 'source text', gen_finished: 'done' });
+  const tag = prepareMessageTag(f.context.chat!, 0);
+  await f.host.applyMessageTags(session, [tag]);
+  f.context.chatMetadata = { archive: 'saved' };
+  await f.context.saveChat!();
+  expect(await f.host.readPersistedWithEffects(session.scope, { messageTags: [tag] })).toEqual({ metadata: { archive: 'saved' }, effectsVerified: true });
+  expect(f.request).toHaveBeenCalledTimes(1);
+  f.context.chat!.push(structuredClone(f.context.chat![0]!));
+  await f.context.saveChat!();
+  expect((await f.host.readPersistedWithEffects(session.scope, { messageTags: [tag] })).effectsVerified).toBe(false);
+  f.context.chat!.pop(); f.context.chat![0]!.mes = 'edited';
+  await f.context.saveChat!();
+  expect((await f.host.readPersistedWithEffects(session.scope, { messageTags: [tag] })).effectsVerified).toBe(false);
 });
 it('消息按结构化文本保存，只插入一次并单次调用生成', async () => {
   const f = fixture(); const port = new NativeMessages(f.host);

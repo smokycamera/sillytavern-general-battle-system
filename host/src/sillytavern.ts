@@ -46,6 +46,29 @@ export interface HostWindow {
   __TAURI_RUNNING__?: boolean;
 }
 
+interface TauriChatApi {
+  open(ref: { kind: 'character'; characterId: string; fileName: string }): { metadata?: { get?(): Promise<unknown> } };
+}
+
+function chatMetadata(header: unknown): Record<string, unknown> {
+  if (header === undefined) return {};
+  const metadata = header && typeof header === 'object' ? (header as { chat_metadata?: unknown }).chat_metadata : undefined;
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) throw Error('聊天附加记录头缺失，不能确认保存');
+  return metadata as Record<string, unknown>;
+}
+
+function messageTagsMatch(messages: HostMessage[], tags: MessageTag[]): boolean {
+  const wanted = new Set(tags.map(tag => tag.id));
+  const found = new Map<string, HostMessage>();
+  for (const message of messages) {
+    const id = sourceId(message);
+    if (!id || !wanted.has(id)) continue;
+    if (found.has(id)) return false;
+    found.set(id, message);
+  }
+  return tags.every(tag => { const message = found.get(tag.id); return !!message && matchesMessageFingerprint(message, tag.fingerprint); });
+}
+
 /** Reads only the current host's public context. No TavernHelper dependency. */
 export class NativeHost implements MetadataPort {
   private epoch = 0;
@@ -115,11 +138,7 @@ export class NativeHost implements MetadataPort {
     for (const { message, tag } of targets) { message.extra ??= {}; message.extra.tavernBattleSourceId = tag.id; }
   }
   async verifyMessageTags(scope: ChatScope, tags: MessageTag[]): Promise<boolean> {
-    const persisted = (await this.readChat(scope)).slice(1);
-    return tags.every(tag => {
-      const matches = persisted.filter(message => sourceId(message) === tag.id);
-      return matches.length === 1 && matchesMessageFingerprint(matches[0]!, tag.fingerprint);
-    });
+    return messageTagsMatch((await this.readChat(scope)).slice(1), tags);
   }
   async applyLegacyHandoff(session: HostSession, handoff: LegacyHandoff): Promise<void> {
     const metadata = this.metadata();
@@ -133,6 +152,9 @@ export class NativeHost implements MetadataPort {
   }
   async verifyLegacyHandoff(scope: ChatScope, handoff: LegacyHandoff): Promise<boolean> {
     const metadata = await this.readPersisted(scope);
+    return this.legacyHandoffMatches(metadata, handoff);
+  }
+  private legacyHandoffMatches(metadata: Record<string, unknown>, handoff: LegacyHandoff): boolean {
     const variables = metadata.variables as { panel?: unknown } | undefined;
     return serialized(variables?.panel) === serialized(handoff.panel) && this.legacyStorage?.getItem(handoff.mirrorKey) === handoff.mirrorValue;
   }
@@ -150,10 +172,26 @@ export class NativeHost implements MetadataPort {
     await context.saveChat();
   }
   async readPersisted(scope: ChatScope): Promise<Record<string, unknown>> {
-    const header = await readChatHeader(await this.requestChat(scope)) as { chat_metadata?: unknown } | undefined;
-    if (header === undefined) return {};
-    if (!header || typeof header !== 'object' || !header.chat_metadata || typeof header.chat_metadata !== 'object' || Array.isArray(header.chat_metadata)) throw Error('聊天附加记录头缺失，不能确认保存');
-    return header.chat_metadata as Record<string, unknown>;
+    // Tauri's compatibility fetch materializes the entire chat before returning a
+    // Response. Its public metadata API reads only the persisted JSONL header.
+    // Open the captured target explicitly; current.handle() could follow a chat switch.
+    const api = (this.host.__TAURITAVERN__ as { api?: { chat?: TauriChatApi } } | undefined)?.api?.chat;
+    if (typeof api?.open === 'function' && scope.avatar.endsWith('.png')) {
+      const handle = api.open({ kind: 'character', characterId: scope.avatar.slice(0, -4), fileName: scope.chatId });
+      if (typeof handle?.metadata?.get === 'function') {
+        // Propagate read/corruption errors; never substitute the unsaved live metadata.
+        return chatMetadata({ chat_metadata: await handle.metadata.get() });
+      }
+    }
+    return chatMetadata(await readChatHeader(await this.requestChat(scope)));
+  }
+  async readPersistedWithEffects(scope: ChatScope, effects: { messageTags?: MessageTag[]; legacyHandoff?: LegacyHandoff }): Promise<{ metadata: Record<string, unknown>; effectsVerified: boolean }> {
+    const tags = effects.messageTags ?? [];
+    // When tags need checking, this full read already contains the archive header.
+    const chat = tags.length ? await this.readChat(scope) : undefined;
+    const metadata = chat ? chatMetadata(chat[0]) : await this.readPersisted(scope);
+    const tagsVerified = !tags.length || messageTagsMatch(chat!.slice(1), tags);
+    return { metadata, effectsVerified: tagsVerified && (!effects.legacyHandoff || this.legacyHandoffMatches(metadata, effects.legacyHandoff)) };
   }
   async readChat(scope: ChatScope): Promise<HostMessage[]> {
     const response = await this.requestChat(scope);

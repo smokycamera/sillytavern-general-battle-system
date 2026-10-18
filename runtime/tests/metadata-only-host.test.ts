@@ -38,6 +38,8 @@ describe('metadata-only host contract', () => {
 
   it('persists source message tags and the envelope together using a full chat save', async () => {
     const f = await taggedFixture();
+    const read = vi.spyOn(f.host, 'readChat');
+    const metadataRead = vi.spyOn(f.host, 'readPersisted');
     const receipt = await f.store.commit(0, () => ({ factRevision: 1 }), { messageTags: [f.tag] });
     expect(receipt.status).toBe('confirmed');
     expect(f.fullSave).toHaveBeenCalledTimes(1);
@@ -45,6 +47,8 @@ describe('metadata-only host contract', () => {
     expect(f.chats.get('a')![0]!.extra?.tavernBattleSourceId).toBe(f.tag.id);
     expect(f.store.hasPending()).toBe(false);
     expect(await f.journal.get(f.host.session()!.scope.key)).toBeUndefined();
+    expect(metadataRead).toHaveBeenCalledTimes(1); // preflight
+    expect(read).toHaveBeenCalledTimes(1); // header + source tags together
   });
 
   it('recovers an old partially persisted candidate after reload without recomputing the operation', async () => {

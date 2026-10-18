@@ -242,10 +242,12 @@ export class NativeStore {
     } catch (value) { error = value; }
     // Even a throwing save may have reached the host. Verify before retrying it.
     try {
-      const saved = envelopeFrom((await this.host.readPersisted(session.scope)).tavernBattle);
+      const combined = this.host.readPersistedWithEffects && (record.messageTags?.length || record.legacyHandoff)
+        ? await this.host.readPersistedWithEffects(session.scope, record) : undefined;
+      const saved = envelopeFrom((combined?.metadata ?? await this.host.readPersisted(session.scope)).tavernBattle);
       if (matches(saved, record.candidate)) {
         if (await payloadHash(saved!.payload) !== record.candidate.payloadHash) error ??= '保存后读回的存档和这次改动不一致';
-        else if (await this.effectsVerified(session, record)) return this.confirm(record, session);
+        else if (combined ? combined.effectsVerified : await this.effectsVerified(session, record)) return this.confirm(record, session);
         // The message may change while the host serializes the chat. Re-apply the tags
         // once: a changed source is then undone above instead of staying half-saved.
         else if (!error && !fullSave && record.messageTags?.length && !record.legacyHandoff && sameSession(session, this.host.session()) && sameSession(session, this.active)) return this.persist(record, session, true);

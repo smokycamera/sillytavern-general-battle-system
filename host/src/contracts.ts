@@ -43,6 +43,8 @@ export interface MetadataPort {
   /** Persists both metadata and messages through the host's serialized save queue. */
   saveChat?(): Promise<void>;
   readPersisted(scope: ChatScope): Promise<Record<string, unknown>>;
+  /** Verify the archive and its message/legacy effects from one persisted read. */
+  readPersistedWithEffects?(scope: ChatScope, effects: { messageTags?: MessageTag[]; legacyHandoff?: LegacyHandoff }): Promise<{ metadata: Record<string, unknown>; effectsVerified: boolean }>;
   applyMessageTags?(session: HostSession, tags: MessageTag[]): Promise<void>;
   verifyMessageTags?(scope: ChatScope, tags: MessageTag[]): Promise<boolean>;
   applyLegacyHandoff?(session: HostSession, handoff: LegacyHandoff): Promise<void>;
