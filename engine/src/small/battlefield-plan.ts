@@ -3,7 +3,8 @@ import { ROUTE_TOPOLOGIES, type RouteTopology } from './route-graph.js';
 import type { CityShape } from './layers.js';
 import {BattlefieldPlanError} from './battlefield-error.js';
 export {BattlefieldPlanError} from './battlefield-error.js';
-import { normalizeSceneIntent, SCENE_ARCHETYPES, WORLD_ANCHORS, SCENE_INTENT_PROMPT, type SceneIntent, type SceneArchetype, type WorldAnchor } from './scene-intent.js';
+import { normalizeSceneIntent, MAX_DEPLOYMENT_PLANS, SCENE_ARCHETYPES, WORLD_ANCHORS, SCENE_INTENT_PROMPT, type SceneIntent, type SceneArchetype, type WorldAnchor } from './scene-intent.js';
+export { MAX_DEPLOYMENT_PLANS, MAX_DEPLOYMENT_ZONES } from './scene-intent.js';
 export const BREACH_SECTORS = ['auto', 'front_left', 'front_right', 'left', 'right', 'rear'] as const;
 export interface BreachPlan { count: 0 | 1 | 2 | 3; width?: 1 | 2; sector?: typeof BREACH_SECTORS[number] }
 export const CITY_SHAPES = ['front', 'enclosure', 'riverside', 'hillside', 'broken'] as const;
@@ -28,8 +29,6 @@ export interface BridgePlan { id?: string; anchor: WorldAnchor; state: 'intact' 
 export const DEPLOYMENT_POSTS = ['wall', 'inside', 'outside'] as const;
 /** A force's starting area on the 3×3 compass grid. The subject is ally, enemy or a public unit handle (u1…). */
 export interface DeploymentPlan { subject: string; at: WorldAnchor[]; post?: typeof DEPLOYMENT_POSTS[number] }
-/** Two sides plus a bounded number of detachments, within the snapshot's deployment-zone budget. */
-export const MAX_DEPLOYMENT_PLANS = 14;
 export const GATE_SECTORS = ['auto', 'front_left', 'front_center', 'front_right', 'left', 'right', 'rear','north','south','east','west'] as const;
 export interface GatePlan { id?: string; sector: typeof GATE_SECTORS[number]; state: 'closed' | 'open' | 'destroyed' }
 export interface BattlefieldPlan {
@@ -116,9 +115,9 @@ export function normalizeBattlefieldPlan(value: unknown): { plan?: BattlefieldPl
     if (!Array.isArray(list) || list.length > MAX_DEPLOYMENT_PLANS) throw new BattlefieldPlanError(`deployments须为最多${MAX_DEPLOYMENT_PLANS}项的列表`);
     plan.deployments = list.map(raw => {
       const d = object(raw), at = Array.isArray(d?.at) ? d!.at : typeof d?.at === 'string' ? [d.at] : [];
-      if (!d || typeof d.subject !== 'string' || !/^(ally|enemy|u\d{1,3})$/.test(d.subject) || !at.length || at.length > 4
+      if (!d || typeof d.subject !== 'string' || !/^(ally|enemy|neutral|u\d{1,3})$/.test(d.subject) || !at.length || at.length > 4
         || at.some(a => !(WORLD_ANCHORS as readonly unknown[]).includes(a)) || d.post !== undefined && !(DEPLOYMENT_POSTS as readonly unknown[]).includes(d.post))
-        throw new BattlefieldPlanError('部署须写subject（ally、enemy或u短ID）、1—4个九宫格方位at，post可选wall、inside或outside');
+        throw new BattlefieldPlanError('部署须写subject（ally、enemy、neutral或u短ID）、1—4个九宫格方位at，post可选wall、inside或outside');
       return { subject: d.subject, at: [...new Set(at as WorldAnchor[])], ...(d.post !== undefined ? { post: d.post as DeploymentPlan['post'] } : {}) };
     });
     if (new Set(plan.deployments.map(d => d.subject)).size !== plan.deployments.length) throw new BattlefieldPlanError('同一部队只能写一项部署');
@@ -157,11 +156,11 @@ export function normalizeBattlefieldPlan(value: unknown): { plan?: BattlefieldPl
 export function requireApiLandmarks(plan: BattlefieldPlan | undefined): asserts plan is BattlefieldPlan {
   if (!plan || !plan.intent && !plan.landmarks?.length) throw new BattlefieldPlanError('副API须返回场景意图或1—5个有效地标；本次未返回，不使用保底地标，请重试地图设计或关闭LLM设计地图');
 }
-export const BATTLEFIELD_PLAN_PROMPT = `battlefield按正文时代、地点与局势设计；未指定部分用不同地形、路网、建筑用途和局部高差补全。地图上北下南；未写部署关系时我方在南、敌方在北。
+export const BATTLEFIELD_PLAN_PROMPT = `battlefield按正文时代、地点与局势设计；未指定部分用不同地形、路网、建筑用途和局部高差补全。地图上北下南；未写部署关系时我方在南、敌方在北、第三方在东。
 scene=field野战/城外|city_siege城市攻防|city_streets巷战|building_siege建筑围攻|interior室内|trenches堑壕。
 可省略：size=compact|standard|large；shape=front|enclosure|riverside|hillside（攻城时front只在面向战场的一侧筑墙、城区延伸出地图，其余为四面城墙）；wallLayers=1|2（攻城时2为内外两重城墙）；layout=scattered|lanes|crossroads|ring|strongpoint|broken；topology=${Object.keys(ROUTE_TOPOLOGIES).join('|')}；orientation=longitudinal|transverse|diagonal；breadth=narrow|normal|broad；relief/cover/obstacles=sparse|balanced|dense。
 water=none无水|ford可涉浅水|river深水河流|moat护城河；waterAxis=horizontal|vertical。室内无室外水系；有bridge须有river实体或water=ford|river|moat。
 fortLevel=1..10按工事材料与强化选级。breaches可省略；格式{count:0..3,width:1|2,sector:auto|front_left|front_right|left|right|rear}，0为完整。
 ${SCENE_INTENT_PROMPT}
-deployments可选，按九宫格方位安排开局位置：[{subject:ally|enemy|u短ID,at:[${WORLD_ANCHORS.join('|')}],post?:wall|inside|outside}]，同一部队只写一项。攻城时攻方只在城外开局；守方默认在城内并分兵上墙，post=wall多上城头、inside不上墙、outside出城列阵。城外野战默认在城外，巷战默认在城内。已用relations写部署关系的部队以relations为准。
+deployments可选，按九宫格方位安排开局位置：[{subject:ally|enemy|neutral|u短ID,at:[${WORLD_ANCHORS.join('|')}],post?:wall|inside|outside}]，同一部队只写一项。攻城时攻方只在城外开局；守方默认在城内并分兵上墙，post=wall多上城头、inside不上墙、outside出城列阵。城外野战默认在城外，巷战默认在城内。已用relations写部署关系的部队以relations为准。neutral默认从东侧进入。
 示例（仅示格式，内容按正文）：{"scene":"field","intent":{"entities":[{"id":"hill1","kind":"hill","label":"北坡","anchor":"north","basis":"explicit","sources":["m1.p2"]},{"id":"camp1","kind":"position","label":"营地"}],"relations":[{"subject":"enemy","relation":"occupies","object":"hill1","basis":"explicit","sources":["m1.p2"]},{"subject":"camp1","relation":"south_of","object":"hill1"},{"subject":"ally","relation":"approaches_from","object":"camp1"}],"constraints":[]}}`;

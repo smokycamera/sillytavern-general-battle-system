@@ -779,7 +779,9 @@ function autoScaleMode(): 'small' | 'mass' {
 }
 
 function rosterHasBothSides(): boolean {
-  return state.roster.some((u) => u.side === 'ally') && state.roster.some((u) => u.side === 'enemy');
+  const openSides = effectiveMode() === 'small' && (state.objectiveMode === 'annihilation' || state.objectiveMode === 'control' || state.objectiveMode === 'auto' && !plannedFieldTags().includes('siege'));
+  return state.roster.some(u => u.side === 'ally' && u.hp > 0 && u.status === 'ready')
+    && state.roster.some(u => (u.side === 'enemy' || openSides && u.side === 'neutral') && u.hp > 0 && u.status === 'ready');
 }
 
 /** 展示用模式：进行中的战斗优先（编制变动不把正在打的战斗切走） */
@@ -881,7 +883,7 @@ async function runAuto(): Promise<void> {
   if (b.isOver()) {
     if (!b.log.some((l) => l.kind === 'battle-end')) {
       const w = b.winner();
-      b.log.push({ round: b.round, kind: 'battle-end', text: w === 'ally' ? '⚔ 战斗胜利' : w === 'draw' ? '僵局' : '⚔ 战斗失败' });
+      b.log.push({ round: b.round, kind: 'battle-end', text: w === 'ally' ? '⚔ 战斗胜利' : w === 'neutral' ? '第三方获胜，我方失败' : w === 'draw' ? '僵局' : '⚔ 战斗失败' });
     }
     (await onBattleEnded());
   }
@@ -1126,7 +1128,7 @@ function renderBattlePreparation(): string {
       : state.objectiveMode === 'control' ? '占领当轮不计，之后连续控制旗点2个完整回合获胜；控制中断后重新计数。'
       : '达到期限仍未分胜负则僵持。';
   return `<section class="battle-preparation"><span class="workspace-eyebrow">下一场交战</span><h2>${ready ? '队伍已集结' : '先集结你的队伍'}</h2>
-    ${preview ? `<p class="notice" data-role="opening-preview">已固定开局预览：${preview.preview.kind === 'small' ? '小战' : '会战'}${preview.preview.map ? ' · 地图 ' + preview.preview.map.width + '×' + preview.preview.map.height : ''} · ${preview.preview.sides.map(s => (s.side === 'ally' ? '我方' : '敌方') + s.cards + '张卡／' + s.personnel + '人').join(' · ')}。点击开始交战会沿用此开局。</p>` : ''}
+    ${preview ? `<p class="notice" data-role="opening-preview">已固定开局预览：${preview.preview.kind === 'small' ? '小战' : '会战'}${preview.preview.map ? ' · 地图 ' + preview.preview.map.width + '×' + preview.preview.map.height : ''} · ${preview.preview.sides.map(s => (s.side === 'ally' ? '我方' : s.side === 'neutral' ? '第三方' : '敌方') + s.cards + '张卡／' + s.personnel + '人').join(' · ')}。点击开始交战会沿用此开局。</p>` : ''}
     ${capacityIssue ? `<p class="notice error" role="alert">${esc(capacityIssue)}</p>` : ''}
     <p>${ready ? esc(recommendBattleMode(state.roster).reason) : '从已有档案选人，或接收剧情中的新遭遇。'}</p>
     ${mode === 'small' ? `<p class="mission-summary">${esc(missionSummary)}</p>` : ''}
@@ -1403,9 +1405,9 @@ function renderMassMap(b: MassBattle): string {
 }
 
 /** 参战单位区（可收起）：小规模/军团共用。同名单位靠 #序号 区分。 */
-function renderUnitsBlock(unitsHtml: string, allyCount: number, enemyCount: number): string {
+function renderUnitsBlock(unitsHtml: string, allyCount: number, enemyCount: number, neutralCount = 0): string {
   return `
-    <div class="gen-head" data-action="units-toggle">已知参战单位（我方 ${allyCount} · 已发现敌方 ${enemyCount}）<span class="gen-caret">${state.unitsOpen ? '▾' : '▸'}</span></div>
+    <div class="gen-head" data-action="units-toggle">已知参战单位（我方 ${allyCount} · 已发现敌方 ${enemyCount}${neutralCount ? ' · 已发现第三方 ' + neutralCount : ''}）<span class="gen-caret">${state.unitsOpen ? '▾' : '▸'}</span></div>
     ${state.unitsOpen ? `<div class="units">${unitsHtml || '<span class="sub">无参战单位</span>'}</div>` : ''}`;
 }
 
@@ -1521,7 +1523,7 @@ function renderManage(): string {
           <label>状态</label><select data-role="s-status">${([['ready', '可战'], ['fled', '已撤离'], ['routing', '溃逃'], ['dying', '濒死']] as const).map(([v, n]) => `<option value="${esc(v)}" ${r.status === v ? 'selected' : ''}>${n}</option>`).join('')}</select>
         </div>
         <div class="row">
-          <label>侧别</label><select data-role="s-side"><option value="ally" ${r.side === 'ally' ? 'selected' : ''}>我方</option><option value="enemy" ${r.side === 'enemy' ? 'selected' : ''}>敌方</option></select>
+          <label>侧别</label><select data-role="s-side"><option value="ally" ${r.side === 'ally' ? 'selected' : ''}>我方</option><option value="enemy" ${r.side === 'enemy' ? 'selected' : ''}>敌方</option><option value="neutral" ${r.side === 'neutral' ? 'selected' : ''}>第三方</option></select>
           <label>武器名</label><input type="text" data-role="s-weapon" value="${esc(r.weaponName ?? '')}" ${r.equipmentManaged ? 'readonly' : ''} placeholder="任意名字" style="width:90px">
           <label>武器类</label>
           <select data-role="s-wclass" ${r.equipmentManaged ? 'disabled' : ''}><option value="">（自动）</option>${(Object.keys(WEAPON_CLASSES) as string[]).map((k) => `<option value="${esc(k)}" ${r.weaponClass === k ? 'selected' : ''}>${k}</option>`).join('')}</select>
@@ -1670,7 +1672,7 @@ function renderSmall(): string {
     </section>`;
   }
   const over = b.isOver();
-  const banner = over ? `<div class="banner ${b.winner() === 'ally' ? 'win' : 'lose'}">${b.winner() === 'ally' ? '⚔ 战斗胜利' : b.winner() === 'draw' ? '僵局' : '⚔ 战斗失败'}｜我方原始击杀经验 ${b.xpGained}（成长另行折算）</div>` : '';
+  const banner = over ? `<div class="banner ${b.winner() === 'ally' ? 'win' : 'lose'}">${b.winner() === 'ally' ? '⚔ 战斗胜利' : b.winner() === 'neutral' ? '第三方获胜，我方失败' : b.winner() === 'draw' ? '僵局' : '⚔ 战斗失败'}｜我方原始击杀经验 ${b.xpGained}（成长另行折算）</div>` : '';
   const act = b.active;
   const proto = act?.id === state.protagonistId;
   const foes = b.combatants.filter((c) => c.side !== act?.side && c.status !== 'dead' && c.status !== 'fled');
@@ -1714,7 +1716,7 @@ function renderSmall(): string {
     <h2>② 小规模战斗 ${over ? '（已结束）' : `· 第${b.round}回合`}${envTag}</h2>
     ${banner}
     ${renderSmallMap(b)}
-    ${renderUnitsBlock(units, allyCount, enemyCount)}
+    ${renderUnitsBlock(units, allyCount, enemyCount, alive.filter(u => u.side === 'neutral').length)}
     ${roundSnapshotHtml(b)}
     ${distanceLegendHtml(false)}
     ${over
@@ -2023,13 +2025,13 @@ function renderXp(): string {
   const b = currentBattle();
   if (!b || !b.isOver()) return '';
   const awards = battleXpAwardsForBothSides(b.combatants, b.xpByUnit, {
-    winner: b.winner(), initialStrength: b.xpInitialStrength,
+    winner: b.winner(), initialStrength: b.xpInitialStrength, sides: b instanceof SmallBattle ? ['ally', 'enemy', 'neutral'] : ['ally', 'enemy'],
     commanderId: state.mass ? state.mass.commanderId : state.commanderId,
   });
   if (!awards.length) return '';
-  const rows = awards.map(a => `<div class="orderline"><b>${a.side === 'enemy' ? '敌方' : '我方'} · ${esc(a.name)}</b><span class="cp">+${xpText(a.total)} 经验</span></div>`).join('');
+  const rows = awards.map(a => `<div class="orderline"><b>${a.side === 'enemy' ? '敌方' : a.side === 'neutral' ? '第三方' : '我方'} · ${esc(a.name)}</b><span class="cp">+${xpText(a.total)} 经验</span></div>`).join('');
   const calculation = awards
-    .map((a) => `<div class="orderline"><b>${a.side === 'enemy' ? '敌方' : '我方'} · ${esc(a.name)}</b> 原始击杀${xpText(a.kills)} + 参战${xpText(a.participation)}${a.command ? ` + 指挥${xpText(a.command)}` : ''}${a.startMembers !== undefined ? `<br>合计${xpText(a.rawTotal ?? 0)} ÷ ${a.populationBasis === 'capacity' ? '编制基数' : '开战实到'}${a.startMembers} × 存活比例${approx((a.survivalRatio ?? 0) * 100, 0)}%（${a.survivingMembers}/${a.startMembers}）` : ''} = <span class="cp">${xpText(a.total)} 成长经验</span></div>`)
+    .map((a) => `<div class="orderline"><b>${a.side === 'enemy' ? '敌方' : a.side === 'neutral' ? '第三方' : '我方'} · ${esc(a.name)}</b> 原始击杀${xpText(a.kills)} + 参战${xpText(a.participation)}${a.command ? ` + 指挥${xpText(a.command)}` : ''}${a.startMembers !== undefined ? `<br>合计${xpText(a.rawTotal ?? 0)} ÷ ${a.populationBasis === 'capacity' ? '编制基数' : '开战实到'}${a.startMembers} × 存活比例${approx((a.survivalRatio ?? 0) * 100, 0)}%（${a.survivingMembers}/${a.startMembers}）` : ''} = <span class="cp">${xpText(a.total)} 成长经验</span></div>`)
     .join('');
   return `<section>
     <h2>经验结算</h2>
@@ -2068,7 +2070,7 @@ function buildContextInject(): string {
   if (alive.length) {
     lines.push('【战场存活单位】');
     for (const u of alive) {
-      const side = u.side === 'ally' ? '我' : u.side === 'enemy' ? '敌' : '中立';
+      const side = u.side === 'ally' ? '我' : u.side === 'enemy' ? '敌' : '第三方';
       const mark = u.id === state.protagonistId ? '【主控】' : '';
       lines.push(`- ${mark}${u.name}（${side}·${scaleLabel(u)}等级${u.level}）${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}/${u.base.hpMax}${woundedLabel(u) ? '｜' + woundedLabel(u) : ''}${u.status !== 'ready' ? '｜' + u.status : ''}`);
     }
@@ -2752,7 +2754,7 @@ async function settleXp(allowUnfinished = false): Promise<void> {
   const b = currentBattle();
   if (!b || (!b.isOver() && !allowUnfinished)) throw new Error('战斗尚未结束');
   const awards = b.isOver() ? battleXpAwardsForBothSides(b.combatants, b.xpByUnit, {
-    winner: b.winner(), initialStrength: b.xpInitialStrength,
+    winner: b.winner(), initialStrength: b.xpInitialStrength, sides: b instanceof SmallBattle ? ['ally', 'enemy', 'neutral'] : ['ally', 'enemy'],
     commanderId: state.mass ? state.mass.commanderId : state.commanderId,
   }) : [];
   const id = battleOutcomeId(state.mass ? 'mass' : 'small', b.seed);
@@ -2789,9 +2791,9 @@ async function settleXp(allowUnfinished = false): Promise<void> {
   // 入账回执确认后立即同步按钮和战果状态；外层操作仍可能等待后续保存。
   render('battle');
   const levelUps = result.levelUps.map((u) => `${u.name} 等级${u.from}→等级${u.to}`);
-  const sideXp = (side: 'ally' | 'enemy') => { const total = awards.filter(a => a.side === side).reduce((sum, a) => sum + a.total, 0); return total ? approxDelta(total, total < 0.1 ? 2 : 1) : '+0'; };
+  const sideXp = (side: Combatant['side']) => { const total = awards.filter(a => a.side === side).reduce((sum, a) => sum + a.total, 0); return total ? approxDelta(total, total < 0.1 ? 2 : 1) : '+0'; };
   toast(result.applied
-    ? `双方成长经验已入账：我方${sideXp('ally')}／敌方${sideXp('enemy')} 经验${levelUps.length ? `｜🎉 升级：${levelUps.join('、')}` : ''}`
+    ? `${b instanceof SmallBattle && b.combatants.some(u => u.side === 'neutral') ? '各方' : '双方'}成长经验已入账：我方${sideXp('ally')}／敌方${sideXp('enemy')}${b instanceof SmallBattle && b.combatants.some(u => u.side === 'neutral') ? '／第三方' + sideXp('neutral') : ''} 经验${levelUps.length ? `｜🎉 升级：${levelUps.join('、')}` : ''}`
     : '本场经验已入账，没有重复结算');
 }
 
@@ -2866,7 +2868,7 @@ async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void>
   }
   let context:LlmEncounterContext|undefined = playerPreparation.resolve(playerPreparationScope());
   prepareRosterForBattle();
-  if (!rosterHasBothSides()) throw Error('开战前必须同时有我方与敌方单位');
+  if (!rosterHasBothSides()) throw Error('开战前必须有可参战的我方与任务所需对手');
   const v2=state.roster.every(u=>u.rulesVersion==='v2'), settings=llmSettingsView().settings;
   const seed = randomSeed();
   let preparedField: ReturnType<typeof generatedLayeredField> | undefined;
@@ -3269,7 +3271,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
       delete r.morale;
     }
     const side = val('s-side');
-    if (side === 'ally' || side === 'enemy') r.side = side;
+    if (side === 'ally' || side === 'enemy' || side === 'neutral') r.side = side;
     const status = val('s-status');
     if (status === 'ready' || status === 'fled' || status === 'routing' || status === 'dying') r.status = status;
     r.weaponName = val('s-weapon')?.trim() || undefined;
@@ -3682,7 +3684,7 @@ async function afterSmallAction(endTurn = true): Promise<void> {
   // 结算战斗结束
   if (b.isOver() && !b.log.some((l) => l.kind === 'battle-end')) {
     const w = b.winner();
-    b.log.push({ round: b.round, kind: 'battle-end', text: w === 'ally' ? '⚔ 战斗胜利' : w === 'draw' ? '僵局' : '⚔ 战斗失败' });
+    b.log.push({ round: b.round, kind: 'battle-end', text: w === 'ally' ? '⚔ 战斗胜利' : w === 'neutral' ? '第三方获胜，我方失败' : w === 'draw' ? '僵局' : '⚔ 战斗失败' });
     (await onBattleEnded());
     return;
   }

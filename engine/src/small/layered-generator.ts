@@ -37,7 +37,7 @@ export function generatedLayeredField(seed: string, width = 7, height = 13, tags
   if ((plan?.landmarks?.length ?? 0)>4 && initial[0]<9 && !roster.some(u=>u.pos!==undefined)) initial=[9,15];
   const sizes: [number,number][] = [[5,7], [7,13], [9,15], [11,17], [13,19]];
   // Conservative ground-space floor; actual layers/air/platforms are then checked below.
-  const neededWidth = Math.ceil(Math.max(0, ...(['ally', 'enemy'] as const).map(side => active.filter(u => u.side === side).reduce((n,u) => n + footprint(u), 0))) / 6);
+  const neededWidth = Math.ceil(Math.max(0, ...(['ally', 'enemy', 'neutral'] as const).map(side => active.filter(u => u.side === side).reduce((n,u) => n + footprint(u), 0))) / 6);
   if (initial[0] < neededWidth && !roster.some(u => u.pos !== undefined)) initial = sizes.find(([w]) => w >= neededWidth) ?? sizes.at(-1)!;
   const candidates: [number,number][] = [initial, ...sizes.filter(([w]) => w > initial[0])];
   const fixed = roster.some(u => u.pos !== undefined);
@@ -394,7 +394,8 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   }
   if (plan?.landmarks?.length && !field.landmarks.length) throw new BattlefieldPlanError('请求的地标无法落到合法位置，未使用随机地标；请调整设计');
   finishSceneRegions(field,plan,options.unitBindings,options.roster);
-  applyPlannedDeployments(field,plannedCity&&!field.city?.defender?withCitySides(field,plan!):plan,options.roster,options.unitBindings);
+  const thirdParty = options.roster?.some(u => u.side === 'neutral' && u.hp > 0 && u.status === 'ready') === true;
+  applyPlannedDeployments(field, thirdParty || plannedCity && !field.city?.defender ? withCitySides(field, plan ?? {}, thirdParty) : plan, options.roster, options.unitBindings);
   initializeHeightMap(field,plan);
   deriveRetreatEdges(field);
   validateSceneFacts(field);

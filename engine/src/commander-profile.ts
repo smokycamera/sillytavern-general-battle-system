@@ -7,11 +7,11 @@ export interface CommanderProfile {
   ability: typeof COMMANDER_ABILITIES[number];
   style: typeof COMMANDER_STYLES[number];
 }
-export type CommanderProfiles = Partial<Record<'ally' | 'enemy', CommanderProfile>>;
+export type CommanderProfiles = Partial<Record<'ally' | 'enemy' | 'neutral', CommanderProfile>>;
 export function normalizeCommanderProfiles(value: unknown): CommanderProfiles {
   const result: CommanderProfiles = {};
   if (!value || typeof value !== 'object') return result;
-  for (const side of ['ally', 'enemy'] as const) {
+  for (const side of ['ally', 'enemy', 'neutral'] as const) {
     const p = (value as CommanderProfiles)[side];
     if (p && COMMANDER_ABILITIES.includes(p.ability) && COMMANDER_STYLES.includes(p.style)) result[side] = { ability: p.ability, style: p.style, ...(p.scoring === 'tactical-v2' ? { scoring: p.scoring } : {}), ...(p.preferences ? { preferences: Object.fromEntries(Object.entries(p.preferences).filter(([k, v]) => ['reserve', 'risk', 'counterattack', 'cohesion', 'breach'].includes(k) && Number.isInteger(v) && v >= 0 && v <= 4).slice(0, 3)) } : {}) };
   }

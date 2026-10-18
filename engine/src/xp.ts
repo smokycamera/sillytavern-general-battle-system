@@ -23,7 +23,7 @@ export interface XpAward {
   /** 指挥加成（主指挥且胜利：基础额 +25%） */
   command: number;
   /** 原始战功与成长经验分开；编队以开战实到人数折算，并支付存活比例损耗。 */
-  side?: 'ally' | 'enemy';
+  side?: Combatant['side'];
   rawTotal?: number;
   startMembers?: number;
   survivingMembers?: number;
@@ -43,7 +43,7 @@ export interface XpAwardOpts {
   defeatParticipationRate?: number;
   /** 指挥加成比例，默认 0.25 */
   commandRate?: number;
-  side?: 'ally' | 'enemy';
+  side?: Combatant['side'];
   initialStrength?: ReadonlyMap<string, number>;
 }
 
@@ -94,8 +94,8 @@ export function battleXpAwards(combatants: Combatant[], xpByUnit: Map<string, nu
 }
 
 /** 两军分别计算自己的击杀池和胜负份额，不把敌军战功分给我方。 */
-export function battleXpAwardsForBothSides(combatants: Combatant[], xpByUnit: Map<string, number>, opts: Omit<XpAwardOpts, 'won' | 'side'> & { winner: 'ally' | 'enemy' | 'draw' | undefined }): XpAward[] {
-  return (['ally', 'enemy'] as const).flatMap(side => battleXpAwards(combatants, xpByUnit, { ...opts, side, won: opts.winner === side }));
+export function battleXpAwardsForBothSides(combatants: Combatant[], xpByUnit: Map<string, number>, opts: Omit<XpAwardOpts, 'won' | 'side'> & { winner: Combatant['side'] | 'draw' | undefined; sides?: readonly Combatant['side'][] }): XpAward[] {
+  return (opts.sides ?? ['ally', 'enemy']).flatMap(side => battleXpAwards(combatants, xpByUnit, { ...opts, side, won: opts.winner === side }));
 }
 
 /** 保留小数经验，采用有效位数消除浮点尾差，不按每场四舍五入到整数。 */

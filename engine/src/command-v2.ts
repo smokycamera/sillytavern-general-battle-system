@@ -15,7 +15,7 @@ type Style = CommanderProfile['style'];
 
 /** §1 按单位当前的作战阵营取档案：被魅惑换边的单位用新阵营的档案；没有档案的一方按常规·均衡。 */
 export function commandProfile(profiles: CommanderProfiles, unit: Combatant, units: readonly Combatant[]): CommanderProfile {
-  return profiles[combatSide(unit, units) === 'ally' ? 'ally' : 'enemy'] ?? DEFAULT_COMMAND;
+  return profiles[combatSide(unit, units)] ?? DEFAULT_COMMAND;
 }
 
 /** §2 水平：估值误差、来袭估值系数、风格执行系数、配合预判系数；方案比较只有大师。 */
@@ -66,9 +66,9 @@ export const COMMAND_STYLE_DESCRIPTIONS: Record<Style, string> = {
 };
 export const commandLabel = (profile: CommanderProfile): string => COMMAND_ABILITY_LABELS[profile.ability] + '·' + COMMAND_STYLE_LABELS[profile.style];
 /** §4 开战记录：每方一行。 */
-export const commandOpening = (profiles: CommanderProfiles): string[] => (['ally', 'enemy'] as const).map(side => {
+export const commandOpening = (profiles: CommanderProfiles, sides: readonly Combatant['side'][] = ['ally', 'enemy']): string[] => sides.map(side => {
   const profile = profiles[side] ?? DEFAULT_COMMAND;
-  return `指挥：${side === 'ally' ? '我方' : '敌方'} ${commandLabel(profile)}`;
+  return `指挥：${side === 'ally' ? '我方' : side === 'neutral' ? '第三方' : '敌方'} ${commandLabel(profile)}`;
 });
 /** §3.1 队形决定小战 cohesion 默认值；玩家写了 preferences.cohesion 的以玩家为准。 */
 export const commandCohesion = (profile: CommanderProfile): number => profile.preferences?.cohesion ?? { loose: 2, tight: 3, layers: 2, core: 3, avoid: 1 }[COMMAND_STYLES[profile.style].formation];
@@ -152,8 +152,8 @@ export function commandScores(choices: CommandCandidate[], profile: CommanderPro
 /** §1 本轮记录：各方攻击过的目标、攻击过各方的单位、本轮开始时的位置。保留本轮和上一轮（见结果文档）。 */
 export interface CommandRound {
   round: number;
-  attacked: Partial<Record<'ally' | 'enemy', string[]>>;
-  attackers: Partial<Record<'ally' | 'enemy', string[]>>;
+  attacked: Partial<Record<Combatant['side'], string[]>>;
+  attackers: Partial<Record<Combatant['side'], string[]>>;
   starts: Record<string, number | string>;
 }
 export function beginCommandRound(rounds: readonly CommandRound[], round: number, units: readonly Combatant[], place: (unit: Combatant) => number | string | undefined): CommandRound[] {
@@ -162,7 +162,7 @@ export function beginCommandRound(rounds: readonly CommandRound[], round: number
   return [...rounds.slice(-1), { round, attacked: {}, attackers: {}, starts }];
 }
 /** 武器、反应与技能结算里的敌对双方；增益技能指向己方，不计。 */
-export function noteCommandAttack(rounds: CommandRound[], entry: BattleLogEntry, units: readonly Combatant[]): void {
+export function noteCommandAttack(rounds: CommandRound[], entry: BattleLogEntry, units: readonly Combatant[], includeNeutral = false): void {
   const current = rounds.at(-1); if (!current) return;
   const pairs = (entry.resolutions?.length ? entry.resolutions : entry.resolution ? [entry.resolution] : []).map(r => [r.attackerId, r.defenderId] as const);
   const [actorId, ...targets] = entry.kind === 'ability' ? entry.participants ?? [] : [];
@@ -171,22 +171,22 @@ export function noteCommandAttack(rounds: CommandRound[], entry: BattleLogEntry,
     const attacker = units.find(u => u.id === attackerId), defender = units.find(u => u.id === defenderId);
     if (!attacker || !defender) continue;
     const from = combatSide(attacker, units), to = combatSide(defender, units);
-    if (from === to || from === 'neutral' || to === 'neutral') continue;
+    if (from === to || !includeNeutral && (from === 'neutral' || to === 'neutral')) continue;
     const attacked = current.attacked[from] ??= [], attackers = current.attackers[to] ??= [];
     if (!attacked.includes(defender.id)) attacked.push(defender.id);
     if (!attackers.includes(attacker.id)) attackers.push(attacker.id);
   }
 }
 /** side 在本轮和上一轮攻击过的目标。 */
-export const commandAttacked = (rounds: readonly CommandRound[], side: 'ally' | 'enemy'): Set<string> => new Set(rounds.flatMap(r => r.attacked[side] ?? []));
+export const commandAttacked = (rounds: readonly CommandRound[], side: Combatant['side']): Set<string> => new Set(rounds.flatMap(r => r.attacked[side] ?? []));
 /** 本轮和上一轮攻击过 side 的单位。 */
-export const commandAttackers = (rounds: readonly CommandRound[], side: 'ally' | 'enemy'): Set<string> => new Set(rounds.flatMap(r => r.attackers[side] ?? []));
+export const commandAttackers = (rounds: readonly CommandRound[], side: Combatant['side']): Set<string> => new Set(rounds.flatMap(r => r.attackers[side] ?? []));
 /** 记录窗口开始时的位置；没有记录时取当前位置。 */
 export const commandStart = (rounds: readonly CommandRound[], unit: Combatant, now: number | string | undefined): number | string | undefined => rounds.length ? rounds[0]!.starts[unit.id] : now;
 /** 存档读取（信任边界）。 */
 export function readCommandRounds(value: unknown): CommandRound[] {
   const ids = (list: unknown) => Array.isArray(list) && list.every(id => typeof id === 'string');
-  const sides = (map: unknown) => !!map && typeof map === 'object' && !Array.isArray(map) && Object.entries(map).every(([side, list]) => ['ally', 'enemy'].includes(side) && ids(list));
+  const sides = (map: unknown) => !!map && typeof map === 'object' && !Array.isArray(map) && Object.entries(map).every(([side, list]) => ['ally', 'enemy', 'neutral'].includes(side) && ids(list));
   if (!Array.isArray(value) || value.length > 2 || !value.every((r: CommandRound) => r && Number.isSafeInteger(r.round) && r.round >= 1 && sides(r.attacked) && sides(r.attackers)
     && !!r.starts && typeof r.starts === 'object' && !Array.isArray(r.starts) && Object.values(r.starts).every(at => typeof at === 'string' || Number.isSafeInteger(at) && (at as number) >= 0))) throw Error('指挥本轮记录损坏');
   return structuredClone(value as CommandRound[]);

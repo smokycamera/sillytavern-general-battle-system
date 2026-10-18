@@ -35,7 +35,7 @@
 | `deploy id` | 从已有档案派上场，沿用当前生命、装备、经验；不是克隆一张新卡。 |
 | `unit_update id hp/hpMax` | 简单战外生命/人数更新，至少写一项。仅增加 hpMax 扩大上限，不自动补满现员。 |
 | `unit_set id` | 战外高级修改，必须存在真实档案且当前战果已结算。未知字段、非法值或配装冲突会拒绝，不能直接写任意 Combatant 属性。 |
-| `name / side / scale / archetype` | 修改显示名、阵营、个体/编队与基础原型。scale 改变必须符合转换与人数约束，不等于免费复制人员。archetype 只认 infantry/ranged/mobile，写了别的值保留原值并提示；新建单位不用写，插件按配装推断（见文末“V15 道具系统与专精十级”）。 |
+| `name / side / scale / archetype` | 修改显示名、阵营（ally/enemy/neutral）、个体/编队与基础原型。scale 改变必须符合转换与人数约束，不等于免费复制人员。archetype 只认 infantry/ranged/mobile，写了别的值保留原值并提示；新建单位不用写，插件按配装推断（见文末“V15 道具系统与专精十级”）。 |
 | `level` | 训练等级 1–10，影响训练能力，不代替武器和技能的 L。只改等级时本级经验进度重置为 0。 |
 | `xp / xpProgress / xpValue` | 分别是累计经验账本、本级已有进度和经验价值字段；允许有限非负小数。要在改等级时保留本级进度，明确同时写 xpProgress。 |
 | `hp / hpMax / memberHp` | 当前生命/人数、最大生命/编制，以及成员基础生命；不能混为同一个量。 |
@@ -78,7 +78,7 @@
 
 | 世界书项目 | 对应机制 |
 | --- | --- |
-| 必填 name、side、scale | 生成名称、ally/enemy 阵营和 hero/company 单位。company 还要 hpMax；写 hp 必须同时写 hpMax 且不能超过上限。 |
+| 必填 name、side、scale | 生成名称、ally/enemy/neutral 阵营和 hero/company 单位。neutral为第三方，与我方、敌方均敌对。company 还要 hpMax；写 hp 必须同时写 hpMax 且不能超过上限。 |
 | level 默认 1 | 新建时训练档位，不是武器科技。明确有高训练依据再提高。 |
 | weapon、weapon2 | 分别是主副武器；攻击仍占同一次主要行动，不因双持自动多打一轮。双手武器仍可搭配盾牌，按总负重与明确稳定装置前提检查。 |
 | armor、shield | 护甲类型和 L 分别决定负担与规格；shield="名称:规格"，如 shield="塔盾:盾L5+2防御"，省略无盾。 |

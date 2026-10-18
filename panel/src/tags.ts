@@ -88,7 +88,7 @@ export type Suggestion =
       /** 编制刻度：hero=个体，company=编队；mook仅供旧消息读取。 */
       scale?: 'hero' | 'mook' | 'company';
       /** 阵营：enemy=敌方（默认）/ ally=我方（可生成玩家自己/友军） */
-      side?: 'ally' | 'enemy';
+      side?: 'ally' | 'enemy' | 'neutral';
       /** 正文装备描述（可选）：weapon 原文（如 "裂颅者:斧L6"） */
       weapon?: string;
       /** 武器显示名：weapon="名字:种类L等级" 的名字段（旧格式无名字段时不落此键） */
@@ -601,7 +601,7 @@ export function parseSuggestionTags(text: string): ParseResult {
           level: clampInt(training.text.slice(1), 1, 10, 1), bonuses: training.bonuses,
           count: clampInt(a.count, 1, 20, 1),
           ...((SCALES as readonly string[]).includes(scaleRaw) ? { scale: scaleRaw as (typeof SCALES)[number] } : {}),
-          ...((a.side ?? '').trim() === 'ally' ? { side: 'ally' as const } : {}),
+          ...(['ally', 'neutral'].includes((a.side ?? '').trim()) ? { side: a.side!.trim() as 'ally' | 'neutral' } : {}),
           ...(weaponRaw ? { weapon: weaponRaw } : {}),
           ...(wepSpec?.classKey ? { weaponClass: wepSpec.classKey } : {}),
           weaponBonuses: wepSpec?.bonuses,

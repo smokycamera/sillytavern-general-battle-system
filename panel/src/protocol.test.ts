@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { parseProtocol, protocolExcerpt } from './protocol.js';
-import { TRAITS } from '../../engine/src/index.js';
+import { TRAITS, generateUnit } from '../../engine/src/index.js';
 import { CORE_PROTOCOL, PROMPT_CARDS } from './narrative-prompt.js';
+
+it('spawn neutral retains third-party ownership through parsing and generation', () => {
+  const parsed = parseProtocol('<tb><spawn name="第三军" side="neutral" scale="hero"/></tb>');
+  expect(parsed.errors).toEqual([]);
+  const event = parsed.events[0]!;
+  if (event.kind !== 'spawn') throw Error('expected spawn');
+  const unit = generateUnit({ name: event.name, side: event.side!, scale: 'hero', level: 3, rulesVersion: 'v2', traits: [] }, { seed: 'third-party-spawn' }).unit;
+  expect([event.side, unit.side]).toEqual(['neutral', 'neutral']);
+});
 
 it('新建装备的显式等级越界时保留诊断，不钳制等级或退回默认装备', () => {
   for (const [key, mechanism] of [['weapon', '剑'], ['weapon2', '剑'], ['armor', '重甲']]) {

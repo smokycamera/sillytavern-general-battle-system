@@ -24,7 +24,7 @@ export interface FieldStructure {
   hp: number;
   hpMax: number;
   /** Doors are physically open to both sides. Ownership only grants operation. */
-  owner?: 'ally' | 'enemy';
+  owner?: 'ally' | 'enemy' | 'neutral';
   gateState?: 'closed' | 'open' | 'destroyed';
   top?: boolean;
   /** Ground cells with built-in stairs, not remote control points. */
@@ -188,7 +188,7 @@ export function validateLayers(field: BattlefieldSpec): void {
     if (s === null) continue;
     if (!s || !Object.hasOwn(STRUCTURE_NAMES, s.kind) || !Number.isInteger(s.level) || s.level < 1 || s.level > 10
       || !Number.isFinite(s.hpMax) || s.hpMax <= 0 || s.hpMax > 1e9 || !Number.isFinite(s.hp) || s.hp < 0 || s.hp > s.hpMax
-      || s.owner !== undefined && !['ally', 'enemy'].includes(s.owner)
+      || s.owner !== undefined && !['ally', 'enemy', 'neutral'].includes(s.owner)
       || s.top !== undefined && typeof s.top !== 'boolean'
       || s.access !== undefined && (!Array.isArray(s.access) || s.access.some(p => !legalCell(p)))
       || s.facing !== undefined && !['north', 'south', 'east', 'west'].includes(s.facing)
