@@ -40,7 +40,8 @@ export function smallCommandFeatures(ctx: SmallCommandContext): (plan: SmallComm
   // 核心单位：本方当前生命最高的英雄（同分取 id 小的）；没有英雄时为人数最多的编队。
   const heroes = friends.filter(u => u.scale === 'hero');
   const core = (heroes.length ? heroes : friends).slice().sort((a, b) => b.hp - a.hp || a.id.localeCompare(b.id))[0];
-  const engineers = friends.filter(u => activeTraitIds(u).includes('siege-breaker'));
+  // 工兵：带工兵特质或持爆破武器的己方单位。
+  const engineers = friends.filter(u => activeTraitIds(u).includes('siege-breaker') || u.weapon?.recipe?.mechanism === 'demolition');
   const attacked = commandAttacked(ctx.rounds, ctx.side === 'ally' ? 'enemy' : 'ally'), ownTargets = commandAttacked(ctx.rounds, ctx.side), hostile = commandAttackers(ctx.rounds, ctx.side);
   const hurtAllies = allies.filter(a => attacked.has(a.id));
   const startOf = (u: Combatant) => commandStart(ctx.rounds, u, u.pos) as number | undefined;

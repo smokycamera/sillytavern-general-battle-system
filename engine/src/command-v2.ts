@@ -132,10 +132,15 @@ export const COORDINATED_CONTROLS = new Set(['stunned', 'restrained', 'blinded',
 export const styleActive = (style: Style): boolean => style !== 'balanced';
 
 export interface CommandCandidate { key: string; score: number; attack: boolean; move: boolean; breach?: boolean; features?: StyleFeatures }
+/** §3 scale = max(1, 最高分, 最高分 − 中位分)（10-18 修订）：机动时最高分常为负，只取最高分会让风格项和估值误差只值零点几分。 */
+export function commandScale(scores: readonly number[]): number {
+  const sorted = [...scores].sort((a, b) => b - a), best = sorted[0] ?? 0;
+  return Math.max(1, best, best - (sorted[Math.floor(sorted.length / 2)] ?? best));
+}
 export type CommandScoreTrace = { profile: CommanderProfile; turnKey: string; scale: number; style: number[]; noise: number[]; preference: number[]; scores: number[] };
 /** §3 候选分 = 原分 + scale ×（s × 风格执行系数 × Σ行为项 + 估值误差 + 偏好项）；偏好每级 0.05。 */
 export function commandScores(choices: CommandCandidate[], profile: CommanderProfile, turnKey: string, trace?: (event: CommandScoreTrace) => void): number[] {
-  const quality = commandQuality(profile.ability), scale = Math.max(1, ...choices.map(c => c.score)), p = profile.preferences ?? {};
+  const quality = commandQuality(profile.ability), scale = commandScale(choices.map(c => c.score)), p = profile.preferences ?? {};
   const style = choices.map(c => c.features ? COMMAND_KNOBS.styleWeight * quality.style * styleTerms(profile.style, c.features) : 0);
   const noise = choices.map(c => commandNoise(turnKey, c.key) * quality.error);
   const preference = choices.map(c => (c.breach ? ((p.breach ?? 2) - 2) * .05 : 0) + (c.attack ? ((p.risk ?? 2) - 2) * .05 : 0) + (c.move && c.attack ? ((p.counterattack ?? 2) - 2) * .05 : 0));

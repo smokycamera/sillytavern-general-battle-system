@@ -18,7 +18,7 @@ import { isEnduranceModel, fatiguePenalty, abilityCost, prepareResourceModel, re
 import { actionPotential } from '../skill-tactics.js';
 import { hasteMagnitude, hasteAttackScale } from '../haste.js';
 import { commanderScores, normalizeCommanderProfiles, type CommanderProfiles, type CommanderProfile, type CommandChoice } from '../commander-profile.js';
-import { isCommandV2, commandProfile, commandQuality, commandCohesion, commandScores, commandOpening, beginCommandRound, noteCommandAttack, readCommandRounds, styleActive, commandAttackers, COMMAND_KNOBS, COMMAND_STYLES, COORDINATED_CONTROLS, type CommandRound } from '../command-v2.js';
+import { isCommandV2, commandProfile, commandQuality, commandCohesion, commandScores, commandOpening, beginCommandRound, noteCommandAttack, readCommandRounds, styleActive, commandAttackers, commandScale, COMMAND_KNOBS, COMMAND_STYLES, COORDINATED_CONTROLS, type CommandRound } from '../command-v2.js';
 import { smallCommandFeatures } from './command-features.js';
 import { killProbability } from '../fire-budget.js';
 import { validateGear, quickItemAction, itemUseAbility, itemEmergency, ITEM_EMERGENCY_DISCOUNT } from '../items.js';
@@ -2746,7 +2746,7 @@ export class SmallBattle {
     }), profile, turnKey, trace);
     // §2.3 大师：与最高分相差不超过比较阈值的候选（最多3个），加上下一个友军的最佳后续攻击 V(c)。
     if (quality.compare && pending.length) {
-      const scale = Math.max(1, ...candidates.map(plan => plan.score)), order = candidates.map((_, i) => i).sort((a, b) => scores[b]! - scores[a]!);
+      const scale = commandScale(candidates.map(plan => plan.score)), order = candidates.map((_, i) => i).sort((a, b) => scores[b]! - scores[a]!);
       const top = order.filter(i => scores[i]! >= scores[order[0]!]! - COMMAND_KNOBS.masterCompare * scale).slice(0, 3);
       const ally = pending[0]!, follow = new Map(foes.map(target => [target.id, followNow(ally, target)]));
       if (top.length > 1 && [...follow.values()].every(Boolean)) {
