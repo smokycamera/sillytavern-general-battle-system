@@ -5,8 +5,10 @@ import {hasMemberHealth,memberHealth,memberHealthMax,memberNoun} from '../../eng
 import {htmlText as esc} from './equipment-form.js';
 export function participationText(preview?: ActionPreview, detailed = false): string {
   if(preview?.participants===undefined)return '';
-  if (!detailed) return `有效攻击数 ${Number(preview.participants.toFixed(1))}${preview.expectedCasualties!==undefined?' · 预计减员 '+preview.expectedCasualties.toFixed(1):''}`;
-  return `有效攻击 ${Number(preview.participants.toFixed(1))} 份${preview.memberHp!==undefined?' · 目标单位最大生命 '+preview.memberHp:''}${(preview.overmatchMultiplier??1)>1?' · 跨代毁伤×'+Number(preview.overmatchMultiplier!.toFixed(2)):''}${preview.weaponOverflow?' · 余伤在目标编队内传递':''}`;
+  // 单人出手不写参战人数；编队写有效攻击数，能估出减员时一并写。
+  const attackers = preview.participants > 1 ? `有效攻击 ${Number(preview.participants.toFixed(1))} 份` : '';
+  if (!detailed) return [attackers, preview.expectedCasualties!==undefined ? '预计减员 '+preview.expectedCasualties.toFixed(1) : ''].filter(Boolean).join(' · ');
+  return [attackers, (preview.overmatchMultiplier??1)>1 ? '跨代毁伤×'+Number(preview.overmatchMultiplier!.toFixed(2)) : ''].filter(Boolean).join(' · ');
 }
 export function memberHealthPanel(unit:Combatant):string {
   if(!hasMemberHealth(unit))return '';

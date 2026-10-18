@@ -94,7 +94,7 @@ export function validateInventoryItem(value: unknown): asserts value is Inventor
   if (m.kind === 'item') {
     validateItemValue(m.value);
     const form = (m.value as { recipe: { form: string } }).recipe.form;
-    if (form === 'single' ? Number(value.qty) > 9999 || value.equippedTo !== undefined : Number(value.qty) > 1) throw new Error(form === 'single' ? '一次性道具数量为0–9999，不能装备' : '佩戴、充能道具必须逐件建档');
+    if (form === 'single' ? value.equippedTo !== undefined : Number(value.qty) > 1) throw new Error(form === 'single' ? '一次性道具不能装备' : '佩戴、充能道具必须逐件建档');
     if (value.equippedTo !== undefined && (!object(value.equippedTo) || value.equippedTo.slot !== 'gear')) throw new Error('道具只能装在佩戴位');
   } else {
     const recipe = object(m.value) ? m.value.recipe : undefined;
@@ -133,7 +133,7 @@ function fingerprint(value: unknown): string {
 const stackable = (spec: ItemSpecification) => spec.kind === 'item' && spec.form === 'single';
 export function createInventoryItem(id: string, name: string, spec: ItemSpecification, seed: string, qty = 1): InventoryItem {
   if (!id || !name.trim()) throw new Error('物品缺少身份或名称');
-  if (!Number.isSafeInteger(qty) || qty < 1 || qty > 9999 || !stackable(spec) && qty !== 1) throw new Error('装备与佩戴、充能道具逐件建档；一次性道具数量为1–9999');
+  if (!Number.isSafeInteger(qty) || qty < 1 || !stackable(spec) && qty !== 1) throw new Error('装备与佩戴、充能道具逐件建档；一次性道具数量须为正整数');
   return { id, name: name.trim(), qty, revision: 1, lootType: spec.kind === 'shield' ? 'armor' : spec.kind,
     mechanics: compileItem(spec, { id, name: name.trim(), seed, damageModel:'wounds-v2' }) };
 }

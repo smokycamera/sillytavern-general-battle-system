@@ -477,7 +477,7 @@ export function parseSuggestionTags(text: string): ParseResult {
         break;
       }
       case 'take': {
-        if (!a.id?.trim() || a.qty !== undefined && (!/^\d+$/.test(a.qty) || Number(a.qty) < 1 || Number(a.qty) > 9999)) { invalid.push(raw); break; }
+        if (!a.id?.trim() || a.qty !== undefined && (!/^\d+$/.test(a.qty) || Number(a.qty) < 1 || !Number.isSafeInteger(Number(a.qty)))) { invalid.push(raw); break; }
         suggestions.push({ kind: 'take', id: a.id.trim(), qty: Number(a.qty ?? 1), note: a.note, raw });
         break;
       }
@@ -495,7 +495,7 @@ export function parseSuggestionTags(text: string): ParseResult {
         suggestions.push({
           kind: 'give', item, note: (a.note ?? '').trim() || undefined,
           ...(a.id?.trim() ? { id: a.id.trim() } : {}),
-          qty: clampInt(a.qty, 1, 9999, 1), lootType: spec ? spec.kind === 'shield' ? 'armor' : spec.kind : lootType,
+          qty: clampInt(a.qty, 1, Number.MAX_SAFE_INTEGER, 1), lootType: spec ? spec.kind === 'shield' ? 'armor' : spec.kind : lootType,
           ...(spec ? { spec } : {}), raw,
         });
         break;

@@ -16,8 +16,6 @@ export interface HandOverContext {
   /** 同一回复 give 入库的实物编号。 */
   given: ReadonlySet<string>;
   notices: string[];
-  /** 本批新建的机械装备与佩戴、充能道具件数，合计最多 64。 */
-  equipment: { count: number };
 }
 
 const effectText = (item: InventoryItem) => item.mechanics?.kind === 'item' ? itemSpecText(item.mechanics.value.recipe) : undefined;
@@ -75,7 +73,6 @@ export function handOverItems(save: NarrativeSave, handovers: HandOver[], contex
         if (!entry.spec) inventory.push({ id: freeId(id), name: entry.name, qty: need, lootType: 'misc', assignedTo: unitId });
         else if (entry.spec.form === 'single') inventory.push({ ...createInventoryItem(freeId(id), entry.name, entry.spec, id, need), assignedTo: unitId });
         else {
-          if ((context.equipment.count += need) > 64) throw new Error('单批机械装备与佩戴、充能道具最多64件，请拆分');
           for (let piece = 0; piece < need; piece++) {
             const pieceId = freeId(need === 1 ? id : `${id}-${piece}`);
             inventory.push({ ...createInventoryItem(pieceId, entry.name, entry.spec, pieceId), assignedTo: unitId, equippedTo: { unitId, slot: 'gear' } });

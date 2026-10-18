@@ -218,7 +218,9 @@ describe('arms-v2 S7 energy shields and barrier grades',()=>{
     const field=standardField();field.tiles.fill('open');caster.pos=24;const context={mode:'small' as const,units:[caster],battlefield:field,fieldTags:[],rules:V18_OVERFLOW_D20};
     caster.battleZones=[placeZone(context,caster,caster,zone,1,zoneSkill.id)];settleZones(context,1,true,new SeededRng('zone'));
     expect(caster.barrier!.remaining).toBe(Math.max(1,Math.round(payload.amount*healingGradeMultiplier(8,3,HEALING_MODEL))));
-    const lines=skillEffectLines(context,caster,caster,compileSkill({id:skillDefinitionId('buff屏障')!},8,caster.id,'skills-v2'));expect(lines.join('')).toContain('跨等级×');
+    const barrierSkill=compileSkill({id:skillDefinitionId('buff屏障')!},8,caster.id,'skills-v2'),raw=barrierSkill.effects.find(e=>e.op==='barrier')!;
+    // 说明直接写跨等级换算后的容量。
+    expect(Number(/屏障吸收(\d+)点/.exec(skillEffectLines(context,caster,caster,barrierSkill).join(''))![1])).toBeGreaterThan(raw.op==='barrier'?raw.amount:Infinity);
   });
 });
 
@@ -333,7 +335,7 @@ describe('arms-v2 补齐必测（击退拉拽、火箭筒、道具屏障）',()=
     const ability=dose.value.ability!,caster=fighter('a','sword',{level:3}),effect=ability.effects.find(e=>e.op==='barrier');
     if(!effect||effect.op!=='barrier')throw Error('道具没有屏障效果');
     expect(effect.defensePower).toBe(ability.power);
-    expect(skillEffectLines({mode:'small',units:[caster],fieldTags:[],rules:V18_OVERFLOW_D20},caster,caster,ability).join('')).toContain('跨等级×');
+    expect(Number(/屏障吸收(\d+)点/.exec(skillEffectLines({mode:'small',units:[caster],fieldTags:[],rules:V18_OVERFLOW_D20},caster,caster,ability).join(''))![1])).toBeGreaterThan(effect.amount);
     grantBarrier(caster,effect.amount,effect.dur,'item',effect.defensePower);
     expect(caster.barrier!.remaining).toBe(Math.max(1,Math.round(effect.amount*healingGradeMultiplier(effect.defensePower!,3,HEALING_MODEL))));
   });

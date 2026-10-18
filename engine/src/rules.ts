@@ -103,8 +103,13 @@ export const V18_OVERFLOW_TW: RulePack = { ...V17_OVERFLOW_TW, id: 'v18-overflow
 export const V19_OVERFLOW_D20: RulePack = { ...V18_OVERFLOW_D20, id: 'v19-overflow-d20', name: 'V19 统帅', commandModel: 'command-v2' };
 export const V19_OVERFLOW_TW: RulePack = { ...V18_OVERFLOW_TW, id: 'v19-overflow-tw', name: 'V19 统帅会战', commandModel: 'command-v2' };
 
+/** V20：组合控制每多一项效果抵抗难度 −1（原 −2）；佩戴修正按道具 L 换算。只有新战斗启用，V19 及以前的战斗按原规则。 */
+export const V20_OVERFLOW_D20: RulePack = { ...V19_OVERFLOW_D20, id: 'v20-overflow-d20', name: 'V20 组合控制与佩戴等级', skillModel: 'skills-v3', itemModel: 'items-v2' };
+export const V20_OVERFLOW_TW: RulePack = { ...V19_OVERFLOW_TW, id: 'v20-overflow-tw', name: 'V20 组合控制与佩戴等级会战', skillModel: 'skills-v3', itemModel: 'items-v2' };
+
 /** id → 规则包（战斗快照恢复用；面板只用默认两包） */
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V20_OVERFLOW_D20.id]: V20_OVERFLOW_D20, [V20_OVERFLOW_TW.id]: V20_OVERFLOW_TW,
   [V19_OVERFLOW_D20.id]: V19_OVERFLOW_D20, [V19_OVERFLOW_TW.id]: V19_OVERFLOW_TW,
   [V18_OVERFLOW_D20.id]: V18_OVERFLOW_D20, [V18_OVERFLOW_TW.id]: V18_OVERFLOW_TW,
   [V17_OVERFLOW_D20.id]: V17_OVERFLOW_D20, [V17_OVERFLOW_TW.id]: V17_OVERFLOW_TW,

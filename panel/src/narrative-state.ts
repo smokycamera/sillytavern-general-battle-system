@@ -1,7 +1,7 @@
 import { prepareTraitLevelModel } from '../../engine/src/trait-level-model.js';
 import { prepareCombatModel } from '../../engine/src/combat-model.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
-import { V6_D20, V18_OVERFLOW_D20 } from '../../engine/src/rules.js';
+import { V6_D20, V20_OVERFLOW_D20 } from '../../engine/src/rules.js';
 import { prepareSkillModel } from '../../engine/src/skill-model.js';
 import { prepareItemModel } from '../../engine/src/item-model.js';
 import { randomId } from '../../host/src/browser-compat.js';
@@ -255,7 +255,7 @@ function applyUnitEffect(storage: UnitRecord[], event: Extract<Suggestion, { kin
   const record: UnitRecord = storage.find((r) => r.id === event.id)!;
   if (record.retired || record.hp <= 0 || record.status === 'dead') throw new Error('不能通过效果来源复活阵亡或解散档案');
   const unit = materializeUnitRecord(record, registry);
-  prepareTraitLevelModel(unit, V18_OVERFLOW_D20);
+  prepareTraitLevelModel(unit, V20_OVERFLOW_D20);
   if (event.kind === 'bless') grantTraitSource(unit, { id: `bless:${proposalId}:${index}`, name: event.name, kind: 'blessing', traitIds: event.traitIds, ...(event.traitLevels ? { traitLevels: event.traitLevels } : {}), duration: event.duration });
   else if (event.kind === 'affect') grantTraitSource(unit, { id: `affect:${proposalId}:${index}`, name: event.name, kind: 'effect', traitIds: [], conditionIds: event.conditionIds, duration: event.duration });
   else {
@@ -329,7 +329,6 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (item.equippedTo) next = prepareInventoryTransaction(next, { kind: 'unequip', id: 'take-unequip:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, ...item.equippedTo });
     next = prepareInventoryTransaction(next, { kind: 'discard', id: 'take:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, itemId: event.id, qty: event.qty });
   }
-  let newEquipment = 0;
   // given：换装可取用的同一回复实物；handed：同一回复 give 的全部实物，unit_set 的 items 先从这里交出。
   const given = new Set<string>(), handed = new Set<string>(), notices: string[] = [];
   const directGives = new Map<string, string>();
@@ -342,7 +341,6 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (!event.spec) { next.inventory = [...(next.inventory ?? []), { id, name: event.item, qty: event.qty, lootType: event.lootType, note: event.note }]; given.add(id); handed.add(id); }
     else if (event.spec.kind === 'item' && event.spec.form === 'single') { next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(id, event.item, event.spec, id, event.qty), note: event.note }]; handed.add(id); }
     else {
-      if ((newEquipment += event.qty) > 64) throw new Error('单批机械装备最多64件，请拆分');
       for (let i = 0; i < event.qty; i++) {
         const itemId = event.qty === 1 ? id : `${id}-${i}`;
         next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(itemId, event.item, event.spec, itemId), note: event.note }];
@@ -374,9 +372,9 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
       for (let i = 0; i < event.count; i++) {
         const id = newUnitId(proposal.id, index, i);
         if (records.some((r) => r.id === id)) throw new Error('新单位身份已存在');
-        const unit = generateUnit(spawnInput(event), { registry, seed: id, skillModel: 'skills-v2' }).unit;
+        const unit = generateUnit(spawnInput(event), { registry, seed: id, skillModel: 'skills-v3' }).unit;
         unit.id = id;
-        prepareSkillModel(unit,V18_OVERFLOW_D20); prepareCombatModel(unit,V6_D20); upgradeCombatSkills(unit); prepareItemModel(unit,V18_OVERFLOW_D20);prepareTraitLevelModel(unit,V18_OVERFLOW_D20); applySpawnWound(unit, event);
+        prepareSkillModel(unit,V20_OVERFLOW_D20); prepareCombatModel(unit,V6_D20); upgradeCombatSkills(unit); prepareItemModel(unit,V20_OVERFLOW_D20);prepareTraitLevelModel(unit,V20_OVERFLOW_D20); applySpawnWound(unit, event);
         records.push(unitRecordFromCombatant(unit, undefined, { sourceId: proposal.id }));
         if (unit.hp > 0 && !event.archiveOnly) roster.push(materializeUnitRecord(records.at(-1)!, registry));
         // 随身道具每张卡各一套，归这张卡；佩戴、充能道具装上（编队一件即整卡配发），一次性道具开战时随身携带。
@@ -386,7 +384,6 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
           if (entry.spec.form === 'single') { next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(itemId, entry.name, entry.spec, itemId, entry.qty), assignedTo: id }]; continue; }
           const pieces = unit.scale === 'hero' ? entry.qty : 1;
           if (pieces < entry.qty && i === 0) notices.push(`${event.name}是编队，佩戴、充能道具一件就是整张单位卡的配发，「${entry.name}」按每卡1件建档`);
-          if ((newEquipment += pieces) > 64) throw new Error('单批机械装备与佩戴、充能道具最多64件，请拆分');
           for (let piece = 0; piece < pieces; piece++) {
             const pieceId = pieces === 1 ? itemId : `${itemId}-${piece}`;
             next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(pieceId, entry.name, entry.spec, pieceId), assignedTo: id, equippedTo: { unitId: id, slot: 'gear' } }];
@@ -417,7 +414,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   // unit_set 的 items 最后交出：此时同一回复 give 的已入库，新建单位也已建档。
   const handovers: HandOver[] = [...proposal.events.entries()].flatMap(([index, event]) => event.kind === 'unit-set' && event.items?.length ? [{ unitId: event.id, items: event.items, index }] : []);
   for (const [unitId, items] of fresh.items) handovers.push({ unitId, items, index: proposal.events.length + handovers.length });
-  next = handOverItems(next, handovers, { proposalId: proposal.id, given: handed, notices, equipment: { count: newEquipment } });
+  next = handOverItems(next, handovers, { proposalId: proposal.id, given: handed, notices });
   const deployed = next.rosterIds ?? [];
   const oldDeployedAlive = (save.storage ?? []).filter(r=>(save.rosterIds ?? []).includes(r.id)&&r.hp>0&&!r.retired).length;
   if (deployed.length > MAX_SCENE_UNITS && (replacesRoster || deployed.length > oldDeployedAlive)) throw Error(`本场参战单位卡上限${MAX_SCENE_UNITS}，整批未应用`);

@@ -13,8 +13,10 @@ import type { BodyKind, Combatant, RulePack } from './types.js';
 import { WEAPON_CLASSES } from './data/weapons.js';
 
 export const ITEM_MODEL = 'items-v1' as const;
-export type ItemModel = typeof ITEM_MODEL;
-export const isItemModel = (model: unknown): model is ItemModel => model === ITEM_MODEL;
+/** V20：在 items-v1 之上，佩戴修正按道具 L 换算（gear-bonuses.ts）。 */
+export const ITEM_MODEL_V2 = 'items-v2' as const;
+export type ItemModel = typeof ITEM_MODEL | typeof ITEM_MODEL_V2;
+export const isItemModel = (model: unknown): model is ItemModel => model === ITEM_MODEL || model === ITEM_MODEL_V2;
 export const itemsV15 = (unit: Pick<Combatant, 'itemModel'> | undefined): boolean => isItemModel(unit?.itemModel);
 
 export function validateItemModel(value: unknown): void {

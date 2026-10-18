@@ -7,7 +7,7 @@ import type { Ability, Armor, BodyKind, Combatant, EffectOp, ItemRecipe, Weapon 
 import { BODY, compileArmor, compileWeapon, equipmentRecipe, type EquipmentContext } from './gen/equipment.js';
 import { compileSkill } from './skill-catalog.js';
 import { upgradeCombatSkills } from './skill-upgrade.js';
-import { SKILL_MODEL } from './skill-model.js';
+import { PHASE3_SKILL_MODEL } from './skill-model.js';
 import { parseSkillMechanism, skillMechanismFromId, skillMechanismId, skillMechanismName } from './data/skill-mechanisms.js';
 import { TRAITS, traitRegistry, isGradedTrait, validTraitLevel } from './data/traits.js';
 import { itemsV15 } from './item-model.js';
@@ -114,13 +114,13 @@ export function chargedUses(a: Ability): number {
 function templateHost(ability: Ability, power: number): Combatant {
   return { id: 'item', name: '道具', side: 'ally', scale: 'hero', level: power, tags: [], base: { atk: 0, def: 0, spd: 0, hpMax: 1 }, hp: 1, conditions: [],
     abilities: [ability], abilityState: [], resources: {}, traits: [], engagedWith: [], status: 'ready', fatigue: 0,
-    rulesVersion: 'v2', damageModel: 'wounds-v2', combatModel: 'cohort-v2', skillModel: 'skills-v2' };
+    rulesVersion: 'v2', damageModel: 'wounds-v2', combatModel: 'cohort-v2', skillModel: PHASE3_SKILL_MODEL };
 }
 /** 与已学技能走同一条编译与入场升级路径，再改成道具：不耗精力、单独计冷却、默认非魔法。 */
 export function itemAbilityTemplate(id: string, power: number, bonuses: Enhancements | undefined, form: 'single' | 'charged', name = '道具'): Ability {
   const mechanism = skillMechanismFromId(id);
   if (!mechanism) throw new Error('未知或矛盾的道具效果');
-  const host = templateHost(compileSkill({ id, name, bonuses }, power, 'item', 'skills-v2'), power);
+  const host = templateHost(compileSkill({ id, name, bonuses }, power, 'item', PHASE3_SKILL_MODEL), power);
   upgradeCombatSkills(host);
   const a = host.abilities[0]!;
   a.id = 'item'; delete a.sourceId; delete a.cost; delete a.cooldownGroup;
@@ -229,7 +229,7 @@ function itemAction(id: string, name: string, template: Ability): Ability {
   return { ...structuredClone(template), id: 'item:' + id, itemSourceId: id, name: '使用' + name, cost: { resource: 'item:' + id, amount: 1 }, cooldownGroup: 'item:' + id };
 }
 export function carriedItemAbility(item: CarriedItem): Ability {
-  if (!item.id || !Number.isSafeInteger(item.quantity) || item.quantity < 1 || item.quantity > 9999) throw new Error('携行物品规格损坏');
+  if (!item.id || !Number.isSafeInteger(item.quantity) || item.quantity < 1) throw new Error('携行物品规格损坏');
   if (item.action) return structuredClone(item.action);
   const m = item.mechanics;
   if (m.kind !== 'item' || m.value.recipe.form !== 'single' || !m.value.ability) throw new Error('只有一次性道具可以携带进战斗使用');
@@ -345,7 +345,7 @@ export function validateGear(unit: Combatant): void {
 }
 
 // 战斗中的佩戴修正见 gear-bonuses.ts（被修正栈引用，保持为叶子模块）。
-export { gearBonuses, combatBonuses } from './gear-bonuses.js';
+export { gearBonuses, combatBonuses, wornItemBonuses, wornLevelScale } from './gear-bonuses.js';
 
 // ---------- V15 一次性道具的使用 ----------
 /** 能否用加速动作（非技能行动）使用：V15 只限喝、敷、注射类；旧规则所有携行物品都可以。 */

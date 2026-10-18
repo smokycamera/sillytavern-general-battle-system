@@ -94,7 +94,7 @@ export function anchoredWeapon(weapon:Weapon|undefined,ammo:'he'|'ap'='he',model
     penetration:Math.max(0,2*power+(actual==='crossbow'?1:actual==='shotgun'?0:(['cannon','indirect-cannon','autocannon','demolition'].includes(mechanism)?2:mechanism==='heavy-rifle'?2:['firearm','rifle','energy'].includes(mechanism)?1:0))+(melee?.penetration??0)+(artillery&&ammo==='ap'?(actual==='rocket'?3:2):0)+instanceRating(weapon.recipe?.bonuses,'penetration',weapon.customized?undefined:weapon.recipe?.variance,weapon.channel??'kinetic')),
     splashTargets:splash,splashFactor:mechanism==='demolition'?0.6:0.4};
 }
-export function anchoredProtection(unit:ShieldBearer & Pick<Combatant,'armor'|'body'|'shield'|'damageModel'|'armsModel'>&Partial<Pick<Combatant,'gear'>>,channel:DamageChannel):number {
+export function anchoredProtection(unit:ShieldBearer & Pick<Combatant,'armor'|'body'|'shield'|'damageModel'|'armsModel'>&Partial<Pick<Combatant,'gear'|'itemModel'>>,channel:DamageChannel):number {
   const armor=unit.armor,innate=BODY[unit.body??'human'].protection[channel];
   const armorBonus=armor?.recipe?.bonuses,shieldBonus=isWoundModel(unit.damageModel)||!shieldUsable(unit)?undefined:unit.shield?.recipe?.bonuses,gear=gearBonuses(unit);
   // 佩戴道具的防护（同方向取最高一件）与护甲、盾的防护修正相加，合计仍限 ±10 点。
@@ -198,7 +198,7 @@ export function overmatchMultiplier(power:number|undefined,unit:DefensiveTarget,
 }
 export function armorEffectLabel(unit:ShieldBearer & Pick<Combatant,'armor'|'shield'|'damageModel'>):string {
   return isWoundModel(unit.damageModel)
-    ? `部分穿透吸能强度×${Number(instanceMultiplier(unit.armor?.recipe?.bonuses,'power',unit.armor?.recipe?.variance).toFixed(2))}；充分穿透后无额外减伤`
+    ? (m => m === 1 ? '' : `强度×${m}`)(Number(instanceMultiplier(unit.armor?.recipe?.bonuses,'power',unit.armor?.recipe?.variance).toFixed(2)))
     : `装甲等效耐久×${Number(armorPowerScale(unit).toFixed(2))}`;
 }
 /** 没有手动指定时，火炮按公开目标防护和人数选择有效毁伤较高的弹种。 */
@@ -226,5 +226,5 @@ export function anchoredWeaponLabel(weapon:Weapon|undefined,model:Combatant['dam
   const w=anchoredWeapon(weapon,undefined,model);if(!w)return '—';
   const raw=(diceAvg(w.baseDice)+(w.apDice?diceAvg(w.apDice):0))*(w.damageScale??1);
   const melee=meleeProfile(w);
-  return `${isRangedWeapon(w) ? (w.indirect ? '曲射' : '直射') + (isCannonWeapon(w) ? '火炮' : '') + ' · ' : ''}${model==='wounds-v2'?'基础单段命中均值':'单次命中均值'}${Number(raw.toFixed(1))}生命 · 穿透${w.penetration??0}${(w.attacks??1)>1?` · ${w.attacks}段`:''}${w.splashTargets?` · 爆炸${w.splashTargets>=1e9?'覆盖目标编队':'另及'+w.splashTargets+'名额'}`:''}${melee?` · ${melee.description}`:''}`;
+  return `${isRangedWeapon(w) ? (w.indirect ? '曲射' : '直射') + (isCannonWeapon(w) ? '火炮' : '') + ' · ' : ''}${model==='wounds-v2'?'单段均值':'单次均值'}${Number(raw.toFixed(1))}生命 · 穿透${w.penetration??0}${(w.attacks??1)>1?` · ${w.attacks}段`:''}${w.splashTargets?` · 爆炸${w.splashTargets>=1e9?'覆盖目标编队':'另及'+w.splashTargets+'名额'}`:''}${melee?` · ${melee.description}`:''}`;
 }

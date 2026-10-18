@@ -48,14 +48,11 @@ export function skillConditionDescription(effect: ConditionEffect, target: Comba
   });
   if (def?.preventMove) details.push('不能移动、起飞或冲锋');
   if (def?.preventMagic) details.push('不能使用魔法技能');
-  if (def?.preventAttack) details.push('不能使用手持武器攻击，天生武器仍可用');
+  if (def?.preventAttack) details.push('不能用手持武器攻击');
   if (def?.skipTurn) details.push('跳过行动');
-  if (def?.dot) details.push('受到持续' + (def.dot.label ?? def.name) + '，按当前战斗规则结算');
-  if (effect.conditionId === 'hasted') details.push('移动点 +1；每轮额外1次非技能动作，额外攻击按半次普通攻击预算随效力折算，同类不叠加');
-  if (effect.conditionId === 'slowed') details.push('移动点 -1（最低1），会战不能冲锋');
-  if (['empowered', 'weakened', 'vulnerable', 'blessed'].includes(effect.conditionId)) details.push('仅修正可造成的伤害，不绕过防护');
-  if (effect.conditionId === 'blessed' && phase2Traits(target)) details.push('旧版祝福效果，保留原减伤与期限');
-  if (effect.conditionId === 'blessed' && effect.defensePower !== undefined) details.push(`防御规格L${effect.defensePower}`);
+  if (def?.dot) details.push('持续' + (def.dot.label ?? def.name));
+  if (effect.conditionId === 'hasted') details.push('移动点 +1，每轮额外1次非技能动作');
+  if (effect.conditionId === 'slowed') details.push('移动点 -1');
   return details.join('、') || def?.desc || effect.conditionId;
 }
 const positive = new Set(['empowered', 'inspired', 'blessed', 'encouraged', 'confident', 'hasted']);
@@ -204,15 +201,15 @@ export function skillEffectLines(context: ObservationContext, actor: Combatant, 
   return ability.effects.flatMap((effect) => {
     if (effect.op === 'summon') {
       const p = summonProfile(effect.templateId, context.mode, ability.bonuses);
-      return p ? [`${p.group ? `群体召唤：一支${p.members}名成员的编队` : '单体召唤：一个个体'}，等级L${p.power}；召唤武器L${p.power}，${p.range > 1 ? '远程' : '近战'}距离${p.range}；在施法者附近出现，下轮行动；群体分摊同级单体的生命和武器伤害预算`] : [];
+      return p ? [`召唤${p.group ? `一支${p.members}人编队` : '一个个体'}（L${p.power}，${p.range > 1 ? '远程距离' + p.range : '近战'}），下轮行动`] : [];
     }
     if (effect.op === 'zone') return [zoneEffectDescription(effect)];
-    if (effect.op === 'move') return [moveEffectDescription(effect, ability)];
-    if (effect.op === 'barrier') { const grade = barrierGradeMultiplier(target, effect.defensePower ?? ability.power); return [`屏障最多吸收${Math.max(1, Math.round(effect.amount * grade))}点伤害${grade > 1 ? `（跨等级×${Number(grade.toFixed(2))}）` : ''}，持续${effect.dur}轮${effect.defensePower ? `，防御规格L${effect.defensePower}` : ''}；重复施放取较强保护`]; }
-    if (effect.op === 'trait') { const grant = skillTraitGrant(target, ability, effect); return [skillTraitReason(target, effect, ability) ?? `${traitRegistry().get(grant.id)?.name}${grant.level === undefined ? '' : 'L' + grant.level}持续${effect.dur}轮，战斗归档时结束`]; }
-    if (effect.op === 'resource') return [`${effect.resource==='SP'?'精力':effect.resource}变化${skillResourceChange(target, effect)}，受当前资源与上限约束`];
-    if (effect.op === 'damage' && ability.areaExposure && target.scale !== 'hero') return [isCohort(actor)?'范围伤害按参战规模与成员耐久折算；疏散可减轻伤害':`每编队至多${Math.min(target.hp, ability.areaExposure)}名成员暴露；疏散可减轻范围伤害`];
-    if (effect.op === 'condition') return [`${effect.onDamage ? '造成损伤后' : effect.onHit ? '命中后' : ''}${definitions.get(effect.conditionId)?.name ?? effect.conditionId}：${skillConditionDescription(effect, target)}；${Math.round(conditionChance(target, effect) * 100)}%生效机会，持续${effect.dur}次状态结算${effect.magnitude !== undefined ? '（效力' + Math.round(effect.magnitude * 100) + '%）' : ''}`];
+    // 突进、闪现的落点由预览单独写出；这里只补出手后的后撤。
+    if (effect.op === 'move') return effect.mode === 'withdraw' ? [moveEffectDescription(effect, ability)] : [];
+    if (effect.op === 'barrier') { const grade = barrierGradeMultiplier(target, effect.defensePower ?? ability.power); return [`屏障吸收${Math.max(1, Math.round(effect.amount * grade))}点伤害，持续${effect.dur}轮`]; }
+    if (effect.op === 'trait') { const grant = skillTraitGrant(target, ability, effect); return [skillTraitReason(target, effect, ability) ?? `获得${traitRegistry().get(grant.id)?.name}${grant.level === undefined ? '' : 'L' + grant.level}，持续${effect.dur}轮`]; }
+    if (effect.op === 'resource') return [`${effect.resource==='SP'?'精力':effect.resource}${skillResourceChange(target, effect)}`];
+    if (effect.op === 'condition') return [`${effect.onDamage ? '造成损伤后' : effect.onHit ? '命中后' : ''}${definitions.get(effect.conditionId)?.name ?? effect.conditionId}：${skillConditionDescription(effect, target)}，${Math.round(conditionChance(target, effect) * 100)}%生效，${effect.dur}轮`];
     if (effect.op === 'push') { const pushed = pushPreview(context, actor, target, effect); return [(effect.onHit ? '命中后' : '') + (pushed.reason ?? (effect.direction === 'towards' ? '拉至' : '推至') + pushed.label)]; }
     if (effect.op === 'dispel') { const entries = dispelCandidates(target, effect); return [entries.length ? '解除' + entries.map((e) => e.name).join('、') : '没有可解除的效果']; }
     return [];

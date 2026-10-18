@@ -142,7 +142,7 @@ describe('战术地图查看与确认', () => {
     expect(html).toContain('命中后伤害');
     expect(html).not.toContain('主目标预计损失');
     expect(html).not.toContain('期望已包含未命中');
-    expect(html).toContain('无法穿透，不造成生命或人数损失');
+    expect(html).toContain('无法穿透，不造成伤害');
     expect(html).toContain('连续守住2个完整回合');
     expect(html).not.toContain('未发现的伏兵');
     expect(tacticalSelection(b, view).target?.preview).toMatchObject({ penetrationFactor: 0, expectedDamage: 0 });

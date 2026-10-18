@@ -302,7 +302,7 @@ export class MassBattle {
     const vanguard = this.rules.resolutionVersion === 'v2' ? deployVanguardFormation(units, attached, this.formationSlots ?? 3) : [];
     this.attached = attached;
     for (const unit of this.combatants) { const placed = units.find((u) => u.id === unit.id)!; unit.tags = placed.tags; if (placed.airborne !== undefined) unit.airborne = placed.airborne; if (placed.formationPosition !== undefined) unit.formationPosition = placed.formationPosition; if (placed.vanguardOrigin) unit.vanguardOrigin = placed.vanguardOrigin; }
-    for (const move of vanguard) this.recordEvent({ round: 1, kind: 'move', participants: [move.id], text: this.byId(move.id).name + (move.from.id === move.to.id ? ' 先锋部署：前出域已满或已位于先遣侧翼，保持阵位' : ` 先锋部署：前出至${move.to.wing}${{ front: '前线', rear: '支援', reserve: '预备' }[move.to.rank]}`) });
+    for (const move of vanguard) this.recordEvent({ round: 1, kind: 'move', participants: [move.id], text: this.byId(move.id).name + (move.from.id === move.to.id ? ' 先锋部署：保持阵位' : ` 先锋部署：前出至${move.to.wing}${{ front: '前线', rear: '支援', reserve: '预备' }[move.to.rank]}`) });
   }
   private maneuverDestination(order: Order, units = this.combatants) {
     const actor = units.find((u) => u.id === order.unitId)!;
@@ -417,7 +417,7 @@ export class MassBattle {
         const destination = this.isAttached(id) ? from : candidates.find((n) => formationCanOccupy(this.combatants, unit, n, this.attached, this.formationSlots ?? 3));
         if (!destination) {
           if (unit.moraleState!.attempts >= MAX_RALLY_ATTEMPTS) unit.status = 'fled';
-          this.recordEvent({ round: this.round, kind: 'morale', participants: [id], text: `${unit.name} 无合法重整阵位，${unit.status === 'fled' ? '机会耗尽，撤离' : '仍在溃退'}` }); continue;
+          this.recordEvent({ round: this.round, kind: 'morale', participants: [id], text: `${unit.name} 无处重整，${unit.status === 'fled' ? '撤离战场' : '仍在溃退'}` }); continue;
         }
         unit.status = 'ready'; if (destination.id !== from.id) { unit.formationPosition ??= from.id; setFormation(unit, destination); this.syncPassenger(unit); }
         changeMorale(unit, Math.max(0, this.rules.morale.breakAt + 15 - (decision.effective ?? 0)));
@@ -810,13 +810,13 @@ export class MassBattle {
   orderPreview(order: Order): { distance?: number; rangeDistance?: number; effects?: string[]; fallChance?: number; areaTargets?: string[]; areaTargetIds?: string[]; areaPreviews?: import('../actions.js').ActionPreview['areaPreviews']; vehicleMove?: typeof FORMATION_NODES[number]; withdrawal?: typeof FORMATION_NODES[number]; weaponName?: string; approach?: typeof FORMATION_NODES[number]; moraleBefore?: number; moraleAfter?: number; breakChance?: number; rallyChance?: number; healing?: number; reason?: string; preview?: ReturnType<typeof previewAttack>; landing?: typeof FORMATION_NODES[number]; extraFatigue?: number; forcedLanding?: typeof FORMATION_NODES[number]; fallDamage?: number; forcedExit?: boolean; reactions?: string[]; layer?: 'air' | 'ground'; destination?: typeof FORMATION_NODES[number] } {
     const known = this.planningUnits(order), reason = this.v2OrderReason(order, known);
     if (reason) return { reason };
-    if (order.type === 'reload') return { effects: ['消耗一次行动，实际武器装填时间减少1轮'] };
+    if (order.type === 'reload') return { effects: ['装填时间减少1轮'] };
     if (['shift-left', 'shift-right', 'rank-forward', 'rank-back'].includes(order.type)) {
       const destination = this.maneuverDestination(order, known), actor = this.byId(order.unitId);
       return { destination, layer: isAirborne(actor) ? 'air' : 'ground', ...(order.type === 'rank-forward' && destination && this.denialSources(actor, destination, known).length ? { reactions: this.denialSources(actor, destination, known).map(u => u.name) } : {}) };
     }
     if (order.type === 'brace' && this.byId(order.unitId).combatModel === MEMBER_HEALTH_MODEL && this.byId(order.unitId).shield) return {
-      effects: ['地面前排平时即遮挡直射；大体型可越过更小友军，弓弩和法杖可越过友军，仍受敌军遮挡；固守提高正面防御，持盾时额外保护同阵位队友；独立魔法技能、空中射击、曲射火炮等间接火力及侧射可绕过盾卫的额外保护。'],
+      effects: ['正面防御提高，持盾时掩护同阵位队友。'],
     };
     if (order.type === 'takeoff' || order.type === 'land') { const actor = this.byId(order.unitId); return { destination: formationNode(actor), layer: order.type === 'takeoff' ? 'air' : 'ground', ...(order.type === 'takeoff' ? { reactions: this.takeoffThreats(actor, known).map((u) => u.name) } : {}) }; }
     if (order.type === 'ability') {
@@ -1754,7 +1754,7 @@ export class MassBattle {
     assertBattleCapacity(this.combatants, 'mass');
     if (this.rules.resolutionVersion === 'v2' || this.formationSlots !== undefined) this.prepareFormation();
     this.started = true;
-    if (isArmsV2(this.rules.armsModel)) for (const u of this.combatants) if (u.shield && !shieldUsable(u) && u.shieldDurability?.remaining !== 0) this.recordEvent({round:1,kind:'condition',participants:[u.id],text:u.name+'的'+(u.shield.name??'盾牌')+'挂背：双手武器只能配小盾或能量盾'});
+    if (isArmsV2(this.rules.armsModel)) for (const u of this.combatants) if (u.shield && !shieldUsable(u) && u.shieldDurability?.remaining !== 0) this.recordEvent({round:1,kind:'condition',participants:[u.id],text:u.name+'的'+(u.shield.name??'盾牌')+'挂在背上'});
     this.round = 1;
     for (const unit of this.combatants) {
       const restored = recoverEntryMorale(unit);

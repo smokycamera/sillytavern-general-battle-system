@@ -76,7 +76,7 @@ import {
   generateUnit, traitCatalog, traitRegistry, resolveTraitId,
   SmallBattle, MassBattle, battleXpAwardsForBothSides, applyXp, xpProgress, approx, approxDelta,
   armorDR, fieldModsFor, LITE_D20,
-  V5_D20, V6_D20, V11_OVERFLOW_D20, V12_OVERFLOW_D20, V18_OVERFLOW_D20, prepareArmsModel, prepareTraitModel, prepareSkillModel, prepareItemModel, isAirborne, abilityUsabilityReason,
+  V5_D20, V6_D20, V11_OVERFLOW_D20, V12_OVERFLOW_D20, V20_OVERFLOW_D20, prepareArmsModel, prepareTraitModel, prepareSkillModel, prepareItemModel, isAirborne, abilityUsabilityReason,
   generatedField, generatedLayeredField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
   FORMATION_NODES, formationNode, concealmentLabel,
   type Combatant, type GenerateInput, type Order, type BattleLogEntry, type Side,
@@ -651,7 +651,7 @@ function restore(): void {
   // 旧存档已结算标记也封口，不能因旧版缺少完整战果 id 而重写最新档案。
   const restoredBattle = currentBattle();
   openingSavedFor = restoredBattle ?? undefined;
-  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V18_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V18_OVERFLOW_D20);prepareTraitModel(unit,V18_OVERFLOW_D20);prepareItemModel(unit,V18_OVERFLOW_D20);prepareTraitLevelModel(unit,V18_OVERFLOW_D20);}
+  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V20_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V20_OVERFLOW_D20);prepareTraitModel(unit,V20_OVERFLOW_D20);prepareItemModel(unit,V20_OVERFLOW_D20);prepareTraitLevelModel(unit,V20_OVERFLOW_D20);}
   if (restoredBattle && state.xpSettled) {
     const id = battleOutcomeId(state.mass ? 'mass' : 'small', restoredBattle.seed);
     if (!state.committedOutcomeIds.includes(id)) state.committedOutcomeIds.push(id);
@@ -733,8 +733,8 @@ function defaultRank(u: Pick<Combatant, 'archetype'>): 'front' | 'rear' | 'reser
 
 async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {}): Promise<void> {
   // 特质去重：AI 标签/面板勾选可能重复给同一特质
-  const { unit } = generateUnit({ ...input, rulesVersion: 'v2', damageModel: 'wounds-v2', era: undefined, traits: [...new Set(input.traits)] }, { registry: reg, skillModel: 'skills-v2' });
-  prepareSkillModel(unit, V18_OVERFLOW_D20); prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit); prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V18_OVERFLOW_D20); prepareTraitModel(unit, V18_OVERFLOW_D20); prepareItemModel(unit, V18_OVERFLOW_D20); prepareTraitLevelModel(unit, V18_OVERFLOW_D20);
+  const { unit } = generateUnit({ ...input, rulesVersion: 'v2', damageModel: 'wounds-v2', era: undefined, traits: [...new Set(input.traits)] }, { registry: reg, skillModel: 'skills-v3' });
+  prepareSkillModel(unit, V20_OVERFLOW_D20); prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit); prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V20_OVERFLOW_D20); prepareTraitModel(unit, V20_OVERFLOW_D20); prepareItemModel(unit, V20_OVERFLOW_D20); prepareTraitLevelModel(unit, V20_OVERFLOW_D20);
   // id 去重
   state.idSeq++;
   state.roster.push(unit);
@@ -748,7 +748,7 @@ async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {})
 /** 储存器档案实体化为本场编制，保留稳定 id、当前兵力、状态和玩家编辑过的基础属性。 */
 function materializeStorageUnit(r0: RosterUnit): Combatant {
   const unit=materializeUnitRecord(r0, reg, { era: state.era });
-  if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V18_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V18_OVERFLOW_D20);prepareTraitModel(unit,V18_OVERFLOW_D20);prepareItemModel(unit,V18_OVERFLOW_D20);prepareTraitLevelModel(unit,V18_OVERFLOW_D20);}
+  if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V20_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V20_OVERFLOW_D20);prepareTraitModel(unit,V20_OVERFLOW_D20);prepareItemModel(unit,V20_OVERFLOW_D20);prepareTraitLevelModel(unit,V20_OVERFLOW_D20);}
   return unit;
 }
 
@@ -1242,7 +1242,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   rows.push(`<span>攻 <b>${atkPlus}</b></span>`);
   rows.push(`<span>防 <b>${u.base.def}</b></span>`);
   rows.push(`<span>速 <b>${u.base.spd}</b></span>`);
-  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${approx(trainingDamage(u.level,currentBattle()?.rules??V18_OVERFLOW_D20), 2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
+  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${approx(trainingDamage(u.level,currentBattle()?.rules??V20_OVERFLOW_D20), 2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
   rows.push(`<span>${u.scale === 'hero' ? '生命' : u.body==='vehicle'?'载具数':'人数'} <b>${u.hp}/${u.base.hpMax}</b></span>`);
   if(u.combatModel&&u.scale!=='hero')rows.push(`<span>单个${u.body==='vehicle'?'载具':'成员'}最大生命 <b>${memberDurability(u)}</b></span>`);
   if (u.base.moraleMax !== undefined) rows.push(`<span>士气 <b>${u.base.moraleMax}</b></span>`);
@@ -1265,7 +1265,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   }
   if (u.armor) {
     if (u.armor.protection) {
-      rows.push(`<div class="eq"><b>通道防护</b> L${u.armor.level??5}${esc(enhancementLabel(u.armor.recipe?.bonuses))} · 动能${protection('kinetic')} / 热能${protection('thermal')} / 奥术${protection('arcane')}${modern?' · '+esc(armorEffectLabel(u)):''} · 负重${u.armor.load ?? 0}</div>`);
+      rows.push(`<div class="eq"><b>通道防护</b> L${u.armor.level??5}${esc(enhancementLabel(u.armor.recipe?.bonuses))} · 动能${protection('kinetic')} / 热能${protection('thermal')} / 奥术${protection('arcane')}${modern&&armorEffectLabel(u)?' · '+esc(armorEffectLabel(u)):''} · 负重${u.armor.load ?? 0}</div>`);
     } else {
     const tierNames = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
     // 实际减伤 = (基础档+特质档修正，封顶4档) 表值 × 护甲效率，最终封顶 90%
@@ -1777,15 +1777,15 @@ function abilityTargetLabel(a: Ability): string {
 function abilityEffectLabel(a: Ability, target: Combatant): string[] {
   return a.effects.map((e) => {
     switch (e.op) {
-      case 'damage': if (a.damageBasis) return `${a.damageBasis === 'shield' ? '以实际盾牌' : a.weaponUse ? '以实际选用武器' : '以当前近战武器'}结算，受技能强度和装备威力共同限制${e.shape === 'burst' ? '，范围内分配可用上限' : ''}`; return `伤害：普通 ${e.baseDice}${e.apDice ? ` + 破甲 ${e.apDice}` : ''}${e.shape === 'burst' ? '（范围）' : ''}`;
-      case 'trait': return `${reg.get(e.traitId)?.name ?? e.traitId}持续至多${e.dur}轮，战斗归档时结束`;
+      case 'damage': if (a.damageBasis) return `${a.damageBasis === 'shield' ? '以盾牌' : '以所持武器'}出手${e.shape === 'burst' ? '（范围）' : ''}`; return `伤害约${Math.round((diceAvg(e.baseDice) + (e.apDice ? diceAvg(e.apDice) : 0)) * (a.damageScale ?? 1))}${e.shape === 'burst' ? '（范围）' : ''}`;
+      case 'trait': return `获得${reg.get(e.traitId)?.name ?? e.traitId}，持续${e.dur}轮`;
       case 'zone': return zoneEffectDescription(e);
       case 'move': return moveEffectDescription(e, a);
       case 'barrier': return `屏障吸收${e.amount}点伤害，持续${e.dur}轮`;
-      case 'heal': return `恢复生命或可救伤兵：${e.amount ?? e.dice}，以实际可恢复量为上限`;
-      case 'condition': return `${e.onDamage ? '造成损伤后' : e.onHit ? '命中后' : ''}施加${standardConditionMap().get(e.conditionId)?.name ?? e.conditionId}：${skillConditionDescription(e, target)}${e.magnitude !== undefined ? '，效力' + Math.round(e.magnitude * 100) + '%' : ''}，持续 ${e.dur} 次状态结算${e.saveDC ? '，目标可以抵抗' : ''}`;
-      case 'push': return `${e.onHit ? '命中后' : ''}尝试${e.direction === 'towards' ? '拉近' : '推开'}目标一格，受体量、稳固姿态和落点限制`;
-      case 'dispel': return `最多解除${e.count}项${e.polarity === 'negative' ? '负面' : '有益'}效果；实物和已发生伤亡保持`;
+      case 'heal': return `恢复${e.amount !== undefined ? Math.round(e.amount) : e.dice}生命`;
+      case 'condition': return `${e.onDamage ? '造成损伤后' : e.onHit ? '命中后' : ''}${standardConditionMap().get(e.conditionId)?.name ?? e.conditionId}：${skillConditionDescription(e, target)}，${e.dur}轮${e.saveDC ? '，抵抗难度' + e.saveDC : ''}`;
+      case 'push': return `${e.onHit ? '命中后' : ''}${e.direction === 'towards' ? '拉近' : '推开'}目标1格`;
+      case 'dispel': return `解除${e.count}项${e.polarity === 'negative' ? '负面' : '有益'}效果`;
       case 'resource': return `${resourceLabel(e.resource)}变化： ${e.amount >= 0 ? '+' : ''}${e.amount}`;
       case 'morale': return `士气 ${e.amount >= 0 ? '+' : ''}${e.amount}`;
       case 'summon': return /^conjured:(10|[1-9])$/.test(e.templateId) ? `召唤临时造物 L${e.templateId.split(':')[1]} ×${e.count}，下一轮行动` : `召唤：${e.templateId} ×${e.count}`;

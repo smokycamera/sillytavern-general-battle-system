@@ -1,4 +1,4 @@
-import { V18_OVERFLOW_D20, prepareSkillModel } from '../../engine/src/index.js';
+import { V20_OVERFLOW_D20, prepareSkillModel } from '../../engine/src/index.js';
 import { validateBattleControlState } from '../../engine/src/battle-control.js';
 import { validateRecoveryRemainders } from '../../engine/src/recovery.js';
 import { validateHealingModel } from '../../engine/src/healing.js';
@@ -286,8 +286,8 @@ export function combatantFromUnknown(value: unknown): Combatant {
         || typeof a.definitionId !== 'string' || !skillMechanismFromId(a.definitionId) || JSON.stringify(skillMechanismFromId(a.definitionId)) !== JSON.stringify({ category: a.recipe.category, area: a.recipe.area, modifiers: a.recipe.modifiers })) throw new Error('通用技能配方损坏');
     }
     if (a.area !== undefined && (!isRecordObject(a.area) || !['cone','line','ring','chain','circle'].includes(String(a.area.shape)) || !Number.isInteger(a.area.radius) || Number(a.area.radius)<1 || Number(a.area.radius)>3 || !Number.isInteger(a.area.maxTargets) || Number(a.area.maxTargets)<1 || Number(a.area.maxTargets)>8)) throw Error('技能范围不正确');
-    if (a.areaExposure !== undefined && (!Number.isInteger(a.areaExposure) || Number(a.areaExposure) < 1 || Number(a.areaExposure) > (['skill-v4.0','skill-v4.1','skill-v4.2','skill-v4.3','skill-v5.0','skill-v6.0','skill-v6.1','skill-v7.0','skill-v8.0'].includes(String(a.effectVersion))?1e9:4) || a.shape !== 'burst' || a.damageBasis !== undefined)) throw new Error('技能范围暴露参数损坏');
-    if (a.damageBasis !== undefined && !['weapon', 'shield'].includes(String(a.damageBasis)) || a.weaponDamageMult !== undefined && (!Number.isFinite(a.weaponDamageMult) || Number(a.weaponDamageMult) <= 0 || Number(a.weaponDamageMult) > (['skill-v3.0','skill-v4.0','skill-v4.1','skill-v4.2','skill-v4.3','skill-v5.0','skill-v6.0','skill-v6.1','skill-v7.0','skill-v8.0'].includes(String(a.effectVersion)) ? 4.4 : 2)) || a.delivery !== undefined && !['melee', 'ranged', 'magic'].includes(String(a.delivery))) throw new Error('技能装备基准损坏');
+    if (a.areaExposure !== undefined && (!Number.isInteger(a.areaExposure) || Number(a.areaExposure) < 1 || Number(a.areaExposure) > (['skill-v4.0','skill-v4.1','skill-v4.2','skill-v4.3','skill-v5.0','skill-v6.0','skill-v6.1','skill-v7.0','skill-v8.0','skill-v9.0'].includes(String(a.effectVersion))?1e9:4) || a.shape !== 'burst' || a.damageBasis !== undefined)) throw new Error('技能范围暴露参数损坏');
+    if (a.damageBasis !== undefined && !['weapon', 'shield'].includes(String(a.damageBasis)) || a.weaponDamageMult !== undefined && (!Number.isFinite(a.weaponDamageMult) || Number(a.weaponDamageMult) <= 0 || Number(a.weaponDamageMult) > (['skill-v3.0','skill-v4.0','skill-v4.1','skill-v4.2','skill-v4.3','skill-v5.0','skill-v6.0','skill-v6.1','skill-v7.0','skill-v8.0','skill-v9.0'].includes(String(a.effectVersion)) ? 4.4 : 2)) || a.delivery !== undefined && !['melee', 'ranged', 'magic'].includes(String(a.delivery))) throw new Error('技能装备基准损坏');
     if(a.damageScale!==undefined&&(!Number.isFinite(a.damageScale)||Number(a.damageScale)<=0||Number(a.damageScale)>1e6))throw Error('技能等级倍率损坏');
     for (const effect of a.effects.flatMap(effect => [effect,...(isRecordObject(effect) && effect.op === 'zone' && Array.isArray(effect.effects) ? effect.effects : [])])) {
       if (isRecordObject(effect) && effect.op === 'zone' && (!['fire','poison','smoke','healing','trap'].includes(String(effect.kind)) || !Number.isInteger(effect.power) || Number(effect.power)<1 || Number(effect.power)>10 || !Number.isInteger(effect.dur) || Number(effect.dur)<1 || Number(effect.dur)>99 || !Number.isInteger(effect.radius) || Number(effect.radius)<0 || Number(effect.radius)>3)) throw Error('持续区域的范围或时间不正确');
@@ -908,7 +908,7 @@ export function learnUnitRecord(record: UnitRecord, skills: NonNullable<Combatan
   if (record.retired || record.hp <= 0 || record.status === 'dead') throw new Error('阵亡或解散档案不能学习');
   const unit = materializeUnitRecord(record, registry);
   if (record.snapshot) { unit.abilityState = clone(record.snapshot.abilityState); unit.resources = clone(record.snapshot.resources); }
-  prepareSkillModel(unit, V18_OVERFLOW_D20);
+  prepareSkillModel(unit, V20_OVERFLOW_D20);
   const learned = learnAbilities(unit, skills ?? [], { rebuildRequested: true });
   return unitRecordFromCombatant(learned, record, { kind: 'edit', sourceId });
 }

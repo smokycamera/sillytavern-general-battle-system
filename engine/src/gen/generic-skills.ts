@@ -3,7 +3,7 @@ import { curveAt } from '../data/curves.js';
 import { diceAvg, rebuildDice } from '../data/weapons.js';
 import { skillMechanismFromId, skillMechanismName, SKILL_MODIFIERS, MOVEMENT_MODIFIERS } from '../data/skill-mechanisms.js';
 import { skillMoveReach } from '../skill-movement.js';
-import { conditionEffectWeight, type SkillModel } from '../skill-model.js';
+import { conditionEffectWeight, controlSavePenalty, skillsPhase2, type SkillModel } from '../skill-model.js';
 import { balanceGenericSkill, BUFF_CONDITIONS } from '../skill-balance.js';
 import { attachDefensePower } from '../barrier.js';
 import { canonicalTraitId, gradedTraitCost } from '../trait-parameters.js';
@@ -14,7 +14,7 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
   const mechanism = skillMechanismFromId(id);
   if (!mechanism) throw new Error('未知或矛盾的技能效果');
   if (!Number.isSafeInteger(power) || power < 1 || power > 10) throw new Error('技能等级必须为1–10整数');
-  const phase2 = formula === 'skills-v2';
+  const phase2 = skillsPhase2(formula);
   if (mechanism.modifiers.some(id => ['taunt','blind','confuse','charm'].includes(id)) && !phase2) throw Error('新控制需要V17技能规则');
   if (mechanism.modifiers.includes('charm') && mechanism.area) throw Error('魅惑只做单体技能，不能加范围');
   const physical = mechanism.category.startsWith('physical'), magic = mechanism.category.startsWith('magic'), damage = physical || magic;
@@ -38,7 +38,7 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
   for (const key of selected) {
     const modifier = SKILL_MODIFIERS.find((m) => m.id === key)!;
     if (modifier.condition) effects.push({ op: 'condition', conditionId: modifier.condition, dur: ['taunted','charmed','confused'].includes(modifier.condition) ? 1 : modifier.condition === 'blinded' ? 2 : ['stunned', 'restrained', 'disarmed', 'silenced'].includes(modifier.condition) ? 1 : model === 'wounds-v2' && BUFF_CONDITIONS.has(modifier.condition) ? power : duration,
-      magnitude: ['taunted','charmed','confused','blinded'].includes(modifier.condition) ? 1 : magnitude, ...(modifier.allowed === 'hostile' ? { saveDC: ['taunted','charmed','confused','blinded'].includes(modifier.condition) ? saveDC : Math.max(1, saveDC - 2 * Math.max(0, weight - 1) - (key === 'stun' ? 2 : 0)) } : {}), ...(damage || damagingDebuff ? { onHit: true, ...(['poisoned', 'bleeding', 'burning'].includes(modifier.condition) ? { onDamage: true } : {}) } : {}), shape: area ? 'burst' : 'single' });
+      magnitude: ['taunted','charmed','confused','blinded'].includes(modifier.condition) ? 1 : magnitude, ...(modifier.allowed === 'hostile' ? { saveDC: ['taunted','charmed','confused','blinded'].includes(modifier.condition) ? saveDC : Math.max(1, saveDC - controlSavePenalty(formula) * Math.max(0, weight - 1) - (key === 'stun' ? 2 : 0)) } : {}), ...(damage || damagingDebuff ? { onHit: true, ...(['poisoned', 'bleeding', 'burning'].includes(modifier.condition) ? { onDamage: true } : {}) } : {}), shape: area ? 'burst' : 'single' });
     else if (modifier.trait) effects.push({ op: 'trait', traitId: modifier.trait, ...(phase2 && isGradedTrait(modifier.trait) ? { level: power } : {}), dur: phase2 ? 1 + Math.floor((power - 1) / 4) : model === 'wounds-v2' ? power : 1 + power, shape: area ? 'burst' : 'single' });
     else if (key === 'heal') effects.push({ op: 'heal', ...(phase2 ? { power } : {}), amount: Math.max(1, Math.round(curve.hp * 0.25 / Math.max(1, weight) / (area ? 2 : 1))) });
     else if (key === 'barrier') effects.push({ op: 'barrier', amount: Math.max(1, Math.round((8 + power * 5) / Math.max(1, weight) / (area ? 2 : 1))), dur: model === 'wounds-v2' ? power : 3 });

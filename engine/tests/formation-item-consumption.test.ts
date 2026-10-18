@@ -113,9 +113,9 @@ describe('编队治疗按实际伤量使用，护盾按本次总件数计算', (
     const combined = carry(unit('combined'), 'buff治疗+屏障'); fight('small', [combined]); applyCombatDamage(combined, 1, 1);
     expect(itemUseAbility(combined, listed(combined), combined).ability.cost?.amount).toBe(100);
   });
-  it('道具说明标出治疗减量和护盾总容量，充能道具不显示一次性件数规则', () => {
-    expect(itemAbilitySummary(listed(carry(unit('healer'), 'buff治疗')))).toContain('按实际伤量使用所需件数');
-    expect(itemAbilitySummary(listed(carry(unit('shield'), 'buff屏障')))).toContain('护盾容量按本次件数累加，全队共用');
+  it('道具说明只写用法与效果，不解释编队件数规则', () => {
+    expect(itemAbilitySummary(listed(carry(unit('healer'), 'buff治疗')))).not.toContain('件数');
+    expect(itemAbilitySummary(listed(carry(unit('shield'), 'buff屏障')))).toMatch(/^自身或相邻友军，可用加速动作，屏障\d+点，\d+轮$/);
     const charged = compileItem({ kind: 'item', form: 'charged', power: 3, active: 'generic:buff:barrier' }, { id: 'wand', seed: 'wand' });
     if (charged.kind !== 'item') throw Error('fixture');
     expect(itemAbilitySummary(charged.value.ability!)).not.toContain('按本次件数累加');

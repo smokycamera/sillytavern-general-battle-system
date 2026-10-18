@@ -168,7 +168,7 @@ describe('持续区域的有符号技能修正', () => {
     const a = unit('a'), e = unit('e', 'enemy'), ability = spell('fire', { damage: 10, penetration: 5, duration: 5 });
     const op = ability.effects[0] as Extract<EffectOp, { op: 'zone' }>;
     const description = zoneEffectDescription(op);
-    expect(description).toContain('基础伤害20'); expect(description).toContain('热能穿透7'); expect(description).toContain('持续4轮');
+    expect(description).toContain('每轮伤害20'); expect(description).toContain('热能穿透7'); expect(description).toContain('持续4轮');
     const context = { units: [a, e], mode: 'small' as const, fieldTags: [] };
     expect(skillEffectLines(context, a, e, ability)).toEqual([description]);
     a.abilities = [ability]; placeZone(context, a, e, op, 1, ability.id);

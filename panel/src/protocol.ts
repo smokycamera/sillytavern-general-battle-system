@@ -460,7 +460,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
   const integer = (key: string, min: number, max: number) => attrs[key] === undefined || (/^\d+$/.test(attrs[key]!) && Number.isSafeInteger(Number(attrs[key])) && Number(attrs[key]) >= min && Number(attrs[key]) <= max);
   if (!integer('count', 1, MAX_SPAWN_COUNT)) throw new Error(`count是单位卡数量，须为1–${MAX_SPAWN_COUNT}；人数写hpMax。${GROUPING_HINT}`);
   const lifeInputMax = kind === 'unit_update' || kind === 'spawn' && attrs.scale === 'hero' ? Number.MAX_SAFE_INTEGER : 1e9;
-  if (!integer('hp', 0, lifeInputMax) || !integer('hpMax', 1, lifeInputMax) || (attrs.level !== undefined && !/^[lL]?(?:10|[1-9])(?:[+-].*)?$/.test(attrs.level)) || !integer('qty', 1, 9999)) throw new Error(`${kind} 数值必须是范围内的完整整数`);
+  if (!integer('hp', 0, lifeInputMax) || !integer('hpMax', 1, lifeInputMax) || (attrs.level !== undefined && !/^[lL]?(?:10|[1-9])(?:[+-].*)?$/.test(attrs.level)) || !integer('qty', 1, Number.MAX_SAFE_INTEGER)) throw new Error(`${kind} 数值必须是范围内的完整整数`);
   if (kind === 'unit_update') {
     if (!attrs.id?.trim() || !['hp', 'hpMax', 'morale', 'state', 'clear'].some(key => attrs[key]?.trim())) throw new Error('unit_update 需要 id 与明确的生命/人数、士气、状态或清除效果');
     if (!integer('morale', 0, 1e9)) throw new Error('unit_update 士气必须是非负整数');

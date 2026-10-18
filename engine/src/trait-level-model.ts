@@ -6,7 +6,7 @@ export const PHASE2_TRAIT_LEVEL_MODEL = 'traits-levels-v2' as const;
 export const phase2Traits = (unit: { rulesVersion?: string; traitLevelModel?: unknown } | undefined): boolean => unit?.rulesVersion === 'v2' && unit.traitLevelModel === PHASE2_TRAIT_LEVEL_MODEL;
 export const traitLevelsV16 = (unit: { rulesVersion?: string; traitLevelModel?: unknown } | undefined): boolean => unit?.rulesVersion === 'v2' && (unit.traitLevelModel === TRAIT_LEVEL_MODEL || phase2Traits(unit));
 export function gradedTraitEnabled(unit: { rulesVersion?: string; itemModel?: unknown; traitLevelModel?: unknown }, id: string): boolean {
-  return unit.rulesVersion === 'v2' && (TERRAIN_GRADED_TRAITS.includes(id) ? unit.itemModel === 'items-v1' : P1_GRADED_TRAITS.includes(id) && traitLevelsV16(unit) || P2_GRADED_TRAITS.includes(id) && phase2Traits(unit));
+  return unit.rulesVersion === 'v2' && (TERRAIN_GRADED_TRAITS.includes(id) ? (unit.itemModel === 'items-v1' || unit.itemModel === 'items-v2') : P1_GRADED_TRAITS.includes(id) && traitLevelsV16(unit) || P2_GRADED_TRAITS.includes(id) && phase2Traits(unit));
 }
 export function validateTraitLevelModel(value: unknown): void {
   if (value !== undefined && value !== TRAIT_LEVEL_MODEL && value !== PHASE2_TRAIT_LEVEL_MODEL) throw new Error('特质分级规则版本损坏');

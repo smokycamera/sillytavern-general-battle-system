@@ -247,7 +247,7 @@ export function parseSpawnItem(entry: string, notes?: string[]): SpawnItem {
   let text = entry.trim(), qty = 1;
   const count = text.match(ITEM_COUNT);
   if (count) { qty = Number(count[1]); text = text.slice(0, count.index).trim(); }
-  if (!Number.isSafeInteger(qty) || qty < 1 || qty > 9999) throw new Error('件数须为1–9999');
+  if (!Number.isSafeInteger(qty) || qty < 1) throw new Error('件数须为正整数');
   const at = text.search(/[:：]/);
   const name = at > 0 ? text.slice(0, at).trim() : '', specText = (at >= 0 ? text.slice(at + 1) : text).trim();
   if (!specText && !name) throw new Error('缺少道具名称');

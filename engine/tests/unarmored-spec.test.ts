@@ -50,10 +50,10 @@ describe('unarmored equipment grades and signed armor enhancements',()=>{
   const plain=armorTransmission(d,'kinetic',2.5);expect(plain).toBeCloseTo(.775);
   d.armor!.recipe!.bonuses!.power=10;
   expect(armorTransmission(d,'kinetic',2.5)).toBeCloseTo(plain**1.5);
-  expect(armorEffectLabel(d)).toContain('吸能强度×1.5');
+  expect(armorEffectLabel(d)).toContain('强度×1.5');
   d.armor!.recipe!.bonuses!.power=-10;
   expect(armorTransmission(d,'kinetic',2.5)).toBeCloseTo(Math.sqrt(plain));
-  expect(armorEffectLabel(d)).toContain('吸能强度×0.5');
+  expect(armorEffectLabel(d)).toContain('强度×0.5');
   expect(armorTransmission(d,'kinetic',3)).toBe(1);
   d.armor!.recipe!.bonuses={protection:10,power:10};
   d.armor!.protectionOverride=true;d.armor!.protection={kinetic:4,thermal:0,arcane:0};

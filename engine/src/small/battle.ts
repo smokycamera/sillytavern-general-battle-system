@@ -239,7 +239,7 @@ export class SmallBattle {
     if (!this.hasteSelected.has(actorId) || !this.hasteAvailable(actorId)) return;
     this.hasteMovement.set(actorId, this.movementBudget(actorId));
     this.hasteSpent.set(actorId, this.round); this.hasteSelected.delete(actorId);
-    this.recordEvent({ round: this.round, kind: 'move', participants: [actorId], text: this.byId(actorId).name + ' 使用加速动作，获得一次额外机动' });
+    this.recordEvent({ round: this.round, kind: 'move', participants: [actorId], text: this.byId(actorId).name + ' 使用加速动作' });
   }
   reloadReason(actorId: string, sidearm = false): string | undefined {
     const actor = this.byId(actorId), weapon = sidearm ? actor.sidearm : actor.weapon;
@@ -360,7 +360,7 @@ export class SmallBattle {
       this.combatants.forEach((c, i) => { c.pos = prepared[i]!.pos; c.elevation = prepared[i]!.elevation; if (prepared[i]!.airborne !== undefined) c.airborne = prepared[i]!.airborne; });
     }
     this.started = true;
-    if (isArmsV2(this.rules.armsModel)) for (const u of this.combatants) if (u.shield && !shieldUsable(u) && u.shieldDurability?.remaining !== 0) this.recordEvent({round:1,kind:'condition',participants:[u.id],text:u.name+'的'+(u.shield.name??'盾牌')+'挂背：双手武器只能配小盾或能量盾'});
+    if (isArmsV2(this.rules.armsModel)) for (const u of this.combatants) if (u.shield && !shieldUsable(u) && u.shieldDurability?.remaining !== 0) this.recordEvent({round:1,kind:'condition',participants:[u.id],text:u.name+'的'+(u.shield.name??'盾牌')+'挂在背上'});
     this.round = 1;
     for (const unit of this.combatants) {
       const restored = recoverEntryMorale(unit);
@@ -764,8 +764,7 @@ export class SmallBattle {
   }
   braceDescription(actorId: string): string {
     const unit = this.byId(actorId);
-    return '面向最近可见威胁，正面防御提高2；移动或下次行动结束姿态。'
-      + (unit.combatModel === MEMBER_HEALTH_MODEL && unit.shield ? '地面前排平时即遮挡直射；大体型可越过更小友军，弓弩和法杖可越过友军，仍受敌军遮挡；持盾固守额外保护同格队友，独立魔法技能、空中射击、曲射火炮等间接火力及侧射可绕过盾卫的额外保护。' : '持盾/长柄专长按装备前提生效。');
+    return '正面防御+2，移动或下次行动时解除' + (unit.combatModel === MEMBER_HEALTH_MODEL && unit.shield ? '；持盾时掩护同格队友' : '') + '。';
   }
   brace(actorId: string): void {
     const reason = this.braceReason(actorId); if (reason) throw new Error(reason);
@@ -774,7 +773,7 @@ export class SmallBattle {
       .sort((a, b) => this.dist(actor, a) - this.dist(actor, b) || a.id.localeCompare(b.id))[0];
     actor.tacticalPose = bracePose(actor, threat, 'small', this.battlefield!.width);
     this.spendAction(actorId); this.overwatch.delete(actorId);
-    this.recordEvent({ round: this.round, kind: 'condition', participants: [actor.id, ...(threat ? [threat.id] : [])], text: `${actor.name} 固守${threat ? '，面向' + threat.name : ''}：${this.braceDescription(actorId)}` });
+    this.recordEvent({ round: this.round, kind: 'condition', participants: [actor.id, ...(threat ? [threat.id] : [])], text: `${actor.name} 固守${threat ? '，面向' + threat.name : ''}` });
   }
   setOverwatch(actorId: string): void {
     const actor = this.byId(actorId);
@@ -798,7 +797,7 @@ export class SmallBattle {
     addTacticalEffort(actor, 1);
     revealUnit(this.observationContext(), actor); revealUnit(this.observationContext(), target);
     this.spendAction(actorId); this.overwatch.delete(targetId);
-    this.recordEvent({ round: this.round, kind: 'condition', participants: [actor.id, target.id], text: `${actor.name} 压制 ${target.name}：未结算生命伤害，目标反应停用、命中-2` });
+    this.recordEvent({ round: this.round, kind: 'condition', participants: [actor.id, target.id], text: `${actor.name} 压制 ${target.name}，未造成伤亡` });
   }
   suppressReason(actorId: string, targetId?: string): string | undefined {
     const actor = this.byId(actorId), target = this.combatants.find((u) => u.id === targetId);
@@ -892,7 +891,7 @@ export class SmallBattle {
     if (weapon && (!ability || ability.damageBasis === 'weapon') && isRangedWeapon(weapon) && weaponReloadTurns(weapon)) this.reloadCd.set(weaponReloadKey(actor, weapon), weaponReloadTurns(weapon) + 1);
     const result = damageStructure(field, cell, preview.damage);
     revealUnit(this.observationContext(), actor); delete actor.tacticalPose;
-    this.recordEvent({ round: this.round, kind: ability ? 'ability' : 'attack', participants: [actorId], text: `${actor.name} ${ability ? '使用【' + ability.name + '】' : '破障'}→${cellLabel(field, cell)} ${label} L${target.level}：结构耐久 ${before}→${target.hp}${result.destroyed ? '，形成突破口' : ''}（不结算单位伤害）` });
+    this.recordEvent({ round: this.round, kind: ability ? 'ability' : 'attack', participants: [actorId], text: `${actor.name} ${ability ? '使用【' + ability.name + '】' : '破障'}→${cellLabel(field, cell)} ${label} L${target.level}：结构耐久 ${before}→${target.hp}${result.destroyed ? '，形成突破口' : ''}` });
     this.resolveGroundStates(actor);
     revealContacts(this.observationContext()); this.checkGridObjective(false);
   }
@@ -3196,7 +3195,7 @@ export class SmallBattle {
       this.recordEvent({
         round: this.round,
         kind: 'condition',
-        participants: [target.id], text: `${target.name} 被重创，陷入【重伤】（攻击/速度受损，3回合）`,
+        participants: [target.id], text: `${target.name} 被重创，陷入【重伤】`,
       });
     }
   }

@@ -35,7 +35,7 @@ export function validateZoneStrength(zone: { amount?: unknown; penetration?: unk
 
 /** 区域不经过普通伤害技能公式；从原配方升级一次，保留身份、冷却与已布置区域。 */
 export function upgradeZoneSkill(ability: Ability, model?: Combatant['damageModel'], formula?: SkillModel): boolean {
-  const version = model === 'wounds-v2' ? formula === 'skills-v2' ? 'skill-zone-v5' : formula ? 'skill-zone-v4' : 'skill-zone-v3' : 'skill-zone-v1';
+  const version = model === 'wounds-v2' ? formula === 'skills-v3' ? 'skill-zone-v6' : formula === 'skills-v2' ? 'skill-zone-v5' : formula ? 'skill-zone-v4' : 'skill-zone-v3' : 'skill-zone-v1';
   let zones = ability.effects.filter((e): e is ZoneEffect => e.op === 'zone');
   if (!zones.length) return false;
   if (!ability.recipe || zones.some(effect => !ability.recipe!.modifiers.includes('zone-' + effect.kind))
@@ -90,11 +90,11 @@ export function upgradeZoneSkill(ability: Ability, model?: Combatant['damageMode
 export function zoneEffectDescription(effect: ZoneEffect): string {
   const names: Record<string,string> = {heal:'治疗',trait:'授予特质',barrier:'屏障',dispel:'驱散/净化',resource:'精力变化',morale:'士气变化',push:'位移'};
   const additions = effect.effects?.map(e => e.op === 'condition' ? (standardConditionMap().get(e.conditionId)?.name ?? e.conditionId) : names[e.op]).join('、');
-  const area = `半径${effect.radius}格，持续${effect.dur}轮${additions ? '；接触时附加'+additions+'（状态需抵抗，持续伤害需先受损）' : ''}`;
-  if (effect.kind === 'smoke') return `烟幕：${area}，遮挡穿过区域的非贴身地面视线；强度和持续修正影响持续时间`;
+  const area = `半径${effect.radius}格，持续${effect.dur}轮${additions ? '，附加'+additions : ''}`;
+  if (effect.kind === 'smoke') return `烟幕：${area}，遮挡视线`;
   const amount = zoneAmount(effect);
-  if (effect.kind === 'healing') return `治疗区域：${area}，每个友方单位每轮最多恢复${amount}点生命，受可恢复量限制`;
-  const protection = effect.kind === 'poison' ? '受毒素抗性限制，封闭车体免疫' : `${effect.kind === 'fire' ? '热能' : '动能'}穿透${Number(zonePenetration(effect).toFixed(2))}，受对应防护限制`;
-  return `${effect.kind === 'fire' ? '火墙' : effect.kind === 'poison' ? '毒雾' : '陷阱'}：${area}，每名受影响成员基础伤害${amount}；${protection}；`
-    + (effect.kind === 'trap' ? '只由敌方触发，触发一次后消失' : '每个单位每轮最多触发一次，也会伤害友军');
+  if (effect.kind === 'healing') return `治疗区域：${area}，每轮恢复${amount}生命`;
+  const penetration = effect.kind === 'poison' ? '' : `（${effect.kind === 'fire' ? '热能' : '动能'}穿透${Number(zonePenetration(effect).toFixed(2))}）`;
+  return `${effect.kind === 'fire' ? '火墙' : effect.kind === 'poison' ? '毒雾' : '陷阱'}：${area}，每轮伤害${amount}${penetration}`
+    + (effect.kind === 'trap' ? '，敌方触发一次后消失' : '，也会伤害友军');
 }

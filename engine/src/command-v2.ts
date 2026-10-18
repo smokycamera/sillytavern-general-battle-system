@@ -68,7 +68,7 @@ export const commandLabel = (profile: CommanderProfile): string => COMMAND_ABILI
 /** §4 开战记录：每方一行。 */
 export const commandOpening = (profiles: CommanderProfiles): string[] => (['ally', 'enemy'] as const).map(side => {
   const profile = profiles[side] ?? DEFAULT_COMMAND;
-  return `指挥：${side === 'ally' ? '我方' : '敌方'} ${commandLabel(profile)}——${COMMAND_STYLE_DESCRIPTIONS[profile.style]}`;
+  return `指挥：${side === 'ally' ? '我方' : '敌方'} ${commandLabel(profile)}`;
 });
 /** §3.1 队形决定小战 cohesion 默认值；玩家写了 preferences.cohesion 的以玩家为准。 */
 export const commandCohesion = (profile: CommanderProfile): number => profile.preferences?.cohesion ?? { loose: 2, tight: 3, layers: 2, core: 3, avoid: 1 }[COMMAND_STYLES[profile.style].formation];

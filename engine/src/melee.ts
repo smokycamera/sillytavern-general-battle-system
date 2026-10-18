@@ -6,18 +6,18 @@ export const MELEE_PROFILES: Record<string, {
   /** closePenalty applies to frozen pre-V12 battles; armsClosePenalty to V12 (arms-v1) battles. */
   closePenalty?: number; armsClosePenalty?: number; description: string;
 }> = {
-  greatsword: { reach: 1, accuracy: 0, parry: 1, penetration: 0, damageScale: 1, description: '双手破阵：触及1，格挡+1，拒止攻击命中−4' },
-  dagger: { reach: 1, accuracy: 1, penetration: -1, damageScale: 1, description: '两段快刺：触及1，命中+1，暴击19起，趁控制破绽暴击' },
-  'great-weapon': { reach: 1, accuracy: -1, penetration: 1, damageScale: 1, description: '双手重击：触及1，命中−1，穿透+1，无视实体盾' },
-  'heavy-polearm': { reach: 2, accuracy: 0, penetration: 1, damageScale: 1, description: '重型长柄：触及2，穿透+1，拒止与钩拽，没有贴身惩罚' },
+  greatsword: { reach: 1, accuracy: 0, parry: 1, penetration: 0, damageScale: 1, description: '双手破阵：格挡+1，拒止攻击命中−4' },
+  dagger: { reach: 1, accuracy: 1, penetration: -1, damageScale: 1, description: '两段快刺：命中+1，暴击19起' },
+  'great-weapon': { reach: 1, accuracy: -1, penetration: 1, damageScale: 1, description: '双手重击：命中−1，穿透+1，无视实体盾' },
+  'heavy-polearm': { reach: 2, accuracy: 0, penetration: 1, damageScale: 1, description: '重型长柄：触及2，穿透+1，拒止与钩拽' },
   sword: { reach: 1, accuracy: 1, parry: 1, penetration: 0, damageScale: 1,
-    description: '剑术攻守：触及1格／1阵距，命中+1、对近战武器防御+1；缴械或失能时不能格挡' },
+    description: '剑术攻守：命中+1，对近战防御+1' },
   axe: { reach: 1, accuracy: -1, penetration: 1, damageScale: 1,
-    description: '重斧劈砍：触及1格／1阵距，保留高伤害，穿透+1、命中−1' },
+    description: '重斧劈砍：穿透+1，命中−1' },
   spear: { reach: 2, accuracy: 0, penetration: 0, damageScale: 1, closePenalty: -2, armsClosePenalty: -1,
-    description: '长柄支援：触及2格／2阵距；距离0–1命中−1，可越过友军，不能越过墙体或存活敌方前线掩护' },
+    description: '长柄支援：触及2格，可越过友军，贴身命中−1' },
   blunt: { reach: 1, accuracy: -1, penetration: 2, damageScale: 0.8,
-    description: '钝器破甲：触及1格／1阵距，穿透+2、命中−1；原始伤害上限×0.8，专攻重甲' },
+    description: '钝器破甲：穿透+2，命中−1，伤害×0.8' },
 };
 
 export function meleeProfile(weapon?: Weapon) {

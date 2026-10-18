@@ -195,7 +195,7 @@ export function decideMorale(context: ObservationContext, unit: Combatant, round
     state.lastRallyRound = round; state.attempts = Math.min(MAX_RALLY_ATTEMPTS, state.attempts + 1);
     const success = risk.immune || risk.rallyChance > 0 && rng.d(20) + risk.rallyBonus >= risk.rallyDC;
     if (success) { state.ralliedRound = round; return { kind: 'rallied', state, effective: risk.effective, text: `${unit.name} 重整成功，准备重返战线` }; }
-    return { kind: state.attempts >= MAX_RALLY_ATTEMPTS ? 'fled' : 'failed', state, text: `${unit.name} 重整失败${state.attempts >= MAX_RALLY_ATTEMPTS ? '，机会耗尽，撤离战场' : `，仍在溃退，剩余${MAX_RALLY_ATTEMPTS - state.attempts}次机会`}` };
+    return { kind: state.attempts >= MAX_RALLY_ATTEMPTS ? 'fled' : 'failed', state, text: `${unit.name} 重整失败${state.attempts >= MAX_RALLY_ATTEMPTS ? '，撤离战场' : '，仍在溃退'}` };
   }
   if (state.ralliedRound === round || risk.immune || activeConditionIds(unit).some((id) => context.conditions?.get(id)?.skipTurn)) return { kind: 'none' };
   let cause: 'terror' | 'morale' | undefined = risk.effective <= breakAt ? 'morale' : undefined;
