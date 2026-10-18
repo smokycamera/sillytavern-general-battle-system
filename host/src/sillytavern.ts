@@ -5,6 +5,7 @@ import { namespaceOf, type MessageEnvelope } from '../../panel/src/narrative-sta
 import { findMessageBySourceId, matchesMessageFingerprint, SourceMessageChangedError, sourceId } from './message-identity.js';
 import { serialized } from './json.js';
 import type { FormattingContext } from './battle-message-format.js';
+import { readChatHeader } from './chat-header.js';
 
 export interface MessageFormatter {
   stage?: { AFTER_REGEX?: string; AFTER_MARKDOWN?: string };
@@ -149,13 +150,18 @@ export class NativeHost implements MetadataPort {
     await context.saveChat();
   }
   async readPersisted(scope: ChatScope): Promise<Record<string, unknown>> {
-    const data = await this.readChat(scope);
-    if (!data.length) return {};
-    const header = data[0] as { chat_metadata?: unknown };
+    const header = await readChatHeader(await this.requestChat(scope)) as { chat_metadata?: unknown } | undefined;
+    if (header === undefined) return {};
     if (!header || typeof header !== 'object' || !header.chat_metadata || typeof header.chat_metadata !== 'object' || Array.isArray(header.chat_metadata)) throw Error('聊天附加记录头缺失，不能确认保存');
     return header.chat_metadata as Record<string, unknown>;
   }
   async readChat(scope: ChatScope): Promise<HostMessage[]> {
+    const response = await this.requestChat(scope);
+    const data: unknown = await response.json();
+    if (!Array.isArray(data)) throw Error('酒馆返回了无法识别的聊天数据');
+    return data as HostMessage[];
+  }
+  private async requestChat(scope: ChatScope): Promise<Response> {
     const headers = this.context().getRequestHeaders?.();
     if (!headers) throw Error('酒馆没有提供保存读回接口所需的请求头');
     const request = this.request;
@@ -164,9 +170,7 @@ export class NativeHost implements MetadataPort {
       body: JSON.stringify({ ch_name: scope.characterName, file_name: scope.chatId, avatar_url: scope.avatar }),
     });
     if (!response.ok) throw Error(`读取聊天持久状态失败（${response.status}）`);
-    const data: unknown = await response.json();
-    if (!Array.isArray(data)) throw Error('酒馆返回了无法识别的聊天数据');
-    return data as HostMessage[];
+    return response;
   }
   subscribe(kind: string, callback: (...args: unknown[]) => void): { available: boolean; stop(): void } {
     const context = this.context(); const source = context.eventSource;
