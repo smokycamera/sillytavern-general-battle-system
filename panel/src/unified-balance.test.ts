@@ -11,18 +11,21 @@ import { applyUnitSet } from './unit-set.js';
 import { prepareInventoryState } from './inventory-state.js';
 import { zoneAmount } from '../../engine/src/zone-skills.js';
 import { diceAvg } from '../../engine/src/data/weapons.js';
+import { PHASE3_SKILL_MODEL, type SkillModel } from '../../engine/src/skill-model.js';
 const registry=traitRegistry();
 function unit(old=false):Combatant {
  const u=generateUnit({name:'known unit',side:'ally',scale:'hero',rulesVersion:'v2',damageModel:old?'wounds-v1':'wounds-v2',level:10,body:'giant',traits:[],weaponClass:'sword',weaponLevel:10}, {seed:'v6-save',registry,noVariance:true}).unit;
  prepareCombatModel(u,old?V5_D20:V6_D20);return u;
 }
-function skill(name:string,power=5,bonuses?:Enhancements) {
- const u=unit();u.abilities=[compileSkill({id:skillDefinitionId(name)!,bonuses},power,u.id)];u.preparedAbilityIds=[u.abilities[0]!.id];upgradeCombatSkills(u);return u;
+function skill(name:string,power=5,bonuses?:Enhancements,model?:SkillModel) {
+ const u=unit();if(model)u.skillModel=model;u.abilities=[compileSkill({id:skillDefinitionId(name)!,bonuses},power,u.id,model)];u.preparedAbilityIds=[u.abilities[0]!.id];upgradeCombatSkills(u);return u;
 }
 describe('V6 archive, skill families and signed modifier round trips',()=>{
  it('every blueprint/modifier at low/high tiers and all signed skill keys survives saving and repeated upgrading',()=>{
   const definitions=new Set(Object.keys(ABILITY_BLUEPRINTS));
   for(const category of SKILL_CATEGORIES) for(const modifier of SKILL_MODIFIERS) {
+   // V17 的新控制只按 skills-v2 起的公式编译，V6 存档里不会有。
+   if(['taunt','blind','confuse','charm'].includes(modifier.id))continue;
    const id=skillMechanismId({category:category.id,area:category.id.endsWith('area'),modifiers:[modifier.id]});
    if(skillMechanismFromId(id))definitions.add(id);
   }
@@ -60,10 +63,11 @@ describe('V6 archive, skill families and signed modifier round trips',()=>{
    const bonuses={power:points,healing:points};
    const dose=compileItem({kind:'item',form:'single',power:10,active:'generic:buff:heal',bonuses},{id:'dose',seed:'dose'});
    if(dose.kind!=='item')throw Error();
-   expect(dose.value.ability!.effects).toEqual(skill('buff治疗',10,bonuses).abilities[0]!.effects);
+   // 道具在创建时按最新技能规则编译并冻结，对照同一规则下的技能。
+   expect(dose.value.ability!.effects).toEqual(skill('buff治疗',10,bonuses,PHASE3_SKILL_MODEL).abilities[0]!.effects);
    const bomb=compileItem({kind:'item',form:'single',power:10,active:'generic:physical-area:projectile',bonuses:{power:points}},{id:'bomb',seed:'bomb'});
    if(bomb.kind!=='item')throw Error();
-   const thrown=skill('物理范围投射',10,{power:points}).abilities[0]!, carried=carriedItemAbility({id:'bomb',name:'bomb',quantity:1,revision:1,mechanics:bomb});
+   const thrown=skill('物理范围投射',10,{power:points},PHASE3_SKILL_MODEL).abilities[0]!, carried=carriedItemAbility({id:'bomb',name:'bomb',quantity:1,revision:1,mechanics:bomb});
    expect(carried.damageScale).toBe(thrown.damageScale); expect(carried.effects).toEqual(thrown.effects);
   }
   const e=skill('治疗区域+治疗',10).abilities[0]!.effects.find(e=>e.op==='zone')!;
