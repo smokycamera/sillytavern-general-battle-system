@@ -282,7 +282,7 @@ git commit -m "feat(traits): 动能/热能/奥术抵抗 L1–L10 单通道防护
 
 - 状态：已完成并验证（本次抵抗功能及两项测试修复）；全量仍有 6 个已复现的基线失败文件，没有新增失败。
 - 改动文件：`engine/src/{trait-parameters.ts,data/traits.ts,gen/generator.ts,power-anchors.ts,trait-levels.ts}`、`engine/tests/{resist-traits,traits-v13}.test.ts`、`panel/src/narrative-tools.integration.test.ts`、两份世界书源文件、`docs/worldbook-xml-markdown.md`、本文。
-- 世界书：`npm run build:worldbook` 通过；JSON 仅替换 1 行（1 insertion / 1 deletion），临时脚本已删除，`dist/` 无改动。
+- 世界书：按用户后续要求删除内置世界书新增的抵抗使用说明，仅在 traits 防护列表增加三个名称；`npm run build:worldbook` 通过并同步可读版，JSON 相对基线仅替换 1 行，临时脚本已删除，`dist/` 由 CI 生成。
 - tsc：修复后 `npx tsc --noEmit` 通过，无错误。
 - 第 5 节第 2 步：6 文件通过，`engine/tests/gen.test.ts` 加载失败；已执行的 52 个用例全部通过，其中新增抵抗测试 12 个全部通过，新增测试期望值无需改动。
 - 全量测试：首轮 8 文件失败；获后续修复授权后追加一次 `npx vitest run`，最终 6 文件失败、225 文件通过；7 用例失败、2158 用例通过，另有 4 个套件加载失败，均与基线一致。
@@ -292,5 +292,5 @@ git commit -m "feat(traits): 动能/热能/奥术抵抗 L1–L10 单通道防护
 - 后续修复②：`panel/src/narrative-tools.integration.test.ts:41` 在草稿变为 `pending` 后等待 `aria-busy` 清除再审批，避免保存尚未结束时点击被忙碌门控忽略；保留入库长度必须为 2 的断言，未改业务代码。
 - 修复验证：`npx vitest run engine/tests/traits-v13.test.ts panel/src/narrative-tools.integration.test.ts` 两文件及 25 个用例全部通过；两文件在修复后的全量测试中也全部通过。
 - 基线复现：在上述基线目录执行 `npx vitest run engine/tests/gen.test.ts engine/tests/layered-review.test.ts engine/tests/systems.test.ts engine/tests/vehicle-armor-v2.test.ts engine/tests/traits-v13.test.ts engine/tests/unified-replay.test.ts panel/src/life-limit-state.test.ts panel/src/narrative-tools.integration.test.ts`。
-- 与本计划不符之处：经用户后续授权，额外同步一处旧目录期望值、修复一处集成测试同步时机，并进行修复后的全量复测；规格之外的 6 个基线失败文件未修改。
+- 与本计划不符之处：经用户后续授权，同步旧目录期望值、修复集成测试同步时机并追加全量复测；按用户要求删除内置世界书附加使用说明；规格之外的 6 个基线失败文件未修改。
 - 提交与发布：`feat/resist-traits` 本提交包含实现、测试与本文；按用户后续授权更新远端 `test`，`dist/` 由 test-channel CI 生成。
