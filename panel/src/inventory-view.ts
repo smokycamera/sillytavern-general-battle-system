@@ -314,13 +314,15 @@ export class InventoryPanel {
       const single = m?.kind === 'item' && m.value.recipe.form === 'single';
       const slots: EquipmentSlot[] = m?.kind === 'weapon' ? ['primary', 'sidearm'] : m?.kind === 'item' ? single ? [] : ['gear'] : m ? [m.kind] : [];
       const gearOptions = slots.map(slot => ({ slot, reason: !actor ? '请先选择使用者' : equipmentReason(slot === 'gear' && m?.kind === 'item' ? { ...actor, gear: [...(actor.gear ?? []), gearItem(item.id, item.name, m.value)] } : { ...actor, [slot === 'primary' ? 'weapon' : slot]: m && m.kind !== 'item' ? m.value : undefined }) }));
-      const complement = m?.kind === 'weapon' && actor?.weapon && !actor.sidearm && !!m.value.tags?.includes('ranged') !== !!actor.weapon.tags?.includes('ranged');
-      const recommended = (complement && gearOptions.find(o => o.slot === 'sidearm' && !o.reason)) || gearOptions.find(o => !o.reason) || gearOptions[0];
+      // 任何武器都能作主武器或副武器：已有主武器、副武器空着时推荐补副武器，否则推荐主武器；两个槽的按钮都直接显示。
+      const weaponSlot = m?.kind === 'weapon' && actor ? actor.weapon && !actor.sidearm ? 'sidearm' : 'primary' : undefined;
+      const recommended = (weaponSlot && gearOptions.find(o => o.slot === weaponSlot && !o.reason)) || gearOptions.find(o => !o.reason) || gearOptions[0];
+      const otherWeaponSlots = m?.kind === 'weapon' && !equipped ? gearOptions.filter(o => o.slot !== recommended?.slot) : [];
       const details: string[] = [];
       if (m && !single) details.push(`<button data-action="inventory-edit" ${itemData} ${disabled}>编辑装备</button>`);
       if (!m) details.push(`<button data-action="inventory-define" ${itemData} ${disabled}>设置物品效果</button>`);
       if (!equipped) {
-        details.push(...gearOptions.filter(o => o.slot !== recommended?.slot).map(o => `<button data-action="inventory-equip" ${itemData} data-slot="${o.slot}" title="${esc(o.reason ?? '')}" ${locked || !actor || o.reason ? 'disabled' : ''}>装备为${slotNames[o.slot]}</button>`));
+        details.push(...gearOptions.filter(o => o.slot !== recommended?.slot && !otherWeaponSlots.includes(o)).map(o => `<button data-action="inventory-equip" ${itemData} data-slot="${o.slot}" title="${esc(o.reason ?? '')}" ${locked || !actor || o.reason ? 'disabled' : ''}>装备为${slotNames[o.slot]}</button>`));
         if (item.assignedTo && !(m?.kind==='weapon' && m.value.recipe?.mechanism==='natural')) details.push(`<button data-action="inventory-unassign" ${itemData} ${disabled}>放回公共库存</button>`);
         if (item.qty > 1) details.push(`<button data-action="inventory-discard" ${itemData} ${disabled}>移除1件</button>`);
         details.push(`<button class="danger" data-action="inventory-delete" ${itemData} ${disabled}>删除物品</button>`);
@@ -340,7 +342,7 @@ export class InventoryPanel {
         <div class="item-location">${equipped ? (equipped.slot === 'gear' ? '已装备' : slotNames[equipped.slot] + ' · 已装备') : item.assignedTo ? '随身物品' : '公共库存'}${m?.kind === 'item' ? ' · ' + ITEM_FORM_NAMES[m.value.recipe.form] + '道具 · 等级' + m.value.recipe.power : m ? ' · 等级' + (m.value.recipe?.power ?? 1) : ''}</div>
         ${shadowed.length ? `<p class="sub" data-role="gear-overshadowed">被更高的一件覆盖：${esc(shadowed.join('、'))}</p>` : ''}
         ${stats.length ? `<dl class="item-stats">${stats.map(([key, value]) => `<div><dt>${key}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl><details class="item-rules" data-detail-id="rules-${esc(item.id)}"><summary>查看完整属性与规则</summary><p>${esc(itemDescription(item))}</p></details>` : `<p>${esc(itemDescription(item))}</p>`}
-        <div class="item-actions" ${this.bulkDelete ? 'hidden' : ''}>${equipped ? `<button class="primary" data-action="inventory-unequip" ${itemData} ${disabled}>卸下</button>` : recommended ? `<button class="primary" data-action="inventory-equip" ${itemData} data-slot="${recommended.slot}" ${locked || !actor || recommended.reason ? 'disabled' : ''}>装备为${slotNames[recommended.slot]}</button>${recommended.reason ? '<span class="grid-reason">' + esc(recommended.reason) + '</span>' : ''}` : ''}
+        <div class="item-actions" ${this.bulkDelete ? 'hidden' : ''}>${equipped ? `<button class="primary" data-action="inventory-unequip" ${itemData} ${disabled}>卸下</button>` : recommended ? `<button class="primary" data-action="inventory-equip" ${itemData} data-slot="${recommended.slot}" ${locked || !actor || recommended.reason ? 'disabled' : ''}>装备为${slotNames[recommended.slot]}</button>${recommended.reason ? '<span class="grid-reason">' + esc(recommended.reason) + '</span>' : ''}${otherWeaponSlots.map(o => `<button data-action="inventory-equip" ${itemData} data-slot="${o.slot}" title="${esc(o.reason ?? '')}" ${locked || !actor || o.reason ? 'disabled' : ''}>装备为${slotNames[o.slot]}</button>`).join('')}` : ''}
         ${single ? `<button class="primary" data-action="inventory-use" ${itemData} title="${battleOnly ? '请在战场的行动列表中使用' : ''}" ${locked || !actor || battleOnly ? 'disabled' : ''}>${battleOnly ? '战斗中使用' : '使用1件'}</button>` : ''}
         ${!equipped && !item.assignedTo && actor ? `<button data-action="inventory-assign" ${itemData} ${disabled}>交给${esc(current!.name)}</button>` : ''}</div>
         ${!this.bulkDelete && details.length ? `<details class="inventory-more" data-detail-id="more-${esc(item.id)}"><summary>其他操作</summary><div class="row">${details.join('')}</div></details>` : ''}
