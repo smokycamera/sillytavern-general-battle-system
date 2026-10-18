@@ -31,7 +31,7 @@ export function worldbookDraftPatch(draft: WorldbookDraft, content: string): Par
 export function renderWorldbookSettings(view: WorldbookEditorState, texts: Map<string, string>, drafts: Map<string, WorldbookDraft>, deleting?: string): string {
   return `<section class="worldbook-settings"><div class="worldbook-heading"><h2>内置世界书</h2><button data-action="worldbook-create">＋新建条目</button></div>
     <label><input type="checkbox" data-role="worldbook-enabled" ${view.enabled ? 'checked' : ''}> 启用内置世界书</label>
-    <p>设置全局保存。启用后请停用外挂的同一套世界书。</p>
+    <p>设置全局保存。四条内置正文随版本更新自动替换，自定义条目保留。启用后请停用外挂的同一套世界书。</p>
     ${view.items.map(item => {
       const custom = item.custom, draft = custom ? drafts.get(item.id) ?? draftFrom(custom) : undefined;
       const field = (name: string) => `id="wb-${esc(item.id)}-${name}" data-role="worldbook-field" data-field="${name}" data-entry="${esc(item.id)}"`;
