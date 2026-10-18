@@ -141,6 +141,7 @@ export function traitLadderSummary(id: string, level: number): string {
     else if (id === 'berserk') parts.push(`固定防御−1；${L===1?'近战武器攻击+1':L===2?'所有武器攻击+1':L===3?'所有攻击+1':L===4?'武器攻击+2、独立魔法+1':`所有攻击+${traitParameter('berserkAttack', L)}`}，合法攻击伤害×${traitParameter('berserkDamage', L)}，不影响治疗、毒DOT或士气`);
     else if (id === 'stalk') parts.push(`潜伏规格L${L}参与确定性侦察对抗；仍需合法隐蔽条件，攻击/施法/近敌接触照常暴露，不穿墙或空间移动`);
     else if (id === 'recon') parts.push(`侦察规格L${L}参与确定性反隐，真实可见目标曲射校射攻击+${traitParameter('reconSpotting', L)}，多来源取强；不提供额外夜视或穿墙，致盲时不反隐/校射`);
+    else if (id === 'kinetic-resist' || id === 'thermal-resist' || id === 'arcane-resist') parts.push(`${id === 'kinetic-resist' ? '动能' : id === 'thermal-resist' ? '热能' : '奥术'}防护+${2 * traitParameter('woundRatio', L)}，与护甲同通道相加`);
     else return '';
   }
   return 'L' + L + '：' + parts.join('，');

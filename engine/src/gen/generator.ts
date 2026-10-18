@@ -281,7 +281,7 @@ export function generateUnit(input: GenerateInput, opts: GenOptions = {}): GenRe
 /** 可选特质清单（与内置世界书同一分组，面板选择器用）；停用项与身体/装备自动项不在其中。 */
 export const TRAIT_GROUPS: Readonly<Record<string, readonly string[]>> = {
   攻击: ['ap-weapon', 'ap-master', 'anti-infantry', 'anti-large', 'monster-hunter', 'anti-air', 'berserk', 'poison-strike', 'sneak-attack', 'lifesteal', 'melee-master', 'sharpshooter', 'versatile'],
-  防护: ['guardian', 'guardian-greater', 'regen', 'tenacity', 'agile', 'natural-armor', 'indomitable', 'fortification', 'shield-wall', 'pike-wall', 'loose-formation', 'inorganic'],
+  防护: ['guardian', 'guardian-greater', 'regen', 'tenacity', 'agile', 'natural-armor', 'kinetic-resist', 'thermal-resist', 'arcane-resist', 'indomitable', 'fortification', 'shield-wall', 'pike-wall', 'loose-formation', 'inorganic'],
   士气: ['fear', 'terror', 'steadfast', 'stubborn', 'commander'],
   机动: ['charge-strong', 'trample', 'skirmisher', 'mounted-archer', 'vanguard', 'stalk', 'recon', 'flying', 'mechanized', 'fatigue-trained'],
   地形与工程: ['forest-lore', 'mountain-born', 'plains-runner', 'urban-fighter', 'night-fighter', 'water-crossing', 'siege-assault', 'siege-breaker'],

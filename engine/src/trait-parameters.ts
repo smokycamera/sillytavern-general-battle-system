@@ -2,7 +2,7 @@
 export const DEFAULT_NEW_TRAIT_LEVEL = 1;
 export const TERRAIN_GRADED_TRAITS: readonly string[] = ['forest-lore', 'mountain-born', 'night-fighter', 'plains-runner', 'urban-fighter'];
 export const P1_GRADED_TRAITS: readonly string[] = ['guardian', 'lifesteal', 'sneak-attack', 'fatigue-trained', 'trample', 'shield-wall', 'ap-weapon', 'anti-infantry', 'anti-large', 'stubborn', 'commander'];
-export const P2_GRADED_TRAITS: readonly string[] = ['regen', 'medic', 'poison-strike', 'fear', 'fortification', 'pike-wall', 'loose-formation', 'skirmisher', 'tenacity', 'agile', 'siege-breaker', 'melee-master', 'sharpshooter', 'charge-strong', 'berserk', 'anti-air', 'stalk', 'recon'];
+export const P2_GRADED_TRAITS: readonly string[] = ['regen', 'medic', 'poison-strike', 'fear', 'fortification', 'pike-wall', 'loose-formation', 'skirmisher', 'tenacity', 'agile', 'siege-breaker', 'melee-master', 'sharpshooter', 'charge-strong', 'berserk', 'anti-air', 'stalk', 'recon', 'kinetic-resist', 'thermal-resist', 'arcane-resist'];
 export const reconDistance = (stalk: number, recon: number, mode: 'small' | 'mass'): number => Math.max(1, Math.min(mode === 'small' ? 7 : 3,
   mode === 'small' ? 2 + (recon > 0 ? 2 + (recon - 5) / 2 : 0) - (stalk - 5) / 2 : 1 + (recon > 0 ? 1 + (recon - 5) / 4 : 0) - (stalk - 5) / 4));
 export const TRAIT_LEVEL_ALIASES: Readonly<Record<string, { id: string; level: number }>> = {

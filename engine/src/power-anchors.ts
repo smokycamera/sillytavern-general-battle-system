@@ -1,5 +1,6 @@
 import { phase2Traits } from './trait-level-model.js';
 import { effectiveTraitLevel } from './trait-sources.js';
+import { traitParameter } from './trait-parameters.js';
 import { instanceMultiplier, instanceRating } from './instance-variance.js';
 import { isWoundModel, UNIFIED_WOUNDS, UNIFIED_SPLASH, powerIndex } from './balance.js';
 import { compileWeapon } from './gen/equipment.js';
@@ -94,7 +95,22 @@ export function anchoredWeapon(weapon:Weapon|undefined,ammo:'he'|'ap'='he',model
     penetration:Math.max(0,2*power+(actual==='crossbow'?1:actual==='shotgun'?0:(['cannon','indirect-cannon','autocannon','demolition'].includes(mechanism)?2:mechanism==='heavy-rifle'?2:['firearm','rifle','energy'].includes(mechanism)?1:0))+(melee?.penetration??0)+(artillery&&ammo==='ap'?(actual==='rocket'?3:2):0)+instanceRating(weapon.recipe?.bonuses,'penetration',weapon.customized?undefined:weapon.recipe?.variance,weapon.channel??'kinetic')),
     splashTargets:splash,splashFactor:mechanism==='demolition'?0.6:0.4};
 }
-export function anchoredProtection(unit:ShieldBearer & Pick<Combatant,'armor'|'body'|'shield'|'damageModel'|'armsModel'>&Partial<Pick<Combatant,'gear'|'itemModel'>>,channel:DamageChannel):number {
+const RESIST_TRAITS = { kinetic: 'kinetic-resist', thermal: 'thermal-resist', arcane: 'arcane-resist' } as const;
+type ResistSources = Partial<Pick<Combatant,'rulesVersion'|'traitLevelModel'|'traits'|'traitLevels'|'traitSources'|'gear'|'accessories'>>;
+/** 动能/热能/奥术抵抗：该通道防护再加 2×woundRatio[L]（L5 为 +2，相当同通道高一级护甲），不占修正的 ±2 上限。
+ * 抵抗只来自本体、bless/技能、佩戴品与旧饰品，身体和装备不会自动派生；先查原始来源，避免每次都归集全部特质。 */
+export function resistProtection(unit:ResistSources,channel:DamageChannel):number {
+  const id=RESIST_TRAITS[channel];
+  if(!phase2Traits(unit)||!(unit.traits?.includes(id)||unit.traitSources?.some(s=>s.traitIds.includes(id))
+    ||unit.gear?.some(item=>item.passive?.traits.some(grant=>grant.id===id))||Object.values(unit.accessories??{}).some(item=>item?.traitId===id)))return 0;
+  const level=effectiveTraitLevel(unit as Combatant,id);
+  return level?2*traitParameter('woundRatio',level):0;
+}
+/** 实际通道抗穿 = 护甲/身体/修正得到的防护 + 对应抵抗。 */
+export function anchoredProtection(unit:ShieldBearer & Pick<Combatant,'armor'|'body'|'shield'|'damageModel'|'armsModel'>&Partial<Pick<Combatant,'gear'|'itemModel'>>&ResistSources,channel:DamageChannel):number {
+  return equipmentProtection(unit,channel)+resistProtection(unit,channel);
+}
+function equipmentProtection(unit:ShieldBearer & Pick<Combatant,'armor'|'body'|'shield'|'damageModel'|'armsModel'>&Partial<Pick<Combatant,'gear'|'itemModel'>>,channel:DamageChannel):number {
   const armor=unit.armor,innate=BODY[unit.body??'human'].protection[channel];
   const armorBonus=armor?.recipe?.bonuses,shieldBonus=isWoundModel(unit.damageModel)||!shieldUsable(unit)?undefined:unit.shield?.recipe?.bonuses,gear=gearBonuses(unit);
   // 佩戴道具的防护（同方向取最高一件）与护甲、盾的防护修正相加，合计仍限 ±10 点。
@@ -125,7 +141,7 @@ export function armorPowerScale(unit:ShieldBearer & Pick<Combatant,'armor'|'shie
 /** 强度只改变部分穿透时的吸能；完全穿透/无法穿透不被另加减伤。 */
 export function armorTransmission(unit:ShieldBearer & Pick<Combatant,'armor'|'body'|'shield'|'damageModel'|'armsModel'>,channel:DamageChannel,penetration:number):number {
   const through=penetrationThrough(penetration,anchoredProtection(unit,channel));
-  const armorDominates=anchoredProtection({...unit,body:'human'},channel)>=BODY[unit.body??'human'].protection[channel];
+  const armorDominates=equipmentProtection({...unit,body:'human'},channel)>=BODY[unit.body??'human'].protection[channel];
   return isWoundModel(unit.damageModel)&&unit.armor&&armorDominates ? through**instanceMultiplier(unit.armor.recipe?.bonuses,'power',unit.armor.recipe?.variance) : through;
 }
 /** 盾牌有界覆盖按期望折算，不追加随机骰；范围/失能/充分穿透不会获得保护。 */
@@ -148,7 +164,7 @@ export function protectionPower(unit:ShieldBearer & Pick<Combatant,'armor'|'body
   const resistance=anchoredProtection(unit,channel),armor=unit.armor;
   if(resistance<=0)return 0;
   const innate=BODY[unit.body??'human'].protection[channel];
-  if(!armor?.tier||anchoredProtection({...unit,body:'human'},channel)<innate)return resistance/2;
+  if(!armor?.tier||equipmentProtection({...unit,body:'human'},channel)<innate)return resistance/2;
   const offset=armorTierOffset(armor.tier,unit.armsModel)-({kinetic:0,thermal:1,arcane:2}[channel]);
   return Math.max(0,(resistance-offset)/2);
 }
