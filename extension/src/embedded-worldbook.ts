@@ -1,4 +1,5 @@
 import worldbook from '../../assets/worldbook/!通用战斗系统约束.json';
+import { version } from '../../package.json';
 import type { CustomWorldbookEntry, WorldbookEditorState, WorldbookEditorUpdate } from '../../panel/src/panel-runtime.js';
 
 interface SourceEntry {
@@ -14,6 +15,7 @@ interface SourceEntry {
 
 export interface EmbeddedWorldbookSettings {
   enabled?: boolean;
+  builtinRevision?: string;
   entries?: Record<string, string>;
   customEntries?: CustomWorldbookEntry[];
   nextCustomId?: number;
@@ -33,6 +35,12 @@ const IN_CHAT = 1;
 const sourceEntries = Object.entries(worldbook.entries as Record<string, SourceEntry>)
   .filter(([, entry]) => !entry.disable)
   .sort(([, a], [, b]) => a.order - b.order);
+// Test-channel updates can change the defaults without changing the release version.
+let defaultHash = 2166136261;
+for (const char of JSON.stringify(sourceEntries.map(([id, entry]) => [id, entry.content]))) {
+  defaultHash = Math.imul(defaultHash ^ char.charCodeAt(0), 16777619);
+}
+const builtinRevision = `${version}:${(defaultHash >>> 0).toString(16)}`;
 
 export const EMBEDDED_WORLD_NAME = 'tavern-battle-native:worldbook';
 export const CUSTOM_WORLD_NAME = 'tavern-battle-native:custom-worldbook';
@@ -100,7 +108,9 @@ function normalizeCustomEntry(raw: Partial<CustomWorldbookEntry> & Pick<CustomWo
 
 export function normalizeEmbeddedWorldbookSettings(value?: EmbeddedWorldbookSettings) {
   const known = new Set(sourceEntries.map(([id]) => id));
-  const entries = Object.fromEntries(Object.entries(value?.entries ?? {}).filter(([id, content]) => known.has(id) && typeof content === 'string'));
+  const entries = value?.builtinRevision === builtinRevision
+    ? Object.fromEntries(Object.entries(value.entries ?? {}).filter(([id, content]) => known.has(id) && typeof content === 'string'))
+    : {};
   const seen = new Set<string>();
   const customEntries: CustomWorldbookEntry[] = [];
   for (const raw of Array.isArray(value?.customEntries) ? value.customEntries : []) {
@@ -111,7 +121,7 @@ export function normalizeEmbeddedWorldbookSettings(value?: EmbeddedWorldbookSett
   }
   const nextCustomId = customEntries.reduce((next, entry) => Math.max(next, Number(entry.id.slice(7)) + 1),
     Math.max(1, integer(value?.nextCustomId, 1, Number.MAX_SAFE_INTEGER - 1)));
-  return { enabled: value?.enabled !== false, entries, customEntries, nextCustomId };
+  return { enabled: value?.enabled !== false, builtinRevision, entries, customEntries, nextCustomId };
 }
 
 export function embeddedWorldbookSettingsView(value?: EmbeddedWorldbookSettings): WorldbookEditorState {

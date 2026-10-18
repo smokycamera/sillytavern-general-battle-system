@@ -61,7 +61,7 @@ describe('embedded worldbook', () => {
     const f = nativeFixture(); f.context.eventTypes!.WORLDINFO_ENTRIES_LOADED = 'worldinfo';
     let stop = installEmbeddedWorldbook(f.host);
     stop();
-    stop = installEmbeddedWorldbook(f.host, { entries: { '0': 'edited rule' } });
+    stop = installEmbeddedWorldbook(f.host, updateEmbeddedWorldbookSettings(undefined, { entry: { id: '0', content: 'edited rule' } }));
     expect(f.handlers.get('worldinfo')?.size).toBe(1);
     const payload = { globalLore: [] as { content: string }[] };
     await f.emit('worldinfo', payload);
@@ -78,6 +78,32 @@ describe('embedded worldbook', () => {
     const stop = installEmbeddedWorldbook(host);
     expect(stop.mode).toBe('depth'); expect(host.inject).toHaveBeenCalledTimes(2);
     stop(); expect(host.clearInjection.mock.calls.map(([id]) => id)).toEqual(host.inject.mock.calls.map(([id]) => id));
+  });
+
+  it.each([undefined, 'old-version:old-defaults'])('updates all four built-ins from revision %s once while retaining custom entries and global settings', (oldRevision) => {
+    let settings = updateEmbeddedWorldbookSettings(undefined, { create: true });
+    settings = updateEmbeddedWorldbookSettings(settings, { custom: { id: 'custom-1', patch: {
+      title: '自定义规则', content: 'CUSTOM', enabled: false, constant: false, keys: ['城堡'], depth: 7, role: 2, order: 23,
+    } } });
+    const old = { ...settings, enabled: false, builtinRevision: oldRevision,
+      entries: Object.fromEntries(Object.keys(worldbook.entries).map(id => [id, `OLD ${id}`])), nextCustomId: 9 };
+    const otherPreferences = { theme: 'light', geometry: { left: 12, top: 34, width: 600, height: 500 }, extra: 'KEEP' };
+    const context = { extensionSettings: { tavernBattle: { ...otherPreferences, worldbook: old }, unrelated: { keep: true } }, saveSettingsDebounced: vi.fn() };
+    const prefs = preferences({ SillyTavern: { getContext: () => context } } as never);
+    const upgraded = prefs.read().worldbook!;
+    expect(upgraded).toMatchObject({ enabled: false, entries: {}, customEntries: settings.customEntries, nextCustomId: 9 });
+    expect(context.extensionSettings.tavernBattle).toEqual({ ...otherPreferences, worldbook: upgraded });
+    expect(context.extensionSettings.unrelated).toEqual({ keep: true });
+    expect(embeddedWorldbookSettingsView(upgraded).items.filter(item => !item.custom).map(item => [item.id, item.content]))
+      .toEqual(Object.entries(worldbook.entries).sort(([, a], [, b]) => a.order - b.order).map(([id, entry]) => [id, entry.content]));
+    expect(buildEmbeddedWorldbook(upgraded)).toEqual([]);
+    prefs.read();
+    expect(context.saveSettingsDebounced).toHaveBeenCalledOnce();
+    const edited = updateEmbeddedWorldbookSettings(upgraded, { entry: { id: '0', content: 'CURRENT EDIT' } });
+    prefs.write({ worldbook: edited });
+    expect(JSON.parse(JSON.stringify(prefs.read().worldbook)).entries).toEqual({ '0': 'CURRENT EDIT' });
+    expect(prefs.read().worldbook?.customEntries).toEqual(settings.customEntries);
+    expect(context.saveSettingsDebounced).toHaveBeenCalledTimes(2);
   });
 
   it('persists custom entries separately through preferences, reset and JSON reload without reusing deleted IDs', () => {
