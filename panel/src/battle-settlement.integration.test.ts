@@ -1,11 +1,41 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from 'vitest';
 import { nativeFixture } from '../../runtime/tests/native-fixture.js';
-import { generateUnit, SmallBattle, standardField, V12_OVERFLOW_D20 } from '../../engine/src/index.js';
+import { generateUnit, SmallBattle, standardField, V12_OVERFLOW_D20, battleXpAwardsForBothSides } from '../../engine/src/index.js';
 import { unitRecordFromCombatant } from './unit-state.js';
+import { battleEpilogue } from './battle-reports.js';
+import { renderTacticalBattle } from './tactical-view.js';
 
 vi.mock('./panel-runtime.js', async () => import('../../extension/src/panel-runtime.js'));
 afterEach(() => { window.dispatchEvent(new Event('pagehide')); vi.unstubAllGlobals(); });
+
+it('awards third-party casualties in both directions once and reports third-party victory as player defeat', () => {
+  const units = (['ally', 'enemy', 'neutral', 'neutral'] as const).map((side, i) => {
+    const u = generateUnit({ name: side + i, side, scale: 'hero', level: 3, rulesVersion: 'v2', weaponClass: 'sword', traits: [] }, { seed: side + i, noVariance: true }).unit;
+    u.id = 't' + i; u.morale = u.base.moraleMax = 100; u.base.atk = 100;
+    u.weapon!.baseDice = u.weapon!.apDice = '100d6'; u.weapon!.penetration = 100; return u;
+  });
+  const field = standardField(9, 15); field.tiles.fill('open');
+  const b = new SmallBattle({ combatants: units, battlefield: field, nonLethal: true, rules: V12_OVERFLOW_D20, seed: 'third-party-xp' });
+  b.start(); units.forEach((u, i) => { u.pos = [30, 38, 31, 39][i]!; });
+  b.turnOrder = ['t0', 't1', 't2', 't3']; b.turnIndex = 0;
+  b.attack('t0', 't2'); const allyXp = b.xpByUnit.get('t0')!;
+  expect(allyXp).toBeGreaterThan(0);
+  const restored = SmallBattle.fromSnapshot(b.toSnapshot());
+  const recovered = restored.byId('t2'); recovered.hp = recovered.base.hpMax; recovered.status = 'ready';
+  restored.turnIndex = 1; restored.endTurn(); restored.turnIndex = 3; restored.endTurn();
+  restored.byId('t0').pos = 30; recovered.pos = 31;
+  restored.turnOrder = ['t0', 't1', 't2', 't3']; restored.turnIndex = 0; restored.attack('t0', 't2');
+  expect(restored.xpByUnit.get('t0')).toBe(allyXp);
+  restored.turnIndex = 3; restored.byId('t3').pos = 39; restored.byId('t1').pos = 38; restored.byId('t0').pos = 100;
+  restored.autoAction('t3');
+  const neutralXp = restored.xpByUnit.get('t3')!; expect(neutralXp).toBeGreaterThan(0);
+  restored.byId('t0').status = 'fled';
+  const awards = battleXpAwardsForBothSides(restored.combatants, restored.xpByUnit, { winner: restored.winner(), sides: ['ally', 'enemy', 'neutral'], initialStrength: restored.xpInitialStrength });
+  expect(awards.find(a => a.unitId === 't3')).toMatchObject({ side: 'neutral', kills: neutralXp });
+  expect(battleEpilogue(restored)).toContain('第三方获胜，我方失败');
+  expect(renderTacticalBattle(restored, { mode: 'inspect' })).toContain('第三方获胜，我方失败');
+});
 
 function battle(seed: string): SmallBattle {
   const units = (['ally', 'enemy'] as const).map((side, i) => {

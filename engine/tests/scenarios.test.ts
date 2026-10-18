@@ -234,7 +234,7 @@ function sideStat(cs: Combatant[], side: Side): SideStat {
 }
 
 interface RunResult {
-  winner: 'ally' | 'enemy' | 'draw';
+  winner: Side | 'draw';
   rounds: number;
   timeout: boolean;
   ally: SideStat;

@@ -25,9 +25,10 @@ export function lastBattleAction(b: Battle) {
 /** V19 §4 战斗头部：双方指挥水平·风格，悬停显示打法说明。 */
 export function commandHeaderHtml(b: Battle): string {
   if (!isCommandV2(b.rules)) return '';
-  return `<div class="sub" data-role="command-header">${(['ally', 'enemy'] as const).map(side => {
+  const sides = b instanceof SmallBattle && b.combatants.some(u => u.side === 'neutral') ? ['ally', 'enemy', 'neutral'] as const : ['ally', 'enemy'] as const;
+  return `<div class="sub" data-role="command-header">${sides.map(side => {
     const profile = b.commanderProfiles[side] ?? DEFAULT_COMMAND;
-    return `<span title="${escapeHtml(COMMAND_STYLE_LABELS[profile.style] + '：' + COMMAND_STYLE_DESCRIPTIONS[profile.style])}">${side === 'ally' ? '我方' : '敌方'}指挥：${escapeHtml(commandLabel(profile))}</span>`;
+    return `<span title="${escapeHtml(COMMAND_STYLE_LABELS[profile.style] + '：' + COMMAND_STYLE_DESCRIPTIONS[profile.style])}">${side === 'ally' ? '我方' : side === 'neutral' ? '第三方' : '敌方'}指挥：${escapeHtml(commandLabel(profile))}</span>`;
   }).join('｜')}</div>`;
 }
 export function renderBattleHighlights(b: Battle): string {

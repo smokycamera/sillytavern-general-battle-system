@@ -481,7 +481,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     delete attrs.id; // 新单位编号一律由插件分配，正文写的 id 不参与建档或引用。
     if(attrs.level)parseEnhancementSuffix('L'+attrs.level.replace(/^[lL]/,''),'unit');
     if (attrs.scale === 'mook') attrs.scale = 'company'; // 旧正文别名，不产生第三套V2规则。
-    if (!attrs.name?.trim() || !['ally', 'enemy'].includes(attrs.side ?? '') || !['hero', 'company', 'mook'].includes(attrs.scale ?? '')) throw new Error('新单位需要 name、side、scale');
+    if (!attrs.name?.trim() || !['ally', 'enemy', 'neutral'].includes(attrs.side ?? '') || !['hero', 'company', 'mook'].includes(attrs.scale ?? '')) throw new Error('新单位需要 name、side、scale');
     if (attrs.scale !== 'hero' && attrs.hpMax === undefined) throw new Error('群体首次建档必须明确 hpMax 编制上限；count 表示单位个数');
     if (attrs.hp !== undefined && attrs.hpMax === undefined) throw new Error('新单位提供 hp 时也需要 hpMax');
     if (attrs.hp !== undefined && Number(attrs.hp) > Number(attrs.hpMax)) throw new Error('新单位当前值不能超过上限');

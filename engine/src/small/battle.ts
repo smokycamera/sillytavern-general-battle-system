@@ -8,7 +8,7 @@ import { spendAbility } from '../ability-state.js';
 import { itemUseLog } from '../item-use-log.js';
 import { assertBattleCapacity } from '../battle-limits.js';
 import { smallBattleResult } from '../battle-result.js';
-import { prepareGridDeployment } from './spatial.js';
+import { prepareGridDeployment, deploymentDepth } from './spatial.js';
 import { unitHeight, heightDefense, heightReach, standingTerrain, surfaceHeightAt, reportsHeights } from './height-map.js';
 import { bonusMultiplier } from '../enhancements.js';
 import { regionalOrder } from './team-tactics.js';
@@ -189,9 +189,9 @@ export class SmallBattle {
   private observationMemo?: Map<Combatant['side'], Combatant[]>;
   /** Routes belong to one read-only query/decision, keyed by actor and movement budget. */
   private gridPathsMemo?: WeakMap<Combatant, Map<number, { paths: GridPath[]; byCell: Map<number, GridPath> }>>;
-  controlRounds = { ally: 0, enemy: 0 };
-  controlHold?: { side: 'ally' | 'enemy'; sinceRound: number; lastCountedRound?: number };
-  objectiveWinner?: 'ally' | 'enemy' | 'draw';
+  controlRounds = { ally: 0, enemy: 0, neutral: 0 };
+  controlHold?: { side: Side; sinceRound: number; lastCountedRound?: number };
+  objectiveWinner?: Side | 'draw';
   defeatedIds = new Set<string>();
   readonly combatants: Combatant[];
   readonly rules: RulePack;
@@ -264,8 +264,8 @@ export class SmallBattle {
     if (opts.battlefield) validateField(opts.battlefield);
     this.battlefield = opts.battlefield ? structuredClone(opts.battlefield) : undefined;
     this.combatants = opts.combatants;
-    this.xpMinimum = initialXpStrength(this.combatants);
-    this.xpInitialStrength = initialXpStrength(this.combatants);
+    this.xpMinimum = initialXpStrength(this.combatants, true);
+    this.xpInitialStrength = initialXpStrength(this.combatants, true);
     for (const unit of this.combatants) unit.nonLethal = this.nonLethal;
     for (const unit of this.combatants) { calibrateAutocannon(unit.weapon); calibrateAutocannon(unit.sidearm); calibrateWeaponHands(unit.weapon); calibrateWeaponHands(unit.sidearm); }
     for (const unit of this.combatants) {
@@ -368,8 +368,7 @@ export class SmallBattle {
     }
     for (const c of this.combatants) {
       if (c.pos === undefined) {
-        const side = (c.side === 'enemy' ? 'enemy' : 'ally') as 'ally' | 'enemy';
-        c.pos = START_POS[side][c.archetype ?? 'infantry'] ?? 2;
+        c.pos = START_POS[c.side][c.archetype ?? 'infantry'] ?? 2;
       }
     }
     if (this.rules.resolutionVersion === 'v2') revealContacts(this.observationContext());
@@ -402,7 +401,7 @@ export class SmallBattle {
     });
     if (isCommandV2(this.rules)) {
       this.commandRounds = beginCommandRound([], 1, this.combatants, u => u.pos);
-      for (const text of commandOpening(this.commanderProfiles)) this.recordEvent({ round: 1, kind: 'rule', text });
+      for (const text of commandOpening(this.commanderProfiles, [...new Set(this.combatants.map(u => u.side))])) this.recordEvent({ round: 1, kind: 'rule', text });
     }
     this.advanceToNextActor();
     if (this.turnIndex >= this.turnOrder.length && !this.isOver()) this.endTurn();
@@ -421,8 +420,8 @@ export class SmallBattle {
   /** 两单位距离 = 坐标差绝对值 */
   dist(a: Combatant, b: Combatant): number {
     if (this.battlefield) return Math.max(sameLayer(a, b) ? 0 : 1, gridDistance(this.battlefield, a.pos!, b.pos!));
-    const pa = a.pos ?? START_POS[a.side === 'enemy' ? 'enemy' : 'ally'][a.archetype ?? 'infantry'] ?? 2;
-    const pb = b.pos ?? START_POS[b.side === 'enemy' ? 'enemy' : 'ally'][b.archetype ?? 'infantry'] ?? 2;
+    const pa = a.pos ?? START_POS[a.side][a.archetype ?? 'infantry'] ?? 2;
+    const pb = b.pos ?? START_POS[b.side][b.archetype ?? 'infantry'] ?? 2;
     return Math.abs(pa - pb);
   }
 
@@ -523,7 +522,7 @@ export class SmallBattle {
   }
   private recordEvent(entry: BattleLogEntry): void {
     reconcileBattleControls(this.combatants);
-    if (isCommandV2(this.rules)) noteCommandAttack(this.commandRounds, entry, this.combatants);
+    if (isCommandV2(this.rules)) noteCommandAttack(this.commandRounds, entry, this.combatants, true);
     for(const result of entry.resolutions?.length?entry.resolutions:[entry.resolution]) if(result&&result.hpAfter<=0) result.defenderStatus=this.nonLethal?'dying':'dead';
     entry.locations ??= Object.fromEntries((entry.participants ?? []).flatMap(id => { const u = this.combatants.find(c => c.id === id); return u?.pos === undefined ? [] : [[id, u.pos]]; }));
     if (this.rules.resolutionVersion !== 'v2') this.log.push(entry);
@@ -688,7 +687,7 @@ export class SmallBattle {
     const denialRisks = isArmsV2(this.rules.armsModel) ? known.filter(holder => path.cells.slice(1).some((to,i)=>this.denialSources(actor,path.cells[0]!,path.cells[i]!,to,this.reactionSpent,known).some(u=>u.id===holder.id))).map(u=>u.name+'可能拒止一次') : [];
     const risks = known.filter((u) => combatHostile(u, actor, this.combatants) && u.status === 'ready' && !this.reactionSpent.has(u.id) && !u.suppression && !u.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack)
       && path.cells.slice(1).some((n, i) => {
-        const previous = path.cells[i]!, ridingAway = agileDisengage(actor) || mountedShooting(actor) && (Math.floor(n / field.width) - Math.floor(previous / field.width)) * (actor.side === 'enemy' ? -1 : 1) > 0;
+        const previous = path.cells[i]!, ridingAway = agileDisengage(actor) || mountedShooting(actor) && deploymentDepth(field, actor.side, n) < deploymentDepth(field, actor.side, previous);
         return !ridingAway && !!meleeWeapon(u) && meleeContact(field,u,{...actor,pos:previous}) && gridDistance(field, u.pos!, previous) === 1 && (gridDistance(field, u.pos!, n) > 1||!meleeContact(field,u,{...actor,pos:n}))
           || this.overwatch.has(u.id) && !this.weaponContext(u, { ...actor, pos: n }).reason;
       }))
@@ -729,7 +728,7 @@ export class SmallBattle {
         if (actor.status !== 'ready') break;
         if (!controlReactionAllowed(foe, actor, this.combatants, this.dist(foe,actor)) || !combatHostile(foe, actor, this.combatants) || foe.status !== 'ready' || foe.suppression || this.reactionSpent.has(foe.id) || foe.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack && baseMechanism(meleeWeapon(foe)) !== 'natural')) continue;
         const reactionWeapon = this.rules.resolutionVersion === 'v2' ? meleeWeapon(foe) : foe.sidearm ?? (!isRangedCapable(foe) ? foe.weapon : undefined);
-        const ridingAway = !opts.opportunity || agileDisengage(actor) || mountedShooting(actor) && (Math.floor(next / field.width) - Math.floor(previous / field.width)) * (actor.side === 'enemy' ? -1 : 1) > 0;
+        const ridingAway = !opts.opportunity || agileDisengage(actor) || mountedShooting(actor) && deploymentDepth(field, actor.side, next) < deploymentDepth(field, actor.side, previous);
         const opportunity = !ridingAway && !!reactionWeapon && meleeContact(field,foe,{...actor,pos:previous}) && gridDistance(field, foe.pos!, previous) === 1 && (gridDistance(field, foe.pos!, next) > 1||!meleeContact(field,foe,actor));
         const watching = this.overwatch.has(foe.id) && !this.weaponContext(foe, actor).reason;
         if (!opportunity && !watching) continue;
@@ -912,7 +911,7 @@ export class SmallBattle {
   toggleGate(actorId: string, cell: number): void {
     const reason = this.gateReason(actorId, cell); if (reason) throw Error(reason);
     const field = this.battlefield!, door = intactStructure(field, cell)!, actor = this.byId(actorId);
-    door.gateState = door.gateState === 'open' ? 'closed' : 'open'; door.owner = actor.side === 'enemy' ? 'enemy' : 'ally';
+    door.gateState = door.gateState === 'open' ? 'closed' : 'open'; door.owner = actor.side;
     field.terrainRevision = (field.terrainRevision ?? 0) + 1; this.spendAction(actorId);
     this.recordEvent({ round: this.round, kind: 'move', participants: [actorId], text: `${actor.name} ${door.gateState === 'open' ? '打开' : '关闭'} ${cellLabel(field, cell)}门，消耗主行动` });
     revealContacts(this.observationContext());
@@ -1006,7 +1005,7 @@ export class SmallBattle {
     } else if (goal.kind === 'control' && goal.cells && goal.attackingSide && this.battlefield?.layerVersion) {
       const occupants = this.combatants.filter(u => u.status === 'ready' && !isAirborne(u) && !isElevated(u) && goal.cells!.includes(u.pos!) && !u.conditions.some(c => c.dur > 0 && this.conditions.get(c.id)?.skipTurn));
       const attacker = goal.attackingSide ?? 'ally', hasAttacker = occupants.some(u => u.side === attacker), contested = occupants.some(u => u.side !== attacker);
-      if (!hasAttacker) { this.controlRounds = { ally: 0, enemy: 0 }; this.controlHold = undefined; }
+      if (!hasAttacker) { this.controlRounds = { ally: 0, enemy: 0, neutral: 0 }; this.controlHold = undefined; }
       else {
         if (!this.controlHold || this.controlHold.side !== attacker) this.controlHold = { side: attacker, sinceRound: this.round };
         if (roundEnd && !contested && this.round > this.controlHold.sinceRound && this.controlHold.lastCountedRound !== this.round) {
@@ -1019,12 +1018,12 @@ export class SmallBattle {
       const eligible = this.combatants.filter(u=>u.status==='ready'&&!isAirborne(u)&&!isElevated(u)&&!u.conditions.some(c=>c.dur>0&&this.conditions.get(c.id)?.skipTurn));
       const occupants = eligible.filter(u=>cells.includes(u.pos!));
       const sides = new Set(eligible.filter(u=>cells.some(p=>gridDistance(this.battlefield!,u.pos!,p)<=1)).map(u=>u.side));
-      const owner = (['ally', 'enemy'] as const).find((side) => (!goal.attackingSide || goal.attackingSide === side)
+      const owner = (['ally', 'enemy', 'neutral'] as const).find((side) => (!goal.attackingSide || goal.attackingSide === side)
         && occupants.some((u) => u.side === side) && sides.size === 1 && sides.has(side));
-      if (!owner) { this.controlRounds = { ally: 0, enemy: 0 }; this.controlHold = undefined; }
+      if (!owner) { this.controlRounds = { ally: 0, enemy: 0, neutral: 0 }; this.controlHold = undefined; }
       else {
         if (this.controlHold?.side !== owner) {
-          this.controlRounds = { ally: 0, enemy: 0 }; this.controlHold = { side: owner, sinceRound: this.round };
+          this.controlRounds = { ally: 0, enemy: 0, neutral: 0 }; this.controlHold = { side: owner, sinceRound: this.round };
         }
         // 占点当轮不足完整一轮；按全体单位轮末计一次，保存恢复不重置或补算。
         if (roundEnd && this.round > this.controlHold.sinceRound && this.controlHold.lastCountedRound !== this.round) {
@@ -2150,7 +2149,7 @@ export class SmallBattle {
       landing?: number; preview?: { expectedDamage: number; variance?: number }; control?: CommandControl }[] = [];
     const knownUnits = this.visibleCombatants(unit.side);
     // V19 §1、§2：按当前作战阵营取指挥档案；来袭估值系数乘在来袭、反应与工事估值上（常规为 1）。
-    const commandV2 = isCommandV2(this.rules), profile = commandV2 ? commandProfile(this.commanderProfiles, unit, this.combatants) : this.commanderProfiles[unit.side === 'ally' ? 'ally' : 'enemy'];
+    const commandV2 = isCommandV2(this.rules), profile = commandV2 ? commandProfile(this.commanderProfiles, unit, this.combatants) : this.commanderProfiles[unit.side];
     const quality = commandV2 ? commandQuality(profile!.ability) : undefined, threat = quality?.incoming ?? 1;
     const objective = field.objective;
     const escorted = objective.kind === 'escape' && objective.unitId !== unitId
@@ -2196,12 +2195,12 @@ export class SmallBattle {
     };
     let order = regionalOrder(field, unit, knownUnits, profile, commandV2);
     if (order && field.city?.defender === unit.side && objective.kind === 'control'
-      && this.controlRounds[unit.side === 'ally' ? 'enemy' : 'ally'] > 0) {
+      && Object.entries(this.controlRounds).some(([side, rounds]) => side !== unit.side && rounds > 0)) {
       order.goals = objective.cells ?? [objective.cell]; order.role = 'core'; order.phase = 'core-threat';
     }
     // V19 守点：防区是锚点不是笼子。驻守、占据的防区和夺点目标（守方）周围一次激活能回到的格子都算防区内，位置不因离开防区扣分；
     // 敌人站上防区格时取消这段活动范围，必须上点争夺或把它打下来；被够不着的射手攻击时出击（见 holdSortie）。对称夺点仍要站在点上。
-    if (commandV2 && !order && objective.kind === 'control' && objective.attackingSide && combatSide(unit, this.combatants) !== objective.attackingSide)
+    if (commandV2 && !order && objective.kind === 'control' && objective.attackingSide && combatSide(unit, this.combatants) === (objective.attackingSide === 'ally' ? 'enemy' : 'ally'))
       order = { role: rangedRole ? 'fire' : 'front', goals: objective.cells ?? [objective.cell], hold: true, phase: 'intact' };
     const zone = commandV2 && order?.hold && !isElevated(unit) && !isAirborne(unit) ? order.goals : undefined;
     const contested = !!zone && foes.some(foe => zone.includes(foe.pos!));
@@ -2299,7 +2298,7 @@ export class SmallBattle {
           const previous=copy.pos!;copy.pos=cell;delete copy.tacticalPose;
           for(const foe of foes) {
             if(copy.hp<=0||spent.has(foe.id)||foe.status!=='ready'||foe.suppression||foe.conditions.some(c=>c.dur>0&&(this.conditions.get(c.id)?.skipTurn||this.conditions.get(c.id)?.preventAttack&&baseMechanism(meleeWeapon(foe))!=='natural')))continue;
-            const weapon=meleeWeapon(foe),ridingAway=agileDisengage(copy)||mountedShooting(copy)&&(Math.floor(cell/field.width)-Math.floor(previous/field.width))*(copy.side==='enemy'?-1:1)>0;
+            const weapon=meleeWeapon(foe),ridingAway=agileDisengage(copy)||mountedShooting(copy)&&deploymentDepth(field,copy.side,cell)<deploymentDepth(field,copy.side,previous);
             const opportunity=!ridingAway&&weapon&&meleeContact(field,foe,{...copy,pos:previous})&&gridDistance(field,foe.pos!,previous)===1&&(gridDistance(field,foe.pos!,cell)>1||!meleeContact(field,foe,copy));
             const watching=this.overwatch.has(foe.id)&&!this.weaponContext(foe,copy,{},undefined,sightAt).reason;
             const denial=this.denialSources(copy,path.cells[0]!,previous,cell,spent,foes).some(u=>u.id===foe.id);
@@ -2667,7 +2666,7 @@ export class SmallBattle {
   /** V19 守点出击：防区活动范围内的单位被射手攻击过（本轮或上一轮），从活动范围内哪一格都打不到它，而且敌方近战一次激活内都打不到防区时，
    *  去打两次激活内够得到的那名射手，返回能攻击它的落点；射手倒下、看不见或敌方近战逼近时回到防区。 */
   private holdSortie(unit: Combatant, zone: number[], area: number[], foes: Combatant[], known: Combatant[]): number[] | undefined {
-    const field = this.battlefield!, side = combatSide(unit, this.combatants) === 'ally' ? 'ally' : 'enemy', arms = this.rules.armsModel;
+    const field = this.battlefield!, side = combatSide(unit, this.combatants), arms = this.rules.armsModel;
     const reach = Math.max(gridWeaponRange(unit.weapon, true, arms), gridWeaponRange(unit.sidearm, true, arms));
     if (!reach || foes.some(f => f.status === 'ready' && !isRangedWeapon(f.weapon) && !!meleeWeapon(f)
       && zone.some(cell => gridDistance(field, cell, f.pos!) <= movementPoints(f, this.fieldTags) + gridWeaponRange(meleeWeapon(f), true, arms)))) return undefined;
@@ -2684,7 +2683,7 @@ export class SmallBattle {
   private commandV2Scores<P extends { score: number; path: GridPath; kind: string; offensive?: boolean; targetId?: string; landing?: number; preview?: { expectedDamage: number; variance?: number }; control?: CommandControl }>(
     unit: Combatant, candidates: P[], choice: (plan: P) => CommandChoice, profile: CommanderProfile, quality: ReturnType<typeof commandQuality>, turnKey: string,
     foes: Combatant[], known: Combatant[], sight: HypotheticalSight, incomingAt: (cell: number) => number, trace?: (event: object) => void): number[] {
-    const field = this.battlefield!, own = combatSide(unit, this.combatants) === 'ally' ? 'ally' : 'enemy';
+    const field = this.battlefield!, own = combatSide(unit, this.combatants);
     // 本轮尚未行动的己方单位，按先攻顺序。
     const pending = this.turnOrder.slice(this.turnIndex + 1).flatMap(id => {
       const ally = known.find(u => u.id === id);
@@ -2800,7 +2799,7 @@ export class SmallBattle {
     const lead = leads.sort((a, b) => cost(a.focus) + a.age * 2 - cost(b.focus) - b.age * 2 || a.focus - b.focus)[0];
     if (lead) return { goals: [lead.focus], focus: lead.focus, lead: true };
     // 敌方从其撤离边一侧进场，每轮至多推进约三格：先扫它们此时可能已到达、近两轮又没看过的地格。
-    const edge = side === 'neutral' ? [] : retreatCells(field, side === 'ally' ? 'enemy' : 'ally');
+    const edge = [...new Set(this.combatants.filter(u => u.side !== side).flatMap(u => retreatCells(field, u.side)))];
     const edgeDistance = new Map<number, number>(), fromEdge = (cell: number) => {
       if (!edge.length) return 0;
       if (!edgeDistance.has(cell)) edgeDistance.set(cell, Math.min(...edge.map((p) => gridDistance(field, cell, p))));
@@ -3053,10 +3052,9 @@ export class SmallBattle {
     })) return;
     const allowed = (cell: number) => cell === start || canOccupy(field, this.combatants, unit, cell);
     const cost = (cell: number, from: number) => movementStepCost(field, cell, unit, this.fieldTags, from);
-    const rearRow = unit.side === 'ally' ? field.height - 1 : 0;
-    const goals = Array.from({ length: field.width }, (_, x) => rearRow * field.width + x);
+    const goals = retreatCells(field, unit.side);
     const remaining = gridCostsToGoals(field, goals, allowed, cost);
-    const distance = (cell: number) => remaining.get(cell) ?? Math.abs(Math.floor(cell / field.width) - rearRow) * 2;
+    const distance = (cell: number) => remaining.get(cell) ?? deploymentDepth(field, unit.side, cell) * 2;
     const path = reachableGridPaths(field, start, this.movementBudget(unit.id), allowed, cost)
       .filter(p => distance(p.cells.at(-1)!) < distance(start))
       .sort((a, b) => distance(a.cells.at(-1)!) - distance(b.cells.at(-1)!) || a.cost - b.cost)[0];
@@ -3162,10 +3160,12 @@ export class SmallBattle {
   }
   private checkDeath(unit: Combatant, killer?: Combatant): void {
     if(this.rules.resolutionVersion==='v2') {
-      const earned=casualtyXp(unit,this.xpMinimum);
-      if(unit.side==='enemy')this.xpGained+=earned;
+      const earned=casualtyXp(unit,this.xpMinimum,true);
+      if(unit.side==='enemy'||unit.side==='neutral'&&killer?.side==='ally')this.xpGained+=earned;
       const owner=killer?.summonerId??killer?.id;
-      if(owner&&earned&&killer?.side!==unit.side&&killer?.side!=='neutral')this.xpByUnit.set(owner,(this.xpByUnit.get(owner)??0)+earned);
+      if(owner&&earned&&killer?.side!==unit.side) {
+        this.xpByUnit.set(owner,(this.xpByUnit.get(owner)??0)+earned);
+      }
     }
     if (unit.hp > 0 || unit.status === 'dead' || this.nonLethal && unit.status === 'dying') return;
     if(this.rules.resolutionVersion==='v2')this.defeatedIds.add(unit.id);
@@ -3260,6 +3260,8 @@ export class SmallBattle {
 
   isOver(): boolean {
     if (this.objectiveWinner) return true;
+    const goal = this.battlefield?.objective;
+    if (!goal || goal.kind === 'annihilation' || goal.kind === 'control' && !goal.attackingSide) return this.remainingSides().length <= 1;
     for (const side of ['ally', 'enemy'] as const) {
       if (!this.combatants.some((c) => c.side === side && (c.status === 'ready' || this.rules.resolutionVersion === 'v2' && c.status === 'routing'))) return true;
     }
@@ -3267,15 +3269,22 @@ export class SmallBattle {
   }
 
   /** 胜方（未结束时为 undefined） */
-  winner(): 'ally' | 'enemy' | 'draw' | undefined {
+  winner(): Side | 'draw' | undefined {
     if (this.objectiveWinner) return this.objectiveWinner;
     if (!this.isOver()) return undefined;
+    const goal = this.battlefield?.objective;
+    if (!goal || goal.kind === 'annihilation' || goal.kind === 'control' && !goal.attackingSide) return this.remainingSides()[0] ?? 'draw';
     const allyReady = this.combatants.some((c) => c.side === 'ally' && (c.status === 'ready' || this.rules.resolutionVersion === 'v2' && c.status === 'routing'));
     const enemyReady = this.combatants.some((c) => c.side === 'enemy' && (c.status === 'ready' || this.rules.resolutionVersion === 'v2' && c.status === 'routing'));
     if (allyReady && enemyReady) return 'draw';
     if (allyReady) return 'ally';
     if (enemyReady) return 'enemy';
     return 'draw';
+  }
+
+  private remainingSides(): Side[] {
+    return (['ally', 'enemy', 'neutral'] as const).filter(side => this.combatants.some(c => c.side === side
+      && (c.status === 'ready' || this.rules.resolutionVersion === 'v2' && c.status === 'routing')));
   }
 
   private conditionDefMap(): Map<string, ConditionDef> {
@@ -3362,7 +3371,7 @@ export class SmallBattle {
       && typeof entry[0] === 'string' && !!entry[1] && cell(entry[1].at) && (entry[1].before === undefined || cell(entry[1].before))).map(([id, start]: [string, { at: number; before?: number }]) => [id, { at: start.at, ...(start.before !== undefined ? { before: start.before } : {}) }]));
     if (isCommandV2(b.rules)) b.commandRounds = readCommandRounds(snap.commandRounds);
     b.movementSpent = new Map(snap.movementSpent ?? []); b.reactionSpent = new Set(snap.reactionSpent ?? []);
-    b.overwatch = new Set(snap.overwatch ?? []); b.controlRounds = snap.controlRounds ?? { ally: 0, enemy: 0 };
+    b.overwatch = new Set(snap.overwatch ?? []); b.controlRounds = { ally: 0, enemy: 0, neutral: 0, ...snap.controlRounds };
     b.objectiveWinner = snap.objectiveWinner; b.controlHold = snap.controlHold ? { ...snap.controlHold } : undefined;
     b.defeatedIds = new Set(snap.defeatedIds ?? []);
     b.turnOrder = snap.turnOrder ?? b.turnOrder;
@@ -3376,7 +3385,7 @@ export class SmallBattle {
       if (before?.pressure !== undefined && before.pressure !== unit.moraleState?.damagePenalty) b.recordEvent({ round: b.round, kind: 'condition', participants: [unit.id],
         text: `${unit.name} 受创士气压力按实际最大生命校准：${before.pressure}→${unit.moraleState?.damagePenalty}` });
     }
-    b.xpMinimum = new Map([...initialXpStrength(b.combatants), ...(snap.xpMinimum ?? [])]);
+    b.xpMinimum = new Map([...initialXpStrength(b.combatants, true), ...(snap.xpMinimum ?? [])]);
     b.xpInitialStrength = new Map(snap.xpInitialStrength ?? []);
     if(!snap.xpMinimum)for(const id of b.defeatedIds)b.xpMinimum.set(id,0);
     b.xpGained = snap.xpGained ?? 0;

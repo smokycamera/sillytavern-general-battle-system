@@ -1,4 +1,5 @@
 import { safeLandmarkLabel } from './map-label.js';
+export const MAX_SCENE_RELATIONS = 24;
 export const SCENE_ARCHETYPES = ['old_town', 'market', 'warehouse', 'riverside', 'hilltown', 'gate_front', 'outskirts',
     'farmland', 'river_crossing', 'rolling_hills', 'forest_path', 'forest_stream', 'forest_edge', 'mountain_pass',
     'ridge_valley', 'terraces', 'residence', 'great_hall', 'fortress', 'trench_line', 'trench_depth'] as const;
@@ -72,7 +73,7 @@ export function normalizeSceneIntent(value: unknown): SceneIntent | undefined {
     const v: Record<string, unknown> | undefined = raw && { schema: 'scene-intent-v1', entities: [], relations: [], constraints: [], ...raw };
     if (!v || v.schema !== 'scene-intent-v1')
         throw Error('场景意图版本无效');
-    if (!Array.isArray(v.entities) || v.entities.length > 12 || !Array.isArray(v.relations) || v.relations.length > 24
+    if (!Array.isArray(v.entities) || v.entities.length > 12 || !Array.isArray(v.relations) || v.relations.length > MAX_SCENE_RELATIONS
         || !Array.isArray(v.constraints) || v.constraints.length > 8)
         throw Error('场景实体最多12项、关系最多24项、数量约束最多8项');
     const result: SceneIntent = { schema: 'scene-intent-v1', entities: [], relations: [], constraints: [] };
@@ -125,7 +126,7 @@ export function normalizeSceneIntent(value: unknown): SceneIntent | undefined {
             || !entityIds.has(r.object))
             throw Error('场景关系或引用的实体无效');
         // Unit handles are resolved against the active roster at the panel boundary.
-        if (!entityIds.has(r.subject) && !['ally', 'enemy'].includes(r.subject) && !/^u\d+$/.test(r.subject))
+        if (!entityIds.has(r.subject) && !['ally', 'enemy', 'neutral'].includes(r.subject) && !/^u\d+$/.test(r.subject))
             throw Error('场景关系的主体无效');
         const relation: SceneRelation = { subject: r.subject, object: r.object, relation: r.relation as SceneRelation['relation'], ...evidence(r) };
         if (r.region !== undefined) {
@@ -160,5 +161,5 @@ export function validateSceneIntentEvidence(intent: SceneIntent, sources: readon
 export const SCENE_INTENT_PROMPT = `battlefield.intent={archetype?,entities:[],relations:[],constraints:[]}，数组可为空。archetype=${SCENE_ARCHETYPES.join('|')}，按场所用途选择，可省略。
 entities≤12，每项{id,kind,label?,anchor?,scale?,height?,state?,width?,basis?,sources?}。id：英文字母开头，仅字母数字_-，≤32字符，互不重复，不用ally/enemy/neutral/u加数字。kind=${SCENE_ENTITY_KINDS.join('|')}；最多1个city、1个river、4个bridge、4个gate，同类普通设施合并为一个。interior只用room|cover|position|ruins|fortification|gate；room仅用于interior或building_siege；gate须有city实体或scene=city_siege|building_siege|interior。label≤32字，只用文字、数字、空格和·—-()（），不用、/：引号等符号。anchor=${WORLD_ANCHORS.join('|')}。scale=minor|major，默认minor，仅主要地形用major。height=0..3整数；width=1|2。state=intact|destroyed，destroyed仅限bridge|gate|building|tower|fortification|cover|ruins；gate另可open|closed。
 basis=explicit表示正文明确，须附sources；basis=inferred为合理补全，可省略sources。sources为narrativeSources中的段落ID数组，如["m2.p1"]，不带方括号，≤4个。采用最新实际状态，区分否定、回忆、假设和计划。
-relations≤24，每项{subject,relation,object,region?,basis?,sources?}；object必须是entities中的id，不能是方位词、ally、enemy或单位。地点之间用north_of|south_of|east_of|west_of|near|inside|connected_to|higher_than|overlooks，bridge用crosses指向river。部队（subject为ally、enemy或units中的u短ID）只用guards|occupies|approaches_from|near|inside|targets|exits_at；部队在某地哪一侧用region=north_bank|south_bank|east_bank|west_bank，不对部队用north_of等方位关系。ally或enemy的多条关系同时约束该方全部部队，分兵时改用u短ID逐个写。targets/exits_at全场只指向同一地点。只写影响布阵、任务或地形的关系。
+relations≤24，每项{subject,relation,object,region?,basis?,sources?}；object必须是entities中的id，不能是方位词、ally、enemy、neutral或单位。地点之间用north_of|south_of|east_of|west_of|near|inside|connected_to|higher_than|overlooks，bridge用crosses指向river。部队（subject为ally、enemy、neutral或units中的u短ID）只用guards|occupies|approaches_from|near|inside|targets|exits_at；部队在某地哪一侧用region=north_bank|south_bank|east_bank|west_bank，不对部队用north_of等方位关系。ally、enemy或neutral的多条关系同时约束该方全部部队，分兵时改用u短ID逐个写。targets/exits_at全场只指向同一地点。只写影响布阵、任务或地形的关系。
 constraints≤8，仅正文明确桥门数量时写{kind,entity,value:0..4,basis?,sources?}：crossing_count的entity为river的id，gate_count的entity为city的id；若同时列出bridge或gate实体，其个数须等于value。唯一过河点保留深水和指定桥。entities已含全部设施，不写landmarks/bridgePlan/gatePlan。`;

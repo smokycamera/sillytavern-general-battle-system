@@ -1,4 +1,5 @@
-import { normalizeBattlefieldPlan, MAX_DEPLOYMENT_PLANS, type BattlefieldPlan, type DeploymentPlan } from '../../engine/src/small/battlefield-plan.js';
+import { normalizeBattlefieldPlan, type BattlefieldPlan, type DeploymentPlan } from '../../engine/src/small/battlefield-plan.js';
+import { MAX_SMALL_UNITS } from '../../engine/src/battle-limits.js';
 import { BattlefieldPlanError } from '../../engine/src/small/battlefield-error.js';
 import { safeLandmarkLabel } from '../../engine/src/small/map-label.js';
 import { SCENE_ARCHETYPE_NAMES, type SceneArchetype, type SceneConstraint, type SceneEntity, type SceneRelation, type WorldAnchor } from '../../engine/src/small/scene-intent.js';
@@ -13,12 +14,12 @@ import type { BattleObjectiveMode } from './battle-setup.js';
  * and reported, and the scene's roles (who holds the walls) are enforced locally rather than requested.
  */
 export const SCENE_CHOICES: Record<BattlefieldScene, string> = {
-  field: '野外交战：平原、林地、山地、河谷、渡口等；附近若有城镇只作背景，双方都在城外',
+  field: '野外交战：平原、林地、山地、河谷、渡口等；附近若有城镇只作背景，各方都在城外',
   city_siege: '城墙攻防：攻方在城外攻城，守方在城内或城头',
-  city_streets: '城内巷战：双方都在城镇街巷里交战',
+  city_streets: '城内巷战：各方都在城镇街巷里交战',
   building_siege: '围攻单个院落、庄园或小据点：攻方在外，守方在院内',
   interior: '室内：房间、走廊、大厅等紧凑空间',
-  trenches: '堑壕阵地战：双方各据战壕',
+  trenches: '堑壕阵地战：各方各据战壕',
 };
 export const SIZE_CHOICES = { compact: '小：局部遭遇、少量人物', standard: '中：一般战斗（不确定时选这项）', large: '大：多支部队、大范围战场' } as const;
 export type LayoutSize = keyof typeof SIZE_CHOICES;
@@ -60,9 +61,9 @@ const ARCHETYPES: Record<BattlefieldScene, SceneArchetype[]> = {
   interior: ['residence', 'great_hall', 'fortress'],
   trenches: ['trench_line', 'trench_depth'],
 };
-const MAX_PLACES = 8, MAX_DETACHMENTS = MAX_DEPLOYMENT_PLANS - 2;
+const MAX_PLACES = 8;
 
-export interface LayoutUnit { id: string; name: string; side: 'ally' | 'enemy'; kind: string; note?: string }
+export interface LayoutUnit { id: string; name: string; side: Combatant['side']; kind: string; note?: string }
 export interface LayoutContext {
   scene: BattlefieldScene;
   size?: LayoutSize;
@@ -74,8 +75,8 @@ export interface LayoutContext {
   map: [number, number];
 }
 export function layoutUnits(roster: readonly Combatant[], publicId: (id: string) => string, notes: Record<string, string> = {}): LayoutUnit[] {
-  return roster.filter(u => u.hp > 0 && u.status === 'ready' && (u.side === 'ally' || u.side === 'enemy')).slice(0, 32).map(u => ({
-    id: publicId(u.id), name: u.name.slice(0, 40), side: u.side as 'ally' | 'enemy',
+  return roster.filter(u => u.hp > 0 && u.status === 'ready').slice(0, MAX_SMALL_UNITS).map(u => ({
+    id: publicId(u.id), name: u.name.slice(0, 40), side: u.side,
     kind: [u.scale === 'hero' ? '人物' : '部队', u.body === 'vehicle' ? '载具' : u.body && u.body !== 'human' ? '大型' : u.mount ? '骑乘' : '',
       hasFlightAbility(u) ? '可飞行' : '', isRangedWeapon(u.weapon) ? '远程' : '近战'].filter(Boolean).join('·'),
     ...(notes[u.id]?.trim() ? { note: notes[u.id]!.trim().slice(0, 60) } : {}) }));
@@ -88,7 +89,7 @@ export function layoutMapSize(scene: BattlefieldScene, roster: readonly Combatan
   return size === 'large' ? [11, 17] : size === 'compact' ? [7, 9] : [7, 13];
 }
 
-const sideName = (side: 'ally' | 'enemy') => side === 'ally' ? '我方' : '敌方';
+const sideName = (side: Combatant['side']) => side === 'ally' ? '我方' : side === 'neutral' ? '第三方' : '敌方';
 const defenderOf = (ctx: LayoutContext) => ctx.attacker === 'ally' ? 'enemy' : 'ally';
 const besieged = (scene: BattlefieldScene) => scene === 'city_siege' || scene === 'building_siege';
 const allowsCity = (scene: BattlefieldScene) => scene === 'city_siege' || scene === 'field';
@@ -102,7 +103,7 @@ function sceneLine(ctx: LayoutContext): string {
   const a = sideName(ctx.attacker), d = sideName(defenderOf(ctx));
   return ctx.scene === 'city_siege' ? `城墙攻防，攻方=${a}（在城外），守方=${d}（守城）`
     : ctx.scene === 'building_siege' ? `围攻院落或据点，攻方=${a}（在外），守方=${d}（在院内）`
-    : ctx.scene === 'city_streets' ? '城内巷战，双方都在街巷里'
+    : ctx.scene === 'city_streets' ? '城内巷战，各方都在街巷里'
     : ctx.scene === 'interior' ? '室内交战（房间与走廊）' : ctx.scene === 'trenches' ? '堑壕阵地战' : '野外交战';
 }
 function objectiveLine(ctx: LayoutContext): string {
@@ -136,6 +137,10 @@ function retryLines(retry: LayoutRetry): string[] {
 /** The user message for the layout step. Shared system and narrative messages precede it. */
 export function layoutTask(ctx: LayoutContext, retry?: LayoutRetry): string {
   const siege = besieged(ctx.scene), d = defenderOf(ctx);
+  const thirdParty = ctx.units.some(u => u.side === 'neutral');
+  const sides = thirdParty ? 'ally / enemy / neutral：各方' : 'ally / enemy：双方';
+  const sample = example(ctx);
+  if (thirdParty) sample.neutral = { at: ['E'] };
   const kinds = placeKinds(ctx.scene).map(k => `${k}${PLACE_NAMES[k]}`).join('|');
   const lines = [
     '【第2步：布置战场】根据正文，在九宫格上布置本场战斗。程序会据此生成地形、建筑与道路，并把单位放进对应区域。',
@@ -149,15 +154,15 @@ export function layoutTask(ctx: LayoutContext, retry?: LayoutRetry): string {
     '- cover：掩体与障碍多少，sparse少|balanced适中|dense多。',
     ctx.scene === 'city_siege' ? '- city：必须写。{"at":方位,"name":"城名","walls":城墙形制,"level":城墙等级,"breaches":破口数,"gates":[{"name":"门名","state":"closed"}]}。at是城区所在方位：N/S/E/W占地图该侧约一半，角落方位占该角，C在地图中央。walls按正文选：front=一道城墙横贯战场，城区延伸出地图（大城的一段城墙）|ring=四面都有城墙，整座城在图内（小城、城堡、营寨）|double=内外两重城墙，中间夹道（多重城墙、内城外郭、瓮城）；正文没写就省略，由程序选。gates列出本战区可见的城门（省略为一座），state=closed关闭|open开启|destroyed已毁，门由程序放在面向攻方的外墙上，两重城墙时内墙配对应的门。level=1临时 2简易 3正规 4重型 5要塞 6超凡 7史诗 8传奇 9半神 10神造，按材料与强化选；breaches=开战时外墙已有的破口0-3。'
       : ctx.scene === 'building_siege' ? '- city：院墙与门，{"level":院墙等级1-10,"breaches":破口数0-3,"gates":[{"name":"院门","state":"closed|open|destroyed"}]}，院落位置由程序决定。'
-      : ctx.scene === 'field' ? '- city：仅当交战地点旁有城镇时写，{"at":方位,"name":"城名","gates":[...]}；双方默认在城外，写gates时会画出朝向战场的城墙与门。' : '',
+      : ctx.scene === 'field' ? '- city：仅当交战地点旁有城镇时写，{"at":方位,"name":"城名","gates":[...]}；各方默认在城外，写gates时会画出朝向战场的城墙与门。' : '',
     allowsWater(ctx.scene) ? `- water：{"type":"river深水河|ford可涉水浅滩|moat护城河|none无水","at":方位,"bridges":[{"name":"桥名","at":方位,"state":"intact完好|destroyed已断"}]}。只有一条主河${ctx.scene === 'city_siege' ? '；护城河由程序沿面向攻方的城墙外侧布置，不写at' : ''}。bridges只写正文提到的桥；正文没提到桥就省略bridges，由程序配桥${ctx.scene === 'city_siege' ? '（护城河配在城门前）' : ''}；[]只用于正文明确无桥可用，程序会留一处可涉水的浅滩。` : '',
     `- places：最多${MAX_PLACES}个有战术意义的地点，优先写正文提到的，[{"type":类型,"name":"名称","at":方位,"height":0-3,"state":"destroyed"}]。type=${kinds}。height只给高地等写，2-3为明显高地；state=destroyed表示已毁。普通房屋、树木、杂物由程序补全，不要写。`,
-    siege ? `- ally / enemy：双方开局位置。${sideName(ctx.attacker)}是攻方，写{"at":["S"]}这样的1-3个${ctx.scene === 'city_siege' ? '城' : '院'}外方位。${sideName(d)}是守方，默认在${ctx.scene === 'city_siege' ? '城' : '院'}内，只需写post：wall城头为主|inside${ctx.scene === 'city_siege' ? '城内街巷' : '院内'}，不上墙|outside出${ctx.scene === 'city_siege' ? '城' : '院'}列阵（这时再写at为外面的方位）。`
-      : `- ally / enemy：双方开局位置，{"at":["S"]}，可写1-3个方位。${ctx.scene === 'city_streets' ? '双方默认在街区内。' : ''}`,
-    `- units：只在正文明确某个单位单独行动时写，如潜伏、断后、守桥，[{"unit":"u3","at":"NE"${siege ? ',"post":"wall"' : ''}}]，最多${MAX_DETACHMENTS}个。`,
+    (siege ? `- ${sides}开局位置。${sideName(ctx.attacker)}是攻方，写{"at":["S"]}这样的1-3个${ctx.scene === 'city_siege' ? '城' : '院'}外方位。${sideName(d)}是守方，默认在${ctx.scene === 'city_siege' ? '城' : '院'}内，只需写post：wall城头为主|inside${ctx.scene === 'city_siege' ? '城内街巷' : '院内'}，不上墙|outside出${ctx.scene === 'city_siege' ? '城' : '院'}列阵（这时再写at为外面的方位）。`
+      : `- ${sides}开局位置，{"at":["S"]}，可写1-3个方位。${ctx.scene === 'city_streets' ? '各方默认在街区内。' : ''}`) + (thirdParty ? 'neutral默认从东侧进入。' : ''),
+    `- units：只在正文明确某个单位单独行动时写，如潜伏、断后、守桥，[{"unit":"u3","at":"NE"${siege ? ',"post":"wall"' : ''}}]，最多${MAX_SMALL_UNITS}个。`,
     exitSide(ctx) ? '- objective：撤离点，写九宫格方位（放在该方向的地图边缘）或places里的name；省略时按部署方向决定。'
       : ctx.objectiveMode === 'siege' ? `- objective：${sideName(ctx.attacker)}要夺取的地点，写places里的name；省略时为${ctx.scene === 'city_siege' ? '城中心' : '守方后方核心'}。` : '',
-    '示例（只示格式，内容按正文）：' + JSON.stringify(example(ctx)),
+    '示例（只示格式，内容按正文）：' + JSON.stringify(sample),
     ...(retry?.errors.length ? retryLines(retry) : []),
   ];
   return lines.filter(Boolean).join('\n');
@@ -324,7 +329,8 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
   // Starting areas: each side, then detachments named by unit handle or exact name.
   const deployments: DeploymentPlan[] = [];
   const siege = besieged(scene), defender = defenderOf(ctx);
-  for (const side of ['ally', 'enemy'] as const) {
+  const sides: Combatant['side'][] = ctx.units.some(u => u.side === 'neutral') ? ['ally', 'enemy', 'neutral'] : ['ally', 'enemy'];
+  for (const side of sides) {
     const entry = raw[side], record = object(entry) ? entry : { at: entry };
     const at = sectors(record.at ?? record.position, notes, sideName(side));
     let post = postOf(record.post);
@@ -333,17 +339,18 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
     if (at.length) deployments.push({ subject: side, at, ...(post ? { post } : {}) });
     else if (post && siege && side === defender) deployments.push({ subject: side, at: [entities.find(e => e.kind === 'city')?.anchor ?? (defender === 'enemy' ? 'north' : 'south')], post });
   }
+  if (sides.includes('neutral') && !deployments.some(d => d.subject === 'neutral')) deployments.push({ subject: 'neutral', at: ['east'] });
   if (!siege) {
     // Without walls to separate them, an unplaced side faces the placed one, or takes its own map edge.
     for (const side of ['enemy', 'ally'] as const) if (!deployments.some(d => d.subject === side)) {
-      const other = deployments.find(d => d.subject !== side)?.at[0];
+      const other = deployments.find(d => d.subject === (side === 'ally' ? 'enemy' : 'ally'))?.at[0];
       deployments.push({ subject: side, at: [other ? opposite(other) : side === 'enemy' ? 'north' : 'south'] });
     }
   }
   const handles = new Map(ctx.units.map(u => [u.id.toLowerCase(), u.id])), byName = new Map(ctx.units.filter(u => ctx.units.filter(o => o.name === u.name).length === 1).map(u => [u.name, u.id]));
   const detachments = Array.isArray(raw.units) ? raw.units : [];
-  if (detachments.length > MAX_DETACHMENTS) notes.add(`单独部署最多${MAX_DETACHMENTS}个`);
-  for (const item of detachments.slice(0, MAX_DETACHMENTS)) {
+  if (detachments.length > MAX_SMALL_UNITS) notes.add(`单独部署最多${MAX_SMALL_UNITS}个`);
+  for (const item of detachments.slice(0, MAX_SMALL_UNITS)) {
     if (!object(item)) continue;
     const written = String(item.unit ?? item.id ?? item.name ?? '').trim(), id = handles.get(written.toLowerCase()) ?? byName.get(written);
     const at = sectors(item.at, notes, written || '单位');
@@ -398,7 +405,7 @@ function layoutAdvice(error: string, plan?: BattlefieldPlan): string {
   if (/桥/.test(error)) return 'bridges少写几座或写[]，桥不写at，由程序放置';
   if (/门/.test(error)) return 'gates少写几座，门不写at，由程序放在面向攻方的城墙上';
   if (/河|水/.test(error)) return '水系写在城市对侧或不写water.at；正文没有强调的河流可以删去';
-  if (/开局|部署|容量|名单/.test(error)) return '双方at各写2—3个相邻的空旷方位，不要与对方、城市或地点挤在同一格；删去units里的单独部署';
+  if (/开局|部署|容量|名单/.test(error)) return '各方at各写2—3个相邻的空旷方位，不要与对方、城市或地点挤在同一格；删去units里的单独部署';
   return '删去或改写与这条报错有关的项，拿不准就删去';
 }
 
@@ -424,7 +431,7 @@ const PARTS: Record<'units' | 'objective' | 'places' | 'bridges' | 'gates' | 'wa
   bridges: { present: r => object(r.water) && Array.isArray(r.water.bridges), drop: r => { delete (r.water as Json).bridges; return '桥梁改由程序布置'; } },
   gates: { present: r => object(r.city) && Array.isArray(r.city.gates), drop: r => { delete (r.city as Json).gates; return '城门改由程序布置'; } },
   water: { present: r => r.water !== undefined, drop: r => { delete r.water; return '未采用水系'; } },
-  sides: { present: r => r.ally !== undefined || r.enemy !== undefined, drop: r => { delete r.ally; delete r.enemy; return '双方开局位置改由程序决定'; } },
+  sides: { present: r => r.ally !== undefined || r.enemy !== undefined || r.neutral !== undefined, drop: (r, ctx) => { delete r.ally; delete r.enemy; delete r.neutral; return (ctx.units.some(u => u.side === 'neutral') ? '各方' : '双方') + '开局位置改由程序决定'; } },
   city: { present: r => r.city !== undefined, drop: r => { delete r.city; return '城市改由程序布置'; } },
   style: { present: r => r.archetype !== undefined || r.cover !== undefined || r.density !== undefined, drop: r => {
     delete r.archetype; delete r.cover; delete r.density; return '场所风格与掩体改由程序决定';

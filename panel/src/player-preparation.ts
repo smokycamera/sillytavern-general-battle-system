@@ -40,7 +40,8 @@ export class PlayerPreparation {
     const context: LlmEncounterContext = encounterRequest({ roster: input.roster, setup: input.setup,
       settings: { ...normalizeContextSettings(), enemy: 'manual', scene: 'manual' }, messages: [], windowSize: 0, roles: [], phase: 'preparation' }).base;
     if (value.commanders !== undefined) {
-      if (!object(value.commanders) || Object.keys(value.commanders).some(k => !['ally','enemy'].includes(k))) throw Error('commanders 仅接受 ally、enemy');
+      const sides = context.mode === 'small' ? ['ally','enemy','neutral'] : ['ally','enemy'];
+      if (!object(value.commanders) || Object.keys(value.commanders).some(k => !sides.includes(k))) throw Error('commanders 仅接受 ' + sides.join('、'));
       for (const [side, p] of Object.entries(value.commanders)) {
         if (!object(p)) throw Error(`commanders.${side} 须为包含 ability 和 style 的对象`);
         if (!(COMMANDER_ABILITIES as readonly unknown[]).includes(p.ability)) throw Error(`commanders.${side}.ability ${p.ability === undefined ? '缺失' : '无效'}；可选：${COMMANDER_ABILITIES.join('、')}`);
@@ -82,12 +83,12 @@ export class PlayerPreparation {
     this.battlefield = value.battlefield === undefined ? '' : JSON.stringify(value.battlefield, null, 2);
   }
   help(input?: PreparationInputs) {
-    return { identity: '玩家视角；我方由玩家下令，敌方由现有 AI 执行。未连接 MCP 时原流程不变。',
+    return { identity: '玩家视角；我方由玩家下令，敌方与第三方由现有 AI 执行。未连接 MCP 时原流程不变。',
       workflow: '先在任务设置选择环境/光照/目标，再提交 commanders 和 battlefield。修改队伍、聊天或任务会使草稿失效。准备后点击开始交战；不会额外请求副API。',
       commanderAbilities: COMMANDER_ABILITIES, commanderStyles: COMMANDER_STYLES,
       preferences: { keys: ['reserve','risk','counterattack','cohesion','breach'], maxKeys: 3, min: 0, max: 4 },
       battlefield: BATTLEFIELD_PLAN_PROMPT,
-      example: { commanders: { ally: { ability: 'skilled', style: 'flanking' }, enemy: { ability: 'regular', style: 'cautious' } }, battlefield: { scene: 'field', layout: 'lanes', landmarks: [{ kind: 'hill', anchor: 'center_left', label: '西侧高地' }] } },
+      example: { commanders: { ally: { ability: 'skilled', style: 'flanking' }, enemy: { ability: 'regular', style: 'cautious' }, ...(input?.setup.mode === 'small' && input.roster.some(u => u.side === 'neutral' && u.hp > 0 && u.status === 'ready') ? { neutral: { ability: 'regular', style: 'balanced' } } : {}) }, battlefield: { scene: 'field', layout: 'lanes', landmarks: [{ kind: 'hill', anchor: 'center_left', label: '西侧高地' }] } },
       ...(input ? { setup: input.setup, units: Object.entries(input.unitBindings).map(([id, realId]) => ({ id, name: input.roster.find(u => u.id === realId)?.name })), narrativeSources: input.sources,
         prepared: this.resolve(input.scope) ? { commanders: this.draft?.context.commanders, battlefield: this.draft?.context.battlefieldPlan } : null } : {}) };
   }

@@ -3,7 +3,24 @@ import { generatedField, findGridPath, generateUnit, SmallBattle, traitRegistry,
 import { recommendBattleMode, normalizeObjectiveMode, prepareBattleObjective, prepareMassRoster, battleCapacityIssue } from './battle-setup.js';
 import { MassBattle, V2_TW, formationNode } from '../../engine/src/index.js';
 import { renderTacticalBattle } from './tactical-view.js';
+import { buildEncounter } from './game-encounter.js';
 const registry = traitRegistry();
+
+it('allows a third party in escort while retaining the original VIP outcome', () => {
+  const roster = [unit('a', 'ally'), unit('e', 'enemy'), unit('n', 'enemy')]; roster[2]!.side = 'neutral';
+  const built = buildEncounter({ roster, setup: { mode: 'small', field: 'plains', lighting: 'day', mapLayout: 'standard', objectiveMode: 'escort', siegeAttacker: 'ally' },
+    nonLethal: false, seed: 'three-way-escort', registry, protagonistId: 'a', summonUnit: () => null });
+  if (!(built instanceof SmallBattle)) throw Error('expected small battle');
+  built.turnOrder = ['n', 'a', 'e']; built.turnIndex = 0;
+  built.battlefield!.tiles.fill('open');
+  built.byId('n').pos = 30; built.byId('e').pos = 31; built.byId('a').pos = 80;
+  const before = built.log.length; built.autoAction('n');
+  expect(built.log.slice(before).some(e => ['attack', 'move', 'ability'].includes(e.kind))).toBe(true);
+  const goal = built.battlefield!.objective;
+  if (goal.kind !== 'escape') throw Error('expected escort');
+  built.byId('a').pos = goal.cell; built.turnIndex = built.turnOrder.length - 1; built.endTurn();
+  expect([built.objectiveWinner, built.byId('n').side]).toEqual(['ally', 'neutral']);
+});
 function unit(id: string, side: 'ally' | 'enemy', input: Partial<GenerateInput> = {}) {
   const u = generateUnit({ rulesVersion: 'v2', name: id, side, scale: 'company', hpMax: 5, level: 3,
     weaponClass: 'sword', traits: [], ...input }, { seed: id, registry, noVariance: true }).unit;

@@ -60,7 +60,7 @@ export function unitForm(prefix: string, d: UnitDraft, registry: Map<string, Tra
   ];
   const selectedControls = controlRules.filter(([name]) => d.skills.some(s => skillDefinitionName(s.id).includes(name!)));
   return `<div data-builder-form="${prefix}" class="unit-builder"><div class="builder-basics">
-    <label>名称${input('name', 'placeholder="角色或编队名称"')}</label><label>归属${select('side', [['ally', '我方'], ['enemy', '敌方']])}</label>
+    <label>名称${input('name', 'placeholder="角色或编队名称"')}</label><label>归属${select('side', [['ally', '我方'], ['enemy', '敌方'], ['neutral', '第三方']])}</label>
     <label>单位类型${select('scale', [['hero', '个体'], ['company', '编队']], opts.editing)}</label><label>训练${input('level', 'type="number" min="1" max="10" ' + (opts.editing ? 'readonly title="随经验成长"' : ''))}</label>
     ${d.scale === 'company' || opts.editing ? `<label>${d.scale === 'company' ? '编制上限' : '生命上限'}${input('hpMax', 'type="number" min="1" placeholder="50"' + (d.scale === 'hero' ? ' max="' + singleLifeLimit(d.damageModel) + '"' : ''))}</label>` : ''}
     ${opts.editing ? `<label>${d.scale === 'company' ? '当前人数' : '当前生命'}${input('hp', 'type="number" min="0"')}</label>` : ''}</div>

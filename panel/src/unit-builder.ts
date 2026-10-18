@@ -42,8 +42,8 @@ function integer(s: string, min: number, max: number, label: string): number {
 }
 function identityInput(d: UnitDraft): GenerateInput {
   if (!d.name.trim()) throw Error('请填写单位名称');
-  if (!['ally', 'enemy'].includes(d.side) || !['hero', 'company'].includes(d.scale)) throw Error('单位归属或人数形式无效');
-  return { name: d.name.trim(), side: d.side as 'ally' | 'enemy', scale: d.scale as 'hero' | 'company', level: integer(d.level, 1, 10, '训练'), rulesVersion: 'v2', damageModel: d.damageModel, traits: [...d.traits], body: d.body as GenerateInput['body'], mount: d.mount, speedTier: d.speedTier ? integer(d.speedTier, 1, 5, '速度档位') : undefined,
+  if (!['ally', 'enemy', 'neutral'].includes(d.side) || !['hero', 'company'].includes(d.scale)) throw Error('单位归属或人数形式无效');
+  return { name: d.name.trim(), side: d.side as Combatant['side'], scale: d.scale as 'hero' | 'company', level: integer(d.level, 1, 10, '训练'), rulesVersion: 'v2', damageModel: d.damageModel, traits: [...d.traits], body: d.body as GenerateInput['body'], mount: d.mount, speedTier: d.speedTier ? integer(d.speedTier, 1, 5, '速度档位') : undefined,
     traitLevels: d.traitLevels,
     hpMax: d.hpMax.trim() ? (d.scale === 'hero' ? capSingleLife(integer(d.hpMax, 1, Number.MAX_SAFE_INTEGER, '生命上限'), d.damageModel) : integer(d.hpMax, 1, 1e9, '编制上限')) : d.scale === 'company' ? 50 : undefined,
     hp: d.hp.trim() ? (d.scale === 'hero' ? capSingleLife(integer(d.hp, 0, Number.MAX_SAFE_INTEGER, '当前生命'), d.damageModel) : integer(d.hp, 0, 1e9, '当前人数')) : undefined,

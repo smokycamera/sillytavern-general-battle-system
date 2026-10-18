@@ -26,7 +26,7 @@ export interface BattlefieldSpec {
   heightTransitions?: HeightTransition[];
   scene?: SceneRecord;
   deploymentZones?: DeploymentZone[];
-  retreatEdges?: Partial<Record<'ally'|'enemy',number[]>>;
+  retreatEdges?: Partial<Record<Combatant['side'],number[]>>;
   initialDeployment?: Record<string,{pos:number;elevation?:1;airborne?:boolean}>;
   layerVersion?: 1;
   structures?: (FieldStructure | null)[];
@@ -323,6 +323,11 @@ export function gridDeploymentCells(field: BattlefieldSpec, unit: Combatant): nu
       : [...field.city.inside, ...field.city.reserve].filter(p => !groundBlocked(field, p, unit));
     return [...new Set(cells)];
   }
+  if (unit.side === 'neutral') {
+    const depths = unit.rulesVersion === 'v2' && isRangedWeapon(unit.weapon) ? [0, 1, 2] : [2, 1, 0];
+    return depths.flatMap(d => Array.from({ length: Math.max(1, field.height - 6) }, (_, y) => (y + 3) * field.width + field.width - 1 - d))
+      .filter(p => !field.city?.defender || !field.city.inside.includes(p));
+  }
   const rows = unit.side === 'enemy' ? [2, 1, 0] : [field.height - 3, field.height - 2, field.height - 1];
   if (unit.rulesVersion === 'v2' && isRangedWeapon(unit.weapon)) rows.reverse();
   const ordinary = rows.flatMap((y) => Array.from({ length: field.width }, (_, x) => y * field.width + x));
@@ -335,8 +340,11 @@ export function gridDeploymentCells(field: BattlefieldSpec, unit: Combatant): nu
   return [...forward, ...ordinary].filter(p => !field.city?.defender || unit.side === field.city.defender || !field.city.inside.includes(p));
 }
 export function retreatCells(field:BattlefieldSpec,side:Combatant['side']):number[] {
-  if(side!=='ally'&&side!=='enemy')return [];
+  if (side === 'neutral') return field.retreatEdges?.neutral ?? Array.from({ length: field.height }, (_, y) => y * field.width + field.width - 1);
   return field.retreatEdges?.[side]??Array.from({length:field.width},(_,x)=>(side==='ally'?field.height-1:0)*field.width+x);
+}
+export function deploymentDepth(field: BattlefieldSpec, side: Combatant['side'], cell: number): number {
+  return Math.min(...retreatCells(field, side).map(p => gridDistance(field, p, cell)));
 }
 /** 小幅扰动按单位/格子派生，数组顺序、评分次数与战斗骰子都不会改变它。 */
 function deploymentNoise(seed: string, id: string, key: string): number {
@@ -346,16 +354,14 @@ function deploymentNoise(seed: string, id: string, key: string): number {
 /** 只看公开地形与己方站位，不读取尚未发现的敌军位置来优化射界。 */
 function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string) {
   const enemy = unit.side === 'enemy', ranged = isRangedWeapon(unit.weapon), air = isAirborne(unit);
-  const forward = enemy ? 3 : field.height - 4;
+  const edge = retreatCells(field, unit.side), horizontal = edge.every(p => p % field.width === edge[0]! % field.width);
   const vanguard = activeTraitIds(unit).includes('vanguard');
   const preferredDepth = ranged ? gridWeaponRange(unit.weapon, true, unit.armsModel) <= 4 ? 1 : 0 : 2;
-  const preferredY = vanguard ? forward : enemy ? preferredDepth : field.height - 1 - preferredDepth;
-  const middle = Math.floor(field.height / 2);
-  const probes = [...new Set([forward, middle])].flatMap(y => Array.from({ length: field.width }, (_, x) => y * field.width + x))
+  const probes = field.tiles.flatMap((_, p) => [3, Math.floor((horizontal ? field.width : field.height) / 2)].includes(deploymentDepth(field, unit.side, p)) ? [p] : [])
     .filter(p => field.layerVersion ? !groundBlocked(field, p, unit) : field.tiles[p] !== 'wall');
   const costs = gridCostsToGoals(field, probes, p => field.layerVersion ? !groundBlocked(field, p, unit) : air || field.tiles[p] !== 'wall', (p,from) => tileCost(field, p, unit)+heightStepCost(field,from,p,unit));
   // A garrison given only a compass area keeps the siege layout: close to its walls, with a reserve.
-  const contextual=field.deploymentZones?.some(z=>(z.unitId===unit.id||!z.unitId&&z.side===unit.side)&&!(field.city?.defender===unit.side&&z.relation?.startsWith('sector')));
+  const contextual=field.deploymentZones?.some(z=>(z.unitId===unit.id||!z.unitId&&z.side===unit.side)&&!!z.landmarkId);
   const emptyConditions = new Map<string, ConditionDef>();
   return (position: number, placed: Combatant[]) => {
     const actor = { ...unit, pos: position }, friends = placed.filter(u => u.id !== unit.id && u.side === unit.side);
@@ -368,7 +374,8 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
     // A ring or a double wall is manned on the face toward the assault, not on the rear or the inner wall.
     const slots = city ? (deploymentNoise(seed, unit.id, 'reserve') < .2 && !isElevated(unit) ? city.reserve : city.frontage?.length ? city.frontage : city.frontline) : [];
     const lineDistance = slots.length ? Math.min(...slots.map(p => gridDistance(field, p, position))) : 0;
-    let score = (contextual?(ranged?1.2:-1.8)*gridDistance(field,position,field.objective.cell):city ? -4 * lineDistance : -5 * Math.abs(y - preferredY)) - 0.45 * Math.abs(x - Math.floor(field.width / 2))
+    let score = (contextual?(ranged?1.2:-1.8)*gridDistance(field,position,field.objective.cell):city ? -4 * lineDistance : -5 * Math.abs(deploymentDepth(field, unit.side, position) - (vanguard ? 3 : preferredDepth)))
+      - 0.45 * Math.abs(horizontal ? y - Math.floor(field.height / 2) : x - Math.floor(field.width / 2))
       - 8 * blockingFriends.filter(u => u.pos === position).length
       - 0.3 * blockingFriends.filter(u => gridDistance(field, u.pos!, position) === 1).length
       - 0.4 * detour - 0.7 * (tileCost(field, position, unit) - 1)
@@ -429,8 +436,7 @@ export function deployOnGrid(field: BattlefieldSpec, units: Combatant[], seed = 
     let legal = candidates.filter(n => canOccupy(field, occupied, unit, n));
     // 先锋优先利用专属前出域，避免占掉普通单位唯一可用的部署容量。
     if (modern && activeTraitIds(unit).includes('vanguard')&&!field.deploymentZones?.length) {
-      const forward = unit.side === 'enemy' ? 3 : field.height - 4;
-      const advanced = legal.filter(n => Math.floor(n / field.width) === forward);
+      const advanced = legal.filter(n => deploymentDepth(field, unit.side, n) === 3);
       if (advanced.length) legal = advanced;
     }
     const score = scorers.get(unit.id);

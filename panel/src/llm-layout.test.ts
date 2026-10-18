@@ -7,7 +7,7 @@ import { renderTacticalBattle } from './tactical-view.js';
 import type { LlmSettings } from './llm-settings.js';
 
 const settings: LlmSettings = { enabled: true, selectBattleScale: true, designMap: true, selectVip: false, windowSize: 4, url: 'https://gateway.example/v1', token: 'key', model: 'flash', models: [] };
-function unit(name: string, side: 'ally' | 'enemy', weaponClass = 'sword'): Combatant {
+function unit(name: string, side: Combatant['side'], weaponClass = 'sword'): Combatant {
   const u = generateUnit({ name, side, scale: 'hero', rulesVersion: 'v2', level: 3, weaponClass, weaponLevel: 3, traits: [] }, { seed: name, noVariance: true }).unit;
   u.id = 'raw:' + name; return u;
 }
@@ -27,6 +27,41 @@ const ctx = (extra: Partial<LayoutContext> = {}): LayoutContext => ({ scene: 'ci
   units: [{ id: 'u1', name: '张辽', side: 'ally', kind: '人物·近战' }, { id: 'u2', name: '弩手', side: 'enemy', kind: '部队·远程' }], ...extra });
 
 describe('two-step preparation with a compass layout', () => {
+  it.each([{ sides: ['ally', 'enemy'] }, { sides: ['ally', 'enemy', 'neutral'] }] as const)('deploys and restores all 32 individually placed units with $sides', ({ sides: sideList }) => {
+    const units = Array.from({ length: 32 }, (_, i) => ({ id: 'u' + (i + 1), name: '布阵' + i, side: sideList[i % sideList.length]!, kind: '人物·近战' }));
+    const context = ctx({ scene: 'field', size: 'large', objectiveMode: 'annihilation', map: [13, 19], units });
+    const sector = { ally: 'S', enemy: 'N', neutral: 'E' };
+    const answer = { ...Object.fromEntries(sideList.map(side => [side, { at: [sector[side]] }])), units: units.map(u => ({ unit: u.id, at: sector[u.side] })) };
+    const compiled = compileLayout(answer, context);
+    const combatants = units.map(u => unit(u.name, u.side));
+    const bindings = Object.fromEntries(units.map((u, i) => [u.id, combatants[i]!.id]));
+    const field = generatedLayeredField('individual-32-' + sideList.length, 13, 19, [], { roster: combatants, plan: compiled.plan, unitBindings: bindings });
+    const b = new SmallBattle({ combatants, battlefield: field, rules: V11_OVERFLOW_D20, seed: 'individual-32' }); b.start();
+    const restored = SmallBattle.fromSnapshot(b.toSnapshot());
+    expect(restored.combatants.every(u => restored.battlefield!.deploymentZones!.some(z => z.unitId === u.id && z.cells.includes(u.pos!)))).toBe(true);
+    expect(restored.combatants).toHaveLength(32);
+  });
+  it('sends an independent third-party commander and layout in the existing two requests', async () => {
+    const input = source(); input.roster.push(unit('第三军', 'neutral'));
+    const request = twoStep({ ally: { at: ['S'] }, enemy: { at: ['N'] }, neutral: { at: ['E'] } },
+      { ...siegeChoice, field: 'plains', objective: 'annihilation', scene: 'field', neutral_ability: 'master', neutral_style: 'ambush' });
+    let field: ReturnType<typeof generatedLayeredField>;
+    const result = await new LlmContextController(request).select(input, settings, () => true, r => {
+      field = generatedLayeredField('third-party-layout', 7, 13, ['plains'], { roster: input.roster, plan: r.battlefieldPlan, unitBindings: r.unitBindings });
+    });
+    expect(request).toHaveBeenCalledTimes(2);
+    const decision = JSON.parse(sent(request, 0).messages[2].content.split('\n').at(-1));
+    expect(decision.fields.filter((f: { id: string }) => f.id.startsWith('neutral_')).map((f: { id: string }) => f.id)).toEqual(['neutral_ability', 'neutral_style']);
+    expect(decision.state.commandRules).toContain('neutral:{preferences:{}}');
+    const task = sent(request, 1).messages[2].content;
+    expect(task).toContain('第三军 · 第三方'); expect(task).toContain('"neutral":{"at":["E"]}');
+    expect(result.commanders?.neutral).toEqual({ ability: 'master', style: 'ambush' });
+    const zones = field!.deploymentZones!;
+    const third = zones.filter(z => z.side === 'neutral').flatMap(z => z.cells);
+    expect(third.length).toBeGreaterThan(0);
+    expect(zones.filter(z => z.side !== 'neutral').every(z => z.cells.every(p => !third.includes(p)))).toBe(true);
+    expect(input.roster.every(u => zones.some(z => z.side === u.side && z.cells.includes(field!.initialDeployment![u.id]!.pos)))).toBe(true);
+  });
   it('decides first, then lays out the chosen siege; both steps share the cached prefix and attackers start outside the walls', async () => {
     const request = twoStep({ city: { at: '北方', name: '青石城', gates: [{ name: '南门', state: 'closed' }] }, ally: { at: ['城南'] }, enemy: { post: '城头' } });
     const input = source(), stages: string[] = [], controller = new LlmContextController(request);
@@ -213,7 +248,7 @@ describe('compass layout compiler', () => {
     expect(layoutRetryNote('目标必须是合法可通行格')).toMatch(/改法：任务目标处被实心地点占住/);
     expect(layoutRetryNote('模型未返回有效布置 JSON，请检查模型是否支持 JSON 输出')).toBe('模型未返回有效布置 JSON。改法：只输出一个JSON对象，不要附加说明文字、注释或代码块');
     expect(layoutRetryNote('河流与完整城墙重叠，请调整城市或河流方位')).toMatch(/改法：水系写在城市对侧/);
-    expect(layoutRetryNote('我方没有可用的开局位置，请调整部署方位')).toMatch(/改法：双方at各写2—3个相邻的空旷方位/);
+    expect(layoutRetryNote('我方没有可用的开局位置，请调整部署方位')).toMatch(/改法：各方at各写2—3个相邻的空旷方位/);
   });
   it('leaves out the named place first, then the part the error points to, then the least essential part', () => {
     const answer = { battlefield: { city: { at: 'N', gates: [{ name: '南门' }] }, water: { type: 'river', at: 'E', bridges: [{ at: 'E' }] },

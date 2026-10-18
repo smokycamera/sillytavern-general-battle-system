@@ -13,7 +13,7 @@ export interface SmallCommandContext {
   /** 本方（当前作战阵营）与敌方：可见、在场的单位。 */
   friends: Combatant[];
   foes: Combatant[];
-  side: 'ally' | 'enemy';
+  side: Combatant['side'];
   rounds: readonly CommandRound[];
   movement: number;
   /** 自身武器的最大射程/触及；敌方近战单位的触及。 */
@@ -42,7 +42,7 @@ export function smallCommandFeatures(ctx: SmallCommandContext): (plan: SmallComm
   const core = (heroes.length ? heroes : friends).slice().sort((a, b) => b.hp - a.hp || a.id.localeCompare(b.id))[0];
   // 工兵：带工兵特质或持爆破武器的己方单位。
   const engineers = friends.filter(u => activeTraitIds(u).includes('siege-breaker') || u.weapon?.recipe?.mechanism === 'demolition');
-  const attacked = commandAttacked(ctx.rounds, ctx.side === 'ally' ? 'enemy' : 'ally'), ownTargets = commandAttacked(ctx.rounds, ctx.side), hostile = commandAttackers(ctx.rounds, ctx.side);
+  const attacked = new Set((['ally', 'enemy', 'neutral'] as const).filter(side => side !== ctx.side).flatMap(side => [...commandAttacked(ctx.rounds, side)])), ownTargets = commandAttacked(ctx.rounds, ctx.side), hostile = commandAttackers(ctx.rounds, ctx.side);
   const hurtAllies = allies.filter(a => attacked.has(a.id));
   const startOf = (u: Combatant) => commandStart(ctx.rounds, u, u.pos) as number | undefined;
   const inFrontZone = (cell: number | undefined, starts: boolean) => cell !== undefined && friends.some(o => { const at = starts ? startOf(o) : o.pos; return at !== undefined && d(cell, at) <= 4; });

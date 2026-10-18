@@ -66,7 +66,7 @@ function unitPlace(b: Battle, u: Combatant, field?: BattlefieldSpec): string {
 function epilogueUnit(b: Battle, u: Combatant, field?: BattlefieldSpec): string {
   const statuses = {ready:'可行动',dying:'濒死',dead:u.scale==='hero'?'阵亡':'编队失去战斗力',routing:'溃退中',fled:'已撤离'};
   const conditions=u.conditions.filter(c=>c.dur>0).map(c=>`${b.conditions.get(c.id)?.name??c.id}（${c.dur}轮）`);
-  return `${u.side==='ally'?'我方':u.side==='enemy'?'敌方':'中立'} ${u.name}${unitPlace(b,u,field)}：${reportStrengthLabel(u)}，${statuses[u.status]}${woundedLabel(u,true)?'，'+woundedLabel(u,true):''}${conditions.length?'，'+conditions.join('、'):''}`;
+  return `${u.side==='ally'?'我方':u.side==='enemy'?'敌方':'第三方'} ${u.name}${unitPlace(b,u,field)}：${reportStrengthLabel(u)}，${statuses[u.status]}${woundedLabel(u,true)?'，'+woundedLabel(u,true):''}${conditions.length?'，'+conditions.join('、'):''}`;
 }
 /** 按真实生命/现员损失累计，过量伤害不计入；来源按稳定id区分。成员生命编队另记减员人数。 */
 function epilogueDamage(b: Battle): string[] {
@@ -110,7 +110,7 @@ export function battleEpilogue(b: Battle, start?: BattleReport['start']): string
   const items = b.isOver() ? itemUseReport(b.combatants, b.log) : [];
   const goal = b instanceof SmallBattle && b.battlefield?.objective;
   const mission = goal ? goal.kind === 'annihilation' ? '歼灭战' : goal.kind === 'control' ? goal.attackingSide ? goal.attackingSide === 'ally' ? '攻城战' : '守城战' : '占旗战' : '护送/拦截' : '军团会战';
-  return [`【战阵·战斗终章】${mission}，共${completedBattleRounds(b)}轮；${b.isOver() ? b.winner()==='ally'?'我方胜利':b.winner()==='enemy'?'我方失利':'停战/僵持':'尚未结束'}`,
+  return [`【战阵·战斗终章】${mission}，共${completedBattleRounds(b)}轮；${b.isOver() ? b.winner()==='ally'?'我方胜利':b.winner()==='neutral'?'第三方获胜，我方失败':b.winner()==='enemy'?'我方失利':'停战/僵持':'尚未结束'}`,
     ...(b instanceof SmallBattle && b.isOver() ? ['【胜负原因】' + smallBattleResult(b)] : []),
     `【本场规则】${lethalityRule(b)}`,
     ...(facts.length?['【战场】',...facts]:[]),
