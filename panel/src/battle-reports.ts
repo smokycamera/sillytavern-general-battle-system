@@ -1,7 +1,7 @@
 import { SmallBattle, type MassBattle, type BattleLogEntry, type Combatant, woundedLabel } from '../../engine/src/index.js';
 import { observedLog } from '../../engine/src/observation.js';
 import { smallBattleResult } from '../../engine/src/battle-result.js';
-import { compactEventGroups, fieldFacts, reportPlaceText, reportStrengthLabel, HEIGHT_LEGEND } from '../../engine/src/inject/format.js';
+import { compactEventGroups, fieldFacts, reportPlaceText, reportStrengthLabel, reportShieldLabel, HEIGHT_LEGEND } from '../../engine/src/inject/format.js';
 import { reportsHeights } from '../../engine/src/small/height-map.js';
 import { formationNode } from '../../engine/src/mass/formation.js';
 import type { BattlefieldSpec } from '../../engine/src/small/spatial.js';
@@ -66,7 +66,7 @@ function unitPlace(b: Battle, u: Combatant, field?: BattlefieldSpec): string {
 function epilogueUnit(b: Battle, u: Combatant, field?: BattlefieldSpec): string {
   const statuses = {ready:'可行动',dying:'濒死',dead:u.scale==='hero'?'阵亡':'编队失去战斗力',routing:'溃退中',fled:'已撤离'};
   const conditions=u.conditions.filter(c=>c.dur>0).map(c=>`${b.conditions.get(c.id)?.name??c.id}（${c.dur}轮）`);
-  return `${u.side==='ally'?'我方':u.side==='enemy'?'敌方':'第三方'} ${u.name}${unitPlace(b,u,field)}：${reportStrengthLabel(u)}，${statuses[u.status]}${woundedLabel(u,true)?'，'+woundedLabel(u,true):''}${conditions.length?'，'+conditions.join('、'):''}`;
+  return `${u.side==='ally'?'我方':u.side==='enemy'?'敌方':'第三方'} ${u.name}${unitPlace(b,u,field)}：${reportStrengthLabel(u)}${reportShieldLabel(u)}，${statuses[u.status]}${woundedLabel(u,true)?'，'+woundedLabel(u,true):''}${conditions.length?'，'+conditions.join('、'):''}`;
 }
 /** 按真实生命/现员损失累计，过量伤害不计入；来源按稳定id区分。成员生命编队另记减员人数。 */
 function epilogueDamage(b: Battle): string[] {

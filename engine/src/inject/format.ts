@@ -56,7 +56,7 @@ export function reportStrengthLabel(u: Combatant): string {
   return u.body === 'vehicle' ? `剩余总数${u.hp}/${u.base.hpMax}辆` : `剩余总人数${u.hp}/${u.base.hpMax}`;
 }
 
-/** 战报状态行的能量盾：剩余/容量（取整）与过载份数；只在战斗进行中写，倒下的单位不写。 */
+/** 战报状态行的能量盾：剩余/容量（取整）与过载份数；倒下或撤离的单位不写。 */
 export function reportShieldLabel(u: Combatant): string {
   const state = u.energyShield;
   if (!state || u.hp <= 0 || u.status === 'dead' || u.status === 'fled') return '';
@@ -97,7 +97,7 @@ export function smallStateSummary(
     const label = side === 'ally' ? '我方' : '敌方';
     lines.push(
       `${label}：${units
-        .map((u) => `${pc === u.id ? '【主控】' : ''}${u.name}${smallPosition(b, u)} ${reportStrengthLabel(u)}${b.isOver() ? '' : reportShieldLabel(u)}${stateLabel(u, true)}${unitReadiness(b, u)}`)
+        .map((u) => `${pc === u.id ? '【主控】' : ''}${u.name}${smallPosition(b, u)} ${reportStrengthLabel(u)}${reportShieldLabel(u)}${stateLabel(u, true)}${unitReadiness(b, u)}`)
         .join('；')}`,
     );
   }
@@ -134,7 +134,7 @@ export function massStateSummary(
           const zone = node ? `${node.wing}${({ front: '前列', rear: '后列', reserve: '预备列' })[node.rank]}·` : b.zones ? `${b.zoneOf(u)}·` : '';
           const engage = u.engagedWith.length ? '⚔' : '';
           const marks = `${pc === u.id ? '【主控】' : ''}${side === 'ally' && b.commanderId === u.id ? '【指挥官】' : ''}`;
-          return `${zone}${marks}${u.name}${engage} ${reportStrengthLabel(u)}${b.isOver() ? '' : reportShieldLabel(u)}${stateLabel(u, true)}${unitReadiness(b, u)}`;
+          return `${zone}${marks}${u.name}${engage} ${reportStrengthLabel(u)}${reportShieldLabel(u)}${stateLabel(u, true)}${unitReadiness(b, u)}`;
         })
         .join('；')}`,
     );
@@ -247,9 +247,13 @@ function heightTag(r: AttackResolution): string {
   return a === undefined || d === undefined || a === d ? '' : `${a > d ? '居高' : '仰攻'}（高度${a}→${d}），`;
 }
 /** 命中/未中、生命损失与成员减员；技能与普通攻击共用。 */
+/** 纪要里的能量盾：挡下的伤害（取整）与过载。 */
+function energyText(absorbed: number, overloaded: number, hero: boolean): string {
+  return (absorbed ? `，能量盾吸收${Math.round(absorbed)}` : '') + (overloaded ? hero ? '，能量盾过载' : `，${overloaded}份能量盾过载` : '');
+}
 function hitText(r: AttackResolution): string {
   return r.hit
-    ? `${r.crit ? '✦暴击' : '命中'}${r.finalDamage}${r.damageModel==='member-health'?'生命':''}（${r.hpBefore}→${r.hpAfter}）${r.damageModel==='member-health'&&r.defenderScale!=='hero'&&r.membersBefore!==undefined&&r.membersAfter!==undefined?`，减员${r.membersBefore-r.membersAfter}`:''}`
+    ? `${r.crit ? '✦暴击' : '命中'}${r.finalDamage}${r.damageModel==='member-health'?'生命':''}（${r.hpBefore}→${r.hpAfter}）${r.damageModel==='member-health'&&r.defenderScale!=='hero'&&r.membersBefore!==undefined&&r.membersAfter!==undefined?`，减员${r.membersBefore-r.membersAfter}`:''}${energyText(r.energyAbsorbed ?? 0, r.energyOverloaded ?? 0, r.defenderScale === 'hero')}`
     : '未中';
 }
 function fellMark(r: AttackResolution): string {
@@ -271,7 +275,8 @@ function volleyLine(volley: BattleLogEntry[]): string {
   const hits = volley.filter((v) => v.resolution!.hit).length, damage = volley.reduce((n, v) => n + v.resolution!.finalDamage, 0);
   const life = first.damageModel === 'member-health';
   const members = life && first.defenderScale !== 'hero' && first.membersBefore !== undefined && last.membersAfter !== undefined ? '，减员' + (first.membersBefore - last.membersAfter) : '';
-  return `${first.attackerName}→${first.defenderName} ${heightTag(first)}${volley.length}段/${hits}中，损失${damage}${life ? '生命' : ''}（${first.hpBefore}→${last.hpAfter}）${members}${fellMark(last)}${volley.some((v) => v.resolution!.crit) ? '·含暴击' : ''}`;
+  const energy = energyText(volley.reduce((n, v) => n + (v.resolution!.energyAbsorbed ?? 0), 0), volley.reduce((n, v) => n + (v.resolution!.energyOverloaded ?? 0), 0), first.defenderScale === 'hero');
+  return `${first.attackerName}→${first.defenderName} ${heightTag(first)}${volley.length}段/${hits}中，损失${damage}${life ? '生命' : ''}（${first.hpBefore}→${last.hpAfter}）${members}${energy}${fellMark(last)}${volley.some((v) => v.resolution!.crit) ? '·含暴击' : ''}`;
 }
 
 /** 技能自身位移受阻、技能因此没有生效的说明；位移本身由逐格移动写出。 */
