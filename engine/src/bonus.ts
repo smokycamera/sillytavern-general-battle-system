@@ -1,4 +1,4 @@
-import { shieldGuardUsable } from './arms.js';
+import { shieldGuardUsable, isArmsV2 } from './arms.js';
 import { phase2Traits } from './trait-level-model.js';
 import { phase2Value, phase2WeaponMods } from './phase2-traits.js';
 /**
@@ -359,7 +359,7 @@ export function collectMods(
   const equipment: Modifier[] = [];
   if (unit.rulesVersion === 'v2') {
     const traits = activeTraitIds(unit);
-    if (equipmentBurden(unit)) equipment.push({ source: 'intrinsic', sourceId: 'equipment:encumbrance', name: unit.armsModel === 'arms-v2' ? equipmentBurden(unit) === 2 ? '超载' : '重载' : '人形重载', kind: 'spd', type: 'flat', value: -2*equipmentBurden(unit) });
+    if (equipmentBurden(unit)) equipment.push({ source: 'intrinsic', sourceId: 'equipment:encumbrance', name: isArmsV2(unit.armsModel) ? equipmentBurden(unit) === 2 ? '超载' : '重载' : '人形重载', kind: 'spd', type: 'flat', value: -2*equipmentBurden(unit) });
     // 五项专精按等级（V15 起 L1–10，旧规则一律 L5）；L5 与无专精时产生的修正与以前完全相同。
     const forest = traitLevel(unit, 'forest-lore', traits), mountain = traitLevel(unit, 'mountain-born', traits), night = traitLevel(unit, 'night-fighter', traits);
     if (ctx.fieldTags?.includes('night')) {

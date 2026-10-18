@@ -131,7 +131,7 @@ export interface Ability {
   /** 显式编辑的效果与数值不被入场公式重建。 */
   customized?: boolean;
   bonuses?: Enhancements;
-    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3' | 'skill-v5.0' | 'skill-v6.0' | 'skill-v6.1' | 'skill-v7.0' | 'skill-v2.5' | 'skill-v8.0' | 'skill-v9.0' | 'skill-zone-v5' | 'skill-zone-v6' | 'skill-zone-v1' | 'skill-zone-v2' | 'skill-zone-v3' | 'skill-zone-v4';
+    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3' | 'skill-v5.0' | 'skill-v6.0' | 'skill-v6.1' | 'skill-v7.0' | 'skill-v2.5' | 'skill-v8.0' | 'skill-v9.0' | 'skill-v10.0' | 'skill-zone-v5' | 'skill-zone-v6' | 'skill-zone-v7' | 'skill-zone-v1' | 'skill-zone-v2' | 'skill-zone-v3' | 'skill-zone-v4';
     damageScale?: number;
   recipe?: import('./data/skill-mechanisms.js').SkillRecipe;
   weaponUse?: 'auto' | 'melee' | 'ranged';
@@ -295,8 +295,8 @@ export interface Combatant {
   barrierModel?: 'barrier-grades-v1';
   /** V13 trait overhaul, projected from the battle rules; absent keeps the frozen V12 trait rules. */
   traitModel?: 'traits-v1';
-  /** V14 skill pricing (composite states priced per stat), projected from the battle rules; absent keeps V13 skill numbers. V20 skills-v3 lowers combined-control save DCs by 1 per extra effect instead of 2. */
-  skillModel?: 'skills-v1' | 'skills-v2' | 'skills-v3';
+  /** V14 skill pricing (composite states priced per stat), projected from the battle rules; absent keeps V13 skill numbers. V20 skills-v3 lowers combined-control save DCs by 1 per extra effect instead of 2. V21 skills-v4 anchors barrier, condition magnitude and morale amounts to the wound budget. */
+  skillModel?: 'skills-v1' | 'skills-v2' | 'skills-v3' | 'skills-v4';
   /** V15 item system (graded specialisations, item action economy and per-piece formation use), projected from the battle rules. V20 items-v2 scales worn modifiers by item L. */
   itemModel?: 'items-v1' | 'items-v2';
   /** V16 特质分级独立门控；旧战斗缺省保持原效果。 */
@@ -601,8 +601,8 @@ export interface RulePack {
   commandModel?: 'command-v2';
   /** V13 trait overhaul (工事据守、工兵、拒马、散兵单体与步枪编队自动散兵); absent keeps V12. */
   traitModel?: 'traits-v1';
-  /** V14 skill pricing: 同时改两项属性的状态按两项附加效果计价; absent keeps V13. V20 skills-v3：组合控制每多一项抵抗难度 −1（原 −2）。 */
-  skillModel?: 'skills-v1' | 'skills-v2' | 'skills-v3';
+  /** V14 skill pricing: 同时改两项属性的状态按两项附加效果计价; absent keeps V13. V20 skills-v3：组合控制每多一项抵抗难度 −1（原 −2）。V21 skills-v4：屏障、状态效力与士气量按单体创伤预算比例。 */
+  skillModel?: 'skills-v1' | 'skills-v2' | 'skills-v3' | 'skills-v4';
   /** V15 道具系统：专精十级、道具行动与编队件数、AI 保留价值、冲锋与远程看实际配装; absent keeps V14. V20 items-v2：佩戴修正按道具 L 换算。 */
   itemModel?: 'items-v1' | 'items-v2';
   /** V16 新增特质分级；独立于 V15 五项专精。 */

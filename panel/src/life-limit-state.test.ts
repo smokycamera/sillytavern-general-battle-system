@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generateUnit, traitRegistry, prepareCombatModel, V4_D20 } from '../../engine/src/index.js';
+import { SINGLE_LIFE_LIMIT } from '../../engine/src/health-limits.js';
 import { parseProtocol } from './protocol.js';
 import { normalizeUnitRecord, unitRecordFromCombatant, updateUnitRecord, materializeUnitRecord, migratePanelUnits } from './unit-state.js';
 import { newUnitDraft, buildUnit, unitDraftFromRecord, editUnitBuild } from './unit-builder.js';
@@ -9,20 +10,26 @@ const message: MessageEnvelope = { characterId: 'test', chatId: 'life-cap', bran
   text: '<tb>\n<spawn name="帝皇" side="ally" scale="hero" hpMax="100000" hp="100000" level="10"/>\n<spawn name="死星" side="enemy" scale="hero" body="vehicle" hpMax="100000" hp="100000" level="10"/>\n</tb>' };
 
 describe('生命上限贯穿正文、编辑与档案', () => {
-  it('正文高生命自动截断并给出提示，编队人数保留原值', () => {
-    const parsed = parseProtocol(message.text); expect(parsed.errors).toEqual([]); expect(parsed.warnings.join('')).toContain('2000');
-    expect(parsed.events).toMatchObject([{ hp: 2000, hpMax: 2000 }, { hp: 2000, hpMax: 2000 }]);
+  // 英雄生命由训练、身体和修正推导，正文 hp/hpMax 只按比例表示伤势，写多大都不会成为生命上限，所以解析时不再截断提示。
+  it('正文英雄高生命照常解析，编队人数保留原值，非法值报错', () => {
+    const parsed = parseProtocol(message.text); expect(parsed.errors).toEqual([]);
+    expect(parsed.events).toMatchObject([{ hp: 100000, hpMax: 100000 }, { hp: 100000, hpMax: 100000, body: 'vehicle' }]);
     expect(parseProtocol('<tb><spawn name="十万人" side="ally" scale="company" hpMax="100000"/></tb>').events[0]).toMatchObject({ hpMax: 100000 });
-    expect(parseProtocol('<tb><spawn name="非法" side="ally" scale="hero" hpMax="-1"/></tb>').errors.length).toBeGreaterThan(0);
+    // 英雄的 hp/hpMax 只换算伤势，写错不阻止建档；编队的人数写错仍报错。
+    const hero = parseProtocol('<tb><spawn name="非法" side="ally" scale="hero" hpMax="-1"/></tb>');
+    expect(hero.errors).toEqual([]); expect(hero.events[0]).toMatchObject({ kind: 'spawn' }); expect((hero.events[0] as { hpMax?: number }).hpMax).toBeUndefined();
+    expect(parseProtocol('<tb><spawn name="非法" side="ally" scale="company" hpMax="-1"/></tb>').errors.length).toBeGreaterThan(0);
   });
-  it('正文事务不能在生成后用旧事件值覆盖生命上限', () => {
+  it('正文事务不能用事件里的生命值覆盖推导出的生命上限', () => {
     const save = { storage: [], rosterIds: [], factRevision: 1 }, namespace = namespaceOf(message);
     const binding = { ...captureGeneration(save, namespace, 'generation'), complete: true };
     const proposal = proposalFromMessage(message, binding)!;
     // 模拟旧客户端已经保存的尚未应用草稿，绕过新版解析器仍需被生成器限制。
     for (const event of proposal.events) if (event.kind === 'spawn') { event.hp = 100000; event.hpMax = 100000; }
     const next = prepareNarrativeTransaction(save, proposal, namespace, true);
-    expect(next.storage).toHaveLength(2); expect(next.storage!.every(record => record.hp === 2000 && record.base.hpMax === 2000)).toBe(true);
+    const [human, vehicle] = next.storage!;
+    expect(next.storage).toHaveLength(2); expect(next.storage!.every(record => record.hp === record.base.hpMax && record.base.hpMax <= SINGLE_LIFE_LIMIT)).toBe(true);
+    expect(vehicle!.base.hpMax).toBeGreaterThan(human!.base.hpMax * 5);
   });
   it('旧档加载同步外层和快照，保留较低伤势、零生命、单位版本与历史', () => {
     const unit = generateUnit({ rulesVersion: 'v2', name: '旧档', side: 'ally', scale: 'hero', level: 6, hpMax: 1000, traits: [] }, { registry, seed: 'old' }).unit;

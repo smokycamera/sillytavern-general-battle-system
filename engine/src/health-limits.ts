@@ -1,6 +1,6 @@
 import { UNIFIED_HP } from './balance.js';
 import { ARCHETYPE_MODS } from './data/curves.js';
-import { BODY, bodyProfile } from './body.js';
+import { BODY, bodyProfile } from './data/bodies.js';
 import type { Combatant } from './types.js';
 
 /** V6 default max is 988; reserve the full legal health+power multiplier (2×). */

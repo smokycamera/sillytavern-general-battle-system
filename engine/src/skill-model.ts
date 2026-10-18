@@ -12,13 +12,19 @@ export const SKILL_MODEL = 'skills-v1' as const;
 export const PHASE2_SKILL_MODEL = 'skills-v2' as const;
 /** V20：组合控制每多一项效果，普通控制的抵抗难度 −1（skills-v2 为 −2）；其余与 skills-v2 相同。 */
 export const PHASE3_SKILL_MODEL = 'skills-v3' as const;
-export type SkillModel = typeof SKILL_MODEL | typeof PHASE2_SKILL_MODEL | typeof PHASE3_SKILL_MODEL;
-export const isSkillModel = (model: unknown): model is SkillModel => model === SKILL_MODEL || model === PHASE2_SKILL_MODEL || model === PHASE3_SKILL_MODEL;
+/** V21：屏障基础量、状态效力与士气量按单体创伤预算比例；其余与 skills-v3 相同。 */
+export const ANCHORED_SKILL_MODEL = 'skills-v4' as const;
+export type SkillModel = typeof SKILL_MODEL | typeof PHASE2_SKILL_MODEL | typeof PHASE3_SKILL_MODEL | typeof ANCHORED_SKILL_MODEL;
+export const isSkillModel = (model: unknown): model is SkillModel => model === SKILL_MODEL || model === PHASE2_SKILL_MODEL || model === PHASE3_SKILL_MODEL || model === ANCHORED_SKILL_MODEL;
 export const skillsV14 = (unit: Pick<Combatant, 'skillModel'> | undefined): boolean => isSkillModel(unit?.skillModel);
-/** V17 起的技能公式（新授予期限、治疗规格、默认 L1 等）；V20 沿用。 */
-export const skillsPhase2 = (model: unknown): boolean => model === PHASE2_SKILL_MODEL || model === PHASE3_SKILL_MODEL;
+/** V17 起的技能公式（新授予期限、治疗规格、默认 L1 等）；V20、V21 沿用。 */
+export const skillsPhase2 = (model: unknown): boolean => model === PHASE2_SKILL_MODEL || model === PHASE3_SKILL_MODEL || model === ANCHORED_SKILL_MODEL;
 /** 组合技能每多一项效果，普通控制的抵抗难度降低多少；嘲讽、致盲、混乱、魅惑不降，按精力计价。 */
-export const controlSavePenalty = (model: unknown): number => model === PHASE3_SKILL_MODEL ? 1 : 2;
+export const controlSavePenalty = (model: unknown): number => model === PHASE3_SKILL_MODEL || model === ANCHORED_SKILL_MODEL ? 1 : 2;
+/** V21 技能量按等级锚定：屏障=同级预算，状态效力与士气按预算比例（L5 不变）。 */
+export const anchoredSkills = (model: unknown): boolean => model === ANCHORED_SKILL_MODEL;
+/** 状态效力上限：旧规则 1.5（L10 的效力），V21 为 2（L10 的预算比例）。 */
+export const conditionMagnitudeCap = (model: unknown): number => anchoredSkills(model) ? 2 : 1.5;
 
 export function validateSkillModel(value: unknown): void {
   if (value !== undefined && !isSkillModel(value)) throw new Error('技能规则版本损坏');

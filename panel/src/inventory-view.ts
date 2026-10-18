@@ -1,5 +1,5 @@
 import { SHIELD_CLASSES, classMismatchHint } from '../../engine/src/data/weapons.js';
-import { shieldClass, energyShieldShare, energyOverloadThreshold } from '../../engine/src/arms.js';
+import { shieldClass, energyShieldPool, energyShieldRecharge, shieldPlatformScale, energyOverloadThreshold } from '../../engine/src/arms.js';
 import { instanceVarianceLabel } from '../../engine/src/instance-variance.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import { equipmentLoadLabel } from '../../engine/src/body.js';
@@ -43,7 +43,7 @@ function itemDescriptionBase(item: InventoryItem): string {
   if (m.kind === 'item') return itemValueSummary(m.value);
   if (m.kind === 'shield') {
     const kind = shieldClass({shield:m.value}), power = m.value.recipe?.power ?? 3, head = `${SHIELD_CLASSES[kind].name} L${power}${enhancementLabel(m.value.recipe?.bonuses)} · 负重${m.value.load}`;
-    if (kind === 'energy-shield') return `${head} · 每人${energyShieldShare(power)}点护盾，每轮回充 · 不能盾击、持盾固守或盾墙`;
+    if (kind === 'energy-shield') return `${head} · 每人${energyShieldPool(power, shieldPlatformScale({shield:m.value}))}点护盾，每次激活回充${energyShieldRecharge(power)}点 · 不能盾击、持盾固守或盾墙`;
     const extra = { buckler: '近战格挡+1，可配双手武器', shield: '可持盾固守、盾墙', 'tower-shield': '远程命中−1、移动−1，只配单手主武器' }[kind];
     return `${head} · 覆盖${Math.round(SHIELD_CLASSES[kind].coverage * 100)}% · 防护${shieldProtection({shield:m.value},'kinetic')}/${shieldProtection({shield:m.value},'thermal')}/${shieldProtection({shield:m.value},'arcane')} · ${extra}`;
   }

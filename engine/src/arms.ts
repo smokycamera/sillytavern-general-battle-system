@@ -1,5 +1,5 @@
-import {shieldClass,shieldDurabilityMax,clampShieldDurability,energyShieldActive,energyShieldCapacity,energyShieldShare,energyOverloadThreshold,clampEnergyShield,rechargeEnergyShield,type ShieldBearer} from './shield-state.js';
-export {shieldClass,shieldDurabilityMax,clampShieldDurability,standardSwordMean,SHIELD_DURABILITY_FACTOR,energyShieldActive,energyShieldCapacity,energyShieldShare,energyOverloadThreshold,energyHeavyHit,rechargeEnergyShield,ENERGY_SHIELD_SHARE,ENERGY_HEAVY_ABSORB,type ShieldBearer} from './shield-state.js';
+import {shieldClass,shieldDurabilityMax,clampShieldDurability,energyShieldActive,energyShieldCapacity,energyShieldShare,energyShareOf,energyThresholdOf,energyShieldRecharge,energyPower,energyOverloadThreshold,clampEnergyShield,rechargeEnergyShield,type ShieldBearer} from './shield-state.js';
+export {shieldClass,shieldDurabilityMax,clampShieldDurability,standardSwordMean,SHIELD_DURABILITY_FACTOR,energyShieldActive,energyShieldCapacity,energyShieldShare,energyShieldPool,energyShieldRecharge,energyShareOf,energyThresholdOf,shieldPlatformScale,energyOverloadThreshold,energyHeavyHit,rechargeEnergyShield,ENERGY_SHIELD_SHARE,ENERGY_HEAVY_ABSORB,ENERGY_RECHARGE_SHARE,type ShieldBearer} from './shield-state.js';
 import { equipmentBurden } from './equipment-load.js';
 /**
  * V12 武器与护甲校准（arms-v1）。只由新战斗规则开启；旧战斗快照没有该标记，继续使用冻结的V11投影。
@@ -20,8 +20,8 @@ import { instanceMultiplier } from './instance-variance.js';
 import { prepareBarrierModel } from './barrier.js';
 import type { Combatant, RulePack, Weapon } from './types.js';
 
-export { ARMS_MODEL, isArmsModel, isArmsV2, validateArmsModel, type ArmsModel } from './arms-model.js';
-import { isArmsModel, isArmsV2 } from './arms-model.js';
+export { ARMS_MODEL, isArmsModel, isArmsV2, isArmsV3, validateArmsModel, type ArmsModel } from './arms-model.js';
+import { isArmsModel, isArmsV2, isArmsV3 } from './arms-model.js';
 
 /** The battle's saved rules are authoritative; re-loading is idempotent and never touches equipment. */
 export function prepareArmsModel(unit: Combatant, rules: Pick<RulePack, 'armsModel' | 'barrierModel'>): void {
@@ -96,7 +96,8 @@ export function validateArmsState(unit: Combatant): void {
   if (unit.shieldDurability !== undefined && (!unit.shieldDurability || !Number.isFinite(unit.shieldDurability.remaining) || unit.shieldDurability.remaining < 0)) throw Error('盾耐久记录损坏');
   if (unit.sprayerFuel !== undefined && (!unit.sprayerFuel || typeof unit.sprayerFuel !== 'object' || Array.isArray(unit.sprayerFuel) || Object.values(unit.sprayerFuel).some(n => !Number.isInteger(n) || n < 0 || n > SPRAYER_FUEL))
     || unit.tankRupturedRound !== undefined && (!Number.isSafeInteger(unit.tankRupturedRound) || unit.tankRupturedRound < 0)) throw Error('喷射燃料记录损坏');
-  if (unit.energyShield !== undefined && (!unit.energyShield || !Number.isSafeInteger(unit.energyShield.remaining) || unit.energyShield.remaining < 0 || !Number.isSafeInteger(unit.energyShield.overloaded) || unit.energyShield.overloaded < 0)) throw Error('能量盾记录损坏');
+  // 重击只吸收每份的四分之一，剩余量可以是小数（每份14时吸收3.5）。
+  if (unit.energyShield !== undefined && (!unit.energyShield || !Number.isFinite(unit.energyShield.remaining) || unit.energyShield.remaining < 0 || !Number.isSafeInteger(unit.energyShield.overloaded) || unit.energyShield.overloaded < 0)) throw Error('能量盾记录损坏');
   if (unit.weaponHeat !== undefined && (!unit.weaponHeat || typeof unit.weaponHeat !== 'object' || Array.isArray(unit.weaponHeat) || Object.values(unit.weaponHeat).some(s => !s || !Number.isInteger(s.streak) || s.streak < 0 || s.streak > ENERGY_FIRE_LIMIT || s.fired !== undefined && typeof s.fired !== 'boolean' || s.cooling !== undefined && typeof s.cooling !== 'boolean'))) throw Error('武器过热记录损坏');
 }
 
@@ -112,6 +113,7 @@ export function armsStatusLabels(unit: Combatant, shield = true): string[] {
 /** 单位详情的盾一行：类型与规格，再接挂背、覆盖、耐久或能量盾说明。 */
 export function shieldDetail(unit: Combatant): string {
   const v2 = isArmsV2(unit.armsModel), kind = v2 ? shieldClass(unit) : 'shield', power = unit.shield!.recipe?.power ?? 3, head = SHIELD_CLASSES[kind].name + 'L' + power;
+  if (v2 && kind === 'energy-shield' && isArmsV3(unit.armsModel)) return [head, '每人一份' + energyShareOf(unit) + '点，每次激活回充' + energyShieldRecharge(energyPower(unit)) + '点，单段均值不低于' + Number(energyThresholdOf(unit).toFixed(1)) + '的重击只能由被击中的份额抵挡', ...shieldStatusLabels(unit)].join(' · ');
   if (v2 && kind === 'energy-shield') return [head, '每人一份' + energyShieldShare(power) + '点，单段均值不低于' + Number(energyOverloadThreshold(power).toFixed(1)) + '的重击只能由被击中的份额抵挡', ...shieldStatusLabels(unit)].join(' · ');
   if (v2 && unit.shieldDurability?.remaining === 0) return head + ' · 盾已碎';
   if (v2 && !shieldUsable(unit)) return head + ' · 挂背（主武器双手）';
@@ -125,7 +127,7 @@ export function shieldStatusLabels(unit: Combatant): string[] {
   if (!shieldUsable(unit) && unit.shieldDurability?.remaining !== 0) labels.push('盾牌挂背');
   if (unit.energyShield) {
     const { remaining, overloaded } = unit.energyShield;
-    labels.push('能量盾 ' + remaining + '/' + energyShieldCapacity(unit) + (overloaded && unit.scale !== 'hero' ? '（' + overloaded + ' 人过载）' : ''));
+    labels.push('能量盾 ' + (isArmsV3(unit.armsModel) ? Number(remaining.toFixed(1)) : remaining) + '/' + energyShieldCapacity(unit) + (overloaded && unit.scale !== 'hero' ? '（' + overloaded + ' 人过载）' : ''));
     if (overloaded && unit.scale === 'hero') labels.push('能量盾过载');
   }
   return labels;

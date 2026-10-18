@@ -57,7 +57,7 @@ describe('终章道具使用与实际效果', () => {
   });
   it.each(['small', 'mass'] as const)('%s屏障记本次三件的总保护量，不把单件规格当成实际效果', mode => {
     const f = fixture(mode, 'buff屏障'), item = use(f);
-    expect(item.consumed).toBe(3); expect(item.effects.join('\n')).toContain('可吸收69点伤害');
+    expect(item.consumed).toBe(3); expect(item.effects.join('\n')).toContain('可吸收72点伤害');
     expect(battleEpilogue(f.b)).toContain('消耗3件');
   });
   it.each(['small', 'mass'] as const)('%s充能道具记使用次数和实际回能，保留道具本体', mode => {

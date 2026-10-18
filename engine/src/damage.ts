@@ -13,12 +13,13 @@ import { entrenched } from './entrenchment.js';
 import { effectiveProtection, overloadPenalty } from './body.js';
 import { applyHealthLoss, applyDamagePlan, type MemberDamagePlan } from './recovery.js';
 import { MEMBER_HEALTH_MODEL, hasMemberHealth, memberHealth, damageMemberGroups } from './member-health.js';
-import { combatWeapon, anchoredProtection,penetrationThrough,armorPowerScale,armorTransmission,shieldTransmission,overmatchMultiplier,defensePower } from './power-anchors.js';
+import { combatWeapon, anchoredProtection,penetrationThrough,armorPowerScale,armorTransmission,shieldTransmission,overmatchMultiplier,defensePower,gradeOvermatch } from './power-anchors.js';
 import { meleeProfile } from './melee.js';
 import { meleeWeapon, isCannonWeapon } from './loadout.js';
 import { cloneData } from './clone.js';
 import { fatiguePenalty } from './resources.js';
-import { energyHeavyHit } from './shield-state.js';
+import { energyHeavyHit, energyShieldActive, energyPower } from './shield-state.js';
+import { isArmsV3 } from './arms-model.js';
 import { diceAvg } from './data/weapons.js';
 import { isArmsV2, MOUNTED_SPRINT_DAMAGE, HOOK_ACCURACY, shieldUsable, shieldClass, shieldCoverage, applyShieldWear, weaponCrew, demolitionPackets, humanSizedIndividual, loneHeavyOperator, LONE_AUTOCANNON_SHARE, ARTILLERY_SMALL_TARGET } from './arms.js';
 /**
@@ -53,8 +54,9 @@ export interface AttackResolution {
   barrierAbsorbed?: number;
   /** R16 喷射武器攻击的武器规格，供惊惧检定。 */
   spray?: number;
-  /** R15 能量盾吸收量与这次过载的份数。 */
+  /** R15 能量盾吸收量与这次过载的份数；V21 跨代换算时另记盾的消耗。 */
   energyAbsorbed?: number;
+  energySpent?: number;
   energyOverloaded?: number;
   unshieldedDamage?: number;
   armorScale?:number;
@@ -307,12 +309,23 @@ function memberPlan(opts:Omit<AttackOpts,'rng'>,direct:number,targets:number,res
   const cappedDirect=overflow&&directTargets>0?direct:Math.min(direct,max*directTargets);
   const incomingSplash=Math.round(direct*extra*(weapon?.splashFactor??0)),splash=Math.min(max*splashTargets,incomingSplash);
   const context=opts.rules.overmatch?penetration??penetrationContext(opts,resolved):undefined;
-  // R15 重击：武器攻击与武器技能按结算武器的基础单段命中均值判定，预览与结算同一结果。
-  const heavy=(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&!!weapon&&energyHeavyHit({...opts.defender,armsModel:opts.rules.armsModel},(diceAvg(weapon.baseDice)+(weapon.apDice?diceAvg(weapon.apDice):0))*(weapon.damageScale??1));
-  return {direct:cappedDirect,targets:directTargets,...(overflow?{overflow:true}:{}),...(heavy?{heavy:true as const}:{}),
+  // R15 重击：武器攻击与武器技能按结算武器的基础单段命中均值判定，预览与结算同一结果。V21 先按盾规格跨代换算。
+  const energy=energyTier(opts,context);
+  const heavy=(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&!!weapon&&energyHeavyHit({...opts.defender,armsModel:opts.rules.armsModel},(diceAvg(weapon.baseDice)+(weapon.apDice?diceAvg(weapon.apDice):0))*(weapon.damageScale??1),energy?.tier);
+  return {direct:cappedDirect,targets:directTargets,...(overflow?{overflow:true}:{}),...(heavy?{heavy:true as const}:{}),...(energy&&energy.ratio!==1?{energyRatio:energy.ratio}:{}),
     ...(context&&(context.overmatchMultiplier??1)>1?{overmatch:{power:context.attackPower,channel:context.channel,penetration:context.penetration,area:!!context.area,canBlock:context.canBlock!==false,multiplier:context.overmatchMultiplier!,...(opts.rules.overmatchCurve?{curve:opts.rules.overmatchCurve}:{})}}:{}),
     ...(direct>cappedDirect?{incomingDirect:direct}:{}),
     ...(extra&&targets?{splash,splashTargets,...(incomingSplash>splash?{incomingSplash}:{})}:{})};
+}
+/**
+ * V21 能量盾规格：攻击规格P高于盾L时按跨代倍率多耗，低于盾L时按反向倍率少耗；
+ * 伤害里已乘的对身体跨代倍率先除掉，盾按自己的规格吸收（同屏障的防御规格）。tier 用于重击判定，ratio 是每点伤害的盾消耗。
+ */
+function energyTier(opts:Omit<AttackOpts,'rng'>,context?:ReturnType<typeof penetrationContext>):{tier:number;ratio:number}|undefined {
+  if(!isArmsV3(opts.rules.armsModel)||!energyShieldActive({...opts.defender,armsModel:opts.rules.armsModel})||context?.attackPower===undefined)return undefined;
+  const P=context.attackPower,L=energyPower(opts.defender),curve=opts.rules.overmatchCurve;
+  const tier=gradeOvermatch(P,L,1,0,curve)/gradeOvermatch(L,P,1,0,curve);
+  return {tier,ratio:tier/(context.overmatchMultiplier??1)};
 }
 /** Independent direct spells release overflow only on overmatch; ordinary V6 spell pacing stays intact. */
 function attackOverflow(opts:Omit<AttackOpts,'rng'>,penetration?:ReturnType<typeof penetrationContext>,resolved?:ResolvedWeapon):boolean {
@@ -651,11 +664,12 @@ export function applyResolutionDamage(target:Combatant,result:AttackResolution):
     return loss;
   }
   result.hpBefore=memberHealth(target);result.membersBefore=target.hp;
-  let direct=0,splash=0,overflow=0,energy=0,overloaded=0;
-  for(const [i,plan] of (result.damagePlans??[]).entries()){const loss=applyDamagePlan(target,plan);direct+=loss.direct;splash+=loss.splash;overflow+=loss.overflow;energy+=loss.energyAbsorbed??0;overloaded+=loss.energyOverloaded??0;if(result.packetRolls?.[i])result.packetRolls[i]!.damage=loss.direct+loss.splash;}
+  let direct=0,splash=0,overflow=0,energy=0,spent=0,converted=false,overloaded=0;
+  for(const [i,plan] of (result.damagePlans??[]).entries()){const loss=applyDamagePlan(target,plan);direct+=loss.direct;splash+=loss.splash;overflow+=loss.overflow;energy+=loss.energyAbsorbed??0;spent+=loss.energySpent??loss.energyAbsorbed??0;converted||=loss.energySpent!==undefined;overloaded+=loss.energyOverloaded??0;if(result.packetRolls?.[i])result.packetRolls[i]!.damage=loss.direct+loss.splash;}
   result.directDamage=direct;result.splashDamage=splash;result.overflowDamage=overflow;result.hpAfter=memberHealth(target);result.membersAfter=target.hp;
   if(shieldBefore)result.barrierAbsorbed=shieldBefore-barrierAmount(target);else delete result.barrierAbsorbed;
   if(energy)result.energyAbsorbed=energy;else delete result.energyAbsorbed;
+  if(energy&&converted)result.energySpent=spent;else delete result.energySpent;
   if(overloaded)result.energyOverloaded=overloaded;else delete result.energyOverloaded;
   if (result.shieldWear) result.shieldBroken = applyShieldWear(target,result.shieldWear);
   recordAppliedDamage(result,result.hpBefore-result.hpAfter);return result.finalDamage;
@@ -712,7 +726,7 @@ export function resolveAttack(opts: AttackOpts): AttackResolution {
         ...(opts.rules.combatModel===MEMBER_HEALTH_MODEL?{membersBefore,membersAfter:opts.defender.hp,damagePlans:parts.flatMap(r=>r.damagePlans??[{direct:0,targets:0}]),directDamage:parts.reduce((n,r)=>n+(r.directDamage??0),0),splashDamage:parts.reduce((n,r)=>n+(r.splashDamage??0),0),overflowDamage:parts.reduce((n,r)=>n+(r.overflowDamage??0),0)}:{}),
         ...(parts.some(r=>r.shieldWear)?{shieldWear:parts.reduce((n,r)=>n+(r.shieldWear??0),0),shieldBroken:parts.some(r=>r.shieldBroken)}:{}),
         ...(parts.some(r=>r.barrierAbsorbed)?{barrierAbsorbed:parts.reduce((n,r)=>n+(r.barrierAbsorbed??0),0)}:{}),
-        ...(parts.some(r=>r.energyAbsorbed)?{energyAbsorbed:parts.reduce((n,r)=>n+(r.energyAbsorbed??0),0)}:{}),...(parts.some(r=>r.energyOverloaded)?{energyOverloaded:parts.reduce((n,r)=>n+(r.energyOverloaded??0),0)}:{}),participants:opts.previewMemo?representative.participants:outcomeScale(opts).participants,packetCount:parts.length,packetHits:parts.filter(r=>r.hit).length,
+        ...(parts.some(r=>r.energyAbsorbed)?{energyAbsorbed:parts.reduce((n,r)=>n+(r.energyAbsorbed??0),0)}:{}),...(parts.some(r=>r.energySpent!==undefined)?{energySpent:parts.reduce((n,r)=>n+(r.energySpent??r.energyAbsorbed??0),0)}:{}),...(parts.some(r=>r.energyOverloaded)?{energyOverloaded:parts.reduce((n,r)=>n+(r.energyOverloaded??0),0)}:{}),participants:opts.previewMemo?representative.participants:outcomeScale(opts).participants,packetCount:parts.length,packetHits:parts.filter(r=>r.hit).length,
         packetRolls:parts.map(r=>({hit:r.hit,crit:r.crit,damage:r.finalDamage,attack:r.attackRoll?.total,base:r.baseRoll?.total,ap:r.apRoll?.total})),
         onHitConditions:parts.find(r=>r.onHitConditions?.length)?.onHitConditions};
       if(!opts.previewMemo)result.text=formatResolution(result,opts.defender);return result;
@@ -889,8 +903,10 @@ function apShareOf(unit: Combatant, ranged: boolean, registry?: Map<string, impo
 }
 
 /** 生成可读结算行（结算卡与审计共用同一文本源） */
+/** 能量盾数值：旧规则原样显示；V21 换算后保留一位小数。 */
+const shieldAmount=(x:number,defender:Combatant)=>isArmsV3(defender.armsModel)?String(Number(x.toFixed(1))):String(x);
 export function formatResolution(r: AttackResolution, defender: Combatant): string {
-  if(r.damageModel==='member-health')return `${r.attackerName} → ${r.defenderName}：${r.ammunition?r.ammunition==='he'?'榴弹·':'穿甲弹·':''}${r.hit?(r.crit?'暴击':'命中'):'未中'}${r.packetCount?`（${r.packetHits}/${r.packetCount}组命中）`:''}，生命损失${r.finalDamage}（${r.hpBefore}→${r.hpAfter}）${(r.overmatchMultiplier??1)>1?'，跨代毁伤×'+Number(r.overmatchMultiplier!.toFixed(2)):''}${r.energyAbsorbed?`，能量盾吸收${r.energyAbsorbed}`:''}${r.energyOverloaded?defender.scale==='hero'?'，能量盾过载':`，${r.energyOverloaded}人能量盾过载`:''}${r.barrierAbsorbed?`，屏障吸收${r.barrierAbsorbed}`:''}${defender.scale!=='hero'?`，减员${(r.membersBefore??defender.hp)-(r.membersAfter??defender.hp)}${defender.body==='vehicle'?'辆':'人'}`:''}${r.overflowDamage?`，其中溢出${r.overflowDamage}`:''}${r.splashDamage?`，其中爆炸${r.splashDamage}`:''}${r.penetrationFactor===0?'；未穿透':''}${r.shieldBroken?'，'+(defender.shield?.name??'盾牌')+'碎了':''}`;
+  if(r.damageModel==='member-health')return `${r.attackerName} → ${r.defenderName}：${r.ammunition?r.ammunition==='he'?'榴弹·':'穿甲弹·':''}${r.hit?(r.crit?'暴击':'命中'):'未中'}${r.packetCount?`（${r.packetHits}/${r.packetCount}组命中）`:''}，生命损失${r.finalDamage}（${r.hpBefore}→${r.hpAfter}）${(r.overmatchMultiplier??1)>1?'，跨代毁伤×'+Number(r.overmatchMultiplier!.toFixed(2)):''}${r.energyAbsorbed?`，能量盾吸收${shieldAmount(r.energyAbsorbed,defender)}${r.energySpent!==undefined?`（耗盾${shieldAmount(r.energySpent,defender)}）`:''}`:''}${r.energyOverloaded?defender.scale==='hero'?'，能量盾过载':`，${r.energyOverloaded}人能量盾过载`:''}${r.barrierAbsorbed?`，屏障吸收${r.barrierAbsorbed}`:''}${defender.scale!=='hero'?`，减员${(r.membersBefore??defender.hp)-(r.membersAfter??defender.hp)}${defender.body==='vehicle'?'辆':'人'}`:''}${r.overflowDamage?`，其中溢出${r.overflowDamage}`:''}${r.splashDamage?`，其中爆炸${r.splashDamage}`:''}${r.penetrationFactor===0?'；未穿透':''}${r.shieldBroken?'，'+(defender.shield?.name??'盾牌')+'碎了':''}`;
   if(r.packetCount)return `${r.attackerName} → ${r.defenderName}：聚合${r.packetCount}组/${r.packetHits}组命中${r.crit?'（含暴击）':''}，损失${r.finalDamage}${defender.scale==='hero'?'生命':'人'}（${r.hpBefore}→${r.hpAfter}）${r.penetrationFactor===0?'；未穿透':''}`;
   const parts: string[] = [];
   const head = `${r.attackerName} → ${r.defenderName}`;

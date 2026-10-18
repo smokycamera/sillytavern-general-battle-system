@@ -7,7 +7,7 @@ import type { Ability, Armor, BodyKind, Combatant, EffectOp, ItemRecipe, Weapon 
 import { BODY, compileArmor, compileWeapon, equipmentRecipe, type EquipmentContext } from './gen/equipment.js';
 import { compileSkill } from './skill-catalog.js';
 import { upgradeCombatSkills } from './skill-upgrade.js';
-import { PHASE3_SKILL_MODEL } from './skill-model.js';
+import { ANCHORED_SKILL_MODEL } from './skill-model.js';
 import { parseSkillMechanism, skillMechanismFromId, skillMechanismId, skillMechanismName } from './data/skill-mechanisms.js';
 import { TRAITS, traitRegistry, isGradedTrait, validTraitLevel } from './data/traits.js';
 import { itemsV15 } from './item-model.js';
@@ -114,13 +114,13 @@ export function chargedUses(a: Ability): number {
 function templateHost(ability: Ability, power: number): Combatant {
   return { id: 'item', name: '道具', side: 'ally', scale: 'hero', level: power, tags: [], base: { atk: 0, def: 0, spd: 0, hpMax: 1 }, hp: 1, conditions: [],
     abilities: [ability], abilityState: [], resources: {}, traits: [], engagedWith: [], status: 'ready', fatigue: 0,
-    rulesVersion: 'v2', damageModel: 'wounds-v2', combatModel: 'cohort-v2', skillModel: PHASE3_SKILL_MODEL };
+    rulesVersion: 'v2', damageModel: 'wounds-v2', combatModel: 'cohort-v2', skillModel: ANCHORED_SKILL_MODEL };
 }
 /** 与已学技能走同一条编译与入场升级路径，再改成道具：不耗精力、单独计冷却、默认非魔法。 */
 export function itemAbilityTemplate(id: string, power: number, bonuses: Enhancements | undefined, form: 'single' | 'charged', name = '道具'): Ability {
   const mechanism = skillMechanismFromId(id);
   if (!mechanism) throw new Error('未知或矛盾的道具效果');
-  const host = templateHost(compileSkill({ id, name, bonuses }, power, 'item', PHASE3_SKILL_MODEL), power);
+  const host = templateHost(compileSkill({ id, name, bonuses }, power, 'item', ANCHORED_SKILL_MODEL), power);
   upgradeCombatSkills(host);
   const a = host.abilities[0]!;
   a.id = 'item'; delete a.sourceId; delete a.cost; delete a.cooldownGroup;

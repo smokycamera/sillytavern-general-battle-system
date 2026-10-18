@@ -4,13 +4,8 @@ import { isArmsV2 } from './arms-model.js';
 import { combatHostile } from './battle-control.js';
 import type { BodyKind, Combatant, DamageChannel } from './types.js';
 
-/** 实际身体统一决定结构与装备容量；体量特质只是这些事实的投影。 */
-export const BODY: Record<BodyKind, { hp: number; strength: number; capacity: number; movement: number; protection: Record<DamageChannel, number> }> = {
-  human: { hp: 1, strength: 1, capacity: 14, movement: 3, protection: { kinetic: 0, thermal: 0, arcane: 0 } },
-  large: { hp: 2, strength: 1.4, capacity: 18, movement: 3, protection: { kinetic: 1, thermal: 0, arcane: 0 } },
-  vehicle: { hp: 6, strength: 1, capacity: 24, movement: 3, protection: { kinetic: 0, thermal: 0, arcane: 0 } },
-  giant: { hp: 10, strength: 1.8, capacity: 24, movement: 2, protection: { kinetic: 2, thermal: 1, arcane: 0 } },
-};
+import { BODY } from './data/bodies.js';
+export { BODY, bodyProfile } from './data/bodies.js';
 /** 产生护甲减益（重甲先攻与移动惩罚、载具重装减速）的护甲档位；天生护甲没有这些减益。轻装前提与防护仍按实际档位。 */
 export function armorBurdenTier(unit: Pick<Combatant, 'armor'> & Partial<Pick<Combatant, 'rulesVersion' | 'traits' | 'traitSources'>>): number {
   return hasNaturalArmor(unit) ? 0 : unit.armor?.tier ?? 0;
@@ -18,9 +13,6 @@ export function armorBurdenTier(unit: Pick<Combatant, 'armor'> & Partial<Pick<Co
 export function equipmentLoadLabel(unit: BurdenUnit): string {
   const load = equipmentLoad(unit), capacity = isArmsV2(unit.armsModel) ? equipmentCapacity({body:unit.body,level:unit.level!}) : BODY[unit.body ?? 'human'].capacity, burden = equipmentBurden(unit);
   return '负重 '+load+'/'+capacity+'（'+Math.round(load/capacity*100)+'%）' + (burden === 2 ? ' · 超载：移动−2、先攻−4、命中和闪避−'+overloadPenalty(unit)+'，不能冲锋和突进' : burden === 1 ? ' · 重载：移动−1、先攻−2' : '');
-}
-export function bodyProfile(body: BodyKind = 'human', model?: Combatant['damageModel']) {
-  return model === 'wounds-v2' && body === 'giant' ? { ...BODY.giant, hp: 6, strength: 3 } : BODY[body];
 }
 export function bodyProtection(unit: Combatant, channel: DamageChannel): number {
   return unit.rulesVersion === 'v2' ? BODY[unit.body ?? 'human'].protection[channel] : 0;

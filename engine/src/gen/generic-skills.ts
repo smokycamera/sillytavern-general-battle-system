@@ -3,7 +3,9 @@ import { curveAt } from '../data/curves.js';
 import { diceAvg, rebuildDice } from '../data/weapons.js';
 import { skillMechanismFromId, skillMechanismName, SKILL_MODIFIERS, MOVEMENT_MODIFIERS } from '../data/skill-mechanisms.js';
 import { skillMoveReach } from '../skill-movement.js';
-import { conditionEffectWeight, controlSavePenalty, skillsPhase2, type SkillModel } from '../skill-model.js';
+import { conditionEffectWeight, controlSavePenalty, skillsPhase2, anchoredSkills, type SkillModel } from '../skill-model.js';
+import { UNIFIED_WOUNDS } from '../balance.js';
+import { TRAIT_PARAMETERS } from '../trait-parameters.js';
 import { balanceGenericSkill, BUFF_CONDITIONS } from '../skill-balance.js';
 import { attachDefensePower } from '../barrier.js';
 import { canonicalTraitId, gradedTraitCost } from '../trait-parameters.js';
@@ -29,7 +31,9 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
     const modifier = SKILL_MODIFIERS.find(m => m.id === key)!;
     return sum + (phase2 && modifier.trait && isGradedTrait(modifier.trait) ? Math.max(1, Math.ceil(gradedTraitCost(modifier.trait, power) / 3)) : conditionEffectWeight(modifier.condition, formula));
   }, 0);
-  const magnitude = Math.max(.25, (5 + power) / 10 / Math.max(1, Math.sqrt(weight)));
+  // V21（skills-v4）按等级锚定：状态效力与士气量乘同级单体创伤预算比例（L5=1），屏障基础量即同级预算；旧公式只在旧规则下保留。
+  const anchored = anchoredSkills(formula), budgetRatio = TRAIT_PARAMETERS.woundRatio[power - 1]!;
+  const magnitude = Math.max(.25, (anchored ? budgetRatio : (5 + power) / 10) / Math.max(1, Math.sqrt(weight)));
   const duration = 1 + Math.floor((power + 1) / 3), saveDC = 8 + power;
   const damagingDebuff = !damage && selected.some((id) => ['burn', 'poison', 'bleed'].includes(id));
   const share = (area ? 0.7 : 1.6) * Math.pow(0.8, weight);
@@ -41,9 +45,9 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
       magnitude: ['taunted','charmed','confused','blinded'].includes(modifier.condition) ? 1 : magnitude, ...(modifier.allowed === 'hostile' ? { saveDC: ['taunted','charmed','confused','blinded'].includes(modifier.condition) ? saveDC : Math.max(1, saveDC - controlSavePenalty(formula) * Math.max(0, weight - 1) - (key === 'stun' ? 2 : 0)) } : {}), ...(damage || damagingDebuff ? { onHit: true, ...(['poisoned', 'bleeding', 'burning'].includes(modifier.condition) ? { onDamage: true } : {}) } : {}), shape: area ? 'burst' : 'single' });
     else if (modifier.trait) effects.push({ op: 'trait', traitId: modifier.trait, ...(phase2 && isGradedTrait(modifier.trait) ? { level: power } : {}), dur: phase2 ? 1 + Math.floor((power - 1) / 4) : model === 'wounds-v2' ? power : 1 + power, shape: area ? 'burst' : 'single' });
     else if (key === 'heal') effects.push({ op: 'heal', ...(phase2 ? { power } : {}), amount: Math.max(1, Math.round(curve.hp * 0.25 / Math.max(1, weight) / (area ? 2 : 1))) });
-    else if (key === 'barrier') effects.push({ op: 'barrier', amount: Math.max(1, Math.round((8 + power * 5) / Math.max(1, weight) / (area ? 2 : 1))), dur: model === 'wounds-v2' ? power : 3 });
+    else if (key === 'barrier') effects.push({ op: 'barrier', amount: Math.max(1, Math.round((anchored ? UNIFIED_WOUNDS[power - 1]! : 8 + power * 5) / Math.max(1, weight) / (area ? 2 : 1))), dur: model === 'wounds-v2' ? power : 3 });
     else if (key === 'cleanse' || key === 'dispel') effects.push({ op: 'dispel', polarity: key === 'cleanse' ? 'negative' : 'positive', count: power >= 6 ? 2 : 1 });
-    else if (key === 'morale-up' || key === 'morale-down') effects.push({ op: 'morale', amount: (key === 'morale-up' ? 1 : -1) * (3 + power) });
+    else if (key === 'morale-up' || key === 'morale-down') effects.push({ op: 'morale', amount: (key === 'morale-up' ? 1 : -1) * (anchored ? Math.round(8 * budgetRatio) : 3 + power) });
     else if (key === 'restore' || key === 'drain') effects.push({ op: 'resource', resource: 'SP', amount: (key === 'restore' ? 1 : -1) * (1 + Math.ceil(power / 3)), maximum: 'training' });
     else if (key === 'push' || key === 'pull') effects.push({ op: 'push', force: Math.min(4, 1 + Math.floor((power - 1) / 3)), steps: 1, physical,
       direction: key === 'pull' ? 'towards' : 'away', ...(damage ? { onHit: true } : {}) });

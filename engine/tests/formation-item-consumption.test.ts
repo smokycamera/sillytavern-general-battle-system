@@ -90,10 +90,10 @@ describe('编队治疗按实际伤量使用，护盾按本次总件数计算', (
     expect(battle.byId(first.id).resources['item:dose']! + battle.byId(second.id).resources['item:dose']!).toBe(199);
     expect(recoveryCapacity(battle.byId(target.id))).toBe(0);
   });
-  it.each(['small', 'mass'] as const)('%s：50/100/200张护盾分别消耗50/100/100张，容量等于23点乘本次件数，快照保存总容量', mode => {
+  it.each(['small', 'mass'] as const)('%s：50/100/200张护盾分别消耗50/100/100张，容量等于24点（L3 预算，V21 起）乘本次件数，快照保存总容量', mode => {
     for (const quantity of [50, 100, 200]) {
       const actor = carry(unit('actor'), 'buff屏障', quantity), battle = fight(mode, [actor]), a = battle.byId(actor.id);
-      const doses = Math.min(100, quantity), expected = 23 * doses;
+      const doses = Math.min(100, quantity), expected = 24 * doses;
       const derived = battle.itemUse(a, listed(a), a).ability;
       expect(derived.effects).toEqual([{ op: 'barrier', amount: expected, dur: 3, defensePower: 3 }]);
       const preview = battle instanceof SmallBattle ? battle.getActionOptions(actor.id).find(o => o.id === 'item:dose')!.targets!.find(t => t.targetId === actor.id)!.preview
@@ -106,10 +106,10 @@ describe('编队治疗按实际伤量使用，护盾按本次总件数计算', (
   });
   it('重复使用护盾批次取较强容量，旧规则仍一次一件；复合道具保留其他效果的覆盖用量', () => {
     const actor = carry(unit('actor'), 'buff屏障', 150), battle = fight('small', [actor]);
-    expect(execute(battle, actor).ok).toBe(true); expect(actor.resources['item:dose']).toBe(50); expect(actor.barrier?.remaining).toBe(2300);
+    expect(execute(battle, actor).ok).toBe(true); expect(actor.resources['item:dose']).toBe(50); expect(actor.barrier?.remaining).toBe(2400);
     expect(battle.useAbility(actor.id, 'item:dose', actor.id, { bypassTurn: true }).ok).toBe(false); expect(actor.resources['item:dose']).toBe(50);
     const old = carry(unit('old'), 'buff屏障'), legacy = fight('small', [old], true);
-    expect(execute(legacy, old).ok).toBe(true); expect(old.resources['item:dose']).toBe(99); expect(old.barrier?.remaining).toBe(23);
+    expect(execute(legacy, old).ok).toBe(true); expect(old.resources['item:dose']).toBe(99); expect(old.barrier?.remaining).toBe(24);
     const combined = carry(unit('combined'), 'buff治疗+屏障'); fight('small', [combined]); applyCombatDamage(combined, 1, 1);
     expect(itemUseAbility(combined, listed(combined), combined).ability.cost?.amount).toBe(100);
   });

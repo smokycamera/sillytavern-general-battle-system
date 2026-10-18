@@ -7,7 +7,7 @@ import { syncGearAbilities, gearItem, validateItemValue, migrateLegacyItem, isLe
 import { skillResourceChange } from '../../engine/src/skill-runtime.js';
 import { applyDispel, dispelCandidates } from '../../engine/src/skill-effects.js';
 /** 库存实物为装备权威；UnitRecord.snapshot 中的装备是供战斗使用的冻结投影。 */
-import { calibrateWeaponRange, compileItem, equipmentReason, healingAmount, traitRegistry, parseDice,
+import { calibrateWeaponRange, compileItem, isArmsV2, equipmentReason, healingAmount, traitRegistry, parseDice,
   type Combatant, type EquipmentSlot, type ItemMechanics, type ItemSpecification } from '../../engine/src/index.js';
 import { unitRecordFromCombatant, updateUnitRecord, type UnitRecord } from './unit-state.js';
 import { prepareNarrativeIds, type NarrativeIdState } from './narrative-ids.js';
@@ -233,7 +233,7 @@ function rewriteRecord(next: InventorySave, record: UnitRecord, sourceId: string
 export function assertInventoryPanelWrite(previous: InventorySave, next: InventorySave): void {
   const previousItems = migrateLegacyInventory(previous.inventory) ?? [], nextItems = migrateLegacyInventory(next.inventory) ?? [];
   const outcome = next.battle && next.committedOutcomeIds?.includes(next.battle.kind + ':' + String(next.battle.snap.seed));
-  const broken = outcome ? (next.battle!.snap.combatants as Combatant[]).filter(u => u.armsModel === 'arms-v2' && u.shieldDurability?.remaining === 0 && u.shield).map(u => u.shield!.id) : [];
+  const broken = outcome ? (next.battle!.snap.combatants as Combatant[]).filter(u => isArmsV2(u.armsModel) && u.shieldDurability?.remaining === 0 && u.shield).map(u => u.shield!.id) : [];
   for (const item of previousItems.filter((i) => i.mechanics)) {
     const incoming = nextItems.find((i) => i.id === item.id);
     if (fingerprint(incoming) !== fingerprint(item) && !(incoming === undefined && broken.includes(item.id))) throw new Error('装备与物品数量/归属须通过库存事务修改');

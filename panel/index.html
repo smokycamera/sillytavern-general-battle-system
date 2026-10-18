@@ -299,6 +299,10 @@
     .command-modes [data-action="loadout-skills"] { grid-area:2 / 3; }
     .command-modes [data-action="grid-retreat"] { grid-area:2 / 4; }
     .command-modes button[aria-pressed="true"] { border-color:var(--gold); color:var(--gold); background:color-mix(in srgb,var(--gold) 9%,var(--card)); }
+    .formation-choice { display:flex; flex-wrap:wrap; align-items:center; gap:4px; margin:8px 0; }
+    .formation-choice button { padding:5px 12px; background:var(--card); border-radius:5px; }
+    .formation-choice button[aria-pressed="true"] { border-color:var(--gold); color:var(--gold); background:color-mix(in srgb,var(--gold) 9%,var(--card)); }
+    .formation-choice small { flex-basis:100%; color:var(--dim); font-size:11px; line-height:1.6; }
     .grid-command label { font-size:11px; color:var(--dim); }
     .grid-command select { margin-top:5px; color:var(--txt); text-overflow:ellipsis; }
     .action-preview { background:var(--card); border:0; padding:12px; font-size:12px; line-height:1.7; overflow-wrap:anywhere; }

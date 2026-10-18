@@ -107,8 +107,16 @@ export const V19_OVERFLOW_TW: RulePack = { ...V18_OVERFLOW_TW, id: 'v19-overflow
 export const V20_OVERFLOW_D20: RulePack = { ...V19_OVERFLOW_D20, id: 'v20-overflow-d20', name: 'V20 组合控制与佩戴等级', skillModel: 'skills-v3', itemModel: 'items-v2' };
 export const V20_OVERFLOW_TW: RulePack = { ...V19_OVERFLOW_TW, id: 'v20-overflow-tw', name: 'V20 组合控制与佩戴等级会战', skillModel: 'skills-v3', itemModel: 'items-v2' };
 
+/**
+ * V21 等级锚定校准（docs/level-anchoring-v21-20261019.md）：能量盾容量按同级预算与平台、跨代换算（arms-v3），实体盾耐久随平台；
+ * 屏障基础量、状态效力与士气量按单体创伤预算比例（skills-v4）。只有新战斗启用，V20 及以前的战斗按原规则。
+ */
+export const V21_OVERFLOW_D20: RulePack = { ...V20_OVERFLOW_D20, id: 'v21-overflow-d20', name: 'V21 等级锚定校准', skillModel: 'skills-v4', armsModel: 'arms-v3' };
+export const V21_OVERFLOW_TW: RulePack = { ...V20_OVERFLOW_TW, id: 'v21-overflow-tw', name: 'V21 等级锚定校准会战', skillModel: 'skills-v4', armsModel: 'arms-v3' };
+
 /** id → 规则包（战斗快照恢复用；面板只用默认两包） */
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V21_OVERFLOW_D20.id]: V21_OVERFLOW_D20, [V21_OVERFLOW_TW.id]: V21_OVERFLOW_TW,
   [V20_OVERFLOW_D20.id]: V20_OVERFLOW_D20, [V20_OVERFLOW_TW.id]: V20_OVERFLOW_TW,
   [V19_OVERFLOW_D20.id]: V19_OVERFLOW_D20, [V19_OVERFLOW_TW.id]: V19_OVERFLOW_TW,
   [V18_OVERFLOW_D20.id]: V18_OVERFLOW_D20, [V18_OVERFLOW_TW.id]: V18_OVERFLOW_TW,

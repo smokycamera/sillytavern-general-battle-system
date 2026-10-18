@@ -9,6 +9,7 @@ import {hasMemberHealth} from '../../engine/src/member-health.js';
 import { renderBattleHighlights, commandHeaderHtml, traceOverlay, unitSymbol } from './battle-presentation.js';
 import { activeTraitIds, weaponReloadKey, FORMATION_NODES, formationNode, isAirborne, moraleLabel, approx, type Combatant, type MassBattle, type Order } from '../../engine/src/index.js';
 import { renderFormationFeedback } from './formation-feedback.js';
+import { looseFormationChoiceHtml } from './loose-formation-view.js';
 import { formationSelection, orderKey, orderLabels, type FormationView, type OrderDrafts, type FormationQueryCache } from './formation-orders.js';
 import { battleSkillChangeReason } from './battle-skills.js';
 import { withBattleReportQueries } from './battle-reports.js';
@@ -63,7 +64,7 @@ function renderFormationContent(b: MassBattle, view: FormationView, drafts: Orde
     <div class="formation-status">${[actor.fatigue ? '疲劳' + approx(actor.fatigue, 1, 'down') + '/' + fatigueLimit(actor) : '', (b.reloadCd.get(actor.id) ?? 0) > 0 ? (tbWeaponShortName(actor.weapon) || '主武器') + '装填中' : '', actor.sidearm && (b.reloadCd.get(weaponReloadKey(actor, actor.sidearm)) ?? 0) > 0 ? (tbWeaponShortName(actor.sidearm) || '副武器') + '装填中' : '', actor.suppression ? '受压制' : '', pressure,
       ...actor.conditions.filter((c) => c.dur > 0).map((c) => (b.conditions.get(c.id)?.name ?? '持续效果') + ' ' + (activationControlDuration(c) ?? c.dur + '轮'))].filter(Boolean).map((t) => '<span>' + esc(t!) + '</span>').join('')}</div>
     <div class="row">${[actor, ...visible.filter(u => u.id === b.attached.get(actor.id))].map(u => `<button data-action="loadout-skills" data-id="${esc(u.id)}" ${battleSkillChangeReason(b, u.id) ? 'disabled' : ''}>${u.id === actor.id ? '技能选择' : '随队技能 · ' + esc(u.name)}</button>`).join('')}</div>
-    ${b.rules.traitLevelModel === 'traits-levels-v2' && activeTraitIds(actor).includes('loose-formation') ? '<div class="formation-choice" aria-label="散兵阵形">'+(['loose','closed'] as const).map(choice=>'<button data-action="trait-formation-choice" data-unit="'+esc(actor.id)+'" data-choice="'+choice+'" aria-pressed="'+((actor.looseFormationChoice??'loose')===choice)+'" '+(!editable || actor.looseChoiceLocked || b.orders.has(actor.id) || b.hasteOrders.has(actor.id)?'disabled':'')+'>'+(choice==='loose'?'疏散':'收拢')+'</button>').join('')+'<small>下军令前可选一次，额外动作沿用。</small></div>':''}
+    ${b.rules.traitLevelModel === 'traits-levels-v2' && activeTraitIds(actor).includes('loose-formation') ? looseFormationChoiceHtml(actor, !editable || !!actor.looseChoiceLocked || b.orders.has(actor.id) || b.hasteOrders.has(actor.id), '本轮下军令前可选一次，额外动作沿用。'):''}
     <div class="formation-current"><span class="tag">${s.draft ? '草案' : s.issued ? '已下达' : '系统建议'}</span><b>${esc(orderName(b, order))}</b>${selectedTarget ? '<p>目标 · ' + esc(selectedTarget.name) + '</p>' : ''}${s.draft && s.issued ? '<small>确认后替换原任务：' + esc(orderName(b, s.issued)) + '</small>' : ''}</div>
     <details class="formation-adjust" data-detail-id="formation-adjust"><summary>调整任务或目标</summary>
       <label>任务<select data-role="formation-order" ${editable ? '' : 'disabled'}>${choices.map((c) => '<option value="' + esc(c.key) + '" ' + (order && c.key === orderKey(order) ? 'selected' : '') + '>' + esc(c.label) + (c.enabled ? '' : ' · 暂不可用') + '</option>').join('')}</select></label>

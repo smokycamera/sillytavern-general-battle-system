@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.1.0**. This release updates items, movement skills, traits and graded terrain specialisations. Formation healing uses only the doses needed for recoverable injuries, and barrier capacity scales with the pieces used. Cavalry actions, map clicks, player-facing copy, narrative parsing, archive reads and automatic approval are improved. See the [player update announcement](docs/player-update-2.1.0-20261013.md). Narrative spatial relationships guide city and outside-city layouts, landmarks and deployment; see [implementation and validation](docs/battlefield-refactor-implementation.md). Export your saves before updating, and do not enable both stable and test installations at once.
+Current version: **2.5.0**. This release adds the expanded weapon and shield classes, commander ability and style for AI decisions, graded traits with resistances and new controls, three-way small battles, and a level-anchoring pass: energy shields now scale with their level and platform, and barrier, buff and morale skills follow the level anchors. A save error that froze battles with energy shields is fixed. See the [player update announcement](docs/player-update-2.5.0-20261019.md). Narrative spatial relationships guide city and outside-city layouts, landmarks and deployment; see [implementation and validation](docs/battlefield-refactor-implementation.md). Export your saves before updating, and do not enable both stable and test installations at once.
 
 The loadout header now includes **技能选择** beside **新增物品**. Choose a unit, select up to five learned skills, and save; preparation retains skill effects, cooldowns, resources, and equipment.
 
