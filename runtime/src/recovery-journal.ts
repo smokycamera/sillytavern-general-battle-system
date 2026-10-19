@@ -38,7 +38,8 @@ export class IndexedDbJournal implements RecoveryJournal {
   get(key: string): Promise<RecoveryRecord | undefined> {
     return this.transaction('readonly', (store, done) => { const request = store.get(key); request.onsuccess = () => done(request.result as RecoveryRecord | undefined); });
   }
-  put(key: string, value: RecoveryRecord): Promise<void> { return this.transaction('readwrite', store => { store.put(structuredClone(value), key); }); }
+  // IndexedDB already synchronously clones the value when put is called.
+  put(key: string, value: RecoveryRecord): Promise<void> { return this.transaction('readwrite', store => { store.put(value, key); }); }
   remove(key: string, operationId: string): Promise<void> {
     return this.transaction('readwrite', store => {
       const request = store.get(key); request.onsuccess = () => { if ((request.result as RecoveryRecord | undefined)?.candidate.lastOperationId === operationId) store.delete(key); };

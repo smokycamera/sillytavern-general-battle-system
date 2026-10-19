@@ -135,7 +135,8 @@ export class NativeStore {
       // head was independently checked above, so this still detects outside edits.
       if (!options.operationId && previous && candidate.payloadHash === previous.payloadHash && !options.clear && !options.replace && !options.migration && !options.messageTags?.length && !options.legacyHandoff && !options.resumeHandoff) return this.result('confirmed', session, operationId);
       const record: RecoveryRecord = { session, candidate, expected: previous ? { generation: previous.generation, revision: previous.revision, payloadHash: previous.payloadHash } : null,
-        previous: structuredClone(previous),
+        // Store heads are immutable and never exposed without a copy.
+        previous,
         ...(options.messageTags?.length ? { messageTags: structuredClone(options.messageTags) } : {}) };
       if (options.legacyHandoff) record.legacyHandoff = structuredClone(options.legacyHandoff);
       try { await this.journal.put(session.scope.key, record); }
@@ -284,7 +285,7 @@ export class NativeStore {
   }
   private async confirm(record: RecoveryRecord, session: HostSession): Promise<PersistReceipt> {
     if (this.sameChat(session)) {
-      this.current = structuredClone(record.candidate); this.pending = undefined;
+      this.current = record.candidate; this.pending = undefined;
       // An object the host swapped in during the save may hold an older head. Give it the
       // verified one, so the host's next save cannot write the old head back.
       const live = this.host.metadata();

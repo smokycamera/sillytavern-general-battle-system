@@ -668,14 +668,15 @@ export class SmallBattle {
   private resolveDenials(actor: Combatant, origin: number, from: number, charging: boolean): void {
     for (const holder of this.denialSources(actor,origin,from,actor.pos!,this.reactionSpent,this.combatants).sort((a,b)=>a.id.localeCompare(b.id))) {
       if (actor.status !== 'ready') break;
+      const watching = this.overwatch.has(holder.id);
       this.reactionSpent.add(holder.id); this.overwatch.delete(holder.id);
       if (holder.denialTriggered?.round !== this.round) holder.denialTriggered = {round:this.round,targets:[]};
       holder.denialTriggered!.targets.push(actor.id);
       const before = actor.scale === 'hero' ? memberHealth(actor) : actor.hp, weapon = meleeWeapon(holder)!;
-      const result = this.resolveAttackWithEnvironment({attacker:holder,defender:actor,rng:this.rng,rules:this.rules,conditionDefs:this.conditionDefMap(),traitRegistry:this.traitRegistry,ranged:false,weaponOverride:weapon,opportunity:true,extraMods:denialModifiers(actor,charging)});
+      const result = this.resolveAttackWithEnvironment({attacker:holder,defender:actor,rng:this.rng,rules:this.rules,conditionDefs:this.conditionDefMap(),traitRegistry:this.traitRegistry,ranged:false,weaponOverride:weapon,opportunity:true,actionDamageScale:watching?this.hasteOverwatch.get(holder.id)??1:1,extraMods:denialModifiers(actor,charging,watching)});
       const interrupted = charging && (actor.scale === 'hero' ? result.finalDamage>0 : actor.hp<before);
       if (interrupted) actor.chargeInterrupted = true;
-      this.recordEvent({round:this.round,kind:'attack',participants:[holder.id,actor.id],text:'拒止反应｜'+result.text+(interrupted?'；'+actor.name+'的冲锋被拒止，失去冲锋加成':''),resolution:result});
+      this.recordEvent({round:this.round,kind:'attack',participants:[holder.id,actor.id],text:(watching?'警戒拒止反应｜':'拒止反应｜')+result.text+(interrupted?'；'+actor.name+'的冲锋被拒止，失去冲锋加成':''),resolution:result});
       if (result.hit) this.applyOnHitTraits(holder,actor,result); this.checkDeath(actor,holder);
     }
   }
@@ -783,6 +784,11 @@ export class SmallBattle {
     if (this.usingHaste(actorId)) this.hasteOverwatch.set(actorId, hasteAttackScale(actor)); else this.hasteOverwatch.delete(actorId);
     this.spendAction(actorId); this.overwatch.add(actorId);
     this.recordEvent({ round: this.round, kind: 'condition', participants: [actor.id], text: `${actor.name} 警戒：共用一次反应额度` });
+  }
+  overwatchDescription(actorId: string): string {
+    return denialReady(this.byId(actorId), this.conditionDefMap())
+      ? '敌人进入2格触及范围时，拒止命中+2；范围内移动也可触发警戒攻击。与自动拒止、借机共用一次反应。'
+      : '敌人在武器攻击范围内移动时反应攻击，占用本轮反应。';
   }
   overwatchReason(actorId: string): string | undefined {
     const actor = this.byId(actorId);
@@ -2312,7 +2318,7 @@ export class SmallBattle {
             const context=this.weaponContext(foe,copy,{weaponMode:opportunity||denial?weapon===foe.sidearm?'sidearm':'primary':'auto'},undefined,sightAt);
             const beforeLoss=copy.scale==='hero'?memberHealth(copy):copy.hp;
             resolveAttack(this.environmentContext({attacker:cloneData(foe),defender:copy,rng,rules:this.rules,conditionDefs:this.conditionDefMap(),traitRegistry:this.traitRegistry,
-              weaponOverride:opportunity||denial?weapon:context.weapon,ranged:!opportunity&&!denial&&context.ranged,actionDamageScale:!opportunity?this.hasteOverwatch.get(foe.id)??1:1,...this.attackModifiers(foe,copy,context),extraMods:[...this.attackModifiers(foe,copy,context).extraMods,...(denial?denialModifiers(copy,charging):[])]}));
+              weaponOverride:opportunity||denial?weapon:context.weapon,ranged:!opportunity&&!denial&&context.ranged,actionDamageScale:!opportunity?this.hasteOverwatch.get(foe.id)??1:1,...this.attackModifiers(foe,copy,context),extraMods:[...this.attackModifiers(foe,copy,context).extraMods,...(denial?denialModifiers(copy,charging,this.overwatch.has(foe.id)):[])]}));
             if(denial&&charging&&(copy.scale==='hero'?memberHealth(copy)<beforeLoss:copy.hp<beforeLoss))copy.chargeInterrupted=true;
           }
           if(copy.hp<=0)break;

@@ -141,14 +141,14 @@ export class BattleService {
       await loading;
       if (this.disposed || epoch !== this.loadEpoch) return;
       if (!this.inSync()) throw Error('载入时聊天已切换');
-      if (this.store.head()?.handoff && !this.store.pendingOperation()) { this.phase = 'handoff'; this.notify(); return; }
-      if (!this.store.envelope() && !this.store.pendingOperation() && this.initialize) {
+      if (this.store.head()?.handoff && !this.store.hasPending()) { this.phase = 'handoff'; this.notify(); return; }
+      if (!this.store.head() && !this.store.hasPending() && this.initialize) {
         const initialized = await this.initialize();
         if (this.disposed || epoch !== this.loadEpoch) return;
-        if (!initialized) { this.phase = this.store.pendingOperation() ? 'pending' : 'import'; this.notify(); return; }
+        if (!initialized) { this.phase = this.store.hasPending() ? 'pending' : 'import'; this.notify(); return; }
       }
       this.migration = reviewMigration(this.snapshot());
-      this.phase = this.store.pendingOperation() ? 'pending' : this.migration ? 'review' : 'ready';
+      this.phase = this.store.hasPending() ? 'pending' : this.migration ? 'review' : 'ready';
       this.project(); this.notify();
     } catch (error) {
       if (this.disposed || epoch !== this.loadEpoch) return;
@@ -233,7 +233,7 @@ export class BattleService {
       this.receipt = receipt;
       if (receipt.status === 'confirmed') this.memoryPanel = undefined;
       if (receipt.status === 'confirmed') this.error = undefined;
-      this.phase = this.store.pendingOperation() ? 'pending' : this.migration ? 'review' : 'ready';
+      this.phase = this.store.hasPending() ? 'pending' : this.migration ? 'review' : 'ready';
       if (receipt.status === 'confirmed') this.project();
       this.notify();
     }
@@ -242,7 +242,7 @@ export class BattleService {
   async retry(): Promise<PersistReceipt> {
     const session = this.store.session(), loaded = this.loadEpoch; const receipt = await this.store.retry();
     if (this.stillOn(session, loaded)) {
-      this.receipt = receipt; this.phase = this.store.pendingOperation() ? 'pending' : this.migration ? 'review' : 'ready';
+      this.receipt = receipt; this.phase = this.store.hasPending() ? 'pending' : this.migration ? 'review' : 'ready';
       if (receipt.status === 'confirmed') { this.migration = reviewMigration(this.snapshot()); this.phase = this.migration ? 'review' : 'ready'; this.project(); }
       this.notify();
     }
@@ -312,7 +312,7 @@ export class BattleService {
   }
   approve(id: string): Promise<PersistReceipt> {
     const namespace = this.host.namespace();
-    const proposal = this.snapshot().proposals?.find(item => item.id === id);
+    const proposal = this.snapshot(['proposals']).proposals?.find(item => item.id === id);
     const chat = this.host.context().chat ?? [];
     const index = proposal && proposal.origin !== 'ai-scan' ? findMessageBySourceId(chat, proposal.source.messageId) : undefined;
     const tags = index === undefined ? [] : [prepareMessageTag(chat, index)];

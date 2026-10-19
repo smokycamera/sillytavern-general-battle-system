@@ -106,12 +106,18 @@ export function narrativeReceiptKey(proposal: NarrativeProposal): string {
 }
 export function compactNarrativeSources(save: NarrativeSave): NarrativeSave {
   if (save.classMigration !== undefined && save.classMigration !== 'arms-v2') throw Error('武器类别更新标记损坏');
+  // The panel shows twelve completed records. Keep their details, and retain only
+  // deduplication receipts for older completed records; unresolved work stays intact.
+  const completed = (save.proposals ?? []).filter(p => p.status === 'committed' || p.status === 'rejected');
+  if (completed.length > 12) save = deleteNarrativeRecords(save, completed.slice(0, -12).map(p => p.id));
   return prepareNarrativeIds({ ...save, ...(Array.isArray(save.proposals) ? { proposals: save.proposals.map((p) => ({ ...p, source: { ...p.source, text: protocolExcerpt(p.source.text) },
     ...(p.originalText !== undefined ? { originalText: protocolExcerpt(p.originalText) } : {}) })) } : {}) });
 }
 export function deleteNarrativeRecords(save: NarrativeSave, ids?: string[]): NarrativeSave {
-  const removed = (save.proposals ?? []).filter((p) => ids ? ids.includes(p.id) : ['committed', 'rejected', 'stale'].includes(p.status));
-  return { ...save, proposals: (save.proposals ?? []).filter((p) => !removed.includes(p)),
+  const selected = ids ? new Set(ids) : undefined;
+  const removed = (save.proposals ?? []).filter((p) => selected ? selected.has(p.id) : ['committed', 'rejected', 'stale'].includes(p.status));
+  const removedSet = new Set(removed);
+  return { ...save, proposals: (save.proposals ?? []).filter((p) => !removedSet.has(p)),
     committedNarrativeSources: [...new Set([...(save.committedNarrativeSources ?? []), ...removed.filter((p) => p.status === 'committed').map((p) => p.sourceKey)])],
     deletedNarrativeReceipts: [...new Set([...(save.deletedNarrativeReceipts ?? []), ...removed.map(narrativeReceiptKey)])] };
 }

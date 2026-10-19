@@ -7,7 +7,7 @@ import { prepareInventoryState } from './inventory-state.js';
 import { narrativeIds } from './narrative-ids.js';
 import { narrativeProjection } from './narrative-controller.js';
 import { serializeEvent } from './protocol-syntax.js';
-import { captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type MessageEnvelope, type NarrativeSave } from './narrative-state.js';
+import { captureGeneration, compactNarrativeSources, narrativeReceiptKey, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type MessageEnvelope, type NarrativeSave } from './narrative-state.js';
 const reg = traitRegistry();
 function setup(body: string) {
   const u = generateUnit({ name: 'A军团', side: 'ally', scale: 'company', level: 4, traits: [] }, { seed: 'narrative', registry: reg }).unit;
@@ -18,6 +18,18 @@ function setup(body: string) {
   return { save, source, ns, proposal: proposalFromMessage(source, binding)! };
 }
 describe('正文原子事务', () => {
+  it('历史收敛保留最近12条已处理记录和全部待处理记录，旧来源仍防止重复入账', () => {
+    const f = setup('<unit_update id="a" hp="80"/>');
+    const completed = Array.from({length: 20}, (_, i) => ({...structuredClone(f.proposal), id: 'done-' + i, sourceKey: 'source-' + i, status: 'committed' as const}));
+    const pending = {...structuredClone(f.proposal), id: 'pending', status: 'pending' as const};
+    const save = {...f.save, proposals: [pending, ...completed]};
+    const compacted = compactNarrativeSources(save);
+    expect(compacted.proposals!.map(p => p.id)).toEqual(['pending', ...completed.slice(-12).map(p => p.id)]);
+    expect(compacted.committedNarrativeSources).toContain('source-0');
+    expect(compacted.deletedNarrativeReceipts).toContain(narrativeReceiptKey(completed[0]!));
+    expect(save.proposals.length).toBe(21);
+    expect(compactNarrativeSources(compacted)).toEqual(compacted);
+  });
   it('短技能、冷却与效果来源编号可通过JSON修改和撤销，实际实例身份不变', () => {
     const fixture = setup('');
     const unit = generateUnit({ name: '法师', side: 'ally', scale: 'hero', rulesVersion: 'v2', level: 4, traits: [], weaponClass: 'rifle',

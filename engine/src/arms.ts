@@ -173,8 +173,9 @@ export const DENIAL_CHARGE_DAMAGE = 1.25, GREATSWORD_DENIAL_ACCURACY = -4, MOUNT
 export function denialReady(holder: Combatant, defs: Map<string, import('./types.js').ConditionDef>): boolean {
   return isArmsV2(holder.armsModel) && ['spear','heavy-polearm'].includes(meleeWeapon(holder)?.recipe?.mechanism ?? '') && holder.status === 'ready' && !holder.suppression && !holder.airborne && !holder.conditions.some(c => c.dur > 0 && (defs.get(c.id)?.skipTurn || defs.get(c.id)?.preventAttack));
 }
-export function denialModifiers(mover: Combatant, charging: boolean): import('./bonus.js').Modifier[] {
+export function denialModifiers(mover: Combatant, charging: boolean, watching = false): import('./bonus.js').Modifier[] {
   const mods: import('./bonus.js').Modifier[] = [];
+  if (watching) mods.push({source:'intrinsic',name:'警戒拒止',kind:'atk',type:'flat',value:2});
   if (charging) mods.push({source:'intrinsic',name:'拒止冲锋',kind:'atk',type:'flat',value:2},{source:'intrinsic',name:'拒止冲锋',kind:'dmg',type:'mult',value:DENIAL_CHARGE_DAMAGE});
   if (mover.weapon?.recipe?.mechanism === 'greatsword') mods.push({source:'intrinsic',name:'巨剑破阵',kind:'atk',type:'flat',value:GREATSWORD_DENIAL_ACCURACY});
   return mods;

@@ -1485,7 +1485,7 @@ function renderManage(): string {
         <button data-action="storage-edit" data-id="${esc(r.id)}" ${isEditingSome && !editing ? 'disabled' : ''}>${editing ? '编辑中' : '编辑'}</button>
         ${r.snapshot?.rulesVersion !== 'v2' ? `<button data-action="unit-conversion-preview" data-id="${esc(r.id)}">预览规则更新</button>` : r.history?.at(-1)?.sourceId === 'mechanism-v2-conversion' ? `<button data-action="unit-conversion-undo" data-id="${esc(r.id)}">撤销刚才更新规则</button>` : ''}
         ${woundedLabel(r) || r.retired ? `<span class="sub">${esc(woundedLabel(r))}${r.retired ? ' · 已解散' : ''}</span>` : ''}
-        <details data-detail-id="archive-history-${esc(r.id)}"><summary>历史记录 · ${r.history?.length ?? 0}条</summary><p class="sub">档案版本 ${r.revision ?? 1}</p>${r.history?.map(h => `<p>${({ created: '建档', battle: '战斗', update: '更新', edit: '编辑', retired: '解散' })[h.kind]} · ${r.scale === 'hero' ? '生命' : '人数'} ${h.hp}/${h.hpMax} · 训练${h.level} · 经验${xpText(h.xp)}</p>`).join('') ?? ''}</details>
+        <details data-detail-id="archive-history-${esc(r.id)}"><summary>历史记录 · ${r.history?.length ?? 0}条</summary><p class="sub">档案版本 ${r.revision ?? 1} · 显示最近12条，完整历史随存档保留</p>${r.history?.slice(-12).reverse().map(h => `<p>${({ created: '建档', battle: '战斗', update: '更新', edit: '编辑', retired: '解散' })[h.kind]} · ${r.scale === 'hero' ? '生命' : '人数'} ${h.hp}/${h.hpMax} · 训练${h.level} · 经验${xpText(h.xp)}</p>`).join('') ?? ''}</details>
         <button data-action="storage-into" data-id="${esc(r.id)}" ${state.roster.some((u) => u.id === r.id) || r.retired || r.hp <= 0 || r.status === 'dying' ? 'disabled' : ''} title="加入本场参战队伍">${state.roster.some((u) => u.id === r.id) ? '已参战' : '→参战队伍'}</button>
         <button data-action="storage-recover" data-id="${esc(r.id)}" ${currentBattle() || r.retired || r.status === 'dead' ? 'disabled' : ''} title="收兵后治疗可恢复的生命或伤兵、恢复士气并解除濒死；不补回永久阵亡人数">战后恢复</button>
         <button data-action="storage-del" data-id="${esc(r.id)}" class="danger" title="删除档案及参战引用，同时删除已装备的主武器、副武器、护甲和盾牌">直接删除（含已装备）</button>
@@ -2085,7 +2085,7 @@ function buildContextInject(): string {
 async function sendToAi(text: string, label: string, reportId?: string, batch?: NarrativeBatch): Promise<void> {
   const historical=state.reports.find(r=>r.id===(reportId??batch?.battleId));
   if(historical?.supersededBy)text='【已被重战替代的历史战报：仅供对照，不代表当前战果】\n'+text;
-  text = applySettlementPrompt(text, controller.snapshot().promptSettings);
+  text = applySettlementPrompt(text, controller.snapshot(['promptSettings']).promptSettings);
   if (!text) { toast(`暂无可发送的${label}`); return; }
   if (['新增战况', '战斗终章', '结算卡（整场）', '回合纪要（整场）', '状态摘要'].includes(label)) {
     text = text.trimEnd() + '\n\n本次回复应根据战报对战斗过程进行详细描写，禁止输出<tb>内容';
@@ -2185,7 +2185,7 @@ function renderNarrativeProposals(): string {
     <label><input type="checkbox" data-role="story-sync" ${state.autoApprove ? 'checked' : ''}>自动确认剧情变更</label>
     <div class="sub">${controller.capabilities.beforeGeneration && controller.capabilities.generationEnded ? '关闭面板后仍保持联动。' : '当前酒馆未连接完整生成事件，请手动扫描。'}${state.autoApprove ? '支持的完整事件会自动入账。' : '新单位、物品与能力先在这里确认。'}${controller.capabilities.injection ? '' : '当前酒馆暂不支持自动提供战斗记录。'}</div>
     ${unresolved.map(proposal).join('')}
-    <details class="narrative-history" data-detail-id="narrative-history"><summary>同步记录与手动扫描</summary><div class="row"><button data-action="narrative-scan">扫描最新完整回复</button><button data-action="narrative-delete">清理已处理记录</button></div><p class="sub">删除记录不撤销已同步档案。事件修正后可重新扫描。</p>${history.map(proposal).join('')}</details>${unresolved.length ? '' : '</details>'}
+    <details class="narrative-history" data-detail-id="narrative-history"><summary>同步记录与手动扫描</summary><div class="row"><button data-action="narrative-scan">扫描最新完整回复</button><button data-action="narrative-delete">清理已处理记录</button></div><p class="sub">已处理记录保留最近12条，旧记录只保留去重凭据。删除记录不撤销已同步档案。事件修正后可重新扫描。</p>${history.map(proposal).join('')}</details>${unresolved.length ? '' : '</details>'}
   </section>`;
 }
 
@@ -2883,7 +2883,7 @@ async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void>
         && JSON.stringify([state.mode,state.field,state.lighting,state.mapLayout,state.objectiveMode,state.siegeAttacker,state.protagonistId])===setupKey
         && JSON.stringify(recentContextMessages())===messagesKey && (!runtime.canWrite||runtime.canWrite());
     const unitNotes=Object.fromEntries(state.storage.filter(u=>state.roster.some(c=>c.id===u.id)).map(u=>[u.id,u.note??'']));
-    const pending=llmContext.select({roster:state.roster,setup,messages,unitNotes,narrativeIdState:controller.snapshot().narrativeIdState,scope:JSON.stringify([identity,namespace,generation]),onStage:()=>render('battle')},settings,valid, result => {
+    const pending=llmContext.select({roster:state.roster,setup,messages,unitNotes,narrativeIdState:controller.snapshot(['narrativeIdState']).narrativeIdState,scope:JSON.stringify([identity,namespace,generation]),onStage:()=>render('battle')},settings,valid, result => {
       if (result.mode !== 'small') return;
       const tags = [...new Set([result.field, ...(result.objectiveMode === 'siege' ? ['siege'] : []), ...(result.mapLayout === 'indoor' ? ['indoor'] : [])])];
       preparedField = generatedLayeredField(seed, result.mapLayout === 'indoor' ? 5 : 7, result.mapLayout === 'indoor' ? 7 : 13, tags,
@@ -3107,19 +3107,19 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   },
   'prompt-save': async (el) => {
     const id = el.dataset.section as PromptSectionId; if (!PROMPT_SECTIONS.some((s) => s.id === id)) return;
-    const settings = controller.snapshot().promptSettings ?? {};
+    const settings = controller.snapshot(['promptSettings']).promptSettings ?? {};
     const template = document.querySelector<HTMLTextAreaElement>(`[data-role="prompt-template"][data-section="${id}"]`)!.value;
     const receipt = (await controller.setPromptSettings({ ...settings, sections: { ...settings.sections, [id]: { ...settings.sections?.[id], template } } }));
     if (receipt.status === 'failed') throw Error(receipt.error); promptDrafts.delete(id);
   },
   'prompt-reset': async (el) => {
     const id = el.dataset.section as PromptSectionId; if (!PROMPT_SECTIONS.some((s) => s.id === id)) return;
-    const settings = controller.snapshot().promptSettings ?? {};
+    const settings = controller.snapshot(['promptSettings']).promptSettings ?? {};
     const receipt = (await controller.setPromptSettings({ ...settings, sections: { ...settings.sections, [id]: { enabled: settings.sections?.[id]?.enabled } } }));
     if (receipt.status === 'failed') throw Error(receipt.error); promptDrafts.delete(id);
   },
   'prompt-select-units': async (el) => {
-    const receipt = (await controller.setPromptSettings(selectPromptEntries(controller.snapshot().promptSettings, 'unit', state.storage.filter(visibleUnitRecord).map((r) => r.id), el.dataset.selected === 'true')));
+    const receipt = (await controller.setPromptSettings(selectPromptEntries(controller.snapshot(['promptSettings']).promptSettings, 'unit', state.storage.filter(visibleUnitRecord).map((r) => r.id), el.dataset.selected === 'true')));
     if (receipt.status === 'failed') throw Error(receipt.error);
   },
   'prompt-select-items': async (el) => {
@@ -3772,13 +3772,13 @@ async function handleChange(e: Event): Promise<void> {
   }
   if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'battle-tactic') { const b = currentBattle(); if (b && !b.isOver() && b.rules.resolutionVersion === 'v2') { b.allyTactic = normalizeTactic(e.target.value); (await persist()); render('battle'); } return; }
   if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'prompt-scope' || e.target instanceof HTMLInputElement && e.target.dataset.role === 'prompt-pin') {
-    const el = e.target as HTMLInputElement, settings = controller.snapshot().promptSettings ?? {};
+    const el = e.target as HTMLInputElement, settings = controller.snapshot(['promptSettings']).promptSettings ?? {};
     if (el.dataset.role === 'prompt-pin') { const ids = new Set(settings.pinnedUnitIds ?? []); if (el.checked) ids.add(el.dataset.id!); else ids.delete(el.dataset.id!); settings.pinnedUnitIds = [...ids]; }
     else if (el.dataset.kind === 'unit') settings.unitScope = el.value as 'manual' | 'roster' | 'scene'; else settings.itemScope = el.value as 'all' | 'carried' | 'scene';
     state.saveReceipt = (await controller.setPromptSettings(settings)); render(); return;
   }
   if (e.target instanceof HTMLInputElement && ['prompt-enabled', 'prompt-unit', 'prompt-item'].includes(e.target.dataset.role ?? '')) {
-    const input = e.target, settings = controller.snapshot().promptSettings ?? {};
+    const input = e.target, settings = controller.snapshot(['promptSettings']).promptSettings ?? {};
     const id = input.dataset.section as PromptSectionId;
     const next = input.dataset.role === 'prompt-enabled'
       ? { ...settings, sections: { ...settings.sections, [id]: { ...settings.sections?.[id], enabled: input.checked } } }

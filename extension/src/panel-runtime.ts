@@ -81,6 +81,6 @@ export function createPanelRuntime(): PanelRuntime {
     writeBlockReason: () => service.writeBlockReason(),
     saving: () => service.saving(),
     reloadArchive: () => service.load(),
-    retrySave: async () => service.store.pendingOperation() ? convert(service.retry()) : (await controller.persistPanel(service.snapshot(), service.snapshot().factRevision ?? 0)).receipt,
+    retrySave: async () => service.store.hasPending() ? convert(service.retry()) : (await controller.persistPanel(service.snapshot(), service.snapshot(['factRevision']).factRevision ?? 0)).receipt,
   };
 }

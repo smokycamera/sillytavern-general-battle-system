@@ -109,6 +109,24 @@ function denialBattle(weapon='spear', suppress=false): {b:SmallBattle;a:Combatan
   const b=new SmallBattle({combatants:[a,holder],rules:V18_OVERFLOW_D20,battlefield:field,seed:'denial',rng:fixedHit()});b.start();a.pos=38;holder.pos=35;holder.suppression=suppress?1:0;return {b,a,holder};
 }
 describe('arms-v2 S4 denial and sprint',()=>{
+  it('主动警戒使两种长兵器拒止命中+2，仍只反应一次并保留加速伤害倍率',()=>{
+    for (const weapon of ['spear', 'heavy-polearm']) {
+      const passive = denialBattle(weapon), watched = denialBattle(weapon);
+      watched.b.overwatch.add(watched.holder.id);
+      // A saved watch must behave identically after loading.
+      const restored = SmallBattle.fromSnapshot(structuredClone(watched.b.toSnapshot()));
+      passive.b.moveTo('a', 37); restored.moveTo('a', 37);
+      const normal = passive.b.log.find(e => e.text.includes('拒止反应'))!.resolution!;
+      const ready = restored.log.find(e => e.text.includes('警戒拒止反应'))!.resolution!;
+      expect(ready.netAtk - normal.netAtk).toBe(2);
+      expect(restored.log.filter(e => e.resolution).length).toBe(1);
+      expect(restored.overwatch.has('e')).toBe(false);
+      expect(restored.reactionSpent.has('e')).toBe(true);
+      const hasted = denialBattle(weapon); hasted.b.overwatch.add('e'); hasted.b.hasteOverwatch.set('e', .5);
+      hasted.b.moveTo('a', 37);
+      expect(hasted.b.log.find(e => e.resolution)!.resolution!.finalDamage).toBeLessThan(normal.finalDamage);
+    }
+  });
   it('reacts on entering two cells, remembers the mover and shares the opportunity budget',()=>{
     const {b,a,holder}=denialBattle();b.moveTo(a.id,37);expect(b.log.filter(e=>e.text.includes('拒止反应')).length).toBe(1);expect(b.reactionSpent.has(holder.id)).toBe(true);
     b.moveTo(a.id,38);b.reactionSpent.delete(holder.id);b.moveTo(a.id,37);expect(b.log.filter(e=>e.text.includes('拒止反应')).length).toBe(1);
