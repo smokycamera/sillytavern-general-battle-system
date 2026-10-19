@@ -99,13 +99,13 @@ describe('frozen five-point enhancement bands', () => {
     expect(shieldTransmission(shield(2),'kinetic',10)).toBeLessThan(shieldTransmission(shield(-2),'kinetic',10));
     expect(shieldTransmission(shield(2),'kinetic',10,true)).toBe(1);
   });
-  it('unit growth preserves roll identity, no auto-heal, no extra personnel; record validation catches corrupt unit/equipment rolls', () => {
+  it('unit growth preserves roll identity, heals survivors and adds no personnel; record validation catches corrupt unit/equipment rolls', () => {
     for(const scale of ['hero','company'] as const) {
       const u=unit('growth',{level:1,scale,...(scale==='company'?{hpMax:20}:{})}), rolls=structuredClone(u.genAudit!.variance),weapon=structuredClone(u.weapon);
       const hp=u.hp;
       for(let level=2;level<=10;level++) {
         applyXp(u,XP_LEVEL_COSTS[level-2]!,registry);
-        expect(u.genAudit!.variance).toEqual(rolls);expect(u.weapon).toEqual(weapon);expect(u.hp).toBe(hp);
+        expect(u.genAudit!.variance).toEqual(rolls);expect(u.weapon).toEqual(weapon);expect(u.hp).toBe(scale==='hero'?u.base.hpMax:hp);
         expect(scale==='hero'?u.base.hpMax:u.formation!.memberHp).toBe(nominalLife(u));
         if(scale==='company')expect(u.formation!.capacity).toBe(20);
       }

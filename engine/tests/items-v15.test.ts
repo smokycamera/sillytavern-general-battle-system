@@ -51,7 +51,10 @@ describe('V15 道具编译与形态', () => {
   it('佩戴品没有总效果点数上限，特质等级和修正完整保留', () => {
     const over=item({form:'worn',power:1,traits:[{id:'guardian',level:8},{id:'regen',level:10}],bonuses:{defense:8,damage:6}});
     const saved=JSON.parse(JSON.stringify(over));expect(()=>validateItemValue(saved)).not.toThrow();
-    expect(saved.passive).toEqual({traits:[{id:'guardian',level:8},{id:'regen',level:10}],bonuses:{defense:8,damage:6}});
+    expect(saved).toEqual(over);
+    expect(saved.passive).toMatchObject({traits:[{id:'guardian',level:8},{id:'regen',level:10}],bonuses:{defense:8,damage:6}});
+    expect(saved.passive.actualEffects.values.defense).toBeCloseTo(.28);
+    expect(saved.passive.actualEffects.values.damage).toBeCloseTo(.06);
     expect(() => item({ form: 'worn', power: 5, traits: [{ id: 'night-fighter', level: 5 }], bonuses: { defense: 2 } })).not.toThrow();
     expect(() => item({ form: 'worn', power: 5, traits: [{ id: 'night-fighter', level: 5 }], bonuses: { defense: 3 } })).not.toThrow();
     expect(() => item({ form: 'worn', power: 5, traits: [{ id: 'flying' }] })).not.toThrow();
@@ -137,7 +140,7 @@ describe('V15 编队件数、加速动作与 AI 保留价值', () => {
     expect(scaled.magnitude).toBeCloseTo(base.magnitude! / 40);
     const restorer = carry(company('r', 'ally', 40), 'restore', { form: 'single', power: 3, active: active('buff回能') }, 1), restore = restorer.abilities.find(a => a.itemSourceId)!;
     const resource = itemUseAbility(restorer, restore, restorer).ability.effects.find(e => e.op === 'resource')!;
-    expect(resource).toMatchObject({ resource: 'SP', amount: 0.05 });
+    expect(resource).toMatchObject({ resource: 'SP', amount: 0.08 }); // L3 回能3，覆盖1/40，按资源精度保留两位。
   });
   it.each(['rifle', 'cannon'] as const)('30人编队齐投的伤害人数与消耗件数相同，不受所持%s武器炮组人数折减', weaponClass => {
     const actor = carry(unit('grenadiers', 'ally', { scale: 'company', hpMax: 30, weaponClass }), 'bomb', { form: 'single', power: 4, active: active('物理范围投射') }, 60);

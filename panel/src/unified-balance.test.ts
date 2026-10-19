@@ -58,13 +58,14 @@ describe('V6 archive, skill families and signed modifier round trips',()=>{
    const e=skill(name,10,{duration:10}).abilities[0]!.effects.find(e=>e.op==='condition')!;expect(e.op==='condition'&&e.dur).toBe(1);
   }
  });
- it('item healing and thrown damage equal the same skill after battle entry, signed modifiers included; nested zone healing uses current life',()=>{
-  for(const points of [-10,0,10]){
+ it('item healing follows its frozen progression table; thrown damage still matches skills and nested zone healing uses current life',()=>{
+  for(const [points,healing] of [[-10,68],[0,136],[10,272]] as const){
    const bonuses={power:points,healing:points};
    const dose=compileItem({kind:'item',form:'single',power:10,active:'generic:buff:heal',bonuses},{id:'dose',seed:'dose'});
    if(dose.kind!=='item')throw Error();
-   // 道具在创建时按最新技能规则编译并冻结，对照同一规则下的技能。
-   expect(dose.value.ability!.effects).toEqual(skill('buff治疗',10,bonuses,PHASE3_SKILL_MODEL).abilities[0]!.effects);
+   // 新道具的治疗使用V23独立表，不再等于同级普通技能；强化仍冻结到实物。
+   expect(dose.value.recipe.progressionModel).toBe('item-progression-v2');
+   expect(dose.value.ability!.effects).toEqual([{op:'heal',power:10,amount:healing}]);
    const bomb=compileItem({kind:'item',form:'single',power:10,active:'generic:physical-area:projectile',bonuses:{power:points}},{id:'bomb',seed:'bomb'});
    if(bomb.kind!=='item')throw Error();
    const thrown=skill('物理范围投射',10,{power:points},PHASE3_SKILL_MODEL).abilities[0]!, carried=carriedItemAbility({id:'bomb',name:'bomb',quantity:1,revision:1,mechanics:bomb});

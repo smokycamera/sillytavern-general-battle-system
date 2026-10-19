@@ -45,13 +45,14 @@ it.each([['small', 'hero'], ['small', 'company'], ['mass', 'hero'], ['mass', 'co
   expect(moraleProfile(restored.observationContext(), restored.byId('lead'), registry).effective).toBeLessThan(Math.min(100, maximum));
 });
 
-it('护送默认对象不依赖主控，明确选择仍优先；战外资料提供当前士气与锁定状态', () => {
+it('护送默认对象不依赖主控，明确选择仍优先；战外资料为主控提供士气锁定说明', () => {
   const roster = [unit('first', 'ally', 'company'), unit('lead', 'ally', 'hero'), unit('foe', 'enemy', 'company')];
   expect(prepareBattleObjective(standardField(), roster, 'escort', 'lead').objective).toMatchObject({ unitId: 'first' });
   expect(prepareBattleObjective(standardField(), roster, 'escort', 'lead', 'ally', 'lead').objective).toMatchObject({ unitId: 'lead' });
   const text = narrativeProjection({ storage: roster.map(u => unitRecordFromCombatant(u)), rosterIds: roster.map(u => u.id), protagonistId: 'lead' });
   expect(text).toContain('"morale":10');
-  expect(text).toContain('"morale":100');
+  expect(text).toContain('"morale":"该单位士气锁定，请勿在tb修改"');
+  expect(text).not.toContain('"morale":100');
   expect(text).toContain('"moraleLocked":true');
 });
 

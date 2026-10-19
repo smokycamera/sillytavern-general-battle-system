@@ -154,7 +154,7 @@ describe('战斗状态提交', () => {
     expect(first.total).toBe(300);
     expect(first.records[0]!.xp).toBe(300);
     expect(first.records[0]!.level).toBe(2);
-    expect(first.records[0]!.hp).toBe(unit.hp);
+    expect(first.records[0]!.hp).toBe(first.records[0]!.base.hpMax);
     expect(first.roster[0]!.xp).toBe(300);
     expect(first.roster[0]!.level).toBe(2);
 

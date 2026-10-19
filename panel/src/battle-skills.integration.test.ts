@@ -22,7 +22,8 @@ it('saves battle skill changes from battle and loadout, preserves live ledgers a
     const units = ['a', 'b', 'enemy'].map(id => {
       const u = buildUnit({ ...newUnitDraft(), name: id, side: id === 'enemy' ? 'enemy' : 'ally', scale: mode === 'small' ? 'hero' : 'company', hpMax: '100',
         skills: Array.from({ length: 6 }, (_, i) => ({ id: 'generic:magic-single', name: id + i, power: '1', prepared: i < 5 })) }, traitRegistry(), id);
-      u.id = id; return u;
+      // Model an existing saved five-skill selection; new units prepare all learned skills.
+      u.id = id; u.preparedAbilityIds = u.abilities.slice(0, 5).map(a => a.id); return u;
     });
     const field = standardField(7, 13); field.tiles.fill('open');
     const b = mode === 'small' ? new SmallBattle({ rules: V7_OVERFLOW_D20, combatants: units, battlefield: field, seed: 'live-skills' })
@@ -53,7 +54,7 @@ it('saves battle skill changes from battle and loadout, preserves live ledgers a
     const before = f.service.snapshot();
     const skill = (i: number) => document.querySelector<HTMLInputElement>(`[data-role="loadout-skill"][data-id="${ids[i]}"]`)!;
     await click('loadout-skills');
-    expect(skill(5).disabled).toBe(true);
+    expect(skill(5).disabled).toBe(false);
     skill(0).click(); skill(5).click(); await click('loadout-skills-save');
     expect(document.querySelector('.loadout-skill-dialog'), document.querySelector('#toast')?.textContent).toBeNull();
     expect(savedUnit().preparedAbilityIds).toEqual(ids.slice(1));

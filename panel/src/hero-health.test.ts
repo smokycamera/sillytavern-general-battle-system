@@ -59,12 +59,12 @@ it('story life survives save/reload and level/health changes until the standard 
   save=change(save,{level:7,bonuses:{health:0}});
   expect(read(save)).toMatchObject({hp:100,base:{hpMax:make(7).base.hpMax}});
 });
-it('XP upgrades use the same floor, preserve wounds, and do not revive zero HP', () => {
+it('XP upgrades use the same floor, heal survivors, and do not revive zero HP', () => {
   for (const max of [100,1000]) for (const hp of [0,50]) {
     const unit=make(); unit.hp=hp; unit.base.hpMax=max;
     applyXp(unit,xpProgress(unit)!.next,registry);
     expect(unit.level).toBe(6);
     expect(unit.base.hpMax).toBe(Math.max(max,make(6).base.hpMax));
-    expect(unit.hp).toBe(hp);
+    expect(unit.hp).toBe(hp>0?unit.base.hpMax:0);
   }
 });

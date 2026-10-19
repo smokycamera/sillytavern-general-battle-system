@@ -102,11 +102,6 @@ export const TRAITS: Trait[] = [
     effects: [{ kind: 'flag', flag: 'no-melee-penalty' }],
   },
   // ---------- 防护 ----------
-  ...(['kinetic', 'thermal', 'arcane'] as const).map((channel): Trait => ({
-    id: channel + '-resist', name: ({ kinetic: '动能', thermal: '热能', arcane: '奥术' })[channel] + '抵抗',
-    desc: 'V18起对应通道抗穿每级+0.4，与身体和护甲相加，同特质取最高L；不影响其他通道、盾牌或屏障',
-    v2SourceReady: true, effects: [{ kind: 'flag', flag: channel + '-resist' }],
-  })),
   {
     id: 'guardian', name: '守护', desc: '受到的全伤害 -25%（不可被破甲绕过）',
     v2SourceReady: true,

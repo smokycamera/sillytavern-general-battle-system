@@ -47,7 +47,7 @@ describe('反馈数值校准',()=>{
     const veteran=unit('A','hero',10);veteran.weapon=a.weapon;
     expect(previewAttack({...opts,attacker:veteran}).expectedDamage).toBeGreaterThan(plain.expectedDamage*2);
     const group=unit('D','company',1,{health:10});expect(group.hp).toBe(30);expect(group.formation!.memberHp).toBe(30);
-    const wounded=unit('A','hero',1,{health:10});wounded.hp=5;applyXp(wounded,900,registry);expect(wounded.hp).toBe(5);expect(wounded.base.hpMax).toBeGreaterThan(30);
+    const wounded=unit('A','hero',1,{health:10});wounded.hp=5;applyXp(wounded,900,registry);expect(wounded.hp).toBe(wounded.base.hpMax);expect(wounded.base.hpMax).toBeGreaterThan(30);
   });
   it('正文强化贯穿建档、学习与保存，非法点数不会静默变成普通装备',()=>{
     const parsed=parseProtocol('<tb>\n<spawn name="A" side="ally" scale="hero" level="L1+2生命" weapon="枪:步枪L5+10精度+10伤害+10穿透" armor="重甲L5+10防护" skills="火花:魔法单体L1+10伤害+10精度"/>\n</tb>');

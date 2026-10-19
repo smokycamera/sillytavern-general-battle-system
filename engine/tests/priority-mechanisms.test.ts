@@ -44,7 +44,7 @@ it('restores the selected ally resource and consumes one physical item, with no 
   if(mechanics.kind!=='item')throw Error('fixture');
   const a=attachCarriedItems(unit('a'),[{id:'dose',name:'回能药剂',quantity:2,revision:1,mechanics}]),f=unit('f'),e=unit('e','enemy');
   const b=grid([a,f,e]);f.resources.SP=0;const before=a.resources.SP;
-  expect(b.useAbility(a.id,'item:dose',f.id).ok).toBe(true);expect(f.resources.SP).toBe(2);expect(a.resources.SP).toBe(before);expect(a.resources['item:dose']).toBe(1);
+  expect(b.useAbility(a.id,'item:dose',f.id).ok).toBe(true);expect(f.resources.SP).toBe(3);expect(a.resources.SP).toBe(before);expect(a.resources['item:dose']).toBe(1);
   const restored=SmallBattle.fromSnapshot(JSON.parse(JSON.stringify(b.toSnapshot())));
   expect(restored.useAbility(a.id,'item:dose',f.id).ok).toBe(false);expect(restored.byId(a.id).resources['item:dose']).toBe(1);
 });
@@ -158,7 +158,7 @@ it('equipped barrier abilities execute and keep spent uses after restoring eithe
     const b=mode==='small'?grid([a,e]):new MassBattle({combatants:[a,e],rules:V4_OVERFLOW_TW,seed:'shield-mass'});if(b instanceof MassBattle)b.start();
     const before=a.resources.SP!;expect(b.useAbility(a.id,ability.id,a.id).ok).toBe(true);
     if(b instanceof MassBattle){b.issue({unitId:e.id,type:'hold'});b.resolveRound();}
-    expect(a.barrier?.remaining).toBe(24);expect(a.resources.SP).toBe(before);expect(a.abilityState.find(s=>s.abilityId==='uses:'+ability.id)?.used).toBe(1);
+    expect(a.barrier?.remaining).toBe(26);expect(a.resources.SP).toBe(before);expect(a.abilityState.find(s=>s.abilityId==='uses:'+ability.id)?.used).toBe(1);
     const save=JSON.parse(JSON.stringify(b.toSnapshot())),restored=b instanceof SmallBattle?SmallBattle.fromSnapshot(save):MassBattle.fromSnapshot(save);
     expect(restored.byId(a.id).barrier).toEqual(a.barrier);expect(restored.byId(a.id).abilityState).toEqual(a.abilityState);
   }

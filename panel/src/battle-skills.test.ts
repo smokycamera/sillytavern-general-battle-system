@@ -50,8 +50,11 @@ it('swapping and swapping back preserve cooldowns, uses, effects and all turn le
 
 it('rejects illegal skill lists, other turns, spent main actions and enemies without changing the battle', () => {
   const b = small(), a = b.byId('a'), skills = a.abilities.map(s => s.id);
+  expect(skills.length).toBeGreaterThan(5);
+  setBattlePreparedSkills(b, 'a', skills);
+  expect(a.preparedAbilityIds).toEqual(skills);
   a.abilities.push({ ...a.abilities[0]!, id: 'gear', equipmentSourceId: 'item' });
-  for (const selected of [skills, [skills[0]!, skills[0]!], ['unknown'], ['gear']]) {
+  for (const selected of [[skills[0]!, skills[0]!], ['unknown'], ['gear']]) {
     const before = b.toSnapshot(); expect(() => setBattlePreparedSkills(b, 'a', selected)).toThrow(); expect(b.toSnapshot()).toEqual(before);
   }
   expect(battleSkillChangeReason(b, 'b')).toContain('轮到');

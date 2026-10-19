@@ -173,7 +173,9 @@ describe('持续区域的有符号技能修正', () => {
     expect(skillEffectLines(context, a, e, ability)).toEqual([description]);
     a.abilities = [ability]; placeZone(context, a, e, op, 1, ability.id);
     expect(() => combatantFromUnknown(JSON.parse(JSON.stringify(a)))).not.toThrow();
-    for (const amount of [0, -1, 1.5, Infinity, NaN]) { a.battleZones![0]!.amount = amount; expect(() => validateAreas(a)).toThrow(); }
+    a.battleZones![0]!.amount = 1.5; expect(() => validateAreas(a)).not.toThrow(); // 道具成长允许有限小数强度。
+    expect(() => combatantFromUnknown(JSON.parse(JSON.stringify(a)))).not.toThrow();
+    for (const amount of [0, -1, 1e6+1, Infinity, NaN]) { a.battleZones![0]!.amount = amount; expect(() => validateAreas(a)).toThrow(); }
     a.battleZones = []; op.penetration = -1; expect(() => combatantFromUnknown(a)).toThrow();
   });
   it('正文仍使用既有 L 等级修正语法，五种新机制都能识别', () => {

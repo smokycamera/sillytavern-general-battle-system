@@ -104,10 +104,11 @@ describe('V6 unified formulas and bounded signed enhancements',()=>{
    }
   }
  });
- it('T9→10 grows the new maximum without healing, spawning members or rerolling gear',()=>{
+ it('T9→10 grows the maximum and heals survivors without spawning members or rerolling gear',()=>{
   for(const scale of ['hero','company'] as const){
-   const a=unit({level:9,scale,body:'giant',bonuses:{health:10,power:10}}),hp=a.hp,health=memberHealth(a),gear=structuredClone(a.weapon),max=nominalLife(a);
-   applyXp(a,XP_LEVEL_COSTS[8]!,registry);expect(a.level).toBe(10);expect(a.hp).toBe(hp);expect(memberHealth(a)).toBe(health);expect(a.weapon).toEqual(gear);expect(nominalLife(a)-max).toBe(192);
+   const a=unit({level:9,scale,body:'giant',bonuses:{health:10,power:10}}),hp=a.hp,gear=structuredClone(a.weapon),max=nominalLife(a);
+   applyCombatDamage(a,1,1);
+   applyXp(a,XP_LEVEL_COSTS[8]!,registry);expect(a.level).toBe(10);expect(a.hp).toBe(scale==='hero'?a.base.hpMax:hp);expect(memberHealth(a)).toBe(scale==='hero'?a.base.hpMax:hp*a.formation!.memberHp);expect(a.weapon).toEqual(gear);expect(nominalLife(a)-max).toBe(192);
   }
  });
 });
