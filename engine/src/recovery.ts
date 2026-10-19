@@ -1,3 +1,4 @@
+import { progression, stackingRevision } from './progression.js';
 import type { Combatant, ConditionDef, Trait } from './types.js';
 import { absorbBarrier } from './barrier.js';
 import { absorbEnergyShield } from './shield-state.js';
@@ -35,7 +36,7 @@ function woundedShare(unit: Combatant): [number, number] {
 /** 余量是尚未凑满一组的伤亡；只按累计总数取整，连续小额伤亡不会丢失或重复。 */
 function woundedFromLoss(unit: Combatant, loss: number, remainder: number): { recoverable: number; remainder: number } {
   if (phase2Traits(unit)) {
-    const level = effectiveTraitLevel(unit, 'medic'), percent = level ? traitParameter('medicRescue', level) : 50;
+    const level = effectiveTraitLevel(unit, 'medic'), percent = level ? traitParameter('medicRescue', level, unit.traitLevelModel) : 50;
     const total = (unit.woundedPercentRemainder ?? 0) + loss * percent;
     unit.woundedPercentRemainder = unit.hp > 0 ? total % 100 : 0;
     return { recoverable: Math.floor(total / 100), remainder }; // 旧余量封存
@@ -113,15 +114,40 @@ export function applyRecovery(unit: Combatant, amount: number): number {
 }
 
 /** 吸血：造成实际生命伤害后回复其中25%；非生物与载具目标不提供，编队只救回已有的可救伤兵。 */
-export function lifestealRecovery(attacker: Combatant, target: Combatant, lifeDamage: number): number {
+export function lifestealRecovery(attacker: Combatant, target: Combatant, lifeDamage: number, round = attacker.lifestealState?.round ?? 1): number {
+  if (stackingRevision(attacker)) {
+    beginLifestealRound(attacker, round);
+    const budget = Math.round(lifestealBudget(attacker, target, lifeDamage) * 10000) / 10000;
+    if (budget <= 0) return 0;
+    const restored = applyRecovery(attacker, budget);
+    const state = attacker.lifestealState!;
+    state.spent += restored;
+    state.remainder = recoveryCapacity(attacker) > 0 ? Math.round((budget - Math.floor(budget)) * 10000) : 0;
+    return restored;
+  }
   const amount = lifestealAmount(attacker, target, lifeDamage);
   return amount > 0 ? applyRecovery(attacker, amount) : 0;
 }
-/** 无副作用的恢复估计供面板/AI 使用；输入须为护盾及过量截断后的生命伤害。 */
-export function lifestealAmount(attacker: Combatant, target: Combatant, lifeDamage: number): number {
+/** 入场以实际成员数冻结生命预算；全局轮边界重置，正常激活/加速/换来源不触碰。 */
+export function beginLifestealRound(unit: Combatant, round: number, entry = false): void {
+  if (!stackingRevision(unit)) return;
+  if (entry || !unit.lifestealState) unit.lifestealState = {
+    baseline: hasMemberHealth(unit) ? unit.hp * unit.formation!.memberHp : unit.base.hpMax, round, spent: 0, remainder: 0,
+  };
+  else if (unit.lifestealState.round !== round) Object.assign(unit.lifestealState, {round, spent:0, remainder:0});
+}
+function lifestealBudget(attacker: Combatant, target: Combatant, lifeDamage: number): number {
   if (attacker.rulesVersion !== 'v2' || !(lifeDamage > 0) || attacker.status !== 'ready' || attacker.hp <= 0 || target.body === 'vehicle'
     || !activeTraitIds(attacker).includes('lifesteal') || activeTraitIds(target).includes('inorganic')) return 0;
-  return Math.min(recoveryCapacity(attacker), Math.floor(lifeDamage * traitValue(attacker, 'lifesteal', 'lifestealRatio', .25)));
+  const earned = lifeDamage * traitValue(attacker, 'lifesteal', 'lifestealRatio', .25);
+  if (!stackingRevision(attacker)) return Math.min(recoveryCapacity(attacker), earned);
+  const state = attacker.lifestealState, baseline = state?.baseline ?? (hasMemberHealth(attacker) ? attacker.hp * attacker.formation!.memberHp : attacker.base.hpMax);
+  const cap = baseline * traitParameter('lifestealRoundCap', effectiveTraitLevel(attacker, 'lifesteal'), attacker.traitLevelModel);
+  return Math.min(recoveryCapacity(attacker), Math.max(0, cap - (state?.spent ?? 0)), earned + (state?.remainder ?? 0)/10000);
+}
+/** 无副作用的恢复估计供面板/AI 使用；输入须为护盾及过量截断后的生命伤害。 */
+export function lifestealAmount(attacker: Combatant, target: Combatant, lifeDamage: number): number {
+  return Math.floor(lifestealBudget(attacker, target, lifeDamage) + 1e-10);
 }
 /** 被动再生不花主行动；失能、濒死与离场时暂停，同源或同类再生只取最高。 */
 export function regenerationAmount(unit: Combatant, registry: Map<string, Trait> = traitRegistry(), conditions: Map<string, ConditionDef> = standardConditionMap()): number {
@@ -130,7 +156,7 @@ export function regenerationAmount(unit: Combatant, registry: Map<string, Trait>
   for (const id of activeTraitIds(unit)) for (const effect of registry.get(id)?.effects ?? []) if (effect.kind === 'regen') amount = Math.max(amount, effect.perRound);
   if (phase2Traits(unit) && amount > 0) {
     const level = effectiveTraitLevel(unit, 'regen');
-    amount = 3 * traitParameter('woundRatio', level) * healingGradeMultiplier(level, unit.level, unit.healingModel);
+    amount = (progression(unit) ? traitParameter('regenAmount', level, unit.traitLevelModel) : 3 * traitParameter('woundRatio', level, unit.traitLevelModel)) * healingGradeMultiplier(level, unit.level, unit.healingModel);
   }
   return Math.min(recoveryCapacity(unit), amount * (isCohort(unit) && unit.scale !== 'hero' ? Math.max(1,personnel(unit)/COHORT_REFERENCE) : 1) + (phase2Traits(unit) && amount > 0 ? (unit.regenerationRemainder ?? 0) / 10000 : 0));
 }
@@ -146,6 +172,9 @@ export function settleRegeneration(unit: Combatant, amount: number): number {
 }
 
 export function validateRecoveryRemainders(unit: Combatant): void {
+  const state = unit.lifestealState;
+  if (state !== undefined && (!state || !Number.isSafeInteger(state.baseline) || state.baseline < 0 || !Number.isSafeInteger(state.round) || state.round < 1
+    || !Number.isSafeInteger(state.spent) || state.spent < 0 || state.spent > state.baseline || !Number.isSafeInteger(state.remainder) || state.remainder < 0 || state.remainder > 9999)) throw Error('吸血轮预算记录损坏');
   for (const [key, max] of [['regenerationRemainder', 9999], ['woundedPercentRemainder', 99]] as const) {
     const value = unit[key]; if (value !== undefined && (!Number.isSafeInteger(value) || value < 0 || value > max)) throw Error('恢复余量记录损坏');
   }

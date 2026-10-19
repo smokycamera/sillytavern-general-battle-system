@@ -42,6 +42,7 @@ export function effectiveMoveReach(actor: Combatant, ability: Pick<Ability, 'bon
 }
 /** 会战阵位：突进与后撤一个阵位，闪现可达两层（技能可走3格以上时）。 */
 export function massMoveReach(effect: MoveEffect): number {
+  if (effect.massReach !== undefined) return effect.massReach;
   return effect.mode === 'blink' && effect.reach >= 3 ? 2 : 1;
 }
 /** 技能说明：只有位移的技能写“移动到落点”；以实际近战武器出手的突进才提冲锋。 */

@@ -115,7 +115,13 @@ export const V21_OVERFLOW_D20: RulePack = { ...V20_OVERFLOW_D20, id: 'v21-overfl
 export const V21_OVERFLOW_TW: RulePack = { ...V20_OVERFLOW_TW, id: 'v21-overflow-tw', name: 'V21 等级锚定校准会战', skillModel: 'skills-v4', armsModel: 'arms-v3' };
 
 /** id → 规则包（战斗快照恢复用；面板只用默认两包） */
+export const V22_OVERFLOW_D20: RulePack = { ...V21_OVERFLOW_D20, id: 'v22-overflow-d20', name: 'V22 特质与道具成长', traitLevelModel: 'traits-items-v1' };
+export const V22_OVERFLOW_TW: RulePack = { ...V21_OVERFLOW_TW, id: 'v22-overflow-tw', name: 'V22 特质与道具成长会战', traitLevelModel: 'traits-items-v1' };
+export const V23_OVERFLOW_D20: RulePack = { ...V22_OVERFLOW_D20, id: 'v23-overflow-d20', name: 'V23 特质与道具组合', traitLevelModel: 'traits-items-v2' };
+export const V23_OVERFLOW_TW: RulePack = { ...V22_OVERFLOW_TW, id: 'v23-overflow-tw', name: 'V23 特质与道具组合会战', traitLevelModel: 'traits-items-v2' };
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V23_OVERFLOW_D20.id]: V23_OVERFLOW_D20, [V23_OVERFLOW_TW.id]: V23_OVERFLOW_TW,
+  [V22_OVERFLOW_D20.id]: V22_OVERFLOW_D20, [V22_OVERFLOW_TW.id]: V22_OVERFLOW_TW,
   [V21_OVERFLOW_D20.id]: V21_OVERFLOW_D20, [V21_OVERFLOW_TW.id]: V21_OVERFLOW_TW,
   [V20_OVERFLOW_D20.id]: V20_OVERFLOW_D20, [V20_OVERFLOW_TW.id]: V20_OVERFLOW_TW,
   [V19_OVERFLOW_D20.id]: V19_OVERFLOW_D20, [V19_OVERFLOW_TW.id]: V19_OVERFLOW_TW,

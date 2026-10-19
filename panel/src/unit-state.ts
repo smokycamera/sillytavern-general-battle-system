@@ -1,4 +1,4 @@
-import { V21_OVERFLOW_D20, prepareSkillModel } from '../../engine/src/index.js';
+import { V23_OVERFLOW_D20, prepareSkillModel } from '../../engine/src/index.js';
 import { validateBattleControlState } from '../../engine/src/battle-control.js';
 import { validateRecoveryRemainders } from '../../engine/src/recovery.js';
 import { validateHealingModel } from '../../engine/src/healing.js';
@@ -202,8 +202,9 @@ function validateRuntimeMetadata(value: Record<string, unknown>): void {
     if (isRecordObject(condition) && condition.potency !== undefined && (!Number.isInteger(condition.potency) || Number(condition.potency) < 1 || Number(condition.potency) > 3)) throw new Error('状态强度记录损坏');
     // Partial item coverage can produce a weaker active condition than the
     // minimum compiled skill potency; it must remain valid through save/load.
-    if (isRecordObject(condition) && condition.magnitude !== undefined && (!Number.isFinite(condition.magnitude) || Number(condition.magnitude) <= 0 || Number(condition.magnitude) > 2)) throw new Error('状态效力记录损坏');
+    if (isRecordObject(condition) && condition.magnitude !== undefined && (!Number.isFinite(condition.magnitude) || Number(condition.magnitude) <= 0 || Number(condition.magnitude) > (['traits-items-v1','traits-items-v2'].includes(String(value.traitLevelModel)) ? 16 : condition.id === 'poisoned' && value.traitLevelModel === 'traits-levels-v2' ? 2 : 2))) throw new Error('状态效力记录损坏');
     if (isRecordObject(condition) && condition.sourceId !== undefined && typeof condition.sourceId !== 'string') throw new Error('状态来源记录损坏');
+    if (condition.damageChannel !== undefined && !['kinetic','thermal','arcane'].includes(String(condition.damageChannel))) throw Error('持续伤害通道损坏');
     if (condition.defensePower !== undefined && (condition.id !== 'blessed' || !validDefensePower(condition.defensePower))) throw new Error('守护防御规格记录损坏');
   }
   if (value.resourceModel !== undefined && !isEnduranceModel(value.resourceModel)) throw new Error('资源规则版本损坏');
@@ -278,6 +279,8 @@ export function combatantFromUnknown(value: unknown): Combatant {
   }
   if (Array.isArray(value.abilities)) for (const a of value.abilities) {
     if (!isRecordObject(a) || typeof a.id !== 'string' || typeof a.name !== 'string' || !Array.isArray(a.effects)) throw new Error('技能结构损坏');
+    const modernItem = ['item-progression-v1','item-progression-v2'].includes(String(a.itemEffectModel));
+    if (a.itemEffectModel !== undefined && !modernItem) throw Error('主动道具成长版本损坏');
     validateEnhancements(a.bonuses as Enhancements | undefined,'skill');
     if(a.penetration!==undefined&&(typeof a.penetration!=='number'||!Number.isFinite(a.penetration)||a.penetration<0))throw Error('技能穿透须为非负有限数');
     if (a.weaponUse !== undefined && (!['auto', 'melee', 'ranged'].includes(String(a.weaponUse)) || a.damageBasis !== 'weapon')) throw new Error('技能选用武器记录损坏');
@@ -294,16 +297,17 @@ export function combatantFromUnknown(value: unknown): Combatant {
       if (isRecordObject(effect) && effect.op === 'zone') validateZoneStrength(effect);
       if (isRecordObject(effect) && effect.op === 'barrier') validateBarrier({ remaining: effect.amount as number, duration: effect.dur as number });
       if (!isRecordObject(effect) || !['damage', 'heal', 'condition', 'trait', 'push', 'dispel', 'resource', 'morale', 'summon', 'barrier', 'zone', 'move'].includes(String(effect.op))) throw new Error('技能包含未支持的效果处理');
+      if (effect.massReach !== undefined && (!modernItem || !Number.isInteger(effect.massReach) || Number(effect.massReach) < 1 || Number(effect.massReach) > 10)) throw Error('道具会战位移损坏');
       if (effect.op === 'move' && (!['dash', 'blink', 'withdraw'].includes(String(effect.mode)) || !Number.isInteger(effect.reach) || Number(effect.reach) < 1 || Number(effect.reach) > 20)) throw new Error('技能位移参数损坏');
       if (effect.defensePower !== undefined && (!validDefensePower(effect.defensePower) || effect.op !== 'barrier' && !(effect.op === 'condition' && effect.conditionId === 'blessed'))) throw new Error('技能防御规格记录损坏');
-      if (effect.magnitude !== undefined && (!Number.isFinite(effect.magnitude) || Number(effect.magnitude) < 0.25 || Number(effect.magnitude) > 2) || effect.onDamage !== undefined && typeof effect.onDamage !== 'boolean') throw new Error('技能效力或损伤前提损坏');
+      if (effect.magnitude !== undefined && (!Number.isFinite(effect.magnitude) || Number(effect.magnitude) <= 0 || Number(effect.magnitude) > (modernItem ? 16 : 2)) || effect.onDamage !== undefined && typeof effect.onDamage !== 'boolean') throw new Error('技能效力或损伤前提损坏');
       if (effect.level !== undefined && (effect.op !== 'trait' || !validTraitLevel(effect.level) || isRecordObject(a.recipe) && a.recipe.version === 'skill-formula-v3' && Number(effect.level) > Number(a.power))) throw Error('技能授予等级损坏');
       if (effect.op === 'heal' && effect.power !== undefined && !validTraitLevel(effect.power)) throw Error('治疗规格损坏');
       if (effect.op === 'trait' && (!traitRegistry().get(String(effect.traitId))?.v2SourceReady || !Number.isInteger(effect.dur) || Number(effect.dur) < 1 || Number(effect.dur) > 99)) throw new Error('技能授予来源损坏');
       if (effect.direction !== undefined && !['away', 'towards'].includes(String(effect.direction)) || effect.maximum !== undefined && effect.maximum !== 'training') throw new Error('技能位移或资源边界损坏');
       if (effect.onHit !== undefined && typeof effect.onHit !== 'boolean' || effect.shape !== undefined && !['single', 'burst'].includes(String(effect.shape))) throw new Error('技能触发或范围参数损坏');
-      if (effect.op === 'push' && (effect.steps !== 1 || !Number.isInteger(effect.force) || Number(effect.force) < 1 || Number(effect.force) > 4)) throw new Error('推动参数损坏');
-      if (effect.op === 'dispel' && (!['positive', 'negative'].includes(String(effect.polarity)) || !Number.isInteger(effect.count) || ![1, 2].includes(Number(effect.count)))) throw new Error('解除参数损坏');
+      if (effect.op === 'push' && (effect.steps !== 1 || !Number.isInteger(effect.force) || Number(effect.force) < 1 || Number(effect.force) > (modernItem ? 10 : 4))) throw new Error('推动参数损坏');
+      if (effect.op === 'dispel' && (!['positive', 'negative'].includes(String(effect.polarity)) || !Number.isInteger(effect.count) || (Number(effect.count) < 1 || Number(effect.count) > (modernItem ? 10 : 2)))) throw new Error('解除参数损坏');
       if (effect.op === 'condition' && (effect.potency !== undefined && (!Number.isInteger(effect.potency) || Number(effect.potency) < 1 || Number(effect.potency) > 3) || effect.saveDC !== undefined && (!Number.isInteger(effect.saveDC) || Number(effect.saveDC) < 1 || Number(effect.saveDC) > 30))) throw new Error('技能状态强度或抵抗参数损坏');
       if (effect.op === 'heal' && effect.amount !== undefined) {
         if (!Number.isFinite(effect.amount) || Number(effect.amount) < 1 || effect.dice !== undefined) throw new Error('治疗量损坏');
@@ -450,7 +454,7 @@ export function unitRecordFromCombatant(
   previous?: UnitRecord,
   opts: { transient?: boolean; kind?: UnitHistoryEntry['kind']; sourceId?: string } = {},
 ): UnitRecord {
-  c = stripCarriedItems(c); delete c.barrier; delete c.weaponHeat; delete c.shieldDurability; delete c.energyShield; delete c.sprayerFuel; delete c.tankRupturedRound; delete c.chargeInterrupted; delete c.chargeDistance; delete c.denialTriggered; delete c.battleZones; delete c.regenerationRemainder; delete c.controlActivation; delete c.movedDuringActivation; delete c.looseChoiceLocked;
+  c = stripCarriedItems(c); delete c.barrier; delete c.weaponHeat; delete c.shieldDurability; delete c.energyShield; delete c.sprayerFuel; delete c.tankRupturedRound; delete c.chargeInterrupted; delete c.chargeDistance; delete c.denialTriggered; delete c.battleZones; delete c.regenerationRemainder; delete c.lifestealState; delete c.controlActivation; delete c.movedDuringActivation; delete c.looseChoiceLocked;
   if(opts.kind==='battle'){ delete c.storyState; c.conditions = c.conditions.filter(condition => !['taunted','charmed','blinded','confused'].includes(condition.id)); }
   limitCombatantLife(c);
   delete c.nonLethal;delete c.cannonAmmo;
@@ -908,7 +912,7 @@ export function learnUnitRecord(record: UnitRecord, skills: NonNullable<Combatan
   if (record.retired || record.hp <= 0 || record.status === 'dead') throw new Error('阵亡或解散档案不能学习');
   const unit = materializeUnitRecord(record, registry);
   if (record.snapshot) { unit.abilityState = clone(record.snapshot.abilityState); unit.resources = clone(record.snapshot.resources); }
-  prepareSkillModel(unit, V21_OVERFLOW_D20);
+  prepareSkillModel(unit, V23_OVERFLOW_D20);
   const learned = learnAbilities(unit, skills ?? [], { rebuildRequested: true });
   return unitRecordFromCombatant(learned, record, { kind: 'edit', sourceId });
 }

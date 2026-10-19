@@ -108,18 +108,18 @@ export interface RangeSpec {
 
 export type EffectOp =
   | { op: 'barrier'; amount: number; dur: number; defensePower?: number }
-  | { op: 'zone'; kind: 'fire' | 'poison' | 'smoke' | 'healing' | 'trap'; power: number; healingModel?: import('./healing.js').HealingModel; dur: number; radius: number; amount?: number; penetration?: number; effects?: ZonePayload[] }
+  | { op: 'zone'; itemEffectModel?: import('./progression.js').ItemProgressionModel; kind: 'fire' | 'poison' | 'smoke' | 'healing' | 'trap'; power: number; healingModel?: import('./healing.js').HealingModel; dur: number; radius: number; amount?: number; penetration?: number; effects?: ZonePayload[] }
   | { op: 'damage'; baseDice: string; apDice?: string; tag?: string; shape?: 'single' | 'burst' }
   | ({ op: 'heal'; power?: number } & ({ dice: string; amount?: never } | { amount: number; dice?: never }))
-  | { op: 'condition'; conditionId: string; dur: number; potency?: number; magnitude?: number; defensePower?: number; saveDC?: number; onHit?: boolean; onDamage?: boolean; shape?: 'single' | 'burst' }
+  | { op: 'condition'; damageChannel?: DamageChannel; conditionId: string; dur: number; potency?: number; magnitude?: number; defensePower?: number; saveDC?: number; onHit?: boolean; onDamage?: boolean; shape?: 'single' | 'burst' }
   | { op: 'trait'; traitId: string; level?: number; dur: number; shape?: 'single' | 'burst' }
   | { op: 'push'; force: number; steps: 1; physical?: boolean; onHit?: boolean; direction?: 'away' | 'towards' }
-  | { op: 'dispel'; polarity: 'positive' | 'negative'; count: 1 | 2 }
+  | { op: 'dispel'; polarity: 'positive' | 'negative'; count: number }
   | { op: 'resource'; resource: string; amount: number; maximum?: 'training' }
   | { op: 'morale'; amount: number }
   | { op: 'summon'; templateId: string; count: number }
   /** 施术者自身位移：dash 沿可走路线突进、blink 闪现到可见落点（两者在效果之前），withdraw 出手后后撤；reach 为格数。 */
-  | { op: 'move'; mode: 'dash' | 'blink' | 'withdraw'; reach: number };
+  | { op: 'move'; mode: 'dash' | 'blink' | 'withdraw'; reach: number; massReach?: number };
 
 /** 区域携带实际效果；不递归生成区域或每轮无限召唤。召唤与施术者位移仍在施放时执行。 */
 export type ZonePayload = Exclude<EffectOp, { op: 'zone' | 'damage' | 'summon' | 'move' }>;
@@ -147,6 +147,8 @@ export interface Ability {
   itemSourceId?: string;
   /** V15 一次性道具：喝、敷、注射的单体增益与治疗可用加速动作。 */
   itemQuick?: boolean;
+  /** 新编译主动道具的冻结预算版本。 */
+  itemEffectModel?: import('./progression.js').ItemProgressionModel;
   /** V15 一次性道具对编队的件数口径：member 每人一份，object 一件一个效果。 */
   itemScaling?: 'member' | 'object';
   /** 编队本次齐用实际消耗的件数；只存在于单次使用的派生行动，不写入存档。 */
@@ -252,10 +254,11 @@ export interface ConditionDef {
   preventMove?: boolean;
   preventAttack?: boolean;
   preventMagic?: boolean;
-  dot?: { dice: string; label?: string };
+  dot?: { dice: string; label?: string; channel?: DamageChannel };
 }
 
 export interface ActiveCondition {
+  damageChannel?: DamageChannel;
   controlPending?: boolean;
   controlActive?: boolean;
   controlSide?: Side;
@@ -278,6 +281,8 @@ export interface ActiveCondition {
 export type UnitStatus = 'ready' | 'dying' | 'dead' | 'routing' | 'fled';
 
 export interface Combatant {
+  /** V23 入场冻结生命、全局轮及实际吸血恢复账本；预览只读。 */
+  lifestealState?: { baseline: number; round: number; spent: number; remainder: number };
   controlActivation?: { sequence: number; targetId?: string };
   /** 固定万分之一恢复单位；只在合法再生周期兑现，满血/离场/失去全部来源清零。 */
   regenerationRemainder?: number;
@@ -300,7 +305,7 @@ export interface Combatant {
   /** V15 item system (graded specialisations, item action economy and per-piece formation use), projected from the battle rules. V20 items-v2 scales worn modifiers by item L. */
   itemModel?: 'items-v1' | 'items-v2';
   /** V16 特质分级独立门控；旧战斗缺省保持原效果。 */
-  traitLevelModel?: 'traits-levels-v1' | 'traits-levels-v2';
+  traitLevelModel?: 'traits-levels-v1' | 'traits-levels-v2' | 'traits-items-v1' | 'traits-items-v2';
   healingModel?: import('./healing.js').HealingModel;
   controlModel?: 'activation-controls-v1';
   battleZones?: import('./area-effects.js').BattleZone[];
@@ -606,7 +611,7 @@ export interface RulePack {
   /** V15 道具系统：专精十级、道具行动与编队件数、AI 保留价值、冲锋与远程看实际配装; absent keeps V14. V20 items-v2：佩戴修正按道具 L 换算。 */
   itemModel?: 'items-v1' | 'items-v2';
   /** V16 新增特质分级；独立于 V15 五项专精。 */
-  traitLevelModel?: 'traits-levels-v1' | 'traits-levels-v2';
+  traitLevelModel?: 'traits-levels-v1' | 'traits-levels-v2' | 'traits-items-v1' | 'traits-items-v2';
   healingModel?: import('./healing.js').HealingModel;
   controlModel?: 'activation-controls-v1';
   combatModel?: 'cohort-v1' | 'cohort-v2';

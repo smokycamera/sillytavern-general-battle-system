@@ -11,25 +11,26 @@ type ZoneEffect = Extract<EffectOp, { op: 'zone' }>;
 type ZoneStrength = Pick<ZoneEffect, 'power' | 'amount' | 'penetration'>;
 export const zoneAmount = (zone: ZoneStrength): number => zone.amount ?? 4 + zone.power * 3;
 export const zonePenetration = (zone: ZoneStrength): number => zone.penetration ?? 2 * zone.power;
-export function validateZoneStrength(zone: { amount?: unknown; penetration?: unknown; effects?: unknown }): void {
-  if (zone.amount !== undefined && (!Number.isSafeInteger(zone.amount) || Number(zone.amount) < 1 || Number(zone.amount) > 1e6)
+export function validateZoneStrength(zone: { amount?: unknown; penetration?: unknown; effects?: unknown; itemEffectModel?: unknown }): void {
+  if (zone.amount !== undefined && (!Number.isFinite(zone.amount) || Number(zone.amount) < 1 || Number(zone.amount) > 1e6)
     || zone.penetration !== undefined && (typeof zone.penetration !== 'number' || !Number.isFinite(zone.penetration) || zone.penetration < 0)) throw Error('持续区域的强度参数损坏');
   if (zone.effects !== undefined && (!Array.isArray(zone.effects) || zone.effects.some(e => !e || typeof e !== 'object'
     || !['condition','trait','heal','barrier','dispel','resource','morale','push'].includes(e.op)))) throw Error('持续区域的附加效果损坏');
+  const modern = ['item-progression-v1','item-progression-v2'].includes(String(zone.itemEffectModel ?? ''));
   const integer=(v:unknown,min:number,max:number)=>Number.isSafeInteger(v)&&Number(v)>=min&&Number(v)<=max;
   for(const e of (zone.effects??[]) as Exclude<EffectOp,{op:'zone'|'damage'|'summon'}>[]) {
     if ('defensePower' in e && e.defensePower !== undefined && (!validDefensePower(e.defensePower) || e.op === 'condition' && e.conditionId !== 'blessed')) throw Error('持续区域的防御规格损坏');
     if ('dur' in e && !integer(e.dur,1,99) || 'onHit' in e && e.onHit!==undefined && typeof e.onHit!=='boolean'
       || 'onDamage' in e && e.onDamage!==undefined && typeof e.onDamage!=='boolean') throw Error('持续区域的附加效果时间或前提损坏');
     if(e.op==='condition' && (!standardConditionMap().has(e.conditionId) || e.saveDC!==undefined&&!integer(e.saveDC,1,30)
-      || e.potency!==undefined&&!integer(e.potency,1,3) || e.magnitude!==undefined&&(!Number.isFinite(e.magnitude)||e.magnitude<.25||e.magnitude>2))) throw Error('持续区域的附加状态损坏');
+      || e.potency!==undefined&&!integer(e.potency,1,3) || e.magnitude!==undefined&&(!Number.isFinite(e.magnitude)||e.magnitude<(modern ? 0 : .25)||e.magnitude>(modern ? 16 : 2)))) throw Error('持续区域的附加状态损坏');
     if(e.op==='trait'&&!traitRegistry().get(e.traitId)?.v2SourceReady)throw Error('持续区域的特质损坏');
     if(e.op==='barrier'&&!integer(e.amount,1,1e6))throw Error('持续区域的屏障损坏');
     if(e.op==='heal') { if(e.amount!==undefined) { if(!Number.isFinite(e.amount)||e.amount<1||e.amount>1e6||e.dice!==undefined)throw Error('持续区域的治疗量损坏'); } else parseDice(e.dice); }
     if(e.op==='resource'&&(!e.resource||typeof e.resource!=='string'||!Number.isFinite(e.amount)||e.maximum!==undefined&&e.maximum!=='training'))throw Error('持续区域的资源效果损坏');
     if(e.op==='morale'&&!Number.isFinite(e.amount))throw Error('持续区域的士气效果损坏');
-    if(e.op==='dispel'&&(!['positive','negative'].includes(e.polarity)||![1,2].includes(e.count)))throw Error('持续区域的驱散效果损坏');
-    if(e.op==='push'&&(!integer(e.force,1,4)||e.steps!==1||e.direction!==undefined&&!['away','towards'].includes(e.direction)))throw Error('持续区域的位移效果损坏');
+    if(e.op==='dispel'&&(!['positive','negative'].includes(e.polarity)||!integer(e.count,1,modern ? 10 : 2)))throw Error('持续区域的驱散效果损坏');
+    if(e.op==='push'&&(!integer(e.force,1,modern ? 10 : 4)||e.steps!==1||e.direction!==undefined&&!['away','towards'].includes(e.direction)))throw Error('持续区域的位移效果损坏');
   }
 }
 

@@ -89,3 +89,6 @@ export * from './healing.js';
 
 export * from './battle-control.js';
 export * from './phase2-traits.js';
+
+export * from './progression.js';
+export * from './gear-bonuses.js';

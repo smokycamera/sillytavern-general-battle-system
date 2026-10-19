@@ -1,3 +1,4 @@
+import { progression, stackingRevision } from './progression.js';
 /**
  * 五项专精的十级阶梯（V15）。L5 就是 V14 及以前的效果，历史记录省略等级按L5，新输入默认L1；V14 及更早的战斗不论记录多少级都按 L5。
  * 每一级比上一级多一项：L1–4 逐级减轻环境惩罚，L6–10 逐级获得环境优势。来源（自带、bless、技能、佩戴品）取最高一级，不叠加。
@@ -21,7 +22,7 @@ import { activeTraitIds, effectiveTraitLevel } from './trait-sources.js';
 import { itemsV15 } from './item-model.js';
 import { isGradedTrait } from './data/traits.js';
 import { gradedTraitEnabled, traitLevelsV16 } from './trait-level-model.js';
-import { traitParameter, type TraitParameter } from './trait-parameters.js';
+import { TERRAIN_GRADED_TRAITS, traitParameter as parameterValue, type TraitParameter } from './trait-parameters.js';
 
 export const STANDARD_TRAIT_LEVEL = 5;
 
@@ -31,7 +32,7 @@ export function traitLevel(unit: Combatant, id: string, traits: readonly string[
 }
 /** 执行器的单一参数入口；旧规则直接返回历史值。调用者检查适用前提。 */
 export function traitValue(unit: Combatant, id: string, parameter: TraitParameter, legacy: number): number {
-  return traitLevelsV16(unit) ? traitParameter(parameter, traitLevel(unit, id)) : legacy;
+  return traitLevelsV16(unit) ? parameterValue(parameter, traitLevel(unit, id), unit.traitLevelModel) : legacy;
 }
 
 // ---- 林地与山地：移动、攻击惩罚、会战行军 ----
@@ -92,7 +93,9 @@ export const TRAIT_LADDER: Readonly<Record<string, readonly string[]>> = {
 };
 const signed = (value: number) => (value >= 0 ? '+' : '−') + Math.abs(value);
 /** 某一级累计生效的效果，按实际数值合并成一句（面板、道具说明与说明文件共用）。 */
-export function traitLadderSummary(id: string, level: number): string {
+export function traitLadderSummary(id: string, level: number, model?: unknown): string {
+  const modern = progression({traitLevelModel:model}), revised = stackingRevision({traitLevelModel:model});
+  const traitParameter = (p: TraitParameter, L: number) => parameterValue(p, L, model);
   const L = Math.max(1, Math.min(10, Math.round(level))), parts: string[] = [];
   const add = (when: boolean, text: string) => { if (when) parts.push(text); };
   if (id === 'forest-lore') {
@@ -119,30 +122,41 @@ export function traitLadderSummary(id: string, level: number): string {
     else if (id === 'fatigue-trained') parts.push(`疲劳获得×${traitParameter('fatigueMultiplier', L)}，休整不变`);
     else if (id === 'trample') parts.push(`合法近战冲锋对更小身体伤害×${traitParameter('trampleMultiplier', L)}`);
     else if (id === 'shield-wall') parts.push(`持实际盾牌、可行动且固守时，正面远程伤害减免${pct('shieldReduction')}%`);
-    else if (id === 'ap-weapon') parts.push(`动能穿透最多+${traitParameter('penetrationBudget', L)}，受floor(基础穿透/3)上限限制；上限吞掉的等级差异不生效`);
+    else if (id === 'ap-weapon') parts.push(`动能穿透最多+${traitParameter('penetrationBudget', L)}，受${modern ? '基础穿透/3' : 'floor(基础穿透/3)'}上限限制；上限吞掉的等级差异不生效`);
     else if (id === 'anti-infantry' || id === 'anti-large') parts.push(`对${id === 'anti-infantry' ? '地面未骑乘人形' : '大型、巨型、载具或骑乘'}目标攻击+${traitParameter('counterAttack', L)}、伤害×${traitParameter('counterMultiplier', L)}${id === 'anti-large' ? '，与对空同组取强' : ''}`);
     else if (id === 'stubborn') parts.push(`自身士气韧性${traitParameter('resilience', L)}，编队只计一次，个体参与心理对抗`);
     else if (id === 'commander') parts.push(`小战3格/会战1阵位内友军士气支援${traitParameter('command', L)}，需要视线、可见且来源可行动，多位统率取强`);
-    else if (id === 'regen') parts.push(`每合法周期基础再生${3 * traitParameter('woundRatio', L)}，再按自身level计算治疗跨代；不足1的余量保存，满血/失去全部来源清零，失能暂停，加速不增加周期，不乘施放医护`);
+    else if (id === 'regen') parts.push(`每合法周期基础再生${modern ? traitParameter('regenAmount', L) : 3 * traitParameter('woundRatio', L)}，再按自身level计算治疗跨代；不足1的余量保存，满血/失去全部来源清零，失能暂停，加速不增加周期，不乘施放医护`);
     else if (id === 'medic') parts.push(`施放治疗×${traitParameter('medicHealing', L)}，自身编队新伤亡可救${traitParameter('medicRescue', L)}%；不重算过去永久伤亡，不抬高治疗规格`);
-    else if (id === 'poison-strike') parts.push(`合法动能攻击造成真实损伤后施加普通毒，基础毒伤×${traitParameter('woundRatio', L)}，冻结效力与波及人数，结算3次；存续时不叠层、不续期、不替换，攻击降低1`);
+    else if (id === 'poison-strike') parts.push(`合法动能攻击造成真实损伤后施加普通毒，基础毒伤×${traitParameter(modern ? 'poisonMultiplier' : 'woundRatio', L)}，冻结效力与波及人数，结算3次；存续时不叠层、不续期、不替换，攻击降低1`);
     else if (id === 'fear') parts.push(`小战3格/会战1阵位恐惧压力${traitParameter('fearPressure', L)}；残余压力扣附近统率与自身韧性，攻击至多降低2${L >= 8 ? `；有效士气≤50时额外惊退DC${12 + 2 * (L - 8)}，按本体来源本战只应对一次` : '，没有额外恐怖惊退'}`);
     else if (id === 'fortification') parts.push(`在据守位置防御+${traitParameter('worksDefense', L)}、远程伤害减免${pct('worksReduction')}%；离开失效，工兵仅削减此来源`);
-    else if (id === 'pike-wall') parts.push(`对机动目标攻击+${traitParameter('counterAttack', L)}、伤害×${traitParameter('counterMultiplier', L)}，正面固守时抗合法冲锋减伤${pct('formationReduction')}%`);
-    else if (id === 'loose-formation') parts.push(`疏散时未被近敌牵制的范围伤害减免${pct('formationReduction')}%，溅射暴露剩余${100-pct('formationReduction')}%；编队近战展开×0.5、近战防御−1；可在正常激活开始选择疏散/收拢，额外动作不切换`);
+    else if (id === 'pike-wall') parts.push(`对机动目标攻击+${traitParameter('counterAttack', L)}、伤害×${traitParameter('counterMultiplier', L)}，正面固守时抗合法冲锋减伤${pct(modern ? 'pikeReduction' : 'formationReduction')}%`);
+    else if (id === 'loose-formation') parts.push(`疏散时未被近敌牵制的范围伤害减免${pct('formationReduction')}%，溅射暴露剩余${100-pct('formationReduction')}%${modern ? '；人数减免与伤害减免只兑现一次' : ''}；编队近战展开×0.5、近战防御−1；可在正常激活开始选择疏散/收拢，额外动作不切换`);
     else if (id === 'skirmisher') parts.push(`合法轻中装先攻+${traitParameter('skirmishInitiative', L)}、机动+${traitParameter('skirmishMobility', L)}，脱离近敌时远程减伤${pct('skirmishReduction')}%`);
     else if (id === 'tenacity') parts.push(`控制抵抗+${traitParameter('controlResistance', L)}，${L >= 5 ? '完全阻挡推拉' : `完全阻挡实际force≤${traitParameter('pushLimit', L)}的推拉`}，不免疫已经施加的失能`);
     else if (id === 'agile') parts.push(`合法地形额外成本剩余${pct('agileTerrain')}%，${L >= 5 ? '脱离近战免借机触发' : `仍触发借机，伤害减免${pct('agileReactionReduction')}%，不免附带状态`}；先攻+${traitParameter('agileInitiative', L)}、机动+${traitParameter('agileMobility', L)}；会战困难地形行军使用同一成本，不跨墙/深水资格`);
     else if (id === 'siege-breaker') parts.push(`结构伤害×${traitParameter('engineerDamage', L)}，攻击时削减目标工事提供的防御/远程减伤${pct('engineerSuppression')}%，不削真实护甲、盾牌或结构本体`);
     else if (id === 'melee-master') parts.push(`近战武器与物理技法攻击+${traitParameter('meleeAttack', L)}、伤害×${traitParameter('meleeDamage', L)}，独立魔法不生效`);
     else if (id === 'anti-air') parts.push(`对空攻击+${traitParameter('counterAttack', L)}、伤害×${traitParameter('counterMultiplier', L)}；地对空额外射程成本小战${traitParameter('antiAirRangeSmall', L)}格/会战${traitParameter('antiAirRangeMass', L)}阵位，不授予新投送方式`);
-    else if (id === 'sharpshooter') parts.push(L === 1 ? '静止且半射程内射击攻击+1' : L === 2 ? '半射程内射击攻击+1，允许移动' : L === 3 ? '全合法射程射击攻击+1' : L === 4 ? '静止射击+2、已移动+1' : `全合法射击攻击+${L>=9?4:L>=7?3:2}${L>=6?`，仅减轻明确掩护${L>=8?2:1}点`:''}${L===10?'，另减轻1点移动命中惩罚':''}`);
-    else if (id === 'charge-strong') parts.push(`${L===1?'仅直线合法冲锋攻击+1':L===3?'直线冲锋+2，其他合法冲锋+1':`任何合法冲锋攻击+${traitParameter('chargeAttack', L)}`}，合法冲锋伤害×${traitParameter('chargeDamage', L)}，不授予穿障碍资格`);
-    else if (id === 'berserk') parts.push(`固定防御−1；${L===1?'近战武器攻击+1':L===2?'所有武器攻击+1':L===3?'所有攻击+1':L===4?'武器攻击+2、独立魔法+1':`所有攻击+${traitParameter('berserkAttack', L)}`}，合法攻击伤害×${traitParameter('berserkDamage', L)}，不影响治疗、毒DOT或士气`);
+    else if (id === 'sharpshooter') parts.push(modern ? `全合法射程与移动后射击攻击+${traitParameter('meleeAttack', L)}、伤害×${traitParameter('meleeDamage', L)}；减轻掩护${traitParameter('sharpshooterCover', L)}点，不减轻移动或射程惩罚，不授予视线；独立魔法无效` : L === 1 ? '静止且半射程内射击攻击+1' : L === 2 ? '半射程内射击攻击+1，允许移动' : L === 3 ? '全合法射程射击攻击+1' : L === 4 ? '静止射击+2、已移动+1' : `全合法射击攻击+${L>=9?4:L>=7?3:2}${L>=6?`，仅减轻明确掩护${L>=8?2:1}点`:''}${L===10?'，另减轻1点移动命中惩罚':''}`);
+    else if (id === 'charge-strong') parts.push(`${modern ? `任何合法冲锋攻击+${traitParameter('chargeAttack', L)}` : L===1?'仅直线合法冲锋攻击+1':L===3?'直线冲锋+2，其他合法冲锋+1':`任何合法冲锋攻击+${traitParameter('chargeAttack', L)}`}，合法冲锋伤害×${traitParameter('chargeDamage', L)}，不授予穿障碍资格`);
+    else if (id === 'berserk') parts.push(`固定防御−1；${modern ? `近战、射击及独立攻击魔法攻击+${traitParameter('berserkAttack', L)}` : L===1?'近战武器攻击+1':L===2?'所有武器攻击+1':L===3?'所有攻击+1':L===4?'武器攻击+2、独立魔法+1':`所有攻击+${traitParameter('berserkAttack', L)}`}，合法攻击伤害×${traitParameter('berserkDamage', L)}，不影响治疗、毒DOT或士气`);
     else if (id === 'stalk') parts.push(`潜伏规格L${L}参与确定性侦察对抗；仍需合法隐蔽条件，攻击/施法/近敌接触照常暴露，不穿墙或空间移动`);
-    else if (id === 'recon') parts.push(`侦察规格L${L}参与确定性反隐，真实可见目标曲射校射攻击+${traitParameter('reconSpotting', L)}，多来源取强；不提供额外夜视或穿墙，致盲时不反隐/校射`);
+    else if (id === 'recon') parts.push(`侦察规格L${L}参与确定性反隐，真实可见目标曲射校射攻击+${traitParameter('reconSpotting', L)}，多来源取强${modern ? '，只抵消已有校射相关惩罚至0，不增加普通直射命中' : ''}；不提供额外夜视或穿墙，致盲时不反隐/校射`);
+    else if (modern && id.endsWith('-resist')) parts.push(revised ? `实际对应通道伤害减免${pct('channelResistance')}%，包括范围、溅射、区域及有明确通道的持续伤害；不增加抗穿或防御规格，不改变跨代倍率；无通道的毒不适用` : `对应通道抗穿+${traitParameter('channelResistance', L)}，与身体、护甲和佩戴品相加，同特质取最高L，不影响其他通道、盾牌及屏障`);
     else if (id === 'kinetic-resist' || id === 'thermal-resist' || id === 'arcane-resist') parts.push(`${id === 'kinetic-resist' ? '动能' : id === 'thermal-resist' ? '热能' : '奥术'}防护+${2 * traitParameter('woundRatio', L)}，与护甲同通道相加`);
     else return '';
+  }
+  if (modern && TERRAIN_GRADED_TRAITS.includes(id)) parts.unshift(`对应合法环境中武器与物理技法伤害×${traitParameter('meleeDamage', L)}，独立魔法无效`);
+  if (revised) {
+    if (id === 'lifesteal') parts.push(`全局每轮恢复上限为入场冻结生命的${Number((traitParameter('lifestealRoundCap',L)*100).toFixed(2))}%；所有目标、反应及额外行动共用，换来源不刷新；小数在轮内累计，编队按生命伤量救治，不乘医护或治疗跨代`);
+    if (['guardian','kinetic-resist','thermal-resist','arcane-resist'].includes(id)) parts.push('护体组与守护/祝福/对应抵抗取强，再与战术组的额外有效生命相加');
+    if (['shield-wall','pike-wall','fortification','loose-formation','skirmisher'].includes(id) || id === 'agile' && L < 5) parts.push('合法比例防护在战术组取强，再与护体组按EA+EB−1合并，易伤另计');
+    if (id === 'loose-formation') {
+      parts[0] = `疏散且未被近敌牵制时，单独范围减伤${Number((traitParameter('formationReduction',L)*100).toFixed(2))}%；参与战术组取强，胜出时溅射暴露剩余EA/(EA+EB−1)、伤害端只兑现护体组，未胜出不另减人数；编队近战展开×0.5、防御−1；正常激活可选疏散/收拢，额外动作不切换`;
+    }
+    if (['berserk','melee-master','sharpshooter','charge-strong','sneak-attack','trample','anti-infantry','anti-large','anti-air','pike-wall','siege-breaker',...TERRAIN_GRADED_TRAITS].includes(id)) parts.push('列出单项伤害倍率；多特质经前提与原同组取强后，最强增幅100%、其余25%；伤害佩戴品仍独立相乘，辅助特质升级收益会被稀释');
   }
   return 'L' + L + '：' + parts.join('，');
 }

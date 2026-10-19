@@ -65,7 +65,7 @@ describe('V20 组合控制抵抗难度', () => {
   });
   it('新建的控制道具按新难度冻结', () => {
     const mechanics = compileItem({ kind: 'item', form: 'charged', power: 5, active: mechanism('减益眩晕+定身') }, { id: 'w', seed: 'w' });
-    expect(mechanics.kind === 'item' && dcs(mechanics.value.ability!)).toEqual({ stunned: 10, restrained: 12 });
+    expect(mechanics.kind === 'item' && dcs(mechanics.value.ability!)).toEqual({ stunned: 9, restrained: 11 });
   });
   it('新规则的技能存档后可以读回', () => {
     const u = hero('s', { abilityBlueprints: [{ id: mechanism('物理单体近战'), level: 5 }, { id: mechanism('魔法范围热能'), level: 7 }] });
@@ -105,8 +105,8 @@ describe('V20 佩戴修正按道具 L 换算', () => {
   });
   it('道具说明写出折算后的数值', () => {
     const mechanics = compileItem({ kind: 'item', form: 'worn', power: 2, bonuses: { damage: 2 } }, { id: 'r', seed: 'r' });
-    expect(mechanics.kind === 'item' && itemValueSummary(mechanics.value)).toBe('佩戴L2+2伤害 · 实际+1伤害');
+    expect(mechanics.kind === 'item' && itemValueSummary(mechanics.value)).toContain('伤害+4.4%');
     const l5 = compileItem({ kind: 'item', form: 'worn', power: 5, bonuses: { damage: 2 } }, { id: 'r5', seed: 'r5' });
-    expect(l5.kind === 'item' && itemValueSummary(l5.value)).toBe('佩戴L5+2伤害');
+    expect(l5.kind === 'item' && itemValueSummary(l5.value)).toContain('伤害+13.4%');
   });
 });

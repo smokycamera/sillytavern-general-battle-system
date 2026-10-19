@@ -1,6 +1,8 @@
+import { progression, stackingRevision } from './progression.js';
+import { traitParameter } from './trait-parameters.js';
+import { wornProtection } from './gear-bonuses.js';
 import { phase2Traits } from './trait-level-model.js';
 import { effectiveTraitLevel } from './trait-sources.js';
-import { traitParameter } from './trait-parameters.js';
 import { instanceMultiplier, instanceRating } from './instance-variance.js';
 import { isWoundModel, UNIFIED_WOUNDS, UNIFIED_SPLASH, powerIndex } from './balance.js';
 import { compileWeapon } from './gen/equipment.js';
@@ -101,14 +103,15 @@ type ResistSources = Partial<Pick<Combatant,'rulesVersion'|'traitLevelModel'|'tr
  * 抵抗只来自本体、bless/技能、佩戴品与旧饰品，身体和装备不会自动派生；先查原始来源，避免每次都归集全部特质。 */
 export function resistProtection(unit:ResistSources,channel:DamageChannel):number {
   const id=RESIST_TRAITS[channel];
+  if(stackingRevision(unit))return 0;
   if(!phase2Traits(unit)||!(unit.traits?.includes(id)||unit.traitSources?.some(s=>s.traitIds.includes(id))
     ||unit.gear?.some(item=>item.passive?.traits.some(grant=>grant.id===id))||Object.values(unit.accessories??{}).some(item=>item?.traitId===id)))return 0;
   const level=effectiveTraitLevel(unit as Combatant,id);
-  return level?2*traitParameter('woundRatio',level):0;
+  return level ? progression(unit) ? traitParameter('channelResistance',level,unit.traitLevelModel) : 2*traitParameter('woundRatio',level) : 0;
 }
 /** 实际通道抗穿 = 护甲/身体/修正得到的防护 + 对应抵抗。 */
 export function anchoredProtection(unit:ShieldBearer & Pick<Combatant,'armor'|'body'|'shield'|'damageModel'|'armsModel'>&Partial<Pick<Combatant,'gear'|'itemModel'>>&ResistSources,channel:DamageChannel):number {
-  return equipmentProtection(unit,channel)+resistProtection(unit,channel);
+  return equipmentProtection(unit,channel)+resistProtection(unit,channel)+wornProtection(unit,channel);
 }
 function equipmentProtection(unit:ShieldBearer & Pick<Combatant,'armor'|'body'|'shield'|'damageModel'|'armsModel'>&Partial<Pick<Combatant,'gear'|'itemModel'>>,channel:DamageChannel):number {
   const armor=unit.armor,innate=BODY[unit.body??'human'].protection[channel];
@@ -116,8 +119,8 @@ function equipmentProtection(unit:ShieldBearer & Pick<Combatant,'armor'|'body'|'
   // 佩戴道具的防护（同方向取最高一件）与护甲、盾的防护修正相加，合计仍限 ±10 点。
   const own=bonusPoints(armorBonus,'protection')+channelPoints(armorBonus,'protection',channel)+bonusPoints(shieldBonus,'protection')+channelPoints(shieldBonus,'protection',channel);
   const adjustment=bonusRating({protection:own+bonusPoints(gear,'protection')+channelPoints(gear,'protection',channel)},'protection');
-  if(!armor)return Math.max(innate,adjustment);
-  if(armor.protectionOverride&&armor.protection)return Math.max(BODY[unit.body??'human'].protection[channel],armor.protection[channel]);
+  if(!armor)return Math.max(0, Math.max(innate,adjustment));
+  if(armor.protectionOverride&&armor.protection)return Math.max(0, Math.max(BODY[unit.body??'human'].protection[channel],armor.protection[channel]));
   const power=armor.recipe?.power??armor.level??5,tier=armor.tier;
   const base=tier===0?0:Math.max(0,2*power+armorTierOffset(tier,unit.armsModel));
   const protection={kinetic:base,thermal:Math.max(0,base-1),arcane:Math.max(0,base-2)};
@@ -129,7 +132,7 @@ function equipmentProtection(unit:ShieldBearer & Pick<Combatant,'armor'|'body'|'
   // Zero protection stays zero: generation does not conjure armor onto bare skin. The armor's own
   // instance variance follows only its own protection, never a worn charm's.
   const variation = protection[channel] + bonusRating({protection:own},'protection') > 0 ? instanceRating(armorBonus, 'protection', armor.recipe?.variance, channel) - bonusRating(armorBonus, 'protection', channel) : 0;
-  return Math.max(innate,armor.recipe?.variance?Number((nominal + variation).toPrecision(12)):nominal);
+  return Math.max(0, Math.max(innate,armor.recipe?.variance?Number((nominal + variation).toPrecision(12)):nominal));
 }
 /** 高阶材料/护场提供等效耐久；24为固定同代交战基准，避免提高攻击曲线后同档全部秒杀。 */
 export function armorPowerScale(unit:ShieldBearer & Pick<Combatant,'armor'|'shield'|'damageModel'>):number {

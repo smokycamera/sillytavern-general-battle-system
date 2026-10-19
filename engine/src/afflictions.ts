@@ -1,3 +1,6 @@
+import { collectMods, resolveStack } from './bonus.js';
+import { standardConditionMap } from './conditions.js';
+import { progression } from './progression.js';
 import type { ActiveCondition, Combatant, Trait, Weapon } from './types.js';
 import { activeTraitIds } from './trait-sources.js';
 import { TRAITS } from './data/traits.js';
@@ -14,7 +17,9 @@ export function conditionExposure(source: Combatant, target: Combatant, area = f
 }
 /** V3的持续伤害共用成员耐久换算；无历史来源的状态只按一个接触组处理。 */
 export function conditionDamage(unit: Combatant, roll: number, condition: ActiveCondition): number {
-  const factor=condition.id==='poisoned'?poisonFactor(unit):1;
+  const ctx = { attacker: unit, damageChannel: condition.damageChannel ?? standardConditionMap().get(condition.id)?.dot?.channel };
+  const ward = progression(unit) ? resolveStack(collectMods(unit, ctx, standardConditionMap(), [], new Map(TRAITS.map(t => [t.id, t]))), 'ward', ctx).multTotal : 1;
+  const factor=(condition.id==='poisoned'?poisonFactor(unit):1)*ward;
   return Math.max(0,roll*(condition.magnitude??1)*factor*(unit.scale==='hero'?1:Math.min(unit.hp,condition.affectedMembers??10)/(unit.combatModel==='cohort-v2'?1:memberDurability(unit))));
 }
 
@@ -35,8 +40,8 @@ export function weaponConditions(attacker: Combatant, target: Combatant, weapon:
   const result = new Map<string, ActiveCondition>();
   for (const id of activeTraitIds(attacker)) for (const effect of (registry?.get(id) ?? TRAITS.find((t) => t.id === id))?.effects ?? []) {
     if (effect.kind !== 'onHitCondition' || effect.conditionId === 'poisoned' && (damage <= 0 || poisonDeliveryReason(target, weapon))) continue;
-    result.set(effect.conditionId, { id: effect.conditionId, dur: Math.max(effect.dur, result.get(effect.conditionId)?.dur ?? 0), sourceId: attacker.id,
-      ...(effect.conditionId === 'poisoned' && phase2Traits(attacker) ? { magnitude: traitParameter('woundRatio', effectiveTraitLevel(attacker, 'poison-strike')) } : {}),
+    result.set(effect.conditionId, { id: effect.conditionId, dur: Math.max(effect.dur, result.get(effect.conditionId)?.dur ?? 0), sourceId: attacker.id, ...(standardConditionMap().get(effect.conditionId)?.dot?.channel ? {damageChannel: standardConditionMap().get(effect.conditionId)!.dot!.channel} : {}),
+      ...(effect.conditionId === 'poisoned' && phase2Traits(attacker) ? { magnitude: traitParameter(progression(attacker) ? 'poisonMultiplier' : 'woundRatio', effectiveTraitLevel(attacker, 'poison-strike'), attacker.traitLevelModel) } : {}),
       ...(isCohort(target)&&target.scale!=='hero'?{affectedMembers:conditionExposure(attacker,target)}:{}) });
   }
   // R16 喷射武器：造成实际生命损失的目标燃烧2轮，编队按范围接触人数。
@@ -51,12 +56,12 @@ export function applyWeaponConditions(target: Combatant, conditions: ActiveCondi
 }
 export function poisonHint(attacker: Combatant, target: Combatant, weapon?: Weapon): string | undefined {
   if (!activeTraitIds(attacker).includes('poison-strike')) return undefined;
-  return poisonDeliveryReason(target, weapon) ?? `造成损伤后中毒3次，不叠层、不续期、不替换；冻结毒伤×${phase2Traits(attacker) ? traitParameter('woundRatio', effectiveTraitLevel(attacker, 'poison-strike')) : 1}；体型影响毒伤`;
+  return poisonDeliveryReason(target, weapon) ?? `造成损伤后中毒3次，不叠层、不续期、不替换；冻结毒伤×${phase2Traits(attacker) ? traitParameter(progression(attacker) ? 'poisonMultiplier' : 'woundRatio', effectiveTraitLevel(attacker, 'poison-strike'), attacker.traitLevelModel) : 1}；体型影响毒伤`;
 }
 /** AI的有界后续收益估值，独立于界面展示的即时伤害；不是额外伤害结算。 */
 export function poisonValue(attacker: Combatant, target: Combatant, weapon: Weapon | undefined, hitChance: number): number {
   if (!activeTraitIds(attacker).includes('poison-strike') || poisonDeliveryReason(target, weapon) || target.conditions.some((c) => c.id === 'poisoned' && c.dur > 0)) return 0;
-  const magnitude = phase2Traits(attacker) ? traitParameter('woundRatio', effectiveTraitLevel(attacker, 'poison-strike')) : 1;
+  const magnitude = phase2Traits(attacker) ? traitParameter(progression(attacker) ? 'poisonMultiplier' : 'woundRatio', effectiveTraitLevel(attacker, 'poison-strike'), attacker.traitLevelModel) : 1;
   const average = [1, 2, 3, 4].reduce((n, roll) => n + (isCohort(target)?conditionDamage(target,roll,{id:'poisoned',dur:3,magnitude,affectedMembers:conditionExposure(attacker,target)}):poisonDamage(target, roll * magnitude)), 0) / 4;
   return Math.min(target.hp, average * 3 + 1) * hitChance;
 }

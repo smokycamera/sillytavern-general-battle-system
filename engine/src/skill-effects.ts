@@ -1,3 +1,5 @@
+import { progression } from './progression.js';
+import { armorTransmission } from './power-anchors.js';
 import { combatHostile, combatSide } from './battle-control.js';
 import { ACTIVATION_CONTROLS } from './battle-control.js';
 import { phase2Value } from './phase2-traits.js';
@@ -8,7 +10,7 @@ import { prepareCombatModel } from './combat-model.js';
 import { memberHealth,hasMemberHealth } from './member-health.js';
 import { recoveryCapacity, regenerationAmount,applyCombatDamage } from './recovery.js';
 import { unitHeight,surfaceHeightAt } from './small/height-map.js';
-import { zoneAmount, zoneEffectDescription } from './zone-skills.js';
+import { zoneAmount, zonePenetration, zoneEffectDescription } from './zone-skills.js';
 import type { Ability, ActiveCondition, Combatant, EffectOp } from './types.js';
 import type { Rng } from './rng.js';
 import { activeTraitIds, bodyRank, traitSourceActive, grantTraitSource, traitPrerequisiteReason, effectiveTraitLevel } from './trait-sources.js';
@@ -19,7 +21,7 @@ import { canEntrench, entrench, entrenched } from './entrenchment.js';
 import { traitRegistry, validTraitLevel } from './data/traits.js';
 import { skillResourceChange, summonProfile, conjureSkillUnit, summonedMemberLife } from './skill-runtime.js';
 import { standardConditionMap } from './conditions.js';
-import { conditionMods } from './bonus.js';
+import { conditionMods, collectMods, resolveStack } from './bonus.js';
 import { poisonFactor, conditionExposure } from './afflictions.js';
 import { isCohort, personnel } from './combat-model.js';
 import { isArmsV2 } from './arms-model.js';
@@ -50,9 +52,12 @@ export function skillConditionDescription(effect: ConditionEffect, target: Comba
   if (def?.preventMagic) details.push('不能使用魔法技能');
   if (def?.preventAttack) details.push('不能用手持武器攻击');
   if (def?.skipTurn) details.push('跳过行动');
-  if (def?.dot) details.push('持续' + (def.dot.label ?? def.name));
-  if (effect.conditionId === 'hasted') details.push('移动点 +1，每轮额外1次非技能动作');
-  if (effect.conditionId === 'slowed') details.push('移动点 -1');
+  if (def?.dot) details.push('受到持续' + (def.dot.label ?? def.name) + '，按当前战斗规则结算');
+  if (effect.conditionId === 'hasted') details.push('移动点 +1；每轮额外1次非技能动作，额外攻击按半次普通攻击预算随效力折算，同类不叠加');
+  if (effect.conditionId === 'slowed') details.push('移动点 -1（最低1），会战不能冲锋');
+  if (['empowered', 'weakened', 'vulnerable', 'blessed'].includes(effect.conditionId)) details.push('仅修正可造成的伤害，不绕过防护');
+  if (effect.conditionId === 'blessed' && phase2Traits(target)) details.push('旧版祝福效果，保留原减伤与期限');
+  if (effect.conditionId === 'blessed' && effect.defensePower !== undefined) details.push(`防御规格L${effect.defensePower}`);
   return details.join('、') || def?.desc || effect.conditionId;
 }
 const positive = new Set(['empowered', 'inspired', 'blessed', 'encouraged', 'confident', 'hasted']);
@@ -93,7 +98,7 @@ export function prepareCondition(actor: Combatant, target: Combatant, effect: Co
     const bonus = controlBonus(target, effect.conditionId), roll = rng.d(20), total = roll + bonus;
     if (roll === 20 || roll !== 1 && total >= effect.saveDC) return { text: `${target.name} 抵抗${name}（${roll}+${bonus}对抗${effect.saveDC}）` };
   }
-  return { condition: { id: effect.conditionId, dur: effect.dur, sourceId: actor.id, ...(ACTIVATION_CONTROLS.has(effect.conditionId) && phase2Traits(target) ? { controlPending: true, ...(effect.conditionId === 'charmed' ? { controlSide: combatSide(actor,units) } : {}) } : {}), ...(effect.conditionId === 'blessed' && effect.defensePower !== undefined ? { defensePower: effect.defensePower } : {}), ...(isCohort(target)&&target.scale!=='hero'&&definitions.get(effect.conditionId)?.dot?{affectedMembers:conditionExposure(actor,target,effect.shape==='burst')}:{}), ...(effect.potency !== undefined ? { potency: effect.potency } : {}), ...(effect.magnitude !== undefined ? { magnitude: effect.magnitude } : {}) }, text: `${target.name} 获得${name}，持续${effect.dur}次状态结算` };
+  return { condition: { id: effect.conditionId, dur: effect.dur, sourceId: actor.id, ...(effect.damageChannel ? {damageChannel:effect.damageChannel} : {}), ...(ACTIVATION_CONTROLS.has(effect.conditionId) && phase2Traits(target) ? { controlPending: true, ...(effect.conditionId === 'charmed' ? { controlSide: combatSide(actor,units) } : {}) } : {}), ...(effect.conditionId === 'blessed' && effect.defensePower !== undefined ? { defensePower: effect.defensePower } : {}), ...(isCohort(target)&&target.scale!=='hero'&&definitions.get(effect.conditionId)?.dot?{affectedMembers:conditionExposure(actor,target,effect.shape==='burst')}:{}), ...(effect.potency !== undefined ? { potency: effect.potency } : {}), ...(effect.magnitude !== undefined ? { magnitude: effect.magnitude } : {}) }, text: `${target.name} 获得${name}，持续${effect.dur}次状态结算` };
 }
 export function applySkillCondition(target: Combatant, condition?: ActiveCondition): void {
   if (!condition || target.hp <= 0) return;
@@ -262,7 +267,11 @@ export function skillEffectValue(context: ObservationContext, actor: Combatant, 
     controlValue += branches.reduce((sum, b) => sum + b.probability * (tacticalStateValue(context, b.unit) - before) * (horizon ? futureWeight(context, b.unit, duration, 1) : 1), 0) * polarity;
   }
   return ability.effects.reduce((sum, effect) => {
-    if (effect.op === 'zone') { const friendly=target.side===actor.side; return sum+(effect.kind==='smoke'?2*effect.dur/3:effect.kind==='healing'?(friendly?Math.min(recoveryCapacity(target),effect.healingModel ? resolveHealingBudget({ source: actor, target, power: effect.power, baseAmount: zoneAmount(effect), delivery: 'zone', rules: context.rules }) : zoneAmount(effect)):0):friendly?effect.kind==='trap'?0:-8:(4+effect.power)*zoneAmount(effect)/(4+effect.power*3)); }
+    if (effect.op === 'zone') {
+      const friendly=target.side===actor.side, ctx={damageChannel:effect.kind==='poison'?undefined:effect.kind==='fire'?'thermal' as const:'kinetic' as const,attacker:target,defender:actor,area:true,engaged:target.engagedWith.length>0};
+      const ward=progression(target)?resolveStack(collectMods(target,ctx,definitions,[],context.traitRegistry ?? traitRegistry()),'ward',ctx).multTotal:1;
+      const transmission=progression(target)?effect.kind==='poison'?poisonFactor(target):armorTransmission(target,effect.kind==='fire'?'thermal':'kinetic',zonePenetration(effect)):1;
+      return sum+(effect.kind==='smoke'?2*effect.dur/3:effect.kind==='healing'?(friendly?Math.min(recoveryCapacity(target),effect.healingModel ? resolveHealingBudget({ source: actor, target, power: effect.power, baseAmount: zoneAmount(effect), delivery: 'zone', rules: context.rules }) : zoneAmount(effect)):0):friendly?effect.kind==='trap'?0:-8*ward*transmission:(4+effect.power)*zoneAmount(effect)/(4+effect.power*3)*ward*transmission); }
     if (effect.op === 'barrier') {
       if (context.rules?.overmatch && (effect.defensePower ?? ability.power)) {
         const future = structuredClone(target); grantBarrier(future, effect.amount, effect.dur, actor.id, effect.defensePower ?? ability.power);

@@ -87,7 +87,7 @@ export function canSpot(context: ObservationContext, observer: Combatant, target
   if (canConceal(context, subject) && !subject.tacticalRevealed) {
     if (controlCondition(observer, 'blinded')) return false;
     const S = Math.max(traitLevel(subject, 'stalk'), terrainsOf(context, subject).some(t => terrainStalks(subject, t)) ? 5 : 0);
-    const radius = phase2Traits(subject) || phase2Traits(observer) ? reconDistance(S, traitLevel(observer, 'recon'), context.mode) : (context.mode === 'small' ? 2 : 1) * (activeTraitIds(observer).includes('recon') ? 2 : 1);
+    const radius = phase2Traits(subject) || phase2Traits(observer) ? reconDistance(S, traitLevel(observer, 'recon'), context.mode, subject.traitLevelModel) : (context.mode === 'small' ? 2 : 1) * (activeTraitIds(observer).includes('recon') ? 2 : 1);
     if (distance > radius) return false;
   }
   if (!night) return true;

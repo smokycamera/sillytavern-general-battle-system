@@ -1,4 +1,9 @@
 import { agileCost, phase2Value } from '../phase2-traits.js';
+import { stackingRevision } from '../progression.js';
+import { collectMods, resolveStack, type ResolveContext, type Modifier } from '../bonus.js';
+import { standardConditionMap } from '../conditions.js';
+import { traitRegistry } from '../data/traits.js';
+import { wornDamageMultiplier } from '../gear-bonuses.js';
 import { instanceMultiplier } from '../instance-variance.js';
 import { bodyProfile } from '../body.js';
 /** Layered maps are opt-in on new fields. Frozen version-2 tile-only saves retain their rules. */
@@ -149,19 +154,27 @@ export const BREACH_COEFFICIENTS: Readonly<Record<string, number>> = Object.free
   blunt: 1, axe: 1, sword: .45, spear: .25, natural: .65, summon: .65,
 });
 export interface BreachBudget { damage: number; coefficient: number; enhancement: number; engineers: number; frontage: number; strength: number }
-export function weaponBreachBudget(actor: Combatant, weapon: Weapon | undefined): BreachBudget {
+/** 结构专用工兵增伤与同次合法攻击特质一起取主/协同，绝不向人员攻击注入工兵。 */
+export function structureTraitMultiplier(actor: Combatant, weapon: Weapon | undefined, context: ResolveContext = {}): number {
+  const ctx: ResolveContext = {...context, attacker:actor, weapon, structure:true, ranged:context.ranged ?? !!weapon?.tags?.includes('ranged')};
+  const engineer: Modifier[] = activeTraitIds(actor).includes('siege-breaker') ? [{source:'intrinsic',sourceId:'siege-breaker:structure',name:'工兵',kind:'dmg',type:'mult',traitDamage:true,value:phase2Value(actor,'siege-breaker','engineerDamage',1.5)}] : [];
+  const mods = collectMods(actor,ctx,standardConditionMap(),engineer,traitRegistry()).filter(m => m.traitDamage);
+  return resolveStack(mods,'dmg',ctx).multTotal * wornDamageMultiplier(actor,context.damageChannel ?? weapon?.channel ?? 'kinetic');
+}
+export function weaponBreachBudget(actor: Combatant, weapon: Weapon | undefined, context?: ResolveContext): BreachBudget {
   if (!weapon) return { damage: 0, coefficient: 0, enhancement: 1, engineers: 1, frontage: 1, strength: 1 };
   const mechanism = baseMechanism(weapon) ?? '';
   const ranged = weapon.tags?.includes('ranged');
   const coefficient = BREACH_COEFFICIENTS[mechanism] ?? (weapon.tags?.includes('blast') ? 1.5 : ranged ? .16 : .45);
   const enhancement = instanceMultiplier(weapon.recipe?.bonuses, 'damage', weapon.recipe?.variance, weapon.channel ?? 'kinetic');
   const engineers = activeTraitIds(actor).includes('siege-breaker') ? phase2Value(actor, 'siege-breaker', 'engineerDamage', 1.5) : 1;
+  const traits = stackingRevision(actor) ? structureTraitMultiplier(actor,weapon,context) : engineers;
   const frontage = actor.scale === 'company' ? Math.min(3, Math.max(1, Math.sqrt(Math.max(0, actor.hp) / 10))) : 1;
   // Strong arms help melee demolition, not firearm/explosive projectile energy.
   const strength = ranged ? 1 : bodyProfile(actor.body, actor.damageModel).strength;
   const summonedShare = mechanism === 'summon' ? Math.min(1, weapon.damageScale ?? 1) : 1;
   const damage = Math.max(0, Math.round(structureDurability('wall', weapon.level ?? weapon.recipe?.power ?? 1) / 5
-    * coefficient * enhancement * engineers * frontage * strength * summonedShare));
+    * coefficient * enhancement * traits * frontage * strength * summonedShare));
   return { damage, coefficient, enhancement, engineers, frontage, strength };
 }
 export function weaponStructureDamage(actor: Combatant, weapon: Weapon | undefined): number { return weaponBreachBudget(actor, weapon).damage; }

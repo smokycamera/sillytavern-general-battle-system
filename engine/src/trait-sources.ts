@@ -1,4 +1,5 @@
 import { shieldGuardUsable } from './arms.js';
+import { progression } from './progression.js';
 import { physicalTraitIds, armorBurdenTier, hasNaturalArmor } from './body.js';
 import { traitsV13 } from './trait-model.js';
 /** 特质知识与外部授予分离；持续期/来源身份属于引擎，不交给正文重写。 */
@@ -164,9 +165,9 @@ export function traitPenetrationBonus(unit: Combatant, weapon: Weapon | undefine
   if (unit.rulesVersion !== 'v2' || !weapon || weapon.channel !== 'kinetic') return 0;
   const ids = activeTraitIds(unit).filter((id) => !traitPrerequisiteReason(unit, id, { weapon, ranged }));
   const level = effectiveTraitLevel(unit, 'ap-weapon', ids);
-  const rank = traitLevelsV16(unit) ? Math.max(level ? traitParameter('penetrationBudget', level) : 0, ids.includes('armor-piercing-shot') ? 1 : 0)
+  const rank = traitLevelsV16(unit) ? Math.max(level ? traitParameter('penetrationBudget', level, unit.traitLevelModel) : 0, ids.includes('armor-piercing-shot') ? 1 : 0)
     : ids.includes('ap-master') ? 2 : ids.includes('ap-weapon') || ids.includes('armor-piercing-shot') ? 1 : 0;
-  return Math.min(rank, Math.max(0, Math.floor(base / 3)));
+  return Math.min(rank, Math.max(0, (progression(unit) ? base / 3 : Math.floor(base / 3))));
 }
 /** V13 改了效果的特质，在旧规则战斗里继续显示旧说明。 */
 export function traitDescription(trait: Trait, unit?: Pick<Combatant, 'rulesVersion'> & Partial<Pick<Combatant, 'traitModel'>>): string {
@@ -184,13 +185,13 @@ export function traitStatContributions(unit: Combatant, ids: string[], registry 
       if (effect.kind !== 'stat' || effect.stat === 'hpMax' || effect.stat === 'morale' && unit.scale === 'hero') continue;
       if (respectPrerequisites && effect.stat === 'spd' && ['heavy-armor', 'super-heavy'].includes(id)) { armorSpeed.push(effect.value); continue; }
       const value = phase2Traits(unit) && levelMode !== 'historical' && id === 'berserk' && effect.stat === 'atk' ? 0
-        : phase2Traits(unit) && levelMode !== 'historical' && id === 'skirmisher' && effect.stat === 'spd' ? traitParameter('skirmishInitiative', levelMode === 'permanent' ? unit.traitLevels?.[id] ?? 5 : effectiveTraitLevel(unit, id))
+        : phase2Traits(unit) && levelMode !== 'historical' && id === 'skirmisher' && effect.stat === 'spd' ? traitParameter('skirmishInitiative', levelMode === 'permanent' ? unit.traitLevels?.[id] ?? 5 : effectiveTraitLevel(unit, id), unit.traitLevelModel)
         : id === 'stubborn' && effect.stat === 'morale' && levelMode !== 'historical' && traitLevelsV16(unit)
-        ? traitParameter('resilience', levelMode === 'permanent' ? unit.traitLevels?.[id] ?? 5 : effectiveTraitLevel(unit, id)) : effect.value;
+        ? traitParameter('resilience', levelMode === 'permanent' ? unit.traitLevels?.[id] ?? 5 : effectiveTraitLevel(unit, id), unit.traitLevelModel) : effect.value;
       result[effect.stat] = (result[effect.stat] ?? 0) + value;
     }
   }
-  if (phase2Traits(unit) && ids.includes('agile') && !traitPrerequisiteReason(unit, 'agile') && levelMode !== 'historical') result.spd = (result.spd ?? 0) + traitParameter('agileInitiative', levelMode === 'permanent' ? unit.traitLevels?.agile ?? 5 : effectiveTraitLevel(unit, 'agile'));
+  if (phase2Traits(unit) && ids.includes('agile') && !traitPrerequisiteReason(unit, 'agile') && levelMode !== 'historical') result.spd = (result.spd ?? 0) + traitParameter('agileInitiative', levelMode === 'permanent' ? unit.traitLevels?.agile ?? 5 : effectiveTraitLevel(unit, 'agile'), unit.traitLevelModel);
   if (armorSpeed.length) result.spd = (result.spd ?? 0) + Math.min(...armorSpeed);
   return result;
 }

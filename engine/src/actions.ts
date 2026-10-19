@@ -1,5 +1,6 @@
 import { equipmentBurden } from './equipment-load.js';
 import { armsWeaponReason, shieldUnavailableReason } from './arms.js';
+import { progression } from './progression.js';
 import { attackHostile, combatHostile, combatSide, controlActionReason, controlCondition } from './battle-control.js';
 import { abilityUsed } from './ability-state.js';
 import { diceMean } from './dice.js';
@@ -134,6 +135,12 @@ export interface ActionOption {
   preview?: ActionPreview;
 }
 
+/** V22 将小数修正保留到边界骰面的概率；整数掷骰与暴击规则不变。 */
+export function d20HitWeight(rules: import('./types.js').RulePack, natural: number, netAtk: number, targetDef: number): number {
+  if (natural <= 1) return 0;
+  if (natural >= rules.critMin) return 1;
+  return progression(rules) ? Math.max(0, Math.min(1, 1 + natural + netAtk - targetDef)) : Number(natural + netAtk >= targetDef);
+}
 /** 无随机数的命中率估算，供 UI 与 AI 预览；执行时仍由伤害管线掷骰。 */
 export function estimateHitChance(rules: import('./types.js').RulePack, netAtk: number, targetDef: number): number {
   if (rules.hitMode === 'tw') {
@@ -143,7 +150,7 @@ export function estimateHitChance(rules: import('./types.js').RulePack, netAtk: 
   let hits = 0;
   for (let natural = 1; natural <= 20; natural++) {
     if (natural <= 1) continue;
-    if (natural >= rules.critMin || natural + netAtk >= targetDef) hits += 1;
+    hits += d20HitWeight(rules, natural, netAtk, targetDef);
   }
   return hits / 20;
 }
@@ -346,7 +353,7 @@ export function abilityTargetReason(input: {
     if (isRangedWeapon(weapon) && weapon.pointBlankPolicy === 'forbid' && distance <= 1 && sameLayer(actor, target)) return '实际武器不能抵近射击';
   }
   if (target && ability.recipe && ability.effects.every((e) => e.op === 'trait' && !!skillTraitReason(target, e, ability)
-    || e.op === 'resource' && (!skillResourceChange(target, e) || target.id === actor.id && e.amount > 0 && (abilityCost(actor, ability)?.amount ?? 0) >= e.amount))) return '目标没有可生效的能力或资源变化';
+    || e.op === 'resource' && (!skillResourceChange(target, e) || target.id === actor.id && e.amount > 0 && (!['item-progression-v1','item-progression-v2'].includes(ability.itemEffectModel ?? '') || abilityCost(actor, ability)?.resource === e.resource) && (abilityCost(actor, ability)?.amount ?? 0) >= e.amount))) return '目标没有可生效的能力或资源变化';
   if (target && !sameLayer(actor, target) && (ability.requires === 'melee' || ability.requires === 'shield')) return '接触技能需要处于同一空地层';
   if (target && actor.rulesVersion === 'v2' && ability.effects.length && ability.effects.every((e) => e.op === 'dispel' && !dispelCandidates(target, e).length || e.op === 'condition' && !conditionChance(target, e))) return '目标没有可解除的效果，或已免疫/处于同类控制';
   if (target && ability.itemSourceId && actor.id !== target.id && !sameLayer(actor, target)) return '向他人使用携行物品需要处于同一空地层';

@@ -76,7 +76,7 @@ import {
   generateUnit, traitCatalog, traitRegistry, resolveTraitId,
   SmallBattle, MassBattle, battleXpAwardsForBothSides, applyXp, xpProgress, approx, approxDelta,
   armorDR, fieldModsFor, LITE_D20,
-  V5_D20, V6_D20, V11_OVERFLOW_D20, V12_OVERFLOW_D20, V21_OVERFLOW_D20, prepareArmsModel, prepareTraitModel, prepareSkillModel, prepareItemModel, isAirborne, abilityUsabilityReason,
+  V5_D20, V6_D20, V11_OVERFLOW_D20, V12_OVERFLOW_D20, V23_OVERFLOW_D20, prepareArmsModel, prepareTraitModel, prepareSkillModel, prepareItemModel, isAirborne, abilityUsabilityReason,
   generatedField, generatedLayeredField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
   FORMATION_NODES, formationNode, concealmentLabel,
   type Combatant, type GenerateInput, type Order, type BattleLogEntry, type Side,
@@ -651,7 +651,7 @@ function restore(): void {
   // 旧存档已结算标记也封口，不能因旧版缺少完整战果 id 而重写最新档案。
   const restoredBattle = currentBattle();
   openingSavedFor = restoredBattle ?? undefined;
-  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V21_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V21_OVERFLOW_D20);prepareTraitModel(unit,V21_OVERFLOW_D20);prepareItemModel(unit,V21_OVERFLOW_D20);prepareTraitLevelModel(unit,V21_OVERFLOW_D20);}
+  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V23_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V23_OVERFLOW_D20);prepareTraitModel(unit,V23_OVERFLOW_D20);prepareItemModel(unit,V23_OVERFLOW_D20);prepareTraitLevelModel(unit,{...V23_OVERFLOW_D20,traitLevelModel:unit.traitLevelModel,healingModel:unit.healingModel,controlModel:unit.controlModel});}
   if (restoredBattle && state.xpSettled) {
     const id = battleOutcomeId(state.mass ? 'mass' : 'small', restoredBattle.seed);
     if (!state.committedOutcomeIds.includes(id)) state.committedOutcomeIds.push(id);
@@ -734,7 +734,7 @@ function defaultRank(u: Pick<Combatant, 'archetype'>): 'front' | 'rear' | 'reser
 async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {}): Promise<void> {
   // 特质去重：AI 标签/面板勾选可能重复给同一特质
   const { unit } = generateUnit({ ...input, rulesVersion: 'v2', damageModel: 'wounds-v2', era: undefined, traits: [...new Set(input.traits)] }, { registry: reg, skillModel: 'skills-v4' });
-  prepareSkillModel(unit, V21_OVERFLOW_D20); prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit); prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V21_OVERFLOW_D20); prepareTraitModel(unit, V21_OVERFLOW_D20); prepareItemModel(unit, V21_OVERFLOW_D20); prepareTraitLevelModel(unit, V21_OVERFLOW_D20);
+  prepareSkillModel(unit, V23_OVERFLOW_D20); prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit); prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V23_OVERFLOW_D20); prepareTraitModel(unit, V23_OVERFLOW_D20); prepareItemModel(unit, V23_OVERFLOW_D20); prepareTraitLevelModel(unit, V23_OVERFLOW_D20);
   // id 去重
   state.idSeq++;
   state.roster.push(unit);
@@ -748,7 +748,7 @@ async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {})
 /** 储存器档案实体化为本场编制，保留稳定 id、当前兵力、状态和玩家编辑过的基础属性。 */
 function materializeStorageUnit(r0: RosterUnit): Combatant {
   const unit=materializeUnitRecord(r0, reg, { era: state.era });
-  if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V21_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V21_OVERFLOW_D20);prepareTraitModel(unit,V21_OVERFLOW_D20);prepareItemModel(unit,V21_OVERFLOW_D20);prepareTraitLevelModel(unit,V21_OVERFLOW_D20);}
+  if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V23_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V23_OVERFLOW_D20);prepareTraitModel(unit,V23_OVERFLOW_D20);prepareItemModel(unit,V23_OVERFLOW_D20);prepareTraitLevelModel(unit,V23_OVERFLOW_D20);}
   return unit;
 }
 
@@ -1244,7 +1244,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   rows.push(`<span>攻 <b>${atkPlus}</b></span>`);
   rows.push(`<span>防 <b>${u.base.def}</b></span>`);
   rows.push(`<span>速 <b>${u.base.spd}</b></span>`);
-  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${approx(trainingDamage(u.level,currentBattle()?.rules??V21_OVERFLOW_D20), 2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
+  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${approx(trainingDamage(u.level,currentBattle()?.rules??V23_OVERFLOW_D20), 2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
   rows.push(`<span>${u.scale === 'hero' ? '生命' : u.body==='vehicle'?'载具数':'人数'} <b>${u.hp}/${u.base.hpMax}</b></span>`);
   if(u.combatModel&&u.scale!=='hero')rows.push(`<span>单个${u.body==='vehicle'?'载具':'成员'}最大生命 <b>${memberDurability(u)}</b></span>`);
   if (u.base.moraleMax !== undefined) rows.push(`<span>士气 <b>${u.base.moraleMax}</b></span>`);
@@ -1322,7 +1322,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
     const names = active.map((id) => shown(id) + (inactive(id) ? '（未生效）' : '')).join('、');
     rows.push(`<div class="eq"><b>特质</b> ${esc(names)}</div>`);
     // 已完成分级的特质按各自规则门控显示累计效果。
-    const effect = (id: string, trait: Trait) => gradedTraitEnabled(u, id) ? traitLadderSummary(id, traitLevel(u, id, active)).replace(/^L\d+：/, '') + (id === 'ap-weapon' ? `；当前主武器实际穿透+${penetrationBonus()}` : '') : traitDescription(trait, u);
+    const effect = (id: string, trait: Trait) => gradedTraitEnabled(u, id) ? traitLadderSummary(id, traitLevel(u, id, active), u.traitLevelModel).replace(/^L\d+：/, '') + (id === 'ap-weapon' ? `；当前主武器实际穿透+${penetrationBonus()}` : '') : traitDescription(trait, u);
     rows.push(`<details><summary>特质效果</summary>${active.map((id) => { const trait = reg.get(id), reason = inactive(id); return `<div>${esc(shown(id))}：${reason ? `<b>未生效：${esc(reason)}</b>。` : ''}${esc(trait ? effect(id, trait) : '未知定义')}${gradedTraitEnabled(u, id) ? '<small> · 等级来源：' + traitLevelSources(u, id).map(s => esc(s.name) + ' L' + s.level + (s.remaining === undefined ? '' : '（剩' + s.remaining + '轮）') + (s.level < traitLevel(u, id, active) ? '，被较高等级覆盖' : '')).join('；') + '</small>' : ''}</div>`; }).join('')}</details>`);
   }
   if (u.traitSources?.length) {
@@ -1761,13 +1761,13 @@ function renderLoadoutSkills(): string {
   const skills = unit ? learnedSkills(unit) : [];
   return `<div class="modal-backdrop" data-action="loadout-skills-close"><section class="modal-card loadout-skill-dialog" data-action="modal-stop" role="dialog" aria-modal="true" aria-labelledby="loadout-skill-title">
     <h2 id="loadout-skill-title">技能选择 · ${esc(unit?.name ?? '单位已不可用')}</h2>
-    <p data-role="loadout-skill-count" aria-live="polite">已选 ${draft.selected.length} / ${MAX_PREPARED_SKILLS} · 勾选准备上场的已学技能</p>
+    <p data-role="loadout-skill-count" aria-live="polite">已选 ${draft.selected.length} 项 · 勾选准备上场的已学技能</p>
     ${stale || locked ? `<p class="grid-reason">${stale ? '档案已更新，请关闭后重新选择。' : esc(reason!)}</p>` : ''}
     <div class="loadout-skill-list">${skills.map(skill => {
       const checked = draft.selected.includes(skill.id);
-      return `<label class="loadout-skill-choice"><input type="checkbox" data-role="loadout-skill" data-id="${esc(skill.id)}" ${checked ? 'checked' : ''} ${stale || locked || !checked && draft.selected.length >= MAX_PREPARED_SKILLS ? 'disabled' : ''}><span><b>${esc(skill.name)}</b><small>${esc(skillDefinitionName(skill.definitionId ?? skill.id))} · L${skill.power ?? 5}${esc(enhancementLabel(skill.bonuses))}${skill.cost ? ' · ' + esc(resourceLabel(skill.cost.resource)) + ' ' + (unit ? abilityCost(unit, skill)!.amount : skill.cost.amount) : ''}</small>${skill.desc ? `<small>${esc(skill.desc)}</small>` : ''}</span></label>`;
+      return `<label class="loadout-skill-choice"><input type="checkbox" data-role="loadout-skill" data-id="${esc(skill.id)}" ${checked ? 'checked' : ''} ${stale || locked ? 'disabled' : ''}><span><b>${esc(skill.name)}</b><small>${esc(skillDefinitionName(skill.definitionId ?? skill.id))} · L${skill.power ?? 5}${esc(enhancementLabel(skill.bonuses))}${skill.cost ? ' · ' + esc(resourceLabel(skill.cost.resource)) + ' ' + (unit ? abilityCost(unit, skill)!.amount : skill.cost.amount) : ''}</small>${skill.desc ? `<small>${esc(skill.desc)}</small>` : ''}</span></label>`;
     }).join('') || '<p class="sub">这个单位还没有已学技能。</p>'}</div>
-    <p class="sub">最多准备 ${MAX_PREPARED_SKILLS} 项；装备和物品附带的能力随配装提供。</p>
+    <p class="sub">准备技能数量不限；装备和物品附带的能力随配装提供。</p>
     <div class="row"><button class="primary" data-action="loadout-skills-save" ${stale || locked ? 'disabled' : ''}>保存选择</button><button data-action="loadout-skills-close">取消</button></div>
   </section></div>`;
 }
@@ -3917,7 +3917,7 @@ document.addEventListener('change', e => {
     const id = e.target.dataset.id, draft = loadoutSkills;
     if (!id || !draft || uiBusy) return;
     const selected = draft.selected.filter(value => value !== id);
-    if (e.target.checked && selected.length < MAX_PREPARED_SKILLS) selected.push(id);
+    if (e.target.checked) selected.push(id);
     draft.selected = selected; render('view');
     return;
   }

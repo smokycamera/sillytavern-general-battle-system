@@ -14,7 +14,7 @@ export const STANDARD_CONDITIONS: ConditionDef[] = [
   { id: 'inaccurate', name: '失准', desc: '攻击命中下降', mods: [{ source: 'condition', name: '失准', kind: 'atk', type: 'flat', value: -2 }] },
   { id: 'exposed', name: '破绽', desc: '防御下降，不更改实物护甲', mods: [{ source: 'condition', name: '破绽', kind: 'def', type: 'flat', value: -2 }] },
   { id: 'silenced', name: '沉默', desc: '不能使用魔法技能；普通武器动作仍可使用', preventMagic: true },
-  { id: 'burning', name: '燃烧', desc: '受到持续灼伤；技能需先穿透并造成实际损伤才能点燃', dot: { dice: '1d4', label: '灼伤' } },
+  { id: 'burning', name: '燃烧', desc: '受到持续灼伤；技能需先穿透并造成实际损伤才能点燃', dot: { dice: '1d4', label: '灼伤', channel: 'thermal' } },
   { id: 'restrained', name: '定身', desc: '不能移动、起飞或冲锋，防御降低1；仍可使用合法攻击和技能', preventMove: true, mods: [{ source: 'condition', name: '定身', kind: 'def', type: 'flat', value: -1 }] },
   {
     id: 'poisoned',
@@ -27,7 +27,7 @@ export const STANDARD_CONDITIONS: ConditionDef[] = [
     id: 'bleeding',
     name: '流血',
     desc: '每回合开始受到 1d4 伤害',
-    dot: { dice: '1d4', label: '流血' },
+    dot: { dice: '1d4', label: '流血', channel: 'kinetic' },
   },
   {
     id: 'stunned',

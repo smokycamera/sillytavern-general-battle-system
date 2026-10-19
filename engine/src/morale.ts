@@ -138,7 +138,7 @@ export function moraleProfile(context: ObservationContext, unit: Combatant, regi
       const trait = registry.get(id); if (!trait) continue;
       for (const effect of trait.effects) {
         if (effect.kind !== 'moraleAura' || effect.scope === 'side' && combatHostile(other, unit, context.units) || effect.scope === 'enemySide' && (!combatHostile(other, unit, context.units) || immune)) continue;
-        sources.push({ id: other.id, name: other.name, trait: trait.name, traitId: id, ...(phase2Traits(other) && id === 'fear' && effectiveTraitLevel(other, 'fear') >= 8 ? { terrorDC: 12 + 2 * (effectiveTraitLevel(other, 'fear') - 8) } : {}), value: id === 'fear' && phase2Traits(other) ? -traitParameter('fearPressure', effectiveTraitLevel(other, 'fear')) : id === 'commander' ? traitValue(other, id, 'command', effect.value) : effect.value });
+        sources.push({ id: other.id, name: other.name, trait: trait.name, traitId: id, ...(phase2Traits(other) && id === 'fear' && effectiveTraitLevel(other, 'fear') >= 8 ? { terrorDC: 12 + 2 * (effectiveTraitLevel(other, 'fear') - 8) } : {}), value: id === 'fear' && phase2Traits(other) ? -traitParameter('fearPressure', effectiveTraitLevel(other, 'fear'), other.traitLevelModel) : id === 'commander' ? traitValue(other, id, 'command', effect.value) : effect.value });
       }
     }
   }

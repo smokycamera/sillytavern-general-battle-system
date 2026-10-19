@@ -1,4 +1,6 @@
 import { shieldGuardUsable, isArmsV2 } from './arms.js';
+import { progression, stackingRevision } from './progression.js';
+import { wornEffects } from './gear-bonuses.js';
 import { phase2Traits } from './trait-level-model.js';
 import { phase2Value, phase2WeaponMods } from './phase2-traits.js';
 /**
@@ -13,7 +15,7 @@ import { standardConditionMap } from './conditions.js';
 import { fatiguePenalty } from './resources.js';
 import { equipmentBurden } from './body.js';
 import { defensivePostureMods, looseFormation } from './tactics.js';
-import { activeTraitIds, actualTargetTag, traitPrerequisiteReason, traitStatAdjustments, bodyRank, traitSourceActive } from './trait-sources.js';
+import { activeTraitIds, effectiveTraitLevel, actualTargetTag, traitPrerequisiteReason, traitStatAdjustments, bodyRank, traitSourceActive } from './trait-sources.js';
 import { traitsV13 } from './trait-model.js';
 import { entrenched } from './entrenchment.js';
 import { gearBonuses } from './gear-bonuses.js';
@@ -40,7 +42,9 @@ export interface ModCond {
 }
 
 export interface Modifier {
-  category?: 'cover' | 'movement';
+  category?: 'cover' | 'movement' | 'spotting';
+  traitDamage?: boolean;
+  wardGroup?: 'a' | 'b';
   sourceId?: string;
   stackGroup?: string;
   source: ModSource;
@@ -57,6 +61,8 @@ export interface Modifier {
 
 /** 一次结算中某类加成的合成结果 */
 export interface StackResult {
+  /** 散兵胜出时只把B组预算放进暴露人数；伤害端只兑现A。 */
+  protection?: { a: number; b: number; transmission: number; exposure: number; looseWins: boolean };
   /** 参与合成的明细（被剔除的不进） */
   lines: StackLine[];
   flatTotal: number;
@@ -73,14 +79,18 @@ export interface StackLine {
 }
 
 export interface ResolveContext {
+  damageChannel?: import('./types.js').DamageChannel;
+  structure?: boolean;
   moved?: boolean; maxRange?: number; chargeStraight?: boolean;
   skillDelivery?: 'melee' | 'ranged' | 'magic';
   area?: boolean;
   /** R16 喷射武器：按范围攻击处理，不计工事的远程减伤。 */
   spray?: boolean;
+  looseViaTargets?: boolean;
   fieldTags?: string[];
   terrain?: string;
   localTerrain?: boolean;
+  macroEnvironment?: boolean;
   heightRules?: boolean;
   /** Levels by which the defender stands above the attacker under real height rules, already capped. */
   heightAdvantage?: number;
@@ -109,7 +119,7 @@ function condMet(cond: ModCond | undefined, ctx: ResolveContext): boolean {
   if (cond.ranged !== undefined && cond.ranged !== !!ctx.ranged) return false;
   if (cond.vsTag !== undefined) {
     const target = ctx.defender;
-    if (!target || !actualTargetTag(target, cond.vsTag)) return false;
+    if (ctx.structure || !target || !actualTargetTag(target, cond.vsTag)) return false;
   }
   if (cond.vsScale !== undefined) {
     const target = ctx.defender;
@@ -155,14 +165,33 @@ export function resolveStack(
     if (!previous || Math.abs(m.value - 1) > Math.abs(previous.value - 1)) grouped.set(key, m);
   }
   mults.push(...grouped.values());
-  let multTotal = mults.reduce((s, m) => s * m.value, 1);
+  const revised = stackingRevision(ctx.attacker), additive = kind === 'dmg' && progression(ctx.attacker);
+  const traits = additive ? mults.filter(m => m.traitDamage && (!revised || m.value > 1)) : [];
+  let protection: StackResult['protection'];
+  let factors = mults;
+  if (kind === 'ward' && revised) {
+    const group = (m: Modifier) => m.wardGroup ?? (m.stackGroup === 'guardian:ward' ? 'a' : undefined);
+    const candidates = mults.filter(m => group(m) && m.value > 0 && m.value <= 1);
+    const strongest = (key: 'a'|'b') => candidates.filter(m => group(m) === key).reduce<Modifier | undefined>((best,m) => !best || m.value < best.value ? m : best, undefined);
+    const a = strongest('a')?.value ?? 1, bMod = strongest('b'), b = bMod?.value ?? 1;
+    const ea = 1/a, e = ea + 1/b - 1, transmission = 1/e;
+    const looseWins = !!ctx.looseViaTargets && bMod?.sourceId === 'loose:area';
+    protection = { a, b, transmission, looseWins, exposure: looseWins ? ea/e : 1 };
+    factors = mults.filter(m => !candidates.includes(m));
+  }
+  let multTotal = factors.filter(m => !traits.includes(m)).reduce((s, m) => s * (progression(ctx.attacker) ? Math.max(0, m.value) : m.value), 1);
+  if (additive) {
+    const bonuses = traits.map(m => m.value - 1), sum = bonuses.reduce((n,b) => n+b,0), max = Math.max(0,...bonuses);
+    multTotal *= revised ? 1 + max + .25 * (sum-max) : 1 + sum;
+  }
+  if (protection) multTotal *= protection.looseWins ? protection.a : protection.transmission;
 
   const lines: StackLine[] = [
     ...[...byName.values()].map((m) => ({ name: m.name, source: m.source, value: m.value, type: 'flat' as const })),
     ...mults.map((m) => ({ name: m.name, source: m.source, value: m.value, type: 'mult' as const })),
   ];
 
-  return { lines, flatTotal, multTotal, hasAdv: false, hasDis: false };
+  return { lines, flatTotal, multTotal, hasAdv: false, hasDis: false, ...(protection ? {protection} : {}) };
 }
 
 /** 把栈结果写成明细行文本（结算卡与审计用） */
@@ -223,25 +252,25 @@ export function traitRuntimeMods(traitIds: string[], registry?: Map<string, Trai
       if (traitsV13(unit) && (!entrenched(unit) || !phase2Traits(unit) && context.defender && activeTraitIds(context.defender).includes('siege-breaker'))) continue;
       const suppression = context.defender && activeTraitIds(context.defender).includes('siege-breaker') ? phase2Value(context.defender, 'siege-breaker', 'engineerSuppression', 1) : 0;
       out.push({ source: 'intrinsic', sourceId: 'fortification:def', stackGroup: 'posture:def', name: t.name, kind: 'def', type: 'flat', value: Math.ceil(phase2Value(unit, id, 'worksDefense', 3) * (1 - suppression)) });
-      if (context.ranged && !context.spray) out.push({ source: 'intrinsic', sourceId: 'fortification:ward', stackGroup: 'posture:ward', name: t.name, kind: 'ward', type: 'mult', value: 1 - phase2Value(unit, id, 'worksReduction', .3) * (1 - suppression) });
+      if (context.ranged && !context.spray) out.push({ source: 'intrinsic', wardGroup: 'b', sourceId: 'fortification:ward', stackGroup: 'posture:ward', name: t.name, kind: 'ward', type: 'mult', value: 1 - phase2Value(unit, id, 'worksReduction', .3) * (1 - suppression) });
       continue;
     }
     if (unit?.rulesVersion === 'v2' && id === 'loose-formation') {
       if (looseFormation(unit)) {
-        if (context.area && !context.engaged) out.push({ source: 'intrinsic', sourceId: 'loose:area', name: '疏散减轻范围暴露', kind: 'ward', type: 'mult', value: 1 - phase2Value(unit, id, 'formationReduction', .5) });
+        if (context.area && !context.engaged && !(progression(unit) && !stackingRevision(unit) && context.looseViaTargets)) out.push({ source: 'intrinsic', sourceId: 'loose:area', wardGroup: 'b', name: '疏散减轻范围暴露', kind: 'ward', type: 'mult', value: 1 - phase2Value(unit, id, 'formationReduction', .5) });
         // V13 个体散兵没有阵形可散，不承担编队的近战代价。
         if (!context.ranged && (context.distance ?? 0) <= 1 && !(traitsV13(unit) && unit.scale === 'hero')) out.push({ source: 'intrinsic', sourceId: 'loose:melee', name: '疏散近战薄弱', kind: 'def', type: 'flat', value: -1 });
       }
       continue;
     }
     if (unit?.rulesVersion === 'v2' && id === 'trample') {
-      if (context.charge && !context.ranged && context.defender && bodyRank(unit) > bodyRank(context.defender)) out.push({ source: 'intrinsic', sourceId: 'trample:impact', name: t.name, kind: 'dmg', type: 'mult', value: traitValue(unit, id, 'trampleMultiplier', 1.25) });
+      if (!context.structure && context.charge && !context.ranged && context.defender && bodyRank(unit) > bodyRank(context.defender)) out.push({ source: 'intrinsic', sourceId: 'trample:impact', name: t.name, kind: 'dmg', type: 'mult', value: traitValue(unit, id, 'trampleMultiplier', 1.25) });
       continue;
     }
     for (const [index, e] of t.effects.entries()) {
       if (unit?.rulesVersion === 'v2') {
         if (e.kind === 'stat') continue;
-        if (phase2Traits(unit) && id === 'skirmisher' && e.kind === 'rangedGuardDR') { if (context.ranged && !context.engaged && (context.distance ?? 0) > 1) out.push({ source: 'intrinsic', name: t.name, kind: 'ward', type: 'mult', value: 1 - phase2Value(unit, id, 'skirmishReduction', .25) }); continue; }
+        if (phase2Traits(unit) && id === 'skirmisher' && e.kind === 'rangedGuardDR') { if (context.ranged && !context.engaged && (context.distance ?? 0) > 1) out.push({ source: 'intrinsic', sourceId: 'skirmisher:ward', wardGroup: 'b', name: t.name, kind: 'ward', type: 'mult', value: 1 - phase2Value(unit, id, 'skirmishReduction', .25) }); continue; }
         if (id === 'skirmisher' && e.kind === 'rangedGuardDR' && (context.engaged || (context.distance ?? 0) <= 1)) continue;
         if (id === 'shield-wall' && !shieldGuardUsable(unit)) continue;
         if (id === 'pike-wall' && baseMechanism(unit.weapon) !== 'spear') continue;
@@ -266,9 +295,14 @@ export function traitRuntimeMods(traitIds: string[], registry?: Map<string, Trai
     }
   }
   if (unit) out.push(...phase2WeaponMods(unit, context));
+  if (unit && stackingRevision(unit) && context.damageChannel) {
+    const id = context.damageChannel + '-resist', level = effectiveTraitLevel(unit, id);
+    if (level) out.push({ source: 'intrinsic', sourceId: id, stackGroup: 'guardian:ward', wardGroup: 'a', name: '对应通道抵抗', kind: 'ward', type: 'mult', value: 1 - phase2Value(unit, id, 'channelResistance', 0) });
+  }
   if (unit?.rulesVersion === 'v2') for (const [kind, value] of Object.entries(traitStatAdjustments(unit, registry))) {
     out.push({ source: 'intrinsic', sourceId: 'trait-current:' + kind, name: '当前特质与原基础的净修正', kind: kind as ModKind, type: 'flat', value });
   }
+  if (progression(unit)) for (const mod of out) if (mod.kind === 'dmg' && mod.type === 'mult') mod.traitDamage = true;
   return out;
 }
 
@@ -381,6 +415,16 @@ export function collectMods(
       if (highGroundDefense(mountain)) equipment.push({ source: 'stance', sourceId: 'trait:mountain-born:def', name: '山地专精·居高', kind: 'def', type: 'flat', value: highGroundDefense(mountain) });
     }
     // 佩戴道具的速度与士气修正（同方向取最高）；伤害、精度、防御在伤害结算里合并。
+    if (progression(unit) && ctx.skillDelivery !== 'magic') {
+      const environments: [string, boolean][] = [
+        ['forest-lore', ctx.terrain === 'forest' || !!ctx.macroEnvironment && !unit.airborne && !!ctx.fieldTags?.includes('forest')], ['mountain-born', ['hill','mountain'].includes(ctx.terrain ?? '') || !!ctx.attackerHigher || !!ctx.macroEnvironment && !unit.airborne && !!ctx.fieldTags?.includes('mountain')],
+        ['night-fighter', !!ctx.fieldTags?.includes('night')], ['plains-runner', !!ctx.fieldTags?.includes('plains')],
+        ['urban-fighter', ['street','building'].includes(ctx.terrain ?? '') || !ctx.localTerrain && !!ctx.fieldTags?.includes('urban')],
+      ];
+      for (const [id, applies] of environments) if (applies && traitLevel(unit, id, traits)) equipment.push({ source: 'intrinsic', sourceId: id + ':damage', name: getTrait(id, registry)?.name ?? id, kind: 'dmg', type: 'mult', traitDamage: true, value: traitValue(unit, id, 'meleeDamage', 1) });
+    }
+    const actual = wornEffects(unit);
+    if (actual.morale) equipment.push({ source: 'intrinsic', sourceId: 'gear:actual-morale', name: '佩戴道具实际效果', kind: 'morale', type: 'flat', value: actual.morale });
     const gear = gearBonuses(unit);
     if (gear?.speed) equipment.push({ source: 'intrinsic', sourceId: 'gear:speed', name: '佩戴道具', kind: 'spd', type: 'flat', value: bonusSteps(gear, 'speed', 5) });
     if (gear?.morale) equipment.push({ source: 'intrinsic', sourceId: 'gear:morale', name: '佩戴道具', kind: 'morale', type: 'flat', value: bonusSteps(gear, 'morale') });

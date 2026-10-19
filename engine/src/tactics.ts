@@ -1,5 +1,7 @@
 import { isArmsV2, shieldUsable, shieldClass } from './arms.js';
 import { isArmsV3 } from './arms-model.js';
+import { wornEffects } from './gear-bonuses.js';
+import { progression } from './progression.js';
 import { phase2Traits } from './trait-level-model.js';
 import { phase2Value, agileCost } from './phase2-traits.js';
 import { isEnduranceModel, resourceRound, fatigueLimit, fatiguePenalty } from './resources.js';
@@ -17,7 +19,7 @@ export interface TacticalPose {
 }
 export const SPEED_TIERS = ['迟缓', '缓行', '标准', '快速', '疾速'] as const;
 export function movementLabel(unit: Combatant, tags: string[] = []): string {
-  const points = movementPoints(unit, tags); return SPEED_TIERS[points - 1] + '·' + points + '格';
+  const points = movementPoints(unit, tags); return SPEED_TIERS[Math.max(0, Math.min(4, Math.floor(points) - 1))] + '·' + points + '格';
 }
 /** 训练先攻与地图移动分开；移动只读实际体量、负载、专长、状态和疲劳。 */
 export function movementPoints(unit: Combatant, tags: string[] = []): number {
@@ -31,7 +33,8 @@ export function movementPoints(unit: Combatant, tags: string[] = []): number {
   const armor = !vehicle && armorBurdenTier(unit) >= 3 ? 1 : 0;
   const night = tags.includes('night') ? nightMovePenalty(traitLevel(unit, 'night-fighter', ids)) : 0;
   const normal = Math.max(1, Math.min(5, bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - armor - night - fatiguePenalty(unit) - equipmentBurden(unit) - Number(isArmsV2(unit.armsModel) && shieldUsable(unit) && shieldClass(unit) === 'tower-shield')));
-  return Math.min(5, normal + Number(unit.status === 'routing'));
+  const base = Math.min(5, normal + Number(unit.status === 'routing'));
+  return progression(unit) ? Math.max(1, base + (wornEffects(unit).speed ?? 0)) : base;
 }
 export function formationMarchSteps(unit: Combatant, tags: string[] = []): number {
   if (isAirborne(unit)) return Math.max(1, Math.min(2, movementPoints(unit, tags) - 1));
@@ -114,8 +117,8 @@ export function defensivePostureMods(unit: Combatant, ctx: ResolveContext, defs:
   const mods: Modifier[] = [{ source: 'stance', sourceId: 'brace:def', stackGroup: 'posture:def', name: '正面固守', kind: 'def', type: 'flat', value: 2 }];
   for (const id of activeTraitIds(unit)) {
     if (traitPrerequisiteReason(unit, id)) continue;
-    const mult = id === 'shield-wall' && ctx.ranged ? 1 - traitValue(unit, id, 'shieldReduction', .4) : id === 'pike-wall' && ctx.charge && !ctx.ranged ? 1 - phase2Value(unit, id, 'formationReduction', .5) : undefined;
-    if (mult !== undefined) mods.push({ source: 'stance', sourceId: id + ':posture', stackGroup: 'posture:ward', name: registry?.get(id)?.name ?? (id === 'pike-wall' ? '拒马' : '盾墙'), kind: 'ward', type: 'mult', value: mult });
+    const mult = id === 'shield-wall' && ctx.ranged ? 1 - traitValue(unit, id, 'shieldReduction', .4) : id === 'pike-wall' && ctx.charge && !ctx.ranged ? 1 - phase2Value(unit, id, progression(unit) ? 'pikeReduction' : 'formationReduction', .5) : undefined;
+    if (mult !== undefined) mods.push({ source: 'stance', sourceId: id + ':posture', stackGroup: 'posture:ward', wardGroup: 'b', name: registry?.get(id)?.name ?? (id === 'pike-wall' ? '拒马' : '盾墙'), kind: 'ward', type: 'mult', value: mult });
   }
   return mods;
 }

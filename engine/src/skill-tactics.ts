@@ -1,4 +1,6 @@
 import { armsWeaponReason } from './arms.js';
+import { progression } from './progression.js';
+import { macroTerrain } from './environment.js';
 import { conditionDamage } from './afflictions.js';
 import { attackHostile, combatHostile, combatSide, controlPolicy, controlActionReason, controlCondition } from './battle-control.js';
 import { hasteMagnitude, hasteAttackScale } from './haste.js';
@@ -15,7 +17,7 @@ import { skillWeapon } from './skill-runtime.js';
 import { skillAttack } from './skill-attack.js';
 import { gridWeapon } from './small/weapon-range.js';
 import { gridAbility } from './small/skill-range.js';
-import { heightDefense, standingTerrain } from './small/height-map.js';
+import { heightDefense, standingTerrain, unitHeight } from './small/height-map.js';
 import { gridDistance, reachableGridPaths, canOccupy, tileCost, meleeLineBlocker, unitLineOfSight } from './small/spatial.js';
 import { formationDistance, formationNode, formationScreened, formationShotReason } from './mass/formation.js';
 import { rangedScreen } from './guard-screen.js';
@@ -122,8 +124,8 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
       };
       const evaluate = (opts: Partial<Parameters<typeof previewAttack>[0]>) => Math.min(memberHealth(target), previewAttack({
         attacker: actor, defender: target, rules, conditionDefs: defs, traitRegistry: context.traitRegistry,
-        fieldTags: context.fieldTags, distance: dist,
-        attackerTerrain: standingTerrain(field, actor), defenderTerrain: standingTerrain(field, target), heightRules: field?.spatialRulesVersion === 2, heightAdvantage: heightDefense(field, target, actor),
+        macroEnvironment: context.mode === 'mass', fieldTags: context.fieldTags, distance: dist,
+        attackerTerrain: progression(actor) && context.mode === 'mass' && !actor.airborne ? macroTerrain(context.fieldTags) : standingTerrain(field, actor), defenderTerrain: progression(target) && context.mode === 'mass' && !target.airborne ? macroTerrain(context.fieldTags) : standingTerrain(field, target), ...(progression(actor) && field ? { localTerrain: true, attackerHeight: unitHeight(field, actor), defenderHeight: unitHeight(field, target) } : {}), heightRules: field?.spatialRulesVersion === 2, heightAdvantage: heightDefense(field, target, actor),
         ...opts,
         extraMods: [...(moved && opts.ranged ? [{ source: 'stance' as const, category: 'movement' as const, name: '移动射击估计', kind: 'atk' as const, type: 'flat' as const, value: -2 }] : []), ...(opts.extraMods ?? []),
           ...(traitLevelsV16(actor) ? [...moraleAttackMods(world, actor, context.traitRegistry), ...situationalTraitMods(world, actor, target, {
@@ -172,14 +174,14 @@ export function incomingPotential(context: ObservationContext, target: Combatant
 }
 /** 仅比较一个状态变化的边际价值；复合控制不会把同一行动重复扣除。 */
 export function tacticalStateValue(context: ObservationContext, target: Combatant): number {
-  if(target.traitLevelModel==='traits-levels-v2')context={...context,units:context.units.map(u=>u.id===target.id?target:u)};
+  if(['traits-levels-v2','traits-items-v1','traits-items-v2'].includes(target.traitLevelModel??''))context={...context,units:context.units.map(u=>u.id===target.id?target:u)};
   const outgoing = actionPotential(context, target), incoming = incomingPotential(context, target);
   const risk = moraleRisk(context, target, (context.rules ?? V4_TW).morale.breakAt, context.traitRegistry).breakChance;
-  const dot = target.conditions.reduce((n, c) => n + (c.dur > 0 ? (target.traitLevelModel === 'traits-levels-v2' ? conditionDamage(target, averageDice((context.conditions ?? defaults).get(c.id)?.dot?.dice), c) : averageDice((context.conditions ?? defaults).get(c.id)?.dot?.dice) * (c.affectedMembers ?? 1)) : 0), 0);
+  const dot = target.conditions.reduce((n, c) => n + (c.dur > 0 ? (['traits-levels-v2','traits-items-v1','traits-items-v2'].includes(target.traitLevelModel??'') ? conditionDamage(target, averageDice((context.conditions ?? defaults).get(c.id)?.dot?.dice), c) : averageDice((context.conditions ?? defaults).get(c.id)?.dot?.dice) * (c.affectedMembers ?? 1)) : 0), 0);
   const survival = incoming + dot >= memberHealth(target) ? outgoing * 0.5 : 0;
   const recovery = traitLevelsV16(target) && activeTraitIds(target).includes('lifesteal')
     ? Math.max(0, ...context.units.filter(u => combatHostile(u, target, context.units) && alive(u)).map(u => lifestealAmount(target, u, actionPotential(context, target, u)))) : 0;
-  if(target.traitLevelModel!=='traits-levels-v2') return outgoing - incoming + recovery - survival - Math.min(memberHealth(target), dot) - risk * Math.max(outgoing, memberHealth(target) * 0.1);
+  if(!['traits-levels-v2','traits-items-v1','traits-items-v2'].includes(target.traitLevelModel??'')) return outgoing - incoming + recovery - survival - Math.min(memberHealth(target), dot) - risk * Math.max(outgoing, memberHealth(target) * 0.1);
   const allegiance = combatSide(target,context.units)===target.side?1:-1;
   return allegiance*(outgoing + recovery) - incoming - survival - Math.min(memberHealth(target), dot) - risk * Math.max(outgoing, memberHealth(target) * 0.1);
 }

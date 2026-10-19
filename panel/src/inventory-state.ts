@@ -3,7 +3,7 @@ import { validateEnhancements, type Enhancements } from '../../engine/src/enhanc
 import { calibrateAutocannon, calibrateWeaponHands } from '../../engine/src/gen/equipment.js';
 import {hasMemberHealth} from '../../engine/src/member-health.js';
 import {applyRecovery} from '../../engine/src/recovery.js';
-import { syncGearAbilities, gearItem, validateItemValue, migrateLegacyItem, isLegacyItemMechanics, type LegacyItemMechanics } from '../../engine/src/items.js';
+import { syncGearAbilities, gearItem, validateItemValue, migrateLegacyItem, isLegacyItemMechanics, upgradeRecoveryItemBudget, type LegacyItemMechanics } from '../../engine/src/items.js';
 import { skillResourceChange } from '../../engine/src/skill-runtime.js';
 import { applyDispel, dispelCandidates } from '../../engine/src/skill-effects.js';
 /** 库存实物为装备权威；UnitRecord.snapshot 中的装备是供战斗使用的冻结投影。 */
@@ -32,6 +32,7 @@ export interface InventorySave {
 export type InventoryAction =
   | { kind: 'create'; itemId: string; name: string; spec: ItemSpecification; qty?: number }
   | { kind: 'reforge'; itemId: string; name?: string; spec: ItemSpecification }
+  | { kind: 'upgrade-budget'; itemId: string }
   | { kind: 'define'; itemId: string; spec: ItemSpecification }
   | { kind: 'discard'; itemId: string; qty: number }
   | { kind: 'discard-many'; items: { itemId: string; qty: number }[] }
@@ -322,6 +323,15 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       const defined = { ...createInventoryItem(newId, item.name, action.spec, id, whole ? item.qty : 1), note: item.note, assignedTo: item.assignedTo, sourceItemId: item.id };
       if (whole) Object.assign(item, defined);
       else { item.qty--; inventory.push(defined); }
+    } else if (action.kind === 'upgrade-budget') {
+      if (item.mechanics?.kind !== 'item') throw Error('只有治疗或屏障道具可升级数值');
+      const previous = clone(item.mechanics), value = upgradeRecoveryItemBudget(item.mechanics.value);
+      item.history = [...(item.history ?? []), { revision: item.revision ?? 1, name: item.name, mechanics: previous, sourceId: id }];
+      item.mechanics = { kind: 'item', value }; item.revision = (item.revision ?? 1) + 1;
+      if (item.equippedTo) {
+        const record = recordById(next, item.equippedTo.unitId);
+        projectEquipment(record, inventory); rewriteRecord(next, record, id);
+      }
     } else if (action.kind === 'reforge') {
       const mechanics = item.mechanics;
       if (!mechanics || mechanics.kind === 'item' && mechanics.value.recipe.form === 'single') throw new Error('一次性道具不能改造；可以移除后重新获得');

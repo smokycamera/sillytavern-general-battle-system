@@ -1,3 +1,6 @@
+import { ITEM_PROGRESSION, ITEM_STACKING, PROGRESSION_MODEL, STACKING_MODEL, itemProgression, type ItemProgressionModel } from './progression.js';
+import { applyItemProgression } from './item-progression.js';
+import { compileWornEffects, type WornEffects } from './gear-bonuses.js';
 import { validateEnhancements, enhancementLabel, type Enhancements, type BonusStat } from './enhancements.js';
 import { recoveryCapacity } from './recovery.js';
 import { equipmentLoad } from './body.js';
@@ -7,7 +10,7 @@ import type { Ability, Armor, BodyKind, Combatant, EffectOp, ItemRecipe, Weapon 
 import { BODY, compileArmor, compileWeapon, equipmentRecipe, type EquipmentContext } from './gen/equipment.js';
 import { compileSkill } from './skill-catalog.js';
 import { upgradeCombatSkills } from './skill-upgrade.js';
-import { ANCHORED_SKILL_MODEL } from './skill-model.js';
+import { ANCHORED_SKILL_MODEL, type SkillModel } from './skill-model.js';
 import { parseSkillMechanism, skillMechanismFromId, skillMechanismId, skillMechanismName } from './data/skill-mechanisms.js';
 import { TRAITS, traitRegistry, isGradedTrait, validTraitLevel } from './data/traits.js';
 import { itemsV15 } from './item-model.js';
@@ -28,12 +31,13 @@ export type ItemForm = 'single' | 'charged' | 'worn';
 export const ITEM_FORM_NAMES: Readonly<Record<ItemForm, string>> = { single: '一次性', charged: '充能', worn: '佩戴' };
 export const ITEM_VERSION = 'items-v1' as const;
 export interface ItemTraitGrant { id: string; level?: number }
-export interface ItemPassive { traits: ItemTraitGrant[]; bonuses?: Enhancements }
+export interface ItemPassive { traits: ItemTraitGrant[]; bonuses?: Enhancements; actualEffects?: WornEffects }
 /** 道具实物的冻结配方；有 legacy 的是旧版药剂与护符转换来的，保留原效果、冻结原参数。 */
 export interface ItemEffectRecipe {
   version: typeof ITEM_VERSION; form: ItemForm; power: number; seed: string;
   /** 缺省是历史预算和历史非分级授予；读取时不得套新价格。 */
-  traitBudgetModel?: typeof TRAIT_LEVEL_MODEL | typeof PHASE2_TRAIT_LEVEL_MODEL;
+  traitBudgetModel?: typeof TRAIT_LEVEL_MODEL | typeof PHASE2_TRAIT_LEVEL_MODEL | typeof PROGRESSION_MODEL | typeof STACKING_MODEL;
+  progressionModel?: ItemProgressionModel;
   /** 一次性、充能：通用技能机制 id。 */
   active?: string;
   /** 佩戴：授予的特质；专精的等级就是道具等级。 */
@@ -111,18 +115,19 @@ export function quickAbility(a: Ability): boolean {
 export function chargedUses(a: Ability): number {
   return isArea(a) || a.effects.some((e) => e.op === 'zone' || e.op === 'summon' || e.op === 'condition' && HARD_CONTROLS.has(e.conditionId)) ? 1 : 2;
 }
-function templateHost(ability: Ability, power: number): Combatant {
+function templateHost(ability: Ability, power: number, formula: SkillModel): Combatant {
   return { id: 'item', name: '道具', side: 'ally', scale: 'hero', level: power, tags: [], base: { atk: 0, def: 0, spd: 0, hpMax: 1 }, hp: 1, conditions: [],
     abilities: [ability], abilityState: [], resources: {}, traits: [], engagedWith: [], status: 'ready', fatigue: 0,
-    rulesVersion: 'v2', damageModel: 'wounds-v2', combatModel: 'cohort-v2', skillModel: ANCHORED_SKILL_MODEL };
+    rulesVersion: 'v2', damageModel: 'wounds-v2', combatModel: 'cohort-v2', skillModel: formula };
 }
 /** 与已学技能走同一条编译与入场升级路径，再改成道具：不耗精力、单独计冷却、默认非魔法。 */
-export function itemAbilityTemplate(id: string, power: number, bonuses: Enhancements | undefined, form: 'single' | 'charged', name = '道具'): Ability {
+export function itemAbilityTemplate(id: string, power: number, bonuses: Enhancements | undefined, form: 'single' | 'charged', name = '道具', modern: boolean | ItemProgressionModel = ITEM_STACKING, formula: SkillModel = ANCHORED_SKILL_MODEL): Ability {
   const mechanism = skillMechanismFromId(id);
   if (!mechanism) throw new Error('未知或矛盾的道具效果');
-  const host = templateHost(compileSkill({ id, name, bonuses }, power, 'item', ANCHORED_SKILL_MODEL), power);
+  const host = templateHost(compileSkill({ id, name, bonuses }, power, 'item', formula), power, formula);
   upgradeCombatSkills(host);
   const a = host.abilities[0]!;
+  if (modern) applyItemProgression(a, bonuses, modern === true ? ITEM_STACKING : modern);
   a.id = 'item'; delete a.sourceId; delete a.cost; delete a.cooldownGroup;
   a.customized = true;
   if (!mechanism.category.startsWith('magic') && a.delivery === 'magic') delete a.delivery;
@@ -167,13 +172,13 @@ function compileItemValue(spec: Extract<ItemSpecification, { kind: 'item' }>, se
     const traits = normalizeTraitGrants(spec.traits ?? [], power, !!spec.legacy, !spec.legacy);
     const bonuses = spec.bonuses && Object.values(spec.bonuses).some((v) => v) ? Object.fromEntries(Object.entries(spec.bonuses).filter(([, v]) => v)) as Enhancements : undefined;
     if (!traits.length && !bonuses) throw new Error('佩戴道具需要特质或单位修正');
-    const passive: ItemPassive = { traits, ...(bonuses ? { bonuses } : {}) };
-    return { recipe: { version: ITEM_VERSION, form: 'worn', power, seed, ...(!spec.legacy ? { traitBudgetModel: PHASE2_TRAIT_LEVEL_MODEL } : {}), ...(traits.length ? { traits } : {}), ...(bonuses ? { bonuses } : {}), ...(spec.legacy ? { legacy: spec.legacy } : {}) }, passive };
+    const passive: ItemPassive = { traits, ...(bonuses ? { bonuses } : {}), ...(!spec.legacy ? { actualEffects: compileWornEffects(bonuses, power) } : {}) };
+    return { recipe: { version: ITEM_VERSION, form: 'worn', power, seed, ...(!spec.legacy ? { traitBudgetModel: STACKING_MODEL, progressionModel: ITEM_PROGRESSION } : {}), ...(traits.length ? { traits } : {}), ...(bonuses ? { bonuses } : {}), ...(spec.legacy ? { legacy: spec.legacy } : {}) }, passive };
   }
   if (!spec.active || spec.traits?.length) throw new Error('一次性与充能道具写技能机制，如buff治疗L3、物理范围投射L4');
   validateEnhancements(spec.bonuses, 'skill');
-  const ability = itemAbilityTemplate(spec.active, power, spec.bonuses, spec.form, name);
-  return { recipe: { version: ITEM_VERSION, form: spec.form, power, seed, active: spec.active, ...(spec.bonuses && Object.keys(spec.bonuses).length ? { bonuses: spec.bonuses } : {}), ...(spec.legacy ? { legacy: spec.legacy } : {}) }, ability };
+  const ability = itemAbilityTemplate(spec.active, power, spec.bonuses, spec.form, name, !spec.legacy);
+  return { recipe: { version: ITEM_VERSION, form: spec.form, power, seed, active: spec.active, ...(!spec.legacy ? { progressionModel: ITEM_STACKING } : {}), ...(spec.bonuses && Object.keys(spec.bonuses).length ? { bonuses: spec.bonuses } : {}), ...(spec.legacy ? { legacy: spec.legacy } : {}) }, ability };
 }
 
 /** 物品编译不依赖持有者等级，也不生成临时人物；效果创建后冻结。 */
@@ -292,17 +297,40 @@ export function equipmentReason(unit: Pick<Combatant, 'body' | 'scale' | 'weapon
 const definition = (a: Ability | undefined) => a ? JSON.stringify({ ...a, name: undefined, desc: undefined, category: undefined }, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
   ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]])) : value) : undefined;
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+/** 历史数值仍可使用；只在玩家明确升级时重编，读取/入场不调用。 */
+export function historicalRecoveryItem(value: ItemValue): boolean {
+  const recovery = (effects: readonly EffectOp[]): boolean => effects.some(e => e.op === 'heal' || e.op === 'barrier' || e.op === 'zone' && (e.kind === 'healing' || recovery(e.effects ?? [])));
+  return value.recipe.progressionModel !== ITEM_STACKING && !!value.ability && recovery(value.ability.effects);
+}
+export function upgradeRecoveryItemBudget(value: ItemValue): ItemValue {
+  validateItemValue(value);
+  const r = value.recipe;
+  if (!historicalRecoveryItem(value) || r.form === 'worn' || !r.active) throw Error('这件道具没有可升级的历史治疗或屏障预算');
+  const version = value.ability!.effectVersion;
+  const formula: SkillModel = version === 'skill-v8.0' || version === 'skill-zone-v5' ? 'skills-v2'
+    : version === 'skill-v9.0' || version === 'skill-zone-v6' ? 'skills-v3'
+    : version === 'skill-v7.0' || version === 'skill-zone-v4' ? 'skills-v1' : ANCHORED_SKILL_MODEL;
+  const expected = itemAbilityTemplate(r.active, r.power, r.bonuses, r.form, value.ability!.name, r.progressionModel ?? false, formula);
+  if (definition(expected) !== definition(value.ability)) throw Error('实物效果与可信配方不一致，不能推测手工数值；请保留原效果');
+  return { ...structuredClone(value), recipe: { ...structuredClone(r), progressionModel: ITEM_STACKING },
+    ability: itemAbilityTemplate(r.active, r.power, r.bonuses, r.form, value.ability!.name, ITEM_STACKING) };
+}
 /** 道具实物的结构校验：形态、等级、效果与授予能力一致；不按当前公式重算冻结行动。 */
 export function validateItemValue(value: unknown): asserts value is ItemValue {
   if (!object(value) || !object(value.recipe)) throw new Error('道具配方损坏');
   const r = value.recipe;
-  if (r.traitBudgetModel !== undefined && r.traitBudgetModel !== TRAIT_LEVEL_MODEL && r.traitBudgetModel !== PHASE2_TRAIT_LEVEL_MODEL) throw new Error('佩戴特质等级版本损坏');
+  if (r.traitBudgetModel !== undefined && r.traitBudgetModel !== TRAIT_LEVEL_MODEL && r.traitBudgetModel !== PHASE2_TRAIT_LEVEL_MODEL && r.traitBudgetModel !== PROGRESSION_MODEL && r.traitBudgetModel !== STACKING_MODEL) throw new Error('佩戴特质等级版本损坏');
   if (r.version !== ITEM_VERSION || !['single', 'charged', 'worn'].includes(String(r.form)) || !Number.isSafeInteger(r.power) || Number(r.power) < 1 || Number(r.power) > 10
     || typeof r.seed !== 'string' || !r.seed || r.legacy !== undefined && typeof r.legacy !== 'string') throw new Error('道具配方版本、形态或等级损坏');
+  if (r.progressionModel !== undefined && !itemProgression(r.progressionModel)) throw Error('道具成长版本损坏');
   if (r.form === 'worn') {
     if (r.active !== undefined || value.ability !== undefined || !object(value.passive) || !Array.isArray(value.passive.traits)) throw new Error('佩戴道具的效果记录损坏');
     validateEnhancements(value.passive.bonuses as Enhancements | undefined, 'gear');
-    const traits = normalizeTraitGrants(value.passive.traits as ItemTraitGrant[], Number(r.power), !!r.legacy, r.traitBudgetModel === PHASE2_TRAIT_LEVEL_MODEL ? true : r.traitBudgetModel === TRAIT_LEVEL_MODEL ? 'p1' : false);
+    const actual = value.passive.actualEffects;
+    if (itemProgression(r.progressionModel)) {
+      if (!object(actual) || !object(actual.values) || Object.values(actual.values).some(v => typeof v !== 'number' || !Number.isFinite(v)) || ['damageCap','negativeDamageCap','protectionCap','negativeProtectionCap'].some(k => typeof actual[k] !== 'number' || !Number.isFinite(actual[k]) || Number(actual[k]) < 0)) throw Error('佩戴实际效果记录损坏');
+    } else if (actual !== undefined) throw Error('佩戴实际效果缺少版本');
+    const traits = normalizeTraitGrants(value.passive.traits as ItemTraitGrant[], Number(r.power), !!r.legacy, (r.traitBudgetModel === PHASE2_TRAIT_LEVEL_MODEL || r.traitBudgetModel === PROGRESSION_MODEL || r.traitBudgetModel === STACKING_MODEL) ? true : r.traitBudgetModel === TRAIT_LEVEL_MODEL ? 'p1' : false);
     if (JSON.stringify(traits) !== JSON.stringify(value.passive.traits) || JSON.stringify(r.traits ?? []) !== JSON.stringify(value.passive.traits)
       || JSON.stringify(r.bonuses ?? null) !== JSON.stringify(value.passive.bonuses ?? null)) throw new Error('佩戴道具的特质或修正与配方不一致');
     return;
@@ -310,6 +338,7 @@ export function validateItemValue(value: unknown): asserts value is ItemValue {
   if (typeof r.active !== 'string' || !skillMechanismFromId(r.active) || r.traits !== undefined || value.passive !== undefined) throw new Error('道具效果机制损坏');
   validateEnhancements(r.bonuses as Enhancements | undefined, 'skill');
   const a = value.ability;
+  if (itemProgression(r.progressionModel) && (!object(a) || a.itemEffectModel !== r.progressionModel)) throw Error('主动道具成长版本损坏');
   if (!object(a) || !Array.isArray(a.effects) || a.customized !== true || a.itemSourceId !== undefined || a.equipmentSourceId !== undefined
     || r.form === 'charged' && (!Number.isSafeInteger(a.usesPerBattle) || ![1, 2].includes(Number(a.usesPerBattle))) || r.form === 'single' && a.usesPerBattle !== undefined) throw new Error('道具行动记录损坏');
 }

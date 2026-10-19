@@ -102,6 +102,11 @@ export const TRAITS: Trait[] = [
     effects: [{ kind: 'flag', flag: 'no-melee-penalty' }],
   },
   // ---------- 防护 ----------
+  ...(['kinetic', 'thermal', 'arcane'] as const).map((channel): Trait => ({
+    id: channel + '-resist', name: ({ kinetic: '动能', thermal: '热能', arcane: '奥术' })[channel] + '抵抗',
+    desc: 'V18起对应通道抗穿每级+0.4，与身体和护甲相加，同特质取最高L；不影响其他通道、盾牌或屏障',
+    v2SourceReady: true, effects: [{ kind: 'flag', flag: channel + '-resist' }],
+  })),
   {
     id: 'guardian', name: '守护', desc: '受到的全伤害 -25%（不可被破甲绕过）',
     v2SourceReady: true,
@@ -141,19 +146,19 @@ export const TRAITS: Trait[] = [
   {
     id: 'kinetic-resist', name: '动能抵抗', desc: '动能防护按等级额外增加，与护甲相加',
     v2SourceReady: true,
-    v2Desc: '刀剑、箭矢、子弹、冲击等动能伤害的抗性（岩石之躯、魔像、刀枪不入）：动能防护+0.5至+4（L5为+2，约等于高一级护甲），与护甲、身体结构相加；不影响热能、奥术',
+    v2Desc: 'V23按真实动能通道减伤15%至81%，包括有明确通道的持续伤害；与守护同护体组取强，不增加抗穿或防御规格。旧版本按其冻结规则。',
     effects: [{ kind: 'flag', flag: 'kinetic-resist' }],
   },
   {
     id: 'thermal-resist', name: '热能抵抗', desc: '热能防护按等级额外增加，与护甲相加',
     v2SourceReady: true,
-    v2Desc: '火焰、冰霜、能量束等热能伤害的抗性（火元素、耐火体质、抗火药剂）：热能防护+0.5至+4（L5为+2，约等于高一级护甲），与护甲、身体结构相加；不影响动能、奥术',
+    v2Desc: 'V23按真实热能通道减伤15%至81%，包括有明确通道的持续伤害；与守护同护体组取强，不增加抗穿或防御规格。旧版本按其冻结规则。',
     effects: [{ kind: 'flag', flag: 'thermal-resist' }],
   },
   {
     id: 'arcane-resist', name: '奥术抵抗', desc: '奥术防护按等级额外增加，与护甲相加',
     v2SourceReady: true,
-    v2Desc: '法术与奥术伤害的抗性（抗魔体质、反魔法甲壳、神佑之躯）：奥术防护+0.5至+4（L5为+2，约等于高一级护甲），与护甲、身体结构相加；不影响动能、热能',
+    v2Desc: 'V23按真实奥术通道减伤15%至81%，包括有明确通道的持续伤害；与守护同护体组取强，不增加抗穿或防御规格。旧版本按其冻结规则。',
     effects: [{ kind: 'flag', flag: 'arcane-resist' }],
   },
   {
@@ -449,10 +454,10 @@ export const TRAIT_ALIASES: Readonly<Record<string, string>> = {
   '护体': 'guardian',
   '韧性': 'tenacity', '霸体': 'tenacity', '道心': 'tenacity', '意志坚定': 'tenacity',
   '轻功': 'agile', '遁术': 'agile',
-  '炼体': 'natural-armor', '金身': 'natural-armor', '鳞片': 'natural-armor', '鳞甲': 'natural-armor', '甲壳': 'natural-armor', '天生装甲': 'natural-armor',
   '物理抗性': 'kinetic-resist', '动能抗性': 'kinetic-resist', '刀枪不入': 'kinetic-resist',
   '火焰抗性': 'thermal-resist', '热能抗性': 'thermal-resist', '抗火': 'thermal-resist', '耐火': 'thermal-resist', '抗寒': 'thermal-resist', '耐寒': 'thermal-resist',
   '魔法抗性': 'arcane-resist', '法术抗性': 'arcane-resist', '奥术抗性': 'arcane-resist', '抗魔': 'arcane-resist', '魔抗': 'arcane-resist',
+  '炼体': 'natural-armor', '金身': 'natural-armor', '鳞片': 'natural-armor', '鳞甲': 'natural-armor', '甲壳': 'natural-armor', '天生装甲': 'natural-armor',
   '坚韧不屈': 'indomitable',
   '守城工事': 'fortification', '掩体': 'fortification', '战壕': 'fortification', '据守': 'fortification',
   '机器人': 'inorganic', '构装体': 'inorganic', '构装': 'inorganic', '亡灵': 'inorganic', '傀儡': 'inorganic', '机械体': 'inorganic', '无机体': 'inorganic',

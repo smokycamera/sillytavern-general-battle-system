@@ -22,7 +22,7 @@ export function healingGradeMultiplier(power: number | undefined, targetLevel: n
 }
 export function medicHealingMultiplier(source: Combatant): number {
   if (source.rulesVersion !== 'v2' || !activeTraitIds(source).includes('medic')) return 1;
-  return phase2Traits(source) ? traitParameter('medicHealing', effectiveTraitLevel(source, 'medic')) : 1.25;
+  return phase2Traits(source) ? traitParameter('medicHealing', effectiveTraitLevel(source, 'medic'), source.traitLevelModel) : 1.25;
 }
 export interface HealingBudgetInput {
   source: Combatant; target: Combatant; baseAmount: number; power?: number;

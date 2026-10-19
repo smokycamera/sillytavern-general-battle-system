@@ -1,24 +1,27 @@
-import { itemSpecText, traitRegistry, standardConditionMap, isGradedTrait, traitLevelsV16, canonicalTraitId, sourceTraitLevel, wornItemBonuses, wornLevelScale, ITEM_MODEL_V2,
+import { progression, wornItemEffects, STACKING_MODEL } from '../../engine/src/index.js';
+import { BONUS_NAMES } from '../../engine/src/enhancements.js';
+import { ITEM_FORM_NAMES, wornItemBonuses, wornLevelScale, ITEM_MODEL_V2, itemSpecText, traitRegistry, standardConditionMap, isGradedTrait, traitLadderSummary, traitLevelsV16, canonicalTraitId, sourceTraitLevel,
   type Ability, type Combatant, type EffectOp, type ItemPassive, type ItemValue } from '../../engine/src/index.js';
 import { enhancementLabel, type Enhancements } from '../../engine/src/enhancements.js';
 import { diceAvg } from '../../engine/src/data/weapons.js';
 import { gridAbility } from '../../engine/src/small/skill-range.js';
+import { historicalRecoveryItem } from '../../engine/src/items.js';
 
 const ZONES: Record<string, string> = { fire: '火墙', poison: '毒雾', smoke: '烟幕', healing: '治疗区域', trap: '陷阱' };
 const MOVES: Record<string, string> = { dash: '突进', blink: '闪现', withdraw: '后撤' };
 function effectText(e: EffectOp, a: Ability): string {
   switch (e.op) {
-    case 'heal': return `恢复${e.amount !== undefined ? Math.round(e.amount) : e.dice}生命`;
+    case 'heal': return `基础治疗预算${e.amount !== undefined ? Number(e.amount.toFixed(4)) : e.dice}生命，受伤口及可救伤兵限制`;
     case 'damage': return `伤害约${Math.round(diceAvg(e.baseDice) * (a.damageScale ?? 1))}${e.shape === 'burst' ? '（范围）' : ''}`;
-    case 'condition': return `${standardConditionMap().get(e.conditionId)?.name ?? e.conditionId}${e.dur}轮`;
+    case 'condition': return `${standardConditionMap().get(e.conditionId)?.name ?? e.conditionId}${e.dur}轮${e.magnitude !== undefined ? '（效力'+Math.round(e.magnitude*100)+'%）' : ''}${e.saveDC ? '，DC'+e.saveDC : ''}`;
     case 'barrier': return `屏障${e.amount}点，${e.dur}轮`;
     case 'dispel': return e.polarity === 'negative' ? `清除${e.count}项不利状态` : `驱散${e.count}项增益`;
     case 'resource': return `精力${e.amount > 0 ? '+' : ''}${e.amount}`;
     case 'morale': return `士气${e.amount > 0 ? '+' : ''}${e.amount}`;
-    case 'trait': return `${traitRegistry().get(e.traitId)?.name ?? e.traitId}${e.dur}轮`;
-    case 'zone': return `${ZONES[e.kind] ?? '区域'}${e.dur}轮`;
+    case 'trait': return `${traitRegistry().get(e.traitId)?.name ?? e.traitId}${e.level ? 'L' + e.level : ''}，${e.dur}轮`;
+    case 'zone': return `${ZONES[e.kind] ?? '区域'}${e.dur}轮${e.amount !== undefined ? '，每周期预算' + e.amount : ''}${e.effects?.length ? '，' + e.effects.map(child=>effectText(child,a)).join('、') : ''}`;
     case 'summon': return '召唤';
-    case 'push': return e.direction === 'towards' ? '拉拽' : '击退';
+    case 'push': return (e.direction === 'towards' ? '拉拽' : '击退') + '，force=' + e.force + '，位移1步';
     case 'move': return `${MOVES[e.mode]}${e.reach}格`;
   }
 }
@@ -27,16 +30,22 @@ export function itemAbilitySummary(a: Ability): string {
   return [a.itemQuick ? '自身或相邻友军，可用加速动作' : a.usesPerBattle ? `每战${a.usesPerBattle}次，占主行动` : '占主行动',
     a.range && a.range.max > 1 ? `射程${gridAbility(a, 'arms-v2').range!.max}格` : '', ...a.effects.map((e) => effectText(e, a)), a.delivery === 'magic' ? '魔法' : ''].filter(Boolean).join('，');
 }
-/** 佩戴修正按道具 L 折算后的实际数值（V20）；L5 与照写的一样，不另写。特质已经写在规格里。 */
-export function itemPassiveSummary(p: ItemPassive, power?: number): string {
-  const scale = power === undefined ? 1 : wornLevelScale(power);
-  if (!p.bonuses || scale === 1) return '';
-  return '实际' + enhancementLabel(Object.fromEntries(Object.entries(p.bonuses).map(([stat, points]) => [stat, Math.round((points ?? 0) * scale * 100) / 100])) as Enhancements);
+export function itemPassiveSummary(p: ItemPassive, model?: unknown): string {
+  const traits = p.traits.map((t) => {
+    const name = traitRegistry().get(t.id)?.name ?? t.id;
+    return isGradedTrait(t.id) ? `${name}（${traitLadderSummary(t.id, t.level ?? 5, model)}）` : name;
+  });
+  const actual = p.actualEffects ? Object.entries(p.actualEffects.values).filter(([,v]) => v).map(([k,v]) => {
+    const percent = k === 'damage' || k.endsWith('Damage');
+    const amount = Number(((v ?? 0) * (percent ? 100 : 1)).toFixed(3));
+    return BONUS_NAMES[k as keyof typeof BONUS_NAMES] + (amount >= 0 ? '+' : '') + amount + (percent ? '%' : '');
+  }).join('、') : '';
+  return ['装备后获得', traits.join('、'), actual ? '实际效果：' + actual + '（同方向正负分别取强；通用与单通道合并有上限）' : p.bonuses ? '单位修正' + enhancementLabel(p.bonuses) + '（同方向只取最高一件）' : ''].filter(Boolean).join(' ');
 }
 /** 库存卡片与审批预览共用的一句话说明；形态已在卡片标题里。 */
 export function itemValueSummary(value: ItemValue): string {
   const r = value.recipe;
-  return [itemSpecText(r), value.ability ? itemAbilitySummary(value.ability) : '', value.passive ? itemPassiveSummary(value.passive, r.power) : ''].filter(Boolean).join(' · ');
+  return [ITEM_FORM_NAMES[r.form] + ' · ' + itemSpecText(r), historicalRecoveryItem(value) ? '历史规则数值（可在库存显式升级）' : '', value.ability ? itemAbilitySummary(value.ability) : '', value.passive ? itemPassiveSummary(value.passive, STACKING_MODEL) + '；特质组合以本场战斗规则为准' : ''].filter(Boolean).join(' · ');
 }
 
 /**
@@ -61,7 +70,8 @@ export function overshadowedGear(unit: Pick<Combatant, 'gear' | 'traits' | 'trai
   for (const [stat, written] of Object.entries(item.passive.bonuses ?? {}) as [keyof NonNullable<ItemPassive['bonuses']>, number][]) {
     const points = actual(item)[stat] ?? 0;
     if (points <= 0) continue;
-    if (gear.some((other, n) => n !== index && beats(actual(other)[stat] ?? 0, n, points))) covered.push(enhancementLabel({ [stat]: written }));
+    const mine = progression(unit) && stat !== 'speed' ? wornItemEffects(item).values[stat] ?? 0 : points;
+    if (gear.some((other, n) => n !== index && beats(progression(unit) && stat !== 'speed' ? wornItemEffects(other).values[stat] ?? 0 : actual(other)[stat] ?? 0, n, mine))) covered.push(enhancementLabel({ [stat]: written }));
   }
   return covered;
 }

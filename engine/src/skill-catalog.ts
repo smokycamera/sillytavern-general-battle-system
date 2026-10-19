@@ -8,7 +8,7 @@ import { upgradeZoneSkill } from './zone-skills.js';
 import { attachDefensePower } from './barrier.js';
 import type { SkillModel } from './skill-model.js';
 
-export const MAX_PREPARED_SKILLS = 5;
+export const MAX_PREPARED_SKILLS = Infinity;
 
 export function skillDefinitionKnown(id: string): boolean { return !!skillMechanismFromId(id) || !!ABILITY_BLUEPRINTS[id]; }
 export function skillDefinitionName(id: string): string { return skillMechanismName(id) || ABILITY_BLUEPRINTS[id]?.name || id.replace(/^invalid:/, ''); }
@@ -56,6 +56,6 @@ export function resolvePreparedSkills(abilities: Ability[], requested: string[])
     if (family.length !== 1) throw new Error('准备技能需指向唯一已学记录');
     return family[0]!.id;
   });
-  if (result.length > MAX_PREPARED_SKILLS || new Set(result).size !== result.length) throw new Error(`准备技能最多${MAX_PREPARED_SKILLS}个且不能重复`);
+  if (new Set(result).size !== result.length) throw new Error('准备技能不能重复');
   return result;
 }

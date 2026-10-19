@@ -25,7 +25,7 @@ export function situationalTraitMods(context: ObservationContext, attacker: Comb
   if (attacker.rulesVersion !== 'v2' || !combatHostile(attacker, target, context.units)) return [];
   const out: Modifier[] = [];
   if (!input.magic && activeTraitIds(attacker).includes('sneak-attack') && (input.ambush || input.flanked()))
-    out.push({ source: 'stance', sourceId: 'sneak-attack', name: input.ambush ? '偷袭·潜伏出手' : '偷袭·趁敌缠斗', kind: 'dmg', type: 'mult', value: traitValue(attacker, 'sneak-attack', 'sneakMultiplier', 1.5) });
+    out.push({ source: 'stance', sourceId: 'sneak-attack', name: input.ambush ? '偷袭·潜伏出手' : '偷袭·趁敌缠斗', kind: 'dmg', type: 'mult', traitDamage: true, value: traitValue(attacker, 'sneak-attack', 'sneakMultiplier', 1.5) });
   const spotters = context.units.filter((u) => !combatHostile(u, attacker, context.units) && u.status === 'ready' && u.rulesVersion === 'v2'
     && activeTraitIds(u).includes('recon') && !controlCondition(u, 'blinded') && canSpot(context, u, target));
   if (input.ranged && input.weapon?.indirect && spotters.length) out.push({ source: 'stance', sourceId: 'recon:spotting', name: '侦察校射', kind: 'atk', type: 'flat', value: Math.max(...spotters.map(u => phase2Value(u, 'recon', 'reconSpotting', 2))) });

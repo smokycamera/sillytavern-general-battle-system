@@ -1,3 +1,4 @@
+import { progression } from './progression.js';
 import type { Combatant, Weapon } from './types.js';
 import type { Modifier, ResolveContext } from './bonus.js';
 import { phase2Traits } from './trait-level-model.js';
@@ -5,7 +6,7 @@ import { effectiveTraitLevel, traitPrerequisiteReason } from './trait-sources.js
 import { traitParameter } from './trait-parameters.js';
 
 export const phase2Value = (unit: Combatant, id: string, parameter: Parameters<typeof traitParameter>[0], legacy: number): number =>
-  phase2Traits(unit) ? traitParameter(parameter, effectiveTraitLevel(unit, id)) : legacy;
+  phase2Traits(unit) ? traitParameter(parameter, effectiveTraitLevel(unit, id), unit.traitLevelModel) : legacy;
 export function agileCost(unit: Combatant | undefined, cost: number): number {
   if (!unit || !effectiveTraitLevel(unit, 'agile') || traitPrerequisiteReason(unit, 'agile')) return cost;
   return 1 + Math.max(0, cost - 1) * phase2Value(unit, 'agile', 'agileTerrain', 0);
@@ -29,14 +30,14 @@ export function phase2WeaponMods(unit: Combatant, context: ResolveContext): Modi
   };
   const level = (id: string) => effectiveTraitLevel(unit, id);
   if (level('melee-master') && !magic && !ranged) take('近战特化', phase2Value(unit, 'melee-master', 'meleeAttack', 2), phase2Value(unit, 'melee-master', 'meleeDamage', 1.15));
-  if (level('sharpshooter') && !magic && ranged) take('射击专家', sharpshooterAttack(level('sharpshooter'), !!context.moved, context.distance ?? 0, context.maxRange ?? context.weapon?.range ?? 0));
+  if (level('sharpshooter') && !magic && ranged) take('射击专家', progression(unit) ? phase2Value(unit, 'sharpshooter', 'meleeAttack', 2) : sharpshooterAttack(level('sharpshooter'), !!context.moved, context.distance ?? 0, context.maxRange ?? context.weapon?.range ?? 0), progression(unit) ? phase2Value(unit, 'sharpshooter', 'meleeDamage', 1) : 1);
   if (level('charge-strong') && context.charge && !magic) {
     const L = level('charge-strong'), straight = context.chargeStraight ?? false;
-    take('冲锋强化', L === 1 && !straight ? 0 : L === 3 && !straight ? 1 : phase2Value(unit, 'charge-strong', 'chargeAttack', 3), phase2Value(unit, 'charge-strong', 'chargeDamage', 1));
+    take('冲锋强化', !progression(unit) && L === 1 && !straight ? 0 : !progression(unit) && L === 3 && !straight ? 1 : phase2Value(unit, 'charge-strong', 'chargeAttack', 3), phase2Value(unit, 'charge-strong', 'chargeDamage', 1));
   }
   if (level('berserk')) {
-    const L = level('berserk'), applies = L >= 3 || !magic && (L >= 2 || !ranged);
-    if (applies) take('狂暴', magic && L === 4 ? 1 : phase2Value(unit, 'berserk', 'berserkAttack', 2), phase2Value(unit, 'berserk', 'berserkDamage', 1));
+    const L = level('berserk'), applies = progression(unit) || L >= 3 || !magic && (L >= 2 || !ranged);
+    if (applies) take('狂暴', !progression(unit) && magic && L === 4 ? 1 : phase2Value(unit, 'berserk', 'berserkAttack', 2), phase2Value(unit, 'berserk', 'berserkDamage', 1));
   }
   return out;
 }
