@@ -1,3 +1,8 @@
+/** 面向玩家的属性数值最多显示两位小数；存档与结算保留原精度。 */
+export function displayNumber(value: number): string {
+  return Number.isFinite(value) ? String(Number(value.toFixed(2))) : String(value);
+}
+
 /**
  * Display-only rounding. Stored values keep their precision; a number that had to be shortened for display is
  * marked "≈" so it is not read as exact. `down` suits progress toward a threshold (never shows it reached early),

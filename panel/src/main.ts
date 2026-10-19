@@ -1,3 +1,4 @@
+import { displayNumber } from '../../engine/src/display-number.js';
 import { armsStatusLabels, shieldDetail, isArmsV2, energyOverloadThreshold } from '../../engine/src/arms.js';
 import { diceAvg } from '../../engine/src/data/weapons.js';
 import { classMigrationCandidates } from './arms-v2.js';
@@ -1240,16 +1241,16 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   const worksUnit = currentBattle()?.combatants.find((c) => c.id === u.id), works = worksUnit && worksLabel(worksUnit);
   if (works) rows.push(`<div class="eq" data-role="works"><b>工事</b> ${esc(works)}</div>`);
   rows.push(`<div class="stat-grid">`);
-  const atkPlus = u.base.atk >= 0 ? '+' + u.base.atk : u.base.atk;
+  const atkPlus = (u.base.atk >= 0 ? '+' : '') + displayNumber(u.base.atk);
   rows.push(`<span>攻 <b>${atkPlus}</b></span>`);
-  rows.push(`<span>防 <b>${u.base.def}</b></span>`);
-  rows.push(`<span>速 <b>${u.base.spd}</b></span>`);
+  rows.push(`<span>防 <b>${displayNumber(u.base.def)}</b></span>`);
+  rows.push(`<span>速 <b>${displayNumber(u.base.spd)}</b></span>`);
   if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${approx(trainingDamage(u.level,currentBattle()?.rules??V23_OVERFLOW_D20), 2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
   rows.push(`<span>${u.scale === 'hero' ? '生命' : u.body==='vehicle'?'载具数':'人数'} <b>${u.hp}/${u.base.hpMax}</b></span>`);
   if(u.combatModel&&u.scale!=='hero')rows.push(`<span>单个${u.body==='vehicle'?'载具':'成员'}最大生命 <b>${memberDurability(u)}</b></span>`);
   if (u.base.moraleMax !== undefined) rows.push(`<span>士气 <b>${u.base.moraleMax}</b></span>`);
   if (woundedLabel(u)) rows.push(`<span>${esc(woundedLabel(u))}</span>`);
-  if (u.rulesVersion === 'v2' && activeTraitIds(u).includes('regen')) rows.push(`<span>本次结算可再生 <b>${regenerationAmount(u, reg)}</b></span>`);
+  if (u.rulesVersion === 'v2' && activeTraitIds(u).includes('regen')) rows.push(`<span>本次结算可再生 <b>${displayNumber(regenerationAmount(u, reg))}</b></span>`);
   rows.push(`</div>`);
   rows.push(memberHealthPanel(u));
   if (u.combatModel && u.scale !== 'hero') rows.push('<details><summary>编队规则</summary><p>人数与成员耐久分别结算。参战规模随现员增长，地形与阵位限制展开；减员后火力同步下降。</p></details>');
@@ -1263,11 +1264,11 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
     // R15 重击：基础单段命中均值不低于同级能量盾的过载阈值。
     const overload = isArmsV2(u.armsModel) && segment >= energyOverloadThreshold(u.weapon.recipe?.power ?? u.weapon.level ?? 5) ? ' · 能让能量盾过载' : '';
     if(modern)rows.push(`<div class="eq"><b>武器</b> ${esc(u.weapon.name)} L${u.weapon.level??5}${esc(enhancementLabel(u.weapon.recipe?.bonuses))}：${esc(anchoredWeaponLabel(projected))}${overload} · 格子射程${gridWeaponRange(u.weapon,true,u.armsModel)}／会战${formationWeaponRange(u.weapon)}阵距${reload}</div>`);
-    else rows.push(`<div class="eq"><b>武器</b> ${esc(u.weapon.name)}：${esc(u.weapon.baseDice)}${u.weapon.apDice ? ` +破甲${esc(u.weapon.apDice)}` : ''}｜射程${u.rulesVersion === 'v2' ? gridWeaponRange(u.weapon, false) + '格／会战' + (u.weapon.range ?? 0) + '阵距' : u.weapon.range ?? 0}${atkTimes}${reload}${u.rulesVersion === 'v2' ? ' · 穿透' + (u.weapon.penetration ?? 0) + ' · ' + ({ kinetic: '动能', thermal: '热能', arcane: '奥术' })[u.weapon.channel ?? 'kinetic'] : u.weapon.tags?.length ? '｜' + esc(u.weapon.tags.join(',')) : ''}</div>`);
+    else rows.push(`<div class="eq"><b>武器</b> ${esc(u.weapon.name)}：${esc(u.weapon.baseDice)}${u.weapon.apDice ? ` +破甲${esc(u.weapon.apDice)}` : ''}｜射程${u.rulesVersion === 'v2' ? gridWeaponRange(u.weapon, false) + '格／会战' + (u.weapon.range ?? 0) + '阵距' : u.weapon.range ?? 0}${atkTimes}${reload}${u.rulesVersion === 'v2' ? ' · 穿透' + displayNumber(u.weapon.penetration ?? 0) + ' · ' + ({ kinetic: '动能', thermal: '热能', arcane: '奥术' })[u.weapon.channel ?? 'kinetic'] : u.weapon.tags?.length ? '｜' + esc(u.weapon.tags.join(',')) : ''}</div>`);
   }
   if (u.armor) {
     if (u.armor.protection) {
-      rows.push(`<div class="eq"><b>通道防护</b> L${u.armor.level??5}${esc(enhancementLabel(u.armor.recipe?.bonuses))} · 动能${protection('kinetic')} / 热能${protection('thermal')} / 奥术${protection('arcane')}${modern&&armorEffectLabel(u)?' · '+esc(armorEffectLabel(u)):''} · 负重${u.armor.load ?? 0}</div>`);
+      rows.push(`<div class="eq"><b>通道防护</b> L${u.armor.level??5}${esc(enhancementLabel(u.armor.recipe?.bonuses))} · 动能${displayNumber(protection('kinetic'))} / 热能${displayNumber(protection('thermal'))} / 奥术${displayNumber(protection('arcane'))}${modern&&armorEffectLabel(u)?' · '+esc(armorEffectLabel(u)):''} · 负重${displayNumber(u.armor.load ?? 0)}</div>`);
     } else {
     const tierNames = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
     // 实际减伤 = (基础档+特质档修正，封顶4档) 表值 × 护甲效率，最终封顶 90%
@@ -1281,7 +1282,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
     const gapHint = (u.armor.tier ?? 0) > 0
       ? `<span class="dim">｜等级差压制：武器每低于护甲 1 级再 +4% 减伤（合计封顶 90%）</span>`
       : '';
-    rows.push(`<div class="eq"><b>护甲</b> ${esc(u.armor.name)}：${tierNames[u.armor.tier] ?? u.armor.tier}档${u.armor.drScale && u.armor.drScale !== 1 ? `（效率×${u.armor.drScale}）` : ''}｜实际减伤 <b>${dr}%</b>${gapHint}${overflow ? '<span class="dim">（特质护甲加成超出4档上限，溢出无效）</span>' : ''}</div>`);
+    rows.push(`<div class="eq"><b>护甲</b> ${esc(u.armor.name)}：${tierNames[u.armor.tier] ?? u.armor.tier}档${u.armor.drScale && u.armor.drScale !== 1 ? `（效率×${displayNumber(u.armor.drScale)}）` : ''}｜实际减伤 <b>${dr}%</b>${gapHint}${overflow ? '<span class="dim">（特质护甲加成超出4档上限，溢出无效）</span>' : ''}</div>`);
     }
   }
   if (u.shield && u.rulesVersion === 'v2') rows.push(`<div class="eq"><b>盾</b> ${esc(u.shield.name ?? '盾牌')}${esc(enhancementLabel(u.shield.recipe?.bonuses))}：${esc(shieldDetail(u))}</div>`);
@@ -1292,25 +1293,25 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   // 技能
   if (u.abilities.length) {
     rows.push(`<b class="detail-label">技能</b>`);
-    rows.push(`<div class="detail-list">${u.abilities.map((a) => `<div><b>${esc(a.name)}</b> L${a.power??5}${esc(enhancementLabel(a.bonuses))}${a.desc && (u.rulesVersion !== 'v2' || a.effectVersion) ? ` <span class="dim">${esc(a.desc)}</span>` : ''}<div class="sub">${abilityEffectLabel(a, u).map(esc).join('；')}</div>${u.rulesVersion === 'v2' ? '<span class="dim"> · 已学 · ' + esc(abilityUsabilityReason(u, a) ?? '已准备可用') + (a.cost ? ' · ' + esc(resourceLabel(a.cost.resource)) + ' ' + abilityCost(u, a)!.amount : '') + '</span>' : ''}</div>`).join('')}</div>`);
+    rows.push(`<div class="detail-list">${u.abilities.map((a) => `<div><b>${esc(a.name)}</b> L${a.power??5}${esc(enhancementLabel(a.bonuses))}${a.desc && (u.rulesVersion !== 'v2' || a.effectVersion) ? ` <span class="dim">${esc(a.desc)}</span>` : ''}<div class="sub">${abilityEffectLabel(a, u).map(esc).join('；')}</div>${u.rulesVersion === 'v2' ? '<span class="dim"> · 已学 · ' + esc(abilityUsabilityReason(u, a) ?? '已准备可用') + (a.cost ? ' · ' + esc(resourceLabel(a.cost.resource)) + ' ' + displayNumber(abilityCost(u, a)!.amount) : '') + '</span>' : ''}</div>`).join('')}</div>`);
   }
-  if (u.barrier) rows.push('<p class="sub">屏障 '+u.barrier.remaining+' 点 · 剩余 '+u.barrier.duration+' 轮</p>');
+  if (u.barrier) rows.push('<p class="sub">屏障 '+displayNumber(u.barrier.remaining)+' 点 · 剩余 '+u.barrier.duration+' 轮</p>');
   if (u.weapon?.recipe?.stabilized) rows.push('<div class="sub">车载行进稳定 · 移动射击免罚 · 仍须装填且可能遭近战借机</div>');
   if (u.rulesVersion === 'v2') rows.push(`<div class="sub">${esc(equipmentLoadLabel(u))}</div>`);
-  if (u.rulesVersion === 'v2' && u.body && u.body !== 'human') rows.push(`<div class="sub">${({ large: '大型身体', giant: '巨型身体', vehicle: '车辆平台' })[u.body]}${u.armor?.protection ? '' : ' · 有效防护 ' + protection('kinetic') + '/' + protection('thermal') + '/' + protection('arcane') + '（动能/热能/奥术）'} · 负重容量${BODY[u.body].capacity}</div>`);
+  if (u.rulesVersion === 'v2' && u.body && u.body !== 'human') rows.push(`<div class="sub">${({ large: '大型身体', giant: '巨型身体', vehicle: '车辆平台' })[u.body]}${u.armor?.protection ? '' : ' · 有效防护 ' + displayNumber(protection('kinetic')) + '/' + displayNumber(protection('thermal')) + '/' + displayNumber(protection('arcane')) + '（动能/热能/奥术）'} · 负重容量${BODY[u.body].capacity}</div>`);
   if (looseFormation(u)) rows.push('<div class="sub">疏散队形 · 未接敌时范围暴露减半 · 近战展开减半、防御降低1；固守后收拢</div>');
   if (u.rulesVersion === 'v2') rows.push('<div class="sub">移动 ' + movementLabel(u, plannedFieldTags()) + ' · 基础速度' + (u.speedTier ?? BODY[u.body ?? 'human'].movement) + '档 · 精力 ' + approx(u.resources.SP ?? 0, 1, 'down') + '/' + spCapacity(u) + (u.resourceModel ? ' · 自然恢复 ' + approx(spRecovery({ ...u, status: 'ready', resources: { ...u.resources, SP: 0 } })) + '/轮 · 空过休整恢复×3 · 疲劳 ' + approx(u.fatigue, 1, 'down') + '/' + fatigueLimit(u) : '') + '</div>');
   if(u.combatModel&&u.scale==='hero'&&u.moraleState?.damagePenalty)rows.push('<p class="sub">累计受创压力 '+u.moraleState.damagePenalty+'，影响本场士气；不溃能力免疫惊退。</p>');
   if (u.mount) rows.push('<div class="sub">骑乘 · 占格更大 · 机动提高</div>');
   for (const gear of [u.weapon, u.sidearm, u.shield]) if (gear?.recipe && gear.name) { const hint = classMismatchHint(gear.name, gear.recipe.mechanism); if (hint) rows.push('<div class="sub">' + esc(hint) + '</div>'); if (gear.recipe.variance) rows.push('<div class="sub">' + esc(gear.name + ' · ' + instanceVarianceLabel(gear.recipe.variance)) + '</div>'); }
-  if (u.weapon?.recipe) rows.push(`<details><summary>装备属性</summary><div class="sub">训练${u.level} · 装备等级${u.weapon.recipe.power}${esc(enhancementLabel(u.weapon.recipe.bonuses))} · 体型${({human:'普通人形',large:'大型生物',giant:'巨型生物',vehicle:'车辆'})[u.body??'human']} · 品质${u.weapon.recipe.quality} · ${esc(WEAPON_CLASSES[u.weapon.recipe.mechanism]?.name ?? u.weapon.recipe.mechanism)} · 穿透${modern?anchoredWeapon(u.weapon,u.cannonAmmo,u.damageModel)?.penetration:u.weapon.penetration} · 物品编号 ${esc(u.weapon.id)}</div></details>`);
+  if (u.weapon?.recipe) rows.push(`<details><summary>装备属性</summary><div class="sub">训练${u.level} · 装备等级${u.weapon.recipe.power}${esc(enhancementLabel(u.weapon.recipe.bonuses))} · 体型${({human:'普通人形',large:'大型生物',giant:'巨型生物',vehicle:'车辆'})[u.body??'human']} · 品质${u.weapon.recipe.quality} · ${esc(WEAPON_CLASSES[u.weapon.recipe.mechanism]?.name ?? u.weapon.recipe.mechanism)} · 穿透${displayNumber((modern?anchoredWeapon(u.weapon,u.cannonAmmo,u.damageModel)?.penetration:u.weapon.penetration)??0)} · 物品编号 ${esc(u.weapon.id)}</div></details>`);
   if (u.generationWarnings?.length) rows.push(`<details><summary>生成说明</summary><div class="sub">${u.generationWarnings.map(esc).join('；')}</div></details>`);
 
   // 特质
   const equipmentTraits = equipmentTraitIds(u);
   if (equipmentTraits.length) rows.push(`<div class="eq" data-role="equipment-traits"><b>装备自动特质</b> ${equipmentTraits.map(id => esc(autoTraitLabel(id))).join('、')} · 来自${esc(equipmentTraits.includes('loose-formation') && !equipmentTraits.some(id => id !== 'loose-formation') ? u.weapon?.name ?? '主武器' : u.armor?.name ?? '护甲')}</div>`);
   const traitAdjustments = Object.entries(traitStatAdjustments(u, reg));
-  if (traitAdjustments.length) rows.push(`<div class="eq"><b>当前特质修正</b> ${traitAdjustments.map(([key, value]) => `${({ atk: '攻击', def: '防御', spd: '先攻速度', morale: '士气' } as Record<string, string>)[key]}${value > 0 ? '+' : ''}${value}`).join(' · ')}</div>`);
+  if (traitAdjustments.length) rows.push(`<div class="eq"><b>当前特质修正</b> ${traitAdjustments.map(([key, value]) => `${({ atk: '攻击', def: '防御', spd: '先攻速度', morale: '士气' } as Record<string, string>)[key]}${value > 0 ? '+' : ''}${displayNumber(value)}`).join(' · ')}</div>`);
   if (activeTraitIds(u).length) {
     // 前提不满足的特质照常列出，但标明未生效及原因（如个体写了骑射却没有坐骑）。
     const currentWeapon = anchoredWeapon(u.weapon, u.cannonAmmo, u.damageModel) ?? u.weapon;
@@ -1322,7 +1323,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
     const names = active.map((id) => shown(id) + (inactive(id) ? '（未生效）' : '')).join('、');
     rows.push(`<div class="eq"><b>特质</b> ${esc(names)}</div>`);
     // 已完成分级的特质按各自规则门控显示累计效果。
-    const effect = (id: string, trait: Trait) => gradedTraitEnabled(u, id) ? traitLadderSummary(id, traitLevel(u, id, active), u.traitLevelModel).replace(/^L\d+：/, '') + (id === 'ap-weapon' ? `；当前主武器实际穿透+${penetrationBonus()}` : '') : traitDescription(trait, u);
+    const effect = (id: string, trait: Trait) => gradedTraitEnabled(u, id) ? traitLadderSummary(id, traitLevel(u, id, active), u.traitLevelModel).replace(/^L\d+：/, '') + (id === 'ap-weapon' ? `；当前主武器实际穿透+${displayNumber(penetrationBonus())}` : '') : traitDescription(trait, u);
     rows.push(`<details><summary>特质效果</summary>${active.map((id) => { const trait = reg.get(id), reason = inactive(id); return `<div>${esc(shown(id))}：${reason ? `<b>未生效：${esc(reason)}</b>。` : ''}${esc(trait ? effect(id, trait) : '未知定义')}${gradedTraitEnabled(u, id) ? '<small> · 等级来源：' + traitLevelSources(u, id).map(s => esc(s.name) + ' L' + s.level + (s.remaining === undefined ? '' : '（剩' + s.remaining + '轮）') + (s.level < traitLevel(u, id, active) ? '，被较高等级覆盖' : '')).join('；') + '</small>' : ''}</div>`; }).join('')}</details>`);
   }
   if (u.traitSources?.length) {
@@ -1651,7 +1652,7 @@ function logDetailHtml(e: BattleLogEntry): string {
     ? `d20[${r.attackRoll.kept.join(',')}]${r.crit ? ' 暴击!' : ''}${r.netAtk >= 0 ? '+' : ''}${r.netAtk}=${r.attackRoll.total + r.netAtk} vs 防御${r.targetDef}`
     : `命中率${Math.round((r.hitChance ?? 0) * 100)}%`;
   lines.push(`${head}：${rollPart} —— <b class="hit">命中</b>`);
-  lines.push(`<span class="dim">净攻${r.netAtk}｜目标防${r.targetDef}${r.drPercent ? `｜护甲减伤${Number(r.drPercent.toFixed(1))}%` : ''}${r.dmgMult !== 1 ? `｜攻倍×${Number(r.dmgMult.toFixed(3))}` : ''}${r.wardMult !== 1 ? `｜守护×${Number(r.wardMult.toFixed(3))}` : ''}</span>`);
+  lines.push(`<span class="dim">净攻${r.netAtk}｜目标防${r.targetDef}${r.drPercent ? `｜护甲减伤${Number(r.drPercent.toFixed(1))}%` : ''}${r.dmgMult !== 1 ? `｜攻倍×${Number(r.dmgMult.toFixed(2))}` : ''}${r.wardMult !== 1 ? `｜守护×${Number(r.wardMult.toFixed(2))}` : ''}</span>`);
   if(r.overmatchMultiplier!==undefined)lines.push(`<span class="dim">${({kinetic:'动能',thermal:'热能',arcane:'奥术'})[r.channel??'kinetic']} · 穿透${Number((r.penetration??0).toFixed(2))}／防护${Number((r.resistance??0).toFixed(2))} · ${r.penetrationFactor===0?'未穿透':r.overmatchMultiplier>1?'跨代压倒':'正常结算'}${r.overmatchMultiplier>1?' · 毁伤×'+Number(r.overmatchMultiplier.toFixed(2))+'（已计入攻倍）':''}</span>`);
   if (r.baseRoll) lines.push(`<span class="dim">普通段 ${r.baseRoll.rolls.join('+')}${r.baseRoll.flat ? '+' + r.baseRoll.flat : ''} → 减伤后 ${r.baseAfterDR}</span>`);
   if (r.apRoll || r.apTotal > 0) lines.push(`<span class="dim">破甲段 ${r.apTotal}</span>`);
@@ -1780,17 +1781,17 @@ function abilityEffectLabel(a: Ability, target: Combatant): string[] {
   return a.effects.map((e) => {
     switch (e.op) {
       case 'damage': if (a.damageBasis) return `${a.damageBasis === 'shield' ? '以盾牌' : '以所持武器'}出手${e.shape === 'burst' ? '（范围）' : ''}`; return `伤害约${Math.round((diceAvg(e.baseDice) + (e.apDice ? diceAvg(e.apDice) : 0)) * (a.damageScale ?? 1))}${e.shape === 'burst' ? '（范围）' : ''}`;
-      case 'trait': return `获得${reg.get(e.traitId)?.name ?? e.traitId}，持续${e.dur}轮`;
+      case 'trait': return `获得${reg.get(e.traitId)?.name ?? e.traitId}，持续${displayNumber(e.dur)}轮`;
       case 'zone': return zoneEffectDescription(e);
       case 'move': return moveEffectDescription(e, a);
-      case 'barrier': return `屏障吸收${e.amount}点伤害，持续${e.dur}轮`;
+      case 'barrier': return `屏障吸收${displayNumber(e.amount)}点伤害，持续${displayNumber(e.dur)}轮`;
       case 'heal': return `恢复${e.amount !== undefined ? Math.round(e.amount) : e.dice}生命`;
-      case 'condition': return `${e.onDamage ? '造成损伤后' : e.onHit ? '命中后' : ''}${standardConditionMap().get(e.conditionId)?.name ?? e.conditionId}：${skillConditionDescription(e, target)}，${e.dur}轮${e.saveDC ? '，抵抗难度' + e.saveDC : ''}`;
+      case 'condition': return `${e.onDamage ? '造成损伤后' : e.onHit ? '命中后' : ''}${standardConditionMap().get(e.conditionId)?.name ?? e.conditionId}：${skillConditionDescription(e, target)}，${displayNumber(e.dur)}轮${e.saveDC ? '，抵抗难度' + e.saveDC : ''}`;
       case 'push': return `${e.onHit ? '命中后' : ''}${e.direction === 'towards' ? '拉近' : '推开'}目标1格`;
-      case 'dispel': return `解除${e.count}项${e.polarity === 'negative' ? '负面' : '有益'}效果`;
-      case 'resource': return `${resourceLabel(e.resource)}变化： ${e.amount >= 0 ? '+' : ''}${e.amount}`;
-      case 'morale': return `士气 ${e.amount >= 0 ? '+' : ''}${e.amount}`;
-      case 'summon': return /^conjured:(10|[1-9])$/.test(e.templateId) ? `召唤临时造物 L${e.templateId.split(':')[1]} ×${e.count}，下一轮行动` : `召唤：${e.templateId} ×${e.count}`;
+      case 'dispel': return `解除${displayNumber(e.count)}项${e.polarity === 'negative' ? '负面' : '有益'}效果`;
+      case 'resource': return `${resourceLabel(e.resource)}变化： ${e.amount >= 0 ? '+' : ''}${displayNumber(e.amount)}`;
+      case 'morale': return `士气 ${e.amount >= 0 ? '+' : ''}${displayNumber(e.amount)}`;
+      case 'summon': return /^conjured:(10|[1-9])$/.test(e.templateId) ? `召唤临时造物 L${e.templateId.split(':')[1]} ×${displayNumber(e.count)}，下一轮行动` : `召唤：${e.templateId} ×${displayNumber(e.count)}`;
     }
   });
 }
@@ -2048,13 +2049,13 @@ function buildContextInject(): string {
   const hero = protagonistUnit();
   if (hero) {
     const prog = xpProgress(hero);
-    const xpS = prog ? `本级${xpText(prog.current, 'down')}/${prog.next}，累计${xpText(hero.xp ?? 0, 'down')}` : `${xpText(hero.xp ?? 0, 'down')}（满级）`;
+    const xpS = prog ? `本级${xpText(prog.current, 'down')}/${prog.next}` : '已满级';
     const eq: string[] = [];
     if (hero.weapon) eq.push(`武器：${hero.weapon.name}(${hero.weapon.baseDice}${hero.weapon.apDice ? '+破甲' + hero.weapon.apDice : ''})`);
     if (hero.armor) eq.push(`护甲：${hero.armor.name}(${hero.armor.tier}档)`);
     if (hero.gear?.length) eq.push(`佩戴：${hero.gear.map((g) => g.name).join('、')}`);
     lines.push(`【战阵·角色状态】name=${hero.name}（等级${hero.level}）`);
-    lines.push(`属性：攻${hero.base.atk}/防${hero.base.def}/速${hero.base.spd}/生命${hero.hp}/${hero.base.hpMax}｜经验 ${xpS}`);
+    lines.push(`属性：攻${hero.base.atk}/防${hero.base.def}/速${hero.base.spd}/生命${hero.hp}/${hero.base.hpMax}｜经验 ${xpS}｜该单位士气锁定，请勿在tb修改`);
     if (eq.length) lines.push(`装备：${eq.join('；')}`);
     if (hero.traits.length) lines.push(`特质：${hero.traits.map((id) => reg.get(id)?.name ?? id).join('、')}`);
   } else {

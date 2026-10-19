@@ -15,7 +15,7 @@ describe('升级曲线与旧档进度', () => {
     }
     expect(XP_LEVEL_COSTS[8]! / curveAt(9).xp).toBe(28);
     expect(u.xp).toBe(XP_THRESHOLDS.at(-1)); expect(u.level).toBe(10); expect(xpProgress(u)).toBeNull();
-    expect(u.weapon).toEqual(equipment); expect(u.hp).toBe(200);
+    expect(u.weapon).toEqual(equipment); expect(u.hp).toBe(u.base.hpMax);
     applyXp(u, 10, registry); expect(u.level).toBe(10);
   });
   it('旧训练5/9的半级进度及累计XP保留，读取不改状态，档案往返不重复换算', () => {

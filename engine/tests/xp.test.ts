@@ -165,14 +165,14 @@ describe('经验入账与升级', () => {
     expect({ weapon: u.weapon, sidearm: u.sidearm, armor: u.armor, abilities: u.abilities }).toEqual(equipment);
   });
 
-  it('英雄生命成长保留自定义生命上限偏移且不会治疗；升级不重写武器', () => {
+  it('英雄生命成长保留自定义生命上限偏移并补满生命；升级不重写武器', () => {
     const u = hero('受伤英雄');
     const originalMax = u.base.hpMax;
     u.base.hpMax = 40;
     u.hp = 18;
     const weapon = structuredClone(u.weapon);
     applyXp(u, XP_THRESHOLDS[1]!, reg);
-    expect(u.hp).toBe(18);
+    expect(u.hp).toBe(u.base.hpMax);
     expect(u.base.hpMax).toBe(40 + CURVES[1]!.hp - (originalMax - 4));
     expect(u.weapon).toEqual(weapon);
   });

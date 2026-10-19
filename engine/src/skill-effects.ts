@@ -1,3 +1,4 @@
+import { displayNumber } from './display-number.js';
 import { progression } from './progression.js';
 import { armorTransmission } from './power-anchors.js';
 import { combatHostile, combatSide } from './battle-control.js';
@@ -213,7 +214,7 @@ export function skillEffectLines(context: ObservationContext, actor: Combatant, 
     if (effect.op === 'move') return effect.mode === 'withdraw' ? [moveEffectDescription(effect, ability)] : [];
     if (effect.op === 'barrier') { const grade = barrierGradeMultiplier(target, effect.defensePower ?? ability.power); return [`屏障吸收${Math.max(1, Math.round(effect.amount * grade))}点伤害，持续${effect.dur}轮`]; }
     if (effect.op === 'trait') { const grant = skillTraitGrant(target, ability, effect); return [skillTraitReason(target, effect, ability) ?? `获得${traitRegistry().get(grant.id)?.name}${grant.level === undefined ? '' : 'L' + grant.level}，持续${effect.dur}轮`]; }
-    if (effect.op === 'resource') return [`${effect.resource==='SP'?'精力':effect.resource}${skillResourceChange(target, effect)}`];
+    if (effect.op === 'resource') return [`${effect.resource==='SP'?'精力':effect.resource}${displayNumber(skillResourceChange(target, effect))}`];
     if (effect.op === 'condition') return [`${effect.onDamage ? '造成损伤后' : effect.onHit ? '命中后' : ''}${definitions.get(effect.conditionId)?.name ?? effect.conditionId}：${skillConditionDescription(effect, target)}，${Math.round(conditionChance(target, effect) * 100)}%生效，${effect.dur}轮`];
     if (effect.op === 'push') { const pushed = pushPreview(context, actor, target, effect); return [(effect.onHit ? '命中后' : '') + (pushed.reason ?? (effect.direction === 'towards' ? '拉至' : '推至') + pushed.label)]; }
     if (effect.op === 'dispel') { const entries = dispelCandidates(target, effect); return [entries.length ? '解除' + entries.map((e) => e.name).join('、') : '没有可解除的效果']; }

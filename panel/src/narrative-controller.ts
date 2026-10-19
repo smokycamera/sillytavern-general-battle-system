@@ -86,6 +86,8 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
   for (const record of records) {
     const live = combatants.find((c) => c.id === record.id);
     const unit = live ?? record.snapshot;
+    const progress = xpProgress({ level: record.level, xp: record.xp ?? 0, xpCurve: unit?.xpCurve, xpLevelStart: unit?.xpLevelStart });
+    const moraleLocked = record.scale === 'hero' || record.id === save.protagonistId || unit?.moraleLocked === true;
     const physical = live && positionedUnit(observation, live);
     const effects = unit?.traitSources?.filter((s) => traitSourceActive(unit, s)).map((s) => ({ source: s.id, name: s.name,
       ...(s.traitIds.length ? { traits: s.traitIds.map((id) => (traitRegistry().get(id)?.name ?? id) + (s.traitLevels?.[id] ? 'L' + s.traitLevels[id] : '')) } : {}),
@@ -93,12 +95,13 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
       duration: s.duration.kind, remaining: s.remaining }));
     const traitEffects = unit ? activeTraitIds(unit).filter(id => gradedTraitEnabled(unit, id)).map(id => ({ trait: id, level: traitLevel(unit, id), ...(detailed ? { effect: traitLadderSummary(id, traitLevel(unit, id)), sources: traitLevelSources(unit, id), inactive: traitPrerequisiteReason(unit, id) } : {}) })) : [];
     const line = promptJson({ ...(traitEffects.length ? { traitEffects } : {}), id: record.id, name: record.name, side: record.side, training:record.level, bonuses:unit?.bonuses,
-      ...(!battleOpen ? { level:record.level,xp:record.xp ?? 0,xpProgress:unit?xpProgress(unit)?.current:undefined,base:record.base,morale:record.id===save.protagonistId?(record.base.moraleMax??100):record.morale,status:record.status,retired:record.retired,resources:unit?.resources,traits:unit?.traits.map((id) => traitLevelToken(id, unit.traitLevels?.[id])),speedTier:unit?.speedTier,conditions:record.conditions,preparedAbilityIds:unit?.preparedAbilityIds } : {}),
-      ...(record.id===save.protagonistId?{moraleLocked:true}:{}),
+      ...(!battleOpen ? { level:record.level,base:{...record.base,...(moraleLocked?{moraleMax:undefined}:{})},morale:record.morale,status:record.status,retired:record.retired,resources:unit?.resources,traits:unit?.traits.map((id) => traitLevelToken(id, unit.traitLevels?.[id])),speedTier:unit?.speedTier,conditions:record.conditions,preparedAbilityIds:unit?.preparedAbilityIds } : {}),
+      ...(progress ? { xpProgress: progress.current, xpRequired: progress.next } : { xpProgress: '已满级' }),
       semantics: record.scale === 'hero' ? '生命' : unit?.body==='vehicle'?'载具数量':'人数', hp: live?.hp ?? record.hp, hpMax: live?.base.hpMax ?? record.base.hpMax,
       // Wound groups are engine bookkeeping: the chat model gets a readable summary, never raw {hp,count} records to echo or rewrite.
       ...(unit&&hasMemberHealth(unit)?{memberHpMax:unit.formation!.memberHp,totalLife:memberHealth(unit),totalLifeMax:memberHealthMax(unit),memberHealth:memberHealthSummary(unit,4)}:{}),
       ...(live && live.rulesVersion === 'v2' && moraleLabel({ ...observation, units: combatants.filter((u) => visible.has(u.id)) }, live) ? { morale: moraleLabel({ ...observation, units: combatants.filter((u) => visible.has(u.id)) }, live) } : {}),
+      ...(moraleLocked ? { morale: '该单位士气锁定，请勿在tb修改', moraleLocked: true } : {}),
       ...(woundedLabel(live ?? record) ? { recovery: woundedLabel(live ?? record) } : {}),
       state: record.retired ? '已解散，不可选择' : ({ ready: '可行动', dying: '倒地失去战斗力（尚未死亡，不代表持续濒死；恢复以最新生命和状态为准）', dead: '死亡', routing: '溃退中，尚未离场', fled: '已撤离战场' }[live?.status ?? record.status ?? 'ready']),
       ...(physical?.airborne !== undefined ? { layer: isAirborne(physical) ? '空中' : '地面' } : {}),

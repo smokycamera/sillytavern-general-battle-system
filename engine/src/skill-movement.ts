@@ -1,3 +1,4 @@
+import { displayNumber } from './display-number.js';
 import { equipmentBurden } from './equipment-load.js';
 /**
  * 技能自带的施术者位移（突进 / 闪现 / 后撤）。
@@ -47,7 +48,7 @@ export function massMoveReach(effect: MoveEffect): number {
 }
 /** 技能说明：只有位移的技能写“移动到落点”；以实际近战武器出手的突进才提冲锋。 */
 export function moveEffectDescription(effect: MoveEffect, ability: Pick<Ability, 'effects' | 'damageBasis' | 'weaponUse'>): string {
-  const movementOnly = movementOnlySkill(ability), cells = `至多${effect.reach}格`;
+  const movementOnly = movementOnlySkill(ability), cells = `至多${displayNumber(effect.reach)}格`;
   const melee = ability.damageBasis === 'weapon' && ability.weaponUse !== 'ranged';
   if (effect.mode === 'dash') return (movementOnly ? '突进' : '出手前突进') + cells + (melee ? '，接敌按冲锋结算' : '');
   if (effect.mode === 'blink') return (movementOnly ? '闪现' : '出手前闪现') + cells + '，不触发反应';

@@ -1,3 +1,4 @@
+import { displayNumber } from './display-number.js';
 /** Frozen generation variation, separate from combat dice and deployment RNG. */
 import { SeededRng } from './rng.js';
 import { bonusMultiplier, bonusRating, BONUS_NAMES, type BonusStat, type Enhancements } from './enhancements.js';
@@ -52,7 +53,7 @@ export function instanceVarianceLabel(variance?: InstanceVariance): string {
   }).join('，') + '）';
   return '固定浮动：' + Object.keys(variance.rolls).map(key => {
     const stat = key as VarianceStat, offset = instanceOffset(variance, stat);
-    return `${BONUS_NAMES[stat as BonusStat]}${offset > 0 ? '+' : ''}${offset}档`;
+    return `${BONUS_NAMES[stat as BonusStat]}${offset > 0 ? '+' : ''}${displayNumber(offset)}档`;
   }).join(' / ');
 }
 

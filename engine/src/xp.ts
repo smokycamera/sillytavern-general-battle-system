@@ -111,7 +111,8 @@ export interface LevelUpResult {
 
 /** 纯读取：旧档按本级完成比例投影到新曲线，既不降级，也不改累计XP。
  *  直接建档的高训练单位可能从0XP开始，此时旧门槛的起点按0处理。 */
-function levelXpStart(unit: Combatant): number {
+type XpProgressUnit = Pick<Combatant, 'level' | 'xp' | 'xpCurve' | 'xpLevelStart'>;
+function levelXpStart(unit: XpProgressUnit): number {
   const total = unit.xp ?? 0;
   if (unit.xpCurve === 'effort-v1') return unit.xpLevelStart ?? total;
   if (unit.level >= MAX_TRAINING_LEVEL) return total;
@@ -135,19 +136,26 @@ export function applyXp(unit: Combatant, amount: number, registry?: Map<string, 
     unit.level += 1;
     levels += 1;
   }
-  if (levels > 0) recomputeFromCurve(unit, from, registry);
+  if (levels > 0) {
+    recomputeFromCurve(unit, from, registry);
+    // 升级恢复现存个体/成员的生命，不补员，也不复活永久伤亡。
+    if (unit.hp > 0 && unit.status !== 'dead') {
+      if (unit.scale === 'hero') unit.hp = unit.base.hpMax;
+      else if (unit.formation?.health) unit.formation.health = [{ hp: unit.formation.memberHp, count: unit.formation.members }];
+    }
+  }
   return { levelsGained: levels, fromLevel: from, toLevel: unit.level };
 }
 
 /** 本级已完成经验/本级所需经验；进度条从每级起点开始，满级返回null。 */
-export function xpProgress(unit: Combatant): { current: number; next: number } | null {
+export function xpProgress(unit: XpProgressUnit): { current: number; next: number } | null {
   if (unit.level >= MAX_TRAINING_LEVEL) return null;
   return { current: preciseXp((unit.xp ?? 0) - levelXpStart(unit)), next: XP_LEVEL_COSTS[unit.level - 1]! };
 }
 
 /**
  * 训练只更新人物属性；装备与能力实例不参与成长重算。
- * 群体编制不增长。V2英雄保留剧情生命上限，仅在等级标准更高时上调，不治疗。
+ * 群体编制不增长。V2英雄保留剧情生命上限，仅在等级标准更高时上调；升级治疗在重算后统一处理。
  */
 function recomputeFromCurve(unit: Combatant, fromLevel: number, registry?: Map<string, Trait>): void {
   const curve = curveAt(unit.level, unit.damageModel);

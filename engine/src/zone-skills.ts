@@ -1,3 +1,4 @@
+import { displayNumber } from './display-number.js';
 import { compileGenericSkill } from './gen/generic-skills.js';
 import type { Ability, EffectOp, Combatant } from './types.js';
 import { bonusMultiplier, bonusRating, bonusSteps, bonusPoints } from './enhancements.js';
@@ -91,11 +92,11 @@ export function upgradeZoneSkill(ability: Ability, model?: Combatant['damageMode
 export function zoneEffectDescription(effect: ZoneEffect): string {
   const names: Record<string,string> = {heal:'治疗',trait:'授予特质',barrier:'屏障',dispel:'驱散/净化',resource:'精力变化',morale:'士气变化',push:'位移'};
   const additions = effect.effects?.map(e => e.op === 'condition' ? (standardConditionMap().get(e.conditionId)?.name ?? e.conditionId) : names[e.op]).join('、');
-  const area = `半径${effect.radius}格，持续${effect.dur}轮${additions ? '，附加'+additions : ''}`;
+  const area = `半径${displayNumber(effect.radius)}格，持续${displayNumber(effect.dur)}轮${additions ? '，附加'+additions : ''}`;
   if (effect.kind === 'smoke') return `烟幕：${area}，遮挡视线`;
   const amount = zoneAmount(effect);
-  if (effect.kind === 'healing') return `治疗区域：${area}，每轮恢复${amount}生命`;
+  if (effect.kind === 'healing') return `治疗区域：${area}，每轮恢复${displayNumber(amount)}生命`;
   const penetration = effect.kind === 'poison' ? '' : `（${effect.kind === 'fire' ? '热能' : '动能'}穿透${Number(zonePenetration(effect).toFixed(2))}）`;
-  return `${effect.kind === 'fire' ? '火墙' : effect.kind === 'poison' ? '毒雾' : '陷阱'}：${area}，每轮伤害${amount}${penetration}`
+  return `${effect.kind === 'fire' ? '火墙' : effect.kind === 'poison' ? '毒雾' : '陷阱'}：${area}，每轮伤害${displayNumber(amount)}${penetration}`
     + (effect.kind === 'trap' ? '，敌方触发一次后消失' : '，也会伤害友军');
 }
