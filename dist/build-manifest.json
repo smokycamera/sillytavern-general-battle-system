@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "2.5.0",
-  "builtAt": "2026-10-18T19:49:58.673Z",
-  "sourceFingerprint": "dfe3820ea78b61b604f9d8adc467fa7f7e03173f6272190698ea07c9a2482cc2",
+  "builtAt": "2026-10-19T02:00:31.222Z",
+  "sourceFingerprint": "0c6a899e53dd621f8a1ce4fe7ea41e3cff1406de0048a0c6057dfd685d7b7f45",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -31,19 +31,19 @@
       "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     },
     {
-      "path": "dist/assets/panel-B6qjwXwC.js",
-      "bytes": 1358801,
-      "sha256": "268a20e6498b6f7e2d9982574633222486d1028c6941786a6edd8778d418ca7d"
-    },
-    {
       "path": "dist/assets/panel-Ca2W74WV.css",
       "bytes": 30823,
       "sha256": "29ecf3e6233e4d9abd64b009985079574db4a000c56e3f1aa8964e4994bae412"
     },
     {
-      "path": "dist/assets/preferences-CQhH1Zlx.js",
-      "bytes": 928898,
-      "sha256": "f5119c051452fc8d75a4c6d4a1d9a414111e54dba85734739bb3c13f114e7246"
+      "path": "dist/assets/panel-DlE0rZJd.js",
+      "bytes": 1358853,
+      "sha256": "fa2ccb90b4703a7ad4fa79b00dc1665ace07765c3cd849328d174d0a44e08c92"
+    },
+    {
+      "path": "dist/assets/preferences-BR_OkVbs.js",
+      "bytes": 928966,
+      "sha256": "038bf893516afad63d234969f55fd6abb96a1792b2b944b2df4b38955c8bdc90"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -247,8 +247,8 @@
     },
     {
       "path": "dist/index.js",
-      "bytes": 92312,
-      "sha256": "b476629a8bd5bf83187b016aa3ed5d456bb32e7f515d8ef3dde77b5b84ed320d"
+      "bytes": 95743,
+      "sha256": "86aed432973e67df8a56df2359502a602376ce752510acc3b45c7dd0e80f2ade"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -313,7 +313,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 46806,
-      "sha256": "d247deeae8ee55a71461f8f8e5751fadf936aac62c320685c225fa47ecb47b82"
+      "sha256": "3cb0efec4582ef7ca81b90eb267f6cf64f68ff83ce9461f6ea80ff4a0a83b96c"
     },
     {
       "path": "release/current-baseline.json",
