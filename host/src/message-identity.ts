@@ -18,6 +18,15 @@ export function matchesMessageFingerprint(message: HostMessage, fingerprint: str
     return JSON.stringify(saved) === messageFingerprint(message);
   } catch { return false; }
 }
+/** Both fingerprints describe one message and swipe (role, swipe, send date, completion), whatever its text. */
+export function sameMessageApartFromText(a: string, b: string): boolean {
+  try {
+    const [left, right] = [a, b].map(value => JSON.parse(value) as unknown);
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== 6 || right.length !== 6) return false;
+    for (const fields of [left, right]) { fields[2] = null; fields[5] = !!fields[5]; }
+    return JSON.stringify(left) === JSON.stringify(right);
+  } catch { return false; }
+}
 export class SourceMessageChangedError extends Error {
   constructor() { super('来源消息已编辑、移动或删除，请重新扫描'); this.name = 'SourceMessageChangedError'; }
 }

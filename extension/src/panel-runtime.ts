@@ -2,7 +2,7 @@ import type { PanelController } from '../../panel/src/controller-port.js';
 import type { PanelRuntime, WorldbookEditorState, WorldbookEditorUpdate } from '../../panel/src/panel-runtime.js';
 import type { SaveReceipt, TavernAdapter } from '../../panel/src/tavern.js';
 import type { PersistReceipt } from '../../host/src/contracts.js';
-import { sameSession } from '../../host/src/contracts.js';
+import { sameChat } from '../../host/src/contracts.js';
 import { NativeMessages } from '../../host/src/messages.js';
 import type { BattleService } from '../../runtime/src/battle-service.js';
 import { preferences } from './preferences.js';
@@ -29,7 +29,7 @@ export function createPanelRuntime(): PanelRuntime {
   let panelCommit = 0;
   const convert = async (action: Promise<PersistReceipt>) => {
     const receipt = await action;
-    if (!sameSession(receipt.session, host.session())) throw Error('聊天已切换，旧面板操作已停止');
+    if (!sameChat(receipt.session, host.session())) throw Error('聊天已切换，旧面板操作已停止');
     return legacyReceipt(receipt);
   };
   const controller: PanelController = {
@@ -79,6 +79,7 @@ export function createPanelRuntime(): PanelRuntime {
     retryGeneration: deliveryId => messages.retryGeneration(deliveryId),
     canWrite: () => service.canWrite(),
     writeBlockReason: () => service.writeBlockReason(),
+    saving: () => service.saving(),
     reloadArchive: () => service.load(),
     retrySave: async () => service.store.pendingOperation() ? convert(service.retry()) : (await controller.persistPanel(service.snapshot(), service.snapshot().factRevision ?? 0)).receipt,
   };

@@ -126,6 +126,57 @@ it('combined verification reads once and rejects changed or duplicate persisted 
   await f.context.saveChat!();
   expect((await f.host.readPersistedWithEffects(session.scope, { messageTags: [tag] })).effectsVerified).toBe(false);
 });
+// Long chats: TauriTavern reads the header and a page of the newest lines, never the whole chat.
+function tauriFile(f: ReturnType<typeof fixture>) {
+  let file: unknown[] = [{ chat_metadata: {} }];
+  f.context.saveChat = vi.fn(async () => { file = structuredClone([{ chat_metadata: f.context.chatMetadata }, ...f.context.chat!]); });
+  f.context.saveMetadata = vi.fn(async () => { file = [{ chat_metadata: structuredClone(f.context.chatMetadata) }, ...file.slice(1)]; });
+  const tail = vi.fn(async ({ limit }: { limit: number }) => ({ messages: structuredClone(file.slice(1).slice(-limit)) }));
+  const get = vi.fn(async () => structuredClone((file[0] as { chat_metadata: unknown }).chat_metadata));
+  Object.assign(f.window, { __TAURITAVERN__: { api: { chat: { open: () => ({ metadata: { get }, history: { tail } }) } } } });
+  f.request.mockImplementation(async () => new Response(JSON.stringify(file)));
+  return { tail, get, edit: (index: number, mes: string) => { (file[index + 1] as { mes: string }).mes = mes; } };
+}
+it('Tauri verifies source tags from a page of the newest lines; misses, repeated IDs and long spans read the whole chat', async () => {
+  const f = fixture(), session = f.host.session()!, disk = tauriFile(f);
+  for (let i = 0; i < 300; i++) f.context.chat!.push({ mes: 'old ' + i, is_user: i % 2 === 0, gen_finished: 'done', send_date: String(i) });
+  f.context.chat!.push({ mes: 'source text', gen_finished: 'done', send_date: 'now' });
+  const tag = prepareMessageTag(f.context.chat!, 300);
+  await f.host.applyMessageTags(session, [tag]);
+  f.context.chatMetadata = { archive: 'saved' }; await f.context.saveChat!();
+  expect(await f.host.readPersistedWithEffects(session.scope, { messageTags: [tag] })).toEqual({ metadata: { archive: 'saved' }, effectsVerified: true });
+  expect(disk.tail).toHaveBeenLastCalledWith({ limit: 9 }); expect(f.request).not.toHaveBeenCalled();
+  disk.edit(300, 'edited on disk');
+  expect(await f.host.verifyMessageTags(session.scope, [tag])).toBe(false); expect(f.request).toHaveBeenCalledTimes(1);
+  await f.context.saveChat!();
+  f.context.chat!.push(structuredClone(f.context.chat![300]!)); await f.context.saveChat!();
+  expect(await f.host.verifyMessageTags(session.scope, [tag])).toBe(false); expect(f.request).toHaveBeenCalledTimes(2);
+  f.context.chat!.pop(); await f.context.saveChat!();
+  const early = prepareMessageTag(f.context.chat!, 1);
+  await f.host.applyMessageTags(session, [early]); await f.context.saveChat!();
+  expect(await f.host.verifyMessageTags(session.scope, [early])).toBe(true); expect(f.request).toHaveBeenCalledTimes(3);
+});
+it('Tauri tagged commits and report delivery stay off the whole-chat read', async () => {
+  const f = fixture(), disk = tauriFile(f);
+  for (let i = 0; i < 50; i++) f.context.chat!.push({ mes: 'old ' + i, is_user: i % 2 === 0, gen_finished: 'done', send_date: String(i) });
+  const store = new NativeStore(f.host, new MemoryJournal()); await store.load();
+  const tag = prepareMessageTag(f.context.chat!, 49);
+  expect((await store.commit(0, () => ({ factRevision: 1 }), { messageTags: [tag] })).status).toBe('confirmed');
+  expect(f.context.chat![49]!.extra?.tavernBattleSourceId).toBe(tag.id);
+  expect((await new NativeMessages(f.host).send('战报', { deliveryId: 'report' })).status).toBe('inserted');
+  expect(disk.tail).toHaveBeenCalledTimes(2); expect(f.request).not.toHaveBeenCalled();
+});
+it('战报保存期间宿主换入同一聊天的附加数据对象，仍然确认送达并触发生成；换了聊天则不触发', async () => {
+  const f = fixture(); const port = new NativeMessages(f.host);
+  f.context.generate = vi.fn(async () => { f.context.chat!.push({ is_user: false, mes: '已叙述', gen_finished: 'done' }); });
+  const save = f.context.saveChat!;
+  f.context.saveChat = vi.fn(async () => { f.context.chatMetadata = { ...f.context.chatMetadata, otherExtension: 1 }; await save(); });
+  expect((await port.send('战报', { deliveryId: 'swap', generate: true })).status).toBe('sent');
+  expect(f.context.generate).toHaveBeenCalledTimes(1);
+  f.context.saveChat = vi.fn(async () => { f.context.chatId = 'other'; await save(); });
+  expect(await port.send('第二份战报', { deliveryId: 'switch', generate: true })).toMatchObject({ status: 'inserted', detail: '消息已保存在原聊天；切聊天后未触发生成' });
+  expect(f.context.generate).toHaveBeenCalledTimes(1);
+});
 it('消息按结构化文本保存，只插入一次并单次调用生成', async () => {
   const f = fixture(); const port = new NativeMessages(f.host);
   f.context.generate = vi.fn(async () => { f.context.chat!.push({ is_user: false, mes: '已叙述', gen_finished: 'done' }); });

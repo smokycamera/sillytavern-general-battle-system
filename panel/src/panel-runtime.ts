@@ -40,6 +40,8 @@ export interface PanelRuntime {
   retrySave?: () => Promise<SaveReceipt>;
   canWrite?: () => boolean;
   writeBlockReason?: () => string | undefined;
+  /** A save is still running (long chats save slowly); not a failure to act on. */
+  saving?: () => boolean;
   reloadArchive?: () => Promise<void>;
   retryGeneration?: (deliveryId: string) => Promise<DeliveryReceipt>;
   getTheme?: () => 'dark' | 'light';

@@ -1036,8 +1036,8 @@ function renderWorkspace(scope: RenderScope, tacticalQuery?: TacticalQuerySource
   const nav = app.querySelector<HTMLElement>('#workspace-navigation')!;
   const navHtml = workspaceNavigation(workspaceTab, pendingCount);
   if (nav.innerHTML !== navHtml) nav.innerHTML = navHtml;
-  const blocked = runtime.writeBlockReason?.();
-  const saveMessage = battleSaving ? '保存中…' : blocked ? esc(blocked) : state.saveReceipt?.status === 'failed' ? '未保存：' + esc(state.saveReceipt.error ?? '存储不可用') : state.saveReceipt?.memoryOnly ? '开局已保存' : state.saveReceipt?.status === 'local-only' ? '已保存本地 · 酒馆待确认' : state.saveReceipt ? '已保存' : '准备就绪';
+  const saving = battleSaving || !!runtime.saving?.(), blocked = saving ? undefined : runtime.writeBlockReason?.();
+  const saveMessage = saving ? '保存中…' : blocked ? esc(blocked) : state.saveReceipt?.status === 'failed' ? '未保存：' + esc(state.saveReceipt.error ?? '存储不可用') : state.saveReceipt?.memoryOnly ? '开局已保存' : state.saveReceipt?.status === 'local-only' ? '已保存本地 · 酒馆待确认' : state.saveReceipt ? '已保存' : '准备就绪';
   const statusHtml = `<span data-role="save-status" class="${blocked || state.saveReceipt?.status === 'failed' ? 'save-failed' : ''}">${saveMessage}</span>${state.saveReceipt?.status === 'failed' ? '<button data-action="save-retry">重试保存</button>' : ''}${blocked && runtime.reloadArchive ? '<button data-action="archive-reload">重新读取存档</button>' : ''}<button data-action="theme-toggle" aria-label="切换深浅主题">明暗</button>`;
   const status = app.querySelector('.app-state')!; if(status.innerHTML !== statusHtml)status.innerHTML=statusHtml;
   const latest = state.proposals.at(-1), failure = latest && ['rejected','stale','unresolved'].includes(latest.status) ? latest.reason : undefined;

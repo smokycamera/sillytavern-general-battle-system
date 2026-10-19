@@ -18,6 +18,8 @@ export class NativeStore {
   private queue: Promise<unknown> = Promise.resolve();
   /** Queued reads and writes not yet settled; a swapped-in host context is only adopted while idle. */
   private busy = 0;
+  /** Writes queued or running: commits, retries and discards. */
+  private writes = 0;
   private loads = 0;
   private pending?: RecoveryRecord;
   constructor(private host: MetadataPort, private journal: RecoveryJournal) {}
@@ -38,9 +40,18 @@ export class NativeStore {
   private result(status: PersistReceipt['status'], session: HostSession, operationId: string, error?: unknown): PersistReceipt {
     return { status, session, operationId, ...(error === undefined ? {} : { error: errorText(error) }) };
   }
-  private enqueue<T>(task: () => Promise<T>): Promise<T> {
-    this.busy++;
-    const result = this.queue.then(task, task).finally(() => { this.busy--; }); this.queue = result.catch(() => undefined); return result;
+  private enqueue<T>(task: () => Promise<T>, write = false): Promise<T> {
+    this.busy++; if (write) this.writes++;
+    const result = this.queue.then(task, task).finally(() => { this.busy--; if (write) this.writes--; }); this.queue = result.catch(() => undefined); return result;
+  }
+  /** A write is queued or running; an unconfirmed candidate without one is a save that ended unconfirmed. */
+  saving(): boolean { return this.writes > 0; }
+  /**
+   * The chat a write belongs to: no reload since it started, and the host still shows that chat.
+   * A same-chat object swap does not stop the write; the disk reads decide whether it landed.
+   */
+  private sameChat(session: HostSession): boolean {
+    return sameSession(session, this.active) && this.host.session()?.scope.key === session.scope.key;
   }
   /**
    * The host can swap in a new metadata or chat object for the same chat without CHAT_CHANGED
@@ -79,6 +90,10 @@ export class NativeStore {
       const expected = pending.expected;
       if ((!envelope && !expected) || envelope && expected && envelope.generation === expected.generation && envelope.revision === expected.revision && envelope.payloadHash === expected.payloadHash) this.pending = pending;
     }
+    // A same-chat object swapped in from a stale copy would write its head back on the host's
+    // next save; give it the head just read. An unconfirmed write keeps its own recovery path.
+    const live = load === this.loads && this.host.session()?.scope.key === session.scope.key ? this.host.metadata() : undefined;
+    if (!this.pending && this.current && live && !matches(live.tavernBattle as NativeEnvelope | undefined, this.current)) live.tavernBattle = structuredClone(this.current);
     });
   }
   commit(expectedRevision: number, update: (before: NarrativeSave) => NarrativeSave, options: {
@@ -89,7 +104,7 @@ export class NativeStore {
     if (!session) return Promise.reject(Error('战阵存档还没读取完成，请稍后再试'));
     const operationId = options.operationId ?? randomId();
     return this.enqueue(async () => {
-      if (!sameSession(session, this.active) || !sameSession(session, this.host.session()) || this.host.hasLegacyRuntime()) return this.result('conflict', session, operationId, '聊天已切换，或脚本版战阵仍在运行，这次没有保存');
+      if (!this.sameChat(session) || this.host.hasLegacyRuntime()) return this.result('conflict', session, operationId, '聊天已切换，或脚本版战阵仍在运行，这次没有保存');
       if (this.current?.lastOperationId === operationId) return this.result('confirmed', session, operationId);
       if (this.current?.handoff && !options.resumeHandoff) return this.result('conflict', session, operationId, '这个存档已交给脚本版战阵，请先在存档管理里迁回');
       if (this.pending) return this.result('pending', session, operationId, '上一次保存还没确认成功，请先选择“重试保存”或“撤销这次改动”');
@@ -100,7 +115,7 @@ export class NativeStore {
         if (previous ? !matches(persisted, previous) : !!persisted) return this.result('conflict', session, operationId, NEWER);
         if (persisted && await payloadHash(persisted.payload) !== persisted.payloadHash) return this.result('conflict', session, operationId, CORRUPT);
       } catch (error) { return this.result('failed', session, operationId, error); }
-      if (!sameSession(session, this.host.session()) || !sameSession(session, this.active)) return this.result('conflict', session, operationId, '保存过程中聊天已切换，这次没有保存');
+      if (!this.sameChat(session)) return this.result('conflict', session, operationId, '保存过程中聊天已切换，这次没有保存');
       let candidate: NativeEnvelope;
       try {
         const payload = options.clear ? null : structuredClone(update(this.snapshot()));
@@ -115,7 +130,7 @@ export class NativeStore {
           ...(options.legacyHandoff ? { handoff: { target: 'helper', sourceHash: await payloadHash(options.legacyHandoff.panel) } } : {}),
         };
       } catch (error) { return this.result('failed', session, operationId, error); }
-      if (!sameSession(session, this.host.session()) || !sameSession(session, this.active)) return this.result('conflict', session, operationId, '保存过程中聊天已切换，这次没有保存');
+      if (!this.sameChat(session)) return this.result('conflict', session, operationId, '保存过程中聊天已切换，这次没有保存');
       // Repeated UI flushes must not rewrite an identical archive. The persisted
       // head was independently checked above, so this still detects outside edits.
       if (!options.operationId && previous && candidate.payloadHash === previous.payloadHash && !options.clear && !options.replace && !options.migration && !options.messageTags?.length && !options.legacyHandoff && !options.resumeHandoff) return this.result('confirmed', session, operationId);
@@ -125,10 +140,10 @@ export class NativeStore {
       if (options.legacyHandoff) record.legacyHandoff = structuredClone(options.legacyHandoff);
       try { await this.journal.put(session.scope.key, record); }
       catch (error) { return this.result('failed', session, operationId, error); }
-      if (!sameSession(session, this.host.session()) || !sameSession(session, this.active)) return this.result('conflict', session, operationId, '保存前聊天已切换；这次改动留在原聊天，回到原聊天后可以继续处理');
+      if (!this.sameChat(session)) return this.result('conflict', session, operationId, '保存前聊天已切换；这次改动留在原聊天，回到原聊天后可以继续处理');
       this.pending = record;
       return this.persist(record, session);
-    });
+    }, true);
   }
   retry(): Promise<PersistReceipt> {
     const session = this.active;
@@ -137,7 +152,7 @@ export class NativeStore {
       const record = this.pending;
       if (!record) throw Error('没有需要重试的保存');
       const id = record.candidate.lastOperationId;
-      if (!sameSession(session, this.active) || !sameSession(session, this.host.session()) || session.scope.key !== record.session.scope.key || this.host.hasLegacyRuntime()) return this.result('conflict', session, id, '聊天已切换，或脚本版战阵仍在运行');
+      if (!this.sameChat(session) || session.scope.key !== record.session.scope.key || this.host.hasLegacyRuntime()) return this.result('conflict', session, id, '聊天已切换，或脚本版战阵仍在运行');
       try {
         const saved = envelopeFrom((await this.host.readPersisted(session.scope)).tavernBattle);
         if (saved && await payloadHash(saved.payload) !== saved.payloadHash) return this.result('conflict', session, id, CORRUPT);
@@ -145,19 +160,19 @@ export class NativeStore {
         const expected = record.expected;
         if (saved ? !expected || saved.generation !== expected.generation || saved.revision !== expected.revision || saved.payloadHash !== expected.payloadHash : !!expected) return this.result('conflict', session, id, '酒馆里的战阵存档已被其他操作更新或清空，这次改动不能再覆盖它；请重新读取存档');
       } catch (error) { return this.result('pending', session, id, error); }
-      if (!sameSession(session, this.host.session())) return this.result('conflict', session, id, '检查保存结果时聊天已切换，请回到原聊天再试');
+      if (!this.sameChat(session)) return this.result('conflict', session, id, '检查保存结果时聊天已切换，请回到原聊天再试');
       return this.persist(record, session, true);
-    });
+    }, true);
   }
   discardPending(): Promise<DiscardResult> {
     const session = this.active;
     if (!session) return Promise.reject(Error('战阵存档还没读取完成，请稍后再试'));
-    return this.enqueue(() => this.discardRecord(session));
+    return this.enqueue(() => this.discardRecord(session), true);
   }
   private async discardRecord(session: HostSession): Promise<DiscardResult> {
     const record = this.pending; if (!record) return { discarded: false };
     if (record.legacyHandoff) throw Error('正在把存档交回脚本版战阵，这一步不能撤销；请点“重试保存”完成');
-    if (!sameSession(session, this.host.session()) || !sameSession(session, this.active) || this.host.hasLegacyRuntime()) throw Error('聊天已切换，或脚本版战阵仍在运行');
+    if (!this.sameChat(session) || this.host.hasLegacyRuntime()) throw Error('聊天已切换，或脚本版战阵仍在运行');
     const metadata = await this.host.readPersisted(session.scope); const saved = envelopeFrom(metadata.tavernBattle);
     if (saved && await payloadHash(saved.payload) !== saved.payloadHash) throw Error(CORRUPT);
     if (matches(saved, record.candidate)) {
@@ -168,9 +183,9 @@ export class NativeStore {
       return { discarded: true };
     }
     if (record.previous ? !matches(saved, record.previous) : !!saved) throw Error(NEWER);
-    if (!sameSession(session, this.host.session()) || !sameSession(session, this.active)) throw Error('检查保存结果时聊天已切换，请回到原聊天再试');
+    if (!this.sameChat(session)) throw Error('检查保存结果时聊天已切换，请回到原聊天再试');
     await this.journal.remove(session.scope.key, record.candidate.lastOperationId);
-    if (!sameSession(session, this.host.session()) || !sameSession(session, this.active)) return { discarded: true };
+    if (!this.sameChat(session)) return { discarded: true };
     const currentMetadata = this.host.metadata();
     if (currentMetadata) { if (saved) currentMetadata.tavernBattle = structuredClone(saved); else delete currentMetadata.tavernBattle; }
     this.current = saved; this.pending = undefined;
@@ -183,7 +198,7 @@ export class NativeStore {
     const restored: NativeEnvelope | undefined = previous && { ...structuredClone(previous), documentId: saved.documentId, generation: saved.generation, revision: saved.revision + 1, lastOperationId: randomId() };
     for (const fullSave of [false, true]) {
       const metadata = this.host.metadata();
-      if (!metadata || !sameSession(session, this.host.session()) || !sameSession(session, this.active)) throw Error('撤销时聊天已切换，请回到原聊天再试');
+      if (!metadata || !this.sameChat(session)) throw Error('撤销时聊天已切换，请回到原聊天再试');
       if (restored) metadata.tavernBattle = structuredClone(restored); else delete metadata.tavernBattle;
       let error: unknown;
       try { await (fullSave ? this.host.saveChat!() : this.host.saveMetadata()); } catch (value) { error = value; }
@@ -191,7 +206,7 @@ export class NativeStore {
       if (restored ? matches(after, restored) && await payloadHash(after!.payload) === restored.payloadHash : !after) {
         // The record no longer matches disk; a failed cleanup is skipped or re-offered by load.
         try { await this.journal.remove(session.scope.key, record.candidate.lastOperationId); } catch { /* See above. */ }
-        if (sameSession(session, this.host.session()) && sameSession(session, this.active)) { this.current = structuredClone(restored); this.pending = undefined; }
+        if (this.sameChat(session)) { this.current = structuredClone(restored); this.pending = undefined; }
         return;
       }
       if (!matches(after, saved)) throw Error(NEWER);
@@ -201,14 +216,13 @@ export class NativeStore {
   }
   private async persist(record: RecoveryRecord, session: HostSession, fullSave = false): Promise<PersistReceipt> {
     const id = record.candidate.lastOperationId;
-    const metadata = this.host.metadata();
-    if (!metadata || !sameSession(session, this.host.session())) return this.result('conflict', session, id, '聊天已切换，这次没有保存');
+    if (!this.host.metadata() || !this.sameChat(session)) return this.result('conflict', session, id, '聊天已切换，这次没有保存');
     if (record.legacyHandoff) {
       try {
         if (!this.host.applyLegacyHandoff) throw Error('当前酒馆不支持把存档交回脚本版战阵');
         await this.host.applyLegacyHandoff(session, record.legacyHandoff);
       } catch (error) { return this.result('pending', session, id, error); }
-      if (!sameSession(session, this.host.session())) return this.result('conflict', session, id, '保存过程中聊天已切换，这次没有保存');
+      if (!this.sameChat(session)) return this.result('conflict', session, id, '保存过程中聊天已切换，这次没有保存');
     }
     if (record.messageTags?.length) {
       try {
@@ -226,8 +240,11 @@ export class NativeStore {
         }
         return this.result('pending', session, id, error);
       }
-      if (!sameSession(session, this.host.session())) return this.result('conflict', session, id, '保存过程中聊天已切换，这次没有保存');
+      if (!this.sameChat(session)) return this.result('conflict', session, id, '保存过程中聊天已切换，这次没有保存');
     }
+    // Write into the object the host holds now; a same-chat swap may have replaced the earlier one.
+    const metadata = this.host.metadata();
+    if (!metadata) return this.result('conflict', session, id, '聊天已切换，这次没有保存');
     metadata.tavernBattle = structuredClone(record.candidate);
     let error: unknown;
     try {
@@ -250,22 +267,28 @@ export class NativeStore {
         else if (combined ? combined.effectsVerified : await this.effectsVerified(session, record)) return this.confirm(record, session);
         // The message may change while the host serializes the chat. Re-apply the tags
         // once: a changed source is then undone above instead of staying half-saved.
-        else if (!error && !fullSave && record.messageTags?.length && !record.legacyHandoff && sameSession(session, this.host.session()) && sameSession(session, this.active)) return this.persist(record, session, true);
+        else if (!error && !fullSave && record.messageTags?.length && !record.legacyHandoff && this.sameChat(session)) return this.persist(record, session, true);
         else error ??= record.legacyHandoff ? '存档已写入，但交给脚本版战阵的副本还没保存成功' : '存档已写入，但对应聊天消息的标记还没保存成功';
       } else {
-        // Some hosts expose a metadata saver that returns without writing. Only
-        // fall back when disk is still the exact previous head; never overwrite
-        // a competing save or bypass an explicit host error.
+        // Some hosts expose a metadata saver that returns without writing; SillyTavern's
+        // saveChatConditional gives up after 1 s while another save runs, which long chats
+        // outlast; a same-chat object swapped in during the save can go to disk without this
+        // write. Write once more with a full save, only while disk is still the exact previous
+        // head; never overwrite a competing save or bypass an explicit host error.
         const unchanged = record.previous ? matches(saved, record.previous) && await payloadHash(saved!.payload) === record.previous.payloadHash : !saved;
-        if (!error && unchanged && !fullSave && !record.messageTags?.length && this.host.saveChat && sameSession(session, this.host.session()) && sameSession(session, this.active)) return this.persist(record, session, true);
+        if (!error && unchanged && !fullSave && this.host.saveChat && this.sameChat(session)) return this.persist(record, session, true);
         error ??= unchanged ? '酒馆显示保存完成，但读回的仍是旧存档，这次改动没有写进去' : '读回的存档和这次改动对不上，可能已被其他操作改动';
       }
     } catch (value) { error = value; }
     return this.result('pending', session, id, error ?? '还没能确认这次保存成功');
   }
   private async confirm(record: RecoveryRecord, session: HostSession): Promise<PersistReceipt> {
-    if (sameSession(session, this.active) && sameSession(session, this.host.session())) {
+    if (this.sameChat(session)) {
       this.current = structuredClone(record.candidate); this.pending = undefined;
+      // An object the host swapped in during the save may hold an older head. Give it the
+      // verified one, so the host's next save cannot write the old head back.
+      const live = this.host.metadata();
+      if (live && !matches(live.tavernBattle as NativeEnvelope | undefined, record.candidate)) live.tavernBattle = structuredClone(record.candidate);
     }
     // A cleanup failure cannot turn a confirmed save into an unsafe retry.
     try { await this.journal.remove(session.scope.key, record.candidate.lastOperationId); } catch { /* Next load verifies and removes it. */ }

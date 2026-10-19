@@ -13,15 +13,21 @@ import { narrativeProjection, type InventoryPreview } from '../../panel/src/narr
 import { reviewMigration, type MigrationReview } from '../../panel/src/migration-review.js';
 import { parseProtocol, protocolExcerpt } from '../../panel/src/protocol.js';
 import type { PromptSettings } from '../../panel/src/prompt-settings.js';
-import { findMessageBySourceId, prepareMessageTag } from '../../host/src/message-identity.js';
+import { findMessageBySourceId, prepareMessageTag, sameMessageApartFromText } from '../../host/src/message-identity.js';
 import { invalidateMissingSources, sameSource, sourceCommitted } from './source-receipts.js';
 import { prepareNarrativeIds } from '../../panel/src/narrative-ids.js';
 import { narrativeAutoApproval, prepareAiScanProposal } from '../../panel/src/narrative-state.js';
 
 const PROMPT_ID = 'tavern-battle-native:context';
-/** Shown on a reply that waits for confirmation although auto-approve is on. */
-const AUTO_APPROVE_SKIPPED = '自动批准只处理档案就绪后生成并直接收到的回复；这条不符合（例如刚进聊天时档案还在读取，或回复被编辑、切换过），请核对后确认';
-export interface CommandVersion { session: HostSession; revision: number; generation?: string }
+/** Shown on a reply that waits for confirmation although auto-approve is on, with the cause when known. */
+const autoApproveSkipped = (cause?: string) => '自动批准只处理档案就绪后生成并直接收到的回复；' + (cause ? `这条没有自动入账：${cause}。` : '这条不符合（例如刚进聊天时档案还在读取，或回复被编辑、切换过），') + '请核对后确认';
+const NOT_READY: Partial<Record<ServiceState['phase'], string>> = { loading: '档案还在读取', pending: '上一次保存还没确认', review: '档案在等迁移核对', error: '档案读取出错', import: '档案还没启用', handoff: '档案已切到脚本模式' };
+/** The archive a generation was bound on; a re-read that finds the same one keeps the binding. */
+type Archive = { documentId: string; generation: string } | undefined;
+const archiveOf = (head?: { documentId: string; generation: string }): Archive => head && { documentId: head.documentId, generation: head.generation };
+const sameArchive = (a: Archive, b: Archive) => a ? !!b && a.documentId === b.documentId && a.generation === b.generation : !b;
+/** `load` counts archive reads; a command captured before a re-read cannot run after it. */
+export interface CommandVersion { session: HostSession; revision: number; generation?: string; load?: number }
 export interface ServiceState {
   phase: 'loading' | 'import' | 'handoff' | 'ready' | 'pending' | 'review' | 'error' | 'disposed';
   save: NarrativeSave;
@@ -42,6 +48,9 @@ export class BattleService {
   private loadEpoch = 0;
   private migration?: MigrationReview;
   private binding?: GenerationBinding;
+  private bindingArchive?: Archive;
+  /** Why the current generation has no binding, for the reply's auto-approve note. */
+  private bindingMiss?: string;
   /** 进行中的一次生成：收到的消息序号，以及生成是否已结束。两者都到齐才扫描这条回复。 */
   private generation?: { receivedId?: number; ended: boolean };
   private scanQueue: Promise<unknown> = Promise.resolve();
@@ -65,6 +74,16 @@ export class BattleService {
   }
   /** The archive belongs to the host's current context; a same-chat object swap that still holds it is adopted. */
   private inSync(): boolean { return sameSession(this.store.session(), this.host.session()) || this.store.adoptContext(); }
+  /**
+   * An async step can finish on the chat and archive load it began on although the host swapped
+   * that chat's objects meanwhile (slow saves of long chats make this common); then adopt them.
+   */
+  private stillOn(session: HostSession | undefined, loaded: number): boolean {
+    if (this.disposed || loaded !== this.loadEpoch || !session || this.store.session()?.scope.key !== session.scope.key || this.host.session()?.scope.key !== session.scope.key) return false;
+    this.inSync(); return true;
+  }
+  /** A save is still running, as opposed to one that ended unconfirmed. */
+  saving(): boolean { return this.store.saving(); }
   canWrite(): boolean { return ['ready', 'review'].includes(this.phase) && !this.store.hasPending() && this.inSync() && !this.host.hasLegacyRuntime(); }
   writeBlockReason(): string | undefined {
     if (this.disposed) return '战阵服务已关闭，请重新打开战阵';
@@ -73,7 +92,7 @@ export class BattleService {
     if (this.phase === 'loading') return '正在读取当前聊天档案';
     if (this.phase === 'error') return this.error ?? '存档读取失败，请点“重新读取存档”';
     if (!this.inSync()) return '聊天已刷新，请点“重新读取存档”或重新扫描';
-    if (this.phase === 'pending' || this.store.hasPending()) return '上一次保存还没确认成功，请先处理上方提示';
+    if (this.phase === 'pending' || this.store.hasPending()) return this.store.saving() ? '正在保存上一项改动，请稍候' : '上一次保存还没确认成功，请先处理上方提示';
     if (this.phase === 'import') return '发现脚本存档，请先选择导入或从空档开始';
     if (this.phase === 'handoff') return '档案已切换到脚本模式，请先在存档管理中迁回原生扩展';
     return undefined;
@@ -94,7 +113,7 @@ export class BattleService {
     const session = this.inSync() ? this.store.session() : undefined;
     if (!session || this.phase !== 'ready' && this.phase !== 'review') throw Error('当前档案尚未就绪');
     const envelope = this.store.head();
-    return { session, revision: envelope?.revision ?? 0, generation: envelope?.generation };
+    return { session, revision: envelope?.revision ?? 0, generation: envelope?.generation, load: this.loadEpoch };
   }
   inventoryContext(): string {
     this.inSync();
@@ -114,6 +133,7 @@ export class BattleService {
     this.memoryPanel = undefined;
     const epoch = ++this.loadEpoch;
     this.phase = 'loading'; this.error = undefined; this.receipt = undefined; this.migration = undefined;
+    if (this.generation) this.bindingMiss = '生成期间重新读取了档案';
     this.binding = undefined; this.generation = undefined;
     this.host.clearInjection(PROMPT_ID);
     const loading = this.store.load(); this.notify();
@@ -159,7 +179,7 @@ export class BattleService {
       if (generation && id !== undefined) {
         generation.receivedId = id;
         if (generation.ended) this.finishGeneration();
-      } else void this.scan(id);
+      } else { this.bindingMiss ??= '没有收到这次生成开始的事件'; void this.scan(id); this.bindingMiss = undefined; }
     });
     // 酒馆这里传的是 chat.length（消息条数），不是刚生成那条的序号，所以不读它；只认收到消息时给的序号。
     this.capabilities.generationEnded = bind('GENERATION_ENDED', () => {
@@ -168,9 +188,9 @@ export class BattleService {
       generation.ended = true;
       if (generation.receivedId !== undefined) this.finishGeneration();
     });
-    bind('GENERATION_STOPPED', () => { this.binding = undefined; this.generation = undefined; void this.scan(); });
-    for (const event of ['MESSAGE_EDITED', 'MESSAGE_SWIPED']) bind(event, value => { this.binding = undefined; void this.scan(messageId(value)); });
-    bind('MESSAGE_DELETED', () => { this.binding = undefined; void this.reconcileDeletedMessages(); });
+    bind('GENERATION_STOPPED', () => { this.generation = undefined; this.unbound('生成被中止'); });
+    for (const event of ['MESSAGE_EDITED', 'MESSAGE_SWIPED']) bind(event, value => this.unbound('回复被编辑或切换过', messageId(value)));
+    bind('MESSAGE_DELETED', () => { this.binding = undefined; if (this.generation) this.bindingMiss = '生成期间有消息被删除'; void this.reconcileDeletedMessages(); });
     bind('CHAT_CHANGED', () => { void this.load(); });
     bind('MESSAGE_SENT', () => this.project());
     await this.load();
@@ -188,7 +208,9 @@ export class BattleService {
   async transact(update: (before: NarrativeSave) => NarrativeSave, options: { version?: CommandVersion; operationId?: string; allowReview?: boolean; clear?: boolean; messageTags?: MessageTag[]; memoryOnly?: boolean; durable?: boolean } = {}): Promise<PersistReceipt> {
     const version = options.version ?? this.version();
     const reject = (error: string): PersistReceipt => ({ status: 'conflict', operationId: options.operationId ?? '', session: version.session, error });
-    if (this.disposed || !sameSession(version.session, this.store.session()) || !sameSession(version.session, this.host.session()) || version.generation !== this.store.head()?.generation) return reject('聊天或存档代次已变化');
+    // Same chat, archive read and generation: a same-chat object swap since the capture is no change.
+    if (this.disposed || version.load !== undefined && version.load !== this.loadEpoch || version.session.scope.key !== this.store.session()?.scope.key
+      || version.session.scope.key !== this.host.session()?.scope.key || version.generation !== this.store.head()?.generation) return reject('聊天或存档代次已变化');
     if (this.migration && !options.allowReview) return reject('请先核对档案迁移预览');
     const live = this.livePanel(), previousMemory = this.memoryPanel;
     const prepare = (before: NarrativeSave) => compactNarrativeSources(update(prepareNarrativeIds(before)));
@@ -202,11 +224,12 @@ export class BattleService {
       const receipt: PersistReceipt = { status: 'confirmed', memoryOnly: true, operationId: options.operationId ?? randomId(), session: version.session };
       this.receipt = receipt; this.notify(); return receipt;
     }
+    const loaded = this.loadEpoch;
     const receipt = await this.store.commit(version.revision, before => {
       if (live && this.memoryPanel !== previousMemory) throw Error('战斗内存状态已更新，请重新保存');
       return candidate ?? prepare(before);
     }, { operationId: options.operationId, clear: options.clear, messageTags: options.messageTags });
-    if (!this.disposed && sameSession(version.session, this.store.session()) && sameSession(version.session, this.host.session())) {
+    if (this.stillOn(version.session, loaded)) {
       this.receipt = receipt;
       if (receipt.status === 'confirmed') this.memoryPanel = undefined;
       if (receipt.status === 'confirmed') this.error = undefined;
@@ -217,20 +240,20 @@ export class BattleService {
     return receipt;
   }
   async retry(): Promise<PersistReceipt> {
-    const session = this.store.session(); const receipt = await this.store.retry();
-    if (!this.disposed && sameSession(session, this.host.session()) && sameSession(session, this.store.session())) {
+    const session = this.store.session(), loaded = this.loadEpoch; const receipt = await this.store.retry();
+    if (this.stillOn(session, loaded)) {
       this.receipt = receipt; this.phase = this.store.pendingOperation() ? 'pending' : this.migration ? 'review' : 'ready';
       if (receipt.status === 'confirmed') { this.migration = reviewMigration(this.snapshot()); this.phase = this.migration ? 'review' : 'ready'; this.project(); }
       this.notify();
     }
-    if (receipt.code === 'source-changed' && sameSession(session, this.host.session()) && this.canWrite()) {
+    if (receipt.code === 'source-changed' && this.stillOn(session, loaded) && this.canWrite()) {
       // An undone first archive leaves none; reload so the initializer offers the import choice again.
       if (!this.store.head() && this.initialize) { await this.load(); return receipt; }
-      this.binding = undefined;
-      await this.scan();
+      this.binding = undefined; this.bindingMiss = '保存途中回复被改动，已按最新正文重扫';
+      const scanning = this.scan(); this.bindingMiss = undefined; await scanning;
       // Return the new scan's receipt (and its own operation ID), so the panel
       // does not overwrite successful recovery with the obsolete conflict.
-      if (sameSession(session, this.host.session()) && sameSession(session, this.store.session()) && this.receipt) return this.receipt;
+      if (this.stillOn(session, loaded) && this.receipt) return this.receipt;
     }
     return receipt;
   }
@@ -325,8 +348,9 @@ export class BattleService {
   }
   async acceptMigration(): Promise<PersistReceipt> {
     const review = this.migration; if (!review) throw Error('没有待核对的迁移');
+    const loaded = this.loadEpoch;
     const receipt = await this.transact(() => ({ ...review.candidate, migrationBackups: [...(Array.isArray(review.original.migrationBackups) ? review.original.migrationBackups : []), { createdAt: new Date().toISOString(), source: { ...review.original, migrationBackups: undefined } }] }), { allowReview: true });
-    if (receipt.status === 'confirmed' && sameSession(receipt.session, this.store.session())) { this.migration = undefined; this.phase = 'ready'; this.project(); this.notify(); }
+    if (receipt.status === 'confirmed' && this.stillOn(receipt.session, loaded)) { this.migration = undefined; this.phase = 'ready'; this.project(); this.notify(); }
     return receipt;
   }
   restoreMigrationBackup(): Promise<PersistReceipt> {
@@ -335,13 +359,18 @@ export class BattleService {
       if (!Array.isArray(backups) || !backups.length) throw Error('没有可恢复的迁移备份');
       if (before.battle && !before.committedOutcomeIds?.includes(`${before.battle.kind}:${String(before.battle.snap.seed)}`)) throw Error('先结束并归档当前战斗');
       return structuredClone(backups.at(-1)!.source);
-    }).then(async receipt => { if (receipt.status === 'confirmed' && sameSession(receipt.session, this.host.session())) await this.load(); return receipt; });
+    }).then(async receipt => { if (receipt.status === 'confirmed' && receipt.session.scope.key === this.host.session()?.scope.key) await this.load(); return receipt; });
   }
   beginGeneration(): void {
-    this.generation = { ended: false }; this.binding = undefined;
-    if (this.phase !== 'ready' || !this.inSync()) { this.project(); return; }
+    this.generation = { ended: false }; this.binding = undefined; this.bindingMiss = undefined;
+    if (this.phase !== 'ready' || !this.inSync()) {
+      this.bindingMiss = '生成开始时' + (this.phase === 'ready' ? '酒馆换了聊天数据，档案要重新读取' : NOT_READY[this.phase] ?? '档案没有就绪');
+      this.project(); return;
+    }
     const namespace = this.host.namespace();
     this.binding = namespace ? captureGeneration(this.snapshot(), namespace, randomId()) : undefined;
+    this.bindingArchive = archiveOf(this.store.head());
+    if (!this.binding) this.bindingMiss = '生成开始时无法确认当前聊天';
     this.project();
   }
   /** 这次生成的回复已收到、生成也已结束：把绑定落到这条消息上再扫描。 */
@@ -349,22 +378,31 @@ export class BattleService {
     const id = this.generation!.receivedId!;
     this.generation = undefined;
     if (this.binding) { this.binding.complete = true; this.binding.messageId = this.host.message(id)?.messageId; }
+    void this.scan(id); this.bindingMiss = undefined;
+  }
+  /** A reply changed outside a generation: rescan it as a manual preview that says why. */
+  private unbound(miss: string, id?: number): void {
+    this.binding = undefined; this.bindingMiss = miss;
     void this.scan(id);
+    if (!this.generation) this.bindingMiss = undefined;
   }
   scan(messageId?: number, options: { manual?: boolean } = {}): Promise<void> {
-    const chat = this.host.session()?.scope.key; let binding = structuredClone(this.binding);
+    const chat = this.host.session()?.scope.key, archive = this.bindingArchive;
+    let binding = structuredClone(this.binding), miss = this.bindingMiss;
     // Only another chat cancels the scan: the host may swap this chat's objects at any time.
     const sameChat = () => chat !== undefined && this.host.session()?.scope.key === chat;
-    const run = async (refreshed = false): Promise<void> => {
+    /** `changed`: the first attempt's source changed during its save; `ids` when that attempt was bound to the generation. */
+    const run = async (changed?: { fingerprint: string; excerpt: string; ids?: (string | undefined)[] }): Promise<void> => {
       if (this.disposed || this.host.isGenerating() || !sameChat()) return;
       if (this.loading) await this.loading.promise;
       if (!sameChat()) return;
       // updateChatMetadata can replace the context without CHAT_CHANGED. An object that still
-      // holds this archive keeps the generation binding; otherwise re-read the chat and never
-      // carry old bindings.
+      // holds this archive is adopted; otherwise re-read the chat. The reply was generated on the
+      // archive the binding captured, so a re-read that finds that same archive keeps it; its
+      // fact and unit versions are still checked before anything is committed.
       if (this.phase === 'error' || !this.inSync()) {
-        binding = undefined;
         await this.load();
+        if (binding && !sameArchive(archive, archiveOf(this.store.head()))) { binding = undefined; miss = '生成期间档案被替换'; }
       }
       if (!sameChat()) return;
       if (this.phase !== 'ready' || !this.canWrite()) {
@@ -384,11 +422,18 @@ export class BattleService {
       const tag = prepareMessageTag(this.host.context().chat!, index);
       const originalId = message.messageId; message.messageId = tag.id;
       this.capabilities.messageIdentity = !!message.messageId && !!message.swipeId;
-      const before = this.snapshot(); let expected = binding && !refreshed && !options.manual ? { ...binding, messageId: binding.messageId === originalId ? tag.id : binding.messageId } : undefined;
+      // After a source change during the save the facts stay automatic only when the first attempt
+      // was bound to this generation and the same message still carries the same events: the host
+      // or another extension rewrote the text around them, which approve() accepts as well.
+      const sameMessage = !changed || sameMessageApartFromText(changed.fingerprint, tag.fingerprint);
+      const kept = !changed || !!changed.ids && sameMessage && !!changed.excerpt && changed.excerpt === protocolExcerpt(message.text);
+      if (!kept && changed?.ids) miss = sameMessage ? '保存途中回复里的事件被改动' : '保存途中回复被切换或替换';
+      const before = this.snapshot(); let expected = binding && kept && !options.manual ? { ...binding, messageId: (changed?.ids ?? [binding.messageId]).includes(originalId) ? tag.id : binding.messageId } : undefined;
       if (!(expected?.complete && expected.messageId === message.messageId) && message.complete && this.capabilities.messageIdentity) expected = { ...captureGeneration(before, namespace, randomId()), complete: true, manualOnly: !(options.manual && narrativeAutoApproval(before)), messageId: message.messageId };
+      const bound = !!binding && expected?.id === binding.id;
       if (expected?.complete && this.capabilities.messageIdentity) message.generationId = expected.id;
       const proposal = proposalFromMessage(message, expected); if (!proposal) return;
-      if (proposal.status === 'pending' && proposal.expected?.manualOnly && !options.manual && narrativeAutoApproval(before)) proposal.reason = AUTO_APPROVE_SKIPPED;
+      if (proposal.status === 'pending' && proposal.expected?.manualOnly && !options.manual && narrativeAutoApproval(before)) proposal.reason = autoApproveSkipped(binding && kept ? '没有对上这次生成的开始' : miss);
       if (sourceCommitted(before, proposal.sourceKey) || before.deletedNarrativeReceipts?.includes(narrativeReceiptKey(proposal))) return;
       const existing = (before.proposals ?? []).filter(p => sameSource(p.sourceKey, proposal.sourceKey));
       const same = existing.find(p => (p.canonical === proposal.canonical || p.status === 'committed' && parseProtocol(p.source.text).canonical === proposal.canonical) && p.source.swipeId === message.swipeId && (!!proposal.canonical || p.source.text === proposal.source.text));
@@ -402,10 +447,11 @@ export class BattleService {
         try { candidate = prepareNarrativeTransaction(candidate, proposal, namespace) as typeof candidate; }
         catch (error) { proposal.reason = String(error); proposal.status = /过期|聊天|分支|战内|未结算/.test(proposal.reason) ? 'stale' : 'unresolved'; }
       }
-      const receipt = await this.transact(() => candidate, { messageTags: [tag] });
-      // Re-read at most once, as a manual preview. Never reapply automatic facts
-      // from a generation whose source changed while its candidate was prepared.
-      if (receipt.code === 'source-changed' && !refreshed) await run(true);
+      // Long chats save slowly: let an open panel show the save while it runs.
+      const saving = this.transact(() => candidate, { messageTags: [tag] }); this.notify();
+      const receipt = await saving;
+      // Re-read at most once. Changed events or another message make it a manual preview.
+      if (receipt.code === 'source-changed' && !changed) await run({ fingerprint: tag.fingerprint, excerpt: proposal.source.text, ids: bound ? [binding!.messageId, tag.id] : undefined });
     };
     const next = this.scanQueue.then(() => run(), () => run()).catch(error => {
       if (!this.disposed && chat !== undefined && this.store.session()?.scope.key === chat) { this.error = errorText(error); this.notify(); }

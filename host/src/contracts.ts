@@ -66,3 +66,7 @@ export interface RecoveryJournal {
 export function sameSession(a: HostSession | undefined, b: HostSession | undefined): boolean {
   return !!a && !!b && a.scope.key === b.scope.key && a.epoch === b.epoch;
 }
+/** Same chat, whichever metadata or chat object the host holds for it now (slow saves outlast swaps). */
+export function sameChat(a: HostSession | undefined, b: HostSession | undefined): boolean {
+  return !!a && !!b && a.scope.key === b.scope.key;
+}
