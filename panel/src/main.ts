@@ -64,7 +64,8 @@ import { newUnitDraft, unitDraftFromRecord, buildUnit, editUnitBuild, type UnitD
 import { MAX_SCENE_UNITS } from './narrative-limits.js';
 import { recommendBattleMode, extendSmallRoundLimit, upgradeDefaultObjective, normalizeObjectiveMode, prepareBattleObjective, battleCapacityIssue, type BattleObjectiveMode } from './battle-setup.js';
 import { unitForm, captureUnitDraft, buildPreview } from './unit-form.js';
-import { BODY, effectiveProtection, looseFormation, ABILITY_BLUEPRINTS, itemSpecText, itemsV15, isGradedTrait, gradedTraitEnabled, traitLevelSources, traitLevel, traitLadderSummary, traitDisplayName, traitPenetrationBonus, postureActive, type Trait } from '../../engine/src/index.js';
+import { playerTraitDescription, playerTraitLevelDescription } from './player-trait-description.js';
+import { BODY, effectiveProtection, looseFormation, ABILITY_BLUEPRINTS, itemSpecText, itemsV15, isGradedTrait, gradedTraitEnabled, traitLevel, traitDisplayName, traitPenetrationBonus, postureActive, type Trait } from '../../engine/src/index.js';
 /**
  * 战阵 · 面板主程序
  * 编排：编制管理（造怪器）→ 小规模战斗 / 军团会战 → 结算卡与状态输出；
@@ -85,7 +86,7 @@ import {
   smallStateSummary, massStateSummary, settlementCard, unitCardLine,
   battleIntroSummary, battleAftermathSummary, roundDigest, isRangedCapable,
   STANDARD_CONDITIONS, standardConditionMap, skillConditionDescription,
-  activeTraitIds, equipmentTraitIds, autoTraitLabel, traitPrerequisiteReason, traitDescription, traitSourceActive, traitStatAdjustments, worksLabel,
+  activeTraitIds, equipmentTraitIds, autoTraitLabel, traitPrerequisiteReason, traitSourceActive, traitStatAdjustments, worksLabel,
   scaleLabel, postureLabel, fatigueAfter, fatigueLimit, fatiguePenalty, environmentTags,
   WEAPON_LIBRARY, ARMOR_LIBRARY, WEAPON_CLASSES, calibrateWeaponRange,
 } from '../../engine/src/index.js';
@@ -1318,13 +1319,13 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
     const penetrationBonus = () => traitPenetrationBonus(u, currentWeapon, !!currentWeapon?.tags?.includes('ranged'), currentWeapon?.penetration ?? 0);
     const inactive = (id: string) => u.rulesVersion === 'v2' ? traitPrerequisiteReason(u, id)
       ?? (id === 'shield-wall' && !postureActive(u, standardConditionMap()) ? '尚未有效固守或当前不能行动；仅正面远程命中触发'
-        : id === 'ap-weapon' && penetrationBonus() === 0 ? '基础穿透不足3，floor(基础穿透/3)上限为0' : undefined) : undefined;
+        : id === 'ap-weapon' && penetrationBonus() === 0 ? '当前武器无法增加穿透' : undefined) : undefined;
     const active = activeTraitIds(u), shown = (id: string) => traitDisplayName(u, id, reg.get(id)?.name ?? id, active);
     const names = active.map((id) => shown(id) + (inactive(id) ? '（未生效）' : '')).join('、');
     rows.push(`<div class="eq"><b>特质</b> ${esc(names)}</div>`);
     // 已完成分级的特质按各自规则门控显示累计效果。
-    const effect = (id: string, trait: Trait) => gradedTraitEnabled(u, id) ? traitLadderSummary(id, traitLevel(u, id, active), u.traitLevelModel).replace(/^L\d+：/, '') + (id === 'ap-weapon' ? `；当前主武器实际穿透+${displayNumber(penetrationBonus())}` : '') : traitDescription(trait, u);
-    rows.push(`<details><summary>特质效果</summary>${active.map((id) => { const trait = reg.get(id), reason = inactive(id); return `<div>${esc(shown(id))}：${reason ? `<b>未生效：${esc(reason)}</b>。` : ''}${esc(trait ? effect(id, trait) : '未知定义')}${gradedTraitEnabled(u, id) ? '<small> · 等级来源：' + traitLevelSources(u, id).map(s => esc(s.name) + ' L' + s.level + (s.remaining === undefined ? '' : '（剩' + s.remaining + '轮）') + (s.level < traitLevel(u, id, active) ? '，被较高等级覆盖' : '')).join('；') + '</small>' : ''}</div>`; }).join('')}</details>`);
+    const effect = (id: string, trait: Trait) => gradedTraitEnabled(u, id) ? playerTraitLevelDescription(id, traitLevel(u, id, active), u.traitLevelModel) + (id === 'ap-weapon' ? `；当前主武器实际穿透+${displayNumber(penetrationBonus())}` : '') : playerTraitDescription(trait);
+    rows.push(`<details><summary>特质效果</summary>${active.map((id) => { const trait = reg.get(id), reason = inactive(id); return `<div>${esc(shown(id))}：${reason ? `<b>未生效：${esc(reason)}</b>。` : ''}${esc(trait ? effect(id, trait) : '未知定义')}</div>`; }).join('')}</details>`);
   }
   if (u.traitSources?.length) {
     rows.push(`<div class="trait-sources" data-role="trait-sources">${u.traitSources.map((source) => {

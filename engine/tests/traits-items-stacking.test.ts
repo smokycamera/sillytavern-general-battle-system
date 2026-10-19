@@ -123,7 +123,7 @@ describe('V23 组合修正关键回归',()=>{
     const a=unit('a',{medic:10,regen:10},{level:10});a.hp-=50;expect(medicHealingMultiplier(a)).toBe(1.96);expect(regenerationAmount(a)).toBe(23);
     const old=frozen(),before=structuredClone(old),up=upgradeRecoveryItemBudget(old);
     expect(old).toEqual(before);expect(up.recipe).toEqual({...old.recipe,progressionModel:ITEM_STACKING});expect(up.ability!.effects[0]).toMatchObject({amount:136*1.10});
-    expect(itemValueSummary(old)).toContain('历史规则');expect(historicalRecoveryItem(up)).toBe(false);
+    expect(itemValueSummary(old)).toContain('治疗');expect(itemValueSummary(old)).not.toMatch(/历史规则|以本场|组合/);expect(historicalRecoveryItem(up)).toBe(false);
     const custom=structuredClone(old);(custom.ability!.effects[0] as {amount:number}).amount=999;expect(()=>upgradeRecoveryItemBudget(custom)).toThrow('可信配方');
     const historical=frozen();historical.ability=itemAbilityTemplate(historical.recipe.active!,10,historical.recipe.bonuses,'single','药剂',false,'skills-v2');delete historical.recipe.progressionModel;
     expect(upgradeRecoveryItemBudget(historical).ability!.effects[0]).toMatchObject({amount:136*1.10});

@@ -9,10 +9,10 @@ import {memberHealthSummary,memberHealth,memberHealthMax,memberNoun,hasMemberHea
 import {anchoredWeaponLabel,anchoredProtection,armorEffectLabel} from '../../engine/src/power-anchors.js';
 import { fallbackAbilityRange } from '../../engine/src/actions.js';
 import { armorTraitId, equipmentTraitIds, autoTraitLabel } from '../../engine/src/trait-sources.js';
-import { TRAIT_MODEL } from '../../engine/src/trait-model.js';
+import { playerTraitDescription, playerTraitLevelDescription } from './player-trait-description.js';
 import { SKILL_CATEGORIES, skillMechanismName } from '../../engine/src/data/skill-mechanisms.js';
 import { skillDefinitionName, skillDefinitionId } from '../../engine/src/skill-catalog.js';
-import { WEAPON_CLASSES, ABILITY_BLUEPRINTS, traitCatalog, traitDescription, isGradedTrait, traitLadderSummary, type Trait, type Combatant, abilityUsabilityReason, effectiveProtection, equipmentReason } from '../../engine/src/index.js';
+import { WEAPON_CLASSES, ABILITY_BLUEPRINTS, traitCatalog, isGradedTrait, type Trait, type Combatant, abilityUsabilityReason, effectiveProtection, equipmentReason } from '../../engine/src/index.js';
 import { bodyChoices, equipmentFields, captureEquipment, selectField, htmlText as esc } from './equipment-form.js';
 import type { UnitDraft } from './unit-builder.js';
 export function captureUnitDraft(prefix: string, d: UnitDraft, opts: { managed?: boolean } = {}): UnitDraft {
@@ -46,10 +46,10 @@ export function unitForm(prefix: string, d: UnitDraft, registry: Map<string, Tra
   const input = (key: string, extra = '') => `<input data-role="${prefix}-${key}" value="${esc(d[key as keyof UnitDraft])}" ${extra}>`;
   const disabled = opts.managed ? 'disabled' : '';
   const armorTrait = d.traits.includes('natural-armor') ? undefined : armorTraitId(Number(d.armor.tier));
-  const describe = (t: Trait) => traitDescription(t, { rulesVersion: 'v2', traitModel: TRAIT_MODEL });
+  const describe = playerTraitDescription;
   const choice = (t: Trait) => {
     const level = d.traitLevels?.[t.id] ?? 1, graded = isGradedTrait(t.id);
-    return `<label title="${esc(t.derived ?? (graded ? traitLadderSummary(t.id, level, 'traits-items-v2') : describe(t)))}"><input type="checkbox" data-role="${prefix}-trait" value="${t.id}" ${d.traits.includes(t.id) ? 'checked' : ''}>${t.name}${graded ? `<input type="number" min="1" max="10" value="${level}" data-role="${prefix}-trait-level" data-trait="${t.id}" aria-label="${t.name}等级">` : ''}</label>`;
+    return `<label title="${esc(graded ? t.name + 'L' + level + '：' + playerTraitLevelDescription(t.id, level, 'traits-items-v2') : describe(t))}"><input type="checkbox" data-role="${prefix}-trait" value="${t.id}" ${d.traits.includes(t.id) ? 'checked' : ''}>${t.name}${graded ? `<input type="number" min="1" max="10" value="${level}" data-role="${prefix}-trait-level" data-trait="${t.id}" aria-label="${t.name}等级">` : ''}</label>`;
   };
   const listed = new Set(traitCatalog(registry).flatMap((g) => g.traits.map((t) => t.id)));
   const legacy = d.traits.filter((id) => !listed.has(id)).flatMap((id) => registry.get(id) ? [registry.get(id)!] : []);
