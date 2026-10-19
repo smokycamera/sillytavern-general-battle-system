@@ -1,6 +1,6 @@
 import { ITEM_PROGRESSION, ITEM_STACKING, PROGRESSION_MODEL, STACKING_MODEL, itemProgression, type ItemProgressionModel } from './progression.js';
 import { applyItemProgression } from './item-progression.js';
-import { compileWornEffects, type WornEffects } from './gear-bonuses.js';
+import { compileWornEffects, WORN_ANCHORED_MODEL, type WornEffects } from './gear-bonuses.js';
 import { validateEnhancements, enhancementLabel, type Enhancements, type BonusStat } from './enhancements.js';
 import { recoveryCapacity } from './recovery.js';
 import { equipmentLoad } from './body.js';
@@ -38,6 +38,8 @@ export interface ItemEffectRecipe {
   /** 缺省是历史预算和历史非分级授予；读取时不得套新价格。 */
   traitBudgetModel?: typeof TRAIT_LEVEL_MODEL | typeof PHASE2_TRAIT_LEVEL_MODEL | typeof PROGRESSION_MODEL | typeof STACKING_MODEL;
   progressionModel?: ItemProgressionModel;
+  /** 仅佩戴修正的编译版本；缺省保留历史实物，读取不重算。 */
+  wornEffectModel?: typeof WORN_ANCHORED_MODEL;
   /** 一次性、充能：通用技能机制 id。 */
   active?: string;
   /** 佩戴：授予的特质；专精的等级就是道具等级。 */
@@ -173,7 +175,7 @@ function compileItemValue(spec: Extract<ItemSpecification, { kind: 'item' }>, se
     const bonuses = spec.bonuses && Object.values(spec.bonuses).some((v) => v) ? Object.fromEntries(Object.entries(spec.bonuses).filter(([, v]) => v)) as Enhancements : undefined;
     if (!traits.length && !bonuses) throw new Error('佩戴道具需要特质或单位修正');
     const passive: ItemPassive = { traits, ...(bonuses ? { bonuses } : {}), ...(!spec.legacy ? { actualEffects: compileWornEffects(bonuses, power) } : {}) };
-    return { recipe: { version: ITEM_VERSION, form: 'worn', power, seed, ...(!spec.legacy ? { traitBudgetModel: STACKING_MODEL, progressionModel: ITEM_PROGRESSION } : {}), ...(traits.length ? { traits } : {}), ...(bonuses ? { bonuses } : {}), ...(spec.legacy ? { legacy: spec.legacy } : {}) }, passive };
+    return { recipe: { version: ITEM_VERSION, form: 'worn', power, seed, ...(!spec.legacy ? { traitBudgetModel: STACKING_MODEL, progressionModel: ITEM_PROGRESSION, wornEffectModel: WORN_ANCHORED_MODEL } : {}), ...(traits.length ? { traits } : {}), ...(bonuses ? { bonuses } : {}), ...(spec.legacy ? { legacy: spec.legacy } : {}) }, passive };
   }
   if (!spec.active || spec.traits?.length) throw new Error('一次性与充能道具写技能机制，如buff治疗L3、物理范围投射L4');
   validateEnhancements(spec.bonuses, 'skill');
@@ -294,9 +296,23 @@ export function equipmentReason(unit: Pick<Combatant, 'body' | 'scale' | 'weapon
   return undefined;
 }
 
-const definition = (a: Ability | undefined) => a ? JSON.stringify({ ...a, name: undefined, desc: undefined, category: undefined }, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
+const definition = (a: object | undefined) => a ? JSON.stringify({ ...a, name: undefined, desc: undefined, category: undefined }, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
   ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]])) : value) : undefined;
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+export function historicalWornItem(value: ItemValue): boolean {
+  return value.recipe.form === 'worn' && value.recipe.wornEffectModel !== WORN_ANCHORED_MODEL && Object.values(value.passive?.bonuses ?? {}).some(v => v);
+}
+/** 显式升级已有实物：保留身份、配方、特质与点数，只替换修正实效。 */
+export function upgradeWornItemBudget(value: ItemValue): ItemValue {
+  validateItemValue(value);
+  if (!historicalWornItem(value)) throw Error('这件道具没有可升级的历史佩戴修正');
+  if (value.passive!.actualEffects && definition(value.passive!.actualEffects) !== definition(compileWornEffects(value.passive!.bonuses, value.recipe.power, 'worn-progression-v1'))) throw Error('实物效果与可信配方不一致，不能推测手工数值；请保留原效果');
+  const next = structuredClone(value);
+  next.recipe.wornEffectModel = WORN_ANCHORED_MODEL;
+  next.recipe.progressionModel = ITEM_PROGRESSION;
+  next.passive!.actualEffects = compileWornEffects(next.passive!.bonuses, next.recipe.power);
+  return next;
+}
 /** 历史数值仍可使用；只在玩家明确升级时重编，读取/入场不调用。 */
 export function historicalRecoveryItem(value: ItemValue): boolean {
   const recovery = (effects: readonly EffectOp[]): boolean => effects.some(e => e.op === 'heal' || e.op === 'barrier' || e.op === 'zone' && (e.kind === 'healing' || recovery(e.effects ?? [])));
@@ -319,6 +335,7 @@ export function upgradeRecoveryItemBudget(value: ItemValue): ItemValue {
 export function validateItemValue(value: unknown): asserts value is ItemValue {
   if (!object(value) || !object(value.recipe)) throw new Error('道具配方损坏');
   const r = value.recipe;
+  if (r.wornEffectModel !== undefined && (r.wornEffectModel !== WORN_ANCHORED_MODEL || r.form !== 'worn' || !itemProgression(r.progressionModel))) throw Error('佩戴修正版本损坏');
   if (r.traitBudgetModel !== undefined && r.traitBudgetModel !== TRAIT_LEVEL_MODEL && r.traitBudgetModel !== PHASE2_TRAIT_LEVEL_MODEL && r.traitBudgetModel !== PROGRESSION_MODEL && r.traitBudgetModel !== STACKING_MODEL) throw new Error('佩戴特质等级版本损坏');
   if (r.version !== ITEM_VERSION || !['single', 'charged', 'worn'].includes(String(r.form)) || !Number.isSafeInteger(r.power) || Number(r.power) < 1 || Number(r.power) > 10
     || typeof r.seed !== 'string' || !r.seed || r.legacy !== undefined && typeof r.legacy !== 'string') throw new Error('道具配方版本、形态或等级损坏');

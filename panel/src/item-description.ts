@@ -1,7 +1,7 @@
 import { displayNumber } from '../../engine/src/display-number.js';
-import { progression, wornItemEffects, STACKING_MODEL } from '../../engine/src/index.js';
+import { progression, wornItemEffects, STACKING_MODEL, compileWornEffects, WORN_ANCHORED_MODEL } from '../../engine/src/index.js';
 import { BONUS_NAMES } from '../../engine/src/enhancements.js';
-import { ITEM_FORM_NAMES, wornItemBonuses, wornLevelScale, ITEM_MODEL_V2, itemSpecText, traitRegistry, standardConditionMap, isGradedTrait, traitLevelsV16, canonicalTraitId, sourceTraitLevel,
+import { wornItemBonuses, ITEM_MODEL_V2, itemSpecText, traitRegistry, standardConditionMap, isGradedTrait, traitLevelsV16, canonicalTraitId, sourceTraitLevel,
   type Ability, type Combatant, type EffectOp, type ItemPassive, type ItemValue } from '../../engine/src/index.js';
 import { enhancementLabel, type Enhancements } from '../../engine/src/enhancements.js';
 import { diceAvg } from '../../engine/src/data/weapons.js';
@@ -10,6 +10,23 @@ import { playerTraitDescription, playerTraitLevelDescription } from './player-tr
 
 const ZONES: Record<string, string> = { fire: '火墙', poison: '毒雾', smoke: '烟幕', healing: '治疗区域', trap: '陷阱' };
 const MOVES: Record<string, string> = { dash: '突进', blink: '闪现', withdraw: '后撤' };
+type EffectStat = keyof typeof BONUS_NAMES;
+export function wornEffectAmount(stat: EffectStat, value: number): string {
+  const percent = stat === 'damage' || stat.endsWith('Damage');
+  const unit = percent ? '%' : stat === 'speed' ? '步' : stat === 'morale' ? '点' : stat === 'protection' || stat.endsWith('Protection') ? '抗穿' : '格';
+  return (value > 0 ? '+' : '') + displayNumber(value * (percent ? 100 : 1)) + unit;
+}
+/** 所有文字出口读取冻结实效；旧配方点数只作配方展示。 */
+export function itemEffectRows(value: ItemValue): { stat: EffectStat; name: string; actual: string; written: string; next?: string }[] {
+  if (!value.passive) return [];
+  const effects = wornItemEffects(value).values;
+  const next = value.recipe.wornEffectModel === WORN_ANCHORED_MODEL && value.recipe.power < 10 ? compileWornEffects(value.passive.bonuses, value.recipe.power + 1).values : undefined;
+  return [...new Set([...Object.keys(value.passive.bonuses ?? {}), ...Object.keys(effects)])].map(key => {
+    const stat = key as EffectStat, amount = effects[stat] ?? 0, points = value.passive!.bonuses?.[stat];
+    return { stat, name: BONUS_NAMES[stat], actual: wornEffectAmount(stat, amount), written: points === undefined ? '—' : (points > 0 ? '+' : '') + points,
+      ...(next && (next[stat] ?? 0) > amount ? { next: wornEffectAmount(stat, (next[stat] ?? 0) - amount) } : {}) };
+  });
+}
 function effectText(e: EffectOp, a: Ability): string {
   switch (e.op) {
     case 'heal': return `治疗${e.amount !== undefined ? displayNumber(e.amount) : e.dice}生命`;
@@ -31,22 +48,20 @@ export function itemAbilitySummary(a: Ability): string {
   return [a.itemQuick ? '自身或相邻友军，可用加速动作' : a.usesPerBattle ? `每战${a.usesPerBattle}次，占主行动` : '占主行动',
     a.range && a.range.max > 1 ? `射程${displayNumber(gridAbility(a, 'arms-v2').range!.max)}格` : '', ...a.effects.map((e) => effectText(e, a)), a.delivery === 'magic' ? '魔法' : ''].filter(Boolean).join('，');
 }
-export function itemPassiveSummary(p: ItemPassive, model?: unknown): string {
+export function itemPassiveSummary(p: ItemPassive, model?: unknown, detailed = true): string {
   const traits = p.traits.map((t) => {
     const trait = traitRegistry().get(t.id), name = trait?.name ?? t.id;
-    return isGradedTrait(t.id) ? `${name}L${t.level ?? 5}（${playerTraitLevelDescription(t.id, t.level ?? 5, model)}）` : trait ? `${name}（${playerTraitDescription(trait)}）` : name;
+    return isGradedTrait(t.id) ? `${name}L${t.level ?? 5}${detailed ? '（' + playerTraitLevelDescription(t.id, t.level ?? 5, model) + '）' : ''}` : trait && detailed ? `${name}（${playerTraitDescription(trait)}）` : name;
   });
-  const actual = p.actualEffects ? Object.entries(p.actualEffects.values).filter(([,v]) => v).map(([k,v]) => {
-    const percent = k === 'damage' || k.endsWith('Damage');
-    const amount = Number(((v ?? 0) * (percent ? 100 : 1)).toFixed(2));
-    return BONUS_NAMES[k as keyof typeof BONUS_NAMES] + (amount >= 0 ? '+' : '') + amount + (percent ? '%' : '');
-  }).join('、') : '';
-  return [traits.join('；'), actual || (p.bonuses ? enhancementLabel(p.bonuses) : '')].filter(Boolean).join('；');
+  const values = wornItemEffects({ passive: p }).values;
+  const actual = [...new Set([...Object.keys(p.bonuses ?? {}), ...Object.keys(values)])].map(k => BONUS_NAMES[k as EffectStat] + wornEffectAmount(k as EffectStat, values[k as EffectStat] ?? 0)).join('、');
+  return [traits.join('；'), actual].filter(Boolean).join('；');
 }
 /** 库存卡片与审批预览共用的一句话说明；形态已在卡片标题里。 */
-export function itemValueSummary(value: ItemValue): string {
+export function itemValueSummary(value: ItemValue, name?: string): string {
   const r = value.recipe;
-  return [ITEM_FORM_NAMES[r.form] + ' · ' + itemSpecText(r), value.ability ? itemAbilitySummary(value.ability) : '', value.passive ? itemPassiveSummary(value.passive, STACKING_MODEL) : ''].filter(Boolean).join(' · ');
+  const spec = itemSpecText(r), historical = value.passive?.bonuses && r.wornEffectModel !== WORN_ANCHORED_MODEL;
+  return [name !== undefined ? '' : spec, value.ability ? itemAbilitySummary(value.ability) : '', value.passive ? itemPassiveSummary(value.passive, STACKING_MODEL, false) : '', historical ? '旧版数值' : ''].filter(Boolean).join(' · ');
 }
 
 /**
@@ -71,8 +86,8 @@ export function overshadowedGear(unit: Pick<Combatant, 'gear' | 'traits' | 'trai
   for (const [stat, written] of Object.entries(item.passive.bonuses ?? {}) as [keyof NonNullable<ItemPassive['bonuses']>, number][]) {
     const points = actual(item)[stat] ?? 0;
     if (points <= 0) continue;
-    const mine = progression(unit) && stat !== 'speed' ? wornItemEffects(item).values[stat] ?? 0 : points;
-    if (gear.some((other, n) => n !== index && beats(progression(unit) && stat !== 'speed' ? wornItemEffects(other).values[stat] ?? 0 : actual(other)[stat] ?? 0, n, mine))) covered.push(enhancementLabel({ [stat]: written }));
+    const mine = progression(unit) ? wornItemEffects(item).values[stat] ?? 0 : points;
+    if (mine > 0 && gear.some((other, n) => n !== index && beats(progression(unit) ? wornItemEffects(other).values[stat] ?? 0 : actual(other)[stat] ?? 0, n, mine))) covered.push(progression(unit) ? BONUS_NAMES[stat] + wornEffectAmount(stat, mine) : enhancementLabel({ [stat]: written }));
   }
   return covered;
 }

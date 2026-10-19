@@ -5,6 +5,7 @@ import { generateUnit, traitRegistry, standardConditionMap, prepareCombatModel, 
   wornEffects, wornDamageMultiplier, anchoredProtection, movementPoints, traitPenetrationBonus, reconDistance,
   parseSkillMechanism, skillMechanismId, itemAbilityTemplate, compileSkill, upgradeCombatSkills, resolveHealingBudget,
   PROGRESSION_MODEL, PROGRESSION_PARAMETERS, traitParameter, regenerationAmount, massMoveReach, itemUseAbility,
+  compileWornEffects,
   placeZone, settleZones, conditionDamage, skillEffectValue, syncGearAbilities, type Combatant, type GenerateInput, type ItemSpecification, type RulePack, type Weapon } from '../src/index.js';
 import { unitRecordFromCombatant, materializeUnitRecord } from '../../panel/src/unit-state.js';
 import { itemValueSummary, overshadowedGear } from '../../panel/src/item-description.js';
@@ -20,7 +21,7 @@ function item(spec: Omit<Extract<ItemSpecification, {kind:'item'}>, 'kind'>) {
   if (m.kind !== 'item') throw Error('fixture');
   // 本文件固定验证V22冻结配方；默认新建物品已采用V23预算。
   m.value.recipe.progressionModel = 'item-progression-v1';
-  if (m.value.passive) m.value.recipe.traitBudgetModel = 'traits-items-v1';
+  if (m.value.passive) { m.value.recipe.traitBudgetModel = 'traits-items-v1'; delete m.value.recipe.wornEffectModel; m.value.passive.actualEffects = compileWornEffects(spec.bonuses, spec.power, 'worn-progression-v1'); }
   if (spec.form !== 'worn') m.value.ability = itemAbilityTemplate(spec.active!,spec.power,spec.bonuses,spec.form,'道具','item-progression-v1');
   return m.value;
 }

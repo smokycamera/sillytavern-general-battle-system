@@ -23,6 +23,7 @@ cpSync('mcp/test', path.join(output, 'mcp/test'), { recursive: true });
 copyFileSync('docs/mcp-player-bridge.md', path.join(output, 'docs/mcp-player-bridge.md'));
 copyFileSync('docs/player-update-2.1.0-20261013.md', path.join(output, 'docs/player-update-2.1.0-20261013.md'));
 copyFileSync('docs/update-2.6-20261019.md', path.join(output, 'docs/update-2.6-20261019.md'));
+copyFileSync('docs/worn-anchoring-20261020.md', path.join(output, 'docs/worn-anchoring-20261020.md'));
 copyFileSync('scripts/jev-cors-relay.mjs', path.join(output, 'scripts/jev-cors-relay.mjs'));
 const files = [];
 function visit(dir) { for (const name of readdirSync(dir, { withFileTypes: true })) { const file = path.join(dir, name.name); if (name.isDirectory()) visit(file); else files.push(file); } }

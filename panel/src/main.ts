@@ -65,7 +65,8 @@ import { MAX_SCENE_UNITS } from './narrative-limits.js';
 import { recommendBattleMode, extendSmallRoundLimit, upgradeDefaultObjective, normalizeObjectiveMode, prepareBattleObjective, battleCapacityIssue, type BattleObjectiveMode } from './battle-setup.js';
 import { unitForm, captureUnitDraft, buildPreview } from './unit-form.js';
 import { playerTraitDescription, playerTraitLevelDescription } from './player-trait-description.js';
-import { BODY, effectiveProtection, looseFormation, ABILITY_BLUEPRINTS, itemSpecText, itemsV15, isGradedTrait, gradedTraitEnabled, traitLevel, traitDisplayName, traitPenetrationBonus, postureActive, type Trait } from '../../engine/src/index.js';
+import { BODY, effectiveProtection, looseFormation, ABILITY_BLUEPRINTS, itemsV15, isGradedTrait, gradedTraitEnabled, traitLevel, traitDisplayName, traitPenetrationBonus, postureActive, type Trait } from '../../engine/src/index.js';
+import { itemValueSummary } from './item-description.js';
 /**
  * 战阵 · 面板主程序
  * 编排：编制管理（造怪器）→ 小规模战斗 / 军团会战 → 结算卡与状态输出；
@@ -1288,7 +1289,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   }
   if (u.shield && u.rulesVersion === 'v2') rows.push(`<div class="eq"><b>盾</b> ${esc(u.shield.name ?? '盾牌')}${esc(enhancementLabel(u.shield.recipe?.bonuses))}：${esc(shieldDetail(u))}</div>`);
   if (u.gear?.length) {
-    rows.push(`<div class="eq"><b>佩戴</b> ${u.gear.map((g) => esc(g.name) + '（' + esc(itemSpecText(g.recipe)) + '）').join('、')}</div>`);
+    rows.push(`<div class="eq"><b>佩戴</b> ${u.gear.map((g) => esc(g.name) + '（' + esc(itemValueSummary(g, g.name)) + '）').join('、')}</div>`);
   }
 
   // 技能

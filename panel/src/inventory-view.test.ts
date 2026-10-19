@@ -44,6 +44,30 @@ function mount(canView = (_record: NonNullable<InventorySave['storage']>[number]
 
 beforeEach(() => { document.body.innerHTML = ''; Element.prototype.scrollIntoView = vi.fn(); });
 
+it('佩戴卡片展示短实效和升级收益；旧物更新先预览，提交后保留实物与历史', async () => {
+  const f = mount(), name = '佩戴L1+2防御+1速度';
+  const worn = createInventoryItem('worn', name, { kind: 'item', form: 'worn', power: 1, bonuses: { defense: 2, speed: 1 } }, 'worn');
+  f.save().inventory!.push(worn); f.render();
+  let card = document.querySelector<HTMLElement>('[data-inventory-id="worn"]')!;
+  expect(card.querySelector('.item-stats')!.textContent).toContain('防御+0.2格升L2 +0.06格');
+  expect(card.querySelector('.item-stats')!.textContent).toContain('速度+0.1步升L2 +0.1步');
+  expect(card.querySelectorAll('b')[0]!.textContent).toBe(name);
+  expect(card.querySelector('.item-rules p:last-child')!.textContent).not.toContain(name);
+  if (worn.mechanics?.kind !== 'item') throw Error('fixture');
+  delete worn.mechanics.value.recipe.wornEffectModel; delete worn.mechanics.value.recipe.progressionModel; delete worn.mechanics.value.passive!.actualEffects;
+  f.render();
+  await f.action('upgrade-budget', 'worn');
+  expect(document.querySelector('.inventory-preview h3')!.textContent).toContain('更新佩戴数值');
+  expect(document.querySelector('.inventory-preview')!.textContent).toContain('防御+0.2格、速度+0.1步');
+  expect(worn.history).toBeUndefined();
+  await f.action('confirm');
+  const updated = f.save().inventory!.find(i => i.id === 'worn')!;
+  expect(updated.qty).toBe(1); expect(updated.history).toHaveLength(1);
+  card = document.querySelector<HTMLElement>('[data-inventory-id="worn"]')!;
+  expect(card.querySelector('[data-action="inventory-upgrade-budget"]')).toBeNull();
+  expect(card.textContent).toContain('防御+0.2格');
+});
+
 it('shows only the selected unit and public items, with equipped gear before its bag and public inventory', () => {
   const f = mount(), before = structuredClone(f.save());
   const equippedA = f.save().inventory!.filter(i => i.equippedTo?.unitId === 'a').map(i => i.id);

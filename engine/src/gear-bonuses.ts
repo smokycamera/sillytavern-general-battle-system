@@ -10,6 +10,9 @@ export interface WornEffects {
   damageCap: number; negativeDamageCap: number;
   protectionCap: number; negativeProtectionCap: number;
 }
+export const WORN_ANCHORED_MODEL = 'worn-anchored-v1' as const;
+/** 满额主词条：L1即可提供一格，逐级成长，L10维持原有上限；不修改主动道具的G表。 */
+export const WORN_ANCHORED_G = [1, 1.30, 1.65, 2.05, 2.50, 3, 3.55, 4.10, 4.65, 5.20] as const;
 /** 同一实物先兑现通用+通道上限，之后才跨实物取强。 */
 function capWornSource(effects: WornEffects): WornEffects {
   for (const channel of ['kinetic', 'thermal', 'arcane']) for (const stat of ['damage', 'protection'] as const) {
@@ -20,11 +23,14 @@ function capWornSource(effects: WornEffects): WornEffects {
   }
   return effects;
 }
-export function compileWornEffects(bonuses: Enhancements | undefined, power: number): WornEffects {
-  const G = GEAR_G[power - 1]!, D = GEAR_D[power - 1]!, values: WornEffects['values'] = {};
+export function compileWornEffects(bonuses: Enhancements | undefined, power: number, model: 'worn-progression-v1' | typeof WORN_ANCHORED_MODEL = WORN_ANCHORED_MODEL): WornEffects {
+  if (!Number.isInteger(power) || power < 1 || power > 10) throw Error('道具等级必须为L1–L10整数');
+  const G = (model === WORN_ANCHORED_MODEL ? WORN_ANCHORED_G : GEAR_G)[power - 1]!, D = GEAR_D[power - 1]!, values: WornEffects['values'] = {};
   for (const [stat, points] of Object.entries(bonuses ?? {}) as [BonusStat, number][]) {
     const q = points / 10, g = points < 0 ? Math.min(G, 1.4) : G, d = points < 0 ? Math.min(D, .67) : D;
-    values[stat] = q * (stat === 'damage' ? d : stat.endsWith('Damage') ? 1.25 * d : stat === 'morale' ? 8 * g : stat === 'protection' ? .5 * g : stat.endsWith('Protection') ? .75 * g : g);
+    // 满额速度主词条每升一级多一格，避免相邻数级在平地都走一样远。
+    const speed = model === WORN_ANCHORED_MODEL && points > 0 ? power : g;
+    values[stat] = q * (stat === 'damage' ? d : stat.endsWith('Damage') ? 1.25 * d : stat === 'morale' ? 8 * g : stat === 'protection' ? .5 * g : stat.endsWith('Protection') ? .75 * g : stat === 'speed' ? speed : g);
   }
   return capWornSource({ values, damageCap: 1.25 * D, negativeDamageCap: 1.25 * Math.min(D, .67), protectionCap: .75 * G, negativeProtectionCap: .75 * Math.min(G, 1.4) });
 }

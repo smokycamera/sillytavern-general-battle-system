@@ -5,8 +5,8 @@ import { instanceVarianceLabel } from '../../engine/src/instance-variance.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import { equipmentLoadLabel } from '../../engine/src/body.js';
 import { enhancementLabel, bonusMultiplier } from '../../engine/src/enhancements.js';
-import { gearItem, ITEM_FORM_NAMES, historicalRecoveryItem, type EquipmentSlot } from '../../engine/src/items.js';
-import { itemValueSummary, overshadowedGear } from './item-description.js';
+import { gearItem, ITEM_FORM_NAMES, itemSpecText, historicalRecoveryItem, historicalWornItem, type EquipmentSlot } from '../../engine/src/items.js';
+import { itemValueSummary, itemPassiveSummary, itemEffectRows, overshadowedGear } from './item-description.js';
 import { promptSelected, type PromptSettings } from './prompt-settings.js';
 import { gridWeaponRange } from '../../engine/src/small/weapon-range.js';
 const ARMS_MODEL = 'arms-v2' as const;
@@ -41,7 +41,7 @@ export function itemDescription(item: InventoryItem): string {
 function itemDescriptionBase(item: InventoryItem): string {
   const m = item.mechanics;
   if (!m) return '剧情物品 · 尚未设置战斗用途';
-  if (m.kind === 'item') return itemValueSummary(m.value);
+  if (m.kind === 'item') return itemValueSummary(m.value, item.name);
   if (m.kind === 'shield') {
     const kind = shieldClass({shield:m.value}), power = m.value.recipe?.power ?? 3, head = `${SHIELD_CLASSES[kind].name} L${power}${enhancementLabel(m.value.recipe?.bonuses)} · 负重${displayNumber(m.value.load)}`;
     if (kind === 'energy-shield') return `${head} · 每人${energyShieldPool(power, shieldPlatformScale({shield:m.value}))}点护盾，每次激活回充${energyShieldRecharge(power)}点 · 不能盾击、持盾固守或盾墙`;
@@ -104,7 +104,7 @@ function previewHtml(preview: InventoryPreview): string {
   const itemId = 'itemId' in intent ? intent.itemId : undefined;
   const afterItem = preview.after.inventory?.find((i) => i.id === itemId);
   const beforeItem = preview.before.inventory?.find((i) => i.id === itemId);
-  const labels: Record<InventoryAction['kind'], string> = { create: '新增物品', define: '设置物品效果', reforge: '编辑装备', 'upgrade-budget':'升级治疗／屏障数值', assign: '调整归属', equip: '更换装备', unequip: '卸下装备', use: '使用物品', discard: '移出库存', 'discard-many': '批量删除', collect: '收缴道具' };
+  const labels: Record<InventoryAction['kind'], string> = { create: '新增物品', define: '设置物品效果', reforge: '编辑装备', 'upgrade-budget': beforeItem?.mechanics?.kind === 'item' && beforeItem.mechanics.value.recipe.form === 'worn' ? '更新佩戴数值' : '升级治疗／屏障数值', assign: '调整归属', equip: '更换装备', unequip: '卸下装备', use: '使用物品', discard: '移出库存', 'discard-many': '批量删除', collect: '收缴道具' };
   const units = changed.map((record) => {
     const before = preview.before.storage?.find((r) => r.id === record.id);
     const registry = traitRegistry();
@@ -329,7 +329,7 @@ export class InventoryPanel {
         if (item.qty > 1) details.push(`<button data-action="inventory-discard" ${itemData} ${disabled}>移除1件</button>`);
         details.push(`<button class="danger" data-action="inventory-delete" ${itemData} ${disabled}>删除物品</button>`);
       }
-      const stats: [string, string][] = [];
+      const stats: [string, string, string?][] = [];
       if (m?.kind === 'weapon') {
         const w = m.value;
         stats.push(['伤害', anchoredWeaponLabel(w,'wounds-v2').split(' · ').find(s => s.includes('均值'))?.replace(/^.*均值/, '') ?? '—'], ['穿透', displayNumber(anchoredWeapon(w,undefined,'wounds-v2')?.penetration ?? w.penetration ?? 0)], ['射程', save.mode === 'mass' ? formationWeaponRange(w) + '阵位' : gridWeaponRange(w,true,ARMS_MODEL) + '格'], ['负重', displayNumber(w.load ?? 0)]);
@@ -337,16 +337,18 @@ export class InventoryPanel {
         const unit = { armor: m.value, body: m.value.recipe?.size, damageModel:'wounds-v2' as const, armsModel: ARMS_MODEL };
         stats.push(['动能防护', displayNumber(anchoredProtection(unit, 'kinetic'))], ['热能防护', displayNumber(anchoredProtection(unit, 'thermal'))], ['奥术防护', displayNumber(anchoredProtection(unit, 'arcane'))], ['负重', displayNumber(m.value.load ?? 0)]);
       }
+      if (m?.kind === 'item') stats.push(...itemEffectRows(m.value).map(row => [row.name, row.actual, row.next ? `升L${m.value.recipe.power + 1} ${row.next}` : undefined] as [string, string, string?]));
       const battleOnly = single && !outOfBattleUse(item);
       // 不叠加：同方向修正只取最高一件、同一特质只算一次，被盖过的效果在卡片上注明。
       const shadowed = equipped?.slot === 'gear' && actor ? overshadowedGear(actor, item.id) : [];
       return `<article class="inventory-card" data-inventory-id="${esc(item.id)}"><div class="inventory-card-heading"><div>${this.bulkDelete ? `<input type="checkbox" class="inventory-select" data-role="inventory-select" ${itemData} aria-label="选择${esc(item.name)}" ${this.selectedItems.has(item.id) ? 'checked' : ''} ${locked || equipped || this.committing ? 'disabled' : ''}>` : ''}<b>${esc(item.name)}</b><span class="sub">${esc(publicId(item.id))}</span><span class="item-quantity">×${item.qty}</span></div>${this.bulkDelete ? '' : `<label class="item-prompt"><input type="checkbox" data-role="prompt-item" data-id="${esc(item.id)}" ${promptSelected(save.promptSettings as PromptSettings | undefined, 'item', item.id) ? 'checked' : ''}><span>供剧情参考</span></label>`}</div>
         <div class="item-location">${equipped ? (equipped.slot === 'gear' ? '已装备' : slotNames[equipped.slot] + ' · 已装备') : item.assignedTo ? '随身物品' : '公共库存'}${m?.kind === 'item' ? ' · ' + ITEM_FORM_NAMES[m.value.recipe.form] + '道具 · 等级' + m.value.recipe.power : m ? ' · 等级' + (m.value.recipe?.power ?? 1) : ''}</div>
-        ${shadowed.length ? `<p class="sub" data-role="gear-overshadowed">当前未生效：${esc(shadowed.join('、'))}</p>` : ''}
-        ${stats.length ? `<dl class="item-stats">${stats.map(([key, value]) => `<div><dt>${key}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl><details class="item-rules" data-detail-id="rules-${esc(item.id)}"><summary>查看完整属性</summary><p>${esc(itemDescription(item))}</p></details>` : `<p>${esc(itemDescription(item))}</p>`}
+        ${shadowed.length ? `<p class="sub" data-role="gear-overshadowed">未生效：${esc(shadowed.join('、'))}（已被覆盖）</p>` : ''}
+        ${stats.length && m?.kind === 'item' && m.value.passive?.traits.length ? '<p>' + esc(itemPassiveSummary({ traits: m.value.passive.traits }, undefined, false)) + '</p>' : ''}
+        ${stats.length ? `<dl class="item-stats">${stats.map(([key, value, next]) => `<div><dt>${key}</dt><dd>${esc(value)}${next ? '<br><small class="sub">' + esc(next) + '</small>' : ''}</dd></div>`).join('')}</dl>${m?.kind === 'item' && historicalWornItem(m.value) ? '<p class="sub">旧版数值，可预览更新。</p>' : ''}<details class="item-rules" data-detail-id="rules-${esc(item.id)}"><summary>查看完整属性</summary>${m?.kind === 'item' ? '<p>配方：' + esc(itemSpecText(m.value.recipe)) + '</p>' : ''}<p>${esc(itemDescription(item))}</p>${m?.kind === 'item' && !m.value.passive?.actualEffects && m.value.passive?.bonuses?.speed ? '<p>旧版速度只加先攻；更新后增加移动。</p>' : ''}</details>` : `<p>${esc(itemDescription(item))}</p>`}
         <div class="item-actions" ${this.bulkDelete ? 'hidden' : ''}>${equipped ? `<button class="primary" data-action="inventory-unequip" ${itemData} ${disabled}>卸下</button>` : recommended ? `<button class="primary" data-action="inventory-equip" ${itemData} data-slot="${recommended.slot}" ${locked || !actor || recommended.reason ? 'disabled' : ''}>装备为${slotNames[recommended.slot]}</button>${recommended.reason ? '<span class="grid-reason">' + esc(recommended.reason) + '</span>' : ''}${otherWeaponSlots.map(o => `<button data-action="inventory-equip" ${itemData} data-slot="${o.slot}" title="${esc(o.reason ?? '')}" ${locked || !actor || o.reason ? 'disabled' : ''}>装备为${slotNames[o.slot]}</button>`).join('')}` : ''}
         ${single ? `<button class="primary" data-action="inventory-use" ${itemData} title="${battleOnly ? '请在战场的行动列表中使用' : ''}" ${locked || !actor || battleOnly ? 'disabled' : ''}>${battleOnly ? '战斗中使用' : '使用1件'}</button>` : ''}
-        ${m?.kind === 'item' && historicalRecoveryItem(m.value) ? `<button data-action="inventory-upgrade-budget" ${itemData} ${disabled}>升级治疗／屏障数值</button>` : ''}
+        ${m?.kind === 'item' && (historicalRecoveryItem(m.value) || historicalWornItem(m.value)) ? `<button data-action="inventory-upgrade-budget" ${itemData} ${disabled}>${m.value.recipe.form === 'worn' ? '更新佩戴数值' : '升级治疗／屏障数值'}</button>` : ''}
         ${!equipped && !item.assignedTo && actor ? `<button data-action="inventory-assign" ${itemData} ${disabled}>交给${esc(current!.name)}</button>` : ''}</div>
         ${!this.bulkDelete && details.length ? `<details class="inventory-more" data-detail-id="more-${esc(item.id)}"><summary>其他操作</summary><div class="row">${details.join('')}</div></details>` : ''}
         ${item.note || item.history?.length ? `<details data-detail-id="history-${esc(item.id)}"><summary>来源与改造记录</summary>${item.note ? '<p>' + esc(item.note) + '</p>' : ''}${item.history?.map(h => '<p>第' + h.revision + '次记录：' + esc(h.name) + ' · ' + esc(itemDescription({ ...item, mechanics: h.mechanics })) + '</p>').join('') ?? ''}</details>` : ''}</article>`;

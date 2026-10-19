@@ -254,7 +254,8 @@ export function parseSpawnItem(entry: string, notes?: string[]): SpawnItem {
   if (!hasLevel(specText)) return { name: name || specText, qty };
   const spec = parseItemSpecification(specText.split('、').map(part => normalizeNarrativeSpec(part)).join('、'), {}, notes, { item: true });
   if (spec.kind !== 'item') throw new Error('武器、护甲与盾写在weapon、weapon2、armor、shield，items只写道具');
-  return { name: name || specText.replace(/\s*[lL]\s*\d.*$/, '').trim() || itemSpecificationText(spec), qty, spec };
+  const baseName = specText.replace(/\s*[lL]\s*\d.*$/, '').trim();
+  return { name: name || (baseName === '佩戴' ? itemSpecificationText(spec) : baseName) || itemSpecificationText(spec), qty, spec };
 }
 /** 道具 spec 的规范写法，再解析得到同一个道具。 */
 export function itemSpecificationText(spec: Extract<ItemSpecification, { kind: 'item' }>): string {

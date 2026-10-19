@@ -3,7 +3,7 @@ import { validateEnhancements, type Enhancements } from '../../engine/src/enhanc
 import { calibrateAutocannon, calibrateWeaponHands } from '../../engine/src/gen/equipment.js';
 import {hasMemberHealth} from '../../engine/src/member-health.js';
 import {applyRecovery} from '../../engine/src/recovery.js';
-import { syncGearAbilities, gearItem, validateItemValue, migrateLegacyItem, isLegacyItemMechanics, upgradeRecoveryItemBudget, type LegacyItemMechanics } from '../../engine/src/items.js';
+import { syncGearAbilities, gearItem, validateItemValue, migrateLegacyItem, isLegacyItemMechanics, upgradeRecoveryItemBudget, upgradeWornItemBudget, type LegacyItemMechanics } from '../../engine/src/items.js';
 import { skillResourceChange } from '../../engine/src/skill-runtime.js';
 import { applyDispel, dispelCandidates } from '../../engine/src/skill-effects.js';
 /** 库存实物为装备权威；UnitRecord.snapshot 中的装备是供战斗使用的冻结投影。 */
@@ -324,8 +324,8 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       if (whole) Object.assign(item, defined);
       else { item.qty--; inventory.push(defined); }
     } else if (action.kind === 'upgrade-budget') {
-      if (item.mechanics?.kind !== 'item') throw Error('只有治疗或屏障道具可升级数值');
-      const previous = clone(item.mechanics), value = upgradeRecoveryItemBudget(item.mechanics.value);
+      if (item.mechanics?.kind !== 'item') throw Error('这件物品没有可升级的道具数值');
+      const previous = clone(item.mechanics), value = item.mechanics.value.recipe.form === 'worn' ? upgradeWornItemBudget(item.mechanics.value) : upgradeRecoveryItemBudget(item.mechanics.value);
       item.history = [...(item.history ?? []), { revision: item.revision ?? 1, name: item.name, mechanics: previous, sourceId: id }];
       item.mechanics = { kind: 'item', value }; item.revision = (item.revision ?? 1) + 1;
       if (item.equippedTo) {
