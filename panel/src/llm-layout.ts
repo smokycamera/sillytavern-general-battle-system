@@ -161,7 +161,7 @@ export function layoutTask(ctx: LayoutContext, retry?: LayoutRetry): string {
     `- places：最多${MAX_PLACES}个有战术意义的地点，优先写正文提到的，[{"type":类型,"name":"名称","at":方位,"height":0-3,"state":"destroyed"}]。type=${kinds}。height只给高地等写，2-3为明显高地；state=destroyed表示已毁。普通房屋、树木、杂物由程序补全，不要写。`,
     (siege ? `- ${sides}开局位置。${sideName(ctx.attacker)}是攻方，写{"at":["S"]}这样的1-3个${ctx.scene === 'city_siege' ? '城' : '院'}外方位。${sideName(d)}是守方，默认在${ctx.scene === 'city_siege' ? '城' : '院'}内，只需写post：wall城头为主|inside${ctx.scene === 'city_siege' ? '城内街巷' : '院内'}，不上墙|outside出${ctx.scene === 'city_siege' ? '城' : '院'}列阵（这时再写at为外面的方位）。`
       : `- ${sides}开局位置，{"at":["S"]}，可写1-3个方位。${ctx.scene === 'city_streets' ? '各方默认在街区内。' : ''}`) + (thirdParty ? 'neutral默认从东侧进入。' : ''),
-    `- units：只在正文明确某个单位单独行动时写，如潜伏、断后、守桥，[{"unit":"u3","at":"NE"${siege ? ',"post":"wall"' : ''}}]，最多${MAX_SMALL_UNITS}个。`,
+    `- units：根据正文内容选择单位开局位置。unit可写一个短ID或多个短ID组成的数组，有正文依据时优先使用place。按方位写 {"unit":"u3","at":"NE"}；有具体地点写 {"unit":["u1","u2"],"place":"档案室","relation":"inside"}，place位置使用本次places、桥或城门的名称，relation=inside在内部|guards驻守附近|near靠近；at可作为地点无效时的备用方位；按方位部署的攻城守方可写post=wall|inside|outside。最多布置${MAX_SMALL_UNITS}个单位。`,
     exitSide(ctx) ? '- objective：撤离点，写九宫格方位（放在该方向的地图边缘）或places里的name；省略时按部署方向决定。'
       : ctx.objectiveMode === 'siege' ? `- objective：${sideName(ctx.attacker)}要夺取的地点，写places里的name；省略时为${ctx.scene === 'city_siege' ? '城中心' : '守方后方核心'}。` : '',
     '示例（只示格式，内容按正文）：' + JSON.stringify(sample),
@@ -363,21 +363,36 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
   const handles = new Map(ctx.units.map(u => [u.id.toLowerCase(), u.id])), byName = new Map(ctx.units.filter(u => ctx.units.filter(o => o.name === u.name).length === 1).map(u => [u.name, u.id]));
   const detachments = Array.isArray(raw.units) ? raw.units : [];
   if (detachments.length > MAX_SMALL_UNITS) notes.add(`单独部署最多${MAX_SMALL_UNITS}个`);
+  const placed = new Set<string>();
   for (const item of detachments.slice(0, MAX_SMALL_UNITS)) {
     if (!object(item)) continue;
-    const written = String(item.unit ?? item.id ?? item.name ?? '').trim(), id = handles.get(written.toLowerCase()) ?? byName.get(written);
-    const at = sectors(item.at, notes, written || '单位');
-    if (!id) { notes.add('忽略了名单外的单位'); continue; }
-    if (!at.length || deployments.some(d => d.subject === id)) continue;
-    const unit = ctx.units.find(u => u.id === id)!;
-    const post = postOf(item.post);
-    deployments.push({ subject: id, at, ...(post && (!siege || unit.side === defender) ? { post } : {}) });
+    const members = Array.isArray(item.unit) ? item.unit.slice(0, MAX_SMALL_UNITS) : [item.unit ?? item.id ?? item.name];
+    const at = sectors(item.at, notes, '单位');
+    const place = labelOf(item.place), matches = place ? entities.filter(e => e.kind !== 'city' && e.label === place) : [];
+    const target = matches.length === 1 ? matches[0] : undefined;
+    const relation = token(item.relation) || (target?.kind === 'room' ? 'inside' : 'guards');
+    const validRelation = relation === 'inside' || relation === 'guards' || relation === 'near';
+    if (item.place !== undefined && !target) notes.add(`地点${place ?? ''}${matches.length > 1 ? '重名' : '无效'}，单位改用备用方位或本方部署`);
+    if (target && !validRelation) notes.add(`地点${place}的部署关系无效，单位改用备用方位或本方部署`);
+    for (const member of members) {
+      const written = typeof member === 'string' ? member.trim() : '', id = handles.get(written.toLowerCase()) ?? byName.get(written);
+      if (!id) { notes.add('忽略了名单外的单位'); continue; }
+      if (placed.has(id) || placed.size >= MAX_SMALL_UNITS) continue;
+      const unit = ctx.units.find(u => u.id === id)!, post = postOf(item.post);
+      if (target && validRelation) relations.push({ subject: id, relation, object: target.id, ...inferred });
+      if (at.length) deployments.push({ subject: id, at, ...(post && (!siege || unit.side === defender) ? { post } : {}) });
+      if (at.length || target && validRelation) placed.add(id);
+    }
   }
   if (deployments.length) plan.deployments = deployments;
   // The scene budget is 12 entities: structures and the task place first, then places in the order written.
-  const kept = new Set(entities.filter(e => e.kind === 'city' || e.kind === 'river' || e.kind === 'gate' || e.kind === 'bridge' || relations.some(r => r.object === e.id)));
+  const kept = new Set(entities.filter(e => e.kind === 'city' || e.kind === 'river' || e.kind === 'gate' || e.kind === 'bridge' || relations.some(r => r.object === e.id && (r.relation === 'targets' || r.relation === 'exits_at'))));
+  for (const e of entities) if (kept.size < 12 && relations.some(r => r.object === e.id)) kept.add(e);
   for (const e of entities) if (kept.size < 12) kept.add(e);
   if (kept.size < entities.length) notes.add('地点过多，保留前12项');
+  for (let i = relations.length - 1; i >= 0; i--) if (!entities.some(e => kept.has(e) && e.id === relations[i]!.object)) {
+    notes.add('单位绑定地点未保留，改用备用方位或本方部署'); relations.splice(i, 1);
+  }
   plan.intent = { schema: 'scene-intent-v1', entities: entities.filter(e => kept.has(e)), relations, constraints };
   // The compiled plan meets the same strict checks as manual or MCP JSON; a failure here is a local defect.
   const strict = normalizeBattlefieldPlan(plan);

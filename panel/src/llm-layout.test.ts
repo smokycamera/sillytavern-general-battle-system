@@ -42,6 +42,53 @@ describe('indoor preparation vocabulary', () => {
   });
 });
 
+describe('named-location unit deployment', () => {
+  it('puts grouped units in the named room and another unit in a different room in the same sector, including after restore', () => {
+    const combatants = roster();
+    const context = ctx({scene:'interior',size:'large',objectiveMode:'annihilation',map:[9,15],units:combatants.map((u,i)=>({id:'u'+(i+1),name:u.name,side:u.side,kind:'人物'}))});
+    const answer = {interior:{use:'office',pattern:'hall'},cover:'sparse',ally:{at:['S']},enemy:{at:['NW']},
+      places:[{type:'room',name:'档案室',at:'NE'},{type:'room',name:'医务室',at:'NE'},{type:'room',name:'南厅',at:'S'}],
+      units:[{unit:['u1','u2'],place:'档案室',at:'S'},{unit:'u3',place:'医务室'}]};
+    const parsed = compileLayout(answer,context);
+    const field = generatedLayeredField('room-binding-0',9,15,[],{roster:combatants,plan:parsed.plan,unitBindings:Object.fromEntries(combatants.map((u,i)=>['u'+(i+1),u.id]))});
+    const battle = new SmallBattle({battlefield:field,combatants,rules:V11_OVERFLOW_D20,seed:'room-binding-0'}); battle.start();
+    const restored = SmallBattle.fromSnapshot(battle.toSnapshot());
+    for (const [index,label] of [[0,'档案室'],[1,'档案室'],[2,'医务室']] as const) {
+      const region = restored.battlefield!.scene!.regions.find(r=>r.label===label)!;
+      expect(region.cells).toContain(restored.combatants.find(u=>u.id===combatants[index]!.id)!.pos);
+    }
+  });
+  it('keeps every member of a full 32-unit location group, deduplicates members, and supports third parties', () => {
+    const units = Array.from({length:32},(_,i)=>({id:'u'+(i+1),name:'单位'+i,side:(i%3===0?'neutral':i%3===1?'ally':'enemy') as Combatant['side'],kind:'人物'}));
+    const parsed = compileLayout({places:[{type:'position',name:'营地',at:'C'}],units:[{unit:units.map(u=>u.id).concat('u1'),place:'营地'},{unit:'u1',at:'N'}]},ctx({scene:'field',units,objectiveMode:'annihilation'}));
+    expect(parsed.plan.intent!.relations.filter(r=>r.relation==='guards')).toHaveLength(32);
+    expect(parsed.plan.deployments?.some(d=>d.subject==='u1')).toBe(false);
+  });
+  it('binds bridges and gates by name and falls back on invalid, ambiguous or unsupported bindings', () => {
+    const context = ctx({units:[...ctx().units,{id:'u3',name:'第三方',side:'neutral',kind:'人物'}]});
+    const parsed = compileLayout({city:{at:'N',gates:[{name:'南门',state:'closed'}]},water:{type:'river',at:'E',bridges:[{name:'石桥',at:'SE'}]},
+      units:[{unit:'u1',place:'石桥'},{unit:'u2',place:'南门',relation:'near'},{unit:'u3',place:'不存在',at:'W'}]},context);
+    expect(parsed.plan.intent!.relations).toEqual(expect.arrayContaining([
+      expect.objectContaining({subject:'u1',relation:'guards',object:parsed.plan.intent!.entities.find(e=>e.label==='石桥')!.id}),
+      expect.objectContaining({subject:'u2',relation:'near',object:parsed.plan.intent!.entities.find(e=>e.label==='南门')!.id}),
+    ]));
+    expect(parsed.plan.deployments).toContainEqual({subject:'u3',at:['west']});
+    const bad = compileLayout({places:[{type:'room',name:'侧室',at:'N'},{type:'room',name:'侧室',at:'S'}],units:[{unit:'u1',place:'侧室',at:'SW'},{unit:'u2',place:'侧室',relation:'execute_code',at:'NE'}]},ctx({scene:'interior'}));
+    expect(bad.plan.intent!.relations).toHaveLength(0);
+    expect(bad.notes.join(' ')).toContain('重名');
+    expect(bad.plan.deployments).toEqual(expect.arrayContaining([{subject:'u1',at:['south_west']},{subject:'u2',at:['north_east']}]));
+  });
+  it('retains only available entity references when named bindings exceed the scene budget', () => {
+    const places = Array.from({length:8},(_,i)=>({type:'position',name:'点'+i,at:'S'}));
+    const units = Array.from({length:8},(_,i)=>({id:'u'+(i+1),name:'单位'+i,side:'ally' as const,kind:'人物'}));
+    const parsed = compileLayout({city:{at:'N',gates:Array.from({length:4},(_,i)=>({name:'门'+i}))},water:{type:'river',at:'E',bridges:Array.from({length:4},(_,i)=>({name:'桥'+i,at:'E'}))},places,units:units.map((u,i)=>({unit:u.id,place:'点'+i,at:'S'}))},ctx({units}));
+    expect(parsed.plan.intent!.entities).toHaveLength(12);
+    expect(parsed.plan.intent!.relations.every(r=>parsed.plan.intent!.entities.some(e=>e.id===r.object))).toBe(true);
+    expect(parsed.notes.join(' ')).toContain('单位绑定地点未保留');
+    expect(parsed.plan.deployments!.filter(d=>/^u\d+$/.test(d.subject))).toHaveLength(8);
+  });
+});
+
 describe('two-step preparation with a compass layout', () => {
   it.each([{ sides: ['ally', 'enemy'] }, { sides: ['ally', 'enemy', 'neutral'] }] as const)('deploys and restores all 32 individually placed units with $sides', ({ sides: sideList }) => {
     const units = Array.from({ length: 32 }, (_, i) => ({ id: 'u' + (i + 1), name: '布阵' + i, side: sideList[i % sideList.length]!, kind: '人物·近战' }));

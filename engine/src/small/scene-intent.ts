@@ -1,6 +1,7 @@
 import { safeLandmarkLabel } from './map-label.js';
 import { MAX_SMALL_UNITS } from '../battle-limits.js';
-export const MAX_SCENE_RELATIONS = 24;
+// Preserve the old scene budget while allowing one named-location binding for every active unit.
+export const MAX_SCENE_RELATIONS = 24 + MAX_SMALL_UNITS;
 export const MAX_DEPLOYMENT_PLANS = MAX_SMALL_UNITS + 3;
 export const MAX_DEPLOYMENT_ZONES = MAX_DEPLOYMENT_PLANS + MAX_SCENE_RELATIONS;
 export const SCENE_ARCHETYPES = ['old_town', 'market', 'warehouse', 'riverside', 'hilltown', 'gate_front', 'outskirts',
