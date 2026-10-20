@@ -88,7 +88,11 @@ export function cellLabel(field: BattlefieldSpec, cell: number): string { return
 export function structureDisplayName(field: BattlefieldSpec, cell: number): string {
   const structure = structureAt(field, cell), scene = field.generation?.scene;
   if (!structure) return '';
-  if (scene === 'interior' && ['wall', 'building'].includes(structure.kind)) return '隔墙';
+  if (scene === 'interior' && ['wall', 'building'].includes(structure.kind)) {
+    const interior = field.generation?.interior;
+    if (Array.isArray(interior?.fixtures) && interior.fixtures.includes(cell)) return interior.use === 'workshop' ? '设备' : interior.use === 'office' ? '档案架' : '货架';
+    return '隔墙';
+  }
   if (scene === 'building_siege' && structure.kind === 'wall') return '外墙';
   if ((scene === 'interior' || scene === 'building_siege') && structure.kind === 'gate') return '门';
   return STRUCTURE_NAMES[structure.kind];

@@ -15,6 +15,7 @@ import { compileScenePlan, finishSceneRegions, validateSceneFacts,deriveRetreatE
 import { buildPlannedCity, buildPlannedWater, applySceneArchetype, selectSceneArchetype } from './scene-layout-v2.js';
 import { initializeHeightMap } from './height-map.js';
 import { applyPlannedDeployments, withCitySides } from './force-deployment.js';
+import { INTERIOR_USES, primaryInteriorRoom } from './interior-plan.js';
 
 export interface LayeredGenerationOptions extends FieldGenerationOptions { plan?: BattlefieldPlan; scene?: BattlefieldScene; unitBindings?: Record<string,string> }
 export function recommendedCitySize(roster: readonly Combatant[] = [], size?: BattlefieldPlan['size']): [number, number] {
@@ -85,6 +86,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
       // A gate front leaves its wall layout to the city builder's seeded choice.
       ...(siege&&archetype!=='gate_front'?{shape:archetype==='riverside'?'riverside':'hillside'}:{}),
       ...(['river_crossing','forest_stream','riverside'].includes(archetype)?{water:'river',bridgePlan:[{anchor:'center',state:'intact',width:1}],...(archetype==='riverside'?{waterPosition:'east',waterAxis:'vertical'}:{})}:{})};
+    if (scene === 'interior') plan.interior = { use: pick(INTERIOR_USES) };
   }
   // Preserve route-builder variety; it remains useful for streets and ordinary outdoor terrain.
   let field = generatedField(seed, width, height, tags, options);
@@ -242,7 +244,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
     if (!siege) field.objective.cell = core[0]!;
   }
   if (['interior','building_siege','trenches'].includes(scene)) {
-    buildSpecialScene(field,scene,plan?{...plan,...(plan.archetype==='fortress'?{layout:'strongpoint'}:plan.archetype==='great_hall'?{breadth:'broad'}:{})}:plan,random,attack);
+    buildSpecialScene(field,scene,plan,random,attack);
     inner=field.city?.inside ?? []; frontline=field.city?.frontline ?? []; gates=field.city?.gates ?? [];
     core=field.city?.core ?? []; reserve=field.city?.reserve ?? [];
     if (field.city) {
@@ -288,13 +290,14 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   for (const u of options.roster ?? []) if (Number.isInteger(u.pos) && u.pos! >= 0 && u.pos! < field.tiles.length && !frontline.includes(u.pos!)) {
     if (field.structures[u.pos!]?.kind === 'building') field.structures[u.pos!] = null;
   }
-  const defaults: LandmarkPlan[] = scene === 'interior' ? [{kind:'room',anchor:'center',label:'主厅'}]
+  const defaults: LandmarkPlan[] = scene === 'interior' ? (field.generation?.interior?.rooms ?? []).map(room => ({kind:'room' as const,anchor:'center' as const,label:room.label}))
     : scene === 'building_siege' ? [{kind:'building',anchor:'core',label:'目标建筑'}]
     : scene === 'trenches' ? [{kind:'fortification',anchor:'front_left',label:'前沿阵地'}]
     : city ? [{kind:'square',anchor:'core'}, {kind:'building',anchor:'inside_left'}]
     : random.next() < .2 ? [] : [{kind:pick(['hill','forest','fortification'] as const),anchor:pick(['center','front_left','front_right'] as const)}];
   const labels = { square:'城区广场', tower:'瞭望塔', ruins:'残垣废墟', fortification:'防御阵地', hill:'制高地', forest:'林间据点', bridge:'渡河桥', building:'地标建筑', room:'房间', cover:'掩体群', position:'战术要点' };
   const marked = new Set<number>();
+  const indoorRooms = field.generation?.interior?.rooms ?? [], boundRooms = new Set<number>();
   const protectedCells = new Set([...core, field.objective.cell, ...gates, ...(options.roster??[]).flatMap(u=>u.pos!==undefined?[u.pos]:[]), ...(field.city?.frontline ?? []),
     ...field.structures.flatMap((s,p)=>s?.kind==='gate'?[p]:[])]);
   // Cell beside an already built entity (landmark, bridge, gate, city or river), two cells toward the stated side.
@@ -309,7 +312,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
     return Math.max(0, Math.min(field.height - 1, y)) * field.width + Math.max(0, Math.min(field.width - 1, x));
   };
   // A supplied plan never inherits random fallback landmarks, including an omitted/empty list.
-  for (const mark of (supplied ? plan?.landmarks ?? [] : defaults).slice(0, plan?.intent ? 12 : 5)) {
+  for (const mark of (supplied ? plan?.landmarks ?? [] : defaults).slice(0, plan?.intent || scene === 'interior' ? 12 : 5)) {
     if (scene === 'interior' && ['hill','forest','bridge','tower','square','building'].includes(mark.kind))
       throw new BattlefieldPlanError('室内地标与场景不匹配，请使用room、cover、position、ruins或fortification');
     if (mark.kind === 'room' && !['interior','building_siege'].includes(scene))
@@ -355,10 +358,29 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
       if (!plots.length && !outside.length) { if (supplied) throw new BattlefieldPlanError('塔楼地标部署容量不足，请调整布局或地标'); else continue; }
       p = plots.length ? plots.sort((a, b) => gridDistance(field, a, p) - gridDistance(field, b, p) || a - b)[0]! : outside[0]!;
     }
-    const cells = [p];
+    let cells = [p];
+    if (scene === 'interior' && mark.kind === 'room' && indoorRooms.length) {
+      const candidates = indoorRooms.map((room, index) => ({room,index}))
+        .filter(r => !boundRooms.has(r.index))
+        .sort((a,b) => {
+          const distance = (room: typeof a.room) => {
+            const x=room.cells.reduce((s,n)=>s+n%width,0)/room.cells.length, y=room.cells.reduce((s,n)=>s+Math.floor(n/width),0)/room.cells.length;
+            const mismatch=Number(mark.anchor.includes('north')&&y>=(height-1)/2)+Number(mark.anchor.includes('south')&&y<=(height-1)/2)
+              +Number(mark.anchor.includes('west')&&x>=(width-1)/2)+Number(mark.anchor.includes('east')&&x<=(width-1)/2);
+            return mismatch*width*height+Math.abs(x-anchor%width)+Math.abs(y-Math.floor(anchor/width));
+          };
+          const da=distance(a.room),db=distance(b.room);
+          if(primaryInteriorRoom(mark) && Math.floor(da/(width*height))===Math.floor(db/(width*height))) return b.room.cells.length-a.room.cells.length || da-db || a.index-b.index;
+          return da-db || a.index-b.index;
+        });
+      const selected = !supplied ? candidates.find(r=>r.room.label===mark.label) ?? candidates[0] : candidates[0];
+      if (!selected) throw new BattlefieldPlanError('房间部署容量不足，请扩大室内地图');
+      boundRooms.add(selected.index); cells = selected.room.cells.filter(n=>!groundBlocked(field,n)); p=cells[0]!;
+      selected.room.label = safeLandmarkLabel(mark.label) ?? selected.room.label;
+    }
     if (mark.kind==='building' && scene==='building_siege' && mark.state==='destroyed') cells.push(...(field.city?.frontline??[]));
     if(mark.kind==='building'&&field.structures[p]?.entityId)cells.push(...field.structures.flatMap((s,n)=>n!==p&&s?.entityId===field.structures![p]!.entityId?[n]:[]));
-    if (mark.scale === 'major' && mark.kind !== 'tower' && mark.kind !== 'bridge' && mark.kind !== 'building') {
+    if (mark.scale === 'major' && mark.kind !== 'tower' && mark.kind !== 'bridge' && mark.kind !== 'building' && !(scene === 'interior' && mark.kind === 'room')) {
       const size=Math.max(3,Math.min(10,Math.ceil(field.tiles.length*.04)));
       for(let i=0;i<cells.length&&cells.length<size;i++)for(const n of neighbors(field,cells[i]!)) {
         if(cells.length>=size)break;
@@ -378,7 +400,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
       } else if (mark.kind === 'square') { field.structures[n] = null; if (!city) field.tiles[n] = 'open'; }
       else if (mark.kind === 'hill' || mark.kind === 'forest') field.tiles[n] = mark.kind; // Explicit parks/high ground are the only natural-terrain exceptions to street parcels.
     }
-    const actual = cells.filter(n => !marked.has(n) && !(core.includes(n) && !semanticCore)
+    const actual = cells.filter(n => (mark.kind === 'room' && scene === 'interior' || !marked.has(n)) && !(core.includes(n) && !semanticCore)
       && (mark.kind !== 'tower' || field.structures![n]?.kind === 'tower'));
     if (mark.state === 'destroyed') for (const n of actual) {
       const structure = field.structures[n];
@@ -388,7 +410,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
       field.overlays[n] = [...new Set([...(field.overlays[n] ?? []), 'rubble' as const])];
     }
     if (!actual.length) {if(supplied)throw new BattlefieldPlanError(`地标${mark.label??mark.kind}没有合法位置，部署容量不足`);else continue;}
-    actual.forEach(n => marked.add(n));
+    if (!(mark.kind === 'room' && scene === 'interior')) actual.forEach(n => marked.add(n));
     field.landmarks.push({ ...(mark.id?{id:mark.id}:{}), kind: mark.kind, label: safeLandmarkLabel(mark.label) ?? labels[mark.kind], cells: actual, scale: mark.scale ?? 'minor' });
     if(p!==anchor && mark.anchor!=='riverbank' && !mark.near) field.generation!.notes=[...(field.generation!.notes??[]),`地标${mark.label??labels[mark.kind]}在指定区域内调整${gridDistance(field,p,anchor)}格`];
   }

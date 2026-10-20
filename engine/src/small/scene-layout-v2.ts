@@ -459,7 +459,7 @@ export function applySceneArchetype(field: BattlefieldSpec, archetype: SceneArch
                     field.tiles[p] = 'hill';
             }
     }
-    if (archetype === 'great_hall' && field.generation?.scene === 'interior') {
+    if (archetype === 'great_hall' && field.generation?.scene === 'interior' && field.generation.version !== 7) {
         for (let y = 2; y < h - 2; y++)
             for (let x = Math.floor(w / 3); x <= Math.ceil(w * 2 / 3); x++) {
                 const p = y * w + x;

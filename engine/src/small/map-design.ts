@@ -1,5 +1,6 @@
 import { ROUTE_TOPOLOGIES, type RouteGraph, type RouteTopology } from './route-graph.js';
 import { safeLandmarkLabel } from './map-label.js';
+import type { InteriorLayoutRecord } from './interior-plan.js';
 export {safeLandmarkLabel} from './map-label.js';
 /** Bounded design vocabulary shared by the local builder and the optional LLM director.
  * A design describes geometry, never executable code or a replacement tile array. */
@@ -25,7 +26,8 @@ export const SCENE_NAMES: Record<BattlefieldScene, string> = { field: '野战', 
 export interface MapGenerationRecord {
   /** Scene identity is independent of map dimensions and survives capacity upgrades. */
   scene?: BattlefieldScene;
-  version: 3 | 4 | 5 | 6;
+  version: 3 | 4 | 5 | 6 | 7;
+  interior?: InteriorLayoutRecord;
   /** Bounded local repairs/size upgrades, never instructions from model labels. */
   notes?: string[];
   family: MapFamily;
@@ -55,7 +57,10 @@ export function mapDesignSummary(design: MapDesign): string {
 /** Display-only noun phrase. Reject markup, control characters and oversized payloads. */
 export function landmarkAt(field: { generation?: MapGenerationRecord; tiles: readonly string[] }, cell: number): string | undefined {
   const marks = (field as { landmarks?: import('./layers.js').FieldLandmark[] }).landmarks;
-  const label = marks?.find(m => m.cells?.includes(cell))?.label;
+  const matches = marks?.filter(m => m.cells?.includes(cell));
+  const label = field.generation?.scene === 'interior' && field.generation.version === 7
+    ? matches?.reduce<typeof matches[number] | undefined>((best, m) => !best || m.cells.length < best.cells.length ? m : best, undefined)?.label
+    : matches?.[0]?.label;
   if (label) return safeLandmarkLabel(label);
   const mark = field.generation?.landmark;
   if (!mark || !Number.isInteger(cell) || cell < 0 || cell >= field.tiles.length || !Array.isArray(mark.cells) || !mark.cells.includes(cell)) return undefined;
