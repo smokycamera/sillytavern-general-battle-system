@@ -995,8 +995,10 @@ export class SmallBattle {
   /** Wall/bridge collapse and expiring movement traits cannot leave a unit in an impossible cell. */
   private resolveGroundStates(source?: Combatant): void {
     const field = this.battlefield; if (!field?.layerVersion) return;
-    for (const unit of this.combatants.filter(u => !isAirborne(u) && u.hp > 0 && ['ready', 'routing'].includes(u.status))) {
+    for (const unit of this.combatants.filter(u => !isAirborne(u))) {
       if (!groundBlocked(field, unit.pos!, unit)) continue;
+      // 伤亡与已撤离单位不再结算落地伤害，但不能继续引用已经塌毁的平台。
+      if (unit.hp <= 0 || !['ready', 'routing'].includes(unit.status)) { delete unit.elevation; continue; }
       const originalHeight=unitHeight(field,unit);
       const origin = unit.pos!, ground = { ...unit, elevation: undefined };
       // Rescue can traverse nearby water, never teleport through an intact wall, cliff or enemy.
@@ -3389,10 +3391,17 @@ export class SmallBattle {
             return r;
           })()
         : liveRng();
+    // 旧版塌墙只处理仍在行动的单位，遗留的伤亡/撤离平台标记会阻止整场战斗恢复。
+    const combatants = (snap.combatants as Combatant[]).map(unit => {
+      const structure = unit.pos === undefined ? undefined : snap.battlefield?.structures?.[unit.pos];
+      return unit.elevation === 1 && !unit.airborne && snap.battlefield?.layerVersion === 1
+        && structure?.top === true && structure.hp === 0 && (unit.hp <= 0 || !['ready', 'routing'].includes(unit.status))
+        ? { ...unit, elevation: undefined } : unit;
+    });
     const b = new SmallBattle({
       nonLethal: snap.nonLethal === true,
       battlefield: snap.battlefield,
-      combatants: snap.combatants,
+      combatants,
       rules: rulesById(snap.rulesId),
       seed: snap.seed ?? randomSeed(),
       rng,
