@@ -105,7 +105,7 @@ export function prepareNarrativeIds<T extends NarrativeIdentitySave>(save: T): T
   return Object.keys(state.aliases).length ? { ...save, narrativeIdState: state } : save;
 }
 
-const referenceKeys = new Set(['id', 'unitId', 'itemId', 'abilityId', 'sourceId', 'owner', 'assignedTo', 'itemSourceId', 'sourceItemId',
+const referenceKeys = new Set(['id', 'to', 'unitId', 'itemId', 'abilityId', 'sourceId', 'owner', 'assignedTo', 'itemSourceId', 'sourceItemId',
   'equipmentId', 'equipmentSourceId', 'summonerId', 'weaponId', 'sidearmId', 'armorId', 'instanceId', 'cooldownGroup', 'targetId']);
 const referenceLists = new Set(['preparedAbilityIds', 'unitIds', 'rosterIds']);
 /** Translate identity fields in both directions without changing names, notes or definition IDs. */

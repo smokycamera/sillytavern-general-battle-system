@@ -8,14 +8,14 @@ afterEach(() => cleanups.splice(0).forEach(stop => stop()));
 async function setup() { const f = nativeFixture(); cleanups.push(() => f.service.dispose()); await f.service.start(); return f; }
 it('AI扫描结果独立保存，人工确认和自动批准均可提交，原正文与消息列表不变', async () => {
   const f = await setup(), chat = structuredClone(f.context.chat);
-  expect((await f.service.proposeAiScan('<tb><spawn name="扫描友军" side="ally" scale="hero"/><give item="药草" qty="2"/></tb>', 0, f.service.inventoryContext())).status).toBe('confirmed');
+  expect((await f.service.proposeAiScan('<tb><spawn name="扫描友军" side="ally" scale="hero"/><add item="药草" qty="2"/></tb>', 0, f.service.inventoryContext())).status).toBe('confirmed');
   const pending = f.service.snapshot().proposals!.at(-1)!;
   expect(pending.origin).toBe('ai-scan'); expect(pending.status).toBe('pending');
   await f.service.scan(); expect(f.service.snapshot().proposals!.at(-1)!.status).toBe('pending');
   expect((await f.service.approve(pending.id)).status).toBe('confirmed'); expect(f.service.snapshot().storage).toHaveLength(1);
   await f.service.setStorySync(true);
   const before = f.service.snapshot();
-  await f.service.proposeAiScan('<tb><field env="forest"/><deploy id="u1"/><spawn name="扫描敌军" side="enemy" scale="hero"/><give item="绷带"/></tb>', before.factRevision!, f.service.inventoryContext());
+  await f.service.proposeAiScan('<tb><field env="forest"/><deploy id="u1"/><spawn name="扫描敌军" side="enemy" scale="hero"/><add item="绷带"/></tb>', before.factRevision!, f.service.inventoryContext());
   expect(f.service.snapshot().proposals!.at(-1)!.status).toBe('committed'); expect(f.service.snapshot().storage).toHaveLength(2);
   expect(f.service.snapshot().field).toBe('forest'); expect(f.service.snapshot().autoApprove).toBe(true); expect(f.context.chat).toEqual(chat);
 });

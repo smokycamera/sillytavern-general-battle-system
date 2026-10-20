@@ -317,15 +317,18 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   let records = next.storage ?? [];
   assertCompatibleUnitChanges([...proposal.events, ...[...fresh.patches].map(([id, data]): Suggestion => ({ kind: 'unit-set', id, data, raw: '' }))]);
   for (const event of proposal.events) {
-    if (event.kind !== 'unit-set' && event.kind !== 'unit-update' && event.kind !== 'deploy' && event.kind !== 'bless' && event.kind !== 'unbless' && event.kind !== 'affect' && event.kind !== 'unaffect' && event.kind !== 'learn' && !(event.kind === 'give' && event.id)) continue;
-    if (isNew(event)) continue;
-    const record = records.find((r) => r.id === event.id);
-    // 缺失与过期分开说明：编错编号需要改草稿，过期才需要重新扫描。
-    if (!record || !event.id) throw new Error(`档案 ${ids.publicId(event.id ?? '')} 缺失：这个编号不是已有单位。修改已有单位请用单位资料里的编号，新单位用 spawn 新建`);
-    if (expected.unitVersions[event.id] !== (record.revision ?? 1)) throw new Error(`档案 ${ids.publicId(event.id)}（${record.name}）在这条回复之后已有改动，版本过期，请重新扫描`);
+    const recipients = event.kind === 'give' ? event.to ?? [] : event.kind === 'add' ? event.to ? [event.to] : []
+      : ['unit-set', 'unit-update', 'deploy', 'bless', 'unbless', 'affect', 'unaffect', 'learn'].includes(event.kind) ? ['id' in event ? event.id ?? '' : ''] : [];
+    for (const unitId of recipients) {
+      if (fresh.created.has(unitId)) continue;
+      const record = records.find((r) => r.id === unitId);
+      // 缺失与过期分开说明：编错编号需要改草稿，过期才需要重新扫描。
+      if (!record || !unitId) throw new Error(`档案 ${ids.publicId(unitId)} 缺失：这个编号不是已有单位。修改已有单位请用单位资料里的编号，新单位用 spawn 新建`);
+      if (expected.unitVersions[unitId] !== (record.revision ?? 1)) throw new Error(`档案 ${ids.publicId(unitId)}（${record.name}）在这条回复之后已有改动，版本过期，请重新扫描`);
+    }
   }
   // 固定阶段：移除旧实物 → 新入库实物 → 补员/状态 → 单位字段 → 实物改造/学习/效果 → 部署。
-  // 新入库排在单位字段之前：unit_set 换上的若正是同一回复 give 的那件，直接取用而不另造一件。
+  // 新入库排在单位字段之前：unit_set 换上的若正是同一回复 add 的那件，直接取用而不另造一件。
   // 版本只对批次开始前的事实校验；后续任一步失败只丢弃此候选副本。
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind !== 'take') continue;
@@ -335,14 +338,18 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (item.equippedTo) next = prepareInventoryTransaction(next, { kind: 'unequip', id: 'take-unequip:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, ...item.equippedTo });
     next = prepareInventoryTransaction(next, { kind: 'discard', id: 'take:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, itemId: event.id, qty: event.qty });
   }
-  // given：换装可取用的同一回复实物；handed：同一回复 give 的全部实物，unit_set 的 items 先从这里交出。
+  for (const [index, event] of proposal.events.entries()) {
+    if (event.kind !== 'add' || !event.id) continue;
+    next = prepareInventoryTransaction(next, { kind: 'add', id: `add:${proposal.id}:${index}`, expectedRevision: next.factRevision ?? 0, itemId: event.id, qty: event.qty });
+  }
+  // given：换装可取用的同一回复实物；handed：同一回复 add 的全部实物，unit_set 的 items 先从这里交出。
   const given = new Set<string>(), handed = new Set<string>(), notices: string[] = [];
   const directGives = new Map<string, string>();
   for (const [index, event] of proposal.events.entries()) {
-    if (event.kind !== 'give') continue;
+    if (event.kind !== 'add' || event.item === undefined) continue;
     const id = `loot-${proposal.id}-${index}`;
-    if (event.id) for (let i = 0; i < (event.spec && !(event.spec.kind === 'item' && event.spec.form === 'single') ? event.qty : 1); i++) {
-      directGives.set(event.spec && !(event.spec.kind === 'item' && event.spec.form === 'single') && event.qty !== 1 ? `${id}-${i}` : id, event.id);
+    if (event.to) for (let i = 0; i < (event.spec && !(event.spec.kind === 'item' && event.spec.form === 'single') ? event.qty : 1); i++) {
+      directGives.set(event.spec && !(event.spec.kind === 'item' && event.spec.form === 'single') && event.qty !== 1 ? `${id}-${i}` : id, event.to);
     }
     if (!event.spec) { next.inventory = [...(next.inventory ?? []), { id, name: event.item, qty: event.qty, lootType: event.lootType, note: event.note }]; given.add(id); handed.add(id); }
     else if (event.spec.kind === 'item' && event.spec.form === 'single') { next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(id, event.item, event.spec, id, event.qty), note: event.note }]; handed.add(id); }
@@ -360,11 +367,11 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (event.kind === 'learn' || event.kind === 'bless' || event.kind === 'unbless' || event.kind === 'affect' || event.kind === 'unaffect') {
       if (!isNew(event)) next.storage = applyUnitEffect(next.storage!, event, index, proposal.id, registry, learned);
     } else if (event.kind === 'reforge') {
-      if (reforged.has(event.id)) throw new Error('同一回复请合并对同一装备的改造');
+      if (reforged.has(event.id)) throw new Error('同一回复请合并对同一实物的改造');
       reforged.add(event.id);
       // 改造道具时写的武器词条换成对应道具，形态不变。
       const target = next.inventory?.find((i) => i.id === event.id)?.mechanics;
-      const spec = target?.kind === 'item' && event.spec.kind === 'weapon' ? weaponItemSpecification(event.spec, target.value.recipe.form === 'charged' ? 'charged' : undefined, notices) : event.spec;
+      const spec = target?.kind === 'item' && event.spec.kind === 'weapon' ? weaponItemSpecification(event.spec, target.value.recipe.form === 'single' ? 'single' : target.value.recipe.form === 'charged' ? 'charged' : undefined, notices) : event.spec;
       next = prepareInventoryTransaction(next, { kind: 'reforge', id: `reforge:${proposal.id}:${index}`, expectedRevision: next.factRevision ?? 0, itemId: event.id, name: event.name, spec });
     }
   }
@@ -398,7 +405,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
         }
       }
     } else if (event.kind === 'field') { next.field = event.env; next.lighting = event.light ?? (event.env === 'night' ? 'night' : 'day'); }
-    else if (!['unit-set', 'unit-update', 'take', 'give', 'reforge', 'learn', 'bless', 'unbless', 'affect', 'unaffect'].includes(event.kind)) throw new Error('不支持此类正文写回');
+    else if (!['unit-set', 'unit-update', 'take', 'add', 'give', 'reforge', 'learn', 'bless', 'unbless', 'affect', 'unaffect'].includes(event.kind)) throw new Error('不支持此类正文写回');
   }
   next.schemaVersion = PANEL_SAVE_SCHEMA_VERSION;
   next.storage = records;
@@ -410,14 +417,28 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   // items keep their original identity and are never created a second time.
   for (const [itemId, unitId] of directGives) {
     const item = next.inventory?.find(i => i.id === itemId), record = next.storage?.find(r => r.id === unitId);
-    if (!item || !record) throw new Error('give 的接收单位或新物品不存在');
-    if (item.assignedTo && item.assignedTo !== unitId || item.equippedTo && item.equippedTo.unitId !== unitId) throw new Error('give 的接收单位与同批物品分配冲突');
+    if (!item || !record) throw new Error('add 的接收单位或新物品不存在');
+    if (item.assignedTo && item.assignedTo !== unitId || item.equippedTo && item.equippedTo.unitId !== unitId) throw new Error('add 的接收单位与同批物品分配冲突');
     item.assignedTo = unitId;
     handed.delete(itemId); // Already owned: items lists count it as held instead of creating it again.
     if (item.mechanics?.kind === 'item' && item.mechanics.value.recipe.form !== 'single') item.equippedTo = { unitId, slot: 'gear' };
   }
   if (directGives.size) next = prepareInventoryState(next) as NarrativeSave;
-  // unit_set 的 items 最后交出：此时同一回复 give 的已入库，新建单位也已建档。
+  // 不同接收数量可分写多条give：先核对同一来源的总支出，避免整件移交后又从新主人扣回。
+  const transferTotals = new Map<string, number>();
+  for (const event of proposal.events) {
+    if (event.kind !== 'give') continue;
+    const total = (transferTotals.get(event.id) ?? 0) + event.qty * new Set(event.to ?? [undefined]).size;
+    const item = next.inventory?.find(item => item.id === event.id);
+    if (!Number.isSafeInteger(total) || !item || total > item.qty) throw new Error('同一实物的转移总数量超出库存');
+    transferTotals.set(event.id, total);
+  }
+  // 显式转移在新单位建档后执行，保留实物与冻结属性，不额外发放。
+  for (const [index, event] of proposal.events.entries()) {
+    if (event.kind !== 'give') continue;
+    next = prepareInventoryTransaction(next, { kind: 'transfer', id: `give:${proposal.id}:${index}`, expectedRevision: next.factRevision ?? 0, itemId: event.id, unitIds: event.to, qty: event.qty });
+  }
+  // unit_set 的 items 最后交出：此时同一回复 add 的已入库，新建单位也已建档。
   const handovers: HandOver[] = [...proposal.events.entries()].flatMap(([index, event]) => event.kind === 'unit-set' && event.items?.length ? [{ unitId: event.id, items: event.items, index }] : []);
   for (const [unitId, items] of fresh.items) handovers.push({ unitId, items, index: proposal.events.length + handovers.length });
   next = handOverItems(next, handovers, { proposalId: proposal.id, given: handed, notices });

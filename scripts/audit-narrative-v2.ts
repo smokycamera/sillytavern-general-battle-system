@@ -4,7 +4,7 @@ import { generateUnit, getSkin, getSystemPack, armorDR } from '../engine/src/ind
 
 const report = (probe: string, observed: unknown) => console.log(JSON.stringify({ probe, observed }, null, 2));
 report('N01 tag outside wrapper', parseSuggestionTags('这是格式说明：<xp amount="50"/>，不是入账请求。'));
-report('N02 quoted example', parseSuggestionTags('示例代码，不应执行：\n```xml\n<give item="示例物品"/>\n```'));
+report('N02 quoted example', parseSuggestionTags('示例代码，不应执行：\n```xml\n<add item="示例物品"/>\n```'));
 
 const a = parseSuggestionTags('<tb>\n<xp amount="50" reason="示例"/>\n</tb>').suggestions[0];
 const b = parseSuggestionTags('<tb>\n<xp reason="示例" amount="50"/>\n</tb>').suggestions[0];

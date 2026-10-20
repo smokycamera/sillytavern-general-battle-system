@@ -90,7 +90,7 @@ function wornBonusFirst(base: string, power: number, suffix: string): { spec: Ex
   return spec && { spec, text: '佩戴L' + power + moved };
 }
 /**
- * 道具位置上写了武器词条（items 清单、带形态词的 spec、要交给单位的 give），换成用这件武器打一次的道具：
+ * 道具位置上写了武器词条（items 清单、带形态词的 spec、要交给单位的 add），换成用这件武器打一次的道具：
  * 爆炸物与火炮是物理范围投射，其余远程武器是物理单体投射（道具自带动能，持有者不需要远程武器），
  * 法杖与魔杖是魔法单体、默认充能。近战、天生与召唤武器没有对应道具。
  */
@@ -147,7 +147,7 @@ type SpecAttributes = { type?: string; quality?: string; body?: string; enchant?
 
 /**
  * 正文与面板共用：装备写“机制L规格+修正”；道具写技能机制（可加“充能”）、特质或“佩戴L等级+修正”。属性、骰子、身份与版本由插件计算。
- * item：这里只能是道具（items 清单、要交给单位的 give），武器词条换成对应道具，护甲与盾不收。
+ * item：这里只能是道具（items 清单、要交给单位的 add），武器词条换成对应道具，护甲与盾不收。
  */
 export function parseItemSpecification(text: string, attrs: SpecAttributes = {}, notes?: string[], options: { item?: boolean } = {}): ItemSpecification {
   const split = splitItemSpecification(text);
@@ -211,8 +211,8 @@ export function parseItemSpecification(text: string, attrs: SpecAttributes = {},
 // ---------- spawn 随身道具 ----------
 /** spawn 的 items 一项：没有 spec 的是金币、信件一类叙事物品。 */
 export interface SpawnItem { name: string; qty: number; spec?: Extract<ItemSpecification, { kind: 'item' }> }
-const ITEM_COUNT = /\s*[×xX*＊✕]\s*(\d{1,5})\s*(?:件|枚|个|瓶|支|份|颗|发|套|把|根|张|卷|片|包|盒|罐)?\s*$/;
-const hasLevel = (text: string) => /[lL]\s*\d/.test(text);
+const ITEM_COUNT = /\s*[×xXｘＸ*＊✕]\s*([0-9０-９]{1,5})\s*(?:件|枚|个|瓶|支|份|颗|发|套|把|根|张|卷|片|包|盒|罐)?\s*$/;
+const hasLevel = (text: string) => /[lLｌＬ]\s*[0-9０-９]/.test(text);
 const traitList = (text: string) => text.split('、').every((name) => narrativeTrait(name).kind === 'trait');
 /**
  * 按逗号分项。“名称:”之后还没写到等级时，逗号或顿号只是佩戴特质之间的分隔（精灵斗篷:潜伏，林地专精L6），
@@ -246,7 +246,7 @@ export function spawnItemName(entry: string): string {
 export function parseSpawnItem(entry: string, notes?: string[]): SpawnItem {
   let text = entry.trim(), qty = 1;
   const count = text.match(ITEM_COUNT);
-  if (count) { qty = Number(count[1]); text = text.slice(0, count.index).trim(); }
+  if (count) { qty = Number(count[1]!.replace(/[０-９]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xfee0))); text = text.slice(0, count.index).trim(); }
   if (!Number.isSafeInteger(qty) || qty < 1) throw new Error('件数须为正整数');
   const at = text.search(/[:：]/);
   const name = at > 0 ? text.slice(0, at).trim() : '', specText = (at >= 0 ? text.slice(at + 1) : text).trim();

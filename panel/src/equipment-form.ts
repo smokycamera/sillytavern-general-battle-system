@@ -47,7 +47,7 @@ export function equipmentSpecification(d: EquipmentDraft): ItemSpecification {
 export function captureEquipment(prefix: string, current: EquipmentDraft): EquipmentDraft {
   const next = { ...current };
   for (const key of ['name', 'kind', 'mechanism', 'power', 'quality', 'body', 'tier', 'enchantment', 'profile', 'effect'] as const) {
-    const el = document.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-role="${prefix}-${key}"]`); if (el) next[key] = el.value;
+    const el = document.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-role="${prefix}-${key}"]`); if (el && !el.disabled) next[key] = el.value;
   }
   const form = document.querySelector<HTMLSelectElement>(`[data-role="${prefix}-form"]`); if (form) next.form = form.value as ItemForm;
   const stable = document.querySelector<HTMLInputElement>(`[data-role="${prefix}-stabilized"]`); if (stable) next.stabilized = stable.checked;

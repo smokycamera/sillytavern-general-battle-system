@@ -126,7 +126,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     // 战内禁止物品档案事件，装备名称已随单位给出；仅按明确查询展开库存规格。
     if (battleOpen && !relevant(item) && !/物品|背包|库存|装备|配装/.test(requestText)) continue;
     const m = item.mechanics;
-    // 道具给出形态与规范写法（与 give 的 spec 相同），装备照旧列出机制与规格。
+    // 道具给出形态与规范写法（与 add 的 spec 相同），装备照旧列出机制与规格。
     if (m?.kind === 'item') blocks.items.push(promptJson({ id: item.id, name: item.name, qty: item.qty, owner: item.assignedTo, slot: item.equippedTo?.slot,
       kind: ITEM_FORM_NAMES[m.value.recipe.form] + '道具', spec: itemSpecText(m.value.recipe), charges: m.value.ability?.usesPerBattle, note: item.note }, publicId));
     else { const recipe = m?.value.recipe;

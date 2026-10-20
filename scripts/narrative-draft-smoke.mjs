@@ -61,7 +61,7 @@ try {
   await button.click(); const third = await selected();
   assert.equal(second.text, '未&#x77e5;技能'); assert.equal(third.text, second.text); assert.ok(third.start > second.start);
   await button.click(); assert.equal((await selected()).start, first.start);
-  await propose('<tb><give item="合法补给"/><unit_update id="u1" hp="10"/><unit_update id="u1" hp="20"/></tb>');
+  await propose('<tb><add item="合法补给"/><unit_update id="u1" hp="10"/><unit_update id="u1" hp="20"/></tb>');
   await panel.locator('.narrative-proposal').nth(1).waitFor();
   assert.equal(await draft.evaluate(el => el === document.activeElement), true);
   assert.equal((await selected()).start, first.start); assert.equal((await selected()).scroll, first.scroll);

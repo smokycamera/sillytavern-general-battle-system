@@ -34,11 +34,13 @@ export interface InventorySave {
 export type InventoryAction =
   | { kind: 'create'; itemId: string; name: string; spec: ItemSpecification; qty?: number }
   | { kind: 'reforge'; itemId: string; name?: string; spec: ItemSpecification }
+  | { kind: 'add'; itemId: string; qty: number }
   | { kind: 'upgrade-budget'; itemId: string }
   | { kind: 'define'; itemId: string; spec: ItemSpecification }
   | { kind: 'discard'; itemId: string; qty: number }
   | { kind: 'discard-many'; items: { itemId: string; qty: number }[] }
   | { kind: 'assign'; itemId: string; unitId?: string }
+  | { kind: 'transfer'; itemId: string; unitId?: string; unitIds?: string[]; qty: number }
   | { kind: 'equip'; itemId: string; unitId: string; slot: EquipmentSlot }
   /** 佩戴与充能道具不限件数，卸下时用 itemId 指明哪一件。 */
   | { kind: 'unequip'; unitId: string; slot: EquipmentSlot; itemId?: string }
@@ -305,8 +307,25 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
   } else {
     const item = inventory.find((i) => i.id === action.itemId);
     if (!item) throw new Error('物品不存在');
-    if (item.qty <= 0) throw new Error('物品数量不足');
-    if (action.kind === 'discard') {
+    if (item.qty <= 0 && action.kind !== 'add') throw new Error('物品数量不足');
+    if (action.kind === 'add') {
+      if (!Number.isSafeInteger(action.qty) || action.qty < 1 || !Number.isSafeInteger(item.qty + action.qty)) throw new Error('增加数量须为正整数，且总数不能超出安全整数范围');
+      if (!item.mechanics || item.mechanics.kind === 'item' && item.mechanics.value.recipe.form === 'single') item.qty += action.qty;
+      else {
+        if (item.mechanics.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural') throw new Error('天生武器不能增加实物数量');
+        // 唯一实物仍逐件建档：复制冻结属性和归属，新增件不占用原装备位。
+        const existingIds = new Set(inventory.map(existing => existing.id));
+        for (let index = 0; index < action.qty; index++) {
+          const itemId = `added:${id}:${index}`;
+          if (existingIds.has(itemId)) throw new Error('新增物品身份已存在');
+          const added = { ...clone(item), id: itemId, qty: 1, revision: 1, sourceItemId: item.id };
+          delete added.equippedTo;
+          delete added.history;
+          if (added.mechanics && added.mechanics.kind !== 'item') added.mechanics.value.id = itemId;
+          inventory.push(added);
+        }
+      }
+    } else if (action.kind === 'discard') {
       if (item.equippedTo) throw new Error('先卸下已装备物品，再从库存移除');
       if (!Number.isSafeInteger(action.qty) || action.qty < 1 || action.qty > item.qty) throw new Error('移除数量超出库存');
       item.qty -= action.qty;
@@ -329,12 +348,13 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       }
     } else if (action.kind === 'reforge') {
       const mechanics = item.mechanics;
-      if (!mechanics || mechanics.kind === 'item' && mechanics.value.recipe.form === 'single') throw new Error('一次性道具不能改造；可以移除后重新获得');
+      if (!mechanics) throw new Error('请先设置物品效果，再进行改造');
       if (mechanics.kind !== action.spec.kind) throw new Error('重铸不能把不同种类实物互相替换');
       const name = action.name?.trim() || item.name;
       let compiled: ItemMechanics;
       if (mechanics.kind === 'item') {
-        if (action.spec.kind !== 'item' || action.spec.form === 'single') throw new Error('佩戴、充能道具只能改造成佩戴或充能道具');
+        if (action.spec.kind !== 'item') throw new Error('重铸不能把不同种类实物互相替换');
+        if ((mechanics.value.recipe.form === 'single') !== (action.spec.form === 'single')) throw new Error('一次性道具与佩戴、充能道具不能互相改造');
         compiled = compileItem(action.spec, { id: item.id, name, seed: mechanics.value.recipe.seed });
       } else {
         const oldRecipe = mechanics.value.recipe;
@@ -353,6 +373,34 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
         const reason = equipmentReason(record.snapshot!);
         if (reason) throw new Error(reason);
         rewriteRecord(next, record, id);
+      }
+    } else if (action.kind === 'transfer') {
+      if (action.unitIds !== undefined && (!Array.isArray(action.unitIds) || !action.unitIds.length || action.unitIds.some(unitId => typeof unitId !== 'string' || !unitId))) throw new Error('接收单位列表不能为空或包含无效编号');
+      if (action.unitIds !== undefined && action.unitId !== undefined) throw new Error('转移接收单位字段冲突');
+      const targets = [...new Set(action.unitIds ?? [action.unitId])];
+      const total = action.qty * targets.length;
+      if (!Number.isSafeInteger(action.qty) || action.qty < 1 || !Number.isSafeInteger(total) || total > item.qty) throw new Error('转移总数量超出库存');
+      for (const unitId of targets) if (unitId) recordById(next, unitId);
+      const owner = item.assignedTo;
+      if (item.mechanics?.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural' && targets.some(unitId => owner !== unitId)) throw new Error('天生武器属于单位身体，不能转移');
+      if (targets.some(unitId => owner !== unitId)) {
+        if (item.equippedTo) {
+          const record = recordById(next, item.equippedTo.unitId);
+          delete item.equippedTo;
+          projectEquipment(record, inventory); rewriteRecord(next, record, id);
+        }
+        for (const [index, unitId] of targets.entries()) {
+          if (unitId === owner) continue;
+          let target = item;
+          if (action.qty < item.qty) {
+            const itemId = `transferred:${id}:${index}`;
+            if (inventory.some(existing => existing.id === itemId)) throw new Error('转移物品身份已存在');
+            item.qty -= action.qty;
+            target = { ...clone(item), id: itemId, qty: action.qty, sourceItemId: item.id };
+            inventory.push(target);
+          }
+          target.assignedTo = unitId;
+        }
       }
     } else if (action.kind === 'assign') {
       if (item.mechanics?.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural' && item.assignedTo && item.assignedTo !== action.unitId) throw Error('天生武器属于单位身体，不能交给其他人或放进公共库存');

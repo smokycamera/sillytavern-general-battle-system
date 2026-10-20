@@ -14,3 +14,4 @@ User working preferences:
 - Infer the goal and act through completion; ask only when missing information materially affects the result, and carry forward authorization.
 - Prepare concrete, reviewable changes before requesting any necessary approval. Avoid unsolicited warnings and approval flows.
 - Explicit user requirements override advisory skill guidance. If a skill blocks work, identify the exact file and applicable quoted requirement.
+- Changes to prompts, dynamic context templates, and worldbook instructions must be presented with their exact proposed content and confirmed by the user before applying them. Parser compatibility and other implementation work may proceed independently while confirmation is pending.

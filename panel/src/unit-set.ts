@@ -155,8 +155,8 @@ function sameGear(mechanics: ItemMechanics | undefined, spec: ItemSpecification 
 // 只有名字、没有规格的叙事记录，按种类可以补上规格后装备。
 const NARRATIVE_GEAR: Record<'weapon' | 'armor', string[]> = { weapon: ['weapon', 'misc', 'quest'], armor: ['armor', 'misc', 'quest'] };
 /**
- * 我方换装时库存里可直接取用的那一件：写了名字按同名找，没写名字只认同一回复 give 的同规格实物。
- * 不拿已装备的、不拿别的单位的；同一回复 give 的优先，其次本单位的备用件，再次公共库存。
+ * 我方换装时库存里可直接取用的那一件：写了名字按同名找，没写名字只认同一回复 add 的同规格实物。
+ * 不拿已装备的、不拿别的单位的；同一回复 add 的优先，其次本单位的备用件，再次公共库存。
  */
 function stashedGear(inventory: InventoryItem[], unitId: string, slot: EquipmentSlot, wanted: WantedGear, given: ReadonlySet<string>): InventoryItem | undefined {
   const usable = (item: InventoryItem) => item.qty > 0 && !item.equippedTo && (!item.assignedTo || item.assignedTo === unitId)
@@ -250,7 +250,7 @@ function rebase(unit: Combatant, data: ObjectData): void {
   unit.tags=[...new Set([...unit.tags.filter(tag=>!old.tags.includes(tag)),...next.tags])];
 }
 
-/** given：同一回复 give 刚入库的实物编号，换装时优先取用；notices 收集换装说明。 */
+/** given：同一回复 add 刚入库的实物编号，换装时优先取用；notices 收集换装说明。 */
 export interface UnitSetContext { given?: ReadonlySet<string>; notices?: string[] }
 export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData, sourceId: string, options: UnitSetContext = {}): NarrativeSave {
   validateUnitPatch(patch);
@@ -360,19 +360,19 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
 
   // 库存属于我方：敌方/中立单位换装照旧只改自己身上这件。
   const ally = unit.side === 'ally', given = options.given ?? new Set<string>();
-  // 同一回复 give 的同名物品就是这件装备时不再另外入库。
+  // 同一回复 add 的同名物品就是这件装备时不再另外入库。
   const dropGiven = (name: string, verb: string) => {
     const twin = next.inventory!.find(i => given.has(i.id) && i.qty > 0 && !i.equippedTo && !i.assignedTo && itemKey(i.name) === itemKey(name));
     if (!twin) return;
     if (twin.qty > 1) twin.qty--; else next.inventory = next.inventory!.filter(i => i !== twin);
-    options.notices?.push(`同一回复 give 的「${twin.name}」就是${unit.name}${verb}的这件，没有另外入库`);
+    options.notices?.push(`同一回复 add 的「${twin.name}」就是${unit.name}${verb}的这件，没有另外入库`);
   };
   const slotKeys = { weapon:'primary',sidearm:'sidearm',armor:'armor',shield:'shield' } as const;
   for (const [key,slot] of Object.entries(slotKeys) as [keyof typeof slotKeys,EquipmentSlot][]) {
     if (!Object.hasOwn(data,key)) continue;
     const equipped = next.inventory!.find(i => i.equippedTo?.unitId===id && i.equippedTo.slot===slot);
     const wanted = wantedGear(data[key]);
-    // 写的就是手上这件：原位修改。否则库存里有这件（含同一回复刚 give 的）就直接换上，原装备卸下留作备用，不另造一件。
+    // 写的就是手上这件：原位修改。否则库存里有这件（含同一回复刚 add 的）就直接换上，原装备卸下留作备用，不另造一件。
     const keep = !!equipped && !!wanted?.name && itemKey(equipped.name) === itemKey(wanted.name);
     const stashed = ally && wanted && !keep ? stashedGear(next.inventory!, id, slot, wanted, given) : undefined;
     // 多件同名叙事记录只拿出一件补上规格。

@@ -2191,7 +2191,7 @@ function renderNarrativeProposals(): string {
 }
 
 function suggestionLabel(s: Suggestion): string {
-  return { take: '减少物品', learn: '学习技能', give: '掉落', reforge: '装备改造', bless: '明确祝福', unbless: '撤销祝福', affect: '增减益', unaffect: '解除效果', status: '状态', xp: '经验', field: '环境', spawn: '遭遇', deploy: '选择编制', 'unit-update': '编制更新', 'unit-set': '完整单位修改' }[s.kind];
+  return { take: '减少物品', add: '新增或补充物品', learn: '学习技能', give: '转移物品', reforge: '物品改造', bless: '明确祝福', unbless: '撤销祝福', affect: '增减益', unaffect: '解除效果', status: '状态', xp: '经验', field: '环境', spawn: '遭遇', deploy: '选择编制', 'unit-update': '编制更新', 'unit-set': '完整单位修改' }[s.kind];
 }
 
 function suggestionDesc(s: Suggestion, batch: Suggestion[] = []): string {
@@ -2205,9 +2205,10 @@ function suggestionDesc(s: Suggestion, batch: Suggestion[] = []): string {
   const ids = viewIds();
   switch (s.kind) {
     case 'take': return `减少物品「${state.inventory.find(i => i.id === ids.realId(s.id))?.name ?? ids.publicId(s.id)}」×${s.qty}${s.note ? '——' + s.note : ''}`;
-    case 'give': return `获得物品「${s.item}」×${s.qty}${s.id ? ' → ' + unitName(s.id) : ''}${s.spec ? ' · ' + itemSpecificationLabel(s.spec) : ' · 叙事记录'}${s.note ? `——${s.note}` : ''}`;
+    case 'give': return `转移物品「${state.inventory.find(i => i.id === ids.realId(s.id))?.name ?? ids.publicId(s.id)}」${s.to && s.to.length > 1 ? '每个单位各' : ''}×${s.qty} → ${s.to?.map(id => unitName(id)).join('、') || '公共库存'}${s.note ? ' · ' + s.note : ''}`;
     case 'learn': return `${unitName(s.id)} 学习或更新：${s.skills.map((skill) => (skill.name ?? ABILITY_BLUEPRINTS[skill.blueprintId]?.name ?? skill.blueprintId) + (skill.level === undefined ? '' : ' L' + skill.level)).join('、')}；其余记录保留`;
-    case 'reforge': return `改造「${s.name ?? state.inventory.find((i) => i.id === ids.realId(s.id))?.name ?? '指定装备'}」为 ${itemSpecificationLabel(s.spec)}`;
+    case 'add': return s.item !== undefined ? `获得物品「${s.item}」×${s.qty}${s.to ? ' → ' + unitName(s.to) : ''}${s.spec ? ' · ' + itemSpecificationLabel(s.spec) : ' · 叙事记录'}${s.note ? ' · ' + s.note : ''}` : `增加「${state.inventory.find(i => i.id === ids.realId(s.id))?.name ?? ids.publicId(s.id)}」×${s.qty}${s.note ? ' · ' + s.note : ''}`;
+    case 'reforge': return `改造「${s.name ?? state.inventory.find((i) => i.id === ids.realId(s.id))?.name ?? '指定物品'}」为 ${itemSpecificationLabel(s.spec)}`;
     case 'bless': return `${unitName(s.id)} 获得「${s.name}」：${s.traitIds.map((id) => reg.get(id)?.name ?? id).join('、')} · ${s.duration.kind === 'permanent' ? '永久' : s.duration.count + (s.duration.kind === 'rounds' ? '个战斗整轮' : '场战斗')}`;
     case 'unbless': return `${unitName(s.id)} 撤销指定祝福来源（保留永久特质）`;
     case 'affect': return `${unitName(s.id)} 获得「${s.name}」：${s.conditionIds.map((id) => standardConditionMap().get(id)?.name ?? id).join('、')} · ${s.duration.kind === 'permanent' ? '永久' : s.duration.count + (s.duration.kind === 'rounds' ? '个战斗整轮' : '场战斗')}`;
@@ -2615,15 +2616,8 @@ function markProcessed(raw: string): void {
 
 /** 批准一条建议并落地 */
 async function approveSuggestion(s: Suggestion): Promise<void> {
-  if (['take', 'unit-set', 'bless', 'unbless', 'affect', 'unaffect', 'reforge', 'learn'].includes(s.kind) || s.kind === 'give' && s.spec) throw new Error('物品扣减、完整单位修改、有效果的物品、改造和增减益请通过剧情档案同步整批审查，旧无来源记录不能直接执行');
+  if (['take', 'add', 'give', 'unit-set', 'bless', 'unbless', 'affect', 'unaffect', 'reforge', 'learn'].includes(s.kind)) throw new Error('物品数量变更、转移、完整单位修改、改造和增减益请通过剧情档案同步整批审查，旧无来源记录不能直接执行');
   switch (s.kind) {
-    case 'give': {
-      const existing = state.inventory.find((it) => it.name === s.item && it.lootType === s.lootType && it.note === s.note && !it.assignedTo);
-      if (existing) existing.qty += s.qty;
-      else state.inventory.push({ id: `loot-${Date.now().toString(36)}-${state.idSeq++}`, name: s.item, note: s.note, qty: s.qty, lootType: s.lootType });
-      toast(`🎒 已入账物品：${s.item}×${s.qty}`);
-      break;
-    }
     case 'status': {
       requireArchiveWritable();
       const stored = storageRecordByRef(undefined, s.target);

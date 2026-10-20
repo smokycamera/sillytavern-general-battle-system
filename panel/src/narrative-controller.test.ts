@@ -74,7 +74,7 @@ describe('常驻宿主生命周期与故障', () => {
     const { controller, generate } = setup({ schemaVersion: 2, factRevision: 1, autoApprove: true, storySync: true, storage: [unitRecordFromCombatant(unit)],
       inventory: [{ id: 'herb', name: '药草', qty: 2, lootType: 'material' }], rosterIds: [] });
     await generate(`<tb><field env="forest" light="night"/><unit_update id="${unit.id}" hp="18"/><unit_set id="${unit.id}" name="已改名"/>
-      <learn id="${unit.id}" skills="治疗L3"/><give item="药剂" type="consumable" spec="治疗L2" qty="2"/><take id="herb"/>
+      <learn id="${unit.id}" skills="治疗L3"/><add item="药剂" type="consumable" spec="治疗L2" qty="2"/><take id="herb"/>
       <reforge id="${unit.weapon!.id}" spec="剑L6+穿甲"/><bless id="${unit.id}" name="新祝福" traits="快速" permanent="true"/>
       <affect id="${unit.id}" name="新诅咒" effects="诅咒" battles="2"/><unbless id="${unit.id}" source="old-bless"/><unaffect id="${unit.id}" source="old-curse"/>
       <deploy id="${unit.id}"/><spawn name="增援" side="enemy" scale="hero"/></tb>`);
