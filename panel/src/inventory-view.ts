@@ -25,6 +25,7 @@ import { narrativeIds } from './narrative-ids.js';
 
 const esc = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const slotNames = { primary: '主武器', sidearm: '副武器', armor: '护甲', shield: '盾牌', gear: '佩戴' };
+const slotOrder: Record<EquipmentSlot, number> = { primary: 0, sidearm: 1, armor: 2, shield: 3, gear: 4 };
 const bodyNames = { human: '普通人形', large: '大型生物', vehicle: '载具平台', giant: '巨型生物' };
 const channelNames = { kinetic: '动能', thermal: '热能', arcane: '奥术' };
 interface Draft extends EquipmentDraft {
@@ -158,7 +159,7 @@ export class InventoryPanel {
     return (save.inventory ?? []).filter((item) => item.qty > 0 && (!item.assignedTo || item.assignedTo === this.selectedUnit))
       .sort((a, b) => {
         const rank = (item: InventoryItem) => item.equippedTo ? 0 : item.assignedTo ? 1 : 2;
-        return rank(a) - rank(b);
+        return rank(a) - rank(b) || (a.equippedTo && b.equippedTo ? slotOrder[a.equippedTo.slot] - slotOrder[b.equippedTo.slot] : 0);
       });
   }
   visibleItemIds(): string[] { return this.currentItems(this.view()).map((item) => item.id); }

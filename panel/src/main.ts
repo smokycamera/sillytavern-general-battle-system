@@ -116,6 +116,7 @@ import {
   updateUnitRecord,
   deployUnitRecord,
   editUnitRecord,
+  forgetUnitRecordSkills,
   previewUnitConversion,
   undoUnitConversion,
   blueprintIdForCategory,
@@ -166,7 +167,7 @@ let builderSeed = randomId();
 let builderPreview: { namespace?: string; context: string; factRevision: number; signature: string; unit: Combatant; record?: UnitRecord; previousRevision?: number } | undefined;
 let unitConversion: { namespace?: string; context: string; factRevision: number; before: UnitRecord; after: UnitRecord } | undefined;
 let reportRestartPreview: { id: string; revision: number; namespace?: string } | undefined;
-let loadoutSkills: { id: string; revision?: number; namespace?: string; selected: string[]; battleId?: string; factRevision?: number } | undefined;
+let loadoutSkills: { id: string; revision?: number; namespace?: string; selected: string[]; deleted: string[]; battleId?: string; factRevision?: number } | undefined;
 
 // ---------- 战场环境 ----------
 
@@ -1764,14 +1765,14 @@ function renderLoadoutSkills(): string {
   const skills = unit ? learnedSkills(unit) : [];
   return `<div class="modal-backdrop" data-action="loadout-skills-close"><section class="modal-card loadout-skill-dialog" data-action="modal-stop" role="dialog" aria-modal="true" aria-labelledby="loadout-skill-title">
     <h2 id="loadout-skill-title">技能选择 · ${esc(unit?.name ?? '单位已不可用')}</h2>
-    <p data-role="loadout-skill-count" aria-live="polite">已选 ${draft.selected.length} 项 · 勾选准备上场的已学技能</p>
+    <p data-role="loadout-skill-count" aria-live="polite">已选 ${draft.selected.filter(id => !draft.deleted.includes(id)).length} 项 · 勾选准备上场的已学技能${draft.deleted.length ? ` · 待删除 ${draft.deleted.length} 项，保存后生效` : ''}</p>
     ${stale || locked ? `<p class="grid-reason">${stale ? '档案已更新，请关闭后重新选择。' : esc(reason!)}</p>` : ''}
     <div class="loadout-skill-list">${skills.map(skill => {
-      const checked = draft.selected.includes(skill.id);
-      return `<label class="loadout-skill-choice"><input type="checkbox" data-role="loadout-skill" data-id="${esc(skill.id)}" ${checked ? 'checked' : ''} ${stale || locked ? 'disabled' : ''}><span><b>${esc(skill.name)}</b><small>${esc(skillDefinitionName(skill.definitionId ?? skill.id))} · L${skill.power ?? 5}${esc(enhancementLabel(skill.bonuses))}${skill.cost ? ' · ' + esc(resourceLabel(skill.cost.resource)) + ' ' + displayNumber((unit ? abilityCost(unit, skill)!.amount : skill.cost.amount)) : ''}</small>${skill.desc ? `<small>${esc(skill.desc)}</small>` : ''}</span></label>`;
+      const deleted = draft.deleted.includes(skill.id), checked = !deleted && draft.selected.includes(skill.id);
+      return `<div class="loadout-skill-row${deleted ? ' pending-delete' : ''}"><label class="loadout-skill-choice"><input type="checkbox" data-role="loadout-skill" data-id="${esc(skill.id)}" ${checked ? 'checked' : ''} ${stale || locked || deleted ? 'disabled' : ''}><span><b>${esc(skill.name)}</b><small>${esc(skillDefinitionName(skill.definitionId ?? skill.id))} · L${skill.power ?? 5}${esc(enhancementLabel(skill.bonuses))}${skill.cost ? ' · ' + esc(resourceLabel(skill.cost.resource)) + ' ' + displayNumber((unit ? abilityCost(unit, skill)!.amount : skill.cost.amount)) : ''}</small>${skill.desc ? `<small>${esc(skill.desc)}</small>` : ''}${deleted ? '<small>待删除，保存后生效</small>' : ''}</span></label><button class="${deleted ? '' : 'danger'}" data-action="loadout-skill-delete" data-id="${esc(skill.id)}" aria-label="${deleted ? '撤销删除' : '删除技能'}：${esc(skill.name)}" ${stale || locked || battle ? 'disabled' : ''}>${deleted ? '撤销删除' : '删除技能'}</button></div>`;
     }).join('') || '<p class="sub">这个单位还没有已学技能。</p>'}</div>
-    <p class="sub">准备技能数量不限；装备和物品附带的能力随配装提供。</p>
-    <div class="row"><button class="primary" data-action="loadout-skills-save" ${stale || locked ? 'disabled' : ''}>保存选择</button><button data-action="loadout-skills-close">取消</button></div>
+    <p class="sub">准备技能数量不限；装备和物品附带的能力随配装提供。${battle ? '战斗结束并提交战果后可删除已学技能。' : '删除只移除所选技能，保存前可撤销。'}</p>
+    <div class="row"><button class="primary" data-action="loadout-skills-save" ${stale || locked ? 'disabled' : ''}>${draft.deleted.length ? '保存更改' : '保存选择'}</button><button data-action="loadout-skills-close">取消</button></div>
   </section></div>`;
 }
 
@@ -2353,11 +2354,22 @@ async function handleAction(e: Event): Promise<void> {
       stopAutomation();
       const ids = new Set(learnedSkills(unit).map(a => a.id));
       loadoutSkills = { id: unit.id, revision: record?.revision, namespace: adapter.namespace(),
-        battleId: battle && battleIdOf(battle), factRevision: state.factRevision,
+        battleId: battle && battleIdOf(battle), factRevision: state.factRevision, deleted: [],
         selected: (battle ? unit.preparedAbilityIds ?? [] : record?.preparedAbilityIds ?? unit.preparedAbilityIds ?? []).filter(id => ids.has(id)) };
     } else loadoutSkills = undefined;
     render('view');
     document.querySelector<HTMLElement>(act === 'loadout-skills' ? '.loadout-skill-dialog input:not(:disabled), .loadout-skill-dialog button' : '[data-action="loadout-skills"]')?.focus({ preventScroll: true });
+    return;
+  }
+  if (act === 'loadout-skill-delete') {
+    const draft = loadoutSkills;
+    if (!draft || draft.namespace !== adapter.namespace()) throw Error('档案已更新，请重新选择技能');
+    const { battle, record, unit } = loadoutSkillContext(draft.id);
+    if (battle || draft.battleId) throw Error('战斗结束并提交战果后可删除已学技能');
+    if (!record || record.revision !== draft.revision || !unit || !learnedSkills(unit).some(skill => skill.id === el.dataset.id)) throw Error('档案已更新，请重新选择技能');
+    const id = el.dataset.id!;
+    draft.deleted = draft.deleted.includes(id) ? draft.deleted.filter(value => value !== id) : [...draft.deleted, id];
+    render('view');
     return;
   }
   if (act === 'loadout-skills-save') {
@@ -2366,6 +2378,7 @@ async function handleAction(e: Event): Promise<void> {
     const { battle, unit } = loadoutSkillContext(draft.id);
     if (draft.battleId !== (battle && battleIdOf(battle))) throw Error('战斗已变化，请重新选择技能');
     if (battle) {
+      if (draft.deleted.length) throw Error('战斗结束并提交战果后可删除已学技能');
       if (!unit || draft.factRevision !== state.factRevision || draft.factRevision !== (saved.factRevision ?? 0)) throw Error('战况已更新，请重新选择技能');
       const removed = setBattlePreparedSkills(battle, draft.id, draft.selected);
       for (const [unitId, order] of Object.entries(state.orderDraft)) {
@@ -2382,7 +2395,9 @@ async function handleAction(e: Event): Promise<void> {
     if (record.retired || record.status === 'dead' || record.snapshot?.rulesVersion !== 'v2') throw Error('当前单位无法选择技能');
     const learned = new Set(record.snapshot.abilities.filter(a => !a.itemSourceId && !a.equipmentSourceId).map(a => a.id));
     if (draft.selected.some(id => !learned.has(id))) throw Error('只能选择当前单位已学技能');
-    const next = editUnitRecord(record, { ...record, preparedAbilityIds: [...draft.selected] }, reg, state.era);
+    const selected = draft.selected.filter(id => !draft.deleted.includes(id));
+    const next = draft.deleted.length ? forgetUnitRecordSkills(record, draft.deleted, selected, reg)
+      : editUnitRecord(record, { ...record, preparedAbilityIds: selected }, reg, state.era);
     const { receipt } = await controller.persistPanel({ ...saved, storage: saved.storage!.map(r => r.id === record.id ? next : r) }, saved.factRevision ?? 0);
     restore(); state.saveReceipt = receipt;
     if (receipt.status === 'failed') throw Error(receipt.error ?? '技能选择尚未保存，请重试');
@@ -3703,7 +3718,7 @@ document.addEventListener('click', e => {
   }
   // Scan/reload validate the refreshed service themselves; they must remain
   // reachable when a host metadata refresh invalidates the old panel session.
-  const viewOnly = ['class-migration-later','save-retry', 'archive-reload', 'narrative-scan', 'pending-scan', 'workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'grid-inspect-unit', 'grid-cell', 'grid-mode', 'narrative-review', 'log-detail', 'unit-detail', 'role-detail', 'modal-stop', 'migration-export', 'loadout-skills', 'loadout-skills-close'].includes(action);
+  const viewOnly = ['class-migration-later','save-retry', 'archive-reload', 'narrative-scan', 'pending-scan', 'workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'grid-inspect-unit', 'grid-cell', 'grid-mode', 'narrative-review', 'log-detail', 'unit-detail', 'role-detail', 'modal-stop', 'migration-export', 'loadout-skills', 'loadout-skills-close', 'loadout-skill-delete'].includes(action);
   const feedback = !viewOnly && /^(grid-|small-|mass-|formation-)/.test(action) ? (e.target as HTMLElement).closest<HTMLElement>('[data-action]') ?? undefined : undefined;
   if (action === 'formation-select-actor') {
     if (uiBusy) { toast('正在保存上一项操作，请稍候…'); return; }
@@ -3912,7 +3927,7 @@ document.addEventListener('change', e => {
 
   if (e.target instanceof HTMLInputElement && e.target.dataset.role === 'loadout-skill') {
     const id = e.target.dataset.id, draft = loadoutSkills;
-    if (!id || !draft || uiBusy) return;
+    if (!id || !draft || uiBusy || draft.deleted.includes(id)) return;
     const selected = draft.selected.filter(value => value !== id);
     if (e.target.checked) selected.push(id);
     draft.selected = selected; render('view');

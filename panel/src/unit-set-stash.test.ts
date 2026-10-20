@@ -23,6 +23,30 @@ const weaponOf = (save: NarrativeSave) => save.inventory!.find(i => i.equippedTo
 const notices = (save: NarrativeSave) => save.proposals!.at(-1)!.notices?.join('；') ?? '';
 
 describe('unit_set 换装与库存同一件实物', () => {
+  it.each(['equipped', 'bag', 'public'] as const)('重铸改名并换回原实物，保留奥术与冻结种子、不复制当前武器：%s', location => {
+    const sword = createInventoryItem('rebellion', '叛逆大剑', { kind: 'weapon', mechanism: 'greatsword', power: 3, enchantment: 'arcane' }, 'rebellion-original');
+    let save = setup('ally', [sword]);
+    const target = save.inventory!.find(item => item.id === sword.id)!;
+    if (location !== 'public') target.assignedTo = 'a';
+    if (location === 'equipped') {
+      delete weaponOf(save).equippedTo;
+      target.equippedTo = { unitId: 'a', slot: 'primary' };
+      save = prepareInventoryState(save);
+    }
+    const before = structuredClone(save), id = narrativeIds(save).publicId(sword.id), name = '叛逆大剑魔血觉醒';
+    for (const setFirst of [false, true]) {
+      const reforge = `<reforge id="${id}" name="${name}" spec="巨剑L4+4伤害+3穿透" enchant="arcane"/>`;
+      const set = `<unit_set id="u1" weapon="${name}:巨剑L4+4伤害+3穿透" reason="换回升阶重铸后的D级主力魔剑"/>`;
+      const next = transact(save, setFirst ? set + reforge : reforge + set);
+      expect(named(next, name)).toHaveLength(1);
+      expect(weaponOf(next)).toMatchObject({ id: sword.id, name, assignedTo: 'a', mechanics: { value: { channel: 'arcane', recipe: { power: 4, enchantment: 'arcane', seed: 'rebellion-original', bonuses: { damage: 4, penetration: 3 } } } } });
+      expect(next.inventory).toHaveLength(before.inventory!.length);
+      for (const item of before.inventory!.filter(item => item.id !== sword.id)) {
+        expect(next.inventory!.find(after => after.id === item.id)!.mechanics).toEqual(item.mechanics);
+      }
+    }
+    expect(save).toEqual(before);
+  });
   it.each([false, true])('give 防具后按名称穿上同一件，保留冻结属性与旧装备，unit_set在前=%s', setFirst => {
     const armor = createInventoryItem('incoming-armor', '盔甲', { kind: 'armor', tier: 3, power: 5, profile: 'thermal', bonuses: { protection: 4 } }, 'original-armor');
     const save = setup('ally', [armor]), before = structuredClone(save), ids = narrativeIds(save);
@@ -98,6 +122,14 @@ describe('unit_set 换装与库存同一件实物', () => {
       expect(named(next, '盔甲')).toHaveLength(1);
       expect(next.storage![0]!.snapshot!.armor).toEqual(armor.mechanics!.value);
       expect(next.rosterIds).toEqual(['a']);
+      f.context.chat!.push({ mes: `<tb><reforge id="${id}" name="升阶盔甲" spec="重甲L6+5防护"/><unit_set id="u1" armor="升阶盔甲:重甲L6+5防护"/></tb>`, is_user: false, swipe_id: 0, gen_finished: 'finished' });
+      await f.service.scan();
+      expect((await f.service.approve(f.service.snapshot().proposals!.at(-1)!.id)).status).toBe('confirmed');
+      await f.service.load(); await f.service.scan();
+      const reforged = f.service.snapshot();
+      expect(named(reforged, '升阶盔甲')).toHaveLength(1);
+      expect(reforged.storage![0]!.snapshot!.armor).toMatchObject({ id: armor.id, name: '升阶盔甲', recipe: { power: 6, bonuses: { protection: 5 }, seed: 'original-armor' } });
+      expect(reforged.inventory).toHaveLength(next.inventory!.length);
     } finally { f.service.dispose(); }
   });
   it('同一回复 add 后 unit_set 换上：只有一把，原武器卸下留在库存', () => {
