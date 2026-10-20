@@ -73,6 +73,14 @@ export function validateWounded(unit: Health): void {
   }
 }
 
+/** 阵亡结算同时封口伤兵池；非致命濒死和单纯切换规则仍保留已有伤兵。 */
+export function settleWoundedOnDeath(unit: Combatant): void {
+  if (unit.status !== 'dead') return;
+  if (unit.recoverableWounded !== undefined) unit.recoverableWounded = 0;
+  if (unit.formation) unit.formation.woundedRemainder = 0;
+  if (unit.woundedPercentRemainder !== undefined) unit.woundedPercentRemainder = 0;
+}
+
 /** 实际损失唯一记账入口；V3跨分组累计半数伤兵余量，避免连发逐次取整丢失。 */
 export function applyHealthLoss(unit: Combatant, amount: number, v2 = unit.rulesVersion === 'v2', overmatch?:DamageOvermatch): number {
   let loss = Math.min(unit.hp, absorbBarrier(unit, amount,barrierRatio(unit,overmatch)));

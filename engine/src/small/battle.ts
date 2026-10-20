@@ -53,7 +53,7 @@ import { prepareCondition, applySkillCondition, dispelCandidates, applyDispel, a
 import { applyWeaponConditions, poisonDamage, poisonFactor, conditionDamage } from '../afflictions.js';
 import { isRangedWeapon, weaponReloadKey, weaponReloadTurns, meleeWeapon, validateMount, mountedShooting, steadyMovingShot, agileDisengage } from '../loadout.js';
 import { moraleProfile, moraleAttackMods, decideMorale, changeMorale, validateMoraleState, moraleRisk, moraleChangePreview, reconcileDamageMorale, recoverEntryMorale } from '../morale.js';
-import { applyHealthLoss, applyCombatDamage, applyRecovery, recoveryCapacity, regenerationAmount, settleRegeneration, validateWounded, lifestealRecovery, beginLifestealRound } from '../recovery.js';
+import { applyHealthLoss, applyCombatDamage, applyRecovery, recoveryCapacity, regenerationAmount, settleRegeneration, validateWounded, settleWoundedOnDeath, lifestealRecovery, beginLifestealRound } from '../recovery.js';
 import {hasMemberHealth,memberHealth,memberHealthMax,MEMBER_HEALTH_MODEL} from '../member-health.js';
 /**
  * 小规模战斗管线：先攻队列 → 交替行动 → 回合末结算。
@@ -3215,6 +3215,7 @@ export class SmallBattle {
     if(this.rules.resolutionVersion==='v2')this.defeatedIds.add(unit.id);
     // 与会战一致：生命归零即阵亡，不依赖战斗结束后不可能发生的再次补刀。
     unit.status = this.nonLethal ? 'dying' : 'dead';
+    settleWoundedOnDeath(unit);
     this.recordEvent({
       round: this.round,
       kind: 'death',
@@ -3298,6 +3299,7 @@ export class SmallBattle {
     if (this.nonLethal || !this.isOver()) return;
     for (const unit of this.combatants) if (unit.hp <= 0 && unit.status === 'dying' && !this.sparedIds.has(unit.id)) {
       unit.status = 'dead';
+      settleWoundedOnDeath(unit);
       this.recordEvent({round:this.round,kind:'death',participants:[unit.id],text:`${unit.name} 阵亡（生命归零）`});
     }
   }

@@ -72,15 +72,16 @@ describe('佩戴等级锚定修正', () => {
     expect(() => upgradeWornItemBudget(custom)).toThrow('可信配方');
   });
 
-  it('效果带单位、配方独立、升级收益可见，覆盖提示使用实际值且速度也参与取强', () => {
+  it('属性修正省略单位后缀，配方独立、升级收益可见，覆盖提示使用实际值且速度也参与取强', () => {
     const value = item(1, { defense: 2, speed: 1 });
     expect(itemEffectRows(value)).toEqual([
-      { stat: 'defense', name: '防御', actual: '+0.2格', written: '+2', next: '+0.06格' },
-      { stat: 'speed', name: '速度', actual: '+0.1步', written: '+1', next: '+0.1步' },
+      { stat: 'defense', name: '防御', actual: '+0.2', written: '+2', next: '+0.06' },
+      { stat: 'speed', name: '速度', actual: '+0.1', written: '+1', next: '+0.1' },
     ]);
-    expect(itemValueSummary(value, itemSpecText(value.recipe))).toBe('防御+0.2格、速度+0.1步');
+    expect(itemValueSummary(value, itemSpecText(value.recipe))).toBe('防御+0.2、速度+0.1');
     const u = unit(); u.gear = [gearItem('old', 'old', value), gearItem('new', 'new', item(2, { defense: 2, speed: 1 }))];
-    expect(overshadowedGear(u, 'old')).toEqual(['防御+0.2格', '速度+0.1步']);
-    for (const stat of ['protection', 'morale', 'kineticDamage'] as BonusStat[]) expect(itemEffectRows(item(2, { [stat]: 10 }))[0]!.actual).toMatch(/(?:抗穿|点|%)$/);
+    expect(overshadowedGear(u, 'old')).toEqual(['防御+0.2', '速度+0.1']);
+    for (const stat of ['protection', 'morale'] as BonusStat[]) expect(itemEffectRows(item(2, { [stat]: 10 }))[0]!.actual).toMatch(/^[+-][\d.]+$/);
+    expect(itemEffectRows(item(2, { kineticDamage: 10 }))[0]!.actual).toMatch(/%$/);
   });
 });
