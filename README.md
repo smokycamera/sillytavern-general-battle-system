@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.6.7**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **2.6.8**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-2.6.7 adds consumable reforging and quantity controls. Narrative `add` creates items or restocks an existing item; `give` transfers existing stock to one or more units while preserving its frozen attributes and deducting the total from the source. Item prompts and the embedded worldbook use the same contract. See the [release guide](docs/current-release.md).
+2.6.8 makes a `give` followed by `unit_set` equip the transferred instance instead of creating or rebuilding equipment. Names and item IDs resolve to the same physical item, preserving its frozen attributes and keeping displaced equipment in inventory. See the [release guide](docs/current-release.md).
 
 ## Documentation
 

@@ -14,6 +14,7 @@ import { materializeUnitRecord, unitRecordFromCombatant, combatantFromUnknown } 
 import { fitsEquipmentSlot, prepareInventoryState, validateInventoryItem, type InventoryItem } from './inventory-state.js';
 import { parseItemSpecification, splitItemSpecification } from './item-spec.js';
 import { parseAbilitySpec } from './tags.js';
+import { narrativeIds } from './narrative-ids.js';
 import type { NarrativeSave } from './narrative-state.js';
 
 type ObjectData = Record<string, unknown>;
@@ -127,17 +128,21 @@ function gearValue(input: unknown, previous: ItemMechanics | undefined, slot: Eq
   return mechanics;
 }
 
-interface WantedGear { name?: string; spec?: ItemSpecification; values: boolean }
+interface WantedGear { name?: string; itemId?: string; spec?: ItemSpecification; referenceOnly: boolean; values: boolean }
 /** 正文给这件装备写的名字与规格；卸下时为 undefined。写错的规格留给 gearValue 报具体错误。 */
 function wantedGear(input: unknown): WantedGear | undefined {
   if (input === null || input === '') return undefined;
   const config = typeof input === 'string' ? { spec: input } : object(input) ? input : {};
-  let name: string | undefined, spec: ItemSpecification | undefined;
+  let name: string | undefined, spec: ItemSpecification | undefined, referenceOnly = false;
   try {
-    if (typeof config.spec === 'string') { const named = splitItemSpecification(config.spec); name = named.name; spec = parseItemSpecification(named.spec); }
+    if (typeof config.spec === 'string') {
+      const named = splitItemSpecification(config.spec); name = named.name;
+      try { spec = parseItemSpecification(named.spec); }
+      catch { if (!named.name && !/[lLｌＬ]\s*[0-9０-９]/.test(named.spec)) { name = named.spec; referenceOnly = true; } }
+    }
     else if (object(config.spec)) { name = typeof config.spec.name === 'string' ? config.spec.name : undefined; spec = config.spec as unknown as ItemSpecification; }
   } catch { /* See gearValue. */ }
-  return { name: name?.trim() || undefined, spec, values: config.values !== undefined };
+  return { name: name?.trim() || undefined, spec, referenceOnly, values: config.values !== undefined };
 }
 /** 实物同名比较：忽略空白与大小写。 */
 export const itemKey = (name: string) => name.replace(/\s+/g, '').toLowerCase();
@@ -147,10 +152,17 @@ function sameGear(mechanics: ItemMechanics | undefined, spec: ItemSpecification 
   if (!mechanics || !spec || mechanics.kind === 'item' || spec.kind === 'item' || mechanics.kind !== spec.kind) return false;
   const recipe = mechanics.value.recipe;
   const mechanism = spec.kind === 'weapon' ? spec.mechanism : spec.kind === 'armor' ? 'armor:' + spec.tier : spec.mechanism ?? 'shield';
-  return !!recipe && recipe.mechanism === mechanism && recipe.power === spec.power && bonusKey(recipe.bonuses) === bonusKey(spec.bonuses)
+  return !!recipe && recipe.mechanism === mechanism && recipe.power === spec.power && (spec.bonuses === undefined || bonusKey(recipe.bonuses) === bonusKey(spec.bonuses))
     && (spec.quality === undefined || spec.quality === recipe.quality) && (spec.body === undefined || spec.body === recipe.size)
     && (spec.kind !== 'weapon' || (spec.enchantment === undefined || (recipe.enchantment ?? 'none') === spec.enchantment) && (spec.stabilized === undefined || !!recipe.stabilized === spec.stabilized))
     && (spec.kind !== 'armor' || spec.profile === undefined || (recipe.protectionProfile ?? 'balanced') === spec.profile);
+}
+/** 同批give明确交出的这件实物是否正是unit_set要穿戴的装备。 */
+export function unitSetReferencesGear(field: string, input: unknown, item: InventoryItem, realId: (id: string) => string): boolean {
+  const kind = ['weapon', 'weapon2', 'sidearm'].includes(field) ? 'weapon' : field;
+  if (item.mechanics?.kind !== kind || !['weapon', 'armor', 'shield'].includes(kind)) return false;
+  const wanted = wantedGear(input);
+  return !!wanted && (wanted.name ? item.id === realId(wanted.name) || itemKey(item.name) === itemKey(wanted.name) : sameGear(item.mechanics, wanted.spec));
 }
 // 只有名字、没有规格的叙事记录，按种类可以补上规格后装备。
 const NARRATIVE_GEAR: Record<'weapon' | 'armor', string[]> = { weapon: ['weapon', 'misc', 'quest'], armor: ['armor', 'misc', 'quest'] };
@@ -162,7 +174,7 @@ function stashedGear(inventory: InventoryItem[], unitId: string, slot: Equipment
   const usable = (item: InventoryItem) => item.qty > 0 && !item.equippedTo && (!item.assignedTo || item.assignedTo === unitId)
     && (item.mechanics ? fitsEquipmentSlot(item.mechanics, slot) : !!wanted.spec && NARRATIVE_GEAR[slot === 'primary' || slot === 'sidearm' ? 'weapon' : 'armor'].includes(item.lootType));
   const rank = (item: InventoryItem) => Number(given.has(item.id)) * 4 + Number(item.assignedTo === unitId) * 2 + Number(!!item.mechanics);
-  return inventory.filter(item => usable(item) && (wanted.name ? itemKey(item.name) === itemKey(wanted.name) : given.has(item.id) && sameGear(item.mechanics, wanted.spec)))
+  return inventory.filter(item => usable(item) && (wanted.name ? item.id === wanted.itemId || itemKey(item.name) === itemKey(wanted.name) : given.has(item.id) && sameGear(item.mechanics, wanted.spec)))
     .sort((a, b) => rank(b) - rank(a))[0];
 }
 
@@ -251,7 +263,11 @@ function rebase(unit: Combatant, data: ObjectData): void {
 }
 
 /** given：同一回复 add 刚入库的实物编号，换装时优先取用；notices 收集换装说明。 */
-export interface UnitSetContext { given?: ReadonlySet<string>; notices?: string[] }
+export const UNIT_EQUIPMENT_FIELDS = ['weapon', 'weapon2', 'sidearm', 'armor', 'shield'] as const;
+export interface UnitSetContext {
+  given?: ReadonlySet<string>; notices?: string[]; transferred?: ReadonlySet<string>;
+  deferEquipmentFor?: ReadonlyMap<string, readonly InventoryItem[]>; deferredEquipment?: Map<string, Record<string, unknown>>;
+}
 export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData, sourceId: string, options: UnitSetContext = {}): NarrativeSave {
   validateUnitPatch(patch);
   if (save.battle && !(save.committedOutcomeIds ?? []).includes(`${save.battle.kind}:${String(save.battle.snap.seed)}`)) throw Error('unit_set仅限战外，须先结算当前战斗');
@@ -359,7 +375,8 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   for (const key of ['resources','abilityState','fatigue'] as const) if (Object.hasOwn(data,key)) (unit.storyState ??= {})[key] = true;
 
   // 库存属于我方：敌方/中立单位换装照旧只改自己身上这件。
-  const ally = unit.side === 'ally', given = options.given ?? new Set<string>();
+  const ally = unit.side === 'ally', given = options.given ?? new Set<string>(), transferred = options.transferred ?? new Set<string>();
+  const ids = narrativeIds(next);
   // 同一回复 add 的同名物品就是这件装备时不再另外入库。
   const dropGiven = (name: string, verb: string) => {
     const twin = next.inventory!.find(i => given.has(i.id) && i.qty > 0 && !i.equippedTo && !i.assignedTo && itemKey(i.name) === itemKey(name));
@@ -372,14 +389,19 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
     if (!Object.hasOwn(data,key)) continue;
     const equipped = next.inventory!.find(i => i.equippedTo?.unitId===id && i.equippedTo.slot===slot);
     const wanted = wantedGear(data[key]);
+    if (wanted?.name) wanted.itemId = ids.realId(wanted.name);
+    const incoming = wanted ? stashedGear(next.inventory!.filter(item => transferred.has(item.id) && item.assignedTo === id), id, slot, wanted, transferred) : undefined;
     // 写的就是手上这件：原位修改。否则库存里有这件（含同一回复刚 add 的）就直接换上，原装备卸下留作备用，不另造一件。
-    const keep = !!equipped && !!wanted?.name && itemKey(equipped.name) === itemKey(wanted.name);
-    const stashed = ally && wanted && !keep ? stashedGear(next.inventory!, id, slot, wanted, given) : undefined;
+    const keep = !incoming && !!equipped && !!wanted?.name && (equipped.id === wanted.itemId || itemKey(equipped.name) === itemKey(wanted.name));
+    const stashed = incoming ?? (ally && wanted && !keep ? stashedGear(next.inventory!, id, slot, wanted, given) : undefined);
     // 多件同名叙事记录只拿出一件补上规格。
     const split = !!stashed && !stashed.mechanics && stashed.qty > 1;
     const old = split ? undefined : stashed ?? equipped;
     const itemId = old?.id ?? `equipment:${sourceId}:${id}:${slot}`;
-    const mechanics = stashed?.mechanics && !wanted!.values && sameGear(stashed.mechanics, wanted!.spec) ? stashed.mechanics : gearValue(data[key],old?.mechanics,slot,itemId,unit,sourceId);
+    const frozen = old?.mechanics && wanted && !wanted.values && (wanted.referenceOnly && (stashed || keep)
+      || incoming && typeof data[key] === 'string' && wanted.spec?.kind === incoming.mechanics?.kind
+      || stashed && sameGear(stashed.mechanics, wanted.spec));
+    const mechanics = frozen ? old!.mechanics : gearValue(data[key],old?.mechanics,slot,itemId,unit,sourceId);
     if (mechanics && mechanics.kind !== 'item') {
       const item = { ...old, ...(split ? { note: stashed!.note } : {}), id:itemId, name:('name' in mechanics.value ? mechanics.value.name : undefined) || '盾牌',qty:1,lootType:mechanics.kind==='weapon'?'weapon':'armor',mechanics,assignedTo:id,equippedTo:{unitId:id,slot},revision:(old?.revision??0)+1 };
       validateInventoryItem(item);
