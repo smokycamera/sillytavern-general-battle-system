@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { generateUnit, traitRegistry } from '../../engine/src/index.js';
 import { unitRecordFromCombatant } from './unit-state.js';
-import { prepareInventoryState, type InventoryItem } from './inventory-state.js';
+import { createInventoryItem, prepareInventoryState, type InventoryItem } from './inventory-state.js';
+import { narrativeIds } from './narrative-ids.js';
+import { nativeFixture } from '../../runtime/tests/native-fixture.js';
 import { captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type MessageEnvelope, type NarrativeSave } from './narrative-state.js';
 
 // unit_set 换上的装备如果就是同一回复 add 的那件、或库存里已有的那件，只算一件。
@@ -21,6 +23,83 @@ const weaponOf = (save: NarrativeSave) => save.inventory!.find(i => i.equippedTo
 const notices = (save: NarrativeSave) => save.proposals!.at(-1)!.notices?.join('；') ?? '';
 
 describe('unit_set 换装与库存同一件实物', () => {
+  it.each([false, true])('give 防具后按名称穿上同一件，保留冻结属性与旧装备，unit_set在前=%s', setFirst => {
+    const armor = createInventoryItem('incoming-armor', '盔甲', { kind: 'armor', tier: 3, power: 5, profile: 'thermal', bonuses: { protection: 4 } }, 'original-armor');
+    const save = setup('ally', [armor]), before = structuredClone(save), ids = narrativeIds(save);
+    const give = `<give id="${ids.publicId(armor.id)}" to="u1"/>`, set = '<unit_set id="u1" armor="盔甲" note="穿上收到的防具"/>';
+    const next = transact(save, setFirst ? set + give : give + set);
+    expect(named(next, '盔甲')).toHaveLength(1);
+    expect(next.inventory!.find(item => item.id === armor.id)).toMatchObject({ qty: 1, assignedTo: 'a', equippedTo: { unitId: 'a', slot: 'armor' }, mechanics: armor.mechanics });
+    expect(next.storage![0]!.snapshot!.armor).toEqual(armor.mechanics!.value);
+    const old = before.inventory!.find(item => item.equippedTo?.slot === 'armor')!;
+    expect(next.inventory!.find(item => item.id === old.id)).toMatchObject({ mechanics: old.mechanics, assignedTo: 'a' });
+    expect(next.inventory!.find(item => item.id === old.id)!.equippedTo).toBeUndefined();
+    expect(next.storage![0]!.note).toBe('穿上收到的防具');
+    expect(save).toEqual(before);
+  });
+  it('同批转来的防具优先于原有同名装备，重复规格不抹掉属性修正；reforge后再按编号穿上', () => {
+    const armor = createInventoryItem('incoming-armor', '盔甲', { kind: 'armor', tier: 3, power: 5, bonuses: { protection: 4 } }, 'original-armor');
+    let save = setup('ally', [armor]);
+    const original = save.inventory!.find(item => item.equippedTo?.slot === 'armor')!;
+    original.name = '盔甲'; if (original.mechanics?.kind === 'armor') original.mechanics.value.name = '盔甲';
+    save = prepareInventoryState(save);
+    const id = narrativeIds(save).publicId(armor.id);
+    const next = transact(save, `<give id="${id}" to="u1"/><unit_set id="u1" armor="盔甲:重甲L5"/>`);
+    expect(next.storage![0]!.snapshot!.armor).toEqual(armor.mechanics!.value);
+    expect(next.inventory!.find(item => item.id === original.id)!.mechanics).toEqual(original.mechanics);
+    const reforged = transact(save, `<unit_set id="u1" armor="${id}"/><give id="${id}" to="u1"/><reforge id="${id}" spec="重甲L6+5防护"/>`);
+    expect(reforged.storage![0]!.snapshot!.armor).toMatchObject({ id: armor.id, recipe: { power: 6, bonuses: { protection: 5 } } });
+    expect(named(reforged, '盔甲')).toHaveLength(2);
+  });
+  it('已转移的防具可交给同批新建单位或敌方，缺失名称与超量转移整批拒绝', () => {
+    const armor = createInventoryItem('incoming-armor', '盔甲', { kind: 'armor', tier: 3, power: 5 }, 'original-armor');
+    const save = setup('enemy', [armor]), id = narrativeIds(save).publicId(armor.id);
+    const enemy = transact(save, `<give id="${id}" to="u1"/><unit_set id="u1" armor="盔甲"/>`);
+    expect(enemy.storage![0]!.snapshot!.armor).toEqual(armor.mechanics!.value);
+    const created = transact(save, `<give id="${id}" to="u9"/><unit_set id="u9" name="新守卫" side="ally" scale="hero" armor="盔甲"/>`);
+    expect(created.storage!.find(unit => unit.name === '新守卫')!.snapshot!.armor).toEqual(armor.mechanics!.value);
+    expect(named(created, '盔甲')).toHaveLength(1);
+    const before = structuredClone(save);
+    expect(() => transact(save, `<give id="${id}" to="u1"/><unit_set id="u1" armor="不存在的盔甲"/>`)).toThrow();
+    expect(() => transact(save, `<give id="${id}" to="u1" qty="2"/><unit_set id="u1" armor="盔甲"/>`)).toThrow(/数量/);
+    expect(save).toEqual(before);
+  });
+  it('接收防具不会延后不相关武器的unit_set，也不覆盖随后reforge的结果', () => {
+    const armor = createInventoryItem('incoming-armor', '盔甲', { kind: 'armor', tier: 3, power: 5 }, 'original-armor');
+    const save = setup('ally', [armor]), ids = narrativeIds(save), weapon = weaponOf(save);
+    const next = transact(save, `<give id="${ids.publicId(armor.id)}" to="u1"/><unit_set id="u1" weapon="长剑:剑L3"/><reforge id="${ids.publicId(weapon.id)}" spec="剑L6"/>`);
+    expect(weaponOf(next)).toMatchObject({ id: weapon.id, mechanics: { value: { recipe: { power: 6 } } } });
+    expect(next.inventory!.find(item => item.id === armor.id)).toMatchObject({ assignedTo: 'a', mechanics: armor.mechanics });
+    expect(next.inventory!.find(item => item.id === armor.id)!.equippedTo).toBeUndefined();
+  });
+  it.each([false, true])('防刺内衬改名带钢板后，give与unit_set锁定原实物，unit_set在前=%s', setFirst => {
+    const armor = createInventoryItem('incoming-armor', '防刺内衬', { kind: 'armor', tier: 1, power: 1 }, 'original-armor');
+    const save = setup('ally', [armor]), id = narrativeIds(save).publicId(armor.id), name = '防刺内衬（带钢板）';
+    const reforge = `<reforge id="${id}" name="${name}" spec="轻甲l2+4防护"/>`, give = `<give id="${id}" to="u1"/>`, set = `<unit_set id="u1" armor="${name}:轻甲L2+4防护"/>`;
+    const next = transact(save, setFirst ? set + give + reforge : reforge + give + set);
+    expect(named(next, name)).toHaveLength(1);
+    expect(named(next, name)[0]).toMatchObject({ id: armor.id, assignedTo: 'a', equippedTo: { unitId: 'a', slot: 'armor' }, revision: 3 });
+    expect(named(next, '防刺内衬')).toHaveLength(0);
+    expect(next.storage![0]!.snapshot!.armor).toEqual(named(next, name)[0]!.mechanics!.value);
+    expect(next.storage![0]!.snapshot!.armor).toMatchObject({ id: armor.id, name, recipe: { power: 2, bonuses: { protection: 4 }, seed: 'original-armor' } });
+  });
+  it('原生保存、读回与重扫保留转来的防具身份和属性，不重复入库', async () => {
+    const f = nativeFixture();
+    try {
+      await f.service.start();
+      const armor = createInventoryItem('incoming-armor', '盔甲', { kind: 'armor', tier: 3, power: 5, bonuses: { protection: 4 } }, 'original-armor');
+      const save = setup('ally', [armor]), id = narrativeIds(save).publicId(armor.id);
+      expect((await f.service.transact(() => save)).status).toBe('confirmed');
+      f.context.chat!.push({ mes: `<tb><give id="${id}" to="u1"/><unit_set id="u1" armor="盔甲"/><deploy id="u1"/></tb>`, is_user: false, swipe_id: 0, gen_finished: 'finished' });
+      await f.service.scan();
+      expect((await f.service.approve(f.service.snapshot().proposals!.at(-1)!.id)).status).toBe('confirmed');
+      await f.service.load(); await f.service.scan();
+      const next = f.service.snapshot();
+      expect(named(next, '盔甲')).toHaveLength(1);
+      expect(next.storage![0]!.snapshot!.armor).toEqual(armor.mechanics!.value);
+      expect(next.rosterIds).toEqual(['a']);
+    } finally { f.service.dispose(); }
+  });
   it('同一回复 add 后 unit_set 换上：只有一把，原武器卸下留在库存', () => {
     const save = setup(), oldWeapon = weaponOf(save);
     const next = transact(save, '<add item="霜之哀伤" spec="剑L7"/><unit_set id="u1" weapon="霜之哀伤:剑L7"/>');

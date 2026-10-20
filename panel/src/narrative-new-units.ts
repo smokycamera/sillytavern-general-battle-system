@@ -9,6 +9,8 @@ import type { SpawnItem } from './item-spec.js';
 import { normalizeHandle, type narrativeIds } from './narrative-ids.js';
 import { parseProtocol } from './protocol.js';
 import { serializeEvent } from './protocol-syntax.js';
+import { unitSetReferencesGear } from './unit-set.js';
+import type { InventoryItem } from './inventory-state.js';
 
 type Ids = ReturnType<typeof narrativeIds>;
 type UnitSet = Extract<Suggestion, { kind: 'unit-set' }>;
@@ -38,10 +40,10 @@ function creatable(event: UnitSet): boolean {
   return typeof data.name === 'string' && !!data.name.trim() && ['ally', 'enemy'].includes(String(data.side)) && ['hero', 'company'].includes(String(data.scale))
     && (data.scale === 'hero' || typeof data.hpMax === 'number' || typeof base?.hpMax === 'number');
 }
-function spawnFromUnitSet(event: UnitSet): { spawn: Suggestion; rest: Record<string, unknown> } {
+function spawnFromUnitSet(event: UnitSet, incoming: InventoryItem[], ids: Ids, reforgedNames: ReadonlyMap<string, string>): { spawn: Suggestion; rest: Record<string, unknown> } {
   const attrs: Record<string, string> = {}, rest: Record<string, unknown> = {};
   for (const [field, value] of Object.entries(event.data)) {
-    const attr = SPAWN_FIELDS[field];
+    const attr = incoming.some(item => unitSetReferencesGear(field, value, item, ids.realId, reforgedNames)) ? undefined : SPAWN_FIELDS[field];
     const text = attr === undefined ? undefined : ['string', 'number', 'boolean'].includes(typeof value) ? String(value)
       : field === 'traits' && Array.isArray(value) && value.every(v => typeof v === 'string') ? value.join(',') : undefined;
     if (text === undefined) rest[field] = value; else attrs[attr!] = text;
@@ -54,6 +56,7 @@ function spawnFromUnitSet(event: UnitSet): { spawn: Suggestion; rest: Record<str
 export function planNewUnits(save: NarrativeSave, proposalId: string, input: Suggestion[], ids: Ids): NewUnitPlan {
   const records = save.storage ?? [], existing = new Set(records.map(r => r.id));
   const events = [...input], created = new Set<string>(), handles = new Map<string, string>(), patches = new Map<string, Record<string, unknown>>(), items = new Map<string, SpawnItem[]>();
+  const reforgedNames = new Map(input.flatMap(event => event.kind === 'reforge' && event.name ? [[event.id, event.name] as const] : []));
   const aliases = new Map<string, number>();
   const named = (name: unknown): string[] => {
     if (typeof name !== 'string' || !name.trim()) return [];
@@ -71,7 +74,8 @@ export function planNewUnits(save: NarrativeSave, proposalId: string, input: Sug
     if (matches.length === 1) { for (const i of indexes) events[i] = { ...events[i] as UnitSet, id: matches[0]! }; continue; }
     const creator = indexes.find(i => creatable(events[i] as UnitSet));
     if (creator === undefined) continue; // Left to the missing-record error.
-    const { spawn, rest } = spawnFromUnitSet(events[creator] as UnitSet), id = newUnitId(proposalId, creator), handed = (events[creator] as UnitSet).items;
+    const incoming = events.flatMap(event => event.kind === 'give' && event.to?.some(id => key(id) === alias) ? save.inventory?.filter(item => item.id === event.id) ?? [] : []);
+    const { spawn, rest } = spawnFromUnitSet(events[creator] as UnitSet, incoming, ids, reforgedNames), id = newUnitId(proposalId, creator), handed = (events[creator] as UnitSet).items;
     events[creator] = spawn; created.add(id); aliases.set(alias, creator);
     if (Object.keys(rest).length) patches.set(id, rest);
     if (handed?.length) items.set(id, handed);

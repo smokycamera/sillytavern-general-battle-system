@@ -13,7 +13,7 @@ import { parseProtocol, protocolExcerpt } from './protocol.js';
 import type { Suggestion } from './tags.js';
 import { createInventoryItem, prepareInventoryState, prepareInventoryTransaction, type InventoryItem } from './inventory-state.js';
 import { assertNarrativeCapacity, hasNarrativeDeployment, MAX_SCENE_UNITS } from './narrative-limits.js';
-import { applyUnitSet, type UnitSetContext } from './unit-set.js';
+import { applyUnitSet, UNIT_EQUIPMENT_FIELDS, unitSetReferencesGear, type UnitSetContext } from './unit-set.js';
 import { mapNarrativeReferences, narrativeIds, prepareNarrativeIds, type NarrativeIdState } from './narrative-ids.js';
 import { newUnitId, planNewUnits, type NewUnitPlan } from './narrative-new-units.js';
 import { handOverItems, type HandOver } from './item-handover.js';
@@ -248,7 +248,18 @@ function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: M
     records = records.map((r) => r.id === event.id ? updateUnitRecord(r, event, registry, proposalId) : r);
   }
   next.storage = records;
-  for (const [id, patch] of combined) next = applyUnitSet(next, id, patch, proposalId, context);
+  for (const [id, patch] of combined) {
+    const incoming = context.deferEquipmentFor?.get(id);
+    if (incoming?.length && context.deferredEquipment) {
+      const deferred = context.deferredEquipment.get(id) ?? {};
+      const resolve = narrativeIds(next).realId;
+      for (const key of UNIT_EQUIPMENT_FIELDS) if (Object.hasOwn(patch, key) && incoming.some(item => unitSetReferencesGear(key, patch[key], item, resolve, context.reforgedNames))) {
+        deferred[key] = patch[key]; delete patch[key];
+      }
+      if (Object.keys(deferred).length) context.deferredEquipment.set(id, deferred);
+    }
+    if (Object.keys(patch).length) next = applyUnitSet(next, id, patch, proposalId, context);
+  }
   return next;
 }
 /** 学习技能与剧情效果来源；来源编号带事件序号，同一回复重复学习需合并。 */
@@ -299,9 +310,10 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (!(save.committedOutcomeIds ?? []).includes(id)) throw new Error('战内与未结算战果只能由引擎更新');
   }
   if (save.committedNarrativeSources?.includes(proposal.sourceKey) || (save.proposals ?? []).some((p) => p.sourceKey === proposal.sourceKey && p.status === 'committed')) throw new Error('此消息已经提交，编辑/重生成不会重复执行');
-  const ids = narrativeIds({ ...prepareInventoryState(save), narrativeIdState: expected.narrativeIdState ?? save.narrativeIdState });
+  const preparedSave = prepareInventoryState(save);
+  const ids = narrativeIds({ ...preparedSave, narrativeIdState: expected.narrativeIdState ?? save.narrativeIdState });
   // 正文给新单位自编的编号只在本批指代该新单位；已有编号照常还原为存档身份。
-  const fresh = planNewUnits(save, proposal.id, mapNarrativeReferences(proposal.events, ids.realId), ids);
+  const fresh = planNewUnits(preparedSave, proposal.id, mapNarrativeReferences(proposal.events, ids.realId), ids);
   proposal = { ...proposal, events: fresh.events };
   const isNew = (event: Suggestion) => 'id' in event && !!event.id && fresh.created.has(event.id);
   if (!manual && expected.manualOnly) throw new Error('此消息需要预览确认后提交');
@@ -344,6 +356,14 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   }
   // given：换装可取用的同一回复实物；handed：同一回复 add 的全部实物，unit_set 的 items 先从这里交出。
   const given = new Set<string>(), handed = new Set<string>(), notices: string[] = [];
+  const deferredEquipment = new Map<string, Record<string, unknown>>();
+  const incomingEquipment = new Map<string, InventoryItem[]>();
+  for (const event of proposal.events) if (event.kind === 'give') {
+    const item = preparedSave.inventory?.find(item => item.id === event.id);
+    if (item) for (const unitId of event.to ?? []) incomingEquipment.set(unitId, [...incomingEquipment.get(unitId) ?? [], item]);
+  }
+  const reforgedNames = new Map(proposal.events.flatMap(event => event.kind === 'reforge' && event.name ? [[event.id, event.name] as const] : []));
+  const unitSetContext: UnitSetContext = { given, notices, deferredEquipment, deferEquipmentFor: incomingEquipment, reforgedNames };
   const directGives = new Map<string, string>();
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind !== 'add' || event.item === undefined) continue;
@@ -361,7 +381,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
       }
     }
   }
-  next = applyUnitChanges(next, proposal.events.filter((event) => !isNew(event)), new Map(), proposal.id, registry, { given, notices });
+  next = applyUnitChanges(next, proposal.events.filter((event) => !isNew(event)), new Map(), proposal.id, registry, unitSetContext);
   const reforged = new Set<string>(), learned = new Set<string>();
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind === 'learn' || event.kind === 'bless' || event.kind === 'unbless' || event.kind === 'affect' || event.kind === 'unaffect') {
@@ -412,7 +432,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   // 新单位装上的佩戴、充能道具立即投影进档案，开战时随单位生效。
   if (spawnedGear) { next = prepareInventoryState(next) as NarrativeSave; records = next.storage!; }
   next.rosterIds = [...new Set(roster.map((u) => u.id))];
-  if (fresh.created.size) next = applyToNewUnits(next, proposal.events, fresh, proposal.id, registry, newDeploys, { given, notices });
+  if (fresh.created.size) next = applyToNewUnits(next, proposal.events, fresh, proposal.id, registry, newDeploys, unitSetContext);
   // Apply explicit recipients after this batch's new units exist. The given
   // items keep their original identity and are never created a second time.
   for (const [itemId, unitId] of directGives) {
@@ -437,6 +457,15 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind !== 'give') continue;
     next = prepareInventoryTransaction(next, { kind: 'transfer', id: `give:${proposal.id}:${index}`, expectedRevision: next.factRevision ?? 0, itemId: event.id, unitIds: event.to, qty: event.qty });
+  }
+  const transferred = new Set(proposal.events.flatMap(event => event.kind === 'give' ? [event.id] : []));
+  for (const [unitId, patch] of deferredEquipment) {
+    // 在原始清单上锁定实物身份；后续改名也不会让配装重新按名字另造一件。
+    for (const field of UNIT_EQUIPMENT_FIELDS) if (typeof patch[field] === 'string') {
+      const matches = incomingEquipment.get(unitId)?.filter(item => unitSetReferencesGear(field, patch[field], item, ids.realId, reforgedNames)) ?? [];
+      if (matches.length === 1) patch[field] = matches[0]!.id;
+    }
+    next = applyUnitSet(next, unitId, patch, proposal.id, { given, notices, transferred });
   }
   // unit_set 的 items 最后交出：此时同一回复 add 的已入库，新建单位也已建档。
   const handovers: HandOver[] = [...proposal.events.entries()].flatMap(([index, event]) => event.kind === 'unit-set' && event.items?.length ? [{ unitId: event.id, items: event.items, index }] : []);
