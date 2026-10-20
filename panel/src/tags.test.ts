@@ -9,21 +9,21 @@ describe('AI 建议标签解析', () => {
     const text = [
       '正文叙述……',
       '<tb>',
-      '<give item="生锈的军刀" note="敌兵遗落"/>',
+      '<add item="生锈的军刀" note="敌兵遗落"/>',
       '<spawn name="黑铁亲卫" archetype="infantry" level="6" weapon="双手巨斧" armor="重甲" traits="重甲,狂暴"/>',
       '</tb>',
     ].join('\n');
     const r = parseSuggestionTags(text);
     expect(r.invalid).toHaveLength(0);
     expect(r.suggestions).toHaveLength(2);
-    expect(r.suggestions[0]).toMatchObject({ kind: 'give', item: '生锈的军刀' });
+    expect(r.suggestions[0]).toMatchObject({ kind: 'add', item: '生锈的军刀' });
     expect(r.suggestions[1]).toMatchObject({ kind: 'spawn', level: 6, traits: ['重甲', '狂暴'] });
   });
 
   it('解析四类合法标签', () => {
     const text = [
       '正文……',
-      '<give item="秘银锁甲" note="矮人锻造"/>',
+      '<add item="秘银锁甲" note="矮人锻造"/>',
       '<status target="艾莉" id="中毒" dur="3"/>',
       '<xp amount="50" reason="救下商队"/>',
       '<spawn name="兽人猎手" archetype="mobile" level="3" count="2"/>',
@@ -31,7 +31,7 @@ describe('AI 建议标签解析', () => {
     const r = parseSuggestionTags(text);
     expect(r.invalid).toHaveLength(0);
     expect(r.suggestions).toHaveLength(4);
-    expect(r.suggestions[0]).toMatchObject({ kind: 'give', item: '秘银锁甲', note: '矮人锻造' });
+    expect(r.suggestions[0]).toMatchObject({ kind: 'add', item: '秘银锁甲', note: '矮人锻造' });
     expect(r.suggestions[1]).toMatchObject({ kind: 'status', target: '艾莉', conditionId: '中毒', dur: 3 });
     expect(r.suggestions[2]).toMatchObject({ kind: 'xp', amount: 50, reason: '救下商队' });
     expect(r.suggestions[3]).toMatchObject({ kind: 'spawn', archetype: 'mobile', level: 3, count: 2 });
@@ -39,7 +39,7 @@ describe('AI 建议标签解析', () => {
 
   it('非法标签降级为 invalid：缺属性/坏经验；写错的原型不再让单位作废', () => {
     const text = [
-      '<give note="没有物品名"/>',
+      '<add note="没有物品名"/>',
       '<xp amount="abc"/>',
       '<spawn name="怪" archetype="dragon" level="3"/>',
       '<status target=""/>',
@@ -47,8 +47,8 @@ describe('AI 建议标签解析', () => {
     ].join('\n');
     const r = parseSuggestionTags(text);
     expect(r.suggestions).toEqual([expect.objectContaining({ kind: 'spawn', name: '怪', archetype: 'infantry' })]);
-    expect(r.invalid).toHaveLength(3); // give、xp、status 解析失败，最后一个根本不匹配
-    expect(r.invalid[0]).toContain('give');
+    expect(r.invalid).toHaveLength(3); // add、xp、status 解析失败，最后一个根本不匹配
+    expect(r.invalid[0]).toContain('add');
   });
 
   it('数值钳制：dur/level/count 越界取边界，xp 上限', () => {
@@ -183,7 +183,7 @@ describe('AI 建议标签解析', () => {
     expect(events.find((e) => e.kind === 'unit-update')).toMatchObject({ hp: 500 });
     expect(events.find((e) => e.kind === 'spawn')).toMatchObject({ scale: 'company', hpMax: 80, count: 1, weaponClass: 'rifle', weaponLevel: 5 });
     expect(events.find((e) => e.kind === 'spawn' && e.name === '掷弹兵连')).toMatchObject({ items: [{ name: '手雷', qty: 60, spec: { form: 'single' } }, { name: '夜视镜', qty: 1, spec: { form: 'worn' } }] });
-    expect(events.filter((e) => e.kind === 'give').map((e) => e.kind === 'give' && [e.item, e.qty, e.spec?.kind === 'item' ? e.spec.form : e.spec?.kind])).toEqual([['手雷', 6, 'single'], ['治疗药水', 3, 'single'], ['火球魔杖', 1, 'charged']]);
+    expect(events.filter((e) => e.kind === 'add' && e.item !== undefined).map((e) => e.kind === 'add' && [e.item, e.qty, e.spec?.kind === 'item' ? e.spec.form : e.spec?.kind])).toEqual([['手雷', 6, 'single'], ['治疗药水', 3, 'single'], ['火球魔杖', 1, 'charged']]);
   });
 
   it('武器种类段无效时整串按纯名字处理；旧格式 "剑L5" 仍解析', () => {
@@ -263,7 +263,7 @@ describe('AI 建议标签解析', () => {
     const r = parseSuggestionTags([
       '<deploy id="corp-a" name="北境军团"/>',
       '<unit_update id="corp-a" hp="500" hpMax="560" morale="70" state="ready" clear="中毒,流血" reason="补员"/>',
-      '<give item="精钢长枪" qty="3" type="weapon" note="缴获"/>',
+      '<add item="精钢长枪" qty="3" type="weapon" note="缴获"/>',
     ].join('\n'));
     expect(r.invalid).toEqual([]);
     expect(r.suggestions[0]).toMatchObject({ kind: 'deploy', id: 'corp-a', name: '北境军团' });
@@ -271,6 +271,6 @@ describe('AI 建议标签解析', () => {
       kind: 'unit-update', id: 'corp-a', hp: 500, hpMax: 560, morale: 70,
       state: 'ready', clear: ['中毒', '流血'], reason: '补员',
     });
-    expect(r.suggestions[2]).toMatchObject({ kind: 'give', item: '精钢长枪', qty: 3, lootType: 'weapon' });
+    expect(r.suggestions[2]).toMatchObject({ kind: 'add', item: '精钢长枪', qty: 3, lootType: 'weapon' });
   });
 });

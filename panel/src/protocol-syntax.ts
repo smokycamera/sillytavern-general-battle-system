@@ -7,6 +7,7 @@ export class ProtocolSyntaxError extends Error {
   constructor(message: string, public start: number, public end: number, public field?: string) { super(message); }
 }
 const compactKey = (value: string) => value.toLowerCase().replace(/[-_]/g, '');
+const quotePairs: Readonly<Record<string, string>> = { '"': '"', "'": "'", '“': '”', '‘': '’', '「': '」', '『': '』', '＂': '＂', '＇': '＇' };
 export function protocolName(value: string): string {
   const key = compactKey(value);
   return key === 'unitupdate' ? 'unit_update' : key === 'unitset' ? 'unit_set' : key;
@@ -26,7 +27,7 @@ const HTML_TAGS = new Set(('a abbr address article aside audio b big blockquote 
   + 'sup svg table tbody td template text textarea tfoot th thead time title tr track tspan u ul var video wbr').split(' '));
 /** 思考区标签：think/thinking、预设自定义的 xxx_planning~、cot 等。 */
 const THINKING_NAME = /think|thought|reason|planning|analysis|scratchpad|(?:^|[_-])(?:cot|plan)(?:[_-]|$)|思考|思维|推理/i;
-const WRAPPER_TAG = /<\s*(\/?)\s*([a-z\u4e00-\u9fff][^\s<>/]*)[^<>]*?(\/?)\s*>/gi;
+const WRAPPER_TAG = /<\s*([/／]?)\s*([a-z\u4e00-\u9fff][^\s<>/／]*)[^<>]*?([/／]?)\s*>/gi;
 /**
  * 思考区位置：成对标签、生成中未闭合的标签，以及开头标签留在预填充里、正文只有闭合标签的思考
  * （如 `……</konatan_planning~>正文`，此时从开头到第一个这样的闭合标签都是思考）。
@@ -91,7 +92,7 @@ export function scanProtocolTags(text: string, known: ReadonlySet<string>): { ta
   // 思考区不属于最终正文；保留换行使不完整标签的边界仍可检查。
   text = blankThinking(text);
   const tags: ProtocolTag[] = [], warnings: string[] = [];
-  const start = /<\s*(\/?)\s*([a-z][a-z0-9_-]*)\b/gi;
+  const start = /<\s*([/／]?)\s*([a-z][a-z0-9_-]*)\b/gi;
   let block = 0, sequence = 0, found: RegExpExecArray | null;
   while ((found = start.exec(text))) {
     const name = protocolName(found[2]!), closing = !!found[1];
@@ -100,15 +101,14 @@ export function scanProtocolTags(text: string, known: ReadonlySet<string>): { ta
       const char = text[at]!;
       if (char === '<') break; // 一个截断事件不能吞掉后续独立事件。
       if (quote) { if (char === quote) quote = ''; }
-      else if (char === '"' || char === "'") quote = char;
-      else if ('“‘「『'.includes(char)) quote = ({ '“': '”', '‘': '’', '「': '」', '『': '』' } as Record<string, string>)[char]!;
+      else if (quotePairs[char]) quote = quotePairs[char]!;
       else if (char === '>') { complete = true; break; }
     }
     const end = complete ? at + 1 : at;
     const raw = text.slice(found.index, end).trim();
     const attrText = text.slice(start.lastIndex, complete ? at : end);
     const attrsStart = start.lastIndex + attrText.length - attrText.trimStart().length;
-    const attrs = attrText.trim().replace(/\/\s*$/, '');
+    const attrs = attrText.trim().replace(/[/／]\s*$/, '');
     start.lastIndex = Math.max(start.lastIndex, end);
     if (name === 'tb') {
       if (closing) block = 0;
@@ -119,7 +119,7 @@ export function scanProtocolTags(text: string, known: ReadonlySet<string>): { ta
     }
     if (closing) continue;
     // 事件自闭合或带“名称=值”属性；<options>、<type> 等包装标签和规则里提到的 <spawn> 都不是事件。
-    const eventLike = /\/\s*$/.test(attrText) || /(?:^|[\s,，;；])[a-z][a-z0-9_-]*\s*[=＝:：]/i.test(attrs);
+    const eventLike = /[/／]\s*$/.test(attrText) || /(?:^|[\s,，、;；|｜])[a-z][a-z0-9_-]*\s*[=＝:：]/i.test(attrs);
     if (known.has(name) ? !block && !eventLike : !block || !eventLike || HTML_TAGS.has(name)) continue;
     tags.push({ name, attrs, raw, complete, block, start: offsets[found.index], end: (offsets[end - 1] ?? offsets[found.index]!) + 1, attrsStart: offsets[attrsStart] ?? offsets[found.index],
       attrsOffsets: [...offsets.slice(attrsStart, attrsStart + attrs.length), offsets[attrsStart + attrs.length] ?? (offsets[end - 1] ?? text.length - 1) + 1] });
@@ -140,7 +140,7 @@ function numeric(value: string, key: string): string {
 }
 const numericKeys = new Set(['hp', 'hpMax', 'level', 'count', 'qty', 'quality', 'rounds', 'battles', 'reserves', 'speed', 'morale', 'xp', 'xpProgress', 'xpValue', 'memberHp', 'atk', 'def', 'spd', 'moraleMax']);
 const booleanKeys = new Set(['shield', 'mount', 'stabilized', 'permanent', 'retired']);
-const textKeys = new Set(['name', 'item', 'note', 'reason', 'id', 'source', 'data']);
+const textKeys = new Set(['name', 'item', 'note', 'reason', 'id', 'to', 'source', 'data']);
 const specKeys = new Set(['weapon', 'weapon2', 'armor', 'shield', 'shieldSpec', 'spec', 'skills']);
 const enumAliases: Record<string, Record<string, string>> = {
   side: { 我方: 'ally', 友方: 'ally', 友军: 'ally', allied: 'ally', friendly: 'ally', 敌方: 'enemy', 敌军: 'enemy', hostile: 'enemy' },
@@ -156,21 +156,39 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
   const aliases: Record<string, string> = { ref: 'id', unitid: 'id', itemid: 'id', equipmentid: 'id', sourceid: 'source', maxhp: 'hpMax', max: 'hpMax', currenthp: 'hp',
     abilities: 'skills', skill: 'skills', sidearm: 'weapon2', secondaryweapon: 'weapon2', primaryweapon: 'weapon', trait: 'traits', armour: 'armor', lv: 'level', training: 'level',
     quantity: tag.name === 'spawn' ? 'count' : 'qty', environment: 'env', lighting: 'light',
-    ...(tag.name === 'give' ? { name: 'item' } : tag.name === 'field' ? { name: 'env' } : {}) };
+    ...(tag.name === 'add' ? { name: 'item' } : tag.name === 'field' ? { name: 'env' } : {}) };
   const result: Record<string, string> = Object.create(null);
   const offset = (index: number) => tag.attrsOffsets?.[index] ?? (tag.attrsStart ?? 0) + index;
   const syntaxError = (message: string, start: number, field?: string) => new ProtocolSyntaxError(message, offset(start), offset(tag.attrs.length), field);
   let rest = tag.attrs;
   while (rest.trim()) {
-    rest = rest.replace(/^[\s,，;；]+/, '');
+    rest = rest.replace(/^[\s,，、;；|｜]+/, '');
     const attrStart = tag.attrs.length - rest.length;
+    // 接收编号允许省略 to=，也可写成 to u1；只接受明确的单位编号形状。
+    const recipient = ['add', 'give'].includes(tag.name) ? rest.match(/^(?:to\s+)?(u[1-9]\d*|unit[-:][a-z0-9:._-]+)(?=[\s,，、;；|｜]|$)/i) : undefined;
+    if (recipient) {
+      const value = recipient[1]!;
+      if (positions) {
+        const start = attrStart + recipient[0].indexOf(value);
+        positions.push({ key: 'to', raw: recipient[0], start: offset(attrStart), end: offset(attrStart + recipient[0].length), value, valueOffsets: Array.from({ length: value.length + 1 }, (_, index) => offset(start + index)) });
+      }
+      if (!collectOnly) {
+        if (tag.name === 'give') result.to = [...new Set([...(result.to ?? '').split(/[,，、;；|｜\s]+/), value].filter(Boolean))].join(',');
+        else {
+          if (result.to !== undefined && result.to !== value) throw new Error(tag.name + ' 的接收单位编号冲突');
+          result.to = value;
+        }
+        warnings.push('已规范化 ' + tag.name + '.to');
+      }
+      rest = rest.slice(recipient[0].length); continue;
+    }
     const attr = rest.match(/^([a-z][a-z0-9_-]*)\s*[=＝:：]\s*/i);
     if (!attr) throw syntaxError(tag.name + ' 属性缺少明确的名称或值：' + rest.slice(0, 45), attrStart);
     const originalKey = attr[1]!, lookup = compactKey(originalKey);
     const key = allowed.find((key) => compactKey(key) === lookup) ?? aliases[lookup];
     rest = rest.slice(attr[0].length);
     let valueStart = tag.attrs.length - rest.length;
-    const quote = rest[0], pair: Record<string, string> = { '"': '"', "'": "'", '“': '”', '‘': '’', '「': '」', '『': '』' };
+    const quote = rest[0], pair = quotePairs;
     const escapedQuote = rest.match(/^&(?:quot|apos|#34|#39|#x22|#x27);/i)?.[0];
     let value: string;
     if (escapedQuote) {
@@ -184,7 +202,9 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
       valueStart++;
       value = rest.slice(1, end); rest = rest.slice(end + 1);
     } else {
-      const next = rest.search(/[\s,，;；]+(?=[a-z][a-z0-9_-]*\s*[=＝:：])/i);
+      const nextAttribute = rest.search(/[\s,，、;；|｜]+(?=[a-z][a-z0-9_-]*\s*[=＝:：])/i);
+      const nextRecipient = ['add', 'give'].includes(tag.name) ? rest.search(/[\s,，、;；|｜]+(?=(?:to\s+)?(?:u[1-9]\d*|unit[-:][a-z0-9:._-]+)(?:[\s,，、;；|｜]|$))/i) : -1;
+      const next = nextAttribute < 0 ? nextRecipient : nextRecipient < 0 ? nextAttribute : Math.min(nextAttribute, nextRecipient);
       const unquoted = next < 0 ? rest : rest.slice(0, next);
       valueStart += unquoted.length - unquoted.trimStart().length;
       value = unquoted.trim(); rest = next < 0 ? '' : rest.slice(next);
@@ -209,7 +229,7 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
     }
     if (collectOnly) continue;
     value = decodeEntities(value).trim();
-    if (!key || !allowed.includes(key)) { if(tag.name==='unit_set')throw Error('unit_set未知属性 '+originalKey+'，复杂字段请写data'); warnings.push(tag.name + ' 未使用额外属性 ' + originalKey); continue; }
+    if (!key || !allowed.includes(key)) { if(tag.name==='unit_set')throw Error('unit_set未知属性 '+originalKey+'，复杂字段请写data'); if(tag.name==='give')throw Error('give 只转移已有实物，未知属性 '+originalKey+'；新增物品请用add'); warnings.push(tag.name + ' 未使用额外属性 ' + originalKey); continue; }
     // 繁体正文先换成简体再查词表；名称、说明、编号和 data 保留原文。
     if (!textKeys.has(key)) value = specKeys.has(key) ? simplifiedSpecification(value) : simplifiedChinese(value);
     if (numericKeys.has(key)) value = numeric(value, key);
@@ -227,13 +247,18 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
         if (!Array.isArray(list) || list.some(item => typeof item !== 'string')) throw Error(key + '列表须为文字数组');
         value = list.join(',');
       }
-      value = value.split(key === 'skills' ? /[,，、;；\n]+/ : /[,，、;；|+＋\n]+/).map((part) => part.trim()).filter(Boolean).join(',');
+      value = value.split(key === 'skills' ? /[,，、;；\n]+/ : /[,，、;；|｜+＋\n]+/).map((part) => part.trim()).filter(Boolean).join(',');
     }
-    if (Object.hasOwn(result, key) && result[key] !== value) throw new Error(tag.name + ' 的 ' + key + ' 重复且数值冲突');
+    if (tag.name === 'give' && key === 'to') value = [...new Set([...(result.to ?? '').split(/[,，、;；|｜\s]+/), ...value.split(/[,，、;；|｜\s]+/)].filter(Boolean))].join(',');
+    if (Object.hasOwn(result, key) && result[key] !== value && !(tag.name === 'give' && key === 'to')) throw new Error(tag.name + ' 的 ' + key + ' 重复且数值冲突');
     if (originalKey !== key || value !== originalValue || !quote || !pair[quote]) warnings.push('已规范化 ' + tag.name + '.' + key);
     result[key] = value;
   }
   if (collectOnly) return result;
+  if (tag.name === 'add' && result.item !== undefined && result.id !== undefined) {
+    if (result.to !== undefined && result.to !== result.id) throw new Error('add 的接收单位编号冲突');
+    result.to = result.id; delete result.id; warnings.push('已规范化 add.id 为接收单位 to');
+  }
   if (tag.name === 'spawn' && result.scale === 'hero') heroWound(result, warnings);
   if (result.hp?.includes('/')) {
     const parts = result.hp.split('/').map((part) => numeric(part, 'hp'));

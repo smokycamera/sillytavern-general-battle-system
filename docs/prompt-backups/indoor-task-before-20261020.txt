@@ -1,0 +1,14 @@
+【第2步：布置战场】根据正文，在九宫格上布置本场战斗。程序会据此生成地形、建筑与道路，并把单位放进对应区域。
+本场：室内交战（房间与走廊）。任务：击败敌军。地图约7列×13行，上北下南。
+参战单位（短ID · 名称 · 阵营 · 类型 · 备注）：
+九宫格方位（东西南北是地图上的绝对方向，与攻守无关）：
+NW西北 | N北 | NE东北
+W西 | C中央 | E东
+SW西南 | S南 | SE东南
+只输出一个JSON对象，不需要的项省略。各项：
+- archetype：场所风格，可选 residence住宅院落|great_hall仓库大厅|fortress堡垒内部。
+- cover：掩体与障碍多少，sparse少|balanced适中|dense多。
+- places：最多8个有战术意义的地点，优先写正文提到的，[{"type":类型,"name":"名称","at":方位,"height":0-3,"state":"destroyed"}]。type=room房间|cover掩体群|position战术要点或营地|ruins废墟|fortification工事阵地。height只给高地等写，2-3为明显高地；state=destroyed表示已毁。普通房屋、树木、杂物由程序补全，不要写。
+- ally / enemy：双方开局位置，{"at":["S"]}，可写1-3个方位。
+- units：只在正文明确某个单位单独行动时写，如潜伏、断后、守桥，[{"unit":"u3","at":"NE"}]，最多32个。
+示例（只示格式，内容按正文）：{"archetype":"residence","places":[{"type":"room","name":"书房","at":"N"},{"type":"cover","name":"屏风","at":"C"}],"ally":{"at":["S"]},"enemy":{"at":["N"]}}

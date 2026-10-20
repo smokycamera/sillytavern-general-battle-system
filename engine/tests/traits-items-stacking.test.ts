@@ -136,7 +136,8 @@ describe('V23 组合修正关键回归',()=>{
     const b=mode==='small'?new SmallBattle({combatants:[a,e],rules,battlefield:standardField(),seed:'old'}):new MassBattle({combatants:[a,e],rules,formationSlots:3,seed:'old'});b.start();const snapshot=JSON.parse(JSON.stringify(b.toSnapshot()));
     const save=prepareInventoryState({inventory:[{id:'stack',name:'旧药剂',qty:7,lootType:'item',assignedTo:'a',revision:2,mechanics:{kind:'item' as const,value:frozen()}}]});
     const upgraded=prepareInventoryTransaction(save,{kind:'upgrade-budget',itemId:'stack',id:'upgrade',expectedRevision:save.factRevision??0});
-    expect(upgraded.inventory![0]).toMatchObject({id:'stack',qty:7,assignedTo:'a',revision:3,history:[{revision:2}]});
+    expect(upgraded.inventory![0]).toMatchObject({id:'stack',qty:7,assignedTo:'a',revision:3});
+    expect(upgraded.inventory![0]!.history).toBeUndefined();
     expect(JSON.parse(JSON.stringify(b.toSnapshot()))).toEqual(snapshot);const restored=mode==='small'?SmallBattle.fromSnapshot(snapshot):MassBattle.fromSnapshot(snapshot);expect(JSON.parse(JSON.stringify(restored.toSnapshot()))).toEqual(snapshot);
     expect(stack(restored.byId('a'),{ranged:false}).multTotal).toBeCloseTo(1+2.65+1.59);expect(restored.byId('a').gear![0]!.ability!.effects[0]).toMatchObject({amount:26*1.10});
     expect(traitParameter('channelResistance',3,'traits-items-v1')).toBe(1.2);expect(traitParameter('channelResistance',3,STACKING_MODEL)).toBe(.37);

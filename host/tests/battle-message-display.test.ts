@@ -100,8 +100,7 @@ describe('原生战阵事件显示', () => {
     f.install(); await flush();
     const chat = document.querySelector('#chat')!;
     for (const id of [1, 2, 3]) chat.insertAdjacentHTML('beforeend', `<div class="mes" mesid="${id}"><div class="mes_text"></div></div>`);
-    await flush();
-    expect(document.querySelectorAll('details')).toHaveLength(2);
+    await vi.waitFor(() => expect(document.querySelectorAll('details')).toHaveLength(2));
     expect(document.querySelector('[mesid="1"] details')).toBeNull(); expect(document.querySelector('[mesid="2"] details')).toBeNull();
   });
   it('清除被吞掉的 15 项事件留下的换行，尾部与正文中间都原位折叠', async () => {
@@ -144,7 +143,8 @@ describe('原生战阵事件显示', () => {
   it('不重复包裹钩子或旧正则已生成的有效折叠，重绘丢失时仍能补全', async () => {
     const f = fixture(true); f.root().innerHTML = formatBattleMessage(reply, {}); f.install(); await flush();
     expect(f.root().querySelectorAll('details')).toHaveLength(1);
-    f.root().innerHTML = '<p>宿主重绘时没有保留显示扩展</p>'; await flush(); expect(f.root().querySelectorAll('details')).toHaveLength(1);
+    f.root().innerHTML = '<p>宿主重绘时没有保留显示扩展</p>';
+    await vi.waitFor(() => expect(f.root().querySelectorAll('details')).toHaveLength(1));
   });
   it('原始 tb 或已转义文本在原位置替换，不复制两份事件', async () => {
     for (const encoded of ['raw', 'escaped', 'br']) {

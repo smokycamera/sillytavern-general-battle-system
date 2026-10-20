@@ -17,6 +17,7 @@ import { findMessageBySourceId, prepareMessageTag, sameMessageApartFromText } fr
 import { invalidateMissingSources, sameSource, sourceCommitted } from './source-receipts.js';
 import { prepareNarrativeIds } from '../../panel/src/narrative-ids.js';
 import { narrativeAutoApproval, prepareAiScanProposal } from '../../panel/src/narrative-state.js';
+import type { ReplySaveWindow } from '../../host/src/reply-save.js';
 
 const PROMPT_ID = 'tavern-battle-native:context';
 /** Shown on a reply that waits for confirmation although auto-approve is on, with the cause when known. */
@@ -142,6 +143,10 @@ export class BattleService {
       if (this.disposed || epoch !== this.loadEpoch) return;
       if (!this.inSync()) throw Error('载入时聊天已切换');
       if (this.store.head()?.handoff && !this.store.hasPending()) { this.phase = 'handoff'; this.notify(); return; }
+      if (!this.store.hasPending() && this.store.needsHistoryCompaction()) {
+        this.receipt = await this.store.commit(this.store.head()!.revision, before => before);
+        if (this.disposed || epoch !== this.loadEpoch) return;
+      }
       if (!this.store.head() && !this.store.hasPending() && this.initialize) {
         const initialized = await this.initialize();
         if (this.disposed || epoch !== this.loadEpoch) return;
@@ -178,7 +183,7 @@ export class BattleService {
       const id = messageId(value), generation = this.generation;
       if (generation && id !== undefined) {
         generation.receivedId = id;
-        if (generation.ended) this.finishGeneration();
+        if (generation.ended) return this.finishGeneration(true);
       } else { this.bindingMiss ??= '没有收到这次生成开始的事件'; void this.scan(id); this.bindingMiss = undefined; }
     });
     // 酒馆这里传的是 chat.length（消息条数），不是刚生成那条的序号，所以不读它；只认收到消息时给的序号。
@@ -205,7 +210,7 @@ export class BattleService {
     this.capabilities.injection = this.host.inject(PROMPT_ID, text);
   }
   /** Caller versions are captured before awaiting; queued old intentions cannot follow a chat switch. */
-  async transact(update: (before: NarrativeSave) => NarrativeSave, options: { version?: CommandVersion; operationId?: string; allowReview?: boolean; clear?: boolean; messageTags?: MessageTag[]; memoryOnly?: boolean; durable?: boolean } = {}): Promise<PersistReceipt> {
+  async transact(update: (before: NarrativeSave) => NarrativeSave, options: { version?: CommandVersion; operationId?: string; allowReview?: boolean; clear?: boolean; messageTags?: MessageTag[]; memoryOnly?: boolean; durable?: boolean; replySave?: ReplySaveWindow } = {}): Promise<PersistReceipt> {
     const version = options.version ?? this.version();
     const reject = (error: string): PersistReceipt => ({ status: 'conflict', operationId: options.operationId ?? '', session: version.session, error });
     // Same chat, archive read and generation: a same-chat object swap since the capture is no change.
@@ -228,7 +233,7 @@ export class BattleService {
     const receipt = await this.store.commit(version.revision, before => {
       if (live && this.memoryPanel !== previousMemory) throw Error('战斗内存状态已更新，请重新保存');
       return candidate ?? prepare(before);
-    }, { operationId: options.operationId, clear: options.clear, messageTags: options.messageTags });
+    }, { operationId: options.operationId, clear: options.clear, messageTags: options.messageTags, replySave: options.replySave });
     if (this.stillOn(version.session, loaded)) {
       this.receipt = receipt;
       if (receipt.status === 'confirmed') this.memoryPanel = undefined;
@@ -374,11 +379,15 @@ export class BattleService {
     this.project();
   }
   /** 这次生成的回复已收到、生成也已结束：把绑定落到这条消息上再扫描。 */
-  private finishGeneration(): void {
+  private finishGeneration(shareHostSave = false): Promise<void> | undefined {
     const id = this.generation!.receivedId!;
     this.generation = undefined;
     if (this.binding) { this.binding.complete = true; this.binding.messageId = this.host.message(id)?.messageId; }
-    void this.scan(id); this.bindingMiss = undefined;
+    // Streaming hosts finish the generation before MESSAGE_RECEIVED, which is awaited before
+    // their own save. Other event orders retain the existing independent-save path.
+    const replySave = shareHostSave ? this.host.replySaveWindow() : undefined;
+    void this.scan(id, { replySave }); this.bindingMiss = undefined;
+    return replySave?.ready;
   }
   /** A reply changed outside a generation: rescan it as a manual preview that says why. */
   private unbound(miss: string, id?: number): void {
@@ -386,7 +395,7 @@ export class BattleService {
     void this.scan(id);
     if (!this.generation) this.bindingMiss = undefined;
   }
-  scan(messageId?: number, options: { manual?: boolean } = {}): Promise<void> {
+  scan(messageId?: number, options: { manual?: boolean; replySave?: ReplySaveWindow } = {}): Promise<void> {
     const chat = this.host.session()?.scope.key, archive = this.bindingArchive;
     let binding = structuredClone(this.binding), miss = this.bindingMiss;
     // Only another chat cancels the scan: the host may swap this chat's objects at any time.
@@ -420,6 +429,7 @@ export class BattleService {
       const message = this.host.message(index); const namespace = this.host.namespace();
       if (!message || message.role !== 'assistant' || !namespace) return;
       const tag = prepareMessageTag(this.host.context().chat!, index);
+      if (options.replySave) tag.excerpt = protocolExcerpt(message.text);
       const originalId = message.messageId; message.messageId = tag.id;
       this.capabilities.messageIdentity = !!message.messageId && !!message.swipeId;
       // After a source change during the save the facts stay automatic only when the first attempt
@@ -448,7 +458,7 @@ export class BattleService {
         catch (error) { proposal.reason = String(error); proposal.status = /过期|聊天|分支|战内|未结算/.test(proposal.reason) ? 'stale' : 'unresolved'; }
       }
       // Long chats save slowly: let an open panel show the save while it runs.
-      const saving = this.transact(() => candidate, { messageTags: [tag] }); this.notify();
+      const saving = this.transact(() => candidate, { messageTags: [tag], replySave: changed ? undefined : options.replySave }); this.notify();
       const receipt = await saving;
       // Re-read at most once. Changed events or another message make it a manual preview.
       if (receipt.code === 'source-changed' && !changed) await run({ fingerprint: tag.fingerprint, excerpt: proposal.source.text, ids: bound ? [binding!.messageId, tag.id] : undefined });
@@ -456,7 +466,7 @@ export class BattleService {
     const next = this.scanQueue.then(() => run(), () => run()).catch(error => {
       if (!this.disposed && chat !== undefined && this.store.session()?.scope.key === chat) { this.error = errorText(error); this.notify(); }
       if (options.manual) throw error;
-    });
+    }).finally(() => options.replySave?.prepared());
     this.scanQueue = next; return next;
   }
   async rebind(id: string): Promise<void> {

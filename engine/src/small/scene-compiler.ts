@@ -8,6 +8,7 @@ import { worldAnchorCell } from './landmark-placement.js';
 import type { Combatant } from '../types.js';
 import { surfaceHeightAt } from './height-map.js';
 import { clipRelationZone } from './force-deployment.js';
+import { INTERIOR_USE_NAMES, INTERIOR_PATTERN_NAMES } from './interior-plan.js';
 export interface SceneRegion {
     id: string;
     kind: string;
@@ -345,7 +346,10 @@ export function validateSceneFacts(field: BattlefieldSpec, units: readonly Comba
     field.scene!.fulfilled = fulfilled;
 }
 export function sceneSummary(field: BattlefieldSpec): string {
-    const name = field.scene?.archetype ? SCENE_ARCHETYPE_NAMES[field.scene.archetype] : '';
+    const inside=field.generation?.scene==='interior'?field.generation.interior:undefined;
+    const name = inside && INTERIOR_USE_NAMES[inside.use] && INTERIOR_PATTERN_NAMES[inside.pattern]
+      ? `${INTERIOR_USE_NAMES[inside.use]} · ${INTERIOR_PATTERN_NAMES[inside.pattern]}`
+      : field.scene?.archetype ? SCENE_ARCHETYPE_NAMES[field.scene.archetype] : '';
     return [name, ...field.scene?.fulfilled ?? []].filter(Boolean).join('；');
 }
 export function validateSceneRecord(field: BattlefieldSpec): void {

@@ -4,7 +4,7 @@ import { NativeStore } from '../src/native-store.js';
 import { MemoryJournal } from '../src/recovery-journal.js';
 import { BattleService } from '../src/battle-service.js';
 
-export function nativeFixture() {
+export function nativeFixture(saveState?: import('../../host/src/reply-save.js').HostSaveState) {
   const handlers = new Map<string, Set<(...args: unknown[]) => unknown>>();
   const context: HostContext = {
     characterId: '0', characters: [{ avatar: 'fixture.png', name: 'Fixture' }], chatId: 'a', chat: [], chatMetadata: {},
@@ -25,12 +25,13 @@ export function nativeFixture() {
   let save: typeof saveNormally | undefined;
   context.saveMetadata = () => save ? save() : saveMetadataNormally();
   context.saveChat = () => save ? save() : saveNormally();
-  const host = new NativeHost({ SillyTavern: { getContext: () => context } }, 'fixture-user', async (_url, init) => {
+  const hostWindow: import('../../host/src/sillytavern.js').HostWindow = { SillyTavern: { getContext: () => context } };
+  const host = new NativeHost(hostWindow, 'fixture-user', async (_url, init) => {
     const request = JSON.parse(init!.body as string) as { file_name: string };
     return new Response(JSON.stringify([{ chat_metadata: disk.get(request.file_name) ?? {} }, ...(chats.get(request.file_name) ?? [])]));
-  }, storage);
+  }, storage, saveState);
   const journal = new MemoryJournal(); const store = new NativeStore(host, journal); const service = new BattleService(host, store);
-  return { host, store, journal, service, context, disk, chats, local, storage, handlers, saveNormally, setSave: (next: typeof saveNormally) => { save = next; },
+  return { host, hostWindow, store, journal, service, context, disk, chats, local, storage, handlers, saveNormally, setSave: (next: typeof saveNormally) => { save = next; },
     switchTo: (id: string) => { context.chatId = id; context.chatMetadata = structuredClone(disk.get(id) ?? {}); context.chat = structuredClone(chats.get(id) ?? []); },
     emit: async (key: string, ...args: unknown[]) => { await context.eventSource!.emit!(key, ...args); },
   };

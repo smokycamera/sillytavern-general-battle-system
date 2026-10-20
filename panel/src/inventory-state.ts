@@ -11,6 +11,7 @@ import { calibrateWeaponRange, compileItem, isArmsV2, equipmentReason, healingAm
   type Combatant, type EquipmentSlot, type ItemMechanics, type ItemSpecification } from '../../engine/src/index.js';
 import { unitRecordFromCombatant, updateUnitRecord, type UnitRecord } from './unit-state.js';
 import { prepareNarrativeIds, type NarrativeIdState } from './narrative-ids.js';
+import { compactSaveHistory, operationFingerprint } from './save-history.js';
 
 export interface InventoryItem {
   id: string; name: string; qty: number; lootType: string; note?: string; assignedTo?: string;
@@ -18,6 +19,7 @@ export interface InventoryItem {
   equippedTo?: { unitId: string; slot: EquipmentSlot };
   sourceItemId?: string;
   revision?: number;
+  /** @deprecated 旧档兼容字段，后续存档移除。 */
   history?: { revision: number; name: string; mechanics: ItemMechanics; sourceId: string }[];
 }
 export interface InventorySave {
@@ -32,11 +34,13 @@ export interface InventorySave {
 export type InventoryAction =
   | { kind: 'create'; itemId: string; name: string; spec: ItemSpecification; qty?: number }
   | { kind: 'reforge'; itemId: string; name?: string; spec: ItemSpecification }
+  | { kind: 'add'; itemId: string; qty: number }
   | { kind: 'upgrade-budget'; itemId: string }
   | { kind: 'define'; itemId: string; spec: ItemSpecification }
   | { kind: 'discard'; itemId: string; qty: number }
   | { kind: 'discard-many'; items: { itemId: string; qty: number }[] }
   | { kind: 'assign'; itemId: string; unitId?: string }
+  | { kind: 'transfer'; itemId: string; unitId?: string; unitIds?: string[]; qty: number }
   | { kind: 'equip'; itemId: string; unitId: string; slot: EquipmentSlot }
   /** 佩戴与充能道具不限件数，卸下时用 itemId 指明哪一件。 */
   | { kind: 'unequip'; unitId: string; slot: EquipmentSlot; itemId?: string }
@@ -52,8 +56,7 @@ const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 
 /** 旧版药剂与护符（V15 之前）一次性换成新道具：效果按对照表、等级与名称不变，装在配件栏的改为已佩戴。幂等。 */
 export function migrateLegacyInventory(items: InventoryItem[] | undefined): InventoryItem[] | undefined {
-  if (!items?.some((item) => isLegacyItemMechanics(item.mechanics as { kind?: unknown } | undefined) || ['accessory1', 'accessory2'].includes(String(item.equippedTo?.slot))
-    || item.history?.some((h) => isLegacyItemMechanics(h.mechanics as { kind?: unknown } | undefined)))) return items;
+  if (!items?.some((item) => item.history !== undefined || isLegacyItemMechanics(item.mechanics as { kind?: unknown } | undefined) || ['accessory1', 'accessory2'].includes(String(item.equippedTo?.slot)))) return items;
   return items.map((source) => {
     const item = clone(source);
     if (isLegacyItemMechanics(item.mechanics as { kind?: unknown } | undefined)) {
@@ -61,11 +64,7 @@ export function migrateLegacyInventory(items: InventoryItem[] | undefined): Inve
       item.lootType = 'item';
     }
     if (item.equippedTo && ['accessory1', 'accessory2'].includes(String(item.equippedTo.slot))) item.equippedTo = { unitId: item.equippedTo.unitId, slot: 'gear' };
-    if (item.history) item.history = item.history.map((entry) => {
-      if (!isLegacyItemMechanics(entry.mechanics as { kind?: unknown } | undefined)) return entry;
-      try { return { ...entry, mechanics: migrateLegacyItem(entry.mechanics as unknown as LegacyItemMechanics, entry.name, item.id) }; }
-      catch { return entry; }
-    });
+    delete item.history;
     return item;
   });
 }
@@ -122,7 +121,6 @@ export function validateInventoryItem(value: unknown): asserts value is Inventor
   }
   if (value.equippedTo !== undefined && (!object(value.equippedTo) || typeof value.equippedTo.unitId !== 'string'
     || !slots.includes(value.equippedTo.slot as EquipmentSlot) || value.qty !== 1)) throw new Error('装备槽位损坏');
-  if (value.history !== undefined && (!Array.isArray(value.history) || value.history.some((h) => !object(h) || typeof h.name !== 'string' || typeof h.sourceId !== 'string' || !Number.isInteger(h.revision)))) throw new Error('物品改造记录损坏');
 }
 function fingerprint(value: unknown): string {
   if (value === undefined) return 'undefined';
@@ -155,7 +153,7 @@ export function fitsEquipmentSlot(mechanics: ItemMechanics, slot: EquipmentSlot)
 /** 首次接入只登记已有V2精确实例，绝不按名称生成或重掷旧装备。 */
 export function prepareInventoryState(save: InventorySave, adoptExisting = true): InventorySave {
   if (save.classMigration !== undefined && save.classMigration !== 'arms-v2') throw Error('武器类别更新标记损坏');
-  const next = clone(prepareNarrativeIds(save));
+  const next = clone(prepareNarrativeIds(compactSaveHistory(save)));
   calibrateSavedWeaponRanges(next);
   next.inventory = migrateLegacyInventory(next.inventory) ?? []; next.storage ??= [];
   migrateBattleCarriedItems(next);
@@ -268,8 +266,8 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
   const key = fingerprint(action);
   const committed = save.inventoryOperations?.find((event) => event.id === id);
   if (committed) {
-    if (committed.fingerprint !== key) throw new Error('重复操作身份对应不同内容');
-    return clone(save);
+    if (committed.fingerprint !== key && committed.fingerprint !== operationFingerprint(key)) throw new Error('重复操作身份对应不同内容');
+    return clone(compactSaveHistory(save));
   }
   if (expectedRevision !== (save.factRevision ?? 0)) throw new Error('物品操作已过期，请按最新状态重新预览');
   requireOutOfBattle(save);
@@ -309,8 +307,25 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
   } else {
     const item = inventory.find((i) => i.id === action.itemId);
     if (!item) throw new Error('物品不存在');
-    if (item.qty <= 0) throw new Error('物品数量不足');
-    if (action.kind === 'discard') {
+    if (item.qty <= 0 && action.kind !== 'add') throw new Error('物品数量不足');
+    if (action.kind === 'add') {
+      if (!Number.isSafeInteger(action.qty) || action.qty < 1 || !Number.isSafeInteger(item.qty + action.qty)) throw new Error('增加数量须为正整数，且总数不能超出安全整数范围');
+      if (!item.mechanics || item.mechanics.kind === 'item' && item.mechanics.value.recipe.form === 'single') item.qty += action.qty;
+      else {
+        if (item.mechanics.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural') throw new Error('天生武器不能增加实物数量');
+        // 唯一实物仍逐件建档：复制冻结属性和归属，新增件不占用原装备位。
+        const existingIds = new Set(inventory.map(existing => existing.id));
+        for (let index = 0; index < action.qty; index++) {
+          const itemId = `added:${id}:${index}`;
+          if (existingIds.has(itemId)) throw new Error('新增物品身份已存在');
+          const added = { ...clone(item), id: itemId, qty: 1, revision: 1, sourceItemId: item.id };
+          delete added.equippedTo;
+          delete added.history;
+          if (added.mechanics && added.mechanics.kind !== 'item') added.mechanics.value.id = itemId;
+          inventory.push(added);
+        }
+      }
+    } else if (action.kind === 'discard') {
       if (item.equippedTo) throw new Error('先卸下已装备物品，再从库存移除');
       if (!Number.isSafeInteger(action.qty) || action.qty < 1 || action.qty > item.qty) throw new Error('移除数量超出库存');
       item.qty -= action.qty;
@@ -325,8 +340,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       else { item.qty--; inventory.push(defined); }
     } else if (action.kind === 'upgrade-budget') {
       if (item.mechanics?.kind !== 'item') throw Error('这件物品没有可升级的道具数值');
-      const previous = clone(item.mechanics), value = item.mechanics.value.recipe.form === 'worn' ? upgradeWornItemBudget(item.mechanics.value) : upgradeRecoveryItemBudget(item.mechanics.value);
-      item.history = [...(item.history ?? []), { revision: item.revision ?? 1, name: item.name, mechanics: previous, sourceId: id }];
+      const value = item.mechanics.value.recipe.form === 'worn' ? upgradeWornItemBudget(item.mechanics.value) : upgradeRecoveryItemBudget(item.mechanics.value);
       item.mechanics = { kind: 'item', value }; item.revision = (item.revision ?? 1) + 1;
       if (item.equippedTo) {
         const record = recordById(next, item.equippedTo.unitId);
@@ -334,12 +348,13 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       }
     } else if (action.kind === 'reforge') {
       const mechanics = item.mechanics;
-      if (!mechanics || mechanics.kind === 'item' && mechanics.value.recipe.form === 'single') throw new Error('一次性道具不能改造；可以移除后重新获得');
+      if (!mechanics) throw new Error('请先设置物品效果，再进行改造');
       if (mechanics.kind !== action.spec.kind) throw new Error('重铸不能把不同种类实物互相替换');
       const name = action.name?.trim() || item.name;
       let compiled: ItemMechanics;
       if (mechanics.kind === 'item') {
-        if (action.spec.kind !== 'item' || action.spec.form === 'single') throw new Error('佩戴、充能道具只能改造成佩戴或充能道具');
+        if (action.spec.kind !== 'item') throw new Error('重铸不能把不同种类实物互相替换');
+        if ((mechanics.value.recipe.form === 'single') !== (action.spec.form === 'single')) throw new Error('一次性道具与佩戴、充能道具不能互相改造');
         compiled = compileItem(action.spec, { id: item.id, name, seed: mechanics.value.recipe.seed });
       } else {
         const oldRecipe = mechanics.value.recipe;
@@ -351,7 +366,6 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
         if (spec.kind === 'weapon' && spec.enchantment === undefined) spec.enchantment = oldRecipe?.enchantment ?? 'none';
         compiled = compileItem(spec, { id: item.id, name, seed: oldRecipe?.seed ?? `reforge:${id}`, damageModel:'wounds-v2', noVariance: oldRecipe?.noVariance, variance: oldRecipe?.variance ?? false });
       }
-      item.history = [...(item.history ?? []), { revision: item.revision ?? 1, name: item.name, mechanics: clone(mechanics), sourceId: id }];
       item.mechanics = compiled; item.name = name; item.revision = (item.revision ?? 1) + 1;
       if (item.equippedTo) {
         const record = recordById(next, item.equippedTo.unitId);
@@ -359,6 +373,34 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
         const reason = equipmentReason(record.snapshot!);
         if (reason) throw new Error(reason);
         rewriteRecord(next, record, id);
+      }
+    } else if (action.kind === 'transfer') {
+      if (action.unitIds !== undefined && (!Array.isArray(action.unitIds) || !action.unitIds.length || action.unitIds.some(unitId => typeof unitId !== 'string' || !unitId))) throw new Error('接收单位列表不能为空或包含无效编号');
+      if (action.unitIds !== undefined && action.unitId !== undefined) throw new Error('转移接收单位字段冲突');
+      const targets = [...new Set(action.unitIds ?? [action.unitId])];
+      const total = action.qty * targets.length;
+      if (!Number.isSafeInteger(action.qty) || action.qty < 1 || !Number.isSafeInteger(total) || total > item.qty) throw new Error('转移总数量超出库存');
+      for (const unitId of targets) if (unitId) recordById(next, unitId);
+      const owner = item.assignedTo;
+      if (item.mechanics?.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural' && targets.some(unitId => owner !== unitId)) throw new Error('天生武器属于单位身体，不能转移');
+      if (targets.some(unitId => owner !== unitId)) {
+        if (item.equippedTo) {
+          const record = recordById(next, item.equippedTo.unitId);
+          delete item.equippedTo;
+          projectEquipment(record, inventory); rewriteRecord(next, record, id);
+        }
+        for (const [index, unitId] of targets.entries()) {
+          if (unitId === owner) continue;
+          let target = item;
+          if (action.qty < item.qty) {
+            const itemId = `transferred:${id}:${index}`;
+            if (inventory.some(existing => existing.id === itemId)) throw new Error('转移物品身份已存在');
+            item.qty -= action.qty;
+            target = { ...clone(item), id: itemId, qty: action.qty, sourceItemId: item.id };
+            inventory.push(target);
+          }
+          target.assignedTo = unitId;
+        }
       }
     } else if (action.kind === 'assign') {
       if (item.mechanics?.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural' && item.assignedTo && item.assignedTo !== action.unitId) throw Error('天生武器属于单位身体，不能交给其他人或放进公共库存');
@@ -401,7 +443,8 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       }
     }
   }
-  next.inventoryOperations = [...(save.inventoryOperations ?? []), { id, fingerprint: key }];
+  // Keep a fixed-size receipt, not a second copy of the complete edit request.
+  next.inventoryOperations = [...(save.inventoryOperations ?? []), { id, fingerprint: operationFingerprint(key) }];
   next.factRevision = (save.factRevision ?? 0) + 1;
   return next;
 }

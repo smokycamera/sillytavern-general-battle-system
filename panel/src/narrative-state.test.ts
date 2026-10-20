@@ -18,6 +18,18 @@ function setup(body: string) {
   return { save, source, ns, proposal: proposalFromMessage(source, binding)! };
 }
 describe('正文原子事务', () => {
+  it('兼容旧档give新增物品和id接收单位，保留原文与去重且不影响新版转移', () => {
+    const f = setup('<add item="旧档补给" qty="2"/>');
+    const legacy = (id?: string) => ({ kind: 'give', item: '旧档补给', qty: 2, lootType: 'misc', ...(id ? { id } : {}), raw: '<give item="旧档补给" qty="2"/>' }) as unknown as typeof f.proposal.events[number];
+    f.proposal.events = [legacy(), legacy('a')];
+    const original = structuredClone(f.proposal);
+    const next = prepareNarrativeTransaction(f.save, f.proposal, f.ns, true);
+    const grants = next.inventory!.filter(item => item.name === '旧档补给');
+    expect(grants.map(item => [item.qty, item.assignedTo])).toEqual([[2, undefined], [2, 'a']]);
+    expect(f.proposal).toEqual(original);
+    expect(next.proposals!.at(-1)!.source).toEqual(original.source);
+    expect(() => prepareNarrativeTransaction(next, f.proposal, f.ns, true)).toThrow(/过期|已经提交/);
+  });
   it('历史收敛保留最近12条已处理记录和全部待处理记录，旧来源仍防止重复入账', () => {
     const f = setup('<unit_update id="a" hp="80"/>');
     const completed = Array.from({length: 20}, (_, i) => ({...structuredClone(f.proposal), id: 'done-' + i, sourceKey: 'source-' + i, status: 'committed' as const}));
@@ -235,12 +247,12 @@ describe('正文原子事务', () => {
     expect(next.rosterIds).toEqual(['a']);
     expect(materializeUnitRecord(next.storage![0]!, reg).weapon).toMatchObject({ id: unit.weapon!.id, name: '附魔大炮', channel: 'arcane', level: 8 });
     expect(next.storage![0]).toMatchObject({ hp: 70, base: { hpMax: 560 }, level: 3 });
-    expect(next.inventory!.find((i) => i.id === unit.weapon!.id)!.history).toHaveLength(1);
+    expect(next.inventory!.find((i) => i.id === unit.weapon!.id)!.history).toBeUndefined();
     expect(() => prepareNarrativeTransaction(next, proposal, ns, true)).toThrow();
     expect(save.storage![0]!.snapshot!.weapon).toEqual(unit.weapon);
   });
   it('正文装备按件建档，失败重试不重掷，未知物品保留叙事记录', () => {
-    const { save, proposal, ns } = setup('<give item="制式剑" type="weapon" spec="剑L4" qty="2"/><give item="急救剂" type="consumable" spec="治疗L3" qty="3"/><give item="未知遗物"/>');
+    const { save, proposal, ns } = setup('<add item="制式剑" type="weapon" spec="剑L4" qty="2"/><add item="急救剂" type="consumable" spec="治疗L3" qty="3"/><add item="未知遗物"/>');
     const next = prepareNarrativeTransaction(save, proposal, ns, true);
     const weapons = next.inventory!.filter((i) => i.mechanics?.kind === 'weapon');
     expect(weapons).toHaveLength(2); expect(new Set(weapons.map((i) => i.id)).size).toBe(2);
@@ -260,7 +272,7 @@ describe('正文原子事务', () => {
     expect(() => prepareNarrativeTransaction(next, proposal, ns)).toThrow();
   });
   it('错误部署不留下前面的补员/物品半批状态', () => {
-    const { save, proposal, ns } = setup('<unit_update id="a" hp="500"/><give item="药"/><deploy id="missing"/>');
+    const { save, proposal, ns } = setup('<unit_update id="a" hp="500"/><add item="药"/><deploy id="missing"/>');
     const before = structuredClone(save);
     expect(() => prepareNarrativeTransaction(save, proposal, ns, true)).toThrow(); expect(save).toEqual(before);
   });

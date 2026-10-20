@@ -156,15 +156,15 @@ it('旧正文mook是编队别名，仍须明确人数，不产生禁止成长或
 });
 describe('V2 正文协议作用域与整批校验', () => {
   it('机械物品与装备重铸使用短规格，陌生名字不推断能力，越界等级整批拒绝', () => {
-    const parsed = parseProtocol('<tb><give item="炮弹投送器" type="weapon" spec="火炮L7" qty="2"/><give item="急救" type="consumable" spec="治疗L3"/><reforge id="gear-a" spec="火炮L8" enchant="arcane" name="附魔大炮"/></tb>');
+    const parsed = parseProtocol('<tb><add item="炮弹投送器" type="weapon" spec="火炮L7" qty="2"/><add item="急救" type="consumable" spec="治疗L3"/><reforge id="gear-a" spec="火炮L8" enchant="arcane" name="附魔大炮"/></tb>');
     expect(parsed.errors).toEqual([]);
-    expect(parsed.events[0]).toMatchObject({ kind: 'give', spec: { kind: 'weapon', mechanism: 'cannon', power: 7 } });
+    expect(parsed.events[0]).toMatchObject({ kind: 'add', spec: { kind: 'weapon', mechanism: 'cannon', power: 7 } });
     expect(parsed.events[2]).toMatchObject({ kind: 'reforge', id: 'gear-a', spec: { kind: 'weapon', mechanism: 'cannon', power: 8, enchantment: 'arcane' } });
-    expect(parseProtocol('<tb><give item="附魔圣炮" type="weapon"/></tb>').events[0]).not.toHaveProperty('spec');
+    expect(parseProtocol('<tb><add item="附魔圣炮" type="weapon"/></tb>').events[0]).not.toHaveProperty('spec');
     for (const text of [
-      '<tb><give item="新剑" type="weapon" spec="剑L99"/></tb>',
-      '<tb><give item="新剑" type="armor" spec="剑L5"/></tb>',
-      '<tb><give item="新剑" enchant="arcane"/></tb>',
+      '<tb><add item="新剑" type="weapon" spec="剑L99"/></tb>',
+      '<tb><add item="新剑" type="armor" spec="剑L5"/></tb>',
+      '<tb><add item="新剑" enchant="arcane"/></tb>',
       '<tb><reforge id="g" spec="未知神器L8"/></tb>',
       '<tb><reforge id="g" spec="重甲L5" enchant="arcane"/></tb>',
     ]) expect(parseProtocol(text).errors.length).toBeGreaterThan(0);

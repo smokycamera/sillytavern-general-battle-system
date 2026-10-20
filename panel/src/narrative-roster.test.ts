@@ -61,7 +61,7 @@ describe('每批明确出场名单取代上一场，而非累加', () => {
     expect(unit.hp).toBe(25); expect(unit.level).toBe(4); expect(unit.weapon!.name).toBe('换装步枪');
   });
   it.each(['<unit_update id="u0" hp="25"/>', '<unit_set id="u0" note="战外更新"/>',
-    '<field env="forest" light="night"/>', '<give item="药草" qty="2"/>',
+    '<field env="forest" light="night"/>', '<add item="药草" qty="2"/>',
     '<reforge id="unit:u0:primary" name="新武器" spec="剑L4"/>'])('没有出场指令的事务保留当前名单：%s', text => {
     const save = fixture(); expect(commit(save, text).rosterIds).toEqual(save.rosterIds);
   });
@@ -98,7 +98,7 @@ describe('每批明确出场名单取代上一场，而非累加', () => {
     expect(commit(save, '<deploy id="u2"/>').rosterIds).toEqual(['u2']);
   });
   it('恢复原批只恢复该批名单，不叠加、不重新生成或发奖，同数量换人也更新事实版本', () => {
-    const first = commit(fixture(), '<deploy id="u0"/><deploy id="u1"/><give item="药草" qty="2"/>', 'first');
+    const first = commit(fixture(), '<deploy id="u0"/><deploy id="u1"/><add item="药草" qty="2"/>', 'first');
     const second = commit(first, '<deploy id="u2"/><deploy id="u3"/>', 'second');
     // Isolate restore from the initial-confirmation bug so the old implementation fails independently.
     second.rosterIds = ['u2', 'u3']; const before = structuredClone(second);

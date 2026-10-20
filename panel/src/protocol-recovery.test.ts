@@ -25,8 +25,8 @@ describe('草稿字段恢复与错误定位', () => {
     const repaired = recoverProtocol(text);
     expect(parseProtocol(repaired.text).events[0]).toMatchObject({ kind: 'unit-set', data: { name: '新名字', xp: 12.5 } });
     expect(repaired.text).not.toContain('nonsense'); expect(repaired.text).not.toContain('unknown');
-    const gear = parseProtocol(recoverProtocol('<give item="护甲" type="armor" spec="重甲L3" qty="未知" quality="4" protection="thermal"/>').text).events[0];
-    expect(gear).toMatchObject({ kind: 'give', item: '护甲', spec: { kind: 'armor', power: 3, quality: 4, profile: 'thermal' } });
+    const gear = parseProtocol(recoverProtocol('<add item="护甲" type="armor" spec="重甲L3" qty="未知" quality="4" protection="thermal"/>').text).events[0];
+    expect(gear).toMatchObject({ kind: 'add', item: '护甲', spec: { kind: 'armor', power: 3, quality: 4, profile: 'thermal' } });
     const incomplete = recoverProtocol('<spawn name="军团" side="enemy" scale="company" hpMax="未知" armor="重甲L4"/>');
     expect(incomplete.text).toContain('<spawn'); expect(incomplete.text).toContain('name="军团"'); expect(incomplete.text).toContain('armor="重甲L4"');
     expect(incomplete.text).not.toContain('1000000000'); expect(parseProtocol(incomplete.text).errors.length).toBeGreaterThan(0);
@@ -40,7 +40,7 @@ describe('草稿字段恢复与错误定位', () => {
     }
   });
   it('整批冲突只定位引发冲突的事件，不把其他合法事件标成错误', () => {
-    const text = '<tb>\n<give item="补给"/>\n<unit_update id="u1" hp="10"/>\n<unit_update id="u1" hp="20"/>\n</tb>';
+    const text = '<tb>\n<add item="补给"/>\n<unit_update id="u1" hp="10"/>\n<unit_update id="u1" hp="20"/>\n</tb>';
     const parsed = parseProtocol(text);
     expect(parsed.errors.join('')).toContain('更新冲突');
     expect(parsed.diagnostics).toHaveLength(1);

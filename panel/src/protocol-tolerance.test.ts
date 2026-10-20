@@ -2,6 +2,29 @@ import { describe, expect, it } from 'vitest';
 import { parseProtocol, protocolExcerpt } from './protocol.js';
 
 describe('正文格式容错', () => {
+  it('中英文引号、分隔符及全角标签生成相同事件，名称和说明中的标点保留', () => {
+    const sources = [
+      '<tb><add item="药，瓶；甲" spec="buff治疗L3+2治疗" qty="2" to="u1"/><give id="c1" to="u2,u3" qty="1"/><reforge id="c1" spec="buff治疗L4" name="新药"/></tb>',
+      '＜tb＞＜add item＝＂药，瓶；甲＂、spec：‘buff治疗Ｌ３＋２治疗’；qty＝＇２＇，u1／＞＜give id＝「c1」，to＝『u2｜u3』；qty＝＂１＂／＞＜reforge id＝“c1”、spec＝＇buff治疗Ｌ４＇，name＝「新药」／＞＜／tb＞',
+      '<tb><add u1｜item=「药，瓶；甲」、spec=buff治疗L3+2治疗；qty=2/><give u2｜u3；id:c1、qty=1/><reforge id=c1，spec:buff治疗L4；name=新药/></tb>',
+    ];
+    const expected = parseProtocol(sources[0]!).canonical;
+    for (const source of sources) {
+      const parsed = parseProtocol(source);
+      expect(parsed.errors, source).toEqual([]);
+      expect(parsed.canonical).toBe(expected);
+      expect(parseProtocol(parsed.canonical).events).toEqual(parsed.events);
+    }
+  });
+  it('随身道具兼容全角等级、数量及乘号，错误数量仍定位到原文', () => {
+    const parsed = parseProtocol('＜spawn name＝“补给兵” side＝“ally” scale＝“hero” items＝“药水：buff治疗Ｌ３＊２，夜视镜：夜战专精Ｌ３ｘ１”／＞');
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.events[0]).toMatchObject({ items: [{ name: '药水', qty: 2, spec: { power: 3 } }, { name: '夜视镜', qty: 1, spec: { power: 3 } }] });
+    const text = '前文＜add item＝＂药水＂、qty＝＇－２＇／＞';
+    const bad = parseProtocol(text);
+    expect(bad.events).toEqual([]);
+    expect(bad.diagnostics.some(issue => text.slice(issue.start, issue.end).includes('－２'))).toBe(true);
+  });
   it('空数值、隐式进制和未知显式护甲不变成另一种有效配置', () => {
     for (const attr of ['hp=""', 'xp=""', 'xp="0x10"', 'atk="Infinity"']) {
       const result = parseProtocol(`<unit_set id="u1" ${attr}/>`);
@@ -42,7 +65,7 @@ describe('正文格式容错', () => {
     const result = parseProtocol('<tb><unit_update id=a hp=500/><deploy id=a/></tb>正文<tb><unit_update id=a hp_max=1000/><deploy id=a/></tb>');
     expect(result.errors).toEqual([]); expect(result.events).toHaveLength(2);
     expect(result.events[0]).toMatchObject({ kind: 'unit-update', hp: 500, hpMax: 1000 });
-    const repeated = '<tb><give item="药剂" qty=2/></tb>';
+    const repeated = '<tb><add item="药剂" qty=2/></tb>';
     expect(parseProtocol(repeated + '说明' + repeated).events).toHaveLength(1);
     expect(parseProtocol(repeated.repeat(40)).errors).toEqual([]);
     expect(parseProtocol(protocolExcerpt(repeated + '说明' + repeated)).events).toHaveLength(1);

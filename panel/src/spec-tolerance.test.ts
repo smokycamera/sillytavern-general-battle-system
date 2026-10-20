@@ -21,7 +21,7 @@ const registry = traitRegistry();
 describe('正文技能规格兼容和局部恢复', () => {
   it('通道简写按武器伤害和防具防护解析，正负修正可省略一点', () => {
     const text = spawn('治疗L3', { weapon: '热刃:剑Ｌ５＋３热能－奥术', armor: '重甲L5-热能+2动能' })
-      + '<give item="备用甲" type="armor" spec="轻甲L4-热能"/>'
+      + '<add item="备用甲" type="armor" spec="轻甲L4-热能"/>'
       + '<reforge id="w1" spec="步枪L5+4热能"/>'
       + '<unit_set id="u1" shieldSpec="盾牌L3-热能"/>';
     const parsed = parseProtocol(text);

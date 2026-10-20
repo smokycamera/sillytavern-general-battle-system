@@ -94,6 +94,7 @@ import {
 import type { SaveScope, SaveReceipt, DeliveryReceipt } from './tavern.js';
 import { createPanelRuntime } from './panel-runtime.js';
 import { type LootType, type Suggestion } from './tags.js';
+import { migrateSavedSuggestion } from './saved-suggestion.js';
 import type { NarrativeProposal, NarrativeSave } from './narrative-state.js';
 import { prepareInventoryState, type InventoryItem } from './inventory-state.js';
 import { prepareBattleItems } from './battle-items.js';
@@ -553,7 +554,7 @@ function restore(): void {
   const saved = Object.keys(snapshot).length ? snapshot as SavedPanel : undefined;
   state.factRevision = saved?.factRevision ?? 0;
   state.encounterContext = saved?.encounterContext;
-  state.proposals = saved?.proposals ?? [];
+  state.proposals = (saved?.proposals ?? []).map(p => ({ ...p, events: p.events.map(migrateSavedSuggestion) }));
   state.storySync = saved?.autoApprove ?? saved?.storySync ?? false;
   state.autoApprove = state.storySync;
   state.nonLethal = saved?.nonLethal === true;
@@ -584,7 +585,7 @@ function restore(): void {
   state.autoTurn = !!saved.autoTurn;
   state.saveScope = saved.saveScope === 'character' ? 'character' : 'chat';
   state.autoApprove = saved.autoApprove ?? saved.storySync ?? false;
-  state.pending = Array.isArray(saved.pending) ? saved.pending : [];
+  state.pending = Array.isArray(saved.pending) ? saved.pending.map(migrateSavedSuggestion) : [];
   state.inventory = Array.isArray(saved.inventory)
     ? saved.inventory.map((it, i) => ({
         ...it,
@@ -1485,9 +1486,8 @@ function renderManage(): string {
         <b>${esc(r.name)}</b><span class="sub">${esc(publicId(r.id))}</span><label><input type="checkbox" data-role="prompt-unit" data-id="${esc(r.id)}" ${promptSelected(promptSettings, 'unit', r.id) ? 'checked' : ''}>发送给AI</label>
         <span class="dim">${scaleLabel({ scale: r.scale, rulesVersion: r.snapshot?.rulesVersion })}等级${r.level}${r.scale !== 'mook' || r.snapshot?.rulesVersion === 'v2' ? `·经验${displayNumber(r.xp ?? 0)}` : ''}·${archName(r.archetype ?? 'infantry', true)}·攻${displayNumber(r.base.atk)}防${displayNumber(r.base.def)}速${displayNumber(r.base.spd)}·${r.scale === 'hero' ? '生命' : '人数'}${displayNumber(r.hp)}/${displayNumber(r.base.hpMax)}${r.morale !== undefined ? `·士气${displayNumber(r.morale)}/${displayNumber(r.base.moraleMax)}` : ''}${r.status && r.status !== 'ready' ? `·${r.status}` : ''}${r.zone ? `·${r.zone}/${r.rank === 'rear' ? '后排' : r.rank === 'reserve' ? '预备队' : '前排'}` : ''}</span>
         <button data-action="storage-edit" data-id="${esc(r.id)}" ${isEditingSome && !editing ? 'disabled' : ''}>${editing ? '编辑中' : '编辑'}</button>
-        ${r.snapshot?.rulesVersion !== 'v2' ? `<button data-action="unit-conversion-preview" data-id="${esc(r.id)}">预览规则更新</button>` : r.history?.at(-1)?.sourceId === 'mechanism-v2-conversion' ? `<button data-action="unit-conversion-undo" data-id="${esc(r.id)}">撤销刚才更新规则</button>` : ''}
+        ${r.snapshot?.rulesVersion !== 'v2' ? `<button data-action="unit-conversion-preview" data-id="${esc(r.id)}">预览规则更新</button>` : r.legacyRecord && r.revision === (r.legacyRecord.revision ?? 1) + 1 ? `<button data-action="unit-conversion-undo" data-id="${esc(r.id)}">撤销刚才更新规则</button>` : ''}
         ${woundedLabel(r) || r.retired ? `<span class="sub">${esc(woundedLabel(r))}${r.retired ? ' · 已解散' : ''}</span>` : ''}
-        <details data-detail-id="archive-history-${esc(r.id)}"><summary>历史记录 · ${r.history?.length ?? 0}条</summary><p class="sub">档案版本 ${r.revision ?? 1} · 显示最近12条，完整历史随存档保留</p>${r.history?.slice(-12).reverse().map(h => `<p>${({ created: '建档', battle: '战斗', update: '更新', edit: '编辑', retired: '解散' })[h.kind]} · ${r.scale === 'hero' ? '生命' : '人数'} ${displayNumber(h.hp)}/${displayNumber(h.hpMax)} · 训练${h.level} · 经验${xpText(h.xp)}</p>`).join('') ?? ''}</details>
         <button data-action="storage-into" data-id="${esc(r.id)}" ${state.roster.some((u) => u.id === r.id) || r.retired || r.hp <= 0 || r.status === 'dying' ? 'disabled' : ''} title="加入本场参战队伍">${state.roster.some((u) => u.id === r.id) ? '已参战' : '→参战队伍'}</button>
         <button data-action="storage-recover" data-id="${esc(r.id)}" ${currentBattle() || r.retired || r.status === 'dead' ? 'disabled' : ''} title="收兵后治疗可恢复的生命或伤兵、恢复士气并解除濒死；不补回永久阵亡人数">战后恢复</button>
         <button data-action="storage-del" data-id="${esc(r.id)}" class="danger" title="删除档案及参战引用，同时删除已装备的主武器、副武器、护甲和盾牌">直接删除（含已装备）</button>
@@ -2192,7 +2192,7 @@ function renderNarrativeProposals(): string {
 }
 
 function suggestionLabel(s: Suggestion): string {
-  return { take: '减少物品', learn: '学习技能', give: '掉落', reforge: '装备改造', bless: '明确祝福', unbless: '撤销祝福', affect: '增减益', unaffect: '解除效果', status: '状态', xp: '经验', field: '环境', spawn: '遭遇', deploy: '选择编制', 'unit-update': '编制更新', 'unit-set': '完整单位修改' }[s.kind];
+  return { take: '减少物品', add: '新增或补充物品', learn: '学习技能', give: '转移物品', reforge: '物品改造', bless: '明确祝福', unbless: '撤销祝福', affect: '增减益', unaffect: '解除效果', status: '状态', xp: '经验', field: '环境', spawn: '遭遇', deploy: '选择编制', 'unit-update': '编制更新', 'unit-set': '完整单位修改' }[s.kind];
 }
 
 function suggestionDesc(s: Suggestion, batch: Suggestion[] = []): string {
@@ -2206,9 +2206,10 @@ function suggestionDesc(s: Suggestion, batch: Suggestion[] = []): string {
   const ids = viewIds();
   switch (s.kind) {
     case 'take': return `减少物品「${state.inventory.find(i => i.id === ids.realId(s.id))?.name ?? ids.publicId(s.id)}」×${s.qty}${s.note ? '——' + s.note : ''}`;
-    case 'give': return `获得物品「${s.item}」×${s.qty}${s.id ? ' → ' + unitName(s.id) : ''}${s.spec ? ' · ' + itemSpecificationLabel(s.spec) : ' · 叙事记录'}${s.note ? `——${s.note}` : ''}`;
+    case 'give': return `转移物品「${state.inventory.find(i => i.id === ids.realId(s.id))?.name ?? ids.publicId(s.id)}」${s.to && s.to.length > 1 ? '每个单位各' : ''}×${s.qty} → ${s.to?.map(id => unitName(id)).join('、') || '公共库存'}${s.note ? ' · ' + s.note : ''}`;
     case 'learn': return `${unitName(s.id)} 学习或更新：${s.skills.map((skill) => (skill.name ?? ABILITY_BLUEPRINTS[skill.blueprintId]?.name ?? skill.blueprintId) + (skill.level === undefined ? '' : ' L' + skill.level)).join('、')}；其余记录保留`;
-    case 'reforge': return `改造「${s.name ?? state.inventory.find((i) => i.id === ids.realId(s.id))?.name ?? '指定装备'}」为 ${itemSpecificationLabel(s.spec)}`;
+    case 'add': return s.item !== undefined ? `获得物品「${s.item}」×${s.qty}${s.to ? ' → ' + unitName(s.to) : ''}${s.spec ? ' · ' + itemSpecificationLabel(s.spec) : ' · 叙事记录'}${s.note ? ' · ' + s.note : ''}` : `增加「${state.inventory.find(i => i.id === ids.realId(s.id))?.name ?? ids.publicId(s.id)}」×${s.qty}${s.note ? ' · ' + s.note : ''}`;
+    case 'reforge': return `改造「${s.name ?? state.inventory.find((i) => i.id === ids.realId(s.id))?.name ?? '指定物品'}」为 ${itemSpecificationLabel(s.spec)}`;
     case 'bless': return `${unitName(s.id)} 获得「${s.name}」：${s.traitIds.map((id) => reg.get(id)?.name ?? id).join('、')} · ${s.duration.kind === 'permanent' ? '永久' : s.duration.count + (s.duration.kind === 'rounds' ? '个战斗整轮' : '场战斗')}`;
     case 'unbless': return `${unitName(s.id)} 撤销指定祝福来源（保留永久特质）`;
     case 'affect': return `${unitName(s.id)} 获得「${s.name}」：${s.conditionIds.map((id) => standardConditionMap().get(id)?.name ?? id).join('、')} · ${s.duration.kind === 'permanent' ? '永久' : s.duration.count + (s.duration.kind === 'rounds' ? '个战斗整轮' : '场战斗')}`;
@@ -2616,15 +2617,8 @@ function markProcessed(raw: string): void {
 
 /** 批准一条建议并落地 */
 async function approveSuggestion(s: Suggestion): Promise<void> {
-  if (['take', 'unit-set', 'bless', 'unbless', 'affect', 'unaffect', 'reforge', 'learn'].includes(s.kind) || s.kind === 'give' && s.spec) throw new Error('物品扣减、完整单位修改、有效果的物品、改造和增减益请通过剧情档案同步整批审查，旧无来源记录不能直接执行');
+  if (['take', 'add', 'give', 'unit-set', 'bless', 'unbless', 'affect', 'unaffect', 'reforge', 'learn'].includes(s.kind)) throw new Error('物品数量变更、转移、完整单位修改、改造和增减益请通过剧情档案同步整批审查，旧无来源记录不能直接执行');
   switch (s.kind) {
-    case 'give': {
-      const existing = state.inventory.find((it) => it.name === s.item && it.lootType === s.lootType && it.note === s.note && !it.assignedTo);
-      if (existing) existing.qty += s.qty;
-      else state.inventory.push({ id: `loot-${Date.now().toString(36)}-${state.idSeq++}`, name: s.item, note: s.note, qty: s.qty, lootType: s.lootType });
-      toast(`🎒 已入账物品：${s.item}×${s.qty}`);
-      break;
-    }
     case 'status': {
       requireArchiveWritable();
       const stored = storageRecordByRef(undefined, s.target);

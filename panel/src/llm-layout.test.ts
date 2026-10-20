@@ -26,6 +26,22 @@ const sent = (request: ReturnType<typeof twoStep>, n: number) => JSON.parse(Stri
 const ctx = (extra: Partial<LayoutContext> = {}): LayoutContext => ({ scene: 'city_siege', size: 'standard', attacker: 'ally', objectiveMode: 'siege', map: [11, 17],
   units: [{ id: 'u1', name: '张辽', side: 'ally', kind: '人物·近战' }, { id: 'u2', name: '弩手', side: 'enemy', kind: '部队·远程' }], ...extra });
 
+describe('indoor preparation vocabulary', () => {
+  it('keeps building use independent of geometry, accepting exact Chinese labels and old answers', () => {
+    const indoor=ctx({scene:'interior',objectiveMode:'annihilation'});
+    expect(compileLayout({interior:{use:'工坊',pattern:'双翼联通'}},indoor).plan.interior).toEqual({use:'workshop',pattern:'wings'});
+    expect(compileLayout({archetype:'residence'},indoor).plan.interior).toBeUndefined();
+    const malformed=compileLayout({interior:{use:'warehouse',pattern:'arbitrary code'}},indoor);
+    expect(malformed.plan.interior).toEqual({use:'warehouse'});expect(malformed.notes.join(' ')).toContain('室内布局无效');
+    expect(compileLayout({interior:{use:'warehouse',pattern:'aisles'}},ctx()).plan.interior).toBeUndefined();
+  });
+  it('does not turn the height of indoor furniture into a raised floor', () => {
+    const plan=compileLayout({places:[{type:'cover',name:'高货架',at:'C',height:2}]},ctx({scene:'interior'})).plan;
+    expect(plan.intent!.entities[0]!.height).toBeUndefined();
+    expect(layoutTask(ctx({scene:'interior'}))).not.toContain('正文未确定的项省略，由程序变化');
+  });
+});
+
 describe('two-step preparation with a compass layout', () => {
   it.each([{ sides: ['ally', 'enemy'] }, { sides: ['ally', 'enemy', 'neutral'] }] as const)('deploys and restores all 32 individually placed units with $sides', ({ sides: sideList }) => {
     const units = Array.from({ length: 32 }, (_, i) => ({ id: 'u' + (i + 1), name: '布阵' + i, side: sideList[i % sideList.length]!, kind: '人物·近战' }));

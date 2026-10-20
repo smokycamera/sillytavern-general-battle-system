@@ -198,7 +198,7 @@ describe('战斗状态提交', () => {
 });
 
 describe('持续档案完整时间线', () => {
-  it('560→70→再次战损→500→再战损→560→560/1000→1000 保持身份装备经验与历史', () => {
+  it('560→70→再次战损→500→再战损→560→560/1000→1000 保持当前身份装备经验，不累积旧状态', () => {
     const unit = makeUnit('army', { scale: 'company', level: 4 });
     unit.hp = unit.base.hpMax = 560;
     let records = [unitRecordFromCombatant(unit)];
@@ -227,7 +227,8 @@ describe('持续档案完整时间线', () => {
     roster = deployUnitRecord(JSON.parse(JSON.stringify(records)), [], unit.id, reg);
     expect([roster[0]!.id, roster[0]!.hp, roster[0]!.base.hpMax, roster[0]!.xp]).toEqual(['army', 1000, 1000, 20]);
     expect(roster[0]!.weapon).toEqual(equipment);
-    expect(records[0]!.history?.filter((e) => e.kind === 'battle').map((e) => e.sourceId)).toEqual(['a', 'b', 'c', 'd']);
+    expect(records[0]!.history).toBeUndefined();
+    expect(committedIds).toEqual(['a', 'b', 'c', 'd']);
   });
 
   it('英雄 18/40→34/40，长期伤势保留，同名 id 不混合，旧版本战果拒绝整批', () => {

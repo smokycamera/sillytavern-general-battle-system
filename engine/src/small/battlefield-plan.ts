@@ -1,6 +1,7 @@
 import { safeLandmarkLabel, MAP_DESIGN_OPTIONS, BATTLEFIELD_SCENES, type BattlefieldScene, type MapDesign } from './map-design.js';
 import { ROUTE_TOPOLOGIES, type RouteTopology } from './route-graph.js';
 import type { CityShape } from './layers.js';
+import { INTERIOR_USES, INTERIOR_PATTERNS, type InteriorPlan } from './interior-plan.js';
 import {BattlefieldPlanError} from './battlefield-error.js';
 export {BattlefieldPlanError} from './battlefield-error.js';
 import { normalizeSceneIntent, MAX_DEPLOYMENT_PLANS, SCENE_ARCHETYPES, WORLD_ANCHORS, SCENE_INTENT_PROMPT, type SceneIntent, type SceneArchetype, type WorldAnchor } from './scene-intent.js';
@@ -35,6 +36,7 @@ export interface BattlefieldPlan {
   scene?: BattlefieldScene;
   intent?: SceneIntent;
   archetype?: SceneArchetype;
+  interior?: InteriorPlan;
   cityPosition?: WorldAnchor;
   waterAxis?: 'horizontal' | 'vertical';
   waterPosition?: WorldAnchor;
@@ -75,6 +77,19 @@ export function normalizeBattlefieldPlan(value: unknown): { plan?: BattlefieldPl
   for (const [key, choices] of Object.entries(enums)) if (input[key] !== undefined) {
     if (typeof input[key] === 'string' && (choices as readonly string[]).includes(input[key] as string)) (plan as Record<string, unknown>)[key] = input[key];
     else notes.push(`地图${key}无效，采用本地默认`);
+  }
+  if (input.interior !== undefined) {
+    const inside = object(input.interior), interior: InteriorPlan = {};
+    if (inside?.use !== undefined) {
+      if ((INTERIOR_USES as readonly unknown[]).includes(inside.use)) interior.use = inside.use as InteriorPlan['use'];
+      else notes.push('室内用途无效，采用本地默认');
+    }
+    if (inside?.pattern !== undefined) {
+      if ((INTERIOR_PATTERNS as readonly unknown[]).includes(inside.pattern)) interior.pattern = inside.pattern as InteriorPlan['pattern'];
+      else notes.push('室内布局无效，采用本地默认');
+    }
+    if (Object.keys(interior).length) plan.interior = interior;
+    else if (!inside) notes.push('室内设计格式无效，采用本地默认');
   }
   if (input.intent !== undefined) {
     try { plan.intent = normalizeSceneIntent(input.intent); }
