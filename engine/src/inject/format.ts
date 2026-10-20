@@ -9,6 +9,7 @@ import { environmentLabel } from '../environment.js';
 import { formationNode } from '../mass/formation.js';
 import { woundedLabel } from '../recovery.js';
 import { energyShieldCapacity } from '../shield-state.js';
+import { STRUCTURE_NAMES } from '../small/layers.js';
 import {hasMemberHealth,memberHealth,memberHealthMax,memberHealthSummary,memberNoun} from '../member-health.js';
 /**
  * 注入文案层：引擎状态 → 提示词文本（单向投影）。
@@ -68,7 +69,7 @@ export function reportShieldLabel(u: Combatant): string {
 function stateLabel(u: Combatant, brief = false): string {
   const morale = u.morale !== undefined ? ` 士气${u.morale}` : '';
   const defs = standardConditionMap();
-  const conds = u.conditions.filter((c) => c.dur > 0).map((c) => (defs.get(c.id)?.name ?? c.id) + c.dur + '轮').join('、');
+  const conds = [...new Set(u.conditions.filter((c) => c.dur > 0).map((c) => defs.get(c.id)?.name ?? c.id))].join('、');
   const wounded = woundedLabel(u, brief);
   return `${morale}${conds ? ' [' + conds + ']' : ''}${wounded ? '｜' + wounded : ''}${u.scale === 'company' && u.status === 'dead' ? '｜编队失去战斗力' : STATUS_WORD[u.status]}`;
 }
@@ -91,10 +92,10 @@ export function smallStateSummary(
   const lines: string[] = [];
   const pc = opts.protagonistId;
   lines.push(`【战阵·当前状态】${b.isOver() ? '战斗已结束' : `第${b.round}回合｜轮到：${b.visibleCombatants('ally').find((u) => u.id === b.active?.id)?.name ?? '未定位的敌方行动'}`}`);
-  for (const side of ['ally', 'enemy'] as const) {
+  for (const side of ['ally', 'enemy', 'neutral'] as const) {
     const units = (b.isOver() ? b.combatants : b.visibleCombatants('ally')).filter((c) => c.side === side);
     if (!units.length) continue;
-    const label = side === 'ally' ? '我方' : '敌方';
+    const label = side === 'ally' ? '我方' : side === 'enemy' ? '敌方' : '第三方';
     lines.push(
       `${label}：${units
         .map((u) => `${pc === u.id ? '【主控】' : ''}${u.name}${smallPosition(b, u)} ${reportStrengthLabel(u)}${reportShieldLabel(u)}${stateLabel(u, true)}${unitReadiness(b, u)}`)
@@ -176,6 +177,29 @@ export function fieldFacts(b: SmallBattle | MassBattle, field = isMass(b) ? unde
   if (b.fieldTags.length || relief) lines.push([b.fieldTags.length ? '环境：' + environmentLabel(b.fieldTags) : '', relief ? HEIGHT_LEGEND : ''].filter(Boolean).join('｜'));
   const marks = field ? landmarkSummary(field) : [];
   if (marks.length) lines.push('地标：' + marks.join('；'));
+  if (field?.structures && !isMass(b)) {
+    const visible = b.isOver() ? undefined : b.visibleCells('ally');
+    const operatedGates = new Set(b.log.flatMap(e => e.gate ? [e.gate.cell] : []));
+    const groups = new Map<string, { label: string; cells: number[] }>();
+    field.structures.forEach((s, cell) => {
+      if (!s || visible && !visible[cell] && s.owner !== 'ally') return;
+      if (s.hp >= s.hpMax && !(s.kind === 'gate' && (s.gateState === 'open' || operatedGates.has(cell)))) return;
+      const state = s.hp <= 0 ? '已毁' : s.kind === 'gate' ? (s.gateState === 'open' ? '打开' : '关闭') + (s.hp < s.hpMax ? '、受损' : '') : '受损';
+      const label = `${STRUCTURE_NAMES[s.kind]}${state}`;
+      const group = groups.get(label) ?? { label, cells: [] };
+      group.cells.push(cell); groups.set(label, group);
+    });
+    const structures = [...groups.values()].map(({ label, cells }) => {
+      const spans: string[] = [];
+      for (let i = 0; i < cells.length; i++) {
+        const from = cells[i]!;
+        while (cells[i + 1] === cells[i]! + 1 && Math.floor(cells[i + 1]! / field.width) === Math.floor(from / field.width)) i++;
+        spans.push(cellLabel(field, from) + (cells[i] !== from ? '–' + cellLabel(field, cells[i]!) : ''));
+      }
+      return label + cells.length + '处（' + spans.join('、') + '）';
+    });
+    if (structures.length) lines.push('建筑与城防：' + structures.join('；'));
+  }
   return lines;
 }
 function battleSituation(b: SmallBattle | MassBattle): string[] {
@@ -239,6 +263,7 @@ const DIGEST_KINDS = new Set<BattleLogEntry['kind']>([
   'death',
   'move',
   'battle-end',
+  'objective',
 ]);
 
 /** 有高低差的地图上双方高度不同时注明居高或仰攻；空中与平地不写。 */
@@ -247,13 +272,19 @@ function heightTag(r: AttackResolution): string {
   return a === undefined || d === undefined || a === d ? '' : `${a > d ? '居高' : '仰攻'}（高度${a}→${d}），`;
 }
 /** 命中/未中、生命损失与成员减员；技能与普通攻击共用。 */
-/** 纪要里的能量盾：挡下的伤害（取整）与过载。 */
-function energyText(absorbed: number, overloaded: number, hero: boolean): string {
-  return (absorbed ? `，能量盾吸收${Math.round(absorbed)}` : '') + (overloaded ? hero ? '，能量盾过载' : `，${overloaded}份能量盾过载` : '');
+/** 跨代能量盾同时写吸收量与实际耗盾；普通屏障、未穿透与实体盾损坏保留在结果旁。 */
+function energyText(absorbed: number, overloaded: number, hero: boolean, spent?: number): string {
+  const amount = (n: number) => spent === undefined ? Math.round(n) : Number(n.toFixed(1));
+  return (absorbed ? `，能量盾吸收${amount(absorbed)}${spent === undefined ? '' : `（耗盾${amount(spent)}）`}` : '') + (overloaded ? hero ? '，能量盾过载' : `，${overloaded}份能量盾过载` : '');
+}
+function defenseText(r: AttackResolution): string {
+  return energyText(r.energyAbsorbed ?? 0, r.energyOverloaded ?? 0, r.defenderScale === 'hero', r.energySpent)
+    + (r.barrierAbsorbed ? `，屏障吸收${Number(r.barrierAbsorbed.toFixed(1))}` : '')
+    + (r.penetrationFactor === 0 ? '，未穿透' : '') + (r.shieldBroken ? '，盾牌碎裂' : '');
 }
 function hitText(r: AttackResolution): string {
   return r.hit
-    ? `${r.crit ? '✦暴击' : '命中'}${r.finalDamage}${r.damageModel==='member-health'?'生命':''}（${r.hpBefore}→${r.hpAfter}）${r.damageModel==='member-health'&&r.defenderScale!=='hero'&&r.membersBefore!==undefined&&r.membersAfter!==undefined?`，减员${r.membersBefore-r.membersAfter}`:''}${energyText(r.energyAbsorbed ?? 0, r.energyOverloaded ?? 0, r.defenderScale === 'hero')}`
+    ? `${r.crit ? '✦暴击' : '命中'}${r.finalDamage}${r.damageModel==='member-health'?'生命':''}（${r.hpBefore}→${r.hpAfter}）${r.damageModel==='member-health'&&r.defenderScale!=='hero'&&r.membersBefore!==undefined&&r.membersAfter!==undefined?`，减员${r.membersBefore-r.membersAfter}`:''}${defenseText(r)}`
     : '未中';
 }
 function fellMark(r: AttackResolution): string {
@@ -275,26 +306,44 @@ function volleyLine(volley: BattleLogEntry[]): string {
   const hits = volley.filter((v) => v.resolution!.hit).length, damage = volley.reduce((n, v) => n + v.resolution!.finalDamage, 0);
   const life = first.damageModel === 'member-health';
   const members = life && first.defenderScale !== 'hero' && first.membersBefore !== undefined && last.membersAfter !== undefined ? '，减员' + (first.membersBefore - last.membersAfter) : '';
-  const energy = energyText(volley.reduce((n, v) => n + (v.resolution!.energyAbsorbed ?? 0), 0), volley.reduce((n, v) => n + (v.resolution!.energyOverloaded ?? 0), 0), first.defenderScale === 'hero');
-  return `${first.attackerName}→${first.defenderName} ${heightTag(first)}${volley.length}段/${hits}中，损失${damage}${life ? '生命' : ''}（${first.hpBefore}→${last.hpAfter}）${members}${energy}${fellMark(last)}${volley.some((v) => v.resolution!.crit) ? '·含暴击' : ''}`;
+  const sum = (key: 'energyAbsorbed' | 'energyOverloaded' | 'barrierAbsorbed') => volley.reduce((n, v) => n + (v.resolution![key] ?? 0), 0);
+  const converted = volley.some(v => v.resolution!.energySpent !== undefined);
+  const energy = energyText(sum('energyAbsorbed'), sum('energyOverloaded'), first.defenderScale === 'hero', converted ? volley.reduce((n, v) => n + (v.resolution!.energySpent ?? v.resolution!.energyAbsorbed ?? 0), 0) : undefined);
+  const barrier = sum('barrierAbsorbed'), blocked = volley.filter(v => v.resolution!.hit && v.resolution!.penetrationFactor === 0).length;
+  const defense = (barrier ? `，屏障吸收${Number(barrier.toFixed(1))}` : '') + (blocked ? blocked === hits ? '，未穿透' : `，其中${blocked}段未穿透` : '') + (volley.some(v => v.resolution!.shieldBroken) ? '，盾牌碎裂' : '');
+  return `${first.attackerName}→${first.defenderName} ${heightTag(first)}${volley.length}段/${hits}中，损失${damage}${life ? '生命' : ''}（${first.hpBefore}→${last.hpAfter}）${members}${energy}${defense}${fellMark(last)}${volley.some((v) => v.resolution!.crit) ? '·含暴击' : ''}`;
 }
 
 /** 技能自身位移受阻、技能因此没有生效的说明；位移本身由逐格移动写出。 */
 const SKILL_SETBACK = /未能离开原位|未能位移|原地出手|技能未生效/;
+const REDUNDANT_EFFECT = /已有同类效果|已有同等或更强且覆盖整个持续期的能力来源|已有同等或更持久的能力来源/;
+/** 战报只写发生的效果；时长与剩余库存留在规则状态，免疫省去原因与检定数字。 */
+export function compactFactLine(line: string): string {
+  if (REDUNDANT_EFFECT.test(line)) return '';
+  const immune = /^(.*?)：.*，未追加(.+)$/.exec(line);
+  if (immune) return `${immune[1]} 免疫${immune[2]}`;
+  const pushImmune = /^(.*?)：坚韧，不受击退或拉拽$/.exec(line);
+  if (pushImmune) return `${pushImmune[1]} 免疫击退或拉拽`;
+  return line.replace(/（-?\d+(?:[+-]\d+)?对抗-?\d+）/g, '')
+    .replace(/，?(?:持续|至多)\d+(?:轮|回合|次状态结算)(?:，战斗归档时结束)?/g, '')
+    .replace(/(获得【[^】]+】)\d+(?:轮|回合)/g, '$1')
+    .replace(/，?剩余\d+(?:\.\d+)?件/g, '');
+}
 /** 技能日志只保留“谁释放了什么”和紧凑效果；完整骰面仍留在结算卡。
  *  技能名已随出手前的位移写出（headerShown）时不再重复，受阻说明写成“某某的【技能】……”。 */
 function digestAbilityLines(e: BattleLogEntry, headerShown = false): string[] {
-  const raw = e.text.split('\n').filter(Boolean);
-  const lines = raw.length && !headerShown ? [raw[0]!] : [];
+  const raw = e.text.split('\n').filter(line => line && !REDUNDANT_EFFECT.test(line));
+  const lines = raw.length && !headerShown ? [compactFactLine(raw[0]!)] : [];
   for (const line of raw.slice(1)) if (SKILL_SETBACK.test(line)) lines.push((headerShown ? raw[0]!.replace(' 使用【', '的【') : '') + line);
   if (e.resolution) {
     for(const r of e.resolutions?.length?e.resolutions:[e.resolution])lines.push(`${r.attackerName}→${r.defenderName} ${heightTag(r)}${hitText(r)}`);
   }
+  const resolutionLines = new Set((e.resolutions?.length ? e.resolutions : e.resolution ? [e.resolution] : []).flatMap(r => r.text.split('\n')));
   for (const line of raw.slice(1)) {
-    if (/d20\[|命中率\d+%|^伤害 /.test(line)) continue;
-    if (/治疗|获得【|士气|【召唤】|召唤失败|召唤请求/.test(line)) lines.push(line);
+    if (resolutionLines.has(line) || SKILL_SETBACK.test(line) || /d20\[|命中率\d+%|^伤害 |^(kinetic|thermal|arcane) 穿透|^(突进|闪现|后撤)至/.test(line)) continue;
+    lines.push(compactFactLine(line));
   }
-  return [...new Set(lines)];
+  return [...new Set(lines.filter(Boolean))];
 }
 
 /** 记录了起止格的连续逐格移动合为一行：首步的起点（高度有变时附起点高度）接末步的落点。 */
@@ -337,10 +386,10 @@ export function compactEventGroups(entries: BattleLogEntry[], opts: { unresolved
         && entries[i + 1]!.round === e.round) volley.push(entries[++i]!);
       groups.push({ text: volley.length === 1 ? digestAttackLine(e)! : volleyLine(volley), first, last: i });
     } else if (e.kind === 'ability') groups.push(...digestAbilityLines(e, headerShown.has(i)).map((text) => ({ text, first, last: i })));
-    else if (e.kind === 'attack') { if (opts.unresolvedAttacks && e.text) groups.push({ text: e.text, first, last: i }); }
+    else if (e.kind === 'attack') { if ((e.structure || /结构耐久\s+\d+→\d+/.test(e.text) || opts.unresolvedAttacks) && e.text) groups.push({ text: e.text, first, last: i }); }
     else {
       // 仅合并真实连续格子移动，保留起终点；借机、起飞、撤离等事件打断该段。
-      let text = e.text.split('\n').filter((line) => !/d20\[|^伤害 /.test(line)).join('；');
+      let text = e.text.split('\n').filter((line) => !/d20\[|^伤害 /.test(line) && !REDUNDANT_EFFECT.test(line)).map(compactFactLine).join('；');
       if (e.kind === 'move' && e.move && e.participants?.length === 1) {
         let end = i;
         // 普通移动与技能位移各自成段：先走几步再冲锋时分开写。

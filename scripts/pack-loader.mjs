@@ -26,7 +26,7 @@ const OUT_PATH = resolve(root, distDir, 'tavern-battle-script.json');
 
 /** 固定脚本 id：版本更新后重复导入会被识别为同一脚本，避免越积越多 */
 const SCRIPT_ID = 'a4c1f7d2-9b3e-4f6a-8d15-2e7c9b40a613';
-const metadata = JSON.parse(readFileSync(resolve(root, 'release/script-metadata.json'), 'utf8'));
+const metadata = JSON.parse(readFileSync(resolve(root, 'release/legacy-script-metadata.json'), 'utf8'));
 const BTN_NAME = metadata.button?.buttons?.[0]?.name;
 if (typeof BTN_NAME !== 'string' || !BTN_NAME.trim()) throw Error('Missing script button name');
 
@@ -85,7 +85,7 @@ writeFileSync(OUT_PATH, JSON.stringify(script, null, 2));
 
 const hash = (path) => createHash('sha256').update(readFileSync(resolve(root, path))).digest('hex');
 const filesIn = (folder) => readdirSync(resolve(root, folder), { withFileTypes: true }).flatMap((entry) => entry.isDirectory() ? filesIn(folder + '/' + entry.name) : [folder + '/' + entry.name]);
-const inputPaths = [...filesIn('engine/src'), ...filesIn('panel/src'), ...filesIn('assets'), 'panel/index.html', 'panel/vite.config.ts', 'panel/controller.vite.config.ts', 'scripts/loader.template.js', 'scripts/pack-loader.mjs', 'scripts/build-worldbook.ts', 'package.json', 'package-lock.json', 'tsconfig.json', 'release/script-metadata.json'].sort();
+const inputPaths = [...filesIn('engine/src'), ...filesIn('panel/src'), ...filesIn('assets'), 'panel/index.html', 'panel/vite.config.ts', 'panel/controller.vite.config.ts', 'scripts/loader.template.js', 'scripts/pack-loader.mjs', 'scripts/build-worldbook.ts', 'package.json', 'package-lock.json', 'tsconfig.json', 'release/legacy-script-metadata.json'].sort();
 const inputs = inputPaths.map((path) => ({ path, sha256: hash(path) }));
 writeFileSync(resolve(root, distDir, 'release-manifest.json'), JSON.stringify({
     label: metadata.name, builtAt: new Date().toISOString(),

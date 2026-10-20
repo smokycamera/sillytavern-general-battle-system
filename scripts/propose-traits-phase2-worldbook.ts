@@ -84,5 +84,5 @@ ${GRADED_TRAITS.filter(id=>!P2_GRADED_TRAITS.includes(id)).map(id=>'- '+reg.get(
 
 可按上述1–8项分别决定采用、删减或调整。当前代码和验证文档不依赖把本清单写回世界书；此提案生成脚本只写本文件。
 `;
-writeFileSync('docs/worldbook-phase2-proposed-20261017.md',text);
+writeFileSync('docs/history/worldbook-phase2-proposed-20261017.md',text);
 console.log('已生成世界书拟改清单；未写入内置世界书、阅读版或dist');

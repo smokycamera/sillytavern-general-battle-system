@@ -1,6 +1,6 @@
 # 通用道具系统：形态 × 效果 × 等级、专精十级与原型推断（V15 items-v1，2026-10-12）
 
-基线：`0dbfcc5`（test）。方案：[通用道具系统方案](item-system-proposal-20261011.md)；世界书改写：[世界书改写草稿](item-system-worldbook-draft-20261011.md)。两者都已批准，世界书按要求另删去条目 1 give 行的“只入库，不自动换装”。
+基线：`0dbfcc5`（test）。方案：[通用道具系统方案](history/item-system-proposal-20261011.md)；世界书改写：[世界书改写草稿](history/item-system-worldbook-draft-20261011.md)。两者都已批准，世界书按要求另删去条目 1 give 行的“只入库，不自动换装”。
 
 新开的战斗使用 `v15-overflow-d20` / `v15-overflow-tw`，即在 V14 上加 `itemModel: 'items-v1'`。进行中的 V2–V14 战斗与读档仍按原规则结算。道具实物本身（效果、件数、佩戴）和正文写法不需要规则开关。
 

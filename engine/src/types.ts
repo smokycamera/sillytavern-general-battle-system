@@ -556,9 +556,15 @@ export type LogKind =
   | 'move'
   | 'round'
   | 'rule'
+  | 'objective'
   | 'battle-end';
 
 export interface BattleLogEntry {
+  /** 破障的实际结构变化；旧日志仍可按原有的结构耐久文本展示。 */
+  structure?: { cell: number; kind: import('./small/layers.js').StructureKind; level: number; hpBefore: number; hpAfter: number; hpMax: number; destroyed: boolean };
+  /** 占点状态与进度，只在实际变化时记录。 */
+  objective?: { cell: number; side?: Side; contested: boolean; progress: number; required: number };
+  gate?: { cell: number; state: 'open' | 'closed' };
   /** 已实际执行的道具使用；效果只记本次结算，不从道具说明或战后状态反推。 */
   itemUse?: { actorId: string; actorName: string; itemId: string; itemName: string; form: 'single' | 'charged'; consumed: number; effects: string[] };
   /** 持续伤害/坠落的实际损失与来源；普通攻击由resolution记录，不能重复累计。members是成员生命编队这次的减员数。 */

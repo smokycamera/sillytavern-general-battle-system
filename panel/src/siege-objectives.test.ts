@@ -31,12 +31,43 @@ it('攻方连续占满两个完整回合即获胜，读档保留进度，离开�
   expect(point).toBe(10); expect(b.battlefield!.objective).toMatchObject({ attackingSide: 'ally', rounds: 2 });
   b.byId('ally').pos = point + 7; b.moveTo('ally', point);
   round(b); expect(b.controlRounds.ally).toBe(0); round(b); expect(b.controlRounds.ally).toBe(1);
+  expect(b.log.filter(e => e.kind === 'objective').map(e => e.text)).toEqual([
+    '我方开始占领D2目标点，连续控制0/2轮', '我方控制D2目标点，连续控制1/2轮',
+  ]);
   b = SmallBattle.fromSnapshot(structuredClone(b.toSnapshot()));
   b.moveTo('ally', point + 1); b.moveTo('ally', point); expect(b.controlRounds.ally).toBe(0);
   round(b); expect(b.controlRounds.ally).toBe(0);
   round(b); expect(b.controlRounds.ally).toBe(1); expect(b.isOver()).toBe(false);
   round(b); expect(b.winner()).toBe('ally');
   expect(b.byId('enemy').hp).toBeGreaterThan(0); expect(b.log.at(-1)?.text).toContain('我方作为攻方占旗获胜');
+  const text = roundDigest(b);
+  expect(text).toContain('D2目标点失去占领，进度重置为0/2轮');
+  expect(text).toContain('我方控制D2目标点，连续控制2/2轮');
+});
+
+it.each([false, true])('占点争夺只记变化并随读档延续；分层攻城=%s按实际规则暂停或清零', layered => {
+  let b = battle(); const field = b.battlefield!, point = field.objective.cell;
+  if (layered) {
+    field.layerVersion = 1; field.structures = field.tiles.map(() => null);
+    field.objective = { kind: 'control', cell: point, cells: [point, point + 1], attackingSide: 'ally', rounds: 2, limit: 60 };
+  }
+  b.byId('ally').pos = point + 7; b.byId('enemy').pos = point + 3;
+  b.moveTo('ally', point); round(b); round(b);
+  expect(b.controlRounds.ally).toBe(1);
+  b.turnIndex = 1; b.byId('enemy').pos = point + 2; b.moveTo('enemy', point + 1);
+  const contest = b.log.filter(e => e.kind === 'objective').at(-1)!;
+  expect(contest.text).toContain(layered ? '发生争夺，暂停计时，我方连续控制1/2轮' : '发生争夺，占领中断，进度重置为0/2轮');
+  expect(b.controlRounds.ally).toBe(layered ? 1 : 0);
+  expect(b.visibleLog('ally')).toContainEqual(contest);
+  b = SmallBattle.fromSnapshot(structuredClone(b.toSnapshot()));
+  b.moveTo('enemy', point + 2);
+  expect(b.log.filter(e => e.kind === 'objective').at(-1)!.text).toContain('我方恢复控制D2目标点');
+  const count = b.log.filter(e => e.kind === 'objective').length;
+  b.moveTo('enemy', point + 3);
+  expect(b.log.filter(e => e.kind === 'objective')).toHaveLength(count);
+  b.turnIndex = 0; b.moveTo('ally', point + 7);
+  expect(b.controlRounds.ally).toBe(0);
+  expect(b.log.filter(e => e.kind === 'objective').at(-1)!.text).toContain('失去占领，进度重置为0/2轮');
 });
 it('攻守反转会镜像移动胜利点，守方占点不提前赢，守满期限获胜', () => {
   const b = battle(true, 'enemy'); expect(b.battlefield!.objective.cell).toBe(52);

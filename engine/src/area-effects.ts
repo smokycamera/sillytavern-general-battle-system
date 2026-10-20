@@ -10,7 +10,7 @@ import { formationNode, FORMATION_NODES } from './mass/formation.js';
 import { applyCombatDamage, applyRecovery, recoveryCapacity } from './recovery.js';
 import { armorTransmission, overmatchMultiplier } from './power-anchors.js';
 import { poisonFactor } from './afflictions.js';
-import { unitLineOfSight } from './small/spatial.js';
+import { unitLineOfSight, cellLabel, type BattlefieldSpec } from './small/spatial.js';
 import { unitHeight,eyeHeight } from './small/height-map.js';
 import { activeTraitIds } from './trait-sources.js';
 import { zoneAmount, zonePenetration, validateZoneStrength } from './zone-skills.js';
@@ -26,6 +26,11 @@ type Point = { x: number; y: number };
 type ZoneEffect = Extract<EffectOp, { op: 'zone' }>;
 export interface BattleZone extends Point { id: string; ownerId: string; itemEffectModel?: ItemProgressionModel; healingModel?: import('./healing.js').HealingModel; sourceMedicSnapshot?: number; sourceMedicModel?: typeof PROGRESSION_MODEL | typeof STACKING_MODEL; side: Combatant['side']; kind: ZoneEffect['kind']; power: number; amount?: number; penetration?: number; effects?: ZoneEffect['effects']; radius: number; remaining: number; createdRound: number; lastRound: number; affected: string[]; mode: 'small' | 'mass'; surface?:'ground'|'platform';height?:number }
 export const ZONE_NAMES = { fire: '燃烧区域', poison: '毒雾', smoke: '烟幕', healing: '治疗区域', trap: '陷阱' } as const;
+export function zoneEndText(zone: BattleZone, field?: BattlefieldSpec): string {
+  const node = zone.mode === 'mass' ? FORMATION_NODES.find(n => n.x === zone.x && n.y === zone.y) : undefined;
+  const place = field ? cellLabel(field, zone.y * field.width + zone.x) : node ? (node.side === 'ally' ? '我方' : '敌方') + node.wing + ({front:'前线',rear:'支援',reserve:'预备'})[node.rank] : '';
+  return `${place ? place + '的' : ''}${ZONE_NAMES[zone.kind]}消失`;
+}
 export const AREA_NAMES = { cone: '扇形', line: '直线', ring: '环形', chain: '连锁', circle: '圆形' } as const;
 export function areaPosition(context: ObservationContext, unit: Combatant): Point {
   const hostId = [...(context.attached ?? [])].find(([, id]) => id === unit.id)?.[0];
@@ -105,7 +110,7 @@ export function smokeBlocks(context: ObservationContext, from: Combatant, to: Co
 }
 export interface ZoneOutcome { target: Combatant; source?: Combatant; damage: number; text: string; control?: boolean }
 /** 同一区域每个单位每轮至多触发一次；离开再进入或读档不会重复触发。 */
-export function settleZones(context: ObservationContext, round: number, boundary=false, rng?: Rng): ZoneOutcome[] {
+export function settleZones(context: ObservationContext, round: number, boundary=false, rng?: Rng, onExpire?: (zone: BattleZone) => void): ZoneOutcome[] {
   const results:ZoneOutcome[]=[];
   for(const owner of context.units) {
     for(const zone of owner.battleZones??[]) {
@@ -166,6 +171,7 @@ export function settleZones(context: ObservationContext, round: number, boundary
         if(zone.kind==='trap'){zone.remaining=0;break;}
       }
       if(boundary && zone.createdRound<round)zone.remaining--;
+      if(zone.remaining<=0)onExpire?.(zone);
     }
     owner.battleZones=(owner.battleZones??[]).filter(z=>z.remaining>0);
     if(!owner.battleZones.length)delete owner.battleZones;

@@ -33,7 +33,7 @@ let loader = script.content.slice(script.content.indexOf("\n(function () {\n  'u
 loader = loader.slice(0, loader.indexOf('const PANEL_HTML = ')) + 'const PANEL_HTML = __PANEL_HTML__' + loader.slice(loader.indexOf("].join('');") + 10);
 loader = loader.replace('const BTN_NAME = "战阵面板"', 'const BTN_NAME = __BTN_NAME__');
 assert.equal(print(loader), print(read('scripts/loader.template.js').split('__CONTROLLER_JS__')[1]), 'Loader template');
-const baseline = JSON.parse(read('release/current-baseline.json'));
+const baseline = JSON.parse(read('release/baselines/user-20260918/metadata.json'));
 for (const item of baseline.outputs) assert.equal(createHash('sha256').update(fs.readFileSync(item.path)).digest('hex'), item.sha256, item.path);
 const result = { checkedAt: new Date().toISOString(), baseline: baseline.sourceSha256, modules: reports.map(r => ({ bundle: r.label, count: r.moduleCount, matched: r.entries.length })), helper: 'identical after TypeScript erasure', styles: 'identical', loader: 'identical', distribution: 'untouched', comparison: 'Parsed JavaScript with comments removed, literal spelling normalized, module IDs resolved; wrapper helper independently compared.' };
 fs.writeFileSync('artifacts/migration-m0/parity.json', JSON.stringify(result, null, 2) + '\n');
