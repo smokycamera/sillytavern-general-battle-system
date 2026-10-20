@@ -44,6 +44,30 @@ function mount(canView = (_record: NonNullable<InventorySave['storage']>[number]
 
 beforeEach(() => { document.body.innerHTML = ''; Element.prototype.scrollIntoView = vi.fn(); });
 
+it('一次性道具可预览改造和增加数量，确认前不写入，取消不改变库存', async () => {
+  const f = mount(); f.choose('a');
+  await f.action('edit', 'a-bag');
+  expect(document.querySelector('.inventory-editor h3')!.textContent).toBe('改造道具');
+  document.querySelector<HTMLInputElement>('[data-role="inventory-power"]')!.value = '5';
+  await f.action('preview-draft');
+  expect(document.querySelector('[data-role="inventory-preview"]'), document.querySelector('[data-role="inventory-feedback"]')?.textContent ?? '').not.toBeNull();
+  expect(f.save().inventory!.find(item => item.id === 'a-bag')!.mechanics).toMatchObject({ value: { recipe: { power: 3 } } });
+  await f.action('confirm');
+  const item = f.save().inventory!.find(item => item.id === 'a-bag')!;
+  expect(item).toMatchObject({ qty: 2, assignedTo: 'a', mechanics: { value: { recipe: { power: 5 } } } });
+  await f.action('add', 'a-bag');
+  document.querySelector<HTMLInputElement>('[data-role="inventory-qty"]')!.value = '3';
+  await f.action('preview-draft');
+  expect(document.querySelector('.inventory-preview')!.textContent).toContain('数量 2 → 5');
+  expect(item.qty).toBe(2);
+  await f.action('cancel'); await f.action('close-draft');
+  expect(f.save().inventory!.find(item => item.id === 'a-bag')!.qty).toBe(2);
+  await f.action('add', 'a-bag');
+  document.querySelector<HTMLInputElement>('[data-role="inventory-qty"]')!.value = '3';
+  await f.action('preview-draft'); await f.action('confirm');
+  expect(f.save().inventory!.find(item => item.id === 'a-bag')).toMatchObject({ qty: 5, assignedTo: 'a', mechanics: item.mechanics });
+});
+
 it('佩戴卡片展示短实效和升级收益；旧物更新先预览，提交后保留实物与历史', async () => {
   const f = mount(), name = '佩戴L1+2防御+1速度';
   const worn = createInventoryItem('worn', name, { kind: 'item', form: 'worn', power: 1, bonuses: { defense: 2, speed: 1 } }, 'worn');

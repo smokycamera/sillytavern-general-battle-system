@@ -90,7 +90,7 @@ describe('named reforge specifications and pre-deployment batches', () => {
     expect(parseProtocol(`<reforge id="${itemId}" name="明确名称" spec="旧前缀:步枪L4"/>`).events[0]).toMatchObject({ name: '明确名称' });
     expect(parseProtocol(`<reforge id="${itemId}" spec="步枪L4"/>`).events[0]).toMatchObject({ name: undefined });
   });
-  it.each(['步枪:胡编机制L4', '步枪:步枪L11', '步枪:步枪L4+11伤害', '步枪:步枪L4+1击退', '药:治疗L3', '步枪:步枪L4,剑L3', '步枪:'])('rejects invalid or ambiguous reforge %s', spec => {
+  it.each(['步枪:胡编机制L4', '步枪:步枪L11', '步枪:步枪L4+11伤害', '步枪:步枪L4+1击退', '步枪:步枪L4,剑L3', '步枪:'])('rejects invalid or ambiguous reforge %s', spec => {
     const parsed = parseProtocol(`<reforge id="${itemId}" spec="${spec}"/>`);
     expect(parsed.errors.length).toBeGreaterThan(0); expect(parsed.events).toEqual([]);
     expect(parsed.errors.join('')).not.toBe('reforge 字段或规格无法解析');

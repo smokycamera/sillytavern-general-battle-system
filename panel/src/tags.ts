@@ -6,7 +6,7 @@ import { CATEGORY_LABELS } from '../../engine/src/data/ability-blueprints.js';
 /**
  * AI 建议标签解析器（纯函数，无 DOM 依赖，可单测）。
  * 世界书「战阵·建议标签规范」的代码对应物：
- *   <give item="物品名" note="简述"/>
+ *   <add item="物品名" note="简述"/>
  *   <status target="角色名" id="中毒" dur="3"/>
  *   <xp amount="50" reason="原因"/>
  *   <deploy id="持久单位id"/>
@@ -40,7 +40,9 @@ export type Suggestion =
   | { kind: 'unit-set'; id: string; data: Record<string, unknown>; items?: SpawnItem[]; reason?: string; raw: string }
   | { kind: 'learn'; id: string; skills: SkillSpec[]; raw: string }
   | { kind: 'take'; id: string; qty: number; note?: string; raw: string }
-  | { kind: 'give'; id?: string; item: string; note?: string; qty: number; lootType: LootType; spec?: ItemSpecification; raw: string }
+  | { kind: 'add'; id: string; qty: number; note?: string; item?: undefined; spec?: undefined; lootType?: undefined; to?: undefined; raw: string }
+  | { kind: 'add'; id?: undefined; item: string; note?: string; qty: number; lootType: LootType; spec?: ItemSpecification; to?: string; raw: string }
+  | { kind: 'give'; id: string; to?: string[]; qty: number; note?: string; raw: string }
   | { kind: 'reforge'; id: string; name?: string; spec: ItemSpecification; raw: string }
   | { kind: 'bless'; id: string; name: string; traitIds: string[]; traitLevels?: Record<string, number>; duration: TraitDuration; raw: string }
   | { kind: 'affect'; id: string; name: string; conditionIds: string[]; duration: TraitDuration; raw: string }
@@ -132,7 +134,7 @@ export interface ParseResult {
   invalid: string[];
 }
 
-const TAG_RE = /<(learn|give|take|reforge|bless|unbless|affect|unaffect|status|xp|field|spawn|deploy|unit_update)\b([^>]*?)\/>/gi;
+const TAG_RE = /<(learn|give|take|add|reforge|bless|unbless|affect|unaffect|status|xp|field|spawn|deploy|unit_update)\b([^>]*?)\/>/gi;
 const ATTR_RE = /([a-zA-Z][a-zA-Z0-9_-]*)\s*=\s*"([^"]*)"/g;
 
 function parseAttrs(s: string): Record<string, string> {
@@ -469,21 +471,30 @@ export function parseSuggestionTags(text: string): ParseResult {
       }
       case 'reforge': {
         try {
-          if (!a.id?.trim() || !a.spec?.trim()) throw new Error('缺少装备引用或规格');
+          if (!a.id?.trim() || !a.spec?.trim()) throw new Error('缺少实物引用或规格');
           const spec = parseItemSpecification(a.spec, a);
-          if (spec.kind === 'item' && spec.form === 'single') throw new Error('一次性道具不能改造');
           suggestions.push({ kind: 'reforge', id: a.id.trim(), name: a.name?.trim() || splitItemSpecification(a.spec).name, spec, raw });
         } catch { invalid.push(raw); }
         break;
       }
-      case 'take': {
+      case 'take':
+      case 'give': {
         if (!a.id?.trim() || a.qty !== undefined && (!/^\d+$/.test(a.qty) || Number(a.qty) < 1 || !Number.isSafeInteger(Number(a.qty)))) { invalid.push(raw); break; }
-        suggestions.push({ kind: 'take', id: a.id.trim(), qty: Number(a.qty ?? 1), note: a.note, raw });
+        if (kind === 'give' && (a.item !== undefined || a.spec !== undefined || a.to !== undefined && !a.to.trim())) { invalid.push(raw); break; }
+        const transfer = { id: a.id.trim(), qty: Number(a.qty ?? 1), note: a.note, raw };
+        const recipients = [...new Set((a.to ?? '').split(/[,，、;；|｜\s]+/).filter(Boolean))];
+        suggestions.push(kind === 'give' ? { ...transfer, kind: 'give', ...(recipients.length ? { to: recipients } : {}) } : { ...transfer, kind: 'take' });
         break;
       }
-      case 'give': {
+      case 'add': {
+        if (a.qty !== undefined && (!/^\d+$/.test(a.qty) || Number(a.qty) < 1 || !Number.isSafeInteger(Number(a.qty)))) { invalid.push(raw); break; }
+        if (a.id !== undefined && a.item === undefined) {
+          if (!a.id.trim() || ['item', 'spec', 'to', 'type', 'body', 'quality', 'enchant', 'stabilized', 'protection'].some(key => a[key] !== undefined)) { invalid.push(raw); break; }
+          suggestions.push({ kind: 'add', id: a.id.trim(), qty: Number(a.qty ?? 1), note: a.note, raw });
+          break;
+        }
         const item = (a.item ?? '').trim();
-        if (!item) {
+        if (!item || a.to !== undefined && !a.to.trim() || a.id !== undefined && (!a.id.trim() || a.to !== undefined && a.id.trim() !== a.to.trim())) {
           invalid.push(raw);
           break;
         }
@@ -493,8 +504,8 @@ export function parseSuggestionTags(text: string): ParseResult {
         try { if (a.spec !== undefined) spec = parseItemSpecification(a.spec, a); }
         catch { invalid.push(raw); break; }
         suggestions.push({
-          kind: 'give', item, note: (a.note ?? '').trim() || undefined,
-          ...(a.id?.trim() ? { id: a.id.trim() } : {}),
+          kind: 'add', item, note: (a.note ?? '').trim() || undefined,
+          ...((a.to ?? a.id)?.trim() ? { to: (a.to ?? a.id)!.trim() } : {}),
           qty: clampInt(a.qty, 1, Number.MAX_SAFE_INTEGER, 1), lootType: spec ? spec.kind === 'shield' ? 'armor' : spec.kind : lootType,
           ...(spec ? { spec } : {}), raw,
         });

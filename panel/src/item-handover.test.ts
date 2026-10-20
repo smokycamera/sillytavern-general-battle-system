@@ -8,22 +8,22 @@ import { captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFr
 
 // 2026-10-12：正文自创的道具——写法容错、道具位置上的武器词条、写不出效果的单独略过、unit_set 的 items 交给单位、佩戴防护。
 const reg = traitRegistry();
-it('give 可按单位编号直接交付道具，兼容无引号属性；同批 items 不重复创建', () => {
-  const parsed = parseProtocol('<give id=u1 item=手雷 spec=物理范围投射L4 qty=3/>');
-  expect(parsed.errors).toEqual([]); expect(parsed.events[0]).toMatchObject({ kind: 'give', id: 'u1', qty: 3 });
-  const before = setup(), after = transact(before, '<give id="u1" item="手雷" spec="物理范围投射L4" qty="3"/><unit_set id="u1" items="手雷:物理范围投射L4×3"/><give id="u1" item="夜视镜" spec="夜战专精L5"/><give item="公共药水" spec="buff治疗L3"/>');
+it('add 可按单位编号直接交付道具，兼容无引号属性；同批 items 不重复创建', () => {
+  const parsed = parseProtocol('<add to=u1 item=手雷 spec=物理范围投射L4 qty=3/>');
+  expect(parsed.errors).toEqual([]); expect(parsed.events[0]).toMatchObject({ kind: 'add', to: 'u1', qty: 3 });
+  const before = setup(), after = transact(before, '<add to="u1" item="手雷" spec="物理范围投射L4" qty="3"/><unit_set id="u1" items="手雷:物理范围投射L4×3"/><add to="u1" item="夜视镜" spec="夜战专精L5"/><add item="公共药水" spec="buff治疗L3"/>');
   expect(after.inventory!.filter(i => i.name === '手雷')).toHaveLength(1);
   expect(carried(after, 'a')).toEqual([['手雷', 3, '-'], ['夜视镜', 1, 'gear']]);
   expect(after.inventory!.find(i => i.name === '公共药水')?.assignedTo).toBeUndefined();
   expect(materializeUnitRecord(after.storage!.find(r => r.id === 'a')!, reg).gear?.some(g => g.name === '夜视镜')).toBe(true);
-  expect(() => transact(before, '<give id="u999" item="错误收件道具" spec="buff治疗L3"/>')).toThrow(/档案.*缺失/);
+  expect(() => transact(before, '<add to="u999" item="错误收件道具" spec="buff治疗L3"/>')).toThrow(/档案.*缺失/);
   expect(before.inventory!.some(i => i.name === '错误收件道具')).toBe(false);
 });
-it('give 可引用同批 unit_set 新建的单位，spawn 自编编号仍不接受', () => {
-  const after = transact(setup(), '<give id="u9" item="手雷" spec="物理范围投射L4" qty="2"/><unit_set id="u9" name="新兵" side="ally" scale="hero"/>');
+it('add 可引用同批 unit_set 新建的单位，spawn 自编编号仍不接受', () => {
+  const after = transact(setup(), '<add to="u9" item="手雷" spec="物理范围投射L4" qty="2"/><unit_set id="u9" name="新兵" side="ally" scale="hero"/>');
   const created = after.storage!.find(r => r.name === '新兵')!;
   expect(after.inventory!.find(i => i.name === '手雷')).toMatchObject({ assignedTo: created.id, qty: 2 });
-  expect(parseProtocol('<spawn id="u9" name="新兵" side="ally" scale="hero"/><give id="u9" item="手雷" spec="物理范围投射L4"/>').errors.join()).toContain('spawn 自编的编号');
+  expect(parseProtocol('<spawn id="u9" name="新兵" side="ally" scale="hero"/><add to="u9" item="手雷" spec="物理范围投射L4"/>').errors.join()).toContain('spawn 自编的编号');
 });
 function unit(id: string, name: string, side: 'ally' | 'enemy' = 'ally', scale: 'hero' | 'company' = 'hero') {
   const generated = generateUnit({ name, side, scale, rulesVersion: 'v2', level: 4, traits: [], weaponClass: 'sword', weaponLevel: 3, armorTier: 1, armorLevel: 3,
@@ -77,28 +77,28 @@ describe('道具写法容错与武器词条', () => {
     expect(parseItemSpecification('一次性炸药L3')).toMatchObject({ kind: 'item', form: 'single', active: 'generic:physical-area:projectile' });
     expect(parseItemSpecification('爆破装置L5')).toMatchObject({ kind: 'weapon', mechanism: 'demolition' });
   });
-  it('give：要用 items 交出的、写爆破装置的按道具入库；其余写武器的仍是武器', () => {
-    const events = (text: string) => parseProtocol(`<tb>${text}</tb>`).events.filter((e) => e.kind === 'give').map((e) => e.kind === 'give' && [e.item, e.spec?.kind === 'item' ? e.spec.form + ':' + e.spec.active : e.spec?.kind]);
-    expect(events('<give item="炸药包" spec="爆破装置L4" qty="3"/>')).toEqual([['炸药包', 'single:generic:physical-area:projectile']]);
-    expect(events('<give item="霜之哀伤" spec="剑L7"/><give item="突击步枪" spec="步枪L5"/>')).toEqual([['霜之哀伤', 'weapon'], ['突击步枪', 'weapon']]);
-    expect(events('<give item="炸药包" type="weapon" spec="爆破装置L4"/><give item="工兵炸药" spec="爆破装置L4"/><unit_set id="u1" weapon="工兵炸药:爆破装置L4"/>')).toEqual([['炸药包', 'weapon'], ['工兵炸药', 'weapon']]);
-    expect(events('<give item="穿甲弹" spec="步枪L5" qty="5"/><unit_set id="u1" items="穿甲弹:步枪L5×5"/>')).toEqual([['穿甲弹', 'single:generic:physical-single:projectile']]);
-    expect(events('<give item="长剑" type="item" spec="剑L5"/><give item="药水" spec="buff治疗L3"/>')).toEqual([['药水', 'single:generic:buff:heal']]);
+  it('add：要用 items 交出的、写爆破装置的按道具入库；其余写武器的仍是武器', () => {
+    const events = (text: string) => parseProtocol(`<tb>${text}</tb>`).events.filter((e) => e.kind === 'add').map((e) => e.kind === 'add' && [e.item, e.spec?.kind === 'item' ? e.spec.form + ':' + e.spec.active : e.spec?.kind]);
+    expect(events('<add item="炸药包" spec="爆破装置L4" qty="3"/>')).toEqual([['炸药包', 'single:generic:physical-area:projectile']]);
+    expect(events('<add item="霜之哀伤" spec="剑L7"/><add item="突击步枪" spec="步枪L5"/>')).toEqual([['霜之哀伤', 'weapon'], ['突击步枪', 'weapon']]);
+    expect(events('<add item="炸药包" type="weapon" spec="爆破装置L4"/><add item="工兵炸药" spec="爆破装置L4"/><unit_set id="u1" weapon="工兵炸药:爆破装置L4"/>')).toEqual([['炸药包', 'weapon'], ['工兵炸药', 'weapon']]);
+    expect(events('<add item="穿甲弹" spec="步枪L5" qty="5"/><unit_set id="u1" items="穿甲弹:步枪L5×5"/>')).toEqual([['穿甲弹', 'single:generic:physical-single:projectile']]);
+    expect(events('<add item="长剑" type="item" spec="剑L5"/><add item="药水" spec="buff治疗L3"/>')).toEqual([['药水', 'single:generic:buff:heal']]);
   });
 });
 
 describe('写不出效果的道具单独略过', () => {
-  it('give 与 items 里写不出的一项略过并提示，其余事件照常；只剩写不出的道具时作为待补全', () => {
-    const parsed = parseProtocol('<tb><give item="冰风暴卷轴" spec="魔法范围寒冷L5"/><give item="药水" spec="buff治疗L3"/><unit_set id="u1" items="冰风暴卷轴:魔法范围寒冷L5,药水:buff治疗L3"/></tb>');
+  it('add 与 items 里写不出的一项略过并提示，其余事件照常；只剩写不出的道具时作为待补全', () => {
+    const parsed = parseProtocol('<tb><add item="冰风暴卷轴" spec="魔法范围寒冷L5"/><add item="药水" spec="buff治疗L3"/><unit_set id="u1" items="冰风暴卷轴:魔法范围寒冷L5,药水:buff治疗L3"/></tb>');
     expect(parsed.errors).toEqual([]);
-    expect(parsed.events.map((e) => e.kind)).toEqual(['give', 'unit-set']);
+    expect(parsed.events.map((e) => e.kind)).toEqual(['add', 'unit-set']);
     expect(parsed.warnings.slice(0, 2)).toEqual([expect.stringContaining('未采用道具「冰风暴卷轴」（未知道具效果「魔法范围寒冷」'), expect.stringContaining('u1：未采用道具「冰风暴卷轴:魔法范围寒冷L5」')]);
     expect(parsed.canonical).toContain('<unit_set id="u1" items="药水:增益治疗L3"/>');
-    const only = parseProtocol('<tb><give item="冰风暴卷轴" spec="魔法范围寒冷L5"/><unit_set id="u1" items="冰风暴卷轴:魔法范围寒冷L5"/></tb>');
+    const only = parseProtocol('<tb><add item="冰风暴卷轴" spec="魔法范围寒冷L5"/><unit_set id="u1" items="冰风暴卷轴:魔法范围寒冷L5"/></tb>');
     expect(only.events).toEqual([]); expect(only.errors).toEqual([expect.stringContaining('未采用道具「冰风暴卷轴」')]);
   });
   it('佩戴品无总点数上限，正文保留全部修正与合法特质，并可完成入库', () => {
-    const body = '<give item="陶瓷插板" spec="佩戴L5+8防御"/><give item="斗篷" spec="潜伏、林地专精L4"/><give item="手雷" spec="物理范围投射L4" qty="2"/>'
+    const body = '<add item="陶瓷插板" spec="佩戴L5+8防御"/><add item="斗篷" spec="潜伏、林地专精L4"/><add item="手雷" spec="物理范围投射L4" qty="2"/>'
       + '<unit_set id="u1" items="赤鳞护符:佩戴L5+4热能防护+4防御,手雷:物理范围投射L4×2"/>';
     const parsed = parseProtocol(`<tb>${body}</tb>`);
     expect(parsed.errors).toEqual([]);
@@ -112,15 +112,15 @@ describe('写不出效果的道具单独略过', () => {
     expect(parseItemSpecification('buff治疗L3+振奋')).toMatchObject({ form: 'single', active: skillMechanismId(parseSkillMechanism('buff治疗+振奋')!) });
   });
   it('识别可解析部分不留下什么都不改的 unit_set', () => {
-    expect(recoverProtocol('<tb><unit_set id="u1" items="冰风暴卷轴:魔法范围寒冷L5"/><give item="药水" spec="buff治疗L3"/></tb>').text).toBe('<tb>\n<give item="药水" spec="buff治疗L3"/>\n</tb>');
+    expect(recoverProtocol('<tb><unit_set id="u1" items="冰风暴卷轴:魔法范围寒冷L5"/><add item="药水" spec="buff治疗L3"/></tb>').text).toBe('<tb>\n<add item="药水" spec="buff治疗L3"/>\n</tb>');
   });
 });
 
 describe('unit_set 的 items 把道具交给单位', () => {
   it('2026-10-12 那条回复：九件道具交到两人手上，佩戴、充能装上，没有重复入库，冰风暴卷轴略过', () => {
-    const next = transact(setup(), '<give item="法力合剂" spec="充能buff回能L4" qty="1"/><give item="抗火护符" spec="佩戴热能防护L5+4" qty="1"/><give item="炽火魔杖" spec="充能魔法单体热能L5" qty="1"/>'
-      + '<give item="冰风暴卷轴" spec="魔法范围寒冷L5" qty="1"/><give item="石肤卷轴" spec="buff守护L5" qty="1"/><give item="沸血烈剂" spec="buff攻击L5+4" qty="1"/><give item="碎魔臂甲" spec="佩戴破甲L5" qty="1"/>'
-      + '<give item="爆裂火球石" spec="爆破装置L5" qty="1"/><give item="硫磺晶尘" spec="buff伤害L4" qty="1"/><give item="龙髓药油" spec="buff狂暴L5" qty="1"/>'
+    const next = transact(setup(), '<add item="法力合剂" spec="充能buff回能L4" qty="1"/><add item="抗火护符" spec="佩戴热能防护L5+4" qty="1"/><add item="炽火魔杖" spec="充能魔法单体热能L5" qty="1"/>'
+      + '<add item="冰风暴卷轴" spec="魔法范围寒冷L5" qty="1"/><add item="石肤卷轴" spec="buff守护L5" qty="1"/><add item="沸血烈剂" spec="buff攻击L5+4" qty="1"/><add item="碎魔臂甲" spec="佩戴破甲L5" qty="1"/>'
+      + '<add item="爆裂火球石" spec="爆破装置L5" qty="1"/><add item="硫磺晶尘" spec="buff伤害L4" qty="1"/><add item="龙髓药油" spec="buff狂暴L5" qty="1"/>'
       + '<unit_set id="u1" items="法力合剂:充能buff回能L4,抗火护符:佩戴热能防护L5+4,炽火魔杖:充能魔法单体热能L5,冰风暴卷轴:魔法范围寒冷L5,石肤卷轴:buff守护L5"/>'
       + '<unit_set id="u2" items="沸血烈剂:buff攻击L5+4,碎魔臂甲:佩戴破甲L5,爆裂火球石:爆破装置L5,硫磺晶尘:buff伤害L4,龙髓药油:buff狂暴L5"/>');
     expect(carried(next, 'a')).toEqual([['法力合剂', 1, 'gear'], ['抗火护符', 1, 'gear'], ['炽火魔杖', 1, 'gear'], ['石肤卷轴', 1, '-']]);
@@ -142,20 +142,20 @@ describe('unit_set 的 items 把道具交给单位', () => {
     expect(carried(save, 'b')).toEqual([['治疗药水', 1, '-'], ['治疗药水', 2, '-'], ['金币', 10, '-']]);
     expect(save.inventory!.some((i) => i.id === 'stash' && i.qty > 0 && !i.assignedTo)).toBe(false);
   });
-  it('编队一件即整卡配发；敌方不动我方原有库存；同一回复 give 的同名道具效果不同时各自入库', () => {
+  it('编队一件即整卡配发；敌方不动我方原有库存；同一回复 add 的同名道具效果不同时各自入库', () => {
     let save = setup([unit('a', '掷弹兵连', 'ally', 'company'), unit('b', '敌将', 'enemy')], [potion('stash', 3)]);
     save = transact(save, '<unit_set id="u1" items="夜视镜:夜战专精L5×30"/><unit_set id="u2" items="治疗药水:buff治疗L3"/>');
     expect(carried(save, 'a')).toEqual([['夜视镜', 1, 'gear']]);
     expect(notices(save)).toContain('掷弹兵连是编队，佩戴、充能道具一件就是整张单位卡的配发，「夜视镜」只交1件');
     expect(carried(save, 'b')).toEqual([['治疗药水', 1, '-']]);
     expect(save.inventory!.find((i) => i.id === 'stash')!.qty).toBe(3);
-    save = transact(save, '<give item="怒火药剂" spec="buff攻击L3"/><unit_set id="u2" items="怒火药剂:buff伤害L3"/>');
+    save = transact(save, '<add item="怒火药剂" spec="buff攻击L3"/><unit_set id="u2" items="怒火药剂:buff伤害L3"/>');
     expect(save.inventory!.filter((i) => i.name === '怒火药剂').map((i) => [i.assignedTo ?? '公共库存', i.mechanics?.kind === 'item' && i.mechanics.value.recipe.active]))
       .toEqual([['公共库存', 'generic:buff:attack'], ['b', 'generic:buff:empower']]);
-    expect(notices(save)).toContain('同一回复 give 的「怒火药剂」效果与交给敌将的不同，各自入库');
+    expect(notices(save)).toContain('同一回复 add 的「怒火药剂」效果与交给敌将的不同，各自入库');
   });
   it('unit_set 新建单位时带的道具交给新单位；只交道具的 unit_set 不改档案', () => {
-    const save = transact(setup(), '<give item="炽火魔杖" spec="充能魔法单体热能L5"/><unit_set id="u9" name="见习法师" side="ally" scale="hero" level="2" items="炽火魔杖:充能魔法单体热能L5,金币×5"/>');
+    const save = transact(setup(), '<add item="炽火魔杖" spec="充能魔法单体热能L5"/><unit_set id="u9" name="见习法师" side="ally" scale="hero" level="2" items="炽火魔杖:充能魔法单体热能L5,金币×5"/>');
     const apprentice = save.storage!.find((r) => r.name === '见习法师')!;
     expect(carried(save, apprentice.id)).toEqual([['炽火魔杖', 1, 'gear'], ['金币', 5, '-']]);
     expect(save.inventory!.filter((i) => i.name === '炽火魔杖')).toHaveLength(1);

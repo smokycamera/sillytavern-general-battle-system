@@ -21,7 +21,8 @@ const ATTRIBUTES: Record<string, readonly string[]> = {
   spawn: ['id', 'name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'speed', 'stabilized', 'protection', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits', 'items'],
   field: ['env', 'light', 'note'],
   take: ['id', 'qty', 'note'],
-  give: ['id', 'item', 'note', 'qty', 'type', 'spec', 'body', 'quality', 'enchant', 'stabilized', 'protection'],
+  add: ['id', 'to', 'item', 'note', 'qty', 'type', 'spec', 'body', 'quality', 'enchant', 'stabilized', 'protection'],
+  give: ['id', 'to', 'qty', 'note'],
   reforge: ['id', 'name', 'spec', 'body', 'quality', 'enchant', 'stabilized', 'protection'],
   bless: ['id', 'name', 'traits', 'rounds', 'battles', 'permanent'],
   unbless: ['id', 'source'],
@@ -60,10 +61,10 @@ function itemPlacements(tags: ProtocolTag[]): { handed: Set<string>; armed: Set<
 }
 const WEAPON_ONLY = ['quality', 'body', 'enchant', 'stabilized', 'protection'];
 /**
- * give 的 spec 是不是道具：type 写明道具；或者没写种类、没有武器专属属性、同一回复没把它当武器换上，
+ * add 的 spec 是不是道具：type 写明道具；或者没写种类、没有武器专属属性、同一回复没把它当武器换上，
  * 而且 unit_set 的 items 正把它交给单位，或者写的是用掉就没的爆炸物（爆破装置）。
  */
-function giveAsItem(attrs: Record<string, string>, handed: ReadonlySet<string>, armed: ReadonlySet<string>): boolean {
+function addAsItem(attrs: Record<string, string>, handed: ReadonlySet<string>, armed: ReadonlySet<string>): boolean {
   if (['item', 'consumable', 'accessory'].includes(attrs.type ?? '')) return true;
   const name = itemKey(attrs.item ?? '');
   if (attrs.type !== undefined || WEAPON_ONLY.some((key) => attrs[key] !== undefined) || armed.has(name)) return false;
@@ -180,9 +181,9 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
         }
         if (kept.length) attrs.items = kept.join(','); else delete attrs.items;
       }
-      if (tag.name === 'give' && attrs.spec !== undefined) {
+      if (tag.name === 'add' && attrs.id === undefined && attrs.spec !== undefined) {
         // 写不出效果的道具单独略过；要当道具用的武器词条换成对应道具。
-        const notes: string[] = [], consumable = giveAsItem(attrs, handed, armed);
+        const notes: string[] = [], consumable = addAsItem(attrs, handed, armed);
         try {
           const parsed = parseItemSpecification(attrs.spec, consumable ? { type: attrs.type } : attrs, notes, { item: consumable });
           const spec = parsed;
@@ -237,10 +238,12 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
   // spawn 写的 id 不作编号。同一回复再用它：出场是多余的（新单位自动上场），其余修改落不到新单位上。
   for (let i = events.length - 1; i >= 0 && spawnIds.size; i--) {
     const event = events[i]!;
-    if (!['deploy', 'unit-update', 'unit-set', 'learn', 'bless', 'affect', 'unbless', 'unaffect', 'give'].includes(event.kind) || !('id' in event) || !event.id || !spawnIds.has(normalizeHandle(event.id))) continue;
+    const targets = event.kind === 'give' ? event.to ?? [] : event.kind === 'add' ? event.to ? [event.to] : [] : 'id' in event && event.id ? [event.id] : [];
+    const unitId = targets.find(id => spawnIds.has(normalizeHandle(id)));
+    if (!['deploy', 'unit-update', 'unit-set', 'learn', 'bless', 'affect', 'unbless', 'unaffect', 'add', 'give'].includes(event.kind) || !unitId || !spawnIds.has(normalizeHandle(unitId))) continue;
     if (event.kind === 'deploy') { events.splice(i, 1); warnings.push(`已略过 deploy ${event.id}：这是本回复 spawn 自编的编号，新单位会自动上场`); }
     else {
-      const message = `${event.id} 是本回复 spawn 自编的编号，新单位的编号由插件分配；要设置新单位请写进 spawn，或在下一次回复按单位资料里的编号修改`;
+      const message = `${unitId} 是本回复 spawn 自编的编号，新单位的编号由插件分配；要设置新单位请写进 spawn，或在下一次回复按单位资料里的编号修改`;
       errors.push(message); issues.set(eventTags.get(event)!, message);
     }
   }
@@ -278,8 +281,8 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
 
 const repairProbes: Record<string, Record<string, string>> = {
   spawn: { name: '规格校验', side: 'ally', scale: 'hero' }, unit_set: { id: '校验' },
-  unit_update: { id: '校验', hp: '1' }, deploy: { id: '校验' }, take: { id: '校验' },
-  give: { item: '规格校验' }, reforge: { id: '校验', spec: '剑L1' }, field: { env: 'plains' },
+  unit_update: { id: '校验', hp: '1' }, deploy: { id: '校验' }, take: { id: '校验' }, add: { id: '校验' },
+  give: { id: '校验' }, reforge: { id: '校验', spec: '剑L1' }, field: { env: 'plains' },
   learn: { id: '校验', skills: '治疗L1' }, bless: { id: '校验', traits: '快速', battles: '1' },
   affect: { id: '校验', effects: '诅咒', battles: '1' }, unbless: { id: '校验', source: '校验' }, unaffect: { id: '校验', source: '校验' },
 };
@@ -329,10 +332,11 @@ export function recoverProtocol(text: string): { text: string; diagnostics: Prot
       try { Object.assign(attrs, normalizedAttributes({ ...tag, attrs: token.raw }, ATTRIBUTES[tag.name]!, [])); } catch { /* Diagnose each field below. */ }
     }
     const probe = { ...repairProbes[tag.name] }, retained: Record<string, string> = {};
+    if (tag.name === 'add' && attrs.item !== undefined) { delete probe.id; probe.item = '规格校验'; }
     if (tag.name === 'spawn' && attrs.scale === 'company') {
       probe.scale = 'company'; probe.hpMax = /^\d+$/.test(attrs.hpMax ?? '') && Number(attrs.hpMax) > 0 ? attrs.hpMax! : '1000000000';
     }
-    if (tag.name === 'give' && attrs.spec !== undefined) {
+    if (tag.name === 'add' && attrs.spec !== undefined) {
       try { parseItemSpecification(attrs.spec, { type: attrs.type }); probe.spec = attrs.spec; }
       catch { probe.spec = attrs.type === 'armor' ? '重甲L1' : '剑L1'; }
     }
@@ -466,14 +470,16 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     if (!integer('morale', 0, 1e9)) throw new Error('unit_update 士气必须是非负整数');
     if (attrs.state !== undefined && !['ready', 'dying', 'dead', 'routing', 'fled'].includes(attrs.state)) throw new Error('unit_update 状态须为ready/dying/dead/routing/fled');
   }
-  if (kind === 'reforge' && (!attrs.id?.trim() || !attrs.spec?.trim())) throw new Error('reforge 需要真实装备id与明确spec');
-  if ((kind === 'reforge' || kind === 'give') && attrs.spec !== undefined) {
+  if (kind === 'add' && attrs.id !== undefined && (!attrs.id.trim() || ['item', 'spec', 'to', 'type', 'body', 'quality', 'enchant', 'stabilized', 'protection'].some(key => attrs[key] !== undefined))) throw new Error('add 补数量只写实物id、qty和可选note；新增物品写item，可用to指定接收单位');
+  if (kind === 'reforge' && (!attrs.id?.trim() || !attrs.spec?.trim())) throw new Error('reforge 需要真实实物id与明确spec');
+  if ((kind === 'reforge' || kind === 'add') && attrs.spec !== undefined) {
     // 先保留具体错误原因，避免旧标签解析器将所有规格错误折叠成“无法解析”。
-    const spec = parseItemSpecification(attrs.spec, attrs, warnings);
-    if (kind === 'reforge' && spec.kind === 'item' && spec.form === 'single') throw new Error('一次性道具不能改造；可以take后重新give');
+    parseItemSpecification(attrs.spec, attrs, warnings);
   }
-  if (kind === 'give') {
-    if (attrs.id !== undefined && !attrs.id.trim()) throw new Error('give 的 id 需要填写接收单位的真实编号，入公共库存请省略 id');
+  if (kind === 'give' && !attrs.id?.trim()) throw new Error('give 转移已有物品，需要实物id；新增物品请用add');
+  if ((kind === 'give' || kind === 'add') && attrs.to !== undefined && !attrs.to.trim()) throw new Error(`${kind} 的 to 需要接收单位真实编号，入公共库存请省略to`);
+  if (kind === 'add' && attrs.to !== undefined && /[,，、;；|｜\s]/.test(attrs.to)) throw new Error('add 新增物品一次指定一个接收单位，多个单位请分写多条add');
+  if (kind === 'add') {
     if (attrs.type !== undefined && !['weapon', 'armor', 'item', 'consumable', 'accessory', 'material', 'quest', 'misc'].includes(attrs.type)) throw new Error('未知物品种类');
     if (attrs.spec === undefined && ['body', 'quality', 'enchant', 'stabilized', 'protection'].some((key) => attrs[key] !== undefined)) throw new Error('有效果的物品需要明确spec，不能只靠名称或附魔提示猜测');
   }

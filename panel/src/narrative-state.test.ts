@@ -240,7 +240,7 @@ describe('正文原子事务', () => {
     expect(save.storage![0]!.snapshot!.weapon).toEqual(unit.weapon);
   });
   it('正文装备按件建档，失败重试不重掷，未知物品保留叙事记录', () => {
-    const { save, proposal, ns } = setup('<give item="制式剑" type="weapon" spec="剑L4" qty="2"/><give item="急救剂" type="consumable" spec="治疗L3" qty="3"/><give item="未知遗物"/>');
+    const { save, proposal, ns } = setup('<add item="制式剑" type="weapon" spec="剑L4" qty="2"/><add item="急救剂" type="consumable" spec="治疗L3" qty="3"/><add item="未知遗物"/>');
     const next = prepareNarrativeTransaction(save, proposal, ns, true);
     const weapons = next.inventory!.filter((i) => i.mechanics?.kind === 'weapon');
     expect(weapons).toHaveLength(2); expect(new Set(weapons.map((i) => i.id)).size).toBe(2);
@@ -260,7 +260,7 @@ describe('正文原子事务', () => {
     expect(() => prepareNarrativeTransaction(next, proposal, ns)).toThrow();
   });
   it('错误部署不留下前面的补员/物品半批状态', () => {
-    const { save, proposal, ns } = setup('<unit_update id="a" hp="500"/><give item="药"/><deploy id="missing"/>');
+    const { save, proposal, ns } = setup('<unit_update id="a" hp="500"/><add item="药"/><deploy id="missing"/>');
     const before = structuredClone(save);
     expect(() => prepareNarrativeTransaction(save, proposal, ns, true)).toThrow(); expect(save).toEqual(before);
   });

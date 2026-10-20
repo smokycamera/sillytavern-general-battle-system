@@ -70,9 +70,10 @@ describe('升级与正文资料', () => {
     const legacy = '【实物清单】此处id用于reforge改造或take扣减，不能用单位id代替；give只入库，换装在面板完成。\n{{content}}';
     const settings = { sections: { items: { template: legacy } } };
     const text = formatPromptSection(settings, 'items', '物品数据');
-    expect(text).toContain('reforge 为改造已有物品'); expect(text).toContain('spec="剑L5+2伤害"');
-    expect(text).not.toMatch(/qty|面板完成/); expect(text).toContain('物品数据');
-    expect(renderPromptSettings(settings)).toContain('reforge 为改造已有物品');
+    expect(text).toContain('改造物品：reforge'); expect(text).toContain('spec="新规格"');
+    expect(text).toContain('新增物品：add'); expect(text).toContain('转移已有物品：give');
+    expect(text).not.toContain('面板完成'); expect(text).toContain('物品数据');
+    expect(renderPromptSettings(settings)).toContain('改造物品：reforge');
     expect(formatPromptSection({ sections: { items: { template: '自定义{{content}}' } } }, 'items', '清单')).toBe('自定义清单');
     expect(formatPromptSection({ sections: { items: { ...settings.sections.items, enabled: false } } }, 'items', '清单')).toBe('');
   });

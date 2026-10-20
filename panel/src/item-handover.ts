@@ -1,8 +1,8 @@
 /**
  * unit_set 的 items：把道具交给单位，只增不减（收回用 take）。每一项依次取：
- * 同一回复 give 的同名道具 → 单位身上原有的同名道具（已经够数就不再添）→ 我方库存里没主的同名道具 → 新建。
- * 写了效果的只拿效果相同的那件；同一回复 give 的同名道具效果不同时各自入库。佩戴、充能道具交出时装上，
- * 编队一件就是整张卡的配发。敌方与中立单位不动我方原有库存，只拿同一回复 give 的或新建。
+ * 同一回复 add 的同名道具 → 单位身上原有的同名道具（已经够数就不再添）→ 我方库存里没主的同名道具 → 新建。
+ * 写了效果的只拿效果相同的那件；同一回复 add 的同名道具效果不同时各自入库。佩戴、充能道具交出时装上，
+ * 编队一件就是整张卡的配发。敌方与中立单位不动我方原有库存，只拿同一回复 add 的或新建。
  */
 import { itemSpecText } from '../../engine/src/index.js';
 import { createInventoryItem, prepareInventoryState, type InventoryItem } from './inventory-state.js';
@@ -13,7 +13,7 @@ import type { NarrativeSave } from './narrative-state.js';
 export interface HandOver { unitId: string; items: SpawnItem[]; index: number }
 export interface HandOverContext {
   proposalId: string;
-  /** 同一回复 give 入库的实物编号。 */
+  /** 同一回复 add 入库的实物编号。 */
   given: ReadonlySet<string>;
   notices: string[];
 }
@@ -50,13 +50,13 @@ export function handOverItems(save: NarrativeSave, handovers: HandOver[], contex
         moved.add(target.id); need -= count;
         return count;
       };
-      // 1. 同一回复 give 的同名道具，就是要交给这个单位的那件。
+      // 1. 同一回复 add 的同名道具，就是要交给这个单位的那件。
       let fromGive = 0, mismatched = false;
       for (const item of inventory.filter((i) => context.given.has(i.id) && i.qty > 0 && !i.assignedTo && !i.equippedTo && itemKey(i.name) === key)) {
         if (!need) break;
         if (same(item)) fromGive += take(item); else mismatched = true;
       }
-      if (mismatched && !fromGive) context.notices.push(`同一回复 give 的「${entry.name}」效果与交给${record.name}的不同，各自入库`);
+      if (mismatched && !fromGive) context.notices.push(`同一回复 add 的「${entry.name}」效果与交给${record.name}的不同，各自入库`);
       // 2. 单位原本就带着的同名道具算在内：正文重复写同一份清单不会越加越多。
       const held = inventory.filter((i) => i.assignedTo === unitId && !moved.has(i.id) && !context.given.has(i.id) && same(i)).reduce((sum, i) => sum + i.qty, 0);
       need = Math.max(0, need - held);
