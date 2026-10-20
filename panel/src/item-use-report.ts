@@ -1,5 +1,6 @@
 import type { BattleLogEntry, Combatant } from '../../engine/src/types.js';
 import type { ItemUseLog } from '../../engine/src/item-use-log.js';
+import { compactEvents, compactFactLine } from '../../engine/src/inject/format.js';
 
 interface ItemRow extends Omit<ItemUseLog, 'consumed'> { uses: number; consumed?: number }
 
@@ -11,7 +12,8 @@ export function itemUseReport(units: Combatant[], log: BattleLogEntry[]): string
     if (!item) continue;
     const id = key(item.actorId, item.itemId), row = rows.get(id) ?? { ...item, uses: 0, consumed: 0, effects: [] };
     row.uses++; row.consumed = (row.consumed ?? 0) + item.consumed;
-    if (item.effects.length) row.effects.push(`第${event.round}轮：${item.effects.join('；')}`);
+    const effects = item.effects.flatMap(effect => effect.split('\n')).map(compactFactLine).filter(Boolean);
+    if (effects.length) row.effects.push(`第${event.round}轮：${effects.join('；')}`);
     rows.set(id, row);
   }
   for (const actor of units) for (const ability of actor.abilities) {
@@ -26,7 +28,7 @@ export function itemUseReport(units: Combatant[], log: BattleLogEntry[]): string
     const consumed = carried && typeof remaining === 'number' && Number.isSafeInteger(remaining) && remaining >= 0 && remaining <= carried.quantity
       ? carried.quantity - remaining : undefined;
     const effects = log.filter(event => !event.itemUse && event.kind === 'ability' && event.participants?.[0] === actor.id
-      && event.text.includes(`使用【${ability.name}】`)).map(event => `第${event.round}轮：${event.text}`);
+      && event.text.includes(`使用【${ability.name}】`)).flatMap(event => { const text = compactEvents([event]).join('；'); return text ? [`第${event.round}轮：${text}`] : []; });
     rows.set(rowId, { actorId: actor.id, actorName: actor.name, itemId: id,
       itemName: carried?.name ?? gear?.name ?? (ability.itemSourceId ? ability.name.replace(/^使用/, '') : ability.name),
       form: ability.itemSourceId ? 'single' : 'charged', uses: used,

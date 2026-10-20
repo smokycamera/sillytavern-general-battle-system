@@ -18,7 +18,7 @@ import { massCommandFeatures } from './command-features.js';
 import { validateGear, quickItemAction, itemUseAbility, itemEmergency, ITEM_EMERGENCY_DISCOUNT } from '../items.js';
 import { prepareItemModel, validateItemModel, itemsV15, chargeCapable, mobileUnit } from '../item-model.js';
 import { prepareTraitLevelModel, validateTraitLevelModel } from '../trait-level-model.js';
-import { areaTargets, zoneTarget, placeZone, settleZones, validateAreas, ZONE_NAMES } from '../area-effects.js';
+import { areaTargets, zoneTarget, placeZone, settleZones, validateAreas, ZONE_NAMES, zoneEndText, type BattleZone } from '../area-effects.js';
 import { tbWeaponShortName } from '../weapon-name.js';
 import { casualtyXp, initialXpStrength } from '../casualty-xp.js';
 import { roundDamage } from '../probability.js';
@@ -67,12 +67,13 @@ import { rollDice } from '../dice.js';
 import { isAirborne, sameLayer, hasFlightAbility, flightCapabilityReason, flightMaintenanceReason, aerialTargetReason, rangedTargetDistance, fallDamage, validateFlightState } from '../aerial.js';
 import { sharedParticipants, engagementWidth } from '../exposure.js';
 import { resolveAttack, isRangedCapable, recordAppliedDamage, applyResolutionDamage, beginPreviewScope, endPreviewScope, previewScopeEpoch } from '../damage.js';
-import { grantBarrier, decayBarrier, validateBarrier } from '../barrier.js';
+import { grantBarrier, validateBarrier } from '../barrier.js';
+import { expireRoundEffects } from '../effect-expiry.js';
 import { ConditionRegistry } from '../conditions.js';
 import { MASS_TW, counterMod, rulesById } from '../rules.js';
 import { traitRuntimeMods, getTrait, fieldModsFor, collectMods, resolveStack } from '../bonus.js';
 import { situationalTraitMods } from '../situational-traits.js';
-import { activeTraitIds, activeConditionIds, expireTraitSources, traitSourceActive } from '../trait-sources.js';
+import { activeTraitIds, activeConditionIds, traitSourceActive } from '../trait-sources.js';
 import { bracePose, formationMarchSteps, settleFatigue, fatigueAfter } from '../tactics.js';
 import { environmentTags, macroTerrain } from '../environment.js';
 import { traitRegistry as defaultTraitRegistry } from '../data/traits.js';
@@ -727,6 +728,11 @@ export class MassBattle {
         noteClue(this.intel, victim.side, { round: entry.round, victimId: victim.id, node: formationNode(this.effectiveUnit(victim)).id });
       }
     }
+    const depleted = new Set((entry.resolutions?.length ? entry.resolutions : entry.resolution ? [entry.resolution] : []).filter(r => r.barrierAbsorbed).map(r => r.defenderId));
+    for (const id of depleted) {
+      const unit = this.byId(id);
+      if (!unit.barrier) this.recordEvent({ round: this.round, kind: 'condition', participants: [id], text: `${unit.name} 屏障耗尽` });
+    }
     this.captureFeedback();
   }
   private feedbackUnits(): FeedbackUnit[] {
@@ -744,7 +750,9 @@ export class MassBattle {
   }
   private captureFeedback(): void { if (this.feedback) this.feedback.capture(this.pendingReport!.round, this.feedbackUnits()); }
   private finishPhase(phase: MassPhase): void {
-    for(const result of settleZones(this.observationContext(),this.round,phase==='重整',this.rng)) { breakCharmOnDamage(this.combatants,result.target,result.source,result.damage); if(result.control&&result.source)this.flightCauses.set(result.target.id,result.source.id); this.recordEvent({round:this.round,kind:'condition',participants:[result.target.id],text:result.text}); this.defeatUnit(result.target,result.source); }
+    const expired: BattleZone[] = [];
+    for(const result of settleZones(this.observationContext(),this.round,phase==='重整',this.rng, zone => expired.push(zone))) { breakCharmOnDamage(this.combatants,result.target,result.source,result.damage); if(result.control&&result.source)this.flightCauses.set(result.target.id,result.source.id); this.recordEvent({round:this.round,kind:'condition',participants:[result.target.id],text:result.text}); this.defeatUnit(result.target,result.source); }
+    for (const zone of expired) this.recordEvent({ round: this.round, kind: 'condition', participants: [zone.ownerId], text: zoneEndText(zone) });
     if (!this.feedback || !this.pendingReport) return;
     this.captureFeedback(); this.feedback.finishActivation();
     const summary = this.feedback.activation();
@@ -1542,7 +1550,11 @@ export class MassBattle {
         const skillArm = ability.weaponUse ? skillWeapon(actor, ability, formationDistance(actor, target)) : undefined;
         if (skillArm && isRangedWeapon(skillArm) && weaponReloadTurns(skillArm)) this.reloadCd.set(weaponReloadKey(actor, skillArm), weaponReloadTurns(skillArm) + 1);
         for (const effect of healingEffectGroups(ability)) {
-          if (effect.op === 'zone') { changes.push(()=>{ const zone = placeZone(this.observationContext(),this.byId(actor.id),target,effect,this.round,ability.id); itemLog?.effects.push(`布置${ZONE_NAMES[zone.kind]}，持续${zone.remaining}轮`); }); }
+          if (effect.op === 'zone') { changes.push(()=>{
+            const zone = placeZone(this.observationContext(),this.byId(actor.id),target,effect,this.round,ability.id);
+            const text = `在${nodeLabel(formationNode(target))}布置${ZONE_NAMES[zone.kind]}，持续${zone.remaining}轮`;
+            this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id], text: `${actor.name} 使用【${ability.name}】${text}` });
+          }); }
           else if (effect.op === 'damage') for (const affected of this.supportTargets(actor, ability, target, support)) {
             const result = this.resolveAttackWithEnvironment({ attacker: actor, defender: structuredClone(affected), rng: this.rng, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry,
               ...this.skillAttackOptions(support, actor, affected, ability, effect, charge && affected.id === target.id) });
@@ -1564,7 +1576,8 @@ export class MassBattle {
           });
           else if (effect.op === 'morale') for (const affected of this.supportTargets(actor, ability, target, support)) changes.push(() => {
             const unit = this.byId(affected.id), before = unit.morale;
-            changeMorale(unit, effect.amount); itemLog?.effects.push(`${unit.name} 士气 ${before}→${unit.morale}`);
+            changeMorale(unit, effect.amount);
+            this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id, unit.id], text: `${actor.name} 使用【${ability.name}】→${unit.name}，${unit.moraleLocked ? '满士气锁定，士气不变' : `士气${before}→${unit.morale}`}` });
           });
           else if (effect.op === 'condition') for (const affected of effect.shape === 'burst' ? this.supportTargets(actor, ability, target, support) : [target]) {
             const hit = hits.get(affected.id);
@@ -1606,7 +1619,13 @@ export class MassBattle {
               amount: (prior?.amount ?? 0) + amount, capped: !!prior?.capped || effect.maximum === 'training' });
           }
         }
-        changes.push(() => {for(const unit of born)unit.nonLethal=this.nonLethal;this.combatants.push(...born);if(born.length)itemLog?.effects.push(`调入预备 ${born.length} 个单位，下轮行动，不进入永久库存`);});
+        changes.push(() => {
+          for(const unit of born)unit.nonLethal=this.nonLethal;this.combatants.push(...born);
+          if (born.length) {
+            const text = '召唤 '+born.map(unit => `${unit.name}（${nodeLabel(formationNode(unit))}）`).join('、');
+            this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id, ...born.map(unit => unit.id)], text: `${actor.name} 使用【${ability.name}】${text}` });
+          }
+        });
         // 出手后后撤一个阵位，排在本技能效果之后。
         if (moveEffects(ability).after) { const back = this.skillWithdrawNode(actor, support); if (back) relocate(back, '后撤'); }
         exertion.set(actor.id, skillExertion(actor, ability) + (charge ? 1 : 0));
@@ -1696,9 +1715,12 @@ export class MassBattle {
         const firstWorks = u.entrenchedAt === undefined;
         if (fullRest && !entrenched(u) && !this.isAttached(u.id) && entrench(u, 'mass')) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 原地休整，${firstWorks ? '' : '重新'}构筑工事` });
         const regeneration = regenerationAmount(u, this.traitRegistry, this.conditionMap());
+        const beforeConditions = new Set(u.conditions.filter(c => c.dur > 0).map(c => c.id));
         for (const condition of u.conditions) if (condition.dur !== undefined && !ACTIVATION_CONTROLS.has(condition.id)) condition.dur--;
         finishControlActivation(u);
         u.conditions = u.conditions.filter((c) => c.dur === undefined || c.dur > 0);
+        const expired = [...beforeConditions].filter(id => !u.conditions.some(c => c.id === id && c.dur > 0)).map(id => this.conditions.get(id)?.name ?? id);
+        if (expired.length) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 状态结束：${expired.join('、')}` });
         if (['traits-levels-v2', 'traits-items-v1', 'traits-items-v2'].includes(this.rules.traitLevelModel ?? '') || u.status === 'ready' && regeneration > 0) {
           const restored = settleRegeneration(u, regeneration);
           if (restored) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 再生 +${restored} → ${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}${u.scale !== 'hero' ? `，剩余可救伤兵${u.recoverableWounded ?? 0}` : ''}` });
@@ -1718,7 +1740,10 @@ export class MassBattle {
       }
       for (const [id, left] of this.reloadCd) { if (left <= 1) this.reloadCd.delete(id); else this.reloadCd.set(id, left - 1); }
       this.previousOrders = new Map(plans.filter((p) => !['ability', 'takeoff', 'land'].includes(p.type)).map((p) => [p.unitId, p]));
-      for (const unit of this.combatants) { delete unit.chargeInterrupted; delete unit.chargeDistance; delete unit.looseChoiceLocked; delete unit.movedDuringActivation; expireTraitSources(unit, 'rounds'); decayBarrier(unit); }
+      for (const unit of this.combatants) {
+        delete unit.chargeInterrupted; delete unit.chargeDistance; delete unit.looseChoiceLocked; delete unit.movedDuringActivation;
+        for (const text of expireRoundEffects(unit)) this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], text });
+      }
       this.resolveFlightStates(); this.updateFrontControl(); this.finishPhase('重整');
       if (this.pendingReport && this.feedback) {
         this.pendingReport.total = this.feedback.rounds()[0]!;

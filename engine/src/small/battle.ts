@@ -26,9 +26,10 @@ import { killProbability } from '../fire-budget.js';
 import { validateGear, quickItemAction, itemUseAbility, itemEmergency, ITEM_EMERGENCY_DISCOUNT } from '../items.js';
 import { prepareItemModel, validateItemModel, itemsV15 } from '../item-model.js';
 import { prepareTraitLevelModel, validateTraitLevelModel } from '../trait-level-model.js';
-import { areaTargets, zoneTarget, placeZone, settleZones, validateAreas, ZONE_NAMES } from '../area-effects.js';
+import { areaTargets, zoneTarget, placeZone, settleZones, validateAreas, ZONE_NAMES, zoneEndText, type BattleZone } from '../area-effects.js';
 import { tbWeaponShortName } from '../weapon-name.js';
-import { grantBarrier, decayBarrier, validateBarrier } from '../barrier.js';
+import { grantBarrier, validateBarrier } from '../barrier.js';
+import { expireRoundEffects } from '../effect-expiry.js';
 import { casualtyXp, initialXpStrength } from '../casualty-xp.js';
 import { roundDamage } from '../probability.js';
 import { prepareCombatModel, healingYield } from '../combat-model.js';
@@ -72,7 +73,7 @@ import { LITE_D20, counterMod, rulesById } from '../rules.js';
 import { getTrait, hasFlag, fieldModsFor, collectMods, resolveStack } from '../bonus.js';
 import { situationalTraitMods } from '../situational-traits.js';
 import { BattleFeedback, type FeedbackUnit, type RoundFeedback } from '../battle-feedback.js';
-import { activeTraitIds, activeConditionIds, expireTraitSources, traitSourceActive } from '../trait-sources.js';
+import { activeTraitIds, activeConditionIds, traitSourceActive } from '../trait-sources.js';
 import { bracePose, movementPoints, settleFatigue, addTacticalEffort, validateTacticalEffort } from '../tactics.js';
 import { rangedTargetDistance, isAirborne, sameLayer, flightCapabilityReason, flightMaintenanceReason, fallDamage, validateFlightState } from '../aerial.js';
 import { environmentTags } from '../environment.js';
@@ -193,6 +194,7 @@ export class SmallBattle {
   private gridPathsMemo?: WeakMap<Combatant, Map<number, { paths: GridPath[]; byCell: Map<number, GridPath> }>>;
   controlRounds = { ally: 0, enemy: 0, neutral: 0 };
   controlHold?: { side: Side; sinceRound: number; lastCountedRound?: number };
+  private controlReport?: BattleLogEntry['objective'];
   objectiveWinner?: Side | 'draw';
   defeatedIds = new Set<string>();
   readonly combatants: Combatant[];
@@ -533,6 +535,11 @@ export class SmallBattle {
       const context = this.observationContext(), views = sideViews(context);
       this.log.push(observeEvent(context, entry, views));
       this.noteIntel(entry, views);
+    }
+    const depleted = new Set((entry.resolutions?.length ? entry.resolutions : entry.resolution ? [entry.resolution] : []).filter(r => r.barrierAbsorbed).map(r => r.defenderId));
+    for (const id of depleted) {
+      const unit = this.byId(id);
+      if (!unit.barrier) this.recordEvent({ round: this.round, kind: 'condition', participants: [id], text: `${unit.name} 屏障耗尽` });
     }
     this.captureFeedback();
   }
@@ -900,7 +907,9 @@ export class SmallBattle {
     if (weapon && (!ability || ability.damageBasis === 'weapon') && isRangedWeapon(weapon) && weaponReloadTurns(weapon)) this.reloadCd.set(weaponReloadKey(actor, weapon), weaponReloadTurns(weapon) + 1);
     const result = damageStructure(field, cell, preview.damage);
     revealUnit(this.observationContext(), actor); delete actor.tacticalPose;
-    this.recordEvent({ round: this.round, kind: ability ? 'ability' : 'attack', participants: [actorId], text: `${actor.name} ${ability ? '使用【' + ability.name + '】' : '破障'}→${cellLabel(field, cell)} ${label} L${target.level}：结构耐久 ${before}→${target.hp}${result.destroyed ? '，形成突破口' : ''}` });
+    this.recordEvent({ round: this.round, kind: ability ? 'ability' : 'attack', participants: [actorId],
+      structure: { cell, kind: target.kind, level: target.level, hpBefore: before, hpAfter: target.hp, hpMax: target.hpMax, destroyed: result.destroyed },
+      text: `${actor.name} ${ability ? '使用【' + ability.name + '】' : '破障'}→${cellLabel(field, cell)} ${label} L${target.level}：结构耐久 ${before}→${target.hp}${result.destroyed ? '，形成突破口' : ''}` });
     this.resolveGroundStates(actor);
     revealContacts(this.observationContext()); this.checkGridObjective(false);
   }
@@ -923,7 +932,7 @@ export class SmallBattle {
     const field = this.battlefield!, door = intactStructure(field, cell)!, actor = this.byId(actorId);
     door.gateState = door.gateState === 'open' ? 'closed' : 'open'; door.owner = actor.side;
     field.terrainRevision = (field.terrainRevision ?? 0) + 1; this.spendAction(actorId);
-    this.recordEvent({ round: this.round, kind: 'move', participants: [actorId], text: `${actor.name} ${door.gateState === 'open' ? '打开' : '关闭'} ${cellLabel(field, cell)}门，消耗主行动` });
+    this.recordEvent({ round: this.round, kind: 'move', participants: [actorId], gate: { cell, state: door.gateState }, text: `${actor.name} ${door.gateState === 'open' ? '打开' : '关闭'} ${cellLabel(field, cell)}门，消耗主行动` });
     revealContacts(this.observationContext());
   }
   climbMovementCost(actorId: string): number { return Math.min(2, this.movementBudget(actorId)); }
@@ -1004,6 +1013,20 @@ export class SmallBattle {
     }
   }
 
+  private recordControlObjective(next: NonNullable<BattleLogEntry['objective']>): void {
+    const previous = this.controlReport;
+    this.controlReport = next;
+    if (previous && previous.cell === next.cell && previous.side === next.side && previous.contested === next.contested && previous.progress === next.progress && previous.required === next.required) return;
+    if (!previous && !next.side && !next.contested && !next.progress) return;
+    const point = cellLabel(this.battlefield!, next.cell) + '目标点';
+    const side = next.side === 'ally' ? '我方' : next.side === 'enemy' ? '敌方' : '第三方';
+    const progress = `连续控制${next.progress}/${next.required}轮`;
+    const text = next.contested ? `${point}发生争夺，${next.side ? '暂停计时，' + side + progress : '占领中断，进度重置为0/' + next.required + '轮'}`
+      : next.side ? `${side}${previous?.contested ? '恢复控制' : previous?.side === next.side ? '控制' : '开始占领'}${point}，${progress}`
+      : `${point}失去占领，进度重置为0/${next.required}轮`;
+    this.recordEvent({ round: this.round, kind: 'objective', objective: next, text });
+  }
+
   private checkGridObjective(roundEnd: boolean): void {
     const goal = this.battlefield?.objective; if (!goal || this.objectiveWinner) return;
     if (goal.kind === 'escape') {
@@ -1023,6 +1046,7 @@ export class SmallBattle {
           if (this.controlRounds[attacker] >= goal.rounds) this.objectiveWinner = attacker;
         }
       }
+      this.recordControlObjective({ cell: goal.cell, side: hasAttacker ? attacker : undefined, contested: hasAttacker && contested, progress: this.controlRounds[attacker], required: goal.rounds });
     } else if (goal.kind === 'control') {
       const cells = goal.cells ?? [goal.cell];
       const eligible = this.combatants.filter(u=>u.status==='ready'&&!isAirborne(u)&&!isElevated(u)&&!u.conditions.some(c=>c.dur>0&&this.conditions.get(c.id)?.skipTurn));
@@ -1041,6 +1065,8 @@ export class SmallBattle {
           if (this.controlRounds[owner] >= goal.rounds) this.objectiveWinner = owner;
         }
       }
+      this.recordControlObjective({ cell: goal.cell, side: owner, contested: occupants.length > 0 && sides.size > 1
+        && (!goal.attackingSide || occupants.some(u => u.side === goal.attackingSide)), progress: owner ? this.controlRounds[owner] : 0, required: goal.rounds });
     }
     if (roundEnd && this.round >= goal.limit && !this.objectiveWinner) this.objectiveWinner = goal.kind === 'control' && goal.attackingSide
       ? goal.attackingSide === 'ally' ? 'enemy' : 'ally' : 'draw';
@@ -1840,7 +1866,7 @@ export class SmallBattle {
     for (const eff of interrupted || movementOnly ? [] : ability.effects) {
       switch (eff.op) {
         case 'move': break;
-        case 'zone': { if (chosenTarget) { placeZone(this.observationContext(),actor,chosenTarget,eff,this.round,ability.id); logBits.push('布置'+ZONE_NAMES[eff.kind]+'，持续'+eff.dur+'轮'); } break; }
+        case 'zone': { if (chosenTarget) { placeZone(this.observationContext(),actor,chosenTarget,eff,this.round,ability.id); logBits.push((this.battlefield ? '在'+reportPlaceLabel(this.battlefield,chosenTarget.pos!,chosenTarget) : '')+'布置'+ZONE_NAMES[eff.kind]+'，持续'+eff.dur+'轮'); } break; }
         case 'barrier': {
           for (const target of effectTargets(ability.shape === 'burst')) { grantBarrier(target, eff.amount, eff.dur, actor.id, eff.defensePower ?? ability.power); logBits.push(`${target.name} 获得屏障，可吸收${target.barrier?.remaining ?? 0}点伤害，持续${eff.dur}轮`); }
           break;
@@ -1968,9 +1994,11 @@ export class SmallBattle {
         }
         case 'summon': {
           if (actor.rulesVersion === 'v2') {
-            if (!summonsSubmitted) { for(const unit of summons)unit.nonLethal=this.nonLethal; this.combatants.push(...summons); }
+            if (!summonsSubmitted) {
+              for(const unit of summons)unit.nonLethal=this.nonLethal; this.combatants.push(...summons);
+              logBits.push('召唤 '+summons.map(unit => `${unit.name}（${reportPlaceLabel(this.battlefield!,unit.pos!,unit)}）`).join('、'));
+            }
             summonsSubmitted = true;
-            logBits.push(`调入预备 ${summons.length} 个单位，下轮行动，不进入永久库存`);
             break;
           }
           // 召唤落地：面板注入的 summonUnit 回调生成单位并加入战斗。
@@ -2041,7 +2069,7 @@ export class SmallBattle {
     this.advanceToNextActor();
     while (this.turnIndex >= this.turnOrder.length && !this.isOver()) {
       this.settleAreaEffects(true); this.checkGridObjective(true);
-      for (const unit of this.combatants) { expireTraitSources(unit, 'rounds'); decayBarrier(unit); }
+      for (const unit of this.combatants) for (const text of expireRoundEffects(unit)) this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], text });
       this.resolveFlightStates();
       this.captureFeedback();
       if (this.objectiveWinner) return;
@@ -3137,17 +3165,17 @@ export class SmallBattle {
     const firstWorks = u.entrenchedAt === undefined;
     if (fullRest && !entrenched(u) && entrench(u, 'small')) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 原地休整，${firstWorks ? '' : '重新'}构筑工事` });
     if (u.suppression) u.suppression = Math.max(0, u.suppression - 1);
-    const expired: string[] = [];
+    const beforeConditions = new Set(u.conditions.filter(c => c.dur > 0).map(c => c.id));
     for (const c of [...u.conditions]) {
       if (ACTIVATION_CONTROLS.has(c.id)) continue;
       if (c.skipNextDecay) { delete c.skipNextDecay; continue; }
       c.dur -= 1;
       if (c.dur <= 0) {
         u.conditions = u.conditions.filter((x) => x !== c);
-        expired.push(this.conditions.get(c.id)?.name ?? c.id);
       }
     }
     finishControlActivation(u);
+    const expired = [...beforeConditions].filter(id => !u.conditions.some(c => c.id === id && c.dur > 0)).map(id => this.conditions.get(id)?.name ?? id);
     if (expired.length) {
       this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 状态结束：${expired.join('、')}` });
     }
@@ -3162,12 +3190,14 @@ export class SmallBattle {
   /** 死亡与经验入账 */
   private settleAreaEffects(boundary=false): void {
     this.resolveGroundStates();
-    for (const result of settleZones(this.observationContext(),this.round,boundary,this.rng)) {
+    const expired: BattleZone[] = [];
+    for (const result of settleZones(this.observationContext(),this.round,boundary,this.rng, zone => expired.push(zone))) {
       breakCharmOnDamage(this.combatants, result.target, result.source, result.damage);
       if(result.control&&result.source)this.flightCauses.set(result.target.id,result.source.id);
       this.recordEvent({round:this.round,kind:'condition',participants:[result.target.id,...(result.source?[result.source.id]:[])],text:result.text});
       this.checkDeath(result.target,result.source); this.checkInjury(result.target,result.damage);
     }
+    for (const zone of expired) this.recordEvent({ round: this.round, kind: 'condition', participants: [zone.ownerId], text: zoneEndText(zone, this.battlefield) });
   }
   private checkDeath(unit: Combatant, killer?: Combatant): void {
     if(this.rules.resolutionVersion==='v2') {
@@ -3384,6 +3414,8 @@ export class SmallBattle {
     b.movementSpent = new Map(snap.movementSpent ?? []); b.reactionSpent = new Set(snap.reactionSpent ?? []);
     b.overwatch = new Set(snap.overwatch ?? []); b.controlRounds = { ally: 0, enemy: 0, neutral: 0, ...snap.controlRounds };
     b.objectiveWinner = snap.objectiveWinner; b.controlHold = snap.controlHold ? { ...snap.controlHold } : undefined;
+    b.controlReport = (snap.log as BattleLogEntry[] | undefined)?.filter(e => e.objective).at(-1)?.objective
+      ?? (b.battlefield?.objective.kind === 'control' && b.controlHold ? { cell: b.battlefield.objective.cell, side: b.controlHold.side, contested: false, progress: b.controlRounds[b.controlHold.side], required: b.battlefield.objective.rounds } : undefined);
     b.defeatedIds = new Set(snap.defeatedIds ?? []);
     b.turnOrder = snap.turnOrder ?? b.turnOrder;
     b.turnIndex = snap.turnIndex ?? 0;

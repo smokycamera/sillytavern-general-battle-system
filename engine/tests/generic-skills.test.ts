@@ -5,6 +5,7 @@ import { generateUnit, traitRegistry, SmallBattle, MassBattle, standardField, V2
 import { parseProtocol } from '../../panel/src/protocol.js';
 import { parseAbilitySpec } from '../../panel/src/tags.js';
 import { materializeUnitRecord, unitRecordFromCombatant, commitBattleOutcome } from '../../panel/src/unit-state.js';
+import { compactEvents } from '../src/inject/format.js';
 const registry = traitRegistry();
 const specs = (text: string) => parseAbilitySpec(text).map((s) => ({ id: s.blueprintId, name: s.name, level: s.level }));
 function unit(id: string, side: 'ally' | 'enemy', skills = '', input: Partial<GenerateInput> = {}) {
@@ -148,6 +149,9 @@ describe('通用六类技能配方', () => {
       const summoned = b.combatants.filter((u) => u.summonerId === 'a');
       expect(summoned).toHaveLength(1); expect(summoned[0]!.level).toBe(7); expect(summoned[0]!.bornRound).toBe(1);
       expect(a.resources.SP).toBe(beforeSP - a.abilities[0]!.cost!.amount);
+      const report = compactEvents(b.log).join('\n');
+      expect(report).toContain('召唤 ' + summoned[0]!.name + '（');
+      expect(report).not.toMatch(/调入预备|下轮开始行动|下轮行动|不进入永久库存/);
     }
   });
 });
