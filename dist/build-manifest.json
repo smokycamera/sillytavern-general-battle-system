@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "2.7.0",
-  "builtAt": "2026-10-20T14:28:22.716Z",
-  "sourceFingerprint": "4034998b53bcbc4eb9dceb9d5fe1fe164b034426be3323da348fa99e69aa8818",
+  "builtAt": "2026-10-20T14:41:50.108Z",
+  "sourceFingerprint": "aa266fb30973f9a67d23bbc6098faae849a8e69aa6a84025f1d5126062612a36",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -11,14 +11,14 @@
       "sha256": "29ecf3e6233e4d9abd64b009985079574db4a000c56e3f1aa8964e4994bae412"
     },
     {
-      "path": "dist/assets/panel-Dw-VYlpp.js",
+      "path": "dist/assets/panel-j2CuQ0TL.js",
       "bytes": 1411170,
-      "sha256": "5c96ca8e24fd8adf428dcc62efbea3aabc0ce0114820a0e874f8e977b6848be2"
+      "sha256": "520bf6bd17037e39b60372f8b122b00290f36eb8a660d939b3af16654a91de10"
     },
     {
-      "path": "dist/assets/preferences-9VvrHid0.js",
-      "bytes": 971101,
-      "sha256": "a9731dcb0d98ad6682d9acfdae86ddccdc37dd2410d04e03e7b5cea26a47e7b0"
+      "path": "dist/assets/preferences-t4iY29sD.js",
+      "bytes": 971333,
+      "sha256": "3e93c1c8f3e2840ec8b5d972b3ef8f32a7f3600c3c1012a51e7c21224828b80d"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -57,8 +57,8 @@
     },
     {
       "path": "docs/current-release.md",
-      "bytes": 8968,
-      "sha256": "5ccb7e547ef0cfe6ec11c2a10a96a8587674a32d935cddc738b8d785bf0250cc"
+      "bytes": 9142,
+      "sha256": "deb66bfb41a892ae62eed17e500a7c4aa8e3611b758bbf9da4f569fceea211d3"
     },
     {
       "path": "docs/embedded-worldbook.md",
@@ -158,7 +158,7 @@
     {
       "path": "dist/index.js",
       "bytes": 96948,
-      "sha256": "7a83eb662c92b15971fce58e067059515a549391324747cc409efb3aacfcb27f"
+      "sha256": "21662f17d979baac643550eb14b4bd079331fe37bac2dca3f554364b31693dc4"
     },
     {
       "path": "LICENSE",
@@ -233,7 +233,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 46806,
-      "sha256": "d6c61c44acb733f6f0534caee462e60af8198841fdff8eaa044d2c4bfde65d40"
+      "sha256": "4e5bcc30a2dae989023277ef51f1baeb3fce866b21cb097d86f8315ce55a5a82"
     },
     {
       "path": "README.md",
