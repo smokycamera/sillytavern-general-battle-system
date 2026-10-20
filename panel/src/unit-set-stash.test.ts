@@ -41,7 +41,7 @@ describe('unit_set 换装与库存同一件实物', () => {
     const upgraded = transact(stored, '<unit_set id="u1" weapon="霜之哀伤:剑L8"/>');
     expect(named(upgraded, '霜之哀伤')).toHaveLength(1);
     expect(weaponOf(upgraded)).toMatchObject({ id, mechanics: { value: { recipe: { power: 8 } } } });
-    expect(weaponOf(upgraded).history).toHaveLength(1);
+    expect(weaponOf(upgraded).history).toBeUndefined();
   });
   it('give 两把只换上一把，另一把留在库存', () => {
     const next = transact(setup(), '<give item="霜之哀伤" spec="剑L7" qty="2"/><unit_set id="u1" weapon="霜之哀伤:剑L7"/>');

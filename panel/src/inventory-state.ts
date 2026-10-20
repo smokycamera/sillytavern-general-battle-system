@@ -11,6 +11,7 @@ import { calibrateWeaponRange, compileItem, isArmsV2, equipmentReason, healingAm
   type Combatant, type EquipmentSlot, type ItemMechanics, type ItemSpecification } from '../../engine/src/index.js';
 import { unitRecordFromCombatant, updateUnitRecord, type UnitRecord } from './unit-state.js';
 import { prepareNarrativeIds, type NarrativeIdState } from './narrative-ids.js';
+import { compactSaveHistory, operationFingerprint } from './save-history.js';
 
 export interface InventoryItem {
   id: string; name: string; qty: number; lootType: string; note?: string; assignedTo?: string;
@@ -18,6 +19,7 @@ export interface InventoryItem {
   equippedTo?: { unitId: string; slot: EquipmentSlot };
   sourceItemId?: string;
   revision?: number;
+  /** @deprecated 旧档兼容字段，后续存档移除。 */
   history?: { revision: number; name: string; mechanics: ItemMechanics; sourceId: string }[];
 }
 export interface InventorySave {
@@ -52,8 +54,7 @@ const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v ===
 
 /** 旧版药剂与护符（V15 之前）一次性换成新道具：效果按对照表、等级与名称不变，装在配件栏的改为已佩戴。幂等。 */
 export function migrateLegacyInventory(items: InventoryItem[] | undefined): InventoryItem[] | undefined {
-  if (!items?.some((item) => isLegacyItemMechanics(item.mechanics as { kind?: unknown } | undefined) || ['accessory1', 'accessory2'].includes(String(item.equippedTo?.slot))
-    || item.history?.some((h) => isLegacyItemMechanics(h.mechanics as { kind?: unknown } | undefined)))) return items;
+  if (!items?.some((item) => item.history !== undefined || isLegacyItemMechanics(item.mechanics as { kind?: unknown } | undefined) || ['accessory1', 'accessory2'].includes(String(item.equippedTo?.slot)))) return items;
   return items.map((source) => {
     const item = clone(source);
     if (isLegacyItemMechanics(item.mechanics as { kind?: unknown } | undefined)) {
@@ -61,11 +62,7 @@ export function migrateLegacyInventory(items: InventoryItem[] | undefined): Inve
       item.lootType = 'item';
     }
     if (item.equippedTo && ['accessory1', 'accessory2'].includes(String(item.equippedTo.slot))) item.equippedTo = { unitId: item.equippedTo.unitId, slot: 'gear' };
-    if (item.history) item.history = item.history.map((entry) => {
-      if (!isLegacyItemMechanics(entry.mechanics as { kind?: unknown } | undefined)) return entry;
-      try { return { ...entry, mechanics: migrateLegacyItem(entry.mechanics as unknown as LegacyItemMechanics, entry.name, item.id) }; }
-      catch { return entry; }
-    });
+    delete item.history;
     return item;
   });
 }
@@ -122,7 +119,6 @@ export function validateInventoryItem(value: unknown): asserts value is Inventor
   }
   if (value.equippedTo !== undefined && (!object(value.equippedTo) || typeof value.equippedTo.unitId !== 'string'
     || !slots.includes(value.equippedTo.slot as EquipmentSlot) || value.qty !== 1)) throw new Error('装备槽位损坏');
-  if (value.history !== undefined && (!Array.isArray(value.history) || value.history.some((h) => !object(h) || typeof h.name !== 'string' || typeof h.sourceId !== 'string' || !Number.isInteger(h.revision)))) throw new Error('物品改造记录损坏');
 }
 function fingerprint(value: unknown): string {
   if (value === undefined) return 'undefined';
@@ -155,7 +151,7 @@ export function fitsEquipmentSlot(mechanics: ItemMechanics, slot: EquipmentSlot)
 /** 首次接入只登记已有V2精确实例，绝不按名称生成或重掷旧装备。 */
 export function prepareInventoryState(save: InventorySave, adoptExisting = true): InventorySave {
   if (save.classMigration !== undefined && save.classMigration !== 'arms-v2') throw Error('武器类别更新标记损坏');
-  const next = clone(prepareNarrativeIds(save));
+  const next = clone(prepareNarrativeIds(compactSaveHistory(save)));
   calibrateSavedWeaponRanges(next);
   next.inventory = migrateLegacyInventory(next.inventory) ?? []; next.storage ??= [];
   migrateBattleCarriedItems(next);
@@ -268,8 +264,8 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
   const key = fingerprint(action);
   const committed = save.inventoryOperations?.find((event) => event.id === id);
   if (committed) {
-    if (committed.fingerprint !== key) throw new Error('重复操作身份对应不同内容');
-    return clone(save);
+    if (committed.fingerprint !== key && committed.fingerprint !== operationFingerprint(key)) throw new Error('重复操作身份对应不同内容');
+    return clone(compactSaveHistory(save));
   }
   if (expectedRevision !== (save.factRevision ?? 0)) throw new Error('物品操作已过期，请按最新状态重新预览');
   requireOutOfBattle(save);
@@ -325,8 +321,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       else { item.qty--; inventory.push(defined); }
     } else if (action.kind === 'upgrade-budget') {
       if (item.mechanics?.kind !== 'item') throw Error('这件物品没有可升级的道具数值');
-      const previous = clone(item.mechanics), value = item.mechanics.value.recipe.form === 'worn' ? upgradeWornItemBudget(item.mechanics.value) : upgradeRecoveryItemBudget(item.mechanics.value);
-      item.history = [...(item.history ?? []), { revision: item.revision ?? 1, name: item.name, mechanics: previous, sourceId: id }];
+      const value = item.mechanics.value.recipe.form === 'worn' ? upgradeWornItemBudget(item.mechanics.value) : upgradeRecoveryItemBudget(item.mechanics.value);
       item.mechanics = { kind: 'item', value }; item.revision = (item.revision ?? 1) + 1;
       if (item.equippedTo) {
         const record = recordById(next, item.equippedTo.unitId);
@@ -351,7 +346,6 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
         if (spec.kind === 'weapon' && spec.enchantment === undefined) spec.enchantment = oldRecipe?.enchantment ?? 'none';
         compiled = compileItem(spec, { id: item.id, name, seed: oldRecipe?.seed ?? `reforge:${id}`, damageModel:'wounds-v2', noVariance: oldRecipe?.noVariance, variance: oldRecipe?.variance ?? false });
       }
-      item.history = [...(item.history ?? []), { revision: item.revision ?? 1, name: item.name, mechanics: clone(mechanics), sourceId: id }];
       item.mechanics = compiled; item.name = name; item.revision = (item.revision ?? 1) + 1;
       if (item.equippedTo) {
         const record = recordById(next, item.equippedTo.unitId);
@@ -401,7 +395,8 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       }
     }
   }
-  next.inventoryOperations = [...(save.inventoryOperations ?? []), { id, fingerprint: key }];
+  // Keep a fixed-size receipt, not a second copy of the complete edit request.
+  next.inventoryOperations = [...(save.inventoryOperations ?? []), { id, fingerprint: operationFingerprint(key) }];
   next.factRevision = (save.factRevision ?? 0) + 1;
   return next;
 }

@@ -235,7 +235,7 @@ describe('正文原子事务', () => {
     expect(next.rosterIds).toEqual(['a']);
     expect(materializeUnitRecord(next.storage![0]!, reg).weapon).toMatchObject({ id: unit.weapon!.id, name: '附魔大炮', channel: 'arcane', level: 8 });
     expect(next.storage![0]).toMatchObject({ hp: 70, base: { hpMax: 560 }, level: 3 });
-    expect(next.inventory!.find((i) => i.id === unit.weapon!.id)!.history).toHaveLength(1);
+    expect(next.inventory!.find((i) => i.id === unit.weapon!.id)!.history).toBeUndefined();
     expect(() => prepareNarrativeTransaction(next, proposal, ns, true)).toThrow();
     expect(save.storage![0]!.snapshot!.weapon).toEqual(unit.weapon);
   });

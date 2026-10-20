@@ -1,6 +1,7 @@
 import { randomId } from './browser-compat.js';
 import type { HostMessage } from './sillytavern.js';
 import type { MessageTag } from './contracts.js';
+import { protocolExcerpt } from '../../panel/src/protocol.js';
 
 export function sourceId(message: HostMessage | undefined): string | undefined {
   const id = message?.extra?.tavernBattleSourceId;
@@ -29,6 +30,12 @@ export function sameMessageApartFromText(a: string, b: string): boolean {
 }
 export class SourceMessageChangedError extends Error {
   constructor() { super('来源消息已编辑、移动或删除，请重新扫描'); this.name = 'SourceMessageChangedError'; }
+}
+/** MVU may append its own update/status text; message identity and our events must remain exact. */
+export function matchesMessageTag(message: HostMessage, tag: MessageTag): boolean {
+  return tag.excerpt
+    ? sameMessageApartFromText(messageFingerprint(message), tag.fingerprint) && protocolExcerpt(message.mes ?? '') === tag.excerpt
+    : matchesMessageFingerprint(message, tag.fingerprint);
 }
 export function prepareMessageTag(chat: HostMessage[], index: number): MessageTag {
   const message = chat[index]; if (!message) throw Error('消息已不存在');

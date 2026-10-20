@@ -1,6 +1,6 @@
 {
   "name": "tavern-battle",
-  "version": "2.6.5",
+  "version": "2.6.6",
   "description": "通用战斗系统 —— SillyTavern / TauriTavern 原生回合制战斗扩展",
   "license": "GPL-3.0-only",
   "type": "module",
@@ -17,6 +17,7 @@
     "test:extension": "vitest run host/tests runtime/tests panel/src/auto-battle.test.ts panel/src/report-history.test.ts panel/src/report-epilogue.test.ts panel/src/jev-command.test.ts panel/src/jev-context.test.ts panel/src/jev-retry.test.ts panel/src/jev-connection.test.ts panel/src/jev-transport.test.ts panel/src/main.integration.test.ts panel/src/main-capacity.integration.test.ts panel/src/reaction-turn.integration.test.ts panel/src/scan-readiness.integration.test.ts panel/src/unit-edit.integration.test.ts",
     "verify:compatibility": "vite-node scripts/verify-recovered-scenarios.ts && vite-node scripts/verify-native-compatibility.ts",
     "smoke:extension": "node scripts/native-extension-smoke.mjs",
+    "smoke:mvu": "node scripts/mvu-save-smoke.mjs",
     "verify:extension": "npm run typecheck && npm run test:extension && npm run test:jev-relay && npm run verify:compatibility && npm run build:extension && npm run smoke:extension",
     "prebuild:panel": "node scripts/check-source-baseline.mjs",
     "build:panel": "vite build panel",

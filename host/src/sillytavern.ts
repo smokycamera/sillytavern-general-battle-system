@@ -2,7 +2,8 @@ import { legacyMirrorKey } from './contracts.js';
 import { optionalStorage, withAbort } from './browser-compat.js';
 import { sameChat, type ChatScope, type HostSession, type MetadataPort, type MessageTag, type LegacyHandoff } from './contracts.js';
 import { namespaceOf, type MessageEnvelope } from '../../panel/src/narrative-state.js';
-import { findMessageBySourceId, matchesMessageFingerprint, SourceMessageChangedError, sourceId } from './message-identity.js';
+import { findMessageBySourceId, matchesMessageTag, SourceMessageChangedError, sourceId } from './message-identity.js';
+import { replySaveWindow, type HostSaveState } from './reply-save.js';
 import { serialized } from './json.js';
 import type { FormattingContext } from './battle-message-format.js';
 import { readChatHeader } from './chat-header.js';
@@ -74,7 +75,7 @@ function messageTagsMatch(messages: HostMessage[], tags: MessageTag[]): boolean 
     if (found.has(id)) return false;
     found.set(id, message);
   }
-  return tags.every(tag => { const message = found.get(tag.id); return !!message && matchesMessageFingerprint(message, tag.fingerprint); });
+  return tags.every(tag => { const message = found.get(tag.id); return !!message && matchesMessageTag(message, tag); });
 }
 
 /** Reads only the current host's public context. No TavernHelper dependency. */
@@ -86,7 +87,12 @@ export class NativeHost implements MetadataPort {
   private lastBranch?: string;
   private stops = new Set<() => void>();
   private generating = false;
-  constructor(private host: HostWindow, private account: string, private request: typeof fetch = fetch, readonly legacyStorage: Storage | undefined = optionalStorage()) {}
+  constructor(private host: HostWindow, private account: string, private request: typeof fetch = fetch, readonly legacyStorage: Storage | undefined = optionalStorage(), private saveState?: HostSaveState) {}
+  replySaveWindow() {
+    const session = this.session();
+    return session && this.saveState && typeof this.saveState.isChatSaving === 'boolean'
+      ? replySaveWindow(this.saveState, session, () => this.session()) : undefined;
+  }
   context(): HostContext { return this.host.SillyTavern?.getContext() ?? {}; }
   session(): HostSession | undefined {
     const context = this.context();
@@ -142,7 +148,7 @@ export class NativeHost implements MetadataPort {
       const identified = chat.flatMap((message, index) => sourceId(message) === tag.id ? [index] : []);
       if (identified.length > 1) throw Error('消息身份重复，不能自动选择来源');
       const index = identified[0] ?? tag.index; const message = chat[index];
-      if (!message || !matchesMessageFingerprint(message, tag.fingerprint) || sourceId(message) && sourceId(message) !== tag.id) throw new SourceMessageChangedError();
+      if (!message || !matchesMessageTag(message, tag) || sourceId(message) && sourceId(message) !== tag.id) throw new SourceMessageChangedError();
       return { message, tag };
     });
     for (const { message, tag } of targets) { message.extra ??= {}; message.extra.tavernBattleSourceId = tag.id; }
@@ -275,9 +281,12 @@ export class NativeHost implements MetadataPort {
 
 interface UserModule { accountsEnabled?: boolean; currentUser?: { handle?: string } | null; getCurrentUserHandle?(): string }
 const loadHostUser = (): Promise<UserModule> => import(/* @vite-ignore */ new URL('/scripts/user.js', globalThis.location.href).href);
-export async function createNativeHost(host: HostWindow, request: typeof fetch = fetch, loadUser: () => Promise<UserModule> = loadHostUser): Promise<NativeHost> {
+const loadHostSaveState = (): Promise<HostSaveState> => import(/* @vite-ignore */ new URL('/script.js', globalThis.location.href).href);
+export async function createNativeHost(host: HostWindow, request: typeof fetch = fetch, loadUser: () => Promise<UserModule> = loadHostUser, loadSaveState = loadHostSaveState): Promise<NativeHost> {
   const headers = host.SillyTavern?.getContext().getRequestHeaders?.();
   if (!headers) throw Error('酒馆上下文尚未就绪');
+  let saveState: HostSaveState | undefined;
+  try { const module = await withAbort({ timeout: 3000 }, () => loadSaveState()); if (typeof module.isChatSaving === 'boolean') saveState = module; } catch { /* Optional optimisation; retain the existing save contract. */ }
   // TauriTavern 2.1 has no /api/users/me route. Use its own account selector,
   // rather than guessing a shared fallback handle for a malformed API response.
   if (host.__TAURI_RUNNING__ === true || host.__TAURITAVERN__) {
@@ -285,7 +294,7 @@ export async function createNativeHost(host: HostWindow, request: typeof fetch =
     if (user.accountsEnabled && !user.currentUser?.handle) throw Error('酒馆账户尚未初始化');
     const handle = user.getCurrentUserHandle?.();
     if (typeof handle !== 'string' || !handle) throw Error('TauriTavern 未提供可靠用户标识');
-    return new NativeHost(host, handle, request);
+    return new NativeHost(host, handle, request, optionalStorage(), saveState);
   }
   const user: unknown = await withAbort({ timeout: 10000 }, async signal => {
     const response = await request('/api/users/me', { headers, cache: 'no-store', signal });
@@ -294,5 +303,5 @@ export async function createNativeHost(host: HostWindow, request: typeof fetch =
   });
   const handle = user && typeof user === 'object' ? (user as { handle?: unknown }).handle : undefined;
   if (typeof handle !== 'string' || !handle) throw Error('酒馆未返回可靠用户标识');
-  return new NativeHost(host, handle, request);
+  return new NativeHost(host, handle, request, optionalStorage(), saveState);
 }

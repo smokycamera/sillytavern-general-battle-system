@@ -4,6 +4,8 @@ import type { HostSession, MetadataPort, NativeEnvelope, PersistReceipt, Recover
 import { sameSession } from '../../host/src/contracts.js';
 import type { NarrativeSave } from '../../panel/src/narrative-state.js';
 import { envelopeFrom, matches, payloadHash } from './save-envelope.js';
+import type { ReplySaveWindow } from '../../host/src/reply-save.js';
+import { compactSaveHistory } from '../../panel/src/save-history.js';
 
 /** Players read these messages; drop the `Error:` prefix that String(error) adds. */
 export const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error);
@@ -28,10 +30,11 @@ export class NativeStore {
     const selected: NarrativeSave = keys ? Object.fromEntries(keys.filter(key => key in save).map(key => [key, save[key]])) : { ...save };
     if (battleFields && selected.battle) selected.battle = { kind: selected.battle.kind,
       snap: Object.fromEntries(battleFields.filter(key => key in selected.battle!.snap).map(key => [key, selected.battle!.snap[key]])) };
-    return structuredClone(selected);
+    return structuredClone(compactSaveHistory(selected));
   }
   /** The current head as of this call, copied on first read; heads are replaced on commit, never edited in place. */
-  snapshotLater(): () => NarrativeSave { const payload = this.current?.payload; let copy: NarrativeSave | undefined; return () => copy ??= structuredClone(payload ?? {}); }
+  snapshotLater(): () => NarrativeSave { const payload = this.current?.payload; let copy: NarrativeSave | undefined; return () => copy ??= structuredClone(compactSaveHistory(payload ?? {})); }
+  needsHistoryCompaction(): boolean { return !!this.current?.payload && compactSaveHistory(this.current.payload) !== this.current.payload; }
   envelope(): NativeEnvelope | undefined { return structuredClone(this.current); }
   head(): Omit<NativeEnvelope, 'payload'> | undefined { if (!this.current) return undefined; const { payload: _payload, ...head } = this.current; return structuredClone(head); }
   session(): HostSession | undefined { return structuredClone(this.active); }
@@ -97,7 +100,7 @@ export class NativeStore {
     });
   }
   commit(expectedRevision: number, update: (before: NarrativeSave) => NarrativeSave, options: {
-    operationId?: string; clear?: boolean; replace?: boolean; migration?: NativeEnvelope['migration']; messageTags?: MessageTag[]; legacyHandoff?: LegacyHandoff; resumeHandoff?: boolean;
+    operationId?: string; clear?: boolean; replace?: boolean; migration?: NativeEnvelope['migration']; messageTags?: MessageTag[]; legacyHandoff?: LegacyHandoff; resumeHandoff?: boolean; replySave?: ReplySaveWindow;
   } = {}): Promise<PersistReceipt> {
     // Capture before queueing so a delayed request cannot jump to another chat.
     const session = this.active;
@@ -118,7 +121,7 @@ export class NativeStore {
       if (!this.sameChat(session)) return this.result('conflict', session, operationId, '保存过程中聊天已切换，这次没有保存');
       let candidate: NativeEnvelope;
       try {
-        const payload = options.clear ? null : structuredClone(update(this.snapshot()));
+        const payload = options.clear ? null : structuredClone(compactSaveHistory(update(this.snapshot())));
         candidate = {
           format: 'tavern-battle-native', containerVersion: 1,
           documentId: previous?.documentId ?? randomId(),
@@ -143,7 +146,7 @@ export class NativeStore {
       catch (error) { return this.result('failed', session, operationId, error); }
       if (!this.sameChat(session)) return this.result('conflict', session, operationId, '保存前聊天已切换；这次改动留在原聊天，回到原聊天后可以继续处理');
       this.pending = record;
-      return this.persist(record, session);
+      return this.persist(record, session, false, options.replySave);
     }, true);
   }
   retry(): Promise<PersistReceipt> {
@@ -215,7 +218,7 @@ export class NativeStore {
     }
     throw Error('撤销这次改动时酒馆没有保存成功，请稍后再试');
   }
-  private async persist(record: RecoveryRecord, session: HostSession, fullSave = false): Promise<PersistReceipt> {
+  private async persist(record: RecoveryRecord, session: HostSession, fullSave = false, replySave?: ReplySaveWindow): Promise<PersistReceipt> {
     const id = record.candidate.lastOperationId;
     if (!this.host.metadata() || !this.sameChat(session)) return this.result('conflict', session, id, '聊天已切换，这次没有保存');
     if (record.legacyHandoff) {
@@ -249,9 +252,14 @@ export class NativeStore {
     metadata.tavernBattle = structuredClone(record.candidate);
     let error: unknown;
     try {
+      if (replySave) {
+        // Release MESSAGE_RECEIVED after staging, so the host (and MVU) can finish then save.
+        replySave.prepared();
+        await replySave.waitForHost();
+      }
       // Source tags live on chat[] messages, not in chat metadata. In particular,
       // Tauri's saveMetadata intentionally leaves the message body untouched.
-      if (record.messageTags?.length || fullSave && this.host.saveChat) {
+      else if (record.messageTags?.length || fullSave && this.host.saveChat) {
         if (!this.host.saveChat) throw Error('当前酒馆没有提供保存整段聊天的接口');
         await this.host.saveChat();
       } else {

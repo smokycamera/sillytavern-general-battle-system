@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.6.5**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **2.6.6**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-2.6.5 fixes battles leaving the combat screen after a nonlethally defeated formation is finished off under lethal rules. Death now settles the recoverable wounded pool, while switching rules alone preserves dying units and their wounded. Weapon damage descriptions and item attribute modifiers also use simpler numeric labels. The previous siege, number formatting, battle report and worn-item anchoring improvements remain included. See the [release guide](docs/current-release.md).
+2.6.6 lets eligible streaming replies share the host's save, with independent verification and a fallback when needed. It preserves MVU variable/status writebacks on SillyTavern and TauriTavern contracts. Unit and item edit trails are removed from old and new saves; current attributes, battle reports and compact duplicate-operation receipts remain. See the [release guide](docs/current-release.md).
 
 ## Documentation
 

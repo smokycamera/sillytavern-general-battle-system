@@ -61,10 +61,11 @@ export interface UnitRecord {
   recoverableWounded?: number;
   /** 库存实例管理装备；snapshot中的装备仅为该库存关系的冻结投影。 */
   equipmentManaged?: boolean;
-  /** 显式转制前的原档；后续成长/战斗也保留，供导出核查。 */
+  /** 仅保留刚转制的原档，供立即撤销；下一次写回后移除。 */
   legacyRecord?: UnitRecord;
   preparedAbilityIds?: string[];
   revision?: number;
+  /** @deprecated 旧档兼容字段，读取时移除，不再累积。 */
   history?: UnitHistoryEntry[];
   /** 解散/阵亡保留身份墓碑，不能被普通 deploy 或补员复活。 */
   retired?: boolean;
@@ -420,7 +421,6 @@ export function normalizeUnitRecord(r: UnitRecord): UnitRecord {
   const normalized: UnitRecord = {
     ...r,
     revision: Number.isSafeInteger(r.revision) && r.revision! > 0 ? r.revision : 1,
-    history: clone(r.history ?? []),
     base: { ...r.base, hpMax },
     hp: Number.isFinite(r.hp) ? Math.max(0, Math.min(hpMax, r.hp)) : hpMax,
     status: r.status ?? (Number.isFinite(r.hp) && r.hp <= 0 ? 'dead' : 'ready'),
@@ -428,6 +428,11 @@ export function normalizeUnitRecord(r: UnitRecord): UnitRecord {
     traits: Array.isArray(r.traits) ? [...new Set(r.traits)] : [],
     xp: Number.isFinite(r.xp) ? Math.max(0, r.xp!) : 0,
   };
+  delete normalized.history;
+  if (normalized.legacyRecord) {
+    if (normalized.revision !== (normalized.legacyRecord.revision ?? 1) + 1) delete normalized.legacyRecord;
+    else normalized.legacyRecord = normalizeUnitRecord(normalized.legacyRecord);
+  }
   if (moraleMax !== undefined) {
     normalized.morale = Number.isFinite(r.morale)
       ? Math.max(0, Math.min(moraleMax, r.morale!))
@@ -448,7 +453,7 @@ export function normalizeUnitRecord(r: UnitRecord): UnitRecord {
   return normalized;
 }
 
-/** Combatant → 权威记录；每次合法写入递增版本并保留身份历史。 */
+/** Combatant → 权威记录；递增版本，仅保存当前状态。 */
 export function unitRecordFromCombatant(
   c: Combatant,
   previous?: UnitRecord,
@@ -477,9 +482,7 @@ export function unitRecordFromCombatant(
     ...(previous?.equipmentManaged ? { equipmentManaged: true } : {}),
     preparedAbilityIds: c.preparedAbilityIds ? [...c.preparedAbilityIds] : input.preparedAbilityIds ? [...input.preparedAbilityIds] : undefined,
     revision: previous ? (previous.revision ?? 1) + 1 : 1,
-    history: clone(previous?.history ?? []),
     ...(previous?.retired ? { retired: true } : {}),
-    ...(previous?.legacyRecord ? { legacyRecord: clone(previous.legacyRecord) } : {}),
     name: c.name,
     level: c.level,
     side: c.side,
@@ -533,11 +536,6 @@ export function unitRecordFromCombatant(
     ...(opts.transient ?? previous?.transient ? { transient: true } : {}),
     snapshot: clone(c),
   };
-  record.history!.push({
-    revision: record.revision!, kind: opts.kind ?? (previous ? 'edit' : 'created'),
-    ...(opts.sourceId ? { sourceId: opts.sourceId } : {}),
-    hp: record.hp, hpMax: record.base.hpMax, ...(record.recoverableWounded !== undefined ? { recoverableWounded: record.recoverableWounded } : {}), level: record.level, xp: record.xp ?? 0, status: record.status,
-  });
   return normalizeUnitRecord(record);
 }
 
@@ -616,15 +614,15 @@ export function previewUnitConversion(record: UnitRecord, registry: Map<string, 
   unit.conditions = clone(record.conditions ?? []); unit.morale = record.morale;
   for (const ability of unit.abilities) ability.sourceId = record.id;
   const next = unitRecordFromCombatant(unit, record, { kind: 'edit', sourceId: 'mechanism-v2-conversion' });
-  next.legacyRecord = clone(record); next.zone = record.zone; next.rank = record.rank;
+  next.legacyRecord = normalizeUnitRecord(record); next.zone = record.zone; next.rank = record.rank;
   return next;
 }
 
 /** 仅撤销刚执行的转制；发生新战损/补员/成长后禁止旧备份覆盖新事实。 */
 export function undoUnitConversion(record: UnitRecord): UnitRecord {
-  if (!record.legacyRecord || record.history?.at(-1)?.sourceId !== 'mechanism-v2-conversion') throw new Error('更新规则后已有新战斗记录，不能用旧备份覆盖；原档仍可导出核查');
+  if (!record.legacyRecord || record.revision !== (record.legacyRecord.revision ?? 1) + 1) throw new Error('更新规则后已有新战斗记录，不能用旧备份覆盖');
   const original = clone(record.legacyRecord); original.revision = (record.revision ?? 1) + 1;
-  original.history = [...clone(record.history ?? []), { revision: original.revision, kind: 'edit', sourceId: 'undo-v2-conversion', hp: original.hp, hpMax: original.base.hpMax, level: original.level, xp: original.xp ?? 0, status: original.status }];
+  delete original.history; delete original.legacyRecord;
   return original;
 }
 
