@@ -1,8 +1,9 @@
 import { expect, it } from 'vitest';
-import { generateUnit, MassBattle, SmallBattle, standardField, traitRegistry, V16_OVERFLOW_D20, V16_OVERFLOW_TW } from '../../engine/src/index.js';
+import { createStructure, generateUnit, MassBattle, SmallBattle, standardField, traitRegistry, V16_OVERFLOW_D20, V16_OVERFLOW_TW } from '../../engine/src/index.js';
 import { computeBattleStep, applyBattleStep, seededReinforcement, type BattleStepRequest } from './battle-step.js';
 import { executeMassPlan } from './battle-execution.js';
 import { previewScopeEpoch } from '../../engine/src/damage.js';
+import { applyCombatDamage } from '../../engine/src/recovery.js';
 
 function units(count = 4) {
   return Array.from({ length: count }, (_, i) => {
@@ -37,6 +38,22 @@ it('background small activations preserve snapshots, RNG, references, and contro
     expect(battle.toSnapshot()).toEqual(expected.toSnapshot());
     expect(battle.rng).toBe(rng); expect(battle.combatants).toBe(array); expect(battle.combatants[0]).toBe(first);
   }
+});
+it('background siege activations continue after a wall collapses beneath a casualty, including old snapshots', () => {
+  const field = standardField(7, 13); field.tiles.fill('open'); field.layerVersion = 1; field.structures = field.tiles.map(() => null);
+  const battle = new SmallBattle({ combatants: units(), battlefield: field, rules: V16_OVERFLOW_D20, seed: 'worker-collapse' }); battle.start();
+  battle.turnOrder = battle.combatants.map(u => u.id); battle.turnIndex = 0;
+  battle.combatants.forEach((u, i) => { u.pos = [31, 52, 24, 3][i]; });
+  const casualty = battle.byId('u2'); applyCombatDamage(casualty, 1e9, casualty.hp); casualty.status = 'dead'; casualty.elevation = 1;
+  battle.battlefield!.structures![24] = createStructure('wall', 1, { top: true }); battle.battlefield!.structures![24]!.hp = 1;
+  battle.attackStructure('u0', 24);
+  const input = request(battle);
+  // Older saves kept the casualty on the platform after its wall was destroyed.
+  (input.snap.combatants as typeof battle.combatants)[2]!.elevation = 1;
+  const result = computeBattleStep(input); applyBattleStep(battle, result);
+  expect(battle.byId('u2')).toBe(casualty); expect(casualty).toMatchObject({ status: 'dead', hp: 0, pos: 24 });
+  expect(casualty.elevation).toBeUndefined(); expect(battle.active?.id).not.toBe('u0');
+  expect(() => SmallBattle.fromSnapshot(structuredClone(battle.toSnapshot()))).not.toThrow();
 });
 it('background mass rounds preserve automatic orders, damage, reports and RNG; read-only scopes always release', () => {
   const registry = traitRegistry(), summonUnit = (id: string, side: 'ally' | 'enemy' | 'neutral', seed?: string) => seed ? seededReinforcement(id, side, seed, registry) : null;
