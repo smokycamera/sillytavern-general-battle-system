@@ -53,7 +53,7 @@ export function archivedNarrativeEvents(b: Battle, deliveries: BattleDeliveries)
 }
 export function knownBattleState(b: Battle): string {
   const field = b instanceof SmallBattle ? b.battlefield : undefined;
-  return ['【最新状态】' + (reportsHeights(field) ? '（' + HEIGHT_LEGEND + '）' : ''), ...(b instanceof SmallBattle && b.isOver() ? [smallBattleResult(b)!] : []), ...b.visibleCombatants('ally').map(u=>epilogueUnit(b,u,field))].join('\n');
+  return ['【最新状态】' + (reportsHeights(field) ? '（' + HEIGHT_LEGEND + '）' : ''), ...(b instanceof SmallBattle && b.isOver() ? [smallBattleResult(b)!] : []), ...(b.isOver() ? b.combatants : b.visibleCombatants('ally')).map(u=>epilogueUnit(b,u,field)), ...fieldFacts(b)].join('\n');
 }
 const RANK_NAMES = { front: '前列', rear: '后列', reserve: '预备列' } as const;
 /** 小战写格子、地形与高度，会战写阵位；撤离的单位和没有位置的旧记录不写。 */
@@ -65,7 +65,7 @@ function unitPlace(b: Battle, u: Combatant, field?: BattlefieldSpec): string {
 }
 function epilogueUnit(b: Battle, u: Combatant, field?: BattlefieldSpec): string {
   const statuses = {ready:'可行动',dying:'濒死',dead:u.scale==='hero'?'阵亡':'编队失去战斗力',routing:'溃退中',fled:'已撤离'};
-  const conditions=u.conditions.filter(c=>c.dur>0).map(c=>`${b.conditions.get(c.id)?.name??c.id}（${c.dur}轮）`);
+  const conditions=[...new Set(u.conditions.filter(c=>c.dur>0).map(c=>b.conditions.get(c.id)?.name??c.id))];
   return `${u.side==='ally'?'我方':u.side==='enemy'?'敌方':'第三方'} ${u.name}${unitPlace(b,u,field)}：${reportStrengthLabel(u)}${reportShieldLabel(u)}，${statuses[u.status]}${woundedLabel(u,true)?'，'+woundedLabel(u,true):''}${conditions.length?'，'+conditions.join('、'):''}`;
 }
 /** 按真实生命/现员损失累计，过量伤害不计入；来源按稳定id区分。成员生命编队另记减员人数。 */

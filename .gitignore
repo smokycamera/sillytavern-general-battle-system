@@ -21,7 +21,8 @@ secrets.json
 settings.json
 /engine/sim/out/
 /release/*
-!/release/current-baseline.json
+!/release/README.md
+!/release/legacy-script-metadata.json
 !/release/baselines/
 /release/baselines/*
 !/release/baselines/user-20260918/

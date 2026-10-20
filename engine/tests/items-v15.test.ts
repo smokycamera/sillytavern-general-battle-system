@@ -53,7 +53,10 @@ describe('V15 道具编译与形态', () => {
     const saved=JSON.parse(JSON.stringify(over));expect(()=>validateItemValue(saved)).not.toThrow();
     expect(saved).toEqual(over);
     expect(saved.passive).toMatchObject({traits:[{id:'guardian',level:8},{id:'regen',level:10}],bonuses:{defense:8,damage:6}});
-    expect(saved.passive.actualEffects.values.defense).toBeCloseTo(.28);
+    // New compilation uses worn-anchored-v1: L1 G=1, so +8 defense grants 0.8.
+    // Historical frozen worn-progression-v1 values are covered separately.
+    expect(saved.recipe.wornEffectModel).toBe('worn-anchored-v1');
+    expect(saved.passive.actualEffects.values.defense).toBeCloseTo(.8);
     expect(saved.passive.actualEffects.values.damage).toBeCloseTo(.06);
     expect(() => item({ form: 'worn', power: 5, traits: [{ id: 'night-fighter', level: 5 }], bonuses: { defense: 2 } })).not.toThrow();
     expect(() => item({ form: 'worn', power: 5, traits: [{ id: 'night-fighter', level: 5 }], bonuses: { defense: 3 } })).not.toThrow();

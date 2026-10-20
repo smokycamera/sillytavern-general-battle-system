@@ -5,25 +5,20 @@ import { nativeSourceFingerprint } from './native-build-fingerprint.mjs';
 const output = path.resolve('release/native-candidate');
 const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
 const extensionManifest = { ...JSON.parse(readFileSync('extension/manifest.json', 'utf8')), version };
+if (JSON.parse(readFileSync('extension/manifest.json', 'utf8')).version !== version) throw Error('Extension template version differs from package.json');
 extensionManifest.display_name += `v${version}`;
 writeFileSync(path.join(output, 'manifest.json'), JSON.stringify(extensionManifest, null, 2) + '\n');
 for (const file of ['README.md', 'README.zh-CN.md', 'LICENSE', 'LICENSE-NOTES.md', 'THIRD_PARTY_NOTICES.md']) copyFileSync(file, path.join(output, file));
-mkdirSync(path.join(output, 'release'), { recursive: true });
-copyFileSync('release/current-baseline.json', path.join(output, 'release/current-baseline.json'));
 for (const directory of ['assets', 'licenses', 'docs']) {
   if (directory === 'docs') {
     mkdirSync(path.join(output, directory), { recursive: true });
-    for (const name of ['battlefield-refactor-proposal.md', 'battlefield-refactor-implementation.md', 'battle-planning-v2.md', 'planning-release-validation.json', 'planning-capacity-audit.json', 'breach-review.md', 'breach-review-validation.json', 'breach-review-audit.json', 'review-map-audit.json', 'review-combat-audit.json', 'layered-city-v1.md', 'layered-map-audit-20260929.json', 'layered-combat-audit-20260929.json', 'layered-release-validation.json', 'map-route-v4.md', 'contextual-map-v3.md', 'embedded-worldbook.md', 'resources-v9.md', 'burst-balance-v8.md', 'overmatch-v7.md', 'unified-balance-v6.md', 'armor-v5-design.md', 'version-rollback.md', 'native-extension-validation.md', 'native-event-display.md', 'validation-results.json', 'extension-migration-assessment-20260919.md', 'native-extension-migration-plan-20260919.md', 'script-baseline-20260919.md', 'jev-integration.md', 'jev-cors-validation.md', 'jev-retry-validation.md', 'jev-endpoint-validation.md', 'jev-command-validation-20260922.md', 'jev-context-validation-20260922.md']) copyFileSync(path.join(directory, name), path.join(output, directory, name));
+    for (const name of ['README.md', 'current-release.md', 'release-channels.md', 'battlefield-refactor-implementation.md', 'battle-planning-v2.md', 'battle-save-policy-20261016.md', 'embedded-worldbook.md', 'native-event-display.md', 'secondary-api-two-step-20261002.md', 'jev-integration.md', 'mcp-player-bridge.md', 'update-2.6-20261019.md', 'worn-anchoring-20261020.md', 'traits-items-stacking-revision-20261019.md', 'level-anchoring-v21-20261019.md', 'control-worn-v20-20261018.md', 'item-system-20261011.md', 'worldbook-xml-markdown.md', 'version-rollback.md']) copyFileSync(path.join(directory, name), path.join(output, directory, name));
   } else cpSync(directory, path.join(output, directory), { recursive: true });
 }
 mkdirSync(path.join(output, 'scripts'), { recursive: true });
 mkdirSync(path.join(output, 'mcp'), { recursive: true });
 for (const name of ['package.json', 'package-lock.json', 'server.mjs', 'broker.mjs', 'tools.mjs', 'start.ps1', 'README.md', 'GAMEPLAY.md']) copyFileSync(path.join('mcp', name), path.join(output, 'mcp', name));
 cpSync('mcp/test', path.join(output, 'mcp/test'), { recursive: true });
-copyFileSync('docs/mcp-player-bridge.md', path.join(output, 'docs/mcp-player-bridge.md'));
-copyFileSync('docs/player-update-2.1.0-20261013.md', path.join(output, 'docs/player-update-2.1.0-20261013.md'));
-copyFileSync('docs/update-2.6-20261019.md', path.join(output, 'docs/update-2.6-20261019.md'));
-copyFileSync('docs/worn-anchoring-20261020.md', path.join(output, 'docs/worn-anchoring-20261020.md'));
 copyFileSync('scripts/jev-cors-relay.mjs', path.join(output, 'scripts/jev-cors-relay.mjs'));
 const files = [];
 function visit(dir) { for (const name of readdirSync(dir, { withFileTypes: true })) { const file = path.join(dir, name.name); if (name.isDirectory()) visit(file); else files.push(file); } }
@@ -35,9 +30,9 @@ for (const file of files.filter(file => /\.(js|html)$/.test(file))) {
 const hash = file => createHash('sha256').update(readFileSync(file)).digest('hex');
 const sourceFingerprint = nativeSourceFingerprint();
 const manifest = { format: 'tavern-battle-native-build', version, builtAt: new Date().toISOString(), sourceFingerprint,
-  baselineSha256: JSON.parse(readFileSync('release/current-baseline.json', 'utf8')).sourceSha256,
+  baselineSha256: JSON.parse(readFileSync('release/baselines/user-20260918/metadata.json', 'utf8')).sourceSha256,
   files: files.filter(file => !file.endsWith('build-manifest.json')).map(file => ({ path: path.relative(output, file).replaceAll('\\', '/'), bytes: readFileSync(file).length, sha256: hash(file) })),
-  validation: { dependencyAudit: 'not-run-by-build', status: 'release-candidate', report: 'docs/native-extension-validation.md' } };
+  validation: { dependencyAudit: 'not-run-by-build', status: 'release-candidate', report: 'docs/current-release.md' } };
 writeFileSync(path.join(output, 'build-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 // The repository itself is directly installable by the host extension manager.
 const dist=path.resolve('dist');

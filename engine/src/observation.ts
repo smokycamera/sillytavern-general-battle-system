@@ -134,7 +134,7 @@ export function sideViews(context: ObservationContext): Map<Side, Set<string>> {
 }
 export function observeEvent(context: ObservationContext, entry: BattleLogEntry, views: ReadonlyMap<Side, ReadonlySet<string>> = sideViews(context)): BattleLogEntry {
   const ids = entry.participants ?? (entry.resolution ? [entry.resolution.attackerId, entry.resolution.defenderId] : []);
-  const global = !ids.length && ['round', 'rule', 'battle-end'].includes(entry.kind);
+  const global = !ids.length && ['round', 'rule', 'objective', 'battle-end'].includes(entry.kind);
   const observedBy: Side[] = [], observedText: Partial<Record<Side, string>> = {};
   for (const side of ['ally', 'enemy', 'neutral'] as const) {
     const visible = views.get(side)!;
@@ -151,5 +151,5 @@ export function observedLog(log: BattleLogEntry[], side: Side): BattleLogEntry[]
   const publicEntry = ({ itemUse: _itemUse, ...entry }: BattleLogEntry): BattleLogEntry => entry;
   return log.flatMap((entry) => entry.observedBy?.includes(side) ? [entry.itemUse ? publicEntry(entry) : entry] : entry.observedText?.[side]
     ? [{ round: entry.round, kind: entry.kind, text: entry.observedText[side]! }]
-    : !entry.observedBy && ['round', 'rule', 'battle-end'].includes(entry.kind) ? [entry] : []);
+    : !entry.observedBy && ['round', 'rule', 'objective', 'battle-end'].includes(entry.kind) ? [entry] : []);
 }
