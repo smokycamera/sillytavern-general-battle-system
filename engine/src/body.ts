@@ -1,3 +1,4 @@
+import { displayNumber } from './display-number.js';
 export { hasNaturalArmor, equipmentLoad, humanEncumbered, equipmentCapacity, equipmentBurden, overloadPenalty } from './equipment-load.js';
 import { hasNaturalArmor, equipmentLoad, equipmentCapacity, equipmentBurden, overloadPenalty, type BurdenUnit } from './equipment-load.js';
 import { isArmsV2 } from './arms-model.js';
@@ -12,7 +13,7 @@ export function armorBurdenTier(unit: Pick<Combatant, 'armor'> & Partial<Pick<Co
 }
 export function equipmentLoadLabel(unit: BurdenUnit): string {
   const load = equipmentLoad(unit), capacity = isArmsV2(unit.armsModel) ? equipmentCapacity({body:unit.body,level:unit.level!}) : BODY[unit.body ?? 'human'].capacity, burden = equipmentBurden(unit);
-  return '负重 '+load+'/'+capacity+'（'+Math.round(load/capacity*100)+'%）' + (burden === 2 ? ' · 超载：移动−2、先攻−4、命中和闪避−'+overloadPenalty(unit)+'，不能冲锋和突进' : burden === 1 ? ' · 重载：移动−1、先攻−2' : '');
+  return '负重 '+displayNumber(load)+'/'+displayNumber(capacity)+'（'+Math.round(load/capacity*100)+'%）' + (burden === 2 ? ' · 超载：移动−2、先攻−4、命中和闪避−'+displayNumber(overloadPenalty(unit))+'，不能冲锋和突进' : burden === 1 ? ' · 重载：移动−1、先攻−2' : '');
 }
 export function bodyProtection(unit: Combatant, channel: DamageChannel): number {
   return unit.rulesVersion === 'v2' ? BODY[unit.body ?? 'human'].protection[channel] : 0;

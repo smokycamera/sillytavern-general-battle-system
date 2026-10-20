@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.6.2**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **2.6.3**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-2.6.2 restores structure damage, actual skill effects, defense outcomes, effect expiration, third-party status and objective progress in round reports, while keeping the wording concise. Final fortification summaries list changed structures only. The previous worn-item anchoring and 2.6 fixes remain included. See the [release guide](docs/current-release.md).
+2.6.3 caps player-facing numbers at two decimal places while retaining calculation and save precision. It also includes the 2.6.2 report improvements: it restores structure damage, actual skill effects, defense outcomes, effect expiration, third-party status and objective progress in round reports, while keeping the wording concise. Final fortification summaries list changed structures only. The previous worn-item anchoring and 2.6 fixes remain included. See the [release guide](docs/current-release.md).
 
 ## Documentation
 

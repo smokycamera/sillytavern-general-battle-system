@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { approx, approxDelta } from '../src/index.js';
+import { approx, approxDelta, displayNumber } from '../src/index.js';
 
 describe('display-only number rounding', () => {
+  it('caps player values at two decimal places without padding integers or changing stored values', () => {
+    const values = [12, 12.5, 12.34567, -12.34567, 0.1 + 0.2, 0.004, -0];
+    const original = [...values];
+    expect(values.map(displayNumber)).toEqual(['12', '12.5', '12.35', '-12.35', '0.3', '0', '0']);
+    expect(values).toEqual(original);
+  });
   it('keeps exact values and marks rounded ones', () => {
     expect([approx(6), approx(6.5), approx(0.1 + 0.2), approx(2 / 3), approx(1.18, 2), approx(6.25, 1, 'down')]).toEqual(['6', '6.5', '0.3', '≈0.7', '1.18', '≈6.2']);
   });

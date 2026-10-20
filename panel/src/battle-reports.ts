@@ -1,3 +1,4 @@
+import { displayNumber } from '../../engine/src/display-number.js';
 import { SmallBattle, type MassBattle, type BattleLogEntry, type Combatant, woundedLabel } from '../../engine/src/index.js';
 import { observedLog } from '../../engine/src/observation.js';
 import { smallBattleResult } from '../../engine/src/battle-result.js';
@@ -89,7 +90,7 @@ function epilogueDamage(b: Battle): string[] {
   return [...totals.values()].map(row=>{
     const source=b.combatants.find(u=>u.id===row.source),target=b.combatants.find(u=>u.id===row.target);
     const members=row.life&&target&&target.scale!=='hero'?`，${row.membersPartial?'减员至少':'减员'}${row.members}${memberNoun(target)}`:'';
-    return `${source?.name??row.sourceName??'来源未记录'} → ${target?.name??row.targetName??row.target}：累计造成${row.amount}${row.life||target?.scale==='hero'?'生命损失':target?memberNoun(target)+'减员':'点损失'}${row.causes.size?'（含'+[...row.causes].join('、')+'）':''}${members}`;
+    return `${source?.name??row.sourceName??'来源未记录'} → ${target?.name??row.targetName??row.target}：累计造成${displayNumber(row.amount)}${row.life||target?.scale==='hero'?'生命损失':target?memberNoun(target)+'减员':'点损失'}${row.causes.size?'（含'+[...row.causes].join('、')+'）':''}${members}`;
   });
 }
 /** 致命规则；战中切换过时写明开局规则和每次切换的轮次，单位按倒下时的规则记录。 */

@@ -1,3 +1,4 @@
+import { displayNumber } from '../display-number.js';
 import { isArmsV2, armsStatusLabels, shieldUsable, denialReady, denialModifiers, beginArmsActivation, noteArmsFire, armsWeaponReason, validateArmsState, isSprayer, spendSprayerFuel } from '../arms.js';
 import { sprayerFear, sprayerTank } from '../sprayer.js';
 import { stackingRevision } from '../progression.js';
@@ -344,7 +345,7 @@ export class SmallBattle {
   }
   private applyLifesteal(attacker: Combatant, target: Combatant, lifeDamage: number): void {
     const restored = lifestealRecovery(attacker, target, lifeDamage, this.round);
-    if (restored) this.recordEvent({ round: this.round, kind: 'condition', participants: [attacker.id], text: `${attacker.name} 吸血，回复${restored}${hasMemberHealth(attacker) || attacker.scale === 'hero' ? '生命' : '名可救伤兵'}` });
+    if (restored) this.recordEvent({ round: this.round, kind: 'condition', participants: [attacker.id], text: `${attacker.name} 吸血，回复${displayNumber(restored)}${hasMemberHealth(attacker) || attacker.scale === 'hero' ? '生命' : '名可救伤兵'}` });
   }
   private previewAttackWithEnvironment(opts: Parameters<typeof previewAttack>[0]) { return previewAttack(this.environmentContext(opts)); }
 
@@ -369,7 +370,7 @@ export class SmallBattle {
     for (const unit of this.combatants) beginLifestealRound(unit, this.round, true);
     for (const unit of this.combatants) {
       const restored = recoverEntryMorale(unit);
-      if (restored) this.recordEvent({ round: 1, kind: 'morale', participants: [unit.id], text: `${unit.name} 开战前整顿，士气 0→${restored}` });
+      if (restored) this.recordEvent({ round: 1, kind: 'morale', participants: [unit.id], text: `${unit.name} 开战前整顿，士气 0→${displayNumber(restored)}` });
     }
     for (const c of this.combatants) {
       if (c.pos === undefined) {
@@ -521,7 +522,7 @@ export class SmallBattle {
       if (hp > memberHealth(unit)) this.checkDeath(unit, this.combatants.find((u) => u.id === this.flightCauses.get(unit.id)));
       if (cell === undefined) unit.status = unit.hp > 0 ? 'fled' : this.nonLethal ? 'dying' : 'dead';
       revealUnit(this.observationContext(), unit);
-      this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], damage: {sourceId:this.flightCauses.get(unit.id),targetId:unit.id,amount:hp-memberHealth(unit),cause:'坠落',...(hasMemberHealth(unit)?{unit:'life' as const,members:members-unit.hp}:{})}, text: `${unit.name} ${reason}，${cell === undefined ? '附近无落点，紧急迫降离场' : '迫降至' + cellLabel(field, cell)}，坠落损失${hp-memberHealth(unit)}${hasMemberHealth(unit)?'生命':''}` });
+      this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], damage: {sourceId:this.flightCauses.get(unit.id),targetId:unit.id,amount:hp-memberHealth(unit),cause:'坠落',...(hasMemberHealth(unit)?{unit:'life' as const,members:members-unit.hp}:{})}, text: `${unit.name} ${reason}，${cell === undefined ? '附近无落点，紧急迫降离场' : '迫降至' + cellLabel(field, cell)}，坠落损失${displayNumber(hp-memberHealth(unit))}${hasMemberHealth(unit)?'生命':''}` });
     }
     this.flightCauses.clear();
   }
@@ -909,7 +910,7 @@ export class SmallBattle {
     revealUnit(this.observationContext(), actor); delete actor.tacticalPose;
     this.recordEvent({ round: this.round, kind: ability ? 'ability' : 'attack', participants: [actorId],
       structure: { cell, kind: target.kind, level: target.level, hpBefore: before, hpAfter: target.hp, hpMax: target.hpMax, destroyed: result.destroyed },
-      text: `${actor.name} ${ability ? '使用【' + ability.name + '】' : '破障'}→${cellLabel(field, cell)} ${label} L${target.level}：结构耐久 ${before}→${target.hp}${result.destroyed ? '，形成突破口' : ''}` });
+      text: `${actor.name} ${ability ? '使用【' + ability.name + '】' : '破障'}→${cellLabel(field, cell)} ${label} L${target.level}：结构耐久 ${displayNumber(before)}→${displayNumber(target.hp)}${result.destroyed ? '，形成突破口' : ''}` });
     this.resolveGroundStates(actor);
     revealContacts(this.observationContext()); this.checkGridObjective(false);
   }
@@ -1008,7 +1009,7 @@ export class SmallBattle {
       else { unit.status = 'fled'; this.recordEvent({ round: this.round, kind: 'move', participants: [unit.id], text: unit.name + ' 失去立足点，无法就近落地，退出本次战斗' }); continue; }
       const drop=field.spatialRulesVersion===2?Math.max(1,originalHeight-unitHeight(field,unit)):1;
       const loss = applyCombatDamage(unit, Math.max(1, Math.round(memberHealth(unit) * (wasHigh ? Math.min(.4,.15*drop) : .1))), hasMemberHealth(unit) ? unit.hp : 1);
-      this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], text: `${unit.name} ${wasHigh ? '随结构塌落' : '落水撤向近岸'}至${cellLabel(field, unit.pos!)}，损失${loss}生命` });
+      this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], text: `${unit.name} ${wasHigh ? '随结构塌落' : '落水撤向近岸'}至${cellLabel(field, unit.pos!)}，损失${displayNumber(loss)}生命` });
       this.checkDeath(unit, source);
     }
   }
@@ -1502,7 +1503,7 @@ export class SmallBattle {
       membersBefore: first.membersBefore, membersAfter: last!.membersAfter, defenderStatus: target.status, finalDamage: total,
       directDamage: shots.reduce((s,r)=>s+(r.directDamage??0),0), splashDamage: shots.reduce((s,r)=>s+(r.splashDamage??0),0),
       barrierAbsorbed: shots.reduce((s,r)=>s+(r.barrierAbsorbed??0),0), packetCount: shots.reduce((s,r)=>s+(r.packetCount??1),0),packetHits:shots.reduce((s,r)=>s+(r.packetHits??Number(r.hit)),0),packetRolls:shots.flatMap(r=>r.packetRolls??[{hit:r.hit,crit:r.crit,damage:r.finalDamage}]),
-      text: `${attacker.name}→${target.name}：${shots.length}发合计伤害${total}${first.membersBefore!==undefined&&last!.membersAfter!==undefined?`，减员${first.membersBefore-last!.membersAfter}，余员${last!.membersAfter}`:''}` };
+      text: `${attacker.name}→${target.name}：${shots.length}发合计伤害${displayNumber(total)}${first.membersBefore!==undefined&&last!.membersAfter!==undefined?`，减员${first.membersBefore-last!.membersAfter}，余员${last!.membersAfter}`:''}` };
   }
 
   /**
@@ -1560,7 +1561,7 @@ export class SmallBattle {
         this.recordEvent({
           round: this.round,
           kind: 'move',
-          participants: [actor.id], text: `${actor.name} 贴边脱离缠斗：位置${before}→${disengagePos}`,
+          participants: [actor.id], text: `${actor.name} 贴边脱离缠斗：位置${displayNumber(before)}→${disengagePos}`,
         });
         this.opportunityAttacks(actor, provoked);
         return;
@@ -1573,7 +1574,7 @@ export class SmallBattle {
     this.recordEvent({
       round: this.round,
       kind: 'move',
-      participants: [actor.id], text: `${actor.name} ${dir === 'advance' ? `逼近${nearest.name}` : '后撤拉开距离'}：位置${before}→${after}`,
+      participants: [actor.id], text: `${actor.name} ${dir === 'advance' ? `逼近${nearest.name}` : '后撤拉开距离'}：位置${displayNumber(before)}→${displayNumber(after)}`,
     });
 
     this.opportunityAttacks(actor, provoked);
@@ -1837,7 +1838,7 @@ export class SmallBattle {
     spendAbility(actor, ability);
 
     const logBits: string[] = [`${actor.name} 使用【${ability.name}】`];
-    if (ability.itemSourceId && cost) logBits.push(`消耗${cost.amount}件，剩余${actor.resources[cost.resource]}件`);
+    if (ability.itemSourceId && cost) logBits.push(`消耗${displayNumber(cost.amount)}件，剩余${displayNumber(actor.resources[cost.resource])}件`);
     // 出手前的突进/闪现逐格记入日志（标为技能位移，战报把它们并到技能名之后），技能本体随后记录；只有位移的技能在这里走完。
     let interrupted: string | undefined, charge = false;
     if (movementOnly && chosenTarget) {
@@ -1868,7 +1869,7 @@ export class SmallBattle {
         case 'move': break;
         case 'zone': { if (chosenTarget) { placeZone(this.observationContext(),actor,chosenTarget,eff,this.round,ability.id); logBits.push((this.battlefield ? '在'+reportPlaceLabel(this.battlefield,chosenTarget.pos!,chosenTarget) : '')+'布置'+ZONE_NAMES[eff.kind]+'，持续'+eff.dur+'轮'); } break; }
         case 'barrier': {
-          for (const target of effectTargets(ability.shape === 'burst')) { grantBarrier(target, eff.amount, eff.dur, actor.id, eff.defensePower ?? ability.power); logBits.push(`${target.name} 获得屏障，可吸收${target.barrier?.remaining ?? 0}点伤害，持续${eff.dur}轮`); }
+          for (const target of effectTargets(ability.shape === 'burst')) { grantBarrier(target, eff.amount, eff.dur, actor.id, eff.defensePower ?? ability.power); logBits.push(`${target.name} 获得屏障，可吸收${displayNumber(target.barrier?.remaining ?? 0)}点伤害，持续${eff.dur}轮`); }
           break;
         }
         case 'damage': {
@@ -1936,7 +1937,7 @@ export class SmallBattle {
             const amount = healingYield(actor, target, eff.amount ?? rollDice(eff.dice!, this.rng).total, !!ability.itemSourceId, eff.power);
             const restored=applyRecovery(target, amount);heal+=restored;
             if (target.status === 'dying' && target.hp > 0) target.status = 'ready';
-            logBits.push('治疗 ' + restored + ' → ' + target.name + ' 生命 ' + (memberHealth(target)-restored) + '→' + memberHealth(target));
+            logBits.push('治疗 ' + displayNumber(restored) + ' → ' + target.name + ' 生命 ' + displayNumber((memberHealth(target)-restored)) + '→' + displayNumber(memberHealth(target)));
           }
           break;
         }
@@ -1979,7 +1980,7 @@ export class SmallBattle {
         case 'resource': {
           for (const target of ability.recipe || ability.itemSourceId || ability.equipmentSourceId ? effectTargets(ability.shape === 'burst') : [actor]) {
             const amount = skillResourceChange(target, eff); target.resources[eff.resource] = (target.resources[eff.resource] ?? 0) + amount;
-            logBits.push(target.name + ' ' + eff.resource + (amount >= 0 ? '+' : '') + amount);
+            logBits.push(target.name + ' ' + eff.resource + (amount >= 0 ? '+' : '') + displayNumber(amount));
           }
           break;
         }
@@ -1988,7 +1989,7 @@ export class SmallBattle {
           const targets = this.rules.resolutionVersion === 'v2' ? effectTargets(ability.shape === 'burst') : [primary];
           for (const target of targets) if (target.morale !== undefined || target.rulesVersion === 'v2') {
             changeMorale(target, eff.amount);
-            logBits.push(target.moraleLocked ? `${target.name} 满士气锁定，士气不变` : `${target.name} 士气${eff.amount >= 0 ? '+' : ''}${eff.amount} → ${moraleProfile(this.observationContext(), target, this.traitRegistry).effective}`);
+            logBits.push(target.moraleLocked ? `${target.name} 满士气锁定，士气不变` : `${target.name} 士气${eff.amount >= 0 ? '+' : ''}${displayNumber(eff.amount)} → ${displayNumber(moraleProfile(this.observationContext(), target, this.traitRegistry).effective)}`);
           }
           break;
         }
@@ -2018,7 +2019,7 @@ export class SmallBattle {
                 // 给它插入先攻队列：位置放在当前行动者之后（本轮即可行动）
                 const idx = this.turnIndex + 1;
                 this.turnOrder.splice(Math.min(idx, this.turnOrder.length), 0, u.id);
-                logBits.push(`【召唤】${u.name} 降临战场（${u.hp}/${u.base.hpMax} HP，阵位${u.pos}）`);
+                logBits.push(`【召唤】${u.name} 降临战场（${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)} HP，阵位${u.pos}）`);
               }
             } else {
               logBits.push(`（召唤失败：模板 ${tmpl} 无可用单位）`);
@@ -3133,7 +3134,7 @@ export class SmallBattle {
           round: this.round,
           kind: 'condition',
           damage: {sourceId:c.sourceId,targetId:u.id,amount:lost,cause:def.dot.label ?? def.name,...(hasMemberHealth(u)?{unit:'life' as const,members:members-u.hp}:{})},
-          participants: [u.id], text: `${u.name} ${def.dot.label ?? def.name} -${damage} → ${hasMemberHealth(u)?'总生命':'HP'} ${memberHealth(u)}`,
+          participants: [u.id], text: `${u.name} ${def.dot.label ?? def.name} -${displayNumber(damage)} → ${hasMemberHealth(u)?'总生命':'HP'} ${displayNumber(memberHealth(u))}`,
         });
         this.checkDeath(u, this.combatants.find(source=>source.id===c.sourceId));
         if (u.hp <= 0) { dotSource = this.combatants.find((source) => source.id === c.sourceId); break; }
@@ -3183,7 +3184,7 @@ export class SmallBattle {
     const regen = this.rules.resolutionVersion === 'v2' ? regeneration : this.regenOf(u);
     if (['traits-levels-v2', 'traits-items-v1', 'traits-items-v2'].includes(this.rules.traitLevelModel ?? '') || regen > 0 && u.hp > 0 && recoveryCapacity(u)>0) {
       const restored = settleRegeneration(u, regen);
-      if (restored > 0) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 再生 +${restored} → ${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}${u.scale !== 'hero' && u.rulesVersion === 'v2' ? `，剩余可救伤兵${u.recoverableWounded ?? 0}` : ''}` });
+      if (restored > 0) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 再生 +${displayNumber(restored)} → ${u.scale === 'hero' ? '生命' : '人数'} ${displayNumber(u.hp)}${u.scale !== 'hero' && u.rulesVersion === 'v2' ? `，剩余可救伤兵${u.recoverableWounded ?? 0}` : ''}` });
     }
   }
 
@@ -3424,9 +3425,9 @@ export class SmallBattle {
     for (const unit of b.combatants) {
       const before = lifeBefore.get(unit.id), maximum = unit.scale === 'hero' ? unit.base.hpMax : unit.formation?.memberHp;
       if (before?.maximum !== undefined && before.maximum !== maximum) b.recordEvent({ round: b.round, kind: 'condition', participants: [unit.id],
-        text: `${unit.name} 单体生命上限调整：${before.maximum}→${maximum}${unit.scale === 'hero' ? `，当前生命${before.hp}→${unit.hp}` : '，编制不变'}；规则归一化，不计战斗伤害` });
+        text: `${unit.name} 单体生命上限调整：${displayNumber(before.maximum)}→${displayNumber(maximum)}${unit.scale === 'hero' ? `，当前生命${displayNumber(before.hp)}→${displayNumber(unit.hp)}` : '，编制不变'}；规则归一化，不计战斗伤害` });
       if (before?.pressure !== undefined && before.pressure !== unit.moraleState?.damagePenalty) b.recordEvent({ round: b.round, kind: 'condition', participants: [unit.id],
-        text: `${unit.name} 受创士气压力按实际最大生命校准：${before.pressure}→${unit.moraleState?.damagePenalty}` });
+        text: `${unit.name} 受创士气压力按实际最大生命校准：${displayNumber(before.pressure)}→${displayNumber(unit.moraleState?.damagePenalty)}` });
     }
     b.xpMinimum = new Map([...initialXpStrength(b.combatants, true), ...(snap.xpMinimum ?? [])]);
     b.xpInitialStrength = new Map(snap.xpInitialStrength ?? []);

@@ -1,3 +1,4 @@
+import { displayNumber } from './display-number.js';
 import {shieldClass,shieldDurabilityMax,clampShieldDurability,energyShieldActive,energyShieldCapacity,energyShieldShare,energyShareOf,energyThresholdOf,energyShieldRecharge,energyPower,energyOverloadThreshold,clampEnergyShield,rechargeEnergyShield,type ShieldBearer} from './shield-state.js';
 export {shieldClass,shieldDurabilityMax,clampShieldDurability,standardSwordMean,SHIELD_DURABILITY_FACTOR,energyShieldActive,energyShieldCapacity,energyShieldShare,energyShieldPool,energyShieldRecharge,energyShareOf,energyThresholdOf,shieldPlatformScale,energyOverloadThreshold,energyHeavyHit,rechargeEnergyShield,ENERGY_SHIELD_SHARE,ENERGY_HEAVY_ABSORB,ENERGY_RECHARGE_SHARE,type ShieldBearer} from './shield-state.js';
 import { equipmentBurden } from './equipment-load.js';
@@ -113,8 +114,8 @@ export function armsStatusLabels(unit: Combatant, shield = true): string[] {
 /** 单位详情的盾一行：类型与规格，再接挂背、覆盖、耐久或能量盾说明。 */
 export function shieldDetail(unit: Combatant): string {
   const v2 = isArmsV2(unit.armsModel), kind = v2 ? shieldClass(unit) : 'shield', power = unit.shield!.recipe?.power ?? 3, head = SHIELD_CLASSES[kind].name + 'L' + power;
-  if (v2 && kind === 'energy-shield' && isArmsV3(unit.armsModel)) return [head, '每人一份' + energyShareOf(unit) + '点，每次激活回充' + energyShieldRecharge(energyPower(unit)) + '点，单段均值不低于' + Number(energyThresholdOf(unit).toFixed(1)) + '的重击只能由被击中的份额抵挡', ...shieldStatusLabels(unit)].join(' · ');
-  if (v2 && kind === 'energy-shield') return [head, '每人一份' + energyShieldShare(power) + '点，单段均值不低于' + Number(energyOverloadThreshold(power).toFixed(1)) + '的重击只能由被击中的份额抵挡', ...shieldStatusLabels(unit)].join(' · ');
+  if (v2 && kind === 'energy-shield' && isArmsV3(unit.armsModel)) return [head, '每人一份' + displayNumber(energyShareOf(unit)) + '点，每次激活回充' + displayNumber(energyShieldRecharge(energyPower(unit))) + '点，单段均值不低于' + Number(energyThresholdOf(unit).toFixed(1)) + '的重击只能由被击中的份额抵挡', ...shieldStatusLabels(unit)].join(' · ');
+  if (v2 && kind === 'energy-shield') return [head, '每人一份' + displayNumber(energyShieldShare(power)) + '点，单段均值不低于' + Number(energyOverloadThreshold(power).toFixed(1)) + '的重击只能由被击中的份额抵挡', ...shieldStatusLabels(unit)].join(' · ');
   if (v2 && unit.shieldDurability?.remaining === 0) return head + ' · 盾已碎';
   if (v2 && !shieldUsable(unit)) return head + ' · 挂背（主武器双手）';
   return [head, '覆盖' + Math.round(shieldCoverage(unit) * 100) + '%', ...shieldStatusLabels(unit)].join(' · ');
@@ -127,14 +128,14 @@ export function shieldStatusLabels(unit: Combatant): string[] {
   if (!shieldUsable(unit) && unit.shieldDurability?.remaining !== 0) labels.push('盾牌挂背');
   if (unit.energyShield) {
     const { remaining, overloaded } = unit.energyShield;
-    labels.push('能量盾 ' + (isArmsV3(unit.armsModel) ? Number(remaining.toFixed(1)) : remaining) + '/' + energyShieldCapacity(unit) + (overloaded && unit.scale !== 'hero' ? '（' + overloaded + ' 人过载）' : ''));
+    labels.push('能量盾 ' + (isArmsV3(unit.armsModel) ? Number(remaining.toFixed(1)) : displayNumber(remaining)) + '/' + displayNumber(energyShieldCapacity(unit)) + (overloaded && unit.scale !== 'hero' ? '（' + overloaded + ' 人过载）' : ''));
     if (overloaded && unit.scale === 'hero') labels.push('能量盾过载');
   }
   return labels;
 }
 /** 战斗界面的防护层：盾耐久或能量盾剩余（含过载），再加技能屏障剩余。 */
 export function defenseLayerLabels(unit: Combatant): string[] {
-  return [...shieldStatusLabels(unit), ...(unit.barrier ? ['屏障 ' + unit.barrier.remaining] : [])];
+  return [...shieldStatusLabels(unit), ...(unit.barrier ? ['屏障 ' + displayNumber(unit.barrier.remaining)] : [])];
 }
 
 export function shieldUsable(unit: ShieldBearer, incoming?: Weapon): boolean {

@@ -1,3 +1,4 @@
+import { displayNumber } from './display-number.js';
 import { shieldGuardUsable, isArmsV2 } from './arms.js';
 import { progression, stackingRevision } from './progression.js';
 import { wornEffects } from './gear-bonuses.js';
@@ -198,7 +199,7 @@ export function resolveStack(
 export function describeStack(r: StackResult): string {
   const parts = r.lines
     .filter((l) => l.type === 'flat' ? l.value !== 0 : l.value !== 1)
-    .map((l) => (l.type === 'flat' ? `${l.name} ${l.value > 0 ? '+' : ''}${l.value}` : `${l.name} ×${l.value}`));
+    .map((l) => (l.type === 'flat' ? `${l.name} ${l.value > 0 ? '+' : ''}${displayNumber(l.value)}` : `${l.name} ×${displayNumber(l.value)}`));
   return parts.join('，');
 }
 
