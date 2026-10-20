@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.7.0**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **2.7.1**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-2.7.0 lets the secondary API place one or several units in a named room or at a specific landmark. Room occupancy and nearby guard positions use the existing deployment engine; compass-only answers and saved battles remain compatible. See the [release guide](docs/current-release.md).
+2.7.1 fixes mixed inventory deductions and preserves the original item when reforging and equipping it in the same reply. Loadout skill selection can delete learned skills before saving, and equipped items use a fixed slot order. Saved battle rules remain unchanged. See the [release guide](docs/current-release.md).
 
 ## Documentation
 

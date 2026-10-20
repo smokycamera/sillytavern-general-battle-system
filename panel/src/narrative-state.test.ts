@@ -3,7 +3,7 @@ import { generateUnit, traitRegistry, activeTraitIds, applyXp, V6_D20 } from '..
 import { prepareCombatModel } from '../../engine/src/combat-model.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
 import { unitRecordFromCombatant, materializeUnitRecord } from './unit-state.js';
-import { prepareInventoryState } from './inventory-state.js';
+import { createInventoryItem, prepareInventoryState } from './inventory-state.js';
 import { narrativeIds } from './narrative-ids.js';
 import { narrativeProjection } from './narrative-controller.js';
 import { serializeEvent } from './protocol-syntax.js';
@@ -122,6 +122,37 @@ describe('正文原子事务', () => {
     save.inventory[0]!.qty = 1;
     expect(() => prepareNarrativeTransaction(save, proposal, ns, true)).toThrow(/数量/);
     expect(save.inventory[0]!.qty).toBe(1);
+  });
+  it.each([false, true])('同批扣除装备、佩戴、随身及公共库存，精确卸下指定佩戴且整批回滚，逆序=%s', reverse => {
+    const f = setup('');
+    const unit = generateUnit({ name: '佩戴者', side: 'ally', scale: 'hero', rulesVersion: 'v2', level: 4, traits: [], weaponClass: 'sword' }, { seed: 'mixed-take', registry: reg }).unit;
+    unit.id = 'a'; f.save.storage = [unitRecordFromCombatant(unit)];
+    const owned = (id: string, equipped = false) => ({
+      ...createInventoryItem(id, id, { kind: 'item', form: 'worn', power: 3, bonuses: { defense: 1 } }, id),
+      assignedTo: 'a', ...(equipped ? { equippedTo: { unitId: 'a', slot: 'gear' as const } } : {}),
+    });
+    const save = prepareInventoryState({ ...f.save, inventory: [owned('remove-worn', true), owned('keep-worn', true), owned('bag'),
+      createInventoryItem('public', '公共药剂', { kind: 'item', form: 'single', power: 2, active: 'generic:buff:heal' }, 'public', 3)] });
+    const weapon = save.inventory!.find(item => item.equippedTo?.slot === 'primary')!;
+    const ids = narrativeIds(save), targets = [weapon.id, 'remove-worn', 'bag', 'public'];
+    if (reverse) targets.reverse();
+    const commit = (body: string) => {
+      const binding = captureGeneration(save, f.ns, 'g1'); binding.complete = true;
+      return prepareNarrativeTransaction(save, proposalFromMessage({ ...f.source, text: `<tb>${body}</tb>` }, binding)!, f.ns, true);
+    };
+    const body = targets.map(id => `<take id="${ids.publicId(id)}" qty="1"/>`).join('');
+    const before = structuredClone(save), next = commit(body);
+    for (const id of targets) {
+      const item = next.inventory!.find(item => item.id === id)!;
+      expect(item.qty).toBe(id === 'public' ? 2 : 0);
+      expect(item.equippedTo).toBeUndefined();
+    }
+    expect(next.inventory!.find(item => item.id === 'keep-worn')).toEqual(before.inventory!.find(item => item.id === 'keep-worn'));
+    expect(next.storage![0]!.snapshot!.weapon).toBeUndefined();
+    expect(next.storage![0]!.snapshot!.gear!.map(item => item.id)).toEqual(['keep-worn']);
+    expect(next.factRevision).toBe(save.factRevision! + 1);
+    expect(() => commit(body + `<take id="${ids.publicId('public')}" qty="3"/>`)).toThrow(/数量/);
+    expect(save).toEqual(before);
   });
   it('新批出场替换旧名单；不合并旧身份，仍允许原档治疗和合法编队人数', () => {
     const { save, ns, source } = setup('');

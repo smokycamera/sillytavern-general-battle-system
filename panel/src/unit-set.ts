@@ -269,6 +269,7 @@ export const UNIT_EQUIPMENT_FIELDS = ['weapon', 'weapon2', 'sidearm', 'armor', '
 export interface UnitSetContext {
   given?: ReadonlySet<string>; notices?: string[]; transferred?: ReadonlySet<string>;
   reforgedNames?: ReadonlyMap<string, string>;
+  reforgedEquipment?: readonly InventoryItem[];
   deferEquipmentFor?: ReadonlyMap<string, readonly InventoryItem[]>; deferredEquipment?: Map<string, Record<string, unknown>>;
 }
 export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData, sourceId: string, options: UnitSetContext = {}): NarrativeSave {
@@ -391,7 +392,9 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   for (const [key,slot] of Object.entries(slotKeys) as [keyof typeof slotKeys,EquipmentSlot][]) {
     if (!Object.hasOwn(data,key)) continue;
     const equipped = next.inventory!.find(i => i.equippedTo?.unitId===id && i.equippedTo.slot===slot);
-    const wanted = wantedGear(data[key]);
+    // 内部锁定使用完整实物id（可能含冒号），先识别引用，不能把id当作“名称:规格”拆开。
+    const referenced = typeof data[key] === 'string' ? next.inventory!.find(item => item.id === data[key]) : undefined;
+    const wanted: WantedGear | undefined = referenced ? { name: String(data[key]), referenceOnly: true, values: false } : wantedGear(data[key]);
     if (wanted?.name) wanted.itemId = ids.realId(wanted.name);
     const incoming = wanted ? stashedGear(next.inventory!.filter(item => transferred.has(item.id) && item.assignedTo === id), id, slot, wanted, transferred) : undefined;
     // 写的就是手上这件：原位修改。否则库存里有这件（含同一回复刚 add 的）就直接换上，原装备卸下留作备用，不另造一件。

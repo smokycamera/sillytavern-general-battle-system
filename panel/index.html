@@ -456,7 +456,10 @@ body[data-native="true"] .app-brand h1 { font-size:15px; letter-spacing:1px; }
 .inventory-delete-list { max-height:160px; overflow:auto; overflow-wrap:anywhere; margin-bottom:12px; }
 .inventory-title-actions button { white-space:nowrap; padding-inline:10px; }
 .loadout-skill-list { display:flex; flex-direction:column; gap:8px; margin:12px 0; }
-.loadout-skill-choice { display:flex; align-items:flex-start; gap:10px; padding:12px; border:1px solid var(--line); border-radius:8px; min-height:44px; cursor:pointer; }
+.loadout-skill-row { display:flex; align-items:center; gap:8px; padding:12px; border:1px solid var(--line); border-radius:8px; }
+.loadout-skill-row > button { flex:0 0 auto; }
+.loadout-skill-row.pending-delete .loadout-skill-choice b { text-decoration:line-through; }
+.loadout-skill-choice { display:flex; flex:1; min-width:0; align-items:flex-start; gap:10px; min-height:44px; cursor:pointer; }
 .loadout-skill-choice input { flex:0 0 auto; width:20px; height:20px; min-height:20px; margin:2px 0; }
 .loadout-skill-choice span { min-width:0; overflow-wrap:anywhere; }
 .loadout-skill-choice small { display:block; color:var(--dim); margin-top:4px; line-height:1.5; }

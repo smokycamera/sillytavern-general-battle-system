@@ -250,12 +250,23 @@ function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: M
   }
   next.storage = records;
   for (const [id, patch] of combined) {
-    const incoming = context.deferEquipmentFor?.get(id);
-    if (incoming?.length && context.deferredEquipment) {
+    const side = patch.side ?? records.find(record => record.id === id)?.side;
+    const reforged = context.reforgedEquipment?.filter(item => item.qty > 0 && (side === 'ally' || item.equippedTo?.unitId === id)
+      && (item.assignedTo === id || !item.assignedTo && side === 'ally')) ?? [];
+    const incoming = [...context.deferEquipmentFor?.get(id) ?? [], ...reforged];
+    if (incoming.length && context.deferredEquipment) {
       const deferred = context.deferredEquipment.get(id) ?? {};
       const resolve = narrativeIds(next).realId;
-      for (const key of UNIT_EQUIPMENT_FIELDS) if (Object.hasOwn(patch, key) && incoming.some(item => unitSetReferencesGear(key, patch[key], item, resolve, context.reforgedNames))) {
-        deferred[key] = patch[key]; delete patch[key];
+      for (const key of UNIT_EQUIPMENT_FIELDS) if (Object.hasOwn(patch, key)) {
+        const slot = key === 'weapon' ? 'primary' : key === 'weapon2' ? 'sidearm' : key;
+        const matches = incoming.filter(item => (!item.equippedTo || item.equippedTo.unitId === id && item.equippedTo.slot === slot
+          || context.deferEquipmentFor?.get(id)?.some(given => given.id === item.id))
+          && unitSetReferencesGear(key, patch[key], item, resolve, context.reforgedNames));
+        if (!matches.length) continue;
+        const unique = [...new Set(matches.map(item => item.id))];
+        // 重铸与转移完成后再穿戴，字符串引用先锁定原实物；不能按改名后的名称另造一件。
+        deferred[key] = typeof patch[key] === 'string' && unique.length === 1 ? unique[0] : patch[key];
+        delete patch[key];
       }
       if (Object.keys(deferred).length) context.deferredEquipment.set(id, deferred);
     }
@@ -349,7 +360,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     next = prepareInventoryState(next);
     const item = next.inventory?.find((i) => i.id === event.id);
     if (!item || item.qty < event.qty) throw new Error('物品不存在或移除数量超出库存');
-    if (item.equippedTo) next = prepareInventoryTransaction(next, { kind: 'unequip', id: 'take-unequip:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, ...item.equippedTo });
+    if (item.equippedTo) next = prepareInventoryTransaction(next, { kind: 'unequip', id: 'take-unequip:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, ...item.equippedTo, itemId: item.id });
     next = prepareInventoryTransaction(next, { kind: 'discard', id: 'take:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, itemId: event.id, qty: event.qty });
   }
   for (const [index, event] of proposal.events.entries()) {
@@ -365,7 +376,9 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (item) for (const unitId of event.to ?? []) incomingEquipment.set(unitId, [...incomingEquipment.get(unitId) ?? [], item]);
   }
   const reforgedNames = new Map(proposal.events.flatMap(event => event.kind === 'reforge' && event.name ? [[event.id, event.name] as const] : []));
-  const unitSetContext: UnitSetContext = { given, notices, deferredEquipment, deferEquipmentFor: incomingEquipment, reforgedNames };
+  const reforgeIds = new Set(proposal.events.flatMap(event => event.kind === 'reforge' ? [event.id] : []));
+  const unitSetContext: UnitSetContext = { given, notices, deferredEquipment, deferEquipmentFor: incomingEquipment, reforgedNames,
+    reforgedEquipment: preparedSave.inventory?.filter(item => reforgeIds.has(item.id)) };
   const directGives = new Map<string, string>();
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind !== 'add' || event.item === undefined) continue;
@@ -462,11 +475,6 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   }
   const transferred = new Set(proposal.events.flatMap(event => event.kind === 'give' ? [event.id] : []));
   for (const [unitId, patch] of deferredEquipment) {
-    // 在原始清单上锁定实物身份；后续改名也不会让配装重新按名字另造一件。
-    for (const field of UNIT_EQUIPMENT_FIELDS) if (typeof patch[field] === 'string') {
-      const matches = incomingEquipment.get(unitId)?.filter(item => unitSetReferencesGear(field, patch[field], item, ids.realId, reforgedNames)) ?? [];
-      if (matches.length === 1) patch[field] = matches[0]!.id;
-    }
     next = applyUnitSet(next, unitId, patch, proposal.id, { given, notices, transferred });
   }
   // unit_set 的 items 最后交出：此时同一回复 add 的已入库，新建单位也已建档。
