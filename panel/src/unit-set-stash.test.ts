@@ -72,6 +72,17 @@ describe('unit_set 换装与库存同一件实物', () => {
     expect(next.inventory!.find(item => item.id === armor.id)).toMatchObject({ assignedTo: 'a', mechanics: armor.mechanics });
     expect(next.inventory!.find(item => item.id === armor.id)!.equippedTo).toBeUndefined();
   });
+  it.each([false, true])('防刺内衬改名带钢板后，give与unit_set锁定原实物，unit_set在前=%s', setFirst => {
+    const armor = createInventoryItem('incoming-armor', '防刺内衬', { kind: 'armor', tier: 1, power: 1 }, 'original-armor');
+    const save = setup('ally', [armor]), id = narrativeIds(save).publicId(armor.id), name = '防刺内衬（带钢板）';
+    const reforge = `<reforge id="${id}" name="${name}" spec="轻甲l2+4防护"/>`, give = `<give id="${id}" to="u1"/>`, set = `<unit_set id="u1" armor="${name}:轻甲L2+4防护"/>`;
+    const next = transact(save, setFirst ? set + give + reforge : reforge + give + set);
+    expect(named(next, name)).toHaveLength(1);
+    expect(named(next, name)[0]).toMatchObject({ id: armor.id, assignedTo: 'a', equippedTo: { unitId: 'a', slot: 'armor' }, revision: 3 });
+    expect(named(next, '防刺内衬')).toHaveLength(0);
+    expect(next.storage![0]!.snapshot!.armor).toEqual(named(next, name)[0]!.mechanics!.value);
+    expect(next.storage![0]!.snapshot!.armor).toMatchObject({ id: armor.id, name, recipe: { power: 2, bonuses: { protection: 4 }, seed: 'original-armor' } });
+  });
   it('原生保存、读回与重扫保留转来的防具身份和属性，不重复入库', async () => {
     const f = nativeFixture();
     try {

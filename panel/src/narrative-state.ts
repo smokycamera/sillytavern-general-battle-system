@@ -253,7 +253,7 @@ function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: M
     if (incoming?.length && context.deferredEquipment) {
       const deferred = context.deferredEquipment.get(id) ?? {};
       const resolve = narrativeIds(next).realId;
-      for (const key of UNIT_EQUIPMENT_FIELDS) if (Object.hasOwn(patch, key) && incoming.some(item => unitSetReferencesGear(key, patch[key], item, resolve))) {
+      for (const key of UNIT_EQUIPMENT_FIELDS) if (Object.hasOwn(patch, key) && incoming.some(item => unitSetReferencesGear(key, patch[key], item, resolve, context.reforgedNames))) {
         deferred[key] = patch[key]; delete patch[key];
       }
       if (Object.keys(deferred).length) context.deferredEquipment.set(id, deferred);
@@ -362,7 +362,8 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     const item = preparedSave.inventory?.find(item => item.id === event.id);
     if (item) for (const unitId of event.to ?? []) incomingEquipment.set(unitId, [...incomingEquipment.get(unitId) ?? [], item]);
   }
-  const unitSetContext: UnitSetContext = { given, notices, deferredEquipment, deferEquipmentFor: incomingEquipment };
+  const reforgedNames = new Map(proposal.events.flatMap(event => event.kind === 'reforge' && event.name ? [[event.id, event.name] as const] : []));
+  const unitSetContext: UnitSetContext = { given, notices, deferredEquipment, deferEquipmentFor: incomingEquipment, reforgedNames };
   const directGives = new Map<string, string>();
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind !== 'add' || event.item === undefined) continue;
@@ -458,7 +459,14 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     next = prepareInventoryTransaction(next, { kind: 'transfer', id: `give:${proposal.id}:${index}`, expectedRevision: next.factRevision ?? 0, itemId: event.id, unitIds: event.to, qty: event.qty });
   }
   const transferred = new Set(proposal.events.flatMap(event => event.kind === 'give' ? [event.id] : []));
-  for (const [unitId, patch] of deferredEquipment) next = applyUnitSet(next, unitId, patch, proposal.id, { given, notices, transferred });
+  for (const [unitId, patch] of deferredEquipment) {
+    // 在原始清单上锁定实物身份；后续改名也不会让配装重新按名字另造一件。
+    for (const field of UNIT_EQUIPMENT_FIELDS) if (typeof patch[field] === 'string') {
+      const matches = incomingEquipment.get(unitId)?.filter(item => unitSetReferencesGear(field, patch[field], item, ids.realId, reforgedNames)) ?? [];
+      if (matches.length === 1) patch[field] = matches[0]!.id;
+    }
+    next = applyUnitSet(next, unitId, patch, proposal.id, { given, notices, transferred });
+  }
   // unit_set 的 items 最后交出：此时同一回复 add 的已入库，新建单位也已建档。
   const handovers: HandOver[] = [...proposal.events.entries()].flatMap(([index, event]) => event.kind === 'unit-set' && event.items?.length ? [{ unitId: event.id, items: event.items, index }] : []);
   for (const [unitId, items] of fresh.items) handovers.push({ unitId, items, index: proposal.events.length + handovers.length });

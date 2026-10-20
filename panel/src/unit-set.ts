@@ -158,11 +158,13 @@ function sameGear(mechanics: ItemMechanics | undefined, spec: ItemSpecification 
     && (spec.kind !== 'armor' || spec.profile === undefined || (recipe.protectionProfile ?? 'balanced') === spec.profile);
 }
 /** 同批give明确交出的这件实物是否正是unit_set要穿戴的装备。 */
-export function unitSetReferencesGear(field: string, input: unknown, item: InventoryItem, realId: (id: string) => string): boolean {
+export function unitSetReferencesGear(field: string, input: unknown, item: InventoryItem, realId: (id: string) => string, reforgedNames?: ReadonlyMap<string, string>): boolean {
   const kind = ['weapon', 'weapon2', 'sidearm'].includes(field) ? 'weapon' : field;
   if (item.mechanics?.kind !== kind || !['weapon', 'armor', 'shield'].includes(kind)) return false;
   const wanted = wantedGear(input);
-  return !!wanted && (wanted.name ? item.id === realId(wanted.name) || itemKey(item.name) === itemKey(wanted.name) : sameGear(item.mechanics, wanted.spec));
+  if (!wanted || !wanted.spec && !wanted.referenceOnly || wanted.spec && wanted.spec.kind !== kind) return false;
+  return wanted.name ? item.id === realId(wanted.name) || itemKey(item.name) === itemKey(wanted.name)
+    || itemKey(reforgedNames?.get(item.id) ?? '') === itemKey(wanted.name) : sameGear(item.mechanics, wanted.spec);
 }
 // 只有名字、没有规格的叙事记录，按种类可以补上规格后装备。
 const NARRATIVE_GEAR: Record<'weapon' | 'armor', string[]> = { weapon: ['weapon', 'misc', 'quest'], armor: ['armor', 'misc', 'quest'] };
@@ -266,6 +268,7 @@ function rebase(unit: Combatant, data: ObjectData): void {
 export const UNIT_EQUIPMENT_FIELDS = ['weapon', 'weapon2', 'sidearm', 'armor', 'shield'] as const;
 export interface UnitSetContext {
   given?: ReadonlySet<string>; notices?: string[]; transferred?: ReadonlySet<string>;
+  reforgedNames?: ReadonlyMap<string, string>;
   deferEquipmentFor?: ReadonlyMap<string, readonly InventoryItem[]>; deferredEquipment?: Map<string, Record<string, unknown>>;
 }
 export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData, sourceId: string, options: UnitSetContext = {}): NarrativeSave {
