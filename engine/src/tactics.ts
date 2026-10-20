@@ -1,3 +1,4 @@
+import { displayNumber } from './display-number.js';
 import { isArmsV2, shieldUsable, shieldClass } from './arms.js';
 import { isArmsV3 } from './arms-model.js';
 import { wornEffects } from './gear-bonuses.js';
@@ -19,7 +20,7 @@ export interface TacticalPose {
 }
 export const SPEED_TIERS = ['迟缓', '缓行', '标准', '快速', '疾速'] as const;
 export function movementLabel(unit: Combatant, tags: string[] = []): string {
-  const points = movementPoints(unit, tags); return SPEED_TIERS[Math.max(0, Math.min(4, Math.floor(points) - 1))] + '·' + points + '格';
+  const points = movementPoints(unit, tags); return SPEED_TIERS[Math.max(0, Math.min(4, Math.floor(points) - 1))] + '·' + displayNumber(points) + '格';
 }
 /** 训练先攻与地图移动分开；移动只读实际体量、负载、专长、状态和疲劳。 */
 export function movementPoints(unit: Combatant, tags: string[] = []): number {

@@ -1,10 +1,11 @@
+import { displayNumber } from '../../engine/src/display-number.js';
 import { SmallBattle, FORMATION_NODES, isCommandV2, commandLabel, DEFAULT_COMMAND, COMMAND_STYLE_LABELS, COMMAND_STYLE_DESCRIPTIONS, type Combatant, type BattleLogEntry } from '../../engine/src/index.js';
 import { publicBattleEvents, battleIdOf, type Battle } from './battle-reports.js';
 import { unitIcon, unitIconKey } from './unit-icons.js';
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 export function actionCaption(entry: BattleLogEntry): string {
   const r=entry.resolution;
-  if(r)return `${r.attackerName} → ${r.defenderName} · ${!r.hit?'未命中':r.finalDamage>0?`损失${r.finalDamage}${r.damageModel==='member-health'?'生命':''}${r.crit?' · 暴击':''}`:r.penetrationFactor===0?'命中·未穿透':'命中·无生命损失'}`;
+  if(r)return `${r.attackerName} → ${r.defenderName} · ${!r.hit?'未命中':r.finalDamage>0?`损失${displayNumber(r.finalDamage)}${r.damageModel==='member-health'?'生命':''}${r.crit?' · 暴击':''}`:r.penetrationFactor===0?'命中·未穿透':'命中·无生命损失'}`;
   return entry.text.split('\n').filter(l=>!/^伤害 |d20\[/.test(l)).join('；');
 }
 export function lastBattleAction(b: Battle) {

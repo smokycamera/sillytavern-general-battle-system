@@ -1,3 +1,4 @@
+import { displayNumber } from './display-number.js';
 import {clampShieldDurability,clampEnergyShield} from './shield-state.js';
 import type {Combatant} from './types.js';
 import { capSingleLife } from './health-limits.js';
@@ -112,5 +113,5 @@ export function healMemberGroups(unit:Combatant,amount:number):number {
 export function memberHealthSummary(unit:Combatant,limit=6):string {
   if(!hasMemberHealth(unit))return '';
   const groups=unit.formation?.health??[],shown=[...groups].reverse().slice(0,limit);
-  return shown.map(g=>`${g.count}${memberNoun(unit)} ${g.hp}/${unit.formation!.memberHp}生命`).join('；')+(groups.length>limit?`；另${groups.length-limit}组伤损`:'');
+  return shown.map(g=>`${g.count}${memberNoun(unit)} ${displayNumber(g.hp)}/${displayNumber(unit.formation!.memberHp)}生命`).join('；')+(groups.length>limit?`；另${groups.length-limit}组伤损`:'');
 }

@@ -1,6 +1,6 @@
 /** 面向玩家的属性数值最多显示两位小数；存档与结算保留原精度。 */
-export function displayNumber(value: number): string {
-  return Number.isFinite(value) ? String(Number(value.toFixed(2))) : String(value);
+export function displayNumber(value: number | null | undefined): string {
+  return typeof value === 'number' && Number.isFinite(value) ? String(Number(value.toFixed(2))) : String(value);
 }
 
 /**

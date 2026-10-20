@@ -1,3 +1,4 @@
+import { displayNumber } from './display-number.js';
 import { WEAPON_CLASSES } from './data/weapons.js';
 import { progression, stackingRevision } from './progression.js';
 import { traitParameter } from './trait-parameters.js';
@@ -651,7 +652,7 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
   const netAtk = attacker.base.atk + atkStack.flatTotal + precision;
   const targetDef = defender.base.def + defStack.flatTotal + evasion;
 
-  const attackDetail = [describeStack(atkStack), ...extraMods.filter(m => m.kind === 'atk' && m.value === 0 && ['破盾','斧劈盾','破绽一击'].includes(m.name) || m.kind === 'dmg' && ['骑乘冲刺','霰弹衰减','拒止冲锋'].includes(m.name)).map(m => m.name + (m.kind === 'dmg' ? ' ×' + m.value : ''))].filter(Boolean).join('；');
+  const attackDetail = [describeStack(atkStack), ...extraMods.filter(m => m.kind === 'atk' && m.value === 0 && ['破盾','斧劈盾','破绽一击'].includes(m.name) || m.kind === 'dmg' && ['骑乘冲刺','霰弹衰减','拒止冲锋'].includes(m.name)).map(m => m.name + (m.kind === 'dmg' ? ' ×' + displayNumber(m.value) : ''))].filter(Boolean).join('；');
   return { ranged, weapon, atkMods, defMods, ctxAtk, ctxDef, atkStack, defStack, netAtk, targetDef, attackDetail };
 }
 
@@ -927,29 +928,29 @@ function apShareOf(unit: Combatant, ranged: boolean, registry?: Map<string, impo
 }
 
 /** 生成可读结算行（结算卡与审计共用同一文本源） */
-/** 能量盾数值：旧规则原样显示；V21 换算后保留一位小数。 */
-const shieldAmount=(x:number,defender:Combatant)=>isArmsV3(defender.armsModel)?String(Number(x.toFixed(1))):String(x);
+/** 能量盾数值：最多两位小数；V21 换算后沿用一位小数。 */
+const shieldAmount=(x:number,defender:Combatant)=>isArmsV3(defender.armsModel)?String(Number(x.toFixed(1))):displayNumber(x);
 export function formatResolution(r: AttackResolution, defender: Combatant): string {
-  if(r.damageModel==='member-health')return `${r.attackerName} → ${r.defenderName}：${r.ammunition?r.ammunition==='he'?'榴弹·':'穿甲弹·':''}${r.hit?(r.crit?'暴击':'命中'):'未中'}${r.packetCount?`（${r.packetHits}/${r.packetCount}组命中）`:''}，生命损失${r.finalDamage}（${r.hpBefore}→${r.hpAfter}）${(r.overmatchMultiplier??1)>1?'，跨代毁伤×'+Number(r.overmatchMultiplier!.toFixed(2)):''}${r.energyAbsorbed?`，能量盾吸收${shieldAmount(r.energyAbsorbed,defender)}${r.energySpent!==undefined?`（耗盾${shieldAmount(r.energySpent,defender)}）`:''}`:''}${r.energyOverloaded?defender.scale==='hero'?'，能量盾过载':`，${r.energyOverloaded}人能量盾过载`:''}${r.barrierAbsorbed?`，屏障吸收${r.barrierAbsorbed}`:''}${defender.scale!=='hero'?`，减员${(r.membersBefore??defender.hp)-(r.membersAfter??defender.hp)}${defender.body==='vehicle'?'辆':'人'}`:''}${r.overflowDamage?`，其中溢出${r.overflowDamage}`:''}${r.splashDamage?`，其中爆炸${r.splashDamage}`:''}${r.penetrationFactor===0?'；未穿透':''}${r.shieldBroken?'，'+(defender.shield?.name??'盾牌')+'碎了':''}`;
-  if(r.packetCount)return `${r.attackerName} → ${r.defenderName}：聚合${r.packetCount}组/${r.packetHits}组命中${r.crit?'（含暴击）':''}，损失${r.finalDamage}${defender.scale==='hero'?'生命':'人'}（${r.hpBefore}→${r.hpAfter}）${r.penetrationFactor===0?'；未穿透':''}`;
+  if(r.damageModel==='member-health')return `${r.attackerName} → ${r.defenderName}：${r.ammunition?r.ammunition==='he'?'榴弹·':'穿甲弹·':''}${r.hit?(r.crit?'暴击':'命中'):'未中'}${r.packetCount?`（${r.packetHits}/${r.packetCount}组命中）`:''}，生命损失${displayNumber(r.finalDamage)}（${displayNumber(r.hpBefore)}→${displayNumber(r.hpAfter)}）${(r.overmatchMultiplier??1)>1?'，跨代毁伤×'+Number(r.overmatchMultiplier!.toFixed(2)):''}${r.energyAbsorbed?`，能量盾吸收${shieldAmount(r.energyAbsorbed,defender)}${r.energySpent!==undefined?`（耗盾${shieldAmount(r.energySpent,defender)}）`:''}`:''}${r.energyOverloaded?defender.scale==='hero'?'，能量盾过载':`，${r.energyOverloaded}人能量盾过载`:''}${r.barrierAbsorbed?`，屏障吸收${displayNumber(r.barrierAbsorbed)}`:''}${defender.scale!=='hero'?`，减员${displayNumber((r.membersBefore??defender.hp)-(r.membersAfter??defender.hp))}${defender.body==='vehicle'?'辆':'人'}`:''}${r.overflowDamage?`，其中溢出${displayNumber(r.overflowDamage)}`:''}${r.splashDamage?`，其中爆炸${displayNumber(r.splashDamage)}`:''}${r.penetrationFactor===0?'；未穿透':''}${r.shieldBroken?'，'+(defender.shield?.name??'盾牌')+'碎了':''}`;
+  if(r.packetCount)return `${r.attackerName} → ${r.defenderName}：聚合${r.packetCount}组/${r.packetHits}组命中${r.crit?'（含暴击）':''}，损失${displayNumber(r.finalDamage)}${defender.scale==='hero'?'生命':'人'}（${displayNumber(r.hpBefore)}→${displayNumber(r.hpAfter)}）${r.penetrationFactor===0?'；未穿透':''}`;
   const parts: string[] = [];
   const head = `${r.attackerName} → ${r.defenderName}`;
   if (!r.hit) {
-    parts.push(`${head}：${r.attackRoll ? `d20[${r.attackRoll.kept.join(',')}]` : ''}+${r.netAtk} vs 防御${r.targetDef} ✗未命中`);
+    parts.push(`${head}：${r.attackRoll ? `d20[${r.attackRoll.kept.join(',')}]` : ''}+${displayNumber(r.netAtk)} vs 防御${displayNumber(r.targetDef)} ✗未命中`);
     return parts.join('\n');
   }
   const rollPart = r.attackRoll
-    ? `d20[${r.attackRoll.kept.join(',')}]${r.crit ? ' 暴击!' : ''}+${r.netAtk}=${r.attackRoll.total + r.netAtk} vs 防御${r.targetDef}`
+    ? `d20[${r.attackRoll.kept.join(',')}]${r.crit ? ' 暴击!' : ''}+${displayNumber(r.netAtk)}=${displayNumber(r.attackRoll.total + r.netAtk)} vs 防御${displayNumber(r.targetDef)}`
     : `命中率${(r.hitChance! * 100).toFixed(0)}% 命中`;
   parts.push(`${head}：${rollPart} ✦命中`);
-  if (r.penetrationFactor !== undefined) parts.push(`${r.channel} 穿透${r.penetration} vs 防护${r.resistance} → ${r.penetrationFactor === 0 ? '未穿透，零生命伤害' : Math.round(r.penetrationFactor * 100) + '%通过'}`);
+  if (r.penetrationFactor !== undefined) parts.push(`${r.channel} 穿透${displayNumber(r.penetration)} vs 防护${displayNumber(r.resistance)} → ${r.penetrationFactor === 0 ? '未穿透，零生命伤害' : Math.round(r.penetrationFactor * 100) + '%通过'}`);
   if (r.onHitConditions?.some((c) => c.id === 'poisoned')) parts.push('造成损伤后附带中毒，已中毒者不叠层或续期');
   const dmgBits: string[] = [];
-  if (r.baseRoll) dmgBits.push(`普通${r.baseRoll.rolls.join('+')}${r.baseRoll.flat ? `+${r.baseRoll.flat}` : ''}${r.drPercent > 0 ? `(减伤${r.drPercent}%后${r.baseAfterDR})` : `(${r.baseAfterDR})`}`);
-  if (r.apRoll || r.apTotal > 0) dmgBits.push(`破甲${r.apTotal}`);
-  if (r.dmgMult !== 1) dmgBits.push(`×${r.dmgMult}`);
-  if (r.wardMult !== 1) dmgBits.push(`守护×${r.wardMult}`);
-  parts.push(`伤害 ${dmgBits.join(' ')} = ${r.finalDamage} → ${defender.name} HP ${r.hpBefore}→${r.hpAfter}`);
+  if (r.baseRoll) dmgBits.push(`普通${r.baseRoll.rolls.join('+')}${r.baseRoll.flat ? `+${displayNumber(r.baseRoll.flat)}` : ''}${r.drPercent > 0 ? `(减伤${displayNumber(r.drPercent)}%后${displayNumber(r.baseAfterDR)})` : `(${displayNumber(r.baseAfterDR)})`}`);
+  if (r.apRoll || r.apTotal > 0) dmgBits.push(`破甲${displayNumber(r.apTotal)}`);
+  if (r.dmgMult !== 1) dmgBits.push(`×${displayNumber(r.dmgMult)}`);
+  if (r.wardMult !== 1) dmgBits.push(`守护×${displayNumber(r.wardMult)}`);
+  parts.push(`伤害 ${dmgBits.join(' ')} = ${displayNumber(r.finalDamage)} → ${defender.name} HP ${displayNumber(r.hpBefore)}→${displayNumber(r.hpAfter)}`);
   if (defender.hp <= 0) parts.push(`${defender.name} 倒下`);
   return parts.join('\n');
 }

@@ -1,3 +1,4 @@
+import { displayNumber } from './display-number.js';
 import { controlCondition } from './battle-control.js';
 import { phase2Traits } from './trait-level-model.js';
 import { reconDistance } from './trait-parameters.js';
@@ -141,7 +142,7 @@ export function observeEvent(context: ObservationContext, entry: BattleLogEntry,
     if (global || ids.length && ids.every((id) => visible.has(id))) observedBy.push(side);
     else if (entry.resolution) {
       const victim = context.units.find((u) => u.id === entry.resolution!.defenderId && u.side === side);
-      if (victim) observedText[side] = `${victim.name} 受到未定位攻击，损失${entry.resolution.finalDamage}，剩余${victim.hp}/${victim.base.hpMax}`;
+      if (victim) observedText[side] = `${victim.name} 受到未定位攻击，损失${displayNumber(entry.resolution.finalDamage)}，剩余${displayNumber(victim.hp)}/${displayNumber(victim.base.hpMax)}`;
     }
   }
   return { ...entry, observedBy, ...(Object.keys(observedText).length ? { observedText } : {}) };

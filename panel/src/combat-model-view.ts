@@ -1,3 +1,4 @@
+import { displayNumber } from '../../engine/src/display-number.js';
 import { isCannonWeapon } from '../../engine/src/loadout.js';
 import type { ActionPreview } from '../../engine/src/actions.js';
 import type {Combatant} from '../../engine/src/types.js';
@@ -13,8 +14,8 @@ export function participationText(preview?: ActionPreview, detailed = false): st
 export function memberHealthPanel(unit:Combatant):string {
   if(!hasMemberHealth(unit))return '';
   const groups=[...(unit.formation?.health??[])].reverse(),label=unit.body==='vehicle'?'载具':'成员',noun=memberNoun(unit);
-  const rows=groups.map(g=>`<span class="member-health-group"><b>${g.count}${noun}</b> ${g.hp}/${unit.formation!.memberHp}生命</span>`);
-  return `<div class="member-health-panel" data-member-health="${esc(unit.id)}"><b>${label}生命 · ${unit.hp}/${unit.base.hpMax}${noun}</b><span>总生命 ${memberHealth(unit)}/${memberHealthMax(unit)}</span><div>${rows.slice(0,8).join('')||'<span>全部失能</span>'}</div>${rows.length>8?`<details><summary>另${rows.length-8}组伤损</summary>${rows.slice(8).join('')}</details>`:''}${unit.recoverableWounded?`<small>可救回 ${unit.recoverableWounded}${noun}</small>`:''}</div>`;
+  const rows=groups.map(g=>`<span class="member-health-group"><b>${g.count}${noun}</b> ${displayNumber(g.hp)}/${displayNumber(unit.formation!.memberHp)}生命</span>`);
+  return `<div class="member-health-panel" data-member-health="${esc(unit.id)}"><b>${label}生命 · ${displayNumber(unit.hp)}/${displayNumber(unit.base.hpMax)}${noun}</b><span>总生命 ${displayNumber(memberHealth(unit))}/${displayNumber(memberHealthMax(unit))}</span><div>${rows.slice(0,8).join('')||'<span>全部失能</span>'}</div>${rows.length>8?`<details><summary>另${rows.length-8}组伤损</summary>${rows.slice(8).join('')}</details>`:''}${unit.recoverableWounded?`<small>可救回 ${unit.recoverableWounded}${noun}</small>`:''}</div>`;
 }
 export function cannonAmmoControl(unit:Combatant|undefined,disabled=false):string {
   if(!unit||unit.combatModel!=='cohort-v2'||![unit.weapon,unit.sidearm].some(isCannonWeapon))return '';

@@ -1,3 +1,4 @@
+import { displayNumber } from './display-number.js';
 import { equipmentBurden } from './equipment-load.js';
 import { armsWeaponReason, shieldUnavailableReason } from './arms.js';
 import { progression } from './progression.js';
@@ -318,7 +319,7 @@ export function abilityUsabilityReason(actor: Combatant, ability: Ability): stri
   if (cost) {
     const have = actor.resources[cost.resource] ?? 0;
     if (have < cost.amount) {
-      return (ability.itemSourceId ? '物品数量' : cost.resource) + ' 不足（' + have + '/' + cost.amount + '）';
+      return (ability.itemSourceId ? '物品数量' : cost.resource) + ' 不足（' + displayNumber(have) + '/' + displayNumber(cost.amount) + '）';
     }
   }
   return undefined;

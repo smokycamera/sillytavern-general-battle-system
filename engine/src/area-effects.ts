@@ -1,3 +1,4 @@
+import { displayNumber } from './display-number.js';
 import { traitRegistry } from './data/traits.js';
 import { progression, PROGRESSION_MODEL, STACKING_MODEL, ItemProgressionModel } from './progression.js';
 import { collectMods, resolveStack } from './bonus.js';
@@ -130,7 +131,7 @@ export function settleZones(context: ObservationContext, round: number, boundary
         const amount=zoneAmount(zone); let damage=0;
         if(zone.kind==='healing') {
           const healed=applyRecovery(target,Math.min(recoveryCapacity(target),zone.healingModel ? resolveHealingBudget({ source: owner, target, power: zone.power, baseAmount: amount, delivery: 'zone', sourceMedicSnapshot: zone.sourceMedicSnapshot, rules: { healingModel: zone.healingModel } }) : amount));
-          if(healed)results.push({target,source:owner,damage:0,text:target.name+'在治疗区域恢复'+healed+'点生命'});
+          if(healed)results.push({target,source:owner,damage:0,text:target.name+'在治疗区域恢复'+displayNumber(healed)+'点生命'});
         } else if(zone.kind!=='smoke') {
           const count=target.scale==='hero'?1:Math.min(target.hp,4);
           const factor=zone.kind==='poison'?poisonFactor(target):armorTransmission(target,zone.kind==='fire'?'thermal':'kinetic',zonePenetration(zone));
@@ -139,7 +140,7 @@ export function settleZones(context: ObservationContext, round: number, boundary
           const ward = progression(target) ? resolveStack(collectMods(target, wardContext, standardConditionMap(), [], context.traitRegistry ?? traitRegistry()), 'ward', wardContext).multTotal : 1;
           damage=applyCombatDamage(target,Math.round(amount*factor*count*overmatch*ward),count,overmatch>1?{
             power:zone.power,channel:zone.kind==='fire'?'thermal':'kinetic',penetration:zonePenetration(zone),area:true,canBlock:true,multiplier:overmatch,...(context.rules?.overmatchCurve?{curve:context.rules.overmatchCurve}:{})}:undefined);
-          results.push({target,source:owner,damage,text:target.name+'受到'+ZONE_NAMES[zone.kind]+'影响，损失'+damage+'点生命'});
+          results.push({target,source:owner,damage,text:target.name+'受到'+ZONE_NAMES[zone.kind]+'影响，损失'+displayNumber(damage)+'点生命'});
         }
         const random=rng??new SeededRng(`${zone.id}:${zone.createdRound}:${round}:${target.id}`);
         for(const effect of healingEffectGroups({ effects: zone.effects??[] })) {
@@ -154,11 +155,11 @@ export function settleZones(context: ObservationContext, round: number, boundary
           } else if(effect.op==='barrier') {
             grantBarrier(target,effect.amount,effect.dur,owner.id,effect.defensePower);text=target.name+'在区域内获得屏障';
           } else if(effect.op==='heal') {
-            const healed=applyRecovery(target,Math.min(recoveryCapacity(target),zone.healingModel ? resolveHealingBudget({ source: owner, target, power: effect.power ?? zone.power, baseAmount: effect.amount ?? rollDice(effect.dice!,random).total, delivery: 'zone', sourceMedicSnapshot: zone.sourceMedicSnapshot, rules: { healingModel: zone.healingModel } }) : effect.amount ?? rollDice(effect.dice!,random).total));text=target.name+'在区域内恢复'+healed+'点生命';
+            const healed=applyRecovery(target,Math.min(recoveryCapacity(target),zone.healingModel ? resolveHealingBudget({ source: owner, target, power: effect.power ?? zone.power, baseAmount: effect.amount ?? rollDice(effect.dice!,random).total, delivery: 'zone', sourceMedicSnapshot: zone.sourceMedicSnapshot, rules: { healingModel: zone.healingModel } }) : effect.amount ?? rollDice(effect.dice!,random).total));text=target.name+'在区域内恢复'+displayNumber(healed)+'点生命';
           } else if(effect.op==='resource') {
-            const change=skillResourceChange(target,effect);target.resources[effect.resource]=(target.resources[effect.resource]??0)+change;text=target.name+' '+effect.resource+(change>=0?'+':'')+change;
+            const change=skillResourceChange(target,effect);target.resources[effect.resource]=(target.resources[effect.resource]??0)+change;text=target.name+' '+effect.resource+(change>=0?'+':'')+displayNumber(change);
           } else if(effect.op==='morale') {
-            const change=changeMorale(target,effect.amount);text=target.name+' 士气'+(change>=0?'+':'')+change;
+            const change=changeMorale(target,effect.amount);text=target.name+' 士气'+(change>=0?'+':'')+displayNumber(change);
           } else if(effect.op==='dispel') {
             const chosen=dispelCandidates(target,effect);applyDispel(target,chosen);control=chosen.length>0;text=target.name+(chosen.length?' 解除'+chosen.map(c=>c.name).join('、'):' 没有可解除的效果');
           } else if(effect.op==='push') {

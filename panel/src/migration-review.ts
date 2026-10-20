@@ -1,3 +1,4 @@
+import { displayNumber } from '../../engine/src/display-number.js';
 import { prepareCombatModel } from '../../engine/src/combat-model.js';
 import { V6_D20 } from '../../engine/src/rules.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
@@ -143,7 +144,7 @@ export function reviewMigration(raw: NarrativeSave, unifiedBalance = false): Mig
       const before = unit.scale === 'hero' ? unit.base.hpMax : unit.formation?.memberHp;
       prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit);
       const after = unit.scale === 'hero' ? unit.base.hpMax : unit.formation?.memberHp;
-      changes.push(`${unit.name}：${unit.scale==='hero'?'生命上限':'成员生命'} ${before ?? '未记录'} → ${after}；保留身份、人数、伤损、资源与冷却，自定义上限保留`);
+      changes.push(`${unit.name}：${unit.scale==='hero'?'生命上限':'成员生命'} ${before ?? '未记录'} → ${displayNumber(after)}；保留身份、人数、伤损、资源与冷却，自定义上限保留`);
       return unitRecordFromCombatant(unit, record, {kind:'edit', sourceId:'balance:unified-v1'});
     });
     if (changes.length) changes.push('新生命按原伤损点数换算，零生命不复活；较低新上限下存活者最低保留1生命。保留物品、战报与已保存的战斗。');

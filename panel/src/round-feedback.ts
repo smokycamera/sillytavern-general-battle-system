@@ -1,3 +1,4 @@
+import { displayNumber } from '../../engine/src/display-number.js';
 import { cellLabel, approxDelta, type SmallBattle, type UnitChange, type RoundFeedback } from '../../engine/src/index.js';
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const statusNames: Record<string, string> = { ready: '恢复行动', dying: '濒死倒地', dead: '阵亡', routing: '惊退', fled: '撤出战场' };
@@ -5,8 +6,8 @@ const meaningful = (u: UnitChange) => u.lost || u.recovered || u.morale || u.fat
 const signed = (n: number) => approxDelta(n);
 function detail(battle: SmallBattle, u: UnitChange): string {
   const parts = [
-    u.lost ? '损失' + u.lost + (u.scale === 'hero' ? '生命' : '人') : '',
-    u.recovered ? '恢复' + u.recovered + (u.scale === 'hero' ? '生命' : '人') : '',
+    u.lost ? '损失' + displayNumber(u.lost) + (u.scale === 'hero' ? '生命' : '人') : '',
+    u.recovered ? '恢复' + displayNumber(u.recovered) + (u.scale === 'hero' ? '生命' : '人') : '',
     ...Object.values(u.resources).filter((r) => r.delta).map((r) => r.name + signed(r.delta)),
     ...u.statuses.map((s) => statusNames[s] ?? '状态变化'),
     u.morale ? '士气' + signed(u.morale) : '', u.fatigue ? '疲劳' + signed(u.fatigue) : '',
@@ -21,13 +22,13 @@ function headline(round: RoundFeedback): string {
   for (const side of ['ally', 'enemy'] as const) {
     const units = round.changes.filter((u) => u.side === side);
     const sums = (field: 'lost' | 'recovered', hero: boolean) => units.filter((u) => (u.scale === 'hero') === hero).reduce((n, u) => n + u[field], 0);
-    const losses = [sums('lost', true) ? sums('lost', true) + '生命' : '', sums('lost', false) ? sums('lost', false) + '人' : ''].filter(Boolean);
-    const heals = [sums('recovered', true) ? sums('recovered', true) + '生命' : '', sums('recovered', false) ? sums('recovered', false) + '人' : ''].filter(Boolean);
+    const losses = [sums('lost', true) ? displayNumber(sums('lost', true)) + '生命' : '', sums('lost', false) ? displayNumber(sums('lost', false)) + '人' : ''].filter(Boolean);
+    const heals = [sums('recovered', true) ? displayNumber(sums('recovered', true)) + '生命' : '', sums('recovered', false) ? displayNumber(sums('recovered', false)) + '人' : ''].filter(Boolean);
     if (losses.length || heals.length) lines.push((side === 'ally' ? '我方' : '可见敌方') + [losses.length ? '损失' + losses.join('、') : '', heals.length ? '恢复' + heals.join('、') : ''].filter(Boolean).join('，'));
   }
   if (round.objective) {
     const after = round.objective.after;
-    lines.push(after.winner ? after.winner === 'ally' ? '任务胜利' : after.winner === 'enemy' ? '任务失败' : '任务期限已到' : '占领进度：我方' + after.ally + '，敌方' + after.enemy);
+    lines.push(after.winner ? after.winner === 'ally' ? '任务胜利' : after.winner === 'enemy' ? '任务失败' : '任务期限已到' : '占领进度：我方' + displayNumber(after.ally) + '，敌方' + displayNumber(after.enemy));
   }
   return lines.join(' · ') || '无显著战损 · 行动与资源详见明细';
 }

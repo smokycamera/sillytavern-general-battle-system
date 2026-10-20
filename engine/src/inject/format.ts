@@ -1,3 +1,4 @@
+import { displayNumber } from '../display-number.js';
 import { smallBattleResult } from '../battle-result.js';
 import { NARRATIVE_TASK } from './narrative-task.js';
 import { standardConditionMap } from '../conditions.js';
@@ -47,14 +48,14 @@ export interface SummaryOpts {
 }
 
 function hpLabel(u: Combatant): string {
-  const core = hasMemberHealth(u)?`现员${u.hp}/${u.base.hpMax}${memberNoun(u)} 总生命${memberHealth(u)}/${memberHealthMax(u)}（${memberHealthSummary(u,Infinity)}）`:`${u.scale === 'company' ? '人数' : 'HP '}${u.hp}/${u.base.hpMax}`;
+  const core = hasMemberHealth(u)?`现员${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}${memberNoun(u)} 总生命${displayNumber(memberHealth(u))}/${displayNumber(memberHealthMax(u))}（${memberHealthSummary(u,Infinity)}）`:`${u.scale === 'company' ? '人数' : 'HP '}${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}`;
   return core + stateLabel(u);
 }
 
 /** 战报状态行的兵力：编队写剩余总人数（载具编队按辆），个体写血量。成员生命分组、装备和精力由单位提示词提供。 */
 export function reportStrengthLabel(u: Combatant): string {
-  if (u.scale === 'hero') return `血量${u.hp}/${u.base.hpMax}`;
-  return u.body === 'vehicle' ? `剩余总数${u.hp}/${u.base.hpMax}辆` : `剩余总人数${u.hp}/${u.base.hpMax}`;
+  if (u.scale === 'hero') return `血量${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}`;
+  return u.body === 'vehicle' ? `剩余总数${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}辆` : `剩余总人数${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}`;
 }
 
 /** 战报状态行的能量盾：剩余/容量（取整）与过载份数；倒下或撤离的单位不写。 */
@@ -62,12 +63,12 @@ export function reportShieldLabel(u: Combatant): string {
   const state = u.energyShield;
   if (!state || u.hp <= 0 || u.status === 'dead' || u.status === 'fled') return '';
   const overload = state.overloaded ? u.scale === 'hero' ? ' 能量盾过载' : ` ${state.overloaded}${memberNoun(u)}能量盾过载` : '';
-  return ` 能量盾${Math.round(state.remaining)}/${energyShieldCapacity(u)}${overload}`;
+  return ` 能量盾${Math.round(state.remaining)}/${displayNumber(energyShieldCapacity(u))}${overload}`;
 }
 
 /** 士气、持续状态、可救伤兵与离场状态。brief 用于战报状态行：只写可救伤兵数，兵力另由 reportStrengthLabel 给出。 */
 function stateLabel(u: Combatant, brief = false): string {
-  const morale = u.morale !== undefined ? ` 士气${u.morale}` : '';
+  const morale = u.morale !== undefined ? ` 士气${displayNumber(u.morale)}` : '';
   const defs = standardConditionMap();
   const conds = [...new Set(u.conditions.filter((c) => c.dur > 0).map((c) => defs.get(c.id)?.name ?? c.id))].join('、');
   const wounded = woundedLabel(u, brief);
@@ -275,7 +276,7 @@ function heightTag(r: AttackResolution): string {
 /** 跨代能量盾同时写吸收量与实际耗盾；普通屏障、未穿透与实体盾损坏保留在结果旁。 */
 function energyText(absorbed: number, overloaded: number, hero: boolean, spent?: number): string {
   const amount = (n: number) => spent === undefined ? Math.round(n) : Number(n.toFixed(1));
-  return (absorbed ? `，能量盾吸收${amount(absorbed)}${spent === undefined ? '' : `（耗盾${amount(spent)}）`}` : '') + (overloaded ? hero ? '，能量盾过载' : `，${overloaded}份能量盾过载` : '');
+  return (absorbed ? `，能量盾吸收${displayNumber(amount(absorbed))}${spent === undefined ? '' : `（耗盾${displayNumber(amount(spent))}）`}` : '') + (overloaded ? hero ? '，能量盾过载' : `，${overloaded}份能量盾过载` : '');
 }
 function defenseText(r: AttackResolution): string {
   return energyText(r.energyAbsorbed ?? 0, r.energyOverloaded ?? 0, r.defenderScale === 'hero', r.energySpent)
@@ -284,7 +285,7 @@ function defenseText(r: AttackResolution): string {
 }
 function hitText(r: AttackResolution): string {
   return r.hit
-    ? `${r.crit ? '✦暴击' : '命中'}${r.finalDamage}${r.damageModel==='member-health'?'生命':''}（${r.hpBefore}→${r.hpAfter}）${r.damageModel==='member-health'&&r.defenderScale!=='hero'&&r.membersBefore!==undefined&&r.membersAfter!==undefined?`，减员${r.membersBefore-r.membersAfter}`:''}${defenseText(r)}`
+    ? `${r.crit ? '✦暴击' : '命中'}${displayNumber(r.finalDamage)}${r.damageModel==='member-health'?'生命':''}（${displayNumber(r.hpBefore)}→${displayNumber(r.hpAfter)}）${r.damageModel==='member-health'&&r.defenderScale!=='hero'&&r.membersBefore!==undefined&&r.membersAfter!==undefined?`，减员${r.membersBefore-r.membersAfter}`:''}${defenseText(r)}`
     : '未中';
 }
 function fellMark(r: AttackResolution): string {
@@ -311,7 +312,7 @@ function volleyLine(volley: BattleLogEntry[]): string {
   const energy = energyText(sum('energyAbsorbed'), sum('energyOverloaded'), first.defenderScale === 'hero', converted ? volley.reduce((n, v) => n + (v.resolution!.energySpent ?? v.resolution!.energyAbsorbed ?? 0), 0) : undefined);
   const barrier = sum('barrierAbsorbed'), blocked = volley.filter(v => v.resolution!.hit && v.resolution!.penetrationFactor === 0).length;
   const defense = (barrier ? `，屏障吸收${Number(barrier.toFixed(1))}` : '') + (blocked ? blocked === hits ? '，未穿透' : `，其中${blocked}段未穿透` : '') + (volley.some(v => v.resolution!.shieldBroken) ? '，盾牌碎裂' : '');
-  return `${first.attackerName}→${first.defenderName} ${heightTag(first)}${volley.length}段/${hits}中，损失${damage}${life ? '生命' : ''}（${first.hpBefore}→${last.hpAfter}）${members}${energy}${defense}${fellMark(last)}${volley.some((v) => v.resolution!.crit) ? '·含暴击' : ''}`;
+  return `${first.attackerName}→${first.defenderName} ${heightTag(first)}${volley.length}段/${hits}中，损失${displayNumber(damage)}${life ? '生命' : ''}（${displayNumber(first.hpBefore)}→${displayNumber(last.hpAfter)}）${members}${energy}${defense}${fellMark(last)}${volley.some((v) => v.resolution!.crit) ? '·含暴击' : ''}`;
 }
 
 /** 技能自身位移受阻、技能因此没有生效的说明；位移本身由逐格移动写出。 */
@@ -482,7 +483,7 @@ export function battleReport(title: string, log: BattleLogEntry[], xp: number): 
     }
     lines.push(`- ${e.text.replace(/\n/g, '\n  ')}`);
   }
-  if (xp > 0) lines.push('', `> 原始击杀经验：${xp}（成长经验以战后折算为准）`);
+  if (xp > 0) lines.push('', `> 原始击杀经验：${displayNumber(xp)}（成长经验以战后折算为准）`);
   return lines.join('\n');
 }
 
@@ -522,7 +523,7 @@ export function battleIntroSummary(
           }
           const zone = b.zones ? `${b.zoneOf(u)}·` : '';
           const engage = u.engagedWith.length ? '⚔' : '';
-          return `${zone}${pc}${u.name}${engage} 兵力${u.hp}/${u.base.hpMax}${u.morale !== undefined ? ` 士气${u.morale}` : ''}${statusSuffix(u)}`;
+          return `${zone}${pc}${u.name}${engage} 兵力${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}${u.morale !== undefined ? ` 士气${displayNumber(u.morale)}` : ''}${statusSuffix(u)}`;
         })
         .join('；')}`,
     );
@@ -545,8 +546,8 @@ export function battleAftermathSummary(
   const mass = isMass(b);
   const lines: string[] = [];
   const head = mass
-    ? `【战阵·战后状况】${won ? '会战大捷' : b.winner() === 'draw' ? '停战／僵持' : '会战失利'}｜我方原始击杀经验 ${b.xpGained}（成长另行折算）`
-    : `【战阵·战后状况】${won ? '战斗胜利' : b.winner() === 'draw' ? '僵局' : '战斗失败'}｜我方原始击杀经验 ${b.xpGained}（成长另行折算）`;
+    ? `【战阵·战后状况】${won ? '会战大捷' : b.winner() === 'draw' ? '停战／僵持' : '会战失利'}｜我方原始击杀经验 ${displayNumber(b.xpGained)}（成长另行折算）`
+    : `【战阵·战后状况】${won ? '战斗胜利' : b.winner() === 'draw' ? '僵局' : '战斗失败'}｜我方原始击杀经验 ${displayNumber(b.xpGained)}（成长另行折算）`;
   lines.push(head);
   if (b.isOver()) lines.push(!isMass(b) ? smallBattleResult(b) ?? '' : b.log.filter((e) => e.kind === 'battle-end').at(-1)?.text ?? '');
   for (const side of ['ally', 'enemy'] as const) {
