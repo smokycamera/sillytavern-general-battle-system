@@ -1,3 +1,4 @@
+import { displayNumber } from './display-number.js';
 import { combatHostile, combatSide, controlActionReason, controlCondition } from './battle-control.js';
 import { phase2Traits } from './trait-level-model.js';
 import { effectiveTraitLevel } from './trait-sources.js';
@@ -163,9 +164,9 @@ export function moraleAttackMods(context: ObservationContext, unit: Combatant, r
 
 export function moraleLabel(context: ObservationContext, unit: Combatant, registry?: Map<string, Trait>, breakAt = 25): string {
   const profile = moraleRisk(context, unit, breakAt, registry);
-  if (unit.moraleLocked) return `满士气锁定，有效士气${profile.effective}`;
+  if (unit.moraleLocked) return `满士气锁定，有效士气${displayNumber(profile.effective)}`;
   if (!profile.sources.length && !profile.immune && unit.status !== 'routing' && !unit.moraleState?.routs && !(isCohort(unit) && unit.moraleState?.damagePenalty)) return '';
-  return [unit.status === 'routing' ? `等待重整，剩余${Math.max(0, MAX_RALLY_ATTEMPTS - (unit.moraleState?.attempts ?? 0))}次机会，基础成功率${Math.round(profile.rallyChance * 100)}%且需要合法空位` : profile.breakChance > 0 && unit.status === 'ready' ? `下次士气结算惊退风险${Math.round(profile.breakChance * 100)}%` : '', profile.immune ? '不溃' : '', profile.fear ? `恐惧压力${profile.fear}` : '', profile.command ? `附近统率${profile.command}` : '', profile.attackPenalty ? `攻击降低${profile.attackPenalty}` : '', `有效士气${profile.effective}`].filter(Boolean).join('，');
+  return [unit.status === 'routing' ? `等待重整，剩余${displayNumber(Math.max(0, MAX_RALLY_ATTEMPTS - (unit.moraleState?.attempts ?? 0)))}次机会，基础成功率${Math.round(profile.rallyChance * 100)}%且需要合法空位` : profile.breakChance > 0 && unit.status === 'ready' ? `下次士气结算惊退风险${Math.round(profile.breakChance * 100)}%` : '', profile.immune ? '不溃' : '', profile.fear ? `恐惧压力${displayNumber(profile.fear)}` : '', profile.command ? `附近统率${displayNumber(profile.command)}` : '', profile.attackPenalty ? `攻击降低${displayNumber(profile.attackPenalty)}` : '', `有效士气${displayNumber(profile.effective)}`].filter(Boolean).join('，');
 }
 
 export function moraleRisk(context: ObservationContext, unit: Combatant, breakAt: number, registry?: Map<string, Trait>) {
@@ -212,7 +213,7 @@ export function decideMorale(context: ObservationContext, unit: Combatant, round
     return { kind: 'rallied', state, effective: risk.effective, text: `${unit.name} 不屈，濒临溃散时当场重整` };
   }
   state.routs = Math.min(3, state.routs + 1); state.attempts = 0; state.routedRound = round; state.cause = cause;
-  return { kind: state.routs >= 3 ? 'fled' : 'routed', state, text: `${unit.name} ${state.routs >= 3 ? '第三次溃退，彻底溃散离场' : cause === 'terror' ? '受到恐怖惊退，退出当前战线等待重整' : `有效士气${risk.effective}，士气崩溃，退出当前战线等待重整`}` };
+  return { kind: state.routs >= 3 ? 'fled' : 'routed', state, text: `${unit.name} ${state.routs >= 3 ? '第三次溃退，彻底溃散离场' : cause === 'terror' ? '受到恐怖惊退，退出当前战线等待重整' : `有效士气${displayNumber(risk.effective)}，士气崩溃，退出当前战线等待重整`}` };
 }
 
 export function moraleChangePreview(context: ObservationContext, unit: Combatant, amount: number, breakAt: number, registry?: Map<string, Trait>, conditions: Combatant['conditions'] = []) {

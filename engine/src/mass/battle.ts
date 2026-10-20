@@ -1,3 +1,4 @@
+import { displayNumber } from '../display-number.js';
 import { isArmsV2, armsStatusLabels, shieldUsable, denialReady, denialModifiers, beginArmsActivation, noteArmsFire, armsWeaponReason, validateArmsState, isSprayer, spendSprayerFuel } from '../arms.js';
 import { sprayerFear, sprayerTank } from '../sprayer.js';
 import { formationMarchCost } from '../tactics.js';
@@ -389,10 +390,10 @@ export class MassBattle {
       const hero = this.combatants.find((u) => u.id === this.attached.get(unit.id));
       if (hero && unit.hp > 0 && hero.status === 'ready') {
         const heroHp=hero.hp, loss = this.applyFlightLoss(hero, source); if (!outcome.landing && hero.hp > 0) hero.status = 'fled'; fallen.push(hero);
-        this.recordEvent({ round: this.round, kind: 'condition', participants: [hero.id], damage:{sourceId:source?.id,targetId:hero.id,amount:heroHp-hero.hp,cause:'坠落'}, text: `${hero.name} 随运输平台迫降，损失${loss}` });
+        this.recordEvent({ round: this.round, kind: 'condition', participants: [hero.id], damage:{sourceId:source?.id,targetId:hero.id,amount:heroHp-hero.hp,cause:'坠落'}, text: `${hero.name} 随运输平台迫降，损失${displayNumber(loss)}` });
       }
       const location = outcome.landing ? `${outcome.landing.side === 'ally' ? '我方' : '敌方'}${outcome.landing.wing}${{ front: '前线', rear: '支援', reserve: '预备' }[outcome.landing.rank]}` : '附近无落点，紧急迫降离场';
-      this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], damage:{sourceId:source?.id,targetId:unit.id,amount:hp-memberHealth(unit),cause:'坠落',...(hasMemberHealth(unit)?{unit:'life' as const,members:members-unit.hp}:{})}, text: `${unit.name} ${reason}，迫降：${location}，坠落损失${damage}${hasMemberHealth(unit)?'生命':''}` });
+      this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], damage:{sourceId:source?.id,targetId:unit.id,amount:hp-memberHealth(unit),cause:'坠落',...(hasMemberHealth(unit)?{unit:'life' as const,members:members-unit.hp}:{})}, text: `${unit.name} ${reason}，迫降：${location}，坠落损失${displayNumber(damage)}${hasMemberHealth(unit)?'生命':''}` });
     }
 
   }
@@ -631,7 +632,7 @@ export class MassBattle {
       if (formationScreened(u, target, units)) return '目标受到前线掩护';
       if (isAirborne(u) && !isAirborne(target) && !this.diveDestination(u, target, units)) return '扑击缺少相邻合法地面落点';
       if (order.type === 'charge' && (u.suppression || !chargeCapable(u, activeTraitIds(u)))) return '缺少冲锋训练或正被压制';
-      if (order.type === 'charge' && fatiguePenalty(u) > 0) return `冲锋前需要重整，疲劳必须低于${fatigueLimit(u) / 2}`;
+      if (order.type === 'charge' && fatiguePenalty(u) > 0) return `冲锋前需要重整，疲劳必须低于${displayNumber(fatigueLimit(u) / 2)}`;
       if (order.type === 'charge' && activeConditionIds(u).some((id) => id === 'slowed' || this.conditions.get(id)?.preventMove)) return '减速或定身状态不能完成冲锋';
       if (order.type === 'charge' && formationDistance(u, target) < 2) return '已经接敌，没有冲锋助跑距离';
       if (order.type === 'charge' && !this.chargeDestination(u, target, this.visibleCombatants(u.side, units))) return '冲锋需要一格合法接近路线和相邻落点';
@@ -1518,7 +1519,7 @@ export class MassBattle {
         spendAbility(actualActor, ability, 1);
         const itemLog = itemUseLog(actualActor, ability, cost?.amount);
         if (itemLog) this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id], itemUse: itemLog,
-          text: ability.itemSourceId && cost ? `${actor.name} 使用【${ability.name}】：消耗${cost.amount}件，剩余${actualActor.resources[cost.resource]}件` : `${actor.name} 使用充能道具【${itemLog.itemName}】` });
+          text: ability.itemSourceId && cost ? `${actor.name} 使用【${ability.name}】：消耗${displayNumber(cost.amount)}件，剩余${displayNumber(actualActor.resources[cost.resource])}件` : `${actor.name} 使用充能道具【${itemLog.itemName}】` });
         const changeStart = changes.length;
         const trackEffects = () => {
           if (itemLog) for (let i = changeStart; i < changes.length; i++) {
@@ -1552,7 +1553,7 @@ export class MassBattle {
         for (const effect of healingEffectGroups(ability)) {
           if (effect.op === 'zone') { changes.push(()=>{
             const zone = placeZone(this.observationContext(),this.byId(actor.id),target,effect,this.round,ability.id);
-            const text = `在${nodeLabel(formationNode(target))}布置${ZONE_NAMES[zone.kind]}，持续${zone.remaining}轮`;
+            const text = `在${nodeLabel(formationNode(target))}布置${ZONE_NAMES[zone.kind]}，持续${displayNumber(zone.remaining)}轮`;
             this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id], text: `${actor.name} 使用【${ability.name}】${text}` });
           }); }
           else if (effect.op === 'damage') for (const affected of this.supportTargets(actor, ability, target, support)) {
@@ -1568,16 +1569,16 @@ export class MassBattle {
             changes.push(() => { const t = this.byId(affected.id); if (t.hp > 0 || t.status === 'dying') {
               const before = memberHealth(t),restored=applyRecovery(t, amount);
               if (t.status === 'dying' && t.hp > 0) t.status = 'ready';
-              this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id,t.id], text: `${actor.name} 使用【${ability.name}】治疗 ${restored} → ${t.name} 生命 ${before}→${memberHealth(t)}` });
+              this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id,t.id], text: `${actor.name} 使用【${ability.name}】治疗 ${displayNumber(restored)} → ${t.name} 生命 ${displayNumber(before)}→${displayNumber(memberHealth(t))}` });
             } });
           } else if (effect.op === 'barrier') for (const affected of this.supportTargets(actor, ability, target, support)) changes.push(() => {
             const unit = this.byId(affected.id); grantBarrier(unit, effect.amount, effect.dur, actor.id, effect.defensePower ?? ability.power);
-            this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id, unit.id], text: `${unit.name} 获得屏障，可吸收${unit.barrier?.remaining ?? 0}点伤害，持续${effect.dur}轮` });
+            this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id, unit.id], text: `${unit.name} 获得屏障，可吸收${displayNumber(unit.barrier?.remaining ?? 0)}点伤害，持续${effect.dur}轮` });
           });
           else if (effect.op === 'morale') for (const affected of this.supportTargets(actor, ability, target, support)) changes.push(() => {
             const unit = this.byId(affected.id), before = unit.morale;
             changeMorale(unit, effect.amount);
-            this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id, unit.id], text: `${actor.name} 使用【${ability.name}】→${unit.name}，${unit.moraleLocked ? '满士气锁定，士气不变' : `士气${before}→${unit.morale}`}` });
+            this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id, unit.id], text: `${actor.name} 使用【${ability.name}】→${unit.name}，${unit.moraleLocked ? '满士气锁定，士气不变' : `士气${displayNumber(before)}→${displayNumber(unit.morale)}`}` });
           });
           else if (effect.op === 'condition') for (const affected of effect.shape === 'burst' ? this.supportTargets(actor, ability, target, support) : [target]) {
             const hit = hits.get(affected.id);
@@ -1613,7 +1614,7 @@ export class MassBattle {
             }
             const paid = resourceTargets.get(affected.id)!, amount = skillResourceChange(paid, effect);
             paid.resources[effect.resource] = (paid.resources[effect.resource] ?? 0) + amount;
-            itemLog?.effects.push(`${affected.name} ${effect.resource === 'SP' ? '精力' : effect.resource}${amount >= 0 ? '+' : ''}${amount}`);
+            itemLog?.effects.push(`${affected.name} ${effect.resource === 'SP' ? '精力' : effect.resource}${amount >= 0 ? '+' : ''}${displayNumber(amount)}`);
             const key = JSON.stringify([affected.id, effect.resource]), prior = resourceDeltas.get(key);
             resourceDeltas.set(key, { unitId: affected.id, resource: effect.resource,
               amount: (prior?.amount ?? 0) + amount, capped: !!prior?.capped || effect.maximum === 'training' });
@@ -1636,7 +1637,7 @@ export class MassBattle {
       for (const delta of resourceDeltas.values()) {
         const unit = this.byId(delta.unitId), before = unit.resources[delta.resource] ?? 0;
         unit.resources[delta.resource] = Math.max(0, Math.min(delta.capped && delta.amount > 0 ? Math.max(before, (delta.resource === 'SP' ? spCapacity(unit) : 6 + Math.floor(unit.level / 2))) : Infinity, before + delta.amount));
-        this.recordEvent({ round: this.round, kind: 'ability', participants: [unit.id], text: unit.name + ' ' + delta.resource + ' ' + before + '→' + unit.resources[delta.resource] });
+        this.recordEvent({ round: this.round, kind: 'ability', participants: [unit.id], text: unit.name + ' ' + delta.resource + ' ' + displayNumber(before) + '→' + displayNumber(unit.resources[delta.resource]) });
       }
       for (const [id] of pushed) if (this.byId(id).hp <= 0 || this.byId(id).status === 'fled') pushed.delete(id);
       this.pruneArrivals(pushed);
@@ -1706,7 +1707,7 @@ export class MassBattle {
             let damage = this.rules.combatModel ? roundDamage(conditionDamage(u,rolled,condition),this.rng) : condition.id === 'poisoned' ? poisonDamage(u, rolled * (condition.magnitude ?? 1)) : condition.magnitude !== undefined ? Math.max(0, Math.round(rolled * condition.magnitude / (u.scale === 'hero' ? 1 : 4))) : Math.max(0, Math.floor(rolled / (u.scale === 'hero' ? 1 : 10)));
             const members=u.hp,lost=hasMemberHealth(u)?applyCombatDamage(u,damage,condition.affectedMembers??10):applyHealthLoss(u,damage); if(this.rules.combatModel)damage=lost;
             breakCharmOnDamage(this.combatants,u,this.combatants.find(source=>source.id===condition.sourceId),lost);
-            this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], damage: {sourceId:condition.sourceId,targetId:u.id,amount:lost,cause:dot.label ?? this.conditions.get(condition.id)!.name,...(hasMemberHealth(u)?{unit:'life' as const,members:members-u.hp}:{})}, text: `${u.name} ${dot.label}损失${damage}${hasMemberHealth(u)?'生命':''}` });
+            this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], damage: {sourceId:condition.sourceId,targetId:u.id,amount:lost,cause:dot.label ?? this.conditions.get(condition.id)!.name,...(hasMemberHealth(u)?{unit:'life' as const,members:members-u.hp}:{})}, text: `${u.name} ${dot.label}损失${displayNumber(damage)}${hasMemberHealth(u)?'生命':''}` });
             this.defeatUnit(u, this.combatants.find((source) => source.id === condition.sourceId));
           }
         }
@@ -1723,7 +1724,7 @@ export class MassBattle {
         if (expired.length) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 状态结束：${expired.join('、')}` });
         if (['traits-levels-v2', 'traits-items-v1', 'traits-items-v2'].includes(this.rules.traitLevelModel ?? '') || u.status === 'ready' && regeneration > 0) {
           const restored = settleRegeneration(u, regeneration);
-          if (restored) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 再生 +${restored} → ${u.scale === 'hero' ? '生命' : '人数'} ${u.hp}${u.scale !== 'hero' ? `，剩余可救伤兵${u.recoverableWounded ?? 0}` : ''}` });
+          if (restored) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 再生 +${displayNumber(restored)} → ${u.scale === 'hero' ? '生命' : '人数'} ${displayNumber(u.hp)}${u.scale !== 'hero' ? `，剩余可救伤兵${u.recoverableWounded ?? 0}` : ''}` });
         }
         this.checkCommanderLost(u);
       }
@@ -1786,7 +1787,7 @@ export class MassBattle {
     for (const unit of this.combatants) beginLifestealRound(unit, this.round, true);
     for (const unit of this.combatants) {
       const restored = recoverEntryMorale(unit);
-      if (restored) this.recordEvent({ round: 1, kind: 'morale', participants: [unit.id], text: `${unit.name} 开战前整顿，士气 0→${restored}` });
+      if (restored) this.recordEvent({ round: 1, kind: 'morale', participants: [unit.id], text: `${unit.name} 开战前整顿，士气 0→${displayNumber(restored)}` });
     }
     this.updateFrontControl();
     this.refreshCp();
@@ -2141,7 +2142,7 @@ export class MassBattle {
         continue;
       }
       const dc = this.rules.morale.baseDC + 2 + (cnt - 1) * 3;
-      const roll = rollDice(`1d${this.rules.morale.dieMax}`, this.rng);
+      const roll = rollDice(`1d${displayNumber(this.rules.morale.dieMax)}`, this.rng);
       if (roll.total + Math.floor((u.morale ?? 0) / 10) >= dc) {
         u.status = 'ready';
         this.recordEvent({ round: this.round, kind: 'morale', participants: [u.id], text: `${u.name} 重整旗鼓，重返战线` });
@@ -2261,7 +2262,7 @@ export class MassBattle {
           if (mt.morale !== undefined) {
             const before = mt.morale;
             changeMorale(mt, eff.amount);
-            logBits.push(`${mt.name} 士气 ${before}→${mt.morale}`);
+            logBits.push(`${mt.name} 士气 ${displayNumber(before)}→${displayNumber(mt.morale)}`);
           }
           break;
         }
@@ -2270,7 +2271,7 @@ export class MassBattle {
           const amount = eff.amount ?? rollDice(eff.dice!, this.rng).total;
           const before = ht.hp;
           ht.hp = Math.min(ht.base.hpMax, ht.hp + amount);
-          logBits.push(`${ht.name} 补充兵力 ${before}→${ht.hp}`);
+          logBits.push(`${ht.name} 补充兵力 ${displayNumber(before)}→${displayNumber(ht.hp)}`);
           break;
         }
         case 'condition': {
@@ -2298,7 +2299,7 @@ export class MassBattle {
               }
               spawned.engagedWith = [];
               spawned.nonLethal=this.nonLethal;this.combatants.push(spawned);
-              logBits.push(`【召唤】${spawned.name} 加入战场（${spawned.hp}/${spawned.base.hpMax} 兵力）`);
+              logBits.push(`【召唤】${spawned.name} 加入战场（${displayNumber(spawned.hp)}/${displayNumber(spawned.base.hpMax)} 兵力）`);
             }
           } else {
             logBits.push(`（召唤请求：${tmpl}×${eff.count}）`);
@@ -2402,7 +2403,7 @@ export class MassBattle {
 
   private applyLifesteal(attacker: Combatant, target: Combatant, lifeDamage: number): void {
     const restored = lifestealRecovery(this.byId(attacker.id), target, lifeDamage, this.round);
-    if (restored) this.recordEvent({ round: this.round, kind: 'condition', participants: [attacker.id], text: `${attacker.name} 吸血，回复${restored}${hasMemberHealth(attacker) || attacker.scale === 'hero' ? '生命' : '名可救伤兵'}` });
+    if (restored) this.recordEvent({ round: this.round, kind: 'condition', participants: [attacker.id], text: `${attacker.name} 吸血，回复${displayNumber(restored)}${hasMemberHealth(attacker) || attacker.scale === 'hero' ? '生命' : '名可救伤兵'}` });
   }
   private recordAttack(u: Combatant, t: Combatant, res: import('../damage.js').AttackResolution, label = ''): void {
     breakCharmOnDamage(this.combatants, t, u, res.hpBefore - res.hpAfter);
@@ -2582,7 +2583,7 @@ export class MassBattle {
     const flat = u.rulesVersion === 'v2'
       ? resolveStack(collectMods(u, {}, this.conditionMap(), [...this.auraModsFor(u), ...fieldModsFor(u, this.fieldTags, this.traitRegistry)], this.traitRegistry), 'morale', {}, { maxFlat: 100 }).flatTotal
       : legacyMods.filter((m) => m.kind === 'morale' && m.type === 'flat').reduce((s, m) => s + m.value, 0);
-    const r = rollDice(`1d${this.rules.morale.dieMax}`, this.rng);
+    const r = rollDice(`1d${displayNumber(this.rules.morale.dieMax)}`, this.rng);
     const total = r.total + (u.rulesVersion === 'v2' ? Math.floor(Math.max(0, (u.morale ?? 0) + flat) / 10) : Math.floor((u.morale ?? 0) / 10) + flat);
     if (total < dc) {
       u.status = 'routing';
@@ -2786,9 +2787,9 @@ export class MassBattle {
     for (const unit of b.combatants) {
       const before = lifeBefore.get(unit.id), maximum = unit.scale === 'hero' ? unit.base.hpMax : unit.formation?.memberHp;
       if (before?.maximum !== undefined && before.maximum !== maximum) b.recordEvent({ round: b.round, kind: 'condition', participants: [unit.id],
-        text: `${unit.name} 单体生命上限调整：${before.maximum}→${maximum}${unit.scale === 'hero' ? `，当前生命${before.hp}→${unit.hp}` : '，编制不变'}；规则归一化，不计战斗伤害` });
+        text: `${unit.name} 单体生命上限调整：${displayNumber(before.maximum)}→${displayNumber(maximum)}${unit.scale === 'hero' ? `，当前生命${displayNumber(before.hp)}→${displayNumber(unit.hp)}` : '，编制不变'}；规则归一化，不计战斗伤害` });
       if (before?.pressure !== undefined && before.pressure !== unit.moraleState?.damagePenalty) b.recordEvent({ round: b.round, kind: 'condition', participants: [unit.id],
-        text: `${unit.name} 受创士气压力按实际最大生命校准：${before.pressure}→${unit.moraleState?.damagePenalty}` });
+        text: `${unit.name} 受创士气压力按实际最大生命校准：${displayNumber(before.pressure)}→${displayNumber(unit.moraleState?.damagePenalty)}` });
     }
     b.orders = new Map((snap.orders ?? []).map((o: Order) => [o.unitId, o]));
     b.cp = snap.cp ?? b.cp;

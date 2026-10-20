@@ -1,7 +1,7 @@
 {
   "name": "tavern-battle",
-  "version": "2.6.2",
-  "description": "通用战斗系统v1.0 —— SillyTavern / TauriTavern 原生回合制战斗扩展",
+  "version": "2.6.3",
+  "description": "通用战斗系统 —— SillyTavern / TauriTavern 原生回合制战斗扩展",
   "license": "GPL-3.0-only",
   "type": "module",
   "private": true,

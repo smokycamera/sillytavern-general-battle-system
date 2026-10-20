@@ -1,3 +1,4 @@
+import { displayNumber } from './display-number.js';
 import { resolveHealingBudget } from './healing.js';
 import { isWoundModel } from './balance.js';
 import { instanceMultiplier, validateInstanceVariance } from './instance-variance.js';
@@ -84,5 +85,5 @@ export function healingYield(source: Combatant, target: Combatant, amount: numbe
   return amount*teams/(target.combatModel===MEMBER_HEALTH_MODEL?1:memberDurability(target));
 }
 export function strengthDescription(u: Combatant): string {
-  return u.scale==='hero'?`生命 ${u.hp}/${u.base.hpMax}`:u.combatModel===MEMBER_HEALTH_MODEL?`现员 ${personnel(u)}/${u.base.hpMax}${memberNoun(u)} · 每人${memberDurability(u)}生命`:isCohort(u)?`现员 ${personnel(u)}/${u.formation?.capacity??u.base.hpMax} · 成员耐久 ${memberDurability(u)}`:`人数 ${u.hp}/${u.base.hpMax}`;
+  return u.scale==='hero'?`生命 ${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}`:u.combatModel===MEMBER_HEALTH_MODEL?`现员 ${personnel(u)}/${displayNumber(u.base.hpMax)}${memberNoun(u)} · 每人${displayNumber(memberDurability(u))}生命`:isCohort(u)?`现员 ${personnel(u)}/${displayNumber(u.formation?.capacity??u.base.hpMax)} · 成员耐久 ${displayNumber(memberDurability(u))}`:`人数 ${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}`;
 }

@@ -1,3 +1,4 @@
+import { displayNumber } from '../../engine/src/display-number.js';
 import { FORMATION_NODES, approxDelta, type MassBattle, type UnitChange } from '../../engine/src/index.js';
 import { orderLabels } from './formation-orders.js';
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -6,7 +7,7 @@ const frontLabel = { ally: '我方控制', enemy: '敌方控制', contested: '�
 const sign = (n: number) => approxDelta(n);
 const at = (index: number) => { const n = FORMATION_NODES[index]; return n ? (n.side === 'ally' ? '我方' : '敌方') + n.wing + ({ front: '前线', rear: '支援', reserve: '预备' })[n.rank] : '原阵位'; };
 function changeText(c: UnitChange): string {
-  return [c.lost ? '损失' + c.lost + (c.scale === 'hero' ? '生命' : '人') : '', c.recovered ? '恢复' + c.recovered + (c.scale === 'hero' ? '生命' : '人') : '',
+  return [c.lost ? '损失' + displayNumber(c.lost) + (c.scale === 'hero' ? '生命' : '人') : '', c.recovered ? '恢复' + displayNumber(c.recovered) + (c.scale === 'hero' ? '生命' : '人') : '',
     ...c.statuses.map((s) => statusLabel[s] ?? '状态变化'), c.morale ? '士气' + sign(c.morale) : '', c.fatigue ? '疲劳' + sign(c.fatigue) : '',
     ...Object.values(c.resources).filter((r) => r.delta).map((r) => r.name + sign(r.delta)),
     c.gained.length ? '获得' + c.gained.join('、') : '', c.ended.length ? c.ended.join('、') + '结束' : '',
@@ -18,7 +19,7 @@ function totals(changes: UnitChange[]): string {
   const pieces: string[] = [];
   for (const side of ['ally', 'enemy'] as const) for (const hero of [false, true]) {
     const subset = changes.filter((c) => c.side === side && (c.scale === 'hero') === hero), lost = subset.reduce((n, c) => n + c.lost, 0), recovered = subset.reduce((n, c) => n + c.recovered, 0);
-    if (lost || recovered) pieces.push((side === 'ally' ? '我方' : '可见敌方') + (lost ? '损失' + lost + (hero ? '生命' : '人') : '') + (recovered ? ' 恢复' + recovered + (hero ? '生命' : '人') : ''));
+    if (lost || recovered) pieces.push((side === 'ally' ? '我方' : '可见敌方') + (lost ? '损失' + displayNumber(lost) + (hero ? '生命' : '人') : '') + (recovered ? ' 恢复' + displayNumber(recovered) + (hero ? '生命' : '人') : ''));
   }
   return pieces.join(' · ') || '无已知生命或人数变化';
 }
