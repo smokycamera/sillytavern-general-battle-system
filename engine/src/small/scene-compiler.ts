@@ -189,10 +189,15 @@ export function finishSceneRegions(field: BattlefieldSpec, plan: BattlefieldPlan
         const region = sceneRegion(field, r.object)!;
         const unitId = unitBindings[r.subject], side = unitId ? undefined : r.subject as Combatant['side'];
         // Each cell holds two ordinary units or one large unit.
-        const actors = roster.filter(u => unitId ? u.id === unitId : u.side === side), large = actors.filter(u => u.body && u.body !== 'human' || u.mount).length;
+        const holds = r.relation === 'occupies' || r.relation === 'inside';
+        // Several unit bindings can occupy the same small place. Size their shared area for the entire group.
+        const owner = unitId ? roster.find(u => u.id === unitId)?.side : undefined;
+        const group = unitId && holds ? new Set(intent!.relations.filter(other => other.object === r.object
+            && (other.relation === 'occupies' || other.relation === 'inside')
+            && roster.some(u => u.id === unitBindings[other.subject] && u.side === owner)).map(other => unitBindings[other.subject])) : undefined;
+        const actors = roster.filter(u => group ? group.has(u.id) : unitId ? u.id === unitId : u.side === side), large = actors.filter(u => u.body && u.body !== 'human' || u.mount).length;
         const required = large + Math.ceil((actors.length - large) / 2);
         const distance = (p: number) => Math.min(...region.cells.map(q => gridDistance(field, p, q)));
-        const holds = r.relation === 'occupies' || r.relation === 'inside';
         let cells = [...region.access], platform = holds && region.cells.every(p => intactStructure(field, p)?.top);
         if (platform)
             cells = [...region.cells];
