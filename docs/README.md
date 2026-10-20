@@ -7,6 +7,7 @@
 - [发布渠道与晋级](release-channels.md)
 - [内置世界书](embedded-worldbook.md) 与 [正文协议](worldbook-xml-markdown.md)
 - [开战两步布置](secondary-api-two-step-20261002.md) 与 [地图实现](battlefield-refactor-implementation.md)
+- [室内空间骨架、Flash 实测与其他地图审阅](indoor-layouts-20261020.md)
 - [战斗存档策略](battle-save-policy-20261016.md)
 - [MVU 共用保存与历史精简](mvu-save-history-20261020.md)
 - [MCP 玩家桥接](mcp-player-bridge.md)

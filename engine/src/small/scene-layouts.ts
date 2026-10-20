@@ -3,6 +3,7 @@ import { BattlefieldPlanError, type BattlefieldPlan, type GatePlan } from './bat
 import type { BattlefieldScene } from './map-design.js';
 import { createStructure, groundBlocked } from './layers.js';
 import { gridDistance, neighbors, type BattlefieldSpec } from './spatial.js';
+import { buildIndoorLayout } from './indoor-layout.js';
 
 export function resolveBattlefieldScene(plan: BattlefieldPlan | undefined, tags: readonly string[], width: number): BattlefieldScene {
   return plan?.scene ?? (width === 5 ? 'interior' : tags.includes('siege') ? 'city_siege' : tags.includes('urban') ? 'city_streets' : 'field');
@@ -28,7 +29,7 @@ export function placePlannedGates(field: BattlefieldSpec, candidates: number[], 
       const gate = createStructure('gate',level,{top,gateState:spec.state,...(spec.id?{entityId:spec.id}:{}),...(inner.length?{owner:defender}:{}),...(top?{access:neighbors(field,p).filter(n=>inner.includes(n)&&!groundBlocked(field,n))}:{})});
       if (spec.state==='destroyed') {gate.hp=0;field.overlays![p]=['rubble'];}
       field.structures![p]=gate;field.tiles[p]='street';
-      for (const n of neighbors(field,p)) if (field.structures![n]?.kind==='building') field.structures![n]=null;
+      if (field.generation?.scene !== 'interior') for (const n of neighbors(field,p)) if (field.structures![n]?.kind==='building') field.structures![n]=null;
       continue;
     }
     const desiredX = spec.sector === 'left' || spec.sector === 'front_left' ? left : spec.sector === 'right' || spec.sector === 'front_right' ? right : mid;
@@ -47,7 +48,7 @@ export function placePlannedGates(field: BattlefieldSpec, candidates: number[], 
     if (spec.state === 'destroyed') { gate.hp = 0; field.overlays![p] = ['rubble']; }
     field.structures![p] = gate; field.tiles[p] = 'street';
     // Ordinary houses may not wall off a planned doorway. City walls and water stay untouched.
-    for (const n of neighbors(field,p)) if (field.structures![n]?.kind === 'building') field.structures![n] = null;
+    if (field.generation?.scene !== 'interior') for (const n of neighbors(field,p)) if (field.structures![n]?.kind === 'building') field.structures![n] = null;
   }
   return gates;
 }
@@ -73,28 +74,8 @@ export function buildSpecialScene(field: BattlefieldSpec, scene: BattlefieldScen
   field.objective = { kind: 'annihilation', cell: center, limit: field.objective.limit };
   if (scene === 'interior') {
     if (plan?.water && plan.water !== 'none') field.generation!.notes = [...(field.generation!.notes??[]),'室内布局不铺设室外水系'];
-    // A continuous hall with coherent side rooms. Open doorways remain when gatePlan is empty.
-    const spine = Math.max(2, Math.min(w-3, Math.floor(w/2) + int(-1,1)));
-    const corridorWidth = plan?.breadth === 'broad' && w >= 9 ? 2 : 1;
-    const walls = [spine-1, Math.min(w-2, spine+corridorWidth)];
-    const step = plan?.layout === 'strongpoint' ? 5 : int(3,4), doorways: number[] = [];
-    for (let d=2; d<h-2; d++) for (const x of walls) field.structures![at(x,d)] = createStructure('building',level);
-    for (const [side,xWall] of walls.entries()) {
-      for (let start=1; start<h-2; start+=step) {
-        const end = Math.min(h-2,start+step), doorD = Math.min(h-3,start+1);
-        const door = at(xWall,doorD); field.structures![door] = null; doorways.push(door);
-        if (end<h-2) for (let x=side ? xWall+1 : 0; x<(side ? w : xWall); x++) field.structures![at(x,end)] = createStructure('building',level);
-      }
-    }
-    for (let d=0;d<h;d++) for (let x=spine;x<spine+corridorWidth;x++) field.overlays[at(x,d)] = ['road'];
-    // The primary hall and objective are never sealed by a door.
-    field.objective.cell = at(spine,Math.floor(h/2));
+    const { doorways } = buildIndoorLayout(field, plan, rng);
     placePlannedGates(field,doorways,legacyGatePlan(plan,[{sector:'left',state:'open'},{sector:'right',state:'open'}]),defender,level,[],false);
-    // Furnishings stay on room edges and away from entrances/deployment rows.
-    const density = {sparse:.18,balanced:.35,dense:.55}[plan?.cover ?? plan?.density ?? 'balanced'];
-    for (let d=3; d<h-3; d++) for (const x of [0,w-1]) {
-      const p=at(x,d); if (!field.structures![p] && rng.next()<density) field.structures![p]=createStructure('cover',level);
-    }
   } else if (scene === 'building_siege') {
     const left = 1, right = w-2, back = 2, front = Math.max(6,Math.floor(h*.60));
     const inside: number[]=[], perimeter: number[]=[];
