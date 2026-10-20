@@ -11,6 +11,7 @@ import { generateUnit, grantTraitSource, revokeTraitSource, traitRegistry, narra
 import { deployUnitRecord, materializeUnitRecord, unitRecordFromCombatant, updateUnitRecord, type UnitRecord } from './unit-state.js';
 import { parseProtocol, protocolExcerpt } from './protocol.js';
 import type { Suggestion } from './tags.js';
+import { migrateSavedSuggestion } from './saved-suggestion.js';
 import { createInventoryItem, prepareInventoryState, prepareInventoryTransaction, type InventoryItem } from './inventory-state.js';
 import { assertNarrativeCapacity, hasNarrativeDeployment, MAX_SCENE_UNITS } from './narrative-limits.js';
 import { applyUnitSet, UNIT_EQUIPMENT_FIELDS, unitSetReferencesGear, type UnitSetContext } from './unit-set.js';
@@ -299,6 +300,7 @@ function applyToNewUnits(save: NarrativeSave, events: Suggestion[], fresh: NewUn
 
 /** 整包准备与校验；调用方持久化成功后才替换当前事实。 */
 export function prepareNarrativeTransaction(save: NarrativeSave, proposal: NarrativeProposal, namespace: string, manual = false): NarrativeSave {
+  proposal = { ...proposal, events: proposal.events.map(migrateSavedSuggestion) };
   if (proposal.status === 'unresolved') throw new Error('还有待补全的事件，请先修正草稿或明确仅保留已识别部分');
   if (proposal.status !== 'pending') throw new Error('待确认内容未处于可提交状态');
   if (!proposal.events.length) throw new Error('没有可入账的事件');
