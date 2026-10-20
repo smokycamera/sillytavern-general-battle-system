@@ -100,8 +100,7 @@ describe('原生战阵事件显示', () => {
     f.install(); await flush();
     const chat = document.querySelector('#chat')!;
     for (const id of [1, 2, 3]) chat.insertAdjacentHTML('beforeend', `<div class="mes" mesid="${id}"><div class="mes_text"></div></div>`);
-    await flush();
-    expect(document.querySelectorAll('details')).toHaveLength(2);
+    await vi.waitFor(() => expect(document.querySelectorAll('details')).toHaveLength(2));
     expect(document.querySelector('[mesid="1"] details')).toBeNull(); expect(document.querySelector('[mesid="2"] details')).toBeNull();
   });
   it('清除被吞掉的 15 项事件留下的换行，尾部与正文中间都原位折叠', async () => {
