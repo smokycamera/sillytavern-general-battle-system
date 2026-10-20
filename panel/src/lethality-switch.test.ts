@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { generateUnit, traitRegistry, SmallBattle, MassBattle, V3_D20, V3_TW, standardField, type Combatant } from '../../engine/src/index.js';
+import { generateUnit, traitRegistry, SmallBattle, MassBattle, V3_D20, V3_TW, V23_OVERFLOW_D20, V23_OVERFLOW_TW, standardField, type Combatant } from '../../engine/src/index.js';
 import { battleEpilogue, makeNarrativeBatch, type BattleDeliveries } from './battle-reports.js';
+import { unitRecordFromCombatant } from './unit-state.js';
 
 const registry = traitRegistry(), rng = { seed: 'fixed', next: () => 0, d: (sides: number) => sides };
 function unit(id: string, scale: 'hero' | 'company' = 'hero'): Combatant {
@@ -16,6 +17,42 @@ function hit(b: SmallBattle, target: string): void { b.byId('A').pos = 28; b.byI
 const restore = (b: SmallBattle) => SmallBattle.fromSnapshot(structuredClone(b.toSnapshot()));
 
 describe('战中切换致命规则', () => {
+  it.each(['small', 'mass'] as const)('%s：切回致命保留濒死编队，补刀后清算伤兵并可保存恢复', mode => {
+    const units = ['A', 'D', 'E', 'F'].map(id => unit(id, 'company'));
+    const b = mode === 'small'
+      ? new SmallBattle({ combatants: units, seed: 'company-lethality', rules: V23_OVERFLOW_D20, battlefield: standardField() })
+      : new MassBattle({ combatants: units, seed: 'company-lethality', rules: V23_OVERFLOW_TW });
+    b.start(); b.setNonLethal(true);
+    if (b instanceof SmallBattle) hit(b, 'D');
+    else {
+      expect(b.issue({ unitId: 'A', type: 'attack', targetId: 'D' }).ok).toBe(true);
+      for (const id of ['D', 'E', 'F']) b.issue({ unitId: id, type: 'hold' });
+      b.resolveRound();
+    }
+    const down = b.byId('D');
+    expect(down.status).toBe('dying'); expect(down.hp).toBe(0);
+    expect(down.recoverableWounded).toBe(down.base.hpMax);
+    b.setNonLethal(false);
+    const reload = () => mode === 'small'
+      ? SmallBattle.fromSnapshot(structuredClone(b.toSnapshot()))
+      : MassBattle.fromSnapshot(structuredClone(b.toSnapshot()));
+    const restored = reload();
+    expect(restored.byId('D')).toMatchObject({ hp: 0, status: 'dying', recoverableWounded: down.recoverableWounded });
+    if (restored instanceof SmallBattle) restored.endTurn();
+    else { for (const id of ['A', 'E', 'F']) restored.issue({ unitId: id, type: 'hold' }); restored.resolveRound(); }
+    expect(restored.byId('D')).toMatchObject({ hp: 0, status: 'dying', recoverableWounded: down.recoverableWounded });
+    if (restored instanceof SmallBattle) hit(restored, 'D');
+    else {
+      expect(restored.issue({ unitId: 'A', type: 'attack', targetId: 'D' }).ok).toBe(true);
+      for (const id of ['E', 'F']) restored.issue({ unitId: id, type: 'hold' });
+      restored.resolveRound();
+    }
+    expect(restored.byId('D')).toMatchObject({ hp: 0, status: 'dead', recoverableWounded: 0 });
+    expect(unitRecordFromCombatant(restored.byId('D'))).toMatchObject({ hp: 0, status: 'dead', recoverableWounded: 0 });
+    restored.finishBattle('ceasefire');
+    expect(() => mode === 'small' ? SmallBattle.fromSnapshot(structuredClone(restored.toSnapshot())) : MassBattle.fromSnapshot(structuredClone(restored.toSnapshot()))).not.toThrow();
+  });
+
   it('改为非致命：之前阵亡的不复活，之后倒下的只会濒死；规则事件双方可见并随快照保存', () => {
     const b = small(false);
     hit(b, 'D'); expect(b.byId('D').status).toBe('dead');

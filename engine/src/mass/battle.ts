@@ -45,7 +45,7 @@ import { applyWeaponConditions, poisonDamage, poisonFactor, conditionDamage } fr
 import { isRangedWeapon, meleeWeapon, weaponReloadKey, weaponReloadTurns, validateMount, mountedShooting, mobileRangedWeapon, vehicleShooting } from '../loadout.js';
 import { meleeReach, formationWeaponRange } from '../melee.js';
 import { MAX_RALLY_ATTEMPTS, moraleProfile, moraleAttackMods, decideMorale, changeMorale, validateMoraleState, moraleRisk, moraleChangePreview, reconcileDamageMorale, recoverEntryMorale } from '../morale.js';
-import { applyHealthLoss, applyCombatDamage, applyRecovery, recoveryCapacity, regenerationAmount, settleRegeneration, validateWounded, lifestealRecovery, beginLifestealRound } from '../recovery.js';
+import { applyHealthLoss, applyCombatDamage, applyRecovery, recoveryCapacity, regenerationAmount, settleRegeneration, validateWounded, settleWoundedOnDeath, lifestealRecovery, beginLifestealRound } from '../recovery.js';
 import {hasMemberHealth,memberHealth,MEMBER_HEALTH_MODEL} from '../member-health.js';
 import { diceAvg } from '../data/weapons.js';
 /**
@@ -2449,6 +2449,7 @@ export class MassBattle {
     if (t.hp <= 0 && t.status !== 'dead' && !(this.nonLethal && t.status === 'dying')) {
       if(this.rules.resolutionVersion==='v2')this.defeatedIds.add(t.id);
       t.status = this.nonLethal ? 'dying' : 'dead';
+      settleWoundedOnDeath(t);
       this.recordEvent({ round: this.round, kind: 'death', participants: [t.id], text: `${t.name} ${this.nonLethal ? '濒死，非致命失能' : this.rules.resolutionVersion === 'v2' && t.scale === 'hero' ? '阵亡' : '全军覆没'}` });
       if (this.rules.resolutionVersion !== 'v2' && t.side === 'enemy' && !this.defeatedIds.has(t.id) ) {
         this.defeatedIds.add(t.id);

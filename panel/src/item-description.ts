@@ -13,7 +13,7 @@ const MOVES: Record<string, string> = { dash: '突进', blink: '闪现', withdra
 type EffectStat = keyof typeof BONUS_NAMES;
 export function wornEffectAmount(stat: EffectStat, value: number): string {
   const percent = stat === 'damage' || stat.endsWith('Damage');
-  const unit = percent ? '%' : stat === 'speed' ? '步' : stat === 'morale' ? '点' : stat === 'protection' || stat.endsWith('Protection') ? '抗穿' : '格';
+  const unit = percent ? '%' : '';
   return (value > 0 ? '+' : '') + displayNumber(value * (percent ? 100 : 1)) + unit;
 }
 /** 所有文字出口读取冻结实效；旧配方点数只作配方展示。 */
