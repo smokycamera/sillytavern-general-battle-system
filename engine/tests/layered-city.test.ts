@@ -112,12 +112,32 @@ describe('layered city and siege maps', () => {
     expect(canOccupy(field, [], b, 24)).toBe(true); resetAction(battle); a.pos = 24;
     expect(battle.gateReason('a', 24)).toContain('有人'); a.pos = 31; battle.toggleGate('a', 24); expect(field.structures![24]!.gateState).toBe('closed');
   });
-  it.each(['hero', 'company'] as const)('wall collapse displaces %s safely and never confuses member health with headcount', scale => {
-    const { a, b, battle, field } = layeredFixture(scale); field.structures![24] = createStructure('wall', 1, { top: true }); field.structures![24]!.hp = 1;
+  it.each((['wall', 'gate'] as const).flatMap(kind => (['hero', 'company'] as const).map(scale => ({ kind, scale }))))('$kind collapse displaces $scale safely and never confuses member health with headcount', ({ kind, scale }) => {
+    const { a, b, battle, field } = layeredFixture(scale); field.structures![24] = createStructure(kind, 1, { top: true }); field.structures![24]!.hp = 1;
     b.pos = 24; b.elevation = 1; const oldHealth = memberHealth(b), oldHp = b.hp;
     battle.attackStructure('a', 24); expect(b.elevation).toBeUndefined(); expect(b.hp).toBeGreaterThan(0); expect(memberHealth(b)).toBeLessThan(oldHealth);
     if (scale === 'company') expect(b.hp).toBe(oldHp); expect(field.overlays![24]).toContain('rubble'); expect(groundBlocked(field, b.pos!, b)).toBe(false);
     const restored = SmallBattle.fromSnapshot(structuredClone(battle.toSnapshot())); expect(memberHealth(restored.byId('b'))).toBe(memberHealth(b));
+  });
+  it.each((['wall', 'gate'] as const).flatMap(kind => (['dead', 'dying', 'fled'] as const).map(status => ({ kind, status }))))('$kind collapse clears an inactive $status platform and repairs old snapshots without changing casualties', ({ kind, status }) => {
+    const { b, battle, field } = layeredFixture(); battle.setNonLethal(true);
+    const reserve = unit('reserve', 'enemy'); reserve.pos = 3; battle.combatants.push(reserve);
+    field.structures![24] = createStructure(kind, 1, { top: true }); field.structures![24]!.hp = 1;
+    b.pos = 24; b.elevation = 1; b.status = status; if (status !== 'fled') b.hp = 0;
+    const hp = b.hp;
+    battle.attackStructure('a', 24);
+    expect(b).toMatchObject({ status, hp, pos: 24 }); expect(b.elevation).toBeUndefined();
+    const snap = structuredClone(battle.toSnapshot()), legacy = structuredClone(snap);
+    (legacy.combatants as Combatant[]).find(u => u.id === b.id)!.elevation = 1;
+    const restored = SmallBattle.fromSnapshot(legacy);
+    expect(restored.toSnapshot()).toEqual(SmallBattle.fromSnapshot(snap).toSnapshot());
+    expect(restored.byId('b')).toMatchObject({ status, hp, pos: 24 }); expect(restored.byId('b').elevation).toBeUndefined();
+    // Keep rejecting actual standing units without support and malformed platform records.
+    const invalid = structuredClone(legacy), invalidUnit = (invalid.combatants as Combatant[]).find(u => u.id === b.id)!;
+    invalidUnit.status = 'ready'; invalidUnit.hp = 1;
+    expect(() => SmallBattle.fromSnapshot(invalid)).toThrow('平台站位数据不合法');
+    (legacy.battlefield as BattlefieldSpec).structures![24] = null;
+    expect(() => SmallBattle.fromSnapshot(legacy)).toThrow('平台站位数据不合法');
   });
   it('deep-water bridge collapse sends non-swimmers to nearby banks exactly once', () => {
     const { b, battle, field } = layeredFixture(); field.tiles[24] = 'deep_water'; field.structures![24] = createStructure('bridge', 1); field.structures![24]!.hp = 1; b.pos = 24;
