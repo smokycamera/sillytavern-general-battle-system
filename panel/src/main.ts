@@ -94,6 +94,7 @@ import {
 import type { SaveScope, SaveReceipt, DeliveryReceipt } from './tavern.js';
 import { createPanelRuntime } from './panel-runtime.js';
 import { type LootType, type Suggestion } from './tags.js';
+import { migrateSavedSuggestion } from './saved-suggestion.js';
 import type { NarrativeProposal, NarrativeSave } from './narrative-state.js';
 import { prepareInventoryState, type InventoryItem } from './inventory-state.js';
 import { prepareBattleItems } from './battle-items.js';
@@ -553,7 +554,7 @@ function restore(): void {
   const saved = Object.keys(snapshot).length ? snapshot as SavedPanel : undefined;
   state.factRevision = saved?.factRevision ?? 0;
   state.encounterContext = saved?.encounterContext;
-  state.proposals = saved?.proposals ?? [];
+  state.proposals = (saved?.proposals ?? []).map(p => ({ ...p, events: p.events.map(migrateSavedSuggestion) }));
   state.storySync = saved?.autoApprove ?? saved?.storySync ?? false;
   state.autoApprove = state.storySync;
   state.nonLethal = saved?.nonLethal === true;
@@ -584,7 +585,7 @@ function restore(): void {
   state.autoTurn = !!saved.autoTurn;
   state.saveScope = saved.saveScope === 'character' ? 'character' : 'chat';
   state.autoApprove = saved.autoApprove ?? saved.storySync ?? false;
-  state.pending = Array.isArray(saved.pending) ? saved.pending : [];
+  state.pending = Array.isArray(saved.pending) ? saved.pending.map(migrateSavedSuggestion) : [];
   state.inventory = Array.isArray(saved.inventory)
     ? saved.inventory.map((it, i) => ({
         ...it,
