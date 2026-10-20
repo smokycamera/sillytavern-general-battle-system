@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Window as HappyWindow } from 'happy-dom';
 import { NativeHost, type HostContext, type HostWindow, type MessageFormatter } from '../src/sillytavern.js';
 import { installBattleMessageDisplay } from '../src/battle-message-display.js';
 import { battleDisplayBlocks, formatBattleMessage, createBattleMessageHooks, BATTLE_DETAILS_CLASS, type FormattingContext } from '../src/battle-message-format.js';
@@ -141,10 +142,17 @@ describe('原生战阵事件显示', () => {
     f.context.chat = [{ mes: block }]; f.root().innerHTML = '<p>另一聊天</p>'; f.emit('CHAT_CHANGED'); await flush(); expect(f.root().querySelector('code')!.textContent).toBe(block);
   });
   it('不重复包裹钩子或旧正则已生成的有效折叠，重绘丢失时仍能补全', async () => {
-    const f = fixture(true); f.root().innerHTML = formatBattleMessage(reply, {}); f.install(); await flush();
-    expect(f.root().querySelectorAll('details')).toHaveLength(1);
-    f.root().innerHTML = '<p>宿主重绘时没有保留显示扩展</p>';
-    await vi.waitFor(() => expect(f.root().querySelectorAll('details')).toHaveLength(1));
+    vi.useFakeTimers();
+    try {
+      const f = fixture(true); f.root().innerHTML = formatBattleMessage(reply, {}); f.install();
+      const settled = () => (window as unknown as HappyWindow).happyDOM.waitUntilComplete();
+      // Happy DOM 管理观察器任务，显示队列使用全局定时器；分别完成两个阶段。
+      await vi.runAllTimersAsync(); await settled();
+      expect(f.root().querySelectorAll('details')).toHaveLength(1);
+      f.root().innerHTML = '<p>宿主重绘时没有保留显示扩展</p>';
+      await settled(); await vi.runAllTimersAsync();
+      expect(f.root().querySelectorAll('details')).toHaveLength(1);
+    } finally { vi.useRealTimers(); }
   });
   it('原始 tb 或已转义文本在原位置替换，不复制两份事件', async () => {
     for (const encoded of ['raw', 'escaped', 'br']) {
