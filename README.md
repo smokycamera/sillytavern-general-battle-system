@@ -1,36 +1,34 @@
-# 通用战斗系统
+# Tavern Battle
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.5.0**. This release adds the expanded weapon and shield classes, commander ability and style for AI decisions, graded traits with resistances and new controls, three-way small battles, and a level-anchoring pass: energy shields now scale with their level and platform, and barrier, buff and morale skills follow the level anchors. A save error that froze battles with energy shields is fixed. See the [player update announcement](docs/player-update-2.5.0-20261019.md). Narrative spatial relationships guide city and outside-city layouts, landmarks and deployment; see [implementation and validation](docs/battlefield-refactor-implementation.md). Export your saves before updating, and do not enable both stable and test installations at once.
+Current version: **2.6.2**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
-The loadout header now includes **技能选择** beside **新增物品**. Choose a unit, select up to five learned skills, and save; preparation retains skill effects, cooldowns, resources, and equipment.
-
-All four entries are constant, with keywords removed and the user-provided text retained. Supported ST / TT hosts process them through the global World Info pipeline with the original position, depth, role, and order. Use **＋新建条目** to add custom entries with constant or keyword activation, depth, message role, insertion order, and individual enable/delete controls. See [embedded lorebook notes](docs/embedded-worldbook.md).
-
-Human carrying capacity is now 14, and large bodies carry 18. Humans at load 12 or above lose 1 movement and 2 initiative. Non-vehicle units may equip and fire autocannons and artillery; vehicle stabilization still requires a vehicle. Load penalties appear in equipment previews and unit details.
-
-New battles use V8 burst tuning (6% training damage per level and 1.5× single weapon skills), retaining cross-grade damage, overflow and the V6 life baseline: the 16T+4 life curve, giant melee strength, shared frontage, skill budgets and bounded area coverage. Signed modifiers, level growth, editing and save validation share the same limits. Archive upgrades show a preview and retain a full backup; ongoing old battles retain their rules. See [V8 burst tuning and pacing checks](docs/burst-balance-v8.md), [V7 overmatch, overflow and validation](docs/overmatch-v7.md) and [V6 life formulas](docs/unified-balance-v6.md).
-
-Export a save before upgrading if you may need to downgrade. The complete 1.0.6 build is preserved on a dedicated rollback branch; see [version rollback](docs/version-rollback.md).
-
-License: **GPL-3.0-only**. Commercial use, modification and distribution are permitted under GPL version 3, including its corresponding-source obligations when conveying covered software. See [LICENSE](LICENSE) and [license notes](LICENSE-NOTES.md).
-
-A native frontend battle extension for SillyTavern / TauriTavern. It supports small-scale battles and larger engagements, unit profiles, equipment and inventory, skill effects, post-battle progression, battle-report archives, and preview/confirmation of battle events extracted from chat content.
+A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
 ## Installation
 
-1. **Stable**: in SillyTavern, open **Extensions → Install Extension**, enter `https://github.com/smokycamera/sillytavern-general-battle-system`, keep the default `main` branch, install it, and refresh the page.
-2. **Test**: use the same repository URL and select the `test` branch during installation. New changes land there first and are promoted with `test → main` after acceptance. Do not enable stable and test copies at the same time.
-3. The four lorebook entries are built in and enabled by default. Open **Battle panel → Settings → 内置世界书** to add custom entries, toggle, edit individual texts, or restore built-in defaults. These settings persist across chats and characters.
-4. Disable the external copy yourself to avoid duplicate context. The plugin does not modify or disable external lorebooks.
+1. In Extensions → Install Extension, enter https://github.com/smokycamera/sillytavern-general-battle-system .
+2. Use main for stable or test for integration builds; refresh the page after updating.
+3. Enable one installation at a time. Built-in lorebook entries are enabled by default and editable in settings; disable an external duplicate yourself.
 
-See [release channels](docs/release-channels.md) for the development and promotion workflow.
+The current installation entry is root manifest.json plus dist/. Old ZIPs, panel/dist and historical resident scripts are not the current distribution. package.json supplies the product version; each saved battle retains its own rules version.
 
-Complete `<tb>` blocks in assistant replies are automatically escaped and shown in a collapsible event panel. No separate display regex is required. Expand it to read or copy the original event text; saved messages, scanning and model context remain unchanged. Disable any old `<tb>` hiding/folding regex and refresh after updating. See [display notes](docs/native-event-display.md).
+## This release
 
-An ordinary OpenAI-compatible LLM can read the selected number of recent messages before battle to choose commander profiles and the supported battle/scene setup. With map design on, it answers in two steps: commanders, task and scene type first, then a 3×3 compass layout of the city, water, places and starting areas. Siege attackers always start outside the walls; see the [two-step notes (Chinese)](docs/secondary-api-two-step-20261002.md). API URL, key, model list and selection persist independently of chats and characters. Native model backends are selected automatically for ST and TT; no relay URL or CORS proxy configuration is required. See the [usage guide](docs/jev-integration.md).
+2.6.2 restores structure damage, actual skill effects, defense outcomes, effect expiration, third-party status and objective progress in round reports, while keeping the wording concise. Final fortification summaries list changed structures only. The previous worn-item anchoring and 2.6 fixes remain included. See the [release guide](docs/current-release.md).
 
-JEV Command controls are withdrawn. Settings retain a disabled unfinished-feature notice; automatic turns use the built-in AI.
+## Documentation
 
-Third-party dependencies remain under their original licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Please report issues through this repository's Issues page and include the host version, extension version, and reproduction steps.
+- [Built-in lorebook](docs/embedded-worldbook.md) and [chat event display](docs/native-event-display.md)
+- [Battle preparation](docs/secondary-api-two-step-20261002.md) and [battlefield implementation](docs/battlefield-refactor-implementation.md)
+- [Battle persistence](docs/battle-save-policy-20261016.md) and [MCP player bridge](docs/mcp-player-bridge.md)
+- [Worn-item anchoring](docs/worn-anchoring-20261020.md) and [trait/item stacking](docs/traits-items-stacking-revision-20261019.md)
+
+## Development and publishing
+
+Run npm ci, npm run typecheck, npm run build:extension and npm run verify:dist. Merge feature work into test, verify it, then promote the same build into main. See [release channels](docs/release-channels.md) and [AGENTS.md](AGENTS.md).
+
+The maintained implementation is in engine/src, panel/src, host/src, runtime/src and extension/src. docs/history contains past reports and superseded proposals. release/baselines/user-20260918 is an immutable compatibility fixture, not the current version.
+
+License: **GPL-3.0-only**. Commercial use, modification and distribution are permitted under GPL version 3, including its corresponding-source obligations. See [LICENSE](LICENSE), [license notes](LICENSE-NOTES.md) and [third-party notices](THIRD_PARTY_NOTICES.md).

@@ -2,35 +2,33 @@
 
 [English](README.md) | **简体中文**
 
-当前版本：**2.5.0**。新增百兵谱武器与盾牌类别、双方指挥水平与风格、特质分级与抵抗、四种新控制和三方小战；按等级锚定校准能量盾（随等级与平台缩放）、屏障、增益与士气技能，并修复能量盾导致战斗卡死的存档错误。完整玩家公告见[2.5.0 更新内容](docs/player-update-2.5.0-20261019.md)。正文空间关系驱动城市、城外战区与地标部署，见[实施与验证](docs/battlefield-refactor-implementation.md)。更新前请先导出存档，不要同时启用正式版与 test 版。
+当前版本：**2.6.2**。当前实现、版本与构建入口见 [当前发布说明](docs/current-release.md)，专题资料见 [文档索引](docs/README.md)。
 
-配装页顶部的「新增物品」旁新增「技能选择」。选好单位后可直接勾选最多 5 项已学技能并保存；技能效果、冷却、资源和装备沿用原记录。
+面向 SillyTavern / TauriTavern 的原生前端回合制战斗扩展，支持小规模战斗、军团会战、三方小战、地图与城防、单位档案、装备和道具、技能与特质、战果成长及战报归档。
 
-四个内置条目全部常驻（蓝灯），已移除关键词，正文沿用用户提供的版本。支持原生世界书入口的 ST / TT 按原位置、深度、角色和顺序参与全局世界书流程。可通过「＋新建条目」添加自定义正文，设置蓝绿灯、关键词、深度、提示词类型与顺序，并独立启停或删除。详见[内置世界书说明](docs/embedded-worldbook.md)。
+## 安装与更新
 
-人形负重容量提高至14，大型提高至18；人形负重达到12时移动−1、先攻−2。非载具可按实际配装使用机炮、直射与曲射火炮，车载稳定装置仍要求真实载具。配装预览与单位详情显示负重减益。
+1. 在酒馆的“扩展 → 安装扩展”中填写 https://github.com/smokycamera/sillytavern-general-battle-system 。
+2. 正式版使用 main 分支，测试版使用 test 分支；更新扩展后刷新页面。
+3. 同一环境只启用一个分支的扩展。内置世界书默认启用，设置中可编辑与管理；外部重复世界书请自行停用。
 
-新战斗采用 V8 增伤校准：训练输出每级增加6%，单体武技基础倍率1.5；保留跨代毁伤、溢出与 V6 生命基线。人形生命按 16T+4 成长，巨兽攻防、编队展开、技能伤害与范围覆盖同步调整，保留武器溢出。±10 修正、编辑、成长和存档校验使用同一边界。已有档案升级前会显示预览并保存备份；进行中的旧战斗保留原规则。跨代优势只进入对具体目标的伤害结算，不增加基础生命或伤害表；武器与独立伤害技能的压倒性余伤可在同队传递。详见 [V8增伤与低中等级验证](docs/burst-balance-v8.md)、[V7规则与验证](docs/overmatch-v7.md) 和 [V6生命数值](docs/unified-balance-v6.md)。
+当前安装入口是根目录 manifest.json 和 dist/，不是旧 ZIP、panel/dist 或历史脚本。产品版本以 package.json 为准，战斗规则版本由各场战斗的快照保存。
 
-如需保留降级选择，请在升级前导出存档。GitHub 已用独立回退分支保存完整 1.0.6，操作见 [版本回退](docs/version-rollback.md)。
+## 本次更新
 
-许可证：**GPL-3.0-only**。允许依 GPL-3.0 商业使用、修改和分发；分发时须遵守其对应源代码提供等要求。详见 [LICENSE](LICENSE) 和[许可说明](LICENSE-NOTES.md)。
+2.6.2 补齐逐轮战报中的结构破坏、技能实际效果、防护结果、效果消失、第三方状态与占点过程，并按用户确认精简文字。结尾只汇总发生变化的城防。佩戴道具锚定和此前的 2.6 修正继续保留。详见 [当前发布说明](docs/current-release.md)。
 
-面向 SillyTavern / TauriTavern 的原生前端战斗扩展。包含小型战斗与会战、单位档案、装备与库存、技能效果、战果成长、战报归档，以及聊天正文事件的预览和确认。
+## 使用资料
 
-## 安装
+- [内置世界书](docs/embedded-worldbook.md)、[正文事件显示](docs/native-event-display.md)
+- [开战两步布置](docs/secondary-api-two-step-20261002.md)、[地图实现](docs/battlefield-refactor-implementation.md)
+- [战斗保存](docs/battle-save-policy-20261016.md)、[MCP 玩家接口](docs/mcp-player-bridge.md)
+- [佩戴道具锚定](docs/worn-anchoring-20261020.md)、[特质与道具组合](docs/traits-items-stacking-revision-20261019.md)
 
-1. **正式版**：在酒馆的“扩展 → 安装扩展”中填写 `https://github.com/smokycamera/sillytavern-general-battle-system`，保持默认 `main` 分支，安装后刷新页面。
-2. **测试版**：使用同一仓库地址，并在安装时选择 `test` 分支。测试版会先接收新功能；满意后再由 `test → main` 发布。不要同时启用正式版与测试版。
-3. 世界书现已内置并默认开启。进入战斗面板的“设置 → 内置世界书”可新建条目、关闭、逐条编辑或恢复内置默认文本；设置全局保存，不随聊天或角色切换。
-4. 请自行停用外挂的同一套世界书，避免重复发送；插件不会修改或停用你的全局世界书。
+## 开发与发布
 
-开发与发布流程见 [双通道发布说明](docs/release-channels.md)。
+执行 npm ci、npm run typecheck、npm run build:extension、npm run verify:dist。功能先合入 test，验证后将同一构建晋级到 main，详见 [发布流程](docs/release-channels.md)。
 
-AI 正文中的完整 `<tb>` 事件块会自动显示为“📋 战阵事件 · N项”，点击即可展开查看和复制，无需另装转义或折叠正则。原始消息、扫描与发送给模型的上下文不变。已安装的旧版 `<tb>` 隐藏/折叠正则可以停用；更新扩展后刷新页面即可。见[显示说明](docs/native-event-display.md)。
+当前源码位于 engine/src、panel/src、host/src、runtime/src、extension/src。历史报告与旧方案位于 docs/history，冻结回放夹具位于 release/baselines/user-20260918；它们用于兼容检查，不代表当前版本。
 
-普通 LLM 可在开战前读取所选层数上下文，选择双方指挥能力、风格、战斗类型与战场。开启地图设计时分两步：先选择指挥、任务和战场类型，再在九宫格上布置城市、水系、地点与双方开局位置；攻城时攻方固定在城外开局，见[两步准备说明](docs/secondary-api-two-step-20261002.md)。API URL、Key、模型列表及模型选择独立保存，不随聊天或角色卡改变；自动适配 ST / TT 内置模型后端，无需配置转发地址或开启 CORS 转发。详见[使用说明](docs/jev-integration.md)。
-
-JEV 指挥入口暂时撤下，设置只保留“jev指挥功能(未完成，勿选)”禁用提示；自动战斗由内置 AI 执行。
-
-第三方依赖遵循各自原许可证，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。问题反馈请使用本仓库 Issues，并附宿主版本、扩展版本和复现步骤。
+许可证：**GPL-3.0-only**。允许依 GPL-3.0 商业使用、修改和分发；分发时须遵守对应源代码提供等要求。见 [LICENSE](LICENSE)、[许可说明](LICENSE-NOTES.md) 和 [第三方声明](THIRD_PARTY_NOTICES.md)。

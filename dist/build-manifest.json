@@ -1,14 +1,14 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "2.6.1",
-  "builtAt": "2026-10-19T16:42:18.432Z",
-  "sourceFingerprint": "2f30796d2bfab1ee2830ee4b937567da1809a5fac147e49c88fb44ff91a182a7",
+  "version": "2.6.2",
+  "builtAt": "2026-10-20T01:57:21.394Z",
+  "sourceFingerprint": "c2cb9b81f325892e7fa5c377783f7f1bd1f51127f35eea691f3ef54be6537c07",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
-      "path": "dist/assets/panel-B9390oQ5.js",
-      "bytes": 1389495,
-      "sha256": "32e8fdd3abdcec6e64d58f3e77212b4a077102f5f76033f692d2f51b46398b48"
+      "path": "dist/assets/panel-AydLY9mV.js",
+      "bytes": 1397340,
+      "sha256": "4a84e8162b825297d4f5f3462e528d7434331cd48bdafebe0c662efaabebcb24"
     },
     {
       "path": "dist/assets/panel-Ca2W74WV.css",
@@ -16,9 +16,9 @@
       "sha256": "29ecf3e6233e4d9abd64b009985079574db4a000c56e3f1aa8964e4994bae412"
     },
     {
-      "path": "dist/assets/preferences-DMOsaZkw.js",
-      "bytes": 954330,
-      "sha256": "aa64b143d101eda549abefde5169205cd68fe3a93bc981e66d87cb861fb9f7ef"
+      "path": "dist/assets/preferences-qd_Aq3mK.js",
+      "bytes": 958356,
+      "sha256": "f488d461062dda306c1da04e5e8a7995606a3d9662d3399c391d80a1a0cc5176"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -36,14 +36,14 @@
       "sha256": "57cf233a9fb12d7c96c5fe9d8f239b3c446a0d65d0dd74bebca2d4e43c8f3657"
     },
     {
-      "path": "docs/armor-v5-design.md",
-      "bytes": 13349,
-      "sha256": "89aac5f0966c6ddbfb021a0e22ff364fbc6b18c69f57ce076d51a8394eefdc13"
-    },
-    {
       "path": "docs/battle-planning-v2.md",
       "bytes": 5739,
       "sha256": "05ebb32cad8e2f1643253ad9f2103b6e4b0bc7618bc717c25a9ff3ea87d84486"
+    },
+    {
+      "path": "docs/battle-save-policy-20261016.md",
+      "bytes": 3063,
+      "sha256": "2f6292520b67f4acdc04529093b23b20b81d82c67310429663895e4f91f1dfd2"
     },
     {
       "path": "docs/battlefield-refactor-implementation.md",
@@ -51,34 +51,14 @@
       "sha256": "8188f26d9ae04816b693de50ac785459c2a89b5510d5ade7ddd401bd357794e1"
     },
     {
-      "path": "docs/battlefield-refactor-proposal.md",
-      "bytes": 32605,
-      "sha256": "ced4598030b3cb072d818226e050c8ec1a8d6662f34241d5a4867505ffd657ec"
+      "path": "docs/control-worn-v20-20261018.md",
+      "bytes": 10264,
+      "sha256": "ab9253e642ef6d08ac111d67206608658848fefb72d8174060845560f69bfca9"
     },
     {
-      "path": "docs/breach-review-audit.json",
-      "bytes": 5353,
-      "sha256": "00ef328fe2c9e34c93c3caf2a02e02bbfe711fa39f65af3fe57685e8cecd4a49"
-    },
-    {
-      "path": "docs/breach-review-validation.json",
-      "bytes": 3658,
-      "sha256": "4128fc2254a72307411afeec25d61d3a40a5749d7661700d84cc391a0c12fbc1"
-    },
-    {
-      "path": "docs/breach-review.md",
-      "bytes": 7007,
-      "sha256": "6eb61c05ba844422e38df93ffbcecc4a841e3dc4a04dd54ce656fcbed380e850"
-    },
-    {
-      "path": "docs/burst-balance-v8.md",
-      "bytes": 3850,
-      "sha256": "6c114f76962c493163ffd6c94818df0155605a9a8dc98615e49034c0f696d2a1"
-    },
-    {
-      "path": "docs/contextual-map-v3.md",
-      "bytes": 4121,
-      "sha256": "5c3d67483c785b27a06581b94325fa09e68fe4d40955aceb1e7cc5ac277b8882"
+      "path": "docs/current-release.md",
+      "bytes": 2406,
+      "sha256": "0d1a77bfaf13bd26ba9a9300a3d40cb97bbcd3084769a3b4efc4a5daf6340897"
     },
     {
       "path": "docs/embedded-worldbook.md",
@@ -86,29 +66,9 @@
       "sha256": "f4d782955fbd269f4a01d3becc00407a3bd4347f61b6449aeb14272d7f279434"
     },
     {
-      "path": "docs/extension-migration-assessment-20260919.md",
-      "bytes": 10268,
-      "sha256": "290adc8cd5a613d8a843da785921b5f8035c7daf7c567b74906958e78161f4e2"
-    },
-    {
-      "path": "docs/jev-command-validation-20260922.md",
-      "bytes": 4690,
-      "sha256": "75f3d5cec55c146094d47461758e1fea6e53a93935c79754533329b4d5b20741"
-    },
-    {
-      "path": "docs/jev-context-validation-20260922.md",
-      "bytes": 2365,
-      "sha256": "ffb3cef26ac1def4eb09e6c6931fc0dd03d82499b6d1e5a3a2fc4ee6ce566dda"
-    },
-    {
-      "path": "docs/jev-cors-validation.md",
-      "bytes": 3953,
-      "sha256": "52c8550b4c0050b5c4e758af11ef284211ab5c66e33cf162258acf98cb2bb740"
-    },
-    {
-      "path": "docs/jev-endpoint-validation.md",
-      "bytes": 2738,
-      "sha256": "e02da53900369b39246ee5d8bf2bd2e27cc8a6699ef03cc3e5b1d69251b9aa61"
+      "path": "docs/item-system-20261011.md",
+      "bytes": 19729,
+      "sha256": "2b5f0aaf38fa61836e83636c8d183c1505745ae65422bc50d337c7202e0e1aee"
     },
     {
       "path": "docs/jev-integration.md",
@@ -116,34 +76,9 @@
       "sha256": "88bc1b9d305ab4d6b442a118f0adf9acafd67d2e8413ec5c987e76618b4b612c"
     },
     {
-      "path": "docs/jev-retry-validation.md",
-      "bytes": 2971,
-      "sha256": "cf8b53f8909ce6879bb1e027c59704eb9a265492822ebf6befed738afef88c0f"
-    },
-    {
-      "path": "docs/layered-city-v1.md",
-      "bytes": 7851,
-      "sha256": "73cd5a0994a47b8a37c319991eca62542172bee8e8d88236d428db876c108223"
-    },
-    {
-      "path": "docs/layered-combat-audit-20260929.json",
-      "bytes": 8165,
-      "sha256": "ff2599fcee2badf55b1382b4e98b7884695917c1797a22bc8b786fe11f6d28e5"
-    },
-    {
-      "path": "docs/layered-map-audit-20260929.json",
-      "bytes": 144,
-      "sha256": "f2dd6e8b3e5b76c6873ae57dbb0f67fcdaf42b18be06be0801ceb11e88122a54"
-    },
-    {
-      "path": "docs/layered-release-validation.json",
-      "bytes": 2213,
-      "sha256": "f908c8282284f2f63a1c7413fff020f2918c64473b697ff725d5e414e8eb94b5"
-    },
-    {
-      "path": "docs/map-route-v4.md",
-      "bytes": 7721,
-      "sha256": "352db5b48093c697c96ccf7480f4c5192194f5aefe2be52f3e52fc2ee50aa95c"
+      "path": "docs/level-anchoring-v21-20261019.md",
+      "bytes": 10337,
+      "sha256": "c5911041335068392b403ef48a84df426397ad5079846e25439c1f1046426e0d"
     },
     {
       "path": "docs/mcp-player-bridge.md",
@@ -156,59 +91,24 @@
       "sha256": "c45c218b36f1780a1c84f1c560e6642b789de77bfe3e547c1b59d2251848851a"
     },
     {
-      "path": "docs/native-extension-migration-plan-20260919.md",
-      "bytes": 31214,
-      "sha256": "cfc4681db07ff5305bf34ee1f9a7e73f0b6392261799ed294e9739dc115e6fb1"
+      "path": "docs/README.md",
+      "bytes": 1018,
+      "sha256": "acb7554d23c7428a005259e5f53626e958f1c48207a90f8cf09bde2ab977a5be"
     },
     {
-      "path": "docs/native-extension-validation.md",
-      "bytes": 3722,
-      "sha256": "e35a0868e56efc57d8945d111e9950addafbb50a12fb26b52b083519f7b2b4c9"
+      "path": "docs/release-channels.md",
+      "bytes": 1950,
+      "sha256": "6bc343b4146b9540064263d20fe1781b9c0a0b6126b666314a976c97145491d2"
     },
     {
-      "path": "docs/overmatch-v7.md",
-      "bytes": 8176,
-      "sha256": "e3b74c35d805da89eba910180c942eb8c23c8be03fbd8818ab4992032d51fee0"
+      "path": "docs/secondary-api-two-step-20261002.md",
+      "bytes": 10625,
+      "sha256": "87aedcf75400bc85a50b8d589e2d6e7bd7ee6e3c90b4e173d9cf4edf00eec8ae"
     },
     {
-      "path": "docs/planning-capacity-audit.json",
-      "bytes": 902,
-      "sha256": "c92c098a907664997f5da20231904286907279063ed56e1e37f06a0ba4708587"
-    },
-    {
-      "path": "docs/planning-release-validation.json",
-      "bytes": 4211,
-      "sha256": "cefe878c27b2aa49611b82f4f7b2df305a0116bbbcc07534e5b40d6eb69f11f2"
-    },
-    {
-      "path": "docs/player-update-2.1.0-20261013.md",
-      "bytes": 1508,
-      "sha256": "2c85fe95352597c4a06cfdd450e8e0d61d576d534fcb83c1bb75533a88002d7a"
-    },
-    {
-      "path": "docs/resources-v9.md",
-      "bytes": 6276,
-      "sha256": "d0e4f4dd75fb3b055fc87a1f08ad93faea94b409b08767b0e616d81882131b32"
-    },
-    {
-      "path": "docs/review-combat-audit.json",
-      "bytes": 8136,
-      "sha256": "ca8e751faa9e9c4ef2ca5d90b907a86ec1fc0ce8212b0bd666751aa167f2c3ac"
-    },
-    {
-      "path": "docs/review-map-audit.json",
-      "bytes": 144,
-      "sha256": "b5405a3a88096b3650b6b6dce640c63d867f934f0afcd933a201792ecb107735"
-    },
-    {
-      "path": "docs/script-baseline-20260919.md",
-      "bytes": 3744,
-      "sha256": "e68f6c58483cacd0d24f26e42138b519f2bb44bb83f3e73e86873d0d284fb076"
-    },
-    {
-      "path": "docs/unified-balance-v6.md",
-      "bytes": 7452,
-      "sha256": "2b7a2f4bbcce6ba148e1ccd5e6543386391584bfe467f060d543c706f4eedcdf"
+      "path": "docs/traits-items-stacking-revision-20261019.md",
+      "bytes": 17332,
+      "sha256": "bc85e8a588eec51581c82ecf56d8294276bd67688c761413f43979cae02408bc"
     },
     {
       "path": "docs/update-2.6-20261019.md",
@@ -216,14 +116,14 @@
       "sha256": "437896b8d4705f5f0b6edebc703edf1ae738fe3f82bcaefa1916fc296884a17b"
     },
     {
-      "path": "docs/validation-results.json",
-      "bytes": 6751,
-      "sha256": "1b19c421a1932b325f82dcea89fa67331d171d2392c5f76a59d860de719c16e0"
-    },
-    {
       "path": "docs/version-rollback.md",
       "bytes": 4188,
       "sha256": "72f3d24c24d3c7d85d7fb750c164b311125c5fe2193b4eaa853bf26e62874ae4"
+    },
+    {
+      "path": "docs/worldbook-xml-markdown.md",
+      "bytes": 18325,
+      "sha256": "0d0420d960e52de796387348ac21c2ccc9e523916d9c707b02d64596e8549507"
     },
     {
       "path": "docs/worn-anchoring-20261020.md",
@@ -233,7 +133,7 @@
     {
       "path": "dist/index.js",
       "bytes": 95665,
-      "sha256": "e611a3415bc00397b2e3e1f47169a886fd71bdc24680411d4f7f0d82773749dc"
+      "sha256": "571945de532a78ca21d1d17f8e9c37bc4a0eb02f7b8ffe3d14ea38c2106835e0"
     },
     {
       "path": "LICENSE",
@@ -253,7 +153,7 @@
     {
       "path": "manifest.json",
       "bytes": 170,
-      "sha256": "15854591ab27f44f2fa9ed0523d48a02062e1fde25e950bf54dd465a1aaee2a2"
+      "sha256": "64c0ecf4d9f75b609db5cc456fd780cdb55f9891b47b0298847a22e5cfbfeff0"
     },
     {
       "path": "mcp/broker.mjs",
@@ -308,22 +208,17 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 46806,
-      "sha256": "4ead39a87f92c7e30c8a9310e47b0f811db01e1c138e67aea4a56d4b5aceada8"
+      "sha256": "d2c325f3728d1a887ee86f6438a7428be2e7b907ec5bf76eea8aeda7c21cbee1"
     },
     {
       "path": "README.md",
-      "bytes": 5531,
-      "sha256": "ea335f52928bcc1048808538cdcb16934245459acffce245bca38d5d3d38ec14"
+      "bytes": 2766,
+      "sha256": "56d5fa0b0478fbfb884aeb6f86857599fcb5118f5c8473504b68698ba150510f"
     },
     {
       "path": "README.zh-CN.md",
-      "bytes": 4967,
-      "sha256": "a994fd62cb78036ed352a0f13a77fe8738300b8f252298c271d4db0751a3dfe2"
-    },
-    {
-      "path": "release/current-baseline.json",
-      "bytes": 2532,
-      "sha256": "8dfb3599bec3e692d47ebf6fd631647326cf5fdeab8c592637c0463aa614e8c5"
+      "bytes": 2547,
+      "sha256": "fd8b2458f09e2d4611343bf95787b976657764043a8894319c576ccbd6fb7ec5"
     },
     {
       "path": "scripts/jev-cors-relay.mjs",
@@ -339,7 +234,7 @@
   "validation": {
     "dependencyAudit": "not-run-by-build",
     "status": "release-candidate",
-    "report": "docs/native-extension-validation.md"
+    "report": "docs/current-release.md"
   },
   "layout": "paths relative to repository root"
 }
