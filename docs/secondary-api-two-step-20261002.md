@@ -41,6 +41,8 @@
 
 ### 九宫格回答格式
 
+2.7.0 起，单位也可绑定具体地点：`"units":[{"unit":["u1","u2"],"place":"档案室","relation":"inside"}]` 可将多名单位一起放入命名房间，不限于单独行动。`place` 使用本次 `places`、桥或城门的名称；`relation` 为 `inside`（内部）、`guards`（驻守附近）或 `near`（靠近），省略时房间用 `inside`，其他地点用 `guards`。每个单位保留独立身份，地点绑定优先于 `at`；无效、重名或超出地点预算的绑定会注明原因，再使用该条 `at` 或本方部署。按方位部署的攻城守方仍可使用 `post`。九宫格表示大区域，具体落点、容量和合法性由本地引擎处理。
+
 ```json
 {"archetype":"gate_front","cover":"balanced",
  "city":{"at":"N","name":"青石城","walls":"ring","level":3,"breaches":0,"gates":[{"name":"南门","state":"closed"}]},

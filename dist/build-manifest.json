@@ -1,24 +1,24 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "2.6.10",
-  "builtAt": "2026-10-20T13:50:46.477Z",
-  "sourceFingerprint": "3852105839ccf54bff41f68ed81eea86533336e8a3085463ba2b73f4f6e7f25d",
+  "version": "2.7.0",
+  "builtAt": "2026-10-20T14:28:22.716Z",
+  "sourceFingerprint": "4034998b53bcbc4eb9dceb9d5fe1fe164b034426be3323da348fa99e69aa8818",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
-    {
-      "path": "dist/assets/panel-B98uQP0t.js",
-      "bytes": 1409967,
-      "sha256": "9c54743fbb0b8a59d5512a5f3c73edd452db2dd4b95e937f647ea2d4f834357c"
-    },
     {
       "path": "dist/assets/panel-Ca2W74WV.css",
       "bytes": 30823,
       "sha256": "29ecf3e6233e4d9abd64b009985079574db4a000c56e3f1aa8964e4994bae412"
     },
     {
-      "path": "dist/assets/preferences-6vfwJZZa.js",
-      "bytes": 971099,
-      "sha256": "1429d21b188733a1b6bc53e6c3b840ee4d46f077ca99265f4cdaf51c302e0b7e"
+      "path": "dist/assets/panel-Dw-VYlpp.js",
+      "bytes": 1411170,
+      "sha256": "5c96ca8e24fd8adf428dcc62efbea3aabc0ce0114820a0e874f8e977b6848be2"
+    },
+    {
+      "path": "dist/assets/preferences-9VvrHid0.js",
+      "bytes": 971101,
+      "sha256": "a9731dcb0d98ad6682d9acfdae86ddccdc37dd2410d04e03e7b5cea26a47e7b0"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -57,8 +57,8 @@
     },
     {
       "path": "docs/current-release.md",
-      "bytes": 8118,
-      "sha256": "d987a9ac6a1433ceb9aac355b622a81eccee606a838d5214b613d272d55e0cb8"
+      "bytes": 8968,
+      "sha256": "5ccb7e547ef0cfe6ec11c2a10a96a8587674a32d935cddc738b8d785bf0250cc"
     },
     {
       "path": "docs/embedded-worldbook.md",
@@ -127,8 +127,8 @@
     },
     {
       "path": "docs/secondary-api-two-step-20261002.md",
-      "bytes": 10625,
-      "sha256": "87aedcf75400bc85a50b8d589e2d6e7bd7ee6e3c90b4e173d9cf4edf00eec8ae"
+      "bytes": 11316,
+      "sha256": "fe082f973ce08537a81b397991f8e160cc804434feaec935aabdfaaaadd90034"
     },
     {
       "path": "docs/traits-items-stacking-revision-20261019.md",
@@ -158,7 +158,7 @@
     {
       "path": "dist/index.js",
       "bytes": 96948,
-      "sha256": "862baa54f446fe95a1e44dae9d01bc9e75f95b68b847183d50b0790cdcec3103"
+      "sha256": "7a83eb662c92b15971fce58e067059515a549391324747cc409efb3aacfcb27f"
     },
     {
       "path": "LICENSE",
@@ -177,8 +177,8 @@
     },
     {
       "path": "manifest.json",
-      "bytes": 172,
-      "sha256": "65e6eea43cc2de5e70dfde9bc76c87623b26fd20056dacc2437d19814bf0313e"
+      "bytes": 170,
+      "sha256": "513fccabe312f6c92460789855a181c50f139e3e35177a124d228eb151419e91"
     },
     {
       "path": "mcp/broker.mjs",
@@ -233,17 +233,17 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 46806,
-      "sha256": "e660debfb57d0edc7eae02ab7d034e96b18b5a419a830c9019559f583b93ac81"
+      "sha256": "d6c61c44acb733f6f0534caee462e60af8198841fdff8eaa044d2c4bfde65d40"
     },
     {
       "path": "README.md",
-      "bytes": 2609,
-      "sha256": "8834756aeaaa3f3c23d0e551ed703963d848678b64c71088fb23ca5942407a77"
+      "bytes": 2690,
+      "sha256": "d4a0562e5666e349c293901f612432ebf7ba27911a879550cfa8e7f152a4f138"
     },
     {
       "path": "README.zh-CN.md",
-      "bytes": 2427,
-      "sha256": "71a2da4ba45182e84996d5aa261dc6ff9f0420ad583455c6f90f6049df1dd149"
+      "bytes": 2490,
+      "sha256": "2a1c4d12d35ac88b06d6875b0817a5a020f4b1be6a10ce82d0734c2edbdc03a5"
     },
     {
       "path": "scripts/jev-cors-relay.mjs",
