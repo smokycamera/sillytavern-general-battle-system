@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { finishSceneRegions } from '../src/small/scene-compiler.js';
 import { generatedLayeredField, generateUnit, normalizeBattlefieldPlan, gridDistance, validateField, type BattlefieldPlan, type BattlefieldSpec, type Combatant } from '../src/index.js';
 
 function sceneUnit(id: string, side: 'ally' | 'enemy'): Combatant {
@@ -10,6 +11,17 @@ const roster = (): Combatant[] => [sceneUnit('a1', 'ally'), sceneUnit('a2', 'all
   sceneUnit('e1', 'enemy'), sceneUnit('e2', 'enemy'), sceneUnit('e3', 'enemy'), sceneUnit('e4', 'enemy')];
 const bindings = { u1: 'a1', u2: 'a2', u3: 'a3', u4: 'a4', u5: 'e1', u6: 'e2', u7: 'e3', u8: 'e4' };
 const evidence = { basis: 'explicit' as const, sources: ['m1.p1'] };
+it('sizes a shared named place for all separately bound members rather than one member', () => {
+  const field = generatedLayeredField('shared-place-capacity', 7, 13);
+  field.scene = {version:1,regions:[{id:'camp',kind:'position',label:'营地',cells:[45],access:[45]}],fulfilled:[]};
+  const units = [sceneUnit('a1','ally'),sceneUnit('a2','ally'),sceneUnit('a3','ally')];
+  const plan: BattlefieldPlan = {intent:{schema:'scene-intent-v1',entities:[{id:'camp',kind:'position',label:'营地',...evidence}],relations:units.map((_,i)=>({subject:'u'+(i+1),object:'camp',relation:'inside',...evidence})),constraints:[]}};
+  finishSceneRegions(field,plan,{u1:'a1',u2:'a2',u3:'a3'},units);
+  const zones = field.deploymentZones!.filter(z=>z.landmarkId==='camp');
+  expect(zones).toHaveLength(3);
+  expect(zones.every(z=>z.cells.length>=2)).toBe(true);
+  expect(zones.every(z=>JSON.stringify(z.cells)===JSON.stringify(zones[0]!.cells))).toBe(true);
+});
 function siege(plan: Record<string, unknown>, seed = 'roles', attackingSide: 'ally' | 'enemy' = 'ally'): { field: BattlefieldSpec; at: (id: string) => number } {
   const field = generatedLayeredField(seed, 7, 13, ['siege'], { roster: roster(), attackingSide, plan: normalizeBattlefieldPlan({ scene: 'city_siege', ...plan }).plan, unitBindings: bindings });
   return { field, at: id => field.initialDeployment![id]!.pos };
