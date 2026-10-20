@@ -43,11 +43,11 @@ export function generatedLayeredField(seed: string, width = 7, height = 13, tags
   const candidates: [number,number][] = [initial, ...sizes.filter(([w]) => w > initial[0])];
   const fixed = roster.some(u => u.pos !== undefined);
   let lastError: unknown;
-  for (const [w,h] of candidates) for(let attempt=0;attempt<(plan?.intent?6:1);attempt++) {
+  for (const [w,h] of candidates) for(let attempt=0;attempt<(plan?.intent||scene==='interior'?6:1);attempt++) {
     try {
       const candidateSeed=attempt===0?seed:`${seed}:scene-candidate-${attempt}`;
       const field = generateLayeredCandidate(candidateSeed, w, h, tags, { ...options, plan, scene });
-      if(attempt)field.generation!.notes=[...(field.generation!.notes??[]),`为满足正文关系采用第${attempt+1}个本地布局候选`];
+      if(attempt)field.generation!.notes=[...(field.generation!.notes??[]),`为${plan?.intent?'满足正文关系':'容纳完整部署'}采用第${attempt+1}个本地布局候选`];
       if (active.length) {
         const prepared=prepareGridDeployment(field,active,seed);validateSceneFacts(field,prepared);
         field.initialDeployment=Object.fromEntries(prepared.map(u=>[u.id,{pos:u.pos!,...(u.elevation?{elevation:u.elevation}:{}),...(u.airborne!==undefined?{airborne:u.airborne}:{})}]));
@@ -61,10 +61,11 @@ export function generatedLayeredField(seed: string, width = 7, height = 13, tags
       return field;
     } catch (error) {
       const relational=!!plan?.intent&&error instanceof Error&&/正文关系|正文指定|合法位置|部署|容量不足/.test(error.message);
-      if (!(error instanceof Error)||!relational&&(fixed||!/部署|容量不足/.test(error.message))) throw error;
+      const indoorCapacity=scene==='interior'&&!fixed&&error instanceof Error&&/部署|容量不足/.test(error.message);
+      if (!(error instanceof Error)||!relational&&!indoorCapacity&&(fixed||!/部署|容量不足/.test(error.message))) throw error;
       lastError = error;
       if (error.message.startsWith('城市与水岸部署容量不足')) break;
-      if(!relational)break;
+      if(!relational&&!indoorCapacity)break;
     }
   }
   throw lastError ?? Error('无法为完整名单生成合法部署');
