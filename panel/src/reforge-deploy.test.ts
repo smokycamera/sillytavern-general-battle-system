@@ -47,7 +47,7 @@ function assertUpdated(next: NarrativeSave) {
   expect(restored.weapon).toMatchObject({ id: itemId, name: '缴获制式步枪与轻机枪', level: 4, recipe: { mechanism: 'rifle', bonuses: { damage: 1 } } });
   expect(next.inventory!.filter(item => item.id === itemId)).toHaveLength(1);
   expect(next.inventory!.find(item => item.id === itemId)).toMatchObject({ equippedTo: { unitId: id, slot: 'primary' }, revision: 2 });
-  expect(next.inventory!.find(item => item.id === itemId)!.history).toHaveLength(1);
+  expect(next.inventory!.find(item => item.id === itemId)!.history).toBeUndefined();
 }
 
 describe('named reforge specifications and pre-deployment batches', () => {

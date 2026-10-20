@@ -116,14 +116,14 @@ describe('物品与档案的原子事务', () => {
     expect(() => prepareInventoryTransaction(next, { id: 'conflict', expectedRevision: next.factRevision!, kind: 'equip', itemId: 'cannon', unitId: 'a', slot: 'primary' })).toThrow(/稳定车载武器需要实际车辆平台/);
     expect(next).toEqual(before);
   });
-  it('重铸保持实物身份与改造历史，已装备投影更新，训练和生命不变', () => {
+  it('重铸保持实物身份和当前规格，已装备投影更新，不累积改造副本', () => {
     let next = prepareInventoryTransaction(initial(), { id: 'equip', expectedRevision: 1, kind: 'equip', itemId: 'prize', unitId: 'a', slot: 'primary' });
     const old = structuredClone(next.inventory!.find((i) => i.id === 'prize')!);
     const actor = structuredClone(next.storage![0]!);
     next = prepareInventoryTransaction(next, { id: 'reforge', expectedRevision: next.factRevision!, kind: 'reforge', itemId: 'prize', name: '附魔战斧', spec: { kind: 'weapon', mechanism: 'axe', power: 9, enchantment: 'arcane' } });
     const item = next.inventory!.find((i) => i.id === 'prize')!;
     expect(item).toMatchObject({ id: old.id, name: '附魔战斧', revision: 2, equippedTo: old.equippedTo });
-    expect(item.history![0]!.mechanics).toEqual(old.mechanics);
+    expect(item.history).toBeUndefined();
     expect(next.storage![0]!.snapshot!.weapon).toMatchObject({ id: old.id, name: '附魔战斧', channel: 'arcane', level: 9 });
     expect([next.storage![0]!.hp, next.storage![0]!.level, next.storage![0]!.base.hpMax]).toEqual([actor.hp, actor.level, actor.base.hpMax]);
   });

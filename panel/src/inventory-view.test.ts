@@ -62,7 +62,7 @@ it('佩戴卡片展示短实效和升级收益；旧物更新先预览，提交�
   expect(worn.history).toBeUndefined();
   await f.action('confirm');
   const updated = f.save().inventory!.find(i => i.id === 'worn')!;
-  expect(updated.qty).toBe(1); expect(updated.history).toHaveLength(1);
+  expect(updated.qty).toBe(1); expect(updated.history).toBeUndefined();
   card = document.querySelector<HTMLElement>('[data-inventory-id="worn"]')!;
   expect(card.querySelector('[data-action="inventory-upgrade-budget"]')).toBeNull();
   expect(card.textContent).toContain('防御+0.2');

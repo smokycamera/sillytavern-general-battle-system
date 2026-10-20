@@ -351,7 +351,7 @@ export class InventoryPanel {
         ${m?.kind === 'item' && (historicalRecoveryItem(m.value) || historicalWornItem(m.value)) ? `<button data-action="inventory-upgrade-budget" ${itemData} ${disabled}>${m.value.recipe.form === 'worn' ? '更新佩戴数值' : '升级治疗／屏障数值'}</button>` : ''}
         ${!equipped && !item.assignedTo && actor ? `<button data-action="inventory-assign" ${itemData} ${disabled}>交给${esc(current!.name)}</button>` : ''}</div>
         ${!this.bulkDelete && details.length ? `<details class="inventory-more" data-detail-id="more-${esc(item.id)}"><summary>其他操作</summary><div class="row">${details.join('')}</div></details>` : ''}
-        ${item.note || item.history?.length ? `<details data-detail-id="history-${esc(item.id)}"><summary>来源与改造记录</summary>${item.note ? '<p>' + esc(item.note) + '</p>' : ''}${item.history?.map(h => '<p>第' + h.revision + '次记录：' + esc(h.name) + ' · ' + esc(itemDescription({ ...item, mechanics: h.mechanics })) + '</p>').join('') ?? ''}</details>` : ''}</article>`;
+        ${item.note ? `<details data-detail-id="note-${esc(item.id)}"><summary>备注</summary><p>${esc(item.note)}</p></details>` : ''}</article>`;
     };
     const groups = [
       { name: '已装备', items: items.filter(item => item.equippedTo) },

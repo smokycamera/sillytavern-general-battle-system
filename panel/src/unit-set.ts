@@ -383,7 +383,7 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
     if (mechanics && mechanics.kind !== 'item') {
       const item = { ...old, ...(split ? { note: stashed!.note } : {}), id:itemId, name:('name' in mechanics.value ? mechanics.value.name : undefined) || '盾牌',qty:1,lootType:mechanics.kind==='weapon'?'weapon':'armor',mechanics,assignedTo:id,equippedTo:{unitId:id,slot},revision:(old?.revision??0)+1 };
       validateInventoryItem(item);
-      if (old?.mechanics && mechanics !== old.mechanics) item.history = [...(old.history??[]),{revision:old.revision??1,name:old.name,mechanics:structuredClone(old.mechanics),sourceId}];
+      delete item.history;
       if (split) stashed!.qty--;
       if (stashed && equipped) delete equipped.equippedTo;
       next.inventory = [...next.inventory!.filter(i=>i.id!==itemId),item];

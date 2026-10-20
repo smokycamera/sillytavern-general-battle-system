@@ -5,6 +5,7 @@ import { validateInventoryItem, assertInventoryPanelWrite, type InventoryItem } 
 import { traitRegistry } from '../../engine/src/data/traits.js';
 import type { NarrativeSave } from './narrative-state.js';
 import type { BattleReport } from './battle-reports.js';
+import { archiveStateStamp } from './archive-stamp.js';
 
 export interface BattleArchiveState {
   storage: UnitRecord[];
@@ -27,10 +28,7 @@ export interface DeletedReport { report: BattleReport; index: number }
 
 /** 不包括报告与界面选择；收兵和删除报告不构成档案成长/装备变更。 */
 export function archiveStamp(save: Pick<NarrativeSave, 'storage' | 'inventory'>): string {
-  const text = JSON.stringify([save.storage ?? [], save.inventory ?? []]);
-  const hashes = [0x811c9dc5, 0x9e3779b9, 0x85ebca6b, 0xc2b2ae35];
-  for (let i=0;i<text.length;i++) for (let n=0;n<hashes.length;n++) hashes[n]=Math.imul(hashes[n]! ^ (text.charCodeAt(i)+n),[16777619,2246822519,3266489917,668265263][n]!);
-  return text.length + ':' + hashes.map(h => (h>>>0).toString(16)).join(':');
+  return archiveStateStamp(save.storage, save.inventory);
 }
 
 export function captureBattleArchive(save: NarrativeSave): BattleArchiveState {
