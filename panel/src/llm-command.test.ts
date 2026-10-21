@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { attachCarriedItems, compileItem, createStructure, generateUnit, MassBattle, SmallBattle, standardField, V24_OVERFLOW_D20, V24_OVERFLOW_TW } from '../../engine/src/index.js';
 import { COMMAND_PROMPTS } from './llm-command-prompts.js';
 import { commanderTool, emptyCommandMemory, commandObservation, LlmCommandController, smallCommandChoices,
@@ -7,6 +7,8 @@ import type { LlmSettings } from './llm-settings.js';
 import { applyBattleStep, computeBattleStep } from './battle-step.js';
 import { savedCommanderState, savedLlmContext } from './llm-save-context.js';
 import { encounterRequest, normalizeContextSettings } from './jev-context.js';
+
+afterEach(() => vi.useRealTimers());
 
 const settings: LlmSettings = { enabled: true, commandEnemy: true, selectBattleScale: false, designMap: false,
   windowSize: 6, model: 'fixture', url: 'https://example.invalid/v1', token: 'fixture-secret', models: [] };
@@ -193,7 +195,46 @@ describe('atomic LLM command execution', () => {
     expect(initial((request as any).mock.calls.at(-1)[1]).plan).toBe(restored.memory.plan);
   });
 
-  it('discards a partial activation on malformed output and switches this battle to local AI', async () => {
+  it('retries preparation and the current command without replaying prior actions or losing the plan', async () => {
+    vi.useFakeTimers();
+    const b = small(), s = state(), before = structuredClone(b.toSnapshot());
+    let preparations = 0, commands = 0; const payloads: string[] = [];
+    const request = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const payload = JSON.parse(String(init?.body));
+      if (!payload.tools) {
+        preparations++;
+        if (preparations === 1) return new Response('{}', { status: 503 });
+        return response({ content: JSON.stringify(preparations === 2 ? { name: '缺少人设' } : s.brief) });
+      }
+      commands++; payloads.push(String(init?.body));
+      if (commands === 1) return call('commander_plan', { plan: '先移动再观察', notes: [] });
+      const data = initial(init);
+      if (commands === 2) return call('commander_act', { choice: data.choices.find((c: any) => c.action?.type === 'move').id });
+      if (commands === 3) return new Response('{}', { status: 503 });
+      return call('commander_act', { choice: data.choices.find((c: any) => c.action?.type === 'end_turn').id });
+    }) as unknown as typeof fetch;
+    const commander = new LlmCommandController(COMMAND_PROMPTS, () => {}, request);
+    const preparation = commander.prepare(b, [], {}, settings, () => true);
+    await vi.runAllTimersAsync(); expect((await preparation)?.brief).toEqual(s.brief); expect(preparations).toBe(3);
+    const pending = commander.small(b, s, settings, () => true);
+    await vi.runAllTimersAsync(); const result = await pending;
+    expect(result).toBeDefined(); expect(commands).toBe(4); expect(payloads[2]).toBe(payloads[3]);
+    expect(result!.commandState.memory.plan).toBe('先移动再观察'); expect(b.toSnapshot()).toEqual(before);
+    applyBattleStep(b, result!); expect(b.active?.id).toBe('u2'); expect(commander.available(b, settings, result!.commandState)).toBe(true);
+  });
+
+  it('cancels retry waiting immediately without another request or local fallback', async () => {
+    vi.useFakeTimers(); const b = small(), before = structuredClone(b.toSnapshot());
+    const request = vi.fn(async () => new Response('{}', { status: 503 })) as unknown as typeof fetch;
+    const commander = new LlmCommandController(COMMAND_PROMPTS, () => {}, request);
+    const pending = commander.small(b, state(), settings, () => true).catch(error => error);
+    await vi.advanceTimersByTimeAsync(0); commander.cancel();
+    expect(await pending).toBeInstanceOf(CommandCancelled); await vi.runAllTimersAsync();
+    expect(request).toHaveBeenCalledTimes(1); expect(b.toSnapshot()).toEqual(before); expect(commander.available(b, settings, state())).toBe(true);
+  });
+
+  it('discards a partial activation only after malformed output exhausts retries and switches this battle to local AI', async () => {
+    vi.useFakeTimers();
     const b = small(), before = structuredClone(b.toSnapshot()), s = state(); let calls = 0;
     const request = vi.fn(async (_url: unknown, init?: RequestInit) => {
       const data = initial(init); calls++;
@@ -202,7 +243,8 @@ describe('atomic LLM command execution', () => {
       return response({ content: JSON.stringify({ choice: 'invalid' }) });
     }) as unknown as typeof fetch;
     const commander = new LlmCommandController(COMMAND_PROMPTS, () => {}, request);
-    expect(await commander.small(b, s, settings, () => true)).toBeUndefined();
+    const pending = commander.small(b, s, settings, () => true); await vi.runAllTimersAsync();
+    expect(await pending).toBeUndefined(); expect(calls).toBe(5);
     expect(b.toSnapshot()).toEqual(before); expect(s.memory.plan).toBe('');
     expect(commander.available(b, settings, s)).toBe(false); expect(commander.status).toContain('内置 AI');
   });

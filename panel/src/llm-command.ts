@@ -8,6 +8,8 @@ import { unitLineOfSight, TERRAIN_NAMES } from '../../engine/src/small/spatial.j
 import { groundHeightAt, unitHeight } from '../../engine/src/small/height-map.js';
 import { obstructionHeight } from '../../engine/src/small/layers.js';
 import { llmConnection, commandRequestOptions, type LlmSettings } from './llm-settings.js';
+import { AUTO_TRIES, CONTEXT_TIMEOUT_MS } from './llm-context.js';
+import { waitForJev, JEV_RETRY_DELAY_MS } from './jev-retry.js';
 import { battleAbilities } from './battle-skills.js';
 import { formationChoices } from './formation-orders.js';
 import type { BattleStepResult } from './battle-step.js';
@@ -236,18 +238,35 @@ export class LlmCommandController {
   available(b: Battle, settings: LlmSettings, state?: CommanderState): boolean {
     return settings.enabled && settings.commandEnemy === true && state?.side === this.side && state.battleSeed === b.seed && b.rules.resolutionVersion === 'v2' && !this.failed.has(this.key(b, settings));
   }
+  /** Retry only the current read/validation; already selected actions and memory are never replayed. */
+  private async retryRequest<T>(operation: (signal: AbortSignal) => Promise<T>, valid: () => boolean, signal: AbortSignal): Promise<T> {
+    const check = () => { if (signal.aborted || !valid()) throw new CommandCancelled(); };
+    const status = this.status;
+    for (let attempt = 1; ; attempt++) {
+      check();
+      try {
+        const result = await withAbort({ timeout: CONTEXT_TIMEOUT_MS, signals: [signal] }, operation);
+        check();
+        if (attempt > 1) { this.status = status; this.changed(); }
+        return result;
+      } catch (error) {
+        check();
+        if (attempt >= AUTO_TRIES) throw Error(`已自动尝试${AUTO_TRIES}次：${error instanceof Error ? error.message : '请求失败'}`);
+        this.status = `模型请求失败，正在第${attempt + 1}/${AUTO_TRIES}次尝试…`; this.changed();
+        await waitForJev(JEV_RETRY_DELAY_MS, signal);
+      }
+    }
+  }
   private async ask(system: string, data: unknown, settings: LlmSettings, valid: () => boolean, signal: AbortSignal) {
     if (signal.aborted || !valid()) throw new CommandCancelled();
     const connection = llmConnection(settings);
     if (!connection.model) throw Error('请先选择模型');
-    const answer = await withAbort({ timeout: 120000, signals: [signal] }, combined => openAiJsonRequest(connection,
-      [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(data) }], combined, this.request, '指挥官', commandRequestOptions(settings)));
-    if (signal.aborted || !valid()) throw new CommandCancelled();
-    return answer;
+    return this.retryRequest(async combined => commanderBrief(await openAiJsonRequest(connection,
+      [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(data) }], combined, this.request, '指挥官', commandRequestOptions(settings))), valid, signal);
   }
   async prepare(b: Battle, narrative: unknown, task: unknown, settings: LlmSettings, valid: () => boolean): Promise<CommanderState | undefined> {
-    return this.run(b, settings, valid, '正在生成指挥官…', async signal => ({ battleSeed: b.seed, side: this.side, brief: commanderBrief(await this.ask(this.prompts.preparation,
-      { narrative, task, observation: commandObservation(b, undefined, this.side) }, settings, valid, signal)), memory: updateCommandMemory(b, emptyCommandMemory(), this.side) }));
+    return this.run(b, settings, valid, '正在生成指挥官…', async signal => ({ battleSeed: b.seed, side: this.side, brief: await this.ask(this.prompts.preparation,
+      { narrative, task, observation: commandObservation(b, undefined, this.side) }, settings, valid, signal), memory: updateCommandMemory(b, emptyCommandMemory(), this.side) }));
   }
   private async choose(b: Battle, actorId: string, state: CommanderState, choices: CommandChoice[], settings: LlmSettings, valid: () => boolean, signal: AbortSignal, budget: { left: number }, conversation: CommandMessage[]): Promise<CommandChoice> {
     this.status = `指挥官 ${state.brief.name} 正在指挥 ${b.byId(actorId).name}…`; this.changed();
@@ -260,7 +279,11 @@ export class LlmCommandController {
       observation: { ...observation, units: observation.units.map(unitSummary) }, map: map && { width: map.width, height: map.height }, choices: choices.map(choice => choiceView(choice, this.side)) }) });
     while (budget.left-- > 0) {
       if (signal.aborted || !valid()) throw new CommandCancelled();
-      const answer = await withAbort({ timeout: 120000, signals: [signal] }, combined => openAiCommandRequest(llmConnection(settings), conversation, commanderTools(this.prompts), combined, this.request, commandRequestOptions(settings)));
+      const answer = await this.retryRequest(async combined => {
+        const answer = await openAiCommandRequest(llmConnection(settings), conversation, commanderTools(this.prompts), combined, this.request, commandRequestOptions(settings));
+        if (!answer.tool_calls && !choices.some(c => c.id === JSON.parse(answer.content!).choice)) throw Error('模型返回了候选之外的指令');
+        return answer;
+      }, valid, signal);
       if (signal.aborted || !valid()) throw new CommandCancelled();
       if (!answer.tool_calls) {
         const choice = choices.find(c => c.id === JSON.parse(answer.content!).choice);
