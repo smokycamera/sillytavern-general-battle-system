@@ -44,9 +44,54 @@ it('T6 replans once for a new opponent and never twice in a round', async()=>{
   const request=vi.fn(async(_url,init)=>reply(holds(init))) as unknown as typeof fetch; const {b,state,p}=setup(request);
   const visible=b.visibleCombatants.bind(b);let spotted=false;
   vi.spyOn(b,'visibleCombatants').mockImplementation(side=>visible(side).filter(u=>u.side==='enemy'||spotted));
-  p.prefetch(b,state,settings,()=>true);await p.beforeHero();spotted=true;await p.forUnit(b,state,settings,()=>true);
-  b.byId('u5').status='dead';await p.forUnit(b,state,settings,()=>true);
+  const situational={...settings,commandInterval:'situation' as const};
+  p.prefetch(b,state,situational,()=>true);await p.beforeHero();spotted=true;await p.forUnit(b,state,situational,()=>true);
+  b.byId('u5').status='dead';await p.forUnit(b,state,situational,()=>true);
   expect([(request as any).mock.calls.length,state.memory.intents!.replanned]).toEqual([2,true]);
+});
+it('keeps one deployment for the whole battle round by default and refreshes on the next round', async()=>{
+  const request=vi.fn(async(_url,init)=>reply(holds(init))) as unknown as typeof fetch;
+  const {b,state,p}=setup(request);
+  const visible=b.visibleCombatants.bind(b);let spotted=false;
+  vi.spyOn(b,'visibleCombatants').mockImplementation(side=>visible(side).filter(u=>u.side==='enemy'||spotted));
+  p.prefetch(b,state,settings,()=>true);await p.beforeHero();spotted=true;
+  for(const turn of [0,1,2]) { b.turnIndex=turn;await p.forUnit(b,state,settings,()=>true); }
+  b.byId('u5').status='dead';await p.forUnit(b,state,settings,()=>true);
+  expect(request).toHaveBeenCalledTimes(1);
+  b.round++;await p.forUnit(b,state,settings,()=>true);expect(request).toHaveBeenCalledTimes(2);
+});
+it('uses default thinking once per faction battle round, including tool continuations and saved state', async()=>{
+  const bodies:any[]=[];
+  const request=(async(_url,init)=>{
+    bodies.push(JSON.parse(String(init?.body)));
+    if(bodies.length===1) return new Response(JSON.stringify({choices:[{message:{content:null,tool_calls:[{id:'plan',type:'function',function:{name:'commander_plan',arguments:'{"plan":"固守"}'}}]}}]}));
+    return reply(holds(init));
+  }) as typeof fetch;
+  const {b,state,p}=setup(request), once={...settings,commandThinking:'round' as const,commandThinkingOffParams:'{"reasoning_effort":"low"}'};
+  p.prefetch(b,state,once,()=>true);await p.beforeHero();
+  expect(bodies.map(body=>body.reasoning_effort)).toEqual([undefined,'low']);
+  expect(state.memory.thinkingRound).toBe(b.round);
+  const saved=savedCommanderState(state)!;delete saved.memory.intents;
+  const c=new LlmCommandController(COMMAND_PROMPTS,()=>{},request), restored=new LlmIntentPlanner(c,COMMAND_PROMPTS);
+  restored.prefetch(b,saved,once,()=>true);await restored.beforeHero();
+  expect(bodies.at(-1).reasoning_effort).toBe('low');
+  b.round++;restored.prefetch(b,saved,once,()=>true);await restored.beforeHero();
+  expect(bodies.at(-1)).not.toHaveProperty('reasoning_effort');
+});
+it('pauses immediately when the player routs and resumes only the battle round after recovery, also after load', async()=>{
+  const request=vi.fn(async(_url,init)=>reply(holds(init))) as unknown as typeof fetch;
+  const {b,state,c,p}=setup(request);
+  p.prefetch(b,state,settings,()=>true);await p.beforeHero();
+  b.byId('u0').status='routing';expect(c.available(b,settings,state)).toBe(false);
+  expect(state.memory.intents).toBeUndefined();
+  b.round++;expect(await p.forUnit(b,state,settings,()=>true)).toBeUndefined();expect(request).toHaveBeenCalledTimes(1);
+  b.byId('u0').status='ready';expect(c.available(b,settings,state)).toBe(false);
+  const saved=savedCommanderState(state)!;
+  const loaded=new LlmCommandController(COMMAND_PROMPTS,()=>{},request);
+  expect(loaded.available(b,settings,saved)).toBe(false);
+  b.round++;expect(loaded.available(b,settings,saved)).toBe(true);
+  const resumed=new LlmIntentPlanner(loaded,COMMAND_PROMPTS);resumed.prefetch(b,saved,settings,()=>true);await resumed.beforeHero();
+  expect(request).toHaveBeenCalledTimes(2);expect(saved.playerFallback).toBeUndefined();
 });
 it('T7 retains valid entries, reports errors and ends after a second submission', async()=>{
   const bodies:any[]=[];const request=vi.fn(async(_url,init)=>{bodies.push(JSON.parse(String(init?.body)));return reply({intents:[{unitId:'u2',mode:'hold',cell:15},{unitId:'foreign',mode:'attack',targetId:'hidden'}]});}) as unknown as typeof fetch;

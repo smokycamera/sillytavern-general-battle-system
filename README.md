@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.9.1**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **2.9.2**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-2.9.1 brings heroes and small rosters onto the same faction-wide round intents as troops. After one requested skill or item, built-in AI can spend a legal extra action while respecting the assigned position and target. Advanced command parameters accept reasoning strength and pass unknown vendor fields through with a reminder. Settings now let you choose whole lorebooks or individual entries for secondary API requests. See the [current release](docs/current-release.md) and [round-intent results](docs/llm-round-intents-result-20261021.md).
+2.9.2 adds command cadence and once-per-battle-round thinking, saved reasoning effort, and reliable local AI takeover after cancellation. Secondary API commanders can propose surrender or mutual withdrawal; players can accept or reject with a reply recorded in the battle report. Agreements always involve two factions, and withdrawal never automatically routes the player faction in a three-way battle. See the [current release](docs/current-release.md).
 
 ## Documentation
 

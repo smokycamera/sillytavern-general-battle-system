@@ -6,6 +6,7 @@ function storage(){const data=new Map<string,string>();vi.stubGlobal('localStora
 describe('global ordinary LLM settings',()=>{
   it('leaves vendor thinking untouched by default and saves editable nonthinking parameters',()=>{
     storage(); const settings=readLlmSettings();
+    expect(settings).toMatchObject({commandInterval:'round',commandThinking:'auto'});
     expect(commandRequestOptions(settings)).toEqual({});
     expect(renderLlmSettings(settings)).not.toContain('llm-command-params"');
     expect(commandRequestOptions({...settings,commandThinking:'off'})).toEqual({thinking:{type:'disabled'}});
@@ -20,6 +21,14 @@ describe('global ordinary LLM settings',()=>{
     expect(commandParameterWarnings({reasoning_effort:'high'})).toEqual([]);
     expect(renderLlmSettings(loaded)).toContain('<details><summary>高级兼容设置</summary>');
     for(const text of ['broken','null','[]','{"messages":[]}','{"model":"other"}','{"stream":true}','{"tools":[]}']) expect(()=>parseCommandParameters(text)).toThrow();
+  });
+  it('persists cadence independently of thinking and uses nonthinking parameters only after the first round request',()=>{
+    storage();const settings={...readLlmSettings(),commandInterval:'situation' as const,commandThinking:'round' as const,commandThinkingOffParams:'{"reasoning_effort":"low"}'};
+    saveLlmSettings(settings);expect(readLlmSettings()).toEqual(settings);
+    expect(commandRequestOptions(settings)).toEqual({});expect(commandRequestOptions(settings,true)).toEqual({reasoning_effort:'low'});
+    const html=renderLlmSettings(settings);
+    expect(html.indexOf('data-role="llm-command-interval"')).toBeLessThan(html.indexOf('data-role="llm-command-thinking"'));
+    expect(html).toContain('每回合（推荐，调用次数少）');expect(html).toContain('每回合思考一次');
   });
   it('round trips credentials and model list without using a chat/card key or legacy route',()=>{
     const data=storage(),s={...readLlmSettings(),url:'https://gateway.example/v1',token:'test-key',model:'chosen',models:['chosen','other'],enabled:true,selectBattleScale:false,windowSize:18};

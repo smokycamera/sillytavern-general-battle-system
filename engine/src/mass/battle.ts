@@ -45,6 +45,7 @@ import { applyWeaponConditions, poisonDamage, poisonFactor, conditionDamage } fr
 import { isRangedWeapon, meleeWeapon, weaponReloadKey, weaponReloadTurns, validateMount, mountedShooting, mobileRangedWeapon, vehicleShooting } from '../loadout.js';
 import { meleeReach, formationWeaponRange } from '../melee.js';
 import { MAX_RALLY_ATTEMPTS, moraleProfile, moraleAttackMods, decideMorale, changeMorale, validateMoraleState, moraleRisk, moraleChangePreview, reconcileDamageMorale, recoverEntryMorale } from '../morale.js';
+import { emptyDiplomacy, restoreDiplomacy } from '../diplomacy.js';
 import { applyHealthLoss, applyCombatDamage, applyRecovery, recoveryCapacity, regenerationAmount, settleRegeneration, validateWounded, settleWoundedOnDeath, lifestealRecovery, beginLifestealRound } from '../recovery.js';
 import {hasMemberHealth,memberHealth,MEMBER_HEALTH_MODEL} from '../member-health.js';
 import { diceAvg } from '../data/weapons.js';
@@ -2657,6 +2658,12 @@ export class MassBattle {
   }
 
   forcedWinner?: 'ally' | 'enemy' | 'draw';
+  diplomacy = emptyDiplomacy();
+  finishDiplomacy(winner: Side | 'draw', text: string): void {
+    if (winner === 'neutral') throw Error('会战不支持第三方');
+    this.forcedWinner = winner;
+    this.recordEvent({ round: this.round, kind: 'battle-end', text });
+  }
   finishBattle(reason: 'ceasefire' | 'surrender'): void {
     if (this.isOver()) return;
     this.forcedWinner = reason === 'surrender' ? 'enemy' : 'draw';
@@ -2734,6 +2741,7 @@ export class MassBattle {
       commanderId: this.commanderId,
       commanderLost: this.commanderLost,
       forcedWinner: this.forcedWinner,
+      ...(this.diplomacy.offers.length ? { diplomacy: this.diplomacy } : {}),
       routCounts: [...this.routCounts],
       fieldTags: this.fieldTags,
       reloadCd: [...this.reloadCd],
@@ -2777,6 +2785,7 @@ export class MassBattle {
     });
     b.allyTactic = normalizeTactic(snap.allyTactic);
     b.commanderProfiles = normalizeCommanderProfiles(snap.commanderProfiles);
+    b.diplomacy = restoreDiplomacy(snap.diplomacy);
     b.round = snap.round ?? 1;
     for (const order of snap.hasteOrders ?? []) b.setHasteOrder(order, order.unitId);
     b.hasteBraced = new Set(snap.hasteBraced ?? []);
