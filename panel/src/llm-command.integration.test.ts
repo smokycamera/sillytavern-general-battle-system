@@ -34,18 +34,21 @@ it('prepares independent commanders for three factions, persists their plans wit
     url: 'https://fixture.invalid/v1', token: 'never-save-token', model: 'fixture', models: [] }));
   Object.assign(window, { __tavernBattleNative: { service: f.service, messages: {} }, __TAURITAVERN__: {}, SillyTavern: { getContext: () => f.context } });
   let commandCount = 0, preparationCount = 0;
+  const commandEvents: string[]=[];
   const request = vi.fn(async (_url: unknown, init?: RequestInit) => {
     const payload = JSON.parse(String(init?.body)), latest = payload.messages.filter((m: any) => m.role === 'user').at(-1).content;
     if (payload.tools) {
       expect(payload.reasoning_effort).toBe('none'); expect(payload).not.toHaveProperty('thinking');
-      const data = JSON.parse(latest), actor = data.observation.actorId;
+      const data = JSON.parse(latest), actor = data.forces[0].id;
+      commandEvents.push(`${actor}:${data.round}`);
+      expect(data.forces).toHaveLength(1); expect(data.forces[0].scale).toBe('hero');
       expect(data.observation.units.find((u: any) => u.id === actor).side).toBe('friendly');
       if (actor === 'u1') expect(JSON.stringify(data)).not.toContain('neutral-private-plan');
       if (actor === 'u2') expect(JSON.stringify(data)).not.toContain('enemy-private-plan');
       commandCount++;
       return new Response(JSON.stringify({ choices: [{ message: { tool_calls: [
         { id: 'plan', type: 'function', function: { name: 'commander_plan', arguments: JSON.stringify({ plan: actor + '-new-plan', addNotes: ['本轮完成部署'] }) } },
-        { id: 'act', type: 'function', function: { name: 'commander_act', arguments: JSON.stringify({ choice: data.choices.find((c: any) => c.action?.type === 'end_turn').id }) } },
+        { id: 'act', type: 'function', function: { name: 'commander_intents', arguments: JSON.stringify({ intents: data.forces.map((u:any)=>({unit:u.id,mode:'hold',cell:u.pos})) }) } },
       ] } }] }));
     }
     if (payload.messages[0].content.includes('指挥官设定助手')) {
@@ -76,7 +79,10 @@ it('prepares independent commanders for three factions, persists their plans wit
   document.querySelector<HTMLButtonElement>('button[data-action="llm-notes-close"]')!.click();
   expect(document.querySelector('[aria-labelledby="llm-notes-title"]')).toBeNull();
   document.querySelector<HTMLButtonElement>('[data-action="grid-endturn"]')!.click(); await idle();
-  expect(commandCount).toBe(2);
+  // The next round may already be prefetched while the player acts; saves must not discard a completed plan.
+  expect(commandCount).toBeGreaterThanOrEqual(2);
+  expect(new Set(commandEvents).size,JSON.stringify(commandEvents)).toBe(commandCount);
+  expect(commandEvents).toContain('u1:1'); expect(commandEvents).toContain('u2:1');
   const saved = f.service.snapshot(), restored = SmallBattle.fromSnapshot(saved.battle!.snap);
   expect(restored.active?.id).toBe('u0');
   expect((saved.encounterContext as LlmEncounterContext).llmCommanders).toMatchObject({ enemy: { memory: { plan: 'u1-new-plan' } }, neutral: { memory: { plan: 'u2-new-plan' } } });

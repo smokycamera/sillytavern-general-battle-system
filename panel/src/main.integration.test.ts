@@ -22,6 +22,8 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   Object.assign(window, {__tavernBattleNative:{service:f.service,messages:{}}, __TAURITAVERN__:{}, SillyTavern:{getContext:()=>f.context}});
   let release: (() => void) | undefined, delayed = false, breakLayout = 0;
   const request = vi.fn(async (url: unknown, init?: RequestInit) => {
+    if (String(url)==='/api/settings/get') return new Response(JSON.stringify({world_names:['测试设定']}));
+    if (String(url)==='/api/worldinfo/get') return new Response(JSON.stringify({entries:{'0':{comment:'设定甲',content:'甲正文'},'1':{comment:'设定乙',content:'乙正文'}}}));
     if (String(url).endsWith('/status')) return new Response(JSON.stringify({data:[{id:'model-one'},{id:'model-two'}]}));
     if (delayed) await new Promise<void>(resolve => { release = resolve; });
     const payload = JSON.parse(String(init?.body)), task = payload.messages.at(-1).content as string;
@@ -79,6 +81,17 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   designToggle().click();vipToggle().click();expect(readLlmSettings()).toMatchObject({designMap:true,selectVip:true});
   select('llm-mode','manual');expect(designToggle().disabled).toBe(true);expect(vipToggle().disabled).toBe(true);expect(scaleToggle().disabled).toBe(true);
   select('llm-mode','llm');expect(scaleToggle().checked).toBe(false);
+  const picker=document.querySelector<HTMLDetailsElement>('[data-detail-id="llm-worldbooks"]')!; picker.open=true;
+  button('llm-worldbooks-refresh').click();
+  await vi.waitFor(()=>expect(document.querySelectorAll('[data-role="llm-worldbook-entry"]')).toHaveLength(2));
+  document.querySelector<HTMLInputElement>('[data-role="llm-worldbook-entry"][data-id="1"]')!.click();
+  expect(readLlmSettings().worldbooks).toEqual([{name:'测试设定',entries:['1']}]);
+  document.querySelector<HTMLInputElement>('[data-role="llm-worldbook-all"]')!.click();
+  expect(readLlmSettings().worldbooks).toEqual([{name:'测试设定',entries:'all'}]);
+  document.querySelector<HTMLInputElement>('[data-role="llm-worldbook-entry"][data-id="0"]')!.click();
+  expect(readLlmSettings().worldbooks).toEqual([{name:'测试设定',entries:['1']}]);
+  document.querySelector<HTMLInputElement>('[data-role="llm-worldbook-entry"][data-id="1"]')!.click();
+  expect(readLlmSettings().worldbooks).toEqual([]);
   const config=localStorage.getItem(LLM_SETTINGS_KEY);
   expect(readLlmSettings()).toMatchObject({model:'model-two',windowSize:2,enabled:true});
   expect(request.mock.calls[0]![0]).toBe('/api/backends/chat-completions/status');

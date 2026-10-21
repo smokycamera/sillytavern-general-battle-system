@@ -22,11 +22,14 @@ const reply=(args:unknown)=>new Response(JSON.stringify({choices:[{message:{cont
 const data=(init?:RequestInit)=>JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
 const holds=(init?:RequestInit)=>({intents:data(init).forces.map((u:any)=>({unitId:u.id,mode:'hold',cell:u.pos}))});
 function setup(request:typeof fetch) { const {b,state}=fixture(), c=new LlmCommandController(COMMAND_PROMPTS,()=>{},request), p=new LlmIntentPlanner(c,COMMAND_PROMPTS);return {b,state,c,p}; }
-it('T4 plans every troop once and leaves heroes on per-activation command', async()=>{
+it('T4 plans heroes and troops together, including a roster of at most three units', async()=>{
   const request=vi.fn(async(_url,init)=>{const d=data(init);return reply(d.forces?holds(init):{choice:d.choices.find((c:any)=>c.action.type==='end_turn').id});}) as unknown as typeof fetch;
   const {b,state,c,p}=setup(request);p.prefetch(b,state,settings,()=>true);await p.beforeHero();
-  await p.forUnit(b,state,settings,()=>true);b.turnIndex=1;await p.forUnit(b,state,settings,()=>true);b.turnIndex=2;await c.small(b,state,settings,()=>true);
-  expect([Object.keys(state.memory.intents!.units).length,(request as any).mock.calls.length,intentForces(b,'enemy').heroes.map(u=>u.id)]).toEqual([4,2,['u1']]);
+  await p.forUnit(b,state,settings,()=>true);b.turnIndex=1;await p.forUnit(b,state,settings,()=>true);b.turnIndex=2;await p.forUnit(b,state,settings,()=>true);
+  expect([Object.keys(state.memory.intents!.units).length,(request as any).mock.calls.length,intentForces(b,'enemy').heroes]).toEqual([5,1,[]]);
+  b.combatants.splice(3); b.turnOrder=['u1','u2','u0']; b.turnIndex=0;
+  delete state.memory.intents; p.prefetch(b,state,settings,()=>true); await p.beforeHero();
+  expect(Object.keys(state.memory.intents!.units)).toEqual(['u1','u2']);
 });
 it('T5 starts prefetch immediately and joins it without another request', async()=>{
   let release!:(r:Response)=>void;let init:RequestInit|undefined;
@@ -48,7 +51,7 @@ it('T6 replans once for a new opponent and never twice in a round', async()=>{
 it('T7 retains valid entries, reports errors and ends after a second submission', async()=>{
   const bodies:any[]=[];const request=vi.fn(async(_url,init)=>{bodies.push(JSON.parse(String(init?.body)));return reply({intents:[{unitId:'u2',mode:'hold',cell:15},{unitId:'foreign',mode:'attack',targetId:'hidden'}]});}) as unknown as typeof fetch;
   const {b,state,p}=setup(request);p.prefetch(b,state,settings,()=>true);await p.beforeHero();b.turnIndex=1;
-  expect([bodies.length,JSON.parse(bodies[1].messages.at(-1).content).missing,await p.forUnit(b,state,settings,()=>true)]).toEqual([2,['u3','u4','u5'],undefined]);
+  expect([bodies.length,JSON.parse(bodies[1].messages.at(-1).content).missing,await p.forUnit(b,state,settings,()=>true)]).toEqual([2,['u1','u3','u4','u5'],undefined]);
   expect(bodies[1].messages.at(-2).content).toContain('foreign');
   expect(JSON.parse(bodies[1].messages.at(-1).content).errors.length).toBeGreaterThan(0);
 });
@@ -64,20 +67,20 @@ it('uses short fields and IDs, corrects malformed replies, and accepts explorati
     const body=JSON.parse(String(init?.body)); bodies.push(body); const d=JSON.parse(body.messages[1].content);
     if(bodies.length===1) return new Response(JSON.stringify({choices:[{message:{content:'wrong-json-reply'}}]}));
     if(bodies.length===2) {
-      shortUnit=d.forces[0].id; expect(shortUnit).toMatch(/^u\d+$/);
+      shortUnit=d.forces[1].id; expect(shortUnit).toMatch(/^u\d+$/);
       return new Response(JSON.stringify({choices:[{message:{content:null,tool_calls:[{id:'unit-query',type:'function',function:{name:'commander_unit',arguments:JSON.stringify({unitId:shortUnit})}}]}}]}));
     }
     const queried=JSON.parse(body.messages.at(-1).content); shortSkill=queried.abilities.find((a:any)=>a.name==='守护').id;
     expect(shortSkill).toMatch(/^a\d+$/); expect(JSON.stringify(queried)).not.toContain('long-real-');
-    return reply({intents:[{unit:shortUnit,mode:'use',skill:shortSkill,target:d.heroes[0]},
-      {unit:d.forces[1].id,mode:'open',cell:23},{unit:d.forces[2].id,mode:'close',cell:23},{unit:d.forces[3].id,mode:'advance',cell:90}]});
+    return reply({intents:[{unit:d.forces[0].id,mode:'hold',cell:d.forces[0].pos},{unit:shortUnit,mode:'use',skill:shortSkill,target:d.forces[0].id},
+      {unit:d.forces[2].id,mode:'open',cell:23},{unit:d.forces[3].id,mode:'close',cell:23},{unit:d.forces[4].id,mode:'advance',cell:90}]});
   }) as typeof fetch;
   const c=new LlmCommandController(COMMAND_PROMPTS,()=>{},request), p=new LlmIntentPlanner(c,COMMAND_PROMPTS);
   p.prefetch(b,state,settings,()=>true); await p.beforeHero();
   expect(bodies).toHaveLength(3); expect(bodies[1].messages.slice(0,2)).toEqual(bodies[0].messages);
   const correction=JSON.parse(bodies[1].messages.at(-1).content); expect(correction.previousAnswer.content).toBe('wrong-json-reply'); expect(correction.retryErrors[0]).toMatch(/JSON/);
   expect(state.memory.intents!.units[actor.id]).toEqual({mode:'use_ability',abilityId:'long-real-ability-identity',targetId:renamed.get('u1')});
-  expect(Object.values(state.memory.intents!.units).map(i=>i.mode)).toEqual(['use_ability','open_gate','close_gate','advance']);
+  expect(Object.values(state.memory.intents!.units).map(i=>i.mode)).toEqual(['hold','use_ability','open_gate','close_gate','advance']);
   expect(state.memory.intents!.units[renamed.get('u5')!]!.cell).toBe(90);
   expect(savedCommanderState(state)!.memory.intents).toEqual(state.memory.intents);
 });
@@ -96,7 +99,7 @@ it('T9 persists only allowed intent fields through save/load',async()=>{
   expect([restored.memory.intents,JSON.stringify(restored).includes('provider-secret')]).toEqual([saved.memory.intents,false]);
 });
 it('T10 disperses shared cells in id and distance order',async()=>{
-  const {b,state,p}=setup(async()=>reply({intents:['u4','u3','u2','u5'].map(unitId=>({unitId,mode:'hold',cell:15}))}));p.prefetch(b,state,settings,()=>true);await p.beforeHero();
+  const {b,state,p}=setup(async()=>reply({intents:[{unitId:'u1',mode:'hold',cell:28},...['u4','u3','u2','u5'].map(unitId=>({unitId,mode:'hold',cell:15}))]}));p.prefetch(b,state,settings,()=>true);await p.beforeHero();
   expect(['u2','u3','u4','u5'].map(id=>state.memory.intents!.units[id]!.cell)).toEqual([15,8,14,16]);
 });
 it('regression: preparation retries keep the original messages and include the rejected answer and problem',async()=>{

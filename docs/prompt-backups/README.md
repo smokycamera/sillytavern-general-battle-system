@@ -1,5 +1,12 @@
 # 战场布局提示词修改前备份
 
+## 英雄统一意图与副 API 世界书（2026-10-21，2.9.1）
+
+- 基线：2.9.0，提交 `3d5c221`。
+- `llm-command-before-heroes-worldbooks-20261021.ts.txt` 与 `llm-intents-before-heroes-worldbooks-20261021.ts.txt` 保留修改前完整原文。
+- 用户逐项确认：意图提示词及工具说明中的“部队”改为“单位”，删除 heroes 排除句；forces 包含英雄，移除 heroes 字段；所选世界书以单独用户消息 `{"worldbooks":[{"name":"世界书名","entries":[{"id":"条目编号","title":"条目标题","content":"条目正文"}]}]}` 放在首条用户消息之后，无选择时不发送。
+- 原有开战、地图、人设、会战及正文扫描系统提示词不改。世界书仅添加已选条目的实际资料，无新增解释段落。
+
 - 基线：产品2.6.8，提交 `10bd4b9d12a8c213c9a73646d506fd5cd12bd89b`。
 - `llm-layout-before-indoor-20261020.ts.txt` 是修改前 `panel/src/llm-layout.ts` 的逐字节副本，包含完整的动态模板、示例与相关编译逻辑；不参与构建。
 - `indoor-task-before-20261020.txt` 是标准室内、歼灭任务、无单位列表的一份渲染文本，用于直接阅读和对照；动态模板的完整来源以上述源码副本为准。

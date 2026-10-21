@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readLlmSettings,saveLlmSettings,llmConnection,LLM_SETTINGS_KEY,llmSettingsView,commandRequestOptions,parseCommandParameters } from './llm-settings.js';
+import { readLlmSettings,saveLlmSettings,llmConnection,LLM_SETTINGS_KEY,llmSettingsView,commandRequestOptions,parseCommandParameters,commandParameterWarnings } from './llm-settings.js';
 import { renderLlmSettings } from './llm-settings-view.js';
 afterEach(()=>vi.unstubAllGlobals());
 function storage(){const data=new Map<string,string>();vi.stubGlobal('localStorage',{getItem:(k:string)=>data.get(k)??null,setItem:(k:string,v:string)=>data.set(k,v)});vi.stubGlobal('sessionStorage',{getItem:()=>null});return data;}
@@ -14,6 +14,10 @@ describe('global ordinary LLM settings',()=>{
     expect(commandRequestOptions(loaded)).toEqual({reasoning_effort:'none'});
     expect(commandRequestOptions({...loaded,commandThinking:'auto'})).toEqual({});
     expect(commandRequestOptions({...loaded,commandThinkingOffParams:'{}'})).toEqual({});
+    const vendor={thinking:{type:'disabled'},reasoning_effort:'high',vendor_strength:7};
+    expect(commandRequestOptions({...loaded,commandThinkingOffParams:JSON.stringify(vendor)})).toEqual(vendor);
+    expect(commandParameterWarnings(vendor)).toEqual([expect.stringContaining('vendor_strength')]);
+    expect(commandParameterWarnings({reasoning_effort:'high'})).toEqual([]);
     expect(renderLlmSettings(loaded)).toContain('<details><summary>高级兼容设置</summary>');
     for(const text of ['broken','null','[]','{"messages":[]}','{"model":"other"}','{"stream":true}','{"tools":[]}']) expect(()=>parseCommandParameters(text)).toThrow();
   });
