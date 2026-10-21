@@ -201,7 +201,7 @@ describe('atomic LLM command execution', () => {
     const b = small(), s = state(); let calls = 0;
     const request = vi.fn(async (_url: unknown, init?: RequestInit) => {
       const data = initial(init), payload = JSON.parse(String(init?.body)); calls++;
-      expect(payload.tools.map((t: any) => t.function.name)).toEqual(['commander_map', 'commander_unit', 'commander_plan', 'commander_act']);
+      expect(payload.tools.map((t: any) => t.function.name)).toEqual(['diplomacy', 'commander_map', 'commander_unit', 'commander_plan', 'commander_act']);
       if (calls === 1) {
         expect(data.self).toMatchObject({ id: 'u1', side: 'friendly', weapon: expect.any(Object) });
         expect(data.map.rows).toHaveLength(13); expect(data.map.rows[0]).toMatch(/^[.?]{7}$/);
@@ -264,6 +264,18 @@ describe('atomic LLM command execution', () => {
     expect(request).toHaveBeenCalledTimes(1); expect(b.toSnapshot()).toEqual(before); expect(commander.available(b, settings, state())).toBe(true);
   });
 
+  it('keeps completed movement and its action cost when a later request proposes surrender', async () => {
+    const b = small(), actor = b.active!.id, start = b.byId(actor).pos, before = structuredClone(b.toSnapshot()); let calls = 0;
+    const request: typeof fetch = async (_url, init) => {
+      if (++calls === 1) return call('commander_act', { choice: initial(init).moves[0][0] });
+      return call('diplomacy', { mode: 'surrender', target: 'opponent-1', text: '请接受投降。' });
+    };
+    const result = await new LlmCommandController(COMMAND_PROMPTS, () => {}, request).small(b, state(), settings, () => true);
+    expect(b.toSnapshot()).toEqual(before); expect(result?.commandState.decision?.mode).toBe('surrender');
+    applyBattleStep(b, result!);
+    expect(b.byId(actor).pos).not.toBe(start); expect(b.movedThisTurn.has(actor)).toBe(true); expect(b.active?.id).toBe(actor);
+  });
+
   it('discards a partial activation only after malformed output exhausts retries and switches this battle to local AI', async () => {
     vi.useFakeTimers();
     const b = small(), before = structuredClone(b.toSnapshot()), s = state(); let calls = 0;
@@ -292,6 +304,21 @@ describe('atomic LLM command execution', () => {
     expect(b.toSnapshot()).toEqual(before); expect(commander.busy).toBe(false);
   });
 
+  it('cancels mass command without blocking local round resolution and restores LLM availability next round', async () => {
+    const b = new MassBattle({ combatants: units(), rules: V24_OVERFLOW_TW, seed: 'pause-mass' }); b.start();
+    const s = state(b.seed), request = vi.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch;
+    const c = new LlmCommandController(COMMAND_PROMPTS, () => {}, request);
+    const pending = c.mass(b, s, settings, () => true);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    c.pauseRound(b);expect(await pending).toBeUndefined();expect(c.available(b, settings, s)).toBe(false);
+    const local = computeBattleStep({ kind: 'mass', snap: b.toSnapshot(), rules: b.rules, traits: b.traitRegistry,
+      conditions: b.conditions.all(), summons: false, drafts: {}, automatic: false, expectedRound: b.round });
+    applyBattleStep(b, local);expect(b.round).toBe(2);expect(c.available(b, settings, s)).toBe(true);
+    b.byId('u0').status = 'routing';expect(c.available(b, settings, s)).toBe(false);
+    b.byId('u0').status = 'ready';expect(c.available(b, settings, s)).toBe(false);
+    b.round++;expect(c.available(b, settings, s)).toBe(true);
+  });
+
   it('orders every mass formation in one request, hides player orders, and preserves external orders through master AI and worker replay', async () => {
     const b = new MassBattle({ combatants: units(), rules: V24_OVERFLOW_TW, seed: 'command-mass' }); b.start();
     b.commanderProfiles.enemy = { ability: 'master', style: 'aggressive', scoring: 'tactical-v2' };
@@ -300,7 +327,7 @@ describe('atomic LLM command execution', () => {
     const request = vi.fn(async (_url: unknown, init?: RequestInit) => {
       const data = initial(init), payload = JSON.parse(String(init?.body));
       expect(JSON.stringify(data)).not.toContain('player-private-order');
-      expect(payload.tools.map((t: any) => t.function.name)).toEqual(['commander_map', 'commander_unit', 'commander_plan', 'commander_orders']);
+      expect(payload.tools.map((t: any) => t.function.name)).toEqual(['diplomacy', 'commander_map', 'commander_unit', 'commander_plan', 'commander_orders']);
       return call('commander_orders', { orders: data.formations.map((f: any) => ({ unitId: f.unitId, choice: f.choices.find((c: any) => c.order?.type === 'hold').id })) });
     }) as unknown as typeof fetch;
     const result = await new LlmCommandController(COMMAND_PROMPTS, () => {}, request).mass(b, state(b.seed), settings, () => true);

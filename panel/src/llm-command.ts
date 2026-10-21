@@ -14,15 +14,17 @@ import { battleAbilities } from './battle-skills.js';
 import { formationChoices } from './formation-orders.js';
 import type { BattleStepResult } from './battle-step.js';
 import type { GameAction } from './mcp-game.js';
+import { incomingDiplomacy, type DiplomacyDecision } from '../../engine/src/diplomacy.js';
+import { commandDiplomacy, commandDiplomacyDecision } from './llm-diplomacy.js';
 
 export interface CommanderBrief { name: string; persona: string; known: string[]; mission: string }
-export type CommanderToolName = 'commander_map' | 'commander_unit' | 'commander_plan' | 'commander_act' | 'commander_orders' | 'commander_intents';
+export type CommanderToolName = 'commander_map' | 'commander_unit' | 'commander_plan' | 'commander_act' | 'commander_orders' | 'commander_intents' | 'diplomacy';
 export interface CommandPrompts { preparation: string; command: string; intents: string; tools: Record<CommanderToolName, string> }
 export interface KnownCommandCell { cell: number; terrain: string; height?: number; structure?: unknown; overlays?: unknown; connections?: unknown; cover?: unknown; round: number }
 export interface RoundIntents { round: number; replanned: boolean; basis: { visible: string[]; friends: string[] }; units: Record<string, import('../../engine/src/index.js').UnitIntent> }
-export interface CommandMemory { intents?: RoundIntents; plan: string; notes: string[]; terrain: KnownCommandCell[]; contacts?: (ReturnType<typeof unitSummary> & { round: number })[] }
+export interface CommandMemory { intents?: RoundIntents; thinkingRound?: number; diplomacyRound?: number; diplomacyRevision?: number; plan: string; notes: string[]; terrain: KnownCommandCell[]; contacts?: (ReturnType<typeof unitSummary> & { round: number })[] }
 export const emptyCommandMemory = (): CommandMemory => ({ plan: '', notes: [], terrain: [] });
-export interface CommanderState { battleSeed: string; side: Side; brief: CommanderBrief; memory: CommandMemory }
+export interface CommanderState { battleSeed: string; side: Side; brief: CommanderBrief; memory: CommandMemory; playerFallback?: { resumeRound?: number }; decision?: DiplomacyDecision & { round: number } }
 type Battle = SmallBattle | MassBattle;
 export interface CommandChoice { id: string; label: string; action?: GameAction; order?: Order; cost?: number; risks?: string[] }
 /** A follow-up step names an action like a candidate does; it runs only if a later candidate matches it. */
@@ -130,13 +132,16 @@ export function updateCommandMemory(b: Battle, memory: CommandMemory, side: Side
   for (const cell of observation.map?.cells ?? []) terrain.set(cell.cell, { ...structuredClone(cell), round: b.round });
   const contacts = new Map((memory.contacts ?? []).map(unit => [unit.id, unit]));
   for (const unit of observation.units.filter(u => u.side !== 'friendly')) contacts.set(unit.id, { ...unitSummary(unit), losFromActor: undefined, round: b.round });
-  return { ...(memory.intents ? { intents: memory.intents } : {}), plan: text(memory.plan, 600), notes: (memory.notes ?? []).slice(0, 12).map(n => text(n, 300)), terrain: [...terrain.values()], contacts: [...contacts.values()].slice(-128) };
+  return { ...(memory.intents ? { intents: memory.intents } : {}), ...(memory.thinkingRound !== undefined ? { thinkingRound: memory.thinkingRound } : {}),
+    ...(memory.diplomacyRound !== undefined ? { diplomacyRound: memory.diplomacyRound } : {}), ...(memory.diplomacyRevision !== undefined ? { diplomacyRevision: memory.diplomacyRevision } : {}),
+    plan: text(memory.plan, 600), notes: (memory.notes ?? []).slice(0, 12).map(n => text(n, 300)), terrain: [...terrain.values()], contacts: [...contacts.values()].slice(-128) };
 }
 
 export function commanderTools(prompts: CommandPrompts, mode: 'small' | 'mass' | 'intents' = 'small'): CommandTool[] {
   const step = { type: 'object', additionalProperties: false, required: ['type'], properties: { type: { type: 'string' }, targetId: { type: 'string' },
     cell: { type: 'integer', minimum: 0 }, weaponMode: { type: 'string', enum: ['primary', 'sidearm'] }, abilityId: { type: 'string' } } };
   const schemas: Partial<Record<CommanderToolName, Record<string, unknown>>> = {
+    diplomacy: { mode: { type: 'string', enum: ['surrender', 'withdraw', 'accept', 'reject'] }, target: { type: 'string' }, id: { type: 'integer', minimum: 1 }, text: { type: 'string', maxLength: 1000 } },
     commander_map: { cells: { type: 'array', items: { type: 'integer', minimum: 0 } } },
     commander_unit: { unitId: { type: 'string' } },
     commander_plan: { plan: { type: 'string', maxLength: 600 }, addNotes: { type: 'array', maxItems: 12, items: { type: 'string', maxLength: 300 } },
@@ -146,7 +151,7 @@ export function commanderTools(prompts: CommandPrompts, mode: 'small' | 'mass' |
       : { commander_orders: { orders: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['unitId', 'choice'],
         properties: { unitId: { type: 'string' }, choice: { type: 'string' } } } } } }),
   };
-  const required: Partial<Record<CommanderToolName, string[]>> = { commander_unit: ['unitId'], commander_act: ['choice'], commander_orders: ['orders'], commander_intents: ['intents'] };
+  const required: Partial<Record<CommanderToolName, string[]>> = { diplomacy: ['mode'], commander_unit: ['unitId'], commander_act: ['choice'], commander_orders: ['orders'], commander_intents: ['intents'] };
   return (Object.keys(schemas) as CommanderToolName[]).map(name => ({ type: 'function', function: { name, description: prompts.tools[name],
     parameters: { type: 'object', properties: schemas[name], additionalProperties: false, required: required[name] ?? [] } } }));
 }
@@ -293,14 +298,42 @@ function interruption(b: SmallBattle, actorId: string, before: CommandWatch): st
 export class LlmCommandController {
   private aborter?: AbortController;
   private failed = new Set<string>();
+  private pausedRounds = new WeakMap<Battle, number>();
+  private thinkingKey?: string;
   status = '';
   statusBattle?: string;
   busy = false;
   constructor(private prompts: CommandPrompts, private changed: () => void = () => {}, private request: typeof fetch = (url, init) => fetch(url, init), readonly side: Side = 'enemy') {}
   cancel(): void { this.aborter?.abort(); }
-  private key(b: Battle, settings: LlmSettings): string { return JSON.stringify([b.seed, this.side, settings.url.trim(), settings.token.trim(), settings.model.trim(), settings.commandThinking, settings.commandThinkingOffParams]); }
+  /** Explicit command pause falls back locally for the remainder of this battle round. */
+  pauseRound(b: Battle): void {
+    this.pausedRounds.set(b, b.round);
+    if (this.statusBattle === b.seed) this.cancel();
+    this.statusBattle = b.seed; this.status = '本大回合由内置 AI 接管，下个大回合恢复 LLM 指挥';
+  }
+  private key(b: Battle, settings: LlmSettings): string { return JSON.stringify([b.seed, this.side, settings.url.trim(), settings.token.trim(), settings.model.trim(), settings.commandInterval, settings.commandThinking, settings.commandThinkingOffParams]); }
+  private playerReady(b: Battle, state: CommanderState): boolean {
+    if (!b.combatants.some(u => u.side === 'ally' && u.status === 'ready' && u.hp > 0)) {
+      state.playerFallback = {}; delete state.memory.intents;
+      this.pauseRound(b); this.status = '我方已全部溃败或失能，内置 AI 接管';
+      return false;
+    }
+    if (state.playerFallback) {
+      state.playerFallback.resumeRound ??= b.round + 1;
+      if (b.round < state.playerFallback.resumeRound) {
+        this.statusBattle = b.seed; this.status = `内置 AI 接管，第${state.playerFallback.resumeRound}大回合恢复 LLM 指挥`;
+        return false;
+      }
+      delete state.playerFallback;
+      this.status = '';
+    }
+    return true;
+  }
   available(b: Battle, settings: LlmSettings, state?: CommanderState): boolean {
-    return settings.enabled && settings.commandEnemy === true && state?.side === this.side && state.battleSeed === b.seed && b.rules.resolutionVersion === 'v2' && !this.failed.has(this.key(b, settings));
+    return settings.enabled && settings.commandEnemy === true && state?.side === this.side && state.battleSeed === b.seed && b.rules.resolutionVersion === 'v2'
+      && b.combatants.some(u => u.side === this.side && u.hp > 0 && ['ready', 'routing'].includes(u.status) && !u.moraleState?.forcedRetreat)
+      && (state.decision?.round === b.round || state.memory.diplomacyRound !== b.round || incomingDiplomacy(b, this.side).length > 0)
+      && this.playerReady(b, state) && this.pausedRounds.get(b) !== b.round && !this.failed.has(this.key(b, settings));
   }
   /** Retry only the current read/validation; already selected actions and memory are never replayed. */
   private async retryRequest<T>(operation: (signal: AbortSignal) => Promise<T>, valid: () => boolean, signal: AbortSignal): Promise<T> {
@@ -343,7 +376,7 @@ export class LlmCommandController {
   /** Query tools run locally; plain JSON that fails the final tool's check is retried like a failed request. */
   async decide<T>(b: Battle, actorId: string | undefined, state: CommanderState, mode: 'small' | 'mass' | 'intents', conversation: CommandMessage[], settings: LlmSettings,
     valid: () => boolean, signal: AbortSignal, budget: { left: number }, final: { check: (args: Record<string, unknown>) => void; apply: (args: Record<string, unknown>) => { done?: T; result: unknown };
-      encode?: (value: unknown) => unknown; decode?: (args: Record<string, unknown>) => Record<string, unknown> }): Promise<T> {
+      encode?: (value: unknown) => unknown; decode?: (args: Record<string, unknown>) => Record<string, unknown> }): Promise<T | undefined> {
     const finalName = mode === 'small' ? 'commander_act' : mode === 'intents' ? 'commander_intents' : 'commander_orders', tools = commanderTools(this.prompts, mode);
     const encode = final.encode ?? ((value: unknown) => value), decode = final.decode ?? ((args: Record<string, unknown>) => args);
     while (budget.left-- > 0) {
@@ -351,8 +384,15 @@ export class LlmCommandController {
       const answer = await this.retryRequest(async combined => {
         let previousAnswer: CommandMessage | undefined;
         try {
-          previousAnswer = await openAiCommandRequest(llmConnection(settings), conversation, tools, combined, this.request, commandRequestOptions(settings));
-          if (!previousAnswer.tool_calls) final.check(decode(JSON.parse(previousAnswer.content!)));
+          const thinkingKey = JSON.stringify([b.seed, b.round]);
+          const options = commandRequestOptions(settings, state.memory.thinkingRound === b.round || this.thinkingKey === thinkingKey);
+          if (settings.commandThinking === 'round') { state.memory.thinkingRound = b.round; this.thinkingKey = thinkingKey; }
+          previousAnswer = await openAiCommandRequest(llmConnection(settings), conversation, tools, combined, this.request, options);
+          if (!previousAnswer.tool_calls) {
+            const args = decode(JSON.parse(previousAnswer.content!));
+            if (['surrender', 'withdraw', 'accept', 'reject'].includes(String(args.mode))) commandDiplomacyDecision(b, this.side, args);
+            else final.check(args);
+          }
           return previousAnswer;
         } catch (error) {
           if (!signal.aborted && valid()) conversation.push({ role: 'user', content: JSON.stringify({ previousAnswer: previousAnswer ?? (error instanceof JevAnswerError ? error.previousAnswer : undefined),
@@ -362,13 +402,25 @@ export class LlmCommandController {
       }, valid, signal);
       if (signal.aborted || !valid()) throw new CommandCancelled();
       conversation.push(answer);
+      const diplomacy = (args: Record<string, unknown>) => {
+        const action = commandDiplomacyDecision(b, this.side, args);
+        state.decision = { ...action, round: b.round }; state.memory.diplomacyRound = b.round;
+      };
       if (!answer.tool_calls) {
-        const outcome = final.apply(decode(JSON.parse(answer.content!)));
+        const args = decode(JSON.parse(answer.content!));
+        if (['surrender', 'withdraw', 'accept', 'reject'].includes(String(args.mode))) { diplomacy(args); return; }
+        const outcome = final.apply(args);
         if (outcome.done !== undefined) return outcome.done;
         conversation.push({ role: 'user', content: JSON.stringify(encode(outcome.result)) });
         continue;
       }
       let done: T | undefined;
+      // A diplomatic decision is terminal; do not also apply combat calls from the same answer.
+      const diplomaticCall = answer.tool_calls.find(call => call.function.name === 'diplomacy');
+      if (diplomaticCall) {
+        try { diplomacy(JSON.parse(diplomaticCall.function.arguments)); return; }
+        catch (error) { conversation.push(...answer.tool_calls.map(call => ({ role: 'tool' as const, tool_call_id: call.id, content: JSON.stringify({ error: call === diplomaticCall ? String(error) : '本次先处理提议，未执行其他工具' }) }))); continue; }
+      }
       for (const call of answer.tool_calls) {
         let result: unknown;
         try {
@@ -388,7 +440,7 @@ export class LlmCommandController {
     throw Error('本单位的工具调用次数已用尽');
   }
   private async choose(b: SmallBattle, actorId: string, state: CommanderState, choices: CommandChoice[], settings: LlmSettings, valid: () => boolean, signal: AbortSignal,
-    budget: { left: number }, conversation: CommandMessage[], sent: { map?: string }, stopped?: { step: CommandStep; reason: string }): Promise<{ choice: CommandChoice; then: CommandStep[] }> {
+    budget: { left: number }, conversation: CommandMessage[], sent: { map?: string }, stopped?: { step: CommandStep; reason: string }): Promise<{ choice: CommandChoice; then: CommandStep[] } | undefined> {
     this.status = `指挥官 ${state.brief.name} 正在指挥 ${b.byId(actorId).name}…`; this.changed();
     state.memory = updateCommandMemory(b, state.memory, this.side);
     const { map, ...observation } = commandObservation(b, actorId, this.side);
@@ -399,7 +451,7 @@ export class LlmCommandController {
     conversation.push({ role: 'user', content: JSON.stringify({ ...(first ? { brief: state.brief } : {}),
       plan: state.memory.plan, ...(mapKey !== sent.map ? { map: mapView } : {}), notes: state.memory.notes, ...(stopped ? { stopped } : {}), lastSightings: state.memory.contacts?.filter(u => !observation.units.some(current => current.id === u.id)),
       self: observation.units.find(u => u.id === actorId), observation: { ...observation, units: observation.units.map(unitSummary) },
-      ...choiceMessage(choices, this.side) }) });
+      diplomacy: commandDiplomacy(b, this.side), ...choiceMessage(choices, this.side) }) });
     sent.map = mapKey;
     const act = (args: Record<string, unknown>) => ({ choice: commanderTool('commander_act', args, b, actorId, state, choices) as CommandChoice, then: commandSteps(args.then) });
     return this.decide(b, actorId, state, 'small', conversation, settings, valid, signal, budget,
@@ -410,6 +462,7 @@ export class LlmCommandController {
     const aborter = new AbortController(); this.aborter = aborter; this.busy = true; this.status = status; this.statusBattle = b.seed; this.changed();
     try { const result = await task(aborter.signal); this.status = ''; return result; }
     catch (error) {
+      if (aborter.signal.aborted && valid() && this.pausedRounds.get(b) === b.round) return undefined;
       if (aborter.signal.aborted || !valid() || error instanceof CommandCancelled) { this.status = 'LLM 指挥已暂停'; throw new CommandCancelled(); }
       this.failed.add(this.key(b, settings));
       this.status = `LLM 指挥失败，本场后续使用内置 AI：${error instanceof Error ? error.message : '请求失败'}`;
@@ -439,12 +492,14 @@ export class LlmCommandController {
         if (!choice) {
           basis = watch(candidate, actorId);
           const decision = await this.choose(candidate, actorId, commandState, choices, settings, valid, signal, budget, conversation, sent, stopped);
+          if (!decision) break;
           choice = decision.choice; queue = decision.then; stopped = undefined;
         }
         executeSmall(candidate, actorId, choice.action!);
         // The commander chose its own ability, so the conditions it adds are not a surprise.
         if (choice.action!.type === 'ability') basis!.conditions = new Set(candidate.byId(actorId).conditions.map(c => c.id));
       }
+      if (commandState.decision) return { snap: candidate.toSnapshot(), conditions: candidate.conditions.all(), commandState };
       if (!candidate.isOver() && candidate.active?.id === actorId) candidate.endTurn();
       commandState.memory = updateCommandMemory(candidate, commandState.memory, this.side);
       return { snap: candidate.toSnapshot(), conditions: candidate.conditions.all(), commandState };
@@ -466,7 +521,7 @@ export class LlmCommandController {
       const formations = () => [...pending].map(([unitId, choices]) => ({ unitId, name: candidate.byId(unitId).name, choices: choices.map(c => choiceView(c, this.side)) }));
       const conversation: CommandMessage[] = [{ role: 'system', content: this.prompts.command }, { role: 'user', content: JSON.stringify({ brief: commandState.brief,
         plan: commandState.memory.plan, notes: commandState.memory.notes, lastSightings: commandState.memory.contacts?.filter(u => !observation.units.some(current => current.id === u.id)),
-        observation: { ...observation, units: observation.units.map(unitSummary) }, formations: formations() }) }];
+        diplomacy: commandDiplomacy(candidate, this.side), observation: { ...observation, units: observation.units.map(unitSummary) }, formations: formations() }) }];
       const check = (args: Record<string, unknown>) => {
         if (!Array.isArray(args.orders) || args.orders.some(o => !o || typeof o.unitId !== 'string' || typeof o.choice !== 'string')) throw Error('orders格式无效');
       };
@@ -484,7 +539,7 @@ export class LlmCommandController {
         return pending.size ? { result: { errors, formations: formations() } } : { done: orders, result: { accepted: orders.map(o => o.unitId) } };
       };
       await this.decide(candidate, undefined, commandState, 'mass', conversation, settings, valid, signal, { left: 6 }, { check, apply });
-      return { orders, commandState };
+      return { orders: commandState.decision ? [] : orders, commandState };
     });
   }
 }

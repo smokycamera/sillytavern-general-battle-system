@@ -22,6 +22,8 @@ import { randomId } from '../../host/src/browser-compat.js';
 import { equipmentLoadLabel } from '../../engine/src/body.js';
 import { LlmContextController, llmContextSummary, type LlmEncounterContext } from './llm-context.js';
 import { LlmCommandController, CommandCancelled } from './llm-command.js';
+import type { CommanderState } from './llm-command.js';
+import { applyDiplomacy, fightingSides, incomingDiplomacy, sideName } from '../../engine/src/diplomacy.js';
 import { LlmIntentPlanner, intentForces } from './llm-intents.js';
 import type { UnitIntent } from '../../engine/src/index.js';
 import { COMMAND_PROMPTS } from './llm-command-prompts.js';
@@ -858,18 +860,38 @@ function tacticalAutomation(b: SmallBattle): TacticalAutomation {
  * 敌方与中立单位始终由AI行动；我方单位按 AI 托管设置（单位单独设置 > 「除主控」），见 ally-control。
  */
 function prefetchCommandIntents(b: SmallBattle): void {
+  if (playerDiplomacy(b)) return;
   const settings = llmSettingsView().settings, key = JSON.stringify(settings), epoch = automationEpoch;
+  const diplomacyRevision = b.diplomacy.revision;
   const identity = adapter.identity(), namespace = adapter.namespace(), context = controller.inventoryContext();
   const valid = () => state.small === b && epoch === automationEpoch && identity === adapter.identity() && namespace === adapter.namespace()
-    && context === controller.inventoryContext() && key === JSON.stringify(readLlmSettings());
+    && context === controller.inventoryContext() && key === JSON.stringify(readLlmSettings()) && diplomacyRevision === b.diplomacy.revision;
   for (const side of ['enemy', 'neutral'] as const) {
     const command = state.encounterContext?.llmCommanders?.[side];
     if (command) llmIntentPlanners[side].prefetch(b, command, settings, valid);
   }
 }
+function playerDiplomacy(b = currentBattle()) {
+  return b ? incomingDiplomacy(b, 'ally')[0] : undefined;
+}
+let diplomacyReplyDraft: { seed: string; id: number; text: string } | undefined;
+/** Commit only on the originating faction's activation, never during background prefetch. */
+function applyCommanderDiplomacy(b: SmallBattle | MassBattle, command: CommanderState): boolean {
+  const decision = command.decision;
+  if (!decision) return false;
+  delete command.decision;
+  if (decision.round !== b.round || b.isOver()) return false;
+  const { round: _round, ...action } = decision;
+  try { applyDiplomacy(b, command.side, action); }
+  catch { return false; } // Another answer may already have resolved this exact proposal.
+  Object.values(llmCommanders).forEach(c => c.cancel());
+  if (action.mode === 'accept') for (const state of Object.values(stateCommanders())) if (state) { delete state.memory.intents; delete state.decision; }
+  return true;
+}
+function stateCommanders() { return state.encounterContext?.llmCommanders ?? {}; }
 async function autoSmall(b: SmallBattle): Promise<void> {
   clearBattleQueries();
-  if (!b.active || b.isOver()) return;
+  if (!b.active || b.isOver() || playerDiplomacy(b)) return;
   const autoEpoch = automationEpoch;
   prefetchCommandIntents(b);
   let intent: UnitIntent | undefined;
@@ -888,11 +910,16 @@ async function autoSmall(b: SmallBattle): Promise<void> {
           if (troop) intent = await planner.forUnit(b, commandState!, settings, commandValid);
           else await planner.beforeHero();
           if (!commandValid()) return;
+          if (commandState?.decision && applyCommanderDiplomacy(b, commandState)) return;
           const result = !troop && commander.available(b, settings, commandState)
             ? await commander.small(b, commandState!, settings, commandValid) : undefined;
           if (!valid()) return;
           if (result) {
             clearBattleQueries(); applyBattleStep(b, result); state.encounterContext!.llmCommanders![side] = result.commandState;
+            if (result.commandState.decision) {
+              if (applyCommanderDiplomacy(b, result.commandState)) return;
+              if (!b.isOver() && b.active) b.autoAction(b.active.id);
+            }
             return;
           }
         } catch (error) { if (error instanceof CommandCancelled) return; throw error; }
@@ -911,8 +938,10 @@ function battleStepGuard(battle: SmallBattle | MassBattle): () => boolean {
   const workerEpoch = battleWorkerEpoch;
   const autoEpoch = automationEpoch;
   const round = battle.round, turn = battle instanceof SmallBattle ? battle.turnIndex : undefined;
+  const diplomacyRevision = battle.diplomacy.revision;
   return () => currentBattle() === battle && identity === adapter.identity() && namespace === adapter.namespace()
     && context === controller.inventoryContext() && revision === state.factRevision && round === battle.round && workerEpoch === battleWorkerEpoch && autoEpoch === automationEpoch
+    && diplomacyRevision === battle.diplomacy.revision
     && (!(battle instanceof SmallBattle) || turn === battle.turnIndex);
 }
 function smallActorBlocked(b: SmallBattle): boolean {
@@ -925,17 +954,18 @@ async function runAuto(): Promise<void> {
   const epoch = automationEpoch;
   if (!b.isOver()) {
     let guard = 0;
-    while (epoch === automationEpoch && state.small === b && !b.isOver() && b.active && guard++ < 200) {
+    while (epoch === automationEpoch && state.small === b && !b.isOver() && !playerDiplomacy(b) && b.active && guard++ < 200) {
       const a = b.active;
       // 反应击杀/失能必须先交还行动权，不能等待已倒下的玩家单位。
       if (!smallActorBlocked(b) && !aiActsFor(b, a, allyControlDefaults())) break;
       tacticalView.selectedId = a.id; tacticalView.cell = undefined; render('battle');
       await yieldBattleFrame();
       if (epoch !== automationEpoch || state.small !== b) return;
-      const progress = `${b.round}:${b.turnIndex}`;
+      const progress = `${b.round}:${b.turnIndex}:${b.diplomacy.revision}`;
       await autoSmall(b);
       if (epoch !== automationEpoch || state.small !== b) return;
-      if (!b.isOver() && progress === `${b.round}:${b.turnIndex}`) throw Error('自动行动未推进回合，已暂停');
+      if (playerDiplomacy(b)) { await persist(); render('battle'); return; }
+      if (!b.isOver() && progress === `${b.round}:${b.turnIndex}:${b.diplomacy.revision}`) throw Error('自动行动未推进回合，已暂停');
       // Activations update session memory; only opening and final results reach storage.
       if (state.small !== b || !(await persistBattleResult())) return;
     }
@@ -960,7 +990,7 @@ async function resumeSmallTurnIfNeeded(): Promise<void> {
   if (uiBusy || fullAuto.running) return;
   smallResumeRequested = false;
   const b = state.small, unsaved = allyControlUnsaved;
-  if (!b || battleSaveFailed || (runtime.canWrite && !runtime.canWrite())) return;
+  if (!b || playerDiplomacy(b) || battleSaveFailed || (runtime.canWrite && !runtime.canWrite())) return;
   if (!unsaved && (b.isOver() || !b.active || (!smallActorBlocked(b) && !aiActsFor(b, b.active, allyControlDefaults())))) return;
   await panelTask(async () => {
     allyControlUnsaved = false;
@@ -983,7 +1013,7 @@ function startFullAuto(): void {
     try {
     if (currentBattle() !== battle || context !== controller.inventoryContext() || workspaceNamespace !== adapter.namespace()
       || controller.migrationReview() || battleSaveFailed || battle.isOver()) return false;
-    const progress = `${battle.round}:${battle instanceof SmallBattle ? battle.turnIndex : ''}`;
+    const progress = `${battle.round}:${battle instanceof SmallBattle ? battle.turnIndex : ''}:${battle.diplomacy.revision}`;
     battleSaveFailed = false;
     if (battle instanceof SmallBattle) {
       if (!battle.active) return false;
@@ -993,6 +1023,7 @@ function startFullAuto(): void {
       // 复用手动执行的草案校验、自动补令、阶段结算和失败回滚。
       (await resolveMassRound(battle.round, battle.seed));
     }
+    if (playerDiplomacy(battle)) { fullAuto.stop(); await persist(); render('battle'); return false; }
     if (!fullAuto.running || battleSaveFailed || currentBattle() !== battle || workerEpoch !== battleWorkerEpoch) return false;
     if (battle.isOver()) {
       fullAuto.stop();
@@ -1000,7 +1031,7 @@ function startFullAuto(): void {
     }
     if (battleSaveFailed || currentBattle() !== battle || !(await persist())) return false;
     if (battle.isOver()) render('battle');
-    if (!battle.isOver() && progress === `${battle.round}:${battle instanceof SmallBattle ? battle.turnIndex : ''}`) throw Error('自动行动没有推进回合，已暂停，可手动处理');
+    if (!battle.isOver() && progress === `${battle.round}:${battle instanceof SmallBattle ? battle.turnIndex : ''}:${battle.diplomacy.revision}`) throw Error('自动行动没有推进回合，已暂停，可手动处理');
     return !battle.isOver();
     } finally {
       uiBusy = false; document.body.removeAttribute('aria-busy');
@@ -1125,7 +1156,7 @@ function renderWorkspace(scope: RenderScope, tacticalQuery?: TacticalQuerySource
     updateRegion(app.querySelector<HTMLElement>(`[data-workspace="${workspaceTab}"]`)!, content);
     dirtyWorkspaces.delete(workspaceTab);
   }
-  const dialog = app.querySelector<HTMLElement>('#workspace-dialog')!, dialogHtml = renderLlmNotes() || renderAiScanDialog() || renderLoadoutSkills() || renderAbilityDialog();
+  const dialog = app.querySelector<HTMLElement>('#workspace-dialog')!, dialogHtml = renderDiplomacyDialog() || renderLlmNotes() || renderAiScanDialog() || renderLoadoutSkills() || renderAbilityDialog();
   if (dialog.innerHTML !== dialogHtml) updateRegion(dialog, dialogHtml);
   window.scrollTo(0, winScroll);
   if (workspaceTab === 'battle' && b) {
@@ -1154,6 +1185,18 @@ function renderLlmNotes(): string {
   if (!battle || llmNotesBattle !== battleIdOf(battle)) return '';
   const notes = Object.entries(state.encounterContext?.llmCommanders ?? {}).flatMap(([side, command]) => command ? [`<section class="llm-notes-side"><h3>${side === 'ally' ? '我方' : side === 'neutral' ? '第三方' : '敌军'} · ${esc(command.brief.name)}</h3><h4>人设</h4><p>${esc(command.brief.persona)}</p><h4>任务</h4><p>${esc(command.brief.mission)}</p><h4>总计划</h4><p>${esc(command.memory.plan) || '尚未制定'}</p><h4>笔记</h4>${command.memory.notes.length ? '<ul>' + command.memory.notes.map(note => '<li>' + esc(note) + '</li>').join('') + '</ul>' : '<p>暂无笔记</p>'}<h4>开局已知信息</h4>${command.brief.known.length ? '<ul>' + command.brief.known.map(note => '<li>' + esc(note) + '</li>').join('') + '</ul>' : '<p>以本场实际观察为准</p>'}${renderRoundIntents(battle, command.memory.intents)}</section>`] : []).join('');
   return `<div class="modal-backdrop" data-action="llm-notes-close"><section class="modal-card llm-notes-dialog" data-action="modal-stop" role="dialog" aria-modal="true" aria-labelledby="llm-notes-title"><div class="row"><h2 id="llm-notes-title">llm笔记</h2><button data-action="llm-notes-close">关闭</button></div>${notes || '<p>本场没有 LLM 指挥官记录。</p>'}</section></div>`;
+}
+function renderDiplomacyDialog(): string {
+  const b = currentBattle(), offer = playerDiplomacy(b);
+  if (!b || !offer) return '';
+  const three = fightingSides(b).length > 2;
+  return `<div class="modal-backdrop"><section class="modal-card" data-action="modal-stop" role="dialog" aria-modal="true" aria-labelledby="diplomacy-title">
+    <h2 id="diplomacy-title">${esc(sideName(offer.from))}提出${offer.mode === 'surrender' ? '投降' : '双方撤军'}</h2>
+    ${offer.text ? `<p>${esc(offer.text)}</p>` : ''}
+    <p class="sub">${offer.mode === 'withdraw' ? three ? '同意后对方溃退，我方保持原状态，可自行撤离。' : '同意后双方各自撤军，本场平局。' : three ? '同意后对方全军溃退，战斗继续。' : '同意后敌方投降，我方胜利。'}</p>
+    <label>回复（可选）<textarea data-role="diplomacy-text" data-id="${offer.id}" maxlength="1000" rows="3" placeholder="想对对方说的话">${esc(diplomacyReplyDraft?.seed === b.seed && diplomacyReplyDraft.id === offer.id ? diplomacyReplyDraft.text : '')}</textarea></label>
+    <div class="row"><button class="primary" data-action="diplomacy-reply" data-mode="accept" data-id="${offer.id}" data-seed="${esc(b.seed)}">同意</button><button data-action="diplomacy-reply" data-mode="reject" data-id="${offer.id}" data-seed="${esc(b.seed)}">拒绝</button></div>
+  </section></div>`;
 }
 function renderContextStatus(): string {
   const stage = llmContext.stage, retry = stage && stage.attempt > 1 ? `第${stage.attempt}次尝试` : '';
@@ -2413,6 +2456,12 @@ async function handleAction(e: Event): Promise<void> {
   if (!el) return;
   const act = el.dataset.action!;
   if (act === 'llm-notes' || act === 'llm-notes-close') { llmNotesBattle = act === 'llm-notes' && currentBattle() ? battleIdOf(currentBattle()!) : undefined; render('view'); return; }
+  if (act === 'llm-command-stop' && currentBattle()) {
+    Object.values(llmCommanders).forEach(c => c.pauseRound(currentBattle()!));
+    toast('已取消本次指挥，内置 AI 接管本大回合'); render('battle');
+    if (state.small) void resumeSmallTurnIfNeeded();
+    return;
+  }
   if (act === 'llm-stop' || act === 'llm-command-stop') { stopAutomation(); toast('已取消模型请求'); render('battle'); return; }
   if (['llm-models','llm-worldbooks-refresh','llm-settings-backup','llm-settings-reset','llm-settings-clear'].includes(act)) { try { await actions[act]!(el); } catch (error) { toast(String(error)); } return; }
   // Navigation never joins the durable-write queue or alters its failure flag.
@@ -2607,6 +2656,7 @@ async function handleAction(e: Event): Promise<void> {
 /** Shared by UI buttons and game-level MCP commands, including reactions and durable auto turns. */
 const EARLY_BATTLE_RESULT = ['grid-execute', 'grid-move', 'grid-endturn', 'grid-mobile-endturn', 'grid-auto', 'mass-resolve'];
 async function executePanelAction(act: string, task: () => void | Promise<void>): Promise<boolean> {
+  if (playerDiplomacy() && act !== 'diplomacy-reply') throw Error('请先答复投降或撤军提议');
   clearBattleQueries();
   const actionBattle = currentBattle();
   const identity = adapter.identity(), namespace = adapter.namespace(), context = controller.inventoryContext(), workerEpoch = battleWorkerEpoch;
@@ -2891,6 +2941,7 @@ async function resolveMassRound(expectedRound: number, expectedSeed?: string): P
     clearBattleQueries();
     const b = state.mass!;
     if (expectedRound !== b.round || expectedSeed && expectedSeed !== b.seed) throw new Error('旧回合按钮已失效');
+    if (playerDiplomacy(b)) return;
     if (b.rules.resolutionVersion === 'v2') {
       const snapshot = structuredClone(b.toSnapshot()), drafts = structuredClone(state.orderDraft), valid = battleStepGuard(b);
       try {
@@ -2898,6 +2949,10 @@ async function resolveMassRound(expectedRound: number, expectedSeed?: string): P
         const command = llmCommander.available(b, settings, commandState)
           ? await llmCommander.mass(b, commandState!, settings, () => valid() && JSON.stringify(readLlmSettings()) === settingsKey) : undefined;
         if (!valid()) return;
+        if (command?.commandState.decision) {
+          state.encounterContext!.llmCommanders!.enemy = command.commandState;
+          if (applyCommanderDiplomacy(b, command.commandState)) { await persist(); render('battle'); return; }
+        }
         const result = b.rng instanceof SeededRng ? await battleWorker.run({ kind: 'mass', snap: snapshot, rules: b.rules,
           traits: b.traitRegistry, conditions: b.conditions.all(), summons: !!b.summonUnit,
           drafts, automatic: massAutoCommand(), expectedRound, enemyOrders: command?.orders }) : undefined;
@@ -3625,6 +3680,20 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     state.abilityDialog = null; state.orderDraft = {};
     (await onBattleEnded()); (await persist());
   },
+  'diplomacy-reply': async (el) => {
+    const b = currentBattle(), offer = playerDiplomacy(b);
+    if (!b || !offer || b.seed !== el.dataset.seed || offer.id !== Number(el.dataset.id)) throw Error('此提议已失效');
+    const text = document.querySelector<HTMLTextAreaElement>('[data-role="diplomacy-text"]')?.value ?? '';
+    stopAutomation();
+    applyDiplomacy(b, 'ally', { mode: el.dataset.mode === 'accept' ? 'accept' : 'reject', id: offer.id, text });
+    diplomacyReplyDraft = undefined;
+    if (el.dataset.mode === 'accept') for (const command of Object.values(stateCommanders())) if (command) { delete command.memory.intents; delete command.decision; }
+    await onBattleEnded(); if (!(await persist())) return;
+    if (!b.isOver() && !playerDiplomacy(b)) {
+      if (b instanceof SmallBattle) await runAuto(); else await resolveMassRound(b.round, b.seed);
+    }
+    render('battle');
+  },
   'battle-close': async () => {
     const b = currentBattle();
     if (!b) throw new Error('没有进行中的战斗可清理');
@@ -3846,15 +3915,30 @@ document.addEventListener('pointerup', () => { cameraPointer=undefined; }, {pass
 document.addEventListener('wheel', event => { if (event.target instanceof Element && event.target.closest('[data-workspace="battle"]')) battleCamera.browse(); }, {passive:true});
 document.addEventListener('input', e => {
   const el=e.target;
-  if (el instanceof HTMLTextAreaElement && el.dataset.role === 'llm-command-params') {
+  if (el instanceof HTMLTextAreaElement && el.dataset.role === 'diplomacy-text') {
+    const b = currentBattle(), offer = playerDiplomacy(b);
+    if (b && offer) diplomacyReplyDraft = { seed: b.seed, id: offer.id, text: el.value };
+    return;
+  }
+  if (el instanceof HTMLTextAreaElement && el.dataset.role === 'llm-command-params' || el instanceof HTMLInputElement && el.dataset.role === 'llm-command-effort') {
     const status = el.closest('details')?.querySelector('[data-role="llm-command-params-status"]');
-    stopAutomation();
     try {
-      const warnings = commandParameterWarnings(parseCommandParameters(el.value));
       const settings = readLlmSettings();
-      if (settings.commandThinking === 'off') settings.commandThinkingOffParams = el.value;
-      else return;
+      if (settings.commandThinking !== 'off' && settings.commandThinking !== 'round') return;
+      const textarea = el.closest('details')?.querySelector<HTMLTextAreaElement>('[data-role="llm-command-params"]');
+      const parameters = parseCommandParameters(textarea?.value ?? el.value);
+      if (el.dataset.role === 'llm-command-effort') {
+        if (el.value.trim()) parameters.reasoning_effort = el.value.trim(); else delete parameters.reasoning_effort;
+        settings.commandThinkingOffParams = JSON.stringify(parameters);
+        if (textarea) { textarea.value = settings.commandThinkingOffParams; textarea.setCustomValidity(''); }
+      } else {
+        settings.commandThinkingOffParams = el.value;
+        const effort = el.closest('details')?.querySelector<HTMLInputElement>('[data-role="llm-command-effort"]');
+        if (effort) { effort.value = typeof parameters.reasoning_effort === 'string' ? parameters.reasoning_effort : ''; effort.setCustomValidity(''); }
+      }
+      const warnings = commandParameterWarnings(parameters);
       saveLlmSettings(settings); el.setCustomValidity(''); llmDiagnostic = '已保存';
+      stopAutomation();
       if (status) status.textContent = ['已保存当前模式的思考参数', ...warnings].join('；');
     } catch (error) {
       const message = error instanceof Error ? error.message : '保存失败';
@@ -4089,11 +4173,12 @@ document.addEventListener('change', e => {
     } catch (error) { toast(error instanceof Error ? error.message : '保存失败'); }
     return;
   }
-  if (e.target instanceof HTMLSelectElement && ['llm-mode', 'llm-model-list', 'llm-command-thinking'].includes(e.target.dataset.role ?? '')) {
+  if (e.target instanceof HTMLSelectElement && ['llm-mode', 'llm-model-list', 'llm-command-thinking', 'llm-command-interval'].includes(e.target.dataset.role ?? '')) {
     try {
       const settings = readLlmSettings();
       if (e.target.dataset.role === 'llm-mode') settings.enabled = e.target.value === 'llm';
-      else if (e.target.dataset.role === 'llm-command-thinking') settings.commandThinking = e.target.value === 'off' ? 'off' : 'auto';
+      else if (e.target.dataset.role === 'llm-command-thinking') settings.commandThinking = e.target.value === 'off' || e.target.value === 'round' ? e.target.value : 'auto';
+      else if (e.target.dataset.role === 'llm-command-interval') settings.commandInterval = e.target.value === 'situation' ? 'situation' : 'round';
       else settings.model = e.target.value;
       saveLlmSettings(settings); stopAutomation(); llmDiagnostic = '已保存'; render('view');
     } catch (error) { toast(error instanceof Error ? error.message : '保存失败'); }

@@ -3,6 +3,8 @@ import { CommandCancelled, commandObservation, compactCommandMap, unitSummary, u
 import type { LlmSettings } from './llm-settings.js';
 import type { CommandMessage } from './jev-connection.js';
 import { battleAbilities } from './battle-skills.js';
+import { incomingDiplomacy } from '../../engine/src/diplomacy.js';
+import { commandDiplomacy } from './llm-diplomacy.js';
 
 const present = (u: Combatant) => ['ready', 'routing'].includes(u.status);
 /** Stable short names within this commander's view; actual save/engine identities stay intact. */
@@ -46,7 +48,11 @@ export class LlmIntentPlanner {
   private basisSeed?: string;
   constructor(readonly commander: LlmCommandController, private prompts: { intents: string }, private changed: () => void = () => {}) {}
   prefetch(b: SmallBattle, state: CommanderState, settings: LlmSettings, valid: () => boolean): void {
+    if (state.decision && state.decision.round !== b.round) delete state.decision;
+    const incoming = incomingDiplomacy(b, state.side).length > 0;
+    if (incoming && state.memory.diplomacyRevision !== b.diplomacy.revision) delete state.memory.intents;
     if (!b.battlefield || b.isOver() || this.pending || this.commander.busy || !this.commander.available(b, settings, state)
+      || state.decision || state.memory.diplomacyRound === b.round && !incoming
       || state.memory.intents?.round === b.round || !intentForces(b, state.side).forces.length) return;
     this.start(b, state, settings, valid);
   }
@@ -61,7 +67,7 @@ export class LlmIntentPlanner {
     if (!valid()) throw new CommandCancelled();
     const intents = state.memory.intents;
     if (!this.lastSeen || this.basisSeed !== b.seed) { this.lastSeen = new Set(state.memory.contacts?.map(u => u.id)); this.basisSeed = b.seed; }
-    if (intents?.round === b.round && !intents.replanned) {
+    if (settings.commandInterval === 'situation' && intents?.round === b.round && !intents.replanned) {
       const visible = b.visibleCombatants(state.side).filter(u => u.side !== state.side);
       const reason = visible.some(u => !intents.basis.visible.includes(u.id) && !this.lastSeen!.has(u.id)) ? '首次发现新对手'
         : Object.values(intents.units).some(i => ['attack', 'use_ability'].includes(i.mode) && !b.combatants.some(u => u.id === i.targetId && (present(u) || i.mode === 'use_ability' && u.status === 'dying'))) ? '意图目标已退场'
@@ -133,7 +139,7 @@ export class LlmIntentPlanner {
         lastSightings: command.memory.contacts?.filter(u => !observation.units.some(v => v.id === u.id)), round, ...(reason ? { reason } : {}),
         forces: forces.map(u => ({ ...unitSummary(observation.units.find(v => v.id === u.id)!), weapon: { name: u.weapon?.name, ranged: isRangedCapable(u), range: weaponRangeSpec(gridWeapon(u.weapon, candidate.rules.combatModel === MEMBER_HEALTH_MODEL, candidate.rules.armsModel), isRangedCapable(u)) },
           ...(battleAbilities(u).length ? { skills: battleAbilities(u).map(a => ({ id: a.id, name: a.name, target: a.target })) } : {}) })),
-        observation: { ...observation, units: observation.units.map(unitSummary) }, previous })) }];
+        diplomacy: commandDiplomacy(candidate, state.side), observation: { ...observation, units: observation.units.map(unitSummary) }, previous })) }];
       await this.commander.decide(candidate, undefined, command, 'intents', conversation, settings, current, signal, { left: 4 }, { check: () => {}, apply, encode: ids.encode, decode: ids.decode });
       const used = new Set<number>();
       for (const [id, intent] of Object.entries(units).sort(([a], [z]) => a.localeCompare(z))) {
@@ -149,9 +155,10 @@ export class LlmIntentPlanner {
           .sort((a, z) => gridDistance(field, origin, a) - gridDistance(field, origin, z) || a - z)[0] ?? origin;
         intent.cell = cell; used.add(cell);
       }
-      command.memory.intents = { round, replanned: !!reason, basis: { visible: observation.units.filter(u => u.side !== 'friendly').map(u => u.id), friends: own.map(u => u.id) }, units };
+      command.memory.diplomacyRevision = candidate.diplomacy.revision;
+      if (!command.decision) command.memory.intents = { round, replanned: !!reason, basis: { visible: observation.units.filter(u => u.side !== 'friendly').map(u => u.id), friends: own.map(u => u.id) }, units };
       return { command, seen };
     });
-    if (result && current()) { state.memory = result.command.memory; this.lastSeen = result.seen; this.basisSeed = b.seed; this.changed(); }
+    if (result && current()) { state.memory = result.command.memory; state.decision = result.command.decision; this.lastSeen = result.seen; this.basisSeed = b.seed; this.changed(); }
   }
 }

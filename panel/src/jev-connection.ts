@@ -173,7 +173,7 @@ export async function openAiTextRequest(connection: JevConnection, messages: { r
   if (connection.protocol !== 'openai' || !connection.model?.trim()) throw new JevConnectionError('请先配置副 API 并选择模型');
   const response = await jevJsonRequest(connection, request, apiEndpoint(connection, 'chat/completions'), {
     method: 'POST', headers: headers(connection), signal,
-    body: JSON.stringify({ model: connection.model.trim(), stream: false, messages: await requestMessages(connection, messages, signal) }),
+    body: JSON.stringify({ model: connection.model.trim(), stream: false, messages: connection.contextMessages ? await requestMessages(connection, messages, signal) : messages }),
   });
   const text = completionText(response?.choices?.[0]?.message?.content);
   if (!text?.trim() || text.length > 100000) throw new JevConnectionError('模型没有返回有效的事件文本');
@@ -212,7 +212,7 @@ export class JevAnswerError extends JevConnectionError {
 export async function openAiJsonRequest(connection: JevConnection, messages: { role: 'system' | 'user'; content: string }[], signal: AbortSignal, request: typeof fetch, label = '决策', options: Record<string, unknown> = {}): Promise<Record<string, any>> {
   const model = connection.model?.trim();
   if (connection.protocol !== 'openai' || !model) throw new JevConnectionError('请先配置副 API 并选择模型');
-  const payload = { ...options, model, stream: false, response_format: { type: 'json_object' }, messages: await requestMessages(connection, messages, signal) };
+  const payload = { ...options, model, stream: false, response_format: { type: 'json_object' }, messages: connection.contextMessages ? await requestMessages(connection, messages, signal) : messages };
   const send = (requestBody: Record<string, unknown>) => jevJsonRequest(connection, request, apiEndpoint(connection, 'chat/completions'), {
     method: 'POST', headers: headers(connection), signal, body: JSON.stringify(requestBody),
   });
@@ -246,7 +246,7 @@ export async function openAiCommandRequest(connection: JevConnection, messages: 
   if (connection.protocol !== 'openai' || !connection.model?.trim()) throw new JevConnectionError('请先配置副 API 并选择模型');
   const response = await jevJsonRequest(connection, request, apiEndpoint(connection, 'chat/completions'), {
     method: 'POST', headers: headers(connection), signal,
-    body: JSON.stringify({ ...options, model: connection.model.trim(), stream: false, messages: await requestMessages(connection, messages, signal), tools: commandTools, tool_choice: 'auto' }),
+    body: JSON.stringify({ ...options, model: connection.model.trim(), stream: false, messages: connection.contextMessages ? await requestMessages(connection, messages, signal) : messages, tools: commandTools, tool_choice: 'auto' }),
   });
   const message = response?.choices?.[0]?.message;
   const calls = message?.tool_calls;

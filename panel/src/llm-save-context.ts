@@ -46,8 +46,16 @@ export function savedCommanderState(value: unknown): CommanderState | undefined 
     ['id', 'name', 'side', 'pos', 'x', 'y', 'formationPosition', 'level', 'scale', 'quantityType', 'hp', 'hpMax', 'status', 'airborne', 'elevation', 'standingHeight', 'round']))
     .filter(v => typeof v.id === 'string' && typeof v.name === 'string').slice(-128);
   const intents = savedIntents(memory.intents);
+  const decision = object(state.decision);
+  const pending = Number.isSafeInteger(decision.round) && Number(decision.round) >= 1 && ['surrender', 'withdraw', 'accept', 'reject'].includes(String(decision.mode))
+    ? primitive(decision, ['round', 'mode', 'target', 'id', 'text']) as unknown as NonNullable<CommanderState['decision']> : undefined;
   return { battleSeed: state.battleSeed, side: state.side as CommanderState['side'], brief,
-    memory: { ...(intents ? { intents } : {}), plan: typeof memory.plan === 'string' ? memory.plan.slice(0, 600) : '', notes: strings(memory.notes, 12, 300), terrain, contacts: contacts as NonNullable<CommanderState['memory']['contacts']> } };
+    ...(pending ? { decision: pending } : {}),
+    ...(state.playerFallback && typeof state.playerFallback === 'object' ? { playerFallback: {
+      ...(Number.isSafeInteger(object(state.playerFallback).resumeRound) && Number(object(state.playerFallback).resumeRound) >= 0 ? { resumeRound: Number(object(state.playerFallback).resumeRound) } : {}) } } : {}),
+    memory: { ...(intents ? { intents } : {}), ...(Number.isSafeInteger(memory.thinkingRound) && Number(memory.thinkingRound) >= 0 ? { thinkingRound: Number(memory.thinkingRound) } : {}),
+      ...primitive(memory, ['diplomacyRound', 'diplomacyRevision']),
+      plan: typeof memory.plan === 'string' ? memory.plan.slice(0, 600) : '', notes: strings(memory.notes, 12, 300), terrain, contacts: contacts as NonNullable<CommanderState['memory']['contacts']> } };
 }
 
 /** The actual map is already in the battle snapshot; preparation designs are redundant after start. */
