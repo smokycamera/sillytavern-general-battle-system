@@ -117,6 +117,65 @@ it('give 可交给同批新建的多个档案，省略接收编号时移回公�
   expect(back.inventory!.find(item => item.id === 'potion')).toMatchObject({ qty: 1, assignedTo: 'owner' });
 });
 
+it.each([
+  ['整叠', '<give u2 c4 qty4/>'],
+  ['每人两件', '<give u2,u3 c4 qty2/>'],
+  ['一件和三件', '<give u2 c4 qt1/><give u3 c4 qty3/>'],
+])('四件同叠物品先分配再take，标签逆序也能扣任一持有者，%s', (_name, give) => {
+  for (const reverse of [false, true]) {
+    const save = initial(); save.inventory![0]!.qty = 4;
+    save.narrativeIdState!.aliases.potion = 'c4';
+    const before = structuredClone(save), take = '<take c4 qty1/>';
+    const p = proposal(save, reverse ? take + give : give + take);
+    expect(p.value.status).toBe('pending');
+    const next = prepareNarrativeTransaction(save, p.value, p.ns, true);
+    const items = next.inventory!.filter(item => item.mechanics?.kind === 'item');
+    expect(items.reduce((sum, item) => sum + item.qty, 0)).toBe(3);
+    expect(items.filter(item => item.qty > 0).every(item => ['receiver', 'receiver2'].includes(item.assignedTo!))).toBe(true);
+    expect(items.every(item => JSON.stringify(item.mechanics) === JSON.stringify(before.inventory![0]!.mechanics))).toBe(true);
+    expect(save).toEqual(before);
+  }
+});
+
+it('分配后跨回复仍可按原编号扣多个持有者，原份额耗尽、再拆分及读档均保留来源', () => {
+  const save = initial(); save.inventory![0]!.qty = 4;
+  save.narrativeIdState!.aliases.potion = 'c4';
+  const give = proposal(save, '<give u2 c4 qty3/><give u3 c4 qty1/>');
+  let next = prepareNarrativeTransaction(save, give.value, give.ns, true);
+  const daughter = next.inventory!.find(item => item.sourceItemId === 'potion')!;
+  next = prepareInventoryTransaction(next, { kind: 'transfer', id: 'split-again', expectedRevision: next.factRevision!, itemId: daughter.id, unitId: 'owner', qty: 1 });
+  const before = structuredClone(next);
+  for (const qty of [1, 2, 1]) {
+    next = JSON.parse(JSON.stringify(next));
+    const p = proposal(next, `<take c4 qty${qty}/>`);
+    // A later reply has a new source identity, while the saved item alias stays c4.
+    p.value.sourceKey += ':' + next.factRevision;
+    p.value.id += ':' + next.factRevision;
+    next = prepareNarrativeTransaction(next, p.value, p.ns, true);
+  }
+  expect(next.inventory!.filter(item => item.mechanics?.kind === 'item').every(item => item.qty === 0)).toBe(true);
+  expect(narrativeIds(next).realId('c4')).toBe('potion');
+  expect(before.inventory!.filter(item => item.mechanics?.kind === 'item').reduce((sum, item) => sum + item.qty, 0)).toBe(4);
+});
+
+it('take 超出同源总量整批回滚，不扣同名的独立库存或已改造的拆分份额', () => {
+  const save = initial(); save.inventory![0]!.qty = 4;
+  save.narrativeIdState!.aliases.potion = 'c4';
+  const give = proposal(save, '<give u2,u3 c4 qty2/>');
+  let split = prepareNarrativeTransaction(save, give.value, give.ns, true);
+  const daughter = split.inventory!.find(item => item.sourceItemId === 'potion')!;
+  split = prepareInventoryTransaction(split, { kind: 'reforge', id: 'different-spec', expectedRevision: split.factRevision!, itemId: daughter.id, spec: { kind: 'item', form: 'single', power: 5, active: 'generic:buff:heal' } });
+  split.inventory!.push({ ...structuredClone(save.inventory![0]!), id: 'independent', qty: 20 });
+  const before = structuredClone(split);
+  const p = proposal(split, '<add item="整批不能留下"/><take c4 qty3/>');
+  p.value.sourceKey += ':later'; p.value.id += ':later';
+  expect(() => prepareNarrativeTransaction(split, p.value, p.ns, true)).toThrow(/数量/);
+  expect(split).toEqual(before);
+  const over = proposal(save, '<give u2,u3 c4 qty2/><take c4 qty2/><take c4 qty3/>');
+  expect(() => prepareNarrativeTransaction(save, over.value, over.ns, true)).toThrow(/数量/);
+  expect(save.inventory![0]!.qty).toBe(4);
+});
+
 it('add 非法数量、库存溢出、give 超量或无效接收单位均拒绝，原库存与属性不变', () => {
   const save = initial(), before = structuredClone(save);
   for (const qty of [0, -1, 1.5, Number.MAX_SAFE_INTEGER]) expect(() => prepareInventoryTransaction(save, { kind: 'add', id: 'bad', expectedRevision: 1, itemId: 'potion', qty })).toThrow();

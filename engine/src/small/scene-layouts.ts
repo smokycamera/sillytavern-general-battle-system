@@ -2,8 +2,10 @@ import type { SeededRng } from '../rng.js';
 import { BattlefieldPlanError, type BattlefieldPlan, type GatePlan } from './battlefield-plan.js';
 import type { BattlefieldScene } from './map-design.js';
 import { createStructure, groundBlocked } from './layers.js';
-import { gridDistance, neighbors, type BattlefieldSpec } from './spatial.js';
+import { neighbors, findGridPath, type BattlefieldSpec } from './spatial.js';
 import { buildIndoorLayout } from './indoor-layout.js';
+import { buildCompoundLayout } from './compound-layout.js';
+import { buildTrenchLayout } from './trench-layout.js';
 
 export function resolveBattlefieldScene(plan: BattlefieldPlan | undefined, tags: readonly string[], width: number): BattlefieldScene {
   return plan?.scene ?? (width === 5 ? 'interior' : tags.includes('siege') ? 'city_siege' : tags.includes('urban') ? 'city_streets' : 'field');
@@ -65,7 +67,6 @@ export function legacyGatePlan(plan: BattlefieldPlan | undefined, fallback: Gate
 export function buildSpecialScene(field: BattlefieldSpec, scene: BattlefieldScene, plan: BattlefieldPlan | undefined,
   rng: SeededRng, attackingSide: 'ally' | 'enemy'): void {
   const { width: w, height: h } = field, defender = attackingSide === 'ally' ? 'enemy' : 'ally';
-  const int = (a: number,b: number) => a + Math.floor(rng.next() * (b-a+1));
   const at = (x: number,d: number) => (defender === 'enemy' ? d : h-1-d) * w + x;
   const level = plan?.fortLevel ?? (scene === 'interior' ? 2 : 3);
   field.tiles.fill(scene === 'interior' ? 'street' : 'open'); field.structures!.fill(null); field.overlays = {};
@@ -77,46 +78,21 @@ export function buildSpecialScene(field: BattlefieldSpec, scene: BattlefieldScen
     const { doorways } = buildIndoorLayout(field, plan, rng);
     placePlannedGates(field,doorways,legacyGatePlan(plan,[{sector:'left',state:'open'},{sector:'right',state:'open'}]),defender,level,[],false);
   } else if (scene === 'building_siege') {
-    const left = 1, right = w-2, back = 2, front = Math.max(6,Math.floor(h*.60));
-    const inside: number[]=[], perimeter: number[]=[];
-    for (let d=back;d<=front;d++) for (let x=left;x<=right;x++) {
-      const p=at(x,d); field.tiles[p]='street';
-      if (x===left || x===right || d===back || d===front) {
-        perimeter.push(p); field.structures![p]=createStructure('wall',level,{owner:defender,top:false});
-      } else inside.push(p);
+    const candidates = buildCompoundLayout(field, plan, rng, attackingSide);
+    const specs = legacyGatePlan(plan, [{ sector: 'front_center', state: plan?.gateState ?? 'closed' }]);
+    field.city!.gates = placePlannedGates(field, candidates,
+      specs.filter(s => !s.internal),
+      defender, level, field.city!.inside, false);
+    placePlannedGates(field, field.generation!.compound!.internalDoors, specs.filter(s => s.internal), defender, level, field.city!.inside, false);
+    const inside = new Set(field.city!.inside), passages = new Set<number>();
+    for (const gate of field.city!.gates) for (const start of neighbors(field, gate).filter(p => inside.has(p) && !groundBlocked(field, p))) {
+      const route = findGridPath(field, start, field.city!.core[0]!,
+        p => inside.has(p) && (!groundBlocked(field, p) || field.structures![p]?.kind === 'gate'), () => 1);
+      for (const p of route?.cells ?? []) passages.add(p);
     }
-    // Corner walls cannot be doors: both the inside and outside need a usable adjacent cell.
-    const candidates=perimeter.filter(p => neighbors(field,p).some(n=>inside.includes(n))
-      && neighbors(field,p).some(n=>!inside.includes(n)&&!perimeter.includes(n)));
-    const gates=placePlannedGates(field,candidates,legacyGatePlan(plan,[{sector:'front_center',state:plan?.gateState??'closed'}]),defender,level,inside,false);
-    const core=inside.sort((a,b)=>gridDistance(field,a,at(Math.floor(w/2),back+2))-gridDistance(field,b,at(Math.floor(w/2),back+2))||a-b).slice(0,3);
-    const reserve=inside.filter(p=>!core.includes(p)&&(defender === 'enemy' ? Math.floor(p/w) : h-1-Math.floor(p/w))!==front-1).slice(0,w-3);
-    field.city={shape:'enclosure',inside,frontline:perimeter,gates,core,reserve,defender};
-    field.objective={kind:'control',cell:core[0]!,cells:core,attackingSide,rounds:2,limit:field.objective.limit};
-    for (const p of inside) if (!core.includes(p) && rng.next()<.06) field.structures![p]=createStructure('cover',level);
+    field.generation!.compound!.passages = [...passages];
+    if (passages.size) field.generation!.compound!.areas.push({ kind: 'passage', label: '联络通道', cells: [...passages] });
   } else if (scene === 'trenches') {
-    for (const base of [Math.floor(h*.3),Math.floor(h*.7)]) {
-      const turn=int(2,Math.max(2,w-3)), offset=int(0,1);
-      // Connected dog-leg fighting line, not repeated isolated single-cell stamps.
-      for (let x=1;x<w-1;x++) {
-        const d=base+(x>=turn?offset:0); field.structures![at(x,d)]=createStructure('fortification',level);
-        if (x===turn && offset) field.structures![at(x,base)]=createStructure('fortification',level);
-      }
-      const rearward=base<h/2?-1:1;
-      for (const startX of [int(1,Math.floor(w/2)),int(Math.floor(w/2)+1,w-2)]) {
-        let x=startX, d=base+(x>=turn?offset:0);
-        while (d+rearward>=1 && d+rearward<h-1) {
-          d+=rearward; field.structures![at(x,d)]=createStructure('fortification',level);
-          if (Math.abs(d-base)%3===2) { x=Math.max(1,Math.min(w-2,x+(rng.next()<.5?-1:1))); field.structures![at(x,d)]=createStructure('fortification',level); }
-        }
-      }
-    }
-    // Crater patches in no-man's-land, with a clear crossing strip.
-    for (let n=0;n<int(2,4);n++) {
-      const p=at(int(0,w-2),int(Math.floor(h*.42),Math.floor(h*.57)));
-      for (const q of [p,...neighbors(field,p).slice(0,2)]) if (!field.structures![q]&&q!==center&&q%w!==Math.floor(w/2)) {
-        field.tiles[q]='rough';field.overlays[q]=['rubble'];
-      }
-    }
+    buildTrenchLayout(field, plan, rng);
   }
 }

@@ -468,7 +468,7 @@ export function applySceneArchetype(field: BattlefieldSpec, archetype: SceneArch
                 field.overlays![p] = ['road'];
             }
     }
-    if (archetype === 'trench_depth' && field.generation?.scene === 'trenches')
+    if (archetype === 'trench_depth' && field.generation?.scene === 'trenches' && field.generation.version !== 8)
         for (const y of [Math.max(2, Math.floor(h * .3) - 2), Math.min(h - 3, Math.floor(h * .7) + 2)]) {
             for (let x = 1; x < w - 1; x++) {
                 const p = y * w + x;

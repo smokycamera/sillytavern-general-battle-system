@@ -44,6 +44,22 @@ function mount(canView = (_record: NonNullable<InventorySave['storage']>[number]
 
 beforeEach(() => { document.body.innerHTML = ''; Element.prototype.scrollIntoView = vi.fn(); });
 
+it('已装备卡片和顶部配装按主武器、副武器、护甲、盾牌、佩戴排序，不受库存写入顺序影响', () => {
+  const f = mount(), inventory = f.save().inventory!;
+  const primary = inventory.find(item => item.equippedTo?.unitId === 'a' && item.equippedTo.slot === 'primary')!;
+  const armor = inventory.find(item => item.equippedTo?.unitId === 'a' && item.equippedTo.slot === 'armor')!;
+  const sidearm = createInventoryItem('sidearm', '副武器', { kind: 'weapon', mechanism: 'axe', power: 3 }, 'sidearm');
+  const shield = createInventoryItem('shield', '盾牌', { kind: 'shield', power: 3 }, 'shield');
+  const worn = createInventoryItem('worn', '饰品', { kind: 'item', form: 'worn', power: 3, bonuses: { defense: 1 } }, 'worn');
+  for (const [item, slot] of [[sidearm, 'sidearm'], [shield, 'shield'], [worn, 'gear']] as const) {
+    item.assignedTo = 'a'; item.equippedTo = { unitId: 'a', slot };
+  }
+  f.save().inventory = [worn, shield, armor, sidearm, ...inventory.filter(item => item.id !== armor.id)];
+  f.render();
+  expect(f.ids().slice(0, 5)).toEqual([primary.id, sidearm.id, armor.id, shield.id, worn.id]);
+  expect([...document.querySelectorAll('.loadout-slots small')].map(el => el.textContent)).toEqual(['主武器', '副武器', '护甲', '盾牌', '佩戴']);
+});
+
 it('一次性道具可预览改造和增加数量，确认前不写入，取消不改变库存', async () => {
   const f = mount(); f.choose('a');
   await f.action('edit', 'a-bag');

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generateUnit, traitRegistry, learnAbilities } from '../../engine/src/index.js';
-import { unitRecordFromCombatant, editUnitRecord, materializeUnitRecord } from './unit-state.js';
+import { unitRecordFromCombatant, editUnitRecord, forgetUnitRecordSkills, materializeUnitRecord } from './unit-state.js';
 import { captureGeneration, namespaceOf, proposalFromMessage, prepareNarrativeTransaction, type NarrativeSave } from './narrative-state.js';
 const registry = traitRegistry();
 function initial() {
@@ -9,6 +9,24 @@ function initial() {
   return unit;
 }
 describe('逐项学习与冻结实例', () => {
+  it('按实例删除同名技能，保留未删技能的精确值与冷却、次数和精力，可删除至空', () => {
+    const unit = initial();
+    const twin = { ...structuredClone(unit.abilities[0]!), id: 'same-name-other-instance', customized: true };
+    unit.abilities.push(twin); unit.preparedAbilityIds = unit.abilities.map(ability => ability.id);
+    unit.fatigue = 1;
+    const record = unitRecordFromCombatant(unit), before = structuredClone(record);
+    const selected = unit.abilities.slice(1).map(ability => ability.id);
+    const next = forgetUnitRecordSkills(record, [unit.abilities[0]!.id], selected, registry);
+    expect(next.snapshot!.abilities).toEqual(record.snapshot!.abilities.slice(1));
+    expect(next.snapshot!.preparedAbilityIds).toEqual(selected);
+    for (const key of ['abilityState', 'resources', 'fatigue', 'weapon', 'armor', 'hp'] as const) expect(next.snapshot![key]).toEqual(record.snapshot![key]);
+    expect(next.snapshot!.genAudit!.input.abilityBlueprints).toHaveLength(selected.length);
+    const empty = forgetUnitRecordSkills(next, selected, [], registry);
+    expect(empty.snapshot!.abilities).toEqual([]); expect(empty.preparedAbilityIds).toEqual([]);
+    expect(empty.snapshot!.genAudit!.input.abilityBlueprints).toEqual([]);
+    expect(() => forgetUnitRecordSkills(record, ['missing'], [], registry)).toThrow(/已学技能/);
+    expect(record).toEqual(before);
+  });
   it('只改名保留原效果，只改一级技能不重建其余技能或装备，准备变化也不刷新次数', () => {
     const unit = initial(); const effect = unit.abilities[0]!.effects[0]!; if (effect.op === 'damage') effect.baseDice = '2d6+9';
     const record = unitRecordFromCombatant(unit), edited = structuredClone(record); edited.skills![0]!.name = '新名称';

@@ -8,6 +8,7 @@ import type { BattlefieldScene } from '../../engine/src/small/map-design.js';
 import { hasFlightAbility, isRangedWeapon, type Combatant } from '../../engine/src/index.js';
 import type { BattleObjectiveMode } from './battle-setup.js';
 import { INTERIOR_USES, INTERIOR_PATTERNS, INTERIOR_USE_NAMES, INTERIOR_PATTERN_NAMES } from '../../engine/src/small/interior-plan.js';
+import { COMPOUND_PATTERNS, TRENCH_PATTERNS, COMPOUND_PATTERN_NAMES, TRENCH_PATTERN_NAMES } from '../../engine/src/small/position-plan.js';
 
 /**
  * Second preparation step: the model places the battle on a 3×3 compass grid and the local generator builds every
@@ -111,6 +112,7 @@ function objectiveLine(ctx: LayoutContext): string {
   const exit = exitSide(ctx);
   if (exit) return `${sideName(exit)}护送${ctx.vipName ? '「' + ctx.vipName + '」' : '目标'}到撤离点，${sideName(exit === 'ally' ? 'enemy' : 'ally')}拦截`;
   if (ctx.objectiveMode === 'siege') return `${sideName(ctx.attacker)}夺取并控制${sideName(defenderOf(ctx))}据守的核心地点`;
+  if (ctx.objectiveMode === 'control') return ctx.units.some(u => u.side === 'neutral') ? '各方争夺并连续控制目标地点' : '双方争夺并连续控制目标地点';
   return '击败敌军';
 }
 function example(ctx: LayoutContext): Record<string, unknown> {
@@ -154,8 +156,10 @@ export function layoutTask(ctx: LayoutContext, retry?: LayoutRetry): string {
     `- archetype：场所风格，可选 ${ARCHETYPES[ctx.scene].map(a => a + SCENE_ARCHETYPE_NAMES[a]).join('|')}。`,
     '- cover：掩体与障碍多少，sparse少|balanced适中|dense多。',
     ctx.scene === 'interior' ? '- interior：仅室内可写，{"use":"用途","pattern":"布局"}。use=residence住宅|inn客栈酒馆|temple殿堂寺院|warehouse仓库|workshop工坊|office办公设施|prison牢房|ruins废弃建筑；pattern=suite穿堂连室|hall主厅侧室|ring环形回廊|cross交叉通道|wings双翼联通|aisles货架通道|cells走廊小室|broken破损连室。按正文选择。places中type=room的地点会生成对应的房间区域。' : '',
+    ctx.scene === 'building_siege' ? '- compound：建筑围攻布局，{"pattern":"布局"}。pattern=courtyard单院|forecourt前后院|wings双翼夹院|dogleg曲折院落|bailey内外院|ruined破损院落。按正文选择；院内房间、院落与通道会生成实际区域，places可命名，units可按地点部署。' : '',
+    ctx.scene === 'trenches' ? '- trenches：堑壕组织，{"pattern":"布局"}。pattern=opposed相对前沿|depth纵深防线|echelon梯次斜线|salient突出部|strongpoints分散支撑点|saps前伸支壕。按正文选择；前沿壕、后方壕与交通壕会实际连通，places可用fortification命名阵地，units可按地点部署。' : '',
     ctx.scene === 'city_siege' ? '- city：必须写。{"at":方位,"name":"城名","walls":城墙形制,"level":城墙等级,"breaches":破口数,"gates":[{"name":"门名","state":"closed"}]}。at是城区所在方位：N/S/E/W占地图该侧约一半，角落方位占该角，C在地图中央。walls按正文选：front=一道城墙横贯战场，城区延伸出地图（大城的一段城墙）|ring=四面都有城墙，整座城在图内（小城、城堡、营寨）|double=内外两重城墙，中间夹道（多重城墙、内城外郭、瓮城）；正文没写就省略，由程序选。gates列出本战区可见的城门（省略为一座），state=closed关闭|open开启|destroyed已毁，门由程序放在面向攻方的外墙上，两重城墙时内墙配对应的门。level=1临时 2简易 3正规 4重型 5要塞 6超凡 7史诗 8传奇 9半神 10神造，按材料与强化选；breaches=开战时外墙已有的破口0-3。'
-      : ctx.scene === 'building_siege' ? '- city：院墙与门，{"level":院墙等级1-10,"breaches":破口数0-3,"gates":[{"name":"院门","state":"closed|open|destroyed"}]}，院落位置由程序决定。'
+      : ctx.scene === 'building_siege' ? '- city：院墙与门，{"level":院墙等级1-10,"breaches":破口数0-3,"gates":[{"name":"院门","at":"S","state":"closed|open|destroyed"}]}。at可选N/S/E/W，表示门在院墙上的绝对方位；各门状态独立，院落位置由程序决定。'
       : ctx.scene === 'field' ? '- city：仅当交战地点旁有城镇时写，{"at":方位,"name":"城名","gates":[...]}；各方默认在城外，写gates时会画出朝向战场的城墙与门。' : '',
     allowsWater(ctx.scene) ? `- water：{"type":"river深水河|ford可涉水浅滩|moat护城河|none无水","at":方位,"bridges":[{"name":"桥名","at":方位,"state":"intact完好|destroyed已断"}]}。只有一条主河${ctx.scene === 'city_siege' ? '；护城河由程序沿面向攻方的城墙外侧布置，不写at' : ''}。bridges只写正文提到的桥；正文没提到桥就省略bridges，由程序配桥${ctx.scene === 'city_siege' ? '（护城河配在城门前）' : ''}；[]只用于正文明确无桥可用，程序会留一处可涉水的浅滩。` : '',
     `- places：最多${MAX_PLACES}个有战术意义的地点，优先写正文提到的，[{"type":类型,"name":"名称","at":方位,"height":0-3,"state":"destroyed"}]。type=${kinds}。height只给高地等写，2-3为明显高地；state=destroyed表示已毁。普通房屋、树木、杂物由程序补全，不要写。`,
@@ -163,7 +167,8 @@ export function layoutTask(ctx: LayoutContext, retry?: LayoutRetry): string {
       : `- ${sides}开局位置，{"at":["S"]}，可写1-3个方位。${ctx.scene === 'city_streets' ? '各方默认在街区内。' : ''}`) + (thirdParty ? 'neutral默认从东侧进入。' : ''),
     `- units：根据正文内容选择单位开局位置。unit可写一个短ID或多个短ID组成的数组，有正文依据时优先使用place。按方位写 {"unit":"u3","at":"NE"}；有具体地点写 {"unit":["u1","u2"],"place":"档案室","relation":"inside"}，place位置使用本次places、桥或城门的名称，relation=inside在内部|guards驻守附近|near靠近；at可作为地点无效时的备用方位；按方位部署的攻城守方可写post=wall|inside|outside。最多布置${MAX_SMALL_UNITS}个单位。`,
     exitSide(ctx) ? '- objective：撤离点，写九宫格方位（放在该方向的地图边缘）或places里的name；省略时按部署方向决定。'
-      : ctx.objectiveMode === 'siege' ? `- objective：${sideName(ctx.attacker)}要夺取的地点，写places里的name；省略时为${ctx.scene === 'city_siege' ? '城中心' : '守方后方核心'}。` : '',
+      : ctx.objectiveMode === 'siege' ? `- objective：${sideName(ctx.attacker)}要夺取的地点，写places里的name；省略时为${ctx.scene === 'city_siege' ? '城中心' : '守方后方核心'}。`
+      : ctx.objectiveMode === 'control' ? (thirdParty ? '- objective：各方争夺的地点，写places里的name或九宫格方位；省略时由程序选择各方可接近的中立位置。' : '- objective：双方争夺的地点，写places里的name或九宫格方位；省略时由程序选择双方可接近的中立位置。') : '',
     '示例（只示格式，内容按正文）：' + JSON.stringify(sample),
     ...(retry?.errors.length ? retryLines(retry) : []),
   ];
@@ -235,6 +240,13 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
     if (inside.use !== undefined && !plan.interior?.use) notes.add('室内用途无效，采用本地默认');
     if (inside.pattern !== undefined && !plan.interior?.pattern) notes.add('室内布局无效，采用本地默认');
   }
+  for (const [key, choices, names] of [['compound', COMPOUND_PATTERNS, COMPOUND_PATTERN_NAMES], ['trenches', TRENCH_PATTERNS, TRENCH_PATTERN_NAMES]] as const) {
+    if ((key === 'compound' ? scene !== 'building_siege' : scene !== 'trenches') || raw[key] === undefined) continue;
+    const record = raw[key], value = object(record) ? record.pattern : record, written = token(value);
+    const pattern = (choices as readonly string[]).includes(written) ? written : Object.entries(names).find(([, label]) => label === value)?.[0];
+    if (pattern) Object.assign(plan, { [key]: { pattern } });
+    else notes.add(`${key === 'compound' ? '院落' : '堑壕'}布局无效，采用本地默认`);
+  }
   const cover = token(raw.cover ?? raw.density);
   if (['sparse', 'balanced', 'dense'].includes(cover)) plan.density = cover as BattlefieldPlan['density'];
 
@@ -270,7 +282,7 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
     gatesRaw.slice(0, 4).forEach((g, i) => {
       const gate: Json = object(g) ? g : { name: g }, label = labelOf(gate.name ?? gate.label), state = stateOf(gate.state), at = sectorOf(gate.at);
       const id = `gate${i + 1}`;
-      entities.push({ id, kind: 'gate', state: state === 'open' || state === 'destroyed' ? state : 'closed', ...(label ? { label } : {}), ...(at && scene !== 'building_siege' ? { anchor: at } : {}), ...inferred });
+      entities.push({ id, kind: 'gate', state: state === 'open' || state === 'destroyed' ? state : 'closed', ...(label ? { label } : {}), ...(at ? { anchor: at } : {}), ...inferred });
       if (label) names.set(label, id);
     });
     if (scene !== 'building_siege') constraints.push({ kind: 'gate_count', entity: 'city', value: Math.min(4, gatesRaw.length), ...inferred });
@@ -319,6 +331,7 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
     if (kind !== stated) notes.add('部分地点改用相近类型');
     const label = labelOf(item.name ?? item.label), at = sectorOf(item.at), height = scene === 'interior' && kind === 'cover' ? undefined : integer(item.height, 0, 3), id = `place${++n}`;
     if (scene === 'interior' && kind === 'position' && /(间|房|室|厅|殿)$/.test(label??'')) {kind='room';notes.add(`${label}按房间处理`);}
+    if (scene === 'building_siege' && kind === 'fortification' && /(?:前院|后院|内院|外院|庭院)$/.test(label ?? '')) { kind = 'position'; notes.add(`${label}按院落区域处理`); }
     entities.push({ id, kind, ...(at ? { anchor: at } : {}), ...(label ? { label } : {}), ...(height !== undefined ? { height } : {}),
       ...(stateOf(item.state) === 'destroyed' && DESTROYABLE.includes(kind) ? { state: 'destroyed' as const } : {}),
       ...(token(item.size ?? item.scale) === 'large' || token(item.size ?? item.scale) === 'major' ? { scale: 'major' as const } : {}), ...inferred });
@@ -329,7 +342,7 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
   // The contested place or the exit, bound to the side the task names.
   const exit = exitSide(ctx), goalRaw = object(raw.objective) ? raw.objective.name ?? raw.objective.place ?? raw.objective.at : raw.objective;
   if (goalRaw !== undefined && goalRaw !== null && goalRaw !== '') {
-    const subject = exit ?? (ctx.objectiveMode === 'siege' ? ctx.attacker : undefined);
+    const subject = exit ?? (ctx.objectiveMode === 'siege' || ctx.objectiveMode === 'control' ? ctx.attacker : undefined);
     const named = typeof goalRaw === 'string' ? names.get(goalRaw.trim()) ?? names.get(labelOf(goalRaw) ?? '') : undefined, at = sectorOf(goalRaw);
     // Annihilation has no place to bind; taking the city itself is the default core objective.
     if (subject && named !== 'city' && (named || at)) {
@@ -461,8 +474,8 @@ const PARTS: Record<'units' | 'objective' | 'places' | 'bridges' | 'gates' | 'wa
   water: { present: r => r.water !== undefined, drop: r => { delete r.water; return '未采用水系'; } },
   sides: { present: r => r.ally !== undefined || r.enemy !== undefined || r.neutral !== undefined, drop: (r, ctx) => { delete r.ally; delete r.enemy; delete r.neutral; return (ctx.units.some(u => u.side === 'neutral') ? '各方' : '双方') + '开局位置改由程序决定'; } },
   city: { present: r => r.city !== undefined, drop: r => { delete r.city; return '城市改由程序布置'; } },
-  style: { present: r => r.archetype !== undefined || r.cover !== undefined || r.density !== undefined || r.interior !== undefined, drop: r => {
-    delete r.archetype; delete r.cover; delete r.density; delete r.interior; return '场所风格与掩体改由程序决定';
+  style: { present: r => r.archetype !== undefined || r.cover !== undefined || r.density !== undefined || r.interior !== undefined || r.compound !== undefined || r.trenches !== undefined, drop: r => {
+    delete r.archetype; delete r.cover; delete r.density; delete r.interior; delete r.compound; delete r.trenches; return '场所风格与掩体改由程序决定';
   } },
 };
 /** Errors that point at a part try it first; the order is otherwise from the least essential part to the scene itself. */
@@ -493,5 +506,7 @@ export function layoutSummary(plan: BattlefieldPlan): string {
   const places = plan.intent?.entities.filter(e => !['city', 'river', 'gate', 'bridge'].includes(e.kind)).length ?? plan.landmarks?.length ?? 0;
   const city = plan.intent?.entities.find(e => e.kind === 'city');
   const walls = plan.scene !== 'city_siege' ? '' : plan.wallLayers === 2 ? '两重城墙' : plan.shape === 'enclosure' ? '四面城墙' : plan.shape === 'front' ? '正面城墙' : '';
-  return [scene, size + '型', plan.interior?.use ? INTERIOR_USE_NAMES[plan.interior.use] : '', plan.interior?.pattern ? INTERIOR_PATTERN_NAMES[plan.interior.pattern] : '', city ? `${city.label ?? '城市'}在${CODE_NAMES[CODE_OF[city.anchor ?? 'center']]}` : '', walls, places ? places + '处地点' : ''].filter(Boolean).join(' · ');
+  return [scene, size + '型', plan.interior?.use ? INTERIOR_USE_NAMES[plan.interior.use] : '', plan.interior?.pattern ? INTERIOR_PATTERN_NAMES[plan.interior.pattern] : '',
+    plan.compound?.pattern ? COMPOUND_PATTERN_NAMES[plan.compound.pattern] : '', plan.trenches?.pattern ? TRENCH_PATTERN_NAMES[plan.trenches.pattern] : '',
+    city ? `${city.label ?? '城市'}在${CODE_NAMES[CODE_OF[city.anchor ?? 'center']]}` : '', walls, places ? places + '处地点' : ''].filter(Boolean).join(' · ');
 }

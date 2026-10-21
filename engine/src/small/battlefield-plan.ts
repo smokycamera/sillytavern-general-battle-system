@@ -2,6 +2,7 @@ import { safeLandmarkLabel, MAP_DESIGN_OPTIONS, BATTLEFIELD_SCENES, type Battlef
 import { ROUTE_TOPOLOGIES, type RouteTopology } from './route-graph.js';
 import type { CityShape } from './layers.js';
 import { INTERIOR_USES, INTERIOR_PATTERNS, type InteriorPlan } from './interior-plan.js';
+import { COMPOUND_PATTERNS, TRENCH_PATTERNS, type CompoundPlan, type TrenchPlan } from './position-plan.js';
 import {BattlefieldPlanError} from './battlefield-error.js';
 export {BattlefieldPlanError} from './battlefield-error.js';
 import { normalizeSceneIntent, MAX_DEPLOYMENT_PLANS, SCENE_ARCHETYPES, WORLD_ANCHORS, SCENE_INTENT_PROMPT, type SceneIntent, type SceneArchetype, type WorldAnchor } from './scene-intent.js';
@@ -31,12 +32,14 @@ export const DEPLOYMENT_POSTS = ['wall', 'inside', 'outside'] as const;
 /** A force's starting area on the 3×3 compass grid. The subject is ally, enemy or a public unit handle (u1…). */
 export interface DeploymentPlan { subject: string; at: WorldAnchor[]; post?: typeof DEPLOYMENT_POSTS[number] }
 export const GATE_SECTORS = ['auto', 'front_left', 'front_center', 'front_right', 'left', 'right', 'rear','north','south','east','west'] as const;
-export interface GatePlan { id?: string; sector: typeof GATE_SECTORS[number]; state: 'closed' | 'open' | 'destroyed' }
+export interface GatePlan { id?: string; sector: typeof GATE_SECTORS[number]; state: 'closed' | 'open' | 'destroyed'; internal?: boolean }
 export interface BattlefieldPlan {
   scene?: BattlefieldScene;
   intent?: SceneIntent;
   archetype?: SceneArchetype;
   interior?: InteriorPlan;
+  compound?: CompoundPlan;
+  trenches?: TrenchPlan;
   cityPosition?: WorldAnchor;
   waterAxis?: 'horizontal' | 'vertical';
   waterPosition?: WorldAnchor;
@@ -91,6 +94,13 @@ export function normalizeBattlefieldPlan(value: unknown): { plan?: BattlefieldPl
     if (Object.keys(interior).length) plan.interior = interior;
     else if (!inside) notes.push('室内设计格式无效，采用本地默认');
   }
+  for (const [key, choices] of [['compound', COMPOUND_PATTERNS], ['trenches', TRENCH_PATTERNS]] as const) {
+    if (input[key] === undefined) continue;
+    const entry = object(input[key]);
+    if (entry?.pattern !== undefined && (choices as readonly unknown[]).includes(entry.pattern)) {
+      (plan as Record<string, unknown>)[key] = { pattern: entry.pattern };
+    } else if (!entry || entry.pattern !== undefined) notes.push(`${key === 'compound' ? '院落' : '堑壕'}布局无效，采用本地默认`);
+  }
   if (input.intent !== undefined) {
     try { plan.intent = normalizeSceneIntent(input.intent); }
     catch (error) { throw new BattlefieldPlanError(error instanceof Error ? error.message : '场景意图无效'); }
@@ -109,7 +119,7 @@ export function normalizeBattlefieldPlan(value: unknown): { plan?: BattlefieldPl
       const g = object(raw); return !g || !(GATE_SECTORS as readonly unknown[]).includes(g.sector)
         || !['closed', 'open', 'destroyed'].includes(String(g.state));
     })) throw new BattlefieldPlanError('gatePlan须为0—4个门的列表，每个门给出合法sector与state');
-    plan.gatePlan = input.gatePlan.map(raw => ({ sector: raw.sector, state: raw.state,
+    plan.gatePlan = input.gatePlan.map(raw => ({ sector: raw.sector, state: raw.state, ...(raw.internal === true ? { internal: true } : {}),
       ...(typeof raw.id === 'string' && /^[a-zA-Z][a-zA-Z0-9_-]{0,31}$/.test(raw.id) ? { id: raw.id } : {}) }));
   }
   if (input.breaches !== undefined) {

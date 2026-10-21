@@ -12,7 +12,7 @@ import { deployUnitRecord, materializeUnitRecord, unitRecordFromCombatant, updat
 import { parseProtocol, protocolExcerpt } from './protocol.js';
 import type { Suggestion } from './tags.js';
 import { migrateSavedSuggestion } from './saved-suggestion.js';
-import { createInventoryItem, prepareInventoryState, prepareInventoryTransaction, type InventoryItem } from './inventory-state.js';
+import { createInventoryItem, isInventoryStack, narrativeTakeParts, prepareInventoryState, prepareInventoryTransaction, type InventoryItem } from './inventory-state.js';
 import { assertNarrativeCapacity, hasNarrativeDeployment, MAX_SCENE_UNITS } from './narrative-limits.js';
 import { applyUnitSet, UNIT_EQUIPMENT_FIELDS, unitSetReferencesGear, type UnitSetContext } from './unit-set.js';
 import { mapNarrativeReferences, narrativeIds, prepareNarrativeIds, type NarrativeIdState } from './narrative-ids.js';
@@ -176,7 +176,7 @@ function spawnInput(event: Extract<Suggestion, { kind: 'spawn' }>): GenerateInpu
     name: event.name, scale: event.scale ?? 'hero', archetype: event.archetype, level: event.level, side: event.side ?? 'enemy',
     traits: traits as string[], weaponName: event.weaponName ?? event.weapon, weaponClass: event.weaponClass,
     bonuses: event.bonuses, weaponBonuses: event.weaponBonuses, sidearmBonuses: event.weapon2Bonuses, armorBonuses: event.armorBonuses,
-    weaponLevel: event.weaponLevel, weaponStabilized: event.weaponStabilized, reserves: event.reserves, armorProfile: event.armorProfile, sidearmName: event.weapon2Name, sidearmClass: event.weapon2Class, sidearmLevel: event.weapon2Level,
+    weaponLevel: event.weaponLevel, weaponStabilized: event.weaponStabilized, weaponEnchantment: event.weaponEnchantment, reserves: event.reserves, armorProfile: event.armorProfile, sidearmName: event.weapon2Name, sidearmClass: event.weapon2Class, sidearmLevel: event.weapon2Level,
     armorName: event.armorName ?? event.armor, armorTier: event.armorTier, armorLevel: event.armorLevel,
     abilityBlueprints: event.skills?.map((s) => ({ id: s.blueprintId, level: s.level, name: s.name, bonuses: s.bonuses })),
   };
@@ -250,13 +250,30 @@ function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: M
   }
   next.storage = records;
   for (const [id, patch] of combined) {
-    const incoming = context.deferEquipmentFor?.get(id);
-    if (incoming?.length && context.deferredEquipment) {
+    const side = patch.side ?? records.find(record => record.id === id)?.side;
+    const reforged = context.reforgedEquipment?.filter(item => item.qty > 0 && (side === 'ally' || item.equippedTo?.unitId === id)
+      && (item.assignedTo === id || !item.assignedTo && side === 'ally')) ?? [];
+    const incoming = [...context.deferEquipmentFor?.get(id) ?? [], ...reforged];
+    if (incoming.length && context.deferredEquipment) {
       const deferred = context.deferredEquipment.get(id) ?? {};
       const resolve = narrativeIds(next).realId;
-      for (const key of UNIT_EQUIPMENT_FIELDS) if (Object.hasOwn(patch, key) && incoming.some(item => unitSetReferencesGear(key, patch[key], item, resolve, context.reforgedNames))) {
-        deferred[key] = patch[key]; delete patch[key];
+      for (const key of UNIT_EQUIPMENT_FIELDS) if (Object.hasOwn(patch, key)) {
+        const slot = key === 'weapon' ? 'primary' : key === 'weapon2' ? 'sidearm' : key;
+        const matches = incoming.filter(item => (!item.equippedTo || item.equippedTo.unitId === id && item.equippedTo.slot === slot
+          || context.deferEquipmentFor?.get(id)?.some(given => given.id === item.id))
+          && unitSetReferencesGear(key, patch[key], item, resolve, context.reforgedNames));
+        if (!matches.length) continue;
+        const unique = [...new Set(matches.map(item => item.id))];
+        // 重铸与转移完成后再穿戴，字符串引用先锁定原实物；不能按改名后的名称另造一件。
+        deferred[key] = typeof patch[key] === 'string' && unique.length === 1 ? unique[0] : patch[key];
+        delete patch[key];
       }
+      if (['weapon','weapon2','sidearm'].some(key => Object.hasOwn(deferred,key))) for (const key of ['enchant','stabilized']) {
+        if (!Object.hasOwn(patch,key)) continue;
+        deferred[key] = patch[key];
+        if (!['weapon','weapon2','sidearm'].some(field => Object.hasOwn(patch,field))) delete patch[key];
+      }
+      if (Object.hasOwn(deferred,'armor') && Object.hasOwn(patch,'protection')) { deferred.protection = patch.protection; delete patch.protection; }
       if (Object.keys(deferred).length) context.deferredEquipment.set(id, deferred);
     }
     if (Object.keys(patch).length) next = applyUnitSet(next, id, patch, proposalId, context);
@@ -344,13 +361,19 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   // 固定阶段：移除旧实物 → 新入库实物 → 补员/状态 → 单位字段 → 实物改造/学习/效果 → 部署。
   // 新入库排在单位字段之前：unit_set 换上的若正是同一回复 add 的那件，直接取用而不另造一件。
   // 版本只对批次开始前的事实校验；后续任一步失败只丢弃此候选副本。
-  for (const [index, event] of proposal.events.entries()) {
-    if (event.kind !== 'take') continue;
+  const givenStacks = new Set(proposal.events.flatMap(event => event.kind === 'give' && preparedSave.inventory?.some(item => item.id === event.id && isInventoryStack(item)) ? [event.id] : []));
+  const take = (event: Extract<Suggestion, { kind: 'take' }>, index: number) => {
     next = prepareInventoryState(next);
-    const item = next.inventory?.find((i) => i.id === event.id);
-    if (!item || item.qty < event.qty) throw new Error('物品不存在或移除数量超出库存');
-    if (item.equippedTo) next = prepareInventoryTransaction(next, { kind: 'unequip', id: 'take-unequip:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, ...item.equippedTo });
-    next = prepareInventoryTransaction(next, { kind: 'discard', id: 'take:' + proposal.id + ':' + index, expectedRevision: next.factRevision ?? 0, itemId: event.id, qty: event.qty });
+    const parts = narrativeTakeParts(next.inventory ?? [], event.id, event.qty);
+    for (const [partIndex, part] of parts.entries()) {
+      const item = next.inventory!.find(item => item.id === part.itemId)!;
+      const operation = proposal.id + ':' + index + (partIndex ? ':part:' + partIndex : '');
+      if (item.equippedTo) next = prepareInventoryTransaction(next, { kind: 'unequip', id: 'take-unequip:' + operation, expectedRevision: next.factRevision ?? 0, ...item.equippedTo, itemId: item.id });
+      next = prepareInventoryTransaction(next, { kind: 'discard', id: 'take:' + operation, expectedRevision: next.factRevision ?? 0, ...part });
+    }
+  };
+  for (const [index, event] of proposal.events.entries()) {
+    if (event.kind === 'take' && !givenStacks.has(event.id)) take(event, index);
   }
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind !== 'add' || !event.id) continue;
@@ -365,7 +388,9 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (item) for (const unitId of event.to ?? []) incomingEquipment.set(unitId, [...incomingEquipment.get(unitId) ?? [], item]);
   }
   const reforgedNames = new Map(proposal.events.flatMap(event => event.kind === 'reforge' && event.name ? [[event.id, event.name] as const] : []));
-  const unitSetContext: UnitSetContext = { given, notices, deferredEquipment, deferEquipmentFor: incomingEquipment, reforgedNames };
+  const reforgeIds = new Set(proposal.events.flatMap(event => event.kind === 'reforge' ? [event.id] : []));
+  const unitSetContext: UnitSetContext = { given, notices, deferredEquipment, deferEquipmentFor: incomingEquipment, reforgedNames,
+    reforgedEquipment: preparedSave.inventory?.filter(item => reforgeIds.has(item.id)) };
   const directGives = new Map<string, string>();
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind !== 'add' || event.item === undefined) continue;
@@ -460,13 +485,12 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (event.kind !== 'give') continue;
     next = prepareInventoryTransaction(next, { kind: 'transfer', id: `give:${proposal.id}:${index}`, expectedRevision: next.factRevision ?? 0, itemId: event.id, unitIds: event.to, qty: event.qty });
   }
+  // 同批分配整叠后再扣取，标签前后顺序一致；允许从任一持有者的拆分份额扣除。
+  for (const [index, event] of proposal.events.entries()) {
+    if (event.kind === 'take' && givenStacks.has(event.id)) take(event, index);
+  }
   const transferred = new Set(proposal.events.flatMap(event => event.kind === 'give' ? [event.id] : []));
   for (const [unitId, patch] of deferredEquipment) {
-    // 在原始清单上锁定实物身份；后续改名也不会让配装重新按名字另造一件。
-    for (const field of UNIT_EQUIPMENT_FIELDS) if (typeof patch[field] === 'string') {
-      const matches = incomingEquipment.get(unitId)?.filter(item => unitSetReferencesGear(field, patch[field], item, ids.realId, reforgedNames)) ?? [];
-      if (matches.length === 1) patch[field] = matches[0]!.id;
-    }
     next = applyUnitSet(next, unitId, patch, proposal.id, { given, notices, transferred });
   }
   // unit_set 的 items 最后交出：此时同一回复 add 的已入库，新建单位也已建档。

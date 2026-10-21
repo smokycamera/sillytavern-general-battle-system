@@ -155,7 +155,7 @@ const enumAliases: Record<string, Record<string, string>> = {
 export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[], warnings: string[], positions?: ProtocolAttribute[], collectOnly = false): Record<string, string> {
   const aliases: Record<string, string> = { ref: 'id', unitid: 'id', itemid: 'id', equipmentid: 'id', sourceid: 'source', maxhp: 'hpMax', max: 'hpMax', currenthp: 'hp',
     abilities: 'skills', skill: 'skills', sidearm: 'weapon2', secondaryweapon: 'weapon2', primaryweapon: 'weapon', trait: 'traits', armour: 'armor', lv: 'level', training: 'level',
-    quantity: tag.name === 'spawn' ? 'count' : 'qty', environment: 'env', lighting: 'light',
+    quantity: tag.name === 'spawn' ? 'count' : 'qty', ...(['give', 'take'].includes(tag.name) ? { qt: 'qty' } : {}), environment: 'env', lighting: 'light',
     ...(tag.name === 'add' ? { name: 'item' } : tag.name === 'field' ? { name: 'env' } : {}) };
   const result: Record<string, string> = Object.create(null);
   const offset = (index: number) => tag.attrsOffsets?.[index] ?? (tag.attrsStart ?? 0) + index;
@@ -164,6 +164,23 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
   while (rest.trim()) {
     rest = rest.replace(/^[\s,，、;；|｜]+/, '');
     const attrStart = tag.attrs.length - rest.length;
+    // 明确的短编号和数量紧写兼容 give u1,u2 c4 qty2 / take c4 qt1。
+    const itemCommand = ['give', 'take'].includes(tag.name);
+    const bareItem = itemCommand ? rest.match(/^([waci][1-9]\d*)(?=[\s,，、;；|｜]|$)/i) : undefined;
+    const bareQty = itemCommand ? rest.match(/^(?:qty|qt)([+-]?(?:\d+(?:\.\d*)?|\.\d+))(?=[\s,，、;；|｜]|$)/i) : undefined;
+    const shorthand = bareItem ?? bareQty;
+    if (shorthand) {
+      const key = bareItem ? 'id' : 'qty', value = shorthand[1]!;
+      if (positions) {
+        const start = attrStart + shorthand[0].indexOf(value);
+        positions.push({ key, raw: shorthand[0], start: offset(attrStart), end: offset(attrStart + shorthand[0].length), value, valueOffsets: Array.from({ length: value.length + 1 }, (_, index) => offset(start + index)) });
+      }
+      if (!collectOnly) {
+        if (result[key] !== undefined && result[key] !== value) throw syntaxError(tag.name + ' 的 ' + key + ' 重复且数值冲突', attrStart, key);
+        result[key] = value; warnings.push('已规范化 ' + tag.name + '.' + key);
+      }
+      rest = rest.slice(shorthand[0].length); continue;
+    }
     // 接收编号允许省略 to=，也可写成 to u1；只接受明确的单位编号形状。
     const recipient = ['add', 'give'].includes(tag.name) ? rest.match(/^(?:to\s+)?(u[1-9]\d*|unit[-:][a-z0-9:._-]+)(?=[\s,，、;；|｜]|$)/i) : undefined;
     if (recipient) {
@@ -204,7 +221,9 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
     } else {
       const nextAttribute = rest.search(/[\s,，、;；|｜]+(?=[a-z][a-z0-9_-]*\s*[=＝:：])/i);
       const nextRecipient = ['add', 'give'].includes(tag.name) ? rest.search(/[\s,，、;；|｜]+(?=(?:to\s+)?(?:u[1-9]\d*|unit[-:][a-z0-9:._-]+)(?:[\s,，、;；|｜]|$))/i) : -1;
-      const next = nextAttribute < 0 ? nextRecipient : nextRecipient < 0 ? nextAttribute : Math.min(nextAttribute, nextRecipient);
+      const nextShorthand = itemCommand ? rest.search(/[\s,，、;；|｜]+(?=(?:[waci][1-9]\d*|(?:qty|qt)[+-]?(?:\d+(?:\.\d*)?|\.\d+))(?:[\s,，、;；|｜]|$))/i) : -1;
+      const boundaries = [nextAttribute, nextRecipient, nextShorthand].filter(at => at >= 0);
+      const next = boundaries.length ? Math.min(...boundaries) : -1;
       const unquoted = next < 0 ? rest : rest.slice(0, next);
       valueStart += unquoted.length - unquoted.trimStart().length;
       value = unquoted.trim(); rest = next < 0 ? '' : rest.slice(next);

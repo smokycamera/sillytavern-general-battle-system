@@ -43,6 +43,29 @@ it('prepares learned skill instances from loadout without refreshing resources, 
   await f.service.load(); button('loadout-skills').click(); await idle();
   expect(skill(0).checked).toBe(true); expect(skill(5).checked).toBe(true);
 
+  const remove = () => document.querySelector<HTMLButtonElement>(`[data-action="loadout-skill-delete"][data-id="${unit.abilities[0]!.id}"]`)!;
+  remove().click(); await idle();
+  expect(skill(0).disabled).toBe(true);
+  expect(document.querySelector('[data-role="loadout-skill-count"]')!.textContent).toContain('待删除 1 项');
+  expect(f.service.snapshot()).toEqual(saved);
+  remove().click(); await idle();
+  expect(skill(0).checked).toBe(true); expect(skill(0).disabled).toBe(false);
+  remove().click(); await idle();
+  button('loadout-skills-close').click(); await idle();
+  expect(f.service.snapshot()).toEqual(saved);
+  button('loadout-skills').click(); await idle();
+  remove().click(); await idle(); button('loadout-skills-save').click(); await idle();
+  expect(document.querySelector('.loadout-skill-dialog'), document.querySelector('#toast')?.textContent ?? '').toBeNull();
+  const forgotten = f.service.snapshot(), remaining = forgotten.storage![0]!;
+  expect(remaining.snapshot!.abilities).toEqual(changed.snapshot!.abilities.slice(1));
+  expect(remaining.preparedAbilityIds).toEqual(changed.preparedAbilityIds!.slice(1));
+  expect(remaining.snapshot!.genAudit!.input.abilityBlueprints).toHaveLength(5);
+  for (const key of ['abilityState', 'resources', 'weapon', 'armor', 'hp'] as const) expect(remaining.snapshot![key]).toEqual(changed.snapshot![key]);
+  expect(forgotten.inventory).toEqual(saved.inventory); expect(forgotten.storage![1]).toEqual(saved.storage![1]);
+  await f.service.load(); button('loadout-skills').click(); await idle();
+  expect(skill(0)).toBeNull(); expect(document.querySelectorAll('[data-role="loadout-skill"]')).toHaveLength(5);
+  expect(skill(5).checked).toBe(true);
+
   // An external update invalidates the open draft rather than overwriting it.
   await f.service.transact(current => ({ ...current, storage: current.storage!.map(r => r.id === 'a' ? { ...r, revision: (r.revision ?? 0) + 1 } : r) }));
   expect(button('loadout-skills-save').disabled).toBe(true);

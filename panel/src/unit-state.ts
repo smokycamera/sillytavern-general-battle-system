@@ -915,6 +915,17 @@ export function learnUnitRecord(record: UnitRecord, skills: NonNullable<Combatan
   return unitRecordFromCombatant(learned, record, { kind: 'edit', sourceId });
 }
 
+/** 按实例删除已学技能，保留其他实例与冷却/次数账本；装备提供的能力由配装管理。 */
+export function forgetUnitRecordSkills(previous: UnitRecord, removedIds: string[], prepared: string[], registry: Map<string, Trait>): UnitRecord {
+  const unit = previous.snapshot ? combatantFromUnknown(previous.snapshot) : materializeUnitRecord(previous, registry);
+  const learned = new Set(unit.abilities.filter(ability => !ability.itemSourceId && !ability.equipmentSourceId).map(ability => ability.id));
+  if (removedIds.some(id => !learned.has(id))) throw Error('只能删除当前单位已学技能');
+  const removed = new Set(removedIds);
+  unit.abilities = unit.abilities.filter(ability => !removed.has(ability.id));
+  const next = learnAbilities(unit, [], { prepared });
+  return unitRecordFromCombatant(next, previous, { kind: 'edit' });
+}
+
 /** 编辑档案只重建显式变更的装备/技能；改名、补员、升级不洗其他实例。 */
 export function editUnitRecord(previous: UnitRecord, edited: UnitRecord, registry: Map<string, Trait>, era?: string): UnitRecord {
   edited = clone(edited);

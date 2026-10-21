@@ -19,9 +19,9 @@ import type { NarrativeSave } from './narrative-state.js';
 
 type ObjectData = Record<string, unknown>;
 /** items 不是档案字段：交给单位的道具在入账时另行处理（item-handover.ts）。 */
-export const UNIT_SET_ATTRIBUTES = ['id', 'data', 'reason', 'name', 'side', 'scale', 'archetype', 'level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'state', 'body', 'mount', 'speed', 'weapon', 'weapon2', 'armor', 'shieldSpec', 'skills', 'traits', 'retired', 'note', 'items'] as const;
+export const UNIT_SET_ATTRIBUTES = ['id', 'data', 'reason', 'name', 'side', 'scale', 'archetype', 'level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'state', 'body', 'mount', 'speed', 'weapon', 'weapon2', 'armor', 'shieldSpec', 'enchant', 'stabilized', 'protection', 'skills', 'traits', 'retired', 'note', 'items'] as const;
 const direct = ['name', 'side', 'scale', 'archetype', 'level', 'xp', 'xpValue', 'hp', 'morale', 'status', 'body', 'mount', 'speedTier', 'tags', 'base', 'bonuses', 'resources', 'conditions', 'traits', 'traitLevels', 'traitSources', 'recoverableWounded', 'formation', 'abilityState', 'fatigue'] as const;
-const special = ['xpProgress', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'moraleMax', 'state', 'speed', 'weapon2', 'weapon', 'sidearm', 'armor', 'shield', 'skills', 'abilities', 'preparedAbilityIds', 'retired', 'note'];
+const special = ['xpProgress', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'moraleMax', 'state', 'speed', 'weapon2', 'weapon', 'sidearm', 'armor', 'shield', 'enchant', 'stabilized', 'protection', 'skills', 'abilities', 'preparedAbilityIds', 'retired', 'note'];
 const object = (value: unknown): value is ObjectData => !!value && typeof value === 'object' && !Array.isArray(value);
 function requireObject(value: unknown, label: string): ObjectData { if (!object(value)) throw Error(label + '必须为对象'); return value; }
 function keys(value: ObjectData, allowed: readonly string[], label: string): void {
@@ -59,7 +59,7 @@ export function parseUnitSet(attrs: Record<string, string>): ObjectData {
       if (!/^[+-]?\d+(?:\.\d+)?$/.test(text) || !Number.isFinite(Number(text))) throw Error(field + '需要明确的有限数值');
       value = Number(text);
     }
-    if (['mount', 'retired'].includes(field)) { if (!['true','false'].includes(text)) throw Error(field + '需要true/false'); value = text === 'true'; }
+    if (['mount', 'retired', 'stabilized'].includes(field)) { if (!['true','false'].includes(text)) throw Error(field + '需要true/false'); value = text === 'true'; }
     if (field === 'traits') value = text ? text.split(',') : [];
     if (Object.hasOwn(data, field) && JSON.stringify(data[field]) !== JSON.stringify(value)) throw Error(field + '与data冲突');
     data[field] = value;
@@ -70,6 +70,38 @@ export function parseUnitSet(attrs: Record<string, string>): ObjectData {
 export function validateUnitPatch(data: ObjectData): void {
   cleanJson(data); keys(data, [...direct, ...special], 'unit_set.data');
   if (!Object.keys(data).length) throw Error('unit_set没有修改字段');
+  if (data.enchant !== undefined) enumeration(data.enchant, ['none','thermal','arcane'], '附魔');
+  if (data.protection !== undefined) enumeration(data.protection, ['balanced','kinetic','thermal','arcane'], '防护类型');
+  if (data.stabilized !== undefined && typeof data.stabilized !== 'boolean') throw Error('稳定装置须为布尔值');
+}
+
+/** 配置作用于已选中的实物，沿用冻结种子和其他属性；不为附魔另建装备。 */
+function configureGear(mechanics: ItemMechanics | undefined, unit: Combatant, data: ObjectData): ItemMechanics {
+  if (!mechanics || mechanics.kind === 'item' || mechanics.kind === 'shield' || !mechanics.value.recipe) throw Error('装备配置需要对应的武器或护甲实物');
+  const value = structuredClone(mechanics.value), recipe = value.recipe!;
+  const context = { id: value.id, name: value.name, seed: recipe.seed, body: recipe.size, quality: recipe.quality, bonuses: recipe.bonuses,
+    damageModel: unit.damageModel, variance: recipe.variance ?? false as const, noVariance: recipe.noVariance, creatingUnit: true };
+  if (mechanics.kind === 'weapon') {
+    if (data.stabilized === true && (unit.body !== 'vehicle' || (mechanics.value.range ?? 1) <= 1 && mechanics.value.recipe?.mechanism !== 'sprayer')) throw Error('稳定装置需要载具的射击武器');
+    const compiled = compileItem({ kind: 'weapon', mechanism: recipe.mechanism, power: recipe.power,
+      enchantment: (data.enchant ?? recipe.enchantment ?? 'none') as 'none'|'thermal'|'arcane', stabilized: (data.stabilized ?? recipe.stabilized) as boolean | undefined }, context);
+    if (compiled.kind !== 'weapon') throw Error('武器配置损坏');
+    const result = structuredClone(mechanics);
+    if (data.enchant !== undefined) {
+      result.value.channel = compiled.value.channel;
+      delete result.value.recipe!.enchantment;
+      if (compiled.value.recipe!.enchantment) result.value.recipe!.enchantment = compiled.value.recipe!.enchantment;
+    }
+    if (data.stabilized !== undefined && data.stabilized !== !!recipe.stabilized) {
+      result.value.baseDice = compiled.value.baseDice;
+      delete result.value.recipe!.stabilized;
+      if (compiled.value.recipe!.stabilized) result.value.recipe!.stabilized = true;
+    }
+    return result;
+  }
+  const compiled = compileItem({ kind: 'armor', tier: mechanics.value.tier, power: recipe.power, profile: data.protection as 'balanced'|'kinetic'|'thermal'|'arcane' }, context);
+  if (compiled.kind !== 'armor') throw Error('护甲配置损坏');
+  return { kind: 'armor', value: { ...mechanics.value, protection: compiled.value.protection, protectionOverride: false, recipe: { ...recipe, protectionProfile: compiled.value.recipe!.protectionProfile } } };
 }
 
 const weaponFields = ['name','baseDice','apDice','channel','penetration','hands','load','tags','range','minRange','pointBlankPolicy','pointBlankPenalty','indirect','attacks','reload','damageScale','splashTargets','splashFactor','ammunition'];
@@ -269,6 +301,7 @@ export const UNIT_EQUIPMENT_FIELDS = ['weapon', 'weapon2', 'sidearm', 'armor', '
 export interface UnitSetContext {
   given?: ReadonlySet<string>; notices?: string[]; transferred?: ReadonlySet<string>;
   reforgedNames?: ReadonlyMap<string, string>;
+  reforgedEquipment?: readonly InventoryItem[];
   deferEquipmentFor?: ReadonlyMap<string, readonly InventoryItem[]>; deferredEquipment?: Map<string, Record<string, unknown>>;
 }
 export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData, sourceId: string, options: UnitSetContext = {}): NarrativeSave {
@@ -388,10 +421,16 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
     options.notices?.push(`同一回复 add 的「${twin.name}」就是${unit.name}${verb}的这件，没有另外入库`);
   };
   const slotKeys = { weapon:'primary',sidearm:'sidearm',armor:'armor',shield:'shield' } as const;
+  const weaponTargets = ['weapon','sidearm'].filter(key => Object.hasOwn(data,key));
+  if (!weaponTargets.length) weaponTargets.push('weapon');
   for (const [key,slot] of Object.entries(slotKeys) as [keyof typeof slotKeys,EquipmentSlot][]) {
-    if (!Object.hasOwn(data,key)) continue;
+    const configure = key === 'armor' ? data.protection !== undefined : weaponTargets.includes(key) && (data.enchant !== undefined || data.stabilized !== undefined);
+    if (!Object.hasOwn(data,key) && !configure) continue;
     const equipped = next.inventory!.find(i => i.equippedTo?.unitId===id && i.equippedTo.slot===slot);
-    const wanted = wantedGear(data[key]);
+    const input = Object.hasOwn(data,key) ? data[key] : equipped?.id;
+    // 内部锁定使用完整实物id（可能含冒号），先识别引用，不能把id当作“名称:规格”拆开。
+    const referenced = typeof input === 'string' ? next.inventory!.find(item => item.id === input) : undefined;
+    const wanted: WantedGear | undefined = referenced ? { name: String(input), referenceOnly: true, values: false } : wantedGear(input);
     if (wanted?.name) wanted.itemId = ids.realId(wanted.name);
     const incoming = wanted ? stashedGear(next.inventory!.filter(item => transferred.has(item.id) && item.assignedTo === id), id, slot, wanted, transferred) : undefined;
     // 写的就是手上这件：原位修改。否则库存里有这件（含同一回复刚 add 的）就直接换上，原装备卸下留作备用，不另造一件。
@@ -402,9 +441,10 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
     const old = split ? undefined : stashed ?? equipped;
     const itemId = old?.id ?? `equipment:${sourceId}:${id}:${slot}`;
     const frozen = old?.mechanics && wanted && !wanted.values && (wanted.referenceOnly && (stashed || keep)
-      || incoming && typeof data[key] === 'string' && wanted.spec?.kind === incoming.mechanics?.kind
+      || incoming && typeof input === 'string' && wanted.spec?.kind === incoming.mechanics?.kind
       || stashed && sameGear(stashed.mechanics, wanted.spec));
-    const mechanics = frozen ? old!.mechanics : gearValue(data[key],old?.mechanics,slot,itemId,unit,sourceId);
+    const baseMechanics = frozen ? old!.mechanics : input === undefined && configure ? undefined : gearValue(input,old?.mechanics,slot,itemId,unit,sourceId);
+    const mechanics = configure ? configureGear(baseMechanics, unit, data) : baseMechanics;
     if (mechanics && mechanics.kind !== 'item') {
       const item = { ...old, ...(split ? { note: stashed!.note } : {}), id:itemId, name:('name' in mechanics.value ? mechanics.value.name : undefined) || '盾牌',qty:1,lootType:mechanics.kind==='weapon'?'weapon':'armor',mechanics,assignedTo:id,equippedTo:{unitId:id,slot},revision:(old?.revision??0)+1 };
       validateInventoryItem(item);
