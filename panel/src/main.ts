@@ -23,7 +23,7 @@ import { equipmentLoadLabel } from '../../engine/src/body.js';
 import { LlmContextController, llmContextSummary, type LlmEncounterContext } from './llm-context.js';
 import { LlmCommandController, CommandCancelled } from './llm-command.js';
 import type { CommanderState } from './llm-command.js';
-import { applyDiplomacy, fightingSides, incomingDiplomacy, sideName } from '../../engine/src/diplomacy.js';
+import { applyDiplomacy, fightingSides, incomingDiplomacy, sideName, sendPlayerLetter, latestLetter } from '../../engine/src/diplomacy.js';
 import { LlmIntentPlanner, intentForces } from './llm-intents.js';
 import type { UnitIntent } from '../../engine/src/index.js';
 import { COMMAND_PROMPTS } from './llm-command-prompts.js';
@@ -167,6 +167,7 @@ const narrativeErrorIndexes = new Map<string, number>();
 const narrativeScanner = new LlmNarrativeScanController();
 let aiScanDialog: { requirements: string; busy: boolean; error?: string } | undefined;
 let llmNotesBattle: string | undefined;
+let letterDraft: { seed: string; open: boolean; target: string; text: string } | undefined;
 const promptDrafts = new Map<string, string>();
 const worldbookDrafts = new Map<string, string>();
 const customWorldbookDrafts = new Map<string, WorldbookDraft>();
@@ -562,6 +563,7 @@ function restore(): void {
   const resumeRequested = smallResumeRequested;
   stopAutomation(false);
   llmNotesBattle = undefined;
+  letterDraft = undefined;
   smallResumeRequested = resumeRequested; allyControlUnsaved = false;
   reportRestartPreview=undefined;
   if (workspaceNamespace !== adapter.namespace()) {
@@ -868,7 +870,8 @@ function prefetchCommandIntents(b: SmallBattle): void {
     && context === controller.inventoryContext() && key === JSON.stringify(readLlmSettings()) && diplomacyRevision === b.diplomacy.revision;
   for (const side of ['enemy', 'neutral'] as const) {
     const command = state.encounterContext?.llmCommanders?.[side];
-    if (command) llmIntentPlanners[side].prefetch(b, command, settings, valid);
+    const letter = latestLetter(b, side);
+    if (command) llmIntentPlanners[side].prefetch(b, command, settings, () => valid() && latestLetter(b, side) === letter);
   }
 }
 function playerDiplomacy(b = currentBattle()) {
@@ -1156,7 +1159,7 @@ function renderWorkspace(scope: RenderScope, tacticalQuery?: TacticalQuerySource
     updateRegion(app.querySelector<HTMLElement>(`[data-workspace="${workspaceTab}"]`)!, content);
     dirtyWorkspaces.delete(workspaceTab);
   }
-  const dialog = app.querySelector<HTMLElement>('#workspace-dialog')!, dialogHtml = renderDiplomacyDialog() || renderLlmNotes() || renderAiScanDialog() || renderLoadoutSkills() || renderAbilityDialog();
+  const dialog = app.querySelector<HTMLElement>('#workspace-dialog')!, dialogHtml = renderDiplomacyDialog() || renderLetterDialog() || renderLlmNotes() || renderAiScanDialog() || renderLoadoutSkills() || renderAbilityDialog();
   if (dialog.innerHTML !== dialogHtml) updateRegion(dialog, dialogHtml);
   window.scrollTo(0, winScroll);
   if (workspaceTab === 'battle' && b) {
@@ -1168,7 +1171,7 @@ function renderWorkspace(scope: RenderScope, tacticalQuery?: TacticalQuerySource
 }
 function renderBattleToolbar(b: SmallBattle | MassBattle): string {
   const actor=b instanceof SmallBattle?b.active:b.combatants.find(u=>u.id===formationView.selectedId)??b.combatants.find(u=>u.side==='ally'&&u.status==='ready'&&!b.isAttached(u.id));
-  const finish = `<div class="battle-finish-actions">${!b.isOver() ? '<button data-action="battle-finish" data-reason="ceasefire">停止交战并结算</button><button class="danger" data-action="battle-finish" data-reason="surrender">投降并结算</button>' : ''}<button data-action="llm-notes">llm笔记</button></div>`;
+  const finish = `<div class="battle-finish-actions">${!b.isOver() ? '<button data-action="battle-finish" data-reason="ceasefire">停止交战并结算</button><button class="danger" data-action="battle-finish" data-reason="surrender">投降并结算</button>' : ''}<button data-action="llm-notes">llm笔记</button>${!b.isOver() ? `<button data-action="letter-open" ${letterRecipients(b).length ? '' : 'disabled'}>发信</button>` : ''}</div>`;
   return `<div class="battle-toolbar"><label class="battle-lethality" title="本场此后双方生命归零只会濒死失能，编队减员算可救伤兵；取消勾选改回致命。已阵亡的不会复活，已经濒死的保持濒死。"><input type="checkbox" data-role="non-lethal" ${b.nonLethal?'checked':''} ${b.isOver()?'disabled':''}>非致命</label>${cannonAmmoControl(actor,b.isOver()||actor?.side!=='ally')}${renderContextStatus()}${b instanceof SmallBattle && b.battlefield ? '' : `<label class="battle-auto"><input type="checkbox" aria-label="全自动战斗（含主控）" data-role="full-auto-battle" ${fullAuto.running ? 'checked' : ''} ${b.isOver() ? 'disabled' : ''}>${fullAuto.running ? '自动推进中 · 点击暂停' : '全自动战斗（含主控）'}</label>`}<label class="battle-tactic" title="AI替我方单位行动时的取舍：托管、代打本次和全自动都按它">AI策略 <select data-role="battle-tactic" ${b.isOver() || b.rules.resolutionVersion !== 'v2' ? 'disabled' : ''}>${Object.entries(TACTICAL_PREFERENCES).map(([id,name]) => `<option value="${esc(id)}" ${b.allyTactic === id ? 'selected' : ''}>${name}</option>`).join('')}</select></label>${finish}</div>`;
 }
 function renderRoundIntents(b: SmallBattle | MassBattle, intents: import('./llm-command.js').RoundIntents | undefined): string {
@@ -1185,6 +1188,22 @@ function renderLlmNotes(): string {
   if (!battle || llmNotesBattle !== battleIdOf(battle)) return '';
   const notes = Object.entries(state.encounterContext?.llmCommanders ?? {}).flatMap(([side, command]) => command ? [`<section class="llm-notes-side"><h3>${side === 'ally' ? '我方' : side === 'neutral' ? '第三方' : '敌军'} · ${esc(command.brief.name)}</h3><h4>人设</h4><p>${esc(command.brief.persona)}</p><h4>任务</h4><p>${esc(command.brief.mission)}</p><h4>总计划</h4><p>${esc(command.memory.plan) || '尚未制定'}</p><h4>笔记</h4>${command.memory.notes.length ? '<ul>' + command.memory.notes.map(note => '<li>' + esc(note) + '</li>').join('') + '</ul>' : '<p>暂无笔记</p>'}<h4>开局已知信息</h4>${command.brief.known.length ? '<ul>' + command.brief.known.map(note => '<li>' + esc(note) + '</li>').join('') + '</ul>' : '<p>以本场实际观察为准</p>'}${renderRoundIntents(battle, command.memory.intents)}</section>`] : []).join('');
   return `<div class="modal-backdrop" data-action="llm-notes-close"><section class="modal-card llm-notes-dialog" data-action="modal-stop" role="dialog" aria-modal="true" aria-labelledby="llm-notes-title"><div class="row"><h2 id="llm-notes-title">llm笔记</h2><button data-action="llm-notes-close">关闭</button></div>${notes || '<p>本场没有 LLM 指挥官记录。</p>'}</section></div>`;
+}
+function letterRecipients(b = currentBattle()): ('enemy' | 'neutral')[] {
+  const settings = llmSettingsView().settings;
+  if (!b || b.isOver() || !settings.enabled || !settings.commandEnemy) return [];
+  return (['enemy', 'neutral'] as const).filter(side => !!stateCommanders()[side] && fightingSides(b).includes(side));
+}
+function renderLetterDialog(): string {
+  const b = currentBattle(), draft = letterDraft;
+  if (!b || !draft?.open || draft.seed !== b.seed || b.isOver()) return '';
+  const targets = letterRecipients(b);
+  return `<div class="modal-backdrop"><section class="modal-card" data-action="modal-stop" role="dialog" aria-modal="true" aria-labelledby="letter-title">
+    <div class="row"><h2 id="letter-title">发信</h2><button data-action="letter-close">关闭</button></div>
+    <label>收件方<select data-role="letter-target">${[...targets.map(side => ({ value: side, name: sideName(side) })), ...(targets.length > 1 ? [{ value: 'all', name: '双方' }] : [])].map(target => `<option value="${target.value}" ${draft.target === target.value ? 'selected' : ''}>${target.name}</option>`).join('')}</select></label>
+    <label>内容<textarea data-role="letter-text" maxlength="1000" rows="5">${esc(draft.text)}</textarea></label>
+    <p class="sub">记入战报，在收件方下次单位行动时送达并重新决策。</p><button class="primary" data-action="letter-send" data-seed="${esc(b.seed)}" ${targets.length ? '' : 'disabled'}>发送</button>
+  </section></div>`;
 }
 function renderDiplomacyDialog(): string {
   const b = currentBattle(), offer = playerDiplomacy(b);
@@ -2455,7 +2474,15 @@ async function handleAction(e: Event): Promise<void> {
   const el = (e.target as HTMLElement).closest('[data-action]') as HTMLElement | null;
   if (!el) return;
   const act = el.dataset.action!;
-  if (act === 'llm-notes' || act === 'llm-notes-close') { llmNotesBattle = act === 'llm-notes' && currentBattle() ? battleIdOf(currentBattle()!) : undefined; render('view'); return; }
+  if (act === 'llm-notes' || act === 'llm-notes-close') { if (letterDraft) letterDraft.open = false; llmNotesBattle = act === 'llm-notes' && currentBattle() ? battleIdOf(currentBattle()!) : undefined; render('view'); return; }
+  if (act === 'letter-open' || act === 'letter-close') {
+    const b = currentBattle();
+    if (act === 'letter-open' && b && letterRecipients(b).length) {
+      llmNotesBattle = undefined;
+      letterDraft = letterDraft?.seed === b.seed ? { ...letterDraft, open: true } : { seed: b.seed, open: true, target: letterRecipients(b)[0]!, text: '' };
+    } else if (letterDraft) letterDraft.open = false;
+    render('view'); return;
+  }
   if (act === 'llm-command-stop' && currentBattle()) {
     Object.values(llmCommanders).forEach(c => c.pauseRound(currentBattle()!));
     toast('已取消本次指挥，内置 AI 接管本大回合'); render('battle');
@@ -3146,6 +3173,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   'llm-settings-reset': () => { resetLlmSettings(true); stopAutomation(); llmDiagnostic = '已重置选项，保留原连接'; render('view'); },
   'llm-command-params-reset': () => {
     const settings = readLlmSettings(); settings.commandThinkingOffParams = COMMAND_THINKING_OFF_PARAMS;
+    delete settings.commandThinkingOffDraft;
     saveLlmSettings(settings); stopAutomation(); llmDiagnostic = '已恢复 DeepSeek 默认关闭思考参数'; render('view');
   },
   'llm-settings-clear': () => { resetLlmSettings(false); stopAutomation(); llmDiagnostic = '已清空副API配置和Key，使用手动配置'; render('view'); },
@@ -3698,6 +3726,21 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     }
     render('battle');
   },
+  'letter-send': (el) => {
+    const b = currentBattle();
+    if (!b || b.seed !== el.dataset.seed || !letterDraft?.open || letterDraft.seed !== b.seed) throw Error('此发信窗口已失效');
+    const recipients = letterRecipients(b), target = document.querySelector<HTMLSelectElement>('[data-role="letter-target"]')?.value;
+    const targets = recipients.filter(side => target === 'all' || target === side);
+    const text = document.querySelector<HTMLTextAreaElement>('[data-role="letter-text"]')?.value ?? letterDraft.text;
+    sendPlayerLetter(b, targets, text);
+    const settings = readLlmSettings();
+    for (const side of targets) {
+      llmCommanders[side].receiveLetter(b, settings);
+      const command = stateCommanders()[side];
+      if (command) { delete command.memory.intents; delete command.memory.diplomacyRound; delete command.decision; }
+    }
+    letterDraft = undefined; toast('已发信，将在收件方下次单位行动时送达');
+  },
   'battle-close': async () => {
     const b = currentBattle();
     if (!b) throw new Error('没有进行中的战斗可清理');
@@ -3894,7 +3937,7 @@ async function afterSmallAction(endTurn = true): Promise<void> {
 document.addEventListener('click', e => {
   const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
   if (!action) return;
-  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'modal-stop', 'llm-stop', 'llm-command-stop', 'llm-notes', 'llm-notes-close', 'llm-models', 'ai-scan', 'ai-scan-confirm', 'ai-scan-cancel', 'narrative-error', 'narrative-recognized'].includes(action) || action.startsWith('worldbook-')) { void handleAction(e); return; }
+  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'modal-stop', 'llm-stop', 'llm-command-stop', 'llm-notes', 'llm-notes-close', 'letter-open', 'letter-close', 'llm-models', 'ai-scan', 'ai-scan-confirm', 'ai-scan-cancel', 'narrative-error', 'narrative-recognized'].includes(action) || action.startsWith('worldbook-')) { void handleAction(e); return; }
   if (MAP_INSPECTION.includes(action)) {
     if (uiBusy) { toast('正在保存上一项操作，请稍候…'); return; }
     try { inspectBattleMap((e.target as HTMLElement).closest<HTMLElement>('[data-action]')!); }
@@ -3919,6 +3962,10 @@ document.addEventListener('pointerup', () => { cameraPointer=undefined; }, {pass
 document.addEventListener('wheel', event => { if (event.target instanceof Element && event.target.closest('[data-workspace="battle"]')) battleCamera.browse(); }, {passive:true});
 document.addEventListener('input', e => {
   const el=e.target;
+  if (el instanceof HTMLTextAreaElement && el.dataset.role === 'letter-text') {
+    if (letterDraft) letterDraft.text = el.value;
+    return;
+  }
   if (el instanceof HTMLTextAreaElement && el.dataset.role === 'diplomacy-text') {
     const b = currentBattle(), offer = playerDiplomacy(b);
     if (b && offer) diplomacyReplyDraft = { seed: b.seed, id: offer.id, text: el.value };
@@ -3931,12 +3978,15 @@ document.addEventListener('input', e => {
       if (settings.commandThinking !== 'off') return;
       parseCommandParameters(el.value);
       settings.commandThinkingOffParams = el.value;
+      delete settings.commandThinkingOffDraft;
       saveLlmSettings(settings); el.setCustomValidity(''); llmDiagnostic = '已保存';
       stopAutomation();
       if (status) status.textContent = '已保存附加参数，将原样发送';
     } catch (error) {
       const message = error instanceof Error ? error.message : '保存失败';
-      el.setCustomValidity(message); if (status) status.textContent = '未保存：' + message;
+      try { const settings = readLlmSettings(); settings.commandThinkingOffDraft = el.value; saveLlmSettings(settings); }
+      catch { /* The original valid parameters remain unchanged if storage is unavailable. */ }
+      el.setCustomValidity(message); if (status) status.textContent = '草稿已保留：' + message + '；请求仍使用上一份有效参数';
     }
     return;
   }
@@ -4120,6 +4170,10 @@ async function handleChange(e: Event): Promise<void> {
   }
 }
 document.addEventListener('change', e => {
+  if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'letter-target') {
+    if (letterDraft) letterDraft.target = e.target.value;
+    return;
+  }
   if (e.target instanceof HTMLElement && e.target.dataset.role === 'worldbook-field') {
     customWorldbookDrafts.set(e.target.dataset.entry!, captureWorldbookDraft(e.target.closest<HTMLElement>('[data-worldbook-entry]')!));
     if (e.target.dataset.field === 'constant') render('view');

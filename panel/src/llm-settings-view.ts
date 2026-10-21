@@ -9,9 +9,9 @@ export function renderLlmSettings(c: LlmSettings, status = '', worldbooks = ''):
     <label class="llm-setting-field">指挥间隔 <select data-role="llm-command-interval" ${c.enabled ? '' : 'disabled'}><option value="round" ${c.commandInterval !== 'situation' ? 'selected' : ''}>每回合（推荐，调用次数少）</option><option value="situation" ${c.commandInterval === 'situation' ? 'selected' : ''}>根据战况（次数多）</option></select></label>
     <label class="llm-setting-field">指挥思考模式 <select data-role="llm-command-thinking" ${c.enabled ? '' : 'disabled'}><option value="auto" ${!c.commandThinking || c.commandThinking === 'auto' ? 'selected' : ''}>默认（时间可能不稳定）</option><option value="off" ${c.commandThinking === 'off' ? 'selected' : ''}>非思考（默认参数ds官渠，可在兼容设置调整，不同渠道参数可能不同）</option></select></label>
     ${c.commandThinking === 'off' ? `<details><summary>高级兼容设置</summary>
-      <label>附加参数（JSON）<textarea data-role="llm-command-params" rows="4" spellcheck="false" ${c.enabled ? '' : 'disabled'}>${esc(c.commandThinkingOffParams ?? COMMAND_THINKING_OFF_PARAMS)}</textarea></label>
+      <label>附加参数<textarea data-role="llm-command-params" rows="4" spellcheck="false" ${c.enabled ? '' : 'disabled'}>${esc(c.commandThinkingOffDraft ?? c.commandThinkingOffParams ?? COMMAND_THINKING_OFF_PARAMS)}</textarea></label>
       <button data-action="llm-command-params-reset" ${c.enabled ? '' : 'disabled'}>恢复默认</button>
-      <p class="sub">默认使用 DeepSeek 官渠关闭思考的参数。可按渠道填写其他参数，有效 JSON 自动保存并原样发送；填 {} 不附加参数。</p><p data-role="llm-command-params-status" role="status"></p></details>` : ''}
+      <p class="sub">支持 JSON 对象，或每行一个 参数名=值（如 参数名="值"）。默认使用 DeepSeek 官渠关闭思考的参数；填 {} 不附加参数。</p><p data-role="llm-command-params-status" role="status">${c.commandThinkingOffDraft !== undefined ? '未完成的草稿已保留；请求仍使用上一份有效参数' : ''}</p></details>` : ''}
     <label><input data-role="llm-map-design" type="checkbox" ${c.designMap === true ? 'checked' : ''} ${c.enabled ? '' : 'disabled'}>由 LLM 设计地图</label>
     <p class="sub">按正文布置城市、河流、地点与双方位置，每次开战多请求1次。关闭时使用随机地图。</p>
     <label><input data-role="llm-vip" type="checkbox" ${c.selectVip === true ? 'checked' : ''} ${c.enabled ? '' : 'disabled'}>由 LLM 选择护送／拦截 VIP</label>

@@ -55,6 +55,7 @@ export function savedCommanderState(value: unknown): CommanderState | undefined 
       ...(Number.isSafeInteger(object(state.playerFallback).resumeRound) && Number(object(state.playerFallback).resumeRound) >= 0 ? { resumeRound: Number(object(state.playerFallback).resumeRound) } : {}) } } : {}),
     memory: { ...(intents ? { intents } : {}),
       ...primitive(memory, ['diplomacyRound', 'diplomacyRevision']),
+      ...(Number.isSafeInteger(memory.letterId) && Number(memory.letterId) >= 0 ? { letterId: Number(memory.letterId) } : {}),
       plan: typeof memory.plan === 'string' ? memory.plan.slice(0, 600) : '', notes: strings(memory.notes, 12, 300), terrain, contacts: contacts as NonNullable<CommanderState['memory']['contacts']> } };
 }
 

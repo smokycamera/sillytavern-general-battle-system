@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { attachCarriedItems, compileItem, createStructure, generateUnit, MassBattle, SmallBattle, standardField, V24_OVERFLOW_D20, V24_OVERFLOW_TW } from '../../engine/src/index.js';
+import { attachCarriedItems, compileItem, createStructure, generateUnit, MassBattle, SmallBattle, standardField, V24_OVERFLOW_D20, V24_OVERFLOW_TW, sendPlayerLetter } from '../../engine/src/index.js';
 import { COMMAND_PROMPTS } from './llm-command-prompts.js';
 import { commanderTool, emptyCommandMemory, commandObservation, LlmCommandController, smallCommandChoices,
   updateCommandMemory, CommandCancelled, type CommanderState } from './llm-command.js';
@@ -317,6 +317,18 @@ describe('atomic LLM command execution', () => {
     b.byId('u0').status = 'routing';expect(c.available(b, settings, s)).toBe(false);
     b.byId('u0').status = 'ready';expect(c.available(b, settings, s)).toBe(false);
     b.round++;expect(c.available(b, settings, s)).toBe(true);
+  });
+  it.each([false,true])('includes unread letters in direct commands and commits the cursor only with a valid result (mass=%s)',async mass=>{
+    const b=mass?new MassBattle({combatants:units(),rules:V24_OVERFLOW_TW,seed:'letters-mass'}):small();if(mass)b.start();
+    sendPlayerLetter(b,['enemy'],'  保留原话与空格。  ');const s=state(b.seed),before=structuredClone(b.toSnapshot());
+    const request:typeof fetch=async(_url,init)=>{
+      const d=initial(init);expect(d.letters).toEqual([{id:1,round:1,from:'opponent-1',text:'  保留原话与空格。  '}]);
+      return b instanceof MassBattle?call('commander_orders',{orders:d.formations.map((f:any)=>({unitId:f.unitId,choice:f.choices.find((c:any)=>c.order?.type==='hold').id}))})
+        :call('commander_act',{choice:d.choices.find((c:any)=>c.action?.type==='end_turn').id});
+    };
+    const c=new LlmCommandController(COMMAND_PROMPTS,()=>{},request);
+    const result=b instanceof MassBattle?await c.mass(b,s,settings,()=>true):await c.small(b,s,settings,()=>true);
+    expect(result?.commandState.memory.letterId).toBe(1);expect(s.memory.letterId).toBeUndefined();expect(b.toSnapshot()).toEqual(before);
   });
 
   it('orders every mass formation in one request, hides player orders, and preserves external orders through master AI and worker replay', async () => {

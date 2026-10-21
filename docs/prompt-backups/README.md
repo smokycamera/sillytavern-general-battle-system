@@ -1,5 +1,11 @@
 # 战场布局提示词修改前备份
 
+## 发信（2026-10-22）
+
+- 用户确认来信采用现有阵营代号，并将说明修订为：“opponent-1 来信见 letters，可结合来信调整计划与决定。”仅在逐单位／会战共用正文和小战意图正文各加这一句。
+- 动态资料仅新增发给本阵营的 `letters`，条目为 `id`、`round`、`from`、`text`；`from` 沿用阵营代号，`text` 保留原话，不新增模型发信工具。
+- `llm-command-before-player-letters-20261022.ts.txt` 保留原正文；`llm-command-context-before-letters-20261022.ts.txt`、`llm-intents-before-letters-20261022.ts.txt` 和 `llm-diplomacy-before-letters-20261022.ts.txt` 保留原动态模板与映射。副本不参与构建，回退时只恢复对应说明句与来信字段。
+
 ## 投降与双方撤军（2026-10-21，2.9.2）
 
 - `llm-command-before-surrender-withdraw-20261021.ts.txt` 与 `llm-intents-before-surrender-withdraw-20261021.ts.txt` 保留本次修改前完整原文。
