@@ -84,11 +84,11 @@ describe('32-card tactics and 64-card scene preparation', () => {
     expect(MassBattle.fromSnapshot(snapshot).formationSlots).toBeUndefined();
     for (const slots of [0,2,8,3.5,'4']) expect(()=>MassBattle.fromSnapshot({...structuredClone(snapshot),formationSlots:slots})).toThrow(/容量/);
   });
-  it('default switches change only missing keys, preserve explicit choices and never auto-enable model transmission', () => {
+  it('keeps the retired scale switch off, preserves other explicit choices and never auto-enables model transmission', () => {
     const store=new Map<string,string>();vi.stubGlobal('localStorage',{getItem:(k:string)=>store.get(k)??null,setItem:(k:string,v:string)=>store.set(k,v)});
     expect(readLlmSettings()).toMatchObject({enabled:false,selectBattleScale:false,designMap:true,selectVip:true});
     store.set(LLM_SETTINGS_KEY,JSON.stringify({enabled:true,selectBattleScale:true,designMap:false,selectVip:false,token:'keep'}));
-    expect(readLlmSettings()).toMatchObject({selectBattleScale:true,designMap:false,selectVip:false,token:'keep'});
+    expect(readLlmSettings()).toMatchObject({selectBattleScale:false,designMap:false,selectVip:false,token:'keep'});
     store.set(LLM_SETTINGS_KEY,JSON.stringify({enabled:true,token:'keep'}));
     expect(readLlmSettings()).toMatchObject({selectBattleScale:false,designMap:true,selectVip:true,token:'keep'});
   });

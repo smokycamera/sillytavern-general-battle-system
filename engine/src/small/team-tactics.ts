@@ -6,7 +6,26 @@ import { activeTraitIds } from '../trait-sources.js';
 import { isAirborne } from '../aerial.js';
 import { isRangedWeapon } from '../loadout.js';
 import { gridDistance, neighbors, gridCostsToGoals,movementStepCost, type BattlefieldSpec } from './spatial.js';
+import { gridWeaponRange } from './weapon-range.js';
 import { groundBlocked, isElevated, intactStructure } from './layers.js';
+export interface UnitIntent {
+  mode: 'attack' | 'advance' | 'hold' | 'withdraw' | 'support' | 'open_gate' | 'close_gate' | 'use_ability';
+  cell?: number; targetId?: string; supportId?: string; abilityId?: string;
+}
+export function intentOrder(field: BattlefieldSpec, unit: Combatant, intent: UnitIntent | undefined, known: Combatant[], ranged = isRangedWeapon(unit.weapon) && gridWeaponRange(unit.weapon, true) > 2): RegionalOrder | undefined {
+  if (!intent) return;
+  const target = intent.targetId ? known.find(u => u.id === intent.targetId && (intent.mode === 'use_ability'
+    ? ['ready', 'routing', 'dying'].includes(u.status) : u.side !== unit.side && ['ready', 'routing'].includes(u.status))) : undefined;
+  if ((intent.mode === 'attack' || intent.mode === 'use_ability') && !target) return;
+  if (intent.mode === 'use_ability' && !unit.abilities.some(a => a.id === intent.abilityId)) return;
+  const support = intent.mode === 'support' ? known.find(u => u.id === intent.supportId && u.side === unit.side && ['ready', 'routing'].includes(u.status)) : undefined;
+  const cell = intent.mode === 'attack' || intent.mode === 'use_ability' ? target?.pos : intent.mode === 'support' ? support?.pos : intent.cell;
+  if (cell === undefined || (intent.mode === 'open_gate' || intent.mode === 'close_gate'
+    ? intactStructure(field, cell)?.kind !== 'gate'
+    : !Number.isSafeInteger(cell) || cell < 0 || cell >= field.tiles.length)) return;
+  return { goals: [cell], role: intent.mode === 'advance' ? 'advance' : intent.mode === 'withdraw' ? 'reserve' : ranged ? 'fire' : 'front',
+    ...(intent.mode === 'hold' ? { hold: true } : {}), phase: intent.mode === 'hold' || intent.mode === 'withdraw' ? 'intact' : 'advance' };
+}
 export interface RegionalOrder {
   role: 'front' | 'fire' | 'reserve' | 'core' | 'breach' | 'flank' | 'advance';
   goals: number[];

@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.8.3**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **2.9.0**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-2.8.3 speeds up LLM command. The first message now carries the acting unit, a compact explored map and every candidate, so the commander usually acts in one request. Follow-up steps (`then`) run in order and stop when a step becomes illegal, a new unit is seen, or the unit is hurt or its state changes. Mass battles order every formation in one request, and notes change incrementally. See the [command and Flash test report](docs/llm-command-20261021.md).
+2.9.0 gives grid troops one faction-wide intent plan per round, prefetched while other units act. Troops follow their assigned destinations, open doors and traverse platforms without being redirected by city defense orders. Commands can specify gates, skills and items. Up to three heroes keep per-activation command; major changes allow one replan per round. Intent memory survives saves and appears in LLM notes. Retries include the original request, failed answer and problem, and command observations omit command ability/style announcements. See the [command report](docs/llm-command-20261021.md) and [2.9.0 results](docs/llm-round-intents-result-20261021.md).
 
 ## Documentation
 

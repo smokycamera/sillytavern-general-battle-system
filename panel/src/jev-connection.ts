@@ -192,6 +192,10 @@ function parseOpenAiDecision(content: unknown, label: string): Record<string, an
   if (!answer || typeof answer !== 'object' || Array.isArray(answer)) throw new JevConnectionError(`模型返回无效${label}`);
   return answer;
 }
+/** Keep only the model's answer for correction, never the HTTP request or credentials. */
+export class JevAnswerError extends JevConnectionError {
+  constructor(message: string, readonly previousAnswer: unknown) { super(message); }
+}
 /**
  * One read-only JSON decision over OpenAI chat completions. Callers that send several steps keep the same leading
  * messages so providers with automatic prefix caching can reuse them; the answer is parsed with the same tolerance.
@@ -213,7 +217,9 @@ export async function openAiJsonRequest(connection: JevConnection, messages: { r
     const { response_format: _responseFormat, ...compatPayload } = payload;
     response = await send(compatPayload);
   }
-  const answer = parseOpenAiDecision(response?.choices?.[0]?.message?.content, label);
+  let answer: Record<string, any>;
+  try { answer = parseOpenAiDecision(response?.choices?.[0]?.message?.content, label); }
+  catch (error) { throw new JevAnswerError(error instanceof Error ? error.message : 'JSON格式无效', completionText(response?.choices?.[0]?.message?.content)); }
   return { ...answer, model: typeof response.model === 'string' ? response.model : model };
 }
 
@@ -243,8 +249,10 @@ export async function openAiCommandRequest(connection: JevConnection, messages: 
       ...commandExtraContent(message.extra_content),
       ...(typeof message.reasoning_content === 'string' ? { reasoning_content: message.reasoning_content } : {}) };
   }
-  const answer = parseOpenAiDecision(message?.content, '指挥');
-  return { role: 'assistant', content: JSON.stringify({ choice: answer.choice, then: answer.then, orders: answer.orders }), ...commandExtraContent(message?.extra_content), ...(typeof message?.reasoning_content === 'string' ? { reasoning_content: message.reasoning_content } : {}) };
+  let answer: Record<string, any>;
+  try { answer = parseOpenAiDecision(message?.content, '指挥'); }
+  catch (error) { throw new JevAnswerError(error instanceof Error ? error.message : '指挥JSON格式无效', { content: completionText(message?.content), ...(Array.isArray(calls) ? { tool_calls: calls } : {}) }); }
+  return { role: 'assistant', content: JSON.stringify({ choice: answer.choice, then: answer.then, orders: answer.orders, intents: answer.intents }), ...commandExtraContent(message?.extra_content), ...(typeof message?.reasoning_content === 'string' ? { reasoning_content: message.reasoning_content } : {}) };
 }
 /** Adapt the host's bounded decisions without changing the vendored command core. */
 export async function directJevRequest(connection: JevConnection, path: string, body: unknown, signal: AbortSignal, request: typeof fetch): Promise<unknown> {

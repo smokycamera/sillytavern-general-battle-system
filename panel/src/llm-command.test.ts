@@ -236,7 +236,7 @@ describe('atomic LLM command execution', () => {
       expect(payload.thinking).toEqual({ type: 'disabled' });
       commands++; payloads.push(String(init?.body));
       if (commands === 1) return call('commander_plan', { plan: '先移动再观察' });
-      const data = initial(init);
+      const data = [...payload.messages].reverse().filter((m: any) => m.role === 'user').map((m: any) => JSON.parse(m.content)).find((m: any) => m.choices);
       if (commands === 2) return call('commander_act', { choice: data.moves[0][0] });
       if (commands === 3) return new Response('{}', { status: 503 });
       return call('commander_act', { choice: data.choices.find((c: any) => c.action?.type === 'end_turn').id });
@@ -246,7 +246,10 @@ describe('atomic LLM command execution', () => {
     await vi.runAllTimersAsync(); expect((await preparation)?.brief).toEqual(s.brief); expect(preparations).toBe(3);
     const pending = commander.small(b, s, nonthinking, () => true);
     await vi.runAllTimersAsync(); const result = await pending;
-    expect(result).toBeDefined(); expect(commands).toBe(4); expect(payloads[2]).toBe(payloads[3]);
+    expect(result).toBeDefined(); expect(commands).toBe(4);
+    const original = JSON.parse(payloads[2]!), retry = JSON.parse(payloads[3]!);
+    expect(retry.messages.slice(0, -1)).toEqual(original.messages);
+    expect(JSON.parse(retry.messages.at(-1).content).retryErrors[0]).toMatch(/HTTP 503/);
     expect(result!.commandState.memory.plan).toBe('先移动再观察'); expect(b.toSnapshot()).toEqual(before);
     applyBattleStep(b, result!); expect(b.active?.id).toBe('u2'); expect(commander.available(b, settings, result!.commandState)).toBe(true);
   });
