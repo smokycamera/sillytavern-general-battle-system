@@ -18,6 +18,8 @@ import { MEMBER_HEALTH_MODEL, memberHealthMax } from './member-health.js';
 import { commandRangeAtLevel, traitValue } from './trait-levels.js';
 
 export interface MoraleState {
+  /** Accepted surrender is a battle decision, including for units immune to morale routing. */
+  forcedRetreat?: 'surrender' | 'withdraw';
   terrorSeen: string[];
   routs: number;
   attempts: number;
@@ -55,7 +57,8 @@ export function validateMoraleState(value: unknown): void {
     || [s.routedRound, s.lastRallyRound, s.ralliedRound].some((n) => n !== undefined && (!Number.isSafeInteger(n) || n! < 0))
     || s.personal !== undefined && (!Number.isFinite(s.personal) || s.personal < 0 || s.personal > 100)
     || [s.damage, s.damagePenalty].some((n) => n !== undefined && (!Number.isSafeInteger(n) || n! < 0))
-    || s.cause !== undefined && !['terror', 'morale'].includes(s.cause) || s.indomitable !== undefined && s.indomitable !== true) throw new Error('惊退来源或重整机会记录损坏');
+    || s.cause !== undefined && !['terror', 'morale'].includes(s.cause) || s.indomitable !== undefined && s.indomitable !== true
+    || s.forcedRetreat !== undefined && !['surrender', 'withdraw'].includes(s.forcedRetreat)) throw new Error('惊退来源或重整机会记录损坏');
 }
 /** 不屈每战一次：可用时记为已用并返回 true。 */
 export function spendIndomitable(unit: Combatant): boolean {
@@ -183,7 +186,7 @@ export function moraleRisk(context: ObservationContext, unit: Combatant, breakAt
   const success = Math.max(0, Math.min(1, (21 + bonus - threshold) / 20));
   return { ...profile, terror, terrorDC,
     breakChance: profile.immune ? 0 : profile.effective <= breakAt ? 1 : terror.length && profile.effective <= 50 ? 1 - Math.max(0, Math.min(1, (21 + Math.floor(profile.effective / 10) - terrorDC) / 20)) : 0,
-    rallyChance: profile.immune ? 1 : profile.effective <= breakAt ? 0 : success, rallyDC: threshold, rallyBonus: bonus };
+    rallyChance: unit.moraleState?.forcedRetreat ? 0 : profile.immune ? 1 : profile.effective <= breakAt ? 0 : success, rallyDC: threshold, rallyBonus: bonus };
 }
 export interface MoraleDecision {
   kind: 'none' | 'resisted' | 'routed' | 'rallied' | 'failed' | 'fled';
@@ -194,6 +197,13 @@ export interface MoraleDecision {
 /** 从同一阶段事实计算；调用方先准备全部结果，再提交位置和状态，避免光环顺序偏差。 */
 export function decideMorale(context: ObservationContext, unit: Combatant, round: number, rng: Rng, breakAt: number, registry?: Map<string, Trait>): MoraleDecision {
   if (unit.rulesVersion !== 'v2' || unit.hp <= 0 || !['ready', 'routing'].includes(unit.status)) return { kind: 'none' };
+  if (unit.moraleState?.forcedRetreat) {
+    const state = structuredClone(unit.moraleState);
+    if (state.lastRallyRound === round) return { kind: 'none' };
+    state.lastRallyRound = round; state.attempts = Math.min(MAX_RALLY_ATTEMPTS, state.attempts + 1);
+    return { kind: state.attempts >= MAX_RALLY_ATTEMPTS ? 'fled' : 'failed', state,
+      text: `${unit.name} 按${state.forcedRetreat === 'withdraw' ? '撤军协议' : '投降决定'}${state.attempts >= MAX_RALLY_ATTEMPTS ? '撤离战场' : '继续溃退'}` };
+  }
   const risk = moraleRisk(context, unit, breakAt, registry), state = structuredClone(unit.moraleState ?? emptyState());
   if (unit.status === 'routing') {
     if (!state.routs) { state.routs = 1; state.routedRound = Math.max(0, round - 1); state.cause = 'morale'; }

@@ -54,6 +54,7 @@ import { prepareCondition, applySkillCondition, dispelCandidates, applyDispel, a
 import { applyWeaponConditions, poisonDamage, poisonFactor, conditionDamage } from '../afflictions.js';
 import { isRangedWeapon, weaponReloadKey, weaponReloadTurns, meleeWeapon, validateMount, mountedShooting, steadyMovingShot, agileDisengage } from '../loadout.js';
 import { moraleProfile, moraleAttackMods, decideMorale, changeMorale, validateMoraleState, moraleRisk, moraleChangePreview, reconcileDamageMorale, recoverEntryMorale } from '../morale.js';
+import { emptyDiplomacy, restoreDiplomacy } from '../diplomacy.js';
 import { applyHealthLoss, applyCombatDamage, applyRecovery, recoveryCapacity, regenerationAmount, settleRegeneration, validateWounded, settleWoundedOnDeath, lifestealRecovery, beginLifestealRound } from '../recovery.js';
 import {hasMemberHealth,memberHealth,memberHealthMax,MEMBER_HEALTH_MODEL} from '../member-health.js';
 /**
@@ -198,6 +199,7 @@ export class SmallBattle {
   controlHold?: { side: Side; sinceRound: number; lastCountedRound?: number };
   private controlReport?: BattleLogEntry['objective'];
   objectiveWinner?: Side | 'draw';
+  diplomacy = emptyDiplomacy();
   defeatedIds = new Set<string>();
   readonly combatants: Combatant[];
   readonly rules: RulePack;
@@ -3397,6 +3399,11 @@ export class SmallBattle {
     this.recordEvent({ round: this.round, kind: 'battle-end', text: reason === 'surrender' ? '我方投降，敌方获胜；保留实际伤亡，存活者不视为死亡或成功撤离' : '玩家停止交战，按当前伤亡结算为停战；倒地者未被补杀，未判定俘虏或敌方投降' });
   }
 
+  finishDiplomacy(winner: Side | 'draw', text: string): void {
+    this.objectiveWinner = winner; this.finalizeCasualties();
+    this.recordEvent({ round: this.round, kind: 'battle-end', text });
+  }
+
   /**
    * 战中切换致命/非致命：只改之后的倒地与减员。已阵亡、已撤离的不变，已记的可救伤兵不变；
    * 改回致命时已经濒死的单位保持濒死，此后再受伤害才会阵亡。
@@ -3466,6 +3473,7 @@ export class SmallBattle {
       ...(this.allyAiControl.size ? { allyAiControl: [...this.allyAiControl] } : {}),
       ...(this.sparedIds.size ? { sparedIds: [...this.sparedIds] } : {}),
       battlefield: this.battlefield,
+      ...(this.diplomacy.offers.length ? { diplomacy: this.diplomacy } : {}),
       searchCoverage: this.searchCoverage,
       intel: this.intel,
       ...(this.activationStarts.size ? { activationStarts: [...this.activationStarts] } : {}),
@@ -3533,6 +3541,7 @@ export class SmallBattle {
       ? snap.allyAiControl.filter((e: unknown): e is [string, boolean] => Array.isArray(e) && typeof e[0] === 'string' && typeof e[1] === 'boolean') : []);
     b.sparedIds = new Set(Array.isArray(snap.sparedIds) ? snap.sparedIds.filter((id: unknown): id is string => typeof id === 'string') : []);
     b.commanderProfiles = normalizeCommanderProfiles(snap.commanderProfiles);
+    b.diplomacy = restoreDiplomacy(snap.diplomacy);
     b.round = snap.round ?? 1;
     b.searchCoverage = structuredClone(snap.searchCoverage ?? {});
     b.intel = restoreIntel(snap.intel, b.battlefield?.tiles.length);
