@@ -32,7 +32,7 @@ import { stripThinking } from './protocol-syntax.js';
 import { controlPolicy } from '../../engine/src/battle-control.js';
 import { LlmNarrativeScanController } from './llm-narrative-scan.js';
 import { parseProtocol, recoverProtocol } from './protocol.js';
-import { readLlmSettings, saveLlmSettings, llmConnectionKey, llmSettingsView, llmSettingsBackup, resetLlmSettings, parseCommandParameters, commandParameterWarnings } from './llm-settings.js';
+import { readLlmSettings, saveLlmSettings, llmConnectionKey, llmSettingsView, llmSettingsBackup, resetLlmSettings, parseCommandParameters, COMMAND_THINKING_OFF_PARAMS } from './llm-settings.js';
 import { setLlmWorldbookSource } from './llm-worldbooks.js';
 import { LlmWorldbookPicker } from './llm-worldbooks-view.js';
 import { renderLlmSettings } from './llm-settings-view.js';
@@ -2463,7 +2463,7 @@ async function handleAction(e: Event): Promise<void> {
     return;
   }
   if (act === 'llm-stop' || act === 'llm-command-stop') { stopAutomation(); toast('已取消模型请求'); render('battle'); return; }
-  if (['llm-models','llm-worldbooks-refresh','llm-settings-backup','llm-settings-reset','llm-settings-clear'].includes(act)) { try { await actions[act]!(el); } catch (error) { toast(String(error)); } return; }
+  if (['llm-models','llm-worldbooks-refresh','llm-settings-backup','llm-settings-reset','llm-settings-clear','llm-command-params-reset'].includes(act)) { try { await actions[act]!(el); } catch (error) { toast(String(error)); } return; }
   // Navigation never joins the durable-write queue or alters its failure flag.
   if (act === 'workspace-tab') {
     const tab = el.dataset.tab;
@@ -3144,6 +3144,10 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     const link = document.createElement('a'); link.href = url; link.download = 'battle-model-settings-backup.json'; link.click(); URL.revokeObjectURL(url);
   },
   'llm-settings-reset': () => { resetLlmSettings(true); stopAutomation(); llmDiagnostic = '已重置选项，保留原连接'; render('view'); },
+  'llm-command-params-reset': () => {
+    const settings = readLlmSettings(); settings.commandThinkingOffParams = COMMAND_THINKING_OFF_PARAMS;
+    saveLlmSettings(settings); stopAutomation(); llmDiagnostic = '已恢复 DeepSeek 默认关闭思考参数'; render('view');
+  },
   'llm-settings-clear': () => { resetLlmSettings(false); stopAutomation(); llmDiagnostic = '已清空副API配置和Key，使用手动配置'; render('view'); },
   'out-delta': async () => { const batch = makeNarrativeBatch(currentBattle() ?? undefined, reportForOutput(), state.reportDeliveries, 'delta'); void (await sendToAi(batch.text, '新增战况', undefined, batch)); },
   'out-epilogue': async () => { const batch = makeNarrativeBatch(currentBattle() ?? undefined, reportForOutput(), state.reportDeliveries, 'epilogue',state.activeBattleStart); void (await sendToAi(batch.text, '战斗终章', undefined, batch)); },
@@ -3920,26 +3924,16 @@ document.addEventListener('input', e => {
     if (b && offer) diplomacyReplyDraft = { seed: b.seed, id: offer.id, text: el.value };
     return;
   }
-  if (el instanceof HTMLTextAreaElement && el.dataset.role === 'llm-command-params' || el instanceof HTMLInputElement && el.dataset.role === 'llm-command-effort') {
+  if (el instanceof HTMLTextAreaElement && el.dataset.role === 'llm-command-params') {
     const status = el.closest('details')?.querySelector('[data-role="llm-command-params-status"]');
     try {
       const settings = readLlmSettings();
-      if (settings.commandThinking !== 'off' && settings.commandThinking !== 'round') return;
-      const textarea = el.closest('details')?.querySelector<HTMLTextAreaElement>('[data-role="llm-command-params"]');
-      const parameters = parseCommandParameters(textarea?.value ?? el.value);
-      if (el.dataset.role === 'llm-command-effort') {
-        if (el.value.trim()) parameters.reasoning_effort = el.value.trim(); else delete parameters.reasoning_effort;
-        settings.commandThinkingOffParams = JSON.stringify(parameters);
-        if (textarea) { textarea.value = settings.commandThinkingOffParams; textarea.setCustomValidity(''); }
-      } else {
-        settings.commandThinkingOffParams = el.value;
-        const effort = el.closest('details')?.querySelector<HTMLInputElement>('[data-role="llm-command-effort"]');
-        if (effort) { effort.value = typeof parameters.reasoning_effort === 'string' ? parameters.reasoning_effort : ''; effort.setCustomValidity(''); }
-      }
-      const warnings = commandParameterWarnings(parameters);
+      if (settings.commandThinking !== 'off') return;
+      parseCommandParameters(el.value);
+      settings.commandThinkingOffParams = el.value;
       saveLlmSettings(settings); el.setCustomValidity(''); llmDiagnostic = '已保存';
       stopAutomation();
-      if (status) status.textContent = ['已保存当前模式的思考参数', ...warnings].join('；');
+      if (status) status.textContent = '已保存附加参数，将原样发送';
     } catch (error) {
       const message = error instanceof Error ? error.message : '保存失败';
       el.setCustomValidity(message); if (status) status.textContent = '未保存：' + message;
@@ -4177,7 +4171,7 @@ document.addEventListener('change', e => {
     try {
       const settings = readLlmSettings();
       if (e.target.dataset.role === 'llm-mode') settings.enabled = e.target.value === 'llm';
-      else if (e.target.dataset.role === 'llm-command-thinking') settings.commandThinking = e.target.value === 'off' || e.target.value === 'round' ? e.target.value : 'auto';
+      else if (e.target.dataset.role === 'llm-command-thinking') settings.commandThinking = e.target.value === 'off' ? 'off' : 'auto';
       else if (e.target.dataset.role === 'llm-command-interval') settings.commandInterval = e.target.value === 'situation' ? 'situation' : 'round';
       else settings.model = e.target.value;
       saveLlmSettings(settings); stopAutomation(); llmDiagnostic = '已保存'; render('view');

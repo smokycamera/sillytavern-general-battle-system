@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.9.2**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **2.9.3**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-2.9.2 adds command cadence and once-per-battle-round thinking, saved reasoning effort, and reliable local AI takeover after cancellation. Secondary API commanders can propose surrender or mutual withdrawal; players can accept or reject with a reply recorded in the battle report. Agreements always involve two factions, and withdrawal never automatically routes the player faction in a three-way battle. See the [current release](docs/current-release.md).
+2.9.3 keeps battle-round command cadence separate from the two thinking modes, default and nonthinking. Advanced compatibility settings accept editable JSON parameters, default to DeepSeek thinking disabled, and include a restore-default button. Surrender, bilateral withdrawal, and local AI takeover after cancellation remain available. See the [current release](docs/current-release.md).
 
 ## Documentation
 

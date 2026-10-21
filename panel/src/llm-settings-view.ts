@@ -1,19 +1,17 @@
 import { escapeHtml as esc } from './battle-presentation.js';
-import { COMMAND_THINKING_OFF_PARAMS, parseCommandParameters, type LlmSettings } from './llm-settings.js';
+import { COMMAND_THINKING_OFF_PARAMS, type LlmSettings } from './llm-settings.js';
 export function renderLlmSettings(c: LlmSettings, status = '', worldbooks = ''): string {
   const models = [...new Set([...(c.model ? [c.model] : []), ...c.models])];
-  let effort = '';
-  try { const value = parseCommandParameters(c.commandThinkingOffParams ?? COMMAND_THINKING_OFF_PARAMS).reasoning_effort; if (typeof value === 'string') effort = value; } catch { /* Keep the original JSON editable. */ }
   return `<section class="llm-settings"><h2>上下文与开战配置</h2>
     <label class="llm-setting-field">配置方式 <select data-role="llm-mode"><option value="manual" ${c.enabled ? '' : 'selected'}>手动配置 · 内置自动战斗</option><option value="llm" ${c.enabled ? 'selected' : ''}>普通 LLM 读取上下文</option><option value="jev" disabled>JEV 指挥（暂不可用）</option></select></label>
     <p>开战前读取最近的正文，由模型选择双方指挥、任务与战场。指挥配置只影响自动行动。</p>
     <label><input data-role="llm-enemy-command" type="checkbox" ${c.commandEnemy ? 'checked' : ''} ${c.enabled ? '' : 'disabled'}>LLM 指挥</label>
     <label class="llm-setting-field">指挥间隔 <select data-role="llm-command-interval" ${c.enabled ? '' : 'disabled'}><option value="round" ${c.commandInterval !== 'situation' ? 'selected' : ''}>每回合（推荐，调用次数少）</option><option value="situation" ${c.commandInterval === 'situation' ? 'selected' : ''}>根据战况（次数多）</option></select></label>
-    <label class="llm-setting-field">指挥思考模式 <select data-role="llm-command-thinking" ${c.enabled ? '' : 'disabled'}><option value="auto" ${!c.commandThinking || c.commandThinking === 'auto' ? 'selected' : ''}>默认（时间可能不稳定）</option><option value="round" ${c.commandThinking === 'round' ? 'selected' : ''}>每回合思考一次</option><option value="off" ${c.commandThinking === 'off' ? 'selected' : ''}>非思考（默认参数ds官渠，可在兼容设置调思考强度，不同渠道参数可能不同）</option></select></label>
-    ${c.commandThinking === 'off' || c.commandThinking === 'round' ? `<details><summary>高级兼容设置</summary>
-      <label>思考强度（reasoning_effort）<input data-role="llm-command-effort" value="${esc(effort)}" placeholder="例如 high；留空不附加" ${c.enabled ? '' : 'disabled'}></label>
-      <label>非思考参数（JSON）<textarea data-role="llm-command-params" rows="4" spellcheck="false" ${c.enabled ? '' : 'disabled'}>${esc(c.commandThinkingOffParams ?? COMMAND_THINKING_OFF_PARAMS)}</textarea></label>
-      <p class="sub">思考强度填写后自动保存，也可编辑 JSON，例如 {&quot;reasoning_effort&quot;:&quot;high&quot;}。未知参数原样发送；填 {} 不附加参数。每回合思考一次时，本轮首次请求使用默认，其余请求使用这里的参数。</p><p data-role="llm-command-params-status" role="status"></p></details>` : ''}
+    <label class="llm-setting-field">指挥思考模式 <select data-role="llm-command-thinking" ${c.enabled ? '' : 'disabled'}><option value="auto" ${!c.commandThinking || c.commandThinking === 'auto' ? 'selected' : ''}>默认（时间可能不稳定）</option><option value="off" ${c.commandThinking === 'off' ? 'selected' : ''}>非思考（默认参数ds官渠，可在兼容设置调整，不同渠道参数可能不同）</option></select></label>
+    ${c.commandThinking === 'off' ? `<details><summary>高级兼容设置</summary>
+      <label>附加参数（JSON）<textarea data-role="llm-command-params" rows="4" spellcheck="false" ${c.enabled ? '' : 'disabled'}>${esc(c.commandThinkingOffParams ?? COMMAND_THINKING_OFF_PARAMS)}</textarea></label>
+      <button data-action="llm-command-params-reset" ${c.enabled ? '' : 'disabled'}>恢复默认</button>
+      <p class="sub">默认使用 DeepSeek 官渠关闭思考的参数。可按渠道填写其他参数，有效 JSON 自动保存并原样发送；填 {} 不附加参数。</p><p data-role="llm-command-params-status" role="status"></p></details>` : ''}
     <label><input data-role="llm-map-design" type="checkbox" ${c.designMap === true ? 'checked' : ''} ${c.enabled ? '' : 'disabled'}>由 LLM 设计地图</label>
     <p class="sub">按正文布置城市、河流、地点与双方位置，每次开战多请求1次。关闭时使用随机地图。</p>
     <label><input data-role="llm-vip" type="checkbox" ${c.selectVip === true ? 'checked' : ''} ${c.enabled ? '' : 'disabled'}>由 LLM 选择护送／拦截 VIP</label>

@@ -3,12 +3,12 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { nativeFixture } from '../../runtime/tests/native-fixture.js';
 import { generateUnit, SmallBattle, standardField, V24_OVERFLOW_D20 } from '../../engine/src/index.js';
 import { unitRecordFromCombatant } from './unit-state.js';
-import { LLM_SETTINGS_KEY } from './llm-settings.js';
+import { LLM_SETTINGS_KEY, COMMAND_THINKING_OFF_PARAMS } from './llm-settings.js';
 import { encounterRequest, normalizeContextSettings } from './jev-context.js';
 vi.mock('./panel-runtime.js', async () => import('../../extension/src/panel-runtime.js'));
 afterEach(() => { window.dispatchEvent(new Event('pagehide')); vi.unstubAllGlobals(); });
 
-it('saves reasoning effort through the actual settings UI and lets local AI finish the round after cancelling both commanders', async () => {
+it('saves and resets generic parameters through the settings UI and lets local AI finish the round after cancelling both commanders', async () => {
   const f = nativeFixture(); await f.service.start(); localStorage.clear();
   const units = (['ally', 'enemy', 'neutral'] as const).map((side, i) => {
     const unit = generateUnit({ name: side, side, scale: 'hero', rulesVersion: 'v2', damageModel: 'wounds-v2', level: 4,
@@ -41,14 +41,19 @@ it('saves reasoning effort through the actual settings UI and lets local AI fini
   await import('./main.js');
   const idle = () => vi.waitFor(() => expect(document.body.getAttribute('aria-busy')).not.toBe('true'), { timeout: 10000 });
   document.querySelector<HTMLButtonElement>('[data-action="workspace-tab"][data-tab="settings"]')!.click(); await idle();
-  const effort = document.querySelector<HTMLInputElement>('[data-role="llm-command-effort"]')!;
-  effort.value = 'high'; effort.dispatchEvent(new Event('input', { bubbles: true }));
-  expect(effort.validationMessage).toBe('');
-  expect(JSON.parse(JSON.parse(localStorage.getItem(LLM_SETTINGS_KEY)!).commandThinkingOffParams)).toEqual({ reasoning_effort: 'high' });
-  const json = document.querySelector<HTMLTextAreaElement>('[data-role="llm-command-params"]')!;
-  expect(json.value).toBe('{"reasoning_effort":"high"}');
+  expect(document.querySelector('[data-role="llm-command-effort"]')).toBeNull();
+  expect([...document.querySelectorAll('[data-role="llm-command-thinking"] option')].map(el=>el.getAttribute('value'))).toEqual(['auto','off']);
+  let json = document.querySelector<HTMLTextAreaElement>('[data-role="llm-command-params"]')!;
+  json.value = '{"enable_thinking":false,"vendor":{"effort":"high"}}'; json.dispatchEvent(new Event('input', { bubbles: true }));
+  expect(json.validationMessage).toBe('');
+  const beforeReset=JSON.parse(localStorage.getItem(LLM_SETTINGS_KEY)!);
+  document.querySelector<HTMLButtonElement>('[data-action="llm-command-params-reset"]')!.click();await idle();
+  json=document.querySelector<HTMLTextAreaElement>('[data-role="llm-command-params"]')!;
+  expect(json.value).toBe(COMMAND_THINKING_OFF_PARAMS);
+  expect(JSON.parse(localStorage.getItem(LLM_SETTINGS_KEY)!)).toEqual({...beforeReset,commandThinkingOffParams:COMMAND_THINKING_OFF_PARAMS});
   json.value = '{"reasoning_effort":'; json.dispatchEvent(new Event('input', { bubbles: true }));
   expect(json.validationMessage).toContain('有效 JSON');
+  expect(JSON.parse(localStorage.getItem(LLM_SETTINGS_KEY)!).commandThinkingOffParams).toBe(COMMAND_THINKING_OFF_PARAMS);
   json.value = '{"reasoning_effort":"high","vendor_strength":7}'; json.dispatchEvent(new Event('input', { bubbles: true }));
   expect(json.validationMessage).toBe('');
   expect(document.querySelector('[data-role="llm-command-params-status"]')!.textContent).toContain('已保存');
@@ -65,6 +70,6 @@ it('saves reasoning effort through the actual settings UI and lets local AI fini
   expect(JSON.stringify(f.service.snapshot())).not.toContain('discard-late-plan');
   expect(document.body.textContent).not.toContain('自动行动未推进回合');
   document.querySelector<HTMLButtonElement>('[data-action="workspace-tab"][data-tab="settings"]')!.click(); await idle();
-  expect(document.querySelector<HTMLInputElement>('[data-role="llm-command-effort"]')!.value).toBe('high');
+  expect(document.querySelector<HTMLTextAreaElement>('[data-role="llm-command-params"]')!.value).toBe('{"reasoning_effort":"high","vendor_strength":7}');
   f.service.dispose();
 }, 20000);
