@@ -323,8 +323,9 @@ describe('atomic LLM command execution', () => {
     sendPlayerLetter(b,['enemy'],'  保留原话与空格。  ');const s=state(b.seed),before=structuredClone(b.toSnapshot());
     const request:typeof fetch=async(_url,init)=>{
       const d=initial(init);expect(d.letters).toEqual([{id:1,round:1,from:'opponent-1',text:'  保留原话与空格。  '}]);
-      return b instanceof MassBattle?call('commander_orders',{orders:d.formations.map((f:any)=>({unitId:f.unitId,choice:f.choices.find((c:any)=>c.order?.type==='hold').id}))})
+      const result=b instanceof MassBattle?call('commander_orders',{orders:d.formations.map((f:any)=>({unitId:f.unitId,choice:f.choices.find((c:any)=>c.order?.type==='hold').id}))})
         :call('commander_act',{choice:d.choices.find((c:any)=>c.action?.type==='end_turn').id});
+      const json=await result.json();json.choices[0].message.tool_calls.unshift({id:'review',type:'function',function:{name:'commander_plan',arguments:JSON.stringify({addNotes:['部分采纳来信，先保持警戒。']})}});return new Response(JSON.stringify(json));
     };
     const c=new LlmCommandController(COMMAND_PROMPTS,()=>{},request);
     const result=b instanceof MassBattle?await c.mass(b,s,settings,()=>true):await c.small(b,s,settings,()=>true);

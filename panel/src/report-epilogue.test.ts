@@ -1,10 +1,10 @@
 import {describe,it,expect} from 'vitest';
-import {generateUnit,traitRegistry,SmallBattle,MassBattle,V3_D20,V3_TW,V6_D20,V6_TW,standardField,applyRecovery,applyHealthLoss,type Combatant} from '../../engine/src/index.js';
+import {generateUnit,traitRegistry,SmallBattle,MassBattle,V3_D20,V3_TW,V6_D20,V6_TW,standardField,applyRecovery,applyHealthLoss,sendPlayerLetter,applyDiplomacy,isCommunicationLog,type Combatant} from '../../engine/src/index.js';
 import {captureBattleStart,captureBattleArchive} from './report-history.js';
 import {unitRecordFromCombatant,materializeUnitRecord,commitBattleState,updateUnitRecord} from './unit-state.js';
-import {battleEpilogue,makeNarrativeBatch,battleIdOf,publicBattleEvents,withBattleReportQueries,type BattleReport} from './battle-reports.js';
+import {battleEpilogue,makeNarrativeBatch,battleIdOf,publicBattleEvents,withBattleReportQueries,archivedDigest,narrativeEvents,type BattleReport} from './battle-reports.js';
 import {skillDefinitionId} from '../../engine/src/skill-catalog.js';
-import {compactEvents,reportPlaceText} from '../../engine/src/inject/format.js';
+import {compactEvents,reportPlaceText,roundDigest} from '../../engine/src/inject/format.js';
 const registry=traitRegistry(),rng={seed:'fixed',next:()=>0,d:(sides:number)=>sides};
 function unit(id:string,scale:'hero'|'company'='hero',area=false) {
  const u=generateUnit({rulesVersion:'v2',name:id,side:id==='A'?'ally':'enemy',scale,body:'large',level:5,weaponClass:'sword',armorTier:0,traits:[],...(scale==='company'?{hpMax:10}:{}),...(area?{abilityBlueprints:[{id:skillDefinitionId('魔法范围')!,level:5}]}:{})},{seed:id,registry,noVariance:true}).unit;
@@ -19,6 +19,31 @@ function hit(b:SmallBattle|MassBattle,actor:string,target:string) {
  else {expect(b.issue({unitId:actor,type:'attack',targetId:target}).ok).toBe(true);b.issue({unitId:target,type:'hold'});b.resolveRound();}
 }
 describe('终章事实与致命开关',()=>{
+ it.each(['small','mass'] as const)('%s逐轮、增量、终章与旧归档保留我方原话和投降撤军提议及答复',mode=>{
+  const b=battle(mode,false,[unit('A'),unit('D')]);
+  sendPlayerLetter(b,['enemy'],'缴枪不杀！！！\n持续3轮，剩余4件。');
+  sendPlayerLetter(b,['enemy'],'缴枪不杀！！！\n持续3轮，剩余4件。');
+  applyDiplomacy(b,'enemy',{mode:'surrender',target:'ally',text:'我方愿缴械，请保证安全。'});
+  applyDiplomacy(b,'ally',{mode:'reject',id:1,text:'不同意这项条件。'});
+  b.round++;applyDiplomacy(b,'enemy',{mode:'withdraw',target:'ally',text:'双方各自撤军。'});
+  applyDiplomacy(b,'ally',{mode:'accept',id:2,text:'同意，互不追击。'});
+  const expected=b.log.filter(isCommunicationLog).map(e=>e.text);
+  for(const entry of b.log)delete entry.communication; // 已发布旧快照没有此标记。
+  const digest=roundDigest(b,undefined,undefined,{wholeBattle:true}),epilogue=battleEpilogue(b),events=narrativeEvents(b);
+  const delta=makeNarrativeBatch(b,undefined,{},'delta').text;
+  for(const text of expected)for(const output of [digest,epilogue,delta])expect(output).toContain(text);
+  expect(compactEvents(b.log).filter(text=>text.startsWith('我方对敌方消息：'))).toHaveLength(2);
+  const old:BattleReport={id:battleIdOf(b),card:'旧结算',digest:'旧纪要',summary:'旧摘要',epilogue:'旧终章',deliveries:{},narrativeEvents:events,eventCount:b.log.length};
+  const frozen=JSON.stringify(old),archived=makeNarrativeBatch(undefined,old,{},'epilogue').text;
+  for(const text of expected){expect(archivedDigest(old)).toContain(text);expect(archived).toContain(text);}
+  expect(JSON.stringify(old)).toBe(frozen);
+ });
+ it('战斗中不把敌方和第三方的私下交涉暴露到我方摘要',()=>{
+  const a=unit('A'),d=unit('D'),third=unit('E');third.side='neutral';
+  const b=battle('small',false,[a,d,third]);
+  applyDiplomacy(b,'enemy',{mode:'withdraw',target:'neutral',text:'秘密撤军条件。'});
+  for(const text of [roundDigest(b),battleEpilogue(b),narrativeEvents(b).map(e=>e.text).join('\n')])expect(text).not.toContain('秘密撤军条件。');
+ });
  it('公开日志仅在同步渲染范围内复用，嵌套与异常退出后仍读取最新记录',()=>{
   const b=battle('small',false,[unit('A'),unit('D')]);
   const first=withBattleReportQueries(()=>{

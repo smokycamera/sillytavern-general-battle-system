@@ -16,6 +16,10 @@ export interface DiplomacyBattle {
 const sides: Side[] = ['ally', 'enemy', 'neutral'];
 export const sideName = (side: Side): string => ({ ally: '我方', enemy: '敌方', neutral: '第三方' })[side];
 export const emptyDiplomacy = (): BattleDiplomacy => ({ next: 1, revision: 0, offers: [] });
+/** Read old unmarked diplomacy logs as well as new records. */
+export function isCommunicationLog(entry: Pick<BattleLogEntry, 'kind' | 'text' | 'communication'>): boolean {
+  return entry.communication === true || entry.kind === 'rule' && /^(?:我方对.+消息：|(?:我方|敌方|第三方)向(?:我方|敌方|第三方)提出(?:投降|双方各自撤军)|(?:我方|敌方|第三方)(?:同意|拒绝)了(?:我方|敌方|第三方)的(?:投降|双方撤军)请求|(?:敌方|第三方)(?:、(?:敌方|第三方))?全军按(?:双方撤军协议|投降决定)溃退)/.test(entry.text);
+}
 export function playerLetters(b: Pick<DiplomacyBattle, 'diplomacy'>, side: Side, after = 0): BattleLetter[] {
   return (b.diplomacy.letters ?? []).filter(letter => letter.id > after && letter.targets.includes(side));
 }
@@ -28,7 +32,7 @@ export function sendPlayerLetter(b: DiplomacyBattle, targets: Side[], text: stri
   const letters = b.diplomacy.letters ??= [];
   const letter: BattleLetter = { id: (letters.at(-1)?.id ?? 0) + 1, round: b.round, from: 'ally', targets: [...targets], text };
   letters.push(letter);
-  b.log.push({ round: b.round, kind: 'rule', text: `我方对${targets.map(sideName).join('、')}消息：${text}`, observedBy: ['ally', ...targets] });
+  b.log.push({ round: b.round, kind: 'rule', communication: true, text: `我方对${targets.map(sideName).join('、')}消息：${text}`, observedBy: ['ally', ...targets] });
   return letter;
 }
 export function fightingSides(b: Pick<DiplomacyBattle, 'combatants'>): Side[] {
@@ -59,7 +63,7 @@ export function checkDiplomacy(b: DiplomacyBattle, side: Side, decision: Diploma
 export function applyDiplomacy(b: DiplomacyBattle, side: Side, decision: DiplomacyDecision): void {
   checkDiplomacy(b, side, decision);
   const state = b.diplomacy, text = decision.text?.trim() ?? '';
-  const log = (message: string, audience: Side[]) => b.log.push({ round: b.round, kind: 'rule', text: message, observedBy: [...new Set(audience)] });
+  const log = (message: string, audience: Side[]) => b.log.push({ round: b.round, kind: 'rule', communication: true, text: message, observedBy: [...new Set(audience)] });
   if (decision.mode === 'surrender' || decision.mode === 'withdraw') {
     const targets = fightingSides(b).filter(s => s !== side && decision.target === s);
     const offer: DiplomacyOffer = { id: state.next++, round: b.round, mode: decision.mode, from: side, targets, text, replies: [], status: 'pending' };

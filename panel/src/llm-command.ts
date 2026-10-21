@@ -24,6 +24,7 @@ export interface KnownCommandCell { cell: number; terrain: string; height?: numb
 export interface RoundIntents { round: number; replanned: boolean; basis: { visible: string[]; friends: string[] }; units: Record<string, import('../../engine/src/index.js').UnitIntent> }
 export interface CommandMemory { intents?: RoundIntents; letterId?: number; diplomacyRound?: number; diplomacyRevision?: number; plan: string; notes: string[]; terrain: KnownCommandCell[]; contacts?: (ReturnType<typeof unitSummary> & { round: number })[] }
 export const emptyCommandMemory = (): CommandMemory => ({ plan: '', notes: [], terrain: [] });
+interface CommandBudget { left: number; letterReviewed?: number }
 export interface CommanderState { battleSeed: string; side: Side; brief: CommanderBrief; memory: CommandMemory; playerFallback?: { resumeRound?: number }; decision?: DiplomacyDecision & { round: number } }
 type Battle = SmallBattle | MassBattle;
 export interface CommandChoice { id: string; label: string; action?: GameAction; order?: Order; cost?: number; risks?: string[] }
@@ -378,10 +379,13 @@ export class LlmCommandController {
   }
   /** Query tools run locally; plain JSON that fails the final tool's check is retried like a failed request. */
   async decide<T>(b: Battle, actorId: string | undefined, state: CommanderState, mode: 'small' | 'mass' | 'intents', conversation: CommandMessage[], settings: LlmSettings,
-    valid: () => boolean, signal: AbortSignal, budget: { left: number }, final: { check: (args: Record<string, unknown>) => void; apply: (args: Record<string, unknown>) => { done?: T; result: unknown };
+    valid: () => boolean, signal: AbortSignal, budget: CommandBudget, final: { check: (args: Record<string, unknown>) => void; apply: (args: Record<string, unknown>) => { done?: T; result: unknown };
       encode?: (value: unknown) => unknown; decode?: (args: Record<string, unknown>) => Record<string, unknown> }): Promise<T | undefined> {
     const finalName = mode === 'small' ? 'commander_act' : mode === 'intents' ? 'commander_intents' : 'commander_orders', tools = commanderTools(this.prompts, mode);
     const encode = final.encode ?? ((value: unknown) => value), decode = final.decode ?? ((args: Record<string, unknown>) => args);
+    const letter = playerLetters(b, this.side, state.memory.letterId).at(-1)?.id;
+    const needsLetterReview = () => letter !== undefined && budget.letterReviewed !== letter;
+    const reviewError = '请先用 commander_plan 的 addNotes 简短记录对新来信的判断、是否采纳及理由，再提交本次决定';
     while (budget.left-- > 0) {
       if (signal.aborted || !valid()) throw new CommandCancelled();
       const answer = await this.retryRequest(async combined => {
@@ -408,6 +412,7 @@ export class LlmCommandController {
       };
       if (!answer.tool_calls) {
         const args = decode(JSON.parse(answer.content!));
+        if (needsLetterReview()) { conversation.push({ role: 'user', content: JSON.stringify({ error: reviewError }) }); continue; }
         if (['surrender', 'withdraw', 'accept', 'reject'].includes(String(args.mode))) { diplomacy(args); return; }
         const outcome = final.apply(args);
         if (outcome.done !== undefined) return outcome.done;
@@ -415,11 +420,21 @@ export class LlmCommandController {
         continue;
       }
       let done: T | undefined;
+      const planResults = new Map<string, unknown>();
+      // Notes are metadata, so keep them even when the same answer ends with diplomacy.
+      for (const call of answer.tool_calls.filter(call => call.function.name === 'commander_plan')) {
+        try {
+          const args = decode(JSON.parse(call.function.arguments));
+          const result = commanderTool('commander_plan', args, b, actorId, state);
+          if (Array.isArray(args.addNotes) && args.addNotes.some(note => typeof note === 'string' && note.trim())) budget.letterReviewed = letter;
+          planResults.set(call.id, result);
+        } catch (error) { planResults.set(call.id, { error: error instanceof Error ? error.message : '记事格式无效' }); }
+      }
       // A diplomatic decision is terminal; do not also apply combat calls from the same answer.
       const diplomaticCall = answer.tool_calls.find(call => call.function.name === 'diplomacy');
       if (diplomaticCall) {
-        try { diplomacy(JSON.parse(diplomaticCall.function.arguments)); return; }
-        catch (error) { conversation.push(...answer.tool_calls.map(call => ({ role: 'tool' as const, tool_call_id: call.id, content: JSON.stringify({ error: call === diplomaticCall ? String(error) : '本次先处理提议，未执行其他工具' }) }))); continue; }
+        try { if (needsLetterReview()) throw Error(reviewError); diplomacy(JSON.parse(diplomaticCall.function.arguments)); return; }
+        catch (error) { conversation.push(...answer.tool_calls.map(call => ({ role: 'tool' as const, tool_call_id: call.id, content: JSON.stringify(planResults.has(call.id) ? encode(planResults.get(call.id)) : { error: call === diplomaticCall ? String(error) : '本次先处理提议，未执行其他工具' }) }))); continue; }
       }
       for (const call of answer.tool_calls) {
         let result: unknown;
@@ -427,7 +442,9 @@ export class LlmCommandController {
           const raw = JSON.parse(call.function.arguments);
           const args = raw && typeof raw === 'object' && !Array.isArray(raw) ? decode(raw) : raw;
           if (!args || typeof args !== 'object' || Array.isArray(args)) throw Error('工具参数无效');
-          if (call.function.name === finalName) {
+          if (planResults.has(call.id)) result = planResults.get(call.id);
+          else if (call.function.name === finalName) {
+            if (needsLetterReview()) throw Error(reviewError);
             if (done !== undefined) throw Error('每次只能提交一项行动');
             ({ done, result } = final.apply(args));
           } else if (['commander_map', 'commander_unit', 'commander_plan'].includes(call.function.name)) result = commanderTool(call.function.name, args, b, actorId, state);
@@ -440,7 +457,7 @@ export class LlmCommandController {
     throw Error('本单位的工具调用次数已用尽');
   }
   private async choose(b: SmallBattle, actorId: string, state: CommanderState, choices: CommandChoice[], settings: LlmSettings, valid: () => boolean, signal: AbortSignal,
-    budget: { left: number }, conversation: CommandMessage[], sent: { map?: string }, stopped?: { step: CommandStep; reason: string }): Promise<{ choice: CommandChoice; then: CommandStep[] } | undefined> {
+    budget: CommandBudget, conversation: CommandMessage[], sent: { map?: string }, stopped?: { step: CommandStep; reason: string }): Promise<{ choice: CommandChoice; then: CommandStep[] } | undefined> {
     this.status = `指挥官 ${state.brief.name} 正在指挥 ${b.byId(actorId).name}…`; this.changed();
     state.memory = updateCommandMemory(b, state.memory, this.side);
     const { map, ...observation } = commandObservation(b, actorId, this.side);
