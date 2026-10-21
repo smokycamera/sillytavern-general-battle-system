@@ -52,9 +52,13 @@ it('saves and resets generic parameters through the settings UI and lets local A
   expect(json.value).toBe(COMMAND_THINKING_OFF_PARAMS);
   expect(JSON.parse(localStorage.getItem(LLM_SETTINGS_KEY)!)).toEqual({...beforeReset,commandThinkingOffParams:COMMAND_THINKING_OFF_PARAMS});
   json.value = '{"reasoning_effort":'; json.dispatchEvent(new Event('input', { bubbles: true }));
-  expect(json.validationMessage).toContain('有效 JSON');
+  expect(json.validationMessage).toContain('JSON');
   expect(JSON.parse(localStorage.getItem(LLM_SETTINGS_KEY)!).commandThinkingOffParams).toBe(COMMAND_THINKING_OFF_PARAMS);
-  json.value = '{"reasoning_effort":"high","vendor_strength":7}'; json.dispatchEvent(new Event('input', { bubbles: true }));
+  document.querySelector<HTMLButtonElement>('[data-action="workspace-tab"][data-tab="battle"]')!.click();await idle();
+  document.querySelector<HTMLButtonElement>('[data-action="workspace-tab"][data-tab="settings"]')!.click();await idle();
+  json=document.querySelector<HTMLTextAreaElement>('[data-role="llm-command-params"]')!;
+  expect(json.value).toBe('{"reasoning_effort":');expect(document.querySelector('[data-role="llm-command-params-status"]')!.textContent).toContain('草稿已保留');
+  json.value = 'reasoning_effort="high"\nvendor_strength=7'; json.dispatchEvent(new Event('input', { bubbles: true }));
   expect(json.validationMessage).toBe('');
   expect(document.querySelector('[data-role="llm-command-params-status"]')!.textContent).toContain('已保存');
   document.querySelector<HTMLButtonElement>('[data-action="workspace-tab"][data-tab="battle"]')!.click(); await idle();
@@ -70,6 +74,6 @@ it('saves and resets generic parameters through the settings UI and lets local A
   expect(JSON.stringify(f.service.snapshot())).not.toContain('discard-late-plan');
   expect(document.body.textContent).not.toContain('自动行动未推进回合');
   document.querySelector<HTMLButtonElement>('[data-action="workspace-tab"][data-tab="settings"]')!.click(); await idle();
-  expect(document.querySelector<HTMLTextAreaElement>('[data-role="llm-command-params"]')!.value).toBe('{"reasoning_effort":"high","vendor_strength":7}');
+  expect(document.querySelector<HTMLTextAreaElement>('[data-role="llm-command-params"]')!.value).toBe('reasoning_effort="high"\nvendor_strength=7');
   f.service.dispose();
 }, 20000);

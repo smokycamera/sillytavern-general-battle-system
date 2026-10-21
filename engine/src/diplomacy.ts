@@ -7,7 +7,8 @@ export interface DiplomacyOffer {
   replies: { from: Side; mode: 'accept' | 'reject'; round: number; text: string }[];
   status: 'pending' | 'accepted' | 'rejected' | 'expired';
 }
-export interface BattleDiplomacy { next: number; revision: number; offers: DiplomacyOffer[] }
+export interface BattleLetter { id: number; round: number; from: 'ally'; targets: Side[]; text: string }
+export interface BattleDiplomacy { next: number; revision: number; offers: DiplomacyOffer[]; letters?: BattleLetter[] }
 export interface DiplomacyBattle {
   round: number; combatants: Combatant[]; diplomacy: BattleDiplomacy; log: BattleLogEntry[];
   isOver(): boolean; finishDiplomacy(winner: Side | 'draw', text: string): void;
@@ -15,6 +16,21 @@ export interface DiplomacyBattle {
 const sides: Side[] = ['ally', 'enemy', 'neutral'];
 export const sideName = (side: Side): string => ({ ally: '我方', enemy: '敌方', neutral: '第三方' })[side];
 export const emptyDiplomacy = (): BattleDiplomacy => ({ next: 1, revision: 0, offers: [] });
+export function playerLetters(b: Pick<DiplomacyBattle, 'diplomacy'>, side: Side, after = 0): BattleLetter[] {
+  return (b.diplomacy.letters ?? []).filter(letter => letter.id > after && letter.targets.includes(side));
+}
+export const latestLetter = (b: Pick<DiplomacyBattle, 'diplomacy'>, side: Side): number => playerLetters(b, side).at(-1)?.id ?? 0;
+export function sendPlayerLetter(b: DiplomacyBattle, targets: Side[], text: string): BattleLetter {
+  if (b.isOver()) throw Error('战斗已结束，不能发信');
+  if (typeof text !== 'string' || !text.trim() || text.length > 1000) throw Error('信件须为1至1000字文本');
+  const active = fightingSides(b);
+  if (!targets.length || new Set(targets).size !== targets.length || targets.some(side => side === 'ally' || !active.includes(side))) throw Error('收件方已退场或无效');
+  const letters = b.diplomacy.letters ??= [];
+  const letter: BattleLetter = { id: (letters.at(-1)?.id ?? 0) + 1, round: b.round, from: 'ally', targets: [...targets], text };
+  letters.push(letter);
+  b.log.push({ round: b.round, kind: 'rule', text: `我方对${targets.map(sideName).join('、')}消息：${text}`, observedBy: ['ally', ...targets] });
+  return letter;
+}
 export function fightingSides(b: Pick<DiplomacyBattle, 'combatants'>): Side[] {
   return sides.filter(side => b.combatants.some(u => u.side === side && u.hp > 0 && ['ready', 'routing'].includes(u.status) && !u.moraleState?.forcedRetreat));
 }
@@ -87,6 +103,16 @@ export function restoreDiplomacy(value: unknown): BattleDiplomacy {
       || !Array.isArray(o.replies) || new Set(o.replies.map(r => r.from)).size !== o.replies.length
       || o.replies.some(r => !r || !o.targets.includes(r.from) || !['accept', 'reject'].includes(r.mode) || !Number.isSafeInteger(r.round) || r.round < o.round || typeof r.text !== 'string' || r.text.length > 1000)) throw Error('投降／撤军提议损坏');
     ids.add(o.id);
+  }
+  if (v.letters !== undefined) {
+    if (!Array.isArray(v.letters)) throw Error('来信记录损坏');
+    let previous = 0;
+    for (const letter of v.letters) {
+      if (!letter || !Number.isSafeInteger(letter.id) || letter.id <= previous || !Number.isSafeInteger(letter.round) || letter.round < 1 || letter.from !== 'ally'
+        || !Array.isArray(letter.targets) || !letter.targets.length || new Set(letter.targets).size !== letter.targets.length
+        || letter.targets.some(side => !sides.includes(side) || side === 'ally') || typeof letter.text !== 'string' || !letter.text.trim() || letter.text.length > 1000) throw Error('来信记录损坏');
+      previous = letter.id;
+    }
   }
   return structuredClone(v);
 }

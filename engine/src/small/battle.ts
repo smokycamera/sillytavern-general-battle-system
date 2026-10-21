@@ -3473,7 +3473,7 @@ export class SmallBattle {
       ...(this.allyAiControl.size ? { allyAiControl: [...this.allyAiControl] } : {}),
       ...(this.sparedIds.size ? { sparedIds: [...this.sparedIds] } : {}),
       battlefield: this.battlefield,
-      ...(this.diplomacy.offers.length ? { diplomacy: this.diplomacy } : {}),
+      ...(this.diplomacy.offers.length || this.diplomacy.letters?.length ? { diplomacy: this.diplomacy } : {}),
       searchCoverage: this.searchCoverage,
       intel: this.intel,
       ...(this.activationStarts.size ? { activationStarts: [...this.activationStarts] } : {}),

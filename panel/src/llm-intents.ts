@@ -3,8 +3,8 @@ import { CommandCancelled, commandObservation, compactCommandMap, unitSummary, u
 import type { LlmSettings } from './llm-settings.js';
 import type { CommandMessage } from './jev-connection.js';
 import { battleAbilities } from './battle-skills.js';
-import { incomingDiplomacy } from '../../engine/src/diplomacy.js';
-import { commandDiplomacy } from './llm-diplomacy.js';
+import { incomingDiplomacy, playerLetters, latestLetter } from '../../engine/src/diplomacy.js';
+import { commandDiplomacy, commandLetters } from './llm-diplomacy.js';
 
 const present = (u: Combatant) => ['ready', 'routing'].includes(u.status);
 /** Stable short names within this commander's view; actual save/engine identities stay intact. */
@@ -30,7 +30,7 @@ class IntentIds {
   private translate(value: unknown, ids: Map<string, string>): unknown {
     if (typeof value === 'string') return ids.get(value) ?? value;
     if (Array.isArray(value)) return value.map(v => this.translate(v, ids));
-    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [ids.get(k) ?? k, this.translate(v, ids)]));
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [ids.get(k) ?? k, k === 'text' || k === 'letters' ? v : this.translate(v, ids)]));
     return value;
   }
   encode = (value: unknown): unknown => this.translate(value, this.short);
@@ -50,9 +50,12 @@ export class LlmIntentPlanner {
   prefetch(b: SmallBattle, state: CommanderState, settings: LlmSettings, valid: () => boolean): void {
     if (state.decision && state.decision.round !== b.round) delete state.decision;
     const incoming = incomingDiplomacy(b, state.side).length > 0;
+    const letters = playerLetters(b, state.side, state.memory.letterId).length > 0;
+    if (letters && b.active?.side !== state.side) return;
+    if (letters) { delete state.memory.intents; delete state.decision; delete state.memory.diplomacyRound; }
     if (incoming && state.memory.diplomacyRevision !== b.diplomacy.revision) delete state.memory.intents;
     if (!b.battlefield || b.isOver() || this.pending || this.commander.busy || !this.commander.available(b, settings, state)
-      || state.decision || state.memory.diplomacyRound === b.round && !incoming
+      || state.decision || state.memory.diplomacyRound === b.round && !incoming && !letters
       || state.memory.intents?.round === b.round || !intentForces(b, state.side).forces.length) return;
     this.start(b, state, settings, valid);
   }
@@ -84,8 +87,8 @@ export class LlmIntentPlanner {
     void pending.finally(() => { if (this.pending === pending) this.pending = undefined; });
   }
   private async plan(b: SmallBattle, state: CommanderState, settings: LlmSettings, valid: () => boolean, reason?: string): Promise<void> {
-    const round = b.round;
-    const current = () => valid() && b.round === round && !b.isOver();
+    const round = b.round, letter = latestLetter(b, state.side);
+    const current = () => valid() && b.round === round && !b.isOver() && latestLetter(b, state.side) === letter;
     const result = await this.commander.run(b, settings, current, `指挥官 ${state.brief.name} 正在部署第${round}轮意图…`, async signal => {
       const candidate = SmallBattle.fromSnapshot(structuredClone(b.toSnapshot()), { traitRegistry: b.traitRegistry, summonUnit: b.summonUnit });
       Object.assign(candidate, { rules: b.rules }); b.conditions.all().forEach(c => candidate.conditions.register(c));
@@ -139,7 +142,7 @@ export class LlmIntentPlanner {
         lastSightings: command.memory.contacts?.filter(u => !observation.units.some(v => v.id === u.id)), round, ...(reason ? { reason } : {}),
         forces: forces.map(u => ({ ...unitSummary(observation.units.find(v => v.id === u.id)!), weapon: { name: u.weapon?.name, ranged: isRangedCapable(u), range: weaponRangeSpec(gridWeapon(u.weapon, candidate.rules.combatModel === MEMBER_HEALTH_MODEL, candidate.rules.armsModel), isRangedCapable(u)) },
           ...(battleAbilities(u).length ? { skills: battleAbilities(u).map(a => ({ id: a.id, name: a.name, target: a.target })) } : {}) })),
-        diplomacy: commandDiplomacy(candidate, state.side), observation: { ...observation, units: observation.units.map(unitSummary) }, previous })) }];
+        letters: commandLetters(candidate, state.side, command.memory.letterId), diplomacy: commandDiplomacy(candidate, state.side), observation: { ...observation, units: observation.units.map(unitSummary) }, previous })) }];
       await this.commander.decide(candidate, undefined, command, 'intents', conversation, settings, current, signal, { left: 4 }, { check: () => {}, apply, encode: ids.encode, decode: ids.decode });
       const used = new Set<number>();
       for (const [id, intent] of Object.entries(units).sort(([a], [z]) => a.localeCompare(z))) {
@@ -156,6 +159,7 @@ export class LlmIntentPlanner {
         intent.cell = cell; used.add(cell);
       }
       command.memory.diplomacyRevision = candidate.diplomacy.revision;
+      command.memory.letterId = latestLetter(candidate, state.side);
       if (!command.decision) command.memory.intents = { round, replanned: !!reason, basis: { visible: observation.units.filter(u => u.side !== 'friendly').map(u => u.id), friends: own.map(u => u.id) }, units };
       return { command, seen };
     });

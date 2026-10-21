@@ -8,6 +8,7 @@ export interface LlmSettings {
   commandInterval?: 'round' | 'situation';
   commandThinking?: 'auto' | 'off';
   commandThinkingOffParams?: string;
+  commandThinkingOffDraft?: string;
   /** Older records inherit defaults only for missing keys; explicit choices survive upgrades. */
   designMap?: boolean;
   selectVip?: boolean;
@@ -27,7 +28,23 @@ const defaults = (): LlmSettings => ({ enabled: false, selectBattleScale: false,
 export function parseCommandParameters(text: string): Record<string, unknown> {
   if (text.length > 20000) throw Error('附加参数不能超过20000字');
   let value: unknown;
-  try { value = JSON.parse(text); } catch { throw Error('附加参数须为有效 JSON 对象；填写 {} 可不附加参数'); }
+  try { value = JSON.parse(text); } catch {
+    const entries: [string, unknown][] = [];
+    for (const line of text.trim().split(/\r?\n/)) {
+      const match = /^\s*([^\s=]+)\s*=\s*(.*?)\s*$/.exec(line);
+      if (!match || !match[2]) throw Error('附加参数须为 JSON 对象，或每行一个 参数名=值；填写 {} 可不附加参数');
+      const [, key, raw] = match;
+      let parameter: unknown;
+      try { parameter = JSON.parse(raw!); }
+      catch {
+        if (!/^[\p{L}\p{N}_.+-]+$/u.test(raw!)) throw Error('参数值未写完整；文字可用双引号包裹，数组和对象须为 JSON');
+        parameter = raw;
+      }
+      if (entries.some(([name]) => name === key)) throw Error('参数名重复：' + key);
+      entries.push([key!, parameter]);
+    }
+    value = Object.fromEntries(entries);
+  }
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('附加参数须为 JSON 对象');
   const reserved = ['model', 'messages', 'stream', 'tools', 'tool_choice', 'parallel_tool_calls', 'response_format', '__proto__', 'constructor', 'prototype'];
   if (Object.keys(value).some(key => reserved.includes(key))) throw Error('附加参数不能覆盖模型、消息、工具或输出格式');
@@ -56,6 +73,7 @@ export function readLlmSettings(): LlmSettings {
         commandInterval: v.commandInterval === 'situation' ? 'situation' : 'round',
         commandThinking: v.commandThinking === 'off' ? 'off' : 'auto',
         commandThinkingOffParams: typeof v.commandThinkingOffParams === 'string' ? v.commandThinkingOffParams : COMMAND_THINKING_OFF_PARAMS,
+        ...(typeof v.commandThinkingOffDraft === 'string' ? { commandThinkingOffDraft: v.commandThinkingOffDraft } : {}),
         designMap: v.designMap === undefined ? true : v.designMap === true,
         selectVip: v.selectVip === undefined ? true : v.selectVip === true,
         worldbooks: normalizeWorldbookSelection(v.worldbooks),

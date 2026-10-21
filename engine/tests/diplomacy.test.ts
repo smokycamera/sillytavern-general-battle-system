@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyDiplomacy, generateUnit, incomingDiplomacy, MassBattle, observedLog, SmallBattle, standardField, V24_OVERFLOW_D20, V24_OVERFLOW_TW, type Side } from '../src/index.js';
+import { applyDiplomacy, generateUnit, incomingDiplomacy, MassBattle, observedLog, SmallBattle, standardField, V24_OVERFLOW_D20, V24_OVERFLOW_TW, sendPlayerLetter, playerLetters, type Side } from '../src/index.js';
 import { decideMorale } from '../src/morale.js';
 
 function fixture(three = false, mass = false) {
@@ -14,6 +14,17 @@ function fixture(three = false, mass = false) {
   b.start(); units.forEach((u, i) => { u.pos = 35 + i * 2; }); return b;
 }
 describe('bilateral surrender and withdrawal', () => {
+  it.each([false,true])('saves letters independently of offers and logs exact text without disclosing another recipient (mass=%s)', mass=>{
+    const b=fixture(!mass,mass), before=b.combatants.map(u=>[u.hp,u.status]);
+    sendPlayerLetter(b,['enemy'],'先撤出桥头。\n“我方”原话保留。');
+    expect(b.log.at(-1)?.text).toBe('我方对敌方消息：先撤出桥头。\n“我方”原话保留。');
+    expect(observedLog(b.log,'neutral').some(e=>e.text.includes('原话保留'))).toBe(false);
+    const loaded=mass?MassBattle.fromSnapshot(structuredClone(b.toSnapshot())):SmallBattle.fromSnapshot(structuredClone(b.toSnapshot()));
+    expect(playerLetters(loaded,'enemy')).toEqual(b.diplomacy.letters);expect(playerLetters(loaded,'neutral')).toEqual([]);
+    if(!mass) { sendPlayerLetter(loaded,['enemy','neutral'],'双方都退一步。');expect(playerLetters(loaded,'enemy',1)).toHaveLength(1);expect(playerLetters(loaded,'neutral')[0]?.id).toBe(2); }
+    expect(loaded.combatants.map(u=>[u.hp,u.status])).toEqual(before);expect(loaded.isOver()).toBe(false);
+    const count=loaded.log.length;expect(()=>sendPlayerLetter(loaded,['ally'],'无效')).toThrow();expect(loaded.log).toHaveLength(count);
+  });
   it.each([false, true])('rejects without ending combat, preserves exact reply and rejects duplicate responses (mass=%s)', mass => {
     const b = fixture(false, mass), before = b.combatants.map(u => [u.hp, u.status]);
     applyDiplomacy(b, 'enemy', { mode: 'surrender', target: 'ally', text: '请接受投降。' });

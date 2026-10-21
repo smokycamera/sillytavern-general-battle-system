@@ -28,9 +28,19 @@ describe('global ordinary LLM settings',()=>{
     expect(html.indexOf('data-role="llm-command-interval"')).toBeLessThan(html.indexOf('data-role="llm-command-thinking"'));
     expect(html).toContain('每回合（推荐，调用次数少）');expect(html).not.toContain('每回合思考一次');
     expect(html.match(/data-role="llm-command-thinking"[^>]*>(.*?)<\/select>/s)![1]!.match(/<option /g)).toHaveLength(2);
-    expect(html).not.toContain('llm-command-effort');expect(html).toContain('附加参数（JSON）');expect(html).toContain('llm-command-params-reset');
+    expect(html).not.toContain('llm-command-effort');expect(html).toContain('附加参数');expect(html).toContain('llm-command-params-reset');
     data.set(LLM_SETTINGS_KEY,JSON.stringify({...settings,commandThinking:'round'}));
     expect(readLlmSettings()).toMatchObject({commandInterval:'situation',commandThinking:'auto',commandThinkingOffParams:settings.commandThinkingOffParams});
+  });
+  it('accepts generic assignments without rewriting names and preserves unfinished drafts independently',()=>{
+    storage();const settings={...readLlmSettings(),commandThinking:'off' as const,commandThinkingOffParams:'reasoning_effort="low"\nenable_thinking=false\nvendor={"budget":64}'};
+    expect(commandRequestOptions(settings)).toEqual({reasoning_effort:'low',enable_thinking:false,vendor:{budget:64}});
+    expect(parseCommandParameters('reaoning_effort="low"')).toEqual({reaoning_effort:'low'});
+    expect(parseCommandParameters('vendor_strength=high')).toEqual({vendor_strength:'high'});
+    for(const invalid of ['reasoning_effort="lo','thinking={','model=other','messages=[]','same=1\nsame=2']) expect(()=>parseCommandParameters(invalid)).toThrow();
+    saveLlmSettings({...settings,commandThinkingOffDraft:'reasoning_effort="lo'});
+    expect(renderLlmSettings(readLlmSettings())).toContain('reasoning_effort=&quot;lo');
+    expect(commandRequestOptions(readLlmSettings())).toEqual({reasoning_effort:'low',enable_thinking:false,vendor:{budget:64}});
   });
   it('round trips credentials and model list without using a chat/card key or legacy route',()=>{
     const data=storage(),s={...readLlmSettings(),url:'https://gateway.example/v1',token:'test-key',model:'chosen',models:['chosen','other'],enabled:true,selectBattleScale:false,windowSize:18};
