@@ -4,6 +4,9 @@ import {standardField,findGridPath,gridCostsToGoals,movementStepCost,unitLineOfS
   standingTerrain,gridWeapon,gridDistance,weaponTargetReason,collectMods,standardConditionMap,traitRegistry,type BattlefieldSpec} from '../src/index.js';
 import {rangedScreen} from '../src/guard-screen.js';
 import {engagementWidth} from '../src/exposure.js';
+import {initializeHeightMap} from '../src/small/height-map.js';
+import {generatedLayeredField} from '../src/small/layered-generator.js';
+import {groundBlocked} from '../src/small/layers.js';
 function sceneUnit(id:string,side:'ally'|'enemy',ranged=false) {
   const u=generateUnit({name:id,side,scale:'hero',rulesVersion:'v2',level:3,weaponClass:ranged?'bow':'sword',weaponLevel:3,traits:[]},{seed:id,noVariance:true}).unit;u.id=id;return u;
 }
@@ -12,6 +15,31 @@ function field():BattlefieldSpec {
   const f=standardField(7,9);f.tiles.fill('open');f.layerVersion=1;f.structures=f.tiles.map(()=>null);f.spatialRulesVersion=2;f.groundHeight=f.tiles.map(()=>0);return f;
 }
 describe('real ground heights',()=>{
+  it.each(['building_siege','interior'] as const)('%s generates reachable raised rooms across actual doorways',scene=>{
+    const f=generatedLayeredField('feedback-raised-room',7,13,[],{plan:{scene,size:'standard',water:'none',landmarks:[{id:'hall',kind:'room',label:'堡垒主厅',anchor:'north',height:2}]}});
+    const room=f.landmarks!.find(m=>m.id==='hall')!;
+    expect(room.cells.every(p=>f.groundHeight![p]===2)).toBe(true);
+    for(const s of f.structures??[])if(s?.kind==='gate')s.gateState='open';
+    const a=sceneUnit('a','ally'),allowed=(p:number)=>!groundBlocked(f,p);
+    const low=f.tiles.flatMap((_,p)=>allowed(p)&&f.groundHeight![p]===0?[p]:[]);
+    expect(low.some(p=>findGridPath(f,p,room.cells[0]!,allowed,(to,from)=>movementStepCost(f,to,a,[],from)))).toBe(true);
+    validateField(f);
+  });
+  it('connects locked raised rooms through doors and cover without changing explicit heights or crossing walls',()=>{
+    const f=field(),a=sceneUnit('a','ally');a.pos=28;
+    f.landmarks=[{id:'low',kind:'square',label:'院落',cells:[28,29],scale:'minor'},{id:'high',kind:'room',label:'高台',cells:[30,31],scale:'minor'}];
+    f.structures![29]=createStructure('gate',3,{gateState:'closed'});
+    f.structures![31]=createStructure('cover',3);
+    f.structures![23]=createStructure('wall',3);
+    initializeHeightMap(f,{landmarks:[{id:'low',kind:'square',anchor:'center',height:0},{id:'high',kind:'room',anchor:'center',height:2}]});
+    expect(f.groundHeight!.slice(28,32)).toEqual([0,0,2,2]);
+    expect(f.heightTransitions).toContainEqual({from:29,to:30,kind:'stairs'});
+    expect(f.heightTransitions?.some(e=>e.from===23||e.to===23)).toBe(false);
+    expect(findGridPath(f,28,30,p=>[28,29,30].includes(p),(p,from)=>movementStepCost(f,p,a,[],from))).toBeUndefined();
+    f.structures![29]!.gateState='open';
+    expect(findGridPath(f,28,30,p=>[28,29,30].includes(p),(p,from)=>movementStepCost(f,p,a,[],from))?.cost).toBe(4);
+    expect(heightDescription(f,30)).toContain('阶梯');validateField(f);
+  });
   it('uses directional costs for uphill/downhill and the same reverse goal costs',()=>{
     const f=field(),a=sceneUnit('a','ally');a.pos=28;f.groundHeight![29]=1;f.groundHeight![30]=2;
     const allowed=(p:number)=>[28,29,30].includes(p),cost=(p:number,from:number)=>movementStepCost(f,p,a,[],from);

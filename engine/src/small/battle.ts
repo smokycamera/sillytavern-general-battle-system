@@ -21,7 +21,7 @@ import { isEnduranceModel, fatiguePenalty, abilityCost, prepareResourceModel, re
 import { actionPotential } from '../skill-tactics.js';
 import { hasteMagnitude, hasteAttackScale } from '../haste.js';
 import { commanderScores, normalizeCommanderProfiles, type CommanderProfiles, type CommanderProfile, type CommandChoice } from '../commander-profile.js';
-import { isCommandV2, commandProfile, commandQuality, commandCohesion, commandScores, commandOpening, beginCommandRound, noteCommandAttack, readCommandRounds, styleActive, commandAttackers, commandScale, COMMAND_KNOBS, COMMAND_STYLES, COORDINATED_CONTROLS, type CommandRound } from '../command-v2.js';
+import { isCommandV2, commandProfile, commandQuality, commandCohesion, commandScores, commandOpening, beginCommandRound, noteCommandAttack, readCommandRounds, styleActive, commandAttacked, commandAttackers, commandScale, COMMAND_KNOBS, COMMAND_STYLES, COORDINATED_CONTROLS, type CommandRound } from '../command-v2.js';
 import { smallCommandFeatures } from './command-features.js';
 import { killProbability } from '../fire-budget.js';
 import { validateGear, quickItemAction, itemUseAbility, itemEmergency, ITEM_EMERGENCY_DISCOUNT } from '../items.js';
@@ -2628,6 +2628,16 @@ export class SmallBattle {
       }
     }
     const tactic = unit.side === 'ally' ? this.allyTactic : 'balanced';
+    // After two quiet rounds, a healthy attacker can commit through one affordable
+    // reaction. Charging it as a recurring loss otherwise makes mutual denial an
+    // endless wait. Keep the sampled survival penalty and the damaged arrival.
+    if (commandV2 && this.round >= 3 && tactic !== 'defensive' && !order?.hold
+      && !this.actedThisTurn.has(unitId) && !commandAttacked(this.commandRounds, combatSide(unit, this.combatants)).size)
+      for (const plan of plans) if (plan.offensive && plan.targetId && plan.path.cost > 0 && (plan.preview?.expectedDamage ?? 0) > 0) {
+        const arrival = arrivalAfterReactions(plan.path, plan.kind === 'charge');
+        if (arrival.survival >= .875 && arrival.loss <= memberHealth(unit) * .35)
+          plan.score += arrival.loss * 1.5;
+      }
     // 逃脱任务的防守方若已经占住出口，不应为了普通位置评分主动让路。
     // 仍保留原地攻击/固守/警戒；若出口上的动作全部非法，再回退到普通候选。
     const defendsEscape = objective.kind === 'escape'

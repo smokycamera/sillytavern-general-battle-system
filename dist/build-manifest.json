@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "2.7.2",
-  "builtAt": "2026-10-21T01:14:57.913Z",
-  "sourceFingerprint": "e7cb776480b9c471dd736f5398b3eb0e9bbab20f10d31f37e468e34180d5f8bc",
+  "version": "2.7.3",
+  "builtAt": "2026-10-21T04:42:27.978Z",
+  "sourceFingerprint": "a366b0e46f77ad3b6dbb29dde41fa0be01dee1367d78084fc22933baa0b2ffe2",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -17,13 +17,13 @@
     },
     {
       "path": "README.md",
-      "bytes": 2924,
-      "sha256": "81d12900b135c00778d6daa9932430f17131b6d8cbf00030095217c06d3220c2"
+      "bytes": 2748,
+      "sha256": "8b900cb9b53c3765c64556f758ddab7fe025390671fb76dc230850fb1a490a1f"
     },
     {
       "path": "README.zh-CN.md",
-      "bytes": 2716,
-      "sha256": "bb40d82a7418cd77ffe2c613a23d146366022d472afdff31c619fa75d321f81c"
+      "bytes": 2514,
+      "sha256": "0982379cb5a37ccff962e26d931d35be19b5815dcbea841b64180c525bfe7c25"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -31,19 +31,19 @@
       "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     },
     {
-      "path": "dist/assets/panel-BCRh7i6n.js",
-      "bytes": 1424103,
-      "sha256": "a72fbbc73653a55ead11e073503c256b49aaccce7206f9885e473034d5ff3159"
-    },
-    {
       "path": "dist/assets/panel-Ca2W74WV.css",
       "bytes": 30823,
       "sha256": "29ecf3e6233e4d9abd64b009985079574db4a000c56e3f1aa8964e4994bae412"
     },
     {
-      "path": "dist/assets/preferences-BRLGC7Hc.js",
-      "bytes": 978123,
-      "sha256": "dc8e1a1d7d623ad801e463f57e6a5f0248a122f9734234976a89fe181815c555"
+      "path": "dist/assets/panel-DRDStYqQ.js",
+      "bytes": 1425576,
+      "sha256": "ef4d672650fb96303f8c332daa6af27e138a095f4b4752761f74db676e8600aa"
+    },
+    {
+      "path": "dist/assets/preferences-qBzTTPpm.js",
+      "bytes": 979678,
+      "sha256": "dc0aa8de44e5caeabad70e152bf8c6ee9f5d39ed5f244352dfe44fd587110bdb"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -52,8 +52,8 @@
     },
     {
       "path": "assets/worldbook/!通用战斗系统约束.json",
-      "bytes": 23126,
-      "sha256": "bbe5814d61656b3dba6656578cc54a16855f97831c462a056c1e585df2680434"
+      "bytes": 22917,
+      "sha256": "c10925bad78c1cb02a00d2aacdb1467ae550d27f117718bbe19ff5f997d5d1ea"
     },
     {
       "path": "assets/worldbook/lorebook system explain.md",
@@ -87,13 +87,13 @@
     },
     {
       "path": "docs/current-release.md",
-      "bytes": 12480,
-      "sha256": "187953d581d9f4f25e296a6766dd10b03504c60f75f85d7c3eee742805325275"
+      "bytes": 13883,
+      "sha256": "59a26d6caf3aeeb946566edde8194171e47f101037ceaaafe7f42969b72edb67"
     },
     {
       "path": "docs/embedded-worldbook.md",
-      "bytes": 7201,
-      "sha256": "f4d782955fbd269f4a01d3becc00407a3bd4347f61b6449aeb14272d7f279434"
+      "bytes": 7476,
+      "sha256": "57447118d5bc23e02c6a00b414074c6a3bcc6b8079f649e834c5fdfa9787dfe4"
     },
     {
       "path": "docs/indoor-layouts-20261020.md",
@@ -202,8 +202,8 @@
     },
     {
       "path": "docs/worldbook-xml-markdown.md",
-      "bytes": 18427,
-      "sha256": "d326cfc3698e3ad3e3ff1a979e4d9756e7c56b85c44b5a39a48ffd69aefe3286"
+      "bytes": 18219,
+      "sha256": "d367800b3bfef91bfaddbd24ce8d7d6d7066510de2ca22e2a3fec2dd140c16ea"
     },
     {
       "path": "docs/worn-anchoring-20261020.md",
@@ -213,7 +213,7 @@
     {
       "path": "dist/index.js",
       "bytes": 96948,
-      "sha256": "4aed016063548dc199f66e71966d96aeda65171b65cf95536cb6e15f7657ddcb"
+      "sha256": "3b8094142c7c4e8c0d63836b86d9e3f7a10a2459065779a97a1f654609939278"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -223,7 +223,7 @@
     {
       "path": "manifest.json",
       "bytes": 170,
-      "sha256": "d435925e35a7bb6d2800497ea589b2d51b15bfb04a32b80a566f586d5dd9e2e7"
+      "sha256": "a7b060d91ddf0c1116f9df00e0668e795b9b793d088aef1feb0ef2c7e50a9a32"
     },
     {
       "path": "mcp/GAMEPLAY.md",
@@ -278,7 +278,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 47032,
-      "sha256": "59a9bf9a48bb656a464f1221d7a6403e5ebf528d577765a3d5f697ef6a8e3681"
+      "sha256": "ed553d199529853d4d255c9c48cac4bfe8835310d903aa8ede277305491626c1"
     },
     {
       "path": "scripts/jev-cors-relay.mjs",

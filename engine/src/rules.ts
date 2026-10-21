@@ -119,7 +119,11 @@ export const V22_OVERFLOW_D20: RulePack = { ...V21_OVERFLOW_D20, id: 'v22-overfl
 export const V22_OVERFLOW_TW: RulePack = { ...V21_OVERFLOW_TW, id: 'v22-overflow-tw', name: 'V22 特质与道具成长会战', traitLevelModel: 'traits-items-v1' };
 export const V23_OVERFLOW_D20: RulePack = { ...V22_OVERFLOW_D20, id: 'v23-overflow-d20', name: 'V23 特质与道具组合', traitLevelModel: 'traits-items-v2' };
 export const V23_OVERFLOW_TW: RulePack = { ...V22_OVERFLOW_TW, id: 'v23-overflow-tw', name: 'V23 特质与道具组合会战', traitLevelModel: 'traits-items-v2' };
+/** V24 只为新战斗启用分级统率范围，历史战斗继续使用原规则。 */
+export const V24_OVERFLOW_D20: RulePack = { ...V23_OVERFLOW_D20, id: 'v24-overflow-d20', name: 'V24 统率范围成长', commandRangeModel: 'graded-v1' };
+export const V24_OVERFLOW_TW: RulePack = { ...V23_OVERFLOW_TW, id: 'v24-overflow-tw', name: 'V24 统率范围成长会战', commandRangeModel: 'graded-v1' };
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V24_OVERFLOW_D20.id]: V24_OVERFLOW_D20, [V24_OVERFLOW_TW.id]: V24_OVERFLOW_TW,
   [V23_OVERFLOW_D20.id]: V23_OVERFLOW_D20, [V23_OVERFLOW_TW.id]: V23_OVERFLOW_TW,
   [V22_OVERFLOW_D20.id]: V22_OVERFLOW_D20, [V22_OVERFLOW_TW.id]: V22_OVERFLOW_TW,
   [V21_OVERFLOW_D20.id]: V21_OVERFLOW_D20, [V21_OVERFLOW_TW.id]: V21_OVERFLOW_TW,

@@ -97,7 +97,8 @@ export function heightDescription(field: BattlefieldSpec, cell: number): string 
     if (field.spatialRulesVersion !== 2)
         return '';
     const top = displayHeightAt(field, cell), ground = groundHeightAt(field, cell);
-    return `高度${top}${top !== surfaceHeightAt(field, cell) && ground ? `（地面${ground}）` : ''}`;
+    const access = field.heightTransitions?.filter(e => (e.from === cell || e.to === cell) && e.kind !== 'cliff');
+    return `高度${top}${top !== surfaceHeightAt(field, cell) && ground ? `（地面${ground}）` : ''}${access?.length ? `（有${access.some(e => e.kind === 'stairs') ? '阶梯' : '坡道'}连接）` : ''}`;
 }
 export function initializeHeightMap(field: BattlefieldSpec, plan: BattlefieldPlan | undefined): void {
     field.spatialRulesVersion = 2;
@@ -177,6 +178,22 @@ export function initializeHeightMap(field: BattlefieldSpec, plan: BattlefieldPla
                 }
         }
     }
+    // A locked low courtyard or a doorway can leave no room for foothills. Connect
+    // the actual ground surfaces without raising explicit regions or hard walls.
+    const accessible = (p: number) => {
+        if (['deep_water', 'shallow_water', 'cliff', 'wall'].includes(field.tiles[p]!)) return false;
+        const s = field.structures?.[p];
+        return !s?.hp || !['wall', 'building', 'tower'].includes(s.kind);
+    };
+    for (let p = 0; p < field.tiles.length; p++) if (accessible(p))
+        for (const n of [p + 1, p + field.width])
+            if (n < field.tiles.length && accessible(n)
+                && Math.abs(n % field.width - p % field.width) + Math.abs(Math.floor(n / field.width) - Math.floor(p / field.width)) === 1
+                && Math.abs(surfaceHeightAt(field, p) - surfaceHeightAt(field, n)) > 1
+                && !field.heightTransitions?.some(e => e.from === p && e.to === n || e.from === n && e.to === p)) {
+                field.heightTransitions ??= [];
+                field.heightTransitions.push({ from: p, to: n, kind: 'stairs' });
+            }
 }
 export function validateHeightMap(field: BattlefieldSpec): void {
     if (field.spatialRulesVersion === undefined) {
