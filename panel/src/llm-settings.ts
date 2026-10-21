@@ -6,7 +6,7 @@ export interface LlmSettings {
   selectBattleScale: boolean;
   commandEnemy?: boolean;
   commandInterval?: 'round' | 'situation';
-  commandThinking?: 'auto' | 'round' | 'off';
+  commandThinking?: 'auto' | 'off';
   commandThinkingOffParams?: string;
   /** Older records inherit defaults only for missing keys; explicit choices survive upgrades. */
   designMap?: boolean;
@@ -33,15 +33,9 @@ export function parseCommandParameters(text: string): Record<string, unknown> {
   if (Object.keys(value).some(key => reserved.includes(key))) throw Error('附加参数不能覆盖模型、消息、工具或输出格式');
   return value as Record<string, unknown>;
 }
-export function commandParameterWarnings(parameters: Record<string, unknown>): string[] {
-  const known = new Set(['thinking', 'reasoning', 'reasoning_effort', 'reasoning_budget', 'thinking_budget', 'enable_thinking',
-    'budget_tokens', 'max_tokens', 'max_completion_tokens', 'temperature', 'top_p', 'top_k', 'min_p', 'presence_penalty', 'frequency_penalty', 'seed', 'stop', 'verbosity', 'extra_body']);
-  const unknown = Object.keys(parameters).filter(key => !known.has(key));
-  return unknown.length ? ['未识别参数：' + unknown.join('、') + '；已保存并原样发送，由供应商处理'] : [];
-}
 /** No vendor detection: only the selected, editable request-body parameters are sent. */
-export function commandRequestOptions(settings: LlmSettings, thoughtThisRound = false): Record<string, unknown> {
-  if (settings.commandThinking === 'off' || settings.commandThinking === 'round' && thoughtThisRound) return parseCommandParameters(settings.commandThinkingOffParams ?? COMMAND_THINKING_OFF_PARAMS);
+export function commandRequestOptions(settings: LlmSettings): Record<string, unknown> {
+  if (settings.commandThinking === 'off') return parseCommandParameters(settings.commandThinkingOffParams ?? COMMAND_THINKING_OFF_PARAMS);
   return {};
 }
 
@@ -60,7 +54,7 @@ export function readLlmSettings(): LlmSettings {
         selectBattleScale: false,
         commandEnemy: v.commandEnemy === true,
         commandInterval: v.commandInterval === 'situation' ? 'situation' : 'round',
-        commandThinking: v.commandThinking === 'off' || v.commandThinking === 'round' ? v.commandThinking : 'auto',
+        commandThinking: v.commandThinking === 'off' ? 'off' : 'auto',
         commandThinkingOffParams: typeof v.commandThinkingOffParams === 'string' ? v.commandThinkingOffParams : COMMAND_THINKING_OFF_PARAMS,
         designMap: v.designMap === undefined ? true : v.designMap === true,
         selectVip: v.selectVip === undefined ? true : v.selectVip === true,

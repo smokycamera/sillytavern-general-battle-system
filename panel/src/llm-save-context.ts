@@ -53,7 +53,7 @@ export function savedCommanderState(value: unknown): CommanderState | undefined 
     ...(pending ? { decision: pending } : {}),
     ...(state.playerFallback && typeof state.playerFallback === 'object' ? { playerFallback: {
       ...(Number.isSafeInteger(object(state.playerFallback).resumeRound) && Number(object(state.playerFallback).resumeRound) >= 0 ? { resumeRound: Number(object(state.playerFallback).resumeRound) } : {}) } } : {}),
-    memory: { ...(intents ? { intents } : {}), ...(Number.isSafeInteger(memory.thinkingRound) && Number(memory.thinkingRound) >= 0 ? { thinkingRound: Number(memory.thinkingRound) } : {}),
+    memory: { ...(intents ? { intents } : {}),
       ...primitive(memory, ['diplomacyRound', 'diplomacyRevision']),
       plan: typeof memory.plan === 'string' ? memory.plan.slice(0, 600) : '', notes: strings(memory.notes, 12, 300), terrain, contacts: contacts as NonNullable<CommanderState['memory']['contacts']> } };
 }
