@@ -2,13 +2,18 @@ import type { MassBattle, Order } from '../../engine/src/index.js';
 import type { OrderDrafts } from './formation-orders.js';
 
 /** 先验证全部草案，再锁定回合；异常由调用方恢复进入此入口前的快照。 */
-export function executeMassPlan(battle: MassBattle, drafts: OrderDrafts, automatic: boolean, expectedRound = battle.round): void {
+export function executeMassPlan(battle: MassBattle, drafts: OrderDrafts, automatic: boolean, expectedRound = battle.round, enemyOrders: Order[] = []): void {
   if (automatic && Object.keys(drafts).length) throw Error('当前由系统指挥；请取消尚未提交的草案，或恢复指挥资格');
   const orders: Order[] = Object.entries(drafts).map(([unitId, draft]) => ({ unitId, ...draft }));
   if (orders.some(o => !battle.combatants.some(u => u.id === o.unitId && u.side === 'ally'))) throw Error('草案包含不属于我方的编队');
   const result = battle.replaceOrders(orders, expectedRound);
   if (!result.ok) throw Error(result.reason);
   battle.autoOrders('ally');
+  if (enemyOrders.length) {
+    if (enemyOrders.some(o => !battle.combatants.some(u => u.id === o.unitId && u.side === 'enemy'))) throw Error('指挥命令包含非敌方单位');
+    const enemies = battle.replaceOrders(enemyOrders.map(o => ({ ...o, automatic: true, externalCommand: true })), expectedRound);
+    if (!enemies.ok) throw Error(enemies.reason);
+  }
   battle.resolveRound(expectedRound);
 }
 

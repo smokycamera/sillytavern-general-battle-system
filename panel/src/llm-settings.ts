@@ -3,6 +3,9 @@ import { connectionUrl, type JevConnection } from './jev-connection.js';
 export interface LlmSettings {
   enabled: boolean;
   selectBattleScale: boolean;
+  commandEnemy?: boolean;
+  commandThinking?: 'auto' | 'off';
+  commandThinkingOffParams?: string;
   /** Older records inherit defaults only for missing keys; explicit choices survive upgrades. */
   designMap?: boolean;
   selectVip?: boolean;
@@ -13,7 +16,25 @@ export interface LlmSettings {
   models: string[];
 }
 export const LLM_SETTINGS_KEY = 'tb:llm:settings:v1';
-const defaults = (): LlmSettings => ({ enabled: false, selectBattleScale: false, designMap: true, selectVip: true, windowSize: 6, url: '', token: '', model: '', models: [] });
+export const COMMAND_THINKING_OFF_PARAMS = '{"thinking":{"type":"disabled"}}';
+const defaults = (): LlmSettings => ({ enabled: false, selectBattleScale: false, commandEnemy: false, commandThinking: 'auto',
+  commandThinkingOffParams: COMMAND_THINKING_OFF_PARAMS,
+  designMap: true, selectVip: true, windowSize: 6, url: '', token: '', model: '', models: [] });
+
+export function parseCommandParameters(text: string): Record<string, unknown> {
+  if (text.length > 20000) throw Error('附加参数不能超过20000字');
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { throw Error('附加参数须为有效 JSON 对象；填写 {} 可不附加参数'); }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('附加参数须为 JSON 对象');
+  const reserved = ['model', 'messages', 'stream', 'tools', 'tool_choice', 'parallel_tool_calls', 'response_format', '__proto__', 'constructor', 'prototype'];
+  if (Object.keys(value).some(key => reserved.includes(key))) throw Error('附加参数不能覆盖模型、消息、工具或输出格式');
+  return value as Record<string, unknown>;
+}
+/** No vendor detection: only the selected, editable request-body parameters are sent. */
+export function commandRequestOptions(settings: LlmSettings): Record<string, unknown> {
+  if (settings.commandThinking === 'off') return parseCommandParameters(settings.commandThinkingOffParams ?? COMMAND_THINKING_OFF_PARAMS);
+  return {};
+}
 
 /** Origin-wide preferences. Never serialize these credentials into a chat or character. */
 export function readLlmSettings(): LlmSettings {
@@ -27,7 +48,10 @@ export function readLlmSettings(): LlmSettings {
       if (!v || typeof v !== 'object' || Array.isArray(v)) throw Error('Invalid settings');
       return {
         enabled: v.enabled === true,
-        selectBattleScale: v.selectBattleScale === true,
+        selectBattleScale: false,
+        commandEnemy: v.commandEnemy === true,
+        commandThinking: v.commandThinking === 'off' ? 'off' : 'auto',
+        commandThinkingOffParams: typeof v.commandThinkingOffParams === 'string' ? v.commandThinkingOffParams : COMMAND_THINKING_OFF_PARAMS,
         designMap: v.designMap === undefined ? true : v.designMap === true,
         selectVip: v.selectVip === undefined ? true : v.selectVip === true,
         windowSize: Number.isInteger(v.windowSize) && v.windowSize >= 1 && v.windowSize <= 100 ? v.windowSize : 6,

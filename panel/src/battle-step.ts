@@ -6,7 +6,7 @@ import type { OrderDrafts } from './formation-orders.js';
 export type BattleStepRequest = {
   kind: 'small' | 'mass'; snap: Record<string, unknown>; rules: RulePack;
   traits: Map<string, Trait>; conditions: ConditionDef[]; summons: boolean;
-  actorId?: string; drafts?: OrderDrafts; automatic?: boolean; expectedRound?: number;
+  actorId?: string; drafts?: OrderDrafts; automatic?: boolean; expectedRound?: number; enemyOrders?: import('../../engine/src/index.js').Order[];
 };
 export interface BattleStepResult { snap: Record<string, unknown>; conditions: ConditionDef[]; damageTaken?: [string, number][] }
 
@@ -27,7 +27,7 @@ export function computeBattleStep(request: BattleStepRequest): BattleStepResult 
   if (battle instanceof SmallBattle) {
     if (battle.active?.id !== request.actorId) throw Error('行动者已变化，请重新预览');
     battle.autoAction(request.actorId!);
-  } else executeMassPlan(battle, request.drafts ?? {}, !!request.automatic, request.expectedRound);
+  } else executeMassPlan(battle, request.drafts ?? {}, !!request.automatic, request.expectedRound, request.enemyOrders);
   return { snap: battle.toSnapshot(), conditions: battle.conditions.all(), ...(battle instanceof MassBattle ? { damageTaken: [...battle.damageTaken] } : {}) };
 }
 

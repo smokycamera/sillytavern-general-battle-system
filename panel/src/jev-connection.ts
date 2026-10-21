@@ -197,10 +197,10 @@ function parseOpenAiDecision(content: unknown, label: string): Record<string, an
  * messages so providers with automatic prefix caching can reuse them; the answer is parsed with the same tolerance.
  * `label` names the answer in parse errors, so a failed layout step does not read as a failed decision.
  */
-export async function openAiJsonRequest(connection: JevConnection, messages: { role: 'system' | 'user'; content: string }[], signal: AbortSignal, request: typeof fetch, label = '决策'): Promise<Record<string, any>> {
+export async function openAiJsonRequest(connection: JevConnection, messages: { role: 'system' | 'user'; content: string }[], signal: AbortSignal, request: typeof fetch, label = '决策', options: Record<string, unknown> = {}): Promise<Record<string, any>> {
   const model = connection.model?.trim();
   if (connection.protocol !== 'openai' || !model) throw new JevConnectionError('请先配置副 API 并选择模型');
-  const payload = { model, stream: false, response_format: { type: 'json_object' }, messages };
+  const payload = { ...options, model, stream: false, response_format: { type: 'json_object' }, messages };
   const send = (requestBody: Record<string, unknown>) => jevJsonRequest(connection, request, apiEndpoint(connection, 'chat/completions'), {
     method: 'POST', headers: headers(connection), signal, body: JSON.stringify(requestBody),
   });
@@ -215,6 +215,36 @@ export async function openAiJsonRequest(connection: JevConnection, messages: { r
   }
   const answer = parseOpenAiDecision(response?.choices?.[0]?.message?.content, label);
   return { ...answer, model: typeof response.model === 'string' ? response.model : model };
+}
+
+export interface CommandTool { type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }
+export interface CommandToolCall { id: string; type: 'function'; function: { name: string; arguments: string }; extra_content?: Record<string, unknown> }
+export interface CommandMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool'; content: string | null;
+  tool_calls?: CommandToolCall[]; tool_call_id?: string; reasoning_content?: string; extra_content?: Record<string, unknown>;
+}
+/** Provider signatures are needed only while continuing an activation's tool conversation. */
+function commandExtraContent(value: unknown): { extra_content?: Record<string, unknown> } {
+  return value && typeof value === 'object' && !Array.isArray(value) ? { extra_content: value as Record<string, unknown> } : {};
+}
+/** Native function calling, using exactly the same credential and host transport as preparation. */
+export async function openAiCommandRequest(connection: JevConnection, messages: CommandMessage[], commandTools: CommandTool[], signal: AbortSignal, request: typeof fetch, options: Record<string, unknown> = {}): Promise<CommandMessage> {
+  if (connection.protocol !== 'openai' || !connection.model?.trim()) throw new JevConnectionError('请先配置副 API 并选择模型');
+  const response = await jevJsonRequest(connection, request, apiEndpoint(connection, 'chat/completions'), {
+    method: 'POST', headers: headers(connection), signal,
+    body: JSON.stringify({ ...options, model: connection.model.trim(), stream: false, messages, tools: commandTools, tool_choice: 'auto', parallel_tool_calls: false }),
+  });
+  const message = response?.choices?.[0]?.message;
+  const calls = message?.tool_calls;
+  if (Array.isArray(calls) && calls.length > 0 && calls.length <= 6 && calls.every(c => c?.type === 'function'
+    && typeof c.id === 'string' && typeof c.function?.name === 'string' && typeof c.function?.arguments === 'string' && c.function.arguments.length <= 20000)) {
+    return { role: 'assistant', content: completionText(message.content) ?? null,
+      tool_calls: calls.map(c => ({ id: c.id, type: 'function', function: { name: c.function.name, arguments: c.function.arguments }, ...commandExtraContent(c.extra_content) })),
+      ...commandExtraContent(message.extra_content),
+      ...(typeof message.reasoning_content === 'string' ? { reasoning_content: message.reasoning_content } : {}) };
+  }
+  const answer = parseOpenAiDecision(message?.content, '指挥');
+  return { role: 'assistant', content: JSON.stringify({ choice: answer.choice }), ...commandExtraContent(message?.extra_content), ...(typeof message?.reasoning_content === 'string' ? { reasoning_content: message.reasoning_content } : {}) };
 }
 /** Adapt the host's bounded decisions without changing the vendored command core. */
 export async function directJevRequest(connection: JevConnection, path: string, body: unknown, signal: AbortSignal, request: typeof fetch): Promise<unknown> {

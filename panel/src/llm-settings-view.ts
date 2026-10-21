@@ -1,12 +1,16 @@
 import { escapeHtml as esc } from './battle-presentation.js';
-import type { LlmSettings } from './llm-settings.js';
+import { COMMAND_THINKING_OFF_PARAMS, type LlmSettings } from './llm-settings.js';
 export function renderLlmSettings(c: LlmSettings, status = ''): string {
   const models = [...new Set([...(c.model ? [c.model] : []), ...c.models])];
   return `<section><h2>上下文与开战配置</h2>
     <label>配置方式 <select data-role="llm-mode"><option value="manual" ${c.enabled ? '' : 'selected'}>手动配置 · 内置自动战斗</option><option value="llm" ${c.enabled ? 'selected' : ''}>普通 LLM 读取上下文</option><option value="jev" disabled>JEV 指挥（暂不可用）</option></select></label>
     <p>开战前读取最近的正文，由模型选择双方指挥、任务与战场。指挥配置只影响自动行动。</p>
-    <label><input data-role="llm-battle-scale" type="checkbox" ${c.selectBattleScale ? 'checked' : ''} ${c.enabled ? '' : 'disabled'}>由 LLM 选择战场规模</label>
-    <p class="sub">关闭时按卡数决定：32张及以下为小战，更多为会战。</p>
+    <label><input data-role="llm-enemy-command" type="checkbox" ${c.commandEnemy ? 'checked' : ''} ${c.enabled ? '' : 'disabled'}>LLM 指挥</label>
+    <p class="sub">用于下一场战斗。开战前分别生成敌军与参战第三方指挥官的人设、已知信息与任务；战斗中各按自己的视野逐单位下令，独立保留总计划与已探索地图。请求失败时该阵营使用内置自动行动。战场规模按卡数决定：32张及以下为小战，更多为会战。</p>
+    <label>指挥思考模式 <select data-role="llm-command-thinking" ${c.enabled ? '' : 'disabled'}><option value="auto" ${!c.commandThinking || c.commandThinking === 'auto' ? 'selected' : ''}>思考</option><option value="off" ${c.commandThinking === 'off' ? 'selected' : ''}>非思考</option></select></label>
+    ${c.commandThinking === 'off' ? `<details><summary>高级兼容设置</summary>
+      <label>非思考参数（JSON）<textarea data-role="llm-command-params" rows="4" spellcheck="false" ${c.enabled ? '' : 'disabled'}>${esc(c.commandThinkingOffParams ?? COMMAND_THINKING_OFF_PARAMS)}</textarea></label>
+      <p class="sub">默认为 DeepSeek 格式，可改为供应商支持的思考参数。填 {} 不附加参数，合法 JSON 自动保存。</p><p data-role="llm-command-params-status" role="status"></p></details>` : ''}
     <label><input data-role="llm-map-design" type="checkbox" ${c.designMap === true ? 'checked' : ''} ${c.enabled ? '' : 'disabled'}>由 LLM 设计地图</label>
     <p class="sub">按正文布置城市、河流、地点与双方位置，每次开战多请求1次。关闭时使用随机地图。</p>
     <label><input data-role="llm-vip" type="checkbox" ${c.selectVip === true ? 'checked' : ''} ${c.enabled ? '' : 'disabled'}>由 LLM 选择护送／拦截 VIP</label>
