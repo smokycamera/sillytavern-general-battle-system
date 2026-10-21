@@ -73,6 +73,7 @@ export type Suggestion =
       mount?: boolean;
       speedTier?: number;
       weaponStabilized?: boolean;
+      weaponEnchantment?: 'thermal' | 'arcane';
       reserves?: number;
       armorProfile?: import('../../engine/src/types.js').ItemRecipe['protectionProfile'];
       quality?: number;

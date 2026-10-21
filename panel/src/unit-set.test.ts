@@ -25,6 +25,44 @@ function transactText(save:NarrativeSave,text:string,mid='set') {
 function restored(save:NarrativeSave) { return materializeUnitRecord(prepareInventoryState(JSON.parse(JSON.stringify(save))).storage![0]!,reg); }
 
 describe('正文战外全字段事务（定向验证）',()=>{
+  it('enchant便捷属性修改当前实物并读档生效，none恢复武器默认通道且不改其他冻结属性',()=>{
+    const save=prepareInventoryState(setup()), old=structuredClone(save.storage![0]!.snapshot!.weapon!);
+    const next=transactText(save,'<unit_set id="u1" enchant="arcane"/>','enchant').next();
+    const enchanted=restored(next).weapon!;
+    expect(enchanted).toMatchObject({id:old.id,channel:'arcane',baseDice:old.baseDice,recipe:{seed:old.recipe!.seed,enchantment:'arcane'}});
+    expect(next.inventory!.find(item=>item.id===old.id)!.mechanics).toMatchObject({kind:'weapon',value:{channel:'arcane'}});
+    const cleared=restored(transactText(next,'<unit_set id="u1" enchant="none"/>','clear').next()).weapon!;
+    expect(cleared.channel).toBe('kinetic');expect(cleared.recipe!.enchantment).toBeUndefined();expect(cleared.baseDice).toBe(old.baseDice);
+    const energy=transactText(save,'<unit_set id="u1" weapon="光束枪:能量武器L3" enchant="none"/>','energy').next();
+    expect(restored(energy).weapon!.channel).toBe('thermal');
+    expect(save.storage![0]!.snapshot!.weapon).toEqual(old);
+  });
+  it('换装同时设置附魔、稳定器和防护侧重，主副武器与新单位建档均保留实际属性',()=>{
+    const save=setup();
+    const next=transactText(save,'<unit_set id="u1" body="vehicle" weapon="主枪:步枪L4" weapon2="副枪:步枪L3" armor="装甲:中甲L4" enchant="thermal" stabilized="true" protection="arcane"/>','configure').next();
+    const unit=restored(next);
+    for(const weapon of [unit.weapon!,unit.sidearm!])expect(weapon).toMatchObject({channel:'thermal',recipe:{enchantment:'thermal',stabilized:true}});
+    expect(unit.armor!.recipe!.protectionProfile).toBe('arcane');expect(unit.armor!.protection?.arcane ?? 0).toBeGreaterThan(unit.armor!.protection?.kinetic ?? 0);
+    const cleared=restored(transactText(next,'<unit_set id="u1" stabilized="false" protection="balanced"/>','clear-config').next());
+    expect(cleared.weapon!.recipe!.stabilized).toBeUndefined();expect(cleared.weapon!.channel).toBe('thermal');expect(cleared.armor!.recipe!.protectionProfile).toBe('balanced');
+    for(const tag of ['spawn name="新兵" side="ally" scale="hero"','unit_set id="u9" name="新兵" side="ally" scale="hero"']) {
+      const added=transactText(save,`<${tag} weapon="步枪L3" enchant="arcane"/>`,tag.split(' ')[0]).next();
+      const fresh=prepareInventoryState(JSON.parse(JSON.stringify(added))).storage!.find(record=>record.name==='新兵')!;
+      expect(fresh.snapshot!.weapon).toMatchObject({channel:'arcane',recipe:{enchantment:'arcane'}});
+    }
+  });
+  it('同批give换装后才应用enchant，原件身份和冻结属性保留；非法属性整批回滚',()=>{
+    const save=prepareInventoryState(setup());
+    save.inventory!.push({id:'spare',name:'备用剑',qty:1,lootType:'weapon',mechanics:structuredClone(save.inventory!.find(item=>item.mechanics?.kind==='weapon')!.mechanics)});
+    const spare=save.inventory!.find(item=>item.id==='spare')!;
+    if(spare.mechanics?.kind==='weapon'){spare.mechanics.value.id='spare';spare.mechanics.value.name='备用剑';}
+    const before=structuredClone(save), next=transactText(save,'<give id="spare" to="u1"/><unit_set id="u1" weapon="备用剑" enchant="thermal"/>','give-enchant').next();
+    expect(restored(next).weapon).toMatchObject({id:'spare',channel:'thermal',recipe:{seed:spare.mechanics!.value.recipe!.seed,enchantment:'thermal'}});
+    expect(next.inventory!.filter(item=>item.name==='备用剑')).toHaveLength(1);
+    for(const attrs of ['enchant="unknown"','protection="unknown"','stabilized="ture"'])expect(parseProtocol(`<unit_set id="u1" ${attrs}/>`).errors.length).toBeGreaterThan(0);
+    expect(()=>transactText(save,'<unit_set id="u1" stabilized="true"/>','bad-stabilizer').next()).toThrow(/载具/);
+    expect(save).toEqual(before);
+  });
   it('已死亡编队可通过天生武器、负护甲强化和毒雾技能转化，持久化后保留零占手',()=>{
     const save=transact(setup('company'),{status:'dead'},'','death').next();
     const before=structuredClone(save);

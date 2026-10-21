@@ -18,6 +18,8 @@ for (const directory of ['assets', 'licenses', 'docs']) {
 mkdirSync(path.join(output, 'scripts'), { recursive: true });
 copyFileSync('docs/mvu-save-history-20261020.md', path.join(output, 'docs/mvu-save-history-20261020.md'));
 copyFileSync('docs/indoor-layouts-20261020.md', path.join(output, 'docs/indoor-layouts-20261020.md'));
+copyFileSync('docs/siege-trenches-20261021.md', path.join(output, 'docs/siege-trenches-20261021.md'));
+copyFileSync('docs/small-three-way-result-20261018.md', path.join(output, 'docs/small-three-way-result-20261018.md'));
 cpSync('docs/prompt-backups', path.join(output, 'docs/prompt-backups'), { recursive: true });
 mkdirSync(path.join(output, 'mcp'), { recursive: true });
 for (const name of ['package.json', 'package-lock.json', 'server.mjs', 'broker.mjs', 'tools.mjs', 'start.ps1', 'README.md', 'GAMEPLAY.md']) copyFileSync(path.join('mcp', name), path.join(output, 'mcp', name));

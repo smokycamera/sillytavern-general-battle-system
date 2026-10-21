@@ -18,7 +18,7 @@ const ATTRIBUTES: Record<string, readonly string[]> = {
   deploy: ['id'],
   learn: ['id', 'skills'],
   unit_update: ['id', 'hp', 'hpMax', 'morale', 'state', 'clear', 'reason'],
-  spawn: ['id', 'name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'speed', 'stabilized', 'protection', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits', 'items'],
+  spawn: ['id', 'name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'speed', 'stabilized', 'protection', 'enchant', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits', 'items'],
   field: ['env', 'light', 'note'],
   take: ['id', 'qty', 'note'],
   add: ['id', 'to', 'item', 'note', 'qty', 'type', 'spec', 'body', 'quality', 'enchant', 'stabilized', 'protection'],
@@ -535,9 +535,11 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     event.speedTier = attrs.speed === undefined ? undefined : Number(attrs.speed);
     if (attrs.stabilized !== undefined && !['true', 'false'].includes(attrs.stabilized)) throw new Error('stabilized 必须是 true/false');
     if (attrs.protection !== undefined && !['balanced', 'kinetic', 'thermal', 'arcane'].includes(attrs.protection)) throw new Error('未知防护类型');
+    if (attrs.enchant !== undefined && !['none', 'thermal', 'arcane'].includes(attrs.enchant)) throw new Error('未知附魔效果');
     if (!integer('reserves', 0, 2)) throw new Error('预备份额需要0–2整数');
     event.reserves = attrs.reserves === undefined ? undefined : Number(attrs.reserves);
     event.weaponStabilized = attrs.stabilized === 'true';
+    event.weaponEnchantment = attrs.enchant === 'none' ? undefined : attrs.enchant as 'thermal'|'arcane'|undefined;
     event.armorProfile = attrs.protection as typeof event.armorProfile;
     event.body = attrs.body as typeof event.body;
     event.quality = attrs.quality === undefined ? undefined : Number(attrs.quality);

@@ -24,7 +24,7 @@
 
 1. 正文、状态栏等格式全部闭合后，回复末尾输出唯一tb块；开闭标签各一行，每行一个小写自闭合事件，结束标签后立即结束回复。
 2. tb块置于所有正文和容器之外，不包代码围栏、引用、注释或思考标签；块内仅事件，无说明、嵌套或空事件。
-3. 属性名严格照写，如hpMax；属性不重复，值用英文双引号。数值是范围内的阿拉伯整数，枚举单选，列表用英文逗号。
+3. 属性名严格照写，如hpMax；属性不重复。数值是范围内的阿拉伯整数，枚举单选。
 4. 可选项不用就省略。属性值单行，不含尖括号或裸和号，内部双引号用XML实体转义；不写空值、null、占位词或公式。
 5. 不输出JSON、坐标、骰子或效果脚本。
 
@@ -81,7 +81,7 @@
 - 真实坐骑写mount="true"，省略无坐骑；大型、车辆、巨体明确body。骑射仅适用真实坐骑，车辆稳定装置用stabilized。非装甲炮兵计算为人形单位
 - speed选1—5（迟缓/缓行/标准/快速/疾速），护甲、坐骑、状态另行修正。
 - skills、traits按“技能与效果”规格写有依据的能力。
-- items写随身道具，每项“名称:道具spec×件数”，英文逗号分隔，件数省略为1；佩戴、充能道具自动装上。
+- items写随身道具，每项“名称:道具spec×件数”。
 
 ## 装备规格
 
@@ -101,22 +101,22 @@
 
 ## 共用可选配置
 
-| 属性 | 取值与适用范围 |
-| --- | --- |
-| body | human/large/vehicle/giant； |
-| stabilized | true/false；车辆武器稳定装置 |
-| protection | balanced/kinetic/thermal/arcane；护甲构型，新建省略通用 |
-| enchant | none/thermal/arcane；仅give/reforge的武器附魔 |
+体型：body=human/large/vehicle/giant
+载具武器稳定器：stabilized=true/false
+护甲侧重防护：protection=balanced/kinetic/thermal/arcane（均衡/动能/热能/奥术）
+武器属性：enchant=none/thermal/arcane（均衡/热能/奥术）
 
 ## 物品事件
 
 | 事件 | 必填 | 可选与含义 |
 | --- | --- | --- |
-| give | item | 有效果的道具写spec；qty是件数，省略为1；可选id写接收单位的真实编号，省略则入公共库存。指定单位时，佩戴、充能道具自动装上，武器与护甲只分配 |
-| take | id（实物） | qty省略1，不超过库存；note说明出售/消耗/遗失/交出 |
-| reforge | id（实物）、spec | name可改名；改造装备或佩戴、充能道具，不改一次性道具 |
+| add（新增） | item | spec：规格；qty：数量；to：接收单位，不写则入公共库存。支持武器、护甲、盾牌、道具和剧情物品。 |
+| add（增加数量） | id（实物） | qty：增加数量。 |
+| give | id（实物） | to：一个或多个接收单位，不写则移回公共库存；qty：每个单位的数量。不同数量分写多条give。 |
+| take | id（实物） | qty：扣减数量；note：原因。 |
+| reforge | id（实物）、spec | name：新名称。支持装备及各类道具。 |
 
-- give/reforge可用上表配置，须与spec相符
+add（新物品）/reforge 可用 body、quality、stabilized、protection、enchant 等该种类支持的配置。
 
 <examples>
 <example situation="新建自行火炮连；hpMax是车数">
@@ -131,10 +131,13 @@
 </example>
 <example situation="获得手雷、治疗药水和火球魔杖，交出实物i1，改造实物g1">
 <tb>
-<give item="手雷" spec="物理范围投射L4" qty="6"/>
-<give item="治疗药水" spec="buff治疗L3" qty="3"/>
-<give item="火球魔杖" spec="充能魔法范围热能L5"/>
-<take id="i1" qty="1" note="交出补给"/>
+<add item="手雷" spec="物理范围投射L4" qty="6"/>
+<add item="治疗药水" spec="buff治疗L3" qty="3"/>
+<add item="火球魔杖" spec="充能魔法范围热能L5"/>
+<add id="i1" qty="2" note="补充同规格药水"/>
+<give id="i1" to="u2,u3" qty="1" note="各给一件"/>
+<take id="i2" qty="1" note="出售"/>
+<reforge id="i1" name="强化治疗药水" spec="buff治疗L4"/>
 <reforge id="g1" name="附魔炮" spec="火炮L8" enchant="arcane"/>
 </tb>
 </example>
@@ -159,7 +162,7 @@
 
 新建填spawn的skills；已有单位明确学习/修改时用learn，必填id、skills。traits必须选择L等级(除了明确不能分级的那类)
 
-- 每项写“名称:机制L等级+修正等级”，多项英文逗号分隔，L取1—10并按等级锚定选择。
+- 每项写“名称:机制L等级+修正等级”，L取1—10并按等级锚定选择。
 - 机制以物理单体、物理范围、魔法单体、魔法范围、单体召唤、群体召唤、buff、debuff、火墙、毒雾、烟幕、治疗区域、陷阱之一开头。类别后加附加词，以+连接。也可单写冲锋（=物理单体+近战+突进），或单写突进、闪现、后撤（只移动自己）。
 - 物理默认实际主武器，可加近战/射击/盾牌/投射之一；投射由技能提供动能。魔法默认奥术，可改热能，两种能量不并用。
 - buff附加词：攻击、防御、伤害、守护、加速、振奋、治疗、净化、回能、士气、屏障，(屏障为护盾)或“traits”加下列规范traits名。如一级飞行术为buff+飞行L1，一级构筑阵地为buff+工事L1，
@@ -186,7 +189,7 @@
   地形与工程：林地专精、山地专精、平原专精、巷战专精、夜战专精、工兵
   后勤：医护
 - 不能分级traits:抵近射击、天生护甲、不屈、非生物、不溃、骑射、先锋部署、飞行、机械化、航渡、登城
-- effects/traits多项用英文逗号；spawn.traits也用上述纯中文名称。登城指能攀登城墙或有攻城器械；身体由body表达。
+- spawn.traits也用上述纯中文名称。登城指能攀登城墙或有攻城器械；身体由body表达。
 
 <examples>
 <example situation="u1新学五项技能，其他技能保留">

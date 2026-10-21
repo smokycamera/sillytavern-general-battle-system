@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { parseProtocol, protocolExcerpt } from './protocol.js';
 
 describe('正文格式容错', () => {
+  it('give和take兼容裸短编号及qty紧写，保留数量校验和原文定位', () => {
+    const text = '<give u1，u2 c4 qty2/><give c4 to=u1 qt=1/><take id=c4 qty1/>';
+    const parsed = parseProtocol(text);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.events).toMatchObject([{ kind: 'give', id: 'c4', to: ['u1', 'u2'], qty: 2 }, { kind: 'give', id: 'c4', to: ['u1'], qty: 1 }, { kind: 'take', id: 'c4', qty: 1 }]);
+    expect(parseProtocol(parsed.canonical).events).toEqual(parsed.events);
+    for (const attrs of ['c4 c5 qty1', 'c4 qty1 qty2', 'c4 qty0', 'c4 qty-1', 'c4 qty1.5', 'c4 qty9007199254740992']) expect(parseProtocol(`<take ${attrs}/>`).errors.length, attrs).toBeGreaterThan(0);
+    const invalid = '<take c4 qty-1/>', bad = parseProtocol(invalid);
+    expect(bad.diagnostics.some(issue => invalid.slice(issue.start, issue.end).includes('-1'))).toBe(true);
+  });
   it('中英文引号、分隔符及全角标签生成相同事件，名称和说明中的标点保留', () => {
     const sources = [
       '<tb><add item="药，瓶；甲" spec="buff治疗L3+2治疗" qty="2" to="u1"/><give id="c1" to="u2,u3" qty="1"/><reforge id="c1" spec="buff治疗L4" name="新药"/></tb>',

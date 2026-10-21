@@ -1,6 +1,7 @@
 import { ROUTE_TOPOLOGIES, type RouteGraph, type RouteTopology } from './route-graph.js';
 import { safeLandmarkLabel } from './map-label.js';
 import type { InteriorLayoutRecord } from './interior-plan.js';
+import type { CompoundRecord, TrenchRecord } from './position-plan.js';
 export {safeLandmarkLabel} from './map-label.js';
 /** Bounded design vocabulary shared by the local builder and the optional LLM director.
  * A design describes geometry, never executable code or a replacement tile array. */
@@ -26,8 +27,10 @@ export const SCENE_NAMES: Record<BattlefieldScene, string> = { field: '野战', 
 export interface MapGenerationRecord {
   /** Scene identity is independent of map dimensions and survives capacity upgrades. */
   scene?: BattlefieldScene;
-  version: 3 | 4 | 5 | 6 | 7;
+  version: 3 | 4 | 5 | 6 | 7 | 8;
   interior?: InteriorLayoutRecord;
+  compound?: CompoundRecord;
+  trenches?: TrenchRecord;
   /** Bounded local repairs/size upgrades, never instructions from model labels. */
   notes?: string[];
   family: MapFamily;
