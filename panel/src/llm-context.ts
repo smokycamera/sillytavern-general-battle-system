@@ -15,9 +15,11 @@ import type { NarrativeMessage, ContextSelectionAnswer, ContextSelectionRequest 
 import type { NarrativeIdState } from './narrative-ids.js';
 import { narrativeIds } from './narrative-ids.js';
 import { stripThinking } from './protocol-syntax.js';
+import type { CommanderState } from './llm-command.js';
 import { sha256, withAbort } from '../../host/src/browser-compat.js';
 
 export interface LlmEncounterContext extends JevEncounterContext, PreparationDesignResult {
+  llmCommanders?: Partial<Record<import('../../engine/src/index.js').Side, CommanderState>>;
   commanders?: CommanderProfiles;
   /** Repairs made to the model's layout; the generator keeps them with the battlefield's own notes. */
   layoutNotes?: string[];

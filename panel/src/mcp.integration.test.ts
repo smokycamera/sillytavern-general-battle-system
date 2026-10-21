@@ -58,7 +58,8 @@ it('plays through production buttons, honors player fog and chat changes, and st
   const final = SmallBattle.fromSnapshot(f.service.snapshot().battle!.snap);
   expect(final.commanderProfiles.ally).toMatchObject({ ability: 'master', style: 'flanking' });
   expect(final.battlefield?.generation?.source).toBe('context');
-  expect((f.service.snapshot().encounterContext as LlmEncounterContext)?.battlefieldPlan?.landmarks?.[0]?.label).toBe('西侧高地');
+  expect(final.battlefield?.landmarks?.some(landmark => landmark.label === '西侧高地')).toBe(true);
+  expect(f.service.snapshot().encounterContext).not.toHaveProperty('battlefieldPlan');
   expect(request).not.toHaveBeenCalled();
   f.service.dispose();
 }, 20000);
