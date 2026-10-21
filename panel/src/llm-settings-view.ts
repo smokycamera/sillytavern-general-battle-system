@@ -6,7 +6,6 @@ export function renderLlmSettings(c: LlmSettings, status = ''): string {
     <label>配置方式 <select data-role="llm-mode"><option value="manual" ${c.enabled ? '' : 'selected'}>手动配置 · 内置自动战斗</option><option value="llm" ${c.enabled ? 'selected' : ''}>普通 LLM 读取上下文</option><option value="jev" disabled>JEV 指挥（暂不可用）</option></select></label>
     <p>开战前读取最近的正文，由模型选择双方指挥、任务与战场。指挥配置只影响自动行动。</p>
     <label><input data-role="llm-enemy-command" type="checkbox" ${c.commandEnemy ? 'checked' : ''} ${c.enabled ? '' : 'disabled'}>LLM 指挥</label>
-    <p class="sub">用于下一场战斗。开战前分别生成敌军与参战第三方指挥官的人设、已知信息与任务；战斗中各按自己的视野逐单位下令，独立保留总计划与已探索地图。请求失败时该阵营使用内置自动行动。战场规模按卡数决定：32张及以下为小战，更多为会战。</p>
     <label>指挥思考模式 <select data-role="llm-command-thinking" ${c.enabled ? '' : 'disabled'}><option value="auto" ${!c.commandThinking || c.commandThinking === 'auto' ? 'selected' : ''}>思考</option><option value="off" ${c.commandThinking === 'off' ? 'selected' : ''}>非思考</option></select></label>
     ${c.commandThinking === 'off' ? `<details><summary>高级兼容设置</summary>
       <label>非思考参数（JSON）<textarea data-role="llm-command-params" rows="4" spellcheck="false" ${c.enabled ? '' : 'disabled'}>${esc(c.commandThinkingOffParams ?? COMMAND_THINKING_OFF_PARAMS)}</textarea></label>
