@@ -335,6 +335,7 @@ export function encounterRequest(input: EncounterContextInput): {
           unknown,
           annihilation: "击败敌军/普通遭遇战",
           siege: "攻取或守住城堡据点",
+          control: "各参战阵营争夺中立据点，任何一方独占均可获胜，无固定攻守方",
           escort: "我方护送目标到出口，敌方拦截",
           intercept: "我方拦截，敌方护送目标到出口",
         },

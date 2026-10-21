@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 const root = path.resolve('release/native-candidate');
 const metadataMode = process.env.TB_METADATA_MODE ?? 'metadata-only';
 assert.ok(['metadata-only', 'legacy-full'].includes(metadataMode), 'Unknown metadata save mode');
-const artifacts = path.resolve('artifacts/layered-browser', metadataMode); mkdirSync(artifacts, { recursive: true });
+const artifacts = path.resolve(process.env.TB_POSITION_FIXTURES ? 'artifacts/position-browser' : 'artifacts/layered-browser', metadataMode); mkdirSync(artifacts, { recursive: true });
 const disk = new Map(); const results = []; const errors = [];
 let jevDelay = 0; let jevRequests = 0;
 const fixture = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><textarea id="send_textarea">未发送的玩家草稿 | /send {{macro}}</textarea><input id="pending-file" value="fixture-attachment.txt"><main id="chat"></main><script>
@@ -55,12 +55,38 @@ const check=(name,condition)=>{assert.ok(condition,name);results.push(name);cons
 const ready=()=>page.waitForFunction(()=>window.__tavernBattleNative?.service.status().phase==='ready');
 const state=()=>page.evaluate(()=>window.__tavernBattleNative.service.snapshot());
 const idle=async frame=>frame.locator('body:not([aria-busy="true"])').waitFor();
-const scene=JSON.parse(readFileSync('artifacts/layered-browser/fixture.json','utf8'));
+const positionScenes=process.env.TB_POSITION_FIXTURES?JSON.parse(readFileSync(process.env.TB_POSITION_FIXTURES,'utf8')):undefined;
+let scene=positionScenes?.[0]??JSON.parse(readFileSync('artifacts/layered-browser/fixture.json','utf8'));
 const install=async()=>{await page.evaluate(async state=>{await __tavernBattleNative.service.transact(()=>structuredClone(state))},scene.state);};
 try {
   await page.goto(url);await ready();await install();
   await page.locator('#tavern-battle-native-entry').click();
   const frame=page.frameLocator('#tavern-battle-native-panel iframe');await frame.locator('#app h1').waitFor();
+  if(positionScenes) {
+    for(const sample of positionScenes) {
+      scene=sample;await install();
+      await frame.locator('[data-action="workspace-tab"][data-tab="battle"]').first().click();await idle(frame);
+      await frame.locator('.grid-cell').first().waitFor();
+      check(sample.pattern+' renders every saved map cell',await frame.locator('.grid-cell').count()===sample.width*sample.height);
+      check(sample.pattern+' renders deployed unit pieces',await frame.locator('.grid-piece').count()>=4&&(await state()).battle.snap.combatants.length===(sample.units??8));
+      const savedLandmarks=(await state()).battle.snap.battlefield.landmarks??[];
+      if(savedLandmarks.length) check(sample.pattern+' landmark list contains only clickable names',JSON.stringify(await frame.locator('.map-landmark button').allTextContents())===JSON.stringify(savedLandmarks.map(mark=>'◇ '+mark.label)));
+      if(sample.goalKind&&sample.goalKind!=='annihilation') {
+        check(sample.pattern+' marks the saved objective cell',await frame.locator(`.grid-cell.objective[data-cell="${sample.goalCell}"]`).count()===1);
+        check(sample.pattern+' distinguishes escape from capture',await frame.locator('.grid-goal').innerText()===(sample.goalKind==='escape'?'出口':'旗'));
+        if(sample.goalKind==='control') check(sample.pattern+' marks the complete capture region',await frame.locator('.control-region').count()===sample.goalArea);
+      }
+      await frame.locator('.grid-board').screenshot({path:path.join(artifacts,sample.pattern+'.png')});
+      if(sample.goalKind&&sample.goalKind!=='annihilation') {
+        await frame.locator(`.grid-cell[data-cell="${sample.goalCell}"]`).click();await idle(frame);
+        await page.screenshot({path:path.join(artifacts,sample.pattern+'-desktop.png'),fullPage:true});
+      }
+    }
+    await page.setViewportSize({width:390,height:844});
+    check('position map has a scrollable mobile container',await frame.locator('.grid-board').evaluate(el=>{let p=el.parentElement;while(p&&p!==document.body){if(['auto','scroll'].includes(getComputedStyle(p).overflowX))return p.scrollWidth>=p.clientWidth;p=p.parentElement;}return false;}));
+    await page.screenshot({path:path.join(artifacts,'mobile.png'),fullPage:true});
+    check('no unhandled browser exceptions',errors.length===0);
+  } else {
   await frame.locator('[data-action="workspace-tab"][data-tab="battle"]').first().click();await idle(frame);
   check('11x17 city is rendered from the saved layered battlefield',await frame.locator('.grid-cell').count()===187);
   check('city, structure and core-region classes are present',await frame.locator('.structure-wall').count()>0&&await frame.locator('.control-region').count()>1);
@@ -83,6 +109,7 @@ try {
   check('mobile map stays scrollable rather than clipping the page',await frame.locator('.grid-board').evaluate(el=>{let p=el.parentElement;while(p&&p!==document.body){if(['auto','scroll'].includes(getComputedStyle(p).overflowX))return p.scrollWidth>=p.clientWidth;p=p.parentElement;}return false;}));
   await page.screenshot({path:path.join(artifacts,'mobile.png'),fullPage:true});
   check('no unhandled browser exceptions',errors.length===0);
+  }
 } catch(error) {
   console.error(error);process.exitCode=1;
   console.error('PAGE ERRORS',errors);try{await page.screenshot({path:path.join(artifacts,'failure.png'),fullPage:true});}catch{}

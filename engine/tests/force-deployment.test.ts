@@ -76,10 +76,13 @@ describe('scene roles outrank how a force is described', () => {
     expect(() => normalizeBattlefieldPlan({ deployments: [{ subject: 'ally', at: ['up'] }] })).toThrow('九宫格');
     expect(() => normalizeBattlefieldPlan({ deployments: [{ subject: 'ally', at: ['south'] }, { subject: 'ally', at: ['north'] }] })).toThrow('只能写一项');
   });
-  it('ruins a compound gate together with a destroyed target building', () => {
+  it('keeps a compound gate independent of a destroyed building inside its walls', () => {
     const plan = { scene: 'building_siege', breaches: { count: 1 }, intent: { schema: 'scene-intent-v1', entities: [{ id: 'hall', kind: 'building', anchor: 'west', state: 'destroyed', basis: 'inferred', sources: [] }], relations: [], constraints: [] } };
     const field = generatedLayeredField('ruined-compound', 7, 13, ['siege'], { roster: roster(), attackingSide: 'enemy', plan: normalizeBattlefieldPlan(plan).plan, unitBindings: bindings });
     expect(() => validateField(field)).not.toThrow();
-    expect(field.city!.gates.every(p => field.structures![p]!.gateState === 'destroyed')).toBe(true);
+    expect(field.city!.gates.every(p => field.structures![p]!.gateState === 'closed' && field.structures![p]!.hp > 0)).toBe(true);
+    const room = field.scene!.regions.find(r => r.id === 'hall')!;
+    expect(room.cells.length).toBeGreaterThan(1);
+    expect(room.cells.every(p => field.overlays![p]?.includes('rubble'))).toBe(true);
   });
 });

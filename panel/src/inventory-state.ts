@@ -130,6 +130,36 @@ function fingerprint(value: unknown): string {
     .map((key) => JSON.stringify(key) + ':' + fingerprint((value as Record<string, unknown>)[key])).join(',') + '}';
 }
 const stackable = (spec: ItemSpecification) => spec.kind === 'item' && spec.form === 'single';
+export const isInventoryStack = (item: InventoryItem): boolean => !item.mechanics || item.mechanics.kind === 'item' && item.mechanics.value.recipe.form === 'single';
+
+/** 正文仍可用原叠编号扣除分给各人的份额；只追踪该叠的拆分后代，不按同名合并。 */
+export function narrativeTakeParts(inventory: readonly InventoryItem[], itemId: string, qty: number): { itemId: string; qty: number }[] {
+  const source = inventory.find(item => item.id === itemId);
+  if (!source || !Number.isSafeInteger(qty) || qty < 1) throw Error('物品不存在或移除数量无效');
+  const byId = new Map(inventory.map(item => [item.id, item]));
+  const signature = (item: InventoryItem) => fingerprint([item.name, item.lootType, item.mechanics]);
+  const sameStack = (item: InventoryItem): boolean => {
+    if (!isInventoryStack(source) || !isInventoryStack(item) || signature(source) !== signature(item)) return false;
+    const visited = new Set<string>();
+    let current: InventoryItem | undefined = item;
+    while (current && !visited.has(current.id)) {
+      if (current.id === source.id) return true;
+      visited.add(current.id);
+      current = current.sourceItemId ? byId.get(current.sourceItemId) : undefined;
+    }
+    return false;
+  };
+  const candidates = [source, ...inventory.filter(item => item.id !== source.id && sameStack(item))];
+  const parts: { itemId: string; qty: number }[] = [];
+  let remaining = qty;
+  for (const item of candidates) {
+    const taken = Math.min(remaining, item.qty);
+    if (taken > 0) parts.push({ itemId: item.id, qty: taken });
+    remaining -= taken;
+    if (!remaining) return parts;
+  }
+  throw Error('物品不存在或移除数量超出库存');
+}
 export function createInventoryItem(id: string, name: string, spec: ItemSpecification, seed: string, qty = 1): InventoryItem {
   if (!id || !name.trim()) throw new Error('物品缺少身份或名称');
   if (!Number.isSafeInteger(qty) || qty < 1 || !stackable(spec) && qty !== 1) throw new Error('装备与佩戴、充能道具逐件建档；一次性道具数量须为正整数');

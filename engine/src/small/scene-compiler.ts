@@ -9,6 +9,7 @@ import type { Combatant } from '../types.js';
 import { surfaceHeightAt } from './height-map.js';
 import { clipRelationZone } from './force-deployment.js';
 import { INTERIOR_USE_NAMES, INTERIOR_PATTERN_NAMES } from './interior-plan.js';
+import { COMPOUND_PATTERN_NAMES, TRENCH_PATTERN_NAMES } from './position-plan.js';
 export interface SceneRegion {
     id: string;
     kind: string;
@@ -94,7 +95,9 @@ export function compileScenePlan(plan: BattlefieldPlan | undefined): Battlefield
         result.gatePlan = Array.from({ length: gateCount?.value ?? gates.length }, (_, i) => {
             const gate = gates[i], anchor = gate ? anchors.get(gate.id) : undefined;
             const sector: GatePlan['sector'] = anchor?.includes('east') ? 'east' : anchor?.includes('west') ? 'west' : anchor?.includes('north') ? 'north' : anchor?.includes('south') ? 'south' : (['front_center', 'front_left', 'front_right', 'rear'] as const)[i]!;
-            return { ...(gate ? { id: gate.id } : {}), sector, state: gate?.state === 'open' ? 'open' : gate?.state === 'destroyed' ? 'destroyed' : 'closed' };
+            return { ...(gate ? { id: gate.id } : {}), sector,
+                ...(result.scene === 'building_siege' && /内.*门|二门|inner/i.test(gate?.label ?? '') ? { internal: true } : {}),
+                state: gate?.state === 'open' ? 'open' : gate?.state === 'destroyed' ? 'destroyed' : 'closed' };
         });
     const marked = intent.entities.filter(e => !['city', 'river', 'gate', 'bridge'].includes(e.kind));
     // A place that is near another one and has no stated anchor is laid out beside it, on the stated side if any.
@@ -104,7 +107,7 @@ export function compileScenePlan(plan: BattlefieldPlan | undefined): Battlefield
         return near && { id: near.object, ...(side ? { side: directionRelations[side.relation] as 'north' | 'south' | 'east' | 'west' } : {}) };
     };
     result.landmarks = marked.map(e => ({ id: e.id, kind: e.kind as LandmarkPlan['kind'], anchor: anchors.get(e.id) ?? 'center',
-        scale: intent.relations.some(r => r.object === e.id && r.relation === 'exits_at') ? 'minor' : e.scale ?? 'minor', ...(e.state === 'destroyed' ? { state: 'destroyed' as const } : {}), ...(e.label ? { label: e.label } : {}), ...(e.height !== undefined ? { height: e.height } : {}), ...(intent.relations.some(r => r.object === e.id && r.relation === 'exits_at') ? { edge: true } : {}),
+        scale: intent.relations.some(r => r.object === e.id && r.relation === 'exits_at') ? 'minor' : e.scale ?? 'minor', ...(e.state === 'destroyed' ? { state: 'destroyed' as const } : {}), ...(e.label ? { label: e.label } : {}), ...(e.height !== undefined ? { height: e.height } : {}), ...(e.id === 'exit' && e.kind === 'position' && intent.relations.some(r => r.object === e.id && r.relation === 'exits_at') ? { edge: true } : {}),
         ...(nearby(e) ? { near: nearby(e) } : {}) }));
     // Lay out a referenced landmark before the one placed beside it.
     for (let pass = 0; pass < result.landmarks.length; pass++) {
@@ -244,6 +247,23 @@ export function finishSceneRegions(field: BattlefieldSpec, plan: BattlefieldPlan
         if (clipped.cells !== cells)
             platform = platform && clipped.cells.every(p => region.cells.includes(p));
         cells = clipped.cells;
+        // A compound garrison explicitly staying inside cannot be pulled outside by a furnishing or gate marker.
+        // Individual sortie posts still take precedence over the side-wide post.
+        if (field.generation?.compound && zoneSide === field.city?.defender) {
+            const post = plan?.deployments?.find(d => d.subject === r.subject)?.post
+                ?? plan?.deployments?.find(d => d.subject === zoneSide)?.post;
+            if (post !== 'outside') {
+                const legal = (p: number) => field.city!.inside.includes(p) && !groundBlocked(field, p);
+                const kept = cells.filter(legal);
+                if (kept.length >= Math.max(1, required)) cells = kept;
+                else {
+                    const ranked = field.city!.inside.filter(legal).sort((a, b) => distance(a) - distance(b) || a - b);
+                    const radius = distance(ranked[Math.min(Math.max(6, required + 2), ranked.length) - 1]!);
+                    cells = ranked.filter(p => distance(p) <= radius);
+                }
+                platform = false;
+            }
+        }
         const note = clipped.note ?? extended;
         if (note)
             field.generation!.notes = [...(field.generation!.notes ?? []), note];
@@ -355,7 +375,9 @@ export function sceneSummary(field: BattlefieldSpec): string {
     const name = inside && INTERIOR_USE_NAMES[inside.use] && INTERIOR_PATTERN_NAMES[inside.pattern]
       ? `${INTERIOR_USE_NAMES[inside.use]} · ${INTERIOR_PATTERN_NAMES[inside.pattern]}`
       : field.scene?.archetype ? SCENE_ARCHETYPE_NAMES[field.scene.archetype] : '';
-    return [name, ...field.scene?.fulfilled ?? []].filter(Boolean).join('；');
+    const compound = field.generation?.compound, trenches = field.generation?.trenches;
+    const organization = compound ? COMPOUND_PATTERN_NAMES[compound.pattern] : trenches ? TRENCH_PATTERN_NAMES[trenches.pattern] : '';
+    return [organization || name, ...field.scene?.fulfilled ?? []].filter(Boolean).join('；');
 }
 export function validateSceneRecord(field: BattlefieldSpec): void {
     const legal = (p: unknown) => Number.isInteger(p) && Number(p) >= 0 && Number(p) < field.tiles.length;

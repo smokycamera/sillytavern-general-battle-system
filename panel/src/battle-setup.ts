@@ -2,7 +2,7 @@ import { DEFAULT_SMALL_ROUND_LIMIT, defaultBattleObjective, type SmallBattle, ne
 import { activeBattleUnits } from '../../engine/src/battle-limits.js';
 import { MAX_SCENE_UNITS, RECOMMENDED_UNITS, GROUPING_HINT } from './narrative-limits.js';
 import {groundBlocked} from '../../engine/src/small/layers.js';
-import { gridCostsToGoals, gridDistance, movementStepCost, prepareGridDeployment } from '../../engine/src/small/spatial.js';
+import { gridCostsToGoals, gridDistance, movementStepCost, prepareGridDeployment, neighbors } from '../../engine/src/small/spatial.js';
 
 export function battleCapacityIssue(roster: Combatant[]): string | undefined {
   const count = activeBattleUnits(roster).length;
@@ -62,10 +62,18 @@ export function prepareBattleObjective(field: BattlefieldSpec, roster: Combatant
   if (!['escort', 'intercept'].includes(mode)) {
     const siegeScene = field.generation?.scene ? ['city_siege','building_siege'].includes(field.generation.scene) : field.environment?.includes('siege');
     const siege = mode === 'siege' || mode === 'auto' && siegeScene;
-    if (siege && field.layerVersion && field.city?.core.length) return { ...field, objective: { kind: 'control', cell: binding?.relation==='targets'?targetCells[0]!:field.city.core[0]!, cells: binding?.relation==='targets'?targetCells:[...field.city.core], attackingSide: binding?.relation==='targets' && binding.side !== 'neutral'?binding.side:attackingSide, rounds: 2, limit: field.objective.limit } };
-    if ((mode === 'control' || mode === 'auto' && binding?.relation === 'targets') && !siege) return { ...field, objective: { kind: 'control', cell: binding?.relation==='targets'?targetCells[0]!:neutralControlCell(field,roster),...(binding?.relation==='targets'?{cells:targetCells,...(binding.side !== 'neutral' ? {attackingSide:binding.side} : {})}:{}), rounds: 2, limit: field.objective.limit } };
+    if (siege && binding?.relation === 'targets') return { ...field, objective: { kind: 'control', cell: neutralControlCell(field, roster, targetCells),
+      cells: targetCells, attackingSide: binding.side !== 'neutral' ? binding.side : attackingSide, rounds: 2, limit: field.objective.limit } };
+    if (siege && field.layerVersion && field.city?.core.length) return { ...field, objective: { kind: 'control', cell: field.city.core[0]!, cells: [...field.city.core], attackingSide, rounds: 2, limit: field.objective.limit } };
+    if ((mode === 'control' || mode === 'auto' && binding?.relation === 'targets') && !siege) {
+      const cells = binding?.relation === 'targets' ? targetCells : undefined;
+      return { ...field, objective: { kind: 'control', cell: neutralControlCell(field, roster, cells),
+        ...(cells ? { cells, ...(mode !== 'control' && binding!.side !== 'neutral' ? { attackingSide: binding!.side } : {}) } : {}), rounds: 2, limit: field.objective.limit } };
+    }
     const next = defaultBattleObjective(field.width, field.height, siege ? ['siege'] : [], attackingSide);
     if (field.layerVersion && !siege) next.cell = field.city?.core[0] ?? field.objective.cell;
+    if (siege && groundBlocked(field, next.cell)) next.cell = field.tiles.flatMap((_, p) => !groundBlocked(field, p) ? [p] : [])
+      .sort((a, b) => gridDistance(field, a, next.cell) - gridDistance(field, b, next.cell) || a - b)[0] ?? next.cell;
     return { ...field, objective: { ...next, limit: field.objective.limit } };
   }
   const side = mode === 'intercept' ? 'enemy' : 'ally';
@@ -74,29 +82,75 @@ export function prepareBattleObjective(field: BattlefieldSpec, roster: Combatant
   if (!escorted) throw new Error(side === 'enemy' ? '拦截任务需要可参战的敌方护送对象' : '护送任务需要可参战的我方单位');
   if(binding?.relation==='exits_at'&&(binding.side!==side||binding.unitId&&binding.unitId!==escorted.id))throw new Error('正文出口所属部队与护送对象不一致');
   return { ...field, objective: { kind: 'escape', unitId: escorted.id,
-    cell: binding?.relation==='exits_at'?targetCells[0]!:escapeDestination(field,side),
+    cell: escapeDestination(field, side, roster, escorted.id, binding?.relation === 'exits_at' ? targetCells : undefined),
     limit: field.objective.limit, defenderWins: true } };
 }
-/** Compare the same ground infantry movement costs from both actual deployments. */
-function neutralControlCell(field: BattlefieldSpec, roster: Combatant[]): number {
+/** Use saved individual posts without changing the roster or recalculating its deployment. */
+function objectiveDeployment(field: BattlefieldSpec, roster: Combatant[]): Combatant[] {
   const active = activeBattleUnits(roster);
-  if (!active.some(u=>u.side==='ally') || !active.some(u=>u.side==='enemy')) return field.objective.cell;
-  const deployed = field.initialDeployment ? active.map(u=>({...u,...field.initialDeployment![u.id]})) : prepareGridDeployment(field,active,'neutral-control');
-  const walker = { ...active[0]!, body: 'human' as const, traits: [], traitSources: [], airborne: false, elevation: undefined, mount: false };
-  const costs = (side: 'ally'|'enemy') => gridCostsToGoals(field,deployed.filter(u=>u.side===side).map(u=>u.pos!),p=>!groundBlocked(field,p,walker),
-    (p,from)=>movementStepCost(field,from,walker,field.environment,p));
-  const ally=costs('ally'),enemy=costs('enemy'),center=Math.floor(field.height/2)*field.width+Math.floor(field.width/2);
-  const candidates=[...ally.keys()].filter(p=>enemy.has(p)&&!groundBlocked(field,p,walker));
-  if (!candidates.length) throw Error('中立据点没有双方步兵均可接近的位置');
-  return candidates.sort((a,b)=>Math.abs(ally.get(a)!-enemy.get(a)!)-Math.abs(ally.get(b)!-enemy.get(b)!)
-    || Math.max(ally.get(a)!,enemy.get(a)!)-Math.max(ally.get(b)!,enemy.get(b)!) || gridDistance(field,a,center)-gridDistance(field,b,center) || a-b)[0]!;
+  return field.initialDeployment ? active.map(u => ({ ...u, ...field.initialDeployment![u.id] })) : prepareGridDeployment(field, active, 'objective-position');
 }
-function escapeDestination(field:BattlefieldSpec,side:'ally'|'enemy'):number {
+/** Assess routes after opening doors, without opening them in the saved battle or bypassing walls. */
+function objectiveDoorways(field: BattlefieldSpec): BattlefieldSpec {
+  return { ...field, structures: field.structures?.map(s => s?.kind === 'gate' && s.hp > 0 ? { ...s, gateState: 'open' } : s) };
+}
+function objectiveGroundStarts(field: BattlefieldSpec, unit: Combatant): number[] {
+  if (unit.elevation !== 1 || unit.airborne) return [unit.pos!];
+  const platforms = [unit.pos!], seen = new Set(platforms), ground = new Set<number>();
+  const walker = { ...unit, elevation: undefined };
+  for (let i = 0; i < platforms.length; i++) for (const p of neighbors(field, platforms[i]!)) {
+    if (!groundBlocked(field, p, walker)) ground.add(p);
+    const s = field.structures?.[p];
+    if (s?.hp && s.top && !seen.has(p)) { seen.add(p); platforms.push(p); }
+  }
+  return [...ground];
+}
+function neutralControlCell(field: BattlefieldSpec, roster: Combatant[], region?: number[]): number {
+  const active = activeBattleUnits(roster);
+  const sides = (['ally', 'enemy', 'neutral'] as const).filter(side => active.some(u => u.side === side));
+  if (sides.length < 2) return region?.[0] ?? field.objective.cell;
+  const deployed = objectiveDeployment(field, roster), routes = objectiveDoorways(field);
+  const walker = { ...active[0]!, body: 'human' as const, traits: [], traitSources: [], airborne: false, elevation: undefined, mount: false };
+  const costs = (side: Combatant['side']) => gridCostsToGoals(routes,deployed.filter(u=>u.side===side).flatMap(u=>objectiveGroundStarts(routes, { ...u, airborne: false })),p=>!groundBlocked(routes,p,walker),
+    (p,from)=>movementStepCost(routes,from,walker,field.environment,p));
+  const maps = sides.map(costs), center=Math.floor(field.height/2)*field.width+Math.floor(field.width/2);
+  const candidates=(region ?? [...maps[0]!.keys()]).filter(p=>maps.every(map=>map.has(p))&&!groundBlocked(field,p,walker));
+  if (!candidates.length) throw Error(`中立据点没有${sides.length === 3 ? '各方' : '双方'}步兵均可接近的位置`);
+  if (region) {
+    const x = region.reduce((s, p) => s + p % field.width, 0) / region.length, y = region.reduce((s, p) => s + Math.floor(p / field.width), 0) / region.length;
+    return candidates.sort((a,b) => Math.abs(a%field.width-x)+Math.abs(Math.floor(a/field.width)-y)
+      -Math.abs(b%field.width-x)-Math.abs(Math.floor(b/field.width)-y)||a-b)[0]!;
+  }
+  const distances = (p: number) => maps.map(map => map.get(p)!);
+  const spread = (p: number) => Math.max(...distances(p)) - Math.min(...distances(p));
+  return candidates.sort((a,b)=>spread(a)-spread(b)
+    || Math.max(...distances(a))-Math.max(...distances(b)) || gridDistance(field,a,center)-gridDistance(field,b,center) || a-b)[0]!;
+}
+function oppositeEscapeEdge(field:BattlefieldSpec,side:'ally'|'enemy'):number {
   const edge=field.retreatEdges?.[side];
   if(edge?.length){const p=edge[Math.floor(edge.length/2)]!;if(edge.every(p=>p%field.width===0))return Math.floor(p/field.width)*field.width+field.width-1;
     if(edge.every(p=>p%field.width===field.width-1))return Math.floor(p/field.width)*field.width;
     return (Math.floor(p/field.width)===0?field.height-1:0)*field.width+p%field.width;}
   return (side==='enemy'?(field.height-1)*field.width:0)+Math.floor(field.width/2);
+}
+function escapeDestination(field: BattlefieldSpec, side: 'ally' | 'enemy', roster: Combatant[], vipId: string, region?: number[]): number {
+  const vip = objectiveDeployment(field, roster).find(u => u.id === vipId)!;
+  const routes = objectiveDoorways(field);
+  const walker = { ...vip, elevation: undefined };
+  const costs = gridCostsToGoals(routes, objectiveGroundStarts(routes, vip), p => !groundBlocked(routes, p, walker),
+    (p, from) => movementStepCost(routes, from, walker, field.environment, p));
+  const wanted = oppositeEscapeEdge(field, side), x = wanted % field.width, y = Math.floor(wanted / field.width);
+  const boundary = field.tiles.flatMap((_, p) => p % field.width === 0 || p % field.width === field.width - 1 || p < field.width || p >= field.tiles.length - field.width ? [p] : []);
+  const candidates = (region ?? boundary).filter(p => !groundBlocked(field, p) && costs.has(p));
+  if (!candidates.length) throw Error('护送撤离点没有护送对象可到达的合法位置');
+  const sameEdge = (p: number) => x === 0 ? p % field.width === 0 : x === field.width - 1 ? p % field.width === x
+    : Math.floor(p / field.width) === y;
+  const cx = region ? region.reduce((s, p) => s + p % field.width, 0) / region.length : x;
+  const cy = region ? region.reduce((s, p) => s + Math.floor(p / field.width), 0) / region.length : y;
+  return candidates.sort((a, b) => (region ? 0 : Number(sameEdge(b)) - Number(sameEdge(a)))
+    || Math.abs(a % field.width - cx) + Math.abs(Math.floor(a / field.width) - cy)
+      - Math.abs(b % field.width - cx) - Math.abs(Math.floor(b / field.width) - cy)
+    || costs.get(a)! - costs.get(b)! || a - b)[0]!;
 }
 
 /** 默认模式只在准备下一战时计算，不转换单位身份或进行中的战斗。 */

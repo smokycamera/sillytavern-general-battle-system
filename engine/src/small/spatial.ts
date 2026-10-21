@@ -384,6 +384,8 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
       - 0.3 * blockingFriends.filter(u => gridDistance(field, u.pos!, position) === 1).length
       - 0.4 * detour - 0.7 * (tileCost(field, position, unit) - 1)
       + (terrain === 'cover' ? 1.4 : terrain === 'forest' ? 0.4 : 0)
+      // New trench layouts prefer a protected station within the requested area; explicit positions still win.
+      + (field.generation?.trenches?.networks.some(n => n.side === unit.side && n.cells.includes(position)) ? 12 : 0)
       + 1.5 * deploymentNoise(seed, unit.id, String(position));
     if (ranged && !unit.weapon?.indirect) {
       const targets = probes.filter(p => p !== position && gridDistance(field, position, p) <= gridWeaponRange(unit.weapon, true, unit.armsModel));

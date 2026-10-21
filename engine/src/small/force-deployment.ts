@@ -198,6 +198,15 @@ export function applyPlannedDeployments(field: BattlefieldSpec, plan: Battlefiel
       }
       if (!fits) notes.push(who + (attacker ? '改在城外正面开局' : post === 'outside' ? '改在城墙前列阵' : '开局位置就近调整'));
     }
+    const network = field.generation?.trenches?.networks.find(n => n.side === r.side);
+    if (network && !platform) {
+      const required = requiredCells(actors), own = new Set(network.cells), protectedCells = cells.filter(p => own.has(p));
+      if (protectedCells.length >= Math.max(1, required)) cells = protectedCells;
+      else if (r.plan.at.every(a => a.includes('north') || a.includes('south'))) {
+        const nearby = nearestRings(field, toSector, p => own.has(p) && !avoid.has(p) && !groundBlocked(field, p), required);
+        if (nearby.length >= Math.max(1, required)) { cells = nearby; notes.push(`${who}沿指定方向就近进入本方战壕`); }
+      }
+    }
     if (cells.length < requiredCells(actors) && post && !attacker && !platform) {
       // A post the scene cannot hold, such as a town both sides were asked to fill, falls back to the scene's own side.
       const legal = forceLegality(field, r.side), wider = nearestRings(field, toSector, p => legal(p) && !avoid.has(p), requiredCells(actors));

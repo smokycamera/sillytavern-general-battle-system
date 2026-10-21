@@ -5,11 +5,17 @@ import { generatedLayeredField, generateUnit, SmallBattle, V11_OVERFLOW_D20, typ
 import { prepareBattleObjective } from '../panel/src/battle-setup.js';
 import type { InteriorUse, InteriorPattern } from '../engine/src/small/interior-plan.js';
 import { geometrySignature } from '../engine/src/small/map-metrics.js';
+import { positionScenarios, objectiveScenarios } from './position-audit-scenarios.js';
+import type { CompoundPattern, TrenchPattern } from '../engine/src/small/position-plan.js';
+import { neighbors, findGridPath } from '../engine/src/small/spatial.js';
+import { groundBlocked } from '../engine/src/small/layers.js';
 
 const MODEL = 'deepseek-v4-flash';
 interface Scenario {
   id: string; scene: BattlefieldScene; text: string; use?: InteriorUse; patterns?: InteriorPattern[]; rooms?: string[];
   water?: boolean; gates?: number; walls?: 'front'|'ring'|'double';
+  compound?: CompoundPattern; trench?: TrenchPattern; gateStates?: string[];
+  objectiveMode?: 'escort' | 'control'; thirdParty?: boolean;
 }
 const scenarios: Scenario[] = [
   {id:'residence-suite',scene:'interior',use:'residence',patterns:['suite'],rooms:['书房','厨房'],text:'双方都已进入住宅内部。前厅、起居室与后厅依次穿堂相连，房门彼此错位；北侧是书房，东南是厨房。屋内家具零散，有屏风与木桌。我方四人从南侧前厅推进，敌方四人在北侧后厅据守，本场击败对方即可。'},
@@ -35,6 +41,8 @@ const scenarios: Scenario[] = [
   {id:'trenches-front',scene:'trenches',text:'开阔战区布有相对的堑壕阵地，南面我方四人占据一条折线战壕，北面敌方四人占据另一条战壕，中间为有弹坑的无人地带。各自的前沿壕与后方交通壕相连，当前双方从壕中交战，没有城市与建筑围墙。'},
   {id:'trenches-depth',scene:'trenches',text:'双方各据多段相通的战壕，在前沿壕后还有第二线壕，交通壕连接前后阵位。我方四人在南部壕沟，敌方四人在北部壕沟，中央无人地有弹坑和瓦砾，任务击败敌人。这里不是城市街巷或建筑内部。'},
 ];
+scenarios.push(...positionScenarios);
+scenarios.push(...objectiveScenarios);
 const roomDirections: Record<string, Record<string,string>> = {
   'residence-suite': {'书房':'N','厨房':'SE'}, 'inn-hall':{'厨房':'NW','客房':'NE'}, 'temple-ring':{'经堂':'E','正殿':'N'},
   'office-cross':{'档案室':'NW','会议室':'SE'}, 'warehouse-aisles':{'前仓':'S','后仓':'N'}, 'workshop-wings':{'工具间':'NW','原料间':'SE'},
@@ -45,24 +53,24 @@ const args = process.argv.slice(2), arg = (name: string, fallback: string) => ar
 const group = arg('--group','indoor'), repeats = Number(arg('--repeats','2')), limit = Number(arg('--limit','1000')), only=arg('--ids','').split(',').filter(Boolean);
 const keyPath = arg('--key-file',''), output = arg('--output',`artifacts/indoor-layout-research/live-${group}.json`);
 const replayPath=arg('--replay',''),replay=replayPath?JSON.parse(readFileSync(replayPath,'utf8')):undefined;
-if ((!keyPath&&!replay) || !['indoor','other'].includes(group) || !Number.isInteger(repeats) || repeats<1 || repeats>4) throw Error('Use --key-file=PATH or --replay=REPORT --group=indoor|other --repeats=1..4');
+if ((!keyPath&&!replay) || !['indoor','other','positions','objectives'].includes(group) || !Number.isInteger(repeats) || repeats<1 || repeats>4) throw Error('Use --key-file=PATH or --replay=REPORT --group=indoor|other|positions|objectives --repeats=1..4');
 const token = replay?'offline-replay':readFileSync(keyPath,'utf8').trim().match(/sk-[A-Za-z0-9_-]+/)?.[0];
 if (!token) throw Error('No recognized API credential in supplied file');
 const settings = { enabled:true,selectBattleScale:false,designMap:true,selectVip:true,windowSize:2,url:'https://api.deepseek.com',token,model:MODEL,models:[MODEL] };
-const tasks = scenarios.filter(s=>(group==='indoor'?s.scene==='interior':s.scene!=='interior')&&(!only.length||only.includes(s.id))).flatMap(s=>Array.from({length:repeats},(_,repeat)=>({s,repeat}))).slice(0,limit);
-const report: any = {date:'2026-10-20',requestedModel:MODEL,group,method:'Real LlmContextController decision + layout, unchanged product request payloads; real generation, deployment, battle start and snapshot restore. Synthetic Chinese narratives. Fact checks are defined per scenario and inspect actual generated fields. No model self-grading.',cases:[],requests:0,usage:{prompt_tokens:0,completion_tokens:0},elapsedMs:0};
+const tasks = scenarios.filter(s=>(group==='objectives'?!!s.objectiveMode:!s.objectiveMode&&(group==='positions'?!!s.compound||!!s.trench:group==='indoor'?s.scene==='interior':s.scene!=='interior'&&!s.compound&&!s.trench))&&(!only.length||only.includes(s.id))).flatMap(s=>Array.from({length:repeats},(_,repeat)=>({s,repeat}))).slice(0,limit);
+const report: any = {date:'2026-10-21',requestedModel:MODEL,group,method:'Real LlmContextController decision + layout, unchanged product request payloads; real generation, deployment, battle start and snapshot restore. Synthetic Chinese narratives. Fact checks are defined per scenario and inspect actual generated fields. No model self-grading.',cases:[],requests:0,usage:{prompt_tokens:0,completion_tokens:0},elapsedMs:0};
 if(replay){report.replayedFrom=replayPath;report.method='Replay of previously recorded real Flash answers through the current product parser, generation, deployment and snapshot restore; no new API requests.';}
 const started = performance.now();
 const nativeFetch = globalThis.fetch.bind(globalThis);
 function persist() {report.elapsedMs=Math.round(performance.now()-started);writeFileSync(output,JSON.stringify(report,null,2)+'\n');}
 const progress = (c:any) => console.log(JSON.stringify({case:c.id,repeat:c.repeat,success:c.success,attempts:c.calls.length,returnedModels:[...new Set(c.calls.map((c:any)=>c.model))],facts:c.facts,error:c.error}));
-const rosterFor = () => (['ally','enemy'] as const).flatMap(side=>Array.from({length:4},(_,i)=>{
-  const u=generateUnit({name:(side==='ally'?'我方':'敌方')+(i+1),side,scale:'hero',rulesVersion:'v2',level:3,weaponClass:i%2?'bow':'sword',weaponLevel:3,traits:[]},{seed:side+i,noVariance:true}).unit;
+const rosterFor = (third = false) => (third ? ['ally','enemy','neutral'] as const : ['ally','enemy'] as const).flatMap(side=>Array.from({length:side==='neutral'?2:4},(_,i)=>{
+  const u=generateUnit({name:(side==='ally'?'我方':side==='enemy'?'敌方':'第三方')+(i+1),side,scale:'hero',rulesVersion:'v2',level:3,weaponClass:i%2?'bow':'sword',weaponLevel:3,traits:[]},{seed:side+i,noVariance:true}).unit;
   u.id=side+i;return u;
 }));
 async function run(s:Scenario, repeat:number) {
   const c:any={id:s.id,repeat,narrative:s.text,expected:{scene:s.scene,use:s.use,patterns:s.patterns,rooms:s.rooms},calls:[],success:false,facts:[]};
-  const roster=rosterFor(), seed=`live-${s.id}-${repeat}`;
+  const roster=rosterFor(s.thirdParty), seed=`live-${s.id}-${repeat}`;
   const request:typeof fetch=async (url,init)=>{
     const target=new URL(String(url)); const body=JSON.parse(String(init?.body));
     if(target.origin!=='https://api.deepseek.com'||!['/chat/completions','/v1/chat/completions'].includes(target.pathname)||body.model!==MODEL) throw Error('Audit endpoint/model guard rejected the request');
@@ -91,7 +99,38 @@ async function run(s:Scenario, repeat:number) {
     const f=field, facts:{name:string;pass:boolean;actual?:unknown}[]=[];
     const fact=(name:string,pass:boolean,actual?:unknown)=>facts.push({name,pass,...(actual!==undefined?{actual}:{})});
     fact('战场类型',f.generation?.scene===s.scene,f.generation?.scene);
+    if(s.objectiveMode) {
+      fact('任务模式',result.objectiveMode===s.objectiveMode,result.objectiveMode);
+      fact('任务目标实际绑定',!!f.scene?.objectiveRegion,f.scene?.objectiveRegion);
+      fact('目标格合法',!groundBlocked(f,f.objective.cell),f.objective.cell);
+      if(s.objectiveMode==='control') fact('三方均能夺点',f.objective.kind==='control'&&!f.objective.attackingSide&&roster.some(u=>u.side==='neutral'),f.objective);
+      else fact('护送出口位于地图边缘',f.objective.kind==='escape'&&(f.objective.cell%f.width===0||f.objective.cell%f.width===f.width-1||f.objective.cell<f.width||f.objective.cell>=f.tiles.length-f.width),f.objective);
+      const doors=structuredClone(f);for(const v of doors.structures??[])if(v?.kind==='gate'&&v.hp>0)v.gateState='open';
+      for(const side of s.thirdParty?['ally','enemy','neutral']:['ally']) {
+        const starts=roster.filter(u=>u.side===side).map(u=>f.initialDeployment?.[u.id]?.pos).filter((p):p is number=>p!==undefined);
+        fact(side+'可沿现有门路接近目标',starts.some(p=>!!findGridPath(doors,p,f.objective.cell,n=>!groundBlocked(doors,n))));
+      }
+    }
     if(s.use) fact('建筑用途',f.generation?.interior?.use===s.use,f.generation?.interior?.use);
+    if(s.compound) {
+      fact('明确院落组织',f.generation?.compound?.pattern===s.compound,f.generation?.compound?.pattern);
+      fact('实际房间与院落',!!f.generation?.compound?.areas.some(a=>a.kind==='room'&&a.cells.length>1)&&!!f.generation.compound.areas.some(a=>a.kind==='court'&&a.cells.length>1));
+      fact('独立院门状态',JSON.stringify(f.city?.gates.map(p=>f.structures![p]?.gateState))===JSON.stringify(s.gateStates),f.city?.gates.map(p=>f.structures![p]?.gateState));
+    }
+    if(s.trench) {
+      fact('明确壕系组织',f.generation?.trenches?.pattern===s.trench,f.generation?.trenches?.pattern);
+      for(const n of f.generation?.trenches?.networks??[]) {
+        const allowed=new Set(n.cells), reached=new Set([n.cells[0]!]),queue=[n.cells[0]!];
+        for(let i=0;i<queue.length;i++)for(const p of neighbors(f,queue[i]!))if(allowed.has(p)&&!reached.has(p)){reached.add(p);queue.push(p);}
+        fact(n.side+'壕系实际连通',reached.size===n.cells.length,{front:n.front.length,support:n.support.length,communication:n.communication.length,saps:n.saps.length});
+      }
+      fact('无人地实际存在',(f.generation?.trenches?.noMansLand.length??0)>0);
+      for(const side of ['ally','enemy'] as const) {
+        const works=new Set(f.generation?.trenches?.networks.find(n=>n.side===side)?.cells??[]);
+        const positions=roster.filter(u=>u.side===side).map(u=>f.initialDeployment?.[u.id]?.pos);
+        fact(side+'从本方壕内开局',positions.every(p=>p!==undefined&&works.has(p)),positions);
+      }
+    }
     if(s.patterns) fact('明确空间组织',s.patterns.includes(f.generation?.interior?.pattern!),f.generation?.interior?.pattern);
     for(const label of s.rooms??[]) {
       const region=f.scene?.regions.find(r=>r.kind==='room'&&r.label.includes(label));
@@ -128,5 +167,5 @@ async function run(s:Scenario, repeat:number) {
 mkdirSync('artifacts/indoor-layout-research',{recursive:true});
 let cursor=0;
 await Promise.all(Array.from({length:2},async()=>{while(cursor<tasks.length){const task=tasks[cursor++]!;await run(task.s,task.repeat);}}));
-report.summary={total:report.cases.length,generated:report.cases.filter((c:any)=>c.success).length,firstPass:report.cases.filter((c:any)=>c.success&&c.firstPass).length,allCheckedFacts:report.cases.filter((c:any)=>c.success&&c.facts.every((f:any)=>f.pass)).length,distinctPatterns:[...new Set(report.cases.map((c:any)=>c.actual?.generation?.interior?.pattern).filter(Boolean))]};
+report.summary={total:report.cases.length,generated:report.cases.filter((c:any)=>c.success).length,firstPass:report.cases.filter((c:any)=>c.success&&c.firstPass).length,allCheckedFacts:report.cases.filter((c:any)=>c.success&&c.facts.every((f:any)=>f.pass)).length,distinctPatterns:[...new Set(report.cases.map((c:any)=>c.actual?.generation?.interior?.pattern??c.actual?.generation?.compound?.pattern??c.actual?.generation?.trenches?.pattern).filter(Boolean))]};
 persist();console.log(JSON.stringify({summary:report.summary,requests:report.requests,usage:report.usage,elapsedMs:report.elapsedMs}));
