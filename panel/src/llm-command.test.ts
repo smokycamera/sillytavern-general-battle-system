@@ -83,10 +83,12 @@ describe('commander observation and tools', () => {
     s.memory = updateCommandMemory(b, s.memory);
     const map = commanderTool('commander_map', { cells: [15] }, b, 'u1', s, []) as { cells: unknown[] };
     expect(map.cells).toEqual([expect.objectContaining({ cell: 15, terrain: 'open', round: b.round - 1, visible: false, x: 1, y: 2 })]);
-    commanderTool('commander_plan', { plan: '计'.repeat(600), notes: ['推测：对手可能在南侧'] }, b, 'u1', s, []);
+    commanderTool('commander_plan', { plan: '计'.repeat(600), addNotes: ['推测：对手可能在南侧'] }, b, 'u1', s, []);
     expect(s.memory.plan).toHaveLength(600);
-    expect(() => commanderTool('commander_plan', { plan: '计'.repeat(601), notes: [] }, b, 'u1', s, [])).toThrow('超出限制');
+    expect(() => commanderTool('commander_plan', { plan: '计'.repeat(601) }, b, 'u1', s, [])).toThrow('超出限制');
     expect(s.memory.plan).toHaveLength(600);
+    commanderTool('commander_plan', { addNotes: ['北侧已清空'], removeNotes: [0] }, b, 'u1', s, []);
+    expect(s.memory).toMatchObject({ plan: '计'.repeat(600), notes: ['北侧已清空'] });
     expect(() => commanderTool('commander_act', { choice: 'invented', actorId: 'u0' }, b, 'u1', s, smallCommandChoices(b, 'u1'))).toThrow('候选编号无效');
     expect(COMMAND_PROMPTS.preparation + COMMAND_PROMPTS.command + Object.values(COMMAND_PROMPTS.tools).join('')).not.toContain('敌方');
   });
@@ -179,7 +181,7 @@ describe('atomic LLM command execution', () => {
       expect(JSON.stringify(payload)).not.toContain('fixture-secret');
       expect(payload.tools.map((t: any) => t.function.name)).toContain('commander_act');
       calls++;
-      if (calls === 1) return call('commander_plan', { plan: '左队固守，右队掩护。', notes: ['双方尚未接触'] });
+      if (calls === 1) return call('commander_plan', { plan: '左队固守，右队掩护。', addNotes: ['双方尚未接触'] });
       if (calls === 2) return call('commander_map', { cells: [15, 16] });
       if (calls === 3) return call('commander_unit', { unitId: 'u1' });
       return call('commander_act', { choice: data.choices.find((c: any) => c.action?.type === 'end_turn').id });
@@ -193,6 +195,29 @@ describe('atomic LLM command execution', () => {
     const second = await new LlmCommandController(COMMAND_PROMPTS, () => {}, request).small(b, restored, settings, () => true);
     expect(second!.commandState.memory.plan).toBe(restored.memory.plan);
     expect(initial((request as any).mock.calls.at(-1)[1]).plan).toBe(restored.memory.plan);
+  });
+
+  it('runs follow-up steps from one answer and asks again with the reason when a step stops', async () => {
+    const b = small(), s = state(); let calls = 0;
+    const request = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const data = initial(init), payload = JSON.parse(String(init?.body)); calls++;
+      expect(payload.tools.map((t: any) => t.function.name)).toEqual(['commander_map', 'commander_unit', 'commander_plan', 'commander_act']);
+      if (calls === 1) {
+        expect(data.self).toMatchObject({ id: 'u1', side: 'friendly', weapon: expect.any(Object) });
+        expect(data.map.rows).toHaveLength(13); expect(data.map.rows[0]).toMatch(/^[.?]{7}$/);
+        expect(data.moveColumns).toEqual(['编号', '格', '消耗', '风险']); expect(data.choices.some((c: any) => c.action?.type === 'move')).toBe(false);
+        return call('commander_act', { choice: data.moves[0][0], then: [{ type: 'gate', cell: 0 }, { type: 'end_turn' }] });
+      }
+      if (calls === 2) {
+        expect(data.stopped).toEqual({ step: { type: 'gate', cell: 0 }, reason: '不再合法' });
+        return call('commander_act', { choice: data.choices.find((c: any) => c.action?.type === 'end_turn').id });
+      }
+      return call('commander_act', { choice: data.moves[0][0], then: [{ type: 'end_turn' }] });
+    }) as unknown as typeof fetch;
+    const commander = new LlmCommandController(COMMAND_PROMPTS, () => {}, request), start = b.byId('u2').pos;
+    applyBattleStep(b, (await commander.small(b, s, settings, () => true))!); expect(calls).toBe(2); expect(b.active?.id).toBe('u2');
+    applyBattleStep(b, (await commander.small(b, s, settings, () => true))!); expect(calls).toBe(3);
+    expect(b.byId('u2').pos).not.toBe(start); expect(b.active?.id).toBe('u0');
   });
 
   it('retries preparation and the current command without replaying prior actions or losing the plan', async () => {
@@ -210,9 +235,9 @@ describe('atomic LLM command execution', () => {
       }
       expect(payload.thinking).toEqual({ type: 'disabled' });
       commands++; payloads.push(String(init?.body));
-      if (commands === 1) return call('commander_plan', { plan: '先移动再观察', notes: [] });
+      if (commands === 1) return call('commander_plan', { plan: '先移动再观察' });
       const data = initial(init);
-      if (commands === 2) return call('commander_act', { choice: data.choices.find((c: any) => c.action?.type === 'move').id });
+      if (commands === 2) return call('commander_act', { choice: data.moves[0][0] });
       if (commands === 3) return new Response('{}', { status: 503 });
       return call('commander_act', { choice: data.choices.find((c: any) => c.action?.type === 'end_turn').id });
     }) as unknown as typeof fetch;
@@ -241,8 +266,8 @@ describe('atomic LLM command execution', () => {
     const b = small(), before = structuredClone(b.toSnapshot()), s = state(); let calls = 0;
     const request = vi.fn(async (_url: unknown, init?: RequestInit) => {
       const data = initial(init); calls++;
-      if (calls === 1) return call('commander_plan', { plan: '先移动', notes: [] });
-      if (calls === 2) return response({ content: JSON.stringify({ choice: data.choices.find((c: any) => c.action?.type === 'move').id }) });
+      if (calls === 1) return call('commander_plan', { plan: '先移动' });
+      if (calls === 2) return response({ content: JSON.stringify({ choice: data.moves[0][0] }) });
       return response({ content: JSON.stringify({ choice: 'invalid' }) });
     }) as unknown as typeof fetch;
     const commander = new LlmCommandController(COMMAND_PROMPTS, () => {}, request);
@@ -264,17 +289,19 @@ describe('atomic LLM command execution', () => {
     expect(b.toSnapshot()).toEqual(before); expect(commander.busy).toBe(false);
   });
 
-  it('plans mass units separately, hides player orders, and preserves external orders through master AI and worker replay', async () => {
+  it('orders every mass formation in one request, hides player orders, and preserves external orders through master AI and worker replay', async () => {
     const b = new MassBattle({ combatants: units(), rules: V24_OVERFLOW_TW, seed: 'command-mass' }); b.start();
     b.commanderProfiles.enemy = { ability: 'master', style: 'aggressive', scoring: 'tactical-v2' };
     b.orders.set('u0', { unitId: 'u0', type: 'hold', targetId: 'player-private-order' });
     const before = structuredClone(b.toSnapshot());
     const request = vi.fn(async (_url: unknown, init?: RequestInit) => {
-      const data = initial(init);
+      const data = initial(init), payload = JSON.parse(String(init?.body));
       expect(JSON.stringify(data)).not.toContain('player-private-order');
-      return call('commander_act', { choice: data.choices.find((c: any) => c.order?.type === 'hold').id });
+      expect(payload.tools.map((t: any) => t.function.name)).toEqual(['commander_map', 'commander_unit', 'commander_plan', 'commander_orders']);
+      return call('commander_orders', { orders: data.formations.map((f: any) => ({ unitId: f.unitId, choice: f.choices.find((c: any) => c.order?.type === 'hold').id })) });
     }) as unknown as typeof fetch;
     const result = await new LlmCommandController(COMMAND_PROMPTS, () => {}, request).mass(b, state(b.seed), settings, () => true);
+    expect(request).toHaveBeenCalledTimes(1);
     expect(b.toSnapshot()).toEqual(before); expect(result!.orders.map(o => o.unitId)).toEqual(['u1', 'u2']);
     expect(b.replaceOrders(result!.orders).ok).toBe(true); b.autoOrders('enemy');
     expect(b.orders.get('u1')).toMatchObject({ type: 'hold', externalCommand: true });

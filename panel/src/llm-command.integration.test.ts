@@ -44,7 +44,7 @@ it('prepares independent commanders for three factions, persists their plans wit
       if (actor === 'u2') expect(JSON.stringify(data)).not.toContain('enemy-private-plan');
       commandCount++;
       return new Response(JSON.stringify({ choices: [{ message: { tool_calls: [
-        { id: 'plan', type: 'function', function: { name: 'commander_plan', arguments: JSON.stringify({ plan: actor + '-new-plan', notes: ['本轮完成部署'] }) } },
+        { id: 'plan', type: 'function', function: { name: 'commander_plan', arguments: JSON.stringify({ plan: actor + '-new-plan', addNotes: ['本轮完成部署'] }) } },
         { id: 'act', type: 'function', function: { name: 'commander_act', arguments: JSON.stringify({ choice: data.choices.find((c: any) => c.action?.type === 'end_turn').id }) } },
       ] } }] }));
     }

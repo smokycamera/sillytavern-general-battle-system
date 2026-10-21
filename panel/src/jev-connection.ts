@@ -232,7 +232,7 @@ export async function openAiCommandRequest(connection: JevConnection, messages: 
   if (connection.protocol !== 'openai' || !connection.model?.trim()) throw new JevConnectionError('请先配置副 API 并选择模型');
   const response = await jevJsonRequest(connection, request, apiEndpoint(connection, 'chat/completions'), {
     method: 'POST', headers: headers(connection), signal,
-    body: JSON.stringify({ ...options, model: connection.model.trim(), stream: false, messages, tools: commandTools, tool_choice: 'auto', parallel_tool_calls: false }),
+    body: JSON.stringify({ ...options, model: connection.model.trim(), stream: false, messages, tools: commandTools, tool_choice: 'auto' }),
   });
   const message = response?.choices?.[0]?.message;
   const calls = message?.tool_calls;
@@ -244,7 +244,7 @@ export async function openAiCommandRequest(connection: JevConnection, messages: 
       ...(typeof message.reasoning_content === 'string' ? { reasoning_content: message.reasoning_content } : {}) };
   }
   const answer = parseOpenAiDecision(message?.content, '指挥');
-  return { role: 'assistant', content: JSON.stringify({ choice: answer.choice }), ...commandExtraContent(message?.extra_content), ...(typeof message?.reasoning_content === 'string' ? { reasoning_content: message.reasoning_content } : {}) };
+  return { role: 'assistant', content: JSON.stringify({ choice: answer.choice, then: answer.then, orders: answer.orders }), ...commandExtraContent(message?.extra_content), ...(typeof message?.reasoning_content === 'string' ? { reasoning_content: message.reasoning_content } : {}) };
 }
 /** Adapt the host's bounded decisions without changing the vendored command core. */
 export async function directJevRequest(connection: JevConnection, path: string, body: unknown, signal: AbortSignal, request: typeof fetch): Promise<unknown> {
