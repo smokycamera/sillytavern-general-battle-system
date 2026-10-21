@@ -97,12 +97,19 @@ describe('原生战阵事件显示', () => {
     expect(f.context.chat![0]!.mes).toBe(before); expect(f.context.saveChat).not.toHaveBeenCalled(); expect(f.context.saveMetadata).not.toHaveBeenCalled();
   });
   it('历史楼层与后来加载的楼层都处理，用户和系统消息保持原样', async () => {
-    const f = fixture(); f.context.chat!.push({ mes: block, is_user: true }, { mes: block, is_system: true }, { mes: block });
-    f.install(); await flush();
-    const chat = document.querySelector('#chat')!;
-    for (const id of [1, 2, 3]) chat.insertAdjacentHTML('beforeend', `<div class="mes" mesid="${id}"><div class="mes_text"></div></div>`);
-    await vi.waitFor(() => expect(document.querySelectorAll('details')).toHaveLength(2));
-    expect(document.querySelector('[mesid="1"] details')).toBeNull(); expect(document.querySelector('[mesid="2"] details')).toBeNull();
+    vi.useFakeTimers();
+    try {
+      const f = fixture(); f.context.chat!.push({ mes: block, is_user: true }, { mes: block, is_system: true }, { mes: block });
+      f.install(); vi.runOnlyPendingTimers();
+      expect(document.querySelectorAll('details')).toHaveLength(1);
+      const chat = document.querySelector('#chat')!;
+      for (const id of [1, 2, 3]) chat.insertAdjacentHTML('beforeend', `<div class="mes" mesid="${id}"><div class="mes_text"></div></div>`);
+      // 先交付 Happy DOM 的观察记录，再执行显示队列；不依赖真实计时器与垃圾回收的先后顺序。
+      await (window as unknown as HappyWindow).happyDOM.waitUntilComplete();
+      await vi.runAllTimersAsync();
+      expect(document.querySelectorAll('details')).toHaveLength(2);
+      expect(document.querySelector('[mesid="1"] details')).toBeNull(); expect(document.querySelector('[mesid="2"] details')).toBeNull();
+    } finally { vi.useRealTimers(); }
   });
   it('清除被吞掉的 15 项事件留下的换行，尾部与正文中间都原位折叠', async () => {
     const events = '<tb>\n' + Array.from({ length: 15 }, (_, i) => `<deploy id="u${i}"/>`).join('\n') + '\n</tb>';
