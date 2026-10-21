@@ -54,7 +54,7 @@ import './terrain-painted.css';
 import { updateRegion, BattleCamera, selectTextareaRange } from './view-dom.js';
 import { executeMassPlan, executeAndSaveAsync as executeAndSave } from './battle-execution.js';
 import { TACTICAL_PREFERENCES, normalizeTactic } from '../../engine/src/tactical-preference.js';
-import { battleIdOf, publicBattleEvents, withBattleReportQueries, battleEpilogue, archivedNarrativeEvents, makeNarrativeBatch, beginNarrativeDelivery, finishNarrativeDelivery, completedBattleRounds, type BattleReport, type BattleDeliveries, type NarrativeBatch } from './battle-reports.js';
+import { battleIdOf, publicBattleEvents, withBattleReportQueries, battleEpilogue, archivedNarrativeEvents, archivedDigest, makeNarrativeBatch, beginNarrativeDelivery, finishNarrativeDelivery, completedBattleRounds, type BattleReport, type BattleDeliveries, type NarrativeBatch } from './battle-reports.js';
 import { lastBattleAction, traceLocations } from './battle-presentation.js';
 import { promptScopeControls } from './prompt-settings.js';
 import { narrativeProjectionDetails } from './narrative-controller.js';
@@ -1186,8 +1186,12 @@ function renderRoundIntents(b: SmallBattle | MassBattle, intents: import('./llm-
 function renderLlmNotes(): string {
   const battle = currentBattle();
   if (!battle || llmNotesBattle !== battleIdOf(battle)) return '';
-  const notes = Object.entries(state.encounterContext?.llmCommanders ?? {}).flatMap(([side, command]) => command ? [`<section class="llm-notes-side"><h3>${side === 'ally' ? '我方' : side === 'neutral' ? '第三方' : '敌军'} · ${esc(command.brief.name)}</h3><h4>人设</h4><p>${esc(command.brief.persona)}</p><h4>任务</h4><p>${esc(command.brief.mission)}</p><h4>总计划</h4><p>${esc(command.memory.plan) || '尚未制定'}</p><h4>笔记</h4>${command.memory.notes.length ? '<ul>' + command.memory.notes.map(note => '<li>' + esc(note) + '</li>').join('') + '</ul>' : '<p>暂无笔记</p>'}<h4>开局已知信息</h4>${command.brief.known.length ? '<ul>' + command.brief.known.map(note => '<li>' + esc(note) + '</li>').join('') + '</ul>' : '<p>以本场实际观察为准</p>'}${renderRoundIntents(battle, command.memory.intents)}</section>`] : []).join('');
+  const notes = Object.entries(state.encounterContext?.llmCommanders ?? {}).flatMap(([side, command]) => command ? [`<section class="llm-notes-side"><h3>${side === 'ally' ? '我方' : side === 'neutral' ? '第三方' : '敌军'} · ${esc(command.brief.name)}</h3><h4>人设</h4><p>${esc(command.brief.persona)}</p><h4>任务</h4><p>${esc(command.brief.mission)}</p>${renderCommanderLetters(battle, command)}<h4>总计划</h4><p>${esc(command.memory.plan) || '尚未制定'}</p><h4>笔记</h4>${command.memory.notes.length ? '<ul>' + command.memory.notes.map(note => '<li>' + esc(note) + '</li>').join('') + '</ul>' : '<p>暂无笔记</p>'}<h4>开局已知信息</h4>${command.brief.known.length ? '<ul>' + command.brief.known.map(note => '<li>' + esc(note) + '</li>').join('') + '</ul>' : '<p>以本场实际观察为准</p>'}${renderRoundIntents(battle, command.memory.intents)}</section>`] : []).join('');
   return `<div class="modal-backdrop" data-action="llm-notes-close"><section class="modal-card llm-notes-dialog" data-action="modal-stop" role="dialog" aria-modal="true" aria-labelledby="llm-notes-title"><div class="row"><h2 id="llm-notes-title">llm笔记</h2><button data-action="llm-notes-close">关闭</button></div>${notes || '<p>本场没有 LLM 指挥官记录。</p>'}</section></div>`;
+}
+function renderCommanderLetters(battle: SmallBattle | MassBattle, command: CommanderState): string {
+  const letters = (battle.diplomacy.letters ?? []).filter(letter => letter.targets.includes(command.side)).slice(-3);
+  return letters.length ? '<h4>来信</h4>' + letters.map(letter => `<p>opponent-1：${esc(letter.text)}<br><small>第${letter.round}大回合 · ${(command.memory.letterId ?? 0) >= letter.id ? '已送达' : '等待下次行动处理'}</small></p>`).join('') : '';
 }
 function letterRecipients(b = currentBattle()): ('enemy' | 'neutral')[] {
   const settings = llmSettingsView().settings;
@@ -3888,7 +3892,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   'out-digest': async () => {
     const b = currentBattle();
     const archived = reportForOutput();
-    if (archived) { void (await sendToAi(archived.digest, '回合纪要（整场）', archived.id)); return; }
+    if (archived) { void (await sendToAi(archivedDigest(archived), '回合纪要（整场）', archived.id)); return; }
     if (!b) throw new Error('没有可输出的战斗');
     // 回合纪要（中等详细）：每回合命中/未中/状态变化/溃退重整——比结算卡省 token
     const text = roundDigest(b, state.era, reg, {

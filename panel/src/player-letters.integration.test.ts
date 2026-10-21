@@ -28,7 +28,7 @@ it('sends private and shared letters through the UI, logs exact text and replans
   const requests: { data: any; body: string }[] = [];
   vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init?: RequestInit) => {
     const body = String(init?.body), data = JSON.parse(JSON.parse(body).messages[1].content); requests.push({ data, body });
-    const calls = [ ...(data.letters?.length ? [{ id: 'plan', type: 'function', function: { name: 'commander_plan', arguments: JSON.stringify({ plan: '已考虑来信：' + data.letters.at(-1).text }) } }] : []),
+    const calls = [ ...(data.letters?.length ? [{ id: 'plan', type: 'function', function: { name: 'commander_plan', arguments: JSON.stringify({ plan: '已考虑来信：' + data.letters.at(-1).text, addNotes: ['部分采纳来信：' + data.letters.at(-1).text + '；保持警戒。'] }) } }] : []),
       { id: 'intents', type: 'function', function: { name: 'commander_intents', arguments: JSON.stringify({ intents: data.forces.map((u: any) => ({ unit: u.id, mode: 'hold', cell: u.pos })) }) } } ];
     return new Response(JSON.stringify({ choices: [{ message: { tool_calls: calls } }] }));
   }));
@@ -68,7 +68,11 @@ it('sends private and shared letters through the UI, logs exact text and replans
   for (const side of ['enemy', 'neutral'] as const) {
     expect(commands?.[side]?.memory.letterId).toBe(2);
     expect(commands?.[side]?.memory.plan).toContain('双方都退一步。');
+    expect(commands?.[side]?.memory.notes.some(note=>note.includes('部分采纳来信'))).toBe(true);
   }
   expect(loaded.diplomacy.letters).toHaveLength(2);
+  document.querySelector<HTMLButtonElement>('[data-action="llm-notes"]')!.click();
+  const notes=document.querySelector('[aria-labelledby="llm-notes-title"]')!.textContent!;
+  expect(notes).toContain('opponent-1：双方都退一步。');expect(notes).toContain('已送达');expect(notes).toContain('部分采纳来信');
   f.service.dispose();
 }, 20000);

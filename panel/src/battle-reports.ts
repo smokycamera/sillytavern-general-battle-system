@@ -10,6 +10,7 @@ import { NARRATIVE_TASK } from '../../engine/src/inject/narrative-task.js';
 import type { DeliveryReceipt } from './tavern.js';
 import {memberNoun} from '../../engine/src/member-health.js';
 import { itemUseReport } from './item-use-report.js';
+import { isCommunicationLog } from '../../engine/src/diplomacy.js';
 
 export type Battle = SmallBattle | MassBattle;
 export interface NarrativeEvent { index: number; round: number; text: string }
@@ -20,6 +21,14 @@ export interface BattleReport {
   afterArchiveStamp?: string;
   supersededBy?: string;
 }
+/** Old archives retain narrative events even when their stored digest omitted diplomacy. */
+export function withCommunications(text: string, events: Pick<NarrativeEvent, 'round' | 'text'>[]): string {
+  const missing = events.filter(event => isCommunicationLog({kind:'rule',text:event.text}) && !text.includes(event.text));
+  if (!missing.length) return text;
+  const task = text.endsWith(NARRATIVE_TASK) ? NARRATIVE_TASK : '';
+  return [task ? text.slice(0, -task.length).trimEnd() : text, '【消息与交涉】', ...missing.map(event => `第${event.round}回合｜${event.text}`), task].filter(Boolean).join('\n');
+}
+export const archivedDigest = (report: BattleReport): string => withCommunications(report.digest || report.card, report.narrativeEvents ?? []);
 export interface NarrativeBatch { battleId: string; key: string; kind: 'delta' | 'epilogue'; from: number; to: number; text: string }
 export interface BattleDelivery { cursor: number; receipts: Record<string, DeliveryReceipt & { from: number; to: number; kind: NarrativeBatch['kind'] }> }
 export type BattleDeliveries = Record<string, BattleDelivery>;
@@ -109,6 +118,7 @@ export function battleEpilogue(b: Battle, start?: BattleReport['start']): string
   const field=b instanceof SmallBattle?b.battlefield:undefined,facts=fieldFacts(b);
   const damage=epilogueDamage(b);
   const items = b.isOver() ? itemUseReport(b.combatants, b.log) : [];
+  const communications = (b.isOver() ? b.log : publicBattleEvents(b).map(event => event.entry)).filter(isCommunicationLog);
   const goal = b instanceof SmallBattle && b.battlefield?.objective;
   const mission = goal ? goal.kind === 'annihilation' ? '歼灭战' : goal.kind === 'control' ? goal.attackingSide ? goal.attackingSide === 'ally' ? '攻城战' : '守城战' : '占旗战' : '护送/拦截' : '军团会战';
   return [`【战阵·战斗终章】${mission}，共${completedBattleRounds(b)}轮；${b.isOver() ? b.winner()==='ally'?'我方胜利':b.winner()==='neutral'?'第三方获胜，我方失败':b.winner()==='enemy'?'我方失利':'停战/僵持':'尚未结束'}`,
@@ -119,13 +129,14 @@ export function battleEpilogue(b: Battle, start?: BattleReport['start']): string
     '【结束单位状态与血量】',...visible.map(u=>epilogueUnit(b,u,field)),
     '【伤害来源】',...(damage.length?damage:['没有记录到可核实的伤害。']),
     '【道具使用和效果】',...(items.length ? items : [b.isOver() ? '本场没有记录到道具使用。' : '战斗尚未结束，道具使用与效果将在终章汇总。']),
+    ...(communications.length ? ['【消息与交涉】', ...communications.map(event => `第${event.round}回合｜${event.text}`)] : []),
     NARRATIVE_TASK].join('\n');
 }
 export function makeNarrativeBatch(b: Battle | undefined, report: BattleReport | undefined, deliveries: BattleDeliveries, kind: NarrativeBatch['kind'], start?: BattleReport['start']): NarrativeBatch {
   const id=b ? battleIdOf(b) : report?.id; if(!id)throw Error('没有可发送的战况');
   if(kind==='epilogue') {
     if(b && !b.isOver())throw Error('战斗结束后可发送终章');
-    return {battleId:id,kind,key:'epilogue',from:0,to:b?.log.length??report?.eventCount??0,text:b?battleEpilogue(b,start??report?.start):report?.epilogue??report?.summary??''};
+    return {battleId:id,kind,key:'epilogue',from:0,to:b?.log.length??report?.eventCount??0,text:b?battleEpilogue(b,start??report?.start):withCommunications(report?.epilogue??report?.summary??'',report?.narrativeEvents??[])};
   }
   const from=deliveries[id]?.cursor??0,to=b?.log.length??report?.eventCount??0;
   if(!b && !report?.narrativeEvents)throw Error('这份战报缺少事件游标，可发送完整战报或状态摘要');

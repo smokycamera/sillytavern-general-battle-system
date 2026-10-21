@@ -19,11 +19,14 @@ function fixture() {
   return {b,state};
 }
 const reply=(args:unknown)=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(args)}}]}));
+const reviewedReply=(args:unknown)=>new Response(JSON.stringify({choices:[{message:{tool_calls:[
+  {id:'review',type:'function',function:{name:'commander_plan',arguments:JSON.stringify({addNotes:['已判断来信：部分采纳，但保留警戒以防失信。']})}},
+  {id:'intent',type:'function',function:{name:'commander_intents',arguments:JSON.stringify(args)}}]}}]}));
 const data=(init?:RequestInit)=>JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
 const holds=(init?:RequestInit)=>({intents:data(init).forces.map((u:any)=>({unitId:u.id,mode:'hold',cell:u.pos}))});
 function setup(request:typeof fetch) { const {b,state}=fixture(), c=new LlmCommandController(COMMAND_PROMPTS,()=>{},request), p=new LlmIntentPlanner(c,COMMAND_PROMPTS);return {b,state,c,p}; }
 it('delivers letters at the recipients next activation, replaces a current-round plan once and preserves the read cursor after load',async()=>{
-  const bodies:any[]=[];const request:typeof fetch=async(_url,init)=>{bodies.push(data(init));return reply(holds(init));};
+  const bodies:any[]=[];const request:typeof fetch=async(_url,init)=>{bodies.push(data(init));return data(init).letters?.length?reviewedReply(holds(init)):reply(holds(init));};
   const {b,state,c,p}=setup(request);p.prefetch(b,state,settings,()=>true);await p.beforeHero();
   b.turnIndex=5;sendPlayerLetter(b,['enemy'],'请重新考虑守桥计划。');c.receiveLetter(b,settings);
   p.prefetch(b,state,settings,()=>true);await p.beforeHero();expect(bodies).toHaveLength(1);
@@ -131,7 +134,7 @@ it('uses short fields and IDs, corrects malformed replies, and accepts explorati
     }
     const queried=JSON.parse(body.messages.at(-1).content); shortSkill=queried.abilities.find((a:any)=>a.name==='守护').id;
     expect(shortSkill).toMatch(/^a\d+$/); expect(JSON.stringify(queried)).not.toContain('long-real-');
-    return reply({intents:[{unit:d.forces[0].id,mode:'hold',cell:d.forces[0].pos},{unit:shortUnit,mode:'use',skill:shortSkill,target:d.forces[0].id},
+    return reviewedReply({intents:[{unit:d.forces[0].id,mode:'hold',cell:d.forces[0].pos},{unit:shortUnit,mode:'use',skill:shortSkill,target:d.forces[0].id},
       {unit:d.forces[2].id,mode:'open',cell:23},{unit:d.forces[3].id,mode:'close',cell:23},{unit:d.forces[4].id,mode:'advance',cell:90}]});
   }) as typeof fetch;
   const c=new LlmCommandController(COMMAND_PROMPTS,()=>{},request), p=new LlmIntentPlanner(c,COMMAND_PROMPTS);
@@ -153,7 +156,7 @@ it('T8 falls back after three failures and discards cancelled late replies',asyn
   expect([(request as any).mock.calls.length,c.available(b,settings,state),late.state.memory.intents]).toEqual([3,false,undefined]);
   expect(late.state.memory.letterId).toBeUndefined();
   late.p.prefetch(late.b,late.state,settings,()=>true);await vi.advanceTimersByTimeAsync(0);
-  expect(data(init).letters[0].text).toBe('这是新来信。');release(reply(holds(init)));await late.p.beforeHero();
+  expect(data(init).letters[0].text).toBe('这是新来信。');release(reviewedReply(holds(init)));await late.p.beforeHero();
   expect(late.state.memory.letterId).toBe(1);expect(late.state.memory.intents).toBeDefined();
 });
 it('T9 persists only allowed intent fields through save/load',async()=>{

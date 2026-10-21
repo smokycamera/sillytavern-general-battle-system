@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.9.4**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **2.9.5**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-2.9.4 accepts JSON and key=value API parameters and preserves unfinished input. Players can send a message to either opposing faction or both; messages appear in the battle report and trigger a new command decision at each recipient's next activation. See the [current release](docs/current-release.md).
+2.9.5 makes commanders record their judgement of new letters before acting and preserves notes submitted with diplomatic decisions. Round reports and epilogues now include messages, surrender or withdrawal proposals, replies, and their exact words. See the [current release](docs/current-release.md).
 
 ## Documentation
 
