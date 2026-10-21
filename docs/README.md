@@ -8,6 +8,7 @@
 - [内置世界书](embedded-worldbook.md) 与 [正文协议](worldbook-xml-markdown.md)
 - [开战两步布置](secondary-api-two-step-20261002.md) 与 [地图实现](battlefield-refactor-implementation.md)
 - [LLM 指挥、阵营隔离与 Flash 实测](llm-command-20261021.md)
+- [LLM 指挥 2.9.0 回合意图规格书](llm-round-intents-spec-20261021.md)
 - [室内空间骨架、Flash 实测与其他地图审阅](indoor-layouts-20261020.md)
 - [建筑围攻、堑壕与护送／夺点选址](siege-trenches-20261021.md)
 - [战斗存档策略](battle-save-policy-20261016.md)
