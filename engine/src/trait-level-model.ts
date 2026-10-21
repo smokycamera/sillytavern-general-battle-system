@@ -13,9 +13,11 @@ export function validateTraitLevelModel(value: unknown): void {
   if (value !== undefined && value !== TRAIT_LEVEL_MODEL && value !== PHASE2_TRAIT_LEVEL_MODEL && value !== PROGRESSION_MODEL && value !== STACKING_MODEL) throw new Error('特质分级规则版本损坏');
 }
 /** 战斗快照规则为准，旧规则明确移除新门控；不重建基础值或来源。 */
-export function prepareTraitLevelModel(unit: Combatant, rules: Pick<RulePack, 'traitLevelModel' | 'healingModel' | 'controlModel'>): void {
+export function prepareTraitLevelModel(unit: Combatant, rules: Pick<RulePack, 'traitLevelModel' | 'healingModel' | 'controlModel' | 'commandRangeModel'>): void {
   if (unit.rulesVersion !== 'v2') return;
   validateTraitLevelModel(rules.traitLevelModel);
+  if (rules.commandRangeModel !== undefined && rules.commandRangeModel !== 'graded-v1') throw Error('统率范围规则版本损坏');
+  if (rules.commandRangeModel) unit.commandRangeModel = rules.commandRangeModel; else delete unit.commandRangeModel;
   prepareHealingModel(unit, rules);
   if (rules.controlModel !== undefined && rules.controlModel !== 'activation-controls-v1') throw Error('控制规则版本损坏');
   if (rules.controlModel) unit.controlModel = rules.controlModel; else delete unit.controlModel;

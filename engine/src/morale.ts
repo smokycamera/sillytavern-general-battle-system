@@ -15,7 +15,7 @@ import { gridDistance, unitLineOfSight } from './small/spatial.js';
 import type { Rng } from './rng.js';
 import { isCohort, nominalLife } from './combat-model.js';
 import { MEMBER_HEALTH_MODEL, memberHealthMax } from './member-health.js';
-import { traitValue } from './trait-levels.js';
+import { commandRangeAtLevel, traitValue } from './trait-levels.js';
 
 export interface MoraleState {
   terrorSeen: string[];
@@ -126,7 +126,7 @@ export function moraleProfile(context: ObservationContext, unit: Combatant, regi
   const immune = !!unit.moraleLocked || traits.some((t) => t.effects.some((e) => e.kind === 'immuneMorale'));
   const resilience = Math.max(0, traits.reduce((sum, trait) => sum + trait.effects.reduce((n, e) => n + (e.kind === 'stat' && e.stat === 'morale' ? trait.id === 'stubborn' ? traitValue(unit, trait.id, 'resilience', e.value) : e.value : 0), 0), 0));
   const sources: MoraleProfile['sources'] = [];
-  const from = positionedUnit(context, unit), range = context.mode === 'small' ? 3 : 1;
+  const from = positionedUnit(context, unit);
   if (unit.rulesVersion === 'v2') for (const other of context.units) {
     if (other.id === unit.id || other.hp <= 0 || other.status !== 'ready' || activeConditionIds(other).some((id) => (context.conditions ?? conditions).get(id)?.skipTurn)) continue;
     // 失去宿主的普通随队人物不能从原先个人部署偏好继续指挥远处友军。
@@ -134,9 +134,14 @@ export function moraleProfile(context: ObservationContext, unit: Combatant, regi
     if (hostId && !context.units.some((u) => u.id === hostId && u.status === 'ready')) continue;
     const to = positionedUnit(context, other), field = context.battlefield;
     const distance = context.mode === 'mass' ? formationDistance(from, to) : field ? gridDistance(field, from.pos!, to.pos!) : Math.abs((from.pos ?? 0) - (to.pos ?? 0));
-    if (distance > range || field && !unitLineOfSight(field, from, to) || !canSpot(context, { ...unit, status: 'ready' }, other)) continue;
-    for (const id of activeTraitIds(other)) {
+    const ids = activeTraitIds(other), baseRange = context.mode === 'small' ? 3 : 1;
+    const commandRange = commandRangeAtLevel(effectiveTraitLevel(other, 'commander', ids), context.mode, context.rules ? context.rules.commandRangeModel : other.commandRangeModel);
+    if (distance > Math.max(baseRange, ids.includes('commander') ? commandRange : 0)
+      || field && !unitLineOfSight(field, from, to) || !canSpot(context, { ...unit, status: 'ready' }, other)) continue;
+    for (const id of ids) {
       const trait = registry.get(id); if (!trait) continue;
+      const range = id === 'commander' ? commandRange : baseRange;
+      if (distance > range) continue;
       for (const effect of trait.effects) {
         if (effect.kind !== 'moraleAura' || effect.scope === 'side' && combatHostile(other, unit, context.units) || effect.scope === 'enemySide' && (!combatHostile(other, unit, context.units) || immune)) continue;
         sources.push({ id: other.id, name: other.name, trait: trait.name, traitId: id, ...(phase2Traits(other) && id === 'fear' && effectiveTraitLevel(other, 'fear') >= 8 ? { terrorDC: 12 + 2 * (effectiveTraitLevel(other, 'fear') - 8) } : {}), value: id === 'fear' && phase2Traits(other) ? -traitParameter('fearPressure', effectiveTraitLevel(other, 'fear'), other.traitLevelModel) : id === 'commander' ? traitValue(other, id, 'command', effect.value) : effect.value });

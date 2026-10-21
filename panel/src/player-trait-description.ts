@@ -1,15 +1,15 @@
-import type { Trait } from '../../engine/src/types.js';
+import type { Combatant, Trait } from '../../engine/src/types.js';
 import { displayNumber as n } from '../../engine/src/display-number.js';
 import { progression, stackingRevision } from '../../engine/src/progression.js';
 import { traitParameter, type TraitParameter } from '../../engine/src/trait-parameters.js';
 import {
-  roughGroundCost, climbFactor, forestDefense, forestAttack, highGroundDefense, highGroundAttack, terrainStalk,
+  commandRangeAtLevel, roughGroundCost, climbFactor, forestDefense, forestAttack, highGroundDefense, highGroundAttack, terrainStalk,
   nightAttack, nightMovePenalty, nightDefense, nightSight, plainsInitiative, plainsMobility, plainsAttack,
   plainsChargeAttack, plainsDefense, urbanDefense, urbanAttack, urbanMeleeAttack, urbanCloseShotAttack, urbanInitiative, urbanStalk,
 } from '../../engine/src/trait-levels.js';
 
 /** 玩家说明只列用途与数值；参数仍读取当前单位使用的规则。 */
-export function playerTraitLevelDescription(id: string, level: number, model?: unknown): string {
+export function playerTraitLevelDescription(id: string, level: number, model?: unknown, commandRangeModel?: Combatant['commandRangeModel']): string {
   const L = Math.max(1, Math.min(10, Math.round(level)));
   const modern = progression({ traitLevelModel: model }), revised = stackingRevision({ traitLevelModel: model });
   const p = (key: TraitParameter) => traitParameter(key, L, model);
@@ -78,7 +78,7 @@ export function playerTraitLevelDescription(id: string, level: number, model?: u
     case 'agile': return `困难地形额外移动消耗减少${n(100 - p('agileTerrain') * 100)}%，${L >= 5 ? '脱离近战免借机攻击' : `借机伤害减免${pct('agileReactionReduction')}%`}` + (p('agileInitiative') ? `，先攻+${value('agileInitiative')}` : '') + (p('agileMobility') ? `，机动+${value('agileMobility')}` : '');
     case 'siege-breaker': return `对建筑、城墙等结构伤害×${value('engineerDamage')}，削弱目标工事防御与远程减伤${pct('engineerSuppression')}%`;
     case 'stubborn': return `士气韧性+${value('resilience')}`;
-    case 'commander': return `3格内友军士气支援+${value('command')}（会战1阵位）`;
+    case 'commander': return `${commandRangeAtLevel(L, 'small', commandRangeModel)}格内友军士气支援+${value('command')}（会战${commandRangeAtLevel(L, 'mass', commandRangeModel)}阵位）`;
     case 'fear': return `3格内敌军承受${value('fearPressure')}点恐惧压力，攻击最多−2（会战1阵位）` + (L >= 8 ? `，士气≤50时可惊退敌人，难度${12 + 2 * (L - 8)}` : '');
     case 'stalk': return '潜伏行动，在掩护或夜间休整可重新潜伏';
     case 'recon': return `识破潜伏，为曲射火力校射+${value('reconSpotting')}`;

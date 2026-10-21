@@ -35,6 +35,15 @@ export function traitValue(unit: Combatant, id: string, parameter: TraitParamete
   return traitLevelsV16(unit) ? parameterValue(parameter, traitLevel(unit, id), unit.traitLevelModel) : legacy;
 }
 
+/** V24 统率：小战每两级扩大一格，会战每四级扩大一阵位。 */
+export function commandAuraRange(unit: Combatant, mode: 'small' | 'mass', model = unit.commandRangeModel): number {
+  return commandRangeAtLevel(traitLevel(unit, 'commander'), mode, model);
+}
+export function commandRangeAtLevel(level: number, mode: 'small' | 'mass', model?: Combatant['commandRangeModel']): number {
+  const base = mode === 'small' ? 3 : 1;
+  return model === 'graded-v1' ? base + Math.floor((Math.max(1, Math.min(10, Math.round(level))) - 1) / (mode === 'small' ? 2 : 4)) : base;
+}
+
 // ---- 林地与山地：移动、攻击惩罚、会战行军 ----
 /** 森林/丘陵格的移动代价：无专精或 L1 为 2，L2–4 为 1.75/1.5/1.25，L5 起为 1。 */
 export const roughGroundCost = (level: number): number => level >= 5 ? 1 : level >= 2 ? 2 - 0.25 * (level - 1) : 2;

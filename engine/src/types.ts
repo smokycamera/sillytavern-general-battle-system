@@ -306,6 +306,7 @@ export interface Combatant {
   itemModel?: 'items-v1' | 'items-v2';
   /** V16 特质分级独立门控；旧战斗缺省保持原效果。 */
   traitLevelModel?: 'traits-levels-v1' | 'traits-levels-v2' | 'traits-items-v1' | 'traits-items-v2';
+  commandRangeModel?: 'graded-v1';
   healingModel?: import('./healing.js').HealingModel;
   controlModel?: 'activation-controls-v1';
   battleZones?: import('./area-effects.js').BattleZone[];
@@ -610,6 +611,8 @@ export interface RulePack {
   barrierModel?: 'barrier-grades-v1';
   /** V19 统帅：指挥水平与风格只改变 AI 决策（command-v2.ts）；缺省保留 V18 及以前的指挥评分。 */
   commandModel?: 'command-v2';
+  /** V24 统率范围按有效特质等级成长；旧战斗保留固定范围。 */
+  commandRangeModel?: 'graded-v1';
   /** V13 trait overhaul (工事据守、工兵、拒马、散兵单体与步枪编队自动散兵); absent keeps V12. */
   traitModel?: 'traits-v1';
   /** V14 skill pricing: 同时改两项属性的状态按两项附加效果计价; absent keeps V13. V20 skills-v3：组合控制每多一项抵抗难度 −1（原 −2）。V21 skills-v4：屏障、状态效力与士气量按单体创伤预算比例。 */
