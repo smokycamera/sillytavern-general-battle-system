@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readLlmSettings,saveLlmSettings,llmConnection,LLM_SETTINGS_KEY,llmSettingsView,commandRequestOptions,parseCommandParameters,commandParameterWarnings } from './llm-settings.js';
+import { readLlmSettings,saveLlmSettings,llmConnection,LLM_SETTINGS_KEY,llmSettingsView,commandRequestOptions,parseCommandParameters } from './llm-settings.js';
 import { renderLlmSettings } from './llm-settings-view.js';
 afterEach(()=>vi.unstubAllGlobals());
 function storage(){const data=new Map<string,string>();vi.stubGlobal('localStorage',{getItem:(k:string)=>data.get(k)??null,setItem:(k:string,v:string)=>data.set(k,v)});vi.stubGlobal('sessionStorage',{getItem:()=>null});return data;}
@@ -17,18 +17,20 @@ describe('global ordinary LLM settings',()=>{
     expect(commandRequestOptions({...loaded,commandThinkingOffParams:'{}'})).toEqual({});
     const vendor={thinking:{type:'disabled'},reasoning_effort:'high',vendor_strength:7};
     expect(commandRequestOptions({...loaded,commandThinkingOffParams:JSON.stringify(vendor)})).toEqual(vendor);
-    expect(commandParameterWarnings(vendor)).toEqual([expect.stringContaining('vendor_strength')]);
-    expect(commandParameterWarnings({reasoning_effort:'high'})).toEqual([]);
     expect(renderLlmSettings(loaded)).toContain('<details><summary>高级兼容设置</summary>');
     for(const text of ['broken','null','[]','{"messages":[]}','{"model":"other"}','{"stream":true}','{"tools":[]}']) expect(()=>parseCommandParameters(text)).toThrow();
   });
-  it('persists cadence independently of thinking and uses nonthinking parameters only after the first round request',()=>{
-    storage();const settings={...readLlmSettings(),commandInterval:'situation' as const,commandThinking:'round' as const,commandThinkingOffParams:'{"reasoning_effort":"low"}'};
+  it('persists cadence independently of two thinking modes and migrates the removed round thinking option',()=>{
+    const data=storage(),settings={...readLlmSettings(),commandInterval:'situation' as const,commandThinking:'off' as const,commandThinkingOffParams:'{"enable_thinking":false,"vendor":{"effort":"low"}}'};
     saveLlmSettings(settings);expect(readLlmSettings()).toEqual(settings);
-    expect(commandRequestOptions(settings)).toEqual({});expect(commandRequestOptions(settings,true)).toEqual({reasoning_effort:'low'});
+    expect(commandRequestOptions(settings)).toEqual({enable_thinking:false,vendor:{effort:'low'}});
     const html=renderLlmSettings(settings);
     expect(html.indexOf('data-role="llm-command-interval"')).toBeLessThan(html.indexOf('data-role="llm-command-thinking"'));
-    expect(html).toContain('每回合（推荐，调用次数少）');expect(html).toContain('每回合思考一次');
+    expect(html).toContain('每回合（推荐，调用次数少）');expect(html).not.toContain('每回合思考一次');
+    expect(html.match(/data-role="llm-command-thinking"[^>]*>(.*?)<\/select>/s)![1]!.match(/<option /g)).toHaveLength(2);
+    expect(html).not.toContain('llm-command-effort');expect(html).toContain('附加参数（JSON）');expect(html).toContain('llm-command-params-reset');
+    data.set(LLM_SETTINGS_KEY,JSON.stringify({...settings,commandThinking:'round'}));
+    expect(readLlmSettings()).toMatchObject({commandInterval:'situation',commandThinking:'auto',commandThinkingOffParams:settings.commandThinkingOffParams});
   });
   it('round trips credentials and model list without using a chat/card key or legacy route',()=>{
     const data=storage(),s={...readLlmSettings(),url:'https://gateway.example/v1',token:'test-key',model:'chosen',models:['chosen','other'],enabled:true,selectBattleScale:false,windowSize:18};

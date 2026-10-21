@@ -22,7 +22,7 @@ export type CommanderToolName = 'commander_map' | 'commander_unit' | 'commander_
 export interface CommandPrompts { preparation: string; command: string; intents: string; tools: Record<CommanderToolName, string> }
 export interface KnownCommandCell { cell: number; terrain: string; height?: number; structure?: unknown; overlays?: unknown; connections?: unknown; cover?: unknown; round: number }
 export interface RoundIntents { round: number; replanned: boolean; basis: { visible: string[]; friends: string[] }; units: Record<string, import('../../engine/src/index.js').UnitIntent> }
-export interface CommandMemory { intents?: RoundIntents; thinkingRound?: number; diplomacyRound?: number; diplomacyRevision?: number; plan: string; notes: string[]; terrain: KnownCommandCell[]; contacts?: (ReturnType<typeof unitSummary> & { round: number })[] }
+export interface CommandMemory { intents?: RoundIntents; diplomacyRound?: number; diplomacyRevision?: number; plan: string; notes: string[]; terrain: KnownCommandCell[]; contacts?: (ReturnType<typeof unitSummary> & { round: number })[] }
 export const emptyCommandMemory = (): CommandMemory => ({ plan: '', notes: [], terrain: [] });
 export interface CommanderState { battleSeed: string; side: Side; brief: CommanderBrief; memory: CommandMemory; playerFallback?: { resumeRound?: number }; decision?: DiplomacyDecision & { round: number } }
 type Battle = SmallBattle | MassBattle;
@@ -132,7 +132,7 @@ export function updateCommandMemory(b: Battle, memory: CommandMemory, side: Side
   for (const cell of observation.map?.cells ?? []) terrain.set(cell.cell, { ...structuredClone(cell), round: b.round });
   const contacts = new Map((memory.contacts ?? []).map(unit => [unit.id, unit]));
   for (const unit of observation.units.filter(u => u.side !== 'friendly')) contacts.set(unit.id, { ...unitSummary(unit), losFromActor: undefined, round: b.round });
-  return { ...(memory.intents ? { intents: memory.intents } : {}), ...(memory.thinkingRound !== undefined ? { thinkingRound: memory.thinkingRound } : {}),
+  return { ...(memory.intents ? { intents: memory.intents } : {}),
     ...(memory.diplomacyRound !== undefined ? { diplomacyRound: memory.diplomacyRound } : {}), ...(memory.diplomacyRevision !== undefined ? { diplomacyRevision: memory.diplomacyRevision } : {}),
     plan: text(memory.plan, 600), notes: (memory.notes ?? []).slice(0, 12).map(n => text(n, 300)), terrain: [...terrain.values()], contacts: [...contacts.values()].slice(-128) };
 }
@@ -299,7 +299,6 @@ export class LlmCommandController {
   private aborter?: AbortController;
   private failed = new Set<string>();
   private pausedRounds = new WeakMap<Battle, number>();
-  private thinkingKey?: string;
   status = '';
   statusBattle?: string;
   busy = false;
@@ -384,10 +383,7 @@ export class LlmCommandController {
       const answer = await this.retryRequest(async combined => {
         let previousAnswer: CommandMessage | undefined;
         try {
-          const thinkingKey = JSON.stringify([b.seed, b.round]);
-          const options = commandRequestOptions(settings, state.memory.thinkingRound === b.round || this.thinkingKey === thinkingKey);
-          if (settings.commandThinking === 'round') { state.memory.thinkingRound = b.round; this.thinkingKey = thinkingKey; }
-          previousAnswer = await openAiCommandRequest(llmConnection(settings), conversation, tools, combined, this.request, options);
+          previousAnswer = await openAiCommandRequest(llmConnection(settings), conversation, tools, combined, this.request, commandRequestOptions(settings));
           if (!previousAnswer.tool_calls) {
             const args = decode(JSON.parse(previousAnswer.content!));
             if (['surrender', 'withdraw', 'accept', 'reject'].includes(String(args.mode))) commandDiplomacyDecision(b, this.side, args);
