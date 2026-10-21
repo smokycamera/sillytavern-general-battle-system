@@ -1,4 +1,4 @@
-import { SmallBattle, MassBattle, generateUnit, type Combatant, type Side, type Trait, type ConditionDef, type RulePack } from '../../engine/src/index.js';
+import { SmallBattle, MassBattle, generateUnit, type Combatant, type Side, type Trait, type ConditionDef, type RulePack, type UnitIntent } from '../../engine/src/index.js';
 import { SeededRng } from '../../engine/src/rng.js';
 import { executeMassPlan } from './battle-execution.js';
 import type { OrderDrafts } from './formation-orders.js';
@@ -6,7 +6,7 @@ import type { OrderDrafts } from './formation-orders.js';
 export type BattleStepRequest = {
   kind: 'small' | 'mass'; snap: Record<string, unknown>; rules: RulePack;
   traits: Map<string, Trait>; conditions: ConditionDef[]; summons: boolean;
-  actorId?: string; drafts?: OrderDrafts; automatic?: boolean; expectedRound?: number; enemyOrders?: import('../../engine/src/index.js').Order[];
+  intent?: UnitIntent; actorId?: string; drafts?: OrderDrafts; automatic?: boolean; expectedRound?: number; enemyOrders?: import('../../engine/src/index.js').Order[];
 };
 export interface BattleStepResult { snap: Record<string, unknown>; conditions: ConditionDef[]; damageTaken?: [string, number][] }
 
@@ -26,7 +26,7 @@ export function computeBattleStep(request: BattleStepRequest): BattleStepResult 
   for (const condition of request.conditions) battle.conditions.register(condition);
   if (battle instanceof SmallBattle) {
     if (battle.active?.id !== request.actorId) throw Error('行动者已变化，请重新预览');
-    battle.autoAction(request.actorId!);
+    battle.autoAction(request.actorId!, request.intent);
   } else executeMassPlan(battle, request.drafts ?? {}, !!request.automatic, request.expectedRound, request.enemyOrders);
   return { snap: battle.toSnapshot(), conditions: battle.conditions.all(), ...(battle instanceof MassBattle ? { damageTaken: [...battle.damageTaken] } : {}) };
 }

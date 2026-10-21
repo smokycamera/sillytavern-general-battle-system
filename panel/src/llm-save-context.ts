@@ -1,5 +1,6 @@
 import type { LlmEncounterContext } from './llm-context.js';
 import { commanderBrief, type CommanderState, type KnownCommandCell } from './llm-command.js';
+import type { UnitIntent } from '../../engine/src/index.js';
 import { normalizeCommanderProfiles } from '../../engine/src/commander-profile.js';
 
 const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -7,6 +8,21 @@ const primitive = (value: unknown, keys: string[]): Record<string, any> => Objec
   && (typeof v === 'string' || typeof v === 'boolean' || typeof v === 'number' && Number.isFinite(v))));
 const strings = (value: unknown, count: number, length: number): string[] => Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string').slice(0, count).map(v => v.slice(0, length)) : [];
 const positions = (value: unknown): number[] => Array.isArray(value) ? value.filter((v): v is number => Number.isSafeInteger(v) && v >= 0) : [];
+
+function savedIntents(value: unknown): CommanderState['memory']['intents'] {
+  const v = object(value), basis = object(v.basis);
+  if (!Number.isSafeInteger(v.round) || (v.round as number) < 0 || typeof v.replanned !== 'boolean') return;
+  const units: Record<string, UnitIntent> = {};
+  for (const [id, value] of Object.entries(object(v.units)).slice(0, 64)) {
+    const i = object(value);
+    if (id.length > 64 || typeof i.mode !== 'string' || !['attack', 'advance', 'hold', 'withdraw', 'support', 'open_gate', 'close_gate', 'use_ability'].includes(i.mode)
+      || i.cell !== undefined && !Number.isSafeInteger(i.cell)
+      || ['targetId', 'supportId', 'abilityId'].some(k => i[k] !== undefined && (typeof i[k] !== 'string' || (i[k] as string).length > 128))) continue;
+    units[id] = { mode: i.mode as UnitIntent['mode'], ...(i.cell !== undefined ? { cell: i.cell as number } : {}),
+      ...(typeof i.targetId === 'string' ? { targetId: i.targetId } : {}), ...(typeof i.supportId === 'string' ? { supportId: i.supportId } : {}), ...(typeof i.abilityId === 'string' ? { abilityId: i.abilityId } : {}) };
+  }
+  return { round: v.round as number, replanned: v.replanned, basis: { visible: strings(basis.visible, 128, 64), friends: strings(basis.friends, 128, 64) }, units };
+}
 
 /** Persist state, never tool transcripts, provider responses, reasoning, or incidental object fields. */
 export function savedCommanderState(value: unknown): CommanderState | undefined {
@@ -29,8 +45,9 @@ export function savedCommanderState(value: unknown): CommanderState | undefined 
   const contacts = (Array.isArray(memory.contacts) ? memory.contacts : []).map(v => primitive(v,
     ['id', 'name', 'side', 'pos', 'x', 'y', 'formationPosition', 'level', 'scale', 'quantityType', 'hp', 'hpMax', 'status', 'airborne', 'elevation', 'standingHeight', 'round']))
     .filter(v => typeof v.id === 'string' && typeof v.name === 'string').slice(-128);
+  const intents = savedIntents(memory.intents);
   return { battleSeed: state.battleSeed, side: state.side as CommanderState['side'], brief,
-    memory: { plan: typeof memory.plan === 'string' ? memory.plan.slice(0, 600) : '', notes: strings(memory.notes, 12, 300), terrain, contacts: contacts as NonNullable<CommanderState['memory']['contacts']> } };
+    memory: { ...(intents ? { intents } : {}), plan: typeof memory.plan === 'string' ? memory.plan.slice(0, 600) : '', notes: strings(memory.notes, 12, 300), terrain, contacts: contacts as NonNullable<CommanderState['memory']['contacts']> } };
 }
 
 /** The actual map is already in the battle snapshot; preparation designs are redundant after start. */

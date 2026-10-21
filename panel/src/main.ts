@@ -22,6 +22,8 @@ import { randomId } from '../../host/src/browser-compat.js';
 import { equipmentLoadLabel } from '../../engine/src/body.js';
 import { LlmContextController, llmContextSummary, type LlmEncounterContext } from './llm-context.js';
 import { LlmCommandController, CommandCancelled } from './llm-command.js';
+import { LlmIntentPlanner, intentForces } from './llm-intents.js';
+import type { UnitIntent } from '../../engine/src/index.js';
 import { COMMAND_PROMPTS } from './llm-command-prompts.js';
 import { savedLlmContext } from './llm-save-context.js';
 import { stripThinking } from './protocol-syntax.js';
@@ -354,6 +356,7 @@ const llmCommanders = {
   enemy: new LlmCommandController(COMMAND_PROMPTS, () => render('battle'), undefined, 'enemy'),
   neutral: new LlmCommandController(COMMAND_PROMPTS, () => render('battle'), undefined, 'neutral'),
 };
+const llmIntentPlanners = { enemy: new LlmIntentPlanner(llmCommanders.enemy, COMMAND_PROMPTS, () => render('battle')), neutral: new LlmIntentPlanner(llmCommanders.neutral, COMMAND_PROMPTS, () => render('battle')) };
 let llmDiagnostic = "";
 let smallResumeRequested = false;
 /** AI连续行动期间改过托管开关、尚未写入存档。 */
@@ -847,31 +850,53 @@ function tacticalAutomation(b: SmallBattle): TacticalAutomation {
  * 自动行动（小规模）：依次替AI一方的单位执行 autoAction，直到轮到玩家手动的我方单位或战斗结束。
  * 敌方与中立单位始终由AI行动；我方单位按 AI 托管设置（单位单独设置 > 「除主控」），见 ally-control。
  */
+function prefetchCommandIntents(b: SmallBattle): void {
+  const settings = llmSettingsView().settings, key = JSON.stringify(settings), epoch = automationEpoch;
+  const identity = adapter.identity(), namespace = adapter.namespace(), context = controller.inventoryContext();
+  const valid = () => state.small === b && epoch === automationEpoch && identity === adapter.identity() && namespace === adapter.namespace()
+    && context === controller.inventoryContext() && key === JSON.stringify(readLlmSettings());
+  for (const side of ['enemy', 'neutral'] as const) {
+    const command = state.encounterContext?.llmCommanders?.[side];
+    if (command) llmIntentPlanners[side].prefetch(b, command, settings, valid);
+  }
+}
 async function autoSmall(b: SmallBattle): Promise<void> {
   clearBattleQueries();
   if (!b.active || b.isOver()) return;
-  if (b.active.status !== 'ready') b.endTurn();
-  else {
-    const valid = battleStepGuard(b);
-    const side = b.active.side, commander = side === 'ally' ? undefined : llmCommanders[side];
-    const settings = llmSettingsView().settings, commandState = state.encounterContext?.llmCommanders?.[side];
-    if (commander && !smallActorBlocked(b) && !['charmed', 'confused'].includes(controlPolicy(b.active) ?? '') && commander.available(b, settings, commandState)) {
-      const settingsKey = JSON.stringify(settings);
-      try {
-        const result = await commander.small(b, commandState!, settings, () => valid() && JSON.stringify(readLlmSettings()) === settingsKey);
-        if (!valid()) return;
-        if (result) {
-          clearBattleQueries(); applyBattleStep(b, result); state.encounterContext!.llmCommanders![side] = result.commandState;
-          return;
-        }
-      } catch (error) { if (error instanceof CommandCancelled) return; throw error; }
+  const autoEpoch = automationEpoch;
+  prefetchCommandIntents(b);
+  let intent: UnitIntent | undefined;
+  try {
+    if (b.active.status !== 'ready') b.endTurn();
+    else {
+      const valid = battleStepGuard(b);
+      const side = b.active.side, commander = side === 'ally' ? undefined : llmCommanders[side];
+      const settings = llmSettingsView().settings, commandState = state.encounterContext?.llmCommanders?.[side];
+      if (commander && !smallActorBlocked(b) && !['charmed', 'confused'].includes(controlPolicy(b.active) ?? '') && commander.available(b, settings, commandState)) {
+        const settingsKey = JSON.stringify(settings);
+        try {
+          const planner = llmIntentPlanners[side as 'enemy' | 'neutral'];
+          const commandValid = () => valid() && JSON.stringify(readLlmSettings()) === settingsKey;
+          const troop = intentForces(b, side).forces.some(u => u.id === b.active!.id);
+          if (troop) intent = await planner.forUnit(b, commandState!, settings, commandValid);
+          else await planner.beforeHero();
+          if (!commandValid()) return;
+          const result = !troop && commander.available(b, settings, commandState)
+            ? await commander.small(b, commandState!, settings, commandValid) : undefined;
+          if (!valid()) return;
+          if (result) {
+            clearBattleQueries(); applyBattleStep(b, result); state.encounterContext!.llmCommanders![side] = result.commandState;
+            return;
+          }
+        } catch (error) { if (error instanceof CommandCancelled) return; throw error; }
+      }
+      const result = b.rules.resolutionVersion === 'v2' && b.rng instanceof SeededRng ? await battleWorker.run({ kind: 'small',
+        snap: b.toSnapshot(), rules: b.rules, traits: b.traitRegistry, conditions: b.conditions.all(), summons: !!b.summonUnit, actorId: b.active.id, intent }) : undefined;
+      if (!valid()) return;
+      clearBattleQueries();
+      if (result) applyBattleStep(b, result); else b.autoAction(b.active.id, intent);
     }
-    const result = b.rules.resolutionVersion === 'v2' && b.rng instanceof SeededRng ? await battleWorker.run({ kind: 'small',
-      snap: b.toSnapshot(), rules: b.rules, traits: b.traitRegistry, conditions: b.conditions.all(), summons: !!b.summonUnit, actorId: b.active.id }) : undefined;
-    if (!valid()) return;
-    clearBattleQueries();
-    if (result) applyBattleStep(b, result); else b.autoAction(b.active.id);
-  }
+  } finally { if (autoEpoch === automationEpoch && state.small === b) prefetchCommandIntents(b); }
 }
 /** A completed background step belongs only to the exact archive and battle that requested it. */
 function battleStepGuard(battle: SmallBattle | MassBattle): () => boolean {
@@ -1108,10 +1133,19 @@ function renderBattleToolbar(b: SmallBattle | MassBattle): string {
   const finish = `<div class="battle-finish-actions">${!b.isOver() ? '<button data-action="battle-finish" data-reason="ceasefire">停止交战并结算</button><button class="danger" data-action="battle-finish" data-reason="surrender">投降并结算</button>' : ''}<button data-action="llm-notes">llm笔记</button></div>`;
   return `<div class="battle-toolbar"><label class="battle-lethality" title="本场此后双方生命归零只会濒死失能，编队减员算可救伤兵；取消勾选改回致命。已阵亡的不会复活，已经濒死的保持濒死。"><input type="checkbox" data-role="non-lethal" ${b.nonLethal?'checked':''} ${b.isOver()?'disabled':''}>非致命</label>${cannonAmmoControl(actor,b.isOver()||actor?.side!=='ally')}${renderContextStatus()}${b instanceof SmallBattle && b.battlefield ? '' : `<label class="battle-auto"><input type="checkbox" aria-label="全自动战斗（含主控）" data-role="full-auto-battle" ${fullAuto.running ? 'checked' : ''} ${b.isOver() ? 'disabled' : ''}>${fullAuto.running ? '自动推进中 · 点击暂停' : '全自动战斗（含主控）'}</label>`}<label class="battle-tactic" title="AI替我方单位行动时的取舍：托管、代打本次和全自动都按它">AI策略 <select data-role="battle-tactic" ${b.isOver() || b.rules.resolutionVersion !== 'v2' ? 'disabled' : ''}>${Object.entries(TACTICAL_PREFERENCES).map(([id,name]) => `<option value="${esc(id)}" ${b.allyTactic === id ? 'selected' : ''}>${name}</option>`).join('')}</select></label>${finish}</div>`;
 }
+function renderRoundIntents(b: SmallBattle | MassBattle, intents: import('./llm-command.js').RoundIntents | undefined): string {
+  const labels = { attack: '进攻', advance: '推进', hold: '固守', withdraw: '后撤', support: '支援', open_gate: '开门', close_gate: '关门', use_ability: '使用技能或道具' };
+  const name = (id: string) => b.combatants.find(u => u.id === id)?.name ?? id;
+  return '<h4>本轮意图</h4>' + (intents ? `<p>第${intents.round}轮</p><ul>` + Object.entries(intents.units).map(([id, intent]) => {
+    const cell = intent.cell !== undefined && b instanceof SmallBattle && b.battlefield ? `(${intent.cell % b.battlefield.width},${Math.floor(intent.cell / b.battlefield.width)})` : '';
+    const ability = intent.abilityId && b.combatants.find(u => u.id === id)?.abilities.find(a => a.id === intent.abilityId)?.name;
+    return `<li>${esc(name(id))}：${labels[intent.mode]} ${esc([cell, ability, intent.supportId && name(intent.supportId), intent.targetId && name(intent.targetId)].filter(Boolean).join(' · '))}</li>`;
+  }).join('') + '</ul>' : '<p>尚未部署</p>');
+}
 function renderLlmNotes(): string {
   const battle = currentBattle();
   if (!battle || llmNotesBattle !== battleIdOf(battle)) return '';
-  const notes = Object.entries(state.encounterContext?.llmCommanders ?? {}).flatMap(([side, command]) => command ? [`<section class="llm-notes-side"><h3>${side === 'ally' ? '我方' : side === 'neutral' ? '第三方' : '敌军'} · ${esc(command.brief.name)}</h3><h4>人设</h4><p>${esc(command.brief.persona)}</p><h4>任务</h4><p>${esc(command.brief.mission)}</p><h4>总计划</h4><p>${esc(command.memory.plan) || '尚未制定'}</p><h4>笔记</h4>${command.memory.notes.length ? '<ul>' + command.memory.notes.map(note => '<li>' + esc(note) + '</li>').join('') + '</ul>' : '<p>暂无笔记</p>'}<h4>开局已知信息</h4>${command.brief.known.length ? '<ul>' + command.brief.known.map(note => '<li>' + esc(note) + '</li>').join('') + '</ul>' : '<p>以本场实际观察为准</p>'}</section>`] : []).join('');
+  const notes = Object.entries(state.encounterContext?.llmCommanders ?? {}).flatMap(([side, command]) => command ? [`<section class="llm-notes-side"><h3>${side === 'ally' ? '我方' : side === 'neutral' ? '第三方' : '敌军'} · ${esc(command.brief.name)}</h3><h4>人设</h4><p>${esc(command.brief.persona)}</p><h4>任务</h4><p>${esc(command.brief.mission)}</p><h4>总计划</h4><p>${esc(command.memory.plan) || '尚未制定'}</p><h4>笔记</h4>${command.memory.notes.length ? '<ul>' + command.memory.notes.map(note => '<li>' + esc(note) + '</li>').join('') + '</ul>' : '<p>暂无笔记</p>'}<h4>开局已知信息</h4>${command.brief.known.length ? '<ul>' + command.brief.known.map(note => '<li>' + esc(note) + '</li>').join('') + '</ul>' : '<p>以本场实际观察为准</p>'}${renderRoundIntents(battle, command.memory.intents)}</section>`] : []).join('');
   return `<div class="modal-backdrop" data-action="llm-notes-close"><section class="modal-card llm-notes-dialog" data-action="modal-stop" role="dialog" aria-modal="true" aria-labelledby="llm-notes-title"><div class="row"><h2 id="llm-notes-title">llm笔记</h2><button data-action="llm-notes-close">关闭</button></div>${notes || '<p>本场没有 LLM 指挥官记录。</p>'}</section></div>`;
 }
 function renderContextStatus(): string {
@@ -2575,6 +2609,7 @@ async function executePanelAction(act: string, task: () => void | Promise<void>)
     if (controller.migrationReview() && !act.startsWith('migration-') && !['log-detail', 'unit-detail', 'units-toggle', 'sec-toggle', 'modal-stop'].includes(act)) throw new Error('先核对迁移预览；预览期间不会改写原档或推进战斗');
     await task();
     if (!valid()) return;
+    if (state.small) prefetchCommandIntents(state.small);
     if (battleSaveFailed) { const receipt = state.saveReceipt; restore(); state.saveReceipt = receipt; render(); return; }
     if (state.small?.battlefield && (['grid-endturn', 'grid-mobile-endturn', 'grid-auto', 'small-start', 'mass-start'].includes(act)
       || smallActorBlocked(state.small))) {
