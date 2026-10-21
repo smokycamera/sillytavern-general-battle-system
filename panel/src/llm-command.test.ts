@@ -198,14 +198,17 @@ describe('atomic LLM command execution', () => {
   it('retries preparation and the current command without replaying prior actions or losing the plan', async () => {
     vi.useFakeTimers();
     const b = small(), s = state(), before = structuredClone(b.toSnapshot());
+    const nonthinking = { ...settings, commandThinking: 'off' as const, commandThinkingOffParams: '{"thinking":{"type":"disabled"}}' };
     let preparations = 0, commands = 0; const payloads: string[] = [];
     const request = vi.fn(async (_url: unknown, init?: RequestInit) => {
       const payload = JSON.parse(String(init?.body));
       if (!payload.tools) {
+        expect(payload).not.toHaveProperty('thinking'); expect(payload).not.toHaveProperty('reasoning_effort');
         preparations++;
         if (preparations === 1) return new Response('{}', { status: 503 });
         return response({ content: JSON.stringify(preparations === 2 ? { name: '缺少人设' } : s.brief) });
       }
+      expect(payload.thinking).toEqual({ type: 'disabled' });
       commands++; payloads.push(String(init?.body));
       if (commands === 1) return call('commander_plan', { plan: '先移动再观察', notes: [] });
       const data = initial(init);
@@ -214,9 +217,9 @@ describe('atomic LLM command execution', () => {
       return call('commander_act', { choice: data.choices.find((c: any) => c.action?.type === 'end_turn').id });
     }) as unknown as typeof fetch;
     const commander = new LlmCommandController(COMMAND_PROMPTS, () => {}, request);
-    const preparation = commander.prepare(b, [], {}, settings, () => true);
+    const preparation = commander.prepare(b, [], {}, nonthinking, () => true);
     await vi.runAllTimersAsync(); expect((await preparation)?.brief).toEqual(s.brief); expect(preparations).toBe(3);
-    const pending = commander.small(b, s, settings, () => true);
+    const pending = commander.small(b, s, nonthinking, () => true);
     await vi.runAllTimersAsync(); const result = await pending;
     expect(result).toBeDefined(); expect(commands).toBe(4); expect(payloads[2]).toBe(payloads[3]);
     expect(result!.commandState.memory.plan).toBe('先移动再观察'); expect(b.toSnapshot()).toEqual(before);

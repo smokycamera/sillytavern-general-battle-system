@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.8.1**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **2.8.2**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-2.8.1 retries commander preparation and individual decisions up to three attempts before falling back to built-in command, and removes the LLM-command introduction from settings. Faction knowledge, 600-character plans and validated per-unit actions remain available through the secondary API. See the [command and Flash test report](docs/llm-command-20261021.md).
+2.8.2 binds commander preparation to the controlled faction's unit IDs and names, separating the commander's role from first-person narration. The nonthinking option now applies only to battle commands; persona generation retains the API's default behavior. See the [command and Flash test report](docs/llm-command-20261021.md).
 
 ## Documentation
 

@@ -262,11 +262,13 @@ export class LlmCommandController {
     const connection = llmConnection(settings);
     if (!connection.model) throw Error('请先选择模型');
     return this.retryRequest(async combined => commanderBrief(await openAiJsonRequest(connection,
-      [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(data) }], combined, this.request, '指挥官', commandRequestOptions(settings))), valid, signal);
+      [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(data) }], combined, this.request, '指挥官')), valid, signal);
   }
   async prepare(b: Battle, narrative: unknown, task: unknown, settings: LlmSettings, valid: () => boolean): Promise<CommanderState | undefined> {
     return this.run(b, settings, valid, '正在生成指挥官…', async signal => ({ battleSeed: b.seed, side: this.side, brief: await this.ask(this.prompts.preparation,
-      { narrative, task, observation: commandObservation(b, undefined, this.side) }, settings, valid, signal), memory: updateCommandMemory(b, emptyCommandMemory(), this.side) }));
+      { perspective: { self: 'friendly', playerFaction: perspective('ally', this.side),
+        controlledUnits: b.combatants.filter(u => u.side === this.side).map(u => ({ id: u.id, name: u.name })) },
+        narrative, task, observation: commandObservation(b, undefined, this.side) }, settings, valid, signal), memory: updateCommandMemory(b, emptyCommandMemory(), this.side) }));
   }
   private async choose(b: Battle, actorId: string, state: CommanderState, choices: CommandChoice[], settings: LlmSettings, valid: () => boolean, signal: AbortSignal, budget: { left: number }, conversation: CommandMessage[]): Promise<CommandChoice> {
     this.status = `指挥官 ${state.brief.name} 正在指挥 ${b.byId(actorId).name}…`; this.changed();

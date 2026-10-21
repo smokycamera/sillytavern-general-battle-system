@@ -1,24 +1,24 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "2.8.1",
-  "builtAt": "2026-10-21T07:06:11.899Z",
-  "sourceFingerprint": "8367c76747a79e4f4637fc39836b7c4571c62be4119e343e2bc3a190cc0fbb5e",
+  "version": "2.8.2",
+  "builtAt": "2026-10-21T07:27:24.380Z",
+  "sourceFingerprint": "bfffb6975bcf62ce555822ae799dce4183a5c2c6744018c65b44e43941bdc70e",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
-    {
-      "path": "dist/assets/panel-D-yNH3Qk.js",
-      "bytes": 1454829,
-      "sha256": "b4715be57f3cc1666d9970f6ddd21069477b09ddedb85fe64ea398cfe896acf4"
-    },
     {
       "path": "dist/assets/panel-DWnwi5Zd.css",
       "bytes": 31125,
       "sha256": "a1aa52b2cbdba7c03a436ec52a79e6bf9875bf1e35fb4db145966238ef50127d"
     },
     {
-      "path": "dist/assets/preferences-Bd8ilYWg.js",
+      "path": "dist/assets/panel-DYBaGlkd.js",
+      "bytes": 1455406,
+      "sha256": "3767c14fed2b277fb5fa785ce6fbe65f8f81099ed8c17ddb360247ee7b279b74"
+    },
+    {
+      "path": "dist/assets/preferences-B-ZcFq0Q.js",
       "bytes": 979963,
-      "sha256": "5df34b76703de13682069a742bed765f1acc408abbc12a4c2ab303622e46d45e"
+      "sha256": "55d67d40a8402609515f054d7dfb021c8b633e8f44183d28d150dba4e9b546bf"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -57,8 +57,8 @@
     },
     {
       "path": "docs/current-release.md",
-      "bytes": 16144,
-      "sha256": "3af087b02c31da687fcd941765463c0700aa011ca3ec993dfdd67611350e7ecc"
+      "bytes": 16691,
+      "sha256": "cc031d0641519f124b31eefaa0587cf658e8f8aa7ee0b3baa755cf32ea9254e9"
     },
     {
       "path": "docs/embedded-worldbook.md",
@@ -87,8 +87,8 @@
     },
     {
       "path": "docs/llm-command-20261021.md",
-      "bytes": 12245,
-      "sha256": "3900ef04f6c231ad175e6a8785d55da8292f92720b003580c9fc37bbb96d55aa"
+      "bytes": 13395,
+      "sha256": "ec84ddc792c5cf88187c252a044b908713c9ba3284a2fcf7b2c8a1828b1bfdd1"
     },
     {
       "path": "docs/mcp-player-bridge.md",
@@ -193,7 +193,7 @@
     {
       "path": "dist/index.js",
       "bytes": 96948,
-      "sha256": "a46aa69e6257df18363b4b36989f6a9456108c6369e01eba53e1559143a8c452"
+      "sha256": "f3a02fdd4ff8519bd957149b68d5ae549f801dd49c29fda17f6bfa559fadd361"
     },
     {
       "path": "LICENSE",
@@ -213,7 +213,7 @@
     {
       "path": "manifest.json",
       "bytes": 170,
-      "sha256": "5bbb18b598ed11a8aa8d7fd8be061106763738f67f251501e6c13cfefe9eb6f6"
+      "sha256": "26ef1036da89f4676ac273dae83903aecff0c1baecb223b0773db53b18b8d12f"
     },
     {
       "path": "mcp/broker.mjs",
@@ -268,17 +268,17 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 47032,
-      "sha256": "56f3e9bfd7c40dcda75c10ffed07ee4a98fe6aab3d4cf25bb0afcd837e481c3a"
+      "sha256": "e0883cd15ffbc8684d2c72ed9ecb8fd49cbdcf6de3a956d4bd768a920e869020"
     },
     {
       "path": "README.md",
-      "bytes": 2769,
-      "sha256": "83efaf0417e349d716a9f9ed51e8f7364cc35e1e0ffc913c43b1d23197caa852"
+      "bytes": 2734,
+      "sha256": "3c4691cbc4b72f0c8aa304b97f2bbe62cc1aa4be5dca059845fa458a335d5037"
     },
     {
       "path": "README.zh-CN.md",
-      "bytes": 2542,
-      "sha256": "c49215ab9709b96dc58c77f1c0d13f28ad93591d8deda6616ee5ea72d20aa3a3"
+      "bytes": 2532,
+      "sha256": "fccceb3ffe7e52f4ed2af517ac6396abc2f33dc6711a35defb542d4804adbc5e"
     },
     {
       "path": "scripts/jev-cors-relay.mjs",

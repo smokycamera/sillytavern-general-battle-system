@@ -49,9 +49,13 @@ it('prepares independent commanders for three factions, persists their plans wit
       ] } }] }));
     }
     if (payload.messages[0].content.includes('指挥官设定助手')) {
-      expect(payload.reasoning_effort).toBe('none'); expect(payload).not.toHaveProperty('thinking');
+      expect(payload).not.toHaveProperty('reasoning_effort'); expect(payload).not.toHaveProperty('thinking');
       preparationCount++;
       const data = JSON.parse(latest), friendly = data.observation.units.find((u: any) => u.side === 'friendly');
+      expect(data.perspective).toEqual({ self: 'friendly', playerFaction: 'opponent-1', controlledUnits: [{ id: friendly.id, name: friendly.name }] });
+      expect(data.perspective.controlledUnits).not.toContainEqual({ id: 'u0', name: 'ally-unit' });
+      expect(JSON.stringify(data.narrative)).toContain('我率领ally-unit');
+      expect(payload.messages[0].content).toContain('将正文中的“我”“我们”归于剧情中的实际叙述者');
       return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ name: friendly.name + '-leader', persona: '谨慎', known: [], mission: '守住阵地' }) } }] }));
     }
     expect(payload).not.toHaveProperty('reasoning_effort'); expect(payload).not.toHaveProperty('thinking');
@@ -83,6 +87,7 @@ it('prepares independent commanders for three factions, persists their plans wit
   document.querySelector<HTMLButtonElement>('button[data-action="llm-notes-close"]')!.click();
   // A new preparation generates two separate briefs before any new battle is written.
   await f.service.transact(() => ({ ...saved, battle: null, encounterContext: undefined })); await idle();
+  f.context.chat!.push({ is_user: false, mes: '我率领ally-unit向enemy-unit进攻，neutral-unit在附近观望。', gen_finished: 'done' });
   document.querySelector<HTMLButtonElement>('[data-action="small-start"]')!.click(); await idle();
   expect(preparationCount).toBe(2);
   expect(f.service.snapshot().battle).toBeDefined();
