@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SmallBattle, MassBattle, V7_OVERFLOW_D20, V7_OVERFLOW_TW, generateUnit, traitRegistry, standardField, compileGenericSkill, type Combatant } from '../src/index.js';
 import { compileItem, carriedItemAbility } from '../src/items.js';
 import { compileWeapon } from '../src/gen/equipment.js';
@@ -13,6 +13,18 @@ function small(){const a=make('a','ally'),d=make('d','enemy'),field=standardFiel
 function mass(){const a=make('a','ally','company'),d=make('d','enemy','company'),b=new MassBattle({combatants:[a,d],rules:V7_OVERFLOW_TW,rng,traitRegistry:registry});b.start();a.formationPosition='ally:中军:front';d.formationPosition='enemy:中军:front';applySkillCondition(a,{id:'hasted',dur:5,magnitude:1});return{b,a,d};}
 
 describe('每轮一次非技能加速动作',()=>{
+ it('意图攻击用完加速；指定技能只放一次，剩余行动由原地 AI 使用',()=>{
+  const attack=small(); const start=attack.b.log.length;
+  attack.b.autoAction(attack.a.id,{mode:'attack',targetId:attack.d.id});
+  expect(attack.b.log.slice(start).filter(e=>e.resolution?.attackerId===attack.a.id)).toHaveLength(2);
+  const {b,a,d}=small(),spell=compileGenericSkill('generic:buff:ward',5,a.id);
+  a.abilities=[spell];a.preparedAbilityIds=[spell.id];a.resources.SP=20;
+  const use=vi.spyOn(b,'useAbility'); const pos=a.pos, before=b.log.length;
+  b.autoAction(a.id,{mode:'use_ability',abilityId:spell.id,targetId:a.id});
+  expect(use).toHaveBeenCalledTimes(1); expect(use.mock.results[0]!.value.ok).toBe(true);
+  expect(b.log.slice(before).some(e=>e.resolution?.attackerId===a.id&&e.resolution.defenderId===d.id)).toBe(true);
+  expect(a.pos).toBe(pos);
+ });
  it('小战先主攻击再加速攻击，预览一致、不可第三次，存档和刷新不重置次数',()=>{
   const {b,a,d}=small();const first=b.attack(a.id,d.id),preview=b.getActionOptions(a.id).find(o=>o.id==='weapon')!.targets![0]!.preview!;
   const second=b.attack(a.id,d.id);expect(second.finalDamage).toBeCloseTo(first.finalDamage*0.5,0);expect(second.targetDef).toBe(preview.defenseScore);

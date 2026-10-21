@@ -21,9 +21,18 @@ import { renderWorldbookSettings, captureWorldbookDraft, worldbookDraftPatch, ty
 import { randomId } from '../../host/src/browser-compat.js';
 import { equipmentLoadLabel } from '../../engine/src/body.js';
 import { LlmContextController, llmContextSummary, type LlmEncounterContext } from './llm-context.js';
+import { LlmCommandController, CommandCancelled } from './llm-command.js';
+import { LlmIntentPlanner, intentForces } from './llm-intents.js';
+import type { UnitIntent } from '../../engine/src/index.js';
+import { COMMAND_PROMPTS } from './llm-command-prompts.js';
+import { savedLlmContext } from './llm-save-context.js';
+import { stripThinking } from './protocol-syntax.js';
+import { controlPolicy } from '../../engine/src/battle-control.js';
 import { LlmNarrativeScanController } from './llm-narrative-scan.js';
 import { parseProtocol, recoverProtocol } from './protocol.js';
-import { readLlmSettings, saveLlmSettings, llmConnectionKey, llmSettingsView, llmSettingsBackup, resetLlmSettings } from './llm-settings.js';
+import { readLlmSettings, saveLlmSettings, llmConnectionKey, llmSettingsView, llmSettingsBackup, resetLlmSettings, parseCommandParameters, commandParameterWarnings } from './llm-settings.js';
+import { setLlmWorldbookSource } from './llm-worldbooks.js';
+import { LlmWorldbookPicker } from './llm-worldbooks-view.js';
 import { renderLlmSettings } from './llm-settings-view.js';
 import { encounterRequest, normalizeContextSettings, type EncounterSetup } from './jev-context.js';
 import { enhancementLabel, trainingEdge, trainingDamage } from '../../engine/src/enhancements.js';
@@ -134,6 +143,8 @@ document.title = panelTitle;
 
 const runtime = createPanelRuntime();
 const { adapter, controller, resident } = runtime;
+setLlmWorldbookSource(runtime.worldbooks);
+const llmWorldbookPicker = new LlmWorldbookPicker(runtime.worldbooks, () => render('view'));
 document.body.dataset.native = String(!!runtime.native);
 if (runtime.getTheme) document.body.dataset.theme = runtime.getTheme();
 const inventoryPanel = new InventoryPanel(controller, visibleUnitRecord);
@@ -153,6 +164,7 @@ const narrativeDrafts = new Map<string, string>();
 const narrativeErrorIndexes = new Map<string, number>();
 const narrativeScanner = new LlmNarrativeScanController();
 let aiScanDialog: { requirements: string; busy: boolean; error?: string } | undefined;
+let llmNotesBattle: string | undefined;
 const promptDrafts = new Map<string, string>();
 const worldbookDrafts = new Map<string, string>();
 const customWorldbookDrafts = new Map<string, WorldbookDraft>();
@@ -344,6 +356,11 @@ const battleWorker = new BattleWorker();
 let battleWorkerEpoch = 0;
 window.addEventListener('pagehide', () => { battleWorkerEpoch++; battleWorker.dispose(); });
 const llmContext = new LlmContextController();
+const llmCommanders = {
+  enemy: new LlmCommandController(COMMAND_PROMPTS, () => render('battle'), undefined, 'enemy'),
+  neutral: new LlmCommandController(COMMAND_PROMPTS, () => render('battle'), undefined, 'neutral'),
+};
+const llmIntentPlanners = { enemy: new LlmIntentPlanner(llmCommanders.enemy, COMMAND_PROMPTS, () => render('battle')), neutral: new LlmIntentPlanner(llmCommanders.neutral, COMMAND_PROMPTS, () => render('battle')) };
 let llmDiagnostic = "";
 let smallResumeRequested = false;
 /** AI连续行动期间改过托管开关、尚未写入存档。 */
@@ -386,7 +403,7 @@ async function confirmAiScan(): Promise<void> {
   render('view');
 }
 /** Hiding the page or the panel pauses battle automation only; a started preparation finishes and keeps its retry memory. */
-function pauseAutomation(): void { automationEpoch++; fullAuto.stop(); smallResumeRequested = false; }
+function pauseAutomation(): void { automationEpoch++; fullAuto.stop(); smallResumeRequested = false; Object.values(llmCommanders).forEach(c => c.cancel()); }
 function stopAutomation(clearRetry = true): void { pauseAutomation(); llmContext.cancel(clearRetry); }
 window.addEventListener('pagehide', () => stopAutomation());
 window.addEventListener('pagehide', () => narrativeScanner.cancel());
@@ -418,6 +435,10 @@ async function panelTask(task: () => Promise<void>, allowPending = false, feedba
 async function persist(options: { battleUnchanged?: boolean } = {}): Promise<boolean> {
   if (!options.battleUnchanged) clearBattleQueries();
   const battle = currentBattle(), memoryOnly = !!battle && !battle.isOver() && openingSavedFor === battle;
+  const activeCommanders = state.encounterContext?.llmCommanders;
+  state.encounterContext = savedLlmContext(state.encounterContext, !!battle);
+  // A pending prefetch owns these live objects. Clean the save without orphaning its result.
+  if (state.encounterContext && activeCommanders) state.encounterContext.llmCommanders = activeCommanders;
   const sessionContext=()=>runtime.native?JSON.stringify(JSON.parse(controller.inventoryContext()).slice(0,2)):controller.inventoryContext();
   const identity=adapter.identity(), namespace=adapter.namespace(), context=sessionContext();
   // v2 起 storage 是持久权威源；新生成但尚未入 storage 的旧路径在保存前补齐一次。
@@ -432,7 +453,7 @@ async function persist(options: { battleUnchanged?: boolean } = {}): Promise<boo
   synchronizeMoraleLock();
   const write = (await controller.persistPanel({
       schemaVersion: PANEL_SAVE_SCHEMA_VERSION,
-      encounterContext: state.encounterContext,
+      encounterContext: savedLlmContext(state.encounterContext, !!battle),
       reports: state.reports, reportDeliveries: state.reportDeliveries,
       selectedReportId: state.selectedReportId,
       activeBattleStart: state.activeBattleStart, deletedReport: state.deletedReport, deletedReportIds: state.deletedReportIds,
@@ -538,6 +559,7 @@ function restore(): void {
   clearBattleQueries();
   const resumeRequested = smallResumeRequested;
   stopAutomation(false);
+  llmNotesBattle = undefined;
   smallResumeRequested = resumeRequested; allyControlUnsaved = false;
   reportRestartPreview=undefined;
   if (workspaceNamespace !== adapter.namespace()) {
@@ -554,7 +576,7 @@ function restore(): void {
   const snapshot = controller.snapshot();
   const saved = Object.keys(snapshot).length ? snapshot as SavedPanel : undefined;
   state.factRevision = saved?.factRevision ?? 0;
-  state.encounterContext = saved?.encounterContext;
+  state.encounterContext = savedLlmContext(saved?.encounterContext, !!saved?.battle);
   state.proposals = (saved?.proposals ?? []).map(p => ({ ...p, events: p.events.map(migrateSavedSuggestion) }));
   state.storySync = saved?.autoApprove ?? saved?.storySync ?? false;
   state.autoApprove = state.storySync;
@@ -835,26 +857,62 @@ function tacticalAutomation(b: SmallBattle): TacticalAutomation {
  * 自动行动（小规模）：依次替AI一方的单位执行 autoAction，直到轮到玩家手动的我方单位或战斗结束。
  * 敌方与中立单位始终由AI行动；我方单位按 AI 托管设置（单位单独设置 > 「除主控」），见 ally-control。
  */
+function prefetchCommandIntents(b: SmallBattle): void {
+  const settings = llmSettingsView().settings, key = JSON.stringify(settings), epoch = automationEpoch;
+  const identity = adapter.identity(), namespace = adapter.namespace(), context = controller.inventoryContext();
+  const valid = () => state.small === b && epoch === automationEpoch && identity === adapter.identity() && namespace === adapter.namespace()
+    && context === controller.inventoryContext() && key === JSON.stringify(readLlmSettings());
+  for (const side of ['enemy', 'neutral'] as const) {
+    const command = state.encounterContext?.llmCommanders?.[side];
+    if (command) llmIntentPlanners[side].prefetch(b, command, settings, valid);
+  }
+}
 async function autoSmall(b: SmallBattle): Promise<void> {
   clearBattleQueries();
   if (!b.active || b.isOver()) return;
-  if (b.active.status !== 'ready') b.endTurn();
-  else {
-    const valid = battleStepGuard(b);
-    const result = b.rules.resolutionVersion === 'v2' && b.rng instanceof SeededRng ? await battleWorker.run({ kind: 'small',
-      snap: b.toSnapshot(), rules: b.rules, traits: b.traitRegistry, conditions: b.conditions.all(), summons: !!b.summonUnit, actorId: b.active.id }) : undefined;
-    if (!valid()) return;
-    clearBattleQueries();
-    if (result) applyBattleStep(b, result); else b.autoAction(b.active.id);
-  }
+  const autoEpoch = automationEpoch;
+  prefetchCommandIntents(b);
+  let intent: UnitIntent | undefined;
+  try {
+    if (b.active.status !== 'ready') b.endTurn();
+    else {
+      const valid = battleStepGuard(b);
+      const side = b.active.side, commander = side === 'ally' ? undefined : llmCommanders[side];
+      const settings = llmSettingsView().settings, commandState = state.encounterContext?.llmCommanders?.[side];
+      if (commander && !smallActorBlocked(b) && !['charmed', 'confused'].includes(controlPolicy(b.active) ?? '') && commander.available(b, settings, commandState)) {
+        const settingsKey = JSON.stringify(settings);
+        try {
+          const planner = llmIntentPlanners[side as 'enemy' | 'neutral'];
+          const commandValid = () => valid() && JSON.stringify(readLlmSettings()) === settingsKey;
+          const troop = intentForces(b, side).forces.some(u => u.id === b.active!.id);
+          if (troop) intent = await planner.forUnit(b, commandState!, settings, commandValid);
+          else await planner.beforeHero();
+          if (!commandValid()) return;
+          const result = !troop && commander.available(b, settings, commandState)
+            ? await commander.small(b, commandState!, settings, commandValid) : undefined;
+          if (!valid()) return;
+          if (result) {
+            clearBattleQueries(); applyBattleStep(b, result); state.encounterContext!.llmCommanders![side] = result.commandState;
+            return;
+          }
+        } catch (error) { if (error instanceof CommandCancelled) return; throw error; }
+      }
+      const result = b.rules.resolutionVersion === 'v2' && b.rng instanceof SeededRng ? await battleWorker.run({ kind: 'small',
+        snap: b.toSnapshot(), rules: b.rules, traits: b.traitRegistry, conditions: b.conditions.all(), summons: !!b.summonUnit, actorId: b.active.id, intent }) : undefined;
+      if (!valid()) return;
+      clearBattleQueries();
+      if (result) applyBattleStep(b, result); else b.autoAction(b.active.id, intent);
+    }
+  } finally { if (autoEpoch === automationEpoch && state.small === b) prefetchCommandIntents(b); }
 }
 /** A completed background step belongs only to the exact archive and battle that requested it. */
 function battleStepGuard(battle: SmallBattle | MassBattle): () => boolean {
   const identity = adapter.identity(), namespace = adapter.namespace(), context = controller.inventoryContext(), revision = state.factRevision;
   const workerEpoch = battleWorkerEpoch;
+  const autoEpoch = automationEpoch;
   const round = battle.round, turn = battle instanceof SmallBattle ? battle.turnIndex : undefined;
   return () => currentBattle() === battle && identity === adapter.identity() && namespace === adapter.namespace()
-    && context === controller.inventoryContext() && revision === state.factRevision && round === battle.round && workerEpoch === battleWorkerEpoch
+    && context === controller.inventoryContext() && revision === state.factRevision && round === battle.round && workerEpoch === battleWorkerEpoch && autoEpoch === automationEpoch
     && (!(battle instanceof SmallBattle) || turn === battle.turnIndex);
 }
 function smallActorBlocked(b: SmallBattle): boolean {
@@ -876,6 +934,7 @@ async function runAuto(): Promise<void> {
       if (epoch !== automationEpoch || state.small !== b) return;
       const progress = `${b.round}:${b.turnIndex}`;
       await autoSmall(b);
+      if (epoch !== automationEpoch || state.small !== b) return;
       if (!b.isOver() && progress === `${b.round}:${b.turnIndex}`) throw Error('自动行动未推进回合，已暂停');
       // Activations update session memory; only opening and final results reach storage.
       if (state.small !== b || !(await persistBattleResult())) return;
@@ -934,7 +993,7 @@ function startFullAuto(): void {
       // 复用手动执行的草案校验、自动补令、阶段结算和失败回滚。
       (await resolveMassRound(battle.round, battle.seed));
     }
-    if (battleSaveFailed || currentBattle() !== battle || workerEpoch !== battleWorkerEpoch) return false;
+    if (!fullAuto.running || battleSaveFailed || currentBattle() !== battle || workerEpoch !== battleWorkerEpoch) return false;
     if (battle.isOver()) {
       fullAuto.stop();
       if (battle instanceof SmallBattle) (await runAuto()); else (await onBattleEnded());
@@ -1066,7 +1125,7 @@ function renderWorkspace(scope: RenderScope, tacticalQuery?: TacticalQuerySource
     updateRegion(app.querySelector<HTMLElement>(`[data-workspace="${workspaceTab}"]`)!, content);
     dirtyWorkspaces.delete(workspaceTab);
   }
-  const dialog = app.querySelector<HTMLElement>('#workspace-dialog')!, dialogHtml = renderAiScanDialog() || renderLoadoutSkills() || renderAbilityDialog();
+  const dialog = app.querySelector<HTMLElement>('#workspace-dialog')!, dialogHtml = renderLlmNotes() || renderAiScanDialog() || renderLoadoutSkills() || renderAbilityDialog();
   if (dialog.innerHTML !== dialogHtml) updateRegion(dialog, dialogHtml);
   window.scrollTo(0, winScroll);
   if (workspaceTab === 'battle' && b) {
@@ -1078,13 +1137,30 @@ function renderWorkspace(scope: RenderScope, tacticalQuery?: TacticalQuerySource
 }
 function renderBattleToolbar(b: SmallBattle | MassBattle): string {
   const actor=b instanceof SmallBattle?b.active:b.combatants.find(u=>u.id===formationView.selectedId)??b.combatants.find(u=>u.side==='ally'&&u.status==='ready'&&!b.isAttached(u.id));
-  return `<div class="battle-toolbar"><label class="battle-lethality" title="本场此后双方生命归零只会濒死失能，编队减员算可救伤兵；取消勾选改回致命。已阵亡的不会复活，已经濒死的保持濒死。"><input type="checkbox" data-role="non-lethal" ${b.nonLethal?'checked':''} ${b.isOver()?'disabled':''}>非致命</label>${cannonAmmoControl(actor,b.isOver()||actor?.side!=='ally')}${renderContextStatus()}${b instanceof SmallBattle && b.battlefield ? '' : `<label class="battle-auto"><input type="checkbox" aria-label="全自动战斗（含主控）" data-role="full-auto-battle" ${fullAuto.running ? 'checked' : ''} ${b.isOver() ? 'disabled' : ''}>${fullAuto.running ? '自动推进中 · 点击暂停' : '全自动战斗（含主控）'}</label>`}<label class="battle-tactic" title="AI替我方单位行动时的取舍：托管、代打本次和全自动都按它">AI策略 <select data-role="battle-tactic" ${b.isOver() || b.rules.resolutionVersion !== 'v2' ? 'disabled' : ''}>${Object.entries(TACTICAL_PREFERENCES).map(([id,name]) => `<option value="${esc(id)}" ${b.allyTactic === id ? 'selected' : ''}>${name}</option>`).join('')}</select></label>${!b.isOver() ? '<div class="battle-finish-actions"><button data-action="battle-finish" data-reason="ceasefire">停止交战并结算</button><button class="danger" data-action="battle-finish" data-reason="surrender">投降并结算</button></div>' : ''}</div>`;
+  const finish = `<div class="battle-finish-actions">${!b.isOver() ? '<button data-action="battle-finish" data-reason="ceasefire">停止交战并结算</button><button class="danger" data-action="battle-finish" data-reason="surrender">投降并结算</button>' : ''}<button data-action="llm-notes">llm笔记</button></div>`;
+  return `<div class="battle-toolbar"><label class="battle-lethality" title="本场此后双方生命归零只会濒死失能，编队减员算可救伤兵；取消勾选改回致命。已阵亡的不会复活，已经濒死的保持濒死。"><input type="checkbox" data-role="non-lethal" ${b.nonLethal?'checked':''} ${b.isOver()?'disabled':''}>非致命</label>${cannonAmmoControl(actor,b.isOver()||actor?.side!=='ally')}${renderContextStatus()}${b instanceof SmallBattle && b.battlefield ? '' : `<label class="battle-auto"><input type="checkbox" aria-label="全自动战斗（含主控）" data-role="full-auto-battle" ${fullAuto.running ? 'checked' : ''} ${b.isOver() ? 'disabled' : ''}>${fullAuto.running ? '自动推进中 · 点击暂停' : '全自动战斗（含主控）'}</label>`}<label class="battle-tactic" title="AI替我方单位行动时的取舍：托管、代打本次和全自动都按它">AI策略 <select data-role="battle-tactic" ${b.isOver() || b.rules.resolutionVersion !== 'v2' ? 'disabled' : ''}>${Object.entries(TACTICAL_PREFERENCES).map(([id,name]) => `<option value="${esc(id)}" ${b.allyTactic === id ? 'selected' : ''}>${name}</option>`).join('')}</select></label>${finish}</div>`;
+}
+function renderRoundIntents(b: SmallBattle | MassBattle, intents: import('./llm-command.js').RoundIntents | undefined): string {
+  const labels = { attack: '进攻', advance: '推进', hold: '固守', withdraw: '后撤', support: '支援', open_gate: '开门', close_gate: '关门', use_ability: '使用技能或道具' };
+  const name = (id: string) => b.combatants.find(u => u.id === id)?.name ?? id;
+  return '<h4>本轮意图</h4>' + (intents ? `<p>第${intents.round}轮</p><ul>` + Object.entries(intents.units).map(([id, intent]) => {
+    const cell = intent.cell !== undefined && b instanceof SmallBattle && b.battlefield ? `(${intent.cell % b.battlefield.width},${Math.floor(intent.cell / b.battlefield.width)})` : '';
+    const ability = intent.abilityId && b.combatants.find(u => u.id === id)?.abilities.find(a => a.id === intent.abilityId)?.name;
+    return `<li>${esc(name(id))}：${labels[intent.mode]} ${esc([cell, ability, intent.supportId && name(intent.supportId), intent.targetId && name(intent.targetId)].filter(Boolean).join(' · '))}</li>`;
+  }).join('') + '</ul>' : '<p>尚未部署</p>');
+}
+function renderLlmNotes(): string {
+  const battle = currentBattle();
+  if (!battle || llmNotesBattle !== battleIdOf(battle)) return '';
+  const notes = Object.entries(state.encounterContext?.llmCommanders ?? {}).flatMap(([side, command]) => command ? [`<section class="llm-notes-side"><h3>${side === 'ally' ? '我方' : side === 'neutral' ? '第三方' : '敌军'} · ${esc(command.brief.name)}</h3><h4>人设</h4><p>${esc(command.brief.persona)}</p><h4>任务</h4><p>${esc(command.brief.mission)}</p><h4>总计划</h4><p>${esc(command.memory.plan) || '尚未制定'}</p><h4>笔记</h4>${command.memory.notes.length ? '<ul>' + command.memory.notes.map(note => '<li>' + esc(note) + '</li>').join('') + '</ul>' : '<p>暂无笔记</p>'}<h4>开局已知信息</h4>${command.brief.known.length ? '<ul>' + command.brief.known.map(note => '<li>' + esc(note) + '</li>').join('') + '</ul>' : '<p>以本场实际观察为准</p>'}${renderRoundIntents(battle, command.memory.intents)}</section>`] : []).join('');
+  return `<div class="modal-backdrop" data-action="llm-notes-close"><section class="modal-card llm-notes-dialog" data-action="modal-stop" role="dialog" aria-modal="true" aria-labelledby="llm-notes-title"><div class="row"><h2 id="llm-notes-title">llm笔记</h2><button data-action="llm-notes-close">关闭</button></div>${notes || '<p>本场没有 LLM 指挥官记录。</p>'}</section></div>`;
 }
 function renderContextStatus(): string {
   const stage = llmContext.stage, retry = stage && stage.attempt > 1 ? `第${stage.attempt}次尝试` : '';
   const step = stage?.of === 2 ? `${stage.step === 'layout' ? '正在布置地图（2/2' : '正在读取正文（1/2'}${retry ? '，' + retry : ''}）…` : `正在读取正文${retry ? `（${retry}）` : ''}…`;
-  return llmContext.busy ? `<p role="status">${step} <button data-action="llm-stop">取消读取</button></p>`
-    : state.encounterContext ? `<p class="sub">${esc(llmContextSummary(state.encounterContext))}</p>` : '';
+  const status = Object.entries(llmCommanders).filter(([, c]) => c.status && (currentBattle() ? c.statusBattle === currentBattle()!.seed : c.busy)).map(([side, c]) => `<p role="status">${side === 'neutral' ? '第三方' : '敌军'}：${esc(c.status)}${c.busy ? ' <button data-action="llm-command-stop">暂停指挥</button>' : ''}</p>`).join('');
+  return (llmContext.busy ? `<p role="status">${step} <button data-action="llm-stop">取消读取</button></p>`
+    : state.encounterContext ? `<p class="sub">${esc(llmContextSummary(state.encounterContext))}</p>` : '') + status;
 }
 function renderBattleExit(b: SmallBattle | MassBattle): string {
   const archived = state.committedOutcomeIds.includes(battleIdOf(b)), deleted=state.deletedReportIds?.includes(battleIdOf(b));
@@ -1151,7 +1227,7 @@ function renderEmbeddedWorldbookSettings(): string {
 }
 function renderWorkspaceSettings(): string {
   const saved = viewSave(), view = llmSettingsView();
-  return `${mcpBridge?.render() ?? ''}${renderLlmSettings(view.settings, view.error ?? llmDiagnostic)}${renderEmbeddedWorldbookSettings()}${promptScopeControls(saved.promptSettings, narrativeProjectionDetails(saved, adapter.recentPromptText?.() ?? ''), (saved.storage ?? []).filter(visibleUnitRecord))}${renderPromptSettings(saved.promptSettings, promptDrafts)}<section><h2>显示与操作</h2><button data-action="theme-toggle">切换深浅主题</button></section>
+  return `${mcpBridge?.render() ?? ''}${renderLlmSettings(view.settings, view.error ?? llmDiagnostic, llmWorldbookPicker.render(view.settings))}${renderEmbeddedWorldbookSettings()}${promptScopeControls(saved.promptSettings, narrativeProjectionDetails(saved, adapter.recentPromptText?.() ?? ''), (saved.storage ?? []).filter(visibleUnitRecord))}${renderPromptSettings(saved.promptSettings, promptDrafts)}<section><h2>显示与操作</h2><button data-action="theme-toggle">切换深浅主题</button></section>
     <section><h2>保存与恢复</h2><p>${state.saveReceipt?.status === 'local-only' ? '目前仅确认本地副本，酒馆尚未确认保存。' : '单位档案和战报随当前聊天保存。保存失败时会在顶部显示。'}</p><button data-action="save-retry">重试保存</button>${controller.migrationReview() ? '' : renderMigrationReview()}</section>
     <details class="workspace-diagnostics"><summary>运行信息</summary><p>战斗结果由本设备计算。伤害、命中和状态的详细过程可在战报中查看。</p><p>${controller.capabilities.injection ? '已支持在续写剧情时参考当前战斗进度。' : '当前酒馆暂不支持自动提供剧情参考。'}</p></details>`;
 }
@@ -2336,8 +2412,9 @@ async function handleAction(e: Event): Promise<void> {
   const el = (e.target as HTMLElement).closest('[data-action]') as HTMLElement | null;
   if (!el) return;
   const act = el.dataset.action!;
-  if (act === 'llm-stop') { llmContext.cancel(); toast('已取消上下文读取'); render('battle'); return; }
-  if (['llm-models','llm-settings-backup','llm-settings-reset','llm-settings-clear'].includes(act)) { try { await actions[act]!(el); } catch (error) { toast(String(error)); } return; }
+  if (act === 'llm-notes' || act === 'llm-notes-close') { llmNotesBattle = act === 'llm-notes' && currentBattle() ? battleIdOf(currentBattle()!) : undefined; render('view'); return; }
+  if (act === 'llm-stop' || act === 'llm-command-stop') { stopAutomation(); toast('已取消模型请求'); render('battle'); return; }
+  if (['llm-models','llm-worldbooks-refresh','llm-settings-backup','llm-settings-reset','llm-settings-clear'].includes(act)) { try { await actions[act]!(el); } catch (error) { toast(String(error)); } return; }
   // Navigation never joins the durable-write queue or alters its failure flag.
   if (act === 'workspace-tab') {
     const tab = el.dataset.tab;
@@ -2539,6 +2616,7 @@ async function executePanelAction(act: string, task: () => void | Promise<void>)
     if (controller.migrationReview() && !act.startsWith('migration-') && !['log-detail', 'unit-detail', 'units-toggle', 'sec-toggle', 'modal-stop'].includes(act)) throw new Error('先核对迁移预览；预览期间不会改写原档或推进战斗');
     await task();
     if (!valid()) return;
+    if (state.small) prefetchCommandIntents(state.small);
     if (battleSaveFailed) { const receipt = state.saveReceipt; restore(); state.saveReceipt = receipt; render(); return; }
     if (state.small?.battlefield && (['grid-endturn', 'grid-mobile-endturn', 'grid-auto', 'small-start', 'mass-start'].includes(act)
       || smallActorBlocked(state.small))) {
@@ -2816,14 +2894,20 @@ async function resolveMassRound(expectedRound: number, expectedSeed?: string): P
     if (b.rules.resolutionVersion === 'v2') {
       const snapshot = structuredClone(b.toSnapshot()), drafts = structuredClone(state.orderDraft), valid = battleStepGuard(b);
       try {
+        const settings = llmSettingsView().settings, commandState = state.encounterContext?.llmCommanders?.enemy, settingsKey = JSON.stringify(settings), llmCommander = llmCommanders.enemy;
+        const command = llmCommander.available(b, settings, commandState)
+          ? await llmCommander.mass(b, commandState!, settings, () => valid() && JSON.stringify(readLlmSettings()) === settingsKey) : undefined;
+        if (!valid()) return;
         const result = b.rng instanceof SeededRng ? await battleWorker.run({ kind: 'mass', snap: snapshot, rules: b.rules,
           traits: b.traitRegistry, conditions: b.conditions.all(), summons: !!b.summonUnit,
-          drafts, automatic: massAutoCommand(), expectedRound }) : undefined;
+          drafts, automatic: massAutoCommand(), expectedRound, enemyOrders: command?.orders }) : undefined;
         if (!valid()) return;
         clearBattleQueries();
-        if (result) applyBattleStep(b, result); else executeMassPlan(b, drafts, massAutoCommand(), expectedRound);
+        if (result) applyBattleStep(b, result); else executeMassPlan(b, drafts, massAutoCommand(), expectedRound, command?.orders);
+        if (command) state.encounterContext!.llmCommanders!.enemy = command.commandState;
         state.orderDraft = {};
       } catch (error) {
+        if (error instanceof CommandCancelled) return;
         if (!valid()) return;
         state.mass = MassBattle.fromSnapshot(snapshot, { traitRegistry: reg, summonUnit }); state.orderDraft = drafts;
         throw error;
@@ -2922,6 +3006,7 @@ async function startSmallBattle(context?:LlmEncounterContext, preparedField?: Re
     const before=captureBattleArchive({...controller.snapshot(),storage:state.storage,inventory:state.inventory,rosterIds:state.roster.map(u=>u.id),protagonistId:state.protagonistId,commanderId:state.commanderId,encounterIds:[...state.encounterIds],lastBattleUnitIds:state.lastBattleUnitIds});
     const small = buildEncounter({ roster: state.roster, setup: { ...playerPreparationInputs().setup, mode: 'small' }, context, seed,
       protagonistId: state.protagonistId, commanderId: state.commanderId, nonLethal: state.nonLethal, registry: reg, summonUnit, preparedField }) as SmallBattle;
+    context = await prepareLlmCommanders(small, context);
     state.activeBattleStart=captureBattleStart(small,before);state.selectedReportId=undefined;
     state.small = small;
     state.mass = null;
@@ -2936,6 +3021,7 @@ async function startMassBattle(context?:LlmEncounterContext):Promise<void> {
     const before=captureBattleArchive({...controller.snapshot(),storage:state.storage,inventory:state.inventory,rosterIds:state.roster.map(u=>u.id),protagonistId:state.protagonistId,commanderId:state.commanderId,encounterIds:[...state.encounterIds],lastBattleUnitIds:state.lastBattleUnitIds});
     const mass = buildEncounter({ roster: state.roster, setup: { ...playerPreparationInputs().setup, mode: 'mass' }, context, seed: randomSeed(),
       protagonistId: state.protagonistId, commanderId: state.commanderId, nonLethal: state.nonLethal, registry: reg, summonUnit }) as MassBattle;
+    context = await prepareLlmCommanders(mass, context);
     state.activeBattleStart=captureBattleStart(mass,before);state.selectedReportId=undefined;
     state.mass = mass;
     state.small = null;
@@ -2944,7 +3030,33 @@ async function startMassBattle(context?:LlmEncounterContext):Promise<void> {
     (await persist());
 }
 
+async function prepareLlmCommanders(battle: SmallBattle | MassBattle, context?: LlmEncounterContext,
+  preparation?: { setup: EncounterSetup; roster: Combatant[] }): Promise<LlmEncounterContext | undefined> {
+  const settings = llmSettingsView().settings;
+  if (!settings.enabled || !settings.commandEnemy || battle.rules.resolutionVersion !== 'v2') return context;
+  const identity = adapter.identity(), namespace = adapter.namespace(), generation = controller.inventoryContext(),
+    fingerprint = preparationFingerprint(), settingsKey = JSON.stringify(settings), messagesKey = JSON.stringify(recentContextMessages());
+  const valid = () => !currentBattle() && identity === adapter.identity() && namespace === adapter.namespace()
+    && generation === controller.inventoryContext() && fingerprint === preparationFingerprint()
+    && JSON.stringify(readLlmSettings()) === settingsKey && messagesKey === JSON.stringify(recentContextMessages()) && (!runtime.canWrite || runtime.canWrite());
+  const narrative = recentContextMessages().slice(-settings.windowSize).map(m => ({ role: m.role, text: stripThinking(m.text).slice(-6000) }));
+  const setup = preparation?.setup ?? playerPreparationInputs().setup, roster = preparation?.roster ?? state.roster;
+  const commands: NonNullable<LlmEncounterContext['llmCommanders']> = {};
+  for (const side of ['enemy', 'neutral'] as const) {
+    if (!battle.combatants.some(u => u.side === side && u.hp > 0 && u.status === 'ready')) continue;
+    const command = await llmCommanders[side].prepare(battle, narrative, { objectiveMode: context?.objectiveMode ?? setup.objectiveMode,
+      field: context?.field ?? setup.field, commander: context?.commanders?.[side] }, settings, valid);
+    if (!valid()) throw Error('准备信息已变化，尚未开战');
+    if (command) commands[side] = command;
+  }
+  if (!Object.keys(commands).length) return context;
+  const base = context ?? encounterRequest({ roster, setup: { ...setup, mode: battle instanceof SmallBattle ? 'small' : 'mass' },
+    settings: { ...normalizeContextSettings(), enemy: 'manual', scene: 'manual' }, messages: [], windowSize: 0, roles: [], phase: 'preparation' }).base;
+  return { ...base, llmCommanders: commands };
+}
+
 const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
+  'llm-worldbooks-refresh': () => llmWorldbookPicker.refresh(),
   'storage-recover': async el => { await recoverPlayerUnits([el.dataset.id!], false); toast('战后恢复已保存，可再次加入参战队伍'); },
   'player-preparation-apply': () => applyPlayerPreparation({
     ...(playerPreparation.commanders.trim() ? { commanders: JSON.parse(playerPreparation.commanders) } : {}),
@@ -2976,8 +3088,8 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     const url = URL.createObjectURL(new Blob([llmSettingsBackup()], { type: 'application/json' }));
     const link = document.createElement('a'); link.href = url; link.download = 'battle-model-settings-backup.json'; link.click(); URL.revokeObjectURL(url);
   },
-  'llm-settings-reset': () => { resetLlmSettings(true); llmContext.cancel(); llmDiagnostic = '已重置选项，保留原连接'; render('view'); },
-  'llm-settings-clear': () => { resetLlmSettings(false); llmContext.cancel(); llmDiagnostic = '已清空副API配置和Key，使用手动配置'; render('view'); },
+  'llm-settings-reset': () => { resetLlmSettings(true); stopAutomation(); llmDiagnostic = '已重置选项，保留原连接'; render('view'); },
+  'llm-settings-clear': () => { resetLlmSettings(false); stopAutomation(); llmDiagnostic = '已清空副API配置和Key，使用手动配置'; render('view'); },
   'out-delta': async () => { const batch = makeNarrativeBatch(currentBattle() ?? undefined, reportForOutput(), state.reportDeliveries, 'delta'); void (await sendToAi(batch.text, '新增战况', undefined, batch)); },
   'out-epilogue': async () => { const batch = makeNarrativeBatch(currentBattle() ?? undefined, reportForOutput(), state.reportDeliveries, 'epilogue',state.activeBattleStart); void (await sendToAi(batch.text, '战斗终章', undefined, batch)); },
   'delivery-review': (el) => { finishNarrativeDelivery(state.reportDeliveries, {battleId:el.dataset.battle!,key:el.dataset.key!}, {status:el.dataset.result === 'sent' ? 'sent' : 'failed',detail:'玩家核对聊天后确认'}); },
@@ -3709,7 +3821,7 @@ async function afterSmallAction(endTurn = true): Promise<void> {
 document.addEventListener('click', e => {
   const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
   if (!action) return;
-  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'modal-stop', 'llm-stop', 'llm-models', 'ai-scan', 'ai-scan-confirm', 'ai-scan-cancel', 'narrative-error', 'narrative-recognized'].includes(action) || action.startsWith('worldbook-')) { void handleAction(e); return; }
+  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'modal-stop', 'llm-stop', 'llm-command-stop', 'llm-notes', 'llm-notes-close', 'llm-models', 'ai-scan', 'ai-scan-confirm', 'ai-scan-cancel', 'narrative-error', 'narrative-recognized'].includes(action) || action.startsWith('worldbook-')) { void handleAction(e); return; }
   if (MAP_INSPECTION.includes(action)) {
     if (uiBusy) { toast('正在保存上一项操作，请稍候…'); return; }
     try { inspectBattleMap((e.target as HTMLElement).closest<HTMLElement>('[data-action]')!); }
@@ -3734,6 +3846,22 @@ document.addEventListener('pointerup', () => { cameraPointer=undefined; }, {pass
 document.addEventListener('wheel', event => { if (event.target instanceof Element && event.target.closest('[data-workspace="battle"]')) battleCamera.browse(); }, {passive:true});
 document.addEventListener('input', e => {
   const el=e.target;
+  if (el instanceof HTMLTextAreaElement && el.dataset.role === 'llm-command-params') {
+    const status = el.closest('details')?.querySelector('[data-role="llm-command-params-status"]');
+    stopAutomation();
+    try {
+      const warnings = commandParameterWarnings(parseCommandParameters(el.value));
+      const settings = readLlmSettings();
+      if (settings.commandThinking === 'off') settings.commandThinkingOffParams = el.value;
+      else return;
+      saveLlmSettings(settings); el.setCustomValidity(''); llmDiagnostic = '已保存';
+      if (status) status.textContent = ['已保存当前模式的思考参数', ...warnings].join('；');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '保存失败';
+      el.setCustomValidity(message); if (status) status.textContent = '未保存：' + message;
+    }
+    return;
+  }
   if (!(el instanceof HTMLInputElement) || !['llm-url','llm-token','llm-model','llm-window'].includes(el.dataset.role ?? '')) return;
   try {
     const settings=readLlmSettings();
@@ -3743,7 +3871,7 @@ document.addEventListener('input', e => {
     } else if(el.dataset.role==='llm-url') settings.url=el.value;
     else if(el.dataset.role==='llm-token') settings.token=el.value;
     else settings.model=el.value;
-    saveLlmSettings(settings); llmContext.cancel(); llmDiagnostic='已保存';
+    saveLlmSettings(settings); stopAutomation(); llmDiagnostic='已保存';
   } catch(error) { toast(error instanceof Error ? error.message : '保存失败'); }
 });
 document.addEventListener('input', (e) => {
@@ -3939,26 +4067,39 @@ document.addEventListener('change', e => {
     catch (error) { toast(error instanceof Error ? error.message : '世界书设置保存失败'); }
     return;
   }
-  if (e.target instanceof HTMLInputElement && ['llm-battle-scale', 'llm-map-design', 'llm-vip'].includes(e.target.dataset.role ?? '')) {
+  if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'llm-worldbook') {
+    if (e.target.value) void llmWorldbookPicker.choose(e.target.value);
+    return;
+  }
+  if (e.target instanceof HTMLInputElement && ['llm-worldbook-all', 'llm-worldbook-entry'].includes(e.target.dataset.role ?? '')) {
+    try {
+      const settings = readLlmSettings();
+      settings.worldbooks = llmWorldbookPicker.update(settings.worldbooks ?? [], e.target.dataset.role === 'llm-worldbook-all' ? undefined : e.target.dataset.id, e.target.checked);
+      saveLlmSettings(settings); stopAutomation(); llmDiagnostic = '已保存'; render('view');
+    } catch (error) { toast(error instanceof Error ? error.message : '世界书选择保存失败'); }
+    return;
+  }
+  if (e.target instanceof HTMLInputElement && ['llm-enemy-command', 'llm-map-design', 'llm-vip'].includes(e.target.dataset.role ?? '')) {
     try {
       const settings = readLlmSettings();
       if (e.target.dataset.role === 'llm-map-design') settings.designMap = e.target.checked;
       else if (e.target.dataset.role === 'llm-vip') settings.selectVip = e.target.checked;
-      else settings.selectBattleScale = e.target.checked;
-      saveLlmSettings(settings); llmContext.cancel(); llmDiagnostic = '已保存'; render('view');
+      else settings.commandEnemy = e.target.checked;
+      saveLlmSettings(settings); stopAutomation(); llmDiagnostic = '已保存'; render('view');
     } catch (error) { toast(error instanceof Error ? error.message : '保存失败'); }
     return;
   }
-  if (e.target instanceof HTMLSelectElement && ['llm-mode', 'llm-model-list'].includes(e.target.dataset.role ?? '')) {
+  if (e.target instanceof HTMLSelectElement && ['llm-mode', 'llm-model-list', 'llm-command-thinking'].includes(e.target.dataset.role ?? '')) {
     try {
       const settings = readLlmSettings();
       if (e.target.dataset.role === 'llm-mode') settings.enabled = e.target.value === 'llm';
+      else if (e.target.dataset.role === 'llm-command-thinking') settings.commandThinking = e.target.value === 'off' ? 'off' : 'auto';
       else settings.model = e.target.value;
-      saveLlmSettings(settings); llmContext.cancel(); llmDiagnostic = '已保存'; render('view');
+      saveLlmSettings(settings); stopAutomation(); llmDiagnostic = '已保存'; render('view');
     } catch (error) { toast(error instanceof Error ? error.message : '保存失败'); }
     return;
   }
-  if (e.target instanceof HTMLInputElement && e.target.dataset.role?.startsWith('llm-')) return;
+  if ((e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) && e.target.dataset.role?.startsWith('llm-')) return;
 
   if (e.target instanceof HTMLInputElement && e.target.dataset.role === 'full-auto-battle' && !e.target.checked) {
     stopAutomation(); render('battle'); return;
@@ -4058,12 +4199,13 @@ function prepareMcpEncounter(args: Record<string, unknown>): McpPrepared {
 async function startMcpPrepared(plan: McpPrepared): Promise<void> {
   if (currentBattle() || plan.fingerprint !== preparationFingerprint()) throw Error('预览已过期：队伍、任务或档案已变化，请重新 battle_plan');
   const before = captureBattleArchive({ ...controller.snapshot(), storage: state.storage, inventory: state.inventory, rosterIds: state.roster.map(u => u.id), protagonistId: state.protagonistId, commanderId: state.commanderId, encounterIds: [...state.encounterIds], lastBattleUnitIds: state.lastBattleUnitIds });
+  const context = await prepareLlmCommanders(plan.battle, plan.context, { setup: plan.setup, roster: plan.roster });
   Object.assign(state, plan.setup); state.storage = plan.records; state.roster = plan.roster;
   state.protagonistId = plan.protagonistId; state.commanderId = plan.commanderId;
   state.small = plan.battle instanceof SmallBattle ? plan.battle : null;
   state.mass = plan.battle instanceof MassBattle ? plan.battle : null;
   state.activeBattleStart = captureBattleStart(plan.battle, before); state.selectedReportId = undefined;
-  state.encounterContext = plan.context; state.xpSettled = false; state.smallTarget = ''; state.orderDraft = {};
+  state.encounterContext = context; state.xpSettled = false; state.smallTarget = ''; state.orderDraft = {};
   tacticalView.selectedId = state.small?.active?.id; tacticalView.cell = undefined;
   mcpPrepared = undefined; playerPreparation.clear();
   if (!(await persist())) throw Error(state.saveReceipt?.error ?? '开战保存尚未确认');

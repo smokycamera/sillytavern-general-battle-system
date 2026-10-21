@@ -48,7 +48,7 @@ export function formationChoices(b: MassBattle, host: Combatant, cache?: Formati
   return cache ? cache.getChoices(b, host) : buildFormationChoices(b, host);
 }
 function buildFormationChoices(b: MassBattle, host: Combatant, cache?: FormationQueryCache): FormationChoice[] {
-  const visible = b.visibleCombatants('ally');
+  const visible = b.visibleCombatants(host.side);
   const enemies = visible.filter((u) => u.side !== host.side && ['ready', 'routing', 'dying'].includes(u.status) && !b.isAttached(u.id));
   const make = (order: Order, label: string, targets: (Combatant | undefined)[]): FormationChoice => {
     const entries = targets.map((target) => { const intent = { ...order, targetId: target?.id }; return { id: target?.id, order: intent, preview: cache ? cache.preview(b, intent) : b.orderPreview(intent) }; });

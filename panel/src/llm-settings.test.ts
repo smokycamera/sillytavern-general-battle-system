@@ -1,23 +1,41 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readLlmSettings,saveLlmSettings,llmConnection,LLM_SETTINGS_KEY,llmSettingsView } from './llm-settings.js';
+import { readLlmSettings,saveLlmSettings,llmConnection,LLM_SETTINGS_KEY,llmSettingsView,commandRequestOptions,parseCommandParameters,commandParameterWarnings } from './llm-settings.js';
 import { renderLlmSettings } from './llm-settings-view.js';
 afterEach(()=>vi.unstubAllGlobals());
 function storage(){const data=new Map<string,string>();vi.stubGlobal('localStorage',{getItem:(k:string)=>data.get(k)??null,setItem:(k:string,v:string)=>data.set(k,v)});vi.stubGlobal('sessionStorage',{getItem:()=>null});return data;}
 describe('global ordinary LLM settings',()=>{
+  it('leaves vendor thinking untouched by default and saves editable nonthinking parameters',()=>{
+    storage(); const settings=readLlmSettings();
+    expect(commandRequestOptions(settings)).toEqual({});
+    expect(renderLlmSettings(settings)).not.toContain('llm-command-params"');
+    expect(commandRequestOptions({...settings,commandThinking:'off'})).toEqual({thinking:{type:'disabled'}});
+    saveLlmSettings({...settings,commandThinking:'off',commandThinkingOffParams:'{"reasoning_effort":"none"}'});
+    const loaded=readLlmSettings();
+    expect(commandRequestOptions(loaded)).toEqual({reasoning_effort:'none'});
+    expect(commandRequestOptions({...loaded,commandThinking:'auto'})).toEqual({});
+    expect(commandRequestOptions({...loaded,commandThinkingOffParams:'{}'})).toEqual({});
+    const vendor={thinking:{type:'disabled'},reasoning_effort:'high',vendor_strength:7};
+    expect(commandRequestOptions({...loaded,commandThinkingOffParams:JSON.stringify(vendor)})).toEqual(vendor);
+    expect(commandParameterWarnings(vendor)).toEqual([expect.stringContaining('vendor_strength')]);
+    expect(commandParameterWarnings({reasoning_effort:'high'})).toEqual([]);
+    expect(renderLlmSettings(loaded)).toContain('<details><summary>高级兼容设置</summary>');
+    for(const text of ['broken','null','[]','{"messages":[]}','{"model":"other"}','{"stream":true}','{"tools":[]}']) expect(()=>parseCommandParameters(text)).toThrow();
+  });
   it('round trips credentials and model list without using a chat/card key or legacy route',()=>{
     const data=storage(),s={...readLlmSettings(),url:'https://gateway.example/v1',token:'test-key',model:'chosen',models:['chosen','other'],enabled:true,selectBattleScale:false,windowSize:18};
     saveLlmSettings(s);expect(readLlmSettings()).toEqual(s);expect([...data.keys()]).toEqual([LLM_SETTINGS_KEY]);
     expect(llmConnection(s)).toEqual({url:s.url,token:s.token,model:s.model,protocol:'openai',transport:'auto'});
     const html=renderLlmSettings(s);expect(html).toContain('<option value="jev" disabled>JEV 指挥（暂不可用）</option>');expect(html).not.toMatch(/data-role="jev-|转发地址|连接途径/);
   });
-  it('defaults scale selection off and disables the control outside LLM mode',()=>{
+  it('hides scale selection, ignores the old scale preference and defaults enemy command off',()=>{
     const data=storage();
     expect(readLlmSettings().selectBattleScale).toBe(false);
-    data.set(LLM_SETTINGS_KEY,JSON.stringify({enabled:true,model:'previous-model'}));
+    data.set(LLM_SETTINGS_KEY,JSON.stringify({enabled:true,model:'previous-model',selectBattleScale:true}));
     const settings=readLlmSettings();
-    expect(settings).toMatchObject({selectBattleScale:false,model:'previous-model'});
-    expect(renderLlmSettings(settings)).not.toMatch(/data-role="llm-battle-scale"[^>]*checked/);
-    expect(renderLlmSettings({...settings,enabled:false})).toMatch(/data-role="llm-battle-scale"[^>]*disabled/);
+    expect(settings).toMatchObject({selectBattleScale:false,commandEnemy:false,model:'previous-model'});
+    expect(renderLlmSettings(settings)).not.toContain('llm-battle-scale');
+    expect(renderLlmSettings({...settings,enabled:false})).toMatch(/data-role="llm-enemy-command"[^>]*disabled/);
+    saveLlmSettings({...settings,commandEnemy:true});expect(readLlmSettings().commandEnemy).toBe(true);
   });
   it('migrates a legacy OpenAI connection once while retaining the original and ignoring a stale relay',()=>{
     const data=storage();for(const[k,v]of Object.entries({protocol:'openai',url:'https://gateway.example/v1',token:'old-key',model:'old-model','relay-url':'http://127.0.0.1:4318'}))data.set('tb:jev:'+k,v);

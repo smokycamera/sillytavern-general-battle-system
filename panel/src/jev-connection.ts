@@ -13,6 +13,14 @@ export interface JevConnection {
   model?: string;
   transport?: JevTransport;
   relayUrl?: string;
+  contextMessages?: (signal: AbortSignal) => Promise<{ role: 'user'; content: string }[]>;
+}
+async function requestMessages<T extends { role: string }>(connection: JevConnection, messages: T[], signal: AbortSignal): Promise<(T | { role: 'user'; content: string })[]> {
+  if (!connection.contextMessages) return messages;
+  const extra = await connection.contextMessages(signal);
+  const firstUser = messages.findIndex(m => m.role === 'user');
+  const after = firstUser < 0 ? messages.length : firstUser + 1;
+  return [...messages.slice(0, after), ...extra, ...messages.slice(after)];
 }
 export function connectionUrl(value: string): string {
   const url = new URL(value.trim());
@@ -165,7 +173,7 @@ export async function openAiTextRequest(connection: JevConnection, messages: { r
   if (connection.protocol !== 'openai' || !connection.model?.trim()) throw new JevConnectionError('请先配置副 API 并选择模型');
   const response = await jevJsonRequest(connection, request, apiEndpoint(connection, 'chat/completions'), {
     method: 'POST', headers: headers(connection), signal,
-    body: JSON.stringify({ model: connection.model.trim(), stream: false, messages }),
+    body: JSON.stringify({ model: connection.model.trim(), stream: false, messages: await requestMessages(connection, messages, signal) }),
   });
   const text = completionText(response?.choices?.[0]?.message?.content);
   if (!text?.trim() || text.length > 100000) throw new JevConnectionError('模型没有返回有效的事件文本');
@@ -192,15 +200,19 @@ function parseOpenAiDecision(content: unknown, label: string): Record<string, an
   if (!answer || typeof answer !== 'object' || Array.isArray(answer)) throw new JevConnectionError(`模型返回无效${label}`);
   return answer;
 }
+/** Keep only the model's answer for correction, never the HTTP request or credentials. */
+export class JevAnswerError extends JevConnectionError {
+  constructor(message: string, readonly previousAnswer: unknown) { super(message); }
+}
 /**
  * One read-only JSON decision over OpenAI chat completions. Callers that send several steps keep the same leading
  * messages so providers with automatic prefix caching can reuse them; the answer is parsed with the same tolerance.
  * `label` names the answer in parse errors, so a failed layout step does not read as a failed decision.
  */
-export async function openAiJsonRequest(connection: JevConnection, messages: { role: 'system' | 'user'; content: string }[], signal: AbortSignal, request: typeof fetch, label = '决策'): Promise<Record<string, any>> {
+export async function openAiJsonRequest(connection: JevConnection, messages: { role: 'system' | 'user'; content: string }[], signal: AbortSignal, request: typeof fetch, label = '决策', options: Record<string, unknown> = {}): Promise<Record<string, any>> {
   const model = connection.model?.trim();
   if (connection.protocol !== 'openai' || !model) throw new JevConnectionError('请先配置副 API 并选择模型');
-  const payload = { model, stream: false, response_format: { type: 'json_object' }, messages };
+  const payload = { ...options, model, stream: false, response_format: { type: 'json_object' }, messages: await requestMessages(connection, messages, signal) };
   const send = (requestBody: Record<string, unknown>) => jevJsonRequest(connection, request, apiEndpoint(connection, 'chat/completions'), {
     method: 'POST', headers: headers(connection), signal, body: JSON.stringify(requestBody),
   });
@@ -213,8 +225,42 @@ export async function openAiJsonRequest(connection: JevConnection, messages: { r
     const { response_format: _responseFormat, ...compatPayload } = payload;
     response = await send(compatPayload);
   }
-  const answer = parseOpenAiDecision(response?.choices?.[0]?.message?.content, label);
+  let answer: Record<string, any>;
+  try { answer = parseOpenAiDecision(response?.choices?.[0]?.message?.content, label); }
+  catch (error) { throw new JevAnswerError(error instanceof Error ? error.message : 'JSON格式无效', completionText(response?.choices?.[0]?.message?.content)); }
   return { ...answer, model: typeof response.model === 'string' ? response.model : model };
+}
+
+export interface CommandTool { type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }
+export interface CommandToolCall { id: string; type: 'function'; function: { name: string; arguments: string }; extra_content?: Record<string, unknown> }
+export interface CommandMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool'; content: string | null;
+  tool_calls?: CommandToolCall[]; tool_call_id?: string; reasoning_content?: string; extra_content?: Record<string, unknown>;
+}
+/** Provider signatures are needed only while continuing an activation's tool conversation. */
+function commandExtraContent(value: unknown): { extra_content?: Record<string, unknown> } {
+  return value && typeof value === 'object' && !Array.isArray(value) ? { extra_content: value as Record<string, unknown> } : {};
+}
+/** Native function calling, using exactly the same credential and host transport as preparation. */
+export async function openAiCommandRequest(connection: JevConnection, messages: CommandMessage[], commandTools: CommandTool[], signal: AbortSignal, request: typeof fetch, options: Record<string, unknown> = {}): Promise<CommandMessage> {
+  if (connection.protocol !== 'openai' || !connection.model?.trim()) throw new JevConnectionError('请先配置副 API 并选择模型');
+  const response = await jevJsonRequest(connection, request, apiEndpoint(connection, 'chat/completions'), {
+    method: 'POST', headers: headers(connection), signal,
+    body: JSON.stringify({ ...options, model: connection.model.trim(), stream: false, messages: await requestMessages(connection, messages, signal), tools: commandTools, tool_choice: 'auto' }),
+  });
+  const message = response?.choices?.[0]?.message;
+  const calls = message?.tool_calls;
+  if (Array.isArray(calls) && calls.length > 0 && calls.length <= 6 && calls.every(c => c?.type === 'function'
+    && typeof c.id === 'string' && typeof c.function?.name === 'string' && typeof c.function?.arguments === 'string' && c.function.arguments.length <= 20000)) {
+    return { role: 'assistant', content: completionText(message.content) ?? null,
+      tool_calls: calls.map(c => ({ id: c.id, type: 'function', function: { name: c.function.name, arguments: c.function.arguments }, ...commandExtraContent(c.extra_content) })),
+      ...commandExtraContent(message.extra_content),
+      ...(typeof message.reasoning_content === 'string' ? { reasoning_content: message.reasoning_content } : {}) };
+  }
+  let answer: Record<string, any>;
+  try { answer = parseOpenAiDecision(message?.content, '指挥'); }
+  catch (error) { throw new JevAnswerError(error instanceof Error ? error.message : '指挥JSON格式无效', { content: completionText(message?.content), ...(Array.isArray(calls) ? { tool_calls: calls } : {}) }); }
+  return { role: 'assistant', content: JSON.stringify({ choice: answer.choice, then: answer.then, orders: answer.orders, intents: answer.intents }), ...commandExtraContent(message?.extra_content), ...(typeof message?.reasoning_content === 'string' ? { reasoning_content: message.reasoning_content } : {}) };
 }
 /** Adapt the host's bounded decisions without changing the vendored command core. */
 export async function directJevRequest(connection: JevConnection, path: string, body: unknown, signal: AbortSignal, request: typeof fetch): Promise<unknown> {

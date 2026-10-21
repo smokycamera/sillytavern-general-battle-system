@@ -1,0 +1,115 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import { generateUnit, SmallBattle, standardField, V24_OVERFLOW_D20, MassBattle, V24_OVERFLOW_TW, createStructure } from '../../engine/src/index.js';
+import { LlmCommandController, commandObservation, commanderTool, emptyCommandMemory, type CommanderState } from './llm-command.js';
+import { COMMAND_PROMPTS } from './llm-command-prompts.js';
+import { LlmIntentPlanner, intentForces } from './llm-intents.js';
+import { savedCommanderState } from './llm-save-context.js';
+import type { LlmSettings } from './llm-settings.js';
+afterEach(() => vi.useRealTimers());
+const settings: LlmSettings = { enabled: true, commandEnemy: true, selectBattleScale: false, designMap: false, windowSize: 6, model: 'fixture', url: 'https://example.invalid/v1', token: 'fixture', models: [] };
+function fixture() {
+  const field = standardField(7,13); field.tiles.fill('open'); field.layerVersion=1; field.structures=field.tiles.map(()=>null);
+  const combatants = ['ally','enemy','enemy','enemy','enemy','enemy'].map((side,i) => {
+    const u = generateUnit({ name: '队'+i, side: side as 'ally'|'enemy', scale: i === 1 ? 'hero' : 'company', hpMax: 40, rulesVersion: 'v2', level: 4, weaponClass: 'rifle', weaponLevel: 4, armorTier: 1, traits: [] }, { seed: 'planner'+i, noVariance: true }).unit;
+    u.id='u'+i; return u;
+  });
+  const b=new SmallBattle({combatants,battlefield:field,rules:V24_OVERFLOW_D20,seed:'planner'}); b.start(); combatants.forEach((u,i)=>u.pos=[78,14,15,16,21,22][i]);
+  b.turnOrder=['u2','u3','u1','u4','u5','u0'];b.turnIndex=0;
+  const state:CommanderState={battleSeed:b.seed,side:'enemy',brief:{name:'守备官',persona:'谨慎',known:[],mission:'保持阵地'},memory:emptyCommandMemory()};
+  return {b,state};
+}
+const reply=(args:unknown)=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(args)}}]}));
+const data=(init?:RequestInit)=>JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
+const holds=(init?:RequestInit)=>({intents:data(init).forces.map((u:any)=>({unitId:u.id,mode:'hold',cell:u.pos}))});
+function setup(request:typeof fetch) { const {b,state}=fixture(), c=new LlmCommandController(COMMAND_PROMPTS,()=>{},request), p=new LlmIntentPlanner(c,COMMAND_PROMPTS);return {b,state,c,p}; }
+it('T4 plans heroes and troops together, including a roster of at most three units', async()=>{
+  const request=vi.fn(async(_url,init)=>{const d=data(init);return reply(d.forces?holds(init):{choice:d.choices.find((c:any)=>c.action.type==='end_turn').id});}) as unknown as typeof fetch;
+  const {b,state,c,p}=setup(request);p.prefetch(b,state,settings,()=>true);await p.beforeHero();
+  await p.forUnit(b,state,settings,()=>true);b.turnIndex=1;await p.forUnit(b,state,settings,()=>true);b.turnIndex=2;await p.forUnit(b,state,settings,()=>true);
+  expect([Object.keys(state.memory.intents!.units).length,(request as any).mock.calls.length,intentForces(b,'enemy').heroes]).toEqual([5,1,[]]);
+  b.combatants.splice(3); b.turnOrder=['u1','u2','u0']; b.turnIndex=0;
+  delete state.memory.intents; p.prefetch(b,state,settings,()=>true); await p.beforeHero();
+  expect(Object.keys(state.memory.intents!.units)).toEqual(['u1','u2']);
+});
+it('T5 starts prefetch immediately and joins it without another request', async()=>{
+  let release!:(r:Response)=>void;let init:RequestInit|undefined;
+  const request=vi.fn((_url,body)=>{init=body;return new Promise<Response>(r=>{release=r;});}) as unknown as typeof fetch;
+  const {b,state,p}=setup(request);
+  state.memory.intents={round:b.round-1,replanned:false,basis:{visible:[],friends:[]},units:{u2:{mode:'withdraw',cell:0}}};
+  let settled=false;p.prefetch(b,state,settings,()=>true);const pending=p.forUnit(b,state,settings,()=>true).then(intent=>{settled=true;return intent;});
+  await vi.waitFor(()=>expect(release).toBeDefined());expect(settled).toBe(false);release(reply(holds(init)));const intent=await pending;
+  expect([(request as any).mock.calls.length,intent?.mode,intent?.cell,state.memory.intents.round]).toEqual([1,'hold',15,b.round]);
+});
+it('T6 replans once for a new opponent and never twice in a round', async()=>{
+  const request=vi.fn(async(_url,init)=>reply(holds(init))) as unknown as typeof fetch; const {b,state,p}=setup(request);
+  const visible=b.visibleCombatants.bind(b);let spotted=false;
+  vi.spyOn(b,'visibleCombatants').mockImplementation(side=>visible(side).filter(u=>u.side==='enemy'||spotted));
+  p.prefetch(b,state,settings,()=>true);await p.beforeHero();spotted=true;await p.forUnit(b,state,settings,()=>true);
+  b.byId('u5').status='dead';await p.forUnit(b,state,settings,()=>true);
+  expect([(request as any).mock.calls.length,state.memory.intents!.replanned]).toEqual([2,true]);
+});
+it('T7 retains valid entries, reports errors and ends after a second submission', async()=>{
+  const bodies:any[]=[];const request=vi.fn(async(_url,init)=>{bodies.push(JSON.parse(String(init?.body)));return reply({intents:[{unitId:'u2',mode:'hold',cell:15},{unitId:'foreign',mode:'attack',targetId:'hidden'}]});}) as unknown as typeof fetch;
+  const {b,state,p}=setup(request);p.prefetch(b,state,settings,()=>true);await p.beforeHero();b.turnIndex=1;
+  expect([bodies.length,JSON.parse(bodies[1].messages.at(-1).content).missing,await p.forUnit(b,state,settings,()=>true)]).toEqual([2,['u1','u3','u4','u5'],undefined]);
+  expect(bodies[1].messages.at(-2).content).toContain('foreign');
+  expect(JSON.parse(bodies[1].messages.at(-1).content).errors.length).toBeGreaterThan(0);
+});
+it('uses short fields and IDs, corrects malformed replies, and accepts exploration, gates and specified abilities', async()=>{
+  const {b,state}=fixture();
+  const renamed = new Map(b.combatants.map(u => [u.id, 'long-real-unit-identity-'+u.id]));
+  b.combatants.forEach(u => { u.id=renamed.get(u.id)!; }); b.turnOrder=b.turnOrder.map(id=>renamed.get(id)!);
+  const actor=b.byId(renamed.get('u2')!); actor.abilities.push({id:'long-real-ability-identity',name:'守护',target:'ally',range:{min:0,max:2,metric:'grid'},effects:[{op:'condition',conditionId:'blessed',dur:3}]}); actor.preparedAbilityIds=['long-real-ability-identity'];
+  b.battlefield!.structures![23]=createStructure('gate',3,{owner:'enemy',gateState:'closed'});
+  vi.spyOn(b,'visibleCells').mockImplementation(()=>b.battlefield!.tiles.map((_,i)=>i===23||b.combatants.some(u=>u.side==='enemy'&&u.pos===i)));
+  const bodies:any[]=[];let shortUnit='',shortSkill='';
+  const request=(async(_url,init)=>{
+    const body=JSON.parse(String(init?.body)); bodies.push(body); const d=JSON.parse(body.messages[1].content);
+    if(bodies.length===1) return new Response(JSON.stringify({choices:[{message:{content:'wrong-json-reply'}}]}));
+    if(bodies.length===2) {
+      shortUnit=d.forces[1].id; expect(shortUnit).toMatch(/^u\d+$/);
+      return new Response(JSON.stringify({choices:[{message:{content:null,tool_calls:[{id:'unit-query',type:'function',function:{name:'commander_unit',arguments:JSON.stringify({unitId:shortUnit})}}]}}]}));
+    }
+    const queried=JSON.parse(body.messages.at(-1).content); shortSkill=queried.abilities.find((a:any)=>a.name==='守护').id;
+    expect(shortSkill).toMatch(/^a\d+$/); expect(JSON.stringify(queried)).not.toContain('long-real-');
+    return reply({intents:[{unit:d.forces[0].id,mode:'hold',cell:d.forces[0].pos},{unit:shortUnit,mode:'use',skill:shortSkill,target:d.forces[0].id},
+      {unit:d.forces[2].id,mode:'open',cell:23},{unit:d.forces[3].id,mode:'close',cell:23},{unit:d.forces[4].id,mode:'advance',cell:90}]});
+  }) as typeof fetch;
+  const c=new LlmCommandController(COMMAND_PROMPTS,()=>{},request), p=new LlmIntentPlanner(c,COMMAND_PROMPTS);
+  p.prefetch(b,state,settings,()=>true); await p.beforeHero();
+  expect(bodies).toHaveLength(3); expect(bodies[1].messages.slice(0,2)).toEqual(bodies[0].messages);
+  const correction=JSON.parse(bodies[1].messages.at(-1).content); expect(correction.previousAnswer.content).toBe('wrong-json-reply'); expect(correction.retryErrors[0]).toMatch(/JSON/);
+  expect(state.memory.intents!.units[actor.id]).toEqual({mode:'use_ability',abilityId:'long-real-ability-identity',targetId:renamed.get('u1')});
+  expect(Object.values(state.memory.intents!.units).map(i=>i.mode)).toEqual(['hold','use_ability','open_gate','close_gate','advance']);
+  expect(state.memory.intents!.units[renamed.get('u5')!]!.cell).toBe(90);
+  expect(savedCommanderState(state)!.memory.intents).toEqual(state.memory.intents);
+});
+it('T8 falls back after three failures and discards cancelled late replies',async()=>{
+  vi.useFakeTimers();const request=vi.fn(async()=>new Response('{}',{status:503})) as unknown as typeof fetch;
+  const {b,state,c,p}=setup(request);p.prefetch(b,state,settings,()=>true);await vi.runAllTimersAsync();await p.beforeHero();
+  let release!:(r:Response)=>void;let init:RequestInit|undefined;
+  const late=setup(((_url,body)=>{init=body;return new Promise<Response>(r=>{release=r;});}) as typeof fetch);
+  late.p.prefetch(late.b,late.state,settings,()=>true);await vi.advanceTimersByTimeAsync(0);late.c.cancel();release(reply(holds(init)));await late.p.beforeHero();
+  expect([(request as any).mock.calls.length,c.available(b,settings,state),late.state.memory.intents]).toEqual([3,false,undefined]);
+});
+it('T9 persists only allowed intent fields through save/load',async()=>{
+  const {b,state,p}=setup(async(_url,init)=>reply(holds(init)));p.prefetch(b,state,settings,()=>true);await p.beforeHero();
+  (state.memory.intents as any).raw='provider-secret';(state.memory.intents!.units.u2 as any).reasoning='provider-secret';
+  const saved=savedCommanderState(state)!;const restored=savedCommanderState(JSON.parse(JSON.stringify(saved)))!;
+  expect([restored.memory.intents,JSON.stringify(restored).includes('provider-secret')]).toEqual([saved.memory.intents,false]);
+});
+it('T10 disperses shared cells in id and distance order',async()=>{
+  const {b,state,p}=setup(async()=>reply({intents:[{unitId:'u1',mode:'hold',cell:28},...['u4','u3','u2','u5'].map(unitId=>({unitId,mode:'hold',cell:15}))]}));p.prefetch(b,state,settings,()=>true);await p.beforeHero();
+  expect(['u2','u3','u4','u5'].map(id=>state.memory.intents!.units[id]!.cell)).toEqual([15,8,14,16]);
+});
+it('regression: preparation retries keep the original messages and include the rejected answer and problem',async()=>{
+  vi.useFakeTimers();const bodies:any[]=[];const {b,state}=fixture();
+  const c=new LlmCommandController(COMMAND_PROMPTS,()=>{},async(_url,init)=>{bodies.push(JSON.parse(String(init?.body)));return reply(bodies.length===1?{name:'缺少人设'}:state.brief);});
+  const pending=c.prepare(b,{story:'原消息'}, {objective:'守住'},settings,()=>true);await vi.runAllTimersAsync();await pending;
+  expect([bodies[1].messages.slice(0,2),JSON.parse(bodies[1].messages[2].content)]).toEqual([bodies[0].messages,{previousAnswer:{name:'缺少人设',model:'fixture'},retryErrors:['指挥官简报格式无效']}]);
+});
+it('regression: observations and tools omit command styles and abilities in small and mass battles',()=>{
+  const {b,state}=fixture();const m=new MassBattle({combatants:structuredClone(b.combatants.slice(0,3)),rules:V24_OVERFLOW_TW,seed:'mass'});m.start();
+  for(const battle of [b,m]) { battle.log.push({round:1,kind:'rule',text:'指挥：我方 大师·渗透'});battle.commanderProfiles.ally={ability:'master',style:'infiltration'}; }
+  expect([b,m].map(battle=>JSON.stringify({observation:commandObservation(battle),unit:commanderTool('commander_unit',{unitId:'u0'},battle,undefined,state),map:commanderTool('commander_map',{},battle,undefined,state)})).join('')).not.toMatch(/大师|渗透|infiltration|commanderProfiles/);
+});

@@ -6,6 +6,7 @@ import { sameChat } from '../../host/src/contracts.js';
 import { NativeMessages } from '../../host/src/messages.js';
 import type { BattleService } from '../../runtime/src/battle-service.js';
 import { preferences } from './preferences.js';
+import { createWorldbookSource } from '../../host/src/worldbooks.js';
 
 export interface NativeRuntime {
   service: BattleService;
@@ -67,6 +68,7 @@ export function createPanelRuntime(): PanelRuntime {
     recentPromptText: () => host.recentPromptText(), sendAsUser: (text, options) => messages.send(text, options),
   };
   return { adapter, controller, resident: true, native: true,
+    worldbooks: createWorldbookSource(() => host.context()),
     recentNarrative: () => {
       const count = host.context().chat?.length ?? 0;
       return Array.from({length: Math.min(count, 100)}, (_, i) => host.message(count - Math.min(count, 100) + i)).flatMap(m => m ? [{ id: m.messageId + ':' + m.swipeId, role: m.role, text: m.text, completed: m.complete }] : []);

@@ -1,11 +1,29 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiEndpoint, directJevRequest, fetchJevModels, jevJsonRequest, JEV_API_URL, readJevConnection, saveJevConnection, type JevConnection } from './jev-connection.js';
+import { apiEndpoint, directJevRequest, fetchJevModels, jevJsonRequest, openAiCommandRequest, JEV_API_URL, readJevConnection, saveJevConnection, type JevConnection } from './jev-connection.js';
 import { JevCommandController } from './jev-command.js';
 
 const connection: JevConnection = { protocol: 'typesafe', url: JEV_API_URL, token: 'test-key', model: 'jev-preview' };
 const response = (body: unknown) => new Response(JSON.stringify(body));
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 describe('protocol matching and backend HTTP diagnostics', () => {
+  it('passes chosen thinking parameters and preserves provider tool signatures only in the transient conversation', async () => {
+    const openai = { ...connection, protocol: 'openai' as const, url: 'https://gateway.example/v1', model: 'gemini-fixture' };
+    const signature = { google: { thought_signature: 'opaque-signature' } }, bodies: any[] = [];
+    const request: typeof fetch = async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return response({ choices: [{ message: { content: null, reasoning_content: 'transient-thinking', tool_calls: [
+        { id: 'query', type: 'function', function: { name: 'commander_map', arguments: '{}' }, extra_content: signature },
+      ] } }] });
+    };
+    const signal = new AbortController().signal;
+    const answer = await openAiCommandRequest(openai, [], [], signal, request, { reasoning_effort: 'low' });
+    expect(bodies[0].reasoning_effort).toBe('low'); expect(bodies[0]).not.toHaveProperty('thinking');
+    expect(answer.tool_calls?.[0]?.extra_content).toEqual(signature);
+    await openAiCommandRequest(openai, [answer, { role: 'tool', tool_call_id: 'query', content: '{}' }], [], signal, request);
+    expect(bodies[1]).not.toHaveProperty('reasoning_effort'); expect(bodies[1]).not.toHaveProperty('thinking');
+    expect(bodies[1].messages[0].reasoning_content).toBe('transient-thinking');
+    expect(bodies[1].messages[0].tool_calls[0].extra_content).toEqual(signature);
+  });
   it.each(['typesafe', 'openai'] as const)('continues to support third-party %s services regardless of model name', async protocol => {
     const c = { ...connection, url: 'https://gateway.example/custom/v2/models/', protocol, model: 'jev-latest' };
     const request = vi.fn<typeof fetch>(async () => response({ models: ['jev-latest'] }));

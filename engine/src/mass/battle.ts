@@ -104,6 +104,8 @@ export type OrderType =
   | 'rank-back';
 
 export interface Order {
+  /** External enemy commands remain authoritative during local automatic coordination. */
+  externalCommand?: true;
   haste?: boolean;
   /** 自动临时决策在下轮重评；玩家明确军令可以持续继承。 */
   automatic?: boolean;
@@ -1298,13 +1300,14 @@ export class MassBattle {
       for (const order of orders) if (attackTypes.includes(order.type) && order.targetId) { const p = preview(order); if (p) byTarget.set(order.targetId, [...(byTarget.get(order.targetId) ?? []), p]); }
       return [...byTarget].reduce((sum, [id, list]) => sum + killProbability(list, health(id)) * health(id) + Math.min(health(id), list.reduce((n, p) => n + p.expectedDamage, 0)), 0);
     };
-    const attacks = own().filter(o => attackTypes.includes(o.type) && o.targetId).map(order => ({ order, value: score(order) }))
+    const attacks = own().filter(o => !o.externalCommand && attackTypes.includes(o.type) && o.targetId).map(order => ({ order, value: score(order) }))
       .sort((a, b) => b.value - a.value || a.order.unitId.localeCompare(b.order.unitId)).slice(0, 10);
     for (const { order: a, value } of attacks) {
       const current = own(), before = total(current);
       let best: { after: number; orders: Order[] } | undefined;
       for (const host of this.readyUnits(side).filter(b => b.id !== a.unitId && !this.isAttached(b.id)).sort((x, y) => x.id.localeCompare(y.id))) {
         const old = this.orders.get(host.id);
+        if (old?.externalCommand) continue;
         if (old && attackTypes.includes(old.type) && old.targetId && score(old) >= value) continue;
         for (const y of foes.filter(t => t.id !== a.targetId).sort((p, q) => p.id.localeCompare(q.id))) {
           if (previews + 2 > budget) break;

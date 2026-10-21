@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.7.3**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **2.9.1**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-2.7.3 connects raised rooms and terrain through stairs when a gradual slope cannot fit, and helps healthy AI units break prolonged spear or overwatch standoffs. Command support range grows with the effective commander trait level in new V24 battles; saved battles retain their original range. See the [release guide](docs/current-release.md).
+2.9.1 brings heroes and small rosters onto the same faction-wide round intents as troops. After one requested skill or item, built-in AI can spend a legal extra action while respecting the assigned position and target. Advanced command parameters accept reasoning strength and pass unknown vendor fields through with a reminder. Settings now let you choose whole lorebooks or individual entries for secondary API requests. See the [current release](docs/current-release.md) and [round-intent results](docs/llm-round-intents-result-20261021.md).
 
 ## Documentation
 
