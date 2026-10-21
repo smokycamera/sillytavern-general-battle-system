@@ -2741,7 +2741,7 @@ export class MassBattle {
       commanderId: this.commanderId,
       commanderLost: this.commanderLost,
       forcedWinner: this.forcedWinner,
-      ...(this.diplomacy.offers.length ? { diplomacy: this.diplomacy } : {}),
+      ...(this.diplomacy.offers.length || this.diplomacy.letters?.length ? { diplomacy: this.diplomacy } : {}),
       routCounts: [...this.routCounts],
       fieldTags: this.fieldTags,
       reloadCd: [...this.reloadCd],

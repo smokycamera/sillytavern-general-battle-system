@@ -1,6 +1,9 @@
-import { checkDiplomacy, diplomacyOptions, fightingSides, incomingDiplomacy, type DiplomacyBattle, type DiplomacyDecision, type Side } from '../../engine/src/index.js';
+import { checkDiplomacy, diplomacyOptions, fightingSides, incomingDiplomacy, playerLetters, type DiplomacyBattle, type DiplomacyDecision, type Side } from '../../engine/src/index.js';
 
 export const diplomacySide = (side: Side, own: Side): string => side === own ? 'friendly' : 'opponent-' + (['ally', 'enemy', 'neutral'].filter(s => s !== own).indexOf(side) + 1);
+export function commandLetters(b: DiplomacyBattle, side: Side, after = 0) {
+  return playerLetters(b, side, after).map(({ id, round, from, text }) => ({ id, round, from: diplomacySide(from, side), text }));
+}
 /** Faction-level negotiation contains no hidden units, positions or unrelated private replies. */
 export function commandDiplomacy(b: DiplomacyBattle, side: Side) {
   const alias = (s: Side) => diplomacySide(s, side);

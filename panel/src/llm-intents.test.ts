@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { generateUnit, SmallBattle, standardField, V24_OVERFLOW_D20, MassBattle, V24_OVERFLOW_TW, createStructure } from '../../engine/src/index.js';
+import { generateUnit, SmallBattle, standardField, V24_OVERFLOW_D20, MassBattle, V24_OVERFLOW_TW, createStructure, sendPlayerLetter } from '../../engine/src/index.js';
 import { LlmCommandController, commandObservation, commanderTool, emptyCommandMemory, type CommanderState } from './llm-command.js';
 import { COMMAND_PROMPTS } from './llm-command-prompts.js';
 import { LlmIntentPlanner, intentForces } from './llm-intents.js';
@@ -22,6 +22,18 @@ const reply=(args:unknown)=>new Response(JSON.stringify({choices:[{message:{cont
 const data=(init?:RequestInit)=>JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
 const holds=(init?:RequestInit)=>({intents:data(init).forces.map((u:any)=>({unitId:u.id,mode:'hold',cell:u.pos}))});
 function setup(request:typeof fetch) { const {b,state}=fixture(), c=new LlmCommandController(COMMAND_PROMPTS,()=>{},request), p=new LlmIntentPlanner(c,COMMAND_PROMPTS);return {b,state,c,p}; }
+it('delivers letters at the recipients next activation, replaces a current-round plan once and preserves the read cursor after load',async()=>{
+  const bodies:any[]=[];const request:typeof fetch=async(_url,init)=>{bodies.push(data(init));return reply(holds(init));};
+  const {b,state,c,p}=setup(request);p.prefetch(b,state,settings,()=>true);await p.beforeHero();
+  b.turnIndex=5;sendPlayerLetter(b,['enemy'],'请重新考虑守桥计划。');c.receiveLetter(b,settings);
+  p.prefetch(b,state,settings,()=>true);await p.beforeHero();expect(bodies).toHaveLength(1);
+  b.turnIndex=0;await p.forUnit(b,state,settings,()=>true);
+  expect(bodies).toHaveLength(2);expect(bodies[1].letters).toEqual([{id:1,round:1,from:'opponent-1',text:'请重新考虑守桥计划。'}]);
+  expect(state.memory.letterId).toBe(1);b.turnIndex=1;await p.forUnit(b,state,settings,()=>true);expect(bodies).toHaveLength(2);
+  const loaded=SmallBattle.fromSnapshot(structuredClone(b.toSnapshot())), saved=savedCommanderState(state)!;
+  const restored=new LlmIntentPlanner(new LlmCommandController(COMMAND_PROMPTS,()=>{},request),COMMAND_PROMPTS);
+  await restored.forUnit(loaded,saved,settings,()=>true);expect(bodies).toHaveLength(2);
+});
 it('T4 plans heroes and troops together, including a roster of at most three units', async()=>{
   const request=vi.fn(async(_url,init)=>{const d=data(init);return reply(d.forces?holds(init):{choice:d.choices.find((c:any)=>c.action.type==='end_turn').id});}) as unknown as typeof fetch;
   const {b,state,c,p}=setup(request);p.prefetch(b,state,settings,()=>true);await p.beforeHero();
@@ -105,11 +117,13 @@ it('uses short fields and IDs, corrects malformed replies, and accepts explorati
   const renamed = new Map(b.combatants.map(u => [u.id, 'long-real-unit-identity-'+u.id]));
   b.combatants.forEach(u => { u.id=renamed.get(u.id)!; }); b.turnOrder=b.turnOrder.map(id=>renamed.get(id)!);
   const actor=b.byId(renamed.get('u2')!); actor.abilities.push({id:'long-real-ability-identity',name:'守护',target:'ally',range:{min:0,max:2,metric:'grid'},effects:[{op:'condition',conditionId:'blessed',dur:3}]}); actor.preparedAbilityIds=['long-real-ability-identity'];
+  sendPlayerLetter(b,['enemy'],actor.id);
   b.battlefield!.structures![23]=createStructure('gate',3,{owner:'enemy',gateState:'closed'});
   vi.spyOn(b,'visibleCells').mockImplementation(()=>b.battlefield!.tiles.map((_,i)=>i===23||b.combatants.some(u=>u.side==='enemy'&&u.pos===i)));
   const bodies:any[]=[];let shortUnit='',shortSkill='';
   const request=(async(_url,init)=>{
     const body=JSON.parse(String(init?.body)); bodies.push(body); const d=JSON.parse(body.messages[1].content);
+    expect(d.letters[0]).toMatchObject({from:'opponent-1',text:actor.id});
     if(bodies.length===1) return new Response(JSON.stringify({choices:[{message:{content:'wrong-json-reply'}}]}));
     if(bodies.length===2) {
       shortUnit=d.forces[1].id; expect(shortUnit).toMatch(/^u\d+$/);
@@ -134,8 +148,13 @@ it('T8 falls back after three failures and discards cancelled late replies',asyn
   const {b,state,c,p}=setup(request);p.prefetch(b,state,settings,()=>true);await vi.runAllTimersAsync();await p.beforeHero();
   let release!:(r:Response)=>void;let init:RequestInit|undefined;
   const late=setup(((_url,body)=>{init=body;return new Promise<Response>(r=>{release=r;});}) as typeof fetch);
-  late.p.prefetch(late.b,late.state,settings,()=>true);await vi.advanceTimersByTimeAsync(0);late.c.cancel();release(reply(holds(init)));await late.p.beforeHero();
+  late.p.prefetch(late.b,late.state,settings,()=>true);await vi.advanceTimersByTimeAsync(0);
+  sendPlayerLetter(late.b,['enemy'],'这是新来信。');late.c.receiveLetter(late.b,settings);release(reply(holds(init)));await late.p.beforeHero();
   expect([(request as any).mock.calls.length,c.available(b,settings,state),late.state.memory.intents]).toEqual([3,false,undefined]);
+  expect(late.state.memory.letterId).toBeUndefined();
+  late.p.prefetch(late.b,late.state,settings,()=>true);await vi.advanceTimersByTimeAsync(0);
+  expect(data(init).letters[0].text).toBe('这是新来信。');release(reply(holds(init)));await late.p.beforeHero();
+  expect(late.state.memory.letterId).toBe(1);expect(late.state.memory.intents).toBeDefined();
 });
 it('T9 persists only allowed intent fields through save/load',async()=>{
   const {b,state,p}=setup(async(_url,init)=>reply(holds(init)));p.prefetch(b,state,settings,()=>true);await p.beforeHero();

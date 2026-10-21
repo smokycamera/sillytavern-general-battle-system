@@ -14,15 +14,15 @@ import { battleAbilities } from './battle-skills.js';
 import { formationChoices } from './formation-orders.js';
 import type { BattleStepResult } from './battle-step.js';
 import type { GameAction } from './mcp-game.js';
-import { incomingDiplomacy, type DiplomacyDecision } from '../../engine/src/diplomacy.js';
-import { commandDiplomacy, commandDiplomacyDecision } from './llm-diplomacy.js';
+import { incomingDiplomacy, playerLetters, latestLetter, type DiplomacyDecision } from '../../engine/src/diplomacy.js';
+import { commandDiplomacy, commandDiplomacyDecision, commandLetters } from './llm-diplomacy.js';
 
 export interface CommanderBrief { name: string; persona: string; known: string[]; mission: string }
 export type CommanderToolName = 'commander_map' | 'commander_unit' | 'commander_plan' | 'commander_act' | 'commander_orders' | 'commander_intents' | 'diplomacy';
 export interface CommandPrompts { preparation: string; command: string; intents: string; tools: Record<CommanderToolName, string> }
 export interface KnownCommandCell { cell: number; terrain: string; height?: number; structure?: unknown; overlays?: unknown; connections?: unknown; cover?: unknown; round: number }
 export interface RoundIntents { round: number; replanned: boolean; basis: { visible: string[]; friends: string[] }; units: Record<string, import('../../engine/src/index.js').UnitIntent> }
-export interface CommandMemory { intents?: RoundIntents; diplomacyRound?: number; diplomacyRevision?: number; plan: string; notes: string[]; terrain: KnownCommandCell[]; contacts?: (ReturnType<typeof unitSummary> & { round: number })[] }
+export interface CommandMemory { intents?: RoundIntents; letterId?: number; diplomacyRound?: number; diplomacyRevision?: number; plan: string; notes: string[]; terrain: KnownCommandCell[]; contacts?: (ReturnType<typeof unitSummary> & { round: number })[] }
 export const emptyCommandMemory = (): CommandMemory => ({ plan: '', notes: [], terrain: [] });
 export interface CommanderState { battleSeed: string; side: Side; brief: CommanderBrief; memory: CommandMemory; playerFallback?: { resumeRound?: number }; decision?: DiplomacyDecision & { round: number } }
 type Battle = SmallBattle | MassBattle;
@@ -133,6 +133,7 @@ export function updateCommandMemory(b: Battle, memory: CommandMemory, side: Side
   const contacts = new Map((memory.contacts ?? []).map(unit => [unit.id, unit]));
   for (const unit of observation.units.filter(u => u.side !== 'friendly')) contacts.set(unit.id, { ...unitSummary(unit), losFromActor: undefined, round: b.round });
   return { ...(memory.intents ? { intents: memory.intents } : {}),
+    ...(memory.letterId !== undefined ? { letterId: memory.letterId } : {}),
     ...(memory.diplomacyRound !== undefined ? { diplomacyRound: memory.diplomacyRound } : {}), ...(memory.diplomacyRevision !== undefined ? { diplomacyRevision: memory.diplomacyRevision } : {}),
     plan: text(memory.plan, 600), notes: (memory.notes ?? []).slice(0, 12).map(n => text(n, 300)), terrain: [...terrain.values()], contacts: [...contacts.values()].slice(-128) };
 }
@@ -304,6 +305,9 @@ export class LlmCommandController {
   busy = false;
   constructor(private prompts: CommandPrompts, private changed: () => void = () => {}, private request: typeof fetch = (url, init) => fetch(url, init), readonly side: Side = 'enemy') {}
   cancel(): void { this.aborter?.abort(); }
+  receiveLetter(b: Battle, settings: LlmSettings): void {
+    this.cancel(); this.pausedRounds.delete(b); this.failed.delete(this.key(b, settings));
+  }
   /** Explicit command pause falls back locally for the remainder of this battle round. */
   pauseRound(b: Battle): void {
     this.pausedRounds.set(b, b.round);
@@ -331,7 +335,7 @@ export class LlmCommandController {
   available(b: Battle, settings: LlmSettings, state?: CommanderState): boolean {
     return settings.enabled && settings.commandEnemy === true && state?.side === this.side && state.battleSeed === b.seed && b.rules.resolutionVersion === 'v2'
       && b.combatants.some(u => u.side === this.side && u.hp > 0 && ['ready', 'routing'].includes(u.status) && !u.moraleState?.forcedRetreat)
-      && (state.decision?.round === b.round || state.memory.diplomacyRound !== b.round || incomingDiplomacy(b, this.side).length > 0)
+      && (state.decision?.round === b.round || state.memory.diplomacyRound !== b.round || incomingDiplomacy(b, this.side).length > 0 || playerLetters(b, this.side, state.memory.letterId).length > 0)
       && this.playerReady(b, state) && this.pausedRounds.get(b) !== b.round && !this.failed.has(this.key(b, settings));
   }
   /** Retry only the current read/validation; already selected actions and memory are never replayed. */
@@ -447,7 +451,7 @@ export class LlmCommandController {
     conversation.push({ role: 'user', content: JSON.stringify({ ...(first ? { brief: state.brief } : {}),
       plan: state.memory.plan, ...(mapKey !== sent.map ? { map: mapView } : {}), notes: state.memory.notes, ...(stopped ? { stopped } : {}), lastSightings: state.memory.contacts?.filter(u => !observation.units.some(current => current.id === u.id)),
       self: observation.units.find(u => u.id === actorId), observation: { ...observation, units: observation.units.map(unitSummary) },
-      diplomacy: commandDiplomacy(b, this.side), ...choiceMessage(choices, this.side) }) });
+      ...(first ? { letters: commandLetters(b, this.side, state.memory.letterId) } : {}), diplomacy: commandDiplomacy(b, this.side), ...choiceMessage(choices, this.side) }) });
     sent.map = mapKey;
     const act = (args: Record<string, unknown>) => ({ choice: commanderTool('commander_act', args, b, actorId, state, choices) as CommandChoice, then: commandSteps(args.then) });
     return this.decide(b, actorId, state, 'small', conversation, settings, valid, signal, budget,
@@ -495,6 +499,7 @@ export class LlmCommandController {
         // The commander chose its own ability, so the conditions it adds are not a surprise.
         if (choice.action!.type === 'ability') basis!.conditions = new Set(candidate.byId(actorId).conditions.map(c => c.id));
       }
+      if (conversation.length) commandState.memory.letterId = latestLetter(candidate, this.side);
       if (commandState.decision) return { snap: candidate.toSnapshot(), conditions: candidate.conditions.all(), commandState };
       if (!candidate.isOver() && candidate.active?.id === actorId) candidate.endTurn();
       commandState.memory = updateCommandMemory(candidate, commandState.memory, this.side);
@@ -517,7 +522,7 @@ export class LlmCommandController {
       const formations = () => [...pending].map(([unitId, choices]) => ({ unitId, name: candidate.byId(unitId).name, choices: choices.map(c => choiceView(c, this.side)) }));
       const conversation: CommandMessage[] = [{ role: 'system', content: this.prompts.command }, { role: 'user', content: JSON.stringify({ brief: commandState.brief,
         plan: commandState.memory.plan, notes: commandState.memory.notes, lastSightings: commandState.memory.contacts?.filter(u => !observation.units.some(current => current.id === u.id)),
-        diplomacy: commandDiplomacy(candidate, this.side), observation: { ...observation, units: observation.units.map(unitSummary) }, formations: formations() }) }];
+        letters: commandLetters(candidate, this.side, commandState.memory.letterId), diplomacy: commandDiplomacy(candidate, this.side), observation: { ...observation, units: observation.units.map(unitSummary) }, formations: formations() }) }];
       const check = (args: Record<string, unknown>) => {
         if (!Array.isArray(args.orders) || args.orders.some(o => !o || typeof o.unitId !== 'string' || typeof o.choice !== 'string')) throw Error('orders格式无效');
       };
@@ -535,6 +540,7 @@ export class LlmCommandController {
         return pending.size ? { result: { errors, formations: formations() } } : { done: orders, result: { accepted: orders.map(o => o.unitId) } };
       };
       await this.decide(candidate, undefined, commandState, 'mass', conversation, settings, valid, signal, { left: 6 }, { check, apply });
+      commandState.memory.letterId = latestLetter(candidate, this.side);
       return { orders: commandState.decision ? [] : orders, commandState };
     });
   }
