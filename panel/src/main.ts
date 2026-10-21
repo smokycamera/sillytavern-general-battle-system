@@ -30,7 +30,9 @@ import { stripThinking } from './protocol-syntax.js';
 import { controlPolicy } from '../../engine/src/battle-control.js';
 import { LlmNarrativeScanController } from './llm-narrative-scan.js';
 import { parseProtocol, recoverProtocol } from './protocol.js';
-import { readLlmSettings, saveLlmSettings, llmConnectionKey, llmSettingsView, llmSettingsBackup, resetLlmSettings, parseCommandParameters } from './llm-settings.js';
+import { readLlmSettings, saveLlmSettings, llmConnectionKey, llmSettingsView, llmSettingsBackup, resetLlmSettings, parseCommandParameters, commandParameterWarnings } from './llm-settings.js';
+import { setLlmWorldbookSource } from './llm-worldbooks.js';
+import { LlmWorldbookPicker } from './llm-worldbooks-view.js';
 import { renderLlmSettings } from './llm-settings-view.js';
 import { encounterRequest, normalizeContextSettings, type EncounterSetup } from './jev-context.js';
 import { enhancementLabel, trainingEdge, trainingDamage } from '../../engine/src/enhancements.js';
@@ -141,6 +143,8 @@ document.title = panelTitle;
 
 const runtime = createPanelRuntime();
 const { adapter, controller, resident } = runtime;
+setLlmWorldbookSource(runtime.worldbooks);
+const llmWorldbookPicker = new LlmWorldbookPicker(runtime.worldbooks, () => render('view'));
 document.body.dataset.native = String(!!runtime.native);
 if (runtime.getTheme) document.body.dataset.theme = runtime.getTheme();
 const inventoryPanel = new InventoryPanel(controller, visibleUnitRecord);
@@ -431,7 +435,10 @@ async function panelTask(task: () => Promise<void>, allowPending = false, feedba
 async function persist(options: { battleUnchanged?: boolean } = {}): Promise<boolean> {
   if (!options.battleUnchanged) clearBattleQueries();
   const battle = currentBattle(), memoryOnly = !!battle && !battle.isOver() && openingSavedFor === battle;
+  const activeCommanders = state.encounterContext?.llmCommanders;
   state.encounterContext = savedLlmContext(state.encounterContext, !!battle);
+  // A pending prefetch owns these live objects. Clean the save without orphaning its result.
+  if (state.encounterContext && activeCommanders) state.encounterContext.llmCommanders = activeCommanders;
   const sessionContext=()=>runtime.native?JSON.stringify(JSON.parse(controller.inventoryContext()).slice(0,2)):controller.inventoryContext();
   const identity=adapter.identity(), namespace=adapter.namespace(), context=sessionContext();
   // v2 起 storage 是持久权威源；新生成但尚未入 storage 的旧路径在保存前补齐一次。
@@ -446,7 +453,7 @@ async function persist(options: { battleUnchanged?: boolean } = {}): Promise<boo
   synchronizeMoraleLock();
   const write = (await controller.persistPanel({
       schemaVersion: PANEL_SAVE_SCHEMA_VERSION,
-      encounterContext: state.encounterContext,
+      encounterContext: savedLlmContext(state.encounterContext, !!battle),
       reports: state.reports, reportDeliveries: state.reportDeliveries,
       selectedReportId: state.selectedReportId,
       activeBattleStart: state.activeBattleStart, deletedReport: state.deletedReport, deletedReportIds: state.deletedReportIds,
@@ -1220,7 +1227,7 @@ function renderEmbeddedWorldbookSettings(): string {
 }
 function renderWorkspaceSettings(): string {
   const saved = viewSave(), view = llmSettingsView();
-  return `${mcpBridge?.render() ?? ''}${renderLlmSettings(view.settings, view.error ?? llmDiagnostic)}${renderEmbeddedWorldbookSettings()}${promptScopeControls(saved.promptSettings, narrativeProjectionDetails(saved, adapter.recentPromptText?.() ?? ''), (saved.storage ?? []).filter(visibleUnitRecord))}${renderPromptSettings(saved.promptSettings, promptDrafts)}<section><h2>显示与操作</h2><button data-action="theme-toggle">切换深浅主题</button></section>
+  return `${mcpBridge?.render() ?? ''}${renderLlmSettings(view.settings, view.error ?? llmDiagnostic, llmWorldbookPicker.render(view.settings))}${renderEmbeddedWorldbookSettings()}${promptScopeControls(saved.promptSettings, narrativeProjectionDetails(saved, adapter.recentPromptText?.() ?? ''), (saved.storage ?? []).filter(visibleUnitRecord))}${renderPromptSettings(saved.promptSettings, promptDrafts)}<section><h2>显示与操作</h2><button data-action="theme-toggle">切换深浅主题</button></section>
     <section><h2>保存与恢复</h2><p>${state.saveReceipt?.status === 'local-only' ? '目前仅确认本地副本，酒馆尚未确认保存。' : '单位档案和战报随当前聊天保存。保存失败时会在顶部显示。'}</p><button data-action="save-retry">重试保存</button>${controller.migrationReview() ? '' : renderMigrationReview()}</section>
     <details class="workspace-diagnostics"><summary>运行信息</summary><p>战斗结果由本设备计算。伤害、命中和状态的详细过程可在战报中查看。</p><p>${controller.capabilities.injection ? '已支持在续写剧情时参考当前战斗进度。' : '当前酒馆暂不支持自动提供剧情参考。'}</p></details>`;
 }
@@ -2407,7 +2414,7 @@ async function handleAction(e: Event): Promise<void> {
   const act = el.dataset.action!;
   if (act === 'llm-notes' || act === 'llm-notes-close') { llmNotesBattle = act === 'llm-notes' && currentBattle() ? battleIdOf(currentBattle()!) : undefined; render('view'); return; }
   if (act === 'llm-stop' || act === 'llm-command-stop') { stopAutomation(); toast('已取消模型请求'); render('battle'); return; }
-  if (['llm-models','llm-settings-backup','llm-settings-reset','llm-settings-clear'].includes(act)) { try { await actions[act]!(el); } catch (error) { toast(String(error)); } return; }
+  if (['llm-models','llm-worldbooks-refresh','llm-settings-backup','llm-settings-reset','llm-settings-clear'].includes(act)) { try { await actions[act]!(el); } catch (error) { toast(String(error)); } return; }
   // Navigation never joins the durable-write queue or alters its failure flag.
   if (act === 'workspace-tab') {
     const tab = el.dataset.tab;
@@ -3049,6 +3056,7 @@ async function prepareLlmCommanders(battle: SmallBattle | MassBattle, context?: 
 }
 
 const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
+  'llm-worldbooks-refresh': () => llmWorldbookPicker.refresh(),
   'storage-recover': async el => { await recoverPlayerUnits([el.dataset.id!], false); toast('战后恢复已保存，可再次加入参战队伍'); },
   'player-preparation-apply': () => applyPlayerPreparation({
     ...(playerPreparation.commanders.trim() ? { commanders: JSON.parse(playerPreparation.commanders) } : {}),
@@ -3842,12 +3850,12 @@ document.addEventListener('input', e => {
     const status = el.closest('details')?.querySelector('[data-role="llm-command-params-status"]');
     stopAutomation();
     try {
-      parseCommandParameters(el.value);
+      const warnings = commandParameterWarnings(parseCommandParameters(el.value));
       const settings = readLlmSettings();
       if (settings.commandThinking === 'off') settings.commandThinkingOffParams = el.value;
       else return;
       saveLlmSettings(settings); el.setCustomValidity(''); llmDiagnostic = '已保存';
-      if (status) status.textContent = '已保存当前模式的思考参数';
+      if (status) status.textContent = ['已保存当前模式的思考参数', ...warnings].join('；');
     } catch (error) {
       const message = error instanceof Error ? error.message : '保存失败';
       el.setCustomValidity(message); if (status) status.textContent = '未保存：' + message;
@@ -4057,6 +4065,18 @@ document.addEventListener('change', e => {
     if (!runtime.setWorldbookSettings) return;
     try { runtime.setWorldbookSettings({ enabled: e.target.checked }); render('view'); }
     catch (error) { toast(error instanceof Error ? error.message : '世界书设置保存失败'); }
+    return;
+  }
+  if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'llm-worldbook') {
+    if (e.target.value) void llmWorldbookPicker.choose(e.target.value);
+    return;
+  }
+  if (e.target instanceof HTMLInputElement && ['llm-worldbook-all', 'llm-worldbook-entry'].includes(e.target.dataset.role ?? '')) {
+    try {
+      const settings = readLlmSettings();
+      settings.worldbooks = llmWorldbookPicker.update(settings.worldbooks ?? [], e.target.dataset.role === 'llm-worldbook-all' ? undefined : e.target.dataset.id, e.target.checked);
+      saveLlmSettings(settings); stopAutomation(); llmDiagnostic = '已保存'; render('view');
+    } catch (error) { toast(error instanceof Error ? error.message : '世界书选择保存失败'); }
     return;
   }
   if (e.target instanceof HTMLInputElement && ['llm-enemy-command', 'llm-map-design', 'llm-vip'].includes(e.target.dataset.role ?? '')) {

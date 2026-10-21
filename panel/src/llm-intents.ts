@@ -36,9 +36,7 @@ class IntentIds {
 }
 export function intentForces(b: SmallBattle, side: Side): { heroes: Combatant[]; forces: Combatant[] } {
   const own = b.combatants.filter(u => u.side === side && present(u));
-  const ready = own.filter(u => u.status === 'ready');
-  const heroes = !b.battlefield || ready.length <= 3 ? own : own.filter(u => u.scale === 'hero')
-    .sort((a, z) => z.level - a.level || z.base.hpMax - a.base.hpMax || a.id.localeCompare(z.id)).slice(0, 3);
+  const heroes = b.battlefield ? [] : own;
   return { heroes, forces: own.filter(u => !heroes.includes(u)) };
 }
 
@@ -86,7 +84,7 @@ export class LlmIntentPlanner {
       const candidate = SmallBattle.fromSnapshot(structuredClone(b.toSnapshot()), { traitRegistry: b.traitRegistry, summonUnit: b.summonUnit });
       Object.assign(candidate, { rules: b.rules }); b.conditions.all().forEach(c => candidate.conditions.register(c));
       const command = structuredClone(state), previous = command.memory.intents?.units;
-      const { heroes, forces } = intentForces(candidate, state.side), field = candidate.battlefield!;
+      const { forces } = intentForces(candidate, state.side), field = candidate.battlefield!;
       const seen = new Set(command.memory.contacts?.map(u => u.id));
       for (const trace of candidate.enemyIntel(state.side).traces) seen.add(trace.id);
       command.memory = updateCommandMemory(candidate, command.memory, state.side);
@@ -135,7 +133,7 @@ export class LlmIntentPlanner {
         lastSightings: command.memory.contacts?.filter(u => !observation.units.some(v => v.id === u.id)), round, ...(reason ? { reason } : {}),
         forces: forces.map(u => ({ ...unitSummary(observation.units.find(v => v.id === u.id)!), weapon: { name: u.weapon?.name, ranged: isRangedCapable(u), range: weaponRangeSpec(gridWeapon(u.weapon, candidate.rules.combatModel === MEMBER_HEALTH_MODEL, candidate.rules.armsModel), isRangedCapable(u)) },
           ...(battleAbilities(u).length ? { skills: battleAbilities(u).map(a => ({ id: a.id, name: a.name, target: a.target })) } : {}) })),
-        heroes: heroes.map(u => u.id), observation: { ...observation, units: observation.units.map(unitSummary) }, previous })) }];
+        observation: { ...observation, units: observation.units.map(unitSummary) }, previous })) }];
       await this.commander.decide(candidate, undefined, command, 'intents', conversation, settings, current, signal, { left: 4 }, { check: () => {}, apply, encode: ids.encode, decode: ids.decode });
       const used = new Set<number>();
       for (const [id, intent] of Object.entries(units).sort(([a], [z]) => a.localeCompare(z))) {

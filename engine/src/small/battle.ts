@@ -2131,6 +2131,7 @@ export class SmallBattle {
   }
   private actionIntent?: UnitIntent;
   private intentActive = false;
+  private intentUseDone = false;
   private intentKnown(unit: Combatant): Combatant[] {
     const known = this.visibleCombatants(unit.side);
     return [...known, ...liveTraces(this.intel, unit.side, this.round, new Set(known.map(u => u.id)))
@@ -2139,6 +2140,7 @@ export class SmallBattle {
   /** Complete as much of the directed route as this activation permits, then fight in place.
    * Each step uses the normal engine executor, including reactions, capacity and action costs. */
   private followIntent(unit: Combatant, intent: UnitIntent): void {
+    if (intent.mode === 'use_ability' && this.intentUseDone) return;
     const field = this.battlefield!, blocked = new Set<number>();
     for (let step = 0; step < field.tiles.length * 2 && this.isTurnOf(unit.id) && unit.status === 'ready' && !this.isOver(); step++) {
       const known = this.visibleCombatants(unit.side), remembered = this.intentKnown(unit);
@@ -2146,6 +2148,7 @@ export class SmallBattle {
       const ability = intent.mode === 'use_ability' ? unit.abilities.find(a => a.id === intent.abilityId) : undefined;
       const cast = () => {
         const result = this.useAbility(unit.id, ability!.id, ability!.target === 'zone' ? 'cell:' + target!.pos : target!.id);
+        if (result.ok) this.intentUseDone = true;
         if (!result.ok) this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], text: `${unit.name} 无法按指令使用${ability!.name}：${result.reason}` });
       };
       if (ability && target && !this.skillTargetReason(unit, this.itemUse(unit, ability, target).ability, target)) { cast(); break; }
@@ -2208,6 +2211,7 @@ export class SmallBattle {
   }
   autoAction(unitId: string, intent?: UnitIntent): void {
     this.actionIntent = intent;
+    this.intentUseDone = false;
     // A task that became impossible during the round must not release movement back to the city AI.
     const referenced = intent && (['attack', 'use_ability'].includes(intent.mode) ? this.combatants.some(u => u.id === intent.targetId)
       : intent.mode === 'support' ? this.combatants.some(u => u.id === intent.supportId && u.side === this.byId(unitId).side)
@@ -2253,7 +2257,7 @@ export class SmallBattle {
         }
       }
       this.endTurn();
-    } finally { this.actionIntent = undefined; this.intentActive = false; }
+    } finally { this.actionIntent = undefined; this.intentActive = false; this.intentUseDone = false; }
   }
 
   /** utility 评分：构建候选动作列表，按分择优尝试执行；返回是否执行了任一动作 */
@@ -2263,7 +2267,11 @@ export class SmallBattle {
     if (!this.isTurnOf(unitId) || unit.status !== 'ready' || this.isOver()) return;
     if (this.intentActive) this.followIntent(unit, this.actionIntent!);
     if (!this.isTurnOf(unitId) || unit.status !== 'ready' || this.isOver()) { if (!this.isOver() && this.isTurnOf(unitId)) this.endTurn(); return; }
-    if (this.intentActive && this.actionIntent!.mode === 'use_ability') { this.endTurn(); return; }
+    if (this.intentActive && this.actionIntent!.mode === 'use_ability') {
+      if (!this.intentUseDone || !this.nonSkillActionAvailable(unitId)) { this.endTurn(); return; }
+      // The explicit use is one action. Spend any legal remainder in place without repeating it.
+      failedAbilities.add(this.actionIntent!.abilityId!);
+    }
     if (!this.intentActive && !isAirborne(unit) && !this.flightReason(unitId, true)) {
       // 地面绕行明显更贵时先升空；歼灭战以最近已知敌人的邻格为目标（扑击前保持机动优势）
       const known = this.visibleCombatants(unit.side);

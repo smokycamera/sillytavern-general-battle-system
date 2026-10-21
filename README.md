@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.9.0**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **2.9.1**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-2.9.0 gives grid troops one faction-wide intent plan per round, prefetched while other units act. Troops follow their assigned destinations, open doors and traverse platforms without being redirected by city defense orders. Commands can specify gates, skills and items. Up to three heroes keep per-activation command; major changes allow one replan per round. Intent memory survives saves and appears in LLM notes. Retries include the original request, failed answer and problem, and command observations omit command ability/style announcements. See the [command report](docs/llm-command-20261021.md) and [2.9.0 results](docs/llm-round-intents-result-20261021.md).
+2.9.1 brings heroes and small rosters onto the same faction-wide round intents as troops. After one requested skill or item, built-in AI can spend a legal extra action while respecting the assigned position and target. Advanced command parameters accept reasoning strength and pass unknown vendor fields through with a reminder. Settings now let you choose whole lorebooks or individual entries for secondary API requests. See the [current release](docs/current-release.md) and [round-intent results](docs/llm-round-intents-result-20261021.md).
 
 ## Documentation
 

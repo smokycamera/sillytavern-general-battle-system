@@ -1,4 +1,5 @@
 import { connectionUrl, type JevConnection } from './jev-connection.js';
+import { normalizeWorldbookSelection, selectedWorldbookMessages, type WorldbookSelection } from './llm-worldbooks.js';
 
 export interface LlmSettings {
   enabled: boolean;
@@ -9,6 +10,7 @@ export interface LlmSettings {
   /** Older records inherit defaults only for missing keys; explicit choices survive upgrades. */
   designMap?: boolean;
   selectVip?: boolean;
+  worldbooks?: WorldbookSelection[];
   windowSize: number;
   url: string;
   token: string;
@@ -19,7 +21,7 @@ export const LLM_SETTINGS_KEY = 'tb:llm:settings:v1';
 export const COMMAND_THINKING_OFF_PARAMS = '{"thinking":{"type":"disabled"}}';
 const defaults = (): LlmSettings => ({ enabled: false, selectBattleScale: false, commandEnemy: false, commandThinking: 'auto',
   commandThinkingOffParams: COMMAND_THINKING_OFF_PARAMS,
-  designMap: true, selectVip: true, windowSize: 6, url: '', token: '', model: '', models: [] });
+  designMap: true, selectVip: true, worldbooks: [], windowSize: 6, url: '', token: '', model: '', models: [] });
 
 export function parseCommandParameters(text: string): Record<string, unknown> {
   if (text.length > 20000) throw Error('附加参数不能超过20000字');
@@ -29,6 +31,12 @@ export function parseCommandParameters(text: string): Record<string, unknown> {
   const reserved = ['model', 'messages', 'stream', 'tools', 'tool_choice', 'parallel_tool_calls', 'response_format', '__proto__', 'constructor', 'prototype'];
   if (Object.keys(value).some(key => reserved.includes(key))) throw Error('附加参数不能覆盖模型、消息、工具或输出格式');
   return value as Record<string, unknown>;
+}
+export function commandParameterWarnings(parameters: Record<string, unknown>): string[] {
+  const known = new Set(['thinking', 'reasoning', 'reasoning_effort', 'reasoning_budget', 'thinking_budget', 'enable_thinking',
+    'budget_tokens', 'max_tokens', 'max_completion_tokens', 'temperature', 'top_p', 'top_k', 'min_p', 'presence_penalty', 'frequency_penalty', 'seed', 'stop', 'verbosity', 'extra_body']);
+  const unknown = Object.keys(parameters).filter(key => !known.has(key));
+  return unknown.length ? ['未识别参数：' + unknown.join('、') + '；已保存并原样发送，由供应商处理'] : [];
 }
 /** No vendor detection: only the selected, editable request-body parameters are sent. */
 export function commandRequestOptions(settings: LlmSettings): Record<string, unknown> {
@@ -54,6 +62,7 @@ export function readLlmSettings(): LlmSettings {
         commandThinkingOffParams: typeof v.commandThinkingOffParams === 'string' ? v.commandThinkingOffParams : COMMAND_THINKING_OFF_PARAMS,
         designMap: v.designMap === undefined ? true : v.designMap === true,
         selectVip: v.selectVip === undefined ? true : v.selectVip === true,
+        worldbooks: normalizeWorldbookSelection(v.worldbooks),
         windowSize: Number.isInteger(v.windowSize) && v.windowSize >= 1 && v.windowSize <= 100 ? v.windowSize : 6,
         url: typeof v.url === 'string' ? v.url : '', token: typeof v.token === 'string' ? v.token : '',
         model: typeof v.model === 'string' ? v.model : '',
@@ -99,8 +108,10 @@ export function llmConnection(settings: LlmSettings): JevConnection {
   const url = connectionUrl(settings.url);
   if (new URL(url).hostname.toLowerCase().replace(/\.$/, '') === 'api.typesafe.ai')
     throw Error('这里需要普通 LLM 的 OpenAI 兼容 API；JEV 指挥功能尚未完成');
-  return { url, token: settings.token.trim(), model: settings.model.trim(), protocol: 'openai', transport: 'auto' };
+  const selection = normalizeWorldbookSelection(settings.worldbooks);
+  return { url, token: settings.token.trim(), model: settings.model.trim(), protocol: 'openai', transport: 'auto',
+    ...(selection.length ? { contextMessages: (signal: AbortSignal) => selectedWorldbookMessages(selection, signal) } : {}) };
 }
 export function llmConnectionKey(settings: LlmSettings): string {
-  return JSON.stringify([settings.url.trim(), settings.token.trim(), settings.model.trim()]);
+  return JSON.stringify([settings.url.trim(), settings.token.trim(), settings.model.trim(), normalizeWorldbookSelection(settings.worldbooks)]);
 }
