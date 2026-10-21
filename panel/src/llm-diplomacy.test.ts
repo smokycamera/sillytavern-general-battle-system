@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { applyDiplomacy, generateUnit, SmallBattle, standardField, V24_OVERFLOW_D20 } from '../../engine/src/index.js';
+import { applyDiplomacy, generateUnit, SmallBattle, standardField, V24_OVERFLOW_D20, sendPlayerLetter } from '../../engine/src/index.js';
 import { LlmCommandController, emptyCommandMemory, type CommanderState } from './llm-command.js';
 import { LlmIntentPlanner } from './llm-intents.js';
 import { COMMAND_PROMPTS } from './llm-command-prompts.js';
@@ -19,6 +19,27 @@ function fixture() {
   return { b, state };
 }
 const response = (args: unknown) => new Response(JSON.stringify({ choices: [{ message: { tool_calls: [{ id: 'decision', type: 'function', function: { name: 'diplomacy', arguments: JSON.stringify(args) } }] } }] }));
+it('keeps a letter judgement from the same answer as diplomacy, even if diplomacy appears first, without executing combat',async()=>{
+  const {b,state}=fixture();sendPlayerLetter(b,['enemy'],'缴枪不杀！！！');const before=structuredClone(b.toSnapshot());
+  const request=vi.fn(async()=>new Response(JSON.stringify({choices:[{message:{tool_calls:[
+    {id:'d',type:'function',function:{name:'diplomacy',arguments:'{"mode":"surrender","target":"opponent-1"}'}},
+    {id:'p',type:'function',function:{name:'commander_plan',arguments:JSON.stringify({addNotes:['采纳缴枪不杀的提议，己方无力继续交战，但需索取安全保证。']})}},
+    {id:'a',type:'function',function:{name:'commander_intents',arguments:'{"intents":[]}'}}
+  ]}}]})));
+  const p=new LlmIntentPlanner(new LlmCommandController(COMMAND_PROMPTS,()=>{},request),COMMAND_PROMPTS);
+  await p.forUnit(b,state,settings,()=>true);
+  expect(request).toHaveBeenCalledTimes(1);expect(state.memory.notes[0]).toContain('采纳缴枪不杀');expect(state.memory.letterId).toBe(1);
+  expect(state.decision?.mode).toBe('surrender');expect(b.toSnapshot()).toEqual(before);
+});
+it('requires an actual note before accepting a new-letter decision in a normal round request',async()=>{
+  const {b,state}=fixture();sendPlayerLetter(b,['enemy'],'缴枪不杀！！！');let calls=0;
+  const request:typeof fetch=async()=>{
+    if(++calls===1)return response({mode:'withdraw',target:'opponent-1'});
+    return new Response(JSON.stringify({choices:[{message:{tool_calls:[{id:'p',type:'function',function:{name:'commander_plan',arguments:'{"addNotes":["不接受缴械，但愿意双方撤军，保全部下。"]}'}},{id:'d',type:'function',function:{name:'diplomacy',arguments:'{"mode":"withdraw","target":"opponent-1"}'}}]}}]}));
+  };
+  await new LlmIntentPlanner(new LlmCommandController(COMMAND_PROMPTS,()=>{},request),COMMAND_PROMPTS).forUnit(b,state,settings,()=>true);
+  expect(calls).toBe(2);expect(state.memory.notes).toEqual(['不接受缴械，但愿意双方撤军，保全部下。']);expect(state.memory.letterId).toBe(1);
+});
 it('prefetches a terminal diplomatic decision without mutating the battle or sending duplicate requests, and saves the queued decision', async () => {
   const { b, state } = fixture(), before = structuredClone(b.toSnapshot());
   const request = vi.fn(async (_url: unknown, _init?: RequestInit) => response({ mode: 'surrender', target: 'opponent-1', text: '愿意放下武器。' }));

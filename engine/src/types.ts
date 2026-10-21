@@ -561,6 +561,8 @@ export type LogKind =
   | 'battle-end';
 
 export interface BattleLogEntry {
+  /** 消息与交涉须保留原话，不按战斗效果精简。 */
+  communication?: boolean;
   /** 破障的实际结构变化；旧日志仍可按原有的结构耐久文本展示。 */
   structure?: { cell: number; kind: import('./small/layers.js').StructureKind; level: number; hpBefore: number; hpAfter: number; hpMax: number; destroyed: boolean };
   /** 占点状态与进度，只在实际变化时记录。 */

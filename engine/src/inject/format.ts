@@ -1,4 +1,5 @@
 import { displayNumber } from '../display-number.js';
+import { isCommunicationLog } from '../diplomacy.js';
 import { smallBattleResult } from '../battle-result.js';
 import { NARRATIVE_TASK } from './narrative-task.js';
 import { standardConditionMap } from '../conditions.js';
@@ -378,6 +379,7 @@ export function compactEventGroups(entries: BattleLogEntry[], opts: { unresolved
   for (const [i, j] of owners) lastMove.set(j, Math.max(lastMove.get(j) ?? i, i));
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i]!, first = i;
+    if (isCommunicationLog(e)) { groups.push({ text: e.text, first, last: i }); continue; }
     if (e.kind === 'attack' && e.resolution) {
       const volley = [e];
       while (!/借机|反击|反应/.test(e.text) && entries[i + 1]?.kind === 'attack' && entries[i + 1]?.resolution
@@ -429,7 +431,7 @@ export function compactEvents(entries: BattleLogEntry[]): string[] {
   return compactEventGroups(entries).map((group) => group.text);
 }
 function recentEvents(b: SmallBattle | MassBattle): string[] {
-  const log = (b.isOver() ? b.log : b.visibleLog('ally')).filter((e) => DIGEST_KINDS.has(e.kind));
+  const log = (b.isOver() ? b.log : b.visibleLog('ally')).filter((e) => DIGEST_KINDS.has(e.kind) || isCommunicationLog(e));
   const latest = log.at(-1)?.round; if (latest === undefined) return [];
   const lines = compactEvents(log.filter((e) => e.round >= latest - 1));
   return lines.length ? [`最近变化（第${Math.max(1, latest - 1)}–${latest}回合）：`, ...lines.slice(-10).map((line) => '▸ ' + line)] : [];
@@ -446,13 +448,13 @@ export function roundDigest(
   _registry?: Map<string, import('../types.js').Trait>,
   opts: { wholeBattle?: boolean; lastRounds?: number; protagonistId?: string } = {},
 ): string {
-  const rounds = [...new Set((b.isOver() ? b.log : b.visibleLog('ally')).filter((e) => DIGEST_KINDS.has(e.kind)).map((e) => e.round))].sort(
+  const rounds = [...new Set((b.isOver() ? b.log : b.visibleLog('ally')).filter((e) => DIGEST_KINDS.has(e.kind) || isCommunicationLog(e)).map((e) => e.round))].sort(
     (x, y) => x - y,
   );
   const takeRounds = opts.lastRounds ? rounds.slice(-opts.lastRounds) : rounds;
   const lines: string[] = [];
   for (const r of takeRounds) {
-    const entries = (b.isOver() ? b.log : b.visibleLog('ally')).filter((e) => e.round === r && DIGEST_KINDS.has(e.kind));
+    const entries = (b.isOver() ? b.log : b.visibleLog('ally')).filter((e) => e.round === r && (DIGEST_KINDS.has(e.kind) || isCommunicationLog(e)));
     if (!entries.length) continue;
     lines.push(`【第${r}回合】`);
     lines.push(...compactEvents(entries).map((line) => '▸ ' + line));
