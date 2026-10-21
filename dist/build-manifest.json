@@ -1,7 +1,7 @@
 {
   "format": "tavern-battle-native-build",
   "version": "2.7.2",
-  "builtAt": "2026-10-21T00:56:10.243Z",
+  "builtAt": "2026-10-21T01:05:09.104Z",
   "sourceFingerprint": "e7cb776480b9c471dd736f5398b3eb0e9bbab20f10d31f37e468e34180d5f8bc",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
@@ -152,8 +152,8 @@
     },
     {
       "path": "docs/siege-trenches-20261021.md",
-      "bytes": 9325,
-      "sha256": "b9521c7cf60781340e97cb3a905cf96749a9d2db4f5e008789df4b072c3c31b1"
+      "bytes": 9666,
+      "sha256": "38575f4117e1481ec6b0d8cdace265d688b03f2851e694c0f414e72c6d33a973"
     },
     {
       "path": "docs/small-three-way-result-20261018.md",

@@ -71,11 +71,13 @@ it('a defender without current contact can climb toward a public firing arc',()=
   if (!battle.byId('a').elevation) {battle.endTurn();battle.autoAction('a');}
   expect(battle.byId('a').elevation,battle.log.map(e=>e.text).join('\n')).toBe(1);
 });
-it('enemy-directed control retains ownership; neutral control uses both deployment distances',()=>{
+it('enemy-directed siege retains ownership; neutral control uses both deployment distances',()=>{
   const field=standardField(7,13),roster=[unit('a','ally'),unit('e','enemy')];
   field.initialDeployment={a:{pos:87},e:{pos:3}};
   field.scene={version:1,regions:[{id:'target',kind:'position',label:'目标',cells:[45],access:[45]}],fulfilled:[],objectiveRegion:{id:'target',relation:'targets',side:'enemy'}};
-  expect(prepareBattleObjective(field,roster,'control').objective).toMatchObject({attackingSide:'enemy',cell:45});
+  expect(prepareBattleObjective(field,roster,'siege').objective).toMatchObject({attackingSide:'enemy',cell:45});
+  const namedNeutral=prepareBattleObjective(field,roster,'control').objective;
+  expect(namedNeutral.cell).toBe(45);expect(namedNeutral).not.toHaveProperty('attackingSide');
   delete field.scene;field.objective.cell=10;
   const neutral=prepareBattleObjective(field,roster,'control').objective;
   expect(Math.floor(neutral.cell/7)).toBe(6);expect(neutral).not.toHaveProperty('attackingSide');
