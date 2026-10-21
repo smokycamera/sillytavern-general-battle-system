@@ -67,10 +67,15 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   params().value='{"reasoning_effort":"none"}';params().dispatchEvent(new Event('input',{bubbles:true}));
   expect(readLlmSettings().commandThinkingOffParams).toBe('{"reasoning_effort":"none"}');
   params().value='{"messages":[]}';params().dispatchEvent(new Event('input',{bubbles:true}));
-  expect(document.querySelector('[data-role="llm-command-params-status"]')!.textContent).toContain('未保存');
+  expect(document.querySelector('[data-role="llm-command-params-status"]')!.textContent).toContain('草稿已保留');
+  expect(readLlmSettings().commandThinkingOffDraft).toBe('{"messages":[]}');
   expect(readLlmSettings().commandThinkingOffParams).toBe('{"reasoning_effort":"none"}');
   select('llm-command-thinking','auto'); await idle();expect(params()).toBeNull();
-  select('llm-command-thinking','off'); await idle();expect(params().value).toBe('{"reasoning_effort":"none"}');
+  select('llm-command-thinking','off'); await idle();expect(params().value).toBe('{"messages":[]}');
+  expect(readLlmSettings().commandThinkingOffParams).toBe('{"reasoning_effort":"none"}');
+  params().value='reasoning_effort="low"';params().dispatchEvent(new Event('input',{bubbles:true}));
+  expect(readLlmSettings().commandThinkingOffDraft).toBeUndefined();
+  expect(readLlmSettings().commandThinkingOffParams).toBe('reasoning_effort="low"');
   select('llm-command-thinking','auto'); await idle();expect(params()).toBeNull();
   expect(readLlmSettings().selectBattleScale).toBe(false);
   const designToggle=()=>document.querySelector<HTMLInputElement>('[data-role="llm-map-design"]')!;
