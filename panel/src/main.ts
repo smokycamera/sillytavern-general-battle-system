@@ -90,7 +90,7 @@ import {
   generateUnit, traitCatalog, traitRegistry, resolveTraitId,
   SmallBattle, MassBattle, battleXpAwardsForBothSides, applyXp, xpProgress, approx, approxDelta,
   armorDR, fieldModsFor, LITE_D20,
-  V5_D20, V6_D20, V11_OVERFLOW_D20, V12_OVERFLOW_D20, V24_OVERFLOW_D20, prepareArmsModel, prepareTraitModel, prepareSkillModel, prepareItemModel, isAirborne, abilityUsabilityReason,
+  V5_D20, V6_D20, V11_OVERFLOW_D20, V12_OVERFLOW_D20, V25_OVERFLOW_D20, prepareArmsModel, prepareTraitModel, prepareSkillModel, prepareItemModel, isAirborne, abilityUsabilityReason,
   generatedField, generatedLayeredField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
   FORMATION_NODES, formationNode, concealmentLabel,
   type Combatant, type GenerateInput, type Order, type BattleLogEntry, type Side,
@@ -682,7 +682,7 @@ function restore(): void {
   // 旧存档已结算标记也封口，不能因旧版缺少完整战果 id 而重写最新档案。
   const restoredBattle = currentBattle();
   openingSavedFor = restoredBattle ?? undefined;
-  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V24_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V24_OVERFLOW_D20);prepareTraitModel(unit,V24_OVERFLOW_D20);prepareItemModel(unit,V24_OVERFLOW_D20);prepareTraitLevelModel(unit,{...V24_OVERFLOW_D20,traitLevelModel:unit.traitLevelModel,healingModel:unit.healingModel,controlModel:unit.controlModel});}
+  if(!restoredBattle)for(const unit of state.roster)if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V25_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V25_OVERFLOW_D20);prepareTraitModel(unit,V25_OVERFLOW_D20);prepareItemModel(unit,V25_OVERFLOW_D20);prepareTraitLevelModel(unit,{...V25_OVERFLOW_D20,traitLevelModel:unit.traitLevelModel,healingModel:unit.healingModel,controlModel:unit.controlModel});}
   if (restoredBattle && state.xpSettled) {
     const id = battleOutcomeId(state.mass ? 'mass' : 'small', restoredBattle.seed);
     if (!state.committedOutcomeIds.includes(id)) state.committedOutcomeIds.push(id);
@@ -765,7 +765,7 @@ function defaultRank(u: Pick<Combatant, 'archetype'>): 'front' | 'rear' | 'reser
 async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {}): Promise<void> {
   // 特质去重：AI 标签/面板勾选可能重复给同一特质
   const { unit } = generateUnit({ ...input, rulesVersion: 'v2', damageModel: 'wounds-v2', era: undefined, traits: [...new Set(input.traits)] }, { registry: reg, skillModel: 'skills-v4' });
-  prepareSkillModel(unit, V24_OVERFLOW_D20); prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit); prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V24_OVERFLOW_D20); prepareTraitModel(unit, V24_OVERFLOW_D20); prepareItemModel(unit, V24_OVERFLOW_D20); prepareTraitLevelModel(unit, V24_OVERFLOW_D20);
+  prepareSkillModel(unit, V25_OVERFLOW_D20); prepareCombatModel(unit, V6_D20); upgradeCombatSkills(unit); prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V25_OVERFLOW_D20); prepareTraitModel(unit, V25_OVERFLOW_D20); prepareItemModel(unit, V25_OVERFLOW_D20); prepareTraitLevelModel(unit, V25_OVERFLOW_D20);
   // id 去重
   state.idSeq++;
   state.roster.push(unit);
@@ -779,7 +779,7 @@ async function addUnit(input: GenerateInput, opts: { encounter?: boolean } = {})
 /** 储存器档案实体化为本场编制，保留稳定 id、当前兵力、状态和玩家编辑过的基础属性。 */
 function materializeStorageUnit(r0: RosterUnit): Combatant {
   const unit=materializeUnitRecord(r0, reg, { era: state.era });
-  if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V24_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V24_OVERFLOW_D20);prepareTraitModel(unit,V24_OVERFLOW_D20);prepareItemModel(unit,V24_OVERFLOW_D20);prepareTraitLevelModel(unit,V24_OVERFLOW_D20);}
+  if(unit.rulesVersion==='v2'){prepareSkillModel(unit,V25_OVERFLOW_D20);prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);upgradeCombatSkills(unit);prepareResourceModel(unit,V11_OVERFLOW_D20);prepareArmsModel(unit,V25_OVERFLOW_D20);prepareTraitModel(unit,V25_OVERFLOW_D20);prepareItemModel(unit,V25_OVERFLOW_D20);prepareTraitLevelModel(unit,V25_OVERFLOW_D20);}
   return unit;
 }
 
@@ -1391,7 +1391,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   rows.push(`<span>攻 <b>${atkPlus}</b></span>`);
   rows.push(`<span>防 <b>${displayNumber(u.base.def)}</b></span>`);
   rows.push(`<span>速 <b>${displayNumber(u.base.spd)}</b></span>`);
-  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${approx(trainingDamage(u.level,currentBattle()?.rules??V24_OVERFLOW_D20), 2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
+  if(modern)rows.push(`<div class="sub">训练加成：命中／规避 +${trainingEdge(u.level)} · 输出 ×${approx(trainingDamage(u.level,currentBattle()?.rules??V25_OVERFLOW_D20), 2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
   rows.push(`<span>${u.scale === 'hero' ? '生命' : u.body==='vehicle'?'载具数':'人数'} <b>${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}</b></span>`);
   if(u.combatModel&&u.scale!=='hero')rows.push(`<span>单个${u.body==='vehicle'?'载具':'成员'}最大生命 <b>${displayNumber(memberDurability(u))}</b></span>`);
   if (u.base.moraleMax !== undefined) rows.push(`<span>士气 <b>${displayNumber(u.base.moraleMax)}</b></span>`);

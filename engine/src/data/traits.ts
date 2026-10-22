@@ -103,6 +103,12 @@ export const TRAITS: Trait[] = [
   },
   // ---------- 防护 ----------
   {
+    id: 'revival', name: '复活', desc: '倒下后自动复起；L8每战一次满血复活，L9两次，L10三次',
+    v2SourceReady: true,
+    v2Desc: '致命与非致命模式均可复起；个体恢复生命，编队按本场入场现员复起，次数共享且随本场保存，不刷新精力、弹药或冷却',
+    effects: [{ kind: 'flag', flag: 'revival' }],
+  },
+  {
     id: 'guardian', name: '守护', desc: '受到的全伤害 -25%（不可被破甲绕过）',
     v2SourceReady: true,
     v2Desc: '超常护体（法术、神佑、力场、护体罡气）：合法生命伤害降低25%；同组取强，不减免士气或控制。普通护甲写在armor里',
@@ -505,7 +511,7 @@ export function narrativeTrait(value: string, registry = traitRegistry()): Narra
 }
 
 /** 原五项专精由V15门控；P1十一类由独立V16门控。其余仍只有“有/无”。 */
-export const GRADED_TRAITS: readonly string[] = [...TERRAIN_GRADED_TRAITS, ...P1_GRADED_TRAITS, ...P2_GRADED_TRAITS];
+export const GRADED_TRAITS: readonly string[] = [...TERRAIN_GRADED_TRAITS, ...P1_GRADED_TRAITS, ...P2_GRADED_TRAITS, 'revival'];
 export const isGradedTrait = (id: string): boolean => GRADED_TRAITS.includes(id);
 export const validTraitLevel = (level: unknown): level is number => Number.isSafeInteger(level) && (level as number) >= 1 && (level as number) <= 10;
 /** 单位或来源记录的专精等级表：只允许已完成分级特质、L1–10 整数。 */

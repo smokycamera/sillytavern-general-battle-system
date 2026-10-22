@@ -20,6 +20,7 @@ export function playerTraitLevelDescription(id: string, level: number, model?: u
   const environment = ({ 'forest-lore': '森林', 'mountain-born': '山地', 'night-fighter': '夜间', 'plains-runner': '平原', 'urban-fighter': '巷战' } as Record<string, string>)[id];
   add(modern && !!environment, `${environment}武器与物理伤害×${value('meleeDamage')}`);
   switch (id) {
+    case 'revival': return `每战${value('revivalUses')}次，倒下后恢复${value('revivalPercent')}%生命或入场人数；致命与非致命均生效`;
     case 'forest-lore':
       parts.push('无森林攻击惩罚');
       add(L >= 2, `森林移动每格${n(roughGroundCost(L))}点`);

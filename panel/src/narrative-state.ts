@@ -1,7 +1,7 @@
 import { prepareTraitLevelModel } from '../../engine/src/trait-level-model.js';
 import { prepareCombatModel } from '../../engine/src/combat-model.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
-import { V6_D20, V24_OVERFLOW_D20 } from '../../engine/src/rules.js';
+import { V6_D20, V25_OVERFLOW_D20 } from '../../engine/src/rules.js';
 import { prepareSkillModel } from '../../engine/src/skill-model.js';
 import { prepareItemModel } from '../../engine/src/item-model.js';
 import { randomId } from '../../host/src/browser-compat.js';
@@ -290,7 +290,7 @@ function applyUnitEffect(storage: UnitRecord[], event: Extract<Suggestion, { kin
   const record: UnitRecord = storage.find((r) => r.id === event.id)!;
   if (record.retired || record.hp <= 0 || record.status === 'dead') throw new Error('不能通过效果来源复活阵亡或解散档案');
   const unit = materializeUnitRecord(record, registry);
-  prepareTraitLevelModel(unit, V24_OVERFLOW_D20);
+  prepareTraitLevelModel(unit, V25_OVERFLOW_D20);
   if (event.kind === 'bless') grantTraitSource(unit, { id: `bless:${proposalId}:${index}`, name: event.name, kind: 'blessing', traitIds: event.traitIds, ...(event.traitLevels ? { traitLevels: event.traitLevels } : {}), duration: event.duration });
   else if (event.kind === 'affect') grantTraitSource(unit, { id: `affect:${proposalId}:${index}`, name: event.name, kind: 'effect', traitIds: [], conditionIds: event.conditionIds, duration: event.duration });
   else {
@@ -434,7 +434,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
         if (records.some((r) => r.id === id)) throw new Error('新单位身份已存在');
         const unit = generateUnit(spawnInput(event), { registry, seed: id, skillModel: 'skills-v4' }).unit;
         unit.id = id;
-        prepareSkillModel(unit,V24_OVERFLOW_D20); prepareCombatModel(unit,V6_D20); upgradeCombatSkills(unit); prepareItemModel(unit,V24_OVERFLOW_D20);prepareTraitLevelModel(unit,V24_OVERFLOW_D20); applySpawnWound(unit, event);
+        prepareSkillModel(unit,V25_OVERFLOW_D20); prepareCombatModel(unit,V6_D20); upgradeCombatSkills(unit); prepareItemModel(unit,V25_OVERFLOW_D20);prepareTraitLevelModel(unit,V25_OVERFLOW_D20); applySpawnWound(unit, event);
         records.push(unitRecordFromCombatant(unit, undefined, { sourceId: proposal.id }));
         if (unit.hp > 0 && !event.archiveOnly) roster.push(materializeUnitRecord(records.at(-1)!, registry));
         // 随身道具每张卡各一套，归这张卡；佩戴、充能道具装上（编队一件即整卡配发），一次性道具开战时随身携带。

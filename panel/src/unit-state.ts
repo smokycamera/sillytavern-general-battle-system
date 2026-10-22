@@ -467,6 +467,7 @@ export function unitRecordFromCombatant(
   restoreDeploymentPreference(c);
   delete c.tacticalPose;
   delete c.moraleState;
+  delete c.revivalState;
   delete c.moraleLocked;
   if (c.base.moraleMax === undefined) delete c.morale;
   delete c.tacticalEffort;
@@ -678,6 +679,7 @@ export function materializeUnitRecord(
   delete generated.suppression;
   delete generated.tacticalPose;
   delete generated.moraleState;
+  delete generated.revivalState;
   delete generated.tacticalEffort;
   delete generated.tacticalRevealed;
   delete generated.airborne; delete generated.elevation;

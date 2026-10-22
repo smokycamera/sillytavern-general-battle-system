@@ -92,6 +92,7 @@ export * from './diplomacy.js';
 export * from './phase2-traits.js';
 
 export * from './progression.js';
+export * from './revival.js';
 export * from './gear-bonuses.js';
 
 export * from './small/team-tactics.js';
