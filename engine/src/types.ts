@@ -111,7 +111,7 @@ export type EffectOp =
   | { op: 'zone'; itemEffectModel?: import('./progression.js').ItemProgressionModel; kind: 'fire' | 'poison' | 'smoke' | 'healing' | 'trap'; power: number; healingModel?: import('./healing.js').HealingModel; dur: number; radius: number; amount?: number; penetration?: number; effects?: ZonePayload[] }
   | { op: 'damage'; baseDice: string; apDice?: string; tag?: string; shape?: 'single' | 'burst' }
   | ({ op: 'heal'; power?: number } & ({ dice: string; amount?: never } | { amount: number; dice?: never }))
-  | { op: 'condition'; damageChannel?: DamageChannel; conditionId: string; dur: number; potency?: number; magnitude?: number; defensePower?: number; saveDC?: number; onHit?: boolean; onDamage?: boolean; shape?: 'single' | 'burst' }
+  | { op: 'condition'; damageChannel?: DamageChannel; conditionId: string; dur: number; potency?: number; magnitude?: number; defensePower?: number; saveDC?: number; saveRolls?: 2; onHit?: boolean; onDamage?: boolean; shape?: 'single' | 'burst' }
   | { op: 'trait'; traitId: string; level?: number; dur: number; shape?: 'single' | 'burst' }
   | { op: 'push'; force: number; steps: 1; physical?: boolean; onHit?: boolean; direction?: 'away' | 'towards' }
   | { op: 'dispel'; polarity: 'positive' | 'negative'; count: number }

@@ -59,7 +59,8 @@ export function skillConditionDescription(effect: ConditionEffect, target: Comba
   if (['empowered', 'weakened', 'vulnerable', 'blessed'].includes(effect.conditionId)) details.push('仅修正可造成的伤害，不绕过防护');
   if (effect.conditionId === 'blessed' && phase2Traits(target)) details.push('旧版祝福效果，保留原减伤与期限');
   if (effect.conditionId === 'blessed' && effect.defensePower !== undefined) details.push(`防御规格L${effect.defensePower}`);
-  return details.join('、') || def?.desc || effect.conditionId;
+  const description = details.join('、') || def?.desc || effect.conditionId;
+  return description + (effect.saveRolls === 2 ? '；目标两次均未抵抗时生效' : '');
 }
 const positive = new Set(['empowered', 'inspired', 'blessed', 'encouraged', 'confident', 'hasted']);
 export function isPositiveCondition(id: string): boolean { return positive.has(id); }
@@ -90,14 +91,18 @@ export function conditionChance(target: Combatant, effect: ConditionEffect): num
     return 1;
   }
   if (target.conditions.some((c) => c.id === effect.conditionId && c.dur > 0)) return 0;
-  return Array.from({ length: 20 }, (_, i) => i + 1).filter((n) => n === 1 || n !== 20 && n + controlBonus(target, effect.conditionId) < effect.saveDC!).length / 20;
+  const chance = Array.from({ length: 20 }, (_, i) => i + 1).filter((n) => n === 1 || n !== 20 && n + controlBonus(target, effect.conditionId) < effect.saveDC!).length / 20;
+  return chance ** (effect.saveRolls ?? 1);
 }
 export function prepareCondition(actor: Combatant, target: Combatant, effect: ConditionEffect, rng: Rng, units: readonly Combatant[] = [actor,target]): { condition?: ActiveCondition; text: string } {
   const name = definitions.get(effect.conditionId)?.name ?? effect.conditionId;
   if (!conditionChance(target, effect)) return { text: `${target.name}：${conditionImmunity(target, effect.conditionId) ?? '已有同类效果或已离场'}，未追加${name}` };
   if (effect.saveDC !== undefined) {
-    const bonus = controlBonus(target, effect.conditionId), roll = rng.d(20), total = roll + bonus;
-    if (roll === 20 || roll !== 1 && total >= effect.saveDC) return { text: `${target.name} 抵抗${name}（${roll}+${displayNumber(bonus)}对抗${displayNumber(effect.saveDC)}）` };
+    const bonus = controlBonus(target, effect.conditionId), rolls = effect.saveRolls ?? 1;
+    for (let check = 1; check <= rolls; check++) {
+      const roll = rng.d(20), total = roll + bonus;
+      if (roll === 20 || roll !== 1 && total >= effect.saveDC) return { text: `${target.name} 抵抗${name}（${rolls > 1 ? `第${check}/${rolls}次：` : ''}${roll}+${displayNumber(bonus)}对抗${displayNumber(effect.saveDC)}）` };
+    }
   }
   return { condition: { id: effect.conditionId, dur: effect.dur, sourceId: actor.id, ...(effect.damageChannel ? {damageChannel:effect.damageChannel} : {}), ...(ACTIVATION_CONTROLS.has(effect.conditionId) && phase2Traits(target) ? { controlPending: true, ...(effect.conditionId === 'charmed' ? { controlSide: combatSide(actor,units) } : {}) } : {}), ...(effect.conditionId === 'blessed' && effect.defensePower !== undefined ? { defensePower: effect.defensePower } : {}), ...(isCohort(target)&&target.scale!=='hero'&&definitions.get(effect.conditionId)?.dot?{affectedMembers:conditionExposure(actor,target,effect.shape==='burst')}:{}), ...(effect.potency !== undefined ? { potency: effect.potency } : {}), ...(effect.magnitude !== undefined ? { magnitude: effect.magnitude } : {}) }, text: `${target.name} 获得${name}，持续${effect.dur}次状态结算` };
 }

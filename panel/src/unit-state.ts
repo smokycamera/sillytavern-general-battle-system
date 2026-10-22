@@ -309,7 +309,7 @@ export function combatantFromUnknown(value: unknown): Combatant {
       if (effect.onHit !== undefined && typeof effect.onHit !== 'boolean' || effect.shape !== undefined && !['single', 'burst'].includes(String(effect.shape))) throw new Error('技能触发或范围参数损坏');
       if (effect.op === 'push' && (effect.steps !== 1 || !Number.isInteger(effect.force) || Number(effect.force) < 1 || Number(effect.force) > (modernItem ? 10 : 4))) throw new Error('推动参数损坏');
       if (effect.op === 'dispel' && (!['positive', 'negative'].includes(String(effect.polarity)) || !Number.isInteger(effect.count) || (Number(effect.count) < 1 || Number(effect.count) > (modernItem ? 10 : 2)))) throw new Error('解除参数损坏');
-      if (effect.op === 'condition' && (effect.potency !== undefined && (!Number.isInteger(effect.potency) || Number(effect.potency) < 1 || Number(effect.potency) > 3) || effect.saveDC !== undefined && (!Number.isInteger(effect.saveDC) || Number(effect.saveDC) < 1 || Number(effect.saveDC) > 30))) throw new Error('技能状态强度或抵抗参数损坏');
+      if (effect.op === 'condition' && (effect.potency !== undefined && (!Number.isInteger(effect.potency) || Number(effect.potency) < 1 || Number(effect.potency) > 3) || effect.saveDC !== undefined && (!Number.isInteger(effect.saveDC) || Number(effect.saveDC) < 1 || Number(effect.saveDC) > 30) || effect.saveRolls !== undefined && (effect.saveRolls !== 2 || effect.saveDC === undefined))) throw new Error('技能状态强度或抵抗参数损坏');
       if (effect.op === 'heal' && effect.amount !== undefined) {
         if (!Number.isFinite(effect.amount) || Number(effect.amount) < 1 || effect.dice !== undefined) throw new Error('治疗量损坏');
       } else if (effect.op === 'damage' || effect.op === 'heal') {
