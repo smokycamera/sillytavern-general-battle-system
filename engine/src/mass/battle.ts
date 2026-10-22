@@ -1,4 +1,5 @@
 import { displayNumber } from '../display-number.js';
+import { prepareRevivalBattle, tryRevive } from '../revival.js';
 import { isArmsV2, armsStatusLabels, shieldUsable, denialReady, denialModifiers, beginArmsActivation, noteArmsFire, armsWeaponReason, validateArmsState, isSprayer, spendSprayerFuel } from '../arms.js';
 import { sprayerFear, sprayerTank } from '../sprayer.js';
 import { formationMarchCost } from '../tactics.js';
@@ -242,7 +243,7 @@ export class MassBattle {
     this.rules = opts.rules ?? MASS_TW;
     for (const unit of this.combatants) { validateSkillModel(unit.skillModel); prepareSkillModel(unit, this.rules); }
     if(this.rules.combatModel)for(const unit of this.combatants){prepareCombatModel(unit,this.rules);upgradeCombatSkills(unit);}
-    for (const unit of this.combatants) { prepareResourceModel(unit, this.rules); prepareArmsModel(unit, this.rules); prepareTraitModel(unit, this.rules); validateTraitModel(unit.traitModel); validateEntrenchment(unit.entrenchedAt); validateItemModel(unit.itemModel); prepareItemModel(unit, this.rules); validateTraitLevelModel(unit.traitLevelModel); prepareTraitLevelModel(unit, this.rules); }
+    for (const unit of this.combatants) { prepareResourceModel(unit, this.rules); prepareArmsModel(unit, this.rules); prepareTraitModel(unit, this.rules); validateTraitModel(unit.traitModel); validateEntrenchment(unit.entrenchedAt); validateItemModel(unit.itemModel); prepareItemModel(unit, this.rules); validateTraitLevelModel(unit.traitLevelModel); prepareTraitLevelModel(unit, this.rules); prepareRevivalBattle(unit); }
     for (const u of this.combatants) { validateFlightState(u.airborne); validateFormationPosition(u.formationPosition); validateBattleControlState(u); validateWounded(u); validateArmsState(u); validateBarrier(u.barrier); validateAreas(u); validateGear(u); validateMount(u); validateMoraleState(u.moraleState); }
     for (const unit of this.combatants) reconcileDamageMorale(unit);
     if (this.rules.resolutionVersion !== 'v2' && this.combatants.some((u) => u.airborne || u.formationPosition !== undefined
@@ -1492,7 +1493,7 @@ export class MassBattle {
             try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'mass', ability.bonuses, this.rules.damageModel) ?? this.summonUnit?.(effect.templateId, actor.side, id); } catch { invalid = true; break; }
             const node = FORMATION_NODES.find((node) => node.side === actor.side && node.wing === formationNode(actor).wing && node.rank === 'reserve')!;
             if (!unit || [...this.combatants, ...stagedBirths, ...born].filter((u) => !this.isAttached(u.id) && u.status === 'ready' && formationNode(u).id === node.id).length >= (this.formationSlots ?? 3)) { invalid = true; break; }
-            prepareSkillModel(unit, this.rules); prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules); prepareTraitModel(unit,this.rules); prepareItemModel(unit,this.rules); prepareTraitLevelModel(unit,this.rules); beginLifestealRound(unit,this.round,true);
+            prepareSkillModel(unit, this.rules); prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules); prepareTraitModel(unit,this.rules); prepareItemModel(unit,this.rules); prepareTraitLevelModel(unit,this.rules); prepareRevivalBattle(unit,true); beginLifestealRound(unit,this.round,true);
             unit.id = id; unit.summonerId = actor.id; unit.bornRound = this.round;
             if (conjuredTemplate(effect.templateId)) unit.name = `${actor.name}的${unit.name}`;
             setFormation(unit, node); born.push(unit);
@@ -1740,8 +1741,14 @@ export class MassBattle {
         this.exposedHeroes.add(heroId);
         const retreat = this.combatants.some((u) => u.id !== hostId && !combatHostile(u, hero, this.combatants) && !this.isAttached(u.id) && u.status === 'ready' && this.rankOf(u) === 'reserve');
         const hpBefore=hero.hp;
-        hero.hp = retreat ? Math.max(1, Math.floor(hero.hp * 0.75)) : 0; hero.status = retreat ? 'fled' : this.nonLethal ? 'dying' : 'dead';
+        hero.hp = retreat ? Math.max(1, Math.floor(hero.hp * 0.75)) : 0;
+        if (retreat) hero.status = 'fled';
         this.recordEvent({ round: this.round, kind: 'death', participants: [hero.id], damage:{targetId:hero.id,amount:hpBefore-hero.hp,cause:'随队暴露'}, text: `${hero.name} 随队暴露：${retreat ? '预备队掩护，受伤撤出' : this.nonLethal ? '无退路，濒死失能' : '无退路，阵亡'}` });
+        if (!retreat) {
+          const revival = tryRevive(hero);
+          if (revival) this.recordEvent({ round: this.round, kind: 'condition', participants: [hero.id], text: revival });
+          else hero.status = this.nonLethal ? 'dying' : 'dead';
+        }
       }
       for (const [id, left] of this.reloadCd) { if (left <= 1) this.reloadCd.delete(id); else this.reloadCd.set(id, left - 1); }
       this.previousOrders = new Map(plans.filter((p) => !['ability', 'takeoff', 'land'].includes(p.type)).map((p) => [p.unitId, p]));
@@ -1783,6 +1790,7 @@ export class MassBattle {
   start(): void {
     for (const unit of this.combatants) delete unit.regenerationRemainder;
     if (this.started) return;
+    for (const unit of this.combatants) prepareRevivalBattle(unit, true);
     assertBattleCapacity(this.combatants, 'mass');
     if (this.rules.resolutionVersion === 'v2' || this.formationSlots !== undefined) this.prepareFormation();
     this.started = true;
@@ -2449,6 +2457,11 @@ export class MassBattle {
       if(t.side==='enemy')this.xpGained+=earned;
       const owner=u?.summonerId??u?.id;
       if(owner&&earned&&u?.side!==t.side&&u?.side!=='neutral')this.xpByUnit.set(owner,(this.xpByUnit.get(owner)??0)+earned);
+    }
+    const revival = tryRevive(t);
+    if (revival) {
+      this.recordEvent({ round: this.round, kind: 'condition', participants: [t.id], text: revival });
+      return;
     }
     if (t.hp <= 0 && t.status !== 'dead' && !(this.nonLethal && t.status === 'dying')) {
       if(this.rules.resolutionVersion==='v2')this.defeatedIds.add(t.id);

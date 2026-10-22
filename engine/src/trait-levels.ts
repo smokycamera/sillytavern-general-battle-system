@@ -106,6 +106,7 @@ export function traitLadderSummary(id: string, level: number, model?: unknown): 
   const modern = progression({traitLevelModel:model}), revised = stackingRevision({traitLevelModel:model});
   const traitParameter = (p: TraitParameter, L: number) => parameterValue(p, L, model);
   const L = Math.max(1, Math.min(10, Math.round(level))), parts: string[] = [];
+  if (id === 'revival') return `每战${traitParameter('revivalUses', L)}次，倒下后恢复${traitParameter('revivalPercent', L)}%最大生命；编队按入场现员比例复起，致命与非致命均生效，不刷新精力、弹药和冷却`;
   const add = (when: boolean, text: string) => { if (when) parts.push(text); };
   if (id === 'forest-lore') {
     add(true, '森林中攻击不受−1'); add(roughGroundCost(L) < 2, roughGroundCost(L) === 1 ? '森林每格只耗1点' : `森林每格耗${roughGroundCost(L)}点`);
