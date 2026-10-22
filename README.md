@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.9.6**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **2.9.7**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-2.9.6 merges a letter replan on a faction's final activation with its next battle round, avoiding consecutive requests at the round boundary. New letters, diplomatic changes and invalidated plans still trigger a fresh decision. See the [current release](docs/current-release.md).
+2.9.7 allows area charm and area magic with charm. Each target uses the same single resistance check as single-target charm. Built-in lorebook guidance now grades traits by setting and inherent nature independently of unit level. See the [current release](docs/current-release.md).
 
 ## Documentation
 

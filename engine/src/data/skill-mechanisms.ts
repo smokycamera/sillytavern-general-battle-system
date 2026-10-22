@@ -11,7 +11,7 @@ export const SKILL_CATEGORY_ALIASES: Record<SkillCategory, string[]> = {
   'physical-single': ['单体物理', '物理单体伤害', '单体物理伤害', '物理单攻', 'physical single', 'physical-single'],
   'physical-area': ['范围物理', '物理范围伤害', '范围物理伤害', '物理群攻', '物理群体', 'physical aoe', 'physical-area'],
   'magic-single': ['单体魔法', '单体法术', '法术单体', '魔法单体伤害', '法术单攻', 'magic single', 'magic-single'],
-  'magic-area': ['范围魔法', '范围法术', '法术范围', '魔法范围伤害', '魔法群攻', '法术群攻', 'magic aoe', 'magic-area'],
+  'magic-area': ['范围魔法', '范围法术', '法术范围', '魔法范围伤害', '魔法群攻', '法术群攻', '群体魔法', '群体法术', '魔法群体', 'magic aoe', 'magic-area'],
   buff: ['buff', '增益', '增益技能', '强化', '强化技能'], debuff: ['debuff', '减益', '减益技能', '负面', '负面状态'],
 };
 export const SKILL_MODIFIER_ALIASES: Record<string, string[]> = {
@@ -128,7 +128,7 @@ const SHORTHAND: Record<string, [SkillCategory, ...string[]]> = {
   净化: ['buff', 'cleanse'], 回能: ['buff', 'restore'], 火墙: ['magic-area', 'zone-fire'], 毒雾: ['magic-area', 'zone-poison'], 烟幕: ['buff', 'zone-smoke'],
   治疗区域: ['buff', 'zone-healing'], 陷阱: ['debuff', 'zone-trap'],
   眩晕: ['debuff', 'stun'], 定身: ['debuff', 'root'], 沉默: ['debuff', 'silence'], 缴械: ['debuff', 'disarm'], 减速: ['debuff', 'slow'], 惊惧: ['debuff', 'fear'],
-  击退: ['debuff', 'push'], 拉拽: ['debuff', 'pull'],
+  击退: ['debuff', 'push'], 拉拽: ['debuff', 'pull'], 魅惑: ['debuff', 'charm'],
   冲锋: ['physical-single', 'melee', 'dash'], 突击: ['physical-single', 'melee', 'dash'], 飞扑: ['physical-single', 'melee', 'dash'], 扑击: ['physical-single', 'melee', 'dash'],
   ...Object.fromEntries(([['dash', '突进', '冲刺', '前冲'], ['blink', '闪现', ...SKILL_MODIFIER_ALIASES.blink!], ['withdraw', '后撤', ...SKILL_MODIFIER_ALIASES.withdraw!]] as string[][])
     .flatMap(([id, ...words]) => words.map((word) => [word, ['buff', id!]]))),
@@ -141,7 +141,7 @@ export interface SkillMechanismParts { mechanism?: SkillMechanism; dropped: Drop
 export function parseSkillMechanismParts(text: string): SkillMechanismParts | undefined {
   const short = text.trim().replace(/^控制[：:]?/, '');
   const expand = (word: string) => { const [category, ...ids] = SHORTHAND[word]!; return [SKILL_CATEGORIES.find((c) => c.id === category)!.name, ...ids.map((id) => SKILL_MODIFIERS.find((m) => m.id === id)!.name)].join('+'); };
-  let source = SHORTHAND[short] ? expand(short) : text.trim().replace(/^(?:范围|群体)(buff|debuff|增益|减益)/i, '$1范围');
+  let source = SHORTHAND[short] ? expand(short) : text.trim().replace(/^(?:范围|群体)\s*\+?\s*魅惑/, '减益范围+魅惑').replace(/^(?:范围|群体)(buff|debuff|增益|减益)/i, '$1范围');
   const shorthand = Object.keys(SHORTHAND).sort((a, b) => b.length - a.length).find(name => source.startsWith(name + '+'));
   if (shorthand) source = expand(shorthand) + source.slice(shorthand.length);
   const prefix = SKILL_CATEGORIES.flatMap((c) => [c.name, ...SKILL_CATEGORY_ALIASES[c.id]].map((name) => ({ id: c.id, name })))
