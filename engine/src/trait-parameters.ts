@@ -13,6 +13,8 @@ export const TRAIT_LEVEL_ALIASES: Readonly<Record<string, { id: string; level: n
 export const canonicalTraitId = (id: string, phase2 = true): string => id === 'terror' && !phase2 ? id : TRAIT_LEVEL_ALIASES[id]?.id ?? id;
 export const sourceTraitLevel = (id: string, level?: number): number => TRAIT_LEVEL_ALIASES[id]?.level ?? level ?? 5;
 export const TRAIT_PARAMETERS = {
+  revivalPercent: [10, 20, 30, 40, 50, 65, 80, 100, 100, 100],
+  revivalUses: [1, 1, 1, 1, 1, 1, 1, 1, 2, 3],
   medicHealing: [1.05, 1.10, 1.15, 1.20, 1.25, 1.28, 1.31, 1.34, 1.37, 1.40],
   medicRescue: [55, 60, 65, 70, 75, 77, 79, 81, 83, 85],
   woundRatio: [.25, .5, .75, .875, 1, 1.125, 1.3125, 1.5, 1.75, 2],
@@ -63,7 +65,7 @@ export function gradedTraitCost(id: string, level: number): number {
   if (TERRAIN_GRADED_TRAITS.includes(id)) return Math.ceil(level / 2);
   const canonical = canonicalTraitId(id), L = sourceTraitLevel(id, level);
   // 屠兽者历史上不在 STRONG_TRAITS 中，实际成本为3，不能因为名称叫“强版”猜成6。
-  const c5 = canonical === 'regen' ? 6 : 3, c8 = canonical === 'guardian' || canonical === 'ap-weapon' || canonical === 'fear' ? 6 : canonical === 'anti-large' ? 3 : undefined;
+  const c5 = canonical === 'regen' || canonical === 'revival' ? 6 : 3, c8 = canonical === 'revival' ? 8 : canonical === 'guardian' || canonical === 'ap-weapon' || canonical === 'fear' ? 6 : canonical === 'anti-large' ? 3 : undefined;
   const c1 = Math.max(1, Math.ceil(c5 * .4)), c10 = Math.max(Math.ceil(c5 * 1.6), Math.ceil((c8 ?? 0) * 1.25));
   const anchors = [[1, c1], [5, c5], ...(c8 === undefined ? [] : [[8, c8]]), [10, c10]];
   const upper = anchors.findIndex(([l]) => L <= l!);
