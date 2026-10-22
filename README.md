@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-2.9.7 allows area charm and area magic with charm. Each target must fail two resistance checks for area charm to apply. Built-in lorebook guidance now grades traits by setting and inherent nature independently of unit level. See the [current release](docs/current-release.md).
+2.9.7 allows area charm and area magic with charm. Each target uses the same single resistance check as single-target charm. Built-in lorebook guidance now grades traits by setting and inherent nature independently of unit level. See the [current release](docs/current-release.md).
 
 ## Documentation
 

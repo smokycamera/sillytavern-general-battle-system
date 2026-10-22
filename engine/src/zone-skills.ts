@@ -24,7 +24,6 @@ export function validateZoneStrength(zone: { amount?: unknown; penetration?: unk
     if ('dur' in e && !integer(e.dur,1,99) || 'onHit' in e && e.onHit!==undefined && typeof e.onHit!=='boolean'
       || 'onDamage' in e && e.onDamage!==undefined && typeof e.onDamage!=='boolean') throw Error('持续区域的附加效果时间或前提损坏');
     if(e.op==='condition' && (!standardConditionMap().has(e.conditionId) || e.saveDC!==undefined&&!integer(e.saveDC,1,30)
-      || e.saveRolls!==undefined&&(e.saveRolls!==2||e.saveDC===undefined)
       || e.potency!==undefined&&!integer(e.potency,1,3) || e.magnitude!==undefined&&(!Number.isFinite(e.magnitude)||e.magnitude<(modern ? 0 : .25)||e.magnitude>(modern ? 16 : 2)))) throw Error('持续区域的附加状态损坏');
     if(e.op==='trait'&&!traitRegistry().get(e.traitId)?.v2SourceReady)throw Error('持续区域的特质损坏');
     if(e.op==='barrier'&&!integer(e.amount,1,1e6))throw Error('持续区域的屏障损坏');

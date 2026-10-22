@@ -14,41 +14,30 @@ const rng = () => new SeededRng('controls');
 const forced = { d: () => 1 } as unknown as Rng;
 
 describe('P2-D/E 控制生命周期与临时战斗关系', () => {
-  it.each(['群体魅惑', '范围+魅惑', 'debuff范围+魅惑', '群体魔法+魅惑', '魔法范围+魅惑', '魔法单体+扇形+魅惑'])('范围魅惑合法且只给魅惑增加双重抵抗：%s', (text) => {
+  it.each(['群体魅惑', '范围+魅惑', 'debuff范围+魅惑', '群体魔法+魅惑', '魔法范围+魅惑', '魔法单体+扇形+魅惑'])('范围魅惑合法且与单体使用相同DC：%s', (text) => {
     const mechanism = parseSkillMechanism(text);
     expect(mechanism).toBeDefined();
     const ability = compileSkill({ id: skillMechanismId(mechanism!) }, 5, 'caster', 'skills-v2');
     expect(ability.area?.maxTargets).toBe(3);
-    expect(ability.effects.find(e => e.op === 'condition')).toMatchObject({ conditionId: 'charmed', saveDC: 13, saveRolls: 2, dur: 1, shape: 'burst' });
+    expect(ability.effects.find(e => e.op === 'condition')).toMatchObject({ conditionId: 'charmed', saveDC: 13, dur: 1, shape: 'burst' });
     if (mechanism!.category.startsWith('magic')) {
       expect(ability.effects.some(e => e.op === 'damage')).toBe(true);
       expect(ability.effects.find(e => e.op === 'condition')).toMatchObject({ onHit: true });
     }
   });
-  it('范围魅惑须连续两次抵抗失败，任一次抵抗成功立即停止；单体及旧效果仍只判一次', () => {
+  it('范围与单体魅惑逐目标使用相同的一次抵抗判定', () => {
     const caster = unit('caster'), target = unit('target', 'enemy');
-    const single = { op: 'condition' as const, conditionId: 'charmed', dur: 1, saveDC: 13 };
-    const area = JSON.parse(JSON.stringify({ ...single, shape: 'burst', saveRolls: 2 })) as typeof single & { saveRolls: 2 };
-    expect(conditionChance(target, area)).toBeCloseTo(conditionChance(target, single) ** 2);
-    for (const [rolls, succeeds, count] of [[[1, 1], true, 2], [[1, 20], false, 2], [[20], false, 1]] as const) {
-      let calls = 0;
-      const random = { d: () => rolls[calls++]! } as unknown as Rng;
-      const result = prepareCondition(caster, target, area, random);
-      expect(!!result.condition).toBe(succeeds);
-      expect(calls).toBe(count);
-      if (count === 2 && !succeeds) expect(result.text).toContain('第2/2次');
+    const single = compileSkill({ id: skillMechanismId(parseSkillMechanism('debuff+魅惑')!) }, 5, caster.id, 'skills-v2').effects.find(e => e.op === 'condition')!;
+    const area = compileSkill({ id: skillMechanismId(parseSkillMechanism('群体魅惑')!) }, 5, caster.id, 'skills-v2').effects.find(e => e.op === 'condition')!;
+    expect(conditionChance(target, area)).toBe(conditionChance(target, single));
+    for (const [roll, succeeds] of [[1, true], [20, false]] as const) {
+      for (const effect of [single, JSON.parse(JSON.stringify(area)) as typeof area]) {
+        let calls = 0;
+        const random = { d: () => { calls++; return roll; } } as unknown as Rng;
+        expect(!!prepareCondition(caster, target, effect, random).condition).toBe(succeeds);
+        expect(calls).toBe(1);
+      }
     }
-    let calls = 0;
-    const random = { d: () => { calls++; return 1; } } as unknown as Rng;
-    expect(prepareCondition(caster, target, single, random).condition).toBeDefined();
-    expect(calls).toBe(1);
-    const ability = compileSkill({ id: skillMechanismId(parseSkillMechanism('debuff+魅惑')!) }, 5, caster.id, 'skills-v2');
-    expect(ability.effects.find(e => e.op === 'condition')).not.toHaveProperty('saveRolls');
-    target.traits = ['tenacity']; target.traitLevels = { tenacity: 10 };
-    expect(conditionChance(target, area)).toBeCloseTo(conditionChance(target, single) ** 2);
-    expect(conditionChance(target, area)).toBeGreaterThan(0);
-    target.conditions = [{ id: 'charmed', dur: 1 }];
-    expect(conditionChance(target, area)).toBe(0);
   });
   it('控制AI按实际行动变化估值，魅惑与混乱查询不修改状态或重掷决定', () => {
     const a=unit('a'), friend=unit('friend'), caster=unit('e','enemy');a.pos=30;friend.pos=31;caster.pos=23;
