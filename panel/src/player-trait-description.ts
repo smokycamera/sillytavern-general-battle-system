@@ -9,7 +9,7 @@ import {
 } from '../../engine/src/trait-levels.js';
 
 /** 玩家说明只列用途与数值；参数仍读取当前单位使用的规则。 */
-export function playerTraitLevelDescription(id: string, level: number, model?: unknown, commandRangeModel?: Combatant['commandRangeModel']): string {
+export function playerTraitLevelDescription(id: string, level: number, model?: unknown, commandRangeModel?: Combatant['commandRangeModel'], recoveryModel?: Combatant['recoveryModel']): string {
   const L = Math.max(1, Math.min(10, Math.round(level)));
   const modern = progression({ traitLevelModel: model }), revised = stackingRevision({ traitLevelModel: model });
   const p = (key: TraitParameter) => traitParameter(key, L, model);
@@ -66,7 +66,7 @@ export function playerTraitLevelDescription(id: string, level: number, model?: u
       return revised ? `${channel}伤害减免${pct('channelResistance')}%` : modern ? `${channel}抗穿+${value('channelResistance')}` : `${channel}防护+${n(2 * p('woundRatio'))}`;
     }
     case 'lifesteal': return `造成生命伤害后，恢复${pct('lifestealRatio')}%伤害量的生命或伤兵` + (revised ? `，每轮最多恢复${pct('lifestealRoundCap')}%生命` : '');
-    case 'regen': return `每轮基础恢复${n(modern ? p('regenAmount') : 3 * p('woundRatio'))}生命或伤兵`;
+    case 'regen': return `每轮基础恢复${n((modern ? p('regenAmount') : 3 * p('woundRatio')) * (recoveryModel ? 1.5 : 1))}生命或伤兵`;
     case 'medic': return `治疗量×${value('medicHealing')}，编队伤亡中${value('medicRescue')}%可救治`;
     case 'poison-strike': return `动能攻击造成伤害后附毒3轮，毒伤×${value(modern ? 'poisonMultiplier' : 'woundRatio')}，中毒者攻击−1`;
     case 'fatigue-trained': return `疲劳获得×${value('fatigueMultiplier')}`;

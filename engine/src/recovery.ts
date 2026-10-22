@@ -1,3 +1,4 @@
+import { lifeRecoveryScale } from './life-recovery.js';
 import { progression, stackingRevision } from './progression.js';
 import type { Combatant, ConditionDef, Trait } from './types.js';
 import { absorbBarrier } from './barrier.js';
@@ -166,7 +167,7 @@ export function regenerationAmount(unit: Combatant, registry: Map<string, Trait>
     const level = effectiveTraitLevel(unit, 'regen');
     amount = (progression(unit) ? traitParameter('regenAmount', level, unit.traitLevelModel) : 3 * traitParameter('woundRatio', level, unit.traitLevelModel)) * healingGradeMultiplier(level, unit.level, unit.healingModel);
   }
-  return Math.min(recoveryCapacity(unit), amount * (isCohort(unit) && unit.scale !== 'hero' ? Math.max(1,personnel(unit)/COHORT_REFERENCE) : 1) + (phase2Traits(unit) && amount > 0 ? (unit.regenerationRemainder ?? 0) / 10000 : 0));
+  return Math.min(recoveryCapacity(unit), amount * lifeRecoveryScale(unit) * (isCohort(unit) && unit.scale !== 'hero' ? Math.max(1,personnel(unit)/COHORT_REFERENCE) : 1) + (phase2Traits(unit) && amount > 0 ? (unit.regenerationRemainder ?? 0) / 10000 : 0));
 }
 
 /** amount为本周期只读预算（含旧余量）；不能由额外动作或预览调用此提交入口。 */

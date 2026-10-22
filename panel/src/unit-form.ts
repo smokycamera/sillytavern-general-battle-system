@@ -49,7 +49,7 @@ export function unitForm(prefix: string, d: UnitDraft, registry: Map<string, Tra
   const describe = playerTraitDescription;
   const choice = (t: Trait) => {
     const level = d.traitLevels?.[t.id] ?? 1, graded = isGradedTrait(t.id);
-    return `<label title="${esc(graded ? t.name + 'L' + level + '：' + playerTraitLevelDescription(t.id, level, 'traits-items-v2', 'graded-v1') : describe(t))}"><input type="checkbox" data-role="${prefix}-trait" value="${t.id}" ${d.traits.includes(t.id) ? 'checked' : ''}>${t.name}${graded ? `<input type="number" min="1" max="10" value="${level}" data-role="${prefix}-trait-level" data-trait="${t.id}" aria-label="${t.name}等级">` : ''}</label>`;
+    return `<label title="${esc(graded ? t.name + 'L' + level + '：' + playerTraitLevelDescription(t.id, level, 'traits-items-v2', 'graded-v1', d.numericModel ? 'life-scaled-v1' : undefined) : describe(t))}"><input type="checkbox" data-role="${prefix}-trait" value="${t.id}" ${d.traits.includes(t.id) ? 'checked' : ''}>${t.name}${graded ? `<input type="number" min="1" max="10" value="${level}" data-role="${prefix}-trait-level" data-trait="${t.id}" aria-label="${t.name}等级">` : ''}</label>`;
   };
   const listed = new Set(traitCatalog(registry).flatMap((g) => g.traits.map((t) => t.id)));
   const legacy = d.traits.filter((id) => !listed.has(id)).flatMap((id) => registry.get(id) ? [registry.get(id)!] : []);

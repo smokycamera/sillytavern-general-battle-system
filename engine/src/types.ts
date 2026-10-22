@@ -281,6 +281,8 @@ export interface ActiveCondition {
 export type UnitStatus = 'ready' | 'dying' | 'dead' | 'routing' | 'fled';
 
 export interface Combatant {
+  recoveryModel?: import('./life-recovery.js').LifeRecoveryModel;
+  artilleryModel?: import('./artillery-model.js').ArtilleryModel;
   /** Fractional normal movement only; whole unused steps never stockpile. Battle-local. */
   movementRemainder?: number;
   marchRemainder?: number;
@@ -605,6 +607,8 @@ export interface BattleLogEntry {
 // ---------- 规则包 ----------
 
 export interface RulePack {
+  recoveryModel?: import('./life-recovery.js').LifeRecoveryModel;
+  artilleryModel?: import('./artillery-model.js').ArtilleryModel;
   numericModel?: import('./numeric-model.js').NumericModel;
   /** V8：训练输出每级增幅；缺省保留旧战斗的 12%。 */
   trainingDamagePerLevel?: number;

@@ -1,4 +1,4 @@
-import { SmallBattle, MassBattle, V26_OVERFLOW_D20, V26_OVERFLOW_TW, LITE_D20, generatedLayeredField,
+import { SmallBattle, MassBattle, V27_OVERFLOW_D20, V27_OVERFLOW_TW, LITE_D20, generatedLayeredField,
   environmentTags, recommendedFormationSlots, cellLabel, personnel, type Combatant, type Trait } from '../../engine/src/index.js';
 import { assertBattleCapacity } from '../../engine/src/battle-limits.js';
 import { newBattleCommanderProfiles } from '../../engine/src/commander-profile.js';
@@ -35,7 +35,7 @@ export function buildEncounter(input: EncounterBuild): SmallBattle | MassBattle 
     const combatants = prepareMassRoster(roster);
     for (const unit of combatants) setMoraleLock(unit, unit.side === 'ally' && unit.id === input.protagonistId);
     const battle = new MassBattle({ nonLethal: input.nonLethal, seed: v2 ? seed : undefined,
-      formationSlots: recommendedFormationSlots(combatants), ...(v2 ? { rules: V26_OVERFLOW_TW } : {}),
+      formationSlots: recommendedFormationSlots(combatants), ...(v2 ? { rules: V27_OVERFLOW_TW } : {}),
       combatants, traitRegistry, commanderId: input.commanderId, zones: ['左翼','中军','右翼'], summonUnit, field: { tags: v2 ? tags : setup.field ? [setup.field] : [] } });
     battle.commanderProfiles = newBattleCommanderProfiles(context?.commanders); battle.start(); return battle;
   }
@@ -48,7 +48,7 @@ export function buildEncounter(input: EncounterBuild): SmallBattle | MassBattle 
   if (context && battlefield?.objective.kind === 'escape') { context.vipId = battlefield.objective.unitId; context.vipName = roster.find(u => u.id === context.vipId)?.name; }
   const combatants = structuredClone(roster);
   for (const unit of combatants) setMoraleLock(unit, unit.side === 'ally' && unit.id === input.protagonistId);
-  const battle = new SmallBattle({ nonLethal: input.nonLethal, ...(v2 ? { battlefield } : {}), rules: v2 ? V26_OVERFLOW_D20 : LITE_D20,
+  const battle = new SmallBattle({ nonLethal: input.nonLethal, ...(v2 ? { battlefield } : {}), rules: v2 ? V27_OVERFLOW_D20 : LITE_D20,
     combatants, seed: v2 ? seed : undefined, traitRegistry, summonUnit, field: { tags: v2 ? tags : setup.field ? [setup.field] : [] } });
   battle.commanderProfiles = newBattleCommanderProfiles(context?.commanders); battle.start(); return battle;
 }

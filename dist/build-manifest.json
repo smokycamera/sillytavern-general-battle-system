@@ -1,14 +1,14 @@
 {
   "format": "tavern-battle-native-build",
   "version": "2.9.8",
-  "builtAt": "2026-10-22T18:59:49.362Z",
-  "sourceFingerprint": "a8247ff680aaf1f58c889e2416155a7e704a6dc65daba89ce4430c2f6fee5f66",
+  "builtAt": "2026-10-22T19:26:10.598Z",
+  "sourceFingerprint": "c54b6c4ac7ef2d45439253170fb04d3a18b8f1f457d5fb900f4d123ac4b7a26e",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
-      "path": "dist/assets/panel-BEJUN06g.js",
-      "bytes": 1525990,
-      "sha256": "96e2a6984021f7ef7220528cee8537817aee289b39ffdad475d7a7d177650f38"
+      "path": "dist/assets/panel-BCInOmch.js",
+      "bytes": 1528728,
+      "sha256": "f0c9c215556222aa36590a7fcc7cc74fce7eba042f8c98627a6c7c9479429fea"
     },
     {
       "path": "dist/assets/panel-DWnwi5Zd.css",
@@ -16,9 +16,9 @@
       "sha256": "a1aa52b2cbdba7c03a436ec52a79e6bf9875bf1e35fb4db145966238ef50127d"
     },
     {
-      "path": "dist/assets/preferences-ClaGiKbi.js",
-      "bytes": 1007382,
-      "sha256": "a6ddd56a2a02cbf99ab39449dc6ef2e0fa222923d014b38c385e3e251433af2c"
+      "path": "dist/assets/preferences-B0oJycGA.js",
+      "bytes": 1009454,
+      "sha256": "1d0d2b652ec539f617f3f5998650fa617c722c26bc2d3189c1528080e4743383"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -34,6 +34,11 @@
       "path": "assets/worldbook/lorebook system explain.md",
       "bytes": 84985,
       "sha256": "b6b525cfc77dce466c77ff28b137dce855974d6f6441ac95e045af7154b56976"
+    },
+    {
+      "path": "docs/artillery-recovery-v27-20261023.md",
+      "bytes": 4186,
+      "sha256": "5c30c77a56ce51a671f75963902fc2100afbebd87629f48cf6d102ee3026722e"
     },
     {
       "path": "docs/battle-planning-v2.md",
@@ -57,8 +62,8 @@
     },
     {
       "path": "docs/current-release.md",
-      "bytes": 29721,
-      "sha256": "b41ecdd3db01150d53fb62ae178c9e41c9173dbc9bb6c8665fc5b6aed8b7e22f"
+      "bytes": 30822,
+      "sha256": "432a29375497ea16eb5f92db302954c2044e0dcb5f92e484fadaca46ed61732e"
     },
     {
       "path": "docs/embedded-worldbook.md",
@@ -104,6 +109,11 @@
       "path": "docs/native-event-display.md",
       "bytes": 3100,
       "sha256": "c45c218b36f1780a1c84f1c560e6642b789de77bfe3e547c1b59d2251848851a"
+    },
+    {
+      "path": "docs/numeric-v26-20261023.md",
+      "bytes": 5892,
+      "sha256": "5165eb346e18af58a8f7e43622a11b2839c80370fdd9e192a647065e30654de7"
     },
     {
       "path": "docs/prompt-backups/indoor-task-before-20261020.txt",
@@ -202,8 +212,8 @@
     },
     {
       "path": "docs/README.md",
-      "bytes": 1456,
-      "sha256": "ecb65d340e8f129204b82c0194442016985070e5b5d4676968008dd06a448282"
+      "bytes": 1617,
+      "sha256": "d4677a115ddf9b493b94a47a90bcccb74d775aeca4a322f9bd66edfb8f583c5a"
     },
     {
       "path": "docs/release-channels.md",
@@ -253,7 +263,7 @@
     {
       "path": "dist/index.js",
       "bytes": 96948,
-      "sha256": "72b49167e6d2b500f6a0dd2334443a0fb7dd7665b00942924da4183393255ec2"
+      "sha256": "3175eb18438e5dbd0efec00b4ff17cd243f3c611847112dd8cb65a4cc9361bc6"
     },
     {
       "path": "LICENSE",
@@ -328,7 +338,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 48599,
-      "sha256": "f4043121f857ea6164475955d05f5f4488aab0b18973f692cad4f9fd56a8e512"
+      "sha256": "6cb2a4cc41bbc41017c7f58cb8b918e578d9fcb53ad45f029f019d4f69250814"
     },
     {
       "path": "README.md",

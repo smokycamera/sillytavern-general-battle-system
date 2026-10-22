@@ -1,4 +1,6 @@
 import { gradedNumbers, gradedLifeScale, NUMERIC_MODEL, unitMultiplier, unitStep, validateNumericModel } from './numeric-model.js';
+import { validateArtilleryModel } from './artillery-model.js';
+import { validateLifeRecoveryModel } from './life-recovery.js';
 import { displayNumber } from './display-number.js';
 import { resolveHealingBudget } from './healing.js';
 import { isWoundModel } from './balance.js';
@@ -15,6 +17,7 @@ export const COHORT_REFERENCE = 50;
 export interface FormationStrength { members: number; capacity: number; memberHp: number; woundedRemainder?: number; health?:MemberHealthGroup[] }
 export const isCohort = (u: Combatant) => u.combatModel === COHORT_MODEL || u.combatModel === MEMBER_HEALTH_MODEL;
 export function validateCombatModel(u: Combatant): void {
+  validateArtilleryModel(u.artilleryModel); validateLifeRecoveryModel(u.recoveryModel);
   validateNumericModel(u.numericModel);
   for (const value of [u.movementRemainder,u.marchRemainder]) if (value !== undefined && (!gradedNumbers(u) || !Number.isFinite(value) || value < 0 || value >= 1)) throw Error('移动余量损坏');
   validateInstanceVariance(u.genAudit?.variance);
@@ -45,7 +48,9 @@ export function setStrength(u: Combatant, value: number): void {
   if(isCohort(u)&&u.scale!=='hero'){synchronizePersonnel(u,true);}
 }
 export function prepareCombatModel(u: Combatant, rules: RulePack, memberHp?:number): void {
-  validateNumericModel(u.numericModel); validateNumericModel(rules.numericModel);
+  validateNumericModel(u.numericModel); validateNumericModel(rules.numericModel); validateArtilleryModel(u.artilleryModel); validateArtilleryModel(rules.artilleryModel); validateLifeRecoveryModel(u.recoveryModel); validateLifeRecoveryModel(rules.recoveryModel);
+  if (rules.recoveryModel) u.recoveryModel = rules.recoveryModel;
+  if (rules.artilleryModel) { u.artilleryModel = rules.artilleryModel; delete u.cannonAmmo; }
   if(!rules.combatModel)return;
   for(const c of u.conditions)if(c.affectedMembers!==undefined&&(!Number.isFinite(c.affectedMembers)||c.affectedMembers<0||c.affectedMembers>1e9))throw Error('状态波及人数损坏');
   if(u.combatModel!==undefined||u.formation!==undefined)validateCombatModel(u);

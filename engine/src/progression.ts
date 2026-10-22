@@ -5,8 +5,9 @@ export const stackingRevision = (value: { traitLevelModel?: unknown } | undefine
 export const progression = (value: { traitLevelModel?: unknown } | undefined): boolean => value?.traitLevelModel === PROGRESSION_MODEL || stackingRevision(value);
 export const ITEM_PROGRESSION = 'item-progression-v1' as const;
 export const ITEM_STACKING = 'item-progression-v2' as const;
-export type ItemProgressionModel = typeof ITEM_PROGRESSION | typeof ITEM_STACKING;
-export const itemProgression = (model: unknown): model is ItemProgressionModel => model === ITEM_PROGRESSION || model === ITEM_STACKING;
+export const ITEM_LIFE_RECOVERY = 'item-progression-v3' as const;
+export type ItemProgressionModel = typeof ITEM_PROGRESSION | typeof ITEM_STACKING | typeof ITEM_LIFE_RECOVERY;
+export const itemProgression = (model: unknown): model is ItemProgressionModel => model === ITEM_PROGRESSION || model === ITEM_STACKING || model === ITEM_LIFE_RECOVERY;
 export const GEAR_G = [.35, .50, .70, 1, 1.40, 1.90, 2.50, 3.20, 4.10, 5.20] as const;
 export const GEAR_D = [.10, .22, .35, .50, .67, .85, 1.06, 1.29, 1.54, 1.82] as const;
 export const ITEM_HEAL = [10, 17, 26, 38, 54, 74, 98, 126, 158, 194] as const;

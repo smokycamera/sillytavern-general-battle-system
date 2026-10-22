@@ -128,7 +128,11 @@ export const V25_OVERFLOW_TW: RulePack = { ...V24_OVERFLOW_TW, id: 'v25-overflow
 /** V26：连续修正、容量移动与更高基础生命；V25及以前保留原结算。 */
 export const V26_OVERFLOW_D20: RulePack = { ...V25_OVERFLOW_D20, id: 'v26-overflow-d20', name: 'V26 修正与容量', numericModel: 'graded-v1' };
 export const V26_OVERFLOW_TW: RulePack = { ...V25_OVERFLOW_TW, id: 'v26-overflow-tw', name: 'V26 修正与容量会战', numericModel: 'graded-v1' };
+/** V27：统一炮弹与余伤衰减；V26及以前保留弹种和线性溢出。 */
+export const V27_OVERFLOW_D20: RulePack = { ...V26_OVERFLOW_D20, id: 'v27-overflow-d20', name: 'V27 火炮衰减', artilleryModel: 'blast-decay-v1', recoveryModel: 'life-scaled-v1' };
+export const V27_OVERFLOW_TW: RulePack = { ...V26_OVERFLOW_TW, id: 'v27-overflow-tw', name: 'V27 火炮衰减会战', artilleryModel: 'blast-decay-v1', recoveryModel: 'life-scaled-v1' };
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V27_OVERFLOW_D20.id]: V27_OVERFLOW_D20, [V27_OVERFLOW_TW.id]: V27_OVERFLOW_TW,
   [V26_OVERFLOW_D20.id]: V26_OVERFLOW_D20, [V26_OVERFLOW_TW.id]: V26_OVERFLOW_TW,
   [V25_OVERFLOW_D20.id]: V25_OVERFLOW_D20, [V25_OVERFLOW_TW.id]: V25_OVERFLOW_TW,
   [V24_OVERFLOW_D20.id]: V24_OVERFLOW_D20, [V24_OVERFLOW_TW.id]: V24_OVERFLOW_TW,

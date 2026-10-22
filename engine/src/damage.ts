@@ -1,3 +1,4 @@
+import { artilleryDirect, artillerySplash, artilleryRetention } from './artillery-model.js';
 import { displayNumber } from './display-number.js';
 import { WEAPON_CLASSES } from './data/weapons.js';
 import { progression, stackingRevision } from './progression.js';
@@ -207,7 +208,7 @@ function gridAttack(attacker: Combatant): boolean { return attacker.pos !== unde
 export interface ResolvedWeapon { weapon: Weapon | undefined }
 function resolveWeapon(opts: Pick<AttackOpts, 'attacker' | 'defender' | 'weaponOverride'> & Partial<Pick<AttackOpts,'rules'|'autoHit'>>): ResolvedWeapon {
   const original=opts.weaponOverride ?? opts.attacker.weapon;
-  const weapon = opts.rules?.combatModel===MEMBER_HEALTH_MODEL?combatWeapon(original,opts.attacker,opts.defender,opts.rules?.weaponOverflow,opts.rules?.damageModel,opts.rules?.overmatch,opts.rules?.overmatchCurve):original;
+  const weapon = opts.rules?.combatModel===MEMBER_HEALTH_MODEL?combatWeapon(original,{...opts.attacker,artilleryModel:opts.rules.artilleryModel},opts.defender,opts.rules?.weaponOverflow,opts.rules?.damageModel,opts.rules?.overmatch,opts.rules?.overmatchCurve):original;
   if (!isArmsV2(opts.rules?.armsModel) || !weapon || opts.defender.scale === 'hero') return { weapon };
   // R12 霰弹散射；R16 会战喷射同“爆炸覆盖目标编队”。
   if (original?.recipe?.mechanism === 'shotgun') return { weapon: { ...weapon, splashTargets: 2, splashFactor: .5 } };
@@ -311,8 +312,11 @@ function memberPlan(opts:Omit<AttackOpts,'rng'>,direct:number,targets:number,res
   const extra = stackingRevision(opts.defender) ? Math.floor(rawExtra * (ward?.protection?.exposure ?? 1)) : rawExtra&&traitsV13(opts.defender)&&!opts.defenderEngaged&&looseFormation(opts.defender)?Math.floor(rawExtra * (1 - phase2Value(opts.defender, 'loose-formation', 'formationReduction', .5))):rawExtra;
   const members=hasMemberHealth(opts.defender),directTargets=members?Math.min(opts.defender.hp,targets):targets>0?1:0,splashTargets=Math.min(opts.defender.hp,targets*extra),max=members?opts.defender.formation!.memberHp:opts.defender.base.hpMax;
   const overflow=members&&attackOverflow(opts,penetration,resolved);
+  const artillery = opts.rules.artilleryModel && isCannonWeapon(weapon) && (!opts.abilityDamage || opts.abilityDamage.weaponBased);
+  const reference = max * directTargets, rawDirect = direct;
+  if (artillery) direct = Math.round(artilleryDirect(rawDirect,reference,artilleryRetention(opts.defender,weapon?.recipe?.power ?? weapon?.level ?? 1)));
   const cappedDirect=overflow&&directTargets>0?direct:Math.min(direct,max*directTargets);
-  const incomingSplash=Math.round(direct*extra*(weapon?.splashFactor??0)),splash=Math.min(max*splashTargets,incomingSplash);
+  const incomingSplash=Math.round(artillery ? artillerySplash(rawDirect,reference,extra,weapon?.splashFactor??0) : direct*extra*(weapon?.splashFactor??0)),splash=Math.min(max*splashTargets,incomingSplash);
   const context=opts.rules.overmatch?penetration??penetrationContext(opts,resolved):undefined;
   // R15 重击：武器攻击与武器技能按结算武器的基础单段命中均值判定，预览与结算同一结果。V21 先按盾规格跨代换算。
   const energy=energyTier(opts,context);
@@ -480,7 +484,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   const penetration=opts.rules.overmatch?protection??penetrationContext(opts,resolved):undefined,overflow=attackOverflow(opts,penetration,resolved);
   const ward = resolveStack(ctx.defMods, 'ward', ctx.ctxDef, {sameNameKeepsHighest:opts.rules.sameNameKeepsHighest,maxFlat:opts.rules.maxFlat});
   const moments=(times:number)=>{
-    const key=JSON.stringify([source?.baseDice,source?.apDice,rawMultiplier,times,weight,opts.defender.hp,opts.defender.barrier,opts.defender.energyShield,opts.defender.shield?.recipe,opts.defender.armsModel,opts.defender.formation,ctx.weapon?.splashTargets,ctx.weapon?.splashFactor,ward.protection?.exposure,opts.abilityDamage?.weaponBased,!!opts.abilityDamage,overflow,opts.rules.overmatch?penetration:undefined]);
+    const key=JSON.stringify([opts.rules.artilleryModel,opts.defender.level,opts.defender.armor,ctx.weapon?.recipe?.power??ctx.weapon?.level,source?.baseDice,source?.apDice,rawMultiplier,times,weight,opts.defender.hp,opts.defender.barrier,opts.defender.energyShield,opts.defender.shield?.recipe,opts.defender.armsModel,opts.defender.formation,ctx.weapon?.splashTargets,ctx.weapon?.splashFactor,ward.protection?.exposure,opts.abilityDamage?.weaponBased,!!opts.abilityDamage,overflow,opts.rules.overmatch?penetration:undefined]);
     const cached=memberPreviewCache.get(key);if(cached)return cached;
     const base=diceDistribution(source?.baseDice,times),ap=diceDistribution(source?.apDice,times);
     const result={mean:0,second:0,positive:0,casualties:0,max:0};

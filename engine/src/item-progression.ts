@@ -5,7 +5,7 @@ import { conditionEffectWeight } from './skill-model.js';
 import { gradedTraitCost } from './trait-parameters.js';
 import { isGradedTrait } from './data/traits.js';
 import { skillMoveReach } from './skill-movement.js';
-import { GEAR_G, ITEM_HEAL, ITEM_BARRIER, ITEM_MORALE, ITEM_DURATION, ITEM_PROGRESSION, ITEM_STACKING, REVISED_ITEM_HEAL, REVISED_ITEM_BARRIER, type ItemProgressionModel } from './progression.js';
+import { ITEM_LIFE_RECOVERY, GEAR_G, ITEM_HEAL, ITEM_BARRIER, ITEM_MORALE, ITEM_DURATION, ITEM_PROGRESSION, ITEM_STACKING, REVISED_ITEM_HEAL, REVISED_ITEM_BARRIER, type ItemProgressionModel } from './progression.js';
 
 const hard = new Set(['stunned','restrained','disarmed','silenced']);
 const binary = new Set(['taunted','charmed','confused','blinded']);
@@ -18,7 +18,7 @@ export function applyItemProgression(ability: Ability, bonuses: Enhancements | u
   const weight = Math.max(1, payload.filter(e => e.op !== 'damage').reduce((n,e) => n + (e.op === 'condition' ? conditionEffectWeight(e.conditionId, 'skills-v2') : e.op === 'trait' && isGradedTrait(e.traitId) ? Math.max(1, Math.ceil(gradedTraitCost(e.traitId, power) / 3)) : 1), ability.effects.filter(e => e.op === 'zone').length));
   const duration = Math.max(1, ITEM_DURATION[i]! + bonusSteps(bonuses, 'duration', 5));
   const effect = (e: EffectOp, zone = false): EffectOp => {
-    if (e.op === 'heal') return { op: 'heal', power, amount: Math.max(1, heals[i]! * (zone ? 1 : area ? .65 : 1) * bonusMultiplier(bonuses, 'healing') / weight) };
+    if (e.op === 'heal') return { op: 'heal', power, amount: Math.max(1, heals[i]! * (version === ITEM_LIFE_RECOVERY ? 1.5 : 1) * (zone ? 1 : area ? .65 : 1) * bonusMultiplier(bonuses, 'healing') / weight) };
     if (e.op === 'barrier') return { ...e, amount: Math.max(1, Math.round(barriers[i]! * (area ? .65 : 1) * bonusMultiplier(bonuses, 'power') / weight)), dur: duration, defensePower: power };
     if (e.op === 'resource') return { ...e, amount: Math.sign(e.amount) * Math.max(0, power + bonusSteps(bonuses, 'resource', 5)) };
     if (e.op === 'morale') return { ...e, amount: Math.sign(e.amount) * ITEM_MORALE[i]! * bonusMultiplier(bonuses, 'morale') };
@@ -34,7 +34,7 @@ export function applyItemProgression(ability: Ability, bonuses: Enhancements | u
     }
     if (e.op === 'zone') return { ...e, itemEffectModel: version,
       // 区域治疗原有分摊为每周期独立预算，无额外范围65%折扣。
-      ...(e.kind === 'healing' ? { amount: heals[i]! * bonusMultiplier(bonuses, 'healing') / weight } : {}),
+      ...(e.kind === 'healing' ? { amount: heals[i]! * (version === ITEM_LIFE_RECOVERY ? 1.5 : 1) * bonusMultiplier(bonuses, 'healing') / weight } : {}),
       ...(e.effects ? { effects: e.effects.map(child => effect(child, true) as NonNullable<typeof e.effects>[number]) } : {}) };
     return e;
   };

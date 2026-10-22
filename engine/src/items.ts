@@ -1,5 +1,5 @@
 import { GRADED_SHIELD_LOAD } from './numeric-model.js';
-import { ITEM_PROGRESSION, ITEM_STACKING, PROGRESSION_MODEL, STACKING_MODEL, itemProgression, type ItemProgressionModel } from './progression.js';
+import { ITEM_PROGRESSION, ITEM_STACKING, ITEM_LIFE_RECOVERY, PROGRESSION_MODEL, STACKING_MODEL, itemProgression, type ItemProgressionModel } from './progression.js';
 import { applyItemProgression } from './item-progression.js';
 import { compileWornEffects, WORN_LEGACY_ANCHORED_MODEL, WORN_ANCHORED_MODEL, type WornEffects } from './gear-bonuses.js';
 import { validateEnhancements, enhancementLabel, type Enhancements, type BonusStat } from './enhancements.js';
@@ -166,7 +166,7 @@ export function normalizeTraitGrants(traits: readonly ItemTraitGrant[], power: n
   for (const grant of normalized) if (!byId.has(grant.id) || (grant.level ?? 5) > (byId.get(grant.id)!.level ?? 5)) byId.set(grant.id, grant);
   return [...byId.values()];
 }
-function compileItemValue(spec: Extract<ItemSpecification, { kind: 'item' }>, seed: string, name?: string): ItemValue {
+function compileItemValue(spec: Extract<ItemSpecification, { kind: 'item' }>, seed: string, name?: string, numericModel?: EquipmentContext['numericModel']): ItemValue {
   const power = integerPower(spec.power);
   if (!['single', 'charged', 'worn'].includes(spec.form)) throw new Error('未知道具形态');
   if (spec.form === 'worn') {
@@ -180,13 +180,14 @@ function compileItemValue(spec: Extract<ItemSpecification, { kind: 'item' }>, se
   }
   if (!spec.active || spec.traits?.length) throw new Error('一次性与充能道具写技能机制，如buff治疗L3、物理范围投射L4');
   validateEnhancements(spec.bonuses, 'skill');
-  const ability = itemAbilityTemplate(spec.active, power, spec.bonuses, spec.form, name, !spec.legacy);
-  return { recipe: { version: ITEM_VERSION, form: spec.form, power, seed, active: spec.active, ...(!spec.legacy ? { progressionModel: ITEM_STACKING } : {}), ...(spec.bonuses && Object.keys(spec.bonuses).length ? { bonuses: spec.bonuses } : {}), ...(spec.legacy ? { legacy: spec.legacy } : {}) }, ability };
+  const activeModel = numericModel ? ITEM_LIFE_RECOVERY : ITEM_STACKING;
+  const ability = itemAbilityTemplate(spec.active, power, spec.bonuses, spec.form, name, spec.legacy ? false : activeModel);
+  return { recipe: { version: ITEM_VERSION, form: spec.form, power, seed, active: spec.active, ...(!spec.legacy ? { progressionModel: activeModel } : {}), ...(spec.bonuses && Object.keys(spec.bonuses).length ? { bonuses: spec.bonuses } : {}), ...(spec.legacy ? { legacy: spec.legacy } : {}) }, ability };
 }
 
 /** 物品编译不依赖持有者等级，也不生成临时人物；效果创建后冻结。 */
 export function compileItem(spec: ItemSpecification, identity: Pick<EquipmentContext, 'id' | 'name' | 'seed' | 'creatingUnit' | 'numericModel' | 'damageModel' | 'noVariance' | 'variance'>): ItemMechanics {
-  if (spec.kind === 'item') return { kind: 'item', value: compileItemValue(spec, identity.seed, identity.name) };
+  if (spec.kind === 'item') return { kind: 'item', value: compileItemValue(spec, identity.seed, identity.name, identity.numericModel) };
   validateEnhancements(spec.bonuses, spec.kind);
   const context = { ...identity, body: spec.body, quality: spec.quality, bonuses: spec.bonuses };
   switch (spec.kind) {
@@ -317,7 +318,8 @@ export function upgradeWornItemBudget(value: ItemValue): ItemValue {
 /** 历史数值仍可使用；只在玩家明确升级时重编，读取/入场不调用。 */
 export function historicalRecoveryItem(value: ItemValue): boolean {
   const recovery = (effects: readonly EffectOp[]): boolean => effects.some(e => e.op === 'heal' || e.op === 'barrier' || e.op === 'zone' && (e.kind === 'healing' || recovery(e.effects ?? [])));
-  return value.recipe.progressionModel !== ITEM_STACKING && !!value.ability && recovery(value.ability.effects);
+  const healing = (effects: readonly EffectOp[]): boolean => effects.some(e => e.op === 'heal' || e.op === 'zone' && (e.kind === 'healing' || healing(e.effects ?? [])));
+  return value.recipe.progressionModel !== ITEM_LIFE_RECOVERY && !!value.ability && (healing(value.ability.effects) || value.recipe.progressionModel !== ITEM_STACKING && recovery(value.ability.effects));
 }
 export function upgradeRecoveryItemBudget(value: ItemValue): ItemValue {
   validateItemValue(value);
@@ -329,8 +331,8 @@ export function upgradeRecoveryItemBudget(value: ItemValue): ItemValue {
     : version === 'skill-v7.0' || version === 'skill-zone-v4' ? 'skills-v1' : ANCHORED_SKILL_MODEL;
   const expected = itemAbilityTemplate(r.active, r.power, r.bonuses, r.form, value.ability!.name, r.progressionModel ?? false, formula);
   if (definition(expected) !== definition(value.ability)) throw Error('实物效果与可信配方不一致，不能推测手工数值；请保留原效果');
-  return { ...structuredClone(value), recipe: { ...structuredClone(r), progressionModel: ITEM_STACKING },
-    ability: itemAbilityTemplate(r.active, r.power, r.bonuses, r.form, value.ability!.name, ITEM_STACKING) };
+  return { ...structuredClone(value), recipe: { ...structuredClone(r), progressionModel: ITEM_LIFE_RECOVERY },
+    ability: itemAbilityTemplate(r.active, r.power, r.bonuses, r.form, value.ability!.name, ITEM_LIFE_RECOVERY) };
 }
 /** 道具实物的结构校验：形态、等级、效果与授予能力一致；不按当前公式重算冻结行动。 */
 export function validateItemValue(value: unknown): asserts value is ItemValue {

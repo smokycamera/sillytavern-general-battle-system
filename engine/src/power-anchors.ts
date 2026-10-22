@@ -227,6 +227,7 @@ export function armorEffectLabel(unit:ShieldBearer & Pick<Combatant,'armor'|'shi
 /** 没有手动指定时，火炮按公开目标防护和人数选择有效毁伤较高的弹种。 */
 export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Combatant,weaponOverflow=false,model=actor.damageModel,overmatch=false,curve?:RulePack['overmatchCurve']):Weapon|undefined {
   if(!weapon)return weapon;
+  if(actor.artilleryModel && isCannonWeapon(weapon)) return { ...anchoredWeapon(weapon,'he',model)!, ammunition: undefined };
   if(actor.cannonAmmo||!isCannonWeapon(weapon))return anchoredWeapon(weapon,actor.cannonAmmo,model);
   const he=anchoredWeapon(weapon,'he',model)!,ap=anchoredWeapon(weapon,'ap',model)!;
   const protectedTarget={...target,damageModel:model};
