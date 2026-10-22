@@ -32,7 +32,7 @@ describe('V25 复活', () => {
 
   it.each([false, true])('会战持续伤害在非致命=%s时触发满血复活并保存次数', nonLethal => {
     const a = unit('a'), e = unit('e', 0);
-    const b = new MassBattle({ combatants: [a, e], rules: V25_OVERFLOW_TW, seed: 'revival-dot', nonLethal });
+    const b = new MassBattle({ combatants: [a, e], rules: V25_OVERFLOW_TW, seed: 'revival-dot', nonLethal, formationSlots: 3 });
     b.start(); a.hp = 1; a.conditions.push({ id: 'burning', dur: 2, magnitude: 1000 });
     b.issue({ unitId: a.id, type: 'hold' }); b.issue({ unitId: e.id, type: 'hold' }); b.resolveRound();
     expect(a.hp).toBe(a.base.hpMax); expect(a.status).toBe('ready'); expect(a.revivalState?.used).toBe(1);
