@@ -41,6 +41,11 @@ export function intentForces(b: SmallBattle, side: Side): { heroes: Combatant[];
   const heroes = b.battlefield ? [] : own;
   return { heroes, forces: own.filter(u => !heroes.includes(u)) };
 }
+/** No planning is needed for a faction that has finished this battle round. */
+function remainingActors(b: SmallBattle, side: Side): Combatant[] {
+  return b.turnOrder.slice(b.turnIndex).map(id => b.byId(id)).filter(u => u.side === side && u.status === 'ready' && u.hp > 0
+    && !u.moraleState?.forcedRetreat && !u.conditions.some(c => c.dur > 0 && b.conditions.get(c.id)?.skipTurn));
+}
 
 export class LlmIntentPlanner {
   private pending?: Promise<void>;
@@ -56,7 +61,19 @@ export class LlmIntentPlanner {
     if (incoming && state.memory.diplomacyRevision !== b.diplomacy.revision) delete state.memory.intents;
     if (!b.battlefield || b.isOver() || this.pending || this.commander.busy || !this.commander.available(b, settings, state)
       || state.decision || state.memory.diplomacyRound === b.round && !incoming && !letters
-      || state.memory.intents?.round === b.round || !intentForces(b, state.side).forces.length) return;
+      || !remainingActors(b, state.side).length || !intentForces(b, state.side).forces.length) return;
+    const intents = state.memory.intents;
+    // A letter handled on the faction's last activation also supplies its next round.
+    // New letters, diplomatic changes or invalidated battlefield facts still need a new plan.
+    if (intents?.carryRound === b.round && intents.round === b.round - 1 && state.memory.diplomacyRevision === b.diplomacy.revision) {
+      const own = b.combatants.filter(u => u.side === state.side && present(u));
+      const known = new Set([...intents.basis.visible, ...(state.memory.contacts ?? []).map(u => u.id)]);
+      const changed = own.length !== intents.basis.friends.length || own.some(u => !intents.basis.friends.includes(u.id))
+        || b.visibleCombatants(state.side).some(u => u.side !== state.side && !known.has(u.id))
+        || Object.values(intents.units).some(i => i.targetId && !b.combatants.some(u => u.id === i.targetId && (present(u) || i.mode === 'use_ability' && u.status === 'dying')));
+      if (!changed) { intents.round = b.round; intents.replanned = false; delete intents.carryRound; this.changed(); }
+    }
+    if (state.memory.intents?.round === b.round) return;
     this.start(b, state, settings, valid);
   }
   async beforeHero(): Promise<void> { await this.pending; }
@@ -88,6 +105,7 @@ export class LlmIntentPlanner {
   }
   private async plan(b: SmallBattle, state: CommanderState, settings: LlmSettings, valid: () => boolean, reason?: string): Promise<void> {
     const round = b.round, letter = latestLetter(b, state.side);
+    const carryRound = playerLetters(b, state.side, state.memory.letterId).length && b.active?.side === state.side && remainingActors(b, state.side).length === 1 ? round + 1 : undefined;
     const current = () => valid() && b.round === round && !b.isOver() && latestLetter(b, state.side) === letter;
     const result = await this.commander.run(b, settings, current, `指挥官 ${state.brief.name} 正在部署第${round}轮意图…`, async signal => {
       const candidate = SmallBattle.fromSnapshot(structuredClone(b.toSnapshot()), { traitRegistry: b.traitRegistry, summonUnit: b.summonUnit });
@@ -160,7 +178,7 @@ export class LlmIntentPlanner {
       }
       command.memory.diplomacyRevision = candidate.diplomacy.revision;
       command.memory.letterId = latestLetter(candidate, state.side);
-      if (!command.decision) command.memory.intents = { round, replanned: !!reason, basis: { visible: observation.units.filter(u => u.side !== 'friendly').map(u => u.id), friends: own.map(u => u.id) }, units };
+      if (!command.decision) command.memory.intents = { round, ...(carryRound !== undefined && forces.every(u => units[u.id]) ? { carryRound } : {}), replanned: !!reason, basis: { visible: observation.units.filter(u => u.side !== 'friendly').map(u => u.id), friends: own.map(u => u.id) }, units };
       return { command, seen };
     });
     if (result && current()) { state.memory = result.command.memory; state.decision = result.command.decision; this.lastSeen = result.seen; this.basisSeed = b.seed; this.changed(); }

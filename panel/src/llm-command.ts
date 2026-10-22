@@ -21,7 +21,7 @@ export interface CommanderBrief { name: string; persona: string; known: string[]
 export type CommanderToolName = 'commander_map' | 'commander_unit' | 'commander_plan' | 'commander_act' | 'commander_orders' | 'commander_intents' | 'diplomacy';
 export interface CommandPrompts { preparation: string; command: string; intents: string; tools: Record<CommanderToolName, string> }
 export interface KnownCommandCell { cell: number; terrain: string; height?: number; structure?: unknown; overlays?: unknown; connections?: unknown; cover?: unknown; round: number }
-export interface RoundIntents { round: number; replanned: boolean; basis: { visible: string[]; friends: string[] }; units: Record<string, import('../../engine/src/index.js').UnitIntent> }
+export interface RoundIntents { round: number; carryRound?: number; replanned: boolean; basis: { visible: string[]; friends: string[] }; units: Record<string, import('../../engine/src/index.js').UnitIntent> }
 export interface CommandMemory { intents?: RoundIntents; letterId?: number; diplomacyRound?: number; diplomacyRevision?: number; plan: string; notes: string[]; terrain: KnownCommandCell[]; contacts?: (ReturnType<typeof unitSummary> & { round: number })[] }
 export const emptyCommandMemory = (): CommandMemory => ({ plan: '', notes: [], terrain: [] });
 interface CommandBudget { left: number; letterReviewed?: number }
