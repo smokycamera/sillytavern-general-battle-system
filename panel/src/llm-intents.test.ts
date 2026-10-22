@@ -37,6 +37,50 @@ it('delivers letters at the recipients next activation, replaces a current-round
   const restored=new LlmIntentPlanner(new LlmCommandController(COMMAND_PROMPTS,()=>{},request),COMMAND_PROMPTS);
   await restored.forUnit(loaded,saved,settings,()=>true);expect(bodies).toHaveLength(2);
 });
+it('merges a letter on the last faction activation of round 6 with round 7, including after load, and resumes normal calls in round 8', async()=>{
+  const bodies:any[]=[];
+  const request:typeof fetch=async(_url,init)=>{bodies.push(data(init));return data(init).letters?.length?reviewedReply(holds(init)):reply(holds(init));};
+  const {b,state,p}=setup(request);b.round=6;b.turnIndex=4;
+  sendPlayerLetter(b,['enemy'],'缴枪不杀！！！');await p.forUnit(b,state,settings,()=>true);
+  expect(bodies).toHaveLength(1);expect(state.memory.intents?.carryRound).toBe(7);
+  const saved=savedCommanderState(state)!;
+  b.endTurn();p.prefetch(b,state,settings,()=>true);await p.beforeHero();expect(bodies).toHaveLength(1);
+  b.endTurn();expect(b.round).toBe(7);
+  const restored=new LlmIntentPlanner(new LlmCommandController(COMMAND_PROMPTS,()=>{},request),COMMAND_PROMPTS);
+  expect(await restored.forUnit(b,saved,settings,()=>true)).toMatchObject({mode:'hold'});
+  b.turnIndex=1;await restored.forUnit(b,saved,settings,()=>true);
+  expect(bodies).toHaveLength(1);expect(saved.memory.intents).toMatchObject({round:7});expect(saved.memory.intents).not.toHaveProperty('carryRound');
+  expect(saved.memory.letterId).toBe(1);expect(saved.memory.notes).toHaveLength(1);
+  b.round=8;await restored.forUnit(b,saved,settings,()=>true);expect(bodies.map(body=>body.round)).toEqual([6,8]);
+});
+it('defers unused prefetch after a faction has finished, and delivers a round-end letter in its single next-round request', async()=>{
+  const bodies:any[]=[];
+  const {b,state,p}=setup(async(_url,init)=>{bodies.push(data(init));return reviewedReply(holds(init));});
+  b.round=6;b.turnIndex=5;p.prefetch(b,state,settings,()=>true);await p.beforeHero();expect(bodies).toHaveLength(0);
+  sendPlayerLetter(b,['enemy'],'下一轮请重新考虑。');p.prefetch(b,state,settings,()=>true);await p.beforeHero();expect(bodies).toHaveLength(0);
+  b.endTurn();await p.forUnit(b,state,settings,()=>true);
+  expect(bodies).toHaveLength(1);expect(bodies[0]).toMatchObject({round:7,letters:[{text:'下一轮请重新考虑。'}]});
+  expect(state.memory.intents).not.toHaveProperty('carryRound');
+});
+it.each(['letter','diplomacy','roster','opponent'] as const)('does not reuse a boundary plan after new %s information', async(change)=>{
+  const bodies:any[]=[];
+  const {b,state,p}=setup(async(_url,init)=>{bodies.push(data(init));return data(init).letters?.length?reviewedReply(holds(init)):reply(holds(init));});
+  b.round=6;b.turnIndex=4;sendPlayerLetter(b,['enemy'],'请考虑停战。');await p.forUnit(b,state,settings,()=>true);
+  b.round=7;b.turnIndex=0;
+  if(change==='letter')sendPlayerLetter(b,['enemy'],'补充：撤军条件有变化。');
+  if(change==='diplomacy')b.diplomacy.revision++;
+  if(change==='roster')b.byId('u5').status='dead';
+  if(change==='opponent'){const opponent=structuredClone(b.byId('u0'));opponent.id='new-opponent';b.combatants.push(opponent);}
+  await p.forUnit(b,state,settings,()=>true);expect(bodies.map(body=>body.round)).toEqual([6,7]);
+  if(change==='letter')expect(bodies[1].letters[0].text).toBe('补充：撤军条件有变化。');
+});
+it('does not extend a mid-round letter replan into the next battle round',async()=>{
+  const bodies:any[]=[];
+  const {b,state,p}=setup(async(_url,init)=>{bodies.push(data(init));return data(init).letters?.length?reviewedReply(holds(init)):reply(holds(init));});
+  b.round=6;sendPlayerLetter(b,['enemy'],'请考虑撤离。');await p.forUnit(b,state,settings,()=>true);
+  expect(state.memory.intents).not.toHaveProperty('carryRound');b.round=7;await p.forUnit(b,state,settings,()=>true);
+  expect(bodies.map(body=>body.round)).toEqual([6,7]);
+});
 it('T4 plans heroes and troops together, including a roster of at most three units', async()=>{
   const request=vi.fn(async(_url,init)=>{const d=data(init);return reply(d.forces?holds(init):{choice:d.choices.find((c:any)=>c.action.type==='end_turn').id});}) as unknown as typeof fetch;
   const {b,state,c,p}=setup(request);p.prefetch(b,state,settings,()=>true);await p.beforeHero();

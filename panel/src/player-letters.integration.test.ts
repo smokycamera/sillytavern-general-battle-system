@@ -56,7 +56,9 @@ it('sends private and shared letters through the UI, logs exact text and replans
   expect(requests.filter(r => r.data.round === 2 && r.data.letters?.length)).toHaveLength(1);
   expect(requests.find(r => r.data.round === 2 && r.data.letters?.length)?.data.letters).toEqual([{ id: 1, round: 2, from: 'opponent-1', text: '只给敌方：桥后已备好退路。' }]);
   expect(requests.filter(r => r.data.forces[0].id === 'u2').every(r => !r.body.includes('只给敌方'))).toBe(true);
-  await vi.waitFor(() => expect(new Set(requests.filter(r => r.data.round === 3).map(r => r.data.forces[0].id)).size).toBe(2));
+  expect(SmallBattle.fromSnapshot(f.service.snapshot().battle!.snap).round).toBe(3);
+  expect(requests.filter(r => r.data.round === 3 && r.data.forces[0].id === 'u1')).toHaveLength(0);
+  await vi.waitFor(() => expect(requests.filter(r => r.data.round === 3 && r.data.forces[0].id === 'u2')).toHaveLength(1));
   await send('all', '双方都退一步。'); await next();
   const deliveries = requests.filter(r => r.data.round === 3 && r.data.letters?.length);
   expect(deliveries).toHaveLength(2);
