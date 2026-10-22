@@ -1,6 +1,7 @@
+import { GRADED_SHIELD_LOAD } from './numeric-model.js';
 import { ITEM_PROGRESSION, ITEM_STACKING, PROGRESSION_MODEL, STACKING_MODEL, itemProgression, type ItemProgressionModel } from './progression.js';
 import { applyItemProgression } from './item-progression.js';
-import { compileWornEffects, WORN_ANCHORED_MODEL, type WornEffects } from './gear-bonuses.js';
+import { compileWornEffects, WORN_LEGACY_ANCHORED_MODEL, WORN_ANCHORED_MODEL, type WornEffects } from './gear-bonuses.js';
 import { validateEnhancements, enhancementLabel, type Enhancements, type BonusStat } from './enhancements.js';
 import { recoveryCapacity } from './recovery.js';
 import { equipmentLoad } from './body.js';
@@ -39,7 +40,7 @@ export interface ItemEffectRecipe {
   traitBudgetModel?: typeof TRAIT_LEVEL_MODEL | typeof PHASE2_TRAIT_LEVEL_MODEL | typeof PROGRESSION_MODEL | typeof STACKING_MODEL;
   progressionModel?: ItemProgressionModel;
   /** 仅佩戴修正的编译版本；缺省保留历史实物，读取不重算。 */
-  wornEffectModel?: typeof WORN_ANCHORED_MODEL;
+  wornEffectModel?: typeof WORN_ANCHORED_MODEL | typeof WORN_LEGACY_ANCHORED_MODEL;
   /** 一次性、充能：通用技能机制 id。 */
   active?: string;
   /** 佩戴：授予的特质；专精的等级就是道具等级。 */
@@ -184,14 +185,14 @@ function compileItemValue(spec: Extract<ItemSpecification, { kind: 'item' }>, se
 }
 
 /** 物品编译不依赖持有者等级，也不生成临时人物；效果创建后冻结。 */
-export function compileItem(spec: ItemSpecification, identity: Pick<EquipmentContext, 'id' | 'name' | 'seed' | 'creatingUnit' | 'damageModel' | 'noVariance' | 'variance'>): ItemMechanics {
+export function compileItem(spec: ItemSpecification, identity: Pick<EquipmentContext, 'id' | 'name' | 'seed' | 'creatingUnit' | 'numericModel' | 'damageModel' | 'noVariance' | 'variance'>): ItemMechanics {
   if (spec.kind === 'item') return { kind: 'item', value: compileItemValue(spec, identity.seed, identity.name) };
   validateEnhancements(spec.bonuses, spec.kind);
   const context = { ...identity, body: spec.body, quality: spec.quality, bonuses: spec.bonuses };
   switch (spec.kind) {
     case 'weapon': return { kind: 'weapon', value: compileWeapon(spec, context) };
     case 'armor': return { kind: 'armor', value: compileArmor(spec, context) };
-    case 'shield': return { kind: 'shield', value: { id: identity.id, name: identity.name ?? '盾牌', load: SHIELD_CLASSES[spec.mechanism ?? 'shield'].load, recipe: equipmentRecipe(spec.mechanism ?? 'shield', spec.power, context) } };
+    case 'shield': return { kind: 'shield', value: { id: identity.id, name: identity.name ?? '盾牌', load: identity.numericModel && context.body !== 'vehicle' ? GRADED_SHIELD_LOAD[spec.mechanism ?? 'shield']! : SHIELD_CLASSES[spec.mechanism ?? 'shield'].load, recipe: equipmentRecipe(spec.mechanism ?? 'shield', spec.power, context) } };
     default: throw new Error('不支持的物品用途');
   }
 }
@@ -306,7 +307,7 @@ export function historicalWornItem(value: ItemValue): boolean {
 export function upgradeWornItemBudget(value: ItemValue): ItemValue {
   validateItemValue(value);
   if (!historicalWornItem(value)) throw Error('这件道具没有可升级的历史佩戴修正');
-  if (value.passive!.actualEffects && definition(value.passive!.actualEffects) !== definition(compileWornEffects(value.passive!.bonuses, value.recipe.power, 'worn-progression-v1'))) throw Error('实物效果与可信配方不一致，不能推测手工数值；请保留原效果');
+  if (value.passive!.actualEffects && definition(value.passive!.actualEffects) !== definition(compileWornEffects(value.passive!.bonuses, value.recipe.power, value.recipe.wornEffectModel ?? 'worn-progression-v1'))) throw Error('实物效果与可信配方不一致，不能推测手工数值；请保留原效果');
   const next = structuredClone(value);
   next.recipe.wornEffectModel = WORN_ANCHORED_MODEL;
   next.recipe.progressionModel = ITEM_PROGRESSION;
@@ -335,7 +336,7 @@ export function upgradeRecoveryItemBudget(value: ItemValue): ItemValue {
 export function validateItemValue(value: unknown): asserts value is ItemValue {
   if (!object(value) || !object(value.recipe)) throw new Error('道具配方损坏');
   const r = value.recipe;
-  if (r.wornEffectModel !== undefined && (r.wornEffectModel !== WORN_ANCHORED_MODEL || r.form !== 'worn' || !itemProgression(r.progressionModel))) throw Error('佩戴修正版本损坏');
+  if (r.wornEffectModel !== undefined && (![WORN_ANCHORED_MODEL, WORN_LEGACY_ANCHORED_MODEL].includes(r.wornEffectModel as typeof WORN_ANCHORED_MODEL) || r.form !== 'worn' || !itemProgression(r.progressionModel))) throw Error('佩戴修正版本损坏');
   if (r.traitBudgetModel !== undefined && r.traitBudgetModel !== TRAIT_LEVEL_MODEL && r.traitBudgetModel !== PHASE2_TRAIT_LEVEL_MODEL && r.traitBudgetModel !== PROGRESSION_MODEL && r.traitBudgetModel !== STACKING_MODEL) throw new Error('佩戴特质等级版本损坏');
   if (r.version !== ITEM_VERSION || !['single', 'charged', 'worn'].includes(String(r.form)) || !Number.isSafeInteger(r.power) || Number(r.power) < 1 || Number(r.power) > 10
     || typeof r.seed !== 'string' || !r.seed || r.legacy !== undefined && typeof r.legacy !== 'string') throw new Error('道具配方版本、形态或等级损坏');
@@ -346,6 +347,7 @@ export function validateItemValue(value: unknown): asserts value is ItemValue {
     const actual = value.passive.actualEffects;
     if (itemProgression(r.progressionModel)) {
       if (!object(actual) || !object(actual.values) || Object.values(actual.values).some(v => typeof v !== 'number' || !Number.isFinite(v)) || ['damageCap','negativeDamageCap','protectionCap','negativeProtectionCap'].some(k => typeof actual[k] !== 'number' || !Number.isFinite(actual[k]) || Number(actual[k]) < 0)) throw Error('佩戴实际效果记录损坏');
+      if ((actual.uncappedNegative === true) !== (r.wornEffectModel === WORN_ANCHORED_MODEL) || actual.uncappedNegative !== undefined && actual.uncappedNegative !== true) throw Error('佩戴负面效果版本损坏');
     } else if (actual !== undefined) throw Error('佩戴实际效果缺少版本');
     const traits = normalizeTraitGrants(value.passive.traits as ItemTraitGrant[], Number(r.power), !!r.legacy, (r.traitBudgetModel === PHASE2_TRAIT_LEVEL_MODEL || r.traitBudgetModel === PROGRESSION_MODEL || r.traitBudgetModel === STACKING_MODEL) ? true : r.traitBudgetModel === TRAIT_LEVEL_MODEL ? 'p1' : false);
     if (JSON.stringify(traits) !== JSON.stringify(value.passive.traits) || JSON.stringify(r.traits ?? []) !== JSON.stringify(value.passive.traits)

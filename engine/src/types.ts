@@ -281,6 +281,10 @@ export interface ActiveCondition {
 export type UnitStatus = 'ready' | 'dying' | 'dead' | 'routing' | 'fled';
 
 export interface Combatant {
+  /** Fractional normal movement only; whole unused steps never stockpile. Battle-local. */
+  movementRemainder?: number;
+  marchRemainder?: number;
+  numericModel?: import('./numeric-model.js').NumericModel;
   /** V25：只在新战斗启用，次数随战斗快照保存，战后剥离。 */
   revivalModel?: 'revival-v1';
   revivalState?: { members: number; used: number };
@@ -452,6 +456,7 @@ export interface GenAudit {
 // ---------- 造怪器 ----------
 
 export interface GenerateInput {
+  numericModel?: import('./numeric-model.js').NumericModel;
   /** Omitted for historical API compatibility; the current panel explicitly selects V6. */
   damageModel?: Combatant['damageModel'];
   bonuses?: Enhancements;
@@ -530,6 +535,7 @@ export type DamageChannel = 'kinetic' | 'thermal' | 'arcane';
 export type BodyKind = 'human' | 'large' | 'vehicle' | 'giant';
 /** 规范化且冻结的 T/P/S/Q/F 中装备职责；训练 T 不在装备配方中。 */
 export interface ItemRecipe {
+  numericModel?: import('./numeric-model.js').NumericModel;
   variance?: import('./instance-variance.js').InstanceVariance;
   /** Identifies the body-strength formula baked into this physical instance. */
   balanceVersion?: 'unified-v1';
@@ -599,6 +605,7 @@ export interface BattleLogEntry {
 // ---------- 规则包 ----------
 
 export interface RulePack {
+  numericModel?: import('./numeric-model.js').NumericModel;
   /** V8：训练输出每级增幅；缺省保留旧战斗的 12%。 */
   trainingDamagePerLevel?: number;
   /** V8：自动生成的单体武器/盾牌技法基础倍率；不改写技能实例。 */

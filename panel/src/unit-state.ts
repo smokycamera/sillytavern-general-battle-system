@@ -459,7 +459,7 @@ export function unitRecordFromCombatant(
   previous?: UnitRecord,
   opts: { transient?: boolean; kind?: UnitHistoryEntry['kind']; sourceId?: string } = {},
 ): UnitRecord {
-  c = stripCarriedItems(c); delete c.barrier; delete c.weaponHeat; delete c.shieldDurability; delete c.energyShield; delete c.sprayerFuel; delete c.tankRupturedRound; delete c.chargeInterrupted; delete c.chargeDistance; delete c.denialTriggered; delete c.battleZones; delete c.regenerationRemainder; delete c.lifestealState; delete c.controlActivation; delete c.movedDuringActivation; delete c.looseChoiceLocked;
+  c = stripCarriedItems(c); delete c.barrier; delete c.weaponHeat; delete c.shieldDurability; delete c.energyShield; delete c.sprayerFuel; delete c.tankRupturedRound; delete c.chargeInterrupted; delete c.chargeDistance; delete c.denialTriggered; delete c.battleZones; delete c.regenerationRemainder; delete c.lifestealState; delete c.controlActivation; delete c.movementRemainder; delete c.marchRemainder; delete c.movedDuringActivation; delete c.looseChoiceLocked;
   if(opts.kind==='battle'){ delete c.storyState; c.conditions = c.conditions.filter(condition => !['taunted','charmed','blinded','confused'].includes(condition.id)); }
   limitCombatantLife(c);
   delete c.nonLethal;delete c.cannonAmmo;
@@ -547,6 +547,8 @@ export function blueprintIdForCategory(cat: Category): string {
 export function unitRecordToGenerateInput(r: UnitRecord, era = 'medieval'): GenerateInput {
   return {
     weaponStabilized: r.snapshot?.weapon?.recipe?.stabilized,
+    damageModel: r.snapshot?.damageModel,
+    numericModel: r.snapshot?.numericModel,
     sidearmStabilized: r.snapshot?.sidearm?.recipe?.stabilized,
     armorProfile: r.snapshot?.armor?.recipe?.protectionProfile,
     weaponEnchantment: r.snapshot?.weapon?.recipe?.enchantment,
@@ -680,7 +682,7 @@ export function materializeUnitRecord(
   delete generated.tacticalPose;
   delete generated.moraleState;
   delete generated.revivalState;
-  delete generated.tacticalEffort;
+  delete generated.tacticalEffort; delete generated.movementRemainder; delete generated.marchRemainder;
   delete generated.tacticalRevealed;
   delete generated.airborne; delete generated.elevation;
   delete generated.formationPosition;

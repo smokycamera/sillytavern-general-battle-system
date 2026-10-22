@@ -17,6 +17,7 @@ import { equipmentBurden } from './equipment-load.js';
  */
 import { isCannonWeapon, meleeWeapon } from './loadout.js';
 import { SHIELD_CLASSES } from './data/weapons.js';
+import { equipmentMultiplier } from './numeric-model.js';
 import { instanceMultiplier } from './instance-variance.js';
 import { prepareBarrierModel } from './barrier.js';
 import type { Combatant, RulePack, Weapon } from './types.js';
@@ -152,7 +153,7 @@ export function shieldGuardUsable(unit: ShieldBearer): boolean {
 export function shieldCoverage(unit: ShieldBearer, incoming?: Weapon): number {
   if (!shieldUsable(unit,incoming)) return 0;
   const kind = isArmsV2(unit.armsModel) ? SHIELD_CLASSES[shieldClass(unit)] : SHIELD_CLASSES.shield;
-  const coverage = Math.min(kind.limit,kind.coverage * instanceMultiplier(unit.shield!.recipe?.bonuses,'power',unit.shield!.recipe?.variance));
+  const coverage = Math.min(kind.limit,kind.coverage * equipmentMultiplier(unit.shield!.recipe,'power'));
   return coverage * (isArmsV2(unit.armsModel) && unit.scale && unit.scale !== 'hero' && unit.shieldDurability ? Math.min(1,unit.shieldDurability.remaining / shieldDurabilityMax(unit)) : 1);
 }
 export function applyShieldWear(unit: Combatant, wear: number): boolean {

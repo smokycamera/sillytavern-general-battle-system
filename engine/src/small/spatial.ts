@@ -152,7 +152,7 @@ export function tileCost(field: BattlefieldSpec, cell: number, actor?: Combatant
  * with only 1 MP left still cannot enter a 3-cost fortification. Prohibitions stay infinite. */
 export function movementStepCost(field: BattlefieldSpec, cell: number, actor: Combatant, tags = field.environment ?? [],from=actor.pos??cell): number {
   const cost = tileCost(field, cell, actor)+heightStepCost(field,from,cell,actor);
-  return field.layerVersion && Number.isFinite(cost) ? Math.min(cost, movementPoints(actor, tags)) : cost;
+  return !actor.numericModel && field.layerVersion && Number.isFinite(cost) ? Math.min(cost, movementPoints(actor, tags)) : cost;
 }
 export function footprint(unit: Combatant): number { return unit.mount === true || unit.body && unit.body !== 'human' ? 2 : 1; }
 export function canOccupy(field: BattlefieldSpec, units: Combatant[], actor: Combatant, cell: number): boolean {

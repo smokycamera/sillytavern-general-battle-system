@@ -1,4 +1,5 @@
 import { nominalLife } from './combat-model.js';
+import { gradedNumbers, unitStep } from './numeric-model.js';
 import { bonusMultiplier, bonusSteps } from './enhancements.js';
 import { capSingleLife } from './health-limits.js';
 import { setMemberMaximum } from './member-health.js';
@@ -175,7 +176,7 @@ function recomputeFromCurve(unit: Combatant, fromLevel: number, registry?: Map<s
 
   const atk = curve.atk + archMod.atk + scaleMod.atkAdj + (traitStats.atk ?? 0) + (deltas.atk ?? 0);
   const def = curve.def + archMod.def + scaleMod.defAdj + (traitStats.def ?? 0) + (deltas.def ?? 0);
-  const spd = bonusSteps(unit.bonuses,'speed',5) + curve.spd + archMod.spd + (traitStats.spd ?? 0) + (deltas.spd ?? 0);
+  const spd = unitStep(unit,'speed') + curve.spd + archMod.spd + (traitStats.spd ?? 0) + (deltas.spd ?? 0);
   const bodyHp = unit.rulesVersion === 'v2' ? bodyProfile(unit.body, unit.damageModel).hp : scaleMod.hpMult;
   const unifiedGrowth = nominalLife(unit) - nominalLife({...unit, level:fromLevel});
   const hpMax = unit.scale === 'hero'
@@ -190,7 +191,7 @@ function recomputeFromCurve(unit: Combatant, fromLevel: number, registry?: Map<s
     setMemberMaximum(unit,unit.formation.memberHp+growth);
   }
   if (unit.base.moraleMax !== undefined) {
-    const moraleMax = curve.morale + bonusSteps(unit.bonuses,'morale') + (traitStats.morale ?? 0);
+    const moraleMax = Math.max(0, curve.morale + unitStep(unit,'morale') + (gradedNumbers(unit) && unit.scale === 'hero' ? 0 : traitStats.morale ?? 0));
     unit.base.moraleMax = moraleMax;
     unit.morale = unit.moraleLocked ? moraleMax : Math.min(unit.morale ?? moraleMax, moraleMax);
   }

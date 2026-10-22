@@ -1,3 +1,4 @@
+import { equipmentStep } from '../../engine/src/numeric-model.js';
 import { displayNumber } from '../../engine/src/display-number.js';
 import { SHIELD_CLASSES, classMismatchHint } from '../../engine/src/data/weapons.js';
 import { shieldClass, energyShieldPool, energyShieldRecharge, shieldPlatformScale, energyOverloadThreshold } from '../../engine/src/arms.js';
@@ -37,7 +38,7 @@ function newDraft(body = 'human'): Draft {
 export function itemDescription(item: InventoryItem): string {
   const mechanics = item.mechanics, variance = mechanics && mechanics.kind !== 'item' ? mechanics.value.recipe?.variance : undefined;
   const hint = mechanics && (mechanics.kind==='weapon'||mechanics.kind==='shield') ? classMismatchHint(item.name,mechanics.value.recipe?.mechanism ?? 'shield') : '';
-  return itemDescriptionBase(item) + (hint?' · '+hint:'') + (variance ? ' · ' + instanceVarianceLabel(variance) : '');
+  return itemDescriptionBase(item) + (mechanics && (mechanics.kind === 'armor' || mechanics.kind === 'shield') && mechanics.value.recipe?.bonuses?.morale ? ' · 士气'+signed(equipmentStep(mechanics.value.recipe,'morale')) : '') + (hint?' · '+hint:'') + (variance ? ' · ' + instanceVarianceLabel(variance) : '');
 }
 function itemDescriptionBase(item: InventoryItem): string {
   const m = item.mechanics;
@@ -46,19 +47,19 @@ function itemDescriptionBase(item: InventoryItem): string {
   if (m.kind === 'shield') {
     const kind = shieldClass({shield:m.value}), power = m.value.recipe?.power ?? 3, head = `${SHIELD_CLASSES[kind].name} L${power}${enhancementLabel(m.value.recipe?.bonuses)} · 负重${displayNumber(m.value.load)}`;
     if (kind === 'energy-shield') return `${head} · 每人${displayNumber(energyShieldPool(power, shieldPlatformScale({shield:m.value})))}点护盾，每次激活回充${displayNumber(energyShieldRecharge(power))}点 · 不能盾击、持盾固守或盾墙`;
-    const extra = { buckler: '近战格挡+1，可配双手武器', shield: '可持盾固守、盾墙', 'tower-shield': '远程命中−1、移动−1，只配单手主武器' }[kind];
+    const extra = { buckler: '近战格挡+1，可配双手武器', shield: '可持盾固守、盾墙', 'tower-shield': m.value.recipe?.numericModel ? '远程命中−1，只配单手主武器' : '远程命中−1、移动−1，只配单手主武器' }[kind];
     return `${head} · 覆盖${Math.round(SHIELD_CLASSES[kind].coverage * 100)}% · 防护${displayNumber(shieldProtection({shield:m.value},'kinetic'))}/${displayNumber(shieldProtection({shield:m.value},'thermal'))}/${displayNumber(shieldProtection({shield:m.value},'arcane'))} · ${extra}`;
   }
-  if (m.kind === 'armor') {const u={armor:m.value,body:m.value.recipe?.size,damageModel:'wounds-v2' as const,armsModel:ARMS_MODEL},trait=armorTraitId(m.value.tier);return `动能${displayNumber(anchoredProtection(u,'kinetic'))} / 热能${displayNumber(anchoredProtection(u,'thermal'))} / 奥术${displayNumber(anchoredProtection(u,'arcane'))}${armorEffectLabel(u) ? ' · ' + armorEffectLabel(u) : ''} · 负重${displayNumber(m.value.load ?? 0)}${trait ? ' · 装备自动特质：' + (trait === 'super-heavy' ? '超重装甲（先攻−2）' : '重甲（先攻−1）') : ''}`;}
+  if (m.kind === 'armor') {const u={armor:m.value,body:m.value.recipe?.size,damageModel:'wounds-v2' as const,armsModel:ARMS_MODEL},trait=armorTraitId(m.value.tier);return `动能${displayNumber(anchoredProtection(u,'kinetic'))} / 热能${displayNumber(anchoredProtection(u,'thermal'))} / 奥术${displayNumber(anchoredProtection(u,'arcane'))}${armorEffectLabel(u) ? ' · ' + armorEffectLabel(u) : ''} · 负重${displayNumber(m.value.load ?? 0)}${m.value.recipe?.bonuses?.defense ? ' · 防御'+signed(equipmentStep(m.value.recipe,'defense')) : ''}${m.value.recipe?.numericModel && m.value.recipe?.bonuses?.speed ? ' · 移动'+signed(equipmentStep(m.value.recipe,'speed'))+'、先攻'+signed(2*equipmentStep(m.value.recipe,'speed')) : ''}${trait && !m.value.recipe?.numericModel ? ' · 装备自动特质：' + (trait === 'super-heavy' ? '超重装甲（先攻−2）' : '重甲（先攻−1）') : ''}`;}
   const w = m.value;
-  return `L${w.level??5}${enhancementLabel(w.recipe?.bonuses)} · ${anchoredWeaponLabel(w,'wounds-v2')} · ${channelNames[w.channel ?? 'kinetic']} · 格子射程${gridWeaponRange(w,true,ARMS_MODEL)}／会战${formationWeaponRange(w)}阵距 · ${w.hands===0?'不占双手':(w.hands??1)+'手'} · 负重${displayNumber(w.load ?? 0)}${w.reload ? ' · 装填' + w.reload : ''}${w.tags?.includes('blast') ? ' · 距离2命中−2' : ''}${w.recipe?.stabilized ? ' · 行进稳定' : ''}`;
+  return `L${w.level??5}${enhancementLabel(w.recipe?.bonuses)} · ${anchoredWeaponLabel(w,'wounds-v2')}${w.recipe?.bonuses?.accuracy ? ' · 精度'+signed(equipmentStep(w.recipe,'accuracy')) : ''}${w.recipe?.bonuses?.defense ? ' · 防御'+signed(equipmentStep(w.recipe,'defense')) : ''} · ${channelNames[w.channel ?? 'kinetic']} · 格子射程${gridWeaponRange(w,true,ARMS_MODEL)}／会战${formationWeaponRange(w)}阵距 · ${w.hands===0?'不占双手':(w.hands??1)+'手'} · 负重${displayNumber(w.load ?? 0)}${w.reload ? ' · 装填' + w.reload : ''}${w.tags?.includes('blast') ? ' · 距离2命中−2' : ''}${w.recipe?.stabilized ? ' · 行进稳定' : ''}`;
 }
 function gearText(record: UnitRecord | undefined): string {
   const u = record?.snapshot ? { ...record.snapshot, armsModel: ARMS_MODEL, traitModel: TRAIT_MODEL } : undefined;
   if (!u) return '无装备资料';
   return [u.weapon ? `${u.weapon.name} ${anchoredWeaponLabel(u.weapon,u.damageModel)}${u.weapon.recipe?.stabilized ? ' / 行进稳定' : ''}` : '主手空置',
     u.sidearm ? `副武器 ${u.sidearm.name}` : '',
-    ...equipmentTraitIds(u).map(id => '装备自动特质：' + autoTraitLabel(id)),
+    ...equipmentTraitIds(u).map(id => '装备自动特质：' + autoTraitLabel(id, u)),
     `有效防护 ${displayNumber(anchoredProtection(u, 'kinetic'))}/${displayNumber(anchoredProtection(u, 'thermal'))}/${displayNumber(anchoredProtection(u, 'arcane'))}（动能/热能/奥术）${armorEffectLabel(u) ? ' · ' + armorEffectLabel(u) : ''}`,
     u.shield ? '携盾' : '无盾',
     u.gear?.length ? '佩戴 ' + u.gear.map((g) => g.name).join('、') : '',
@@ -379,3 +380,5 @@ export class InventoryPanel {
       ${d ? `<div class="inventory-editor-shade"></div><aside class="inventory-editor" role="dialog" aria-modal="true" aria-label="编辑物品"><header><div><h3>${d.mode === 'add' ? '增加数量' : d.mode === 'reforge' ? d.kind === 'item' ? '改造道具' : '编辑装备' : d.mode === 'define' ? '设置物品效果' : '新增物品'}</h3><p class="sub">${current ? esc(current.name) : '公共库存'} · ${esc(d.name || '未命名物品')}</p></div><button data-action="inventory-close-draft" aria-label="关闭物品编辑">关闭</button></header><div class="inventory-editor-body"><div class="inventory-form">${d.mode === 'add' ? `<label>增加件数<input data-role="inventory-qty" type="number" min="1" step="1" value="${esc(d.qty)}"></label>` : `<div class="inventory-fields"><label>种类${select('kind', d.kind, [['weapon', '武器'], ['armor', '护甲'], ['shield', '盾牌'], ['item', '道具']], d.mode === 'reforge')}</label>${d.kind === 'item' && d.form === 'single' && d.mode === 'create' ? `<label>数量<input data-role="inventory-qty" type="number" min="1" value="${esc(d.qty)}"></label>` : ''}</div>${equipmentFields('inventory', d, { nameReadonly: d.mode === 'define' })}`}</div>${feedback}</div><footer><button class="primary" data-action="inventory-preview-draft">预览结果</button><button data-action="inventory-close-draft">取消</button></footer></aside>` : ''}</section>`;
   }
 }
+
+const signed = (n: number) => (n > 0 ? '+' : '') + displayNumber(n);

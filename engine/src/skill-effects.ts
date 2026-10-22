@@ -229,7 +229,7 @@ function futureWeight(context: ObservationContext, target: Combatant, duration: 
   return value;
 }
 export function summonValue(context: ObservationContext, actor: Combatant, ability: Ability, effect: Extract<EffectOp, { op: 'summon' }>): number {
-  const unit = conjureSkillUnit(effect.templateId, actor.side, 'preview-summon:' + actor.id, context.mode, ability.bonuses, actor.damageModel);
+  const unit = conjureSkillUnit(effect.templateId, actor.side, 'preview-summon:' + actor.id, context.mode, ability.bonuses, actor.damageModel, actor.numericModel);
   // 外部召唤模板没有只读规格，保留既有保守估值，不能为评分调用生成回调。
   if (!unit) return 8 * effect.count;
   if (!context.rules) return 0;

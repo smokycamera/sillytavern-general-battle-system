@@ -1,7 +1,9 @@
+import { equipmentStep, gradedNumbers } from './numeric-model.js';
+import { loadInitiativePenalty } from './equipment-load.js';
 import { displayNumber } from './display-number.js';
-import { shieldGuardUsable, isArmsV2 } from './arms.js';
+import { shieldGuardUsable, shieldUsable, isArmsV2 } from './arms.js';
 import { progression, stackingRevision } from './progression.js';
-import { wornEffects } from './gear-bonuses.js';
+import { wornInitiative, wornEffects } from './gear-bonuses.js';
 import { phase2Traits } from './trait-level-model.js';
 import { phase2Value, phase2WeaponMods } from './phase2-traits.js';
 /**
@@ -43,6 +45,7 @@ export interface ModCond {
 }
 
 export interface Modifier {
+  uncappedNegative?: boolean;
   category?: 'cover' | 'movement' | 'spotting';
   traitDamage?: boolean;
   wardGroup?: 'a' | 'b';
@@ -157,7 +160,7 @@ export function resolveStack(
   }
 
   let flatTotal = [...byName.values()].reduce((s, m) => s + m.value, 0);
-  flatTotal = Math.max(-maxFlat, Math.min(maxFlat, flatTotal));
+  flatTotal = Math.max(active.some(m => m.uncappedNegative) || ctx.attacker?.numericModel ? -Number.MAX_VALUE : -maxFlat, Math.min(maxFlat, flatTotal));
 
   const grouped = new Map<string, Modifier>();
   const mults = active.filter((m) => m.type === 'mult' && !m.stackGroup && !m.sourceId);
@@ -394,7 +397,7 @@ export function collectMods(
   const equipment: Modifier[] = [];
   if (unit.rulesVersion === 'v2') {
     const traits = activeTraitIds(unit);
-    if (equipmentBurden(unit)) equipment.push({ source: 'intrinsic', sourceId: 'equipment:encumbrance', name: isArmsV2(unit.armsModel) ? equipmentBurden(unit) === 2 ? '超载' : '重载' : '人形重载', kind: 'spd', type: 'flat', value: -2*equipmentBurden(unit) });
+    if (equipmentBurden(unit)) equipment.push({ source: 'intrinsic', sourceId: 'equipment:encumbrance', name: isArmsV2(unit.armsModel) ? equipmentBurden(unit) === 2 ? '超载' : '重载' : '人形重载', kind: 'spd', type: 'flat', value: -loadInitiativePenalty(unit) });
     // 五项专精按等级（V15 起 L1–10，旧规则一律 L5）；L5 与无专精时产生的修正与以前完全相同。
     const forest = traitLevel(unit, 'forest-lore', traits), mountain = traitLevel(unit, 'mountain-born', traits), night = traitLevel(unit, 'night-fighter', traits);
     if (ctx.fieldTags?.includes('night')) {
@@ -424,7 +427,15 @@ export function collectMods(
       ];
       for (const [id, applies] of environments) if (applies && traitLevel(unit, id, traits)) equipment.push({ source: 'intrinsic', sourceId: id + ':damage', name: getTrait(id, registry)?.name ?? id, kind: 'dmg', type: 'mult', traitDamage: true, value: traitValue(unit, id, 'meleeDamage', 1) });
     }
+    const armorSpeed = equipmentStep(unit.armor?.recipe, 'speed');
+    if (armorSpeed && unit.armor?.recipe?.numericModel) equipment.push({ source: 'intrinsic', sourceId: 'armor:speed', name: '护甲速度修正', kind: 'spd', type: 'flat', value: 2 * armorSpeed });
+    const armorMorale = equipmentStep(unit.armor?.recipe, 'morale');
+    if (armorMorale) equipment.push({ source: 'intrinsic', sourceId: 'armor:morale', name: '护甲士气修正', kind: 'morale', type: 'flat', value: armorMorale });
+    const shieldMorale = shieldUsable(unit) ? equipmentStep(unit.shield?.recipe, 'morale') : 0;
+    if (shieldMorale) equipment.push({ source: 'intrinsic', sourceId: 'shield:morale', name: '盾牌士气修正', kind: 'morale', type: 'flat', value: shieldMorale });
     const actual = wornEffects(unit);
+    const wornSpeed = wornInitiative(unit);
+    if (wornSpeed) equipment.push({ source: 'intrinsic', sourceId: 'gear:actual-speed', name: '佩戴道具速度修正', kind: 'spd', type: 'flat', value: wornSpeed });
     if (actual.morale) equipment.push({ source: 'intrinsic', sourceId: 'gear:actual-morale', name: '佩戴道具实际效果', kind: 'morale', type: 'flat', value: actual.morale });
     const gear = gearBonuses(unit);
     if (gear?.speed) equipment.push({ source: 'intrinsic', sourceId: 'gear:speed', name: '佩戴道具', kind: 'spd', type: 'flat', value: bonusSteps(gear, 'speed', 5) });
@@ -443,7 +454,8 @@ export function collectMods(
   const quality = unit.rulesVersion === 'v2' && unit.armor?.tier ? unit.armor.recipe?.quality ?? 3 : 3;
   const fit = quality === 1 ? -1 : quality === 5 ? 1 : 0;
   if (fit) equipment.push({ source: 'intrinsic', sourceId: unit.armor!.id + ':quality', name: '护甲品质·防护可靠性', kind: 'def', type: 'flat', value: fit });
-  return [...traitRuntimeMods(unit.traits, registry, unit, ctx), ...equipment, ...conditionMods(unit.conditions, conditionDefs, unit, registry), ...sourceConditions, ...defensivePostureMods(unit, ctx, conditionDefs, registry), ...extra];
+  const result = [...traitRuntimeMods(unit.traits, registry, unit, ctx), ...equipment, ...conditionMods(unit.conditions, conditionDefs, unit, registry), ...sourceConditions, ...defensivePostureMods(unit, ctx, conditionDefs, registry), ...extra];
+  return gradedNumbers(unit) ? result.map(mod => mod.value < 0 ? {...mod, uncappedNegative: true} : mod) : result;
 }
 
 /** 收集单位在特定战场环境下的修正（fieldMod 特质 → 攻/防/士气），供战斗层注入 */

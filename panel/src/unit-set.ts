@@ -80,7 +80,7 @@ function configureGear(mechanics: ItemMechanics | undefined, unit: Combatant, da
   if (!mechanics || mechanics.kind === 'item' || mechanics.kind === 'shield' || !mechanics.value.recipe) throw Error('装备配置需要对应的武器或护甲实物');
   const value = structuredClone(mechanics.value), recipe = value.recipe!;
   const context = { id: value.id, name: value.name, seed: recipe.seed, body: recipe.size, quality: recipe.quality, bonuses: recipe.bonuses,
-    damageModel: unit.damageModel, variance: recipe.variance ?? false as const, noVariance: recipe.noVariance, creatingUnit: true };
+    damageModel: unit.damageModel, numericModel: recipe.numericModel, variance: recipe.variance ?? false as const, noVariance: recipe.noVariance, creatingUnit: true };
   if (mechanics.kind === 'weapon') {
     if (data.stabilized === true && (unit.body !== 'vehicle' || (mechanics.value.range ?? 1) <= 1 && mechanics.value.recipe?.mechanism !== 'sprayer')) throw Error('稳定装置需要载具的射击武器');
     const compiled = compileItem({ kind: 'weapon', mechanism: recipe.mechanism, power: recipe.power,
@@ -132,7 +132,7 @@ function gearValue(input: unknown, previous: ItemMechanics | undefined, slot: Eq
     if (spec.kind === 'weapon' && spec.enchantment !== undefined) enumeration(spec.enchantment, ['none','thermal','arcane'], '附魔');
     if (spec.kind === 'armor' && spec.profile !== undefined) enumeration(spec.profile, ['balanced','kinetic','thermal','arcane'], '防护类型');
     const old = previous && previous.kind !== 'item' ? previous.value : undefined;
-    mechanics = compileItem({ ...spec, body: spec.body ?? unit.body, quality: spec.quality ?? old?.recipe?.quality }, { id, name: name ?? (old && 'name' in old ? old.name : undefined) ?? slot, seed: old?.recipe?.seed ?? seed, creatingUnit: true, damageModel: unit.damageModel, variance: old ? old.recipe?.variance ?? false : undefined, noVariance: old?.recipe?.noVariance });
+    mechanics = compileItem({ ...spec, body: spec.body ?? unit.body, quality: spec.quality ?? old?.recipe?.quality }, { id, name: name ?? (old && 'name' in old ? old.name : undefined) ?? slot, seed: old?.recipe?.seed ?? seed, creatingUnit: true, damageModel: unit.damageModel, numericModel: 'graded-v1', variance: old ? old.recipe?.variance ?? false : undefined, noVariance: old?.recipe?.noVariance });
   }
   if (!mechanics || mechanics.kind === 'item' || mechanics.kind !== (['primary','sidearm'].includes(slot) ? 'weapon' : slot)) throw Error(slot + '需要匹配槽位的装备规格');
   if (config.values !== undefined) {
@@ -144,7 +144,7 @@ function gearValue(input: unknown, previous: ItemMechanics | undefined, slot: Eq
     if (mechanics.kind === 'armor' && values.protection !== undefined) mechanics.value.protectionOverride = values.protection !== null;
   }
   const gear = mechanics.value as unknown as ObjectData;
-  for (const key of ['load','range','minRange','reload','attacks','splashTargets']) if (gear[key] !== undefined) number(gear[key], key, 0, Number.MAX_SAFE_INTEGER, true);
+  for (const key of ['load','range','minRange','reload','attacks','splashTargets']) if (gear[key] !== undefined) number(gear[key], key, 0, Number.MAX_SAFE_INTEGER, !['load','range','minRange'].includes(key));
   if(gear.penetration!==undefined)number(gear.penetration,'穿透',0);
   if(gear.protection!==undefined)validateChannelProtection(gear.protection);
   for (const key of ['damageScale','drScale','powerScale']) if (gear[key] !== undefined) number(gear[key], key, Number.MIN_VALUE);
@@ -282,13 +282,13 @@ function rebase(unit: Combatant, data: ObjectData): void {
   const baseline=(value: ObjectData) => {
     strings(value.traits,'traits');
     const traits=value.traits.map(name=>{const id=resolveTraitId(name,registry);if(!id)throw Error('未知特质：'+name);return id;});
-    const input={name:unit.name,side:unit.side,rulesVersion:'v2',damageModel:unit.damageModel,scale:value.scale,body:value.body,archetype:value.archetype,level:value.level,bonuses:value.bonuses??undefined,traits,armorTier:0} as GenerateInput;
+    const input={name:unit.name,side:unit.side,rulesVersion:'v2',damageModel:unit.damageModel,numericModel:unit.numericModel,scale:value.scale,body:value.body,archetype:value.archetype,level:value.level,bonuses:value.bonuses??undefined,traits,armorTier:0} as GenerateInput;
     return generateUnit(input,{seed:'unit-set-baseline',registry,noVariance:true}).unit;
   };
   const old=baseline(unit as unknown as ObjectData), changed=merge(unit as unknown as ObjectData,Object.fromEntries(['level','body','archetype','scale','bonuses','traits'].filter(key=>Object.hasOwn(data,key)).map(key=>[key,data[key]]))), next=baseline(changed);
   for(const key of ['atk','def','spd'] as const)unit.base[key]+=next.base[key]-old.base[key];
-  if(next.scale==='hero')unit.base.hpMax=Math.max(1,Math.min(singleLifeLimit(unit.damageModel),Math.max(unit.base.hpMax,next.base.hpMax)));
-  if(next.scale==='company')unit.base.moraleMax=(unit.base.moraleMax??old.base.moraleMax??0)+(next.base.moraleMax??0)-(old.base.moraleMax??0);
+  if(next.scale==='hero')unit.base.hpMax=Math.max(1,Math.min(singleLifeLimit(unit.damageModel),unit.numericModel ? unit.base.hpMax + next.base.hpMax - old.base.hpMax : Math.max(unit.base.hpMax,next.base.hpMax)));
+  if(next.scale==='company'||unit.numericModel)unit.base.moraleMax=(unit.base.moraleMax??old.base.moraleMax??0)+(next.base.moraleMax??0)-(old.base.moraleMax??0);
   else {delete unit.base.moraleMax;delete unit.morale;}
   if(unit.formation)setMemberMaximum(unit,Math.max(1,Math.round(unit.formation.memberHp+nominalLife(next)-nominalLife(old))));
   unit.xpValue=next.xpValue;

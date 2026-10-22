@@ -1,4 +1,5 @@
 import { bonusSteps } from '../enhancements.js';
+import { equipmentStep, gradedNumbers } from '../numeric-model.js';
 import type { Combatant, Weapon } from '../types.js';
 import { meleeReach } from '../melee.js';
 import { isArmsModel } from '../arms.js';
@@ -14,6 +15,7 @@ export function gridWeaponRange(weapon?: Weapon, modernMelee = true, armsModel?:
   if (!weapon) return 0;
   if (!weapon.tags?.includes('ranged')) return modernMelee ? meleeReach(weapon) : Math.max(1, weapon.range ?? 0);
   const ranges = isArmsModel(armsModel) ? ARMS_GRID_RANGES : GRID_RANGES;
+  if (weapon.recipe && gradedNumbers(weapon.recipe)) return Math.max(1, weapon.minRange ?? 0, (ranges[weapon.recipe.mechanism] ?? 3) + equipmentStep(weapon.recipe, 'range'));
   return Math.max(weapon.range ?? 3, (ranges[weapon.recipe?.mechanism ?? ''] ?? 0) + bonusSteps(weapon.recipe?.bonuses,'range',5));
 }
 export function gridWeapon(weapon?: Weapon, modernMelee = true, armsModel?: Combatant['armsModel']): Weapon | undefined {
