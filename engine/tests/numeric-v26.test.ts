@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateUnit, prepareCombatModel, prepareArmsModel, prepareTraitModel, prepareTraitLevelModel, prepareItemModel,
   prepareResourceModel, V25_OVERFLOW_D20, V26_OVERFLOW_D20, V26_OVERFLOW_TW, SmallBattle, MassBattle, standardField,
-  previewAttack, standardConditionMap, traitRegistry, compileItem, compileWornEffects, gearItem, wornEffects,
+  previewAttack, standardConditionMap, traitRegistry, compileItem, compileWornEffects, gearItem, wornEffects, applyXp,
   upgradeWornItemBudget, validateItemValue, collectMods, resolveStack, movementPoints, nominalLife, type Combatant, type GenerateInput } from '../src/index.js';
 import { equipmentStep } from '../src/numeric-model.js';
 import { equipmentLoad, equipmentCapacity, equipmentBurden, loadMovementScale, overloadPenalty } from '../src/equipment-load.js';
@@ -117,6 +117,7 @@ describe('V26 连续修正、容量与生命', () => {
     prepareCombatModel(legacy,rules);expect(legacy.hp).toBe(122);
     const custom=unit({hpMax:211,hp:199},true);prepareCombatModel(custom,rules);expect([custom.base.hpMax,custom.hp]).toEqual([211,199]);
     expect(nominalLife(unit({bonuses:{health:-10,power:-10}}))).toBe(1);
+    const cursed=unit({level:8,bonuses:{health:-10}});applyXp(cursed,999999,registry);expect(cursed.level).toBe(10);expect(cursed.base.hpMax).toBe(nominalLife(cursed));
   });
   it('新负面佩戴效果逐级增长且不受通用+通道上限截断；v1读取与显式升级各守版本', () => {
     const m=compileItem({kind:'item',form:'worn',power:10,bonuses:{damage:-10,kineticDamage:-10,protection:-10,kineticProtection:-10,speed:-10}}, {id:'curse',seed:'curse'});
