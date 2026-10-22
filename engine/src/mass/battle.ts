@@ -388,16 +388,17 @@ export class MassBattle {
       const outcome = this.landingOutcome(unit), source = this.combatants.find((u) => u.id === this.flightCauses.get(unit.id));
       unit.formationPosition ??= formationNode(unit).id; unit.airborne = false; delete unit.tacticalPose;
       if (outcome.landing) setFormation(unit, outcome.landing);
-      const hp=memberHealth(unit), members=unit.hp, damage = this.applyFlightLoss(unit, source);
+      const members=unit.hp, revivalUses=unit.revivalState?.used, damage = this.applyFlightLoss(unit, source);
+      const lostMembers = revivalUses !== unit.revivalState?.used ? members : members - unit.hp;
       if (!outcome.landing && unit.hp > 0) unit.status = 'fled';
       this.syncPassenger(unit); revealUnit(this.observationContext(), unit); fallen.push(unit);
       const hero = this.combatants.find((u) => u.id === this.attached.get(unit.id));
       if (hero && unit.hp > 0 && hero.status === 'ready') {
-        const heroHp=hero.hp, loss = this.applyFlightLoss(hero, source); if (!outcome.landing && hero.hp > 0) hero.status = 'fled'; fallen.push(hero);
-        this.recordEvent({ round: this.round, kind: 'condition', participants: [hero.id], damage:{sourceId:source?.id,targetId:hero.id,amount:heroHp-hero.hp,cause:'坠落'}, text: `${hero.name} 随运输平台迫降，损失${displayNumber(loss)}` });
+        const loss = this.applyFlightLoss(hero, source); if (!outcome.landing && hero.hp > 0) hero.status = 'fled'; fallen.push(hero);
+        this.recordEvent({ round: this.round, kind: 'condition', participants: [hero.id], damage:{sourceId:source?.id,targetId:hero.id,amount:loss,cause:'坠落'}, text: `${hero.name} 随运输平台迫降，损失${displayNumber(loss)}` });
       }
       const location = outcome.landing ? `${outcome.landing.side === 'ally' ? '我方' : '敌方'}${outcome.landing.wing}${{ front: '前线', rear: '支援', reserve: '预备' }[outcome.landing.rank]}` : '附近无落点，紧急迫降离场';
-      this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], damage:{sourceId:source?.id,targetId:unit.id,amount:hp-memberHealth(unit),cause:'坠落',...(hasMemberHealth(unit)?{unit:'life' as const,members:members-unit.hp}:{})}, text: `${unit.name} ${reason}，迫降：${location}，坠落损失${displayNumber(damage)}${hasMemberHealth(unit)?'生命':''}` });
+      this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], damage:{sourceId:source?.id,targetId:unit.id,amount:damage,cause:'坠落',...(hasMemberHealth(unit)?{unit:'life' as const,members:lostMembers}:{})}, text: `${unit.name} ${reason}，迫降：${location}，坠落损失${displayNumber(damage)}${hasMemberHealth(unit)?'生命':''}` });
     }
 
   }

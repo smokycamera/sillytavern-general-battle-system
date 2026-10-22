@@ -523,11 +523,12 @@ export class SmallBattle {
       unit.airborne = false; delete unit.tacticalPose;
       if (alreadyDefeated) { if (cell !== undefined) unit.pos = cell; revealUnit(this.observationContext(), unit); continue; }
       const hp = memberHealth(unit), members = unit.hp; applyCombatDamage(unit,damage*(hasMemberHealth(unit)?unit.formation!.memberHp:1),unit.hp);
+      const lostHealth = hp - memberHealth(unit), lostMembers = members - unit.hp;
       if (cell !== undefined) unit.pos = cell;
-      if (hp > memberHealth(unit)) this.checkDeath(unit, this.combatants.find((u) => u.id === this.flightCauses.get(unit.id)));
+      if (lostHealth > 0) this.checkDeath(unit, this.combatants.find((u) => u.id === this.flightCauses.get(unit.id)));
       if (cell === undefined) unit.status = unit.hp > 0 ? 'fled' : this.nonLethal ? 'dying' : 'dead';
       revealUnit(this.observationContext(), unit);
-      this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], damage: {sourceId:this.flightCauses.get(unit.id),targetId:unit.id,amount:hp-memberHealth(unit),cause:'坠落',...(hasMemberHealth(unit)?{unit:'life' as const,members:members-unit.hp}:{})}, text: `${unit.name} ${reason}，${cell === undefined ? '附近无落点，紧急迫降离场' : '迫降至' + cellLabel(field, cell)}，坠落损失${displayNumber(hp-memberHealth(unit))}${hasMemberHealth(unit)?'生命':''}` });
+      this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], damage: {sourceId:this.flightCauses.get(unit.id),targetId:unit.id,amount:lostHealth,cause:'坠落',...(hasMemberHealth(unit)?{unit:'life' as const,members:lostMembers}:{})}, text: `${unit.name} ${reason}，${cell === undefined ? '附近无落点，紧急迫降离场' : '迫降至' + cellLabel(field, cell)}，坠落损失${displayNumber(lostHealth)}${hasMemberHealth(unit)?'生命':''}` });
     }
     this.flightCauses.clear();
   }

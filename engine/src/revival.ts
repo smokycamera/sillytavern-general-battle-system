@@ -36,7 +36,7 @@ export function tryRevive(unit: Combatant): string | undefined {
   }
   if (unit.recoverableWounded !== undefined) unit.recoverableWounded = Math.min(Math.max(0, unit.recoverableWounded - (unit.scale === 'hero' ? 0 : unit.hp)), unit.base.hpMax - unit.hp);
   unit.woundedPercentRemainder = 0;
-  unit.status = 'ready';
+  unit.status = unit.moraleState?.forcedRetreat ? 'routing' : 'ready';
   if (unit.moraleState) { unit.moraleState.damage = 0; unit.moraleState.damagePenalty = 0; delete unit.moraleState.cause; }
   changeMorale(unit, Math.max(0, Math.ceil(fullMorale(unit) / 2) - (unit.morale ?? unit.moraleState?.personal ?? fullMorale(unit))));
   return `${unit.name} 复活，恢复至${displayNumber(unit.hp)}${unit.scale === 'hero' ? '生命' : unit.body === 'vehicle' ? '辆' : '人'}${percent === 100 ? '，满血复生' : ''}（本场剩余${Math.max(0, traitParameter('revivalUses', level) - state.used)}次）`;
