@@ -1,6 +1,7 @@
 import { displayNumber } from './display-number.js';
 import {shieldClass,shieldDurabilityMax,clampShieldDurability,energyShieldActive,energyShieldCapacity,energyShieldShare,energyShareOf,energyThresholdOf,energyShieldRecharge,energyPower,energyOverloadThreshold,clampEnergyShield,rechargeEnergyShield,type ShieldBearer} from './shield-state.js';
 export {shieldClass,shieldDurabilityMax,clampShieldDurability,standardSwordMean,SHIELD_DURABILITY_FACTOR,energyShieldActive,energyShieldCapacity,energyShieldShare,energyShieldPool,energyShieldRecharge,energyShareOf,energyThresholdOf,shieldPlatformScale,energyOverloadThreshold,energyHeavyHit,rechargeEnergyShield,ENERGY_SHIELD_SHARE,ENERGY_HEAVY_ABSORB,ENERGY_RECHARGE_SHARE,type ShieldBearer} from './shield-state.js';
+import { validateLoadModel } from './load-model.js';
 import { equipmentBurden } from './equipment-load.js';
 /**
  * V12 武器与护甲校准（arms-v1）。只由新战斗规则开启；旧战斗快照没有该标记，继续使用冻结的V11投影。
@@ -26,8 +27,10 @@ export { ARMS_MODEL, isArmsModel, isArmsV2, isArmsV3, validateArmsModel, type Ar
 import { isArmsModel, isArmsV2, isArmsV3 } from './arms-model.js';
 
 /** The battle's saved rules are authoritative; re-loading is idempotent and never touches equipment. */
-export function prepareArmsModel(unit: Combatant, rules: Pick<RulePack, 'armsModel' | 'barrierModel'>): void {
+export function prepareArmsModel(unit: Combatant, rules: Pick<RulePack, 'armsModel' | 'barrierModel' | 'loadModel'>): void {
   if (unit.rulesVersion !== 'v2') return;
+  validateLoadModel(unit.loadModel); validateLoadModel(rules.loadModel);
+  if (rules.loadModel && unit.numericModel) unit.loadModel = rules.loadModel;
   if (rules.armsModel) unit.armsModel = rules.armsModel; else delete unit.armsModel;
   prepareBarrierModel(unit, rules);
   if (isArmsV2(unit.armsModel) && unit.shield && shieldClass(unit) !== 'energy-shield') { unit.shieldDurability ??= { remaining: shieldDurabilityMax(unit) }; clampShieldDurability(unit); }
@@ -39,11 +42,7 @@ export function armorTierOffset(tier: number, model?: Combatant['armsModel']): n
   return tier === 1 && isArmsModel(model) ? -0.5 : tier - 2;
 }
 
-/** People needed to serve one heavy weapon in a human formation. */
-export function weaponCrew(weapon: Weapon | undefined, model?: RulePack['armsModel']): number {
-  const mechanism = weapon?.recipe?.mechanism ?? weapon?.tags?.find(t => t.startsWith('mechanism:'))?.slice(10);
-  return mechanism === 'rocket' ? (isArmsV2(model) ? 2 : 4) : isCannonWeapon(weapon) ? 4 : mechanism === 'autocannon' ? (isArmsModel(model) ? 2 : 3) : 1;
-}
+export { weaponCrew } from './weapon-crew.js';
 
 /** One demolition charge per three participating members of a formation; at least one charge. */
 export const DEMOLITION_TEAM = 3;

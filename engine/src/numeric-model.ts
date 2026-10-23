@@ -41,7 +41,7 @@ export function equipmentStep(recipe: ItemRecipe | undefined, stat: BonusStat): 
   if (!recipe || !gradedNumbers(recipe)) return bonusSteps(recipe?.bonuses, stat, stat === 'speed' || stat === 'range' ? 5 : 3);
   return precise((recipe.bonuses?.[stat] ?? 0) * (stat === 'speed' ? recipe.power / 10 : stat === 'morale' ? recipe.power + 2 : ratingPerPoint(recipe.power)));
 }
-/** Relative physical burden, including bulk and handling; artillery specifications remain frozen. */
+/** Frozen V26 relative burden; V29 overrides artillery loads via its own physical recipe marker. */
 export const GRADED_WEAPON_LOAD: Readonly<Record<string, number>> = {
   natural: 0, summon: 0, 'light-ranged': .5, demolition: 1, sword: 1, greatsword: 1.5, dagger: .5,
   axe: 1, 'great-weapon': 3, blunt: 1, spear: 1.5, 'heavy-polearm': 2, throwing: 1, bow: 1,

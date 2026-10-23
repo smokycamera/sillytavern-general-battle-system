@@ -549,6 +549,7 @@ export function unitRecordToGenerateInput(r: UnitRecord, era = 'medieval'): Gene
     weaponStabilized: r.snapshot?.weapon?.recipe?.stabilized,
     damageModel: r.snapshot?.damageModel,
     numericModel: r.snapshot?.numericModel,
+    loadModel: r.snapshot?.loadModel,
     sidearmStabilized: r.snapshot?.sidearm?.recipe?.stabilized,
     armorProfile: r.snapshot?.armor?.recipe?.protectionProfile,
     weaponEnchantment: r.snapshot?.weapon?.recipe?.enchantment,

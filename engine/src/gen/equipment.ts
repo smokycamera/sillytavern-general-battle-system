@@ -1,4 +1,5 @@
 import { ARTILLERY_MECHANISMS, equipmentStep, gradedNumbers, GRADED_WEAPON_LOAD, validateNumericModel, type NumericModel } from '../numeric-model.js';
+import { modifiedEquipmentLoad, revisedLoad, REVISED_ARTILLERY_LOAD, REVISED_ARMOR_LOAD, validateLoadModel, type LoadModel } from '../load-model.js';
 import { bonusMultiplier, bonusSteps, validateEnhancements, type Enhancements } from '../enhancements.js';
 import { MELEE_PROFILES } from '../melee.js';
 import { BODY, bodyProfile } from '../body.js';
@@ -24,6 +25,7 @@ const ARMOR_ALIASES: Record<string, 0 | 1 | 2 | 3 | 4> = {
   'arm-composite': 3, 'arm-power': 4, 'arm-flak': 2, 'arm-subdermal': 1, 'arm-arament': 4, 'arm-terminator': 4,
 };
 export interface EquipmentContext {
+  loadModel?: LoadModel;
   numericModel?: NumericModel;
   /** false preserves an older recipe; an existing record preserves its rolls on reforge. */
   variance?: InstanceVariance | false;
@@ -39,6 +41,7 @@ function integer(value: number, min: number, max: number, name: string): number 
 }
 export function equipmentRecipe(mechanism: string, power: number, context: EquipmentContext): ItemRecipe {
   validateNumericModel(context.numericModel);
+  validateLoadModel(context.loadModel);
   const size = context.body ?? 'human';
   if (!BODY[size]) throw new Error('不支持的身体/平台');
   if (!context.id || !context.seed) throw new Error('物品缺少唯一编号或随机记录号');
@@ -47,7 +50,7 @@ export function equipmentRecipe(mechanism: string, power: number, context: Equip
   if (context.variance !== false) validateInstanceVariance(context.variance);
   const variance = context.damageModel === 'wounds-v2' && !context.noVariance && context.variance !== false && stats.length
     ? context.variance ?? rollInstanceVariance(context.seed, stats, context.varianceVersion) : undefined;
-  return { ...(context.numericModel && !ARTILLERY_MECHANISMS.includes(mechanism) ? { numericModel: context.numericModel } : {}), ...(variance ? { variance: structuredClone(variance) } : {}), ...(context.damageModel === 'wounds-v2' ? { balanceVersion: 'unified-v1' as const } : {}), ...(context.damageModel === 'wounds-v2' && context.noVariance ? { noVariance: true } : {}), bonuses: context.bonuses, version: FORMULA_VERSION, mechanism, power: integer(power, 1, 10, '装备等级'), size,
+  return { ...(context.loadModel ? { loadModel: context.loadModel } : {}), ...(context.numericModel && !ARTILLERY_MECHANISMS.includes(mechanism) ? { numericModel: context.numericModel } : {}), ...(variance ? { variance: structuredClone(variance) } : {}), ...(context.damageModel === 'wounds-v2' ? { balanceVersion: 'unified-v1' as const } : {}), ...(context.damageModel === 'wounds-v2' && context.noVariance ? { noVariance: true } : {}), bonuses: context.bonuses, version: FORMULA_VERSION, mechanism, power: integer(power, 1, 10, '装备等级'), size,
     quality: integer(context.quality ?? 3, 1, 5, '品质'), seed: context.seed };
 }
 export function compileWeapon(spec: { mechanism?: string; weaponId?: string; power?: number; bonuses?: Enhancements; stabilized?: boolean; enchantment?: 'none' | 'thermal' | 'arcane' }, context: EquipmentContext): Weapon {
@@ -73,6 +76,8 @@ export function compileWeapon(spec: { mechanism?: string; weaponId?: string; pow
   const budget = (diceAvg(powerCurve.dmgBase) + (powerCurve.dmgAp ? diceAvg(powerCurve.dmgAp) : 0))
     * Math.min(1.6, profile.dmgMult) * (0.85 + recipe.quality * 0.05) * (ranged ? 1 : bodyProfile(recipe.size, context.damageModel).strength) * jitter * (recipe.stabilized ? 0.85 : 1);
   const attacks = Math.max(1, Math.min(3, profile.attacks ?? 1));
+  const load = revisedLoad(recipe) ? (REVISED_ARTILLERY_LOAD[mechanism] ?? GRADED_WEAPON_LOAD[mechanism]!)
+    : gradedNumbers(recipe) && recipe.size !== 'vehicle' ? GRADED_WEAPON_LOAD[mechanism]! : mechanism === 'sprayer' ? 3 : ['greatsword', 'great-weapon', 'heavy-polearm'].includes(mechanism) ? 2 : ['natural','summon'].includes(mechanism) ? 0 : ['light-ranged','throwing'].includes(mechanism) ? 1 : ['cannon', 'indirect-cannon', 'autocannon'].includes(mechanism) ? 6 : ranged ? 2 : 1;
   return { id: context.id, name: context.name?.trim() || profile.name,
     baseDice: rebuildDice(budget / attacks, budget / attacks < 3.5 ? 2 : 6), recipe,
     channel: recipe.enchantment ?? (['energy', 'sprayer'].includes(mechanism) ? 'thermal' : mechanism === 'magic' ? 'arcane' : 'kinetic'),
@@ -80,7 +85,7 @@ export function compileWeapon(spec: { mechanism?: string; weaponId?: string; pow
     range: summonRange ?? (gradedNumbers(recipe) && !ranged ? Math.max(0, (MELEE_PROFILES[mechanism]?.reach ?? Math.max(1, profile.range)) + equipmentStep(recipe, 'range')) : Math.max(profile.minRange??0, ranged ? 1 : profile.range, profile.range + (ranged ? equipmentStep(recipe, 'range') : 0))), minRange: profile.minRange ?? 0,
     pointBlankPolicy: profile.pointBlankPolicy ?? 'allow', pointBlankPenalty: profile.pointBlankPenalty,
     indirect: profile.indirect, attacks, reload: profile.reload, level: recipe.power,
-    hands: ['greatsword', 'great-weapon', 'heavy-polearm'].includes(mechanism) ? 2 : ['natural','summon'].includes(mechanism) ? 0 : ['light-ranged','throwing'].includes(mechanism) ? 1 : ranged ? 2 : 1, load: gradedNumbers(recipe) && recipe.size !== 'vehicle' ? GRADED_WEAPON_LOAD[mechanism]! : mechanism === 'sprayer' ? 3 : ['greatsword', 'great-weapon', 'heavy-polearm'].includes(mechanism) ? 2 : ['natural','summon'].includes(mechanism) ? 0 : ['light-ranged','throwing'].includes(mechanism) ? 1 : ['cannon', 'indirect-cannon', 'autocannon'].includes(mechanism) ? 6 : ranged ? 2 : 1,
+    hands: ['greatsword', 'great-weapon', 'heavy-polearm'].includes(mechanism) ? 2 : ['natural','summon'].includes(mechanism) ? 0 : ['light-ranged','throwing'].includes(mechanism) ? 1 : ranged ? 2 : 1, load: modifiedEquipmentLoad(load, recipe.bonuses),
     tags: [...(ranged ? ['ranged'] : []), ...(profile.blast ? ['blast'] : []), 'mechanism:' + mechanism] };
 }
 /** 旧长兵器改为单手；保留明确自定义值，不重掷装备。 */
@@ -118,5 +123,5 @@ export function compileArmor(spec: { tier?: Armor['tier']; armorId?: string; pow
   return { id: context.id, name: context.name?.trim() || (spec.armorId ? ARMOR_LIBRARY[spec.armorId]!.name : ['无甲', '轻甲', '中甲', '重甲', '超重甲'][tier]!),
     tier, level: recipe.power, recipe,
     protection,
-    load: (gradedNumbers(recipe) && recipe.size !== 'vehicle' ? [0, 2, 4, 6, 8] : [0, 1, 2, 4, 5])[tier]!, drScale: 1 };
+    load: modifiedEquipmentLoad((revisedLoad(recipe) ? REVISED_ARMOR_LOAD : gradedNumbers(recipe) && recipe.size !== 'vehicle' ? [0, 2, 4, 6, 8] : [0, 1, 2, 4, 5])[tier]!, recipe.bonuses), drScale: 1 };
 }

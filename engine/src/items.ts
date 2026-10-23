@@ -1,3 +1,4 @@
+import { modifiedEquipmentLoad, revisedLoad } from './load-model.js';
 import { GRADED_SHIELD_LOAD } from './numeric-model.js';
 import { ITEM_PROGRESSION, ITEM_STACKING, ITEM_LIFE_RECOVERY, PROGRESSION_MODEL, STACKING_MODEL, itemProgression, type ItemProgressionModel } from './progression.js';
 import { applyItemProgression } from './item-progression.js';
@@ -186,14 +187,14 @@ function compileItemValue(spec: Extract<ItemSpecification, { kind: 'item' }>, se
 }
 
 /** 物品编译不依赖持有者等级，也不生成临时人物；效果创建后冻结。 */
-export function compileItem(spec: ItemSpecification, identity: Pick<EquipmentContext, 'id' | 'name' | 'seed' | 'creatingUnit' | 'numericModel' | 'damageModel' | 'noVariance' | 'variance'>): ItemMechanics {
+export function compileItem(spec: ItemSpecification, identity: Pick<EquipmentContext, 'id' | 'name' | 'seed' | 'creatingUnit' | 'loadModel' | 'numericModel' | 'damageModel' | 'noVariance' | 'variance'>): ItemMechanics {
   if (spec.kind === 'item') return { kind: 'item', value: compileItemValue(spec, identity.seed, identity.name, identity.numericModel) };
   validateEnhancements(spec.bonuses, spec.kind);
   const context = { ...identity, body: spec.body, quality: spec.quality, bonuses: spec.bonuses };
   switch (spec.kind) {
     case 'weapon': return { kind: 'weapon', value: compileWeapon(spec, context) };
     case 'armor': return { kind: 'armor', value: compileArmor(spec, context) };
-    case 'shield': return { kind: 'shield', value: { id: identity.id, name: identity.name ?? '盾牌', load: identity.numericModel && context.body !== 'vehicle' ? GRADED_SHIELD_LOAD[spec.mechanism ?? 'shield']! : SHIELD_CLASSES[spec.mechanism ?? 'shield'].load, recipe: equipmentRecipe(spec.mechanism ?? 'shield', spec.power, context) } };
+    case 'shield': return { kind: 'shield', value: { id: identity.id, name: identity.name ?? '盾牌', load: modifiedEquipmentLoad(revisedLoad(identity) || identity.numericModel && context.body !== 'vehicle' ? GRADED_SHIELD_LOAD[spec.mechanism ?? 'shield']! : SHIELD_CLASSES[spec.mechanism ?? 'shield'].load, spec.bonuses), recipe: equipmentRecipe(spec.mechanism ?? 'shield', spec.power, context) } };
     default: throw new Error('不支持的物品用途');
   }
 }

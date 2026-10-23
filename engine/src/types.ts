@@ -286,6 +286,7 @@ export interface Combatant {
   /** Fractional normal movement only; whole unused steps never stockpile. Battle-local. */
   movementRemainder?: number;
   marchRemainder?: number;
+  loadModel?: import('./load-model.js').LoadModel;
   numericModel?: import('./numeric-model.js').NumericModel;
   /** V25：只在新战斗启用，次数随战斗快照保存，战后剥离。 */
   revivalModel?: 'revival-v1';
@@ -458,6 +459,7 @@ export interface GenAudit {
 // ---------- 造怪器 ----------
 
 export interface GenerateInput {
+  loadModel?: import('./load-model.js').LoadModel;
   numericModel?: import('./numeric-model.js').NumericModel;
   /** Omitted for historical API compatibility; the current panel explicitly selects V6. */
   damageModel?: Combatant['damageModel'];
@@ -537,6 +539,7 @@ export type DamageChannel = 'kinetic' | 'thermal' | 'arcane';
 export type BodyKind = 'human' | 'large' | 'vehicle' | 'giant';
 /** 规范化且冻结的 T/P/S/Q/F 中装备职责；训练 T 不在装备配方中。 */
 export interface ItemRecipe {
+  loadModel?: import('./load-model.js').LoadModel;
   numericModel?: import('./numeric-model.js').NumericModel;
   variance?: import('./instance-variance.js').InstanceVariance;
   /** Identifies the body-strength formula baked into this physical instance. */
@@ -609,6 +612,7 @@ export interface BattleLogEntry {
 export interface RulePack {
   recoveryModel?: import('./life-recovery.js').LifeRecoveryModel;
   artilleryModel?: import('./artillery-model.js').ArtilleryModel;
+  loadModel?: import('./load-model.js').LoadModel;
   numericModel?: import('./numeric-model.js').NumericModel;
   /** V8：训练输出每级增幅；缺省保留旧战斗的 12%。 */
   trainingDamagePerLevel?: number;

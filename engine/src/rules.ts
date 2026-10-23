@@ -134,7 +134,11 @@ export const V27_OVERFLOW_TW: RulePack = { ...V26_OVERFLOW_TW, id: 'v27-overflow
 /** V28: bounded rocket/spray coverage; V27 snapshots keep their original areas. */
 export const V28_OVERFLOW_D20: RulePack = { ...V27_OVERFLOW_D20, id: 'v28-overflow-d20', name: 'V28 火箭与喷射范围', artilleryModel: 'blast-decay-v2' };
 export const V28_OVERFLOW_TW: RulePack = { ...V27_OVERFLOW_TW, id: 'v28-overflow-tw', name: 'V28 火箭与喷射范围会战', artilleryModel: 'blast-decay-v2' };
+/** V29: finite carrying growth, graded platforms and frozen physical weight affixes. */
+export const V29_OVERFLOW_D20: RulePack = { ...V28_OVERFLOW_D20, id: 'v29-overflow-d20', name: 'V29 承载与重量修正', loadModel: 'capacity-v2' };
+export const V29_OVERFLOW_TW: RulePack = { ...V28_OVERFLOW_TW, id: 'v29-overflow-tw', name: 'V29 承载与重量修正会战', loadModel: 'capacity-v2' };
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V29_OVERFLOW_D20.id]: V29_OVERFLOW_D20, [V29_OVERFLOW_TW.id]: V29_OVERFLOW_TW,
   [V28_OVERFLOW_D20.id]: V28_OVERFLOW_D20, [V28_OVERFLOW_TW.id]: V28_OVERFLOW_TW,
   [V27_OVERFLOW_D20.id]: V27_OVERFLOW_D20, [V27_OVERFLOW_TW.id]: V27_OVERFLOW_TW,
   [V26_OVERFLOW_D20.id]: V26_OVERFLOW_D20, [V26_OVERFLOW_TW.id]: V26_OVERFLOW_TW,

@@ -1,3 +1,4 @@
+import { validateLoadModel } from '../../engine/src/load-model.js';
 import { validateNumericModel } from '../../engine/src/numeric-model.js';
 import { validateInstanceVariance } from '../../engine/src/instance-variance.js';
 import { validateEnhancements, type Enhancements } from '../../engine/src/enhancements.js';
@@ -105,7 +106,7 @@ export function validateInventoryItem(value: unknown): asserts value is Inventor
       || !Number.isInteger(recipe.quality) || Number(recipe.quality) < 1 || Number(recipe.quality) > 5
       || !['human', 'large', 'vehicle', 'giant'].includes(String(recipe.size)) || typeof recipe.seed !== 'string' || !recipe.seed)) throw new Error('已保存的属性损坏或版本未知');
     if (object(recipe) && (recipe.balanceVersion !== undefined && recipe.balanceVersion !== 'unified-v1' || recipe.noVariance !== undefined && typeof recipe.noVariance !== 'boolean')) throw Error('装备数值版本损坏');
-    if(object(recipe)){ validateInstanceVariance(recipe.variance); validateNumericModel(recipe.numericModel); }
+    if(object(recipe)){ validateInstanceVariance(recipe.variance); validateNumericModel(recipe.numericModel); validateLoadModel(recipe.loadModel); }
     if(object(recipe))validateEnhancements(recipe.bonuses as Enhancements | undefined, m.kind as 'weapon'|'armor'|'shield');
     const gear = m.value;
     if (!object(gear) || gear.id !== value.id || Number(value.qty) > 1) throw new Error('装备唯一编号/数量冲突');
@@ -165,7 +166,7 @@ export function createInventoryItem(id: string, name: string, spec: ItemSpecific
   if (!id || !name.trim()) throw new Error('物品缺少身份或名称');
   if (!Number.isSafeInteger(qty) || qty < 1 || !stackable(spec) && qty !== 1) throw new Error('装备与佩戴、充能道具逐件建档；一次性道具数量须为正整数');
   return { id, name: name.trim(), qty, revision: 1, lootType: spec.kind === 'shield' ? 'armor' : spec.kind,
-    mechanics: compileItem(spec, { id, name: name.trim(), seed, damageModel:'wounds-v2', numericModel:'graded-v1' }) };
+    mechanics: compileItem(spec, { id, name: name.trim(), seed, damageModel:'wounds-v2', numericModel:'graded-v1', loadModel:'capacity-v2' }) };
 }
 function gearAt(unit: Combatant, slot: EquipmentSlot): unknown {
   switch (slot) {
@@ -395,7 +396,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
         if (spec.kind === 'weapon' && spec.stabilized === undefined) spec.stabilized = oldRecipe?.stabilized;
         if (spec.kind === 'armor' && spec.profile === undefined) spec.profile = oldRecipe?.protectionProfile;
         if (spec.kind === 'weapon' && spec.enchantment === undefined) spec.enchantment = oldRecipe?.enchantment ?? 'none';
-        compiled = compileItem(spec, { id: item.id, name, seed: oldRecipe?.seed ?? `reforge:${id}`, damageModel:'wounds-v2', numericModel:'graded-v1', noVariance: oldRecipe?.noVariance, variance: oldRecipe?.variance ?? false });
+        compiled = compileItem(spec, { id: item.id, name, seed: oldRecipe?.seed ?? `reforge:${id}`, damageModel:'wounds-v2', numericModel:'graded-v1', loadModel:'capacity-v2', noVariance: oldRecipe?.noVariance, variance: oldRecipe?.variance ?? false });
       }
       item.mechanics = compiled; item.name = name; item.revision = (item.revision ?? 1) + 1;
       if (item.equippedTo) {

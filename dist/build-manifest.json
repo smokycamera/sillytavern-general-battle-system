@@ -1,24 +1,24 @@
 {
   "format": "tavern-battle-native-build",
   "version": "2.9.8",
-  "builtAt": "2026-10-23T00:43:49.189Z",
-  "sourceFingerprint": "79591dd757df71db4149c903bf239c40c0c4eef923f8a44df5043aba68a38ec3",
+  "builtAt": "2026-10-23T01:45:37.452Z",
+  "sourceFingerprint": "663302f1c2ae2134163445645b51d52508cc09cf34ef04287a2ffcca2611aaa7",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
-    {
-      "path": "dist/assets/panel-DI53Gn-A.js",
-      "bytes": 1529815,
-      "sha256": "cfc6ee236c5c029fe08c0ca1d1523df3e7eb180b9958a01bc0ec4338a487aab1"
-    },
     {
       "path": "dist/assets/panel-DWnwi5Zd.css",
       "bytes": 31125,
       "sha256": "a1aa52b2cbdba7c03a436ec52a79e6bf9875bf1e35fb4db145966238ef50127d"
     },
     {
-      "path": "dist/assets/preferences-Bg-oHno3.js",
-      "bytes": 1010548,
-      "sha256": "a96aa6fcd862539e8e569d215b538b422c20b376622c5fa916fe1739df7ade69"
+      "path": "dist/assets/panel-ofCePbjD.js",
+      "bytes": 1532279,
+      "sha256": "5e3cb2cb5e2c32b538db30c53725137712f9481ac42477f0d8b62ba993f27932"
+    },
+    {
+      "path": "dist/assets/preferences--VDJVC_n.js",
+      "bytes": 1012408,
+      "sha256": "002fc0ad2973c9ab6d0685a079f95da57e275155e3614d58974ef742f34f1b40"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -27,8 +27,8 @@
     },
     {
       "path": "assets/worldbook/!通用战斗系统约束.json",
-      "bytes": 23641,
-      "sha256": "8cea84a05c3f0c1e04379bb0b3c80c6abc51e5d0821bd51032ed0667cd12a110"
+      "bytes": 23787,
+      "sha256": "4cd640d41a7bbe05d031c9b158a3fb1179ccc9f4455a32f81a16dfb56e4a5338"
     },
     {
       "path": "assets/worldbook/lorebook system explain.md",
@@ -56,14 +56,19 @@
       "sha256": "8188f26d9ae04816b693de50ac785459c2a89b5510d5ade7ddd401bd357794e1"
     },
     {
+      "path": "docs/capacity-weight-v29-20261023.md",
+      "bytes": 4844,
+      "sha256": "eed4d7abd26dc3a5717b7e5f4ca299a35fd08d987d2ea11ad412941c5f78ac39"
+    },
+    {
       "path": "docs/control-worn-v20-20261018.md",
       "bytes": 10264,
       "sha256": "ab9253e642ef6d08ac111d67206608658848fefb72d8174060845560f69bfca9"
     },
     {
       "path": "docs/current-release.md",
-      "bytes": 31083,
-      "sha256": "fc124bf7ff234f2c2e113c1b64e026c1d886f698eb51254af6d253d063bd6023"
+      "bytes": 31408,
+      "sha256": "f88138bfbc507c10b83f5c6d96312edea41a19d8352e4b4a26b68a295e8ff72b"
     },
     {
       "path": "docs/embedded-worldbook.md",
@@ -187,8 +192,13 @@
     },
     {
       "path": "docs/prompt-backups/README.md",
-      "bytes": 7416,
-      "sha256": "59fcac0b92a708e563cbef171a3b6be7cd67b093081b16883cfee0852da90837"
+      "bytes": 7846,
+      "sha256": "ebfb02aa0417fa96216fdfc38db4b9155d3bf154e6bd9db4fc7b7a0855aa2ebb"
+    },
+    {
+      "path": "docs/prompt-backups/worldbook-before-capacity-v29-20261023.json.txt",
+      "bytes": 23641,
+      "sha256": "8cea84a05c3f0c1e04379bb0b3c80c6abc51e5d0821bd51032ed0667cd12a110"
     },
     {
       "path": "docs/prompt-backups/worldbook-before-common-options-20261021.json.txt",
@@ -222,8 +232,8 @@
     },
     {
       "path": "docs/rocket-sprayer-v28-20261023.md",
-      "bytes": 4546,
-      "sha256": "30a2d98d234c7c93e72415cb142a2a9c3999099d0f5005d03610f38597dbae5c"
+      "bytes": 4712,
+      "sha256": "f148ca6fb7256e4e91c3bd282cfa44139534c41fe1e147379e7f6f39ac685a09"
     },
     {
       "path": "docs/secondary-api-two-step-20261002.md",
@@ -268,7 +278,7 @@
     {
       "path": "dist/index.js",
       "bytes": 96948,
-      "sha256": "9809a39e15f9e2cfef8ebc0ee44d991363e62bf8a9f2c5d655d7eb9c3b3a8b66"
+      "sha256": "8c40236ae66ecda5abf5194486af6172fbd8d4e50e8ce00a52b3428e0050771f"
     },
     {
       "path": "LICENSE",
@@ -343,7 +353,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 48599,
-      "sha256": "436a8408864a0bbc9c00c13ab8aa8659d350fd48ed3ab2d1cf4a2828238978a2"
+      "sha256": "f8d87d7c43a7e5320c042c90eac9434098da808283470ea68d3ca2e34a26771f"
     },
     {
       "path": "README.md",

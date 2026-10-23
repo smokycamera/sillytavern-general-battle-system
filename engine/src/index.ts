@@ -11,6 +11,7 @@ export * from './trait-level-model.js';
 export * from './trait-parameters.js';
 export * from './afflictions.js';
 export * from './body.js';
+export * from './load-model.js';
 /**
  * 战阵引擎 · 统一出口。面板只从此处导入。
  */
