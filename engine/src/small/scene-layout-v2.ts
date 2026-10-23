@@ -7,6 +7,7 @@ import { gridDistance, neighbors, findGridPath, type BattlefieldSpec } from './s
 import { worldAnchorCell } from './landmark-placement.js';
 import { SCENE_ARCHETYPE_NAMES, type SceneArchetype, type WorldAnchor } from './scene-intent.js';
 import type { BattlefieldScene } from './map-design.js';
+import { compassSector, gridBounds } from './grid-anchor.js';
 export function selectSceneArchetype(scene: BattlefieldScene, family: string, seed: string): SceneArchetype {
     const rng = new SeededRng('scene-archetype-v1:' + seed);
     const pool: SceneArchetype[] = scene === 'interior' ? ['residence', 'great_hall', 'fortress'] : scene === 'trenches' ? ['trench_line', 'trench_depth']
@@ -61,6 +62,7 @@ const CITY_SIDES: readonly CitySide[] = ['south', 'north', 'west', 'east'];
  * inner wall two cells behind the outer one, with a passage between them. An unstated layout is drawn from the seed.
  */
 export function siegeWallLayout(plan: Pick<BattlefieldPlan, 'shape' | 'wallLayers'>, position: WorldAnchor, seed: string): { ring: boolean; layers: 1 | 2 } {
+    position = compassSector(position) as WorldAnchor;
     if (plan.shape === undefined && plan.wallLayers === undefined) {
         const roll = new SeededRng('city-walls-v1:' + seed).next();
         return { ring: position === 'center' || roll >= .45 && roll < .8, layers: position !== 'center' && roll >= .8 ? 2 : 1 };
@@ -70,14 +72,14 @@ export function siegeWallLayout(plan: Pick<BattlefieldPlan, 'shape' | 'wallLayer
 /** The walled side an assault faces: where the attackers are said to start, else the widest open ground. */
 function siegeFacing(field: BattlefieldSpec, position: WorldAnchor, walled: Record<CitySide, boolean>, [l, r, t, b]: number[], attackers: readonly WorldAnchor[], attackEdge: CitySide): CitySide {
     const space: Record<CitySide, number> = { north: t!, south: field.height - 1 - b!, west: l!, east: field.width - 1 - r! };
-    const toward = (s: CitySide) => attackers.filter(a => a.includes(s)).length;
+    const toward = (s: CitySide) => attackers.filter(a => compassSector(a).includes(s)).length;
     return CITY_SIDES.filter(s => walled[s] && !position.includes(s))
         .sort((a, c) => toward(c) - toward(a) || space[c] - space[a] || Number(c === attackEdge) - Number(a === attackEdge) || CITY_SIDES.indexOf(a) - CITY_SIDES.indexOf(c))[0] ?? attackEdge;
 }
 /** A city footprint is a region in the battlefield, independent of which faction attacks. */
 export function buildPlannedCity(field: BattlefieldSpec, plan: BattlefieldPlan, seed: string, scene: BattlefieldScene, attackingSide: 'ally' | 'enemy'): void {
     const rng = new SeededRng('city-parcels-v2:' + seed), w = field.width, h = field.height, defender = attackingSide === 'ally' ? 'enemy' : 'ally';
-    const siege = scene === 'city_siege', outside = scene === 'field', position = plan.cityPosition ?? (defender === 'enemy' ? 'north' : 'south');
+    const siege = scene === 'city_siege', outside = scene === 'field', position = compassSector(plan.cityPosition ?? (defender === 'enemy' ? 'north' : 'south')) as WorldAnchor;
     let [l, r, t, b] = bounds(field, position, outside);
     const layout = siege ? siegeWallLayout(plan, position, seed) : undefined;
     if (layout && !layout.ring) {
@@ -93,7 +95,7 @@ export function buildPlannedCity(field: BattlefieldSpec, plan: BattlefieldPlan, 
             r = w - 1;
     }
     if (plan.intent?.entities.some(e => e.kind === 'river') || plan.waterPosition) {
-        const water = plan.waterPosition ?? 'center';
+        const water = compassSector(plan.waterPosition ?? 'center');
         if (water.includes('east'))
             r = Math.min(r, w - 7);
         if (water.includes('west'))
@@ -290,29 +292,45 @@ export function buildPlannedCity(field: BattlefieldSpec, plan: BattlefieldPlan, 
 export function buildPlannedWater(field: BattlefieldSpec, plan: BattlefieldPlan, seed: string): void {
     if (!plan.water || plan.water === 'none')
         return;
-    if (field.generation?.scene === 'interior')
-        throw new BattlefieldPlanError('室内场景不能铺设室外河流');
-    const w = field.width, h = field.height, anchor = plan.waterPosition ?? 'center', moat = plan.water === 'moat';
+    const indoor = field.generation?.scene === 'interior';
+    const flooded = plan.waterCoverage === 'all';
+    const w = field.width, h = field.height, anchor = plan.waterPosition ?? 'center', direction = compassSector(anchor), moat = plan.water === 'moat';
     // A moat keeps one cell of footing below the walls; a river leaves room for a bank road.
     const gap = moat ? 2 : 3;
     let axis = plan.waterAxis ?? 'horizontal';
     const cityCells = field.city ? [...field.city.inside, ...field.city.frontline] : [];
     let line = axis === 'horizontal' ? Math.floor(worldAnchorCell(field, anchor) / w) : worldAnchorCell(field, anchor) % w;
     if (cityCells.length && (plan.intent?.entities.some(e => e.kind === 'river') || plan.waterPosition)) {
-        if (axis === 'vertical' && anchor.includes('east'))
+        if (axis === 'vertical' && direction.includes('east'))
             line = Math.min(w - 2, Math.max(...cityCells.map(p => p % w)) + gap);
-        if (axis === 'vertical' && anchor.includes('west'))
+        if (axis === 'vertical' && direction.includes('west'))
             line = Math.max(1, Math.min(...cityCells.map(p => p % w)) - gap);
-        if (axis === 'horizontal' && anchor.includes('north'))
+        if (axis === 'horizontal' && direction.includes('north'))
             line = Math.max(1, Math.min(...cityCells.map(p => Math.floor(p / w))) - gap);
-        if (axis === 'horizontal' && anchor.includes('south'))
+        if (axis === 'horizontal' && direction.includes('south'))
             line = Math.min(h - 2, Math.max(...cityCells.map(p => Math.floor(p / w))) + gap);
     }
     const lineCells = (n: number, along = axis) => Array.from({ length: along === 'horizontal' ? w : h }, (_, i) => along === 'horizontal' ? n * w + i : i * w + n);
     let cells = lineCells(line);
+    if (flooded) {
+        cells = field.tiles.flatMap((tile, p) => !field.structures![p]
+            && !['wall', 'cliff', 'hill', 'cover', 'forest', 'rough'].includes(tile)
+            && !field.overlays![p]?.includes('rubble') && !(field.groundHeight?.[p]! > 0) ? [p] : []);
+        if (!cells.length) throw new BattlefieldPlanError('全场水域没有可覆盖的低处地面');
+        field.generation!.waterCoverage = 'all';
+    } else if (indoor) {
+        const floors = new Set(field.generation?.interior?.rooms.flatMap(r => r.cells) ?? []);
+        const usable = (p: number) => floors.has(p) && !['wall', 'building', 'tower', 'gate'].includes(field.structures![p]?.kind ?? '');
+        const bounds = gridBounds(anchor, w, h), min = bounds ? (axis === 'horizontal' ? bounds[2] : bounds[0]) : line,
+            max = bounds ? (axis === 'horizontal' ? bounds[3] : bounds[1]) : line;
+        const candidates = Array.from({ length: max - min + 1 }, (_, i) => min + i).sort((a, b) => Math.abs(a - line) - Math.abs(b - line) || a - b);
+        const selected = candidates.find(n => lineCells(n).some(usable));
+        if (selected === undefined) throw new BattlefieldPlanError('室内水域在指定区域没有合法位置');
+        line = selected; cells = lineCells(line).filter(usable);
+    }
     // A planned city is a placed region, so an unplaced river keeps clear of its streets as well as its walls.
     const avoided = new Set(field.city?.facing ? cityCells : field.city?.frontline ?? []);
-    if (cityCells.length && anchor === 'center' && cells.some(p => avoided.has(p))) {
+    if (!flooded && cityCells.length && anchor === 'center' && cells.some(p => avoided.has(p))) {
         // A river with no stated side cannot cut through the city: it runs along the city's open side,
         // across the other axis when the city spans this one.
         for (const along of [axis, axis === 'horizontal' ? 'vertical' as const : 'horizontal' as const]) {
@@ -325,20 +343,30 @@ export function buildPlannedWater(field: BattlefieldSpec, plan: BattlefieldPlan,
     }
     if (cells.some(p => field.city?.frontline.includes(p)))
         throw new BattlefieldPlanError('河流与完整城墙重叠，请调整城市或河流方位');
+    const shallow = new Set<number>();
+    if (plan.waterDepth === 'mixed') {
+        if (cells.length < 2) throw new BattlefieldPlanError('深浅混合水域部署容量不足');
+        const depthRng = new SeededRng('water-depth-v1:' + seed), vertical = depthRng.next() < .5;
+        const coordinate = (p: number) => vertical ? p % w : Math.floor(p / w);
+        const ordered = [...cells].sort((a, b) => coordinate(a) - coordinate(b) || a - b);
+        for (const p of ordered.slice(0, Math.ceil(ordered.length / 2))) shallow.add(p);
+    }
     const target = field.objective.cell;
     for (const p of cells) {
-        field.tiles[p] = plan.water === 'ford' ? 'shallow_water' : 'deep_water';
-        field.structures![p] = null;
+        field.tiles[p] = plan.water === 'ford' || shallow.has(p) ? 'shallow_water' : 'deep_water';
+        if (!indoor || field.structures![p]?.kind!=='gate') field.structures![p] = null;
         delete field.overlays![p];
     }
-    const replacement = cells.includes(target) ? neighbors(field, target).filter(p => !cells.includes(p) && !groundBlocked(field, p)).sort((a, b) => a - b)[0] : undefined;
+    const coveredTarget = cells.includes(target) && groundBlocked(field, target);
+    const replacement = coveredTarget ? (flooded ? field.tiles.map((_, p) => p) : neighbors(field, target))
+        .filter(p => (flooded || !cells.includes(p)) && !groundBlocked(field, p)).sort((a, b) => gridDistance(field, a, target) - gridDistance(field, b, target) || a - b)[0] : undefined;
     // A ford stays walkable, so the objective may remain in it when no bank cell is free.
-    if (cells.includes(target) && replacement === undefined && plan.water !== 'ford')
+    if (coveredTarget && replacement === undefined && !(flooded&&field.objective.kind==='annihilation'))
         throw new BattlefieldPlanError('水域覆盖任务目标且没有合法岸上目标');
     if (replacement !== undefined) {
         field.objective.cell = replacement;
         if (field.objective.kind === 'control')
-            field.objective.cells = (field.objective.cells ?? [target]).filter(p => !cells.includes(p));
+            field.objective.cells = (field.objective.cells ?? [target]).filter(p => !groundBlocked(field, p));
         if (field.objective.kind === 'control' && !field.objective.cells!.includes(replacement))
             field.objective.cells!.push(replacement);
         if (field.city)
@@ -358,13 +386,16 @@ export function buildPlannedWater(field: BattlefieldSpec, plan: BattlefieldPlan,
             const run = Array.from({ length: width }, (_, n) => p + (axis === 'horizontal' ? n : n * w));
             if (run.some(q => !cells.includes(q) || used.has(q)))
                 continue;
-            if (run.some(q => [q - (axis === 'horizontal' ? w : 1), q + (axis === 'horizontal' ? w : 1)].some(n => n < 0 || n >= field.tiles.length || field.city?.frontline.includes(n))))
+            if ((indoor || flooded) && run.some(q=>!!field.structures![q])) continue;
+            if (run.some(q => [q - (axis === 'horizontal' ? w : 1), q + (axis === 'horizontal' ? w : 1)].some(n => n < 0 || n >= field.tiles.length || field.city?.frontline.includes(n)
+                || (indoor || flooded)&&(!neighbors(field,q).includes(n)||groundBlocked(field,n)))))
                 continue;
             if (run.some(q => [...used].some(n => gridDistance(field, n, q) <= 1)))
                 continue;
             crossing = run;
             break;
         }
+        if (!crossing && (indoor || flooded) && plan.bridgePlan===undefined) continue;
         if (!crossing)
             throw new BattlefieldPlanError('桥梁部署容量不足，无法保留数量、宽度和位置');
         const id = spec.id ?? `bridge_${i + 1}`;
@@ -375,8 +406,9 @@ export function buildPlannedWater(field: BattlefieldSpec, plan: BattlefieldPlan,
                 bridge.hp = 0;
             field.structures![p] = bridge;
             field.overlays![p] = spec.state === 'destroyed' ? ['rubble'] : ['road'];
+            if (flooded) continue;
             for (const q of [p - (axis === 'horizontal' ? w : 1), p + (axis === 'horizontal' ? w : 1)]) {
-                if (field.structures![q]?.kind === 'building')
+                if (!indoor && !flooded && field.structures![q]?.kind === 'building')
                     field.structures![q] = null;
                 if (field.tiles[q] === 'cliff')
                     field.tiles[q] = 'rough';
@@ -386,7 +418,7 @@ export function buildPlannedWater(field: BattlefieldSpec, plan: BattlefieldPlan,
         }
     }
     // Join each bank entrance to its own side's public road network without adding crossings.
-    for (const p of used)
+    for (const p of indoor || flooded ? [] : used)
         for (const q of [p - (axis === 'horizontal' ? w : 1), p + (axis === 'horizontal' ? w : 1)]) {
             const bank = q < p ? -1 : 1;
             const edge = axis === 'horizontal' ? (bank < 0 ? q % w : (h - 1) * w + q % w) : (bank < 0 ? Math.floor(q / w) * w : Math.floor(q / w) * w + w - 1);
@@ -401,10 +433,11 @@ export function buildPlannedWater(field: BattlefieldSpec, plan: BattlefieldPlan,
                         field.overlays![n] = ['road'];
                 }
         }
-    const notes = [`水系${axis === 'horizontal' ? '横向' : '纵向'}布置，${specs.length}座桥`];
+    const bridgeCount = new Set([...used].map(p => field.structures![p]!.entityId)).size;
+    const notes = [`水系${flooded ? '覆盖低处地面' : axis === 'horizontal' ? '横向布置' : '纵向布置'}，${bridgeCount}座桥`];
     // Deep water across the whole battlefield with no standing bridge would split the battle for good: one stretch,
     // in front of the gate or in line with the objective, stays fordable. No bridge is added.
-    if (plan.water !== 'ford' && ![...used].some(p => (field.structures![p]?.hp ?? 0) > 0)) {
+    if (!indoor && !flooded && plan.water !== 'ford' && ![...used].some(p => (field.structures![p]?.hp ?? 0) > 0)) {
         const step = axis === 'horizontal' ? 1 : w, ahead = before(moat && gates[0] !== undefined ? gates[0] : field.objective.cell);
         const ford = cells.filter(p => cells.includes(p + step) && !used.has(p) && !used.has(p + step))
             .sort((a, b) => gridDistance(field, a, ahead) - gridDistance(field, b, ahead) || a - b)[0];

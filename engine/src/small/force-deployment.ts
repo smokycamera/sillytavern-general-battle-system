@@ -4,6 +4,7 @@ import { MAX_DEPLOYMENT_ZONES, type WorldAnchor } from './scene-intent.js';
 import type { Combatant } from '../types.js';
 import type { SceneRegion } from './scene-compiler.js';
 import { groundBlocked, intactStructure } from './layers.js';
+import { gridBounds } from './grid-anchor.js';
 import { footprint, gridDistance, type BattlefieldSpec } from './spatial.js';
 
 type Side = Combatant['side'];
@@ -15,6 +16,8 @@ function band(size: number, index: number): [number, number] {
   return index === 0 ? [0, a - 1] : index === 1 ? [a, b - 1] : [b, size - 1];
 }
 function sectorBounds(field: BattlefieldSpec, anchor: WorldAnchor): [number, number, number, number] {
+  const numbered = gridBounds(anchor, field.width, field.height);
+  if (numbered) return numbered;
   const [x0, x1] = band(field.width, anchor.includes('west') ? 0 : anchor.includes('east') ? 2 : 1);
   const [y0, y1] = band(field.height, anchor.includes('north') ? 0 : anchor.includes('south') ? 2 : 1);
   return [x0, x1, y0, y1];
@@ -68,8 +71,9 @@ function inFront(field: BattlefieldSpec): (p: number) => boolean {
  * attackers start outside the walls and the defenders inside unless they sortie; at a city in an open-field
  * battle both sides start outside it, in street fighting inside it. A stated post overrides the open-field default.
  */
-export function forceLegality(field: BattlefieldSpec, side: Side, post?: Post): (p: number) => boolean {
-  const city = field.city, inCity = cityCells(field), open = (p: number) => !groundBlocked(field, p);
+export function forceLegality(field: BattlefieldSpec, side: Side, post?: Post, actors: readonly Combatant[] = []): (p: number) => boolean {
+  const city = field.city, inCity = cityCells(field), open = (p: number) => !groundBlocked(field, p)
+    || field.generation?.waterCoverage === 'all' && actors.some(u => !groundBlocked(field, p, u));
   const outside = () => { const front = inFront(field); return (p: number) => open(p) && !inCity.has(p) && front(p); };
   if (city?.defender) {
     if (side !== city.defender || post === 'outside') return outside();
@@ -109,14 +113,14 @@ export function withCitySides(field: BattlefieldSpec, plan: BattlefieldPlan, thi
  * of its gates keeps it inside. Only an explicit unit inside or occupying a named place may start behind enemy walls.
  */
 export function clipRelationZone(field: BattlefieldSpec, side: Side, unitId: string | undefined, relation: string, region: SceneRegion,
-  cells: number[], required: number): { cells: number[]; note?: string } {
+  cells: number[], required: number, actors: readonly Combatant[] = []): { cells: number[]; note?: string } {
   const city = field.city, inCity = cityCells(field);
   if (!city || !inCity.size) return { cells };
   const holds = relation === 'occupies' || relation === 'inside';
   const toRegion = (p: number) => Math.min(...(region.cells.length ? region.cells : region.access).map(q => gridDistance(field, p, q)));
   if (city.defender && side !== city.defender) {
     if (unitId && holds && region.kind !== 'city') return { cells };
-    const legal = forceLegality(field, side), kept = cells.filter(legal);
+    const legal = forceLegality(field, side, undefined, actors), kept = cells.filter(legal);
     if (region.kind !== 'city' && kept.length >= Math.max(1, required)) return { cells: kept, ...(kept.length < cells.length ? { note: '攻方只在城外开局' } : {}) };
     const grown = region.kind === 'city' ? defaultArea(field, side) : nearestRings(field, toRegion, legal, required);
     return { cells: grown, note: region.kind === 'city' ? `攻方改在城外接近${region.label}` : `攻方改在${region.label}附近城外` };
@@ -128,7 +132,7 @@ export function clipRelationZone(field: BattlefieldSpec, side: Side, unitId: str
     const tops = region.kind === 'city' ? city.frontline.filter(p => !!intactStructure(field, p)?.top && !cells.includes(p)) : [];
     const kept = [...cells.filter(p => inCity.has(p)), ...tops];
     if (kept.length >= Math.max(1, required)) return { cells: kept, ...(kept.length < cells.length + tops.length ? { note: `守方在城内据守${region.label}` } : {}) };
-    return { cells: nearestRings(field, toRegion, forceLegality(field, side), required), note: `守方在城内据守${region.label}` };
+    return { cells: nearestRings(field, toRegion, forceLegality(field, side, undefined, actors), required), note: `守方在城内据守${region.label}` };
   }
   // Open-field battle beside a town: approaching or guarding it does not place a force inside it.
   if (region.kind === 'city' && !holds && field.generation?.scene !== 'city_streets') {
@@ -178,15 +182,16 @@ export function applyPlannedDeployments(field: BattlefieldSpec, plan: Battlefiel
       if (!platform) { notes.push(`${who}无墙可登，随守军部署`); continue; }
     } else if (!r.unitId && defender === r.side && post !== 'outside') {
       // The whole garrison area stays available; the deployment scorer keeps it near the walls.
-      const legal = forceLegality(field, r.side, post);
+      const legal = forceLegality(field, r.side, post, actors);
       cells = field.tiles.map((_, p) => p).filter(p => legal(p) && !avoid.has(p));
     } else {
-      const legal = forceLegality(field, r.side, post), required = requiredCells(actors);
+      const legal = forceLegality(field, r.side, post, actors), required = requiredCells(actors);
       // An assault forms up beyond the reach of a first rush from the walls, when the map leaves room for it.
       const walls = attacker ? field.city!.frontline : [], wallGap = (p: number) => walls.length ? Math.min(...walls.map(q => gridDistance(field, p, q))) : Infinity;
       const standoff = [3, 2, 0].find(gap => field.tiles.filter((_, p) => legal(p) && !avoid.has(p) && wallGap(p) >= gap).length >= required + 2) ?? 0;
-      // Nobody starts on a bridge or in a ford: they are the crossings both sides contest.
-      const usable = (p: number) => legal(p) && !avoid.has(p) && wallGap(p) >= standoff && field.structures?.[p]?.kind !== 'bridge' && field.tiles[p] !== 'shallow_water';
+      // Narrow crossings stay contested; explicit full flooding permits starting in shallow water.
+      const usable = (p: number) => legal(p) && !avoid.has(p) && wallGap(p) >= standoff && field.structures?.[p]?.kind !== 'bridge'
+        && (field.generation?.waterCoverage === 'all' || field.tiles[p] !== 'shallow_water');
       const fits = field.tiles.some((_, p) => usable(p) && toSector(p) === 0);
       // A detachment that cannot start where it was sent stays with its own side.
       if (!fits && r.unitId) { notes.push(`${who}随本方部署`); continue; }
@@ -209,7 +214,7 @@ export function applyPlannedDeployments(field: BattlefieldSpec, plan: Battlefiel
     }
     if (cells.length < requiredCells(actors) && post && !attacker && !platform) {
       // A post the scene cannot hold, such as a town both sides were asked to fill, falls back to the scene's own side.
-      const legal = forceLegality(field, r.side), wider = nearestRings(field, toSector, p => legal(p) && !avoid.has(p), requiredCells(actors));
+      const legal = forceLegality(field, r.side, undefined, actors), wider = nearestRings(field, toSector, p => legal(p) && !avoid.has(p), requiredCells(actors));
       if (wider.length > cells.length) { cells = wider; notes.push(`${who}改按默认位置部署`); }
     }
     if (!cells.length) throw new BattlefieldPlanError(`${who}没有可用的开局位置，请调整部署方位`);

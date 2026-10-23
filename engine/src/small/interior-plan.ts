@@ -17,7 +17,7 @@ export const INTERIOR_PATTERN_NAMES: Record<InteriorPattern, string> = {
 export interface InteriorLayoutRecord {
   use: InteriorUse;
   pattern: InteriorPattern;
-  rooms: { cells: number[]; label: string }[];
+  rooms: { cells: number[]; label: string; planId?: string }[];
   doorways: number[];
   fixtures?: number[];
 }
