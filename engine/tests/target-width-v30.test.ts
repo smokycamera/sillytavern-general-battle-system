@@ -26,6 +26,13 @@ describe('V30 target-limited weapon participants',()=>{
     for(const [body,melee,ranged] of [['human',6,12],['large',10,18],['giant',16,28],['vehicle',16,32]] as const){
       const hero=unit({name:'d',side:'enemy',scale:'hero',body,hpMax:1000,hp:1000});
       expect(targetWidthLimit(hero,false)).toBe(melee);expect(targetWidthLimit(hero,true)).toBe(ranged);
+      const one=unit({name:'d',side:'enemy',body,hpMax:1,hp:1});
+      for(const [shooting,cap] of [[false,melee],[true,ranged]] as const){
+        const actor=unit({weaponClass:shooting?'rifle':'sword'});
+        const counts=[hero,one].map(target=>sharedParticipants(actor,[actor],engagementWidth(actor,target,shooting),target,shooting));
+        expect(counts).toEqual([cap,cap]);
+        for(const target of [hero,one])expect(preview(actor,target,shooting).participants).toBe(cap);
+      }
     }
     const a=unit(),d=unit({name:'d',side:'enemy'});
     expect(sharedParticipants(a,[a],16,d,false)).toBe(32);
