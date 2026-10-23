@@ -119,6 +119,7 @@ export function validateInventoryItem(value: unknown): asserts value is Inventor
       if (![0, 1, 2, 3, 4].includes(Number(gear.tier))) throw new Error('护甲档位损坏');
       if (gear.protection !== undefined && (!object(gear.protection) || ['kinetic', 'thermal', 'arcane'].some((c) => !Number.isFinite((gear.protection as Record<string, unknown>)[c]) || Number((gear.protection as Record<string, unknown>)[c]) < 0))) throw new Error('护甲通道防护损坏');
     }
+    if (gear.loadOverride !== undefined && typeof gear.loadOverride !== 'boolean') throw new Error('装备负重覆盖记录损坏');
     if (gear.load !== undefined && (!Number.isFinite(gear.load) || Number(gear.load) < 0)) throw new Error('装备负重损坏');
   }
   if (value.equippedTo !== undefined && (!object(value.equippedTo) || typeof value.equippedTo.unitId !== 'string'

@@ -24,6 +24,14 @@ function transactText(save:NarrativeSave,text:string,mid='set') {
 }
 function restored(save:NarrativeSave) { return materializeUnitRecord(prepareInventoryState(JSON.parse(JSON.stringify(save))).storage![0]!,reg); }
 
+it('明确写入武器护甲盾的负载均留下手工标记，包括恰好等于默认值', () => {
+  const next = transact(setup(), { weapon: { values: { load: 1 } }, armor: { values: { load: 1 } }, shield: { spec: '盾L3', values: { load: 1.5 } } }).next();
+  const unit = restored(next);
+  expect(unit.weapon).toMatchObject({ load: 1, loadOverride: true });
+  expect(unit.armor).toMatchObject({ load: 1, loadOverride: true });
+  expect(unit.shield).toMatchObject({ load: 1.5, loadOverride: true });
+});
+
 describe('正文战外全字段事务（定向验证）',()=>{
   it('enchant便捷属性修改当前实物并读档生效，none恢复武器默认通道且不改其他冻结属性',()=>{
     const save=prepareInventoryState(setup()), old=structuredClone(save.storage![0]!.snapshot!.weapon!);

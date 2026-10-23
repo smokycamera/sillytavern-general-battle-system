@@ -138,6 +138,7 @@ function gearValue(input: unknown, previous: ItemMechanics | undefined, slot: Eq
   if (config.values !== undefined) {
     const values = requireObject(config.values, '装备values');
     keys(values, mechanics.kind === 'weapon' ? weaponFields : mechanics.kind === 'armor' ? armorFields : shieldFields, '装备values');
+    if (Object.hasOwn(values, 'load')) mechanics.value.loadOverride = values.load !== null;
     // 明确的原始数值指的是当前规则实际值，不能在入场时被威力投影覆盖。
     if (mechanics.kind === 'weapon') mechanics.value = { ...anchoredWeapon(mechanics.value,undefined,unit.damageModel ?? 'wounds-v1')!, customized: true };
     mechanics.value = merge(mechanics.value as unknown as ObjectData, values) as unknown as typeof mechanics.value;

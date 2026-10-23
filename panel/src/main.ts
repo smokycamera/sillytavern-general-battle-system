@@ -487,9 +487,15 @@ async function persist(options: { battleUnchanged?: boolean } = {}): Promise<boo
   if (write.receipt.status !== 'failed') {
     if (!write.receipt.memoryOnly) openingSavedFor = battle ?? undefined;
     state.factRevision = write.revision;
-    const saved=controller.snapshot(['inventory', 'reports']);
+    const outside = !battle || battle.isOver();
+    const saved=controller.snapshot(outside ? ['inventory', 'reports', 'storage'] : ['inventory', 'reports']);
     state.inventory = saved.inventory ?? [];
     state.reports = saved.reports ?? [];
+    if (outside) {
+      state.storage = saved.storage ?? [];
+      const records = new Map(state.storage.map(record => [record.id, record]));
+      state.roster = state.roster.map(unit => records.has(unit.id) ? materializeStorageUnit(records.get(unit.id)!) : unit);
+    }
   } else {
     battleSaveFailed = true;
     restore();
