@@ -370,11 +370,12 @@ export function sampledPreviewComputations(): number { return sampledPreviewRuns
 // serialized once per table and scope. Callers must not change table contents inside a scope;
 // values are the same either way, only their reuse differs.
 interface ScopeTable { id: string; text: string }
-interface PreviewScope { samples: Map<string, SampledMemberPreview>; chars: number; tables: WeakMap<object, ScopeTable>; ids: Map<string, string>; epoch: number }
+interface PreviewScope { samples: Map<string, SampledMemberPreview>; chars: number; tables: WeakMap<object, ScopeTable>; ids: Map<string, string>; epoch: number;
+  parts: Map<string, string>; partChars: number }
 const SCOPE_CACHE_ENTRIES = 4096, SCOPE_CACHE_CHARS = 8 * 1024 * 1024;
 let previewScope: PreviewScope | undefined, previewScopes = 0;
 /** 开始一次只读估值（AI 选择行动）；结束前不得修改状态表或特质表内容。 */
-export function beginPreviewScope(): void { previewScope = { samples: new Map(), chars: 0, tables: new WeakMap(), ids: new Map(), epoch: ++previewScopes }; }
+export function beginPreviewScope(): void { previewScope = { samples: new Map(), chars: 0, tables: new WeakMap(), ids: new Map(), epoch: ++previewScopes, parts: new Map(), partChars: 0 }; }
 export function endPreviewScope(): void { previewScope = undefined; }
 /** 当前估值范围的编号；范围外为 undefined。供其他估值模块在同一范围内复用只读派生表。 */
 export function previewScopeEpoch(): number | undefined { return previewScope?.epoch; }
@@ -388,7 +389,7 @@ function scopeTable(scope: PreviewScope, table: Map<string, unknown>): ScopeTabl
   }
   return entry;
 }
-function sampledPreviewBase(opts: Omit<AttackOpts, 'rng'>): string {
+function sampledPreviewState(opts: Omit<AttackOpts, 'rng'>) {
   // Damage receives terrain, distance, participants and external modifiers explicitly.
   // Coordinates only affect directional brace (whether the pose is still held and whether
   // the opponent stands in its front arc) and V13 works (whether the unit still stands on its
@@ -408,18 +409,31 @@ function sampledPreviewBase(opts: Omit<AttackOpts, 'rng'>): string {
   // V15 巷战专精的“2格内射击”还区分 2 格与更远，只有带巷战专精的攻击方保留到 3 格。
   const closeShots = itemsV15(opts.attacker) && activeTraitIds(opts.attacker).includes('urban-fighter');
   const distance = isArmsV2(opts.rules.armsModel) ? opts.distance : opts.distance === undefined ? undefined : opts.distance <= 1 ? 1 : closeShots ? Math.min(3, opts.distance) : opts.distance >= 2 ? 2 : opts.distance;
-  return JSON.stringify({ ...opts, distance, attacker: unit(opts.attacker, opts.defender, true), defender: unit(opts.defender, opts.attacker, false),
-    conditionDefs: undefined, traitRegistry: undefined });
+  return { ...opts, distance, attacker: unit(opts.attacker, opts.defender, true), defender: unit(opts.defender, opts.attacker, false),
+    conditionDefs: undefined, traitRegistry: undefined };
+}
+/** Store a unit/attack description once instead of copying both full skill inventories
+ * into every pair's key. Full JSON equality is retained; no combat fields are omitted.
+ * At the memory bound fall back to the full text, with a disjoint prefix from IDs. */
+function scopePart(scope: PreviewScope, value: unknown): string {
+  const text = JSON.stringify(value), found = scope.parts.get(text);
+  if (found !== undefined) return found;
+  if (scope.parts.size >= SCOPE_CACHE_ENTRIES || scope.partChars + text.length > SCOPE_CACHE_CHARS) return ':' + text;
+  const id = 'p' + scope.parts.size;
+  scope.parts.set(text, id); scope.partChars += text.length;
+  return id;
 }
 /** The state and trait tables follow the JSON object; JSON text has no raw newline, so the parts cannot run together. */
 function sampledPreviewKeys(opts: Omit<AttackOpts, 'rng'>, scope: PreviewScope | undefined): { key: string; shared: () => string } {
-  const base = sampledPreviewBase(opts);
+  const state = sampledPreviewState(opts);
   if (!scope) {
-    const key = base + '\n' + JSON.stringify([...opts.conditionDefs]) + '\n' + (opts.traitRegistry ? JSON.stringify([...opts.traitRegistry]) : '');
+    const key = JSON.stringify(state) + '\n' + JSON.stringify([...opts.conditionDefs]) + '\n' + (opts.traitRegistry ? JSON.stringify([...opts.traitRegistry]) : '');
     return { key, shared: () => key };
   }
   const defs = scopeTable(scope, opts.conditionDefs), registry = opts.traitRegistry && scopeTable(scope, opts.traitRegistry);
-  return { key: base + '\n' + defs.id + '\n' + (registry?.id ?? ''), shared: () => base + '\n' + defs.text + '\n' + (registry?.text ?? '') };
+  const { attacker, defender, ...attack } = state;
+  const base = [scopePart(scope, attacker), scopePart(scope, defender), scopePart(scope, attack)].join('\n');
+  return { key: base + '\n' + defs.id + '\n' + (registry?.id ?? ''), shared: () => JSON.stringify(state) + '\n' + defs.text + '\n' + (registry?.text ?? '') };
 }
 function rememberScopedPreview(scope: PreviewScope, key: string, value: SampledMemberPreview): void {
   if (key.length > SCOPE_CACHE_CHARS) return;
@@ -723,7 +737,11 @@ function attackBasis(opts: AttackOpts): AttackBasis {
   // 结算只改守方的生命、成员分组、屏障、士气与伤兵；同一预览的攻方副本与其余输入固定。
   // 非火炮的命中与修正只经“疏散”(现员>1) 受这些改动影响；火炮弹种随目标状态而选，按完整状态复用。
   const memo = opts.previewMemo, d = opts.defender;
-  const key = !memo ? undefined : isArmsV2(opts.rules.armsModel) ? JSON.stringify([d.hp,d.status,d.shieldDurability,d.conditions,d.barrier,d.formation]) : opts.attacker.cannonAmmo || !isCannonWeapon(opts.weaponOverride ?? opts.attacker.weapon)
+  // Ordinary weapons do not select their attack/penetration basis from individual
+  // members' wound distribution. Keep headcount, shields and conditions; only cannon
+  // ammunition selection needs the complete formation. Damage still uses live wounds.
+  const key = !memo ? undefined : isArmsV2(opts.rules.armsModel) ? JSON.stringify([d.hp,d.status,d.shieldDurability,d.conditions,d.barrier,
+    isCannonWeapon(opts.weaponOverride ?? opts.attacker.weapon) ? d.formation : undefined]) : opts.attacker.cannonAmmo || !isCannonWeapon(opts.weaponOverride ?? opts.attacker.weapon)
     ? (memo.loose ??= activeTraitIds(d).includes('loose-formation')) ? String(looseFormation(d)) : ''
     : JSON.stringify([d.hp, d.status, d.morale, d.moraleState, d.barrier, d.formation, d.recoverableWounded, d.conditions, d.base]);
   const known = key === undefined ? undefined : memo!.bases.get(key);
