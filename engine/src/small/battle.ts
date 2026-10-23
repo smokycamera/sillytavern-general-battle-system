@@ -2291,7 +2291,7 @@ export class SmallBattle {
       if (unit.status !== 'ready') { if (!this.isOver()) this.endTurn(); return; }
     }
     // Read-only evaluation: observations and preview samples are reused until an action is chosen.
-    this.observationMemo = new Map(); this.gridPathsMemo = new WeakMap(); beginPreviewScope();
+    this.observationMemo = new Map(); this.gridPathsMemo = new WeakMap(); beginPreviewScope(true);
     const plans: { score: number; path: GridPath; offensive?: boolean; selfDefenseScore?: number; targetId?: string; abilityId?: string; weaponMode?: SmallAttackOpts['weaponMode']; cell?: number; structureMode?: string; kind: 'structure' | 'gate' | 'climb' | 'weapon' | 'charge' | 'ability' | 'brace' | 'hold' | 'land' | 'reload' | 'haste-move' | 'haste-flight';
       /** V19：技能位移后的落点、对主目标的伤害预览、控制效果的生效概率与生效后的目标。 */
       landing?: number; preview?: { expectedDamage: number; variance?: number }; control?: CommandControl }[] = [];
