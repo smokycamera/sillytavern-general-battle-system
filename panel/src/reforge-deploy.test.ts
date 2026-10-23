@@ -39,14 +39,14 @@ function setup(text: string, managed = false) {
 function permutations<T>(values: T[]): T[][] {
   return values.length ? values.flatMap((value, i) => permutations(values.filter((_, j) => i !== j)).map(rest => [value, ...rest])) : [[]];
 }
-function assertUpdated(next: NarrativeSave) {
+function assertUpdated(next: NarrativeSave, revision = 2) {
   const record = next.storage!.find(record => record.id === id)!;
   expect(record).toMatchObject({ hp: 50, base: { hpMax: 50 }, level: 3, note: '换装缴获军械，主力突击队' });
   expect(next.rosterIds).toContain(id);
   const restored = materializeUnitRecord(record, registry);
   expect(restored.weapon).toMatchObject({ id: itemId, name: '缴获制式步枪与轻机枪', level: 4, recipe: { mechanism: 'rifle', bonuses: { damage: 1 } } });
   expect(next.inventory!.filter(item => item.id === itemId)).toHaveLength(1);
-  expect(next.inventory!.find(item => item.id === itemId)).toMatchObject({ equippedTo: { unitId: id, slot: 'primary' }, revision: 2 });
+  expect(next.inventory!.find(item => item.id === itemId)).toMatchObject({ equippedTo: { unitId: id, slot: 'primary' }, revision });
   expect(next.inventory!.find(item => item.id === itemId)!.history).toBeUndefined();
 }
 
@@ -150,16 +150,19 @@ it.each(['metadata-only', 'legacy-full'])('native scan/approve/reload preserves 
     await f.service.start();
     const { save } = setup(original, true);
     expect((await f.service.transact(() => save)).status).toBe('confirmed');
+    const migrated = f.service.snapshot().inventory!.find(item => item.id === itemId)!;
+    expect(migrated).toMatchObject({ revision: 2, mechanics: { value: { recipe: { loadModel: 'capacity-v2' } } } });
+    const reforgedRevision = migrated.revision! + 1;
     f.context.chat!.push({ mes: original, is_user: false, swipe_id: 0, gen_finished: 'finished' });
     await f.service.scan();
     const proposal = f.service.snapshot().proposals!.at(-1)!;
     expect(proposal.status).toBe('pending'); expect(proposal.events).toHaveLength(8);
     expect((await f.service.approve(proposal.id)).status).toBe('confirmed');
-    assertUpdated(f.service.snapshot());
+    assertUpdated(f.service.snapshot(), reforgedRevision);
     await f.service.load();
-    assertUpdated(f.service.snapshot());
+    assertUpdated(f.service.snapshot(), reforgedRevision);
     await f.service.scan();
     expect(f.service.snapshot().storage).toHaveLength(4);
-    assertUpdated(f.service.snapshot());
+    assertUpdated(f.service.snapshot(), reforgedRevision);
   } finally { f.service.dispose(); }
 });
