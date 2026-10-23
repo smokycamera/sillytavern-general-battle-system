@@ -179,7 +179,8 @@ export class LlmContextController {
         const ids = narrativeIds({ storage: input.roster, narrativeIdState: input.narrativeIdState });
         const layout: LayoutContext = { scene, size, attacker: result.siegeAttacker, objectiveMode: result.objectiveMode,
           units: layoutUnits(input.roster, ids.publicId, input.unitNotes), ...(result.vipName ? { vipName: result.vipName } : {}), map: layoutMapSize(scene, input.roster, size) };
-        const final = memory.layoutFailures >= LAYOUT_TRIES - 1, headline = `连续${LAYOUT_TRIES}次布置未能生成地图，只采用回答中能生成的部分`;
+        const sailingFallback = memory.layoutFailures >= AUTO_TRIES - 1 && memory.errors.layout.some(note => /航行(?:特质|部署)|航行单位/.test(note));
+        const final = memory.layoutFailures >= LAYOUT_TRIES - 1 || sailingFallback, headline = `连续${sailingFallback ? AUTO_TRIES : LAYOUT_TRIES}次布置未能生成地图，只采用回答中能生成的部分`;
         const tried: LaidOut = { scene }, adjusted: string[] = [];
         laidOut = tried;
         let placed: unknown;
@@ -204,6 +205,11 @@ export class LlmContextController {
         try { build(placed); }
         catch (error) {
           if (!final || !(error instanceof BattlefieldPlanError)) throw error;
+          if (/航行(?:特质|部署)|航行单位/.test(error.message)) {
+            delete result.battlefieldPlan; delete result.unitBindings; tried.plan = undefined;
+            result.layoutNotes = ['航行单位没有可用水域，改用带水域的本地地图'];
+            finish(result); return;
+          }
           if (!adjusted.length) adjusted.push(headline);
           let rest = placed, failure: unknown = error;
           for (let next = reduceLayout(rest, error.message, layout); next; next = reduceLayout(rest, (failure as Error).message, layout)) {

@@ -340,8 +340,12 @@ export const TRAITS: Trait[] = [
     effects: [{ kind: 'flag', flag: 'night' }],
   },
   {
-    id: 'water-crossing', name: '航渡', desc: '具备游泳、舟艇或两栖渡河手段；允许进入深水并降低涉水成本，不改变单位装备或赋予飞行',
+    id: 'water-crossing', name: '两栖', desc: '具备游泳、舟艇或两栖渡河手段；允许进入深水并降低涉水成本，不改变单位装备或赋予飞行',
     v2SourceReady: true, effects: [{ kind: 'flag', flag: 'water-crossing' }],
+  },
+  {
+    id: 'sailing', name: '航行', desc: '只能在深水、浅水移动；部署位置不在水中时，自动移至最近的可用水格',
+    v2SourceReady: true, effects: [{ kind: 'flag', flag: 'sailing' }],
   },
   {
     id: 'siege-assault', name: '登城', desc: '可从墙外攀登相邻的墙顶，并与该处守军近战；攀登消耗主行动及最多2点基础移动力；迟缓单位耗尽1点也可登城，不能穿过敌军占据的位置',
@@ -474,7 +478,7 @@ export const TRAIT_ALIASES: Readonly<Record<string, string>> = {
   '原野游骑': 'plains-runner', '平原作战': 'plains-runner',
   '巷战大师': 'urban-fighter', '巷战': 'urban-fighter', '城市作战': 'urban-fighter', '城镇作战': 'urban-fighter',
   '夜战': 'night-fighter', '夜视': 'night-fighter', '黑暗视觉': 'night-fighter',
-  '两栖': 'water-crossing', '泅渡': 'water-crossing',
+  '航渡': 'water-crossing', '浮渡': 'water-crossing', '泅渡': 'water-crossing',
   '攀登': 'siege-assault', '攀爬': 'siege-assault',
   '攻城工兵': 'siege-breaker', '工程兵': 'siege-breaker',
   '军医': 'medic', '卫生兵': 'medic', '医疗兵': 'medic', '医疗': 'medic', '救护': 'medic', '医修': 'medic',
@@ -482,6 +486,7 @@ export const TRAIT_ALIASES: Readonly<Record<string, string>> = {
 
 /** 改名前的正式名称：旧技能写法（如 buff+守城工事）继续能解析。 */
 export const TRAIT_FORMER_NAMES: Readonly<Record<string, readonly string[]>> = {
+  'water-crossing': ['航渡', '浮渡', '泅渡'],
   'forest-lore': ['林间行者'], 'mountain-born': ['山地子民'], 'plains-runner': ['原野游骑'], 'urban-fighter': ['巷战大师'], 'night-fighter': ['夜战'],
   fortification: ['守城工事'], 'siege-breaker': ['攻城工兵'], versatile: ['远近双全'], 'poison-strike': ['毒击'],
 };

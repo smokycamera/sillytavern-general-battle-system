@@ -27,6 +27,22 @@ const ctx = (extra: Partial<LayoutContext> = {}): LayoutContext => ({ scene: 'ci
   units: [{ id: 'u1', name: '张辽', side: 'ally', kind: '人物·近战' }, { id: 'u2', name: '弩手', side: 'enemy', kind: '部队·远程' }], ...extra });
 
 describe('indoor preparation vocabulary', () => {
+  it('航行无水错误返回副 API，三次仍无水时本次开战自动回退带水域地图', async () => {
+    const input = { ...source(), scope: 'sailing-water' }; input.roster = [input.roster[0]!, input.roster[4]!]; input.roster[0]!.traits.push('sailing');
+    const request = twoStep({ water: { type: 'none' }, ally: { at: ['B4'] }, enemy: { at: ['B1'] } },
+      { ...siegeChoice, field: 'plains', objective: 'annihilation', scene: 'interior' });
+    let field: ReturnType<typeof generatedLayeredField> | undefined;
+    const result = await new LlmContextController(request).select(input, settings, () => true, result => {
+      field = generatedLayeredField('sailing-retry', 7, 13, ['plains'], { roster: input.roster, scene: 'interior',
+        plan: result.battlefieldPlan, unitBindings: result.unitBindings });
+    });
+    expect(request).toHaveBeenCalledTimes(1 + AUTO_TRIES);
+    const retry = sent(request, 2).messages[2].content as string;
+    expect(retry).toContain('航行'); expect(retry).toContain('增加water'); expect(retry).not.toContain('正文没有强调的河流可以删去');
+    expect(sent(request, 1).messages[2].content).toContain('航行：只能在深水或浅水部署与移动');
+    expect(result.battlefieldPlan).toBeUndefined(); expect(result.layoutNotes).toContain('航行单位没有可用水域，改用带水域的本地地图');
+    expect(['deep_water', 'shallow_water']).toContain(field!.tiles[field!.initialDeployment![input.roster[0]!.id]!.pos]);
+  });
   it('keeps building use independent of geometry, accepting exact Chinese labels and old answers', () => {
     const indoor=ctx({scene:'interior',objectiveMode:'annihilation'});
     expect(compileLayout({interior:{use:'工坊',pattern:'双翼联通'}},indoor).plan.interior).toEqual({use:'workshop',pattern:'wings'});

@@ -2,7 +2,8 @@ import { displayNumber } from '../../engine/src/display-number.js';
 import { activationControlDuration, controlPolicy } from '../../engine/src/battle-control.js';
 import { abilityCost, fatigueLimit } from '../../engine/src/resources.js';
 import { hitChanceText, hitDamageText, hitDamageDetails } from './damage-preview.js';
-import { ZONE_NAMES, visibleBattleZones } from '../../engine/src/area-effects.js';
+import { visibleBattleZones } from '../../engine/src/area-effects.js';
+import { fieldEffectMarks, fieldWorks, worksLabelShort, zoneLabel } from './field-effects-view.js';
 import { tbWeaponShortName } from '../../engine/src/weapon-name.js';
 import { strengthDescription } from '../../engine/src/combat-model.js';
 import { participationText,memberHealthPanel } from './combat-model-view.js';
@@ -41,12 +42,15 @@ function renderFormationContent(b: MassBattle, view: FormationView, drafts: Orde
   const invalidDrafts = Object.entries(drafts).filter(([unitId, draft]) => (cache ? cache.preview(b, { unitId, ...draft }) : b.orderPreview({ unitId, ...draft })).reason);
   const pendingCount = Object.keys(drafts).length, issuedCount = s.hosts.filter((u) => b.orders.has(u.id)).length;
   const zones=visibleBattleZones(b.observationContext(),'ally');
+  const works=fieldWorks(visible);
   // 我方共享敌情：此刻看不见的敌军最后被看见的阵位，以及近几轮遭到未定位攻击的编队。
   const intel = over ? { traces: [], clues: [] } : b.enemyIntel('ally', visible);
   const ago = (round: number) => b.round - round ? (b.round - round) + '轮前' : '本轮';
   const nodes = [...FORMATION_NODES].sort((a, b) => a.y - b.y || a.x - b.x).map((node) => {
     const occupants = visible.filter((u) => !b.isAttached(u.id) && !['dead', 'fled'].includes(u.status) && formationNode(u).id === node.id);
-    return `<div class="formation-node ${node.side} ${actor && formationNode(actor).id === node.id ? 'selected' : ''} ${node.id === destination?.id ? 'destination' : ''}" data-formation="${node.id}">${zones.filter(z=>Math.abs(z.x-node.x)+Math.abs(z.y-node.y)<=z.radius).map(z=>'<span class="zone-label">'+ZONE_NAMES[z.kind]+'</span>').join('')}
+    const nodeZones=zones.filter(z=>Math.abs(z.x-node.x)+Math.abs(z.y-node.y)<=z.radius);
+    const nodeWorks=works.filter(u=>u.entrenchedAt===node.id);
+    return `<div class="formation-node ${node.side} ${actor && formationNode(actor).id === node.id ? 'selected' : ''} ${node.id === destination?.id ? 'destination' : ''}" data-formation="${node.id}">${fieldEffectMarks(nodeZones,nodeWorks)}<div class="formation-field-effects">${[...(nodeWorks.length?[worksLabelShort(nodeWorks)]:[]),...new Set(nodeZones.map(zoneLabel))].map(label=>'<span class="zone-label">'+label+'</span>').join('')}</div>
       <button class="formation-cell-label" data-action="formation-cell" data-node="${node.id}" aria-label="${esc((node.side === 'ally' ? '我方' : '敌方') + node.wing + rankName[node.rank])}">${node.side === 'ally' ? '我方' : '敌方'} · ${rankName[node.rank]}</button>
       ${occupants.length > 1 ? '<details class="formation-stack" data-detail-id="stack-' + node.id + '"' + (occupants.some(u => u.id === actor?.id) ? ' open' : '') + '><summary>' + occupants.length + '支编队 · 展开筹码</summary>' : ''}${occupants.map((u) => {
         const assigned = b.orders.get(u.id), draft = drafts[u.id], passenger = visible.find((h) => h.id === b.attached.get(u.id));
