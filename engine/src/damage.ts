@@ -529,7 +529,7 @@ function outcomeScale(opts: Omit<AttackOpts, 'rng'>, resolved?: ResolvedWeapon):
   if(opts.rules.combatModel===MEMBER_HEALTH_MODEL){
     const a=opts.attacker,d=opts.defender,ranged=opts.ranged??isRangedCapable(a),weapon=resolved?resolved.weapon:combatWeapon(opts.weaponOverride??a.weapon,a,d,opts.rules.weaponOverflow,opts.rules.damageModel,opts.rules.overmatch,opts.rules.overmatchCurve);
     const weaponAttack=!opts.abilityDamage||opts.abilityDamage.weaponBased;
-    const fallbackWidth=engagementWidth(a,d,ranged,undefined,opts.fieldTags)*(opts.rules.targetWidthModel&&weaponAttack&&d.scale==='hero'?1:Math.max(1,personnel(a)/COHORT_REFERENCE));
+    const fallbackWidth=engagementWidth(a,d,ranged,undefined,opts.fieldTags)*Math.max(1,personnel(a)/COHORT_REFERENCE);
     const available=a.body==='vehicle'?personnel(a):Math.min(personnel(a),opts.participants??fallbackWidth);
     const count=a.scale==='hero'?1:Math.min(available,weaponAttack?targetWidthLimit(d,ranged,opts.rules.targetWidthModel??null):Infinity);
     const crew=a.scale!=='hero'&&(a.body??'human')==='human'&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&!opts.abilityDamage?.delivery?.startsWith('magic')?weaponCrew(weapon,opts.rules.armsModel):1;
