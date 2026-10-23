@@ -140,7 +140,15 @@ export const V29_OVERFLOW_TW: RulePack = { ...V28_OVERFLOW_TW, id: 'v29-overflow
 /** V30 adds worn armor restrictions alongside load; V29 and earlier retain their original movement. */
 export const V30_OVERFLOW_D20: RulePack = { ...V29_OVERFLOW_D20, id: 'v30-overflow-d20', name: 'V30 护甲、目标展开与再生', armorWearModel: 'wear-v1', targetWidthModel: 'target-width-v1', regenerationModel: 'life-floor-v1' };
 export const V30_OVERFLOW_TW: RulePack = { ...V29_OVERFLOW_TW, id: 'v30-overflow-tw', name: 'V30 护甲、目标展开与再生会战', armorWearModel: 'wear-v1', targetWidthModel: 'target-width-v1', regenerationModel: 'life-floor-v1' };
+/** V31 restores the declared single-weapon baseline for all generated wound formulas. Saved V30 and earlier stay frozen. */
+export const V31_OVERFLOW_D20: RulePack = { ...V30_OVERFLOW_D20, id: 'v31-overflow-d20', name: 'V31 单体武技校准', weaponSkillCalibration: 'all-formulas-v1' };
+export const V31_OVERFLOW_TW: RulePack = { ...V30_OVERFLOW_TW, id: 'v31-overflow-tw', name: 'V31 单体武技校准会战', weaponSkillCalibration: 'all-formulas-v1' };
+/** V32 scales independent spell / single-projectile damage; V31 and earlier retain their saved budgets. */
+export const V32_OVERFLOW_D20: RulePack = { ...V31_OVERFLOW_D20, id: 'v32-overflow-d20', name: 'V32 技能爆发校准', independentSkillDamageMultiplier: .55 };
+export const V32_OVERFLOW_TW: RulePack = { ...V31_OVERFLOW_TW, id: 'v32-overflow-tw', name: 'V32 技能爆发校准会战', independentSkillDamageMultiplier: .55 };
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V32_OVERFLOW_D20.id]: V32_OVERFLOW_D20, [V32_OVERFLOW_TW.id]: V32_OVERFLOW_TW,
+  [V31_OVERFLOW_D20.id]: V31_OVERFLOW_D20, [V31_OVERFLOW_TW.id]: V31_OVERFLOW_TW,
   [V30_OVERFLOW_D20.id]: V30_OVERFLOW_D20, [V30_OVERFLOW_TW.id]: V30_OVERFLOW_TW,
   [V29_OVERFLOW_D20.id]: V29_OVERFLOW_D20, [V29_OVERFLOW_TW.id]: V29_OVERFLOW_TW,
   [V28_OVERFLOW_D20.id]: V28_OVERFLOW_D20, [V28_OVERFLOW_TW.id]: V28_OVERFLOW_TW,
