@@ -492,9 +492,15 @@ async function persist(options: { battleUnchanged?: boolean } = {}): Promise<boo
     state.inventory = saved.inventory ?? [];
     state.reports = saved.reports ?? [];
     if (outside) {
+      const previous = new Map(state.storage.map(record => [record.id, record.revision]));
       state.storage = saved.storage ?? [];
       const records = new Map(state.storage.map(record => [record.id, record]));
-      state.roster = state.roster.map(unit => records.has(unit.id) ? materializeStorageUnit(records.get(unit.id)!) : unit);
+      // Only migration-changed records need refreshing. Rebuilding an unchanged
+      // roster alters the preparation scope and discards the just-applied draft.
+      state.roster = state.roster.map(unit => {
+        const record = records.get(unit.id);
+        return record && record.revision !== previous.get(unit.id) ? materializeStorageUnit(record) : unit;
+      });
     }
   } else {
     battleSaveFailed = true;

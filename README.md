@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.10.1**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **2.10.2**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-2.10.1 automatically updates old default equipment loads and carrying capacity outside battle. Explicit manual loads remain, and ongoing battles wait until settlement. Other equipment stats and saved battle snapshots stay unchanged. See the [current release](docs/current-release.md).
+2.10.2 fixes ordinary saves discarding just-applied commander and map preparation. Out-of-battle load migration still refreshes changed records after settlement and preserves manual loads and battle snapshots. See the [current release](docs/current-release.md).
 
 ## Documentation
 
