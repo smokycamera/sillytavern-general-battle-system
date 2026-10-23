@@ -993,13 +993,7 @@ async function runAuto(): Promise<void> {
   tacticalView.selectedId = b.active?.id; tacticalView.cell = undefined;
   // 战斗结束统一收口：无论结束路径（自动清场/手动收尾/🤖自动行动/撤离）都补结束日志并触发入账+注入。
   // 各步骤幂等（battle-end 日志判重 / xpSettled），每次 render 重复调用无副作用。
-  if (b.isOver()) {
-    if (!b.log.some((l) => l.kind === 'battle-end')) {
-      const w = b.winner();
-      b.log.push({ round: b.round, kind: 'battle-end', text: w === 'ally' ? '⚔ 战斗胜利' : w === 'neutral' ? '第三方获胜，我方失败' : w === 'draw' ? '僵局' : '⚔ 战斗失败' });
-    }
-    (await onBattleEnded());
-  }
+  if (b.isOver()) await onBattleEnded();
 }
 
 async function resumeSmallTurnIfNeeded(): Promise<void> {
@@ -1067,7 +1061,13 @@ function startFullAuto(): void {
 async function onBattleEnded(): Promise<void> {
   const b = currentBattle();
   if (!b || !b.isOver()) return;
-  if (b instanceof SmallBattle) b.finalizeCasualties();
+  if (b instanceof SmallBattle) {
+    if (!b.log.some(entry => entry.kind === 'battle-end')) {
+      const winner = b.winner();
+      b.log.push({ round: b.round, kind: 'battle-end', text: winner === 'ally' ? '⚔ 战斗胜利' : winner === 'neutral' ? '第三方获胜，我方失败' : winner === 'draw' ? '僵局' : '⚔ 战斗失败' });
+    }
+    b.finalizeCasualties();
+  }
   if (state.autoSettleXp && !state.xpSettled && state.saveReceipt?.status !== 'failed') {
     try {
       (await settleXp());
@@ -1252,11 +1252,13 @@ function replayBattleTrace(eventIndex?: number): void {
   const b = currentBattle(); if (!b) return;
   const trace = traceLocations(b, eventIndex); if (!trace) return;
   const app = $('#app');
-  const targets = trace.cells.map(cell => b instanceof SmallBattle ? app.querySelector<HTMLElement>(`.grid-cell[data-cell="${cell}"]`) : app.querySelector<HTMLElement>(`[data-formation="${FORMATION_NODES[cell]?.id}"]`)).filter((el): el is HTMLElement => !!el);
+  const atCell = (cell: number | undefined) => cell === undefined ? undefined : b instanceof SmallBattle ? app.querySelector<HTMLElement>(`.grid-cell[data-cell="${cell}"]`) : app.querySelector<HTMLElement>(`[data-formation="${FORMATION_NODES[cell]?.id}"]`);
+  const targets = trace.cells.map(atCell).filter((el): el is HTMLElement => !!el);
   for (const el of targets) { el.classList.remove('trace-pulse'); void el.offsetWidth; el.classList.add('trace-pulse'); }
   const overlay = app.querySelector<SVGSVGElement>('.battle-trace'); if (overlay && eventIndex === undefined) {
     const line = overlay.querySelector('line'), bounds = overlay.getBoundingClientRect(), box = overlay.viewBox.baseVal;
-    if (line && targets.length >= 2 && bounds.width && bounds.height) for (const [suffix, target] of [['1', targets[0]!], ['2', targets.at(-1)!]] as const) {
+    const from = atCell(trace.from), to = atCell(trace.to);
+    if (line && from && to && bounds.width && bounds.height) for (const [suffix, target] of [['1', from], ['2', to]] as const) {
       const rect = target.getBoundingClientRect();
       line.setAttribute('x' + suffix, String((rect.left + rect.width / 2 - bounds.left) / bounds.width * box.width));
       line.setAttribute('y' + suffix, String((rect.top + rect.height / 2 - bounds.top) / bounds.height * box.height));
@@ -1265,8 +1267,9 @@ function replayBattleTrace(eventIndex?: number): void {
   }
   const event = eventIndex === undefined ? lastBattleAction(b)?.entry : publicBattleEvents(b).find(e => e.index === eventIndex)?.entry;
   const damage = event?.resolution;
-  if (damage && targets.length) { const label = document.createElement('span'); label.className = 'battle-damage-float'; label.textContent = damage.finalDamage ? '−' + displayNumber(damage.finalDamage) : damage.hit ? damage.penetrationFactor === 0 ? '未穿透' : '无损失' : '未命中'; targets.at(-1)!.append(label); setTimeout(() => label.remove(), 2200); }
-  if (eventIndex !== undefined) battleCamera.focus(targets.at(-1));
+  const damageTarget = damage ? atCell(event?.locations?.[damage.defenderId]) : undefined;
+  if (damage && damageTarget) { const label = document.createElement('span'); label.className = 'battle-damage-float'; label.textContent = damage.finalDamage ? '−' + displayNumber(damage.finalDamage) : damage.hit ? damage.penetrationFactor === 0 ? '未穿透' : '无损失' : '未命中'; damageTarget.append(label); setTimeout(() => label.remove(), 2200); }
+  if (eventIndex !== undefined) battleCamera.focus(atCell(trace.to) ?? targets.at(-1));
 }
 
 
@@ -2730,8 +2733,12 @@ async function executePanelAction(act: string, task: () => void | Promise<void>)
     if (state.small?.battlefield && (['grid-endturn', 'grid-mobile-endturn', 'grid-auto', 'small-start', 'mass-start'].includes(act)
       || smallActorBlocked(state.small))) {
       // 先保存动作及反应结果，再跳过失能行动者并执行后续自动回合。
-      if (!(await persistBattleResult())) return;
-      (await runAuto()); tacticalView.selectedId = state.small.active?.id; tacticalView.cell = undefined;
+      const active = state.small.active;
+      if (active && !state.small.isOver() && (smallActorBlocked(state.small) || aiActsFor(state.small, active, allyControlDefaults()))) {
+        if (!(await persistBattleResult())) return;
+        await runAuto();
+      }
+      tacticalView.selectedId = state.small.active?.id; tacticalView.targetId = undefined; tacticalView.cell = undefined;
     }
     if (!state.small?.battlefield && ['small-start', 'mass-start', 'small-attack', 'small-sidearm', 'small-charge', 'small-move', 'small-retreat', 'small-auto-act', 'small-endturn', 'ability-confirm'].includes(act)) {
       if (!(await persist())) return;
@@ -4233,6 +4240,14 @@ document.addEventListener('change', e => {
   }
   if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'llm-worldbook') {
     if (e.target.value) void llmWorldbookPicker.choose(e.target.value);
+    return;
+  }
+  if (e.target instanceof HTMLSelectElement && e.target.dataset.role === 'llm-worldbook-mode') {
+    try {
+      const settings = readLlmSettings();
+      settings.worldbookMode = e.target.value === 'character' ? 'character' : 'manual';
+      saveLlmSettings(settings); stopAutomation(); llmDiagnostic = '已保存'; render('view');
+    } catch (error) { toast(error instanceof Error ? error.message : '世界书模式保存失败'); }
     return;
   }
   if (e.target instanceof HTMLInputElement && ['llm-worldbook-all', 'llm-worldbook-entry'].includes(e.target.dataset.role ?? '')) {

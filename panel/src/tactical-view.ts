@@ -307,7 +307,8 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
     // 地形与结构由底图表达；格内只放单位、状态与被查看格的名称。高度0为默认地表，只标注抬高的格子。
     const height = field.spatialRulesVersion === 2 ? surfaceHeightAt(field, cell) : 0;
     const terrainLabel = inspected && !occupants.length;
-    const inner = (height ? '<span class="grid-height" aria-hidden="true">高' + height + '</span>' : '') + (landmark ? '<span class="grid-landmark" aria-hidden="true">◇</span>' : '') + (goalCell === cell ? '<span class="grid-goal" aria-hidden="true">' + (field.objective.kind === 'escape' ? '出口' : '旗') + '</span>' : '')
+    const inner = (searched.has(cell) ? '<span class="grid-search-mark" aria-hidden="true"></span>' : '')
+      + (height ? '<span class="grid-height" aria-hidden="true">高' + height + '</span>' : '') + (landmark ? '<span class="grid-landmark" aria-hidden="true">◇</span>' : '') + (goalCell === cell ? '<span class="grid-goal" aria-hidden="true">' + (field.objective.kind === 'escape' ? '出口' : '旗') + '</span>' : '')
       + occupants.map((u) => gridPiece(battle, u, u.id === actor?.id, automation.aiUnitIds.has(u.id))).join('')
       + (occupants.length > 1 ? '<span class="grid-stack-count">' + occupants.length + '队</span>' : '')
       + (ghosts.length ? `<span class="grid-last-seen${occupants.length ? ' raised' : ''}" aria-hidden="true" title="${esc(ghostText)}">?${ghosts.length > 1 ? ghosts.length : ''}<small>${esc(ago(Math.max(...ghosts.map((t) => t.round))))}</small></span>` : '')

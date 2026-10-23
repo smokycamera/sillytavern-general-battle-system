@@ -6,7 +6,7 @@ import { sameChat } from '../../host/src/contracts.js';
 import { NativeMessages } from '../../host/src/messages.js';
 import type { BattleService } from '../../runtime/src/battle-service.js';
 import { preferences } from './preferences.js';
-import { createWorldbookSource } from '../../host/src/worldbooks.js';
+import { createWorldbookSource, type WorldbookSource } from '../../host/src/worldbooks.js';
 
 export interface NativeRuntime {
   service: BattleService;
@@ -15,6 +15,7 @@ export interface NativeRuntime {
   close(): void;
   dispose(): void;
   worldbook?: { view(): WorldbookEditorState; update(update: WorldbookEditorUpdate): WorldbookEditorState };
+  worldbooks?: WorldbookSource;
 }
 export function legacyReceipt(receipt: PersistReceipt): SaveReceipt {
   if (receipt.memoryOnly) return { status: 'saved', host: false, local: false, memoryOnly: true };
@@ -26,6 +27,8 @@ export function createPanelRuntime(): PanelRuntime {
   const runtime = (window.parent as unknown as { __tavernBattleNative?: NativeRuntime }).__tavernBattleNative;
   if (!runtime) throw Error('原生战阵服务未启动，请从扩展入口打开面板');
   const { service, messages } = runtime; const host = service.host;
+  const worldbooks = runtime.worldbooks ?? createWorldbookSource(() => host.context());
+  if (!runtime.worldbooks) window.addEventListener('pagehide', event => { if (!event.persisted) worldbooks.dispose?.(); });
   const display = preferences(window.parent as unknown as import('../../host/src/sillytavern.js').HostWindow);
   let panelCommit = 0;
   const convert = async (action: Promise<PersistReceipt>) => {
@@ -68,7 +71,7 @@ export function createPanelRuntime(): PanelRuntime {
     recentPromptText: () => host.recentPromptText(), sendAsUser: (text, options) => messages.send(text, options),
   };
   return { adapter, controller, resident: true, native: true,
-    worldbooks: createWorldbookSource(() => host.context()),
+    worldbooks,
     recentNarrative: () => {
       const count = host.context().chat?.length ?? 0;
       return Array.from({length: Math.min(count, 100)}, (_, i) => host.message(count - Math.min(count, 100) + i)).flatMap(m => m ? [{ id: m.messageId + ':' + m.swipeId, role: m.role, text: m.text, completed: m.complete }] : []);

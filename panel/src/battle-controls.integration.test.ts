@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { nativeFixture } from '../../runtime/tests/native-fixture.js';
 import { generateUnit, SmallBattle, standardField, V12_OVERFLOW_D20 } from '../../engine/src/index.js';
 import { unitRecordFromCombatant } from './unit-state.js';
+import * as viewDom from './view-dom.js';
 
 vi.mock('./panel-runtime.js', async () => import('../../extension/src/panel-runtime.js'));
 afterEach(() => { window.dispatchEvent(new Event('pagehide')); vi.unstubAllGlobals(); });
@@ -140,5 +141,16 @@ it('战斗界面控件：「除主控」自动停在主控，全自动包含主�
   expect(snapshot().nonLethal).toBe(true); expect(saved().nonLethal).toBe(true);
   expect(snapshot().log.at(-1)).toMatchObject({ kind: 'rule', rule: { nonLethal: true } });
   expect(lethality().checked).toBe(true);
+  // 手动交给下一名我方行动者，只保存/重绘一次，保留地图节点。
+  await load(battle());
+  await select('a1');
+  const camera = document.querySelector('.grid-camera');
+  const patches = vi.spyOn(viewDom, 'updateRegion');
+  await endTurn();
+  expect(snapshot().active?.id).toBe('lead');
+  expect(document.querySelector('.command-actor h3')!.textContent).toBe('lead');
+  expect(document.querySelector('.grid-camera')).toBe(camera);
+  expect(patches.mock.calls.filter(([root]) => root.dataset.workspace === 'battle')).toHaveLength(1);
+  patches.mockRestore();
   f.service.dispose();
 }, 60000);

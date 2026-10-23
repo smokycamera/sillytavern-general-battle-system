@@ -20,6 +20,8 @@ copyFileSync('docs/mvu-save-history-20261020.md', path.join(output, 'docs/mvu-sa
 copyFileSync('docs/indoor-layouts-20261020.md', path.join(output, 'docs/indoor-layouts-20261020.md'));
 copyFileSync('docs/siege-trenches-20261021.md', path.join(output, 'docs/siege-trenches-20261021.md'));
 copyFileSync('docs/llm-command-20261021.md', path.join(output, 'docs/llm-command-20261021.md'));
+copyFileSync('docs/character-worldbooks-20261024.md', path.join(output, 'docs/character-worldbooks-20261024.md'));
+copyFileSync('docs/worldbook-map-review-20261024.md', path.join(output, 'docs/worldbook-map-review-20261024.md'));
 copyFileSync('docs/standard-skill-damage-v31-20261023.md', path.join(output, 'docs/standard-skill-damage-v31-20261023.md'));
 copyFileSync('docs/standard-skill-damage-v32-20261023.md', path.join(output, 'docs/standard-skill-damage-v32-20261023.md'));
 copyFileSync('docs/small-three-way-result-20261018.md', path.join(output, 'docs/small-three-way-result-20261018.md'));

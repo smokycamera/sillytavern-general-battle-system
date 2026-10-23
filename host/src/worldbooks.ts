@@ -1,13 +1,18 @@
 import { withAbort } from './browser-compat.js';
 import type { HostContext } from './sillytavern.js';
+import { trackActivatedWorldbooks } from './activated-worldbooks.js';
 
 export interface WorldbookEntry { id: string; title: string; content: string }
+export interface WorldbookContent { name: string; entries: WorldbookEntry[] }
 export interface WorldbookSource {
   list(signal?: AbortSignal): Promise<string[]>;
   read(name: string, signal?: AbortSignal): Promise<WorldbookEntry[]>;
+  active?(signal?: AbortSignal): Promise<WorldbookContent[]>;
+  dispose?(): void;
 }
 /** Read-only host endpoints, shared by SillyTavern and TauriTavern. */
 export function createWorldbookSource(context: () => HostContext, request: typeof fetch = (url, init) => fetch(url, init)): WorldbookSource {
+  const activated = trackActivatedWorldbooks(context);
   const post = (path: string, body: unknown, signal?: AbortSignal) => withAbort({ timeout: 10000, signals: signal ? [signal] : [] }, async combined => {
     const headers = context().getRequestHeaders?.();
     if (!headers) throw Error('当前酒馆未提供世界书读取接口');
@@ -17,6 +22,8 @@ export function createWorldbookSource(context: () => HostContext, request: typeo
     return response.json();
   });
   return {
+    active: activated.read,
+    dispose: activated.dispose,
     async list(signal) {
       const data = await post('/api/settings/get', {}, signal);
       if (!Array.isArray(data?.world_names)) throw Error('酒馆未返回世界书列表');

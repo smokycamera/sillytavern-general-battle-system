@@ -91,6 +91,13 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   await vi.waitFor(()=>expect(document.querySelectorAll('[data-role="llm-worldbook-entry"]')).toHaveLength(2));
   document.querySelector<HTMLInputElement>('[data-role="llm-worldbook-entry"][data-id="1"]')!.click();
   expect(readLlmSettings().worldbooks).toEqual([{name:'测试设定',entries:['1']}]);
+  select('llm-worldbook-mode','character');
+  expect(readLlmSettings()).toMatchObject({worldbookMode:'character',worldbooks:[{name:'测试设定',entries:['1']}]});
+  expect(document.querySelector('[data-role="llm-worldbook-entry"]')).toBeNull();
+  expect(document.querySelector('[data-detail-id="llm-worldbooks"]')!.textContent).toContain('绿灯触发');
+  select('llm-worldbook-mode','manual');
+  expect(readLlmSettings().worldbooks).toEqual([{name:'测试设定',entries:['1']}]);
+  expect(document.querySelector<HTMLInputElement>('[data-role="llm-worldbook-entry"][data-id="1"]')!.checked).toBe(true);
   document.querySelector<HTMLInputElement>('[data-role="llm-worldbook-all"]')!.click();
   expect(readLlmSettings().worldbooks).toEqual([{name:'测试设定',entries:'all'}]);
   document.querySelector<HTMLInputElement>('[data-role="llm-worldbook-entry"][data-id="0"]')!.click();
