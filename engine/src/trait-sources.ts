@@ -87,7 +87,9 @@ export function autoLooseFormation(unit: Pick<Combatant, 'rulesVersion' | 'armor
     && (unit.armor?.tier ?? 0) <= 2 && DISPERSED_ARMS.includes(baseMechanism(unit.weapon) ?? '');
 }
 /** 装备或编制自动产生的特质在界面上的简短说明。 */
-export function autoTraitLabel(id: string, unit?: Partial<Pick<Combatant,'numericModel'|'loadModel'>>): string {
+export function autoTraitLabel(id: string, unit?: Partial<Pick<Combatant,'numericModel'|'loadModel'|'armorWearModel'|'body'>>): string {
+  if (unit?.armorWearModel && unit.body !== 'vehicle' && ['heavy-armor','super-heavy'].includes(id)) return id === 'super-heavy'
+    ? '超重装甲（移动×0.75、先攻−2、活动疲劳×1.5）' : '重甲（移动×0.85、先攻−1、活动疲劳×1.25）';
   if ((unit?.numericModel || unit && revisedLoad(unit)) && ['heavy-armor','super-heavy'].includes(id)) return (id === 'super-heavy' ? '超重装甲' : '重甲') + '（负担按容量占比）';
   return id === 'super-heavy' ? '超重装甲（先攻−2，无额外防御）' : id === 'heavy-armor' ? '重甲（先攻−1，无额外防御）' : id === 'loose-formation' ? '散兵（步枪类编队自动疏散）' : id;
 }

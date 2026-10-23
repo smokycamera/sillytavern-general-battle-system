@@ -1,5 +1,6 @@
 import { artilleryDirect, artillerySplash, artilleryRetention, BOUNDED_BLAST_MODEL, sprayerSplashAt } from './artillery-model.js';
 import { displayNumber } from './display-number.js';
+import { targetWidthLimit } from './target-width.js';
 import { WEAPON_CLASSES } from './data/weapons.js';
 import { progression, stackingRevision } from './progression.js';
 import { traitParameter } from './trait-parameters.js';
@@ -527,7 +528,10 @@ function outcomeScale(opts: Omit<AttackOpts, 'rng'>, resolved?: ResolvedWeapon):
   if (opts.rules.resolutionVersion !== 'v2') return { participants: 1, multiplier: 1 };
   if(opts.rules.combatModel===MEMBER_HEALTH_MODEL){
     const a=opts.attacker,d=opts.defender,ranged=opts.ranged??isRangedCapable(a),weapon=resolved?resolved.weapon:combatWeapon(opts.weaponOverride??a.weapon,a,d,opts.rules.weaponOverflow,opts.rules.damageModel,opts.rules.overmatch,opts.rules.overmatchCurve);
-    const count=a.scale==='hero'?1:a.body==='vehicle'?personnel(a):Math.min(personnel(a),opts.participants??engagementWidth(a,d,ranged,undefined,opts.fieldTags)*Math.max(1,personnel(a)/COHORT_REFERENCE));
+    const weaponAttack=!opts.abilityDamage||opts.abilityDamage.weaponBased;
+    const fallbackWidth=engagementWidth(a,d,ranged,undefined,opts.fieldTags)*(opts.rules.targetWidthModel&&weaponAttack&&d.scale==='hero'?1:Math.max(1,personnel(a)/COHORT_REFERENCE));
+    const available=a.body==='vehicle'?personnel(a):Math.min(personnel(a),opts.participants??fallbackWidth);
+    const count=a.scale==='hero'?1:Math.min(available,weaponAttack?targetWidthLimit(d,ranged,opts.rules.targetWidthModel??null):Infinity);
     const crew=a.scale!=='hero'&&(a.body??'human')==='human'&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&!opts.abilityDamage?.delivery?.startsWith('magic')?weaponCrew(weapon,opts.rules.armsModel):1;
     // 疏散的近战代价是编队只展开一半人数；V21 起个体不再按半数出手（个体没有阵形可散，旧战斗保持原结算）。
     const loose=Math.max(0,count/crew)*(!ranged&&looseFormation(a)&&!(a.scale==='hero'&&isArmsV3(opts.rules.armsModel))?0.5:1);

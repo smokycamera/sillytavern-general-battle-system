@@ -15,6 +15,7 @@ import { phase2Traits } from './trait-level-model.js';
 import { effectiveTraitLevel } from './trait-sources.js';
 import { traitParameter } from './trait-parameters.js';
 import { healingGradeMultiplier } from './healing.js';
+import { REGENERATION_MODEL, REGENERATION_FLOOR } from './regeneration-model.js';
 
 type Health = Pick<Combatant, 'hp' | 'base' | 'scale'> & Partial<Pick<Combatant, 'status' | 'rulesVersion' | 'recoverableWounded' | 'combatModel' | 'formation'>>;
 
@@ -161,13 +162,17 @@ export function lifestealAmount(attacker: Combatant, target: Combatant, lifeDama
 /** 被动再生不花主行动；失能、濒死与离场时暂停，同源或同类再生只取最高。 */
 export function regenerationAmount(unit: Combatant, registry: Map<string, Trait> = traitRegistry(), conditions: Map<string, ConditionDef> = standardConditionMap()): number {
   if (unit.status !== 'ready' || unit.hp <= 0 || activeConditionIds(unit).some((id) => conditions.get(id)?.skipTurn)) return 0;
-  let amount = 0;
+  let amount = 0, floor = 0;
   for (const id of activeTraitIds(unit)) for (const effect of registry.get(id)?.effects ?? []) if (effect.kind === 'regen') amount = Math.max(amount, effect.perRound);
   if (phase2Traits(unit) && amount > 0) {
     const level = effectiveTraitLevel(unit, 'regen');
     amount = (progression(unit) ? traitParameter('regenAmount', level, unit.traitLevelModel) : 3 * traitParameter('woundRatio', level, unit.traitLevelModel)) * healingGradeMultiplier(level, unit.level, unit.healingModel);
+    if (unit.regenerationModel === REGENERATION_MODEL) {
+      const maximum = hasMemberHealth(unit) ? unit.formation!.memberHp : unit.base.hpMax;
+      floor = maximum * (REGENERATION_FLOOR[level - 1] ?? 0) * healingGradeMultiplier(level, unit.level, unit.healingModel);
+    }
   }
-  return Math.min(recoveryCapacity(unit), amount * lifeRecoveryScale(unit) * (isCohort(unit) && unit.scale !== 'hero' ? Math.max(1,personnel(unit)/COHORT_REFERENCE) : 1) + (phase2Traits(unit) && amount > 0 ? (unit.regenerationRemainder ?? 0) / 10000 : 0));
+  return Math.min(recoveryCapacity(unit), Math.max(amount * lifeRecoveryScale(unit), floor) * (isCohort(unit) && unit.scale !== 'hero' ? Math.max(1,personnel(unit)/COHORT_REFERENCE) : 1) + (phase2Traits(unit) && amount > 0 ? (unit.regenerationRemainder ?? 0) / 10000 : 0));
 }
 
 /** amount为本周期只读预算（含旧余量）；不能由额外动作或预览调用此提交入口。 */

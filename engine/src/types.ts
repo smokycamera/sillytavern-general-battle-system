@@ -284,6 +284,9 @@ export interface ActiveCondition {
 export type UnitStatus = 'ready' | 'dying' | 'dead' | 'routing' | 'fled';
 
 export interface Combatant {
+  regenerationModel?: import('./regeneration-model.js').RegenerationModel;
+  targetWidthModel?: import('./target-width.js').TargetWidthModel;
+  armorWearModel?: import('./armor-wear.js').ArmorWearModel;
   recoveryModel?: import('./life-recovery.js').LifeRecoveryModel;
   artilleryModel?: import('./artillery-model.js').ArtilleryModel;
   /** Fractional normal movement only; whole unused steps never stockpile. Battle-local. */
@@ -613,6 +616,9 @@ export interface BattleLogEntry {
 // ---------- 规则包 ----------
 
 export interface RulePack {
+  regenerationModel?: import('./regeneration-model.js').RegenerationModel;
+  targetWidthModel?: import('./target-width.js').TargetWidthModel;
+  armorWearModel?: import('./armor-wear.js').ArmorWearModel;
   recoveryModel?: import('./life-recovery.js').LifeRecoveryModel;
   artilleryModel?: import('./artillery-model.js').ArtilleryModel;
   loadModel?: import('./load-model.js').LoadModel;

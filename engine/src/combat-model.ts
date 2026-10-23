@@ -1,5 +1,8 @@
 import { gradedNumbers, gradedLifeScale, NUMERIC_MODEL, unitMultiplier, unitStep, validateNumericModel } from './numeric-model.js';
 import { validateLoadModel } from './load-model.js';
+import { prepareArmorWearModel, validateArmorWearModel } from './armor-wear.js';
+import { validateTargetWidthModel } from './target-width.js';
+import { prepareRegenerationModel, validateRegenerationModel } from './regeneration-model.js';
 import { validateArtilleryModel } from './artillery-model.js';
 import { validateLifeRecoveryModel } from './life-recovery.js';
 import { displayNumber } from './display-number.js';
@@ -18,6 +21,9 @@ export const COHORT_REFERENCE = 50;
 export interface FormationStrength { members: number; capacity: number; memberHp: number; woundedRemainder?: number; health?:MemberHealthGroup[] }
 export const isCohort = (u: Combatant) => u.combatModel === COHORT_MODEL || u.combatModel === MEMBER_HEALTH_MODEL;
 export function validateCombatModel(u: Combatant): void {
+  validateRegenerationModel(u.regenerationModel);
+  validateTargetWidthModel(u.targetWidthModel);
+  validateArmorWearModel(u.armorWearModel);
   validateArtilleryModel(u.artilleryModel); validateLifeRecoveryModel(u.recoveryModel);
   validateNumericModel(u.numericModel); validateLoadModel(u.loadModel);
   for (const value of [u.movementRemainder,u.marchRemainder]) if (value !== undefined && (!gradedNumbers(u) || !Number.isFinite(value) || value < 0 || value >= 1)) throw Error('移动余量损坏');
@@ -49,6 +55,10 @@ export function setStrength(u: Combatant, value: number): void {
   if(isCohort(u)&&u.scale!=='hero'){synchronizePersonnel(u,true);}
 }
 export function prepareCombatModel(u: Combatant, rules: RulePack, memberHp?:number): void {
+  prepareRegenerationModel(u, rules);
+  validateTargetWidthModel(u.targetWidthModel); validateTargetWidthModel(rules.targetWidthModel);
+  if (rules.targetWidthModel) u.targetWidthModel = rules.targetWidthModel; else delete u.targetWidthModel;
+  prepareArmorWearModel(u, rules);
   validateNumericModel(u.numericModel); validateLoadModel(u.loadModel); validateNumericModel(rules.numericModel); validateArtilleryModel(u.artilleryModel); validateArtilleryModel(rules.artilleryModel); validateLifeRecoveryModel(u.recoveryModel); validateLifeRecoveryModel(rules.recoveryModel);
   validateLoadModel(rules.loadModel);
   if (rules.loadModel) u.loadModel = rules.loadModel;

@@ -1,11 +1,13 @@
 import { prepareTraitLevelModel } from '../../engine/src/trait-level-model.js';
-import { V11_OVERFLOW_D20, V12_OVERFLOW_D20, V23_OVERFLOW_D20, V29_OVERFLOW_D20 } from '../../engine/src/rules.js';
+import { V11_OVERFLOW_D20, V12_OVERFLOW_D20, V23_OVERFLOW_D20, V30_OVERFLOW_D20 } from '../../engine/src/rules.js';
 import { prepareSkillModel } from '../../engine/src/skill-model.js';
 import { prepareItemModel } from '../../engine/src/item-model.js';
 import { prepareArmsModel } from '../../engine/src/arms.js';
 import { prepareTraitModel } from '../../engine/src/trait-model.js';
 import { spCapacity, prepareResourceModel } from '../../engine/src/resources.js';
 import { prepareCombatModel,nominalLife } from '../../engine/src/combat-model.js';
+import { prepareArmorWearModel } from '../../engine/src/armor-wear.js';
+import { prepareRegenerationModel } from '../../engine/src/regeneration-model.js';
 import { capSingleLife } from '../../engine/src/health-limits.js';
 import {setMemberMaximum} from '../../engine/src/member-health.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
@@ -81,7 +83,7 @@ export function buildUnit(d: UnitDraft, registry: Map<string, Trait>, seed: stri
   if (weapon.kind !== 'weapon' || armor.kind !== 'armor') throw Error('装备类型无效');
   let unit = generateUnit({ ...input, weaponClass: weapon.mechanism, weaponLevel: weapon.power, armorTier: armor.tier, armorLevel: armor.power, preparedAbilityIds: [] }, { seed, registry, skillModel: 'skills-v4' }).unit;
   setGear(unit, d); unit = learnAbilities(unit, [], { prepared: d.autoPrepare ? undefined : d.skills.filter((s) => s.prepared).map((s) => unit.abilities.find((a) => a.id === s.instanceId || a.definitionId === s.id && a.name === (s.name.trim() || skillDefinitionName(s.id)))?.id ?? s.id) });
-  prepareSkillModel(unit, V23_OVERFLOW_D20); prepareCombatModel(unit,d.numericModel ? V29_OVERFLOW_D20 : V6_D20,(d.memberHp??'').trim()?capSingleLife(integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命'), d.damageModel):undefined); upgradeCombatSkills(unit);
+  prepareSkillModel(unit, V23_OVERFLOW_D20); prepareCombatModel(unit,d.numericModel ? V30_OVERFLOW_D20 : V6_D20,(d.memberHp??'').trim()?capSingleLife(integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命'), d.damageModel):undefined); upgradeCombatSkills(unit);
   prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V23_OVERFLOW_D20); prepareTraitModel(unit, V23_OVERFLOW_D20); prepareItemModel(unit, V23_OVERFLOW_D20); prepareTraitLevelModel(unit, V23_OVERFLOW_D20);
   unit.resources.SP = spCapacity(unit); normalizeBakedTraitStats(unit, registry); return unit;
 }
@@ -103,6 +105,8 @@ export function editUnitBuild(previous: UnitRecord, d: UnitDraft, registry: Map<
   if (!Object.keys(unit.traitLevels).length) delete unit.traitLevels;
   unit.body = input.body; unit.mount = input.mount; unit.speedTier = input.speedTier; validateMount(unit);
   prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);
+  prepareArmorWearModel(unit,d.numericModel ? V30_OVERFLOW_D20 : {});
+  prepareRegenerationModel(unit,d.numericModel ? V30_OVERFLOW_D20 : {});
   if(unit.formation&&(d.memberHp??'').trim())setMemberMaximum(unit,integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命'));
   unit.abilityState = structuredClone(previous.snapshot.abilityState); unit.resources = { ...previous.snapshot.resources, reserve: input.reserves ?? 0 };
   if (!previous.equipmentManaged) setGear(unit, d, oldDraft);

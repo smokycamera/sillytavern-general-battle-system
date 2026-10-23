@@ -6,6 +6,8 @@ import { traitRegistry } from '../../engine/src/data/traits.js';
 import type { NarrativeSave } from './narrative-state.js';
 import type { BattleReport } from './battle-reports.js';
 import { archiveStateStamp } from './archive-stamp.js';
+import { savedLlmContext } from './llm-save-context.js';
+import type { LlmEncounterContext } from './llm-context.js';
 
 export interface BattleArchiveState {
   storage: UnitRecord[];
@@ -22,6 +24,7 @@ export interface BattleStart {
   kind: 'small' | 'mass';
   snapshot: Record<string, unknown>;
   before: BattleArchiveState;
+  encounterContext?: LlmEncounterContext;
   replacesReportId?: string;
 }
 export interface DeletedReport { report: BattleReport; index: number }
@@ -37,9 +40,10 @@ export function captureBattleArchive(save: NarrativeSave): BattleArchiveState {
     encounterIds:(save.encounterIds as string[]|undefined)??[], lastBattleUnitIds:(save.lastBattleUnitIds as string[]|undefined)??[] });
 }
 
-export function captureBattleStart(battle: SmallBattle | MassBattle, before: BattleArchiveState): BattleStart {
+export function captureBattleStart(battle: SmallBattle | MassBattle, before: BattleArchiveState, context?: LlmEncounterContext): BattleStart {
   const kind=battle instanceof SmallBattle?'small':'mass';
-  return {version:1,battleId:kind+':'+battle.seed,kind,snapshot:structuredClone(battle.toSnapshot()),before:structuredClone(before)};
+  return {version:1,battleId:kind+':'+battle.seed,kind,snapshot:structuredClone(battle.toSnapshot()),before:structuredClone(before),
+    encounterContext:savedLlmContext(context,true)};
 }
 
 /** 消耗品差额已写入后再记录守卫，保证比较的是实际落库的完整战果。 */
@@ -91,6 +95,12 @@ export function prepareReportRestart(save: NarrativeSave, id: string, expectedRe
   for(const record of records)materializeUnitRecord(record,traitRegistry());
   for(const item of start.before.inventory)validateInventoryItem(item);
   assertInventoryPanelWrite({...start.before},{...start.before});
+  const context=savedLlmContext(start.encounterContext,true);
+  for(const [side,command] of Object.entries(context?.llmCommanders??{})) {
+    if(command?.battleSeed===String(start.snapshot.seed)) command.battleSeed=seed;
+    else delete context!.llmCommanders![side as keyof NonNullable<LlmEncounterContext['llmCommanders']>];
+  }
+  start.encounterContext=context;
   start.snapshot.seed=seed;
   // 加载完整引擎快照验证阵位、人数与规则；原开局RNG状态和实际装备均保留。
   const battle=start.kind==='small'?SmallBattle.fromSnapshot(structuredClone(start.snapshot)):MassBattle.fromSnapshot(structuredClone(start.snapshot));
@@ -99,6 +109,7 @@ export function prepareReportRestart(save: NarrativeSave, id: string, expectedRe
   start.snapshot=structuredClone(battle.toSnapshot());start.battleId=newId;start.replacesReportId=id;
   const next: NarrativeSave={...structuredClone(save),...structuredClone(start.before),
     battle:{kind:start.kind,snap:structuredClone(start.snapshot)},activeBattleStart:start,
+    encounterContext:structuredClone(context),
     mode:start.kind,smallTarget:'',orderDraft:{},xpSettled:false,selectedReportId:undefined,
     factRevision:expectedRevision+1};
   next.reports=next.reports!.map(r=>r.id===id?{...r,supersededBy:newId}:r);

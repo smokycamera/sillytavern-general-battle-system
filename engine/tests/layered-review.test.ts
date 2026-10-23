@@ -26,6 +26,35 @@ function magic(a: Combatant, extra: Partial<Ability> = {}) {
   return ability;
 }
 describe('review: layered movement and structural action contracts', () => {
+  it('new numeric maps let a one-point unit enter rough ground and connected height 2, keeping old maps frozen', () => {
+    const { a, field, battle } = fixture(1); a.numericModel='graded-v1';
+    a.weapon=undefined; a.armor=undefined; a.shield=undefined; a.gear=[];
+    field.spatialRulesVersion=2; field.groundHeight=field.tiles.map(()=>0);
+    field.tiles[24]='rough'; field.groundHeight[24]=2;
+    field.heightTransitions=[{from:31,to:24,kind:'stairs'}];
+    expect(battle.pathPreview('a',24).path).toBeUndefined();
+    field.movementCostModel='minimum-step-v1';
+    expect(battle.pathPreview('a',24).path?.cost).toBe(1);
+    battle.moveTo('a',24); expect(a.pos).toBe(24); expect(battle.movementLeft('a')).toBe(0);
+    const loaded=SmallBattle.fromSnapshot(structuredClone(battle.toSnapshot()));
+    expect(loaded.battlefield!.movementCostModel).toBe('minimum-step-v1');
+    expect(loaded.byId('a').pos).toBe(24); expect(loaded.movementLeft('a')).toBe(0);
+  });
+  it('new numeric minimum progress keeps fractional movement, remaining budgets, cliffs, water and roots meaningful', () => {
+    const { a, field, battle }=fixture(2); a.numericModel='graded-v1';
+    a.weapon=undefined; a.armor=undefined; a.shield=undefined; a.gear=[];
+    field.movementCostModel='minimum-step-v1';field.structures![24]=createStructure('fortification',1);
+    battle.movementSpent.set('a',1);expect(battle.pathPreview('a',24).path).toBeUndefined();
+    battle.movementSpent.clear();a.speedTier=.5;expect(battle.pathPreview('a',24).path).toBeUndefined();
+    a.movementRemainder=.5;expect(battle.pathPreview('a',24).path?.cost).toBe(1);
+    a.speedTier=0;a.movementRemainder=.5;expect(battle.pathPreview('a',24).path).toBeUndefined();
+    a.speedTier=1;a.movementRemainder=0;field.structures![24]=null;field.tiles[24]='deep_water';
+    expect(battle.pathPreview('a',24).path).toBeUndefined();
+    field.tiles[24]='open';field.spatialRulesVersion=2;field.groundHeight=field.tiles.map(()=>0);field.groundHeight[24]=2;
+    expect(battle.pathPreview('a',24).path).toBeUndefined();
+    field.heightTransitions=[{from:31,to:24,kind:'ramp'}];a.conditions.push({id:'restrained',dur:1});
+    expect(battle.pathPreview('a',24).path).toBeUndefined();
+  });
   it.each(['rough', 'forest', 'hill', 'shallow_water', 'swamp'] as Terrain[])('one-point units enter difficult %s using their full normal allowance', terrain => {
     const { a, field, battle } = fixture(1); field.tiles[24] = terrain;
     expect(battle.movementBudget('a')).toBe(1); expect(tileCost(field, 24, a)).toBeGreaterThan(1);

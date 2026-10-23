@@ -1,6 +1,7 @@
 import { equipmentStep, gradedNumbers } from './numeric-model.js';
 import { loadMovementScale } from './equipment-load.js';
 import { revisedLoad } from './load-model.js';
+import { armorWear } from './armor-wear.js';
 import { displayNumber } from './display-number.js';
 import { isArmsV2, shieldUsable, shieldClass } from './arms.js';
 import { isArmsV3 } from './arms-model.js';
@@ -40,7 +41,7 @@ export function movementPoints(unit: Combatant, tags: string[] = []): number {
     const movement = bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - night - fatiguePenalty(unit)
       + Number(unit.status === 'routing') + (gradedNumbers(unit) ? (unit.bonuses?.speed ?? 0) * unit.level / 10 : 0) + equipmentStep(unit.armor?.recipe, 'speed')
       + (progression(unit) ? wornEffects(unit).speed ?? 0 : 0);
-    return Math.max(0, Number((movement * loadMovementScale(unit)).toPrecision(12)));
+    return Math.max(0, Number((movement * armorWear(unit).movement * loadMovementScale(unit)).toPrecision(12)));
   }
   const normal = Math.max(1, Math.min(5, bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - armor - night - fatiguePenalty(unit) - equipmentBurden(unit) - Number(isArmsV2(unit.armsModel) && shieldUsable(unit) && shieldClass(unit) === 'tower-shield')));
   const base = Math.min(5, normal + Number(unit.status === 'routing'));
@@ -76,11 +77,11 @@ export function settleFatigue(unit: Combatant, exertion: number, fullRest = fals
 export function fatigueAfter(unit: Combatant, exertion: number, fullRest = false): number {
   const resistance = activeTraitIds(unit).includes('fatigue-trained') ? traitValue(unit, 'fatigue-trained', 'fatigueMultiplier', .5) : 1;
   if (isEnduranceModel(unit.resourceModel)) {
-    const gain = exertion > 0 ? exertion * 0.5 * resistance / (1 + 0.1 * (unit.level - 1))
+    const gain = exertion > 0 ? exertion * 0.5 * resistance * armorWear(unit).fatigue / (1 + 0.1 * (unit.level - 1))
       : -(fullRest ? 2 + 0.1 * (unit.level - 1) : 1);
     return resourceRound(Math.max(0, Math.min(fatigueLimit(unit), unit.fatigue + gain)));
   }
-  return Math.max(0, Math.min(4, unit.fatigue + (exertion > 0 ? exertion * 0.5 * resistance : -1)));
+  return Math.max(0, Math.min(4, unit.fatigue + (exertion > 0 ? exertion * 0.5 * resistance * armorWear(unit).fatigue : -1)));
 }
 /** V9 haste adds exertion; old snapshots keep their integer-only contract. */
 export function addTacticalEffort(unit: Combatant, amount: number): void {
