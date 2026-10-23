@@ -627,6 +627,10 @@ export interface RulePack {
   trainingDamagePerLevel?: number;
   /** V8：自动生成的单体武器/盾牌技法基础倍率；不改写技能实例。 */
   singleWeaponSkillMultiplier?: number;
+  /** V31：将单体武技校准覆盖到 V14–V21 技能公式；旧规则只处理 V6 技能。 */
+  weaponSkillCalibration?: 'all-formulas-v1';
+  /** V32：可信生成的直接法术及独立单体投射伤害倍率；不重写技能或冻结道具。 */
+  independentSkillDamageMultiplier?: number;
   /** V7：跨代充分穿透追加毁伤；旧快照缺省关闭。 */
   overmatch?: boolean;
   /** V10 continuous; V11 soft40 attenuates low-grade extra damage. Absent keeps the V7–V9 safe band. */

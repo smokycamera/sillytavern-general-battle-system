@@ -38,7 +38,7 @@ import { roundDamage } from '../probability.js';
 import { prepareCombatModel, healingYield } from '../combat-model.js';
 import { prepareArmsModel } from '../arms.js';
 import { prepareTraitModel, validateTraitModel, validateEntrenchment, traitsV13 } from '../trait-model.js';
-import { prepareSkillModel, validateSkillModel } from '../skill-model.js';
+import { prepareSkillModel, validateSkillModel, singleWeaponSkillScale, independentSkillDamageScale } from '../skill-model.js';
 import { entrench, entrenched } from '../entrenchment.js';
 import { upgradeCombatSkills } from '../skill-upgrade.js';
 import { normalizeTactic, type TacticalPreference } from '../tactical-preference.js';
@@ -873,13 +873,11 @@ export class SmallBattle {
         // Generated weaponDamageMult already contains generic signed enhancements.
         const cap = Math.min(1, structureDurability('wall', level) / structureDurability('wall', weapon!.level ?? weapon!.recipe?.power ?? 1));
         const channel = bonusMultiplier(ability.bonuses, 'damage', weapon?.channel) / bonusMultiplier(ability.bonuses, 'damage');
-        const single = this.rules.singleWeaponSkillMultiplier !== undefined && actor.damageModel === 'wounds-v2'
-          && ability.shape !== 'burst' && !ability.customized && !ability.fixedPower && /^skill-v6\./.test(ability.effectVersion ?? '')
-          ? this.rules.singleWeaponSkillMultiplier / 2.2 : 1;
+        const single = singleWeaponSkillScale(actor, ability, this.rules);
         budget *= cap * (ability.weaponDamageMult ?? bonusMultiplier(ability.bonuses, 'damage')) * channel * single;
       } else {
         coefficient = ability.channel === 'thermal' ? .65 : 1;
-        budget = structureDurability('wall', level) / 5 * coefficient * bonusMultiplier(ability.bonuses, 'damage', ability.channel);
+        budget = structureDurability('wall', level) / 5 * coefficient * bonusMultiplier(ability.bonuses, 'damage', ability.channel) * independentSkillDamageScale(actor, ability, this.rules);
       }
     } else budget *= this.usingHaste(actorId) ? hasteAttackScale(actor) : 1;
     if (stackingRevision(actor) && !usesWeapon) budget *= structureTraitMultiplier(actor,undefined,{ranged,skillDelivery:ability?.delivery,fieldTags:this.fieldTags,localTerrain:true,terrain:field.tiles[actor.pos!],damageChannel:ability?.channel});

@@ -94,7 +94,7 @@ import {
   generateUnit, traitCatalog, traitRegistry, resolveTraitId,
   SmallBattle, MassBattle, battleXpAwardsForBothSides, applyXp, xpProgress, approx, approxDelta,
   armorDR, fieldModsFor, LITE_D20,
-  V5_D20, V6_D20, V11_OVERFLOW_D20, V12_OVERFLOW_D20, V30_OVERFLOW_D20, prepareArmsModel, prepareTraitModel, prepareSkillModel, prepareItemModel, isAirborne, abilityUsabilityReason,
+  V5_D20, V6_D20, V11_OVERFLOW_D20, V12_OVERFLOW_D20, V30_OVERFLOW_D20, V32_OVERFLOW_D20, independentSkillDamageScale, prepareArmsModel, prepareTraitModel, prepareSkillModel, prepareItemModel, isAirborne, abilityUsabilityReason,
   generatedField, generatedLayeredField, randomSeed, hasFlightAbility, woundedLabel, regenerationAmount, moraleLabel,
   FORMATION_NODES, formationNode, concealmentLabel,
   type Combatant, type GenerateInput, type Order, type BattleLogEntry, type Side,
@@ -1939,10 +1939,10 @@ function abilityTargetLabel(a: Ability): string {
   return { enemy: '敌方单位', ally: '友方单位', self: '自己', zone: '战区' }[a.target] ?? a.target;
 }
 
-function abilityEffectLabel(a: Ability, target: Combatant): string[] {
+function abilityEffectLabel(a: Ability, target: Combatant, actor: Combatant = target): string[] {
   return a.effects.map((e) => {
     switch (e.op) {
-      case 'damage': if (a.damageBasis) return `${a.damageBasis === 'shield' ? '以盾牌' : '以所持武器'}出手${e.shape === 'burst' ? '（范围）' : ''}`; return `伤害约${Math.round((diceAvg(e.baseDice) + (e.apDice ? diceAvg(e.apDice) : 0)) * (a.damageScale ?? 1))}${e.shape === 'burst' ? '（范围）' : ''}`;
+      case 'damage': if (a.damageBasis) return `${a.damageBasis === 'shield' ? '以盾牌' : '以所持武器'}出手${e.shape === 'burst' ? '（范围）' : ''}`; return `伤害约${Math.round((diceAvg(e.baseDice) + (e.apDice ? diceAvg(e.apDice) : 0)) * (a.damageScale ?? 1) * independentSkillDamageScale(actor, a, currentBattle()?.rules ?? V32_OVERFLOW_D20))}${e.shape === 'burst' ? '（范围）' : ''}`;
       case 'trait': return `获得${reg.get(e.traitId)?.name ?? e.traitId}，持续${displayNumber(e.dur)}轮`;
       case 'zone': return zoneEffectDescription(target.recoveryModel && !a.itemEffectModel && e.kind === 'healing' ? {...e,amount:(e.amount ?? 4 + e.power * 3) * 1.5} : e);
       case 'move': return moveEffectDescription(e, a);
@@ -2024,7 +2024,7 @@ function renderAbilityDialog(): string {
       <h2>${confirmation}：${esc(ability.name)}</h2>
       ${ability.desc && (actor.rulesVersion !== 'v2' || ability.effectVersion) ? `<div class="sub">${esc(ability.desc)}</div>` : ''}
       <div class="row"><span class="tag">使用者：${esc(unitLabel(actor))}</span><span class="tag">目标：${abilityTargetLabel(ability)}</span><span class="tag">射程：${range}</span>${ability.itemSourceId ? '' : `<span class="tag">冷却：${runtime?.cdLeft ?? 0}/${ability.cooldown ?? 0}</span>`}</div>
-      <div class="effect-list">${abilityEffectLabel(ability, recoveryTarget ?? actor).map((x) => `<div>▸ ${esc(x)}</div>`).join('')}</div>
+      <div class="effect-list">${abilityEffectLabel(ability, recoveryTarget ?? actor, actor).map((x) => `<div>▸ ${esc(x)}</div>`).join('')}</div>
       <div class="row"><b>选择目标</b>${targetSelect}</div>
       ${damagePreview}${damagePreview && strikePreview && 'expectedDamage' in strikePreview ? '<details><summary>伤害详情</summary><p>' + hitDamageDetails(strikePreview, strikePreview.damageModel === 'member-health' || recoveryTarget?.scale === 'hero' ? '生命' : '人') + '</p></details>' : ''}${recoveryPreview}${moralePreview}${effectPreview?.effects?.length ? '<div class="effect-preview">' + effectPreview.effects.map(esc).join('<br>') + '</div>' : ''}
       <div class="sub">资源：${esc(resource)}｜${uses}${unavailable ? `｜不可用：${esc(unavailable)}` : ''}${massV2 ? '｜支援阶段执行时扣费，占用所属编队唯一主任务' : ''}</div>

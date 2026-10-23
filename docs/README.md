@@ -16,6 +16,7 @@
 - [MCP 玩家桥接](mcp-player-bridge.md)
 - [最近的 2.6 修正](update-2.6-20261019.md)、[佩戴道具修正](worn-anchoring-20261020.md)
 - [特质与道具组合修正](traits-items-stacking-revision-20261019.md)
+- [技能爆发55%校准、伤害表与review（2.10.5 / V32）](standard-skill-damage-v32-20261023.md)
 - [连续修正与容量（V26）](numeric-v26-20261023.md)、[火炮与恢复配套（V27）](artillery-recovery-v27-20261023.md)、[火箭喷射与士气容量评估（V28）](rocket-sprayer-v28-20261023.md)（开发分支，待发布）
 
 其他留在本目录的专题设计描述特定机制及兼容边界，须结合源码和存档内冻结规则阅读。旧版本公告、早期迁移方案、阶段验收和被后续方案替代的草案集中在 [history/](history/README.md)。
