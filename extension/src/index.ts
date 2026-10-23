@@ -11,6 +11,7 @@ import { preferences } from './preferences.js';
 import { installBattleMessageDisplay } from '../../host/src/battle-message-display.js';
 import { bindPageLifecycle } from '../../host/src/page-lifecycle.js';
 import { embeddedWorldbookSettingsView, installEmbeddedWorldbook, updateEmbeddedWorldbookSettings } from './embedded-worldbook.js';
+import { createWorldbookSource } from '../../host/src/worldbooks.js';
 
 const windowHost = window as unknown as HostWindow & { __tavernBattleNative?: NativeRuntime };
 windowHost.__tavernBattleNative?.dispose();
@@ -19,11 +20,13 @@ const extensionPreferences = preferences(windowHost);
 const panel = new PanelHost(new URL(panelPath, import.meta.url).href, extensionPreferences);
 let disposed = false; let unlock = () => {}; let stop = () => {}; let stopDisplay = () => {}; let stopWorldbook = () => {}; let service: BattleService | undefined;
 let starting: Promise<void> | undefined; let stopLifecycle = () => {};
+let stopWorldbookSource = () => {};
 const exportData = (name: string, value: unknown) => {
   const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }));
   const link = document.createElement('a'); link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 const stopRuntime = () => {
+  stopWorldbookSource(); stopWorldbookSource = () => {};
   stopWorldbook(); stopWorldbook = () => {}; stopDisplay(); stopDisplay = () => {}; stop(); stop = () => {};
   service?.dispose(); service?.host.dispose(); service = undefined;
   unlock(); unlock = () => {};
@@ -49,6 +52,8 @@ async function startRuntime() {
   if (disposed) { unlock(); return; }
   const host = await createNativeHost(windowHost);
   if (disposed) { host.dispose(); unlock(); return; }
+  const worldbooks = createWorldbookSource(() => host.context());
+  stopWorldbookSource = () => worldbooks.dispose?.();
   let worldbookMode: 'native' | 'depth' = 'native';
   const applyWorldbook = (worldbook = extensionPreferences.read().worldbook) => {
     stopWorldbook();
@@ -71,6 +76,7 @@ async function startRuntime() {
   const current = service;
   windowHost.__tavernBattleNative = {
     service: current,
+    worldbooks,
     messages: new NativeMessages(host, () => current.canWrite()),
     open: () => panel.open(),
     close: () => panel.close(),

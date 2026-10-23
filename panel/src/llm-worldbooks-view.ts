@@ -44,7 +44,14 @@ export class LlmWorldbookPicker {
     if (!this.current) this.current = names[0] ?? '';
     const book = selection.find(book => book.name === this.current), entries = this.books.get(this.current);
     const disabled = !settings.enabled || this.busy;
+    const bound = settings.worldbookMode === 'character';
+    const mode = `<label class="llm-setting-field">读取模式 <select data-role="llm-worldbook-mode" ${disabled ? 'disabled' : ''}>
+      <option value="manual" ${!bound ? 'selected' : ''}>手动选择</option><option value="character" ${bound ? 'selected' : ''}>绑定当前角色卡（共用激活条目）</option></select></label>`;
+    if (bound) return `<details class="llm-worldbooks" data-detail-id="llm-worldbooks"><summary>发送给副 API 的世界书（绑定当前角色卡）</summary>
+      ${mode}<p class="sub">跟随当前角色卡和聊天，共用主 API 本轮实际激活的世界书条目。蓝灯常驻、绿灯触发及预算均沿用酒馆设置。</p>
+      <p class="sub">刷新页面或切换聊天后，先让角色卡生成一次正文。切回手动选择会恢复原来的勾选。</p></details>`;
     return `<details class="llm-worldbooks" data-detail-id="llm-worldbooks"><summary>发送给副 API 的世界书（已选${selection.length}本）</summary>
+      ${mode}
       <p class="sub">可整本发送或勾选条目，用于开战、地图、人设、指挥和正文扫描。勾选内容每次发送，不受关键词触发限制。</p>
       <button data-action="llm-worldbooks-refresh" ${disabled ? 'disabled' : ''}>${this.busy ? '读取中…' : '读取／刷新世界书'}</button>
       ${names.length ? `<label class="llm-setting-field">世界书 <select data-role="llm-worldbook" ${disabled ? 'disabled' : ''}><option value="">选择世界书</option>${names.map(name => {

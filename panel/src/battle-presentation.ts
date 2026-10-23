@@ -39,24 +39,34 @@ export function renderBattleHighlights(b: Battle): string {
   if(!last&&!picks.length)return '';
   return `<aside class="battle-highlights" aria-label="行动与关键变化">${last?`<div class="latest-action" data-trace-key="${escapeHtml(battleIdOf(b)+':'+last.index)}"><span><b>上一行动</b> ${escapeHtml(actionCaption(last.entry))}</span><button data-action="battle-replay">重看</button></div>`:''}${picks.length?`<details data-detail-id="battle-highlights"><summary>关键变化 · ${picks.length}项</summary>${picks.map(({entry:e,index})=>`<button class="highlight-event" data-action="battle-highlight" data-event="${index}">第${e.round}轮 · ${escapeHtml(actionCaption(e))}</button>`).join('')}</details>`:''}</aside>`;
 }
-export function traceLocations(b: Battle, eventIndex?: number): {key:string;cells:number[];label:string;attack:boolean} | undefined {
+export function traceLocations(b: Battle, eventIndex?: number): {key:string;cells:number[];from?:number;to?:number;label:string;attack:boolean} | undefined {
   const selected=eventIndex===undefined?lastBattleAction(b):publicBattleEvents(b).find(e=>e.index===eventIndex);if(!selected)return;
-  const {entry,index}=selected;let cells=Object.values(entry.locations??{}).filter(Number.isInteger);
+  const {entry,index}=selected, locations=entry.locations??{};
+  const ids = entry.kind === 'ability' && entry.participants?.length ? entry.participants
+    : entry.resolution ? [entry.resolution.attackerId, entry.resolution.defenderId] : entry.participants ?? [];
+  const location = (id: string | undefined) => id === undefined ? undefined : locations[id]
+    ?? (b instanceof SmallBattle && /^cell:\d+$/.test(id) ? Number(id.slice(5)) : undefined);
+  let from=location(ids[0]), to=location(ids[1]);
+  let cells=[...ids.map(location),...Object.values(locations)].filter((cell):cell is number=>Number.isInteger(cell));
   if(b instanceof SmallBattle&&b.battlefield&&entry.kind==='move'){
-    const matches=[...entry.text.matchAll(/([A-Z])(\d+)/g)];
-    if(matches.length===2)cells=matches.map(m=>(Number(m[2])-1)*b.battlefield!.width+m[1]!.charCodeAt(0)-65);
+    if (entry.move) { from=entry.move.from;to=entry.move.to;cells=[from,to]; }
+    else {
+      const matches=[...entry.text.matchAll(/([A-Z])(\d+)/g)];
+      if(matches.length===2){cells=matches.map(m=>(Number(m[2])-1)*b.battlefield!.width+m[1]!.charCodeAt(0)-65);[from,to]=cells;}
+    }
   }
   // 旧事件没有发生时坐标就只显示文字，不借用单位现在的位置伪造历史轨迹。
   const count=b instanceof SmallBattle?b.battlefield?.tiles.length??0:FORMATION_NODES.length;
-  cells=cells.filter(c=>c>=0&&c<count);if(!cells.length)return;
-  return {key:battleIdOf(b)+':'+index,cells,label:actionCaption(entry),attack:!!entry.resolution};
+  const valid=(cell:number|undefined):cell is number=>Number.isInteger(cell)&&cell!>=0&&cell!<count;
+  cells=[...new Set(cells.filter(valid))];if(!cells.length)return;
+  return {key:battleIdOf(b)+':'+index,cells,from:valid(from)?from:undefined,to:valid(to)?to:undefined,label:actionCaption(entry),attack:!!entry.resolution};
 }
 export function traceOverlay(b: Battle): string {
-  const trace=traceLocations(b);if(!trace||trace.cells.length<2)return '';
+  const trace=traceLocations(b);if(!trace||trace.from===undefined||trace.to===undefined||trace.from===trace.to)return '';
   const grid=b instanceof SmallBattle?b.battlefield:undefined;
   const width=grid?.width??3,height=grid?.height??6;
   const point=(cell:number)=>grid?{x:cell%width+.5,y:Math.floor(cell/width)+.5}:{x:(FORMATION_NODES[cell]?.x??0)+.5,y:(FORMATION_NODES[cell]?.y??0)+.5};
-  const from=point(trace.cells[0]!),to=point(trace.cells.at(-1)!);
+  const from=point(trace.from),to=point(trace.to);
   return `<svg class="battle-trace ${trace.attack?'trace-attack':'trace-move'}" data-trace-key="${escapeHtml(trace.key)}" viewBox="0 0 ${width*100} ${height*100}" preserveAspectRatio="none" aria-hidden="true"><defs><marker id="trace-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="currentColor"/></marker></defs><line x1="${from.x*100}" y1="${from.y*100}" x2="${to.x*100}" y2="${to.y*100}" marker-end="url(#trace-arrow)" vector-effect="non-scaling-stroke"/></svg>`;
 }
 /** 兵种图标按实际武器机制选择（见 unit-icons.ts）。 */

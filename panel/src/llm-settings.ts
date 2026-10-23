@@ -1,5 +1,5 @@
 import { connectionUrl, type JevConnection } from './jev-connection.js';
-import { normalizeWorldbookSelection, selectedWorldbookMessages, type WorldbookSelection } from './llm-worldbooks.js';
+import { characterWorldbookMessages, normalizeWorldbookSelection, selectedWorldbookMessages, type WorldbookSelection } from './llm-worldbooks.js';
 
 export interface LlmSettings {
   enabled: boolean;
@@ -13,6 +13,7 @@ export interface LlmSettings {
   designMap?: boolean;
   selectVip?: boolean;
   worldbooks?: WorldbookSelection[];
+  worldbookMode?: 'manual' | 'character';
   windowSize: number;
   url: string;
   token: string;
@@ -23,7 +24,7 @@ export const LLM_SETTINGS_KEY = 'tb:llm:settings:v1';
 export const COMMAND_THINKING_OFF_PARAMS = '{"thinking":{"type":"disabled"}}';
 const defaults = (): LlmSettings => ({ enabled: false, selectBattleScale: false, commandEnemy: false, commandInterval: 'round', commandThinking: 'auto',
   commandThinkingOffParams: COMMAND_THINKING_OFF_PARAMS,
-  designMap: true, selectVip: true, worldbooks: [], windowSize: 6, url: '', token: '', model: '', models: [] });
+  designMap: true, selectVip: true, worldbooks: [], worldbookMode: 'manual', windowSize: 6, url: '', token: '', model: '', models: [] });
 
 export function parseCommandParameters(text: string): Record<string, unknown> {
   if (text.length > 20000) throw Error('附加参数不能超过20000字');
@@ -77,6 +78,7 @@ export function readLlmSettings(): LlmSettings {
         designMap: v.designMap === undefined ? true : v.designMap === true,
         selectVip: v.selectVip === undefined ? true : v.selectVip === true,
         worldbooks: normalizeWorldbookSelection(v.worldbooks),
+        worldbookMode: v.worldbookMode === 'character' ? 'character' : 'manual',
         windowSize: Number.isInteger(v.windowSize) && v.windowSize >= 1 && v.windowSize <= 100 ? v.windowSize : 6,
         url: typeof v.url === 'string' ? v.url : '', token: typeof v.token === 'string' ? v.token : '',
         model: typeof v.model === 'string' ? v.model : '',
@@ -124,8 +126,10 @@ export function llmConnection(settings: LlmSettings): JevConnection {
     throw Error('这里需要普通 LLM 的 OpenAI 兼容 API；JEV 指挥功能尚未完成');
   const selection = normalizeWorldbookSelection(settings.worldbooks);
   return { url, token: settings.token.trim(), model: settings.model.trim(), protocol: 'openai', transport: 'auto',
-    ...(selection.length ? { contextMessages: (signal: AbortSignal) => selectedWorldbookMessages(selection, signal) } : {}) };
+    ...(settings.worldbookMode === 'character' ? { contextMessages: characterWorldbookMessages }
+      : selection.length ? { contextMessages: (signal: AbortSignal) => selectedWorldbookMessages(selection, signal) } : {}) };
 }
 export function llmConnectionKey(settings: LlmSettings): string {
-  return JSON.stringify([settings.url.trim(), settings.token.trim(), settings.model.trim(), normalizeWorldbookSelection(settings.worldbooks)]);
+  const mode = settings.worldbookMode === 'character' ? 'character' : 'manual';
+  return JSON.stringify([settings.url.trim(), settings.token.trim(), settings.model.trim(), mode, mode === 'manual' ? normalizeWorldbookSelection(settings.worldbooks) : []]);
 }

@@ -3,6 +3,17 @@ import { describe, expect, it } from 'vitest';
 import { updateRegion } from './view-dom.js';
 
 describe('战场原位重绘', () => {
+  it('同一行动的状态重绘保留正在播放的箭头及实际格心坐标，新行动正常替换', () => {
+    const root = document.createElement('div'); root.dataset.workspace = 'battle'; document.body.append(root);
+    const html = (key: string) => `<svg class="battle-trace trace-move" data-trace-key="${key}" viewBox="0 0 700 1300"><line x1="50" x2="150"/></svg>`;
+    updateRegion(root, html('one'));
+    const trace = root.querySelector('svg')!, line = trace.querySelector('line')!;
+    trace.classList.add('trace-active'); line.setAttribute('x2','175');
+    updateRegion(root, html('one'));
+    expect(root.querySelector('svg')).toBe(trace); expect(trace.classList.contains('trace-active')).toBe(true); expect(line.getAttribute('x2')).toBe('175');
+    updateRegion(root, html('two'));
+    expect(root.querySelector('svg')).not.toBe(trace); expect(root.querySelector('line')!.getAttribute('x2')).toBe('150'); root.remove();
+  });
   it('相同显示保留节点和焦点，但仍把用户临时改动的控件恢复到传入状态', () => {
     const root = document.createElement('div'); root.dataset.workspace = 'battle'; document.body.append(root);
     const html = '<section><article><b>未改变的单位说明</b><input data-role="toggle" type="checkbox"><input data-role="name" value="原值"><select data-role="target"><option value="a" selected>A</option><option value="b">B</option></select><textarea>原草稿</textarea></article></section>';

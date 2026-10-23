@@ -14,6 +14,11 @@ export function normalizeWorldbookSelection(raw: unknown): WorldbookSelection[] 
 }
 let source: WorldbookSource | undefined;
 export function setLlmWorldbookSource(value: WorldbookSource | undefined): void { source = value; }
+export async function characterWorldbookMessages(signal: AbortSignal): Promise<{ role: 'user'; content: string }[]> {
+  if (!source?.active) throw Error('当前酒馆无法读取角色卡已激活的世界书，请使用手动选择模式');
+  const worldbooks = await source.active(signal);
+  return worldbooks.length ? [{ role: 'user', content: JSON.stringify({ worldbooks }) }] : [];
+}
 /** Resolve only explicit selections. No host activation scan and no content stored in a battle save. */
 export async function selectedWorldbookMessages(selection: WorldbookSelection[], signal: AbortSignal): Promise<{ role: 'user'; content: string }[]> {
   if (!selection.length) return [];

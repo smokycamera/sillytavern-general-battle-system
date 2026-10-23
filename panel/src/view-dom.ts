@@ -28,7 +28,7 @@ export function selectTextareaRange(draft: HTMLTextAreaElement, start: number, e
 function battleNodeKey(node: Node): string | undefined {
   if (!(node instanceof Element)) return undefined;
   const tag = node.tagName;
-  for (const name of ['id', 'data-detail-id', 'data-role', 'data-cell', 'data-formation', 'data-workspace']) {
+  for (const name of ['id', 'data-detail-id', 'data-role', 'data-cell', 'data-formation', 'data-workspace', 'data-trace-key']) {
     const value = node.getAttribute(name);
     if (value !== null) return tag + ':' + name + ':' + value + ':' + (node.getAttribute('data-section') ?? '');
   }
@@ -45,6 +45,10 @@ function patchBattleNode(old: Node, next: Node): void {
   // 静态底图：同一 id 的内容不变，整棵子树跳过；id 变化时清空，交给 hydrateTerrain 重画。
   const island = next.getAttribute('data-static');
   if (island !== null && island === old.getAttribute('data-static')) return;
+  // Playback adds a class and adjusts SVG coordinates to the actual cell centers.
+  // An unrelated status/view render must not stop or redirect the same action's animation.
+  if (next.classList.contains('battle-trace') && next.getAttribute('data-trace-key') === old.getAttribute('data-trace-key')
+    && next.getAttribute('viewBox') === old.getAttribute('viewBox')) return;
   // 相同的显示子树交给原生比较后整段保留；表单的实时属性不属于 DOM 属性，仍须同步以支持保存失败回滚。
   if (old.isEqualNode(next)) {
     syncBattleControl(old, next);
