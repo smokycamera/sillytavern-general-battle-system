@@ -367,6 +367,9 @@ export function validateItemValue(value: unknown): asserts value is ItemValue {
 
 /** 配件与道具效果由现存实物决定，读档不能附加另一种被动能力或无限使用次数。 */
 export function validateGear(unit: Combatant): void {
+  for (const value of [unit.weapon, unit.sidearm, unit.armor, unit.shield]) {
+    if (value?.loadOverride !== undefined && typeof value.loadOverride !== 'boolean') throw new Error('装备负重覆盖记录损坏');
+  }
   const ids = new Set<string>();
   if (unit.accessories !== undefined) {
     if (!object(unit.accessories) || Object.keys(unit.accessories).some((key) => !['accessory1', 'accessory2'].includes(key))) throw new Error('配件栏记录不正确');

@@ -1,3 +1,4 @@
+import { migrateOutOfBattleLoads } from '../../panel/src/load-migration.js';
 import { prepareClassMigration } from '../../panel/src/arms-v2.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import type { PersistReceipt, HostSession, MessageTag } from '../../host/src/contracts.js';
@@ -143,16 +144,20 @@ export class BattleService {
       if (this.disposed || epoch !== this.loadEpoch) return;
       if (!this.inSync()) throw Error('载入时聊天已切换');
       if (this.store.head()?.handoff && !this.store.hasPending()) { this.phase = 'handoff'; this.notify(); return; }
-      if (!this.store.hasPending() && this.store.needsHistoryCompaction()) {
-        this.receipt = await this.store.commit(this.store.head()!.revision, before => before);
-        if (this.disposed || epoch !== this.loadEpoch) return;
-      }
       if (!this.store.head() && !this.store.hasPending() && this.initialize) {
         const initialized = await this.initialize();
         if (this.disposed || epoch !== this.loadEpoch) return;
         if (!initialized) { this.phase = this.store.hasPending() ? 'pending' : 'import'; this.notify(); return; }
       }
       this.migration = reviewMigration(this.snapshot());
+      if (!this.migration && !this.store.hasPending() && this.store.head()) {
+        const before = this.store.snapshot(), upgraded = migrateOutOfBattleLoads(before);
+        if (upgraded !== before || this.store.needsHistoryCompaction()) {
+          this.receipt = await this.store.commit(this.store.head()!.revision, current => migrateOutOfBattleLoads(current));
+          if (this.disposed || epoch !== this.loadEpoch) return;
+          if (!this.inSync()) throw Error('载入时聊天已切换');
+        }
+      }
       this.phase = this.store.hasPending() ? 'pending' : this.migration ? 'review' : 'ready';
       this.project(); this.notify();
     } catch (error) {
@@ -218,7 +223,7 @@ export class BattleService {
       || version.session.scope.key !== this.host.session()?.scope.key || version.generation !== this.store.head()?.generation) return reject('聊天或存档代次已变化');
     if (this.migration && !options.allowReview) return reject('请先核对档案迁移预览');
     const live = this.livePanel(), previousMemory = this.memoryPanel;
-    const prepare = (before: NarrativeSave) => compactNarrativeSources(update(prepareNarrativeIds(before)));
+    const prepare = (before: NarrativeSave) => migrateOutOfBattleLoads(compactNarrativeSources(update(prepareNarrativeIds(before))));
     let candidate: NarrativeSave | undefined;
     try { if (options.memoryOnly || live) candidate = structuredClone(prepare(this.snapshot())); }
     catch (error) { return { ...reject(errorText(error)), status: 'failed' }; }

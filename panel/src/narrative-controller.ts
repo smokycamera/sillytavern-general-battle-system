@@ -1,3 +1,4 @@
+import { migrateOutOfBattleLoads } from './load-migration.js';
 import { prepareClassMigration } from './arms-v2.js';
 import { instanceQuality } from '../../engine/src/instance-variance.js';
 import { WEAPON_CLASSES, SHIELD_CLASSES, type ShieldClass } from '../../engine/src/data/weapons.js';
@@ -182,6 +183,7 @@ export class NarrativeController {
     if (this.migration) this.state = structuredClone(this.migration.candidate);
     calibrateSavedWeaponRanges(this.state);
     this.identity = adapter.identity(); this.namespace = adapter.namespace();
+    if (!this.migration) { const upgraded = migrateOutOfBattleLoads(this.state); if (upgraded !== this.state) this.write(upgraded, false, false); }
     const bind = (kind: string, handler: (...args: unknown[]) => void) => {
       const result = adapter.subscribe(kind, handler); this.disposers.push(result.stop); return result.available;
     };
@@ -264,12 +266,14 @@ export class NarrativeController {
     this.migration = reviewMigration(this.state);
     if (this.migration) this.state = structuredClone(this.migration.candidate);
     calibrateSavedWeaponRanges(this.state);
-    this.lastReceipt = undefined; this.project(); this.notify();
+    this.lastReceipt = undefined;
+    if (!this.migration) { const upgraded = migrateOutOfBattleLoads(this.state); if (upgraded !== this.state) this.write(upgraded, false, false); }
+    this.project(); this.notify();
   }
   private write(next: NarrativeSave, notify = true, memoryOnly = this.memoryBattle): SaveReceipt {
     if (this.migration) return { status: 'failed', host: false, local: false, error: '请先核对并接受迁移预览；原始存档尚未改写' };
     if (!this.active || this.identity !== this.adapter.identity() || this.namespace !== this.adapter.namespace()) return { status: 'failed', host: false, local: false, error: '聊天已切换，旧回调已拒绝' };
-    next = compactNarrativeSources(next);
+    next = migrateOutOfBattleLoads(compactNarrativeSources(next));
     const receipt: SaveReceipt = memoryOnly ? { status: 'saved', host: false, local: false, memoryOnly: true } : this.adapter.save('panel', next, 'chat');
     this.lastReceipt = receipt;
     if (receipt.status !== 'failed') { this.state = structuredClone(next); this.memoryBattle = memoryOnly; if (!memoryOnly) this.project(); }

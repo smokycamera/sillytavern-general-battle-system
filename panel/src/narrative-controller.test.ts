@@ -329,7 +329,7 @@ describe('常驻宿主生命周期与故障', () => {
       createInventoryItem('dose', '补给', { kind: 'item', form: 'single', power: 3, active: 'generic:buff:heal' }, 'dose', 2),
     ] };
     emit('CHAT_CHANGED');
-    const equip = { id: 'equip', expectedRevision: 1, kind: 'equip' as const, unitId: unit.id, itemId: 'blade', slot: 'primary' as const };
+    const equip = { id: 'equip', expectedRevision: controller.snapshot().factRevision!, kind: 'equip' as const, unitId: unit.id, itemId: 'blade', slot: 'primary' as const };
     const before = controller.snapshot();
     fail(true); expect(controller.inventoryAction(equip).status).toBe('failed'); expect(controller.snapshot()).toEqual(before);
     fail(false); expect(controller.inventoryAction(equip).status).not.toBe('failed');

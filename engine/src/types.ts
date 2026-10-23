@@ -37,6 +37,8 @@ export interface Stats {
 
 /** 武器：伤害分普通段与破甲段（战锤全面战争制） */
 export interface Weapon {
+  /** Explicit raw load edits survive automatic out-of-battle load updates. */
+  loadOverride?: boolean;
   /** 正文明确设定的V4冻结数值，不参与旧装备自动校正。 */
   customized?: boolean;
   /** V4运行时规格投影；库存仍保存原始冻结配方。 */
@@ -78,6 +80,7 @@ export interface Weapon {
 
 /** 护甲：等级映射减伤比例（具体比例由规则包定义） */
 export interface Armor {
+  loadOverride?: boolean;
   /** 仅显式数值编辑时覆盖；未设置的普通装备仍使用原公式。 */
   protectionOverride?: boolean;
   powerScale?: number;
@@ -384,7 +387,7 @@ export interface Combatant {
   speedTier?: number;
   /** 明确骑乘平台；专长本身不会创建坐骑或增加人员/生命。 */
   mount?: boolean;
-  shield?: { id: string; name?: string; load: number; recipe?: ItemRecipe; powerScale?: number };
+  shield?: { id: string; name?: string; load: number; loadOverride?: boolean; recipe?: ItemRecipe; powerScale?: number };
   preparedAbilityIds?: string[];
   generationWarnings?: string[];
   /** 参战时持久档案版本；战后提交必须仍匹配，战内不自行递增。 */

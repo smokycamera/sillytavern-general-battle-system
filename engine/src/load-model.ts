@@ -1,6 +1,6 @@
 import type { Enhancements } from './enhancements.js';
 
-/** V29 capacity rules are explicit; historical snapshots and physical loads stay frozen. */
+/** V29 capacity rules are explicit; historical battle snapshots stay frozen. */
 export const LOAD_MODEL = 'capacity-v2' as const;
 export type LoadModel = typeof LOAD_MODEL;
 export const revisedLoad = (value: { loadModel?: LoadModel }) => value.loadModel === LOAD_MODEL;

@@ -15,8 +15,8 @@ export function armorBurdenTier(unit: Pick<Combatant, 'armor'> & Partial<Pick<Co
   return hasNaturalArmor(unit) ? 0 : unit.armor?.tier ?? 0;
 }
 export function equipmentLoadLabel(unit: BurdenUnit): string {
-  const load = equipmentLoad(unit), capacity = isArmsV2(unit.armsModel) ? equipmentCapacity({...unit,level:unit.level!}) : BODY[unit.body ?? 'human'].capacity, burden = equipmentBurden(unit);
-  if (gradedNumbers(unit)) return '负重 '+displayNumber(load)+'/'+displayNumber(capacity)+'（'+Math.round(load/capacity*100)+'%）' + (burden ? ' · 移动×'+displayNumber(loadMovementScale(unit))+'、先攻−'+displayNumber(loadInitiativePenalty(unit))+(burden === 2 ? '、命中和闪避−'+displayNumber(overloadPenalty(unit))+'，不能冲锋和突进' : '') : ' · 无负担') + ([unit.weapon,unit.sidearm].some(weapon => weaponLoadCrew(unit,weapon) > 1) ? ' · 班组武器负载按操作人数分摊' : '');
+  const load = equipmentLoad(unit), capacity = isArmsV2(unit.armsModel) || revisedLoad(unit) ? equipmentCapacity({...unit,level:unit.level!}) : BODY[unit.body ?? 'human'].capacity, burden = equipmentBurden(unit);
+  if (gradedNumbers(unit) || revisedLoad(unit)) return '负重 '+displayNumber(load)+'/'+displayNumber(capacity)+'（'+Math.round(load/capacity*100)+'%）' + (burden ? ' · 移动×'+displayNumber(loadMovementScale(unit))+'、先攻−'+displayNumber(loadInitiativePenalty(unit))+(burden === 2 ? '、命中和闪避−'+displayNumber(overloadPenalty(unit))+'，不能冲锋和突进' : '') : ' · 无负担') + ([unit.weapon,unit.sidearm].some(weapon => weaponLoadCrew(unit,weapon) > 1) ? ' · 班组武器负载按操作人数分摊' : '');
   return '负重 '+displayNumber(load)+'/'+displayNumber(capacity)+'（'+Math.round(load/capacity*100)+'%）' + (burden === 2 ? ' · 超载：移动−2、先攻−4、命中和闪避−'+displayNumber(overloadPenalty(unit))+'，不能冲锋和突进' : burden === 1 ? ' · 重载：移动−1、先攻−2' : '');
 }
 export function bodyProtection(unit: Combatant, channel: DamageChannel): number {

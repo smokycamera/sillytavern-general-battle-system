@@ -1,3 +1,4 @@
+import { revisedLoad } from './load-model.js';
 import { equipmentStep, gradedNumbers } from './numeric-model.js';
 import { loadInitiativePenalty } from './equipment-load.js';
 import { displayNumber } from './display-number.js';
@@ -397,7 +398,7 @@ export function collectMods(
   const equipment: Modifier[] = [];
   if (unit.rulesVersion === 'v2') {
     const traits = activeTraitIds(unit);
-    if (equipmentBurden(unit)) equipment.push({ source: 'intrinsic', sourceId: 'equipment:encumbrance', name: isArmsV2(unit.armsModel) ? equipmentBurden(unit) === 2 ? '超载' : '重载' : '人形重载', kind: 'spd', type: 'flat', value: -loadInitiativePenalty(unit) });
+    if (equipmentBurden(unit)) equipment.push({ source: 'intrinsic', sourceId: 'equipment:encumbrance', name: isArmsV2(unit.armsModel) ? equipmentBurden(unit) === 2 ? '超载' : '重载' : '人形重载', kind: 'spd', type: 'flat', ...(revisedLoad(unit) ? { uncappedNegative: true } : {}), value: -loadInitiativePenalty(unit) });
     // 五项专精按等级（V15 起 L1–10，旧规则一律 L5）；L5 与无专精时产生的修正与以前完全相同。
     const forest = traitLevel(unit, 'forest-lore', traits), mountain = traitLevel(unit, 'mountain-born', traits), night = traitLevel(unit, 'night-fighter', traits);
     if (ctx.fieldTags?.includes('night')) {

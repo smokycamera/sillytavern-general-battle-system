@@ -30,12 +30,12 @@ export function equipmentCapacity(unit: Pick<Combatant,'body'|'level'> & Partial
   return unit.body === 'vehicle' ? 24 : {human:10,large:14,giant:20,vehicle:24}[unit.body ?? 'human'] + Math.floor(.8*unit.level);
 }
 export function equipmentBurden(unit: BurdenUnit): number {
-  if (!isArmsV2(unit.armsModel)) return Number(humanEncumbered(unit));
+  if (!isArmsV2(unit.armsModel) && !revisedLoad(unit)) return Number(humanEncumbered(unit));
   const capacity = equipmentCapacity({...unit,level:unit.level!}), load = equipmentLoad(unit);
   return load>capacity ? 2 : load>capacity*.8 ? 1 : 0;
 }
 export function overloadPenalty(unit: BurdenUnit): number {
-  if (gradedNumbers(unit)) return 10 * Math.max(0, loadRatio(unit) - 1);
+  if (gradedNumbers(unit) || revisedLoad(unit)) return 10 * Math.max(0, loadRatio(unit) - 1);
   return equipmentBurden(unit) === 2 ? Math.min(5,Math.ceil((equipmentLoad(unit)-equipmentCapacity({...unit,level:unit.level!}))/equipmentCapacity({...unit,level:unit.level!})*10)) : 0;
 }
 
@@ -45,5 +45,5 @@ export function loadMovementScale(unit: BurdenUnit): number {
   return ratio <= .8 ? 1 : ratio <= 1 ? 1 - 1.5 * (ratio - .8) : .7 / ratio ** 2;
 }
 export function loadInitiativePenalty(unit: BurdenUnit): number {
-  return gradedNumbers(unit) ? 10 * Math.max(0, loadRatio(unit) - .8) : 2 * equipmentBurden(unit);
+  return gradedNumbers(unit) || revisedLoad(unit) ? 10 * Math.max(0, loadRatio(unit) - .8) : 2 * equipmentBurden(unit);
 }
