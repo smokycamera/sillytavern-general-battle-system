@@ -11,15 +11,16 @@ export type BattleStepRequest = {
 export interface BattleStepResult { snap: Record<string, unknown>; conditions: ConditionDef[]; damageTaken?: [string, number][] }
 
 /** V2's fallback reinforcement is seeded by the engine, including its identity. */
-export function seededReinforcement(templateId: string, side: Side, seed: string, registry: Map<string, Trait>): Combatant | null {
+export function seededReinforcement(templateId: string, side: Side, seed: string, registry: Map<string, Trait>, rules?: RulePack): Combatant | null {
   if (templateId !== 'reinforcement') return null;
   return generateUnit({ name: '随队预备', side, scale: seed.startsWith('mass:') ? 'company' : 'hero', hpMax: seed.startsWith('mass:') ? 10 : undefined,
+    ...(rules?.loadModel ? { damageModel: rules.damageModel, numericModel: rules.numericModel, loadModel: rules.loadModel } : {}),
     level: 3, rulesVersion: 'v2', traits: [], weaponClass: 'sword', weaponLevel: 4, armorTier: 2 }, { registry, seed }).unit;
 }
 
 /** Runs on a detached candidate. No host writes or main-thread state are accessed. */
 export function computeBattleStep(request: BattleStepRequest): BattleStepResult {
-  const summonUnit = request.summons ? (templateId: string, side: Side, seed?: string) => seed ? seededReinforcement(templateId, side, seed, request.traits) : null : undefined;
+  const summonUnit = request.summons ? (templateId: string, side: Side, seed?: string) => seed ? seededReinforcement(templateId, side, seed, request.traits, request.rules) : null : undefined;
   const options = { traitRegistry: request.traits, summonUnit };
   const battle = request.kind === 'small' ? SmallBattle.fromSnapshot(request.snap, options) : MassBattle.fromSnapshot(request.snap, options);
   Object.assign(battle, { rules: request.rules });

@@ -1,5 +1,6 @@
 import { equipmentStep, gradedNumbers } from './numeric-model.js';
 import { loadMovementScale } from './equipment-load.js';
+import { revisedLoad } from './load-model.js';
 import { displayNumber } from './display-number.js';
 import { isArmsV2, shieldUsable, shieldClass } from './arms.js';
 import { isArmsV3 } from './arms-model.js';
@@ -47,9 +48,12 @@ export function movementPoints(unit: Combatant, tags: string[] = []): number {
 }
 export function formationMarchSteps(unit: Combatant, tags: string[] = []): number {
   if (gradedNumbers(unit)) {
-    const movement = movementPoints(unit, tags), base = movement / (unit.body === 'vehicle' ? 2 : 3);
+    const movement = movementPoints(unit, tags), airborne = revisedLoad(unit) && isAirborne(unit);
+    const base = airborne ? Math.max(0, Math.min(2, movement - 1)) : movement / (unit.body === 'vehicle' ? 2 : 3);
     const rough = tags.includes('forest') && !freeMarch(traitLevel(unit, 'forest-lore')) || tags.includes('mountain') && !freeMarch(traitLevel(unit, 'mountain-born'));
-    return Math.max(0, (rough && !activeTraitIds(unit).includes('agile') ? base / 2 : base) + (movement > 0 ? unit.marchRemainder ?? 0 : 0));
+    const traits = activeTraitIds(unit), agile = traits.includes('agile') && (!revisedLoad(unit)
+      || !traitPrerequisiteReason(unit, 'agile') && (!phase2Traits(unit) || traitLevel(unit, 'agile', traits) >= 5));
+    return Math.max(0, (!airborne && rough && !agile ? base / 2 : base) + (movement > 0 ? unit.marchRemainder ?? 0 : 0));
   }
   if (isAirborne(unit)) return Math.max(1, Math.min(2, movementPoints(unit, tags) - 1));
   const traits = activeTraitIds(unit);

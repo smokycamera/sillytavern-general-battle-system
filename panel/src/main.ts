@@ -789,7 +789,7 @@ function materializeStorageUnit(r0: RosterUnit): Combatant {
  *  模板按「reinforcement」返回一个默认援军单位；成功后不写入持久编制（临场召唤物）。 */
 function summonUnit(templateId: string, side: Side, seed?: string): Combatant | null {
   if (templateId !== 'reinforcement') return null;
-  if (seed) return seededReinforcement(templateId, side, seed, reg);
+  if (seed) return seededReinforcement(templateId, side, seed, reg, currentBattle()?.rules);
   const { unit } = generateUnit(
     {
       name: '援军营',

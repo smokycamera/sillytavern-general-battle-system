@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **2.9.8**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **2.10.0**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-2.9.8 adds the graded revival trait in lethal and nonlethal battles. L8 revives once at full health, L9 twice, and L10 three times. Formations revive actual deployed members; battle saves retain spent uses. See the [current release](docs/current-release.md).
+2.10.0 adds continuous unit and equipment modifiers, equipment weight adjustments, and level-based carrying capacity for vehicles. Base life and fixed recovery increase together; rockets and flamethrowers have bounded area coverage. Existing battles keep their saved rules. See the [current release](docs/current-release.md).
 
 ## Documentation
 

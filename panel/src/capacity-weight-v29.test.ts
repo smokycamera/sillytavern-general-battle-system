@@ -10,6 +10,8 @@ import { materializeUnitRecord, unitRecordFromCombatant } from './unit-state.js'
 import { newUnitDraft, buildUnit, unitDraftFromRecord, editUnitBuild } from './unit-builder.js';
 import { unitForm } from './unit-form.js';
 import { traitRegistry, equipmentCapacity } from '../../engine/src/index.js';
+import { V28_OVERFLOW_D20, V29_OVERFLOW_D20 } from '../../engine/src/rules.js';
+import { seededReinforcement } from './battle-step.js';
 
 it('weight suffixes work through all equipment forms, inventory descriptions and saved physical validation', () => {
   for (const [kind, text, expected] of [['weapon', '机炮L5-1重量', 8 / 1.1],
@@ -51,4 +53,12 @@ it('new manual vehicles use platform levels and renaming preserves frozen equipm
   const record = unitRecordFromCombatant(u), edited = unitDraftFromRecord(record); edited.name = '改名平台';
   const result = editUnitBuild(record, edited, registry).snapshot!;
   expect(result.loadModel).toBe('capacity-v2'); expect(result.weapon).toEqual(u.weapon); expect(result.armor).toEqual(u.armor);
+});
+
+it('reinforcements use new physical loads only in V29 and retain historical generation in saved V28 battles', () => {
+  const registry = traitRegistry(), old = seededReinforcement('reinforcement', 'ally', 'mass:old', registry, V28_OVERFLOW_D20)!;
+  const current = seededReinforcement('reinforcement', 'ally', 'mass:current', registry, V29_OVERFLOW_D20)!;
+  expect(old.loadModel).toBeUndefined(); expect(old.numericModel).toBeUndefined(); expect(old.armor!.load).toBe(2);
+  expect(current.loadModel).toBe('capacity-v2'); expect(current.numericModel).toBe('graded-v1'); expect(current.armor!.load).toBe(4);
+  expect(current.formation?.members ?? current.hp).toBe(10);
 });

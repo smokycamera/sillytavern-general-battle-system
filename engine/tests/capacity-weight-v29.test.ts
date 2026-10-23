@@ -6,6 +6,7 @@ import { generateUnit, prepareCombatModel, prepareArmsModel, prepareTraitModel, 
 import { equipmentLoad, equipmentCapacity, equipmentBurden, loadMovementScale } from '../src/equipment-load.js';
 import { ENHANCEMENT_STATS, parseEnhancementSuffix, validateEnhancements } from '../src/enhancements.js';
 import { combatantFromUnknown } from '../../panel/src/unit-state.js';
+import { formationMarchSteps } from '../src/tactics.js';
 
 const registry = traitRegistry();
 function unit(patch: Partial<GenerateInput> = {}, rules: RulePack = V29_OVERFLOW_D20): Combatant {
@@ -114,6 +115,20 @@ describe('V29 capacity and equipment weight', () => {
     current.weapon!.load += .001; expect(movementPoints(current)).toBeLessThan(3);
     current.weapon!.load = equipmentCapacity(current) * 2;
     expect(loadMovementScale(current)).toBeCloseTo(.175);
+  });
+
+  it('retains airborne marching and validates agile level and armor prerequisites in the new movement branch', () => {
+    const flyer = unit({ scale: 'company', traits: ['flying'] }); flyer.airborne = true;
+    expect(formationMarchSteps(flyer)).toBe(2); expect(formationMarchSteps(flyer, ['forest'])).toBe(2);
+    expect(formationMarchSteps(flyer, ['mountain'])).toBe(2);
+    const novice = unit({ scale: 'company', traits: ['agile'], traitLevels: { agile: 1 } });
+    expect(formationMarchSteps(novice, ['forest'])).toBe(.5);
+    const trained = unit({ scale: 'company', traits: ['agile'], traitLevels: { agile: 5 } });
+    expect(formationMarchSteps(trained, ['forest'])).toBe(formationMarchSteps(trained));
+    trained.armor!.tier = 3; trained.armor!.load = 6;
+    expect(formationMarchSteps(trained, ['forest'])).toBeCloseTo(formationMarchSteps(trained) / 2);
+    const historical = unit({ scale: 'company', traits: ['flying'] }, V28_OVERFLOW_D20); historical.airborne = true;
+    expect(formationMarchSteps(historical, ['forest'])).toBe(.5);
   });
 
   it('round-trips both battle modes and rejects unknown load models without upgrading old snapshots', () => {
