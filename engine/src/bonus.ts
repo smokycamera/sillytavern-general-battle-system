@@ -1,6 +1,7 @@
 import { revisedLoad } from './load-model.js';
 import { equipmentStep, gradedNumbers } from './numeric-model.js';
 import { loadInitiativePenalty } from './equipment-load.js';
+import { armorWear } from './armor-wear.js';
 import { displayNumber } from './display-number.js';
 import { shieldGuardUsable, shieldUsable, isArmsV2 } from './arms.js';
 import { progression, stackingRevision } from './progression.js';
@@ -398,6 +399,8 @@ export function collectMods(
   const equipment: Modifier[] = [];
   if (unit.rulesVersion === 'v2') {
     const traits = activeTraitIds(unit);
+    const wear = armorWear(unit);
+    if (wear.initiative) equipment.push({ source: 'intrinsic', sourceId: 'equipment:armor-wear', name: '护甲穿戴', kind: 'spd', type: 'flat', uncappedNegative: true, value: -wear.initiative });
     if (equipmentBurden(unit)) equipment.push({ source: 'intrinsic', sourceId: 'equipment:encumbrance', name: isArmsV2(unit.armsModel) ? equipmentBurden(unit) === 2 ? '超载' : '重载' : '人形重载', kind: 'spd', type: 'flat', ...(revisedLoad(unit) ? { uncappedNegative: true } : {}), value: -loadInitiativePenalty(unit) });
     // 五项专精按等级（V15 起 L1–10，旧规则一律 L5）；L5 与无专精时产生的修正与以前完全相同。
     const forest = traitLevel(unit, 'forest-lore', traits), mountain = traitLevel(unit, 'mountain-born', traits), night = traitLevel(unit, 'night-fighter', traits);

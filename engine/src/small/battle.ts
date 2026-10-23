@@ -1209,7 +1209,7 @@ export class SmallBattle {
     }
 
     const width = engagementWidth(attacker, target, context.ranged, this.battlefield, this.fieldTags);
-    const participants = this.battlefield || this.rules.combatModel ? sharedParticipants(attacker, this.combatants.filter((u) => u.pos === attacker.pos && sameLayer(u, attacker)), width, target) : width;
+    const participants = this.battlefield || this.rules.combatModel ? sharedParticipants(attacker, this.combatants.filter((u) => u.pos === attacker.pos && sameLayer(u, attacker)), width, target, context.ranged) : width;
     return { chargeDistance: opts.chargeDistance, chargeStraight: opts.chargeStraight, extraMods, defenderMods, participants };
   }
 

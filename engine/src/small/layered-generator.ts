@@ -462,6 +462,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   const thirdParty = options.roster?.some(u => u.side === 'neutral' && u.hp > 0 && u.status === 'ready') === true;
   applyPlannedDeployments(field, thirdParty || plannedCity && !field.city?.defender ? withCitySides(field, plan ?? {}, thirdParty) : plan, options.roster, options.unitBindings);
   initializeHeightMap(field,plan);
+  field.movementCostModel='minimum-step-v1';
   deriveRetreatEdges(field);
   validateSceneFacts(field);
   validateField(field);

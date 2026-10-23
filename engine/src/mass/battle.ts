@@ -480,7 +480,7 @@ export class MassBattle {
         || foe.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack && baseMechanism(meleeWeapon(foe)) !== 'natural')) continue;
       spent.add(foe.id);
       const result = this.resolveAttackWithEnvironment({ attacker: foe, defender: actor, rng: this.rng, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry,
-        weaponOverride: weapon, ranged: false, participants: sharedParticipants(foe, this.combatants.filter((u) => !isAirborne(u) && formationNode(u).id === formationNode(foe).id), engagementWidth(foe, actor, false, undefined, this.fieldTags), actor) });
+        weaponOverride: weapon, ranged: false, participants: sharedParticipants(foe, this.combatants.filter((u) => !isAirborne(u) && formationNode(u).id === formationNode(foe).id), engagementWidth(foe, actor, false, undefined, this.fieldTags), actor, false) });
       this.recordAttack(foe, actor, result, '起飞借机');
     }
   }
@@ -560,7 +560,7 @@ export class MassBattle {
       spent.add(foe.id);
       const result = this.resolveAttackWithEnvironment({ attacker: foe, defender: actor, weaponOverride: meleeWeapon(foe), ranged: false, rng: this.rng,
         rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry,
-        participants: sharedParticipants(foe, this.combatants.filter((u) => sameLayer(foe, u) && formationNode(u).id === formationNode(foe).id), engagementWidth(foe, actor, false, undefined, this.fieldTags), actor) });
+        participants: sharedParticipants(foe, this.combatants.filter((u) => sameLayer(foe, u) && formationNode(u).id === formationNode(foe).id), engagementWidth(foe, actor, false, undefined, this.fieldTags), actor, false) });
       this.recordAttack(foe, actor, result, '车辆脱离借机');
     }
   }
@@ -826,7 +826,7 @@ export class MassBattle {
     const close = pointBlankModifier(weapon, ranged, sameLayer(actor, target) && formationDistance(actor, target) <= 1 ? 0 : formationDistance(actor, target), actor);
     return { attacker: actor, defender: target, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry,
       weaponOverride: weapon, ranged, ...(['traits-levels-v2', 'traits-items-v1', 'traits-items-v2'].includes(this.rules.traitLevelModel ?? '') ? { moved: !!approach || !!vehicleMove || !!withdrawal || source.movedDuringActivation, chargeStraight: formationNode(source).x === formationNode(target).x } : {}), charge: order.type === 'charge', chargeDistance: order.type === 'charge' ? 2 : undefined,
-      participants: sharedParticipants(actor, units.filter((u) => sameLayer(u, actor) && formationNode(u).id === formationNode(actor).id), engagementWidth(actor, target, ranged, undefined, this.fieldTags), target),
+      participants: sharedParticipants(actor, units.filter((u) => sameLayer(u, actor) && formationNode(u).id === formationNode(actor).id), engagementWidth(actor, target, ranged, undefined, this.fieldTags), target, ranged),
       extraMods: [...this.stanceMods(actor, target, { charge: order.type === 'charge' }), ...(close ? [{ source: 'stance' as const, name: '抵近射击', kind: 'atk' as const, type: 'flat' as const, value: close }] : [])],
       defenderMods: this.defModsFor(target) };
   }
@@ -972,7 +972,7 @@ export class MassBattle {
               for(const foe of threats) {
                 if(actor.hp<=0)break;
                 resolveAttack(this.environmentContext({attacker:structuredClone(foe),defender:actor,weaponOverride:meleeWeapon(foe),ranged:false,rng,rules:this.rules,conditionDefs:this.conditionMap(),traitRegistry:this.traitRegistry,
-                  participants:sharedParticipants(foe,planning.filter(other=>sameLayer(foe,other)&&formationNode(other).id===formationNode(foe).id),engagementWidth(foe,actor,false,undefined,this.fieldTags),actor)},planning));
+                  participants:sharedParticipants(foe,planning.filter(other=>sameLayer(foe,other)&&formationNode(other).id===formationNode(foe).id),engagementWidth(foe,actor,false,undefined,this.fieldTags),actor,false)},planning));
               }
               loss+=memberHealth(u)-memberHealth(actor);
               if(actor.hp>0) {

@@ -21,6 +21,8 @@ export const DEFAULT_SMALL_ROUND_LIMIT = 60;
 export type Terrain = 'open' | 'cover' | 'wall' | 'rough' | 'forest' | 'hill' | 'street' | 'shallow_water' | 'deep_water' | 'swamp' | 'cliff';
 export const TERRAIN_NAMES: Record<Terrain, string> = { open: '开阔地', cover: '掩体', wall: '墙体', rough: '崎岖地', forest: '森林', hill: '山地', street: '街道', shallow_water: '浅水', deep_water: '深水', swamp: '沼泽', cliff: '岩壁' };
 export interface BattlefieldSpec {
+  /** New maps allow slow units one full-allowance step; historical costs stay frozen. */
+  movementCostModel?: 'minimum-step-v1';
   spatialRulesVersion?: 2;
   groundHeight?: number[];
   heightTransitions?: HeightTransition[];
@@ -67,6 +69,7 @@ export function standardField(width = 7, height = 9, tags: string[] = []): Battl
   return { version: 2, width, height, tiles, environment, objective: defaultBattleObjective(width, height, environment) };
 }
 export function validateField(field: BattlefieldSpec): void {
+  if (field.movementCostModel !== undefined && field.movementCostModel !== 'minimum-step-v1') throw Error('未知地形移动规则');
   if (field.generation?.scene !== undefined && !BATTLEFIELD_SCENES.includes(field.generation.scene)) throw Error('场景记录损坏');
   if (field.version !== 2 || ![[7, 9], [5, 7], [7, 11], [7, 13], [9, 15], [11, 17], [13, 19]].some(([w, h]) => field.width === w && field.height === h)) throw new Error('地图尺寸不支持（野战7×13，城区9×15/11×17/13×19）');
   if (field.tiles.length !== field.width * field.height || field.tiles.some((t) => !Object.hasOwn(TERRAIN_NAMES, t))) throw new Error('地形数据不完整');
@@ -152,6 +155,7 @@ export function tileCost(field: BattlefieldSpec, cell: number, actor?: Combatant
  * with only 1 MP left still cannot enter a 3-cost fortification. Prohibitions stay infinite. */
 export function movementStepCost(field: BattlefieldSpec, cell: number, actor: Combatant, tags = field.environment ?? [],from=actor.pos??cell): number {
   const cost = tileCost(field, cell, actor)+heightStepCost(field,from,cell,actor);
+  if (field.movementCostModel === 'minimum-step-v1' && Number.isFinite(cost)) return Math.min(cost, Math.max(1, movementPoints(actor, tags)));
   return !actor.numericModel && field.layerVersion && Number.isFinite(cost) ? Math.min(cost, movementPoints(actor, tags)) : cost;
 }
 export function footprint(unit: Combatant): number { return unit.mount === true || unit.body && unit.body !== 'human' ? 2 : 1; }

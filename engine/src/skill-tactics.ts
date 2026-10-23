@@ -157,7 +157,7 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
         const width = engagementWidth(actor, target, ranged, field, context.fieldTags);
         const attached = new Set(context.attached?.values() ?? []);
         const cohort = world.units.filter(u => !attached.has(u.id) && sameLayer(actor, u) && (context.mode === 'mass' ? formationNode(actor).id === formationNode(u).id : u.pos === actor.pos));
-        best = Math.max(best, evaluate({ weaponOverride: weapon, ranged, participants: sharedParticipants(actor, cohort, width, target) }));
+        best = Math.max(best, evaluate({ weaponOverride: weapon, ranged, participants: sharedParticipants(actor, cohort, width, target, ranged) }));
       }
       for (const rawAbility of weaponOnly || controlPolicy(actor)==='confused' ? [] : actor.abilities) {
         if (!rawAbility.effects.some(e => e.op === 'damage')) continue;

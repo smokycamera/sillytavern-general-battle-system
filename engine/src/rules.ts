@@ -137,7 +137,11 @@ export const V28_OVERFLOW_TW: RulePack = { ...V27_OVERFLOW_TW, id: 'v28-overflow
 /** V29: finite carrying growth, graded platforms and frozen physical weight affixes. */
 export const V29_OVERFLOW_D20: RulePack = { ...V28_OVERFLOW_D20, id: 'v29-overflow-d20', name: 'V29 承载与重量修正', loadModel: 'capacity-v2' };
 export const V29_OVERFLOW_TW: RulePack = { ...V28_OVERFLOW_TW, id: 'v29-overflow-tw', name: 'V29 承载与重量修正会战', loadModel: 'capacity-v2' };
+/** V30 adds worn armor restrictions alongside load; V29 and earlier retain their original movement. */
+export const V30_OVERFLOW_D20: RulePack = { ...V29_OVERFLOW_D20, id: 'v30-overflow-d20', name: 'V30 护甲、目标展开与再生', armorWearModel: 'wear-v1', targetWidthModel: 'target-width-v1', regenerationModel: 'life-floor-v1' };
+export const V30_OVERFLOW_TW: RulePack = { ...V29_OVERFLOW_TW, id: 'v30-overflow-tw', name: 'V30 护甲、目标展开与再生会战', armorWearModel: 'wear-v1', targetWidthModel: 'target-width-v1', regenerationModel: 'life-floor-v1' };
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V30_OVERFLOW_D20.id]: V30_OVERFLOW_D20, [V30_OVERFLOW_TW.id]: V30_OVERFLOW_TW,
   [V29_OVERFLOW_D20.id]: V29_OVERFLOW_D20, [V29_OVERFLOW_TW.id]: V29_OVERFLOW_TW,
   [V28_OVERFLOW_D20.id]: V28_OVERFLOW_D20, [V28_OVERFLOW_TW.id]: V28_OVERFLOW_TW,
   [V27_OVERFLOW_D20.id]: V27_OVERFLOW_D20, [V27_OVERFLOW_TW.id]: V27_OVERFLOW_TW,
