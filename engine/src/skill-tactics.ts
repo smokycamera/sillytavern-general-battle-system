@@ -40,8 +40,24 @@ const extraCaches = new WeakMap<ObservationContext, WeakMap<Combatant, Map<Comba
 // 可达落点只取决于观测上下文与行动单位，与估值目标无关；同一估值上下文内复用。
 const reachableCaches = new WeakMap<ObservationContext, WeakMap<Combatant, (number | undefined)[]>>();
 const traitCacheStates = new WeakMap<ObservationContext, string>();
+const traitCacheEpochs = new WeakMap<ObservationContext, number>();
+const stateValues = new WeakMap<ObservationContext, { epoch: number; values: Map<string, number> }>();
 /** V16 来源/等级可在同一面板上下文内改变；身份缓存不能把旧等级继续当成现状。 */
 function refreshTraitCaches(context: ObservationContext): void {
+  // AI/query scopes are synchronous and read-only. A hypothetical change gets a new
+  // context/unit; live execution starts after the scope ends. Do not serialize every
+  // unit's entire skill/item list for every attacker/target in the same evaluation.
+  const epoch = previewScopeEpoch();
+  if (epoch !== undefined) {
+    if (traitCacheEpochs.get(context) === epoch) return;
+    traitCacheEpochs.set(context, epoch); traitCacheStates.delete(context);
+    caches.delete(context); extraCaches.delete(context); reachableCaches.delete(context);
+    return;
+  }
+  if (traitCacheEpochs.has(context)) {
+    traitCacheEpochs.delete(context);
+    caches.delete(context); extraCaches.delete(context); reachableCaches.delete(context);
+  }
   if (context.rules?.traitLevelModel !== 'traits-levels-v1' && !context.units.some(traitLevelsV16)) return;
   const state = JSON.stringify([context.rules?.traitLevelModel, context.units.map(u => [u.id, u.traits, u.traitLevels, u.traitSources,
     u.gear?.map(g => [g.id, g.passive]), u.accessories, u.weapon?.id, u.armor?.id, u.shield?.id, u.traitLevelModel, u.itemModel, u.healingModel, u.level, u.hp, u.formation, u.recoverableWounded, u.conditions, u.abilities, u.resources])]);
@@ -155,6 +171,7 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
       }
     }
     if (!weaponOnly && !onlyTarget) for (const ability of actor.abilities) {
+      if (!ability.effects.some(e => e.op === 'heal')) continue;
       if (abilityUsabilityReason(actor, ability)) continue;
       for (const target of context.units.filter(u => !combatHostile(u, actor, context.units) && alive(u))) {
         if (field && !unitLineOfSight(field,actor,positionedUnit(context,target))) continue;
@@ -174,6 +191,19 @@ export function incomingPotential(context: ObservationContext, target: Combatant
 }
 /** 仅比较一个状态变化的边际价值；复合控制不会把同一行动重复扣除。 */
 export function tacticalStateValue(context: ObservationContext, target: Combatant): number {
+  const epoch = previewScopeEpoch();
+  if (epoch === undefined) return evaluateTacticalState(context, target);
+  let cache = stateValues.get(context);
+  if (cache?.epoch !== epoch) stateValues.set(context, cache = { epoch, values: new Map() });
+  // Skill branches often clone the same unchanged target (before buff / duration
+  // horizons). Equal complete states have equal values within this read-only world.
+  const key = JSON.stringify(target), found = cache.values.get(key);
+  if (found !== undefined) return found;
+  const value = evaluateTacticalState(context, target);
+  if (cache.values.size < 128 && key.length <= 16384) cache.values.set(key, value);
+  return value;
+}
+function evaluateTacticalState(context: ObservationContext, target: Combatant): number {
   if(['traits-levels-v2','traits-items-v1','traits-items-v2'].includes(target.traitLevelModel??''))context={...context,units:context.units.map(u=>u.id===target.id?target:u)};
   const outgoing = actionPotential(context, target), incoming = incomingPotential(context, target);
   const risk = moraleRisk(context, target, (context.rules ?? V4_TW).morale.breakAt, context.traitRegistry).breakChance;
