@@ -1,14 +1,14 @@
 {
   "format": "tavern-battle-native-build",
   "version": "2.9.8",
-  "builtAt": "2026-10-22T19:35:36.145Z",
-  "sourceFingerprint": "10463ee5b54d8ed107227a0d57365841f681b500da946e0a16920d9929b57d59",
+  "builtAt": "2026-10-23T00:43:49.189Z",
+  "sourceFingerprint": "79591dd757df71db4149c903bf239c40c0c4eef923f8a44df5043aba68a38ec3",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
-      "path": "dist/assets/panel-BAoaOzn-.js",
-      "bytes": 1528775,
-      "sha256": "905a040c42152c8d0e5494b8dce55249fac34ef04ff31345a103787a129dc474"
+      "path": "dist/assets/panel-DI53Gn-A.js",
+      "bytes": 1529815,
+      "sha256": "cfc6ee236c5c029fe08c0ca1d1523df3e7eb180b9958a01bc0ec4338a487aab1"
     },
     {
       "path": "dist/assets/panel-DWnwi5Zd.css",
@@ -16,9 +16,9 @@
       "sha256": "a1aa52b2cbdba7c03a436ec52a79e6bf9875bf1e35fb4db145966238ef50127d"
     },
     {
-      "path": "dist/assets/preferences-BbG_Amp9.js",
-      "bytes": 1009531,
-      "sha256": "36b1a0bc04f03ae5afc1bf57640152f02b1518019c228f949067c6898c2495af"
+      "path": "dist/assets/preferences-Bg-oHno3.js",
+      "bytes": 1010548,
+      "sha256": "a96aa6fcd862539e8e569d215b538b422c20b376622c5fa916fe1739df7ade69"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -62,8 +62,8 @@
     },
     {
       "path": "docs/current-release.md",
-      "bytes": 30822,
-      "sha256": "432a29375497ea16eb5f92db302954c2044e0dcb5f92e484fadaca46ed61732e"
+      "bytes": 31083,
+      "sha256": "fc124bf7ff234f2c2e113c1b64e026c1d886f698eb51254af6d253d063bd6023"
     },
     {
       "path": "docs/embedded-worldbook.md",
@@ -212,13 +212,18 @@
     },
     {
       "path": "docs/README.md",
-      "bytes": 1617,
-      "sha256": "d4677a115ddf9b493b94a47a90bcccb74d775aeca4a322f9bd66edfb8f583c5a"
+      "bytes": 1696,
+      "sha256": "47942ba32b0d808e080fb6c7534c570447e6e1a903be2790b5897c612de90d05"
     },
     {
       "path": "docs/release-channels.md",
       "bytes": 1950,
       "sha256": "6bc343b4146b9540064263d20fe1781b9c0a0b6126b666314a976c97145491d2"
+    },
+    {
+      "path": "docs/rocket-sprayer-v28-20261023.md",
+      "bytes": 4546,
+      "sha256": "30a2d98d234c7c93e72415cb142a2a9c3999099d0f5005d03610f38597dbae5c"
     },
     {
       "path": "docs/secondary-api-two-step-20261002.md",
@@ -263,7 +268,7 @@
     {
       "path": "dist/index.js",
       "bytes": 96948,
-      "sha256": "949834e069e266cbaff77156ce54316b677e6c40bee5206c24cfaf54d277d26f"
+      "sha256": "9809a39e15f9e2cfef8ebc0ee44d991363e62bf8a9f2c5d655d7eb9c3b3a8b66"
     },
     {
       "path": "LICENSE",
@@ -338,7 +343,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 48599,
-      "sha256": "1159099f5b349626c04e0cd4e8df19c305f86d1476d6f5a314ee21a2f5599e81"
+      "sha256": "436a8408864a0bbc9c00c13ab8aa8659d350fd48ed3ab2d1cf4a2828238978a2"
     },
     {
       "path": "README.md",

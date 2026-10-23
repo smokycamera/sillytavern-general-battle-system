@@ -1,4 +1,5 @@
 import { equipmentMultiplier, equipmentRating, gradedNumbers } from './numeric-model.js';
+import { BOUNDED_BLAST_MODEL, rocketSplashAt, sprayerSplashAt, type ArtilleryModel } from './artillery-model.js';
 import { displayNumber } from './display-number.js';
 import { progression, stackingRevision } from './progression.js';
 import { traitParameter } from './trait-parameters.js';
@@ -227,7 +228,12 @@ export function armorEffectLabel(unit:ShieldBearer & Pick<Combatant,'armor'|'shi
 /** 没有手动指定时，火炮按公开目标防护和人数选择有效毁伤较高的弹种。 */
 export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Combatant,weaponOverflow=false,model=actor.damageModel,overmatch=false,curve?:RulePack['overmatchCurve']):Weapon|undefined {
   if(!weapon)return weapon;
-  if(actor.artilleryModel && isCannonWeapon(weapon)) return { ...anchoredWeapon(weapon,'he',model)!, ammunition: undefined };
+  if(actor.artilleryModel && isCannonWeapon(weapon)) {
+    const unified = anchoredWeapon(weapon,'he',model)!;
+    const mechanism = weapon.recipe?.mechanism ?? weapon.tags?.find(t=>t.startsWith('mechanism:'))?.slice(10);
+    return { ...unified, ammunition: undefined, ...(actor.artilleryModel === BOUNDED_BLAST_MODEL && mechanism === 'rocket'
+      ? { splashTargets: rocketSplashAt(weapon.recipe?.power ?? weapon.level ?? 1) } : {}) };
+  }
   if(actor.cannonAmmo||!isCannonWeapon(weapon))return anchoredWeapon(weapon,actor.cannonAmmo,model);
   const he=anchoredWeapon(weapon,'he',model)!,ap=anchoredWeapon(weapon,'ap',model)!;
   const protectedTarget={...target,damageModel:model};
@@ -246,9 +252,13 @@ export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Comb
   };
   return score(ap)>score(he)?ap:he;
 }
-export function anchoredWeaponLabel(weapon:Weapon|undefined,model:Combatant['damageModel']=weapon?.powerModel==='wounds-v2'?'wounds-v2':weapon?.powerModel==='wounds-v1'?'wounds-v1':undefined):string {
-  const w=anchoredWeapon(weapon,undefined,model);if(!w)return '—';
+export function anchoredWeaponLabel(weapon:Weapon|undefined,model:Combatant['damageModel']=weapon?.powerModel==='wounds-v2'?'wounds-v2':weapon?.powerModel==='wounds-v1'?'wounds-v1':undefined,artilleryModel?:ArtilleryModel):string {
+  let w=anchoredWeapon(weapon,undefined,model);if(!w)return '—';
+  const mechanism = w.recipe?.mechanism ?? w.tags?.find(t=>t.startsWith('mechanism:'))?.slice(10);
+  const bounded = artilleryModel === BOUNDED_BLAST_MODEL;
+  if (bounded && mechanism === 'rocket') w = {...w, splashTargets: rocketSplashAt(w.recipe?.power ?? w.level ?? 1)};
   const raw=(diceAvg(w.baseDice)+(w.apDice?diceAvg(w.apDice):0))*(w.damageScale??1);
   const melee=meleeProfile(w);
-  return `${isRangedWeapon(w) ? (w.indirect ? '曲射' : '直射') + (isCannonWeapon(w) ? '火炮' : '') + ' · ' : ''}${model==='wounds-v2'?'单段均值':'单次均值'}${Number(raw.toFixed(1))} · 穿透${displayNumber(w.penetration??0)}${(w.attacks??1)>1?` · ${w.attacks}段`:''}${w.splashTargets?` · 爆炸${w.splashTargets>=1e9?'覆盖目标编队':'另及'+w.splashTargets+'名额'}`:''}${melee?` · ${melee.description}`:''}`;
+  const area = bounded && mechanism === 'sprayer' ? ` · 会战每份另及${sprayerSplashAt(w.recipe?.power ?? w.level ?? 1)}名额，范围伤害递减` : w.splashTargets ? ` · 爆炸${w.splashTargets>=1e9?'覆盖目标编队':'另及'+w.splashTargets+'名额'}` : '';
+  return `${isRangedWeapon(w) ? (w.indirect ? '曲射' : '直射') + (isCannonWeapon(w) ? '火炮' : '') + ' · ' : ''}${model==='wounds-v2'?'单段均值':'单次均值'}${Number(raw.toFixed(1))} · 穿透${displayNumber(w.penetration??0)}${(w.attacks??1)>1?` · ${w.attacks}段`:''}${area}${melee?` · ${melee.description}`:''}`;
 }

@@ -1,4 +1,4 @@
-import { artilleryDirect, artillerySplash, artilleryRetention } from './artillery-model.js';
+import { artilleryDirect, artillerySplash, artilleryRetention, BOUNDED_BLAST_MODEL, sprayerSplashAt } from './artillery-model.js';
 import { displayNumber } from './display-number.js';
 import { WEAPON_CLASSES } from './data/weapons.js';
 import { progression, stackingRevision } from './progression.js';
@@ -212,7 +212,7 @@ function resolveWeapon(opts: Pick<AttackOpts, 'attacker' | 'defender' | 'weaponO
   if (!isArmsV2(opts.rules?.armsModel) || !weapon || opts.defender.scale === 'hero') return { weapon };
   // R12 霰弹散射；R16 会战喷射同“爆炸覆盖目标编队”。
   if (original?.recipe?.mechanism === 'shotgun') return { weapon: { ...weapon, splashTargets: 2, splashFactor: .5 } };
-  if (original?.recipe?.mechanism === 'sprayer' && !gridAttack(opts.attacker) && !opts.autoHit) return { weapon: { ...weapon, splashTargets: 1e9 } };
+  if (original?.recipe?.mechanism === 'sprayer' && !gridAttack(opts.attacker) && !opts.autoHit) return { weapon: { ...weapon, splashTargets: opts.rules?.artilleryModel === BOUNDED_BLAST_MODEL ? sprayerSplashAt(original.recipe.power) : 1e9 } };
   return { weapon };
 }
 export function penetrationContext(opts: Pick<AttackOpts, 'attacker' | 'defender' | 'weaponOverride' | 'abilityDamage' | 'ranged'> & Partial<Pick<AttackOpts,'rules'|'conditionDefs'|'charge'|'chargeStraight'|'chargeDistance'>>, resolved: ResolvedWeapon = resolveWeapon(opts)) {
@@ -313,10 +313,12 @@ function memberPlan(opts:Omit<AttackOpts,'rng'>,direct:number,targets:number,res
   const members=hasMemberHealth(opts.defender),directTargets=members?Math.min(opts.defender.hp,targets):targets>0?1:0,splashTargets=Math.min(opts.defender.hp,targets*extra),max=members?opts.defender.formation!.memberHp:opts.defender.base.hpMax;
   const overflow=members&&attackOverflow(opts,penetration,resolved);
   const artillery = opts.rules.artilleryModel && isCannonWeapon(weapon) && (!opts.abilityDamage || opts.abilityDamage.weaponBased);
+  // Grid spray keeps its existing cone; tank ruptures keep their explicit auto-hit budget.
+  const sprayDecay = opts.rules.artilleryModel === BOUNDED_BLAST_MODEL && weapon?.recipe?.mechanism === 'sprayer' && !opts.autoHit && (!opts.abilityDamage || opts.abilityDamage.weaponBased);
   const reference = max * directTargets, rawDirect = direct;
   if (artillery) direct = Math.round(artilleryDirect(rawDirect,reference,artilleryRetention(opts.defender,weapon?.recipe?.power ?? weapon?.level ?? 1)));
   const cappedDirect=overflow&&directTargets>0?direct:Math.min(direct,max*directTargets);
-  const incomingSplash=Math.round(artillery ? artillerySplash(rawDirect,reference,extra,weapon?.splashFactor??0) : direct*extra*(weapon?.splashFactor??0)),splash=Math.min(max*splashTargets,incomingSplash);
+  const incomingSplash=Math.round(artillery || sprayDecay ? artillerySplash(rawDirect,reference,extra,weapon?.splashFactor??0) : direct*extra*(weapon?.splashFactor??0)),splash=Math.min(max*splashTargets,incomingSplash);
   const context=opts.rules.overmatch?penetration??penetrationContext(opts,resolved):undefined;
   // R15 重击：武器攻击与武器技能按结算武器的基础单段命中均值判定，预览与结算同一结果。V21 先按盾规格跨代换算。
   const energy=energyTier(opts,context);

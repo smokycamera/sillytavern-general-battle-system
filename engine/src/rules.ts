@@ -131,7 +131,11 @@ export const V26_OVERFLOW_TW: RulePack = { ...V25_OVERFLOW_TW, id: 'v26-overflow
 /** V27：统一炮弹与余伤衰减；V26及以前保留弹种和线性溢出。 */
 export const V27_OVERFLOW_D20: RulePack = { ...V26_OVERFLOW_D20, id: 'v27-overflow-d20', name: 'V27 火炮衰减', artilleryModel: 'blast-decay-v1', recoveryModel: 'life-scaled-v1' };
 export const V27_OVERFLOW_TW: RulePack = { ...V26_OVERFLOW_TW, id: 'v27-overflow-tw', name: 'V27 火炮衰减会战', artilleryModel: 'blast-decay-v1', recoveryModel: 'life-scaled-v1' };
+/** V28: bounded rocket/spray coverage; V27 snapshots keep their original areas. */
+export const V28_OVERFLOW_D20: RulePack = { ...V27_OVERFLOW_D20, id: 'v28-overflow-d20', name: 'V28 火箭与喷射范围', artilleryModel: 'blast-decay-v2' };
+export const V28_OVERFLOW_TW: RulePack = { ...V27_OVERFLOW_TW, id: 'v28-overflow-tw', name: 'V28 火箭与喷射范围会战', artilleryModel: 'blast-decay-v2' };
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V28_OVERFLOW_D20.id]: V28_OVERFLOW_D20, [V28_OVERFLOW_TW.id]: V28_OVERFLOW_TW,
   [V27_OVERFLOW_D20.id]: V27_OVERFLOW_D20, [V27_OVERFLOW_TW.id]: V27_OVERFLOW_TW,
   [V26_OVERFLOW_D20.id]: V26_OVERFLOW_D20, [V26_OVERFLOW_TW.id]: V26_OVERFLOW_TW,
   [V25_OVERFLOW_D20.id]: V25_OVERFLOW_D20, [V25_OVERFLOW_TW.id]: V25_OVERFLOW_TW,

@@ -1,5 +1,5 @@
 import { prepareTraitLevelModel } from '../../engine/src/trait-level-model.js';
-import { V11_OVERFLOW_D20, V12_OVERFLOW_D20, V23_OVERFLOW_D20, V27_OVERFLOW_D20 } from '../../engine/src/rules.js';
+import { V11_OVERFLOW_D20, V12_OVERFLOW_D20, V23_OVERFLOW_D20, V28_OVERFLOW_D20 } from '../../engine/src/rules.js';
 import { prepareSkillModel } from '../../engine/src/skill-model.js';
 import { prepareItemModel } from '../../engine/src/item-model.js';
 import { prepareArmsModel } from '../../engine/src/arms.js';
@@ -80,7 +80,7 @@ export function buildUnit(d: UnitDraft, registry: Map<string, Trait>, seed: stri
   if (weapon.kind !== 'weapon' || armor.kind !== 'armor') throw Error('装备类型无效');
   let unit = generateUnit({ ...input, weaponClass: weapon.mechanism, weaponLevel: weapon.power, armorTier: armor.tier, armorLevel: armor.power, preparedAbilityIds: [] }, { seed, registry, skillModel: 'skills-v4' }).unit;
   setGear(unit, d); unit = learnAbilities(unit, [], { prepared: d.autoPrepare ? undefined : d.skills.filter((s) => s.prepared).map((s) => unit.abilities.find((a) => a.id === s.instanceId || a.definitionId === s.id && a.name === (s.name.trim() || skillDefinitionName(s.id)))?.id ?? s.id) });
-  prepareSkillModel(unit, V23_OVERFLOW_D20); prepareCombatModel(unit,d.numericModel ? V27_OVERFLOW_D20 : V6_D20,(d.memberHp??'').trim()?capSingleLife(integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命'), d.damageModel):undefined); upgradeCombatSkills(unit);
+  prepareSkillModel(unit, V23_OVERFLOW_D20); prepareCombatModel(unit,d.numericModel ? V28_OVERFLOW_D20 : V6_D20,(d.memberHp??'').trim()?capSingleLife(integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命'), d.damageModel):undefined); upgradeCombatSkills(unit);
   prepareResourceModel(unit, V11_OVERFLOW_D20); prepareArmsModel(unit, V23_OVERFLOW_D20); prepareTraitModel(unit, V23_OVERFLOW_D20); prepareItemModel(unit, V23_OVERFLOW_D20); prepareTraitLevelModel(unit, V23_OVERFLOW_D20);
   unit.resources.SP = spCapacity(unit); normalizeBakedTraitStats(unit, registry); return unit;
 }

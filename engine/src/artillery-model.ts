@@ -1,10 +1,15 @@
 import type { Combatant } from './types.js';
 
 export const ARTILLERY_MODEL = 'blast-decay-v1' as const;
-export type ArtilleryModel = typeof ARTILLERY_MODEL;
+export const BOUNDED_BLAST_MODEL = 'blast-decay-v2' as const;
+export type ArtilleryModel = typeof ARTILLERY_MODEL | typeof BOUNDED_BLAST_MODEL;
 export function validateArtilleryModel(value: unknown): void {
-  if (value !== undefined && value !== ARTILLERY_MODEL) throw Error('未知火炮结算模型');
+  if (value !== undefined && value !== ARTILLERY_MODEL && value !== BOUNDED_BLAST_MODEL) throw Error('未知火炮结算模型');
 }
+/** V28 changes rocket/spray coverage only; cannon and indirect-cannon keep V27 values. */
+export const ROCKET_SPLASH = [0, 0, 1, 2, 3, 4, 5, 6, 7, 8] as const;
+export const rocketSplashAt = (power: number): number => ROCKET_SPLASH[Math.max(0, Math.min(9, Math.round(power) - 1))]!;
+export const sprayerSplashAt = (power: number): number => Math.max(1, Math.min(10, Math.round(power))) + 2;
 /** Game-scale spill energy. Armor/HP already resolve penetration before this curve.
  * Trained/protected targets retain less residual spread; higher weapon L retains more.
  * This is a balance abstraction inspired by diminishing cumulative fragment effects,
