@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SmallBattle, generateUnit, standardField, V29_OVERFLOW_D20, beginPreviewScope, endPreviewScope,
   compileGenericSkill, type Combatant } from '../src/index.js';
-import { actionPotential, tacticalStateValue } from '../src/skill-tactics.js';
+import { actionPotential, tacticalStateValue, tacticalWorld } from '../src/skill-tactics.js';
 import { skillEffectValue } from '../src/skill-effects.js';
 
 function fixture() {
@@ -19,6 +19,24 @@ function fixture() {
 function scoped<T>(read: () => T): T { beginPreviewScope(); try { return read(); } finally { endPreviewScope(); } }
 
 describe('tactical valuation cache lifetime', () => {
+  it('keeps projected buff worlds isolated across state, context and scope changes', () => {
+    const { b, actor, target, context } = fixture(), before = b.toSnapshot();
+    const evaluate = () => {
+      const variants = [structuredClone(target), { ...target, conditions: [{ id: 'stunned', dur: 1 }] },
+        { ...target, traitLevels: { guardian: 10 } }];
+      return variants.flatMap(unit => [tacticalStateValue(tacticalWorld(context, unit), unit),
+        tacticalStateValue(tacticalWorld({ ...context, units: [target] }, unit), unit)]);
+    };
+    const expected = evaluate();
+    expect(scoped(() => [evaluate(), evaluate()])).toEqual([expected, expected]);
+    // Equal unmodified fighters can cancel outgoing/incoming to zero. A stunned
+    // target isolates incoming pressure, which must disappear in the lone-unit world.
+    expect(expected[2]).not.toBe(expected[3]);
+    expect(b.toSnapshot()).toEqual(before);
+    actor.conditions = [{ id: 'stunned', dur: 1 }];
+    const changed = evaluate(); expect(changed).not.toEqual(expected);
+    expect(scoped(evaluate)).toEqual(changed);
+  });
   it('preserves buff, control and hypothetical-state values without modifying the battle', () => {
     const { b, actor, target, context } = fixture(), before = b.toSnapshot();
     const effects = ['buff:attack', 'buff:barrier', 'buff:trait-berserk', 'debuff:stun'].map(id =>

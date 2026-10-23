@@ -1,13 +1,13 @@
 /** Local CPU benchmark; no model requests. Compare hashes against the baseline before using timings.
  * BENCH_CASE selects a case, BENCH_TRIALS controls repetitions, BENCH_PROFILE writes a CPU profile.
- * node node_modules/vite-node/vite-node.mjs scripts/benchmark-ai-skills.ts artifacts/ai-skills/before.json
+ * node scripts/run-benchmark-ai-skills.mjs [baseline-ref]
  */
 import { performance } from 'node:perf_hooks';
 import { Session } from 'node:inspector';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
-import { SmallBattle, generateUnit, standardField, traitRegistry, V29_OVERFLOW_D20, compileGenericSkill,
+import { SmallBattle, generateUnit, standardField, traitRegistry, V32_OVERFLOW_D20, compileGenericSkill,
   attachCarriedItems, compileItem, type Side, type UnitIntent } from '../engine/src/index.js';
 import { sampledPreviewComputations } from '../engine/src/damage.js';
 
@@ -26,7 +26,8 @@ const trials = Number(process.env.BENCH_TRIALS ?? 1), rows: object[] = [];
 if (!Number.isInteger(trials) || trials < 1 || trials > 5) throw Error('BENCH_TRIALS must be 1..5');
 const profile = process.env.BENCH_PROFILE ? new Session() : undefined;
 if (profile) { profile.connect(); profile.post('Profiler.enable'); profile.post('Profiler.start'); }
-for (const scenario of cases.filter(c => !process.env.BENCH_CASE || c.name === process.env.BENCH_CASE)) {
+const selected = process.env.BENCH_CASE?.split(',');
+for (const scenario of cases.filter(c => !selected || selected.includes(c.name))) {
   for (let trial = 0; trial < trials; trial++) {
     const seed = `ai-skills:${scenario.name}:${trial}`, registry = traitRegistry();
     const combatants = Array.from({ length: scenario.count }, (_, i) => {
@@ -36,7 +37,7 @@ for (const scenario of cases.filter(c => !process.env.BENCH_CASE || c.name === p
         rulesVersion: 'v2', damageModel: 'wounds-v2', weaponClass: i % 3 === 0 ? 'bow' : 'spear',
         weaponLevel: 4, armorTier: 1, traits: [] }, { registry, seed: `${seed}:u${i}`, noVariance: true }).unit;
       unit.id = `u${i}`;
-      unit.abilities = definitions.map(id => compileGenericSkill('generic:' + id, 4, unit.id, undefined, 'wounds-v2', V29_OVERFLOW_D20.skillModel));
+      unit.abilities = definitions.map(id => compileGenericSkill('generic:' + id, 4, unit.id, undefined, 'wounds-v2', V32_OVERFLOW_D20.skillModel));
       unit.preparedAbilityIds = unit.abilities.map(a => a.id);
       if (scenario.items) Object.assign(unit, attachCarriedItems(unit, ['buff:attack', 'buff:defense', 'buff:barrier', 'buff:heal'].map((active, j) => ({
         id: `dose${j}`, name: active, quantity: 40, revision: 1,
@@ -45,7 +46,7 @@ for (const scenario of cases.filter(c => !process.env.BENCH_CASE || c.name === p
       return unit;
     });
     const field = standardField(13, 19); field.tiles.fill('open'); field.layerVersion = 1; field.structures = field.tiles.map(() => null);
-    const battle = new SmallBattle({ combatants, battlefield: field, rules: V29_OVERFLOW_D20, traitRegistry: registry, seed }); battle.start();
+    const battle = new SmallBattle({ combatants, battlefield: field, rules: V32_OVERFLOW_D20, traitRegistry: registry, seed }); battle.start();
     const offsets = { ally: 0, enemy: 0, neutral: 0 };
     for (const u of combatants) {
       const n = offsets[u.side]++;

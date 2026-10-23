@@ -29,7 +29,7 @@ import { isArmsV2 } from './arms-model.js';
 import { positionedUnit, revealUnit, type ObservationContext } from './observation.js';
 import { canOccupy, terrainCellLabel } from './small/spatial.js';
 import { formationNode, FORMATION_NODES, formationCanOccupy } from './mass/formation.js';
-import { actionPotential, incomingPotential, tacticalStateValue } from './skill-tactics.js';
+import { actionPotential, incomingPotential, tacticalStateValue, tacticalWorld } from './skill-tactics.js';
 import { grantBarrier, barrierGradeMultiplier } from './barrier.js';
 import { moveEffectDescription } from './skill-movement.js';
 import { moraleChangePreview } from './morale.js';
@@ -293,7 +293,7 @@ export function skillEffectValue(context: ObservationContext, actor: Combatant, 
           for (const source of before.traitSources ?? []) if (source.duration.kind === 'rounds') source.remaining = Math.max(0, source.remaining! - from);
           const future = structuredClone(before);
           grantTraitSource(future, { id: 'preview:' + effect.traitId, name: ability.name, kind: 'blessing', traitIds: [grant.id], traitLevels: { [grant.id]: grant.level! }, duration: { kind: 'rounds', count: effect.dur - from }, battleOnly: true });
-          const beforeWorld = { ...context, units: context.units.map(u => u.id === before.id ? before : u) }, afterWorld = { ...context, units: context.units.map(u => u.id === future.id ? future : u) };
+          const beforeWorld = tacticalWorld(context, before), afterWorld = tacticalWorld(context, future);
           let difference = tacticalStateValue(afterWorld, future) - tacticalStateValue(beforeWorld, before);
           if (grant.id === 'commander') for (const ally of context.units.filter(u => u.side === target.side && u.id !== target.id)) {
             const prior = moraleChangePreview(beforeWorld, ally, 0, context.rules?.morale.breakAt ?? 25, context.traitRegistry);

@@ -323,7 +323,7 @@ function memberPlan(opts:Omit<AttackOpts,'rng'>,direct:number,targets:number,res
   const context=opts.rules.overmatch?penetration??penetrationContext(opts,resolved):undefined;
   // R15 重击：武器攻击与武器技能按结算武器的基础单段命中均值判定，预览与结算同一结果。V21 先按盾规格跨代换算。
   const energy=energyTier(opts,context);
-  const heavy=(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&!!weapon&&energyHeavyHit({...opts.defender,armsModel:opts.rules.armsModel},(diceAvg(weapon.baseDice)+(weapon.apDice?diceAvg(weapon.apDice):0))*(weapon.damageScale??1),energy?.tier);
+  const heavy=!!opts.defender.shield&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&!!weapon&&energyHeavyHit(defenderWithArmsModel(opts),(diceAvg(weapon.baseDice)+(weapon.apDice?diceAvg(weapon.apDice):0))*(weapon.damageScale??1),energy?.tier);
   return {direct:cappedDirect,targets:directTargets,...(overflow?{overflow:true}:{}),...(heavy?{heavy:true as const}:{}),...(energy&&energy.ratio!==1?{energyRatio:energy.ratio}:{}),
     ...(context&&(context.overmatchMultiplier??1)>1?{overmatch:{power:context.attackPower,channel:context.channel,penetration:context.penetration,area:!!context.area,canBlock:context.canBlock!==false,multiplier:context.overmatchMultiplier!,...(opts.rules.overmatchCurve?{curve:opts.rules.overmatchCurve}:{})}}:{}),
     ...(direct>cappedDirect?{incomingDirect:direct}:{}),
@@ -334,10 +334,15 @@ function memberPlan(opts:Omit<AttackOpts,'rng'>,direct:number,targets:number,res
  * 伤害里已乘的对身体跨代倍率先除掉，盾按自己的规格吸收（同屏障的防御规格）。tier 用于重击判定，ratio 是每点伤害的盾消耗。
  */
 function energyTier(opts:Omit<AttackOpts,'rng'>,context?:ReturnType<typeof penetrationContext>):{tier:number;ratio:number}|undefined {
-  if(!isArmsV3(opts.rules.armsModel)||!energyShieldActive({...opts.defender,armsModel:opts.rules.armsModel})||context?.attackPower===undefined)return undefined;
+  if(!opts.defender.shield||!isArmsV3(opts.rules.armsModel)||context?.attackPower===undefined||!energyShieldActive(defenderWithArmsModel(opts)))return undefined;
   const P=context.attackPower,L=energyPower(opts.defender),curve=opts.rules.overmatchCurve;
   const tier=gradeOvermatch(P,L,1,0,curve)/gradeOvermatch(L,P,1,0,curve);
   return {tier,ratio:tier/(context.overmatchMultiplier??1)};
+}
+/** Most battle units already carry the frozen rules' arms model. Reuse them for
+ * read-only shield queries; historical/custom mismatches still receive an override. */
+function defenderWithArmsModel(opts: Omit<AttackOpts, 'rng'>): Combatant {
+  return opts.defender.armsModel === opts.rules.armsModel ? opts.defender : { ...opts.defender, armsModel: opts.rules.armsModel };
 }
 /** Independent direct spells release overflow only on overmatch; ordinary V6 spell pacing stays intact. */
 function attackOverflow(opts:Omit<AttackOpts,'rng'>,penetration?:ReturnType<typeof penetrationContext>,resolved?:ResolvedWeapon):boolean {
@@ -372,11 +377,12 @@ export function sampledPreviewComputations(): number { return sampledPreviewRuns
 // values are the same either way, only their reuse differs.
 interface ScopeTable { id: string; text: string }
 interface PreviewScope { samples: Map<string, SampledMemberPreview>; chars: number; tables: WeakMap<object, ScopeTable>; ids: Map<string, string>; epoch: number;
-  parts: Map<string, string>; partChars: number }
+  parts: Map<string, string>; partChars: number; readonlyUnits: boolean; immutableParts: WeakMap<object, string> }
 const SCOPE_CACHE_ENTRIES = 4096, SCOPE_CACHE_CHARS = 8 * 1024 * 1024;
 let previewScope: PreviewScope | undefined, previewScopes = 0;
 /** 开始一次只读估值（AI 选择行动）；结束前不得修改状态表或特质表内容。 */
-export function beginPreviewScope(): void { previewScope = { samples: new Map(), chars: 0, tables: new WeakMap(), ids: new Map(), epoch: ++previewScopes, parts: new Map(), partChars: 0 }; }
+export function beginPreviewScope(readonlyUnits = false): void { previewScope = { samples: new Map(), chars: 0, tables: new WeakMap(), ids: new Map(), epoch: ++previewScopes, parts: new Map(), partChars: 0,
+  readonlyUnits, immutableParts: new WeakMap() }; }
 export function endPreviewScope(): void { previewScope = undefined; }
 /** 当前估值范围的编号；范围外为 undefined。供其他估值模块在同一范围内复用只读派生表。 */
 export function previewScopeEpoch(): number | undefined { return previewScope?.epoch; }
@@ -416,13 +422,26 @@ function sampledPreviewState(opts: Omit<AttackOpts, 'rng'>) {
 /** Store a unit/attack description once instead of copying both full skill inventories
  * into every pair's key. Full JSON equality is retained; no combat fields are omitted.
  * At the memory bound fall back to the full text, with a disjoint prefix from IDs. */
-function scopePart(scope: PreviewScope, value: unknown): string {
+function scopePart(scope: PreviewScope, value: unknown, immutable = false): string {
+  const object = immutable && scope.readonlyUnits && value && typeof value === 'object' ? value : undefined;
+  const known = object && scope.immutableParts.get(object);
+  if (known) return known;
   const text = JSON.stringify(value), found = scope.parts.get(text);
-  if (found !== undefined) return found;
+  if (found !== undefined) { if (object) scope.immutableParts.set(object, found); return found; }
   if (scope.parts.size >= SCOPE_CACHE_ENTRIES || scope.partChars + text.length > SCOPE_CACHE_CHARS) return ':' + text;
   const id = 'p' + scope.parts.size;
   scope.parts.set(text, id); scope.partChars += text.length;
+  if (object) scope.immutableParts.set(object, id);
   return id;
+}
+/** AI candidates are immutable during scoring. Intern their shared nested branches
+ * once (skills, equipment, generation records), retaining full content equality.
+ * General preview scopes keep recomputing keys so in-place edits remain visible. */
+function scopeUnit(scope: PreviewScope, unit: ReturnType<typeof sampledPreviewState>['attacker']): string {
+  if (!scope.readonlyUnits) return scopePart(scope, unit);
+  const parts: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(unit)) parts[key] = value && typeof value === 'object' ? [scopePart(scope, value, true)] : value;
+  return scopePart(scope, parts);
 }
 /** The state and trait tables follow the JSON object; JSON text has no raw newline, so the parts cannot run together. */
 function sampledPreviewKeys(opts: Omit<AttackOpts, 'rng'>, scope: PreviewScope | undefined): { key: string; shared: () => string } {
@@ -433,7 +452,7 @@ function sampledPreviewKeys(opts: Omit<AttackOpts, 'rng'>, scope: PreviewScope |
   }
   const defs = scopeTable(scope, opts.conditionDefs), registry = opts.traitRegistry && scopeTable(scope, opts.traitRegistry);
   const { attacker, defender, ...attack } = state;
-  const base = [scopePart(scope, attacker), scopePart(scope, defender), scopePart(scope, attack)].join('\n');
+  const base = [scopeUnit(scope, attacker), scopeUnit(scope, defender), scopePart(scope, attack)].join('\n');
   return { key: base + '\n' + defs.id + '\n' + (registry?.id ?? ''), shared: () => JSON.stringify(state) + '\n' + defs.text + '\n' + (registry?.text ?? '') };
 }
 function rememberScopedPreview(scope: PreviewScope, key: string, value: SampledMemberPreview): void {
@@ -734,7 +753,11 @@ function damageCopy(unit: Combatant): Combatant {
 }
 /** 非火炮的结算武器与目标状态无关；其穿透只看守方装备、等级与状态，在整次预览中不变。 */
 function basisPenetration(opts: AttackOpts, basis: AttackBasis): ReturnType<typeof penetrationContext> {
-  const stable = !isArmsV2(opts.rules.armsModel) && opts.previewMemo && (opts.attacker.cannonAmmo || !isCannonWeapon(opts.weaponOverride ?? opts.attacker.weapon));
+  // Without a shield/barrier, ordinary-weapon penetration cannot change as members
+  // take wounds. Equipment, trait sources and conditions are fixed for these 96
+  // samples; cannon selection and mutable shield coverage keep per-basis results.
+  const stable = opts.previewMemo && (opts.attacker.cannonAmmo || !isCannonWeapon(opts.weaponOverride ?? opts.attacker.weapon))
+    && (!isArmsV2(opts.rules.armsModel) || !isCannonWeapon(opts.weaponOverride ?? opts.attacker.weapon) && !opts.defender.shield && !opts.defender.barrier);
   return basis.penetration ??= stable ? opts.previewMemo!.penetration ??= penetrationContext(opts, basis.resolved) : penetrationContext(opts, basis.resolved);
 }
 function attackBasis(opts: AttackOpts): AttackBasis {
@@ -744,8 +767,12 @@ function attackBasis(opts: AttackOpts): AttackBasis {
   // Ordinary weapons do not select their attack/penetration basis from individual
   // members' wound distribution. Keep headcount, shields and conditions; only cannon
   // ammunition selection needs the complete formation. Damage still uses live wounds.
-  const key = !memo ? undefined : isArmsV2(opts.rules.armsModel) ? JSON.stringify([d.hp,d.status,d.shieldDurability,d.conditions,d.barrier,
-    isCannonWeapon(opts.weaponOverride ?? opts.attacker.weapon) ? d.formation : undefined]) : opts.attacker.cannonAmmo || !isCannonWeapon(opts.weaponOverride ?? opts.attacker.weapon)
+  const cannon = isCannonWeapon(opts.weaponOverride ?? opts.attacker.weapon);
+  // Conditions and barrier specifications never change inside a damage-only sample;
+  // only shield/barrier balances do. Each independent preview owns a fresh memo.
+  const key = !memo ? undefined : isArmsV2(opts.rules.armsModel) ? !cannon
+    ? d.hp + ':' + d.status + ':' + d.shieldDurability?.remaining + ':' + d.barrier?.remaining
+    : JSON.stringify([d.hp,d.status,d.shieldDurability,d.conditions,d.barrier,d.formation]) : opts.attacker.cannonAmmo || !cannon
     ? (memo.loose ??= activeTraitIds(d).includes('loose-formation')) ? String(looseFormation(d)) : ''
     : JSON.stringify([d.hp, d.status, d.morale, d.moraleState, d.barrier, d.formation, d.recoverableWounded, d.conditions, d.base]);
   const known = key === undefined ? undefined : memo!.bases.get(key);
@@ -906,8 +933,8 @@ function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean): AttackResol
   let final = Math.round((baseAfterDR + apTotal) * dmgMult * wardMult * scale.multiplier);
   if (v2) final = roundDamage(v2DamageAmount(baseRaw, apRolledTotal, penetration!.factor, dmgMult * wardMult * (modern?targets*sourceScale:scale.multiplier)), rng);
   if (final < 1) final = v2 ? 0 : 1;
-  const wear = isArmsV2(rules.armsModel) && !penetration?.area && penetration?.canBlock !== false && (!opts.abilityDamage || opts.abilityDamage.weaponBased)
-    ? shieldCoverage({...defender,armsModel:rules.armsModel},weapon) * (baseRaw + apRolledTotal) * (opts.abilityDamage?.damageScale ?? weapon?.damageScale ?? 1) * trainingDamage(attacker.level,rules) * unitMultiplier(attacker,'damage',weapon?.channel,combatBonuses(attacker)) * dmgMult * targets * (weapon?.recipe?.mechanism === 'axe' ? 2 : 1) : 0;
+  const wear = defender.shield && isArmsV2(rules.armsModel) && !penetration?.area && penetration?.canBlock !== false && (!opts.abilityDamage || opts.abilityDamage.weaponBased)
+    ? shieldCoverage(defenderWithArmsModel(opts),weapon) * (baseRaw + apRolledTotal) * (opts.abilityDamage?.damageScale ?? weapon?.damageScale ?? 1) * trainingDamage(attacker.level,rules) * unitMultiplier(attacker,'damage',weapon?.channel,combatBonuses(attacker)) * dmgMult * targets * (weapon?.recipe?.mechanism === 'axe' ? 2 : 1) : 0;
   if (res && wear) res.shieldWear = wear;
   if (!res) {
     if (modern) applyDamagePlan(defender, memberPlan(opts, final, targets, resolved, penetration, basis.ward));

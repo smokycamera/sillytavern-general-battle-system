@@ -42,6 +42,22 @@ const reachableCaches = new WeakMap<ObservationContext, WeakMap<Combatant, (numb
 const traitCacheStates = new WeakMap<ObservationContext, string>();
 const traitCacheEpochs = new WeakMap<ObservationContext, number>();
 const stateValues = new WeakMap<ObservationContext, { epoch: number; values: Map<string, number> }>();
+const projectedWorlds = new WeakMap<ObservationContext, { epoch: number; worlds: Map<string, ObservationContext> }>();
+/** Equivalent buff branches should share the same read-only world, so their
+ * unchanged before-state and reachability estimates are not rebuilt per skill. */
+export function tacticalWorld(context: ObservationContext, target: Combatant): ObservationContext {
+  const create = () => ({ ...context, units: context.units.map(u => u.id === target.id ? target : u) });
+  const epoch = previewScopeEpoch();
+  if (epoch === undefined) return create();
+  if (!context.units.some(u => u.id === target.id && u !== target)) return context;
+  let cache = projectedWorlds.get(context);
+  if (cache?.epoch !== epoch) projectedWorlds.set(context, cache = { epoch, worlds: new Map() });
+  const key = JSON.stringify(target), found = cache.worlds.get(key);
+  if (found) return found;
+  const world = create();
+  if (cache.worlds.size < 128 && key.length <= 16384) cache.worlds.set(key, world);
+  return world;
+}
 /** V16 来源/等级可在同一面板上下文内改变；身份缓存不能把旧等级继续当成现状。 */
 function refreshTraitCaches(context: ObservationContext): void {
   // AI/query scopes are synchronous and read-only. A hypothetical change gets a new
@@ -204,7 +220,7 @@ export function tacticalStateValue(context: ObservationContext, target: Combatan
   return value;
 }
 function evaluateTacticalState(context: ObservationContext, target: Combatant): number {
-  if(['traits-levels-v2','traits-items-v1','traits-items-v2'].includes(target.traitLevelModel??''))context={...context,units:context.units.map(u=>u.id===target.id?target:u)};
+  if(['traits-levels-v2','traits-items-v1','traits-items-v2'].includes(target.traitLevelModel??''))context=tacticalWorld(context,target);
   const outgoing = actionPotential(context, target), incoming = incomingPotential(context, target);
   const risk = moraleRisk(context, target, (context.rules ?? V4_TW).morale.breakAt, context.traitRegistry).breakChance;
   const dot = target.conditions.reduce((n, c) => n + (c.dur > 0 ? (['traits-levels-v2','traits-items-v1','traits-items-v2'].includes(target.traitLevelModel??'') ? conditionDamage(target, averageDice((context.conditions ?? defaults).get(c.id)?.dot?.dice), c) : averageDice((context.conditions ?? defaults).get(c.id)?.dot?.dice) * (c.affectedMembers ?? 1)) : 0), 0);
