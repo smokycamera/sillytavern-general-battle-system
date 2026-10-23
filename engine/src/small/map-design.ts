@@ -27,7 +27,9 @@ export const SCENE_NAMES: Record<BattlefieldScene, string> = { field: '野战', 
 export interface MapGenerationRecord {
   /** Scene identity is independent of map dimensions and survives capacity upgrades. */
   scene?: BattlefieldScene;
-  version: 3 | 4 | 5 | 6 | 7 | 8;
+  version: 3 | 4 | 5 | 6 | 7 | 8 | 9;
+  /** Explicit low-ground flooding; does not replace terrain obstacles or structures. */
+  waterCoverage?: 'all';
   interior?: InteriorLayoutRecord;
   compound?: CompoundRecord;
   trenches?: TrenchRecord;
@@ -61,7 +63,7 @@ export function mapDesignSummary(design: MapDesign): string {
 export function landmarkAt(field: { generation?: MapGenerationRecord; tiles: readonly string[] }, cell: number): string | undefined {
   const marks = (field as { landmarks?: import('./layers.js').FieldLandmark[] }).landmarks;
   const matches = marks?.filter(m => m.cells?.includes(cell));
-  const label = field.generation?.scene === 'interior' && field.generation.version === 7
+  const label = field.generation?.scene === 'interior' && field.generation.version >= 7
     ? matches?.reduce<typeof matches[number] | undefined>((best, m) => !best || m.cells.length < best.cells.length ? m : best, undefined)?.label
     : matches?.[0]?.label;
   if (label) return safeLandmarkLabel(label);

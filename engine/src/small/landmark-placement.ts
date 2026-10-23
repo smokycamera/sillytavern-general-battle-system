@@ -2,13 +2,16 @@ import type { LandmarkPlan } from './battlefield-plan.js';
 import { gridDistance, neighbors, type BattlefieldSpec } from './spatial.js';
 import { groundBlocked } from './layers.js';
 import type { WorldAnchor } from './scene-intent.js';
+import { gridBounds, gridPosition, compassSector, inGridSector } from './grid-anchor.js';
 export function worldAnchorCell(field: BattlefieldSpec, anchor: WorldAnchor): number {
+    const bounds = gridBounds(anchor, field.width, field.height);
+    if (bounds) return Math.floor((bounds[2] + bounds[3]) / 2) * field.width + Math.floor((bounds[0] + bounds[1]) / 2);
     const x = anchor.includes('west') ? Math.max(1, Math.floor(field.width * .2)) : anchor.includes('east') ? Math.min(field.width - 2, Math.floor(field.width * .8)) : Math.floor(field.width / 2);
     const y = anchor.includes('north') ? Math.max(1, Math.floor(field.height * .2)) : anchor.includes('south') ? Math.min(field.height - 2, Math.floor(field.height * .8)) : Math.floor(field.height / 2);
     return y * field.width + x;
 }
 export function landmarkAnchorCell(field: BattlefieldSpec, anchor: LandmarkPlan['anchor'], defender: 'ally' | 'enemy', frontDepth: number, left: number, right: number): number {
-    if (/^(north|south|east|west)/.test(anchor) || anchor === 'center')
+    if (gridPosition(anchor) || /^(north|south|east|west)/.test(anchor) || anchor === 'center')
         return worldAnchorCell(field, anchor as WorldAnchor);
     if (/^(ally|enemy|center)_/.test(anchor)) {
         const y = anchor.startsWith('ally_') ? field.height - 3 : anchor.startsWith('enemy_') ? 2 : Math.floor(field.height / 2);
@@ -36,6 +39,8 @@ export function landmarkCandidates(field: BattlefieldSpec, mark: LandmarkPlan, a
     if (mark.anchor.startsWith('enemy'))
         cells = cells.filter(p => Math.floor(p / field.width) < field.height / 2);
     if (mark.edge)
-        cells = cells.filter(p => mark.anchor.includes('west') ? p % field.width === 0 : mark.anchor.includes('east') ? p % field.width === field.width - 1 : mark.anchor.includes('north') ? Math.floor(p / field.width) === 0 : mark.anchor.includes('south') ? Math.floor(p / field.width) === field.height - 1 : true);
+        cells = cells.filter(p => compassSector(mark.anchor).includes('west') ? p % field.width === 0 : compassSector(mark.anchor).includes('east') ? p % field.width === field.width - 1 : compassSector(mark.anchor).includes('north') ? Math.floor(p / field.width) === 0 : compassSector(mark.anchor).includes('south') ? Math.floor(p / field.width) === field.height - 1 : true);
+    else if (gridPosition(mark.anchor))
+        cells = cells.filter(p => inGridSector(mark.anchor, field.width, field.height, p % field.width, Math.floor(p / field.width)));
     return cells.filter(legal).sort((a, b) => gridDistance(field, a, anchor) - gridDistance(field, b, anchor) || a - b);
 }

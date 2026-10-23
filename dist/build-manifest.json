@@ -1,39 +1,14 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "2.10.5",
-  "builtAt": "2026-10-23T12:46:56.449Z",
-  "sourceFingerprint": "d93a5bc202baad39800fa022f4b2c995b57ade6b806c84aaff83ca8826fcdcdc",
+  "version": "2.10.6",
+  "builtAt": "2026-10-23T15:50:28.764Z",
+  "sourceFingerprint": "ce3e230390cdc35b3c880510c1fe2af7da3dcbe98bd3496e956bd1b03462c348",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
-      "path": "LICENSE",
-      "bytes": 35149,
-      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
-    },
-    {
-      "path": "LICENSE-NOTES.md",
-      "bytes": 1076,
-      "sha256": "3c1102b6cb3f1d12fb603fa36920adf797f79463e7178ae4612782765b87f5cc"
-    },
-    {
-      "path": "README.md",
-      "bytes": 2668,
-      "sha256": "a5b68ecf40b5476509b77a6bba5e1eb3abd053097dab0e7825c1fab849d0c9d6"
-    },
-    {
-      "path": "README.zh-CN.md",
-      "bytes": 2469,
-      "sha256": "5cddecbd75649da0915e8c758bc90d841581a29808081ea3f9b8736ddb3ac8da"
-    },
-    {
-      "path": "THIRD_PARTY_NOTICES.md",
-      "bytes": 1564,
-      "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
-    },
-    {
-      "path": "dist/assets/panel-AqOEo1Vd.js",
-      "bytes": 1362779,
-      "sha256": "11bce37dc298451b5f66abfeefc105bea40ca62171b8430c938b6ae612c5cfa7"
+      "path": "dist/assets/panel-D-S2s1Lp.js",
+      "bytes": 1363191,
+      "sha256": "546883c4f8e60e7a7467f3db29c61cf79d5c3ca4ccf1fa7a473a586c81c7025c"
     },
     {
       "path": "dist/assets/panel-DWnwi5Zd.css",
@@ -41,9 +16,9 @@
       "sha256": "a1aa52b2cbdba7c03a436ec52a79e6bf9875bf1e35fb4db145966238ef50127d"
     },
     {
-      "path": "dist/assets/preferences-Djf1WtnC.js",
-      "bytes": 1195150,
-      "sha256": "1fb5e50517a59e5b8e5ca60236dd23e6304fbc1033f7d0b72ad6fb3b59a0c49e"
+      "path": "dist/assets/preferences-DblitLLG.js",
+      "bytes": 1203270,
+      "sha256": "0b5092ea91b1608a2d383086e02424e4d3dbe87ab61a4f1706eb98071a352c35"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -59,11 +34,6 @@
       "path": "assets/worldbook/lorebook system explain.md",
       "bytes": 84985,
       "sha256": "b6b525cfc77dce466c77ff28b137dce855974d6f6441ac95e045af7154b56976"
-    },
-    {
-      "path": "docs/README.md",
-      "bytes": 1800,
-      "sha256": "52dfc9c5c90a518c23c0316b4becbe1ba48cc823655857fb9d02583895c9eb5a"
     },
     {
       "path": "docs/artillery-recovery-v27-20261023.md",
@@ -97,8 +67,8 @@
     },
     {
       "path": "docs/current-release.md",
-      "bytes": 36788,
-      "sha256": "f87a76db81ee4be78186fc1535164738b9b4643027395456a9a324c1c88c3515"
+      "bytes": 38239,
+      "sha256": "afae5c16681229fdbf1a74761ef592f3417ad020e32cc18f56b39255d1bf7dba"
     },
     {
       "path": "docs/embedded-worldbook.md",
@@ -151,9 +121,9 @@
       "sha256": "5165eb346e18af58a8f7e43622a11b2839c80370fdd9e192a647065e30654de7"
     },
     {
-      "path": "docs/prompt-backups/README.md",
-      "bytes": 7846,
-      "sha256": "ebfb02aa0417fa96216fdfc38db4b9155d3bf154e6bd9db4fc7b7a0855aa2ebb"
+      "path": "docs/prompt-backups/battlefield-plan-before-indoor-terrain-20261023.ts.txt",
+      "bytes": 15132,
+      "sha256": "c9f74576392ddd49fec643a6babd2df70a1055336892ae212ff63973cc6941ce"
     },
     {
       "path": "docs/prompt-backups/indoor-task-before-20261020.txt",
@@ -211,9 +181,19 @@
       "sha256": "a954e2906d4283d9edd99961d821fc1338289fe7136889b77305afeb67d46ee0"
     },
     {
+      "path": "docs/prompt-backups/llm-layout-before-grid4-20261023.ts.txt",
+      "bytes": 48185,
+      "sha256": "7f5ba52552030a31faea087681faa788216484fe845b77049010ef22a3772857"
+    },
+    {
       "path": "docs/prompt-backups/llm-layout-before-indoor-20261020.ts.txt",
       "bytes": 41969,
       "sha256": "22cb4aa4473e92df8ec4401a14c80bc09048ab59639c81b3c53bc4e88fef9238"
+    },
+    {
+      "path": "docs/prompt-backups/llm-layout-before-indoor-terrain-20261023.ts.txt",
+      "bytes": 49643,
+      "sha256": "44866ef7cf32cff86879cf584f3c76ba7ca997d57c7b5df7538716852e2f949f"
     },
     {
       "path": "docs/prompt-backups/llm-layout-before-neutral-objective-20261021.ts.txt",
@@ -224,6 +204,16 @@
       "path": "docs/prompt-backups/llm-layout-before-siege-trenches-20261021.ts.txt",
       "bytes": 45607,
       "sha256": "5a53b988ebefef5e94a4e19a150fd92381d8393de6ddcc85cc490d8e0b91c97f"
+    },
+    {
+      "path": "docs/prompt-backups/README.md",
+      "bytes": 9238,
+      "sha256": "b65c75a6379d313b1e7efc6f677ca1199334e5b7a0d42f3965b2259585b5dd73"
+    },
+    {
+      "path": "docs/prompt-backups/scene-intent-before-indoor-terrain-20261023.ts.txt",
+      "bytes": 12079,
+      "sha256": "7c6dfad733572ac0839cc64c0e6e0c62a9aade0714d1139a0eb0ca3b0efd13bf"
     },
     {
       "path": "docs/prompt-backups/worldbook-before-capacity-v29-20261023.json.txt",
@@ -249,6 +239,11 @@
       "path": "docs/prompt-backups/worldbook-before-trait-grades-20261022.json.txt",
       "bytes": 23107,
       "sha256": "5d2230161ad8dc3922422cc186268d9f41fabcaeed53b659738ed9f6cd3e333d"
+    },
+    {
+      "path": "docs/README.md",
+      "bytes": 1800,
+      "sha256": "52dfc9c5c90a518c23c0316b4becbe1ba48cc823655857fb9d02583895c9eb5a"
     },
     {
       "path": "docs/release-channels.md",
@@ -313,7 +308,17 @@
     {
       "path": "dist/index.js",
       "bytes": 99261,
-      "sha256": "3395f24d8b170d00cf951cf5bdec7033b29b4e624bb448be8b35dab414b7e8a8"
+      "sha256": "a3bfe09014b6e6ffddf202dae013b9b331680c2f6c36bc57bd42112f8359abd8"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 35149,
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "path": "LICENSE-NOTES.md",
+      "bytes": 1076,
+      "sha256": "3c1102b6cb3f1d12fb603fa36920adf797f79463e7178ae4612782765b87f5cc"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -323,22 +328,17 @@
     {
       "path": "manifest.json",
       "bytes": 172,
-      "sha256": "beaacb55a0e57023ee2a3eaef8f07e40e97ede298e9629dbb41758fd3282e6e2"
-    },
-    {
-      "path": "mcp/GAMEPLAY.md",
-      "bytes": 6554,
-      "sha256": "80ef81e9d2ed7031057e339b58abb550c628f7293600ca38a77ddaf433f0a5d3"
-    },
-    {
-      "path": "mcp/README.md",
-      "bytes": 8919,
-      "sha256": "d2793765368337dc0ae84ff55bbd24cec2dd2b64aefec4f0e02496fa22ac9c31"
+      "sha256": "e95c3f18ce99d1cc4426565a6a07d0d7c5b387a1d68209a5763685925da63502"
     },
     {
       "path": "mcp/broker.mjs",
       "bytes": 3326,
       "sha256": "420bc4a6edd74362ea5e2a16847844173e529e59d773cca338eeef2270948783"
+    },
+    {
+      "path": "mcp/GAMEPLAY.md",
+      "bytes": 6554,
+      "sha256": "80ef81e9d2ed7031057e339b58abb550c628f7293600ca38a77ddaf433f0a5d3"
     },
     {
       "path": "mcp/package-lock.json",
@@ -349,6 +349,11 @@
       "path": "mcp/package.json",
       "bytes": 388,
       "sha256": "33904dc07d85b28ad6e2f15ec9f472c7403ca054924cd88c039002996cdd7c24"
+    },
+    {
+      "path": "mcp/README.md",
+      "bytes": 8919,
+      "sha256": "d2793765368337dc0ae84ff55bbd24cec2dd2b64aefec4f0e02496fa22ac9c31"
     },
     {
       "path": "mcp/server.mjs",
@@ -378,12 +383,27 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 48599,
-      "sha256": "90f279fd55928c4b674ad18371440b50f3c893b2270c0842cd811634c545e214"
+      "sha256": "9e891df8e668628dbcf7bcfe15f5c877433bac63bbd16386576fba4353bc4fa0"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2870,
+      "sha256": "280354b233b61724a94d9750884b009028e1355a3bfb06492685b866c75a033c"
+    },
+    {
+      "path": "README.zh-CN.md",
+      "bytes": 2599,
+      "sha256": "254c24bc6540ef079b0a7333b2a2863474167a5330b182f5d2de40dca7f75e8d"
     },
     {
       "path": "scripts/jev-cors-relay.mjs",
       "bytes": 5754,
       "sha256": "c7fb9094f869607e10a45fb46335de4545e14043034f1b56fef937115fca50ca"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "bytes": 1564,
+      "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     }
   ],
   "validation": {

@@ -117,7 +117,7 @@ describe('two-step preparation with a compass layout', () => {
     expect(decision.fields.filter((f: { id: string }) => f.id.startsWith('neutral_')).map((f: { id: string }) => f.id)).toEqual(['neutral_ability', 'neutral_style']);
     expect(decision.state.commandRules).toContain('neutral:{preferences:{}}');
     const task = sent(request, 1).messages[2].content;
-    expect(task).toContain('第三军 · 第三方'); expect(task).toContain('"neutral":{"at":["E"]}');
+    expect(task).toContain('第三军 · 第三方'); expect(task).toContain('"neutral":{"at":["D2"]}');
     expect(result.commanders?.neutral).toEqual({ ability: 'master', style: 'ambush' });
     const zones = field!.deploymentZones!;
     const third = zones.filter(z => z.side === 'neutral').flatMap(z => z.cells);
@@ -276,10 +276,10 @@ describe('compass layout compiler', () => {
     expect(plan.intent!.entities.find(e => e.id === 'exit')).toMatchObject({ kind: 'position', anchor: 'north' });
     expect(plan.deployments).toEqual([{ subject: 'ally', at: ['south'] }, { subject: 'enemy', at: ['north'] }, { subject: 'u1', at: ['west'] }, { subject: 'u2', at: ['east'] }]);
   });
-  it('fits the scene: indoor kinds, no outdoor water indoors, and the 12-entity budget', () => {
+  it('keeps explicit indoor terrain and water within the 12-entity budget', () => {
     const indoor = compileLayout({ places: [{ type: 'building', name: '书房', at: 'N' }, { type: 'hill', name: '假山' }], water: { type: 'river', at: 'E' } }, ctx({ scene: 'interior', objectiveMode: 'annihilation' }));
-    expect(indoor.plan.intent!.entities.map(e => e.kind)).toEqual(['room']);
-    expect(indoor.notes).toEqual(expect.arrayContaining(['本场景不设水系']));
+    expect(indoor.plan.intent!.entities.map(e => e.kind)).toEqual(['river', 'building', 'hill']);
+    expect(indoor.notes).not.toContain('本场景不设水系');
     const crowded = compileLayout({ city: { at: 'N', gates: [{}, {}, {}, {}] }, water: { type: 'river', at: 'E', bridges: [{}, {}, {}, {}] },
       places: Array.from({ length: 8 }, (_, i) => ({ type: 'cover', name: '掩体' + i, at: 'C' })) }, ctx());
     expect(crowded.plan.intent!.entities).toHaveLength(12);
@@ -305,7 +305,7 @@ describe('compass layout compiler', () => {
   });
   it('reports a local failure in the answer\'s own terms, with the usual fix', () => {
     const { plan } = compileLayout({ places: [{ type: 'building', name: '府衙', at: 'N' }, { type: 'tower', at: 'NE' }], objective: '府衙' }, ctx());
-    expect(layoutRetryNote('正文关系引用的地点place1没有生成', plan)).toBe('正文关系引用的地点「府衙」没有生成。改法：objective「府衙」处没有可站立的空地：改写为空旷的地点（如广场空地、营地）或九宫格方位，或省略objective');
+    expect(layoutRetryNote('正文关系引用的地点place1没有生成', plan)).toBe('正文关系引用的地点「府衙」没有生成。改法：objective「府衙」处没有可站立的空地：改写为空旷的地点（如广场空地、营地）或4×4分区编号，或省略objective');
     expect(layoutRetryNote('地点place2未落在正文指定的north_east区域', plan)).toMatch(/^地点塔楼未落在正文指定的NE（东北）区域。改法：地点「塔楼」放不下/);
     expect(layoutRetryNote('地标tower在指定区域部署容量不足', plan)).toMatch(/^地标塔楼在指定区域部署容量不足。改法：地点「塔楼」放不下/);
     expect(layoutRetryNote('目标必须是合法可通行格')).toMatch(/改法：任务目标处被实心地点占住/);

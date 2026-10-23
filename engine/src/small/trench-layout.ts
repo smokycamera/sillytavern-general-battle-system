@@ -3,6 +3,8 @@ import type { BattlefieldPlan } from './battlefield-plan.js';
 import { createStructure } from './layers.js';
 import { neighbors, type BattlefieldSpec } from './spatial.js';
 import { TRENCH_PATTERNS, type TrenchPattern, type TrenchNetwork } from './position-plan.js';
+import { gridPosition } from './grid-anchor.js';
+import { worldAnchorCell } from './landmark-placement.js';
 
 /** Trace each force's network independently; topology is chosen before the crater decoration. */
 export function buildTrenchLayout(field: BattlefieldSpec, plan: BattlefieldPlan | undefined, rng: SeededRng): void {
@@ -11,8 +13,9 @@ export function buildTrenchLayout(field: BattlefieldSpec, plan: BattlefieldPlan 
   const pattern: TrenchPattern = plan?.trenches?.pattern ?? (plan?.archetype === 'trench_depth' ? 'depth'
     : TRENCH_PATTERNS[int(0, TRENCH_PATTERNS.length - 1)]!);
   const networks: TrenchNetwork[] = [];
-  const northSide = plan?.deployments?.find(d => d.subject === 'ally')?.at.some(a => a.includes('north'))
-    && !plan?.deployments?.find(d => d.subject === 'enemy')?.at.some(a => a.includes('north')) ? 'ally' : 'enemy';
+  const north = (a: string) => {const p=gridPosition(a);return p?p[1]<2:a.includes('north');};
+  const northSide = plan?.deployments?.find(d => d.subject === 'ally')?.at.some(north)
+    && !plan?.deployments?.find(d => d.subject === 'enemy')?.at.some(north) ? 'ally' : 'enemy';
   for (const side of [northSide, northSide === 'enemy' ? 'ally' : 'enemy'] as const) {
     const at = (x: number, d: number) => (side === northSide ? d : h - 1 - d) * w + x;
     const limit = Math.floor(h / 2) - 1;
@@ -58,6 +61,14 @@ export function buildTrenchLayout(field: BattlefieldSpec, plan: BattlefieldPlan 
         const shift = Math.max(left, Math.min(right, x + (rng.next() < .5 ? -1 : 1)));
         path('saps', [[x, ys[x]!], [x, Math.min(limit, ys[x]! + 1)], [shift, Math.min(limit, ys[x]! + 1)], [shift, limit]]);
       }
+    }
+    for (const mark of plan?.landmarks??[]) if(mark.kind==='fortification'&&gridPosition(mark.anchor)) {
+      const target=worldAnchorCell(field,mark.anchor as import('./scene-intent.js').WorldAnchor), y=Math.floor(target/w);
+      if ((side===northSide)!==(y<h/2)) continue;
+      const d=side===northSide?y:h-1-y, x=target%w;
+      const closest=[...new Set(Object.values(parts).flatMap(s=>[...s]))].sort((a,b)=>Math.abs(a%w-x)+Math.abs(Math.floor(a/w)-y)-Math.abs(b%w-x)-Math.abs(Math.floor(b/w)-y)||a-b)[0]!;
+      path('communication',[[closest%w,side===northSide?Math.floor(closest/w):h-1-Math.floor(closest/w)],[x,d]]);
+      point(/后壕|后方|第二|支援|预备|support/.test(mark.label??'')?'support':'front',x,d);
     }
     const cells = [...new Set(Object.values(parts).flatMap(s => [...s]))].sort((a, b) => a - b);
     for (const p of cells) field.structures![p] = createStructure('fortification', level);

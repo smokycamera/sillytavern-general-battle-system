@@ -4,8 +4,9 @@ import { BattlefieldPlanError } from './battlefield-error.js';
 import { createStructure, groundBlocked } from './layers.js';
 import { gridDistance, neighbors, type BattlefieldSpec } from './spatial.js';
 import { INTERIOR_PATTERN_NAMES, INTERIOR_USE_NAMES, primaryInteriorRoom, type InteriorUse, type InteriorPattern, type InteriorLayoutRecord } from './interior-plan.js';
+import { compassSector, gridPosition, gridBounds } from './grid-anchor.js';
 
-interface Area { id: number; l: number; t: number; r: number; b: number; passage?: boolean; wing?: number; band?: number }
+interface Area { id: number; l: number; t: number; r: number; b: number; passage?: boolean; wing?: number; band?: number; planId?: string; planLabel?: string }
 interface Portal { a: number; b: number; cells: number[] }
 const USE_PATTERNS: Record<InteriorUse, InteriorPattern[]> = {
   residence: ['suite', 'hall', 'ring', 'wings'], inn: ['hall', 'suite', 'cells', 'wings'], temple: ['hall', 'ring', 'cross', 'suite'],
@@ -68,10 +69,10 @@ export function buildIndoorLayout(field: BattlefieldSpec, plan: BattlefieldPlan 
     if (sidePassage) add(0, 0, 0, h - 1, { passage: true });
     for (const [t, b] of bands(0, h - 1, rowCount)) add(sidePassage ? 2 : 0, t, w - 1, b);
   } else if (pattern === 'hall') {
-    if (mainMark && /north|south/.test(mainMark.anchor)) {
+    if (mainMark && /north|south/.test(compassSector(mainMark.anchor))) {
       if(w<7) throw new BattlefieldPlanError('主厅与侧室部署容量不足，请扩大室内地图');
-      const north=mainMark.anchor.includes('north');
-      const west=(plan?.landmarks??[]).some(m=>m!==mainMark&&m.kind==='room'&&m.anchor.includes('west'));
+      const north=compassSector(mainMark.anchor).includes('north');
+      const west=(plan?.landmarks??[]).some(m=>m!==mainMark&&m.kind==='room'&&compassSector(m.anchor).includes('west'));
       const cut=west?2:w-3, l=west?cut+1:0, r=west?w-1:cut-1;
       const t=north?0:3, b=north?h-4:h-1, split=Math.floor((t+b)/2)+int(-1,1);
       add(l,t,r,b);
@@ -116,7 +117,7 @@ export function buildIndoorLayout(field: BattlefieldSpec, plan: BattlefieldPlan 
     }
   }
   // A named eastern/western room occupies a real side room, rather than labeling a whole-width hall.
-  for (const mark of (plan?.landmarks ?? []).filter(m => m.kind === 'room' && /east|west/.test(m.anchor))) {
+  for (const mark of (plan?.landmarks ?? []).filter(m => m.kind === 'room' && !gridPosition(m.anchor) && /east|west/.test(m.anchor))) {
     const x = mark.anchor.includes('west') ? Math.floor(w * .2) : Math.floor(w * .8);
     const y = mark.anchor.includes('north') ? Math.floor(h * .2) : mark.anchor.includes('south') ? Math.floor(h * .8) : Math.floor(h / 2);
     const distance = (a: Area) => Math.max(0, a.l-x, x-a.r) + Math.max(0, a.t-y, y-a.b);
@@ -133,6 +134,28 @@ export function buildIndoorLayout(field: BattlefieldSpec, plan: BattlefieldPlan 
     if (!a) throw new BattlefieldPlanError('房间部署容量不足，请扩大室内地图');
     if (a.r - a.l >= 4) { const cut = Math.floor((a.l + a.r) / 2), right = a.r; a.r = cut - 1; add(cut + 1, a.t, right, a.b); }
     else { const cut = Math.floor((a.t + a.b) / 2), bottom = a.b; a.b = cut - 1; add(a.l, cut + 1, a.r, bottom); }
+  }
+  // Numbered room requests partition actual rooms before walls/doors are built. A name always binds a whole room.
+  for (const [index, mark] of (plan?.landmarks ?? []).entries()) {
+    const b = mark.kind === 'room' ? gridBounds(mark.anchor, w, h) : undefined;
+    if (!b) continue;
+    const overlap = (a: Area) => Math.max(0, Math.min(a.r,b[1])-Math.max(a.l,b[0])+1)
+      * Math.max(0, Math.min(a.b,b[3])-Math.max(a.t,b[2])+1);
+    let a = areas.filter(a=>!a.passage&&!a.planId&&overlap(a)>0)
+      .sort((a,c)=>overlap(c)-overlap(a)||a.id-c.id)[0];
+    if (!a) {
+      // Several distinct rooms may share one numbered sector.
+      const occupied = areas.filter(a=>!a.passage&&overlap(a)>0&&(a.r-a.l>=2||a.b-a.t>=2))
+        .sort((a,c)=>overlap(c)-overlap(a)||a.id-c.id)[0];
+      if (!occupied) throw new BattlefieldPlanError(`房间${mark.label??''}在${mark.anchor}部署容量不足`);
+      if (occupied.r-occupied.l>=2) { const end=occupied.r,cut=Math.floor((occupied.l+end)/2);occupied.r=cut-1;add(cut+1,occupied.t,end,occupied.b); }
+      else { const end=occupied.b,cut=Math.floor((occupied.t+end)/2);occupied.b=cut-1;add(occupied.l,cut+1,occupied.r,end); }
+      a=areas.at(-1)!;
+    }
+    const old={...a}, l=Math.max(a.l,b[0]), r=Math.min(a.r,b[1]), t=Math.max(a.t,b[2]), bottom=Math.min(a.b,b[3]);
+    add(old.l,old.t,l-2,old.b);add(r+2,old.t,old.r,old.b);
+    add(l,old.t,r,t-2);add(l,bottom+2,r,old.b);
+    Object.assign(a,{l,r,t,b:bottom,planId:mark.id??`grid-room-${index}`,planLabel:mark.label});
   }
   field.structures!.fill(null);
   for (let p = 0; p < w * h; p++) field.structures![p] = createStructure('building', level);
@@ -192,14 +215,15 @@ export function buildIndoorLayout(field: BattlefieldSpec, plan: BattlefieldPlan 
   }
   const density = { sparse: .12, balanced: .27, dense: .44 }[plan?.cover ?? plan?.density ?? 'balanced'];
   const rooms = areas.filter(a => !a.passage).map((a, index) => ({
-    label: ROOM_LABELS[use][index % ROOM_LABELS[use].length]!,
+    label: a.planLabel ?? ROOM_LABELS[use][index % ROOM_LABELS[use].length]!,
+    ...(a.planId ? {planId:a.planId} : {}),
     cells: field.tiles.flatMap((_, p) => owners[p] === a.id && !groundBlocked(field, p) ? [p] : []),
   })).filter(r => r.cells.length);
   const main = rooms.reduce((best,room)=>room.cells.length>best.cells.length?room:best,rooms[0]!);
   const mainName: Record<InteriorUse,string> = {residence:'起居室',inn:'客堂',temple:'正殿',warehouse:'货区',workshop:'主工坊',office:'办公间',prison:'监房',ruins:'破损大厅'};
   const labels = ROOM_LABELS[use].filter(label=>label!==mainName[use]);
   let labelIndex = 0;
-  for (const room of rooms) room.label=room===main?mainName[use]:labels[labelIndex++%labels.length]!;
+  for (const room of rooms) if(!room.planId) room.label=room===main?mainName[use]:labels[labelIndex++%labels.length]!;
   // Keep the middle of each room usable. Furniture hugs selected walls in clusters rather than perimeter-only stamps.
   for (const room of rooms) {
     const set = new Set(room.cells), edges = room.cells.filter(p => neighbors(field, p).some(n => !set.has(n) && !doorways.includes(n)));
