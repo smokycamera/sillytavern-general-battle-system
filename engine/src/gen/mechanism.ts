@@ -1,3 +1,5 @@
+import { GRADED_SHIELD_LOAD, gradedLifeScale, gradedNumbers, unitMultiplier, unitStep, validateNumericModel } from '../numeric-model.js';
+import { modifiedEquipmentLoad, revisedLoad, validateLoadModel } from '../load-model.js';
 import { bodyProfile } from '../body.js';
 import { bonusMultiplier, bonusSteps, validateEnhancements, type Enhancements } from '../enhancements.js';
 import { spCapacity } from '../resources.js';
@@ -27,6 +29,8 @@ function integer(value: number, min: number, max: number, label: string): number
 }
 
 export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): GenResult {
+  validateNumericModel(raw.numericModel);
+  validateLoadModel(raw.loadModel);
   if (raw.damageModel !== undefined && !['wounds-v1','wounds-v2'].includes(raw.damageModel)) throw Error('未知伤害模型');
   const oldScale = raw.scale === 'mook';
   if (oldScale) raw = { ...raw, scale: 'company', hpMax: raw.hpMax ?? 10 };
@@ -53,21 +57,23 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
     if (slot === 'sidearm' && !weaponId && !classId && !name) return undefined;
     const mechanism = classId ?? (weaponId ? undefined : slot === 'sidearm' ? 'sword' : raw.loadout === 'ranged' || arch === 'ranged' ? 'bow' : 'sword');
     return compileWeapon({ mechanism, weaponId, bonuses: slot === 'primary' ? raw.weaponBonuses : raw.sidearmBonuses, power: (slot === 'primary' ? raw.weaponLevel : raw.sidearmLevel) ?? 1, stabilized: slot === 'primary' ? raw.weaponStabilized : raw.sidearmStabilized, enchantment: slot === 'primary' ? raw.weaponEnchantment : raw.sidearmEnchantment },
-      { id: `${id}:${slot}`, name, seed: seed + ':' + slot, body, quality, noVariance: opts.noVariance, varianceVersion: opts.varianceVersion, creatingUnit: true, damageModel: raw.damageModel });
+      { id: `${id}:${slot}`, name, seed: seed + ':' + slot, body, quality, noVariance: opts.noVariance, varianceVersion: opts.varianceVersion, creatingUnit: true, damageModel: raw.damageModel, numericModel: raw.numericModel, loadModel: raw.loadModel });
   };
   const weapon = weaponFor('primary')!; const sidearm = weaponFor('sidearm');
   const hasArmor = raw.armorTier !== undefined || !!raw.armorId || !!raw.armorName?.trim();
-  const armor = compileArmor({ bonuses: raw.armorBonuses, tier: hasArmor ? raw.armorTier : 0, profile: raw.armorProfile, armorId: raw.armorId, power: raw.armorLevel }, { id: `${id}:armor`, name: raw.armorName, seed: seed + ':armor', body, quality, noVariance: opts.noVariance, varianceVersion: opts.varianceVersion, damageModel: raw.damageModel });
+  const armor = compileArmor({ bonuses: raw.armorBonuses, tier: hasArmor ? raw.armorTier : 0, profile: raw.armorProfile, armorId: raw.armorId, power: raw.armorLevel }, { id: `${id}:armor`, name: raw.armorName, seed: seed + ':armor', body, quality, noVariance: opts.noVariance, varianceVersion: opts.varianceVersion, damageModel: raw.damageModel, numericModel: raw.numericModel, loadModel: raw.loadModel });
   const tier = armor.tier, armorPower = armor.level!;
-  const shield: Combatant['shield'] = raw.shield ? { id: `${id}:shield`, load: ({ buckler: 1, shield: 2, 'tower-shield': 3, 'energy-shield': 1 })[raw.shieldClass ?? 'shield'] } : undefined;
+  const numeric = { ...raw, genAudit: { variance } } as Combatant;
+  const shield: Combatant['shield'] = raw.shield ? { id: `${id}:shield`, load: (revisedLoad(raw) || gradedNumbers(raw) && body !== 'vehicle' ? GRADED_SHIELD_LOAD : { buckler: 1, shield: 2, 'tower-shield': 3, 'energy-shield': 1 })[raw.shieldClass ?? 'shield']! } : undefined;
   if (shield && (raw.shieldClass !== undefined || raw.shieldLevel !== undefined || raw.shieldName !== undefined || raw.shieldBonuses !== undefined)) {
     shield.name = raw.shieldName ?? '盾牌';
-    shield.recipe = equipmentRecipe(raw.shieldClass ?? 'shield', raw.shieldLevel ?? 3, { id: shield.id, seed: seed + ':shield', name: shield.name, body, quality, bonuses: raw.shieldBonuses, noVariance: opts.noVariance, varianceVersion: opts.varianceVersion, damageModel: raw.damageModel });
+    shield.recipe = equipmentRecipe(raw.shieldClass ?? 'shield', raw.shieldLevel ?? 3, { id: shield.id, seed: seed + ':shield', name: shield.name, body, quality, bonuses: raw.shieldBonuses, noVariance: opts.noVariance, varianceVersion: opts.varianceVersion, damageModel: raw.damageModel, numericModel: raw.numericModel, loadModel: raw.loadModel });
   }
+  if (shield) shield.load = modifiedEquipmentLoad(shield.load, raw.shieldBonuses);
   const conflict = equipmentReason({ body, scale: raw.scale, weapon, sidearm, armor, shield });
   if (conflict) warnings.push('建档已保留配装：' + conflict + '；实际使用由战斗规则判定');
   const group = raw.scale !== 'hero';
-  const requestedMax = integer(raw.hpMax ?? (group ? 50 : Math.round((curve.hp * bodyProfile(body, raw.damageModel).hp + archMod.hp) * instanceMultiplier(raw.bonuses, 'health', variance))), 1, group ? 1e9 : Number.MAX_SAFE_INTEGER, group ? '编制上限' : '生命上限');
+  const requestedMax = integer(raw.hpMax ?? (group ? 50 : Math.max(1, Math.round((curve.hp * bodyProfile(body, raw.damageModel).hp + archMod.hp) * gradedLifeScale(raw) * unitMultiplier(numeric, 'health')))), 1, group ? 1e9 : Number.MAX_SAFE_INTEGER, group ? '编制上限' : '生命上限');
   const requestedHp = integer(raw.hp ?? requestedMax, 0, requestedMax, '当前值');
   const hpMax = group ? requestedMax : capSingleLife(requestedMax, raw.damageModel), hp = Math.min(requestedHp, hpMax);
   if (hpMax !== requestedMax) warnings.push(`单体生命上限${requestedMax}超过硬上限，已限制为${singleLifeLimit(raw.damageModel)}`);
@@ -76,8 +82,8 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   validateTraitLevels(raw.traitLevels);
   const levelEntries = traits.filter(isGradedTrait).map(id => [id, raw.traitLevels?.[id] ?? DEFAULT_NEW_TRAIT_LEVEL] as const).filter(([, level]) => level !== 5);
   const traitLevels = levelEntries.length ? Object.fromEntries(levelEntries) as Record<string, number> : undefined;
-  const base = { atk: curve.atk + archMod.atk, def: curve.def + archMod.def, spd: Math.max(1, curve.spd + archMod.spd + bonusSteps(raw.bonuses, 'speed', 5)), hpMax,
-    ...(group ? { moraleMax: curve.morale + bonusSteps(raw.bonuses, 'morale') } : {}) };
+  const base = { atk: curve.atk + archMod.atk, def: curve.def + archMod.def, spd: Math.max(gradedNumbers(raw) ? -Number.MAX_VALUE : 1, curve.spd + archMod.spd + unitStep(numeric, 'speed')), hpMax,
+    ...(group || gradedNumbers(raw) ? { moraleMax: Math.max(0, curve.morale + unitStep(numeric, 'morale')) } : {}) };
   const tags = new Set<string>([arch, raw.scale, body]);
   for (const traitId of traits) {
     const trait = registry.get(traitId);
@@ -90,7 +96,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
       if (effect.kind === 'stat') {
         if (effect.stat === 'atk' || effect.stat === 'def' || effect.stat === 'spd') base[effect.stat] += effect.value;
         else if (effect.stat === 'hpMax' && !group && raw.hpMax === undefined) base.hpMax += effect.value;
-        else if (effect.stat === 'morale' && base.moraleMax !== undefined) base.moraleMax += effect.value;
+        else if (effect.stat === 'morale' && base.moraleMax !== undefined && (group || !gradedNumbers(raw))) base.moraleMax += effect.value;
       }
       if (effect.kind === 'armorTier' && !['heavy-armor', 'super-heavy', 'mechanized'].includes(traitId)) warnings.push(`${trait.name} 不代替装备，不额外提高防护`);
     }
@@ -117,13 +123,13 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
     weaponLevel: weapon.level, sidearmLevel: sidearm?.level, armorTier: tier, armorLevel: armorPower, hpMax: base.hpMax, hp: currentHp, preparedAbilityIds: prepared,
     abilityBlueprints: (raw.abilityBlueprints ?? []).map((s) => typeof s === 'string' ? { id: s, level: skillsPhase2(opts.skillModel) ? 1 : 5 } : { ...s, level: s.level ?? (skillsPhase2(opts.skillModel) ? 1 : 5) }) };
   const unit: Combatant = { id, name: raw.name, side: raw.side, scale: raw.scale, archetype: arch, level: training,
-    rulesVersion: 'v2', ...(raw.damageModel ? {damageModel:raw.damageModel} : {}), bonuses: raw.bonuses, body, ...(raw.speedTier !== undefined ? { speedTier: raw.speedTier } : {}), ...(raw.mount ? { mount: true } : {}), base, hp: currentHp, tags: [...tags], traits, ...(traitLevels ? { traitLevels } : {}),
+    rulesVersion: 'v2', ...(raw.loadModel ? { loadModel: raw.loadModel } : {}), ...(raw.numericModel ? { numericModel: raw.numericModel } : {}), ...(raw.damageModel ? {damageModel:raw.damageModel} : {}), bonuses: raw.bonuses, body, ...(raw.speedTier !== undefined ? { speedTier: raw.speedTier } : {}), ...(raw.mount ? { mount: true } : {}), base, hp: currentHp, tags: [...tags], traits, ...(traitLevels ? { traitLevels } : {}),
     weapon, sidearm, armor, shield,
     abilities, preparedAbilityIds: preparedIds,
     conditions: [], abilityState: [], resources: { SP: 6 + Math.floor(training / 2), reserve: integer(raw.reserves ?? 0, 0, 2, '随队预备份额') },
     morale: base.moraleMax, engagedWith: [], status: hp > 0 ? 'ready' : 'dead', fatigue: 0,
     xpValue: curve.xp, generationWarnings: warnings,
-    genAudit: { seed, ...(variance ? { variance } : {}), deltas: {}, formulaVersion: FORMULA_VERSION + (raw.damageModel === 'wounds-v2' ? '+unified-v1' : ''), input, abilities: abilityAudit } };
+    genAudit: { seed, ...(variance ? { variance } : {}), deltas: {}, formulaVersion: FORMULA_VERSION + (raw.damageModel === 'wounds-v2' ? '+unified-v1' : '') + (raw.numericModel ? '+graded-v1' : '') + (raw.loadModel ? '+capacity-v2' : ''), input, abilities: abilityAudit } };
   unit.resources.SP = spCapacity(unit);
   normalizeBakedTraitStats(unit, registry);
   if (oldScale) unit.legacyScale = 'mook';

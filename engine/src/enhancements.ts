@@ -3,7 +3,7 @@ import type { DamageChannel, RulePack } from './types.js';
 export const BONUS_NAMES = {
   power: '强度', damage: '伤害', accuracy: '精度', penetration: '穿透',
   defense: '防御', protection: '防护', health: '生命', speed: '速度',
-  range: '射程', healing: '治疗', duration: '持续', resource: '回能', morale: '士气',
+  range: '射程', healing: '治疗', duration: '持续', resource: '回能', morale: '士气', weight: '重量',
   kineticDamage: '动能伤害', thermalDamage: '热能伤害', arcaneDamage: '奥术伤害',
   kineticPenetration: '动能穿透', thermalPenetration: '热能穿透', arcanePenetration: '奥术穿透',
   kineticProtection: '动能防护', thermalProtection: '热能防护', arcaneProtection: '奥术防护',
@@ -13,7 +13,7 @@ const BONUS_ALIASES: Record<string, BonusStat> = {
   命中: 'accuracy', 命中率: 'accuracy', 准确: 'accuracy', 精准: 'accuracy', 精准度: 'accuracy',
   破甲: 'penetration', 穿甲: 'penetration', 穿透力: 'penetration', 伤害加成: 'damage',
   距离: 'range', 攻击距离: 'range', 持续时间: 'duration', 持续回合: 'duration',
-  治疗量: 'healing', 恢复能量: 'resource', 生命值: 'health', 防御力: 'defense', 防护值: 'protection',
+  治疗量: 'healing', 恢复能量: 'resource', 生命值: 'health', 防御力: 'defense', 防护值: 'protection', 负载: 'weight', 负重: 'weight',
 };
 export function resolveBonusStat(label: string, kind?: BonusKind): BonusStat | undefined {
   const channel = ({ 动能: 'kinetic', 热能: 'thermal', 奥术: 'arcane', kinetic: 'kinetic', thermal: 'thermal', arcane: 'arcane' } as Record<string, string>)[label.toLowerCase()];
@@ -31,8 +31,8 @@ const penetrationChannels: BonusStat[] = ['kineticPenetration','thermalPenetrati
 const protectionChannels: BonusStat[] = ['kineticProtection','thermalProtection','arcaneProtection'];
 export const ENHANCEMENT_STATS: Record<BonusKind, BonusStat[]> = {
   unit: ['power', 'damage', 'accuracy', 'defense', 'health', 'speed', 'morale', ...damageChannels],
-  weapon: ['power', 'damage', 'accuracy', 'defense', 'penetration', 'range', ...damageChannels, ...penetrationChannels],
-  armor: ['power', 'defense', 'protection', ...protectionChannels], shield: ['power', 'defense', 'protection', ...protectionChannels],
+  weapon: ['power', 'damage', 'accuracy', 'defense', 'penetration', 'range', 'weight', ...damageChannels, ...penetrationChannels],
+  armor: ['power', 'defense', 'protection', 'speed', 'morale', 'weight', ...protectionChannels], shield: ['power', 'defense', 'protection', 'morale', 'weight', ...protectionChannels],
   gear: ['damage', 'accuracy', 'defense', 'speed', 'morale', ...damageChannels, 'protection', ...protectionChannels],
   skill: ['power', 'damage', 'accuracy', 'penetration', 'range', 'healing', 'duration', 'resource', 'morale', ...damageChannels, ...penetrationChannels],
 };

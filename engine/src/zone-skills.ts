@@ -17,7 +17,7 @@ export function validateZoneStrength(zone: { amount?: unknown; penetration?: unk
     || zone.penetration !== undefined && (typeof zone.penetration !== 'number' || !Number.isFinite(zone.penetration) || zone.penetration < 0)) throw Error('持续区域的强度参数损坏');
   if (zone.effects !== undefined && (!Array.isArray(zone.effects) || zone.effects.some(e => !e || typeof e !== 'object'
     || !['condition','trait','heal','barrier','dispel','resource','morale','push'].includes(e.op)))) throw Error('持续区域的附加效果损坏');
-  const modern = ['item-progression-v1','item-progression-v2'].includes(String(zone.itemEffectModel ?? ''));
+  const modern = ['item-progression-v1','item-progression-v2','item-progression-v3'].includes(String(zone.itemEffectModel ?? ''));
   const integer=(v:unknown,min:number,max:number)=>Number.isSafeInteger(v)&&Number(v)>=min&&Number(v)<=max;
   for(const e of (zone.effects??[]) as Exclude<EffectOp,{op:'zone'|'damage'|'summon'}>[]) {
     if ('defensePower' in e && e.defensePower !== undefined && (!validDefensePower(e.defensePower) || e.op === 'condition' && e.conditionId !== 'blessed')) throw Error('持续区域的防御规格损坏');

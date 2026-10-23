@@ -229,7 +229,7 @@ function futureWeight(context: ObservationContext, target: Combatant, duration: 
   return value;
 }
 export function summonValue(context: ObservationContext, actor: Combatant, ability: Ability, effect: Extract<EffectOp, { op: 'summon' }>): number {
-  const unit = conjureSkillUnit(effect.templateId, actor.side, 'preview-summon:' + actor.id, context.mode, ability.bonuses, actor.damageModel);
+  const unit = conjureSkillUnit(effect.templateId, actor.side, 'preview-summon:' + actor.id, context.mode, ability.bonuses, actor.damageModel, actor.numericModel);
   // 外部召唤模板没有只读规格，保留既有保守估值，不能为评分调用生成回调。
   if (!unit) return 8 * effect.count;
   if (!context.rules) return 0;
@@ -272,7 +272,7 @@ export function skillEffectValue(context: ObservationContext, actor: Combatant, 
       const friendly=target.side===actor.side, ctx={damageChannel:effect.kind==='poison'?undefined:effect.kind==='fire'?'thermal' as const:'kinetic' as const,attacker:target,defender:actor,area:true,engaged:target.engagedWith.length>0};
       const ward=progression(target)?resolveStack(collectMods(target,ctx,definitions,[],context.traitRegistry ?? traitRegistry()),'ward',ctx).multTotal:1;
       const transmission=progression(target)?effect.kind==='poison'?poisonFactor(target):armorTransmission(target,effect.kind==='fire'?'thermal':'kinetic',zonePenetration(effect)):1;
-      return sum+(effect.kind==='smoke'?2*effect.dur/3:effect.kind==='healing'?(friendly?Math.min(recoveryCapacity(target),effect.healingModel ? resolveHealingBudget({ source: actor, target, power: effect.power, baseAmount: zoneAmount(effect), delivery: 'zone', rules: context.rules }) : zoneAmount(effect)):0):friendly?effect.kind==='trap'?0:-8*ward*transmission:(4+effect.power)*zoneAmount(effect)/(4+effect.power*3)*ward*transmission); }
+      return sum+(effect.kind==='smoke'?2*effect.dur/3:effect.kind==='healing'?(friendly?Math.min(recoveryCapacity(target),effect.healingModel ? resolveHealingBudget({ source: actor, target, power: effect.power, baseAmount: zoneAmount(effect), delivery: 'zone', recoveryModel: effect.itemEffectModel ? undefined : context.rules?.recoveryModel ?? actor.recoveryModel, rules: context.rules }) : zoneAmount(effect)):0):friendly?effect.kind==='trap'?0:-8*ward*transmission:(4+effect.power)*zoneAmount(effect)/(4+effect.power*3)*ward*transmission); }
     if (effect.op === 'barrier') {
       if (context.rules?.overmatch && (effect.defensePower ?? ability.power)) {
         const future = structuredClone(target); grantBarrier(future, effect.amount, effect.dur, actor.id, effect.defensePower ?? ability.power);

@@ -1,3 +1,4 @@
+import { lifeRecoveryScale, type LifeRecoveryModel } from './life-recovery.js';
 import type { Combatant, RulePack, Ability, EffectOp } from './types.js';
 import { powerBudget } from './power-anchors.js';
 import { validTraitLevel } from './data/traits.js';
@@ -25,6 +26,7 @@ export function medicHealingMultiplier(source: Combatant): number {
   return phase2Traits(source) ? traitParameter('medicHealing', effectiveTraitLevel(source, 'medic'), source.traitLevelModel) : 1.25;
 }
 export interface HealingBudgetInput {
+  recoveryModel?: LifeRecoveryModel;
   source: Combatant; target: Combatant; baseAmount: number; power?: number;
   delivery?: 'skill' | 'item' | 'zone' | 'regen'; itemDoses?: number;
   sourceMedicSnapshot?: number; rules?: Pick<RulePack, 'healingModel'>;
@@ -41,7 +43,8 @@ export function resolveHealingBudget(input: HealingBudgetInput): number {
   const scale = cohort && target.scale !== 'hero' && delivery !== 'zone' && delivery !== 'regen'
     ? teams / (target.combatModel === 'cohort-v2' ? 1 : target.formation?.memberHp ?? 10) : 1;
   const model = input.rules ? input.rules.healingModel : target.healingModel;
-  return baseAmount * scale * medic * itemDoses * healingGradeMultiplier(power, target.level, model);
+  const recovery = delivery === 'skill' ? lifeRecoveryScale(target) : delivery === 'zone' ? lifeRecoveryScale(input) : 1;
+  return baseAmount * scale * medic * itemDoses * healingGradeMultiplier(power, target.level, model) * (power === undefined ? 1 : recovery);
 }
 
 /** 同动作、同规格的确定预算先合并；旧效果与旧骰子保留其原结算。 */

@@ -1,3 +1,6 @@
+import { equipmentStep, gradedNumbers } from './numeric-model.js';
+import { loadMovementScale } from './equipment-load.js';
+import { revisedLoad } from './load-model.js';
 import { displayNumber } from './display-number.js';
 import { isArmsV2, shieldUsable, shieldClass } from './arms.js';
 import { isArmsV3 } from './arms-model.js';
@@ -33,11 +36,25 @@ export function movementPoints(unit: Combatant, tags: string[] = []): number {
   const mobility = Math.max(unit.mount === true || ids.includes('fast') || ids.includes('mechanized') ? 1 : 0, ids.includes('skirmisher') && light ? phase2Value(unit, 'skirmisher', 'skirmishMobility', 1) : 0, ids.includes('agile') && light ? phase2Value(unit, 'agile', 'agileMobility', 0) : 0, plains);
   const armor = !vehicle && armorBurdenTier(unit) >= 3 ? 1 : 0;
   const night = tags.includes('night') ? nightMovePenalty(traitLevel(unit, 'night-fighter', ids)) : 0;
+  if (gradedNumbers(unit)) {
+    const movement = bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - night - fatiguePenalty(unit)
+      + Number(unit.status === 'routing') + (unit.bonuses?.speed ?? 0) * unit.level / 10 + equipmentStep(unit.armor?.recipe, 'speed')
+      + (progression(unit) ? wornEffects(unit).speed ?? 0 : 0);
+    return Math.max(0, Number((movement * loadMovementScale(unit)).toPrecision(12)));
+  }
   const normal = Math.max(1, Math.min(5, bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - armor - night - fatiguePenalty(unit) - equipmentBurden(unit) - Number(isArmsV2(unit.armsModel) && shieldUsable(unit) && shieldClass(unit) === 'tower-shield')));
   const base = Math.min(5, normal + Number(unit.status === 'routing'));
   return progression(unit) ? Math.max(1, base + (wornEffects(unit).speed ?? 0)) : base;
 }
 export function formationMarchSteps(unit: Combatant, tags: string[] = []): number {
+  if (gradedNumbers(unit)) {
+    const movement = movementPoints(unit, tags), airborne = revisedLoad(unit) && isAirborne(unit);
+    const base = airborne ? Math.max(0, Math.min(2, movement - 1)) : movement / (unit.body === 'vehicle' ? 2 : 3);
+    const rough = tags.includes('forest') && !freeMarch(traitLevel(unit, 'forest-lore')) || tags.includes('mountain') && !freeMarch(traitLevel(unit, 'mountain-born'));
+    const traits = activeTraitIds(unit), agile = traits.includes('agile') && (!revisedLoad(unit)
+      || !traitPrerequisiteReason(unit, 'agile') && (!phase2Traits(unit) || traitLevel(unit, 'agile', traits) >= 5));
+    return Math.max(0, (!airborne && rough && !agile ? base / 2 : base) + (movement > 0 ? unit.marchRemainder ?? 0 : 0));
+  }
   if (isAirborne(unit)) return Math.max(1, Math.min(2, movementPoints(unit, tags) - 1));
   const traits = activeTraitIds(unit);
   const agile = traits.includes('agile') && !traitPrerequisiteReason(unit, 'agile') && (!phase2Traits(unit) || traitLevel(unit, 'agile', traits) >= 5);
@@ -129,4 +146,9 @@ export function looseFormation(unit: Combatant): boolean {
     && (!phase2Traits(unit) || unit.looseFormationChoice !== 'closed' || unit.scale === 'hero' && isArmsV3(unit.armsModel))
     && unit.status === 'ready' && (unit.hp > 1 || unit.scale === 'hero') && !unit.tacticalPose && !unit.suppression
     && !activeConditionIds(unit).includes('stunned');
+}
+
+export function movementFraction(value: number): number {
+  const rounded = Number(value.toFixed(10));
+  return Number((rounded - Math.floor(rounded)).toFixed(10));
 }

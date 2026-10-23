@@ -86,7 +86,8 @@ export function autoLooseFormation(unit: Pick<Combatant, 'rulesVersion' | 'armor
     && (unit.armor?.tier ?? 0) <= 2 && DISPERSED_ARMS.includes(baseMechanism(unit.weapon) ?? '');
 }
 /** 装备或编制自动产生的特质在界面上的简短说明。 */
-export function autoTraitLabel(id: string): string {
+export function autoTraitLabel(id: string, unit?: Partial<Pick<Combatant,'numericModel'>>): string {
+  if (unit?.numericModel && ['heavy-armor','super-heavy'].includes(id)) return (id === 'super-heavy' ? '超重装甲' : '重甲') + '（负担按容量占比）';
   return id === 'super-heavy' ? '超重装甲（先攻−2，无额外防御）' : id === 'heavy-armor' ? '重甲（先攻−1，无额外防御）' : id === 'loose-formation' ? '散兵（步枪类编队自动疏散）' : id;
 }
 export function equipmentTraitIds(unit: Pick<Combatant, 'rulesVersion' | 'armor'> & Partial<Pick<Combatant, 'traitModel' | 'traits' | 'traitSources' | 'scale' | 'body' | 'mount' | 'weapon'>>): string[] {
@@ -183,7 +184,7 @@ export function traitStatContributions(unit: Combatant, ids: string[], registry 
     if (respectPrerequisites && id === 'mechanized' && (unit.armor?.tier ?? 0) > 0) result.def = (result.def ?? 0) + 1;
     for (const effect of registry.get(id)?.effects ?? []) {
       if (effect.kind !== 'stat' || effect.stat === 'hpMax' || effect.stat === 'morale' && unit.scale === 'hero') continue;
-      if (respectPrerequisites && effect.stat === 'spd' && ['heavy-armor', 'super-heavy'].includes(id)) { armorSpeed.push(effect.value); continue; }
+      if (respectPrerequisites && effect.stat === 'spd' && ['heavy-armor', 'super-heavy'].includes(id)) { if (!unit.numericModel) armorSpeed.push(effect.value); continue; }
       const value = phase2Traits(unit) && levelMode !== 'historical' && id === 'berserk' && effect.stat === 'atk' ? 0
         : phase2Traits(unit) && levelMode !== 'historical' && id === 'skirmisher' && effect.stat === 'spd' ? traitParameter('skirmishInitiative', levelMode === 'permanent' ? unit.traitLevels?.[id] ?? 5 : effectiveTraitLevel(unit, id), unit.traitLevelModel)
         : id === 'stubborn' && effect.stat === 'morale' && levelMode !== 'historical' && traitLevelsV16(unit)

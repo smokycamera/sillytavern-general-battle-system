@@ -53,7 +53,11 @@ describe('佩戴等级锚定修正', () => {
     const caps = compileWornEffects({ damage: 10, kineticDamage: 10, protection: 10, kineticProtection: 10 }, 10);
     expect(caps.values.damage! + caps.values.kineticDamage!).toBeCloseTo(1.25 * 1.82);
     expect(caps.values.protection! + caps.values.kineticProtection!).toBeCloseTo(.75 * 5.2);
-    for (const stat of ENHANCEMENT_STATS.gear) expect(compileWornEffects({ [stat]: -10 }, 10).values[stat]).toBe(compileWornEffects({ [stat]: -10 }, 5).values[stat]);
+    // Frozen v1 keeps its old negative ceiling; newly compiled v2 continues to grow.
+    for (const stat of ENHANCEMENT_STATS.gear) {
+      expect(compileWornEffects({ [stat]: -10 }, 10, 'worn-anchored-v1').values[stat]).toBe(compileWornEffects({ [stat]: -10 }, 5, 'worn-anchored-v1').values[stat]);
+      expect(compileWornEffects({ [stat]: -10 }, 10).values[stat]!).toBeLessThan(compileWornEffects({ [stat]: -10 }, 5).values[stat]!);
+    }
   });
 
   it('历史实物读取不变；显式更新统一新旧换算并恢复速度移动', () => {
@@ -68,6 +72,7 @@ describe('佩戴等级锚定修正', () => {
     const u = unit(); u.gear = [gearItem('g', 'g', upgradedLegacy)];
     expect(wornEffects(u).speed).toBeCloseTo(.1);
     const custom = item(1, { defense: 2 }); delete custom.recipe.wornEffectModel;
+    custom.passive!.actualEffects = compileWornEffects(custom.passive!.bonuses, 1, 'worn-progression-v1');
     custom.passive!.actualEffects!.values.defense = 999;
     expect(() => upgradeWornItemBudget(custom)).toThrow('可信配方');
   });
@@ -78,7 +83,7 @@ describe('佩戴等级锚定修正', () => {
       { stat: 'defense', name: '防御', actual: '+0.2', written: '+2', next: '+0.06' },
       { stat: 'speed', name: '速度', actual: '+0.1', written: '+1', next: '+0.1' },
     ]);
-    expect(itemValueSummary(value, itemSpecText(value.recipe))).toBe('防御+0.2、速度+0.1');
+    expect(itemValueSummary(value, itemSpecText(value.recipe))).toBe('防御+0.2、速度+0.1（先攻+0.2）');
     const u = unit(); u.gear = [gearItem('old', 'old', value), gearItem('new', 'new', item(2, { defense: 2, speed: 1 }))];
     expect(overshadowedGear(u, 'old')).toEqual(['防御+0.2', '速度+0.1']);
     for (const stat of ['protection', 'morale'] as BonusStat[]) expect(itemEffectRows(item(2, { [stat]: 10 }))[0]!.actual).toMatch(/^[+-][\d.]+$/);

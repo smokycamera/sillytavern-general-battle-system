@@ -28,6 +28,7 @@ export function meleeProfile(weapon?: Weapon) {
 
 /** 空间投影保持幂等；普通武器至少触及相邻位置，长柄获得第二格/阵位。 */
 export function meleeReach(weapon?: Weapon): number {
+  if (weapon?.recipe?.numericModel) return Math.max(0, weapon.range ?? meleeProfile(weapon)?.reach ?? 1);
   return weapon ? Math.max(1, weapon.range ?? 0, meleeProfile(weapon)?.reach ?? 1) : 0;
 }
 

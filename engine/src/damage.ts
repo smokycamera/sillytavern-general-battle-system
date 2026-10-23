@@ -1,3 +1,4 @@
+import { artilleryDirect, artillerySplash, artilleryRetention, BOUNDED_BLAST_MODEL, sprayerSplashAt } from './artillery-model.js';
 import { displayNumber } from './display-number.js';
 import { WEAPON_CLASSES } from './data/weapons.js';
 import { progression, stackingRevision } from './progression.js';
@@ -7,6 +8,7 @@ import { phase2Traits } from './trait-level-model.js';
 import { effectiveTraitLevel } from './trait-sources.js';
 import { phase2Value } from './phase2-traits.js';
 import { isWoundModel } from './balance.js';
+import { equipmentStep, unitMultiplier, unitStep } from './numeric-model.js';
 import { instanceMultiplier } from './instance-variance.js';
 import { bonusMultiplier, bonusSteps, trainingEdge, trainingDamage } from './enhancements.js';
 import { barrierAmount } from './barrier.js';
@@ -206,11 +208,11 @@ function gridAttack(attacker: Combatant): boolean { return attacker.pos !== unde
 export interface ResolvedWeapon { weapon: Weapon | undefined }
 function resolveWeapon(opts: Pick<AttackOpts, 'attacker' | 'defender' | 'weaponOverride'> & Partial<Pick<AttackOpts,'rules'|'autoHit'>>): ResolvedWeapon {
   const original=opts.weaponOverride ?? opts.attacker.weapon;
-  const weapon = opts.rules?.combatModel===MEMBER_HEALTH_MODEL?combatWeapon(original,opts.attacker,opts.defender,opts.rules?.weaponOverflow,opts.rules?.damageModel,opts.rules?.overmatch,opts.rules?.overmatchCurve):original;
+  const weapon = opts.rules?.combatModel===MEMBER_HEALTH_MODEL?combatWeapon(original,{...opts.attacker,artilleryModel:opts.rules.artilleryModel},opts.defender,opts.rules?.weaponOverflow,opts.rules?.damageModel,opts.rules?.overmatch,opts.rules?.overmatchCurve):original;
   if (!isArmsV2(opts.rules?.armsModel) || !weapon || opts.defender.scale === 'hero') return { weapon };
   // R12 霰弹散射；R16 会战喷射同“爆炸覆盖目标编队”。
   if (original?.recipe?.mechanism === 'shotgun') return { weapon: { ...weapon, splashTargets: 2, splashFactor: .5 } };
-  if (original?.recipe?.mechanism === 'sprayer' && !gridAttack(opts.attacker) && !opts.autoHit) return { weapon: { ...weapon, splashTargets: 1e9 } };
+  if (original?.recipe?.mechanism === 'sprayer' && !gridAttack(opts.attacker) && !opts.autoHit) return { weapon: { ...weapon, splashTargets: opts.rules?.artilleryModel === BOUNDED_BLAST_MODEL ? sprayerSplashAt(original.recipe.power) : 1e9 } };
   return { weapon };
 }
 export function penetrationContext(opts: Pick<AttackOpts, 'attacker' | 'defender' | 'weaponOverride' | 'abilityDamage' | 'ranged'> & Partial<Pick<AttackOpts,'rules'|'conditionDefs'|'charge'|'chargeStraight'|'chargeDistance'>>, resolved: ResolvedWeapon = resolveWeapon(opts)) {
@@ -310,8 +312,13 @@ function memberPlan(opts:Omit<AttackOpts,'rng'>,direct:number,targets:number,res
   const extra = stackingRevision(opts.defender) ? Math.floor(rawExtra * (ward?.protection?.exposure ?? 1)) : rawExtra&&traitsV13(opts.defender)&&!opts.defenderEngaged&&looseFormation(opts.defender)?Math.floor(rawExtra * (1 - phase2Value(opts.defender, 'loose-formation', 'formationReduction', .5))):rawExtra;
   const members=hasMemberHealth(opts.defender),directTargets=members?Math.min(opts.defender.hp,targets):targets>0?1:0,splashTargets=Math.min(opts.defender.hp,targets*extra),max=members?opts.defender.formation!.memberHp:opts.defender.base.hpMax;
   const overflow=members&&attackOverflow(opts,penetration,resolved);
+  const artillery = opts.rules.artilleryModel && isCannonWeapon(weapon) && (!opts.abilityDamage || opts.abilityDamage.weaponBased);
+  // Grid spray keeps its existing cone; tank ruptures keep their explicit auto-hit budget.
+  const sprayDecay = opts.rules.artilleryModel === BOUNDED_BLAST_MODEL && weapon?.recipe?.mechanism === 'sprayer' && !opts.autoHit && (!opts.abilityDamage || opts.abilityDamage.weaponBased);
+  const reference = max * directTargets, rawDirect = direct;
+  if (artillery) direct = Math.round(artilleryDirect(rawDirect,reference,artilleryRetention(opts.defender,weapon?.recipe?.power ?? weapon?.level ?? 1)));
   const cappedDirect=overflow&&directTargets>0?direct:Math.min(direct,max*directTargets);
-  const incomingSplash=Math.round(direct*extra*(weapon?.splashFactor??0)),splash=Math.min(max*splashTargets,incomingSplash);
+  const incomingSplash=Math.round(artillery || sprayDecay ? artillerySplash(rawDirect,reference,extra,weapon?.splashFactor??0) : direct*extra*(weapon?.splashFactor??0)),splash=Math.min(max*splashTargets,incomingSplash);
   const context=opts.rules.overmatch?penetration??penetrationContext(opts,resolved):undefined;
   // R15 重击：武器攻击与武器技能按结算武器的基础单段命中均值判定，预览与结算同一结果。V21 先按盾规格跨代换算。
   const energy=energyTier(opts,context);
@@ -442,7 +449,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   }
   if(critInfo.forced)critical=hit;
   const samples=cohortSamples(opts,resolved),weight=outcomeScale({...opts,packetShare:1/samples},resolved).multiplier,count=(opts.abilityDamage?1:ctx.weapon?.attacks??1)*samples;
-  const rawMultiplier=memberAreaBudget(opts)*modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level,opts.rules)*instanceMultiplier(combatBonuses(opts.attacker),'damage',opts.attacker.genAudit?.variance,opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic')*wornDamageMultiplier(opts.attacker,opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
+  const rawMultiplier=memberAreaBudget(opts)*modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level,opts.rules)*unitMultiplier(opts.attacker,'damage',opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic',combatBonuses(opts.attacker))*wornDamageMultiplier(opts.attacker,opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
   const maxBase=diceDistribution(source?.baseDice,opts.rules.critRule==='doubleDice'?2:1),maxAp=diceDistribution(source?.apDice,opts.rules.critRule==='doubleDice'?2:1);
   const upper=maxBase&&maxAp ? Math.ceil((Math.max(...maxBase.keys())+Math.max(...maxAp.keys()))*rawMultiplier*Math.ceil(weight))*count : Infinity;
   // 连续攻击共用剩余屏障。固定种子的小样本估计只操作副本，不消耗实战随机数。
@@ -479,7 +486,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   const penetration=opts.rules.overmatch?protection??penetrationContext(opts,resolved):undefined,overflow=attackOverflow(opts,penetration,resolved);
   const ward = resolveStack(ctx.defMods, 'ward', ctx.ctxDef, {sameNameKeepsHighest:opts.rules.sameNameKeepsHighest,maxFlat:opts.rules.maxFlat});
   const moments=(times:number)=>{
-    const key=JSON.stringify([source?.baseDice,source?.apDice,rawMultiplier,times,weight,opts.defender.hp,opts.defender.barrier,opts.defender.energyShield,opts.defender.shield?.recipe,opts.defender.armsModel,opts.defender.formation,ctx.weapon?.splashTargets,ctx.weapon?.splashFactor,ward.protection?.exposure,opts.abilityDamage?.weaponBased,!!opts.abilityDamage,overflow,opts.rules.overmatch?penetration:undefined]);
+    const key=JSON.stringify([opts.rules.artilleryModel,opts.defender.level,opts.defender.armor,ctx.weapon?.recipe?.power??ctx.weapon?.level,source?.baseDice,source?.apDice,rawMultiplier,times,weight,opts.defender.hp,opts.defender.barrier,opts.defender.energyShield,opts.defender.shield?.recipe,opts.defender.armsModel,opts.defender.formation,ctx.weapon?.splashTargets,ctx.weapon?.splashFactor,ward.protection?.exposure,opts.abilityDamage?.weaponBased,!!opts.abilityDamage,overflow,opts.rules.overmatch?penetration:undefined]);
     const cached=memberPreviewCache.get(key);if(cached)return cached;
     const base=diceDistribution(source?.baseDice,times),ap=diceDistribution(source?.apDice,times);
     const result={mean:0,second:0,positive:0,casualties:0,max:0};
@@ -631,7 +638,7 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
     && !defender.conditions.some(c => c.dur > 0 && (opts.conditionDefs.get(c.id)?.preventAttack || opts.conditionDefs.get(c.id)?.skipTurn))) {
     // 贴身沿用近战换武器规则；备用武器不与当前武器重复叠加。
     const defensiveWeapon = (!ranged ? meleeWeapon(defender) : undefined) ?? defender.weapon ?? defender.sidearm;
-    const weaponDefense = bonusSteps(defensiveWeapon?.recipe?.bonuses, 'defense');
+    const weaponDefense = equipmentStep(defensiveWeapon?.recipe, 'defense');
     if (weaponDefense) defenderMods.push({ source: 'intrinsic', name: '武器防御修正', kind: 'def', type: 'flat', value: weaponDefense });
     if (!ranged && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) {
       const parry = meleeProfile(meleeWeapon(defender))?.parry;
@@ -647,8 +654,8 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
   const defStack = resolveStack(defMods, 'def', ctxDef, { sameNameKeepsHighest: rules.sameNameKeepsHighest, maxFlat: rules.maxFlat });
 
   const modern = rules.combatModel === MEMBER_HEALTH_MODEL;
-  const precision = modern ? (armsAttack && ranged && actual === 'crossbow' ? 0 : trainingEdge(attacker.level)) + bonusSteps(combatBonuses(attacker),'accuracy') + (wornEffects(attacker).accuracy ?? 0) + (opts.abilityDamage?.accuracy??0) + (!opts.abilityDamage || opts.abilityDamage.weaponBased ? bonusSteps(weapon?.recipe?.bonuses,'accuracy') : 0) : 0;
-  const evasion = modern ? trainingEdge(defender.level) + bonusSteps(combatBonuses(defender),'defense') + (wornEffects(defender).defense ?? 0) + bonusSteps(defender.armor?.recipe?.bonuses,'defense') + bonusSteps(usableShield ? defender.shield?.recipe?.bonuses : undefined,'defense') : 0;
+  const precision = modern ? (armsAttack && ranged && actual === 'crossbow' ? 0 : trainingEdge(attacker.level)) + unitStep({...attacker,bonuses:combatBonuses(attacker)},'accuracy') + (wornEffects(attacker).accuracy ?? 0) + (opts.abilityDamage?.accuracy??0) + (!opts.abilityDamage || opts.abilityDamage.weaponBased ? equipmentStep(weapon?.recipe,'accuracy') : 0) : 0;
+  const evasion = modern ? trainingEdge(defender.level) + unitStep({...defender,bonuses:combatBonuses(defender)},'defense') + (wornEffects(defender).defense ?? 0) + equipmentStep(defender.armor?.recipe,'defense') + equipmentStep(usableShield ? defender.shield?.recipe : undefined,'defense') : 0;
   const netAtk = attacker.base.atk + atkStack.flatTotal + precision;
   const targetDef = defender.base.def + defStack.flatTotal + evasion;
 
@@ -870,7 +877,7 @@ function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean): AttackResol
 
   // 展开规模与伤害系数另按分段份额与现员复用（范围技能暴露人数随现员变化）。
   const modern=rules.combatModel===MEMBER_HEALTH_MODEL, sizeKey=opts.previewMemo&&modern?opts.packetShare+'|'+defender.hp:undefined;
-  const size=(sizeKey===undefined?undefined:basis.sizes?.get(sizeKey))??{scale:outcomeScale(opts, resolved),sourceScale:modern?memberAreaBudget(opts)*(opts.abilityDamage?opts.abilityDamage.damageScale??1:weapon?.damageScale??1)/(penetration?.armorScale??1)*trainingDamage(attacker.level,rules)*instanceMultiplier(combatBonuses(attacker),'damage',attacker.genAudit?.variance,penetration?.channel??'kinetic')*wornDamageMultiplier(attacker,penetration?.channel??'kinetic')*(penetration?.overmatchMultiplier??1):1};
+  const size=(sizeKey===undefined?undefined:basis.sizes?.get(sizeKey))??{scale:outcomeScale(opts, resolved),sourceScale:modern?memberAreaBudget(opts)*(opts.abilityDamage?opts.abilityDamage.damageScale??1:weapon?.damageScale??1)/(penetration?.armorScale??1)*trainingDamage(attacker.level,rules)*unitMultiplier(attacker,'damage',penetration?.channel??'kinetic',combatBonuses(attacker))*wornDamageMultiplier(attacker,penetration?.channel??'kinetic')*(penetration?.overmatchMultiplier??1):1};
   if (sizeKey!==undefined) (basis.sizes??=new Map()).set(sizeKey,size);
   const { scale, sourceScale } = size;
   const targets=modern?roundDamage(scale.multiplier,rng):0;
@@ -878,7 +885,7 @@ function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean): AttackResol
   if (v2) final = roundDamage(v2DamageAmount(baseRaw, apRolledTotal, penetration!.factor, dmgMult * wardMult * (modern?targets*sourceScale:scale.multiplier)), rng);
   if (final < 1) final = v2 ? 0 : 1;
   const wear = isArmsV2(rules.armsModel) && !penetration?.area && penetration?.canBlock !== false && (!opts.abilityDamage || opts.abilityDamage.weaponBased)
-    ? shieldCoverage({...defender,armsModel:rules.armsModel},weapon) * (baseRaw + apRolledTotal) * (opts.abilityDamage?.damageScale ?? weapon?.damageScale ?? 1) * trainingDamage(attacker.level,rules) * instanceMultiplier(combatBonuses(attacker),'damage',attacker.genAudit?.variance,weapon?.channel) * dmgMult * targets * (weapon?.recipe?.mechanism === 'axe' ? 2 : 1) : 0;
+    ? shieldCoverage({...defender,armsModel:rules.armsModel},weapon) * (baseRaw + apRolledTotal) * (opts.abilityDamage?.damageScale ?? weapon?.damageScale ?? 1) * trainingDamage(attacker.level,rules) * unitMultiplier(attacker,'damage',weapon?.channel,combatBonuses(attacker)) * dmgMult * targets * (weapon?.recipe?.mechanism === 'axe' ? 2 : 1) : 0;
   if (res && wear) res.shieldWear = wear;
   if (!res) {
     if (modern) applyDamagePlan(defender, memberPlan(opts, final, targets, resolved, penetration, basis.ward));

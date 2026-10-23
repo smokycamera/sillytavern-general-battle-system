@@ -78,7 +78,7 @@ import { getTrait, hasFlag, fieldModsFor, collectMods, resolveStack } from '../b
 import { situationalTraitMods } from '../situational-traits.js';
 import { BattleFeedback, type FeedbackUnit, type RoundFeedback } from '../battle-feedback.js';
 import { activeTraitIds, activeConditionIds, traitSourceActive } from '../trait-sources.js';
-import { bracePose, movementPoints, settleFatigue, addTacticalEffort, validateTacticalEffort } from '../tactics.js';
+import { movementFraction, bracePose, movementPoints, settleFatigue, addTacticalEffort, validateTacticalEffort } from '../tactics.js';
 import { rangedTargetDistance, isAirborne, sameLayer, flightCapabilityReason, flightMaintenanceReason, fallDamage, validateFlightState } from '../aerial.js';
 import { environmentTags } from '../environment.js';
 import { traitRegistry as defaultTraitRegistry } from '../data/traits.js';
@@ -453,7 +453,7 @@ export class SmallBattle {
     });
   }
 
-  movementBudget(actorId: string): number { return movementPoints(this.byId(actorId), this.fieldTags); }
+  movementBudget(actorId: string): number { const unit = this.byId(actorId), movement = movementPoints(unit, this.fieldTags); return movement + (unit.numericModel && movement > 0 ? unit.movementRemainder ?? 0 : 0); }
   flightRisks(actorId: string, airborne: boolean): string[] {
     if (!airborne) return [];
     const actor=this.byId(actorId);
@@ -1825,7 +1825,7 @@ export class SmallBattle {
         for (let i = 0; i < effect.count; i++) {
           const id = `${this.seed}:summon:${actor.id}:${ability.definitionId ?? ability.id}:${this.round}:${summons.length}`;
           let unit: Combatant | null | undefined;
-          try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'small', ability.bonuses, this.rules.damageModel) ?? this.summonUnit?.(effect.templateId, actor.side, id); }
+          try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'small', ability.bonuses, this.rules.damageModel, this.rules.numericModel) ?? this.summonUnit?.(effect.templateId, actor.side, id); }
           catch { return { ok: false, reason: '召唤模板生成失败，未扣费', resolutions: [], log: '' }; }
           if (!unit) return { ok: false, reason: '召唤模板不可用，未扣费', resolutions: [], log: '' };
           prepareSkillModel(unit, this.rules); prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules); prepareTraitModel(unit,this.rules); prepareItemModel(unit,this.rules); prepareTraitLevelModel(unit,this.rules); prepareRevivalBattle(unit,true); beginLifestealRound(unit,this.round,true);
@@ -3273,6 +3273,8 @@ export class SmallBattle {
 
   /** 回合结束效果：状态时长递减/过期、冷却递减、再生 */
   private settleUnit(u: Combatant): void {
+    const movement = movementPoints(u, this.fieldTags);
+    const remainder = u.numericModel ? movement > 0 ? movementFraction(movement + (u.movementRemainder ?? 0)) : 0 : undefined;
     const regeneration = this.rules.resolutionVersion === 'v2' ? regenerationAmount(u, this.traitRegistry, this.conditionDefMap()) : 0;
     if (this.rules.resolutionVersion === 'v2' && settleConcealment(this.observationContext(), u, !this.actedThisTurn.has(u.id) && !this.movedThisTurn.has(u.id))) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 在掩护中休整，重新潜伏` });
     const modernResources = isEnduranceModel(u.resourceModel);
@@ -3286,6 +3288,7 @@ export class SmallBattle {
       delete u.tacticalEffort;
     }
     recoverSp(u, fullRest, incapacitated);
+    if (remainder !== undefined) u.movementRemainder = remainder;
     // V13 工事：离开阵地（或开战时没能构筑）后原地完整休整一轮，在所在位置构筑。
     const firstWorks = u.entrenchedAt === undefined;
     if (fullRest && !entrenched(u) && entrench(u, 'small')) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 原地休整，${firstWorks ? '' : '重新'}构筑工事` });

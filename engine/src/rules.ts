@@ -125,7 +125,23 @@ export const V24_OVERFLOW_TW: RulePack = { ...V23_OVERFLOW_TW, id: 'v24-overflow
 /** V25：新战斗启用复活，旧快照保留原伤亡结算。 */
 export const V25_OVERFLOW_D20: RulePack = { ...V24_OVERFLOW_D20, id: 'v25-overflow-d20', name: 'V25 复活特质', revivalModel: 'revival-v1' };
 export const V25_OVERFLOW_TW: RulePack = { ...V24_OVERFLOW_TW, id: 'v25-overflow-tw', name: 'V25 复活特质会战', revivalModel: 'revival-v1' };
+/** V26：连续修正、容量移动与更高基础生命；V25及以前保留原结算。 */
+export const V26_OVERFLOW_D20: RulePack = { ...V25_OVERFLOW_D20, id: 'v26-overflow-d20', name: 'V26 修正与容量', numericModel: 'graded-v1' };
+export const V26_OVERFLOW_TW: RulePack = { ...V25_OVERFLOW_TW, id: 'v26-overflow-tw', name: 'V26 修正与容量会战', numericModel: 'graded-v1' };
+/** V27：统一炮弹与余伤衰减；V26及以前保留弹种和线性溢出。 */
+export const V27_OVERFLOW_D20: RulePack = { ...V26_OVERFLOW_D20, id: 'v27-overflow-d20', name: 'V27 火炮衰减', artilleryModel: 'blast-decay-v1', recoveryModel: 'life-scaled-v1' };
+export const V27_OVERFLOW_TW: RulePack = { ...V26_OVERFLOW_TW, id: 'v27-overflow-tw', name: 'V27 火炮衰减会战', artilleryModel: 'blast-decay-v1', recoveryModel: 'life-scaled-v1' };
+/** V28: bounded rocket/spray coverage; V27 snapshots keep their original areas. */
+export const V28_OVERFLOW_D20: RulePack = { ...V27_OVERFLOW_D20, id: 'v28-overflow-d20', name: 'V28 火箭与喷射范围', artilleryModel: 'blast-decay-v2' };
+export const V28_OVERFLOW_TW: RulePack = { ...V27_OVERFLOW_TW, id: 'v28-overflow-tw', name: 'V28 火箭与喷射范围会战', artilleryModel: 'blast-decay-v2' };
+/** V29: finite carrying growth, graded platforms and frozen physical weight affixes. */
+export const V29_OVERFLOW_D20: RulePack = { ...V28_OVERFLOW_D20, id: 'v29-overflow-d20', name: 'V29 承载与重量修正', loadModel: 'capacity-v2' };
+export const V29_OVERFLOW_TW: RulePack = { ...V28_OVERFLOW_TW, id: 'v29-overflow-tw', name: 'V29 承载与重量修正会战', loadModel: 'capacity-v2' };
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V29_OVERFLOW_D20.id]: V29_OVERFLOW_D20, [V29_OVERFLOW_TW.id]: V29_OVERFLOW_TW,
+  [V28_OVERFLOW_D20.id]: V28_OVERFLOW_D20, [V28_OVERFLOW_TW.id]: V28_OVERFLOW_TW,
+  [V27_OVERFLOW_D20.id]: V27_OVERFLOW_D20, [V27_OVERFLOW_TW.id]: V27_OVERFLOW_TW,
+  [V26_OVERFLOW_D20.id]: V26_OVERFLOW_D20, [V26_OVERFLOW_TW.id]: V26_OVERFLOW_TW,
   [V25_OVERFLOW_D20.id]: V25_OVERFLOW_D20, [V25_OVERFLOW_TW.id]: V25_OVERFLOW_TW,
   [V24_OVERFLOW_D20.id]: V24_OVERFLOW_D20, [V24_OVERFLOW_TW.id]: V24_OVERFLOW_TW,
   [V23_OVERFLOW_D20.id]: V23_OVERFLOW_D20, [V23_OVERFLOW_TW.id]: V23_OVERFLOW_TW,

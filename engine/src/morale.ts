@@ -1,3 +1,4 @@
+import { gradedNumbers } from './numeric-model.js';
 import { displayNumber } from './display-number.js';
 import { combatHostile, combatSide, controlActionReason, controlCondition } from './battle-control.js';
 import { phase2Traits } from './trait-level-model.js';
@@ -155,9 +156,10 @@ export function moraleProfile(context: ObservationContext, unit: Combatant, regi
   const auraMods: Modifier[] = sources.map((s) => ({ source: 'command', sourceId: `aura:${s.id}:${s.trait}`, stackGroup: s.value < 0 ? 'fear:morale' : 'command:morale', name: s.trait, kind: 'morale', type: 'flat', value: s.value }));
   // 个体不新增一套永久士气表，训练基准与个人韧性只用于本场心理对抗。
   const personal = unit.scale === 'hero' ? resilience : 0;
-  const flat = resolveStack(collectMods(unit, { fieldTags: context.fieldTags }, conditions, auraMods, registry), 'morale', {}, { maxFlat: 100 }).flatTotal;
+  const flat = resolveStack(collectMods(unit, { fieldTags: context.fieldTags }, conditions, auraMods, registry), 'morale', {}, { maxFlat: gradedNumbers(unit) ? Number.MAX_SAFE_INTEGER : 100 }).flatTotal;
   const injury = unit.scale === 'hero' ? Math.round((1 - unit.hp / unit.base.hpMax) * 40) : 0;
-  const effective = unit.moraleLocked ? Math.min(100, fullMorale(unit)) : Math.max(0, Math.min(100, (unit.morale ?? unit.moraleState?.personal ?? curveAt(unit.level).morale) + personal + flat - injury));
+  const maximum = gradedNumbers(unit) ? Number.MAX_SAFE_INTEGER : 100;
+  const effective = unit.moraleLocked ? Math.min(maximum, fullMorale(unit)) : Math.max(0, Math.min(maximum, (unit.morale ?? unit.moraleState?.personal ?? curveAt(unit.level).morale) + personal + flat - injury));
   const attackPenalty = immune ? 0 : Math.min(2, Math.ceil(Math.max(0, fear - command - resilience) / 8));
   return { effective, fear, command, resilience, immune, attackPenalty, sources, auraMods };
 }
@@ -182,10 +184,11 @@ export function moraleRisk(context: ObservationContext, unit: Combatant, breakAt
   const terror = profile.sources.filter((s) => (s.traitId === 'terror' || s.terrorDC !== undefined) && !state?.terrorSeen.includes(s.id));
   const terrorDC = Math.max(12, ...terror.map(s => s.terrorDC ?? 12));
   const threshold = 12 + Math.max(0, (state?.routs ?? 1) - 1) * 3;
-  const bonus = Math.floor(profile.effective / 10) + (profile.command > 0 ? 2 : 0);
+  const moraleBonus = gradedNumbers(unit) ? profile.effective / 10 : Math.floor(profile.effective / 10);
+  const bonus = moraleBonus + (profile.command > 0 ? 2 : 0);
   const success = Math.max(0, Math.min(1, (21 + bonus - threshold) / 20));
   return { ...profile, terror, terrorDC,
-    breakChance: profile.immune ? 0 : profile.effective <= breakAt ? 1 : terror.length && profile.effective <= 50 ? 1 - Math.max(0, Math.min(1, (21 + Math.floor(profile.effective / 10) - terrorDC) / 20)) : 0,
+    breakChance: profile.immune ? 0 : profile.effective <= breakAt ? 1 : terror.length && profile.effective <= 50 ? 1 - Math.max(0, Math.min(1, (21 + moraleBonus - terrorDC) / 20)) : 0,
     rallyChance: unit.moraleState?.forcedRetreat ? 0 : profile.immune ? 1 : profile.effective <= breakAt ? 0 : success, rallyDC: threshold, rallyBonus: bonus };
 }
 export interface MoraleDecision {
@@ -209,7 +212,7 @@ export function decideMorale(context: ObservationContext, unit: Combatant, round
     if (!state.routs) { state.routs = 1; state.routedRound = Math.max(0, round - 1); state.cause = 'morale'; }
     if (state.routedRound === round || state.lastRallyRound === round) return { kind: 'none' };
     state.lastRallyRound = round; state.attempts = Math.min(MAX_RALLY_ATTEMPTS, state.attempts + 1);
-    const success = risk.immune || risk.rallyChance > 0 && rng.d(20) + risk.rallyBonus >= risk.rallyDC;
+    const success = risk.immune || risk.rallyChance > 0 && (gradedNumbers(unit) ? rng.next() < risk.rallyChance : rng.d(20) + risk.rallyBonus >= risk.rallyDC);
     if (success) { state.ralliedRound = round; return { kind: 'rallied', state, effective: risk.effective, text: `${unit.name} 重整成功，准备重返战线` }; }
     return { kind: state.attempts >= MAX_RALLY_ATTEMPTS ? 'fled' : 'failed', state, text: `${unit.name} 重整失败${state.attempts >= MAX_RALLY_ATTEMPTS ? '，撤离战场' : '，仍在溃退'}` };
   }
@@ -217,7 +220,7 @@ export function decideMorale(context: ObservationContext, unit: Combatant, round
   let cause: 'terror' | 'morale' | undefined = risk.effective <= breakAt ? 'morale' : undefined;
   if (!cause && risk.terror.length && risk.effective <= 50) {
     state.terrorSeen = [...new Set([...state.terrorSeen, ...risk.terror.map((s) => s.id)])];
-    if (rng.d(20) + Math.floor(risk.effective / 10) >= risk.terrorDC) return { kind: 'resisted', state, text: `${unit.name} 顶住恐怖，同一来源本战不会再次触发惊退` };
+    if (gradedNumbers(unit) ? rng.next() < Math.max(0, Math.min(1, (21 + risk.effective / 10 - risk.terrorDC) / 20)) : rng.d(20) + Math.floor(risk.effective / 10) >= risk.terrorDC) return { kind: 'resisted', state, text: `${unit.name} 顶住恐怖，同一来源本战不会再次触发惊退` };
     cause = 'terror';
   }
   if (!cause) return { kind: 'none' };

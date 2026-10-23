@@ -140,7 +140,7 @@ export class McpSandbox {
         || !Number.isInteger(p.level ?? 3) || (p.level ?? 3) < 1 || (p.level ?? 3) > 10 || !WEAPON_CLASSES[p.weaponClass ?? 'sword']) throw Error(`participants[${index}] 的 side、scale、level 或 weaponClass 无效`);
       if (p.personnel !== undefined && (!Number.isInteger(p.personnel) || p.personnel < 1 || p.personnel > 10000 || (p.scale ?? 'hero') === 'hero')) throw Error(`participants[${index}].personnel 只适用于部队，范围1—10000`);
       const unit = generateUnit({ name: String(p.name ?? '试战单位' + (index + 1)).slice(0,80), side: p.side as 'ally' | 'enemy', scale: (p.scale ?? 'hero') as 'hero' | 'mook' | 'company',
-        level: p.level ?? 3, rulesVersion: 'v2', damageModel: 'wounds-v2', weaponClass: p.weaponClass ?? 'sword', ...(p.personnel !== undefined ? { hpMax: p.personnel } : {}), traits: [] }, { seed: seed + ':' + index, registry: this.registry }).unit;
+        level: p.level ?? 3, rulesVersion: 'v2', damageModel: 'wounds-v2', numericModel: 'graded-v1', loadModel: 'capacity-v2', weaponClass: p.weaponClass ?? 'sword', ...(p.personnel !== undefined ? { hpMax: p.personnel } : {}), traits: [] }, { seed: seed + ':' + index, registry: this.registry }).unit;
       unit.id = 'sandbox-unit-' + (index + 1); return unit;
     });
     const setup = { mode: roster.length > 32 ? 'mass' : 'small', field: 'plains', lighting: 'day', mapLayout: 'standard', objectiveMode: 'annihilation', siegeAttacker: 'ally', ...(args.setup as object ?? {}) } as EncounterSetup;

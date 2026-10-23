@@ -77,7 +77,7 @@ import { MASS_TW, counterMod, rulesById } from '../rules.js';
 import { traitRuntimeMods, getTrait, fieldModsFor, collectMods, resolveStack } from '../bonus.js';
 import { situationalTraitMods } from '../situational-traits.js';
 import { activeTraitIds, activeConditionIds, traitSourceActive } from '../trait-sources.js';
-import { bracePose, formationMarchSteps, settleFatigue, fatigueAfter } from '../tactics.js';
+import { movementPoints, movementFraction, bracePose, formationMarchSteps, settleFatigue, fatigueAfter } from '../tactics.js';
 import { environmentTags, macroTerrain } from '../environment.js';
 import { traitRegistry as defaultTraitRegistry } from '../data/traits.js';
 import { pointBlankModifier, abilityRangeDistance, abilityTargetReason, abilityUsabilityReason } from '../actions.js';
@@ -310,11 +310,11 @@ export class MassBattle {
     for (const unit of this.combatants) { const placed = units.find((u) => u.id === unit.id)!; unit.tags = placed.tags; if (placed.airborne !== undefined) unit.airborne = placed.airborne; if (placed.formationPosition !== undefined) unit.formationPosition = placed.formationPosition; if (placed.vanguardOrigin) unit.vanguardOrigin = placed.vanguardOrigin; }
     for (const move of vanguard) this.recordEvent({ round: 1, kind: 'move', participants: [move.id], text: this.byId(move.id).name + (move.from.id === move.to.id ? ' 先锋部署：保持阵位' : ` 先锋部署：前出至${move.to.wing}${{ front: '前线', rear: '支援', reserve: '预备' }[move.to.rank]}`) });
   }
-  private maneuverDestination(order: Order, units = this.combatants) {
+  private maneuverDestination(order: Order, units = this.combatants, stepsOverride?: number) {
     const actor = units.find((u) => u.id === order.unitId)!;
     let node = formationNode(actor);
     if (!['rank-forward', 'rank-back', 'shift-left', 'shift-right'].includes(order.type)) return node;
-    const steps = ['rank-forward', 'rank-back'].includes(order.type) ? formationMarchSteps(actor, this.fieldTags) : 1;
+    const steps = stepsOverride ?? (actor.numericModel || ['rank-forward', 'rank-back'].includes(order.type) ? Math.floor(formationMarchSteps(actor, this.fieldTags) + 1e-9) : 1);
     for (let step = 0; step < steps; step++) {
       const rankIndex = RANKS.indexOf(node.rank) + (order.type === 'rank-forward' ? -1 : order.type === 'rank-back' ? 1 : 0);
       const x = node.x + (order.type === 'shift-left' ? -1 : order.type === 'shift-right' ? 1 : 0);
@@ -411,7 +411,9 @@ export class MassBattle {
       if (decision.kind === 'routed' || decision.kind === 'failed') {
         unit.status = 'routing'; delete unit.tacticalPose;
         const immobilized = activeConditionIds(unit).some(id => this.conditions.get(id)?.skipTurn || this.conditions.get(id)?.preventMove);
-        if (!this.isAttached(id) && !immobilized) for (let step = 0; step < formationMarchSteps(unit, this.fieldTags); step++) {
+        const routSteps = formationMarchSteps(unit, this.fieldTags);
+        if (unit.numericModel && !this.isAttached(id) && !immobilized) unit.marchRemainder = movementFraction(routSteps);
+        if (!this.isAttached(id) && !immobilized) for (let step = 0; step < Math.floor(routSteps + 1e-9); step++) {
           const from = formationNode(unit), to = FORMATION_NODES.find((n) => n.x === from.x && n.y === from.y + (unit.side === 'ally' ? 1 : -1));
           if (to && (to.side === unit.side || unit.formationPosition !== undefined) && formationCanOccupy(this.combatants, unit, to, this.attached, this.formationSlots ?? 3)) {
             unit.formationPosition ??= from.id; setFormation(unit, to); this.syncPassenger(unit);
@@ -489,7 +491,11 @@ export class MassBattle {
       const actor = this.byId(order.unitId), node = formationNode(actor);
       if (order.type === 'retreat') { actor.status = 'fled'; this.orderReceipt(order, '机动', 'executed'); continue; }
       if (order.type === 'takeoff' || order.type === 'land') plans.set(actor.id, { node, airborne: order.type === 'takeoff' });
-      else { const destination = this.maneuverDestination(order, units); if (destination.id !== node.id) plans.set(actor.id, { node: destination, airborne: isAirborne(actor) }); }
+      else { const destination = this.maneuverDestination(order, units);
+        if (actor.numericModel) actor.marchRemainder = movementFraction(formationMarchSteps(actor, this.fieldTags));
+        if (destination.id !== node.id) plans.set(actor.id, { node: destination, airborne: isAirborne(actor) });
+        else if (actor.numericModel) { this.orderReceipt(order, '机动', 'executed'); this.recordEvent({round:this.round,kind:'move',participants:[actor.id],text:actor.name+' 缓慢机动，余量保留至下轮'}); }
+      }
     }
     this.pruneArrivals(plans);
     for (const [id, plan] of plans) {
@@ -616,7 +622,10 @@ export class MassBattle {
     if (order.type === 'rank-forward' && u.formationPosition === undefined && node.rank === 'front') return '已在前线';
     if (order.type === 'rank-back' && u.formationPosition === undefined && node.rank === 'reserve') return '已在预备队';
     if (['shift-left', 'shift-right', 'rank-forward', 'rank-back'].includes(order.type) && activeConditionIds(u).some((id) => this.conditions.get(id)?.preventMove)) return '定身状态不能机动';
-    if (['shift-left', 'shift-right', 'rank-forward', 'rank-back'].includes(order.type)) return this.maneuverDestination(order, units).id === node.id ? '机动路线受阻或已到边界' : undefined;
+    if (['shift-left', 'shift-right', 'rank-forward', 'rank-back'].includes(order.type)) {
+      if (u.numericModel && formationMarchSteps(u, this.fieldTags) < 1) return movementPoints(u, this.fieldTags) > 0 && this.maneuverDestination(order, units, 1).id !== node.id ? undefined : '当前没有可用移动额度或路线受阻';
+      return this.maneuverDestination(order, units).id === node.id ? '机动路线受阻或已到边界' : undefined;
+    }
     const target = units.find((c) => c.id === order.targetId);
     if (!target && order.targetId) return '尚未观测到目标';
     if (!target || !attackHostile(u, target, this.combatants) || !['ready', 'routing', 'dying'].includes(target.status) || this.isAttached(target.id)) return '需要合法敌方独立编队';
@@ -1491,7 +1500,7 @@ export class MassBattle {
           for (let n = 0; n < effect.count; n++) {
             const id = `mass:${this.seed}:summon:${actor.id}:${this.round}:${born.length}`;
             let unit: Combatant | null | undefined;
-            try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'mass', ability.bonuses, this.rules.damageModel) ?? this.summonUnit?.(effect.templateId, actor.side, id); } catch { invalid = true; break; }
+            try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'mass', ability.bonuses, this.rules.damageModel, this.rules.numericModel) ?? this.summonUnit?.(effect.templateId, actor.side, id); } catch { invalid = true; break; }
             const node = FORMATION_NODES.find((node) => node.side === actor.side && node.wing === formationNode(actor).wing && node.rank === 'reserve')!;
             if (!unit || [...this.combatants, ...stagedBirths, ...born].filter((u) => !this.isAttached(u.id) && u.status === 'ready' && formationNode(u).id === node.id).length >= (this.formationSlots ?? 3)) { invalid = true; break; }
             prepareSkillModel(unit, this.rules); prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules); prepareTraitModel(unit,this.rules); prepareItemModel(unit,this.rules); prepareTraitLevelModel(unit,this.rules); prepareRevivalBattle(unit,true); beginLifestealRound(unit,this.round,true);
