@@ -7,7 +7,7 @@ import { environmentTags } from '../environment.js';
 import type { Combatant } from '../types.js';
 import { generatedField, type FieldGenerationOptions } from './field-generator.js';
 import { normalizeBattlefieldPlan, type BattlefieldPlan, type LandmarkPlan, CITY_SHAPES, BattlefieldPlanError } from './battlefield-plan.js';
-import { createStructure, groundBlocked, type CityShape, type FieldLandmark } from './layers.js';
+import { createStructure, groundBlocked, waterOnly, type CityShape, type FieldLandmark } from './layers.js';
 import { validateField, neighbors, findGridPath, gridDistance, prepareGridDeployment, footprint, type BattlefieldSpec, type Terrain } from './spatial.js';
 import { safeLandmarkLabel, type BattlefieldScene } from './map-design.js';
 import { landmarkAnchorCell, landmarkCandidates } from './landmark-placement.js';
@@ -64,10 +64,11 @@ export function generatedLayeredField(seed: string, width = 7, height = 13, tags
     } catch (error) {
       const relational=!!plan?.intent&&error instanceof Error&&/正文关系|正文指定|合法位置|部署|容量不足/.test(error.message);
       const indoorCapacity=scene==='interior'&&!fixed&&error instanceof Error&&/部署|容量不足/.test(error.message);
-      if (!(error instanceof Error)||!relational&&!indoorCapacity&&(fixed||!/部署|容量不足/.test(error.message))) throw error;
+      const sailingCapacity=!options.plan&&active.some(waterOnly)&&error instanceof Error&&/航行.*部署格/.test(error.message);
+      if (!(error instanceof Error)||!relational&&!indoorCapacity&&!sailingCapacity&&(fixed||!/部署|容量不足/.test(error.message))) throw error;
       lastError = error;
       if (error.message.startsWith('城市与水岸部署容量不足')) break;
-      if(!relational&&!indoorCapacity)break;
+      if(!relational&&!indoorCapacity&&!sailingCapacity)break;
     }
   }
   throw lastError ?? Error('无法为完整名单生成合法部署');
@@ -91,6 +92,9 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
       ...(['river_crossing','forest_stream','riverside'].includes(archetype)?{water:'river',bridgePlan:[{anchor:'center',state:'intact',width:1}],...(archetype==='riverside'?{waterPosition:'east',waterAxis:'vertical'}:{})}:{})};
     if (scene === 'interior') plan.interior = { use: pick(INTERIOR_USES) };
     if (scene === 'trenches') plan.trenches = { pattern: pick(TRENCH_PATTERNS) };
+    const sailors = options.roster?.filter(u => u.hp > 0 && u.status === 'ready' && waterOnly(u)) ?? [];
+    if (sailors.length && !plan.water) plan.water = 'ford';
+    if (sailors.length > width - 1) { plan.water = 'ford'; plan.waterCoverage = 'all'; }
   }
   // Preserve route-builder variety; it remains useful for streets and ordinary outdoor terrain.
   let field = generatedField(seed, width, height, tags, options);

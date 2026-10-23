@@ -1,0 +1,525 @@
+import { normalizeBattlefieldPlan, type BattlefieldPlan, type DeploymentPlan } from '../../engine/src/small/battlefield-plan.js';
+import { MAX_SMALL_UNITS } from '../../engine/src/battle-limits.js';
+import { BattlefieldPlanError } from '../../engine/src/small/battlefield-error.js';
+import { safeLandmarkLabel } from '../../engine/src/small/map-label.js';
+import { SCENE_ARCHETYPE_NAMES, type SceneArchetype, type SceneConstraint, type SceneEntity, type SceneRelation, type WorldAnchor } from '../../engine/src/small/scene-intent.js';
+import { recommendedCitySize } from '../../engine/src/small/layered-generator.js';
+import type { BattlefieldScene } from '../../engine/src/small/map-design.js';
+import { hasFlightAbility, isRangedWeapon, type Combatant } from '../../engine/src/index.js';
+import type { BattleObjectiveMode } from './battle-setup.js';
+import { INTERIOR_USES, INTERIOR_PATTERNS, INTERIOR_USE_NAMES, INTERIOR_PATTERN_NAMES } from '../../engine/src/small/interior-plan.js';
+import { COMPOUND_PATTERNS, TRENCH_PATTERNS, COMPOUND_PATTERN_NAMES, TRENCH_PATTERN_NAMES } from '../../engine/src/small/position-plan.js';
+import { gridPosition, compassSector, oppositeGrid } from '../../engine/src/small/grid-anchor.js';
+
+/**
+ * Second preparation step: the model places the battle on a 4×4 grid and the local generator builds every
+ * cell. The answer has no IDs, citations or relation verbs to get wrong; every slip that has one reading is repaired
+ * and reported, and the scene's roles (who holds the walls) are enforced locally rather than requested.
+ */
+export const SCENE_CHOICES: Record<BattlefieldScene, string> = {
+  field: '野外交战：平原、林地、山地、河谷、渡口等；附近若有城镇只作背景，各方都在城外',
+  city_siege: '城墙攻防：攻方在城外攻城，守方在城内或城头',
+  city_streets: '城内巷战：各方都在城镇街巷里交战',
+  building_siege: '围攻单个院落、庄园或小据点：攻方在外，守方在院内',
+  interior: '室内：房间、走廊、大厅等紧凑空间',
+  trenches: '堑壕阵地战：各方各据战壕',
+};
+export const SIZE_CHOICES = { compact: '小：局部遭遇、少量人物', standard: '中：一般战斗（不确定时选这项）', large: '大：多支部队、大范围战场' } as const;
+export type LayoutSize = keyof typeof SIZE_CHOICES;
+
+const CODES = { NW: 'north_west', N: 'north', NE: 'north_east', W: 'west', C: 'center', E: 'east', SW: 'south_west', S: 'south', SE: 'south_east' } as const;
+type Code = keyof typeof CODES;
+const CODE_NAMES: Record<Code, string> = { NW: '西北', N: '北', NE: '东北', W: '西', C: '中央', E: '东', SW: '西南', S: '南', SE: '东南' };
+const CODE_OF = Object.fromEntries(Object.entries(CODES).map(([code, anchor]) => [anchor, code])) as Partial<Record<WorldAnchor, Code>>;
+const ZH_SECTORS: Record<string, Code> = { 北: 'N', 南: 'S', 东: 'E', 西: 'W', 东北: 'NE', 北东: 'NE', 西北: 'NW', 北西: 'NW', 东南: 'SE', 南东: 'SE', 西南: 'SW', 南西: 'SW',
+  中: 'C', 中央: 'C', 中间: 'C', 中部: 'C', 中心: 'C', 正中: 'C',
+  // The prompt states the map is drawn north up, so screen directions have one reading.
+  上: 'N', 下: 'S', 左: 'W', 右: 'E', 左上: 'NW', 右上: 'NE', 左下: 'SW', 右下: 'SE' };
+const EN_SECTORS: Record<string, Code> = { north: 'N', south: 'S', east: 'E', west: 'W', northeast: 'NE', north_east: 'NE', northwest: 'NW', north_west: 'NW',
+  southeast: 'SE', south_east: 'SE', southwest: 'SW', south_west: 'SW', center: 'C', centre: 'C', middle: 'C', central: 'C' };
+const GRID_EXAMPLES: Record<Code, string> = { NW:'A1', N:'B1', NE:'D1', W:'A2', C:'B2', E:'D2', SW:'A4', S:'B4', SE:'D4' };
+function anchorName(anchor: WorldAnchor): string { const code=CODE_OF[anchor];return code?CODE_NAMES[code]:anchor; }
+function shortAnchor(anchor: WorldAnchor): string { return CODE_OF[anchor]??anchor; }
+const PLACE_KINDS = ['hill', 'forest', 'square', 'tower', 'ruins', 'fortification', 'building', 'room', 'cover', 'position'] as const;
+type PlaceKind = typeof PLACE_KINDS[number];
+const PLACE_NAMES: Record<PlaceKind, string> = { hill: '高地', forest: '树林', square: '广场空地', tower: '塔楼', ruins: '废墟', fortification: '工事阵地', building: '重要建筑', room: '房间', cover: '掩体群', position: '战术要点或营地' };
+const KIND_ALIASES: Record<string, PlaceKind> = { ridge: 'hill', mountain: 'hill', highland: 'hill', high_ground: 'hill', woods: 'forest', wood: 'forest', jungle: 'forest',
+  plaza: 'square', clearing: 'square', wall: 'fortification', trench: 'fortification', fort: 'fortification', barricade: 'cover', house: 'building', ruin: 'ruins', camp: 'position',
+  高地: 'hill', 山丘: 'hill', 山坡: 'hill', 山岗: 'hill', 土丘: 'hill', 山: 'hill', 坡: 'hill', 树林: 'forest', 森林: 'forest', 林地: 'forest', 林: 'forest', 广场: 'square', 空地: 'square',
+  塔楼: 'tower', 塔: 'tower', 箭楼: 'tower', 哨塔: 'tower', 钟楼: 'tower', 废墟: 'ruins', 残垣: 'ruins', 工事: 'fortification', 阵地: 'fortification', 壕沟: 'fortification', 堡垒: 'fortification',
+  建筑: 'building', 房屋: 'building', 宅院: 'building', 仓库: 'building', 房间: 'room', 掩体: 'cover', 掩体群: 'cover', 要点: 'position', 营地: 'position', 据点: 'position' };
+const DESTROYABLE: readonly string[] = ['building', 'tower', 'fortification', 'cover', 'ruins'];
+/** Siege wall layouts: a stretch of a larger city's wall, a town walled all round, or an inner wall behind the outer one. */
+const WALL_LAYOUTS: Record<string, { ring?: boolean; layers?: 1 | 2 }> = { front: { ring: false, layers: 1 }, line: { ring: false }, section: { ring: false }, single: { layers: 1 },
+  ring: { ring: true, layers: 1 }, enclosure: { ring: true }, enclosed: { ring: true }, closed: { ring: true }, walled: { ring: true },
+  double: { layers: 2 }, two: { layers: 2 }, layered: { layers: 2 }, inner_outer: { layers: 2 }, triple: { layers: 2 }, multiple: { layers: 2 },
+  正面: { ring: false, layers: 1 }, 一面: { ring: false }, 单面: { ring: false }, 一段: { ring: false }, 一道: { layers: 1 }, 单层: { layers: 1 }, 单重: { layers: 1 },
+  环形: { ring: true }, 环城: { ring: true }, 四面: { ring: true }, 四面城墙: { ring: true }, 围墙: { ring: true }, 城堡: { ring: true },
+  双重: { layers: 2 }, 两重: { layers: 2 }, 双层: { layers: 2 }, 两道: { layers: 2 }, 三重: { layers: 2 }, 多重: { layers: 2 }, 内外: { layers: 2 }, 瓮城: { layers: 2 } };
+function wallsOf(v: unknown): { ring?: boolean; layers?: 1 | 2 } | undefined {
+  return typeof v !== 'string' ? undefined : WALL_LAYOUTS[token(v)] ?? WALL_LAYOUTS[v.trim().replace(/(城墙|城)$/, '')];
+}
+const ARCHETYPES: Record<BattlefieldScene, SceneArchetype[]> = {
+  field: ['farmland', 'river_crossing', 'rolling_hills', 'forest_path', 'forest_stream', 'forest_edge', 'mountain_pass', 'ridge_valley', 'terraces', 'outskirts'],
+  city_siege: ['gate_front', 'old_town', 'market', 'warehouse', 'riverside', 'hilltown'],
+  city_streets: ['old_town', 'market', 'warehouse', 'riverside'],
+  building_siege: ['warehouse', 'fortress'],
+  interior: ['residence', 'great_hall', 'fortress'],
+  trenches: ['trench_line', 'trench_depth'],
+};
+const MAX_PLACES = 8;
+
+export interface LayoutUnit { id: string; name: string; side: Combatant['side']; kind: string; note?: string }
+export interface LayoutContext {
+  scene: BattlefieldScene;
+  size?: LayoutSize;
+  /** The side attacking the walls; only meaningful in a siege. */
+  attacker: 'ally' | 'enemy';
+  objectiveMode: BattleObjectiveMode;
+  units: LayoutUnit[];
+  vipName?: string;
+  map: [number, number];
+}
+export function layoutUnits(roster: readonly Combatant[], publicId: (id: string) => string, notes: Record<string, string> = {}): LayoutUnit[] {
+  return roster.filter(u => u.hp > 0 && u.status === 'ready').slice(0, MAX_SMALL_UNITS).map(u => ({
+    id: publicId(u.id), name: u.name.slice(0, 40), side: u.side,
+    kind: [u.scale === 'hero' ? '人物' : '部队', u.body === 'vehicle' ? '载具' : u.body && u.body !== 'human' ? '大型' : u.mount ? '骑乘' : '',
+      hasFlightAbility(u) ? '可飞行' : '', isRangedWeapon(u.weapon) ? '远程' : '近战'].filter(Boolean).join('·'),
+    ...(notes[u.id]?.trim() ? { note: notes[u.id]!.trim().slice(0, 60) } : {}) }));
+}
+/** The generator's starting size for the scene; capacity may still enlarge the map. */
+export function layoutMapSize(scene: BattlefieldScene, roster: readonly Combatant[], size?: LayoutSize): [number, number] {
+  const active = roster.filter(u => u.hp > 0 && u.status === 'ready');
+  if (['city_siege', 'city_streets', 'building_siege'].includes(scene)) return recommendedCitySize(active, size);
+  if (scene === 'interior') return size === 'large' ? [9, 15] : size === 'standard' ? [7, 13] : [5, 7];
+  return size === 'large' ? [11, 17] : size === 'compact' ? [7, 9] : [7, 13];
+}
+
+const sideName = (side: Combatant['side']) => side === 'ally' ? '我方' : side === 'neutral' ? '第三方' : '敌方';
+const defenderOf = (ctx: LayoutContext) => ctx.attacker === 'ally' ? 'enemy' : 'ally';
+const besieged = (scene: BattlefieldScene) => scene === 'city_siege' || scene === 'building_siege';
+const allowsCity = (scene: BattlefieldScene) => scene === 'city_siege' || scene === 'field';
+function placeKinds(scene: BattlefieldScene): PlaceKind[] {
+  return PLACE_KINDS.filter(k => k !== 'room' || scene === 'interior' || scene === 'building_siege');
+}
+function exitSide(ctx: LayoutContext): 'ally' | 'enemy' | undefined { return ctx.objectiveMode === 'escort' ? 'ally' : ctx.objectiveMode === 'intercept' ? 'enemy' : undefined; }
+
+function sceneLine(ctx: LayoutContext): string {
+  const a = sideName(ctx.attacker), d = sideName(defenderOf(ctx));
+  return ctx.scene === 'city_siege' ? `城墙攻防，攻方=${a}（在城外），守方=${d}（守城）`
+    : ctx.scene === 'building_siege' ? `围攻院落或据点，攻方=${a}（在外），守方=${d}（在院内）`
+    : ctx.scene === 'city_streets' ? '城内巷战，各方都在街巷里'
+    : ctx.scene === 'interior' ? '室内交战（房间与走廊）' : ctx.scene === 'trenches' ? '堑壕阵地战' : '野外交战';
+}
+function objectiveLine(ctx: LayoutContext): string {
+  const exit = exitSide(ctx);
+  if (exit) return `${sideName(exit)}护送${ctx.vipName ? '「' + ctx.vipName + '」' : '目标'}到撤离点，${sideName(exit === 'ally' ? 'enemy' : 'ally')}拦截`;
+  if (ctx.objectiveMode === 'siege') return `${sideName(ctx.attacker)}夺取并控制${sideName(defenderOf(ctx))}据守的核心地点`;
+  if (ctx.objectiveMode === 'control') return ctx.units.some(u => u.side === 'neutral') ? '各方争夺并连续控制目标地点' : '双方争夺并连续控制目标地点';
+  return '击败敌军';
+}
+function example(ctx: LayoutContext): Record<string, unknown> {
+  const d = defenderOf(ctx), a = ctx.attacker;
+  if (ctx.scene === 'city_siege') return { archetype: 'gate_front', cover: 'balanced', city: { at: d === 'enemy' ? 'N' : 'S', name: '青石城', level: 3, breaches: 0, gates: [{ name: '城门', state: 'closed' }] },
+    places: [{ type: 'building', name: '府衙', at: d === 'enemy' ? 'N' : 'S' }, { type: 'position', name: '攻城营地', at: d === 'enemy' ? 'S' : 'N' }],
+    [a]: { at: d === 'enemy' ? ['S', 'SW'] : ['N', 'NE'] }, [d]: { post: 'wall' }, ...(ctx.objectiveMode === 'siege' ? { objective: '府衙' } : {}) };
+  if (ctx.scene === 'interior') return { archetype: 'residence', interior: { use: 'residence', pattern: 'suite' }, places: [{ type: 'room', name: '书房', at: 'N' }, { type: 'cover', name: '屏风', at: 'C' }], ally: { at: ['S'] }, enemy: { at: ['N'] } };
+  if (ctx.scene === 'building_siege') return { archetype: 'fortress', city: { level: 3, gates: [{ name: '院门', state: 'closed' }] }, places: [{ type: 'tower', name: '角楼', at: d === 'enemy' ? 'NE' : 'SE' }],
+    [a]: { at: [d === 'enemy' ? 'S' : 'N'] }, [d]: { post: 'inside' } };
+  return { archetype: ctx.scene === 'city_streets' ? 'old_town' : 'farmland', cover: 'balanced',
+    places: [{ type: 'hill', name: '北坡', at: 'NE', height: 2 }, { type: 'forest', name: '南林', at: 'SW' }],
+    ally: { at: ['S'] }, enemy: { at: ['N'] }, ...(exitSide(ctx) ? { objective: exitSide(ctx) === 'ally' ? 'N' : 'S' } : {}) };
+}
+/** What the next layout request is told about failed ones: the model's own last answer and one note per failure, newest last. */
+export interface LayoutRetry { answer?: unknown; errors: readonly string[] }
+/** The model cannot see its last answer otherwise, so a retry would rewrite the same layout from the same narrative. */
+function retryLines(retry: LayoutRetry): string[] {
+  const answer = retry.answer === undefined ? '' : JSON.stringify(retry.answer), earlier = retry.errors.slice(0, -1);
+  return ['【上次布置未能生成地图】在上次回答的基础上只改与失败有关的项，其余照旧；拿不准的项直接删去，由程序决定。',
+    ...(answer ? ['上次回答：' + (answer.length > 2000 ? answer.slice(0, 2000) + '…' : answer)] : []),
+    '失败原因与改法：' + retry.errors.at(-1),
+    ...(earlier.length ? ['更早的失败，不要重犯：' + earlier.join('；')] : [])];
+}
+/** The user message for the layout step. Shared system and narrative messages precede it. */
+export function layoutTask(ctx: LayoutContext, retry?: LayoutRetry): string {
+  const siege = besieged(ctx.scene), d = defenderOf(ctx);
+  const thirdParty = ctx.units.some(u => u.side === 'neutral');
+  const sides = thirdParty ? 'ally / enemy / neutral：各方' : 'ally / enemy：双方';
+  const sample = example(ctx);
+  if (thirdParty) sample.neutral = { at: ['E'] };
+  const kinds = placeKinds(ctx.scene).map(k => `${k}${PLACE_NAMES[k]}`).join('|');
+  const lines = [
+    '【第2步：布置战场】根据正文，在4×4分区上布置本场战斗。程序会据此生成地形、建筑与道路，并把单位放进对应区域。',
+    `本场：${sceneLine(ctx)}。任务：${objectiveLine(ctx)}。地图约${ctx.map[0]}列×${ctx.map[1]}行，按下列分区编号定位。`,
+    '参战单位（短ID · 名称 · 阵营 · 类型 · 备注）：',
+    ...ctx.units.map(u => [u.id, u.name, sideName(u.side), u.kind, u.note].filter(Boolean).join(' · ')),
+    '4×4分区（位置固定，与攻守无关）：',
+    'x为列，从左到右为A、B、C、D；y为行，从上到下为1、2、3、4。',
+    'at填写完整格子编号，由列字母和行数字组成，例如C2。',
+    '             x →', '          A    B    C    D',
+    'y ↓  1   A1   B1   C1   D1', '     2   A2   B2   C2   D2', '     3   A3   B3   C3   D3', '     4   A4   B4   C4   D4',
+    '正文只给宽泛方向时，在符合该方向的分区中选择；中央对应B2/C2/B3/C3，单位有具体地点时优先使用place。',
+    '只输出一个JSON对象，不需要的项省略。各项：',
+    `- archetype：场所风格，可选 ${ARCHETYPES[ctx.scene].map(a => a + SCENE_ARCHETYPE_NAMES[a]).join('|')}。`,
+    '- cover：掩体与障碍多少，sparse少|balanced适中|dense多。',
+    ctx.scene === 'interior' ? '- interior：仅室内可写，{"use":"用途","pattern":"布局"}。use=residence住宅|inn客栈酒馆|temple殿堂寺院|warehouse仓库|workshop工坊|office办公设施|prison牢房|ruins废弃建筑；pattern=suite穿堂连室|hall主厅侧室|ring环形回廊|cross交叉通道|wings双翼联通|aisles货架通道|cells走廊小室|broken破损连室。按正文选择。places中type=room的地点会生成对应的房间区域。' : '',
+    ctx.scene === 'building_siege' ? '- compound：建筑围攻布局，{"pattern":"布局"}。pattern=courtyard单院|forecourt前后院|wings双翼夹院|dogleg曲折院落|bailey内外院|ruined破损院落。按正文选择；院内房间、院落与通道会生成实际区域，places可命名，units可按地点部署。' : '',
+    ctx.scene === 'trenches' ? '- trenches：堑壕组织，{"pattern":"布局"}。pattern=opposed相对前沿|depth纵深防线|echelon梯次斜线|salient突出部|strongpoints分散支撑点|saps前伸支壕。按正文选择；前沿壕、后方壕与交通壕会实际连通，places可用fortification命名阵地，units可按地点部署。' : '',
+    ctx.scene === 'city_siege' ? '- city：必须写。{"at":方位,"name":"城名","walls":城墙形制,"level":城墙等级,"breaches":破口数,"gates":[{"name":"门名","state":"closed"}]}。at是城区主要所在分区；第1行表示城区在上侧，第4行在下侧，A列在左侧，D列在右侧；中央四个分区表示城区位于地图中央。walls按正文选：front=一道城墙横贯战场，城区延伸出地图（大城的一段城墙）|ring=四面都有城墙，整座城在图内（小城、城堡、营寨）|double=内外两重城墙，中间夹道（多重城墙、内城外郭、瓮城）；正文没写就省略，由程序选。gates列出本战区可见的城门（省略为一座），state=closed关闭|open开启|destroyed已毁，门由程序放在面向攻方的外墙上，两重城墙时内墙配对应的门。level=1临时 2简易 3正规 4重型 5要塞 6超凡 7史诗 8传奇 9半神 10神造，按材料与强化选；breaches=开战时外墙已有的破口0-3。'
+      : ctx.scene === 'building_siege' ? '- city：院墙与门，{"level":院墙等级1-10,"breaches":破口数0-3,"gates":[{"name":"院门","at":"S","state":"closed|open|destroyed"}]}。at可选N/S/E/W，表示门在院墙上的绝对方位；各门状态独立，院落位置由程序决定。'
+      : ctx.scene === 'field' ? '- city：仅当交战地点旁有城镇时写，{"at":方位,"name":"城名","gates":[...]}；各方默认在城外，写gates时会画出朝向战场的城墙与门。' : '',
+    ctx.scene === 'interior' ? '- water：正文明确有水域时写，{"type":"river深水|ford浅水|mixed深浅混合|none无水","at":"分区编号|all全场","bridges":[{"name":"桥名","at":分区编号,"state":"intact完好|destroyed已断"}]}。按正文布置；bridges只写正文提到的桥，正文没提到桥就省略，由程序配桥。at为all时，水域覆盖低处地面，墙体、建筑、石头掩体及高地保留。'
+      : `- water：{"type":"river深水河|ford可涉水浅滩|mixed深浅混合|moat护城河|none无水","at":"分区编号|all全场","bridges":[{"name":"桥名","at":方位,"state":"intact完好|destroyed已断"}]}。只有一条主河${ctx.scene === 'city_siege' ? '；护城河由程序沿面向攻方的城墙外侧布置，不写at' : ''}。bridges只写正文提到的桥；正文没提到桥就省略bridges，由程序配桥${ctx.scene === 'city_siege' ? '（护城河配在城门前）' : ''}；[]只用于正文明确无桥可用，程序会留一处可涉水的浅滩。at为all时，水域覆盖低处地面，墙体、建筑、石头掩体及高地保留。`,
+    `- places：最多${MAX_PLACES}个有战术意义的地点，优先写正文提到的，[{"type":类型,"name":"名称","at":方位,"height":0-3,"state":"destroyed"}]。type=${kinds}。height只给高地等写，2-3为明显高地；state=destroyed表示已毁。普通房屋、树木、杂物由程序补全，不要写。`,
+    (siege ? `- ${sides}开局位置。${sideName(ctx.attacker)}是攻方，写{"at":["B4"]}这样的1-3个${ctx.scene === 'city_siege' ? '城' : '院'}外方位。${sideName(d)}是守方，默认在${ctx.scene === 'city_siege' ? '城' : '院'}内，只需写post：wall城头为主|inside${ctx.scene === 'city_siege' ? '城内街巷' : '院内'}，不上墙|outside出${ctx.scene === 'city_siege' ? '城' : '院'}列阵（这时再写at为外面的方位）。`
+      : `- ${sides}开局位置，{"at":["B4"]}，可写1-3个方位。${ctx.scene === 'city_streets' ? '各方默认在街区内。' : ''}`) + (thirdParty ? 'neutral默认从右侧进入。' : ''),
+    `- units：根据正文内容选择单位开局位置。unit可写一个短ID或多个短ID组成的数组，有正文依据时优先使用place。按方位写 {"unit":"u3","at":"D1"}；有具体地点写 {"unit":["u1","u2"],"place":"档案室","relation":"inside"}，place位置使用本次places、桥或城门的名称，relation=inside在内部|guards驻守附近|near靠近；at可作为地点无效时的备用方位；按方位部署的攻城守方可写post=wall|inside|outside。最多布置${MAX_SMALL_UNITS}个单位。`,
+    exitSide(ctx) ? '- objective：撤离点，写4×4分区编号（放在该方向的地图边缘）或places里的name；省略时按部署方向决定。'
+      : ctx.objectiveMode === 'siege' ? `- objective：${sideName(ctx.attacker)}要夺取的地点，写places里的name；省略时为${ctx.scene === 'city_siege' ? '城中心' : '守方后方核心'}。`
+      : ctx.objectiveMode === 'control' ? (thirdParty ? '- objective：各方争夺的地点，写places里的name或4×4分区编号；省略时由程序选择各方可接近的中立位置。' : '- objective：双方争夺的地点，写places里的name或4×4分区编号；省略时由程序选择双方可接近的中立位置。') : '',
+    '示例（只示格式，内容按正文）：' + JSON.stringify(sample).replace(/"(NW|N|NE|W|C|E|SW|S|SE)"/g, (_, code: Code) => '"' + GRID_EXAMPLES[code] + '"').replaceAll('北坡','高坡').replaceAll('南林','树林'),
+    ...(retry?.errors.length ? retryLines(retry) : []),
+  ];
+  return lines.filter(Boolean).join('\n');
+}
+
+type Json = Record<string, unknown>;
+const object = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v);
+const token = (v: unknown) => typeof v === 'string' ? v.trim().toLowerCase().replace(/[\s-]+/g, '_') : '';
+function sectorOf(v: unknown): WorldAnchor | undefined {
+  if (typeof v !== 'string') return;
+  const text = v.trim(), upper = text.toUpperCase();
+  if (gridPosition(upper)) return upper as WorldAnchor;
+  if (Object.hasOwn(CODES, upper)) return CODES[upper as Code];
+  const english = token(text);
+  if (Object.hasOwn(EN_SECTORS, english)) return CODES[EN_SECTORS[english]!];
+  const zh = text.replace(/^(地图|偏|城|正)/, '').replace(/(方向|一带|方|侧|部|边|面|角)$/, '');
+  return Object.hasOwn(ZH_SECTORS, zh) ? CODES[ZH_SECTORS[zh]!] : undefined;
+}
+function sectors(v: unknown, notes: Set<string>, what: string): WorldAnchor[] {
+  const list = Array.isArray(v) ? v : v === undefined || v === null || v === '' ? [] : [v];
+  const found = [...new Set(list.map(sectorOf).filter((a): a is WorldAnchor => !!a))].slice(0, 4);
+  if (found.length < list.length) notes.add(`${what}方位无效`);
+  return found;
+}
+/** Display names keep their words; separators become a middle dot and other symbols are removed. */
+function labelOf(v: unknown): string | undefined {
+  if (typeof v !== 'string') return;
+  const text = v.replace(/[、/／|｜,，;；:：]+/g, '·').replace(/[^\p{L}\p{N} ·・—–\-()（）]+/gu, ' ').replace(/\s+/g, ' ').replace(/^[\s·]+|[\s·]+$/g, '');
+  return safeLandmarkLabel([...text].slice(0, 32).join('').replace(/[\s·]+$/, ''));
+}
+function integer(v: unknown, min: number, max: number): number | undefined {
+  const n = typeof v === 'string' && v.trim() ? Number(v) : v;
+  return typeof n === 'number' && Number.isFinite(n) ? Math.max(min, Math.min(max, Math.round(n))) : undefined;
+}
+function stateOf(v: unknown): string | undefined {
+  const t = token(v);
+  return { intact: 'intact', open: 'open', opened: 'open', closed: 'closed', shut: 'closed', locked: 'closed', destroyed: 'destroyed', broken: 'destroyed', ruined: 'destroyed', collapsed: 'destroyed',
+    完好: 'intact', 开启: 'open', 打开: 'open', 敞开: 'open', 开: 'open', 关闭: 'closed', 紧闭: 'closed', 关: 'closed', 已毁: 'destroyed', 被毁: 'destroyed', 损毁: 'destroyed', 已断: 'destroyed', 断: 'destroyed', 破: 'destroyed' }[t];
+}
+function postOf(v: unknown): DeploymentPlan['post'] {
+  const t = token(v);
+  return ({ wall: 'wall', walls: 'wall', on_wall: 'wall', 城头: 'wall', 城墙: 'wall', 墙上: 'wall', 城楼: 'wall', inside: 'inside', streets: 'inside', 城内: 'inside', 院内: 'inside', 内: 'inside',
+    outside: 'outside', sortie: 'outside', 出城: 'outside', 城外: 'outside', 院外: 'outside', 出城列阵: 'outside' } as Record<string, DeploymentPlan['post']>)[t];
+}
+const opposite = (a: WorldAnchor): WorldAnchor => oppositeGrid(a) ?? (a === 'center' ? 'north' : a.replace(/north|south|east|west/g, w => ({ north: 'south', south: 'north', east: 'west', west: 'east' })[w]!) as WorldAnchor);
+
+export interface CompiledLayout { plan: BattlefieldPlan; notes: string[] }
+/** Repairs every slip with one reading, then hands the generator a plan that passes the same strict validation as manual JSON. */
+export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayout {
+  const notes = new Set<string>(), top = object(answer) ? answer : {};
+  const raw: Json = ['battlefield', 'layout', 'map'].map(k => top[k]).find(object) ?? top;
+  let scene = ctx.scene;
+  const cityRaw = object(raw.city) ? raw.city : undefined;
+  // A siege objective at a stated city is fought at its walls, not in an open field beside it.
+  if (scene === 'field' && ctx.objectiveMode === 'siege' && cityRaw && sectorOf(cityRaw.at)) { scene = 'city_siege'; notes.add('按攻城任务改为城墙攻防'); }
+  const inferred = { basis: 'inferred' as const, sources: [] as string[] };
+  const entities: SceneEntity[] = [], relations: SceneRelation[] = [], constraints: SceneConstraint[] = [];
+  const names = new Map<string, string>();
+  const plan: BattlefieldPlan = { scene, ...(ctx.size ? { size: ctx.size } : {}) };
+  const archetype = token(raw.archetype);
+  if ((ARCHETYPES[scene] as string[]).includes(archetype)) plan.archetype = archetype as SceneArchetype;
+  if (scene === 'interior' && object(raw.interior)) {
+    const inside = raw.interior, use = token(inside.use), pattern = token(inside.pattern);
+    const parsed = normalizeBattlefieldPlan({interior:{
+      use: (INTERIOR_USES as readonly string[]).includes(use) ? use : INTERIOR_USES.find(k=>INTERIOR_USE_NAMES[k]===inside.use),
+      pattern: (INTERIOR_PATTERNS as readonly string[]).includes(pattern) ? pattern : INTERIOR_PATTERNS.find(k=>INTERIOR_PATTERN_NAMES[k]===inside.pattern),
+    }});
+    if (parsed.plan?.interior) plan.interior = parsed.plan.interior;
+    if (inside.use !== undefined && !plan.interior?.use) notes.add('室内用途无效，采用本地默认');
+    if (inside.pattern !== undefined && !plan.interior?.pattern) notes.add('室内布局无效，采用本地默认');
+  }
+  for (const [key, choices, names] of [['compound', COMPOUND_PATTERNS, COMPOUND_PATTERN_NAMES], ['trenches', TRENCH_PATTERNS, TRENCH_PATTERN_NAMES]] as const) {
+    if ((key === 'compound' ? scene !== 'building_siege' : scene !== 'trenches') || raw[key] === undefined) continue;
+    const record = raw[key], value = object(record) ? record.pattern : record, written = token(value);
+    const pattern = (choices as readonly string[]).includes(written) ? written : Object.entries(names).find(([, label]) => label === value)?.[0];
+    if (pattern) Object.assign(plan, { [key]: { pattern } });
+    else notes.add(`${key === 'compound' ? '院落' : '堑壕'}布局无效，采用本地默认`);
+  }
+  const cover = token(raw.cover ?? raw.density);
+  if (['sparse', 'balanced', 'dense'].includes(cover)) plan.density = cover as BattlefieldPlan['density'];
+
+  // City walls, gates and their damage.
+  if (cityRaw && (allowsCity(scene) || scene === 'building_siege')) {
+    const wall = integer(cityRaw.level ?? cityRaw.wall, 1, 10), breaches = integer(cityRaw.breaches, 0, 3);
+    if (wall !== undefined) plan.fortLevel = wall;
+    if (breaches !== undefined && besieged(scene)) plan.breaches = { count: breaches as 0 | 1 | 2 | 3 };
+  } else if (cityRaw && scene === 'city_streets') notes.add('巷战不设城市方位');
+  else if (cityRaw) notes.add('本场景不设城市');
+  let cityAt = cityRaw ? sectorOf(cityRaw.at) : undefined;
+  if (scene === 'city_siege' && !cityAt) {
+    cityAt = defenderOf(ctx) === 'enemy' ? 'north' : 'south';
+    notes.add(`城市放在守方一侧（${anchorName(cityAt)}）`);
+  }
+  if (scene === 'city_siege' && cityRaw) {
+    const layers = integer(cityRaw.layers, 1, 2) as 1 | 2 | undefined;
+    const stated = [cityRaw.walls, cityRaw.wall_layout, cityRaw.layout, cityRaw.wall].map(wallsOf).find(Boolean) ?? (layers ? { layers } : undefined);
+    if (stated?.layers) plan.wallLayers = stated.layers;
+    if (stated?.ring !== undefined) plan.shape = stated.ring || compassSector(cityAt ?? 'center') === 'center' ? 'enclosure' : 'front';
+    if (stated?.ring === false && compassSector(cityAt ?? 'center') === 'center') notes.add('城在中央，改为四面城墙');
+    if (!stated && cityRaw.walls !== undefined) notes.add('城墙形制无效，由程序决定');
+  }
+  if (allowsCity(scene) && cityAt) {
+    const label = labelOf(cityRaw?.name ?? cityRaw?.label);
+    entities.push({ id: 'city', kind: 'city', anchor: cityAt, ...(label ? { label } : {}), ...inferred });
+    if (label) names.set(label, 'city');
+  }
+  const gatesRaw = Array.isArray(cityRaw?.gates) ? cityRaw!.gates : undefined;
+  // In an open field an empty gate list means an unwalled town, not walls without a way in.
+  if (gatesRaw && (scene === 'city_siege' || scene === 'building_siege' || scene === 'field' && cityAt && gatesRaw.length)) {
+    if (gatesRaw.length > 4) notes.add('城门最多4处');
+    gatesRaw.slice(0, 4).forEach((g, i) => {
+      const gate: Json = object(g) ? g : { name: g }, label = labelOf(gate.name ?? gate.label), state = stateOf(gate.state), at = sectorOf(gate.at);
+      const id = `gate${i + 1}`;
+      entities.push({ id, kind: 'gate', state: state === 'open' || state === 'destroyed' ? state : 'closed', ...(label ? { label } : {}), ...(at ? { anchor: at } : {}), ...inferred });
+      if (label) names.set(label, id);
+    });
+    if (scene !== 'building_siege') constraints.push({ kind: 'gate_count', entity: 'city', value: Math.min(4, gatesRaw.length), ...inferred });
+    // A compound has no city entity to count against; an empty list still means no gate.
+    else if (!gatesRaw.length) plan.gatePlan = [];
+  }
+
+  // One water body and the exact bridges over it.
+  const waterRaw = object(raw.water) ? raw.water : undefined, waterType = waterRaw ? ({ river: 'river', 河: 'river', 河流: 'river', 深水: 'river', ford: 'ford', 浅滩: 'ford', 浅水: 'ford', mixed: 'river', 深浅混合: 'river',
+    moat: 'moat', 护城河: 'moat', none: 'none', 无: 'none', 无水: 'none' } as Record<string, 'river' | 'ford' | 'moat' | 'none'>)[token(waterRaw.type ?? waterRaw.kind)] : undefined;
+  if (waterRaw && !waterType) notes.add('水域类型无效，未布置');
+  if (waterType && waterType !== 'none') {
+    plan.water = waterType;
+    if (['mixed', '深浅混合'].includes(token(waterRaw!.type ?? waterRaw!.kind))) plan.waterDepth = 'mixed';
+    const waterAt = waterRaw!.at;
+    if (token(waterAt)==='all') plan.waterCoverage='all';
+    const column = typeof waterAt === 'string' && /^[A-D]$/i.test(waterAt.trim()) ? waterAt.trim().toUpperCase() : undefined;
+    let riverAt = sectorOf(waterAt) ?? (column ? `${column}2` as WorldAnchor : 'center');
+    if (column) notes.add(`河流按${column}列布置`);
+    // A moat, or a river on the city's own side, runs along the city's open side; the generator routes an
+    // unplaced river there instead of through the streets or the garrison's line to its walls.
+    const shared = (a: WorldAnchor, b: WorldAnchor) => ['north', 'south', 'east', 'west'].some(d => compassSector(a).includes(d) && compassSector(b).includes(d));
+    if (cityAt && allowsCity(scene) && riverAt !== 'center' && (waterType === 'moat' || shared(riverAt, cityAt) || compassSector(cityAt) === 'center')) {
+      riverAt = 'center'; notes.add(waterType === 'moat' ? '护城河沿城外开阔侧布置' : '河流改沿城外开阔侧');
+    }
+    entities.push({ id: 'river', kind: 'river', anchor: riverAt, ...inferred });
+    if (Array.isArray(waterRaw!.bridges)) {
+      if (waterRaw!.bridges.length > 4) notes.add('桥梁最多4座');
+      waterRaw!.bridges.slice(0, 4).forEach((b, i) => {
+        const bridge: Json = object(b) ? b : { name: b }, label = labelOf(bridge.name ?? bridge.label), at = sectorOf(bridge.at), id = `bridge${i + 1}`;
+        const width = integer(bridge.width, 1, 2);
+        entities.push({ id, kind: 'bridge', ...(stateOf(bridge.state) === 'destroyed' ? { state: 'destroyed' as const } : {}), ...(label ? { label } : {}), ...(at ? { anchor: at } : {}), ...(width ? { width: width as 1 | 2 } : {}), ...inferred });
+        if (label) names.set(label, id);
+      });
+      constraints.push({ kind: 'crossing_count', entity: 'river', value: Math.min(4, waterRaw!.bridges.length), ...inferred });
+    }
+  }
+
+  // Named places of tactical meaning; the generator fills ordinary houses and trees.
+  const placesRaw = Array.isArray(raw.places) ? raw.places : Array.isArray(raw.landmarks) ? raw.landmarks : [];
+  if (placesRaw.length > MAX_PLACES) notes.add(`地点最多${MAX_PLACES}个`);
+  const allowed = placeKinds(scene);
+  let n = 0;
+  for (const item of placesRaw.slice(0, MAX_PLACES)) {
+    if (!object(item)) { notes.add('无效地点未采用'); continue; }
+    const written = token(item.type ?? item.kind), stated = (PLACE_KINDS as readonly string[]).includes(written) ? written as PlaceKind : KIND_ALIASES[written] ?? KIND_ALIASES[String(item.type ?? item.kind ?? '').trim()];
+    let kind = stated;
+    if (kind && !allowed.includes(kind)) kind = scene === 'interior' && ['building', 'square', 'tower'].includes(kind) ? 'room' : kind === 'room' ? 'building' : undefined;
+    if (!kind) { notes.add('部分地点类型无效，已省略'); continue; }
+    if (kind !== stated) notes.add('部分地点改用相近类型');
+    const label = labelOf(item.name ?? item.label), at = sectorOf(item.at), height = scene === 'interior' && kind === 'cover' ? undefined : integer(item.height, 0, 3), id = `place${++n}`;
+    if (scene === 'interior' && kind === 'position' && /(间|房|室|厅|殿)$/.test(label??'')) {kind='room';notes.add(`${label}按房间处理`);}
+    if (scene === 'building_siege' && kind === 'fortification' && /(?:前院|后院|内院|外院|庭院)$/.test(label ?? '')) { kind = 'position'; notes.add(`${label}按院落区域处理`); }
+    entities.push({ id, kind, ...(at ? { anchor: at } : {}), ...(label ? { label } : {}), ...(height !== undefined ? { height } : {}),
+      ...(stateOf(item.state) === 'destroyed' && DESTROYABLE.includes(kind) ? { state: 'destroyed' as const } : {}),
+      ...(token(item.size ?? item.scale) === 'large' || token(item.size ?? item.scale) === 'major' ? { scale: 'major' as const } : {}), ...inferred });
+    if (label && !names.has(label)) names.set(label, id);
+    if (!at) notes.add(`${label ?? PLACE_NAMES[kind]}放在中央`);
+  }
+
+  // The contested place or the exit, bound to the side the task names.
+  const exit = exitSide(ctx), goalRaw = object(raw.objective) ? raw.objective.name ?? raw.objective.place ?? raw.objective.at : raw.objective;
+  if (goalRaw !== undefined && goalRaw !== null && goalRaw !== '') {
+    const subject = exit ?? (ctx.objectiveMode === 'siege' || ctx.objectiveMode === 'control' ? ctx.attacker : undefined);
+    const named = typeof goalRaw === 'string' ? names.get(goalRaw.trim()) ?? names.get(labelOf(goalRaw) ?? '') : undefined, at = sectorOf(goalRaw);
+    // Annihilation has no place to bind; taking the city itself is the default core objective.
+    if (subject && named !== 'city' && (named || at)) {
+      let object = named;
+      if (!object) { object = exit ? 'exit' : 'target'; entities.push({ id: object, kind: 'position', anchor: at!, label: exit ? '撤离点' : '争夺点', ...inferred }); }
+      relations.push({ subject, relation: exit ? 'exits_at' : 'targets', object, ...inferred });
+    } else if (subject && named !== 'city') notes.add('任务地点无效，用默认位置');
+  }
+
+  // Starting areas: each side, then detachments named by unit handle or exact name.
+  const deployments: DeploymentPlan[] = [];
+  const siege = besieged(scene), defender = defenderOf(ctx);
+  const sides: Combatant['side'][] = ctx.units.some(u => u.side === 'neutral') ? ['ally', 'enemy', 'neutral'] : ['ally', 'enemy'];
+  for (const side of sides) {
+    const entry = raw[side], record = object(entry) ? entry : { at: entry };
+    const at = sectors(record.at ?? record.position, notes, sideName(side));
+    let post = postOf(record.post);
+    // Attackers hold no post on the walls or in the streets they are assaulting.
+    if (post && siege && side !== defender) post = undefined;
+    if (at.length) deployments.push({ subject: side, at, ...(post ? { post } : {}) });
+    else if (post && siege && side === defender) deployments.push({ subject: side, at: [entities.find(e => e.kind === 'city')?.anchor ?? (defender === 'enemy' ? 'north' : 'south')], post });
+  }
+  if (sides.includes('neutral') && !deployments.some(d => d.subject === 'neutral')) deployments.push({ subject: 'neutral', at: ['east'] });
+  if (!siege) {
+    // Without walls to separate them, an unplaced side faces the placed one, or takes its own map edge.
+    for (const side of ['enemy', 'ally'] as const) if (!deployments.some(d => d.subject === side)) {
+      const other = deployments.find(d => d.subject === (side === 'ally' ? 'enemy' : 'ally'))?.at[0];
+      deployments.push({ subject: side, at: [other ? opposite(other) : side === 'enemy' ? 'north' : 'south'] });
+    }
+  }
+  const handles = new Map(ctx.units.map(u => [u.id.toLowerCase(), u.id])), byName = new Map(ctx.units.filter(u => ctx.units.filter(o => o.name === u.name).length === 1).map(u => [u.name, u.id]));
+  const detachments = Array.isArray(raw.units) ? raw.units : [];
+  if (detachments.length > MAX_SMALL_UNITS) notes.add(`单独部署最多${MAX_SMALL_UNITS}个`);
+  const placed = new Set<string>();
+  for (const item of detachments.slice(0, MAX_SMALL_UNITS)) {
+    if (!object(item)) continue;
+    const members = Array.isArray(item.unit) ? item.unit.slice(0, MAX_SMALL_UNITS) : [item.unit ?? item.id ?? item.name];
+    const at = sectors(item.at, notes, '单位');
+    const place = labelOf(item.place), matches = place ? entities.filter(e => e.kind !== 'city' && e.label === place) : [];
+    const target = matches.length === 1 ? matches[0] : undefined;
+    const relation = token(item.relation) || (target?.kind === 'room' ? 'inside' : 'guards');
+    const validRelation = relation === 'inside' || relation === 'guards' || relation === 'near';
+    if (item.place !== undefined && !target) notes.add(`地点${place ?? ''}${matches.length > 1 ? '重名' : '无效'}，单位改用备用方位或本方部署`);
+    if (target && !validRelation) notes.add(`地点${place}的部署关系无效，单位改用备用方位或本方部署`);
+    for (const member of members) {
+      const written = typeof member === 'string' ? member.trim() : '', id = handles.get(written.toLowerCase()) ?? byName.get(written);
+      if (!id) { notes.add('忽略了名单外的单位'); continue; }
+      if (placed.has(id) || placed.size >= MAX_SMALL_UNITS) continue;
+      const unit = ctx.units.find(u => u.id === id)!, post = postOf(item.post);
+      if (target && validRelation) relations.push({ subject: id, relation, object: target.id, ...inferred });
+      if (at.length) deployments.push({ subject: id, at, ...(post && (!siege || unit.side === defender) ? { post } : {}) });
+      if (at.length || target && validRelation) placed.add(id);
+    }
+  }
+  if (deployments.length) plan.deployments = deployments;
+  // The scene budget is 12 entities: structures and the task place first, then places in the order written.
+  const kept = new Set(entities.filter(e => e.kind === 'city' || e.kind === 'river' || e.kind === 'gate' || e.kind === 'bridge' || relations.some(r => r.object === e.id && (r.relation === 'targets' || r.relation === 'exits_at'))));
+  for (const e of entities) if (kept.size < 12 && relations.some(r => r.object === e.id)) kept.add(e);
+  for (const e of entities) if (kept.size < 12) kept.add(e);
+  if (kept.size < entities.length) notes.add('地点过多，保留前12项');
+  for (let i = relations.length - 1; i >= 0; i--) if (!entities.some(e => kept.has(e) && e.id === relations[i]!.object)) {
+    notes.add('单位绑定地点未保留，改用备用方位或本方部署'); relations.splice(i, 1);
+  }
+  plan.intent = { schema: 'scene-intent-v1', entities: entities.filter(e => kept.has(e)), relations, constraints };
+  // The compiled plan meets the same strict checks as manual or MCP JSON; a failure here is a local defect.
+  const strict = normalizeBattlefieldPlan(plan);
+  if (!strict.plan || strict.notes.length) throw new BattlefieldPlanError('地图布置未通过本地校验：' + strict.notes.join('；'));
+  return { plan: strict.plan, notes: [...notes] };
+}
+
+const ENTITY_NAMES: Record<string, string> = { ...PLACE_NAMES, city: '城市', river: '水系', gate: '城门', bridge: '桥梁' };
+/** The place a local error names, as the generator prints it: the label the answer wrote, or the kind when unnamed. */
+const NAMED_PLACE = /(?:地标|地点)(.+?)(?:没有合法位置|在指定区域|未落在|没有符合|没有保留|未能落实)/;
+/**
+ * One note for the next layout request: the local error in the answer's own terms (its names and compass codes rather
+ * than compiled IDs and anchors), then the change that usually fixes that family of failures.
+ */
+export function layoutRetryNote(error: string, plan?: BattlefieldPlan): string {
+  const entities = plan?.intent?.entities ?? [];
+  const name = (id: string) => {
+    if (id === 'exit' || id === 'target') return 'objective';
+    const e = entities.find(x => x.id === id);
+    return e?.label ? `「${e.label}」` : ENTITY_NAMES[e?.kind ?? id.replace(/\d+$/, '')] ?? id;
+  };
+  const text = error.replace(/，请检查模型是否支持 JSON 输出$/, '')
+    .replace(/\b(?:place\d+|gate\d+|bridge\d+|exit|target|city|river)\b/g, name)
+    .replace(/\b(?:north_west|north_east|south_west|south_east|north|south|east|west|center)\b/g, a => `${CODE_OF[a as WorldAnchor]}（${CODE_NAMES[CODE_OF[a as WorldAnchor]!]}）`)
+    .replace(/地标(hill|forest|square|tower|ruins|fortification|building|room|cover|position)\b/g, (_, kind: PlaceKind) => '地标' + PLACE_NAMES[kind]);
+  return `${text}。改法：${layoutAdvice(text, plan)}`;
+}
+function layoutAdvice(error: string, plan?: BattlefieldPlan): string {
+  const goal = plan?.intent?.relations.find(r => r.relation === 'targets' || r.relation === 'exits_at');
+  const place = goal && plan!.intent!.entities.find(e => e.id === goal.object);
+  const written = !place ? '' : place.id === 'exit' || place.id === 'target' ? `（${shortAnchor(place.anchor ?? 'center')}）` : place.label ? `「${place.label}」` : '';
+  if (/JSON|无效布置/.test(error)) return '只输出一个JSON对象，不要附加说明文字、注释或代码块';
+  if (/任务|目标|出口|撤离|关系引用的地点/.test(error)) return goal
+    ? `objective${written}处没有可站立的空地：改写为空旷的地点（如广场空地、营地）或4×4分区编号，或省略objective`
+    : '任务目标处被实心地点占住：中央和城中心不要放建筑、塔楼或工事，或用objective指定一处空旷地点';
+  const named = NAMED_PLACE.exec(error)?.[1];
+  if (named || /地标|地点/.test(error)) return `地点${!named ? '' : named.startsWith('「') ? named : `「${named}」`}放不下：换到更空旷的4×4分区编号、type改为position或cover，或删去它；不要把几个地点和部队挤在同一格`;
+  if (/桥/.test(error)) return 'bridges少写几座或写[]，桥不写at，由程序放置';
+  if (/门/.test(error)) return 'gates少写几座，门不写at，由程序放在面向攻方的城墙上';
+  if (/河|水/.test(error)) return '水系写在城市对侧或不写water.at；正文没有强调的河流可以删去';
+  if (/开局|部署|容量|名单/.test(error)) return '各方at各写2—3个相邻的空旷方位，不要与对方、城市或地点挤在同一格；删去units里的单独部署';
+  return '删去或改写与这条报错有关的项，拿不准就删去';
+}
+
+interface LayoutPart { present(raw: Json): boolean; drop(raw: Json, ctx: LayoutContext): string }
+const listOf = (v: unknown): unknown[] => Array.isArray(v) ? v : [];
+const placesOf = (raw: Json): unknown[] => Array.isArray(raw.places) ? raw.places : listOf(raw.landmarks);
+const PARTS: Record<'units' | 'objective' | 'places' | 'bridges' | 'gates' | 'water' | 'sides' | 'city' | 'style', LayoutPart> = {
+  units: { present: r => listOf(r.units).length > 0, drop: (r, ctx) => {
+    const names = listOf(r.units).map(u => {
+      const written = object(u) ? String(u.unit ?? u.id ?? u.name ?? '').trim() : '';
+      return ctx.units.find(x => x.id.toLowerCase() === written.toLowerCase())?.name ?? written;
+    }).filter(Boolean);
+    delete r.units; return '未采用单独部署' + (names.length ? '：' + names.join('、') : '');
+  } },
+  objective: { present: r => r.objective !== undefined && r.objective !== null && r.objective !== '', drop: r => {
+    const goal = object(r.objective) ? r.objective.name ?? r.objective.place ?? r.objective.at : r.objective, label = labelOf(goal);
+    delete r.objective; return '未采用任务地点' + (label ? `「${label}」` : '');
+  } },
+  places: { present: r => placesOf(r).length > 0, drop: r => {
+    const names = placesOf(r).map(p => object(p) ? labelOf(p.name ?? p.label) : undefined).filter(Boolean);
+    delete r.places; delete r.landmarks; return '未采用地点' + names.map(n => `「${n}」`).join('');
+  } },
+  bridges: { present: r => object(r.water) && Array.isArray(r.water.bridges), drop: r => { delete (r.water as Json).bridges; return '桥梁改由程序布置'; } },
+  gates: { present: r => object(r.city) && Array.isArray(r.city.gates), drop: r => { delete (r.city as Json).gates; return '城门改由程序布置'; } },
+  water: { present: r => r.water !== undefined, drop: r => { delete r.water; return '未采用水系'; } },
+  sides: { present: r => r.ally !== undefined || r.enemy !== undefined || r.neutral !== undefined, drop: (r, ctx) => { delete r.ally; delete r.enemy; delete r.neutral; return (ctx.units.some(u => u.side === 'neutral') ? '各方' : '双方') + '开局位置改由程序决定'; } },
+  city: { present: r => r.city !== undefined, drop: r => { delete r.city; return '城市改由程序布置'; } },
+  style: { present: r => r.archetype !== undefined || r.cover !== undefined || r.density !== undefined || r.interior !== undefined || r.compound !== undefined || r.trenches !== undefined, drop: r => {
+    delete r.archetype; delete r.cover; delete r.density; delete r.interior; delete r.compound; delete r.trenches; return '场所风格与掩体改由程序决定';
+  } },
+};
+/** Errors that point at a part try it first; the order is otherwise from the least essential part to the scene itself. */
+const TARGETS: [RegExp, LayoutPart[]][] = [
+  [/任务|目标|出口|撤离|关系引用的地点/, [PARTS.objective, PARTS.places]], [/地标|地点/, [PARTS.places]], [/桥/, [PARTS.bridges, PARTS.water]],
+  [/门/, [PARTS.gates]], [/河|水/, [PARTS.water]], [/开局|部署|容量|名单/, [PARTS.units, PARTS.sides]],
+];
+const ORDER = [PARTS.units, PARTS.objective, PARTS.places, PARTS.bridges, PARTS.gates, PARTS.water, PARTS.sides, PARTS.city, PARTS.style];
+export interface LayoutReduction { answer: Json; note: string }
+/**
+ * The final try keeps what can be built. Each call leaves out one more part: the place the local error names, else the
+ * part it points to, else the least essential part still present. Undefined once nothing is left to leave out.
+ */
+export function reduceLayout(answer: unknown, error: string, ctx: LayoutContext): LayoutReduction | undefined {
+  const top = object(answer) ? answer : {};
+  const raw = structuredClone(['battlefield', 'layout', 'map'].map(k => top[k]).find(object) ?? top) as Json;
+  const places = placesOf(raw), named = NAMED_PLACE.exec(error)?.[1];
+  const i = named ? places.findIndex(p => object(p) && labelOf(p.name ?? p.label) === named) : -1;
+  if (i >= 0) { places.splice(i, 1); return { answer: raw, note: `未采用地点「${named}」` }; }
+  const part = TARGETS.flatMap(([pattern, parts]) => pattern.test(error) ? parts : []).find(p => p.present(raw)) ?? ORDER.find(p => p.present(raw));
+  return part && { answer: raw, note: part.drop(raw, ctx) };
+}
+
+/** One line for the preparation summary. */
+export function layoutSummary(plan: BattlefieldPlan): string {
+  const scene = { field: '野外', city_siege: '城墙攻防', city_streets: '巷战', building_siege: '围攻院落', interior: '室内', trenches: '堑壕' }[plan.scene ?? 'field'];
+  const size = { compact: '小', standard: '中', large: '大' }[plan.size ?? 'standard'];
+  const places = plan.intent?.entities.filter(e => !['city', 'river', 'gate', 'bridge'].includes(e.kind)).length ?? plan.landmarks?.length ?? 0;
+  const city = plan.intent?.entities.find(e => e.kind === 'city');
+  const walls = plan.scene !== 'city_siege' ? '' : plan.wallLayers === 2 ? '两重城墙' : plan.shape === 'enclosure' ? '四面城墙' : plan.shape === 'front' ? '正面城墙' : '';
+  return [scene, size + '型', plan.interior?.use ? INTERIOR_USE_NAMES[plan.interior.use] : '', plan.interior?.pattern ? INTERIOR_PATTERN_NAMES[plan.interior.pattern] : '',
+    plan.compound?.pattern ? COMPOUND_PATTERN_NAMES[plan.compound.pattern] : '', plan.trenches?.pattern ? TRENCH_PATTERN_NAMES[plan.trenches.pattern] : '',
+    city ? `${city.label ?? '城市'}在${anchorName(city.anchor ?? 'center')}` : '', walls, places ? places + '处地点' : ''].filter(Boolean).join(' · ');
+}

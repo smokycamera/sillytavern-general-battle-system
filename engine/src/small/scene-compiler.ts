@@ -2,8 +2,8 @@ import type { BattlefieldPlan, LandmarkPlan, GatePlan } from './battlefield-plan
 import { BattlefieldPlanError } from './battlefield-error.js';
 import { MAX_DEPLOYMENT_ZONES, WORLD_ANCHORS, SCENE_ARCHETYPE_NAMES, type SceneIntent, type SceneEntity, type WorldAnchor, type SceneArchetype } from './scene-intent.js';
 import { SCENE_ARCHETYPES, normalizeSceneIntent } from './scene-intent.js';
-import { groundBlocked, intactStructure } from './layers.js';
-import { gridDistance, neighbors, findGridPath, gridCostsToGoals, unitLineOfSight, type BattlefieldSpec } from './spatial.js';
+import { groundBlocked, intactStructure, waterOnly } from './layers.js';
+import { canOccupy, gridDistance, neighbors, findGridPath, gridCostsToGoals, unitLineOfSight, type BattlefieldSpec } from './spatial.js';
 import { worldAnchorCell } from './landmark-placement.js';
 import type { Combatant } from '../types.js';
 import { surfaceHeightAt } from './height-map.js';
@@ -373,7 +373,10 @@ export function validateSceneFacts(field: BattlefieldSpec, units: readonly Comba
             // A unit with its own relation deploys in its own zone (gridDeploymentCells), not the side's.
             const actors = id ? side : side.filter(u => !field.deploymentZones?.some(z => z.unitId === u.id));
             const zones = field.deploymentZones?.filter(z => z.landmarkId === r.object && (id ? z.unitId === id : !z.unitId && z.side === r.subject)) ?? [];
-            ok = side.length > 0 && actors.every(u => u.pos !== undefined && zones.some(z => z.cells.includes(u.pos!) && (!z.platform || u.elevation === 1)));
+            const matches = (u: Combatant) => u.pos !== undefined && zones.some(z => z.cells.includes(u.pos!) && (!z.platform || u.elevation === 1));
+            ok = side.length > 0 && actors.every(matches);
+            // 航行单位在陆地关系部署后移至最近水格，不再把原地点记录为已满足。
+            if (!ok && side.length > 0 && actors.every(u => matches(u) || waterOnly(u) && u.pos !== undefined && canOccupy(field, units, u, u.pos))) continue;
         }
         if (!ok && r.basis === 'explicit')
             throw new BattlefieldPlanError(`无法满足正文关系：${r.subject} ${r.relation} ${r.object}`);

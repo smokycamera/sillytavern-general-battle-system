@@ -5,7 +5,7 @@ import { safeLandmarkLabel } from '../../engine/src/small/map-label.js';
 import { SCENE_ARCHETYPE_NAMES, type SceneArchetype, type SceneConstraint, type SceneEntity, type SceneRelation, type WorldAnchor } from '../../engine/src/small/scene-intent.js';
 import { recommendedCitySize } from '../../engine/src/small/layered-generator.js';
 import type { BattlefieldScene } from '../../engine/src/small/map-design.js';
-import { hasFlightAbility, isRangedWeapon, type Combatant } from '../../engine/src/index.js';
+import { activeTraitIds, hasFlightAbility, isRangedWeapon, type Combatant } from '../../engine/src/index.js';
 import type { BattleObjectiveMode } from './battle-setup.js';
 import { INTERIOR_USES, INTERIOR_PATTERNS, INTERIOR_USE_NAMES, INTERIOR_PATTERN_NAMES } from '../../engine/src/small/interior-plan.js';
 import { COMPOUND_PATTERNS, TRENCH_PATTERNS, COMPOUND_PATTERN_NAMES, TRENCH_PATTERN_NAMES } from '../../engine/src/small/position-plan.js';
@@ -84,7 +84,7 @@ export function layoutUnits(roster: readonly Combatant[], publicId: (id: string)
   return roster.filter(u => u.hp > 0 && u.status === 'ready').slice(0, MAX_SMALL_UNITS).map(u => ({
     id: publicId(u.id), name: u.name.slice(0, 40), side: u.side,
     kind: [u.scale === 'hero' ? '人物' : '部队', u.body === 'vehicle' ? '载具' : u.body && u.body !== 'human' ? '大型' : u.mount ? '骑乘' : '',
-      hasFlightAbility(u) ? '可飞行' : '', isRangedWeapon(u.weapon) ? '远程' : '近战'].filter(Boolean).join('·'),
+      hasFlightAbility(u) ? '可飞行' : '', activeTraitIds(u).includes('sailing') ? '航行：只能在深水或浅水部署与移动' : '', isRangedWeapon(u.weapon) ? '远程' : '近战'].filter(Boolean).join('·'),
     ...(notes[u.id]?.trim() ? { note: notes[u.id]!.trim().slice(0, 60) } : {}) }));
 }
 /** The generator's starting size for the scene; capacity may still enlarge the map. */
@@ -447,6 +447,7 @@ export function layoutRetryNote(error: string, plan?: BattlefieldPlan): string {
   return `${text}。改法：${layoutAdvice(text, plan)}`;
 }
 function layoutAdvice(error: string, plan?: BattlefieldPlan): string {
+  if (/航行(?:特质|部署)|航行单位/.test(error)) return '航行单位只能部署在深水或浅水：增加water（type写river、ford或mixed），保留足够水域；不要把航行单位放在陆地、城头或房间内';
   const goal = plan?.intent?.relations.find(r => r.relation === 'targets' || r.relation === 'exits_at');
   const place = goal && plan!.intent!.entities.find(e => e.id === goal.object);
   const written = !place ? '' : place.id === 'exit' || place.id === 'target' ? `（${shortAnchor(place.anchor ?? 'center')}）` : place.label ? `「${place.label}」` : '';
