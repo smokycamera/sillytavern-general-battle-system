@@ -92,7 +92,6 @@ export function gateAngle(t: TerrainScene, p: number): number {
 /** 桥的走向：两侧为水则桥面南北向。 */
 export function bridgeVertical(t: TerrainScene, p: number): boolean {
   const x = p % t.g.w, y = (p - x) / t.g.w;
-  if (t.intact(p)?.top) return !((x > 0 && t.intact(p - 1)?.top) || (x < t.g.w - 1 && t.intact(p + 1)?.top));
   return (x > 0 && t.isWater(p - 1)) || (x < t.g.w - 1 && t.isWater(p + 1)) || !((y > 0 && t.isWater(p - t.g.w)) || (y < t.g.h - 1 && t.isWater(p + t.g.w)));
 }
 /** 撤离方向标记的折线。 */

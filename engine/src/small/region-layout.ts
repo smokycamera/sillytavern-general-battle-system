@@ -169,7 +169,6 @@ export function buildRegionCity(field: BattlefieldSpec, plan: BattlefieldPlan, s
         const inner = path?.cells.find(n => innerWall.has(n));
         if (layers === 2 && inner !== undefined) {
             field.structures![inner] = createStructure('gate', plan.fortLevel ?? 3, { owner: defender, top: true, gateState: spec.state === 'open' ? 'open' : 'closed' });
-            connectCityWallTops(field, path!.cells.slice(0, path!.cells.indexOf(inner) + 1), plan.fortLevel ?? 3, defender);
         }
         pave(path?.cells ?? []);
         const outer = neighbors(field, p).find(n => !mask.has(n));
@@ -210,14 +209,6 @@ export function buildRegionCity(field: BattlefieldSpec, plan: BattlefieldPlan, s
     if (siege)
         field.deploymentZones = [{ side: defender, cells: reserve }, { side: attackingSide, cells: field.tiles.flatMap((_, p) => !mask.has(p) && !groundBlocked(field, p) ? [p] : []) }];
     delete field.generation!.routes;
-}
-/** A gatehouse bridge joins wall tops while keeping the passage beneath it walkable. */
-export function connectCityWallTops(field: BattlefieldSpec, cells: readonly number[], level: number, owner: 'ally' | 'enemy'): void {
-    for (const p of cells.slice(1, -1)) {
-        if (field.structures![p]) continue;
-        field.structures![p] = createStructure('bridge', level, { top: true, platformHeight: 1, owner,
-            access: neighbors(field, p).filter(n => !groundBlocked(field, n)) });
-    }
 }
 /** Named outdoor buildings have actual floor cells; walls and doors keep their normal battle mechanics. */
 export function buildEnterableBuilding(field: BattlefieldSpec, mark: LandmarkPlan, anchor: number, protectedCells: Set<number>, marked: Set<number>, radius=2): number[] {
