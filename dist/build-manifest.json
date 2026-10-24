@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "3.0.1",
-  "builtAt": "2026-10-24T02:37:19.748Z",
-  "sourceFingerprint": "635500155fbb7c664ca9d5c53f987ef6335f4cc823020b4239369ee66016e5be",
+  "builtAt": "2026-10-24T02:47:37.595Z",
+  "sourceFingerprint": "f2c47ec315f2c117d3ca4ea5df7d3815b3725973fc9df44603abe440bb800590",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -272,8 +272,8 @@
     },
     {
       "path": "docs/region-battlefields-20261024.md",
-      "bytes": 8771,
-      "sha256": "f60650a054e80399f27b64473d7fe5774a9e58c8e6808924ef92277c362cfcfb"
+      "bytes": 9906,
+      "sha256": "39544208ada88bb188e477af4838028f299d2801a8b135620ed77cc6ec1da343"
     },
     {
       "path": "docs/region-battlefields-proposal-20261024.md",

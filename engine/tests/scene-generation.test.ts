@@ -19,12 +19,12 @@ export function bridgeTownIntent():SceneIntent {
         {kind:'crossing_count',entity:'river',value:1,...evidence},{kind:'gate_count',entity:'town',value:1,...evidence}]};
 }
 describe('scene constraints and actual deployment',()=>{
-  it('F5 明确传入的建筑地标放不下时仍报原错',()=>{
+  it('F5 明确传入的建筑内部放不下时仍报容量错误',()=>{
     const roster = Array.from({ length: 91 }, (_, p) => p).filter(p => Math.abs(p % 7 - 3) + Math.abs(Math.floor(p / 7) - 6) <= 2)
       .map(p => { const u = sceneUnit('block' + p, 'ally'); u.pos = p; return u; });
     expect(() => generatedLayeredField('explicit-building', 7, 13, ['plains'], {
       plan: { scene: 'field', water: 'none', landmarks: [{ kind: 'building', anchor: 'center' }] }, roster,
-    })).toThrow('建筑地标部署容量不足，请调整布局或地标');
+    })).toThrow('建筑的内部部署容量不足，需要扩大分区或调整位置');
   });
   it('places center at the actual center and riverbank beside real water',()=>{
     const center=generatedLayeredField('center-v2',7,13,['plains'],{plan:{water:'none',landmarks:[{kind:'position',anchor:'center'}]}});
