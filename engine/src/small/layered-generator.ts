@@ -318,7 +318,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   const indoorRooms = field.generation?.interior?.rooms ?? [], boundRooms = new Set<number>();
   const compoundAreas = field.generation?.compound?.areas ?? [], boundAreas = new Set<number>();
   const protectedCells = new Set([...core, field.objective.cell, ...gates, ...(options.roster??[]).flatMap(u=>u.pos!==undefined?[u.pos]:[]), ...(field.city?.frontline ?? []),
-    ...field.structures.flatMap((s,p)=>s?.kind==='gate'||s?.kind==='bridge'&&s.top?[p]:[])]);
+    ...field.structures.flatMap((s,p)=>s?.kind==='gate'?[p]:[])]);
   // Cell beside an already built entity (landmark, bridge, gate, city or river), two cells toward the stated side.
   const besideCell = (near: NonNullable<LandmarkPlan['near']>): number | undefined => {
     const kind = plan?.intent?.entities.find(e => e.id === near.id)?.kind;

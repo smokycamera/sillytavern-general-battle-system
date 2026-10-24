@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "3.0.6",
-  "builtAt": "2026-10-24T13:20:37.743Z",
-  "sourceFingerprint": "451a0b0d0688a93eacac05a60f183ca0892b9773beddf7b503de0f6e712d46a2",
+  "version": "3.0.7",
+  "builtAt": "2026-10-24T13:28:33.583Z",
+  "sourceFingerprint": "df411f888d3c0c1600803e10e70113e2603cbf84a6b6bdce05a764ec9813ec02",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -11,9 +11,9 @@
       "sha256": "93a493b61ffba4661d8ef5abe578723946270a39a9f11909b800a81a817a1f35"
     },
     {
-      "path": "dist/assets/panel-DkW58Pjw.js",
-      "bytes": 1378694,
-      "sha256": "84d5d91120c5e51c3e7f634b2d8cb73850b1eb9e5cfbccbb50cdac4900cb0a91"
+      "path": "dist/assets/panel-DvKewpEB.js",
+      "bytes": 1378619,
+      "sha256": "e7f2816f5d3a2ef035ba5a65c3dfd21a18f3cebbce17a65755998c0150dba7b8"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -31,9 +31,9 @@
       "sha256": "e5fa8cbfea311ba29366db9925c8ae9f8360f2dee1cd741f7a9d8163152f8b27"
     },
     {
-      "path": "dist/assets/worldbooks-C5VBhDgr.js",
-      "bytes": 1241053,
-      "sha256": "1267de2947bc821272d3ab538c4e503544b8af0633b311ca72ac55285ab5804a"
+      "path": "dist/assets/worldbooks-DHNGsONr.js",
+      "bytes": 1240758,
+      "sha256": "ce46758492e0f4f81a50e26fd9f05314a906ce0089ca971fb6414fa2cbf9d4dd"
     },
     {
       "path": "docs/artillery-recovery-v27-20261023.md",
@@ -72,8 +72,8 @@
     },
     {
       "path": "docs/current-release.md",
-      "bytes": 49547,
-      "sha256": "c802717a03fa33fc38ec54caa1225e95e74e7adf166886d49afc23a2352ede7b"
+      "bytes": 50031,
+      "sha256": "97dee8092a0a3a8a11594e91b4734be9e88a632092007eaf161d08ee87a5f724"
     },
     {
       "path": "docs/embedded-worldbook.md",
@@ -408,7 +408,7 @@
     {
       "path": "dist/index.js",
       "bytes": 99425,
-      "sha256": "f56ec934031bddfc86296be273faf2382e8f5aa1d25052229ca833c0e66c3d57"
+      "sha256": "ca7807b59fdbc5e98bfc4970740372fac3dc5476c44ae3730894228a3e241d2e"
     },
     {
       "path": "LICENSE",
@@ -428,7 +428,7 @@
     {
       "path": "manifest.json",
       "bytes": 170,
-      "sha256": "3a3090ec0207da80f3a852ae2a56948e76b3f994dfc9f528ac0803910381577f"
+      "sha256": "300a4951670d21cc0266fcbd1a6aa39b50090cd5c34eb3a44f2018983e32d938"
     },
     {
       "path": "mcp/broker.mjs",
@@ -483,17 +483,17 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 48598,
-      "sha256": "bf2eb4b4d542303d0a6ced006e9556f3bed5ae4359b992789cdec5ae889ce3b3"
+      "sha256": "473fbdfe97f725fe1c988959212c1cce08d526345ea68b8108462f27f888191f"
     },
     {
       "path": "README.md",
-      "bytes": 2725,
-      "sha256": "bae0fa197d0671c293adaacedf92d17eef62520a597fae5236c43bbea03c2f8a"
+      "bytes": 2667,
+      "sha256": "6ac7410092514419d7fa9aa75080354ba357194c37b079356a8188e9060e8d4a"
     },
     {
       "path": "README.zh-CN.md",
-      "bytes": 2518,
-      "sha256": "a956b0a618c57aa1eba59f616f51e32ac98bcdc1e1c213d95fef0d3f4ca13bfb"
+      "bytes": 2462,
+      "sha256": "c6ad8f5e6868c4052db08a6042daa855caac376f884a79d132d1ac63e37cb8bb"
     },
     {
       "path": "scripts/jev-cors-relay.mjs",
