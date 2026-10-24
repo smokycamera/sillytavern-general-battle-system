@@ -121,8 +121,8 @@ describe('移动、开放城墙与组合技能的实际行为',()=>{
   const outside=f.tiles.flatMap((_,p)=>!f.city!.inside.includes(p)&&!walls.includes(p)&&!groundBlocked(f,p)?[p]:[]);
   expect(outside.some(p=>findGridPath(f,p,f.city!.core[0]!,q=>!groundBlocked(f,q)))).toBe(true);
  });
- it('沿东部地图边缘的双重陆墙保留两条纵向防线，不能因double自动围成方堡',()=>{
-  const plan=compileLayout({city:{at:['C1','D1','C2','D2','C3','D3','C4','D4'],walls:'double'},ally:{at:['A2','A3']}},{scene:'city_siege',size:'standard',attacker:'ally',objectiveMode:'siege',units:[],map:[11,17]}).plan;
+ it('明确指定front的双重陆墙仍保留两条纵向防线',()=>{
+  const plan=compileLayout({city:{at:['C1','D1','C2','D2','C3','D3','C4','D4'],walls:'front',layers:2},ally:{at:['A2','A3']}},{scene:'city_siege',size:'standard',attacker:'ally',objectiveMode:'siege',units:[],map:[11,17]}).plan;
   const f=generatedLayeredField('double-front',7,13,['siege'],{plan,attackingSide:'ally'});
   expect(f.city!.shape).toBe('front');expect(f.city!.facing).toBe('west');expect(f.city!.terrace!.length).toBeGreaterThan(0);
   expect(new Set(f.city!.frontline.map(p=>p%f.width)).size).toBe(2);

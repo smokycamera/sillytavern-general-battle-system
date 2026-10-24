@@ -10,7 +10,7 @@ const ref = process.argv[2], directory = process.env.BENCH_DIR ?? 'artifacts/ai-
 mkdirSync(directory, { recursive: true });
 for (const mode of ref ? ['before', 'after'] : ['after']) {
   const plugins = mode === 'before' ? [{ name: 'baseline', setup(builder) {
-    builder.onLoad({ filter: /engine[\\/]src[\\/](damage|skill-tactics|skill-effects|small[\\/]battle)\.ts$/ }, args => ({
+    builder.onLoad({ filter: /engine[\\/]src[\\/](damage|power-anchors|skill-tactics|skill-effects|small[\\/]battle)\.ts$/ }, args => ({
       contents: execFileSync('git', ['show', ref + ':' + relative(process.cwd(), args.path).split(sep).join('/')], { encoding: 'utf8' }), loader: 'ts',
     }));
   } }] : [];

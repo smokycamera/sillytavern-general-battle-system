@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generateUnit, prepareCombatModel, previewAttack, resolveAttack, standardConditionMap, traitRegistry,
-  V8_OVERFLOW_D20, V8_OVERFLOW_TW, V29_OVERFLOW_D20, V32_OVERFLOW_D20, prepareArmsModel, compileItem, grantBarrier, SeededRng, sampledPreviewComputations, beginPreviewScope, endPreviewScope, previewScopeEpoch, type AttackOpts } from '../src/index.js';
+  V8_OVERFLOW_D20, V8_OVERFLOW_TW, V29_OVERFLOW_D20, V32_OVERFLOW_D20, V34_OVERFLOW_D20, V34_OVERFLOW_TW, prepareArmsModel, compileItem, grantBarrier, SeededRng, sampledPreviewComputations, beginPreviewScope, endPreviewScope, previewScopeEpoch, type AttackOpts } from '../src/index.js';
 import { memberHealth } from '../src/member-health.js';
 import { bracePose } from '../src/tactics.js';
 let serial = 0;
@@ -20,6 +20,18 @@ function options(scale: 'hero' | 'company' = 'hero'): Omit<AttackOpts, 'rng'> {
 function computed(query: () => unknown): number { const before = sampledPreviewComputations(); query(); return sampledPreviewComputations() - before; }
 describe('屏障多段预览的有界值缓存', () => {
   const scenarios: [string, 'hero' | 'company', (o: Omit<AttackOpts, 'rng'>) => void][] = [
+    ...(['dagger', 'cannon', 'sprayer'] as const).flatMap(mechanism => [V34_OVERFLOW_D20, V34_OVERFLOW_TW].map<[string, 'company', (o: Omit<AttackOpts, 'rng'>) => void]>(rules => [
+      `${rules.id} ${mechanism} 分段抽样`, 'company', o => {
+        o.rules = rules;
+        const weapon = compileItem({ kind: 'weapon', mechanism, power: 4 }, { id: mechanism, seed: mechanism });
+        if (weapon.kind !== 'weapon') throw Error('weapon fixture');
+        o.attacker.weapon = weapon.value; o.attacker.weapon.attacks = 2;
+        o.ranged = mechanism !== 'dagger'; o.distance = o.ranged ? 4 : 1;
+        for (const u of [o.attacker, o.defender]) prepareArmsModel(u, rules);
+        o.defender.conditions = [{ id: 'stunned', dur: 2 }];
+        o.defender.formation!.health = [{ count: 10, hp: 3 }, { count: 10, hp: o.defender.formation!.memberHp }];
+      },
+    ])),
     ['个体连击', 'hero', () => {}],
     ['编队连击', 'company', () => {}],
     ['优势与扩大暴击', 'company', o => { o.advantage = 'adv'; o.rules.critMin = 15; }],

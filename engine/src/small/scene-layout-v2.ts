@@ -8,7 +8,7 @@ import { worldAnchorCell } from './landmark-placement.js';
 import { SCENE_ARCHETYPE_NAMES, type SceneArchetype, type WorldAnchor } from './scene-intent.js';
 import type { BattlefieldScene } from './map-design.js';
 import { compassSector, gridBounds } from './grid-anchor.js';
-import { buildRegionCity, regionCells } from './region-layout.js';
+import { buildRegionCity, regionCells, connectCityWallTops } from './region-layout.js';
 export function selectSceneArchetype(scene: BattlefieldScene, family: string, seed: string): SceneArchetype {
     const rng = new SeededRng('scene-archetype-v1:' + seed);
     const pool: SceneArchetype[] = scene === 'interior' ? ['residence', 'great_hall', 'fortress'] : scene === 'trenches' ? ['trench_line', 'trench_depth']
@@ -68,7 +68,7 @@ export function siegeWallLayout(plan: Pick<BattlefieldPlan, 'shape' | 'wallLayer
         const roll = new SeededRng('city-walls-v1:' + seed).next();
         return { ring: position === 'center' || roll >= .45 && roll < .8, layers: position !== 'center' && roll >= .8 ? 2 : 1 };
     }
-    return { ring: position === 'center' || (plan.shape ?? 'front') !== 'front', layers: plan.wallLayers ?? 1 };
+    return { ring: plan.shape !== 'front', layers: plan.wallLayers ?? 1 };
 }
 /** The walled side an assault faces: where the attackers are said to start, else the widest open ground. */
 function siegeFacing(field: BattlefieldSpec, position: WorldAnchor, walled: Record<CitySide, boolean>, [l, r, t, b]: number[], attackers: readonly WorldAnchor[], attackEdge: CitySide): CitySide {
@@ -237,7 +237,9 @@ export function buildPlannedCity(field: BattlefieldSpec, plan: BattlefieldPlan, 
                 for (const q of neighbors(field, into))
                     if (field.structures![q]?.kind === 'building')
                         field.structures![q] = null;
-                pave(findGridPath(field, p, into, q => q === into || terrace.includes(q), () => 1));
+                const connection = findGridPath(field, p, into, q => q === into || terrace.includes(q), () => 1);
+                pave(connection);
+                if (connection) connectCityWallTops(field, connection.cells, level, defender);
                 pave(findGridPath(field, into, coreCell, q => town.includes(q), q => field.structures![q]?.kind === 'building' ? 100 : 1));
             }
             else

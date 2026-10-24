@@ -497,12 +497,20 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
       stats = { sum: 0, squares: 0, positive: 0, casualties: 0, maximum: 0, hits: 0 }; sampledPreviewRuns++;
       // 结算只改守方；攻方副本由全部抽样共用，守方每次从原状态重新复制。
       const attacker = cloneData(opts.attacker), previewMemo: PreviewMemo = { bases: new Map() };
+      // Every seed uses the same attack inputs and packet share. Replace only the
+      // private defender and RNG instead of spreading all options for each attack.
+      const sampleOpts: AttackOpts = { ...opts, attacker, defender: opts.defender, rng: new SeededRng('barrier-preview:0'), previewMemo };
+      const packets = opts.packetShare !== undefined ? 1 : cohortSamples(sampleOpts);
+      if (packets > 1) sampleOpts.packetShare = 1 / packets;
       for (let i = 0; i < SAMPLED_PREVIEW_COUNT; i++) {
         const defender = damageCopy(opts.defender);
         const rng = new SeededRng('barrier-preview:' + i), before = memberHealth(defender), members = defender.hp;
+        sampleOpts.defender = defender; sampleOpts.rng = rng;
         let hitAny = false;
         for (let n = 0; n < (opts.abilityDamage ? 1 : ctx.weapon?.attacks ?? 1) && defender.hp > 0; n++) {
-          hitAny = sampledAttackHit({ ...opts, attacker, defender, rng, previewMemo }) || hitAny;
+          for (let packet = 0; packet < Math.max(1, packets) && defender.hp > 0; packet++) {
+            hitAny = resolveAttackPacket(sampleOpts, true) || hitAny;
+          }
         }
         stats.hits += Number(hitAny);
         const loss = before - memberHealth(defender);
@@ -739,8 +747,9 @@ export function applyResolutionDamage(target:Combatant,result:AttackResolution):
 }
 
 /** 一段攻击中不含随机数的部分。 */
-interface AttackBasis { ward: StackResult; context: ReturnType<typeof attackContext>; resolved: ResolvedWeapon; dmgMult: number; wardMult: number; atkDetail: string; penetration?: ReturnType<typeof penetrationContext>; sizes?: Map<string, { scale: ReturnType<typeof outcomeScale>; sourceScale: number }> }
-interface PreviewMemo { bases: Map<string, AttackBasis>; samples?: number; penetration?: ReturnType<typeof penetrationContext>; loose?: boolean }
+interface AttackBasis { ward: StackResult; context: ReturnType<typeof attackContext>; resolved: ResolvedWeapon; dmgMult: number; wardMult: number; atkDetail: string; penetration?: ReturnType<typeof penetrationContext>; sizes?: Map<string, { scale: ReturnType<typeof outcomeScale>; sourceScale: number }>; critical?: ReturnType<typeof criticalInfo>; hitRules?: RulePack; hitWeights?: number[] }
+interface PreviewMemo { bases: Map<string, AttackBasis>; samples?: number; penetration?: ReturnType<typeof penetrationContext>; loose?: boolean; cannon?: boolean; modernArms?: boolean;
+  lastBasis?: { hp: number; status: Combatant['status']; shield: number | undefined; barrier: number | undefined; value: AttackBasis } }
 /** 抽样副本：伤损只改写生命基数、状态、成员分组、屏障、盾耐久、能量盾与士气记录；其余数据与原单位共享且只读。 */
 function damageCopy(unit: Combatant): Combatant {
   // Copy once, then replace mutable branches; avoid repeatedly spreading the large unit object.
@@ -773,33 +782,32 @@ function attackBasis(opts: AttackOpts): AttackBasis {
   // Ordinary weapons do not select their attack/penetration basis from individual
   // members' wound distribution. Keep headcount, shields and conditions; only cannon
   // ammunition selection needs the complete formation. Damage still uses live wounds.
-  const cannon = isCannonWeapon(opts.weaponOverride ?? opts.attacker.weapon);
+  const cannon = memo ? memo.cannon ??= isCannonWeapon(opts.weaponOverride ?? opts.attacker.weapon) : isCannonWeapon(opts.weaponOverride ?? opts.attacker.weapon);
+  const modernArms = memo ? memo.modernArms ??= isArmsV2(opts.rules.armsModel) : isArmsV2(opts.rules.armsModel);
+  const last = memo?.lastBasis;
+  // Most packets wound the same surviving member. Compare the exact existing key
+  // fields before allocating another string and looking up the same basis.
+  if (modernArms && !cannon && last && last.hp === d.hp && last.status === d.status
+    && last.shield === d.shieldDurability?.remaining && last.barrier === d.barrier?.remaining) return last.value;
   // Conditions and barrier specifications never change inside a damage-only sample;
   // only shield/barrier balances do. Each independent preview owns a fresh memo.
-  const key = !memo ? undefined : isArmsV2(opts.rules.armsModel) ? !cannon
+  const key = !memo ? undefined : modernArms ? !cannon
     ? d.hp + ':' + d.status + ':' + d.shieldDurability?.remaining + ':' + d.barrier?.remaining
     : JSON.stringify([d.hp,d.status,d.shieldDurability,d.conditions,d.barrier,d.formation]) : opts.attacker.cannonAmmo || !cannon
     ? (memo.loose ??= activeTraitIds(d).includes('loose-formation')) ? String(looseFormation(d)) : ''
     : JSON.stringify([d.hp, d.status, d.morale, d.moraleState, d.barrier, d.formation, d.recoverableWounded, d.conditions, d.base]);
   const known = key === undefined ? undefined : memo!.bases.get(key);
-  if (known) return known;
+  const rememberLast = (value: AttackBasis) => {
+    if (memo && modernArms && !cannon) memo.lastBasis = { hp: d.hp, status: d.status, shield: d.shieldDurability?.remaining, barrier: d.barrier?.remaining, value };
+    return value;
+  };
+  if (known) return rememberLast(known);
   const context = attackContext(opts), stack = { sameNameKeepsHighest: opts.rules.sameNameKeepsHighest, maxFlat: opts.rules.maxFlat };
   const ward = resolveStack(context.defMods, 'ward', context.ctxDef, stack);
   const basis: AttackBasis = { ward, context, resolved: { weapon: context.weapon }, atkDetail: context.attackDetail,
     dmgMult: resolveStack(context.atkMods, 'dmg', context.ctxAtk, stack).multTotal, wardMult: ward.multTotal };
   if (key !== undefined) opts.previewMemo!.bases.set(key, basis);
-  return basis;
-}
-/** Sampling consumes only hit-any and the mutated defender, without building packet reports. */
-function sampledAttackHit(opts: AttackOpts & { previewMemo: PreviewMemo }): boolean {
-  const samples = opts.packetShare !== undefined ? 1 : opts.previewMemo.samples ??= cohortSamples(opts);
-  if (samples <= 1) return resolveAttackPacket(opts, true);
-  const packet = { ...opts, packetShare: 1 / samples };
-  let hit = false;
-  for (let i = 0; i < samples && opts.defender.hp > 0; i++) {
-    hit = resolveAttackPacket(packet, true) || hit;
-  }
-  return hit;
+  return rememberLast(basis);
 }
 export function resolveAttack(opts: AttackOpts): AttackResolution {
   const samples=opts.packetShare!==undefined?1:opts.previewMemo?opts.previewMemo.samples??=cohortSamples(opts):cohortSamples(opts);
@@ -837,7 +845,7 @@ function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean): AttackResol
   let attackRoll: DiceRollDetail | undefined;
   let hitChance: number | undefined;
 
-  const critInfo=criticalInfo(opts,weapon);
+  const critInfo=basis.critical ??= criticalInfo(opts,weapon);
   if (opts.autoHit) hit = true;
   else if (rules.hitMode === 'd20') {
     let nat: number;
@@ -856,7 +864,11 @@ function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean): AttackResol
       hit = true;
       crit = true;
     } else {
-      const weight = d20HitWeight({...rules,critMin:critInfo.minimum}, nat, netAtk, targetDef);
+      const hitRules = basis.hitRules ??= critInfo.minimum === rules.critMin ? rules : { ...rules, critMin: critInfo.minimum };
+      // Each basis has fixed hit inputs; preserve RNG draws while reusing the
+      // deterministic weight for a die face throughout the 96 preview seeds.
+      const weight = sampleOnly ? (basis.hitWeights ??= [])[nat] ??= d20HitWeight(hitRules, nat, netAtk, targetDef)
+        : d20HitWeight(hitRules, nat, netAtk, targetDef);
       hit = weight >= 1 || weight > 0 && rng.next() < weight;
     }
   } else {

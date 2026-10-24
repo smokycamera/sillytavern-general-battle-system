@@ -160,6 +160,7 @@ export function layoutTask(ctx: LayoutContext, retry?: LayoutRetry): string {
     '             x →', '          A    B    C    D',
     'y ↓  1   A1   B1   C1   D1', '     2   A2   B2   C2   D2', '     3   A3   B3   C3   D3', '     4   A4   B4   C4   D4',
     '正文只给宽泛方向时，在符合该方向的分区中选择；中央对应B2/C2/B3/C3，单位有具体地点时优先使用place。',
+    '城市、城堡、营寨、院落和水域等区域，根据大小、位置和形状选择占据的分区及数量。',
     '只输出一个JSON对象，不需要的项省略。各项：',
     `- archetype：场所风格，可选 ${ARCHETYPES[ctx.scene].map(a => a + SCENE_ARCHETYPE_NAMES[a]).join('|')}。`,
     '- cover：掩体与障碍多少，sparse少|balanced适中|dense多。',
@@ -283,7 +284,7 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
   if (scene === 'city_siege' && cityRaw) {
     const layers = integer(cityRaw.layers, 1, 2) as 1 | 2 | undefined;
     const stated = [cityRaw.walls, cityRaw.wall_layout, cityRaw.layout, cityRaw.wall].map(wallsOf).find(Boolean) ?? (layers ? { layers } : undefined);
-    if (stated?.layers) plan.wallLayers = stated.layers;
+    if (layers ?? stated?.layers) plan.wallLayers = layers ?? stated!.layers;
     if (stated?.ring !== undefined) plan.shape = stated.ring || !citySectors && compassSector(cityAt ?? 'center') === 'center' ? 'enclosure' : 'front';
     if (!citySectors && stated?.ring === false && compassSector(cityAt ?? 'center') === 'center') notes.add('城在中央，改为四面城墙');
     if (!stated && cityRaw.walls !== undefined) notes.add('城墙形制无效，由程序决定');

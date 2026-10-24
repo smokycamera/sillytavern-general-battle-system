@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **3.0.5**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **3.0.6**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-3.0.5 strengthens the three fueled sprays and adds a bonus against formations, lets amphibious movement override sailing while retaining the original unit icon, supports LLM orders to attack structures and reports blocked routes, and gives both battle preparation steps five attempts with rejected-answer feedback. See the [current release](docs/current-release.md).
+3.0.6 keeps double-walled cities enclosed when their districts touch a map edge, connects inner and outer gatehouse tops with walkable bridges, asks the map API to choose region counts from size, location and shape, and reduces repeated battle AI damage-preview work. See the [current release](docs/current-release.md).
 
 ## Documentation
 
