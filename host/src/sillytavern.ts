@@ -24,7 +24,8 @@ export interface HostContext {
   messageFormatter?: MessageFormatter;
   characterId?: number | string; chatId?: string; branchId?: string; groupId?: string | number | false | null;
   name1?: string; name2?: string;
-  characters?: { avatar?: string; name?: string; chat?: string }[];
+  characters?: { avatar?: string; name?: string; chat?: string; data?: { extensions?: { world?: string } } }[];
+  powerUserSettings?: { persona_description_lorebook?: string };
   chat?: HostMessage[];
   chatMetadata?: Record<string, unknown>;
   extensionSettings?: Record<string, unknown>;

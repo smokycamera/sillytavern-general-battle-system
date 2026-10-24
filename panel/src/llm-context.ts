@@ -17,6 +17,7 @@ import { narrativeIds } from './narrative-ids.js';
 import { stripThinking } from './protocol-syntax.js';
 import type { CommanderState } from './llm-command.js';
 import { sha256, withAbort } from '../../host/src/browser-compat.js';
+import { WorldbookReadError } from '../../host/src/worldbook-error.js';
 
 export interface LlmEncounterContext extends JevEncounterContext, PreparationDesignResult {
   llmCommanders?: Partial<Record<import('../../engine/src/index.js').Side, CommanderState>>;
@@ -276,7 +277,7 @@ function normalizeSelections(answer: Record<string, unknown>, fields: readonly C
   return selections;
 }
 function llmFailure(error: unknown): string {
-  if (error instanceof BattlefieldPlanError) return error.message;
+  if (error instanceof BattlefieldPlanError || error instanceof WorldbookReadError) return error.message;
   if (!(error instanceof JevConnectionError || error instanceof JevTransportError)) return error instanceof Error && /请先填写 API|普通 LLM/.test(error.message) ? error.message : '模型请求或返回格式无效';
   // These error classes already contain bounded, credential-free diagnostics.
   // Preserve actionable host, timeout and CORS details instead of hiding the cause.

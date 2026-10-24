@@ -21,6 +21,7 @@ copyFileSync('docs/indoor-layouts-20261020.md', path.join(output, 'docs/indoor-l
 copyFileSync('docs/siege-trenches-20261021.md', path.join(output, 'docs/siege-trenches-20261021.md'));
 copyFileSync('docs/llm-command-20261021.md', path.join(output, 'docs/llm-command-20261021.md'));
 copyFileSync('docs/character-worldbooks-20261024.md', path.join(output, 'docs/character-worldbooks-20261024.md'));
+copyFileSync('docs/worldbook-start-20261024.md', path.join(output, 'docs/worldbook-start-20261024.md'));
 copyFileSync('docs/region-battlefields-20261024.md', path.join(output, 'docs/region-battlefields-20261024.md'));
 copyFileSync('docs/region-battlefields-proposal-20261024.md', path.join(output, 'docs/region-battlefields-proposal-20261024.md'));
 copyFileSync('docs/worldbook-map-review-20261024.md', path.join(output, 'docs/worldbook-map-review-20261024.md'));

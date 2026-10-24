@@ -1,8 +1,8 @@
 import { expect, it, vi } from 'vitest';
-import { createWorldbookSource } from '../src/worldbooks.js';
+import { createWorldbookSource, type HostWorldbookBindings } from '../src/worldbooks.js';
 import type { HostContext } from '../src/sillytavern.js';
 
-function fixture(tauri = false) {
+function fixture(tauri = false, bindings?: HostWorldbookBindings) {
   const handlers = new Map<string, Set<(...args: unknown[]) => void>>();
   const context: HostContext = {
     characterId: 0, characters: [{ avatar: 'a.png' }, { avatar: 'b.png' }], chatId: 'a',
@@ -17,7 +17,7 @@ function fixture(tauri = false) {
     context.event_types = context.eventTypes; delete context.eventTypes;
     context.eventSource!.removeListener = context.eventSource!.off; delete context.eventSource!.off;
   }
-  const request = vi.fn(), source = createWorldbookSource(() => context, request);
+  const request = vi.fn(), source = createWorldbookSource(() => context, request, bindings ? async () => bindings : undefined);
   const emit = (kind: string, ...args: unknown[]) => { for (const callback of handlers.get(kind) ?? []) callback(...args); };
   return { context, source, request, emit, handlers };
 }
@@ -45,6 +45,38 @@ it('copies only the actual primary API activation, sharing blue, triggered green
   expect(await f.source.active!()).toEqual(expected);
   expect(f.request).not.toHaveBeenCalled();
   f.source.dispose!();
+});
+
+it('starts with no lorebooks before generation, while every configured source still requires its actual activation', async () => {
+  const bindings: HostWorldbookBindings = { world_info: {}, selected_world_info: [] }, f = fixture(false, bindings);
+  expect(await f.source.active!()).toEqual([]);
+  f.context.characters![0]!.data = { extensions: { world: '角色书' } };
+  await expect(f.source.active!()).rejects.toThrow('生成一次正文');
+  f.context.characters![0]!.data!.extensions!.world = '';
+  bindings.selected_world_info = ['全局书'];
+  await expect(f.source.active!()).rejects.toThrow('生成一次正文');
+  bindings.selected_world_info = []; f.context.chatMetadata = { world_info: '聊天书' };
+  await expect(f.source.active!()).rejects.toThrow('生成一次正文');
+  f.context.chatMetadata = {}; f.context.powerUserSettings = { persona_description_lorebook: '人设书' };
+  await expect(f.source.active!()).rejects.toThrow('生成一次正文');
+  f.context.powerUserSettings = {}; bindings.world_info!.charLore = [{ name: 'a', extraBooks: ['附加书'] }];
+  await expect(f.source.active!()).rejects.toThrow('生成一次正文');
+  bindings.world_info!.charLore = [{ name: 'b', extraBooks: ['别的角色书'] }];
+  expect(await f.source.active!()).toEqual([]);
+  expect(f.request).not.toHaveBeenCalled(); f.source.dispose!();
+});
+
+it('does not treat unknown bindings as empty, and stops a missing-activation lookup after a chat switch', async () => {
+  const f = fixture(false, {});
+  await expect(f.source.active!()).rejects.toThrow('生成一次正文'); f.source.dispose!();
+  for (const bindings of [{world_info: [], selected_world_info: []}, {world_info: {charLore: [null]}, selected_world_info: []}]) {
+    const malformed = fixture(false, bindings as unknown as HostWorldbookBindings);
+    await expect(malformed.source.active!()).rejects.toThrow('生成一次正文'); malformed.source.dispose!();
+  }
+  let finish!: (bindings: HostWorldbookBindings) => void;
+  const source = createWorldbookSource(() => f.context, f.request, () => new Promise(resolve => { finish = resolve; }));
+  const pending = source.active!(); f.context.chatId = 'changed'; finish({ world_info: {}, selected_world_info: [] });
+  await expect(pending).rejects.toThrow('聊天已变化'); source.dispose!();
 });
 
 it('does not carry a green activation into an empty next round, and ignores dry-run generations', async () => {
