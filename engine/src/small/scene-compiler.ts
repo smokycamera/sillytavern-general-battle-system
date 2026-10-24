@@ -212,7 +212,7 @@ export function finishSceneRegions(field: BattlefieldSpec, plan: BattlefieldPlan
             && roster.some(u => u.id === unitBindings[other.subject] && u.side === owner)).map(other => unitBindings[other.subject])) : undefined;
         const actors = roster.filter(u => group ? group.has(u.id) : unitId ? u.id === unitId : u.side === side), large = actors.filter(u => u.body && u.body !== 'human' || u.mount).length;
         const required = large + Math.ceil((actors.length - large) / 2);
-        const open = (p: number) => !groundBlocked(field, p) || field.generation?.waterCoverage === 'all' && actors.some(u => !groundBlocked(field, p, u));
+        const open = (p: number) => !groundBlocked(field, p) || !!field.generation?.waterCoverage && actors.some(u => !groundBlocked(field, p, u));
         const distance = (p: number) => Math.min(...region.cells.map(q => gridDistance(field, p, q)));
         let cells = [...region.access], platform = holds && region.cells.every(p => intactStructure(field, p)?.top);
         if (platform)

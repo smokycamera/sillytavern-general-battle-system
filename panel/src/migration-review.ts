@@ -31,8 +31,8 @@ function validateBattle(save: NarrativeSave): void {
     if (kind === 'small' && u.vanguardOrigin !== undefined) throw new Error('会战先锋来源不能放入小战存档记录');
     if (u.tacticalPose !== undefined) {
       validateTacticalPose(u.tacticalPose);
-      const field = snap.battlefield as { width?: number } | undefined;
-      if (u.tacticalPose.mode !== kind || kind === 'small' && u.tacticalPose.width !== field?.width) throw new Error('姿态与当前战场尺度不匹配');
+      const field = snap.battlefield as { width?: number; height?: number } | undefined;
+      if (u.tacticalPose.mode !== kind || kind === 'small' && (u.tacticalPose.width !== field?.width || u.tacticalPose.height !== undefined && u.tacticalPose.height !== field?.height)) throw new Error('姿态与当前战场尺度不匹配');
     }
     if (u.traitSources !== undefined) {
       if (!Array.isArray(u.traitSources) || new Set(u.traitSources.map((s) => s?.id)).size !== u.traitSources.length) throw new Error('特质来源结构或身份损坏');

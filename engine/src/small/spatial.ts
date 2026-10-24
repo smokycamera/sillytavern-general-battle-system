@@ -71,14 +71,14 @@ export function standardField(width = 7, height = 9, tags: string[] = []): Battl
 export function validateField(field: BattlefieldSpec): void {
   if (field.movementCostModel !== undefined && field.movementCostModel !== 'minimum-step-v1') throw Error('未知地形移动规则');
   if (field.generation?.scene !== undefined && !BATTLEFIELD_SCENES.includes(field.generation.scene)) throw Error('场景记录损坏');
-  if (field.version !== 2 || ![[7, 9], [5, 7], [7, 11], [7, 13], [9, 15], [11, 17], [13, 19]].some(([w, h]) => field.width === w && field.height === h)) throw new Error('地图尺寸不支持（野战7×13，城区9×15/11×17/13×19）');
+  if (field.version !== 2 || !Number.isSafeInteger(field.width) || !Number.isSafeInteger(field.height) || field.width < 5 || field.height < 7 || !Number.isSafeInteger(field.width * field.height)) throw new Error('地图尺寸须为至少5列×7行的整数格数');
   if (field.tiles.length !== field.width * field.height || field.tiles.some((t) => !Object.hasOwn(TERRAIN_NAMES, t))) throw new Error('地形数据不完整');
   validateLayers(field);
   validateHeightMap(field);
   validateSceneRecord(field);
   if (field.objective.kind === 'control' && field.objective.cells !== undefined && (!Array.isArray(field.objective.cells) || !field.objective.cells.includes(field.objective.cell) || field.objective.cells.some(p => !inBounds(field, p) || groundBlocked(field, p)))) throw Error('占领区域不合法');
   if (field.environment !== undefined && (!Array.isArray(field.environment) || field.environment.some((t) => typeof t !== 'string'))) throw new Error('环境附加记录损坏');
-  const floodedReference = field.objective.kind === 'annihilation' && field.generation?.waterCoverage === 'all'
+  const floodedReference = field.objective.kind === 'annihilation' && !!field.generation?.waterCoverage
     && field.tiles[field.objective.cell] === 'deep_water' && !field.structures?.[field.objective.cell];
   if (!inBounds(field, field.objective.cell) || !floodedReference && (field.layerVersion ? groundBlocked(field, field.objective.cell) : field.tiles[field.objective.cell] === 'wall')) throw new Error('目标必须是合法可通行格');
   if (field.objective.kind === 'escape' && field.objective.defenderWins !== undefined && typeof field.objective.defenderWins !== 'boolean') throw new Error('护送判胜规则损坏');
@@ -87,7 +87,16 @@ export function inBounds(field: BattlefieldSpec, cell: number): boolean { return
 export function gridDistance(field: BattlefieldSpec, a: number, b: number): number {
   return Math.abs(a % field.width - b % field.width) + Math.abs(Math.floor(a / field.width) - Math.floor(b / field.width));
 }
-export function cellLabel(field: BattlefieldSpec, cell: number): string { return String.fromCharCode(65 + cell % field.width) + (Math.floor(cell / field.width) + 1); }
+export function gridColumnLabel(index: number): string {
+  let label='';for(let n=index+1;n>0;n=Math.floor((n-1)/26))label=String.fromCharCode(65+(n-1)%26)+label;
+  return label;
+}
+export function gridColumnIndex(label: string): number {
+  if(!/^[A-Z]+$/i.test(label))return -1;
+  let index=0;for(const c of label.toUpperCase())index=index*26+c.charCodeAt(0)-64;
+  return Number.isSafeInteger(index)?index-1:-1;
+}
+export function cellLabel(field: BattlefieldSpec, cell: number): string { return gridColumnLabel(cell % field.width) + (Math.floor(cell / field.width) + 1); }
 /** 战报使用实际落点；飞越特殊地形时标清空中，避免误报地面掩护。 */
 /** The collision token stays wall; environmental names explain natural hard blockers in v4 maps. */
 export function structureDisplayName(field: BattlefieldSpec, cell: number): string {

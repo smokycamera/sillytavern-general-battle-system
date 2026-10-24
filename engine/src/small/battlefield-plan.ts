@@ -4,7 +4,7 @@ import type { CityShape } from './layers.js';
 import { INTERIOR_USES, INTERIOR_PATTERNS, type InteriorPlan } from './interior-plan.js';
 import { COMPOUND_PATTERNS, TRENCH_PATTERNS, type CompoundPlan, type TrenchPlan } from './position-plan.js';
 import {BattlefieldPlanError} from './battlefield-error.js';
-import { COMPASS_ANCHORS } from './grid-anchor.js';
+import { COMPASS_ANCHORS, GRID_ANCHORS, type GridAnchor } from './grid-anchor.js';
 export {BattlefieldPlanError} from './battlefield-error.js';
 import { normalizeSceneIntent, MAX_DEPLOYMENT_PLANS, SCENE_ARCHETYPES, WORLD_ANCHORS, SCENE_INTENT_PROMPT, type SceneIntent, type SceneArchetype, type WorldAnchor } from './scene-intent.js';
 export { MAX_DEPLOYMENT_PLANS, MAX_DEPLOYMENT_ZONES } from './scene-intent.js';
@@ -42,10 +42,14 @@ export interface BattlefieldPlan {
   compound?: CompoundPlan;
   trenches?: TrenchPlan;
   cityPosition?: WorldAnchor;
+  /** Numbered regions are an actual joined footprint, unlike the legacy city anchor. */
+  citySectors?: GridAnchor[];
   waterAxis?: 'horizontal' | 'vertical';
   waterPosition?: WorldAnchor;
   waterCoverage?: 'all';
   waterDepth?: 'mixed';
+  waterSectors?: GridAnchor[];
+  waterShallowSectors?: GridAnchor[];
   bridgePlan?: BridgePlan[];
   /** Array length is the exact number of gates; each state is independent. Overrides legacy gates/gateState. */
   gatePlan?: GatePlan[];
@@ -83,6 +87,11 @@ export function normalizeBattlefieldPlan(value: unknown): { plan?: BattlefieldPl
   for (const [key, choices] of Object.entries(enums)) if (input[key] !== undefined) {
     if (typeof input[key] === 'string' && (choices as readonly string[]).includes(input[key] as string)) (plan as Record<string, unknown>)[key] = input[key];
     else notes.push(`地图${key}无效，采用本地默认`);
+  }
+  for (const key of ['citySectors', 'waterSectors', 'waterShallowSectors'] as const) if (input[key] !== undefined) {
+    if (!Array.isArray(input[key]) || !input[key].length || input[key].length > 16 || input[key].some(a => !(GRID_ANCHORS as readonly unknown[]).includes(a)))
+      throw new BattlefieldPlanError(`${key}须为1—16个4×4分区编号`);
+    plan[key] = [...new Set(input[key] as GridAnchor[])];
   }
   if (input.interior !== undefined) {
     const inside = object(input.interior), interior: InteriorPlan = {};

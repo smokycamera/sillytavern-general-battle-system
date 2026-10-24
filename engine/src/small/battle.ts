@@ -788,7 +788,7 @@ export class SmallBattle {
     const actor = this.byId(actorId);
     const threat = this.combatants.filter((u) => combatHostile(u, actor, this.combatants) && u.status === 'ready' && !this.sightReason(actor, u))
       .sort((a, b) => this.dist(actor, a) - this.dist(actor, b) || a.id.localeCompare(b.id))[0];
-    actor.tacticalPose = bracePose(actor, threat, 'small', this.battlefield!.width);
+    actor.tacticalPose = bracePose(actor, threat, 'small', this.battlefield!.width,this.battlefield!.height);
     this.spendAction(actorId); this.overwatch.delete(actorId);
     this.recordEvent({ round: this.round, kind: 'condition', participants: [actor.id, ...(threat ? [threat.id] : [])], text: `${actor.name} 固守${threat ? '，面向' + threat.name : ''}` });
   }
@@ -2583,7 +2583,7 @@ export class SmallBattle {
       if (!this.nonSkillActionAvailable(unitId)) continue;
       if (!this.braceReason(unitId)) {
         const threats = foes.filter((f) => !this.sightReason(actor, f)).sort((a, b) => this.dist(actor, a) - this.dist(actor, b) || a.id.localeCompare(b.id)).slice(0, 3);
-        const braced = { ...actor, tacticalPose: bracePose(actor, threats[0], 'small', field.width) };
+        const braced = { ...actor, tacticalPose: bracePose(actor, threats[0], 'small', field.width,field.height) };
         const avoided = incomingReduction(actor, braced);
         const protectedDamage = shieldProtectionValue(braced);
         if (avoided > 0 || protectedDamage > 0) plans.push({ score: baseScore + avoided * 0.3 + protectedDamage, selfDefenseScore: avoided * 0.3, path, kind: 'brace' });
