@@ -18,6 +18,7 @@ import { applyPlannedDeployments, withCitySides } from './force-deployment.js';
 import { INTERIOR_USES, primaryInteriorRoom } from './interior-plan.js';
 import { TRENCH_PATTERNS } from './position-plan.js';
 import { compassSector, gridPosition, gridBounds, inGridSector } from './grid-anchor.js';
+import { regionMapSize, regionCells, buildingRadius, buildEnterableBuilding } from './region-layout.js';
 
 export interface LayeredGenerationOptions extends FieldGenerationOptions { plan?: BattlefieldPlan; scene?: BattlefieldScene; unitBindings?: Record<string,string> }
 export function recommendedCitySize(roster: readonly Combatant[] = [], size?: BattlefieldPlan['size']): [number, number] {
@@ -42,8 +43,10 @@ export function generatedLayeredField(seed: string, width = 7, height = 13, tags
   // Conservative ground-space floor; actual layers/air/platforms are then checked below.
   const neededWidth = Math.ceil(Math.max(0, ...(['ally', 'enemy', 'neutral'] as const).map(side => active.filter(u => u.side === side).reduce((n,u) => n + footprint(u), 0))) / 6);
   if (initial[0] < neededWidth && !roster.some(u => u.pos !== undefined)) initial = sizes.find(([w]) => w >= neededWidth) ?? sizes.at(-1)!;
-  const candidates: [number,number][] = [initial, ...sizes.filter(([w]) => w > initial[0])];
   const fixed = roster.some(u => u.pos !== undefined);
+  if(!fixed)initial=regionMapSize(plan,active,initial[0],initial[1],options.unitBindings);
+  const candidates: [number,number][] = fixed ? [initial] : [initial, ...sizes.filter(([w]) => w > initial[0]),
+    ...Array.from({length:3},(_,i)=>[Math.max(initial[0],13)+4*(i+1),Math.max(initial[1],19)+4*(i+1)] as [number,number])];
   let lastError: unknown;
   for (const [w,h] of candidates) for(let attempt=0;attempt<(plan?.intent||scene==='interior'?6:1);attempt++) {
     try {
@@ -67,6 +70,7 @@ export function generatedLayeredField(seed: string, width = 7, height = 13, tags
       const sailingCapacity=!options.plan&&active.some(waterOnly)&&error instanceof Error&&/航行.*部署格/.test(error.message);
       if (!(error instanceof Error)||!relational&&!indoorCapacity&&!sailingCapacity&&(fixed||!/部署|容量不足/.test(error.message))) throw error;
       lastError = error;
+      if (options.plan && /航行.*部署格/.test(error.message) && (!plan?.water || plan.water==='none') && plan?.shape!=='riverside') throw error;
       if (error.message.startsWith('城市与水岸部署容量不足')) break;
       if(!relational&&!indoorCapacity&&!sailingCapacity)break;
     }
@@ -112,6 +116,10 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
     return null;
   });
   field.overlays = {}; field.landmarks = [];
+  // The narrative's sea/lake footprint precedes local decoration. Explicit landmarks are built afterwards.
+  if(plan?.waterSectors?.length)for(const p of regionCells(field,plan.waterSectors)){
+    field.tiles[p]='open';field.structures[p]=null;
+  }
   field.generation!.version = 6; field.generation!.scene = scene;
   if (scene === 'interior') field.generation!.family = 'indoor';
   else if (scene === 'city_siege' || scene === 'building_siege') field.generation!.family = 'siege';
@@ -125,7 +133,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   const wallLevel = plan?.fortLevel ?? 3;
   let inner: number[] = [], frontline: number[] = [], gates: number[] = [], core: number[] = [], reserve: number[] = [];
   let frontDepth = Math.floor(height * .53), left = 0, right = width - 1;
-  const plannedCity=!!plan&&(!!plan.cityPosition||!!plan.intent?.entities.some(e=>e.kind==='city')||siege&&plan.wallLayers!==undefined);
+  const plannedCity=!!plan&&(!!plan.citySectors?.length||!!plan.cityPosition||!!plan.intent?.entities.some(e=>e.kind==='city')||siege&&plan.wallLayers!==undefined);
   if(plannedCity) {
     buildPlannedCity(field,plan!,seed,scene,attack);
     inner=field.city!.inside;frontline=field.city!.frontline;gates=field.city!.gates;core=field.city!.core;reserve=field.city!.reserve;
@@ -265,7 +273,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   }
   // Water changes routes. Bridges are real structures; no trait is granted to the roster.
   const water = plan?.water ?? (scene !== 'field' ? 'none' : pick(['none', 'none', 'none', 'ford', 'river'] as const));
-  const floodAll = plan?.waterCoverage === 'all';
+  const floodAll = plan?.waterCoverage === 'all' || !!plan?.waterSectors?.length;
   // A placed siege city takes its water from the same builder as narrative rivers: moats before the gates, a ford if unbridged.
   // Full flooding waits until named structures and raised ground have their final geometry.
   if(!floodAll&&plan&&(plan.bridgePlan!==undefined||plan.waterAxis||plan.intent?.entities.some(e=>e.kind==='river')||plannedCity&&siege&&water!=='none'||scene==='interior'&&water!=='none')) {
@@ -331,6 +339,11 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
     const direction = compassSector(mark.anchor);
     if(mark.edge){const x=anchor%width,y=Math.floor(anchor/width);anchor=direction.includes('west')?y*width:direction.includes('east')?y*width+width-1:direction.includes('north')?x:direction.includes('south')?(height-1)*width+x:anchor;}
     let p = anchor;
+    if(mark.kind==='building'&&!['interior','building_siege'].includes(scene)&&supplied){
+      const cells=buildEnterableBuilding(field,mark,anchor,protectedCells,marked,buildingRadius(plan,mark,options.roster??[],options.unitBindings));
+      field.landmarks.push({...(mark.id?{id:mark.id}:{}),kind:'building',label:safeLandmarkLabel(mark.label)??'建筑',cells,scale:mark.scale??'minor'});
+      continue;
+    }
     if (mark.edge) {
       const edge = (n: number) => direction.includes('west') ? n % width === 0 : direction.includes('east') ? n % width === width - 1
         : direction.includes('north') ? n < width : direction.includes('south') ? n >= width * (height - 1)
@@ -475,7 +488,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
     if(p!==anchor && mark.anchor!=='riverbank' && !mark.near) field.generation!.notes=[...(field.generation!.notes??[]),`地标${mark.label??labels[mark.kind]}在指定区域内调整${gridDistance(field,p,anchor)}格`];
   }
   if (plan?.landmarks?.length && !field.landmarks.length) throw new BattlefieldPlanError('请求的地标无法落到合法位置，未使用随机地标；请调整设计');
-  if (plan?.waterCoverage === 'all' && water !== 'none') {
+  if ((plan?.waterCoverage === 'all' || plan?.waterSectors?.length) && water !== 'none') {
     initializeHeightMap(field, plan);
     buildPlannedWater(field, { ...plan, water }, seed);
   }
@@ -488,6 +501,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   if (plan && (plan.waterCoverage === 'all' || [...(plan.landmarks??[]).map(m=>m.anchor),...(plan.deployments??[]).flatMap(d=>d.at),plan.cityPosition??'',plan.waterPosition??'',...(plan.bridgePlan??[]).map(b=>b.anchor)].some(a=>!!gridPosition(a))
     ||scene==='interior'&&(water!=='none'||plan.landmarks?.some(m=>['hill','forest','square','tower','building'].includes(m.kind)))))
     field.generation!.version = 9;
+  if(plan?.citySectors?.length||plan?.waterSectors?.length||supplied&&!['interior','building_siege'].includes(scene)&&plan?.landmarks?.some(m=>m.kind==='building'))field.generation!.version=10;
   validateSceneFacts(field);
   validateField(field);
   return field;

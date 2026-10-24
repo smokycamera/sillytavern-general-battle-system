@@ -1,7 +1,7 @@
 import { displayNumber } from '../../engine/src/display-number.js';
 import { activationControlDuration, controlPolicy } from '../../engine/src/battle-control.js';
 import { SCENE_NAMES } from '../../engine/src/small/map-design.js';
-import { movementStepCost, structureDisplayName,retreatCells,neighbors } from '../../engine/src/small/spatial.js';
+import { movementStepCost, structureDisplayName,retreatCells,neighbors,gridColumnLabel } from '../../engine/src/small/spatial.js';
 import { heightDescription,surfaceHeightAt,unitHeight } from '../../engine/src/small/height-map.js';
 import { SCENE_ARCHETYPE_NAMES } from '../../engine/src/small/scene-intent.js';
 import { structureAt, intactStructure, groundBlocked, isElevated } from '../../engine/src/small/layers.js';
@@ -329,7 +329,7 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
     return `<button ${attrs} data-static="c${signature(attrs + inner)}">${inner}</button>`;
   }).join('');
   const zoom = view.zoom ?? 'fit';
-  const rulers = `<div class="grid-ruler-x" aria-hidden="true"><span class="grid-ruler-corner"></span>${Array.from({ length: field.width }, (_, x) => '<span>' + String.fromCharCode(65 + x) + '</span>').join('')}</div>`;
+  const rulers = `<div class="grid-ruler-x" aria-hidden="true"><span class="grid-ruler-corner"></span>${Array.from({ length: field.width }, (_, x) => '<span>' + gridColumnLabel(x) + '</span>').join('')}</div>`;
   const rows = `<div class="grid-ruler-y" aria-hidden="true">${Array.from({ length: field.height }, (_, y) => '<span>' + (y + 1) + '</span>').join('')}</div>`;
   const concealment = actor && concealmentLabel(battle.observationContext(), actor);
   const pressure = actor && moraleLabel({ ...battle.observationContext(), units: visible }, actor, battle.traitRegistry);

@@ -48,7 +48,7 @@ export type PreparationStep = 'decide' | 'layout';
 /** A bad answer is asked for again automatically, up to this many tries per start. */
 export const AUTO_TRIES = 3;
 /** A layout that still fails on this try is built from the parts of the answer that can be generated. */
-export const LAYOUT_TRIES = 6;
+export const LAYOUT_TRIES = AUTO_TRIES;
 /** One layout try: the scene it laid out, the answer as read, and the plan compiled from it. */
 interface LaidOut { scene: BattlefieldScene; answer?: unknown; plan?: BattlefieldPlan }
 /** Retries remember, per narrative and settings, what failed and the layout answer that failed. */
@@ -204,7 +204,7 @@ export class LlmContextController {
         };
         try { build(placed); }
         catch (error) {
-          if (!final || !(error instanceof BattlefieldPlanError)) throw error;
+          if (!(error instanceof BattlefieldPlanError) || !final && attempt < AUTO_TRIES) throw error;
           if (/航行(?:特质|部署)|航行单位/.test(error.message)) {
             delete result.battlefieldPlan; delete result.unitBindings; tried.plan = undefined;
             result.layoutNotes = ['航行单位没有可用水域，改用带水域的本地地图'];

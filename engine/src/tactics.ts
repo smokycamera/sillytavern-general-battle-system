@@ -19,7 +19,7 @@ import { traitLevel, traitValue, plainsMobility, nightMovePenalty, freeMarch, ro
 import { formationNode } from './mass/formation.js';
 
 export interface TacticalPose {
-  kind: 'brace'; mode: 'small' | 'mass'; width?: number;
+  kind: 'brace'; mode: 'small' | 'mass'; width?: number; height?: number;
   anchor: { x: number; y: number }; facing: { x: number; y: number };
 }
 export const SPEED_TIERS = ['迟缓', '缓行', '标准', '快速', '疾速'] as const;
@@ -95,25 +95,27 @@ export function validateTacticalEffort(value: unknown, model?: unknown): void {
   } else if (!Number.isSafeInteger(value) || Number(value) < 0 || Number(value) > 2) throw new Error('待结疲劳记录损坏');
 }
 export function validateTacticalPose(pose: TacticalPose): void {
+  const height=pose?.height??({5:7,7:13,9:15,11:17,13:19} as Record<number,number>)[pose?.width??0];
   if (!pose || pose.kind !== 'brace' || !['small', 'mass'].includes(pose.mode)
-    || pose.mode === 'small' && ![5, 7, 9, 11, 13].includes(pose.width!)
+    || pose.mode === 'small' && (!Number.isSafeInteger(pose.width)||pose.width!<5||!Number.isSafeInteger(height)||height!<7)
     || !pose.anchor || !pose.facing || ![pose.anchor.x, pose.anchor.y, pose.facing.x, pose.facing.y].every(Number.isSafeInteger)
     || Math.abs(pose.facing.x) + Math.abs(pose.facing.y) !== 1
     || pose.anchor.x < 0 || pose.anchor.y < 0
     || pose.anchor.x >= (pose.mode === 'mass' ? 3 : pose.width!)
-    || pose.anchor.y >= (pose.mode === 'mass' ? 6 : ({ 5: 7, 7: 13, 9: 15, 11: 17, 13: 19 } as Record<number, number>)[pose.width!]!)) throw new Error('战术姿态数据损坏');
+    || pose.anchor.y >= (pose.mode === 'mass' ? 6 : height!)) throw new Error('战术姿态数据损坏');
 }
 function position(unit: Combatant, space: Pick<TacticalPose, 'mode' | 'width'>) {
   if (space.mode === 'mass') { const node = formationNode(unit); return { x: node.x, y: node.y }; }
   return { x: unit.pos! % space.width!, y: Math.floor(unit.pos! / space.width!) };
 }
 /** 面向系统选定的威胁；不增加四方向选择器。 */
-export function bracePose(unit: Combatant, threat: Combatant | undefined, mode: TacticalPose['mode'], width?: number): TacticalPose {
+export function bracePose(unit: Combatant, threat: Combatant | undefined, mode: TacticalPose['mode'], width?: number, height?: number): TacticalPose {
   const anchor = position(unit, { mode, width });
   const target = threat ? position(threat, { mode, width }) : { x: anchor.x, y: anchor.y + (unit.side === 'enemy' ? 1 : -1) };
   const dx = target.x - anchor.x, dy = target.y - anchor.y;
   const facing = Math.abs(dx) > Math.abs(dy) ? { x: Math.sign(dx), y: 0 } : { x: 0, y: Math.sign(dy) || (unit.side === 'enemy' ? 1 : -1) };
-  const pose: TacticalPose = { kind: 'brace', mode, ...(width ? { width } : {}), anchor, facing }; validateTacticalPose(pose); return pose;
+  const oldHeight=({5:7,7:13,9:15,11:17,13:19} as Record<number,number>)[width??0];
+  const pose: TacticalPose = { kind: 'brace', mode, ...(width ? { width } : {}), ...(height!==undefined&&height!==oldHeight?{height}:{}), anchor, facing }; validateTacticalPose(pose); return pose;
 }
 export function postureActive(unit: Combatant, defs: Map<string, ConditionDef>): boolean {
   const pose = unit.tacticalPose; if (!pose || unit.rulesVersion !== 'v2' || unit.status !== 'ready' || unit.suppression || isAirborne(unit)) return false;

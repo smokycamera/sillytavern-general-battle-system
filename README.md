@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **3.0.0**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **3.0.1**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-3.0.0 renames Water Crossing to Amphibious and adds Sailing, with water-only movement and nearest-water deployment. Missing-water layout errors are returned to the secondary API, with a local water-map fallback. Traps, persistent areas and skill-built works now have visible map markings and details. See the [current release](docs/current-release.md).
+3.0.1 joins city regions into continuous streets and walls, grows maps to fit buildings and units, and confines seas and lakes to their specified regions. Named outdoor buildings have usable interiors. Fleets retain valid water sectors, siege objectives stay inside the city, and explicit flank or multi-side deployments keep their positions. See the [current release](docs/current-release.md).
 
 ## Documentation
 

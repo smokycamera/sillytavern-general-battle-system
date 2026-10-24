@@ -1,5 +1,5 @@
 import { displayNumber } from '../../engine/src/display-number.js';
-import { SmallBattle, FORMATION_NODES, isCommandV2, commandLabel, DEFAULT_COMMAND, COMMAND_STYLE_LABELS, COMMAND_STYLE_DESCRIPTIONS, type Combatant, type BattleLogEntry } from '../../engine/src/index.js';
+import { SmallBattle, gridColumnIndex, FORMATION_NODES, isCommandV2, commandLabel, DEFAULT_COMMAND, COMMAND_STYLE_LABELS, COMMAND_STYLE_DESCRIPTIONS, type Combatant, type BattleLogEntry } from '../../engine/src/index.js';
 import { publicBattleEvents, battleIdOf, type Battle } from './battle-reports.js';
 import { unitIcon, unitIconKey } from './unit-icons.js';
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
@@ -51,8 +51,8 @@ export function traceLocations(b: Battle, eventIndex?: number): {key:string;cell
   if(b instanceof SmallBattle&&b.battlefield&&entry.kind==='move'){
     if (entry.move) { from=entry.move.from;to=entry.move.to;cells=[from,to]; }
     else {
-      const matches=[...entry.text.matchAll(/([A-Z])(\d+)/g)];
-      if(matches.length===2){cells=matches.map(m=>(Number(m[2])-1)*b.battlefield!.width+m[1]!.charCodeAt(0)-65);[from,to]=cells;}
+      const matches=[...entry.text.matchAll(/([A-Z]+)(\d+)/g)];
+      if(matches.length===2){cells=matches.map(m=>(Number(m[2])-1)*b.battlefield!.width+gridColumnIndex(m[1]!));[from,to]=cells;}
     }
   }
   // 旧事件没有发生时坐标就只显示文字，不借用单位现在的位置伪造历史轨迹。

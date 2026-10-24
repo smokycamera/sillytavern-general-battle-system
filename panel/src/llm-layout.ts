@@ -9,7 +9,7 @@ import { activeTraitIds, hasFlightAbility, isRangedWeapon, type Combatant } from
 import type { BattleObjectiveMode } from './battle-setup.js';
 import { INTERIOR_USES, INTERIOR_PATTERNS, INTERIOR_USE_NAMES, INTERIOR_PATTERN_NAMES } from '../../engine/src/small/interior-plan.js';
 import { COMPOUND_PATTERNS, TRENCH_PATTERNS, COMPOUND_PATTERN_NAMES, TRENCH_PATTERN_NAMES } from '../../engine/src/small/position-plan.js';
-import { gridPosition, compassSector, oppositeGrid } from '../../engine/src/small/grid-anchor.js';
+import { gridPosition, compassSector, oppositeGrid, type GridAnchor } from '../../engine/src/small/grid-anchor.js';
 
 /**
  * Second preparation step: the model places the battle on a 4×4 grid and the local generator builds every
@@ -120,7 +120,7 @@ function objectiveLine(ctx: LayoutContext): string {
 }
 function example(ctx: LayoutContext): Record<string, unknown> {
   const d = defenderOf(ctx), a = ctx.attacker;
-  if (ctx.scene === 'city_siege') return { archetype: 'gate_front', cover: 'balanced', city: { at: d === 'enemy' ? 'N' : 'S', name: '青石城', level: 3, breaches: 0, gates: [{ name: '城门', state: 'closed' }] },
+  if (ctx.scene === 'city_siege') return { archetype: 'gate_front', cover: 'balanced', city: { at: [d === 'enemy' ? 'N' : 'S'], name: '青石城', level: 3, breaches: 0, gates: [{ name: '城门', state: 'closed' }] },
     places: [{ type: 'building', name: '府衙', at: d === 'enemy' ? 'N' : 'S' }, { type: 'position', name: '攻城营地', at: d === 'enemy' ? 'S' : 'N' }],
     [a]: { at: d === 'enemy' ? ['S', 'SW'] : ['N', 'NE'] }, [d]: { post: 'wall' }, ...(ctx.objectiveMode === 'siege' ? { objective: '府衙' } : {}) };
   if (ctx.scene === 'interior') return { archetype: 'residence', interior: { use: 'residence', pattern: 'suite' }, places: [{ type: 'room', name: '书房', at: 'N' }, { type: 'cover', name: '屏风', at: 'C' }], ally: { at: ['S'] }, enemy: { at: ['N'] } };
@@ -150,7 +150,7 @@ export function layoutTask(ctx: LayoutContext, retry?: LayoutRetry): string {
   const kinds = placeKinds(ctx.scene).map(k => `${k}${PLACE_NAMES[k]}`).join('|');
   const lines = [
     '【第2步：布置战场】根据正文，在4×4分区上布置本场战斗。程序会据此生成地形、建筑与道路，并把单位放进对应区域。',
-    `本场：${sceneLine(ctx)}。任务：${objectiveLine(ctx)}。地图约${ctx.map[0]}列×${ctx.map[1]}行，按下列分区编号定位。`,
+    `本场：${sceneLine(ctx)}。任务：${objectiveLine(ctx)}。地图从${ctx.map[0]}列×${ctx.map[1]}行起步，程序按区域、建筑和单位容量扩展，按下列分区编号定位。`,
     '参战单位（短ID · 名称 · 阵营 · 类型 · 备注）：',
     ...ctx.units.map(u => [u.id, u.name, sideName(u.side), u.kind, u.note].filter(Boolean).join(' · ')),
     '4×4分区（位置固定，与攻守无关）：',
@@ -165,12 +165,12 @@ export function layoutTask(ctx: LayoutContext, retry?: LayoutRetry): string {
     ctx.scene === 'interior' ? '- interior：仅室内可写，{"use":"用途","pattern":"布局"}。use=residence住宅|inn客栈酒馆|temple殿堂寺院|warehouse仓库|workshop工坊|office办公设施|prison牢房|ruins废弃建筑；pattern=suite穿堂连室|hall主厅侧室|ring环形回廊|cross交叉通道|wings双翼联通|aisles货架通道|cells走廊小室|broken破损连室。按正文选择。places中type=room的地点会生成对应的房间区域。' : '',
     ctx.scene === 'building_siege' ? '- compound：建筑围攻布局，{"pattern":"布局"}。pattern=courtyard单院|forecourt前后院|wings双翼夹院|dogleg曲折院落|bailey内外院|ruined破损院落。按正文选择；院内房间、院落与通道会生成实际区域，places可命名，units可按地点部署。' : '',
     ctx.scene === 'trenches' ? '- trenches：堑壕组织，{"pattern":"布局"}。pattern=opposed相对前沿|depth纵深防线|echelon梯次斜线|salient突出部|strongpoints分散支撑点|saps前伸支壕。按正文选择；前沿壕、后方壕与交通壕会实际连通，places可用fortification命名阵地，units可按地点部署。' : '',
-    ctx.scene === 'city_siege' ? '- city：必须写。{"at":方位,"name":"城名","walls":城墙形制,"level":城墙等级,"breaches":破口数,"gates":[{"name":"门名","state":"closed"}]}。at是城区主要所在分区；第1行表示城区在上侧，第4行在下侧，A列在左侧，D列在右侧；中央四个分区表示城区位于地图中央。walls按正文选：front=一道城墙横贯战场，城区延伸出地图（大城的一段城墙）|ring=四面都有城墙，整座城在图内（小城、城堡、营寨）|double=内外两重城墙，中间夹道（多重城墙、内城外郭、瓮城）；正文没写就省略，由程序选。gates列出本战区可见的城门（省略为一座），state=closed关闭|open开启|destroyed已毁，门由程序放在面向攻方的外墙上，两重城墙时内墙配对应的门。level=1临时 2简易 3正规 4重型 5要塞 6超凡 7史诗 8传奇 9半神 10神造，按材料与强化选；breaches=开战时外墙已有的破口0-3。'
+    ctx.scene === 'city_siege' ? '- city：必须写。{"at":[分区编号],"name":"城名","walls":城墙形制,"level":城墙等级,"breaches":破口数,"gates":[{"name":"门名","state":"closed"}]}。at写城市、城堡或营寨占据的分区数组，例如["B3","C3","B4","C4"]；相邻分区连成同一城区，分开的分区由程序连接，城墙沿整体外缘生成，内部生成街道、院落和建筑。单个分区也写成数组。留出城外接近地带。walls按正文选：front=一道城墙横贯战场，城区延伸出地图（大城的一段城墙）|ring=四面都有城墙，整座城在图内（小城、城堡、营寨）|double=内外两重城墙，中间夹道（多重城墙、内城外郭、瓮城）；正文没写就省略，由程序选。gates列出本战区可见的城门（省略为一座），state=closed关闭|open开启|destroyed已毁，门由程序放在面向攻方的外墙上，两重城墙时内墙配对应的门。level=1临时 2简易 3正规 4重型 5要塞 6超凡 7史诗 8传奇 9半神 10神造，按材料与强化选；breaches=开战时外墙已有的破口0-3。'
       : ctx.scene === 'building_siege' ? '- city：院墙与门，{"level":院墙等级1-10,"breaches":破口数0-3,"gates":[{"name":"院门","at":"S","state":"closed|open|destroyed"}]}。at可选N/S/E/W，表示门在院墙上的绝对方位；各门状态独立，院落位置由程序决定。'
-      : ctx.scene === 'field' ? '- city：仅当交战地点旁有城镇时写，{"at":方位,"name":"城名","gates":[...]}；各方默认在城外，写gates时会画出朝向战场的城墙与门。' : '',
-    ctx.scene === 'interior' ? '- water：正文明确有水域时写，{"type":"river深水|ford浅水|mixed深浅混合|none无水","at":"分区编号|all全场","bridges":[{"name":"桥名","at":分区编号,"state":"intact完好|destroyed已断"}]}。按正文布置；bridges只写正文提到的桥，正文没提到桥就省略，由程序配桥。at为all时，水域覆盖低处地面，墙体、建筑、石头掩体及高地保留。'
-      : `- water：{"type":"river深水河|ford可涉水浅滩|mixed深浅混合|moat护城河|none无水","at":"分区编号|all全场","bridges":[{"name":"桥名","at":方位,"state":"intact完好|destroyed已断"}]}。只有一条主河${ctx.scene === 'city_siege' ? '；护城河由程序沿面向攻方的城墙外侧布置，不写at' : ''}。bridges只写正文提到的桥；正文没提到桥就省略bridges，由程序配桥${ctx.scene === 'city_siege' ? '（护城河配在城门前）' : ''}；[]只用于正文明确无桥可用，程序会留一处可涉水的浅滩。at为all时，水域覆盖低处地面，墙体、建筑、石头掩体及高地保留。`,
-    `- places：最多${MAX_PLACES}个有战术意义的地点，优先写正文提到的，[{"type":类型,"name":"名称","at":方位,"height":0-3,"state":"destroyed"}]。type=${kinds}。height只给高地等写，2-3为明显高地；state=destroyed表示已毁。普通房屋、树木、杂物由程序补全，不要写。`,
+      : ctx.scene === 'field' ? '- city：仅当交战地点旁有城镇时写，{"at":[分区编号],"name":"城名","gates":[...]}。at列出城区占据的分区，程序连接成同一城区；各方默认在城外，写gates时会画出朝向战场的城墙与门。' : ctx.scene === 'city_streets' ? '- city：可写{"at":[分区编号],"name":"城名"}，标出本战区的城区范围，程序连接成街巷；各方在城区内交战，不生成城防外墙。' : '',
+    ctx.scene === 'interior' ? '- water：正文明确有水域时写，{"type":"river深水|ford浅水|mixed深浅混合|none无水","at":"分区编号或分区编号数组","bridges":[{"name":"桥名","at":分区编号,"state":"intact完好|destroyed已断"}]}。按正文布置；bridges只写正文提到的桥，正文没提到桥就省略，由程序配桥。河流写单个分区编号，海面、湖泊或大片积水写覆盖范围的分区数组，例如["A1","B1","C1","D1"]；数组内铺水，城区、建筑及高地保留。mixed按陆地边缘生成连续浅滩，远处为深水；可用shallow:[分区编号]指定浅水范围。面状水域不自动配桥或添加渡河浅滩，bridges只写正文提到的桥。'
+      : `- water：{"type":"river深水河|ford可涉水浅滩|mixed深浅混合|moat护城河|none无水","at":"分区编号或分区编号数组","bridges":[{"name":"桥名","at":方位,"state":"intact完好|destroyed已断"}]}。河流只设一条主河${ctx.scene === 'city_siege' ? '；护城河由程序沿面向攻方的城墙外侧布置，不写at' : ''}。bridges只写正文提到的桥；正文没提到桥就省略bridges，由程序配桥${ctx.scene === 'city_siege' ? '（护城河配在城门前）' : ''}；[]只用于正文明确无桥可用，程序会留一处可涉水的浅滩。河流写单个分区编号，海面、湖泊或大片积水写覆盖范围的分区数组，例如["A1","B1","C1","D1"]；数组内铺水，城区、建筑及高地保留。mixed按陆地边缘生成连续浅滩，远处为深水；可用shallow:[分区编号]指定浅水范围。面状水域不自动配桥或添加渡河浅滩，bridges只写正文提到的桥。`,
+    `- places：最多${MAX_PLACES}个有战术意义的地点，优先写正文提到的，[{"type":类型,"name":"名称","at":方位,"height":0-3,"state":"destroyed"}]。type=${kinds}。height只给高地等写，2-3为明显高地；state=destroyed表示已毁。普通房屋、树木、杂物由程序补全，不要写。室外的重要building生成有墙、门和可走内部的建筑，单位可按place进入或驻守，任务目标可放在内部。`,
     (siege ? `- ${sides}开局位置。${sideName(ctx.attacker)}是攻方，写{"at":["B4"]}这样的1-3个${ctx.scene === 'city_siege' ? '城' : '院'}外方位。${sideName(d)}是守方，默认在${ctx.scene === 'city_siege' ? '城' : '院'}内，只需写post：wall城头为主|inside${ctx.scene === 'city_siege' ? '城内街巷' : '院内'}，不上墙|outside出${ctx.scene === 'city_siege' ? '城' : '院'}列阵（这时再写at为外面的方位）。`
       : `- ${sides}开局位置，{"at":["B4"]}，可写1-3个方位。${ctx.scene === 'city_streets' ? '各方默认在街区内。' : ''}`) + (thirdParty ? 'neutral默认从右侧进入。' : ''),
     `- units：根据正文内容选择单位开局位置。unit可写一个短ID或多个短ID组成的数组，有正文依据时优先使用place。按方位写 {"unit":"u3","at":"D1"}；有具体地点写 {"unit":["u1","u2"],"place":"档案室","relation":"inside"}，place位置使用本次places、桥或城门的名称，relation=inside在内部|guards驻守附近|near靠近；at可作为地点无效时的备用方位；按方位部署的攻城守方可写post=wall|inside|outside。最多布置${MAX_SMALL_UNITS}个单位。`,
@@ -232,7 +232,7 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
   let scene = ctx.scene;
   const cityRaw = object(raw.city) ? raw.city : undefined;
   // A siege objective at a stated city is fought at its walls, not in an open field beside it.
-  if (scene === 'field' && ctx.objectiveMode === 'siege' && cityRaw && sectorOf(cityRaw.at)) { scene = 'city_siege'; notes.add('按攻城任务改为城墙攻防'); }
+  if (scene === 'field' && ctx.objectiveMode === 'siege' && cityRaw && (sectorOf(cityRaw.at) || Array.isArray(cityRaw.at))) { scene = 'city_siege'; notes.add('按攻城任务改为城墙攻防'); }
   const inferred = { basis: 'inferred' as const, sources: [] as string[] };
   const entities: SceneEntity[] = [], relations: SceneRelation[] = [], constraints: SceneConstraint[] = [];
   const names = new Map<string, string>();
@@ -264,9 +264,17 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
     const wall = integer(cityRaw.level ?? cityRaw.wall, 1, 10), breaches = integer(cityRaw.breaches, 0, 3);
     if (wall !== undefined) plan.fortLevel = wall;
     if (breaches !== undefined && besieged(scene)) plan.breaches = { count: breaches as 0 | 1 | 2 | 3 };
-  } else if (cityRaw && scene === 'city_streets') notes.add('巷战不设城市方位');
+  } else if (cityRaw && scene === 'city_streets' && !Array.isArray(cityRaw.at)) notes.add('巷战不设城市方位');
   else if (cityRaw) notes.add('本场景不设城市');
-  let cityAt = cityRaw ? sectorOf(cityRaw.at) : undefined;
+  const numberedSectors = (value: unknown): GridAnchor[] | undefined => {
+    if (!Array.isArray(value)) return;
+    const anchors = value.map(sectorOf);
+    if (!anchors.length || anchors.length > 16 || anchors.some(a => !a || !gridPosition(a))) throw new BattlefieldPlanError('区域须写1—16个4×4分区编号');
+    return [...new Set(anchors)] as GridAnchor[];
+  };
+  const citySectors = cityRaw ? numberedSectors(cityRaw.at) : undefined;
+  if (citySectors && (allowsCity(scene) || scene === 'city_streets')) plan.citySectors = citySectors;
+  let cityAt = citySectors?.[0] ?? (cityRaw ? sectorOf(cityRaw.at) : undefined);
   if (scene === 'city_siege' && !cityAt) {
     cityAt = defenderOf(ctx) === 'enemy' ? 'north' : 'south';
     notes.add(`城市放在守方一侧（${anchorName(cityAt)}）`);
@@ -275,11 +283,11 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
     const layers = integer(cityRaw.layers, 1, 2) as 1 | 2 | undefined;
     const stated = [cityRaw.walls, cityRaw.wall_layout, cityRaw.layout, cityRaw.wall].map(wallsOf).find(Boolean) ?? (layers ? { layers } : undefined);
     if (stated?.layers) plan.wallLayers = stated.layers;
-    if (stated?.ring !== undefined) plan.shape = stated.ring || compassSector(cityAt ?? 'center') === 'center' ? 'enclosure' : 'front';
-    if (stated?.ring === false && compassSector(cityAt ?? 'center') === 'center') notes.add('城在中央，改为四面城墙');
+    if (stated?.ring !== undefined) plan.shape = stated.ring || !citySectors && compassSector(cityAt ?? 'center') === 'center' ? 'enclosure' : 'front';
+    if (!citySectors && stated?.ring === false && compassSector(cityAt ?? 'center') === 'center') notes.add('城在中央，改为四面城墙');
     if (!stated && cityRaw.walls !== undefined) notes.add('城墙形制无效，由程序决定');
   }
-  if (allowsCity(scene) && cityAt) {
+  if ((allowsCity(scene) || scene === 'city_streets' && citySectors) && cityAt) {
     const label = labelOf(cityRaw?.name ?? cityRaw?.label);
     entities.push({ id: 'city', kind: 'city', anchor: cityAt, ...(label ? { label } : {}), ...inferred });
     if (label) names.set(label, 'city');
@@ -307,6 +315,10 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
     plan.water = waterType;
     if (['mixed', '深浅混合'].includes(token(waterRaw!.type ?? waterRaw!.kind))) plan.waterDepth = 'mixed';
     const waterAt = waterRaw!.at;
+    const waterSectors = numberedSectors(waterAt);
+    if (waterSectors) plan.waterSectors = waterSectors;
+    const shallowSectors = numberedSectors(waterRaw!.shallow);
+    if (shallowSectors) plan.waterShallowSectors = shallowSectors;
     if (token(waterAt)==='all') plan.waterCoverage='all';
     const column = typeof waterAt === 'string' && /^[A-D]$/i.test(waterAt.trim()) ? waterAt.trim().toUpperCase() : undefined;
     let riverAt = sectorOf(waterAt) ?? (column ? `${column}2` as WorldAnchor : 'center');
@@ -447,6 +459,7 @@ export function layoutRetryNote(error: string, plan?: BattlefieldPlan): string {
   return `${text}。改法：${layoutAdvice(text, plan)}`;
 }
 function layoutAdvice(error: string, plan?: BattlefieldPlan): string {
+  if (/占领区域|占领目标|城内没有可走/.test(error)) return '检查占领区内的深水与障碍；攻城目标须在守方城内的可走地面，命名建筑目标使用建筑内部。保留航行单位需要的水域，调整水域范围或目标位置，不要删除整个water。';
   if (/航行(?:特质|部署)|航行单位/.test(error)) return '航行单位只能部署在深水或浅水：增加water（type写river、ford或mixed），保留足够水域；不要把航行单位放在陆地、城头或房间内';
   const goal = plan?.intent?.relations.find(r => r.relation === 'targets' || r.relation === 'exits_at');
   const place = goal && plan!.intent!.entities.find(e => e.id === goal.object);
