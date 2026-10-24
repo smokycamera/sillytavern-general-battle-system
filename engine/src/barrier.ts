@@ -1,5 +1,6 @@
 import type { Ability, Combatant, EffectOp, RulePack } from './types.js';
 import { healingGradeMultiplier, HEALING_MODEL } from './healing.js';
+import { skillEffectPower } from './data/skill-mechanisms.js';
 
 export const BARRIER_MODEL = 'barrier-grades-v1' as const;
 export function validateBarrierModel(value: unknown): void {
@@ -22,7 +23,7 @@ export function attachDefensePower(ability: Ability): void {
   const power = ability.power ?? ability.recipe?.power;
   if (!validDefensePower(power)) return;
   const attach = (effect: EffectOp): void => {
-    if (effect.op === 'barrier' || effect.op === 'condition' && effect.conditionId === 'blessed') effect.defensePower = power;
+    if (effect.op === 'barrier' || effect.op === 'condition' && effect.conditionId === 'blessed') effect.defensePower = skillEffectPower(ability,effect);
     if (effect.op === 'zone') effect.effects?.forEach(attach);
   };
   ability.effects.forEach(attach);

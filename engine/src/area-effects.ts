@@ -51,12 +51,13 @@ export function visibleBattleZones(context: ObservationContext, side: Combatant[
 }
 export function areaTargets(context: ObservationContext, actor: Combatant, primary: Combatant, ability: Ability, valid: (unit: Combatant) => boolean): Combatant[] {
   const area = ability.area; if (!area) return [primary];
-  const origin = areaPosition(context, actor), pivot = areaPosition(context, primary);
+  const origin = areaPosition(context, actor), centered = area.shape === 'ring' && context.rules?.casterCenteredRing;
+  const pivot = centered ? origin : areaPosition(context, primary), source = centered ? actor : primary;
   const field=context.battlefield;
   const connects=(from:Combatant,to:Combatant)=>field?.spatialRulesVersion!==2||!!from.airborne===!!to.airborne
     &&Math.abs(unitHeight(field,from)-unitHeight(field,to))<=area.radius&&unitLineOfSight(field,from,to);
   const eligible = context.units.filter(u => !combatHostile(u, primary, context.units) && u.hp > 0 && !['dead','fled'].includes(u.status) && valid(u)
-    &&(area.shape==='chain'||connects(primary,u))).sort((a,b) => a.id.localeCompare(b.id));
+    &&(area.shape==='chain'||connects(source,u))).sort((a,b) => a.id.localeCompare(b.id));
   if (area.shape === 'chain') {
     const result: Combatant[] = eligible.some(u => u.id === primary.id) ? [primary] : [];
     while (result.length && result.length < area.maxTargets) {
@@ -75,7 +76,7 @@ export function areaTargets(context: ObservationContext, actor: Combatant, prima
     if (!length) return unit.id === primary.id;
     const ux=at.x-origin.x, uy=at.y-origin.y, dot=(ux*dx+uy*dy)/length, cross=Math.abs(ux*dy-uy*dx)/length;
     return dot > 0 && dot <= length + .5 && cross <= (area.shape === 'line' ? .5 : dot * .6 + .25);
-  }).sort((a,b) => distance(areaPosition(context,a),pivot)-distance(areaPosition(context,b),pivot) || a.id.localeCompare(b.id)).slice(0,area.maxTargets);
+  }).sort((a,b) => (centered ? Number(b.id === primary.id) - Number(a.id === primary.id) : 0) || distance(areaPosition(context,a),pivot)-distance(areaPosition(context,b),pivot) || a.id.localeCompare(b.id)).slice(0,area.maxTargets);
 }
 export function zoneTarget(context: ObservationContext, actor: Combatant, id?: string): Combatant | undefined {
   if (!id) return undefined;

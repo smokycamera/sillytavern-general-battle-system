@@ -8,22 +8,29 @@ import { neighbors, gridDistance, findGridPath, footprint, type BattlefieldSpec 
 import { carveInitialBreaches } from './city-breaches.js';
 /** Keep the union, including concavities. A disconnected town gets the shortest dry sector connection. */
 export function connectedCitySectors(sectors: readonly GridAnchor[], water: readonly GridAnchor[] = []): GridAnchor[] {
-    const joined = new Set<GridAnchor>([sectors[0]!]), blocked = new Set(water.filter(a => !sectors.includes(a)));
+    const joined = new Set<GridAnchor>(sectors), blocked = new Set(water.filter(a => !sectors.includes(a)));
     const adjacent = (a: GridAnchor) => { const [x, y] = gridPosition(a)!; return GRID_ANCHORS.filter(b => { const [xx, yy] = gridPosition(b)!; return Math.abs(x - xx) + Math.abs(y - yy) === 1; }); };
-    for (const goal of sectors.slice(1)) {
-        const queue = [...joined], previous = new Map<GridAnchor, GridAnchor | undefined>(queue.map(a => [a, undefined]));
-        for (let i = 0; i < queue.length && !previous.has(goal); i++)
+    const component = () => {
+        const first=GRID_ANCHORS.find(a=>joined.has(a)), reached=new Set<GridAnchor>(first?[first]:[]), queue=[...reached];
+        for(let i=0;i<queue.length;i++)for(const next of adjacent(queue[i]!))if(joined.has(next)&&!reached.has(next)){reached.add(next);queue.push(next);}
+        return reached;
+    };
+    for (let reached=component();reached.size<joined.size;reached=component()) {
+        const queue = GRID_ANCHORS.filter(a=>reached.has(a)), previous = new Map<GridAnchor, GridAnchor | undefined>(queue.map(a => [a, undefined]));
+        let goal:GridAnchor|undefined;
+        for (let i = 0; i < queue.length && !goal; i++)
             for (const next of adjacent(queue[i]!))
                 if (!blocked.has(next) && !previous.has(next)) {
                     previous.set(next, queue[i]);
                     queue.push(next);
+                    if(joined.has(next)&&!reached.has(next)){goal=next;break;}
                 }
-        if (!previous.has(goal))
+        if (!goal)
             throw new BattlefieldPlanError('城市分区被水域隔断，无法连接成同一城区；请调整城区或水域范围');
         for (let at: GridAnchor | undefined = goal; at !== undefined; at = previous.get(at))
             joined.add(at);
     }
-    return [...joined];
+    return GRID_ANCHORS.filter(a=>joined.has(a));
 }
 export function regionCells(field: Pick<BattlefieldSpec, 'width' | 'height'>, sectors: readonly GridAnchor[]): number[] {
     const cells = new Set<number>();
@@ -48,10 +55,10 @@ export function regionMapSize(plan: BattlefieldPlan | undefined, roster: readonl
 ] {
     if (!plan?.citySectors?.length && !plan?.waterSectors?.length && !plan?.landmarks?.some(m=>m.kind==='building'&&buildingRadius(plan,m,roster,bindings)>2))
         return [width, height];
-    const city = plan.citySectors ? connectedCitySectors(plan.citySectors, plan.waterSectors) : [];
-    const demand = new Map<GridAnchor, number>(GRID_ANCHORS.map(a => [a, city.includes(a) ? (plan.wallLayers === 2 ? 81 : 49) : 16]));
+    // Adjacent city sectors share their boundary and interior. They do not each need a complete fortress.
+    const demand = new Map<GridAnchor, number>(GRID_ANCHORS.map(a => [a, 0]));
     for (const mark of plan.landmarks ?? [])
-        if (gridPosition(mark.anchor) && mark.kind === 'building') {
+        if (gridPosition(mark.anchor) && mark.kind === 'building' && buildingRadius(plan,mark,roster,bindings)>2) {
             const a = mark.anchor as GridAnchor;
             demand.set(a, demand.get(a)! + (2*buildingRadius(plan,mark,roster,bindings)+2)**2);
         }
@@ -59,7 +66,7 @@ export function regionMapSize(plan: BattlefieldPlan | undefined, roster: readonl
         const actors = roster.filter(u => u.hp > 0 && u.status === 'ready' && (u.id === deployment.subject || u.side === deployment.subject));
         const numbered = deployment.at.filter(a => !!gridPosition(a)) as GridAnchor[];
         for (const a of numbered)
-            demand.set(a, demand.get(a)! + Math.ceil(actors.reduce((n, u) => n + footprint(u), 0) / Math.max(1, numbered.length)) * 2);
+            demand.set(a, demand.get(a)! + Math.ceil(actors.reduce((n, u) => n + footprint(u), 0) / Math.max(1, numbered.length) / 2));
     }
     const side = Math.ceil(Math.sqrt(Math.max(...demand.values())));
     return [Math.max(width, side * 4 + 1), Math.max(height, side * 4 + 1)];
@@ -68,10 +75,27 @@ export function regionMapSize(plan: BattlefieldPlan | undefined, roster: readonl
 export function buildRegionCity(field: BattlefieldSpec, plan: BattlefieldPlan, seed: string, attackingSide: 'ally' | 'enemy'): void {
     const w = field.width, h = field.height, rng = new SeededRng('region-city-v1:' + seed), siege = field.generation!.scene === 'city_siege';
     const defender = attackingSide === 'ally' ? 'enemy' : 'ally', sectors = connectedCitySectors(plan.citySectors!, plan.waterSectors);
-    const front = plan.shape === 'front', mask = new Set(regionCells(field, sectors).filter(p => front || p % w > 0 && p % w < w - 1 && p >= w && p < w * (h - 1)));
+    // Discard the generic urban parcels before drawing the specified town; named suburbs are built later.
+    field.structures!.forEach((s,p) => { if (s?.kind === 'building') { field.structures![p]=null; if(field.tiles[p]==='street')field.tiles[p]='open'; } });
+    // "double" specifies depth, not enclosure. Edge-spanning numbered districts remain a wall segment.
+    const front = plan.shape === 'front' || plan.shape === undefined && plan.wallLayers === 2
+      && sectors.some(a=>{const [x,y]=gridPosition(a)!;return x===0||x===3||y===0||y===3;});
+    const mask = new Set(regionCells(field, sectors).filter(p => front || p % w > 0 && p % w < w - 1 && p >= w && p < w * (h - 1)));
     const edge = (p: number) => p % w === 0 || p % w === w - 1 || p < w || p >= w * (h - 1);
-    if(front&&![...mask].some(edge))throw new BattlefieldPlanError('front城区须连接地图边缘，才能表示延伸出战场的大城；请调整城区范围或城墙形制');
-    const rim = [...mask].filter(p => neighbors(field, p).some(n => !mask.has(n)) || !front && edge(p));
+    const mx=[...mask].reduce((s,p)=>s+p%w,0)/mask.size,my=[...mask].reduce((s,p)=>s+Math.floor(p/w),0)/mask.size;
+    const approach = plan.deployments?.find(d => d.subject === attackingSide)?.at.map(a => worldAnchorCell(field, a)) ?? [];
+    const dx = approach.length ? approach.reduce((n, p) => n + p % w, 0) / approach.length - mx : 0;
+    const dy = approach.length ? approach.reduce((n, p) => n + Math.floor(p / w), 0) / approach.length - my : attackingSide === 'enemy' ? -h : h;
+    const directions = ['north', 'south', 'west', 'east'] as const;
+    const step = { north: -w, south: w, west: -1, east: 1 };
+    const toward = { north: -dy, south: dy, west: -dx, east: dx };
+    const boundary = [...mask].filter(p => neighbors(field, p).some(n => !mask.has(n)) || !front && edge(p));
+    const exposed = directions.filter(side => boundary.some(p => neighbors(field, p).includes(p + step[side]) && !mask.has(p + step[side])));
+    const facing = exposed.sort((a, b) => toward[b] - toward[a])[0] ?? (attackingSide === 'enemy' ? 'north' : 'south');
+    const rearAxis=(p:number)=>facing==='north'?Math.floor(p/w):facing==='south'?-Math.floor(p/w):facing==='west'?p%w:-(p%w);
+    const backEdge=Math.max(...[...mask].map(rearAxis));
+    // A front wall may be an open connected defence inside the map. It need not close a box or touch an edge.
+    const rim = front ? boundary.filter(p => rearAxis(p)!==backEdge) : boundary;
     if (!rim.length)
         throw new BattlefieldPlanError('城市占满战场，没有城外接近地带；请保留至少一个城外分区');
     const depth = new Map(rim.map(p => [p, 0])), queue = [...rim];
@@ -120,15 +144,6 @@ export function buildRegionCity(field: BattlefieldSpec, plan: BattlefieldPlan, s
     }
     for (const p of walls)
         field.structures![p] = createStructure('wall', plan.fortLevel ?? 3, { owner: defender, top: true });
-    // Only the side's main approach sets the default frontage. Individual flank parties keep their own posts.
-    const approach = plan.deployments?.find(d => d.subject === attackingSide)?.at.map(a => worldAnchorCell(field, a)) ?? [];
-    const dx = approach.length ? approach.reduce((n, p) => n + p % w, 0) / approach.length - cx : 0;
-    const dy = approach.length ? approach.reduce((n, p) => n + Math.floor(p / w), 0) / approach.length - cy : attackingSide === 'enemy' ? -h : h;
-    const directions = ['north', 'south', 'west', 'east'] as const;
-    const step = { north: -w, south: w, west: -1, east: 1 };
-    const toward = { north: -dy, south: dy, west: -dx, east: dx };
-    const exposed = directions.filter(side => rim.some(p => neighbors(field, p).includes(p + step[side]) && !mask.has(p + step[side])));
-    const facing = exposed.sort((a, b) => toward[b] - toward[a])[0] ?? (attackingSide === 'enemy' ? 'north' : 'south');
     const axis = (p: number) => facing === 'north' ? Math.floor(p / w) : facing === 'south' ? -Math.floor(p / w) : facing === 'west' ? p % w : -(p % w);
     const frontAxis = Math.min(...rim.map(axis)), frontage = rim.filter(p => axis(p) === frontAxis), gates: number[] = [], terrace = inside.filter(p => layers === 2 && depth.get(p) === 1);
     const specs = plan.gatePlan ?? (plan.gates === 'none' ? [] : plan.gates === 'double' || plan.gates === 'side' ? [{ sector: 'front_left', state: plan.gateState ?? 'closed' }, { sector: 'front_right', state: plan.gateState ?? 'closed' }] : [{ sector: 'front_center', state: plan.gateState ?? 'closed' }]) as GatePlan[];

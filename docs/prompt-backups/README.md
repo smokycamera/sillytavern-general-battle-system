@@ -96,3 +96,9 @@
 - 用户明确要求护甲／盾加入士气修正，护甲同时支持本轮已要求的速度修正；仅拆分并补充对应方向列表。
 - 等级锚定使用用户逐字给出的L1–L10层级与全部示例，并将依据技术或魔法规格改为“根据技术，工艺或魔法规格”。Markdown只补齐表格换行与分隔行。
 - 游戏界面的规格锚定说明同步相同层级和示例，伤害预算及火炮参数保持原值；其他世界书正文和条目设置不改。
+
+## 城区轮廓、组合技能示例与speed解释（2026-10-24，3.0.3）
+
+- `worldbook-before-composite-example-20261024.json.txt`及`worldbook-reading-before-composite-example-20261024.md.txt`保存追加标准示例前的全文。用户拒绝扩展两段说明，仅授权新增原句：“示例，震慑旋斩:物理范围L4+近战+环形+惊惧L2”。
+- `llm-layout-before-irregular-compounds-20261024.ts.txt`保存替换建筑围攻city说明前的完整源码。只应用用户最终提供的city一行：增加院落占据分区，门的at继续表示N/S/E/W绝对方位；不追加用户删去的解释。回退时只恢复该提示词行，保留解析器与生成器改动。
+- `worldbook-before-speed-intrinsic-20261024.json.txt`及`worldbook-reading-before-speed-intrinsic-20261024.md.txt`保存speed修改前全文。只把“护甲、坐骑、状态另行修正。”替换为用户指定的“speed只表示单位本身固有速度，选择时不考虑装备，负重或坐骑等其他因素的影响。”，保留speed1—5范围与其他正文，并同步生成阅读版。

@@ -63,13 +63,13 @@ describe('V30 worn armor and fractional movement',()=>{
     b.moveTo('a',24);expect(b.byId('a').pos).toBe(24);expect(b.movementLeft('a')).toBeGreaterThan(0);
     expect(b.movementLeft('a')).toBeLessThan(1);
   });
-  it('new UI units and both encounter modes select V30 without changing incoming archived units',()=>{
-    const draft=newUnitDraft();draft.name='builder';expect(buildUnit(draft,registry,'builder').armorWearModel).toBe('wear-v1');
+  it('new UI units and both encounter modes select current wear without changing incoming archived units',()=>{
+    const draft=newUnitDraft();draft.name='builder';expect(buildUnit(draft,registry,'builder').armorWearModel).toBe('wear-v2');
     for(const mode of ['small','mass'] as const){
       const roster=[unit({armorTier:4},V29_OVERFLOW_D20),unit({name:'d',side:'enemy'},V29_OVERFLOW_D20)],original=JSON.stringify(roster);
       const b=buildEncounter({roster,setup:{mode,field:'plains',lighting:'day',mapLayout:'standard',objectiveMode:'annihilation',siegeAttacker:'ally'},
         nonLethal:false,seed:'ui-current',registry,summonUnit:()=>null});
-      expect(b.rules.armorWearModel).toBe('wear-v1');expect(b.byId('a').armorWearModel).toBe('wear-v1');expect(JSON.stringify(roster)).toBe(original);
+      expect(b.rules.armorWearModel).toBe('wear-v2');expect(b.byId('a').armorWearModel).toBe('wear-v2');expect(JSON.stringify(roster)).toBe(original);
     }
   });
 });

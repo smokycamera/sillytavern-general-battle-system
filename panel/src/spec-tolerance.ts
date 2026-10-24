@@ -3,6 +3,7 @@ import { parseSkillMechanism, parseSkillMechanismParts, skillMechanismName, skil
 import { legacySkillEquivalent } from '../../engine/src/skill-catalog.js';
 import { resolveWeaponClass, SHIELD_CLASSES } from '../../engine/src/data/weapons.js';
 import type { BonusKind } from '../../engine/src/enhancements.js';
+import { splitSkillLevel } from './skill-notation.js';
 
 /** Read either sign/number/name or name/sign/number, without borrowing the next bonus's sign. */
 function enhancementOrder(text: string): string | undefined {
@@ -80,17 +81,20 @@ function mechanism(text: string, warnings: string[] = [], source = text): SkillM
 
 /** 将等级后的效果词归回机制段；无法实现的可选强化留下诊断，不废掉基础技能。 */
 export function normalizeNarrativeSkill(text: string, warnings: string[]): string {
-  if ((text.match(/[lL]\s*\d+/g) ?? []).length > 1) throw Error('每个技能末尾只写一个L，若要不同等级请拆成两项技能');
-  const normalized = normalizeNarrativeSpec(text);
+  const source = text.replace(/[０-９Ａ-Ｚａ-ｚ]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
+    .replace(/＋/g, '+').replace(/[−－﹣]/g, '-').replace(/．/g, '.')
+    .replace(/(?:level|lv\.?|l)\s*([+-]?\d+(?:\.\d+)?)\s*(?:级)?/gi, 'L$1');
+  const normalized = source;
   const separator = normalized.search(/[:：·｜|/／]/);
   const prefix = separator > 0 ? normalized.slice(0, separator) + ':' : '';
   const spec = separator > 0 ? normalized.slice(separator + 1) : normalized;
-  const match = spec.match(/^(.*?)[lL]([+-]?\d+(?:\.\d+)?)(.*)$/);
-  if (!match) { const bare = mechanism(spec, warnings, text); return prefix + (bare ? skillMechanismName(bare) : spec); }
-  const [, base, level, suffix] = match;
-  if (!/^\d+$/.test(level!) || Number(level) < 1 || Number(level) > 10) throw Error('技能等级必须是L1–L10整数');
+  const { mechanism: base, level, suffix: rawSuffix } = splitSkillLevel(spec);
+  if (level === undefined) { const bare = mechanism(spec, warnings, text); return prefix + (bare ? skillMechanismName(bare) : spec); }
+  if (!Number.isInteger(level) || level < 1 || level > 10) throw Error('技能等级必须是L1–L10整数');
+  const suffix = normalizeNarrativeSpec('占位L1' + rawSuffix, 'skill').slice('占位L1'.length);
   let parsed = mechanism(base!, warnings, text);
-  if (!suffix) return prefix + (parsed ? skillMechanismName(parsed) : base) + 'L' + level;
+  const formatted = () => { const body = parsed ? skillMechanismName(parsed) : base; return prefix + (/[lL]\d/.test(body) ? '(' + body + ')' : body) + 'L' + level; };
+  if (!suffix) return formatted();
   const parts = [...suffix!.matchAll(/([+-])(\d+(?:\.\d+)?)?([^+\-\d]*)/g)];
   if (parts.map(part => part[0]).join('') !== suffix) throw Error('技能强化格式不完整');
   const bonuses: Enhancements = {};
@@ -121,7 +125,7 @@ export function normalizeNarrativeSkill(text: string, warnings: string[]): strin
     }
     warnings.push(`${text}：已忽略未支持强化 ${part[0]}，保留基础技能`);
   }
-  const result = prefix + (parsed ? skillMechanismName(parsed) : base) + 'L' + level + enhancementLabel(bonuses);
-  parseEnhancementSuffix(result, 'skill');
+  const result = formatted() + enhancementLabel(bonuses);
+  parseEnhancementSuffix('技能L' + level + enhancementLabel(bonuses), 'skill');
   return result;
 }

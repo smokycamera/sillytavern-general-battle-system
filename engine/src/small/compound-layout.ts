@@ -5,10 +5,12 @@ import { createStructure, groundBlocked } from './layers.js';
 import { neighbors, gridDistance, type BattlefieldSpec } from './spatial.js';
 import { COMPOUND_PATTERNS, type CompoundPattern, type PositionArea } from './position-plan.js';
 import { gridPosition, inGridSector } from './grid-anchor.js';
+import { buildRegionCompound } from './region-compound.js';
 
 /** Build the footprint before naming its spaces. An outer wall never doubles as an internal partition. */
 export function buildCompoundLayout(field: BattlefieldSpec, plan: BattlefieldPlan | undefined, rng: SeededRng,
   attackingSide: 'ally' | 'enemy'): number[] {
+  if(plan?.citySectors?.length)return buildRegionCompound(field,plan,rng,attackingSide);
   const { width: w, height: h } = field, defender = attackingSide === 'ally' ? 'enemy' : 'ally';
   const int = (a: number, b: number) => a + Math.floor(rng.next() * (b - a + 1));
   const pattern: CompoundPattern = plan?.compound?.pattern ?? COMPOUND_PATTERNS[int(0, COMPOUND_PATTERNS.length - 1)]!;

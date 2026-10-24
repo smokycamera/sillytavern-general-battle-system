@@ -166,7 +166,7 @@ export function layoutTask(ctx: LayoutContext, retry?: LayoutRetry): string {
     ctx.scene === 'building_siege' ? '- compound：建筑围攻布局，{"pattern":"布局"}。pattern=courtyard单院|forecourt前后院|wings双翼夹院|dogleg曲折院落|bailey内外院|ruined破损院落。按正文选择；院内房间、院落与通道会生成实际区域，places可命名，units可按地点部署。' : '',
     ctx.scene === 'trenches' ? '- trenches：堑壕组织，{"pattern":"布局"}。pattern=opposed相对前沿|depth纵深防线|echelon梯次斜线|salient突出部|strongpoints分散支撑点|saps前伸支壕。按正文选择；前沿壕、后方壕与交通壕会实际连通，places可用fortification命名阵地，units可按地点部署。' : '',
     ctx.scene === 'city_siege' ? '- city：必须写。{"at":[分区编号],"name":"城名","walls":城墙形制,"level":城墙等级,"breaches":破口数,"gates":[{"name":"门名","state":"closed"}]}。at写城市、城堡或营寨占据的分区数组，例如["B3","C3","B4","C4"]；相邻分区连成同一城区，分开的分区由程序连接，城墙沿整体外缘生成，内部生成街道、院落和建筑。单个分区也写成数组。留出城外接近地带。walls按正文选：front=一道城墙横贯战场，城区延伸出地图（大城的一段城墙）|ring=四面都有城墙，整座城在图内（小城、城堡、营寨）|double=内外两重城墙，中间夹道（多重城墙、内城外郭、瓮城）；正文没写就省略，由程序选。gates列出本战区可见的城门（省略为一座），state=closed关闭|open开启|destroyed已毁，门由程序放在面向攻方的外墙上，两重城墙时内墙配对应的门。level=1临时 2简易 3正规 4重型 5要塞 6超凡 7史诗 8传奇 9半神 10神造，按材料与强化选；breaches=开战时外墙已有的破口0-3。'
-      : ctx.scene === 'building_siege' ? '- city：院墙与门，{"level":院墙等级1-10,"breaches":破口数0-3,"gates":[{"name":"院门","at":"S","state":"closed|open|destroyed"}]}。at可选N/S/E/W，表示门在院墙上的绝对方位；各门状态独立，院落位置由程序决定。'
+      : ctx.scene === 'building_siege' ? '- city：院落范围、院墙与门，{"at":[分区编号],"level":院墙等级1-10,"breaches":破口数0-3,"gates":[{"name":"院门","at":"S","state":"closed|open|destroyed"}]}。at列出院落占据的分区，gates中的at可选N/S/E/W，表示门在围墙上的绝对方位，各门状态独立。'
       : ctx.scene === 'field' ? '- city：仅当交战地点旁有城镇时写，{"at":[分区编号],"name":"城名","gates":[...]}。at列出城区占据的分区，程序连接成同一城区；各方默认在城外，写gates时会画出朝向战场的城墙与门。' : ctx.scene === 'city_streets' ? '- city：可写{"at":[分区编号],"name":"城名"}，标出本战区的城区范围，程序连接成街巷；各方在城区内交战，不生成城防外墙。' : '',
     ctx.scene === 'interior' ? '- water：正文明确有水域时写，{"type":"river深水|ford浅水|mixed深浅混合|none无水","at":"分区编号或分区编号数组","bridges":[{"name":"桥名","at":分区编号,"state":"intact完好|destroyed已断"}]}。按正文布置；bridges只写正文提到的桥，正文没提到桥就省略，由程序配桥。河流写单个分区编号，海面、湖泊或大片积水写覆盖范围的分区数组，例如["A1","B1","C1","D1"]；数组内铺水，城区、建筑及高地保留。mixed按陆地边缘生成连续浅滩，远处为深水；可用shallow:[分区编号]指定浅水范围。面状水域不自动配桥或添加渡河浅滩，bridges只写正文提到的桥。'
       : `- water：{"type":"river深水河|ford可涉水浅滩|mixed深浅混合|moat护城河|none无水","at":"分区编号或分区编号数组","bridges":[{"name":"桥名","at":方位,"state":"intact完好|destroyed已断"}]}。河流只设一条主河${ctx.scene === 'city_siege' ? '；护城河由程序沿面向攻方的城墙外侧布置，不写at' : ''}。bridges只写正文提到的桥；正文没提到桥就省略bridges，由程序配桥${ctx.scene === 'city_siege' ? '（护城河配在城门前）' : ''}；[]只用于正文明确无桥可用，程序会留一处可涉水的浅滩。河流写单个分区编号，海面、湖泊或大片积水写覆盖范围的分区数组，例如["A1","B1","C1","D1"]；数组内铺水，城区、建筑及高地保留。mixed按陆地边缘生成连续浅滩，远处为深水；可用shallow:[分区编号]指定浅水范围。面状水域不自动配桥或添加渡河浅滩，bridges只写正文提到的桥。`,
@@ -273,7 +273,7 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
     return [...new Set(anchors)] as GridAnchor[];
   };
   const citySectors = cityRaw ? numberedSectors(cityRaw.at) : undefined;
-  if (citySectors && (allowsCity(scene) || scene === 'city_streets')) plan.citySectors = citySectors;
+  if (citySectors && (allowsCity(scene) || scene === 'city_streets' || scene === 'building_siege')) plan.citySectors = citySectors;
   let cityAt = citySectors?.[0] ?? (cityRaw ? sectorOf(cityRaw.at) : undefined);
   if (scene === 'city_siege' && !cityAt) {
     cityAt = defenderOf(ctx) === 'enemy' ? 'north' : 'south';

@@ -18,25 +18,28 @@ function build(answer:unknown,roster:Combatant[]=[],extra:Partial<LayoutContext>
  return {field,compiled};
 }
 describe('区域城市、水域与建筑',()=>{
- it('扩大实际格数，合并凹形城区并保留外缘墙、独立城门状态和破口',()=>{
+ it('按合并城区保持紧凑尺寸，保留凹形外缘墙、独立城门状态和破口',()=>{
   const sectors=['A3','B3','A4'] as const;
   const {field}=build({city:{at:sectors,walls:'ring',level:4,breaches:1,gates:[{name:'北门',at:'N',state:'open'},{name:'东门',at:'E',state:'closed'}]}});
-  expect(field.width).toBeGreaterThan(13);expect(field.tiles.length).toBeGreaterThan(247);
-  expect(cellLabel(field,26)).toBe('AA1');expect(gridColumnIndex('AO')).toBe(40);expect(gameCell({battlefield:field} as SmallBattle,'AA1')).toBe(26);
-  const defender=unit('守军','ally');defender.pos=field.city!.core[0];const pose=bracePose(defender,undefined,'small',field.width,field.height);expect(pose.height).toBe(field.height);expect(()=>validateTacticalPose(pose)).not.toThrow();
+  expect(field.width).toBe(13);expect(field.height).toBe(19);
+  const urban=new Set([...field.city!.inside,...field.city!.frontline]);
+  expect(field.structures!.every((s,p)=>s?.kind!=='building'||urban.has(p))).toBe(true);
+  const wide={...field,width:41,height:41};
+  expect(cellLabel(wide,26)).toBe('AA1');expect(gridColumnIndex('AO')).toBe(40);expect(gameCell({battlefield:wide} as SmallBattle,'AA1')).toBe(26);
+  const defender=unit('守军','ally');defender.pos=field.city!.core[0];const pose=bracePose(defender,undefined,'small',field.width,field.height);expect(pose.height??19).toBe(field.height);expect(()=>validateTacticalPose(pose)).not.toThrow();
   const actual=new Set([...field.city!.inside,...field.city!.frontline]);
   expect(regionCells(field,['B4']).some(p=>actual.has(p))).toBe(false);
   const seam=regionCells(field,['A3']).filter(p=>neighbors(field,p).some(n=>regionCells(field,['B3']).includes(n)));
   expect(seam.some(p=>field.city!.inside.includes(p))).toBe(true);
   expect(field.city!.gates.map(p=>field.structures![p]!.gateState)).toEqual(['open','closed']);
-  expect(field.city!.breaches).toHaveLength(1);expect(field.generation!.version).toBe(10);validateField(field);
+  expect(field.city!.breaches).toHaveLength(1);expect(field.generation!.version).toBe(11);validateField(field);
   const double=build({city:{at:['B2','C2','B3','C3'],walls:'double',level:5,gates:[{name:'正门',state:'open'}]}}).field;
   expect(double.city!.terrace!.length).toBeGreaterThan(0);
   expect(double.structures!.filter(s=>s?.kind==='gate')).toHaveLength(2);
   expect(double.structures!.filter(s=>s?.kind==='gate').every(s=>s!.gateState==='open'&&s!.level===5)).toBe(true);
  });
  it('分开的城区按最短分区路径连接，不填平凹角',()=>{
-  expect(connectedCitySectors(['A3','C3'])).toEqual(['A3','C3','B3']);
+  expect(connectedCitySectors(['A3','C3'])).toEqual(['A3','B3','C3']);
   expect(connectedCitySectors(['A3','B3','A4'])).toHaveLength(3);
  });
  it('面状海水只在指定区域铺设，沿岸有连续浅滩，城内与房间保持陆地且不凭空造桥',()=>{
