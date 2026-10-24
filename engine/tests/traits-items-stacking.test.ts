@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { generateUnit, traitRegistry, standardConditionMap, prepareCombatModel, prepareTraitModel, prepareItemModel, prepareTraitLevelModel,
   V23_OVERFLOW_D20, V23_OVERFLOW_TW, V22_OVERFLOW_D20, V22_OVERFLOW_TW, SmallBattle, MassBattle, standardField,
   compileItem, gearItem, collectMods, resolveStack, resolveAttack, previewAttack, wornDamageMultiplier, anchoredProtection, defensePower,
-  traitParameter, STACKING_MODEL, REVISED_ITEM_HEAL, REVISED_ITEM_BARRIER, ITEM_STACKING, ITEM_PROGRESSION,
+  traitParameter, STACKING_MODEL, REVISED_ITEM_HEAL, REVISED_ITEM_BARRIER, ITEM_STACKING, ITEM_LIFE_RECOVERY, ITEM_PROGRESSION,
   parseSkillMechanism, skillMechanismId, itemAbilityTemplate, upgradeRecoveryItemBudget, historicalRecoveryItem,
   beginLifestealRound, lifestealRecovery, lifestealAmount, memberHealth, applyCombatDamage, bracePose, conditionDamage,
   placeZone, settleZones, skillEffectValue, structureTraitMultiplier, syncGearAbilities, regenerationAmount, medicHealingMultiplier,
@@ -122,13 +122,13 @@ describe('V23 组合修正关键回归',()=>{
     }
     const a=unit('a',{medic:10,regen:10},{level:10});a.hp-=50;expect(medicHealingMultiplier(a)).toBe(1.96);expect(regenerationAmount(a)).toBe(23);
     const old=frozen(),before=structuredClone(old),up=upgradeRecoveryItemBudget(old);
-    expect(old).toEqual(before);expect(up.recipe).toEqual({...old.recipe,progressionModel:ITEM_STACKING});expect(up.ability!.effects[0]).toMatchObject({amount:136*1.10});
+    expect(old).toEqual(before);expect(up.recipe).toEqual({...old.recipe,progressionModel:ITEM_LIFE_RECOVERY});expect(up.ability!.effects[0]).toMatchObject({amount:224.4});
     expect(itemValueSummary(old)).toContain('治疗');expect(itemValueSummary(old)).not.toMatch(/历史规则|以本场|组合/);expect(historicalRecoveryItem(up)).toBe(false);
     const custom=structuredClone(old);(custom.ability!.effects[0] as {amount:number}).amount=999;expect(()=>upgradeRecoveryItemBudget(custom)).toThrow('可信配方');
     const historical=frozen();historical.ability=itemAbilityTemplate(historical.recipe.active!,10,historical.recipe.bonuses,'single','药剂',false,'skills-v2');delete historical.recipe.progressionModel;
-    expect(upgradeRecoveryItemBudget(historical).ability!.effects[0]).toMatchObject({amount:136*1.10});
+    expect(upgradeRecoveryItemBudget(historical).ability!.effects[0]).toMatchObject({amount:224.4});
     const oldZone=frozen(10,'charged','治疗区域');oldZone.ability=itemAbilityTemplate(oldZone.recipe.active!,10,oldZone.recipe.bonuses,'charged','药剂',false,'skills-v2');delete oldZone.recipe.progressionModel;
-    expect(upgradeRecoveryItemBudget(oldZone).ability!.itemEffectModel).toBe(ITEM_STACKING);
+    expect(upgradeRecoveryItemBudget(oldZone).ability!.itemEffectModel).toBe(ITEM_LIFE_RECOVERY);
   });
   it.each(['small','mass'] as const)('%s V22快照和冻结治疗不变；升级库存整叠保留身份和归属',mode=>{
     const rules=mode==='small'?V22_OVERFLOW_D20:V22_OVERFLOW_TW,a=unit('a',{berserk:10,'melee-master':10},{},rules),e=unit('e',{}, {},rules);

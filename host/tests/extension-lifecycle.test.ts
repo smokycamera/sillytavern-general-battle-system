@@ -24,7 +24,7 @@ it('recovers one failed startup, preserves the cached runtime and disposes only 
     characterId: 0, characters: [{ avatar: 'test.png', name: 'Test' }], chatId: 'a', chat: [], chatMetadata: {}, extensionSettings: {},
     getRequestHeaders: () => ({ 'Content-Type': 'application/json' }), setExtensionPrompt: vi.fn(),
     saveMetadata: async () => { metadata = structuredClone(context.chatMetadata!); },
-    eventTypes: { CHAT_CHANGED: 'chat', WORLDINFO_ENTRIES_LOADED: 'worldinfo' },
+    eventTypes: { CHAT_CHANGED: 'chat', WORLDINFO_ENTRIES_LOADED: 'worldinfo', GENERATION_STARTED: 'generation', WORLD_INFO_ACTIVATED: 'activated' },
     saveSettingsDebounced: vi.fn(),
     eventSource: { on(key, fn) { const set = handlers.get(key) ?? new Set(); set.add(fn); handlers.set(key, set); }, off(key, fn) { handlers.get(key)?.delete(fn); } },
   };
@@ -41,6 +41,9 @@ it('recovers one failed startup, preserves the cached runtime and disposes only 
   await vi.waitFor(() => expect(hostWindow.__tavernBattleNative?.service.status().phase).toBe('ready'));
   expect(request.mock.calls.filter(([url]) => url === '/api/users/me')).toHaveLength(2);
   const runtime = hostWindow.__tavernBattleNative!, panel = document.getElementById('tavern-battle-native-panel');
+  for (const handler of handlers.get('generation')!) handler('normal', {}, false);
+  for (const handler of handlers.get('activated')!) handler([{world:'角色世界',uid:1,content:'绿灯已命中'}]);
+  expect(await runtime.worldbooks!.active!()).toEqual([{name:'角色世界',entries:[{id:'1',title:'条目 1',content:'绿灯已命中'}]}]);
   expect(runtime.worldbook!.view().injectionMode).toBe('native');
   runtime.worldbook!.update({ entry: { id: '0', content: 'saved rule' } });
   expect(context.saveSettingsDebounced).toHaveBeenCalledOnce();
@@ -65,4 +68,5 @@ it('recovers one failed startup, preserves the cached runtime and disposes only 
   window.dispatchEvent(new PageTransitionEvent('pagehide'));
   expect(hostWindow.__tavernBattleNative).toBeUndefined(); expect(panel?.isConnected).toBe(false); expect(handlers.get('chat')!.size).toBe(0);
   expect(handlers.get('worldinfo')!.size).toBe(0);
+  expect(handlers.get('activated')!.size).toBe(0);
 });

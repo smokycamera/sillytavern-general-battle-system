@@ -4,6 +4,7 @@ import type { CityShape } from './layers.js';
 import { INTERIOR_USES, INTERIOR_PATTERNS, type InteriorPlan } from './interior-plan.js';
 import { COMPOUND_PATTERNS, TRENCH_PATTERNS, type CompoundPlan, type TrenchPlan } from './position-plan.js';
 import {BattlefieldPlanError} from './battlefield-error.js';
+import { COMPASS_ANCHORS, GRID_ANCHORS, type GridAnchor } from './grid-anchor.js';
 export {BattlefieldPlanError} from './battlefield-error.js';
 import { normalizeSceneIntent, MAX_DEPLOYMENT_PLANS, SCENE_ARCHETYPES, WORLD_ANCHORS, SCENE_INTENT_PROMPT, type SceneIntent, type SceneArchetype, type WorldAnchor } from './scene-intent.js';
 export { MAX_DEPLOYMENT_PLANS, MAX_DEPLOYMENT_ZONES } from './scene-intent.js';
@@ -29,7 +30,7 @@ export interface LandmarkPlan {
 export interface BridgePlan { id?: string; anchor: WorldAnchor; state: 'intact' | 'destroyed'; width?: 1 | 2 }
 /** wall/inside/outside choose the defenders' posts in a siege; elsewhere inside/outside choose the city side. */
 export const DEPLOYMENT_POSTS = ['wall', 'inside', 'outside'] as const;
-/** A force's starting area on the 3×3 compass grid. The subject is ally, enemy or a public unit handle (u1…). */
+/** A force's starting area on the numbered grid or legacy compass grid. The subject is ally, enemy or a public unit handle (u1…). */
 export interface DeploymentPlan { subject: string; at: WorldAnchor[]; post?: typeof DEPLOYMENT_POSTS[number] }
 export const GATE_SECTORS = ['auto', 'front_left', 'front_center', 'front_right', 'left', 'right', 'rear','north','south','east','west'] as const;
 export interface GatePlan { id?: string; sector: typeof GATE_SECTORS[number]; state: 'closed' | 'open' | 'destroyed'; internal?: boolean }
@@ -41,8 +42,14 @@ export interface BattlefieldPlan {
   compound?: CompoundPlan;
   trenches?: TrenchPlan;
   cityPosition?: WorldAnchor;
+  /** Numbered regions are an actual joined footprint, unlike the legacy city anchor. */
+  citySectors?: GridAnchor[];
   waterAxis?: 'horizontal' | 'vertical';
   waterPosition?: WorldAnchor;
+  waterCoverage?: 'all';
+  waterDepth?: 'mixed';
+  waterSectors?: GridAnchor[];
+  waterShallowSectors?: GridAnchor[];
   bridgePlan?: BridgePlan[];
   /** Array length is the exact number of gates; each state is independent. Overrides legacy gates/gateState. */
   gatePlan?: GatePlan[];
@@ -76,10 +83,15 @@ export function normalizeBattlefieldPlan(value: unknown): { plan?: BattlefieldPl
     topology: Object.keys(ROUTE_TOPOLOGIES), density: ['sparse', 'balanced', 'dense'], water: ['none', 'ford', 'river', 'moat'], gates: ['none', 'single', 'side', 'double'], gateState: ['closed', 'open', 'destroyed'],
     orientation: Object.keys(MAP_DESIGN_OPTIONS.orientation), relief: Object.keys(MAP_DESIGN_OPTIONS.relief),
     cover: Object.keys(MAP_DESIGN_OPTIONS.cover), obstacles: Object.keys(MAP_DESIGN_OPTIONS.obstacles), breadth: Object.keys(MAP_DESIGN_OPTIONS.breadth),
-    archetype: SCENE_ARCHETYPES, cityPosition: WORLD_ANCHORS, waterAxis: ['horizontal','vertical'], waterPosition: WORLD_ANCHORS };
+    archetype: SCENE_ARCHETYPES, cityPosition: WORLD_ANCHORS, waterAxis: ['horizontal','vertical'], waterPosition: WORLD_ANCHORS, waterCoverage: ['all'], waterDepth: ['mixed'] };
   for (const [key, choices] of Object.entries(enums)) if (input[key] !== undefined) {
     if (typeof input[key] === 'string' && (choices as readonly string[]).includes(input[key] as string)) (plan as Record<string, unknown>)[key] = input[key];
     else notes.push(`地图${key}无效，采用本地默认`);
+  }
+  for (const key of ['citySectors', 'waterSectors', 'waterShallowSectors'] as const) if (input[key] !== undefined) {
+    if (!Array.isArray(input[key]) || !input[key].length || input[key].length > 16 || input[key].some(a => !(GRID_ANCHORS as readonly unknown[]).includes(a)))
+      throw new BattlefieldPlanError(`${key}须为1—16个4×4分区编号`);
+    plan[key] = [...new Set(input[key] as GridAnchor[])];
   }
   if (input.interior !== undefined) {
     const inside = object(input.interior), interior: InteriorPlan = {};
@@ -184,8 +196,8 @@ export function requireApiLandmarks(plan: BattlefieldPlan | undefined): asserts 
 export const BATTLEFIELD_PLAN_PROMPT = `battlefield按正文时代、地点与局势设计；未指定部分用不同地形、路网、建筑用途和局部高差补全。地图上北下南；未写部署关系时我方在南、敌方在北、第三方在东。
 scene=field野战/城外|city_siege城市攻防|city_streets巷战|building_siege建筑围攻|interior室内|trenches堑壕。
 可省略：size=compact|standard|large；shape=front|enclosure|riverside|hillside（攻城时front只在面向战场的一侧筑墙、城区延伸出地图，其余为四面城墙）；wallLayers=1|2（攻城时2为内外两重城墙）；layout=scattered|lanes|crossroads|ring|strongpoint|broken；topology=${Object.keys(ROUTE_TOPOLOGIES).join('|')}；orientation=longitudinal|transverse|diagonal；breadth=narrow|normal|broad；relief/cover/obstacles=sparse|balanced|dense。
-water=none无水|ford可涉浅水|river深水河流|moat护城河；waterAxis=horizontal|vertical。室内无室外水系；有bridge须有river实体或water=ford|river|moat。
+water=none无水|ford可涉浅水|river深水河流|moat护城河；waterAxis=horizontal|vertical。室内水域按正文指定；有bridge须有river实体或water=ford|river|moat。
 fortLevel=1..10按工事材料与强化选级。breaches可省略；格式{count:0..3,width:1|2,sector:auto|front_left|front_right|left|right|rear}，0为完整。
 ${SCENE_INTENT_PROMPT}
-deployments可选，按九宫格方位安排开局位置：[{subject:ally|enemy|neutral|u短ID,at:[${WORLD_ANCHORS.join('|')}],post?:wall|inside|outside}]，同一部队只写一项。攻城时攻方只在城外开局；守方默认在城内并分兵上墙，post=wall多上城头、inside不上墙、outside出城列阵。城外野战默认在城外，巷战默认在城内。已用relations写部署关系的部队以relations为准。neutral默认从东侧进入。
+deployments可选，按九宫格方位安排开局位置：[{subject:ally|enemy|neutral|u短ID,at:[${COMPASS_ANCHORS.join('|')}],post?:wall|inside|outside}]，同一部队只写一项。攻城时攻方只在城外开局；守方默认在城内并分兵上墙，post=wall多上城头、inside不上墙、outside出城列阵。城外野战默认在城外，巷战默认在城内。已用relations写部署关系的部队以relations为准。neutral默认从东侧进入。
 示例（仅示格式，内容按正文）：{"scene":"field","intent":{"entities":[{"id":"hill1","kind":"hill","label":"北坡","anchor":"north","basis":"explicit","sources":["m1.p2"]},{"id":"camp1","kind":"position","label":"营地"}],"relations":[{"subject":"enemy","relation":"occupies","object":"hill1","basis":"explicit","sources":["m1.p2"]},{"subject":"camp1","relation":"south_of","object":"hill1"},{"subject":"ally","relation":"approaches_from","object":"camp1"}],"constraints":[]}}`;

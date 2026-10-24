@@ -4,6 +4,7 @@ import { isAirborne } from './aerial.js';
 import { isCohort, personnel, COHORT_REFERENCE } from './combat-model.js';
 import { standingTerrain } from './small/height-map.js';
 import { activeTraitIds } from './trait-sources.js';
+import { TARGET_WIDTH_MODEL, targetWidthLimit } from './target-width.js';
 
 export const LEGACY_ENGAGEMENT_WIDTH = { ranged: 10, melee: 8, difficultPenalty: 2 } as const;
 export const ENGAGEMENT_WIDTH = { ranged: 20, melee: 16, difficultPenalty: 4 } as const;
@@ -27,12 +28,13 @@ export function engagementWidth(actor: Combatant, target: Combatant, ranged: boo
   return (ranged ? width.ranged : width.melee) - (constrained ? width.difficultPenalty : 0);
 }
 /** 同阵位共用展开；V3按现员比例分配，旧规则继续按稳定id轮流分配。 */
-export function sharedParticipants(actor: Combatant, cohort: Combatant[], width: number, target?: Combatant): number {
+export function sharedParticipants(actor: Combatant, cohort: Combatant[], width: number, target?: Combatant, ranged?: boolean): number {
   if (actor.scale === 'hero') return 1;
   const units = [actor, ...cohort.filter((u) => u.id !== actor.id)].filter((u) => u.side === actor.side && u.status === 'ready' && u.scale !== 'hero').sort((a, b) => a.id.localeCompare(b.id));
   if(isCohort(actor)){
     const total=units.reduce((n,u)=>n+personnel(u),0);
-    const throughput=width*(target?.scale==='hero'?1:Math.max(1,total/COHORT_REFERENCE));
+    const targetLimited=target?.targetWidthModel===TARGET_WIDTH_MODEL&&ranged!==undefined;
+    const throughput=Math.min(width*(target?.scale==='hero'&&!targetLimited?1:Math.max(1,total/COHORT_REFERENCE)), target && ranged !== undefined ? targetWidthLimit(target,ranged) : Infinity);
     return total>0?Math.min(personnel(actor),throughput*personnel(actor)/total):0;
   }
   const assigned = new Map(units.map((u) => [u.id, 0]));

@@ -62,9 +62,18 @@ export function prepareBattleObjective(field: BattlefieldSpec, roster: Combatant
   if (!['escort', 'intercept'].includes(mode)) {
     const siegeScene = field.generation?.scene ? ['city_siege','building_siege'].includes(field.generation.scene) : field.environment?.includes('siege');
     const siege = mode === 'siege' || mode === 'auto' && siegeScene;
-    if (siege && binding?.relation === 'targets') return { ...field, objective: { kind: 'control', cell: neutralControlCell(field, roster, targetCells),
-      cells: targetCells, attackingSide: binding.side !== 'neutral' ? binding.side : attackingSide, rounds: 2, limit: field.objective.limit } };
-    if (siege && field.layerVersion && field.city?.core.length) return { ...field, objective: { kind: 'control', cell: field.city.core[0]!, cells: [...field.city.core], attackingSide, rounds: 2, limit: field.objective.limit } };
+    if (siege && binding?.relation === 'targets') {
+      const cells=field.city?.defender?targetCells.filter(p=>field.city!.inside.includes(p)):targetCells;
+      if(!cells.length)throw new Error('正文指定的攻城目标位于守方城外，请调整目标地点或城区范围');
+      return { ...field, objective: { kind: 'control', cell: neutralControlCell(field, roster, cells),
+        cells, attackingSide: binding.side !== 'neutral' ? binding.side : attackingSide, rounds: 2, limit: field.objective.limit } };
+    }
+    if (siege && field.layerVersion && field.city) {
+      const legal=field.city.core.filter(p=>field.city!.inside.includes(p)&&!groundBlocked(field,p));
+      const cells=legal.length?legal:field.city.inside.filter(p=>!groundBlocked(field,p)).sort((a,b)=>gridDistance(field,a,field.objective.cell)-gridDistance(field,b,field.objective.cell)||a-b).slice(0,1);
+      if(!cells.length)throw new Error('守方城内没有可走的占领目标格，请调整水域或城内障碍');
+      return { ...field, city:{...field.city,core:cells}, objective: { kind:'control',cell:cells[0]!,cells,attackingSide,rounds:2,limit:field.objective.limit } };
+    }
     if ((mode === 'control' || mode === 'auto' && binding?.relation === 'targets') && !siege) {
       const cells = binding?.relation === 'targets' ? targetCells : undefined;
       return { ...field, objective: { kind: 'control', cell: neutralControlCell(field, roster, cells),

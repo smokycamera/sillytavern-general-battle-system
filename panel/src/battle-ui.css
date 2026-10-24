@@ -12,6 +12,15 @@
 .unit-symbol{width:17px;height:17px;flex-shrink:0;display:inline-block;vertical-align:middle;color:currentColor;}.unit-symbol .f{fill:currentColor;stroke:none;}.unit-symbol .s{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;}
 .formation-stack{min-width:0;}.formation-stack>summary{color:var(--gold);cursor:pointer;padding:8px 4px;min-height:44px;}.formation-stack[open] .formation-piece{width:100%;box-shadow:2px 2px 0 var(--line);}
 .formation-piece .unit-symbol{margin-right:5px;}.formation-node{position:relative;}
+.field-effect{position:absolute;inset:2px;z-index:1;pointer-events:none;overflow:hidden;border-radius:4px;--effect-color:#d5bb79;border:1px dashed var(--effect-color);background:color-mix(in srgb,var(--effect-color) 16%,transparent)}
+.field-effect svg{position:absolute;top:3px;right:3px;width:18px;height:18px;fill:color-mix(in srgb,var(--effect-color) 28%,transparent);stroke:var(--effect-color);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 1px 1px #15120e)}
+.effect-fire{--effect-color:#ff985a;background:repeating-linear-gradient(125deg,transparent 0 7px,#e2703438 7px 10px)}.effect-fire svg{right:auto;left:3px}
+.effect-poison{--effect-color:#b2d66d;background:radial-gradient(circle at 30% 40%,#94b74b55,transparent 65%)}
+.effect-smoke{--effect-color:#c7cbd2;background:repeating-linear-gradient(0deg,transparent 0 5px,#b4bec735 5px 9px)}.effect-smoke svg{top:24px;left:3px;right:auto}
+.effect-healing{--effect-color:#7fddcd;background:radial-gradient(ellipse at center,#56c6ae44,transparent 70%)}.effect-healing svg{top:24px}
+.effect-trap{--effect-color:#f2c668;background:repeating-linear-gradient(45deg,transparent 0 8px,#b7913b45 8px 10px)}.effect-trap svg{top:auto;bottom:17px}
+.effect-works{--effect-color:#dfc99b;border:3px double var(--effect-color);background:repeating-linear-gradient(0deg,transparent 0 12px,#b3976138 12px 15px)}.effect-works svg{top:auto;bottom:17px;left:3px;right:auto}
+.formation-node>.field-effect{z-index:0}.formation-node>.field-effect svg{width:22px;height:22px}.formation-field-effects{position:relative;z-index:1;display:flex;gap:4px;flex-wrap:wrap;margin-bottom:3px;pointer-events:none}.formation-field-effects:empty{display:none}.zone-label{font-size:11px;padding:2px 5px;border:1px solid var(--gold);border-radius:3px;background:var(--panel);color:var(--gold)}
 .formation-last-seen{display:block;margin-top:3px;padding:2px 4px;border:1px dashed var(--enemy);border-radius:4px;font-size:10px;color:var(--enemy);opacity:.85;text-align:center;}
 .battle-trace{position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none;opacity:0;color:var(--gold);overflow:visible;}
 .battle-trace line{stroke:currentColor;stroke-width:2.5;}.trace-attack{color:var(--enemy);}.trace-move line{stroke-dasharray:5 4;}
@@ -67,4 +76,4 @@ button[data-processing="true"] { outline: 2px solid var(--accent, #cdbb86); opac
 .battle-toolbar .battle-tactic{margin-left:auto;}
 .battle-finish-actions{display:flex;flex-basis:100%;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
 .llm-notes-dialog{width:min(700px,96vw);}.llm-notes-side{border-top:1px solid var(--line);margin-top:12px;padding-top:8px;}.llm-notes-side p,.llm-notes-side li{white-space:pre-wrap;overflow-wrap:anywhere;}
-.grid-cell.recently-searched::after{content:'';position:absolute;right:3px;bottom:3px;width:4px;height:4px;border-radius:50%;background:var(--ally);pointer-events:none;}
+.grid-search-mark{position:absolute;right:3px;bottom:3px;width:4px;height:4px;border-radius:50%;background:var(--ally);pointer-events:none;z-index:2;}

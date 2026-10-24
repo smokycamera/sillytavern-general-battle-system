@@ -5,7 +5,7 @@
  * 都与分别写两个单项相同，不再以一项的价格压过“攻击”“防御”等单项减益。
  * 突进、闪现、后撤与正文解析修正是新增写法，旧战斗里不会出现，不依赖这个开关。
  */
-import type { Combatant, RulePack } from './types.js';
+import type { Ability, Combatant, RulePack } from './types.js';
 import { standardConditionMap } from './conditions.js';
 
 export const SKILL_MODEL = 'skills-v1' as const;
@@ -25,6 +25,27 @@ export const controlSavePenalty = (model: unknown): number => model === PHASE3_S
 export const anchoredSkills = (model: unknown): boolean => model === ANCHORED_SKILL_MODEL;
 /** 状态效力上限：旧规则 1.5（L10 的效力），V21 为 2（L10 的预算比例）。 */
 export const conditionMagnitudeCap = (model: unknown): number => anchoredSkills(model) ? 2 : 1.5;
+
+/** Replace only the generated 2.2 baseline, retaining signed bonuses, effect discounts and the saved instance. */
+export function singleWeaponSkillScale(actor: Pick<Combatant, 'damageModel'>, ability: Ability, rules?: Pick<RulePack, 'singleWeaponSkillMultiplier' | 'weaponSkillCalibration'>): number {
+  const formula = rules?.weaponSkillCalibration === 'all-formulas-v1' ? /^skill-v(?:6|7|8|9|10)\./ : /^skill-v6\./;
+  return rules?.singleWeaponSkillMultiplier !== undefined && actor.damageModel === 'wounds-v2'
+    && ability.shape !== 'burst' && !ability.customized && !ability.fixedPower && formula.test(ability.effectVersion ?? '')
+    ? rules.singleWeaponSkillMultiplier / 2.2 : 1;
+}
+
+/** Only generated direct damage is calibrated; secondary effects and frozen active items retain their own budgets. */
+export function independentSkillDamageScale(actor: Pick<Combatant, 'damageModel'>, ability: Ability, rules?: Pick<RulePack, 'independentSkillDamageMultiplier'>): number {
+  if (rules?.independentSkillDamageMultiplier === undefined || actor.damageModel !== 'wounds-v2'
+    || ability.damageBasis || ability.customized || ability.fixedPower || ability.itemSourceId || ability.equipmentSourceId
+    || !ability.definitionId
+    || !/^skill-v(?:6|7|8|9|10)\./.test(ability.effectVersion ?? '')) return 1;
+  const category = ability.recipe?.category ?? ability.category;
+  const spell = ability.delivery === 'magic' && ['magic-single', 'magic-area', 'magic-burst'].includes(category ?? '');
+  const projectile = category === 'physical-single' && ability.shape !== 'burst'
+    && ability.delivery === 'ranged' && ability.recipe?.modifiers.includes('projectile');
+  return spell || projectile ? rules.independentSkillDamageMultiplier : 1;
+}
 
 export function validateSkillModel(value: unknown): void {
   if (value !== undefined && !isSkillModel(value)) throw new Error('技能规则版本损坏');

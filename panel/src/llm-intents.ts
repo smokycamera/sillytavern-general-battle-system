@@ -7,6 +7,9 @@ import { incomingDiplomacy, playerLetters, latestLetter } from '../../engine/src
 import { commandDiplomacy, commandLetters } from './llm-diplomacy.js';
 
 const present = (u: Combatant) => ['ready', 'routing'].includes(u.status);
+const invalidTarget = (b: SmallBattle, intent: UnitIntent) => intent.mode === 'attack' && !intent.targetId && intent.cell !== undefined
+  ? !b.battlefield || !intactStructure(b.battlefield, intent.cell)
+  : !!intent.targetId && !b.combatants.some(u => u.id === intent.targetId && (present(u) || intent.mode === 'use_ability' && u.status === 'dying'));
 /** Stable short names within this commander's view; actual save/engine identities stay intact. */
 class IntentIds {
   private short = new Map<string, string>();
@@ -69,8 +72,9 @@ export class LlmIntentPlanner {
       const own = b.combatants.filter(u => u.side === state.side && present(u));
       const known = new Set([...intents.basis.visible, ...(state.memory.contacts ?? []).map(u => u.id)]);
       const changed = own.length !== intents.basis.friends.length || own.some(u => !intents.basis.friends.includes(u.id))
+        || b.log.slice(intents.logIndex ?? 0).some(e => e.intentFailure && !e.intentFailure.temporary && own.some(u => u.id === e.intentFailure!.unitId))
         || b.visibleCombatants(state.side).some(u => u.side !== state.side && !known.has(u.id))
-        || Object.values(intents.units).some(i => i.targetId && !b.combatants.some(u => u.id === i.targetId && (present(u) || i.mode === 'use_ability' && u.status === 'dying')));
+        || Object.values(intents.units).some(i => invalidTarget(b, i));
       if (!changed) { intents.round = b.round; intents.replanned = false; delete intents.carryRound; this.changed(); }
     }
     if (state.memory.intents?.round === b.round) return;
@@ -90,7 +94,8 @@ export class LlmIntentPlanner {
     if (settings.commandInterval === 'situation' && intents?.round === b.round && !intents.replanned) {
       const visible = b.visibleCombatants(state.side).filter(u => u.side !== state.side);
       const reason = visible.some(u => !intents.basis.visible.includes(u.id) && !this.lastSeen!.has(u.id)) ? '首次发现新对手'
-        : Object.values(intents.units).some(i => ['attack', 'use_ability'].includes(i.mode) && !b.combatants.some(u => u.id === i.targetId && (present(u) || i.mode === 'use_ability' && u.status === 'dying'))) ? '意图目标已退场'
+        : b.log.slice(intents.logIndex ?? 0).some(e => e.intentFailure && !e.intentFailure.temporary && b.combatants.some(u => u.id === e.intentFailure!.unitId && u.side === state.side)) ? '己方指令路径受阻'
+        : Object.values(intents.units).some(i => ['attack', 'use_ability'].includes(i.mode) && invalidTarget(b, i)) ? '意图目标已退场或结构已毁'
         : intents.basis.friends.some(id => !b.combatants.some(u => u.id === id && present(u))) ? '己方单位已退场' : undefined;
       if (reason) { this.start(b, state, settings, valid, reason); await this.pending; }
     }
@@ -136,10 +141,12 @@ export class LlmIntentPlanner {
           const supportId = mode === 'support' ? item!.target ?? item!.supportId : item!.supportId;
           const abilityId = item!.skill ?? item!.abilityId;
           const ability = unit.abilities.find(a => a.id === abilityId);
+          const structureAttack = mode === 'attack' && targetId === undefined;
           let error: string | undefined;
           if (typeof mode !== 'string' || !['attack', 'advance', 'hold', 'withdraw', 'support', 'open_gate', 'close_gate', 'use_ability'].includes(mode)) error = 'mode须为支持的意图';
           else if (mode === 'use_ability' && (typeof targetId !== 'string' || !known.has(targetId) && !ownTargets.some(u => u.id === targetId))) error = 'target须为本阵营单位或已知对手';
-          else if (mode !== 'use_ability' && (mode === 'attack' || targetId !== undefined) && (typeof targetId !== 'string' || !known.has(targetId))) error = 'target须为已知对手';
+          else if (structureAttack && (!Number.isSafeInteger(cell) || !explored.has(cell as number) || !intactStructure(field, cell as number))) error = 'cell须为已探索的完好结构';
+          else if (mode !== 'use_ability' && !structureAttack && (mode === 'attack' || targetId !== undefined) && (typeof targetId !== 'string' || !known.has(targetId))) error = 'target须为已知对手';
           else if (mode === 'use_ability' && (typeof abilityId !== 'string' || !ability)) error = 'skill须为本单位的技能或道具动作编号';
           else if (mode === 'use_ability' && ability!.target === 'self' && targetId !== unit.id) error = '该动作只能对自己使用';
           else if (mode === 'use_ability' && ability!.target === 'ally' && !ownTargets.some(u => u.id === targetId)) error = '该动作须对己方单位使用';
@@ -178,7 +185,7 @@ export class LlmIntentPlanner {
       }
       command.memory.diplomacyRevision = candidate.diplomacy.revision;
       command.memory.letterId = latestLetter(candidate, state.side);
-      if (!command.decision) command.memory.intents = { round, ...(carryRound !== undefined && forces.every(u => units[u.id]) ? { carryRound } : {}), replanned: !!reason, basis: { visible: observation.units.filter(u => u.side !== 'friendly').map(u => u.id), friends: own.map(u => u.id) }, units };
+      if (!command.decision) command.memory.intents = { round, logIndex: b.log.length, ...(carryRound !== undefined && forces.every(u => units[u.id]) ? { carryRound } : {}), replanned: !!reason, basis: { visible: observation.units.filter(u => u.side !== 'friendly').map(u => u.id), friends: own.map(u => u.id) }, units };
       return { command, seen };
     });
     if (result && current()) { state.memory = result.command.memory; state.decision = result.command.decision; this.lastSeen = result.seen; this.basisSeed = b.seed; this.changed(); }

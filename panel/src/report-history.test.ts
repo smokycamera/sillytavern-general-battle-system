@@ -6,6 +6,9 @@ import {prepareBattleItems,prepareBattleItemWrite} from './battle-items.js';
 import {captureBattleArchive,captureBattleStart,archiveStamp,stampNewBattleReports,prepareReportDeletion,prepareReportRestore,prepareReportRestart,reportRestartReason} from './report-history.js';
 import {renderReportWorkspace} from './report-view.js';
 import {factsOf,type NarrativeSave} from './narrative-state.js';
+import type {LlmEncounterContext} from './llm-context.js';
+import {LlmCommandController} from './llm-command.js';
+import {COMMAND_PROMPTS} from './llm-command-prompts.js';
 const registry=traitRegistry();
 
 function finished(mode:'small'|'mass'='small') {
@@ -27,6 +30,26 @@ function finished(mode:'small'|'mass'='small') {
 }
 
 describe('战报删除与原局重战',()=>{
+ it.each(['small','mass'] as const)('%s重战恢复开局LLM笔记并绑定新战斗，清除其他战斗遗留指挥',mode=>{
+  const {next,start}=finished(mode);
+  const opening=mode==='small'?SmallBattle.fromSnapshot(structuredClone(start.snapshot)):MassBattle.fromSnapshot(structuredClone(start.snapshot));
+  const context={mode,field:'plains',lighting:'day',mapLayout:'standard',enemy:{ability:'normal',source:'manual',style:{}},messageKey:'',detail:'',
+   llmCommanders:{enemy:{battleSeed:opening.seed,side:'enemy',brief:{name:'原指挥官',persona:'谨慎',mission:'守住阵地',known:['开局情报']},memory:{plan:'开局计划',notes:['开局笔记'],terrain:[]}}}} as unknown as LlmEncounterContext;
+  Object.assign(context,{messages:['discard-provider-transcript']});
+  const captured=captureBattleStart(opening,captureBattleArchive(next),context);
+  next.reports![0]!.start={...start,encounterContext:captured.encounterContext};
+  context.llmCommanders!.enemy!.memory.notes.push('战后才知道的信息');
+  next.encounterContext=context;
+  const replay=prepareReportRestart(JSON.parse(JSON.stringify(next)),start.battleId,2,'retry');
+  const command=(replay.encounterContext as LlmEncounterContext).llmCommanders!.enemy!;
+  expect(command).toMatchObject({battleSeed:'retry',brief:{name:'原指挥官'},memory:{plan:'开局计划',notes:['开局笔记']}});
+  expect(replay.activeBattleStart!.encounterContext).toEqual(replay.encounterContext);
+  expect(JSON.stringify(captured)).not.toContain('discard-provider-transcript');
+  const battle=mode==='small'?SmallBattle.fromSnapshot(replay.battle!.snap):MassBattle.fromSnapshot(replay.battle!.snap);
+  expect(new LlmCommandController(COMMAND_PROMPTS,()=>{}).available(battle,{enabled:true,selectBattleScale:false,commandEnemy:true,windowSize:6,url:'https://fixture.invalid/v1',token:'fixture',model:'fixture',models:[]},command)).toBe(true);
+  delete next.reports![0]!.start!.encounterContext;
+  expect(prepareReportRestart(next,start.battleId,2,'legacy').encounterContext).toBeUndefined();
+ });
  it.each(['small','mass'] as const)('%s原局恢复生命/XP/物品，旧编号继续封口，新一轮物品能正常扣除',mode=>{
   const {before,next,start}=finished(mode),original=structuredClone(next);
   expect(next.inventory!.find(i=>i.id==='dose')!.qty).toBe(2);expect(next.storage![0]!.xp).toBeGreaterThan(before.storage![0]!.xp??0);

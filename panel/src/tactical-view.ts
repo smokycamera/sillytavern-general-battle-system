@@ -1,11 +1,12 @@
 import { displayNumber } from '../../engine/src/display-number.js';
 import { activationControlDuration, controlPolicy } from '../../engine/src/battle-control.js';
 import { SCENE_NAMES } from '../../engine/src/small/map-design.js';
-import { movementStepCost, structureDisplayName,retreatCells,neighbors } from '../../engine/src/small/spatial.js';
+import { movementStepCost, structureDisplayName,retreatCells,neighbors,gridColumnLabel } from '../../engine/src/small/spatial.js';
 import { heightDescription,surfaceHeightAt,unitHeight } from '../../engine/src/small/height-map.js';
 import { SCENE_ARCHETYPE_NAMES } from '../../engine/src/small/scene-intent.js';
 import { structureAt, intactStructure, groundBlocked, isElevated } from '../../engine/src/small/layers.js';
-import { ZONE_NAMES } from '../../engine/src/area-effects.js';
+import { visibleBattleZones } from '../../engine/src/area-effects.js';
+import { fieldEffectMarks, fieldWorks, worksLabelShort, zoneLabel, zoneDetail } from './field-effects-view.js';
 import { tbWeaponShortName } from '../../engine/src/weapon-name.js';
 import { strengthDescription } from '../../engine/src/combat-model.js';
 import { participationText,memberHealthPanel } from './combat-model-view.js';
@@ -123,13 +124,13 @@ const HEIGHT_RULES = '比对手每高1级，防御+1、远程武器射程+1（�
 function terrainDescription(terrain: Terrain, actor?: Combatant,heightRules=false): string {
   const airborne = actor && isAirborne(actor);
   const traits = actor ? activeTraitIds(actor) : [];
-  const footing = '站在其中立足不稳：攻击−1、防御−1，' + difficultEngagementDescription(actor?.damageModel) + '；航渡单位与桥上单位不受影响。';
+  const footing = '站在其中立足不稳：攻击−1、防御−1，' + difficultEngagementDescription(actor?.damageModel) + '；两栖单位与桥上单位不受影响。';
   const effect = {
     open: '没有额外地形防护。',
     street: '城区街道；巷战大师在此攻击+1、防御+2，建筑与瓦砾效果另外结算。',
-    shallow_water: '可以涉水，通常花费2移动；航渡单位花费1。不能从水中发起地面冲锋。' + (heightRules ? footing : ''),
-    deep_water: '地面单位需要航渡或完好桥梁；航渡花费3移动。',
-    swamp: '移动花费3，航渡单位花费2；不适合地面冲锋。' + (heightRules ? footing : ''),
+    shallow_water: '可以涉水，通常花费2移动；两栖单位花费1。不能从水中发起地面冲锋。' + (heightRules ? footing : ''),
+    deep_water: '地面单位需要两栖或完好桥梁；两栖花费3移动。',
+    swamp: '移动花费3，两栖单位花费2；不适合地面冲锋。' + (heightRules ? footing : ''),
     cliff: '不可破坏的自然障碍，按高度遮挡低空射线。',
     cover: '地面单位被一格以外的武器攻击时，防御提高2。',
     wall: '阻挡地面通行与地面直射；空中单位可越过。',
@@ -170,6 +171,9 @@ function tileInspector(battle: SmallBattle, view: TacticalView, selection: Retur
   if (cell === undefined || !inBounds(field, cell)) return '<div class="map-inspector muted-inspector">点选单位查看或选目标；要移动到队友所在格，请先切到「移动」，再点该格。</div>';
   const terrain = field.tiles[cell]!, { actor, visible } = selection;
   const occupants = visible.filter((u) => u.pos === cell);
+  const zones = visibleBattleZones(battle.observationContext(), 'ally').filter(z => (z.side === 'ally' || battle.cellVisible('ally', cell))
+    && Math.abs(z.x - cell % field.width) + Math.abs(z.y - Math.floor(cell / field.width)) <= z.radius);
+  const works = fieldWorks(visible).filter(u => u.entrenchedAt === cell);
   const traversable = field.layerVersion ? !groundBlocked(field, cell, actor) : terrain !== 'wall' || actor && isAirborne(actor);
   const structure = structureAt(field, cell);
   const structureActions = structure?.hp && actor && selection.canControl ? [
@@ -186,6 +190,8 @@ function tileInspector(battle: SmallBattle, view: TacticalView, selection: Retur
   const climbReason = actor ? battle.climbReason(actor.id, cell) : undefined;
   return `<div class="map-inspector" aria-live="polite"><div class="inspector-heading"><strong>${cellLabel(field, cell)} · ${landmarkAt(field, cell) ? esc(landmarkAt(field, cell)!) + ' · ' : ''}${terrainName(field, cell)}${field.spatialRulesVersion===2?' · '+heightDescription(field,cell):''}</strong><span>${actor && traversable ? Number.isFinite(entry)?'相邻进入花费'+entry+'移动':'需经坡道或阶梯接近' : terrain === 'wall' || !traversable ? '地面不可通行' : ''}</span></div>
     <p>${terrainDescription(terrain, actor,field.spatialRulesVersion===2)}</p>
+    ${zones.map(z => '<p class="field-effect-detail">' + esc(zoneDetail(z)) + '</p>').join('')}
+    ${works.map(u => '<p class="field-effect-detail">' + esc(u.name) + '的工事 · ' + (entrenched(u) ? '据守中' : '空置，原单位回到此处可据守') + '</p>').join('')}
     ${field.spatialRulesVersion===2?'<details data-detail-id="height-rules"><summary>高度规则</summary><p>'+HEIGHT_RULES+'</p></details>':''}
     ${structure ? `<p><b>${structureDisplayName(field, cell)} L${structure.level}</b> · 耐久 ${displayNumber(structure.hp)}/${displayNumber(structure.hpMax)}${structure.top && structure.hp > 0 ? ' · 可登城防平台' : ''}${structure.kind === 'fortification' ? ' · 全向防护' : structure.facing ? ' · 朝向 ' + ({north:'北',south:'南',east:'东',west:'西'}[structure.facing]) : ''}</p>` : ''}
     ${field.overlays?.[cell]?.length ? '<p>' + field.overlays[cell]!.map(o => o === 'road' ? '道路' : '瓦砾：基础2移动；慢速单位花费整轮基础移动力可前进一步' + (field.spatialRulesVersion === 2 ? '；地面单位抵御一格以外的远射时防御+1' : '')).join(' · ') + '</p>' : ''}
@@ -287,7 +293,8 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
   const lastSeen = new Map<number, typeof intel.traces>();
   for (const trace of intel.traces) if (trace.cell !== undefined) lastSeen.set(trace.cell, [...(lastSeen.get(trace.cell) ?? []), trace]);
   const ago = (round: number) => battle.round - round ? (battle.round - round) + '轮前' : '本轮';
-  const liveZones = battle.combatants.flatMap(u => u.battleZones ?? []).filter(z => z.mode === 'small' && (z.kind !== 'trap' || z.side === 'ally'));
+  const liveZones = visibleBattleZones(battle.observationContext(), 'ally');
+  const liveWorks = fieldWorks(visible);
   const goalCell = field.objective.kind !== 'annihilation' ? field.objective.cell : undefined;
   const inspectedMark=field.landmarks?.find(m=>m.cells.includes(view.inspectedCell??-1));
   const controlCells = new Set(field.objective.kind === 'control' ? field.objective.cells ?? [field.objective.cell] : []);
@@ -300,26 +307,29 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
       occupants.some((u) => u.id === actor?.id) ? 'selected' : '', inspected ? 'inspected' : '',inspectedMark?.cells.includes(cell)?'landmark-focus':'',
       goalCell === cell ? 'objective' : '', inRange ? 'in-range' : '', (targets.has('cell:'+cell) || occupants.some((u) => targets.has(u.id))) ? 'legal-target' + (occupants.some((u) => targets.has(u.id) && u.side === 'ally') ? ' legal-ally' : '') : '',
       (target?.targetId==='cell:'+cell || occupants.some((u) => u.id === target?.targetId)) && mode !== 'move' && mode !== 'guard' ? 'targeted' : '', occupants.some((u) => area.has(u.id)) ? 'area-hit' : '', occupants.length > 1 ? 'stacked' : ''].filter(Boolean).join(' ');
-    const zones = seen[cell] ? liveZones.filter(z => Math.abs(z.x - cell % field.width) + Math.abs(z.y - Math.floor(cell / field.width)) <= z.radius) : [];
+    const zones = liveZones.filter(z => (z.side === 'ally' || seen[cell]) && Math.abs(z.x - cell % field.width) + Math.abs(z.y - Math.floor(cell / field.width)) <= z.radius);
+    const works = liveWorks.filter(u => u.entrenchedAt === cell && (u.side === 'ally' || seen[cell]));
+    const effectLabels = [...(works.length ? [worksLabelShort(works)] : []), ...new Set(zones.map(zoneLabel))];
     const ghosts = lastSeen.get(cell) ?? [];
     const ghostText = ghosts.map((t) => '最后目击敌方' + t.name + '（' + ago(t.round) + '）').join('、');
-    const label = (goalCell === cell ? field.objective.kind === 'escape' ? '护送撤离点 ' : '夺点目标 ' : controlCells.has(cell) ? '占领区域 ' : '') + zones.map(z=>ZONE_NAMES[z.kind]).join('、')+' '+cellLabel(field, cell) + ' ' + (landmark ?? '') + ' ' + terrainName(field, cell) + ' '+heightDescription(field,cell)+' ' + occupants.map((u) => (u.side === 'ally' ? '我方' : u.side === 'enemy' ? '敌方' : '第三方') + u.name).join('、') + (ghostText ? ' ' + ghostText : '');
+    const label = (goalCell === cell ? field.objective.kind === 'escape' ? '护送撤离点 ' : '夺点目标 ' : controlCells.has(cell) ? '占领区域 ' : '') + effectLabels.join('、')+' '+cellLabel(field, cell) + ' ' + (landmark ?? '') + ' ' + terrainName(field, cell) + ' '+heightDescription(field,cell)+' ' + occupants.map((u) => (u.side === 'ally' ? '我方' : u.side === 'enemy' ? '敌方' : '第三方') + u.name).join('、') + (ghostText ? ' ' + ghostText : '');
     // 地形与结构由底图表达；格内只放单位、状态与被查看格的名称。高度0为默认地表，只标注抬高的格子。
     const height = field.spatialRulesVersion === 2 ? surfaceHeightAt(field, cell) : 0;
     const terrainLabel = inspected && !occupants.length;
-    const inner = (height ? '<span class="grid-height" aria-hidden="true">高' + height + '</span>' : '') + (landmark ? '<span class="grid-landmark" aria-hidden="true">◇</span>' : '') + (goalCell === cell ? '<span class="grid-goal" aria-hidden="true">' + (field.objective.kind === 'escape' ? '出口' : '旗') + '</span>' : '')
+    const inner = fieldEffectMarks(zones, works) + (searched.has(cell) ? '<span class="grid-search-mark" aria-hidden="true"></span>' : '')
+      + (height ? '<span class="grid-height" aria-hidden="true">高' + height + '</span>' : '') + (landmark ? '<span class="grid-landmark" aria-hidden="true">◇</span>' : '') + (goalCell === cell ? '<span class="grid-goal" aria-hidden="true">' + (field.objective.kind === 'escape' ? '出口' : '旗') + '</span>' : '')
       + occupants.map((u) => gridPiece(battle, u, u.id === actor?.id, automation.aiUnitIds.has(u.id))).join('')
       + (occupants.length > 1 ? '<span class="grid-stack-count">' + occupants.length + '队</span>' : '')
       + (ghosts.length ? `<span class="grid-last-seen${occupants.length ? ' raised' : ''}" aria-hidden="true" title="${esc(ghostText)}">?${ghosts.length > 1 ? ghosts.length : ''}<small>${esc(ago(Math.max(...ghosts.map((t) => t.round))))}</small></span>` : '')
       + (structure?.hp && !terrainLabel && (structure.hp < structure.hpMax || inspected) ? `<span class="structure-hp${occupants.length || zones.length ? ' raised' : ''}" aria-hidden="true">${displayNumber(structure.hp)}/${displayNumber(structure.hpMax)}</span>` : '')
-      + (zones.length ? '<span class="grid-zone">' + zones.map(z => ZONE_NAMES[z.kind]).join('·') + '</span>' : '')
+      + (effectLabels.length ? '<span class="grid-zone" title="' + esc(effectLabels.join('、')) + '">' + effectLabels.join('·') + '</span>' : '')
       + (terrainLabel ? '<span class="grid-terrain">' + (structure ? structureDisplayName(field, cell) + (structure.hp ? ' L' + structure.level + ' · ' + displayNumber(structure.hp) + '/' + displayNumber(structure.hpMax) : '·残骸') : field.generation?.scene === 'interior' && terrain === 'street' ? '室内地面' : terrainNames[terrain]) + '</span>' : '');
     const attrs = `class="grid-cell ${flags}" data-action="grid-cell" data-cell="${cell}" data-coordinate="${cellLabel(field, cell)}" data-unit-ids="${esc(JSON.stringify(occupants.map(u => u.id)))}" data-acting="${occupants.some(u => u.id === active?.id)}" data-selected="${occupants.some(u => u.id === actor?.id)}"${occupants.length > 1 ? ` style="--stack:${occupants.length}"` : ''} aria-label="${esc(label)}" aria-pressed="${inspected}"`;
     // 内容签名：点选只改动少数格，其余格在打补丁时整格跳过。
     return `<button ${attrs} data-static="c${signature(attrs + inner)}">${inner}</button>`;
   }).join('');
   const zoom = view.zoom ?? 'fit';
-  const rulers = `<div class="grid-ruler-x" aria-hidden="true"><span class="grid-ruler-corner"></span>${Array.from({ length: field.width }, (_, x) => '<span>' + String.fromCharCode(65 + x) + '</span>').join('')}</div>`;
+  const rulers = `<div class="grid-ruler-x" aria-hidden="true"><span class="grid-ruler-corner"></span>${Array.from({ length: field.width }, (_, x) => '<span>' + gridColumnLabel(x) + '</span>').join('')}</div>`;
   const rows = `<div class="grid-ruler-y" aria-hidden="true">${Array.from({ length: field.height }, (_, y) => '<span>' + (y + 1) + '</span>').join('')}</div>`;
   const concealment = actor && concealmentLabel(battle.observationContext(), actor);
   const pressure = actor && moraleLabel({ ...battle.observationContext(), units: visible }, actor, battle.traitRegistry);

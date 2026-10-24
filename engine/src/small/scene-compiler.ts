@@ -2,14 +2,15 @@ import type { BattlefieldPlan, LandmarkPlan, GatePlan } from './battlefield-plan
 import { BattlefieldPlanError } from './battlefield-error.js';
 import { MAX_DEPLOYMENT_ZONES, WORLD_ANCHORS, SCENE_ARCHETYPE_NAMES, type SceneIntent, type SceneEntity, type WorldAnchor, type SceneArchetype } from './scene-intent.js';
 import { SCENE_ARCHETYPES, normalizeSceneIntent } from './scene-intent.js';
-import { groundBlocked, intactStructure } from './layers.js';
-import { gridDistance, neighbors, findGridPath, gridCostsToGoals, unitLineOfSight, type BattlefieldSpec } from './spatial.js';
+import { groundBlocked, intactStructure, waterOnly } from './layers.js';
+import { canOccupy, gridDistance, neighbors, findGridPath, gridCostsToGoals, unitLineOfSight, type BattlefieldSpec } from './spatial.js';
 import { worldAnchorCell } from './landmark-placement.js';
 import type { Combatant } from '../types.js';
 import { surfaceHeightAt } from './height-map.js';
 import { clipRelationZone } from './force-deployment.js';
 import { INTERIOR_USE_NAMES, INTERIOR_PATTERN_NAMES } from './interior-plan.js';
 import { COMPOUND_PATTERN_NAMES, TRENCH_PATTERN_NAMES } from './position-plan.js';
+import { compassSector, gridPosition, inGridSector } from './grid-anchor.js';
 export interface SceneRegion {
     id: string;
     kind: string;
@@ -70,9 +71,19 @@ export function compileScenePlan(plan: BattlefieldPlan | undefined): Battlefield
         const riverAnchor = anchors.get(rivers[0].id) ?? 'center';
         if (result.water !== 'ford' && result.water !== 'moat') result.water = 'river';
         result.waterPosition = riverAnchor;
-        result.waterAxis = riverAnchor.includes('east') || riverAnchor.includes('west') ? 'vertical' : result.waterAxis ?? 'horizontal';
+        const inferredAxis = compassSector(riverAnchor).includes('east') || compassSector(riverAnchor).includes('west') ? 'vertical' : 'horizontal';
+        result.waterAxis = gridPosition(riverAnchor) ? result.waterAxis ?? inferredAxis
+            : inferredAxis === 'vertical' ? 'vertical' : result.waterAxis ?? 'horizontal';
     }
     const bridges = intent.entities.filter(e => e.kind === 'bridge'), gates = intent.entities.filter(e => e.kind === 'gate');
+    if (rivers[0] && (gridPosition(anchors.get(rivers[0].id) ?? '') || (anchors.get(rivers[0].id)??'center')==='center') && !plan.waterAxis) {
+        const points = bridges.map(e => gridPosition(anchors.get(e.id) ?? '')).filter((p): p is [number, number] => !!p);
+        if (points.length > 1) {
+            const dx = Math.max(...points.map(p => p[0])) - Math.min(...points.map(p => p[0]));
+            const dy = Math.max(...points.map(p => p[1])) - Math.min(...points.map(p => p[1]));
+            if (dx !== dy) result.waterAxis = dy > dx ? 'vertical' : 'horizontal';
+        }
+    }
     if (rivers[0] && !plan.waterAxis && (anchors.get(rivers[0].id) ?? 'center') === 'center' && bridges.some(e => (anchors.get(e.id) ?? '').includes('north') || (anchors.get(e.id) ?? '').includes('south')))
         result.waterAxis = 'vertical';
     for (const constraint of intent.constraints) {
@@ -94,7 +105,8 @@ export function compileScenePlan(plan: BattlefieldPlan | undefined): Battlefield
     if (gates.length || gateCount)
         result.gatePlan = Array.from({ length: gateCount?.value ?? gates.length }, (_, i) => {
             const gate = gates[i], anchor = gate ? anchors.get(gate.id) : undefined;
-            const sector: GatePlan['sector'] = anchor?.includes('east') ? 'east' : anchor?.includes('west') ? 'west' : anchor?.includes('north') ? 'north' : anchor?.includes('south') ? 'south' : (['front_center', 'front_left', 'front_right', 'rear'] as const)[i]!;
+            const direction = compassSector(anchor ?? 'center');
+            const sector: GatePlan['sector'] = direction.includes('east') ? 'east' : direction.includes('west') ? 'west' : direction.includes('north') ? 'north' : direction.includes('south') ? 'south' : (['front_center', 'front_left', 'front_right', 'rear'] as const)[i]!;
             return { ...(gate ? { id: gate.id } : {}), sector,
                 ...(result.scene === 'building_siege' && /内.*门|二门|inner/i.test(gate?.label ?? '') ? { internal: true } : {}),
                 state: gate?.state === 'open' ? 'open' : gate?.state === 'destroyed' ? 'destroyed' : 'closed' };
@@ -200,29 +212,30 @@ export function finishSceneRegions(field: BattlefieldSpec, plan: BattlefieldPlan
             && roster.some(u => u.id === unitBindings[other.subject] && u.side === owner)).map(other => unitBindings[other.subject])) : undefined;
         const actors = roster.filter(u => group ? group.has(u.id) : unitId ? u.id === unitId : u.side === side), large = actors.filter(u => u.body && u.body !== 'human' || u.mount).length;
         const required = large + Math.ceil((actors.length - large) / 2);
+        const open = (p: number) => !groundBlocked(field, p) || !!field.generation?.waterCoverage && actors.some(u => !groundBlocked(field, p, u));
         const distance = (p: number) => Math.min(...region.cells.map(q => gridDistance(field, p, q)));
         let cells = [...region.access], platform = holds && region.cells.every(p => intactStructure(field, p)?.top);
         if (platform)
             cells = [...region.cells];
         else if (holds) {
             // A solid building or gate is held from its doorways rather than from inside its wall cells.
-            const walkable = region.cells.filter(p => !groundBlocked(field, p));
+            const walkable = region.cells.filter(open);
             cells = walkable.length ? walkable : [...region.access];
         }
         if (holds && cells.length < required) {
             // A small place cannot hold the whole force: the rest hold the nearest ground around it.
             platform = false;
-            const ground = field.tiles.map((_, p) => p).filter(p => !groundBlocked(field, p)).sort((a, b) => distance(a) - distance(b) || a - b);
+            const ground = field.tiles.map((_, p) => p).filter(open).sort((a, b) => distance(a) - distance(b) || a - b);
             const radius = ground.length ? distance(ground[Math.min(required - 1, ground.length - 1)]!) : 0;
-            cells = [...new Set([...cells.filter(p => !groundBlocked(field, p)), ...ground.filter(p => distance(p) <= radius)])];
+            cells = [...new Set([...cells.filter(open), ...ground.filter(p => distance(p) <= radius)])];
             field.generation!.notes = [...(field.generation!.notes ?? []), `为部署完整部队，${region.label}占据范围延伸至${radius}格`];
         }
         if (!holds) {
-            cells = field.tiles.map((_, p) => p).filter(p => !groundBlocked(field, p));
+            cells = field.tiles.map((_, p) => p).filter(open);
             if (field.city?.defender && side && side !== field.city.defender && region.kind === 'gate')
                 cells = cells.filter(p => !field.city!.inside.includes(p));
             if (r.relation === 'guards') {
-                const reachable = gridCostsToGoals(field, region.access, n => !groundBlocked(field, n));
+                const reachable = gridCostsToGoals(field, [...new Set([...region.access, ...region.cells.filter(open)])], open);
                 cells = cells.filter(p => reachable.has(p));
             }
         }
@@ -243,7 +256,7 @@ export function finishSceneRegions(field: BattlefieldSpec, plan: BattlefieldPlan
         if (zoneSide !== 'ally' && zoneSide !== 'enemy' && zoneSide !== 'neutral')
             throw new BattlefieldPlanError('指定正文部队没有合法阵营');
         // Siege roles outrank the relation's wording: attackers start outside the walls, defenders of the city inside.
-        const clipped = clipRelationZone(field, zoneSide, unitId, r.relation, region, cells, required);
+        const clipped = clipRelationZone(field, zoneSide, unitId, r.relation, region, cells, required, actors);
         if (clipped.cells !== cells)
             platform = platform && clipped.cells.every(p => region.cells.includes(p));
         cells = clipped.cells;
@@ -253,7 +266,7 @@ export function finishSceneRegions(field: BattlefieldSpec, plan: BattlefieldPlan
             const post = plan?.deployments?.find(d => d.subject === r.subject)?.post
                 ?? plan?.deployments?.find(d => d.subject === zoneSide)?.post;
             if (post !== 'outside') {
-                const legal = (p: number) => field.city!.inside.includes(p) && !groundBlocked(field, p);
+                const legal = (p: number) => field.city!.inside.includes(p) && open(p);
                 const kept = cells.filter(legal);
                 if (kept.length >= Math.max(1, required)) cells = kept;
                 else {
@@ -303,11 +316,17 @@ export function validateSceneFacts(field: BattlefieldSpec, units: readonly Comba
                 throw new BattlefieldPlanError(`地点${region.label}没有保留正文指定高度`);
         }
     for (const e of intent.entities)
-        if (e.anchor && e.basis === 'explicit') {
+        if (e.anchor && (e.basis === 'explicit' || gridPosition(e.anchor))) {
             const actual = sceneRegion(field, e.id);
             if (!actual)
                 continue;
             const [x, y] = regionCenter(field, actual);
+            if (gridPosition(e.anchor)) {
+                // City footprints, whole rivers and wall gates are larger than a single numbered sector.
+                if (!['city', 'river', 'gate'].includes(e.kind) && !inGridSector(e.anchor, field.width, field.height, x, y))
+                    throw new BattlefieldPlanError(`地点${actual.label}未落在正文指定的${e.anchor}区域`);
+                continue;
+            }
             const center: [
                 number,
                 number
@@ -354,7 +373,10 @@ export function validateSceneFacts(field: BattlefieldSpec, units: readonly Comba
             // A unit with its own relation deploys in its own zone (gridDeploymentCells), not the side's.
             const actors = id ? side : side.filter(u => !field.deploymentZones?.some(z => z.unitId === u.id));
             const zones = field.deploymentZones?.filter(z => z.landmarkId === r.object && (id ? z.unitId === id : !z.unitId && z.side === r.subject)) ?? [];
-            ok = side.length > 0 && actors.every(u => u.pos !== undefined && zones.some(z => z.cells.includes(u.pos!) && (!z.platform || u.elevation === 1)));
+            const matches = (u: Combatant) => u.pos !== undefined && zones.some(z => z.cells.includes(u.pos!) && (!z.platform || u.elevation === 1));
+            ok = side.length > 0 && actors.every(matches);
+            // 航行单位在陆地关系部署后移至最近水格，不再把原地点记录为已满足。
+            if (!ok && side.length > 0 && actors.every(u => matches(u) || waterOnly(u) && u.pos !== undefined && canOccupy(field, units, u, u.pos))) continue;
         }
         if (!ok && r.basis === 'explicit')
             throw new BattlefieldPlanError(`无法满足正文关系：${r.subject} ${r.relation} ${r.object}`);

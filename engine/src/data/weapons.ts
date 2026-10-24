@@ -191,8 +191,8 @@ export function getWeaponProfile(id?: string): WeaponProfile | undefined {
 /** 2026-09 射程校准：远程分类整体 +1（轻型副武器与爆破保持短距）。
  *  射程是分类的确定性参数而非掷骰结果，旧实例低于当前分类值时补齐到分类射程；
  *  幂等，不重掷任何骰子，近战/长柄（射程带<2）不动。 */
-export function calibrateWeaponRange<T extends { customized?: boolean; range?: number; recipe?: { mechanism?: string; bonuses?: { range?: number } } }>(weapon: T | undefined): void {
-  if (!weapon || weapon.customized) return;
+export function calibrateWeaponRange<T extends { customized?: boolean; range?: number; recipe?: { mechanism?: string; numericModel?: string; bonuses?: { range?: number } } }>(weapon: T | undefined): void {
+  if (!weapon || weapon.customized || weapon.recipe?.numericModel) return;
   const mechanism = weapon.recipe?.mechanism;
   const profile = mechanism ? WEAPON_CLASSES[mechanism]?.profile : undefined;
   const points = weapon.recipe?.bonuses?.range ?? 0;

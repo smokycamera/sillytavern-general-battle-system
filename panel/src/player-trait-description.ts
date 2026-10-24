@@ -9,7 +9,7 @@ import {
 } from '../../engine/src/trait-levels.js';
 
 /** 玩家说明只列用途与数值；参数仍读取当前单位使用的规则。 */
-export function playerTraitLevelDescription(id: string, level: number, model?: unknown, commandRangeModel?: Combatant['commandRangeModel']): string {
+export function playerTraitLevelDescription(id: string, level: number, model?: unknown, commandRangeModel?: Combatant['commandRangeModel'], recoveryModel?: Combatant['recoveryModel']): string {
   const L = Math.max(1, Math.min(10, Math.round(level)));
   const modern = progression({ traitLevelModel: model }), revised = stackingRevision({ traitLevelModel: model });
   const p = (key: TraitParameter) => traitParameter(key, L, model);
@@ -66,7 +66,7 @@ export function playerTraitLevelDescription(id: string, level: number, model?: u
       return revised ? `${channel}伤害减免${pct('channelResistance')}%` : modern ? `${channel}抗穿+${value('channelResistance')}` : `${channel}防护+${n(2 * p('woundRatio'))}`;
     }
     case 'lifesteal': return `造成生命伤害后，恢复${pct('lifestealRatio')}%伤害量的生命或伤兵` + (revised ? `，每轮最多恢复${pct('lifestealRoundCap')}%生命` : '');
-    case 'regen': return `每轮基础恢复${n(modern ? p('regenAmount') : 3 * p('woundRatio'))}生命或伤兵`;
+    case 'regen': return `每轮基础恢复${n((modern ? p('regenAmount') : 3 * p('woundRatio')) * (recoveryModel ? 1.5 : 1))}生命或伤兵`;
     case 'medic': return `治疗量×${value('medicHealing')}，编队伤亡中${value('medicRescue')}%可救治`;
     case 'poison-strike': return `动能攻击造成伤害后附毒3轮，毒伤×${value(modern ? 'poisonMultiplier' : 'woundRatio')}，中毒者攻击−1`;
     case 'fatigue-trained': return `疲劳获得×${value('fatigueMultiplier')}`;
@@ -94,6 +94,7 @@ const EFFECTS: Record<string, string> = {
   'mounted-archer': '骑乘时移动射击无命中惩罚，向后脱离免借机攻击，会战可后撤射击',
   vanguard: '开局向前部署1排或1阵位', flying: '升空飞行，越过地面障碍；落地后可近战扑击',
   mechanized: '先攻+2，机动+1，穿着护甲时防御+1', 'water-crossing': '可进入深水，降低涉水移动消耗',
+  sailing: '只能在深水、浅水移动，部署时自动移至最近的可用水格',
   'siege-assault': '消耗主行动及最多2移动点，攀登相邻墙顶并接战',
   veteran: '攻击+1，防御+1，士气+10', elite: '攻击+2，防御+2', fast: '先攻+3，机动+1',
   'heavy-armor': '先攻−1', 'super-heavy': '先攻−2', large: '大型身体，占格2，动能防护至少1', titan: '巨型身体，独占1格，基础移动2，动能防护至少2、热能防护至少1',

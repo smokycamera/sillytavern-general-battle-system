@@ -350,7 +350,7 @@ function digestAbilityLines(e: BattleLogEntry, headerShown = false): string[] {
 
 /** 记录了起止格的连续逐格移动合为一行：首步的起点（高度有变时附起点高度）接末步的落点。 */
 function mergedMove(first: BattleLogEntry, last: BattleLogEntry): string | undefined {
-  const head = /^(.* )([A-Z]\d+)(?:\(高度\d+\))?$/.exec(first.text.slice(0, first.text.lastIndexOf('→')));
+  const head = /^(.* )([A-Z]+\d+)(?:\(高度\d+\))?$/.exec(first.text.slice(0, first.text.lastIndexOf('→')));
   if (!head || last.text.lastIndexOf('→') < 0) return undefined;
   const start = first.move!.fromHeight, end = last.move!.toHeight;
   return head[1]! + head[2]! + (start !== undefined && start !== end ? '(高度' + start + ')' : '') + last.text.slice(last.text.lastIndexOf('→'));
@@ -409,11 +409,11 @@ export function compactEventGroups(entries: BattleLogEntry[], opts: { unresolved
           if (i >= lastMove.get(owner!)! && skill.some((line) => /^突进至.*，冲锋$/.test(line))) text += '，冲锋';
         }
       } else {
-        const move = /^(.* )([A-Z]\d+)→([A-Z]\d+)$/.exec(text);
+        const move = /^(.* )([A-Z]+\d+)→([A-Z]+\d+)$/.exec(text);
         if (e.kind === 'move' && move && e.participants?.length) {
           let end = move[3]!;
           while (entries[i + 1]?.kind === 'move' && entries[i + 1]?.round === e.round && e.participants.join() === entries[i + 1]?.participants?.join()) {
-            const next = /^(.* )([A-Z]\d+)→([A-Z]\d+)$/.exec(entries[i + 1]!.text);
+            const next = /^(.* )([A-Z]+\d+)→([A-Z]+\d+)$/.exec(entries[i + 1]!.text);
             if (!next || next[1] !== move[1] || next[2] !== end) break;
             end = next[3]!; i++;
           }

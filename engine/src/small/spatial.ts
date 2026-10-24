@@ -2,7 +2,7 @@ import { combatHostile } from '../battle-control.js';
 import { agileCost } from '../phase2-traits.js';
 import { movementPoints } from '../tactics.js';
 import { GridQueue } from './grid-queue.js';
-import { layerMoveCost, groundBlocked, obstructionHeight, structureAt, STRUCTURE_NAMES, validateLayers, isElevated, structureDefense, type FieldStructure, type GroundOverlay, type FieldLandmark, type CityRecord } from './layers.js';
+import { layerMoveCost, groundBlocked, obstructionHeight, structureAt, STRUCTURE_NAMES, validateLayers, isElevated, structureDefense, waterOnly, sailingBlocked, type FieldStructure, type GroundOverlay, type FieldLandmark, type CityRecord } from './layers.js';
 import { landmarkAt, BATTLEFIELD_SCENES, type MapGenerationRecord } from './map-design.js';
 import { isRangedWeapon } from '../loadout.js';
 import type { Combatant, ConditionDef } from '../types.js';
@@ -21,6 +21,8 @@ export const DEFAULT_SMALL_ROUND_LIMIT = 60;
 export type Terrain = 'open' | 'cover' | 'wall' | 'rough' | 'forest' | 'hill' | 'street' | 'shallow_water' | 'deep_water' | 'swamp' | 'cliff';
 export const TERRAIN_NAMES: Record<Terrain, string> = { open: '开阔地', cover: '掩体', wall: '墙体', rough: '崎岖地', forest: '森林', hill: '山地', street: '街道', shallow_water: '浅水', deep_water: '深水', swamp: '沼泽', cliff: '岩壁' };
 export interface BattlefieldSpec {
+  /** New maps allow slow units one full-allowance step; historical costs stay frozen. */
+  movementCostModel?: 'minimum-step-v1';
   spatialRulesVersion?: 2;
   groundHeight?: number[];
   heightTransitions?: HeightTransition[];
@@ -67,22 +69,34 @@ export function standardField(width = 7, height = 9, tags: string[] = []): Battl
   return { version: 2, width, height, tiles, environment, objective: defaultBattleObjective(width, height, environment) };
 }
 export function validateField(field: BattlefieldSpec): void {
+  if (field.movementCostModel !== undefined && field.movementCostModel !== 'minimum-step-v1') throw Error('未知地形移动规则');
   if (field.generation?.scene !== undefined && !BATTLEFIELD_SCENES.includes(field.generation.scene)) throw Error('场景记录损坏');
-  if (field.version !== 2 || ![[7, 9], [5, 7], [7, 11], [7, 13], [9, 15], [11, 17], [13, 19]].some(([w, h]) => field.width === w && field.height === h)) throw new Error('地图尺寸不支持（野战7×13，城区9×15/11×17/13×19）');
+  if (field.version !== 2 || !Number.isSafeInteger(field.width) || !Number.isSafeInteger(field.height) || field.width < 5 || field.height < 7 || !Number.isSafeInteger(field.width * field.height)) throw new Error('地图尺寸须为至少5列×7行的整数格数');
   if (field.tiles.length !== field.width * field.height || field.tiles.some((t) => !Object.hasOwn(TERRAIN_NAMES, t))) throw new Error('地形数据不完整');
   validateLayers(field);
   validateHeightMap(field);
   validateSceneRecord(field);
   if (field.objective.kind === 'control' && field.objective.cells !== undefined && (!Array.isArray(field.objective.cells) || !field.objective.cells.includes(field.objective.cell) || field.objective.cells.some(p => !inBounds(field, p) || groundBlocked(field, p)))) throw Error('占领区域不合法');
   if (field.environment !== undefined && (!Array.isArray(field.environment) || field.environment.some((t) => typeof t !== 'string'))) throw new Error('环境附加记录损坏');
-  if (!inBounds(field, field.objective.cell) || (field.layerVersion ? groundBlocked(field, field.objective.cell) : field.tiles[field.objective.cell] === 'wall')) throw new Error('目标必须是合法可通行格');
+  const floodedReference = field.objective.kind === 'annihilation' && !!field.generation?.waterCoverage
+    && field.tiles[field.objective.cell] === 'deep_water' && !field.structures?.[field.objective.cell];
+  if (!inBounds(field, field.objective.cell) || !floodedReference && (field.layerVersion ? groundBlocked(field, field.objective.cell) : field.tiles[field.objective.cell] === 'wall')) throw new Error('目标必须是合法可通行格');
   if (field.objective.kind === 'escape' && field.objective.defenderWins !== undefined && typeof field.objective.defenderWins !== 'boolean') throw new Error('护送判胜规则损坏');
 }
 export function inBounds(field: BattlefieldSpec, cell: number): boolean { return Number.isInteger(cell) && cell >= 0 && cell < field.tiles.length; }
 export function gridDistance(field: BattlefieldSpec, a: number, b: number): number {
   return Math.abs(a % field.width - b % field.width) + Math.abs(Math.floor(a / field.width) - Math.floor(b / field.width));
 }
-export function cellLabel(field: BattlefieldSpec, cell: number): string { return String.fromCharCode(65 + cell % field.width) + (Math.floor(cell / field.width) + 1); }
+export function gridColumnLabel(index: number): string {
+  let label='';for(let n=index+1;n>0;n=Math.floor((n-1)/26))label=String.fromCharCode(65+(n-1)%26)+label;
+  return label;
+}
+export function gridColumnIndex(label: string): number {
+  if(!/^[A-Z]+$/i.test(label))return -1;
+  let index=0;for(const c of label.toUpperCase())index=index*26+c.charCodeAt(0)-64;
+  return Number.isSafeInteger(index)?index-1:-1;
+}
+export function cellLabel(field: BattlefieldSpec, cell: number): string { return gridColumnLabel(cell % field.width) + (Math.floor(cell / field.width) + 1); }
 /** 战报使用实际落点；飞越特殊地形时标清空中，避免误报地面掩护。 */
 /** The collision token stays wall; environmental names explain natural hard blockers in v4 maps. */
 export function structureDisplayName(field: BattlefieldSpec, cell: number): string {
@@ -137,6 +151,7 @@ export function neighbors(field: BattlefieldSpec, cell: number): number[] {
   return [cell - field.width, cell - 1, cell + 1, cell + field.width].filter((n) => inBounds(field, n) && gridDistance(field, cell, n) === 1);
 }
 export function tileCost(field: BattlefieldSpec, cell: number, actor?: Combatant): number {
+  if (!field.layerVersion && sailingBlocked(field, cell, actor)) return Infinity;
   const layered = layerMoveCost(field, cell, actor);
   if (layered !== undefined) return layered;
   if (actor && isAirborne(actor)) return 1;
@@ -152,10 +167,12 @@ export function tileCost(field: BattlefieldSpec, cell: number, actor?: Combatant
  * with only 1 MP left still cannot enter a 3-cost fortification. Prohibitions stay infinite. */
 export function movementStepCost(field: BattlefieldSpec, cell: number, actor: Combatant, tags = field.environment ?? [],from=actor.pos??cell): number {
   const cost = tileCost(field, cell, actor)+heightStepCost(field,from,cell,actor);
-  return field.layerVersion && Number.isFinite(cost) ? Math.min(cost, movementPoints(actor, tags)) : cost;
+  if (field.movementCostModel === 'minimum-step-v1' && Number.isFinite(cost)) return Math.min(cost, Math.max(1, movementPoints(actor, tags)));
+  return !actor.numericModel && field.layerVersion && Number.isFinite(cost) ? Math.min(cost, movementPoints(actor, tags)) : cost;
 }
 export function footprint(unit: Combatant): number { return unit.mount === true || unit.body && unit.body !== 'human' ? 2 : 1; }
-export function canOccupy(field: BattlefieldSpec, units: Combatant[], actor: Combatant, cell: number): boolean {
+export function canOccupy(field: BattlefieldSpec, units: readonly Combatant[], actor: Combatant, cell: number): boolean {
+  if (!field.layerVersion && sailingBlocked(field, cell, actor)) return false;
   if (!inBounds(field, cell) || (field.layerVersion ? groundBlocked(field, cell, actor) : field.tiles[cell] === 'wall' && !isAirborne(actor))) return false;
   const occupants = units.filter((u) => u.id !== actor.id && u.pos === cell && sameLayer(actor, u) && u.hp > 0 && (u.status === 'ready' || u.status === 'routing'));
   if (occupants.some((u) => u.side !== actor.side)) return false;
@@ -324,7 +341,7 @@ export function gridDeploymentCells(field: BattlefieldSpec, unit: Combatant): nu
   if (isElevated(unit) && selected.some(z => z.relation === 'sector:inside' || z.relation === 'sector:outside')) return [];
   if (field.layerVersion && field.city?.defender === unit.side) {
     const cells = isElevated(unit) ? field.city.frontline.filter(p => structureAt(field, p)?.top && structureAt(field, p)!.hp > 0)
-      : [...field.city.inside, ...field.city.reserve].filter(p => !groundBlocked(field, p, unit));
+      : [...field.city.inside, ...field.city.reserve].filter(p => waterOnly(unit) || !groundBlocked(field, p, unit));
     return [...new Set(cells)];
   }
   if (unit.side === 'neutral') {
@@ -408,11 +425,12 @@ export function prepareGridDeployment(field: BattlefieldSpec, units: readonly Co
     // Same precedence as gridDeploymentCells: a unit's own zones replace its side's zones.
     const own=field.deploymentZones?.filter(z=>z.unitId===u.id)??[];
     const zones=own.length?own:field.deploymentZones?.filter(z=>!z.unitId&&z.side===u.side)??[];
-    if(zones.some(z=>z.platform)){u.elevation=1;u.airborne=false;}
+    if(waterOnly(u)){delete u.elevation;u.airborne=false;}
+    else if(zones.some(z=>z.platform)){u.elevation=1;u.airborne=false;}
     else if(zones.some(z=>z.relation==='occupies'||z.relation==='inside'))u.airborne=false;
   }
   if (field.layerVersion && field.city?.defender) {
-    const guard = prepared.filter(u => u.side === field.city!.defender && u.pos === undefined && !isAirborne(u)
+    const guard = prepared.filter(u => u.side === field.city!.defender && u.pos === undefined && !isAirborne(u) && !waterOnly(u)
       &&gridDeploymentCells(field,{...u,elevation:1}).some(p=>structureAt(field,p)?.top))
       .sort((a,b) => Number(isRangedWeapon(b.weapon)) - Number(isRangedWeapon(a.weapon)) || a.id.localeCompare(b.id));
     const capacity = field.city.frontline.filter(p => structureAt(field,p)?.hp && structureAt(field,p)?.top).length;
@@ -431,7 +449,8 @@ export function deployOnGrid(field: BattlefieldSpec, units: Combatant[], seed = 
   const scratch = units.map((u) => ({ ...u }));
   const occupied: Combatant[] = [];
   const modern = units.every(u => u.rulesVersion === 'v2');
-  const ordered = [...scratch].sort((a, b) => Number(a.pos === undefined) - Number(b.pos === undefined)
+  const needsPlacement = (u: Combatant) => u.pos === undefined || sailingBlocked(field, u.pos, u);
+  const ordered = [...scratch].sort((a, b) => Number(needsPlacement(a)) - Number(needsPlacement(b))
     || (modern ? footprint(b) - footprint(a)
       || Number(activeTraitIds(a).includes('vanguard')) - Number(activeTraitIds(b).includes('vanguard'))
       || Number(isRangedWeapon(a.weapon)) - Number(isRangedWeapon(b.weapon))
@@ -450,12 +469,20 @@ export function deployOnGrid(field: BattlefieldSpec, units: Combatant[], seed = 
   };
   for (const unit of ordered) {
     const candidates = gridDeploymentCells(field, unit);
+    if (waterOnly(unit)) {
+      const origin = unit.pos ?? select(unit, candidates) ?? candidates[0];
+      if (origin === undefined || !inBounds(field, origin)) throw new Error(`${unit.name}的航行部署位置越界或不存在`);
+      const cell = field.tiles.flatMap((_, p) => canOccupy(field, occupied, unit, p) ? [p] : [])
+        .sort((a, b) => gridDistance(field, origin, a) - gridDistance(field, origin, b) || a - b)[0];
+      if (cell === undefined) throw new Error(`${unit.name}具有航行特质，但战场没有可用的深水或浅水部署格`);
+      unit.pos = cell; occupied.push(unit); continue;
+    }
     const cell = unit.pos ?? select(unit, candidates);
     if (cell === undefined || !candidates.includes(cell) || !canOccupy(field, occupied, unit, cell)) throw new Error('部署越界、跨阵营或容量不足；请减少上场单位');
     unit.pos = cell; occupied.push(unit);
   }
   // 大型远程先占整格后，再依据已完成的前排站位调整一次射界；玩家指定位置不动。
-  if (modern) for (const unit of ordered.filter(u => scorers.has(u.id) && isRangedWeapon(u.weapon))) {
+  if (modern) for (const unit of ordered.filter(u => scorers.has(u.id) && isRangedWeapon(u.weapon) && !waterOnly(u))) {
     unit.pos = select(unit, gridDeploymentCells(field, unit)) ?? unit.pos;
   }
   return units.map((u) => scratch.find((c) => c.id === u.id)!.pos!);

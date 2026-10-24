@@ -21,24 +21,27 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
   const physical = mechanism.category.startsWith('physical'), magic = mechanism.category.startsWith('magic'), damage = physical || magic;
   const geometry = mechanism.modifiers.find(id => ['cone','line','ring','chain'].includes(id)) as NonNullable<Ability['area']>['shape'] | undefined;
   const zoneKinds = mechanism.modifiers.filter(id => id.startsWith('zone-')).map(id => id.slice(5)) as Extract<EffectOp,{op:'zone'}>['kind'][];
-  const area = mechanism.area || !!geometry, curve = curveAt(power, model), effects: EffectOp[] = [];
+  const defaultPower = power;
+  const modifierPower = (key: string) => mechanism.modifierPowers?.[key] ?? (phase2 && key === 'trait-guardian' ? mechanism.modifierPowers?.ward : undefined) ?? defaultPower;
+  const area = mechanism.area || !!geometry, curve = curveAt(mechanism.categoryPower ?? power, model), effects: EffectOp[] = [];
   const modifiers = mechanism.modifiers.filter((m) => !['melee', 'ranged', 'shield', 'projectile', 'thermal', 'arcane', 'martial', 'cone', 'line', 'ring', 'chain'].includes(m));
   const selected = [...new Set((modifiers.length ? modifiers : damage ? [] : mechanism.category === 'buff' ? ['attack', 'defense'] : ['weaken'])
     .map(key => phase2 && key === 'ward' ? 'trait-guardian' : phase2 && key.startsWith('trait-') ? 'trait-' + canonicalTraitId(key.slice(6)) : key))];
   // skills-v1：同时改两项属性的状态按两项效果分摊效力、抵抗难度、伤害与消耗。
   const weight = selected.reduce((sum, key) => {
     const modifier = SKILL_MODIFIERS.find(m => m.id === key)!;
-    return sum + (phase2 && modifier.trait && isGradedTrait(modifier.trait) ? Math.max(1, Math.ceil(gradedTraitCost(modifier.trait, power) / 3)) : conditionEffectWeight(modifier.condition, formula));
+    return sum + (phase2 && modifier.trait && isGradedTrait(modifier.trait) ? Math.max(1, Math.ceil(gradedTraitCost(modifier.trait, modifierPower(key)) / 3)) : conditionEffectWeight(modifier.condition, formula));
   }, 0);
   // V21（skills-v4）按等级锚定：状态效力与士气量乘同级单体创伤预算比例（L5=1），屏障基础量即同级预算；旧公式只在旧规则下保留。
-  const anchored = anchoredSkills(formula), budgetRatio = TRAIT_PARAMETERS.woundRatio[power - 1]!;
-  const magnitude = Math.max(.25, (anchored ? budgetRatio : (5 + power) / 10) / Math.max(1, Math.sqrt(weight)));
-  const duration = 1 + Math.floor((power + 1) / 3), saveDC = 8 + power;
+  const anchored = anchoredSkills(formula);
   const damagingDebuff = !damage && selected.some((id) => ['burn', 'poison', 'bleed'].includes(id));
   const share = (area ? 0.7 : 1.6) * Math.pow(0.8, weight);
   if (damage) effects.push({ op: 'damage', baseDice: rebuildDice((diceAvg(curve.dmgBase) + (curve.dmgAp ? diceAvg(curve.dmgAp) : 0)) * share, 6), shape: area ? 'burst' : 'single' });
   if (damagingDebuff) effects.push({ op: 'damage', baseDice: rebuildDice(diceAvg(curve.dmgBase) * 0.35 / (area ? 2 : 1), 6), shape: area ? 'burst' : 'single' });
   for (const key of selected) {
+    const power = modifierPower(key), curve = curveAt(power, model), budgetRatio = TRAIT_PARAMETERS.woundRatio[power - 1]!;
+    const magnitude = Math.max(.25, (anchored ? budgetRatio : (5 + power) / 10) / Math.max(1, Math.sqrt(weight)));
+    const duration = 1 + Math.floor((power + 1) / 3), saveDC = 8 + power;
     const modifier = SKILL_MODIFIERS.find((m) => m.id === key)!;
     if (modifier.condition) effects.push({ op: 'condition', conditionId: modifier.condition, dur: ['taunted','charmed','confused'].includes(modifier.condition) ? 1 : modifier.condition === 'blinded' ? 2 : ['stunned', 'restrained', 'disarmed', 'silenced'].includes(modifier.condition) ? 1 : model === 'wounds-v2' && BUFF_CONDITIONS.has(modifier.condition) ? power : duration,
       magnitude: ['taunted','charmed','confused','blinded'].includes(modifier.condition) ? 1 : magnitude, ...(modifier.allowed === 'hostile' ? { saveDC: ['taunted','charmed','confused','blinded'].includes(modifier.condition) ? saveDC : Math.max(1, saveDC - controlSavePenalty(formula) * Math.max(0, weight - 1) - (key === 'stun' ? 2 : 0)) } : {}), ...(damage || damagingDebuff ? { onHit: true, ...(['poisoned', 'bleeding', 'burning'].includes(modifier.condition) ? { onDamage: true } : {}) } : {}), shape: area ? 'burst' : 'single' });
@@ -72,7 +75,7 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
       // 区域接触即触发；流血/燃烧/中毒仍须造成损伤，不能穿过免疫白送状态。
       const copy = { ...e }; if ('onHit' in copy) delete copy.onHit; return copy;
     });
-    ability.effects = zoneKinds.map(kind => ({ op: 'zone', kind, power, ...(phase2 ? { healingModel: 'healing-grades-v1' as const } : {}), radius: kind === 'trap' ? 0 : 1, dur: 3,
+    ability.effects = zoneKinds.map(kind => ({ op: 'zone', kind, power: mechanism.modifierPowers?.['zone-' + kind] ?? power, ...(phase2 ? { healingModel: 'healing-grades-v1' as const } : {}), radius: kind === 'trap' ? 0 : 1, dur: 3,
       ...(payload.length ? { effects: structuredClone(payload) } : {}) }));
     ability.effects.push(...effects.filter(e => e.op === 'summon' || e.op === 'move'));
     ability.target = 'zone'; ability.shape = 'burst'; ability.cost = { resource: 'SP', amount: phase2 ? 3 + weight : Math.min(6,2+weight) }; ability.cooldown = 3; ability.customized = true;

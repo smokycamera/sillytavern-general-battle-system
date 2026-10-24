@@ -354,7 +354,7 @@ export function abilityTargetReason(input: {
     if (isRangedWeapon(weapon) && weapon.pointBlankPolicy === 'forbid' && distance <= 1 && sameLayer(actor, target)) return '实际武器不能抵近射击';
   }
   if (target && ability.recipe && ability.effects.every((e) => e.op === 'trait' && !!skillTraitReason(target, e, ability)
-    || e.op === 'resource' && (!skillResourceChange(target, e) || target.id === actor.id && e.amount > 0 && (!['item-progression-v1','item-progression-v2'].includes(ability.itemEffectModel ?? '') || abilityCost(actor, ability)?.resource === e.resource) && (abilityCost(actor, ability)?.amount ?? 0) >= e.amount))) return '目标没有可生效的能力或资源变化';
+    || e.op === 'resource' && (!skillResourceChange(target, e) || target.id === actor.id && e.amount > 0 && (!['item-progression-v1','item-progression-v2','item-progression-v3'].includes(ability.itemEffectModel ?? '') || abilityCost(actor, ability)?.resource === e.resource) && (abilityCost(actor, ability)?.amount ?? 0) >= e.amount))) return '目标没有可生效的能力或资源变化';
   if (target && !sameLayer(actor, target) && (ability.requires === 'melee' || ability.requires === 'shield')) return '接触技能需要处于同一空地层';
   if (target && actor.rulesVersion === 'v2' && ability.effects.length && ability.effects.every((e) => e.op === 'dispel' && !dispelCandidates(target, e).length || e.op === 'condition' && !conditionChance(target, e))) return '目标没有可解除的效果，或已免疫/处于同类控制';
   if (target && ability.itemSourceId && actor.id !== target.id && !sameLayer(actor, target)) return '向他人使用携行物品需要处于同一空地层';

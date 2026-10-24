@@ -25,6 +25,31 @@ const reviewedReply=(args:unknown)=>new Response(JSON.stringify({choices:[{messa
 const data=(init?:RequestInit)=>JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
 const holds=(init?:RequestInit)=>({intents:data(init).forces.map((u:any)=>({unitId:u.id,mode:'hold',cell:u.pos}))});
 function setup(request:typeof fetch) { const {b,state}=fixture(), c=new LlmCommandController(COMMAND_PROMPTS,()=>{},request), p=new LlmIntentPlanner(c,COMMAND_PROMPTS);return {b,state,c,p}; }
+it('accepts attack-cell structure orders, executes them, and replans after destruction in situation mode', async () => {
+  let commands = 0;
+  const request = vi.fn<typeof fetch>(async (_url, init) => { commands++; return reply(commands > 1 ? holds(init) : { intents: data(init).forces.map((u: any) => u.id === 'u2' ? { unit: u.id, mode: 'attack', cell: 31 } : { unit: u.id, mode: 'hold', cell: u.pos }) }); });
+  const { b, state, p } = setup(request); b.battlefield!.structures![31] = createStructure('gate', 4, { owner: 'ally', gateState: 'closed' });
+  await p.forUnit(b, state, settings, () => true);
+  expect(state.memory.intents!.units.u2).toEqual({ mode: 'attack', cell: 31 });
+  expect(savedCommanderState(state)!.memory.intents!.units.u2).toEqual({ mode: 'attack', cell: 31 });
+  const hp = b.battlefield!.structures![31]!.hp; b.autoAction('u2', state.memory.intents!.units.u2);
+  expect(b.battlefield!.structures![31]!.hp).toBeLessThan(hp);
+  b.battlefield!.structures![31]!.hp = 0; b.battlefield!.structures![31]!.gateState = 'destroyed';
+  await p.forUnit(b, state, { ...settings, commandInterval: 'situation' }, () => true);
+  expect(request).toHaveBeenCalledTimes(2);
+});
+it('retains own blocked-route feedback beyond the last twelve events and replans only for hard failure', async () => {
+  const bodies: any[] = [], { b, state, p } = setup(async (_url, init) => { bodies.push(data(init)); return reply(holds(init)); });
+  await p.forUnit(b, state, settings, () => true);
+  const failure = { round: b.round, kind: 'condition' as const, observedBy: ['enemy' as const], participants: ['u2'], text: '队2 指令未完成：城墙阻断路线', intentFailure: { unitId: 'u2', cell: 31, temporary: true } };
+  b.log.push(failure);
+  await p.forUnit(b, state, { ...settings, commandInterval: 'situation' }, () => true); expect(bodies).toHaveLength(1);
+  b.log.push({ ...failure, intentFailure: { ...failure.intentFailure, temporary: false } });
+  for (let i = 0; i < 20; i++) b.log.push({ round: b.round, kind: 'condition', participants: ['u2'], text: '其他事件' + i });
+  await p.forUnit(b, state, { ...settings, commandInterval: 'situation' }, () => true);
+  expect(bodies).toHaveLength(2); expect(bodies[1].reason).toBe('己方指令路径受阻');
+  expect(bodies[1].observation.events.some((e: any) => e.text.includes('城墙阻断路线'))).toBe(true);
+});
 it('delivers letters at the recipients next activation, replaces a current-round plan once and preserves the read cursor after load',async()=>{
   const bodies:any[]=[];const request:typeof fetch=async(_url,init)=>{bodies.push(data(init));return data(init).letters?.length?reviewedReply(holds(init)):reply(holds(init));};
   const {b,state,c,p}=setup(request);p.prefetch(b,state,settings,()=>true);await p.beforeHero();

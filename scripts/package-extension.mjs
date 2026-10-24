@@ -12,7 +12,7 @@ for (const file of ['README.md', 'README.zh-CN.md', 'LICENSE', 'LICENSE-NOTES.md
 for (const directory of ['assets', 'licenses', 'docs']) {
   if (directory === 'docs') {
     mkdirSync(path.join(output, directory), { recursive: true });
-    for (const name of ['README.md', 'current-release.md', 'release-channels.md', 'battlefield-refactor-implementation.md', 'battle-planning-v2.md', 'battle-save-policy-20261016.md', 'embedded-worldbook.md', 'native-event-display.md', 'secondary-api-two-step-20261002.md', 'jev-integration.md', 'mcp-player-bridge.md', 'update-2.6-20261019.md', 'worn-anchoring-20261020.md', 'traits-items-stacking-revision-20261019.md', 'level-anchoring-v21-20261019.md', 'control-worn-v20-20261018.md', 'item-system-20261011.md', 'worldbook-xml-markdown.md', 'version-rollback.md']) copyFileSync(path.join(directory, name), path.join(output, directory, name));
+    for (const name of ['README.md', 'current-release.md', 'release-channels.md', 'battlefield-refactor-implementation.md', 'battle-planning-v2.md', 'battle-save-policy-20261016.md', 'embedded-worldbook.md', 'native-event-display.md', 'secondary-api-two-step-20261002.md', 'jev-integration.md', 'mcp-player-bridge.md', 'update-2.6-20261019.md', 'worn-anchoring-20261020.md', 'traits-items-stacking-revision-20261019.md', 'level-anchoring-v21-20261019.md', 'control-worn-v20-20261018.md', 'item-system-20261011.md', 'worldbook-xml-markdown.md', 'numeric-v26-20261023.md', 'artillery-recovery-v27-20261023.md', 'rocket-sprayer-v28-20261023.md', 'capacity-weight-v29-20261023.md', 'version-rollback.md']) copyFileSync(path.join(directory, name), path.join(output, directory, name));
   } else cpSync(directory, path.join(output, directory), { recursive: true });
 }
 mkdirSync(path.join(output, 'scripts'), { recursive: true });
@@ -20,6 +20,14 @@ copyFileSync('docs/mvu-save-history-20261020.md', path.join(output, 'docs/mvu-sa
 copyFileSync('docs/indoor-layouts-20261020.md', path.join(output, 'docs/indoor-layouts-20261020.md'));
 copyFileSync('docs/siege-trenches-20261021.md', path.join(output, 'docs/siege-trenches-20261021.md'));
 copyFileSync('docs/llm-command-20261021.md', path.join(output, 'docs/llm-command-20261021.md'));
+copyFileSync('docs/character-worldbooks-20261024.md', path.join(output, 'docs/character-worldbooks-20261024.md'));
+copyFileSync('docs/worldbook-start-20261024.md', path.join(output, 'docs/worldbook-start-20261024.md'));
+copyFileSync('docs/region-battlefields-20261024.md', path.join(output, 'docs/region-battlefields-20261024.md'));
+copyFileSync('docs/region-battlefields-proposal-20261024.md', path.join(output, 'docs/region-battlefields-proposal-20261024.md'));
+copyFileSync('docs/worldbook-map-review-20261024.md', path.join(output, 'docs/worldbook-map-review-20261024.md'));
+copyFileSync('docs/standard-skill-damage-v31-20261023.md', path.join(output, 'docs/standard-skill-damage-v31-20261023.md'));
+copyFileSync('docs/standard-skill-damage-v32-20261023.md', path.join(output, 'docs/standard-skill-damage-v32-20261023.md'));
+copyFileSync('docs/sprayer-mobility-command-fixes-20261024.md', path.join(output, 'docs/sprayer-mobility-command-fixes-20261024.md'));
 copyFileSync('docs/small-three-way-result-20261018.md', path.join(output, 'docs/small-three-way-result-20261018.md'));
 cpSync('docs/prompt-backups', path.join(output, 'docs/prompt-backups'), { recursive: true });
 mkdirSync(path.join(output, 'mcp'), { recursive: true });

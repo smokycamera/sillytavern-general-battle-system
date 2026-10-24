@@ -37,6 +37,8 @@ export interface Stats {
 
 /** 武器：伤害分普通段与破甲段（战锤全面战争制） */
 export interface Weapon {
+  /** Explicit raw load edits survive automatic out-of-battle load updates. */
+  loadOverride?: boolean;
   /** 正文明确设定的V4冻结数值，不参与旧装备自动校正。 */
   customized?: boolean;
   /** V4运行时规格投影；库存仍保存原始冻结配方。 */
@@ -78,6 +80,7 @@ export interface Weapon {
 
 /** 护甲：等级映射减伤比例（具体比例由规则包定义） */
 export interface Armor {
+  loadOverride?: boolean;
   /** 仅显式数值编辑时覆盖；未设置的普通装备仍使用原公式。 */
   protectionOverride?: boolean;
   powerScale?: number;
@@ -281,6 +284,16 @@ export interface ActiveCondition {
 export type UnitStatus = 'ready' | 'dying' | 'dead' | 'routing' | 'fled';
 
 export interface Combatant {
+  regenerationModel?: import('./regeneration-model.js').RegenerationModel;
+  targetWidthModel?: import('./target-width.js').TargetWidthModel;
+  armorWearModel?: import('./armor-wear.js').ArmorWearModel;
+  recoveryModel?: import('./life-recovery.js').LifeRecoveryModel;
+  artilleryModel?: import('./artillery-model.js').ArtilleryModel;
+  /** Fractional normal movement only; whole unused steps never stockpile. Battle-local. */
+  movementRemainder?: number;
+  marchRemainder?: number;
+  loadModel?: import('./load-model.js').LoadModel;
+  numericModel?: import('./numeric-model.js').NumericModel;
   /** V25：只在新战斗启用，次数随战斗快照保存，战后剥离。 */
   revivalModel?: 'revival-v1';
   revivalState?: { members: number; used: number };
@@ -300,6 +313,8 @@ export interface Combatant {
   resourceModel?: 'endurance-v1' | 'endurance-v2';
   /** V12 weapon/armor calibration, projected from the battle rules; absent keeps the frozen V11 behaviour. */
   armsModel?: import('./arms.js').ArmsModel;
+  sprayerDamageMultiplier?: number;
+  sprayerGroupDamageMultiplier?: number;
   barrierModel?: 'barrier-grades-v1';
   /** V13 trait overhaul, projected from the battle rules; absent keeps the frozen V12 trait rules. */
   traitModel?: 'traits-v1';
@@ -377,7 +392,7 @@ export interface Combatant {
   speedTier?: number;
   /** 明确骑乘平台；专长本身不会创建坐骑或增加人员/生命。 */
   mount?: boolean;
-  shield?: { id: string; name?: string; load: number; recipe?: ItemRecipe; powerScale?: number };
+  shield?: { id: string; name?: string; load: number; loadOverride?: boolean; recipe?: ItemRecipe; powerScale?: number };
   preparedAbilityIds?: string[];
   generationWarnings?: string[];
   /** 参战时持久档案版本；战后提交必须仍匹配，战内不自行递增。 */
@@ -452,6 +467,8 @@ export interface GenAudit {
 // ---------- 造怪器 ----------
 
 export interface GenerateInput {
+  loadModel?: import('./load-model.js').LoadModel;
+  numericModel?: import('./numeric-model.js').NumericModel;
   /** Omitted for historical API compatibility; the current panel explicitly selects V6. */
   damageModel?: Combatant['damageModel'];
   bonuses?: Enhancements;
@@ -530,6 +547,8 @@ export type DamageChannel = 'kinetic' | 'thermal' | 'arcane';
 export type BodyKind = 'human' | 'large' | 'vehicle' | 'giant';
 /** 规范化且冻结的 T/P/S/Q/F 中装备职责；训练 T 不在装备配方中。 */
 export interface ItemRecipe {
+  loadModel?: import('./load-model.js').LoadModel;
+  numericModel?: import('./numeric-model.js').NumericModel;
   variance?: import('./instance-variance.js').InstanceVariance;
   /** Identifies the body-strength formula baked into this physical instance. */
   balanceVersion?: 'unified-v1';
@@ -564,6 +583,8 @@ export type LogKind =
   | 'battle-end';
 
 export interface BattleLogEntry {
+  /** Actual execution feedback; temporary budget limits do not invalidate a route. */
+  intentFailure?: { unitId: string; cell?: number; temporary: boolean };
   /** 消息与交涉须保留原话，不按战斗效果精简。 */
   communication?: boolean;
   /** 破障的实际结构变化；旧日志仍可按原有的结构耐久文本展示。 */
@@ -599,10 +620,26 @@ export interface BattleLogEntry {
 // ---------- 规则包 ----------
 
 export interface RulePack {
+  regenerationModel?: import('./regeneration-model.js').RegenerationModel;
+  targetWidthModel?: import('./target-width.js').TargetWidthModel;
+  armorWearModel?: import('./armor-wear.js').ArmorWearModel;
+  recoveryModel?: import('./life-recovery.js').LifeRecoveryModel;
+  artilleryModel?: import('./artillery-model.js').ArtilleryModel;
+  loadModel?: import('./load-model.js').LoadModel;
+  numericModel?: import('./numeric-model.js').NumericModel;
   /** V8：训练输出每级增幅；缺省保留旧战斗的 12%。 */
   trainingDamagePerLevel?: number;
   /** V8：自动生成的单体武器/盾牌技法基础倍率；不改写技能实例。 */
   singleWeaponSkillMultiplier?: number;
+  /** V31：将单体武技校准覆盖到 V14–V21 技能公式；旧规则只处理 V6 技能。 */
+  weaponSkillCalibration?: 'all-formulas-v1';
+  /** V33 rings originate at the caster; older battles retain target-centered rings. */
+  casterCenteredRing?: boolean;
+  /** V32：可信生成的直接法术及独立单体投射伤害倍率；不重写技能或冻结道具。 */
+  independentSkillDamageMultiplier?: number;
+  /** V34 increases each of the three fueled sprays without rewriting physical weapons. */
+  sprayerDamageMultiplier?: number;
+  sprayerGroupDamageMultiplier?: number;
   /** V7：跨代充分穿透追加毁伤；旧快照缺省关闭。 */
   overmatch?: boolean;
   /** V10 continuous; V11 soft40 attenuates low-grade extra damage. Absent keeps the V7–V9 safe band. */

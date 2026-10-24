@@ -8,7 +8,7 @@ import { instanceMultiplier } from '../instance-variance.js';
 import { bodyProfile } from '../body.js';
 /** Layered maps are opt-in on new fields. Frozen version-2 tile-only saves retain their rules. */
 import type { Combatant, Weapon } from '../types.js';
-import { activeTraitIds, traitPrerequisiteReason } from '../trait-sources.js';
+import { activeTraitIds, traitPrerequisiteReason, traitSourceActive } from '../trait-sources.js';
 import { traitLevel, roughGroundCost } from '../trait-levels.js';
 import { isAirborne } from '../aerial.js';
 import type { BattlefieldSpec } from './spatial.js';
@@ -60,14 +60,25 @@ export function intactStructure(field: BattlefieldSpec, cell: number): FieldStru
 }
 export function isElevated(unit: Combatant): boolean { return !isAirborne(unit) && unit.elevation === 1; }
 export function supportsPlatform(field: BattlefieldSpec, cell: number): boolean { return intactStructure(field, cell)?.top === true; }
+/** Sailing has no body/armor-derived grants; keep the common non-sailing movement path cheap. */
+export function waterOnly(actor: Combatant): boolean {
+  const sailing = actor.traits.includes('sailing') || !!actor.gear?.some(item => item.passive?.traits.some(grant => grant.id === 'sailing'))
+    || !!actor.accessories && Object.values(actor.accessories).some(item => item?.traitId === 'sailing')
+    || actor.rulesVersion === 'v2' && !!actor.traitSources?.some(source => source.traitIds.includes('sailing') && traitSourceActive(actor, source));
+  return sailing && !activeTraitIds(actor).includes('water-crossing');
+}
+export function sailingBlocked(field: BattlefieldSpec, cell: number, actor?: Combatant): boolean {
+  return !!actor && waterOnly(actor) && (actor.elevation === 1 || !['deep_water', 'shallow_water'].includes(field.tiles[cell] ?? ''));
+}
 export function groundBlocked(field: BattlefieldSpec, cell: number, actor?: Combatant): boolean {
   if (!Number.isInteger(cell) || cell < 0 || cell >= field.tiles.length) return true;
+  if (sailingBlocked(field, cell, actor)) return true;
   if (actor && isAirborne(actor)) return false;
   if (actor && isElevated(actor)) return !supportsPlatform(field, cell);
   const s = intactStructure(field, cell), t = field.tiles[cell];
   if (t === 'wall' || t === 'cliff') return true;
   if (s && (s.kind === 'wall' || s.kind === 'building' || s.kind === 'tower' || s.kind === 'gate' && s.gateState !== 'open')) return true;
-  return t === 'deep_water' && s?.kind !== 'bridge' && !(actor && activeTraitIds(actor).includes('water-crossing'));
+  return t === 'deep_water' && s?.kind !== 'bridge' && !(actor && activeTraitIds(actor).some(id => id === 'water-crossing' || id === 'sailing'));
 }
 export function obstructionHeight(field: BattlefieldSpec, cell: number): number {
   const ground=groundHeightAt(field,cell);
@@ -79,6 +90,7 @@ export function obstructionHeight(field: BattlefieldSpec, cell: number): number 
 }
 export function layerMoveCost(field: BattlefieldSpec, cell: number, actor?: Combatant): number | undefined {
   if (!field.layerVersion) return undefined;
+  if (sailingBlocked(field, cell, actor)) return Infinity;
   if (actor && (isAirborne(actor) || isElevated(actor))) return 1;
   const s = intactStructure(field, cell), t = field.tiles[cell], overlays = field.overlays?.[cell] ?? [];
   const traits = actor ? activeTraitIds(actor) : [];
@@ -114,6 +126,7 @@ export function structureDefense(field: BattlefieldSpec, defender: Combatant, at
   return s.hp > s.hpMax / 2 ? 3 : 1;
 }
 export function canClimbFrom(field: BattlefieldSpec, actor: Combatant, target: number): boolean {
+  if (waterOnly(actor)) return false;
   if (actor.pos === undefined || isAirborne(actor)) return false;
   const adjacent = Math.abs(actor.pos % field.width - target % field.width)
     + Math.abs(Math.floor(actor.pos / field.width) - Math.floor(target / field.width)) === 1;

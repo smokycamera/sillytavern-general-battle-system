@@ -19,6 +19,28 @@ function navigationFixture() {
 }
 function nextActor(b: SmallBattle) { while (b.active?.id !== 'u2' && !b.isOver()) b.endTurn(); }
 describe('unit intents', () => {
+  it.each(['wall', 'gate'] as const)('approaches and damages the requested %s, preserving the target after save and collapse', kind => {
+    const b = navigationFixture(), f = b.battlefield!, actor = b.byId('u2'); actor.pos = 1;
+    f.structures![66] = createStructure(kind, 4, { owner: 'ally', gateState: kind === 'gate' ? 'closed' : undefined });
+    const hp = f.structures![66]!.hp, start = actor.pos;
+    for (let round = 0; round < 4 && f.structures![66]!.hp === hp; round++) { b.autoAction(actor.id, { mode: 'attack', cell: 66 }); nextActor(b); }
+    expect(actor.pos).not.toBe(start); expect(f.structures![66]!.hp).toBeLessThan(hp);
+    const restored = SmallBattle.fromSnapshot(structuredClone(b.toSnapshot()));
+    restored.battlefield!.structures![66]!.hp = 0;
+    const before = restored.byId('u2').pos; restored.autoAction('u2', { mode: 'attack', cell: 66 });
+    expect(restored.byId('u2').pos).toBe(before);
+  });
+  it('reports an observed sealed wall even when no approach step remains, distinguishing movement budget exhaustion', () => {
+    const b = navigationFixture(), f = b.battlefield!, actor = b.byId('u2'); actor.pos = 17;
+    for (let cell = 21; cell < 28; cell++) f.structures![cell] = createStructure('wall', 10);
+    b.autoAction(actor.id, { mode: 'advance', cell: 38 });
+    const feedback = b.log.filter(e => e.intentFailure?.unitId === actor.id);
+    expect(feedback.some(e => !e.intentFailure!.temporary && e.text.includes('城墙'))).toBe(true);
+    expect(feedback.some(e => e.text.includes('目标'))).toBe(true);
+    const open = navigationFixture(); open.autoAction('u2', { mode: 'advance', cell: 80 });
+    expect(open.log.some(e => e.intentFailure?.temporary && e.text.includes('移动额度不足'))).toBe(true);
+    expect(open.log.some(e => e.intentFailure && !e.intentFailure.temporary)).toBe(false);
+  });
   it('T1 preserves the pre-change three-round replay', () => {
     const b = fixture(); let guard = 0;
     while (!b.isOver() && b.round <= 3 && guard++ < 100) b.autoAction(b.active!.id);

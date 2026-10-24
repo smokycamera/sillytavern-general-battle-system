@@ -3,6 +3,7 @@ import { traitRegistry } from './data/traits.js';
 import { progression, PROGRESSION_MODEL, STACKING_MODEL, ItemProgressionModel } from './progression.js';
 import { collectMods, resolveStack } from './bonus.js';
 import { combatHostile, combatSide } from './battle-control.js';
+import { validateLifeRecoveryModel } from './life-recovery.js';
 import { medicHealingMultiplier, resolveHealingBudget, healingEffectGroups, validateHealingModel } from './healing.js';
 import type { Ability, Combatant, EffectOp } from './types.js';
 import { traitLevel, nightSight } from './trait-levels.js';
@@ -25,7 +26,7 @@ import { rollDice } from './dice.js';
 
 type Point = { x: number; y: number };
 type ZoneEffect = Extract<EffectOp, { op: 'zone' }>;
-export interface BattleZone extends Point { id: string; ownerId: string; itemEffectModel?: ItemProgressionModel; healingModel?: import('./healing.js').HealingModel; sourceMedicSnapshot?: number; sourceMedicModel?: typeof PROGRESSION_MODEL | typeof STACKING_MODEL; side: Combatant['side']; kind: ZoneEffect['kind']; power: number; amount?: number; penetration?: number; effects?: ZoneEffect['effects']; radius: number; remaining: number; createdRound: number; lastRound: number; affected: string[]; mode: 'small' | 'mass'; surface?:'ground'|'platform';height?:number }
+export interface BattleZone extends Point { recoveryModel?: import('./life-recovery.js').LifeRecoveryModel; id: string; ownerId: string; itemEffectModel?: ItemProgressionModel; healingModel?: import('./healing.js').HealingModel; sourceMedicSnapshot?: number; sourceMedicModel?: typeof PROGRESSION_MODEL | typeof STACKING_MODEL; side: Combatant['side']; kind: ZoneEffect['kind']; power: number; amount?: number; penetration?: number; effects?: ZoneEffect['effects']; radius: number; remaining: number; createdRound: number; lastRound: number; affected: string[]; mode: 'small' | 'mass'; surface?:'ground'|'platform';height?:number }
 export const ZONE_NAMES = { fire: '燃烧区域', poison: '毒雾', smoke: '烟幕', healing: '治疗区域', trap: '陷阱' } as const;
 export function zoneEndText(zone: BattleZone, field?: BattlefieldSpec): string {
   const node = zone.mode === 'mass' ? FORMATION_NODES.find(n => n.x === zone.x && n.y === zone.y) : undefined;
@@ -50,12 +51,13 @@ export function visibleBattleZones(context: ObservationContext, side: Combatant[
 }
 export function areaTargets(context: ObservationContext, actor: Combatant, primary: Combatant, ability: Ability, valid: (unit: Combatant) => boolean): Combatant[] {
   const area = ability.area; if (!area) return [primary];
-  const origin = areaPosition(context, actor), pivot = areaPosition(context, primary);
+  const origin = areaPosition(context, actor), centered = area.shape === 'ring' && context.rules?.casterCenteredRing;
+  const pivot = centered ? origin : areaPosition(context, primary), source = centered ? actor : primary;
   const field=context.battlefield;
   const connects=(from:Combatant,to:Combatant)=>field?.spatialRulesVersion!==2||!!from.airborne===!!to.airborne
     &&Math.abs(unitHeight(field,from)-unitHeight(field,to))<=area.radius&&unitLineOfSight(field,from,to);
   const eligible = context.units.filter(u => !combatHostile(u, primary, context.units) && u.hp > 0 && !['dead','fled'].includes(u.status) && valid(u)
-    &&(area.shape==='chain'||connects(primary,u))).sort((a,b) => a.id.localeCompare(b.id));
+    &&(area.shape==='chain'||connects(source,u))).sort((a,b) => a.id.localeCompare(b.id));
   if (area.shape === 'chain') {
     const result: Combatant[] = eligible.some(u => u.id === primary.id) ? [primary] : [];
     while (result.length && result.length < area.maxTargets) {
@@ -74,7 +76,7 @@ export function areaTargets(context: ObservationContext, actor: Combatant, prima
     if (!length) return unit.id === primary.id;
     const ux=at.x-origin.x, uy=at.y-origin.y, dot=(ux*dx+uy*dy)/length, cross=Math.abs(ux*dy-uy*dx)/length;
     return dot > 0 && dot <= length + .5 && cross <= (area.shape === 'line' ? .5 : dot * .6 + .25);
-  }).sort((a,b) => distance(areaPosition(context,a),pivot)-distance(areaPosition(context,b),pivot) || a.id.localeCompare(b.id)).slice(0,area.maxTargets);
+  }).sort((a,b) => (centered ? Number(b.id === primary.id) - Number(a.id === primary.id) : 0) || distance(areaPosition(context,a),pivot)-distance(areaPosition(context,b),pivot) || a.id.localeCompare(b.id)).slice(0,area.maxTargets);
 }
 export function zoneTarget(context: ObservationContext, actor: Combatant, id?: string): Combatant | undefined {
   if (!id) return undefined;
@@ -92,6 +94,7 @@ export function zoneTarget(context: ObservationContext, actor: Combatant, id?: s
 export function placeZone(context: ObservationContext, actor: Combatant, target: Combatant, effect: ZoneEffect, round: number, abilityId: string): BattleZone {
   const point=areaPosition(context,target), id=actor.id+':'+abilityId+':'+effect.kind;
   const zone:BattleZone={...point,id,ownerId:actor.id,side:actor.side,...(effect.itemEffectModel ? {itemEffectModel:effect.itemEffectModel} : {}),kind:effect.kind,power:effect.power,amount:zoneAmount(effect),penetration:zonePenetration(effect),radius:effect.radius,remaining:effect.dur,createdRound:round,lastRound:round,affected:[],mode:context.mode};
+  if (!effect.itemEffectModel && (context.rules?.recoveryModel ?? actor.recoveryModel)) zone.recoveryModel = context.rules?.recoveryModel ?? actor.recoveryModel;
   if (effect.healingModel && context.rules?.healingModel) { zone.healingModel = effect.healingModel; zone.sourceMedicSnapshot = medicHealingMultiplier(actor); if (progression(actor)) zone.sourceMedicModel = actor.traitLevelModel as typeof PROGRESSION_MODEL | typeof STACKING_MODEL; }
   if(context.battlefield?.spatialRulesVersion===2){zone.surface=target.elevation===1?'platform':'ground';zone.height=unitHeight(context.battlefield,{...target,airborne:false});}
   if (effect.effects?.length) zone.effects=structuredClone(effect.effects);
@@ -130,7 +133,7 @@ export function settleZones(context: ObservationContext, round: number, boundary
         zone.affected.push(target.id);
         const amount=zoneAmount(zone); let damage=0;
         if(zone.kind==='healing') {
-          const healed=applyRecovery(target,Math.min(recoveryCapacity(target),zone.healingModel ? resolveHealingBudget({ source: owner, target, power: zone.power, baseAmount: amount, delivery: 'zone', sourceMedicSnapshot: zone.sourceMedicSnapshot, rules: { healingModel: zone.healingModel } }) : amount));
+          const healed=applyRecovery(target,Math.min(recoveryCapacity(target),zone.healingModel ? resolveHealingBudget({ source: owner, target, power: zone.power, baseAmount: amount, delivery: 'zone', recoveryModel: zone.recoveryModel, sourceMedicSnapshot: zone.sourceMedicSnapshot, rules: { healingModel: zone.healingModel } }) : amount));
           if(healed)results.push({target,source:owner,damage:0,text:target.name+'在治疗区域恢复'+displayNumber(healed)+'点生命'});
         } else if(zone.kind!=='smoke') {
           const count=target.scale==='hero'?1:Math.min(target.hp,4);
@@ -155,7 +158,7 @@ export function settleZones(context: ObservationContext, round: number, boundary
           } else if(effect.op==='barrier') {
             grantBarrier(target,effect.amount,effect.dur,owner.id,effect.defensePower);text=target.name+'在区域内获得屏障';
           } else if(effect.op==='heal') {
-            const healed=applyRecovery(target,Math.min(recoveryCapacity(target),zone.healingModel ? resolveHealingBudget({ source: owner, target, power: effect.power ?? zone.power, baseAmount: effect.amount ?? rollDice(effect.dice!,random).total, delivery: 'zone', sourceMedicSnapshot: zone.sourceMedicSnapshot, rules: { healingModel: zone.healingModel } }) : effect.amount ?? rollDice(effect.dice!,random).total));text=target.name+'在区域内恢复'+displayNumber(healed)+'点生命';
+            const healed=applyRecovery(target,Math.min(recoveryCapacity(target),zone.healingModel ? resolveHealingBudget({ source: owner, target, power: effect.power ?? zone.power, baseAmount: effect.amount ?? rollDice(effect.dice!,random).total, delivery: 'zone', recoveryModel: zone.recoveryModel, sourceMedicSnapshot: zone.sourceMedicSnapshot, rules: { healingModel: zone.healingModel } }) : effect.amount ?? rollDice(effect.dice!,random).total));text=target.name+'在区域内恢复'+displayNumber(healed)+'点生命';
           } else if(effect.op==='resource') {
             const change=skillResourceChange(target,effect);target.resources[effect.resource]=(target.resources[effect.resource]??0)+change;text=target.name+' '+effect.resource+(change>=0?'+':'')+displayNumber(change);
           } else if(effect.op==='morale') {
@@ -185,7 +188,7 @@ export function validateAreas(unit: Combatant): void {
   for(const zone of unit.battleZones??[]) {
     if(!zone || typeof zone.id!=='string' || !zone.id || ids.has(zone.id) || zone.side!==unit.side || zone.ownerId!==unit.id || !Object.hasOwn(ZONE_NAMES,zone.kind) || !['small','mass'].includes(zone.mode) || !Number.isSafeInteger(zone.x) || zone.x<0 || !Number.isSafeInteger(zone.y) || zone.y<0 || !Number.isInteger(zone.radius) || zone.radius<0 || zone.radius>3 || !Number.isInteger(zone.power) || zone.power<1 || zone.power>10 || !Number.isInteger(zone.remaining) || zone.remaining<1 || zone.remaining>99 || !Number.isSafeInteger(zone.createdRound) || zone.createdRound<1 || !Number.isSafeInteger(zone.lastRound) || zone.lastRound<zone.createdRound || !Array.isArray(zone.affected) || zone.affected.some(id=>typeof id!=='string') || new Set(zone.affected).size!==zone.affected.length)throw Error('持续区域的存档不完整');
     validateZoneStrength(zone);
-    validateHealingModel(zone.healingModel);
+    validateHealingModel(zone.healingModel); validateLifeRecoveryModel(zone.recoveryModel);
     if (zone.sourceMedicModel !== undefined && zone.sourceMedicModel !== PROGRESSION_MODEL && zone.sourceMedicModel !== STACKING_MODEL) throw Error('区域医护数值版本损坏');
     if (zone.sourceMedicSnapshot !== undefined && (!Number.isFinite(zone.sourceMedicSnapshot) || zone.sourceMedicSnapshot < 1 || zone.sourceMedicSnapshot > (zone.sourceMedicModel === PROGRESSION_MODEL ? 3.06 : zone.sourceMedicModel === STACKING_MODEL ? 1.96 : 1.4))) throw Error('区域医护快照损坏'); ids.add(zone.id);
     if(zone.surface!==undefined&&!['ground','platform'].includes(zone.surface)||zone.height!==undefined&&(!Number.isFinite(zone.height)||zone.height<0||zone.height>5))throw Error('持续区域高度损坏');

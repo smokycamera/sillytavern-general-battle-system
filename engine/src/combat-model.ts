@@ -1,3 +1,10 @@
+import { gradedNumbers, gradedLifeScale, NUMERIC_MODEL, unitMultiplier, unitStep, validateNumericModel } from './numeric-model.js';
+import { validateLoadModel } from './load-model.js';
+import { prepareArmorWearModel, validateArmorWearModel } from './armor-wear.js';
+import { validateTargetWidthModel } from './target-width.js';
+import { prepareRegenerationModel, validateRegenerationModel } from './regeneration-model.js';
+import { validateArtilleryModel } from './artillery-model.js';
+import { validateLifeRecoveryModel } from './life-recovery.js';
 import { displayNumber } from './display-number.js';
 import { resolveHealingBudget } from './healing.js';
 import { isWoundModel } from './balance.js';
@@ -14,8 +21,14 @@ export const COHORT_REFERENCE = 50;
 export interface FormationStrength { members: number; capacity: number; memberHp: number; woundedRemainder?: number; health?:MemberHealthGroup[] }
 export const isCohort = (u: Combatant) => u.combatModel === COHORT_MODEL || u.combatModel === MEMBER_HEALTH_MODEL;
 export function validateCombatModel(u: Combatant): void {
+  validateRegenerationModel(u.regenerationModel);
+  validateTargetWidthModel(u.targetWidthModel);
+  validateArmorWearModel(u.armorWearModel);
+  validateArtilleryModel(u.artilleryModel); validateLifeRecoveryModel(u.recoveryModel);
+  validateNumericModel(u.numericModel); validateLoadModel(u.loadModel);
+  for (const value of [u.movementRemainder,u.marchRemainder]) if (value !== undefined && (!gradedNumbers(u) || !Number.isFinite(value) || value < 0 || value >= 1)) throw Error('移动余量损坏');
   validateInstanceVariance(u.genAudit?.variance);
-  for (const gear of [u.weapon, u.sidearm, u.armor, u.shield]) validateInstanceVariance(gear?.recipe?.variance);
+  for (const gear of [u.weapon, u.sidearm, u.armor, u.shield]) { validateInstanceVariance(gear?.recipe?.variance); validateNumericModel(gear?.recipe?.numericModel); validateLoadModel(gear?.recipe?.loadModel); }
   if(u.damageModel!==undefined&&!isWoundModel(u.damageModel))throw Error('未知伤害模型');
   if(u.combatModel===undefined){if(u.formation!==undefined)throw Error('编队人数缺少规则版本');return;}
   if(!isCohort(u))throw Error('未知战斗人数模型');
@@ -27,7 +40,7 @@ export function validateCombatModel(u: Combatant): void {
 }
 export function personnel(u: Combatant): number { return u.formation?.members ?? u.hp; }
 export function memberDurability(u: Combatant): number { return u.formation?.memberHp ?? 10 * BODY[u.body ?? 'human'].hp; }
-export function nominalLife(u: Combatant): number { return Math.round((curveAt(u.level, u.damageModel).hp * bodyProfile(u.body, u.damageModel).hp + ARCHETYPE_MODS[u.archetype ?? 'infantry'].hp) * instanceMultiplier(u.bonuses, 'health', u.genAudit?.variance)); }
+export function nominalLife(u: Combatant): number { return Math.max(1, Math.round((curveAt(u.level, u.damageModel).hp * bodyProfile(u.body, u.damageModel).hp + ARCHETYPE_MODS[u.archetype ?? 'infantry'].hp) * gradedLifeScale(u) * unitMultiplier(u, 'health'))); }
 export function synchronizePersonnel(u: Combatant, fromLegacy = false): void {
   if (!isCohort(u) || u.scale === 'hero') { if (u.scale === 'hero') delete u.formation; return; }
   if (!u.formation) u.formation = {members:u.hp,capacity:u.base.hpMax,memberHp:10*BODY[u.body??'human'].hp};
@@ -42,12 +55,22 @@ export function setStrength(u: Combatant, value: number): void {
   if(isCohort(u)&&u.scale!=='hero'){synchronizePersonnel(u,true);}
 }
 export function prepareCombatModel(u: Combatant, rules: RulePack, memberHp?:number): void {
+  prepareRegenerationModel(u, rules);
+  validateTargetWidthModel(u.targetWidthModel); validateTargetWidthModel(rules.targetWidthModel);
+  if (rules.targetWidthModel) u.targetWidthModel = rules.targetWidthModel; else delete u.targetWidthModel;
+  prepareArmorWearModel(u, rules);
+  validateNumericModel(u.numericModel); validateLoadModel(u.loadModel); validateNumericModel(rules.numericModel); validateArtilleryModel(u.artilleryModel); validateArtilleryModel(rules.artilleryModel); validateLifeRecoveryModel(u.recoveryModel); validateLifeRecoveryModel(rules.recoveryModel);
+  validateLoadModel(rules.loadModel);
+  if (rules.loadModel) u.loadModel = rules.loadModel;
+  if (rules.recoveryModel) u.recoveryModel = rules.recoveryModel;
+  if (rules.artilleryModel) { u.artilleryModel = rules.artilleryModel; delete u.cannonAmmo; }
   if(!rules.combatModel)return;
   for(const c of u.conditions)if(c.affectedMembers!==undefined&&(!Number.isFinite(c.affectedMembers)||c.affectedMembers<0||c.affectedMembers>1e9))throw Error('状态波及人数损坏');
   if(u.combatModel!==undefined||u.formation!==undefined)validateCombatModel(u);
   // 旧快照依旧版本运行；只有显式进入V4才创建成员生命，不能在恢复时重置伤损。
   if (u.damageModel === 'wounds-v2' && rules.damageModel !== 'wounds-v2') throw Error('单位与战斗规则不一致，无法转换');
   if (rules.damageModel === 'wounds-v2') upgradeUnifiedLife(u);
+  if (gradedNumbers(rules)) prepareNumericModel(u);
   const fresh=!u.formation;
   u.combatModel=rules.combatModel;
   if(rules.damageModel)u.damageModel=rules.damageModel;else delete u.damageModel;
@@ -74,6 +97,31 @@ export function upgradeUnifiedLife(u: Combatant): void {
     }
   }
   if (u.genAudit) { u.genAudit.input.damageModel = 'wounds-v2'; u.genAudit.formulaVersion += '+unified-v1'; }
+}
+/** A new V26 battle opts an existing roster unit in; snapshots never upgrade on restore. */
+export function prepareNumericModel(u: Combatant): void {
+  if (gradedNumbers(u)) return;
+  const oldNominal = nominalLife(u), oldMaximum = u.scale === 'hero' ? u.base.hpMax : u.formation?.memberHp;
+  const oldSpeed = unitStep(u, 'speed'), oldMorale = unitStep(u, 'morale');
+  const traitHp = u.scale === 'hero' && u.traits.includes('elite') ? 8 : 0;
+  u.numericModel = NUMERIC_MODEL;
+  const nextNominal = nominalLife(u);
+  if (oldMaximum === oldNominal + traitHp) {
+    const next = nextNominal + traitHp;
+    const preserve = (hp: number) => hp <= 0 ? 0 : Math.max(1, Math.min(next, next - (oldMaximum! - hp)));
+    if (u.scale === 'hero') { u.base.hpMax = next; u.hp = preserve(u.hp); }
+    else if (u.formation) { u.formation.memberHp = next; if (u.formation.health) u.formation.health = u.formation.health.map(g => ({ ...g, hp: preserve(g.hp) })); }
+  }
+  u.base.spd += unitStep(u, 'speed') - oldSpeed;
+  const moraleDelta = unitStep(u, 'morale') - oldMorale;
+  if (u.base.moraleMax !== undefined) {
+    u.base.moraleMax = Math.max(0, u.base.moraleMax + moraleDelta);
+    if (u.morale !== undefined) u.morale = Math.max(0, Math.min(u.base.moraleMax, u.morale + moraleDelta));
+  } else {
+    u.base.moraleMax = Math.max(0, curveAt(u.level).morale + unitStep(u, 'morale'));
+    u.morale = Math.max(0, Math.min(u.base.moraleMax, u.moraleState?.personal ?? u.base.moraleMax));
+  }
+  if (u.genAudit) { u.genAudit.input.numericModel = NUMERIC_MODEL; u.genAudit.formulaVersion += '+graded-v1'; }
 }
 /** 本地医疗按实际执行单位换算；物品为单份，不随服用者人数放大。 */
 export function healingYield(source: Combatant, target: Combatant, amount: number, item = false, power?: number): number {

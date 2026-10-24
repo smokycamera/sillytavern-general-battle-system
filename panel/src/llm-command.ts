@@ -8,7 +8,7 @@ import { unitLineOfSight, TERRAIN_NAMES, type Terrain } from '../../engine/src/s
 import { groundHeightAt, unitHeight } from '../../engine/src/small/height-map.js';
 import { obstructionHeight, STRUCTURE_NAMES, type FieldStructure } from '../../engine/src/small/layers.js';
 import { llmConnection, commandRequestOptions, type LlmSettings } from './llm-settings.js';
-import { AUTO_TRIES, CONTEXT_TIMEOUT_MS } from './llm-context.js';
+import { CONTEXT_TIMEOUT_MS } from './llm-context.js';
 import { waitForJev, JEV_RETRY_DELAY_MS } from './jev-retry.js';
 import { battleAbilities } from './battle-skills.js';
 import { formationChoices } from './formation-orders.js';
@@ -21,12 +21,13 @@ export interface CommanderBrief { name: string; persona: string; known: string[]
 export type CommanderToolName = 'commander_map' | 'commander_unit' | 'commander_plan' | 'commander_act' | 'commander_orders' | 'commander_intents' | 'diplomacy';
 export interface CommandPrompts { preparation: string; command: string; intents: string; tools: Record<CommanderToolName, string> }
 export interface KnownCommandCell { cell: number; terrain: string; height?: number; structure?: unknown; overlays?: unknown; connections?: unknown; cover?: unknown; round: number }
-export interface RoundIntents { round: number; carryRound?: number; replanned: boolean; basis: { visible: string[]; friends: string[] }; units: Record<string, import('../../engine/src/index.js').UnitIntent> }
+export interface RoundIntents { round: number; carryRound?: number; logIndex?: number; replanned: boolean; basis: { visible: string[]; friends: string[] }; units: Record<string, import('../../engine/src/index.js').UnitIntent> }
 export interface CommandMemory { intents?: RoundIntents; letterId?: number; diplomacyRound?: number; diplomacyRevision?: number; plan: string; notes: string[]; terrain: KnownCommandCell[]; contacts?: (ReturnType<typeof unitSummary> & { round: number })[] }
 export const emptyCommandMemory = (): CommandMemory => ({ plan: '', notes: [], terrain: [] });
 interface CommandBudget { left: number; letterReviewed?: number }
 export interface CommanderState { battleSeed: string; side: Side; brief: CommanderBrief; memory: CommandMemory; playerFallback?: { resumeRound?: number }; decision?: DiplomacyDecision & { round: number } }
 type Battle = SmallBattle | MassBattle;
+const AUTO_TRIES = 3;
 export interface CommandChoice { id: string; label: string; action?: GameAction; order?: Order; cost?: number; risks?: string[] }
 /** A follow-up step names an action like a candidate does; it runs only if a later candidate matches it. */
 export type CommandStep = Pick<GameAction, 'type' | 'targetId' | 'cell' | 'weaponMode' | 'abilityId'>;
@@ -96,6 +97,9 @@ export function commandObservation(b: Battle, actorId?: string, side: Side = 'en
   const cells = b instanceof SmallBattle ? b.visibleCells(side) : [];
   const objective = field?.objective;
   const observer = visible.find(u => u.id === actorId && u.side === side);
+  const log = b.visibleLog(side).filter(e => !(e.kind === 'rule' && /^指挥[：:]/.test(e.text)));
+  const failures = new Map<string, typeof log[number]>();
+  for (const event of log) if (event.intentFailure && event.round >= b.round - 1 && b.combatants.some(u => u.id === event.intentFailure!.unitId && u.side === side)) failures.set(event.intentFailure.unitId, event);
   return { mode: b instanceof SmallBattle ? 'small' : 'mass', round: b.round, actorId,
     units: visible.map(u => ({ ...observedUnit(u, side), ...(field && u.pos !== undefined ? { x: u.pos % field.width, y: Math.floor(u.pos / field.width), standingHeight: unitHeight(field, u) } : {}),
       losFromActor: observer ? { canSee: canSpot(b.observationContext(), observer, u), geometric: field ? unitLineOfSight(field, observer, u) : undefined } : undefined,
@@ -120,7 +124,7 @@ export function commandObservation(b: Battle, actorId?: string, side: Side = 'en
       .map(order => ({ unitId: order.unitId, ...choiceView({ id: '', label: '', order }, side).order })) : undefined,
     economy: b instanceof SmallBattle && actorId ? { ...b.getTurnEconomy(actorId), movementLeft: b.movementLeft(actorId), haste: b.hasteAvailable(actorId) } : undefined,
     // visibleLog already redacts unseen participants and supplies side-specific narration.
-    events: b.visibleLog(side).filter(e => !(e.kind === 'rule' && /^指挥[：:]/.test(e.text))).slice(-12).map(e => ({ round: e.round, kind: e.kind,
+    events: [...new Set([...failures.values(), ...log.slice(-12)])].map(e => ({ round: e.round, kind: e.kind,
       text: e.text.slice(0, 400).replace(/我方|敌方|第三方/g, label => { const faction = ({ 我方: 'ally', 敌方: 'enemy', 第三方: 'neutral' } as const)[label as '我方' | '敌方' | '第三方']; return faction === side ? '己方' : perspective(faction, side) === 'opponent-1' ? '对手一方' : '对手二方'; }),
       participants: e.participants?.filter(id => visible.some(u => u.id === id)),
       locations: e.locations && Object.fromEntries(Object.entries(e.locations).filter(([id]) => visible.some(u => u.id === id))) })),

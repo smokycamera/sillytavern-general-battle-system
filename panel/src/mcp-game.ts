@@ -1,4 +1,4 @@
-import { SmallBattle, MassBattle, cellLabel, FORMATION_NODES, type Combatant, type Order } from '../../engine/src/index.js';
+import { SmallBattle, MassBattle, cellLabel, gridColumnIndex, FORMATION_NODES, type Combatant, type Order } from '../../engine/src/index.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import { battleAbilities } from './battle-skills.js';
 import { formationChoices } from './formation-orders.js';
@@ -106,9 +106,9 @@ export function gameCell(b: SmallBattle, value: unknown): number {
   if (!field) throw Error('当前不是格子战场，请使用 advance / withdraw');
   let cell = value;
   if (typeof value === 'string') {
-    const match = /^([A-Z])(\d+)$/i.exec(value.trim());
-    if (!match || Number(match[2]) < 1 || match[1]!.toUpperCase().charCodeAt(0) - 65 >= field.width) throw Error('格子须为 A1 等坐标或零起始索引');
-    cell = (Number(match[2]) - 1) * field.width + match[1]!.toUpperCase().charCodeAt(0) - 65;
+    const match = /^([A-Z]+)(\d+)$/i.exec(value.trim()),column=match?gridColumnIndex(match[1]!):-1;
+    if (!match || Number(match[2]) < 1 || column < 0 || column >= field.width) throw Error('格子须为 A1 等坐标或零起始索引');
+    cell = (Number(match[2]) - 1) * field.width + column;
   }
   if (!Number.isInteger(cell) || Number(cell) < 0 || Number(cell) >= field.tiles.length) throw Error('格子超出地图范围');
   return Number(cell);

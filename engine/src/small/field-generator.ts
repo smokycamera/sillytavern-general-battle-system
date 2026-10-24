@@ -1,6 +1,7 @@
 import { SeededRng } from '../rng.js';
 import { environmentTags } from '../environment.js';
 import { flightCapabilityReason } from '../aerial.js';
+import { waterOnly } from './layers.js';
 import type { Combatant } from '../types.js';
 import { mapFamily, validMapDesign, safeLandmarkLabel, MAP_DESIGN_OPTIONS, type MapDesign, type MapDesignKey } from './map-design.js';
 import { buildRouteGraph, repairRouteCuts, ROUTE_TOPOLOGIES } from './route-graph.js';
@@ -57,7 +58,8 @@ export function generatedField(seed: string, width = 7, height = 13, tags: strin
   const reserved = new Set([field.objective.cell, 0, width - 1, tiles.length - width, tiles.length - 1,
     cell(center, 0), cell(center, 1), cell(center, middle), cell(center, height - 2), cell(center, height - 1)]);
   if (indoor && options.roster?.length) {
-    const units = options.roster.map(u => ({ ...u, airborne: u.airborne ?? !flightCapabilityReason(u) }));
+    // 航行单位等结构和水域生成后再部署，底图阶段只为陆地单位预留空间。
+    const units = options.roster.filter(u => !waterOnly(u)).map(u => ({ ...u, airborne: u.airborne ?? !flightCapabilityReason(u) }));
     for (const position of deployOnGrid(field, units, seed)) reserved.add(position);
   }
   // Even vanguard / explicitly positioned units must not be buried by a wall.

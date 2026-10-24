@@ -4,6 +4,7 @@ import { nativeFixture } from '../../runtime/tests/native-fixture.js';
 import { generateUnit, SmallBattle, standardField, V4_OVERFLOW_D20 } from '../../engine/src/index.js';
 import { unitRecordFromCombatant } from './unit-state.js';
 import { readLlmSettings, LLM_SETTINGS_KEY } from './llm-settings.js';
+import { LAYOUT_TRIES } from './llm-context.js';
 vi.mock('./panel-runtime.js', async () => import('../../extension/src/panel-runtime.js'));
 afterEach(() => { window.dispatchEvent(new Event('pagehide')); vi.unstubAllGlobals(); });
 
@@ -91,6 +92,13 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   await vi.waitFor(()=>expect(document.querySelectorAll('[data-role="llm-worldbook-entry"]')).toHaveLength(2));
   document.querySelector<HTMLInputElement>('[data-role="llm-worldbook-entry"][data-id="1"]')!.click();
   expect(readLlmSettings().worldbooks).toEqual([{name:'测试设定',entries:['1']}]);
+  select('llm-worldbook-mode','character');
+  expect(readLlmSettings()).toMatchObject({worldbookMode:'character',worldbooks:[{name:'测试设定',entries:['1']}]});
+  expect(document.querySelector('[data-role="llm-worldbook-entry"]')).toBeNull();
+  expect(document.querySelector('[data-detail-id="llm-worldbooks"]')!.textContent).toContain('绿灯触发');
+  select('llm-worldbook-mode','manual');
+  expect(readLlmSettings().worldbooks).toEqual([{name:'测试设定',entries:['1']}]);
+  expect(document.querySelector<HTMLInputElement>('[data-role="llm-worldbook-entry"][data-id="1"]')!.checked).toBe(true);
   document.querySelector<HTMLInputElement>('[data-role="llm-worldbook-all"]')!.click();
   expect(readLlmSettings().worldbooks).toEqual([{name:'测试设定',entries:'all'}]);
   document.querySelector<HTMLInputElement>('[data-role="llm-worldbook-entry"][data-id="0"]')!.click();
@@ -117,17 +125,23 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   expect(button('migration-accept')).not.toBeNull();
   button('migration-accept').click();await idle();
   expect(f.service.snapshot().storage![0]!.snapshot!.damageModel).toBe('wounds-v2');
-  // A layout answer that is not JSON fails only the second step. One start asks for it three times; the next start
-  // still carries the failure back, even when the page was hidden in between.
-  breakLayout=3;
+  // Exhaust the layout step's own budget, preserving the decision and falling back within this same start.
+  const preparationStart=request.mock.calls.length;
+  breakLayout=LAYOUT_TRIES;
   nav('battle');button('small-start').click();await idle();
-  expect(f.service.snapshot().battle).toBeFalsy();expect(document.querySelector('#toast')?.textContent).toMatch(/布置地图.*有效布置 JSON.*已自动尝试3次/);
-  window.dispatchEvent(new MessageEvent('message',{source:window.parent,origin:location.origin,data:{type:'tb:panel-hidden'}}));
-  nav('battle');button('small-start').click();await idle();
-  const retryTask=JSON.parse(String(request.mock.calls.at(-1)![1]?.body)).messages.at(-1).content as string;
+  const preparationRequests=request.mock.calls.slice(preparationStart).map(([,init])=>JSON.parse(String(init?.body)));
+  expect(preparationRequests).toHaveLength(1+LAYOUT_TRIES);expect(breakLayout).toBe(0);
+  expect(preparationRequests[0].messages.at(-1).content).toContain('【第1步');
+  expect(preparationRequests.slice(1).every(p=>p.messages.at(-1).content.startsWith('【第2步'))).toBe(true);
+  const retryTask=preparationRequests.at(-1).messages.at(-1).content as string;
   expect(retryTask).toContain('失败原因与改法：模型未返回有效布置 JSON。改法：只输出一个JSON对象');
+  const rejectedAnswers=JSON.parse(retryTask.split('\n').find(line=>line.startsWith('此前失败回答：'))!.slice('此前失败回答：'.length));
+  expect(rejectedAnswers).toHaveLength(LAYOUT_TRIES-1);
+  expect(rejectedAnswers.every((record:{answer:unknown;error:string})=>record.answer==='地图如下：无'&&record.error.includes('模型未返回有效布置 JSON'))).toBe(true);
   expect(f.service.snapshot().battle, document.querySelector('#toast')?.textContent ?? JSON.stringify(f.service.status())).toBeDefined();
   const selected=SmallBattle.fromSnapshot(f.service.snapshot().battle!.snap);
+  expect(selected.battlefield!.generation!.notes).toContain(`连续${LAYOUT_TRIES}次布置未能生成地图，只采用回答中能生成的部分`);
+  expect(selected.battlefield!.generation!.notes).toContain('布置回答无法读取，只按开战决策生成');
   expect(selected.commanderProfiles).toEqual({ally:{ability:'master',style:'aggressive',scoring:'tactical-v2'},enemy:{ability:'expert',style:'cautious',scoring:'tactical-v2'}});
   expect(f.service.snapshot()).toMatchObject({field:'forest',lighting:'night'});
   expect(selected.battlefield!.generation).toMatchObject({source:'context',scene:'field'});
@@ -136,6 +150,8 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   expect(f.service.snapshot().encounterContext).toMatchObject({vipId:'u1'});
   expect(f.service.snapshot().encounterContext).not.toHaveProperty('battlefieldPlan');
   const frozen=structuredClone(f.service.snapshot().battle);
+  window.dispatchEvent(new MessageEvent('message',{source:window.parent,origin:location.origin,data:{type:'tb:panel-hidden'}}));
+  nav('battle');expect(f.service.snapshot().battle).toEqual(frozen);
   nav('settings');designToggle().click();vipToggle().click();
   expect(f.service.snapshot().battle).toEqual(frozen);
   designToggle().click();vipToggle().click();nav('battle');
@@ -143,7 +159,7 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   expect(JSON.stringify(f.service.snapshot())).not.toContain('private-fixture-key');
   const payload=JSON.parse(String(request.mock.calls.at(-1)![1]?.body));
   expect(payload.model).toBe('model-two');expect(payload.messages[1].content).toMatch(/〔1 · 玩家〕[\s\S]*〔2 · 叙述〕/);
-  const decided=JSON.parse(String(request.mock.calls.at(-2)![1]?.body)).messages.at(-1).content as string;
+  const decided=preparationRequests[0].messages.at(-1).content as string;
   expect(JSON.parse(decided.slice(decided.lastIndexOf('\n')+1)).fields.some((field:{id:string})=>field.id==='battle_mode')).toBe(false);
 
   // Any independent preparation toggle invalidates a pending response, never starts a stale battle.

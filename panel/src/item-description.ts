@@ -24,7 +24,7 @@ export function itemEffectRows(value: ItemValue): { stat: EffectStat; name: stri
   return [...new Set([...Object.keys(value.passive.bonuses ?? {}), ...Object.keys(effects)])].map(key => {
     const stat = key as EffectStat, amount = effects[stat] ?? 0, points = value.passive!.bonuses?.[stat];
     return { stat, name: BONUS_NAMES[stat], actual: wornEffectAmount(stat, amount), written: points === undefined ? '—' : (points > 0 ? '+' : '') + points,
-      ...(next && (next[stat] ?? 0) > amount ? { next: wornEffectAmount(stat, (next[stat] ?? 0) - amount) } : {}) };
+      ...(next && (next[stat] ?? 0) !== amount ? { next: wornEffectAmount(stat, (next[stat] ?? 0) - amount) } : {}) };
   });
 }
 function effectText(e: EffectOp, a: Ability): string {
@@ -54,7 +54,8 @@ export function itemPassiveSummary(p: ItemPassive, model?: unknown, detailed = t
     return isGradedTrait(t.id) ? `${name}L${t.level ?? 5}${detailed ? '（' + playerTraitLevelDescription(t.id, t.level ?? 5, model) + '）' : ''}` : trait && detailed ? `${name}（${playerTraitDescription(trait)}）` : name;
   });
   const values = wornItemEffects({ passive: p }).values;
-  const actual = [...new Set([...Object.keys(p.bonuses ?? {}), ...Object.keys(values)])].map(k => BONUS_NAMES[k as EffectStat] + wornEffectAmount(k as EffectStat, values[k as EffectStat] ?? 0)).join('、');
+  const actual = [...new Set([...Object.keys(p.bonuses ?? {}), ...Object.keys(values)])].map(k => BONUS_NAMES[k as EffectStat] + wornEffectAmount(k as EffectStat, values[k as EffectStat] ?? 0)
+    + (k === 'speed' && p.actualEffects?.uncappedNegative ? '（先攻' + wornEffectAmount('speed', 2 * (values.speed ?? 0)) + '）' : '')).join('、');
   return [traits.join('；'), actual].filter(Boolean).join('；');
 }
 /** 库存卡片与审批预览共用的一句话说明；形态已在卡片标题里。 */

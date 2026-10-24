@@ -27,6 +27,55 @@ const ctx = (extra: Partial<LayoutContext> = {}): LayoutContext => ({ scene: 'ci
   units: [{ id: 'u1', name: '张辽', side: 'ally', kind: '人物·近战' }, { id: 'u2', name: '弩手', side: 'enemy', kind: '部队·远程' }], ...extra });
 
 describe('indoor preparation vocabulary', () => {
+  it('budgets five decisions plus five layouts independently and returns every rejected answer with its error', async () => {
+    const base = twoStep({ city: { at: 'N' } }); let decisions = 0, layouts = 0, validations = 0;
+    const stages: string[] = [], bodies: any[] = [];
+    const request = vi.fn<typeof fetch>(async (url, init) => {
+      const task = JSON.parse(String(init?.body)).messages.at(-1).content as string; bodies.push(task);
+      if (task.startsWith('【第1步')) {
+        decisions++;
+        if (decisions < 5) return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ rejected: decisions }) } }] }));
+      } else layouts++;
+      return base(url, init);
+    });
+    const controller = new LlmContextController(request);
+    await controller.select({ ...source(), onStage: () => stages.push(`${controller.stage!.step}:${controller.stage!.attempt}`) }, settings, () => true, r => {
+      if (r.battlefieldPlan && ++validations < 5) throw Error('地点部署容量不足' + validations);
+    });
+    expect([decisions, layouts]).toEqual([5, 5]);
+    expect(stages).toEqual(['decide:1','decide:2','decide:3','decide:4','decide:5','layout:1','layout:2','layout:3','layout:4','layout:5']);
+    const decision = JSON.parse(bodies[4].split('\n').at(-1));
+    expect(decision.state.previousAnswers.map((p: any) => p.answer.rejected)).toEqual([1,2,3,4]);
+    expect(decision.state.previousAnswers.every((p: any) => p.error.includes('selections.'))).toBe(true);
+    const history = JSON.parse(bodies[9].split('\n').find((line: string) => line.startsWith('此前失败回答：')).slice('此前失败回答：'.length));
+    expect(history).toHaveLength(4); expect(history.every((p: any) => p.answer.city.at === 'N' && p.error.includes('部署容量不足'))).toBe(true);
+  });
+  it('前两次占领区失败、第三次才出现航行错误时，同次开战仍完成回退', async () => {
+    const request=twoStep({city:{at:'N'}}),controller=new LlmContextController(request);let attempts=0;
+    const result=await controller.select(source(),settings,()=>true,r=>{
+      if(!r.battlefieldPlan)return;
+      attempts++;
+      throw Error(attempts<3?'占领区域不合法':'舰队具有航行特质，但战场没有可用的深水或浅水部署格');
+    });
+    expect(attempts).toBe(LAYOUT_TRIES);expect(request).toHaveBeenCalledTimes(1+LAYOUT_TRIES);expect(result.battlefieldPlan).toBeUndefined();
+    expect(result.layoutNotes).toContain('航行单位没有可用水域，改用带水域的本地地图');
+  });
+  it('航行无水错误返回副 API，五次仍无水时本次开战自动回退带水域地图', async () => {
+    const input = { ...source(), scope: 'sailing-water' }; input.roster = [input.roster[0]!, input.roster[4]!]; input.roster[0]!.traits.push('sailing');
+    const request = twoStep({ water: { type: 'none' }, ally: { at: ['B4'] }, enemy: { at: ['B1'] } },
+      { ...siegeChoice, field: 'plains', objective: 'annihilation', scene: 'interior' });
+    let field: ReturnType<typeof generatedLayeredField> | undefined;
+    const result = await new LlmContextController(request).select(input, settings, () => true, result => {
+      field = generatedLayeredField('sailing-retry', 7, 13, ['plains'], { roster: input.roster, scene: 'interior',
+        plan: result.battlefieldPlan, unitBindings: result.unitBindings });
+    });
+    expect(request).toHaveBeenCalledTimes(1 + AUTO_TRIES);
+    const retry = sent(request, 2).messages[2].content as string;
+    expect(retry).toContain('航行'); expect(retry).toContain('增加water'); expect(retry).not.toContain('正文没有强调的河流可以删去');
+    expect(sent(request, 1).messages[2].content).toContain('航行：只能在深水或浅水部署与移动');
+    expect(result.battlefieldPlan).toBeUndefined(); expect(result.layoutNotes).toContain('航行单位没有可用水域，改用带水域的本地地图');
+    expect(['deep_water', 'shallow_water']).toContain(field!.tiles[field!.initialDeployment![input.roster[0]!.id]!.pos]);
+  });
   it('keeps building use independent of geometry, accepting exact Chinese labels and old answers', () => {
     const indoor=ctx({scene:'interior',objectiveMode:'annihilation'});
     expect(compileLayout({interior:{use:'工坊',pattern:'双翼联通'}},indoor).plan.interior).toEqual({use:'workshop',pattern:'wings'});
@@ -117,7 +166,7 @@ describe('two-step preparation with a compass layout', () => {
     expect(decision.fields.filter((f: { id: string }) => f.id.startsWith('neutral_')).map((f: { id: string }) => f.id)).toEqual(['neutral_ability', 'neutral_style']);
     expect(decision.state.commandRules).toContain('neutral:{preferences:{}}');
     const task = sent(request, 1).messages[2].content;
-    expect(task).toContain('第三军 · 第三方'); expect(task).toContain('"neutral":{"at":["E"]}');
+    expect(task).toContain('第三军 · 第三方'); expect(task).toContain('"neutral":{"at":["D2"]}');
     expect(result.commanders?.neutral).toEqual({ ability: 'master', style: 'ambush' });
     const zones = field!.deploymentZones!;
     const third = zones.filter(z => z.side === 'neutral').flatMap(z => z.cells);
@@ -184,15 +233,13 @@ describe('two-step preparation with a compass layout', () => {
   const noBeacon = (r: { battlefieldPlan?: { intent?: { entities: { label?: string }[] } } }) => {
     if (r.battlefieldPlan?.intent?.entities.some(e => e.label === '烽火台')) throw Error('地标烽火台在指定区域部署容量不足');
   };
-  it(`builds the ${LAYOUT_TRIES}th failing layout, at the end of the second start, from the parts that can be generated`, async () => {
+  it(`builds the ${LAYOUT_TRIES}th failing layout in the same start from the parts that can be generated`, async () => {
     const request = twoStep(beacon), controller = new LlmContextController(request), input = { ...source(), scope: 'chat' };
-    await expect(controller.select(input, settings, () => true, noBeacon)).rejects.toThrow('地标烽火台在指定区域部署容量不足');
     const result = await controller.select(input, settings, () => true, noBeacon);
-    // Two starts, each one decision and three layouts.
-    expect(request).toHaveBeenCalledTimes(2 * (1 + AUTO_TRIES)); expect(LAYOUT_TRIES).toBe(2 * AUTO_TRIES);
+    expect(request).toHaveBeenCalledTimes(1 + AUTO_TRIES); expect(LAYOUT_TRIES).toBe(AUTO_TRIES);
     const last = JSON.parse(String(request.mock.calls.at(-1)![1]!.body)).messages[2].content as string;
     expect(last).toContain('失败原因与改法：地标烽火台在指定区域部署容量不足。改法：地点「烽火台」放不下');
-    // The same failure five times is one note, not five.
+    // Repeated identical failures are one note.
     expect(last).not.toContain('更早的失败');
     expect(result.layoutNotes!.slice(0, 2)).toEqual([`连续${LAYOUT_TRIES}次布置未能生成地图，只采用回答中能生成的部分`, '未采用地点「烽火台」']);
     expect(result.battlefieldPlan!.intent!.entities.map(e => e.label)).toEqual(['青石城', '府衙']);
@@ -203,13 +250,11 @@ describe('two-step preparation with a compass layout', () => {
   it('falls back to the local map when no part of the final answer can be built, and reads an unreadable final answer as empty', async () => {
     const input = { ...source(), scope: 'chat' }, planless = (r: { battlefieldPlan?: unknown }) => { if (r.battlefieldPlan) throw Error('无法为完整名单生成合法部署'); };
     const controller = new LlmContextController(twoStep(beacon));
-    await expect(controller.select(input, settings, () => true, planless)).rejects.toThrow('布置地图');
     const local = await controller.select(input, settings, () => true, planless);
     expect(local.battlefieldPlan).toBeUndefined(); expect(local.unitBindings).toBeUndefined();
     expect(local.layoutNotes).toEqual([`连续${LAYOUT_TRIES}次布置未能生成地图，只采用回答中能生成的部分`, '双方开局位置改由程序决定', '未采用地点「烽火台」「府衙」',
       '城市改由程序布置', '回答中没有能生成的部分，改用本地生成的地图']);
     const unreadable = new LlmContextController(twoStep('地图如下：无'));
-    await expect(unreadable.select(input, settings, () => true)).rejects.toThrow('模型返回无效布置');
     const decided = await unreadable.select(input, settings, () => true);
     expect(decided.battlefieldPlan).toMatchObject({ scene: 'city_siege', size: 'standard' });
     expect(decided.layoutNotes!.slice(0, 2)).toEqual([`连续${LAYOUT_TRIES}次布置未能生成地图，只采用回答中能生成的部分`, '布置回答无法读取，只按开战决策生成']);
@@ -276,10 +321,10 @@ describe('compass layout compiler', () => {
     expect(plan.intent!.entities.find(e => e.id === 'exit')).toMatchObject({ kind: 'position', anchor: 'north' });
     expect(plan.deployments).toEqual([{ subject: 'ally', at: ['south'] }, { subject: 'enemy', at: ['north'] }, { subject: 'u1', at: ['west'] }, { subject: 'u2', at: ['east'] }]);
   });
-  it('fits the scene: indoor kinds, no outdoor water indoors, and the 12-entity budget', () => {
+  it('keeps explicit indoor terrain and water within the 12-entity budget', () => {
     const indoor = compileLayout({ places: [{ type: 'building', name: '书房', at: 'N' }, { type: 'hill', name: '假山' }], water: { type: 'river', at: 'E' } }, ctx({ scene: 'interior', objectiveMode: 'annihilation' }));
-    expect(indoor.plan.intent!.entities.map(e => e.kind)).toEqual(['room']);
-    expect(indoor.notes).toEqual(expect.arrayContaining(['本场景不设水系']));
+    expect(indoor.plan.intent!.entities.map(e => e.kind)).toEqual(['river', 'building', 'hill']);
+    expect(indoor.notes).not.toContain('本场景不设水系');
     const crowded = compileLayout({ city: { at: 'N', gates: [{}, {}, {}, {}] }, water: { type: 'river', at: 'E', bridges: [{}, {}, {}, {}] },
       places: Array.from({ length: 8 }, (_, i) => ({ type: 'cover', name: '掩体' + i, at: 'C' })) }, ctx());
     expect(crowded.plan.intent!.entities).toHaveLength(12);
@@ -305,7 +350,7 @@ describe('compass layout compiler', () => {
   });
   it('reports a local failure in the answer\'s own terms, with the usual fix', () => {
     const { plan } = compileLayout({ places: [{ type: 'building', name: '府衙', at: 'N' }, { type: 'tower', at: 'NE' }], objective: '府衙' }, ctx());
-    expect(layoutRetryNote('正文关系引用的地点place1没有生成', plan)).toBe('正文关系引用的地点「府衙」没有生成。改法：objective「府衙」处没有可站立的空地：改写为空旷的地点（如广场空地、营地）或九宫格方位，或省略objective');
+    expect(layoutRetryNote('正文关系引用的地点place1没有生成', plan)).toBe('正文关系引用的地点「府衙」没有生成。改法：objective「府衙」处没有可站立的空地：改写为空旷的地点（如广场空地、营地）或4×4分区编号，或省略objective');
     expect(layoutRetryNote('地点place2未落在正文指定的north_east区域', plan)).toMatch(/^地点塔楼未落在正文指定的NE（东北）区域。改法：地点「塔楼」放不下/);
     expect(layoutRetryNote('地标tower在指定区域部署容量不足', plan)).toMatch(/^地标塔楼在指定区域部署容量不足。改法：地点「塔楼」放不下/);
     expect(layoutRetryNote('目标必须是合法可通行格')).toMatch(/改法：任务目标处被实心地点占住/);

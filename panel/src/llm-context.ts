@@ -3,7 +3,7 @@ import { BattlefieldPlanError } from '../../engine/src/small/battlefield-plan.js
 import { normalizeCommanderProfiles } from '../../engine/src/commander-profile.js';
 import { preparationDesignRequest, applyPreparationDesign, type PreparationDesignResult } from './llm-map-design.js';
 import { mapDesignSummary, validMapDesign, type BattlefieldScene } from '../../engine/src/small/map-design.js';
-import { openAiJsonRequest, fetchJevModels, JevConnectionError } from './jev-connection.js';
+import { openAiJsonRequest, fetchJevModels, JevConnectionError, JevAnswerError } from './jev-connection.js';
 import { JevTransportError } from './jev-transport.js';
 import { encounterRequest, applyEncounterSelection, normalizeContextSettings, ABILITY_LABELS, STYLE_PRESETS, encounterSummary, type EncounterSetup, type JevEncounterContext } from './jev-context.js';
 import { llmConnection, type LlmSettings } from './llm-settings.js';
@@ -11,12 +11,13 @@ import { SCENE_CHOICES, SIZE_CHOICES, compileLayout, layoutMapSize, layoutRetryN
 import type { BattlefieldPlan } from '../../engine/src/small/battlefield-plan.js';
 import type { Combatant } from '../../engine/src/index.js';
 import type { CommanderProfiles, CommanderProfile } from '../../engine/src/commander-profile.js';
-import type { NarrativeMessage, ContextSelectionAnswer, ContextSelectionRequest } from '../../vendor/jev-core/src/index.js';
+import type { NarrativeMessage, ContextSelectionAnswer, ContextSelectionRequest, Json } from '../../vendor/jev-core/src/index.js';
 import type { NarrativeIdState } from './narrative-ids.js';
 import { narrativeIds } from './narrative-ids.js';
 import { stripThinking } from './protocol-syntax.js';
 import type { CommanderState } from './llm-command.js';
 import { sha256, withAbort } from '../../host/src/browser-compat.js';
+import { WorldbookReadError } from '../../host/src/worldbook-error.js';
 
 export interface LlmEncounterContext extends JevEncounterContext, PreparationDesignResult {
   llmCommanders?: Partial<Record<import('../../engine/src/index.js').Side, CommanderState>>;
@@ -46,9 +47,9 @@ function decisionTask(request: ContextSelectionRequest): string {
 }
 export type PreparationStep = 'decide' | 'layout';
 /** A bad answer is asked for again automatically, up to this many tries per start. */
-export const AUTO_TRIES = 3;
+export const AUTO_TRIES = 5;
 /** A layout that still fails on this try is built from the parts of the answer that can be generated. */
-export const LAYOUT_TRIES = 6;
+export const LAYOUT_TRIES = AUTO_TRIES;
 /** One layout try: the scene it laid out, the answer as read, and the plan compiled from it. */
 interface LaidOut { scene: BattlefieldScene; answer?: unknown; plan?: BattlefieldPlan }
 /** Retries remember, per narrative and settings, what failed and the layout answer that failed. */
@@ -56,7 +57,7 @@ interface RetryMemory {
   key: string;
   errors: Record<PreparationStep, string[]>;
   expires: number;
-  layoutFailures: number;
+  answers: Record<PreparationStep, { scene?: BattlefieldScene; answer: Json; error: string }[]>;
   /** The last layout answer, shown back to the model only for the same scene; absent when it could not be read. */
   layout?: { scene: BattlefieldScene; answer?: unknown };
 }
@@ -125,6 +126,7 @@ export class LlmContextController {
     const step = (next: PreparationStep) => { this.stage = { step: next, of: designMap ? 2 : 1, attempt }; input.onStage?.(); };
     // What the layout step answered and compiled, so a failure can be reported to the next try in the answer's own terms.
     let laidOut: LaidOut | undefined;
+    let decisionAnswer: unknown;
     /** Keeps a failed answer for the next try: the newest failure last, a layout one in the answer's own terms. */
     const remember = (error: unknown): boolean => {
       // Only the answer itself can be asked for again; an unreachable or misconfigured service fails the same way every time.
@@ -132,21 +134,24 @@ export class LlmContextController {
       if (!this.retry || !answerError) return false;
       const memory = this.retry, failed = this.stage?.step ?? 'decide', detail = llmFailure(error);
       const note = failed === 'layout' ? layoutRetryNote(detail, laidOut?.plan).slice(0, 400) : detail.slice(0, 280);
-      memory.errors[failed] = [...memory.errors[failed].filter(e => e !== note), note].slice(-4);
-      if (failed === 'layout') { memory.layoutFailures++; if (laidOut) memory.layout = { scene: laidOut.scene, answer: laidOut.answer }; }
+      memory.errors[failed] = [...memory.errors[failed].filter(e => e !== note), note].slice(-AUTO_TRIES);
+      const answer = (error instanceof JevAnswerError ? error.previousAnswer : failed === 'layout' ? laidOut?.answer : decisionAnswer) as Json | undefined;
+      memory.answers[failed] = [...memory.answers[failed], { ...(failed === 'layout' && laidOut ? { scene: laidOut.scene } : {}), answer: answer ?? null, error: note }].slice(-AUTO_TRIES);
+      if (failed === 'layout' && laidOut) memory.layout = { scene: laidOut.scene, answer };
       memory.expires = Date.now() + 300000;
       return true;
     };
     try {
-      step('decide');
       check();
       const key = await sha256(new TextEncoder().encode(JSON.stringify([input.scope, connection, request])));
       check();
-      if (this.retry?.key !== key || this.retry.expires < Date.now()) this.retry = { key, errors: { decide: [], layout: [] }, expires: Date.now() + 300000, layoutFailures: 0 };
+      if (this.retry?.key !== key || this.retry.expires < Date.now()) this.retry = { key, errors: { decide: [], layout: [] }, answers: { decide: [], layout: [] }, expires: Date.now() + 300000 };
       const memory = this.retry, state = request.state;
       const decide = async () => {
-        request.state = memory.errors.decide.length ? { ...state as object, retryErrors: memory.errors.decide } : state;
+        request.state = memory.errors.decide.length ? { ...state as object, retryErrors: memory.errors.decide, previousAnswers: memory.answers.decide.map(({ answer, error }) => ({ answer, error })) } : state;
+        decisionAnswer = undefined;
         const answer = await ask(decisionTask(request)) as unknown as ContextSelectionAnswer;
+        decisionAnswer = structuredClone(answer);
         check();
         answer.selections = normalizeSelections(answer as unknown as Record<string, unknown>, request.fields);
         for (const field of coreRequest.fields) {
@@ -179,12 +184,13 @@ export class LlmContextController {
         const ids = narrativeIds({ storage: input.roster, narrativeIdState: input.narrativeIdState });
         const layout: LayoutContext = { scene, size, attacker: result.siegeAttacker, objectiveMode: result.objectiveMode,
           units: layoutUnits(input.roster, ids.publicId, input.unitNotes), ...(result.vipName ? { vipName: result.vipName } : {}), map: layoutMapSize(scene, input.roster, size) };
-        const final = memory.layoutFailures >= LAYOUT_TRIES - 1, headline = `连续${LAYOUT_TRIES}次布置未能生成地图，只采用回答中能生成的部分`;
+        const final = attempt >= LAYOUT_TRIES, headline = `连续${LAYOUT_TRIES}次布置未能生成地图，只采用回答中能生成的部分`;
         const tried: LaidOut = { scene }, adjusted: string[] = [];
         laidOut = tried;
         let placed: unknown;
         try {
-          const { model: _model, ...reply } = await ask(layoutTask(layout, { answer: memory.layout?.scene === scene ? memory.layout.answer : undefined, errors: memory.errors.layout }), '布置');
+          const { model: _model, ...reply } = await ask(layoutTask(layout, { answer: memory.layout?.scene === scene ? memory.layout.answer : undefined, errors: memory.errors.layout,
+            previousAnswers: memory.answers.layout.filter(record => record.scene === scene).map(({ answer, error }) => ({ answer, error })) }), '布置');
           placed = tried.answer = reply;
         } catch (error) {
           // An unreadable final answer leaves only the decisions above to build from.
@@ -203,7 +209,12 @@ export class LlmContextController {
         };
         try { build(placed); }
         catch (error) {
-          if (!final || !(error instanceof BattlefieldPlanError)) throw error;
+          if (!(error instanceof BattlefieldPlanError) || !final) throw error;
+          if (/航行(?:特质|部署)|航行单位/.test(error.message)) {
+            delete result.battlefieldPlan; delete result.unitBindings; tried.plan = undefined;
+            result.layoutNotes = ['航行单位没有可用水域，改用带水域的本地地图'];
+            finish(result); return;
+          }
           if (!adjusted.length) adjusted.push(headline);
           let rest = placed, failure: unknown = error;
           for (let next = reduceLayout(rest, error.message, layout); next; next = reduceLayout(rest, (failure as Error).message, layout)) {
@@ -223,11 +234,12 @@ export class LlmContextController {
       };
       // A decision that worked is kept for the rest of this start; a failed layout asks only for the layout again.
       let decided: Awaited<ReturnType<typeof decide>> | undefined;
-      for (;; attempt++) {
+      let decisionAttempt = 0, layoutAttempt = 0;
+      for (;;) {
         try {
-          if (!decided) { if (attempt > 1) step('decide'); decided = await decide(); }
+          if (!decided) { attempt = ++decisionAttempt; step('decide'); decided = await decide(); }
           const result: LlmEncounterContext = { ...decided.result };
-          if (decided.scene && decided.size && result.mode === 'small') await layOut(result, decided.scene, decided.size);
+          if (decided.scene && decided.size && result.mode === 'small') { attempt = ++layoutAttempt; await layOut(result, decided.scene, decided.size); }
           else finish(result);
           check();
           this.retry = undefined;
@@ -235,7 +247,7 @@ export class LlmContextController {
         } catch (error) {
           check();
           // Only a bad answer is worth asking again; transport, timeout and key errors stop at once.
-          if (!remember(error) || attempt >= AUTO_TRIES) throw error;
+          if (!remember(error) || attempt >= (this.stage?.step === 'layout' ? LAYOUT_TRIES : AUTO_TRIES)) throw error;
           if (this.stage?.step === 'decide') decided = undefined;
         }
       }
@@ -270,7 +282,7 @@ function normalizeSelections(answer: Record<string, unknown>, fields: readonly C
   return selections;
 }
 function llmFailure(error: unknown): string {
-  if (error instanceof BattlefieldPlanError) return error.message;
+  if (error instanceof BattlefieldPlanError || error instanceof WorldbookReadError) return error.message;
   if (!(error instanceof JevConnectionError || error instanceof JevTransportError)) return error instanceof Error && /请先填写 API|普通 LLM/.test(error.message) ? error.message : '模型请求或返回格式无效';
   // These error classes already contain bounded, credential-free diagnostics.
   // Preserve actionable host, timeout and CORS details instead of hiding the cause.

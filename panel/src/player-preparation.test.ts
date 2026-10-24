@@ -24,9 +24,11 @@ it('rejects unsupported or impossible plans without replacing a valid draft', ()
   expect(() => draft.apply({ commanders: { ally: { ability: 'god', style: 'balanced' } } }, input)).toThrow('无效');
   expect(() => draft.apply({ battlefield: { scene: 'invented', landmarks: [{ kind: 'hill', anchor: 'center_left' }] } }, input)).toThrow('无效');
   expect(() => draft.apply({ battlefield: { landmarks: [{ kind: 'hill' }] } }, input)).toThrow('battlefield.landmarks[0].anchor 缺失');
-  expect(() => draft.apply({ battlefield: { scene: 'interior', landmarks: [{ kind: 'forest', anchor: 'center' }] } }, input)).toThrow();
+  expect(() => draft.apply({ battlefield: { scene: 'field', landmarks: [{ kind: 'room', anchor: 'center' }] } }, input)).toThrow('房间地标需要室内或建筑围攻场景');
   expect(() => draft.apply({ battlefield: { landmarks: [{ kind: 'hill', anchor: 'center' }] } }, { ...input, setup: { ...input.setup, mode: 'mass' } })).toThrow('会战');
   expect(draft.resolve(input.scope)).toEqual(before);
   draft.apply({ battlefield: { scene: 'field' } }, input);
   expect(draft.resolve(input.scope)?.battlefieldPlan).toMatchObject({ scene: 'field' });
+  draft.apply({ battlefield: { scene: 'interior', landmarks: [{ kind: 'forest', anchor: 'center' }] } }, input);
+  expect(draft.resolve(input.scope)?.battlefieldPlan).toMatchObject({ scene: 'interior', landmarks: [{ kind: 'forest', anchor: 'center' }] });
 });

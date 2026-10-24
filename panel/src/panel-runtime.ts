@@ -54,8 +54,10 @@ export interface PanelRuntime {
 export function createPanelRuntime(): PanelRuntime {
   const adapter = createAdapter();
   const resident = (window.parent as unknown as { __tavernBattleController?: NarrativeController }).__tavernBattleController;
+  const worldbooks = createWorldbookSource(() => (window.parent as unknown as import('../../host/src/sillytavern.js').HostWindow).SillyTavern?.getContext() ?? {});
+  window.addEventListener('pagehide', event => { if (!event.persisted) worldbooks.dispose?.(); });
   return { adapter, controller: resident ?? new NarrativeController(adapter), resident: !!resident, native: false,
-    worldbooks: createWorldbookSource(() => (window.parent as unknown as import('../../host/src/sillytavern.js').HostWindow).SillyTavern?.getContext() ?? {}),
+    worldbooks,
     recentNarrative: () => { const text=adapter.recentPromptText?.()??'';return text?[{id:'legacy-recent',role:'assistant',text,completed:true}]:[]; },
   };
 }

@@ -200,7 +200,7 @@ describe('正文原子事务', () => {
     const { save, proposal, ns } = setup('<spawn name="骑射队" side="ally" scale="company" hpMax="80" level="3" mount="true" weapon="战弓:弓弩L5" weapon2="手弩:轻型投射L3" traits="骑射,远近双全"/>');
     const next = prepareNarrativeTransaction(save, proposal, ns, true);
     const record = next.storage!.find((r) => r.name === '骑射队')!, unit = materializeUnitRecord(record, reg);
-    expect(unit.mount).toBe(true); expect(unit.tags).not.toContain('mounted'); expect(unit.sidearm).toMatchObject({ hands: 1, load: 1, range: 2 });
+    expect(unit.mount).toBe(true); expect(unit.tags).not.toContain('mounted'); expect(unit.sidearm).toMatchObject({ hands: 1, load: .5, range: 2 });
     const gear = structuredClone(unit.sidearm);
     applyXp(unit, 9999, reg);
     const restored = materializeUnitRecord(unitRecordFromCombatant(unit), reg);
@@ -213,7 +213,7 @@ describe('正文原子事务', () => {
     const record = next.storage!.find(r => r.name === '持盾卫队')!;
     const unit = materializeUnitRecord(JSON.parse(JSON.stringify(record)), reg);
     expect(unit.level).toBe(1);
-    expect(unit.shield).toMatchObject({ name: 'AEGIS塔盾', load: 2, recipe: { mechanism: 'shield', power: 5, bonuses: { defense: 2, thermalProtection: -3 }, size: 'human' } });
+    expect(unit.shield).toMatchObject({ name: 'AEGIS塔盾', load: 1.5, recipe: { mechanism: 'shield', power: 5, bonuses: { defense: 2, thermalProtection: -3 }, size: 'human' } });
     expect(unit.genAudit!.input).toMatchObject({ shield: true, shieldName: 'AEGIS塔盾', shieldLevel: 5, shieldBonuses: { defense: 2, thermalProtection: -3 } });
     const inventory = prepareInventoryState(next);
     expect(inventory.inventory!.find(i => i.id === unit.shield!.id)).toMatchObject({ name: 'AEGIS塔盾', equippedTo: { unitId: record.id, slot: 'shield' }, mechanics: { kind: 'shield', value: unit.shield } });

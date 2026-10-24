@@ -8,6 +8,7 @@ import { compileSkill, skillDefinitionKnown } from './skill-catalog.js';
 import { balanceGenericSkill, genericEffectCount, BUFF_CONDITIONS } from './skill-balance.js';
 import { upgradeZoneSkill } from './zone-skills.js';
 import { attachDefensePower } from './barrier.js';
+import { skillEffectPower } from './data/skill-mechanisms.js';
 import { SKILL_MODEL, skillsV14, skillsPhase2, conditionEffectWeight, conditionMagnitudeCap } from './skill-model.js';
 /** V3只在新规则入场时升级；原技能身份、P与已支付的账本都保留。 */
 export function upgradeCombatSkills(unit: Combatant): void {
@@ -30,7 +31,7 @@ export function upgradeCombatSkills(unit: Combatant): void {
       Object.assign(a,rebuilt,{sourceId,id});
       delete a.damageScale;
     }
-    const power=a.power??5, curve=curveAt(power), base=modern?combatPowerBudget(power,unit.damageModel):diceAvg(curve.dmgBase)+(curve.dmgAp?diceAvg(curve.dmgAp):0);
+    const power=a.recipe?.categoryPower??a.power??5, curve=curveAt(power), base=modern?combatPowerBudget(power,unit.damageModel):diceAvg(curve.dmgBase)+(curve.dmgAp?diceAvg(curve.dmgAp):0);
     const damaging=a.effects.some(e=>e.op==='damage'), area=a.shape==='burst';
     if(modern&&area&&!a.damageBasis&&damaging)a.areaExposure=unified?UNIFIED_AREA[powerIndex(power)]:power>=10?1e9:power>=9?128:power>=8?16:power>=7?8:4;
     const controls=a.effects.filter(e=>!['damage'].includes(e.op)).reduce((sum,e)=>sum+(e.op==='condition'?conditionEffectWeight(e.conditionId,formula):1),0);
@@ -48,6 +49,7 @@ export function upgradeCombatSkills(unit: Combatant): void {
       a.penetration=Math.max(0,(a.penetration??0)+bonusRating(a.bonuses,'penetration',a.channel??'kinetic'));
       if(a.range && a.range.max>1 && !a.effects.some(e=>e.op==='summon')) a.range.max=Math.max(a.range.min,1,a.range.max+bonusSteps(a.bonuses,'range',5));
       a.effects=a.effects.map(e=>{
+        const power=skillEffectPower(a,e);
         if(wounds&&e.op==='barrier')return {...e,amount:Math.max(1,Math.round(e.amount*bonusMultiplier(a.bonuses,'power'))),dur:Math.max(1,Math.min(99,(unified?power:e.dur)+bonusSteps(a.bonuses,'duration',5)))};
         if(e.op==='condition' && ['taunted','charmed','confused','blinded'].includes(e.conditionId)) return {...e, saveDC: Math.max(1,Math.min(30,(e.saveDC ?? 8+power)+bonusSteps(a.bonuses,'accuracy'))), magnitude:1};
         if(e.op==='condition')return {...e,...(e.saveDC!==undefined?{saveDC:Math.max(1,Math.min(30,e.saveDC+bonusSteps(a.bonuses,'accuracy')))}:{}),dur:Math.max(1,(unified&&BUFF_CONDITIONS.has(e.conditionId)?power:e.dur)+(['stunned','restrained','disarmed','silenced'].includes(e.conditionId)?Math.min(0,bonusSteps(a.bonuses,'duration',5)):bonusSteps(a.bonuses,'duration',5))),magnitude:Math.max(unified?.25:0,Math.min(conditionMagnitudeCap(formula),(e.magnitude??1)*bonusMultiplier(a.bonuses,'power')))};
@@ -60,7 +62,11 @@ export function upgradeCombatSkills(unit: Combatant): void {
       if(restored?.op==='resource'&&a.cost?.resource==='SP')a.cost.amount=Math.max(a.cost.amount,restored.amount*(area?2:1));
     }
     const healingScale=wounds?(area ? 0.65 : 1):(area ? 0.8 : 1.5);
-    if(modern)a.effects=a.effects.map(e=>e.op==='heal'?{op:'heal',...(skillsPhase2(formula)?{power}:{}),amount:skillsPhase2(formula)?Math.max(1,base*healingScale*bonusMultiplier(a.bonuses,'healing')/(generic?genericEffectCount(a,formula):1)):Math.max(1,Math.round(base*healingScale*bonusMultiplier(a.bonuses,'healing')/(generic?genericEffectCount(a,formula):1)))}:e);
+    if(modern)a.effects=a.effects.map(e=>{
+      if(e.op!=='heal')return e;
+      const power=skillEffectPower(a,e),healingBase=generic?combatPowerBudget(power,unit.damageModel):base;
+      return {op:'heal',...(skillsPhase2(formula)?{power}:{}),amount:skillsPhase2(formula)?Math.max(1,healingBase*healingScale*bonusMultiplier(a.bonuses,'healing')/(generic?genericEffectCount(a,formula):1)):Math.max(1,Math.round(healingBase*healingScale*bonusMultiplier(a.bonuses,'healing')/(generic?genericEffectCount(a,formula):1)))};
+    });
     if(modern)balanceGenericSkill(a,formula);
     const oldGroup=previousGroup;
     a.cooldownGroup='skill-mechanism:'+(a.definitionId??a.id);

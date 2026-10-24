@@ -1,12 +1,16 @@
 import type { SeededRng } from '../rng.js';
 import type { BattlefieldPlan } from './battlefield-plan.js';
+import { BattlefieldPlanError } from './battlefield-error.js';
 import { createStructure, groundBlocked } from './layers.js';
 import { neighbors, gridDistance, type BattlefieldSpec } from './spatial.js';
 import { COMPOUND_PATTERNS, type CompoundPattern, type PositionArea } from './position-plan.js';
+import { gridPosition, inGridSector } from './grid-anchor.js';
+import { buildRegionCompound } from './region-compound.js';
 
 /** Build the footprint before naming its spaces. An outer wall never doubles as an internal partition. */
 export function buildCompoundLayout(field: BattlefieldSpec, plan: BattlefieldPlan | undefined, rng: SeededRng,
   attackingSide: 'ally' | 'enemy'): number[] {
+  if(plan?.citySectors?.length)return buildRegionCompound(field,plan,rng,attackingSide);
   const { width: w, height: h } = field, defender = attackingSide === 'ally' ? 'enemy' : 'ally';
   const int = (a: number, b: number) => a + Math.floor(rng.next() * (b - a + 1));
   const pattern: CompoundPattern = plan?.compound?.pattern ?? COMPOUND_PATTERNS[int(0, COMPOUND_PATTERNS.length - 1)]!;
@@ -67,6 +71,17 @@ export function buildCompoundLayout(field: BattlefieldSpec, plan: BattlefieldPla
   // A rear hall provides an actual enterable building in every compound, with a door into its yard.
   // It is a partition within the defended area, so demolition cannot erase the outer walls by aliasing.
   across(back + 2);
+  const plannedAreas: {kind:PositionArea['kind'];label?:string;cells:Set<number>}[]=[];
+  for(const mark of plan?.landmarks??[]) if(gridPosition(mark.anchor)&&(['room','building','square'].includes(mark.kind)
+    || mark.kind==='position'&&/院(?!墙)|庭|通道|过道|门道/.test(mark.label??''))) {
+    const cells=new Set(inside.filter(p=>inGridSector(mark.anchor,w,h,p%w,Math.floor(p/w))));
+    if(!cells.size)throw new BattlefieldPlanError(`地点${mark.label??''}在${mark.anchor}部署容量不足`);
+    const forgetDoor=(p:number)=>{let i:number;while((i=internalDoors.indexOf(p))>=0)internalDoors.splice(i,1);};
+    for(const p of cells){field.structures![p]=null;forgetDoor(p);}
+    const edge=[...new Set([...cells].flatMap(p=>neighbors(field,p)).filter(p=>floor.has(p)&&!cells.has(p)))];
+    for(const p of edge){forgetDoor(p);wall(p);}door(edge);
+    plannedAreas.push({kind:['room','building'].includes(mark.kind)?'room':/通道|过道|门道/.test(mark.label??'')?'passage':'court',label:mark.label,cells});
+  }
   // Connect side rooms isolated by intersecting hall/wing partitions, without cutting the perimeter.
   for (let pass = 0; pass < inside.length; pass++) {
     const component = new Map<number, number>(); let count = 0;
@@ -95,6 +110,8 @@ export function buildCompoundLayout(field: BattlefieldSpec, plan: BattlefieldPla
     if (pattern === 'wings' && i > 0 && (x < left + 2 || x > right - 2)) {
       a.kind = 'room'; a.label = x < left + 2 ? '西厢房' : '东厢房';
     }
+    const planned=plannedAreas.find(p=>a.cells.some(n=>p.cells.has(n)));
+    if(planned){a.kind=planned.kind;a.label=planned.label??a.label;}
   });
   const rear = areas[0]?.cells ?? inside.filter(p => !groundBlocked(field, p));
   const target = at(Math.floor((left + right) / 2), back + 1);

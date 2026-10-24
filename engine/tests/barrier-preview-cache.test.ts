@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generateUnit, prepareCombatModel, previewAttack, resolveAttack, standardConditionMap, traitRegistry,
-  V8_OVERFLOW_D20, V8_OVERFLOW_TW, grantBarrier, SeededRng, sampledPreviewComputations, beginPreviewScope, endPreviewScope, previewScopeEpoch, type AttackOpts } from '../src/index.js';
+  V8_OVERFLOW_D20, V8_OVERFLOW_TW, V29_OVERFLOW_D20, V32_OVERFLOW_D20, prepareArmsModel, compileItem, grantBarrier, SeededRng, sampledPreviewComputations, beginPreviewScope, endPreviewScope, previewScopeEpoch, type AttackOpts } from '../src/index.js';
 import { memberHealth } from '../src/member-health.js';
 import { bracePose } from '../src/tactics.js';
 let serial = 0;
@@ -27,6 +27,37 @@ describe('屏障多段预览的有界值缓存', () => {
     ['概率命中与溅射', 'company', o => { o.rules = V8_OVERFLOW_TW; o.attacker.weapon!.splashTargets = 3; o.attacker.weapon!.splashFactor = .5; }],
     ['范围法术与屏障', 'company', o => { o.abilityDamage = { baseDice: '2d6kh1+5', apDice: '2d4-1', shape: 'burst', areaExposure: 4, channel: 'arcane', penetration: 10 }; }],
     ['目标耗尽', 'hero', o => { o.defender.hp = 1; o.defender.barrier = undefined; }],
+    ['V29编队伤口与屏障', 'company', o => {
+      o.rules = V29_OVERFLOW_D20;
+      for (const u of [o.attacker, o.defender]) prepareArmsModel(u, o.rules);
+      o.defender.formation!.health = [{ count: 10, hp: 3 }, { count: 10, hp: o.defender.formation!.memberHp }];
+    }],
+    ['V29实体盾耐久与编队减员', 'company', o => {
+      o.rules = V29_OVERFLOW_D20;
+      const shield = compileItem({ kind: 'shield', mechanism: 'shield', power: 4 }, { id: 'shield', seed: 'shield' });
+      if (shield.kind !== 'shield') throw Error('shield fixture');
+      o.defender.shield = shield.value;
+      for (const u of [o.attacker, o.defender]) prepareArmsModel(u, o.rules);
+      o.defender.shieldDurability = { remaining: 2 };
+    }],
+    ...[false, true].map<[string, 'company', (o: Omit<AttackOpts, 'rng'>) => void]>(staleModel => [
+      'V32能量盾耗尽及规则覆盖' + staleModel, 'company', o => {
+        o.rules = V32_OVERFLOW_D20;
+        const shield = compileItem({ kind: 'shield', mechanism: 'energy-shield', power: 4 }, { id: 'energy', seed: 'energy' });
+        if (shield.kind !== 'shield') throw Error('energy shield fixture');
+        o.defender.shield = shield.value;
+        for (const u of [o.attacker, o.defender]) prepareArmsModel(u, o.rules);
+        o.defender.energyShield!.remaining = 7;
+        o.defender.conditions = [{ id: 'blessed', dur: 2, defensePower: 4 }, { id: 'exposed', dur: 2 }];
+        if (staleModel) delete o.defender.armsModel;
+      },
+    ]),
+    ['V32无盾、多种状态与伤口', 'company', o => {
+      o.rules = V32_OVERFLOW_D20; delete o.defender.barrier;
+      for (const u of [o.attacker, o.defender]) prepareArmsModel(u, o.rules);
+      o.defender.conditions = [{ id: 'blessed', dur: 2, defensePower: 3 }, { id: 'exposed', dur: 3, magnitude: .7 }];
+      o.defender.formation!.health = [{ count: 10, hp: 3 }, { count: 10, hp: o.defender.formation!.memberHp }];
+    }],
   ];
   it.each(scenarios)('%s 保持原96种子模拟的每项统计与战斗对象不变', (_name, scale, configure) => {
     const o = options(scale); configure(o);
@@ -44,6 +75,9 @@ describe('屏障多段预览的有界值缓存', () => {
     expect(preview.damageChance).toBe(positive / 96); expect(preview.maxDamage).toBe(maximum);
     if (scale === 'company') expect(preview.expectedCasualties).toBe(casualties / 96);
     expect(JSON.stringify(o)).toBe(before); expect(previewAttack(o)).toEqual(preview);
+    beginPreviewScope(true);
+    try { expect(previewAttack(o)).toEqual(preview); expect(previewAttack(structuredClone(o))).toEqual(preview); }
+    finally { endPreviewScope(); }
   });
   it('重复查询与无姿态的等价走位不再重新抽样，返回值修改不污染缓存', () => {
     const o = options(); let first!: ReturnType<typeof previewAttack>;
@@ -104,6 +138,41 @@ describe('屏障多段预览的有界值缓存', () => {
   });
 });
 describe('AI 单次估值范围内的样本复用', () => {
+  it('read-only AI keys distinguish new candidate branches and reset before the next decision', () => {
+    const o = options('company');
+    const variants = [o, { ...o, defender: { ...o.defender, barrier: { ...o.defender.barrier!, remaining: 50 } } },
+      { ...o, defender: { ...o.defender, conditions: [{ id: 'stunned', dur: 2 }] } },
+      { ...o, attacker: { ...o.attacker, weapon: { ...o.attacker.weapon!, baseDice: '2d6+2' } } }];
+    const expected = variants.map(v => previewAttack(v));
+    beginPreviewScope(true);
+    try { variants.forEach((v, i) => expect(previewAttack(v)).toEqual(expected[i])); }
+    finally { endPreviewScope(); }
+    o.attacker.weapon!.baseDice = '1d6+1';
+    const changed = previewAttack(o);
+    beginPreviewScope(true);
+    try { expect(previewAttack(o)).toEqual(changed); }
+    finally { endPreviewScope(); }
+  });
+  it('large skill inventories do not evict the same pairwise samples, and changed states stay distinct', () => {
+    const o = options();
+    for (const unit of [o.attacker, o.defender]) unit.abilities = Array.from({ length: 40 }, (_, i) => ({
+      id: 'learned-' + i, name: 'learned-' + i, desc: 'saved skill description '.repeat(180),
+      target: 'self' as const, effects: [{ op: 'heal' as const, amount: i + 1 }],
+    }));
+    const variants = Array.from({ length: 32 }, (_, i) => ({ ...o, actionDamageScale: .01 + i / 1000 }));
+    const outside = previewAttack(variants[0]!);
+    beginPreviewScope();
+    try {
+      const expected = variants.map(v => previewAttack(v));
+      expect(expected[0]).toEqual(outside);
+      expect(computed(() => variants.forEach((v, i) => expect(previewAttack(v)).toEqual(expected[i])))).toBe(0);
+      const changed = { ...o, defender: { ...o.defender, barrier: { ...o.defender.barrier!, remaining: 60 } } };
+      expect(computed(() => previewAttack(changed))).toBe(1);
+      expect(computed(() => previewAttack(structuredClone(changed)))).toBe(0);
+      o.attacker.abilities[0]!.effects = [{ op: 'heal', amount: 999 }];
+      expect(computed(() => previewAttack(variants[0]!))).toBe(1);
+    } finally { endPreviewScope(); }
+  });
   it('范围内超过共享上限的样本仍复用，数值与范围外逐项相同，结束后释放', () => {
     const o = options(), variants = Array.from({ length: 140 }, (_, i) => ({ ...o, actionDamageScale: .01 + i / 1000 }));
     const outside = variants.map(v => previewAttack(v));

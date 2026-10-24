@@ -122,6 +122,6 @@ describe('非对称环境地图生成', () => {
       const roster = ['ally', 'enemy'].flatMap(side => Array.from({ length: 21 }, (_, n) => unit(side + n, side as 'ally' | 'enemy', 'vehicle')));
       expect(deployOnGrid(field, roster)).toHaveLength(42);
     }
-    expect(() => generatedField('bad', 4, 6)).toThrow('支持');
+    expect(() => generatedField('bad', 4, 6)).toThrow('地图尺寸须为至少5列×7行的整数格数');
   });
 });

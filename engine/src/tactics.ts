@@ -1,3 +1,7 @@
+import { equipmentStep, gradedNumbers } from './numeric-model.js';
+import { loadMovementScale } from './equipment-load.js';
+import { revisedLoad } from './load-model.js';
+import { armorWear } from './armor-wear.js';
 import { displayNumber } from './display-number.js';
 import { isArmsV2, shieldUsable, shieldClass } from './arms.js';
 import { isArmsV3 } from './arms-model.js';
@@ -15,7 +19,7 @@ import { traitLevel, traitValue, plainsMobility, nightMovePenalty, freeMarch, ro
 import { formationNode } from './mass/formation.js';
 
 export interface TacticalPose {
-  kind: 'brace'; mode: 'small' | 'mass'; width?: number;
+  kind: 'brace'; mode: 'small' | 'mass'; width?: number; height?: number;
   anchor: { x: number; y: number }; facing: { x: number; y: number };
 }
 export const SPEED_TIERS = ['迟缓', '缓行', '标准', '快速', '疾速'] as const;
@@ -33,11 +37,25 @@ export function movementPoints(unit: Combatant, tags: string[] = []): number {
   const mobility = Math.max(unit.mount === true || ids.includes('fast') || ids.includes('mechanized') ? 1 : 0, ids.includes('skirmisher') && light ? phase2Value(unit, 'skirmisher', 'skirmishMobility', 1) : 0, ids.includes('agile') && light ? phase2Value(unit, 'agile', 'agileMobility', 0) : 0, plains);
   const armor = !vehicle && armorBurdenTier(unit) >= 3 ? 1 : 0;
   const night = tags.includes('night') ? nightMovePenalty(traitLevel(unit, 'night-fighter', ids)) : 0;
+  if (gradedNumbers(unit) || revisedLoad(unit)) {
+    const movement = bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - night - fatiguePenalty(unit)
+      + Number(unit.status === 'routing') + (gradedNumbers(unit) ? (unit.bonuses?.speed ?? 0) * unit.level / 10 : 0) + equipmentStep(unit.armor?.recipe, 'speed')
+      + (progression(unit) ? wornEffects(unit).speed ?? 0 : 0);
+    return Math.max(0, Number((movement * armorWear(unit).movement * loadMovementScale(unit)).toPrecision(12)));
+  }
   const normal = Math.max(1, Math.min(5, bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - armor - night - fatiguePenalty(unit) - equipmentBurden(unit) - Number(isArmsV2(unit.armsModel) && shieldUsable(unit) && shieldClass(unit) === 'tower-shield')));
   const base = Math.min(5, normal + Number(unit.status === 'routing'));
   return progression(unit) ? Math.max(1, base + (wornEffects(unit).speed ?? 0)) : base;
 }
 export function formationMarchSteps(unit: Combatant, tags: string[] = []): number {
+  if (gradedNumbers(unit) || revisedLoad(unit)) {
+    const movement = movementPoints(unit, tags), airborne = revisedLoad(unit) && isAirborne(unit);
+    const base = airborne ? Math.max(0, Math.min(2, movement - 1)) : movement / (unit.body === 'vehicle' ? 2 : 3);
+    const rough = tags.includes('forest') && !freeMarch(traitLevel(unit, 'forest-lore')) || tags.includes('mountain') && !freeMarch(traitLevel(unit, 'mountain-born'));
+    const traits = activeTraitIds(unit), agile = traits.includes('agile') && (!revisedLoad(unit)
+      || !traitPrerequisiteReason(unit, 'agile') && (!phase2Traits(unit) || traitLevel(unit, 'agile', traits) >= 5));
+    return Math.max(0, (!airborne && rough && !agile ? base / 2 : base) + (movement > 0 ? unit.marchRemainder ?? 0 : 0));
+  }
   if (isAirborne(unit)) return Math.max(1, Math.min(2, movementPoints(unit, tags) - 1));
   const traits = activeTraitIds(unit);
   const agile = traits.includes('agile') && !traitPrerequisiteReason(unit, 'agile') && (!phase2Traits(unit) || traitLevel(unit, 'agile', traits) >= 5);
@@ -59,11 +77,11 @@ export function settleFatigue(unit: Combatant, exertion: number, fullRest = fals
 export function fatigueAfter(unit: Combatant, exertion: number, fullRest = false): number {
   const resistance = activeTraitIds(unit).includes('fatigue-trained') ? traitValue(unit, 'fatigue-trained', 'fatigueMultiplier', .5) : 1;
   if (isEnduranceModel(unit.resourceModel)) {
-    const gain = exertion > 0 ? exertion * 0.5 * resistance / (1 + 0.1 * (unit.level - 1))
+    const gain = exertion > 0 ? exertion * 0.5 * resistance * armorWear(unit).fatigue / (1 + 0.1 * (unit.level - 1))
       : -(fullRest ? 2 + 0.1 * (unit.level - 1) : 1);
     return resourceRound(Math.max(0, Math.min(fatigueLimit(unit), unit.fatigue + gain)));
   }
-  return Math.max(0, Math.min(4, unit.fatigue + (exertion > 0 ? exertion * 0.5 * resistance : -1)));
+  return Math.max(0, Math.min(4, unit.fatigue + (exertion > 0 ? exertion * 0.5 * resistance * armorWear(unit).fatigue : -1)));
 }
 /** V9 haste adds exertion; old snapshots keep their integer-only contract. */
 export function addTacticalEffort(unit: Combatant, amount: number): void {
@@ -77,25 +95,27 @@ export function validateTacticalEffort(value: unknown, model?: unknown): void {
   } else if (!Number.isSafeInteger(value) || Number(value) < 0 || Number(value) > 2) throw new Error('待结疲劳记录损坏');
 }
 export function validateTacticalPose(pose: TacticalPose): void {
+  const height=pose?.height??({5:7,7:13,9:15,11:17,13:19} as Record<number,number>)[pose?.width??0];
   if (!pose || pose.kind !== 'brace' || !['small', 'mass'].includes(pose.mode)
-    || pose.mode === 'small' && ![5, 7, 9, 11, 13].includes(pose.width!)
+    || pose.mode === 'small' && (!Number.isSafeInteger(pose.width)||pose.width!<5||!Number.isSafeInteger(height)||height!<7)
     || !pose.anchor || !pose.facing || ![pose.anchor.x, pose.anchor.y, pose.facing.x, pose.facing.y].every(Number.isSafeInteger)
     || Math.abs(pose.facing.x) + Math.abs(pose.facing.y) !== 1
     || pose.anchor.x < 0 || pose.anchor.y < 0
     || pose.anchor.x >= (pose.mode === 'mass' ? 3 : pose.width!)
-    || pose.anchor.y >= (pose.mode === 'mass' ? 6 : ({ 5: 7, 7: 13, 9: 15, 11: 17, 13: 19 } as Record<number, number>)[pose.width!]!)) throw new Error('战术姿态数据损坏');
+    || pose.anchor.y >= (pose.mode === 'mass' ? 6 : height!)) throw new Error('战术姿态数据损坏');
 }
 function position(unit: Combatant, space: Pick<TacticalPose, 'mode' | 'width'>) {
   if (space.mode === 'mass') { const node = formationNode(unit); return { x: node.x, y: node.y }; }
   return { x: unit.pos! % space.width!, y: Math.floor(unit.pos! / space.width!) };
 }
 /** 面向系统选定的威胁；不增加四方向选择器。 */
-export function bracePose(unit: Combatant, threat: Combatant | undefined, mode: TacticalPose['mode'], width?: number): TacticalPose {
+export function bracePose(unit: Combatant, threat: Combatant | undefined, mode: TacticalPose['mode'], width?: number, height?: number): TacticalPose {
   const anchor = position(unit, { mode, width });
   const target = threat ? position(threat, { mode, width }) : { x: anchor.x, y: anchor.y + (unit.side === 'enemy' ? 1 : -1) };
   const dx = target.x - anchor.x, dy = target.y - anchor.y;
   const facing = Math.abs(dx) > Math.abs(dy) ? { x: Math.sign(dx), y: 0 } : { x: 0, y: Math.sign(dy) || (unit.side === 'enemy' ? 1 : -1) };
-  const pose: TacticalPose = { kind: 'brace', mode, ...(width ? { width } : {}), anchor, facing }; validateTacticalPose(pose); return pose;
+  const oldHeight=({5:7,7:13,9:15,11:17,13:19} as Record<number,number>)[width??0];
+  const pose: TacticalPose = { kind: 'brace', mode, ...(width ? { width } : {}), ...(height!==undefined&&height!==oldHeight?{height}:{}), anchor, facing }; validateTacticalPose(pose); return pose;
 }
 export function postureActive(unit: Combatant, defs: Map<string, ConditionDef>): boolean {
   const pose = unit.tacticalPose; if (!pose || unit.rulesVersion !== 'v2' || unit.status !== 'ready' || unit.suppression || isAirborne(unit)) return false;
@@ -129,4 +149,9 @@ export function looseFormation(unit: Combatant): boolean {
     && (!phase2Traits(unit) || unit.looseFormationChoice !== 'closed' || unit.scale === 'hero' && isArmsV3(unit.armsModel))
     && unit.status === 'ready' && (unit.hp > 1 || unit.scale === 'hero') && !unit.tacticalPose && !unit.suppression
     && !activeConditionIds(unit).includes('stunned');
+}
+
+export function movementFraction(value: number): number {
+  const rounded = Number(value.toFixed(10));
+  return Number((rounded - Math.floor(rounded)).toFixed(10));
 }
