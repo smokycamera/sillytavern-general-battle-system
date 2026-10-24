@@ -16,10 +16,11 @@ export function intentOrder(field: BattlefieldSpec, unit: Combatant, intent: Uni
   if (!intent) return;
   const target = intent.targetId ? known.find(u => u.id === intent.targetId && (intent.mode === 'use_ability'
     ? ['ready', 'routing', 'dying'].includes(u.status) : u.side !== unit.side && ['ready', 'routing'].includes(u.status))) : undefined;
-  if ((intent.mode === 'attack' || intent.mode === 'use_ability') && !target) return;
+  const structure = intent.mode === 'attack' && !intent.targetId && intent.cell !== undefined && intactStructure(field, intent.cell);
+  if ((intent.mode === 'attack' || intent.mode === 'use_ability') && !target && !structure) return;
   if (intent.mode === 'use_ability' && !unit.abilities.some(a => a.id === intent.abilityId)) return;
   const support = intent.mode === 'support' ? known.find(u => u.id === intent.supportId && u.side === unit.side && ['ready', 'routing'].includes(u.status)) : undefined;
-  const cell = intent.mode === 'attack' || intent.mode === 'use_ability' ? target?.pos : intent.mode === 'support' ? support?.pos : intent.cell;
+  const cell = structure ? intent.cell : intent.mode === 'attack' || intent.mode === 'use_ability' ? target?.pos : intent.mode === 'support' ? support?.pos : intent.cell;
   if (cell === undefined || (intent.mode === 'open_gate' || intent.mode === 'close_gate'
     ? intactStructure(field, cell)?.kind !== 'gate'
     : !Number.isSafeInteger(cell) || cell < 0 || cell >= field.tiles.length)) return;

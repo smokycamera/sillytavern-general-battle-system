@@ -62,9 +62,10 @@ export const UNIT_ICON_NAMES: Record<string, string> = {
 export function weaponMechanism(weapon?: Weapon): string | undefined {
   return weapon?.recipe?.mechanism ?? weapon?.tags?.find(tag => tag.startsWith('mechanism:'))?.slice(10);
 }
-/** 图标键：生效的航行特质 > 载具 > 骑乘 > 主武器机制；旧存档无机制时，远程退回弓、近战退回剑。 */
+/** 两栖保留原图标；只有航行受限单位显示船，其后依次为载具、骑乘和主武器。 */
 export function unitIconKey(u: Combatant): string {
-  if (activeTraitIds(u).includes('sailing')) return 'ship';
+  const traits = activeTraitIds(u);
+  if (traits.includes('sailing') && !traits.includes('water-crossing')) return 'ship';
   if (u.body === 'vehicle') return 'vehicle';
   if (u.mount) return 'cavalry';
   const mechanism = weaponMechanism(u.weapon);

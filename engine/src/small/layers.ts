@@ -62,9 +62,10 @@ export function isElevated(unit: Combatant): boolean { return !isAirborne(unit) 
 export function supportsPlatform(field: BattlefieldSpec, cell: number): boolean { return intactStructure(field, cell)?.top === true; }
 /** Sailing has no body/armor-derived grants; keep the common non-sailing movement path cheap. */
 export function waterOnly(actor: Combatant): boolean {
-  return actor.traits.includes('sailing') || !!actor.gear?.some(item => item.passive?.traits.some(grant => grant.id === 'sailing'))
+  const sailing = actor.traits.includes('sailing') || !!actor.gear?.some(item => item.passive?.traits.some(grant => grant.id === 'sailing'))
     || !!actor.accessories && Object.values(actor.accessories).some(item => item?.traitId === 'sailing')
     || actor.rulesVersion === 'v2' && !!actor.traitSources?.some(source => source.traitIds.includes('sailing') && traitSourceActive(actor, source));
+  return sailing && !activeTraitIds(actor).includes('water-crossing');
 }
 export function sailingBlocked(field: BattlefieldSpec, cell: number, actor?: Combatant): boolean {
   return !!actor && waterOnly(actor) && (actor.elevation === 1 || !['deep_water', 'shallow_water'].includes(field.tiles[cell] ?? ''));

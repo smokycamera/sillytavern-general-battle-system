@@ -5,7 +5,7 @@ import { safeLandmarkLabel } from '../../engine/src/small/map-label.js';
 import { SCENE_ARCHETYPE_NAMES, type SceneArchetype, type SceneConstraint, type SceneEntity, type SceneRelation, type WorldAnchor } from '../../engine/src/small/scene-intent.js';
 import { recommendedCitySize } from '../../engine/src/small/layered-generator.js';
 import type { BattlefieldScene } from '../../engine/src/small/map-design.js';
-import { activeTraitIds, hasFlightAbility, isRangedWeapon, type Combatant } from '../../engine/src/index.js';
+import { waterOnly, hasFlightAbility, isRangedWeapon, type Combatant } from '../../engine/src/index.js';
 import type { BattleObjectiveMode } from './battle-setup.js';
 import { INTERIOR_USES, INTERIOR_PATTERNS, INTERIOR_USE_NAMES, INTERIOR_PATTERN_NAMES } from '../../engine/src/small/interior-plan.js';
 import { COMPOUND_PATTERNS, TRENCH_PATTERNS, COMPOUND_PATTERN_NAMES, TRENCH_PATTERN_NAMES } from '../../engine/src/small/position-plan.js';
@@ -84,7 +84,7 @@ export function layoutUnits(roster: readonly Combatant[], publicId: (id: string)
   return roster.filter(u => u.hp > 0 && u.status === 'ready').slice(0, MAX_SMALL_UNITS).map(u => ({
     id: publicId(u.id), name: u.name.slice(0, 40), side: u.side,
     kind: [u.scale === 'hero' ? '人物' : '部队', u.body === 'vehicle' ? '载具' : u.body && u.body !== 'human' ? '大型' : u.mount ? '骑乘' : '',
-      hasFlightAbility(u) ? '可飞行' : '', activeTraitIds(u).includes('sailing') ? '航行：只能在深水或浅水部署与移动' : '', isRangedWeapon(u.weapon) ? '远程' : '近战'].filter(Boolean).join('·'),
+      hasFlightAbility(u) ? '可飞行' : '', waterOnly(u) ? '航行：只能在深水或浅水部署与移动' : '', isRangedWeapon(u.weapon) ? '远程' : '近战'].filter(Boolean).join('·'),
     ...(notes[u.id]?.trim() ? { note: notes[u.id]!.trim().slice(0, 60) } : {}) }));
 }
 /** The generator's starting size for the scene; capacity may still enlarge the map. */
@@ -131,14 +131,15 @@ function example(ctx: LayoutContext): Record<string, unknown> {
     ally: { at: ['S'] }, enemy: { at: ['N'] }, ...(exitSide(ctx) ? { objective: exitSide(ctx) === 'ally' ? 'N' : 'S' } : {}) };
 }
 /** What the next layout request is told about failed ones: the model's own last answer and one note per failure, newest last. */
-export interface LayoutRetry { answer?: unknown; errors: readonly string[] }
+export interface LayoutRetry { answer?: unknown; errors: readonly string[]; previousAnswers?: { answer: unknown; error: string }[] }
 /** The model cannot see its last answer otherwise, so a retry would rewrite the same layout from the same narrative. */
 function retryLines(retry: LayoutRetry): string[] {
   const answer = retry.answer === undefined ? '' : JSON.stringify(retry.answer), earlier = retry.errors.slice(0, -1);
   return ['【上次布置未能生成地图】在上次回答的基础上只改与失败有关的项，其余照旧；拿不准的项直接删去，由程序决定。',
     ...(answer ? ['上次回答：' + (answer.length > 2000 ? answer.slice(0, 2000) + '…' : answer)] : []),
     '失败原因与改法：' + retry.errors.at(-1),
-    ...(earlier.length ? ['更早的失败，不要重犯：' + earlier.join('；')] : [])];
+    ...(earlier.length ? ['更早的失败，不要重犯：' + earlier.join('；')] : []),
+    ...(retry.previousAnswers?.length ? ['此前失败回答：' + JSON.stringify(retry.previousAnswers)] : [])];
 }
 /** The user message for the layout step. Shared system and narrative messages precede it. */
 export function layoutTask(ctx: LayoutContext, retry?: LayoutRetry): string {

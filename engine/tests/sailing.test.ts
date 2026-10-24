@@ -24,17 +24,29 @@ describe('两栖与航行', () => {
     expect(parseSkillMechanism('buff航渡')).toEqual(parseSkillMechanism('buff两栖'));
     expect(parseSkillMechanism('buff航行')?.modifiers).toContain('trait-sailing');
   });
-  it('只准进入深浅水，拒绝陆地、沼泽、平台和跨陆地寻路，兼有两栖不能取消限制', () => {
-    const f = field(), a = unit('a', 'ally', ['sailing', 'water-crossing', 'siege-assault']); a.pos = 45;
+  it('单独航行只准进入深浅水，拒绝陆地、沼泽、平台和跨陆地寻路', () => {
+    const f = field(), a = unit('a', 'ally', ['sailing', 'siege-assault']); a.pos = 45;
     f.tiles[45] = 'deep_water'; f.tiles[44] = 'shallow_water'; f.tiles[46] = 'swamp'; f.tiles[47] = 'shallow_water';
     expect(canOccupy(f, [], a, 44)).toBe(true); expect(canOccupy(f, [], a, 45)).toBe(true);
-    expect(tileCost(f, 44, a)).toBe(1); expect(tileCost(f, 45, a)).toBe(3);
+    expect(tileCost(f, 44, a)).toBe(2); expect(tileCost(f, 45, a)).toBe(3);
     for (const p of [38, 46]) { expect(canOccupy(f, [], a, p)).toBe(false); expect(tileCost(f, p, a)).toBe(Infinity); }
     f.structures![44] = createStructure('tower', 3, { top: true });
     expect(canClimbFrom(f, a, 44)).toBe(false); expect(canOccupy(f, [], { ...a, elevation: 1 }, 44)).toBe(false);
     expect(findIntentRoute(f, a, [a], u => u.pos === 47, () => false, 1, 1)).toBeUndefined();
     delete f.layerVersion; delete f.structures; delete f.overlays;
     expect(canOccupy(f, [], a, 38)).toBe(false);
+  });
+  it('同时拥有两栖时保留陆地部署与水陆移动，临时两栖到期后恢复航行限制', () => {
+    const f = field(), a = unit('a', 'ally', ['sailing', 'water-crossing']); a.pos = 45;
+    f.tiles[44] = 'shallow_water'; f.tiles[43] = 'deep_water';
+    expect(deployOnGrid(f, [a])).toEqual([45]);
+    expect(canOccupy(f, [], a, 45)).toBe(true); expect(tileCost(f, 44, a)).toBe(1);
+    expect(canOccupy(f, [], a, 43)).toBe(true);
+    expect(findIntentRoute(f, a, [a], u => u.pos === 43, () => false, 1, 1)).toBeDefined();
+    a.traits = ['sailing'];
+    grantTraitSource(a, { id: 'amphibious', name: '两栖', kind: 'blessing', traitIds: ['water-crossing'], duration: { kind: 'rounds', count: 1 } });
+    expect(canOccupy(f, [], a, 45)).toBe(true);
+    a.traitSources![0]!.remaining = 0; expect(canOccupy(f, [], a, 45)).toBe(false);
   });
   it('陆地指定位置移到最近可用水格，先保留已有占位，最近平局稳定且不修改输入', () => {
     const f = field(), a = unit('a'), occupied = unit('b'); a.pos = 52; occupied.pos = 44; occupied.body = 'vehicle';

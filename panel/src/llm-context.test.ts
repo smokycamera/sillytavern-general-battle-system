@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { generateUnit } from '../../engine/src/index.js';
-import { LlmContextController } from './llm-context.js';
+import { AUTO_TRIES, LlmContextController } from './llm-context.js';
 import type { LlmSettings } from './llm-settings.js';
 const settings: LlmSettings = {enabled:true,selectBattleScale:true,windowSize:2,url:'https://gateway.example/v1',token:'test-key',model:'chosen-model',models:['chosen-model']};
 const input = () => ({
@@ -95,15 +95,15 @@ describe('ordinary LLM preparation',()=>{
   it('carries only bounded current-request errors into automatic and manual retries and clears them on success or scope change',async()=>{
     const request=model(),controller=new LlmContextController(request),source={...input(),scope:'chat-a'};
     const errors=(n:number)=>decision(request.mock.calls[n]![1]).body.state.retryErrors;
-    // Each start tries three times; without a map layout, a failed decision is asked for again.
-    await expect(controller.select(source,settings,()=>true,()=>{throw Error('地标部署容量不足');})).rejects.toThrow('容量不足。已自动尝试3次');
-    expect([0,1,2].map(n=>errors(n))).toEqual([undefined,['地标部署容量不足'],['地标部署容量不足']]);
+    await expect(controller.select(source,settings,()=>true,()=>{throw Error('地标部署容量不足');})).rejects.toThrow(`容量不足。已自动尝试${AUTO_TRIES}次`);
+    expect(Array.from({length:AUTO_TRIES},(_,n)=>errors(n))).toEqual([undefined,...Array.from({length:AUTO_TRIES-1},()=>['地标部署容量不足'])]);
     await expect(controller.select(source,settings,()=>true,()=>{throw Error('正文桥梁数量与实体列表不一致');})).rejects.toThrow('数量');
-    expect(errors(3)).toEqual(['地标部署容量不足']);expect(errors(4)).toEqual(['地标部署容量不足','正文桥梁数量与实体列表不一致']);
-    await controller.select(source,settings,()=>true);expect(errors(6)).toEqual(['地标部署容量不足','正文桥梁数量与实体列表不一致']);
-    await controller.select(source,settings,()=>true);expect(errors(7)).toBeUndefined();
+    expect(errors(AUTO_TRIES)).toEqual(['地标部署容量不足']);expect(errors(AUTO_TRIES+1)).toEqual(['地标部署容量不足','正文桥梁数量与实体列表不一致']);
+    expect(decision(request.mock.calls[AUTO_TRIES]![1]).body.state.previousAnswers).toHaveLength(AUTO_TRIES);
+    await controller.select(source,settings,()=>true);expect(errors(AUTO_TRIES*2)).toEqual(['地标部署容量不足','正文桥梁数量与实体列表不一致']);
+    await controller.select(source,settings,()=>true);expect(errors(AUTO_TRIES*2+1)).toBeUndefined();
     await expect(controller.select(source,settings,()=>true,()=>{throw Error('地标部署容量不足');})).rejects.toThrow();
-    await controller.select({...source,scope:'chat-b'},settings,()=>true);expect(errors(11)).toBeUndefined();
+    await controller.select({...source,scope:'chat-b'},settings,()=>true);expect(errors(AUTO_TRIES*3+2)).toBeUndefined();
   });
   it('releases the operation lock at the deadline even if the transport never settles',async()=>{
     vi.useFakeTimers();

@@ -416,7 +416,8 @@ function sampledPreviewState(opts: Omit<AttackOpts, 'rng'>) {
   // V15 巷战专精的“2格内射击”还区分 2 格与更远，只有带巷战专精的攻击方保留到 3 格。
   const closeShots = itemsV15(opts.attacker) && activeTraitIds(opts.attacker).includes('urban-fighter');
   const distance = isArmsV2(opts.rules.armsModel) ? opts.distance : opts.distance === undefined ? undefined : opts.distance <= 1 ? 1 : closeShots ? Math.min(3, opts.distance) : opts.distance >= 2 ? 2 : opts.distance;
-  return { ...opts, distance, attacker: unit(opts.attacker, opts.defender, true), defender: unit(opts.defender, opts.attacker, false),
+  return { ...opts, distance, ...(isArmsV2(opts.rules.armsModel) && (opts.weaponOverride ?? opts.attacker.weapon)?.recipe?.mechanism === 'sprayer' ? { sprayOnGrid: gridAttack(opts.attacker) } : {}),
+    attacker: unit(opts.attacker, opts.defender, true), defender: unit(opts.defender, opts.attacker, false),
     conditionDefs: undefined, traitRegistry: undefined };
 }
 /** Store a unit/attack description once instead of copying both full skill inventories
@@ -652,6 +653,11 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
     let mitigation = 1; for (let i = 0; i < extraMods.length && mitigation > 0; i++) if (extraMods[i]!.category === 'movement' && extraMods[i]!.kind === 'atk' && extraMods[i]!.value < 0) { const n = Math.min(mitigation, -extraMods[i]!.value); extraMods[i] = { ...extraMods[i]!, value: extraMods[i]!.value + n }; mitigation -= n; }
   }
   const atkMods = collectMods(attacker, ctxAtk, opts.conditionDefs, extraMods, opts.traitRegistry);
+  if (armsAttack && !opts.autoHit && actual === 'sprayer') {
+    if (rules.sprayerDamageMultiplier) atkMods.push({ source: 'intrinsic', name: '喷射火力', kind: 'dmg', type: 'mult', value: rules.sprayerDamageMultiplier });
+    if (hasMemberHealth(defender) && defender.hp > 1 && rules.sprayerGroupDamageMultiplier)
+      atkMods.push({ source: 'intrinsic', name: '喷射对群', kind: 'dmg', type: 'mult', value: rules.sprayerGroupDamageMultiplier });
+  }
   if (progression(attacker)) {
     const spotting = atkMods.find(m => m.sourceId === 'recon:spotting');
     if (spotting) {

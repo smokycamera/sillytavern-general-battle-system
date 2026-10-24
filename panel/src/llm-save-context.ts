@@ -21,7 +21,9 @@ function savedIntents(value: unknown): CommanderState['memory']['intents'] {
     units[id] = { mode: i.mode as UnitIntent['mode'], ...(i.cell !== undefined ? { cell: i.cell as number } : {}),
       ...(typeof i.targetId === 'string' ? { targetId: i.targetId } : {}), ...(typeof i.supportId === 'string' ? { supportId: i.supportId } : {}), ...(typeof i.abilityId === 'string' ? { abilityId: i.abilityId } : {}) };
   }
-  return { round: v.round as number, ...(v.carryRound === Number(v.round) + 1 ? { carryRound: v.carryRound as number } : {}), replanned: v.replanned, basis: { visible: strings(basis.visible, 128, 64), friends: strings(basis.friends, 128, 64) }, units };
+  return { round: v.round as number, ...(v.carryRound === Number(v.round) + 1 ? { carryRound: v.carryRound as number } : {}),
+    ...(Number.isSafeInteger(v.logIndex) && (v.logIndex as number) >= 0 ? { logIndex: v.logIndex as number } : {}),
+    replanned: v.replanned, basis: { visible: strings(basis.visible, 128, 64), friends: strings(basis.friends, 128, 64) }, units };
 }
 
 /** Persist state, never tool transcripts, provider responses, reasoning, or incidental object fields. */
