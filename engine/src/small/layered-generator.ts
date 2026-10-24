@@ -133,7 +133,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   const wallLevel = plan?.fortLevel ?? 3;
   let inner: number[] = [], frontline: number[] = [], gates: number[] = [], core: number[] = [], reserve: number[] = [];
   let frontDepth = Math.floor(height * .53), left = 0, right = width - 1;
-  const plannedCity=!!plan&&(!!plan.citySectors?.length||!!plan.cityPosition||!!plan.intent?.entities.some(e=>e.kind==='city')||siege&&plan.wallLayers!==undefined);
+  const plannedCity=scene!=='building_siege'&&!!plan&&(!!plan.citySectors?.length||!!plan.cityPosition||!!plan.intent?.entities.some(e=>e.kind==='city')||siege&&plan.wallLayers!==undefined);
   if(plannedCity) {
     buildPlannedCity(field,plan!,seed,scene,attack);
     inner=field.city!.inside;frontline=field.city!.frontline;gates=field.city!.gates;core=field.city!.core;reserve=field.city!.reserve;
@@ -416,7 +416,9 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
       selected.room.label = safeLandmarkLabel(mark.label) ?? selected.room.label;
     }
     let areaBound = false;
-    if (scene === 'building_siege' && compoundAreas.length && (['building', 'room', 'square'].includes(mark.kind)
+    const outsideCompound=scene==='building_siege'&&plan?.citySectors?.length&&gridPosition(mark.anchor)
+      &&!inner.some(p=>inGridSector(mark.anchor,width,height,p%width,Math.floor(p/width)));
+    if (scene === 'building_siege' && !outsideCompound && compoundAreas.length && (['building', 'room', 'square'].includes(mark.kind)
       || /院(?!墙)|庭|厢房|主屋|仓房|通道|过道|门道/.test(mark.label ?? '') && mark.kind === 'position')) {
       const room = mark.kind === 'building' || mark.kind === 'room';
       const desired = room ? 'room' : /通道|过道|门道/.test(mark.label ?? '') ? 'passage' : 'court';
@@ -429,7 +431,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
         return Number(desired !== a.area.kind) * width * height
           + Math.abs(x - anchor % width) + Math.abs(y - Math.floor(anchor / width));
       };
-      const selected = candidates.sort((a, b) => distance(a) - distance(b) || a.index - b.index)[0];
+      const selected = candidates.sort((a, b) => Number(b.area.label===mark.label)-Number(a.area.label===mark.label) || distance(a) - distance(b) || a.index - b.index)[0];
       if (selected) {
         cells = selected.area.cells.filter(n => !groundBlocked(field, n)); p = cells[0]!;
         boundAreas.add(selected.index); selected.area.label = safeLandmarkLabel(mark.label) ?? selected.area.label; areaBound = true;
@@ -501,7 +503,8 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   if (plan && (plan.waterCoverage === 'all' || [...(plan.landmarks??[]).map(m=>m.anchor),...(plan.deployments??[]).flatMap(d=>d.at),plan.cityPosition??'',plan.waterPosition??'',...(plan.bridgePlan??[]).map(b=>b.anchor)].some(a=>!!gridPosition(a))
     ||scene==='interior'&&(water!=='none'||plan.landmarks?.some(m=>['hill','forest','square','tower','building'].includes(m.kind)))))
     field.generation!.version = 9;
-  if(plan?.citySectors?.length||plan?.waterSectors?.length||supplied&&!['interior','building_siege'].includes(scene)&&plan?.landmarks?.some(m=>m.kind==='building'))field.generation!.version=10;
+  if(plan?.citySectors?.length||plan?.waterSectors?.length||supplied&&!['interior','building_siege'].includes(scene)&&plan?.landmarks?.some(m=>m.kind==='building'))field.generation!.version=11;
+  if(scene==='building_siege'&&plan?.citySectors?.length)field.generation!.version=12;
   validateSceneFacts(field);
   validateField(field);
   return field;

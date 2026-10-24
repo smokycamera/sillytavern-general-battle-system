@@ -1,5 +1,6 @@
 import { canonicalTraitId, TRAIT_LEVEL_ALIASES } from '../trait-parameters.js';
 import { TRAITS, TRAIT_FORMER_NAMES } from './traits.js';
+import type { Ability, EffectOp } from '../types.js';
 
 export const SKILL_CATEGORIES = [
   { id: 'physical-single', name: '物理单体' }, { id: 'physical-area', name: '物理范围' },
@@ -29,7 +30,7 @@ export const SKILL_MODIFIER_ALIASES: Record<string, string[]> = {
   dash: ['冲锋', '冲刺', '突击', '飞扑', '扑击', '前冲'], blink: ['瞬移', '传送', '闪烁', '瞬步', '缩地', '影步'],
   withdraw: ['撤步', '后跳', '跃退', '脱离', '翻滚', '后退'],
 };
-export interface SkillMechanism { category: SkillCategory; area: boolean; modifiers: string[] }
+export interface SkillMechanism { category: SkillCategory; area: boolean; modifiers: string[]; categoryPower?: number; modifierPowers?: Record<string, number> }
 /** 施术者自身位移的效果词。 */
 export const MOVEMENT_MODIFIERS: readonly string[] = ['dash', 'blink', 'withdraw'];
 export interface SkillRecipe extends SkillMechanism { version: 'skill-formula-v1' | 'skill-formula-v2' | 'skill-formula-v3'; power: number }
@@ -108,18 +109,23 @@ function normalizeModifiers(input: string[]): string[] {
   return [...new Set(input)].filter(id=>!groups.some(group=>group.includes(id)&&[...input].reverse().find(value=>group.includes(value))!==id));
 }
 export function skillMechanismId(mechanism: SkillMechanism): string {
-  return 'generic:' + mechanism.category + (mechanism.area && !mechanism.category.endsWith('area') ? ':area' : '')
-    + (mechanism.modifiers.length ? ':' + normalizeModifiers(mechanism.modifiers).sort().join('+') : '');
+  return 'generic:' + mechanism.category + (mechanism.categoryPower ? '@' + mechanism.categoryPower : '') + (mechanism.area && !mechanism.category.endsWith('area') ? ':area' : '')
+    + (mechanism.modifiers.length ? ':' + normalizeModifiers(mechanism.modifiers).sort().map(id => id + (mechanism.modifierPowers?.[id] ? '@' + mechanism.modifierPowers[id] : '')).join('+') : '');
 }
 export function skillMechanismFromId(id: string): SkillMechanism | undefined {
   if (!id.startsWith('generic:')) return undefined;
-  const parts = id.slice(8).split(':'), category = parts.shift() as SkillCategory;
+  const parts = id.slice(8).split(':'), categoryPart = parts.shift()!.split('@'), category = categoryPart[0] as SkillCategory;
+  const validPower = (value: string | undefined) => value === undefined || /^(?:[1-9]|10)$/.test(value);
+  if (categoryPart.length > 2 || !validPower(categoryPart[1])) return undefined;
   if (!SKILL_CATEGORIES.some((c) => c.id === category)) return undefined;
   const area = category.endsWith('area') || parts[0] === 'area'; if (parts[0] === 'area') parts.shift();
   if (parts.length > 1) return undefined;
-  const modifiers = normalizeModifiers(parts[0]?.split('+') ?? []);
+  const tokens = parts[0]?.split('+').map(part => part.split('@')) ?? [];
+  if (tokens.some(token => token.length > 2 || !validPower(token[1]))) return undefined;
+  const modifiers = normalizeModifiers(tokens.map(token => token[0]!));
+  const modifierPowers = Object.fromEntries(modifiers.flatMap(key => { const value = tokens.filter(token => token[0] === key).at(-1)?.[1]; return value ? [[key, Number(value)]] : []; }));
   if (modifiers.some((id) => !SKILL_MODIFIERS.some((m) => m.id === id))) return undefined;
-  return { category, area, modifiers };
+  return { category, area, modifiers, ...(categoryPart[1] ? { categoryPower: Number(categoryPart[1]) } : {}), ...(Object.keys(modifierPowers).length ? { modifierPowers } : {}) };
 }
 const CHARGE_WORDS = ['冲锋', '突击', '飞扑', '扑击'];
 /** 单词简写展开为完整机制：控制词默认减益；冲锋类默认以实际近战武器出手；单写位移词只移动自己。 */
@@ -149,6 +155,15 @@ export function parseSkillMechanismParts(text: string): SkillMechanismParts | un
   if (!prefix) return undefined;
   const category = prefix.id;
   source = source.slice(prefix.name.length).trim();
+  const readPower = () => {
+    const token = source.match(/^[lL]\s*(\d+)/);
+    if (!token) return undefined;
+    const power = Number(token[1]);
+    if (!Number.isInteger(power) || power < 1 || power > 10) throw Error('技能等级必须是L1–L10整数');
+    source = source.slice(token[0].length).trimStart();
+    return power;
+  };
+  const categoryPower = readPower(), modifierPowers: Record<string, number> = {};
   const areaWord = source.match(/^(?:群体范围|范围|群体(?!召唤))/)?.[0];
   const area = category.endsWith('area') || !!areaWord; if (areaWord) source = source.slice(areaWord.length);
   const preferred = allowedSkillModifiers(category);
@@ -159,7 +174,9 @@ export function parseSkillMechanismParts(text: string): SkillMechanismParts | un
   while (source) {
     source = source.replace(/^[+\s]+/, ''); if (!source) break;
     const choice = choices.find((m) => source.startsWith(m.name)); if (!choice) return undefined;
-    found.push(choice.modifier); source = source.slice(choice.name.length);
+    found.push(choice.modifier); source = source.slice(choice.name.length).trimStart();
+    const power = readPower();
+    if (power !== undefined) modifierPowers[choice.modifier.id] = power;
     charge ||= CHARGE_WORDS.includes(choice.name);
   }
   // 冲锋类词表示贴身出手：物理技能未写投送方式时按实际近战武器。
@@ -170,14 +187,14 @@ export function parseSkillMechanismParts(text: string): SkillMechanismParts | un
   for (const m of found) {
     const normalized = m.trait && canonicalTraitId(m.trait) !== m.trait ? SKILL_MODIFIERS.find(r => r.trait === canonicalTraitId(m.trait!))! : m;
     const replacement = normalized.id in SKILL_GRANT_REPLACEMENTS ? SKILL_MODIFIERS.find((r) => r.id === SKILL_GRANT_REPLACEMENTS[normalized.id]!) : normalized;
-    if (replacement && replacement !== m && !polarityConflict(replacement, category)) { modifiers.push(replacement.id); replaced.push([m.name.replace(/^特质/, ''), replacement.name]); }
+    if (replacement && replacement !== m && !polarityConflict(replacement, category)) { modifiers.push(replacement.id); if (modifierPowers[m.id]) modifierPowers[replacement.id] = modifierPowers[m.id]!; replaced.push([m.name.replace(/^特质/, ''), replacement.name]); }
     else if (replacement === m && !retiredTraitModifier(m) && !polarityConflict(m, category)) modifiers.push(m.id);
     else dropped.push({ name: m.name.replace(/^特质/, ''), reason: why(m) });
   }
   // 增益/减益没有附加效果时会补默认效果；全部剔除后不能悄悄换成另一种技能。
   const effects = modifiers.filter((id) => !['melee', 'ranged', 'shield', 'projectile', 'thermal', 'arcane', 'martial', 'cone', 'line', 'ring', 'chain'].includes(id));
   if (dropped.length && !effects.length && !category.startsWith('physical') && !category.startsWith('magic')) return { dropped, replaced };
-  const mechanism = skillMechanismFromId(skillMechanismId({ category, area, modifiers }));
+  const mechanism = skillMechanismFromId(skillMechanismId({ category, area, modifiers, categoryPower, modifierPowers }));
   return mechanism ? { mechanism, dropped, replaced } : undefined;
 }
 /** 通用机制直接解析；自定义名称不进入机制推断，不匹配预制技能名。与类别冲突的效果不成立。 */
@@ -188,9 +205,19 @@ export function parseSkillMechanism(text: string): SkillMechanism | undefined {
 export function skillMechanismName(value: SkillMechanism | string): string {
   const mechanism = typeof value === 'string' ? skillMechanismFromId(value) : value;
   if (!mechanism) return '';
-  return SKILL_CATEGORIES.find((c) => c.id === mechanism.category)!.name
+  return SKILL_CATEGORIES.find((c) => c.id === mechanism.category)!.name + (mechanism.categoryPower ? 'L' + mechanism.categoryPower : '')
     + (mechanism.area && !mechanism.category.endsWith('area') ? '范围' : '')
     // 自身位移写在最后，读作“物理单体近战+突进”；其余顺序不变，已有技能的显示名不受影响。
     + [...mechanism.modifiers].sort((a, b) => Number(MOVEMENT_MODIFIERS.includes(a)) - Number(MOVEMENT_MODIFIERS.includes(b)))
-      .map((id) => SKILL_MODIFIERS.find((m) => m.id === id)!.name).join('+');
+      .map((id) => SKILL_MODIFIERS.find((m) => m.id === id)!.name + (mechanism.modifierPowers?.[id] ? 'L' + mechanism.modifierPowers[id] : '')).join('+');
+}
+
+/** Per-effect L survives rebuilding, save validation, barrier attachment and battle upgrades. */
+export function skillEffectPower(ability: Pick<Ability, 'recipe' | 'power'>, effect: EffectOp): number {
+  const key = effect.op === 'condition' ? SKILL_MODIFIERS.find(m => m.condition === effect.conditionId)?.id
+    : effect.op === 'trait' ? SKILL_MODIFIERS.find(m => m.trait === effect.traitId)?.id
+    : effect.op === 'heal' ? 'heal' : effect.op === 'barrier' ? 'barrier'
+    : effect.op === 'zone' ? 'zone-' + effect.kind : effect.op === 'move' ? effect.mode : undefined;
+  return (key ? ability.recipe?.modifierPowers?.[key] : undefined)
+    ?? (effect.op === 'trait' && effect.traitId === 'guardian' ? ability.recipe?.modifierPowers?.ward : undefined) ?? ability.power ?? 5;
 }

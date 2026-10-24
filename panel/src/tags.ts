@@ -1,5 +1,6 @@
 import { parseEnhancementSuffix, enhancementLabel, type Enhancements } from '../../engine/src/enhancements.js';
 import { parseSkillMechanism, skillMechanismId } from '../../engine/src/data/skill-mechanisms.js';
+import { splitSkillLevel } from './skill-notation.js';
 import { legacySkillEquivalent } from '../../engine/src/skill-catalog.js';
 import { decodeEntities } from './protocol-syntax.js';
 import { CATEGORY_LABELS } from '../../engine/src/data/ability-blueprints.js';
@@ -352,16 +353,25 @@ function blueprintKey(spec: string): string | undefined {
 
 /** 单条技能：可选 "名字:" 前缀 + 蓝图（必命中才有效）+ 可选 L等级 */
 function parseSkillItem(item: string): SkillSpec | undefined {
-  if ((item.match(/[lL]\s*\d+/g) ?? []).length > 1) throw Error('每个技能末尾只写一个L，若要不同等级请拆成两项技能');
-  const parsed = parseEnhancementSuffix(item,'skill');
-  if(parsed.bonuses){const skill=parseSkillItem(parsed.text);return skill?{...skill,bonuses:parsed.bonuses}:undefined;}
   const s = item.trim();
   if (!s) return undefined;
+  const separator = s.search(SPEC_SEP_RE), named = separator > 0;
+  const spec = named ? s.slice(separator + 1).trim() : s;
+  const notation = splitSkillLevel(spec);
+  if (notation.level !== undefined) {
+    if (!Number.isInteger(notation.level) || notation.level < 1 || notation.level > 10) return undefined;
+    const blueprintId = blueprintKey(notation.mechanism);
+    if (blueprintId) {
+      const bonuses = notation.suffix ? parseEnhancementSuffix('技能L' + notation.level + notation.suffix, 'skill').bonuses : undefined;
+      return { blueprintId, level: notation.level, ...(named ? { name: s.slice(0, separator).trim() } : {}), ...(bonuses ? { bonuses } : {}) };
+    }
+    return undefined;
+  }
   const idx = s.search(SPEC_SEP_RE);
   if (idx > 0) {
     const name = s.slice(0, idx).trim();
     const spec = s.slice(idx + 1).trim();
-    const m = spec.match(/^(.+?)\s*[lL]\s*(\d{1,2})$/);
+    const m = spec.match(/^(.+)\s*[lL]\s*(\d{1,2})$/);
     const bpName = (m ? m[1]! : spec).trim();
     const blueprintId = blueprintKey(bpName);
     if (blueprintId) {
@@ -375,7 +385,7 @@ function parseSkillItem(item: string): SkillSpec | undefined {
     if (fallback) return { blueprintId: fallback };
     return undefined;
   }
-  const m = s.match(/^(.+?)\s*[lL]\s*(\d{1,2})$/);
+  const m = s.match(/^(.+)\s*[lL]\s*(\d{1,2})$/);
   if (m) {
     const blueprintId = blueprintKey(m[1]!.trim());
     const level = Number(m[2]);

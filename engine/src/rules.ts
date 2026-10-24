@@ -146,7 +146,10 @@ export const V31_OVERFLOW_TW: RulePack = { ...V30_OVERFLOW_TW, id: 'v31-overflow
 /** V32 scales independent spell / single-projectile damage; V31 and earlier retain their saved budgets. */
 export const V32_OVERFLOW_D20: RulePack = { ...V31_OVERFLOW_D20, id: 'v32-overflow-d20', name: 'V32 技能爆发校准', independentSkillDamageMultiplier: .55 };
 export const V32_OVERFLOW_TW: RulePack = { ...V31_OVERFLOW_TW, id: 'v32-overflow-tw', name: 'V32 技能爆发校准会战', independentSkillDamageMultiplier: .55 };
+export const V33_OVERFLOW_D20: RulePack = { ...V32_OVERFLOW_D20, id: 'v33-overflow-d20', name: 'V33 穿戴与环形技能', armorWearModel: 'wear-v2', casterCenteredRing: true };
+export const V33_OVERFLOW_TW: RulePack = { ...V32_OVERFLOW_TW, id: 'v33-overflow-tw', name: 'V33 穿戴与环形技能会战', armorWearModel: 'wear-v2', casterCenteredRing: true };
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V33_OVERFLOW_D20.id]: V33_OVERFLOW_D20, [V33_OVERFLOW_TW.id]: V33_OVERFLOW_TW,
   [V32_OVERFLOW_D20.id]: V32_OVERFLOW_D20, [V32_OVERFLOW_TW.id]: V32_OVERFLOW_TW,
   [V31_OVERFLOW_D20.id]: V31_OVERFLOW_D20, [V31_OVERFLOW_TW.id]: V31_OVERFLOW_TW,
   [V30_OVERFLOW_D20.id]: V30_OVERFLOW_D20, [V30_OVERFLOW_TW.id]: V30_OVERFLOW_TW,

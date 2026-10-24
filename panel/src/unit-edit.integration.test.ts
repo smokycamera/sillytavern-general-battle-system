@@ -12,7 +12,7 @@ afterEach(() => { window.dispatchEvent(new Event('pagehide')); vi.unstubAllGloba
 it('managed character editing survives input, skill rerender, preview, confirmation and reopen without re-forging inventory', async () => {
   const f = nativeFixture(); await f.service.start(); localStorage.clear();
   try {
-    const d = newUnitDraft(); d.name = '无强化的原单位'; d.armor.tier = '1';
+    const d = newUnitDraft(); d.name = '无强化的原单位'; d.armor.tier = '3'; d.speedTier = '2';
     const unit = buildUnit(d, traitRegistry(), 'managed-edit-integration');
     await f.service.transact(() => ({ ...prepareInventoryState({ schemaVersion: 2, storage: [unitRecordFromCombatant(unit)] }), rosterIds: [unit.id] }));
     Object.assign(window, { __tavernBattleNative: { service: f.service, messages: {} }, __TAURITAVERN__: {}, SillyTavern: { getContext: () => f.context } });
@@ -29,6 +29,8 @@ it('managed character editing survives input, skill rerender, preview, confirmat
       expect(el, role).not.toBeNull(); el.value = value; el.dispatchEvent(new Event('input', { bubbles: true }));
     };
     await click('[data-action="workspace-tab"][data-tab="units"]');
+    await click(`[data-action="unit-detail"][data-id="${unit.id}"]`);
+    expect(document.body.textContent).toContain('迟缓·1.9格');
     await click('[data-action="manage-toggle"]');
     const before = f.service.snapshot(), original = before.storage![0]!;
     expect(original.equipmentManaged).toBe(true); expect(original.snapshot!.weapon!.recipe!.bonuses).toBeUndefined();
@@ -45,6 +47,7 @@ it('managed character editing survives input, skill rerender, preview, confirmat
     expect(result).toMatchObject({ name: '已编辑的单位', hp: 17, base: { hpMax: 100 }, note: '没有修改任何装备', equipmentManaged: true });
     for (const slot of ['weapon', 'sidearm', 'armor', 'shield'] as const) expect(result.snapshot![slot]).toEqual(original.snapshot![slot]);
     expect(result.snapshot!.abilities.some(a => a.name === '新学技能')).toBe(true);
+    expect(result.snapshot!.armorWearModel).toBe('wear-v2');
     expect(result.snapshot!.resources.SP).toBe(original.snapshot!.resources.SP);
     expect(after.inventory).toEqual(before.inventory);
     await click(`[data-action="storage-edit"][data-id="${unit.id}"]`);

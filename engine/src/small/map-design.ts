@@ -27,7 +27,7 @@ export const SCENE_NAMES: Record<BattlefieldScene, string> = { field: '野战', 
 export interface MapGenerationRecord {
   /** Scene identity is independent of map dimensions and survives capacity upgrades. */
   scene?: BattlefieldScene;
-  version: 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+  version: 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
   /** Explicit low-ground flooding; does not replace terrain obstacles or structures. */
   waterCoverage?: 'all' | 'regions';
   interior?: InteriorLayoutRecord;
