@@ -4,7 +4,7 @@ import { mapFamily, safeLandmarkLabel, type MapFamily } from '../../engine/src/s
 import type { BattlefieldSpec, Terrain } from '../../engine/src/small/spatial.js';
 import { retreatCells } from '../../engine/src/small/spatial.js';
 import { surfaceHeightAt } from '../../engine/src/small/height-map.js';
-import { S, type Grid } from './terrain-geometry.js';
+import { S, segments, type Grid } from './terrain-geometry.js';
 
 export type SceneStyle = 'field' | 'city' | 'compound' | 'interior' | 'trenches';
 export function sceneStyleOf(field: BattlefieldSpec): SceneStyle {
@@ -80,10 +80,14 @@ export function analyzeTerrain(field: BattlefieldSpec, id: string): TerrainScene
   };
 }
 
-/** 城门朝向：左右为墙体则为水平墙线上的门（通道南北向）。 */
-export function gateHorizontal(t: TerrainScene, p: number): boolean {
+/** 城门沿实际墙线转向；保留已有横竖门的判定，纯斜线门跟随斜墙。 */
+export function gateAngle(t: TerrainScene, p: number): number {
   const blocking = (q: number) => t.kindAt(q, 'wall', 'gate', 'tower', 'building') || t.legacyWall(q);
-  return (p % t.g.w > 0 && blocking(p - 1)) || (p % t.g.w < t.g.w - 1 && blocking(p + 1));
+  const lines = segments(t.g, [p], blocking, false, q => !!t.struct(q) || t.legacyWall(q));
+  if (lines.some(s => s.y0 === s.y1)) return 0;
+  if (lines.some(s => s.x0 === s.x1) || !lines.length) return 90;
+  const s = lines[0]!;
+  return Math.atan2(s.y1 - s.y0, s.x1 - s.x0) * 180 / Math.PI;
 }
 /** 桥的走向：两侧为水则桥面南北向。 */
 export function bridgeVertical(t: TerrainScene, p: number): boolean {

@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **3.0.3**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **3.0.4**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-3.0.3 reduces worn-armor movement penalties and forced city expansion, preserves selected compound outlines with varied room partitions, supports open connected city defences and fixes caster-centered ring skills. Combined skills retain individual effect levels. See the [current release](docs/current-release.md).
+3.0.4 connects diagonal walls, roads, trenches and interior partitions in the existing map style, aligns gates and battlements with diagonal walls, and gives sailing units a matching ship silhouette. Destroyed sections retain their gaps. See the [current release](docs/current-release.md).
 
 ## Documentation
 
