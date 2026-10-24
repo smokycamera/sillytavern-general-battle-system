@@ -7,7 +7,7 @@ import { Session } from 'node:inspector';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
-import { SmallBattle, generateUnit, standardField, traitRegistry, V32_OVERFLOW_D20, compileGenericSkill,
+import { SmallBattle, generateUnit, standardField, traitRegistry, V34_OVERFLOW_D20, compileGenericSkill,
   attachCarriedItems, compileItem, type Side, type UnitIntent } from '../engine/src/index.js';
 import { sampledPreviewComputations } from '../engine/src/damage.js';
 
@@ -37,7 +37,7 @@ for (const scenario of cases.filter(c => !selected || selected.includes(c.name))
         rulesVersion: 'v2', damageModel: 'wounds-v2', weaponClass: i % 3 === 0 ? 'bow' : 'spear',
         weaponLevel: 4, armorTier: 1, traits: [] }, { registry, seed: `${seed}:u${i}`, noVariance: true }).unit;
       unit.id = `u${i}`;
-      unit.abilities = definitions.map(id => compileGenericSkill('generic:' + id, 4, unit.id, undefined, 'wounds-v2', V32_OVERFLOW_D20.skillModel));
+      unit.abilities = definitions.map(id => compileGenericSkill('generic:' + id, 4, unit.id, undefined, 'wounds-v2', V34_OVERFLOW_D20.skillModel));
       unit.preparedAbilityIds = unit.abilities.map(a => a.id);
       if (scenario.items) Object.assign(unit, attachCarriedItems(unit, ['buff:attack', 'buff:defense', 'buff:barrier', 'buff:heal'].map((active, j) => ({
         id: `dose${j}`, name: active, quantity: 40, revision: 1,
@@ -46,7 +46,7 @@ for (const scenario of cases.filter(c => !selected || selected.includes(c.name))
       return unit;
     });
     const field = standardField(13, 19); field.tiles.fill('open'); field.layerVersion = 1; field.structures = field.tiles.map(() => null);
-    const battle = new SmallBattle({ combatants, battlefield: field, rules: V32_OVERFLOW_D20, traitRegistry: registry, seed }); battle.start();
+    const battle = new SmallBattle({ combatants, battlefield: field, rules: V34_OVERFLOW_D20, traitRegistry: registry, seed }); battle.start();
     const offsets = { ally: 0, enemy: 0, neutral: 0 };
     for (const u of combatants) {
       const n = offsets[u.side]++;
