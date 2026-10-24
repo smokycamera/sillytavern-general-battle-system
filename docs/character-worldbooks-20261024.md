@@ -6,6 +6,8 @@
 
 扩展启动时就监听激活事件，关闭或重新打开战阵面板不会丢失已取得的结果。结果只留在内存，不写入战斗存档或角色卡。切换角色、聊天或分支后不复用旧结果；编辑、切换或删除消息后需要重新生成正文。刷新页面后也需要先让角色卡生成一次正文，才能取得当前聊天的激活结果。尚未取得结果或酒馆未提供激活接口时显示具体原因，不悄悄改发整本世界书。
 
+3.0.2补充：尚未取得结果时，先只读检查宿主的世界书绑定配置。角色卡主书与附加书、聊天、全局及人设都没有配置世界书时，直接按空世界书继续开战；这不是缺少激活结果。宿主配置无法确认时不推断为空。该检查不读取整本正文、不扫描触发词、不调用主API，也不重抽概率。世界书诊断使用受控错误码跨宿主和面板传递，避免具体原因被通用模型错误覆盖。
+
 手动模式保持原来的行为：选择整本或指定条目，每次请求发送勾选的内容，不受关键词触发限制。两种模式互斥，绑定时不叠加手动选择。
 
 实现依据：SillyTavern 与 TauriTavern 的 `getWorldInfoPrompt()` 都在非 dry-run 的扫描结果非空时，通过 `WORLD_INFO_ACTIVATED` 发出本轮激活条目；空结果不发此事件，因此在真实的 `GENERATION_STARTED` 时先清空上轮结果。扫描试运行不会覆盖已取得的真实结果；TauriTavern 从 agent 检查点继续时保留原有激活结果，若宿主发出新激活事件则随之更新。兼容 `eventTypes` / `event_types` 以及 `off` / `removeListener`。相关接口见 [SillyTavern world-info.js](https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js)、[SillyTavern script.js](https://github.com/SillyTavern/SillyTavern/blob/release/public/script.js)、[TauriTavern world-info.js](https://github.com/Darkatse/TauriTavern/blob/main/src/scripts/world-info.js) 与 [TauriTavern script.js](https://github.com/Darkatse/TauriTavern/blob/main/src/script.js)。

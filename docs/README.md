@@ -12,6 +12,7 @@
 - [室内空间骨架、Flash 实测与其他地图审阅](indoor-layouts-20261020.md)
 - [建筑围攻、堑壕与护送／夺点选址](siege-trenches-20261021.md)
 - [区域城市、自适应地图、可进入建筑与3.0.1复核](region-battlefields-20261024.md)
+- [绑定世界书开战错误与无世界书处理（3.0.2）](worldbook-start-20261024.md)
 - [战斗存档策略](battle-save-policy-20261016.md)
 - [MVU 共用保存与历史精简](mvu-save-history-20261020.md)
 - [MCP 玩家桥接](mcp-player-bridge.md)

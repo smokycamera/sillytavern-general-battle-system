@@ -3,6 +3,7 @@ import { createWorldbookSource } from '../../host/src/worldbooks.js';
 import { selectedWorldbookMessages, setLlmWorldbookSource, normalizeWorldbookSelection } from './llm-worldbooks.js';
 import { openAiJsonRequest, openAiCommandRequest, openAiTextRequest } from './jev-connection.js';
 import { llmConnection, llmConnectionKey, type LlmSettings } from './llm-settings.js';
+import { WorldbookReadError } from '../../host/src/worldbook-error.js';
 
 afterEach(()=>setLlmWorldbookSource(undefined));
 it('reads the host catalog and entry IDs without storing or altering other host settings',async()=>{
@@ -57,7 +58,18 @@ it('uses the current character activation for every request type, without mixing
   source.active.mockResolvedValue([]);
   await openAiTextRequest(connection,messages,signal,request);
   expect(bodies.at(-1).messages).toEqual(messages);
-  source.active.mockRejectedValue(Error('请先生成正文'));
-  await expect(openAiTextRequest(connection,messages,signal,request)).rejects.toThrow('请先生成正文');
+  source.active.mockRejectedValue(new WorldbookReadError('activation-missing'));
+  await expect(openAiTextRequest(connection,messages,signal,request)).rejects.toThrow('生成一次正文');
   expect(bodies).toHaveLength(4);
+});
+
+it('preserves host iframe worldbook error codes and never echoes an unknown read failure or sends a model request',async()=>{
+  const settings:LlmSettings={enabled:true,selectBattleScale:false,windowSize:2,url:'https://example.invalid/v1',token:'private-fixture-key',model:'fixture',models:[],worldbookMode:'character'};
+  const request=vi.fn(),signal=new AbortController().signal;
+  setLlmWorldbookSource({list:vi.fn(),read:vi.fn(),active:async()=>{throw {name:'WorldbookReadError',code:'activation-missing',message:'private-fixture-key'};}});
+  await expect(openAiJsonRequest(llmConnection(settings),[],signal,request)).rejects.toThrow('生成一次正文');
+  setLlmWorldbookSource({list:vi.fn(),read:vi.fn(),active:async()=>{throw Error('private-fixture-key');}});
+  const error=await openAiJsonRequest(llmConnection(settings),[],signal,request).catch(error=>error as Error);
+  expect(error.message).toContain('世界书激活结果失败');expect(error.message).not.toContain('private-fixture-key');
+  expect(request).not.toHaveBeenCalled();
 });

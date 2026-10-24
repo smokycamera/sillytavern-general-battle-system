@@ -1,6 +1,7 @@
 import { throwIfAborted } from './browser-compat.js';
 import type { HostContext } from './sillytavern.js';
 import type { WorldbookContent } from './worldbooks.js';
+import { WorldbookReadError } from './worldbook-error.js';
 
 function scope(context: HostContext): string | undefined {
   if (context.groupId !== undefined && context.groupId !== null && context.groupId !== false && context.groupId !== '') return;
@@ -27,7 +28,7 @@ function contents(raw: unknown): WorldbookContent[] {
 }
 
 /** Share the primary API's actual activation, without another probability roll or timed-effect update. */
-export function trackActivatedWorldbooks(context: () => HostContext): {
+export function trackActivatedWorldbooks(context: () => HostContext, hasWorldbooks?: (signal?: AbortSignal) => Promise<boolean | undefined>): {
   read(signal?: AbortSignal): Promise<WorldbookContent[]>;
   dispose(): void;
 } {
@@ -67,12 +68,20 @@ export function trackActivatedWorldbooks(context: () => HostContext): {
   return {
     async read(signal) {
       throwIfAborted(signal);
-      if (disposed || !source || !events.WORLD_INFO_ACTIVATED || !events.GENERATION_STARTED)
-        throw Error('当前酒馆未提供世界书激活接口，请使用手动选择模式');
+      if (disposed) throw new WorldbookReadError('activation-unsupported');
       const current = scope(context());
-      if (!current) throw Error('请先打开当前角色卡的聊天，再使用绑定世界书模式');
+      if (!current) throw new WorldbookReadError(!source || !events.WORLD_INFO_ACTIVATED || !events.GENERATION_STARTED ? 'activation-unsupported' : 'chat-required');
+      if (!snapshot || snapshot.scope !== current) {
+        const configured = await hasWorldbooks?.(signal);
+        throwIfAborted(signal);
+        if (disposed || scope(context()) !== current) throw new WorldbookReadError('scope-changed');
+        // A missing activation is harmless only when the host confirms that every source is unbound.
+        if ((!snapshot || snapshot.scope !== current) && configured === false) return [];
+      }
+      if (!source || !events.WORLD_INFO_ACTIVATED || !events.GENERATION_STARTED)
+        throw new WorldbookReadError('activation-unsupported');
       if (!snapshot || snapshot.scope !== current)
-        throw Error('尚未取得当前聊天的世界书激活结果，请先让角色卡生成一次正文');
+        throw new WorldbookReadError('activation-missing');
       return snapshot.books.map(book => ({ name: book.name, entries: book.entries.map(entry => ({ ...entry })) }));
     },
     dispose() { disposed = true; stops.forEach(stop => stop()); snapshot = undefined; generationScope = undefined; },
