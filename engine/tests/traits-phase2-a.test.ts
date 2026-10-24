@@ -23,7 +23,7 @@ function compile(input: string, owner: Combatant) {
 const ward = (u: Combatant) => resolveStack(collectMods(u, {}, defs, [], reg), 'ward', {}).multTotal;
 
 describe('P2-A 输入、冻结版本与真实来源', () => {
-  it('末尾L是唯一等级；旧名规范化、显式特质、重复组合及预算无绕级', () => {
+  it('共享L与单项覆盖保留实际等级；旧名规范化、显式特质、重复组合及预算无绕级', () => {
     for (const L of [1, 5, 8, 10]) for (const name of ['吸血', '特质吸血', '破甲大师', '屠兽者', '守护', '特质守护']) {
       const u = unit(), a = compile(`测试:buff+${name}L${L}`, u);
       const effect = a.effects.find(e => e.op === 'trait')!;
@@ -35,7 +35,14 @@ describe('P2-A 输入、冻结版本与真实来源', () => {
     }
     const u = unit(), a = compile('复合:buff+破甲+破甲大师+吸血+偷袭L10', u);
     expect(a.effects.filter(e => e.op === 'trait')).toHaveLength(3); expect(a.cost!.amount).toBeGreaterThan(6);
-    for (const f of [() => parseAbilitySpec('buff+吸血L3+偷袭L8'), () => normalizeNarrativeSkill('buff+吸血L3+偷袭L8', [])]) expect(f).toThrow('每个技能末尾只写一个L');
+    for (const text of ['buff+吸血L3+偷袭L8', normalizeNarrativeSkill('buff+吸血L3+偷袭L8', [])]) {
+      const mixed = compile(text, unit());
+      expect(mixed.power).toBe(8);
+      expect(mixed.effects).toEqual(expect.arrayContaining([
+        expect.objectContaining({ op: 'trait', traitId: 'lifesteal', level: 3 }),
+        expect.objectContaining({ op: 'trait', traitId: 'sneak-attack', level: 8 }),
+      ]));
+    }
     expect(narrativeTraitLevel('破甲大师L1')).toMatchObject({ id: 'ap-weapon', level: 1 });
     expect(narrativeTraitLevel('破甲大师')).toMatchObject({ id: 'ap-weapon', level: 8 });
   });

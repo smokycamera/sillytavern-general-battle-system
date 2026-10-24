@@ -27,7 +27,12 @@ it('物品种类识别与显示保留负值，配件不接受数值强化',()=>{
 it('正文修正同义词和省略的+1都归到正式强化方向', () => {
   expect(parseItemSpecification('步枪L5+1破甲+1距离').bonuses).toEqual({ penetration: 1, range: 1 });
   expect(parseItemSpecification('步枪L5+穿甲+伤害').bonuses).toEqual({ penetration: 1, damage: 1 });
-  expect(parseItemSpecification('魔法单体L5+热能')).toMatchObject({ active: 'generic:magic-single:thermal' });
+  for (const [word, channel] of [['热能', 'thermal'], ['奥术', 'arcane']]) {
+    expect(parseItemSpecification('魔法单体L5+' + word)).toMatchObject({ active: 'generic:magic-single:' + channel });
+    const channelSkill = parseProtocol(`<spawn name="通道" side="ally" scale="hero" skills="魔法单体L5+${word}+3伤害"/>`);
+    expect(channelSkill.errors).toEqual([]);
+    expect(channelSkill.events[0]).toMatchObject({ skills: [{ blueprintId: 'generic:magic-single:' + channel, level: 5, bonuses: { damage: 3 } }] });
+  }
   expect(parseItemSpecification('魔法单体L5+3热能')).toMatchObject({ bonuses: { thermalDamage: 3 } });
   const parsed = parseProtocol('<tb><spawn name="校验" side="ally" scale="hero" weapon="步枪L5+1穿甲+距离" skills="火花:魔法单体L4+破甲+射程"/></tb>');
   expect(parsed.errors).toEqual([]);

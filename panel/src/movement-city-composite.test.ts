@@ -1,6 +1,6 @@
 import {describe,it,expect,vi} from 'vitest';
 import {generateUnit,traitRegistry,SmallBattle,MassBattle,V32_OVERFLOW_D20,V33_OVERFLOW_D20,V33_OVERFLOW_TW,
-  prepareCombatModel,movementPoints,compileSkill,upgradeCombatSkills,standardField,type Combatant} from '../../engine/src/index.js';
+  prepareCombatModel,prepareSkillModel,movementPoints,compileSkill,upgradeCombatSkills,applySkillTrait,activeTraitIds,expireTraitSources,standardField,type Combatant} from '../../engine/src/index.js';
 import {areaTargets} from '../../engine/src/area-effects.js';
 import {loadRatio} from '../../engine/src/equipment-load.js';
 import {parseProtocol} from './protocol.js';
@@ -44,6 +44,40 @@ describe('移动、开放城墙与组合技能的实际行为',()=>{
    const loaded=materializeUnitRecord(JSON.parse(JSON.stringify(saved.storage![0]!)),registry);
    prepareCombatModel(loaded,V33_OVERFLOW_D20);upgradeCombatSkills(loaded);
    expect(loaded.abilities[0]!.effects.find(e=>e.op==='condition'&&e.conditionId==='fearful')).toMatchObject(fear!);
+  }
+ });
+ it('攻击方式、形状与通道不分级，单写L也不改变机制或挤掉可分级效果',()=>{
+  for(const [category,word] of [
+   ['物理单体','近战'],['物理单体','射击'],['物理单体','盾牌'],['物理单体','投射'],
+   ['魔法单体','热能'],['魔法单体','奥术'],['增益','战技'],
+   ...['扇形','直线','环形','连锁'].map(word=>['物理范围',word]),
+  ]) {
+   const effect=category==='增益'?'治疗':'惊惧';
+   const plain=`（${category}+${word}+${effect}L2）L4`,written=`（${category}+${word}L9+${effect}L2）L4`;
+   const spec=parseAbilitySpec(written)[0]!;expect(spec,word).toEqual(parseAbilitySpec(plain)[0]);
+   const parsed=parseProtocol(`<spawn name="a" side="ally" scale="hero" skills="${written}"/>`);
+   expect(parsed.errors).toEqual([]);expect(parsed.events[0]).toMatchObject({skills:[spec]});
+   expect(parseProtocol(parsed.canonical).canonical).toBe(parsed.canonical);
+   const skill=compileSkill({id:spec.blueprintId},spec.level!,'a','skills-v4');
+   expect(skill.recipe?.modifierPowers).toEqual({[effect==='治疗'?'heal':'fear']:2});
+  }
+ });
+ it('不可分级特质忽略单独的L，不改授予强度和持续，独立治疗等级仍保留',()=>{
+  for(const word of ['飞行','机械化','两栖','航行','登城']) {
+   const plain=`（buff+${word}+治疗L2）L4`,written=`（buff+${word}L9+治疗L2）L4`;
+   const spec=parseAbilitySpec(written)[0]!;expect(spec,word).toEqual(parseAbilitySpec(plain)[0]);
+   const a=unit('fixed-'+word);a.abilities=[compileSkill({id:spec.blueprintId},spec.level!,a.id,'skills-v4')];
+   prepareSkillModel(a,V33_OVERFLOW_D20);prepareCombatModel(a,V33_OVERFLOW_D20);upgradeCombatSkills(a);
+   expect(a.abilities[0]!.recipe?.modifierPowers).toEqual({heal:2});
+   const trait=a.abilities[0]!.effects.find(e=>e.op==='trait')!;
+   expect(trait).toMatchObject({op:'trait',dur:1});expect(trait).not.toHaveProperty('level');
+   if(trait.op!=='trait')throw Error('fixture');
+   applySkillTrait(a,a,a.abilities[0]!,trait,'fixed');
+   expect(activeTraitIds(a)).toContain(trait.traitId);
+   expect(a.traitSources?.at(-1)).not.toHaveProperty('traitLevels');
+   expect(a.abilities[0]!.effects.find(e=>e.op==='heal')).toMatchObject({power:2});
+   expect(combatantFromUnknown(JSON.parse(JSON.stringify(a))).abilities).toEqual(a.abilities);
+   expireTraitSources(a,'rounds');expect(activeTraitIds(a)).not.toContain(trait.traitId);
   }
  });
  it('环形以施放者为圆心，包含唯一选中敌人，并能实际命中和附加惊惧',()=>{

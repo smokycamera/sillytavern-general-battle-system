@@ -1,5 +1,5 @@
 import { canonicalTraitId, TRAIT_LEVEL_ALIASES } from '../trait-parameters.js';
-import { TRAITS, TRAIT_FORMER_NAMES } from './traits.js';
+import { TRAITS, TRAIT_FORMER_NAMES, isGradedTrait } from './traits.js';
 import type { Ability, EffectOp } from '../types.js';
 
 export const SKILL_CATEGORIES = [
@@ -82,6 +82,9 @@ export const SKILL_MODIFIERS: SkillModifier[] = [
   { id: 'dash', name: '突进', allowed: 'any' }, { id: 'blink', name: '闪现', allowed: 'any' }, { id: 'withdraw', name: '后撤', allowed: 'any' },
   ...TRAITS.filter((t) => t.v2SourceReady).map((t): SkillModifier => ({ id: 'trait-' + t.id, name: '特质' + t.name, allowed: 'buff', trait: t.id })),
 ];
+const FIXED_MODIFIERS = new Set(['melee', 'ranged', 'shield', 'projectile', 'thermal', 'arcane', 'martial', 'cone', 'line', 'ring', 'chain']);
+const acceptsModifierPower = (modifier: SkillModifier) => !FIXED_MODIFIERS.has(modifier.id)
+  && (!modifier.trait || isGradedTrait(canonicalTraitId(modifier.trait)));
 const TRAIT_BY_ID = new Map(TRAITS.map((t) => [t.id, t]));
 /** 停用特质与身体/装备特质只为旧技能的 id 保留，新技能不能再选。 */
 const retiredTraitModifier = (m: SkillModifier) => !!m.trait && !!(TRAIT_BY_ID.get(m.trait)?.legacy || TRAIT_BY_ID.get(m.trait)?.derived);
@@ -176,7 +179,7 @@ export function parseSkillMechanismParts(text: string): SkillMechanismParts | un
     const choice = choices.find((m) => source.startsWith(m.name)); if (!choice) return undefined;
     found.push(choice.modifier); source = source.slice(choice.name.length).trimStart();
     const power = readPower();
-    if (power !== undefined) modifierPowers[choice.modifier.id] = power;
+    if (power !== undefined && acceptsModifierPower(choice.modifier)) modifierPowers[choice.modifier.id] = power;
     charge ||= CHARGE_WORDS.includes(choice.name);
   }
   // 冲锋类词表示贴身出手：物理技能未写投送方式时按实际近战武器。

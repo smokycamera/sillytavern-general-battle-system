@@ -91,7 +91,8 @@ export function normalizeNarrativeSkill(text: string, warnings: string[]): strin
   const { mechanism: base, level, suffix: rawSuffix } = splitSkillLevel(spec);
   if (level === undefined) { const bare = mechanism(spec, warnings, text); return prefix + (bare ? skillMechanismName(bare) : spec); }
   if (!Number.isInteger(level) || level < 1 || level > 10) throw Error('技能等级必须是L1–L10整数');
-  const suffix = normalizeNarrativeSpec('占位L1' + rawSuffix, 'skill').slice('占位L1'.length);
+  // Bare channel words are mechanisms; only an explicit number makes +3热能 a damage bonus.
+  const suffix = normalizeNarrativeSpec('占位L1' + rawSuffix).slice('占位L1'.length);
   let parsed = mechanism(base!, warnings, text);
   const formatted = () => { const body = parsed ? skillMechanismName(parsed) : base; return prefix + (/[lL]\d/.test(body) ? '(' + body + ')' : body) + 'L' + level; };
   if (!suffix) return formatted();
