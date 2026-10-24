@@ -148,7 +148,11 @@ export const V32_OVERFLOW_D20: RulePack = { ...V31_OVERFLOW_D20, id: 'v32-overfl
 export const V32_OVERFLOW_TW: RulePack = { ...V31_OVERFLOW_TW, id: 'v32-overflow-tw', name: 'V32 技能爆发校准会战', independentSkillDamageMultiplier: .55 };
 export const V33_OVERFLOW_D20: RulePack = { ...V32_OVERFLOW_D20, id: 'v33-overflow-d20', name: 'V33 穿戴与环形技能', armorWearModel: 'wear-v2', casterCenteredRing: true };
 export const V33_OVERFLOW_TW: RulePack = { ...V32_OVERFLOW_TW, id: 'v33-overflow-tw', name: 'V33 穿戴与环形技能会战', armorWearModel: 'wear-v2', casterCenteredRing: true };
+/** Three fueled bursts remain finite; historical battles keep their original damage. */
+export const V34_OVERFLOW_D20: RulePack = { ...V33_OVERFLOW_D20, id: 'v34-overflow-d20', name: 'V34 喷射火力', sprayerDamageMultiplier: 2, sprayerGroupDamageMultiplier: 1.25 };
+export const V34_OVERFLOW_TW: RulePack = { ...V33_OVERFLOW_TW, id: 'v34-overflow-tw', name: 'V34 喷射火力会战', sprayerDamageMultiplier: 2, sprayerGroupDamageMultiplier: 1.25 };
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V34_OVERFLOW_D20.id]: V34_OVERFLOW_D20, [V34_OVERFLOW_TW.id]: V34_OVERFLOW_TW,
   [V33_OVERFLOW_D20.id]: V33_OVERFLOW_D20, [V33_OVERFLOW_TW.id]: V33_OVERFLOW_TW,
   [V32_OVERFLOW_D20.id]: V32_OVERFLOW_D20, [V32_OVERFLOW_TW.id]: V32_OVERFLOW_TW,
   [V31_OVERFLOW_D20.id]: V31_OVERFLOW_D20, [V31_OVERFLOW_TW.id]: V31_OVERFLOW_TW,

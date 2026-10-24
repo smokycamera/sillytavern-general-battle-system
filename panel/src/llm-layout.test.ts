@@ -27,6 +27,29 @@ const ctx = (extra: Partial<LayoutContext> = {}): LayoutContext => ({ scene: 'ci
   units: [{ id: 'u1', name: '张辽', side: 'ally', kind: '人物·近战' }, { id: 'u2', name: '弩手', side: 'enemy', kind: '部队·远程' }], ...extra });
 
 describe('indoor preparation vocabulary', () => {
+  it('budgets five decisions plus five layouts independently and returns every rejected answer with its error', async () => {
+    const base = twoStep({ city: { at: 'N' } }); let decisions = 0, layouts = 0, validations = 0;
+    const stages: string[] = [], bodies: any[] = [];
+    const request = vi.fn<typeof fetch>(async (url, init) => {
+      const task = JSON.parse(String(init?.body)).messages.at(-1).content as string; bodies.push(task);
+      if (task.startsWith('【第1步')) {
+        decisions++;
+        if (decisions < 5) return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ rejected: decisions }) } }] }));
+      } else layouts++;
+      return base(url, init);
+    });
+    const controller = new LlmContextController(request);
+    await controller.select({ ...source(), onStage: () => stages.push(`${controller.stage!.step}:${controller.stage!.attempt}`) }, settings, () => true, r => {
+      if (r.battlefieldPlan && ++validations < 5) throw Error('地点部署容量不足' + validations);
+    });
+    expect([decisions, layouts]).toEqual([5, 5]);
+    expect(stages).toEqual(['decide:1','decide:2','decide:3','decide:4','decide:5','layout:1','layout:2','layout:3','layout:4','layout:5']);
+    const decision = JSON.parse(bodies[4].split('\n').at(-1));
+    expect(decision.state.previousAnswers.map((p: any) => p.answer.rejected)).toEqual([1,2,3,4]);
+    expect(decision.state.previousAnswers.every((p: any) => p.error.includes('selections.'))).toBe(true);
+    const history = JSON.parse(bodies[9].split('\n').find((line: string) => line.startsWith('此前失败回答：')).slice('此前失败回答：'.length));
+    expect(history).toHaveLength(4); expect(history.every((p: any) => p.answer.city.at === 'N' && p.error.includes('部署容量不足'))).toBe(true);
+  });
   it('前两次占领区失败、第三次才出现航行错误时，同次开战仍完成回退', async () => {
     const request=twoStep({city:{at:'N'}}),controller=new LlmContextController(request);let attempts=0;
     const result=await controller.select(source(),settings,()=>true,r=>{
@@ -34,10 +57,10 @@ describe('indoor preparation vocabulary', () => {
       attempts++;
       throw Error(attempts<3?'占领区域不合法':'舰队具有航行特质，但战场没有可用的深水或浅水部署格');
     });
-    expect(attempts).toBe(3);expect(request).toHaveBeenCalledTimes(4);expect(result.battlefieldPlan).toBeUndefined();
+    expect(attempts).toBe(LAYOUT_TRIES);expect(request).toHaveBeenCalledTimes(1+LAYOUT_TRIES);expect(result.battlefieldPlan).toBeUndefined();
     expect(result.layoutNotes).toContain('航行单位没有可用水域，改用带水域的本地地图');
   });
-  it('航行无水错误返回副 API，三次仍无水时本次开战自动回退带水域地图', async () => {
+  it('航行无水错误返回副 API，五次仍无水时本次开战自动回退带水域地图', async () => {
     const input = { ...source(), scope: 'sailing-water' }; input.roster = [input.roster[0]!, input.roster[4]!]; input.roster[0]!.traits.push('sailing');
     const request = twoStep({ water: { type: 'none' }, ally: { at: ['B4'] }, enemy: { at: ['B1'] } },
       { ...siegeChoice, field: 'plains', objective: 'annihilation', scene: 'interior' });

@@ -16,7 +16,7 @@ import { prepareGridDeployment, deploymentDepth } from './spatial.js';
 import { unitHeight, heightDefense, heightReach, standingTerrain, surfaceHeightAt, reportsHeights } from './height-map.js';
 import { bonusMultiplier } from '../enhancements.js';
 import { regionalOrder, intentOrder, type UnitIntent } from './team-tactics.js';
-import { findIntentRoute, intentPlace } from './intent-path.js';
+import { findIntentRoute, intentPlace, intentRouteFailure } from './intent-path.js';
 import { groundBlocked, isElevated, intactStructure, canClimbFrom, meleeHeightReason, meleeContact, structureDefense, structureDurability, damageStructure, weaponBreachBudget, structureTraitMultiplier, STRUCTURE_NAMES } from './layers.js';
 import { tacticalSkillCost, tacticalRestValue } from '../skill-economy.js';
 import { isEnduranceModel, fatiguePenalty, abilityCost, prepareResourceModel, recoverSp, skillExertion, resourceRound } from '../resources.js';
@@ -833,8 +833,8 @@ export class SmallBattle {
     return undefined;
   }
   /** Shared pure validation used by the inspector, AI and execution. */
-  structurePreview(actorId: string, cell: number, mode = 'primary', from?: number): { reason?: string; damage: number; coefficient?: number; actions?: number } {
-    const actor = { ...this.byId(actorId), ...(from === undefined ? {} : { pos: from }) }, field = this.battlefield;
+  structurePreview(actorId: string, cell: number, mode = 'primary', from?: number | Pick<Combatant, 'pos' | 'elevation' | 'airborne'>): { reason?: string; damage: number; coefficient?: number; actions?: number } {
+    const actor = { ...this.byId(actorId), ...(typeof from === 'number' ? { pos: from } : from) }, field = this.battlefield;
     const fail = (reason: string) => ({ reason, damage: 0 });
     if (!field?.layerVersion || actor.pos === undefined || !this.isTurnOf(actorId) || actor.status !== 'ready' || this.isOver() || !this.nonSkillActionAvailable(actorId)) return fail('当前没有可用的破障行动');
     if (mode !== 'primary' && mode !== 'sidearm' && !mode.startsWith('ability:')) return fail('未知破障方式');
@@ -846,6 +846,7 @@ export class SmallBattle {
     const usesWeapon = !ability || ability.damageBasis === 'weapon';
     const weapon = ability ? usesWeapon ? skillWeapon(actor, ability) : undefined : mode === 'sidearm' ? actor.sidearm : actor.weapon;
     if (usesWeapon && !weapon) return fail('没有可用武器');
+    const weaponReason = usesWeapon && armsWeaponReason(actor, weapon); if (weaponReason) return fail(weaponReason);
     if (actor.conditions.some(c => c.dur > 0 && (this.conditions.get(c.id)?.skipTurn
       || usesWeapon && baseMechanism(weapon) !== 'natural' && this.conditions.get(c.id)?.preventAttack
       || ability?.delivery === 'magic' && this.conditions.get(c.id)?.preventMagic))) return fail('当前状态禁止攻击结构');
@@ -910,6 +911,7 @@ export class SmallBattle {
       addTacticalEffort(actor, skillExertion(actor, ability)); this.spendAction(actorId, false);
     } else { addTacticalEffort(actor, 1); this.spendAction(actorId); }
     if (weapon && (!ability || ability.damageBasis === 'weapon') && isRangedWeapon(weapon) && weaponReloadTurns(weapon)) this.reloadCd.set(weaponReloadKey(actor, weapon), weaponReloadTurns(weapon) + 1);
+    if (weapon && (!ability || ability.damageBasis === 'weapon')) { spendSprayerFuel(actor, weapon); noteArmsFire(actor, weapon); }
     const result = damageStructure(field, cell, preview.damage);
     revealUnit(this.observationContext(), actor); delete actor.tacticalPose;
     this.recordEvent({ round: this.round, kind: ability ? 'ability' : 'attack', participants: [actorId],
@@ -2145,7 +2147,16 @@ export class SmallBattle {
   private followIntent(unit: Combatant, intent: UnitIntent): void {
     if (intent.mode === 'use_ability' && this.intentUseDone) return;
     const field = this.battlefield!, blocked = new Set<number>();
+    let reportedBlocked = false;
+    const feedback = (reason: string, temporary: boolean) => this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id],
+      intentFailure: { unitId: unit.id, ...(intent.cell !== undefined ? { cell: intent.cell } : {}), temporary },
+      text: `${unit.name} 指令未完成${intent.cell === undefined ? '' : '（目标' + cellLabel(field, intent.cell) + '）'}：${reason}` });
+    const structureCommand = intent.mode === 'attack' && !intent.targetId && intent.cell !== undefined;
+    const structureModes = ['primary', ...(unit.sidearm ? ['sidearm'] : []), ...unit.abilities.filter(a => a.effects.some(e => e.op === 'damage')).map(a => 'ability:' + a.id)];
+    const structureMode = (actor: Combatant) => structureModes.map(mode => ({ mode, ...this.structurePreview(unit.id, intent.cell!, mode, actor) }))
+      .filter(p => !p.reason).sort((a, b) => b.damage - a.damage)[0]?.mode;
     for (let step = 0; step < field.tiles.length * 2 && this.isTurnOf(unit.id) && unit.status === 'ready' && !this.isOver(); step++) {
+      if (structureCommand && (!intactStructure(field, intent.cell!) || !this.nonSkillActionAvailable(unit.id))) break;
       const known = this.visibleCombatants(unit.side), remembered = this.intentKnown(unit);
       const target = remembered.find(u => u.id === intent.targetId && (intent.mode === 'use_ability' ? ['ready', 'routing', 'dying'].includes(u.status) : u.side !== unit.side && ['ready', 'routing'].includes(u.status)));
       const ability = intent.mode === 'use_ability' ? unit.abilities.find(a => a.id === intent.abilityId) : undefined;
@@ -2159,7 +2170,7 @@ export class SmallBattle {
       const gateCommand = intent.mode === 'open_gate' || intent.mode === 'close_gate';
       const door = gateCommand && intactStructure(field, intent.cell!);
       if (gateCommand && (!door || door.kind !== 'gate' || door.gateState === (intent.mode === 'open_gate' ? 'open' : 'closed'))) break;
-      const destination = gateCommand || intent.cell === undefined ? undefined : intentPlace(field, unit, intent.cell) ?? { cell: intent.cell, layer: 'ground' as const };
+      const destination = gateCommand || structureCommand || intent.cell === undefined ? undefined : intentPlace(field, unit, intent.cell) ?? { cell: intent.cell, layer: 'ground' as const };
       const attackPosition = (actor: Combatant) => !!target && [actor.weapon, ...(actor.sidearm ? [actor.sidearm] : [])].some(weapon => {
         const ranged = isRangedWeapon(weapon), adapted = gridWeapon(weapon, this.rules.combatModel === MEMBER_HEALTH_MODEL, this.rules.armsModel);
         return !weaponTargetReason({ actor, target, weapon: adapted, ranged, distance: this.dist(actor, target), field, units: known })
@@ -2169,41 +2180,46 @@ export class SmallBattle {
           && (!ranged || !rangedScreen(actor, target, weapon, known, { mode: 'small', width: field.width, battlefield: field }, this.conditionDefMap()));
       });
       const goal = (actor: Combatant) => gateCommand ? !this.gatePositionReason(actor, intent.cell!, known)
+        : structureCommand ? structureMode(actor) !== undefined
         : intent.mode === 'attack' ? attackPosition(actor)
         : intent.mode === 'use_ability' ? !!ability && !!target && !abilityTargetReason({ actor, ability: gridAbility(this.itemUse(actor, ability, target).ability, actor.armsModel), target,
             distance: this.dist(actor, target), field, units: known }) && unitLineOfSight(field, actor, target)
         : intent.mode === 'support' ? !!support && sameLayer(actor, support) && gridDistance(field, actor.pos!, support.pos!) <= 1 && actor.pos !== support.pos
         : !!destination && actor.pos === destination.cell && isElevated(actor) === (destination.layer === 'platform');
       if (goal(unit)) {
+        if (structureCommand) { this.attackStructure(unit.id, intent.cell!, structureMode(unit)!); continue; }
         if (gateCommand && !this.gateReason(unit.id, intent.cell!)) this.toggleGate(unit.id, intent.cell!);
         if (ability && target) cast();
         break;
       }
-      if (!gateCommand && (['attack', 'use_ability'].includes(intent.mode) && !target || intent.mode === 'support' && !support || !['attack', 'support', 'use_ability'].includes(intent.mode) && !destination)) break;
-      const toward = gateCommand ? intent.cell : intent.mode === 'attack' || intent.mode === 'use_ability' ? target?.pos : intent.mode === 'support' ? support?.pos : destination?.cell;
+      if (!gateCommand && !structureCommand && (['attack', 'use_ability'].includes(intent.mode) && !target || intent.mode === 'support' && !support || !['attack', 'support', 'use_ability'].includes(intent.mode) && !destination)) break;
+      const toward = gateCommand || structureCommand ? intent.cell : intent.mode === 'attack' || intent.mode === 'use_ability' ? target?.pos : intent.mode === 'support' ? support?.pos : destination?.cell;
+      let reachable: Combatant[] = [];
       let route = findIntentRoute(field, unit, known, goal, (actor, cell) => !this.gatePositionReason(actor, cell, known),
-        this.movementBudget(unit.id), this.climbMovementCost(unit.id), this.fieldTags, blocked);
+        this.movementBudget(unit.id), this.climbMovementCost(unit.id), this.fieldTags, blocked, undefined, actors => { reachable = actors; });
+      if (!route && !reportedBlocked) {
+        feedback(intentRouteFailure(field, unit, known, reachable, toward, this.visibleCells(unit.side), (actor, cell) => !this.gatePositionReason(actor, cell, known)), false);
+        reportedBlocked = true;
+      }
       // An occupied assigned cell still needs to be approached, then cleared or vacated.
       if (!route && destination && !canOccupy(field, known, { ...unit, elevation: destination.layer === 'platform' ? 1 : undefined }, destination.cell))
         route = findIntentRoute(field, unit, known, actor => isElevated(actor) === (destination.layer === 'platform') && gridDistance(field, actor.pos!, destination.cell) === 1,
           (actor, cell) => !this.gatePositionReason(actor, cell, known), this.movementBudget(unit.id), this.climbMovementCost(unit.id), this.fieldTags, blocked);
       if (!route && toward !== undefined) route = findIntentRoute(field, unit, known, goal, (actor, cell) => !this.gatePositionReason(actor, cell, known),
         this.movementBudget(unit.id), this.climbMovementCost(unit.id), this.fieldTags, blocked, actor => gridDistance(field, actor.pos!, toward));
-      if (!route) {
-        this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], text: unit.name + ' 按指令前往目标，当前路径受阻，保持位置' }); break;
-      }
+      if (!route) break;
       const next = route[0]; if (!next) break;
       const before = unit.pos, beforeLayer = unit.elevation;
       if (next.kind === 'open') {
-        if (this.gateReason(unit.id, next.cell)) break;
+        const reason = this.gateReason(unit.id, next.cell); if (reason) { if (!reportedBlocked) feedback(reason, true); break; }
         this.toggleGate(unit.id, next.cell); continue;
       }
       if (next.kind === 'climb') {
-        if (this.climbReason(unit.id, next.cell)) break;
+        const reason = this.climbReason(unit.id, next.cell); if (reason) { if (!reportedBlocked) feedback(reason, true); break; }
         this.climb(unit.id, next.cell);
       } else {
         const cost = movementStepCost(field, next.cell, unit, this.fieldTags, unit.pos);
-        if (cost > this.movementLeft(unit.id)) break;
+        if (cost > this.movementLeft(unit.id)) { if (!reportedBlocked) feedback('路线可通行，本轮剩余移动额度不足', true); break; }
         this.walkPath(unit.id, { cells: [unit.pos!, next.cell], cost }, { spend: true, haste: true, opportunity: true });
       }
       if (before === unit.pos && beforeLayer === unit.elevation) {
@@ -2216,7 +2232,8 @@ export class SmallBattle {
     this.actionIntent = intent;
     this.intentUseDone = false;
     // A task that became impossible during the round must not release movement back to the city AI.
-    const referenced = intent && (['attack', 'use_ability'].includes(intent.mode) ? this.combatants.some(u => u.id === intent.targetId)
+    const referenced = intent && (intent.mode === 'attack' && !intent.targetId && intent.cell !== undefined ? !!this.battlefield?.structures?.[intent.cell]
+      : ['attack', 'use_ability'].includes(intent.mode) ? this.combatants.some(u => u.id === intent.targetId)
       : intent.mode === 'support' ? this.combatants.some(u => u.id === intent.supportId && u.side === this.byId(unitId).side)
       : ['open_gate', 'close_gate'].includes(intent.mode) && intent.cell !== undefined && this.battlefield?.structures?.[intent.cell]?.kind === 'gate');
     this.intentActive = !!this.battlefield && (!!referenced || !!intentOrder(this.battlefield, this.byId(unitId), intent, intent ? this.intentKnown(this.byId(unitId)) : []));
@@ -2270,6 +2287,7 @@ export class SmallBattle {
     if (!this.isTurnOf(unitId) || unit.status !== 'ready' || this.isOver()) return;
     if (this.intentActive) this.followIntent(unit, this.actionIntent!);
     if (!this.isTurnOf(unitId) || unit.status !== 'ready' || this.isOver()) { if (!this.isOver() && this.isTurnOf(unitId)) this.endTurn(); return; }
+    if (this.intentActive && this.actionIntent!.mode === 'attack' && !this.actionIntent!.targetId) { this.endTurn(); return; }
     if (this.intentActive && this.actionIntent!.mode === 'use_ability') {
       if (!this.intentUseDone || !this.nonSkillActionAvailable(unitId)) { this.endTurn(); return; }
       // The explicit use is one action. Spend any legal remainder in place without repeating it.

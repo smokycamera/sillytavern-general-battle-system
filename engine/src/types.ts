@@ -313,6 +313,8 @@ export interface Combatant {
   resourceModel?: 'endurance-v1' | 'endurance-v2';
   /** V12 weapon/armor calibration, projected from the battle rules; absent keeps the frozen V11 behaviour. */
   armsModel?: import('./arms.js').ArmsModel;
+  sprayerDamageMultiplier?: number;
+  sprayerGroupDamageMultiplier?: number;
   barrierModel?: 'barrier-grades-v1';
   /** V13 trait overhaul, projected from the battle rules; absent keeps the frozen V12 trait rules. */
   traitModel?: 'traits-v1';
@@ -581,6 +583,8 @@ export type LogKind =
   | 'battle-end';
 
 export interface BattleLogEntry {
+  /** Actual execution feedback; temporary budget limits do not invalidate a route. */
+  intentFailure?: { unitId: string; cell?: number; temporary: boolean };
   /** 消息与交涉须保留原话，不按战斗效果精简。 */
   communication?: boolean;
   /** 破障的实际结构变化；旧日志仍可按原有的结构耐久文本展示。 */
@@ -633,6 +637,9 @@ export interface RulePack {
   casterCenteredRing?: boolean;
   /** V32：可信生成的直接法术及独立单体投射伤害倍率；不重写技能或冻结道具。 */
   independentSkillDamageMultiplier?: number;
+  /** V34 increases each of the three fueled sprays without rewriting physical weapons. */
+  sprayerDamageMultiplier?: number;
+  sprayerGroupDamageMultiplier?: number;
   /** V7：跨代充分穿透追加毁伤；旧快照缺省关闭。 */
   overmatch?: boolean;
   /** V10 continuous; V11 soft40 attenuates low-grade extra damage. Absent keeps the V7–V9 safe band. */

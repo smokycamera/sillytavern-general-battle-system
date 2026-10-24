@@ -1,5 +1,11 @@
 # 战场布局提示词修改前备份
 
+## 结构攻击与五次重试（2026-10-24）
+
+- 用户逐项确认：整轮意图中的 `attack进攻target指定的对手；` 改为 `attack进攻target指定的对手，或破坏cell处的墙体、城门等结构；`；工具说明中的 `attack、support须给target；` 改为 `attack须给target指定对手，或给cell指定要破坏的结构；support须给target；`。
+- 用户另行确认：决策 `state` 增加 `previousAnswers:[{"answer":此前失败的原回答,"error":"该次错误"}]`；地图重试末尾增加 `此前失败回答：[{"answer":此前失败的原回答,"error":"该次错误"}]`。每步独立最多5次，历史记录每步最多5条。
+- `llm-command-before-structure-attack-20261024.ts.txt`、`llm-context-before-five-retries-20261024.ts.txt`、`llm-layout-before-five-retries-20261024.ts.txt` 保存修改前完整源码的逐字节副本。世界书保持原文。
+
 ## 副 API 驻守意图与指挥提示词精简（2026-10-24）
 
 - 用户确认将意图说明中的“hold在cell附近固守”替换为“hold前往cell驻守，在该位置攻击，不主动追击”，本轮意图列表的 hold 名称同步为“驻守”；brace 动作仍称“固守”。

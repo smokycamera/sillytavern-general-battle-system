@@ -1,3 +1,4 @@
+import { V34_OVERFLOW_D20 } from '../../engine/src/rules.js';
 import { equipmentStep } from '../../engine/src/numeric-model.js';
 import { BOUNDED_BLAST_MODEL } from '../../engine/src/artillery-model.js';
 import { displayNumber } from '../../engine/src/display-number.js';
@@ -53,12 +54,12 @@ function itemDescriptionBase(item: InventoryItem): string {
   }
   if (m.kind === 'armor') {const u={armor:m.value,body:m.value.recipe?.size,damageModel:'wounds-v2' as const,armsModel:ARMS_MODEL},trait=armorTraitId(m.value.tier);return `动能${displayNumber(anchoredProtection(u,'kinetic'))} / 热能${displayNumber(anchoredProtection(u,'thermal'))} / 奥术${displayNumber(anchoredProtection(u,'arcane'))}${armorEffectLabel(u) ? ' · ' + armorEffectLabel(u) : ''} · 负重${displayNumber(m.value.load ?? 0)}${m.value.recipe?.bonuses?.defense ? ' · 防御'+signed(equipmentStep(m.value.recipe,'defense')) : ''}${m.value.recipe?.numericModel && m.value.recipe?.bonuses?.speed ? ' · 移动'+signed(equipmentStep(m.value.recipe,'speed'))+'、先攻'+signed(2*equipmentStep(m.value.recipe,'speed')) : ''}${trait ? ' · 装备自动特质：' + (m.value.recipe?.numericModel || m.value.recipe?.loadModel ? autoTraitLabel(trait,m.value.recipe) : trait === 'super-heavy' ? '超重装甲（先攻−2）' : '重甲（先攻−1）') : ''}`;}
   const w = m.value;
-  return `L${w.level??5}${enhancementLabel(w.recipe?.bonuses)} · ${anchoredWeaponLabel(w,'wounds-v2',BOUNDED_BLAST_MODEL)}${w.recipe?.bonuses?.accuracy ? ' · 精度'+signed(equipmentStep(w.recipe,'accuracy')) : ''}${w.recipe?.bonuses?.defense ? ' · 防御'+signed(equipmentStep(w.recipe,'defense')) : ''} · ${channelNames[w.channel ?? 'kinetic']} · 格子射程${gridWeaponRange(w,true,ARMS_MODEL)}／会战${formationWeaponRange(w)}阵距 · ${w.hands===0?'不占双手':(w.hands??1)+'手'} · 负重${displayNumber(w.load ?? 0)}${w.reload ? ' · 装填' + w.reload : ''}${w.tags?.includes('blast') ? ' · 距离2命中−2' : ''}${w.recipe?.stabilized ? ' · 行进稳定' : ''}`;
+  return `L${w.level??5}${enhancementLabel(w.recipe?.bonuses)} · ${anchoredWeaponLabel(w,'wounds-v2',BOUNDED_BLAST_MODEL,V34_OVERFLOW_D20.sprayerDamageMultiplier,V34_OVERFLOW_D20.sprayerGroupDamageMultiplier)}${w.recipe?.bonuses?.accuracy ? ' · 精度'+signed(equipmentStep(w.recipe,'accuracy')) : ''}${w.recipe?.bonuses?.defense ? ' · 防御'+signed(equipmentStep(w.recipe,'defense')) : ''} · ${channelNames[w.channel ?? 'kinetic']} · 格子射程${gridWeaponRange(w,true,ARMS_MODEL)}／会战${formationWeaponRange(w)}阵距 · ${w.hands===0?'不占双手':(w.hands??1)+'手'} · 负重${displayNumber(w.load ?? 0)}${w.reload ? ' · 装填' + w.reload : ''}${w.tags?.includes('blast') ? ' · 距离2命中−2' : ''}${w.recipe?.stabilized ? ' · 行进稳定' : ''}`;
 }
 function gearText(record: UnitRecord | undefined): string {
   const u = record?.snapshot ? { ...record.snapshot, armsModel: ARMS_MODEL, traitModel: TRAIT_MODEL } : undefined;
   if (!u) return '无装备资料';
-  return [u.weapon ? `${u.weapon.name} ${anchoredWeaponLabel(u.weapon,u.damageModel,u.artilleryModel)}${u.weapon.recipe?.stabilized ? ' / 行进稳定' : ''}` : '主手空置',
+  return [u.weapon ? `${u.weapon.name} ${anchoredWeaponLabel(u.weapon,u.damageModel,u.artilleryModel,u.sprayerDamageMultiplier,u.sprayerGroupDamageMultiplier)}${u.weapon.recipe?.stabilized ? ' / 行进稳定' : ''}` : '主手空置',
     u.sidearm ? `副武器 ${u.sidearm.name}` : '',
     ...equipmentTraitIds(u).map(id => '装备自动特质：' + autoTraitLabel(id, u)),
     `有效防护 ${displayNumber(anchoredProtection(u, 'kinetic'))}/${displayNumber(anchoredProtection(u, 'thermal'))}/${displayNumber(anchoredProtection(u, 'arcane'))}（动能/热能/奥术）${armorEffectLabel(u) ? ' · ' + armorEffectLabel(u) : ''}`,
@@ -345,7 +346,7 @@ export class InventoryPanel {
       const stats: [string, string, string?][] = [];
       if (m?.kind === 'weapon') {
         const w = m.value;
-        stats.push(['伤害', anchoredWeaponLabel(w,'wounds-v2').split(' · ').find(s => s.includes('均值'))?.replace(/^.*均值/, '') ?? '—'], ['穿透', displayNumber(anchoredWeapon(w,undefined,'wounds-v2')?.penetration ?? w.penetration ?? 0)], ['射程', save.mode === 'mass' ? formationWeaponRange(w) + '阵位' : gridWeaponRange(w,true,ARMS_MODEL) + '格'], ['负重', displayNumber(w.load ?? 0)]);
+        stats.push(['伤害', anchoredWeaponLabel(w,'wounds-v2',undefined,V34_OVERFLOW_D20.sprayerDamageMultiplier,V34_OVERFLOW_D20.sprayerGroupDamageMultiplier).split(' · ').find(s => s.includes('均值'))?.replace(/^.*均值/, '') ?? '—'], ['穿透', displayNumber(anchoredWeapon(w,undefined,'wounds-v2')?.penetration ?? w.penetration ?? 0)], ['射程', save.mode === 'mass' ? formationWeaponRange(w) + '阵位' : gridWeaponRange(w,true,ARMS_MODEL) + '格'], ['负重', displayNumber(w.load ?? 0)]);
       } else if (m?.kind === 'armor') {
         const unit = { armor: m.value, body: m.value.recipe?.size, damageModel:'wounds-v2' as const, armsModel: ARMS_MODEL };
         stats.push(['动能防护', displayNumber(anchoredProtection(unit, 'kinetic'))], ['热能防护', displayNumber(anchoredProtection(unit, 'thermal'))], ['奥术防护', displayNumber(anchoredProtection(unit, 'arcane'))], ['负重', displayNumber(m.value.load ?? 0)]);

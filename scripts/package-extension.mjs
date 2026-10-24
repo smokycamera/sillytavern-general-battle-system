@@ -27,6 +27,7 @@ copyFileSync('docs/region-battlefields-proposal-20261024.md', path.join(output, 
 copyFileSync('docs/worldbook-map-review-20261024.md', path.join(output, 'docs/worldbook-map-review-20261024.md'));
 copyFileSync('docs/standard-skill-damage-v31-20261023.md', path.join(output, 'docs/standard-skill-damage-v31-20261023.md'));
 copyFileSync('docs/standard-skill-damage-v32-20261023.md', path.join(output, 'docs/standard-skill-damage-v32-20261023.md'));
+copyFileSync('docs/sprayer-mobility-command-fixes-20261024.md', path.join(output, 'docs/sprayer-mobility-command-fixes-20261024.md'));
 copyFileSync('docs/small-three-way-result-20261018.md', path.join(output, 'docs/small-three-way-result-20261018.md'));
 cpSync('docs/prompt-backups', path.join(output, 'docs/prompt-backups'), { recursive: true });
 mkdirSync(path.join(output, 'mcp'), { recursive: true });

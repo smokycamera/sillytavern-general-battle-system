@@ -43,7 +43,7 @@ describe('区域城市、水域与建筑',()=>{
   expect(connectedCitySectors(['A3','B3','A4'])).toHaveLength(3);
  });
  it('面状海水只在指定区域铺设，沿岸有连续浅滩，城内与房间保持陆地且不凭空造桥',()=>{
-  const sailors=[unit('u1','ally',['sailing','water-crossing'],true),unit('u2','enemy',['sailing','water-crossing'],true)];
+  const sailors=[unit('u1','ally',['sailing'],true),unit('u2','enemy',['sailing'],true)];
   const {field}=build({city:{at:['A3','B3','C3','D3','A4','B4','C4','D4'],walls:'front'},water:{type:'mixed',at:['A1','B1','C1','D1','A2','B2','C2','D2']},ally:{post:'wall'},enemy:{at:['A1','B1']},units:[{unit:'u1',at:'D2'},{unit:'u2',at:'B1'}]},sailors);
   expect(field.tiles.some(t=>t==='deep_water')).toBe(true);expect(field.tiles.some(t=>t==='shallow_water')).toBe(true);
   expect(field.city!.inside.every(p=>!field.tiles[p]!.includes('water'))).toBe(true);

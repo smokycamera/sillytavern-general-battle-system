@@ -252,13 +252,14 @@ export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Comb
   };
   return score(ap)>score(he)?ap:he;
 }
-export function anchoredWeaponLabel(weapon:Weapon|undefined,model:Combatant['damageModel']=weapon?.powerModel==='wounds-v2'?'wounds-v2':weapon?.powerModel==='wounds-v1'?'wounds-v1':undefined,artilleryModel?:ArtilleryModel):string {
+export function anchoredWeaponLabel(weapon:Weapon|undefined,model:Combatant['damageModel']=weapon?.powerModel==='wounds-v2'?'wounds-v2':weapon?.powerModel==='wounds-v1'?'wounds-v1':undefined,artilleryModel?:ArtilleryModel,sprayerDamageMultiplier=1,sprayerGroupDamageMultiplier=1):string {
   let w=anchoredWeapon(weapon,undefined,model);if(!w)return '—';
   const mechanism = w.recipe?.mechanism ?? w.tags?.find(t=>t.startsWith('mechanism:'))?.slice(10);
   const bounded = artilleryModel === BOUNDED_BLAST_MODEL;
   if (bounded && mechanism === 'rocket') w = {...w, splashTargets: rocketSplashAt(w.recipe?.power ?? w.level ?? 1)};
-  const raw=(diceAvg(w.baseDice)+(w.apDice?diceAvg(w.apDice):0))*(w.damageScale??1);
+  const raw=(diceAvg(w.baseDice)+(w.apDice?diceAvg(w.apDice):0))*(w.damageScale??1)*(mechanism==='sprayer'?sprayerDamageMultiplier:1);
   const melee=meleeProfile(w);
-  const area = bounded && mechanism === 'sprayer' ? ` · 会战每份另及${sprayerSplashAt(w.recipe?.power ?? w.level ?? 1)}名额，范围伤害递减` : w.splashTargets ? ` · 爆炸${w.splashTargets>=1e9?'覆盖目标编队':'另及'+w.splashTargets+'名额'}` : '';
+  const group = mechanism === 'sprayer' && sprayerGroupDamageMultiplier > 1 ? ` · 对多人编队伤害+${displayNumber((sprayerGroupDamageMultiplier-1)*100)}%` : '';
+  const area = group + (bounded && mechanism === 'sprayer' ? ` · 会战每份另及${sprayerSplashAt(w.recipe?.power ?? w.level ?? 1)}名额，范围伤害递减` : w.splashTargets ? ` · 爆炸${w.splashTargets>=1e9?'覆盖目标编队':'另及'+w.splashTargets+'名额'}` : '');
   return `${isRangedWeapon(w) ? (w.indirect ? '曲射' : '直射') + (isCannonWeapon(w) ? '火炮' : '') + ' · ' : ''}${model==='wounds-v2'?'单段均值':'单次均值'}${Number(raw.toFixed(1))} · 穿透${displayNumber(w.penetration??0)}${(w.attacks??1)>1?` · ${w.attacks}段`:''}${area}${melee?` · ${melee.description}`:''}`;
 }

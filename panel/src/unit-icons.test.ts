@@ -30,8 +30,14 @@ describe('unit icons', () => {
     expect(UNIT_ICON_NAMES.ship).toBe('船'); expect(unitIcon('ship')).toContain(UNIT_ICONS.ship);
     ship.traits = ['water-crossing']; expect(unitIconKey(ship)).toBe('vehicle');
     grantTraitSource(ship, { id: 'sail', kind: 'blessing', name: '舟行', traitIds: ['sailing'], duration: { kind: 'rounds', count: 2 } });
+    expect(unitIconKey(ship)).toBe('vehicle');
+    ship.traits = [];
     expect(unitIconKey(ship)).toBe('ship');
     ship.traitSources![0]!.remaining = 0; expect(unitIconKey(ship)).toBe('vehicle');
     ship.traitSources![0]!.remaining = 1; ship.traitSources![0]!.revoked = true; expect(unitIconKey(ship)).toBe('vehicle');
+  });
+  it('two water traits preserve the original vehicle, mount or weapon silhouette', () => {
+    for (const [props, icon] of [[{ body: 'vehicle' }, 'vehicle'], [{ mount: true }, 'cavalry'], [{ weapon: base.weapon }, 'sword']] as const)
+      expect(unitIconKey(unit({ ...props, traits: ['sailing', 'water-crossing'] }))).toBe(icon);
   });
 });

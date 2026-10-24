@@ -1,7 +1,7 @@
 import type { Combatant } from '../types.js';
 import { isAirborne } from '../aerial.js';
-import { canClimbFrom, groundBlocked, intactStructure, isElevated } from './layers.js';
-import { canOccupy, movementStepCost, neighbors, type BattlefieldSpec } from './spatial.js';
+import { canClimbFrom, groundBlocked, intactStructure, isElevated, STRUCTURE_NAMES } from './layers.js';
+import { canOccupy, movementStepCost, neighbors, gridDistance, cellLabel, TERRAIN_NAMES, type BattlefieldSpec } from './spatial.js';
 import { GridQueue } from './grid-queue.js';
 
 export type IntentLayer = 'ground' | 'platform';
@@ -23,7 +23,8 @@ export function intentPlace(field: BattlefieldSpec, unit: Combatant, cell: numbe
 /** Weighted, layered graph. Special edges describe real engine actions, not teleports.
  * Rebuilt from observed occupants after movement/actions; no route or hidden unit is saved. */
 export function findIntentRoute(field: BattlefieldSpec, unit: Combatant, known: Combatant[], goal: (actor: Combatant) => boolean,
-  canOpen: (actor: Combatant, cell: number) => boolean, actionCost: number, climbCost: number, tags = field.environment ?? [], blocked = new Set<number>(), distance?: (actor: Combatant) => number): IntentStep[] | undefined {
+  canOpen: (actor: Combatant, cell: number) => boolean, actionCost: number, climbCost: number, tags = field.environment ?? [], blocked = new Set<number>(), distance?: (actor: Combatant) => number,
+  unreachable?: (reachable: Combatant[]) => void): IntentStep[] | undefined {
   const count = field.tiles.length, key = (cell: number, elevated: boolean) => cell + (elevated ? count : 0);
   const start = key(unit.pos!, isElevated(unit));
   const actorAt = (node: number): Combatant => ({ ...unit, pos: node % count, elevation: node >= count ? 1 : undefined });
@@ -67,5 +68,25 @@ export function findIntentRoute(field: BattlefieldSpec, unit: Combatant, known: 
     }
   }
   // Approach an obstructed destination without replacing it with a regional objective.
+  unreachable?.([...costs.keys()].map(actorAt));
   if (distance) return routeTo(closest);
+}
+
+/** Explain only observed obstructions along the reachable frontier; hidden occupants never enter the report. */
+export function intentRouteFailure(field: BattlefieldSpec, unit: Combatant, known: Combatant[], reachable: Combatant[], toward: number | undefined,
+  visible: readonly boolean[], canOpen: (actor: Combatant, cell: number) => boolean): string {
+  const obstacles = new Map<number, string>();
+  for (const actor of reachable) for (const cell of neighbors(field, actor.pos!)) {
+    if (!visible[cell] || canOccupy(field, known, actor, cell) && Number.isFinite(movementStepCost(field, cell, actor, field.environment, actor.pos))) continue;
+    const structure = intactStructure(field, cell);
+    if (structure?.kind === 'gate' && structure.gateState === 'closed' && canOpen(actor, cell)) continue;
+    const occupant = known.find(u => u.id !== unit.id && u.pos === cell && ['ready', 'routing'].includes(u.status) && isElevated(u) === isElevated(actor));
+    const reason = occupant ? '单位占位（' + occupant.name + '）' : structure && groundBlocked(field, cell, actor)
+      ? structure.kind === 'gate' ? '关闭且当前无法打开的城门' : STRUCTURE_NAMES[structure.kind]
+      : !Number.isFinite(movementStepCost(field, cell, actor, field.environment, actor.pos)) && !groundBlocked(field, cell, actor) ? '缺少可通行的高度连接'
+      : TERRAIN_NAMES[field.tiles[cell]!] + '不适合本单位通行';
+    obstacles.set(cell, cellLabel(field, cell) + reason);
+  }
+  const cells = [...obstacles.keys()].sort((a, b) => (toward === undefined ? 0 : gridDistance(field, a, toward) - gridDistance(field, b, toward)) || a - b).slice(0, 3);
+  return cells.length ? '当前没有可通行路线；可见阻碍：' + cells.map(c => obstacles.get(c)).join('、') : '当前没有可通行路线，尚不能从已知信息确定堵点';
 }
