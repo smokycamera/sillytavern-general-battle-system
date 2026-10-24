@@ -149,7 +149,7 @@ export function armorPowerScale(unit:ShieldBearer & Pick<Combatant,'armor'|'shie
 /** 强度只改变部分穿透时的吸能；完全穿透/无法穿透不被另加减伤。 */
 export function armorTransmission(unit:ShieldBearer & Pick<Combatant,'armor'|'body'|'shield'|'damageModel'|'armsModel'>,channel:DamageChannel,penetration:number):number {
   const through=penetrationThrough(penetration,anchoredProtection(unit,channel));
-  const armorDominates=equipmentProtection({...unit,body:'human'},channel)>=BODY[unit.body??'human'].protection[channel];
+  const armorDominates=equipmentProtection(unit.body==='human'?unit:{...unit,body:'human'},channel)>=BODY[unit.body??'human'].protection[channel];
   return isWoundModel(unit.damageModel)&&unit.armor&&armorDominates ? through**equipmentMultiplier(unit.armor.recipe,'power') : through;
 }
 /** 盾牌有界覆盖按期望折算，不追加随机骰；范围/失能/充分穿透不会获得保护。 */
@@ -172,7 +172,7 @@ export function protectionPower(unit:ShieldBearer & Pick<Combatant,'armor'|'body
   const resistance=anchoredProtection(unit,channel),armor=unit.armor;
   if(resistance<=0)return 0;
   const innate=BODY[unit.body??'human'].protection[channel];
-  if(!armor?.tier||equipmentProtection({...unit,body:'human'},channel)<innate)return resistance/2;
+  if(!armor?.tier||equipmentProtection(unit.body==='human'?unit:{...unit,body:'human'},channel)<innate)return resistance/2;
   const offset=armorTierOffset(armor.tier,unit.armsModel)-({kinetic:0,thermal:1,arcane:2}[channel]);
   return Math.max(0,(resistance-offset)/2);
 }
