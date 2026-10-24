@@ -11,6 +11,12 @@ export function noise(cell: number, salt: number): number {
 /** 按绝对坐标取值：相邻两块地形共用的边得到同一组抖动，拼接处不留缝。 */
 export const noiseAt = (x: number, y: number, salt = 0) => noise(Math.round(x) * 7919 + Math.round(y) * 104729, salt);
 export const rect = (x: number, y: number, w: number, h: number) => `M${r1(x)} ${r1(y)}h${r1(w)}v${r1(h)}h${r1(-w)}Z`;
+export function rotatedRect(x: number, y: number, w: number, h: number, angle: number, cx: number, cy: number): string {
+  if (!angle) return rect(x, y, w, h);
+  const a = angle * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
+  return [[x, y], [x + w, y], [x + w, y + h], [x, y + h]].map(([px, py], i) =>
+    `${i ? 'L' : 'M'}${r1(cx + (px! - cx) * cos - (py! - cy) * sin)} ${r1(cy + (px! - cx) * sin + (py! - cy) * cos)}`).join('') + 'Z';
+}
 export const circle = (cx: number, cy: number, r: number) => `M${r1(cx - r)} ${r1(cy)}a${r1(r)} ${r1(r)} 0 1 0 ${r1(2 * r)} 0a${r1(r)} ${r1(r)} 0 1 0 ${r1(-2 * r)} 0`;
 export const ellipse = (cx: number, cy: number, rx: number, ry: number) => `M${r1(cx - rx)} ${r1(cy)}a${r1(rx)} ${r1(ry)} 0 1 0 ${r1(2 * rx)} 0a${r1(rx)} ${r1(ry)} 0 1 0 ${r1(-2 * rx)} 0`;
 export function roundedRect(x0: number, y0: number, x1: number, y1: number, nw: number, ne: number, se: number, sw: number): string {
@@ -18,31 +24,51 @@ export function roundedRect(x0: number, y0: number, x1: number, y1: number, nw: 
     + `H${r1(x0 + sw)}${sw ? `a${sw} ${sw} 0 0 1 ${-sw} ${-sw}` : ''}V${r1(y0 + nw)}${nw ? `a${nw} ${nw} 0 0 1 ${nw} ${-nw}` : ''}Z`;
 }
 
-/** 线状结构（道路、城墙、堑壕）：格心方块 + 通向可连接邻格的连杆，天然连成网。 */
-export function skeleton(g: Grid, cells: readonly number[], join: (p: number) => boolean, width: number, core = width): string {
-  const half = width / 2, members = new Set(cells); let d = '';
+/** 线状结构（道路、城墙、堑壕）：格心接头 + 通向邻格的等宽连杆。 */
+export function skeleton(g: Grid, cells: readonly number[], join: (p: number) => boolean, width: number, core = width, cornerBlocked?: (p: number) => boolean): string {
+  const lines = segments(g, cells, join, false, cornerBlocked), diagonal = new Set<number>(), cardinal = new Set<number>();
+  for (const s of lines) for (const [x, y] of [[s.x0, s.y0], [s.x1, s.y1]]) {
+    (s.x0 !== s.x1 && s.y0 !== s.y1 ? diagonal : cardinal).add(Math.floor(y! / S) * g.w + Math.floor(x! / S));
+  }
+  let d = '';
   for (const p of cells) {
     const x = p % g.w, y = (p - x) / g.w, cx = x * S + S / 2, cy = y * S + S / 2;
-    d += rect(cx - core / 2, cy - core / 2, core, core);
-    if (x < g.w - 1 && join(p + 1)) d += rect(cx, cy - half, S, width);
-    if (y < g.h - 1 && join(p + g.w)) d += rect(cx - half, cy, width, S);
-    if (x > 0 && join(p - 1) && !members.has(p - 1)) d += rect(cx - S, cy - half, S, width);
-    if (y > 0 && join(p - g.w) && !members.has(p - g.w)) d += rect(cx - half, cy - S, width, S);
+    // 纯斜线的接头也转45°，避免每格鼓出一块方形墙柱。
+    const r = core / Math.SQRT2;
+    d += diagonal.has(p) && !cardinal.has(p)
+      ? `M${r1(cx)} ${r1(cy - r)}L${r1(cx + r)} ${r1(cy)}L${r1(cx)} ${r1(cy + r)}L${r1(cx - r)} ${r1(cy)}Z`
+      : rect(cx - core / 2, cy - core / 2, core, core);
   }
-  return d;
+  return d + lines.map(s => segmentBand(s, width)).join('');
 }
 export interface Segment { x0: number; y0: number; x1: number; y1: number }
-/** 线状结构的中心线段（格心到可连接邻格格心）；孤立格返回一段短横线。 */
-export function segments(g: Grid, cells: readonly number[], join: (p: number) => boolean): Segment[] {
+/** 等宽连杆，offset 沿线段法向偏移；横、竖、斜线共用同一套几何。 */
+export function segmentBand(s: Segment, width: number, offset = 0): string {
+  const len = Math.hypot(s.x1 - s.x0, s.y1 - s.y0), nx = -(s.y1 - s.y0) / len, ny = (s.x1 - s.x0) / len;
+  const point = (x: number, y: number, side: number) => `${r1(x + nx * (offset + side * width / 2))} ${r1(y + ny * (offset + side * width / 2))}`;
+  return `M${point(s.x0, s.y0, -1)}L${point(s.x1, s.y1, -1)}L${point(s.x1, s.y1, 1)}L${point(s.x0, s.y0, 1)}Z`;
+}
+export function segmentPath(s: Segment, offset = 0): string {
+  const len = Math.hypot(s.x1 - s.x0, s.y1 - s.y0), dx = -(s.y1 - s.y0) / len * offset, dy = (s.x1 - s.x0) / len * offset;
+  return `M${r1(s.x0 + dx)} ${r1(s.y0 + dy)}L${r1(s.x1 + dx)} ${r1(s.y1 + dy)}`;
+}
+/** 格心连线；只有两侧均无同类正交连接时才连斜角，避免把L形转角抹成三角形。 */
+export function segments(g: Grid, cells: readonly number[], join: (p: number) => boolean, isolated = true, cornerBlocked?: (p: number) => boolean): Segment[] {
   const members = new Set(cells), out: Segment[] = [];
   for (const p of cells) {
     const x = p % g.w, y = (p - x) / g.w, cx = x * S + S / 2, cy = y * S + S / 2;
     let linked = false;
-    if (x < g.w - 1 && join(p + 1)) { out.push({ x0: cx, y0: cy, x1: cx + S, y1: cy }); linked = true; }
-    if (y < g.h - 1 && join(p + g.w)) { out.push({ x0: cx, y0: cy, x1: cx, y1: cy + S }); linked = true; }
-    if (x > 0 && join(p - 1)) { linked = true; if (!members.has(p - 1)) out.push({ x0: cx - S, y0: cy, x1: cx, y1: cy }); }
-    if (y > 0 && join(p - g.w)) { linked = true; if (!members.has(p - g.w)) out.push({ x0: cx, y0: cy - S, x1: cx, y1: cy }); }
-    if (!linked) out.push({ x0: cx - 22, y0: cy, x1: cx + 22, y1: cy });
+    for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]] as const) {
+      const nx = x + dx, ny = y + dy, q = ny * g.w + nx;
+      if (nx < 0 || nx >= g.w || ny < 0 || ny >= g.h || q >= g.n || !join(q)) continue;
+      // 已毁墙角或别的结构也不能被新斜线穿过，避免在破口处凭空补墙。
+      if (dx && dy && [y * g.w + nx, ny * g.w + x].some(side => join(side) || cornerBlocked?.(side))) continue;
+      linked = true;
+      if (q < p && members.has(q)) continue;
+      const other = { x: cx + dx * S, y: cy + dy * S };
+      out.push(q < p ? { x0: other.x, y0: other.y, x1: cx, y1: cy } : { x0: cx, y0: cy, x1: other.x, y1: other.y });
+    }
+    if (!linked && isolated) out.push({ x0: cx - 22, y0: cy, x1: cx + 22, y1: cy });
   }
   return out;
 }

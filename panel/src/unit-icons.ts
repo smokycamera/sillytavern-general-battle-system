@@ -1,6 +1,7 @@
-/** 兵种图标：24×24 的实心剪影，按单位实际装备的武器机制选择，载具与骑乘优先。
+/** 兵种图标：24×24 的实心剪影，航行单位用船，其余按载具、骑乘与实际武器机制选择。
  * 只读取装备上已经记录的机制（recipe.mechanism / mechanism: 标签），不按名称猜测。 */
 import type { Combatant, Weapon } from '../../engine/src/types.js';
+import { activeTraitIds } from '../../engine/src/trait-sources.js';
 
 const rot = (deg: number, body: string) => `<g transform="rotate(${deg} 12 12)">${body}</g>`;
 const f = (d: string) => `<path class="f" d="${d}"/>`;
@@ -46,6 +47,8 @@ export const UNIT_ICONS: Record<string, string> = {
   summon: s('M12 12.6a1.4 1.4 0 1 1 2.8 0a4 4 0 1 1 -8 0a6.4 6.4 0 1 1 12.8 0a8.6 8.6 0 1 1 -17.2 0', 1.7) + spark(20.2, 3.8, 2.4),
   cavalry: `<path class="f" fill-rule="evenodd" d="M6.4 22.4L5.5 19.4L6.9 18.6L5.8 15.8L7.3 15.1L6.6 12.4L8.2 11.7L8 9.2L9.6 8.6L10 6.4L11 4.9L11.2 1.4L13.7 4.1C16.6 4.6 19.6 7.6 21.7 10.5C22.5 11.7 22 13.5 20.3 13.3C18.5 13.1 16.9 12.7 15.7 13.7C14.5 14.8 14.3 16.6 15.4 18.6C16.2 20 16.8 21.3 17.2 22.4ZM15.3 7.6a1 1 0 1 0 0.01 0Z"/>`,
   vehicle: `<path class="f" fill-rule="evenodd" d="M4.4 14.4H19.6Q22 14.4 22 16.8V17.6Q22 20 19.6 20H4.4Q2 20 2 17.6V16.8Q2 14.4 4.4 14.4ZM5.4 17.2a1.3 1.3 0 1 0 0.01 0ZM9.4 17.2a1.3 1.3 0 1 0 0.01 0ZM13.4 17.2a1.3 1.3 0 1 0 0.01 0ZM17.4 17.2a1.3 1.3 0 1 0 0.01 0Z"/>` + f('M3.6 14.4L5.6 11.4H18.4L20.8 14.4Z') + f('M7.8 11.4L9 8.2H14.8L16.2 11.4Z') + f('M14.8 9H23V10.4H14.8Z') + f('M10.2 8.2V7.2H12.4V8.2Z'),
+  ship: f('M11.1 1H12.7V15.5H11.1Z') + f('M10 2.7V12.9H2.5Q4.7 6.6 10 2.7Z') + f('M13.8 4.2Q19.1 7.5 21.4 12.9H13.8Z')
+    + f('M1.2 15.1H22.8L20.5 19.2Q20 20 18.8 20H6Q4.8 20 4.1 19Z') + s('M2 22Q4 20.6 6 22T10 22T14 22T18 22T22 22', 1.3),
   shield: `<path class="f" fill-rule="evenodd" d="M12 1.8L20.2 4.8V11C20.2 16.6 16.8 20.6 12 22.4C7.2 20.6 3.8 16.6 3.8 11V4.8ZM12 4.6L6.4 6.6V11C6.4 15 8.6 18.2 12 19.7Z"/>`,
 };
 
@@ -53,14 +56,15 @@ export const UNIT_ICON_NAMES: Record<string, string> = {
   sword: '剑', greatsword: '巨剑', dagger: '短兵器', axe: '斧', 'great-weapon': '巨型冷兵器', spear: '长兵器', 'heavy-polearm': '重型长兵器',
   blunt: '钝器', natural: '天生武器', throwing: '投掷', bow: '弓', crossbow: '弩', 'light-ranged': '轻型投射',
   firearm: '火枪', rifle: '步枪', shotgun: '霰弹枪', 'heavy-rifle': '重步枪', autocannon: '机炮', cannon: '直射火炮', rocket: '火箭筒', 'indirect-cannon': '曲射火炮',
-  sprayer: '喷射武器', energy: '能量武器', magic: '法杖', demolition: '爆破', summon: '召唤', cavalry: '骑乘', vehicle: '载具', shield: '其他',
+  sprayer: '喷射武器', energy: '能量武器', magic: '法杖', demolition: '爆破', summon: '召唤', cavalry: '骑乘', vehicle: '载具', ship: '船', shield: '其他',
 };
 
 export function weaponMechanism(weapon?: Weapon): string | undefined {
   return weapon?.recipe?.mechanism ?? weapon?.tags?.find(tag => tag.startsWith('mechanism:'))?.slice(10);
 }
-/** 图标键：载具 > 骑乘 > 主武器机制（每个武器类别都有自己的图标）；旧存档无机制时，远程退回弓、近战退回剑。 */
-export function unitIconKey(u: Pick<Combatant, 'body' | 'mount' | 'weapon'>): string {
+/** 图标键：生效的航行特质 > 载具 > 骑乘 > 主武器机制；旧存档无机制时，远程退回弓、近战退回剑。 */
+export function unitIconKey(u: Combatant): string {
+  if (activeTraitIds(u).includes('sailing')) return 'ship';
   if (u.body === 'vehicle') return 'vehicle';
   if (u.mount) return 'cavalry';
   const mechanism = weaponMechanism(u.weapon);

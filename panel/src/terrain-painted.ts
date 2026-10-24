@@ -1,11 +1,12 @@
 /** 底图风格「手绘战棋」：参考《战场兄弟》一类回合制战棋的画法——低饱和的手绘地表，
  * 树、岩石、房屋、城墙、掩体都是带顶面与正面的 3/4 俯视道具并投下影子，高地为台地、南侧露出崖面，四周压暗。
  * 只画存档里真实存在的地形与结构，不添加暗示规则的装饰。 */
-import { S, r1, noise, rect, circle, ellipse, roundedRect, loopPath, traceLoops, skeleton, segments, components, outline, painter } from './terrain-geometry.js';
-import { bridgeVertical, exitChevrons, gateHorizontal, gridLines, landmarkLabels, type TerrainScene } from './terrain-scene.js';
+import { S, r1, noise, rect, rotatedRect, circle, ellipse, roundedRect, loopPath, traceLoops, skeleton, segments, segmentBand, segmentPath, components, outline, painter } from './terrain-geometry.js';
+import { bridgeVertical, exitChevrons, gateAngle, gridLines, landmarkLabels, type TerrainScene } from './terrain-scene.js';
 
 export function buildPainted(t: TerrainScene): string {
   const { g, W, H, id } = t, p = painter(), f = (name: string) => `url(#${id}-${name})`;
+  const cornerBlocked = (q: number) => !!t.struct(q) || t.legacyWall(q);
   const defs: string[] = [];
   let seq = 0;
   const organic = (inside: (q: number) => boolean, salt: number, off = 0, jitter = 7) => loopPath(traceLoops(g, inside), { r: 30, rc: 14, jitter, step: 26, salt, off });
@@ -111,11 +112,11 @@ export function buildPainted(t: TerrainScene): string {
     if (t.style === 'interior') { p.path('pt-rug-edge', skeleton(g, t.roads, t.joinRoad, 48)); p.path('pt-rug', skeleton(g, t.roads, t.joinRoad, 40)); p.path('pt-texture', skeleton(g, t.roads, t.joinRoad, 40), ` fill="${f('weave')}"`); }
     else if (t.style === 'city') {
       p.path('pt-lane', skeleton(g, t.roads, t.joinRoad, 50), ` filter="${f('soft3')}"`);
-      p.path('pt-lane-track', segments(g, t.roads, t.joinRoad).map(s => s.y0 === s.y1 ? `M${s.x0} ${s.y0 - 10}H${s.x1}M${s.x0} ${s.y0 + 10}H${s.x1}` : `M${s.x0 - 10} ${s.y0}V${s.y1}M${s.x0 + 10} ${s.y0}V${s.y1}`).join(''), ` filter="${f('soft2')}"`);
+      p.path('pt-lane-track', segments(g, t.roads, t.joinRoad).map(s => segmentPath(s, -10) + segmentPath(s, 10)).join(''), ` filter="${f('soft2')}"`);
     }
     else {
       p.path('pt-road', skeleton(g, t.roads, t.joinRoad, 46), ` filter="${f('soft3')}"`);
-      p.path('pt-rut', segments(g, t.roads, t.joinRoad).map(s => s.y0 === s.y1 ? `M${s.x0} ${s.y0 - 9}H${s.x1}M${s.x0} ${s.y0 + 9}H${s.x1}` : `M${s.x0 - 9} ${s.y0}V${s.y1}M${s.x0 + 9} ${s.y0}V${s.y1}`).join(''), ` filter="${f('soft1')}"`);
+      p.path('pt-rut', segments(g, t.roads, t.joinRoad).map(s => segmentPath(s, -9) + segmentPath(s, 9)).join(''), ` filter="${f('soft1')}"`);
     }
   }
   if (t.style !== 'interior') p.add(`<rect width="${W}" height="${H}" filter="${f('grain')}" class="pt-grain"/>`);
@@ -187,9 +188,18 @@ export function buildPainted(t: TerrainScene): string {
   }
 
   // ── 室内隔墙 / 城区房屋 / 城墙：3/4 体块。
+  const withGateGaps = (body: () => void) => {
+    const gaps = t.gates.map(q => {
+      const [x, y] = t.at(q), angle = gateAngle(t, q);
+      return angle === 90 ? rect(x - 2, y + 29, S + 4, S - 58) : rotatedRect(x + 29, y - 2, S - 58, S + 4, angle, x + 50, y + 50);
+    }).join('');
+    if (gaps) defs.push(`<mask id="${id}-gatecut" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="#fff"/><path d="${gaps}" fill="#000"/></mask>`);
+    p.group(gaps ? `mask="${f('gatecut')}"` : 'class="pt-wall"', body);
+  };
   if (interior) {
-    const walls = crisp(q => t.partitions.includes(q), -3, 2, false);
-    block(walls, t.style === 'compound' ? 18 : 14, 'pt-iwall-top', 'pt-iwall-face', undefined, [5, 7, 3]);
+    const walls = crisp(q => t.partitions.includes(q), -3, 2, false)
+      + segments(g, t.partitions, t.joinPartition, false, cornerBlocked).filter(s => s.x0 !== s.x1 && s.y0 !== s.y1).map(s => segmentBand(s, 44)).join('');
+    withGateGaps(() => block(walls, t.style === 'compound' ? 18 : 14, 'pt-iwall-top', 'pt-iwall-face', undefined, [5, 7, 3]));
   } else {
     for (const group of components(g, t.buildings)) {
       const set = new Set(group), d = crisp(q => set.has(q), -6, 3, false);
@@ -210,13 +220,17 @@ export function buildPainted(t: TerrainScene): string {
       p.path('pt-window', windows);
     }
     if (t.wallLine.length) {
-      const body = skeleton(g, t.wallLine, t.joinWall, 44), line = segments(g, t.wallLine, t.joinWall);
-      let merlon = '', gaps = '';
-      for (const s of line) { const len = Math.hypot(s.x1 - s.x0, s.y1 - s.y0), k = Math.max(1, Math.floor(len / 17)); for (let i = 0; i < k; i++) for (const side of [-1, 1]) { const u = (i + .5) * len / k; merlon += s.y0 === s.y1 ? rect(s.x0 + u - 4.5, s.y0 + side * 18 - 4, 9, 8) : rect(s.x0 + side * 18 - 4, s.y0 + u - 4.5, 8, 9); } }
+      const body = skeleton(g, t.wallLine, t.joinWall, 44, 44, cornerBlocked), line = segments(g, t.wallLine, t.joinWall, true, cornerBlocked);
+      let merlon = '';
+      for (const s of line) {
+        const len = Math.hypot(s.x1 - s.x0, s.y1 - s.y0), dx = (s.x1 - s.x0) / len, dy = (s.y1 - s.y0) / len, k = Math.max(1, Math.floor(len / 17));
+        for (let i = 0; i < k; i++) for (const side of [-1, 1]) {
+          const u = (i + .5) * len / k;
+          merlon += segmentBand({ x0: s.x0 + dx * (u - 4.5), y0: s.y0 + dy * (u - 4.5), x1: s.x0 + dx * (u + 4.5), y1: s.y0 + dy * (u + 4.5) }, 8, side * 18);
+        }
+      }
       // 门洞处把墙体连同投影、垛口一起裁掉，两侧由门垛收头。
-      for (const q of t.gates) { const [x, y] = t.at(q); gaps += gateHorizontal(t, q) ? rect(x + 29, y - 2, S - 58, S + 4) : rect(x - 2, y + 29, S + 4, S - 58); }
-      if (gaps) defs.push(`<mask id="${id}-gatecut" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="#fff"/><path d="${gaps}" fill="#000"/></mask>`);
-      p.group(gaps ? `mask="${f('gatecut')}"` : 'class="pt-wall"', () => {
+      withGateGaps(() => {
         block(body, 16, 'pt-wall-top', 'pt-wall-face', () => `<path class="pt-merlon" d="${merlon}"/><path class="pt-walk" d="${line.map(s => `M${s.x0} ${s.y0}L${s.x1} ${s.y1}`).join('')}"/>`, [8, 11, 4]);
       });
     }
@@ -231,14 +245,20 @@ export function buildPainted(t: TerrainScene): string {
   //    室内门：隔墙本就在门格留空，只画门扇。
   let pillars = '', crenels = '', doorFace = '', doorTop = '', bands = '', leaves = '';
   for (const q of t.gates) {
-    const st = t.intact(q)!, [x, y] = t.at(q), cx = x + 50, cy = y + 50, horizontal = gateHorizontal(t, q), open = st.gateState === 'open', half = interior ? 24 : 21;
+    const st = t.intact(q)!, [x, y] = t.at(q), cx = x + 50, cy = y + 50, angle = gateAngle(t, q), horizontal = angle !== 90, open = st.gateState === 'open', half = interior ? 24 : 21;
+    const turn = horizontal ? angle : 0, a = turn * Math.PI / 180;
+    const box = (bx: number, by: number, w: number, h: number) => rotatedRect(bx, by, w, h, turn, cx, cy);
+    const line = (x0: number, y0: number, x1: number, y1: number) => {
+      const pt = (px: number, py: number) => `${r1(cx + (px - cx) * Math.cos(a) - (py - cy) * Math.sin(a))} ${r1(cy + (px - cx) * Math.sin(a) + (py - cy) * Math.cos(a))}`;
+      return `M${pt(x0, y0)}L${pt(x1, y1)}`;
+    };
     if (!interior) {
-      if (horizontal) for (const px of [x, x + S - 29]) { pillars += rect(px, cy - 27, 29, 54); for (const mx of [px + 2, px + 11, px + 20]) crenels += rect(mx, cy - 26, 7, 6) + rect(mx, cy + 4, 7, 6); }
+      if (horizontal) for (const px of [x, x + S - 29]) { pillars += box(px, cy - 27, 29, 54); for (const mx of [px + 2, px + 11, px + 20]) crenels += box(mx, cy - 26, 7, 6) + box(mx, cy + 4, 7, 6); }
       else for (const py of [y, y + S - 29]) { pillars += rect(cx - 27, py, 54, 29); for (const mx of [cx - 25, cx - 3.5, cx + 18]) crenels += rect(mx, py + 1, 7, 6); }
     }
     if (horizontal) {
-      if (open) leaves += rect(cx - half, cy - 32, 5, 30) + rect(cx + half - 5, cy - 32, 5, 30);
-      else { doorTop += rect(cx - half, cy - 17, half * 2, 3); doorFace += rect(cx - half, cy - 14, half * 2, 18); bands += `M${cx - half} ${cy - 8}h${half * 2}M${cx - half} ${cy - 1}h${half * 2}M${cx} ${cy - 14}v18`; }
+      if (open) leaves += box(cx - half, cy - 32, 5, 30) + box(cx + half - 5, cy - 32, 5, 30);
+      else { doorTop += box(cx - half, cy - 17, half * 2, 3); doorFace += box(cx - half, cy - 14, half * 2, 18); bands += line(cx - half, cy - 8, cx + half, cy - 8) + line(cx - half, cy - 1, cx + half, cy - 1) + line(cx, cy - 14, cx, cy + 4); }
     } else {
       if (open) leaves += rect(cx + 3, cy - half, 26, 5) + rect(cx + 3, cy + half - 5, 26, 5);
       else { doorFace += rect(cx - 4, cy - half, 8, half * 2); bands += `M${cx - 4} ${cy - 9}h8M${cx - 4} ${cy + 9}h8`; }
@@ -250,12 +270,12 @@ export function buildPainted(t: TerrainScene): string {
   // ── 工事：土胸墙（3/4，顶面浅、南面深）+ 壕沟；孤立的为圆形掩体坑。
   if (t.works.length) {
     const join = (q: number) => t.kindAt(q, 'fortification');
-    const linked = t.works.filter(q => [q - g.w, q + g.w, q % g.w > 0 ? q - 1 : -1, q % g.w < g.w - 1 ? q + 1 : -1].some(n => n >= 0 && n < g.n && join(n)));
+    const linked = t.works.filter(q => segments(g, [q], join, false, cornerBlocked).length > 0);
     let ring = '', pit = '';
     for (const q of t.works.filter(q => !linked.includes(q))) { const [x, y] = t.at(q); ring += circle(x + 50, y + 52, 32); pit += circle(x + 50, y + 50, 17); }
-    const mound = skeleton(g, linked, join, 62) + ring;
+    const mound = skeleton(g, linked, join, 62, 62, cornerBlocked) + ring;
     block(mound, 9, 'pt-parapet-top', 'pt-parapet-face', sid => `<use href="#${sid}" fill="${f('sandbags')}"/>`, [5, 8, 3]);
-    p.path('pt-trench', skeleton(g, linked, join, 24) + pit, ` filter="${f('soft1')}"`);
+    p.path('pt-trench', skeleton(g, linked, join, 24, 24, cornerBlocked) + pit, ` filter="${f('soft1')}"`);
   }
   // ── 掩体：野外为干砌石矮墙，城内为木箱与木桶，室内为桌椅；都带顶面、正面与投影。
   let wallD = '', crateD = '', barrelD = '', tableD = '', crateLines = '';
