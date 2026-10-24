@@ -3,6 +3,7 @@ import {
   generateUnit, prepareCombatModel, prepareArmsModel, prepareSkillModel, upgradeCombatSkills,
   skillDefinitionId, skillAttack, previewAttack, resolveAttack, traitRegistry, standardConditionMap,
   SmallBattle, MassBattle, standardField, createStructure, V31_OVERFLOW_D20, V31_OVERFLOW_TW, V32_OVERFLOW_D20, V32_OVERFLOW_TW,
+  V33_OVERFLOW_D20, V33_OVERFLOW_TW,
   type Combatant, type GenerateInput, type RulePack, type AttackOpts, type AttackResolution,
 } from '../src/index.js';
 import { buildEncounter } from '../../panel/src/game-encounter.js';
@@ -91,7 +92,7 @@ describe('V32 independent direct damage at 55%', () => {
     }
   });
 
-  it('starts both encounter modes on V32 through the shared UI/MCP constructor', () => {
+  it('starts both encounter modes on V33 while retaining V32 damage calibration through the shared UI/MCP constructor', () => {
     for (const mode of ['small', 'mass'] as const) {
       const extra: Partial<GenerateInput> = mode === 'mass' ? { scale: 'company', hpMax: 1, hp: 1 } : {};
       const roster = [unit('a', '魔法单体', extra), unit('d', undefined, extra)];
@@ -99,7 +100,8 @@ describe('V32 independent direct damage at 55%', () => {
       const battle = buildEncounter({ roster,
         setup: { mode, field: 'plains', lighting: 'day', mapLayout: 'standard', objectiveMode: 'annihilation', siegeAttacker: 'ally' },
         nonLethal: false, seed: 'v32-encounter', registry, preparedField: standardField(), summonUnit: () => { throw Error('No summon'); } });
-      expect(battle.rules.id).toBe(mode === 'small' ? V32_OVERFLOW_D20.id : V32_OVERFLOW_TW.id);
+      expect(battle.rules.id).toBe(mode === 'small' ? V33_OVERFLOW_D20.id : V33_OVERFLOW_TW.id);
+      expect(battle.rules.independentSkillDamageMultiplier).toBe(.55);
     }
   });
 
