@@ -4,6 +4,7 @@ import { nativeFixture } from '../../runtime/tests/native-fixture.js';
 import { generateUnit, SmallBattle, standardField, V4_OVERFLOW_D20 } from '../../engine/src/index.js';
 import { unitRecordFromCombatant } from './unit-state.js';
 import { readLlmSettings, LLM_SETTINGS_KEY } from './llm-settings.js';
+import { LAYOUT_TRIES } from './llm-context.js';
 vi.mock('./panel-runtime.js', async () => import('../../extension/src/panel-runtime.js'));
 afterEach(() => { window.dispatchEvent(new Event('pagehide')); vi.unstubAllGlobals(); });
 
@@ -124,19 +125,22 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   expect(button('migration-accept')).not.toBeNull();
   button('migration-accept').click();await idle();
   expect(f.service.snapshot().storage![0]!.snapshot!.damageModel).toBe('wounds-v2');
-  // Three unreadable layouts keep the decision and finish this same start using the decision's local layout.
+  // Exhaust the layout step's own budget, preserving the decision and falling back within this same start.
   const preparationStart=request.mock.calls.length;
-  breakLayout=3;
+  breakLayout=LAYOUT_TRIES;
   nav('battle');button('small-start').click();await idle();
   const preparationRequests=request.mock.calls.slice(preparationStart).map(([,init])=>JSON.parse(String(init?.body)));
-  expect(preparationRequests).toHaveLength(4);expect(breakLayout).toBe(0);
+  expect(preparationRequests).toHaveLength(1+LAYOUT_TRIES);expect(breakLayout).toBe(0);
   expect(preparationRequests[0].messages.at(-1).content).toContain('【第1步');
   expect(preparationRequests.slice(1).every(p=>p.messages.at(-1).content.startsWith('【第2步'))).toBe(true);
   const retryTask=preparationRequests.at(-1).messages.at(-1).content as string;
   expect(retryTask).toContain('失败原因与改法：模型未返回有效布置 JSON。改法：只输出一个JSON对象');
+  const rejectedAnswers=JSON.parse(retryTask.split('\n').find(line=>line.startsWith('此前失败回答：'))!.slice('此前失败回答：'.length));
+  expect(rejectedAnswers).toHaveLength(LAYOUT_TRIES-1);
+  expect(rejectedAnswers.every((record:{answer:unknown;error:string})=>record.answer==='地图如下：无'&&record.error.includes('模型未返回有效布置 JSON'))).toBe(true);
   expect(f.service.snapshot().battle, document.querySelector('#toast')?.textContent ?? JSON.stringify(f.service.status())).toBeDefined();
   const selected=SmallBattle.fromSnapshot(f.service.snapshot().battle!.snap);
-  expect(selected.battlefield!.generation!.notes).toContain('连续3次布置未能生成地图，只采用回答中能生成的部分');
+  expect(selected.battlefield!.generation!.notes).toContain(`连续${LAYOUT_TRIES}次布置未能生成地图，只采用回答中能生成的部分`);
   expect(selected.battlefield!.generation!.notes).toContain('布置回答无法读取，只按开战决策生成');
   expect(selected.commanderProfiles).toEqual({ally:{ability:'master',style:'aggressive',scoring:'tactical-v2'},enemy:{ability:'expert',style:'cautious',scoring:'tactical-v2'}});
   expect(f.service.snapshot()).toMatchObject({field:'forest',lighting:'night'});
