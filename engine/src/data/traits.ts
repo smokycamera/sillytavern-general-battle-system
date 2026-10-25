@@ -516,7 +516,7 @@ export function narrativeTrait(value: string, registry = traitRegistry()): Narra
 }
 
 /** 原五项专精由V15门控；P1十一类由独立V16门控。其余仍只有“有/无”。 */
-export const GRADED_TRAITS: readonly string[] = [...TERRAIN_GRADED_TRAITS, ...P1_GRADED_TRAITS, ...P2_GRADED_TRAITS, 'revival'];
+export const GRADED_TRAITS: readonly string[] = [...TERRAIN_GRADED_TRAITS, ...P1_GRADED_TRAITS, ...P2_GRADED_TRAITS, 'revival', 'flying'];
 export const isGradedTrait = (id: string): boolean => GRADED_TRAITS.includes(id);
 export const validTraitLevel = (level: unknown): level is number => Number.isSafeInteger(level) && (level as number) >= 1 && (level as number) <= 10;
 /** 单位或来源记录的专精等级表：只允许已完成分级特质、L1–10 整数。 */

@@ -2312,7 +2312,7 @@ export class SmallBattle {
     }
     // Read-only evaluation: observations and preview samples are reused until an action is chosen.
     this.observationMemo = new Map(); this.gridPathsMemo = new WeakMap(); beginPreviewScope(true);
-    const plans: { score: number; path: GridPath; offensive?: boolean; selfDefenseScore?: number; targetId?: string; abilityId?: string; weaponMode?: SmallAttackOpts['weaponMode']; cell?: number; structureMode?: string; kind: 'structure' | 'gate' | 'climb' | 'weapon' | 'charge' | 'ability' | 'brace' | 'hold' | 'land' | 'reload' | 'haste-move' | 'haste-flight';
+    const plans: { score: number; path: GridPath; offensive?: boolean; selfDefenseScore?: number; targetId?: string; abilityId?: string; weaponMode?: SmallAttackOpts['weaponMode']; cell?: number; structureMode?: string; kind: 'structure' | 'gate' | 'climb' | 'weapon' | 'charge' | 'ability' | 'brace' | 'overwatch' | 'hold' | 'land' | 'reload' | 'haste-move' | 'haste-flight';
       /** V19：技能位移后的落点、对主目标的伤害预览、控制效果的生效概率与生效后的目标。 */
       landing?: number; preview?: { expectedDamage: number; variance?: number }; control?: CommandControl }[] = [];
     const knownUnits = this.visibleCombatants(unit.side);
@@ -2539,6 +2539,8 @@ export class SmallBattle {
       const context = { ...this.observationContext(), units: knownUnits };
       if (!this.reactionSpent.has(unitId)) restValue = tacticalRestValue(context, unit);
     }
+    const overwatchValue = order?.hold || unit.side === 'ally' && this.allyTactic === 'defensive'
+      ? this.holdOverwatchValue(unit, foes, knownUnits, sightAt) : 0;
     const reachable = this.intentActive ? [{ cells: [unit.pos!], cost: 0 }] : this.reachableCells(unitId);
     // Stage 1: cheap regional/position scoring; stage 2: costly damage/skill previews at bounded locations.
     const scored = field.layerVersion ? new Map(reachable.map(path => [path, positionScore(path)])) : undefined;
@@ -2601,6 +2603,7 @@ export class SmallBattle {
       if (isAirborne(unit) && path.cost + 1 <= this.movementLeft(unitId) && canOccupy(field, this.visibleCombatants(unit.side), { ...actor, airborne: false }, actor.pos!)) plans.push({ score: baseScore + (objective.kind !== 'annihilation' && actor.pos === field.objective.cell ? 6 : 0.1), path, kind: 'land' });
       plans.push({ score: baseScore + (path.cost === 0 ? restValue : 0) + (foes.length && path.cost === 0 && canReconceal(this.observationContext(), unit) ? 4 : 0), path, kind: 'hold' });
       if (!this.nonSkillActionAvailable(unitId)) continue;
+      if (path.cost === 0 && overwatchValue > 0) plans.push({ score: baseScore + overwatchValue, path, kind: 'overwatch' });
       if (!this.braceReason(unitId)) {
         const threats = foes.filter((f) => !this.sightReason(actor, f)).sort((a, b) => this.dist(actor, a) - this.dist(actor, b) || a.id.localeCompare(b.id)).slice(0, 3);
         const braced = { ...actor, tacticalPose: bracePose(actor, threats[0], 'small', field.width,field.height) };
@@ -2787,7 +2790,7 @@ export class SmallBattle {
     const choice = (plan: typeof plans[number]) => ({
       key: JSON.stringify(field.layerVersion ? [plan.kind, plan.path.cells, plan.targetId, plan.abilityId, plan.weaponMode, plan.cell, plan.structureMode] : [plan.kind, plan.path.cells, plan.targetId, plan.abilityId, plan.weaponMode]), score: plan.score,
       attack: !!plan.offensive, breach: plan.kind === 'structure', ranged: plan.kind === 'structure' ? plan.structureMode?.startsWith('ability:') ? unit.abilities.find(a => a.id === plan.structureMode!.slice(8))?.delivery !== 'melee' : isRangedWeapon(plan.structureMode === 'sidearm' ? unit.sidearm : unit.weapon) : plan.kind === 'weapon' ? isRangedWeapon(plan.weaponMode === 'sidearm' ? unit.sidearm : unit.weapon) : plan.kind === 'ability' && !movementOnlySkill(unit.abilities.find(a => a.id === plan.abilityId) ?? { effects: [] }) && (unit.abilities.find(a => a.id === plan.abilityId)?.range?.max ?? 0) > 1,
-      move: plan.path.cost > 0 || plan.kind === 'ability' && hasSkillMovement(unit.abilities.find(a => a.id === plan.abilityId) ?? { effects: [] }), defend: plan.kind === 'brace' || plan.kind === 'hold' || plan.kind === 'ability' && !!unit.abilities.find(a => a.id === plan.abilityId)?.effects.some(e => e.op === 'barrier' || e.op === 'heal' || e.op === 'dispel' && e.polarity === 'negative' || e.op === 'condition' && ['blessed','encouraged'].includes(e.conditionId)),
+      move: plan.path.cost > 0 || plan.kind === 'ability' && hasSkillMovement(unit.abilities.find(a => a.id === plan.abilityId) ?? { effects: [] }), defend: plan.kind === 'brace' || plan.kind === 'hold' || plan.kind === 'overwatch' || plan.kind === 'ability' && !!unit.abilities.find(a => a.id === plan.abilityId)?.effects.some(e => e.op === 'barrier' || e.op === 'heal' || e.op === 'dispel' && e.polarity === 'negative' || e.op === 'condition' && ['blessed','encouraged'].includes(e.conditionId)),
     });
     const turnKey = `${this.seed}:${this.round}:${unitId}`;
     const scoreTrace = this.aiTrace ? (event: object) => this.aiTrace!({ stage: 'scores', mode: 'small', unitId, round: this.round, ...event }) : undefined;
@@ -2833,6 +2836,7 @@ export class SmallBattle {
         else if (best.kind === 'reload') this.reloadWeapon(unitId, best.weaponMode === 'sidearm');
         else if (best.kind === 'land' && !this.flightReason(unitId, false)) this.changeFlight(unitId, false);
         else if (best.kind === 'brace' && !this.braceReason(unitId)) this.brace(unitId);
+        else if (best.kind === 'overwatch' && !this.overwatchReason(unitId)) this.setOverwatch(unitId);
         else if (!(isEnduranceModel(unit.resourceModel) && best.kind === 'hold') && !(best.path.cost === 0 && canReconceal(this.observationContext(), unit)) && !this.overwatchReason(unitId)) this.setOverwatch(unitId);
       }
     }
@@ -2862,6 +2866,40 @@ export class SmallBattle {
     return best?.cells;
   }
   /** V19：§2.2 配合预判、§3 风格行为项、§2.3 大师方案比较。只读估值，不消耗战斗随机数。 */
+  /** One possible reaction against an observed enemy's legal next move; never sum several shots. */
+  private holdOverwatchValue(actor: Combatant, foes: Combatant[], known: Combatant[], sight: HypotheticalSight): number {
+    if (this.overwatch.has(actor.id) || this.overwatchReason(actor.id)) return 0;
+    const field = this.battlefield!, defs = this.conditionDefMap();
+    const reach = Math.max(gridWeaponRange(actor.weapon, true, this.rules.armsModel), gridWeaponRange(actor.sidearm, true, this.rules.armsModel));
+    const threats = foes.filter(foe => foe.status === 'ready' && !foe.conditions.some(c => c.dur > 0 && (defs.get(c.id)?.skipTurn || defs.get(c.id)?.preventMove))
+      && this.dist(actor, foe) <= reach + movementPoints(foe, this.fieldTags))
+      .sort((a, b) => this.dist(actor, a) - this.dist(actor, b) || a.id.localeCompare(b.id)).slice(0, 3);
+    let value = 0;
+    for (const foe of threats) {
+      const paths = reachableGridPaths(field, foe.pos!, movementPoints(foe, this.fieldTags), cell => canOccupy(field, known, foe, cell),
+        (cell, from) => movementStepCost(field, cell, foe, this.fieldTags, from), foe)
+        .filter(path => path.cost > 0 && gridDistance(field, actor.pos!, path.cells.at(-1)!) <= reach)
+        .sort((a, b) => a.cost - b.cost || a.cells.at(-1)! - b.cells.at(-1)!);
+      for (const path of paths) {
+        const target = { ...foe, pos: path.cells.at(-1)!, tacticalPose: undefined, entrenchedAt: undefined, movedDuringActivation: true };
+        if (!controlReactionAllowed(actor, target, known, this.dist(actor, target))) continue;
+        const context = this.weaponContext(actor, target, {}, known, sight);
+        if (context.reason || context.landing) continue;
+        const denial = denialReady(actor, defs) && this.dist(actor, foe) > 2 && this.dist(actor, target) <= 2 && sameLayer(actor, target);
+        const mods = this.attackModifiers(actor, target, context);
+        const options = { attacker: actor, defender: target, rules: this.rules, conditionDefs: defs, traitRegistry: this.traitRegistry,
+          weaponOverride: context.weapon, ranged: context.ranged, actionDamageScale: this.usingHaste(actor.id) ? hasteAttackScale(actor) : 1, ...mods };
+        const watched = this.previewAttackWithEnvironment({ ...options, extraMods: [...mods.extraMods, ...(denial ? denialModifiers(target, false, true) : [])] }).expectedDamage;
+        // Entering a pike's reach already permits automatic denial; credit only the extra benefit.
+        const automatic = denial ? this.previewAttackWithEnvironment({ ...options, actionDamageScale: 1, extraMods: [...mods.extraMods, ...denialModifiers(target, false, false)] }).expectedDamage : 0;
+        this.aiTrace?.({ stage: 'overwatch-preview', unitId: actor.id, targetId: target.id, cell: target.pos, watched, automatic });
+        value = Math.max(value, Math.min(memberHealth(target), watched) - Math.min(memberHealth(target), automatic));
+        break;
+      }
+    }
+    return value * .5;
+  }
+
   private commandV2Scores<P extends { score: number; path: GridPath; kind: string; offensive?: boolean; targetId?: string; landing?: number; preview?: { expectedDamage: number; variance?: number }; control?: CommandControl }>(
     unit: Combatant, candidates: P[], choice: (plan: P) => CommandChoice, profile: CommanderProfile, quality: ReturnType<typeof commandQuality>, turnKey: string,
     foes: Combatant[], known: Combatant[], sight: HypotheticalSight, incomingAt: (cell: number) => number, trace?: (event: object) => void): number[] {
@@ -2922,7 +2960,7 @@ export class SmallBattle {
     const scores = commandScores(candidates.map(plan => {
       const option = choice(plan), target = plan.targetId ? foes.find(f => f.id === plan.targetId) : undefined;
       return { ...option, ...(features ? { features: features({ cells: plan.landing === undefined ? plan.path.cells : [...plan.path.cells, plan.landing], landing: plan.landing ?? plan.path.cells.at(-1)!,
-        attack: option.attack, ranged: option.ranged, breach: !!option.breach, stay: plan.kind === 'hold' || plan.kind === 'brace', target, killChance: target && plan.preview ? killProbability([plan.preview], memberHealth(target)) : 0 }) } : {}) };
+        attack: option.attack, ranged: option.ranged, breach: !!option.breach, stay: plan.kind === 'hold' || plan.kind === 'brace' || plan.kind === 'overwatch', target, killChance: target && plan.preview ? killProbability([plan.preview], memberHealth(target)) : 0 }) } : {}) };
     }), profile, turnKey, trace);
     // §2.3 大师：与最高分相差不超过比较阈值的候选（最多3个），加上下一个友军的最佳后续攻击 V(c)。
     if (quality.compare && pending.length) {
