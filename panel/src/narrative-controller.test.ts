@@ -91,13 +91,13 @@ describe('常驻宿主生命周期与故障', () => {
     const { controller, ctx } = setup(); const save = controller.snapshot();
     save.inventory = Array.from({ length: 20 }, (_, i) => ({ id: 'i-' + i, name: '材料' + i, qty: 1, lootType: 'material' }));
     controller.persistPanel(save, save.factRevision!);
-    expect(narrativeProjection(controller.snapshot())).toContain('"id":"i20"');
+    expect(narrativeProjection(controller.snapshot())).toContain('id="i20"');
     let settings = selectPromptEntries(undefined, 'unit', ['a'], false);
     settings = { ...selectPromptEntries(settings, 'item', ['i-1'], false), sections: { facts: { template: '自定义事实\n{{content}}' }, reminder: { enabled: false } } };
     expect(controller.setPromptSettings(settings).status).toBe('saved');
     const projected = ctx.setExtensionPrompt.mock.calls.at(-1)![1] as string;
-    expect(projected).toContain('自定义事实'); expect(projected).not.toContain('"id":"u1"'); expect(projected).not.toContain('"id":"i2"');
-    expect(projected).toContain('"id":"i20"'); expect(projected).not.toContain('【本次输出约束】');
+    expect(projected).toContain('自定义事实'); expect(projected).not.toContain('"id":"u1"'); expect(projected).not.toContain('id="i2"');
+    expect(projected).toContain('id="i20"'); expect(projected).not.toContain('【本次输出约束】');
     const current = controller.snapshot(); delete current.promptSettings; controller.persistPanel(current, current.factRevision!);
     expect(controller.snapshot().promptSettings).toEqual(settings);
     const allOff = { sections: Object.fromEntries(PROMPT_SECTIONS.map((s) => [s.id, { enabled: false }])) };
