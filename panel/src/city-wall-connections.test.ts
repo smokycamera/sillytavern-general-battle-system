@@ -4,14 +4,18 @@ import {groundBlocked} from '../../engine/src/small/layers.js';
 import {neighbors} from '../../engine/src/small/spatial.js';
 import {compileLayout} from './llm-layout.js';
 
-function build(at: string[] | string, attacker: 'ally' | 'enemy' = 'enemy') {
- const plan=compileLayout({city:{at,walls:'double',gates:[{name:'城门',state:'closed'}]}},
+function build(at: string[] | string, attacker: 'ally' | 'enemy' = 'enemy',walls='double') {
+ const plan=compileLayout({city:{at,walls,gates:[{name:'城门',state:'closed'}]}},
   {scene:'city_siege',size:'large',attacker,objectiveMode:'siege',units:[],map:[13,19]}).plan;
  return generatedLayeredField('closed-double',7,13,['siege'],{plan,attackingSide:attacker});
 }
 describe('闭合城市与墙头连接',()=>{
- it.each([['A3','B3','A4'],['B3','C3','B4','C4']])('触边的双重城墙仍闭合：%j',(...at)=>{
-  const f=build(at),urban=new Set([...f.city!.inside,...f.city!.frontline]);
+ it.each([
+  {at:['A3','B3','A4'],walls:'double'},{at:['B3','C3','B4','C4'],walls:'double'},
+  {at:['A1','B1','A2'],walls:'ring'},{at:['C1','D1','D2'],walls:'ring'},
+  {at:['A3','A4','B4'],walls:'ring'},{at:['C3','C4','D4'],walls:'ring'},
+ ])('触边围城仍闭合：$walls $at',({at,walls})=>{
+  const f=build(at,'enemy',walls),urban=new Set([...f.city!.inside,...f.city!.frontline]);
   const queue=f.tiles.flatMap((_,p)=>!urban.has(p)&&!groundBlocked(f,p)?[p]:[]),seen=new Set(queue);
   for(let i=0;i<queue.length;i++)for(const n of neighbors(f,queue[i]!))if(!seen.has(n)&&!groundBlocked(f,n)){seen.add(n);queue.push(n);}
   expect(f.city!.shape).toBe('enclosure');

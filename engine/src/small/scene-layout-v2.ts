@@ -68,7 +68,7 @@ export function siegeWallLayout(plan: Pick<BattlefieldPlan, 'shape' | 'wallLayer
         const roll = new SeededRng('city-walls-v1:' + seed).next();
         return { ring: position === 'center' || roll >= .45 && roll < .8, layers: position !== 'center' && roll >= .8 ? 2 : 1 };
     }
-    return { ring: plan.shape !== 'front', layers: plan.wallLayers ?? 1 };
+    return { ring: position === 'center' || plan.shape !== 'front', layers: plan.wallLayers ?? 1 };
 }
 /** The walled side an assault faces: where the attackers are said to start, else the widest open ground. */
 function siegeFacing(field: BattlefieldSpec, position: WorldAnchor, walled: Record<CitySide, boolean>, [l, r, t, b]: number[], attackers: readonly WorldAnchor[], attackEdge: CitySide): CitySide {
@@ -117,6 +117,8 @@ export function buildPlannedCity(field: BattlefieldSpec, plan: BattlefieldPlan, 
     let layers = layout?.layers ?? 1;
     // Two walls need the passage between them and a town at least three cells across behind both.
     if (layers === 2 && (([x0, x1, y0, y1]) => x1! - x0! < 2 || y1! - y0! < 2)(townBox(3))) {
+        if (plan.wallLayers === 2 && plan.size !== 'compact')
+            throw new BattlefieldPlanError('双重城墙内部部署容量不足，需要扩大地图');
         layers = 1;
         field.generation!.notes = [...(field.generation!.notes ?? []), '战区放不下两重城墙，改为一道城墙'];
     }

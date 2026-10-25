@@ -25,9 +25,10 @@ export function roundedRect(x0: number, y0: number, x1: number, y1: number, nw: 
 }
 
 /** 线状结构（道路、城墙、堑壕）：格心接头 + 通向邻格的等宽连杆。 */
-export function skeleton(g: Grid, cells: readonly number[], join: (p: number) => boolean, width: number, core = width, cornerBlocked?: (p: number) => boolean): string {
-  const lines = segments(g, cells, join, false, cornerBlocked), diagonal = new Set<number>(), cardinal = new Set<number>();
+export function skeleton(g: Grid, cells: readonly number[], join: (p: number) => boolean, width: number, core = width, cornerBlocked?: (p: number) => boolean, extendEdges = false): string {
+  const lines = segments(g, cells, join, false, cornerBlocked, extendEdges), diagonal = new Set<number>(), cardinal = new Set<number>();
   for (const s of lines) for (const [x, y] of [[s.x0, s.y0], [s.x1, s.y1]]) {
+    if (x! % S !== S / 2 || y! % S !== S / 2) continue;
     (s.x0 !== s.x1 && s.y0 !== s.y1 ? diagonal : cardinal).add(Math.floor(y! / S) * g.w + Math.floor(x! / S));
   }
   let d = '';
@@ -53,21 +54,27 @@ export function segmentPath(s: Segment, offset = 0): string {
   return `M${r1(s.x0 + dx)} ${r1(s.y0 + dy)}L${r1(s.x1 + dx)} ${r1(s.y1 + dy)}`;
 }
 /** 格心连线；只有两侧均无同类正交连接时才连斜角，避免把L形转角抹成三角形。 */
-export function segments(g: Grid, cells: readonly number[], join: (p: number) => boolean, isolated = true, cornerBlocked?: (p: number) => boolean): Segment[] {
+export function segments(g: Grid, cells: readonly number[], join: (p: number) => boolean, isolated = true, cornerBlocked?: (p: number) => boolean, extendEdges = false): Segment[] {
   const members = new Set(cells), out: Segment[] = [];
   for (const p of cells) {
     const x = p % g.w, y = (p - x) / g.w, cx = x * S + S / 2, cy = y * S + S / 2;
-    let linked = false;
+    let linked = false, connections = 0, inwardX = 0, inwardY = 0;
     for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]] as const) {
       const nx = x + dx, ny = y + dy, q = ny * g.w + nx;
       if (nx < 0 || nx >= g.w || ny < 0 || ny >= g.h || q >= g.n || !join(q)) continue;
       // 已毁墙角或别的结构也不能被新斜线穿过，避免在破口处凭空补墙。
       if (dx && dy && [y * g.w + nx, ny * g.w + x].some(side => join(side) || cornerBlocked?.(side))) continue;
       linked = true;
+      connections++; inwardX = dx; inwardY = dy;
       if (q < p && members.has(q)) continue;
       const other = { x: cx + dx * S, y: cy + dy * S };
       out.push(q < p ? { x0: other.x, y0: other.y, x1: cx, y1: cy } : { x0: cx, y0: cy, x1: other.x, y1: other.y });
     }
+    // An intact terminal wall occupies the boundary cell: carry its body to the board edge.
+    // Never extend an interior endpoint or reconnect a destroyed/missing boundary cell.
+    if (extendEdges && connections === 1 && (x === 0 && inwardX > 0 || x === g.w - 1 && inwardX < 0
+      || y === 0 && inwardY > 0 || y === g.h - 1 && inwardY < 0))
+      out.push({ x0: cx - inwardX * S / 2, y0: cy - inwardY * S / 2, x1: cx, y1: cy });
     if (!linked && isolated) out.push({ x0: cx - 22, y0: cy, x1: cx + 22, y1: cy });
   }
   return out;
