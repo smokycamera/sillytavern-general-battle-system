@@ -1,0 +1,178 @@
+{
+  "width": 21,
+  "height": 27,
+  "floor": [
+    44,
+    45,
+    46,
+    65,
+    66,
+    67,
+    86,
+    87,
+    88
+  ],
+  "structures": {
+    "22": {
+      "entityId": "place3",
+      "hp": 387,
+      "hpMax": 387,
+      "kind": "wall",
+      "level": 3,
+      "top": false
+    },
+    "23": {
+      "entityId": "place3",
+      "hp": 387,
+      "hpMax": 387,
+      "kind": "wall",
+      "level": 3,
+      "top": false
+    },
+    "24": {
+      "entityId": "place3",
+      "hp": 387,
+      "hpMax": 387,
+      "kind": "wall",
+      "level": 3,
+      "top": false
+    },
+    "25": {
+      "entityId": "place3",
+      "hp": 387,
+      "hpMax": 387,
+      "kind": "wall",
+      "level": 3,
+      "top": false
+    },
+    "26": {
+      "entityId": "place3",
+      "hp": 387,
+      "hpMax": 387,
+      "kind": "wall",
+      "level": 3,
+      "top": false
+    },
+    "43": {
+      "entityId": "place3",
+      "hp": 387,
+      "hpMax": 387,
+      "kind": "wall",
+      "level": 3,
+      "top": false
+    },
+    "47": {
+      "entityId": "place3",
+      "hp": 387,
+      "hpMax": 387,
+      "kind": "wall",
+      "level": 3,
+      "top": false
+    },
+    "64": {
+      "entityId": "place3",
+      "gateState": "open",
+      "hp": 252,
+      "hpMax": 252,
+      "kind": "gate",
+      "level": 3,
+      "top": false
+    },
+    "68": {
+      "entityId": "place3",
+      "hp": 387,
+      "hpMax": 387,
+      "kind": "wall",
+      "level": 3,
+      "top": false
+    },
+    "85": {
+      "entityId": "place3",
+      "hp": 387,
+      "hpMax": 387,
+      "kind": "wall",
+      "level": 3,
+      "top": false
+    },
+    "89": {
+      "entityId": "place3",
+      "hp": 387,
+      "hpMax": 387,
+      "kind": "wall",
+      "level": 3,
+      "top": false
+    },
+    "106": {
+      "entityId": "place3",
+      "hp": 387,
+      "hpMax": 387,
+      "kind": "wall",
+      "level": 3,
+      "top": false
+    },
+    "107": {
+      "entityId": "place3",
+      "hp": 387,
+      "hpMax": 387,
+      "kind": "wall",
+      "level": 3,
+      "top": false
+    },
+    "108": {
+      "entityId": "place3",
+      "hp": 387,
+      "hpMax": 387,
+      "kind": "wall",
+      "level": 3,
+      "top": false
+    },
+    "109": {
+      "entityId": "place3",
+      "hp": 387,
+      "hpMax": 387,
+      "kind": "wall",
+      "level": 3,
+      "top": false
+    },
+    "110": {
+      "entityId": "place3",
+      "hp": 387,
+      "hpMax": 387,
+      "kind": "wall",
+      "level": 3,
+      "top": false
+    },
+    "131": {
+      "access": [
+        110
+      ],
+      "hp": 387,
+      "hpMax": 387,
+      "kind": "wall",
+      "level": 3,
+      "owner": "ally",
+      "platformHeight": 1,
+      "top": true
+    }
+  },
+  "generation": {
+    "design": {
+      "breadth": "narrow",
+      "cover": "balanced",
+      "feature": "none",
+      "featureZone": "center_right",
+      "landmarkScale": "minor",
+      "layout": "scattered",
+      "obstacles": "balanced",
+      "orientation": "longitudinal",
+      "relief": "balanced",
+      "route": "winding",
+      "topology": "spine_branches"
+    },
+    "family": "siege",
+    "scene": "city_siege",
+    "source": "context",
+    "version": 11,
+    "waterCoverage": "regions"
+  }
+}

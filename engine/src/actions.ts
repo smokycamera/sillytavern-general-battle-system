@@ -358,7 +358,7 @@ export function abilityTargetReason(input: {
   if (target && !sameLayer(actor, target) && (ability.requires === 'melee' || ability.requires === 'shield')) return '接触技能需要处于同一空地层';
   if (target && actor.rulesVersion === 'v2' && ability.effects.length && ability.effects.every((e) => e.op === 'dispel' && !dispelCandidates(target, e).length || e.op === 'condition' && !conditionChance(target, e))) return '目标没有可解除的效果，或已免疫/处于同类控制';
   if (target && ability.itemSourceId && actor.id !== target.id && !sameLayer(actor, target)
-    && (ability.itemQuick || ability.delivery === 'melee' || isAirborne(actor) !== isAirborne(target))) return '向他人使用接触类物品需要处于同一空地层';
+    && (ability.delivery === 'melee' || isAirborne(actor) !== isAirborne(target))) return '向他人使用接触类物品需要处于同一空地层';
   if (actor.rulesVersion === 'v2' && ability.effects.every((e) => e.op === 'heal') && target && !recoveryCapacity(target)) return target.scale === 'hero' ? '当前目标没有可恢复损伤或已离场' : '群体治疗需要可救伤员记录，不能凭技能招募新兵';
   if (ability.target === 'enemy' && (!target || !combatHostile(target, actor, input.units ?? [actor, target]))) {
     return '该技能必须指定一名敌方目标';

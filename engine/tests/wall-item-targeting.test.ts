@@ -27,9 +27,10 @@ describe('携行道具与墙顶目标', () => {
     expect(b.useAbility(a.id, ability.id, t.id).ok).toBe(true);
     expect(a.resources['item:item']).toBe(1);
   });
-  it('喝敷类仍需接触，空地隔层和距离、遮挡继续限制投掷', () => {
+  it('相邻膏剂可用于墙顶，空地隔层和距离、遮挡继续限制道具', () => {
     const quick = setup(true), target = () => quick.b.getActionOptions('a').find(o => o.id === quick.ability.id)!.targets!.find(x => x.targetId === 't')!;
-    expect(target().reason).toContain('同一空地层');
+    expect(target().enabled).toBe(true);
+    const hp = quick.t.hp; expect(quick.b.useAbility('a', quick.ability.id, 't').ok).toBe(true); expect(quick.t.hp).toBeGreaterThan(hp);
     const { a, t, b, ability } = setup(), reason = () => b.getActionOptions('a').find(o => o.id === ability.id)!.targets!.find(x => x.targetId === 't')!.reason;
     t.airborne = true; expect(reason()).toContain('同一空地层');
     t.airborne = false; t.pos = 4; b.battlefield!.structures![4] = createStructure('wall', 3, { top: true });
