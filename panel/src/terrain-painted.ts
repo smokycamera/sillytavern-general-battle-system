@@ -220,7 +220,7 @@ export function buildPainted(t: TerrainScene): string {
       p.path('pt-window', windows);
     }
     if (t.wallLine.length) {
-      const body = skeleton(g, t.wallLine, t.joinWall, 44, 44, cornerBlocked), line = segments(g, t.wallLine, t.joinWall, true, cornerBlocked);
+      const body = skeleton(g, t.wallLine, t.joinWall, 44, 44, cornerBlocked, true), line = segments(g, t.wallLine, t.joinWall, true, cornerBlocked, true);
       let merlon = '';
       for (const s of line) {
         const len = Math.hypot(s.x1 - s.x0, s.y1 - s.y0), dx = (s.x1 - s.x0) / len, dy = (s.y1 - s.y0) / len, k = Math.max(1, Math.floor(len / 17));

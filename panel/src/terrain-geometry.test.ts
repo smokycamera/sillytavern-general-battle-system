@@ -24,6 +24,23 @@ describe('地图斜角连接', () => {
     expect(segmentBand(s, 20 * Math.SQRT2)).toBe('M60 40L160 140L140 160L40 60Z');
     expect(segmentPath(s, 10 * Math.SQRT2)).toBe('M40 60L140 160');
   });
+  it('seals both terminal wall cells at the board edge, including diagonal ends, without filling broken cells', () => {
+    const cells = [3,4,5], join = (q:number)=>cells.includes(q);
+    expect(segments(g,cells,join,false,undefined,true)).toEqual(expect.arrayContaining([
+      {x0:0,y0:150,x1:50,y1:150},{x0:300,y0:150,x1:250,y1:150},
+    ]));
+    expect(segments(g,[0,4,8],q=>[0,4,8].includes(q),false,undefined,true)).toEqual(expect.arrayContaining([
+      {x0:0,y0:0,x1:50,y1:50},{x0:300,y0:300,x1:250,y1:250},
+    ]));
+    expect(segments(g,[4,5],q=>[4,5].includes(q),false,undefined,true).some(s=>s.x0===0)).toBe(false);
+    const field=standardField();field.tiles.fill('open');field.layerVersion=1;field.structures=field.tiles.map(()=>null);
+    for(let x=0;x<field.width;x++)field.structures[field.width*3+x]=createStructure('wall',3,{top:true});
+    const before=JSON.stringify(field),markup=buildPainted(analyzeTerrain(field,'edge-wall'));
+    expect(markup).toContain('M0 350L50 350');expect(markup).toContain('M700 350L650 350');
+    expect(JSON.stringify(field)).toBe(before);
+    field.structures[field.width*3]!.hp=0;
+    expect(buildPainted(analyzeTerrain(field,'broken-edge'))).not.toContain('M0 350L50 350');
+  });
   it('draws diagonal ramparts, rotates their gate, and leaves destroyed sections broken', () => {
     const field = standardField(); field.tiles.fill('open'); field.layerVersion = 1;
     field.structures = field.tiles.map(() => null);

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { generatedLayeredField, generateUnit, groundBlocked, intactStructure, damageStructure, SmallBattle, V11_OVERFLOW_D20,
   type BattlefieldPlan, type BattlefieldSpec, type Combatant } from '../src/index.js';
 import { regionalOrder } from '../src/small/team-tactics.js';
+import { neighbors } from '../src/small/spatial.js';
 
 function unit(id: string, side: 'ally' | 'enemy'): Combatant {
   const u = generateUnit({ name: id, side, scale: 'hero', rulesVersion: 'v2', level: 3, weaponClass: 'blunt', weaponLevel: 3, traits: [] }, { seed: id, noVariance: true }).unit;
@@ -75,7 +76,8 @@ describe('siege walls close the city', () => {
   });
   it('outer wall stairs lead down to the passage and inner wall stairs to the town', () => {
     const field = siege({ wallLayers: 2, cityPosition: 'north' }, 'stairs'), city = field.city!, terrace = new Set(city.terrace);
-    const outer = city.frontline.filter(p => city.frontage!.includes(p)), inner = city.frontline.filter(p => !city.frontage!.includes(p));
+    const urban = new Set([...city.inside, ...city.frontline]);
+    const outer = city.frontline.filter(p => neighbors(field,p).some(q=>!urban.has(q))), inner = city.frontline.filter(p => !outer.includes(p));
     expect(outer.flatMap(p => field.structures![p]!.access ?? []).every(q => terrace.has(q))).toBe(true);
     expect(inner.flatMap(p => field.structures![p]!.access ?? []).every(q => !terrace.has(q) && city.inside.includes(q))).toBe(true);
   });
