@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
-import {generateUnit,traitRegistry,SmallBattle,MassBattle,V32_OVERFLOW_D20,V33_OVERFLOW_D20,V33_OVERFLOW_TW,
+import {generateUnit,traitRegistry,SmallBattle,MassBattle,V32_OVERFLOW_D20,V33_OVERFLOW_D20,V33_OVERFLOW_TW,V35_OVERFLOW_D20,
   prepareCombatModel,prepareSkillModel,movementPoints,compileSkill,upgradeCombatSkills,applySkillTrait,activeTraitIds,expireTraitSources,standardField,type Combatant} from '../../engine/src/index.js';
 import {areaTargets} from '../../engine/src/area-effects.js';
 import {loadRatio} from '../../engine/src/equipment-load.js';
@@ -63,7 +63,7 @@ describe('移动、开放城墙与组合技能的实际行为',()=>{
   }
  });
  it('不可分级特质忽略单独的L，不改授予强度和持续，独立治疗等级仍保留',()=>{
-  for(const word of ['飞行','机械化','两栖','航行','登城']) {
+  for(const word of ['机械化','两栖','航行','登城']) {
    const plain=`（buff+${word}+治疗L2）L4`,written=`（buff+${word}L9+治疗L2）L4`;
    const spec=parseAbilitySpec(written)[0]!;expect(spec,word).toEqual(parseAbilitySpec(plain)[0]);
    const a=unit('fixed-'+word);a.abilities=[compileSkill({id:spec.blueprintId},spec.level!,a.id,'skills-v4')];
@@ -79,6 +79,21 @@ describe('移动、开放城墙与组合技能的实际行为',()=>{
    expect(combatantFromUnknown(JSON.parse(JSON.stringify(a))).abilities).toEqual(a.abilities);
    expireTraitSources(a,'rounds');expect(activeTraitIds(a)).not.toContain(trait.traitId);
   }
+ });
+ it('飞行与治疗各保留单项等级，共享L只作为技能等级',()=>{
+  const spec=parseAbilitySpec('（buff+飞行L9+治疗L2）L4')[0]!;expect(spec.level).toBe(4);
+  const a=unit('graded-flight');a.abilities=[compileSkill({id:spec.blueprintId},spec.level!,a.id,'skills-v4')];
+  const b=new SmallBattle({combatants:[a,unit('d','enemy')],battlefield:standardField(),rules:V35_OVERFLOW_D20,seed:'graded-flight'});b.start();
+  expect(a.abilities[0]!.recipe?.modifierPowers).toEqual({heal:2,'trait-flying':9});
+  const trait=a.abilities[0]!.effects.find(e=>e.op==='trait')!;
+  expect(trait).toMatchObject({op:'trait',traitId:'flying',level:9,dur:3});
+  if(trait.op!=='trait')throw Error('fixture');
+  applySkillTrait(a,a,a.abilities[0]!,trait,'graded');
+  expect(a.traitSources?.at(-1)).toMatchObject({traitIds:['flying'],traitLevels:{flying:9}});
+  expect(a.abilities[0]!.effects.find(e=>e.op==='heal')).toMatchObject({power:2});
+  expect(combatantFromUnknown(JSON.parse(JSON.stringify(a))).abilities).toEqual(a.abilities);
+  expireTraitSources(a,'rounds');expect(activeTraitIds(a)).toContain('flying');
+  expireTraitSources(a,'rounds');expireTraitSources(a,'rounds');expect(activeTraitIds(a)).not.toContain('flying');
  });
  it('环形以施放者为圆心，包含唯一选中敌人，并能实际命中和附加惊惧',()=>{
   const a=unit('a'),d=unit('d','enemy'),f=standardField();f.tiles.fill('open');
