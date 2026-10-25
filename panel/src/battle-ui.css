@@ -12,6 +12,7 @@
 .unit-symbol{width:17px;height:17px;flex-shrink:0;display:inline-block;vertical-align:middle;color:currentColor;}.unit-symbol .f{fill:currentColor;stroke:none;}.unit-symbol .s{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;}
 .formation-stack{min-width:0;}.formation-stack>summary{color:var(--gold);cursor:pointer;padding:8px 4px;min-height:44px;}.formation-stack[open] .formation-piece{width:100%;box-shadow:2px 2px 0 var(--line);}
 .formation-piece .unit-symbol{margin-right:5px;}.formation-node{position:relative;}
+.formation-node .formation-piece,.formation-node .formation-stack,.formation-node .formation-empty{position:relative;z-index:1}
 .field-effect{position:absolute;inset:2px;z-index:1;pointer-events:none;overflow:hidden;border-radius:4px;--effect-color:#d5bb79;border:1px dashed var(--effect-color);background:color-mix(in srgb,var(--effect-color) 16%,transparent)}
 .field-effect svg{position:absolute;top:3px;right:3px;width:18px;height:18px;fill:color-mix(in srgb,var(--effect-color) 28%,transparent);stroke:var(--effect-color);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 1px 1px #15120e)}
 .effect-fire{--effect-color:#ff985a;background:repeating-linear-gradient(125deg,transparent 0 7px,#e2703438 7px 10px)}.effect-fire svg{right:auto;left:3px}
