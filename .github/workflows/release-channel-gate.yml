@@ -37,10 +37,13 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - name: Require test to include current main
+      - name: Require test to include the pull request base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git fetch origin main
-          git merge-base --is-ancestor origin/main HEAD
+          # The live main ref may already include this PR's merge commit by the time this job runs.
+          git merge-base --is-ancestor "$BASE_SHA" HEAD
       - name: Verify version and committed installable bundle
         run: |
           npm ci
