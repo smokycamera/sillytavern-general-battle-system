@@ -1,7 +1,8 @@
 import { displayNumber } from '../../engine/src/display-number.js';
 import { activationControlDuration, controlPolicy } from '../../engine/src/battle-control.js';
 import { SCENE_NAMES } from '../../engine/src/small/map-design.js';
-import { movementStepCost, structureDisplayName,retreatCells,neighbors,gridColumnLabel } from '../../engine/src/small/spatial.js';
+import { movementStepCost, structureDisplayName,retreatCells,neighbors,gridColumnLabel, reachableGridPaths, canOccupy } from '../../engine/src/small/spatial.js';
+import { intentRouteFailure } from '../../engine/src/small/intent-path.js';
 import { heightDescription,surfaceHeightAt,unitHeight } from '../../engine/src/small/height-map.js';
 import { SCENE_ARCHETYPE_NAMES } from '../../engine/src/small/scene-intent.js';
 import { structureAt, intactStructure, groundBlocked, isElevated } from '../../engine/src/small/layers.js';
@@ -166,6 +167,22 @@ function objectiveSummary(battle: SmallBattle): string {
   return enemyEscort ? '阻止护送对象在期限内抵达出口。' : '护送对象须在期限内抵达出口。';
 }
 
+/** Selecting an adjacent staircase in move mode previews the existing climb action and its full cost. */
+export function tacticalMovementPreview(battle: SmallBattle, actorId: string, cell: number) {
+  const preview = battle.pathPreview(actorId, cell), actor = battle.byId(actorId), field = battle.battlefield;
+  if (field && actor.pos !== undefined && preview.reason === '路径受阻或落点容量不足') {
+    const known = battle.visibleCombatants(actor.side);
+    const reachable = reachableGridPaths(field, actor.pos, Infinity, n => canOccupy(field, known, actor, n),
+      (n, from) => movementStepCost(field, n, actor, battle.fieldTags, from), actor).map(p => ({ ...actor, pos: p.cells.at(-1)! }));
+    preview.reason = intentRouteFailure(field, actor, known, reachable, cell, battle.visibleCells(actor.side), () => false);
+  }
+  if (preview.path || !field?.layerVersion || actor.pos === undefined || gridDistance(field, actor.pos, cell) !== 1
+    || isAirborne(actor) || isElevated(actor) && groundBlocked(field, cell, { ...actor, elevation: undefined })) return { ...preview, climb: false };
+  if (!isElevated(actor) && !intactStructure(field, cell)?.top) return { ...preview, climb: false };
+  const reason = battle.climbReason(actorId, cell);
+  return { climb: true, reason, path: reason ? undefined : { cells: [actor.pos, cell], cost: battle.climbMovementCost(actorId) },
+    risks: ['上下墙仍会触发借机与警戒反应'] };
+}
 function tileInspector(battle: SmallBattle, view: TacticalView, selection: ReturnType<typeof tacticalSelection>): string {
   const cell = view.inspectedCell, field = battle.battlefield!;
   if (cell === undefined || !inBounds(field, cell)) return '<div class="map-inspector muted-inspector">点选单位查看或选目标；要移动到队友所在格，请先切到「移动」，再点该格。</div>';
@@ -276,9 +293,10 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
   const mode = special || view.mode === 'move' || view.mode === 'guard' ? view.mode : option?.id ?? 'weapon';
   const specialReason = actor ? mode === 'retreat' ? s.allOptions.find(o=>o.id==='retreat')?.reason : special ? battle.flightReason(actor.id,mode==='flight:takeoff') : undefined : '没有可用单位';
   const specialDetail = !special ? '' : mode === 'retreat' ? '撤出本场战斗，消耗主行动1。确认后该单位不再参战。' : '消耗移动1；' + (actor ? battle.flightRisks(actor.id,mode==='flight:takeoff').join('；') || '已知敌军没有可触发的起落反应。' : '');
-  const movement = actor && view.cell !== undefined ? read(`path:${actor.id}:${view.cell}`, () => battle.pathPreview(actor.id, view.cell!)) : undefined;
+  const movement = actor && view.cell !== undefined ? read(`path:${actor.id}:${view.cell}`, () => tacticalMovementPreview(battle, actor.id, view.cell!)) : undefined;
   const paths = new Set(movement?.path?.cells ?? []);
   const reachable = canControl && actor && mode === 'move' ? read('reachable:' + actor.id, () => new Set(battle.reachableCells(actor.id).map(p => p.cells.at(-1)!))) : new Set<number>();
+  if (canControl && actor && mode === 'move') for (const cell of neighbors(field, actor.pos!)) if (!battle.climbReason(actor.id, cell)) reachable.add(cell);
   const targets = new Set(canControl && mode !== 'move' && mode !== 'guard' ? option?.targets?.filter((t) => t.enabled).map((t) => t.targetId) : []);
   const area = new Set(mode !== 'move' && mode !== 'guard' ? target?.preview?.areaTargetIds ?? [] : []);
   const range = mode !== 'move' && mode !== 'guard' ? option?.range : undefined;
@@ -340,16 +358,18 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
   const weapon = options.find((o) => o.id === view.mode && ['weapon', 'charge'].includes(o.kind)) ?? options.find((o) => o.kind === 'weapon' && o.enabled) ?? options.find((o) => o.id === 'weapon');
   const actionReady = canControl && !!option?.enabled && (!option.targets?.length || !!target?.enabled);
   const executeReady = special ? canControl && !specialReason : mode === 'move' ? canControl && !!movement?.path && movement.path.cost > 0 : mode !== 'guard' && actionReady;
-  const executeCommand = `<button class="primary" data-action="${mode === 'move' ? 'grid-move' : 'grid-execute'}" data-actor="${esc(actor?.id ?? '')}" data-mode="${esc(special ? mode : option?.id ?? 'weapon')}" data-target="${esc(target?.targetId ?? '')}" ${executeReady ? '' : 'disabled'} title="${mode === 'guard' ? '请在守备面板选择固守或警戒' : mode === 'move' ? '执行已预览的移动' : '执行已预览的攻击或技能'}">${mode === 'move' ? '执行移动' : '执行命令'}</button>`;
+  const moveAction = movement?.climb ? 'grid-climb' : 'grid-move', moveLabel = movement?.climb ? isElevated(actor!) ? '下到地面' : '登城' : '移动';
+  const moveCost = movement?.path ? '花费' + displayNumber(movement.path.cost) + '移动 · ' + (movement.climb ? '消耗主行动' : '保留主行动') : '';
+  const executeCommand = `<button class="primary" data-action="${mode === 'move' ? moveAction : 'grid-execute'}" data-cell="${view.cell ?? ''}" data-actor="${esc(actor?.id ?? '')}" data-mode="${esc(special ? mode : option?.id ?? 'weapon')}" data-target="${esc(target?.targetId ?? '')}" ${executeReady ? '' : 'disabled'} title="${mode === 'guard' ? '请在守备面板选择固守或警戒' : mode === 'move' ? '执行已预览的移动' : '执行已预览的攻击或技能'}">${mode === 'move' ? '执行' + moveLabel : '执行命令'}</button>`;
   const targetUnit = visible.find(u => u.id === (target?.targetId ?? view.targetId));
   const preview = target?.preview ?? option?.preview;
   const commandTitle = special ? mode==='retreat'?'确认撤离':mode==='flight:takeoff'?'确认起飞':'确认降落' : mode === 'move' ? (view.cell === undefined ? '选择移动落点' : '移动 → ' + cellLabel(field, view.cell)) : mode === 'guard' ? '选择固守或警戒' : (option?.label ?? '行动') + (targetUnit ? ' → ' + targetUnit.name : '');
-  const commandDetail = special ? specialReason ?? specialDetail : !executeReady ? (!canControl ? '当前不可下令' : mode === 'move' ? movement?.reason ?? '请选择可达落点' : targetReason ?? option?.reason ?? '请在下方选择守备') : mode === 'move' ? movement?.path ? '花费' + displayNumber(movement.path.cost) + '移动 · 保留主行动' : movement?.reason ?? '点击可达地块' : preview?.healing !== undefined ? '预计恢复' + displayNumber(preview.healing) : preview?.expectedDamage !== undefined ? '至少命中一次' + hitChanceText(preview) + ' · 命中后伤害' + hitDamageText(preview) + (preview.damageModel==='member-health'||targetUnit?.scale === 'hero' ? '生命' : '人') + ' · 主行动1' : preview?.resource ? '消耗' + displayNumber(preview.resource.cost) + preview.resource.name : reasonText();
+  const commandDetail = special ? specialReason ?? specialDetail : !executeReady ? (!canControl ? '当前不可下令' : mode === 'move' ? movement?.reason ?? '请选择可达落点' : targetReason ?? option?.reason ?? '请在下方选择守备') : mode === 'move' ? movement?.path ? moveCost : movement?.reason ?? '点击可达地块' : preview?.healing !== undefined ? '预计恢复' + displayNumber(preview.healing) : preview?.expectedDamage !== undefined ? '至少命中一次' + hitChanceText(preview) + ' · 命中后伤害' + hitDamageText(preview) + (preview.damageModel==='member-health'||targetUnit?.scale === 'hero' ? '生命' : '人') + ' · 主行动1' : preview?.resource ? '消耗' + displayNumber(preview.resource.cost) + preview.resource.name : reasonText();
   function reasonText(): string { return canControl ? '请查看行动预览' : '当前不可下令'; }
   const reason = !canControl ? '当前行动者为' + activeLabel + '，可先查看战场。' : targetReason ?? option?.reason;
-  const movePanel = `<div class="move-preview">${movement ? movement.path ? '到' + cellLabel(field, view.cell!) + ' · 花费' + displayNumber(movement.path.cost) + '移动，余' + displayNumber((battle.movementLeft(actor!.id) - movement.path.cost)) : esc(movement.reason ?? '') : '点击蓝边可达格，空格、队友格或濒死单位所在格均可预览移动；濒死单位不占容量，存活敌军仍阻路。'}
+  const movePanel = `<div class="move-preview">${movement ? movement.path ? moveLabel + '到' + cellLabel(field, view.cell!) + ' · ' + moveCost + '，余' + displayNumber((battle.movementLeft(actor!.id) - movement.path.cost)) : esc(movement.reason ?? '') : '点击蓝边可达格，空格、队友格或濒死单位所在格均可预览移动；濒死单位不占容量，存活敌军仍阻路。'}
     ${movement?.path && movement.path.cost > 0 ? '<div class="sub">' + (actor && entrenched(actor) && movement.path.cells.at(-1) !== actor.entrenchedAt ? '离开工事阵地，工事随之失效；' : '') + (movement.risks.length ? movement.risks.map(esc).join('；') : '已知敌军没有可触发的移动反应。') + '</div>' : ''}
-    <button class="primary" data-action="grid-move" data-actor="${esc(actor?.id ?? '')}" ${canControl && movement?.path && movement.path.cost > 0 ? '' : 'disabled'}>确认移动${movement?.path ? ' · ' + displayNumber(movement.path.cost) + '点' : ''}</button></div>`;
+    <button class="primary" data-action="${moveAction}" data-cell="${view.cell ?? ''}" data-actor="${esc(actor?.id ?? '')}" ${canControl && movement?.path && movement.path.cost > 0 ? '' : 'disabled'}>确认${moveLabel}${movement?.path ? ' · ' + displayNumber(movement.path.cost) + '点' : ''}</button></div>`;
   return `<section class="tactical-workspace" data-ended="${over}" data-map-zoom="${zoom}">
     <div class="tactical-heading"><div><span class="sub">战术交战${battle.fieldTags.includes('night') ? ' · 夜间' : ''}${over ? '' : ' · <span class="turn-indicator"' + (active && active.pos !== undefined ? ' data-current-unit="' + esc(active.id) + '" data-current-position="' + active.pos + '" data-current-coordinate="' + cellLabel(field, active.pos) + '"' : '') + '>当前行动 <b>' + esc(activeLabel) + '</b></span>'}</span><h2>${goal}</h2>${commandHeaderHtml(battle)}</div><button class="objective-status" ${mission.kind === 'annihilation' ? 'disabled' : 'data-action="grid-cell" data-cell="' + mission.cell + '"'}>第${battle.round}/${field.objective.limit}轮${mission.kind === 'control' ? '<small>' + (mission.attackingSide ? '攻方占领 '+battle.controlRounds[mission.attackingSide] : '我方 '+battle.controlRounds.ally+' · 敌方 '+battle.controlRounds.enemy+(battle.combatants.some(u=>u.side==='neutral')?' · 第三方 '+battle.controlRounds.neutral:'')) + '/' + mission.rounds + '</small>' : ''}</button></div>
     ${over ? '<div class="banner">' + (battle.winner() === 'ally' ? '任务胜利' : battle.winner() === 'neutral' ? '第三方获胜，我方失败' : battle.winner() === 'enemy' ? '任务失败' : '任务结束：僵持') + '</div>' : ''}

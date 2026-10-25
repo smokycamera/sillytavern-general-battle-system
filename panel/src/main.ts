@@ -3276,6 +3276,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     const b = state.small, id = el.dataset.actor;
     if (!b || !id || id !== b.active?.id || b.active.side !== 'ally') throw Error('行动者已变化，请重新预览');
     b.climb(id, Number(el.dataset.cell));
+    tacticalView.cell = undefined;
   },
   'grid-flight': (el) => {
     const b = state.small; const actorId = el.dataset.actor;

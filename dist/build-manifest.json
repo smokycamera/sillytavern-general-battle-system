@@ -1,44 +1,19 @@
 {
   "format": "tavern-battle-native-build",
-  "version": "3.0.9",
-  "builtAt": "2026-10-25T01:23:47.323Z",
-  "sourceFingerprint": "933a9056d45799c8840b538f55422249295d289dd05450ce614fab5c60a18096",
+  "version": "3.0.10",
+  "builtAt": "2026-10-25T02:08:53.948Z",
+  "sourceFingerprint": "2a6de47bcb8d4c6a28c0187a8dcd4936ed1b11c6c9b9d3711d1c9da16799e491",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
-      "path": "LICENSE",
-      "bytes": 35149,
-      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
-    },
-    {
-      "path": "LICENSE-NOTES.md",
-      "bytes": 1076,
-      "sha256": "3c1102b6cb3f1d12fb603fa36920adf797f79463e7178ae4612782765b87f5cc"
-    },
-    {
-      "path": "README.md",
-      "bytes": 2703,
-      "sha256": "cc67bb9fa2f4b1dfb64afa73d443d9030fde18a9efa055e9d5ecdbb9898ae8f3"
-    },
-    {
-      "path": "README.zh-CN.md",
-      "bytes": 2526,
-      "sha256": "14e28f7bd07a17ab8917863896abab100ae88f44985f8e0ad53b058df8664c03"
-    },
-    {
-      "path": "THIRD_PARTY_NOTICES.md",
-      "bytes": 1564,
-      "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
+      "path": "dist/assets/panel-BRb4sitH.js",
+      "bytes": 1380695,
+      "sha256": "13bbdb2504ec1433401e17eb609140c5a6b5c8edaab09e97c8bbe771df659972"
     },
     {
       "path": "dist/assets/panel-D1A5WJTM.css",
       "bytes": 33077,
       "sha256": "93a493b61ffba4661d8ef5abe578723946270a39a9f11909b800a81a817a1f35"
-    },
-    {
-      "path": "dist/assets/panel-DTg2QoTq.js",
-      "bytes": 1379470,
-      "sha256": "25da6d89c4e11752b242edc27dde0dead6a231dde69d3dbe5f95c1f1e8946aa5"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -56,14 +31,9 @@
       "sha256": "e5fa8cbfea311ba29366db9925c8ae9f8360f2dee1cd741f7a9d8163152f8b27"
     },
     {
-      "path": "dist/assets/worldbooks-DhG86dfM.js",
-      "bytes": 1241848,
-      "sha256": "3ad3d8e13933a702b2af572ae1dfba726abcefaba0a05f8add304748dc30fdf8"
-    },
-    {
-      "path": "docs/README.md",
-      "bytes": 1993,
-      "sha256": "d489de536f3e1f8ca56aa5a5d135b564634bcdf501d28123ddfbe1ef415fe726"
+      "path": "dist/assets/worldbooks-qH2Cbqwm.js",
+      "bytes": 1241980,
+      "sha256": "37762844040b82be46ab9c41ded8ec3713f177be8ec581bfae3151a28a6ff424"
     },
     {
       "path": "docs/artillery-recovery-v27-20261023.md",
@@ -102,8 +72,8 @@
     },
     {
       "path": "docs/current-release.md",
-      "bytes": 51969,
-      "sha256": "620eee6561941359f878f494c258b5b052156163430f1e4ac10a88b49e1583b3"
+      "bytes": 52844,
+      "sha256": "92be11a9037042df032f8dca121169717c916f24d3e559e29bd5951addaca70a"
     },
     {
       "path": "docs/embedded-worldbook.md",
@@ -156,11 +126,6 @@
       "sha256": "5165eb346e18af58a8f7e43622a11b2839c80370fdd9e192a647065e30654de7"
     },
     {
-      "path": "docs/prompt-backups/README.md",
-      "bytes": 13260,
-      "sha256": "8ba76f28383d19e870b406bd3931c211fabb02e09a27c5fe64250ea6cb52484b"
-    },
-    {
       "path": "docs/prompt-backups/battlefield-plan-before-indoor-terrain-20261023.ts.txt",
       "bytes": 15132,
       "sha256": "c9f74576392ddd49fec643a6babd2df70a1055336892ae212ff63973cc6941ce"
@@ -194,6 +159,11 @@
       "path": "docs/prompt-backups/llm-command-before-player-letters-20261022.ts.txt",
       "bytes": 7795,
       "sha256": "0c9bc514f8b573e0c6782e1baf4f13a593af9efb7a2005fdb179fdc73ae22d45"
+    },
+    {
+      "path": "docs/prompt-backups/llm-command-before-siege-assault-20261025.ts.txt",
+      "bytes": 8202,
+      "sha256": "13e6947ccf24db42730557869016c80869298bd57d713a353fe4e7a0dd3859cc"
     },
     {
       "path": "docs/prompt-backups/llm-command-before-structure-attack-20261024.ts.txt",
@@ -291,6 +261,11 @@
       "sha256": "5a53b988ebefef5e94a4e19a150fd92381d8393de6ddcc85cc490d8e0b91c97f"
     },
     {
+      "path": "docs/prompt-backups/README.md",
+      "bytes": 13596,
+      "sha256": "7ab3866005599ef952cc45f2b3cbc0ab37a392b25ee31c5715c8467bd7cf6afc"
+    },
+    {
       "path": "docs/prompt-backups/scene-intent-before-indoor-terrain-20261023.ts.txt",
       "bytes": 12079,
       "sha256": "7c6dfad733572ac0839cc64c0e6e0c62a9aade0714d1139a0eb0ca3b0efd13bf"
@@ -344,6 +319,11 @@
       "path": "docs/prompt-backups/worldbook-reading-before-speed-intrinsic-20261024.md.txt",
       "bytes": 19156,
       "sha256": "921889ccc95d486657bf5fd1ba9d86b74ef994a7edfea260515a762a02686a5d"
+    },
+    {
+      "path": "docs/README.md",
+      "bytes": 1993,
+      "sha256": "d489de536f3e1f8ca56aa5a5d135b564634bcdf501d28123ddfbe1ef415fe726"
     },
     {
       "path": "docs/region-battlefields-20261024.md",
@@ -433,7 +413,17 @@
     {
       "path": "dist/index.js",
       "bytes": 99425,
-      "sha256": "825b9250fce8dc851bccc08bdc29422958c958148659db69686c343df8d3ab13"
+      "sha256": "bdb043ea9a93e1e0a40fd8b0b2801b0d6c4d35b10034c09d9079565684180318"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 35149,
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "path": "LICENSE-NOTES.md",
+      "bytes": 1076,
+      "sha256": "3c1102b6cb3f1d12fb603fa36920adf797f79463e7178ae4612782765b87f5cc"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -442,23 +432,18 @@
     },
     {
       "path": "manifest.json",
-      "bytes": 170,
-      "sha256": "ca060e6d70d10787b8abb2322611f8d3acdb23d0c9a59429598e477529c1193e"
-    },
-    {
-      "path": "mcp/GAMEPLAY.md",
-      "bytes": 6554,
-      "sha256": "80ef81e9d2ed7031057e339b58abb550c628f7293600ca38a77ddaf433f0a5d3"
-    },
-    {
-      "path": "mcp/README.md",
-      "bytes": 8919,
-      "sha256": "d2793765368337dc0ae84ff55bbd24cec2dd2b64aefec4f0e02496fa22ac9c31"
+      "bytes": 172,
+      "sha256": "1bb6b01f4eab7ee7e88c1a959373e1a3fc021c97fa9566e3d71824718ef0120c"
     },
     {
       "path": "mcp/broker.mjs",
       "bytes": 3326,
       "sha256": "420bc4a6edd74362ea5e2a16847844173e529e59d773cca338eeef2270948783"
+    },
+    {
+      "path": "mcp/GAMEPLAY.md",
+      "bytes": 6554,
+      "sha256": "80ef81e9d2ed7031057e339b58abb550c628f7293600ca38a77ddaf433f0a5d3"
     },
     {
       "path": "mcp/package-lock.json",
@@ -469,6 +454,11 @@
       "path": "mcp/package.json",
       "bytes": 388,
       "sha256": "33904dc07d85b28ad6e2f15ec9f472c7403ca054924cd88c039002996cdd7c24"
+    },
+    {
+      "path": "mcp/README.md",
+      "bytes": 8919,
+      "sha256": "d2793765368337dc0ae84ff55bbd24cec2dd2b64aefec4f0e02496fa22ac9c31"
     },
     {
       "path": "mcp/server.mjs",
@@ -498,12 +488,27 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 48598,
-      "sha256": "ba8e5c94625784ad6a034eae9fe87528f77793c1b7b135ed00b6041793155e0f"
+      "sha256": "6d6ba42fa45b6285bf829dbaba38695539f0062d598dbef233f17547f90dc84b"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2704,
+      "sha256": "e3f67d73b5a1622195ca753baab9398e01fecfa8bb7fe56a753e9a821f99ab62"
+    },
+    {
+      "path": "README.zh-CN.md",
+      "bytes": 2527,
+      "sha256": "9a4376de472de1fe43f7a2c54e77407c91cfcfaf5778ecaef02190dcdcc28007"
     },
     {
       "path": "scripts/jev-cors-relay.mjs",
       "bytes": 5754,
       "sha256": "c7fb9094f869607e10a45fb46335de4545e14043034f1b56fef937115fca50ca"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "bytes": 1564,
+      "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     }
   ],
   "validation": {
