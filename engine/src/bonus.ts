@@ -34,6 +34,7 @@ export type ModType = 'flat' | 'mult';
 
 /** 条件生效约束：不满足则该修正不参与合成 */
 export interface ModCond {
+  damageChannel?: import('./types.js').DamageChannel;
   /** 仅在（被）冲锋时生效 */
   charge?: boolean;
   /** 仅在远程攻击中生效（盾墙类，挂在受击方） */
@@ -85,6 +86,8 @@ export interface StackLine {
 }
 
 export interface ResolveContext {
+  /** V35 uses the same table for anti-air attack and airborne defense. */
+  flightModel?: Combatant['flightModel'];
   damageChannel?: import('./types.js').DamageChannel;
   structure?: boolean;
   moved?: boolean; maxRange?: number; chargeStraight?: boolean;
@@ -121,6 +124,7 @@ export interface ResolveContext {
 /** 条件是否满足 */
 function condMet(cond: ModCond | undefined, ctx: ResolveContext): boolean {
   if (!cond) return true;
+  if (cond.damageChannel !== undefined && cond.damageChannel !== (ctx.damageChannel ?? ctx.weapon?.channel ?? 'kinetic')) return false;
   if (cond.charge !== undefined && cond.charge !== !!ctx.charge) return false;
   if (cond.ranged !== undefined && cond.ranged !== !!ctx.ranged) return false;
   if (cond.vsTag !== undefined) {
@@ -287,7 +291,8 @@ export function traitRuntimeMods(traitIds: string[], registry?: Map<string, Trai
           continue;
         }
       }
-      const effect = unit && traitLevelsV16(unit) && id === 'guardian' && e.kind === 'ward' ? { ...e, percent: 100 * traitValue(unit, id, 'guardianReduction', .25) }
+      const effect = unit && id === 'anti-air' && e.kind === 'conditionalAtk' && context.flightModel === 'maneuver-v1' ? { ...e, value: traitValue(unit, id, 'flightDefense', 2) }
+        : unit && traitLevelsV16(unit) && id === 'guardian' && e.kind === 'ward' ? { ...e, percent: 100 * traitValue(unit, id, 'guardianReduction', .25) }
         : unit && traitLevelsV16(unit) && ['anti-infantry', 'anti-large', ...(phase2Traits(unit) ? ['anti-air'] : [])].includes(id) && e.kind === 'conditionalAtk' ? { ...e, value: traitValue(unit, id, 'counterAttack', 2) }
         : unit && traitLevelsV16(unit) && ['anti-infantry', 'anti-large', ...(phase2Traits(unit) ? ['anti-air'] : [])].includes(id) && e.kind === 'conditionalDmgMult' ? { ...e, mult: traitValue(unit, id, 'counterMultiplier', 1.25) } : e;
       const m = traitEffectToMod(effect, t.name);

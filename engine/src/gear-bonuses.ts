@@ -33,7 +33,7 @@ export function compileWornEffects(bonuses: Enhancements | undefined, power: num
     const q = points / 10, uncapped = model === WORN_ANCHORED_MODEL, g = points < 0 && !uncapped ? Math.min(G, 1.4) : G, d = points < 0 && !uncapped ? Math.min(D, .67) : D;
     // 满额速度主词条每升一级多一格，避免相邻数级在平地都走一样远。
     const speed = model === WORN_ANCHORED_MODEL || model === WORN_LEGACY_ANCHORED_MODEL && points > 0 ? power : g;
-    values[stat] = q * (stat === 'damage' ? d : stat.endsWith('Damage') ? 1.25 * d : stat === 'morale' ? 8 * g : stat === 'protection' ? .5 * g : stat.endsWith('Protection') ? .75 * g : stat === 'speed' ? speed : g);
+    values[stat] = q * (stat === 'damage' || stat === 'health' ? d : stat.endsWith('Damage') ? 1.25 * d : stat === 'morale' ? 8 * g : stat === 'protection' ? .5 * g : stat.endsWith('Protection') ? .75 * g : stat === 'speed' ? speed : g);
   }
   return capWornSource({ ...(model === WORN_ANCHORED_MODEL ? {uncappedNegative:true as const} : {}), values, damageCap: 1.25 * D, negativeDamageCap: 1.25 * Math.min(D, .67), protectionCap: .75 * G, negativeProtectionCap: .75 * Math.min(G, 1.4) });
 }

@@ -3,10 +3,10 @@ import { ARCHETYPE_MODS } from './data/curves.js';
 import { BODY, bodyProfile } from './data/bodies.js';
 import type { Combatant } from './types.js';
 
-/** V6 default max is 988; reserve the full legal health+power multiplier (2×). */
+/** 保留单位生命/强度上限与V36生命佩戴品的合法空间。 */
 export const MAX_DEFAULT_SINGLE_LIFE = Math.max(...UNIFIED_HP) * Math.max(...(Object.keys(BODY) as (keyof typeof BODY)[]).map(body => bodyProfile(body, 'wounds-v2').hp))
   + Math.max(...Object.values(ARCHETYPE_MODS).map(archetype => archetype.hp));
-export const SINGLE_LIFE_LIMIT = Math.ceil(MAX_DEFAULT_SINGLE_LIFE * 2 / 1000) * 1000;
+export const SINGLE_LIFE_LIMIT = Math.ceil(MAX_DEFAULT_SINGLE_LIFE * 6 / 1000) * 1000;
 export const singleLifeLimit = (model?: Combatant['damageModel']) => model === 'wounds-v2' ? SINGLE_LIFE_LIMIT : 1000;
 export const capSingleLife = (value: number, model?: Combatant['damageModel']): number => Math.min(value, singleLifeLimit(model));
 

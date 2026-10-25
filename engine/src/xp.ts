@@ -3,6 +3,7 @@ import { gradedNumbers, unitStep } from './numeric-model.js';
 import { bonusMultiplier, bonusSteps } from './enhancements.js';
 import { capSingleLife } from './health-limits.js';
 import { setMemberMaximum } from './member-health.js';
+import { syncWornHealth } from './worn-health.js';
 import { BODY, bodyProfile } from './body.js';
 /**
  * 经验与成长：击杀记名 + 参战份额 + 指挥加成 → XP 账本 → 升级按曲线重算属性。
@@ -139,6 +140,7 @@ export function applyXp(unit: Combatant, amount: number, registry?: Map<string, 
   }
   if (levels > 0) {
     recomputeFromCurve(unit, from, registry);
+    if (unit.wornHealthState) syncWornHealth(unit, true);
     // 升级恢复现存个体/成员的生命，不补员，也不复活永久伤亡。
     if (unit.hp > 0 && unit.status !== 'dead') {
       if (unit.scale === 'hero') unit.hp = unit.base.hpMax;
@@ -179,10 +181,12 @@ function recomputeFromCurve(unit: Combatant, fromLevel: number, registry?: Map<s
   const spd = unitStep(unit,'speed') + curve.spd + archMod.spd + (traitStats.spd ?? 0) + (deltas.spd ?? 0);
   const bodyHp = unit.rulesVersion === 'v2' ? bodyProfile(unit.body, unit.damageModel).hp : scaleMod.hpMult;
   const unifiedGrowth = nominalLife(unit) - nominalLife({...unit, level:fromLevel});
-  const followsGradedLife = gradedNumbers(unit) && unit.base.hpMax === nominalLife({...unit,level:fromLevel}) + (traitStats.hpMax ?? 0);
+  const wornLife = unit.scale === 'hero' ? unit.wornHealthState?.amount ?? 0 : 0;
+  const intrinsicMaximum = unit.base.hpMax - wornLife;
+  const followsGradedLife = gradedNumbers(unit) && intrinsicMaximum === nominalLife({...unit,level:fromLevel}) + (traitStats.hpMax ?? 0);
   const hpMax = unit.scale === 'hero'
     ? unit.rulesVersion === 'v2'
-      ? followsGradedLife ? nominalLife(unit) + (traitStats.hpMax ?? 0) : Math.max(unit.base.hpMax, nominalLife(unit) + (traitStats.hpMax ?? 0))
+      ? followsGradedLife ? nominalLife(unit) + (traitStats.hpMax ?? 0) + wornLife : Math.max(intrinsicMaximum, nominalLife(unit) + (traitStats.hpMax ?? 0)) + wornLife
       : unit.base.hpMax + Math.round(curve.hp * bodyHp * bonusMultiplier(unit.bonuses,'health')) - Math.round(curveAt(fromLevel, unit.damageModel).hp * bodyHp * bonusMultiplier(unit.bonuses,'health'))
     : unit.base.hpMax;
 

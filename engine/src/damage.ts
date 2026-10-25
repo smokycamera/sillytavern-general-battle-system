@@ -1,5 +1,6 @@
 import { artilleryDirect, artillerySplash, artilleryRetention, BOUNDED_BLAST_MODEL, sprayerSplashAt } from './artillery-model.js';
 import { displayNumber } from './display-number.js';
+import { flightDefense } from './aerial.js';
 import { targetWidthLimit } from './target-width.js';
 import { WEAPON_CLASSES } from './data/weapons.js';
 import { progression, stackingRevision } from './progression.js';
@@ -49,10 +50,13 @@ import { damageMoments, diceDistribution, v2DamageAmount, roundDamage } from './
 import { engagementWidth } from './exposure.js';
 import { activeTraitIds, traitPenetrationBonus } from './trait-sources.js';
 import { combatBonuses } from './gear-bonuses.js';
+import { additionalChannelBudgets, splitChannelDamage } from './additional-channels.js';
 import { itemsV15 } from './item-model.js';
 import { COHORT_MODEL, COHORT_REFERENCE, personnel, memberDurability } from './combat-model.js';
 
 export interface AttackResolution {
+  damageChannels?: { channel: import('./types.js').DamageChannel; damage: number; penetration: number }[];
+  damagePlanPackets?: number[];
   overmatchMultiplier?:number;
   attackPower?:number;
   protectionPower?:number;
@@ -156,7 +160,7 @@ export interface AttackOpts {
   /** 优势/劣势（d20 模式） */
   advantage?: 'none' | 'adv' | 'dis';
   /** 技能伤害（覆盖武器） */
-  abilityDamage?: { power?: number; accuracy?: number; damageScale?:number; areaExposure?: number; delivery?: 'melee' | 'ranged' | 'magic'; weaponBased?: boolean; shape?: 'single' | 'burst'; baseDice: string; apDice?: string; channel?: import('./types.js').DamageChannel; penetration?: number };
+  abilityDamage?: { bonuses?: import('./enhancements.js').Enhancements; power?: number; accuracy?: number; damageScale?:number; areaExposure?: number; delivery?: 'melee' | 'ranged' | 'magic'; weaponBased?: boolean; shape?: 'single' | 'burst'; baseDice: string; apDice?: string; channel?: import('./types.js').DamageChannel; penetration?: number };
 }
 
 /** 护甲等级 → 减伤比例（含特质护甲修正与护甲原型效率） */
@@ -216,11 +220,12 @@ function resolveWeapon(opts: Pick<AttackOpts, 'attacker' | 'defender' | 'weaponO
   if (original?.recipe?.mechanism === 'sprayer' && !gridAttack(opts.attacker) && !opts.autoHit) return { weapon: { ...weapon, splashTargets: opts.rules?.artilleryModel === BOUNDED_BLAST_MODEL ? sprayerSplashAt(original.recipe.power) : 1e9 } };
   return { weapon };
 }
-export function penetrationContext(opts: Pick<AttackOpts, 'attacker' | 'defender' | 'weaponOverride' | 'abilityDamage' | 'ranged'> & Partial<Pick<AttackOpts,'rules'|'conditionDefs'|'charge'|'chargeStraight'|'chargeDistance'>>, resolved: ResolvedWeapon = resolveWeapon(opts)) {
+export function penetrationContext(opts: Pick<AttackOpts, 'attacker' | 'defender' | 'weaponOverride' | 'abilityDamage' | 'ranged'> & Partial<Pick<AttackOpts,'rules'|'conditionDefs'|'charge'|'chargeStraight'|'chargeDistance'>>, resolved: ResolvedWeapon = resolveWeapon(opts), override?: { channel: import('./types.js').DamageChannel; penetrationDelta: number }) {
   const modern=opts.rules?.combatModel===MEMBER_HEALTH_MODEL;
   const weapon=resolved.weapon;
-  const channel = opts.abilityDamage?.channel ?? weapon?.channel ?? 'kinetic';
-  const base = opts.abilityDamage?.penetration ?? weapon?.penetration ?? 1 + Math.floor((weapon?.level ?? 5) / 2);
+  const channel = override?.channel ?? opts.abilityDamage?.channel ?? weapon?.channel ?? 'kinetic';
+  const originalBase = opts.abilityDamage?.penetration ?? weapon?.penetration ?? 1 + Math.floor((weapon?.level ?? 5) / 2);
+  const base = override ? Math.max(0, originalBase + override.penetrationDelta) : originalBase;
   const sprint = isArmsV2(opts.rules?.armsModel) && (!opts.abilityDamage || opts.abilityDamage.weaponBased) && weapon?.recipe?.mechanism === 'spear' && (opts.attacker.mount || opts.attacker.body === 'large') && opts.charge && !opts.attacker.chargeInterrupted && opts.chargeStraight && (opts.chargeDistance ?? opts.attacker.chargeDistance ?? 0) >= 2;
   const penetration = base + (sprint ? 2 : 0) + (opts.abilityDamage && !opts.abilityDamage.weaponBased ? 0 : traitPenetrationBonus(opts.attacker, weapon, opts.ranged ?? !!weapon?.tags?.includes('ranged'), base));
   // The battle rules, not a possibly stale unit field, decide the armor projection.
@@ -357,6 +362,40 @@ function previewMemberPlan(unit:Combatant,plan:MemberDamagePlan):{damage:number;
   const splash=plan.splash&&plan.splashTargets?damageMemberGroups(copy,plan.splash,plan.splashTargets):{health:0,casualties:0};
   return {damage:direct.health+splash.health,casualties:direct.casualties+splash.casualties};
 }
+interface AdditionalDamagePart { channel: import('./types.js').DamageChannel; scale: number; penetration: ReturnType<typeof penetrationContext>; ward: StackResult }
+function additionalDamageParts(opts: Omit<AttackOpts, 'rng'>, ctx: ReturnType<typeof attackContext>, resolved: ResolvedWeapon): AdditionalDamagePart[] {
+  const budgets = additionalChannelBudgets(opts, ctx.weapon);
+  if (!budgets.length) return [];
+  const stack = { sameNameKeepsHighest: opts.rules.sameNameKeepsHighest, maxFlat: opts.rules.maxFlat };
+  return budgets.map(budget => {
+    const penetration = penetrationContext(opts, resolved, budget), context = { ...ctx.ctxDef, damageChannel: budget.channel };
+    const defender = penetration.canBlock === false ? { ...opts.defender, shield: undefined } : opts.defender;
+    const mods = collectMods(defender, context, opts.conditionDefs, opts.defenderMods, opts.traitRegistry);
+    mods.push(...ctx.defMods.filter(m => m.sourceId === 'agile:opportunity'));
+    const ward = resolveStack(mods, 'ward', context, stack);
+    const damage = resolveStack(ctx.atkMods.filter(mod => !mod.stackGroup?.startsWith('channel-buff:')), 'dmg', { ...ctx.ctxAtk, damageChannel: budget.channel, weapon: ctx.weapon && { ...ctx.weapon, channel: budget.channel } }, stack);
+    return { channel: budget.channel, penetration, ward, scale: budget.scale * memberAreaBudget(opts) * damage.multTotal * ward.multTotal
+      * penetration.factor / penetration.armorScale * (penetration.overmatchMultiplier ?? 1) };
+  });
+}
+function channelPlans(opts: Omit<AttackOpts, 'rng'>, total: number, targets: number, primaryWeight: number, extra: AdditionalDamagePart[], resolved: ResolvedWeapon, penetration: ReturnType<typeof penetrationContext>, ward: StackResult): MemberDamagePlan[] {
+  const amounts = splitChannelDamage(total, [primaryWeight, ...extra.map(part => part.scale)]);
+  const plans = [memberPlan(opts, amounts[0]!, targets, resolved, penetration, ward),
+    ...extra.map((part, i) => memberPlan(opts, amounts[i + 1]!, targets, resolved, part.penetration, part.ward))];
+  const heavy = amounts.findIndex(amount => amount > 0);
+  plans.forEach((plan,i) => { if(i !== heavy) delete plan.heavy; });
+  return plans;
+}
+function sameChannelTargets(plan: MemberDamagePlan, initialMembers: number, unit: Combatant): MemberDamagePlan {
+  if (plan.overflow || !hasMemberHealth(unit)) return plan;
+  const lost = initialMembers - unit.hp;
+  return lost > 0 ? { ...plan, targets: Math.max(0, plan.targets - lost), ...(plan.splashTargets ? { splashTargets: Math.max(0, plan.splashTargets - lost) } : {}) } : plan;
+}
+function previewChannelPlans(unit: Combatant, plans: MemberDamagePlan[]): { damage: number; casualties: number } {
+  const copy = damageCopy(unit), before = memberHealth(copy), members = copy.hp;
+  for (const plan of plans) applyDamagePlan(copy, sameChannelTargets(plan,members,copy));
+  return { damage: before - memberHealth(copy), casualties: hasMemberHealth(unit) ? members - copy.hp : 0 };
+}
 const memberPreviewCache=new Map<string,{mean:number;second:number;positive:number;casualties:number;max:number}>();
 
 interface SampledMemberPreview { sum: number; squares: number; positive: number; casualties: number; maximum: number; hits: number }
@@ -484,7 +523,10 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   }
   if(critInfo.forced)critical=hit;
   const samples=cohortSamples(opts,resolved),weight=outcomeScale({...opts,packetShare:1/samples},resolved).multiplier,count=(opts.abilityDamage?1:ctx.weapon?.attacks??1)*samples;
-  const rawMultiplier=memberAreaBudget(opts)*modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level,opts.rules)*unitMultiplier(opts.attacker,'damage',opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic',combatBonuses(opts.attacker))*wornDamageMultiplier(opts.attacker,opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
+  const primaryMultiplier=memberAreaBudget(opts)*modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level,opts.rules)*unitMultiplier(opts.attacker,'damage',opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic',combatBonuses(opts.attacker))*wornDamageMultiplier(opts.attacker,opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
+  const additional = additionalDamageParts(opts, ctx, resolved ?? { weapon: ctx.weapon });
+  if (additional.length) diagnostics.additionalChannels = additional.map(part => ({ channel: part.channel, penetration: part.penetration.penetration, resistance: part.penetration.resistance, penetrationFactor: part.penetration.factor }));
+  const rawMultiplier = primaryMultiplier + additional.reduce((sum, part) => sum + part.scale, 0);
   const maxBase=diceDistribution(source?.baseDice,opts.rules.critRule==='doubleDice'?2:1),maxAp=diceDistribution(source?.apDice,opts.rules.critRule==='doubleDice'?2:1);
   const upper=maxBase&&maxAp ? Math.ceil((Math.max(...maxBase.keys())+Math.max(...maxAp.keys()))*rawMultiplier*Math.ceil(weight))*count : Infinity;
   // 连续攻击共用剩余屏障。固定种子的小样本估计只操作副本，不消耗实战随机数。
@@ -529,7 +571,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   const penetration=opts.rules.overmatch?protection??penetrationContext(opts,resolved):undefined,overflow=attackOverflow(opts,penetration,resolved);
   const ward = resolveStack(ctx.defMods, 'ward', ctx.ctxDef, {sameNameKeepsHighest:opts.rules.sameNameKeepsHighest,maxFlat:opts.rules.maxFlat});
   const moments=(times:number)=>{
-    const key=JSON.stringify([opts.rules.artilleryModel,opts.defender.level,opts.defender.armor,ctx.weapon?.recipe?.power??ctx.weapon?.level,source?.baseDice,source?.apDice,rawMultiplier,times,weight,opts.defender.hp,opts.defender.barrier,opts.defender.energyShield,opts.defender.shield?.recipe,opts.defender.armsModel,opts.defender.formation,ctx.weapon?.splashTargets,ctx.weapon?.splashFactor,ward.protection?.exposure,opts.abilityDamage?.weaponBased,!!opts.abilityDamage,overflow,opts.rules.overmatch?penetration:undefined]);
+    const key=JSON.stringify([opts.rules.artilleryModel,opts.defender.level,opts.defender.armor,ctx.weapon?.recipe?.power??ctx.weapon?.level,source?.baseDice,source?.apDice,rawMultiplier,times,weight,opts.defender.hp,opts.defender.barrier,opts.defender.energyShield,opts.defender.shield?.recipe,opts.defender.armsModel,opts.defender.formation,ctx.weapon?.splashTargets,ctx.weapon?.splashFactor,ward.protection?.exposure,opts.abilityDamage?.weaponBased,!!opts.abilityDamage,overflow,opts.rules.overmatch?penetration:undefined,...(additional.length ? [primaryMultiplier, additional] : [])]);
     const cached=memberPreviewCache.get(key);if(cached)return cached;
     const base=diceDistribution(source?.baseDice,times),ap=diceDistribution(source?.apDice,times);
     const result={mean:0,second:0,positive:0,casualties:0,max:0};
@@ -538,7 +580,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
     for(const [b,bp] of base)for(const [a,apb] of ap)for(const [n,np] of targets){
       if(!np)continue;const raw=(b+a)*rawMultiplier*n!,floor=Math.floor(raw),frac=raw-floor;
       for(const [amount,p] of [[floor,1-frac],[floor+1,frac]]){
-        if(!p)continue;const event=previewMemberPlan(opts.defender,memberPlan(opts,amount!,n!,resolved,penetration,ward)),prob=bp*apb*np!*p!;
+        if(!p)continue;const event=additional.length ? previewChannelPlans(opts.defender,channelPlans(opts,amount!,n!,primaryMultiplier,additional,resolved??{weapon:ctx.weapon},penetration??penetrationContext(opts,resolved),ward)) : previewMemberPlan(opts.defender,memberPlan(opts,amount!,n!,resolved,penetration,ward)),prob=bp*apb*np!*p!;
         result.mean+=event.damage*prob;result.second+=event.damage**2*prob;result.positive+=Number(event.damage>0)*prob;result.casualties+=event.casualties*prob;result.max=Math.max(result.max,event.damage);
       }
     }
@@ -655,7 +697,7 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
   // ---- 收集双方修正 ----
   // 攻击方视角：条件修正看 defender 的标签
   const moved = opts.moved ?? attacker.movedDuringActivation ?? extraMods.some(m => m.category === 'movement');
-  const ctxAtk = { moved, maxRange: weaponRange(weapon), chargeStraight: opts.chargeStraight, skillDelivery: opts.abilityDamage?.delivery, attacker, defender, charge, ranged, weapon, fieldTags: opts.fieldTags, localTerrain: opts.localTerrain,macroEnvironment:opts.macroEnvironment,heightRules:opts.heightRules,heightAdvantage:0, terrain: opts.attackerTerrain, opponentTerrain: opts.defenderTerrain, distance: opts.distance,
+  const ctxAtk = { damageChannel: opts.abilityDamage?.channel ?? weapon?.channel ?? 'kinetic' as const, flightModel: rules.flightModel, moved, maxRange: weaponRange(weapon), chargeStraight: opts.chargeStraight, skillDelivery: opts.abilityDamage?.delivery, attacker, defender, charge, ranged, weapon, fieldTags: opts.fieldTags, localTerrain: opts.localTerrain,macroEnvironment:opts.macroEnvironment,heightRules:opts.heightRules,heightAdvantage:0, terrain: opts.attackerTerrain, opponentTerrain: opts.defenderTerrain, distance: opts.distance,
     attackerHigher: opts.heightRules ? (opts.attackerHeight ?? 0) > (opts.defenderHeight ?? 0) : opts.attackerTerrain === 'hill' && opts.defenderTerrain !== 'hill' };
   if (!progression(attacker) && phase2Traits(attacker) && effectiveTraitLevel(attacker, 'sharpshooter') >= 10 && ranged && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) {
     let mitigation = 1; for (let i = 0; i < extraMods.length && mitigation > 0; i++) if (extraMods[i]!.category === 'movement' && extraMods[i]!.kind === 'atk' && extraMods[i]!.value < 0) { const n = Math.min(mitigation, -extraMods[i]!.value); extraMods[i] = { ...extraMods[i]!, value: extraMods[i]!.value + n }; mitigation -= n; }
@@ -682,6 +724,8 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
   const usableShield = !spray && shieldUsable({...defender,armsModel:rules.armsModel},original);
   const shieldDefender = usableShield ? defender : {...defender,shield:undefined};
   const defenderMods = [...(opts.defenderMods ?? [])];
+  const maneuverDefense = !opts.autoHit && rules.flightModel === 'maneuver-v1' ? flightDefense(attacker, defender) : 0;
+  if (maneuverDefense) defenderMods.push({ source: 'intrinsic', sourceId: 'flying:maneuver', name: '飞行机动', kind: 'def', type: 'flat', value: maneuverDefense });
   if (isArmsV2(rules.armsModel) && overloadPenalty(defender)) defenderMods.push({source:'intrinsic',name:'超载',kind:'def',type:'flat',value:-overloadPenalty(defender)});
   if (isArmsV2(rules.armsModel) && usableShield && ranged && shieldClass(defender)==='tower-shield') defenderMods.push({source:'intrinsic',name:'大盾遮蔽',kind:'def',type:'flat',value:1});
   if (isArmsV2(rules.armsModel) && usableShield && !ranged && shieldClass(defender)==='buckler' && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) defenderMods.push({source:'intrinsic',name:'小盾格挡',kind:'def',type:'flat',value:1});
@@ -736,7 +780,15 @@ export function applyResolutionDamage(target:Combatant,result:AttackResolution):
   }
   result.hpBefore=memberHealth(target);result.membersBefore=target.hp;
   let direct=0,splash=0,overflow=0,energy=0,spent=0,converted=false,overloaded=0;
-  for(const [i,plan] of (result.damagePlans??[]).entries()){const loss=applyDamagePlan(target,plan);direct+=loss.direct;splash+=loss.splash;overflow+=loss.overflow;energy+=loss.energyAbsorbed??0;spent+=loss.energySpent??loss.energyAbsorbed??0;converted||=loss.energySpent!==undefined;overloaded+=loss.energyOverloaded??0;if(result.packetRolls?.[i])result.packetRolls[i]!.damage=loss.direct+loss.splash;}
+  if (result.damagePlanPackets) for (const packet of result.packetRolls ?? []) packet.damage = 0;
+  let channelPacket=-1,channelMembers=target.hp;
+  for(const [i,plan] of (result.damagePlans??[]).entries()){
+    const packetIndex=result.damagePlanPackets?.[i]??0;
+    if(result.damageChannels&&packetIndex!==channelPacket){channelPacket=packetIndex;channelMembers=target.hp;}
+    const loss=applyDamagePlan(target,result.damageChannels ? sameChannelTargets(plan,channelMembers,target) : plan);direct+=loss.direct;splash+=loss.splash;overflow+=loss.overflow;energy+=loss.energyAbsorbed??0;spent+=loss.energySpent??loss.energyAbsorbed??0;converted||=loss.energySpent!==undefined;overloaded+=loss.energyOverloaded??0;
+    if (result.damageChannels?.[i]) result.damageChannels[i]!.damage = loss.direct + loss.splash;
+    const packet = result.packetRolls?.[result.damagePlanPackets?.[i] ?? i]; if(packet) { if(result.damagePlanPackets) packet.damage += loss.direct+loss.splash; else packet.damage=loss.direct+loss.splash; }
+  }
   result.directDamage=direct;result.splashDamage=splash;result.overflowDamage=overflow;result.hpAfter=memberHealth(target);result.membersAfter=target.hp;
   if(shieldBefore)result.barrierAbsorbed=shieldBefore-barrierAmount(target);else delete result.barrierAbsorbed;
   if(energy)result.energyAbsorbed=energy;else delete result.energyAbsorbed;
@@ -747,7 +799,7 @@ export function applyResolutionDamage(target:Combatant,result:AttackResolution):
 }
 
 /** 一段攻击中不含随机数的部分。 */
-interface AttackBasis { ward: StackResult; context: ReturnType<typeof attackContext>; resolved: ResolvedWeapon; dmgMult: number; wardMult: number; atkDetail: string; penetration?: ReturnType<typeof penetrationContext>; sizes?: Map<string, { scale: ReturnType<typeof outcomeScale>; sourceScale: number }>; critical?: ReturnType<typeof criticalInfo>; hitRules?: RulePack; hitWeights?: number[] }
+interface AttackBasis { ward: StackResult; context: ReturnType<typeof attackContext>; resolved: ResolvedWeapon; dmgMult: number; wardMult: number; atkDetail: string; additional?: AdditionalDamagePart[]; penetration?: ReturnType<typeof penetrationContext>; sizes?: Map<string, { scale: ReturnType<typeof outcomeScale>; sourceScale: number }>; critical?: ReturnType<typeof criticalInfo>; hitRules?: RulePack; hitWeights?: number[] }
 interface PreviewMemo { bases: Map<string, AttackBasis>; samples?: number; penetration?: ReturnType<typeof penetrationContext>; loose?: boolean; cannon?: boolean; modernArms?: boolean;
   lastBasis?: { hp: number; status: Combatant['status']; shield: number | undefined; barrier: number | undefined; value: AttackBasis } }
 /** 抽样副本：伤损只改写生命基数、状态、成员分组、屏障、盾耐久、能量盾与士气记录；其余数据与原单位共享且只读。 */
@@ -822,6 +874,10 @@ export function resolveAttack(opts: AttackOpts): AttackResolution {
         ...(parts.some(r=>r.barrierAbsorbed)?{barrierAbsorbed:parts.reduce((n,r)=>n+(r.barrierAbsorbed??0),0)}:{}),
         ...(parts.some(r=>r.energyAbsorbed)?{energyAbsorbed:parts.reduce((n,r)=>n+(r.energyAbsorbed??0),0)}:{}),...(parts.some(r=>r.energySpent!==undefined)?{energySpent:parts.reduce((n,r)=>n+(r.energySpent??r.energyAbsorbed??0),0)}:{}),...(parts.some(r=>r.energyOverloaded)?{energyOverloaded:parts.reduce((n,r)=>n+(r.energyOverloaded??0),0)}:{}),participants:opts.previewMemo?representative.participants:outcomeScale(opts).participants,packetCount:parts.length,packetHits:parts.filter(r=>r.hit).length,
         packetRolls:parts.map(r=>({hit:r.hit,crit:r.crit,damage:r.finalDamage,attack:r.attackRoll?.total,base:r.baseRoll?.total,ap:r.apRoll?.total})),
+        ...(parts.some(r => r.damageChannels?.length) ? {
+          damageChannels: parts.flatMap(r => (r.damagePlans ?? [{direct:0,targets:0}]).map((_p,i) => r.damageChannels?.[i] ?? {channel:r.channel??representative.channel??'kinetic',damage:0,penetration:r.penetration??0})),
+          damagePlanPackets: parts.flatMap((r,i) => (r.damagePlans ?? [{direct:0,targets:0}]).map(() => i)),
+        } : {}),
         onHitConditions:parts.find(r=>r.onHitConditions?.length)?.onHitConditions};
       if(!opts.previewMemo)result.text=formatResolution(result,opts.defender);return result;
     }
@@ -948,14 +1004,20 @@ function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean): AttackResol
   if (sizeKey!==undefined) (basis.sizes??=new Map()).set(sizeKey,size);
   const { scale, sourceScale } = size;
   const targets=modern?roundDamage(scale.multiplier,rng):0;
+  const additional = modern ? basis.additional ??= additionalDamageParts(opts, basis.context, resolved) : [];
+  const primaryWeight = v2 ? dmgMult * wardMult * sourceScale * penetration!.factor : 0;
   let final = Math.round((baseAfterDR + apTotal) * dmgMult * wardMult * scale.multiplier);
-  if (v2) final = roundDamage(v2DamageAmount(baseRaw, apRolledTotal, penetration!.factor, dmgMult * wardMult * (modern?targets*sourceScale:scale.multiplier)), rng);
+  if (v2) final = roundDamage(v2DamageAmount(baseRaw, apRolledTotal, penetration!.factor, dmgMult * wardMult * (modern?targets*sourceScale:scale.multiplier))
+    + (baseRaw + apRolledTotal) * targets * additional.reduce((sum, part) => sum + part.scale, 0), rng);
   if (final < 1) final = v2 ? 0 : 1;
   const wear = defender.shield && isArmsV2(rules.armsModel) && !penetration?.area && penetration?.canBlock !== false && (!opts.abilityDamage || opts.abilityDamage.weaponBased)
     ? shieldCoverage(defenderWithArmsModel(opts),weapon) * (baseRaw + apRolledTotal) * (opts.abilityDamage?.damageScale ?? weapon?.damageScale ?? 1) * trainingDamage(attacker.level,rules) * unitMultiplier(attacker,'damage',weapon?.channel,combatBonuses(attacker)) * dmgMult * targets * (weapon?.recipe?.mechanism === 'axe' ? 2 : 1) : 0;
   if (res && wear) res.shieldWear = wear;
   if (!res) {
-    if (modern) applyDamagePlan(defender, memberPlan(opts, final, targets, resolved, penetration, basis.ward));
+    if (modern) {
+      if (additional.length) { const members=defender.hp; for (const plan of channelPlans(opts, final, targets, primaryWeight, additional, resolved, penetration!, basis.ward)) applyDamagePlan(defender, sameChannelTargets(plan,members,defender)); }
+      else applyDamagePlan(defender, memberPlan(opts, final, targets, resolved, penetration, basis.ward));
+    }
     else applyHealthLoss(defender, final, v2);
     if (wear) applyShieldWear(defender,wear);
     return true;
@@ -977,7 +1039,11 @@ function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean): AttackResol
   res.wardMult = wardMult;
   res.finalDamage = final;
   const stood = defender.moraleState?.indomitable;
-  if(modern){res.damagePlans=[memberPlan(opts,final,targets,resolved,penetration,basis.ward)];applyResolutionDamage(defender,res);}
+  if(modern){
+    res.damagePlans=additional.length ? channelPlans(opts,final,targets,primaryWeight,additional,resolved,penetration!,basis.ward) : [memberPlan(opts,final,targets,resolved,penetration,basis.ward)];
+    if (additional.length) res.damageChannels = [{channel:penetration!.channel,damage:0,penetration:penetration!.penetration},...additional.map(part => ({channel:part.channel,damage:0,penetration:part.penetration.penetration}))];
+    applyResolutionDamage(defender,res);
+  }
   else {const actualLoss = applyHealthLoss(defender, final, v2);if (rules.combatModel===COHORT_MODEL || shieldBefore) res.finalDamage = actualLoss;res.hpAfter = defender.hp;if(shieldBefore){res.unshieldedDamage=final;res.barrierAbsorbed=shieldBefore-barrierAmount(defender);}}
   if (v2 && !opts.previewMemo && !opts.autoHit && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) { const conditions = weaponConditions(attacker, defender, weapon, res.finalDamage, opts.traitRegistry); if (conditions.length) res.onHitConditions = conditions; }
   if (isArmsV2(rules.armsModel) && !opts.autoHit && penetration && (!opts.abilityDamage || opts.abilityDamage.weaponBased) && weapon?.recipe?.mechanism === 'sprayer') res.spray = weapon.recipe.power;
@@ -1005,6 +1071,14 @@ function apShareOf(unit: Combatant, ranged: boolean, registry?: Map<string, impo
 /** 能量盾数值：最多两位小数；V21 换算后沿用一位小数。 */
 const shieldAmount=(x:number,defender:Combatant)=>isArmsV3(defender.armsModel)?String(Number(x.toFixed(1))):displayNumber(x);
 export function formatResolution(r: AttackResolution, defender: Combatant): string {
+  const text = formatResolutionBase(r,defender);
+  if (!r.damageChannels?.length) return text;
+  const values = new Map<string,number>();
+  for (const part of r.damageChannels) values.set(part.channel,(values.get(part.channel)??0)+part.damage);
+  const names: Record<string,string> = {kinetic:'动能',thermal:'热能',arcane:'奥术'};
+  return text.replace('；未穿透','；主通道未穿透') + '（' + [...values].map(([channel,damage])=>names[channel]+displayNumber(damage)).join('、') + '）';
+}
+function formatResolutionBase(r: AttackResolution, defender: Combatant): string {
   if(r.damageModel==='member-health')return `${r.attackerName} → ${r.defenderName}：${r.ammunition?r.ammunition==='he'?'榴弹·':'穿甲弹·':''}${r.hit?(r.crit?'暴击':'命中'):'未中'}${r.packetCount?`（${r.packetHits}/${r.packetCount}组命中）`:''}，生命损失${displayNumber(r.finalDamage)}（${displayNumber(r.hpBefore)}→${displayNumber(r.hpAfter)}）${(r.overmatchMultiplier??1)>1?'，跨代毁伤×'+Number(r.overmatchMultiplier!.toFixed(2)):''}${r.energyAbsorbed?`，能量盾吸收${shieldAmount(r.energyAbsorbed,defender)}${r.energySpent!==undefined?`（耗盾${shieldAmount(r.energySpent,defender)}）`:''}`:''}${r.energyOverloaded?defender.scale==='hero'?'，能量盾过载':`，${r.energyOverloaded}人能量盾过载`:''}${r.barrierAbsorbed?`，屏障吸收${displayNumber(r.barrierAbsorbed)}`:''}${defender.scale!=='hero'?`，减员${displayNumber((r.membersBefore??defender.hp)-(r.membersAfter??defender.hp))}${defender.body==='vehicle'?'辆':'人'}`:''}${r.overflowDamage?`，其中溢出${displayNumber(r.overflowDamage)}`:''}${r.splashDamage?`，其中爆炸${displayNumber(r.splashDamage)}`:''}${r.penetrationFactor===0?'；未穿透':''}${r.shieldBroken?'，'+(defender.shield?.name??'盾牌')+'碎了':''}`;
   if(r.packetCount)return `${r.attackerName} → ${r.defenderName}：聚合${r.packetCount}组/${r.packetHits}组命中${r.crit?'（含暴击）':''}，损失${displayNumber(r.finalDamage)}${defender.scale==='hero'?'生命':'人'}（${displayNumber(r.hpBefore)}→${displayNumber(r.hpAfter)}）${r.penetrationFactor===0?'；未穿透':''}`;
   const parts: string[] = [];

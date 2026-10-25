@@ -3,7 +3,7 @@ import type { DamageChannel, RulePack } from './types.js';
 export const BONUS_NAMES = {
   power: '强度', damage: '伤害', accuracy: '精度', penetration: '穿透',
   defense: '防御', protection: '防护', health: '生命', speed: '速度',
-  range: '射程', healing: '治疗', duration: '持续', resource: '回能', morale: '士气', weight: '重量',
+  range: '射程', healing: '治疗', duration: '持续', uses: '次数', resource: '回能', morale: '士气', weight: '重量',
   kineticDamage: '动能伤害', thermalDamage: '热能伤害', arcaneDamage: '奥术伤害',
   kineticPenetration: '动能穿透', thermalPenetration: '热能穿透', arcanePenetration: '奥术穿透',
   kineticProtection: '动能防护', thermalProtection: '热能防护', arcaneProtection: '奥术防护',
@@ -18,14 +18,14 @@ const BONUS_ALIASES: Record<string, BonusStat> = {
 export function resolveBonusStat(label: string, kind?: BonusKind): BonusStat | undefined {
   const channel = ({ 动能: 'kinetic', 热能: 'thermal', 奥术: 'arcane', kinetic: 'kinetic', thermal: 'thermal', arcane: 'arcane' } as Record<string, string>)[label.toLowerCase()];
   if (channel && kind) {
-    const direction = ['armor', 'shield'].includes(kind) ? 'Protection' : ['unit', 'weapon', 'skill', 'gear'].includes(kind) ? 'Damage' : undefined;
+    const direction = ['armor', 'shield'].includes(kind) ? 'Protection' : ['unit', 'weapon', 'skill', 'charged', 'gear'].includes(kind) ? 'Damage' : undefined;
     if (direction) return (channel + direction) as BonusStat;
   }
   return (Object.hasOwn(BONUS_ALIASES, label) ? BONUS_ALIASES[label] : undefined) ?? Object.entries(BONUS_NAMES).find(([key, name]) => key.toLowerCase() === label.toLowerCase() || name === label)?.[0] as BonusStat | undefined;
 }
 export type Enhancements = Partial<Record<BonusStat, number>>;
-/** gear：佩戴道具给单位的修正（不含生命与强度；防护与护甲、盾的防护相加抗穿）。一次性与充能道具的修正与技能相同。 */
-export type BonusKind = 'unit' | 'weapon' | 'armor' | 'shield' | 'gear' | 'skill';
+/** gear：佩戴道具给单位的修正（不含强度；防护与护甲、盾的防护相加抗穿）。充能另支持次数。 */
+export type BonusKind = 'unit' | 'weapon' | 'armor' | 'shield' | 'gear' | 'skill' | 'charged';
 const damageChannels: BonusStat[] = ['kineticDamage','thermalDamage','arcaneDamage'];
 const penetrationChannels: BonusStat[] = ['kineticPenetration','thermalPenetration','arcanePenetration'];
 const protectionChannels: BonusStat[] = ['kineticProtection','thermalProtection','arcaneProtection'];
@@ -33,8 +33,9 @@ export const ENHANCEMENT_STATS: Record<BonusKind, BonusStat[]> = {
   unit: ['power', 'damage', 'accuracy', 'defense', 'health', 'speed', 'morale', ...damageChannels],
   weapon: ['power', 'damage', 'accuracy', 'defense', 'penetration', 'range', 'weight', ...damageChannels, ...penetrationChannels],
   armor: ['power', 'defense', 'protection', 'speed', 'morale', 'weight', ...protectionChannels], shield: ['power', 'defense', 'protection', 'morale', 'weight', ...protectionChannels],
-  gear: ['damage', 'accuracy', 'defense', 'speed', 'morale', ...damageChannels, 'protection', ...protectionChannels],
+  gear: ['damage', 'accuracy', 'defense', 'health', 'speed', 'morale', ...damageChannels, 'protection', ...protectionChannels],
   skill: ['power', 'damage', 'accuracy', 'penetration', 'range', 'healing', 'duration', 'resource', 'morale', ...damageChannels, ...penetrationChannels],
+  charged: ['power', 'damage', 'accuracy', 'penetration', 'range', 'healing', 'duration', 'uses', 'resource', 'morale', ...damageChannels, ...penetrationChannels],
 };
 export function validateEnhancements(value: Enhancements | undefined, kind: BonusKind): void {
   if (value === undefined) return;

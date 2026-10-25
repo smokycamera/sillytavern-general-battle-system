@@ -15,5 +15,6 @@ export function hitDamageDetails(preview: ActionPreview, unit: string): string {
   const normal = preview.normalHitDamage, critical = preview.criticalHitDamage;
   return (normal === undefined ? '' : '普通命中约' + Number(normal.toFixed(1)) + unit + '。')
     + (critical === undefined ? '' : '暴击约' + Number(critical.toFixed(1)) + unit + '。')
-    + ((preview.attackRollCount ?? preview.aggregationSamples ?? 1) > 1 ? `共${preview.attackRollCount ?? preview.aggregationSamples}组判定，每组命中${Math.round((preview.hitChance??0)*100)}%。` : '');
+    + ((preview.attackRollCount ?? preview.aggregationSamples ?? 1) > 1 ? `共${preview.attackRollCount ?? preview.aggregationSamples}组判定，每组命中${Math.round((preview.hitChance??0)*100)}%。` : '')
+    + (preview.additionalChannels?.length ? '附加' + preview.additionalChannels.map(part => ({kinetic:'动能',thermal:'热能',arcane:'奥术'})[part.channel] + '穿透' + Number(part.penetration.toFixed(2)) + '对防护' + Number(part.resistance.toFixed(2)) + '，保留' + Math.round(part.penetrationFactor*100) + '%').join('；') + '。' : '');
 }

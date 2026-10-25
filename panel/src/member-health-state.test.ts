@@ -37,7 +37,7 @@ describe('成员生命的本地档案与重战',()=>{
   // The chat model reads wounds as text; raw {hp,count} groups never reach it, even in the editable record.
   expect(facts).toContain('54/100生命');expect(facts).not.toMatch(/"count":/);
   const editing=narrativeProjection(after,'请修改车辆的属性，补满弹药');
-  expect(editing).toContain('"editable"');expect(editing).toContain('"memberHp":100');expect(editing).not.toMatch(/"health"|"count":/);
+  expect(editing).not.toContain('"editable"');expect(editing).toContain('"memberHpMax":100');expect(editing).not.toMatch(/"health"|"count":/);
   expect(narrativeProjection(after,'车队调整阵型后继续前进。')).not.toContain('"editable"');
  });
  it('高阶范围技能和机炮配方可以持久化，不因新规格记录被拒绝',()=>{

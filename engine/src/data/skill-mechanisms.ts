@@ -1,6 +1,7 @@
 import { canonicalTraitId, TRAIT_LEVEL_ALIASES } from '../trait-parameters.js';
 import { TRAITS, TRAIT_FORMER_NAMES, isGradedTrait } from './traits.js';
 import type { Ability, EffectOp } from '../types.js';
+import { CHANNEL_BUFFS } from '../channel-buffs.js';
 
 export const SKILL_CATEGORIES = [
   { id: 'physical-single', name: '物理单体' }, { id: 'physical-area', name: '物理范围' },
@@ -16,6 +17,8 @@ export const SKILL_CATEGORY_ALIASES: Record<SkillCategory, string[]> = {
   buff: ['buff', '增益', '增益技能', '强化', '强化技能'], debuff: ['debuff', '减益', '减益技能', '负面', '负面状态'],
 };
 export const SKILL_MODIFIER_ALIASES: Record<string, string[]> = {
+  'kinetic-damage': ['物理伤害'], 'kinetic-defense': ['物理防御'],
+  'arcane-damage': ['奥数伤害'], 'arcane-defense': ['奥数防御'],
   melee: ['近身', '近战技法'], ranged: ['远射', '远程射击'], shield: ['盾击'], projectile: ['动能投射', '远程投射'],
   thermal: ['火焰', '热伤'], arcane: ['奥术伤害'], martial: ['非魔法', '物理技法'],
   attack: ['提高攻击', '攻击提升', '提高命中', '命中提升'], defense: ['提高防御', '防御提升'],
@@ -43,6 +46,7 @@ export const SKILL_MODIFIERS: SkillModifier[] = [
   { id: 'attack', name: '攻击', allowed: 'buff', condition: 'inspired' },
   { id: 'defense', name: '防御', allowed: 'buff', condition: 'encouraged' },
   { id: 'empower', name: '伤害', allowed: 'buff', condition: 'empowered' },
+  ...CHANNEL_BUFFS.map((buff): SkillModifier => ({ id: buff.id, name: buff.name, allowed: 'buff', condition: buff.condition })),
   { id: 'ward', name: '守护', allowed: 'buff', condition: 'blessed' },
   { id: 'haste', name: '加速', allowed: 'buff', condition: 'hasted' },
   { id: 'confidence', name: '振奋', allowed: 'buff', condition: 'confident' },

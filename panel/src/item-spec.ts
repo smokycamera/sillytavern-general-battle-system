@@ -82,6 +82,30 @@ function passiveSpecification(base: string, power: number, suffix: string): Extr
   }
   return { kind: 'item', form: 'worn', power, traits: [...grants.values()], ...(bonuses ? { bonuses } : {}) };
 }
+
+/** Each explicitly graded trait keeps its grade; the highest grade anchors numeric bonuses. */
+function mixedPassiveSpecification(text: string): Extract<ItemSpecification, { kind: 'item' }> | undefined {
+  const at = text.search(/[+-]\d/), body = at < 0 ? text : text.slice(0, at), suffix = at < 0 ? '' : text.slice(at);
+  const tokens = body.split(/[、,，+＋]/).map(token => token.trim()).filter(Boolean);
+  if (tokens.length < 2) return undefined;
+  const grants = new Map<string, { id: string; level?: number }>();
+  let power = 0;
+  for (const token of tokens) {
+    const match = token.match(/^(.+?)\s*[lL]\s*(\d{1,2})$/);
+    if (!match) return undefined;
+    const level = Number(match[2]);
+    if (level < 1 || level > 10) throw new Error('佩戴特质等级必须为L1–L10');
+    const part = passiveSpecification(match[1]!.trim(), level, '');
+    if (!part?.traits?.length) return undefined;
+    power = Math.max(power, level);
+    for (const grant of part.traits) {
+      power = Math.max(power, grant.level ?? level);
+      if (!grants.has(grant.id) || (grant.level ?? 5) > (grants.get(grant.id)!.level ?? 5)) grants.set(grant.id, grant);
+    }
+  }
+  const bonuses = parseEnhancementSuffix('L' + power + suffix, 'gear').bonuses;
+  return { kind: 'item', form: 'worn', power, traits: [...grants.values()], ...(bonuses ? { bonuses } : {}) };
+}
 /** 佩戴道具把修正方向写在等级前（佩戴热能防护L5+4）时，方向挪到点数后面（佩戴L5+4热能防护）。 */
 function wornBonusFirst(base: string, power: number, suffix: string): { spec: Extract<ItemSpecification, { kind: 'item' }>; text: string } | undefined {
   const stat = resolveBonusStat(base), points = suffix.match(/^([+-])\s*(\d{1,2})$/);
@@ -105,11 +129,13 @@ function weaponItem(weapon: string, power: number, suffix: string, form: 'single
   if (!target) throw new Error(`「${WEAPON_CLASSES[weapon]?.name ?? weapon}」没有对应的道具写法；武器写在weapon、weapon2`);
   // 修正与效果词（+2穿透、+中毒）照技能写法理解；道具没有的修正略去并说明。
   const tolerance: string[] = [];
-  const normalized = normalizeNarrativeSkill(target.mechanism + 'L' + power + suffix, tolerance);
+  const resolvedForm = form ?? target.form ?? 'single', bonusKind = resolvedForm === 'charged' ? 'charged' : 'skill';
+  if (resolvedForm !== 'charged' && /[+-]\d{0,2}次数/.test(suffix)) throw new Error('次数修正仅用于充能道具');
+  const normalized = normalizeNarrativeSkill(target.mechanism + 'L' + power + suffix, tolerance, bonusKind);
   const match = normalized.match(/^(.*?)[lL](\d{1,2})((?:[+-].*)?)$/), mechanism = match ? parseSkillMechanism(match[1]!) : undefined;
   if (!mechanism) throw new Error(`「${written}」换成道具后无法识别`);
-  const bonuses = parseEnhancementSuffix('L' + match![2] + match![3], 'skill').bonuses;
-  const spec: Extract<ItemSpecification, { kind: 'item' }> = { kind: 'item', form: form ?? target.form ?? 'single', power, active: skillMechanismId(mechanism),
+  const bonuses = parseEnhancementSuffix('L' + match![2] + match![3], bonusKind).bonuses;
+  const spec: Extract<ItemSpecification, { kind: 'item' }> = { kind: 'item', form: resolvedForm, power, active: skillMechanismId(mechanism),
     ...(bonuses && Object.keys(bonuses).length ? { bonuses } : {}) };
   notes?.push(`「${written}」是武器写法，按道具「${itemSpecificationText(spec)}」`, ...tolerance);
   return spec;
@@ -125,18 +151,20 @@ export function assertItemCompiles(spec: ItemSpecification, name = '道具'): vo
 }
 /** 技能机制：先按严格写法解析，正文写法再经容错（单词简写、旧技能名）解析一次；容错的说明写进 notes。 */
 function activeSpecification(base: string, power: number, suffix: string, form: 'single' | 'charged', notes: string[] = []): Extract<ItemSpecification, { kind: 'item' }> | undefined {
+  if (form !== 'charged' && /[+-]\d{0,2}次数/.test(suffix)) throw new Error('次数修正仅用于充能道具');
   const strict = parseSkillMechanism(base);
   let id = strict ? skillMechanismId(strict) : undefined, bonuses: Enhancements | undefined, strictError: unknown;
   // 等级后写了效果词（buff治疗L3+振奋）时严格写法读不出修正，同样走正文容错；容错也读不出就报原来的错。
-  if (id) try { bonuses = parseEnhancementSuffix('L' + power + suffix, 'skill').bonuses; } catch (error) { strictError = error; id = undefined; }
+  if (id) try { bonuses = parseEnhancementSuffix('L' + power + suffix, form === 'charged' ? 'charged' : 'skill').bonuses; } catch (error) { strictError = error; id = undefined; }
   if (!id) {
     try {
       const tolerance: string[] = [];
-      const normalized = normalizeNarrativeSkill(base + 'L' + power + suffix, tolerance);
+      const bonusKind = form === 'charged' ? 'charged' : 'skill';
+      const normalized = normalizeNarrativeSkill(base + 'L' + power + suffix, tolerance, bonusKind);
       const match = normalized.match(/^(.*?)[lL](\d{1,2})((?:[+-].*)?)$/);
       const mechanism = match ? parseSkillMechanism(match[1]!) : undefined;
       if (!mechanism) { if (strictError) throw strictError; return undefined; }
-      id = skillMechanismId(mechanism); bonuses = parseEnhancementSuffix('L' + match![2] + match![3], 'skill').bonuses;
+      id = skillMechanismId(mechanism); bonuses = parseEnhancementSuffix('L' + match![2] + match![3], bonusKind).bonuses;
       notes.push(...tolerance);
     } catch { if (strictError) throw strictError; return undefined; }
   }
@@ -189,7 +217,7 @@ export function parseItemSpecification(text: string, attrs: SpecAttributes = {},
   }
   for (const key of ['quality', 'body', 'enchant', 'stabilized', 'protection'] as const) if (attrs[key] !== undefined) throw new Error(`${key} 只适用于武器、护甲或盾牌`);
   if (attrs.type !== undefined && !['item', 'consumable', 'accessory'].includes(attrs.type)) throw new Error('物品种类与物品属性冲突');
-  const passive = passiveSpecification(base, power, suffix);
+  const passive = mixedPassiveSpecification(spec) ?? passiveSpecification(base, power, suffix);
   if (passive) {
     if (form && form !== 'worn') throw new Error('特质写在佩戴道具里；一次性或充能道具写技能机制，如buff夜战专精L5');
     return passive;
