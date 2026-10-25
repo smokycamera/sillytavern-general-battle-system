@@ -82,7 +82,8 @@ export function intentRouteFailure(field: BattlefieldSpec, unit: Combatant, know
     if (structure?.kind === 'gate' && structure.gateState === 'closed' && canOpen(actor, cell)) continue;
     const occupant = known.find(u => u.id !== unit.id && u.pos === cell && ['ready', 'routing'].includes(u.status) && isElevated(u) === isElevated(actor));
     const reason = occupant ? '单位占位（' + occupant.name + '）' : structure && groundBlocked(field, cell, actor)
-      ? structure.kind === 'gate' ? '关闭且当前无法打开的城门' : STRUCTURE_NAMES[structure.kind]
+      ? isElevated(actor) && !structure.top ? STRUCTURE_NAMES[structure.kind] + '没有可通行墙顶'
+        : structure.kind === 'gate' ? '关闭且当前无法打开的城门' : STRUCTURE_NAMES[structure.kind]
       : !Number.isFinite(movementStepCost(field, cell, actor, field.environment, actor.pos)) && !groundBlocked(field, cell, actor) ? '缺少可通行的高度连接'
       : TERRAIN_NAMES[field.tiles[cell]!] + '不适合本单位通行';
     obstacles.set(cell, cellLabel(field, cell) + reason);
