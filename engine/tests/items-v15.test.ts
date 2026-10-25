@@ -65,7 +65,7 @@ describe('V15 道具编译与形态', () => {
     expect(() => item({ form: 'worn', power: 4, traits: [{ id: 'berserk' }], bonuses: { damage: 1, defense: -3 } })).not.toThrow();
     expect(() => item({ form: 'worn', power: 5, traits: [{ id: 'stalk' }, { id: 'forest-lore', level: 6 }] })).not.toThrow();
     expect(() => item({ form: 'worn', power: 6, traits: [{ id: 'stalk', level: 5 }, { id: 'forest-lore', level: 6 }] })).not.toThrow();
-    expect(() => item({ form: 'worn', power: 9, bonuses: { health: 1 } })).toThrow();
+    expect(item({ form: 'worn', power: 9, bonuses: { health: 1 } }).passive!.actualEffects!.values.health).toBeGreaterThan(0);
     expect(() => item({ form: 'worn', power: 9, traits: [{ id: 'natural-armor' }] })).toThrow(/不能授予/);
     // 新编译的佩戴品已采用 V16 预算；旧战斗的运行时门控仍由其快照决定。
     expect(() => item({ form: 'worn', power: 5, traits: [{ id: 'guardian', level: 5 }] })).not.toThrow();

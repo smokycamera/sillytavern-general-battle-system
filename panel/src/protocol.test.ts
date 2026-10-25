@@ -79,8 +79,10 @@ it('80人按一支编队表达；大量单位、错误count和超长事件整批
     expect(result.errors.join('')).toMatch(/编队|人数|单位|事件/);
   }
   const examples = [CORE_PROTOCOL, ...PROMPT_CARDS.map((c) => c.content)].flatMap((text) => text.match(/<tb>(?:\s*<[a-z_]+\s[^<>]*\/>\s*)+<\/tb>/g) ?? []);
-  expect(examples).toHaveLength(8);
+  expect(examples).toHaveLength(7);
   for (const text of examples) expect(parseProtocol(text).errors, text).toEqual([]);
+  const effectExample = PROMPT_CARDS.map(c=>c.content).join('\n').match(/## 获得与解除效果\s+示例：\n([\s\S]*?)\n\n/)![1]!;
+  expect(parseProtocol(effectExample).errors).toEqual([]); expect(parseProtocol(effectExample).events).toHaveLength(4);
 });
 
 it('环境和昼夜可用一个短事件组合，矛盾或未知昼夜整批拒绝', () => {

@@ -80,7 +80,7 @@ function mechanism(text: string, warnings: string[] = [], source = text): SkillM
 }
 
 /** 将等级后的效果词归回机制段；无法实现的可选强化留下诊断，不废掉基础技能。 */
-export function normalizeNarrativeSkill(text: string, warnings: string[]): string {
+export function normalizeNarrativeSkill(text: string, warnings: string[], bonusKind: 'skill' | 'charged' = 'skill'): string {
   const source = text.replace(/[０-９Ａ-Ｚａ-ｚ]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
     .replace(/＋/g, '+').replace(/[−－﹣]/g, '-').replace(/．/g, '.')
     .replace(/(?:level|lv\.?|l)\s*([+-]?\d+(?:\.\d+)?)\s*(?:级)?/gi, 'L$1');
@@ -109,8 +109,8 @@ export function normalizeNarrativeSkill(text: string, warnings: string[]): strin
     if (number === undefined && !label) throw Error('技能强化格式不完整');
     const points = number === undefined ? undefined : Number(number) * (sign === '-' ? -1 : 1);
     if (points !== undefined && (!Number.isInteger(points) || Math.abs(points) > 10)) throw Error('技能强化须为-10至+10整数');
-    const key = label ? bonusKey(label, points === undefined ? undefined : 'skill') : 'power';
-    if (points !== undefined && key && ENHANCEMENT_STATS.skill.includes(key)) { add(key, points); continue; }
+    const key = label ? bonusKey(label, points === undefined ? undefined : bonusKind) : 'power';
+    if (points !== undefined && key && ENHANCEMENT_STATS[bonusKind].includes(key)) { add(key, points); continue; }
     // 防御、护盾和加速等原本由“强度”缩放；同义强化只在对应机制确实存在时换写。
     const targets = key === 'defense' ? ['defense', 'defense-down', 'barrier', 'ward']
       : key === 'protection' ? ['barrier', 'ward'] : key === 'speed' ? ['haste', 'slow'] : [];
@@ -127,6 +127,6 @@ export function normalizeNarrativeSkill(text: string, warnings: string[]): strin
     warnings.push(`${text}：已忽略未支持强化 ${part[0]}，保留基础技能`);
   }
   const result = formatted() + enhancementLabel(bonuses);
-  parseEnhancementSuffix('技能L' + level + enhancementLabel(bonuses), 'skill');
+  parseEnhancementSuffix('技能L' + level + enhancementLabel(bonuses), bonusKind);
   return result;
 }

@@ -128,7 +128,8 @@ function templateHost(ability: Ability, power: number, formula: SkillModel): Com
 export function itemAbilityTemplate(id: string, power: number, bonuses: Enhancements | undefined, form: 'single' | 'charged', name = '道具', modern: boolean | ItemProgressionModel = ITEM_STACKING, formula: SkillModel = ANCHORED_SKILL_MODEL): Ability {
   const mechanism = skillMechanismFromId(id);
   if (!mechanism) throw new Error('未知或矛盾的道具效果');
-  const host = templateHost(compileSkill({ id, name, bonuses }, power, 'item', formula), power, formula);
+  const effectBonuses = bonuses?.uses === undefined ? bonuses : Object.fromEntries(Object.entries(bonuses).filter(([key]) => key !== 'uses')) as Enhancements;
+  const host = templateHost(compileSkill({ id, name, bonuses: effectBonuses }, power, 'item', formula), power, formula);
   upgradeCombatSkills(host);
   const a = host.abilities[0]!;
   if (modern) applyItemProgression(a, bonuses, modern === true ? ITEM_STACKING : modern);
@@ -136,7 +137,7 @@ export function itemAbilityTemplate(id: string, power: number, bonuses: Enhancem
   a.customized = true;
   if (!mechanism.category.startsWith('magic') && a.delivery === 'magic') delete a.delivery;
   if (form === 'single') { delete a.cooldown; delete a.usesPerBattle; }
-  else a.usesPerBattle = chargedUses(a);
+  else a.usesPerBattle = Math.max(1, chargedUses(a) + (bonuses?.uses ?? 0));
   if (form === 'single' && quickAbility(a)) { a.itemQuick = true; a.range = { min: 0, max: 1, metric: 'grid', allowEngaged: true, requiresLineOfSight: true }; }
   a.itemScaling = objectScaledAbility(a) ? 'object' : 'member';
   a.desc = (form === 'single' ? (a.itemQuick ? '一次性：自身或相邻友军，可用加速动作' : '一次性：占主行动') : `充能：装备后每战${a.usesPerBattle}次，占主行动`)
@@ -180,7 +181,7 @@ function compileItemValue(spec: Extract<ItemSpecification, { kind: 'item' }>, se
     return { recipe: { version: ITEM_VERSION, form: 'worn', power, seed, ...(!spec.legacy ? { traitBudgetModel: STACKING_MODEL, progressionModel: ITEM_PROGRESSION, wornEffectModel: WORN_ANCHORED_MODEL } : {}), ...(traits.length ? { traits } : {}), ...(bonuses ? { bonuses } : {}), ...(spec.legacy ? { legacy: spec.legacy } : {}) }, passive };
   }
   if (!spec.active || spec.traits?.length) throw new Error('一次性与充能道具写技能机制，如buff治疗L3、物理范围投射L4');
-  validateEnhancements(spec.bonuses, 'skill');
+  validateEnhancements(spec.bonuses, spec.form === 'charged' ? 'charged' : 'skill');
   const activeModel = numericModel ? ITEM_LIFE_RECOVERY : ITEM_STACKING;
   const ability = itemAbilityTemplate(spec.active, power, spec.bonuses, spec.form, name, spec.legacy ? false : activeModel);
   return { recipe: { version: ITEM_VERSION, form: spec.form, power, seed, active: spec.active, ...(!spec.legacy ? { progressionModel: activeModel } : {}), ...(spec.bonuses && Object.keys(spec.bonuses).length ? { bonuses: spec.bonuses } : {}), ...(spec.legacy ? { legacy: spec.legacy } : {}) }, ability };
@@ -362,11 +363,13 @@ export function validateItemValue(value: unknown): asserts value is ItemValue {
     return;
   }
   if (typeof r.active !== 'string' || !skillMechanismFromId(r.active) || r.traits !== undefined || value.passive !== undefined) throw new Error('道具效果机制损坏');
-  validateEnhancements(r.bonuses as Enhancements | undefined, 'skill');
+  validateEnhancements(r.bonuses as Enhancements | undefined, r.form === 'charged' ? 'charged' : 'skill');
   const a = value.ability;
   if (itemProgression(r.progressionModel) && (!object(a) || a.itemEffectModel !== r.progressionModel)) throw Error('主动道具成长版本损坏');
   if (!object(a) || !Array.isArray(a.effects) || a.customized !== true || a.itemSourceId !== undefined || a.equipmentSourceId !== undefined
-    || r.form === 'charged' && (!Number.isSafeInteger(a.usesPerBattle) || ![1, 2].includes(Number(a.usesPerBattle))) || r.form === 'single' && a.usesPerBattle !== undefined) throw new Error('道具行动记录损坏');
+    || r.form === 'charged' && (!Number.isSafeInteger(a.usesPerBattle) || ((r.bonuses as Enhancements | undefined)?.uses === undefined
+      ? ![1, 2].includes(Number(a.usesPerBattle)) : a.usesPerBattle !== Math.max(1, chargedUses(a as unknown as Ability) + (r.bonuses as Enhancements).uses!)))
+    || r.form === 'single' && a.usesPerBattle !== undefined) throw new Error('道具行动记录损坏');
 }
 
 /** 配件与道具效果由现存实物决定，读档不能附加另一种被动能力或无限使用次数。 */

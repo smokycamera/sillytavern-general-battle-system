@@ -4,8 +4,12 @@
  */
 
 import type { ConditionDef } from './types.js';
+import { CHANNEL_BUFFS } from './channel-buffs.js';
 
 export const STANDARD_CONDITIONS: ConditionDef[] = [
+  ...CHANNEL_BUFFS.map((buff): ConditionDef => ({ id: buff.condition, name: buff.name, desc: buff.stat === 'damage' ? `提高${buff.name}，可新增该伤害通道` : `对${buff.name.slice(0,-2)}攻击提高防御`,
+    mods: [{ source: 'condition', name: buff.name, kind: buff.stat === 'damage' ? 'dmg' : 'def', type: buff.stat === 'damage' ? 'mult' : 'flat',
+      value: buff.stat === 'damage' ? 1.2 : 2, stackGroup: `channel-buff:${buff.channel}:${buff.stat}`, cond: { damageChannel: buff.channel } }] })),
   { id: 'taunted', name: '嘲讽', desc: '一次正常激活中，敌对行为指向施加者；可接近、固守或自保' },
   { id: 'blinded', name: '致盲', desc: '两次正常激活；自身观测/直接点名距离1，攻击−4、防御−2', mods: [{ source: 'condition', name: '致盲', kind: 'atk', type: 'flat', value: -4 }, { source: 'condition', name: '致盲', kind: 'def', type: 'flat', value: -2 }] },
   { id: 'confused', name: '混乱', desc: '一次正常激活，等概率选择自身可感知且可用普通武器攻击的单位；决定保存，加速不重选' },

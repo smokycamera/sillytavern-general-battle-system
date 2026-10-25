@@ -27,7 +27,7 @@ export function equipmentDraft(kind = 'weapon', body = 'human', mechanics?: Item
   const r = mechanics?.value.recipe;
   return { bonuses: r?.bonuses, name, kind: mechanics?.kind ?? kind, mechanism: (mechanics?.kind === 'weapon' && isCannonWeapon(mechanics.value) && mechanics.value.indirect ? 'indirect-cannon' : r?.mechanism) ?? (kind === 'shield' ? 'shield' : 'sword'), power: String(r?.power ?? (kind === 'shield' ? 3 : 5)), quality: String(r?.quality ?? 3), body: r?.size ?? body, tier: mechanics?.kind === 'armor' ? String(mechanics.value.tier) : '1', enchantment: r?.enchantment ?? '', stabilized: !!r?.stabilized, profile: r?.protectionProfile ?? 'balanced', form: 'single', effect: '' };
 }
-const bonusKind = (d: Pick<EquipmentDraft, 'kind' | 'form'>): BonusKind => d.kind === 'item' ? d.form === 'worn' ? 'gear' : 'skill' : d.kind as BonusKind;
+const bonusKind = (d: Pick<EquipmentDraft, 'kind' | 'form'>): BonusKind => d.kind === 'item' ? d.form === 'worn' ? 'gear' : d.form === 'charged' ? 'charged' : 'skill' : d.kind as BonusKind;
 export function equipmentSpecification(d: EquipmentDraft): ItemSpecification {
   const base = { bonuses: d.bonuses, power: Number(d.power), quality: Number(d.quality), body: d.body as BodyKind };
   if (d.kind === 'weapon') return { ...base, kind: 'weapon', mechanism: d.mechanism, enchantment: (d.enchantment || 'none') as 'none' | 'thermal' | 'arcane', stabilized: d.stabilized };

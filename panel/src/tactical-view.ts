@@ -232,7 +232,7 @@ function actionPreview(battle: SmallBattle, preview: ActionPreview | undefined, 
     : p?.expectedDamage !== undefined ? `<div class="preview-numbers"><span>至少命中一次<b>${hitChanceText(p)}</b></span><span>命中后伤害<b>${hitDamageText(p)}<small>${unit}</small></b></span></div>`
     : '查看目标和效果后确认';
   // 主区只在打不穿时提醒；穿透与防护的数字放进伤害详情。
-  const resistance = p?.penetrationFactor === 0 ? '<div class="penetration-preview grid-reason">无法穿透，不造成伤害</div>' : '';
+  const resistance = p?.penetrationFactor === 0 ? '<div class="penetration-preview grid-reason">' + (p.additionalChannels?.length ? '主通道无法穿透' : '无法穿透，不造成伤害') + '</div>' : '';
   const resistanceDetail = p?.penetrationFactor ? `<p>${p.channel ? { kinetic: '物理', thermal: '热能', arcane: '魔法' }[p.channel] : ''}穿透 ${displayNumber(p.penetration)} 对防护 ${displayNumber(p.resistance)}，保留${Math.round(p.penetrationFactor * 100)}%${p.shieldFactor!==undefined&&p.shieldFactor<1?'，盾牌掩护减伤'+Math.round((1-p.shieldFactor)*100)+'%':''}</p>` : '';
   const cost = option?.preview?.resource;
   // V15 编队齐用按件数：对所选目标本次实际消耗的件数（英雄与旧规则为 1 件）。

@@ -1,3 +1,4 @@
+import { CHANNEL_BUFF_CONDITIONS } from './channel-buffs.js';
 import { displayNumber } from './display-number.js';
 import { progression } from './progression.js';
 import { armorTransmission } from './power-anchors.js';
@@ -47,7 +48,7 @@ export function skillConditionDescription(effect: ConditionEffect, target: Comba
   const labels = { atk: '攻击命中', def: '防御', dmg: '造成伤害', ward: '受到伤害', spd: '先攻速度', morale: '有效士气' };
   const details = mods.map(mod => {
     const value = Number((mod.type === 'mult' ? (mod.value - 1) * 100 : mod.value).toFixed(2));
-    return labels[mod.kind] + (value >= 0 ? ' +' : ' ') + value + (mod.type === 'mult' ? '%' : '');
+    return (mod.cond?.damageChannel ? {kinetic:'动能',thermal:'热能',arcane:'奥术'}[mod.cond.damageChannel] : '') + labels[mod.kind] + (value >= 0 ? ' +' : ' ') + value + (mod.type === 'mult' ? '%' : '');
   });
   if (def?.preventMove) details.push('不能移动、起飞或冲锋');
   if (def?.preventMagic) details.push('不能使用魔法技能');
@@ -61,7 +62,7 @@ export function skillConditionDescription(effect: ConditionEffect, target: Comba
   if (effect.conditionId === 'blessed' && effect.defensePower !== undefined) details.push(`防御规格L${effect.defensePower}`);
   return details.join('、') || def?.desc || effect.conditionId;
 }
-const positive = new Set(['empowered', 'inspired', 'blessed', 'encouraged', 'confident', 'hasted']);
+const positive = new Set(['empowered', 'inspired', 'blessed', 'encouraged', 'confident', 'hasted', ...CHANNEL_BUFF_CONDITIONS]);
 export function isPositiveCondition(id: string): boolean { return positive.has(id); }
 const negative = new Set(['taunted','charmed','blinded','confused','inaccurate', 'exposed', 'poisoned', 'bleeding', 'burning', 'silenced', 'stunned', 'restrained', 'disarmed', 'fearful', 'slowed', 'cursed', 'demoralized', 'weakened', 'vulnerable', 'wounded']);
 export function conditionImmunity(target: Combatant, id: string): string | undefined {

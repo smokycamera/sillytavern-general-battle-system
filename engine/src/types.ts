@@ -299,6 +299,8 @@ export interface Combatant {
   revivalState?: { members: number; used: number };
   /** V35: airborne maneuver defense; absent preserves historical flight. */
   flightModel?: 'maneuver-v1';
+  enhancementModel?: 'channels-life-v1';
+  wornHealthState?: { amount: number };
   /** V23 入场冻结生命、全局轮及实际吸血恢复账本；预览只读。 */
   lifestealState?: { baseline: number; round: number; spent: number; remainder: number };
   controlActivation?: { sequence: number; targetId?: string };
@@ -540,7 +542,7 @@ export interface GenerateInput {
   abilityIds?: string[];
   /** 技能蓝图（data/ability-blueprints.ts）：字符串 id 或对象（带威力等级与自定义名），按公式生成技能。
    *  由 skills="名字:蓝图L等级" 驱动；不再做 persona 关键词自动匹配。 */
-  abilityBlueprints?: Array<string | { id: string; level?: number; name?: string; instanceId?: string }>;
+  abilityBlueprints?: Array<string | { id: string; level?: number; name?: string; instanceId?: string; bonuses?: Enhancements }>;
   /** 护甲档位覆盖（0~4）；缺省=原型基准+加权浮动 */
   armorTier?: 0 | 1 | 2 | 3 | 4;
 }
@@ -659,6 +661,7 @@ export interface RulePack {
   commandRangeModel?: 'graded-v1';
   revivalModel?: 'revival-v1';
   flightModel?: 'maneuver-v1';
+  enhancementModel?: 'channels-life-v1';
   /** V13 trait overhaul (工事据守、工兵、拒马、散兵单体与步枪编队自动散兵); absent keeps V12. */
   traitModel?: 'traits-v1';
   /** V14 skill pricing: 同时改两项属性的状态按两项附加效果计价; absent keeps V13. V20 skills-v3：组合控制每多一项抵抗难度 −1（原 −2）。V21 skills-v4：屏障、状态效力与士气量按单体创伤预算比例。 */

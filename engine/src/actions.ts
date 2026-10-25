@@ -86,6 +86,7 @@ export interface ActionPreview {
   areaTargetIds?: string[];
   areaPreviews?: (Pick<ActionPreview, 'anyHitChance' | 'damageOnHit' | 'normalHitDamage' | 'criticalHitDamage'> & { targetId: string; hitChance: number; expectedDamage: number })[];
   channel?: import('./types.js').DamageChannel;
+  additionalChannels?: { channel: import('./types.js').DamageChannel; penetration: number; resistance: number; penetrationFactor: number }[];
   penetration?: number;
   resistance?: number;
   penetrationFactor?: number;

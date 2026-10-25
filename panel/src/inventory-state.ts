@@ -12,6 +12,7 @@ import { applyDispel, dispelCandidates } from '../../engine/src/skill-effects.js
 import { calibrateWeaponRange, compileItem, isArmsV2, equipmentReason, healingAmount, traitRegistry, parseDice,
   type Combatant, type EquipmentSlot, type ItemMechanics, type ItemSpecification } from '../../engine/src/index.js';
 import { unitRecordFromCombatant, updateUnitRecord, type UnitRecord } from './unit-state.js';
+import { syncWornHealth } from '../../engine/src/worn-health.js';
 import { prepareNarrativeIds, type NarrativeIdState } from './narrative-ids.js';
 import { compactSaveHistory, operationFingerprint } from './save-history.js';
 
@@ -241,6 +242,10 @@ function projectEquipment(record: UnitRecord, inventory: InventoryItem[]): void 
     else (unit.gear ??= []).push(gearItem(item.id, item.name, mechanics.value));
   }
   syncGearAbilities(unit);
+  // 档案标量是当前事实；换装不能用旧快照生命覆盖正文或面板刚更新的生命。
+  unit.hp = record.hp; unit.base.hpMax = record.base.hpMax;
+  syncWornHealth(unit, true);
+  record.hp = unit.hp; record.base = { ...record.base, hpMax: unit.base.hpMax };
   const fields = {
     weaponId: undefined, weaponName: unit.weapon?.name, weaponClass: unit.weapon?.recipe?.mechanism, weaponLevel: unit.weapon?.level,
     sidearmId: undefined, sidearmName: unit.sidearm?.name, sidearmClass: unit.sidearm?.recipe?.mechanism, sidearmLevel: unit.sidearm?.level,
