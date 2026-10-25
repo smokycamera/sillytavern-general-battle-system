@@ -145,6 +145,7 @@ export function buildRegionCity(field: BattlefieldSpec, plan: BattlefieldPlan, s
         field.structures![p] = createStructure('wall', plan.fortLevel ?? 3, { owner: defender, top: true });
     const axis = (p: number) => facing === 'north' ? Math.floor(p / w) : facing === 'south' ? -Math.floor(p / w) : facing === 'west' ? p % w : -(p % w);
     const frontAxis = Math.min(...rim.map(axis)), frontage = rim.filter(p => axis(p) === frontAxis), gates: number[] = [], terrace = inside.filter(p => layers === 2 && depth.get(p) === 1);
+    const terraceSet = new Set(terrace), innerGates = new Set<number>();
     const specs = plan.gatePlan ?? (plan.gates === 'none' ? [] : plan.gates === 'double' || plan.gates === 'side' ? [{ sector: 'front_left', state: plan.gateState ?? 'closed' }, { sector: 'front_right', state: plan.gateState ?? 'closed' }] : [{ sector: 'front_center', state: plan.gateState ?? 'closed' }]) as GatePlan[];
     for (const [index, spec] of (fortified ? specs : []).entries()) {
         const side = ['north', 'south', 'east', 'west'].includes(spec.sector) ? spec.sector : facing;
@@ -165,11 +166,22 @@ export function buildRegionCity(field: BattlefieldSpec, plan: BattlefieldPlan, s
         }
         field.structures![p] = gate;
         gates.push(p);
-        const path = findGridPath(field, p, coreCell, n => mask.has(n), n => wallSet.has(n) ? 100 : field.structures![n]?.kind === 'building' ? 5 : 1);
-        const inner = path?.cells.find(n => innerWall.has(n));
-        if (layers === 2 && inner !== undefined) {
-            field.structures![inner] = createStructure('gate', plan.fortLevel ?? 3, { owner: defender, top: true, gateState: spec.state === 'open' ? 'open' : 'closed' });
-        }
+        let path: ReturnType<typeof findGridPath>;
+        if (innerWall.size) {
+            const candidates = [...innerWall].filter(n => !innerGates.has(n)
+                && neighbors(field,n).some(q => terraceSet.has(q)) && neighbors(field,n).some(q => town.has(q)))
+                .sort((a,b) => gridDistance(field,p,a)-gridDistance(field,p,b) || gridDistance(field,a,coreCell)-gridDistance(field,b,coreCell) || a-b);
+            for (const inner of candidates) {
+                const approach = findGridPath(field,p,inner,n => n===inner || terraceSet.has(n),()=>1);
+                const entry = findGridPath(field,inner,coreCell,n => town.has(n),n => field.structures![n]?.kind==='building'?5:1);
+                if (!approach || !entry) continue;
+                field.structures![inner] = createStructure('gate', plan.fortLevel ?? 3, { owner: defender, top: true, gateState: spec.state === 'open' ? 'open' : 'closed' });
+                innerGates.add(inner);
+                path = {cells:[...approach.cells,...entry.cells.slice(1)],cost:approach.cost+entry.cost};
+                break;
+            }
+            if (!path) throw new BattlefieldPlanError('内城门部署容量不足，无法保留独立城门和通路');
+        } else path = findGridPath(field, p, coreCell, n => mask.has(n), n => wallSet.has(n) ? 100 : field.structures![n]?.kind === 'building' ? 5 : 1);
         pave(path?.cells ?? []);
         const outer = neighbors(field, p).find(n => !mask.has(n));
         if (outer !== undefined) {
@@ -197,7 +209,8 @@ export function buildRegionCity(field: BattlefieldSpec, plan: BattlefieldPlan, s
             flood(p);
         }
     for (const p of walls)
-        field.structures![p]!.access = neighbors(field, p).filter(n => inside.includes(n) && !groundBlocked(field, n));
+        field.structures![p]!.access = neighbors(field, p).filter(n => !groundBlocked(field,n)
+            && (innerWall.has(p) ? town.has(n) : innerWall.size ? terraceSet.has(n) : inside.includes(n)));
     const reserve = inside.filter(p => !core.includes(p) && !groundBlocked(field, p));
     field.city = { shape: siege ? front ? 'front' : 'enclosure' : 'district', inside: fortified ? inside : [...mask], frontline: walls, gates, core, reserve, facing, frontage, ...siege ? { defender } : {}, ...terrace.length ? { terrace } : {} };
     if (siege) {

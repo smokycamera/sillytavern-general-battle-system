@@ -88,9 +88,9 @@ export function regionalOrder(field: BattlefieldSpec, unit: Combatant, known: Co
     return { role, goals: goals.length ? goals : [unit.pos], phase };
   }
   // A gap behind water/cliffs is not a usable breach for this unit. Public terrain only.
-  const coreReachable = breached.length > 0 && gridCostsToGoals(field, legal(city.core), p => !groundBlocked(field, p, unit), (p,from)=>movementStepCost(field,p,unit,field.environment,from)).has(unit.pos);
+  const coreReachable = breached.length > 0 && gridCostsToGoals(field, legal(city.core), p => !groundBlocked(field, p, unit), (p,from)=>movementStepCost(field,p,unit,field.environment,from),unit).has(unit.pos);
   // Behind the outer of two walls, the passage is not the town: the inner wall still stands between the unit and the core.
-  const reach = city.terrace?.length ? gridCostsToGoals(field, [unit.pos], p => !groundBlocked(field, p, unit)) : undefined;
+  const reach = city.terrace?.length ? gridCostsToGoals(field, [unit.pos], p => !groundBlocked(field, p, unit),undefined,unit) : undefined;
   if (isAirborne(unit) || isElevated(unit) || (reach ? city.core.some(p => reach.has(p)) : city.inside.includes(unit.pos) || coreReachable)) {
     return { role: ranged ? 'fire' : 'advance', goals: legal(city.core).length ? legal(city.core) : city.core, phase: 'advance' };
   }

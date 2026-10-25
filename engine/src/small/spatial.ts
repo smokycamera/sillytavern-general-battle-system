@@ -2,7 +2,7 @@ import { combatHostile } from '../battle-control.js';
 import { agileCost } from '../phase2-traits.js';
 import { movementPoints } from '../tactics.js';
 import { GridQueue } from './grid-queue.js';
-import { layerMoveCost, groundBlocked, obstructionHeight, structureAt, STRUCTURE_NAMES, validateLayers, isElevated, structureDefense, waterOnly, sailingBlocked, type FieldStructure, type GroundOverlay, type FieldLandmark, type CityRecord } from './layers.js';
+import { layerMoveCost, groundBlocked, obstructionHeight, structureAt, intactStructure, STRUCTURE_NAMES, validateLayers, isElevated, structureDefense, waterOnly, sailingBlocked, type FieldStructure, type GroundOverlay, type FieldLandmark, type CityRecord } from './layers.js';
 import { landmarkAt, BATTLEFIELD_SCENES, type MapGenerationRecord } from './map-design.js';
 import { isRangedWeapon } from '../loadout.js';
 import type { Combatant, ConditionDef } from '../types.js';
@@ -150,6 +150,22 @@ export function reportPlaceLabel(field: BattlefieldSpec, cell: number, unit?: Co
 export function neighbors(field: BattlefieldSpec, cell: number): number[] {
   return [cell - field.width, cell - 1, cell + 1, cell + field.width].filter((n) => inBounds(field, n) && gridDistance(field, cell, n) === 1);
 }
+/** Only connected wall tops add diagonal steps. Ground, air, stairs and map construction keep four neighbours. */
+export function movementNeighbors(field: BattlefieldSpec, cell: number, actor?: Combatant): number[] {
+  const cells = neighbors(field,cell);
+  if (!actor || !isElevated(actor)) return cells;
+  const wall = (p:number) => { const s=intactStructure(field,p); return !!s?.top && ['wall','gate','tower'].includes(s.kind); };
+  if (!wall(cell)) return cells;
+  const x=cell%field.width,y=Math.floor(cell/field.width);
+  for (const [dx,dy] of [[1,1],[-1,1],[1,-1],[-1,-1]] as const) {
+    const nx=x+dx,ny=y+dy,next=ny*field.width+nx;
+    if(nx<0||nx>=field.width||ny<0||ny>=field.height||!wall(next))continue;
+    // Match the rendered wall connection: retain L corners, other structures and destroyed corner masonry.
+    if([y*field.width+nx,ny*field.width+x].some(p=>!!field.structures?.[p]||field.tiles[p]==='wall'))continue;
+    cells.push(next);
+  }
+  return cells;
+}
 export function tileCost(field: BattlefieldSpec, cell: number, actor?: Combatant): number {
   if (!field.layerVersion && sailingBlocked(field, cell, actor)) return Infinity;
   const layered = layerMoveCost(field, cell, actor);
@@ -179,7 +195,7 @@ export function canOccupy(field: BattlefieldSpec, units: readonly Combatant[], a
   return footprint(actor) + occupants.reduce((n, u) => n + footprint(u), 0) <= 2;
 }
 /** Dijkstra：几何距离与地形路径成本分开，稳定平局规则不消费RNG。 */
-export function findGridPath(field: BattlefieldSpec, start: number, goal: number, allowed: (cell: number) => boolean, costOf:(cell:number,from:number)=>number = (cell,from) => tileCost(field, cell)+heightStepCost(field,from,cell)): GridPath | undefined {
+export function findGridPath(field: BattlefieldSpec, start: number, goal: number, allowed: (cell: number) => boolean, costOf:(cell:number,from:number)=>number = (cell,from) => tileCost(field, cell,actor)+heightStepCost(field,from,cell,actor), actor?: Combatant): GridPath | undefined {
   if (!inBounds(field, start) || !inBounds(field, goal) || (goal !== start && !allowed(goal))) return undefined;
   const costs = new Map([[start, 0]]); const previous = new Map<number, number>(); const open = new GridQueue(); open.push(start, 0);
   while (open.size) {
@@ -189,7 +205,7 @@ export function findGridPath(field: BattlefieldSpec, start: number, goal: number
       const cells = [goal]; while (cells[0] !== start) cells.unshift(previous.get(cells[0]!)!);
       return { cells, cost: costs.get(goal)! };
     }
-    for (const next of neighbors(field, current)) {
+    for (const next of movementNeighbors(field, current, actor)) {
       if (!allowed(next)) continue;
       const cost = costs.get(current)! + costOf(next,current);
       if (cost >= (costs.get(next) ?? Infinity)) continue;
@@ -200,13 +216,13 @@ export function findGridPath(field: BattlefieldSpec, start: number, goal: number
 }
 /** 一次有界Dijkstra得到所有可达格，沿用单目标寻路的平局规则与路径。 */
 export function reachableGridPaths(field: BattlefieldSpec, start: number, budget: number, allowed: (cell: number) => boolean,
-  costOf:(cell:number,from:number)=>number = (cell,from) => tileCost(field, cell)+heightStepCost(field,from,cell)): GridPath[] {
+  costOf:(cell:number,from:number)=>number = (cell,from) => tileCost(field, cell,actor)+heightStepCost(field,from,cell,actor), actor?: Combatant): GridPath[] {
   if (!inBounds(field, start) || budget < 0) return [];
   const costs = new Map([[start, 0]]), previous = new Map<number, number>(), open = new GridQueue(); open.push(start, 0);
   while (open.size) {
     const entry = open.pop()!, current = entry.cell;
     if (entry.cost !== costs.get(current)) continue;
-    for (const next of neighbors(field, current)) {
+    for (const next of movementNeighbors(field, current, actor)) {
       if (!allowed(next)) continue;
       const cost = costs.get(current)! + costOf(next,current);
       if (cost > budget || cost >= (costs.get(next) ?? Infinity)) continue;
@@ -220,13 +236,13 @@ export function reachableGridPaths(field: BattlefieldSpec, start: number, budget
 }
 /** 反向多源Dijkstra：一次计算各格到合法目标格的实际移动成本，供AI绕障碍。 */
 export function gridCostsToGoals(field: BattlefieldSpec, goals: number[], allowed: (cell: number) => boolean,
-  costOf:(cell:number,from:number)=>number = (cell,from) => tileCost(field, cell)+heightStepCost(field,from,cell)): Map<number, number> {
+  costOf:(cell:number,from:number)=>number = (cell,from) => tileCost(field, cell,actor)+heightStepCost(field,from,cell,actor), actor?: Combatant): Map<number, number> {
   const costs = new Map(goals.filter(cell => inBounds(field, cell) && allowed(cell)).map(cell => [cell, 0]));
   const open = new GridQueue(); for (const cell of costs.keys()) open.push(cell, 0);
   while (open.size) {
     const entry = open.pop()!, current = entry.cell;
     if (entry.cost !== costs.get(current)) continue;
-    for (const previous of neighbors(field, current)) {
+    for (const previous of movementNeighbors(field, current, actor)) {
       if (!allowed(previous)) continue;
       // 正向从previous进入current时支付current地形成本。
       const cost = costs.get(current)! + costOf(current,previous);
@@ -380,7 +396,7 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
   const preferredDepth = ranged ? gridWeaponRange(unit.weapon, true, unit.armsModel) <= 4 ? 1 : 0 : 2;
   const probes = field.tiles.flatMap((_, p) => [3, Math.floor((horizontal ? field.width : field.height) / 2)].includes(deploymentDepth(field, unit.side, p)) ? [p] : [])
     .filter(p => field.layerVersion ? !groundBlocked(field, p, unit) : field.tiles[p] !== 'wall');
-  const costs = gridCostsToGoals(field, probes, p => field.layerVersion ? !groundBlocked(field, p, unit) : air || field.tiles[p] !== 'wall', (p,from) => tileCost(field, p, unit)+heightStepCost(field,from,p,unit));
+  const costs = gridCostsToGoals(field, probes, p => field.layerVersion ? !groundBlocked(field, p, unit) : air || field.tiles[p] !== 'wall', (p,from) => tileCost(field, p, unit)+heightStepCost(field,from,p,unit), unit);
   // A garrison given only a compass area keeps the siege layout: close to its walls, with a reserve.
   const contextual=field.deploymentZones?.some(z=>(z.unitId===unit.id||!z.unitId&&z.side===unit.side)&&!!z.landmarkId);
   const emptyConditions = new Map<string, ConditionDef>();
