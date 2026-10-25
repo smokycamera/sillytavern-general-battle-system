@@ -639,6 +639,8 @@ export interface RulePack {
   weaponSkillCalibration?: 'all-formulas-v1';
   /** V33 rings originate at the caster; older battles retain target-centered rings. */
   casterCenteredRing?: boolean;
+  /** V37: independent area recipients use the impact geometry rather than the caster's selection range. */
+  areaTargetingModel?: 'impact-v1';
   /** V32：可信生成的直接法术及独立单体投射伤害倍率；不重写技能或冻结道具。 */
   independentSkillDamageMultiplier?: number;
   /** V34 increases each of the three fueled sprays without rewriting physical weapons. */

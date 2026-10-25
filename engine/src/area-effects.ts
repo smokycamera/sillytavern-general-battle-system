@@ -20,6 +20,7 @@ import { prepareCondition, applySkillCondition, applySkillTrait, applyPush, disp
 import { SeededRng, type Rng } from './rng.js';
 import { grantBarrier } from './barrier.js';
 import { skillResourceChange } from './skill-runtime.js';
+import { sameLayer } from './aerial.js';
 import { standardConditionMap } from './conditions.js';
 import { changeMorale } from './morale.js';
 import { rollDice } from './dice.js';
@@ -54,8 +55,11 @@ export function areaTargets(context: ObservationContext, actor: Combatant, prima
   const origin = areaPosition(context, actor), centered = area.shape === 'ring' && context.rules?.casterCenteredRing;
   const pivot = centered ? origin : areaPosition(context, primary), source = centered ? actor : primary;
   const field=context.battlefield;
-  const connects=(from:Combatant,to:Combatant)=>field?.spatialRulesVersion!==2||!!from.airborne===!!to.airborne
-    &&Math.abs(unitHeight(field,from)-unitHeight(field,to))<=area.radius&&unitLineOfSight(field,from,to);
+  const connects = (from: Combatant, to: Combatant) => {
+    if (!field) return context.rules?.areaTargetingModel !== 'impact-v1' || sameLayer(from, to);
+    if (field.spatialRulesVersion !== 2 && context.rules?.areaTargetingModel !== 'impact-v1') return true;
+    return sameLayer(from, to) && Math.abs(unitHeight(field, from) - unitHeight(field, to)) <= area.radius && unitLineOfSight(field, from, to);
+  };
   const eligible = context.units.filter(u => !combatHostile(u, primary, context.units) && u.hp > 0 && !['dead','fled'].includes(u.status) && valid(u)
     &&(area.shape==='chain'||connects(source,u))).sort((a,b) => a.id.localeCompare(b.id));
   if (area.shape === 'chain') {
