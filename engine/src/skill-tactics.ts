@@ -132,7 +132,7 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
   if (!reachable) {
     const canMove = !flags(context, source).some(d => d?.preventMove) && ![...(context.attached?.values() ?? [])].includes(source.id);
     reachable = field && context.mode === 'small' && canMove
-      ? reachableGridPaths(field, origin.pos!, movementPoints(source, context.fieldTags), cell => canOccupy(field, context.units, origin, cell), cell => tileCost(field, cell, origin)).map(p => p.cells.at(-1)!)
+      ? reachableGridPaths(field, origin.pos!, movementPoints(source, context.fieldTags), cell => canOccupy(field, context.units, origin, cell), cell => tileCost(field, cell, origin), origin).map(p => p.cells.at(-1)!)
       : [origin.pos];
     reachableCache.set(source, reachable);
   }

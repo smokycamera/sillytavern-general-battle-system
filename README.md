@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **3.0.8**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **3.0.9**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-3.0.8 draws intact terminal wall cells through to the map edge, fixes legacy central-city generation, preserves requested double walls by expanding non-compact maps, and fixes the release gate's base-commit race. The approved map prompt and battle AI performance improvements remain included. See the [current release](docs/current-release.md).
+3.0.9 fixes inner-wall stairs and independent gate pairing in regional cities, and makes connected diagonal wall tops traversable by players and AI. It preserves ground movement, real breaches and the approved map prompt, without adding bridges. See the [current release](docs/current-release.md).
 
 ## Documentation
 

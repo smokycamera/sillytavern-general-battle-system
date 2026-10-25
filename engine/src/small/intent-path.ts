@@ -1,7 +1,7 @@
 import type { Combatant } from '../types.js';
 import { isAirborne } from '../aerial.js';
 import { canClimbFrom, groundBlocked, intactStructure, isElevated, STRUCTURE_NAMES } from './layers.js';
-import { canOccupy, movementStepCost, neighbors, gridDistance, cellLabel, TERRAIN_NAMES, type BattlefieldSpec } from './spatial.js';
+import { canOccupy, movementStepCost, movementNeighbors, gridDistance, cellLabel, TERRAIN_NAMES, type BattlefieldSpec } from './spatial.js';
 import { GridQueue } from './grid-queue.js';
 
 export type IntentLayer = 'ground' | 'platform';
@@ -55,7 +55,7 @@ export function findIntentRoute(field: BattlefieldSpec, unit: Combatant, known: 
       if (blocked.has(node) || !Number.isFinite(cost) || total >= (costs.get(node) ?? Infinity)) return;
       costs.set(node, total); previous.set(node, { node: entry.cell, step: { cell, layer: elevated ? 'platform' : 'ground', kind, cost } }); open.push(node, total);
     };
-    for (const cell of neighbors(field, actor.pos!)) {
+    for (const cell of movementNeighbors(field, actor.pos!, actor)) {
       if (canOccupy(field, known, actor, cell)) offer(cell, isElevated(actor), 'move', movementStepCost(field, cell, actor, tags, actor.pos));
       else if (!isElevated(actor) && !isAirborne(actor) && intactStructure(field, cell)?.gateState === 'closed' && canOpen(actor, cell)) {
         const openedField = withOpenDoor(cell);
@@ -76,7 +76,7 @@ export function findIntentRoute(field: BattlefieldSpec, unit: Combatant, known: 
 export function intentRouteFailure(field: BattlefieldSpec, unit: Combatant, known: Combatant[], reachable: Combatant[], toward: number | undefined,
   visible: readonly boolean[], canOpen: (actor: Combatant, cell: number) => boolean): string {
   const obstacles = new Map<number, string>();
-  for (const actor of reachable) for (const cell of neighbors(field, actor.pos!)) {
+  for (const actor of reachable) for (const cell of movementNeighbors(field, actor.pos!, actor)) {
     if (!visible[cell] || canOccupy(field, known, actor, cell) && Number.isFinite(movementStepCost(field, cell, actor, field.environment, actor.pos))) continue;
     const structure = intactStructure(field, cell);
     if (structure?.kind === 'gate' && structure.gateState === 'closed' && canOpen(actor, cell)) continue;

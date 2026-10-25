@@ -82,7 +82,7 @@ import { movementFraction, bracePose, movementPoints, settleFatigue, addTactical
 import { rangedTargetDistance, isAirborne, sameLayer, flightCapabilityReason, flightMaintenanceReason, fallDamage, validateFlightState } from '../aerial.js';
 import { environmentTags } from '../environment.js';
 import { traitRegistry as defaultTraitRegistry } from '../data/traits.js';
-import { meleeLineBlocker, terrainTacticalValue, canOccupy, cellLabel, reportPlaceLabel, deployOnGrid, findGridPath, reachableGridPaths, gridCostsToGoals, gridDistance, lineOfSight, unitLineOfSight, neighbors, movementStepCost, retreatCells, validateField, type BattlefieldSpec, type GridPath } from './spatial.js';
+import { meleeLineBlocker, terrainTacticalValue, canOccupy, cellLabel, reportPlaceLabel, deployOnGrid, findGridPath, reachableGridPaths, gridCostsToGoals, gridDistance, lineOfSight, unitLineOfSight, neighbors, movementNeighbors, movementStepCost, retreatCells, validateField, type BattlefieldSpec, type GridPath } from './spatial.js';
 import { canSpot, concealedUnit, observedUnits, observeEvent, sideViews, observedLog, revealUnit, revealContacts, settleConcealment, canReconceal, validateConcealment, type ObservationContext } from '../observation.js';
 import { noteSightings, noteClue, liveTraces, liveClues, restoreIntel, intelView, CLUE_RANGE, SPREAD_ROUNDS, type IntelBook, type IntelView } from '../intel.js';
 import {
@@ -625,7 +625,7 @@ export class SmallBattle {
     if (!entry) {
       const field = this.battlefield!, known = this.visibleCombatants(actor.side);
       const paths = reachableGridPaths(field, actor.pos!, budget, n => canOccupy(field, known, actor, n),
-        (n, from) => movementStepCost(field, n, actor, this.fieldTags, from));
+        (n, from) => movementStepCost(field, n, actor, this.fieldTags, from), actor);
       entry = { paths, byCell: new Map(paths.map(p => [p.cells.at(-1)!, p])) };
       if (this.gridPathsMemo) {
         if (!budgets) { budgets = new Map(); this.gridPathsMemo.set(actor, budgets); }
@@ -699,7 +699,7 @@ export class SmallBattle {
     const actor = this.byId(actorId);
     if (actor.status !== 'ready' || (this.started && !this.isTurnOf(actorId)) || this.isOver()) return { reason: '当前单位不能移动', risks: [] };
     const known = this.visibleCombatants(actor.side);
-    const path = findGridPath(field, actor.pos!, cell, (n) => canOccupy(field, known, actor, n), (n, from) => movementStepCost(field, n, actor, this.fieldTags, from));
+    const path = findGridPath(field, actor.pos!, cell, (n) => canOccupy(field, known, actor, n), (n, from) => movementStepCost(field, n, actor, this.fieldTags, from), actor);
     if (!path) return { reason: '路径受阻或落点容量不足', risks: [] };
     if (path.cost > this.movementLeft(actorId)) return { reason: '移动点不足', risks: [] };
     const denialRisks = isArmsV2(this.rules.armsModel) ? known.filter(holder => path.cells.slice(1).some((to,i)=>this.denialSources(actor,path.cells[0]!,path.cells[i]!,to,this.reactionSpent,known).some(u=>u.id===holder.id))).map(u=>u.name+'可能拒止一次') : [];
@@ -726,7 +726,7 @@ export class SmallBattle {
     for (const next of path.cells.slice(1)) {
       if (actor.status !== 'ready' || actor.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventMove)) break;
       const stepCost = opts.spend ? movementStepCost(field, next, actor, this.fieldTags) : movementStepCost(field, next, actor, this.fieldTags, actor.pos);
-      if (gridDistance(field, actor.pos!, next) !== 1 || stepCost > (opts.spend ? this.movementLeft(actorId) : budget)) break;
+      if (!movementNeighbors(field, actor.pos!, actor).includes(next) || stepCost > (opts.spend ? this.movementLeft(actorId) : budget)) break;
       if (!canOccupy(field, this.combatants, actor, next)) break;
       if (opts.haste) this.activateHasteMovement(actorId);
       const previous = actor.pos!, heights = reportsHeights(field) && !isAirborne(actor);
@@ -1015,7 +1015,7 @@ export class SmallBattle {
       const origin = unit.pos!, ground = { ...unit, elevation: undefined };
       // Rescue can traverse nearby water, never teleport through an intact wall, cliff or enemy.
       const rescue = { ...ground, traits: [...ground.traits, 'water-crossing'] };
-      const candidates = reachableGridPaths(field, origin, 2, n => canOccupy(field, this.combatants, rescue, n), () => 1)
+      const candidates = reachableGridPaths(field, origin, 2, n => canOccupy(field, this.combatants, rescue, n), () => 1, rescue)
         .filter(path => canOccupy(field, this.combatants, ground, path.cells.at(-1)!)&&(field.spatialRulesVersion!==2||unitHeight(field,{...ground,pos:path.cells.at(-1)!})<=originalHeight))
         .sort((a, b) => a.cost - b.cost || a.cells.at(-1)! - b.cells.at(-1)!).map(path => path.cells.at(-1)!);
       const wasHigh = isElevated(unit); unit.elevation = undefined;
@@ -1658,7 +1658,7 @@ export class SmallBattle {
   /** 沿可走路线在 reach 格内可到的位置（只看本阵营已知单位；执行时逐格按实际占位走）。 */
   private skillPaths(actor: Combatant, reach: number): GridPath[] {
     const field = this.battlefield!, known = this.visibleCombatants(actor.side);
-    return reachableGridPaths(field, actor.pos!, reach, (n) => canOccupy(field, known, actor, n), (n, from) => movementStepCost(field, n, actor, this.fieldTags, from));
+    return reachableGridPaths(field, actor.pos!, reach, (n) => canOccupy(field, known, actor, n), (n, from) => movementStepCost(field, n, actor, this.fieldTags, from), actor);
   }
   /** 闪现落点：reach 格内、施术者视线可及、按自身空地层可落脚的位置；不跨平台层。 */
   private skillBlinkCells(actor: Combatant, reach: number): number[] {
@@ -2303,7 +2303,7 @@ export class SmallBattle {
       const goalCells = field.objective.kind === 'annihilation' ? (nearestFoe ? neighbors(field, nearestFoe.pos!) : []) : [field.objective.cell];
       if (goalCells.length && !goalCells.includes(unit.pos!)) {
         const air = { ...unit, airborne: true };
-        const cheapest = (actor: Combatant) => Math.min(...goalCells.map((g) => findGridPath(field, unit.pos!, g, (n) => canOccupy(field, known, actor, n), (n, from) => movementStepCost(field, n, actor, this.fieldTags, from))?.cost ?? Infinity));
+        const cheapest = (actor: Combatant) => Math.min(...goalCells.map((g) => findGridPath(field, unit.pos!, g, (n) => canOccupy(field, known, actor, n), (n, from) => movementStepCost(field, n, actor, this.fieldTags, from), actor)?.cost ?? Infinity));
         if (!this.flightRisks(unitId,true).length && cheapest(air) + 1 < cheapest(unit)) this.changeFlight(unitId, true);
       }
       if (unit.status !== 'ready') { if (!this.isOver()) this.endTurn(); return; }
@@ -2321,7 +2321,7 @@ export class SmallBattle {
     const escorted = !this.intentActive && objective.kind === 'escape' && objective.unitId !== unitId
       ? knownUnits.find((u) => u.id === objective.unitId && !combatHostile(u, unit, this.combatants)) : undefined;
     const escortPath = escorted ? findGridPath(field, escorted.pos!, objective.cell,
-      (n) => canOccupy(field, knownUnits.filter((u) => u.id !== unitId), escorted, n), (n, from) => movementStepCost(field, n, escorted, this.fieldTags, from)) : undefined;
+      (n) => canOccupy(field, knownUnits.filter((u) => u.id !== unitId), escorted, n), (n, from) => movementStepCost(field, n, escorted, this.fieldTags, from), escorted) : undefined;
     const escortCorridor = new Set(escorted ? [objective.cell, ...(escortPath?.cells.slice(1) ?? [])] : []);
     const foes = knownUnits.filter((u) => combatHostile(u, unit, this.combatants) && ['ready', 'routing'].includes(u.status));
     const hasFear = foes.some((u) => activeTraitIds(u).some((id) => this.traitRegistry.get(id)?.effects.some((e) => e.kind === 'moraleAura' && e.scope === 'enemySide')));
@@ -2372,7 +2372,7 @@ export class SmallBattle {
       order = { role: rangedRole ? 'fire' : 'front', goals: objective.cells ?? [objective.cell], hold: true, phase: 'intact' };
     const zone = !this.intentActive && commandV2 && order?.hold && !isElevated(unit) && !isAirborne(unit) ? order.goals : undefined;
     const contested = !!zone && foes.some(foe => zone.includes(foe.pos!));
-    const zoneCosts = zone && !contested ? gridCostsToGoals(field, zone, allowed, (cell, from) => movementStepCost(field, cell, unit, this.fieldTags, from)) : undefined;
+    const zoneCosts = zone && !contested ? gridCostsToGoals(field, zone, allowed, (cell, from) => movementStepCost(field, cell, unit, this.fieldTags, from), unit) : undefined;
     const area = zoneCosts ? field.tiles.flatMap((_, cell) => (zoneCosts.get(cell) ?? Infinity) <= this.movementBudget(unitId) ? [cell] : []) : [];
     const sortie = area.includes(unit.pos!) ? this.holdSortie(unit, zone!, area, foes, knownUnits) : undefined;
     if (sortie) order = { role: 'front', goals: sortie, phase: 'sortie' };
@@ -2386,7 +2386,7 @@ export class SmallBattle {
           && gridDistance(field,pos,cell)<=gridWeaponRange(actor.weapon, true, this.rules.armsModel)&&unitLineOfSight(field,actor,{...actor,pos:cell,elevation:undefined,side:unit.side==='ally'?'enemy':'ally'}));
       return hasFire?[pos]:[];
     }) : [];
-    const wallRoutes = gridCostsToGoals(field,firingPositions,p=>canOccupy(field,knownUnits,elevatedActor,p),(p,from)=>movementStepCost(field,p,elevatedActor,this.fieldTags,from));
+    const wallRoutes = gridCostsToGoals(field,firingPositions,p=>canOccupy(field,knownUnits,elevatedActor,p),(p,from)=>movementStepCost(field,p,elevatedActor,this.fieldTags,from),elevatedActor);
     const climbApproaches = isElevated(unit) ? firingPositions : [...wallRoutes.keys()].flatMap(p=>neighbors(field,p).filter(n=>canOccupy(field,knownUnits,unit,n)&&!this.climbReason(unitId,p,n)));
     const goals = !this.intentActive && climbApproaches.length && !order?.phase.includes('threat') ? climbApproaches : order ? order.goals : objective.kind !== 'annihilation' ? [objective.cell]
       : foes.length ? field.tiles.flatMap((_, cell) => {
@@ -2399,7 +2399,7 @@ export class SmallBattle {
           : this.dist(actor, target) <= gridWeaponRange(meleeWeapon(actor), this.rules.combatModel === MEMBER_HEALTH_MODEL, this.rules.armsModel)
             && !this.sightReason(actor, target) && (meleeContact(field, actor, target) || isAirborne(actor))) ? [cell] : [];
       }) : huntGoals;
-    const routeCosts = gridCostsToGoals(field, goals, allowed, (cell, from) => movementStepCost(field, cell, unit, this.fieldTags, from));
+    const routeCosts = gridCostsToGoals(field, goals, allowed, (cell, from) => movementStepCost(field, cell, unit, this.fieldTags, from), unit);
     const positionParts = this.aiTrace ? new Map<GridPath, Record<string, number>>() : undefined;
     const positionScore = (path: GridPath) => {
       const cell = path.cells.at(-1)!;
@@ -2745,7 +2745,7 @@ export class SmallBattle {
         plans.push({ kind: 'reload', weaponMode: sidearm ? 'sidearm' : 'primary', path: stay, score: positionScore(stay) + value * 0.5 });
       }
       if (!this.intentActive && this.actedThisTurn.has(unitId) && this.hasteAvailable(unitId)) {
-        const extraPaths = reachableGridPaths(field, unit.pos!, this.movementLeft(unitId) + this.movementBudget(unitId), allowed, (n, from) => movementStepCost(field, n, unit, this.fieldTags, from));
+        const extraPaths = reachableGridPaths(field, unit.pos!, this.movementLeft(unitId) + this.movementBudget(unitId), allowed, (n, from) => movementStepCost(field, n, unit, this.fieldTags, from), unit);
         for (const path of extraPaths.filter(p => p.cost > this.movementLeft(unitId))) plans.push({ kind: 'haste-move', path, score: positionScore(path) - 0.25 - worksCost(path.cells.at(-1)!) });
         const flying = { ...unit, airborne: !isAirborne(unit) };
         if ((isAirborne(unit) || !flightCapabilityReason(unit, this.conditions)) && canOccupy(field, knownUnits, flying, flying.pos!)) {
@@ -2854,7 +2854,7 @@ export class SmallBattle {
     let best: { cells: number[]; cost: number } | undefined;
     for (const shooter of foes.filter(f => shooters.has(f.id) && isRangedWeapon(f.weapon) && area.every(cell => gridDistance(field, cell, f.pos!) > reach)).sort((a, b) => a.id.localeCompare(b.id))) {
       const cells = field.tiles.flatMap((_, cell) => gridDistance(field, cell, shooter.pos!) <= reach && allowed(cell) && !this.weaponContext({ ...unit, pos: cell }, shooter).reason ? [cell] : []);
-      const cost = cells.length ? gridCostsToGoals(field, cells, allowed, (cell, from) => movementStepCost(field, cell, unit, this.fieldTags, from)).get(unit.pos!) : undefined;
+      const cost = cells.length ? gridCostsToGoals(field, cells, allowed, (cell, from) => movementStepCost(field, cell, unit, this.fieldTags, from), unit).get(unit.pos!) : undefined;
       if (cost !== undefined && cost <= 2 * this.movementBudget(unit.id) && (!best || cost < best.cost)) best = { cells, cost };
     }
     return best?.cells;
@@ -2950,7 +2950,7 @@ export class SmallBattle {
     const memory = this.intel[side] ??= { traces: [], clues: [] };
     const viewed = memory.viewed?.length === view.length ? memory.viewed : memory.viewed = Array<number>(view.length).fill(0);
     view.forEach((seen, cell) => { if (seen) viewed[cell] = this.round; });
-    const reach = gridCostsToGoals(field, [unit.pos!], (cell) => canOccupy(field, known, unit, cell), (cell, from) => movementStepCost(field, cell, unit, this.fieldTags, from));
+    const reach = gridCostsToGoals(field, [unit.pos!], (cell) => canOccupy(field, known, unit, cell), (cell, from) => movementStepCost(field, cell, unit, this.fieldTags, from), unit);
     const cost = (cell: number) => reach.get(cell) ?? 1000 + gridDistance(field, unit.pos!, cell);
     const unseen = (cell: number) => !view[cell] && !groundBlocked(field, cell);
     const fresh = (cell: number) => unseen(cell) && viewed[cell]! <= Math.max(0, this.round - 2);
@@ -3013,7 +3013,7 @@ export class SmallBattle {
       if (observers.some(observer => gridDistance(field, observer.pos!, cell) <= 2
         && unitLineOfSight(field, observer, { ...observer, pos: cell, airborne: false }))) coverage[cell] = this.round;
     }
-    const reachable = gridCostsToGoals(field, [unit.pos!], cell => canOccupy(field, known, unit, cell), (cell, from) => movementStepCost(field, cell, unit, this.fieldTags, from));
+    const reachable = gridCostsToGoals(field, [unit.pos!], cell => canOccupy(field, known, unit, cell), (cell, from) => movementStepCost(field, cell, unit, this.fieldTags, from), unit);
     const owner = (cell:number) => [...observers].sort((a,b)=>gridDistance(field,a.pos!,cell)-gridDistance(field,b.pos!,cell)||a.id.localeCompare(b.id))[0]?.id;
     const assigned = [...reachable.keys()].filter(p=>owner(p)===unit.id && (coverage[p]??0)<this.round-1);
     return (assigned.length?assigned:[...reachable.keys()]).sort((a, b) => (coverage[a] ?? 0) - (coverage[b] ?? 0)
@@ -3233,9 +3233,9 @@ export class SmallBattle {
     const allowed = (cell: number) => cell === start || canOccupy(field, this.combatants, unit, cell);
     const cost = (cell: number, from: number) => movementStepCost(field, cell, unit, this.fieldTags, from);
     const goals = retreatCells(field, unit.side);
-    const remaining = gridCostsToGoals(field, goals, allowed, cost);
+    const remaining = gridCostsToGoals(field, goals, allowed, cost, unit);
     const distance = (cell: number) => remaining.get(cell) ?? deploymentDepth(field, unit.side, cell) * 2;
-    const path = reachableGridPaths(field, start, this.movementBudget(unit.id), allowed, cost)
+    const path = reachableGridPaths(field, start, this.movementBudget(unit.id), allowed, cost, unit)
       .filter(p => distance(p.cells.at(-1)!) < distance(start))
       .sort((a, b) => distance(a.cells.at(-1)!) - distance(b.cells.at(-1)!) || a.cost - b.cost)[0];
     if (!path) return;
