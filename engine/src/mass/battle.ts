@@ -800,13 +800,13 @@ export class MassBattle {
   }
   private supportTargets(actor: Combatant, ability: Ability, primary: Combatant, units: Combatant[]): Combatant[] {
     if (ability.area) return areaTargets({...this.observationContext(units),units:this.visibleCombatants(actor.side,units)},actor,primary,ability,u=>!this.isAttached(u.id)
-      && !abilityTargetReason({space:'mass',actor,ability,target:u,units,controlRecipient:true,distance:formationDistance(actor,u)})
+      && !abilityTargetReason({space:'mass',actor,ability,target:u,units,controlRecipient:true,areaRecipient:this.rules.areaTargetingModel === 'impact-v1' && !ability.weaponUse && ability.requires !== 'melee' && ability.requires !== 'shield',distance:formationDistance(actor,u)})
       && (this.rules.combatModel !== MEMBER_HEALTH_MODEL || !ability.weaponUse || isRangedWeapon(skillWeapon(actor, ability)) || !formationScreened(actor,u,units))
       && (!ability.weaponUse || !rangedScreen(actor,u,skillWeapon(actor,ability,formationDistance(actor,u)),units.filter(c=>!this.isAttached(c.id)),{mode:'mass'},this.conditionMap())));
     if (ability.shape !== 'burst' && !ability.effects.some((e) => e.op === 'damage' && e.shape === 'burst')) return [primary];
     const pivot = ability.recipe?.category === 'physical-area' && ability.damageBasis && !isRangedWeapon(skillWeapon(actor, ability)) ? actor : primary;
     return [primary, ...this.visibleCombatants(actor.side, units).filter((u) => u.id !== primary.id && !combatHostile(u, primary, units) && u.status === 'ready' && !this.isAttached(u.id)
-      && formationDistance(pivot, u) <= 1 && !abilityTargetReason({ space: 'mass', actor, ability, target: u, units, controlRecipient:true, distance: formationDistance(actor, u) })
+      && formationDistance(pivot, u) <= 1 && !abilityTargetReason({ space: 'mass', actor, ability, target: u, units, controlRecipient:true, areaRecipient:this.rules.areaTargetingModel === 'impact-v1' && !ability.weaponUse && ability.requires !== 'melee' && ability.requires !== 'shield', distance: formationDistance(actor, u) })
       && (this.rules.combatModel !== MEMBER_HEALTH_MODEL || !ability.weaponUse || isRangedWeapon(skillWeapon(actor, ability)) || !formationScreened(actor, u, units))
       && (!ability.weaponUse || !rangedScreen(actor, u, skillWeapon(actor, ability, formationDistance(actor, u)), units.filter(c => !this.isAttached(c.id)), { mode: 'mass' }, this.conditionMap())))
       .sort((a, b) => a.id.localeCompare(b.id))].slice(0, 2);
@@ -854,7 +854,7 @@ export class MassBattle {
       const actor = move.node ? { ...source, formationPosition: move.node.id } : source;
       const healing = ability.effects.find((e) => e.op === 'heal'), morale = ability.effects.find((e) => e.op === 'morale'), damage = ability.effects.find((e) => e.op === 'damage');
       const strike = target && damage ? this.previewAttackWithEnvironment({ attacker: actor, defender: this.effectiveUnit(target, known), rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(known, actor, target, ability, damage, !!move.charge) }, known) : undefined;
-      const area = target && (damage?.shape ?? ability.shape) === 'burst' ? this.supportTargets(actor, ability, target, known) : [];
+      const area = target && (ability.area || (damage?.shape ?? ability.shape) === 'burst') ? this.supportTargets(actor, ability, target, known) : [];
       const areaPreviews = damage ? area.map((affected) => ({
         targetId: affected.id,
         ...this.previewAttackWithEnvironment({ attacker: actor, defender: this.effectiveUnit(affected, known), rules: this.rules,
@@ -1595,7 +1595,7 @@ export class MassBattle {
             changeMorale(unit, effect.amount);
             this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id, unit.id], text: `${actor.name} 使用【${ability.name}】→${unit.name}，${unit.moraleLocked ? '满士气锁定，士气不变' : `士气${displayNumber(before)}→${displayNumber(unit.morale)}`}` });
           });
-          else if (effect.op === 'condition') for (const affected of effect.shape === 'burst' ? this.supportTargets(actor, ability, target, support) : [target]) {
+          else if (effect.op === 'condition') for (const affected of effect.shape === 'burst' || this.rules.areaTargetingModel === 'impact-v1' && ability.area ? this.supportTargets(actor, ability, target, support) : [target]) {
             const hit = hits.get(affected.id);
             if (effect.onDamage && !(hit && hit.finalDamage > 0)) continue;
             if (effect.onHit && (!hit?.hit || hit.hpAfter <= 0)) continue;

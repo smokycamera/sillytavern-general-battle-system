@@ -334,13 +334,15 @@ export function abilityTargetReason(input: {
   units?: readonly Combatant[];
   controlAreaIds?: readonly string[];
   controlRecipient?: boolean;
+  /** Independent splash recipients have already passed the area's geometry and obstruction checks. */
+  areaRecipient?: boolean;
   space?: AerialRangeSpace;
   field?: BattlefieldSpec;
 }): string | undefined {
   const { actor, ability } = input;
   const target = ability.target === 'self' ? actor : input.target ?? (ability.target === 'ally' ? actor : undefined);
   const controlled = controlActionReason(actor, target, input.units ?? (target ? [actor, target] : [actor]), 'skill', ability.target === 'ally' || ability.target === 'self' && !ability.effects.some(e => e.op === 'zone' || e.op === 'summon'), input.controlAreaIds, input.controlRecipient); if (controlled) return controlled;
-  if (target && controlCondition(actor, 'blinded') && (input.distance ?? 0) > 1) return '致盲只能直接选择1格/阵位内目标';
+  if (target && !input.areaRecipient && controlCondition(actor, 'blinded') && (input.distance ?? 0) > 1) return '致盲只能直接选择1格/阵位内目标';
   if (target && ability.targetBody && target.body !== ability.targetBody && !(target.rulesVersion === 'v2' && activeTraitIds(target).includes('inorganic'))) return '维修用品只能修理车辆或非生物';
   if (target && ability.effects.length && ability.effects.every(e => e.op === 'barrier' && (target.barrier?.remaining ?? 0) >= e.amount && (target.barrier?.duration ?? 0) >= e.dur
     && (!(e.defensePower ?? ability.power) || target.barrier?.defenses?.some(d => d.power >= (e.defensePower ?? ability.power)! && d.duration >= e.dur))
@@ -377,6 +379,7 @@ export function abilityTargetReason(input: {
     try { for (const effect of ability.effects) if (effect.op === 'heal' && effect.amount !== undefined) healingAmount(target, effect.amount); }
     catch (error) { return error instanceof Error ? error.message : String(error); }
   }
+  if (input.areaRecipient && !ability.weaponUse && ability.requires !== 'melee' && ability.requires !== 'shield') return undefined;
   const range = fallbackAbilityRange(actor, ability, !!input.field);
   if (range.metric === 'self') {
     return target && target.id !== actor.id ? '该技能只能对自己施放' : undefined;
