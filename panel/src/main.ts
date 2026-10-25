@@ -56,6 +56,7 @@ import './battle-ui.css';
 import './map-ui.css';
 import './terrain-painted.css';
 import { updateRegion, BattleCamera, selectTextareaRange } from './view-dom.js';
+import { installMapGestures, fitMap, mapScale } from './map-gestures.js';
 import { executeMassPlan, executeAndSaveAsync as executeAndSave } from './battle-execution.js';
 import { TACTICAL_PREFERENCES, normalizeTactic } from '../../engine/src/tactical-preference.js';
 import { battleIdOf, publicBattleEvents, withBattleReportQueries, battleEpilogue, archivedNarrativeEvents, archivedDigest, makeNarrativeBatch, beginNarrativeDelivery, finishNarrativeDelivery, completedBattleRounds, type BattleReport, type BattleDeliveries, type NarrativeBatch } from './battle-reports.js';
@@ -157,11 +158,13 @@ const inventoryPanel = new InventoryPanel(controller, visibleUnitRecord);
 if (!resident) window.addEventListener('pagehide', event => { if (!event.persisted) controller.dispose(); });
 const reg = traitRegistry();
 const MAP_ZOOM_KEY = 'tavern-battle:map-zoom';
+const MAP_SCALE_KEY = 'tavern-battle:map-scale';
 /** 缩放只是本机查看偏好：读不到存储时回到“适应”，不进入存档。 */
 function storedMapZoom(): MapZoom {
   try { const value = localStorage.getItem(MAP_ZOOM_KEY); return value && Object.hasOwn(MAP_ZOOM_LABELS, value) ? value as MapZoom : 'fit'; } catch { return 'fit'; }
 }
-const tacticalView: TacticalView = { mode: 'weapon', zoom: storedMapZoom() };
+function storedMapScale(): number { try { const value = localStorage.getItem(MAP_SCALE_KEY); return value === null ? 1 : mapScale(Number(value)); } catch { return 1; } }
+const tacticalView: TacticalView = { mode: 'weapon', zoom: storedMapZoom(), mapScale: storedMapScale() };
 const tacticalQueries = new TacticalQueryCache();
 const formationQueries = new FormationQueryCache();
 function clearBattleQueries(): void { tacticalQueries.clear(); formationQueries.clear(); }
@@ -2589,9 +2592,15 @@ async function handleAction(e: Event): Promise<void> {
   }
   if (act === 'grid-pan') { document.querySelector('.grid-camera')?.scrollBy({ left: Number(el.dataset.dx) * 180, behavior: 'auto' }); return; }
   if (act === 'grid-focus') { battleCamera.focus(document.querySelector<HTMLElement>('.grid-cell.selected') ?? undefined); return; }
+  if (act === 'grid-overview') {
+    battleCamera.browse(); tacticalView.zoom = 'fit'; tacticalView.mapScale = 1; render('view');
+    const camera = document.querySelector<HTMLElement>('.grid-camera'); if (camera) changeMapScale(fitMap(camera));
+    commitMapScale(); try { localStorage.setItem(MAP_ZOOM_KEY, 'fit'); } catch { /* View preference only. */ } return;
+  }
   if (act === 'grid-zoom') {
     const order: MapZoom[] = ['fit', 'large', 'compact'];
     tacticalView.zoom = order[(order.indexOf(tacticalView.zoom ?? 'fit') + 1) % order.length];
+    tacticalView.mapScale = 1; commitMapScale();
     try { localStorage.setItem(MAP_ZOOM_KEY, tacticalView.zoom!); } catch { /* 仅本次会话生效 */ }
     render('view'); battleCamera.focus(document.querySelector<HTMLElement>('.grid-cell.selected') ?? undefined); return;
   }
@@ -3977,7 +3986,7 @@ async function afterSmallAction(endTurn = true): Promise<void> {
 document.addEventListener('click', e => {
   const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
   if (!action) return;
-  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'modal-stop', 'llm-stop', 'llm-command-stop', 'llm-notes', 'llm-notes-close', 'letter-open', 'letter-close', 'llm-models', 'ai-scan', 'ai-scan-confirm', 'ai-scan-cancel', 'narrative-error', 'narrative-recognized'].includes(action) || action.startsWith('worldbook-')) { void handleAction(e); return; }
+  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'grid-overview', 'modal-stop', 'llm-stop', 'llm-command-stop', 'llm-notes', 'llm-notes-close', 'letter-open', 'letter-close', 'llm-models', 'ai-scan', 'ai-scan-confirm', 'ai-scan-cancel', 'narrative-error', 'narrative-recognized'].includes(action) || action.startsWith('worldbook-')) { void handleAction(e); return; }
   if (MAP_INSPECTION.includes(action)) {
     if (uiBusy) { toast('正在保存上一项操作，请稍候…'); return; }
     try { inspectBattleMap((e.target as HTMLElement).closest<HTMLElement>('[data-action]')!); }
@@ -4000,6 +4009,15 @@ document.addEventListener('pointerdown', event => { cameraPointer = event.target
 document.addEventListener('pointermove', event => { if (cameraPointer && Math.hypot(event.clientX-cameraPointer.x,event.clientY-cameraPointer.y)>8) { battleCamera.browse(); cameraPointer=undefined; } }, {passive:true});
 document.addEventListener('pointerup', () => { cameraPointer=undefined; }, {passive:true});
 document.addEventListener('wheel', event => { if (event.target instanceof Element && event.target.closest('[data-workspace="battle"]')) battleCamera.browse(); }, {passive:true});
+
+function changeMapScale(scale: number): void {
+  tacticalView.mapScale = scale;
+  const label = MAP_ZOOM_LABELS[tacticalView.zoom ?? 'fit'] + ' ' + Math.round(scale * 100) + '%';
+  const button = document.querySelector<HTMLElement>('[data-action="grid-zoom"]');
+  if (button) { button.textContent = '缩放 · ' + label; button.setAttribute('aria-label', '切换地图缩放，当前' + label); }
+}
+function commitMapScale(): void { try { localStorage.setItem(MAP_SCALE_KEY, String(tacticalView.mapScale ?? 1)); } catch { /* View preference only. */ } }
+installMapGestures(document, { change: changeMapScale, commit: commitMapScale, browse: () => battleCamera.browse() });
 document.addEventListener('input', e => {
   const el=e.target;
   if (el instanceof HTMLTextAreaElement && el.dataset.role === 'letter-text') {
