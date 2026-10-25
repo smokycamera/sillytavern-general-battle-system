@@ -102,11 +102,12 @@ export const TRAIT_LADDER: Readonly<Record<string, readonly string[]>> = {
 };
 const signed = (value: number) => (value >= 0 ? '+' : '−') + Math.abs(value);
 /** 某一级累计生效的效果，按实际数值合并成一句（面板、道具说明与说明文件共用）。 */
-export function traitLadderSummary(id: string, level: number, model?: unknown): string {
+export function traitLadderSummary(id: string, level: number, model?: unknown, flightModel?: Combatant['flightModel']): string {
   const modern = progression({traitLevelModel:model}), revised = stackingRevision({traitLevelModel:model});
   const traitParameter = (p: TraitParameter, L: number) => parameterValue(p, L, model);
   const L = Math.max(1, Math.min(10, Math.round(level))), parts: string[] = [];
   if (id === 'revival') return `每战${traitParameter('revivalUses', L)}次，倒下后恢复${traitParameter('revivalPercent', L)}%最大生命；编队按入场现员比例复起，致命与非致命均生效，不刷新精力、弹药和冷却`;
+  if (id === 'flying') return `空中受到地面攻击时防御+${traitParameter('flightDefense', L)}；空对空及落地后不增加飞行防御`;
   const add = (when: boolean, text: string) => { if (when) parts.push(text); };
   if (id === 'forest-lore') {
     add(true, '森林中攻击不受−1'); add(roughGroundCost(L) < 2, roughGroundCost(L) === 1 ? '森林每格只耗1点' : `森林每格耗${roughGroundCost(L)}点`);
@@ -148,7 +149,7 @@ export function traitLadderSummary(id: string, level: number, model?: unknown): 
     else if (id === 'agile') parts.push(`合法地形额外成本剩余${pct('agileTerrain')}%，${L >= 5 ? '脱离近战免借机触发' : `仍触发借机，伤害减免${pct('agileReactionReduction')}%，不免附带状态`}；先攻+${traitParameter('agileInitiative', L)}、机动+${traitParameter('agileMobility', L)}；会战困难地形行军使用同一成本，不跨墙/深水资格`);
     else if (id === 'siege-breaker') parts.push(`结构伤害×${traitParameter('engineerDamage', L)}，攻击时削减目标工事提供的防御/远程减伤${pct('engineerSuppression')}%，不削真实护甲、盾牌或结构本体`);
     else if (id === 'melee-master') parts.push(`近战武器与物理技法攻击+${traitParameter('meleeAttack', L)}、伤害×${traitParameter('meleeDamage', L)}，独立魔法不生效`);
-    else if (id === 'anti-air') parts.push(`对空攻击+${traitParameter('counterAttack', L)}、伤害×${traitParameter('counterMultiplier', L)}；地对空额外射程成本小战${traitParameter('antiAirRangeSmall', L)}格/会战${traitParameter('antiAirRangeMass', L)}阵位，不授予新投送方式`);
+    else if (id === 'anti-air') parts.push(`对空攻击+${traitParameter(flightModel === 'maneuver-v1' ? 'flightDefense' : 'counterAttack', L)}、伤害×${traitParameter('counterMultiplier', L)}；地对空额外射程成本小战${traitParameter('antiAirRangeSmall', L)}格/会战${traitParameter('antiAirRangeMass', L)}阵位，不授予新投送方式`);
     else if (id === 'sharpshooter') parts.push(modern ? `全合法射程与移动后射击攻击+${traitParameter('meleeAttack', L)}、伤害×${traitParameter('meleeDamage', L)}；减轻掩护${traitParameter('sharpshooterCover', L)}点，不减轻移动或射程惩罚，不授予视线；独立魔法无效` : L === 1 ? '静止且半射程内射击攻击+1' : L === 2 ? '半射程内射击攻击+1，允许移动' : L === 3 ? '全合法射程射击攻击+1' : L === 4 ? '静止射击+2、已移动+1' : `全合法射击攻击+${L>=9?4:L>=7?3:2}${L>=6?`，仅减轻明确掩护${L>=8?2:1}点`:''}${L===10?'，另减轻1点移动命中惩罚':''}`);
     else if (id === 'charge-strong') parts.push(`${modern ? `任何合法冲锋攻击+${traitParameter('chargeAttack', L)}` : L===1?'仅直线合法冲锋攻击+1':L===3?'直线冲锋+2，其他合法冲锋+1':`任何合法冲锋攻击+${traitParameter('chargeAttack', L)}`}，合法冲锋伤害×${traitParameter('chargeDamage', L)}，不授予穿障碍资格`);
     else if (id === 'berserk') parts.push(`固定防御−1；${modern ? `近战、射击及独立攻击魔法攻击+${traitParameter('berserkAttack', L)}` : L===1?'近战武器攻击+1':L===2?'所有武器攻击+1':L===3?'所有攻击+1':L===4?'武器攻击+2、独立魔法+1':`所有攻击+${traitParameter('berserkAttack', L)}`}，合法攻击伤害×${traitParameter('berserkDamage', L)}，不影响治疗、毒DOT或士气`);

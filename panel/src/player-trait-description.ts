@@ -9,7 +9,7 @@ import {
 } from '../../engine/src/trait-levels.js';
 
 /** 玩家说明只列用途与数值；参数仍读取当前单位使用的规则。 */
-export function playerTraitLevelDescription(id: string, level: number, model?: unknown, commandRangeModel?: Combatant['commandRangeModel'], recoveryModel?: Combatant['recoveryModel']): string {
+export function playerTraitLevelDescription(id: string, level: number, model?: unknown, commandRangeModel?: Combatant['commandRangeModel'], recoveryModel?: Combatant['recoveryModel'], flightModel?: Combatant['flightModel']): string {
   const L = Math.max(1, Math.min(10, Math.round(level)));
   const modern = progression({ traitLevelModel: model }), revised = stackingRevision({ traitLevelModel: model });
   const p = (key: TraitParameter) => traitParameter(key, L, model);
@@ -21,6 +21,7 @@ export function playerTraitLevelDescription(id: string, level: number, model?: u
   add(modern && !!environment, `${environment}武器与物理伤害×${value('meleeDamage')}`);
   switch (id) {
     case 'revival': return `每战${value('revivalUses')}次，倒下后恢复${value('revivalPercent')}%生命或入场人数；致命与非致命均生效`;
+    case 'flying': return `升空越过地面障碍；空中受到地面攻击时防御+${value('flightDefense')}；落地后可近战扑击`;
     case 'forest-lore':
       parts.push('无森林攻击惩罚');
       add(L >= 2, `森林移动每格${n(roughGroundCost(L))}点`);
@@ -58,7 +59,7 @@ export function playerTraitLevelDescription(id: string, level: number, model?: u
     case 'trample': return `近战冲锋较小体型目标时，伤害×${value('trampleMultiplier')}`;
     case 'anti-infantry': return `对未骑乘人形攻击+${value('counterAttack')}，伤害×${value('counterMultiplier')}`;
     case 'anti-large': return `对大型、巨型、载具及骑乘目标攻击+${value('counterAttack')}，伤害×${value('counterMultiplier')}`;
-    case 'anti-air': return `对空攻击+${value('counterAttack')}，伤害×${value('counterMultiplier')}，对空额外射程消耗${value('antiAirRangeSmall')}格（会战${value('antiAirRangeMass')}阵位）`;
+    case 'anti-air': return `对空攻击+${value(flightModel === 'maneuver-v1' ? 'flightDefense' : 'counterAttack')}，伤害×${value('counterMultiplier')}，对空额外射程消耗${value('antiAirRangeSmall')}格（会战${value('antiAirRangeMass')}阵位）`;
     case 'ap-weapon': return `动能穿透+${value('penetrationBudget')}`;
     case 'guardian': return `全伤害减免${pct('guardianReduction')}%，防御规格L${L}`;
     case 'kinetic-resist': case 'thermal-resist': case 'arcane-resist': {

@@ -297,6 +297,8 @@ export interface Combatant {
   /** V25：只在新战斗启用，次数随战斗快照保存，战后剥离。 */
   revivalModel?: 'revival-v1';
   revivalState?: { members: number; used: number };
+  /** V35: airborne maneuver defense; absent preserves historical flight. */
+  flightModel?: 'maneuver-v1';
   /** V23 入场冻结生命、全局轮及实际吸血恢复账本；预览只读。 */
   lifestealState?: { baseline: number; round: number; spent: number; remainder: number };
   controlActivation?: { sequence: number; targetId?: string };
@@ -656,6 +658,7 @@ export interface RulePack {
   /** V24 统率范围按有效特质等级成长；旧战斗保留固定范围。 */
   commandRangeModel?: 'graded-v1';
   revivalModel?: 'revival-v1';
+  flightModel?: 'maneuver-v1';
   /** V13 trait overhaul (工事据守、工兵、拒马、散兵单体与步枪编队自动散兵); absent keeps V12. */
   traitModel?: 'traits-v1';
   /** V14 skill pricing: 同时改两项属性的状态按两项附加效果计价; absent keeps V13. V20 skills-v3：组合控制每多一项抵抗难度 −1（原 −2）。V21 skills-v4：屏障、状态效力与士气量按单体创伤预算比例。 */

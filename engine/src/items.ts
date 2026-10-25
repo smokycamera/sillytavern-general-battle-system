@@ -202,6 +202,10 @@ export function compileItem(spec: ItemSpecification, identity: Pick<EquipmentCon
 export function itemSpecText(recipe: ItemEffectRecipe): string {
   if (recipe.form === 'worn') {
     const names = (recipe.traits ?? []).map((t) => traitRegistry().get(t.id)?.name ?? t.id);
+    const traits = recipe.traits ?? [];
+    if (!recipe.legacy && traits.length > 1 && Math.max(...traits.map(t => t.level ?? recipe.power)) === recipe.power
+      && traits.some(t => t.level !== undefined && t.level !== recipe.power))
+      return names.map((name, i) => name + 'L' + (traits[i]!.level ?? recipe.power)).join('+') + enhancementLabel(recipe.bonuses);
     // 旧版夜视镜、林行靴按 L5 专精转换，写出实际生效的专精等级，照抄回正文也得到同样的效果。
     const level = recipe.legacy && recipe.traits?.length === 1 && recipe.traits[0]!.level !== undefined ? recipe.traits[0]!.level : recipe.power;
     return (names.length ? names.join('、') : '佩戴') + 'L' + level + enhancementLabel(recipe.bonuses);

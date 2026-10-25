@@ -1,13 +1,20 @@
 import { phase2Value } from './phase2-traits.js';
 import { isIndirectCannonWeapon } from './loadout.js';
 import type { Combatant, ConditionDef, Weapon } from './types.js';
-import { activeTraitIds, activeConditionIds } from './trait-sources.js';
+import { activeTraitIds, activeConditionIds, effectiveTraitLevel } from './trait-sources.js';
+import { traitParameter } from './trait-parameters.js';
 import { standardConditionMap } from './conditions.js';
 const defaultConditions = standardConditionMap();
 export type FlightConditions = Pick<ReadonlyMap<string, ConditionDef>, 'get'>;
 export function isAirborne(unit: Combatant): boolean { return unit.rulesVersion === 'v2' && unit.airborne === true; }
 export function sameLayer(a: Combatant, b: Combatant): boolean { return isAirborne(a) === isAirborne(b) && (isAirborne(a) || (a.elevation ?? 0) === (b.elevation ?? 0)); }
 export function hasFlightAbility(unit: Combatant): boolean { return unit.rulesVersion === 'v2' && activeTraitIds(unit).includes('flying'); }
+/** Flight and AA use the same table; the normal attack-defense difference cancels them. */
+export function flightDefense(actor: Combatant, target: Combatant): number {
+  if (target.flightModel !== 'maneuver-v1' || !isAirborne(target) || isAirborne(actor)) return 0;
+  const level = effectiveTraitLevel(target, 'flying');
+  return level > 0 ? traitParameter('flightDefense', level) : 0;
+}
 export function flightCapabilityReason(unit: Combatant, defs: FlightConditions = defaultConditions): string | undefined {
   if (unit.status !== 'ready' || unit.hp <= 0) return '当前不能主动飞行';
   return flightMaintenanceReason(unit, defs);

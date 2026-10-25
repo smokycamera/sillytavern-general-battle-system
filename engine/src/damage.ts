@@ -1,5 +1,6 @@
 import { artilleryDirect, artillerySplash, artilleryRetention, BOUNDED_BLAST_MODEL, sprayerSplashAt } from './artillery-model.js';
 import { displayNumber } from './display-number.js';
+import { flightDefense } from './aerial.js';
 import { targetWidthLimit } from './target-width.js';
 import { WEAPON_CLASSES } from './data/weapons.js';
 import { progression, stackingRevision } from './progression.js';
@@ -655,7 +656,7 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
   // ---- 收集双方修正 ----
   // 攻击方视角：条件修正看 defender 的标签
   const moved = opts.moved ?? attacker.movedDuringActivation ?? extraMods.some(m => m.category === 'movement');
-  const ctxAtk = { moved, maxRange: weaponRange(weapon), chargeStraight: opts.chargeStraight, skillDelivery: opts.abilityDamage?.delivery, attacker, defender, charge, ranged, weapon, fieldTags: opts.fieldTags, localTerrain: opts.localTerrain,macroEnvironment:opts.macroEnvironment,heightRules:opts.heightRules,heightAdvantage:0, terrain: opts.attackerTerrain, opponentTerrain: opts.defenderTerrain, distance: opts.distance,
+  const ctxAtk = { flightModel: rules.flightModel, moved, maxRange: weaponRange(weapon), chargeStraight: opts.chargeStraight, skillDelivery: opts.abilityDamage?.delivery, attacker, defender, charge, ranged, weapon, fieldTags: opts.fieldTags, localTerrain: opts.localTerrain,macroEnvironment:opts.macroEnvironment,heightRules:opts.heightRules,heightAdvantage:0, terrain: opts.attackerTerrain, opponentTerrain: opts.defenderTerrain, distance: opts.distance,
     attackerHigher: opts.heightRules ? (opts.attackerHeight ?? 0) > (opts.defenderHeight ?? 0) : opts.attackerTerrain === 'hill' && opts.defenderTerrain !== 'hill' };
   if (!progression(attacker) && phase2Traits(attacker) && effectiveTraitLevel(attacker, 'sharpshooter') >= 10 && ranged && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) {
     let mitigation = 1; for (let i = 0; i < extraMods.length && mitigation > 0; i++) if (extraMods[i]!.category === 'movement' && extraMods[i]!.kind === 'atk' && extraMods[i]!.value < 0) { const n = Math.min(mitigation, -extraMods[i]!.value); extraMods[i] = { ...extraMods[i]!, value: extraMods[i]!.value + n }; mitigation -= n; }
@@ -682,6 +683,8 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
   const usableShield = !spray && shieldUsable({...defender,armsModel:rules.armsModel},original);
   const shieldDefender = usableShield ? defender : {...defender,shield:undefined};
   const defenderMods = [...(opts.defenderMods ?? [])];
+  const maneuverDefense = !opts.autoHit && rules.flightModel === 'maneuver-v1' ? flightDefense(attacker, defender) : 0;
+  if (maneuverDefense) defenderMods.push({ source: 'intrinsic', sourceId: 'flying:maneuver', name: '飞行机动', kind: 'def', type: 'flat', value: maneuverDefense });
   if (isArmsV2(rules.armsModel) && overloadPenalty(defender)) defenderMods.push({source:'intrinsic',name:'超载',kind:'def',type:'flat',value:-overloadPenalty(defender)});
   if (isArmsV2(rules.armsModel) && usableShield && ranged && shieldClass(defender)==='tower-shield') defenderMods.push({source:'intrinsic',name:'大盾遮蔽',kind:'def',type:'flat',value:1});
   if (isArmsV2(rules.armsModel) && usableShield && !ranged && shieldClass(defender)==='buckler' && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) defenderMods.push({source:'intrinsic',name:'小盾格挡',kind:'def',type:'flat',value:1});
