@@ -17,6 +17,7 @@ import { unitHeight, heightDefense, heightReach, standingTerrain, surfaceHeightA
 import { bonusMultiplier } from '../enhancements.js';
 import { regionalOrder, intentOrder, type UnitIntent } from './team-tactics.js';
 import { findIntentRoute, intentPlace, intentRouteFailure } from './intent-path.js';
+import { restoreOutdoorWallPlatforms } from './outdoor-wall-platforms.js';
 import { groundBlocked, isElevated, intactStructure, canClimbFrom, meleeHeightReason, meleeContact, structureDefense, structureDurability, damageStructure, weaponBreachBudget, structureTraitMultiplier, STRUCTURE_NAMES } from './layers.js';
 import { tacticalSkillCost, tacticalRestValue } from '../skill-economy.js';
 import { isEnduranceModel, fatiguePenalty, abilityCost, prepareResourceModel, recoverSp, skillExertion, resourceRound } from '../resources.js';
@@ -272,6 +273,7 @@ export class SmallBattle {
     this.nonLethalRule = opts.nonLethal === true;
     if (opts.battlefield) validateField(opts.battlefield);
     this.battlefield = opts.battlefield ? structuredClone(opts.battlefield) : undefined;
+    if (this.battlefield) restoreOutdoorWallPlatforms(this.battlefield);
     this.combatants = opts.combatants;
     this.xpMinimum = initialXpStrength(this.combatants, true);
     this.xpInitialStrength = initialXpStrength(this.combatants, true);
