@@ -34,6 +34,7 @@ export type ModType = 'flat' | 'mult';
 
 /** 条件生效约束：不满足则该修正不参与合成 */
 export interface ModCond {
+  damageChannel?: import('./types.js').DamageChannel;
   /** 仅在（被）冲锋时生效 */
   charge?: boolean;
   /** 仅在远程攻击中生效（盾墙类，挂在受击方） */
@@ -123,6 +124,7 @@ export interface ResolveContext {
 /** 条件是否满足 */
 function condMet(cond: ModCond | undefined, ctx: ResolveContext): boolean {
   if (!cond) return true;
+  if (cond.damageChannel !== undefined && cond.damageChannel !== (ctx.damageChannel ?? ctx.weapon?.channel ?? 'kinetic')) return false;
   if (cond.charge !== undefined && cond.charge !== !!ctx.charge) return false;
   if (cond.ranged !== undefined && cond.ranged !== !!ctx.ranged) return false;
   if (cond.vsTag !== undefined) {

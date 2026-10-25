@@ -154,7 +154,10 @@ export const V34_OVERFLOW_TW: RulePack = { ...V33_OVERFLOW_TW, id: 'v34-overflow
 /** Flight grades only affect new battles; old snapshots retain their saved targeting and defense. */
 export const V35_OVERFLOW_D20: RulePack = { ...V34_OVERFLOW_D20, id: 'v35-overflow-d20', name: 'V35 飞行机动性', flightModel: 'maneuver-v1' };
 export const V35_OVERFLOW_TW: RulePack = { ...V34_OVERFLOW_TW, id: 'v35-overflow-tw', name: 'V35 飞行机动性会战', flightModel: 'maneuver-v1' };
+export const V36_OVERFLOW_D20: RulePack = { ...V35_OVERFLOW_D20, id: 'v36-overflow-d20', name: 'V36 通道伤害与生命道具', enhancementModel: 'channels-life-v1' };
+export const V36_OVERFLOW_TW: RulePack = { ...V35_OVERFLOW_TW, id: 'v36-overflow-tw', name: 'V36 通道伤害与生命道具会战', enhancementModel: 'channels-life-v1' };
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V36_OVERFLOW_D20.id]: V36_OVERFLOW_D20, [V36_OVERFLOW_TW.id]: V36_OVERFLOW_TW,
   [V35_OVERFLOW_D20.id]: V35_OVERFLOW_D20, [V35_OVERFLOW_TW.id]: V35_OVERFLOW_TW,
   [V34_OVERFLOW_D20.id]: V34_OVERFLOW_D20, [V34_OVERFLOW_TW.id]: V34_OVERFLOW_TW,
   [V33_OVERFLOW_D20.id]: V33_OVERFLOW_D20, [V33_OVERFLOW_TW.id]: V33_OVERFLOW_TW,

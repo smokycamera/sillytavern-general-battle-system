@@ -44,10 +44,10 @@ describe('生命上限贯穿正文、编辑与档案', () => {
   it('单位更新与手动编辑统一限制生命；成员上限不影响人数', () => {
     const draft = newUnitDraft(); draft.name = '单体'; draft.hpMax = draft.hp = '100000';
     const unit = buildUnit(draft, registry, 'single'); const record = unitRecordFromCombatant(unit);
-    expect(unit.base.hpMax).toBe(2000); expect(updateUnitRecord(record, { hp: 100000, hpMax: 100000 }, registry).hp).toBe(2000);
-    const edit = unitDraftFromRecord(record); edit.hpMax = edit.hp = '100000'; expect(editUnitBuild(record, edit, registry).base.hpMax).toBe(2000);
+    expect(unit.base.hpMax).toBe(SINGLE_LIFE_LIMIT); expect(updateUnitRecord(record, { hp: 100000, hpMax: 100000 }, registry).hp).toBe(SINGLE_LIFE_LIMIT);
+    const edit = unitDraftFromRecord(record); edit.hpMax = edit.hp = '100000'; expect(editUnitBuild(record, edit, registry).base.hpMax).toBe(SINGLE_LIFE_LIMIT);
     draft.scale = 'company'; draft.hpMax = draft.hp = '100000'; draft.memberHp = '100000';
-    const company = buildUnit(draft, registry, 'company'); expect(company.hp).toBe(100000); expect(company.formation!.memberHp).toBe(2000);
-    const loaded = materializeUnitRecord(unitRecordFromCombatant(company), registry); expect(loaded.hp).toBe(100000); expect(loaded.formation!.memberHp).toBe(2000);
+    const company = buildUnit(draft, registry, 'company'); expect(company.hp).toBe(100000); expect(company.formation!.memberHp).toBe(SINGLE_LIFE_LIMIT);
+    const loaded = materializeUnitRecord(unitRecordFromCombatant(company), registry); expect(loaded.hp).toBe(100000); expect(loaded.formation!.memberHp).toBe(SINGLE_LIFE_LIMIT);
   });
 });

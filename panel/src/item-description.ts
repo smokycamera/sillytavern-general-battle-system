@@ -12,7 +12,7 @@ const ZONES: Record<string, string> = { fire: '火墙', poison: '毒雾', smoke:
 const MOVES: Record<string, string> = { dash: '突进', blink: '闪现', withdraw: '后撤' };
 type EffectStat = keyof typeof BONUS_NAMES;
 export function wornEffectAmount(stat: EffectStat, value: number): string {
-  const percent = stat === 'damage' || stat.endsWith('Damage');
+  const percent = stat === 'damage' || stat === 'health' || stat.endsWith('Damage');
   const unit = percent ? '%' : '';
   return (value > 0 ? '+' : '') + displayNumber(value * (percent ? 100 : 1)) + unit;
 }
@@ -45,7 +45,7 @@ function effectText(e: EffectOp, a: Ability): string {
 }
 /** 行动道具：怎么用、多远、效果。 */
 export function itemAbilitySummary(a: Ability): string {
-  return [a.itemQuick ? '自身或相邻友军，可用加速动作' : a.usesPerBattle ? `每战${a.usesPerBattle}次，占主行动` : '占主行动',
+  return [a.usesPerBattle ? `每战${a.usesPerBattle}次` : '', a.itemQuick ? '自身或相邻友军，可用加速动作' : '占主行动',
     a.range && a.range.max > 1 ? `射程${displayNumber(gridAbility(a, 'arms-v2').range!.max)}格` : '', ...a.effects.map((e) => effectText(e, a)), a.delivery === 'magic' ? '魔法' : ''].filter(Boolean).join('，');
 }
 export function itemPassiveSummary(p: ItemPassive, model?: unknown, detailed = true): string {

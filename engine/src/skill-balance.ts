@@ -1,8 +1,9 @@
 import type { Ability } from './types.js';
 import { conditionEffectWeight, type SkillModel } from './skill-model.js';
+import { CHANNEL_BUFF_CONDITIONS } from './channel-buffs.js';
 
 export const HARD_CONTROLS = new Set(['stunned', 'restrained', 'disarmed', 'silenced']);
-export const BUFF_CONDITIONS = new Set(['inspired', 'encouraged', 'empowered', 'blessed', 'hasted', 'confident']);
+export const BUFF_CONDITIONS = new Set(['inspired', 'encouraged', 'empowered', 'blessed', 'hasted', 'confident', ...CHANNEL_BUFF_CONDITIONS]);
 /** 投送方式、能量通道和几何形状不占效果预算；skills-v1 起同时改两项属性的状态计两项。 */
 export function genericEffectCount(ability: Ability, formula?: SkillModel): number {
   return Math.max(1, ability.effects.filter(e => e.op !== 'damage').reduce((sum, e) => sum + (e.op === 'condition' ? conditionEffectWeight(e.conditionId, formula) : 1), 0));
