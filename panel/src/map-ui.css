@@ -8,8 +8,9 @@
 }
 
 /* 视口与标尺。适应模式按可用宽度自动定格宽，但不小于 44px 触控下限。 */
-.tactical-workspace .grid-camera { container-type:inline-size; overflow:auto; max-width:100%; height:min(72vh,720px); border:1px solid var(--line); border-radius:8px; overscroll-behavior:contain; background:var(--panel); }
-.grid-stage { --ruler:18px; --cell:clamp(44px, calc((100cqi - var(--ruler) - 2px) / var(--columns)), 78px); width:max-content; min-width:100%; }
+.tactical-workspace .grid-camera { container-type:inline-size; overflow:auto; max-width:100%; height:min(72vh,720px); border:1px solid var(--line); border-radius:8px; overscroll-behavior:contain; background:var(--panel); touch-action:none;user-select:none }
+.grid-camera.map-dragging{cursor:grabbing}
+.grid-stage { --ruler:18px; --cell:clamp(44px, calc((100cqi - var(--ruler) - 2px) / var(--columns)), 78px); width:max-content;zoom:var(--map-scale,1) }
 .tactical-workspace[data-map-zoom="large"] .grid-stage { --cell:88px; }
 .tactical-workspace[data-map-zoom="compact"] .grid-stage { --cell:44px; }
 .grid-ruler-x { position:sticky; top:0; z-index:6; display:flex; height:var(--ruler); background:var(--panel); border-bottom:1px solid var(--line); }
@@ -77,17 +78,20 @@
 .tactical-workspace .grid-status { display:none; }
 @container (min-width: 70px) { .tactical-workspace .grid-affiliation { display:inline; } }
 @container (min-width: 84px) { .tactical-workspace .grid-status { display:inline; } }
-/* 同格多支：逐行排列“符号 + 数值”，行高按支数均分。 */
+/* 同格多支：每支保留两行，上行小图标与姓名，下行完整血量。 */
 .tactical-workspace .grid-cell.stacked { flex-direction:column; flex-wrap:nowrap; align-items:stretch; justify-content:center; gap:1px; padding:1px 2px; }
-.tactical-workspace .grid-cell.stacked .grid-piece { flex-direction:row; justify-content:center; align-items:center; gap:2px; width:100%; min-height:0; padding:0; }
-.tactical-workspace .grid-cell.stacked .grid-token { flex:none; width:min(calc(var(--cell) * .3), calc((var(--cell) - 6px) / var(--stack, 2) - 2px)); height:min(calc(var(--cell) * .3), calc((var(--cell) - 6px) / var(--stack, 2) - 2px)); }
-.tactical-workspace .grid-cell.stacked .grid-piece-name, .tactical-workspace .grid-cell.stacked .grid-badges, .tactical-workspace .grid-cell.stacked .grid-affiliation, .tactical-workspace .grid-cell.stacked .grid-status { display:none; }
-.tactical-workspace .grid-cell.stacked .grid-hp { margin:0; padding:0 2px; min-width:0; font-size:clamp(8px, calc(var(--cell) * .13), 10px); line-height:1.15; }
-.tactical-workspace .grid-stack-count { position:absolute; z-index:3; left:2px; bottom:2px; padding:0 3px; border-radius:4px; font-size:9px; background:var(--panel); color:var(--gold); }
+.tactical-workspace .grid-cell.stacked .grid-piece { display:grid; grid-template-columns:max-content minmax(0,1fr); grid-template-rows:auto auto; align-items:center; gap:0 2px; width:100%; min-height:0; padding:0; }
+.tactical-workspace .grid-cell.stacked .grid-token { grid-column:1;grid-row:1;width:clamp(10px,calc(var(--cell) * .16),14px);height:clamp(10px,calc(var(--cell) * .16),14px);box-shadow:0 0 0 1px var(--side),0 0 0 2px rgba(10,8,6,.85); }
+.tactical-workspace .grid-cell.stacked .grid-token .unit-symbol{width:90%;height:90%}
+.tactical-workspace .grid-cell.stacked .grid-piece.actor .grid-token{box-shadow:0 0 0 1px var(--gold),0 0 0 2px rgba(10,8,6,.85)}
+.tactical-workspace .grid-cell.stacked .grid-piece.status-dying .grid-token::after{font-size:clamp(10px,calc(var(--cell) * .16),14px)}
+.tactical-workspace .grid-cell.stacked .grid-piece-name{grid-column:2;grid-row:1;display:block;min-width:0;width:100%;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(9px,calc(var(--cell) * .13),10px);line-height:1.1}
+.tactical-workspace .grid-cell.stacked .grid-piece-name>span{display:inline}
+.tactical-workspace .grid-cell.stacked .grid-badges, .tactical-workspace .grid-cell.stacked .grid-affiliation, .tactical-workspace .grid-cell.stacked .grid-status { display:none; }
+.tactical-workspace .grid-cell.stacked .grid-hp { grid-column:1 / -1;grid-row:2;margin:0;padding:0 1px;min-width:0;text-align:right;font-size:clamp(8px,calc(var(--cell) * .13),10px);line-height:1.15; }
+.tactical-workspace .grid-stack-count { position:absolute; z-index:2; left:2px; bottom:2px; padding:0 3px; border-radius:4px; font-size:9px; background:var(--panel); color:var(--gold); }
 @container (max-width: 60px) {
-  .tactical-workspace .grid-stack-count,.tactical-workspace .grid-cell.stacked .grid-token{display:none}
-  .tactical-workspace .grid-cell.stacked .grid-piece{gap:0}
-  .tactical-workspace .grid-cell.stacked .grid-hp{flex:1;padding:0 1px}
+  .tactical-workspace .grid-stack-count{display:none}
 }
 
 /* 格内标记。 */
