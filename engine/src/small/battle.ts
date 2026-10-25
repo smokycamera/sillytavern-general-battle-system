@@ -1376,7 +1376,7 @@ export class SmallBattle {
           conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ranged: damage.tag === 'ranged' ? true : undefined,
           ...this.skillAttackOptions(caster, target, ability, damage, !!move, move?.charge) })
           : healing && !reason ? { healing: Math.min(recoveryCapacity(target), healingYield(actor, target, healing.amount ?? diceAvg(healing.dice!), !!ability.itemSourceId, healing.power)) } : moraleEffect && !reason ? moraleChangePreview({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, target, moraleEffect.amount, this.rules.morale.breakAt, this.traitRegistry, ability.effects.flatMap((e) => e.op === 'condition' ? [{ id: e.conditionId, dur: e.dur }] : [])) : undefined;
-        const area = (damage?.shape ?? ability.shape) === 'burst' && !reason ? this.abilityDamageTargets(caster, target, ability, true) : [];
+        const area = (this.rules.areaTargetingModel === 'impact-v1' && ability.area || (damage?.shape ?? ability.shape) === 'burst') && !reason ? this.abilityDamageTargets(caster, target, ability, true) : [];
         const areaPreviews = damage && this.rules.resolutionVersion === 'v2' ? area.map((affected) => ({
           targetId: affected.id, ...this.previewAttackWithEnvironment({ attacker: caster, defender: affected, rules: this.rules,
             conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(caster, affected, ability, damage, !!move, move?.charge && affected.id === target.id) }),
@@ -1729,12 +1729,13 @@ export class SmallBattle {
   }
   /** 不考虑技能位移、按施术者当前位置判断目标是否可选。 */
   private skillTargetReasonAt(actor: Combatant, ability: Combatant['abilities'][number], target: Combatant, recipient = false): string | undefined {
+    const areaRecipient = recipient && this.rules.areaTargetingModel === 'impact-v1' && !ability.weaponUse && ability.requires !== 'melee' && ability.requires !== 'shield';
     if (this.battlefield?.layerVersion && ability.delivery === 'melee') { const height = meleeHeightReason(this.battlefield, actor, target); if (height) return height; }
     ability = this.battlefield ? gridAbility(ability, actor.armsModel) : ability;
     if (ability.target === 'zone') return !this.battlefield || !this.cellVisible(actor.side,target.pos!) ? '请指定可见的地面位置' : abilityTargetReason({actor,ability,target,distance:this.dist(actor,target),field:this.battlefield}) ?? (unitLineOfSight(this.battlefield,actor,target) ? undefined : '这里被障碍物遮挡');
     const controlAreaIds = !recipient && controlPolicy(actor) === 'taunted' && (ability.area || ability.shape === 'burst' || ability.effects.some(e => e.op === 'damage' && e.shape === 'burst')) ? this.abilityDamageTargets(actor, target, ability, true).map(u => u.id) : undefined;
-    const reason = abilityTargetReason({ actor, ability, target, distance: this.dist(actor, target), field: this.battlefield, units: this.combatants, controlAreaIds, controlRecipient: recipient })
-      ?? (this.battlefield && !ability.weaponUse ? this.sightReason(actor, target) : undefined);
+    const reason = abilityTargetReason({ actor, ability, target, distance: this.dist(actor, target), field: this.battlefield, units: this.combatants, controlAreaIds, controlRecipient: recipient, areaRecipient })
+      ?? (this.battlefield && !ability.weaponUse && !areaRecipient ? this.sightReason(actor, target) : undefined);
     if (reason) return reason;
     if (this.battlefield && target.status === 'dying' && ability.effects.some(e => e.op === 'heal')
       && !canOccupy(this.battlefield, this.visibleCombatants(actor.side), target, target.pos!)) return '濒死单位所在格没有起身空间，请先让出救援位置';
@@ -1758,7 +1759,7 @@ export class SmallBattle {
     ability = this.battlefield ? gridAbility(ability, actor.armsModel) : ability;
     const pivot = ability.recipe?.category === 'physical-area' && ability.damageBasis && !isRangedWeapon(skillWeapon(actor, ability)) ? actor : target;
     return [target, ...this.visibleCombatants(actor.side).filter((u) => u.id !== target.id && !combatHostile(u, target, this.combatants) && u.status === 'ready' && this.dist(u, pivot) <= 1
-      && !this.skillTargetReasonAt(actor, ability, u, true))
+      && (!this.battlefield || this.rules.areaTargetingModel !== 'impact-v1' || sameLayer(pivot, u) && unitLineOfSight(this.battlefield, pivot, u)) && !this.skillTargetReasonAt(actor, ability, u, true))
       .sort((a, b) => a.id.localeCompare(b.id))].slice(0, 2);
   }
   /** 执行技能位移：突进/后撤沿路线逐格走（后撤不触发近战借机），闪现直接落位；返回战报短句。
@@ -1873,7 +1874,7 @@ export class SmallBattle {
     if (interrupted) logBits.push(interrupted);
 
     const castTargets = chosenTarget && !interrupted && !movementOnly ? this.abilityDamageTargets(actor, chosenTarget, ability, ability.shape === 'burst' || ability.effects.some((e) => 'shape' in e && e.shape === 'burst')) : [actor];
-    const effectTargets = (area: boolean) => area ? castTargets : [chosenTarget ?? actor];
+    const effectTargets = (area: boolean) => area || this.rules.areaTargetingModel === 'impact-v1' && ability.area ? castTargets : [chosenTarget ?? actor];
     const resolutions: AttackResolution[] = [];
     let summonsSubmitted = false;
     let heal = 0;

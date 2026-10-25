@@ -156,7 +156,10 @@ export const V35_OVERFLOW_D20: RulePack = { ...V34_OVERFLOW_D20, id: 'v35-overfl
 export const V35_OVERFLOW_TW: RulePack = { ...V34_OVERFLOW_TW, id: 'v35-overflow-tw', name: 'V35 飞行机动性会战', flightModel: 'maneuver-v1' };
 export const V36_OVERFLOW_D20: RulePack = { ...V35_OVERFLOW_D20, id: 'v36-overflow-d20', name: 'V36 通道伤害与生命道具', enhancementModel: 'channels-life-v1' };
 export const V36_OVERFLOW_TW: RulePack = { ...V35_OVERFLOW_TW, id: 'v36-overflow-tw', name: 'V36 通道伤害与生命道具会战', enhancementModel: 'channels-life-v1' };
+export const V37_OVERFLOW_D20: RulePack = { ...V36_OVERFLOW_D20, id: 'v37-overflow-d20', name: 'V37 范围波及', areaTargetingModel: 'impact-v1' };
+export const V37_OVERFLOW_TW: RulePack = { ...V36_OVERFLOW_TW, id: 'v37-overflow-tw', name: 'V37 范围波及会战', areaTargetingModel: 'impact-v1' };
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V37_OVERFLOW_D20.id]: V37_OVERFLOW_D20, [V37_OVERFLOW_TW.id]: V37_OVERFLOW_TW,
   [V36_OVERFLOW_D20.id]: V36_OVERFLOW_D20, [V36_OVERFLOW_TW.id]: V36_OVERFLOW_TW,
   [V35_OVERFLOW_D20.id]: V35_OVERFLOW_D20, [V35_OVERFLOW_TW.id]: V35_OVERFLOW_TW,
   [V34_OVERFLOW_D20.id]: V34_OVERFLOW_D20, [V34_OVERFLOW_TW.id]: V34_OVERFLOW_TW,
