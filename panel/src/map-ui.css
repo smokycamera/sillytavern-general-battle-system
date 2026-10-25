@@ -3,7 +3,7 @@
    底图是一幅暗调的画，格内文字、迷雾与数值底板在深浅两种主题下都按暗底取色。 */
 .tactical-workspace {
   --map-ink:#f1e7cf; --map-dim:#b9c2bf; --map-mid:#e0b25a; --map-low:#ef8a74;
-  --fog:rgba(8,6,4,.46); --hp-plate:rgba(10,13,15,.62);
+  --fog:rgba(8,6,4,.46); --hp-plate:rgba(10,13,15,.62); --hp-plate-opaque:#0a0d0f;
   --token-ally:#7fa9c8; --token-enemy:#c8674f; --token-neutral:#b5ad98;
 }
 
@@ -45,7 +45,7 @@
 .tactical-workspace .grid-cell.trace-pulse { animation:trace-pulse 2.2s ease-out; }
 
 /* 棋子。 */
-.tactical-workspace .grid-piece { position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; width:100%; min-width:0; padding:0 2px; line-height:1.15; font-weight:600; pointer-events:none; white-space:nowrap; }
+.tactical-workspace .grid-piece { position:relative; z-index:3; display:flex; flex-direction:column; align-items:center; width:100%; min-width:0; padding:0 2px; line-height:1.15; font-weight:600; pointer-events:none; white-space:nowrap; }
 .grid-token { --side:var(--token-neutral); position:relative; display:grid; place-items:center; width:calc(var(--cell) * .44); height:calc(var(--cell) * .44); border-radius:50%; background:radial-gradient(circle at 38% 32%, #4a423a, #1c1814 72%); color:#eadcbc; box-shadow:0 0 0 2px var(--side), 0 0 0 3.5px rgba(10,8,6,.85), 0 4px 7px rgba(0,0,0,.65); }
 .grid-piece.ally .grid-token { --side:var(--token-ally); }
 .grid-piece.enemy .grid-token { --side:var(--token-enemy); }
@@ -84,7 +84,11 @@
 .tactical-workspace .grid-cell.stacked .grid-piece-name, .tactical-workspace .grid-cell.stacked .grid-badges, .tactical-workspace .grid-cell.stacked .grid-affiliation, .tactical-workspace .grid-cell.stacked .grid-status { display:none; }
 .tactical-workspace .grid-cell.stacked .grid-hp { margin:0; padding:0 2px; min-width:0; font-size:clamp(8px, calc(var(--cell) * .13), 10px); line-height:1.15; }
 .tactical-workspace .grid-stack-count { position:absolute; z-index:3; left:2px; bottom:2px; padding:0 3px; border-radius:4px; font-size:9px; background:var(--panel); color:var(--gold); }
-@container (max-width: 60px) { .tactical-workspace .grid-stack-count { display:none; } }
+@container (max-width: 60px) {
+  .tactical-workspace .grid-stack-count,.tactical-workspace .grid-cell.stacked .grid-token{display:none}
+  .tactical-workspace .grid-cell.stacked .grid-piece{gap:0}
+  .tactical-workspace .grid-cell.stacked .grid-hp{flex:1;padding:0 1px}
+}
 
 /* 格内标记。 */
 .tactical-workspace .grid-landmark { position:absolute; z-index:2; left:3px; top:1px; color:var(--gold); font-size:10px; text-shadow:0 0 3px rgba(0,0,0,.8); pointer-events:none; }
@@ -97,7 +101,9 @@
 .tactical-workspace .structure-hp { position:absolute; z-index:2; left:50%; bottom:2px; transform:translateX(-50%); max-width:calc(100% - 4px); padding:0 3px; border-radius:3px; border-left:2px solid var(--gold); font-size:9px; line-height:13px; font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; background:var(--hp-plate); color:var(--map-mid); pointer-events:none; }
 .tactical-workspace .structure-hp.raised { bottom:auto; top:1px; }
 .tactical-workspace .grid-zone { position:absolute; z-index:2; left:2px; right:2px; bottom:2px; font-size:9px; line-height:14px; border-radius:3px; background:color-mix(in srgb,var(--panel) 80%,transparent); color:var(--gold); border:1px solid var(--gold); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.tactical-workspace .grid-zone{z-index:3;pointer-events:none;line-height:12px;max-height:24px;white-space:normal}.field-effect-detail{color:var(--gold)}
+.tactical-workspace .grid-zone{z-index:2;pointer-events:none;line-height:12px;max-height:24px;white-space:normal}.field-effect-detail{color:var(--gold)}
+.tactical-workspace .grid-zone.occupied{top:1px;bottom:auto;right:auto;max-width:calc(100% - 4px);max-height:12px;line-height:11px;white-space:nowrap;padding:0 2px}
+.tactical-workspace .grid-hp{background:var(--hp-plate-opaque)}
 .tactical-workspace .grid-terrain { position:absolute; z-index:2; left:2px; right:2px; bottom:2px; font-size:10px; line-height:15px; border-radius:3px; background:color-mix(in srgb,var(--panel) 82%,transparent); color:var(--txt); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tactical-workspace .battle-trace { z-index:4; }
 .tactical-workspace .battle-damage-float { z-index:8; }

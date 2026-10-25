@@ -328,6 +328,8 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
     const zones = liveZones.filter(z => (z.side === 'ally' || seen[cell]) && Math.abs(z.x - cell % field.width) + Math.abs(z.y - Math.floor(cell / field.width)) <= z.radius);
     const works = liveWorks.filter(u => u.entrenchedAt === cell && (u.side === 'ally' || seen[cell]));
     const effectLabels = [...(works.length ? [worksLabelShort(works)] : []), ...new Set(zones.map(zoneLabel))];
+    const effectText = occupants.length ? (works.length ? '工事' : effectLabels[0]?.split(' ')[0] ?? '')
+      + (effectLabels.length > 1 ? ' +' + (effectLabels.length - 1) : '') : effectLabels.join('·');
     const ghosts = lastSeen.get(cell) ?? [];
     const ghostText = ghosts.map((t) => '最后目击敌方' + t.name + '（' + ago(t.round) + '）').join('、');
     const label = (goalCell === cell ? field.objective.kind === 'escape' ? '护送撤离点 ' : '夺点目标 ' : controlCells.has(cell) ? '占领区域 ' : '') + effectLabels.join('、')+' '+cellLabel(field, cell) + ' ' + (landmark ?? '') + ' ' + terrainName(field, cell) + ' '+heightDescription(field,cell)+' ' + occupants.map((u) => (u.side === 'ally' ? '我方' : u.side === 'enemy' ? '敌方' : '第三方') + u.name).join('、') + (ghostText ? ' ' + ghostText : '');
@@ -340,7 +342,7 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
       + (occupants.length > 1 ? '<span class="grid-stack-count">' + occupants.length + '队</span>' : '')
       + (ghosts.length ? `<span class="grid-last-seen${occupants.length ? ' raised' : ''}" aria-hidden="true" title="${esc(ghostText)}">?${ghosts.length > 1 ? ghosts.length : ''}<small>${esc(ago(Math.max(...ghosts.map((t) => t.round))))}</small></span>` : '')
       + (structure?.hp && !terrainLabel && (structure.hp < structure.hpMax || inspected) ? `<span class="structure-hp${occupants.length || zones.length ? ' raised' : ''}" aria-hidden="true">${displayNumber(structure.hp)}/${displayNumber(structure.hpMax)}</span>` : '')
-      + (effectLabels.length ? '<span class="grid-zone" title="' + esc(effectLabels.join('、')) + '">' + effectLabels.join('·') + '</span>' : '')
+      + (effectLabels.length ? '<span class="grid-zone' + (occupants.length ? ' occupied' : '') + '" title="' + esc(effectLabels.join('、')) + '">' + esc(effectText) + '</span>' : '')
       + (terrainLabel ? '<span class="grid-terrain">' + (structure ? structureDisplayName(field, cell) + (structure.hp ? ' L' + structure.level + ' · ' + displayNumber(structure.hp) + '/' + displayNumber(structure.hpMax) : '·残骸') : field.generation?.scene === 'interior' && terrain === 'street' ? '室内地面' : terrainNames[terrain]) + '</span>' : '');
     const attrs = `class="grid-cell ${flags}" data-action="grid-cell" data-cell="${cell}" data-coordinate="${cellLabel(field, cell)}" data-unit-ids="${esc(JSON.stringify(occupants.map(u => u.id)))}" data-acting="${occupants.some(u => u.id === active?.id)}" data-selected="${occupants.some(u => u.id === actor?.id)}"${occupants.length > 1 ? ` style="--stack:${occupants.length}"` : ''} aria-label="${esc(label)}" aria-pressed="${inspected}"`;
     // 内容签名：点选只改动少数格，其余格在打补丁时整格跳过。
