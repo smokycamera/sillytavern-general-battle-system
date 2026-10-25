@@ -30,10 +30,10 @@ describe('携行道具与墙顶目标', () => {
   it('相邻膏剂可用于墙顶，空地隔层和距离、遮挡继续限制道具', () => {
     const quick = setup(true), target = () => quick.b.getActionOptions('a').find(o => o.id === quick.ability.id)!.targets!.find(x => x.targetId === 't')!;
     expect(target().enabled).toBe(true);
+    quick.t.airborne = true; expect(target().reason).toContain('同一空地层'); quick.t.airborne = false;
     const hp = quick.t.hp; expect(quick.b.useAbility('a', quick.ability.id, 't').ok).toBe(true); expect(quick.t.hp).toBeGreaterThan(hp);
     const { a, t, b, ability } = setup(), reason = () => b.getActionOptions('a').find(o => o.id === ability.id)!.targets!.find(x => x.targetId === 't')!.reason;
-    t.airborne = true; expect(reason()).toContain('同一空地层');
-    t.airborne = false; t.pos = 4; b.battlefield!.structures![4] = createStructure('wall', 3, { top: true });
+    t.pos = 4; b.battlefield!.structures![4] = createStructure('wall', 3, { top: true });
     expect(reason()).toContain('射程');
     t.pos = 37; b.battlefield!.structures![37] = createStructure('wall', 3, { top: true });
     b.battlefield!.structures![36]!.obstructionHeight = 10;

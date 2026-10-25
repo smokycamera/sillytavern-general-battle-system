@@ -2175,11 +2175,15 @@ export class SmallBattle {
       const destination = gateCommand || structureCommand || intent.cell === undefined ? undefined : intentPlace(field, unit, intent.cell) ?? { cell: intent.cell, layer: 'ground' as const };
       const attackPosition = (actor: Combatant) => !!target && [actor.weapon, ...(actor.sidearm ? [actor.sidearm] : [])].some(weapon => {
         const ranged = isRangedWeapon(weapon), adapted = gridWeapon(weapon, this.rules.combatModel === MEMBER_HEALTH_MODEL, this.rules.armsModel);
-        return !weaponTargetReason({ actor, target, weapon: adapted, ranged, distance: this.dist(actor, target), field, units: known })
-          && (ranged || meleeContact(field, actor, target)) && (weapon?.indirect
+        // 扑击的接敌格按落地后的状态判定，不能把目标头顶当作可攻击落点。
+        const landing = isAirborne(actor) && !isAirborne(target) && !ranged;
+        const strike = landing ? { ...actor, airborne: false, elevation: undefined } : actor;
+        if (landing && !canOccupy(field, known, strike, strike.pos!)) return false;
+        return !weaponTargetReason({ actor: strike, target, weapon: adapted, ranged, distance: this.dist(strike, target), field, units: known })
+          && (ranged || meleeContact(field, strike, target)) && (weapon?.indirect
             ? known.some(observer => observer.side === unit.side && observer.status === 'ready' && canSpot(this.observationContext(known), observer, target))
-            : unitLineOfSight(field, actor, target))
-          && (!ranged || !rangedScreen(actor, target, weapon, known, { mode: 'small', width: field.width, battlefield: field }, this.conditionDefMap()));
+            : unitLineOfSight(field, strike, target))
+          && (!ranged || !rangedScreen(strike, target, weapon, known, { mode: 'small', width: field.width, battlefield: field }, this.conditionDefMap()));
       });
       const goal = (actor: Combatant) => gateCommand ? !this.gatePositionReason(actor, intent.cell!, known)
         : structureCommand ? structureMode(actor) !== undefined

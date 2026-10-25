@@ -58,7 +58,7 @@ describe('正文原子事务', () => {
     const ids = narrativeIds(blessed), skillId = ids.publicId(ability.id), sourceId = ids.publicId(effect.id);
     expect(skillId).toBe('k1'); expect(sourceId).toMatch(/^s\d+$/);
     const prompt = narrativeProjection(blessed, '调整技能');
-    expect(prompt).toContain(`"id":"${skillId}"`); expect(prompt).toContain(`"source":"${sourceId}"`);
+    expect(prompt).toContain(`id="${skillId}"`); expect(prompt).toContain(`"source":"${sourceId}"`);
     expect(prompt).not.toContain(`"id":"${ability.id}"`); expect(prompt).not.toContain(`"source":"${effect.id}"`);
     const data = { skills: [{ id: skillId, values: { power: 5 } }], preparedAbilityIds: [skillId],
       abilityState: [{ abilityId: ids.publicId(ability.cooldownGroup ?? ability.id), cdLeft: 1, used: 1 }] };
@@ -90,7 +90,7 @@ describe('正文原子事务', () => {
     expect(ids.publicId(unitId)).toBe('u1');
     expect(ids.publicId(itemId)).toBe('i1');
     expect(prompt).toContain(`"id":"${ids.publicId(unitId)}"`);
-    expect(prompt).toContain(`"id":"${ids.publicId(itemId)}"`);
+    expect(prompt).toContain(`id="${ids.publicId(itemId)}"`);
     expect(prompt).not.toContain(unitId); expect(prompt).not.toContain(itemId);
     const binding = captureGeneration(fixture.save, fixture.ns, 'g1'); binding.complete = true;
     const source = { ...fixture.source, text: `<tb><unit_update id="${ids.publicId(unitId)}" hp="60"/><take id="${ids.publicId(itemId)}" qty="1"/></tb>` };

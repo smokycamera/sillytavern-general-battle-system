@@ -88,8 +88,8 @@ describe('spawn 携带道具与收缴', () => {
     expect(activeTraitIds(fielded)).toEqual(expect.arrayContaining(['stalk', 'forest-lore'])); expect(traitLevel(fielded, 'forest-lore')).toBe(6);
     // 事实清单列出道具形态与 spec 原文，充能道具给每战次数。
     const facts = narrativeProjection(save, '');
-    expect(facts).toContain('"spec":"充能魔法范围热能L5","charges":1');
-    expect(facts).toContain('"kind":"一次性道具","spec":"物理范围投射L4"');
+    expect(facts).toContain('kind="充能道具" items="火球魔杖:充能魔法范围热能L5"');
+    expect(facts).toContain('kind="一次性道具" items="手雷:物理范围投射L4×');
   });
   it('阵亡或撤离的敌方单位身上剩余的道具可以收缴进公共库存；活着的敌人与我方单位不能收缴', () => {
     let { save } = commit(empty(), '<spawn name="敌将" side="enemy" scale="hero" level="5" weapon="剑L5" items="手雷:物理范围投射L4×3,护身符:佩戴L4+4防御,密信"/><spawn name="我方" side="ally" scale="hero" weapon="剑L3" items="手雷:物理范围投射L4"/>');
@@ -113,7 +113,7 @@ describe('专精等级与 archetype 的正文写法', () => {
     const id = save.storage![0]!.id;
     expect(save.storage![0]!.snapshot).toMatchObject({ traits: expect.arrayContaining(['forest-lore', 'ap-weapon', 'night-fighter']), traitLevels: { 'forest-lore': 8, 'ap-weapon': 3, 'night-fighter': 10 } });
     expect(notices.join()).toContain('「夜战专精L12」按L10');
-    expect(narrativeProjection(save, '')).toContain('"traits":["forest-loreL8","ap-weaponL3","night-fighterL10"]');
+    expect(narrativeProjection(save, '')).toContain('traits="林地专精L8,破甲L3,夜战专精L10"');
     save = commit(save, '<unit_set id="u1" traits="林地专精L6,夜战专精"/>').save;
     expect(save.storage!.find((r) => r.id === id)!.snapshot!.traitLevels).toEqual({ 'forest-lore': 6, 'night-fighter': 1 });
     save = commit(save, '<unit_set id="u1" traits="林地专精"/>').save;
