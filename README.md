@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **3.0.10**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **3.0.11**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 

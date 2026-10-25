@@ -262,9 +262,9 @@ export function buildEnterableBuilding(field: BattlefieldSpec, mark: LandmarkPla
         }
         const level = mark.level ?? field.structures![field.city?.frontline[0] ?? -1]?.level ?? 3;
         for (const p of rim) {
-            field.structures![p] = createStructure('wall', level, { top: false, ...mark.id ? { entityId: mark.id } : {} });
+            field.structures![p] = createStructure('wall', level, { top: true, access: neighbors(field, p).filter(n => floorSet.has(n)), ...mark.id ? { entityId: mark.id } : {} });
         }
-        field.structures![door] = createStructure('gate', level, { top: false, gateState: 'open', ...mark.id ? { entityId: mark.id } : {} });
+        field.structures![door] = createStructure('gate', level, { top: true, access: neighbors(field, door).filter(n => floorSet.has(n)), gateState: 'open', ...mark.id ? { entityId: mark.id } : {} });
         for (const p of connection?.cells ?? []) {
             field.structures![p] = null;
             field.overlays![p] = ['road'];
@@ -289,6 +289,10 @@ export function buildEnterableBuilding(field: BattlefieldSpec, mark: LandmarkPla
             if (furniture !== undefined)
                 field.structures![furniture] = createStructure('cover', level);
         }
+        // An adjacent city wall may still list the new perimeter as a ground-side staircase.
+        const perimeter = new Set(rim);
+        for (const s of field.structures!) if (s?.access?.some(p => perimeter.has(p)))
+            s.access = s.access.filter(p => !perimeter.has(p));
         cells.forEach(p => marked.add(p));
         return floor;
     }
