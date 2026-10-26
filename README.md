@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **3.0.18**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **3.0.19**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-3.0.18 makes rings land around the selected target and include that target. Area support can use a healthy or already-buffed ally as its center, with recipient-specific previews and effective healing, buffs and cleansing. New battles use V38; saved battles retain their rules. See the [current release](docs/current-release.md).
+3.0.19 unifies named skill and item specifications, explicitly grades each effect, and uses unit_set for existing-unit changes. It adds shield and condition-clearing convenience fields while retaining older protocol formats. Battle rules remain V38. See the [current release](docs/current-release.md).
 
 ## Documentation
 

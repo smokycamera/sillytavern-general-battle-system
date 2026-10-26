@@ -16,12 +16,12 @@ describe('approved standard story records', () => {
   it('renders the six approved records with stable short identities and freezes the original save', () => {
     const state = save(), before = structuredClone(state), text = narrativeProjection(state, '修改单位属性');
     for (const line of [
-      'id="c1" owner="u1" kind="一次性道具" items="治疗药水:buff治疗L3×2"',
-      'id="i1" owner="u1" kind="充能道具" items="火球魔杖:充能魔法范围热能L5"',
+      'id="c1" owner="u1" kind="一次性道具" items="治疗药水:buffL3+治疗L3×2"',
+      'id="i1" owner="u1" kind="充能道具" items="火球魔杖:充能+魔法范围L5+热能"',
       'id="i2" owner="u1" kind="佩戴道具" items="精灵斗篷:潜伏L3+林地专精L5+2防御"',
       'id="w1" owner="u1" weapon="精密步枪:步枪L5+6精度+4伤害"',
       'id="a1" owner="u1" armor="护卫甲:重甲L5+10防护"',
-      'id="k1" owner="u1" skills="火球术:魔法范围热能L5+4伤害"',
+      'id="k1" owner="u1" skills="火球术:魔法范围L5+热能+4伤害"',
       'id="u1" traits="飞行L5"',
     ]) expect(text).toContain(line);
     expect(text).toContain('items="密信"');

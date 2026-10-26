@@ -33,6 +33,27 @@ it('明确写入武器护甲盾的负载均留下手工标记，包括恰好等�
 });
 
 describe('正文战外全字段事务（定向验证）',()=>{
+  it('shield与旧shieldSpec都修改同一盾槽，speed便捷属性保留固有速度',()=>{
+    const attrs={id:'u1',speed:'4',shield:'骑兵盾:中盾L3'};
+    const parsed=parseProtocol(serializeEvent('unit_set',attrs));
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.events[0]).toMatchObject({kind:'unit-set',data:{speedTier:4,shield:'骑兵盾:中盾L3'}});
+    const next=transactText(setup(),serializeEvent('unit_set',attrs)).next();
+    const old=transactText(setup(),serializeEvent('unit_set',{id:'u1',speed:'4',shieldSpec:attrs.shield})).next();
+    expect(parseProtocol(serializeEvent('unit_set',{id:'u1',speed:'4',shieldSpec:attrs.shield})).events[0]).toMatchObject({data:(parsed.events[0] as Extract<typeof parsed.events[number],{kind:'unit-set'}>).data});
+    for(const save of [next,old])expect(restored(save)).toMatchObject({speedTier:4,shield:{name:'骑兵盾',load:1.5,recipe:{mechanism:'shield',power:3}}});
+  });
+  it('unit_set可按中文状态名或id清除指定状态，all清空且不改生命、特质与来源',()=>{
+    const save=transact(setup(),{conditions:[{id:'poisoned',dur:3},{id:'bleeding',dur:2},{id:'slowed',dur:2}],traits:['再生L5']},'<bless id="u1" name="祝福来源" traits="守护L5" battles="2"/>').next();
+    const before=structuredClone(save),previous=restored(save);
+    const next=transactText(save,'<unit_set id="u1" clear="中毒,bleeding"/>','clear-some').next(),unit=restored(next);
+    expect(unit.conditions.map(condition=>condition.id)).toEqual(['slowed']);
+    expect(unit.hp).toBe(previous.hp);expect(unit.traits).toEqual(previous.traits);expect(unit.traitSources).toEqual(previous.traitSources);
+    for(const clear of ['all','全部'])expect(restored(transactText(save,serializeEvent('unit_set',{id:'u1',clear}),'clear-all').next()).conditions).toEqual([]);
+    expect(restored(transactText(setup(),'<unit_update id="u1" hp="70"/>').next()).hp).toBe(70);
+    expect(parseProtocol('<unit_set id="u1" clear="不存在的状态"/>').errors.length).toBeGreaterThan(0);
+    expect(save).toEqual(before);
+  });
   it('enchant便捷属性修改当前实物并读档生效，none恢复武器默认通道且不改其他冻结属性',()=>{
     const save=prepareInventoryState(setup()), old=structuredClone(save.storage![0]!.snapshot!.weapon!);
     const next=transactText(save,'<unit_set id="u1" enchant="arcane"/>','enchant').next();

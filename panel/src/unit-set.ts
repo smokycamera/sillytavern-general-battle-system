@@ -19,9 +19,9 @@ import type { NarrativeSave } from './narrative-state.js';
 
 type ObjectData = Record<string, unknown>;
 /** items 不是档案字段：交给单位的道具在入账时另行处理（item-handover.ts）。 */
-export const UNIT_SET_ATTRIBUTES = ['id', 'data', 'reason', 'name', 'side', 'scale', 'archetype', 'level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'state', 'body', 'mount', 'speed', 'weapon', 'weapon2', 'armor', 'shieldSpec', 'enchant', 'stabilized', 'protection', 'skills', 'traits', 'retired', 'note', 'items'] as const;
+export const UNIT_SET_ATTRIBUTES = ['id', 'data', 'reason', 'name', 'side', 'scale', 'archetype', 'level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'state', 'clear', 'body', 'mount', 'speed', 'weapon', 'weapon2', 'armor', 'shield', 'shieldSpec', 'enchant', 'stabilized', 'protection', 'skills', 'traits', 'retired', 'note', 'items'] as const;
 const direct = ['name', 'side', 'scale', 'archetype', 'level', 'xp', 'xpValue', 'hp', 'morale', 'status', 'body', 'mount', 'speedTier', 'tags', 'base', 'bonuses', 'resources', 'conditions', 'traits', 'traitLevels', 'traitSources', 'recoverableWounded', 'formation', 'abilityState', 'fatigue'] as const;
-const special = ['xpProgress', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'moraleMax', 'state', 'speed', 'weapon2', 'weapon', 'sidearm', 'armor', 'shield', 'enchant', 'stabilized', 'protection', 'skills', 'abilities', 'preparedAbilityIds', 'retired', 'note'];
+const special = ['xpProgress', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'moraleMax', 'state', 'clear', 'speed', 'weapon2', 'weapon', 'sidearm', 'armor', 'shield', 'enchant', 'stabilized', 'protection', 'skills', 'abilities', 'preparedAbilityIds', 'retired', 'note'];
 const object = (value: unknown): value is ObjectData => !!value && typeof value === 'object' && !Array.isArray(value);
 function requireObject(value: unknown, label: string): ObjectData { if (!object(value)) throw Error(label + '必须为对象'); return value; }
 function keys(value: ObjectData, allowed: readonly string[], label: string): void {
@@ -32,6 +32,20 @@ function number(value: unknown, label: string, min = -Number.MAX_SAFE_INTEGER, m
 }
 function enumeration(value: unknown, allowed: readonly string[], label: string): void { if (!allowed.includes(String(value))) throw Error(label + '取值无效'); }
 function strings(value: unknown, label: string): asserts value is string[] { if (!Array.isArray(value) || value.some(v => typeof v !== 'string' || !v.trim())) throw Error(label + '须为字符串数组'); }
+/** clear 是一次性的状态清除指令，不作为单位字段保存；中文名称与标准状态 id 均可使用。 */
+function conditionClear(input: unknown): string[] {
+  strings(input, 'clear');
+  if (!input.length) throw Error('clear需要明确的状态名或all');
+  const conditions = standardConditionMap();
+  const ids = input.map(value => {
+    const name = value.trim();
+    if (name === '全部' || name.toLowerCase() === 'all') return 'all';
+    const id = conditions.has(name) ? name : [...conditions.values()].find(condition => condition.name === name)?.id;
+    if (!id) throw Error('clear未知状态：' + name);
+    return id;
+  });
+  return [...new Set(ids)];
+}
 function cleanJson(value: unknown): void {
   if (typeof value === 'number' && !Number.isFinite(value)) throw Error('数值必须有限');
   if (value && typeof value === 'object') for (const [key, entry] of Object.entries(value)) {
@@ -61,6 +75,7 @@ export function parseUnitSet(attrs: Record<string, string>): ObjectData {
     }
     if (['mount', 'retired', 'stabilized'].includes(field)) { if (!['true','false'].includes(text)) throw Error(field + '需要true/false'); value = text === 'true'; }
     if (field === 'traits') value = text ? text.split(',') : [];
+    if (field === 'clear') value = conditionClear(text.split(/[,，、;；|｜+＋]/).filter(Boolean));
     if (Object.hasOwn(data, field) && JSON.stringify(data[field]) !== JSON.stringify(value)) throw Error(field + '与data冲突');
     data[field] = value;
   }
@@ -70,6 +85,7 @@ export function parseUnitSet(attrs: Record<string, string>): ObjectData {
 export function validateUnitPatch(data: ObjectData): void {
   cleanJson(data); keys(data, [...direct, ...special], 'unit_set.data');
   if (!Object.keys(data).length) throw Error('unit_set没有修改字段');
+  if (data.clear !== undefined) conditionClear(data.clear);
   if (data.enchant !== undefined) enumeration(data.enchant, ['none','thermal','arcane'], '附魔');
   if (data.protection !== undefined) enumeration(data.protection, ['balanced','kinetic','thermal','arcane'], '防护类型');
   if (data.stabilized !== undefined && typeof data.stabilized !== 'boolean') throw Error('稳定装置须为布尔值');
@@ -351,6 +367,10 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   rebase(unit,data);
   const fields = Object.fromEntries(direct.filter(key => Object.hasOwn(data,key)).map(key => [key,data[key]]));
   unit = merge(unit as unknown as ObjectData, fields) as unknown as Combatant;
+  if (data.clear !== undefined) {
+    const clear = conditionClear(data.clear);
+    unit.conditions = clear.includes('all') ? [] : unit.conditions.filter(condition => !clear.includes(condition.id));
+  }
   if(data.hp===undefined)unit.hp=Math.min(unit.hp,unit.base.hpMax);
   if(data.morale===undefined&&unit.base.moraleMax!==undefined)unit.morale=Math.min(unit.morale??unit.base.moraleMax,unit.base.moraleMax);
   if (typeof unit.name !== 'string' || !unit.name.trim()) throw Error('单位名称不能为空');

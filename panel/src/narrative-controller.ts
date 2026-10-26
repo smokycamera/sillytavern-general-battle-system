@@ -28,7 +28,7 @@ import {
 import { RUNTIME_REMINDER } from './narrative-prompt.js';
 import { parseProtocol, protocolExcerpt } from './protocol.js';
 import { mapNarrativeReferences, mentionsNarrativeId, narrativeIds } from './narrative-ids.js';
-import { storyFields, storyEquipmentSpec, storySkillSpec } from './story-spec.js';
+import { storyFields, storyEquipmentSpec, storySkillSpec, storyItemSpec } from './story-spec.js';
 import { enhancementLabel } from '../../engine/src/enhancements.js';
 import { isGradedTrait } from '../../engine/src/data/traits.js';
 const promptJson = (value: unknown, publicId: (id: string) => string = id => id) => JSON.stringify(mapNarrativeReferences(value, publicId)).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
@@ -137,13 +137,13 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     const m = item.mechanics;
     if (!detailed) {
       const quantity = item.qty > 1 ? '×' + item.qty : '';
-      const key = m?.kind === 'weapon' ? item.equippedTo?.slot === 'sidearm' ? 'weapon2' : 'weapon' : m?.kind === 'armor' ? 'armor' : m?.kind === 'shield' ? 'shieldSpec' : 'items';
+      const key = m?.kind === 'weapon' ? item.equippedTo?.slot === 'sidearm' ? 'weapon2' : 'weapon' : m?.kind === 'armor' ? 'armor' : m?.kind === 'shield' ? 'shield' : 'items';
       const quality = m && m.kind !== 'item' ? instanceQuality(m.value.recipe?.variance) : undefined;
       const enchant = m && m.kind !== 'item' ? m.value.recipe?.enchantment : undefined;
       const note = [item.note, quality && quality !== '普通' ? quality : undefined, enchant ? enchant === 'thermal' ? '热能转化' : '奥术转化' : undefined].filter(Boolean).join('；') || undefined;
       blocks.items.push(storyFields({ id: item.id, owner: item.assignedTo,
         kind: m?.kind === 'item' ? ITEM_FORM_NAMES[m.value.recipe.form] + '道具' : undefined,
-        [key]: (m?.kind === 'item' ? item.name + ':' + itemSpecText(m.value.recipe).replace(/^(充能)?增益/, '$1buff').replace(/^(充能)?减益/, '$1debuff') : m ? storyEquipmentSpec(item) : item.name) + quantity,
+        [key]: (m?.kind === 'item' ? storyItemSpec(item) : m ? storyEquipmentSpec(item) : item.name) + quantity,
         equipped: item.assignedTo && !item.equippedTo && m && (m.kind !== 'item' || m.value.recipe.form !== 'single') ? false : undefined, note }, publicId));
     } else {
     // 道具给出形态与规范写法（与 add 的 spec 相同），装备照旧列出机制与规格。
