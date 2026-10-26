@@ -32,7 +32,7 @@ import { prepareItemModel, validateItemModel, itemsV15 } from '../item-model.js'
 import { prepareTraitLevelModel, validateTraitLevelModel } from '../trait-level-model.js';
 import { areaTargets, canAnchorArea, zoneTarget, placeZone, settleZones, validateAreas, ZONE_NAMES, zoneEndText, type BattleZone } from '../area-effects.js';
 import { tbWeaponShortName } from '../weapon-name.js';
-import { grantBarrier, validateBarrier } from '../barrier.js';
+import { grantBarrier, validateBarrier, barrierSourceKey } from '../barrier.js';
 import { expireRoundEffects } from '../effect-expiry.js';
 import { casualtyXp, initialXpStrength } from '../casualty-xp.js';
 import { roundDamage } from '../probability.js';
@@ -1895,7 +1895,7 @@ export class SmallBattle {
         case 'move': break;
         case 'zone': { if (chosenTarget) { placeZone(this.observationContext(),actor,chosenTarget,eff,this.round,ability.id); logBits.push((this.battlefield ? '在'+reportPlaceLabel(this.battlefield,chosenTarget.pos!,chosenTarget) : '')+'布置'+ZONE_NAMES[eff.kind]+'，持续'+eff.dur+'轮'); } break; }
         case 'barrier': {
-          for (const target of effectTargets(ability.shape === 'burst')) { grantBarrier(target, eff.amount, eff.dur, actor.id, eff.defensePower ?? ability.power); logBits.push(`${target.name} 获得屏障，可吸收${displayNumber(target.barrier?.remaining ?? 0)}点伤害，持续${eff.dur}轮`); }
+          for (const target of effectTargets(ability.shape === 'burst')) { grantBarrier(target, eff.amount, eff.dur, actor.id, eff.defensePower ?? ability.power, barrierSourceKey(actor.id, ability)); logBits.push(`${target.name} 获得屏障，可吸收${displayNumber(target.barrier?.remaining ?? 0)}点伤害，持续${eff.dur}轮`); }
           break;
         }
         case 'damage': {

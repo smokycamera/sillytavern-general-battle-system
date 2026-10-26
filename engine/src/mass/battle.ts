@@ -70,7 +70,7 @@ import { rollDice } from '../dice.js';
 import { isAirborne, sameLayer, hasFlightAbility, flightCapabilityReason, flightMaintenanceReason, aerialTargetReason, rangedTargetDistance, fallDamage, validateFlightState } from '../aerial.js';
 import { sharedParticipants, engagementWidth } from '../exposure.js';
 import { resolveAttack, isRangedCapable, recordAppliedDamage, applyResolutionDamage, beginPreviewScope, endPreviewScope, previewScopeEpoch } from '../damage.js';
-import { grantBarrier, validateBarrier } from '../barrier.js';
+import { grantBarrier, validateBarrier, barrierSourceKey } from '../barrier.js';
 import { expireRoundEffects } from '../effect-expiry.js';
 import { ConditionRegistry } from '../conditions.js';
 import { MASS_TW, counterMod, rulesById } from '../rules.js';
@@ -1039,7 +1039,7 @@ export class MassBattle {
       for (const effect of healingEffectGroups(ability)) if (effect.op === 'trait' || effect.op === 'barrier' || effect.op === 'condition' && !effect.onHit && !effect.onDamage && effect.saveDC === undefined) {
         for (const affected of this.supportTargets(actor, ability, target, planning).filter(u => u.side === side)) {
           const projected = reservedSupport.get(affected.id) ?? structuredClone(affected);
-          if (effect.op === 'barrier') grantBarrier(projected, effect.amount, effect.dur, actor.id, effect.defensePower ?? ability.power);
+          if (effect.op === 'barrier') grantBarrier(projected, effect.amount, effect.dur, actor.id, effect.defensePower ?? ability.power, barrierSourceKey(actor.id, ability));
           else if (effect.op === 'trait') applySkillTrait(actor, projected, ability, effect, 'preview');
           else applySkillCondition(projected, { id: effect.conditionId, dur: effect.dur, potency: effect.potency, magnitude: effect.magnitude, defensePower: effect.defensePower });
           reservedSupport.set(affected.id, projected);
@@ -1592,7 +1592,7 @@ export class MassBattle {
               this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id,t.id], text: `${actor.name} 使用【${ability.name}】治疗 ${displayNumber(restored)} → ${t.name} 生命 ${displayNumber(before)}→${displayNumber(memberHealth(t))}` });
             } });
           } else if (effect.op === 'barrier') for (const affected of this.supportTargets(actor, ability, target, support)) changes.push(() => {
-            const unit = this.byId(affected.id); grantBarrier(unit, effect.amount, effect.dur, actor.id, effect.defensePower ?? ability.power);
+            const unit = this.byId(affected.id); grantBarrier(unit, effect.amount, effect.dur, actor.id, effect.defensePower ?? ability.power, barrierSourceKey(actor.id, ability));
             this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id, unit.id], text: `${unit.name} 获得屏障，可吸收${displayNumber(unit.barrier?.remaining ?? 0)}点伤害，持续${effect.dur}轮` });
           });
           else if (effect.op === 'morale') for (const affected of this.supportTargets(actor, ability, target, support)) changes.push(() => {

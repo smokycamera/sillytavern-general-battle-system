@@ -11,6 +11,7 @@ import { standardConditionMap } from './conditions.js';
 import { canonicalTraitId, sourceTraitLevel, traitParameter } from './trait-parameters.js';
 import { gradedTraitEnabled, traitLevelsV16, phase2Traits } from './trait-level-model.js';
 import { baseMechanism } from './data/weapons.js';
+import { validateStoryRoundEndEffects, type StoryRoundEndEffect } from './story-effect-types.js';
 
 export type TraitDuration = { kind: 'permanent' } | { kind: 'rounds' | 'battles'; count: number };
 export interface TraitSourceInput {
@@ -19,6 +20,7 @@ export interface TraitSourceInput {
   conditionIds?: string[];
   /** 新统一效果的冻结状态规格；实际状态存于单位conditions，沿用战斗结算。缺省为旧来源。 */
   conditions?: ActiveCondition[];
+  roundEndEffects?: StoryRoundEndEffect[];
   specification?: string;
   barrier?: { amount: number; defensePower?: number };
   duration: TraitDuration; equipmentId?: string;
@@ -29,7 +31,8 @@ export interface TraitSource extends TraitSourceInput { remaining?: number; revo
 function signature(source: TraitSourceInput): string {
   return JSON.stringify([source.kind, source.name, [...new Set(source.traitIds)].sort(), [...new Set(source.conditionIds ?? [])].sort(), source.duration.kind, source.duration.kind === 'permanent' ? undefined : source.duration.count, source.equipmentId, source.battleOnly,
     ...(source.traitLevels && Object.keys(source.traitLevels).length ? [Object.entries(source.traitLevels).sort(([a], [b]) => a.localeCompare(b))] : []),
-    ...(source.conditions !== undefined ? [source.conditions, source.specification, source.barrier] : [])]);
+    ...(source.conditions !== undefined ? [source.conditions, source.specification, source.barrier] : []),
+    ...(source.roundEndEffects !== undefined ? [source.roundEndEffects] : [])]);
 }
 export function validateTraitSource(source: TraitSource, registry = traitRegistry()): void {
   if (source?.battleOnly !== undefined && typeof source.battleOnly !== 'boolean') throw new Error('技能临时来源标记损坏');
@@ -38,6 +41,10 @@ export function validateTraitSource(source: TraitSource, registry = traitRegistr
     || new Set(source.traitIds).size !== source.traitIds.length || source.traitIds.some((id) => !registry.has(id))) throw new Error('特质来源身份或内容损坏');
   const conditions = standardConditionMap(), ids = source.conditionIds ?? [];
   const unified = source.conditions !== undefined;
+  if (source.roundEndEffects !== undefined) {
+    if (!unified || source.kind !== 'effect') throw new Error('轮末结算需要统一剧情效果来源');
+    validateStoryRoundEndEffects(source.roundEndEffects);
+  }
   if (unified && (source.kind !== 'effect' || !Array.isArray(source.conditions) || typeof source.specification !== 'string' || !source.specification
     || source.conditions.length !== ids.length || new Set(source.conditions.map(c => c?.id)).size !== ids.length || source.conditions.some(c => !c || !ids.includes(c.id) || !conditions.has(c.id)
       || !Number.isSafeInteger(c.dur) || c.dur < 1 || c.dur > 99 || c.effectSourceId !== undefined
@@ -47,7 +54,7 @@ export function validateTraitSource(source: TraitSource, registry = traitRegistr
   if (source.barrier !== undefined && (!unified || !Number.isSafeInteger(source.barrier.amount) || source.barrier.amount < 1
     || source.barrier.defensePower !== undefined && (!Number.isSafeInteger(source.barrier.defensePower) || source.barrier.defensePower < 1 || source.barrier.defensePower > 10))) throw new Error('统一效果的屏障规格损坏');
   if (!Array.isArray(ids) || new Set(ids).size !== ids.length || ids.some((id) => unified ? !conditions.has(id) : !conditions.get(id)?.v2SourceReady)
-    || source.traitIds.length + ids.length === 0 && !source.barrier || source.kind === 'blessing' && ids.length > 0 || !unified && source.kind === 'effect' && source.traitIds.length > 0) throw new Error('效果来源为空或包含未完成的状态');
+    || source.traitIds.length + ids.length === 0 && !source.barrier && !source.roundEndEffects?.length || source.kind === 'blessing' && ids.length > 0 || !unified && source.kind === 'effect' && source.traitIds.length > 0) throw new Error('效果来源为空或包含未完成的状态');
   if (!source.duration || !['permanent', 'rounds', 'battles'].includes(source.duration.kind)) throw new Error('特质来源期限未知');
   if (source.revoked !== undefined && typeof source.revoked !== 'boolean' || source.duration.kind === 'permanent' && source.remaining !== undefined) throw new Error('特质来源生命周期字段损坏');
   if (source.duration.kind !== 'permanent' && (!Number.isSafeInteger(source.duration.count) || source.duration.count < 1 || source.duration.count > 99

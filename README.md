@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **3.0.22**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **3.0.23**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-3.0.22 fixes save migration for units with story effects, including effect and deploy in the same batch. Skill conditions retain their own lifetime alongside story effects, and repeated story damage effects settle once per condition and channel. Battle rules remain V38. See the [current release](docs/current-release.md).
+3.0.23 supports story healing, morale, energy recovery/drain and cleansing/dispelling at each full battle round end. New V39 battles add independent barrier capacities, spend each layer at its own protection grade and retain separate lifetimes, including interactions with energy shields. Existing battles and frozen effects retain their rules. See the [current release](docs/current-release.md).
 
 ## Documentation
 

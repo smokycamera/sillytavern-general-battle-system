@@ -204,13 +204,13 @@ export function gradeOvermatch(power:number|undefined,defensePower:number,penetr
 }
 type DefensiveTarget = Pick<Combatant,'level'|'armor'|'body'|'shield'|'status'|'damageModel'> & Partial<Pick<Combatant,'conditions'|'barrier'|'armsModel'|'rulesVersion'|'traitLevelModel'|'traits'|'traitLevels'|'traitSources'|'gear'|'accessories'|'weapon'|'sidearm'|'itemModel'>>;
 /** 单位等级、无甲装备规格、实际防护与守护取高；屏障仅在吸收时参与，不改写通道抗穿。 */
-export function defensePower(unit:DefensiveTarget,channel:DamageChannel,includeBarrier=false):number {
+export function defensePower(unit:DefensiveTarget,channel:DamageChannel,includeBarrier:boolean|number=false):number {
   const wards=(unit.conditions??[]).filter(c=>c.id==='blessed'&&c.dur>0&&validDefensePower(c.defensePower)).map(c=>c.defensePower!);
   const unarmoredPower=unit.armor?.tier===0?(unit.armor.recipe?.power??unit.armor.level??0):0;
   const guardian = phase2Traits(unit) && unit.traits ? effectiveTraitLevel(unit as Combatant, 'guardian') : 0;
-  return Math.max(unit.level,unarmoredPower,protectionPower(unit,channel),guardian,...wards,includeBarrier?barrierDefensePower(unit):0);
+  return Math.max(unit.level,unarmoredPower,protectionPower(unit,channel),guardian,...wards,typeof includeBarrier === 'number' ? includeBarrier : includeBarrier?barrierDefensePower(unit):0);
 }
-export function overmatchMultiplier(power:number|undefined,unit:DefensiveTarget,channel:DamageChannel,penetration:number,area=false,canBlock=true,includeBarrier=false,curve?:RulePack['overmatchCurve']):number {
+export function overmatchMultiplier(power:number|undefined,unit:DefensiveTarget,channel:DamageChannel,penetration:number,area=false,canBlock=true,includeBarrier:boolean|number=false,curve?:RulePack['overmatchCurve']):number {
   const armor=gradeOvermatch(power,defensePower(unit,channel,includeBarrier),penetration,anchoredProtection(unit,channel),curve);
   if(!shieldUsable(unit)||unit.status!=='ready'||area||!canBlock||armor===1)return armor;
   const coverage=shieldCoverage(unit);
