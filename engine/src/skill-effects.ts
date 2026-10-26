@@ -5,10 +5,11 @@ import { armorTransmission } from './power-anchors.js';
 import { combatHostile, combatSide } from './battle-control.js';
 import { ACTIVATION_CONTROLS } from './battle-control.js';
 import { phase2Value } from './phase2-traits.js';
-import { resolveHealingBudget } from './healing.js';
+import { resolveHealingBudget, healingEffectGroups } from './healing.js';
 import { abilityCost } from './resources.js';
 import { flightCapabilityReason, isAirborne } from './aerial.js';
-import { prepareCombatModel } from './combat-model.js';
+import { prepareCombatModel, healingYield } from './combat-model.js';
+import { diceMean } from './dice.js';
 import { memberHealth,hasMemberHealth } from './member-health.js';
 import { recoveryCapacity, regenerationAmount,applyCombatDamage } from './recovery.js';
 import { unitHeight,surfaceHeightAt } from './small/height-map.js';
@@ -203,6 +204,14 @@ export function applySkillTrait(actor: Combatant, target: Combatant, ability: Ab
   if (replay && traitLevelsV16(target)) return `${target.name}：该来源已处理，不重复授予或重建`;
   if (effect.traitId === 'fortification') entrench(target, target.pos !== undefined ? 'small' : 'mass');
   return `${target.name} 获得${name}${level === undefined ? '' : 'L' + level}，至多${effect.dur}轮，战斗归档时结束`;
+}
+/** Per-recipient support previews use the same grouped healing and effect descriptions as execution. */
+export function areaSkillEffectLines(context: ObservationContext, actor: Combatant, targets: Combatant[], ability: Ability): string[] {
+  const healing = healingEffectGroups(ability).filter(e => e.op === 'heal');
+  return targets.flatMap(target => {
+    const amount = Math.min(recoveryCapacity(target), healing.reduce((sum, e) => sum + healingYield(actor, target, e.amount ?? diceMean(e.dice!), !!ability.itemSourceId, e.power), 0));
+    return [...skillEffectLines(context, actor, target, ability), ...(healing.length ? ['恢复生命约' + displayNumber(amount)] : [])].map(line => target.name + '：' + line);
+  });
 }
 export function skillEffectLines(context: ObservationContext, actor: Combatant, target: Combatant, ability: Ability): string[] {
   return ability.effects.flatMap((effect) => {

@@ -336,6 +336,8 @@ export function abilityTargetReason(input: {
   controlRecipient?: boolean;
   /** Independent splash recipients have already passed the area's geometry and obstruction checks. */
   areaRecipient?: boolean;
+  /** V38: range and allegiance still apply to an area center that needs no effect itself. */
+  areaAnchor?: boolean;
   space?: AerialRangeSpace;
   field?: BattlefieldSpec;
 }): string | undefined {
@@ -344,7 +346,7 @@ export function abilityTargetReason(input: {
   const controlled = controlActionReason(actor, target, input.units ?? (target ? [actor, target] : [actor]), 'skill', ability.target === 'ally' || ability.target === 'self' && !ability.effects.some(e => e.op === 'zone' || e.op === 'summon'), input.controlAreaIds, input.controlRecipient); if (controlled) return controlled;
   if (target && !input.areaRecipient && controlCondition(actor, 'blinded') && (input.distance ?? 0) > 1) return '致盲只能直接选择1格/阵位内目标';
   if (target && ability.targetBody && target.body !== ability.targetBody && !(target.rulesVersion === 'v2' && activeTraitIds(target).includes('inorganic'))) return '维修用品只能修理车辆或非生物';
-  if (target && ability.effects.length && ability.effects.every(e => e.op === 'barrier' && (target.barrier?.remaining ?? 0) >= e.amount && (target.barrier?.duration ?? 0) >= e.dur
+  if (!input.areaAnchor && target && ability.effects.length && ability.effects.every(e => e.op === 'barrier' && (target.barrier?.remaining ?? 0) >= e.amount && (target.barrier?.duration ?? 0) >= e.dur
     && (!(e.defensePower ?? ability.power) || target.barrier?.defenses?.some(d => d.power >= (e.defensePower ?? ability.power)! && d.duration >= e.dur))
     || e.op === 'resource' && !skillResourceChange(target, e))) return '目标已经有足够的屏障或精力';
   if (target && ability.weaponUse) {
@@ -356,15 +358,15 @@ export function abilityTargetReason(input: {
     if (distance > skillWeaponReach(actor, weapon, !!input.field) + abilityHeightReach(actor, ability, target, input.distance, input.field) || distance < (weapon.minRange ?? 0)) return '目标超出实际武器射程';
     if (isRangedWeapon(weapon) && weapon.pointBlankPolicy === 'forbid' && distance <= 1 && sameLayer(actor, target)) return '实际武器不能抵近射击';
   }
-  if (target && ability.recipe && ability.effects.every((e) => e.op === 'trait' && !!skillTraitReason(target, e, ability)
+  if (!input.areaAnchor && target && ability.recipe && ability.effects.every((e) => e.op === 'trait' && !!skillTraitReason(target, e, ability)
     || e.op === 'resource' && (!skillResourceChange(target, e) || target.id === actor.id && e.amount > 0 && (!['item-progression-v1','item-progression-v2','item-progression-v3'].includes(ability.itemEffectModel ?? '') || abilityCost(actor, ability)?.resource === e.resource) && (abilityCost(actor, ability)?.amount ?? 0) >= e.amount))) return '目标没有可生效的能力或资源变化';
   if (target && !sameLayer(actor, target) && (ability.requires === 'melee' || ability.requires === 'shield')) return '接触技能需要处于同一空地层';
-  if (target && actor.rulesVersion === 'v2' && ability.effects.length && ability.effects.every((e) => e.op === 'dispel' && !dispelCandidates(target, e).length || e.op === 'condition' && !conditionChance(target, e))) return '目标没有可解除的效果，或已免疫/处于同类控制';
+  if (!input.areaAnchor && target && actor.rulesVersion === 'v2' && ability.effects.length && ability.effects.every((e) => e.op === 'dispel' && !dispelCandidates(target, e).length || e.op === 'condition' && !conditionChance(target, e))) return '目标没有可解除的效果，或已免疫/处于同类控制';
   // 投射、魔法及通过实际武器检查的道具不按接触用品限制空地层。
   if (target && ability.itemSourceId && actor.id !== target.id && !sameLayer(actor, target)
     && (ability.delivery === 'melee' || !ability.weaponUse && ability.delivery !== 'ranged' && ability.delivery !== 'magic'
       && isAirborne(actor) !== isAirborne(target))) return '向他人使用接触类物品需要处于同一空地层';
-  if (actor.rulesVersion === 'v2' && ability.effects.every((e) => e.op === 'heal') && target && !recoveryCapacity(target)) return target.scale === 'hero' ? '当前目标没有可恢复损伤或已离场' : '群体治疗需要可救伤员记录，不能凭技能招募新兵';
+  if (!input.areaAnchor && actor.rulesVersion === 'v2' && ability.effects.every((e) => e.op === 'heal') && target && !recoveryCapacity(target)) return target.scale === 'hero' ? '当前目标没有可恢复损伤或已离场' : '群体治疗需要可救伤员记录，不能凭技能招募新兵';
   if (ability.target === 'enemy' && (!target || !combatHostile(target, actor, input.units ?? [actor, target]))) {
     return '该技能必须指定一名敌方目标';
   }
