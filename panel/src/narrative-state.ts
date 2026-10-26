@@ -15,6 +15,8 @@ import { migrateSavedSuggestion } from './saved-suggestion.js';
 import { createInventoryItem, isInventoryStack, narrativeTakeParts, prepareInventoryState, prepareInventoryTransaction, type InventoryItem } from './inventory-state.js';
 import { assertNarrativeCapacity, hasNarrativeDeployment, MAX_SCENE_UNITS } from './narrative-limits.js';
 import { applyUnitSet, UNIT_EQUIPMENT_FIELDS, unitSetReferencesGear, type UnitSetContext } from './unit-set.js';
+import { grantStoryEffects } from './story-effects.js';
+import { clearUnitEffects } from './unit-clear.js';
 import { mapNarrativeReferences, narrativeIds, prepareNarrativeIds, type NarrativeIdState } from './narrative-ids.js';
 import { newUnitId, planNewUnits, type NewUnitPlan } from './narrative-new-units.js';
 import { handOverItems, type HandOver } from './item-handover.js';
@@ -281,17 +283,23 @@ function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: M
   return next;
 }
 /** 学习技能与剧情效果来源；来源编号带事件序号，同一回复重复学习需合并。 */
-function applyUnitEffect(storage: UnitRecord[], event: Extract<Suggestion, { kind: 'learn' | 'bless' | 'unbless' | 'affect' | 'unaffect' }>, index: number, proposalId: string, registry: Registry, learned: Set<string>): UnitRecord[] {
+function applyUnitEffect(storage: UnitRecord[], event: Extract<Suggestion, { kind: 'learn' | 'effect' | 'bless' | 'unbless' | 'affect' | 'unaffect' }>, index: number, proposalId: string, registry: Registry, learned: Set<string>): UnitRecord[] {
   if (event.kind === 'learn') {
     if (learned.has(event.id)) throw new Error('同一回复请合并对同一档案的技能学习');
     learned.add(event.id);
     return storage.map((record) => record.id === event.id ? learnUnitRecord(record, event.skills.map((s) => ({ id: s.blueprintId, level: s.level, name: s.name, bonuses: s.bonuses })), registry, `learn:${proposalId}:${index}`) : record);
   }
   const record: UnitRecord = storage.find((r) => r.id === event.id)!;
-  if (record.retired || record.hp <= 0 || record.status === 'dead') throw new Error('不能通过效果来源复活阵亡或解散档案');
+  if ((event.kind !== 'effect' || event.effects?.length) && (record.retired || record.hp <= 0 || record.status === 'dead')) throw new Error('不能通过效果来源复活阵亡或解散档案');
   const unit = materializeUnitRecord(record, registry);
   prepareTraitLevelModel(unit, V29_OVERFLOW_D20);
-  if (event.kind === 'bless') grantTraitSource(unit, { id: `bless:${proposalId}:${index}`, name: event.name, kind: 'blessing', traitIds: event.traitIds, ...(event.traitLevels ? { traitLevels: event.traitLevels } : {}), duration: event.duration });
+  if (event.kind === 'effect') {
+    if (event.clear?.length) clearUnitEffects(unit, event.clear, `${proposalId}:${index}`);
+    if (event.effects?.length) {
+      if (!event.duration) throw Error('effects缺少期限');
+      grantStoryEffects(unit, event.effects, event.duration, `${proposalId}:${index}`);
+    }
+  } else if (event.kind === 'bless') grantTraitSource(unit, { id: `bless:${proposalId}:${index}`, name: event.name, kind: 'blessing', traitIds: event.traitIds, ...(event.traitLevels ? { traitLevels: event.traitLevels } : {}), duration: event.duration });
   else if (event.kind === 'affect') grantTraitSource(unit, { id: `affect:${proposalId}:${index}`, name: event.name, kind: 'effect', traitIds: [], conditionIds: event.conditionIds, duration: event.duration });
   else {
     const kind = unit.traitSources?.find((s) => s.id === event.sourceId)?.kind;
@@ -309,7 +317,7 @@ function applyToNewUnits(save: NarrativeSave, events: Suggestion[], fresh: NewUn
   for (const [index, event] of events.entries()) {
     if (!isNew(event)) continue;
     if (event.kind === 'unbless' || event.kind === 'unaffect') throw new Error('新建单位还没有可解除的效果来源');
-    if (event.kind === 'learn' || event.kind === 'bless' || event.kind === 'affect') next.storage = applyUnitEffect(next.storage!, event, index, proposalId, registry, learned);
+    if (event.kind === 'learn' || event.kind === 'effect' || event.kind === 'bless' || event.kind === 'affect') next.storage = applyUnitEffect(next.storage!, event, index, proposalId, registry, learned);
   }
   const fit = (id: string) => next.storage!.some((r) => r.id === id && r.hp > 0 && !r.retired && r.status !== 'dead');
   next.rosterIds = [...new Set([...next.rosterIds ?? [], ...deploys])].filter((id) => !fresh.created.has(id) || fit(id));
@@ -350,7 +358,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   assertCompatibleUnitChanges([...proposal.events, ...[...fresh.patches].map(([id, data]): Suggestion => ({ kind: 'unit-set', id, data, raw: '' }))]);
   for (const event of proposal.events) {
     const recipients = event.kind === 'give' ? event.to ?? [] : event.kind === 'add' ? event.to ? [event.to] : []
-      : ['unit-set', 'unit-update', 'deploy', 'bless', 'unbless', 'affect', 'unaffect', 'learn'].includes(event.kind) ? ['id' in event ? event.id ?? '' : ''] : [];
+      : ['unit-set', 'unit-update', 'deploy', 'effect', 'bless', 'unbless', 'affect', 'unaffect', 'learn'].includes(event.kind) ? ['id' in event ? event.id ?? '' : ''] : [];
     for (const unitId of recipients) {
       if (fresh.created.has(unitId)) continue;
       const record = records.find((r) => r.id === unitId);
@@ -412,7 +420,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   next = applyUnitChanges(next, proposal.events.filter((event) => !isNew(event)), new Map(), proposal.id, registry, unitSetContext);
   const reforged = new Set<string>(), learned = new Set<string>();
   for (const [index, event] of proposal.events.entries()) {
-    if (event.kind === 'learn' || event.kind === 'bless' || event.kind === 'unbless' || event.kind === 'affect' || event.kind === 'unaffect') {
+    if (event.kind === 'learn' || event.kind === 'effect' || event.kind === 'bless' || event.kind === 'unbless' || event.kind === 'affect' || event.kind === 'unaffect') {
       if (!isNew(event)) next.storage = applyUnitEffect(next.storage!, event, index, proposal.id, registry, learned);
     } else if (event.kind === 'reforge') {
       if (reforged.has(event.id)) throw new Error('同一回复请合并对同一实物的改造');
@@ -436,6 +444,10 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
         const unit = generateUnit(spawnInput(event), { registry, seed: id, skillModel: 'skills-v4' }).unit;
         unit.id = id;
         prepareSkillModel(unit,V29_OVERFLOW_D20); prepareCombatModel(unit,V29_OVERFLOW_D20); upgradeCombatSkills(unit); prepareItemModel(unit,V29_OVERFLOW_D20);prepareTraitLevelModel(unit,V29_OVERFLOW_D20); applySpawnWound(unit, event);
+        if (event.effects?.length) {
+          if (!event.duration) throw Error('spawn effects缺少期限');
+          grantStoryEffects(unit, event.effects, event.duration, `${proposal.id}:${index}:${i}`);
+        }
         records.push(unitRecordFromCombatant(unit, undefined, { sourceId: proposal.id }));
         if (unit.hp > 0 && !event.archiveOnly) roster.push(materializeUnitRecord(records.at(-1)!, registry));
         // 随身道具每张卡各一套，归这张卡；佩戴、充能道具装上（编队一件即整卡配发），一次性道具开战时随身携带。
@@ -453,7 +465,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
         }
       }
     } else if (event.kind === 'field') { next.field = event.env; next.lighting = event.light ?? (event.env === 'night' ? 'night' : 'day'); }
-    else if (!['unit-set', 'unit-update', 'take', 'add', 'give', 'reforge', 'learn', 'bless', 'unbless', 'affect', 'unaffect'].includes(event.kind)) throw new Error('不支持此类正文写回');
+    else if (!['unit-set', 'unit-update', 'take', 'add', 'give', 'reforge', 'learn', 'effect', 'bless', 'unbless', 'affect', 'unaffect'].includes(event.kind)) throw new Error('不支持此类正文写回');
   }
   next.schemaVersion = PANEL_SAVE_SCHEMA_VERSION;
   next.storage = records;

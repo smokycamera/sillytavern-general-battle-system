@@ -1737,7 +1737,7 @@ export class MassBattle {
         if (fullRest && !entrenched(u) && !this.isAttached(u.id) && entrench(u, 'mass')) this.recordEvent({ round: this.round, kind: 'condition', participants: [u.id], text: `${u.name} 原地休整，${firstWorks ? '' : '重新'}构筑工事` });
         const regeneration = regenerationAmount(u, this.traitRegistry, this.conditionMap());
         const beforeConditions = new Set(u.conditions.filter(c => c.dur > 0).map(c => c.id));
-        for (const condition of u.conditions) if (condition.dur !== undefined && !ACTIVATION_CONTROLS.has(condition.id)) condition.dur--;
+        for (const condition of u.conditions) if (!condition.effectSourceId && condition.dur !== undefined && !ACTIVATION_CONTROLS.has(condition.id)) condition.dur--;
         finishControlActivation(u);
         u.conditions = u.conditions.filter((c) => c.dur === undefined || c.dur > 0);
         const expired = [...beforeConditions].filter(id => !u.conditions.some(c => c.id === id && c.dur > 0)).map(id => this.conditions.get(id)?.name ?? id);

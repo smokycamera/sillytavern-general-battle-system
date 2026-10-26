@@ -4,6 +4,9 @@ import { splitSkillLevel } from './skill-notation.js';
 import { legacySkillEquivalent } from '../../engine/src/skill-catalog.js';
 import { decodeEntities } from './protocol-syntax.js';
 import { CATEGORY_LABELS } from '../../engine/src/data/ability-blueprints.js';
+import { compileStoryEffect } from './story-effects.js';
+import { normalizeUnitClear } from './unit-clear.js';
+import { normalizeNarrativeSkill } from './spec-tolerance.js';
 /**
  * AI 建议标签解析器（纯函数，无 DOM 依赖，可单测）。
  * 世界书「战阵·建议标签规范」的代码对应物：
@@ -40,6 +43,7 @@ export type Suggestion =
   /** items：交给这个单位的道具，只增不减；只交道具时 data 为空。 */
   | { kind: 'unit-set'; id: string; data: Record<string, unknown>; items?: SpawnItem[]; reason?: string; raw: string }
   | { kind: 'learn'; id: string; skills: SkillSpec[]; raw: string }
+  | { kind: 'effect'; id: string; effects?: SkillSpec[]; duration?: TraitDuration; clear?: string[]; raw: string }
   | { kind: 'take'; id: string; qty: number; note?: string; raw: string }
   | { kind: 'add'; id: string; qty: number; note?: string; item?: undefined; spec?: undefined; lootType?: undefined; to?: undefined; raw: string }
   | { kind: 'add'; id?: undefined; item: string; note?: string; qty: number; lootType: LootType; spec?: ItemSpecification; to?: string; raw: string }
@@ -69,6 +73,8 @@ export type Suggestion =
     }
   | {
       kind: 'spawn';
+      effects?: SkillSpec[];
+      duration?: TraitDuration;
       bonuses?: Enhancements; weaponBonuses?: Enhancements; weapon2Bonuses?: Enhancements; armorBonuses?: Enhancements;
       body?: BodyKind;
       mount?: boolean;
@@ -136,7 +142,7 @@ export interface ParseResult {
   invalid: string[];
 }
 
-const TAG_RE = /<(learn|give|take|add|reforge|bless|unbless|affect|unaffect|status|xp|field|spawn|deploy|unit_update)\b([^>]*?)\/>/gi;
+const TAG_RE = /<(learn|give|take|add|reforge|effect|bless|unbless|affect|unaffect|status|xp|field|spawn|deploy|unit_update)\b([^>]*?)\/>/gi;
 const ATTR_RE = /([a-zA-Z][a-zA-Z0-9_-]*)\s*=\s*"([^"]*)"/g;
 
 function parseAttrs(s: string): Record<string, string> {
@@ -404,6 +410,26 @@ export function parseAbilitySpec(v: string): SkillSpec[] {
     .filter((x): x is SkillSpec => !!x);
 }
 
+/** 新入口整项校验，任一错误都不能悄悄丢掉其中的效果。 */
+export function parseEffectAttributes(attrs: Record<string, string>): { effects?: SkillSpec[]; duration?: TraitDuration; clear?: string[] } {
+  const result: { effects?: SkillSpec[]; duration?: TraitDuration; clear?: string[] } = {};
+  const durations = ['rounds', 'battles', 'permanent'].filter(key => attrs[key] !== undefined);
+  if (attrs.effects !== undefined) {
+    if (!attrs.effects.trim() || durations.length !== 1) throw Error('effects需要非空规格与唯一明确期限');
+    const key = durations[0]!;
+    if (key === 'permanent' ? attrs[key] !== 'true' : !/^[1-9]\d?$/.test(attrs[key]!)) throw Error('effects期限为1–99整数，或permanent="true"');
+    const duration: TraitDuration = key === 'permanent' ? { kind: 'permanent' } : { kind: key as 'rounds' | 'battles', count: Number(attrs[key]) };
+    const parts = attrs.effects.split(/[,，、;；]/), notes: string[] = [];
+    const effects = parseAbilitySpec(parts.map(part => normalizeNarrativeSkill(part, notes)).join(','));
+    if (notes.some(note => /未支持|忽略|未采用/.test(note))) throw Error('effects存在未支持的效果规格：' + notes.join('；'));
+    if (effects.length !== parts.length) throw Error('effects存在未支持的效果规格');
+    for (const effect of effects) compileStoryEffect(effect, 'validate', duration);
+    result.effects = effects; result.duration = duration;
+  } else if (durations.length) throw Error('期限需要对应的effects');
+  if (attrs.clear !== undefined) result.clear = normalizeUnitClear(attrs.clear.split(/[,，、;；|｜+＋]/).filter(Boolean));
+  return result;
+}
+
 // ---------- 战场环境 ----------
 
 /** 环境声明 → 面板 field 标签键 */
@@ -438,6 +464,13 @@ export function parseSuggestionTags(text: string): ParseResult {
     const a = parseAttrs(m[2] ?? '');
     const raw = m[0];
     try { switch (kind) {
+      case 'effect': {
+        if (!a.id?.trim()) throw Error('effect需要已有单位id');
+        const effects = parseEffectAttributes(a);
+        if (!effects.effects?.length && !effects.clear?.length) throw Error('effect需要effects或clear');
+        suggestions.push({ kind: 'effect', id: a.id.trim(), ...effects, raw });
+        break;
+      }
       case 'bless':
       case 'affect': {
         try {
@@ -618,6 +651,7 @@ export function parseSuggestionTags(text: string): ParseResult {
         const scaleRaw = (a.scale ?? '').trim().toLowerCase();
         suggestions.push({
           kind: 'spawn',
+          ...parseEffectAttributes(a),
           name,
           archetype: arch as (typeof ARCHETYPES)[number],
           level: clampInt(training.text.slice(1), 1, 10, 1), bonuses: training.bonuses,

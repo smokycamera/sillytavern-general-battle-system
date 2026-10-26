@@ -1,5 +1,6 @@
 import { V23_OVERFLOW_D20, prepareSkillModel } from '../../engine/src/index.js';
 import { validateBattleControlState } from '../../engine/src/battle-control.js';
+import { refreshBarrier } from '../../engine/src/barrier.js';
 import { validateRecoveryRemainders } from '../../engine/src/recovery.js';
 import { validateHealingModel } from '../../engine/src/healing.js';
 import { validTraitLevel } from '../../engine/src/data/traits.js';
@@ -205,6 +206,8 @@ function validateRuntimeMetadata(value: Record<string, unknown>): void {
     // minimum compiled skill potency; it must remain valid through save/load.
     if (isRecordObject(condition) && condition.magnitude !== undefined && (!Number.isFinite(condition.magnitude) || Number(condition.magnitude) <= 0 || Number(condition.magnitude) > (['traits-items-v1','traits-items-v2'].includes(String(value.traitLevelModel)) ? 16 : condition.id === 'poisoned' && value.traitLevelModel === 'traits-levels-v2' ? 2 : 2))) throw new Error('状态效力记录损坏');
     if (isRecordObject(condition) && condition.sourceId !== undefined && typeof condition.sourceId !== 'string') throw new Error('状态来源记录损坏');
+    if (condition.effectSourceId !== undefined && (typeof condition.effectSourceId !== 'string'
+      || !(value.traitSources as import('../../engine/src/trait-sources.js').TraitSource[] | undefined)?.some(s => s.id === condition.effectSourceId && s.conditions !== undefined && !s.revoked && s.conditionIds?.includes(String(condition.id)) && (s.duration.kind === 'permanent' || s.remaining! > 0)))) throw Error('状态的效果来源记录损坏');
     if (condition.damageChannel !== undefined && !['kinetic','thermal','arcane'].includes(String(condition.damageChannel))) throw Error('持续伤害通道损坏');
     if (condition.defensePower !== undefined && (condition.id !== 'blessed' || !validDefensePower(condition.defensePower))) throw new Error('守护防御规格记录损坏');
   }
@@ -459,8 +462,11 @@ export function unitRecordFromCombatant(
   previous?: UnitRecord,
   opts: { transient?: boolean; kind?: UnitHistoryEntry['kind']; sourceId?: string } = {},
 ): UnitRecord {
-  c = stripCarriedItems(c); delete c.barrier; delete c.weaponHeat; delete c.shieldDurability; delete c.energyShield; delete c.sprayerFuel; delete c.tankRupturedRound; delete c.chargeInterrupted; delete c.chargeDistance; delete c.denialTriggered; delete c.battleZones; delete c.regenerationRemainder; delete c.lifestealState; delete c.controlActivation; delete c.movementRemainder; delete c.marchRemainder; delete c.movedDuringActivation; delete c.looseChoiceLocked;
-  if(opts.kind==='battle'){ delete c.storyState; c.conditions = c.conditions.filter(condition => !['taunted','charmed','blinded','confused'].includes(condition.id)); }
+  c = stripCarriedItems(c);
+  if (c.barrier?.grants) { c.barrier.grants = c.barrier.grants.filter(g => g.effectSourceId); refreshBarrier(c); }
+  else delete c.barrier;
+  delete c.weaponHeat; delete c.shieldDurability; delete c.energyShield; delete c.sprayerFuel; delete c.tankRupturedRound; delete c.chargeInterrupted; delete c.chargeDistance; delete c.denialTriggered; delete c.battleZones; delete c.regenerationRemainder; delete c.lifestealState; delete c.controlActivation; delete c.movementRemainder; delete c.marchRemainder; delete c.movedDuringActivation; delete c.looseChoiceLocked;
+  if(opts.kind==='battle'){ delete c.storyState; c.conditions = c.conditions.filter(condition => condition.effectSourceId || !['taunted','charmed','blinded','confused'].includes(condition.id)); }
   limitCombatantLife(c);
   delete c.nonLethal;delete c.cannonAmmo;
   delete c.airborne; delete c.elevation; delete c.formationPosition;

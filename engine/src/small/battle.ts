@@ -3365,6 +3365,7 @@ export class SmallBattle {
     if (u.suppression) u.suppression = Math.max(0, u.suppression - 1);
     const beforeConditions = new Set(u.conditions.filter(c => c.dur > 0).map(c => c.id));
     for (const c of [...u.conditions]) {
+      if (c.effectSourceId) continue;
       if (ACTIVATION_CONTROLS.has(c.id)) continue;
       if (c.skipNextDecay) { delete c.skipNextDecay; continue; }
       c.dur -= 1;

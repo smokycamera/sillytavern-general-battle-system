@@ -28,7 +28,7 @@ export interface NewUnitPlan {
 
 /** The engine identity of the n-th card created by the event at `index`. */
 export const newUnitId = (proposalId: string, index: number, n = 0) => `unit-${proposalId}-${index}-${n}`;
-const UNIT_REFERENCES = new Set<Suggestion['kind']>(['deploy', 'unit-update', 'unit-set', 'learn', 'bless', 'affect', 'unbless', 'unaffect']);
+const UNIT_REFERENCES = new Set<Suggestion['kind']>(['deploy', 'unit-update', 'unit-set', 'learn', 'effect', 'bless', 'affect', 'unbless', 'unaffect']);
 const unitReference = (event: Suggestion): event is Suggestion & { id: string } => UNIT_REFERENCES.has(event.kind) && 'id' in event && !!event.id;
 const key = (id: string) => normalizeHandle(id.trim());
 // unit_set field → spawn attribute; everything else is applied after creation.

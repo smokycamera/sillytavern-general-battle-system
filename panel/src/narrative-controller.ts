@@ -28,7 +28,7 @@ import {
 import { RUNTIME_REMINDER } from './narrative-prompt.js';
 import { parseProtocol, protocolExcerpt } from './protocol.js';
 import { mapNarrativeReferences, mentionsNarrativeId, narrativeIds } from './narrative-ids.js';
-import { storyFields, storyEquipmentSpec, storySkillSpec, storyItemSpec } from './story-spec.js';
+import { storyFields, storyEquipmentSpec, storySkillSpec, storyItemSpec, storyEffectSpec } from './story-spec.js';
 import { enhancementLabel } from '../../engine/src/enhancements.js';
 import { isGradedTrait } from '../../engine/src/data/traits.js';
 const promptJson = (value: unknown, publicId: (id: string) => string = id => id) => JSON.stringify(mapNarrativeReferences(value, publicId)).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
@@ -86,7 +86,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     const progress = xpProgress({ level: record.level, xp: record.xp ?? 0, xpCurve: unit?.xpCurve, xpLevelStart: unit?.xpLevelStart });
     const moraleLocked = record.scale === 'hero' || record.id === save.protagonistId || unit?.moraleLocked === true;
     const physical = live && positionedUnit(observation, live);
-    const effects = unit?.traitSources?.filter((s) => traitSourceActive(unit, s)).map((s) => ({ source: s.id, name: s.name,
+    const effects = unit?.traitSources?.filter((s) => traitSourceActive(unit, s) && (detailed || s.conditions === undefined)).map((s) => ({ source: s.id, name: s.name,
       ...(s.traitIds.length ? { traits: s.traitIds.map((id) => (traitRegistry().get(id)?.name ?? id) + (s.traitLevels?.[id] ? 'L' + s.traitLevels[id] : '')) } : {}),
       ...(s.conditionIds?.length ? { effects: s.conditionIds.map((id) => standardConditionMap().get(id)?.name ?? id) } : {}),
       duration: s.duration.kind, remaining: s.remaining }));
@@ -94,7 +94,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     const line = promptJson({ ...(detailed && traitEffects.length ? { traitEffects } : {}), id: record.id, name: record.name, side: record.side,
       ...(detailed ? { training: record.level, bonuses: unit?.bonuses } : { level: String(record.level) + enhancementLabel(unit?.bonuses) }),
       ...(!battleOpen ? { ...(detailed ? { level:record.level,base:{...record.base,...(moraleLocked?{moraleMax:undefined}:{})},status:record.status,retired:record.retired,resources:unit?.resources,traits:unit?.traits.map((id) => traitLevelToken(id, unit.traitLevels?.[id])),preparedAbilityIds:unit?.preparedAbilityIds } : {}),morale:record.morale,speedTier:unit?.speedTier,
-        conditions:detailed ? record.conditions : record.conditions?.filter(c => c.dur > 0).map(c => (standardConditionMap().get(c.id)?.name ?? c.id) + c.dur + '轮') } : {}),
+        conditions:detailed ? record.conditions : record.conditions?.filter(c => c.dur > 0 && !c.effectSourceId).map(c => (standardConditionMap().get(c.id)?.name ?? c.id) + c.dur + '轮') } : {}),
       ...(progress ? { xpProgress: progress.current, xpRequired: progress.next } : { xpProgress: '已满级' }),
       semantics: record.scale === 'hero' ? '生命' : unit?.body==='vehicle'?'载具数量':'人数', hp: live?.hp ?? record.hp, hpMax: live?.base.hpMax ?? record.base.hpMax,
       // Wound groups are engine bookkeeping: the chat model gets a readable summary, never raw {hp,count} records to echo or rewrite.
@@ -109,7 +109,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
       ...(live && worksLabel(live) ? { works: worksLabel(live) } : {}),
       ...(live && observation.mode === 'mass' && live.rulesVersion === 'v2' ? { formation: (formationNode(physical ?? live).side === 'ally' ? '我方阵地/' : '敌方阵地/') + formationNode(physical ?? live).wing + '/' + ({ front: '前线', rear: '支援', reserve: '预备' }[formationNode(live).rank]) } : {}),
       ...(field && live?.pos !== undefined ? { position: cellLabel(field, live.pos), suppressed: !!live.suppression } : {}),
-      ...(live?.conditions.some((c) => c.dur > 0) ? { conditions: live.conditions.filter((c) => c.dur > 0).map((c) => (standardConditionMap().get(c.id)?.name ?? c.id) + c.dur + '轮') } : {}),
+      ...(live?.conditions.some((c) => c.dur > 0 && !c.effectSourceId) ? { conditions: live.conditions.filter((c) => c.dur > 0 && !c.effectSourceId).map((c) => (standardConditionMap().get(c.id)?.name ?? c.id) + c.dur + '轮') } : {}),
       ...(live?.side === 'ally' ? { SP: `${live.resources.SP ?? 0}/${spCapacity(live)}` } : {}),
       skills: detailed && unit?.rulesVersion === 'v2' && unit.abilities.length ? unit.abilities.filter((a) => !a.itemSourceId && !a.equipmentSourceId && (!battleOpen || /学习|技能|learn/.test(requestText) || unit.preparedAbilityIds?.includes(a.id))).map((a) => battleOpen && !/学习|技能|learn/.test(requestText)
         ? { name: a.name, cooldown: unit.abilityState.find((s) => s.abilityId === (a.cooldownGroup ?? a.id))?.cdLeft || undefined }
@@ -119,6 +119,13 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
       weapon: equipmentFact(unit?.weapon), sidearm: equipmentFact(unit?.sidearm), armor: equipmentFact(unit?.armor), shield: equipmentFact(unit?.shield), ...(effects?.length ? { effects } : {}) }, publicId);
     blocks.units.push(line);
     if (!detailed && unit?.rulesVersion === 'v2') {
+      for (const source of unit.traitSources ?? []) if (source.conditions !== undefined && traitSourceActive(unit, source)) {
+        const specification = storyEffectSpec(source, unit);
+        if (specification) blocks.units.push(storyFields({ id: record.id, effects: specification,
+          rounds: source.duration.kind === 'rounds' ? source.remaining : undefined,
+          battles: source.duration.kind === 'battles' ? source.remaining : undefined,
+          permanent: source.duration.kind === 'permanent' ? true : undefined }, publicId));
+      }
       if (unit.traits.length) blocks.units.push(storyFields({ id: record.id, traits: unit.traits.map(id =>
         (traitRegistry().get(id)?.name ?? id) + (isGradedTrait(id) ? 'L' + (unit.traitLevels?.[id] ?? 5) : '')).join(',') }, publicId));
       for (const ability of unit.abilities.filter(a => !a.itemSourceId && !a.equipmentSourceId && (!battleOpen || /学习|技能|learn/.test(requestText) || unit.preparedAbilityIds?.includes(a.id)))) {

@@ -1,0 +1,610 @@
+{
+  "id": "unit-story-ai-example-spawn-0-0",
+  "equipmentManaged": true,
+  "preparedAbilityIds": [
+    "unit:unit-story-ai-example-spawn-0-0:skill:%E5%86%B2%E9%94%8B",
+    "unit:unit-story-ai-example-spawn-0-0:skill:%E9%BC%93%E8%88%9E",
+    "unit:unit-story-ai-example-spawn-0-0:skill:%E6%B2%BB%E7%96%97%E6%9C%AF"
+  ],
+  "revision": 3,
+  "name": "再生赤翼骑兵连",
+  "level": 5,
+  "side": "ally",
+  "scale": "company",
+  "archetype": "mobile",
+  "base": {
+    "atk": 8,
+    "def": 15,
+    "spd": 6,
+    "hpMax": 100,
+    "moraleMax": 72
+  },
+  "hp": 80,
+  "morale": 72,
+  "status": "ready",
+  "conditions": [
+    {
+      "id": "inspired",
+      "dur": 99,
+      "magnitude": 0.43301270189221935,
+      "effectSourceId": "effect:story-ai-example-spawn:0:0:0"
+    },
+    {
+      "id": "slowed",
+      "dur": 3,
+      "magnitude": 0.5,
+      "effectSourceId": "effect:story-ai-example-frost:0:0"
+    },
+    {
+      "id": "bleeding",
+      "dur": 3
+    }
+  ],
+  "weaponName": "骑枪",
+  "weaponClass": "spear",
+  "weaponLevel": 3,
+  "sidearmName": "军刀",
+  "sidearmClass": "sword",
+  "sidearmLevel": 3,
+  "armorName": "板甲",
+  "armorTier": 3,
+  "armorLevel": 3,
+  "skills": [],
+  "traits": [
+    "regen",
+    "commander",
+    "charge-strong"
+  ],
+  "xp": 0,
+  "snapshot": {
+    "id": "unit-story-ai-example-spawn-0-0",
+    "name": "再生赤翼骑兵连",
+    "side": "ally",
+    "scale": "company",
+    "archetype": "mobile",
+    "level": 5,
+    "rulesVersion": "v2",
+    "loadModel": "capacity-v2",
+    "numericModel": "graded-v1",
+    "damageModel": "wounds-v2",
+    "body": "human",
+    "speedTier": 4,
+    "mount": true,
+    "base": {
+      "atk": 8,
+      "def": 15,
+      "spd": 6,
+      "hpMax": 100,
+      "moraleMax": 72
+    },
+    "hp": 80,
+    "tags": [
+      "mobile",
+      "company",
+      "human"
+    ],
+    "traits": [
+      "regen",
+      "commander",
+      "charge-strong"
+    ],
+    "traitLevels": {
+      "commander": 4,
+      "charge-strong": 3
+    },
+    "abilities": [
+      {
+        "id": "unit:unit-story-ai-example-spawn-0-0:skill:%E5%86%B2%E9%94%8B",
+        "definitionId": "generic:physical-single:dash@4+melee",
+        "name": "冲锋",
+        "sourceId": "unit:unit-story-ai-example-spawn-0-0",
+        "cooldownGroup": "skill-mechanism:generic:physical-single:dash@4+melee",
+        "category": "physical-single",
+        "recipe": {
+          "category": "physical-single",
+          "area": false,
+          "modifiers": [
+            "dash",
+            "melee"
+          ],
+          "modifierPowers": {
+            "dash": 4
+          },
+          "version": "skill-formula-v3",
+          "power": 4
+        },
+        "effectVersion": "skill-v10.0",
+        "power": 4,
+        "effects": [
+          {
+            "op": "damage",
+            "baseDice": "8d6",
+            "shape": "single"
+          },
+          {
+            "op": "move",
+            "mode": "dash",
+            "reach": 3
+          }
+        ],
+        "shape": "single",
+        "channel": "kinetic",
+        "penetration": 10,
+        "cost": {
+          "resource": "SP",
+          "amount": 3
+        },
+        "cooldown": 1,
+        "target": "enemy",
+        "range": {
+          "min": 0,
+          "max": 3,
+          "metric": "grid",
+          "allowEngaged": true
+        },
+        "desc": "物理单体近战+突进L4；强度与装备/目标条件共同决定结果，不同种效果独立冷却，同种效果改名不刷新。",
+        "damageBasis": "weapon",
+        "requires": "weapon",
+        "weaponUse": "melee",
+        "weaponDamageMult": 1.9800000000000002,
+        "damageScale": 1.9800000000000002
+      },
+      {
+        "id": "unit:unit-story-ai-example-spawn-0-0:skill:%E9%BC%93%E8%88%9E",
+        "definitionId": "generic:buff:attack@3",
+        "name": "鼓舞",
+        "sourceId": "unit:unit-story-ai-example-spawn-0-0",
+        "cooldownGroup": "skill-mechanism:generic:buff:attack@3",
+        "category": "buff",
+        "recipe": {
+          "category": "buff",
+          "area": false,
+          "modifiers": [
+            "attack"
+          ],
+          "modifierPowers": {
+            "attack": 3
+          },
+          "version": "skill-formula-v3",
+          "power": 3
+        },
+        "effectVersion": "skill-v10.0",
+        "power": 3,
+        "effects": [
+          {
+            "op": "condition",
+            "conditionId": "inspired",
+            "dur": 3,
+            "magnitude": 0.75,
+            "shape": "single"
+          }
+        ],
+        "shape": "single",
+        "channel": "arcane",
+        "penetration": 2,
+        "delivery": "magic",
+        "cost": {
+          "resource": "SP",
+          "amount": 3
+        },
+        "cooldown": 2,
+        "target": "ally",
+        "range": {
+          "min": 0,
+          "max": 3,
+          "metric": "grid",
+          "allowEngaged": true
+        },
+        "desc": "增益攻击L3；强度与装备/目标条件共同决定结果，不同种效果独立冷却，同种效果改名不刷新。"
+      },
+      {
+        "id": "unit:unit-story-ai-example-spawn-0-0:skill:%E6%B2%BB%E7%96%97%E6%9C%AF",
+        "definitionId": "generic:buff:heal@3",
+        "name": "治疗术",
+        "sourceId": "unit:unit-story-ai-example-spawn-0-0",
+        "cooldownGroup": "skill-mechanism:generic:buff:heal@3",
+        "category": "buff",
+        "recipe": {
+          "category": "buff",
+          "area": false,
+          "modifiers": [
+            "heal"
+          ],
+          "modifierPowers": {
+            "heal": 3
+          },
+          "version": "skill-formula-v3",
+          "power": 3
+        },
+        "effectVersion": "skill-v10.0",
+        "power": 3,
+        "effects": [
+          {
+            "op": "heal",
+            "power": 3,
+            "amount": 24
+          }
+        ],
+        "shape": "single",
+        "channel": "arcane",
+        "penetration": 2,
+        "delivery": "magic",
+        "cost": {
+          "resource": "SP",
+          "amount": 3
+        },
+        "cooldown": 2,
+        "target": "ally",
+        "range": {
+          "min": 0,
+          "max": 3,
+          "metric": "grid",
+          "allowEngaged": true
+        },
+        "desc": "增益治疗L3；强度与装备/目标条件共同决定结果，不同种效果独立冷却，同种效果改名不刷新。"
+      }
+    ],
+    "preparedAbilityIds": [
+      "unit:unit-story-ai-example-spawn-0-0:skill:%E5%86%B2%E9%94%8B",
+      "unit:unit-story-ai-example-spawn-0-0:skill:%E9%BC%93%E8%88%9E",
+      "unit:unit-story-ai-example-spawn-0-0:skill:%E6%B2%BB%E7%96%97%E6%9C%AF"
+    ],
+    "conditions": [
+      {
+        "id": "inspired",
+        "dur": 99,
+        "magnitude": 0.43301270189221935,
+        "effectSourceId": "effect:story-ai-example-spawn:0:0:0"
+      },
+      {
+        "id": "slowed",
+        "dur": 3,
+        "magnitude": 0.5,
+        "effectSourceId": "effect:story-ai-example-frost:0:0"
+      },
+      {
+        "id": "bleeding",
+        "dur": 3
+      }
+    ],
+    "abilityState": [],
+    "resources": {
+      "SP": 22,
+      "reserve": 0
+    },
+    "morale": 72,
+    "engagedWith": [],
+    "status": "ready",
+    "fatigue": 0,
+    "xpValue": 350,
+    "generationWarnings": [],
+    "genAudit": {
+      "seed": "unit-story-ai-example-spawn-0-0",
+      "variance": {
+        "version": "normal-v1",
+        "rolls": {
+          "damage": -13,
+          "health": -32
+        }
+      },
+      "deltas": {},
+      "formulaVersion": "mechanism-v2.3+traits-v2+unified-v1+graded-v1+capacity-v2",
+      "input": {
+        "traitLevels": {
+          "regen": 5,
+          "commander": 4,
+          "charge-strong": 3
+        },
+        "rulesVersion": "v2",
+        "damageModel": "wounds-v2",
+        "numericModel": "graded-v1",
+        "loadModel": "capacity-v2",
+        "body": "human",
+        "mount": true,
+        "speedTier": 4,
+        "quality": 3,
+        "shield": true,
+        "shieldName": "骑兵盾",
+        "shieldLevel": 3,
+        "shieldClass": "shield",
+        "hp": 80,
+        "hpMax": 100,
+        "name": "再生赤翼骑兵连",
+        "scale": "company",
+        "archetype": "mobile",
+        "level": 5,
+        "side": "ally",
+        "traits": [
+          "regen",
+          "commander",
+          "charge-strong"
+        ],
+        "weaponName": "骑枪",
+        "weaponClass": "spear",
+        "weaponLevel": 3,
+        "sidearmName": "军刀",
+        "sidearmClass": "sword",
+        "sidearmLevel": 3,
+        "armorName": "板甲",
+        "armorTier": 3,
+        "armorLevel": 3,
+        "abilityBlueprints": [
+          {
+            "id": "generic:physical-single:dash@4+melee",
+            "level": 4,
+            "name": "冲锋"
+          },
+          {
+            "id": "generic:buff:attack@3",
+            "level": 3,
+            "name": "鼓舞"
+          },
+          {
+            "id": "generic:buff:heal@3",
+            "level": 3,
+            "name": "治疗术"
+          }
+        ],
+        "preparedAbilityIds": [
+          "unit:unit-story-ai-example-spawn-0-0:skill:%E5%86%B2%E9%94%8B",
+          "unit:unit-story-ai-example-spawn-0-0:skill:%E9%BC%93%E8%88%9E",
+          "unit:unit-story-ai-example-spawn-0-0:skill:%E6%B2%BB%E7%96%97%E6%9C%AF"
+        ],
+        "armorProfile": "balanced"
+      },
+      "abilities": [
+        {
+          "blueprintId": "generic:physical-single:dash@4+melee",
+          "power": 4
+        },
+        {
+          "blueprintId": "generic:buff:attack@3",
+          "power": 3
+        },
+        {
+          "blueprintId": "generic:buff:heal@3",
+          "power": 3
+        }
+      ]
+    },
+    "bakedTraitStats": {},
+    "skillModel": "skills-v4",
+    "recoveryModel": "life-scaled-v1",
+    "artilleryModel": "blast-decay-v2",
+    "combatModel": "cohort-v2",
+    "formation": {
+      "members": 80,
+      "capacity": 100,
+      "memberHp": 128,
+      "health": [
+        {
+          "hp": 128,
+          "count": 80
+        }
+      ]
+    },
+    "itemModel": "items-v2",
+    "revivalModel": "revival-v1",
+    "commandRangeModel": "graded-v1",
+    "healingModel": "healing-grades-v1",
+    "controlModel": "activation-controls-v1",
+    "traitLevelModel": "traits-items-v2",
+    "traitSources": [
+      {
+        "id": "effect:story-ai-example-spawn:0:0:0",
+        "name": "风神赐福",
+        "kind": "effect",
+        "specification": "风神赐福:buffL3+攻击L3+飞行L5",
+        "traitIds": [
+          "flying"
+        ],
+        "traitLevels": {
+          "flying": 5
+        },
+        "conditions": [
+          {
+            "id": "inspired",
+            "dur": 99,
+            "magnitude": 0.43301270189221935
+          }
+        ],
+        "conditionIds": [
+          "inspired"
+        ],
+        "duration": {
+          "kind": "battles",
+          "count": 2
+        },
+        "remaining": 2
+      },
+      {
+        "id": "effect:story-ai-example-frost:0:0",
+        "name": "寒霜侵蚀",
+        "kind": "effect",
+        "specification": "寒霜侵蚀:debuffL2+减速L2",
+        "traitIds": [],
+        "traitLevels": {},
+        "conditions": [
+          {
+            "id": "slowed",
+            "dur": 3,
+            "magnitude": 0.5
+          }
+        ],
+        "conditionIds": [
+          "slowed"
+        ],
+        "duration": {
+          "kind": "rounds",
+          "count": 3
+        },
+        "remaining": 3
+      }
+    ],
+    "recordRevision": 2,
+    "xp": 0,
+    "gear": [
+      {
+        "id": "spawn-item-story-ai-example-spawn-0-0-1",
+        "name": "夜视镜",
+        "load": 0,
+        "recipe": {
+          "version": "items-v1",
+          "form": "worn",
+          "power": 4,
+          "seed": "spawn-item-story-ai-example-spawn-0-0-1",
+          "traitBudgetModel": "traits-items-v2",
+          "progressionModel": "item-progression-v1",
+          "wornEffectModel": "worn-anchored-v2",
+          "traits": [
+            {
+              "id": "night-fighter",
+              "level": 4
+            }
+          ]
+        },
+        "passive": {
+          "traits": [
+            {
+              "id": "night-fighter",
+              "level": 4
+            }
+          ],
+          "actualEffects": {
+            "uncappedNegative": true,
+            "values": {},
+            "damageCap": 0.625,
+            "negativeDamageCap": 0.625,
+            "protectionCap": 1.5374999999999999,
+            "negativeProtectionCap": 1.0499999999999998
+          }
+        }
+      }
+    ],
+    "weapon": {
+      "id": "unit:unit-story-ai-example-spawn-0-0:primary",
+      "name": "骑枪",
+      "baseDice": "2d6+2",
+      "recipe": {
+        "loadModel": "capacity-v2",
+        "numericModel": "graded-v1",
+        "variance": {
+          "version": "normal-v1",
+          "rolls": {
+            "damage": -82,
+            "penetration": 49
+          }
+        },
+        "balanceVersion": "unified-v1",
+        "version": "mechanism-v2.3",
+        "mechanism": "spear",
+        "power": 3,
+        "size": "human",
+        "quality": 3,
+        "seed": "unit-story-ai-example-spawn-0-0:primary"
+      },
+      "channel": "kinetic",
+      "penetration": 2,
+      "range": 2,
+      "minRange": 0,
+      "pointBlankPolicy": "allow",
+      "attacks": 1,
+      "level": 3,
+      "hands": 1,
+      "load": 1.5,
+      "tags": [
+        "mechanism:spear"
+      ]
+    },
+    "sidearm": {
+      "id": "unit:unit-story-ai-example-spawn-0-0:sidearm",
+      "name": "军刀",
+      "baseDice": "2d6+2",
+      "recipe": {
+        "loadModel": "capacity-v2",
+        "numericModel": "graded-v1",
+        "variance": {
+          "version": "normal-v1",
+          "rolls": {
+            "damage": 4,
+            "penetration": 80
+          }
+        },
+        "balanceVersion": "unified-v1",
+        "version": "mechanism-v2.3",
+        "mechanism": "sword",
+        "power": 3,
+        "size": "human",
+        "quality": 3,
+        "seed": "unit-story-ai-example-spawn-0-0:sidearm"
+      },
+      "channel": "kinetic",
+      "penetration": 2,
+      "range": 1,
+      "minRange": 0,
+      "pointBlankPolicy": "allow",
+      "attacks": 1,
+      "level": 3,
+      "hands": 1,
+      "load": 1,
+      "tags": [
+        "mechanism:sword"
+      ]
+    },
+    "armor": {
+      "id": "unit:unit-story-ai-example-spawn-0-0:armor",
+      "name": "板甲",
+      "tier": 3,
+      "level": 3,
+      "recipe": {
+        "loadModel": "capacity-v2",
+        "numericModel": "graded-v1",
+        "variance": {
+          "version": "normal-v1",
+          "rolls": {
+            "protection": -26,
+            "power": -155
+          }
+        },
+        "balanceVersion": "unified-v1",
+        "version": "mechanism-v2.3",
+        "mechanism": "armor:3",
+        "power": 3,
+        "size": "human",
+        "quality": 3,
+        "seed": "unit-story-ai-example-spawn-0-0:armor",
+        "protectionProfile": "balanced"
+      },
+      "protection": {
+        "kinetic": 3,
+        "thermal": 2,
+        "arcane": 1
+      },
+      "load": 6,
+      "drScale": 1
+    },
+    "shield": {
+      "id": "unit:unit-story-ai-example-spawn-0-0:shield",
+      "load": 1.5,
+      "name": "骑兵盾",
+      "recipe": {
+        "loadModel": "capacity-v2",
+        "numericModel": "graded-v1",
+        "variance": {
+          "version": "normal-v1",
+          "rolls": {
+            "protection": -71,
+            "power": 15
+          }
+        },
+        "balanceVersion": "unified-v1",
+        "version": "mechanism-v2.3",
+        "mechanism": "shield",
+        "power": 3,
+        "size": "human",
+        "quality": 3,
+        "seed": "unit-story-ai-example-spawn-0-0:shield"
+      }
+    }
+  }
+}

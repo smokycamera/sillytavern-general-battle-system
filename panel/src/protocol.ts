@@ -2,7 +2,7 @@ import { WEAPON_CLASSES } from '../../engine/src/data/weapons.js';
 import { parseEnhancementSuffix, enhancementLabel, type Enhancements, type BonusKind } from '../../engine/src/enhancements.js';
 import { narrativeTraitLevel, traitLevelToken, traitRegistry, inferArchetype, type BodyKind } from '../../engine/src/index.js';
 /** V2正文：全文提取、格式容错、逐项诊断；真实身份和数值由事务层最终核对。 */
-import { parseAbilitySpec, parseSuggestionTags, type Suggestion } from './tags.js';
+import { parseAbilitySpec, parseEffectAttributes, parseSuggestionTags, type Suggestion } from './tags.js';
 import { resolveWeaponClass } from '../../engine/src/data/weapons.js';
 import { MAX_PROTOCOL_CHARS, MAX_PROTOCOL_EVENTS, MAX_SCENE_UNITS, MAX_SPAWN_COUNT, GROUPING_HINT } from './narrative-limits.js';
 import { scanProtocolTags, normalizedAttributes, serializeEvent, ProtocolSyntaxError, type ProtocolTag, type ProtocolAttribute } from './protocol-syntax.js';
@@ -17,8 +17,9 @@ const ATTRIBUTES: Record<string, readonly string[]> = {
   unit_set: UNIT_SET_ATTRIBUTES,
   deploy: ['id'],
   learn: ['id', 'skills'],
+  effect: ['id', 'effects', 'clear', 'rounds', 'battles', 'permanent'],
   unit_update: ['id', 'hp', 'hpMax', 'morale', 'state', 'clear', 'reason'],
-  spawn: ['id', 'name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'speed', 'stabilized', 'protection', 'enchant', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits', 'items'],
+  spawn: ['id', 'name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'speed', 'stabilized', 'protection', 'enchant', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits', 'items', 'effects', 'rounds', 'battles', 'permanent'],
   field: ['env', 'light', 'note'],
   take: ['id', 'qty', 'note'],
   add: ['id', 'to', 'item', 'note', 'qty', 'type', 'spec', 'body', 'quality', 'enchant', 'stabilized', 'protection'],
@@ -240,7 +241,7 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
     const event = events[i]!;
     const targets = event.kind === 'give' ? event.to ?? [] : event.kind === 'add' ? event.to ? [event.to] : [] : 'id' in event && event.id ? [event.id] : [];
     const unitId = targets.find(id => spawnIds.has(normalizeHandle(id)));
-    if (!['deploy', 'unit-update', 'unit-set', 'learn', 'bless', 'affect', 'unbless', 'unaffect', 'add', 'give'].includes(event.kind) || !unitId || !spawnIds.has(normalizeHandle(unitId))) continue;
+    if (!['deploy', 'unit-update', 'unit-set', 'learn', 'effect', 'bless', 'affect', 'unbless', 'unaffect', 'add', 'give'].includes(event.kind) || !unitId || !spawnIds.has(normalizeHandle(unitId))) continue;
     if (event.kind === 'deploy') { events.splice(i, 1); warnings.push(`已略过 deploy ${event.id}：这是本回复 spawn 自编的编号，新单位会自动上场`); }
     else {
       const message = `${unitId} 是本回复 spawn 自编的编号，新单位的编号由插件分配；要设置新单位请写进 spawn，或在下一次回复按单位资料里的编号修改`;
@@ -283,7 +284,7 @@ const repairProbes: Record<string, Record<string, string>> = {
   spawn: { name: '规格校验', side: 'ally', scale: 'hero' }, unit_set: { id: '校验' },
   unit_update: { id: '校验', hp: '1' }, deploy: { id: '校验' }, take: { id: '校验' }, add: { id: '校验' },
   give: { id: '校验' }, reforge: { id: '校验', spec: '剑L1' }, field: { env: 'plains' },
-  learn: { id: '校验', skills: '治疗L1' }, bless: { id: '校验', traits: '快速', battles: '1' },
+  learn: { id: '校验', skills: '治疗L1' }, effect: { id: '校验', effects: '校验:buffL1+攻击L1', battles: '1' }, bless: { id: '校验', traits: '快速', battles: '1' },
   affect: { id: '校验', effects: '诅咒', battles: '1' }, unbless: { id: '校验', source: '校验' }, unaffect: { id: '校验', source: '校验' },
 };
 
@@ -300,7 +301,7 @@ function attributeParts(token: ProtocolAttribute, key: string): [number, number]
   } else if (token.value.startsWith('[')) {
     for (const match of token.value.matchAll(/"(?:\\.|[^"\\])*"/g)) push(match.index! + 1, match.index! + match[0].length - 1);
   } else {
-    const separator = key === 'skills' ? /[,，、;；\n]+/g : /[,，、;；|+＋\n]+/g;
+    const separator = key === 'skills' || key === 'effects' ? /[,，、;；\n]+/g : /[,，、;；|+＋\n]+/g;
     let cursor = 0;
     for (const match of token.value.matchAll(separator)) { push(cursor, match.index!); cursor = match.index! + match[0].length; }
     push(cursor, token.value.length);
@@ -332,6 +333,10 @@ export function recoverProtocol(text: string): { text: string; diagnostics: Prot
       try { Object.assign(attrs, normalizedAttributes({ ...tag, attrs: token.raw }, ATTRIBUTES[tag.name]!, [])); } catch { /* Diagnose each field below. */ }
     }
     const probe = { ...repairProbes[tag.name] }, retained: Record<string, string> = {};
+    if (['effect', 'spawn'].includes(tag.name) && attrs.effects !== undefined) {
+      probe.effects = '校验:buffL1+攻击L1';
+      if (!probe.rounds && !probe.battles && !probe.permanent) probe.battles = '1';
+    }
     if (tag.name === 'add' && attrs.item !== undefined) { delete probe.id; probe.item = '规格校验'; }
     if (tag.name === 'spawn' && attrs.scale === 'company') {
       probe.scale = 'company'; probe.hpMax = /^\d+$/.test(attrs.hpMax ?? '') && Number(attrs.hpMax) > 0 ? attrs.hpMax! : '1000000000';
@@ -455,6 +460,12 @@ function naturalArmorSpec(armor: string, body?: string): { armor: string; writte
 }
 
 function validatedEvent(kind: string, attrs: Record<string, string>, warnings: string[]): Suggestion {
+  if (kind === 'effect') {
+    if (!attrs.id?.trim()) throw Error('effect需要已有单位id');
+    const effect = parseEffectAttributes(attrs);
+    if (!effect.effects?.length && !effect.clear?.length) throw Error('effect需要effects或clear');
+    return { kind: 'effect', id: attrs.id.trim(), ...effect, raw: serializeEvent(kind, attrs) };
+  }
   if (kind === 'unit_set') {
     // items 交给单位的道具不是档案字段；只交道具时不改档案。
     const items = attrs.items ? splitSpawnItems(attrs.items).map((entry) => parseSpawnItem(entry)) : [];
@@ -484,6 +495,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     if (attrs.spec === undefined && ['body', 'quality', 'enchant', 'stabilized', 'protection'].some((key) => attrs[key] !== undefined)) throw new Error('有效果的物品需要明确spec，不能只靠名称或附魔提示猜测');
   }
   if (kind === 'spawn') {
+    parseEffectAttributes(attrs);
     delete attrs.id; // 新单位编号一律由插件分配，正文写的 id 不参与建档或引用。
     if(attrs.level)parseEnhancementSuffix('L'+attrs.level.replace(/^[lL]/,''),'unit');
     if (attrs.scale === 'mook') attrs.scale = 'company'; // 旧正文别名，不产生第三套V2规则。
