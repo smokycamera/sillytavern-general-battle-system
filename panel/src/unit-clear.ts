@@ -1,6 +1,7 @@
 import { canonicalTraitId, resolveTraitId, traitRegistry, standardConditionMap, type Combatant } from '../../engine/src/index.js';
 import { clearEffectSources } from '../../engine/src/effect-sources.js';
 import { SKILL_MODIFIERS } from '../../engine/src/data/skill-mechanisms.js';
+import { STORY_ROUND_END_IDS } from '../../engine/src/story-effect-types.js';
 
 /** 正文只需填写状态或授予能力的名称；保存时仍兼容原有状态 id。 */
 export function normalizeUnitClear(input: unknown): string[] {
@@ -12,7 +13,7 @@ export function normalizeUnitClear(input: unknown): string[] {
     const condition = conditions.has(name) ? name : [...conditions.values()].find(entry => entry.name === name)?.id;
     const trait = resolveTraitId(name, traits);
     const modifiers = SKILL_MODIFIERS.filter(m => m.name === name || m.id === name);
-    const found = [condition, trait && canonicalTraitId(trait, true), ...modifiers.flatMap(m => m.condition ? [m.condition] : m.id === 'barrier' ? ['barrier'] : [])].filter((id): id is string => !!id);
+    const found = [condition, trait && canonicalTraitId(trait, true), ...modifiers.flatMap(m => m.condition ? [m.condition] : m.id === 'barrier' || STORY_ROUND_END_IDS.some(id => id === m.id) ? [m.id] : [])].filter((id): id is string => !!id);
     if (!found.length) throw Error('clear未知状态或剧情能力：' + name);
     return found;
   });

@@ -4,6 +4,7 @@ import { skillDefinitionName } from '../../engine/src/skill-catalog.js';
 import { skillMechanismFromId, skillMechanismName, SKILL_CATEGORIES, SKILL_MODIFIERS, MOVEMENT_MODIFIERS, acceptsModifierPower, type SkillMechanism } from '../../engine/src/data/skill-mechanisms.js';
 import type { Ability, Combatant } from '../../engine/src/types.js';
 import type { TraitSource } from '../../engine/src/trait-sources.js';
+import { storyRoundEndId } from '../../engine/src/story-effect-types.js';
 import { parseSkillMechanism } from '../../engine/src/data/skill-mechanisms.js';
 import { canonicalTraitId } from '../../engine/src/trait-parameters.js';
 import { normalizeNarrativeSkill } from './spec-tolerance.js';
@@ -47,13 +48,15 @@ export function storyEffectSpec(source: TraitSource, unit: Combatant): string | 
   if (!mechanism) return undefined;
   const conditions = new Set(unit.conditions.filter(c => c.effectSourceId === source.id && c.dur > 0).map(c => c.id));
   const barrier = !!source.barrier && !!unit.barrier?.grants?.some(g => g.effectSourceId === source.id && g.remaining > 0);
-  if (!conditions.size && !source.traitIds.length && !barrier) return undefined;
+  const periodic = new Set(source.roundEndEffects?.map(storyRoundEndId));
+  if (!conditions.size && !source.traitIds.length && !barrier && !periodic.size) return undefined;
   const modifiers = mechanism.modifiers.filter(id => {
     const modifier = SKILL_MODIFIERS.find(m => m.id === id)!;
     if (modifier.trait) return source.traitIds.includes(canonicalTraitId(modifier.trait, true));
     if (id === 'ward') return source.traitIds.includes('guardian') || conditions.has('blessed');
     if (modifier.condition) return conditions.has(modifier.condition);
     if (id === 'barrier') return barrier;
+    if (periodic.has(id as ReturnType<typeof storyRoundEndId>)) return true;
     return id === 'martial';
   });
   const bonuses = notation.suffix ? parseEnhancementSuffix('技能L' + notation.level + notation.suffix, 'skill').bonuses : undefined;

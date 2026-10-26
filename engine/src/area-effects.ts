@@ -169,7 +169,7 @@ export function settleZones(context: ObservationContext, round: number, boundary
             if(outcome.condition?.affectedMembers!==undefined)outcome.condition.affectedMembers=Math.min(target.hp,4);
             applySkillCondition(target,outcome.condition);text=outcome.text;control=!!outcome.condition;
           } else if(effect.op==='barrier') {
-            grantBarrier(target,effect.amount,effect.dur,owner.id,effect.defensePower);text=target.name+'在区域内获得屏障';
+            grantBarrier(target,effect.amount,effect.dur,owner.id,effect.defensePower,zone.id);text=target.name+'在区域内获得屏障';
           } else if(effect.op==='heal') {
             const healed=applyRecovery(target,Math.min(recoveryCapacity(target),zone.healingModel ? resolveHealingBudget({ source: owner, target, power: effect.power ?? zone.power, baseAmount: effect.amount ?? rollDice(effect.dice!,random).total, delivery: 'zone', recoveryModel: zone.recoveryModel, sourceMedicSnapshot: zone.sourceMedicSnapshot, rules: { healingModel: zone.healingModel } }) : effect.amount ?? rollDice(effect.dice!,random).total));text=target.name+'在区域内恢复'+displayNumber(healed)+'点生命';
           } else if(effect.op==='resource') {

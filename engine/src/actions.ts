@@ -14,6 +14,7 @@ import { standardConditionMap } from './conditions.js';
 import { dispelCandidates, conditionChance } from './skill-effects.js';
 import { meleeWeapon } from './loadout.js';
 import { recoveryCapacity } from './recovery.js';
+import { barrierSufficient } from './barrier.js';
 /**
  * 战斗动作的共用查询与合法性判定。
  *
@@ -346,8 +347,7 @@ export function abilityTargetReason(input: {
   const controlled = controlActionReason(actor, target, input.units ?? (target ? [actor, target] : [actor]), 'skill', ability.target === 'ally' || ability.target === 'self' && !ability.effects.some(e => e.op === 'zone' || e.op === 'summon'), input.controlAreaIds, input.controlRecipient); if (controlled) return controlled;
   if (target && !input.areaRecipient && controlCondition(actor, 'blinded') && (input.distance ?? 0) > 1) return '致盲只能直接选择1格/阵位内目标';
   if (target && ability.targetBody && target.body !== ability.targetBody && !(target.rulesVersion === 'v2' && activeTraitIds(target).includes('inorganic'))) return '维修用品只能修理车辆或非生物';
-  if (!input.areaAnchor && target && ability.effects.length && ability.effects.every(e => e.op === 'barrier' && (target.barrier?.remaining ?? 0) >= e.amount && (target.barrier?.duration ?? 0) >= e.dur
-    && (!(e.defensePower ?? ability.power) || target.barrier?.defenses?.some(d => d.power >= (e.defensePower ?? ability.power)! && d.duration >= e.dur))
+  if (!input.areaAnchor && target && ability.effects.length && ability.effects.every(e => e.op === 'barrier' && barrierSufficient(target, e.amount, e.dur, e.defensePower ?? ability.power, actor.id, ability)
     || e.op === 'resource' && !skillResourceChange(target, e))) return '目标已经有足够的屏障或精力';
   if (target && ability.weaponUse) {
     const weapon = skillWeapon(actor, ability, input.distance);
