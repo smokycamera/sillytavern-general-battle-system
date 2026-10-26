@@ -86,10 +86,10 @@ describe('spawn 携带道具与收缴', () => {
     const battle = new SmallBattle({ combatants: units, battlefield: standardField(), rules: V15_OVERFLOW_D20, seed: 'spawn-items', traitRegistry: registry }); battle.start();
     const fielded = battle.byId(ranger.id);
     expect(activeTraitIds(fielded)).toEqual(expect.arrayContaining(['stalk', 'forest-lore'])); expect(traitLevel(fielded, 'forest-lore')).toBe(6);
-    // 事实清单列出道具形态与 spec 原文，充能道具给每战次数。
+    // 事实清单沿用世界书的统一规格，仍保留道具形态与件数。
     const facts = narrativeProjection(save, '');
-    expect(facts).toContain('kind="充能道具" items="火球魔杖:充能魔法范围热能L5"');
-    expect(facts).toContain('kind="一次性道具" items="手雷:物理范围投射L4×');
+    expect(facts).toContain('kind="充能道具" items="火球魔杖:充能+魔法范围L5+热能"');
+    expect(facts).toContain('kind="一次性道具" items="手雷:物理范围L4+投射×');
   });
   it('阵亡或撤离的敌方单位身上剩余的道具可以收缴进公共库存；活着的敌人与我方单位不能收缴', () => {
     let { save } = commit(empty(), '<spawn name="敌将" side="enemy" scale="hero" level="5" weapon="剑L5" items="手雷:物理范围投射L4×3,护身符:佩戴L4+4防御,密信"/><spawn name="我方" side="ally" scale="hero" weapon="剑L3" items="手雷:物理范围投射L4"/>');
