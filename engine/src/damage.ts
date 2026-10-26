@@ -800,7 +800,7 @@ export function applyResolutionDamage(target:Combatant,result:AttackResolution):
 
 /** 一段攻击中不含随机数的部分。 */
 interface AttackBasis { ward: StackResult; context: ReturnType<typeof attackContext>; resolved: ResolvedWeapon; dmgMult: number; wardMult: number; atkDetail: string; additional?: AdditionalDamagePart[]; penetration?: ReturnType<typeof penetrationContext>; sizes?: Map<string, { scale: ReturnType<typeof outcomeScale>; sourceScale: number }>; critical?: ReturnType<typeof criticalInfo>; hitRules?: RulePack; hitWeights?: number[] }
-interface PreviewMemo { bases: Map<string, AttackBasis>; samples?: number; penetration?: ReturnType<typeof penetrationContext>; loose?: boolean; cannon?: boolean; modernArms?: boolean;
+interface PreviewMemo { bases: Map<string, AttackBasis>; samples?: number; penetration?: ReturnType<typeof penetrationContext>; loose?: boolean; cannon?: boolean; modernArms?: boolean; layeredLegacy?: boolean;
   lastBasis?: { hp: number; status: Combatant['status']; shield: number | undefined; barrier: number | undefined; value: AttackBasis } }
 /** 抽样副本：伤损只改写生命基数、状态、成员分组、屏障、盾耐久、能量盾与士气记录；其余数据与原单位共享且只读。 */
 function damageCopy(unit: Combatant): Combatant {
@@ -836,21 +836,21 @@ function attackBasis(opts: AttackOpts): AttackBasis {
   // ammunition selection needs the complete formation. Damage still uses live wounds.
   const cannon = memo ? memo.cannon ??= isCannonWeapon(opts.weaponOverride ?? opts.attacker.weapon) : isCannonWeapon(opts.weaponOverride ?? opts.attacker.weapon);
   const modernArms = memo ? memo.modernArms ??= isArmsV2(opts.rules.armsModel) : isArmsV2(opts.rules.armsModel);
+  const layeredLegacy = memo ? memo.layeredLegacy ??= d.barrier?.stacking === 'layers-v1' && !!d.barrier.grants?.some(g => g.legacy) : false;
   const last = memo?.lastBasis;
   // Most packets wound the same surviving member. Compare the exact existing key
   // fields before allocating another string and looking up the same basis.
-  if (modernArms && !cannon && last && last.hp === d.hp && last.status === d.status
+  if (modernArms && !cannon && !layeredLegacy && last && last.hp === d.hp && last.status === d.status
     && last.shield === d.shieldDurability?.remaining && last.barrier === d.barrier?.remaining) return last.value;
-  // Conditions and barrier specifications never change inside a damage-only sample;
-  // only shield/barrier balances do. Each independent preview owns a fresh memo.
-  const key = !memo ? undefined : modernArms ? !cannon
+  // 新层按固定顺序耗用，同总余额对应同分布；旧保护组的防护可能在层间切换，必须保留完整分布。
+  const key = !memo ? undefined : modernArms ? !cannon && !layeredLegacy
     ? d.hp + ':' + d.status + ':' + d.shieldDurability?.remaining + ':' + d.barrier?.remaining
     : JSON.stringify([d.hp,d.status,d.shieldDurability,d.conditions,d.barrier,d.formation]) : opts.attacker.cannonAmmo || !cannon
     ? (memo.loose ??= activeTraitIds(d).includes('loose-formation')) ? String(looseFormation(d)) : ''
     : JSON.stringify([d.hp, d.status, d.morale, d.moraleState, d.barrier, d.formation, d.recoverableWounded, d.conditions, d.base]);
   const known = key === undefined ? undefined : memo!.bases.get(key);
   const rememberLast = (value: AttackBasis) => {
-    if (memo && modernArms && !cannon) memo.lastBasis = { hp: d.hp, status: d.status, shield: d.shieldDurability?.remaining, barrier: d.barrier?.remaining, value };
+    if (memo && modernArms && !cannon && !layeredLegacy) memo.lastBasis = { hp: d.hp, status: d.status, shield: d.shieldDurability?.remaining, barrier: d.barrier?.remaining, value };
     return value;
   };
   if (known) return rememberLast(known);

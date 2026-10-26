@@ -1,6 +1,7 @@
 import type { Combatant } from './types.js';
 import { canonicalTraitId } from './trait-parameters.js';
 import { traitSourceActive, revokeTraitSource } from './trait-sources.js';
+import { storyRoundEndId } from './story-effect-types.js';
 
 /** 部分解除保留原来源作为重放凭据；剩余内容复制到同期限的子来源。 */
 export function clearEffectSources(unit: Combatant, clear: ReadonlySet<string>, operationId: string, onlySource?: string): void {
@@ -10,8 +11,9 @@ export function clearEffectSources(unit: Combatant, clear: ReadonlySet<string>, 
     const traits = all ? [] : source.traitIds.filter(id => !clear.has(canonicalTraitId(id, true)));
     const conditions = all ? [] : (source.conditionIds ?? []).filter(id => !clear.has(id));
     const barrier = source.barrier && !all && !clear.has('barrier') ? source.barrier : undefined;
-    if (!all && traits.length === source.traitIds.length && conditions.length === (source.conditionIds?.length ?? 0) && barrier === source.barrier) continue;
-    if (traits.length || conditions.length || barrier) {
+    const periodic = all ? [] : (source.roundEndEffects ?? []).filter(effect => !clear.has(storyRoundEndId(effect)));
+    if (!all && traits.length === source.traitIds.length && conditions.length === (source.conditionIds?.length ?? 0) && barrier === source.barrier && periodic.length === (source.roundEndEffects?.length ?? 0)) continue;
+    if (traits.length || conditions.length || barrier || periodic.length) {
       const remaining = structuredClone(source), base = `${source.id}:clear:${operationId}`;
       let id = base;
       for (let n = 2; unit.traitSources!.some(existing => existing.id === id); n++) id = `${base}:${n}`;
@@ -20,6 +22,7 @@ export function clearEffectSources(unit: Combatant, clear: ReadonlySet<string>, 
       if (source.conditionIds !== undefined) remaining.conditionIds = conditions;
       if (source.conditions !== undefined) remaining.conditions = source.conditions.filter(c => conditions.includes(c.id)).map(c => ({ ...c }));
       if (!barrier) delete remaining.barrier;
+      if (periodic.length) remaining.roundEndEffects = structuredClone(periodic); else delete remaining.roundEndEffects;
       if (remaining.traitLevels) remaining.traitLevels = Object.fromEntries(Object.entries(remaining.traitLevels).filter(([trait]) => traits.includes(trait)));
       unit.traitSources!.push(remaining);
       // 先接续剩余状态，再撤销旧来源，不能重建已驱散的状态或重置其运行状态。

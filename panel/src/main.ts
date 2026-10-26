@@ -1463,7 +1463,16 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
     rows.push(`<b class="detail-label">技能</b>`);
     rows.push(`<div class="detail-list">${u.abilities.map((a) => `<div><b>${esc(a.name)}</b> L${a.power??5}${esc(enhancementLabel(a.bonuses))}${a.desc && (u.rulesVersion !== 'v2' || a.effectVersion) ? ` <span class="dim">${esc(a.desc)}</span>` : ''}<div class="sub">${abilityEffectLabel(a, u).map(esc).join('；')}</div>${u.rulesVersion === 'v2' ? '<span class="dim"> · 已学 · ' + esc(abilityUsabilityReason(u, a) ?? '已准备可用') + (a.cost ? ' · ' + esc(resourceLabel(a.cost.resource)) + ' ' + displayNumber(abilityCost(u, a)!.amount) : '') + '</span>' : ''}</div>`).join('')}</div>`);
   }
-  if (u.barrier) rows.push('<p class="sub">屏障 '+displayNumber(u.barrier.remaining)+' 点 · 剩余 '+u.barrier.duration+' 轮</p>');
+  if (u.barrier) {
+    const layers = u.barrier.stacking === 'layers-v1' ? u.barrier.grants : undefined;
+    const details = layers?.filter(g => !g.legacy).map(g => {
+      const source = g.effectSourceId ? u.traitSources?.find(s => s.id === g.effectSourceId) : undefined;
+      const duration = source ? source.duration.kind === 'permanent' ? '永久' : source.remaining + (source.duration.kind === 'battles' ? '场' : '轮') : g.duration + '轮';
+      return (g.defenses?.[0] ? 'L' + g.defenses[0].power + ' ' : '') + displayNumber(g.remaining) + '点 / ' + duration;
+    });
+    if (layers?.some(g => g.legacy)) details!.push('旧保护组 ' + displayNumber(Math.max(...layers.filter(g => g.legacy).map(g => g.remaining))) + '点，沿用各来源原期限');
+    rows.push('<p class="sub">屏障 '+displayNumber(u.barrier.remaining)+' 点 · '+(details ? esc(details.join('；')) : '剩余 '+u.barrier.duration+' 轮')+'</p>');
+  }
   if (u.weapon?.recipe?.stabilized) rows.push('<div class="sub">车载行进稳定 · 移动射击免罚 · 仍须装填且可能遭近战借机</div>');
   if (u.rulesVersion === 'v2') rows.push(`<div class="sub">${esc(equipmentLoadLabel(u))}</div>`);
   if (u.numericModel && u.bonuses) rows.push('<div class="sub">本体修正：'+esc(unitModifierSummary(u))+'</div>');

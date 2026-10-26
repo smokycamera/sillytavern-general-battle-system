@@ -33,9 +33,10 @@ import { positionedUnit, revealUnit, type ObservationContext } from './observati
 import { canOccupy, terrainCellLabel } from './small/spatial.js';
 import { formationNode, FORMATION_NODES, formationCanOccupy } from './mass/formation.js';
 import { actionPotential, incomingPotential, tacticalStateValue, tacticalWorld } from './skill-tactics.js';
-import { grantBarrier, barrierGradeMultiplier } from './barrier.js';
+import { grantBarrier, barrierGradeMultiplier, barrierSourceKey } from './barrier.js';
 import { moveEffectDescription } from './skill-movement.js';
 import { moraleChangePreview } from './morale.js';
+import { positiveStoryRoundEnd, storyRoundEndId } from './story-effect-types.js';
 
 type ConditionEffect = Extract<EffectOp, { op: 'condition' }>;
 type PushEffect = Extract<EffectOp, { op: 'push' }>;
@@ -118,15 +119,17 @@ export function applySkillCondition(target: Combatant, condition?: ActiveConditi
     if (stronger) { existing.potency = condition.potency; existing.magnitude = condition.magnitude; }
   }
 }
-export interface DispelCandidate { kind: 'condition' | 'source' | 'barrier'; id: string; name: string }
+export interface DispelCandidate { kind: 'condition' | 'source' | 'barrier'; id: string; name: string; clear?: string[] }
 export function dispelCandidates(target: Combatant, effect: DispelEffect): DispelCandidate[] {
   const group = effect.polarity === 'positive' ? positive : negative;
   const conditions: DispelCandidate[] = [...new Set(target.conditions.filter((c) => c.dur > 0 && group.has(c.id)).map((c) => c.id))]
     .sort((a, b) => Number(['stunned', 'restrained'].includes(b)) - Number(['stunned', 'restrained'].includes(a)) || a.localeCompare(b))
     .map((id) => ({ kind: 'condition', id, name: (definitions.get(id)?.name ?? id) + (phase2Traits(target) ? '（一次移除此类全部来源）' : '') }));
   const sources: DispelCandidate[] = (target.traitSources ?? []).filter((s) => s.kind !== 'equipment' && traitSourceActive(target, s)
-    && (s.conditions !== undefined ? effect.polarity === 'positive' && s.traitIds.length > 0 : effect.polarity === 'positive' && s.kind === 'blessing' || s.conditionIds?.some((id) => group.has(id))))
-    .sort((a, b) => a.id.localeCompare(b.id)).map((s) => ({ kind: 'source', id: s.id, name: s.name }));
+    && (s.conditions !== undefined ? effect.polarity === 'positive' && s.traitIds.length > 0
+      || s.roundEndEffects?.some(e => positiveStoryRoundEnd(e) === (effect.polarity === 'positive')) : effect.polarity === 'positive' && s.kind === 'blessing' || s.conditionIds?.some((id) => group.has(id))))
+    .sort((a, b) => a.id.localeCompare(b.id)).map((s) => ({ kind: 'source', id: s.id, name: s.name,
+      ...(s.roundEndEffects ? { clear: [...(effect.polarity === 'positive' ? s.traitIds : []), ...s.roundEndEffects.filter(e => positiveStoryRoundEnd(e) === (effect.polarity === 'positive')).map(storyRoundEndId)] } : {}) }));
   return [...conditions, ...sources, ...(effect.polarity==='positive' && target.barrier ? [{kind:'barrier' as const,id:'barrier',name:'屏障'}] : [])].slice(0, effect.count);
 }
 export function applyDispel(target: Combatant, chosen: DispelCandidate[]): void {
@@ -137,7 +140,7 @@ export function applyDispel(target: Combatant, chosen: DispelCandidate[]): void 
       for (const source of [...target.traitSources ?? []]) if (source.conditions !== undefined) clearEffectSources(target, new Set([entry.id]), 'dispel', source.id);
     } else {
       const source = target.traitSources?.find((s) => s.id === entry.id);
-      if (source?.conditions !== undefined) clearEffectSources(target, new Set(source.traitIds.map(id => canonicalTraitId(id, true))), 'dispel', source.id);
+      if (source?.conditions !== undefined) clearEffectSources(target, new Set(entry.clear ?? source.traitIds.map(id => canonicalTraitId(id, true))), 'dispel', source.id);
       else if (source) source.revoked = true;
     }
   }
@@ -292,8 +295,8 @@ export function skillEffectValue(context: ObservationContext, actor: Combatant, 
       const transmission=progression(target)?effect.kind==='poison'?poisonFactor(target):armorTransmission(target,effect.kind==='fire'?'thermal':'kinetic',zonePenetration(effect)):1;
       return sum+(effect.kind==='smoke'?2*effect.dur/3:effect.kind==='healing'?(friendly?Math.min(recoveryCapacity(target),effect.healingModel ? resolveHealingBudget({ source: actor, target, power: effect.power, baseAmount: zoneAmount(effect), delivery: 'zone', recoveryModel: effect.itemEffectModel ? undefined : context.rules?.recoveryModel ?? actor.recoveryModel, rules: context.rules }) : zoneAmount(effect)):0):friendly?effect.kind==='trap'?0:-8*ward*transmission:(4+effect.power)*zoneAmount(effect)/(4+effect.power*3)*ward*transmission); }
     if (effect.op === 'barrier') {
-      if (context.rules?.overmatch && (effect.defensePower ?? ability.power)) {
-        const future = structuredClone(target); grantBarrier(future, effect.amount, effect.dur, actor.id, effect.defensePower ?? ability.power);
+      if (context.rules?.overmatch && (effect.defensePower ?? ability.power) || target.barrierModel === 'barrier-layers-v2' || target.barrier?.stacking === 'layers-v1') {
+        const future = structuredClone(target); grantBarrier(future, effect.amount, effect.dur, actor.id, effect.defensePower ?? ability.power, barrierSourceKey(actor.id, ability));
         return sum + Math.max(0, tacticalStateValue(context, future) - tacticalStateValue(context, target)) * polarity;
       }
       return sum + Math.min(Math.max(0, Math.max(1, Math.round(effect.amount * barrierGradeMultiplier(target, effect.defensePower ?? ability.power))) - (target.barrier?.remaining ?? 0)), incomingPotential(context, target)) * polarity;

@@ -76,7 +76,8 @@ export function energyHeavyHit(unit: EnergyBearer, segmentMean: number, tier = 1
   return energyShieldActive(unit) && segmentMean * tier >= energyThresholdOf(unit);
 }
 /**
- * R15 吸收：护甲减伤之后、技能屏障之前；普通伤害从总量扣，重击只能动用被它打中的那几份，挡完这几份过载。
+ * R15 吸收：护甲减伤之后、技能屏障之前；V39由调用方先处理技能屏障，仅把余伤交到这里。
+ * 普通伤害从总量扣，重击只能动用被它打中的那几份，挡完这几份过载。
  * V21：plan.energyRatio 把这次伤害换算成盾规格的消耗（跨代：低级火力少耗、高级火力多耗）；absorbed 是挡下的伤害，spent 是盾的消耗。
  */
 export function absorbEnergyShield(unit: EnergyBearer, plan: MemberDamagePlan): { plan: MemberDamagePlan; absorbed: number; spent: number; overloaded: number } {

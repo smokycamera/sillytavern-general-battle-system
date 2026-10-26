@@ -238,7 +238,7 @@ describe('统一剧情效果', () => {
     expect(barrierAmount(a)).toBeGreaterThan(20);
     grantBarrier(a, 20, 3, 'caster', 3); absorbBarrier(a, 2);
     expireTraitSources(a, 'rounds');
-    expect(barrierAmount(a)).toBe(18); expect(barrierDefensePower(a)).toBe(3);
+    expect(barrierAmount(a)).toBe(20); expect(barrierDefensePower(a)).toBe(3);
     decayBarrier(a); expect(a.barrier!.duration).toBe(2);
   });
 
@@ -270,8 +270,8 @@ describe('统一剧情效果', () => {
     }
   });
 
-  it('拒绝缺失/冲突期限、非法等级、未知效果及即时操作，不静默漏掉其中一项', () => {
-    for (const attrs of ['effects="x:buffL3+攻击L3"', 'effects="x:buffL3+攻击L3" rounds="2" battles="1"', 'effects="x:buffL11+攻击L3" rounds="2"', 'effects="x:buffL3+未知L3" rounds="2"', 'effects="x:buffL3+治疗L3" rounds="2"', 'rounds="2"', 'clear="不存在"']) {
+  it('拒绝缺失/冲突期限、非法等级、未知效果及缺少战场上下文的操作，不静默漏掉其中一项', () => {
+    for (const attrs of ['effects="x:buffL3+攻击L3"', 'effects="x:buffL3+攻击L3" rounds="2" battles="1"', 'effects="x:buffL11+攻击L3" rounds="2"', 'effects="x:buffL3+未知L3" rounds="2"', 'effects="x:buffL3+治疗L3+召唤L3" rounds="2"', 'rounds="2"', 'clear="不存在"']) {
       expect(parseProtocol(`<effect id="u1" ${attrs}/>`).errors.length, attrs).toBeGreaterThan(0);
     }
   });

@@ -286,6 +286,9 @@ export interface ActiveCondition {
 export type UnitStatus = 'ready' | 'dying' | 'dead' | 'routing' | 'fled';
 
 export interface BarrierGrant {
+  key?: string;
+  /** 旧屏障进入新战斗时仍作为一组取强、同步消耗，不凭空补出容量。 */
+  legacy?: true;
   effectSourceId?: string;
   remaining: number;
   duration: number;
@@ -293,7 +296,8 @@ export interface BarrierGrant {
   defenses?: { power: number; duration: number }[];
 }
 export interface BarrierState extends BarrierGrant {
-  /** 仅新剧情屏障使用；普通屏障及历史快照继续使用原结构。各份保护同步消耗，容量仍取最大值。 */
+  stacking?: 'layers-v1';
+  /** 旧模型各份同步消耗；layers-v1 的新来源容量相加，旧来源组保留旧容量。 */
   grants?: BarrierGrant[];
 }
 
@@ -333,7 +337,7 @@ export interface Combatant {
   armsModel?: import('./arms.js').ArmsModel;
   sprayerDamageMultiplier?: number;
   sprayerGroupDamageMultiplier?: number;
-  barrierModel?: 'barrier-grades-v1';
+  barrierModel?: 'barrier-grades-v1' | 'barrier-layers-v2';
   /** V13 trait overhaul, projected from the battle rules; absent keeps the frozen V12 trait rules. */
   traitModel?: 'traits-v1';
   /** V14 skill pricing (composite states priced per stat), projected from the battle rules; absent keeps V13 skill numbers. V20 skills-v3 lowers combined-control save DCs by 1 per extra effect instead of 2. V21 skills-v4 anchors barrier, condition magnitude and morale amounts to the wound budget. */
@@ -672,7 +676,7 @@ export interface RulePack {
   resourceModel?: 'endurance-v1' | 'endurance-v2';
   /** V12 weapon/armor calibration (crew, demolition, light armor, reach, grid ranges); absent keeps V11. */
   armsModel?: import('./arms.js').ArmsModel;
-  barrierModel?: 'barrier-grades-v1';
+  barrierModel?: 'barrier-grades-v1' | 'barrier-layers-v2';
   /** V19 统帅：指挥水平与风格只改变 AI 决策（command-v2.ts）；缺省保留 V18 及以前的指挥评分。 */
   commandModel?: 'command-v2';
   /** V24 统率范围按有效特质等级成长；旧战斗保留固定范围。 */

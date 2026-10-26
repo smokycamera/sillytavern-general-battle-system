@@ -27,6 +27,12 @@ function barrierRatio(unit:Combatant,context?:DamageOvermatch):number {
   if(!unit.barrier||!context)return 1;
   return Math.min(1,overmatchMultiplier(context.power,unit,context.channel,context.penetration,context.area,context.canBlock,true,context.curve)/context.multiplier);
 }
+function absorbCombatBarrier(unit: Combatant, amount: number, context?: DamageOvermatch): number {
+  if (!context || context.multiplier === 1) return absorbBarrier(unit, amount);
+  if (unit.barrier?.stacking === 'layers-v1' && context) return absorbBarrier(unit, amount, 1,
+    power => Math.min(1, overmatchMultiplier(context.power, unit, context.channel, context.penetration, context.area, context.canBlock, power, context.curve) / context.multiplier));
+  return absorbBarrier(unit, amount, barrierRatio(unit, context));
+}
 /** V4以真实生命结算；旧版继续使用人数换算，不改写进行中的旧战斗。 */
 export function applyCombatDamage(unit:Combatant,amount:number,targets=1,overmatch?:DamageOvermatch):number {
   return applyMemberDamage(unit,amount,targets,false,overmatch).health;
@@ -46,9 +52,9 @@ function woundedFromLoss(unit: Combatant, loss: number, remainder: number): { re
   const [kept, group] = woundedShare(unit), carried = remainder % group, total = loss + carried;
   return { recoverable: Math.floor(kept * total / group) - Math.floor(kept * carried / group), remainder: total % group };
 }
-function applyMemberDamage(unit:Combatant,amount:number,targets:number,overflow=false,overmatch?:DamageOvermatch):{health:number;overflow:number} {
-  if(!hasMemberHealth(unit))return {health:applyHealthLoss(unit,amount,unit.rulesVersion==='v2',overmatch),overflow:0};
-  const result=damageMemberGroups(unit,targets > 0 ? absorbBarrier(unit,amount,barrierRatio(unit,overmatch)) : 0,targets,overflow);
+function applyMemberDamage(unit:Combatant,amount:number,targets:number,overflow=false,overmatch?:DamageOvermatch,barrierHandled=false):{health:number;overflow:number} {
+  if(!hasMemberHealth(unit))return {health:applyHealthLoss(unit,amount,unit.rulesVersion==='v2',overmatch,barrierHandled),overflow:0};
+  const result=damageMemberGroups(unit,targets > 0 ? barrierHandled ? Math.max(0,Math.round(amount)) : absorbCombatBarrier(unit,amount,overmatch) : 0,targets,overflow);
   if(result.health)moraleOnDamage(unit,result.health);
   if(result.casualties){
     const wounded=woundedFromLoss(unit,result.casualties,unit.formation!.woundedRemainder??0);
@@ -57,7 +63,27 @@ function applyMemberDamage(unit:Combatant,amount:number,targets:number,overflow=
   }
   return result;
 }
+function settleUnshieldedPlan(unit: Combatant, directAmount: number, targets: number, overflow: boolean | undefined, splashAmount = 0, splashTargets = 0): { direct: number; splash: number; overflow: number } {
+  const direct = applyMemberDamage(unit, directAmount, targets, overflow, undefined, true);
+  const splash = splashAmount && splashTargets ? applyMemberDamage(unit, splashAmount, splashTargets, false, undefined, true).health : 0;
+  return { direct: direct.health, splash, overflow: direct.overflow };
+}
 export function applyDamagePlan(unit:Combatant,planned:MemberDamagePlan):{direct:number;splash:number;overflow:number;energyAbsorbed?:number;energySpent?:number;energyOverloaded?:number} {
+  if (unit.barrier?.stacking === 'layers-v1') {
+    // V39：屏障先处理原始直击/溅射，再把余伤交给能量盾。后续生命结算不重复扣屏障。
+    const direct = planned.targets > 0 ? absorbCombatBarrier(unit, planned.incomingDirect ?? planned.direct, planned.overmatch) : 0;
+    const splash = planned.splashTargets ? absorbCombatBarrier(unit, planned.incomingSplash ?? planned.splash ?? 0, planned.overmatch) : 0;
+    if (!unit.energyShield || !direct && !splash) return settleUnshieldedPlan(unit, Math.min(planned.direct, direct), planned.targets, planned.overflow,
+      Math.min(planned.splash ?? 0, splash), planned.splashTargets);
+    const remaining: MemberDamagePlan = { ...planned, direct: Math.min(planned.direct, direct), targets: direct ? planned.targets : 0,
+      ...(planned.incomingDirect !== undefined ? { incomingDirect: direct } : {}),
+      ...(planned.splash !== undefined ? { splash: Math.min(planned.splash, splash), splashTargets: splash ? planned.splashTargets : 0 } : {}),
+      ...(planned.incomingSplash !== undefined ? { incomingSplash: splash } : {}) };
+    const energy = absorbEnergyShield(unit, remaining), plan = energy.plan;
+    return { ...settleUnshieldedPlan(unit, plan.direct, plan.targets, plan.overflow, plan.splash, plan.splashTargets),
+      ...(energy.absorbed || energy.overloaded ? { energyAbsorbed: energy.absorbed, energyOverloaded: energy.overloaded,
+        ...(energy.spent !== energy.absorbed ? { energySpent: energy.spent } : {}) } : {}) };
+  }
   const energy=absorbEnergyShield(unit,planned),plan=energy.plan;
   const direct=applyMemberDamage(unit,unit.barrier ? plan.incomingDirect ?? plan.direct : plan.direct,plan.targets,plan.overflow,plan.overmatch);
   const splash=plan.splash&&plan.splashTargets?applyCombatDamage(unit,unit.barrier ? plan.incomingSplash ?? plan.splash : plan.splash,plan.splashTargets,plan.overmatch):0;
@@ -84,8 +110,8 @@ export function settleWoundedOnDeath(unit: Combatant): void {
 }
 
 /** 实际损失唯一记账入口；V3跨分组累计半数伤兵余量，避免连发逐次取整丢失。 */
-export function applyHealthLoss(unit: Combatant, amount: number, v2 = unit.rulesVersion === 'v2', overmatch?:DamageOvermatch): number {
-  let loss = Math.min(unit.hp, absorbBarrier(unit, amount,barrierRatio(unit,overmatch)));
+export function applyHealthLoss(unit: Combatant, amount: number, v2 = unit.rulesVersion === 'v2', overmatch?:DamageOvermatch, barrierHandled = false): number {
+  let loss = Math.min(unit.hp, barrierHandled ? Math.max(0, Math.round(amount)) : absorbCombatBarrier(unit, amount, overmatch));
   // 不屈（个体）：每战一次，致命伤以1点生命坚持。
   if (v2 && unit.scale === 'hero' && loss > 0 && loss >= unit.hp && unit.status === 'ready' && spendIndomitable(unit)) loss = unit.hp - 1;
   setStrength(unit, unit.hp - loss);
