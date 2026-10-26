@@ -30,7 +30,7 @@ import { killProbability } from '../fire-budget.js';
 import { validateGear, quickItemAction, itemUseAbility, itemEmergency, ITEM_EMERGENCY_DISCOUNT } from '../items.js';
 import { prepareItemModel, validateItemModel, itemsV15 } from '../item-model.js';
 import { prepareTraitLevelModel, validateTraitLevelModel } from '../trait-level-model.js';
-import { areaTargets, zoneTarget, placeZone, settleZones, validateAreas, ZONE_NAMES, zoneEndText, type BattleZone } from '../area-effects.js';
+import { areaTargets, canAnchorArea, zoneTarget, placeZone, settleZones, validateAreas, ZONE_NAMES, zoneEndText, type BattleZone } from '../area-effects.js';
 import { tbWeaponShortName } from '../weapon-name.js';
 import { grantBarrier, validateBarrier } from '../barrier.js';
 import { expireRoundEffects } from '../effect-expiry.js';
@@ -52,7 +52,7 @@ import { skillWeapon, skillResourceChange, conjureSkillUnit, conjuredTemplate, s
 import { applySkillTrait, isPositiveCondition } from '../skill-effects.js';
 import { skillAttack } from '../skill-attack.js';
 import { moveEffects, movementOnlySkill, hasSkillMovement, moveBlockReason, effectiveMoveReach, type MoveEffect, type MoveMode } from '../skill-movement.js';
-import { prepareCondition, applySkillCondition, dispelCandidates, applyDispel, applyPush, pushPreview, skillEffectLines, skillEffectValue, summonValue, conditionChance } from '../skill-effects.js';
+import { prepareCondition, applySkillCondition, dispelCandidates, applyDispel, applyPush, pushPreview, skillEffectLines, areaSkillEffectLines, skillEffectValue, summonValue, conditionChance } from '../skill-effects.js';
 import { applyWeaponConditions, poisonDamage, poisonFactor, conditionDamage } from '../afflictions.js';
 import { isRangedWeapon, weaponReloadKey, weaponReloadTurns, meleeWeapon, validateMount, mountedShooting, steadyMovingShot, agileDisengage } from '../loadout.js';
 import { moraleProfile, moraleAttackMods, decideMorale, changeMorale, validateMoraleState, moraleRisk, moraleChangePreview, reconcileDamageMorale, recoverEntryMorale } from '../morale.js';
@@ -1370,13 +1370,15 @@ export class SmallBattle {
         // 带突进/闪现的技能从落点出手：预览、范围与描述都按到位后的施术者计算。
         const move = !reason && !movementOnlySkill(ability) ? this.skillMovePlan(actor, ability, target).move : undefined;
         const caster = move ? { ...actor, pos: move.to } : actor;
+        const area = (this.rules.areaTargetingModel === 'impact-v1' && ability.area || (damage?.shape ?? ability.shape) === 'burst') && !reason ? this.abilityDamageTargets(caster, target, ability, true) : [];
+        const supportArea = canAnchorArea(ability, this.rules) && area.length > 0 && !damage;
         const effects = !reason && this.rules.resolutionVersion === 'v2' ? [...(move && this.battlefield ? [(move.mode === 'dash' ? '先突进至' : '先闪现至') + reportPlaceLabel(this.battlefield, move.to, actor) + (move.charge ? '，以冲锋接敌' : '')] : []),
-          ...skillEffectLines({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, caster, target, ability)] : [];
+          ...(supportArea ? areaSkillEffectLines({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, caster, area, ability)
+            : skillEffectLines({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, caster, target, ability))] : [];
         const preview = !reason && this.rules.resolutionVersion === 'v2' && damage ? this.previewAttackWithEnvironment({ attacker: caster, defender: target, rules: this.rules,
           conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ranged: damage.tag === 'ranged' ? true : undefined,
           ...this.skillAttackOptions(caster, target, ability, damage, !!move, move?.charge) })
-          : healing && !reason ? { healing: Math.min(recoveryCapacity(target), healingYield(actor, target, healing.amount ?? diceAvg(healing.dice!), !!ability.itemSourceId, healing.power)) } : moraleEffect && !reason ? moraleChangePreview({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, target, moraleEffect.amount, this.rules.morale.breakAt, this.traitRegistry, ability.effects.flatMap((e) => e.op === 'condition' ? [{ id: e.conditionId, dur: e.dur }] : [])) : undefined;
-        const area = (this.rules.areaTargetingModel === 'impact-v1' && ability.area || (damage?.shape ?? ability.shape) === 'burst') && !reason ? this.abilityDamageTargets(caster, target, ability, true) : [];
+          : healing && !reason ? { healing: (supportArea ? area : [target]).reduce((sum, affected) => sum + Math.min(recoveryCapacity(affected), healingYield(actor, affected, healing.amount ?? diceAvg(healing.dice!), !!ability.itemSourceId, healing.power)), 0) } : moraleEffect && !reason ? moraleChangePreview({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, target, moraleEffect.amount, this.rules.morale.breakAt, this.traitRegistry, ability.effects.flatMap((e) => e.op === 'condition' ? [{ id: e.conditionId, dur: e.dur }] : [])) : undefined;
         const areaPreviews = damage && this.rules.resolutionVersion === 'v2' ? area.map((affected) => ({
           targetId: affected.id, ...this.previewAttackWithEnvironment({ attacker: caster, defender: affected, rules: this.rules,
             conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(caster, affected, ability, damage, !!move, move?.charge && affected.id === target.id) }),
@@ -1729,22 +1731,24 @@ export class SmallBattle {
   }
   /** 不考虑技能位移、按施术者当前位置判断目标是否可选。 */
   private skillTargetReasonAt(actor: Combatant, ability: Combatant['abilities'][number], target: Combatant, recipient = false): string | undefined {
+    const areaAnchor = !recipient && canAnchorArea(ability, this.rules);
     const areaRecipient = recipient && this.rules.areaTargetingModel === 'impact-v1' && !ability.weaponUse && ability.requires !== 'melee' && ability.requires !== 'shield';
     if (this.battlefield?.layerVersion && ability.delivery === 'melee') { const height = meleeHeightReason(this.battlefield, actor, target); if (height) return height; }
     ability = this.battlefield ? gridAbility(ability, actor.armsModel) : ability;
     if (ability.target === 'zone') return !this.battlefield || !this.cellVisible(actor.side,target.pos!) ? '请指定可见的地面位置' : abilityTargetReason({actor,ability,target,distance:this.dist(actor,target),field:this.battlefield}) ?? (unitLineOfSight(this.battlefield,actor,target) ? undefined : '这里被障碍物遮挡');
     const controlAreaIds = !recipient && controlPolicy(actor) === 'taunted' && (ability.area || ability.shape === 'burst' || ability.effects.some(e => e.op === 'damage' && e.shape === 'burst')) ? this.abilityDamageTargets(actor, target, ability, true).map(u => u.id) : undefined;
-    const reason = abilityTargetReason({ actor, ability, target, distance: this.dist(actor, target), field: this.battlefield, units: this.combatants, controlAreaIds, controlRecipient: recipient, areaRecipient })
+    const reason = abilityTargetReason({ actor, ability, target, distance: this.dist(actor, target), field: this.battlefield, units: this.combatants, controlAreaIds, controlRecipient: recipient, areaRecipient, areaAnchor })
       ?? (this.battlefield && !ability.weaponUse && !areaRecipient ? this.sightReason(actor, target) : undefined);
     if (reason) return reason;
-    if (this.battlefield && target.status === 'dying' && ability.effects.some(e => e.op === 'heal')
+    if (!areaAnchor && this.battlefield && target.status === 'dying' && ability.effects.some(e => e.op === 'heal')
       && !canOccupy(this.battlefield, this.visibleCombatants(actor.side), target, target.pos!)) return '濒死单位所在格没有起身空间，请先让出救援位置';
     if (ability.weaponUse) {
       const weapon = skillWeapon(actor, ability, this.dist(actor, target));
       const context = this.weaponContext(actor, target, { weaponMode: weapon?.id === actor.sidearm?.id ? 'sidearm' : 'primary', controlRecipient: true });
       if (context.reason) return context.reason;
     }
-    if (ability.effects.every((e) => e.op === 'push')) return pushPreview({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, actor, target, ability.effects[0] as Extract<EffectOp, { op: 'push' }>).reason;
+    if (areaAnchor && !this.abilityDamageTargets(actor, target, ability, true).length) return '范围内没有可生效的目标';
+    if (!areaAnchor && ability.effects.every((e) => e.op === 'push')) return pushPreview({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, actor, target, ability.effects[0] as Extract<EffectOp, { op: 'push' }>).reason;
     return undefined;
   }
   /** 道具的派生行动供预览、确认框、AI 与执行共用；范围治疗按实际波及伤员计算件数。 */
@@ -1758,7 +1762,9 @@ export class SmallBattle {
     if (!burst) return [target];
     ability = this.battlefield ? gridAbility(ability, actor.armsModel) : ability;
     const pivot = ability.recipe?.category === 'physical-area' && ability.damageBasis && !isRangedWeapon(skillWeapon(actor, ability)) ? actor : target;
-    return [target, ...this.visibleCombatants(actor.side).filter((u) => u.id !== target.id && !combatHostile(u, target, this.combatants) && u.status === 'ready' && this.dist(u, pivot) <= 1
+    const primary = this.rules.skillTargetModel !== 'area-anchor-v1' || !this.skillTargetReasonAt(actor, ability, target, true) ? [target] : [];
+    return [...primary, ...this.visibleCombatants(actor.side).filter((u) => u.id !== target.id && !combatHostile(u, target, this.combatants)
+      && (u.status === 'ready' || this.rules.skillTargetModel === 'area-anchor-v1' && ability.target === 'ally' && u.status === 'dying' && ability.effects.some(e => e.op === 'heal')) && this.dist(u, pivot) <= 1
       && (!this.battlefield || this.rules.areaTargetingModel !== 'impact-v1' || sameLayer(pivot, u) && unitLineOfSight(this.battlefield, pivot, u)) && !this.skillTargetReasonAt(actor, ability, u, true))
       .sort((a, b) => a.id.localeCompare(b.id))].slice(0, 2);
   }
@@ -1818,7 +1824,7 @@ export class SmallBattle {
     const summonError = this.summonReason(actor, ability);
     if (summonError) return { ok: false, reason: summonError, resolutions: [], log: '' };
     const summons: Combatant[] = [];
-    if (actor.rulesVersion === 'v2' && ability.effects.every((e) => e.op === 'push') && chosenTarget) {
+    if (actor.rulesVersion === 'v2' && !canAnchorArea(ability, this.rules) && ability.effects.every((e) => e.op === 'push') && chosenTarget) {
       const effect = ability.effects[0] as Extract<EffectOp, { op: 'push' }>; const pushed = pushPreview(this.observationContext(), actor, chosenTarget, effect);
       if (pushed.reason) return { ok: false, reason: pushed.reason, resolutions: [], log: '' };
     }
@@ -1848,6 +1854,9 @@ export class SmallBattle {
     const movementOnly = movementOnlySkill(ability);
     const movePlan = chosenTarget && !movementOnly ? this.skillMovePlan(actor, ability, chosenTarget) : {};
     if (movePlan.reason) return { ok: false, reason: movePlan.reason, resolutions: [], log: '' };
+    // 不位移的V38技能按扣费前的资格锁定接受者，避免支付SP后把施术者临时加入范围回能。
+    const plannedTargets = this.rules.skillTargetModel === 'area-anchor-v1' && chosenTarget && !movementOnly && !movePlan.move
+      ? this.abilityDamageTargets(actor, chosenTarget, ability, ability.shape === 'burst' || ability.effects.some(e => 'shape' in e && e.shape === 'burst')) : undefined;
     if (this.rules.resolutionVersion === 'v2') revealUnit(this.observationContext(), actor);
     // 扣费与计数
     const cost = abilityCost(actor, ability);
@@ -1873,7 +1882,7 @@ export class SmallBattle {
     }
     if (interrupted) logBits.push(interrupted);
 
-    const castTargets = chosenTarget && !interrupted && !movementOnly ? this.abilityDamageTargets(actor, chosenTarget, ability, ability.shape === 'burst' || ability.effects.some((e) => 'shape' in e && e.shape === 'burst')) : [actor];
+    const castTargets = chosenTarget && !interrupted && !movementOnly ? plannedTargets ?? this.abilityDamageTargets(actor, chosenTarget, ability, ability.shape === 'burst' || ability.effects.some((e) => 'shape' in e && e.shape === 'burst')) : [actor];
     const effectTargets = (area: boolean) => area || this.rules.areaTargetingModel === 'impact-v1' && ability.area ? castTargets : [chosenTarget ?? actor];
     const resolutions: AttackResolution[] = [];
     let summonsSubmitted = false;

@@ -641,6 +641,8 @@ export interface RulePack {
   casterCenteredRing?: boolean;
   /** V37: independent area recipients use the impact geometry rather than the caster's selection range. */
   areaTargetingModel?: 'impact-v1';
+  /** V38: target-centered inclusive rings, primary priority and applicable area anchors. */
+  skillTargetModel?: 'area-anchor-v1';
   /** V32：可信生成的直接法术及独立单体投射伤害倍率；不重写技能或冻结道具。 */
   independentSkillDamageMultiplier?: number;
   /** V34 increases each of the three fueled sprays without rewriting physical weapons. */

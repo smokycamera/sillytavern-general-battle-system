@@ -5,7 +5,7 @@ import { collectMods, resolveStack } from './bonus.js';
 import { combatHostile, combatSide } from './battle-control.js';
 import { validateLifeRecoveryModel } from './life-recovery.js';
 import { medicHealingMultiplier, resolveHealingBudget, healingEffectGroups, validateHealingModel } from './healing.js';
-import type { Ability, Combatant, EffectOp } from './types.js';
+import type { Ability, Combatant, EffectOp, RulePack } from './types.js';
 import { traitLevel, nightSight } from './trait-levels.js';
 import type { ObservationContext } from './observation.js';
 import { formationNode, FORMATION_NODES } from './mass/formation.js';
@@ -50,9 +50,16 @@ export function visibleBattleZones(context: ObservationContext, side: Combatant[
     return !context.battlefield||unitLineOfSight(context.battlefield,observer,{...observer,airborne:false,pos:zone.y*context.battlefield.width+zone.x});
   })));
 }
+/** A valid selected center need not itself need healing, cleansing or another area effect. */
+export function canAnchorArea(ability: Ability, rules?: Pick<RulePack, 'skillTargetModel'>): boolean {
+  return rules?.skillTargetModel === 'area-anchor-v1' && !ability.itemSourceId && ['ally', 'enemy'].includes(ability.target)
+    && !ability.effects.some(e => e.op === 'zone' || e.op === 'summon')
+    && !!(ability.area || ability.shape === 'burst' || ability.effects.some(e => 'shape' in e && e.shape === 'burst'));
+}
 export function areaTargets(context: ObservationContext, actor: Combatant, primary: Combatant, ability: Ability, valid: (unit: Combatant) => boolean): Combatant[] {
   const area = ability.area; if (!area) return [primary];
-  const origin = areaPosition(context, actor), centered = area.shape === 'ring' && context.rules?.casterCenteredRing;
+  const anchored = context.rules?.skillTargetModel === 'area-anchor-v1';
+  const origin = areaPosition(context, actor), centered = area.shape === 'ring' && context.rules?.casterCenteredRing && !anchored;
   const pivot = centered ? origin : areaPosition(context, primary), source = centered ? actor : primary;
   const field=context.battlefield;
   const connects = (from: Combatant, to: Combatant) => {
@@ -60,7 +67,9 @@ export function areaTargets(context: ObservationContext, actor: Combatant, prima
     if (field.spatialRulesVersion !== 2 && context.rules?.areaTargetingModel !== 'impact-v1') return true;
     return sameLayer(from, to) && Math.abs(unitHeight(field, from) - unitHeight(field, to)) <= area.radius && unitLineOfSight(field, from, to);
   };
-  const eligible = context.units.filter(u => !combatHostile(u, primary, context.units) && u.hp > 0 && !['dead','fled'].includes(u.status) && valid(u)
+  const eligible = context.units.filter(u => !combatHostile(u, primary, context.units)
+    && (u.hp > 0 || anchored && ability.target === 'ally' && u.status === 'dying' && ability.effects.some(e => e.op === 'heal'))
+    && !['dead','fled'].includes(u.status) && valid(u)
     &&(area.shape==='chain'||connects(source,u))).sort((a,b) => a.id.localeCompare(b.id));
   if (area.shape === 'chain') {
     const result: Combatant[] = eligible.some(u => u.id === primary.id) ? [primary] : [];
@@ -76,11 +85,11 @@ export function areaTargets(context: ObservationContext, actor: Combatant, prima
   return eligible.filter(unit => {
     const at = areaPosition(context,unit), d = distance(at,pivot);
     if (area.shape === 'circle') return d <= area.radius;
-    if (area.shape === 'ring') return d > 0 && d <= area.radius;
+    if (area.shape === 'ring') return (anchored || d > 0) && d <= area.radius;
     if (!length) return unit.id === primary.id;
     const ux=at.x-origin.x, uy=at.y-origin.y, dot=(ux*dx+uy*dy)/length, cross=Math.abs(ux*dy-uy*dx)/length;
     return dot > 0 && dot <= length + .5 && cross <= (area.shape === 'line' ? .5 : dot * .6 + .25);
-  }).sort((a,b) => (centered ? Number(b.id === primary.id) - Number(a.id === primary.id) : 0) || distance(areaPosition(context,a),pivot)-distance(areaPosition(context,b),pivot) || a.id.localeCompare(b.id)).slice(0,area.maxTargets);
+  }).sort((a,b) => (centered || anchored ? Number(b.id === primary.id) - Number(a.id === primary.id) : 0) || distance(areaPosition(context,a),pivot)-distance(areaPosition(context,b),pivot) || a.id.localeCompare(b.id)).slice(0,area.maxTargets);
 }
 export function zoneTarget(context: ObservationContext, actor: Combatant, id?: string): Combatant | undefined {
   if (!id) return undefined;
