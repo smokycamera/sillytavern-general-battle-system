@@ -170,11 +170,11 @@ describe('AI 建议标签解析', () => {
     expect(plain.weapon2Name).toBeUndefined();
   });
 
-  it('世界书格式与战报演出常驻，七个完整短例及四条效果示例均通过正式解析，80人不展开为80张卡，道具示例全部采用', () => {
+  it('世界书格式与战报演出常驻，八个完整短例及四条效果示例均通过正式解析，count按卡数生成，道具示例全部采用', () => {
     const entries = Object.values(wbJson.entries);
     expect(entries.filter((e) => e.constant).map((e) => e.uid)).toEqual([0, 1, 5, 8]);
     const blocks = entries.flatMap((e) => e.content.match(/<tb>(?:\s*<[a-z_]+\s[^<>]*\/>\s*)+<\/tb>/g) ?? []);
-    expect(blocks).toHaveLength(7);
+    expect(blocks).toHaveLength(8);
     const effectExample = entries.map(e=>e.content).join('\n').match(/## 获得与解除效果\s+示例：\n([\s\S]*?)\n\n/)![1]!;
     expect(parseProtocol(effectExample).events).toHaveLength(4);
     const events = blocks.flatMap((block) => {
@@ -184,6 +184,7 @@ describe('AI 建议标签解析', () => {
     });
     expect(events.find((e) => e.kind === 'unit-set')).toMatchObject({ id: 'u1', data: { hp: 500 } });
     expect(events.find((e) => e.kind === 'spawn')).toMatchObject({ scale: 'company', hpMax: 80, count: 1, weaponClass: 'rifle', weaponLevel: 5 });
+    expect(events.find((e) => e.kind === 'spawn' && e.name === '再生赤翼骑兵连')).toMatchObject({ count: 2, hp: 80, hpMax: 100, level: 5 });
     expect(events.find((e) => e.kind === 'spawn' && e.name === '掷弹兵连')).toMatchObject({ items: [{ name: '手雷', qty: 60, spec: { form: 'single' } }, { name: '夜视镜', qty: 1, spec: { form: 'worn' } }] });
     expect(events.filter((e) => e.kind === 'add' && e.item !== undefined).map((e) => e.kind === 'add' && [e.item, e.qty, e.spec?.kind === 'item' ? e.spec.form : e.spec?.kind])).toEqual([['手雷', 6, 'single'], ['治疗药水', 3, 'single'], ['火球魔杖', 1, 'charged']]);
   });
