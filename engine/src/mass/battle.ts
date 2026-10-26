@@ -20,7 +20,7 @@ import { massCommandFeatures } from './command-features.js';
 import { validateGear, quickItemAction, itemUseAbility, itemEmergency, ITEM_EMERGENCY_DISCOUNT } from '../items.js';
 import { prepareItemModel, validateItemModel, itemsV15, chargeCapable, mobileUnit } from '../item-model.js';
 import { prepareTraitLevelModel, validateTraitLevelModel } from '../trait-level-model.js';
-import { areaTargets, zoneTarget, placeZone, settleZones, validateAreas, ZONE_NAMES, zoneEndText, type BattleZone } from '../area-effects.js';
+import { areaTargets, canAnchorArea, zoneTarget, placeZone, settleZones, validateAreas, ZONE_NAMES, zoneEndText, type BattleZone } from '../area-effects.js';
 import { tbWeaponShortName } from '../weapon-name.js';
 import { casualtyXp, initialXpStrength } from '../casualty-xp.js';
 import { roundDamage } from '../probability.js';
@@ -41,7 +41,7 @@ import { applySkillTrait } from '../skill-effects.js';
 import { BattleFeedback, type FeedbackUnit } from '../battle-feedback.js';
 import { restoreMassReport, type MassRoundReport, type MassPhase } from './feedback.js';
 import { skillAttack } from '../skill-attack.js';
-import { prepareCondition, applySkillCondition, dispelCandidates, applyDispel, pushPreview, pushStrength, skillEffectLines, skillEffectValue, summonValue, conditionChance } from '../skill-effects.js';
+import { prepareCondition, applySkillCondition, dispelCandidates, applyDispel, pushPreview, pushStrength, skillEffectLines, areaSkillEffectLines, skillEffectValue, summonValue, conditionChance } from '../skill-effects.js';
 import { applyWeaponConditions, poisonDamage, poisonFactor, conditionDamage } from '../afflictions.js';
 import { isRangedWeapon, meleeWeapon, weaponReloadKey, weaponReloadTurns, validateMount, mountedShooting, mobileRangedWeapon, vehicleShooting } from '../loadout.js';
 import { meleeReach, formationWeaponRange } from '../melee.js';
@@ -657,7 +657,8 @@ export class MassBattle {
   }
   /** 不考虑技能位移、按施术者当前阵位判断目标是否可选。 */
   private abilityTargetCheck(actor: Combatant, ability: Ability, target: Combatant | undefined, units: Combatant[]): string | undefined {
-    const reason = abilityTargetReason({ space: 'mass', actor, ability, target, units, controlAreaIds: target && controlPolicy(actor) === 'taunted' && (ability.area || ability.shape === 'burst' || ability.effects.some(e => e.op === 'damage' && e.shape === 'burst')) ? this.supportTargets(actor, ability, target, units).map(t => t.id) : undefined, distance: target ? formationDistance(actor, target) : undefined });
+    const areaAnchor = !!target && canAnchorArea(ability, this.rules);
+    const reason = abilityTargetReason({ space: 'mass', actor, ability, target, units, areaAnchor, controlAreaIds: target && controlPolicy(actor) === 'taunted' && (ability.area || ability.shape === 'burst' || ability.effects.some(e => e.op === 'damage' && e.shape === 'burst')) ? this.supportTargets(actor, ability, target, units).map(t => t.id) : undefined, distance: target ? formationDistance(actor, target) : undefined });
     if (reason) return reason;
     if (ability.weaponUse && target) {
       const weapon = skillWeapon(actor, ability, formationDistance(actor, target));
@@ -669,7 +670,8 @@ export class MassBattle {
         if (guard) return rangedScreenReason(guard);
       }
     }
-    if (ability.effects.every((e) => e.op === 'push') && target) {
+    if (areaAnchor && !this.supportTargets(actor, ability, target!, units).length) return '范围内没有可生效的目标';
+    if (!areaAnchor && ability.effects.every((e) => e.op === 'push') && target) {
       const effect = ability.effects[0] as Extract<EffectOp, { op: 'push' }>;
       const push = pushPreview(this.observationContext(units), actor, target, effect); if (push.reason) return push.reason;
     }
@@ -799,16 +801,18 @@ export class MassBattle {
     return itemUseAbility(actor, ability, target, healingTargets);
   }
   private supportTargets(actor: Combatant, ability: Ability, primary: Combatant, units: Combatant[]): Combatant[] {
-    if (ability.area) return areaTargets({...this.observationContext(units),units:this.visibleCombatants(actor.side,units)},actor,primary,ability,u=>!this.isAttached(u.id)
-      && !abilityTargetReason({space:'mass',actor,ability,target:u,units,controlRecipient:true,areaRecipient:this.rules.areaTargetingModel === 'impact-v1' && !ability.weaponUse && ability.requires !== 'melee' && ability.requires !== 'shield',distance:formationDistance(actor,u)})
-      && (this.rules.combatModel !== MEMBER_HEALTH_MODEL || !ability.weaponUse || isRangedWeapon(skillWeapon(actor, ability)) || !formationScreened(actor,u,units))
-      && (!ability.weaponUse || !rangedScreen(actor,u,skillWeapon(actor,ability,formationDistance(actor,u)),units.filter(c=>!this.isAttached(c.id)),{mode:'mass'},this.conditionMap())));
+    const valid = (u: Combatant) => !this.isAttached(u.id)
+      && !abilityTargetReason({ space: 'mass', actor, ability, target: u, units, controlRecipient: true, areaRecipient: this.rules.areaTargetingModel === 'impact-v1' && !ability.weaponUse && ability.requires !== 'melee' && ability.requires !== 'shield', distance: formationDistance(actor, u) })
+      && (this.rules.skillTargetModel !== 'area-anchor-v1' || !ability.effects.every(e => e.op === 'push') || !pushPreview(this.observationContext(units), actor, u, ability.effects[0] as Extract<EffectOp, { op: 'push' }>).reason)
+      && (this.rules.combatModel !== MEMBER_HEALTH_MODEL || !ability.weaponUse || isRangedWeapon(skillWeapon(actor, ability)) || !formationScreened(actor, u, units))
+      && (!ability.weaponUse || !rangedScreen(actor, u, skillWeapon(actor, ability, formationDistance(actor, u)), units.filter(c => !this.isAttached(c.id)), { mode: 'mass' }, this.conditionMap()));
+    if (ability.area) return areaTargets({ ...this.observationContext(units), units: this.visibleCombatants(actor.side, units) }, actor, primary, ability, valid);
     if (ability.shape !== 'burst' && !ability.effects.some((e) => e.op === 'damage' && e.shape === 'burst')) return [primary];
     const pivot = ability.recipe?.category === 'physical-area' && ability.damageBasis && !isRangedWeapon(skillWeapon(actor, ability)) ? actor : primary;
-    return [primary, ...this.visibleCombatants(actor.side, units).filter((u) => u.id !== primary.id && !combatHostile(u, primary, units) && u.status === 'ready' && !this.isAttached(u.id)
-      && formationDistance(pivot, u) <= 1 && !abilityTargetReason({ space: 'mass', actor, ability, target: u, units, controlRecipient:true, areaRecipient:this.rules.areaTargetingModel === 'impact-v1' && !ability.weaponUse && ability.requires !== 'melee' && ability.requires !== 'shield', distance: formationDistance(actor, u) })
-      && (this.rules.combatModel !== MEMBER_HEALTH_MODEL || !ability.weaponUse || isRangedWeapon(skillWeapon(actor, ability)) || !formationScreened(actor, u, units))
-      && (!ability.weaponUse || !rangedScreen(actor, u, skillWeapon(actor, ability, formationDistance(actor, u)), units.filter(c => !this.isAttached(c.id)), { mode: 'mass' }, this.conditionMap())))
+    const selected = this.rules.skillTargetModel !== 'area-anchor-v1' || valid(primary) ? [primary] : [];
+    return [...selected, ...this.visibleCombatants(actor.side, units).filter((u) => u.id !== primary.id && !combatHostile(u, primary, units)
+      && (u.status === 'ready' || this.rules.skillTargetModel === 'area-anchor-v1' && ability.target === 'ally' && u.status === 'dying' && ability.effects.some(e => e.op === 'heal'))
+      && formationDistance(pivot, u) <= 1 && valid(u))
       .sort((a, b) => a.id.localeCompare(b.id))].slice(0, 2);
   }
   /** 与阶段执行共享武器/展开/特质/环境；预览不读取尚未执行的敌方军令。 */
@@ -855,6 +859,7 @@ export class MassBattle {
       const healing = ability.effects.find((e) => e.op === 'heal'), morale = ability.effects.find((e) => e.op === 'morale'), damage = ability.effects.find((e) => e.op === 'damage');
       const strike = target && damage ? this.previewAttackWithEnvironment({ attacker: actor, defender: this.effectiveUnit(target, known), rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(known, actor, target, ability, damage, !!move.charge) }, known) : undefined;
       const area = target && (ability.area || (damage?.shape ?? ability.shape) === 'burst') ? this.supportTargets(actor, ability, target, known) : [];
+      const supportArea = canAnchorArea(ability, this.rules) && area.length > 0 && !damage;
       const areaPreviews = damage ? area.map((affected) => ({
         targetId: affected.id,
         ...this.previewAttackWithEnvironment({ attacker: actor, defender: this.effectiveUnit(affected, known), rules: this.rules,
@@ -866,13 +871,13 @@ export class MassBattle {
         rangeDistance: abilityRangeDistance(source, ability, target, formationDistance(source, target), 'mass'),
         ...(move.node ? { approach: move.node } : {}),
         ...(moveEffects(ability).after && this.skillWithdrawNode(actor, known) ? { withdrawal: this.skillWithdrawNode(actor, known) } : {}),
-        effects: [...(move.node ? [(move.mode === 'dash' ? '先突进至' : '先闪现至') + nodeLabel(move.node) + (move.charge ? '，以冲锋接敌' : '')] : []), ...skillEffectLines(this.observationContext(known), actor, target, ability)],
+        effects: [...(move.node ? [(move.mode === 'dash' ? '先突进至' : '先闪现至') + nodeLabel(move.node) + (move.charge ? '，以冲锋接敌' : '')] : []), ...(supportArea ? areaSkillEffectLines(this.observationContext(known), actor, area, ability) : skillEffectLines(this.observationContext(known), actor, target, ability))],
         ...(strike ? { preview: strike } : {}),
         ...(area.length ? { areaTargets: area.map((u) => u.name), areaTargetIds: area.map((u) => u.id), areaPreviews } : {}),
         ...this.abilityFlightPreview(actor, target, ability, known),
         ...(morale ? moraleChangePreview(this.observationContext(known), target, morale.amount, this.rules.morale.breakAt,
           this.traitRegistry, ability.effects.flatMap((e) => e.op === 'condition' ? [{ id: e.conditionId, dur: e.dur }] : [])) : {}),
-        ...(healing ? { healing: Math.min(recoveryCapacity(target), healingYield(actor, target, healing.amount ?? diceAvg(healing.dice!), !!ability.itemSourceId, healing.power)) } : {}),
+        ...(healing ? { healing: (supportArea ? area : [target]).reduce((sum, affected) => sum + Math.min(recoveryCapacity(affected), healingYield(actor, affected, healing.amount ?? diceAvg(healing.dice!), !!ability.itemSourceId, healing.power)), 0) } : {}),
       } : {};
     }
     const actor = this.byId(order.unitId), target = known.find((u) => u.id === order.targetId);

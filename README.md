@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **3.0.17**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **3.0.18**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-3.0.17 fixes area recipients being excluded at the edge of a spell's casting range and removes commander route diagnostics from round reports. Area previews, damage and reports share the affected targets; new battles use V37 while saved battles retain their rules. See the [current release](docs/current-release.md).
+3.0.18 makes rings land around the selected target and include that target. Area support can use a healthy or already-buffed ally as its center, with recipient-specific previews and effective healing, buffs and cleansing. New battles use V38; saved battles retain their rules. See the [current release](docs/current-release.md).
 
 ## Documentation
 
