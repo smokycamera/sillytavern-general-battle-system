@@ -261,6 +261,8 @@ export interface ConditionDef {
 }
 
 export interface ActiveCondition {
+  /** 剧情效果的期限由对应来源管理，不参与普通状态的激活/轮末递减。 */
+  effectSourceId?: string;
   damageChannel?: DamageChannel;
   controlPending?: boolean;
   controlActive?: boolean;
@@ -282,6 +284,18 @@ export interface ActiveCondition {
 // ---------- 战斗单位 ----------
 
 export type UnitStatus = 'ready' | 'dying' | 'dead' | 'routing' | 'fled';
+
+export interface BarrierGrant {
+  effectSourceId?: string;
+  remaining: number;
+  duration: number;
+  sourceId?: string;
+  defenses?: { power: number; duration: number }[];
+}
+export interface BarrierState extends BarrierGrant {
+  /** 仅新剧情屏障使用；普通屏障及历史快照继续使用原结构。各份保护同步消耗，容量仍取最大值。 */
+  grants?: BarrierGrant[];
+}
 
 export interface Combatant {
   regenerationModel?: import('./regeneration-model.js').RegenerationModel;
@@ -332,7 +346,7 @@ export interface Combatant {
   healingModel?: import('./healing.js').HealingModel;
   controlModel?: 'activation-controls-v1';
   battleZones?: import('./area-effects.js').BattleZone[];
-  barrier?: { remaining: number; duration: number; sourceId?: string; defenses?: { power: number; duration: number }[] };
+  barrier?: BarrierState;
   /** 旧版两格配件；只出现在 V15 之前开始、尚未结束的战斗快照里，新档一律用 gear。 */
   accessories?: Partial<Record<'accessory1' | 'accessory2', import('./items.js').LegacyAccessory>>;
   /** 已装备的佩戴、充能道具；与武器护甲一样是库存实物的投影，件数不限。 */

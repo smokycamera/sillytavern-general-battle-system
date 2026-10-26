@@ -250,7 +250,8 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
     value = decodeEntities(value).trim();
     if (!key || !allowed.includes(key)) { if(tag.name==='unit_set')throw Error('unit_set未知属性 '+originalKey+'，复杂字段请写data'); if(tag.name==='give')throw Error('give 只转移已有实物，未知属性 '+originalKey+'；新增物品请用add'); warnings.push(tag.name + ' 未使用额外属性 ' + originalKey); continue; }
     // 繁体正文先换成简体再查词表；名称、说明、编号和 data 保留原文。
-    if (!textKeys.has(key)) value = specKeys.has(key) ? simplifiedSpecification(value) : simplifiedChinese(value);
+    const effectSpecification = key === 'effects' && ['effect', 'spawn'].includes(tag.name);
+    if (!textKeys.has(key)) value = specKeys.has(key) || effectSpecification ? simplifiedSpecification(value) : simplifiedChinese(value);
     if (numericKeys.has(key)) value = numeric(value, key);
     if (tag.name === 'spawn' && key === 'level') value = normalizeNarrativeSpec('L' + value, 'unit').replace(/^L/i, '');
     if (booleanKeys.has(key) && (key !== 'shield' || /^(?:true|false|1|0|yes|no|是|否|有|无)$/i.test(value))) value = ({ '1': 'true', '0': 'false', yes: 'true', no: 'false', 是: 'true', 否: 'false', 有: 'true', 无: 'false' } as Record<string, string>)[value.toLowerCase()] ?? value.toLowerCase();
@@ -266,7 +267,7 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
         if (!Array.isArray(list) || list.some(item => typeof item !== 'string')) throw Error(key + '列表须为文字数组');
         value = list.join(',');
       }
-      value = value.split(key === 'skills' ? /[,，、;；\n]+/ : /[,，、;；|｜+＋\n]+/).map((part) => part.trim()).filter(Boolean).join(',');
+      value = value.split(key === 'skills' || effectSpecification ? /[,，、;；\n]+/ : /[,，、;；|｜+＋\n]+/).map((part) => part.trim()).filter(Boolean).join(',');
     }
     if (tag.name === 'give' && key === 'to') value = [...new Set([...(result.to ?? '').split(/[,，、;；|｜\s]+/), ...value.split(/[,，、;；|｜\s]+/)].filter(Boolean))].join(',');
     if (Object.hasOwn(result, key) && result[key] !== value && !(tag.name === 'give' && key === 'to')) throw new Error(tag.name + ' 的 ' + key + ' 重复且数值冲突');

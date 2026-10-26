@@ -1,0 +1,13 @@
+## 获得与解除效果
+
+- 单位获得持续增益、减益或外部授予能力时，使用effects属性。新单位写在spawn中，已有单位使用effect事件，id沿用单位资料里的编号。
+- 每项写“effects=名称:buffL等级+效果L等级”或“effects=名称:debuffL等级+效果L等级”效果词、traits名及数值修正沿用技能规格。多个效果项以逗号分隔，每个可分级效果分别标L等级。
+- 使用effects时，期限三选一：rounds或battles填1—99整数，或permanent="true"。等级决定效果强度，期限决定保留时间。
+- 解除效果使用clear，按名称填写，多个以逗号分隔；clear=all解除全部当前状态与效果。
+
+示例：
+<spawn name="被祭司临时祝福的战士" side="ally" scale="hero" level="3" effects="风神赐福:buffL3+攻击L3+飞行L5" battles="2"/>
+<effect id="u1" effects="风神赐福:buffL3+攻击L3+飞行L5" battles="2"/>
+<effect id="u2" effects="寒霜侵蚀:debuffL2+减速L2" rounds="3"/>
+<effect id="u1" clear="飞行"/>
+<effect id="u2" clear="all"/>

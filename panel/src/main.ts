@@ -1499,7 +1499,12 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   if (currentSources.length) {
     rows.push(`<div class="trait-sources" data-role="trait-sources">${currentSources.map((source) => {
       const duration = source.duration.kind === 'permanent' ? '永久' : `剩余${displayNumber(source.remaining)}${source.duration.kind === 'rounds' ? '个战斗整轮' : '场战斗'}`;
-      const effects = (source.conditionIds ?? []).map((id) => { const def = standardConditionMap().get(id); return `<div><b>${esc(def?.name ?? id)}</b>：${esc(def?.desc ?? '')}</div>`; }).join('');
+      const effects = (source.conditionIds ?? []).map((id) => {
+        const def = standardConditionMap().get(id), condition = u.conditions.find(c => c.effectSourceId === source.id && c.id === id);
+        if (source.conditions !== undefined && !condition) return '';
+        const description = condition ? skillConditionDescription({ op: 'condition', conditionId: id, dur: condition.dur, magnitude: condition.magnitude, potency: condition.potency, defensePower: condition.defensePower }, u) : def?.desc ?? '';
+        return `<div><b>${esc(def?.name ?? id)}</b>：${esc(description)}</div>`;
+      }).join('');
       return `<div><b>${esc(source.name)}</b> · ${duration}<div>${source.traitIds.map((id) => esc(reg.get(id)?.name ?? id) + (source.traitLevels?.[id] === undefined ? '' : 'L' + source.traitLevels[id])).join('、')}</div>${effects}${source.kind !== 'equipment' && !currentBattle() ? `<button data-action="trait-source-revoke" data-unit="${esc(u.id)}" data-source="${esc(source.id)}" data-revision="${state.factRevision}" data-context="${esc(controller.inventoryContext())}">解除此效果</button>` : ''}</div>`;
     }).join('')}</div>`);
   }
@@ -2358,7 +2363,7 @@ function renderNarrativeProposals(): string {
 }
 
 function suggestionLabel(s: Suggestion): string {
-  return { take: '减少物品', add: '新增或补充物品', learn: '学习技能', give: '转移物品', reforge: '物品改造', bless: '明确祝福', unbless: '撤销祝福', affect: '增减益', unaffect: '解除效果', status: '状态', xp: '经验', field: '环境', spawn: '遭遇', deploy: '选择编制', 'unit-update': '编制更新', 'unit-set': '完整单位修改' }[s.kind];
+  return { take: '减少物品', add: '新增或补充物品', learn: '学习技能', give: '转移物品', reforge: '物品改造', effect: '效果变更', bless: '明确祝福', unbless: '撤销祝福', affect: '增减益', unaffect: '解除效果', status: '状态', xp: '经验', field: '环境', spawn: '遭遇', deploy: '选择编制', 'unit-update': '编制更新', 'unit-set': '完整单位修改' }[s.kind];
 }
 
 function suggestionDesc(s: Suggestion, batch: Suggestion[] = []): string {
@@ -2376,6 +2381,7 @@ function suggestionDesc(s: Suggestion, batch: Suggestion[] = []): string {
     case 'learn': return `${unitName(s.id)} 学习或更新：${s.skills.map((skill) => (skill.name ?? ABILITY_BLUEPRINTS[skill.blueprintId]?.name ?? skill.blueprintId) + (skill.level === undefined ? '' : ' L' + skill.level)).join('、')}；其余记录保留`;
     case 'add': return s.item !== undefined ? `获得物品「${s.item}」×${s.qty}${s.to ? ' → ' + unitName(s.to) : ''}${s.spec ? ' · ' + itemSpecificationLabel(s.spec) : ' · 叙事记录'}${s.note ? ' · ' + s.note : ''}` : `增加「${state.inventory.find(i => i.id === ids.realId(s.id))?.name ?? ids.publicId(s.id)}」×${s.qty}${s.note ? ' · ' + s.note : ''}`;
     case 'reforge': return `改造「${s.name ?? state.inventory.find((i) => i.id === ids.realId(s.id))?.name ?? '指定物品'}」为 ${itemSpecificationLabel(s.spec)}`;
+    case 'effect': return `${unitName(s.id)}${s.clear?.length ? ' 解除：' + s.clear.map(id => standardConditionMap().get(id)?.name ?? reg.get(id)?.name ?? id).join('、') : ''}${s.effects?.length ? ' 获得：' + s.effects.map(effect => effect.name ?? effect.blueprintId).join('、') + ' · ' + (s.duration?.kind === 'permanent' ? '永久' : s.duration?.count + (s.duration?.kind === 'rounds' ? '个战斗整轮' : '场战斗')) : ''}`;
     case 'bless': return `${unitName(s.id)} 获得「${s.name}」：${s.traitIds.map((id) => reg.get(id)?.name ?? id).join('、')} · ${s.duration.kind === 'permanent' ? '永久' : s.duration.count + (s.duration.kind === 'rounds' ? '个战斗整轮' : '场战斗')}`;
     case 'unbless': return `${unitName(s.id)} 撤销指定祝福来源（保留永久特质）`;
     case 'affect': return `${unitName(s.id)} 获得「${s.name}」：${s.conditionIds.map((id) => standardConditionMap().get(id)?.name ?? id).join('、')} · ${s.duration.kind === 'permanent' ? '永久' : s.duration.count + (s.duration.kind === 'rounds' ? '个战斗整轮' : '场战斗')}`;
@@ -2404,7 +2410,7 @@ function suggestionDesc(s: Suggestion, batch: Suggestion[] = []): string {
       const wound = (s.scale ?? 'hero') === 'hero' && s.hp !== undefined && s.hpMax && s.hp < s.hpMax ? `·当前生命约${displayNumber(Math.max(1, Math.round(s.hp / s.hpMax * 100)))}%` : '';
       // 随身道具每张卡各一套：列名称与件数，佩戴、充能道具会自动装上。
       const items = s.items?.length ? '·随身' + s.items.map((i) => i.name + (i.qty > 1 ? '×' + i.qty : '')).join('、') : '';
-      return `${s.archiveOnly ? '新建档案' : '新增'} ${s.name}×${s.count}（训练${s.level}${s.scale ? '·' + scaleLabel({ scale: s.scale, rulesVersion: 'v2' }) : ''}${wep ? `·${wep}` : ''}${arm ? `·${arm}` : ''}${s.skills?.length ? `·技能×${s.skills.length}` : ''}${items}${wound}）`;
+      return `${s.archiveOnly ? '新建档案' : '新增'} ${s.name}×${s.count}（训练${s.level}${s.scale ? '·' + scaleLabel({ scale: s.scale, rulesVersion: 'v2' }) : ''}${wep ? `·${wep}` : ''}${arm ? `·${arm}` : ''}${s.skills?.length ? `·技能×${s.skills.length}` : ''}${s.effects?.length ? '·效果：' + s.effects.map(effect => effect.name ?? effect.blueprintId).join('、') : ''}${items}${wound}）`;
     }
   }
 }
@@ -2835,7 +2841,7 @@ function markProcessed(raw: string): void {
 
 /** 批准一条建议并落地 */
 async function approveSuggestion(s: Suggestion): Promise<void> {
-  if (['take', 'add', 'give', 'unit-set', 'bless', 'unbless', 'affect', 'unaffect', 'reforge', 'learn'].includes(s.kind)) throw new Error('物品数量变更、转移、完整单位修改、改造和增减益请通过剧情档案同步整批审查，旧无来源记录不能直接执行');
+  if (['take', 'add', 'give', 'unit-set', 'effect', 'bless', 'unbless', 'affect', 'unaffect', 'reforge', 'learn'].includes(s.kind)) throw new Error('物品数量变更、转移、完整单位修改、改造和增减益请通过剧情档案同步整批审查，旧无来源记录不能直接执行');
   switch (s.kind) {
     case 'status': {
       requireArchiveWritable();

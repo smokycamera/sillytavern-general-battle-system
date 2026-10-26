@@ -1,0 +1,11 @@
+<tb>
+<spawn name="再生赤翼骑兵连" side="ally" scale="company" level="5" hp="80" hpMax="100" body="human" mount="true" speed="4" weapon="骑枪:长兵器L3" weapon2="军刀:剑L3" armor="板甲:重甲L3" shield="骑兵盾:中盾L3" skills="冲锋:物理单体L4+近战+突进L4,鼓舞:buffL3+攻击L3,治疗术:buffL3+治疗L3" traits="再生L5,统率L4,冲锋强化L3" items="治疗药水:buffL3+治疗L3×2,夜视镜:夜战专精L4" effects="风神赐福:buffL3+攻击L3+飞行L5" battles="2"/>
+</tb>
+
+<tb>
+<effect id="u1" effects="寒霜侵蚀:debuffL2+减速L2" rounds="3"/>
+</tb>
+
+<tb>
+<unit_set data="{&quot;conditions&quot;:[{&quot;id&quot;:&quot;inspired&quot;,&quot;dur&quot;:99,&quot;magnitude&quot;:0.43301270189221935,&quot;effectSourceId&quot;:&quot;effect:story-ai-example-spawn:0:0:0&quot;},{&quot;id&quot;:&quot;slowed&quot;,&quot;dur&quot;:3,&quot;magnitude&quot;:0.5,&quot;effectSourceId&quot;:&quot;effect:story-ai-example-frost:0:0&quot;},{&quot;id&quot;:&quot;bleeding&quot;,&quot;dur&quot;:3}]}" id="u1"/>
+</tb>

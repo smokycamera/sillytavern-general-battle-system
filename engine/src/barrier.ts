@@ -1,4 +1,4 @@
-import type { Ability, Combatant, EffectOp, RulePack } from './types.js';
+import type { Ability, BarrierGrant, Combatant, EffectOp, RulePack } from './types.js';
 import { healingGradeMultiplier, HEALING_MODEL } from './healing.js';
 import { skillEffectPower } from './data/skill-mechanisms.js';
 
@@ -35,6 +35,36 @@ export function barrierDefensePower(unit: Pick<Combatant, 'barrier'>): number {
 
 /** 屏障在护甲和减伤结算后吸收生命伤害；全队共用一个有限护盾，不增加人数或生命上限。 */
 export function barrierAmount(unit: Pick<Combatant, 'barrier'>): number { return unit.barrier?.remaining ?? 0; }
+
+/** 来源屏障与普通技能共用现有吸收逻辑，只分别保存期限与已消耗容量。 */
+export function refreshBarrier(unit: Combatant): void {
+  if (!unit.barrier?.grants) return;
+  const grants = unit.barrier.grants.filter(grant => {
+    if (grant.remaining <= 0 || grant.duration <= 0) return false;
+    if (!grant.effectSourceId) return true;
+    const source = unit.traitSources?.find(s => s.id === grant.effectSourceId && s.barrier && !s.revoked && (s.duration.kind === 'permanent' || s.remaining! > 0));
+    if (!source) return false;
+    grant.duration = source.duration.kind === 'rounds' ? source.remaining! : 99;
+    for (const defense of grant.defenses ?? []) defense.duration = grant.duration;
+    return true;
+  });
+  if (!grants.length) { delete unit.barrier; return; }
+  const strongest = grants.reduce((a, b) => a.remaining >= b.remaining ? a : b), defenses = new Map<number, number>();
+  for (const grant of grants) for (const defense of grant.defenses ?? []) if (defense.duration > 0) defenses.set(defense.power, Math.max(defenses.get(defense.power) ?? 0, defense.duration));
+  unit.barrier = { remaining: strongest.remaining, duration: Math.max(...grants.map(g => g.duration)), sourceId: strongest.sourceId, grants,
+    ...(defenses.size ? { defenses: [...defenses].map(([power, duration]) => ({ power, duration })) } : {}) };
+}
+
+function mergedBarrier(previous: BarrierGrant | undefined, amount: number, duration: number, sourceId?: string, defensePower?: number): BarrierGrant {
+  const defenses = (previous?.defenses ?? []).map(d => ({ ...d }));
+  if (defensePower !== undefined) {
+    const same = defenses.find(d => d.power === defensePower);
+    if (same) same.duration = Math.max(same.duration, duration);
+    else defenses.push({ power: defensePower, duration });
+  }
+  return { remaining: Math.max(previous?.remaining ?? 0, amount), duration: Math.max(previous?.duration ?? 0, duration), sourceId,
+    ...(defenses.length ? { defenses } : {}) };
+}
 export function grantBarrier(unit: Combatant, amount: number, duration: number, sourceId?: string, defensePower?: number): number {
   if (!Number.isSafeInteger(amount) || amount < 1 || !Number.isSafeInteger(duration) || duration < 1 || duration > 99) throw Error('屏障强度或持续回合不正确');
   if (defensePower !== undefined && !validDefensePower(defensePower)) throw Error('屏障防御规格须为1–10整数');
@@ -43,26 +73,38 @@ export function grantBarrier(unit: Combatant, amount: number, duration: number, 
   amount = Math.max(1, Math.round(amount * barrierGradeMultiplier(unit, defensePower)));
   const before = barrierAmount(unit);
   // 重复施放取较强保护，不把多件护符或同一技能无限相加。
-  const defenses = (unit.barrier?.defenses ?? []).map(d => ({ ...d }));
-  if (defensePower !== undefined) {
-    const same = defenses.find(d => d.power === defensePower);
-    if (same) same.duration = Math.max(same.duration, duration);
-    else defenses.push({ power: defensePower, duration });
-  }
-  unit.barrier = { remaining: Math.max(before, amount), duration: Math.max(unit.barrier?.duration ?? 0, duration), sourceId,
-    ...(defenses.length ? { defenses } : {}) };
-  return unit.barrier.remaining - before;
+  const effectSource = unit.traitSources?.find(s => s.id === sourceId && s.conditions !== undefined && s.barrier);
+  if (effectSource || unit.barrier?.grants) {
+    const grants = structuredClone(unit.barrier?.grants ?? (unit.barrier ? [unit.barrier] : []));
+    if (effectSource) grants.push({ ...mergedBarrier(undefined, amount, duration, sourceId, defensePower), effectSourceId: effectSource.id });
+    else {
+      const index = grants.findIndex(g => !g.effectSourceId), normal = mergedBarrier(index < 0 ? undefined : grants[index], amount, duration, sourceId, defensePower);
+      if (index < 0) grants.push(normal); else grants[index] = normal;
+    }
+    unit.barrier = { remaining: Math.max(before, amount), duration, grants }; refreshBarrier(unit);
+  } else unit.barrier = mergedBarrier(unit.barrier, amount, duration, sourceId, defensePower);
+  return barrierAmount(unit) - before;
 }
 export function absorbBarrier(unit: Combatant, amount: number, protectedRatio = 1): number {
   const incoming = Math.max(0, Math.round(amount));
   // 容量扣除采用屏障规格；只有尚未吸收的攻击份额恢复为肉身规格。
   const protectedDamage = Math.max(0, Math.round(incoming * protectedRatio));
   const absorbed = Math.min(protectedDamage, barrierAmount(unit));
-  if (unit.barrier) { unit.barrier.remaining -= absorbed; if (!unit.barrier.remaining) delete unit.barrier; }
+  if (unit.barrier?.grants) {
+    for (const grant of unit.barrier.grants) grant.remaining = Math.max(0, grant.remaining - absorbed);
+    refreshBarrier(unit);
+  } else if (unit.barrier) { unit.barrier.remaining -= absorbed; if (!unit.barrier.remaining) delete unit.barrier; }
   return absorbed === protectedDamage ? 0 : Math.max(0, Math.round(incoming - absorbed / protectedRatio));
 }
 export function decayBarrier(unit: Combatant): void {
   if (!unit.barrier) return;
+  if (unit.barrier.grants) {
+    for (const grant of unit.barrier.grants) if (!grant.effectSourceId) {
+      grant.duration--;
+      if (grant.defenses) grant.defenses = grant.defenses.filter(d => --d.duration > 0);
+    }
+    refreshBarrier(unit); return;
+  }
   if (--unit.barrier.duration <= 0) { delete unit.barrier; return; }
   if (unit.barrier.defenses) {
     unit.barrier.defenses = unit.barrier.defenses.filter(d => --d.duration > 0);
@@ -74,4 +116,13 @@ export function validateBarrier(value: Combatant['barrier']): void {
   if (value?.defenses !== undefined && (!Array.isArray(value.defenses) || value.defenses.length > 10
     || value.defenses.some(d => !d || !validDefensePower(d.power) || !Number.isSafeInteger(d.duration) || d.duration < 1 || d.duration > value.duration)
     || new Set(value.defenses.map(d => d.power)).size !== value.defenses.length)) throw Error('屏障防御规格或时间不正确');
+  if (value?.grants !== undefined) {
+    if (!Array.isArray(value.grants) || !value.grants.length || value.grants.filter(g => !g.effectSourceId).length > 1) throw Error('屏障来源结构不正确');
+    const ids = value.grants.map(g => g.effectSourceId).filter(Boolean);
+    if (new Set(ids).size !== ids.length) throw Error('屏障来源重复');
+    for (const grant of value.grants) {
+      if (grant.effectSourceId !== undefined && (typeof grant.effectSourceId !== 'string' || !grant.effectSourceId)) throw Error('屏障来源编号不正确');
+      validateBarrier({ remaining: grant.remaining, duration: grant.duration, sourceId: grant.sourceId, defenses: grant.defenses });
+    }
+  }
 }

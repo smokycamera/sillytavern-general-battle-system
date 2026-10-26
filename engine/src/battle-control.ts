@@ -64,7 +64,7 @@ export function beginControlActivation(unit: Combatant, rng: Rng, candidates: ()
   }
 }
 export function finishControlActivation(unit: Combatant): void {
-  for (const c of unit.conditions) if (ACTIVATION_CONTROLS.has(c.id) && c.controlActive) { c.dur--; delete c.controlActive; }
+  for (const c of unit.conditions) if (ACTIVATION_CONTROLS.has(c.id) && c.controlActive) { if (!c.effectSourceId) c.dur--; delete c.controlActive; }
   unit.conditions = unit.conditions.filter(c => c.dur > 0);
 }
 export function validateBattleControlState(unit: Combatant): void {

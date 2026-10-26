@@ -454,7 +454,7 @@ export function collectMods(
   if (unit.rulesVersion === 'v2' && fatiguePenalty(unit) > 0) equipment.push({ source: 'condition', sourceId: 'fatigue:atk', name: '持续作战疲劳', kind: 'atk', type: 'flat', value: -fatiguePenalty(unit) });
   const sourceConditions: Modifier[] = [];
   if (unit.rulesVersion === 'v2') for (const source of unit.traitSources ?? []) {
-    if (!traitSourceActive(unit, source)) continue;
+    if (source.conditions !== undefined || !traitSourceActive(unit, source)) continue;
     for (const id of (source.conditionIds ?? []).filter((id) => id !== 'fearful' || !activeTraitIds(unit).some((trait) => getTrait(trait, registry)?.effects.some((e) => e.kind === 'immuneMorale')))) for (const [index, mod] of ((conditionDefs.get(id) ?? SOURCE_CONDITIONS.get(id))?.mods ?? []).entries()) {
       sourceConditions.push({ ...mod, sourceId: `${source.id}:${id}:${index}`, stackGroup: conditionStackGroup(mod),
         name: `${mod.name}（${source.name}）`, duration: source.duration.kind === 'rounds' ? source.remaining : undefined });

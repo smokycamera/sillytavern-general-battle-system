@@ -1,4 +1,5 @@
 import { CHANNEL_BUFF_CONDITIONS } from './channel-buffs.js';
+import { clearEffectSources } from './effect-sources.js';
 import { displayNumber } from './display-number.js';
 import { progression } from './progression.js';
 import { armorTransmission } from './power-anchors.js';
@@ -86,7 +87,7 @@ export function conditionChance(target: Combatant, effect: ConditionEffect): num
   if (effect.saveDC === undefined) {
     if (positive.has(effect.conditionId)) {
       const same = target.conditions.filter((c) => c.id === effect.conditionId && c.dur >= effect.dur && (c.defensePower ?? 0) >= (effect.defensePower ?? 0)).map((c) => (c.potency ?? 2) * (c.magnitude ?? 1));
-      if (!effect.defensePower && (target.traitSources ?? []).some((s) => traitSourceActive(target, s) && s.conditionIds?.includes(effect.conditionId))) same.push(2);
+      if (!effect.defensePower && (target.traitSources ?? []).some((s) => s.conditions === undefined && traitSourceActive(target, s) && s.conditionIds?.includes(effect.conditionId))) same.push(2);
       if (same.some((value) => value >= (effect.potency ?? 2) * (effect.magnitude ?? 1))) return 0;
     }
     return 1;
@@ -123,15 +124,21 @@ export function dispelCandidates(target: Combatant, effect: DispelEffect): Dispe
     .sort((a, b) => Number(['stunned', 'restrained'].includes(b)) - Number(['stunned', 'restrained'].includes(a)) || a.localeCompare(b))
     .map((id) => ({ kind: 'condition', id, name: (definitions.get(id)?.name ?? id) + (phase2Traits(target) ? '（一次移除此类全部来源）' : '') }));
   const sources: DispelCandidate[] = (target.traitSources ?? []).filter((s) => s.kind !== 'equipment' && traitSourceActive(target, s)
-    && (effect.polarity === 'positive' && s.kind === 'blessing' || s.conditionIds?.some((id) => group.has(id))))
+    && (s.conditions !== undefined ? effect.polarity === 'positive' && s.traitIds.length > 0 : effect.polarity === 'positive' && s.kind === 'blessing' || s.conditionIds?.some((id) => group.has(id))))
     .sort((a, b) => a.id.localeCompare(b.id)).map((s) => ({ kind: 'source', id: s.id, name: s.name }));
   return [...conditions, ...sources, ...(effect.polarity==='positive' && target.barrier ? [{kind:'barrier' as const,id:'barrier',name:'屏障'}] : [])].slice(0, effect.count);
 }
 export function applyDispel(target: Combatant, chosen: DispelCandidate[]): void {
   for (const entry of chosen) {
     if (entry.kind === 'barrier') delete target.barrier;
-    else if (entry.kind === 'condition') target.conditions = target.conditions.filter((c) => c.id !== entry.id);
-    else { const source = target.traitSources?.find((s) => s.id === entry.id); if (source) source.revoked = true; }
+    else if (entry.kind === 'condition') {
+      target.conditions = target.conditions.filter((c) => c.id !== entry.id);
+      for (const source of [...target.traitSources ?? []]) if (source.conditions !== undefined) clearEffectSources(target, new Set([entry.id]), 'dispel', source.id);
+    } else {
+      const source = target.traitSources?.find((s) => s.id === entry.id);
+      if (source?.conditions !== undefined) clearEffectSources(target, new Set(source.traitIds.map(id => canonicalTraitId(id, true))), 'dispel', source.id);
+      else if (source) source.revoked = true;
+    }
   }
 }
 export interface PushPreview { reason?: string; cell?: number; nodeId?: string; label?: string;fallDamage?:number;groundLanding?:boolean }
