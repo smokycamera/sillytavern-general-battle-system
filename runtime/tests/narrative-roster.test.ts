@@ -46,3 +46,25 @@ it('新名单保存未确认时仍展示旧名单；重试只提交同一候选�
   expect((await f.service.retry()).status).toBe('confirmed'); expect(f.service.snapshot()).toEqual(candidate);
   await f.service.load(); expect(f.service.snapshot().rosterIds).toEqual(candidate.rosterIds); expect(f.service.snapshot().storage).toHaveLength(4);
 });
+
+it.each([true, false])('deploy与effect同批保存、原生重载及后续修改均无迁移误报，deployFirst=%s', async deployFirst => {
+  const f = await setup();
+  const deploy = '<deploy id="u1"/>', effect = '<effect id="u1" effects="战意:buffL3+攻击L3+飞行L5" battles="2"/>';
+  const proposal = await scan(f, deployFirst ? deploy + effect : effect + deploy);
+  expect((await f.service.approve(proposal.id)).status).toBe('confirmed');
+  const saved = f.service.snapshot(), record = saved.storage!.find(r => r.id === 'old-0')!;
+  expect(record.conditions![0]!.effectSourceId).toBe(record.snapshot!.traitSources![0]!.id);
+  // 从宿主磁盘重新读取，覆盖真实load→reviewMigration→面板可用状态链路。
+  f.switchTo('a'); await f.service.load();
+  expect(f.service.status().phase).toBe('ready'); expect(f.service.migrationReview()).toBeUndefined();
+  expect(f.service.snapshot().storage).toEqual(saved.storage); expect(f.service.snapshot().rosterIds).toEqual(['old-0']);
+  const edit = await scan(f, '<unit_set id="u1" note="部署后修改"/><effect id="u1" clear="飞行"/>');
+  expect((await f.service.approve(edit.id)).status).toBe('confirmed');
+  const edited = f.service.snapshot();
+  f.switchTo('a'); await f.service.load();
+  expect(f.service.status().phase).toBe('ready'); expect(f.service.migrationReview()).toBeUndefined();
+  expect(f.service.snapshot().storage).toEqual(edited.storage);
+  const current = f.service.snapshot().storage!.find(r => r.id === 'old-0')!;
+  expect(current.snapshot!.traitSources!.find(s => !s.revoked)).toMatchObject({ traitIds: [], remaining: 2 });
+  expect(current.conditions).toHaveLength(1);
+});

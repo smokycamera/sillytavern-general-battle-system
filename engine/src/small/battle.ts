@@ -53,7 +53,7 @@ import { applySkillTrait, isPositiveCondition } from '../skill-effects.js';
 import { skillAttack } from '../skill-attack.js';
 import { moveEffects, movementOnlySkill, hasSkillMovement, moveBlockReason, effectiveMoveReach, type MoveEffect, type MoveMode } from '../skill-movement.js';
 import { prepareCondition, applySkillCondition, dispelCandidates, applyDispel, applyPush, pushPreview, skillEffectLines, areaSkillEffectLines, skillEffectValue, summonValue, conditionChance } from '../skill-effects.js';
-import { applyWeaponConditions, poisonDamage, poisonFactor, conditionDamage } from '../afflictions.js';
+import { applyWeaponConditions, poisonDamage, poisonFactor, conditionDamage, conditionDamageSources } from '../afflictions.js';
 import { isRangedWeapon, weaponReloadKey, weaponReloadTurns, meleeWeapon, validateMount, mountedShooting, steadyMovingShot, agileDisengage } from '../loadout.js';
 import { moraleProfile, moraleAttackMods, decideMorale, changeMorale, validateMoraleState, moraleRisk, moraleChangePreview, reconcileDamageMorale, recoverEntryMorale } from '../morale.js';
 import { emptyDiplomacy, restoreDiplomacy } from '../diplomacy.js';
@@ -3316,7 +3316,7 @@ export class SmallBattle {
       }
     }
     let dotSource: Combatant | undefined;
-    for (const c of [...u.conditions]) {
+    for (const c of conditionDamageSources(u)) {
       if (this.rules.resolutionVersion === 'v2' && c.id === 'poisoned' && !poisonFactor(u)) { u.conditions = u.conditions.filter((condition) => condition !== c); continue; }
       const def = this.conditions.get(c.id);
       if (def?.dot) {

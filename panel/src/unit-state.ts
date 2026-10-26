@@ -183,7 +183,7 @@ function validateBase(value: unknown): asserts value is Combatant['base'] {
   if (!Number.isSafeInteger(value.hpMax) || Number(value.hpMax) < 1) throw new Error('base.hpMax 必须为正整数');
 }
 
-function validateRuntimeMetadata(value: Record<string, unknown>): void {
+function validateRuntimeMetadata(value: Record<string, unknown>, sourceState = value): void {
   if (value.status !== undefined && (typeof value.status !== 'string' || !['ready', 'dying', 'dead', 'routing', 'fled'].includes(value.status))) throw new Error('单位状态记录损坏');
   if (value.fatigue !== undefined && (!Number.isFinite(value.fatigue) || Number(value.fatigue) < 0)) throw new Error('疲劳记录损坏');
   if (value.resources !== undefined && (!isRecordObject(value.resources) || Object.values(value.resources).some(n => !Number.isFinite(n) || Number(n) < 0))) throw new Error('资源记录损坏');
@@ -204,10 +204,10 @@ function validateRuntimeMetadata(value: Record<string, unknown>): void {
     if (isRecordObject(condition) && condition.potency !== undefined && (!Number.isInteger(condition.potency) || Number(condition.potency) < 1 || Number(condition.potency) > 3)) throw new Error('状态强度记录损坏');
     // Partial item coverage can produce a weaker active condition than the
     // minimum compiled skill potency; it must remain valid through save/load.
-    if (isRecordObject(condition) && condition.magnitude !== undefined && (!Number.isFinite(condition.magnitude) || Number(condition.magnitude) <= 0 || Number(condition.magnitude) > (['traits-items-v1','traits-items-v2'].includes(String(value.traitLevelModel)) ? 16 : condition.id === 'poisoned' && value.traitLevelModel === 'traits-levels-v2' ? 2 : 2))) throw new Error('状态效力记录损坏');
+    if (isRecordObject(condition) && condition.magnitude !== undefined && (!Number.isFinite(condition.magnitude) || Number(condition.magnitude) <= 0 || Number(condition.magnitude) > (['traits-items-v1','traits-items-v2'].includes(String(sourceState.traitLevelModel)) ? 16 : 2))) throw new Error('状态效力记录损坏');
     if (isRecordObject(condition) && condition.sourceId !== undefined && typeof condition.sourceId !== 'string') throw new Error('状态来源记录损坏');
     if (condition.effectSourceId !== undefined && (typeof condition.effectSourceId !== 'string'
-      || !(value.traitSources as import('../../engine/src/trait-sources.js').TraitSource[] | undefined)?.some(s => s.id === condition.effectSourceId && s.conditions !== undefined && !s.revoked && s.conditionIds?.includes(String(condition.id)) && (s.duration.kind === 'permanent' || s.remaining! > 0)))) throw Error('状态的效果来源记录损坏');
+      || !(sourceState.traitSources as import('../../engine/src/trait-sources.js').TraitSource[] | undefined)?.some(s => s.id === condition.effectSourceId && s.conditions !== undefined && !s.revoked && s.conditionIds?.includes(String(condition.id)) && (s.duration.kind === 'permanent' || s.remaining! > 0)))) throw Error('状态的效果来源记录损坏');
     if (condition.damageChannel !== undefined && !['kinetic','thermal','arcane'].includes(String(condition.damageChannel))) throw Error('持续伤害通道损坏');
     if (condition.defensePower !== undefined && (condition.id !== 'blessed' || !validDefensePower(condition.defensePower))) throw new Error('守护防御规格记录损坏');
   }
@@ -239,6 +239,10 @@ function validateRuntimeMetadata(value: Record<string, unknown>): void {
       if (ids.has(source.id)) throw new Error('特质来源身份重复'); ids.add(source.id);
     }
   }
+  if (isRecordObject(value.barrier) && Array.isArray(value.barrier.grants)) for (const grant of value.barrier.grants) {
+    if (isRecordObject(grant) && grant.effectSourceId !== undefined
+      && !(sourceState.traitSources as Combatant['traitSources'])?.some(s => s.id === grant.effectSourceId && s.conditions !== undefined && s.barrier && !s.revoked && (s.duration.kind === 'permanent' || s.remaining! > 0))) throw Error('屏障的效果来源记录损坏');
+  }
 }
 function recordFromUnknown(value: unknown): UnitRecord {
   if (!isRecordObject(value)) throw new Error('不是对象');
@@ -248,9 +252,11 @@ function recordFromUnknown(value: unknown): UnitRecord {
   if (typeof value.scale !== 'string' || !['hero', 'mook', 'company'].includes(value.scale)) throw new Error('scale 非法');
   validateEnhancements(value.bonuses as Enhancements | undefined,'unit');
   validateBase(value.base);
-  validateRuntimeMetadata(value); validateBarrier(value.barrier as Combatant['barrier']); validateAreas(value as unknown as Combatant);
-  if (value.hp !== undefined && (!Number.isSafeInteger(value.hp) || Number(value.hp) < 0 || Number(value.hp) > value.base.hpMax)) throw new Error('hp 越界，禁止猜测补满或截断');
   const snapshot = value.snapshot ? combatantFromUnknown(value.snapshot) : undefined;
+  // 档案外层保存当前状态；来源及规则模型只在精确快照中保存一份。
+  validateRuntimeMetadata(value, snapshot ? snapshot as unknown as Record<string, unknown> : value);
+  validateBarrier(value.barrier as Combatant['barrier']); validateAreas(value as unknown as Combatant);
+  if (value.hp !== undefined && (!Number.isSafeInteger(value.hp) || Number(value.hp) < 0 || Number(value.hp) > value.base.hpMax)) throw new Error('hp 越界，禁止猜测补满或截断');
   return normalizeUnitRecord({
     ...(clone(value) as unknown as UnitRecord),
     ...(snapshot ? { snapshot } : {}),

@@ -108,6 +108,7 @@ export function applySkillCondition(target: Combatant, condition?: ActiveConditi
   if (!condition || target.hp <= 0) return;
   // 不同规格各自到期；低阶长效守护不能延长高阶短效守护。
   const existing = target.conditions.find((c) => c.id === condition.id && c.dur > 0 && c.defensePower === condition.defensePower
+    && c.effectSourceId === condition.effectSourceId
     && (!phase2Traits(target) || !positive.has(condition.id) || c.sourceId === condition.sourceId && c.potency === condition.potency && c.magnitude === condition.magnitude));
   if (!existing) target.conditions.push({ ...condition });
   else if (positive.has(condition.id)) {

@@ -11,10 +11,12 @@ import { captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFr
 import { parseProtocol } from './protocol.js';
 import { parseAbilitySpec, parseEffectAttributes } from './tags.js';
 import { grantStoryEffects } from './story-effects.js';
-import { materializeUnitRecord, unitRecordFromCombatant } from './unit-state.js';
+import { combatantFromUnknown, materializeUnitRecord, migratePanelUnits, unitRecordFromCombatant } from './unit-state.js';
+import { reviewMigration } from './migration-review.js';
 import { commitBattleOutcome } from './unit-state.js';
 import { narrativeProjection } from './narrative-controller.js';
 import { absorbBarrier, barrierAmount, barrierDefensePower, decayBarrier, grantBarrier } from '../../engine/src/barrier.js';
+import { conditionDamageSources } from '../../engine/src/afflictions.js';
 
 const registry = traitRegistry();
 const wind = '风神赐福:buffL3+攻击L3+飞行L5';
@@ -51,6 +53,13 @@ describe('统一剧情效果', () => {
     const next = commit(setup(), deployFirst ? `<deploy id="u1"/>${grant}` : `${grant}<deploy id="u1"/>`), u = restored(next);
     expect(next.rosterIds).toEqual(['u1']); expect(activeConditionIds(u)).toEqual(expect.arrayContaining(['inspired', 'slowed']));
     expect(activeTraitIds(u)).toContain('regen'); expect(traitLevel(u, 'flying')).toBe(5);
+    const saved = JSON.parse(JSON.stringify(next)), before = structuredClone(saved);
+    const loaded = migratePanelUnits({ ...saved, registry });
+    expect(loaded.warnings).toEqual([]); expect(loaded.backup).toEqual([]);
+    expect(loaded.records).toEqual(next.storage); expect(loaded.roster).toHaveLength(1);
+    expect(loaded.roster[0]!.traitSources).toEqual(u.traitSources);
+    expect(loaded.roster[0]!.conditions).toEqual(u.conditions);
+    expect(reviewMigration(saved)).toBeUndefined(); expect(saved).toEqual(before);
   });
 
   it('同规格与真实技能编译共享效力、通道伤害及修正，不重复叠加固定来源状态', () => {
@@ -63,6 +72,82 @@ describe('统一剧情效果', () => {
     const attack = (u: ReturnType<typeof unit>) => resolveStack(collectMods(u, {}, standardConditionMap(), [], registry), 'atk', {}).flatTotal;
     expect(attack(target)).toBe(attack(skillTarget)); expect(channelBuffDamage(target, 'thermal')).toBe(channelBuffDamage(skillTarget, 'thermal'));
     expect(target.conditions.find(c => c.id === 'thermal-damage-up')!.magnitude).toBeGreaterThan(0);
+  });
+
+  it.each(['rounds="2"', 'battles="2"', 'permanent="true"'])('未部署的spawn效果也能读档，期限=%s', lifetime => {
+    const next = commit({ storage: [], factRevision: 1, storySync: true }, `<spawn name="储备战士" side="ally" scale="hero" level="3" effects="${wind}" ${lifetime}/>`);
+    // 未部署的单位同样必须通过整个档案的迁移校验。
+    next.rosterIds = [];
+    const saved = JSON.parse(JSON.stringify(next));
+    const loaded = migratePanelUnits({ ...saved, registry });
+    expect(loaded.warnings).toEqual([]); expect(loaded.records).toEqual(next.storage);
+    expect(reviewMigration(saved)).toBeUndefined();
+  });
+
+  it('外层状态使用快照的来源与模型校验，高强度合法；真实损坏仍隔离并保留原件', () => {
+    const original = commit(setup(), `<effect id="u1" effects="${wind}" rounds="3"/>`).storage![0]!;
+    const strong = structuredClone(original);
+    strong.conditions![0]!.magnitude = strong.snapshot!.conditions[0]!.magnitude = 3;
+    const loaded = migratePanelUnits({ storage: [strong], registry });
+    expect(loaded.warnings).toEqual([]); expect(loaded.records[0]!.conditions![0]!.magnitude).toBe(3);
+    for (const damage of ['missing', 'revoked', 'expired', 'wrong-condition', 'duplicate', 'no-snapshot', 'bad-snapshot'] as const) {
+      const record = structuredClone(original), source = record.snapshot!.traitSources![0]!;
+      if (damage === 'missing') record.conditions![0]!.effectSourceId = 'missing';
+      else if (damage === 'revoked') source.revoked = true;
+      else if (damage === 'expired') source.remaining = 0;
+      else if (damage === 'wrong-condition') record.conditions![0]!.id = 'slowed';
+      else if (damage === 'duplicate') record.snapshot!.traitSources!.push(structuredClone(source));
+      else if (damage === 'no-snapshot') delete record.snapshot;
+      else record.snapshot!.conditions[0]!.effectSourceId = 'missing';
+      const migrated = migratePanelUnits({ storage: [record], registry });
+      expect(migrated.records, damage).toEqual([]); expect(migrated.backup, damage).toEqual([record]);
+      expect(migrated.warnings, damage).toHaveLength(1);
+    }
+  });
+
+  it.each(['inspired', 'slowed'])('普通技能与剧情的%s各自保留来源，剧情先到期不吞掉技能', id => {
+    const u = restored(commit(setup(), `<effect id="u1" effects="${id === 'inspired' ? wind : frost}" rounds="1"/>`));
+    const story = structuredClone(u.conditions[0]!);
+    applySkillCondition(u, { id, dur: 3, potency: story.potency, magnitude: story.magnitude });
+    expect(u.conditions.filter(c => c.id === id)).toHaveLength(2);
+    expect(u.conditions.find(c => c.effectSourceId)).toEqual(story);
+    expireTraitSources(u, 'rounds');
+    const loaded = combatantFromUnknown(JSON.parse(JSON.stringify(u)));
+    expect(loaded.conditions).toEqual([{ id, dur: 3, potency: story.potency, magnitude: story.magnitude }]);
+  });
+
+  it('同种持续伤害取强但分别保存来源和期限；强效到期后弱效继续，不影响其他通道或旧状态', () => {
+    const u = unit();
+    grantStoryEffects(u, parseAbilitySpec('短毒:debuffL8+中毒L8'), { kind: 'rounds', count: 1 }, 'strong');
+    grantStoryEffects(u, parseAbilitySpec('长毒:debuffL2+中毒L2'), { kind: 'rounds', count: 3 }, 'weak');
+    const strong = u.conditions[0]!, weak = u.conditions[1]!;
+    expect(strong.magnitude).toBeGreaterThan(weak.magnitude!);
+    expect(conditionDamageSources(u)).toEqual([strong]);
+    expect(u.conditions).toHaveLength(2);
+    expireTraitSources(u, 'rounds');
+    expect(conditionDamageSources(u)).toEqual([weak]); expect(weak.dur).toBe(2);
+    const ordinary = { id: 'poisoned', dur: 2, magnitude: 2 };
+    u.conditions.push(ordinary, { ...ordinary, damageChannel: 'thermal' });
+    expect(conditionDamageSources(u)).toEqual([ordinary, { ...ordinary, damageChannel: 'thermal' }]);
+    const legacy = unit(); legacy.conditions = [ordinary, { ...ordinary }];
+    expect(conditionDamageSources(legacy)).toEqual(legacy.conditions);
+  });
+
+  it.each(['small', 'mass'] as const)('%s的同种剧情持续伤害每次只结算一份，全部来源仍可保存', mode => {
+    const a = unit(mode === 'mass' ? 'company' : 'hero'), b = unit(mode === 'mass' ? 'company' : 'hero');
+    b.id = 'enemy'; b.side = 'enemy';
+    grantStoryEffects(a, parseAbilitySpec('毒一:debuffL1+中毒L1,毒二:debuffL1+中毒L1'), { kind: 'rounds', count: 3 }, 'dots');
+    let battle: SmallBattle | MassBattle;
+    if (mode === 'small') {
+      battle = new SmallBattle({ rules: V38_OVERFLOW_D20, battlefield: standardField(), combatants: [a, b], seed: 'dot-small' }); battle.start();
+      for (let n = 0; !battle.log.some(l => l.damage?.cause === '毒伤') && n < 4; n++) battle.endTurn();
+    } else {
+      const mass = new MassBattle({ rules: V38_OVERFLOW_D20, combatants: [a, b], seed: 'dot-mass' }); battle = mass; mass.start();
+      mass.issue({ unitId: 'u1', type: 'hold' }); mass.issue({ unitId: 'enemy', type: 'hold' }); mass.resolveRound();
+    }
+    expect(battle.log.filter(l => l.damage?.targetId === 'u1' && l.damage?.cause === '毒伤')).toHaveLength(1);
+    expect(a.conditions.filter(c => c.id === 'poisoned')).toHaveLength(2);
+    expect(combatantFromUnknown(JSON.parse(JSON.stringify(a))).traitSources).toEqual(a.traitSources);
   });
 
   it('部分解除保留原期限、链接与重放凭据，clear all保留固有traits', () => {
@@ -167,6 +252,22 @@ describe('统一剧情效果', () => {
     expect(barrierAmount(loaded)).toBe(storyAmount - 2);
     expireTraitSources(loaded, 'battles'); expect(barrierAmount(loaded)).toBe(storyAmount - 2);
     expireTraitSources(loaded, 'battles'); expect(barrierAmount(loaded)).toBe(0);
+  });
+
+  it('剧情屏障缺失或错误的来源不能被读档悄悄丢弃', () => {
+    const u = unit();
+    grantStoryEffects(u, parseAbilitySpec('结界:buffL3+屏障L3'), { kind: 'battles', count: 2 }, 'barrier-link');
+    const record = unitRecordFromCombatant(u);
+    expect(migratePanelUnits({ storage: [record], registry }).warnings).toEqual([]);
+    for (const damage of ['missing', 'revoked', 'expired', 'wrong-content'] as const) {
+      const bad = structuredClone(record), source = bad.snapshot!.traitSources![0]!;
+      if (damage === 'missing') bad.snapshot!.barrier!.grants![0]!.effectSourceId = 'missing';
+      else if (damage === 'revoked') source.revoked = true;
+      else if (damage === 'expired') source.remaining = 0;
+      else delete source.barrier;
+      const result = migratePanelUnits({ storage: [bad], registry });
+      expect(result.records, damage).toEqual([]); expect(result.backup, damage).toEqual([bad]);
+    }
   });
 
   it('拒绝缺失/冲突期限、非法等级、未知效果及即时操作，不静默漏掉其中一项', () => {
