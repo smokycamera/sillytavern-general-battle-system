@@ -87,7 +87,7 @@ export const SKILL_MODIFIERS: SkillModifier[] = [
   ...TRAITS.filter((t) => t.v2SourceReady).map((t): SkillModifier => ({ id: 'trait-' + t.id, name: '特质' + t.name, allowed: 'buff', trait: t.id })),
 ];
 const FIXED_MODIFIERS = new Set(['melee', 'ranged', 'shield', 'projectile', 'thermal', 'arcane', 'martial', 'cone', 'line', 'ring', 'chain']);
-const acceptsModifierPower = (modifier: SkillModifier) => !FIXED_MODIFIERS.has(modifier.id)
+export const acceptsModifierPower = (modifier: SkillModifier) => !FIXED_MODIFIERS.has(modifier.id)
   && (!modifier.trait || isGradedTrait(canonicalTraitId(modifier.trait)));
 const TRAIT_BY_ID = new Map(TRAITS.map((t) => [t.id, t]));
 /** 停用特质与身体/装备特质只为旧技能的 id 保留，新技能不能再选。 */
