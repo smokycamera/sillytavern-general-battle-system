@@ -2,7 +2,7 @@
 
 [English](README.md) | **简体中文**
 
-当前版本：**3.0.21**。当前实现、版本与构建入口见 [当前发布说明](docs/current-release.md)，专题资料见 [文档索引](docs/README.md)。
+当前版本：**3.0.22**。当前实现、版本与构建入口见 [当前发布说明](docs/current-release.md)，专题资料见 [文档索引](docs/README.md)。
 
 面向 SillyTavern / TauriTavern 的原生前端回合制战斗扩展，支持小规模战斗、军团会战、三方小战、地图与城防、单位档案、装备和道具、技能与特质、战果成长及战报归档。
 
@@ -16,7 +16,7 @@
 
 ## 本次更新
 
-3.0.21 统一使用spawn的effects与独立effect事件授予持续效果，复用buff、debuff及traits的规格、等级和修正；clear按名称解除效果，同源其他效果保留剩余期限。旧事件与存档继续兼容，战斗规则仍为V38。详见 [当前发布说明](docs/current-release.md)。
+3.0.22 修复包含剧情效果的单位读档迁移误报，包括同批effect与deploy；普通技能状态与剧情来源各自保留期限，同种同通道剧情持续伤害每次仅结算最强的一份。战斗规则仍为V38。详见 [当前发布说明](docs/current-release.md)。
 
 ## 使用资料
 

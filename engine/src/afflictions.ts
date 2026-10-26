@@ -23,6 +23,24 @@ export function conditionDamage(unit: Combatant, roll: number, condition: Active
   return Math.max(0,roll*(condition.magnitude??1)*factor*(unit.scale==='hero'?1:Math.min(unit.hp,condition.affectedMembers??10)/(unit.combatModel==='cohort-v2'?1:memberDurability(unit))));
 }
 
+/** 剧情来源分别保存期限；同种同通道持续伤害每次只结算最强的一份。 */
+export function conditionDamageSources(unit: Combatant): ActiveCondition[] {
+  if (!unit.conditions.some(c => c.effectSourceId)) return unit.conditions;
+  const definitions = standardConditionMap();
+  const key = (c: ActiveCondition) => JSON.stringify([c.id, c.damageChannel ?? definitions.get(c.id)?.dot?.channel]);
+  const sourced = new Set(unit.conditions.filter(c => c.effectSourceId && definitions.get(c.id)?.dot).map(key));
+  if (!sourced.size) return unit.conditions;
+  const strongest = new Map<string, ActiveCondition>();
+  const strength = (c: ActiveCondition) => unit.combatModel ? conditionDamage(unit, 1, c) : c.magnitude ?? 1;
+  for (const condition of unit.conditions) {
+    const group = key(condition);
+    if (!sourced.has(group) || condition.dur <= 0) continue;
+    const previous = strongest.get(group);
+    if (!previous || strength(condition) > strength(previous)) strongest.set(group, condition);
+  }
+  return unit.conditions.filter(c => !sourced.has(key(c)) || strongest.get(key(c)) === c);
+}
+
 export function poisonFactor(unit: Combatant): number {
   if (unit.rulesVersion === 'v2' && activeTraitIds(unit).includes('inorganic')) return 0;
   return unit.body === 'vehicle' ? 0 : unit.body === 'giant' ? 0.25 : unit.body === 'large' ? 0.5 : 1;
