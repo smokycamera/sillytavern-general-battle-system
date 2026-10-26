@@ -42,7 +42,7 @@ import { BattleFeedback, type FeedbackUnit } from '../battle-feedback.js';
 import { restoreMassReport, type MassRoundReport, type MassPhase } from './feedback.js';
 import { skillAttack } from '../skill-attack.js';
 import { prepareCondition, applySkillCondition, dispelCandidates, applyDispel, pushPreview, pushStrength, skillEffectLines, areaSkillEffectLines, skillEffectValue, summonValue, conditionChance } from '../skill-effects.js';
-import { applyWeaponConditions, poisonDamage, poisonFactor, conditionDamage } from '../afflictions.js';
+import { applyWeaponConditions, poisonDamage, poisonFactor, conditionDamage, conditionDamageSources } from '../afflictions.js';
 import { isRangedWeapon, meleeWeapon, weaponReloadKey, weaponReloadTurns, validateMount, mountedShooting, mobileRangedWeapon, vehicleShooting } from '../loadout.js';
 import { meleeReach, formationWeaponRange } from '../melee.js';
 import { MAX_RALLY_ATTEMPTS, moraleProfile, moraleAttackMods, decideMorale, changeMorale, validateMoraleState, moraleRisk, moraleChangePreview, reconcileDamageMorale, recoverEntryMorale } from '../morale.js';
@@ -1719,7 +1719,7 @@ export class MassBattle {
           && !hastePlans.some(p => p.unitId === u.id && p.type !== 'hold');
         if (!u.resourceModel || u.status === 'ready' && u.bornRound !== this.round) settleFatigue(u, exertion.get(u.id) ?? 0, fullRest);
         for (const s of u.abilityState) s.cdLeft = Math.max(0, s.cdLeft - 1);
-        for (const condition of u.conditions) {
+        for (const condition of conditionDamageSources(u)) {
           if (condition.id === 'poisoned' && !poisonFactor(u)) { condition.dur = 0; continue; }
           const dot = this.conditions.get(condition.id)?.dot;
           if (dot && u.status === 'ready') {
