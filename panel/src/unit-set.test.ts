@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateUnit, traitRegistry, xpProgress, SmallBattle, V5_D20 } from '../../engine/src/index.js';
+import { generateUnit, traitRegistry, xpProgress, SmallBattle, V5_D20, activeConditionIds, activeTraitIds, traitLevel, traitSourceActive, grantTraitSource } from '../../engine/src/index.js';
 import { anchoredWeapon, anchoredProtection, armorPowerScale } from '../../engine/src/power-anchors.js';
 import { materializeUnitRecord, unitRecordFromCombatant } from './unit-state.js';
 import { captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type NarrativeSave, type MessageEnvelope } from './narrative-state.js';
@@ -43,16 +43,51 @@ describe('正文战外全字段事务（定向验证）',()=>{
     expect(parseProtocol(serializeEvent('unit_set',{id:'u1',speed:'4',shieldSpec:attrs.shield})).events[0]).toMatchObject({data:(parsed.events[0] as Extract<typeof parsed.events[number],{kind:'unit-set'}>).data});
     for(const save of [next,old])expect(restored(save)).toMatchObject({speedTier:4,shield:{name:'骑兵盾',load:1.5,recipe:{mechanism:'shield',power:3}}});
   });
-  it('unit_set可按中文状态名或id清除指定状态，all清空且不改生命、特质与来源',()=>{
+  it('unit_set可按中文状态名或id清除指定状态，all解除剧情来源但保留本体与生命',()=>{
     const save=transact(setup(),{conditions:[{id:'poisoned',dur:3},{id:'bleeding',dur:2},{id:'slowed',dur:2}],traits:['再生L5']},'<bless id="u1" name="祝福来源" traits="守护L5" battles="2"/>').next();
     const before=structuredClone(save),previous=restored(save);
     const next=transactText(save,'<unit_set id="u1" clear="中毒,bleeding"/>','clear-some').next(),unit=restored(next);
     expect(unit.conditions.map(condition=>condition.id)).toEqual(['slowed']);
     expect(unit.hp).toBe(previous.hp);expect(unit.traits).toEqual(previous.traits);expect(unit.traitSources).toEqual(previous.traitSources);
-    for(const clear of ['all','全部'])expect(restored(transactText(save,serializeEvent('unit_set',{id:'u1',clear}),'clear-all').next()).conditions).toEqual([]);
+    for(const clear of ['all','全部']) {
+      const cleared=restored(transactText(save,serializeEvent('unit_set',{id:'u1',clear}),'clear-all').next());
+      expect(cleared.conditions).toEqual([]);expect(cleared.traits).toEqual(previous.traits);
+      expect(cleared.traitSources!.every(source=>source.revoked)).toBe(true);
+    }
     expect(restored(transactText(setup(),'<unit_update id="u1" hp="70"/>').next()).hp).toBe(70);
     expect(parseProtocol('<unit_set id="u1" clear="不存在的状态"/>').errors.length).toBeGreaterThan(0);
     expect(save).toEqual(before);
+  });
+  it('clear按名称同时解除普通状态、剧情状态和授予能力，保留同源其他效果、期限与旧授予重放',()=>{
+    const save=transact(setup(),{conditions:[{id:'poisoned',dur:3},{id:'bleeding',dur:2}],traits:['再生L5']},'<affect id="u1" name="阴影侵蚀" effects="诅咒,士气低下" battles="2"/><bless id="u1" name="风灵赐福" traits="飞行L3,侦察L4" rounds="3"/>').next();
+    const before=structuredClone(save),previous=restored(save);
+    const next=transactText(save,'<unit_set id="u1" clear="中毒,诅咒,飞行"/>','clear-effects').next(),unit=restored(next);
+    expect(activeConditionIds(unit)).toEqual(expect.arrayContaining(['bleeding','demoralized']));
+    expect(activeConditionIds(unit)).not.toContain('poisoned');
+    expect(activeConditionIds(unit)).not.toContain('cursed');
+    expect(activeTraitIds(unit)).not.toContain('flying');expect(activeTraitIds(unit)).toContain('regen');expect(traitLevel(unit,'recon')).toBe(4);
+    const active=unit.traitSources!.filter(source=>traitSourceActive(unit,source));
+    expect(active.find(source=>source.kind==='effect')).toMatchObject({conditionIds:['demoralized'],remaining:2,duration:{kind:'battles',count:2}});
+    expect(active.find(source=>source.kind==='blessing')).toMatchObject({traitIds:['recon'],traitLevels:{recon:4},remaining:3,duration:{kind:'rounds',count:3}});
+    for(const source of previous.traitSources!) {
+      expect(unit.traitSources!.find(current=>current.id===source.id)).toMatchObject({...source,revoked:true});
+      grantTraitSource(unit,source);
+    }
+    expect(unit.traitSources!.filter(source=>traitSourceActive(unit,source))).toEqual(active);
+    expect(activeConditionIds(unit)).not.toContain('cursed');expect(activeTraitIds(unit)).not.toContain('flying');
+    const oldSource=previous.traitSources!.find(source=>source.kind==='effect')!;
+    const legacy=restored(transactText(next,`<unaffect id="u1" source="${oldSource.id}"/>`,'legacy-remaining-source').next());
+    expect(activeConditionIds(legacy)).not.toContain('demoralized');expect(activeTraitIds(legacy)).toContain('recon');
+    expect(save).toEqual(before);
+  });
+  it('clear all解除正负剧情来源，永久本体与装备能力保留，旧解除事件仍兼容',()=>{
+    const save=transact(setup(),{conditions:[{id:'hasted',dur:2},{id:'poisoned',dur:3}],traits:['飞行L5']},'<affect id="u1" effects="诅咒,鼓舞" permanent="true"/><bless id="u1" traits="飞行L3,侦察L4" battles="2"/><unit_set id="u1" items="夜视镜:夜战专精L5"/>').next();
+    const unit=restored(transactText(save,'<unit_set id="u1" clear="all"/>','clear-all-sources').next());
+    expect(activeConditionIds(unit)).toEqual([]);expect(unit.traitSources!.filter(source=>traitSourceActive(unit,source))).toEqual([]);
+    expect(activeTraitIds(unit)).toEqual(expect.arrayContaining(['flying','night-fighter']));expect(traitLevel(unit,'flying')).toBe(5);
+    const ids=restored(save).traitSources!.map(source=>source.id);
+    const legacy=restored(transactText(save,`<unaffect id="u1" source="${ids[0]}"/><unbless id="u1" source="${ids[1]}"/>`,'legacy-clear-sources').next());
+    expect(legacy.traitSources!.every(source=>source.revoked)).toBe(true);
   });
   it('enchant便捷属性修改当前实物并读档生效，none恢复武器默认通道且不改其他冻结属性',()=>{
     const save=prepareInventoryState(setup()), old=structuredClone(save.storage![0]!.snapshot!.weapon!);

@@ -296,7 +296,8 @@ function applyUnitEffect(storage: UnitRecord[], event: Extract<Suggestion, { kin
   else {
     const kind = unit.traitSources?.find((s) => s.id === event.sourceId)?.kind;
     if (!kind || kind === 'equipment' || event.kind === 'unbless' && kind !== 'blessing') throw new Error('只能解除本单位的明确剧情效果来源');
-    revokeTraitSource(unit, event.sourceId);
+    // 旧回复可能沿用 clear 部分解除前的来源编号，剩余效果仍属于这条来源。
+    for (const source of unit.traitSources!.filter(source => source.id === event.sourceId || source.id.startsWith(event.sourceId + ':clear:'))) revokeTraitSource(unit, source.id);
   }
   return storage.map((r) => r.id === record.id ? unitRecordFromCombatant(unit, record, { sourceId: proposalId, kind: 'update' }) : r);
 }

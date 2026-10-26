@@ -38,7 +38,7 @@
 - count是1—20张单位卡，人数写hpMax。单场上限64张。不同编制/用途单位必须分开建档，重要人物可保留个体，已有档案不自动合并。
 - unit_set用于补员、休整、治疗、复活、清除状态、配装和档案修正等有依据的战外变化；reason可选。复活须同时写state="ready"与正数hp。
 - 便捷属性：name、side、scale、level、xpProgress、hp、hpMax、morale、state、clear、body、mount、speed、weapon、weapon2、armor、shield、skills、traits、items、retired、note。state=ready/dying/dead/routing/fled；side=ally/enemy/neutral；scale=hero/company；speed选1—5，只表示单位本身固有速度，不计装备、负重或坐骑影响；shield写盾牌的“名称:规格”；items把道具交给该单位，写法同spawn的items，只增不减，收回用take。
-- clear用于清除单位当前状态，填写状态中文名，多个以逗号分隔，如clear="中毒,流血"；clear="all"表示清除全部当前状态。affect/bless授予的来源效果分别用unaffect/unbless解除。
+- 解除状态效果使用unit_set的clear，按名称填写，多个以逗号分隔，如clear="中毒,诅咒,飞行"。clear="all"解除全部当前状态效果
 - 常用修改优先使用便捷属性；便捷属性无法表达的修改可写入data，值为经XML转义的JSON对象。
 
 ## 环境
@@ -57,6 +57,11 @@
 <tb>
 <unit_set id="u1" hp="500"/>
 <deploy id="u1"/>
+</tb>
+</example>
+<example situation="示例：两支再生赤翼骑兵连，每支现员80、编制100">
+<tb>
+<spawn name="再生赤翼骑兵连" side="ally" scale="company" level="5" hp="80" hpMax="100" body="human" mount="true" speed="4" weapon="骑枪:长兵器L3" weapon2="军刀:剑L3" armor="板甲:重甲L3" shield="骑兵盾:中盾L3" skills="冲锋:物理单体L4+近战+突进L4,鼓舞:buffL3+士气L3" traits="再生L5" items="治疗药水:buffL3+治疗L3×2" count="2"/>
 </tb>
 </example>
 <example situation="全部便捷属性格式示例，xpProgress为当前等级经验数；仅展示格式，实际只写需要修改且有依据的字段">
@@ -191,10 +196,9 @@ add（新物品）/reforge 可用 body、quality、stabilized、protection、enc
 示例：
 <affect id="u1" effects="诅咒,士气低下" battles="2"/>
 <bless id="u1" traits="守护L5" rounds="3"/>
-<unaffect id="u1" source="s1"/>
-<unbless id="u1" source="s2"/>
+<unit_set id="u1" clear="诅咒,守护"/>
+<unit_set id="u1" clear="all"/>
 
-- source复制该单位对应效果的来源id，不填效果名或期限。
 - affect/bless可选name；期限三选一：rounds或battles填1—99整数，或permanent="true"。
 - effects选：鼓舞、祝福、惊惧、加速、减速、坚守、诅咒、士气低下、振奋、虚弱、易伤。
 ## 特质traits
