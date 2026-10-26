@@ -3,6 +3,7 @@ import { parseEnhancementSuffix, enhancementLabel, resolveBonusStat, BONUS_NAMES
 import { WEAPON_CLASSES, resolveWeaponClass, parseSkillMechanism, skillMechanismId, skillMechanismFromId, narrativeTrait, isGradedTrait, ITEM_FORM_NAMES, itemSpecText, compileItem,
   canonicalTraitId, TRAIT_LEVEL_ALIASES, type BodyKind, type ItemForm, type ItemSpecification } from '../../engine/src/index.js';
 import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-tolerance.js';
+import { splitSkillLevel } from './skill-notation.js';
 
 const ARMOR_TIERS = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
 export function itemSpecificationLabel(spec: ItemSpecification): string {
@@ -161,10 +162,10 @@ function activeSpecification(base: string, power: number, suffix: string, form: 
       const tolerance: string[] = [];
       const bonusKind = form === 'charged' ? 'charged' : 'skill';
       const normalized = normalizeNarrativeSkill(base + 'L' + power + suffix, tolerance, bonusKind);
-      const match = normalized.match(/^(.*?)[lL](\d{1,2})((?:[+-].*)?)$/);
-      const mechanism = match ? parseSkillMechanism(match[1]!) : undefined;
+      const notation = splitSkillLevel(normalized);
+      const mechanism = notation.level === undefined ? undefined : parseSkillMechanism(notation.mechanism);
       if (!mechanism) { if (strictError) throw strictError; return undefined; }
-      id = skillMechanismId(mechanism); bonuses = parseEnhancementSuffix('L' + match![2] + match![3], bonusKind).bonuses;
+      id = skillMechanismId(mechanism); bonuses = parseEnhancementSuffix('L' + notation.level + notation.suffix, bonusKind).bonuses;
       notes.push(...tolerance);
     } catch { if (strictError) throw strictError; return undefined; }
   }
@@ -228,7 +229,11 @@ export function parseItemSpecification(text: string, attrs: SpecAttributes = {},
     notes?.push(`「${text.trim()}」按「${moved.text}」理解`);
     return moved.spec;
   }
-  const active = activeSpecification(base, power, suffix, form === 'charged' ? 'charged' : 'single', notes);
+  // 道具沿用技能的主体与独立效果等级；不能把排序后第一个效果的 L 当成道具整体等级。
+  const notation = splitSkillLevel(spec);
+  const active = notation.level !== undefined && parseSkillMechanism(notation.mechanism)
+    ? activeSpecification(notation.mechanism, notation.level, notation.suffix, form === 'charged' ? 'charged' : 'single', notes)
+    : activeSpecification(base, power, suffix, form === 'charged' ? 'charged' : 'single', notes);
   if (active) return active;
   // 写了形态词的武器（充能魔杖L5、一次性炸药L3）也是道具。
   const weapon = resolveWeaponClass(base);

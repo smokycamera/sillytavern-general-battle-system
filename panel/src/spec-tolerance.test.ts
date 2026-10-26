@@ -7,6 +7,7 @@ import { traitRegistry, V6_D20 } from '../../engine/src/index.js';
 import { prepareCombatModel } from '../../engine/src/combat-model.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
 import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-tolerance.js';
+import { parseAbilitySpec } from './tags.js';
 
 function spawn(skills: string, extra: Record<string, string> = {}) {
   return serializeEvent('spawn', { name: '测试单位', side: 'ally', scale: 'hero', level: '5', skills, ...extra });
@@ -19,6 +20,17 @@ function transact(save: NarrativeSave, text: string, messageId = '1'): Narrative
 const registry = traitRegistry();
 
 describe('正文技能规格兼容和局部恢复', () => {
+  it('主体等级后可直接接不分级的方式词，直接解析与正文归一化均保留主体等级', () => {
+    for (const [text, blueprintId, level] of [
+      ['穿心箭:物理单体L3+射击', 'generic:physical-single:ranged', 3],
+      ['火球:魔法范围L5+热能', 'generic:magic-area:thermal', 5],
+    ] as const) {
+      expect(parseAbilitySpec(text)).toMatchObject([{blueprintId,level}]);
+      const parsed=parseProtocol(spawn(text));
+      expect(parsed.errors).toEqual([]);
+      expect(parsed.events[0]).toMatchObject({skills:[{blueprintId,level}]});
+    }
+  });
   it('通道简写按武器伤害和防具防护解析，正负修正可省略一点', () => {
     const text = spawn('治疗L3', { weapon: '热刃:剑Ｌ５＋３热能－奥术', armor: '重甲L5-热能+2动能' })
       + '<add item="备用甲" type="armor" spec="轻甲L4-热能"/>'

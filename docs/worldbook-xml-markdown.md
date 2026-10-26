@@ -24,20 +24,22 @@
 
 1. 正文、状态栏等格式全部闭合后，回复末尾输出唯一tb块；开闭标签各一行，每行一个小写自闭合事件，结束标签后立即结束回复。
 2. tb块置于所有正文和容器之外，不包代码围栏、引用、注释或思考标签；块内仅事件，无说明、嵌套或空事件。
-3. 属性名严格照写，如hpMax；属性不重复。数值是范围内的阿拉伯整数，枚举单选。
+3. 属性名严格照写，如hpMax；属性不重复。等级、生命/人数、数量和期限写范围内的阿拉伯整数；xpProgress可写有限非负小数，枚举单选。
 4. 可选项不用就省略。属性值单行，不含尖括号或裸和号，内部双引号用XML实体转义；不写空值、null、占位词或公式。
-5. 不输出JSON、坐标、骰子或效果脚本。
+5. 事件按下列XML标签与属性填写，不写坐标、骰子或效果脚本。
 
 ## 战场外变更，如休整治疗补员复活修正等
 
 - 已有单位id、实物id和效果来源id不要瞎猜，不要偷懒，需要原封不动输出；不猜id、不用spawn重建同名档案。战斗开始时spawn单位不用deploy，traits必须按照等级锚定分级(除了明确不能分级的)
 - hero的hp/hpMax是生命/最大生命；company的是现员/编制数，载具编队按车辆数，非装甲炮兵归为人形单位。不把总生命当人数。
-- deploy必填id。unit_update必填id及hp、hpMax、morale、state、clear至少一项；morale填写恢复后的士气绝对值，不超过当前moraleMax
+- deploy必填id，用于让已有单位参战。已有单位的战外修改统一使用unit_set，必填真实id及至少一项修改字段；morale填写恢复后的士气绝对值，不超过当前moraleMax。
 - 仅扩编只写hpMax，不自动补员；扩编并补员同时写hpMax、hp。休整等情况需要在恢复hp的同时恢复士气。
-- 同单位的unit_update、learn各合并一条，同实物的reforge合并一条；更新后可同时deploy。
+- 同单位的unit_set、learn各合并一条，同实物的reforge合并一条；更新后可同时deploy。learn用于新增或修改指定技能，保留其他技能；unit_set的skills会替换该单位的自有技能列表。
 - count是1—20张单位卡，人数写hpMax。单场上限64张。不同编制/用途单位必须分开建档，重要人物可保留个体，已有档案不自动合并。
--已有单位可用unit_set修改双方全部情况；必填真实id，另填便捷属性或data，reason可选。如补员，休整，获得/使用物品，改造等；
-- 便捷属性：name、side、scale、level、xpProgress、hp、hpMax、morale、state、body、mount、weapon、weapon2、armor、shieldSpec、skills、traits、items、retired、note。state=ready/dying/dead/routing/fled；side=ally/enemy/neutral；scale=hero/company；items把道具交给该单位，写法同spawn的items，只增不减，收回用take
+- unit_set用于补员、休整、治疗、复活、清除状态、配装和档案修正等有依据的战外变化；reason可选。复活须同时写state="ready"与正数hp。
+- 便捷属性：name、side、scale、level、xpProgress、hp、hpMax、morale、state、clear、body、mount、speed、weapon、weapon2、armor、shield、skills、traits、items、retired、note。state=ready/dying/dead/routing/fled；side=ally/enemy/neutral；scale=hero/company；speed选1—5，只表示单位本身固有速度，不计装备、负重或坐骑影响；shield写盾牌的“名称:规格”；items把道具交给该单位，写法同spawn的items，只增不减，收回用take。
+- clear用于清除单位当前状态，填写状态中文名，多个以逗号分隔，如clear="中毒,流血"；clear="all"表示清除全部当前状态。affect/bless授予的来源效果分别用unaffect/unbless解除。
+- 常用修改优先使用便捷属性；便捷属性无法表达的修改可写入data，值为经XML转义的JSON对象。
 
 ## 环境
 
@@ -48,18 +50,18 @@
 <tb>
 <field env="forest" light="night"/>
 <deploy id="u1"/>
-<spawn name="守备连" side="enemy" scale="company" hpMax="80" level="3" weapon="步枪L5"/>
+<spawn name="守备连" side="enemy" scale="company" hpMax="80" level="3" weapon="制式步枪:步枪L5"/>
 </tb>
 </example>
 <example situation="u1补员至500后参战，上限已允许；不是治疗500生命">
 <tb>
-<unit_update id="u1" hp="500"/>
+<unit_set id="u1" hp="500"/>
 <deploy id="u1"/>
 </tb>
 </example>
 <example situation="全部便捷属性格式示例，xpProgress为当前等级经验数；仅展示格式，实际只写需要修改且有依据的字段">
 <tb>
-<unit_set id="u1" name="再生赤翼骑兵连" side="ally" scale="company" level="5" xpProgress="100.5" hp="80" hpMax="100" state="ready" body="human" mount="true" speed="4" weapon="骑枪:长兵器L3" weapon2="军刀:剑L3" armor="板甲:重甲L3" shieldSpec="盾L3" skills="冲锋:冲锋L4,鼓舞:buff+士气L3" traits="再生L5" items="治疗药水:buff治疗L3×2" retired="false" note="精锐骑兵" reason="示范全部便捷属性格式"/>
+<unit_set id="u1" name="再生赤翼骑兵连" side="ally" scale="company" level="5" xpProgress="100.5" hp="80" hpMax="100" morale="100" state="ready" clear="中毒,流血" body="human" mount="true" speed="4" weapon="骑枪:长兵器L3" weapon2="军刀:剑L3" armor="板甲:重甲L3" shield="骑兵盾:中盾L3" skills="冲锋:物理单体L4+近战+突进L4,鼓舞:buffL3+士气L3" traits="再生L5" items="治疗药水:buffL3+治疗L3×2" retired="false" note="精锐骑兵" reason="示范全部便捷属性格式"/>
 </tb>
 </example>
 </examples>
@@ -82,20 +84,20 @@
 - 真实坐骑写mount="true"，省略无坐骑；大型、车辆、巨体明确body。骑射仅适用真实坐骑，车辆稳定装置用stabilized。非装甲炮兵计算为人形单位
 - speed选1—5（迟缓/缓行/标准/快速/疾速），speed只表示单位本身固有速度，选择时不考虑装备，负重或坐骑等其他因素的影响。
 - skills、traits按“技能与效果”规格写有依据的能力。
-- items写随身道具，每项“名称:道具spec×件数”。
+- items写随身道具，每项“名称:道具规格×件数”。技能、装备与道具规格统一用半角冒号分隔名称与机制；主体等级紧接主体类别，可分级附加效果各自写等级，附加词之间用+连接，数值修正写在整项规格末尾。add的item和reforge的name已承担名称，spec只写冒号右侧的规格。
 
 ## 装备规格
 
 #装备技能等级需严格按要求写入，不同等级数值差距巨大！所有修正均为可选。
 
-- 武器写“名称:机制L规格+修正”；机制选天生武器、轻型投射、爆破装置、剑、巨剑、短兵器、斧、巨型冷兵器、钝器、长兵器、重型长兵器、投掷冷兵器、弓、弩、火枪、步枪、霰弹枪、单发重步枪、机炮、直射火炮、火箭筒、曲射火炮、能量武器、喷射武器、法杖。(巨型冷兵器指巨斧、大锤等双手劈砸兵器，重型长兵器指戟、关刀等，轻型投射指投石索、手枪等，步枪指半自动、全自动类枪械，轻中机枪归为步枪，重机枪归为低级机炮，单兵火箭写火箭筒，导弹归为火炮，喷射武器指火焰喷射器等，普通施法归为法杖，分清楚weapon和skill)武器类型只能从以上机制中选择！
-- 护甲为"名称:无甲/轻甲/中甲/重甲/超重甲之一，加L规格+修正；盾用小盾、中盾、大盾、能量盾之一加L规格。
+- 武器写“名称:机制L等级±修正”；机制选天生武器、轻型投射、爆破装置、剑、巨剑、短兵器、斧、巨型冷兵器、钝器、长兵器、重型长兵器、投掷冷兵器、弓、弩、火枪、步枪、霰弹枪、单发重步枪、机炮、直射火炮、火箭筒、曲射火炮、能量武器、喷射武器、法杖。(巨型冷兵器指巨斧、大锤等双手劈砸兵器，重型长兵器指戟、关刀等，轻型投射指投石索、手枪等，步枪指半自动、全自动类枪械，轻中机枪归为步枪，重机枪归为低级机炮，单兵火箭写火箭筒，导弹归为火炮，喷射武器指火焰喷射器等，普通施法归为法杖，分清楚weapon和skill)武器类型只能从以上机制中选择！
+- 护甲写“名称:类型L等级±修正”，类型选无甲、轻甲、中甲、重甲、超重甲；盾写“名称:类型L等级±修正”，类型选小盾、中盾、大盾、能量盾。
 - L取1—10，按等级锚定选取。
 
 ## 道具规格（名称只作显示，效果只看spec，L按等级锚定）
 
-- 一次性：写“技能机制L等级±修正”，使用后消耗。如治疗药水:buff治疗L3、手雷:物理范围投射L4、烟雾弹:烟幕L2。
-- 充能：在技能规格前加“充能”。如火球魔杖:充能魔法范围热能L5。次数修正每点增减1次，每战至少1次，如充能魔法范围热能L5+2次数。
+- 一次性：写“名称:类别L等级+附加词”，可分级效果各自标级，使用后消耗。如治疗药水:buffL3+治疗L3、手雷:物理范围L4+投射、烟雾弹:烟幕L2。
+- 充能：在技能机制前加“充能+”。如火球魔杖:充能+魔法范围L5+热能。次数修正每点增减1次，每战至少1次，如多充能火球魔杖:充能+魔法范围L5+热能+2次数。
 - 佩戴：写特质或属性修正。如夜视镜:夜战专精L5、守护戒指:佩戴L4+4防御、精灵斗篷:潜伏L3+林地专精L5+2防御。
 - 佩戴修正方向：伤害、精度、防御、防护、生命、速度、士气、动能伤害、热能伤害、奥术伤害、动能防护、热能防护、奥术防护。
 - 一次性、充能道具的机制与修正方向按“技能与效果”。
@@ -123,24 +125,24 @@ add（新物品）/reforge 可用 body、quality、stabilized、protection、enc
 <examples>
 <example situation="新建自行火炮连；hpMax是车数">
 <tb>
-<spawn name="自行火炮连" side="ally" scale="company" hpMax="12" body="vehicle" level="4" weapon="曲射火炮L6" armor="重甲L4"/>
+<spawn name="自行火炮连" side="ally" scale="company" hpMax="12" body="vehicle" level="4" weapon="自行榴弹炮:曲射火炮L6" armor="车体装甲:重甲L4"/>
 </tb>
 </example>
 <example situation="新建掷弹兵连，每人2枚手雷，全连配发夜视镜">
 <tb>
-<spawn name="掷弹兵连" side="enemy" scale="company" hpMax="30" level="3" weapon="步枪L4" armor="轻甲L4" items="手雷:物理范围投射L4×60,夜视镜:夜战专精L5"/>
+<spawn name="掷弹兵连" side="enemy" scale="company" hpMax="30" level="3" weapon="掷弹兵步枪:步枪L4" armor="防弹衣:轻甲L4" items="手雷:物理范围L4+投射×60,夜视镜:夜战专精L5"/>
 </tb>
 </example>
 <example situation="获得手雷、治疗药水和火球魔杖，交出实物i1，改造实物g1">
 <tb>
-<add item="手雷" spec="物理范围投射L4" qty="6"/>
-<add item="治疗药水" spec="buff治疗L3" qty="3"/>
-<add item="火球魔杖" spec="充能魔法范围热能L5"/>
+<add item="手雷" spec="物理范围L4+投射" qty="6"/>
+<add item="治疗药水" spec="buffL3+治疗L3" qty="3"/>
+<add item="火球魔杖" spec="充能+魔法范围L5+热能"/>
 <add id="i1" qty="2" note="补充同规格药水"/>
 <give id="i1" to="u2,u3" qty="1" note="各给一件"/>
 <take id="i2" qty="1" note="出售"/>
-<reforge id="i1" name="强化治疗药水" spec="buff治疗L4"/>
-<reforge id="g1" name="附魔炮" spec="火炮L8" enchant="arcane"/>
+<reforge id="i1" name="强化治疗药水" spec="buffL4+治疗L4"/>
+<reforge id="g1" name="加装火控与增程改件的星舰主炮" spec="直射火炮L8+3精度+2射程+2重量"/>
 </tb>
 </example>
 </examples>
@@ -159,7 +161,7 @@ add（新物品）/reforge 可用 body、quality、stabilized、protection、enc
 | 盾 | 强度、防御、防护、士气、重量、动能防护、热能防护、奥术防护 |
 
 - 防御为闪避格挡，防护为抗穿；强度影响整体效果。
-- 示例：weapon="精密步枪:步枪L5+6精度+4伤害"；armor="护卫甲:重甲L5+10防护"；armor="轻量化重型防弹衣：重甲L4-5重量-3防护"。
+- 示例：weapon="精密步枪:步枪L5+6精度+4伤害"；armor="护卫甲:重甲L5+10防护"；armor="轻量化重型防弹衣:重甲L4-5重量-3防护"。
 </unit_equipment_specs>
 ```
 
@@ -173,14 +175,15 @@ add（新物品）/reforge 可用 body、quality、stabilized、protection、enc
 
 新建填spawn的skills；已有单位明确学习/修改时用learn，必填id、skills。traits必须选择L等级(除了明确不能分级的那类)
 
-- 每项写“名称:机制L等级+修正等级”，L取1—10并按等级锚定选择。
-- 机制以物理单体、物理范围、魔法单体、魔法范围、单体召唤、群体召唤、buff、debuff、火墙、毒雾、烟幕、治疗区域、陷阱之一开头。类别后加附加词，以+连接。也可单写冲锋（=物理单体+近战+突进），或单写突进、闪现、后撤（只移动自己）。
-- 限定武器类型时使用物理单体/范围接近战/射击/盾牌，物理单体/范围接投射代表无需特定武器的远程技能，不接代表通用技能。如“快速攻击：物理单体L2”，“穿心箭：物理单体射击L3”，“飞石术：物理单体投射L4”。魔法默认奥术，可改热能。
-- buff附加词：攻击、防御、伤害、动能防御、热能防御、奥术防御、动能伤害、热能伤害、奥术伤害、守护、加速、振奋、治疗、净化、回能、士气、屏障，(屏障为护盾)或“traits”加下列规范traits名。如一级飞行术为buff+飞行L1，一级构筑阵地为buff+工事L1，
+- 每项统一写“名称:类别L等级+附加词”，用半角冒号与+；无附加词时写“名称:类别L等级”。主体等级紧接类别，每个可分级效果也必须明确写L1—L10；按等级锚定选择，数值修正写在整项规格末尾。如“春风:buff范围L7+治疗L7”“穿心箭:物理单体L3+射击”。
+- 机制以物理单体、物理范围、魔法单体、魔法范围、单体召唤、群体召唤、buff、debuff、火墙、毒雾、烟幕、治疗区域、陷阱之一开头。类别与每个附加词之间均以+连接。冲锋写“冲锋:物理单体L4+近战+突进L4”；只移动自己时可写“疾行:突进L3”“瞬步:闪现L3”“脱身:后撤L3”。
+- 限定武器类型时，在物理单体/物理范围及其等级后以+连接近战、射击或盾牌；连接投射表示无需特定武器的远程技能，不连接则为通用技能。如“快速攻击:物理单体L2”“穿心箭:物理单体L3+射击”“飞石术:物理单体L4+投射”。魔法默认奥术，改热能时写“寒潮:魔法范围L6+热能+减速L3”。
+- buff附加词：攻击、防御、伤害、动能防御、热能防御、奥术防御、动能伤害、热能伤害、奥术伤害、守护、加速、振奋、治疗、净化、回能、士气、屏障（屏障为护盾）；或直接附加下列规范traits名（如buffL1+飞行L1）。完整示例：“飞行术:buffL1+飞行L1”“构筑阵地:buffL1+工事L1”。
 - 减益/伤害附加词：虚弱、攻击、防御、易伤、减速、定身、眩晕、缴械、沉默、诅咒、惊惧、士气、士气低下、重伤、中毒、流血、燃烧、驱散、耗能、击退、拉拽、嘲讽、魅惑、致盲、混乱；"攻击、防御、士气"表示降低。
-- buff/debuff类别后可加范围，附加战技表示非魔法。单写buff默认攻防增益，单写debuff默认虚弱。投送、能量、战技、效果均计入附加词。
+- buff/debuff类别后可加范围，附加战技表示非魔法。buff/debuff须明确写出主体及效果等级，如“强攻:buffL4+攻击L4”“虚弱术:debuffL3+虚弱L3”。投送、能量、战技、效果均计入附加词。
 - 物理范围、魔法范围附加词:扇形、直线、环形、连锁
-示例，震慑旋斩:物理范围L4+近战+环形+惊惧L2
+- 主体等级和效果等级可以不同，均须明确填写。如“寒潮:魔法范围L6+热能+减速L3”表示范围魔法伤害L6、减速L3；“震慑旋斩:物理范围L4+近战+环形+惊惧L2”表示范围攻击L4、惊惧L2。治疗、控制、增益、位移和可分级traits均须明确标级；即使与主体同级也重复写出，如“春风:buff范围L7+治疗L7”。近战、射击、盾牌、投射、热能、奥术、战技、扇形、直线、环形、连锁只表示方式、通道或形状，不单独分级；不可分级traits仍按下列目录填写。
+- 主体L是技能基础等级，各效果L决定对应效果强度；持续时间按各效果的规则及持续修正计算，buff主体等级不单独指定持续时间。
 - 位移附加词，任何类别可加：突进（冲锋）出手前沿路线接近，近战从远处突进按冲锋结算；闪现出手前瞬移到视线内落点；后撤出手后拉开距离。
 - 攻击、减益技能不加治疗、增益或traits，需要时分成两项技能；先锋部署不作技能效果。
 ## 获得与解除效果
@@ -209,14 +212,14 @@ add（新物品）/reforge 可用 body、quality、stabilized、protection、enc
 <examples>
 <example situation="u1新学五项技能，其他技能保留">
 <tb>
-<learn id="u1" skills="破阵:物理范围击退L7,寒潮:魔法范围热能+减速L6,春风:buff范围治疗L7,缚足:debuff定身L4,回马箭:物理单体射击+后撤L5"/>
+<learn id="u1" skills="破阵:物理范围L7+击退L4,寒潮:魔法范围L6+热能+减速L3,春风:buff范围L7+治疗L7,缚足:debuffL4+定身L4,回马箭:物理单体L5+射击+后撤L2"/>
 </tb>
 </example>
 </examples>
 ## 修正(可选，代表特性，缺陷或低于高于标准值)
 - 修正支持-10到+10整数；方向为强度、伤害、精度、穿透、射程、治疗、持续、回能、士气、动能伤害、热能伤害、奥术伤害、动能穿透、热能穿透、奥术穿透。
 - 唯一特例，其他不可参照:召唤技能射程+0为召唤物贴身肉搏，+1为长矛，+10为火炮
-- 示例：skills="灼热射击:物理单体射击L5+6精度+4热能伤害,复苏:buff治疗L4-2治疗"。
+- 示例：skills="灼热射击:物理单体L5+射击+6精度+4热能伤害,复苏:buffL4+治疗L4-2治疗"。
 </ability_effect_specs>
 ```
 
