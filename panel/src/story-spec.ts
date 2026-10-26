@@ -2,7 +2,13 @@ import { enhancementLabel, type Enhancements } from '../../engine/src/enhancemen
 import { WEAPON_CLASSES, SHIELD_CLASSES, type ShieldClass } from '../../engine/src/data/weapons.js';
 import { skillDefinitionName } from '../../engine/src/skill-catalog.js';
 import { skillMechanismFromId, skillMechanismName, SKILL_CATEGORIES, SKILL_MODIFIERS, MOVEMENT_MODIFIERS, acceptsModifierPower, type SkillMechanism } from '../../engine/src/data/skill-mechanisms.js';
-import type { Ability } from '../../engine/src/types.js';
+import type { Ability, Combatant } from '../../engine/src/types.js';
+import type { TraitSource } from '../../engine/src/trait-sources.js';
+import { parseSkillMechanism } from '../../engine/src/data/skill-mechanisms.js';
+import { canonicalTraitId } from '../../engine/src/trait-parameters.js';
+import { normalizeNarrativeSkill } from './spec-tolerance.js';
+import { splitSkillLevel } from './skill-notation.js';
+import { parseEnhancementSuffix } from '../../engine/src/enhancements.js';
 import { itemSpecText } from '../../engine/src/items.js';
 import type { InventoryItem } from './inventory-state.js';
 
@@ -30,6 +36,28 @@ export function storySkillSpec(ability: Ability): string {
   const power = ability.power ?? ability.recipe?.power;
   if (!mechanism) return ability.name + (ability.definitionId && !ability.customized ? ':' + skillDefinitionName(ability.definitionId) + (power === undefined ? '' : 'L' + power) : '');
   return ability.name + ':' + storyMechanismSpec(mechanism, power, ability.bonuses);
+}
+
+/** 正文只看仍有效的效果与标准规格；冻结来源不重编，部分解除不改其强度或期限。 */
+export function storyEffectSpec(source: TraitSource, unit: Combatant): string | undefined {
+  if (!source.specification || source.conditions === undefined) return undefined;
+  const normalized = normalizeNarrativeSkill(source.specification, []), separator = normalized.indexOf(':');
+  const notation = splitSkillLevel(normalized.slice(separator + 1));
+  const mechanism = parseSkillMechanism(notation.mechanism);
+  if (!mechanism) return undefined;
+  const conditions = new Set(unit.conditions.filter(c => c.effectSourceId === source.id && c.dur > 0).map(c => c.id));
+  const barrier = !!source.barrier && !!unit.barrier?.grants?.some(g => g.effectSourceId === source.id && g.remaining > 0);
+  if (!conditions.size && !source.traitIds.length && !barrier) return undefined;
+  const modifiers = mechanism.modifiers.filter(id => {
+    const modifier = SKILL_MODIFIERS.find(m => m.id === id)!;
+    if (modifier.trait) return source.traitIds.includes(canonicalTraitId(modifier.trait, true));
+    if (id === 'ward') return source.traitIds.includes('guardian') || conditions.has('blessed');
+    if (modifier.condition) return conditions.has(modifier.condition);
+    if (id === 'barrier') return barrier;
+    return id === 'martial';
+  });
+  const bonuses = notation.suffix ? parseEnhancementSuffix('技能L' + notation.level + notation.suffix, 'skill').bonuses : undefined;
+  return source.name + ':' + storyMechanismSpec({ ...mechanism, modifiers }, notation.level, bonuses);
 }
 
 /** 只整理正文规格，不修改已保存的配方与冻结效果。 */

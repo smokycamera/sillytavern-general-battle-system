@@ -2,7 +2,7 @@
 
 [English](README.md) | **简体中文**
 
-当前版本：**3.0.20**。当前实现、版本与构建入口见 [当前发布说明](docs/current-release.md)，专题资料见 [文档索引](docs/README.md)。
+当前版本：**3.0.21**。当前实现、版本与构建入口见 [当前发布说明](docs/current-release.md)，专题资料见 [文档索引](docs/README.md)。
 
 面向 SillyTavern / TauriTavern 的原生前端回合制战斗扩展，支持小规模战斗、军团会战、三方小战、地图与城防、单位档案、装备和道具、技能与特质、战果成长及战报归档。
 
@@ -16,7 +16,7 @@
 
 ## 本次更新
 
-3.0.20 统一使用unit_set的clear按名称解除状态与剧情授予能力，保留固有特质和装备能力；增加两支骑兵连的count示例，修复等价新旧道具规格混用时重复新增的问题。战斗规则仍为V38。详见 [当前发布说明](docs/current-release.md)。
+3.0.21 统一使用spawn的effects与独立effect事件授予持续效果，复用buff、debuff及traits的规格、等级和修正；clear按名称解除效果，同源其他效果保留剩余期限。旧事件与存档继续兼容，战斗规则仍为V38。详见 [当前发布说明](docs/current-release.md)。
 
 ## 使用资料
 

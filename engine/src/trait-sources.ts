@@ -3,8 +3,9 @@ import { shieldGuardUsable } from './arms.js';
 import { progression } from './progression.js';
 import { physicalTraitIds, armorBurdenTier, hasNaturalArmor } from './body.js';
 import { traitsV13 } from './trait-model.js';
+import { refreshBarrier } from './barrier.js';
 /** 特质知识与外部授予分离；持续期/来源身份属于引擎，不交给正文重写。 */
-import type { Combatant, Trait, Weapon } from './types.js';
+import type { ActiveCondition, Combatant, Trait, Weapon } from './types.js';
 import { traitRegistry, validateTraitLevels, isGradedTrait } from './data/traits.js';
 import { standardConditionMap } from './conditions.js';
 import { canonicalTraitId, sourceTraitLevel, traitParameter } from './trait-parameters.js';
@@ -16,6 +17,10 @@ export interface TraitSourceInput {
   battleOnly?: boolean;
   id: string; name: string; kind: 'blessing' | 'equipment' | 'effect'; traitIds: string[];
   conditionIds?: string[];
+  /** 新统一效果的冻结状态规格；实际状态存于单位conditions，沿用战斗结算。缺省为旧来源。 */
+  conditions?: ActiveCondition[];
+  specification?: string;
+  barrier?: { amount: number; defensePower?: number };
   duration: TraitDuration; equipmentId?: string;
   /** 已完成分级特质的等级（L1–10）；新V16输入默认L1，历史记录省略仍L5。 */
   traitLevels?: Record<string, number>;
@@ -23,7 +28,8 @@ export interface TraitSourceInput {
 export interface TraitSource extends TraitSourceInput { remaining?: number; revoked?: boolean }
 function signature(source: TraitSourceInput): string {
   return JSON.stringify([source.kind, source.name, [...new Set(source.traitIds)].sort(), [...new Set(source.conditionIds ?? [])].sort(), source.duration.kind, source.duration.kind === 'permanent' ? undefined : source.duration.count, source.equipmentId, source.battleOnly,
-    ...(source.traitLevels && Object.keys(source.traitLevels).length ? [Object.entries(source.traitLevels).sort(([a], [b]) => a.localeCompare(b))] : [])]);
+    ...(source.traitLevels && Object.keys(source.traitLevels).length ? [Object.entries(source.traitLevels).sort(([a], [b]) => a.localeCompare(b))] : []),
+    ...(source.conditions !== undefined ? [source.conditions, source.specification, source.barrier] : [])]);
 }
 export function validateTraitSource(source: TraitSource, registry = traitRegistry()): void {
   if (source?.battleOnly !== undefined && typeof source.battleOnly !== 'boolean') throw new Error('技能临时来源标记损坏');
@@ -31,8 +37,17 @@ export function validateTraitSource(source: TraitSource, registry = traitRegistr
     || !['blessing', 'equipment', 'effect'].includes(source.kind) || !Array.isArray(source.traitIds)
     || new Set(source.traitIds).size !== source.traitIds.length || source.traitIds.some((id) => !registry.has(id))) throw new Error('特质来源身份或内容损坏');
   const conditions = standardConditionMap(), ids = source.conditionIds ?? [];
-  if (!Array.isArray(ids) || new Set(ids).size !== ids.length || ids.some((id) => !conditions.get(id)?.v2SourceReady)
-    || source.traitIds.length + ids.length === 0 || source.kind === 'blessing' && ids.length > 0 || source.kind === 'effect' && source.traitIds.length > 0) throw new Error('效果来源为空或包含未完成的状态');
+  const unified = source.conditions !== undefined;
+  if (unified && (source.kind !== 'effect' || !Array.isArray(source.conditions) || typeof source.specification !== 'string' || !source.specification
+    || source.conditions.length !== ids.length || new Set(source.conditions.map(c => c?.id)).size !== ids.length || source.conditions.some(c => !c || !ids.includes(c.id) || !conditions.has(c.id)
+      || !Number.isSafeInteger(c.dur) || c.dur < 1 || c.dur > 99 || c.effectSourceId !== undefined
+      || c.magnitude !== undefined && (!Number.isFinite(c.magnitude) || c.magnitude <= 0 || c.magnitude > 16)
+      || c.potency !== undefined && (!Number.isInteger(c.potency) || c.potency < 1 || c.potency > 3)
+      || c.defensePower !== undefined && (c.id !== 'blessed' || !Number.isSafeInteger(c.defensePower) || c.defensePower < 1 || c.defensePower > 10)))) throw new Error('统一效果的冻结规格损坏');
+  if (source.barrier !== undefined && (!unified || !Number.isSafeInteger(source.barrier.amount) || source.barrier.amount < 1
+    || source.barrier.defensePower !== undefined && (!Number.isSafeInteger(source.barrier.defensePower) || source.barrier.defensePower < 1 || source.barrier.defensePower > 10))) throw new Error('统一效果的屏障规格损坏');
+  if (!Array.isArray(ids) || new Set(ids).size !== ids.length || ids.some((id) => unified ? !conditions.has(id) : !conditions.get(id)?.v2SourceReady)
+    || source.traitIds.length + ids.length === 0 && !source.barrier || source.kind === 'blessing' && ids.length > 0 || !unified && source.kind === 'effect' && source.traitIds.length > 0) throw new Error('效果来源为空或包含未完成的状态');
   if (!source.duration || !['permanent', 'rounds', 'battles'].includes(source.duration.kind)) throw new Error('特质来源期限未知');
   if (source.revoked !== undefined && typeof source.revoked !== 'boolean' || source.duration.kind === 'permanent' && source.remaining !== undefined) throw new Error('特质来源生命周期字段损坏');
   if (source.duration.kind !== 'permanent' && (!Number.isSafeInteger(source.duration.count) || source.duration.count < 1 || source.duration.count > 99
@@ -60,15 +75,26 @@ export function grantTraitSource(unit: Combatant, input: TraitSourceInput, regis
     return; // 已到期/被撤销的原消息也不能续期。
   }
   (unit.traitSources ??= []).push(source);
+  for (const condition of source.conditions ?? []) unit.conditions.push({ ...structuredClone(condition), effectSourceId: source.id });
 }
 export function revokeTraitSource(unit: Combatant, sourceId: string): void {
   const source = unit.traitSources?.find((s) => s.id === sourceId);
   if (!source) throw new Error('特质来源不存在'); source.revoked = true;
+  unit.conditions = unit.conditions.filter(c => c.effectSourceId !== sourceId);
+  if (unit.barrier?.grants) { unit.barrier.grants = unit.barrier.grants.filter(g => g.effectSourceId !== sourceId); refreshBarrier(unit); }
   if (phase2Traits(unit) && !activeTraitIds(unit).includes('regen')) unit.regenerationRemainder = 0;
 }
 export function expireTraitSources(unit: Combatant, boundary: 'rounds' | 'battles'): void {
   for (const source of unit.traitSources ?? []) if (!source.revoked && source.duration.kind === boundary && source.remaining! > 0) source.remaining!--;
   if (boundary === 'battles') for (const source of unit.traitSources ?? []) if (source.battleOnly) source.revoked = true;
+  unit.conditions = unit.conditions.filter(condition => {
+    if (!condition.effectSourceId) return true;
+    const source = unit.traitSources?.find(s => s.id === condition.effectSourceId);
+    if (!source || !traitSourceActive(unit, source)) return false;
+    if (source.duration.kind === 'rounds') condition.dur = source.remaining!;
+    return true;
+  });
+  refreshBarrier(unit);
   if (phase2Traits(unit) && (boundary === 'battles' || !activeTraitIds(unit).includes('regen'))) unit.regenerationRemainder = 0;
   if (phase2Traits(unit) && !activeTraitIds(unit).includes('regen')) unit.regenerationRemainder = 0;
 }
@@ -125,7 +151,7 @@ export function effectiveTraitLevel(unit: Combatant, id: string, traits?: readon
 }
 export function activeConditionIds(unit: Combatant): string[] {
   return [...new Set([...unit.conditions.filter((c) => c.dur > 0).map((c) => c.id),
-    ...(unit.rulesVersion === 'v2' ? unit.traitSources?.filter((s) => traitSourceActive(unit, s)).flatMap((s) => s.conditionIds ?? []) ?? [] : [])])];
+    ...(unit.rulesVersion === 'v2' ? unit.traitSources?.filter((s) => s.conditions === undefined && traitSourceActive(unit, s)).flatMap((s) => s.conditionIds ?? []) ?? [] : [])])];
 }
 export function actualTargetTag(unit: Combatant, tag: string): boolean {
   if (unit.rulesVersion !== 'v2') return unit.tags.includes(tag);
