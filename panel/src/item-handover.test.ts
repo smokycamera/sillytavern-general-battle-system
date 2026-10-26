@@ -19,6 +19,28 @@ it('add 可按单位编号直接交付道具，兼容无引号属性；同批 it
   expect(() => transact(before, '<add to="u999" item="错误收件道具" spec="buff治疗L3"/>')).toThrow(/档案.*缺失/);
   expect(before.inventory!.some(i => i.name === '错误收件道具')).toBe(false);
 });
+
+it('同批道具以新旧等价规格分别描述时，add与unit_set仍复用同一批实物', () => {
+  for (const [added,handed] of [['buff治疗L3','buffL3+治疗L3'],['buffL3+治疗L3','buff治疗L3'],['buffL3','buffL3+攻击L3+防御L3']] as const) {
+    const after=transact(setup(),`<add item="治疗药水" spec="${added}" qty="3"/><unit_set id="u1" items="治疗药水:${handed}×3"/>`);
+    const potions=after.inventory!.filter(item=>item.name==='治疗药水');
+    expect(potions.reduce((total,item)=>total+item.qty,0)).toBe(3);
+    expect(carried(after,'a')).toEqual([['治疗药水',3,'-']]);
+    if(potions[0]!.mechanics?.kind!=='item')throw Error('fixture');
+    expect(potions[0]!.mechanics.value.recipe.active).toBe((parseItemSpecification(added) as {active:string}).active);
+  }
+});
+
+it('等价新写法复用已持有和库存道具，效果等级不同仍各自入库', () => {
+  for(const owner of ['a',undefined]) {
+    const after=transact(setup(undefined,[potion('old-potion',2,owner)]),'<unit_set id="u1" items="治疗药水:buffL3+治疗L3×3"/>');
+    expect(after.inventory!.filter(item=>item.name==='治疗药水').reduce((total,item)=>total+item.qty,0)).toBe(3);
+    expect(after.inventory!.find(item=>item.id==='old-potion')).toMatchObject({qty:2,assignedTo:'a'});
+  }
+  const distinct=transact(setup(),'<add item="治疗药水" spec="buffL3+治疗L2" qty="3"/><unit_set id="u1" items="治疗药水:buffL3+治疗L3×3"/>');
+  expect(distinct.inventory!.filter(item=>item.name==='治疗药水').reduce((total,item)=>total+item.qty,0)).toBe(6);
+  expect(notices(distinct)).toContain('效果与交给法师的不同，各自入库');
+});
 it('add 可引用同批 unit_set 新建的单位，spawn 自编编号仍不接受', () => {
   const after = transact(setup(), '<add to="u9" item="手雷" spec="物理范围投射L4" qty="2"/><unit_set id="u9" name="新兵" side="ally" scale="hero"/>');
   const created = after.storage!.find(r => r.name === '新兵')!;

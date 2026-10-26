@@ -4,9 +4,10 @@
  * 写了效果的只拿效果相同的那件；同一回复 add 的同名道具效果不同时各自入库。佩戴、充能道具交出时装上，
  * 编队一件就是整张卡的配发。敌方与中立单位不动我方原有库存，只拿同一回复 add 的或新建。
  */
-import { itemSpecText } from '../../engine/src/index.js';
+import { itemSpecText, type ItemEffectRecipe } from '../../engine/src/index.js';
+import { skillMechanismFromId, skillMechanismId } from '../../engine/src/data/skill-mechanisms.js';
 import { createInventoryItem, prepareInventoryState, type InventoryItem } from './inventory-state.js';
-import { itemSpecificationText, type SpawnItem } from './item-spec.js';
+import type { SpawnItem } from './item-spec.js';
 import { itemKey } from './unit-set.js';
 import type { NarrativeSave } from './narrative-state.js';
 
@@ -18,7 +19,17 @@ export interface HandOverContext {
   notices: string[];
 }
 
-const effectText = (item: InventoryItem) => item.mechanics?.kind === 'item' ? itemSpecText(item.mechanics.value.recipe) : undefined;
+/** 匹配时消除与主体同级的冗余标级；不改写实物配方或重编冻结效果。 */
+function effectKey(spec: Pick<ItemEffectRecipe, 'form' | 'power' | 'active' | 'traits' | 'bonuses'>): string {
+  const mechanism = skillMechanismFromId(spec.active ?? '');
+  const active = mechanism ? skillMechanismId({ ...mechanism,
+    modifiers: mechanism.modifiers.length ? mechanism.modifiers : mechanism.category === 'buff' ? ['attack','defense'] : mechanism.category === 'debuff' ? ['weaken'] : [],
+    categoryPower: mechanism.categoryPower === spec.power ? undefined : mechanism.categoryPower,
+    modifierPowers: Object.fromEntries(Object.entries(mechanism.modifierPowers ?? {}).filter(([,power]) => power !== spec.power)),
+  }) : spec.active;
+  return itemSpecText({ ...spec, active, version: 'items-v1', seed: '' });
+}
+const effectText = (item: InventoryItem) => item.mechanics?.kind === 'item' ? effectKey(item.mechanics.value.recipe) : undefined;
 const wearable = (item: InventoryItem) => item.mechanics?.kind === 'item' && item.mechanics.value.recipe.form !== 'single';
 
 export function handOverItems(save: NarrativeSave, handovers: HandOver[], context: HandOverContext): NarrativeSave {
@@ -31,7 +42,7 @@ export function handOverItems(save: NarrativeSave, handovers: HandOver[], contex
     if (!record) throw new Error('要交给道具的单位不存在');
     const ally = record.side === 'ally', company = record.scale !== 'hero', parts: string[] = [];
     for (const [n, entry] of items.entries()) {
-      const key = itemKey(entry.name), wanted = entry.spec ? itemSpecificationText(entry.spec) : undefined;
+      const key = itemKey(entry.name), wanted = entry.spec ? effectKey(entry.spec) : undefined;
       const same = (item: InventoryItem) => itemKey(item.name) === key && (wanted === undefined || effectText(item) === wanted);
       const gear = entry.spec?.form === 'worn' || entry.spec?.form === 'charged';
       if (gear && company && entry.qty > 1) context.notices.push(`${record.name}是编队，佩戴、充能道具一件就是整张单位卡的配发，「${entry.name}」只交1件`);
