@@ -182,7 +182,7 @@ describe('AI 建议标签解析', () => {
       expect(result.errors).toEqual([]); expect(result.warnings.filter((w) => /未采用|未支持|忽略|不再使用/.test(w))).toEqual([]);
       return result.events;
     });
-    expect(events.find((e) => e.kind === 'unit-update')).toMatchObject({ hp: 500 });
+    expect(events.find((e) => e.kind === 'unit-set')).toMatchObject({ id: 'u1', data: { hp: 500 } });
     expect(events.find((e) => e.kind === 'spawn')).toMatchObject({ scale: 'company', hpMax: 80, count: 1, weaponClass: 'rifle', weaponLevel: 5 });
     expect(events.find((e) => e.kind === 'spawn' && e.name === '掷弹兵连')).toMatchObject({ items: [{ name: '手雷', qty: 60, spec: { form: 'single' } }, { name: '夜视镜', qty: 1, spec: { form: 'worn' } }] });
     expect(events.filter((e) => e.kind === 'add' && e.item !== undefined).map((e) => e.kind === 'add' && [e.item, e.qty, e.spec?.kind === 'item' ? e.spec.form : e.spec?.kind])).toEqual([['手雷', 6, 'single'], ['治疗药水', 3, 'single'], ['火球魔杖', 1, 'charged']]);
