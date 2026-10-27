@@ -1,10 +1,35 @@
 {
   "format": "tavern-battle-native-build",
   "version": "3.0.24",
-  "builtAt": "2026-10-27T17:06:35.869Z",
+  "builtAt": "2026-10-27T17:17:26.423Z",
   "sourceFingerprint": "fc7f3f8d3c329da6439b13ac2442707e268a1938af122d49f603fb645f7012d1",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
+    {
+      "path": "LICENSE",
+      "bytes": 35149,
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "path": "LICENSE-NOTES.md",
+      "bytes": 1076,
+      "sha256": "3c1102b6cb3f1d12fb603fa36920adf797f79463e7178ae4612782765b87f5cc"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2715,
+      "sha256": "6741ad13b1a398e976ba6b0cedf212c994074120582d1ee99190f2ab8f77b5e0"
+    },
+    {
+      "path": "README.zh-CN.md",
+      "bytes": 2537,
+      "sha256": "e489511d6296f1862cae0159a3e731499e3b7f70d6970fd191106b5a0afe7ce5"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "bytes": 1564,
+      "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
+    },
     {
       "path": "dist/assets/panel-DGJy4g3G.css",
       "bytes": 34245,
@@ -34,6 +59,11 @@
       "path": "dist/assets/worldbooks-CG5KUYui.js",
       "bytes": 1286993,
       "sha256": "430f7fff8fe8aed0f084ded0eb22c933c6e73e564ec6959b9647cb6401dd9b53"
+    },
+    {
+      "path": "docs/README.md",
+      "bytes": 2081,
+      "sha256": "7f5201f38f7d4d49bf304a940b7d6c9d9ed199cd41620b3ee575b3660e86c539"
     },
     {
       "path": "docs/artillery-recovery-v27-20261023.md",
@@ -144,6 +174,11 @@
       "path": "docs/performance-battle-save-20261028.md",
       "bytes": 6395,
       "sha256": "c06f229e69195ef8b2afaefe7fc0f15fd13027203e834e6f79c7e95045f1aa49"
+    },
+    {
+      "path": "docs/prompt-backups/README.md",
+      "bytes": 14743,
+      "sha256": "1a66f98ae9b7330a5738dd9c886a48e0267c361aa261ef859835aeb7a5d20873"
     },
     {
       "path": "docs/prompt-backups/battlefield-plan-before-indoor-terrain-20261023.ts.txt",
@@ -306,11 +341,6 @@
       "sha256": "afe3e6ab48a0aeb7e1858cbac3f50ac4a88d31bdedfa73aea3f1dd315d4beb67"
     },
     {
-      "path": "docs/prompt-backups/README.md",
-      "bytes": 14743,
-      "sha256": "1a66f98ae9b7330a5738dd9c886a48e0267c361aa261ef859835aeb7a5d20873"
-    },
-    {
       "path": "docs/prompt-backups/scene-intent-before-indoor-terrain-20261023.ts.txt",
       "bytes": 12079,
       "sha256": "7c6dfad733572ac0839cc64c0e6e0c62a9aade0714d1139a0eb0ca3b0efd13bf"
@@ -441,11 +471,6 @@
       "sha256": "b0b33c9d254bf94cd7514268e7398c8ece894a5c830564c1fe2aa26698134dd2"
     },
     {
-      "path": "docs/README.md",
-      "bytes": 2081,
-      "sha256": "7f5201f38f7d4d49bf304a940b7d6c9d9ed199cd41620b3ee575b3660e86c539"
-    },
-    {
       "path": "docs/region-battlefields-20261024.md",
       "bytes": 9906,
       "sha256": "39544208ada88bb188e477af4838028f299d2801a8b135620ed77cc6ec1da343"
@@ -541,16 +566,6 @@
       "sha256": "3bb75acfbb56a10bd17d67f40eaa665d4a31168af5455d96402bccfec545c226"
     },
     {
-      "path": "LICENSE",
-      "bytes": 35149,
-      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
-    },
-    {
-      "path": "LICENSE-NOTES.md",
-      "bytes": 1076,
-      "sha256": "3c1102b6cb3f1d12fb603fa36920adf797f79463e7178ae4612782765b87f5cc"
-    },
-    {
       "path": "licenses/Vite-LICENSE.md",
       "bytes": 162419,
       "sha256": "04d9940b3b8b372bff74437c3b153eda8a89642669c4209a4f67135eb3132bc9"
@@ -561,14 +576,19 @@
       "sha256": "f467ee330a62168af2214334919dde3e9f82cf096676e49e053cd3e69bcb1350"
     },
     {
-      "path": "mcp/broker.mjs",
-      "bytes": 3326,
-      "sha256": "420bc4a6edd74362ea5e2a16847844173e529e59d773cca338eeef2270948783"
-    },
-    {
       "path": "mcp/GAMEPLAY.md",
       "bytes": 6554,
       "sha256": "80ef81e9d2ed7031057e339b58abb550c628f7293600ca38a77ddaf433f0a5d3"
+    },
+    {
+      "path": "mcp/README.md",
+      "bytes": 8919,
+      "sha256": "d2793765368337dc0ae84ff55bbd24cec2dd2b64aefec4f0e02496fa22ac9c31"
+    },
+    {
+      "path": "mcp/broker.mjs",
+      "bytes": 3326,
+      "sha256": "420bc4a6edd74362ea5e2a16847844173e529e59d773cca338eeef2270948783"
     },
     {
       "path": "mcp/package-lock.json",
@@ -579,11 +599,6 @@
       "path": "mcp/package.json",
       "bytes": 388,
       "sha256": "33904dc07d85b28ad6e2f15ec9f472c7403ca054924cd88c039002996cdd7c24"
-    },
-    {
-      "path": "mcp/README.md",
-      "bytes": 8919,
-      "sha256": "d2793765368337dc0ae84ff55bbd24cec2dd2b64aefec4f0e02496fa22ac9c31"
     },
     {
       "path": "mcp/server.mjs",
@@ -616,24 +631,9 @@
       "sha256": "a52aba62ac2ab46864a1f3cc724bb39aac529d4c579eb1f9bbb4fe3b7c43ce77"
     },
     {
-      "path": "README.md",
-      "bytes": 2715,
-      "sha256": "6741ad13b1a398e976ba6b0cedf212c994074120582d1ee99190f2ab8f77b5e0"
-    },
-    {
-      "path": "README.zh-CN.md",
-      "bytes": 2537,
-      "sha256": "e489511d6296f1862cae0159a3e731499e3b7f70d6970fd191106b5a0afe7ce5"
-    },
-    {
       "path": "scripts/jev-cors-relay.mjs",
       "bytes": 5754,
       "sha256": "c7fb9094f869607e10a45fb46335de4545e14043034f1b56fef937115fca50ca"
-    },
-    {
-      "path": "THIRD_PARTY_NOTICES.md",
-      "bytes": 1564,
-      "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     }
   ],
   "validation": {
