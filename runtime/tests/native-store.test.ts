@@ -16,6 +16,21 @@ function fixture() {
 }
 
 describe('原生保存：独立读回与恢复记录', () => {
+  it('copies loaded data, snapshots, host metadata and callback results across every ownership boundary', async () => {
+    const f = fixture(); await f.store.load();
+    const candidate = { factRevision: 1, rosterIds: ['original'], custom: JSON.parse('{"__proto__":{"safe":true}}') };
+    expect((await f.store.commit(0, () => candidate)).status).toBe('confirmed');
+    candidate.rosterIds.push('callback');
+    (f.metadata().tavernBattle as NativeEnvelope).payload!.rosterIds!.push('host');
+    const snapshot = f.store.snapshot(), envelope = f.store.envelope()!, later = f.store.snapshotLater();
+    snapshot.rosterIds!.push('snapshot'); envelope.payload!.rosterIds!.push('envelope'); later().rosterIds!.push('later');
+    expect(f.store.snapshot().rosterIds).toEqual(['original']);
+    const read = structuredClone(f.disk.get('a')!); f.setRead(async () => read); await f.store.load();
+    (read.tavernBattle as NativeEnvelope).payload!.rosterIds!.push('read');
+    expect(f.store.snapshot().rosterIds).toEqual(['original']);
+    expect(Object.getPrototypeOf(f.store.snapshot().custom)).toBe(Object.prototype);
+    expect(Object.hasOwn(f.store.snapshot().custom as object, '__proto__')).toBe(true);
+  });
   it('放弃候选前再次核实，已经落盘的操作转为确认而不是丢失进度', async () => {
     const f = fixture(); await f.store.load(); f.setSave(async () => {});
     await f.store.commit(0, () => ({ factRevision: 1 }));
