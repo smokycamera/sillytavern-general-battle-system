@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generateUnit, prepareCombatModel, previewAttack, resolveAttack, standardConditionMap, traitRegistry,
-  V8_OVERFLOW_D20, V8_OVERFLOW_TW, V29_OVERFLOW_D20, V32_OVERFLOW_D20, V34_OVERFLOW_D20, V34_OVERFLOW_TW, prepareArmsModel, compileItem, grantBarrier, SeededRng, sampledPreviewComputations, beginPreviewScope, endPreviewScope, previewScopeEpoch, type AttackOpts } from '../src/index.js';
+  V8_OVERFLOW_D20, V8_OVERFLOW_TW, V29_OVERFLOW_D20, V32_OVERFLOW_D20, V34_OVERFLOW_D20, V34_OVERFLOW_TW, V39_OVERFLOW_D20, V39_OVERFLOW_TW, prepareArmsModel, compileItem, grantBarrier, SeededRng, sampledPreviewComputations, beginPreviewScope, endPreviewScope, previewScopeEpoch, type AttackOpts } from '../src/index.js';
 import { memberHealth } from '../src/member-health.js';
 import { bracePose } from '../src/tactics.js';
 let serial = 0;
@@ -20,7 +20,7 @@ function options(scale: 'hero' | 'company' = 'hero'): Omit<AttackOpts, 'rng'> {
 function computed(query: () => unknown): number { const before = sampledPreviewComputations(); query(); return sampledPreviewComputations() - before; }
 describe('屏障多段预览的有界值缓存', () => {
   const scenarios: [string, 'hero' | 'company', (o: Omit<AttackOpts, 'rng'>) => void][] = [
-    ...(['dagger', 'cannon', 'sprayer'] as const).flatMap(mechanism => [V34_OVERFLOW_D20, V34_OVERFLOW_TW].map<[string, 'company', (o: Omit<AttackOpts, 'rng'>) => void]>(rules => [
+    ...(['dagger', 'cannon', 'sprayer'] as const).flatMap(mechanism => [V34_OVERFLOW_D20, V34_OVERFLOW_TW, V39_OVERFLOW_D20, V39_OVERFLOW_TW].map<[string, 'company', (o: Omit<AttackOpts, 'rng'>) => void]>(rules => [
       `${rules.id} ${mechanism} 分段抽样`, 'company', o => {
         o.rules = rules;
         const weapon = compileItem({ kind: 'weapon', mechanism, power: 4 }, { id: mechanism, seed: mechanism });
@@ -70,6 +70,21 @@ describe('屏障多段预览的有界值缓存', () => {
       o.defender.conditions = [{ id: 'blessed', dur: 2, defensePower: 3 }, { id: 'exposed', dur: 3, magnitude: .7 }];
       o.defender.formation!.health = [{ count: 10, hp: 3 }, { count: 10, hp: o.defender.formation!.memberHp }];
     }],
+    ...(['hero', 'company'] as const).map<[string, 'hero' | 'company', (o: Omit<AttackOpts, 'rng'>) => void]>(scale => [
+      `V39 ${scale} 分层屏障、能量盾与伤兵/不屈逐种子恢复`, scale, o => {
+        o.rules = V39_OVERFLOW_D20;
+        const shield = compileItem({ kind: 'shield', mechanism: 'energy-shield', power: 4 }, { id: 'energy-v39', seed: 'energy-v39' });
+        if (shield.kind !== 'shield') throw Error('shield fixture');
+        o.defender.shield = shield.value;
+        o.defender.traits.push(scale === 'hero' ? 'indomitable' : 'medic');
+        for (const u of [o.attacker, o.defender]) prepareArmsModel(u, o.rules);
+        o.defender.energyShield!.remaining = 7;
+        o.defender.barrier = undefined;
+        grantBarrier(o.defender, 5, 3, 'layer-a', 2); grantBarrier(o.defender, 9, 4, 'layer-b', 4);
+        if (scale === 'hero') o.defender.hp = 3;
+        else o.defender.woundedPercentRemainder = 50;
+      },
+    ]),
   ];
   it.each(scenarios)('%s 保持原96种子模拟的每项统计与战斗对象不变', (_name, scale, configure) => {
     const o = options(scale); configure(o);
@@ -150,6 +165,21 @@ describe('屏障多段预览的有界值缓存', () => {
   });
 });
 describe('AI 单次估值范围内的样本复用', () => {
+  it('complete read-only previews return independent results and end with the decision', () => {
+    const o = options('company'), expected = previewAttack(o);
+    beginPreviewScope(true);
+    try {
+      const first = previewAttack(o); first.expectedDamage = -1; first.attackModifiers = 'edited by caller';
+      expect(previewAttack(o)).toEqual(expected);
+      const moved = { ...o, actionDamageScale: 0, defender: { ...o.defender, pos: 8, conditions: [{ id: 'stunned', dur: 1 }] } };
+      expect(previewAttack(moved)).not.toEqual(expected);
+    } finally { endPreviewScope(); }
+    o.attacker.weapon!.baseDice = '1d6+1';
+    const changed = previewAttack(o);
+    beginPreviewScope(true);
+    try { expect(previewAttack(o)).toEqual(changed); }
+    finally { endPreviewScope(); }
+  });
   it('read-only AI keys distinguish new candidate branches and reset before the next decision', () => {
     const o = options('company');
     const variants = [o, { ...o, defender: { ...o.defender, barrier: { ...o.defender.barrier!, remaining: 50 } } },

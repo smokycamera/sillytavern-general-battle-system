@@ -145,10 +145,15 @@ export class NativeHost implements MetadataPort {
     // The host may swap in new objects for the same chat; the fingerprints decide whether
     // these are still the scanned messages.
     if (!chat || !sameChat(session, this.session())) throw Error('绑定消息身份时聊天已切换');
+    const wanted = new Set(tags.map(tag => tag.id)), identified = new Map<string, number>();
+    for (let index = 0; index < chat.length; index++) {
+      const id = sourceId(chat[index]);
+      if (!id || !wanted.has(id)) continue;
+      if (identified.has(id)) throw Error('消息身份重复，不能自动选择来源');
+      identified.set(id, index);
+    }
     const targets = tags.map(tag => {
-      const identified = chat.flatMap((message, index) => sourceId(message) === tag.id ? [index] : []);
-      if (identified.length > 1) throw Error('消息身份重复，不能自动选择来源');
-      const index = identified[0] ?? tag.index; const message = chat[index];
+      const index = identified.get(tag.id) ?? tag.index; const message = chat[index];
       if (!message || !matchesMessageTag(message, tag) || sourceId(message) && sourceId(message) !== tag.id) throw new SourceMessageChangedError();
       return { message, tag };
     });

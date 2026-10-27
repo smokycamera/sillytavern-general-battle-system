@@ -252,7 +252,22 @@ function criticalInfo(opts: Omit<AttackOpts,'rng'>, weapon?: Weapon): { minimum:
     forced: !!applies && actual === 'dagger' && opts.defender.conditions.some(c=>c.dur>0&&['stunned','restrained','blinded','disarmed','confused','charmed'].includes(c.id)) };
 }
 export function previewAttack(opts: Omit<AttackOpts, 'rng'>): import('./actions.js').ActionPreview & { hitChance: number; expectedDamage: number; conditionValue?: number } {
-  const preview = previewAttackOutcome(opts);
+  // Repeated AI branches ask for the same complete preview, not just the same
+  // sampled losses. Reuse diagnostics too, only inside a synchronous read-only
+  // decision. Exact unit/options content (including positions/resources) is kept.
+  const scope = previewScope?.readonlyUnits ? previewScope : undefined;
+  const key = scope && fullPreviewKey(scope, opts);
+  let preview = key ? scope!.outcomes.get(key) : undefined;
+  if (preview) preview = cloneData(preview);
+  else {
+    preview = previewAttackOutcome(opts);
+    if (key && scope!.outcomes.size < SCOPE_CACHE_ENTRIES) {
+      const size = key.length + JSON.stringify(preview).length;
+      if (scope!.outcomeChars + size <= SCOPE_CACHE_CHARS) {
+        scope!.outcomes.set(key, cloneData(preview)); scope!.outcomeChars += size;
+      }
+    }
+  }
   const chance = preview.anyHitChance ?? preview.hitChance;
   const remaining = opts.rules.combatModel === MEMBER_HEALTH_MODEL ? memberHealth(opts.defender) : opts.defender.hp;
   return { ...preview, attackRollCount: (preview.aggregationSamples ?? 1) * (opts.abilityDamage ? 1 : (opts.weaponOverride ?? opts.attacker.weapon)?.attacks ?? 1), damageOnHit: preview.damageOnHit ?? Math.min(remaining, chance > 0 ? preview.expectedDamage / chance : 0) };
@@ -416,12 +431,13 @@ export function sampledPreviewComputations(): number { return sampledPreviewRuns
 // values are the same either way, only their reuse differs.
 interface ScopeTable { id: string; text: string }
 interface PreviewScope { samples: Map<string, SampledMemberPreview>; chars: number; tables: WeakMap<object, ScopeTable>; ids: Map<string, string>; epoch: number;
-  parts: Map<string, string>; partChars: number; readonlyUnits: boolean; immutableParts: WeakMap<object, string> }
+  parts: Map<string, string>; partChars: number; readonlyUnits: boolean; immutableParts: WeakMap<object, string>;
+  outcomes: Map<string, ReturnType<typeof previewAttackOutcome>>; outcomeChars: number }
 const SCOPE_CACHE_ENTRIES = 4096, SCOPE_CACHE_CHARS = 8 * 1024 * 1024;
 let previewScope: PreviewScope | undefined, previewScopes = 0;
 /** 开始一次只读估值（AI 选择行动）；结束前不得修改状态表或特质表内容。 */
 export function beginPreviewScope(readonlyUnits = false): void { previewScope = { samples: new Map(), chars: 0, tables: new WeakMap(), ids: new Map(), epoch: ++previewScopes, parts: new Map(), partChars: 0,
-  readonlyUnits, immutableParts: new WeakMap() }; }
+  readonlyUnits, immutableParts: new WeakMap(), outcomes: new Map(), outcomeChars: 0 }; }
 export function endPreviewScope(): void { previewScope = undefined; }
 /** 当前估值范围的编号；范围外为 undefined。供其他估值模块在同一范围内复用只读派生表。 */
 export function previewScopeEpoch(): number | undefined { return previewScope?.epoch; }
@@ -477,11 +493,17 @@ function scopePart(scope: PreviewScope, value: unknown, immutable = false): stri
 /** AI candidates are immutable during scoring. Intern their shared nested branches
  * once (skills, equipment, generation records), retaining full content equality.
  * General preview scopes keep recomputing keys so in-place edits remain visible. */
-function scopeUnit(scope: PreviewScope, unit: ReturnType<typeof sampledPreviewState>['attacker']): string {
+function scopeUnit(scope: PreviewScope, unit: object): string {
   if (!scope.readonlyUnits) return scopePart(scope, unit);
   const parts: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(unit)) parts[key] = value && typeof value === 'object' ? [scopePart(scope, value, true)] : value;
   return scopePart(scope, parts);
+}
+function fullPreviewKey(scope: PreviewScope, opts: Omit<AttackOpts, 'rng'>): string | undefined {
+  const { attacker, defender, conditionDefs, traitRegistry, ...attack } = opts;
+  const defs = scopeTable(scope, conditionDefs), registry = traitRegistry && scopeTable(scope, traitRegistry);
+  const key = [scopeUnit(scope, attacker), scopeUnit(scope, defender), scopePart(scope, attack), defs.id, registry?.id ?? ''].join('\n');
+  return key.length <= 16384 ? key : undefined;
 }
 /** The state and trait tables follow the JSON object; JSON text has no raw newline, so the parts cannot run together. */
 function sampledPreviewKeys(opts: Omit<AttackOpts, 'rng'>, scope: PreviewScope | undefined): { key: string; shared: () => string } {
@@ -544,8 +566,10 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
       const sampleOpts: AttackOpts = { ...opts, attacker, defender: opts.defender, rng: new SeededRng('barrier-preview:0'), previewMemo };
       const packets = opts.packetShare !== undefined ? 1 : cohortSamples(sampleOpts);
       if (packets > 1) sampleOpts.packetShare = 1 / packets;
+      let reusable: Combatant | undefined;
       for (let i = 0; i < SAMPLED_PREVIEW_COUNT; i++) {
-        const defender = damageCopy(opts.defender);
+        const defender = damageCopy(opts.defender, reusable);
+        reusable = defender;
         const rng = new SeededRng('barrier-preview:' + i), before = memberHealth(defender), members = defender.hp;
         sampleOpts.defender = defender; sampleOpts.rng = rng;
         let hitAny = false;
@@ -803,9 +827,17 @@ interface AttackBasis { ward: StackResult; context: ReturnType<typeof attackCont
 interface PreviewMemo { bases: Map<string, AttackBasis>; samples?: number; penetration?: ReturnType<typeof penetrationContext>; loose?: boolean; cannon?: boolean; modernArms?: boolean; layeredLegacy?: boolean;
   lastBasis?: { hp: number; status: Combatant['status']; shield: number | undefined; barrier: number | undefined; value: AttackBasis } }
 /** 抽样副本：伤损只改写生命基数、状态、成员分组、屏障、盾耐久、能量盾与士气记录；其余数据与原单位共享且只读。 */
-function damageCopy(unit: Combatant): Combatant {
-  // Copy once, then replace mutable branches; avoid repeatedly spreading the large unit object.
-  const copy = { ...unit };
+function damageCopy(unit: Combatant, reusable?: Combatant): Combatant {
+  // Across seeds keep the large immutable skill/equipment branches and reset every
+  // field the damage pipeline can change. Each seed still starts at the same health,
+  // wounds, shields and morale; no seed inherits a previous seed's injury.
+  const copy = reusable ?? { ...unit };
+  if (reusable) {
+    copy.hp = unit.hp; copy.status = unit.status; copy.morale = unit.morale;
+    copy.recoverableWounded = unit.recoverableWounded;
+    copy.woundedPercentRemainder = unit.woundedPercentRemainder;
+    copy.barrier = undefined; copy.energyShield = undefined; copy.shieldDurability = undefined; copy.moraleState = undefined;
+  }
   copy.base = { ...unit.base };
   copy.conditions = unit.conditions.map((c) => ({ ...c }));
   if (unit.formation) {

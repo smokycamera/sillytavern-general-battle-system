@@ -15,6 +15,7 @@
 - [绑定世界书开战错误与无世界书处理（3.0.2）](worldbook-start-20261024.md)
 - [战斗存档策略](battle-save-policy-20261016.md)
 - [MVU 共用保存与历史精简](mvu-save-history-20261020.md)
+- [3.0.24 战斗与高楼层存读档性能实测](performance-battle-save-20261028.md)
 - [MCP 玩家桥接](mcp-player-bridge.md)
 - [最近的 2.6 修正](update-2.6-20261019.md)、[佩戴道具修正](worn-anchoring-20261020.md)
 - [特质与道具组合修正](traits-items-stacking-revision-20261019.md)

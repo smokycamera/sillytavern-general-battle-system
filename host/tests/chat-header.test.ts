@@ -25,6 +25,19 @@ it('cancels before requesting the long message tail and does not wait for cancel
   expect(cancel).toHaveBeenCalledTimes(1);
 });
 
+it('skips long strings with odd/even backslash runs across chunk boundaries', async () => {
+  const header = { chat_metadata: { text: Array.from({ length: 12 }, (_, i) => '\\'.repeat(i) + '"中文😀{}[],').join('').repeat(60), nested: { value: 'end' } } };
+  const bytes = new TextEncoder().encode(JSON.stringify([header, { mes: 'tail' }]));
+  for (const size of [2, 7, 1024, 65536]) {
+    let offset = 0;
+    const response = new Response(new ReadableStream<Uint8Array>({ pull(controller) {
+      if (offset === bytes.length) { controller.close(); return; }
+      const next = Math.min(offset+size,bytes.length); controller.enqueue(bytes.subarray(offset,next)); offset=next;
+    } }, { highWaterMark: 0 }));
+    expect(await readChatHeader(response)).toEqual(header);
+  }
+});
+
 it('accepts empty chats and rejects malformed or incomplete headers', async () => {
   expect(await readChatHeader(new Response(' [ ] '))).toBeUndefined();
   for (const text of ['{}', '[null]', '[{"chat_metadata":', '[{"x":1}oops]', '[{"x":]}]', '[{"x":1}']) {

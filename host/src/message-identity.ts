@@ -43,6 +43,10 @@ export function prepareMessageTag(chat: HostMessage[], index: number): MessageTa
 }
 export function findMessageBySourceId(chat: HostMessage[], id: string): number | undefined {
   if (/^\d+$/.test(id)) { const index = Number(id); return chat[index] ? index : undefined; }
-  const matches = chat.flatMap((message, index) => sourceId(message) === id ? [index] : []);
-  return matches.length === 1 ? matches[0] : undefined;
+  let found: number | undefined;
+  for (let index = 0; index < chat.length; index++) if (sourceId(chat[index]) === id) {
+    if (found !== undefined) return undefined;
+    found = index;
+  }
+  return found;
 }

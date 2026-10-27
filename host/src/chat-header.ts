@@ -36,9 +36,15 @@ export async function readChatHeader(response: Response): Promise<unknown> {
           }
         }
         if (quoted) {
-          if (escaped) escaped = false;
-          else if (byte === 92) escaped = true;
-          else if (byte === 34) quoted = false;
+          // Large saved reports contain long JSON strings. Skip to their closing
+          // quote with the native byte search instead of branching on every byte.
+          const end = value.indexOf(34, i);
+          const boundary = end < 0 ? value.length : end;
+          let back = boundary - 1, slash = false;
+          while (back >= i && value[back] === 92) { slash = !slash; back--; }
+          if (back < i) slash = slash !== escaped;
+          if (end < 0) { escaped = slash; break; }
+          quoted = slash; escaped = false; i = end;
         } else if (byte === 34) quoted = true;
         else if (byte === 123 || byte === 91) depth++;
         else if (byte === 125 || byte === 93) {

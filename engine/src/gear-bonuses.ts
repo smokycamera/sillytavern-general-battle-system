@@ -51,6 +51,7 @@ export function wornItemEffects(item: Pick<GearItem, 'passive'>): WornEffects {
 /** 各方向正负分别取极值；汇总后再执行通用+通道上限，不能拆件绕过。 */
 export function wornEffects(unit: Pick<Combatant, 'gear'> & Partial<Pick<Combatant, 'traitLevelModel'|'itemModel'>>): WornEffects['values'] {
   if (!progression(unit)) return {};
+  if (!unit.gear?.length) return { kineticDamage: 0, kineticProtection: 0, thermalDamage: 0, thermalProtection: 0, arcaneDamage: 0, arcaneProtection: 0 };
   const best: WornEffects['values'] = {}, worst: WornEffects['values'] = {}, uncapped: Partial<Record<BonusStat, boolean>> = {};
   let damageCap = 0, negativeDamageCap = 0, protectionCap = 0, negativeProtectionCap = 0;
   for (const item of unit.gear ?? []) {
@@ -93,6 +94,7 @@ export function wornItemBonuses(item: Pick<GearItem, 'recipe' | 'passive'>, unit
 }
 /** 佩戴品同方向修正取最高（负面取最低），不同道具不叠加。 */
 export function gearBonuses(unit: Pick<Combatant, 'gear'> & Partial<Pick<Combatant, 'itemModel' | 'traitLevelModel'>>): Enhancements | undefined {
+  if (!unit.gear?.length) return undefined;
   const best: Enhancements = {}, worst: Enhancements = {};
   for (const item of unit.gear ?? []) for (const [stat, points] of Object.entries(progression(unit) ? item.passive?.actualEffects ? {} : item.passive?.bonuses?.speed ? { speed: item.passive.bonuses.speed } : {} : wornItemBonuses(item, unit) ?? {}) as [BonusStat, number][]) {
     if (points > 0) best[stat] = Math.max(best[stat] ?? 0, points);
