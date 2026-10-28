@@ -3,7 +3,7 @@ import { curveAt } from '../data/curves.js';
 import { diceAvg, rebuildDice } from '../data/weapons.js';
 import { skillMechanismFromId, skillMechanismName, SKILL_MODIFIERS, MOVEMENT_MODIFIERS } from '../data/skill-mechanisms.js';
 import { skillMoveReach } from '../skill-movement.js';
-import { conditionEffectWeight, controlSavePenalty, skillsPhase2, anchoredSkills, type SkillModel } from '../skill-model.js';
+import { conditionEffectWeight, controlSavePenalty, skillsPhase2, anchoredSkills, progressiveSkills, type SkillModel } from '../skill-model.js';
 import { UNIFIED_WOUNDS } from '../balance.js';
 import { TRAIT_PARAMETERS } from '../trait-parameters.js';
 import { balanceGenericSkill, BUFF_CONDITIONS } from '../skill-balance.js';
@@ -17,6 +17,7 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
   if (!mechanism) throw new Error('未知或矛盾的技能效果');
   if (!Number.isSafeInteger(power) || power < 1 || power > 10) throw new Error('技能等级必须为1–10整数');
   const phase2 = skillsPhase2(formula);
+  const progressive = progressiveSkills(formula);
   if (mechanism.modifiers.some(id => ['taunt','blind','confuse','charm'].includes(id)) && !phase2) throw Error('新控制需要V17技能规则');
   const physical = mechanism.category.startsWith('physical'), magic = mechanism.category.startsWith('magic'), damage = physical || magic;
   const geometry = mechanism.modifiers.find(id => ['cone','line','ring','chain'].includes(id)) as NonNullable<Ability['area']>['shape'] | undefined;
@@ -45,17 +46,17 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
     const modifier = SKILL_MODIFIERS.find((m) => m.id === key)!;
     if (modifier.condition) effects.push({ op: 'condition', conditionId: modifier.condition, dur: ['taunted','charmed','confused'].includes(modifier.condition) ? 1 : modifier.condition === 'blinded' ? 2 : ['stunned', 'restrained', 'disarmed', 'silenced'].includes(modifier.condition) ? 1 : model === 'wounds-v2' && BUFF_CONDITIONS.has(modifier.condition) ? power : duration,
       magnitude: ['taunted','charmed','confused','blinded'].includes(modifier.condition) ? 1 : magnitude, ...(modifier.allowed === 'hostile' ? { saveDC: ['taunted','charmed','confused','blinded'].includes(modifier.condition) ? saveDC : Math.max(1, saveDC - controlSavePenalty(formula) * Math.max(0, weight - 1) - (key === 'stun' ? 2 : 0)) } : {}), ...(damage || damagingDebuff ? { onHit: true, ...(['poisoned', 'bleeding', 'burning'].includes(modifier.condition) ? { onDamage: true } : {}) } : {}), shape: area ? 'burst' : 'single' });
-    else if (modifier.trait) effects.push({ op: 'trait', traitId: modifier.trait, ...(phase2 && isGradedTrait(modifier.trait) ? { level: power } : {}), dur: phase2 ? 1 + Math.floor((power - 1) / 4) : model === 'wounds-v2' ? power : 1 + power, shape: area ? 'burst' : 'single' });
+    else if (modifier.trait) effects.push({ op: 'trait', traitId: modifier.trait, ...(phase2 && isGradedTrait(modifier.trait) ? { level: power } : {}), dur: progressive && !isGradedTrait(modifier.trait) ? power : phase2 ? 1 + Math.floor((power - 1) / 4) : model === 'wounds-v2' ? power : 1 + power, shape: area ? 'burst' : 'single' });
     else if (key === 'heal') effects.push({ op: 'heal', ...(phase2 ? { power } : {}), amount: Math.max(1, Math.round(curve.hp * 0.25 / Math.max(1, weight) / (area ? 2 : 1))) });
     else if (key === 'barrier') effects.push({ op: 'barrier', amount: Math.max(1, Math.round((anchored ? UNIFIED_WOUNDS[power - 1]! : 8 + power * 5) / Math.max(1, weight) / (area ? 2 : 1))), dur: model === 'wounds-v2' ? power : 3 });
-    else if (key === 'cleanse' || key === 'dispel') effects.push({ op: 'dispel', polarity: key === 'cleanse' ? 'negative' : 'positive', count: power >= 6 ? 2 : 1 });
+    else if (key === 'cleanse' || key === 'dispel') effects.push({ op: 'dispel', polarity: key === 'cleanse' ? 'negative' : 'positive', count: progressive ? power : power >= 6 ? 2 : 1 });
     else if (key === 'morale-up' || key === 'morale-down') effects.push({ op: 'morale', amount: (key === 'morale-up' ? 1 : -1) * (anchored ? Math.round(8 * budgetRatio) : 3 + power) });
-    else if (key === 'restore' || key === 'drain') effects.push({ op: 'resource', resource: 'SP', amount: (key === 'restore' ? 1 : -1) * (1 + Math.ceil(power / 3)), maximum: 'training' });
+    else if (key === 'restore' || key === 'drain') effects.push({ op: 'resource', resource: 'SP', amount: (key === 'restore' ? 1 : -1) * (progressive ? 2 + (power - 1) / 3 : 1 + Math.ceil(power / 3)), maximum: 'training' });
     else if (key === 'push' || key === 'pull') effects.push({ op: 'push', force: Math.min(4, 1 + Math.floor((power - 1) / 3)), steps: 1, physical,
       direction: key === 'pull' ? 'towards' : 'away', ...(damage ? { onHit: true } : {}) });
     else if (key === 'summon') effects.push({ op: 'summon', templateId: 'conjured:' + power, count: 1 });
     else if (key === 'summon-single' || key === 'summon-group') effects.push({ op: 'summon', templateId: `conjured:${key.slice(7)}:${power}`, count: 1 });
-    else if (MOVEMENT_MODIFIERS.includes(key)) effects.push({ op: 'move', mode: key as 'dash' | 'blink' | 'withdraw', reach: skillMoveReach(key as 'dash' | 'blink' | 'withdraw', power) });
+    else if (MOVEMENT_MODIFIERS.includes(key)) effects.push({ op: 'move', mode: key as 'dash' | 'blink' | 'withdraw', reach: skillMoveReach(key as 'dash' | 'blink' | 'withdraw', power, formula) });
   }
   // 只有位移的技能以落点为目标；与其他效果组合时位移服务于该效果，目标照类别选择。
   const movementOnly = effects.length > 0 && effects.every(e => e.op === 'move');
@@ -69,6 +70,9 @@ export function compileGenericSkill(id: string, power: number, ownerId: string, 
     range: { min: 0, max: 2 + Math.floor(power / 3), metric: 'grid', allowEngaged: true },
     desc: skillMechanismName(mechanism) + '；强度与装备/目标条件共同决定结果，同类别共享冷却。' };
   if (geometry) ability.area = { shape: geometry, radius: 2, maxTargets: 3 };
+  // Utility push/pull gains delivery reach, not fictitious force beyond the body's cap.
+  if (progressive && !damage && !zoneKinds.length && selected.some(key=>key==='push'||key==='pull'))
+    ability.range!.max = 2 + Math.max(...selected.filter(key=>key==='push'||key==='pull').map(modifierPower));
   if (phase2 && area && !geometry) ability.area = { shape: 'circle', radius: 1, maxTargets: 3 };
   if (zoneKinds.length) {
     const payload = effects.filter((e): e is ZonePayload => !['damage','summon','move'].includes(e.op)).map(e => {

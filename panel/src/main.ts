@@ -1467,7 +1467,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
     const layers = u.barrier.stacking === 'layers-v1' ? u.barrier.grants : undefined;
     const details = layers?.filter(g => !g.legacy).map(g => {
       const source = g.effectSourceId ? u.traitSources?.find(s => s.id === g.effectSourceId) : undefined;
-      const duration = source ? source.duration.kind === 'permanent' ? '永久' : source.remaining + (source.duration.kind === 'battles' ? '场' : '轮') : g.duration + '轮';
+      const duration = g.battleLong ? '本场' : source ? source.duration.kind === 'permanent' ? '永久' : source.remaining + (source.duration.kind === 'battles' ? '场' : '轮') : g.duration + '轮';
       return (g.defenses?.[0] ? 'L' + g.defenses[0].power + ' ' : '') + displayNumber(g.remaining) + '点 / ' + duration;
     });
     if (layers?.some(g => g.legacy)) details!.push('旧保护组 ' + displayNumber(Math.max(...layers.filter(g => g.legacy).map(g => g.remaining))) + '点，沿用各来源原期限');

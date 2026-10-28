@@ -361,7 +361,8 @@ function blueprintKey(spec: string): string | undefined {
 function parseSkillItem(item: string): SkillSpec | undefined {
   const s = item.trim();
   if (!s) return undefined;
-  const separator = s.search(SPEC_SEP_RE), named = separator > 0;
+  const colon = s.search(/[:：﹕]/);
+  const separator = colon >= 0 ? colon : s.search(SPEC_SEP_RE), named = separator > 0;
   const spec = named ? s.slice(separator + 1).trim() : s;
   const notation = splitSkillLevel(spec);
   if (notation.level !== undefined) {
@@ -373,7 +374,7 @@ function parseSkillItem(item: string): SkillSpec | undefined {
     }
     return undefined;
   }
-  const idx = s.search(SPEC_SEP_RE);
+  const idx = separator;
   if (idx > 0) {
     const name = s.slice(0, idx).trim();
     const spec = s.slice(idx + 1).trim();

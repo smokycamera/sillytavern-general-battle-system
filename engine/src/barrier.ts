@@ -60,6 +60,7 @@ export function refreshBarrier(unit: Combatant): void {
 }
 
 function layerPower(grant: BarrierGrant): number { return grant.defenses?.[0]?.power ?? 0; }
+function layerExpiry(grant: BarrierGrant): number { return grant.battleLong ? 100 : grant.duration; }
 function enableBarrierLayers(unit: Combatant): void {
   const previous = unit.barrier;
   if (!previous || previous.stacking) return;
@@ -88,7 +89,7 @@ function refreshLayers(unit: Combatant, sort: boolean, validateSources: boolean)
   }
   grants.length = write;
   if (!write) { delete unit.barrier; return; }
-  if (sort) grants.sort((a,b) => Number(!!a.legacy) - Number(!!b.legacy) || layerPower(b) - layerPower(a) || a.duration - b.duration || (a.key ?? '').localeCompare(b.key ?? ''));
+  if (sort) grants.sort((a,b) => Number(!!a.legacy) - Number(!!b.legacy) || layerPower(b) - layerPower(a) || layerExpiry(a) - layerExpiry(b) || (a.key ?? '').localeCompare(b.key ?? ''));
   barrier.remaining = total + legacy; barrier.duration = duration; barrier.sourceId = grants[0]!.sourceId;
   if (power) barrier.defenses = [{ power, duration: defenseDuration }]; else delete barrier.defenses;
 }
@@ -186,7 +187,7 @@ export function absorbBarrier(unit: Combatant, amount: number, protectedRatio = 
 export function decayBarrier(unit: Combatant): void {
   if (!unit.barrier) return;
   if (unit.barrier.grants) {
-    for (const grant of unit.barrier.grants) if (!grant.effectSourceId) {
+    for (const grant of unit.barrier.grants) if (!grant.effectSourceId && !grant.battleLong) {
       grant.duration--;
       if (grant.defenses) grant.defenses = grant.defenses.filter(d => --d.duration > 0);
     }
@@ -215,11 +216,12 @@ export function validateBarrier(value: Combatant['barrier']): void {
       const power = Math.max(0, ...value.grants.flatMap(g => (g.defenses ?? []).filter(d => d.duration > 0).map(d => d.power)));
       if ((value.defenses?.[0]?.power ?? 0) !== power || (value.defenses?.length ?? 0) > 1 || value.duration !== Math.max(...value.grants.map(g => g.duration))) throw Error('分层屏障汇总不一致');
       const normal = value.grants.filter(g => !g.legacy);
-      if (normal.some((g,i) => i > 0 && (layerPower(normal[i-1]!) < layerPower(g) || layerPower(normal[i-1]!) === layerPower(g) && normal[i-1]!.duration > g.duration))) throw Error('分层屏障消耗顺序损坏');
+      if (normal.some((g,i) => i > 0 && (layerPower(normal[i-1]!) < layerPower(g) || layerPower(normal[i-1]!) === layerPower(g) && layerExpiry(normal[i-1]!) > layerExpiry(g)))) throw Error('分层屏障消耗顺序损坏');
     }
     const ids = value.grants.map(g => g.effectSourceId).filter(Boolean);
     if (new Set(ids).size !== ids.length) throw Error('屏障来源重复');
     for (const grant of value.grants) {
+      if (grant.battleLong !== undefined && (grant.battleLong !== true || grant.duration !== 99 || value.stacking !== 'layers-v1' || grant.legacy || grant.effectSourceId || !grant.sourceId || !grant.defenses?.length)) throw Error('佩戴屏障期限记录损坏');
       if (grant.effectSourceId !== undefined && (typeof grant.effectSourceId !== 'string' || !grant.effectSourceId)) throw Error('屏障来源编号不正确');
       validateBarrier({ remaining: grant.remaining, duration: grant.duration, sourceId: grant.sourceId, defenses: grant.defenses });
     }

@@ -12,12 +12,14 @@ import { equipmentBurden } from './equipment-load.js';
  */
 import type { Ability, Combatant, ConditionDef, EffectOp } from './types.js';
 import { bonusSteps } from './enhancements.js';
+import { progressiveSkills } from './skill-model.js';
 
 export type MoveEffect = Extract<EffectOp, { op: 'move' }>;
 export type MoveMode = MoveEffect['mode'];
 
-/** 突进/后撤 L1–3 走2格、L4–7 3格、L8–10 4格；闪现 L1–2 1格、L3–5 2格、L6–8 3格、L9–10 4格。 */
-export function skillMoveReach(mode: MoveMode, power: number): number {
+/** V40：闪现走L格，突进/后撤L+1格；旧规则保留原阶梯。路径、视线、反应与平台限制仍由执行器检查。 */
+export function skillMoveReach(mode: MoveMode, power: number, model?: unknown): number {
+  if (progressiveSkills(model)) return power + (mode === 'blink' ? 0 : 1);
   return mode === 'blink' ? 1 + Math.floor(power / 3) : 2 + Math.floor(power / 4);
 }
 export function moveEffects(ability: Pick<Ability, 'effects'>): { before?: MoveEffect; after?: MoveEffect } {

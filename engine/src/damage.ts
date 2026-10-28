@@ -5,6 +5,7 @@ import { targetWidthLimit } from './target-width.js';
 import { WEAPON_CLASSES } from './data/weapons.js';
 import { progression, stackingRevision } from './progression.js';
 import { traitParameter } from './trait-parameters.js';
+import { damageMergeRatio, criticalBudgetScale } from './damage-policy.js';
 import { wornEffects, wornDamageMultiplier } from './gear-bonuses.js';
 import { phase2Traits } from './trait-level-model.js';
 import { effectiveTraitLevel } from './trait-sources.js';
@@ -25,6 +26,7 @@ import { combatWeapon, anchoredProtection,penetrationThrough,armorPowerScale,arm
 import { meleeProfile } from './melee.js';
 import { meleeWeapon, isCannonWeapon } from './loadout.js';
 import { cloneData } from './clone.js';
+import { exactSequenceMoments } from './sequence-preview.js';
 import { fatiguePenalty } from './resources.js';
 import { energyHeavyHit, energyShieldActive, energyPower } from './shield-state.js';
 import { isArmsV3 } from './arms-model.js';
@@ -545,10 +547,24 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   }
   if(critInfo.forced)critical=hit;
   const samples=cohortSamples(opts,resolved),weight=outcomeScale({...opts,packetShare:1/samples},resolved).multiplier,count=(opts.abilityDamage?1:ctx.weapon?.attacks??1)*samples;
-  const primaryMultiplier=memberAreaBudget(opts)*modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level,opts.rules)*unitMultiplier(opts.attacker,'damage',opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic',combatBonuses(opts.attacker))*wornDamageMultiplier(opts.attacker,opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
+  const primaryMultiplier=memberAreaBudget(opts)*modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level,opts.rules)*unitMultiplier(opts.attacker,'damage',opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic',combatBonuses(opts.attacker))*wornDamageMultiplier(opts.attacker,opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic')*damageMergeRatio(opts,ctx.weapon,opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
   const additional = additionalDamageParts(opts, ctx, resolved ?? { weapon: ctx.weapon });
   if (additional.length) diagnostics.additionalChannels = additional.map(part => ({ channel: part.channel, penetration: part.penetration.penetration, resistance: part.penetration.resistance, penetrationFactor: part.penetration.factor }));
   const rawMultiplier = primaryMultiplier + additional.reduce((sum, part) => sum + part.scale, 0);
+  // V40 only: no stateful absorption, casualties or changing ammunition within this independent sequence.
+  if (opts.rules.attackPreviewModel === 'exact-sequence-v1' && count > 1 && samples === 1 && weight === 1
+    && opts.attacker.scale === 'hero' && opts.defender.scale === 'hero' && !opts.defender.shield
+    && !opts.defender.barrier && !opts.defender.energyShield && !isCannonWeapon(ctx.weapon)
+    && !activeTraitIds(opts.defender).includes('indomitable') && additional.length === 0) {
+    const moments = exactSequenceMoments(source?.baseDice, source?.apDice, rawMultiplier, hit, critical, opts.rules.critRule === 'doubleDice' ? 2 : 1, count, memberHealth(opts.defender), criticalBudgetScale(opts.rules));
+    if (moments) {
+      const anyHitChance = 1 - (1 - hit) ** count;
+      return { ...diagnostics, damageModel: 'member-health' as const, hitChance: hit, critChance: critical, anyHitChance,
+        expectedDamage: moments.mean, damageOnHit: anyHitChance > 0 ? moments.mean / anyHitChance : 0,
+        damageChance: moments.positive, penetrationFactor: factor, exact: true,
+        variance: Math.max(0, moments.second - moments.mean ** 2), minDamage: 0, maxDamage: moments.max };
+    }
+  }
   const maxBase=diceDistribution(source?.baseDice,opts.rules.critRule==='doubleDice'?2:1),maxAp=diceDistribution(source?.apDice,opts.rules.critRule==='doubleDice'?2:1);
   const upper=maxBase&&maxAp ? Math.ceil((Math.max(...maxBase.keys())+Math.max(...maxAp.keys()))*rawMultiplier*Math.ceil(weight))*count : Infinity;
   // 连续攻击共用剩余屏障。固定种子的小样本估计只操作副本，不消耗实战随机数。
@@ -575,6 +591,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
         let hitAny = false;
         for (let n = 0; n < (opts.abilityDamage ? 1 : ctx.weapon?.attacks ?? 1) && defender.hp > 0; n++) {
           for (let packet = 0; packet < Math.max(1, packets) && defender.hp > 0; packet++) {
+            if (opts.rules.attackPreviewModel === 'exact-sequence-v1') sampleOpts.rng = new SeededRng(`barrier-preview:${i}:${n}:${packet}`);
             hitAny = resolveAttackPacket(sampleOpts, true) || hitAny;
           }
         }
@@ -594,15 +611,15 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   // 预览不改动单位：溢出判定与穿透在全部骰面组合中保持不变。
   const penetration=opts.rules.overmatch?protection??penetrationContext(opts,resolved):undefined,overflow=attackOverflow(opts,penetration,resolved);
   const ward = resolveStack(ctx.defMods, 'ward', ctx.ctxDef, {sameNameKeepsHighest:opts.rules.sameNameKeepsHighest,maxFlat:opts.rules.maxFlat});
-  const moments=(times:number)=>{
-    const key=JSON.stringify([opts.rules.artilleryModel,opts.defender.level,opts.defender.armor,ctx.weapon?.recipe?.power??ctx.weapon?.level,source?.baseDice,source?.apDice,rawMultiplier,times,weight,opts.defender.hp,opts.defender.barrier,opts.defender.energyShield,opts.defender.shield?.recipe,opts.defender.armsModel,opts.defender.formation,ctx.weapon?.splashTargets,ctx.weapon?.splashFactor,ward.protection?.exposure,opts.abilityDamage?.weaponBased,!!opts.abilityDamage,overflow,opts.rules.overmatch?penetration:undefined,...(additional.length ? [primaryMultiplier, additional] : [])]);
+  const moments=(times:number, critScale = 1)=>{
+    const key=JSON.stringify([opts.rules.artilleryModel,opts.defender.level,opts.defender.armor,ctx.weapon?.recipe?.power??ctx.weapon?.level,source?.baseDice,source?.apDice,rawMultiplier,times,critScale,weight,opts.defender.hp,opts.defender.barrier,opts.defender.energyShield,opts.defender.shield?.recipe,opts.defender.armsModel,opts.defender.formation,ctx.weapon?.splashTargets,ctx.weapon?.splashFactor,ward.protection?.exposure,opts.abilityDamage?.weaponBased,!!opts.abilityDamage,overflow,opts.rules.overmatch?penetration:undefined,...(additional.length ? [primaryMultiplier, additional] : [])]);
     const cached=memberPreviewCache.get(key);if(cached)return cached;
     const base=diceDistribution(source?.baseDice,times),ap=diceDistribution(source?.apDice,times);
     const result={mean:0,second:0,positive:0,casualties:0,max:0};
     if(!base||!ap)return result;
     const low=Math.floor(weight),fraction=weight-low,targets=[[low,1-fraction],[low+1,fraction]];
     for(const [b,bp] of base)for(const [a,apb] of ap)for(const [n,np] of targets){
-      if(!np)continue;const raw=(b+a)*rawMultiplier*n!,floor=Math.floor(raw),frac=raw-floor;
+      if(!np)continue;const raw=(b+a)*rawMultiplier*critScale*n!,floor=Math.floor(raw),frac=raw-floor;
       for(const [amount,p] of [[floor,1-frac],[floor+1,frac]]){
         if(!p)continue;const event=additional.length ? previewChannelPlans(opts.defender,channelPlans(opts,amount!,n!,primaryMultiplier,additional,resolved??{weapon:ctx.weapon},penetration??penetrationContext(opts,resolved),ward)) : previewMemberPlan(opts.defender,memberPlan(opts,amount!,n!,resolved,penetration,ward)),prob=bp*apb*np!*p!;
         result.mean+=event.damage*prob;result.second+=event.damage**2*prob;result.positive+=Number(event.damage>0)*prob;result.casualties+=event.casualties*prob;result.max=Math.max(result.max,event.damage);
@@ -610,7 +627,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
     }
     if(memberPreviewCache.size>1024)memberPreviewCache.clear();memberPreviewCache.set(key,result);return result;
   };
-  const normal=moments(1),crit=moments(opts.rules.critRule==='doubleDice'?2:1),mean=(hit-critical)*normal.mean+critical*crit.mean,second=(hit-critical)*normal.second+critical*crit.second;
+  const normal=moments(1),crit=moments(opts.rules.critRule==='doubleDice'?2:1,criticalBudgetScale(opts.rules)),mean=(hit-critical)*normal.mean+critical*crit.mean,second=(hit-critical)*normal.second+critical*crit.second;
   return {...diagnostics,damageModel:'member-health' as const,weaponOverflow:hasMemberHealth(opts.defender)&&overflow,hitChance:hit,...(isArmsV2(opts.rules.armsModel)?{critChance:critical}:{}),anyHitChance:1-(1-hit)**count,expectedDamage:Math.min(memberHealth(opts.defender),mean*count),
     ...(count === 1 ? { normalHitDamage: normal.mean, ...(critical > 0 ? { criticalHitDamage: crit.mean } : {}) } : {}),
     expectedCasualties:hasMemberHealth(opts.defender)?Math.min(opts.defender.hp,((hit-critical)*normal.casualties+critical*crit.casualties)*count):undefined,
@@ -922,6 +939,13 @@ function resolveAttackPacket(opts: AttackOpts, sampleOnly: false): AttackResolut
 /** 实战和抽样共用命中、伤损与随机数顺序；抽样在报告构建前直接提交伤损。 */
 function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean): AttackResolution | boolean {
   const { attacker, defender, rng, rules } = opts;
+  // V40 comparisons couple each random purpose across loadouts. A skipped fractional
+  // hit/rounding draw can no longer shift all damage dice or the following packet.
+  const separated = sampleOnly && rules.attackPreviewModel === 'exact-sequence-v1';
+  const hitRng = separated ? new SeededRng(rng.seed + ':hit') : rng;
+  const diceRng = separated ? new SeededRng(rng.seed + ':dice') : rng;
+  const targetsRng = separated ? new SeededRng(rng.seed + ':targets') : rng;
+  const roundingRng = separated ? new SeededRng(rng.seed + ':round') : rng;
   const shieldBefore = barrierAmount(defender);
   const basis = attackBasis(opts), { ranged, weapon, netAtk, targetDef } = basis.context;
   // 守方在本段末尾才受损：此前的穿透、展开与成员伤损方案共用同一结算武器。
@@ -938,9 +962,9 @@ function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean): AttackResol
   else if (rules.hitMode === 'd20') {
     let nat: number;
     if (sampleOnly) {
-      nat = rng.d(20);
-      if (opts.advantage === 'adv') nat = Math.max(nat, rng.d(20));
-      else if (opts.advantage === 'dis') nat = Math.min(nat, rng.d(20));
+      nat = hitRng.d(20);
+      if (opts.advantage === 'adv') nat = Math.max(nat, hitRng.d(20));
+      else if (opts.advantage === 'dis') nat = Math.min(nat, hitRng.d(20));
     } else {
       const expr = opts.advantage === 'adv' ? '2d20kh1' : opts.advantage === 'dis' ? '2d20kl1' : '1d20';
       attackRoll = rollDice(expr, rng);
@@ -957,12 +981,12 @@ function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean): AttackResol
       // deterministic weight for a die face throughout the 96 preview seeds.
       const weight = sampleOnly ? (basis.hitWeights ??= [])[nat] ??= d20HitWeight(hitRules, nat, netAtk, targetDef)
         : d20HitWeight(hitRules, nat, netAtk, targetDef);
-      hit = weight >= 1 || weight > 0 && rng.next() < weight;
+      hit = weight >= 1 || weight > 0 && hitRng.next() < weight;
     }
   } else {
     const diff = netAtk - (targetDef - rules.tw.defOffset);
     hitChance = Math.max(rules.tw.min, Math.min(rules.tw.max, rules.tw.base + diff * rules.tw.perDiff));
-    hit = rng.next() < hitChance;
+    hit = hitRng.next() < hitChance;
     crit = false;
   }
 
@@ -1007,9 +1031,10 @@ function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean): AttackResol
 
   const times = crit && rules.critRule === 'doubleDice' ? 2 : 1;
   const baseRoll = sampleOnly ? undefined : rollDicePortion(src.baseDice, rng, times);
-  const baseTotal = baseRoll?.total ?? rollDicePortionTotal(src.baseDice, rng, times);
+  const critScale = crit ? criticalBudgetScale(rules) : 1;
+  const baseTotal = baseRoll?.total ?? rollDicePortionTotal(src.baseDice, diceRng, times);
   const apRoll = !sampleOnly && src.apDice ? rollDicePortion(src.apDice, rng, times) : undefined;
-  const apRolledTotal = apRoll?.total ?? (src.apDice ? rollDicePortionTotal(src.apDice, rng, times) : 0);
+  const apRolledTotal = apRoll?.total ?? (src.apDice ? rollDicePortionTotal(src.apDice, diceRng, times) : 0);
 
   // 破甲占比特质：将普通段的一部分移入破甲段（无视 DR）；rangedOnly 仅射击生效
   const v2 = rules.resolutionVersion === 'v2';
@@ -1028,22 +1053,24 @@ function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean): AttackResol
   const apTotal = v2 ? v2DamageAmount(0, apRolledTotal, penetration!.factor, 1) : apRolledTotal + apMoved;
 
   // 攻击方伤害倍率（践踏等）与防御方守护减免
-  const { dmgMult, wardMult } = basis;
+  const { dmgMult: sourceDmgMult, wardMult } = basis;
+  const dmgMult = sourceDmgMult * critScale;
 
   // 展开规模与伤害系数另按分段份额与现员复用（范围技能暴露人数随现员变化）。
   const modern=rules.combatModel===MEMBER_HEALTH_MODEL, sizeKey=opts.previewMemo&&modern?opts.packetShare+'|'+defender.hp:undefined;
-  const size=(sizeKey===undefined?undefined:basis.sizes?.get(sizeKey))??{scale:outcomeScale(opts, resolved),sourceScale:modern?memberAreaBudget(opts)*(opts.abilityDamage?opts.abilityDamage.damageScale??1:weapon?.damageScale??1)/(penetration?.armorScale??1)*trainingDamage(attacker.level,rules)*unitMultiplier(attacker,'damage',penetration?.channel??'kinetic',combatBonuses(attacker))*wornDamageMultiplier(attacker,penetration?.channel??'kinetic')*(penetration?.overmatchMultiplier??1):1};
+  const size=(sizeKey===undefined?undefined:basis.sizes?.get(sizeKey))??{scale:outcomeScale(opts, resolved),sourceScale:modern?memberAreaBudget(opts)*(opts.abilityDamage?opts.abilityDamage.damageScale??1:weapon?.damageScale??1)/(penetration?.armorScale??1)*trainingDamage(attacker.level,rules)*unitMultiplier(attacker,'damage',penetration?.channel??'kinetic',combatBonuses(attacker))*wornDamageMultiplier(attacker,penetration?.channel??'kinetic')*damageMergeRatio(opts,weapon,penetration?.channel??'kinetic')*(penetration?.overmatchMultiplier??1):1};
   if (sizeKey!==undefined) (basis.sizes??=new Map()).set(sizeKey,size);
   const { scale, sourceScale } = size;
-  const targets=modern?roundDamage(scale.multiplier,rng):0;
-  const additional = modern ? basis.additional ??= additionalDamageParts(opts, basis.context, resolved) : [];
+  const targets=modern?roundDamage(scale.multiplier,targetsRng):0;
+  const extra = modern ? basis.additional ??= additionalDamageParts(opts, basis.context, resolved) : [];
+  const additional = critScale === 1 ? extra : extra.map(part => ({ ...part, scale: part.scale * critScale }));
   const primaryWeight = v2 ? dmgMult * wardMult * sourceScale * penetration!.factor : 0;
   let final = Math.round((baseAfterDR + apTotal) * dmgMult * wardMult * scale.multiplier);
   if (v2) final = roundDamage(v2DamageAmount(baseRaw, apRolledTotal, penetration!.factor, dmgMult * wardMult * (modern?targets*sourceScale:scale.multiplier))
-    + (baseRaw + apRolledTotal) * targets * additional.reduce((sum, part) => sum + part.scale, 0), rng);
+    + (baseRaw + apRolledTotal) * targets * additional.reduce((sum, part) => sum + part.scale, 0), roundingRng);
   if (final < 1) final = v2 ? 0 : 1;
   const wear = defender.shield && isArmsV2(rules.armsModel) && !penetration?.area && penetration?.canBlock !== false && (!opts.abilityDamage || opts.abilityDamage.weaponBased)
-    ? shieldCoverage(defenderWithArmsModel(opts),weapon) * (baseRaw + apRolledTotal) * (opts.abilityDamage?.damageScale ?? weapon?.damageScale ?? 1) * trainingDamage(attacker.level,rules) * unitMultiplier(attacker,'damage',weapon?.channel,combatBonuses(attacker)) * dmgMult * targets * (weapon?.recipe?.mechanism === 'axe' ? 2 : 1) : 0;
+    ? shieldCoverage(defenderWithArmsModel(opts),weapon) * (baseRaw + apRolledTotal) * (opts.abilityDamage?.damageScale ?? weapon?.damageScale ?? 1) * trainingDamage(attacker.level,rules) * unitMultiplier(attacker,'damage',weapon?.channel,combatBonuses(attacker)) * (rules.damageStackModel ? wornDamageMultiplier(attacker,penetration?.channel??'kinetic') : 1) * damageMergeRatio(opts,weapon,penetration?.channel??'kinetic') * dmgMult * targets * (weapon?.recipe?.mechanism === 'axe' ? 2 : 1) : 0;
   if (res && wear) res.shieldWear = wear;
   if (!res) {
     if (modern) {
