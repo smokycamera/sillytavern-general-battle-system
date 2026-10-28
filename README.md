@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **3.0.23**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **3.0.26**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-3.0.23 supports story healing, morale, energy recovery/drain and cleansing/dispelling at each full battle round end. New V39 battles add independent barrier capacities, spend each layer at its own protection grade and retain separate lifetimes, including interactions with energy shields. Existing battles and frozen effects retain their rules. See the [current release](docs/current-release.md).
+3.0.26 combines positive damage bonuses across sources, reduces critical damage budgets, and adds worn items that grant a barrier at battle entry. New battles use V41, including the earlier skill progression and preview fixes; existing battles retain their saved rules. See the [mechanics review](docs/offense-barrier-v41-review-20261028.md) and [current release](docs/current-release.md).
 
 ## Documentation
 

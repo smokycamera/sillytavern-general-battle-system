@@ -1,4 +1,5 @@
 import { sha256 } from '../../host/src/browser-compat.js';
+import { cloneData } from '../../engine/src/clone.js';
 import type { NativeEnvelope } from '../../host/src/contracts.js';
 import { serialized } from '../../host/src/json.js';
 export { serialized } from '../../host/src/json.js';
@@ -6,7 +7,9 @@ export async function payloadHash(value: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(serialized(value));
   return sha256(bytes);
 }
-export function envelopeFrom(value: unknown): NativeEnvelope | undefined {
+/** Copy by default. Verification-only callers may borrow a freshly read envelope;
+ * they must neither retain it nor expose it as the immutable store head. */
+export function envelopeFrom(value: unknown, copy = true): NativeEnvelope | undefined {
   if (value === undefined) return undefined;
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('原生存档文件损坏');
   const envelope = value as NativeEnvelope;
@@ -14,7 +17,7 @@ export function envelopeFrom(value: unknown): NativeEnvelope | undefined {
   if (![envelope.documentId, envelope.generation, envelope.lastOperationId].every(value => typeof value === 'string' && value.length > 0) || !Number.isSafeInteger(envelope.revision) || envelope.revision < 1 || !/^[0-9a-f]{64}$/.test(envelope.payloadHash)) throw Error('原生存档身份或版本损坏');
   if (envelope.state !== 'active' && envelope.state !== 'cleared' || envelope.state === 'cleared' && envelope.payload !== null || envelope.state === 'active' && (!envelope.payload || typeof envelope.payload !== 'object' || Array.isArray(envelope.payload))) throw Error('原生存档状态与内容不一致');
   if (envelope.handoff && (envelope.handoff.target !== 'helper' || typeof envelope.handoff.sourceHash !== 'string')) throw Error('原生存档交接标记损坏');
-  return structuredClone(envelope);
+  return copy ? cloneData(envelope) : envelope;
 }
 export function matches(a: NativeEnvelope | undefined, b: NativeEnvelope | undefined): boolean {
   return !!a && !!b && a.documentId === b.documentId && a.generation === b.generation && a.revision === b.revision && a.lastOperationId === b.lastOperationId && a.payloadHash === b.payloadHash && a.state === b.state && serialized(a.handoff) === serialized(b.handoff) && serialized(a.migration) === serialized(b.migration);

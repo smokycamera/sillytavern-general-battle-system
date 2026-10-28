@@ -74,6 +74,7 @@ export * from './power-anchors.js';
 export * from './skill-upgrade.js';
 
 export * from './barrier.js';
+export * from './worn-barrier.js';
 
 export * from './area-effects.js';
 

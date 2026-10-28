@@ -1,4 +1,5 @@
 import { randomId } from '../../host/src/browser-compat.js';
+import { cloneData } from '../../engine/src/clone.js';
 import { SourceMessageChangedError } from '../../host/src/message-identity.js';
 import type { HostSession, MetadataPort, NativeEnvelope, PersistReceipt, RecoveryJournal, RecoveryRecord, MessageTag, LegacyHandoff } from '../../host/src/contracts.js';
 import { sameSession } from '../../host/src/contracts.js';
@@ -30,12 +31,12 @@ export class NativeStore {
     const selected: NarrativeSave = keys ? Object.fromEntries(keys.filter(key => key in save).map(key => [key, save[key]])) : { ...save };
     if (battleFields && selected.battle) selected.battle = { kind: selected.battle.kind,
       snap: Object.fromEntries(battleFields.filter(key => key in selected.battle!.snap).map(key => [key, selected.battle!.snap[key]])) };
-    return structuredClone(compactSaveHistory(selected));
+    return cloneData(compactSaveHistory(selected));
   }
   /** The current head as of this call, copied on first read; heads are replaced on commit, never edited in place. */
-  snapshotLater(): () => NarrativeSave { const payload = this.current?.payload; let copy: NarrativeSave | undefined; return () => copy ??= structuredClone(compactSaveHistory(payload ?? {})); }
+  snapshotLater(): () => NarrativeSave { const payload = this.current?.payload; let copy: NarrativeSave | undefined; return () => copy ??= cloneData(compactSaveHistory(payload ?? {})); }
   needsHistoryCompaction(): boolean { return !!this.current?.payload && compactSaveHistory(this.current.payload) !== this.current.payload; }
-  envelope(): NativeEnvelope | undefined { return structuredClone(this.current); }
+  envelope(): NativeEnvelope | undefined { return cloneData(this.current); }
   head(): Omit<NativeEnvelope, 'payload'> | undefined { if (!this.current) return undefined; const { payload: _payload, ...head } = this.current; return structuredClone(head); }
   session(): HostSession | undefined { return structuredClone(this.active); }
   pendingOperation(): RecoveryRecord | undefined { return structuredClone(this.pending); }
@@ -87,7 +88,7 @@ export class NativeStore {
     this.current = envelope; this.active = now;
     if (pending && matches(envelope, pending.candidate)) {
       if (await this.effectsVerified(session, pending)) await this.journal.remove(session.scope.key, pending.candidate.lastOperationId);
-      else { this.current = structuredClone(pending.previous); this.pending = pending; }
+      else { this.current = cloneData(pending.previous); this.pending = pending; }
     } else if (pending) {
       // A cleared or newer generation never inherits an old recovery candidate.
       const expected = pending.expected;
@@ -96,7 +97,7 @@ export class NativeStore {
     // A same-chat object swapped in from a stale copy would write its head back on the host's
     // next save; give it the head just read. An unconfirmed write keeps its own recovery path.
     const live = load === this.loads && this.host.session()?.scope.key === session.scope.key ? this.host.metadata() : undefined;
-    if (!this.pending && this.current && live && !matches(live.tavernBattle as NativeEnvelope | undefined, this.current)) live.tavernBattle = structuredClone(this.current);
+    if (!this.pending && this.current && live && !matches(live.tavernBattle as NativeEnvelope | undefined, this.current)) live.tavernBattle = cloneData(this.current);
     });
   }
   commit(expectedRevision: number, update: (before: NarrativeSave) => NarrativeSave, options: {
@@ -114,7 +115,7 @@ export class NativeStore {
       if ((this.current?.revision ?? 0) !== expectedRevision) return this.result('conflict', session, operationId, '存档已更新，请重新打开或重新预览后再操作');
       const previous = this.current;
       try {
-        const persisted = envelopeFrom((await this.host.readPersisted(session.scope)).tavernBattle);
+        const persisted = envelopeFrom((await this.host.readPersisted(session.scope)).tavernBattle, false);
         if (previous ? !matches(persisted, previous) : !!persisted) return this.result('conflict', session, operationId, NEWER);
         if (persisted && await payloadHash(persisted.payload) !== persisted.payloadHash) return this.result('conflict', session, operationId, CORRUPT);
       } catch (error) { return this.result('failed', session, operationId, error); }
@@ -158,7 +159,7 @@ export class NativeStore {
       const id = record.candidate.lastOperationId;
       if (!this.sameChat(session) || session.scope.key !== record.session.scope.key || this.host.hasLegacyRuntime()) return this.result('conflict', session, id, '聊天已切换，或脚本版战阵仍在运行');
       try {
-        const saved = envelopeFrom((await this.host.readPersisted(session.scope)).tavernBattle);
+        const saved = envelopeFrom((await this.host.readPersisted(session.scope)).tavernBattle, false);
         if (saved && await payloadHash(saved.payload) !== saved.payloadHash) return this.result('conflict', session, id, CORRUPT);
         if (matches(saved, record.candidate)) return await this.effectsVerified(session, record) ? this.confirm(record, session) : this.persist(record, session);
         const expected = record.expected;
@@ -191,7 +192,7 @@ export class NativeStore {
     await this.journal.remove(session.scope.key, record.candidate.lastOperationId);
     if (!this.sameChat(session)) return { discarded: true };
     const currentMetadata = this.host.metadata();
-    if (currentMetadata) { if (saved) currentMetadata.tavernBattle = structuredClone(saved); else delete currentMetadata.tavernBattle; }
+    if (currentMetadata) { if (saved) currentMetadata.tavernBattle = cloneData(saved); else delete currentMetadata.tavernBattle; }
     this.current = saved; this.pending = undefined;
     return { discarded: true };
   }
@@ -199,18 +200,18 @@ export class NativeStore {
   private async restorePrevious(session: HostSession, record: RecoveryRecord, saved: NativeEnvelope): Promise<void> {
     const previous = record.previous;
     // A new revision on top of the saved head: the old record can never match disk again.
-    const restored: NativeEnvelope | undefined = previous && { ...structuredClone(previous), documentId: saved.documentId, generation: saved.generation, revision: saved.revision + 1, lastOperationId: randomId() };
+    const restored: NativeEnvelope | undefined = previous && { ...cloneData(previous), documentId: saved.documentId, generation: saved.generation, revision: saved.revision + 1, lastOperationId: randomId() };
     for (const fullSave of [false, true]) {
       const metadata = this.host.metadata();
       if (!metadata || !this.sameChat(session)) throw Error('撤销时聊天已切换，请回到原聊天再试');
-      if (restored) metadata.tavernBattle = structuredClone(restored); else delete metadata.tavernBattle;
+      if (restored) metadata.tavernBattle = cloneData(restored); else delete metadata.tavernBattle;
       let error: unknown;
       try { await (fullSave ? this.host.saveChat!() : this.host.saveMetadata()); } catch (value) { error = value; }
-      const after = envelopeFrom((await this.host.readPersisted(session.scope)).tavernBattle);
+      const after = envelopeFrom((await this.host.readPersisted(session.scope)).tavernBattle, false);
       if (restored ? matches(after, restored) && await payloadHash(after!.payload) === restored.payloadHash : !after) {
         // The record no longer matches disk; a failed cleanup is skipped or re-offered by load.
         try { await this.journal.remove(session.scope.key, record.candidate.lastOperationId); } catch { /* See above. */ }
-        if (this.sameChat(session)) { this.current = structuredClone(restored); this.pending = undefined; }
+        if (this.sameChat(session)) { this.current = cloneData(restored); this.pending = undefined; }
         return;
       }
       if (!matches(after, saved)) throw Error(NEWER);
@@ -249,7 +250,7 @@ export class NativeStore {
     // Write into the object the host holds now; a same-chat swap may have replaced the earlier one.
     const metadata = this.host.metadata();
     if (!metadata) return this.result('conflict', session, id, '聊天已切换，这次没有保存');
-    metadata.tavernBattle = structuredClone(record.candidate);
+    metadata.tavernBattle = cloneData(record.candidate);
     let error: unknown;
     try {
       if (replySave) {
@@ -270,7 +271,7 @@ export class NativeStore {
     try {
       const combined = this.host.readPersistedWithEffects && (record.messageTags?.length || record.legacyHandoff)
         ? await this.host.readPersistedWithEffects(session.scope, record) : undefined;
-      const saved = envelopeFrom((combined?.metadata ?? await this.host.readPersisted(session.scope)).tavernBattle);
+      const saved = envelopeFrom((combined?.metadata ?? await this.host.readPersisted(session.scope)).tavernBattle, false);
       if (matches(saved, record.candidate)) {
         if (await payloadHash(saved!.payload) !== record.candidate.payloadHash) error ??= '保存后读回的存档和这次改动不一致';
         else if (combined ? combined.effectsVerified : await this.effectsVerified(session, record)) return this.confirm(record, session);
@@ -297,7 +298,7 @@ export class NativeStore {
       // An object the host swapped in during the save may hold an older head. Give it the
       // verified one, so the host's next save cannot write the old head back.
       const live = this.host.metadata();
-      if (live && !matches(live.tavernBattle as NativeEnvelope | undefined, record.candidate)) live.tavernBattle = structuredClone(record.candidate);
+      if (live && !matches(live.tavernBattle as NativeEnvelope | undefined, record.candidate)) live.tavernBattle = cloneData(record.candidate);
     }
     // A cleanup failure cannot turn a confirmed save into an unsafe retry.
     try { await this.journal.remove(session.scope.key, record.candidate.lastOperationId); } catch { /* Next load verifies and removes it. */ }

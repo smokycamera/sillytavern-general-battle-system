@@ -42,7 +42,11 @@ export function validateMemberHealth(unit:Combatant):void {
 export function initializeMemberHealth(unit:Combatant):void {
   const f=unit.formation;if(!hasMemberHealth(unit)||!f)return;
   f.health??=f.members>0?[{hp:f.memberHp,count:f.members}]:[];
-  validateMemberHealth(unit);f.health=mergeHealth(f.health);
+  validateMemberHealth(unit);
+  // Valid groups produced by damage/healing are already strictly ordered and merged.
+  // Keep validating external edits, but avoid copying every surviving member group
+  // again before each packet in the 96-seed damage preview.
+  if (f.health.some((g,i) => i > 0 && g.hp <= f.health![i-1]!.hp)) f.health=mergeHealth(f.health);
 }
 /** 外部明确调整现员时保留已有成员伤损；新补员才以完整成员生命加入。 */
 export function resizeMemberHealth(unit:Combatant,members:number):void {

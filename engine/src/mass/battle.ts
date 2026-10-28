@@ -1,4 +1,5 @@
 import { displayNumber } from '../display-number.js';
+import { grantEntryWornBarrier, resetWornBarrier } from '../worn-barrier.js';
 import { prepareRevivalBattle, tryRevive } from '../revival.js';
 import { isArmsV2, armsStatusLabels, shieldUsable, denialReady, denialModifiers, beginArmsActivation, noteArmsFire, armsWeaponReason, validateArmsState, isSprayer, spendSprayerFuel } from '../arms.js';
 import { sprayerFear, sprayerTank } from '../sprayer.js';
@@ -1508,7 +1509,7 @@ export class MassBattle {
             try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'mass', ability.bonuses, this.rules.damageModel, this.rules.numericModel) ?? this.summonUnit?.(effect.templateId, actor.side, id); } catch { invalid = true; break; }
             const node = FORMATION_NODES.find((node) => node.side === actor.side && node.wing === formationNode(actor).wing && node.rank === 'reserve')!;
             if (!unit || [...this.combatants, ...stagedBirths, ...born].filter((u) => !this.isAttached(u.id) && u.status === 'ready' && formationNode(u).id === node.id).length >= (this.formationSlots ?? 3)) { invalid = true; break; }
-            prepareSkillModel(unit, this.rules); prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules); prepareTraitModel(unit,this.rules); prepareItemModel(unit,this.rules); prepareTraitLevelModel(unit,this.rules); prepareRevivalBattle(unit,true); beginLifestealRound(unit,this.round,true);
+            prepareSkillModel(unit, this.rules); prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules); prepareTraitModel(unit,this.rules); prepareItemModel(unit,this.rules); prepareTraitLevelModel(unit,this.rules); prepareRevivalBattle(unit,true); resetWornBarrier(unit); const entryBarrier = grantEntryWornBarrier(unit,this.rules); if(entryBarrier)this.recordEvent({round:this.round,kind:'condition',participants:[unit.id],text:entryBarrier}); beginLifestealRound(unit,this.round,true);
             unit.id = id; unit.summonerId = actor.id; unit.bornRound = this.round;
             if (conjuredTemplate(effect.templateId)) unit.name = `${actor.name}的${unit.name}`;
             setFormation(unit, node); born.push(unit);
@@ -1805,12 +1806,13 @@ export class MassBattle {
   start(): void {
     for (const unit of this.combatants) delete unit.regenerationRemainder;
     if (this.started) return;
-    for (const unit of this.combatants) prepareRevivalBattle(unit, true);
+    for (const unit of this.combatants) { prepareRevivalBattle(unit, true); resetWornBarrier(unit); }
     assertBattleCapacity(this.combatants, 'mass');
     if (this.rules.resolutionVersion === 'v2' || this.formationSlots !== undefined) this.prepareFormation();
     this.started = true;
     if (isArmsV2(this.rules.armsModel)) for (const u of this.combatants) if (u.shield && !shieldUsable(u) && u.shieldDurability?.remaining !== 0) this.recordEvent({round:1,kind:'condition',participants:[u.id],text:u.name+'的'+(u.shield.name??'盾牌')+'挂在背上'});
     this.round = 1;
+    for (const unit of this.combatants) { const text = grantEntryWornBarrier(unit, this.rules); if (text) this.recordEvent({round:1,kind:'condition',participants:[unit.id],text}); }
     for (const unit of this.combatants) beginLifestealRound(unit, this.round, true);
     for (const unit of this.combatants) {
       const restored = recoverEntryMorale(unit);
@@ -2846,6 +2848,7 @@ export class MassBattle {
     b.routCounts = new Map(snap.routCounts ?? []);
     b.reloadCd = new Map(snap.reloadCd ?? []);
     (b as unknown as { started: boolean }).started = !!snap.started;
+    if (b.started) for (const unit of b.combatants) { const text = grantEntryWornBarrier(unit, b.rules); if(text)b.recordEvent({round:b.round,kind:'condition',participants:[unit.id],text}); }
     return b;
   }
 }

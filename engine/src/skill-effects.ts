@@ -94,14 +94,19 @@ export function conditionChance(target: Combatant, effect: ConditionEffect): num
     return 1;
   }
   if (target.conditions.some((c) => c.id === effect.conditionId && c.dur > 0)) return 0;
-  return Array.from({ length: 20 }, (_, i) => i + 1).filter((n) => n === 1 || n !== 20 && n + controlBonus(target, effect.conditionId) < effect.saveDC!).length / 20;
+  return Array.from({ length: 20 }, (_, i) => conditionFailureWeight(i + 1, controlBonus(target, effect.conditionId), effect)).reduce((sum,p)=>sum+p,0) / 20;
+}
+function conditionFailureWeight(roll: number, bonus: number, effect: ConditionEffect): number {
+  if (roll === 1) return 1;
+  if (roll === 20) return 0;
+  return effect.continuousSave ? Math.max(0, Math.min(1, effect.saveDC! - roll - bonus)) : Number(roll + bonus < effect.saveDC!);
 }
 export function prepareCondition(actor: Combatant, target: Combatant, effect: ConditionEffect, rng: Rng, units: readonly Combatant[] = [actor,target]): { condition?: ActiveCondition; text: string } {
   const name = definitions.get(effect.conditionId)?.name ?? effect.conditionId;
   if (!conditionChance(target, effect)) return { text: `${target.name}：${conditionImmunity(target, effect.conditionId) ?? '已有同类效果或已离场'}，未追加${name}` };
   if (effect.saveDC !== undefined) {
-    const bonus = controlBonus(target, effect.conditionId), roll = rng.d(20), total = roll + bonus;
-    if (roll === 20 || roll !== 1 && total >= effect.saveDC) return { text: `${target.name} 抵抗${name}（${roll}+${displayNumber(bonus)}对抗${displayNumber(effect.saveDC)}）` };
+    const bonus = controlBonus(target, effect.conditionId), roll = rng.d(20), failure = conditionFailureWeight(roll,bonus,effect);
+    if (failure <= 0 || failure < 1 && rng.next() >= failure) return { text: `${target.name} 抵抗${name}（${roll}+${displayNumber(bonus)}对抗${displayNumber(effect.saveDC)}）` };
   }
   return { condition: { id: effect.conditionId, dur: effect.dur, sourceId: actor.id, ...(effect.damageChannel ? {damageChannel:effect.damageChannel} : {}), ...(ACTIVATION_CONTROLS.has(effect.conditionId) && phase2Traits(target) ? { controlPending: true, ...(effect.conditionId === 'charmed' ? { controlSide: combatSide(actor,units) } : {}) } : {}), ...(effect.conditionId === 'blessed' && effect.defensePower !== undefined ? { defensePower: effect.defensePower } : {}), ...(isCohort(target)&&target.scale!=='hero'&&definitions.get(effect.conditionId)?.dot?{affectedMembers:conditionExposure(actor,target,effect.shape==='burst')}:{}), ...(effect.potency !== undefined ? { potency: effect.potency } : {}), ...(effect.magnitude !== undefined ? { magnitude: effect.magnitude } : {}) }, text: `${target.name} 获得${name}，持续${effect.dur}次状态结算` };
 }

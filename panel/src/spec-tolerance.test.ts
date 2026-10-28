@@ -20,6 +20,15 @@ function transact(save: NarrativeSave, text: string, messageId = '1'): Narrative
 const registry = traitRegistry();
 
 describe('正文技能规格兼容和局部恢复', () => {
+  it('技能显式冒号优先于名称分隔符，仅规范化冒号后的规格', () => {
+    for (const name of ['星·火', '星/火', 'ＡＬ３＋', '繁體·術']) {
+      const text = name + '﹕魔法单体Ｌ４﹢热能﹢２伤害';
+      expect(normalizeNarrativeSkill(text, []).startsWith(name + ':')).toBe(true);
+      const parsed = parseProtocol(spawn(text));
+      expect(parsed.errors).toEqual([]);
+      expect(parsed.events[0]).toMatchObject({ skills: [{ name, blueprintId: 'generic:magic-single:thermal', level: 4, bonuses: { damage: 2 } }] });
+    }
+  });
   it('主体等级后可直接接不分级的方式词，直接解析与正文归一化均保留主体等级', () => {
     for (const [text, blueprintId, level] of [
       ['穿心箭:物理单体L3+射击', 'generic:physical-single:ranged', 3],

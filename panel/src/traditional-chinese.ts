@@ -65,7 +65,8 @@ export function simplifiedChinese(text: string): string {
 /** 列表里每项“名称:规格”只换写规格段；没有名称段时整项都是规格。 */
 export function simplifiedSpecification(value: string): string {
   return value.split(/([,，、;；\n])/).map((part) => {
-    const at = part.search(/[:：·｜|/／]/);
+    const colon = part.search(/[:：﹕]/);
+    const at = colon >= 0 ? colon : part.search(/[·｜|/／]/);
     return at > 0 ? part.slice(0, at + 1) + simplifiedChinese(part.slice(at + 1)) : simplifiedChinese(part);
   }).join('');
 }

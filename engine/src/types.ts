@@ -114,7 +114,7 @@ export type EffectOp =
   | { op: 'zone'; itemEffectModel?: import('./progression.js').ItemProgressionModel; kind: 'fire' | 'poison' | 'smoke' | 'healing' | 'trap'; power: number; healingModel?: import('./healing.js').HealingModel; dur: number; radius: number; amount?: number; penetration?: number; effects?: ZonePayload[] }
   | { op: 'damage'; baseDice: string; apDice?: string; tag?: string; shape?: 'single' | 'burst' }
   | ({ op: 'heal'; power?: number } & ({ dice: string; amount?: never } | { amount: number; dice?: never }))
-  | { op: 'condition'; damageChannel?: DamageChannel; conditionId: string; dur: number; potency?: number; magnitude?: number; defensePower?: number; saveDC?: number; onHit?: boolean; onDamage?: boolean; shape?: 'single' | 'burst' }
+  | { op: 'condition'; damageChannel?: DamageChannel; conditionId: string; dur: number; potency?: number; magnitude?: number; defensePower?: number; saveDC?: number; continuousSave?: true; onHit?: boolean; onDamage?: boolean; shape?: 'single' | 'burst' }
   | { op: 'trait'; traitId: string; level?: number; dur: number; shape?: 'single' | 'burst' }
   | { op: 'push'; force: number; steps: 1; physical?: boolean; onHit?: boolean; direction?: 'away' | 'towards' }
   | { op: 'dispel'; polarity: 'positive' | 'negative'; count: number }
@@ -134,7 +134,7 @@ export interface Ability {
   /** 显式编辑的效果与数值不被入场公式重建。 */
   customized?: boolean;
   bonuses?: Enhancements;
-    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3' | 'skill-v5.0' | 'skill-v6.0' | 'skill-v6.1' | 'skill-v7.0' | 'skill-v2.5' | 'skill-v8.0' | 'skill-v9.0' | 'skill-v10.0' | 'skill-zone-v5' | 'skill-zone-v6' | 'skill-zone-v7' | 'skill-zone-v1' | 'skill-zone-v2' | 'skill-zone-v3' | 'skill-zone-v4';
+    effectVersion?: 'skill-v2.1' | 'skill-v2.2' | 'skill-v2.3' | 'skill-v2.4' | 'skill-v3.0' | 'skill-v4.0' | 'skill-v4.1' | 'skill-v4.2' | 'skill-v4.3' | 'skill-v5.0' | 'skill-v6.0' | 'skill-v6.1' | 'skill-v7.0' | 'skill-v2.5' | 'skill-v8.0' | 'skill-v9.0' | 'skill-v10.0' | 'skill-v11.0' | 'skill-zone-v8' | 'skill-zone-v5' | 'skill-zone-v6' | 'skill-zone-v7' | 'skill-zone-v1' | 'skill-zone-v2' | 'skill-zone-v3' | 'skill-zone-v4';
     damageScale?: number;
   recipe?: import('./data/skill-mechanisms.js').SkillRecipe;
   weaponUse?: 'auto' | 'melee' | 'ranged';
@@ -286,6 +286,8 @@ export interface ActiveCondition {
 export type UnitStatus = 'ready' | 'dying' | 'dead' | 'routing' | 'fled';
 
 export interface BarrierGrant {
+  /** Entry equipment layer lasts until consumed or battle ends. */
+  battleLong?: true;
   key?: string;
   /** 旧屏障进入新战斗时仍作为一组取强、同步消耗，不凭空补出容量。 */
   legacy?: true;
@@ -302,6 +304,8 @@ export interface BarrierState extends BarrierGrant {
 }
 
 export interface Combatant {
+  /** Battle-local receipt; even entry without a barrier spends this battle's grant. */
+  wornBarrierUsed?: true;
   regenerationModel?: import('./regeneration-model.js').RegenerationModel;
   targetWidthModel?: import('./target-width.js').TargetWidthModel;
   armorWearModel?: import('./armor-wear.js').ArmorWearModel;
@@ -341,7 +345,7 @@ export interface Combatant {
   /** V13 trait overhaul, projected from the battle rules; absent keeps the frozen V12 trait rules. */
   traitModel?: 'traits-v1';
   /** V14 skill pricing (composite states priced per stat), projected from the battle rules; absent keeps V13 skill numbers. V20 skills-v3 lowers combined-control save DCs by 1 per extra effect instead of 2. V21 skills-v4 anchors barrier, condition magnitude and morale amounts to the wound budget. */
-  skillModel?: 'skills-v1' | 'skills-v2' | 'skills-v3' | 'skills-v4';
+  skillModel?: 'skills-v1' | 'skills-v2' | 'skills-v3' | 'skills-v4' | 'skills-v5';
   /** V15 item system (graded specialisations, item action economy and per-piece formation use), projected from the battle rules. V20 items-v2 scales worn modifiers by item L. */
   itemModel?: 'items-v1' | 'items-v2';
   /** V16 特质分级独立门控；旧战斗缺省保持原效果。 */
@@ -687,7 +691,11 @@ export interface RulePack {
   /** V13 trait overhaul (工事据守、工兵、拒马、散兵单体与步枪编队自动散兵); absent keeps V12. */
   traitModel?: 'traits-v1';
   /** V14 skill pricing: 同时改两项属性的状态按两项附加效果计价; absent keeps V13. V20 skills-v3：组合控制每多一项抵抗难度 −1（原 −2）。V21 skills-v4：屏障、状态效力与士气量按单体创伤预算比例。 */
-  skillModel?: 'skills-v1' | 'skills-v2' | 'skills-v3' | 'skills-v4';
+  skillModel?: 'skills-v1' | 'skills-v2' | 'skills-v3' | 'skills-v4' | 'skills-v5';
+  attackPreviewModel?: 'exact-sequence-v1';
+  damageStackModel?: 'additive-positive-v1';
+  criticalDamageScale?: number;
+  wornBarrierModel?: 'entry-once-v1';
   /** V15 道具系统：专精十级、道具行动与编队件数、AI 保留价值、冲锋与远程看实际配装; absent keeps V14. V20 items-v2：佩戴修正按道具 L 换算。 */
   itemModel?: 'items-v1' | 'items-v2';
   /** V16 新增特质分级；独立于 V15 五项专精。 */

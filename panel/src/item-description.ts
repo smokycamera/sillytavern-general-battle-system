@@ -1,3 +1,4 @@
+import { strongestWornBarrier } from '../../engine/src/worn-barrier.js';
 import { displayNumber } from '../../engine/src/display-number.js';
 import { progression, wornItemEffects, STACKING_MODEL, compileWornEffects, WORN_ANCHORED_MODEL } from '../../engine/src/index.js';
 import { BONUS_NAMES } from '../../engine/src/enhancements.js';
@@ -56,7 +57,7 @@ export function itemPassiveSummary(p: ItemPassive, model?: unknown, detailed = t
   const values = wornItemEffects({ passive: p }).values;
   const actual = [...new Set([...Object.keys(p.bonuses ?? {}), ...Object.keys(values)])].map(k => BONUS_NAMES[k as EffectStat] + wornEffectAmount(k as EffectStat, values[k as EffectStat] ?? 0)
     + (k === 'speed' && p.actualEffects?.uncappedNegative ? '（先攻' + wornEffectAmount('speed', 2 * (values.speed ?? 0)) + '）' : '')).join('、');
-  return [traits.join('；'), actual].filter(Boolean).join('；');
+  return [traits.join('；'), p.barrier ? `开战屏障${displayNumber(p.barrier.amount)}点（L${p.barrier.power}），每战一次` : '', actual].filter(Boolean).join('；');
 }
 /** 库存卡片与审批预览共用的一句话说明；形态已在卡片标题里。 */
 export function itemValueSummary(value: ItemValue, name?: string): string {
@@ -74,6 +75,7 @@ export function overshadowedGear(unit: Pick<Combatant, 'gear' | 'traits' | 'trai
   if (!item?.passive) return [];
   const beats = (other: number, otherIndex: number, mine: number) => other > mine || other === mine && otherIndex < index;
   const covered: string[] = [];
+  if (item.passive.barrier && strongestWornBarrier(unit)?.id !== itemId) covered.push('开战屏障');
   const canonical = (id: string) => traitLevelsV16(unit) ? canonicalTraitId(id) : id;
   const grade = (id: string, level?: number) => traitLevelsV16(unit) ? sourceTraitLevel(id, level) : level ?? 5;
   for (const grant of item.passive.traits) {

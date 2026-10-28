@@ -17,6 +17,8 @@ for (const directory of ['assets', 'licenses', 'docs']) {
 }
 mkdirSync(path.join(output, 'scripts'), { recursive: true });
 copyFileSync('docs/mvu-save-history-20261020.md', path.join(output, 'docs/mvu-save-history-20261020.md'));
+copyFileSync('docs/performance-battle-save-20261028.md', path.join(output, 'docs/performance-battle-save-20261028.md'));
+for (const name of ['skill-preview-fixes-20261028.md', 'balance-options-20261028.md', 'offense-barrier-v41-review-20261028.md']) copyFileSync(path.join('docs', name), path.join(output, 'docs', name));
 copyFileSync('docs/effect-source-migration-review-20261026.md', path.join(output, 'docs/effect-source-migration-review-20261026.md'));
 copyFileSync('docs/effect-round-end-stacking-review-20261026.md', path.join(output, 'docs/effect-round-end-stacking-review-20261026.md'));
 copyFileSync('docs/indoor-layouts-20261020.md', path.join(output, 'docs/indoor-layouts-20261020.md'));

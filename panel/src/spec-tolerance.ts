@@ -27,11 +27,12 @@ function enhancementOrder(text: string): string | undefined {
 
 /** 仅用于正文输入；不放宽存档、手工表单和引擎数值校验。 */
 export function normalizeNarrativeSpec(text: string, kind?: BonusKind): string {
-  const separator = text.search(/[:：·｜|/／]/);
+  const colon = text.search(/[:：﹕]/);
+  const separator = colon >= 0 ? colon : text.search(/[·｜|/／]/);
   const prefix = separator > 0 ? text.slice(0, separator).trim() + ':' : '';
   let spec = separator > 0 ? text.slice(separator + 1) : text;
   spec = spec.replace(/[０-９Ａ-Ｚａ-ｚ]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
-    .replace(/＋/g, '+').replace(/[−－﹣]/g, '-').replace(/．/g, '.').trim();
+    .replace(/[＋﹢]/g, '+').replace(/[−－﹣–]/g, '-').replace(/．/g, '.').trim();
   // 括号只有在包住整个规格或等级/修正时才是格式，不删除任意文字。
   spec = spec.replace(/^[（(]([^()（）]+)[）)]$/, '$1')
     .replace(/[（(]\s*((?:level|lv\.?|l)\s*\d[^()（）]*)[）)]$/i, '$1')
@@ -81,13 +82,13 @@ function mechanism(text: string, warnings: string[] = [], source = text): SkillM
 
 /** 将等级后的效果词归回机制段；无法实现的可选强化留下诊断，不废掉基础技能。 */
 export function normalizeNarrativeSkill(text: string, warnings: string[], bonusKind: 'skill' | 'charged' = 'skill'): string {
-  const source = text.replace(/[０-９Ａ-Ｚａ-ｚ]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
-    .replace(/＋/g, '+').replace(/[−－﹣]/g, '-').replace(/．/g, '.')
+  const colon = text.search(/[:：﹕]/);
+  const separator = colon >= 0 ? colon : text.search(/[·｜|/／]/);
+  const prefix = separator > 0 ? text.slice(0, separator) + ':' : '';
+  const body = separator > 0 ? text.slice(separator + 1) : text;
+  const spec = body.replace(/[０-９Ａ-Ｚａ-ｚ]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
+    .replace(/[＋﹢]/g, '+').replace(/[−－﹣–]/g, '-').replace(/．/g, '.')
     .replace(/(?:level|lv\.?|l)\s*([+-]?\d+(?:\.\d+)?)\s*(?:级)?/gi, 'L$1');
-  const normalized = source;
-  const separator = normalized.search(/[:：·｜|/／]/);
-  const prefix = separator > 0 ? normalized.slice(0, separator) + ':' : '';
-  const spec = separator > 0 ? normalized.slice(separator + 1) : normalized;
   const { mechanism: base, level, suffix: rawSuffix } = splitSkillLevel(spec);
   if (level === undefined) { const bare = mechanism(spec, warnings, text); return prefix + (bare ? skillMechanismName(bare) : spec); }
   if (!Number.isInteger(level) || level < 1 || level > 10) throw Error('技能等级必须是L1–L10整数');

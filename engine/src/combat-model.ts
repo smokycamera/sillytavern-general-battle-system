@@ -21,6 +21,7 @@ export const COHORT_REFERENCE = 50;
 export interface FormationStrength { members: number; capacity: number; memberHp: number; woundedRemainder?: number; health?:MemberHealthGroup[] }
 export const isCohort = (u: Combatant) => u.combatModel === COHORT_MODEL || u.combatModel === MEMBER_HEALTH_MODEL;
 export function validateCombatModel(u: Combatant): void {
+  if (u.wornBarrierUsed !== undefined && u.wornBarrierUsed !== true) throw Error('佩戴屏障入场记录损坏');
   validateRegenerationModel(u.regenerationModel);
   validateTargetWidthModel(u.targetWidthModel);
   validateArmorWearModel(u.armorWearModel);

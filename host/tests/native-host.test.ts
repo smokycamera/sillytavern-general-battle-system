@@ -64,6 +64,21 @@ it('读回使用捕获的目标身份而不是当前聊天', async () => {
   f.context.chatId = 'different'; await f.host.readPersisted(session.scope);
   expect(JSON.parse(f.request.mock.calls[0]![1]!.body as string).file_name).toBe('chat');
 });
+it('batch source binding locates moved messages once and remains atomic on duplicate or edited sources', async () => {
+  const f = fixture();
+  f.context.chat = Array.from({ length: 1000 }, (_, i) => ({ mes: `source-${i}`, gen_finished: 'done', send_date: String(i) }));
+  const session = f.host.session()!, first = prepareMessageTag(f.context.chat, 998), second = prepareMessageTag(f.context.chat, 999);
+  await f.host.applyMessageTags(session, [first]);
+  const moved = f.context.chat.pop()!; f.context.chat.unshift(moved);
+  await f.host.applyMessageTags(session, [first]);
+  expect(f.context.chat[999]!.extra?.tavernBattleSourceId).toBe(first.id);
+  const current = prepareMessageTag(f.context.chat, 998);
+  await expect(f.host.applyMessageTags(session, [current, second])).rejects.toThrow('来源消息');
+  expect(f.context.chat[998]!.extra).toBeUndefined();
+  await f.host.applyMessageTags(session, [current]);
+  f.context.chat.push(structuredClone(f.context.chat[998]!));
+  await expect(f.host.applyMessageTags(session, [current])).rejects.toThrow('消息身份重复');
+});
 it('Tauri metadata API reads the captured avatar/chat from disk on every call, without fetching history', async () => {
   const f = fixture();
   f.context.characters![0] = { avatar: ' Hero.v2.png', name: 'Different display name' };
