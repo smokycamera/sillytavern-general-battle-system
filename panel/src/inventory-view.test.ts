@@ -7,6 +7,7 @@ import { InventoryPanel } from './inventory-view.js';
 import type { PanelController } from './controller-port.js';
 import type { InventoryPreview } from './narrative-controller.js';
 import { selectPromptEntries } from './prompt-settings.js';
+import { parseItemSpecification } from './item-spec.js';
 
 function fixture() {
   const storage = ['a', 'b', 'enemy'].map(id => {
@@ -82,6 +83,30 @@ it('一次性道具可预览改造和增加数量，确认前不写入，取消�
   document.querySelector<HTMLInputElement>('[data-role="inventory-qty"]')!.value = '3';
   await f.action('preview-draft'); await f.action('confirm');
   expect(f.save().inventory!.find(item => item.id === 'a-bag')).toMatchObject({ qty: 5, assignedTo: 'a', mechanics: item.mechanics });
+});
+
+it('改造佩戴道具保留独立屏障和混合特质等级，预览后只提交所改属性', async () => {
+  const f = mount();
+  const item = createInventoryItem('barrier', '屏障护符', parseItemSpecification('佩戴L4+屏障L6+夜战专精L3+林地专精L5+2防御'), 'barrier');
+  f.save().inventory!.push(item); f.render();
+  const before = structuredClone(item);
+  await f.action('edit', 'barrier');
+  const form = document.querySelector<HTMLSelectElement>('[data-role="inventory-form"]')!;
+  expect(form.querySelector('option[selected]')!.getAttribute('value')).toBe('worn');
+  // happy-dom reports the third selected option as the second; Chrome selects worn correctly.
+  form.value = 'worn';
+  expect(document.querySelector<HTMLInputElement>('[data-role="inventory-effect"]')!.value).toContain('屏障L6');
+  expect(document.querySelector('.inventory-editor')!.textContent).toContain('奥术防护');
+  document.querySelector<HTMLInputElement>('[data-role="inventory-bonuses"]')!.value = '+2防御+3奥术防护';
+  await f.action('preview-draft');
+  expect(document.querySelector('[data-role="inventory-preview"]'), document.querySelector('[data-role="inventory-feedback"]')?.textContent ?? '').not.toBeNull();
+  expect(item).toEqual(before);
+  document.querySelector<HTMLSelectElement>('[data-role="inventory-form"]')!.value = 'worn';
+  await f.action('confirm');
+  const after = f.save().inventory!.find(i => i.id === 'barrier')!;
+  if (after.mechanics?.kind !== 'item' || before.mechanics?.kind !== 'item') throw Error('fixture');
+  expect(after.mechanics.value.recipe).toMatchObject({ power: 4, barrierPower: 6, traits: before.mechanics.value.recipe.traits, bonuses: { defense: 2, arcaneProtection: 3 } });
+  expect(after.mechanics.value.passive!.barrier).toEqual(before.mechanics.value.passive!.barrier);
 });
 
 it('佩戴卡片展示短实效和升级收益；旧物更新先预览，提交后保留实物与历史', async () => {

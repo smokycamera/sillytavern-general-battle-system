@@ -16,6 +16,9 @@ function itemEffectText(mechanics: Extract<ItemMechanics, { kind: 'item' }>): st
   const recipe = mechanics.value.recipe;
   if (recipe.active) return skillMechanismName(recipe.active);
   const names = (recipe.traits ?? []).map((t) => traitRegistry().get(t.id)?.name ?? t.id);
+  const graded = (recipe.traits ?? []).map((t, i) => names[i] + (t.level === undefined ? '' : 'L' + t.level));
+  if (recipe.barrierPower !== undefined) return ['屏障L' + recipe.barrierPower, ...graded].join('+');
+  if (recipe.traits?.every(t => t.level !== undefined) && recipe.traits.some(t => t.level !== recipe.power)) return graded.join('+');
   return names.length ? names.join('、') : '佩戴';
 }
 export function equipmentDraft(kind = 'weapon', body = 'human', mechanics?: ItemMechanics, name = ''): EquipmentDraft {
@@ -34,13 +37,15 @@ export function equipmentSpecification(d: EquipmentDraft): ItemSpecification {
   if (d.kind === 'armor') return { ...base, kind: 'armor', tier: Number(d.tier) as 0 | 1 | 2 | 3 | 4, profile: d.profile as 'balanced' | 'kinetic' | 'thermal' | 'arcane' };
   if (d.kind === 'shield') return { ...base, kind: 'shield', mechanism: d.mechanism as keyof typeof SHIELD_CLASSES };
   if (d.kind === 'item') {
+    if (!Number.isInteger(Number(d.power)) || Number(d.power) < 1 || Number(d.power) > 10) throw Error('物品强度必须为1–10');
     const effect = d.effect.trim();
     if (!effect) throw Error('请填写道具效果，如buff治疗、物理范围投射、夜战专精或佩戴');
-    const spec = parseItemSpecification((d.form === 'charged' ? '充能' : '') + effect + 'L' + d.power + enhancementLabel(d.bonuses));
+    const gradedWorn = d.form === 'worn' && /[lLＬｌ]\s*[0-9０-９]/.test(effect);
+    const spec = parseItemSpecification((d.form === 'worn' ? '佩戴+' : d.form === 'charged' ? '充能' : '') + effect + (gradedWorn ? '' : 'L' + d.power) + enhancementLabel(d.bonuses));
     if (spec.kind !== 'item') throw Error('道具效果写技能机制、特质或“佩戴”，武器护甲请选对应种类');
     if (d.form === 'worn' && spec.form !== 'worn') throw Error('佩戴道具写特质或“佩戴”，主动效果请选一次性或充能');
     if (d.form !== 'worn' && spec.form === 'worn') throw Error('特质写在佩戴道具里；一次性或充能道具写技能机制，如buff夜战专精');
-    return spec;
+    return d.form === 'worn' ? { ...spec, power: Number(d.power) } : spec;
   }
   throw Error('请选择支持的物品种类');
 }
@@ -60,6 +65,7 @@ export function captureEquipment(prefix: string, current: EquipmentDraft): Equip
   return next;
 }
 const EFFECT_EXAMPLES = ['buff治疗', '物理范围投射', '物理范围投射+燃烧', '烟幕', 'debuff范围眩晕', '陷阱', '魔法范围热能', '物理单体射击+燃烧', 'buff屏障', 'buff净化', '夜战专精', '林地专精', '潜伏', '侦察', '登城', '佩戴'];
+const WORN_EFFECT_EXAMPLES = ['夜战专精', '林地专精', '潜伏L3+林地专精L5', '侦察', '登城', '佩戴', '屏障', '屏障L4', '屏障L6+夜战专精L3'];
 /** 新建、编辑与库存共用中文字段和实际配方；高级数值默认收起。 */
 export function equipmentFields(prefix: string, d: EquipmentDraft, opts: { disabled?: boolean; sidearm?: boolean; nameReadonly?: boolean; primaryHands?: number } = {}): string {
   const disabled = !!opts.disabled, ro = disabled || opts.nameReadonly ? 'readonly' : '', lock = disabled ? 'disabled' : '';
@@ -68,15 +74,17 @@ export function equipmentFields(prefix: string, d: EquipmentDraft, opts: { disab
   const weapons = '<select data-role="' + prefix + '-mechanism" ' + lock + '>' + groups.map(([name, ids]) => '<optgroup label="' + name + '">' + ids.map(id => '<option value="' + id + '" ' + (d.mechanism === id ? 'selected' : '') + '>' + WEAPON_CLASSES[id]!.name + '</option>').join('') + '</optgroup>').join('') + '</select>';
   const shields = Object.entries(SHIELD_CLASSES).filter(([id]) => opts.primaryHands !== 2 || ['buckler', 'energy-shield'].includes(id)).map(([id, value]): [string, string] => [id, value.name]);
   const item = d.kind === 'item';
+  const worn = item && d.form === 'worn';
+  const directions = (ENHANCEMENT_STATS[bonusKind(d)] ?? []).filter(stat => !worn || stat !== 'protection' || !!d.bonuses?.protection).map(stat => BONUS_NAMES[stat]).join('、');
   const anchor = `<p class="sub power-anchor">L${htmlText(d.power)} · ${htmlText(POWER_ANCHORS[Number(d.power)-1]?.name??'请选择1–10')}：${htmlText(POWER_ANCHORS[Number(d.power)-1]?.example??'')}</p>`;
   return `<div class="equipment-fields"><label>名称<input data-role="${prefix}-name" value="${htmlText(d.name)}" placeholder="留空采用类型名称" ${ro}></label>
     ${d.kind === 'weapon' ? `<label>武器${weapons}</label><p class="sub">${htmlText(WEAPON_CLASSES[d.mechanism]?.profile.desc ?? '')}</p>` : d.kind === 'armor' ? `<label>护甲${select('tier', armorChoices)}</label>`
-      : d.kind === 'shield' ? `<label>盾类型${select('mechanism', shields).replace('</select>', opts.primaryHands === 2 && ['shield','tower-shield'].includes(d.mechanism) ? '<option value="'+d.mechanism+'" selected disabled hidden>'+SHIELD_CLASSES[d.mechanism as keyof typeof SHIELD_CLASSES].name+'（挂背）</option></select>' : '</select>')}</label>${opts.primaryHands === 2 && ['shield','tower-shield'].includes(d.mechanism) ? '<p class="sub">挂背（主武器双手）：双手武器只能配小盾或能量盾</p>' : ''}` : item ? `<label>形态${select('form', (Object.entries(ITEM_FORM_NAMES) as [string, string][]))}</label><label>效果<input data-role="${prefix}-effect" list="${prefix}-effect-examples" value="${htmlText(d.effect)}" placeholder="如buff治疗、物理范围投射、夜战专精" ${disabled ? 'readonly' : ''}><datalist id="${prefix}-effect-examples">${EFFECT_EXAMPLES.map((e) => `<option value="${htmlText(e)}"></option>`).join('')}</datalist></label>
-        <p class="sub">${d.form==='single'?'使用后消耗，喝、敷类可用加速动作。效果写法与技能相同。':d.form==='charged'?'装备后每战可使用1–2次。效果写法与技能相同。':'装备后被动生效，件数不限。效果填写特质或“佩戴”加修正。'}</p>` : ''}
+      : d.kind === 'shield' ? `<label>盾类型${select('mechanism', shields).replace('</select>', opts.primaryHands === 2 && ['shield','tower-shield'].includes(d.mechanism) ? '<option value="'+d.mechanism+'" selected disabled hidden>'+SHIELD_CLASSES[d.mechanism as keyof typeof SHIELD_CLASSES].name+'（挂背）</option></select>' : '</select>')}</label>${opts.primaryHands === 2 && ['shield','tower-shield'].includes(d.mechanism) ? '<p class="sub">挂背（主武器双手）：双手武器只能配小盾或能量盾</p>' : ''}` : item ? `<label>形态${select('form', (Object.entries(ITEM_FORM_NAMES) as [string, string][]))}</label><label>效果<input data-role="${prefix}-effect" list="${prefix}-effect-examples" value="${htmlText(d.effect)}" placeholder="如夜战专精、屏障L4；主动效果如buff治疗" ${disabled ? 'readonly' : ''}><datalist id="${prefix}-effect-examples">${(worn ? WORN_EFFECT_EXAMPLES : EFFECT_EXAMPLES).map((e) => `<option value="${htmlText(e)}"></option>`).join('')}</datalist></label>
+        <p class="sub">${d.form==='single'?'使用后消耗，喝、敷类可用加速动作。效果写法与技能相同。':d.form==='charged'?'装备后每战次数由效果与次数修正决定。效果写法与技能相同。':'佩戴可写特质、属性修正或开战屏障。效果如夜战专精、屏障L4、屏障L6+夜战专精L3；只改属性时填“佩戴”，修正写在下方。屏障每战首次入场获得一次，同类取强。'}</p>${worn ? `<p class="sub">佩戴修正方向：${htmlText(directions)}。</p>` : ''}` : ''}
     <label>规格<input data-role="${prefix}-power" type="number" min="1" max="10" value="${htmlText(d.power)}" ${disabled ? 'readonly' : ''}></label></div>
     ${d.kind==='weapon'||item?anchor:''}
     <details class="equipment-advanced" data-detail-id="${prefix}-advanced"><summary>${item ? '属性修正' : '特殊配置与品质'}</summary><div class="equipment-fields">
-    <label>属性修正（每项−10至+10）<input data-role="${prefix}-bonuses" value="${htmlText(enhancementLabel(d.bonuses))}" placeholder="如+3伤害-2精度；留空清除" ${disabled?'readonly':''}></label><p class="sub">${htmlText((ENHANCEMENT_STATS[bonusKind(d)]??[]).map(k=>BONUS_NAMES[k]).join('、'))}。单通道修正只影响该通道；穿透与防护每点0.2档。${['weapon','armor','shield'].includes(d.kind) ? '重量每+1使负载×1.1，每−1使负载÷1.1；各方向数量不限。' : ''}</p>
+    <label>属性修正（每项−10至+10）<input data-role="${prefix}-bonuses" value="${htmlText(enhancementLabel(d.bonuses))}" placeholder="如+3伤害-2精度；留空清除" ${disabled?'readonly':''}></label><p class="sub">${htmlText(directions)}。${worn ? '修正按道具规格等级换算，同方向取强，通道修正只影响对应通道。' : '单通道修正只影响该通道；穿透与防护每点0.2档。'}${['weapon','armor','shield'].includes(d.kind) ? '重量每+1使负载×1.1，每−1使负载÷1.1；各方向数量不限。' : ''}</p>
     ${item ? '' : `<label>品质<input data-role="${prefix}-quality" type="number" min="1" max="5" value="${htmlText(d.quality)}" ${disabled ? 'readonly' : ''}></label><label>装备体量${select('body', bodyChoices)}</label>`}
     ${d.kind === 'weapon' ? `<label>伤害转化${select('enchantment', [['', '保持原伤害类型'], ['thermal', '热能转化'], ['arcane', '奥术转化']])}</label><label class="check-field"><input data-role="${prefix}-stabilized" type="checkbox" ${d.stabilized ? 'checked' : ''} ${lock}>车载行进稳定</label>` : ''}
     ${d.kind === 'armor' ? `<label>防护侧重${select('profile', [['balanced', '综合防护'], ['kinetic', '侧重动能'], ['thermal', '侧重热能'], ['arcane', '侧重奥术']])}</label>` : ''}

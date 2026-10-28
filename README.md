@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Current version: **3.0.26**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
+Current version: **3.0.27**. Start with the [current release and workspace guide](docs/current-release.md) and the [documentation index](docs/README.md).
 
 A native turn-based battle extension for SillyTavern / TauriTavern, with small battles, larger engagements, three-way skirmishes, maps and fortifications, unit records, equipment and items, skills and traits, progression and archived battle reports.
 
@@ -16,7 +16,7 @@ The current installation entry is root manifest.json plus dist/. Old ZIPs, panel
 
 ## This release
 
-3.0.26 combines positive damage bonuses across sources, reduces critical damage budgets, and adds worn items that grant a barrier at battle entry. New battles use V41, including the earlier skill progression and preview fixes; existing battles retain their saved rules. See the [mechanics review](docs/offense-barrier-v41-review-20261028.md) and [current release](docs/current-release.md).
+3.0.27 clarifies worn item editing, preserves entry barriers and independent trait levels when reforging, and removes the confirmed data-object instruction from the runtime reminder. Battle rules remain V41. See the [wording and UI review](docs/prompt-wording-audit-20261028.md) and [current release](docs/current-release.md).
 
 ## Documentation
 
