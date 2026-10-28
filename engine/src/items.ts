@@ -1,3 +1,4 @@
+import { compileWornBarrier, type WornBarrier } from './worn-barrier.js';
 import { modifiedEquipmentLoad, revisedLoad } from './load-model.js';
 import { GRADED_SHIELD_LOAD } from './numeric-model.js';
 import { ITEM_PROGRESSION, ITEM_STACKING, ITEM_LIFE_RECOVERY, PROGRESSION_MODEL, STACKING_MODEL, itemProgression, type ItemProgressionModel } from './progression.js';
@@ -33,10 +34,12 @@ export type ItemForm = 'single' | 'charged' | 'worn';
 export const ITEM_FORM_NAMES: Readonly<Record<ItemForm, string>> = { single: '一次性', charged: '充能', worn: '佩戴' };
 export const ITEM_VERSION = 'items-v1' as const;
 export interface ItemTraitGrant { id: string; level?: number }
-export interface ItemPassive { traits: ItemTraitGrant[]; bonuses?: Enhancements; actualEffects?: WornEffects }
+export interface ItemPassive { barrier?: WornBarrier; traits: ItemTraitGrant[]; bonuses?: Enhancements; actualEffects?: WornEffects }
 /** 道具实物的冻结配方；有 legacy 的是旧版药剂与护符转换来的，保留原效果、冻结原参数。 */
 export interface ItemEffectRecipe {
   version: typeof ITEM_VERSION; form: ItemForm; power: number; seed: string;
+  barrierPower?: number;
+  wornBarrierModel?: 'entry-once-v1';
   /** 缺省是历史预算和历史非分级授予；读取时不得套新价格。 */
   traitBudgetModel?: typeof TRAIT_LEVEL_MODEL | typeof PHASE2_TRAIT_LEVEL_MODEL | typeof PROGRESSION_MODEL | typeof STACKING_MODEL;
   progressionModel?: ItemProgressionModel;
@@ -66,7 +69,7 @@ export type ItemSpecification = ItemSpecificationBase & (
   | { kind: 'weapon'; mechanism: string; enchantment?: 'none' | 'thermal' | 'arcane'; stabilized?: boolean }
   | { kind: 'armor'; tier: Armor['tier']; profile?: ItemRecipe['protectionProfile'] }
   | { kind: 'shield'; mechanism?: ShieldClass }
-  | { kind: 'item'; form: ItemForm; active?: string; traits?: ItemTraitGrant[]; legacy?: string }
+  | { kind: 'item'; form: ItemForm; active?: string; traits?: ItemTraitGrant[]; barrierPower?: number; legacy?: string }
 );
 export type ItemMechanics =
   | { kind: 'weapon'; value: Weapon }
@@ -176,10 +179,11 @@ function compileItemValue(spec: Extract<ItemSpecification, { kind: 'item' }>, se
     validateEnhancements(spec.bonuses, 'gear');
     const traits = normalizeTraitGrants(spec.traits ?? [], power, !!spec.legacy, !spec.legacy);
     const bonuses = spec.bonuses && Object.values(spec.bonuses).some((v) => v) ? Object.fromEntries(Object.entries(spec.bonuses).filter(([, v]) => v)) as Enhancements : undefined;
-    if (!traits.length && !bonuses) throw new Error('佩戴道具需要特质或单位修正');
-    const passive: ItemPassive = { traits, ...(bonuses ? { bonuses } : {}), ...(!spec.legacy ? { actualEffects: compileWornEffects(bonuses, power) } : {}) };
-    return { recipe: { version: ITEM_VERSION, form: 'worn', power, seed, ...(!spec.legacy ? { traitBudgetModel: STACKING_MODEL, progressionModel: ITEM_PROGRESSION, wornEffectModel: WORN_ANCHORED_MODEL } : {}), ...(traits.length ? { traits } : {}), ...(bonuses ? { bonuses } : {}), ...(spec.legacy ? { legacy: spec.legacy } : {}) }, passive };
+    if (!traits.length && !bonuses && spec.barrierPower === undefined) throw new Error('佩戴道具需要特质或单位修正');
+    const passive: ItemPassive = { ...(spec.barrierPower === undefined ? {} : { barrier: compileWornBarrier(spec.barrierPower) }), traits, ...(bonuses ? { bonuses } : {}), ...(!spec.legacy ? { actualEffects: compileWornEffects(bonuses, power) } : {}) };
+    return { recipe: { version: ITEM_VERSION, form: 'worn', power, seed, ...(spec.barrierPower === undefined ? {} : { barrierPower: spec.barrierPower, wornBarrierModel: 'entry-once-v1' as const }), ...(!spec.legacy ? { traitBudgetModel: STACKING_MODEL, progressionModel: ITEM_PROGRESSION, wornEffectModel: WORN_ANCHORED_MODEL } : {}), ...(traits.length ? { traits } : {}), ...(bonuses ? { bonuses } : {}), ...(spec.legacy ? { legacy: spec.legacy } : {}) }, passive };
   }
+  if (spec.barrierPower !== undefined) throw Error('开战屏障仅适用于佩戴道具');
   if (!spec.active || spec.traits?.length) throw new Error('一次性与充能道具写技能机制，如buff治疗L3、物理范围投射L4');
   validateEnhancements(spec.bonuses, spec.form === 'charged' ? 'charged' : 'skill');
   const activeModel = numericModel ? ITEM_LIFE_RECOVERY : ITEM_STACKING;
@@ -202,6 +206,8 @@ export function compileItem(spec: ItemSpecification, identity: Pick<EquipmentCon
 /** 道具配方的规范写法，与正文 spec 一致（充能前缀、特质、等级与修正）。 */
 export function itemSpecText(recipe: ItemEffectRecipe): string {
   if (recipe.form === 'worn') {
+    if (recipe.barrierPower !== undefined) return '佩戴L' + recipe.power + '+屏障L' + recipe.barrierPower
+      + (recipe.traits ?? []).map(t => '+' + (traitRegistry().get(t.id)?.name ?? t.id) + (t.level === undefined ? '' : 'L' + t.level)).join('') + enhancementLabel(recipe.bonuses);
     const names = (recipe.traits ?? []).map((t) => traitRegistry().get(t.id)?.name ?? t.id);
     const traits = recipe.traits ?? [];
     if (!recipe.legacy && traits.length > 1 && Math.max(...traits.map(t => t.level ?? recipe.power)) === recipe.power
@@ -214,7 +220,7 @@ export function itemSpecText(recipe: ItemEffectRecipe): string {
   return (recipe.form === 'charged' ? '充能' : '') + skillMechanismName(recipe.active ?? '') + 'L' + recipe.power + enhancementLabel(recipe.bonuses);
 }
 export function itemSpecificationFromRecipe(recipe: ItemEffectRecipe): Extract<ItemSpecification, { kind: 'item' }> {
-  return { kind: 'item', form: recipe.form, power: recipe.power, ...(recipe.active ? { active: recipe.active } : {}), ...(recipe.traits ? { traits: structuredClone(recipe.traits) } : {}),
+  return { kind: 'item', form: recipe.form, power: recipe.power, ...(recipe.barrierPower === undefined ? {} : { barrierPower: recipe.barrierPower }), ...(recipe.active ? { active: recipe.active } : {}), ...(recipe.traits ? { traits: structuredClone(recipe.traits) } : {}),
     ...(recipe.bonuses ? { bonuses: { ...recipe.bonuses } } : {}), ...(recipe.legacy ? { legacy: recipe.legacy } : {}) };
 }
 
@@ -349,6 +355,11 @@ export function validateItemValue(value: unknown): asserts value is ItemValue {
   if (r.version !== ITEM_VERSION || !['single', 'charged', 'worn'].includes(String(r.form)) || !Number.isSafeInteger(r.power) || Number(r.power) < 1 || Number(r.power) > 10
     || typeof r.seed !== 'string' || !r.seed || r.legacy !== undefined && typeof r.legacy !== 'string') throw new Error('道具配方版本、形态或等级损坏');
   if (r.progressionModel !== undefined && !itemProgression(r.progressionModel)) throw Error('道具成长版本损坏');
+  if (r.barrierPower !== undefined || r.wornBarrierModel !== undefined || object(value.passive) && value.passive.barrier !== undefined) {
+    if (r.form !== 'worn' || r.wornBarrierModel !== 'entry-once-v1' || !Number.isInteger(r.barrierPower) || Number(r.barrierPower) < 1 || Number(r.barrierPower) > 10
+      || !object(value.passive) || !object(value.passive.barrier) || value.passive.barrier.power !== r.barrierPower
+      || !Number.isSafeInteger(value.passive.barrier.amount) || Number(value.passive.barrier.amount) < 1) throw Error('佩戴屏障冻结效果损坏');
+  }
   if (r.form === 'worn') {
     if (r.active !== undefined || value.ability !== undefined || !object(value.passive) || !Array.isArray(value.passive.traits)) throw new Error('佩戴道具的效果记录损坏');
     validateEnhancements(value.passive.bonuses as Enhancements | undefined, 'gear');

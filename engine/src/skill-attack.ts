@@ -1,7 +1,7 @@
-import { bonusSteps, bonusRating, bonusMultiplier } from './enhancements.js';
+import { bonusRating, bonusMultiplier } from './enhancements.js';
 import { isCohort } from './combat-model.js';
 import { skillWeapon } from './skill-runtime.js';
-import { singleWeaponSkillScale, independentSkillDamageScale } from './skill-model.js';
+import { singleWeaponSkillScale, independentSkillDamageScale, skillAccuracyBonus } from './skill-model.js';
 import { isRangedWeapon } from './loadout.js';
 import { gridDistance } from './small/spatial.js';
 import { formationDistance } from './mass/formation.js';
@@ -31,9 +31,9 @@ export function skillAttack(context: ObservationContext, actor: Combatant, targe
     const cohort=context.units.filter(u=>!attached.has(u.id)&&sameLayer(actor,u)&&(context.mode==='mass'?formationNode(actor).id===formationNode(u).id:u.pos===actor.pos));
     // Independent consumables already paid for each participant. Applying the
     // held weapon's frontage again would discard part of the volley's damage.
-    return {participants:ability.itemDoses ?? sharedParticipants(actor,cohort,width,target),abilityDamage:{...channelBonuses,power:ability.power,accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect,damageScale,channel:ability.channel,penetration:ability.penetration,delivery:ability.delivery,areaExposure:ability.areaExposure},ranged:ability.delivery!=='melee'};
+    return {participants:ability.itemDoses ?? sharedParticipants(actor,cohort,width,target),abilityDamage:{...channelBonuses,power:ability.power,accuracy:skillAccuracyBonus(ability),...effect,damageScale,channel:ability.channel,penetration:ability.penetration,delivery:ability.delivery,areaExposure:ability.areaExposure},ranged:ability.delivery!=='melee'};
   }
-  if (actor.rulesVersion !== 'v2' || !ability.damageBasis) return { abilityDamage: { ...channelBonuses,power:ability.power,accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect, damageScale,channel: ability.channel, penetration: ability.penetration, delivery: ability.delivery, areaExposure: ability.areaExposure }, ranged: ability.delivery ? ability.delivery !== 'melee' : effect.tag === 'ranged' ? true : undefined };
+  if (actor.rulesVersion !== 'v2' || !ability.damageBasis) return { abilityDamage: { ...channelBonuses,power:ability.power,accuracy:skillAccuracyBonus(ability),...effect, damageScale,channel: ability.channel, penetration: ability.penetration, delivery: ability.delivery, areaExposure: ability.areaExposure }, ranged: ability.delivery ? ability.delivery !== 'melee' : effect.tag === 'ranged' ? true : undefined };
   let weapon: Weapon | undefined;
   if (ability.damageBasis === 'weapon') weapon = skillWeapon(actor, ability, context.mode === 'mass' ? formationDistance(actor, target) : context.battlefield ? gridDistance(context.battlefield, actor.pos!, target.pos!) : Math.abs((actor.pos ?? 0) - (target.pos ?? 0)));
   else if (actor.shield) {
@@ -41,7 +41,7 @@ export function skillAttack(context: ObservationContext, actor: Combatant, targe
     weapon = { id: actor.shield.id, name: '盾牌打击', baseDice: rebuildDice(diceAvg(curveAt(power).dmgBase) * bodyProfile(size, actor.damageModel).strength, 6), channel: 'kinetic', penetration: 1 + Math.floor(power / 4), range: 1, tags: [],
       ...(actor.combatModel==='cohort-v2'?{level:power,recipe:{...(actor.shield.recipe??{version:'mechanism-v2.3',mechanism:'shield',power,quality:3,size,seed:actor.shield.id}),...(actor.damageModel==='wounds-v2'?{balanceVersion:'unified-v1' as const}:{})}}:{}) };
   }
-  if (!weapon) return { abilityDamage: { accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect, baseDice: '1d2-2', apDice: undefined, penetration: 0, channel: 'kinetic', weaponBased: true }, ranged: false, participants: 0 };
+  if (!weapon) return { abilityDamage: { accuracy:skillAccuracyBonus(ability),...effect, baseDice: '1d2-2', apDice: undefined, penetration: 0, channel: 'kinetic', weaponBased: true }, ranged: false, participants: 0 };
   if(actor.combatModel==='cohort-v2')weapon=combatWeapon(weapon,actor,target,rules?.weaponOverflow,rules?.damageModel,rules?.overmatch,rules?.overmatchCurve)!;
   const skillBudget = diceAvg(effect.baseDice) + (effect.apDice ? diceAvg(effect.apDice) : 0);
   const channel=weapon.channel??'kinetic';
@@ -55,7 +55,7 @@ export function skillAttack(context: ObservationContext, actor: Combatant, targe
   const cohort = context.units.filter((u) => !attached.has(u.id) && sameLayer(actor, u) && (context.mode === 'mass' ? formationNode(actor).id === formationNode(u).id : u.pos === actor.pos));
   const budget=isCohort(actor)?equipmentBudget*Math.min(1,combatPowerBudget(ability.power??5,actor.damageModel)/combatPowerBudget(weapon.level??5,actor.damageModel)):Math.min(skillBudget,equipmentBudget),scaled=scaledPowerDice(budget);
   return { weaponOverride: weapon, ranged: isRangedWeapon(weapon), participants: itemParticipants(ability, sharedParticipants(actor, cohort, width, target, isRangedWeapon(weapon))),
-    abilityDamage: { ...channelBonuses,accuracy:bonusSteps(ability.bonuses,'accuracy'),...effect, baseDice:actor.combatModel==='cohort-v2'?scaled.dice:cappedDice(budget),damageScale:actor.combatModel==='cohort-v2'?scaled.scale:undefined,apDice: undefined, channel, penetration: Math.max(0,(weapon.penetration ?? 1 + Math.floor((weapon.level ?? 5) / 2)) + bonusRating(ability.bonuses,'penetration',channel)), weaponBased: true } };
+    abilityDamage: { ...channelBonuses,accuracy:skillAccuracyBonus(ability),...effect, baseDice:actor.combatModel==='cohort-v2'?scaled.dice:cappedDice(budget),damageScale:actor.combatModel==='cohort-v2'?scaled.scale:undefined,apDice: undefined, channel, penetration: Math.max(0,(weapon.penetration ?? 1 + Math.floor((weapon.level ?? 5) / 2)) + bonusRating(ability.bonuses,'penetration',channel)), weaponBased: true } };
 }
 /** 低预算不能被最少一枚d6抬高；向下选取可表达且不超过预算的均值。 */
 function cappedDice(budget: number): string {

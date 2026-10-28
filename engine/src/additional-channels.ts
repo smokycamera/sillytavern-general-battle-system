@@ -1,3 +1,4 @@
+import { damageFactors, mergeDamageFactors } from './damage-policy.js';
 import type { AttackOpts } from './damage.js';
 import type { DamageChannel, Weapon } from './types.js';
 import { channelPoints, bonusMultiplier, bonusRating, trainingDamage } from './enhancements.js';
@@ -22,6 +23,11 @@ export function additionalChannelBudgets(opts: Omit<AttackOpts, 'rng'>, weapon?:
   }
   if (skill) common *= bonusMultiplier(skill, 'damage') / bonusMultiplier(skill, 'damage', primary);
   const result: AdditionalChannelBudget[] = [];
+  const additive = opts.rules.damageStackModel === 'additive-positive-v1';
+  const general = additive ? mergeDamageFactors(damageFactors(opts, weapon)) : 0;
+  const embedded = additive ? damageFactors(opts, weapon, primary) : undefined;
+  const base = embedded ? embedded[0]! * embedded[1]! : 0;
+  const additiveBase = base > 0 ? (opts.abilityDamage?.damageScale ?? weapon?.damageScale ?? 1) * trainingDamage(opts.attacker.level, opts.rules) / base : 0;
   for (const channel of ['kinetic', 'thermal', 'arcane'] as const) {
     if (channel === primary) continue;
     const unitPart = channelPoints(own, 'damage', channel) * (gradedNumbers(opts.attacker) ? multiplierPerPoint(opts.attacker.level) : .05);
@@ -31,11 +37,12 @@ export function additionalChannelBudgets(opts: Omit<AttackOpts, 'rng'>, weapon?:
     const wornPart = wornGeneral ? Math.max(0, 1 + (worn[(channel + 'Damage') as 'kineticDamage'] ?? 0)) / wornGeneral - 1 : -1;
     // 与原有单位/武器倍率同样逐来源封顶2倍；负修正不能因相乘而重新变成正伤害。
     const factor = (part: number) => Math.max(0, Math.min(2, 1 + part));
-    const fraction = Math.max(0, factor(unitPart) * factor(weaponPart) * factor(skillPart) * Math.max(0, 1 + wornPart) * (1 + channelBuffDamage(opts.attacker,channel)) - 1);
-    if (!fraction || !common) continue;
+    const fraction = additive ? Math.max(0, mergeDamageFactors(damageFactors(opts, weapon, channel)) * (1 + channelBuffDamage(opts.attacker,channel)) - general) : Math.max(0, factor(unitPart) * factor(weaponPart) * factor(skillPart) * Math.max(0, 1 + wornPart) * (1 + channelBuffDamage(opts.attacker,channel)) - 1);
+    const channelBase = additive ? additiveBase : common;
+    if (!fraction || !channelBase) continue;
     const penetrationDelta = (recipe ? equipmentRating(recipe, 'penetration', channel) - equipmentRating(recipe, 'penetration', primary) : 0)
       + bonusRating(skill, 'penetration', channel) - bonusRating(skill, 'penetration', primary);
-    result.push({ channel, scale: common * fraction, penetrationDelta });
+    result.push({ channel, scale: channelBase * fraction, penetrationDelta });
   }
   return result;
 }

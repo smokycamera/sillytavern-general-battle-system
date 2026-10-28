@@ -7,14 +7,14 @@ import { splitSkillLevel } from './skill-notation.js';
 
 const ARMOR_TIERS = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
 export function itemSpecificationLabel(spec: ItemSpecification): string {
-  if (spec.kind === 'item') return ITEM_FORM_NAMES[spec.form] + '·' + itemSpecText({ version: 'items-v1', form: spec.form, power: spec.power, seed: '', active: spec.active, traits: spec.traits, bonuses: spec.bonuses });
+  if (spec.kind === 'item') return ITEM_FORM_NAMES[spec.form] + '·' + itemSpecText({ version: 'items-v1', form: spec.form, power: spec.power, seed: '', active: spec.active, traits: spec.traits, bonuses: spec.bonuses, barrierPower: spec.barrierPower });
   const name = spec.kind === 'weapon' ? WEAPON_CLASSES[spec.mechanism]?.name ?? spec.mechanism : spec.kind === 'armor' ? ARMOR_TIERS[spec.tier] : SHIELD_CLASSES[spec.mechanism ?? 'shield'].name;
   return `${name}L${spec.power}${enhancementLabel(spec.bonuses)}${spec.kind === 'weapon' && spec.enchantment && spec.enchantment !== 'none' ? ' · ' + (spec.enchantment === 'arcane' ? '奥术转化' : '热能转化') : ''}`;
 }
 
 /** 名称只是显示前缀；只读取分隔符后明确写出的机制，不按名称猜装备。 */
 export function splitItemSpecification(text: string): { name?: string; spec: string } {
-  const value = text.trim(), colon = value.search(/[:：]/);
+  const value = text.trim(), colon = value.search(/[:：﹕]/);
   const separator = colon >= 0 ? colon : value.search(/[·｜|/／]/);
   if (separator < 0) return { spec: value };
   const name = value.slice(0, separator).trim(), spec = value.slice(separator + 1).trim();
@@ -85,6 +85,33 @@ function passiveSpecification(base: string, power: number, suffix: string): Extr
 }
 
 /** Each explicitly graded trait keeps its grade; the highest grade anchors numeric bonuses. */
+function barrierPassiveSpecification(text: string, form?: ItemForm): Extract<ItemSpecification, { kind: 'item' }> | undefined {
+  if (!text.includes('屏障') || form !== 'worn' && !/^(?:佩戴|饰品)[lL]/.test(text)) return;
+  const at = text.search(/[+-]\d/), body = at < 0 ? text : text.slice(0, at), suffix = at < 0 ? '' : text.slice(at);
+  let power: number | undefined, barrierPower: number | undefined;
+  const traits: { id: string; level?: number }[] = [];
+  for (const token of body.split(/[、,，+]/).map(s => s.trim()).filter(Boolean)) {
+    const match = token.match(/^(.+?)\s*[lL]\s*(\d{1,2})$/);
+    if (!match) {
+      const plain = narrativeTrait(token);
+      if (plain.kind === 'trait' && !isGradedTrait(plain.id)) { traits.push({ id: canonicalTraitId(plain.id) }); continue; }
+      throw Error('佩戴效果须写等级，如佩戴L4+屏障L4');
+    }
+    const level = Number(match[2]), name = match[1]!.trim();
+    if (level < 1 || level > 10) throw Error('佩戴效果等级须为L1–L10');
+    if (FORM_WORDS[name] === 'worn') { if (power !== undefined) throw Error('佩戴主体等级重复'); power = level; }
+    else if (name === '屏障') { if (barrierPower !== undefined) throw Error('佩戴屏障不能重复填写'); barrierPower = level; }
+    else {
+      const part = passiveSpecification(name, level, '');
+      if (!part?.traits?.length) throw Error('未支持的佩戴效果：' + name);
+      traits.push(...part.traits);
+    }
+  }
+  if (barrierPower === undefined) throw Error('佩戴屏障缺少等级');
+  power ??= Math.max(barrierPower, ...traits.map(t => t.level ?? barrierPower!));
+  const bonuses = parseEnhancementSuffix('L' + power + suffix, 'gear').bonuses;
+  return { kind: 'item', form: 'worn', power, barrierPower, traits, ...(bonuses ? { bonuses } : {}) };
+}
 function mixedPassiveSpecification(text: string): Extract<ItemSpecification, { kind: 'item' }> | undefined {
   const at = text.search(/[+-]\d/), body = at < 0 ? text : text.slice(0, at), suffix = at < 0 ? '' : text.slice(at);
   const tokens = body.split(/[、,，+＋]/).map(token => token.trim()).filter(Boolean);
@@ -180,6 +207,7 @@ type SpecAttributes = { type?: string; quality?: string; body?: string; enchant?
  */
 export function parseItemSpecification(text: string, attrs: SpecAttributes = {}, notes?: string[], options: { item?: boolean } = {}): ItemSpecification {
   const split = splitItemSpecification(text);
+  split.spec = normalizeNarrativeSpec(split.spec);
   let form: ItemForm | undefined = split.name ? FORM_WORDS[split.name] : undefined;
   let spec = split.spec.trim();
   // 形态词可写在效果前。“佩戴L4+4防御”的佩戴就是效果本身，“佩戴破甲L5”的佩戴才是形态词。
@@ -218,7 +246,7 @@ export function parseItemSpecification(text: string, attrs: SpecAttributes = {},
   }
   for (const key of ['quality', 'body', 'enchant', 'stabilized', 'protection'] as const) if (attrs[key] !== undefined) throw new Error(`${key} 只适用于武器、护甲或盾牌`);
   if (attrs.type !== undefined && !['item', 'consumable', 'accessory'].includes(attrs.type)) throw new Error('物品种类与物品属性冲突');
-  const passive = mixedPassiveSpecification(spec) ?? passiveSpecification(base, power, suffix);
+  const passive = barrierPassiveSpecification(spec, form) ?? mixedPassiveSpecification(spec) ?? passiveSpecification(base, power, suffix);
   if (passive) {
     if (form && form !== 'worn') throw new Error('特质写在佩戴道具里；一次性或充能道具写技能机制，如buff夜战专精L5');
     return passive;
@@ -258,9 +286,9 @@ export function splitSpawnItems(value: string, ranges?: [number, number][]): str
     const part = raw.trim();
     if (!part) continue;
     const start = match.index! + raw.length - raw.trimStart().length, end = start + part.length;
-    const last = entries.at(-1), at = last?.search(/[:：]/) ?? -1;
+    const last = entries.at(-1), at = last?.search(/[:：﹕]/) ?? -1;
     const open = last !== undefined && !ITEM_COUNT.test(last) && !hasLevel(at >= 0 ? last.slice(at + 1) : last) && (at >= 0 || traitList(last));
-    if (open && !/[:：]/.test(part)) {
+    if (open && !/[:：﹕]/.test(part)) {
       entries[entries.length - 1] = last + '、' + part;
       if (ranges) ranges[ranges.length - 1]![1] = end;
     } else { entries.push(part); ranges?.push([start, end]); }
@@ -272,8 +300,8 @@ export function spawnItemName(entry: string): string {
   let text = entry.trim();
   const count = text.match(ITEM_COUNT);
   if (count) text = text.slice(0, count.index).trim();
-  const at = text.search(/[:：]/);
-  return at > 0 ? text.slice(0, at).trim() : text.replace(/^[:：]/, '').replace(/\s*[lL]\s*\d.*$/, '').trim();
+  const at = text.search(/[:：﹕]/);
+  return at > 0 ? text.slice(0, at).trim() : text.replace(/^[:：﹕]/, '').replace(/\s*[lL]\s*\d.*$/, '').trim();
 }
 /** “名称:道具spec×件数”；件数省略为1，也接受 x、X、*。武器词条换成对应道具，护甲照旧写在 armor。没写名称时取等级前的文字。 */
 export function parseSpawnItem(entry: string, notes?: string[]): SpawnItem {
@@ -281,7 +309,7 @@ export function parseSpawnItem(entry: string, notes?: string[]): SpawnItem {
   const count = text.match(ITEM_COUNT);
   if (count) { qty = Number(count[1]!.replace(/[０-９]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xfee0))); text = text.slice(0, count.index).trim(); }
   if (!Number.isSafeInteger(qty) || qty < 1) throw new Error('件数须为正整数');
-  const at = text.search(/[:：]/);
+  const at = text.search(/[:：﹕]/);
   const name = at > 0 ? text.slice(0, at).trim() : '', specText = (at >= 0 ? text.slice(at + 1) : text).trim();
   if (!specText && !name) throw new Error('缺少道具名称');
   if (!hasLevel(specText)) return { name: name || specText, qty };
@@ -292,7 +320,7 @@ export function parseSpawnItem(entry: string, notes?: string[]): SpawnItem {
 }
 /** 道具 spec 的规范写法，再解析得到同一个道具。 */
 export function itemSpecificationText(spec: Extract<ItemSpecification, { kind: 'item' }>): string {
-  return itemSpecText({ version: 'items-v1', form: spec.form, power: spec.power, seed: '', active: spec.active, traits: spec.traits, bonuses: spec.bonuses });
+  return itemSpecText({ version: 'items-v1', form: spec.form, power: spec.power, seed: '', active: spec.active, traits: spec.traits, bonuses: spec.bonuses, barrierPower: spec.barrierPower });
 }
 /** 规范写法，与 parseSpawnItem 互逆；各项之间用英文逗号连接。 */
 export function spawnItemText(item: SpawnItem): string {

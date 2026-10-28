@@ -1,4 +1,5 @@
 import { displayNumber } from '../display-number.js';
+import { grantEntryWornBarrier, resetWornBarrier } from '../worn-barrier.js';
 import { prepareRevivalBattle, tryRevive } from '../revival.js';
 import { isArmsV2, armsStatusLabels, shieldUsable, denialReady, denialModifiers, beginArmsActivation, noteArmsFire, armsWeaponReason, validateArmsState, isSprayer, spendSprayerFuel } from '../arms.js';
 import { sprayerFear, sprayerTank } from '../sprayer.js';
@@ -365,7 +366,7 @@ export class SmallBattle {
   start(): void {
     for (const unit of this.combatants) delete unit.regenerationRemainder;
     if (this.started) return;
-    for (const unit of this.combatants) prepareRevivalBattle(unit, true);
+    for (const unit of this.combatants) { prepareRevivalBattle(unit, true); resetWornBarrier(unit); }
     assertBattleCapacity(this.combatants, 'small');
     if (this.battlefield) {
       const prepared = prepareGridDeployment(this.battlefield, this.combatants, this.seed, this.conditions, this.rules.resolutionVersion === 'v2');
@@ -374,6 +375,7 @@ export class SmallBattle {
     this.started = true;
     if (isArmsV2(this.rules.armsModel)) for (const u of this.combatants) if (u.shield && !shieldUsable(u) && u.shieldDurability?.remaining !== 0) this.recordEvent({round:1,kind:'condition',participants:[u.id],text:u.name+'的'+(u.shield.name??'盾牌')+'挂在背上'});
     this.round = 1;
+    for (const unit of this.combatants) { const text = grantEntryWornBarrier(unit, this.rules); if (text) this.recordEvent({round:1,kind:'condition',participants:[unit.id],text}); }
     for (const unit of this.combatants) beginLifestealRound(unit, this.round, true);
     for (const unit of this.combatants) {
       const restored = recoverEntryMorale(unit);
@@ -1837,7 +1839,7 @@ export class SmallBattle {
           try { unit = conjureSkillUnit(effect.templateId, actor.side, id, 'small', ability.bonuses, this.rules.damageModel, this.rules.numericModel) ?? this.summonUnit?.(effect.templateId, actor.side, id); }
           catch { return { ok: false, reason: '召唤模板生成失败，未扣费', resolutions: [], log: '' }; }
           if (!unit) return { ok: false, reason: '召唤模板不可用，未扣费', resolutions: [], log: '' };
-          prepareSkillModel(unit, this.rules); prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules); prepareTraitModel(unit,this.rules); prepareItemModel(unit,this.rules); prepareTraitLevelModel(unit,this.rules); prepareRevivalBattle(unit,true); beginLifestealRound(unit,this.round,true);
+          prepareSkillModel(unit, this.rules); prepareCombatModel(unit, this.rules, summonedMemberLife(unit)); if(this.rules.combatModel)upgradeCombatSkills(unit); prepareResourceModel(unit,this.rules); prepareArmsModel(unit,this.rules); prepareTraitModel(unit,this.rules); prepareItemModel(unit,this.rules); prepareTraitLevelModel(unit,this.rules); prepareRevivalBattle(unit,true); resetWornBarrier(unit); const entryBarrier = grantEntryWornBarrier(unit,this.rules); if(entryBarrier)this.recordEvent({round:this.round,kind:'condition',participants:[unit.id],text:entryBarrier}); beginLifestealRound(unit,this.round,true);
           unit.id = id; unit.summonerId = actor.id; unit.bornRound = this.round;
           if (conjuredTemplate(effect.templateId)) unit.name = `${actor.name}的${unit.name}`;
           const cell = neighbors(this.battlefield, actor.pos!).find((n) => canOccupy(this.battlefield!, [...this.combatants, ...summons], unit, n));
@@ -3661,6 +3663,7 @@ export class SmallBattle {
     if ([...b.hasteSelected].some(id => !b.combatants.some(u => u.id === id)) || [...b.hasteOverwatch].some(([id, scale]) => !b.combatants.some(u => u.id === id) || !Number.isFinite(scale) || scale < 0 || scale > 1)) throw Error('加速动作记录损坏');
     b.reloadCd = new Map(snap.reloadCd ?? []);
     (b as unknown as { started: boolean }).started = !!snap.started;
+    if (b.started) for (const unit of b.combatants) { const text = grantEntryWornBarrier(unit, b.rules); if(text)b.recordEvent({round:b.round,kind:'condition',participants:[unit.id],text}); }
     b.finalizeCasualties();
     if (b.started && b.battlefield && b.rules.resolutionVersion === 'v2') {
       b.feedback = new BattleFeedback(b.round, b.feedbackUnits(), snap.feedback);

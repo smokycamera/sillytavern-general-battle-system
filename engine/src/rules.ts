@@ -162,7 +162,13 @@ export const V38_OVERFLOW_D20: RulePack = { ...V37_OVERFLOW_D20, id: 'v38-overfl
 export const V38_OVERFLOW_TW: RulePack = { ...V37_OVERFLOW_TW, id: 'v38-overflow-tw', name: 'V38 目标环形与范围支援会战', skillTargetModel: 'area-anchor-v1' };
 export const V39_OVERFLOW_D20: RulePack = { ...V38_OVERFLOW_D20, id: 'v39-overflow-d20', name: 'V39 独立屏障容量', barrierModel: 'barrier-layers-v2' };
 export const V39_OVERFLOW_TW: RulePack = { ...V38_OVERFLOW_TW, id: 'v39-overflow-tw', name: 'V39 独立屏障容量会战', barrierModel: 'barrier-layers-v2' };
+export const V40_OVERFLOW_D20: RulePack = { ...V39_OVERFLOW_D20, id: 'v40-overflow-d20', name: 'V40 技能逐级收益与精确连击预览', skillModel: 'skills-v5', attackPreviewModel: 'exact-sequence-v1' };
+export const V40_OVERFLOW_TW: RulePack = { ...V39_OVERFLOW_TW, id: 'v40-overflow-tw', name: 'V40 技能逐级收益与精确连击预览会战', skillModel: 'skills-v5', attackPreviewModel: 'exact-sequence-v1' };
+export const V41_OVERFLOW_D20: RulePack = { ...V40_OVERFLOW_D20, id: 'v41-overflow-d20', name: 'V41 增伤合并、暴击与佩戴屏障', damageStackModel: 'additive-positive-v1', criticalDamageScale: .75, wornBarrierModel: 'entry-once-v1' };
+export const V41_OVERFLOW_TW: RulePack = { ...V40_OVERFLOW_TW, id: 'v41-overflow-tw', name: 'V41 增伤合并、暴击与佩戴屏障会战', damageStackModel: 'additive-positive-v1', criticalDamageScale: .75, wornBarrierModel: 'entry-once-v1' };
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V41_OVERFLOW_D20.id]: V41_OVERFLOW_D20, [V41_OVERFLOW_TW.id]: V41_OVERFLOW_TW,
+  [V40_OVERFLOW_D20.id]: V40_OVERFLOW_D20, [V40_OVERFLOW_TW.id]: V40_OVERFLOW_TW,
   [V39_OVERFLOW_D20.id]: V39_OVERFLOW_D20, [V39_OVERFLOW_TW.id]: V39_OVERFLOW_TW,
   [V38_OVERFLOW_D20.id]: V38_OVERFLOW_D20, [V38_OVERFLOW_TW.id]: V38_OVERFLOW_TW,
   [V37_OVERFLOW_D20.id]: V37_OVERFLOW_D20, [V37_OVERFLOW_TW.id]: V37_OVERFLOW_TW,

@@ -31,7 +31,7 @@ function options(a: Combatant, d: Combatant, rules: RulePack, index = 0): Omit<A
 
 describe('V31 single weapon skill calibration', () => {
   it('covers every generated wound formula once while preserving signed bonuses and effect discounts', () => {
-    for (const formula of [undefined, 'skills-v1', 'skills-v2', 'skills-v3', 'skills-v4'] as const) {
+    for (const formula of [undefined, 'skills-v1', 'skills-v2', 'skills-v3', 'skills-v4', 'skills-v5'] as const) {
       for (const definition of ['物理单体近战', '物理单体近战中毒']) for (const points of [-2, 2]) {
         const abilityBlueprints = [{ id: skillDefinitionId(definition)!, level: 5, bonuses: { damage: points } }];
         const a = unit('a', { abilityBlueprints }, formula), d = unit('d');

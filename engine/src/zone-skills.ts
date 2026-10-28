@@ -6,7 +6,7 @@ import { standardConditionMap } from './conditions.js';
 import { traitRegistry } from './data/traits.js';
 import { parseDice } from './dice.js';
 import { validDefensePower } from './barrier.js';
-import { conditionMagnitudeCap, type SkillModel } from './skill-model.js';
+import { conditionMagnitudeCap, progressiveSkills, type SkillModel } from './skill-model.js';
 
 type ZoneEffect = Extract<EffectOp, { op: 'zone' }>;
 type ZoneStrength = Pick<ZoneEffect, 'power' | 'amount' | 'penetration'>;
@@ -23,21 +23,22 @@ export function validateZoneStrength(zone: { amount?: unknown; penetration?: unk
     if ('defensePower' in e && e.defensePower !== undefined && (!validDefensePower(e.defensePower) || e.op === 'condition' && e.conditionId !== 'blessed')) throw Error('持续区域的防御规格损坏');
     if ('dur' in e && !integer(e.dur,1,99) || 'onHit' in e && e.onHit!==undefined && typeof e.onHit!=='boolean'
       || 'onDamage' in e && e.onDamage!==undefined && typeof e.onDamage!=='boolean') throw Error('持续区域的附加效果时间或前提损坏');
-    if(e.op==='condition' && (!standardConditionMap().has(e.conditionId) || e.saveDC!==undefined&&!integer(e.saveDC,1,30)
+    if(e.op==='condition' && (e.continuousSave!==undefined&&(e.continuousSave!==true||e.saveDC===undefined) || !standardConditionMap().has(e.conditionId) || e.saveDC!==undefined&&!(e.continuousSave ? Number.isFinite(e.saveDC)&&e.saveDC>=1&&e.saveDC<=30 : integer(e.saveDC,1,30))
       || e.potency!==undefined&&!integer(e.potency,1,3) || e.magnitude!==undefined&&(!Number.isFinite(e.magnitude)||e.magnitude<(modern ? 0 : .25)||e.magnitude>(modern ? 16 : 2)))) throw Error('持续区域的附加状态损坏');
     if(e.op==='trait'&&!traitRegistry().get(e.traitId)?.v2SourceReady)throw Error('持续区域的特质损坏');
     if(e.op==='barrier'&&!integer(e.amount,1,1e6))throw Error('持续区域的屏障损坏');
     if(e.op==='heal') { if(e.amount!==undefined) { if(!Number.isFinite(e.amount)||e.amount<1||e.amount>1e6||e.dice!==undefined)throw Error('持续区域的治疗量损坏'); } else parseDice(e.dice); }
     if(e.op==='resource'&&(!e.resource||typeof e.resource!=='string'||!Number.isFinite(e.amount)||e.maximum!==undefined&&e.maximum!=='training'))throw Error('持续区域的资源效果损坏');
     if(e.op==='morale'&&!Number.isFinite(e.amount))throw Error('持续区域的士气效果损坏');
-    if(e.op==='dispel'&&(!['positive','negative'].includes(e.polarity)||!integer(e.count,1,modern ? 10 : 2)))throw Error('持续区域的驱散效果损坏');
-    if(e.op==='push'&&(!integer(e.force,1,modern ? 10 : 4)||e.steps!==1||e.direction!==undefined&&!['away','towards'].includes(e.direction)))throw Error('持续区域的位移效果损坏');
+    if(e.op==='dispel'&&(!['positive','negative'].includes(e.polarity)||!integer(e.count,1,10)))throw Error('持续区域的驱散效果损坏');
+    if(e.op==='push'&&(!integer(e.force,1,10)||e.steps!==1||e.direction!==undefined&&!['away','towards'].includes(e.direction)))throw Error('持续区域的位移效果损坏');
   }
 }
 
 /** 区域不经过普通伤害技能公式；从原配方升级一次，保留身份、冷却与已布置区域。 */
 export function upgradeZoneSkill(ability: Ability, model?: Combatant['damageModel'], formula?: SkillModel): boolean {
-  const version = model === 'wounds-v2' ? formula === 'skills-v4' ? 'skill-zone-v7' : formula === 'skills-v3' ? 'skill-zone-v6' : formula === 'skills-v2' ? 'skill-zone-v5' : formula ? 'skill-zone-v4' : 'skill-zone-v3' : 'skill-zone-v1';
+  const progressive = progressiveSkills(formula);
+  const version = model === 'wounds-v2' ? progressive ? 'skill-zone-v8' : formula === 'skills-v4' ? 'skill-zone-v7' : formula === 'skills-v3' ? 'skill-zone-v6' : formula === 'skills-v2' ? 'skill-zone-v5' : formula ? 'skill-zone-v4' : 'skill-zone-v3' : 'skill-zone-v1';
   let zones = ability.effects.filter((e): e is ZoneEffect => e.op === 'zone');
   if (!zones.length) return false;
   if (!ability.recipe || zones.some(effect => !ability.recipe!.modifiers.includes('zone-' + effect.kind))
@@ -70,15 +71,16 @@ export function upgradeZoneSkill(ability: Ability, model?: Combatant['damageMode
       : bonusSteps(bonuses, 'duration', 5);
     effect.dur = Math.max(1, Math.min(99, effect.dur + duration));
     effect.effects = effect.effects?.map(e => {
-      if (e.op === 'condition' && ['taunted','blinded','confused','charmed'].includes(e.conditionId)) return { ...e, magnitude: 1 };
+      const accuracy = progressive ? (bonuses?.accuracy ?? 0) / 3 : bonusSteps(bonuses,'accuracy');
+      if (e.op === 'condition' && ['taunted','blinded','confused','charmed'].includes(e.conditionId)) return { ...e, magnitude: 1, ...(progressive&&e.saveDC!==undefined?{saveDC:Math.max(1,Math.min(30,e.saveDC+accuracy)),continuousSave:true as const}:{}) };
       if (e.op === 'condition') return { ...e, dur: Math.max(1,Math.min(99,e.dur + (['stunned','restrained','disarmed','silenced'].includes(e.conditionId) ? Math.min(0,bonusSteps(bonuses,'duration',5)) : bonusSteps(bonuses,'duration',5)))),
         magnitude: Math.max(.25,Math.min(conditionMagnitudeCap(formula),(e.magnitude ?? 1)*bonusMultiplier(bonuses,'power'))),
-        ...(e.saveDC === undefined ? {} : {saveDC:Math.max(1,Math.min(30,e.saveDC+bonusSteps(bonuses,'accuracy')))}) };
+        ...(e.saveDC === undefined ? {} : {saveDC:Math.max(1,Math.min(30,e.saveDC+accuracy)),...(progressive?{continuousSave:true as const}:{})}) };
       if (e.op === 'heal' && e.amount !== undefined) return { ...e, amount:Math.max(1,Math.round(e.amount*bonusMultiplier(bonuses,'healing'))) };
       if (e.op === 'barrier') return { ...e, amount:Math.max(1,Math.round(e.amount*bonusMultiplier(bonuses,'power'))),dur:Math.max(1,Math.min(99,e.dur+bonusSteps(bonuses,'duration',5))) };
       if (e.op === 'trait') return { ...e, dur:Math.max(1,Math.min(99,e.dur+bonusSteps(bonuses,'duration',5))) };
-      if (e.op === 'resource') return { ...e, amount:Math.sign(e.amount)*Math.max(0,Math.abs(e.amount)+bonusSteps(bonuses,'resource',5)) };
-      if (e.op === 'morale') return { ...e, amount:Math.round(e.amount*bonusMultiplier(bonuses,'morale')) };
+      if (e.op === 'resource') return { ...e, amount:Math.sign(e.amount)*Math.max(0,Math.abs(e.amount)+(progressive?(bonuses?.resource??0)/5:bonusSteps(bonuses,'resource',5))) };
+      if (e.op === 'morale') return { ...e, amount:progressive?e.amount*bonusMultiplier(bonuses,'morale'):Math.round(e.amount*bonusMultiplier(bonuses,'morale')) };
       return e;
     });
   }
