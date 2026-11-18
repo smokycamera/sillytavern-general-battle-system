@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "3.0.26",
-  "builtAt": "2026-11-18T01:16:14.516Z",
-  "sourceFingerprint": "63beae25ff4f3342907190ea5e0236707d3bb63444b7ac325197221140104a57",
+  "builtAt": "2026-11-18T01:18:10.180Z",
+  "sourceFingerprint": "efcc4778df0cbe0fea239a6df1b91ce0c8607a28674a7a06bdd99d2101c74e20",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -36,9 +36,9 @@
       "sha256": "d7e482a072c030ccf70b23815979df46fcc7c11440f4eb9ea413633dacd9dfb7"
     },
     {
-      "path": "dist/assets/panel-OVba6SQs.js",
-      "bytes": 1435913,
-      "sha256": "1154f45f7de9367fdc43554bdc2d97633eeea8157e36b50dc5b854d726832c6b"
+      "path": "dist/assets/panel-K17UM1qR.js",
+      "bytes": 1435949,
+      "sha256": "6775751427d2bf42420893d9d633a1e2f61d2730966ab8cdf13e9fd170dff326"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -56,9 +56,9 @@
       "sha256": "20df3d3dc1cb9257c08d74bf7fe590d2eddc4499684ec018cf7861afbf776cf9"
     },
     {
-      "path": "dist/assets/worldbooks-BWtIVHdA.js",
-      "bytes": 1298361,
-      "sha256": "18223ab320c23c5aae44e3ef8ec49ce65c5ac283d683b8da91cc65218d154f29"
+      "path": "dist/assets/worldbooks-CrFOLc8F.js",
+      "bytes": 1298389,
+      "sha256": "b7e9528e37dffd43c1996c750b3e0a0b33c7c9de70f4a74125d30a71cf3542ec"
     },
     {
       "path": "docs/README.md",
@@ -588,7 +588,7 @@
     {
       "path": "dist/index.js",
       "bytes": 99477,
-      "sha256": "90d1244641a1d007de467bbf6f5963bed08bae96b0b687148b46f2248ee29ebf"
+      "sha256": "0773719d30a08ab7a1f6dc5ad7ea5a863c05877716e4725bae3ac31eceee9df7"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -653,7 +653,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 48598,
-      "sha256": "9c5078b5b9abda074c339656359f657b0b7ab8b0c3d2c9960fa568d8376166ad"
+      "sha256": "8391bb39ec2fb85c370f53dede032ec00327e8e77786b9a0b45835139f61fae2"
     },
     {
       "path": "scripts/jev-cors-relay.mjs",

@@ -292,7 +292,7 @@ export class SmallBattle {
     for (const unit of this.combatants) { prepareResourceModel(unit, this.rules); prepareArmsModel(unit, this.rules); prepareTraitModel(unit, this.rules); validateTraitModel(unit.traitModel); validateEntrenchment(unit.entrenchedAt); validateTacticalEffort(unit.tacticalEffort, unit.resourceModel); validateItemModel(unit.itemModel); prepareItemModel(unit, this.rules); validateTraitLevelModel(unit.traitLevelModel); prepareTraitLevelModel(unit, this.rules); prepareRevivalBattle(unit); }
     if (this.combatants.some((u) => u.airborne) && (!this.battlefield || this.rules.resolutionVersion !== 'v2')) throw new Error('空中状态需要二维战场');
     this.seed = opts.seed ?? (this.rules.initiativeModel && opts.rng && opts.rng.seed !== 'crypto' ? opts.rng.seed : randomSeed());
-    this.rng = opts.rng ?? (opts.seed || this.rules.resolutionVersion === 'v2' ? new SeededRng(this.seed) : liveRng());
+    this.rng = opts.rng ?? (opts.seed || this.rules.resolutionVersion === 'v2' || this.rules.initiativeModel ? new SeededRng(this.seed) : liveRng());
     this.conditions = new ConditionRegistry(opts.extraConditions ?? []);
     for (const unit of this.combatants) if (unit.airborne && flightMaintenanceReason(unit, this.conditions)) throw new Error('空中存档记录缺少可维持的飞行能力');
     this.traitRegistry = opts.traitRegistry ?? (this.rules.resolutionVersion === 'v2' ? defaultTraitRegistry() : new Map());

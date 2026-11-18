@@ -81,3 +81,11 @@ it('uses the supplied encounter seed for new lightweight small battles', () => {
   }
   expect(start(ids)).toEqual(start([...ids].reverse()));
 });
+
+it('can reproduce a lightweight opening from its automatically generated seed', () => {
+  const original = new SmallBattle({ combatants: units(ids) });
+  original.start();
+  const replay = opening([...ids].reverse(), V42_LITE_D20, original.seed);
+  expect(replay.turnOrder).toEqual(original.turnOrder);
+  expect(replay.rng.next()).toBe(original.rng.next());
+});
