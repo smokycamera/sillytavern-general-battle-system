@@ -2,7 +2,7 @@ import { singleLifeLimit } from '../../engine/src/health-limits.js';
 /** 正文战外绝对赋值。所有修改先在副本校验，装备实物与档案一起提交。 */
 import type { Ability, Combatant, EquipmentSlot, ItemMechanics, ItemSpecification } from '../../engine/src/index.js';
 import { compileItem, equipmentReason, resolveTraitId, traitRegistry, standardConditionMap, parseDice, generateUnit, narrativeTraitLevel, isGradedTrait, validateTraitLevels, type GenerateInput } from '../../engine/src/index.js';
-import { validateEnhancements, validateChannelProtection, type Enhancements } from '../../engine/src/enhancements.js';
+import { parseEnhancementSuffix, validateEnhancements, validateChannelProtection, type Enhancements } from '../../engine/src/enhancements.js';
 import { anchoredWeapon } from '../../engine/src/power-anchors.js';
 import { MAX_PREPARED_SKILLS, compileSkill, resolvePreparedSkills, skillDefinitionId } from '../../engine/src/skill-catalog.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
@@ -52,9 +52,21 @@ function merge(target: ObjectData, patch: ObjectData): ObjectData {
 export function parseUnitSet(attrs: Record<string, string>): ObjectData {
   if (!attrs.id?.trim()) throw Error('unit_set需要已有单位id');
   const data = attrs.data === undefined ? {} : requireObject(JSON.parse(attrs.data), 'data');
-  for (const [key, text] of Object.entries(attrs)) {
+  for (const [key, input] of Object.entries(attrs)) {
     if (['id', 'data', 'reason', 'items'].includes(key)) continue;
     const field = ({ weapon2: 'sidearm', shieldSpec: 'shield', state: 'status', speed: 'speedTier' } as Record<string,string>)[key] ?? key;
+    let text = input;
+    if (field === 'level') {
+      const training = parseEnhancementSuffix('L' + input, 'unit');
+      text = training.text.slice(1);
+      if (training.bonuses) {
+        const existing = data.bonuses;
+        const entries = Object.entries(training.bonuses);
+        if (existing !== undefined && (!object(existing) || Object.keys(existing).length !== entries.length
+          || entries.some(([stat, points]) => existing[stat] !== points))) throw Error('level修正与data.bonuses冲突');
+        data.bonuses = training.bonuses;
+      }
+    }
     let value: unknown = text;
     if (['level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'speedTier'].includes(field)) {
       if (!/^[+-]?\d+(?:\.\d+)?$/.test(text) || !Number.isFinite(Number(text))) throw Error(field + '需要明确的有限数值');
@@ -72,6 +84,7 @@ export function parseUnitSet(attrs: Record<string, string>): ObjectData {
 export function validateUnitPatch(data: ObjectData): void {
   cleanJson(data); keys(data, [...direct, ...special], 'unit_set.data');
   if (!Object.keys(data).length) throw Error('unit_set没有修改字段');
+  if (data.level !== undefined) number(data.level, '训练等级', 1, 10, true);
   if (data.clear !== undefined) normalizeUnitClear(data.clear);
   if (data.enchant !== undefined) enumeration(data.enchant, ['none','thermal','arcane'], '附魔');
   if (data.protection !== undefined) enumeration(data.protection, ['balanced','kinetic','thermal','arcane'], '防护类型');
@@ -369,8 +382,10 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   if (unit.mount !== undefined && typeof unit.mount !== 'boolean') throw Error('mount须为布尔值');
   validateEnhancements(unit.bonuses,'unit');
   for (const key of ['xp','xpValue'] as const) if (unit[key] !== undefined) number(unit[key],key,0);
-  if (data.xp !== undefined || data.xpProgress !== undefined || data.level !== undefined) {
-    const progress = data.xpProgress ?? (data.level !== undefined ? 0 : Math.max(0,oldProgress + Number(data.xp ?? unit.xp ?? 0) - Number(previous.xp ?? 0)));
+  // 同级设置本体修正保留进度；单独指定等级仍沿用显式重置的语义。
+  const resetProgress = data.level !== undefined && (data.level !== previous.level || data.bonuses === undefined);
+  if (data.xp !== undefined || data.xpProgress !== undefined || resetProgress) {
+    const progress = data.xpProgress ?? (resetProgress ? 0 : Math.max(0,oldProgress + Number(data.xp ?? unit.xp ?? 0) - Number(previous.xp ?? 0)));
     number(progress,'xpProgress',0);
     // XP是累计账本；显式改等级不偷偷换算等级。下次经验结算再按本级进度升级。
     unit.xpCurve = 'effort-v1'; unit.xpLevelStart = (unit.xp ?? 0) - progress;
