@@ -67,11 +67,11 @@ ${t.text}`)].join(`
 
 - 已有单位id、实物id和效果来源id不要瞎猜，不要偷懒，需要原封不动输出；不猜id、不用spawn重建同名档案。战斗开始时spawn单位不用deploy，traits必须按照等级锚定分级(除了明确不能分级的)
 - hero的hp/hpMax是生命/最大生命；company的是现员/编制数，载具编队按车辆数，非装甲炮兵归为人形单位。不把总生命当人数。
-- deploy必填id，用于让已有单位参战。已有单位的战外修改统一使用unit_set，必填真实id及至少一项修改字段；morale填写恢复后的士气绝对值，不超过当前moraleMax。
+- deploy必填id，用于让已有单位参战。已有单位的其他战外档案修改使用unit_set，必填真实id及至少一项修改字段；morale填写恢复后的士气绝对值，不超过当前moraleMax。
 - 仅扩编只写hpMax，不自动补员；扩编并补员同时写hpMax、hp。休整等情况需要在恢复hp的同时恢复士气。
 - 同单位的unit_set、learn各合并一条，同实物的reforge合并一条；更新后可同时deploy。learn用于新增或修改指定技能，保留其他技能；unit_set的skills会替换该单位的自有技能列表。
 - count是1—20张单位卡，人数写hpMax。单场上限64张。不同编制/用途单位必须分开建档，重要人物可保留个体，已有档案不自动合并。
-- unit_set用于补员、休整、治疗、复活、清除状态、配装和档案修正等有依据的战外变化；reason可选。复活须同时写state="ready"与正数hp。
+- unit_set用于补员、休整、复活、清除状态、配装和档案修正等有依据的战外变化；reason可选。复活须同时写state="ready"与正数hp。
 - 战外治疗用 <recover id="u1" life="all"/>。life="all" 恢复全部可恢复伤势，也可填写治疗点数，如 life="120"。
 - 便捷属性：name、side、scale、level、xpProgress、hp、hpMax、morale、state、clear、body、mount、speed、weapon、weapon2、armor、shield、skills、traits、items、retired、note。state=ready/dying/dead/routing/fled；side=ally/enemy/neutral；scale=hero/company；speed选1—5，只表示单位本身固有速度，不计装备、负重或坐骑影响；shield写盾牌的“名称:规格”；items把道具交给该单位，写法同spawn的items，只增不减，收回用take。
 - 解除状态效果使用unit_set的clear，按名称填写，多个以逗号分隔，如clear="中毒,诅咒,飞行"。clear="all"解除全部当前状态效果
@@ -276,7 +276,7 @@ add（新物品）/reforge 可用 body、quality、stabilized、protection、enc
 
 编号沿用当前事实清单：u为单位，w为武器，a为护甲或盾牌，c为一次性道具，i为其他道具与物品，k为技能。编号由插件分配，不按名字猜编号；id及data中的身份引用均使用清单给出的编号。
 
-依据本次战斗记录与最新状态叙述，保留{{user}}视角，无变化者合并简述；不改判、不代操作。战斗中、战果待提交或无有效事件时只写正文。仅有据可查的战外变化可在全部格式闭合后追加唯一tb块：开闭标签各一行，每行一个小写自闭合事件，块后结束。已有单位参战用deploy，战外修改用unit_set，id照抄单位资料里的编号，资料里没有的单位不自编编号。unit_set优先使用便捷属性；便捷属性无法表达的修改可写入data，值为经XML转义的JSON对象。事件按世界书给出的XML标签与属性填写。新单位一律用spawn，不写id，编号由插件分配；hero的hp是生命，company的hp是人数/车辆数，count是卡数；本场最多${Ni}张。
+依据本次战斗记录与最新状态叙述，保留{{user}}视角，无变化者合并简述；不改判、不代操作。战斗中、战果待提交或无有效事件时只写正文。仅有据可查的战外变化可在全部格式闭合后追加唯一tb块：开闭标签各一行，每行一个小写自闭合事件，块后结束。已有单位参战用deploy，战外治疗用recover，其他战外档案修改用unit_set，id照抄单位资料里的编号，资料里没有的单位不自编编号。unit_set优先使用便捷属性；便捷属性无法表达的修改可写入data，值为经XML转义的JSON对象。事件按世界书给出的XML标签与属性填写。新单位一律用spawn，不写id，编号由插件分配；hero的hp是生命，company的hp是人数/车辆数，count是卡数；本场最多${Ni}张。
 </turn_contract>`,O$=`【叙述任务】
 依据已记录的开局单位状态与血量、结束单位状态与血量，以及谁对谁造成了伤害，叙述战斗经过和终章。以结束状态为准：阵亡明确写为阵亡，濒死仍然存活，溃退或撤离不视为死亡；编队人数不当作个体血量。缺失的开局或伤害来源不补造，不自定俘虏、战利品或隐藏信息，不照抄骰式，停在玩家下一次决定之前。主控未标指挥官时不替其调兵。`,N0="根据战斗情况描写战斗过程，不得出现血量，骰子点数等词",e2=e=>e===O$||e===N0||e===`【叙述任务】
 `+N0,_$=`【实物清单】此处id用于reforge改造或take扣减，不能用单位id代替；give只入库，换装在面板完成。
