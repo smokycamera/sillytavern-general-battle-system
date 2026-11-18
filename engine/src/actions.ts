@@ -109,6 +109,7 @@ export interface ActionPreview {
   healing?: number;
   exact?: boolean;
   variance?: number;
+  conditionValue?: number;
   minDamage?: number;
   maxDamage?: number;
   /** 0~1 的命中概率；是当前公开属性下的估算，不消耗随机数。 */

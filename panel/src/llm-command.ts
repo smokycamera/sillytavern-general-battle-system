@@ -213,10 +213,11 @@ export function smallCommandChoices(b: SmallBattle, actorId: string): CommandCho
     const add = (label: string, action: GameAction) => choices.push({ id: 'c' + choices.length, label, action });
     for (const option of b.platforms.options(actor)) {
       const action = { type:option.kind === 'select' ? 'select-platform' as const : option.kind,targetId:option.id };
-      add(option.label,{...action,count:option.maxCount});
+      const label = option.label+' · '+b.byId(option.id).name;
+      add(label,{...action,count:option.maxCount});
       if ((option.maxCount ?? 0) > 1) {
         const count = Math.floor(option.maxCount! / 2);
-        add(option.label+'（'+count+'人）',{...action,count});
+        add(label+'（'+count+'人）',{...action,count});
       }
     }
     for (const option of b.getActionOptions(actorId)) {
@@ -261,7 +262,7 @@ export function massCommandChoices(b: MassBattle, actorId: string): CommandChoic
 function executeSmall(b: SmallBattle, actorId: string, a: GameAction): void {
   const target = a.targetId!;
   switch (a.type) {
-    case 'board': case 'leave': case 'select-platform': b.platforms.act(b.byId(actorId),a.type === 'select-platform' ? 'select' : a.type,target,a.count); break;
+    case 'board': case 'leave': case 'merge': case 'select-platform': b.platforms.act(b.byId(actorId),a.type === 'select-platform' ? 'select' : a.type,target,a.count); break;
     case 'move': if (b.battlefield) b.moveTo(actorId, a.cell as number); else b.move(actorId, a.direction!); break;
     case 'attack': b.attack(actorId, target, { weaponMode: a.weaponMode }); break;
     case 'charge': b.attack(actorId, target, { charge: true }); break;

@@ -5,7 +5,7 @@ import { formationChoices } from './formation-orders.js';
 import { publicBattleEvents } from './battle-reports.js';
 
 export interface GameAction {
-  type: 'move' | 'attack' | 'charge' | 'ability' | 'brace' | 'overwatch' | 'reload' | 'suppress' | 'retreat' | 'takeoff' | 'land' | 'climb' | 'structure' | 'gate' | 'haste' | 'end_turn' | 'auto' | 'board' | 'leave' | 'select-platform';
+  type: 'move' | 'attack' | 'charge' | 'ability' | 'brace' | 'overwatch' | 'reload' | 'suppress' | 'retreat' | 'takeoff' | 'land' | 'climb' | 'structure' | 'gate' | 'haste' | 'end_turn' | 'auto' | 'board' | 'leave' | 'select-platform' | 'merge';
   count?: number;
   cell?: number | string;
   direction?: 'advance' | 'withdraw';
@@ -123,7 +123,7 @@ export function executeSmallGameAction(b: SmallBattle, actorId: string, a: GameA
   if (a.targetId && a.targetId !== actorId && !a.targetId.startsWith('cell:') && !b.rosterInView('ally').some(u => u.id === a.targetId)) throw Error('目标不在玩家可见范围内');
   const target = () => { if (!a.targetId) throw Error('请提供 targetId'); return a.targetId; };
   switch (a.type) {
-    case 'board': case 'leave': case 'select-platform': b.platforms.act(actor,a.type === 'select-platform' ? 'select' : a.type,target(),a.count); break;
+    case 'board': case 'leave': case 'merge': case 'select-platform': b.platforms.act(actor,a.type === 'select-platform' ? 'select' : a.type,target(),a.count); break;
     case 'move':
       if (b.battlefield) b.moveTo(actorId, gameCell(b, a.cell));
       else { if (a.direction !== 'advance' && a.direction !== 'withdraw') throw Error('此战场的移动指令需要 direction'); b.move(actorId, a.direction); }

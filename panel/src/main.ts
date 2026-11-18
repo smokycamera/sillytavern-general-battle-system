@@ -3307,9 +3307,9 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   },
   'small-platform': (el) => {
     const b = state.small, actor = b?.active, kind = el.dataset.kind;
-    if (!b || !actor || actor.side !== 'ally' || actor.id !== el.dataset.actor || !['leave','select','board'].includes(kind ?? '')) throw Error('骑乘行动者已变化');
+    if (!b || !actor || actor.side !== 'ally' || actor.id !== el.dataset.actor || !['leave','select','board','merge'].includes(kind ?? '')) throw Error('骑乘行动者已变化');
     const count = el.parentElement?.querySelector<HTMLInputElement>('input[data-ride-count]');
-    b.platforms.act(actor,kind as 'leave'|'select'|'board',el.dataset.id!, count ? count.valueAsNumber : undefined);
+    b.platforms.act(actor,kind as 'leave'|'select'|'board'|'merge',el.dataset.id!, count ? count.valueAsNumber : undefined);
     tacticalView.selectedId = b.active?.id; tacticalView.targetId = undefined;
     tacticalView.cell = undefined; tacticalView.mode = 'move';
   },
