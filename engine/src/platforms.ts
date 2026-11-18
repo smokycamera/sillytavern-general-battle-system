@@ -1,15 +1,15 @@
 import { enhancementLabel, parseEnhancementSuffix, validateEnhancements, type Enhancements } from './enhancements.js';
 import type { Combatant } from './types.js';
 
-export const platformKinds = { animal: '坐骑', open: '开放载具', transport: '运输载具' } as const;
+export const platformKinds = { animal: '坐骑', open: '开放载具', transport: '封闭载具' } as const;
 export interface Platform { kind: keyof typeof platformKinds; power: number; bonuses?: Enhancements }
 export interface Ride { platformId: string; mode: 'mount' | 'aboard' }
 export type PlatformUnit = Pick<Combatant, 'id' | 'name' | 'side' | 'body' | 'scale' | 'hp' | 'platform' | 'seats' | 'ride'>;
 
 export function parsePlatform(text: string): Platform {
   const spec = parseEnhancementSuffix(text, 'unit');
-  const match = /^(坐骑|开放载具|运输载具)L(10|[1-9])$/i.exec(spec.text);
-  if (!match) throw Error('platform 须为坐骑、开放载具或运输载具及 L1–L10 规格');
+  const match = /^(坐骑|开放载具|封闭载具|运输载具)L(10|[1-9])$/i.exec(spec.text);
+  if (!match) throw Error('platform 须为坐骑、开放载具或封闭载具及 L1–L10 规格');
   const kind = match[1] === '坐骑' ? 'animal' : match[1] === '开放载具' ? 'open' : 'transport';
   return { kind, power: Number(match[2]), ...(spec.bonuses ? { bonuses: spec.bonuses } : {}) };
 }

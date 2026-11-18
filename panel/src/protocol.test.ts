@@ -79,7 +79,7 @@ it('80人按一支编队表达；大量单位、错误count和超长事件整批
     expect(result.errors.join('')).toMatch(/编队|人数|单位|事件/);
   }
   const examples = [CORE_PROTOCOL, ...PROMPT_CARDS.map((c) => c.content)].flatMap((text) => text.match(/<tb>(?:\s*<[a-z_]+\s[^<>]*\/>\s*)+<\/tb>/g) ?? []);
-  expect(examples).toHaveLength(8);
+  expect(examples).toHaveLength(10);
   for (const text of examples) expect(parseProtocol(text).errors, text).toEqual([]);
   const effectSection = PROMPT_CARDS.map(c=>c.content).join('\n').match(/## 获得与解除效果\n([\s\S]*?)\n## 特质traits/)![1]!;
   const effectExample = effectSection.slice(effectSection.indexOf('示例：') + '示例：'.length);

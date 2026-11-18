@@ -86,7 +86,7 @@
 - 必填name、side（ally/enemy/neutral）、scale（hero/company）。company还必填hpMax；填写hp必须同时填写hpMax。count是卡数。
 - neutral为第三方，与我方、敌方均敌对。
 - level为训练1—10。weapon主武器、weapon2副武器均支持下列种类；armor用护甲规格，shield="名称:规格"，如shield="塔盾:大盾L5+2防御"。
-- 坐骑、车辆可单独建档。platform 写“类别L等级±修正”，类别选坐骑、开放载具、运输载具。乘员外露的车辆选开放载具，乘员在车舱内的 APC 等选运输载具，两类都能按 seats 搭载单位。L 按现有通用规格等级锚定，修正沿用单位可用方向，每项取 −10 到 +10 整数。level 写生物训练或车组训练。武器、护甲、技能各用自己的规格等级。未写 platform 的车辆沿用原综合等级。
+- 坐骑、车辆可单独建档。platform 写“类别L等级±修正”，类别选坐骑、开放载具、封闭载具。乘员外露的车辆选开放载具，乘员在车舱内的 APC 等选封闭载具，两类都能按 seats 搭载单位。L 按现有通用规格等级锚定，修正沿用单位可用方向，每项取 −10 到 +10 整数。level 写生物训练或车组训练。武器、护甲、技能各用自己的规格等级。未写 platform 的车辆沿用原综合等级。
 - 坐骑和车辆的 traits、skills 按现有特质和技能写在其自身档案。坐骑或车辆自有的主武器、副武器、护甲、盾和携带道具，分别写在自身的 weapon、weapon2、armor、shield 和 items。骑手和步兵的个人装备写在各自单位卡，下马或下车后仍随本人。车辆用 body="vehicle"。骑射适用于生物坐骑，车辆行进射击用车载武器的稳定装置。非装甲炮兵仍按人形单位建档。
 - seats 写每匹或每辆可搭载的人数，省略时为 1。生物坐骑计入骑手，车辆座位数不含固定车组。个人占 1 位，步兵编队按现员占位。
 - 让一张单位卡使用专属坐骑或车辆，在该单位的 spawn 或 unit_set 写 mount="平台单位编号"。双方共用一次激活。让多张友军卡乘坐独立行动的平台，在各乘员卡上写 aboard="平台单位编号"。同一平台一次采用一种方式。mount="false" 解除附挂，aboard="false" 表示离开独立平台。旧写法 mount="true" 沿用原骑乘状态。
@@ -141,7 +141,7 @@ add（新物品）/reforge 可用 body、quality、stabilized、protection、enc
 </example>
 <example situation="一辆 APC 与一个八人机械化步兵班">
 <tb>
-<spawn name="渡鸦号" side="ally" scale="hero" body="vehicle" level="3" platform="运输载具L5+4防御-1速度" seats="8" weapon="车载轻机枪:步枪L5" armor="车体装甲:重甲L5" skills="烟幕释放:烟幕L3"/>
+<spawn name="渡鸦号" side="ally" scale="hero" body="vehicle" level="3" platform="封闭载具L5+4防御-1速度" seats="8" weapon="车载轻机枪:步枪L5" armor="车体装甲:重甲L5" skills="烟幕释放:烟幕L3"/>
 <spawn name="青原机械化步兵班" side="ally" scale="company" hpMax="8" level="2" aboard="渡鸦号" weapon="制式步枪:步枪L5" armor="防弹衣:中甲L4"/>
 </tb>
 </example>

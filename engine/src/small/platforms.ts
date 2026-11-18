@@ -1,4 +1,4 @@
-import { boardingReason, unitCount, type Ride } from '../platforms.js';
+import { boardingReason, platformKinds, unitCount, type Ride } from '../platforms.js';
 import type { Combatant } from '../types.js';
 import { canOccupy, neighbors } from './spatial.js';
 import type { SmallBattle } from './battle.js';
@@ -10,6 +10,12 @@ export class SmallPlatforms {
   private get units() { return this.battle.combatants; }
   carrier(u: Combatant): Combatant | undefined {
     return u.ride && this.units.find(p => p.id === u.ride!.platformId);
+  }
+  role(u: Combatant): string {
+    if (u.platform) return platformKinds[u.platform.kind];
+    const carrier = this.carrier(u);
+    if (carrier?.platform) return carrier.platform.kind === 'animal' ? '骑手' : '乘员';
+    return '';
   }
   mover(u: Combatant): Combatant {
     return u.ride?.mode === 'mount' ? this.carrier(u) ?? u : u;

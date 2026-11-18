@@ -1858,7 +1858,7 @@ function renderSmall(): string {
   const banner = over ? `<div class="banner ${b.winner() === 'ally' ? 'win' : 'lose'}">${b.winner() === 'ally' ? '⚔ 战斗胜利' : b.winner() === 'neutral' ? '第三方获胜，我方失败' : b.winner() === 'draw' ? '僵局' : '⚔ 战斗失败'}｜我方原始击杀经验 ${displayNumber(b.xpGained)}（成长另行折算）</div>` : '';
   const act = b.active;
   const proto = act?.id === state.protagonistId;
-  const foes = b.combatants.filter((c) => c.side !== act?.side && c.status !== 'dead' && c.status !== 'fled');
+  const foes = b.visibleCombatants('ally').filter((c) => c.side !== act?.side && c.status !== 'dead' && c.status !== 'fled');
   const actionOptions = act ? b.getActionOptions(act.id) : [];
   const optionById = (id: string) => actionOptions.find((option) => option.id === id);
   const weaponOption = optionById('weapon');
@@ -1881,7 +1881,7 @@ function renderSmall(): string {
       : sidearm?.enabled
         ? `｜主武器不可：${primary?.reason ?? '不可用'}；副武器可用`
         : `｜不可攻击：${primary?.reason ?? sidearm?.reason ?? '没有合法武器'}`;
-    return `<option value="${esc(f.id)}" ${selectedTargetId === f.id ? 'selected' : ''}>${esc(unitLabel(f, `（等级${f.level}·生命${displayNumber(f.hp)}/${displayNumber(f.base.hpMax)}）`))}（距${b.dist(act!, f)}${esc(availability)}）</option>`;
+    return `<option value="${esc(f.id)}" ${selectedTargetId === f.id ? 'selected' : ''}>${esc([unitLabel(f), b.platforms.role(f), `（等级${f.level}·生命${displayNumber(f.hp)}/${displayNumber(f.base.hpMax)}）`].filter(Boolean).join(' '))}（距${b.dist(act!, f)}${esc(availability)}）</option>`;
   }).join('');
   const abilityBtns = (act ? battleAbilities(act) : [])
     .map((a) => {
@@ -2018,7 +2018,7 @@ function renderAbilityDialog(): string {
     : targets.length
       ? `<select data-role="ability-confirm-target">${targets.map((u) => {
           const distance = d.battle === 'small' ? `·距${(b as SmallBattle).dist(actor, u)}` : `·${(b as MassBattle).zoneOf(u)}/${(b as MassBattle).rankOf(u) === 'front' ? '前排' : (b as MassBattle).rankOf(u) === 'rear' ? '后排' : '预备队'}`;
-          return `<option value="${esc(u.id)}" ${u.id === selected ? 'selected' : ''}>${esc(unitLabel(u, `（生命${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}${distance}）`))}</option>`;
+          return `<option value="${esc(u.id)}" ${u.id === selected ? 'selected' : ''}>${esc([unitLabel(u), isMassBattle(b) ? '' : b.platforms.role(u), `（生命${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}${distance}）`].filter(Boolean).join(' '))}</option>`;
         }).join('')}</select>`
       : '<span class="tag">无需选择</span>';
   // V15 编队齐用按件数：显示对所选目标本次实际消耗的件数。

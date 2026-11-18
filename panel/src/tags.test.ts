@@ -170,11 +170,11 @@ describe('AI 建议标签解析', () => {
     expect(plain.weapon2Name).toBeUndefined();
   });
 
-  it('世界书格式与战报演出常驻，八个完整短例及五条效果示例均通过正式解析，count按卡数生成，道具示例全部采用', () => {
+  it('世界书格式与战报演出常驻，十个完整短例及五条效果示例均通过正式解析，count按卡数生成，道具示例全部采用', () => {
     const entries = Object.values(wbJson.entries);
     expect(entries.filter((e) => e.constant).map((e) => e.uid)).toEqual([0, 1, 5, 8]);
     const blocks = entries.flatMap((e) => e.content.match(/<tb>(?:\s*<[a-z_]+\s[^<>]*\/>\s*)+<\/tb>/g) ?? []);
-    expect(blocks).toHaveLength(8);
+    expect(blocks).toHaveLength(10);
     const effectSection = wbJson.entries['5'].content.match(/## 获得与解除效果\n([\s\S]*?)\n## 特质traits/)?.[1];
     expect(effectSection).toBeDefined();
     const effectExample = effectSection!.slice(effectSection!.indexOf('示例：') + '示例：'.length);
