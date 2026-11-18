@@ -2372,7 +2372,7 @@ function renderNarrativeProposals(): string {
 }
 
 function suggestionLabel(s: Suggestion): string {
-  return { take: '减少物品', add: '新增或补充物品', learn: '学习技能', give: '转移物品', reforge: '物品改造', effect: '效果变更', bless: '明确祝福', unbless: '撤销祝福', affect: '增减益', unaffect: '解除效果', status: '状态', xp: '经验', field: '环境', spawn: '遭遇', deploy: '选择编制', 'unit-update': '编制更新', 'unit-set': '完整单位修改' }[s.kind];
+  return { take: '减少物品', add: '新增或补充物品', learn: '学习技能', give: '转移物品', reforge: '物品改造', effect: '效果变更', bless: '明确祝福', unbless: '撤销祝福', affect: '增减益', unaffect: '解除效果', status: '状态', xp: '经验', field: '环境', spawn: '遭遇', deploy: '选择编制', recover: '战外治疗', 'unit-update': '编制更新', 'unit-set': '完整单位修改' }[s.kind];
 }
 
 function suggestionDesc(s: Suggestion, batch: Suggestion[] = []): string {
@@ -2399,6 +2399,7 @@ function suggestionDesc(s: Suggestion, batch: Suggestion[] = []): string {
     case 'xp': return `剧情经验 +${displayNumber(s.amount)} 经验${s.reason ? `（${s.reason}）` : ''}`;
     case 'field': return `战场环境设为「${FIELD_LABELS[s.env] ?? s.env}${s.light === 'night' && s.env !== 'night' ? ' / 夜间' : ''}」（开战时生效）${s.note ? `——${s.note}` : ''}`;
     case 'deploy': return `让${unitName(s.id, s.name)}参战`;
+    case 'recover': return s.life === 'all' ? `治疗${unitName(s.id)}的全部可恢复伤势` : `为${unitName(s.id)}提供${displayNumber(s.life)}点治疗`;
     case 'unit-set': {
       // 编号不在档案里时按入账规则说明：同名档案优先，否则写全新单位字段的会新建入档。
       const name = typeof s.data.name === 'string' ? s.data.name : undefined, known = storageRecordByRef(s.id) ?? storageRecordByRef(undefined, name);
@@ -2852,6 +2853,7 @@ function markProcessed(raw: string): void {
 async function approveSuggestion(s: Suggestion): Promise<void> {
   if (['take', 'add', 'give', 'unit-set', 'effect', 'bless', 'unbless', 'affect', 'unaffect', 'reforge', 'learn'].includes(s.kind)) throw new Error('物品数量变更、转移、完整单位修改、改造和增减益请通过剧情档案同步整批审查，旧无来源记录不能直接执行');
   switch (s.kind) {
+    case 'recover': throw new Error('战外治疗请通过剧情档案同步整批审查');
     case 'status': {
       requireArchiveWritable();
       const stored = storageRecordByRef(undefined, s.target);

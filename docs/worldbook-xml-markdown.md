@@ -32,11 +32,12 @@
 
 - 已有单位id、实物id和效果来源id不要瞎猜，不要偷懒，需要原封不动输出；不猜id、不用spawn重建同名档案。战斗开始时spawn单位不用deploy，traits必须按照等级锚定分级(除了明确不能分级的)
 - hero的hp/hpMax是生命/最大生命；company的是现员/编制数，载具编队按车辆数，非装甲炮兵归为人形单位。不把总生命当人数。
-- deploy必填id，用于让已有单位参战。已有单位的战外修改统一使用unit_set，必填真实id及至少一项修改字段；morale填写恢复后的士气绝对值，不超过当前moraleMax。
+- deploy必填id，用于让已有单位参战。已有单位的其他战外档案修改使用unit_set，必填真实id及至少一项修改字段；morale填写恢复后的士气绝对值，不超过当前moraleMax。
 - 仅扩编只写hpMax，不自动补员；扩编并补员同时写hpMax、hp。休整等情况需要在恢复hp的同时恢复士气。
 - 同单位的unit_set、learn各合并一条，同实物的reforge合并一条；更新后可同时deploy。learn用于新增或修改指定技能，保留其他技能；unit_set的skills会替换该单位的自有技能列表。
 - count是1—20张单位卡，人数写hpMax。单场上限64张。不同编制/用途单位必须分开建档，重要人物可保留个体，已有档案不自动合并。
-- unit_set用于补员、休整、治疗、复活、清除状态、配装和档案修正等有依据的战外变化；reason可选。复活须同时写state="ready"与正数hp。
+- unit_set用于补员、休整、复活、清除状态、配装和档案修正等有依据的战外变化；reason可选。复活须同时写state="ready"与正数hp。
+- 战外治疗用 <recover id="u1" life="all"/>。life="all" 恢复全部可恢复伤势，也可填写治疗点数，如 life="120"。
 - 便捷属性：name、side、scale、level、xpProgress、hp、hpMax、morale、state、clear、body、mount、speed、weapon、weapon2、armor、shield、skills、traits、items、retired、note。state=ready/dying/dead/routing/fled；side=ally/enemy/neutral；scale=hero/company；speed选1—5，只表示单位本身固有速度，不计装备、负重或坐骑影响；shield写盾牌的“名称:规格”；items把道具交给该单位，写法同spawn的items，只增不减，收回用take。
 - 解除状态效果使用unit_set的clear，按名称填写，多个以逗号分隔，如clear="中毒,诅咒,飞行"。clear="all"解除全部当前状态效果
 - 常用修改优先使用便捷属性。

@@ -38,12 +38,15 @@ describe('升级与正文资料', () => {
     const records = [hero, company].map(u => unitRecordFromCombatant(u));
     const save: NarrativeSave = { storage: records, rosterIds: [hero.id, company.id] };
     const rows = (text: string) => text.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
-    const out = rows(narrativeProjection(save));
+    const projection = narrativeProjection(save), out = rows(projection);
     expect(out.find(r => r.name === 'hero')).toMatchObject({ xpProgress: .125, xpRequired: 1600, morale: '该单位士气锁定，请勿在tb修改' });
-    expect(out.find(r => r.name === 'company').morale).toBe(25);
+    expect(out.find(r => r.name === 'hero')).not.toHaveProperty('moraleMax');
+    expect(projection).toContain('"morale":25,"moraleMax":80');
     expect(out.every(r => !Object.hasOwn(r, 'xp'))).toBe(true);
+    company.morale = 0; company.base.moraleMax = 90;
     const during = rows(narrativeProjection({ ...save, battle: { kind: 'small', snap: { seed: 'context', combatants: [hero, company], fieldTags: ['plains'] } } }));
     expect(during.find(r => r.name === 'hero').morale).toBe('该单位士气锁定，请勿在tb修改');
+    expect(during.find(r => r.name === 'company')).toMatchObject({ morale: 0, moraleMax: 90 });
     const withoutSnapshot = { ...records[0]!, snapshot: undefined };
     expect(rows(narrativeProjection({ storage: [withoutSnapshot] }))[0]).toHaveProperty('xpRequired', 1600);
     hero.level = 10;

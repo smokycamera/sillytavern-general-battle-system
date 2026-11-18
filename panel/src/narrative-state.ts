@@ -21,6 +21,7 @@ import { mapNarrativeReferences, narrativeIds, prepareNarrativeIds, type Narrati
 import { newUnitId, planNewUnits, type NewUnitPlan } from './narrative-new-units.js';
 import { handOverItems, type HandOver } from './item-handover.js';
 import { weaponItemSpecification } from './item-spec.js';
+import { treatUnitRecord } from './post-battle-recovery.js';
 
 export interface MessageEnvelope {
   characterId: string;
@@ -230,7 +231,7 @@ function mergePatch(target: Record<string, unknown>, source: Record<string, unkn
     } else target[key] = structuredClone(value);
   }
 }
-/** 补员/状态与单位字段：同一档案的 unit_set 合并后一次赋值，unit_update 并入其中或单独更新。 */
+/** 合并同一档案的字段修改，再按更新后的编队和伤势计算治疗。 */
 function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: Map<string, Record<string, unknown>>, proposalId: string, registry: Registry, context: UnitSetContext): NarrativeSave {
   let next = save, records = next.storage ?? [];
   // 只交道具（items）的 unit_set 不改档案字段，道具在入账最后交出。
@@ -280,6 +281,16 @@ function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: M
     }
     if (Object.keys(patch).length) next = applyUnitSet(next, id, patch, proposalId, context);
   }
+  const recoveries = new Map<string, number | 'all'>();
+  for (const event of events) if (event.kind === 'recover') {
+    const previous = recoveries.get(event.id);
+    if (previous !== undefined && previous !== event.life) throw Error('同一单位的治疗量冲突，请每个单位只写一条 recover');
+    recoveries.set(event.id, event.life);
+  }
+  if (recoveries.size) next.storage = next.storage!.map((record) => {
+    const life = recoveries.get(record.id);
+    return life === undefined ? record : treatUnitRecord(record, registry, life, proposalId);
+  });
   return next;
 }
 /** 学习技能与剧情效果来源；来源编号带事件序号，同一回复重复学习需合并。 */
@@ -358,9 +369,9 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   assertCompatibleUnitChanges([...proposal.events, ...[...fresh.patches].map(([id, data]): Suggestion => ({ kind: 'unit-set', id, data, raw: '' }))]);
   for (const event of proposal.events) {
     const recipients = event.kind === 'give' ? event.to ?? [] : event.kind === 'add' ? event.to ? [event.to] : []
-      : ['unit-set', 'unit-update', 'deploy', 'effect', 'bless', 'unbless', 'affect', 'unaffect', 'learn'].includes(event.kind) ? ['id' in event ? event.id ?? '' : ''] : [];
+      : ['unit-set', 'unit-update', 'recover', 'deploy', 'effect', 'bless', 'unbless', 'affect', 'unaffect', 'learn'].includes(event.kind) ? ['id' in event ? event.id ?? '' : ''] : [];
     for (const unitId of recipients) {
-      if (fresh.created.has(unitId)) continue;
+      if (event.kind !== 'recover' && fresh.created.has(unitId)) continue;
       const record = records.find((r) => r.id === unitId);
       // 缺失与过期分开说明：编错编号需要改草稿，过期才需要重新扫描。
       if (!record || !unitId) throw new Error(`档案 ${ids.publicId(unitId)} 缺失：这个编号不是已有单位。修改已有单位请用单位资料里的编号，新单位用 spawn 新建`);
@@ -465,7 +476,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
         }
       }
     } else if (event.kind === 'field') { next.field = event.env; next.lighting = event.light ?? (event.env === 'night' ? 'night' : 'day'); }
-    else if (!['unit-set', 'unit-update', 'take', 'add', 'give', 'reforge', 'learn', 'effect', 'bless', 'unbless', 'affect', 'unaffect'].includes(event.kind)) throw new Error('不支持此类正文写回');
+    else if (!['unit-set', 'unit-update', 'recover', 'take', 'add', 'give', 'reforge', 'learn', 'effect', 'bless', 'unbless', 'affect', 'unaffect'].includes(event.kind)) throw new Error('不支持此类正文写回');
   }
   next.schemaVersion = PANEL_SAVE_SCHEMA_VERSION;
   next.storage = records;
