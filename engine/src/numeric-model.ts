@@ -12,16 +12,18 @@ export function validateNumericModel(value: unknown): void {
 export const ratingPerPoint = (level: number) => .5 + .05 * (level - 1);
 export const multiplierPerPoint = (level: number) => .05 + .005 * (level - 1);
 const precise = (value: number) => Number(value.toPrecision(12));
-type NumericUnit = Pick<Combatant, 'level' | 'bonuses'> & Partial<Pick<Combatant, 'numericModel' | 'genAudit'>>;
+type NumericUnit = Pick<Combatant, 'level' | 'bonuses'> & Partial<Pick<Combatant, 'numericModel' | 'genAudit' | 'platform'>>;
 export function unitStep(unit: NumericUnit, stat: BonusStat): number {
   if (!gradedNumbers(unit)) return bonusSteps(unit.bonuses, stat, stat === 'speed' ? 5 : 3);
-  const step = stat === 'speed' ? .2 * unit.level : stat === 'morale' ? unit.level + 2 : ratingPerPoint(unit.level);
-  return precise((unit.bonuses?.[stat] ?? 0) * step);
+  const step = (level: number) => stat === 'speed' ? .2 * level : stat === 'morale' ? level + 2 : ratingPerPoint(level);
+  return precise((unit.bonuses?.[stat] ?? 0) * step(unit.level) + (unit.platform?.bonuses?.[stat] ?? 0) * step(unit.platform?.power ?? 1));
 }
 /** Shared power and the selected channel are added before conversion. Negative effects have no artificial floor. */
 export function unitMultiplier(unit: NumericUnit, stat: 'damage' | 'health', channel?: DamageChannel, bonuses = unit.bonuses): number {
   if (!gradedNumbers(unit)) return instanceMultiplier(bonuses, stat, unit.genAudit?.variance, channel);
-  return gradedMultiplier(bonuses, stat, unit.level, unit.genAudit?.variance, channel);
+  const trained = gradedMultiplier(bonuses, stat, unit.level, unit.genAudit?.variance, channel);
+  if (!unit.platform?.bonuses) return trained;
+  return precise(Math.max(0, Math.min(2, trained + gradedMultiplier(unit.platform.bonuses, stat, unit.platform.power, undefined, channel) - 1)));
 }
 function gradedMultiplier(bonuses: Enhancements | undefined, stat: VarianceStat, level: number, variance?: InstanceVariance, channel?: DamageChannel): number {
   const points = (bonuses?.[stat] ?? 0) + (stat === 'power' ? 0 : bonuses?.power ?? 0) + channelPoints(bonuses, stat, channel);

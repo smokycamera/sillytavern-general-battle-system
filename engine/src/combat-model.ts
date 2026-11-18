@@ -41,7 +41,7 @@ export function validateCombatModel(u: Combatant): void {
 }
 export function personnel(u: Combatant): number { return u.formation?.members ?? u.hp; }
 export function memberDurability(u: Combatant): number { return u.formation?.memberHp ?? 10 * BODY[u.body ?? 'human'].hp; }
-export function nominalLife(u: Combatant): number { return Math.max(1, Math.round((curveAt(u.level, u.damageModel).hp * bodyProfile(u.body, u.damageModel).hp + ARCHETYPE_MODS[u.archetype ?? 'infantry'].hp) * gradedLifeScale(u) * unitMultiplier(u, 'health'))); }
+export function nominalLife(u: Combatant): number { return Math.max(1, Math.round((curveAt(u.platform?.power ?? u.level, u.damageModel).hp * bodyProfile(u.body, u.damageModel).hp + ARCHETYPE_MODS[u.archetype ?? 'infantry'].hp) * gradedLifeScale(u) * unitMultiplier(u, 'health'))); }
 export function synchronizePersonnel(u: Combatant, fromLegacy = false): void {
   if (!isCohort(u) || u.scale === 'hero') { if (u.scale === 'hero') delete u.formation; return; }
   if (!u.formation) u.formation = {members:u.hp,capacity:u.base.hpMax,memberHp:10*BODY[u.body??'human'].hp};

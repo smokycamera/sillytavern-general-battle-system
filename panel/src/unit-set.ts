@@ -1,3 +1,4 @@
+import { parsePlatform, validatePlatform } from '../../engine/src/platforms.js';
 import { singleLifeLimit } from '../../engine/src/health-limits.js';
 /** 正文战外绝对赋值。所有修改先在副本校验，装备实物与档案一起提交。 */
 import type { Ability, Combatant, EquipmentSlot, ItemMechanics, ItemSpecification } from '../../engine/src/index.js';
@@ -20,8 +21,8 @@ import { normalizeUnitClear, clearUnitEffects } from './unit-clear.js';
 
 type ObjectData = Record<string, unknown>;
 /** items 不是档案字段：交给单位的道具在入账时另行处理（item-handover.ts）。 */
-export const UNIT_SET_ATTRIBUTES = ['id', 'data', 'reason', 'name', 'side', 'scale', 'archetype', 'level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'state', 'clear', 'body', 'mount', 'speed', 'weapon', 'weapon2', 'armor', 'shield', 'shieldSpec', 'enchant', 'stabilized', 'protection', 'skills', 'traits', 'retired', 'note', 'items'] as const;
-const direct = ['name', 'side', 'scale', 'archetype', 'level', 'xp', 'xpValue', 'hp', 'morale', 'status', 'body', 'mount', 'speedTier', 'tags', 'base', 'bonuses', 'resources', 'conditions', 'traits', 'traitLevels', 'traitSources', 'recoverableWounded', 'formation', 'abilityState', 'fatigue'] as const;
+export const UNIT_SET_ATTRIBUTES = ['id', 'data', 'reason', 'name', 'side', 'scale', 'archetype', 'level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'state', 'clear', 'body', 'mount', 'platform', 'seats', 'aboard', 'speed', 'weapon', 'weapon2', 'armor', 'shield', 'shieldSpec', 'enchant', 'stabilized', 'protection', 'skills', 'traits', 'retired', 'note', 'items'] as const;
+const direct = ['name', 'side', 'scale', 'archetype', 'level', 'xp', 'xpValue', 'hp', 'morale', 'status', 'body', 'mount', 'platform', 'seats', 'ride', 'speedTier', 'tags', 'base', 'bonuses', 'resources', 'conditions', 'traits', 'traitLevels', 'traitSources', 'recoverableWounded', 'formation', 'abilityState', 'fatigue'] as const;
 const special = ['xpProgress', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'moraleMax', 'state', 'clear', 'speed', 'weapon2', 'weapon', 'sidearm', 'armor', 'shield', 'enchant', 'stabilized', 'protection', 'skills', 'abilities', 'preparedAbilityIds', 'retired', 'note'];
 const object = (value: unknown): value is ObjectData => !!value && typeof value === 'object' && !Array.isArray(value);
 function requireObject(value: unknown, label: string): ObjectData { if (!object(value)) throw Error(label + '必须为对象'); return value; }
@@ -45,7 +46,7 @@ function merge(target: ObjectData, patch: ObjectData): ObjectData {
   const next = structuredClone(target);
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) delete next[key];
-    else next[key] = key !== 'bonuses' && key !== 'traitLevels' && object(value) && object(next[key]) ? merge(next[key] as ObjectData, value) : structuredClone(value);
+    else next[key] = key !== 'platform' && key !== 'bonuses' && key !== 'traitLevels' && object(value) && object(next[key]) ? merge(next[key] as ObjectData, value) : structuredClone(value);
   }
   return next;
 }
@@ -54,7 +55,7 @@ export function parseUnitSet(attrs: Record<string, string>): ObjectData {
   const data = attrs.data === undefined ? {} : requireObject(JSON.parse(attrs.data), 'data');
   for (const [key, input] of Object.entries(attrs)) {
     if (['id', 'data', 'reason', 'items'].includes(key)) continue;
-    const field = ({ weapon2: 'sidearm', shieldSpec: 'shield', state: 'status', speed: 'speedTier' } as Record<string,string>)[key] ?? key;
+    let field = ({ weapon2: 'sidearm', shieldSpec: 'shield', state: 'status', speed: 'speedTier' } as Record<string,string>)[key] ?? key;
     let text = input;
     if (field === 'level') {
       const training = parseEnhancementSuffix('L' + input, 'unit');
@@ -68,7 +69,13 @@ export function parseUnitSet(attrs: Record<string, string>): ObjectData {
       }
     }
     let value: unknown = text;
-    if (['level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'speedTier'].includes(field)) {
+    if (field === 'platform') value = parsePlatform(text);
+    if (field === 'aboard' || field === 'mount' && !['true','false'].includes(text)) {
+      if (attrs.aboard !== undefined && attrs.mount !== undefined) throw Error('mount 与 aboard 只选一种');
+      value = text === 'false' ? null : { mode: field === 'aboard' ? 'aboard' : 'mount', platformId: text };
+      field = 'ride';
+    }
+    if (['seats', 'level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'speedTier'].includes(field)) {
       if (!/^[+-]?\d+(?:\.\d+)?$/.test(text) || !Number.isFinite(Number(text))) throw Error(field + '需要明确的有限数值');
       value = Number(text);
     }
@@ -293,16 +300,16 @@ function validateAbility(a: Ability): void {
 }
 
 /** 重算训练/身体/强化的标准部分；hero生命取现有上限与新标准较大值，显式base随后覆盖。 */
-function rebase(unit: Combatant, data: ObjectData): void {
-  if (!['level','body','archetype','scale','bonuses','traits'].some(key=>Object.hasOwn(data,key))) return;
+export function rebaseUnitStats(unit: Combatant, data: ObjectData): void {
+  if (!['level','body','archetype','scale','platform','bonuses','traits'].some(key=>Object.hasOwn(data,key))) return;
   const registry=traitRegistry();
   const baseline=(value: ObjectData) => {
     strings(value.traits,'traits');
     const traits=value.traits.map(name=>{const id=resolveTraitId(name,registry);if(!id)throw Error('未知特质：'+name);return id;});
-    const input={name:unit.name,side:unit.side,rulesVersion:'v2',damageModel:unit.damageModel,numericModel:unit.numericModel,loadModel:unit.loadModel,scale:value.scale,body:value.body,archetype:value.archetype,level:value.level,bonuses:value.bonuses??undefined,traits,armorTier:0} as GenerateInput;
+    const input={name:unit.name,side:unit.side,rulesVersion:'v2',damageModel:unit.damageModel,numericModel:unit.numericModel,loadModel:unit.loadModel,scale:value.scale,body:value.body,archetype:value.archetype,level:value.level,platform:value.platform,bonuses:value.bonuses??undefined,traits,armorTier:0} as GenerateInput;
     return generateUnit(input,{seed:'unit-set-baseline',registry,noVariance:true}).unit;
   };
-  const old=baseline(unit as unknown as ObjectData), changed=merge(unit as unknown as ObjectData,Object.fromEntries(['level','body','archetype','scale','bonuses','traits'].filter(key=>Object.hasOwn(data,key)).map(key=>[key,data[key]]))), next=baseline(changed);
+  const old=baseline(unit as unknown as ObjectData), changed=merge(unit as unknown as ObjectData,Object.fromEntries(['level','body','archetype','scale','platform','bonuses','traits'].filter(key=>Object.hasOwn(data,key)).map(key=>[key,data[key]]))), next=baseline(changed);
   for(const key of ['atk','def','spd'] as const)unit.base[key]+=next.base[key]-old.base[key];
   if(next.scale==='hero')unit.base.hpMax=Math.max(1,Math.min(singleLifeLimit(unit.damageModel),unit.numericModel ? unit.base.hpMax + next.base.hpMax - old.base.hpMax : Math.max(unit.base.hpMax,next.base.hpMax)));
   if(next.scale==='company'||unit.numericModel)unit.base.moraleMax=(unit.base.moraleMax??old.base.moraleMax??0)+(next.base.moraleMax??0)-(old.base.moraleMax??0);
@@ -364,7 +371,9 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
     if (base[key] !== undefined && base[key] !== data[key]) throw Error(key + '与base冲突'); base[key] = data[key];
   }
   if (data.base !== undefined) keys(requireObject(data.base,'base'), ['atk','def','spd','hpMax','moraleMax'], 'base');
-  rebase(unit,data);
+  if (data.mount !== undefined) data.ride ??= null;
+  if (data.ride !== undefined && data.mount === undefined) data.mount = false;
+  rebaseUnitStats(unit,data);
   const fields = Object.fromEntries(direct.filter(key => Object.hasOwn(data,key)).map(key => [key,data[key]]));
   unit = merge(unit as unknown as ObjectData, fields) as unknown as Combatant;
   if (data.clear !== undefined) clearUnitEffects(unit, data.clear, sourceId);
@@ -380,6 +389,7 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   if (unit.morale !== undefined) number(unit.morale,'morale',0,unit.base.moraleMax ?? Number.MAX_SAFE_INTEGER);
   if (unit.speedTier !== undefined) number(unit.speedTier,'speedTier',1,5,true);
   if (unit.mount !== undefined && typeof unit.mount !== 'boolean') throw Error('mount须为布尔值');
+  validatePlatform(unit);
   validateEnhancements(unit.bonuses,'unit');
   for (const key of ['xp','xpValue'] as const) if (unit[key] !== undefined) number(unit[key],key,0);
   // 同级设置本体修正保留进度；单独指定等级仍沿用显式重置的语义。

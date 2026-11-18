@@ -418,6 +418,9 @@ export interface Combatant {
   speedTier?: number;
   /** 明确骑乘平台；专长本身不会创建坐骑或增加人员/生命。 */
   mount?: boolean;
+  platform?: import('./platforms.js').Platform;
+  seats?: number;
+  ride?: import('./platforms.js').Ride;
   shield?: { id: string; name?: string; load: number; loadOverride?: boolean; recipe?: ItemRecipe; powerScale?: number };
   preparedAbilityIds?: string[];
   generationWarnings?: string[];
@@ -510,6 +513,9 @@ export interface GenerateInput {
   speedTier?: number;
   /** 明确骑乘平台；专长本身不会创建坐骑或增加人员/生命。 */
   mount?: boolean;
+  platform?: import('./platforms.js').Platform;
+  seats?: number;
+  ride?: import('./platforms.js').Ride;
   quality?: number;
   hp?: number;
   hpMax?: number;

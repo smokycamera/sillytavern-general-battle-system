@@ -41,7 +41,7 @@ export function generatedLayeredField(seed: string, width = 7, height = 13, tags
   if ((plan?.landmarks?.length ?? 0)>4 && initial[0]<9 && !roster.some(u=>u.pos!==undefined)) initial=[9,15];
   const sizes: [number,number][] = [[5,7], [7,13], [9,15], [11,17], [13,19]];
   // Conservative ground-space floor; actual layers/air/platforms are then checked below.
-  const neededWidth = Math.ceil(Math.max(0, ...(['ally', 'enemy', 'neutral'] as const).map(side => active.filter(u => u.side === side).reduce((n,u) => n + footprint(u), 0))) / 6);
+  const neededWidth = Math.ceil(Math.max(0, ...(['ally', 'enemy', 'neutral'] as const).map(side => active.filter(u => !u.ride && u.side === side).reduce((n,u) => n + footprint(u), 0))) / 6);
   if (initial[0] < neededWidth && !roster.some(u => u.pos !== undefined)) initial = sizes.find(([w]) => w >= neededWidth) ?? sizes.at(-1)!;
   const fixed = roster.some(u => u.pos !== undefined);
   if(!fixed)initial=regionMapSize(plan,active,initial[0],initial[1],options.unitBindings);

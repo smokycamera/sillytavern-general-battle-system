@@ -67,7 +67,7 @@ const present = (u: Combatant) => !['dead', 'fled'].includes(u.status);
 export function tacticalSelection(battle: SmallBattle, view: TacticalView, query?: TacticalQuerySource) {
   const visible = query instanceof TacticalQueryCache ? query.read(battle, 'visible', () => battle.visibleCombatants('ally').filter(present)) : battle.visibleCombatants('ally').filter(present);
   const actor = visible.find((u) => u.id === view.selectedId && u.side === 'ally')
-    ?? visible.find((u) => u.id === battle.active?.id && u.side === 'ally')
+    ?? (battle.active?.side === 'ally' ? battle.active : undefined)
     ?? visible.find((u) => u.side === 'ally' && u.status === 'ready');
   const allOptions = actor ? query instanceof TacticalQueryCache ? query.get(battle, actor)
     : query?.battle === battle && query.actor === actor ? query.options : battle.getActionOptions(actor.id) : [];
@@ -271,6 +271,10 @@ function gridPiece(battle: SmallBattle, u: Combatant, isActor: boolean, ai = fal
 export interface TacticalAutomation { aiUnitIds: ReadonlySet<string>; allAllies: boolean; fullAuto: boolean }
 const MANUAL: TacticalAutomation = { aiUnitIds: new Set(), allAllies: false, fullAuto: false };
 
+export function rideControls(battle: SmallBattle, actor?: Combatant): string {
+  if (!actor || actor.side !== 'ally') return '';
+  return battle.platforms.options(actor).map(a => `<button data-action="small-platform" data-actor="${esc(actor.id)}" data-kind="${a.kind}" data-id="${esc(a.id)}">${esc(a.label)}</button>`).join('');
+}
 export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, automation: TacticalAutomation = MANUAL, query?: TacticalQuerySource): string {
   return withBattleReportQueries(() => battle.withReadOnlyQueries(() => renderTacticalContent(battle, view, automation, query)));
 }
@@ -280,7 +284,7 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
   const { visible, actor, options, option, target, canControl } = s;
   const targetMismatch = view.targetId !== undefined && !!option?.targets?.length && !target;
   const targetReason = targetMismatch ? '所选目标不适用于此行动，请重新选择目标' : target?.reason;
-  const active = visible.find((u) => u.id === battle.active?.id), over = battle.isOver();
+  const active = battle.active?.side === 'ally' ? battle.active : visible.find((u) => u.id === battle.active?.id), over = battle.isOver();
   const activeLabel = active?.name ?? (battle.active?.side === 'enemy' ? '尚未发现的敌方单位' : '未定位单位');
   const autoToggle = `<label class="fixed-auto" title="敌我全部交给AI连续推进，取消勾选即暂停"><input type="checkbox" data-role="full-auto-battle" ${automation.fullAuto ? 'checked' : ''} ${over ? 'disabled' : ''}>全自动</label>`;
   const actorAi = !!actor && automation.aiUnitIds.has(actor.id);
@@ -394,6 +398,7 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
       ${actor ? '<div class="actor-status">' + [(battle.reloadCd.get(actor.id) ?? 0) > 0 ? (tbWeaponShortName(actor.weapon) || '主武器') + '装填中' : '', actor.sidearm && (battle.reloadCd.get(weaponReloadKey(actor, actor.sidearm)) ?? 0) > 0 ? (tbWeaponShortName(actor.sidearm) || '副武器') + '装填中' : '', actor.fatigue ? '疲劳' + approx(actor.fatigue, 1, 'down') + '/' + displayNumber(fatigueLimit(actor)) : '', concealment, pressure, isAirborne(actor) ? '空中，不能占领地面目标' : '', ...defenseLayerLabels(actor), actor.tacticalPose ? postureLabel(actor, standardConditionMap()) : '', worksLabel(actor) ?? '', ...actor.conditions.filter((c) => c.dur > 0).map((c) => (battle.conditions.get(c.id)?.name ?? '持续效果') + ' ' + (activationControlDuration(c) ?? c.dur + '回合'))].filter(Boolean).map((v) => '<span' + (v === pressure ? ' class="morale-pressure"' : '') + '>' + esc(v!) + '</span>').join('') + '</div>' : ''}
       ${canControl && actor && ['traits-levels-v2','traits-items-v1','traits-items-v2'].includes(battle.rules.traitLevelModel??'') && activeTraitIds(actor).includes('loose-formation') ? looseFormationChoiceHtml(actor, !!actor.looseChoiceLocked || battle.actedThisTurn.has(actor.id) || battle.movedThisTurn.has(actor.id), '正常激活开始、行动前可选一次，保持到下次正常激活。') : ''}
       <div class="command-modes" aria-label="行动类型">${[['move', '移动'], [weapon?.id ?? 'weapon', '攻击'], [skill?.id ?? '', '技能'], ['guard', '守备']].map(([id, label]) => `<button data-action="grid-mode" data-mode="${esc(id!)}" aria-pressed="${mode === id || label === '攻击' && !!option && ['weapon', 'charge'].includes(option.kind) && !['move', 'guard'].includes(mode) || label === '技能' && option?.kind === 'ability' && !['move', 'guard'].includes(mode)}" ${!id ? 'disabled' : ''}>${label}</button>`).join('')}
+        ${canControl ? rideControls(battle,actor) : ''}
         ${actor && (isAirborne(actor) || activeTraitIds(actor).includes('flying')) ? `<button data-action="grid-flight" data-actor="${esc(actor.id)}" data-airborne="${!isAirborne(actor)}" ${!canControl || battle.flightReason(actor.id, !isAirborne(actor)) ? 'disabled' : ''} title="${esc(battle.flightReason(actor.id, !isAirborne(actor)) ?? '消耗移动1')}">${isAirborne(actor) ? '降落' : '起飞'}</button>` : ''}
         <button data-action="grid-suppress" data-target="${esc(target?.targetId ?? '')}" ${canControl && actor && !battle.suppressReason(actor.id, target?.targetId) ? '' : 'disabled'} title="${esc(actor ? battle.suppressReason(actor.id, target?.targetId) ?? '压制所选目标，消耗主行动1和战技点1' : '没有可用单位')}">压制</button>
         ${actor ? `<button data-action="loadout-skills" data-id="${esc(actor.id)}" ${battleSkillChangeReason(battle, actor.id) ? 'disabled' : ''}>技能选择</button>` : ''}

@@ -79,6 +79,9 @@ export type Suggestion =
       bonuses?: Enhancements; weaponBonuses?: Enhancements; weapon2Bonuses?: Enhancements; armorBonuses?: Enhancements;
       body?: BodyKind;
       mount?: boolean;
+      platform?: import('../../engine/src/platforms.js').Platform;
+      seats?: number;
+      ride?: import('../../engine/src/platforms.js').Ride;
       speedTier?: number;
       weaponStabilized?: boolean;
       weaponEnchantment?: 'thermal' | 'arcane';

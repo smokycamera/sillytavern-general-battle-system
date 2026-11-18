@@ -39,7 +39,7 @@ export function movementPoints(unit: Combatant, tags: string[] = []): number {
   const night = tags.includes('night') ? nightMovePenalty(traitLevel(unit, 'night-fighter', ids)) : 0;
   if (gradedNumbers(unit) || revisedLoad(unit)) {
     const movement = bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - night - fatiguePenalty(unit)
-      + Number(unit.status === 'routing') + (gradedNumbers(unit) ? (unit.bonuses?.speed ?? 0) * unit.level / 10 : 0) + equipmentStep(unit.armor?.recipe, 'speed')
+      + Number(unit.status === 'routing') + (gradedNumbers(unit) ? ((unit.bonuses?.speed ?? 0) * unit.level + (unit.platform?.bonuses?.speed ?? 0) * (unit.platform?.power ?? 1)) / 10 : 0) + equipmentStep(unit.armor?.recipe, 'speed')
       + (progression(unit) ? wornEffects(unit).speed ?? 0 : 0);
     return Math.max(0, Number((movement * armorWear(unit).movement * loadMovementScale(unit)).toPrecision(12)));
   }
