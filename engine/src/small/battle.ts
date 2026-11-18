@@ -75,7 +75,7 @@ import { resolveAttack, previewAttack, penetrationContext, isRangedCapable, armo
 import { sharedParticipants } from '../exposure.js';
 import { diceAvg, rebuildDice } from '../data/weapons.js';
 import { ConditionRegistry } from '../conditions.js';
-import { LITE_D20, counterMod, rulesById } from '../rules.js';
+import { V42_LITE_D20, counterMod, rulesById } from '../rules.js';
 import { getTrait, hasFlag, fieldModsFor, collectMods, resolveStack } from '../bonus.js';
 import { situationalTraitMods } from '../situational-traits.js';
 import { BattleFeedback, type FeedbackUnit, type RoundFeedback } from '../battle-feedback.js';
@@ -286,13 +286,13 @@ export class SmallBattle {
       if (unit.formationPosition !== undefined) throw new Error('实际会战阵位不能放入小战存档记录');
       if (unit.vanguardOrigin !== undefined) throw new Error('会战先锋来源不能放入小战存档记录');
     }
-    this.rules = opts.rules ?? LITE_D20;
+    this.rules = opts.rules ?? V42_LITE_D20;
     for (const unit of this.combatants) { validateSkillModel(unit.skillModel); prepareSkillModel(unit, this.rules); }
     if(this.rules.combatModel)for(const unit of this.combatants){prepareCombatModel(unit,this.rules);upgradeCombatSkills(unit);reconcileDamageMorale(unit);}
     for (const unit of this.combatants) { prepareResourceModel(unit, this.rules); prepareArmsModel(unit, this.rules); prepareTraitModel(unit, this.rules); validateTraitModel(unit.traitModel); validateEntrenchment(unit.entrenchedAt); validateTacticalEffort(unit.tacticalEffort, unit.resourceModel); validateItemModel(unit.itemModel); prepareItemModel(unit, this.rules); validateTraitLevelModel(unit.traitLevelModel); prepareTraitLevelModel(unit, this.rules); prepareRevivalBattle(unit); }
     if (this.combatants.some((u) => u.airborne) && (!this.battlefield || this.rules.resolutionVersion !== 'v2')) throw new Error('空中状态需要二维战场');
-    this.seed = opts.seed ?? randomSeed();
-    this.rng = opts.rng ?? (opts.seed || this.rules.resolutionVersion === 'v2' ? new SeededRng(this.seed) : liveRng());
+    this.seed = opts.seed ?? (this.rules.initiativeModel && opts.rng && opts.rng.seed !== 'crypto' ? opts.rng.seed : randomSeed());
+    this.rng = opts.rng ?? (opts.seed || this.rules.resolutionVersion === 'v2' || this.rules.initiativeModel ? new SeededRng(this.seed) : liveRng());
     this.conditions = new ConditionRegistry(opts.extraConditions ?? []);
     for (const unit of this.combatants) if (unit.airborne && flightMaintenanceReason(unit, this.conditions)) throw new Error('空中存档记录缺少可维持的飞行能力');
     this.traitRegistry = opts.traitRegistry ?? (this.rules.resolutionVersion === 'v2' ? defaultTraitRegistry() : new Map());
@@ -389,8 +389,18 @@ export class SmallBattle {
     if (this.rules.resolutionVersion === 'v2') revealContacts(this.observationContext());
     // V13 工事：开战位置即阵地。
     for (const unit of this.combatants) entrench(unit, 'small');
-    const rolls = this.combatants
-      .filter((c) => c.status === 'ready')
+    const ready = this.combatants.filter(c => c.status === 'ready');
+    if (this.rules.initiativeModel === 'seeded-ties-v1') {
+      // A seeded permutation gives every ready unit a unique tie rank. Stable sorting below
+      // keeps it only for exact ties. The combat RNG still supplies exactly one d20 per unit.
+      ready.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      const lottery = new SeededRng(JSON.stringify(['initiative-ties-v1', this.seed]));
+      for (let i = ready.length - 1; i > 0; i--) {
+        const j = lottery.d(i + 1) - 1;
+        [ready[i], ready[j]] = [ready[j]!, ready[i]!];
+      }
+    }
+    const rolls = ready
       .map((c) => {
         const r = rollDice('1d20', this.rng);
         const speed = c.rulesVersion === 'v2' ? resolveStack(collectMods(c, { fieldTags: this.fieldTags }, this.conditionDefMap(), [], this.traitRegistry), 'spd', {}).flatTotal : 0;

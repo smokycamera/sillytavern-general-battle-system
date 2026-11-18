@@ -696,6 +696,7 @@ export interface RulePack {
   damageStackModel?: 'additive-positive-v1';
   criticalDamageScale?: number;
   wornBarrierModel?: 'entry-once-v1';
+  initiativeModel?: 'seeded-ties-v1';
   /** V15 道具系统：专精十级、道具行动与编队件数、AI 保留价值、冲锋与远程看实际配装; absent keeps V14. V20 items-v2：佩戴修正按道具 L 换算。 */
   itemModel?: 'items-v1' | 'items-v2';
   /** V16 新增特质分级；独立于 V15 五项专精。 */
