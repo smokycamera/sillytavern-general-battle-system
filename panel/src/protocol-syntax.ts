@@ -253,7 +253,7 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
     const effectSpecification = key === 'effects' && ['effect', 'spawn'].includes(tag.name);
     if (!textKeys.has(key)) value = specKeys.has(key) || effectSpecification ? simplifiedSpecification(value) : simplifiedChinese(value);
     if (numericKeys.has(key)) value = numeric(value, key);
-    if (tag.name === 'spawn' && key === 'level') value = normalizeNarrativeSpec('L' + value, 'unit').replace(/^L/i, '');
+    if (key === 'level' && (tag.name === 'spawn' || tag.name === 'unit_set')) value = normalizeNarrativeSpec('L' + value, 'unit').replace(/^L/i, '');
     if (booleanKeys.has(key) && (key !== 'shield' || /^(?:true|false|1|0|yes|no|是|否|有|无)$/i.test(value))) value = ({ '1': 'true', '0': 'false', yes: 'true', no: 'false', 是: 'true', 否: 'false', 有: 'true', 无: 'false' } as Record<string, string>)[value.toLowerCase()] ?? value.toLowerCase();
     if (enumAliases[key]) value = enumAliases[key]![value.toLowerCase()] ?? value.toLowerCase();
     if (key === 'env') value = value.toLowerCase();

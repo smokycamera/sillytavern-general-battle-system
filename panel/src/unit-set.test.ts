@@ -174,6 +174,23 @@ describe('正文战外全字段事务（定向验证）',()=>{
     expect(restored(transact(dying,{xp:20},'','down-xp').next()).status).toBe('dying');
     expect(save.storage![0]!.hp).toBe(60);
   });
+  it('level 可整体设置单位修正，同级改修正保留经验，单改等级保留修正', () => {
+    const initial = transact(setup(), { level: 1, xp: 90, xpProgress: 30, bonuses: { speed: 2 } }).next();
+    const changed = transactText(initial, '<unit_set id="u1" level="1+4防御"/>', 'defense').next();
+    const unit = restored(changed);
+    expect(unit.level).toBe(1);
+    expect(unit.bonuses).toEqual({ defense: 4 });
+    expect(xpProgress(unit)?.current).toBe(30);
+
+    const promoted = restored(transactText(changed, '<unit_set id="u1" level="2"/>', 'promote').next());
+    expect(promoted).toMatchObject({ level: 2, xp: 90, bonuses: { defense: 4 } });
+    expect(xpProgress(promoted)?.current).toBe(0);
+
+    const attrs = { id: 'u1', level: 'Ｌ３＋４防御－２生命' };
+    const parseWith = (bonuses: Record<string, number>) => parseProtocol(serializeEvent('unit_set', { ...attrs, data: JSON.stringify({ bonuses }) }));
+    expect(parseWith({ health: -2, defense: 4 }).events[0]).toMatchObject({ data: { level: 3, bonuses: { defense: 4, health: -2 } } });
+    expect(parseWith({ health: -2 }).errors.join()).toContain('data.bonuses冲突');
+  });
   it('装备库存与当前规则数值一致，旧耐久覆盖仅保留记录，定制技能入场后不被公式重建',()=>{
     const save=setup(),oldWeapon=save.storage![0]!.snapshot!.weapon!.id;
     const next=transact(save,{body:'vehicle',weapon:{spec:{kind:'weapon',mechanism:'rifle',power:6,bonuses:{damage:5}},values:{baseDice:'2d6',damageScale:2,penetration:25,range:2}},armor:{spec:'重甲L9',values:{protection:{kinetic:3,thermal:2,arcane:1},powerScale:2}},skills:[{spec:{id:'bp-arcane-bolt',name:'雷击',level:4},values:{cooldown:5,damageScale:3,penetration:17,effects:[{op:'damage',baseDice:'2d6'}]}}]}).next();
