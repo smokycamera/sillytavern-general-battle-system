@@ -13,7 +13,7 @@ import { spendAbility } from '../ability-state.js';
 import { itemUseLog } from '../item-use-log.js';
 import { assertBattleCapacity } from '../battle-limits.js';
 import { smallBattleResult } from '../battle-result.js';
-import { combinePersonnel } from './transport-groups.js';
+import { combinePersonnel, planTransportDeployment } from './transport-groups.js';
 import { SmallPlatforms } from './platforms.js';
 import { unitCount, validateRides } from '../platforms.js';
 import { prepareGridDeployment, deploymentDepth } from './spatial.js';
@@ -381,15 +381,36 @@ export class SmallBattle {
     if (this.started) return;
     for (const unit of this.combatants) { prepareRevivalBattle(unit, true); resetWornBarrier(unit); }
     assertBattleCapacity(this.combatants, 'small');
-    if (this.hasPlatforms) validateRides(this.combatants);
+    if (this.hasPlatforms) validateRides(this.combatants,true);
+    const plan = this.hasPlatforms ? planTransportDeployment(this.combatants) : undefined;
+    const deployed = plan?.deployed ?? this.combatants;
     if (this.battlefield) {
-      const deployed = this.combatants;
       const prepared = prepareGridDeployment(this.battlefield, deployed, this.seed, this.conditions, this.rules.resolutionVersion === 'v2');
       deployed.forEach((c, i) => { c.pos = prepared[i]!.pos; c.elevation = prepared[i]!.elevation; if (prepared[i]!.airborne !== undefined) c.airborne = prepared[i]!.airborne; });
+    }
+    if (plan?.overflow.length) {
+      for (const {rider,foot} of plan.overflow) {
+        const original = this.byId(rider.id);
+        Object.assign(original,rider);
+        if (foot === rider) {
+          delete original.ride;
+          if (rider.pos === undefined) delete original.pos;
+          if (rider.elevation === undefined) delete original.elevation;
+          if (rider.airborne === undefined) delete original.airborne;
+        } else {
+          this.combatants.push(foot);
+          if (this.allyAiControl.has(rider.id)) this.allyAiControl.set(foot.id,this.allyAiControl.get(rider.id)!);
+        }
+      }
+      this.xpMinimum = initialXpStrength(this.combatants,true);
     }
     this.started = true;
     if (isArmsV2(this.rules.armsModel)) for (const u of this.combatants) if (u.shield && !shieldUsable(u) && u.shieldDurability?.remaining !== 0) this.recordEvent({round:1,kind:'condition',participants:[u.id],text:u.name+'的'+(u.shield.name??'盾牌')+'挂在背上'});
     this.round = 1;
+    for (const {foot,carrierId} of plan?.overflow ?? []) {
+      const carrier = this.byId(carrierId);
+      this.logTransport(foot,carrier.name+'座位不足，'+unitCount(foot)+'人步行部署',carrier);
+    }
     for (const unit of this.combatants) { const text = grantEntryWornBarrier(unit, this.rules); if (text) this.recordEvent({round:1,kind:'condition',participants:[unit.id],text}); }
     for (const unit of this.combatants) beginLifestealRound(unit, this.round, true);
     for (const unit of this.combatants) {

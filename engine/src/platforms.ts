@@ -29,19 +29,20 @@ export function validatePlatform(unit: Pick<PlatformUnit, 'platform'|'seats'|'ri
   if (unit.ride !== undefined && (p || !unit.ride || !['mount','aboard'].includes(unit.ride.mode) || typeof unit.ride.platformId !== 'string' || !unit.ride.platformId.trim())) throw Error('搭载关系无效或平台嵌套');
 }
 export const unitCount = (u: Pick<PlatformUnit,'scale'|'hp'>) => u.scale === 'hero' ? Number(u.hp > 0) : u.hp;
-export function boardingReason(units: readonly PlatformUnit[], rider: PlatformUnit, carrier: PlatformUnit, mode: Ride['mode']): string | undefined {
+export function boardingReason(units: readonly PlatformUnit[], rider: PlatformUnit, carrier: PlatformUnit, mode: Ride['mode'], allowOverflow = false): string | undefined {
   if (carrier.id === rider.id || rider.platform || !carrier.platform || carrier.ride || rider.side !== carrier.side || carrier.hp <= 0 || rider.hp <= 0) return '需要同阵营可用平台与乘员';
   const others = units.filter(u => u.id !== rider.id && u.hp > 0 && u.ride?.platformId === carrier.id);
   if (mode === 'mount' && others.some(u => u.ride!.mode === 'mount')) return '该平台已有控制单位';
+  if (allowOverflow) return;
   const free = (carrier.seats ?? 1) * unitCount(carrier) - others.reduce((sum,u) => sum + (u.ride?.stranded ? 0 : unitCount(u)),0);
   if (unitCount(rider) > free) return carrier.name + '缺少' + (unitCount(rider) - free) + '个座位';
 }
-export function validateRides(units: readonly PlatformUnit[]): void {
+export function validateRides(units: readonly PlatformUnit[], allowOverflow = false): void {
   for (const u of units) {
     validatePlatform(u);
     if (!u.ride || u.hp <= 0) continue;
     const carrier = units.find(p => p.id === u.ride!.platformId);
-    const reason = carrier ? boardingReason(units,u,carrier,u.ride.mode) : '平台档案不存在或未部署';
+    const reason = carrier ? boardingReason(units,u,carrier,u.ride.mode,allowOverflow) : '平台档案不存在或未部署';
     if (reason) throw Error(u.name + '：' + reason);
   }
 }

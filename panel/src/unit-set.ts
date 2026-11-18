@@ -419,7 +419,14 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
     if (!Object.keys(unit.traitLevels).length) delete unit.traitLevels;
   }
   if (data.formation !== undefined) keys(requireObject(data.formation,'formation'), ['members','capacity','memberHp','health','woundedRemainder'], 'formation');
-  if (unit.scale === 'hero') { if (data.formation || data.memberHp !== undefined) throw Error('个体不使用formation/memberHp'); delete unit.formation; }
+  if (unit.scale === 'hero') {
+    if (data.formation || data.memberHp !== undefined) throw Error('个体不使用formation/memberHp');
+    delete unit.formation;
+    if (previous.scale !== 'hero') {
+      if (data.recoverableWounded === undefined) delete unit.recoverableWounded;
+      delete unit.woundedPercentRemainder;
+    }
+  }
   else {
     unit.combatModel = 'cohort-v2';
     unit.formation ??= { members:unit.hp,capacity:unit.base.hpMax,memberHp:Math.min(singleLifeLimit(unit.damageModel),nominalLife(unit)) };

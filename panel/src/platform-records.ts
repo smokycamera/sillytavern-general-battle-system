@@ -10,7 +10,7 @@ export function platformUnits(records: UnitRecord[]): PlatformUnit[] {
 export function platformRoster(records: UnitRecord[], roster: string[]): string[] {
   if (!records.some(r => r.snapshot?.platform || r.snapshot?.ride || r.snapshot?.seats !== undefined)) return roster;
   const units = platformUnits(records);
-  validateRides(units);
+  validateRides(units,true);
   const selected = new Set(roster);
   for (const unit of units) if (selected.has(unit.id) && unit.ride) selected.add(unit.ride.platformId);
   return [...selected];

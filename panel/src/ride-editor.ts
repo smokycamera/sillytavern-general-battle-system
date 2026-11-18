@@ -10,12 +10,13 @@ export function rideEditor(id: string, units: PlatformUnit[], locked = false): s
   if (!carrier && !candidates.length && !current.ride) return '';
   const riders = carrier ? candidates.filter(u => u.ride?.platformId === id) : current.ride ? [current] : [];
   const seats = (u: PlatformUnit) => unitCount(u) * (u.seats ?? 1);
+  const requested = riders.reduce((sum,u) => sum + unitCount(u),0), capacity = seats(current);
   const status = current.platform ? esc(platformText(current.platform)) + ' · 已用 ' +
-    riders.reduce((sum,u) => sum + unitCount(u),0) + ' / ' + seats(current) + ' 席' : '';
+    Math.min(requested,capacity) + ' / ' + capacity + ' 席' + (requested > capacity ? ' · '+(requested-capacity)+'人步行部署' : '') : '';
   const entries = riders.map(rider => {
     const bound = rider.ride!.mode === 'mount';
     const name = carrier ? rider.name : candidates.find(u => u.id === rider.ride!.platformId)?.name ?? '坐骑或载具';
-    return '<div class="ride-entry"><span>'+esc(name)+' · '+(bound ? '已绑定' : '已装载')+' · '+unitCount(rider)+' 席</span>'+
+    return '<div class="ride-entry"><span>'+esc(name)+' · '+(bound ? '已绑定' : '已装载')+' · '+unitCount(rider)+' 人</span>'+
       '<button data-action="ride-edit" data-rider="'+esc(rider.id)+'">'+(bound ? '解绑' : '离开')+'</button></div>';
   }).join('');
   const options = candidates.map(u => {
