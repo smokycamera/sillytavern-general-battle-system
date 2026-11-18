@@ -227,7 +227,7 @@ export class McpGameApi {
             if (!Array.isArray(args.orders) || args.orders.length > 64) throw Error('orders 须为不超过64条的列表');
             await this.runtime.orders(args.orders as Order[], args.resolve !== false); current.completedSteps = 1;
           } else {
-            if (!Array.isArray(args.unitIds) || !args.unitIds.length || args.unitIds.length > 64 || args.unitIds.some(id => typeof id !== 'string')) throw Error('unitIds 须包含1—64个档案 ID');
+            if (!Array.isArray(args.unitIds) || !args.unitIds.length || args.unitIds.some(id => typeof id !== 'string' || !id)) throw Error('unitIds 须包含要恢复的档案 ID');
             await this.runtime.recover(args.unitIds as string[], args.deploy !== false); current.completedSteps = 1;
           }
         });

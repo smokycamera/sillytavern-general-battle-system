@@ -121,7 +121,7 @@ export class LlmIntentPlanner {
       for (const trace of candidate.enemyIntel(state.side).traces) seen.add(trace.id);
       command.memory = updateCommandMemory(candidate, command.memory, state.side);
       const { map, ...observation } = commandObservation(candidate, undefined, state.side);
-      const known = new Set([...command.memory.contacts!.map(u => u.id), ...candidate.enemyIntel(state.side).traces.map(t => t.id)]);
+      const known = new Set([...observation.units.filter(u => u.side !== 'friendly').map(u => u.id), ...command.memory.contacts!.map(u => u.id), ...candidate.enemyIntel(state.side).traces.map(t => t.id)]);
       const explored = new Set(command.memory.terrain.map(t => t.cell));
       const own = candidate.combatants.filter(u => u.side === state.side && present(u));
       const ownTargets = candidate.combatants.filter(u => u.side === state.side && (present(u) || u.status === 'dying'));

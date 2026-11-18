@@ -25,6 +25,13 @@ const reviewedReply=(args:unknown)=>new Response(JSON.stringify({choices:[{messa
 const data=(init?:RequestInit)=>JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
 const holds=(init?:RequestInit)=>({intents:data(init).forces.map((u:any)=>({unitId:u.id,mode:'hold',cell:u.pos}))});
 function setup(request:typeof fetch) { const {b,state}=fixture(), c=new LlmCommandController(COMMAND_PROMPTS,()=>{},request), p=new LlmIntentPlanner(c,COMMAND_PROMPTS);return {b,state,c,p}; }
+it('keeps every unit order and observation basis when saving a large tactical battle', () => {
+  const { state } = fixture();
+  const ids = Array.from({length: 140}, (_, i) => 'unit-' + i);
+  state.memory.intents = { round: 1, replanned: false, basis: { friends: ids, visible: ids },
+    units: Object.fromEntries(ids.map(id => [id, { mode: 'hold', cell: 1 }])) };
+  expect(savedCommanderState(state)?.memory.intents).toEqual(state.memory.intents);
+});
 it('accepts attack-cell structure orders, executes them, and replans after destruction in situation mode', async () => {
   let commands = 0;
   const request = vi.fn<typeof fetch>(async (_url, init) => { commands++; return reply(commands > 1 ? holds(init) : { intents: data(init).forces.map((u: any) => u.id === 'u2' ? { unit: u.id, mode: 'attack', cell: 31 } : { unit: u.id, mode: 'hold', cell: u.pos }) }); });

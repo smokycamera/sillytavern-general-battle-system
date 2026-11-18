@@ -92,7 +92,7 @@ export function createBattleMcp(broker) {
       targetId: z.string().optional(), abilityId: z.string().optional(), abilityActorId: z.string().optional(), haste: z.boolean().optional() }).strict()).max(64), resolve: z.boolean().optional(),
   }, 'game_orders');
   register('battle_recover', '战后收兵、恢复指定档案的可恢复生命/伤兵与士气、解除濒死，并默认重新加入参战。不能用于进行中的战斗，不能复活阵亡或解散档案。', {
-    ...gameWrite, unitIds: z.array(z.string()).min(1).max(64), deploy: z.boolean().optional().describe('默认true；false仅恢复，未参战的档案留在储存器'),
+    ...gameWrite, unitIds: z.array(z.string().min(1)).min(1), deploy: z.boolean().optional().describe('默认true；false仅恢复，未参战的档案留在储存器'),
   }, 'game_recover');
   register('battle_auto', '启动或暂停全自动，立即返回运行状态，不等待整场结束。pause不需stateId；正在结算的动作保存完成后可接管。后续用 battle_state 查看进度。', {
     ...gameSession, requestId, stateId: z.string().optional().describe('start必填，pause可省略'), action: z.enum(['start','pause']),

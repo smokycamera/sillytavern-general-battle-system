@@ -23,7 +23,7 @@ export class SmallPlatforms {
     return '';
   }
   canDrive(rider: Combatant, carrier: Combatant): boolean {
-    return !['charmed','confused'].includes(controlPolicy(rider) ?? '') && !controlPolicy(carrier) && !combatHostile(rider,carrier,this.units);
+    return carrier.status === 'ready' && !['charmed','confused'].includes(controlPolicy(rider) ?? '') && !controlPolicy(carrier) && !combatHostile(rider,carrier,this.units);
   }
   canMoveIndependently(unit: Combatant): boolean {
     const carrier = this.carrier(unit);

@@ -3521,7 +3521,9 @@ export class SmallBattle {
       }
       const carrier = u.ride?.mode === 'mount' ? this.platforms.carrier(u) : undefined;
       this.beginTurn(u);
-      if (carrier?.status === 'ready' && u.status === 'ready') this.beginTurn(carrier);
+      if (carrier && (carrier.status === 'ready' || carrier.status === 'routing')) this.beginTurn(carrier);
+      if (carrier?.status === 'fled') this.platforms.reconcile(carrier);
+      if (carrier?.status === 'routing' || carrier?.status === 'ready' && u.status !== 'ready') this.settleUnit(carrier);
       if (carrier?.status === 'ready' && u.status === 'ready') {
         this.activationPair = [u.id,carrier.id];
         if (!controlPolicy(u) && (this.platforms.sheltered(u) || controlPolicy(carrier))) this.platformActor = carrier.id;

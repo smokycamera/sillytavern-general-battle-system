@@ -1,3 +1,10 @@
+import { SmallBattle, type MassBattle } from '../../engine/src/index.js';
+
+export function battleProgress(battle: SmallBattle | MassBattle): string {
+  const slot = battle instanceof SmallBattle ? battle.turnOrder[battle.turnIndex] : '';
+  return JSON.stringify([battle.round,slot,battle.diplomacy.revision]);
+}
+
 /** 每次只推进一个激活/会战回合，把控制权交回界面以便关闭开关。 */
 export class AutoBattleLoop {
   private timer?: ReturnType<typeof setTimeout>;

@@ -60,9 +60,13 @@ export function archivedNarrativeEvents(b: Battle, deliveries: BattleDeliveries)
   const cursor = Math.max(0, Math.min(deliveries[battleIdOf(b)]?.cursor ?? 0, b.log.length));
   return [...narrativeEvents(b, 0, cursor), ...narrativeEvents(b, cursor)];
 }
+export function knownBattleUnits(b: Battle): Combatant[] {
+  if (b.isOver()) return b.combatants;
+  return b instanceof SmallBattle ? b.rosterInView('ally') : b.visibleCombatants('ally');
+}
 export function knownBattleState(b: Battle): string {
   const field = b instanceof SmallBattle ? b.battlefield : undefined;
-  return ['【最新状态】', ...(b instanceof SmallBattle && b.isOver() ? [smallBattleResult(b)!] : []), ...(b.isOver() ? b.combatants : b.visibleCombatants('ally')).map(u=>epilogueUnit(b,u,field)), ...fieldFacts(b)].join('\n');
+  return ['【最新状态】', ...(b instanceof SmallBattle && b.isOver() ? [smallBattleResult(b)!] : []), ...knownBattleUnits(b).map(u=>epilogueUnit(b,u,field)), ...fieldFacts(b)].join('\n');
 }
 const RANK_NAMES = { front: '前列', rear: '后列', reserve: '预备列' } as const;
 /** 小战写格子、地形与高度，会战写阵位；撤离的单位和没有位置的旧记录不写。 */
@@ -110,7 +114,7 @@ function lethalityRule(b: Battle): string {
     + '单位按倒下时的规则记录：致命阶段生命归零即阵亡；非致命阶段只会濒死失能，不视为死亡，编队减员为可救伤兵。';
 }
 export function battleEpilogue(b: Battle, start?: BattleReport['start']): string {
-  const visible=b.isOver()?b.combatants:b.visibleCombatants('ally'),ids=new Set(visible.map(u=>u.id));
+  const visible=knownBattleUnits(b),ids=new Set(visible.map(u=>u.id));
   const opening=start?.battleId===battleIdOf(b)&&Array.isArray(start.snapshot.combatants)?(start.snapshot.combatants as Combatant[]).filter(u=>ids.has(u.id)):undefined;
   // 开局位置按开战快照里的地图写，之后城墙被毁等变化不回写到开局。
   const openingField=b instanceof SmallBattle&&opening&&start!.snapshot.battlefield&&typeof start!.snapshot.battlefield==='object'?start!.snapshot.battlefield as BattlefieldSpec:undefined;
