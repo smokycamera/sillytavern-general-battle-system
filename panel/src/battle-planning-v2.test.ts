@@ -190,15 +190,15 @@ describe('independent city shape, breaches and legal deployment', () => {
     const explicit=army(1,1);explicit[0]!.pos=0;
     expect(()=>generatedLayeredField('bad-position',7,13,[],{roster:explicit})).toThrow(/部署/);
   });
-  it('over-capacity LLM preparation omits impossible scale/grid/VIP questions without changing saved preferences', async () => {
-    const settings={enabled:true,selectBattleScale:true,designMap:true,selectVip:true,url:'https://api.example/v1',token:'',model:'test',models:[],windowSize:6};
+  it('explicit 64-card mass preparation omits tactical layout and VIP questions and preserves map preferences', async () => {
+    const settings={enabled:true,selectBattleScale:false,designMap:true,selectVip:true,url:'https://api.example/v1',token:'',model:'test',models:[],windowSize:6};
     const request=vi.fn<typeof fetch>(async(_url,init)=>{
       const task=JSON.parse(String(init?.body)).messages.at(-1).content as string,body=JSON.parse(task.slice(task.lastIndexOf('\n')+1));
       expect(body.fields.some((f:any)=>['battle_mode','scene','size'].includes(f.id)||f.id.startsWith('vip_'))).toBe(false);
       return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({selections:Object.fromEntries(body.fields.map((f:any)=>[f.id,{value:Object.keys(f.options)[0],confidence:1}]))})}}]}));
     });
-    const result=await new LlmContextController(request).select({roster:army(32,32),setup,messages:[{id:'m',role:'assistant',completed:true,text:'双方军队展开正面会战。'}]},settings,()=>true);
-    expect(result.mode).toBe('mass');expect(result.battlefieldPlan).toBeUndefined();expect(request).toHaveBeenCalledTimes(1);expect(settings.selectBattleScale).toBe(true);
+    const result=await new LlmContextController(request).select({roster:army(32,32),setup:{...setup,mode:'mass'},messages:[{id:'m',role:'assistant',completed:true,text:'双方军队展开正面会战。'}]},settings,()=>true);
+    expect(result.mode).toBe('mass');expect(result.battlefieldPlan).toBeUndefined();expect(request).toHaveBeenCalledTimes(1);expect(settings.designMap).toBe(true);
   });
   it('VIP 31 remains addressable with commander choices, and map damage follows in the layout step', async () => {
     const roster=army(31,1,'company'),request=vi.fn<typeof fetch>(async(_url,init)=>{

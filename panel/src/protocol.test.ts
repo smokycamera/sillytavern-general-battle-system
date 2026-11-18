@@ -68,16 +68,13 @@ it('错误盾牌规格定位到shield，不把武器、护甲或道具误当盾�
   }
 });
 
-it('80人按一支编队表达；大量单位、错误count和超长事件整批拒绝，规范短例均可解析', () => {
+it('80人可建为一支编队或80张卡；单次count和单批事件数各自校验', () => {
   expect(parseProtocol('<tb><spawn name="守备连" side="enemy" scale="company" hpMax="80"/></tb>').events[0]).toMatchObject({ count: 1, hpMax: 80 });
-  for (const body of [
-    Array.from({ length: 80 }, (_, n) => `<spawn name="士兵${n}" side="enemy" scale="hero"/>`).join(''),
-    '<spawn name="士兵" side="enemy" scale="hero" count="80"/>',
-    '<spawn name="士兵" side="enemy" scale="hero" count="20"/>'.repeat(4),
-  ]) {
-    const result = parseProtocol('<tb><unit_update id="a" hp="500"/>' + body + '</tb>');
-    expect(result.errors.join('')).toMatch(/编队|人数|单位|事件/);
-  }
+  const cards = (n: number) => Array.from({ length: n }, (_, i) => `<spawn name="士兵${i}" side="enemy" scale="hero"/>`).join('');
+  const many = parseProtocol('<tb>' + cards(80) + '</tb>');
+  expect(many.errors).toEqual([]); expect(many.events).toHaveLength(80);
+  expect(parseProtocol('<tb>' + cards(161) + '</tb>').errors.join('')).toMatch(/160/);
+  expect(parseProtocol('<tb><spawn name="士兵" side="enemy" scale="hero" count="80"/></tb>').errors.join('')).toMatch(/count|卡/);
   const examples = [CORE_PROTOCOL, ...PROMPT_CARDS.map((c) => c.content)].flatMap((text) => text.match(/<tb>(?:\s*<[a-z_]+\s[^<>]*\/>\s*)+<\/tb>/g) ?? []);
   expect(examples).toHaveLength(10);
   for (const text of examples) expect(parseProtocol(text).errors, text).toEqual([]);

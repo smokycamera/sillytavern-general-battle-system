@@ -92,9 +92,10 @@ describe('正文格式容错', () => {
       const parsed = parseProtocol(text); expect(parsed.events, text).toEqual([]); expect(parsed.errors.length, text).toBeGreaterThan(0);
     }
   });
-  it('正文长度不占事件预算；卡片与人数上限仍按实际事件检查', () => {
+  it('正文长度不占事件预算；单次建卡上限按每条事件检查', () => {
     expect(parseProtocol('很长的正文'.repeat(5000) + '<unit_update id=a hp=500/>继续正文').errors).toEqual([]);
     expect(parseProtocol('<spawn name="士兵" side=enemy scale=hero count=80/>').errors.join('')).toMatch(/count|卡/);
-    expect(parseProtocol('<tb>' + '<spawn name="士兵" side=enemy scale=hero count=20/>'.repeat(4) + '</tb>').errors.join('')).toMatch(/64/);
+    const batch = parseProtocol('<tb>' + '<spawn name="士兵" side=enemy scale=hero count=20/>'.repeat(4) + '</tb>');
+    expect(batch.errors).toEqual([]); expect(batch.events).toHaveLength(4);
   });
 });

@@ -69,7 +69,7 @@ try {
   check('独立静态面板已加载',await frame.locator('[data-action="workspace-tab"]').count()>0);
   // Reproduce an existing rc.1 journal: envelope saved, message source tag not saved.
   const partial = await page.evaluate(async()=>{
-    context.chat.push({is_user:false,mes:'<tb><spawn name="原生卫兵" side="ally" scale="hero"/><spawn name="原生敌军" side="enemy" scale="hero"/></tb>',swipe_id:0,gen_finished:'complete'});
+    context.chat.push({is_user:false,mes:'<tb><spawn name="原生卫兵" side="ally" scale="hero" weapon="卫兵剑:剑L3"/><spawn name="原生敌军" side="enemy" scale="hero" weapon="卫兵剑:剑L3"/></tb>',swipe_id:0,gen_finished:'complete'});
     await context.saveChat();
     const full=context.saveChat;
     context.saveChat=()=>persistFixture(false);
@@ -181,6 +181,7 @@ try {
   await frame.locator('[data-action="workspace-tab"][data-tab="units"]').first().click();await idle(frame);
   await frame.locator('[data-action="narrative-approve"]').click();await page.waitForFunction(()=>__tavernBattleNative.service.snapshot().storage?.length===34);await idle(frame);
   await frame.locator('[data-action="workspace-tab"][data-tab="battle"]').first().click();await idle(frame);
+  await frame.locator('[data-role="simple-battle"]').check(); await idle(frame);
   await frame.locator('[data-action="mass-start"]').first().click();await idle(frame);
   const massRound=(await state()).battle.snap.round;
   const massCheckpoint = await page.evaluate(()=>JSON.stringify(context.chatMetadata.tavernBattle));
