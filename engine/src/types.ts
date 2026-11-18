@@ -411,6 +411,8 @@ export interface Combatant {
   carriedItems?: import('./items.js').CarriedItem[];
   summonerId?: string;
   bornRound?: number;
+  transportOrigin?: string;
+  transportReadyRound?: number;
   suppression?: number;
   rulesVersion?: 'v2';
   body?: BodyKind;
@@ -496,6 +498,7 @@ export interface GenAudit {
 // ---------- 造怪器 ----------
 
 export interface GenerateInput {
+  unarmed?: boolean;
   loadModel?: import('./load-model.js').LoadModel;
   numericModel?: import('./numeric-model.js').NumericModel;
   /** Omitted for historical API compatibility; the current panel explicitly selects V6. */
@@ -615,6 +618,7 @@ export type LogKind =
   | 'battle-end';
 
 export interface BattleLogEntry {
+  transport?: boolean;
   /** Actual execution feedback; temporary budget limits do not invalidate a route. */
   intentFailure?: { unitId: string; cell?: number; temporary: boolean };
   /** 消息与交涉须保留原话，不按战斗效果精简。 */

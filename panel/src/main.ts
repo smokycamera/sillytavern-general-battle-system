@@ -2943,7 +2943,7 @@ async function approveSuggestion(s: Suggestion): Promise<void> {
         (await addUnit(
           {
             name: s.name, side, archetype: s.archetype,
-            scale, level: s.level, traits, era: state.era,
+            scale, level: s.level, traits, era: state.era, unarmed: !weaponLabel && !s.weaponClass,
             ...(s.weaponClass
               ? { bonuses:s.bonuses,weaponBonuses:s.weaponBonuses,sidearmBonuses:s.weapon2Bonuses,armorBonuses:s.armorBonuses,weaponClass: s.weaponClass, weaponLevel: s.weaponLevel ?? 1, weaponName: weaponLabel }
               : weaponId ? { weaponId } : s.weapon ? { weaponName: s.weapon } : {}),
@@ -3308,7 +3308,8 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   'small-platform': (el) => {
     const b = state.small, actor = b?.active, kind = el.dataset.kind;
     if (!b || !actor || actor.side !== 'ally' || actor.id !== el.dataset.actor || !['leave','select','board'].includes(kind ?? '')) throw Error('骑乘行动者已变化');
-    b.platforms.act(actor,kind as 'leave'|'select'|'board',el.dataset.id!);
+    const count = el.parentElement?.querySelector<HTMLInputElement>('input[data-ride-count]');
+    b.platforms.act(actor,kind as 'leave'|'select'|'board',el.dataset.id!, count ? count.valueAsNumber : undefined);
     tacticalView.selectedId = b.active?.id; tacticalView.targetId = undefined;
     tacticalView.cell = undefined; tacticalView.mode = 'move';
   },

@@ -61,7 +61,8 @@ export function createBattleMcp(broker) {
   const gameWrite = { ...gameSession, stateId: z.string().describe('最近 battle_state 或游戏操作返回的 stateId'), requestId };
   const cell = z.union([z.number().int().min(0), z.string().regex(/^[A-Za-z][1-9]\d*$/)]).describe('地图零起始索引，或 A1 等坐标');
   const action = z.object({
-    type: z.enum(['move','attack','charge','ability','brace','overwatch','reload','suppress','retreat','takeoff','land','climb','structure','gate','haste','end_turn','auto']),
+    type: z.enum(['move','attack','charge','ability','brace','overwatch','reload','suppress','retreat','takeoff','land','climb','structure','gate','haste','end_turn','auto','board','leave','select-platform']),
+    count: z.number().int().positive().optional(),
     cell: cell.optional(), direction: z.enum(['advance','withdraw']).optional(), targetId: z.string().optional(),
     abilityId: z.string().optional(), weaponMode: z.enum(['primary','sidearm']).optional(), enabled: z.boolean().optional(),
   }).strict();

@@ -5,7 +5,8 @@ import { formationChoices } from './formation-orders.js';
 import { publicBattleEvents } from './battle-reports.js';
 
 export interface GameAction {
-  type: 'move' | 'attack' | 'charge' | 'ability' | 'brace' | 'overwatch' | 'reload' | 'suppress' | 'retreat' | 'takeoff' | 'land' | 'climb' | 'structure' | 'gate' | 'haste' | 'end_turn' | 'auto';
+  type: 'move' | 'attack' | 'charge' | 'ability' | 'brace' | 'overwatch' | 'reload' | 'suppress' | 'retreat' | 'takeoff' | 'land' | 'climb' | 'structure' | 'gate' | 'haste' | 'end_turn' | 'auto' | 'board' | 'leave' | 'select-platform';
+  count?: number;
   cell?: number | string;
   direction?: 'advance' | 'withdraw';
   targetId?: string;
@@ -44,6 +45,7 @@ function unitView(u: Combatant, b: Battle | null) {
   return { id: u.id, name: u.name, side: u.side, scale: u.scale, level: u.level, body: u.body,
     hp: u.hp, hpMax: u.base.hpMax, morale: u.morale, status: u.status, stats: u.base, resources: u.resources,
     conditions: u.conditions, pos: u.pos, cell: field && u.pos !== undefined ? cellLabel(field, u.pos) : undefined,
+    platform:u.platform, seats:u.seats, ride:u.ride && {platformId:u.ride.platformId,mode:u.ride.mode},
     formationPosition: u.formationPosition, airborne: u.airborne, elevation: u.elevation,
     weapon: u.weapon && { name: u.weapon.name, range: u.weapon.range, minRange: u.weapon.minRange },
     sidearm: u.sidearm && { name: u.sidearm.name, range: u.sidearm.range },
@@ -55,7 +57,7 @@ function unitView(u: Combatant, b: Battle | null) {
 /** Domain state, independent of selected tab, map mode, dialog or DOM controls. */
 export function playerGameState(runtime: McpGameRuntime, args: Record<string, unknown> = {}) {
   const b = runtime.battle();
-  const visible = b ? b.rules.resolutionVersion === 'v2' ? b.visibleCombatants('ally') : b.combatants : runtime.roster();
+  const visible = b instanceof SmallBattle ? b.rosterInView('ally') : b ? b.rules.resolutionVersion === 'v2' ? b.visibleCombatants('ally') : b.combatants : runtime.roster();
   const known = new Set(visible.map(u => u.id));
   const actor = visible.find(u => u.side === 'ally' && u.id === args.actorId)
     ?? (b instanceof SmallBattle ? visible.find(u => u.side === 'ally' && u.id === b.active?.id) : visible.find(u => u.side === 'ally' && u.status === 'ready'));
@@ -79,7 +81,7 @@ export function playerGameState(runtime: McpGameRuntime, args: Record<string, un
     ...(b instanceof SmallBattle && actor ? {
       economy: b.getTurnEconomy(actor.id), movementLeft: field ? b.movementLeft(actor.id) : undefined,
       reachable: field ? b.reachableCells(actor.id).map(p => ({ cell: p.cells.at(-1), label: cellLabel(field, p.cells.at(-1)!), cost: p.cost })) : undefined,
-      options,
+      options, transport: b.platforms.options(actor),
       auxiliaryActions: ['overwatch','reload','suppress','takeoff','land','climb','structure','gate','haste','auto'],
     } : {}),
     ...(b instanceof MassBattle ? {
@@ -118,9 +120,10 @@ export function gameCell(b: SmallBattle, value: unknown): number {
 export function executeSmallGameAction(b: SmallBattle, actorId: string, a: GameAction): void {
   const actor = b.combatants.find(u => u.id === actorId && u.side === 'ally');
   if (!actor || b.active?.id !== actorId || actor.status !== 'ready' || b.isOver()) throw Error('该我方单位当前不能行动，后续步骤已停止');
-  if (a.targetId && !a.targetId.startsWith('cell:') && !b.visibleCombatants('ally').some(u => u.id === a.targetId)) throw Error('目标不在玩家可见范围内');
+  if (a.targetId && a.targetId !== actorId && !a.targetId.startsWith('cell:') && !b.rosterInView('ally').some(u => u.id === a.targetId)) throw Error('目标不在玩家可见范围内');
   const target = () => { if (!a.targetId) throw Error('请提供 targetId'); return a.targetId; };
   switch (a.type) {
+    case 'board': case 'leave': case 'select-platform': b.platforms.act(actor,a.type === 'select-platform' ? 'select' : a.type,target(),a.count); break;
     case 'move':
       if (b.battlefield) b.moveTo(actorId, gameCell(b, a.cell));
       else { if (a.direction !== 'advance' && a.direction !== 'withdraw') throw Error('此战场的移动指令需要 direction'); b.move(actorId, a.direction); }

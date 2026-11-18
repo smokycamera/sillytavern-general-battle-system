@@ -65,7 +65,7 @@ const present = (u: Combatant) => !['dead', 'fled'].includes(u.status);
 
 /** 查看敌军不切换到敌军观测口径；所有动作始终属于我方单位。 */
 export function tacticalSelection(battle: SmallBattle, view: TacticalView, query?: TacticalQuerySource) {
-  const visible = query instanceof TacticalQueryCache ? query.read(battle, 'visible', () => battle.visibleCombatants('ally').filter(present)) : battle.visibleCombatants('ally').filter(present);
+  const visible = query instanceof TacticalQueryCache ? query.read(battle, 'visible', () => battle.rosterInView('ally').filter(present)) : battle.rosterInView('ally').filter(present);
   const actor = visible.find((u) => u.id === view.selectedId && u.side === 'ally')
     ?? (battle.active?.side === 'ally' ? battle.active : undefined)
     ?? visible.find((u) => u.side === 'ally' && u.status === 'ready');
@@ -223,7 +223,7 @@ function tileInspector(battle: SmallBattle, view: TacticalView, selection: Retur
     ${actor && selection.canControl && (!climbReason || structure?.top && structure.hp > 0) ? `<button data-action="grid-climb" data-actor="${esc(actor.id)}" data-cell="${cell}" ${climbReason ? 'disabled' : ''} title="${esc(climbReason ?? `消耗主行动和${battle.climbMovementCost(actor.id)}移动`)}">${isElevated(actor) ? '下到地面' : '登城'}</button>` : ''}</div>
     ${!battle.cellVisible('ally', cell) ? '<p class="grid-reason">此格尚未观测；路线只考虑已知占位，实际移动可能遇敌受阻。</p>' : ''}
     ${field.objective.kind !== 'annihilation' && field.objective.cell === cell ? '<div class="objective-detail"><b>任务目标</b><div class="objective-rule">' + objectiveDetails(battle) + '</div></div>' : ''}
-    ${occupants.length ? '<div class="inspector-units">' + occupants.map((u) => `<button data-action="grid-inspect-unit" data-unit="${esc(u.id)}" class="${u.side}">${esc(tacticalName(battle,u)!)} · ${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}${u.scale === 'hero' ? '生命' : '人'}${isAirborne(u) ? ' · 空中' : isElevated(u) ? ' · 墙顶' : ''}${defenseLayerLabels(u).map((label) => ' · ' + esc(label)).join('')}</button>`).join('') + '</div>' : ''}
+    ${occupants.length ? '<div class="inspector-units">' + occupants.map((u) => `<button data-action="grid-inspect-unit" data-unit="${esc(u.id)}" class="${u.side}">${esc(tacticalName(battle,u)!)} · ${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}${u.scale === 'hero' ? '生命' : u.body === 'vehicle' ? '辆' : u.platform?.kind === 'animal' ? '匹' : '人'}${isAirborne(u) ? ' · 空中' : isElevated(u) ? ' · 墙顶' : ''}${defenseLayerLabels(u).map((label) => ' · ' + esc(label)).join('')}</button>`).join('') + '</div>' : ''}
   </div>`;
 }
 
@@ -284,7 +284,11 @@ export function rideControls(battle: SmallBattle, actor?: Combatant): string {
   const slot = battle.turnOrder[battle.turnIndex];
   const owner = battle.isTurnOf(actor.id) && slot ? battle.byId(slot) : undefined;
   const source = owner?.ride?.mode === 'mount' ? '<span>当前行动方 · ' + esc(tacticalName(battle,actor)!) + '</span>' : '';
-  return source + battle.platforms.options(actor).map(a => `<button data-action="small-platform" data-actor="${esc(actor.id)}" data-kind="${a.kind}" data-id="${esc(a.id)}">${esc(a.label)}</button>`).join('');
+  return source + battle.platforms.options(actor).map(option => {
+    const count = option.maxCount && option.maxCount > 1
+      ? `<label>人数 <input data-ride-count type="number" min="1" max="${option.maxCount}" value="${option.maxCount}"></label>` : '';
+    return `<span>${count}<button data-action="small-platform" data-actor="${esc(actor.id)}" data-kind="${option.kind}" data-id="${esc(option.id)}">${esc(option.label)}</button></span>`;
+  }).join('');
 }
 export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, automation: TacticalAutomation = MANUAL, query?: TacticalQuerySource): string {
   return withBattleReportQueries(() => battle.withReadOnlyQueries(() => renderTacticalContent(battle, view, automation, query)));

@@ -178,7 +178,7 @@ function spawnInput(event: Extract<Suggestion, { kind: 'spawn' }>): GenerateInpu
     shieldName: event.shieldName, shieldLevel: event.shieldLevel, shieldClass: event.shieldClass, shieldBonuses: event.shieldBonuses,
     ...((event.scale ?? 'hero') === 'hero' ? {} : { hp: event.hp, hpMax: event.hpMax }),
     name: event.name, scale: event.scale ?? 'hero', archetype: event.archetype, level: event.level, side: event.side ?? 'enemy',
-    traits: traits as string[], weaponName: event.weaponName ?? event.weapon, weaponClass: event.weaponClass,
+    traits: traits as string[], unarmed: !event.weapon && !event.weaponClass, weaponName: event.weaponName ?? event.weapon, weaponClass: event.weaponClass,
     bonuses: event.bonuses, weaponBonuses: event.weaponBonuses, sidearmBonuses: event.weapon2Bonuses, armorBonuses: event.armorBonuses,
     weaponLevel: event.weaponLevel, weaponStabilized: event.weaponStabilized, weaponEnchantment: event.weaponEnchantment, reserves: event.reserves, armorProfile: event.armorProfile, sidearmName: event.weapon2Name, sidearmClass: event.weapon2Class, sidearmLevel: event.weapon2Level,
     armorName: event.armorName ?? event.armor, armorTier: event.armorTier, armorLevel: event.armorLevel,
