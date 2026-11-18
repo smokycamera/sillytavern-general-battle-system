@@ -16,7 +16,7 @@ export function prepareRevivalBattle(unit: Combatant, reset = false): void {
 
 /** 仅在实际伤害造成归零时调用；普通治疗、撤军和归档不会进入此处。 */
 export function tryRevive(unit: Combatant): string | undefined {
-  if (unit.revivalModel !== 'revival-v1' || unit.rulesVersion !== 'v2' || unit.hp > 0 || !['ready', 'routing'].includes(unit.status)) return;
+  if (unit.transportOrigin || unit.revivalModel !== 'revival-v1' || unit.rulesVersion !== 'v2' || unit.hp > 0 || !['ready', 'routing'].includes(unit.status)) return;
   const state = unit.revivalState, level = effectiveTraitLevel(unit, 'revival');
   if (!state?.members || !level || state.used >= traitParameter('revivalUses', level)) return;
   const percent = traitParameter('revivalPercent', level);

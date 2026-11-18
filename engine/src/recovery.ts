@@ -41,6 +41,18 @@ export function applyCombatDamage(unit:Combatant,amount:number,targets=1,overmat
 function woundedShare(unit: Combatant): [number, number] {
   return unit.rulesVersion === 'v2' && unit.scale !== 'hero' && activeTraitIds(unit).includes('medic') ? [3, 4] : [1, 2];
 }
+export function mergeWounded(root: Combatant, child: Combatant): void {
+  const percent = (root.woundedPercentRemainder ?? 0) + (child.woundedPercentRemainder ?? 0);
+  let carry = Math.floor(percent / 100);
+  root.woundedPercentRemainder = percent % 100;
+  if (root.formation && child.formation && !phase2Traits(root)) {
+    const [kept, group] = woundedShare(root);
+    const first = root.formation.woundedRemainder ?? 0, second = child.formation.woundedRemainder ?? 0;
+    carry += Math.floor(kept * (first + second) / group) - Math.floor(kept * first / group) - Math.floor(kept * second / group);
+    root.formation.woundedRemainder = (first + second) % group;
+  }
+  root.recoverableWounded = Math.min(root.base.hpMax-root.hp,(root.recoverableWounded ?? 0) + (child.recoverableWounded ?? 0) + carry);
+}
 /** 余量是尚未凑满一组的伤亡；只按累计总数取整，连续小额伤亡不会丢失或重复。 */
 function woundedFromLoss(unit: Combatant, loss: number, remainder: number): { recoverable: number; remainder: number } {
   if (phase2Traits(unit)) {

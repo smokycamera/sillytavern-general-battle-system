@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "3.0.26",
-  "builtAt": "2026-11-18T11:35:14.984Z",
-  "sourceFingerprint": "b8ec133f350dddca6d56edc438bbd778f712a2e0a2e1b0034d8ead7ca0c2a07e",
+  "builtAt": "2026-11-18T11:53:27.091Z",
+  "sourceFingerprint": "d8a6dd1a6044dc82500344a5cc14bbf1d0ff2c96ffa18ef5f26701a551bb0e08",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -31,14 +31,14 @@
       "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     },
     {
-      "path": "dist/assets/panel-DGJy4g3G.css",
-      "bytes": 34245,
-      "sha256": "d7e482a072c030ccf70b23815979df46fcc7c11440f4eb9ea413633dacd9dfb7"
+      "path": "dist/assets/panel-Cn6g8M8a.css",
+      "bytes": 35186,
+      "sha256": "d4340f4655ed63b31e9af9322e644c1fbd817f0aed007c2efcbf86b11be7a359"
     },
     {
-      "path": "dist/assets/panel-nMG8UqbJ.js",
-      "bytes": 1463378,
-      "sha256": "bc4305f94f76e96b68df8815f8fce35433e9522bcd8c5207991448cb7c23f273"
+      "path": "dist/assets/panel-ksLKXZwi.js",
+      "bytes": 1471245,
+      "sha256": "7b2956476f1fb6499e8d694cbd4270d6b47abb797ee0edcba359cd944d364ae8"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -56,9 +56,9 @@
       "sha256": "20df3d3dc1cb9257c08d74bf7fe590d2eddc4499684ec018cf7861afbf776cf9"
     },
     {
-      "path": "dist/assets/worldbooks-B4XwrT-o.js",
-      "bytes": 1323339,
-      "sha256": "ac6d3d20eb3498996fc5ab679e3d7b4e4f9f6d8c4b81cec1c610090f5e4cb6ab"
+      "path": "dist/assets/worldbooks-C3YzeBAC.js",
+      "bytes": 1328391,
+      "sha256": "641060be244542611ff6047f63a21cdaf6df8a904f1fa2d81417a3b8a1ac76d5"
     },
     {
       "path": "docs/README.md",
@@ -588,7 +588,7 @@
     {
       "path": "dist/index.js",
       "bytes": 99477,
-      "sha256": "a88ebf521fb0527092cbdaa63c8ef1145c631468f2e8d52d35049a9836fdba2f"
+      "sha256": "e6ec6411c175379ae5f41e9b1e4e0f329609162434985c126aa81f92a7ed6b77"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -647,13 +647,13 @@
     },
     {
       "path": "mcp/tools.mjs",
-      "bytes": 12809,
-      "sha256": "15850fb7dce7d460a3b06c16d26dd63d78abdb508731f074706ce64d6dfb4e16"
+      "bytes": 12817,
+      "sha256": "864a3ea772501528638a5dcc1df716fd2e9529a14a25d6ad4bf48976a35bc476"
     },
     {
       "path": "dist/panel/index.html",
       "bytes": 48598,
-      "sha256": "2dd393f5c28731c81d955a4dca3e18ee4ce4707eb48e28450d333be1eac92e16"
+      "sha256": "a5d89fa8eec5e110d95da1dcdc298baf086b78f816212a351682d34d21b2eb79"
     },
     {
       "path": "scripts/jev-cors-relay.mjs",

@@ -1,5 +1,6 @@
 import type { Combatant } from '../types.js';
 import { clampShieldDurability, clampEnergyShield } from '../shield-state.js';
+import { mergeWounded } from '../recovery.js';
 import { mergeHealth } from '../member-health.js';
 
 // Seat numbers are zero-based. A vehicle owns a contiguous block of seats.
@@ -41,6 +42,18 @@ export function detachMembers(parent: Combatant, count: number, id: string): Com
     }
     pf.health = kept; cf.health = moved;
   }
+  if (parent.xpValue !== undefined) {
+    child.xpValue = Math.floor(parent.xpValue * count / parent.base.hpMax);
+    parent.xpValue -= child.xpValue;
+  }
+  if (parent.lifestealState && child.lifestealState) {
+    for (const key of ['baseline','spent'] as const) {
+      const share = Math.floor(parent.lifestealState[key] * count / parent.hp);
+      child.lifestealState[key] = share; parent.lifestealState[key] -= share;
+    }
+    child.lifestealState.remainder = 0;
+  }
+  child.regenerationRemainder = 0; delete child.battleZones;
   parent.hp -= count; parent.base.hpMax -= count;
   if (pf) { pf.members = parent.hp; pf.capacity -= count; }
   child.id = id; child.transportOrigin = parent.transportOrigin ?? parent.id;
@@ -52,8 +65,9 @@ export function detachMembers(parent: Combatant, count: number, id: string): Com
   child.gear = []; delete child.carriedItems; delete child.accessories;
   clampShieldDurability(parent); clampEnergyShield(parent);
   if (parent.revivalState) {
-    parent.revivalState.members = Math.min(parent.revivalState.members,parent.base.hpMax);
-    child.revivalState = {members:0,used:0};
+    const retained = Math.min(parent.revivalState.members,parent.base.hpMax);
+    child.revivalState = {members:parent.revivalState.members-retained,used:0};
+    parent.revivalState.members = retained;
   }
   // A limited-area condition follows only as many members as it originally affected.
   parent.conditions.forEach((condition,i) => {
@@ -69,6 +83,24 @@ export function detachMembers(parent: Combatant, count: number, id: string): Com
   return child;
 }
 
+/** Combine the member health ledger without healing or generating a casualty event. */
+export function combinePersonnel(root: Combatant, child: Combatant): void {
+  root.hp += child.hp;
+  root.base.hpMax += child.base.hpMax;
+  if (root.formation && child.formation) {
+    root.formation.capacity = root.base.hpMax;
+    root.formation.members = root.hp;
+    if (root.formation.health && child.formation.health) root.formation.health = mergeHealth([...root.formation.health,...child.formation.health]);
+  }
+  mergeWounded(root,child);
+  if (root.revivalState && child.revivalState) root.revivalState.members += child.revivalState.members;
+  if (child.xpValue !== undefined) root.xpValue = (root.xpValue ?? 0) + child.xpValue;
+  if (root.lifestealState && child.lifestealState) {
+    root.lifestealState.baseline += child.lifestealState.baseline;
+    root.lifestealState.spent += child.lifestealState.spent;
+  }
+}
+
 /** Settlement projection only. The original battle and its report retain the positions of all detachments. */
 export function reuniteTransportGroups(units: Combatant[]): Combatant[] {
   if (!units.some(u => u.transportOrigin)) return units;
@@ -81,12 +113,7 @@ export function reuniteTransportGroups(units: Combatant[]): Combatant[] {
     if (child.hp > 0 && !wasEmpty && (root.ride?.platformId !== child.ride?.platformId || root.ride?.mode !== child.ride?.mode)) {
       delete root.ride; root.mount = false;
     } else if (child.hp > 0 && wasEmpty) { root.ride = child.ride && {...child.ride}; root.mount = child.mount; }
-    root.hp += child.hp; root.base.hpMax += child.base.hpMax;
-    if (root.formation && child.formation) {
-      root.formation.capacity = root.base.hpMax; root.formation.members = root.hp;
-      if (root.formation.health && child.formation.health) root.formation.health = mergeHealth([...root.formation.health,...child.formation.health]);
-    }
-    root.recoverableWounded = (root.recoverableWounded ?? 0) + (child.recoverableWounded ?? 0);
+    combinePersonnel(root,child);
     if (child.hp > 0 && (wasEmpty || child.status === 'ready')) root.status = child.status;
   }
   for (const unit of parents) if (unit.ride) unit.ride = {platformId:unit.ride.platformId,mode:unit.ride.mode};

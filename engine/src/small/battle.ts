@@ -13,6 +13,7 @@ import { spendAbility } from '../ability-state.js';
 import { itemUseLog } from '../item-use-log.js';
 import { assertBattleCapacity } from '../battle-limits.js';
 import { smallBattleResult } from '../battle-result.js';
+import { combinePersonnel } from './transport-groups.js';
 import { SmallPlatforms } from './platforms.js';
 import { unitCount, validateRides } from '../platforms.js';
 import { prepareGridDeployment, deploymentDepth } from './spatial.js';
@@ -404,7 +405,7 @@ export class SmallBattle {
       this.platforms.restore();
       for (const rider of this.combatants) {
         const carrier = this.platforms.carrier(rider);
-        if (carrier && rider.hp > 0) this.logTransport(rider,'部署时'+(rider.mount ? '骑乘' : '搭乘')+carrier.name+'，人数'+unitCount(rider),carrier);
+        if (carrier && rider.hp > 0) this.logTransport(rider,'部署时装载至'+carrier.name+'，人数'+unitCount(rider),carrier);
       }
     }
     if (this.rules.resolutionVersion === 'v2') revealContacts(this.observationContext());
@@ -465,10 +466,17 @@ export class SmallBattle {
     return (this.platformActor ?? this.turnOrder[this.turnIndex]) === id;
   }
 
-  private platformTargetBonus(target: Combatant, damage: number, visible: Combatant[]): number {
-    if (!target.platform || damage <= 0) return 0;
-    const exposed = visible.filter(u => u.hp > 0 && u.ride?.platformId === target.id);
-    return Math.min(4,exposed.length * 2) * Math.min(1,damage / Math.max(1,memberHealth(target) / unitCount(target)));
+  private visibleLoads(units: Combatant[]): Map<string,number> {
+    const loads = new Map<string,number>();
+    for (const u of units) if (u.ride && u.hp > 0 && !u.ride.stranded)
+      loads.set(u.ride.platformId,(loads.get(u.ride.platformId) ?? 0) + unitCount(u));
+    return loads;
+  }
+  private platformTargetBonus(target: Combatant, damage: number, loads: Map<string,number>): number {
+    const passengers = loads.get(target.id);
+    if (!passengers || !target.platform || damage <= 0) return 0;
+    const occupancy = Math.min(1,passengers / ((target.seats ?? 1)*unitCount(target)));
+    return 4 * occupancy * Math.min(1,damage / Math.max(1,memberHealth(target) / unitCount(target)));
   }
   transportMovementAvailable(actorId: string, passenger = this.byId(actorId)): boolean {
     if (passenger.status !== 'ready' || passenger.conditions.some(c => c.dur > 0 && (this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventMove))) return false;
@@ -488,6 +496,65 @@ export class SmallBattle {
     if (this.actedThisTurn.has(from)) this.actedThisTurn.add(to);
     if (this.hasteSpent.get(from) === this.round) this.hasteSpent.set(to,this.round);
   }
+  regroup(actor: Combatant, target: Combatant): void {
+    if (!this.platforms.options(actor).some(option => option.kind === 'merge' && option.id === target.id)) throw Error('这两队当前无法合并');
+    this.actedThisTurn.add(actor.id);
+    // Only the acting group settles regeneration, cooldowns and resources this turn.
+    this.finishTurn(() => this.combineGroups(actor,target));
+  }
+
+  private combineGroups(actor: Combatant, target: Combatant): void {
+    // Preserve the archive card and its equipment when it is one of the two groups.
+    const keep = target.transportOrigin ? actor : target;
+    const part = keep === actor ? target : actor;
+    const before = keep.hp, incoming = part.hp, cell = target.pos;
+    const minimum = (this.xpMinimum.get(keep.id) ?? before) + (this.xpMinimum.get(part.id) ?? incoming);
+    combinePersonnel(keep,part);
+    this.notePersonnelTransfer(keep.id,incoming);
+    keep.pos = cell;
+    const credit = this.xpByUnit.get(part.id);
+    if (credit) {
+      const owner = keep.transportOrigin ?? keep.id;
+      this.xpByUnit.set(owner,(this.xpByUnit.get(owner) ?? 0)+credit);
+      this.xpByUnit.delete(part.id);
+    }
+    keep.fatigue = Math.max(keep.fatigue,part.fatigue);
+    keep.suppression = Math.max(keep.suppression ?? 0,part.suppression ?? 0);
+    if (keep.morale !== undefined && part.morale !== undefined) keep.morale = Math.round((keep.morale*before + part.morale*incoming) / keep.hp);
+    for (const condition of part.conditions) {
+      const current = keep.conditions.find(c => c.id === condition.id && c.sourceId === condition.sourceId && c.effectSourceId === condition.effectSourceId);
+      if (!current) keep.conditions.push({...condition});
+      else {
+        current.dur = Math.max(current.dur,condition.dur);
+        if (current.affectedMembers !== undefined && condition.affectedMembers !== undefined)
+          current.affectedMembers = Math.min(keep.hp,current.affectedMembers + condition.affectedMembers);
+      }
+    }
+    if (part.battleZones?.length) (keep.battleZones ??= []).push(...part.battleZones.map(z => ({...z,ownerId:keep.id})));
+    for (const unit of this.combatants) {
+      for (const condition of unit.conditions) if (condition.sourceId === part.id) condition.sourceId = keep.id;
+      for (const zone of unit.battleZones ?? []) if (zone.affected.includes(part.id))
+        zone.affected = [...new Set(zone.affected.map(id => id === part.id ? keep.id : id))];
+    }
+    for (const slot of ['weapon','sidearm'] as const) {
+      const key = weaponReloadKey(keep,keep[slot]), from = weaponReloadKey(part,part[slot]);
+      const cooldown = Math.max(this.reloadCd.get(key) ?? 0,this.reloadCd.get(from) ?? 0);
+      if (cooldown) this.reloadCd.set(key,cooldown);
+    }
+    this.xpMinimum.set(keep.id,minimum);
+    // Retain the retired ID so future detachments cannot reuse it in the battle history.
+    this.xpMinimum.set(part.id,0);
+    this.logTransport(keep,'与'+part.name+'合并，'+before+'人＋'+incoming+'人，共'+keep.hp+'人',part);
+    this.combatants.splice(this.combatants.indexOf(part),1);
+    // Both slots are spent this round; the combined card occupies the current slot.
+    const beforeSlot = this.turnOrder.slice(0,this.turnIndex).filter(id => id !== keep.id && id !== part.id);
+    const afterSlot = this.turnOrder.slice(this.turnIndex+1).filter(id => id !== keep.id && id !== part.id);
+    this.turnIndex = beforeSlot.length;
+    this.turnOrder = [...beforeSlot,keep.id,...afterSlot];
+    this.actedThisTurn.add(keep.id);
+    this.reactionSpent.add(keep.id);
+    this.overwatch.delete(keep.id);
+  }
   canSwitchPlatform(owner: string, carrier: string): boolean {
     return this.activationPair.includes(owner) && this.activationPair.includes(carrier);
   }
@@ -498,16 +565,22 @@ export class SmallBattle {
   logTransport(actor: Combatant, text: string, platform: Combatant): void {
     this.recordEvent({round:this.round,kind:'move',transport:true,participants:[actor.id,platform.id],text:actor.name+'：'+text});
   }
-  transportBlast(passenger: Combatant, carrier: Combatant, source?: Combatant): void {
+  transportInjury(passenger: Combatant, carrier: Combatant, cause: '摔落' | '载具爆毁', source?: Combatant): void {
     const count = unitCount(passenger);
     // One randomized rounding per wrecked group, irrespective of formation size.
-    const affected = Math.floor((count + this.rng.d(6) - 1) / 6);
+    const fall = cause === '摔落';
+    const affected = fall ? count : Math.floor((count + this.rng.d(6) - 1) / 6);
     const perMember = hasMemberHealth(passenger) ? passenger.formation!.memberHp : passenger.scale === 'hero' ? passenger.base.hpMax : 1;
-    const loss = applyCombatDamage(passenger,affected * Math.max(1,Math.ceil(perMember / 2)),affected);
+    const damage = fall && !hasMemberHealth(passenger) ? fallDamage(passenger)
+      : affected * Math.max(1,Math.ceil(perMember / (fall ? 10 : 2)));
+    const loss = applyCombatDamage(passenger,damage,affected);
     const casualties = count - unitCount(passenger);
-    this.recordEvent({round:this.round,kind:'condition',transport:true,participants:[passenger.id,carrier.id],text:carrier.name+'爆毁，'+passenger.name+'受波及'+affected+'人，生命损失'+loss+'，减员'+casualties+'人',
-      damage:{sourceId:source?.id,targetId:passenger.id,amount:loss,cause:'载具爆毁',unit:'life',members:casualties}});
-    if (loss) this.checkDeath(passenger,source);
+    this.recordEvent({round:this.round,kind:'condition',transport:true,participants:[passenger.id,carrier.id],text:(fall ? passenger.name+'从'+carrier.name+'摔落，'+count+'人' : carrier.name+'爆毁，'+passenger.name+'受波及'+affected+'人')+'，损失'+loss+'生命，减员'+casualties+'人',
+      damage:{sourceId:source?.id,targetId:passenger.id,amount:loss,cause,...((hasMemberHealth(passenger) || passenger.scale === 'hero') && {unit:'life' as const}),members:casualties}});
+    if (loss) {
+      breakCharmOnDamage(this.combatants,passenger,source,loss);
+      this.checkDeath(passenger,source);
+    }
   }
 
   /** 两单位距离 = 坐标差绝对值 */
@@ -671,6 +744,7 @@ export class SmallBattle {
       ])].sort(),
     }));
   }
+  notePersonnelTransfer(id: string, count: number): void { this.feedback?.transferMembers(id,count); }
   private captureFeedback(): void { this.feedback?.capture(this.round, this.feedbackUnits(), { ...this.controlRounds, winner: this.objectiveWinner }); }
   private beginFeedbackActivation(): void {
     this.captureFeedback();
@@ -1052,7 +1126,7 @@ export class SmallBattle {
   }
   climbMovementCost(actorId: string): number { return Math.min(2, this.movementBudget(actorId)); }
   climbReason(actorId: string, cell: number, from?: number): string | undefined {
-    if (this.byId(actorId).ride) return '攀登须由平台执行，乘员可先下车';
+    if (this.byId(actorId).ride) return '乘员离开后可独立攀登';
     const field = this.battlefield, actor = { ...this.byId(actorId), ...(from === undefined ? {} : { pos: from }) };
     if (!field?.layerVersion || !this.isTurnOf(actorId) || actor.status !== 'ready' || this.isOver() || !this.nonSkillActionAvailable(actorId)) return '攀登需要主行动';
     if (this.movementLeft(actorId) < this.climbMovementCost(actorId)) return `攀登需要${this.climbMovementCost(actorId)}点移动`;
@@ -1198,7 +1272,7 @@ export class SmallBattle {
     shieldingUnits = this.visibleCombatants(actor.side),
     sight?: HypotheticalSight,
   ): WeaponContext {
-    if (this.platforms.sheltered(actor) || this.platforms.sheltered(target)) return {weapon:undefined,ranged:false,useSidearm:false,pointBlankPenalty:0,reason:'舱内乘员受车体掩护，须先下车'};
+    if (this.platforms.sheltered(actor) || this.platforms.sheltered(target)) return {weapon:undefined,ranged:false,useSidearm:false,pointBlankPenalty:0,reason:'乘员在封闭载具内'};
     const distance = this.dist(actor, target);
     const primaryRanged = this.rules.resolutionVersion === 'v2' ? isRangedWeapon(actor.weapon) : opts.ranged ?? isRangedCapable(actor);
     const mode = opts.weaponMode ?? 'auto';
@@ -1260,7 +1334,7 @@ export class SmallBattle {
   }
 
   private moveReason(actor: Combatant, dir: 'advance' | 'withdraw'): string | undefined {
-    if (actor.ride?.mode === 'aboard') return '乘员随平台移动，请先下车';
+    if (actor.ride?.mode === 'aboard') return '离开后可独立移动';
     if (this.battlefield) return this.reachableCells(actor.id).some((p) => p.cost > 0) ? undefined : '没有可用上限内的可移动落点';
     const foes = this.combatants.filter((c) => combatHostile(c, actor, this.combatants) && c.status === 'ready');
     if (!foes.length) return '没有可供参照的敌人';
@@ -1379,7 +1453,7 @@ export class SmallBattle {
   private buildActionOptions(actorId: string): ActionOption[] {
     const actor = this.byId(actorId);
     const economy = this.getTurnEconomy(actorId);
-    const actorReason = this.platforms.sheltered(actor) ? '舱内乘员须先下车' : controlPolicy(actor)==='charmed' && !this.controlledExecution.has(actorId) ? '魅惑期间由受约束AI行动' : actor.status !== 'ready'
+    const actorReason = this.platforms.sheltered(actor) ? '乘员在封闭载具内' : controlPolicy(actor)==='charmed' && !this.controlledExecution.has(actorId) ? '魅惑期间由受约束AI行动' : actor.status !== 'ready'
       ? actor.name + ' 无法行动（' + actor.status + '）'
       : this.started && !this.isTurnOf(actorId)
         ? '现在不是 ' + actor.name + ' 的回合'
@@ -1634,7 +1708,7 @@ export class SmallBattle {
   move(actorId: string, dir: 'advance' | 'withdraw', opts: { bypassTurn?: boolean } = {}): void {
     const rider = this.byId(actorId), carrier = this.platforms.carrier(rider);
     if (carrier && rider.ride?.mode === 'mount' && !this.platforms.canDrive(rider,carrier)) throw Error('当前控制状态无法驾驭平台');
-    if (this.byId(actorId).ride?.mode === 'aboard') throw Error('乘员随平台移动，请先下车');
+    if (this.byId(actorId).ride?.mode === 'aboard') throw Error('离开后可独立移动');
     if (this.battlefield) {
       const actor = this.byId(actorId);
       const destinations = this.reachableCells(actorId).filter((p) => p.cost > 0).sort((a, b) => {
@@ -1846,7 +1920,7 @@ export class SmallBattle {
   }
   /** 不考虑技能位移、按施术者当前位置判断目标是否可选。 */
   private skillTargetReasonAt(actor: Combatant, ability: Combatant['abilities'][number], target: Combatant, recipient = false): string | undefined {
-    if (this.platforms.sheltered(actor) || this.platforms.sheltered(target)) return '舱内乘员须先下车';
+    if (this.platforms.sheltered(actor) || this.platforms.sheltered(target)) return '乘员在封闭载具内';
     const areaAnchor = !recipient && canAnchorArea(ability, this.rules);
     const areaRecipient = recipient && this.rules.areaTargetingModel === 'impact-v1' && !ability.weaponUse && ability.requires !== 'melee' && ability.requires !== 'shield';
     if (this.battlefield?.layerVersion && ability.delivery === 'melee') { const height = meleeHeightReason(this.battlefield, actor, target); if (height) return height; }
@@ -1908,7 +1982,7 @@ export class SmallBattle {
   /** 使用技能 */
   useAbility(actorId: string, abilityId: string, targetId?: string, opts: { bypassTurn?: boolean } = {}): AbilityUseResult {
     const actor = this.byId(actorId);
-    if (this.platforms.sheltered(actor)) return {ok:false, reason:'舱内乘员须先下车', resolutions:[], log:''};
+    if (this.platforms.sheltered(actor)) return {ok:false, reason:'乘员在封闭载具内', resolutions:[], log:''};
     if (controlPolicy(actor) === 'charmed' && !this.controlledExecution.has(actorId)) return { ok: false, reason: '魅惑期间由受约束AI行动', resolutions: [], log: '' };
     if (!opts.bypassTurn && this.started && !this.isTurnOf(actorId)) {
       throw new Error(`现在不是 ${actor.name} 的回合`);
@@ -2200,7 +2274,9 @@ export class SmallBattle {
    * 时序约定：DOT 与死亡判定在单位回合开始；状态时长/冷却/再生在其回合结束递减；
    * 被眩晕跳过的单位视作"回合已过"，同样结算开始与结束效果。
    */
-  endTurn(): void {
+  endTurn(): void { this.finishTurn(); }
+
+  private finishTurn(afterSettlement?: () => void): void {
     if (!this.started) throw new Error('战斗尚未开始');
     if (this.rules.resourceModel && this.isOver()) return;
     const ended = this.active;
@@ -2208,6 +2284,7 @@ export class SmallBattle {
     const settling = this.activationPair.length ? this.activationPair.map(id => this.byId(id)) : ended ? [ended] : [];
     for (const unit of settling) if (unit.status === 'ready' || unit.status === 'routing') this.settleUnit(unit);
     this.activationPair = []; this.platformActor = undefined;
+    afterSettlement?.();
     this.captureFeedback();
     this.feedback?.finishActivation();
 
@@ -2384,10 +2461,16 @@ export class SmallBattle {
         const visible = this.visibleCombatants(dispersionUnit.side).filter(u => u.status === 'ready' && combatHostile(u,dispersionUnit,this.combatants));
         const canFire = (u: Combatant) => visible.some(target => !this.weaponContext(u,target).reason || u.abilities.some(a => this.abilityUsable(u,a) && !this.skillTargetReasonAt(u,a,target)));
         const alternate = choices.find(a => a.kind === 'select');
-        if (alternate && !canFire(dispersionUnit) && canFire(this.byId(alternate.id))) {
+        const hasShot = choices.length > 0 && canFire(dispersionUnit);
+        const regroup = choices.find(a => a.kind === 'merge');
+        if (regroup && !hasShot) {
+          this.platforms.act(dispersionUnit,'merge',regroup.id);
+          return;
+        }
+        if (alternate && !hasShot && canFire(this.byId(alternate.id))) {
           this.platforms.act(dispersionUnit,'select',alternate.id);
           unitId = alternate.id; dispersionUnit = this.byId(unitId);
-        } else if (!dispersionUnit.ride && !canFire(dispersionUnit)) {
+        } else if (!dispersionUnit.ride && !hasShot) {
           const lift = choices.find(a => a.kind === 'board' && a.maxCount === unitCount(dispersionUnit)
             && this.byId(a.id).base.spd > dispersionUnit.base.spd && visible.every(target => this.dist(dispersionUnit,target) > (this.battlefield ? 4 : 2)));
           if (lift) this.platforms.act(dispersionUnit,'board',lift.id);
@@ -2472,7 +2555,7 @@ export class SmallBattle {
     const plans: { score: number; path: GridPath; offensive?: boolean; selfDefenseScore?: number; targetId?: string; abilityId?: string; weaponMode?: SmallAttackOpts['weaponMode']; cell?: number; structureMode?: string; kind: 'structure' | 'gate' | 'climb' | 'weapon' | 'charge' | 'ability' | 'brace' | 'overwatch' | 'hold' | 'land' | 'reload' | 'haste-move' | 'haste-flight';
       /** V19：技能位移后的落点、对主目标的伤害预览、控制效果的生效概率与生效后的目标。 */
       landing?: number; preview?: { expectedDamage: number; variance?: number }; control?: CommandControl }[] = [];
-    const knownUnits = this.visibleCombatants(unit.side);
+    const knownUnits = this.visibleCombatants(unit.side), loads = this.visibleLoads(knownUnits);
     // V19 §1、§2：按当前作战阵营取指挥档案；来袭估值系数乘在来袭、反应与工事估值上（常规为 1）。
     const commandV2 = isCommandV2(this.rules), profile = commandV2 ? commandProfile(this.commanderProfiles, unit, this.combatants) : this.commanderProfiles[unit.side];
     const quality = commandV2 ? commandQuality(profile!.ability) : undefined, threat = quality?.incoming ?? 1;
@@ -2786,7 +2869,7 @@ export class SmallBattle {
           return sum + Math.min(memberHealth(v), this.previewAttackWithEnvironment({ attacker: arrival, defender: v, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, weaponOverride: context.weapon, ranged: context.ranged, actionDamageScale: this.usingHaste(unitId) ? hasteAttackScale(unit) : 1, ...victimMods }).expectedDamage);
         }, 0) : 0;
         const volleyDamage = Math.min(memberHealth(target), preview.expectedDamage) + sprayDamage;
-        plans.push({ score: baseScore + this.platformTargetBonus(target,preview.expectedDamage,knownUnits) + volleyDamage + (preview.conditionValue ?? 0) + (volleyDamage >= memberHealth(target) ? 4 : 0), offensive: volleyDamage + (preview.conditionValue ?? 0) > 0, path, targetId: target.id, weaponMode, kind: 'weapon', preview });
+        plans.push({ score: baseScore + this.platformTargetBonus(target,preview.expectedDamage,loads) + volleyDamage + (preview.conditionValue ?? 0) + 4 * killProbability([preview],memberHealth(target)), offensive: volleyDamage + (preview.conditionValue ?? 0) > 0, path, targetId: target.id, weaponMode, kind: 'weapon', preview });
       }
       for (const listedAbility of actor.abilities) {
         const ability = listedAbility;
@@ -3230,7 +3313,6 @@ export class SmallBattle {
 
     // —— 估值辅助 ——
     const hitChanceOf = (f: Combatant): number => {
-      if (this.rules.resolutionVersion === 'v2') return this.weaponPreview(u, f, this.weaponContext(u, f)).hitChance ?? 0;
       const netAtk = u.base.atk + counterMod(this.rules, u.archetype, f.archetype);
       if (this.rules.hitMode === 'tw') {
         const diff = netAtk - (f.base.def - this.rules.tw.defOffset);
@@ -3241,7 +3323,6 @@ export class SmallBattle {
       return Math.max(0.05, Math.min(0.95, (21 - needed) / 20));
     };
     const expDamage = (baseDice: string, apDice: string | undefined, f: Combatant): number => {
-      if (this.rules.resolutionVersion === 'v2') return (diceAvg(baseDice) + (apDice ? diceAvg(apDice) : 0)) * penetrationContext({ attacker: u, defender: f,rules:this.rules }).factor;
       const dr = Math.min(0.9, armorDR(f, this.rules, this.traitRegistry) + qualityGapDR(u, f));
       return Math.max(1, diceAvg(baseDice) * (1 - dr) + (apDice ? diceAvg(apDice) : 0));
     };
@@ -3249,19 +3330,27 @@ export class SmallBattle {
       (f.base.atk + diceAvg(f.weapon?.baseDice ?? '1d6') + diceAvg(f.weapon?.apDice ?? '1d2')) / 2;
     const offenseScore = (expDmg: number, f: Combatant): number =>
       expDmg * hitChanceOf(f) +
-      (expDmg >= f.hp ? 8 : 0) + // 斩杀线：终结残敌
-      (1 - f.hp / Math.max(1, f.base.hpMax)) * 3 + // 集火残血
+      (expDmg >= memberHealth(f) ? 8 : 0) + // 斩杀线：终结残敌
+      (1 - memberHealth(f) / Math.max(1,memberHealthMax(f))) * 3 + // 集火残血
       threatOf(f) / 2; // 威胁优先
 
     // —— 普攻候选（射程/装填门禁与 attack() 同构）——
-    const weaponTargets = foes.filter((f) => !this.weaponContext(u, f).reason);
-    for (const f of weaponTargets) {
+    const modern = this.rules.resolutionVersion === 'v2', loads = this.visibleLoads(this.visibleCombatants(u.side));
+    const previewScore = (preview: NonNullable<ActionOption['preview']>, f: Combatant): number => {
+      const expected = preview.expectedDamage ?? 0, life = memberHealth(f);
+      return Math.min(expected,life) + (preview.conditionValue ?? 0)
+        + 8 * killProbability([{expectedDamage:expected,variance:preview.variance}],life)
+        + (1-life/Math.max(1,memberHealthMax(f))) * 3 + threatOf(f)/2;
+    };
+    for (const f of foes) {
       const context = this.weaponContext(u, f);
-      const weapon = context.weapon;
-      const times = Math.max(1, weapon?.attacks ?? 1);
-      const exp = expDamage(weapon?.baseDice ?? '1d6', weapon?.apDice, f) * times;
+      if (context.reason) continue;
+      const preview = modern ? this.weaponPreview(u,f,context) : undefined;
+      const expected = preview?.expectedDamage ?? expDamage(context.weapon?.baseDice ?? '1d6',context.weapon?.apDice,f) * (context.weapon?.attacks ?? 1);
+      if (preview && expected <= 0 && !preview.conditionValue) continue;
+      const score = preview ? previewScore(preview,f) : offenseScore(expected,f);
       cands.push({
-        score: offenseScore(exp, f) + this.platformTargetBonus(f,exp,this.visibleCombatants(u.side)) + jitter(),
+        score: score + this.platformTargetBonus(f,expected,loads) + jitter(),
         run: () => {
           try {
             this.attack(u.id, f.id);
@@ -3283,6 +3372,20 @@ export class SmallBattle {
       if (damageEff) {
         for (const f of foes) {
           if (abilityTargetReason({ actor: u, ability: a, target: f, distance: this.dist(u, f), field: this.battlefield })) continue;
+          if (modern) {
+            if (this.skillTargetReasonAt(u,a,f)) continue;
+            let score = 0;
+            for (const target of this.abilityDamageTargets(u,f,a,damageEff.shape === 'burst')) {
+              const preview = this.previewAttackWithEnvironment({attacker:u,defender:target,rules:this.rules,conditionDefs:this.conditionDefMap(),traitRegistry:this.traitRegistry,
+                ...this.skillAttackOptions(u,target,a,damageEff)});
+              if (preview.expectedDamage || preview.conditionValue) {
+                const value = target === f ? previewScore(preview,target) : Math.min(memberHealth(target),preview.expectedDamage);
+                score += combatHostile(u,target,this.combatants) ? value : -value;
+              }
+            }
+            if (score > 0) cands.push({score:score-cost+jitter(),run:() => this.useAbility(u.id,a.id,f.id).ok});
+            continue;
+          }
           let exp = expDamage(damageEff.baseDice, damageEff.apDice, f);
           if (damageEff.shape === 'burst') {
             // 覆盖形态：邻近敌人的溅射期望（威力减半，至多两目标）
@@ -3305,7 +3408,7 @@ export class SmallBattle {
           if (a.target === 'self' && t.id !== u.id) continue;
           if (abilityTargetReason({ actor: u, ability: a, target: t, distance: this.dist(u, t), field: this.battlefield })) continue;
           const dying = t.status === 'dying';
-          const hpPct = t.hp / Math.max(1, t.base.hpMax);
+          const hpPct = memberHealth(t) / Math.max(1,memberHealthMax(t));
           if (!dying && hpPct >= 0.5) continue;
           const effective = Math.min(recoveryCapacity(t), healEff.amount ?? diceAvg(healEff.dice!));
           cands.push({
@@ -3586,7 +3689,10 @@ export class SmallBattle {
     if (unit.side === 'enemy' && this.rules.resolutionVersion !== 'v2' && !this.defeatedIds.has(unit.id)) {
       this.defeatedIds.add(unit.id);
       this.xpGained += unit.xpValue ?? 0;
-      if (killer) this.xpByUnit.set(killer.id, (this.xpByUnit.get(killer.id) ?? 0) + (unit.xpValue ?? 0));
+      if (killer) {
+        const owner = killer.transportOrigin ?? killer.id;
+        this.xpByUnit.set(owner,(this.xpByUnit.get(owner) ?? 0) + (unit.xpValue ?? 0));
+      }
     }
     this.checkGridObjective(false);
   }

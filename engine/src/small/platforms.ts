@@ -1,12 +1,14 @@
 import { boardingReason, platformKinds, unitCount, validatePlatform, type Ride } from '../platforms.js';
 import type { Combatant } from '../types.js';
 import { weaponReloadKey } from '../loadout.js';
+import { moveBlockReason } from '../skill-movement.js';
+import { sameLayer } from '../aerial.js';
 import { controlPolicy, combatHostile } from '../battle-control.js';
 import { availableSeats, takeSeats, detachMembers, type SeatRange } from './transport-groups.js';
-import { canOccupy, neighbors } from './spatial.js';
+import { canOccupy, movementNeighbors, movementStepCost, neighbors } from './spatial.js';
 import type { SmallBattle } from './battle.js';
 
-export interface RideAction { kind: 'board'|'leave'|'select'; id: string; label: string; maxCount?: number }
+export interface RideAction { kind: 'board'|'leave'|'select'|'merge'; id: string; label: string; maxCount?: number }
 
 export class SmallPlatforms {
   constructor(private battle: SmallBattle) {}
@@ -39,10 +41,11 @@ export class SmallPlatforms {
   private split(u: Combatant,count: number): Combatant {
     let n = 1;
     const root = u.transportOrigin ?? u.id;
-    while (this.units.some(c => c.id === root + ':part:' + n)) n++;
+    while (this.battle.xpMinimum.has(root + ':part:' + n) || this.units.some(c => c.id === root + ':part:' + n)) n++;
     const minimum = this.battle.xpMinimum.get(u.id) ?? u.hp;
     const part = detachMembers(u,count,root + ':part:' + n);
     part.transportReadyRound = this.battle.round + 1;
+    this.battle.notePersonnelTransfer(u.id,-count);
     this.units.push(part);
     if (this.battle.allyAiControl.has(u.id)) this.battle.allyAiControl.set(part.id,this.battle.allyAiControl.get(u.id)!);
     this.battle.logTransport(u,'分出'+part.name+' '+count+'人，原队余'+unitCount(u)+'人',part);
@@ -102,7 +105,7 @@ export class SmallPlatforms {
     if (carrier.ride && (carrier.hp <= 0 || carrier.status === 'dead')) {
       const platform = this.carrier(carrier)!;
       this.release(carrier,platform.pos!);
-      b.logTransport(carrier,'失能，解除与'+platform.name+'的骑乘关系',platform);
+      b.logTransport(carrier,'失去战斗力，被迫离开'+platform.name,platform);
     }
     if (!carrier.platform) return;
     const capacity = (carrier.seats ?? 1)*unitCount(carrier);
@@ -121,17 +124,29 @@ export class SmallPlatforms {
       if (expelled !== u) this.bind(expelled,carrier,'aboard',{...ride,seats:[]});
       const first = !expelled.ride!.stranded;
       expelled.ride!.stranded = true;
-      if (first && blast && carrier.platform.kind === 'transport') b.transportBlast(expelled,carrier,source);
+      if (first && carrier.platform.kind === 'animal') b.transportInjury(expelled,carrier,'摔落',source);
+      if (first && blast && carrier.platform.kind === 'transport') b.transportInjury(expelled,carrier,'载具爆毁',source);
       if (!expelled.hp || !expelled.ride) continue;
       const cell = this.landing(expelled,carrier);
       if (cell !== undefined) {
         this.release(expelled,cell);
-        b.logTransport(expelled,'因'+carrier.name+'损失座位撤离，现员'+unitCount(expelled),carrier);
-      } else if (first) b.logTransport(expelled,'受困于'+carrier.name+'，等待合法落点',carrier);
+        b.logTransport(expelled,'被迫离开'+carrier.name+'，剩余'+unitCount(expelled),carrier);
+      } else if (first) b.logTransport(expelled,'受困于'+carrier.name+'，周围暂无空位',carrier);
     }
   }
   private boardingMode(carrier: Combatant): Ride['mode'] {
     return carrier.platform?.kind === 'animal' && !this.passengers(carrier).some(u => u.hp > 0 && u.ride?.mode === 'mount') ? 'mount' : 'aboard';
+  }
+  private canRegroup(actor: Combatant, other: Combatant): boolean {
+    if (other === actor || other.side !== actor.side || !other.hp || other.status !== 'ready' || other.ride || other.mount || other.airborne ||
+        (other.transportOrigin ?? other.id) !== (actor.transportOrigin ?? actor.id) || !sameLayer(actor,other) ||
+        controlPolicy(other) || moveBlockReason(other,this.battle.conditions)) return false;
+    const field = this.battle.battlefield;
+    if (actor.pos === other.pos) return true;
+    // The acting group walks to the other group. Its members occupy a single card after joining.
+    return !!field && actor.pos !== undefined && other.pos !== undefined &&
+      movementNeighbors(field,actor.pos,actor).includes(other.pos) && movementStepCost(field,other.pos,actor,this.battle.fieldTags,actor.pos) <= this.battle.movementLeft(actor.id) &&
+      canOccupy(field,this.units.filter(u => u !== other),actor,other.pos);
   }
   options(actor: Combatant): RideAction[] {
     const b = this.battle, slot = b.turnOrder[b.turnIndex];
@@ -145,15 +160,19 @@ export class SmallPlatforms {
         options.push({kind:'select',id:next.id,label:'使用'+next.name+'的行动'});
     }
     if (controlPolicy(actor) === 'charmed' || controlPolicy(actor) === 'confused' || owner !== actor && (controlPolicy(owner) || controlPolicy(actor))) return options;
+    if (owner === actor && !actor.ride && !actor.mount && !actor.platform && !actor.airborne && actor.scale !== 'hero' &&
+        !controlPolicy(actor) && !b.actedThisTurn.has(actor.id) && !moveBlockReason(actor,b.conditions)) {
+      for (const other of this.units) if (this.canRegroup(actor,other)) options.push({kind:'merge',id:other.id,label:'合并'});
+    }
     if (owner.ride && ownCarrier && !ownCarrier.airborne && b.transportMovementAvailable(actor.id,owner) && this.landing(owner,ownCarrier) !== undefined) {
-      options.push({kind:'leave',id:owner.id,maxCount:unitCount(owner),label:ownCarrier.platform!.kind === 'animal' ? '下马' : '下车'});
+      options.push({kind:'leave',id:owner.id,maxCount:unitCount(owner),label:'离开'});
     } else if (!owner.ride && !owner.platform && !owner.airborne && b.transportMovementAvailable(actor.id)) {
       for (const p of this.units) if (p.platform && p.status === 'ready' && !p.airborne && p.elevation === actor.elevation
         && !combatHostile(actor,p,this.units) && b.dist(actor,p) <= (b.battlefield ? 1 : 0)) {
         const maxCount = Math.min(unitCount(actor),this.free(p,actor).reduce((n,[,count]) => n+count,0));
         const mode = this.boardingMode(p);
         if (maxCount > 0 && !boardingReason(this.units,{...actor,hp:actor.scale === 'hero' ? actor.hp : maxCount},p,mode))
-          options.push({kind:'board',id:p.id,maxCount,label:(p.platform.kind === 'animal' ? '骑乘' : '搭乘')+p.name});
+          options.push({kind:'board',id:p.id,maxCount,label:'装载'});
       }
     }
     return options;
@@ -164,6 +183,7 @@ export class SmallPlatforms {
     const b = this.battle, target = b.byId(id);
     const count = requested ?? choice.maxCount ?? 1;
     if (!Number.isSafeInteger(count) || count < 1 || count > (choice.maxCount ?? 1)) throw Error('乘降人数超出可用人数或座位');
+    if (kind === 'merge') { b.regroup(actor,target); return; }
     if (kind === 'select') {
       b.selectPlatformActor(actor.id,id); b.logTransport(actor,'交由'+target.name+'行动',target);
     } else if (kind === 'leave') {
@@ -174,14 +194,14 @@ export class SmallPlatforms {
       if (leaving !== target) target.ride!.seats = takeSeats(target.ride!.seats ?? [],unitCount(target));
       this.release(leaving,cell);
       b.spendTransportMovement(target.id);
-      b.logTransport(leaving,choice.label+'，离开'+carrier.name+'，人数'+count,carrier);
+      b.logTransport(leaving,count+'人离开'+carrier.name,carrier);
     } else {
       if (count < unitCount(actor)) this.split(actor,unitCount(actor)-count);
       const mode = this.boardingMode(target);
       this.bind(actor,target,mode);
       if (mode === 'mount') b.attachDuringTurn(target.id);
       b.spendTransportMovement(actor.id);
-      b.logTransport(actor,choice.label+'，人数'+count,target);
+      b.logTransport(actor,'装载至'+target.name+'，共'+count+'人',target);
     }
   }
 }

@@ -4,6 +4,8 @@ import { applyCombatDamage } from '../../engine/src/recovery.js';
 import { memberHealth } from '../../engine/src/member-health.js';
 import { reuniteTransportGroups } from '../../engine/src/small/transport-groups.js';
 import { anchoredWeapon, anchoredProtection, armorPowerScale } from '../../engine/src/power-anchors.js';
+import { rideControls } from './tactical-view.js';
+import { casualtyXp } from '../../engine/src/casualty-xp.js';
 import { battleEpilogue } from './battle-reports.js';
 import { commitBattleState, materializeUnitRecord, unitRecordFromCombatant } from './unit-state.js';
 import { captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type NarrativeSave, type MessageEnvelope } from './narrative-state.js';
@@ -110,6 +112,46 @@ describe('小战坐骑与运输载具', () => {
     expect(rider.hp).toBe(3);
     expect(rider.ride?.seats).toEqual([[0,3]]);
     expect(reuniteTransportGroups(battle.combatants).find(u => u.id === rider.id)?.hp).toBe(8);
+  });
+  it('装载、离开和摔落后战中合并，保留实际伤势且减员只计一次经验', () => {
+    const b = battleFrom(infantry.replace('aboard="APC渡鸦"','mount="马群"')
+      + '<spawn name="马群" side="ally" scale="company" hpMax="8" body="large" platform="坐骑L2" level="2"/>',false,V42_OVERFLOW_D20);
+    const rider = b.combatants[0]!, horses = b.combatants[1]!, foe = b.combatants[2]!;
+    while (b.active?.id !== rider.id) b.endTurn();
+    const perMember = rider.formation!.memberHp;
+    const initialHP = memberHealth(rider), revivalMembers = rider.revivalState?.members;
+    expect(rideControls(b,rider)).toContain('>离开</button>');
+    b.platforms.act(rider,'leave',rider.id,3);
+    const part = b.combatants.find(u => u.transportOrigin === rider.id)!;
+    expect(memberHealth(part) + memberHealth(rider)).toBe(initialHP);
+    // An already wounded rider will not survive a fall.
+    applyCombatDamage(rider,perMember-1,1);
+    applyCombatDamage(horses,memberHealth(horses),horses.hp);
+    b.platforms.reconcile(horses,false,foe);
+    expect(rider.ride).toBeUndefined();
+    expect(rider.hp).toBe(4);
+    expect(b.log.filter(e => e.damage?.cause === '摔落')).toHaveLength(1);
+    expect(b.log.some(e => e.text.includes('被迫离开马群'))).toBe(true);
+    const xp = b.xpByUnit.get(foe.id), health = memberHealth(part)+memberHealth(rider);
+    expect(xp).toBeGreaterThan(0);
+    b.platforms.reconcile(horses,false,foe);
+    const saved = SmallBattle.fromSnapshot(structuredClone(b.toSnapshot()));
+    expect(rideControls(saved,saved.byId(rider.id))).toContain('合并后 7 人');
+    while (saved.active?.id !== part.id) saved.endTurn();
+    saved.byId(rider.id).abilityState.push({abilityId:'merge-cooldown',cdLeft:2,used:1});
+    saved.platforms.act(saved.byId(part.id),'merge',rider.id);
+    const restored = SmallBattle.fromSnapshot(structuredClone(saved.toSnapshot()));
+    const joined = restored.byId(rider.id);
+    expect([joined.hp,joined.base.hpMax,memberHealth(joined)]).toEqual([7,8,health]);
+    expect(restored.combatants.some(u => u.id === part.id)).toBe(false);
+    expect(restored.turnOrder.filter(id => id === joined.id)).toHaveLength(1);
+    expect(restored.xpByUnit.get(foe.id)).toBe(xp);
+    expect(joined.abilityState.find(s => s.abilityId === 'merge-cooldown')?.cdLeft).toBe(2);
+    expect(joined.revivalState?.members).toBe(revivalMembers);
+    expect(restored.xpMinimum.get(rider.id)).toBe(7);
+    expect(casualtyXp(joined,restored.xpMinimum,true)).toBe(0);
+    expect(restored.log.filter(e => e.damage?.cause === '摔落')).toHaveLength(1);
+    expect(restored.log.some(e => e.transport && e.text.includes('共7人'))).toBe(true);
   });
   it('专属挂载共用一次激活，读档保持行动来源，下马后平台下一轮独立行动', () => {
     const horse = '<spawn name="青原战马群" side="ally" scale="company" hpMax="8" body="large" level="2" platform="坐骑L2+2速度" weapon="马蹄:天生武器L2"/>';
