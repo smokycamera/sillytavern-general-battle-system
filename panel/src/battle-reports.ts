@@ -118,7 +118,8 @@ export function battleEpilogue(b: Battle, start?: BattleReport['start']): string
   const field=b instanceof SmallBattle?b.battlefield:undefined,facts=fieldFacts(b);
   const damage=epilogueDamage(b);
   const items = b.isOver() ? itemUseReport(b.combatants, b.log) : [];
-  const communications = (b.isOver() ? b.log : publicBattleEvents(b).map(event => event.entry)).filter(isCommunicationLog);
+  const events = b.isOver() ? b.log : publicBattleEvents(b).map(event => event.entry);
+  const communications = events.filter(isCommunicationLog), transport = events.filter(e => e.transport);
   const goal = b instanceof SmallBattle && b.battlefield?.objective;
   const mission = goal ? goal.kind === 'annihilation' ? '歼灭战' : goal.kind === 'control' ? goal.attackingSide ? goal.attackingSide === 'ally' ? '攻城战' : '守城战' : '占旗战' : '护送/拦截' : '军团会战';
   return [`【战阵·战斗终章】${mission}，共${completedBattleRounds(b)}轮；${b.isOver() ? b.winner()==='ally'?'我方胜利':b.winner()==='neutral'?'第三方获胜，我方失败':b.winner()==='enemy'?'我方失利':'停战/僵持':'尚未结束'}`,
@@ -129,6 +130,7 @@ export function battleEpilogue(b: Battle, start?: BattleReport['start']): string
     '【结束单位状态与血量】',...visible.map(u=>epilogueUnit(b,u,field)),
     '【伤害来源】',...(damage.length?damage:['没有记录到可核实的伤害。']),
     '【道具使用和效果】',...(items.length ? items : [b.isOver() ? '本场没有记录到道具使用。' : '战斗尚未结束，道具使用与效果将在终章汇总。']),
+    ...(transport.length ? ['【坐骑与载具】', ...transport.map(e => `第${e.round}回合｜${e.text}`)] : []),
     ...(communications.length ? ['【消息与交涉】', ...communications.map(event => `第${event.round}回合｜${event.text}`)] : []),
     NARRATIVE_TASK].join('\n');
 }

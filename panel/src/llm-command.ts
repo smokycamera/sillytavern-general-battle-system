@@ -30,7 +30,7 @@ type Battle = SmallBattle | MassBattle;
 const AUTO_TRIES = 3;
 export interface CommandChoice { id: string; label: string; action?: GameAction; order?: Order; cost?: number; risks?: string[] }
 /** A follow-up step names an action like a candidate does; it runs only if a later candidate matches it. */
-export type CommandStep = Pick<GameAction, 'type' | 'targetId' | 'cell' | 'weaponMode' | 'abilityId'>;
+export type CommandStep = Pick<GameAction, 'type' | 'targetId' | 'cell' | 'weaponMode' | 'abilityId' | 'count'>;
 export class CommandCancelled extends Error { constructor() { super('模型请求已取消，尚未应用本次指令'); } }
 const text = (v: unknown, max: number): string => typeof v === 'string' ? v.trim().slice(0, max) : '';
 
@@ -92,7 +92,7 @@ export function compactCommandMap(width: number, height: number, known: KnownCom
 
 /** Never serialize the battle, snapshot, source narrative, allied orders, or full map into command requests. */
 export function commandObservation(b: Battle, actorId?: string, side: Side = 'enemy') {
-  const visible = b.visibleCombatants(side), intel = b.enemyIntel(side, visible);
+  const visible = b instanceof SmallBattle ? b.rosterInView(side) : b.visibleCombatants(side), intel = b.enemyIntel(side, visible);
   const field = b instanceof SmallBattle ? b.battlefield : undefined;
   const cells = b instanceof SmallBattle ? b.visibleCells(side) : [];
   const objective = field?.objective;
@@ -211,6 +211,14 @@ export function smallCommandChoices(b: SmallBattle, actorId: string): CommandCho
     const seen = b.visibleCells(actor.side), visible = new Set(b.visibleCombatants(actor.side).map(u => u.id));
     const allowedTarget = (id: string) => visible.has(id) || id.startsWith('cell:') && seen[Number(id.slice(5))] === true;
     const add = (label: string, action: GameAction) => choices.push({ id: 'c' + choices.length, label, action });
+    for (const option of b.platforms.options(actor)) {
+      const action = { type:option.kind === 'select' ? 'select-platform' as const : option.kind,targetId:option.id };
+      add(option.label,{...action,count:option.maxCount});
+      if ((option.maxCount ?? 0) > 1) {
+        const count = Math.floor(option.maxCount! / 2);
+        add(option.label+'（'+count+'人）',{...action,count});
+      }
+    }
     for (const option of b.getActionOptions(actorId)) {
       if (!option.enabled || option.kind === 'move' && b.battlefield || option.kind === 'ability' && !battleAbilities(actor).some(a => a.id === option.id)) continue;
       const action: GameAction = option.kind === 'weapon' ? { type: 'attack', weaponMode: option.id === 'weapon:sidearm' ? 'sidearm' : 'primary' }
@@ -253,6 +261,7 @@ export function massCommandChoices(b: MassBattle, actorId: string): CommandChoic
 function executeSmall(b: SmallBattle, actorId: string, a: GameAction): void {
   const target = a.targetId!;
   switch (a.type) {
+    case 'board': case 'leave': case 'select-platform': b.platforms.act(b.byId(actorId),a.type === 'select-platform' ? 'select' : a.type,target,a.count); break;
     case 'move': if (b.battlefield) b.moveTo(actorId, a.cell as number); else b.move(actorId, a.direction!); break;
     case 'attack': b.attack(actorId, target, { weaponMode: a.weaponMode }); break;
     case 'charge': b.attack(actorId, target, { charge: true }); break;
@@ -276,12 +285,12 @@ function executeSmall(b: SmallBattle, actorId: string, a: GameAction): void {
 function commandSteps(value: unknown): CommandStep[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > 7 || value.some(step => !step || typeof step !== 'object' || typeof step.type !== 'string')) throw Error('then格式无效');
-  return value.map(({ type, targetId, cell, weaponMode, abilityId }) => ({ type, ...(typeof targetId === 'string' ? { targetId } : {}),
+  return value.map(({ type, targetId, cell, weaponMode, abilityId, count }) => ({ type, ...(Number.isSafeInteger(count) ? {count} : {}), ...(typeof targetId === 'string' ? { targetId } : {}),
     ...(Number.isSafeInteger(cell) ? { cell } : {}), ...(weaponMode === 'primary' || weaponMode === 'sidearm' ? { weaponMode } : {}), ...(typeof abilityId === 'string' ? { abilityId } : {}) }));
 }
 /** A step must identify one target or cell; only the weapon of an otherwise identical attack may stay implicit (primary first). */
 function stepChoice(choices: CommandChoice[], step: CommandStep): CommandChoice | undefined {
-  const matches = choices.filter(({ action: a }) => a?.type === step.type && (step.targetId === undefined || a.targetId === step.targetId)
+  const matches = choices.filter(({ action: a }) => a?.type === step.type && (step.count === undefined || a.count === step.count) && (step.targetId === undefined || a.targetId === step.targetId)
     && (step.cell === undefined || a.cell === step.cell) && (step.abilityId === undefined || a.abilityId === step.abilityId)
     && (step.weaponMode === undefined || (a.weaponMode ?? 'primary') === step.weaponMode));
   return new Set(matches.map(({ action: a }) => [a!.targetId, a!.cell, a!.abilityId].join())).size === 1 ? matches[0] : undefined;
@@ -493,14 +502,15 @@ export class LlmCommandController {
   async small(b: SmallBattle, state: CommanderState, settings: LlmSettings, valid: () => boolean): Promise<(BattleStepResult & { commandState: CommanderState }) | undefined> {
     if (state.side !== this.side || state.battleSeed !== b.seed || b.active?.side !== this.side) throw Error('指挥官不能控制其他阵营或其他战斗');
     return this.run(b, settings, valid, '正在请求敌方指令…', async signal => {
-      const actorId = b.active!.id;
+      const slot = b.turnOrder[b.turnIndex], round = b.round;
       const candidate = SmallBattle.fromSnapshot(structuredClone(b.toSnapshot()), { traitRegistry: b.traitRegistry, summonUnit: b.summonUnit });
       Object.assign(candidate, { rules: b.rules }); b.conditions.all().forEach(c => candidate.conditions.register(c));
       const commandState = structuredClone(state), budget = { left: 12 };
       const conversation: CommandMessage[] = [], sent: { map?: string } = {};
       let queue: CommandStep[] = [], basis: CommandWatch | undefined, stopped: { step: CommandStep; reason: string } | undefined;
       // One activation is atomic. A later invalid answer discards all of its partial moves and RNG changes.
-      for (let i = 0; i < 8 && (budget.left > 0 || queue.length) && !candidate.isOver() && candidate.active?.id === actorId; i++) {
+      for (let i = 0; i < 8 && (budget.left > 0 || queue.length) && !candidate.isOver() && candidate.round === round && candidate.turnOrder[candidate.turnIndex] === slot; i++) {
+        const actorId = candidate.active!.id;
         const choices = smallCommandChoices(candidate, actorId);
         if (!choices.length) { candidate.autoAction(actorId); break; }
         let choice: CommandChoice | undefined;
@@ -517,12 +527,13 @@ export class LlmCommandController {
           choice = decision.choice; queue = decision.then; stopped = undefined;
         }
         executeSmall(candidate, actorId, choice.action!);
+        if (candidate.active?.id !== actorId) queue = [];
         // The commander chose its own ability, so the conditions it adds are not a surprise.
         if (choice.action!.type === 'ability') basis!.conditions = new Set(candidate.byId(actorId).conditions.map(c => c.id));
       }
       if (conversation.length) commandState.memory.letterId = latestLetter(candidate, this.side);
       if (commandState.decision) return { snap: candidate.toSnapshot(), conditions: candidate.conditions.all(), commandState };
-      if (!candidate.isOver() && candidate.active?.id === actorId) candidate.endTurn();
+      if (!candidate.isOver() && candidate.round === round && candidate.turnOrder[candidate.turnIndex] === slot) candidate.endTurn();
       commandState.memory = updateCommandMemory(candidate, commandState.memory, this.side);
       return { snap: candidate.toSnapshot(), conditions: candidate.conditions.all(), commandState };
     });

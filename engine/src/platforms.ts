@@ -3,7 +3,7 @@ import type { Combatant } from './types.js';
 
 export const platformKinds = { animal: '坐骑', open: '开放载具', transport: '封闭载具' } as const;
 export interface Platform { kind: keyof typeof platformKinds; power: number; bonuses?: Enhancements }
-export interface Ride { platformId: string; mode: 'mount' | 'aboard' }
+export interface Ride { platformId: string; mode: 'mount' | 'aboard'; seats?: [number,number][]; stranded?: boolean }
 export type PlatformUnit = Pick<Combatant, 'id' | 'name' | 'side' | 'body' | 'scale' | 'hp' | 'platform' | 'seats' | 'ride'>;
 
 export function parsePlatform(text: string): Platform {
@@ -24,14 +24,16 @@ export function validatePlatform(unit: Pick<PlatformUnit, 'platform'|'seats'|'ri
     if ((p.kind !== 'animal') !== (unit.body === 'vehicle')) throw Error('车辆规格须使用 vehicle 身体，生物坐骑须使用生物身体');
   }
   if (unit.seats !== undefined && (!p || !Number.isSafeInteger(unit.seats) || unit.seats < 1)) throw Error('seats 需要有平台规格及正整数座位数');
+  if (unit.ride?.seats !== undefined && (!Array.isArray(unit.ride.seats) || unit.ride.seats.some(r =>
+    !Array.isArray(r) || r.length !== 2 || !Number.isSafeInteger(r[0]) || r[0] < 0 || !Number.isSafeInteger(r[1]) || r[1] < 1 || !Number.isSafeInteger(r[0]+r[1])))) throw Error('乘员座位记录无效');
   if (unit.ride !== undefined && (p || !unit.ride || !['mount','aboard'].includes(unit.ride.mode) || typeof unit.ride.platformId !== 'string' || !unit.ride.platformId.trim())) throw Error('搭载关系无效或平台嵌套');
 }
 export const unitCount = (u: Pick<PlatformUnit,'scale'|'hp'>) => u.scale === 'hero' ? Number(u.hp > 0) : u.hp;
 export function boardingReason(units: readonly PlatformUnit[], rider: PlatformUnit, carrier: PlatformUnit, mode: Ride['mode']): string | undefined {
   if (carrier.id === rider.id || rider.platform || !carrier.platform || carrier.ride || rider.side !== carrier.side || carrier.hp <= 0 || rider.hp <= 0) return '需要同阵营可用平台与乘员';
   const others = units.filter(u => u.id !== rider.id && u.hp > 0 && u.ride?.platformId === carrier.id);
-  if (others.some(u => u.ride!.mode === 'mount' || mode === 'mount')) return '专属挂载与其他乘员不能同时占用平台';
-  const free = (carrier.seats ?? 1) * unitCount(carrier) - others.reduce((sum,u) => sum + unitCount(u),0);
+  if (mode === 'mount' && others.some(u => u.ride!.mode === 'mount')) return '该平台已有控制单位';
+  const free = (carrier.seats ?? 1) * unitCount(carrier) - others.reduce((sum,u) => sum + (u.ride?.stranded ? 0 : unitCount(u)),0);
   if (unitCount(rider) > free) return carrier.name + '缺少' + (unitCount(rider) - free) + '个座位';
 }
 export function validateRides(units: readonly PlatformUnit[]): void {

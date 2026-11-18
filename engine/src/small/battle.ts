@@ -14,7 +14,7 @@ import { itemUseLog } from '../item-use-log.js';
 import { assertBattleCapacity } from '../battle-limits.js';
 import { smallBattleResult } from '../battle-result.js';
 import { SmallPlatforms } from './platforms.js';
-import { validateRides } from '../platforms.js';
+import { unitCount, validateRides } from '../platforms.js';
 import { prepareGridDeployment, deploymentDepth } from './spatial.js';
 import { unitHeight, heightDefense, heightReach, standingTerrain, surfaceHeightAt, reportsHeights } from './height-map.js';
 import { bonusMultiplier } from '../enhancements.js';
@@ -209,9 +209,10 @@ export class SmallBattle {
   readonly combatants: Combatant[];
   readonly platforms = new SmallPlatforms(this);
   private hasPlatforms: boolean;
+  private explosiveLoss = new WeakSet<Combatant>();
   private platformActor?: string;
   private activationPair: string[] = [];
-  private get exposedUnits(): Combatant[] { return this.hasPlatforms ? this.combatants.filter(u => !this.platforms.sheltered(u)) : this.combatants; }
+  private get exposedUnits(): Combatant[] { return this.hasPlatforms ? this.combatants.filter(u => !this.platforms.sheltered(u) && !u.ride?.stranded) : this.combatants; }
   readonly rules: RulePack;
   readonly rng: Rng;
   readonly conditions: ConditionRegistry;
@@ -328,6 +329,9 @@ export class SmallBattle {
     const ambush = this.rules.resolutionVersion === 'v2' && concealedUnit(this.observationContext(), this.byId(opts.attacker.id));
     if (this.rules.resolutionVersion === 'v2' && !(isArmsV2(this.rules.armsModel) && ambush && (opts.weaponOverride ?? opts.attacker.weapon)?.recipe?.mechanism === 'crossbow')) revealUnit(this.observationContext(), this.byId(opts.attacker.id));
     const result = resolveAttack(this.environmentContext({ ...opts, ambush } as AttackOpts)), field = this.battlefield;
+    const weapon = opts.weaponOverride ?? opts.attacker.weapon;
+    if (opts.defender.platform?.kind === 'transport' && result.hpAfter < result.hpBefore &&
+        (result.ammunition === 'he' || (result.splashDamage ?? 0) > 0 || ((!opts.abilityDamage || opts.abilityDamage.weaponBased) && ['rocket','demolition'].includes(weapon?.recipe?.mechanism ?? '')))) this.explosiveLoss.add(opts.defender);
     if (!opts.abilityDamage || opts.abilityDamage.weaponBased) noteArmsFire(this.byId(opts.attacker.id), opts.weaponOverride ?? opts.attacker.weapon);
     breakCharmOnDamage(this.combatants, opts.defender, opts.attacker, result.hpBefore - result.hpAfter);
     if (reportsHeights(field) && opts.attacker.pos !== undefined && opts.defender.pos !== undefined && !isAirborne(opts.attacker) && !isAirborne(opts.defender))
@@ -354,7 +358,7 @@ export class SmallBattle {
     for (const victim of victims) {
       const blast = resolveAttack(this.environmentContext({ attacker: holder, defender: victim, weaponOverride: tank, ranged: true, autoHit: true, ...(holder.scale === 'hero' ? {} : { participants: 3 }),
         rng: this.rng, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry }));
-      texts.push(blast.text); this.checkDeath(victim, cause);
+      texts.push(blast.text); this.checkDeath(victim, cause,true);
     }
     return texts.join('；');
   }
@@ -396,7 +400,13 @@ export class SmallBattle {
         c.pos = START_POS[c.side][c.archetype ?? 'infantry'] ?? 2;
       }
     }
-    if (this.hasPlatforms) this.platforms.restore();
+    if (this.hasPlatforms) {
+      this.platforms.restore();
+      for (const rider of this.combatants) {
+        const carrier = this.platforms.carrier(rider);
+        if (carrier && rider.hp > 0) this.logTransport(rider,'部署时'+(rider.mount ? '骑乘' : '搭乘')+carrier.name+'，人数'+unitCount(rider),carrier);
+      }
+    }
     if (this.rules.resolutionVersion === 'v2') revealContacts(this.observationContext());
     // V13 工事：开战位置即阵地。
     for (const unit of this.combatants) entrench(unit, 'small');
@@ -455,6 +465,11 @@ export class SmallBattle {
     return (this.platformActor ?? this.turnOrder[this.turnIndex]) === id;
   }
 
+  private platformTargetBonus(target: Combatant, damage: number, visible: Combatant[]): number {
+    if (!target.platform || damage <= 0) return 0;
+    const exposed = visible.filter(u => u.hp > 0 && u.ride?.platformId === target.id);
+    return Math.min(4,exposed.length * 2) * Math.min(1,damage / Math.max(1,memberHealth(target) / unitCount(target)));
+  }
   transportMovementAvailable(actorId: string, passenger = this.byId(actorId)): boolean {
     if (passenger.status !== 'ready' || passenger.conditions.some(c => c.dur > 0 && (this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventMove))) return false;
     if (!this.battlefield) return !this.movedThisTurn.has(actorId);
@@ -473,7 +488,27 @@ export class SmallBattle {
     if (this.actedThisTurn.has(from)) this.actedThisTurn.add(to);
     if (this.hasteSpent.get(from) === this.round) this.hasteSpent.set(to,this.round);
   }
-  logTransport(actor: Combatant, text: string): void { this.recordEvent({round:this.round,kind:'move',participants:[actor.id],text:actor.name+'：'+text}); }
+  canSwitchPlatform(owner: string, carrier: string): boolean {
+    return this.activationPair.includes(owner) && this.activationPair.includes(carrier);
+  }
+  attachDuringTurn(carrier: string): void {
+    const index = this.turnOrder.indexOf(carrier);
+    if (index > this.turnIndex) this.turnOrder.splice(index,1);
+  }
+  logTransport(actor: Combatant, text: string, platform: Combatant): void {
+    this.recordEvent({round:this.round,kind:'move',transport:true,participants:[actor.id,platform.id],text:actor.name+'：'+text});
+  }
+  transportBlast(passenger: Combatant, carrier: Combatant, source?: Combatant): void {
+    const count = unitCount(passenger);
+    // One randomized rounding per wrecked group, irrespective of formation size.
+    const affected = Math.floor((count + this.rng.d(6) - 1) / 6);
+    const perMember = hasMemberHealth(passenger) ? passenger.formation!.memberHp : passenger.scale === 'hero' ? passenger.base.hpMax : 1;
+    const loss = applyCombatDamage(passenger,affected * Math.max(1,Math.ceil(perMember / 2)),affected);
+    const casualties = count - unitCount(passenger);
+    this.recordEvent({round:this.round,kind:'condition',transport:true,participants:[passenger.id,carrier.id],text:carrier.name+'爆毁，'+passenger.name+'受波及'+affected+'人，生命损失'+loss+'，减员'+casualties+'人',
+      damage:{sourceId:source?.id,targetId:passenger.id,amount:loss,cause:'载具爆毁',unit:'life',members:casualties}});
+    if (loss) this.checkDeath(passenger,source);
+  }
 
   /** 两单位距离 = 坐标差绝对值 */
   dist(a: Combatant, b: Combatant): number {
@@ -594,7 +629,12 @@ export class SmallBattle {
     if (this.rules.resolutionVersion !== 'v2') this.log.push(entry);
     else {
       const context = this.observationContext(), views = sideViews(context);
-      this.log.push(observeEvent(context, entry, views));
+      const observed = observeEvent(context, entry, views);
+      if (entry.transport && entry.participants?.length) {
+        const side = this.byId(entry.participants[0]!).side;
+        if (!observed.observedBy!.includes(side)) observed.observedBy!.push(side);
+      }
+      this.log.push(observed);
       this.noteIntel(entry, views);
     }
     const depleted = new Set((entry.resolutions?.length ? entry.resolutions : entry.resolution ? [entry.resolution] : []).filter(r => r.barrierAbsorbed).map(r => r.defenderId));
@@ -666,7 +706,7 @@ export class SmallBattle {
   movementLeft(actorId: string, includeHaste = true): number {
     const unit = this.byId(actorId), mover = this.platforms.mover(unit);
     const blocked = (u: Combatant) => u.conditions.some(c => c.dur > 0 && (this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventMove));
-    if (blocked(unit) || mover !== unit && (mover.status !== 'ready' || blocked(mover))) return 0;
+    if (blocked(unit) || mover !== unit && (mover.status !== 'ready' || blocked(mover) || !this.platforms.canDrive(unit,mover))) return 0;
     return Math.max(0, this.movementBudget(unit.id) + (this.hasteMovement.get(actorId) ?? 0) + (includeHaste && this.hasteSelected.has(actorId) && this.hasteAvailable(actorId) ? this.movementBudget(actorId) : 0) - (this.movementSpent.get(actorId) ?? 0));
   }
   reachableCells(actorId: string): GridPath[] {
@@ -674,6 +714,10 @@ export class SmallBattle {
     const actor = this.byId(actorId);
     if (actor.ride?.mode === 'aboard' || actor.status !== 'ready' || (this.started && !this.isTurnOf(actorId))) return [];
     return this.gridPaths(actor, this.movementLeft(actorId)).paths;
+  }
+  rosterInView(side: Side): Combatant[] {
+    const observed = this.visibleCombatants(side);
+    return this.hasPlatforms ? [...observed,...this.combatants.filter(u => u.side === side && u.ride && !observed.includes(u))] : observed;
   }
   private gridPaths(actor: Combatant, budget: number): { paths: GridPath[]; byCell: Map<number, GridPath> } {
     let budgets = this.gridPathsMemo?.get(actor), entry = budgets?.get(budget);
@@ -1105,7 +1149,7 @@ export class SmallBattle {
     const goal = this.battlefield?.objective; if (!goal || this.objectiveWinner) return;
     if (goal.kind === 'escape') {
       const unit = this.combatants.find((u) => u.id === goal.unitId);
-      if (unit?.status === 'ready' && !isAirborne(unit) && unit.pos === goal.cell) this.objectiveWinner = unit.side === 'enemy' ? 'enemy' : 'ally';
+      if (unit?.status === 'ready' && !unit.ride?.stranded && !isAirborne(unit) && unit.pos === goal.cell) this.objectiveWinner = unit.side === 'enemy' ? 'enemy' : 'ally';
       else if (goal.defenderWins && unit && (unit.status === 'dead' || unit.status === 'fled' || roundEnd && this.round >= goal.limit)) {
         this.objectiveWinner = unit.side === 'enemy' ? 'ally' : 'enemy';
       }
@@ -1588,6 +1632,8 @@ export class SmallBattle {
    * 带「游击」或「骑射」特质的单位免疫——骑射放风筝的攻防核心。
    */
   move(actorId: string, dir: 'advance' | 'withdraw', opts: { bypassTurn?: boolean } = {}): void {
+    const rider = this.byId(actorId), carrier = this.platforms.carrier(rider);
+    if (carrier && rider.ride?.mode === 'mount' && !this.platforms.canDrive(rider,carrier)) throw Error('当前控制状态无法驾驭平台');
     if (this.byId(actorId).ride?.mode === 'aboard') throw Error('乘员随平台移动，请先下车');
     if (this.battlefield) {
       const actor = this.byId(actorId);
@@ -1683,7 +1729,8 @@ export class SmallBattle {
    * 撤离不等于溃败——小规模战斗中 fled 单位视为退出战斗（isOver 判失去战斗力）。
    */
   retreat(actorId: string, opts: { bypassTurn?: boolean } = {}): void {
-    const actor = this.byId(actorId);
+    const actor = this.byId(actorId), carrier = this.platforms.carrier(actor);
+    if (carrier && (actor.ride?.mode === 'aboard' || !this.platforms.canDrive(actor,carrier))) throw Error('须先离开平台才能独立撤离');
     if (this.battlefield && !retreatCells(this.battlefield, actor.side).includes(actor.pos!)) throw new Error('先移动到己方地图边缘再撤离');
     if (!opts.bypassTurn && this.started && !this.isTurnOf(actorId)) {
       throw new Error(`现在不是 ${actor.name} 的回合`);
@@ -1726,11 +1773,13 @@ export class SmallBattle {
   }
   /** 沿可走路线在 reach 格内可到的位置（只看本阵营已知单位；执行时逐格按实际占位走）。 */
   private skillPaths(actor: Combatant, reach: number): GridPath[] {
+    if (!this.platforms.canMoveIndependently(actor)) return [];
     const field = this.battlefield!, known = this.visibleCombatants(actor.side);
     return reachableGridPaths(field, actor.pos!, reach, (n) => canOccupy(field, known, actor, n), (n, from) => movementStepCost(field, n, actor, this.fieldTags, from), actor);
   }
   /** 闪现落点：reach 格内、施术者视线可及、按自身空地层可落脚的位置；不跨平台层。 */
   private skillBlinkCells(actor: Combatant, reach: number): number[] {
+    if (!this.platforms.canMoveIndependently(actor)) return [];
     const field = this.battlefield!, known = this.visibleCombatants(actor.side);
     return field.tiles.flatMap((_tile, cell) => cell !== actor.pos && gridDistance(field, actor.pos!, cell) <= reach && canOccupy(field, known, actor, cell)
       && unitLineOfSight(field, actor, { ...actor, pos: cell }) ? [cell] : []);
@@ -2155,7 +2204,7 @@ export class SmallBattle {
     if (!this.started) throw new Error('战斗尚未开始');
     if (this.rules.resourceModel && this.isOver()) return;
     const ended = this.active;
-    if (ended && ended.ride?.mode !== 'aboard' && ['charmed','confused'].includes(controlPolicy(ended) ?? '') && !this.controlledExecution.has(ended.id)) { this.autoAction(ended.id); return; }
+    if (ended && !this.platforms.sheltered(ended) && ['charmed','confused'].includes(controlPolicy(ended) ?? '') && !this.controlledExecution.has(ended.id)) { this.autoAction(ended.id); return; }
     const settling = this.activationPair.length ? this.activationPair.map(id => this.byId(id)) : ended ? [ended] : [];
     for (const unit of settling) if (unit.status === 'ready' || unit.status === 'routing') this.settleUnit(unit);
     this.activationPair = []; this.platformActor = undefined;
@@ -2173,7 +2222,12 @@ export class SmallBattle {
       this.round += 1;
       if (isCommandV2(this.rules)) this.commandRounds = beginCommandRound(this.commandRounds, this.round, this.combatants, u => u.pos);
       for (const unit of this.combatants) beginLifestealRound(unit, this.round);
-      for (const unit of this.combatants) if ((unit.bornRound !== undefined && unit.bornRound < this.round || unit.platform && !this.combatants.some(u => u.hp > 0 && u.ride?.mode === 'mount' && u.ride.platformId === unit.id)) && !this.turnOrder.includes(unit.id)) this.turnOrder.push(unit.id);
+      const attached = new Set(this.combatants.flatMap(u => u.hp > 0 && u.ride?.mode === 'mount' ? [u.ride.platformId] : []));
+      this.turnOrder = this.turnOrder.filter(id => !attached.has(id));
+      for (const unit of this.combatants) {
+        const eligible = unit.platform || unit.bornRound !== undefined && unit.bornRound < this.round || (unit.transportReadyRound ?? Infinity) <= this.round;
+        if (eligible && unit.hp > 0 && !attached.has(unit.id) && !this.turnOrder.includes(unit.id)) this.turnOrder.push(unit.id);
+      }
       this.recordEvent({ round: this.round, kind: 'round', text: `—— 第 ${this.round} 回合 ——` });
       this.turnIndex = 0;
       this.advanceToNextActor();
@@ -2324,8 +2378,22 @@ export class SmallBattle {
       : ['open_gate', 'close_gate'].includes(intent.mode) && intent.cell !== undefined && this.battlefield?.structures?.[intent.cell]?.kind === 'gate');
     this.intentActive = !!this.battlefield && (!!referenced || !!intentOrder(this.battlefield, this.byId(unitId), intent, intent ? this.intentKnown(this.byId(unitId)) : []));
     try {
-      const dispersionUnit = this.byId(unitId);
-      if (dispersionUnit.ride?.mode === 'aboard' && this.isTurnOf(unitId)) {
+      let dispersionUnit = this.byId(unitId);
+      if (this.hasPlatforms && this.isTurnOf(unitId) && !intent && !controlPolicy(dispersionUnit)) {
+        const choices = this.platforms.options(dispersionUnit);
+        const visible = this.visibleCombatants(dispersionUnit.side).filter(u => u.status === 'ready' && combatHostile(u,dispersionUnit,this.combatants));
+        const canFire = (u: Combatant) => visible.some(target => !this.weaponContext(u,target).reason || u.abilities.some(a => this.abilityUsable(u,a) && !this.skillTargetReasonAt(u,a,target)));
+        const alternate = choices.find(a => a.kind === 'select');
+        if (alternate && !canFire(dispersionUnit) && canFire(this.byId(alternate.id))) {
+          this.platforms.act(dispersionUnit,'select',alternate.id);
+          unitId = alternate.id; dispersionUnit = this.byId(unitId);
+        } else if (!dispersionUnit.ride && !canFire(dispersionUnit)) {
+          const lift = choices.find(a => a.kind === 'board' && a.maxCount === unitCount(dispersionUnit)
+            && this.byId(a.id).base.spd > dispersionUnit.base.spd && visible.every(target => this.dist(dispersionUnit,target) > (this.battlefield ? 4 : 2)));
+          if (lift) this.platforms.act(dispersionUnit,'board',lift.id);
+        }
+      }
+      if (this.platforms.sheltered(dispersionUnit) && this.isTurnOf(unitId)) {
         const leave = this.platforms.options(dispersionUnit).find(a => a.kind === 'leave');
         if (leave && this.distToNearestFoe(dispersionUnit) <= (this.battlefield ? 4 : 2)) this.platforms.act(dispersionUnit,'leave',unitId);
         else { this.endTurn(); return; }
@@ -2630,7 +2698,7 @@ export class SmallBattle {
     }
     const overwatchValue = order?.hold || unit.side === 'ally' && this.allyTactic === 'defensive'
       ? this.holdOverwatchValue(unit, foes, knownUnits, sightAt) : 0;
-    const reachable = this.intentActive ? [{ cells: [unit.pos!], cost: 0 }] : this.reachableCells(unitId);
+    const reachable = this.intentActive || unit.ride?.mode === 'aboard' ? [{ cells: [unit.pos!], cost: 0 }] : this.reachableCells(unitId);
     // Stage 1: cheap regional/position scoring; stage 2: costly damage/skill previews at bounded locations.
     const scored = field.layerVersion ? new Map(reachable.map(path => [path, positionScore(path)])) : undefined;
     const shortlist = field.layerVersion ? [...reachable].sort((a, b) => scored!.get(b)! - scored!.get(a)! || a.cost - b.cost).slice(0, 12) : reachable;
@@ -2718,7 +2786,7 @@ export class SmallBattle {
           return sum + Math.min(memberHealth(v), this.previewAttackWithEnvironment({ attacker: arrival, defender: v, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, weaponOverride: context.weapon, ranged: context.ranged, actionDamageScale: this.usingHaste(unitId) ? hasteAttackScale(unit) : 1, ...victimMods }).expectedDamage);
         }, 0) : 0;
         const volleyDamage = Math.min(memberHealth(target), preview.expectedDamage) + sprayDamage;
-        plans.push({ score: baseScore + volleyDamage + (preview.conditionValue ?? 0) + (volleyDamage >= memberHealth(target) ? 4 : 0), offensive: volleyDamage + (preview.conditionValue ?? 0) > 0, path, targetId: target.id, weaponMode, kind: 'weapon', preview });
+        plans.push({ score: baseScore + this.platformTargetBonus(target,preview.expectedDamage,knownUnits) + volleyDamage + (preview.conditionValue ?? 0) + (volleyDamage >= memberHealth(target) ? 4 : 0), offensive: volleyDamage + (preview.conditionValue ?? 0) > 0, path, targetId: target.id, weaponMode, kind: 'weapon', preview });
       }
       for (const listedAbility of actor.abilities) {
         const ability = listedAbility;
@@ -3193,7 +3261,7 @@ export class SmallBattle {
       const times = Math.max(1, weapon?.attacks ?? 1);
       const exp = expDamage(weapon?.baseDice ?? '1d6', weapon?.apDice, f) * times;
       cands.push({
-        score: offenseScore(exp, f) + jitter(),
+        score: offenseScore(exp, f) + this.platformTargetBonus(f,exp,this.visibleCombatants(u.side)) + jitter(),
         run: () => {
           try {
             this.attack(u.id, f.id);
@@ -3314,6 +3382,10 @@ export class SmallBattle {
     while (this.turnIndex < this.turnOrder.length) {
       const u = this.active;
       if (!u) break;
+      if (u.ride?.stranded) {
+        this.platforms.reconcile(this.platforms.carrier(u)!);
+        if (u.ride?.stranded) { this.turnIndex++; continue; }
+      }
       if (u.status === 'ready' || u.status === 'routing') this.beginFeedbackActivation();
       if (u.status !== 'ready' && u.status !== 'routing') {
         this.captureFeedback(); this.feedback?.finishActivation();
@@ -3325,7 +3397,7 @@ export class SmallBattle {
       if (carrier && carrier.status === 'ready' && u.status === 'ready') {
         this.beginTurn(carrier);
         this.activationPair = [u.id,carrier.id];
-        if (this.platforms.sheltered(u)) this.platformActor = carrier.id;
+        if (!controlPolicy(u) && (this.platforms.sheltered(u) || controlPolicy(carrier))) this.platformActor = carrier.id;
       }
       this.captureFeedback();
       if (u.status !== 'ready') {
@@ -3485,11 +3557,12 @@ export class SmallBattle {
     }
     for (const zone of expired) this.recordEvent({ round: this.round, kind: 'condition', participants: [zone.ownerId], text: zoneEndText(zone, this.battlefield) });
   }
-  private checkDeath(unit: Combatant, killer?: Combatant): void {
+  private checkDeath(unit: Combatant, killer?: Combatant, blast = false): void {
+    blast = this.explosiveLoss.delete(unit) || blast;
     if(this.rules.resolutionVersion==='v2') {
       const earned=casualtyXp(unit,this.xpMinimum,true);
       if(unit.side==='enemy'||unit.side==='neutral'&&killer?.side==='ally')this.xpGained+=earned;
-      const owner=killer?.summonerId??killer?.id;
+      const owner=killer?.summonerId??killer?.transportOrigin??killer?.id;
       if(owner&&earned&&killer?.side!==unit.side) {
         this.xpByUnit.set(owner,(this.xpByUnit.get(owner)??0)+earned);
       }
@@ -3499,7 +3572,7 @@ export class SmallBattle {
       this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], text: revival });
       return;
     }
-    if (this.hasPlatforms) this.platforms.reconcile(unit);
+    if (this.hasPlatforms) this.platforms.reconcile(unit,blast,killer);
     if (unit.hp > 0 || unit.status === 'dead' || this.nonLethal && unit.status === 'dying') return;
     if(this.rules.resolutionVersion==='v2')this.defeatedIds.add(unit.id);
     // 与会战一致：生命归零即阵亡，不依赖战斗结束后不可能发生的再次补刀。
@@ -3602,10 +3675,8 @@ export class SmallBattle {
     if (this.objectiveWinner) return true;
     const goal = this.battlefield?.objective;
     if (!goal || goal.kind === 'annihilation' || goal.kind === 'control' && !goal.attackingSide) return this.remainingSides().length <= 1;
-    for (const side of ['ally', 'enemy'] as const) {
-      if (!this.combatants.some((c) => c.side === side && (c.status === 'ready' || this.rules.resolutionVersion === 'v2' && c.status === 'routing'))) return true;
-    }
-    return false;
+    const sides = this.remainingSides();
+    return !sides.includes('ally') || !sides.includes('enemy');
   }
 
   /** 胜方（未结束时为 undefined） */
@@ -3614,8 +3685,7 @@ export class SmallBattle {
     if (!this.isOver()) return undefined;
     const goal = this.battlefield?.objective;
     if (!goal || goal.kind === 'annihilation' || goal.kind === 'control' && !goal.attackingSide) return this.remainingSides()[0] ?? 'draw';
-    const allyReady = this.combatants.some((c) => c.side === 'ally' && (c.status === 'ready' || this.rules.resolutionVersion === 'v2' && c.status === 'routing'));
-    const enemyReady = this.combatants.some((c) => c.side === 'enemy' && (c.status === 'ready' || this.rules.resolutionVersion === 'v2' && c.status === 'routing'));
+    const sides = this.remainingSides(), allyReady = sides.includes('ally'), enemyReady = sides.includes('enemy');
     if (allyReady && enemyReady) return 'draw';
     if (allyReady) return 'ally';
     if (enemyReady) return 'enemy';
@@ -3623,7 +3693,7 @@ export class SmallBattle {
   }
 
   private remainingSides(): Side[] {
-    return (['ally', 'enemy', 'neutral'] as const).filter(side => this.combatants.some(c => c.side === side
+    return (['ally', 'enemy', 'neutral'] as const).filter(side => this.combatants.some(c => c.side === side && !c.ride?.stranded
       && (c.status === 'ready' || this.rules.resolutionVersion === 'v2' && c.status === 'routing')));
   }
 

@@ -1,3 +1,4 @@
+import { reuniteTransportGroups } from '../../engine/src/small/transport-groups.js';
 import { validatePlatform } from '../../engine/src/platforms.js';
 import { V23_OVERFLOW_D20, prepareSkillModel } from '../../engine/src/index.js';
 import { validateBattleControlState } from '../../engine/src/battle-control.js';
@@ -472,6 +473,8 @@ export function unitRecordFromCombatant(
   opts: { transient?: boolean; kind?: UnitHistoryEntry['kind']; sourceId?: string } = {},
 ): UnitRecord {
   c = stripCarriedItems(c);
+  if (c.ride) c.ride = {platformId:c.ride.platformId,mode:c.ride.mode};
+  delete c.transportReadyRound; delete c.transportOrigin;
   if (c.barrier?.grants) { c.barrier.grants = c.barrier.grants.filter(g => g.effectSourceId); refreshBarrier(c); }
   else delete c.barrier;
   delete c.wornBarrierUsed; delete c.weaponHeat; delete c.shieldDurability; delete c.energyShield; delete c.sprayerFuel; delete c.tankRupturedRound; delete c.chargeInterrupted; delete c.chargeDistance; delete c.denialTriggered; delete c.battleZones; delete c.regenerationRemainder; delete c.lifestealState; delete c.controlActivation; delete c.movementRemainder; delete c.marchRemainder; delete c.movedDuringActivation; delete c.looseChoiceLocked;
@@ -561,6 +564,7 @@ export function blueprintIdForCategory(cat: Category): string {
 
 export function unitRecordToGenerateInput(r: UnitRecord, era = 'medieval'): GenerateInput {
   return {
+    unarmed: r.snapshot ? !r.snapshot.weapon : undefined,
     weaponStabilized: r.snapshot?.weapon?.recipe?.stabilized,
     damageModel: r.snapshot?.damageModel,
     numericModel: r.snapshot?.numericModel,
@@ -620,7 +624,7 @@ export function previewUnitConversion(record: UnitRecord, registry: Map<string, 
   const input = unitRecordToGenerateInput(record);
   const source = record.snapshot;
   const weaponId = input.weaponId ?? source?.genAudit?.weapon?.profileId;
-  if (!weaponId && !input.weaponClass) throw new Error('武器缺少明确效果来源，请先编辑武器类型');
+  if (!input.unarmed && !weaponId && !input.weaponClass) throw new Error('武器缺少明确效果来源，请先编辑武器类型');
   if (source?.abilities.some((a) => !a.definitionId?.startsWith('bp-') && !a.id.startsWith('bp-'))) throw new Error('技能缺少明确配方，请在编辑中选择支持的效果');
   const unit = generateUnit({ ...input, rulesVersion: 'v2', era: undefined,
     weaponId,
@@ -790,6 +794,7 @@ export function commitBattleState(opts: {
   combatants: Combatant[];
   battleId?: string;
 }): CommitBattleStateResult {
+  opts = {...opts,combatants:reuniteTransportGroups(opts.combatants)};
   const lostIds = opts.combatants
     .filter((c) => c.hp <= 0 || c.status === 'dead')
     .map((c) => c.id);
@@ -818,11 +823,12 @@ export function commitBattleState(opts: {
   });
 
   const roster = opts.roster
-    .filter((u) => !lost.has(u.id))
+    .filter((u) => !u.transportOrigin && !lost.has(u.id))
     .map((u) => {
       const current = live.get(u.id);
       const next = current ? clone(current) : clone(u);
       clearLostCarrier(next);
+      if (next.ride) next.ride = {platformId:next.ride.platformId,mode:next.ride.mode};
       next.recordRevision = records.find((r) => r.id === next.id)?.revision;
       return next;
     });
@@ -858,7 +864,7 @@ export function commitBattleOutcome(opts: {
     };
   }
   // 准备结果不得修改输入，保存失败可按同一原始战斗快照重试。
-  const combatants = clone(opts.combatants);
+  const combatants = reuniteTransportGroups(clone(opts.combatants));
   for (const combatant of combatants) {
     const record = opts.records.find((r) => r.id === combatant.id);
     if (record && combatant.recordRevision !== undefined && combatant.recordRevision !== (record.revision ?? 1)) {

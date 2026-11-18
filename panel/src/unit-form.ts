@@ -23,7 +23,7 @@ export function captureUnitDraft(prefix: string, d: UnitDraft, opts: { managed?:
   // Managed gear is a frozen inventory projection, not an editable recipe. Even
   // untouched controls lose absent/zero bonuses and unsupported legacy values.
   if (!opts.managed) {
-    for (const key of ['sidearmEnabled', 'shield'] as const) { const el = root.querySelector<HTMLInputElement>(`[data-role="${prefix}-${key}"]`); if (el) next[key] = el.checked; }
+    for (const key of ['primaryEnabled', 'sidearmEnabled', 'shield'] as const) { const el = root.querySelector<HTMLInputElement>(`[data-role="${prefix}-${key}"]`); if (el) next[key] = el.checked; }
     for (const slot of ['primary', 'sidearm', 'armor', 'shieldGear'] as const) next[slot] = captureEquipment(prefix + '-' + slot, d[slot]);
   }
   next.traits = [...d.traits.filter((id) => ['large', 'titan'].includes(id)), ...root.querySelectorAll<HTMLInputElement>(`[data-role="${prefix}-trait"]:checked`)].map((el) => typeof el === 'string' ? el : el.value);
@@ -65,12 +65,13 @@ export function unitForm(prefix: string, d: UnitDraft, registry: Map<string, Tra
     <label>单位类型${select('scale', [['hero', '个体'], ['company', '编队']], opts.editing)}</label><label>${d.body === 'vehicle' ? d.platformSpec ? '车组训练' : '平台等级' : '训练'}${input('level', 'type="number" min="1" max="10" ' + (opts.editing ? 'readonly title="随经验成长"' : ''))}</label>
     ${d.scale === 'company' || opts.editing ? `<label>${d.scale === 'company' ? '编制上限' : '生命上限'}${input('hpMax', 'type="number" min="1" placeholder="50"' + (d.scale === 'hero' ? ' max="' + singleLifeLimit(d.damageModel) + '"' : ''))}</label>` : ''}
     ${opts.editing ? `<label>${d.scale === 'company' ? '当前人数' : '当前生命'}${input('hp', 'type="number" min="0"')}</label>` : ''}</div>
-    <div class="builder-recommendation"><span>当前方案</span><b>${esc(d.primary.name || WEAPON_CLASSES[d.primary.mechanism]?.name || '主武器')} · ${['无甲', '轻甲', '中甲', '重甲', '超重甲'][Number(d.armor.tier)] ?? '护甲'}${d.mount ? ' · 骑乘' : ''}${d.shield ? ' · 携盾' : ''}</b><small>${opts.editing ? '修改后先预览，未改动的记录保持原样。' : '默认无甲、L1主武器；需要装备或特殊能力时再展开调整。'}</small></div>
+    <div class="builder-recommendation"><span>当前方案</span><b>${esc(d.primaryEnabled === false ? '无主武器' : d.primary.name || WEAPON_CLASSES[d.primary.mechanism]?.name || '主武器')} · ${['无甲', '轻甲', '中甲', '重甲', '超重甲'][Number(d.armor.tier)] ?? '护甲'}${d.mount ? ' · 骑乘' : ''}${d.shield ? ' · 携盾' : ''}</b><small>${opts.editing ? '修改后先预览，未改动的记录保持原样。' : '默认无甲、L1主武器；需要装备或特殊能力时再展开调整。'}</small></div>
     <details class="builder-section" data-detail-id="${prefix}-body"><summary>身体与装备 <span>调整配装</span></summary><p class="sub">基础速度决定移动格数；负载、地形、状态和疲劳影响实际机动。${d.numericModel || d.loadModel ? '容量随等级和身体变化，负载不超过容量80%时无负担；超过后连续影响移动与先攻。' : '人形容量14，负重达到12时移动−1、先攻−2；大型容量18。'}${d.body === 'vehicle' && !d.platformSpec ? '平台等级综合表示载具与乘员水平，影响生命、作战能力和承载。' : ''}</p>
       <div class="builder-basics"><label>身体${select('body', bodyChoices)}</label><label>坐骑／载具规格${input('platformSpec','placeholder="例如 封闭载具L5+4防御"')}</label><label>每匹／辆座位${input('seats','type="number" min="1" placeholder="1"')}</label><label>基础速度${select('speedTier', [['', '随身体'], ['1', '1 · 迟缓'], ['2', '2 · 缓行'], ['3', '3 · 标准'], ['4', '4 · 快速'], ['5', '5 · 疾速']])}</label><label class="check-field"><input type="checkbox" data-role="${prefix}-mount" ${d.mount ? 'checked' : ''}>骑乘</label></div>
       ${opts.editing ? '<p class="sub">身体变化不会重铸原装备或增加生命/兵员。训练随经验成长。</p>' : ''}
       ${opts.managed ? '<p class="builder-hint">在配装页更换或编辑装备。<button data-action="workspace-tab" data-tab="inventory">前往配装</button></p>' : ''}
-      <fieldset ${disabled}><legend>主武器</legend>${equipmentFields(prefix + '-primary', d.primary, { disabled: opts.managed })}</fieldset>
+      <label class="check-field"><input type="checkbox" data-role="${prefix}-primaryEnabled" ${d.primaryEnabled !== false ? 'checked' : ''} ${disabled}>携带主武器</label>
+      ${d.primaryEnabled !== false ? `<fieldset ${disabled}><legend>主武器</legend>${equipmentFields(prefix + '-primary', d.primary, { disabled: opts.managed })}</fieldset>` : ''}
       <label class="check-field"><input type="checkbox" data-role="${prefix}-sidearmEnabled" ${d.sidearmEnabled ? 'checked' : ''} ${disabled}>携带副武器</label>
       ${d.sidearmEnabled ? `<fieldset ${disabled}><legend>副武器</legend>${equipmentFields(prefix + '-sidearm', d.sidearm, { disabled: opts.managed, sidearm: true })}</fieldset>` : ''}
       <fieldset ${disabled}><legend>护甲</legend>${equipmentFields(prefix + '-armor', d.armor, { disabled: opts.managed })}${armorTrait ? `<p class="sub" data-role="equipment-traits">装备自动特质：${esc(armorTraitDefinition?.name ?? armorTrait)}。${esc(armorTraitDefinition ? describe(armorTraitDefinition) : '')}</p>` : ''}</fieldset>

@@ -1,3 +1,4 @@
+import { reuniteTransportGroups } from './small/transport-groups.js';
 import { nominalLife } from './combat-model.js';
 import { gradedNumbers, unitStep } from './numeric-model.js';
 import { bonusMultiplier, bonusSteps } from './enhancements.js';
@@ -56,6 +57,7 @@ export interface XpAwardOpts {
  * 主指挥仅在胜利时额外 +25%。
  */
 export function battleXpAwards(combatants: Combatant[], xpByUnit: Map<string, number>, opts: XpAwardOpts): XpAward[] {
+  combatants = reuniteTransportGroups(combatants);
   const partRate = opts.won ? (opts.participationRate ?? 0.15) : (opts.defeatParticipationRate ?? 0.05);
   const cmdRate = opts.commandRate ?? 0.25;
   const side = opts.side ?? 'ally';
