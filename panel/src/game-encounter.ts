@@ -1,4 +1,4 @@
-import { SmallBattle, MassBattle, V41_OVERFLOW_D20, V41_OVERFLOW_TW, LITE_D20, generatedLayeredField,
+import { SmallBattle, MassBattle, V42_OVERFLOW_D20, V41_OVERFLOW_TW, V42_LITE_D20, generatedLayeredField,
   environmentTags, recommendedFormationSlots, cellLabel, personnel, type Combatant, type Trait } from '../../engine/src/index.js';
 import { assertBattleCapacity } from '../../engine/src/battle-limits.js';
 import { newBattleCommanderProfiles } from '../../engine/src/commander-profile.js';
@@ -48,8 +48,8 @@ export function buildEncounter(input: EncounterBuild): SmallBattle | MassBattle 
   if (context && battlefield?.objective.kind === 'escape') { context.vipId = battlefield.objective.unitId; context.vipName = roster.find(u => u.id === context.vipId)?.name; }
   const combatants = structuredClone(roster);
   for (const unit of combatants) setMoraleLock(unit, unit.side === 'ally' && unit.id === input.protagonistId);
-  const battle = new SmallBattle({ nonLethal: input.nonLethal, ...(v2 ? { battlefield } : {}), rules: v2 ? V41_OVERFLOW_D20 : LITE_D20,
-    combatants, seed: v2 ? seed : undefined, traitRegistry, summonUnit, field: { tags: v2 ? tags : setup.field ? [setup.field] : [] } });
+  const battle = new SmallBattle({ nonLethal: input.nonLethal, ...(v2 ? { battlefield } : {}), rules: v2 ? V42_OVERFLOW_D20 : V42_LITE_D20,
+    combatants, seed, traitRegistry, summonUnit, field: { tags: v2 ? tags : setup.field ? [setup.field] : [] } });
   battle.commanderProfiles = newBattleCommanderProfiles(context?.commanders); battle.start(); return battle;
 }
 
