@@ -60,14 +60,17 @@
 <deploy id="u1"/>
 </tb>
 </example>
-<example situation="示例：两支再生赤翼骑兵连，每支现员80、编制100">
+<example situation="两支再生赤翼骑兵连，各有80名骑兵、80匹战马，人员与战马的编制上限各为100">
 <tb>
-<spawn name="再生赤翼骑兵连" side="ally" scale="company" level="5" hp="80" hpMax="100" body="human" mount="true" speed="4" weapon="骑枪:长兵器L3" weapon2="军刀:剑L3" armor="板甲:重甲L3" shield="骑兵盾:中盾L3" skills="冲锋:物理单体L4+近战+突进L4,鼓舞:buffL3+士气L3" traits="再生L5" items="治疗药水:buffL3+治疗L3×2" count="2"/>
+<spawn name="再生赤翼骑兵一连" side="ally" scale="company" level="5" hp="80" hpMax="100" body="human" mount="赤翼一连战马群" speed="4" weapon="骑枪:长兵器L3" weapon2="军刀:剑L3" armor="板甲:重甲L3" shield="骑兵盾:中盾L3" skills="冲锋:物理单体L4+近战+突进L4,鼓舞:buffL3+士气L3" traits="再生L5" items="治疗药水:buffL3+治疗L3×2"/>
+<spawn name="赤翼一连战马群" side="ally" scale="company" level="3" hp="80" hpMax="100" body="human" platform="坐骑L3" seats="1"/>
+<spawn name="赤翼二连战马群" side="ally" scale="company" level="3" hp="80" hpMax="100" body="human" platform="坐骑L3" seats="1"/>
+<spawn name="再生赤翼骑兵二连" side="ally" scale="company" level="5" hp="80" hpMax="100" body="human" mount="赤翼二连战马群" speed="4" weapon="骑枪:长兵器L3" weapon2="军刀:剑L3" armor="板甲:重甲L3" shield="骑兵盾:中盾L3" skills="冲锋:物理单体L4+近战+突进L4,鼓舞:buffL3+士气L3" traits="再生L5" items="治疗药水:buffL3+治疗L3×2"/>
 </tb>
 </example>
-<example situation="全部便捷属性格式示例，xpProgress为当前等级经验数；仅展示格式，实际只写需要修改且有依据的字段">
+<example situation="已有骑兵连 u1、战马群 u2。更新 u1 并绑定 u2；xpProgress 为当前等级经验，实际只写需要修改的字段">
 <tb>
-<unit_set id="u1" name="再生赤翼骑兵连" side="ally" scale="company" level="5" xpProgress="100.5" hp="80" hpMax="100" morale="100" state="ready" clear="中毒,流血" body="human" mount="true" speed="4" weapon="骑枪:长兵器L3" weapon2="军刀:剑L3" armor="板甲:重甲L3" shield="骑兵盾:中盾L3" skills="冲锋:物理单体L4+近战+突进L4,鼓舞:buffL3+士气L3" traits="再生L5" items="治疗药水:buffL3+治疗L3×2" retired="false" note="精锐骑兵" reason="示范全部便捷属性格式"/>
+<unit_set id="u1" name="再生赤翼骑兵连" side="ally" scale="company" level="5" xpProgress="100.5" hp="80" hpMax="100" morale="50" state="ready" clear="中毒,流血" body="human" mount="u2" speed="4" weapon="骑枪:长兵器L3" weapon2="军刀:剑L3" armor="板甲:重甲L3" shield="骑兵盾:中盾L3" skills="冲锋:物理单体L4+近战+突进L4,鼓舞:buffL3+士气L3" traits="再生L5" items="治疗药水:buffL3+治疗L3×2" retired="false" note="精锐骑兵" reason="示范全部便捷属性格式"/>
 </tb>
 </example>
 </examples>
@@ -86,11 +89,11 @@
 - 必填name、side（ally/enemy/neutral）、scale（hero/company）。company还必填hpMax；填写hp必须同时填写hpMax。count是卡数。
 - neutral为第三方，与我方、敌方均敌对。
 - level为训练1—10。weapon主武器、weapon2副武器均支持下列种类；armor用护甲规格，shield="名称:规格"，如shield="塔盾:大盾L5+2防御"。
-- 坐骑、运输载具单独建档。platform 写“类别L等级±修正”，类别选坐骑、开放载具、封闭载具。乘员外露载具选开放载具，乘员在内选封闭载具，两类都能按 seats 搭载单位。
-非装甲炮兵仍按人形单位建档。
-- seats 为载具可搭载人数，不考虑载具组成员
-- 让一张单位卡使用坐骑或车辆，在该单位的 spawn 或 unit_set 写 mount="平台单位编号"。mount="false" 解除绑定，aboard="false" 表示离开载具。
-- 已有载具或坐骑引用事实清单中的单位编号。同型载具或坐骑的 hp/hpMax 表示编制实际数量/最大数量。
+- 坐骑和载具单独建档。platform 写“类别L等级±修正”，类别选坐骑、开放载具、封闭载具。乘员外露选开放载具，乘员在内选封闭载具。
+- 马匹等普通坐骑用 body="human"，大型、巨型生物坐骑分别用 body="large"、body="giant"。车辆用 body="vehicle"。仅独立作战的坦克、自行火炮可省略 platform 和 seats。非装甲炮兵按人形单位建档。
+- seats 是每匹坐骑或每辆车的载员人数，车组成员不占座。company 的 hp/hpMax 表示现有数量/编制上限，总座位数为 hp × seats；单匹或单辆用 hero 时，hp/hpMax 表示生命/最大生命，总座位数为 seats。
+- 在乘员的 spawn 或 unit_set 中，绑定写 mount="坐骑或载具编号"，乘员与坐骑或载具共用行动回合；普通搭乘写 aboard="坐骑或载具编号"。用 unit_set 写 mount="false" 解绑，aboard="false" 离开。
+- 已建档的坐骑或载具填事实清单中的单位编号，如 u3。同一 <tb> 内新建时，填该批次中唯一的单位全名，乘员和坐骑或载具均可先写。
 - speed选1—5（迟缓/缓行/标准/快速/疾速），speed只表示单位本身固有速度，选择时不考虑装备，负重或坐骑等其他因素的影响。
 - skills、traits按“技能与效果”规格写有依据的能力。
 - items写随身道具，每项“名称:道具规格×件数”。主体等级紧接主体类别，可分级附加效果各自写等级，数值修正写在整项规格末尾。若原文没提到相关设定，可生成若干符合设定的道具和技能
@@ -135,7 +138,7 @@ add（新物品）/reforge 可用 body、quality、stabilized、protection、enc
 <examples>
 <example situation="八人骑兵队与八匹战马">
 <tb>
-<spawn name="青原战马群" side="ally" scale="company" hpMax="8" body="large" level="2" platform="坐骑L2+2速度" seats="1" weapon="马蹄:天生武器L2" armor="马铠:轻甲L2"/>
+<spawn name="青原战马群" side="ally" scale="company" hpMax="8" body="human" level="2" platform="坐骑L2+2速度" seats="1" weapon="马蹄:天生武器L2" armor="马铠:轻甲L2"/>
 <spawn name="青原骑兵队" side="ally" scale="company" hpMax="8" level="3" mount="青原战马群" weapon="骑枪:长兵器L3" weapon2="佩剑:剑L2" armor="骑兵甲:中甲L2"/>
 </tb>
 </example>

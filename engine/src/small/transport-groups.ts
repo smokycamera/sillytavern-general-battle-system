@@ -1,3 +1,4 @@
+import { unitCount } from '../platforms.js';
 import type { Combatant } from '../types.js';
 import { clampShieldDurability, clampEnergyShield } from '../shield-state.js';
 import { mergeWounded } from '../recovery.js';
@@ -81,6 +82,38 @@ export function detachMembers(parent: Combatant, count: number, id: string): Com
   child.engagedWith = [];
   delete child.ride; child.mount = false;
   return child;
+}
+
+/** Plan on copies so map previews and failed deployments never divide an archive card. */
+export function planTransportDeployment(units: readonly Combatant[]) {
+  const deployed = [...units], remaining = new Map<string,number>();
+  const overflow: {rider: Combatant; foot: Combatant; carrierId: string}[] = [];
+  for (const u of units) if (u.platform) remaining.set(u.id,unitCount(u) * (u.seats ?? 1));
+  const ids = new Set(units.map(u => u.id));
+  // Reserve seats for the controlling card first, then other passengers in roster order.
+  for (const mode of ['mount','aboard'] as const) {
+    for (const [index,u] of units.entries()) {
+      if (u.ride?.mode !== mode || u.hp <= 0) continue;
+      const carrierId = u.ride.platformId, free = remaining.get(carrierId);
+      if (free === undefined) continue; // Missing carriers are reported by ride validation.
+      const count = unitCount(u), seated = Math.min(count,free);
+      remaining.set(carrierId,free-seated);
+      if (count === seated) continue;
+      const rider = structuredClone(u);
+      deployed[index] = rider;
+      let foot = rider;
+      if (seated) {
+        let n = 1;
+        while (ids.has(u.id+':part:'+n)) n++;
+        foot = detachMembers(rider,count-seated,u.id+':part:'+n);
+        ids.add(foot.id); deployed.push(foot);
+      }
+      delete foot.ride; foot.mount = false;
+      delete foot.pos; delete foot.elevation; delete foot.airborne;
+      overflow.push({rider,foot,carrierId});
+    }
+  }
+  return {deployed,overflow};
 }
 
 /** Combine the member health ledger without healing or generating a casualty event. */

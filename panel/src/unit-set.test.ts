@@ -64,8 +64,26 @@ describe('小战坐骑与运输载具', () => {
     b.platforms.act(passenger,'leave',passenger.id);
     expect(passenger.ride).toBeUndefined();
     expect(b.getTurnEconomy(passenger.id)).toMatchObject({moveAvailable:false,actionAvailable:true});
-    expect(() => battleFrom(apc+infantry.replace('hpMax="8"','hpMax="9"'))).toThrow(/座位/);
     expect(() => battleFrom(apc+apc+infantry)).toThrow(/重名/);
+  });
+  it('unit_set 改平台和规模后可超员绑定，入场按席位分组并保留伤势', () => {
+    const first = transactText(setup(),'<tb>'+apc+infantry.replace(' aboard="APC渡鸦"','')+foe+'</tb>').next();
+    const carrier = first.storage!.find(r => r.name === 'APC渡鸦')!, squad = first.storage!.find(r => r.name === '步兵班')!;
+    const next = transactText(first,'<tb><unit_set id="'+carrier.id+'" scale="company" hp="2" hpMax="2" platform="开放载具L4+2防御" seats="3"/><unit_set id="'+squad.id+'" mount="'+carrier.id+'"/></tb>','set-ride').next();
+    const units = next.rosterIds!.map(id => materializeUnitRecord(next.storage!.find(r => r.id === id)!,reg));
+    expect(units.find(u => u.id === carrier.id)).toMatchObject({scale:'company',hp:2,platform:{kind:'open',power:4,bonuses:{defense:2}}});
+    const rider = units.find(u => u.id === squad.id)!;
+    expect(rider.ride).toMatchObject({platformId:carrier.id,mode:'mount'});
+    const b = new SmallBattle({combatants:units,rules:V42_OVERFLOW_D20,battlefield:standardField(7,9),seed:'entry'});
+    applyCombatDamage(rider,1,1);
+    const hp = memberHealth(rider);
+    b.start();
+    const saved = SmallBattle.fromSnapshot(structuredClone(b.toSnapshot()));
+    const mounted = saved.byId(squad.id), foot = saved.combatants.find(u => u.transportOrigin === squad.id)!;
+    expect([mounted.hp,foot.hp,mounted.ride?.seats,foot.ride]).toEqual([6,2,[[0,6]],undefined]);
+    expect(memberHealth(mounted)+memberHealth(foot)).toBe(hp);
+    expect([saved.xpMinimum.get(mounted.id),saved.xpMinimum.get(foot.id),saved.xpInitialStrength.get(mounted.id)]).toEqual([6,2,8]);
+    expect(saved.turnOrder).toContain(foot.id);
   });
   it('先部署乘员再建五辆八座车，受损只波及失去座位的八人，分队读档和归队守恒', () => {
     const battle = battleFrom(infantry.replace('hpMax="8"','hpMax="40"') + apc.replace('scale="hero"','scale="company" hpMax="5"'),false,V42_OVERFLOW_D20);

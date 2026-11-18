@@ -1,3 +1,4 @@
+import { planTransportDeployment } from './transport-groups.js';
 import { combatHostile } from '../battle-control.js';
 import { agileCost } from '../phase2-traits.js';
 import { movementPoints } from '../tactics.js';
@@ -435,6 +436,7 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
 /** Pure preparation shared by generator capacity checks and SmallBattle.start. */
 export function prepareGridDeployment(field: BattlefieldSpec, units: readonly Combatant[], seed = 'deployment', conditions?: FlightConditions, enableFlight = true): Combatant[] {
   if (units.some(u => u.ride)) {
+    units = planTransportDeployment(units).deployed;
     const physical = prepareGridDeployment(field, units.filter(u => !u.ride), seed, conditions, enableFlight);
     const positions = new Map(physical.map(u => [u.id, u]));
     return units.map(u => {
