@@ -114,6 +114,8 @@ import { migrateSavedSuggestion } from './saved-suggestion.js';
 import type { NarrativeProposal, NarrativeSave } from './narrative-state.js';
 import { prepareInventoryState, type InventoryItem } from './inventory-state.js';
 import { prepareBattleItems } from './battle-items.js';
+import { rideEditor, rideEditAction } from './ride-editor.js';
+import { platformUnits } from './platform-records.js';
 import { InventoryPanel } from './inventory-view.js';
 import { itemSpecificationLabel } from './item-spec.js';
 import { WORKSPACES, workspaceNavigation, workspacePage, showWorkspace, type WorkspaceTab } from './workspace-view.js';
@@ -1346,9 +1348,10 @@ function renderUnitConversion(): string {
 
 function renderConfig(): string {
   const units = state.roster.filter(visibleUnitRecord);
+  const rideUnits = currentBattle() ? [] : platformUnits(state.storage.filter(r => r.snapshot && visibleUnitRecord(r)));
   return `<section class="team-workspace"><div class="section-heading"><div><h2>参战队伍</h2><p class="sub">沿用当前生命、人数与装备。</p></div><div class="row"><button data-action="ai-scan" ${aiScanDialog?.busy ? 'disabled' : ''}>AI扫描</button><button data-action="gen-toggle">${state.genOpen ? '收起新建' : '添加单位'}</button></div></div>
     <div class="gen-details">${state.genOpen ? `<div class="gen-body"><h3>新建单位</h3>${unitForm('gen', state.form, reg)}<div class="row"><button class="primary" data-action="gen-add">预览单位</button></div>${builderPreview && !builderPreview.record ? buildPreview(builderPreview.unit) : ''}</div>` : ''}</div>
-    <div class="units">${units.map((u) => unitHtml(u, state.roster.indexOf(u), false)).join('') || '<div class="workspace-empty"><p>尚未集结队伍。添加新单位，或从下方档案中选择。</p></div>'}</div>
+    <div class="units">${units.map((u) => unitHtml(u, state.roster.indexOf(u), false, rideEditor(u.id,rideUnits))).join('') || '<div class="workspace-empty"><p>尚未集结队伍。添加新单位，或从下方档案中选择。</p></div>'}</div>
     ${units.length ? '<details class="team-tools"><summary>编制工具</summary><button data-action="gen-clear">清空参战名单</button></details>' : ''}</section>`;
 }
 
@@ -1362,7 +1365,7 @@ function visibleUnitRecord(u: { id: string; side: Side }): boolean {
   const b = currentBattle();
   return !b || b.isOver() || b.rules.resolutionVersion !== 'v2' || u.side === 'ally' || b.visibleCombatants('ally').some((c) => c.id === u.id);
 }
-function unitHtml(u: Combatant, index: number, inBattle: boolean): string {
+function unitHtml(u: Combatant, index: number, inBattle: boolean, ride = ''): string {
   if (!visibleUnitRecord(u)) return '';
   const battle = currentBattle(); const physical = inBattle && battle && isMassBattle(battle) ? battle.effectiveUnit(u) : u; const concealment = battle && concealmentLabel(battle.observationContext(), u);
   const pressure = inBattle && battle?.rules.resolutionVersion === 'v2' ? moraleLabel({ ...battle.observationContext(), units: battle.visibleCombatants('ally') }, u, reg) : '';
@@ -1397,6 +1400,7 @@ function unitHtml(u: Combatant, index: number, inBattle: boolean): string {
     ${pressure ? `<div class="sub morale-pressure">${esc(pressure)}</div>` : ''}
     <div class="row" style="margin-top:2px"><button data-action="unit-detail" data-id="${esc(u.id)}">${expanded ? '收起详情' : '详情'}</button></div>
     ${expanded ? `<div class="unit-detail">${unitDetailHtml(u, battleFieldTags())}</div>` : ''}
+    ${ride}
     ${rosterCtl}
   </div>`;
 }
@@ -2636,6 +2640,20 @@ async function handleAction(e: Event): Promise<void> {
     if (!b || b.rules.resolutionVersion !== 'v2') return;
     selectFormationUnit(b, formationView, state.orderDraft, el.dataset.id!, false, true, formationQueries);
     render('view'); return;
+  }
+  if (act === 'ride-edit') {
+    if (!(el instanceof HTMLButtonElement) || el.matches(':disabled')) return;
+    el.disabled = true;
+    const context = controller.inventoryContext();
+    try {
+      const preview = controller.previewInventory(rideEditAction(el));
+      const receipt = await controller.commitInventoryPreview(preview);
+      if (context !== controller.inventoryContext()) return;
+      if (receipt.status === 'failed') throw Error(receipt.error ?? '保存失败');
+      restore(); render();
+    } catch (error) { if (context === controller.inventoryContext()) toast(error instanceof Error ? error.message : String(error)); }
+    finally { el.disabled = false; }
+    return;
   }
   if ((await inventoryPanel.handleAction(el))) return;
   battleSaveFailed = false;

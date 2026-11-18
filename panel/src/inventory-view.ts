@@ -1,4 +1,5 @@
-import { platformText } from '../../engine/src/platforms.js';
+import { rideEditor } from './ride-editor.js';
+import { platformUnits } from './platform-records.js';
 import { V34_OVERFLOW_D20 } from '../../engine/src/rules.js';
 import { equipmentStep } from '../../engine/src/numeric-model.js';
 import { BOUNDED_BLAST_MODEL } from '../../engine/src/artillery-model.js';
@@ -239,12 +240,7 @@ export class InventoryPanel {
     this.capture(); this.error = undefined;
     try {
       const item = this.view().inventory?.find((i) => i.id === element.dataset.item);
-      if (action === 'inventory-ride') {
-        const platformId = document.querySelector<HTMLSelectElement>('[data-role="inventory-platform"]')?.value;
-        const mode = element.dataset.mode === 'aboard' ? 'aboard' : 'mount';
-        if (element.dataset.mode && !platformId) throw Error('请先选择坐骑或载具');
-        await this.commitPreview(this.controller.previewInventory({kind:'ride',unitId:this.selectedUnit!,...(element.dataset.mode && platformId ? {ride:{platformId,mode}} : {})}));
-      } else if (action === 'inventory-bulk') {
+      if (action === 'inventory-bulk') {
         this.bulkDelete = true; this.selectedItems.clear(); this.preview = undefined; this.draft = undefined;
       } else if (action === 'inventory-bulk-cancel') {
         this.bulkDelete = false; this.selectedItems.clear(); this.preview = undefined;
@@ -319,7 +315,6 @@ export class InventoryPanel {
     if (this.selectedUnit === undefined || this.selectedUnit !== '' && !records.some(r => r.id === this.selectedUnit)) this.selectedUnit = records.find(r => r.side === 'ally' && !r.retired)?.id ?? '';
     const items = this.currentItems(save), current = records.find(r => r.id === this.selectedUnit), actor = current?.snapshot;
     const locked = !!save.battle && !(save.committedOutcomeIds ?? []).includes(`${save.battle.kind}:${String(save.battle.snap.seed)}`);
-    const carriers = records.filter(r => r.snapshot?.platform && r.hp > 0 && !r.retired && r.side === current?.side && r.id !== current?.id);
     const eligible = items.filter(item => !item.equippedTo);
     const eligibleIds = new Set(eligible.map(item => item.id));
     const removedSelection = [...this.selectedItems].some(id => !eligibleIds.has(id));
@@ -381,7 +376,7 @@ export class InventoryPanel {
     ];
     return `<section id="inventory-panel"><div class="inventory-title"><h2>装备与物品 <small class="sub">${items.length}种物品</small></h2><div class="inventory-title-actions">${this.bulkDelete ? `<button data-action="inventory-select-all" ${locked || !eligible.length || this.committing ? 'disabled' : ''}>${allSelected ? '取消全选' : '全选'}</button><button class="danger" data-action="inventory-delete-selected" ${locked || !this.selectedItems.size || this.committing ? 'disabled' : ''}>删除（${this.selectedItems.size}）</button><button data-action="inventory-bulk-cancel" ${this.committing ? 'disabled' : ''}>取消</button>` : `<button data-action="inventory-bulk" ${locked || !eligible.length ? 'disabled' : ''}>批量删除</button><button data-action="loadout-skills" data-id="${esc(current?.id ?? '')}" ${!actor || actor.rulesVersion !== 'v2' || current?.retired || current?.status === 'dead' || locked && actor.side !== 'ally' ? 'disabled' : ''}>技能选择</button><button data-action="inventory-new" ${disabled}>新增物品</button>${collectible ? `<button data-action="inventory-collect" data-id="${esc(current!.id)}" ${disabled}>收缴道具</button>` : ''}`}</div></div>
       <div class="inventory-unit-choice"><label>查看单位 ${select('unit', this.selectedUnit, [['', '无主物品'], ...records.map((r): [string, string] => [r.id, `${r.name} · ${r.side === 'ally' ? '我方' : '敌方'} · ${displayNumber(r.hp)}/${displayNumber(r.base.hpMax)}`])])}</label></div>
-      ${current ? `<div class="loadout-current"><h3>${esc(current.name)} · 当前装备</h3><div class="loadout-slots">${items.filter(i => i.equippedTo).map(i => '<span><small>' + slotNames[i.equippedTo!.slot] + '</small>' + esc(i.name) + '</span>').join('') || '<span>尚未装备物品</span>'}</div>${actor?.platform ? '<p>'+esc(platformText(actor.platform))+' · 每匹／辆 '+(actor.seats ?? 1)+' 席</p>' : carriers.length || actor?.ride ? `<div class="row"><label>坐骑／载具<select data-role="inventory-platform" ${disabled}><option value="">选择平台</option>${carriers.map(r => '<option value="'+esc(r.id)+'" '+(actor?.ride?.platformId === r.id ? 'selected' : '')+'>'+esc(r.name)+'</option>').join('')}</select></label><button data-action="inventory-ride" data-mode="mount" ${disabled}>专属挂载</button><button data-action="inventory-ride" data-mode="aboard" ${disabled}>搭乘</button>${actor?.ride ? `<span>${actor.ride.mode === 'mount' ? '专属' : '搭乘'} · ${esc(records.find(r => r.id === actor.ride!.platformId)?.name)}</span><button data-action="inventory-ride" ${disabled}>解除</button>` : ''}</div>` : ''}<details data-detail-id="loadout-summary"><summary>查看整体防护与负重</summary><p>${esc(gearText(current))}</p></details></div>` : ''}
+      ${current ? `<div class="loadout-current"><h3>${esc(current.name)} · 当前装备</h3><div class="loadout-slots">${items.filter(i => i.equippedTo).map(i => '<span><small>' + slotNames[i.equippedTo!.slot] + '</small>' + esc(i.name) + '</span>').join('') || '<span>尚未装备物品</span>'}</div>${rideEditor(current.id,platformUnits(records.filter(r => r.snapshot)),locked || this.committing)}<details data-detail-id="loadout-summary"><summary>查看整体防护与负重</summary><p>${esc(gearText(current))}</p></details></div>` : ''}
       ${locked ? '<p class="grid-reason">战斗中不能更换装备。请在战场的行动列表中使用随身物品。</p>' : ''}
       ${!d ? feedback : ''}
       <details class="inventory-send" data-detail-id="send-options"><summary>剧情参考设置</summary><div class="row"><button data-action="prompt-select-items" data-selected="true">全部加入参考</button><button data-action="prompt-select-items" data-selected="false">全部移出参考</button></div><p class="sub">只影响当前显示的物品。勾选后，写剧情时会参考这些物品。</p></details>

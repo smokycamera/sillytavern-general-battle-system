@@ -90,3 +90,9 @@ button[data-processing="true"] { outline: 2px solid var(--accent, #cdbb86); opac
 .transport-count input { box-sizing:border-box; width:5.2em; min-height:36px; font-variant-numeric:tabular-nums; }
 .transport-row button { min-height:36px; padding-inline:.85rem; }
 .transport-row :focus-visible { outline:2px solid var(--gold); outline-offset:1px; }
+
+.ride-editor { min-width:0; margin:8px 0; padding:6px 10px 9px; border:1px solid var(--line); border-radius:6px; }
+.ride-editor legend { padding:0 4px; color:var(--gold); }
+.ride-entry { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:4px; }
+.ride-entry label, .ride-entry span { flex:1 1 9rem; min-width:0; overflow-wrap:anywhere; }
+.ride-entry select { display:block; width:100%; min-width:0; max-width:100%; }
