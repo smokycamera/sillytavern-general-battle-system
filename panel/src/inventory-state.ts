@@ -1,3 +1,5 @@
+import { platformRoster } from './platform-records.js';
+import type { Ride } from '../../engine/src/platforms.js';
 import { validateLoadModel } from '../../engine/src/load-model.js';
 import { validateNumericModel } from '../../engine/src/numeric-model.js';
 import { validateInstanceVariance } from '../../engine/src/instance-variance.js';
@@ -34,7 +36,9 @@ export interface InventorySave {
   committedOutcomeIds?: string[];
   [key: string]: unknown;
 }
+
 export type InventoryAction =
+  | { kind: 'ride'; unitId: string; ride?: Ride }
   | { kind: 'create'; itemId: string; name: string; spec: ItemSpecification; qty?: number }
   | { kind: 'reforge'; itemId: string; name?: string; spec: ItemSpecification }
   | { kind: 'add'; itemId: string; qty: number }
@@ -311,7 +315,14 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
   requireOutOfBattle(save);
   const next = prepareInventoryState(save);
   const inventory = next.inventory!;
-  if (action.kind === 'create') {
+  if (action.kind === 'ride') {
+    const record = recordById(next,action.unitId);
+    if (!record.snapshot || record.retired || record.hp <= 0) throw Error('请选择可用的单位');
+    if (action.ride) record.snapshot.ride = structuredClone(action.ride); else delete record.snapshot.ride;
+    record.snapshot.mount = false;
+    next.rosterIds = platformRoster(next.storage!,next.rosterIds ?? []);
+    rewriteRecord(next,record,id);
+  } else if (action.kind === 'create') {
     if (inventory.some((i) => i.id === action.itemId)) throw new Error('物品身份已存在');
     inventory.push(createInventoryItem(action.itemId, action.name, action.spec, id, action.qty));
   } else if (action.kind === 'discard-many') {
@@ -509,6 +520,10 @@ export function deleteUnitArchive(save: InventorySave, unitId: string): Inventor
   requireOutOfBattle(save); recordById(save, unitId);
   const next = prepareInventoryState(save);
   next.storage = next.storage!.filter((r) => r.id !== unitId);
+  for (const record of next.storage) if (record.snapshot?.ride?.platformId === unitId) {
+    delete record.snapshot.ride; record.snapshot.mount = false;
+    rewriteRecord(next,record,'remove-platform:'+unitId);
+  }
   next.rosterIds = (next.rosterIds ?? []).filter((id) => id !== unitId);
   next.inventory = next.inventory!.filter((item) => item.equippedTo?.unitId !== unitId && !(item.assignedTo===unitId && item.mechanics?.kind==='weapon' && item.mechanics.value.recipe?.mechanism==='natural'));
   for (const item of next.inventory ?? []) {

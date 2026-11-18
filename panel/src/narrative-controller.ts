@@ -31,6 +31,7 @@ import { mapNarrativeReferences, mentionsNarrativeId, narrativeIds } from './nar
 import { storyFields, storyEquipmentSpec, storySkillSpec, storyItemSpec, storyEffectSpec } from './story-spec.js';
 import { enhancementLabel } from '../../engine/src/enhancements.js';
 import { isGradedTrait } from '../../engine/src/data/traits.js';
+import { platformText } from '../../engine/src/platforms.js';
 const promptJson = (value: unknown, publicId: (id: string) => string = id => id) => JSON.stringify(mapNarrativeReferences(value, publicId)).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
 // Only an explicit request to change a record exposes its editable fields; story wording such as 调整阵型 does not.
 const EDIT_REQUEST = /unit_set|(?:修改|调整|更改|改动)[^\s，。！？、；：,.!?;:]{0,6}(?:属性|数值|档案|面板|数据)|(?:属性|数值|档案|面板|数据)[^\s，。！？、；：,.!?;:]{0,4}(?:修改|调整|更改)/;
@@ -54,11 +55,13 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
   const combatants = battleOpen && Array.isArray(save.battle?.snap.combatants) ? save.battle!.snap.combatants as Combatant[] : [];
   const field = save.battle?.snap.battlefield as BattlefieldSpec | undefined;
   const limited = battleOpen && combatants.some((u) => u.rulesVersion === 'v2');
-  const observation: ObservationContext = { units: combatants, mode: save.battle?.kind ?? 'small', fieldTags: save.battle?.snap.fieldTags as string[] ?? field?.environment ?? [],
+  const transports = new Set(combatants.filter(u => u.platform?.kind === 'transport').map(u => u.id));
+  const exposed = save.battle?.kind === 'small' && transports.size ? combatants.filter(u => !u.ride || !transports.has(u.ride.platformId)) : combatants;
+  const observation: ObservationContext = { units: exposed, mode: save.battle?.kind ?? 'small', fieldTags: save.battle?.snap.fieldTags as string[] ?? field?.environment ?? [],
     battlefield: field, attached: new Map(save.battle?.snap.attached as [string, string][] ?? []) };
-  const visible = new Set((limited ? observedUnits(observation, 'ally') : combatants).map((u) => u.id));
+  const visible = new Set((limited ? observedUnits(observation, 'ally') : exposed).map((u) => u.id));
   const visibleObservation = { ...observation, units: combatants.filter((u) => visible.has(u.id)) };
-  const canInclude = (record: { id: string; side: string }) => !limited || record.side === 'ally' || visible.has(record.id);
+  const canInclude = (record: { id: string; side: string }) => record.side === 'ally' || visible.has(record.id) || (!limited && !transports.size);
   const roster = new Set(save.rosterIds ?? []);
   let inventory: InventorySave['inventory'] = [];
   try { inventory = prepareInventoryState({ storage: save.storage, inventory: save.inventory, narrativeIdState: save.narrativeIdState,
@@ -119,7 +122,9 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
         ? { name: a.name, cooldown: unit.abilityState.find((s) => s.abilityId === (a.cooldownGroup ?? a.id))?.cdLeft || undefined }
         : { id:a.id, definitionId:a.definitionId, name: a.name, mechanism: skillMechanismName(a.definitionId ?? '') || a.definitionId, power: a.fixedPower ? undefined : a.power, bonuses:a.bonuses, prepared: unit.preparedAbilityIds?.includes(a.id) }) : undefined,
       ...(detailed && !battleOpen && EDIT_REQUEST.test(requestText) ? { editable: { formation:unit?.formation&&{...unit.formation,health:undefined},abilities:unit?.abilities,traitSources:unit?.traitSources,abilityState:unit?.abilityState,fatigue:unit?.fatigue,weapon:unit?.weapon,sidearm:unit?.sidearm,armor:unit?.armor,shield:unit?.shield,xpValue:unit?.xpValue } } : {}),
-      body: unit?.rulesVersion === 'v2' && unit.body !== 'human' ? unit.body : undefined, mount: unit?.mount || undefined,
+      body: unit?.rulesVersion === 'v2' && unit.body !== 'human' ? unit.body : undefined, platform: unit?.platform && platformText(unit.platform), seats: unit?.platform ? unit.seats ?? 1 : undefined,
+      mount: unit?.ride?.mode === 'mount' ? publicId(unit.ride.platformId) : unit?.mount || undefined,
+      aboard: unit?.ride?.mode === 'aboard' ? publicId(unit.ride.platformId) : undefined,
       weapon: equipmentFact(unit?.weapon), sidearm: equipmentFact(unit?.sidearm), armor: equipmentFact(unit?.armor), shield: equipmentFact(unit?.shield), ...(effects?.length ? { effects } : {}) }, publicId);
     blocks.units.push(line);
     if (!detailed && unit?.rulesVersion === 'v2') {

@@ -38,7 +38,7 @@
 - count是1—20张单位卡，人数写hpMax。单场上限64张。不同编制/用途单位必须分开建档，重要人物可保留个体，已有档案不自动合并。
 - unit_set用于补员、休整、复活、清除状态、配装和档案修正等有依据的战外变化；reason可选。复活须同时写state="ready"与正数hp。
 - 战外治疗用 <recover id="u1" life="all"/>。life="all" 恢复全部可恢复伤势，也可填写治疗点数，如 life="120"。
-- 便捷属性：name、side、scale、level、xpProgress、hp、hpMax、morale、state、clear、body、mount、speed、weapon、weapon2、armor、shield、skills、traits、items、retired、note。state=ready/dying/dead/routing/fled；side=ally/enemy/neutral；scale=hero/company；speed选1—5，只表示单位本身固有速度，不计装备、负重或坐骑影响；shield写盾牌的“名称:规格”；items把道具交给该单位，写法同spawn的items，只增不减，收回用take。
+- 便捷属性：name、side、scale、level、xpProgress、hp、hpMax、morale、state、clear、body、mount、platform、seats、aboard、speed、weapon、weapon2、armor、shield、skills、traits、items、retired、note。state=ready/dying/dead/routing/fled；side=ally/enemy/neutral；scale=hero/company；speed选1—5，只表示单位本身固有速度，不计装备、负重或坐骑影响；shield写盾牌的“名称:规格”；items把道具交给该单位，写法同spawn的items，只增不减，收回用take。
 - 解除状态效果使用unit_set的clear，按名称填写，多个以逗号分隔，如clear="中毒,诅咒,飞行"。clear="all"解除全部当前状态效果
 - 常用修改优先使用便捷属性。
 
@@ -86,8 +86,11 @@
 - 必填name、side（ally/enemy/neutral）、scale（hero/company）。company还必填hpMax；填写hp必须同时填写hpMax。count是卡数。
 - neutral为第三方，与我方、敌方均敌对。
 - level为训练1—10。weapon主武器、weapon2副武器均支持下列种类；armor用护甲规格，shield="名称:规格"，如shield="塔盾:大盾L5+2防御"。
-- vehicle的单位level表示载具与乘员的综合平台等级；武器、护甲的L仍分别表示装备规格。
-- 真实坐骑写mount="true"，省略无坐骑；大型、车辆、巨体明确body。骑射仅适用真实坐骑，车辆稳定装置用stabilized。非装甲炮兵计算为人形单位
+- 坐骑、车辆可单独建档。platform 写“类别L等级±修正”，类别选坐骑、开放载具、运输载具。乘员外露的车辆选开放载具，乘员在车舱内的 APC 等选运输载具，两类都能按 seats 搭载单位。L 按现有通用规格等级锚定，修正沿用单位可用方向，每项取 −10 到 +10 整数。level 写生物训练或车组训练。武器、护甲、技能各用自己的规格等级。未写 platform 的车辆沿用原综合等级。
+- 坐骑和车辆的 traits、skills 按现有特质和技能写在其自身档案。坐骑或车辆自有的主武器、副武器、护甲、盾和携带道具，分别写在自身的 weapon、weapon2、armor、shield 和 items。骑手和步兵的个人装备写在各自单位卡，下马或下车后仍随本人。车辆用 body="vehicle"。骑射适用于生物坐骑，车辆行进射击用车载武器的稳定装置。非装甲炮兵仍按人形单位建档。
+- seats 写每匹或每辆可搭载的人数，省略时为 1。生物坐骑计入骑手，车辆座位数不含固定车组。个人占 1 位，步兵编队按现员占位。
+- 让一张单位卡使用专属坐骑或车辆，在该单位的 spawn 或 unit_set 写 mount="平台单位编号"。双方共用一次激活。让多张友军卡乘坐独立行动的平台，在各乘员卡上写 aboard="平台单位编号"。同一平台一次采用一种方式。mount="false" 解除附挂，aboard="false" 表示离开独立平台。旧写法 mount="true" 沿用原骑乘状态。
+- 已有平台引用事实清单中的单位编号。首次部署时，在同一 tb 内先 spawn 平台，再 spawn 骑手或乘员，直接写该块内唯一的平台名称。新建单位由 spawn 直接参战。同型坐骑编队的 hp/hpMax 按匹数填写，车辆编队按车数，步兵或骑兵编队按人数。重名时分批建档，再用实际编号。正文只记录战外配置，战中上下车由小战面板执行。
 - speed选1—5（迟缓/缓行/标准/快速/疾速），speed只表示单位本身固有速度，选择时不考虑装备，负重或坐骑等其他因素的影响。
 - skills、traits按“技能与效果”规格写有依据的能力。
 - items写随身道具，每项“名称:道具规格×件数”。主体等级紧接主体类别，可分级附加效果各自写等级，数值修正写在整项规格末尾。若原文没提到相关设定，可生成若干符合设定的道具和技能
@@ -130,6 +133,18 @@
 add（新物品）/reforge 可用 body、quality、stabilized、protection、enchant 等该种类支持的配置。
 
 <examples>
+<example situation="八人骑兵队与八匹战马">
+<tb>
+<spawn name="青原战马群" side="ally" scale="company" hpMax="8" body="large" level="2" platform="坐骑L2+2速度" seats="1" weapon="马蹄:天生武器L2" armor="马铠:轻甲L2"/>
+<spawn name="青原骑兵队" side="ally" scale="company" hpMax="8" level="3" mount="青原战马群" weapon="骑枪:长兵器L3" weapon2="佩剑:剑L2" armor="骑兵甲:中甲L2"/>
+</tb>
+</example>
+<example situation="一辆 APC 与一个八人机械化步兵班">
+<tb>
+<spawn name="渡鸦号" side="ally" scale="hero" body="vehicle" level="3" platform="运输载具L5+4防御-1速度" seats="8" weapon="车载轻机枪:步枪L5" armor="车体装甲:重甲L5" skills="烟幕释放:烟幕L3"/>
+<spawn name="青原机械化步兵班" side="ally" scale="company" hpMax="8" level="2" aboard="渡鸦号" weapon="制式步枪:步枪L5" armor="防弹衣:中甲L4"/>
+</tb>
+</example>
 <example situation="新建自行火炮连；hpMax是车数">
 <tb>
 <spawn name="自行火炮连" side="ally" scale="company" hpMax="12" body="vehicle" level="4" weapon="自行榴弹炮:曲射火炮L6" armor="车体装甲:重甲L4"/>

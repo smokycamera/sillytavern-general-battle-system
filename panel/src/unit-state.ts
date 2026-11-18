@@ -1,3 +1,4 @@
+import { validatePlatform } from '../../engine/src/platforms.js';
 import { V23_OVERFLOW_D20, prepareSkillModel } from '../../engine/src/index.js';
 import { validateBattleControlState } from '../../engine/src/battle-control.js';
 import { refreshBarrier } from '../../engine/src/barrier.js';
@@ -57,6 +58,7 @@ import {
 } from '../../engine/src/index.js';
 
 export const PANEL_SAVE_SCHEMA_VERSION = 2;
+
 
 export interface UnitRecord {
   recoverableWounded?: number;
@@ -227,6 +229,7 @@ function validateRuntimeMetadata(value: Record<string, unknown>, sourceState = v
   if (value.moraleLocked !== undefined && value.moraleLocked !== true) throw new Error('士气锁定记录损坏');
   validateWounded(value as unknown as Combatant);
   validateMount(value as unknown as Combatant);
+  validatePlatform(value as unknown as Combatant);
   validateFormationPosition(value.formationPosition);
   validateVanguardOrigin(value.vanguardOrigin, value.side as Combatant['side']);
   if (value.tacticalPose !== undefined) validateTacticalPose(value.tacticalPose as NonNullable<Combatant['tacticalPose']>);
@@ -569,6 +572,7 @@ export function unitRecordToGenerateInput(r: UnitRecord, era = 'medieval'): Gene
     rulesVersion: r.snapshot?.rulesVersion,
     body: r.snapshot?.body,
     mount: r.snapshot?.mount,
+    platform: r.snapshot?.platform, seats: r.snapshot?.seats, ride: r.snapshot?.ride,
     quality: r.snapshot?.genAudit?.input.quality,
     shield: !!r.snapshot?.shield,
     hp: r.hp,
@@ -796,12 +800,16 @@ export function commitBattleState(opts: {
       .map((c) => [c.id, c] as const),
   );
 
+  function clearLostCarrier(unit: Combatant | undefined) {
+    if (unit?.ride && lost.has(unit.ride.platformId)) { delete unit.ride; unit.mount = false; }
+  }
   const records = opts.records.map((previous) => {
     const combatant = opts.combatants.find((c) => c.id === previous.id);
-    if (!combatant) return clone(previous);
+    if (!combatant) { const next = clone(previous); clearLostCarrier(next.snapshot); return next; }
     const next = unitRecordFromCombatant(combatant, previous, {
       transient: false, kind: 'battle', sourceId: opts.battleId,
     });
+    clearLostCarrier(next.snapshot);
     if (lost.has(combatant.id)) {
       next.hp = 0;
       next.status = combatant.status === 'dying' ? 'dying' : 'dead';
@@ -814,6 +822,7 @@ export function commitBattleState(opts: {
     .map((u) => {
       const current = live.get(u.id);
       const next = current ? clone(current) : clone(u);
+      clearLostCarrier(next);
       next.recordRevision = records.find((r) => r.id === next.id)?.revision;
       return next;
     });
@@ -914,6 +923,12 @@ export function deployUnitRecord(records: UnitRecord[], roster: Combatant[], id:
   const record = records.find((r) => r.id === id);
   if (!record) throw new Error(`缺少档案 ${id}`);
   if (record.retired || record.hp <= 0 || record.status === 'dead' || record.status === 'dying') throw new Error('阵亡、解散或濒死单位不能出场');
+  const carrier = record.snapshot?.ride?.platformId;
+  if (carrier && !roster.some(u => u.id === carrier)) {
+    const vehicle = records.find(r => r.id === carrier);
+    if (!vehicle?.snapshot?.platform || vehicle.snapshot.ride) throw Error(record.name + '的平台不可部署');
+    roster = deployUnitRecord(records, roster, carrier, registry);
+  }
   const unit = materializeUnitRecord(record, registry);
   // 撤离/溃逃属于上一战；仍保留士气与长期伤势，重新部署只清战斗位置和行动状态。
   if (unit.status === 'fled' || unit.status === 'routing') unit.status = 'ready';

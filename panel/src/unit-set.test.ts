@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { generateUnit, traitRegistry, xpProgress, SmallBattle, V5_D20, activeConditionIds, activeTraitIds, traitLevel, traitSourceActive, grantTraitSource } from '../../engine/src/index.js';
+import { generateUnit, traitRegistry, xpProgress, SmallBattle, standardField, V5_D20, activeConditionIds, activeTraitIds, traitLevel, traitSourceActive, grantTraitSource } from '../../engine/src/index.js';
 import { anchoredWeapon, anchoredProtection, armorPowerScale } from '../../engine/src/power-anchors.js';
 import { materializeUnitRecord, unitRecordFromCombatant } from './unit-state.js';
 import { captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type NarrativeSave, type MessageEnvelope } from './narrative-state.js';
 import { prepareInventoryState } from './inventory-state.js';
 import { serializeEvent } from './protocol-syntax.js';
 import { parseProtocol } from './protocol.js';
+import { applyBattleStep } from './battle-step.js';
 
 const reg=traitRegistry();
 function setup(scale:'hero'|'company'='hero'):NarrativeSave {
@@ -30,6 +31,57 @@ it('明确写入武器护甲盾的负载均留下手工标记，包括恰好等�
   expect(unit.weapon).toMatchObject({ load: 1, loadOverride: true });
   expect(unit.armor).toMatchObject({ load: 1, loadOverride: true });
   expect(unit.shield).toMatchObject({ load: 1.5, loadOverride: true });
+});
+
+describe('小战坐骑与运输载具', () => {
+  const infantry = '<spawn name="步兵班" side="ally" scale="company" hpMax="8" level="2" weapon="步枪L5" aboard="APC渡鸦"/>';
+  const apc = '<spawn name="APC渡鸦" side="ally" scale="hero" body="vehicle" level="3" platform="运输载具L5+4防御" seats="8" armor="重甲L5" skills="烟幕:烟幕L3"/>';
+  const foe = '<spawn name="对手" side="enemy" scale="hero" level="3"/>';
+  function battleFrom(events: string, grid = false) {
+    const next = transactText(setup(), '<tb>'+events+foe+'</tb>').next();
+    const combatants = next.rosterIds!.map(id => materializeUnitRecord(next.storage!.find(r => r.id === id)!,reg));
+    const battle = new SmallBattle({combatants, battlefield:grid ? standardField(7,9) : undefined, seed:'platforms'});
+    battle.start();
+    return battle;
+  }
+  it('按本段唯一名称搭乘，载员跟车、受掩护，可在自己的回合下车', () => {
+    const b = battleFrom(apc+infantry);
+    const vehicle = b.combatants[0]!, passenger = b.combatants[1]!, enemy = b.combatants[2]!;
+    expect(vehicle.platform).toEqual({kind:'transport',power:5,bonuses:{defense:4}});
+    expect(vehicle.abilities.some(a => a.name === '烟幕')).toBe(true);
+    expect(passenger.ride?.platformId).toBe(vehicle.id);
+    vehicle.pos = 2;
+    expect(passenger.pos).toBe(2);
+    expect(b.visibleCombatants(enemy.side)).not.toContain(passenger);
+    for (let i = 0; i < b.turnOrder.length && b.active?.id !== passenger.id; i++) b.endTurn();
+    expect(b.active?.id).toBe(passenger.id);
+    b.platforms.act(passenger,'leave',passenger.id);
+    expect(passenger.ride).toBeUndefined();
+    expect(b.getTurnEconomy(passenger.id)).toMatchObject({moveAvailable:false,actionAvailable:true});
+    expect(() => battleFrom(apc+infantry.replace('hpMax="8"','hpMax="9"'))).toThrow(/座位/);
+    expect(() => battleFrom(apc+apc+infantry)).toThrow(/重名/);
+  });
+  it('专属挂载共用一次激活，读档保持行动来源，下马后平台下一轮独立行动', () => {
+    const horse = '<spawn name="青原战马群" side="ally" scale="company" hpMax="8" body="large" level="2" platform="坐骑L2+2速度" weapon="马蹄:天生武器L2"/>';
+    const b = battleFrom(horse+infantry.replace('aboard="APC渡鸦"','mount="青原战马群"'), true);
+    const [mount,rider] = b.combatants;
+    expect(b.turnOrder).not.toContain(mount!.id);
+    for (let i = 0; i < b.turnOrder.length && b.active?.id !== rider!.id; i++) b.endTurn();
+    expect(b.active?.id).toBe(rider!.id);
+    expect(rider!.pos).toBe(mount!.pos);
+    b.platforms.act(rider!,'select',mount!.id);
+    const saved = SmallBattle.fromSnapshot(structuredClone(b.toSnapshot()));
+    expect(saved.active?.id).toBe(mount!.id);
+    applyBattleStep(saved, {snap:structuredClone(saved.toSnapshot()), conditions:[]});
+    expect(saved.platforms.options(saved.active!).some(a => a.kind === 'leave')).toBe(true);
+    saved.platforms.act(saved.active!,'leave',rider!.id);
+    expect(saved.active?.id).toBe(rider!.id);
+    expect(saved.byId(rider!.id).mount).toBe(false);
+    expect(saved.turnOrder).not.toContain(mount!.id);
+    const round = saved.round;
+    for (let i = 0; i <= saved.turnOrder.length && saved.round === round; i++) saved.endTurn();
+    expect(saved.turnOrder).toContain(mount!.id);
+  });
 });
 
 describe('正文战外全字段事务（定向验证）',()=>{

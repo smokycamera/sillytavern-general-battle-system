@@ -1,3 +1,4 @@
+import { parsePlatform, validatePlatform } from '../../engine/src/platforms.js';
 import { WEAPON_CLASSES } from '../../engine/src/data/weapons.js';
 import { parseEnhancementSuffix, enhancementLabel, type Enhancements, type BonusKind } from '../../engine/src/enhancements.js';
 import { narrativeTraitLevel, traitLevelToken, traitRegistry, inferArchetype, type BodyKind } from '../../engine/src/index.js';
@@ -20,7 +21,7 @@ const ATTRIBUTES: Record<string, readonly string[]> = {
   effect: ['id', 'effects', 'clear', 'rounds', 'battles', 'permanent'],
   unit_update: ['id', 'hp', 'hpMax', 'morale', 'state', 'clear', 'reason'],
   recover: ['id', 'life'],
-  spawn: ['id', 'name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'speed', 'stabilized', 'protection', 'enchant', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits', 'items', 'effects', 'rounds', 'battles', 'permanent'],
+  spawn: ['id', 'name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'platform', 'seats', 'aboard', 'speed', 'stabilized', 'protection', 'enchant', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits', 'items', 'effects', 'rounds', 'battles', 'permanent'],
   field: ['env', 'light', 'note'],
   take: ['id', 'qty', 'note'],
   add: ['id', 'to', 'item', 'note', 'qty', 'type', 'spec', 'body', 'quality', 'enchant', 'stabilized', 'protection'],
@@ -549,7 +550,12 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
   if (event.kind === 'spawn') {
     if (attrs.body !== undefined && !['human', 'large', 'vehicle', 'giant'].includes(attrs.body)) throw new Error('未知身体/平台');
     if (!integer('quality', 1, 5)) throw new Error('品质必须为1–5');
-    if (attrs.mount !== undefined && !['true', 'false'].includes(attrs.mount)) throw new Error('mount 必须是 true/false');
+    if (attrs.aboard !== undefined && attrs.mount !== undefined) throw Error('mount 与 aboard 只选一种');
+    if (attrs.platform !== undefined) event.platform = parsePlatform(attrs.platform);
+    if (attrs.seats !== undefined) { if (!integer('seats',1,Number.MAX_SAFE_INTEGER)) throw Error('seats 须为正整数'); event.seats = Number(attrs.seats); }
+    if (attrs.mount !== undefined && !['true','false'].includes(attrs.mount)) event.ride = {mode:'mount',platformId:attrs.mount};
+    if (attrs.aboard !== undefined && attrs.aboard !== 'false') event.ride = {mode:'aboard',platformId:attrs.aboard};
+    validatePlatform({...event,body:attrs.body as BodyKind});
     event.mount = attrs.mount === 'true';
     if (!integer('speed', 1, 5)) throw new Error('速度档位需要1–5整数');
     event.speedTier = attrs.speed === undefined ? undefined : Number(attrs.speed);

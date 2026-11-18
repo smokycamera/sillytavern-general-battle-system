@@ -120,7 +120,7 @@ import { WORKSPACES, workspaceNavigation, workspacePage, showWorkspace, type Wor
 import { renderFormationBattle } from './formation-view.js';
 import { battleAbilities, battleSkillChangeReason, learnedSkills, removedSkillOrder, setBattlePreparedSkills } from './battle-skills.js';
 import { formationSelection, selectFormationUnit, setFormationChoice, orderDraft, FormationQueryCache, type FormationView, type OrderDrafts } from './formation-orders.js';
-import { renderTacticalBattle, selectTacticalElement, TacticalQueryCache, MAP_ZOOM_LABELS, type MapZoom, type TacticalView, type TacticalQuerySource, type TacticalAutomation } from './tactical-view.js';
+import { rideControls, renderTacticalBattle, selectTacticalElement, TacticalQueryCache, MAP_ZOOM_LABELS, type MapZoom, type TacticalView, type TacticalQuerySource, type TacticalAutomation } from './tactical-view.js';
 import { aiActsFor, aiControlledAllyIds, resetAllyAi, setUnitAi, type AllyControlDefaults } from './ally-control.js';
 import {
   PANEL_SAVE_SCHEMA_VERSION,
@@ -1913,6 +1913,7 @@ function renderSmall(): string {
            ${act?.sidearm ? `<button data-action="small-sidearm" ${selectedSidearmTarget?.enabled ? '' : 'disabled'} title="${esc(selectedSidearmTarget?.reason ?? '明确切换副武器攻击所选目标')}">副武器·${esc(act.sidearm.name)}</button>` : ''}
            <button data-action="small-charge" ${chargeOption?.enabled ? '' : 'disabled'} title="${esc(chargeOption?.reason ?? '消耗移动与主行动：贴至目标并造成攻击伤害')}">冲锋</button>
           ${abilityBtns}
+          ${rideControls(b,act)}
         </div>
         <div class="row">
            <button data-action="small-move" data-dir="advance" ${advanceOption?.enabled ? '' : 'disabled'} title="${esc(advanceOption?.reason ?? '消耗移动额度，不消耗主行动')}">◀ 前进</button>
@@ -3303,6 +3304,13 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     if (!b || !id || id !== b.active?.id || b.active.side !== 'ally') throw Error('行动者已变化，请重新预览');
     b.climb(id, Number(el.dataset.cell));
     tacticalView.cell = undefined;
+  },
+  'small-platform': (el) => {
+    const b = state.small, actor = b?.active, kind = el.dataset.kind;
+    if (!b || !actor || actor.side !== 'ally' || actor.id !== el.dataset.actor || !['leave','select','board'].includes(kind ?? '')) throw Error('骑乘行动者已变化');
+    b.platforms.act(actor,kind as 'leave'|'select'|'board',el.dataset.id!);
+    tacticalView.selectedId = b.active?.id; tacticalView.targetId = undefined;
+    tacticalView.cell = undefined; tacticalView.mode = 'move';
   },
   'grid-flight': (el) => {
     const b = state.small; const actorId = el.dataset.actor;

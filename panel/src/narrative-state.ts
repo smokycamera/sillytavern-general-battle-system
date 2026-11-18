@@ -18,7 +18,8 @@ import { applyUnitSet, UNIT_EQUIPMENT_FIELDS, unitSetReferencesGear, type UnitSe
 import { grantStoryEffects } from './story-effects.js';
 import { clearUnitEffects } from './unit-clear.js';
 import { mapNarrativeReferences, narrativeIds, prepareNarrativeIds, type NarrativeIdState } from './narrative-ids.js';
-import { newUnitId, planNewUnits, type NewUnitPlan } from './narrative-new-units.js';
+import { platformRoster } from './platform-records.js';
+import { newUnitId, planNewUnits, resolvePlatformReferences, type NewUnitPlan } from './narrative-new-units.js';
 import { handOverItems, type HandOver } from './item-handover.js';
 import { weaponItemSpecification } from './item-spec.js';
 import { treatUnitRecord } from './post-battle-recovery.js';
@@ -173,7 +174,7 @@ function spawnInput(event: Extract<Suggestion, { kind: 'spawn' }>): GenerateInpu
   for (const p of parsed) if (p.kind === 'trait' && isGradedTrait(p.id)) levels[p.id] = Math.max(levels[p.id] ?? 0, p.level ?? 5);
   return {
     ...(Object.keys(levels).length ? { traitLevels: levels } : {}),
-    rulesVersion: 'v2', damageModel: 'wounds-v2', numericModel: 'graded-v1', loadModel: 'capacity-v2', body: event.body, mount: event.mount, speedTier: event.speedTier, quality: event.quality, shield: event.shield,
+    rulesVersion: 'v2', damageModel: 'wounds-v2', numericModel: 'graded-v1', loadModel: 'capacity-v2', body: event.body, mount: event.mount, platform: event.platform, seats: event.seats, ride: event.ride, speedTier: event.speedTier, quality: event.quality, shield: event.shield,
     shieldName: event.shieldName, shieldLevel: event.shieldLevel, shieldClass: event.shieldClass, shieldBonuses: event.shieldBonuses,
     ...((event.scale ?? 'hero') === 'hero' ? {} : { hp: event.hp, hpMax: event.hpMax }),
     name: event.name, scale: event.scale ?? 'hero', archetype: event.archetype, level: event.level, side: event.side ?? 'enemy',
@@ -353,6 +354,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   const ids = narrativeIds({ ...preparedSave, narrativeIdState: expected.narrativeIdState ?? save.narrativeIdState });
   // 正文给新单位自编的编号只在本批指代该新单位；已有编号照常还原为存档身份。
   const fresh = planNewUnits(preparedSave, proposal.id, mapNarrativeReferences(proposal.events, ids.realId), ids);
+  resolvePlatformReferences(fresh, proposal.id, preparedSave.storage ?? [], ids.realId);
   proposal = { ...proposal, events: fresh.events };
   const isNew = (event: Suggestion) => 'id' in event && !!event.id && fresh.created.has(event.id);
   if (!manual && expected.manualOnly) throw new Error('此消息需要预览确认后提交');
@@ -521,7 +523,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   const handovers: HandOver[] = [...proposal.events.entries()].flatMap(([index, event]) => event.kind === 'unit-set' && event.items?.length ? [{ unitId: event.id, items: event.items, index }] : []);
   for (const [unitId, items] of fresh.items) handovers.push({ unitId, items, index: proposal.events.length + handovers.length });
   next = handOverItems(next, handovers, { proposalId: proposal.id, given: handed, notices });
-  const deployed = next.rosterIds ?? [];
+  const deployed = next.rosterIds = platformRoster(next.storage ?? [], next.rosterIds ?? []);
   const oldDeployedAlive = (save.storage ?? []).filter(r=>(save.rosterIds ?? []).includes(r.id)&&r.hp>0&&!r.retired).length;
   if (deployed.length > MAX_SCENE_UNITS && (replacesRoster || deployed.length > oldDeployedAlive)) throw Error(`本场参战单位卡上限${MAX_SCENE_UNITS}，整批未应用`);
   next.factRevision = (save.factRevision ?? 0) + 1;
@@ -537,7 +539,13 @@ export function narrativeDeploymentIds(save: NarrativeSave, proposalId: string):
   if (!committed) return [];
   const ids = committed.events.flatMap((event, index) => event.kind === 'deploy' ? [event.id] : event.kind === 'spawn' && !event.archiveOnly
     ? Array.from({ length: event.count }, (_, n) => newUnitId(committed.id, index, n)) : []);
-  return [...new Set(ids)].filter((id) => save.storage?.some((r) => r.id === id && r.hp > 0 && !r.retired && r.status !== 'dead' && r.status !== 'dying'));
+  const available = new Map((save.storage ?? []).filter(r => r.hp > 0 && !r.retired && r.status !== 'dead' && r.status !== 'dying').map(r => [r.id,r]));
+  const deployedIds = new Set(ids.filter(id => available.has(id)));
+  for (const id of deployedIds) {
+    const carrier = available.get(id)?.snapshot?.ride?.platformId;
+    if (carrier && available.has(carrier)) deployedIds.add(carrier);
+  }
+  return [...deployedIds];
 }
 /** 已有本批全部单位但夹带旧单位时，也应允许从历史记录修复名单。 */
 export function needsNarrativeDeploymentRestore(save: NarrativeSave, proposalId: string): boolean {

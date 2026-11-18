@@ -190,7 +190,7 @@ export function footprint(unit: Combatant): number { return unit.mount === true 
 export function canOccupy(field: BattlefieldSpec, units: readonly Combatant[], actor: Combatant, cell: number): boolean {
   if (!field.layerVersion && sailingBlocked(field, cell, actor)) return false;
   if (!inBounds(field, cell) || (field.layerVersion ? groundBlocked(field, cell, actor) : field.tiles[cell] === 'wall' && !isAirborne(actor))) return false;
-  const occupants = units.filter((u) => u.id !== actor.id && u.pos === cell && sameLayer(actor, u) && u.hp > 0 && (u.status === 'ready' || u.status === 'routing'));
+  const occupants = units.filter((u) => !u.ride && u.id !== actor.ride?.platformId && u.id !== actor.id && u.pos === cell && sameLayer(actor, u) && u.hp > 0 && (u.status === 'ready' || u.status === 'routing'));
   if (occupants.some((u) => u.side !== actor.side)) return false;
   return footprint(actor) + occupants.reduce((n, u) => n + footprint(u), 0) <= 2;
 }
@@ -434,6 +434,15 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
 
 /** Pure preparation shared by generator capacity checks and SmallBattle.start. */
 export function prepareGridDeployment(field: BattlefieldSpec, units: readonly Combatant[], seed = 'deployment', conditions?: FlightConditions, enableFlight = true): Combatant[] {
+  if (units.some(u => u.ride)) {
+    const physical = prepareGridDeployment(field, units.filter(u => !u.ride), seed, conditions, enableFlight);
+    const positions = new Map(physical.map(u => [u.id, u]));
+    return units.map(u => {
+      const carrier = positions.get(u.ride?.platformId ?? u.id);
+      if (!carrier) throw Error(u.name + '的平台未部署');
+      return u.ride ? { ...u, pos: carrier.pos, elevation: carrier.elevation, airborne: carrier.airborne } : carrier;
+    });
+  }
   const prepared = units.map(u => ({ ...u, ...(enableFlight && u.rulesVersion === 'v2' && u.airborne === undefined && !flightCapabilityReason(u, conditions) ? { airborne: true } : {}) }));
   for(const u of prepared) {
     const frozen=field.initialDeployment&&Object.hasOwn(field.initialDeployment,u.id)?field.initialDeployment[u.id]:undefined;

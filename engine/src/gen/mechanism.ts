@@ -1,3 +1,4 @@
+import { validatePlatform } from '../platforms.js';
 import { GRADED_SHIELD_LOAD, gradedLifeScale, gradedNumbers, unitMultiplier, unitStep, validateNumericModel } from '../numeric-model.js';
 import { modifiedEquipmentLoad, revisedLoad, validateLoadModel } from '../load-model.js';
 import { bodyProfile } from '../body.js';
@@ -41,6 +42,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   const body = raw.body ?? 'human';
   if (!BODY[body]) throw new Error('不支持的身体/平台');
   const quality = integer(raw.quality ?? 3, 1, 5, '品质');
+  validatePlatform(raw);
   validateEnhancements(raw.bonuses, 'unit');
   const training = integer(raw.level, 1, 10, '训练T');
   const arch = raw.archetype ?? 'infantry';
@@ -73,7 +75,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   const conflict = equipmentReason({ body, scale: raw.scale, weapon, sidearm, armor, shield });
   if (conflict) warnings.push('建档已保留配装：' + conflict + '；实际使用由战斗规则判定');
   const group = raw.scale !== 'hero';
-  const requestedMax = integer(raw.hpMax ?? (group ? 50 : Math.max(1, Math.round((curve.hp * bodyProfile(body, raw.damageModel).hp + archMod.hp) * gradedLifeScale(raw) * unitMultiplier(numeric, 'health')))), 1, group ? 1e9 : Number.MAX_SAFE_INTEGER, group ? '编制上限' : '生命上限');
+  const requestedMax = integer(raw.hpMax ?? (group ? 50 : Math.max(1, Math.round(((raw.platform ? curveAt(raw.platform.power, raw.damageModel).hp : curve.hp) * bodyProfile(body, raw.damageModel).hp + archMod.hp) * gradedLifeScale(raw) * unitMultiplier(numeric, 'health')))), 1, group ? 1e9 : Number.MAX_SAFE_INTEGER, group ? '编制上限' : '生命上限');
   const requestedHp = integer(raw.hp ?? requestedMax, 0, requestedMax, '当前值');
   const hpMax = group ? requestedMax : capSingleLife(requestedMax, raw.damageModel), hp = Math.min(requestedHp, hpMax);
   if (hpMax !== requestedMax) warnings.push(`单体生命上限${requestedMax}超过硬上限，已限制为${singleLifeLimit(raw.damageModel)}`);
@@ -123,7 +125,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
     weaponLevel: weapon.level, sidearmLevel: sidearm?.level, armorTier: tier, armorLevel: armorPower, hpMax: base.hpMax, hp: currentHp, preparedAbilityIds: prepared,
     abilityBlueprints: (raw.abilityBlueprints ?? []).map((s) => typeof s === 'string' ? { id: s, level: skillsPhase2(opts.skillModel) ? 1 : 5 } : { ...s, level: s.level ?? (skillsPhase2(opts.skillModel) ? 1 : 5) }) };
   const unit: Combatant = { id, name: raw.name, side: raw.side, scale: raw.scale, archetype: arch, level: training,
-    rulesVersion: 'v2', ...(raw.loadModel ? { loadModel: raw.loadModel } : {}), ...(raw.numericModel ? { numericModel: raw.numericModel } : {}), ...(raw.damageModel ? {damageModel:raw.damageModel} : {}), bonuses: raw.bonuses, body, ...(raw.speedTier !== undefined ? { speedTier: raw.speedTier } : {}), ...(raw.mount ? { mount: true } : {}), base, hp: currentHp, tags: [...tags], traits, ...(traitLevels ? { traitLevels } : {}),
+    rulesVersion: 'v2', ...(raw.loadModel ? { loadModel: raw.loadModel } : {}), ...(raw.numericModel ? { numericModel: raw.numericModel } : {}), ...(raw.damageModel ? {damageModel:raw.damageModel} : {}), bonuses: raw.bonuses, ...(raw.platform && { platform: raw.platform }), ...(raw.seats !== undefined && {seats:raw.seats}), ...(raw.ride && {ride:raw.ride}), body, ...(raw.speedTier !== undefined ? { speedTier: raw.speedTier } : {}), ...(raw.mount ? { mount: true } : {}), base, hp: currentHp, tags: [...tags], traits, ...(traitLevels ? { traitLevels } : {}),
     weapon, sidearm, armor, shield,
     abilities, preparedAbilityIds: preparedIds,
     conditions: [], abilityState: [], resources: { SP: 6 + Math.floor(training / 2), reserve: integer(raw.reserves ?? 0, 0, 2, '随队预备份额') },

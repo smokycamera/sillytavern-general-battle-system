@@ -1,3 +1,5 @@
+import { parsePlatform, platformText, validatePlatform } from '../../engine/src/platforms.js';
+import { rebaseUnitStats } from './unit-set.js';
 import { prepareTraitLevelModel } from '../../engine/src/trait-level-model.js';
 import { V11_OVERFLOW_D20, V12_OVERFLOW_D20, V23_OVERFLOW_D20, V33_OVERFLOW_D20, V34_OVERFLOW_D20, V36_OVERFLOW_D20 } from '../../engine/src/rules.js';
 import { prepareSkillModel } from '../../engine/src/skill-model.js';
@@ -22,18 +24,19 @@ export interface UnitDraft {
   numericModel?: Combatant['numericModel'];
   loadModel?: Combatant['loadModel'];
   memberHp?:string;
+  platformSpec?: string; seats?: string;
   name: string; side: string; scale: string; level: string; body: string; speedTier: string; mount: boolean; hp: string; hpMax: string; note: string; reserves: string;
   primary: EquipmentDraft; sidearm: EquipmentDraft; armor: EquipmentDraft; shieldGear: EquipmentDraft; sidearmEnabled: boolean; shield: boolean;
   traits: string[]; traitLevels?: Record<string, number>; skills: { id: string; name: string; power: string; prepared: boolean; instanceId?: string }[]; autoPrepare: boolean;
 }
 export function newUnitDraft(): UnitDraft {
-  return { damageModel: 'wounds-v2', numericModel: 'graded-v1', loadModel: 'capacity-v2', name: '', side: 'ally', scale: 'hero', level: '3', body: 'human', speedTier: '', mount: false, hp: '', hpMax: '', memberHp:'',note: '', reserves: '0',
+  return { damageModel: 'wounds-v2', numericModel: 'graded-v1', loadModel: 'capacity-v2', name: '', side: 'ally', scale: 'hero', level: '3', body: 'human', speedTier: '', mount: false, platformSpec: '', seats: '', hp: '', hpMax: '', memberHp:'',note: '', reserves: '0',
     primary: { ...equipmentDraft(), power: '1' }, sidearm: { ...equipmentDraft(), power: '1' }, armor: { ...equipmentDraft('armor'), tier: '0', power: '1' }, shieldGear: equipmentDraft('shield'), sidearmEnabled: false, shield: false, traits: [], skills: [], autoPrepare: true };
 }
 export function unitDraftFromRecord(r: UnitRecord): UnitDraft {
   const u = r.snapshot!, body = u.body ?? 'human';
   const levels = Object.fromEntries(u.traits.filter(isGradedTrait).map(id => [id, u.traitLevels?.[id] ?? 5]));
-  return { ...newUnitDraft(), damageModel: u.damageModel, numericModel: u.numericModel, loadModel: u.loadModel, name: r.name, side: r.side, scale: r.scale, level: String(r.level), body, speedTier: u.speedTier === undefined ? '' : String(u.speedTier), mount: !!u.mount, hp: String(r.hp), hpMax: String(r.base.hpMax),memberHp:String(u.formation?.memberHp??nominalLife(u)), note: r.note ?? '', reserves: String(u.resources.reserve ?? 0),
+  return { ...newUnitDraft(), damageModel: u.damageModel, numericModel: u.numericModel, loadModel: u.loadModel, name: r.name, side: r.side, scale: r.scale, level: String(r.level), body, speedTier: u.speedTier === undefined ? '' : String(u.speedTier), mount: !!u.mount, platformSpec: u.platform ? platformText(u.platform) : '', seats: u.seats?.toString() ?? '', hp: String(r.hp), hpMax: String(r.base.hpMax),memberHp:String(u.formation?.memberHp??nominalLife(u)), note: r.note ?? '', reserves: String(u.resources.reserve ?? 0),
     primary: equipmentDraft('weapon', body, u.weapon ? { kind: 'weapon', value: u.weapon } : undefined, u.weapon?.name),
     sidearm: equipmentDraft('weapon', body, u.sidearm ? { kind: 'weapon', value: u.sidearm } : undefined, u.sidearm?.name),
     armor: equipmentDraft('armor', body, u.armor ? { kind: 'armor', value: u.armor } : undefined, u.armor?.name),
@@ -48,6 +51,8 @@ function identityInput(d: UnitDraft): GenerateInput {
   if (!d.name.trim()) throw Error('请填写单位名称');
   if (!['ally', 'enemy', 'neutral'].includes(d.side) || !['hero', 'company'].includes(d.scale)) throw Error('单位归属或人数形式无效');
   return { name: d.name.trim(), side: d.side as Combatant['side'], scale: d.scale as 'hero' | 'company', level: integer(d.level, 1, 10, '训练'), rulesVersion: 'v2', damageModel: d.damageModel, numericModel: d.numericModel, loadModel: d.loadModel, traits: [...d.traits], body: d.body as GenerateInput['body'], mount: d.mount, speedTier: d.speedTier ? integer(d.speedTier, 1, 5, '速度档位') : undefined,
+    platform: d.platformSpec?.trim() ? parsePlatform(d.platformSpec.trim()) : undefined,
+    seats: d.seats?.trim() ? integer(d.seats,1,Number.MAX_SAFE_INTEGER,'座位数') : undefined,
     traitLevels: d.traitLevels,
     hpMax: d.hpMax.trim() ? (d.scale === 'hero' ? capSingleLife(integer(d.hpMax, 1, Number.MAX_SAFE_INTEGER, '生命上限'), d.damageModel) : integer(d.hpMax, 1, 1e9, '编制上限')) : d.scale === 'company' ? 50 : undefined,
     hp: d.hp.trim() ? (d.scale === 'hero' ? capSingleLife(integer(d.hp, 0, Number.MAX_SAFE_INTEGER, '当前生命'), d.damageModel) : integer(d.hp, 0, 1e9, '当前人数')) : undefined,
@@ -103,7 +108,11 @@ export function editUnitBuild(previous: UnitRecord, d: UnitDraft, registry: Map<
   unit.traits = parsedTraits.traits;
   unit.traitLevels = Object.fromEntries(Object.entries(input.traitLevels ?? parsedTraits.traitLevels ?? {}).filter(([id, level]) => unit.traits.includes(id) && level !== 5));
   if (!Object.keys(unit.traitLevels).length) delete unit.traitLevels;
-  unit.body = input.body; unit.mount = input.mount; unit.speedTier = input.speedTier; validateMount(unit);
+  if (oldDraft.platformSpec !== (d.platformSpec ?? '')) {
+    rebaseUnitStats(unit,{platform:input.platform ?? null, body:input.body});
+  }
+  unit.platform = input.platform; unit.seats = input.seats;
+  unit.body = input.body; unit.mount = input.mount; unit.speedTier = input.speedTier; validateMount(unit); validatePlatform(unit);
   prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);
   prepareArmorWearModel(unit,d.numericModel ? V33_OVERFLOW_D20 : {});
   prepareRegenerationModel(unit,d.numericModel ? V33_OVERFLOW_D20 : {});
@@ -111,7 +120,7 @@ export function editUnitBuild(previous: UnitRecord, d: UnitDraft, registry: Map<
   unit.abilityState = structuredClone(previous.snapshot.abilityState); unit.resources = { ...previous.snapshot.resources, reserve: input.reserves ?? 0 };
   if (!previous.equipmentManaged) setGear(unit, d, oldDraft);
   else { const reason = equipmentReason(unit); if (reason) throw Error(reason); }
-  if (unit.genAudit) Object.assign(unit.genAudit.input, { body: unit.body, mount: unit.mount, speedTier: unit.speedTier, reserves: unit.resources.reserve });
+  if (unit.genAudit) Object.assign(unit.genAudit.input, { body: unit.body, platform:unit.platform, seats:unit.seats, mount: unit.mount, speedTier: unit.speedTier, reserves: unit.resources.reserve });
   normalizeBakedTraitStats(unit, registry);
   const specs = d.skills.filter((s) => s.id).map((s) => ({ id: s.id, instanceId: s.instanceId, name: s.name, ...(oldDraft.skills.find((old) => old.instanceId === s.instanceId || !s.instanceId && old.id === s.id)?.power === s.power || ABILITY_BLUEPRINTS[s.id]?.fixedPower ? {} : { level: integer(s.power, 1, 10, '技能等级') }) }));
   let prepared = learnAbilities(unit, specs, { replace: true });
