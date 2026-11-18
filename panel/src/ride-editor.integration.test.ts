@@ -34,6 +34,7 @@ it('从队伍载具卡装载，在配装乘员卡离开，再绑定并从载具�
     click('#inventory-panel .ride-editor [data-mode="mount"]');
     await vi.waitFor(() => expect(ride()?.mode).toBe('mount'));
     click('[data-action="workspace-tab"][data-tab="units"]');
+    expect(document.querySelectorAll('.team-transport-group [data-unit]')).toHaveLength(2);
     click('.ride-editor[data-carrier="carrier"] button[data-rider="rider"]');
     await vi.waitFor(() => expect(ride()).toBeUndefined());
     expect(document.querySelector('.ride-editor[data-carrier="carrier"]')?.textContent).toContain('已用 0 / 4 席');

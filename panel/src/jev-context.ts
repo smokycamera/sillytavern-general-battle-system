@@ -1,4 +1,3 @@
-import { MAX_SMALL_UNITS } from '../../engine/src/battle-limits.js';
 import { narrativeIds, type NarrativeIdState } from './narrative-ids.js';
 import { selectSpatialNarrative } from './narrative-map-source.js';
 import {
@@ -15,7 +14,6 @@ import {
   type NarrativeMessage,
 } from "../../vendor/jev-core/src/index.js";
 import {
-  recommendBattleMode,
   prepareMassRoster,
   type BattleObjectiveMode,
 } from "./battle-setup.js";
@@ -142,18 +140,13 @@ function finishSetup(
   if (input.phase === "battle") return context; // Existing battle geometry and victory rules are immutable.
   if (input.settings.battleMode !== "auto")
     context.mode = input.settings.battleMode;
-  const count = input.roster.filter(u => u.hp > 0 && u.status === 'ready').length;
-  if (count > MAX_SMALL_UNITS) {
-    if (context.mode !== 'mass') context.detail += '；超过32张，采用会战';
-    context.mode = 'mass';
-  }
   if (context.mode === 'mass' && !massAvailable(input.roster)) {
-    if (count > MAX_SMALL_UNITS) throw Error('会战部署容量或明确阵位无效，请调整部署；不会把超过32张的名单塞回小战');
+    if (input.settings.battleMode === 'mass') prepareMassRoster(input.roster);
     context.mode = 'small';
     context.detail += '；会战部署不可用，采用小战';
   }
   if (
-    input.settings.battleMode === "auto" && count <= MAX_SMALL_UNITS &&
+    input.settings.battleMode === "auto" &&
     (["siege", "escort", "intercept"].includes(context.objectiveMode) ||
       context.mapLayout === "indoor")
   )

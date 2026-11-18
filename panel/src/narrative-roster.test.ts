@@ -87,12 +87,12 @@ describe('每批明确出场名单取代上一场，而非累加', () => {
     const before = structuredClone(save);
     const forty = Array.from({ length: 40 }, (_, i) => `<deploy id="u${i}"/>`).join('');
     const twenty = '<spawn name="B" side="enemy" scale="hero" count="20"/>';
-    expect(() => commit(save, forty + twenty + '<spawn name="C" side="enemy" scale="hero" count="5"/>')).toThrow(/上限|最多/);
+    expect(commit(save, forty + twenty + '<spawn name="C" side="enemy" scale="hero" count="5"/>').rosterIds).toHaveLength(65);
     expect(save).toEqual(before);
     const full = commit(save, forty + twenty + '<spawn name="C" side="enemy" scale="hero" count="4"/>');
     expect(full.rosterIds).toHaveLength(64); expect(full.storage).toHaveLength(64);
   });
-  it('旧超限存档仍可纯治疗，但不能建立新的超限名单', () => {
+  it('大名单可纯治疗，也可单独选择下一场参战单位', () => {
     const save = fixture(80); save.rosterIds = save.storage!.map(r => r.id);
     expect(commit(save, '<unit_update id="u0" hp="25"/>').rosterIds).toHaveLength(80);
     expect(commit(save, '<deploy id="u2"/>').rosterIds).toEqual(['u2']);

@@ -630,7 +630,9 @@ export class SmallBattle {
   }
 
   movementBudget(actorId: string): number {
-    const mover = this.platforms.mover(this.byId(actorId)), movement = movementPoints(mover, this.fieldTags);
+    const actor = this.byId(actorId);
+    if (!this.platforms.canMoveIndependently(actor)) return 0;
+    const mover = this.platforms.mover(actor), movement = movementPoints(mover, this.fieldTags);
     return movement + (mover.numericModel && movement > 0 ? mover.movementRemainder ?? 0 : 0);
   }
   flightRisks(actorId: string, airborne: boolean): string[] {
@@ -2301,7 +2303,7 @@ export class SmallBattle {
     if (!this.started) throw new Error('战斗尚未开始');
     if (this.rules.resourceModel && this.isOver()) return;
     const ended = this.active;
-    if (ended && !this.platforms.sheltered(ended) && ['charmed','confused'].includes(controlPolicy(ended) ?? '') && !this.controlledExecution.has(ended.id)) { this.autoAction(ended.id); return; }
+    if (ended?.status === 'ready' && !this.platforms.sheltered(ended) && ['charmed','confused'].includes(controlPolicy(ended) ?? '') && !this.controlledExecution.has(ended.id)) { this.autoAction(ended.id); return; }
     const settling = this.activationPair.length ? this.activationPair.map(id => this.byId(id)) : ended ? [ended] : [];
     for (const unit of settling) if (unit.status === 'ready' || unit.status === 'routing') this.settleUnit(unit);
     this.activationPair = []; this.platformActor = undefined;
@@ -2467,6 +2469,7 @@ export class SmallBattle {
     }
   }
   autoAction(unitId: string, intent?: UnitIntent): void {
+    if (this.isTurnOf(unitId) && this.byId(unitId).status !== 'ready') { this.endTurn(); return; }
     this.actionIntent = intent;
     this.intentUseDone = false;
     // A task that became impossible during the round must not release movement back to the city AI.
@@ -3518,14 +3521,15 @@ export class SmallBattle {
       }
       const carrier = u.ride?.mode === 'mount' ? this.platforms.carrier(u) : undefined;
       this.beginTurn(u);
-      if (carrier && carrier.status === 'ready' && u.status === 'ready') {
-        this.beginTurn(carrier);
+      if (carrier?.status === 'ready' && u.status === 'ready') this.beginTurn(carrier);
+      if (carrier?.status === 'ready' && u.status === 'ready') {
         this.activationPair = [u.id,carrier.id];
         if (!controlPolicy(u) && (this.platforms.sheltered(u) || controlPolicy(carrier))) this.platformActor = carrier.id;
       }
       this.captureFeedback();
       if (u.status !== 'ready') {
         if (u.status === 'routing') this.settleUnit(u);
+        this.activationPair = []; this.platformActor = undefined;
         this.feedback?.finishActivation();
         this.turnIndex += 1;
         continue;
@@ -3931,7 +3935,7 @@ export class SmallBattle {
       if (Array.isArray(pair) && pair.length === 2 && pair[0] === b.turnOrder[b.turnIndex] && pair[0] !== pair[1]
         && b.combatants.some(u => u.id === pair[0]) && b.combatants.some(u => u.id === pair[1] && u.platform)) {
         b.activationPair = [...pair];
-        if (pair.includes(snap.platformActor)) b.platformActor = snap.platformActor;
+        if (pair.includes(snap.platformActor) && b.byId(snap.platformActor).status === 'ready') b.platformActor = snap.platformActor;
       }
     }
     b.log = [...(snap.log ?? [])];

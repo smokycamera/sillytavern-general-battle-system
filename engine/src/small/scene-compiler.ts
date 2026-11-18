@@ -412,14 +412,14 @@ export function validateSceneRecord(field: BattlefieldSpec): void {
         || (cells as number[]).some(p => p % field.width !== 0 && p % field.width !== field.width - 1 && Math.floor(p / field.width) !== 0 && Math.floor(p / field.width) !== field.height - 1))))
         throw Error('撤离边缘损坏');
     if (field.initialDeployment !== undefined && (!field.initialDeployment || typeof field.initialDeployment !== 'object' || Array.isArray(field.initialDeployment)
-        || Object.entries(field.initialDeployment).length > 32 || Object.values(field.initialDeployment).some(p => !p || !legal(p.pos) || p.elevation !== undefined && p.elevation !== 1 || p.airborne !== undefined && typeof p.airborne !== 'boolean')))
+        || Object.values(field.initialDeployment).some(p => !p || !legal(p.pos) || p.elevation !== undefined && p.elevation !== 1 || p.airborne !== undefined && typeof p.airborne !== 'boolean')))
         throw Error('初始部署记录损坏');
     if (!field.scene)
         return;
     if (field.scene.archetype !== undefined && !(SCENE_ARCHETYPES as readonly unknown[]).includes(field.scene.archetype))
         throw Error('场景原型记录损坏');
     if (field.scene.unitBindings !== undefined && (!field.scene.unitBindings || typeof field.scene.unitBindings !== 'object' || Array.isArray(field.scene.unitBindings)
-        || Object.entries(field.scene.unitBindings).length > 32 || Object.entries(field.scene.unitBindings).some(([id, value]) => !/^u\d+$/.test(id) || typeof value !== 'string' || value.length > 200)))
+        || Object.entries(field.scene.unitBindings).some(([id, value]) => !/^u\d+$/.test(id) || typeof value !== 'string' || value.length > 200)))
         throw Error('正文单位映射损坏');
     if (field.scene.intent !== undefined)
         normalizeSceneIntent(field.scene.intent);

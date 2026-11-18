@@ -173,10 +173,10 @@ function unitReadiness(b: SmallBattle | MassBattle, u: Combatant): string {
   const info = [isAirborne(u) ? '空中' : '', !over && u.suppression ? '受压制' : '', !over && u.tacticalPose ? '固守' : '', !over && (b.reloadCd.get(u.id) ?? 0) > 0 ? '装填中' : ''].filter(Boolean);
   return info.length ? '｜' + info.join('·') : '';
 }
-/** 环境与地标：状态摘要、逐轮战报与战斗终章共用。高度说明只在有高低差的地图出现。 */
+/** 环境与地标：状态摘要、逐轮战报与战斗终章共用。 */
 export function fieldFacts(b: SmallBattle | MassBattle, field = isMass(b) ? undefined : b.battlefield): string[] {
-  const lines: string[] = [], relief = reportsHeights(field);
-  if (b.fieldTags.length || relief) lines.push([b.fieldTags.length ? '环境：' + environmentLabel(b.fieldTags) : '', relief ? HEIGHT_LEGEND : ''].filter(Boolean).join('｜'));
+  const lines: string[] = [];
+  if (b.fieldTags.length) lines.push('环境：' + environmentLabel(b.fieldTags));
   const marks = field ? landmarkSummary(field) : [];
   if (marks.length) lines.push('地标：' + marks.join('；'));
   if (field?.structures && !isMass(b)) {
@@ -215,8 +215,6 @@ function battleSituation(b: SmallBattle | MassBattle): string[] {
   return lines;
 }
 
-/** 有高低差的地图在战报里说明高度的含义，单位与地标随后只写数字。 */
-export const HEIGHT_LEGEND = '高度按层计，约一层楼，0为地面';
 /** 每个地标一项：名称、至多4个格子、地形与高度范围。旧存档的地标记录可能残缺，无效项略去。 */
 function landmarkSummary(field: BattlefieldSpec): string[] {
   const marks: { label?: unknown; cells?: unknown }[] = field.landmarks?.length ? field.landmarks : field.generation?.landmark ? [field.generation.landmark] : [];

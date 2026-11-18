@@ -70,7 +70,7 @@ export function createBattleMcp(broker) {
     lighting: z.enum(['day','night']).optional(), mapLayout: z.enum(['standard','indoor']).optional(),
     objectiveMode: z.enum(['auto','annihilation','siege','control','escort','intercept']).optional(), siegeAttacker: z.enum(['ally','enemy']).optional() }).strict();
   const preparation = {
-    setup: setup.optional(), deployment: z.array(z.object({ unitId: z.string(), side: z.enum(['ally','enemy']).optional() }).strict()).min(1).max(64).optional().describe('完整参战名单；省略沿用当前名单，side省略沿用档案阵营'),
+    setup: setup.optional(), deployment: z.array(z.object({ unitId: z.string(), side: z.enum(['ally','enemy']).optional() }).strict()).min(1).optional().describe('完整参战名单；省略沿用当前名单，side省略沿用档案阵营'),
     protagonistId: z.string().optional(), commanderId: z.string().optional(),
     recovery: z.enum(['none','recoverable']).optional().describe('默认none；recoverable在开战提交时恢复所选单位的可恢复生命/伤兵，不复活阵亡或补回永久缺员'),
     commanders: z.record(z.unknown()).optional(), battlefield: z.record(z.unknown()).optional().describe('省略使用普通随机地图；不必传intent，复杂场景格式见battle_state.preparation'),
@@ -100,7 +100,7 @@ export function createBattleMcp(broker) {
   register('battle_sandbox', '隔离试战：start一键生成测试队伍并开打（默认双方各剑士/射手），restart满状态重开同一地图与部署，reports读最近20场独立战报，close返回正式档案。不会写正式档案/库存/成长；面板刷新后可restart。', {
     ...gameSession, action: z.enum(['start','restart','reports','close']), requestId: requestId.optional().describe('start/restart/close必填；reports只读不需要'), reportId: z.string().optional().describe('reports省略时列目录，指定时返回逐轮内容'),
     participants: z.array(z.object({ name: z.string().max(80).optional(), side: z.enum(['ally','enemy']), scale: z.enum(['hero','mook','company']).optional(),
-      level: z.number().int().min(1).max(10).optional(), weaponClass: z.string().max(50).optional().describe('例如sword或rifle'), personnel: z.number().int().min(1).max(10000).optional().describe('仅部队人数，英雄不可填写') }).strict()).min(2).max(64).optional(),
+      level: z.number().int().min(1).max(10).optional(), weaponClass: z.string().max(50).optional().describe('例如sword或rifle'), personnel: z.number().int().min(1).max(10000).optional().describe('仅部队人数，英雄不可填写') }).strict()).min(2).optional(),
     setup: setup.optional(), commanders: z.record(z.unknown()).optional(), battlefield: z.record(z.unknown()).optional(), nonLethal: z.boolean().optional().describe('默认true'),
   }, 'game_sandbox');
   return server;

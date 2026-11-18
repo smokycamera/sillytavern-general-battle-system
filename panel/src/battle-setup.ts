@@ -1,6 +1,6 @@
 import { DEFAULT_SMALL_ROUND_LIMIT, defaultBattleObjective, type SmallBattle, needsFormationHost, recommendedFormationSlots, flightCapabilityReason, standardConditionMap, FORMATION_NODES, type BattlefieldSpec, type Combatant } from '../../engine/src/index.js';
 import { activeBattleUnits } from '../../engine/src/battle-limits.js';
-import { MAX_SCENE_UNITS, RECOMMENDED_UNITS, GROUPING_HINT } from './narrative-limits.js';
+import { MAX_SCENE_UNITS, GROUPING_HINT } from './narrative-limits.js';
 import {groundBlocked} from '../../engine/src/small/layers.js';
 import { gridCostsToGoals, gridDistance, movementStepCost, prepareGridDeployment, neighbors } from '../../engine/src/small/spatial.js';
 
@@ -163,11 +163,8 @@ function escapeDestination(field: BattlefieldSpec, side: 'ally' | 'enemy', roste
 }
 
 /** 默认模式只在准备下一战时计算，不转换单位身份或进行中的战斗。 */
-export function recommendBattleMode(roster: Combatant[]): { mode: 'small' | 'mass'; reason: string } {
-  const units = activeBattleUnits(roster);
-  // 地图承载的是可操作实体，编队人数不等于格子数，也不能用师团等名称判定。
-  if (units.length > RECOMMENDED_UNITS) return { mode: 'mass', reason: '参战单位超过32张，采用会战军令与阶段结算；人物身份保持不变' };
-  return { mode: 'small', reason: '参战单位不超过32张，采用小战地图，保留具体移动与目标操作' };
+export function recommendBattleMode(_roster: Combatant[]): { mode: 'small' | 'mass'; reason: string } {
+  return { mode: 'small', reason: '小规模战斗使用战术地图' };
 }
 
 /** 只延长尚未结束的旧默认小战，不改已判胜战果或其他自定义期限。 */

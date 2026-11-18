@@ -1,6 +1,5 @@
 import { resolveBattlefieldScene, buildSpecialScene, placePlannedGates } from './scene-layouts.js';
 import { carveInitialBreaches } from './city-breaches.js';
-import { MAX_SMALL_UNITS } from '../battle-limits.js';
 import { buildRouteGraph } from './route-graph.js';
 import { SeededRng } from '../rng.js';
 import { environmentTags } from '../environment.js';
@@ -30,7 +29,6 @@ export function recommendedCitySize(roster: readonly Combatant[] = [], size?: Ba
 export function generatedLayeredField(seed: string, width = 7, height = 13, tags: string[] = [], options: LayeredGenerationOptions = {}): BattlefieldSpec {
   const roster = options.roster ?? [], plan = compileScenePlan(normalizeBattlefieldPlan(options.plan).plan);
   const active = roster.filter(u => u.hp > 0 && u.status === 'ready');
-  if (active.length > MAX_SMALL_UNITS) throw Error('小战最多32张单位卡，33—64张应采用会战');
   const scene = options.scene ?? resolveBattlefieldScene(plan, environmentTags(tags), width);
   const city = ['city_siege', 'city_streets', 'building_siege'].includes(scene)||!!plan?.intent?.entities.some(e=>e.kind==='city');
   if (plan?.gatePlan?.length && !['city_siege','building_siege','interior'].includes(scene)&&!plan.intent?.entities.some(e=>e.kind==='city'))
@@ -42,7 +40,7 @@ export function generatedLayeredField(seed: string, width = 7, height = 13, tags
   const sizes: [number,number][] = [[5,7], [7,13], [9,15], [11,17], [13,19]];
   // Conservative ground-space floor; actual layers/air/platforms are then checked below.
   const neededWidth = Math.ceil(Math.max(0, ...(['ally', 'enemy', 'neutral'] as const).map(side => active.filter(u => !u.ride && u.side === side).reduce((n,u) => n + footprint(u), 0))) / 6);
-  if (initial[0] < neededWidth && !roster.some(u => u.pos !== undefined)) initial = sizes.find(([w]) => w >= neededWidth) ?? sizes.at(-1)!;
+  if (initial[0] < neededWidth && !roster.some(u => u.pos !== undefined)) initial = sizes.find(([w]) => w >= neededWidth) ?? [neededWidth + (neededWidth % 2 === 0 ? 1 : 0), initial[1]];
   const fixed = roster.some(u => u.pos !== undefined);
   if(!fixed)initial=regionMapSize(plan,active,initial[0],initial[1],options.unitBindings);
   const candidates: [number,number][] = fixed ? [initial] : [initial, ...sizes.filter(([w]) => w > initial[0]),

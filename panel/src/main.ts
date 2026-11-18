@@ -77,8 +77,8 @@ import { BattleWorker } from './battle-worker.js';
 import { applyBattleStep, seededReinforcement } from './battle-step.js';
 import { SeededRng } from '../../engine/src/rng.js';
 import { newUnitDraft, unitDraftFromRecord, buildUnit, editUnitBuild, type UnitDraft } from './unit-builder.js';
-import { MAX_SCENE_UNITS } from './narrative-limits.js';
-import { recommendBattleMode, extendSmallRoundLimit, upgradeDefaultObjective, normalizeObjectiveMode, prepareBattleObjective, battleCapacityIssue, type BattleObjectiveMode } from './battle-setup.js';
+import { MAX_SPAWN_COUNT } from './narrative-limits.js';
+import { extendSmallRoundLimit, upgradeDefaultObjective, normalizeObjectiveMode, prepareBattleObjective, battleCapacityIssue, type BattleObjectiveMode } from './battle-setup.js';
 import { unitForm, captureUnitDraft, buildPreview } from './unit-form.js';
 import { playerTraitDescription, playerTraitLevelDescription } from './player-trait-description.js';
 import { BODY, effectiveProtection, looseFormation, ABILITY_BLUEPRINTS, itemsV15, isGradedTrait, gradedTraitEnabled, traitLevel, traitDisplayName, traitPenetrationBonus, postureActive, type Trait } from '../../engine/src/index.js';
@@ -264,6 +264,7 @@ interface AppState {
   xpSettled: boolean;
   /** 战后经验自动入账（写回编制并按曲线自动升级） */
   autoSettleXp: boolean;
+  simpleBattle?: boolean;
   nonLethal: boolean;
   /** 军团：每回合自动为我方无令单位下达军令（命令记忆优先，启发补全） */
   autoAllyOrders: boolean;
@@ -480,7 +481,7 @@ async function persist(options: { battleUnchanged?: boolean } = {}): Promise<boo
       xpSettled: state.xpSettled, manageOpen: state.manageOpen,
       processedRaws: state.processedRaws, orderMemory: state.orderMemory,
       lastScanAt: state.lastScanAt,
-      autoSettleXp: state.autoSettleXp, nonLethal: state.nonLethal, autoAllyOrders: state.autoAllyOrders, unitsOpen: state.unitsOpen,
+      autoSettleXp: state.autoSettleXp, simpleBattle: state.simpleBattle, nonLethal: state.nonLethal, autoAllyOrders: state.autoAllyOrders, unitsOpen: state.unitsOpen,
       encounterIds: [...state.encounterIds],
       storage: state.storage, orderDraft: state.orderDraft, collapsed: state.collapsed,
       snapOpen: state.snapOpen,
@@ -569,7 +570,7 @@ interface SavedPanel {
   xpSettled?: boolean; manageOpen?: boolean;
   processedRaws?: string[]; orderMemory?: AppState['orderMemory'];
   lastScanAt?: number;
-  autoSettleXp?: boolean; nonLethal?: boolean; autoAllyOrders?: boolean; unitsOpen?: boolean;
+  autoSettleXp?: boolean; simpleBattle?: boolean; nonLethal?: boolean; autoAllyOrders?: boolean; unitsOpen?: boolean;
   encounterIds?: string[];
   storage?: RosterUnit[]; orderDraft?: OrderDrafts;
   collapsed?: Record<string, boolean>; snapOpen?: boolean;
@@ -605,6 +606,7 @@ function restore(): void {
   state.proposals = (saved?.proposals ?? []).map(p => ({ ...p, events: p.events.map(migrateSavedSuggestion) }));
   state.storySync = saved?.autoApprove ?? saved?.storySync ?? false;
   state.autoApprove = state.storySync;
+  state.simpleBattle = saved?.simpleBattle;
   state.nonLethal = saved?.nonLethal === true;
   state.mapLayout = saved?.mapLayout === 'indoor' ? 'indoor' : 'standard';
   state.objectiveMode = normalizeObjectiveMode(saved?.objectiveMode);
@@ -827,7 +829,7 @@ function summonUnit(templateId: string, side: Side, seed?: string): Combatant | 
 
 /** 新战根据实际规模与参战形式推荐；进行中的战斗由effectiveMode保持。 */
 function autoScaleMode(): 'small' | 'mass' {
-  return recommendBattleMode(state.roster).mode;
+  return state.simpleBattle ? 'mass' : 'small';
 }
 
 function rosterHasBothSides(): boolean {
@@ -860,7 +862,7 @@ function prepareRosterForBattle(): void {
 function deployedRoster(records: UnitRecord[], ids: string[]): Combatant[] {
   let roster: Combatant[] = [];
   for (const id of new Set(ids)) roster = deployUnitRecord(records, roster, id, reg);
-  const issue = battleCapacityIssue(roster); if (issue) throw new Error(issue);
+
   // 旧远程实例在开战时补齐到分类新射程（库存权威档案由控制器装载时迁移）。
   for (const unit of roster) { calibrateWeaponRange(unit.weapon); calibrateWeaponRange(unit.sidearm); calibrateAutocannon(unit.weapon); calibrateAutocannon(unit.sidearm); calibrateWeaponHands(unit.weapon); calibrateWeaponHands(unit.sidearm); }
   return prepareBattleItems(roster, controller.snapshot());
@@ -968,6 +970,10 @@ function battleStepGuard(battle: SmallBattle | MassBattle): () => boolean {
     && diplomacyRevision === battle.diplomacy.revision
     && (!(battle instanceof SmallBattle) || turn === battle.turnIndex);
 }
+function battleProgress(battle: SmallBattle | MassBattle): string {
+  const slot = battle instanceof SmallBattle ? battle.turnOrder[battle.turnIndex] : '';
+  return JSON.stringify([battle.round,slot,battle.diplomacy.revision]);
+}
 function smallActorBlocked(b: SmallBattle): boolean {
   return !!b.active && (b.active.status !== 'ready' || b.active.conditions.some(c => c.dur > 0 && b.conditions.get(c.id)?.skipTurn));
 }
@@ -977,19 +983,18 @@ async function runAuto(): Promise<void> {
   if (!b) return;
   const epoch = automationEpoch;
   if (!b.isOver()) {
-    let guard = 0;
-    while (epoch === automationEpoch && state.small === b && !b.isOver() && !playerDiplomacy(b) && b.active && guard++ < 200) {
+    while (epoch === automationEpoch && state.small === b && !b.isOver() && !playerDiplomacy(b) && b.active) {
       const a = b.active;
       // 反应击杀/失能必须先交还行动权，不能等待已倒下的玩家单位。
       if (!smallActorBlocked(b) && !aiActsFor(b, a, allyControlDefaults())) break;
       tacticalView.selectedId = a.id; tacticalView.cell = undefined; render('battle');
       await yieldBattleFrame();
       if (epoch !== automationEpoch || state.small !== b) return;
-      const progress = `${b.round}:${b.turnIndex}:${b.diplomacy.revision}`;
+      const progress = battleProgress(b);
       await autoSmall(b);
       if (epoch !== automationEpoch || state.small !== b) return;
       if (playerDiplomacy(b)) { await persist(); render('battle'); return; }
-      if (!b.isOver() && progress === `${b.round}:${b.turnIndex}:${b.diplomacy.revision}`) throw Error('自动行动未推进回合，已暂停');
+      if (!b.isOver() && progress === battleProgress(b)) throw Error('自动行动未推进回合，已暂停');
       // Activations update session memory; only opening and final results reach storage.
       if (state.small !== b || !(await persistBattleResult())) return;
     }
@@ -1031,7 +1036,7 @@ function startFullAuto(): void {
     try {
     if (currentBattle() !== battle || context !== controller.inventoryContext() || workspaceNamespace !== adapter.namespace()
       || controller.migrationReview() || battleSaveFailed || battle.isOver()) return false;
-    const progress = `${battle.round}:${battle instanceof SmallBattle ? battle.turnIndex : ''}:${battle.diplomacy.revision}`;
+    const progress = battleProgress(battle);
     battleSaveFailed = false;
     if (battle instanceof SmallBattle) {
       if (!battle.active) return false;
@@ -1049,7 +1054,7 @@ function startFullAuto(): void {
     }
     if (battleSaveFailed || currentBattle() !== battle || !(await persist())) return false;
     if (battle.isOver()) render('battle');
-    if (!battle.isOver() && progress === `${battle.round}:${battle instanceof SmallBattle ? battle.turnIndex : ''}:${battle.diplomacy.revision}`) throw Error('自动行动没有推进回合，已暂停，可手动处理');
+    if (!battle.isOver() && progress === battleProgress(battle)) throw Error('自动行动没有推进回合，已暂停，可手动处理');
     return !battle.isOver();
     } finally {
       uiBusy = false; document.body.removeAttribute('aria-busy');
@@ -1282,7 +1287,7 @@ function renderBattlePreparation(): string {
   const llm = llmSettingsView();
   const preview = mcpPrepared && mcpPrepared.fingerprint === preparationFingerprint() ? mcpPrepared : undefined;
   const visible = (preview?.roster ?? state.roster).filter(visibleUnitRecord), allies = visible.filter((u) => u.side === 'ally'), enemies = visible.filter((u) => u.side === 'enemy');
-  const mode = preview?.setup.mode ?? effectiveMode(), capacityIssue = battleCapacityIssue(preview?.roster ?? state.roster), ready = !!preview || rosterHasBothSides() && !capacityIssue;
+  const mode = preview?.setup.mode ?? effectiveMode(), capacityIssue = mode === 'mass' ? battleCapacityIssue(preview?.roster ?? state.roster) : undefined, ready = !!preview || rosterHasBothSides() && !capacityIssue;
   const escortSide = state.objectiveMode === 'intercept' ? 'enemy' : 'ally';
   const escortCandidates = state.roster.filter((u) => u.side === escortSide && u.hp > 0 && u.status === 'ready');
   const escortUnit = escortCandidates[0];
@@ -1301,10 +1306,10 @@ function renderBattlePreparation(): string {
   return `<section class="battle-preparation"><span class="workspace-eyebrow">下一场交战</span><h2>${ready ? '队伍已集结' : '先集结你的队伍'}</h2>
     ${preview ? `<p class="notice" data-role="opening-preview">已固定开局预览：${preview.preview.kind === 'small' ? '小战' : '会战'}${preview.preview.map ? ' · 地图 ' + preview.preview.map.width + '×' + preview.preview.map.height : ''} · ${preview.preview.sides.map(s => (s.side === 'ally' ? '我方' : s.side === 'neutral' ? '第三方' : '敌方') + s.cards + '张卡／' + s.personnel + '人').join(' · ')}。点击开始交战会沿用此开局。</p>` : ''}
     ${capacityIssue ? `<p class="notice error" role="alert">${esc(capacityIssue)}</p>` : ''}
-    <p>${ready ? esc(recommendBattleMode(state.roster).reason) : '从已有档案选人，或接收剧情中的新遭遇。'}</p>
+    ${ready ? '' : '<p>从已有档案选人，或接收剧情中的新遭遇。</p>'}
     ${mode === 'small' ? `<p class="mission-summary">${esc(missionSummary)}</p>` : ''}
     <div class="preparation-stats"><div><strong>${allies.length}</strong><span>我方单位</span></div><div><strong>${enemies.length}</strong><span>已知敌方</span></div><div><strong>${mode === 'mass' ? '会战' : '战术'}</strong><span>${esc(fieldLabel(plannedFieldTags()) || '野战')}</span></div></div>
-    <label class="battle-auto"><input type="checkbox" data-role="non-lethal" ${state.nonLethal?'checked':''}> 非致命战斗（双方伤害只会造成濒死）</label>
+    <div class="row"><label><input type="checkbox" data-role="non-lethal" ${state.nonLethal?'checked':''}> 非致命战斗</label><label><input type="checkbox" data-role="simple-battle" ${mode === 'mass'?'checked':''}> 简易战斗</label></div>
     ${renderContextStatus()}${llm.error ? '<p role="alert">'+esc(llm.error)+'</p>' : ''}${llm.settings.enabled ? '<p class="sub">开战前会读取最近的正文来配置本场，可在设置中关闭。</p>' : ''}<div class="row"><button class="primary" data-action="${mode === 'mass' ? 'mass-start' : 'small-start'}" ${ready ? '' : 'disabled'}>开始交战</button><button data-action="workspace-tab" data-tab="units">${ready ? '查看队伍' : '集结队伍'}</button><button data-action="workspace-tab" data-tab="inventory">整理配装</button></div>
     ${state.roster.every((u) => u.rulesVersion === 'v2') ? `<details class="preparation-options" data-detail-id="preparation-options"><summary>任务设置 · ${state.mapLayout === 'indoor' ? '室内' : '野战'} / ${state.objectiveMode === 'escort' ? '护送' : state.objectiveMode === 'intercept' ? '拦截' : state.objectiveMode === 'siege' ? '攻城' : state.objectiveMode === 'control' ? '占旗' : state.objectiveMode === 'annihilation' ? '歼灭' : plannedFieldTags().includes('siege') ? '攻城' : '歼灭'}</summary><div class="row"><label>地形<select data-role="context-field">${Object.entries(FIELD_LABELS).filter(([id])=>id!=='night').map(([id,label])=>`<option value="${id}" ${(state.field||'plains')===id?'selected':''}>${label}</option>`).join('')}</select></label><label>光照<select data-role="context-lighting"><option value="day" ${state.lighting==='day'?'selected':''}>日间</option><option value="night" ${state.lighting==='night'?'selected':''}>夜间</option></select></label><label>地图<select data-role="map-layout"><option value="standard" ${state.mapLayout !== 'indoor' ? 'selected' : ''}>标准野战</option><option value="indoor" ${state.mapLayout === 'indoor' ? 'selected' : ''}>紧凑室内</option></select></label><label>目标<select data-role="objective-mode"><option value="auto" ${state.objectiveMode === 'auto' ? 'selected' : ''}>按环境：野战歼灭／攻城夺点</option><option value="annihilation" ${state.objectiveMode === 'annihilation' ? 'selected' : ''}>歼灭战</option><option value="control" ${state.objectiveMode === 'control' ? 'selected' : ''}>占旗战</option><option value="siege" ${state.objectiveMode === 'siege' ? 'selected' : ''}>攻城战</option><option value="escort" ${state.objectiveMode === 'escort' ? 'selected' : ''}>我方护送</option><option value="intercept" ${state.objectiveMode === 'intercept' ? 'selected' : ''}>拦截敌方护送</option></select></label><label>攻城角色<select data-role="siege-attacker"><option value="ally" ${state.siegeAttacker === 'ally' ? 'selected' : ''}>我方进攻</option><option value="enemy" ${state.siegeAttacker === 'enemy' ? 'selected' : ''}>我方防守</option></select></label></div><p>${esc(missionDetails)}</p></details>` : ''}
     ${allies.length ? `<div class="preparation-roster">${allies.slice(0, 8).map((u) => `<span><b>${esc(u.name)}</b><small>${u.scale === 'hero' ? '生命' : '人数'} ${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}</small></span>`).join('')}${allies.length > 8 ? `<span>另有${allies.length - 8}支单位</span>` : ''}</div>` : ''}
@@ -1349,9 +1354,22 @@ function renderUnitConversion(): string {
 function renderConfig(): string {
   const units = state.roster.filter(visibleUnitRecord);
   const rideUnits = currentBattle() ? [] : platformUnits(state.storage.filter(r => r.snapshot && visibleUnitRecord(r)));
+  const present = new Set(units.map(u => u.id));
+  const groups = new Map<string, Combatant[]>();
+  for (const u of units) {
+    const carrier = u.ride?.platformId;
+    const key = carrier && present.has(carrier) ? carrier : u.id;
+    const group = groups.get(key) ?? [];
+    if (key === u.id) group.unshift(u); else group.push(u);
+    groups.set(key,group);
+  }
+  const cards = [...groups.values()].map(group => {
+    const html = group.map(u => unitHtml(u,state.roster.indexOf(u),false,rideEditor(u.id,rideUnits))).join('');
+    return group.length > 1 ? '<section class="team-transport-group" aria-label="'+esc(group[0]!.name)+'">'+html+'</section>' : html;
+  }).join('');
   return `<section class="team-workspace"><div class="section-heading"><div><h2>参战队伍</h2><p class="sub">沿用当前生命、人数与装备。</p></div><div class="row"><button data-action="ai-scan" ${aiScanDialog?.busy ? 'disabled' : ''}>AI扫描</button><button data-action="gen-toggle">${state.genOpen ? '收起新建' : '添加单位'}</button></div></div>
     <div class="gen-details">${state.genOpen ? `<div class="gen-body"><h3>新建单位</h3>${unitForm('gen', state.form, reg)}<div class="row"><button class="primary" data-action="gen-add">预览单位</button></div>${builderPreview && !builderPreview.record ? buildPreview(builderPreview.unit) : ''}</div>` : ''}</div>
-    <div class="units">${units.map((u) => unitHtml(u, state.roster.indexOf(u), false, rideEditor(u.id,rideUnits))).join('') || '<div class="workspace-empty"><p>尚未集结队伍。添加新单位，或从下方档案中选择。</p></div>'}</div>
+    <div class="units">${cards || '<div class="workspace-empty"><p>尚未集结队伍。添加新单位，或从下方档案中选择。</p></div>'}</div>
     ${units.length ? '<details class="team-tools"><summary>编制工具</summary><button data-action="gen-clear">清空参战名单</button></details>' : ''}</section>`;
 }
 
@@ -2926,7 +2944,7 @@ async function approveSuggestion(s: Suggestion): Promise<void> {
       break;
     }
     case 'spawn': {
-      if (!Number.isInteger(s.count) || s.count < 1 || s.count + state.roster.length > MAX_SCENE_UNITS) throw new Error(`本场单位卡超过${MAX_SCENE_UNITS}，请通过正文整批审查重新按编队描述；人数写hpMax`);
+      if (!Number.isInteger(s.count) || s.count < 1 || s.count > MAX_SPAWN_COUNT) throw new Error(`单次新建卡数须在 1–${MAX_SPAWN_COUNT} 之间`);
       // 正文对应层：装备/特质/人设从 AI 描述映射到生成输入（匹配不到的按曲线基准+原名生成）
       // 武器显示名：weapon="名字:种类L等级" 的名字段（旧格式无名字段则用原文）——面板一律显示它
       const weaponLabel = s.weaponName ?? s.weapon;
@@ -3144,7 +3162,7 @@ async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void>
         && JSON.stringify([state.mode,state.field,state.lighting,state.mapLayout,state.objectiveMode,state.siegeAttacker,state.protagonistId])===setupKey
         && JSON.stringify(recentContextMessages())===messagesKey && (!runtime.canWrite||runtime.canWrite());
     const unitNotes=Object.fromEntries(state.storage.filter(u=>state.roster.some(c=>c.id===u.id)).map(u=>[u.id,u.note??'']));
-    const pending=llmContext.select({roster:state.roster,setup,messages,unitNotes,narrativeIdState:controller.snapshot(['narrativeIdState']).narrativeIdState,scope:JSON.stringify([identity,namespace,generation]),onStage:()=>render('battle')},settings,valid, result => {
+    const pending=llmContext.select({roster:state.roster,setup,messages,unitNotes,narrativeIdState:controller.snapshot(['narrativeIdState']).narrativeIdState,scope:JSON.stringify([identity,namespace,generation]),onStage:()=>render('battle')},state.simpleBattle === undefined ? settings : {...settings, selectBattleScale:false},valid, result => {
       if (result.mode !== 'small') return;
       const tags = [...new Set([result.field, ...(result.objectiveMode === 'siege' ? ['siege'] : []), ...(result.mapLayout === 'indoor' ? ['indoor'] : [])])];
       preparedField = generatedLayeredField(seed, result.mapLayout === 'indoor' ? 5 : 7, result.mapLayout === 'indoor' ? 7 : 13, tags,
@@ -3161,7 +3179,7 @@ async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void>
   let mode=context?.mode??requestedMode;
   if(!context) {
     const manual=encounterRequest({roster:state.roster,setup,
-      settings:{...normalizeContextSettings(),enemy:'manual',scene:'manual'},messages:[],windowSize:0,roles:[],phase:'preparation'}).base;
+      settings:{...normalizeContextSettings(),battleMode:requestedMode,enemy:'manual',scene:'manual'},messages:[],windowSize:0,roles:[],phase:'preparation'}).base;
     mode=manual.mode;state.mapLayout=manual.mapLayout;
   }
   if(mode==='mass')await startMassBattle(context);else await startSmallBattle(context, preparedField, seed);
@@ -3687,7 +3705,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     state.small = null;
     state.mass = null;
     state.commanderId = undefined;
-    state.mode = 'small';
+    state.mode = autoScaleMode();
     state.encounterIds.clear();
     (await persist());
   },
@@ -4128,6 +4146,12 @@ async function handleChange(e: Event): Promise<void> {
     if(!b||b.isOver()||!unit||unit.artilleryModel||unit.side!=='ally'||!['auto','he','ap'].includes(e.target.value))return;
     const previous=unit.cannonAmmo;unit.cannonAmmo=e.target.value==='auto'?undefined:e.target.value as 'he'|'ap';if(!(await persist()))unit.cannonAmmo=previous;render('battle');return;
   }
+  if (e.target instanceof HTMLInputElement && e.target.dataset.role === 'simple-battle' && !currentBattle()) {
+    state.simpleBattle = e.target.checked;
+    state.mode = autoScaleMode();
+    mcpPrepared = undefined; playerPreparation.clear(); llmContext.cancel();
+    await persist(); render('battle'); return;
+  }
   if (e.target instanceof HTMLInputElement && e.target.dataset.role === 'non-lethal') {
     const checked = e.target.checked, b = currentBattle();
     if (b) {
@@ -4412,10 +4436,11 @@ function prepareMcpEncounter(args: Record<string, unknown>): McpPrepared {
   const allowed: Record<string, readonly string[]> = { mode: ['small','mass'], field: Object.keys(FIELD_LABELS), lighting: ['day','night'], mapLayout: ['standard','indoor'], objectiveMode: ['auto','annihilation','siege','control','escort','intercept'], siegeAttacker: ['ally','enemy'] };
   if (rawSetup) for (const [key, value] of Object.entries(rawSetup)) if (!allowed[key]?.includes(String(value))) throw Error('setup.' + key + ' 无效');
   const deployment = args.deployment === undefined ? state.roster.map(u => ({ unitId: u.id })) : args.deployment;
-  if (!Array.isArray(deployment) || !deployment.length || deployment.length > 64) throw Error('deployment 须包含1—64个参战单位，每项包含 unitId 和可选 side');
+  if (!Array.isArray(deployment) || !deployment.length) throw Error('deployment 须包含参战单位，每项包含 unitId 和可选 side');
   const entries = deployment as { unitId: string; side?: 'ally' | 'enemy' }[];
   if (entries.some(e => !e || typeof e.unitId !== 'string' || e.side !== undefined && !['ally','enemy'].includes(e.side)) || new Set(entries.map(e => e.unitId)).size !== entries.length) throw Error('deployment.unitId 须唯一，side 须为 ally 或 enemy');
   if (args.recovery !== undefined && args.recovery !== 'none' && args.recovery !== 'recoverable') throw Error('recovery 须为 none 或 recoverable');
+  if (args.recovery === 'recoverable' && args.deployment === undefined) throw Error('请选择要恢复的参战单位');
   const records = structuredClone(state.storage);
   for (const entry of entries) {
     const index = records.findIndex(r => r.id === entry.unitId); if (index < 0) throw Error('deployment.unitId 不存在：' + entry.unitId);
@@ -4426,7 +4451,7 @@ function prepareMcpEncounter(args: Record<string, unknown>): McpPrepared {
   }
   const roster = deployedRoster(records, entries.map(e => e.unitId));
   if (roster.some(u => u.rulesVersion === 'v2' && u.damageModel !== 'wounds-v2')) throw Error('参战档案需要先在界面完成规则迁移预览');
-  const setup = { ...playerPreparationInputs().setup, ...(args.deployment !== undefined ? { mode: recommendBattleMode(roster).mode } : {}), ...rawSetup } as EncounterSetup;
+  const setup = { ...playerPreparationInputs().setup, ...rawSetup } as EncounterSetup;
   const protagonistId = args.protagonistId === undefined ? state.protagonistId : String(args.protagonistId);
   if (protagonistId && !records.some(r => r.id === protagonistId && r.side === 'ally')) throw Error('protagonistId 须为已建档我方单位 ID');
   const requestedCommander = args.commanderId ?? state.commanderId;
