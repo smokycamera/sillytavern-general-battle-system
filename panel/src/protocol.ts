@@ -19,6 +19,7 @@ const ATTRIBUTES: Record<string, readonly string[]> = {
   learn: ['id', 'skills'],
   effect: ['id', 'effects', 'clear', 'rounds', 'battles', 'permanent'],
   unit_update: ['id', 'hp', 'hpMax', 'morale', 'state', 'clear', 'reason'],
+  recover: ['id', 'life'],
   spawn: ['id', 'name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'speed', 'stabilized', 'protection', 'enchant', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits', 'items', 'effects', 'rounds', 'battles', 'permanent'],
   field: ['env', 'light', 'note'],
   take: ['id', 'qty', 'note'],
@@ -202,7 +203,7 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
       if (tag.name === 'unit_set' && (hadOptionalList || unitSetArchetype || hadItems) && !Object.keys(attrs).some(key => !['id', 'reason'].includes(key))) continue;
       const event = validatedEvent(tag.name, attrs, warnings);
       const earlier = seen.get(event.raw);
-      if (earlier !== undefined && (earlier !== tag.block || ['deploy', 'unit-update'].includes(event.kind))) {
+      if (earlier !== undefined && (earlier !== tag.block || ['deploy', 'unit-update', 'recover'].includes(event.kind))) {
         warnings.push('已合并重复展示的 ' + tag.name + ' 事件'); continue;
       }
       seen.set(event.raw, tag.block);
@@ -241,7 +242,7 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
     const event = events[i]!;
     const targets = event.kind === 'give' ? event.to ?? [] : event.kind === 'add' ? event.to ? [event.to] : [] : 'id' in event && event.id ? [event.id] : [];
     const unitId = targets.find(id => spawnIds.has(normalizeHandle(id)));
-    if (!['deploy', 'unit-update', 'unit-set', 'learn', 'effect', 'bless', 'affect', 'unbless', 'unaffect', 'add', 'give'].includes(event.kind) || !unitId || !spawnIds.has(normalizeHandle(unitId))) continue;
+    if (!['deploy', 'unit-update', 'unit-set', 'recover', 'learn', 'effect', 'bless', 'affect', 'unbless', 'unaffect', 'add', 'give'].includes(event.kind) || !unitId || !spawnIds.has(normalizeHandle(unitId))) continue;
     if (event.kind === 'deploy') { events.splice(i, 1); warnings.push(`已略过 deploy ${event.id}：这是本回复 spawn 自编的编号，新单位会自动上场`); }
     else {
       const message = `${unitId} 是本回复 spawn 自编的编号，新单位的编号由插件分配；要设置新单位请写进 spawn，或在下一次回复按单位资料里的编号修改`;
@@ -282,7 +283,7 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
 
 const repairProbes: Record<string, Record<string, string>> = {
   spawn: { name: '规格校验', side: 'ally', scale: 'hero' }, unit_set: { id: '校验' },
-  unit_update: { id: '校验', hp: '1' }, deploy: { id: '校验' }, take: { id: '校验' }, add: { id: '校验' },
+  unit_update: { id: '校验', hp: '1' }, recover: { id: '校验', life: '1' }, deploy: { id: '校验' }, take: { id: '校验' }, add: { id: '校验' },
   give: { id: '校验' }, reforge: { id: '校验', spec: '剑L1' }, field: { env: 'plains' },
   learn: { id: '校验', skills: '治疗L1' }, effect: { id: '校验', effects: '校验:buffL1+攻击L1', battles: '1' }, bless: { id: '校验', traits: '快速', battles: '1' },
   affect: { id: '校验', effects: '诅咒', battles: '1' }, unbless: { id: '校验', source: '校验' }, unaffect: { id: '校验', source: '校验' },
@@ -473,6 +474,13 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     return { kind:'unit-set', id:attrs.id!, data:fields || !items.length ? parseUnitSet(attrs) : {}, ...(items.length ? { items } : {}), reason:attrs.reason, raw:serializeEvent(kind,attrs) };
   }
   const integer = (key: string, min: number, max: number) => attrs[key] === undefined || (/^\d+$/.test(attrs[key]!) && Number.isSafeInteger(Number(attrs[key])) && Number(attrs[key]) >= min && Number(attrs[key]) <= max);
+  if (kind === 'recover') {
+    const id = attrs.id?.trim(), life = attrs.life?.toLowerCase();
+    if (!id) throw Error('recover 需要已有单位 id');
+    if (!life || life !== 'all' && !integer('life', 1, Number.MAX_SAFE_INTEGER)) throw Error('recover 的 life 须为正整数或 all');
+    const amount = life === 'all' ? life : Number(life);
+    return { kind: 'recover', id, life: amount, raw: serializeEvent(kind, { id, life: String(amount) }) };
+  }
   if (!integer('count', 1, MAX_SPAWN_COUNT)) throw new Error(`count是单位卡数量，须为1–${MAX_SPAWN_COUNT}；人数写hpMax。${GROUPING_HINT}`);
   const lifeInputMax = kind === 'unit_update' || kind === 'spawn' && attrs.scale === 'hero' ? Number.MAX_SAFE_INTEGER : 1e9;
   if (!integer('hp', 0, lifeInputMax) || !integer('hpMax', 1, lifeInputMax) || (attrs.level !== undefined && !/^[lL]?(?:10|[1-9])(?:[+-].*)?$/.test(attrs.level)) || !integer('qty', 1, Number.MAX_SAFE_INTEGER)) throw new Error(`${kind} 数值必须是范围内的完整整数`);

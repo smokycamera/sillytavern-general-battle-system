@@ -37,6 +37,7 @@
 - 同单位的unit_set、learn各合并一条，同实物的reforge合并一条；更新后可同时deploy。learn用于新增或修改指定技能，保留其他技能；unit_set的skills会替换该单位的自有技能列表。
 - count是1—20张单位卡，人数写hpMax。单场上限64张。不同编制/用途单位必须分开建档，重要人物可保留个体，已有档案不自动合并。
 - unit_set用于补员、休整、治疗、复活、清除状态、配装和档案修正等有依据的战外变化；reason可选。复活须同时写state="ready"与正数hp。
+- 战外治疗用 <recover id="u1" life="all"/>。life="all" 恢复全部可恢复伤势，也可填写治疗点数，如 life="120"。
 - 便捷属性：name、side、scale、level、xpProgress、hp、hpMax、morale、state、clear、body、mount、speed、weapon、weapon2、armor、shield、skills、traits、items、retired、note。state=ready/dying/dead/routing/fled；side=ally/enemy/neutral；scale=hero/company；speed选1—5，只表示单位本身固有速度，不计装备、负重或坐骑影响；shield写盾牌的“名称:规格”；items把道具交给该单位，写法同spawn的items，只增不减，收回用take。
 - 解除状态效果使用unit_set的clear，按名称填写，多个以逗号分隔，如clear="中毒,诅咒,飞行"。clear="all"解除全部当前状态效果
 - 常用修改优先使用便捷属性。

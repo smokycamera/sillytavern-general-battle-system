@@ -57,6 +57,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
   const observation: ObservationContext = { units: combatants, mode: save.battle?.kind ?? 'small', fieldTags: save.battle?.snap.fieldTags as string[] ?? field?.environment ?? [],
     battlefield: field, attached: new Map(save.battle?.snap.attached as [string, string][] ?? []) };
   const visible = new Set((limited ? observedUnits(observation, 'ally') : combatants).map((u) => u.id));
+  const visibleObservation = { ...observation, units: combatants.filter((u) => visible.has(u.id)) };
   const canInclude = (record: { id: string; side: string }) => !limited || record.side === 'ally' || visible.has(record.id);
   const roster = new Set(save.rosterIds ?? []);
   let inventory: InventorySave['inventory'] = [];
@@ -85,6 +86,10 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     const unit = live ?? record.snapshot;
     const progress = xpProgress({ level: record.level, xp: record.xp ?? 0, xpCurve: unit?.xpCurve, xpLevelStart: unit?.xpLevelStart });
     const moraleLocked = record.scale === 'hero' || record.id === save.protagonistId || unit?.moraleLocked === true;
+    const liveMorale = !moraleLocked && live?.rulesVersion === 'v2' ? moraleLabel(visibleObservation, live) : '';
+    const currentMorale = battleOpen ? (detailed ? undefined : live?.morale) : record.morale;
+    const morale = moraleLocked ? '该单位士气锁定，请勿在tb修改' : liveMorale || currentMorale;
+    const moraleMax = !detailed && !moraleLocked && morale !== undefined ? (live?.base ?? record.base).moraleMax : undefined;
     const physical = live && positionedUnit(observation, live);
     const effects = unit?.traitSources?.filter((s) => traitSourceActive(unit, s) && (detailed || s.conditions === undefined)).map((s) => ({ source: s.id, name: s.name,
       ...(s.traitIds.length ? { traits: s.traitIds.map((id) => (traitRegistry().get(id)?.name ?? id) + (s.traitLevels?.[id] ? 'L' + s.traitLevels[id] : '')) } : {}),
@@ -93,14 +98,13 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     const traitEffects = detailed && unit ? activeTraitIds(unit).filter(id => gradedTraitEnabled(unit, id)).map(id => ({ trait: id, level: traitLevel(unit, id), effect: traitLadderSummary(id, traitLevel(unit, id), undefined, unit.flightModel), sources: traitLevelSources(unit, id), inactive: traitPrerequisiteReason(unit, id) })) : [];
     const line = promptJson({ ...(detailed && traitEffects.length ? { traitEffects } : {}), id: record.id, name: record.name, side: record.side,
       ...(detailed ? { training: record.level, bonuses: unit?.bonuses } : { level: String(record.level) + enhancementLabel(unit?.bonuses) }),
-      ...(!battleOpen ? { ...(detailed ? { level:record.level,base:{...record.base,...(moraleLocked?{moraleMax:undefined}:{})},status:record.status,retired:record.retired,resources:unit?.resources,traits:unit?.traits.map((id) => traitLevelToken(id, unit.traitLevels?.[id])),preparedAbilityIds:unit?.preparedAbilityIds } : {}),morale:record.morale,speedTier:unit?.speedTier,
+      ...(!battleOpen ? { ...(detailed ? { level:record.level,base:{...record.base,...(moraleLocked?{moraleMax:undefined}:{})},status:record.status,retired:record.retired,resources:unit?.resources,traits:unit?.traits.map((id) => traitLevelToken(id, unit.traitLevels?.[id])),preparedAbilityIds:unit?.preparedAbilityIds } : {}),speedTier:unit?.speedTier,
         conditions:detailed ? record.conditions : record.conditions?.filter(c => c.dur > 0 && !c.effectSourceId).map(c => (standardConditionMap().get(c.id)?.name ?? c.id) + c.dur + '轮') } : {}),
       ...(progress ? { xpProgress: progress.current, xpRequired: progress.next } : { xpProgress: '已满级' }),
       semantics: record.scale === 'hero' ? '生命' : unit?.body==='vehicle'?'载具数量':'人数', hp: live?.hp ?? record.hp, hpMax: live?.base.hpMax ?? record.base.hpMax,
       // Wound groups are engine bookkeeping: the chat model gets a readable summary, never raw {hp,count} records to echo or rewrite.
       ...(unit&&hasMemberHealth(unit)?{memberHpMax:unit.formation!.memberHp,totalLife:memberHealth(unit),totalLifeMax:memberHealthMax(unit),memberHealth:memberHealthSummary(unit,4)}:{}),
-      ...(live && live.rulesVersion === 'v2' && moraleLabel({ ...observation, units: combatants.filter((u) => visible.has(u.id)) }, live) ? { morale: moraleLabel({ ...observation, units: combatants.filter((u) => visible.has(u.id)) }, live) } : {}),
-      ...(moraleLocked ? { morale: '该单位士气锁定，请勿在tb修改', moraleLocked: true } : {}),
+      morale, moraleMax, ...(moraleLocked ? { moraleLocked: true } : {}),
       ...(woundedLabel(live ?? record) ? { recovery: woundedLabel(live ?? record) } : {}),
       state: record.retired ? '已解散，不可选择' : ({ ready: '可行动', dying: '倒地失去战斗力（尚未死亡，不代表持续濒死；恢复以最新生命和状态为准）', dead: '死亡', routing: '溃退中，尚未离场', fled: '已撤离战场' }[live?.status ?? record.status ?? 'ready']),
       ...(physical?.airborne !== undefined ? { layer: isAirborne(physical) ? '空中' : '地面' } : {}),
