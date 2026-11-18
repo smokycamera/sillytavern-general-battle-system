@@ -94,6 +94,7 @@ export function selectTacticalElement(battle: SmallBattle, view: TacticalView, i
   const selection = tacticalSelection(battle, view, query);
   const cell = input.cell ?? selection.visible.find((u) => u.id === input.unitId)?.pos;
   if (cell === undefined || !inBounds(field, cell)) return selection.query;
+  const sameCell = view.inspectedCell === cell;
   view.inspectedCell = cell; view.cell = undefined;
   const occupants = selection.visible.filter((u) => u.pos === cell);
   const active = occupants.find(u => u.side === 'ally' && u.id === battle.active?.id);
@@ -102,8 +103,12 @@ export function selectTacticalElement(battle: SmallBattle, view: TacticalView, i
     view.selectedId = active.id; view.targetId = undefined; return query instanceof TacticalQueryCache ? query : undefined;
   }
   if (selection.option?.targets?.some(t=>t.targetId==='cell:'+cell) && !input.actor) { view.targetId='cell:'+cell; return selection.query; }
-  const unit = input.unitId ? occupants.find((u) => u.id === input.unitId)
-    : occupants.find((u) => selection.option?.targets?.some((t) => t.targetId === u.id)) ?? occupants[0];
+  const targets = selection.option?.targets ?? [];
+  const legal = occupants.filter(u => targets.some(t => t.targetId === u.id && t.enabled));
+  const cycle = sameCell && legal.some(u => u.ride || u.platform);
+  const next = cycle ? legal.findIndex(u => u.id === view.targetId) + 1 : 0;
+  const unit = input.unitId ? occupants.find(u => u.id === input.unitId)
+    : (legal.length ? legal[next % legal.length] : undefined) ?? occupants.find(u => targets.some(t => t.targetId === u.id)) ?? occupants[0];
   if (view.mode === 'move' && !input.actor && (!input.unitId || unit?.status === 'dying')
     && !occupants.some(u => u.side !== (selection.actor?.side ?? 'ally') && u.hp > 0 && u.status !== 'dying')) {
     view.cell = cell; view.targetId = undefined; return selection.query;
@@ -218,7 +223,7 @@ function tileInspector(battle: SmallBattle, view: TacticalView, selection: Retur
     ${actor && selection.canControl && (!climbReason || structure?.top && structure.hp > 0) ? `<button data-action="grid-climb" data-actor="${esc(actor.id)}" data-cell="${cell}" ${climbReason ? 'disabled' : ''} title="${esc(climbReason ?? `消耗主行动和${battle.climbMovementCost(actor.id)}移动`)}">${isElevated(actor) ? '下到地面' : '登城'}</button>` : ''}</div>
     ${!battle.cellVisible('ally', cell) ? '<p class="grid-reason">此格尚未观测；路线只考虑已知占位，实际移动可能遇敌受阻。</p>' : ''}
     ${field.objective.kind !== 'annihilation' && field.objective.cell === cell ? '<div class="objective-detail"><b>任务目标</b><div class="objective-rule">' + objectiveDetails(battle) + '</div></div>' : ''}
-    ${occupants.length ? '<div class="inspector-units">' + occupants.map((u) => `<button data-action="grid-inspect-unit" data-unit="${esc(u.id)}" class="${u.side}">${esc(u.name)} · ${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}${u.scale === 'hero' ? '生命' : '人'}${isAirborne(u) ? ' · 空中' : isElevated(u) ? ' · 墙顶' : ''}${defenseLayerLabels(u).map((label) => ' · ' + esc(label)).join('')}</button>`).join('') + '</div>' : ''}
+    ${occupants.length ? '<div class="inspector-units">' + occupants.map((u) => `<button data-action="grid-inspect-unit" data-unit="${esc(u.id)}" class="${u.side}">${esc(tacticalName(battle,u)!)} · ${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}${u.scale === 'hero' ? '生命' : '人'}${isAirborne(u) ? ' · 空中' : isElevated(u) ? ' · 墙顶' : ''}${defenseLayerLabels(u).map((label) => ' · ' + esc(label)).join('')}</button>`).join('') + '</div>' : ''}
   </div>`;
 }
 
@@ -238,7 +243,7 @@ function actionPreview(battle: SmallBattle, preview: ActionPreview | undefined, 
   // V15 编队齐用按件数：对所选目标本次实际消耗的件数（英雄与旧规则为 1 件）。
   const actor = battle.active, item = option?.kind === 'ability' && actor ? actor.abilities.find((a) => a.id === option.id && a.itemSourceId) : undefined;
   const itemCost = item && actor ? battle.itemUse(actor, item, target ?? (item.target === 'self' ? actor : undefined)).ability.cost?.amount : undefined;
-  return `<div class="action-preview" aria-live="polite">${target ? '<div class="preview-target">' + esc(target.name) + ' · ' + strengthDescription(target) + '</div>'+(target.formation?.health?.some(g => g.hp < (target.formation?.memberHp ?? 0)) ? memberHealthPanel(target) : '') : ''}${primary}${resistance}${participationText(p) ? `<p class="sub">${participationText(p)}</p>` : ''}
+  return `<div class="action-preview" aria-live="polite">${target ? '<div class="preview-target">' + esc(tacticalName(battle,target)!) + ' · ' + strengthDescription(target) + '</div>'+(target.formation?.health?.some(g => g.hp < (target.formation?.memberHp ?? 0)) ? memberHealthPanel(target) : '') : ''}${primary}${resistance}${participationText(p) ? `<p class="sub">${participationText(p)}</p>` : ''}
     ${p?.effects?.length ? '<div class="preview-effects">' + p.effects.map(esc).join('；') + '</div>' : ''}
     ${p?.areaTargets?.length ? '<div class="area-preview">实际波及：' + p.areaTargets.map(esc).join('、') + (p.areaPreviews?.length ? '<div>' + p.areaPreviews.map((hit) => { const affected = battle.visibleCombatants('ally').find((u) => u.id === hit.targetId); return affected ? '<div>' + esc(affected.name) + ' · 至少命中一次' + hitChanceText(hit) + ' · 命中后伤害' + hitDamageText(hit) + (affected.scale === 'hero'||hasMemberHealth(affected) ? '生命' : '人') + '</div>' : ''; }).join('') + '</div>' : '') + '</div>' : ''}
     ${p?.onHit ? '<div>' + esc(p.onHit) + '</div>' : ''}
@@ -271,9 +276,15 @@ function gridPiece(battle: SmallBattle, u: Combatant, isActor: boolean, ai = fal
 export interface TacticalAutomation { aiUnitIds: ReadonlySet<string>; allAllies: boolean; fullAuto: boolean }
 const MANUAL: TacticalAutomation = { aiUnitIds: new Set(), allAllies: false, fullAuto: false };
 
+function tacticalName(battle: SmallBattle, unit?: Combatant): string | undefined {
+  if (unit) return [unit.name, battle.platforms.role(unit)].filter(Boolean).join(' · ');
+}
 export function rideControls(battle: SmallBattle, actor?: Combatant): string {
   if (!actor || actor.side !== 'ally') return '';
-  return battle.platforms.options(actor).map(a => `<button data-action="small-platform" data-actor="${esc(actor.id)}" data-kind="${a.kind}" data-id="${esc(a.id)}">${esc(a.label)}</button>`).join('');
+  const slot = battle.turnOrder[battle.turnIndex];
+  const owner = battle.isTurnOf(actor.id) && slot ? battle.byId(slot) : undefined;
+  const source = owner?.ride?.mode === 'mount' ? '<span>当前行动方 · ' + esc(tacticalName(battle,actor)!) + '</span>' : '';
+  return source + battle.platforms.options(actor).map(a => `<button data-action="small-platform" data-actor="${esc(actor.id)}" data-kind="${a.kind}" data-id="${esc(a.id)}">${esc(a.label)}</button>`).join('');
 }
 export function renderTacticalBattle(battle: SmallBattle, view: TacticalView, automation: TacticalAutomation = MANUAL, query?: TacticalQuerySource): string {
   return withBattleReportQueries(() => battle.withReadOnlyQueries(() => renderTacticalContent(battle, view, automation, query)));
@@ -406,7 +417,7 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
       </div>
       ${special ? '<div class="action-preview"><b>'+esc(commandTitle)+'</b><p>'+esc(specialReason??specialDetail)+'</p>'+executeCommand+'</div>' : mode === 'move' ? movePanel : mode === 'guard' ? `<div class="guard-options"><button data-action="grid-brace" ${canControl && actor && !battle.braceReason(actor.id) ? '' : 'disabled'}>固守 · 行动1</button><p>${esc(actor ? battle.braceReason(actor.id) ?? battle.braceDescription(actor.id) : '')}</p><button data-action="grid-watch" ${canControl && actor && !battle.overwatchReason(actor.id) ? '' : 'disabled'}>警戒 · 行动1</button><p>${esc(actor ? battle.overwatchReason(actor.id) ?? battle.overwatchDescription(actor.id) : '')}</p></div>` : `
         <label>使用<select data-role="grid-mode">${options.filter((o) => option?.kind === 'ability' ? o.kind === 'ability' : ['weapon', 'charge'].includes(o.kind)).map((o) => `<option value="${esc(o.id)}" ${o.id === option?.id ? 'selected' : ''}>${esc(o.label)}${o.enabled ? '' : ' · 暂不可用'}</option>`).join('')}</select></label>
-        ${option?.targets?.length ? '<label>目标<select data-role="grid-target">' + (targetMismatch ? '<option value="' + esc(view.targetId!) + '" selected disabled>' + esc(targetUnit?.name ?? '所选目标') + ' · 不适用于此行动</option>' : '') + option.targets.map((t) => '<option value="' + esc(t.targetId) + '" ' + (t.targetId === target?.targetId ? 'selected' : '') + '>' + esc(visible.find((u) => u.id === t.targetId)?.name ?? (t.targetId.startsWith('cell:') ? cellLabel(field,Number(t.targetId.slice(5))) : '未定位目标')) + (t.enabled ? '' : ' · ' + esc(t.reason ?? '不可选')) + '</option>').join('') + '</select></label>' : ''}
+        ${option?.targets?.length ? '<label>目标<select data-role="grid-target">' + (targetMismatch ? '<option value="' + esc(view.targetId!) + '" selected disabled>' + esc(targetUnit?.name ?? '所选目标') + ' · 不适用于此行动</option>' : '') + option.targets.map((t) => '<option value="' + esc(t.targetId) + '" ' + (t.targetId === target?.targetId ? 'selected' : '') + '>' + esc(tacticalName(battle,visible.find((u) => u.id === t.targetId)) ?? (t.targetId.startsWith('cell:') ? cellLabel(field,Number(t.targetId.slice(5))) : '未定位目标')) + (t.enabled ? '' : ' · ' + esc(t.reason ?? '不可选')) + '</option>').join('') + '</select></label>' : ''}
         ${target?.rangeDistance !== undefined && target.distance !== undefined && target.rangeDistance > target.distance ? '<p class="aerial-range">距离 ' + target.distance + ' + 对空 ' + (target.rangeDistance - target.distance) + ' = 射程距离 ' + target.rangeDistance + '</p>' : ''}
         ${target?.heightReach ? '<p class="aerial-range">居高射击：射程 +' + target.heightReach + '</p>' : ''}
         ${actionPreview(battle, target?.preview ?? option?.preview, option, target?.targetId)}
