@@ -22,7 +22,7 @@ it('扫描使用当前正文、玩家要求和内置等级锚定，返回事件�
   expect(data.正文.map((m: {text:string}) => m.text)).toEqual(['角色进入城堡。', '门口有两名老练护卫。']);
   expect(data.玩家要求).toBe(source.requirements); expect(data.当前资料).toContain('"id":"u1"');
   expect(payload.messages[0].content).toContain('<power_reference>'); expect(payload.messages[0].content).toContain('<unit_equipment_specs>');
-  expect(payload.messages[0].content).toContain('skills、traits'); expect(payload.messages[0].content).toContain('<example situation="全部便捷属性格式示例');
+  expect(payload.messages[0].content).toContain('skills、traits'); expect(payload.messages[0].content).toMatch(/<unit_set id="u1"[^>]+mount="u2"/);
   expect(payload.messages[0].content).not.toMatch(/确凿证据|有依据|有据可查/);
   expect(payload.response_format).toBeUndefined(); expect(JSON.stringify(payload)).not.toContain('private-key');
   expect(text).toContain('name="护卫"'); expect(text).not.toContain('错误'); expect(source).toEqual(before);
