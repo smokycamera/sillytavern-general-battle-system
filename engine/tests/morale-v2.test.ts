@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateUnit, MassBattle, SmallBattle, traitRegistry, V2_TW, V2_D20, standardField, setFormation, FORMATION_NODES, moraleProfile, moraleAttackMods, grantTraitSource, collectMods, resolveStack, standardConditionMap, type Combatant } from '../src/index.js';
+import { generateUnit, MassBattle, SmallBattle, traitRegistry, V2_TW, V2_D20, V42_OVERFLOW_D20, standardField, setFormation, FORMATION_NODES, moraleProfile, moraleAttackMods, grantTraitSource, collectMods, resolveStack, standardConditionMap, type Combatant } from '../src/index.js';
 const registry = traitRegistry();
 function unit(id: string, side: 'ally' | 'enemy' = 'ally') {
   const u = generateUnit({ name: id, side, scale: 'company', rulesVersion: 'v2', level: 3, hpMax: 500, weaponClass: 'sword', traits: [] }, { seed: id, registry, noVariance: true }).unit;
@@ -7,6 +7,19 @@ function unit(id: string, side: 'ally' | 'enemy' = 'ally') {
 }
 const place = (u: Combatant, id: string) => setFormation(u, FORMATION_NODES.find((n) => n.id === id)!);
 describe('空间士气与可观察压力', () => {
+  it('绑定的封闭载具溃退后逐轮结算，撤离时带走乘员', () => {
+    const carrier = unit('载具'), rider = unit('乘员');
+    carrier.body = 'vehicle'; carrier.platform = { kind: 'transport', power: 3 }; carrier.seats = 1;
+    rider.ride = { mode: 'mount', platformId: carrier.id };
+    const battle = new SmallBattle({ combatants: [carrier, rider, unit('友军'), unit('敌军', 'enemy')],
+      battlefield: standardField(), rules: V42_OVERFLOW_D20, seed: 'carrier-retreat' });
+    battle.start();
+    carrier.status = 'routing';
+    carrier.moraleState = { terrorSeen: [], routs: 1, attempts: 0, forcedRetreat: 'withdraw' };
+    expect(battle.movementBudget(rider.id)).toBe(0);
+    for (let i = 0; i < 24 && !battle.isOver() && battle.byId(carrier.id).status !== 'fled'; i++) battle.endTurn();
+    expect([carrier.status, rider.status]).toEqual(['fled', 'fled']);
+  });
   it('会战远处或已经撤离的恐惧不影响全图，同类多个来源取强，统率必须靠近', () => {
     const a = unit('a'), f = unit('f', 'enemy'), c = unit('c'), f2 = unit('f2', 'enemy'); f.traits = f2.traits = ['fear']; c.traits = ['commander'];
     const battle = new MassBattle({ combatants: [a, f, f2, c], rules: V2_TW, traitRegistry: registry, seed: 'auras' }); battle.start();

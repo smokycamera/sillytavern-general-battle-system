@@ -16,13 +16,14 @@ it('native panel starts tactics above 32 cards and mass via the simplified battl
   await f.service.transact(()=>({schemaVersion:2,storage:units.map(u=>unitRecordFromCombatant(u)),rosterIds:units.slice(0,32).map(u=>u.id),autoTurn:false,protagonistId:units[0]!.id}));
   await import('./main.js');
   for(const count of [65,64]) {
-    await f.service.transact(()=>({schemaVersion:2,storage:units.map(u=>unitRecordFromCombatant(u)),rosterIds:units.slice(0,count).map(u=>u.id),autoTurn:false,protagonistId:units[0]!.id}));
+    await f.service.transact(()=>({schemaVersion:2,storage:units.map(u=>unitRecordFromCombatant(u)),rosterIds:units.slice(0,count).map(u=>u.id),objectiveMode:count===64?'escort':'annihilation',autoTurn:false,protagonistId:units[0]!.id}));
     document.querySelector<HTMLButtonElement>('[data-action="workspace-tab"][data-tab="battle"]')!.click();
     const kind=count===64?'mass':'small';
     if (kind === 'mass') {
       document.querySelector<HTMLInputElement>('[data-role="simple-battle"]')!.click();
       await vi.waitFor(()=>expect(document.querySelector('[data-action="mass-start"]')).not.toBeNull());
     }
+    if (kind === 'mass') expect(document.querySelector('[data-role="objective-mode"]')).toBeNull();
     const button=document.querySelector<HTMLButtonElement>(`[data-action="${kind}-start"]`);
     expect(button).not.toBeNull();expect(button!.disabled).toBe(false);button!.click();
     await vi.waitFor(()=>expect(document.body.getAttribute('aria-busy')).not.toBe('true'),{timeout:15000});

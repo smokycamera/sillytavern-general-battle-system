@@ -59,7 +59,7 @@ import { updateRegion, BattleCamera, selectTextareaRange } from './view-dom.js';
 import { installMapGestures, fitMap, mapScale } from './map-gestures.js';
 import { executeMassPlan, executeAndSaveAsync as executeAndSave } from './battle-execution.js';
 import { TACTICAL_PREFERENCES, normalizeTactic } from '../../engine/src/tactical-preference.js';
-import { battleIdOf, publicBattleEvents, withBattleReportQueries, battleEpilogue, archivedNarrativeEvents, archivedDigest, makeNarrativeBatch, beginNarrativeDelivery, finishNarrativeDelivery, completedBattleRounds, type BattleReport, type BattleDeliveries, type NarrativeBatch } from './battle-reports.js';
+import { battleIdOf, knownBattleUnits, publicBattleEvents, withBattleReportQueries, battleEpilogue, archivedNarrativeEvents, archivedDigest, makeNarrativeBatch, beginNarrativeDelivery, finishNarrativeDelivery, completedBattleRounds, type BattleReport, type BattleDeliveries, type NarrativeBatch } from './battle-reports.js';
 import { lastBattleAction, traceLocations } from './battle-presentation.js';
 import { promptScopeControls } from './prompt-settings.js';
 import { narrativeProjectionDetails } from './narrative-controller.js';
@@ -72,7 +72,7 @@ const resourceLabel = (key: string) => key === 'SP' ? '精力' : key === 'reserv
 import { spCapacity, abilityCost, spRecovery, prepareResourceModel, skillExertion, resourceRound } from '../../engine/src/resources.js';
 import { PROMPT_SECTIONS, applySettlementPrompt, promptSelected, selectPromptEntries, renderPromptSettings, type PromptSectionId } from './prompt-settings.js';
 import { needsNarrativeDeploymentRestore } from './narrative-state.js';
-import { AutoBattleLoop, yieldBattleFrame } from './auto-battle.js';
+import { AutoBattleLoop, battleProgress, yieldBattleFrame } from './auto-battle.js';
 import { BattleWorker } from './battle-worker.js';
 import { applyBattleStep, seededReinforcement } from './battle-step.js';
 import { SeededRng } from '../../engine/src/rng.js';
@@ -970,10 +970,6 @@ function battleStepGuard(battle: SmallBattle | MassBattle): () => boolean {
     && diplomacyRevision === battle.diplomacy.revision
     && (!(battle instanceof SmallBattle) || turn === battle.turnIndex);
 }
-function battleProgress(battle: SmallBattle | MassBattle): string {
-  const slot = battle instanceof SmallBattle ? battle.turnOrder[battle.turnIndex] : '';
-  return JSON.stringify([battle.round,slot,battle.diplomacy.revision]);
-}
 function smallActorBlocked(b: SmallBattle): boolean {
   return !!b.active && (b.active.status !== 'ready' || b.active.conditions.some(c => c.dur > 0 && b.conditions.get(c.id)?.skipTurn));
 }
@@ -1311,7 +1307,7 @@ function renderBattlePreparation(): string {
     <div class="preparation-stats"><div><strong>${allies.length}</strong><span>我方单位</span></div><div><strong>${enemies.length}</strong><span>已知敌方</span></div><div><strong>${mode === 'mass' ? '会战' : '战术'}</strong><span>${esc(fieldLabel(plannedFieldTags()) || '野战')}</span></div></div>
     <div class="row"><label><input type="checkbox" data-role="non-lethal" ${state.nonLethal?'checked':''}> 非致命战斗</label><label><input type="checkbox" data-role="simple-battle" ${mode === 'mass'?'checked':''}> 简易战斗</label></div>
     ${renderContextStatus()}${llm.error ? '<p role="alert">'+esc(llm.error)+'</p>' : ''}${llm.settings.enabled ? '<p class="sub">开战前会读取最近的正文来配置本场，可在设置中关闭。</p>' : ''}<div class="row"><button class="primary" data-action="${mode === 'mass' ? 'mass-start' : 'small-start'}" ${ready ? '' : 'disabled'}>开始交战</button><button data-action="workspace-tab" data-tab="units">${ready ? '查看队伍' : '集结队伍'}</button><button data-action="workspace-tab" data-tab="inventory">整理配装</button></div>
-    ${state.roster.every((u) => u.rulesVersion === 'v2') ? `<details class="preparation-options" data-detail-id="preparation-options"><summary>任务设置 · ${state.mapLayout === 'indoor' ? '室内' : '野战'} / ${state.objectiveMode === 'escort' ? '护送' : state.objectiveMode === 'intercept' ? '拦截' : state.objectiveMode === 'siege' ? '攻城' : state.objectiveMode === 'control' ? '占旗' : state.objectiveMode === 'annihilation' ? '歼灭' : plannedFieldTags().includes('siege') ? '攻城' : '歼灭'}</summary><div class="row"><label>地形<select data-role="context-field">${Object.entries(FIELD_LABELS).filter(([id])=>id!=='night').map(([id,label])=>`<option value="${id}" ${(state.field||'plains')===id?'selected':''}>${label}</option>`).join('')}</select></label><label>光照<select data-role="context-lighting"><option value="day" ${state.lighting==='day'?'selected':''}>日间</option><option value="night" ${state.lighting==='night'?'selected':''}>夜间</option></select></label><label>地图<select data-role="map-layout"><option value="standard" ${state.mapLayout !== 'indoor' ? 'selected' : ''}>标准野战</option><option value="indoor" ${state.mapLayout === 'indoor' ? 'selected' : ''}>紧凑室内</option></select></label><label>目标<select data-role="objective-mode"><option value="auto" ${state.objectiveMode === 'auto' ? 'selected' : ''}>按环境：野战歼灭／攻城夺点</option><option value="annihilation" ${state.objectiveMode === 'annihilation' ? 'selected' : ''}>歼灭战</option><option value="control" ${state.objectiveMode === 'control' ? 'selected' : ''}>占旗战</option><option value="siege" ${state.objectiveMode === 'siege' ? 'selected' : ''}>攻城战</option><option value="escort" ${state.objectiveMode === 'escort' ? 'selected' : ''}>我方护送</option><option value="intercept" ${state.objectiveMode === 'intercept' ? 'selected' : ''}>拦截敌方护送</option></select></label><label>攻城角色<select data-role="siege-attacker"><option value="ally" ${state.siegeAttacker === 'ally' ? 'selected' : ''}>我方进攻</option><option value="enemy" ${state.siegeAttacker === 'enemy' ? 'selected' : ''}>我方防守</option></select></label></div><p>${esc(missionDetails)}</p></details>` : ''}
+    ${state.roster.every((u) => u.rulesVersion === 'v2') ? `<details class="preparation-options" data-detail-id="preparation-options"><summary>${mode === 'mass' ? '任务设置 · 会战歼灭' : `任务设置 · ${state.mapLayout === 'indoor' ? '室内' : '野战'} / ${state.objectiveMode === 'escort' ? '护送' : state.objectiveMode === 'intercept' ? '拦截' : state.objectiveMode === 'siege' ? '攻城' : state.objectiveMode === 'control' ? '占旗' : state.objectiveMode === 'annihilation' ? '歼灭' : plannedFieldTags().includes('siege') ? '攻城' : '歼灭'}`}</summary><div class="row"><label>地形<select data-role="context-field">${Object.entries(FIELD_LABELS).filter(([id])=>id!=='night').map(([id,label])=>`<option value="${id}" ${(state.field||'plains')===id?'selected':''}>${label}</option>`).join('')}</select></label><label>光照<select data-role="context-lighting"><option value="day" ${state.lighting==='day'?'selected':''}>日间</option><option value="night" ${state.lighting==='night'?'selected':''}>夜间</option></select></label>${mode === 'small' ? `<label>地图<select data-role="map-layout"><option value="standard" ${state.mapLayout !== 'indoor' ? 'selected' : ''}>标准野战</option><option value="indoor" ${state.mapLayout === 'indoor' ? 'selected' : ''}>紧凑室内</option></select></label><label>目标<select data-role="objective-mode"><option value="auto" ${state.objectiveMode === 'auto' ? 'selected' : ''}>按环境：野战歼灭／攻城夺点</option><option value="annihilation" ${state.objectiveMode === 'annihilation' ? 'selected' : ''}>歼灭战</option><option value="control" ${state.objectiveMode === 'control' ? 'selected' : ''}>占旗战</option><option value="siege" ${state.objectiveMode === 'siege' ? 'selected' : ''}>攻城战</option><option value="escort" ${state.objectiveMode === 'escort' ? 'selected' : ''}>我方护送</option><option value="intercept" ${state.objectiveMode === 'intercept' ? 'selected' : ''}>拦截敌方护送</option></select></label><label>攻城角色<select data-role="siege-attacker"><option value="ally" ${state.siegeAttacker === 'ally' ? 'selected' : ''}>我方进攻</option><option value="enemy" ${state.siegeAttacker === 'enemy' ? 'selected' : ''}>我方防守</option></select></label>` : ''}</div>${mode === 'small' ? `<p>${esc(missionDetails)}</p>` : ''}</details>` : ''}
     ${allies.length ? `<div class="preparation-roster">${allies.slice(0, 8).map((u) => `<span><b>${esc(u.name)}</b><small>${u.scale === 'hero' ? '生命' : '人数'} ${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}</small></span>`).join('')}${allies.length > 8 ? `<span>另有${allies.length - 8}支单位</span>` : ''}</div>` : ''}
     ${MCP_ENABLED ? playerPreparation.render(playerPreparationScope()) : ''}
   </section>`;
@@ -1352,8 +1348,10 @@ function renderUnitConversion(): string {
 }
 
 function renderConfig(): string {
-  const units = state.roster.filter(visibleUnitRecord);
-  const rideUnits = currentBattle() ? [] : platformUnits(state.storage.filter(r => r.snapshot && visibleUnitRecord(r)));
+  const battle = currentBattle();
+  const units = battle ? knownBattleUnits(battle) : state.roster;
+  const rosterIndex = new Map(state.roster.map((u, i) => [u.id, i]));
+  const rideUnits = battle ? [] : platformUnits(state.storage.filter(r => r.snapshot && visibleUnitRecord(r)));
   const present = new Set(units.map(u => u.id));
   const groups = new Map<string, Combatant[]>();
   for (const u of units) {
@@ -1364,9 +1362,10 @@ function renderConfig(): string {
     groups.set(key,group);
   }
   const cards = [...groups.values()].map(group => {
-    const html = group.map(u => unitHtml(u,state.roster.indexOf(u),false,rideEditor(u.id,rideUnits))).join('');
+    const html = group.map(u => unitHtml(u,rosterIndex.get(u.id) ?? -1,!!battle,battle ? '' : rideEditor(u.id,rideUnits))).join('');
     return group.length > 1 ? '<section class="team-transport-group" aria-label="'+esc(group[0]!.name)+'">'+html+'</section>' : html;
   }).join('');
+  if (battle) return `<section class="team-workspace"><h2>参战队伍</h2><div class="units">${cards}</div></section>`;
   return `<section class="team-workspace"><div class="section-heading"><div><h2>参战队伍</h2><p class="sub">沿用当前生命、人数与装备。</p></div><div class="row"><button data-action="ai-scan" ${aiScanDialog?.busy ? 'disabled' : ''}>AI扫描</button><button data-action="gen-toggle">${state.genOpen ? '收起新建' : '添加单位'}</button></div></div>
     <div class="gen-details">${state.genOpen ? `<div class="gen-body"><h3>新建单位</h3>${unitForm('gen', state.form, reg)}<div class="row"><button class="primary" data-action="gen-add">预览单位</button></div>${builderPreview && !builderPreview.record ? buildPreview(builderPreview.unit) : ''}</div>` : ''}</div>
     <div class="units">${cards || '<div class="workspace-empty"><p>尚未集结队伍。添加新单位，或从下方档案中选择。</p></div>'}</div>
@@ -1642,7 +1641,7 @@ function roundSnapshotHtml(b: SmallBattle | MassBattle): string {
     return `<div class="snapshot-line"><b>${marks}${esc(u.name)}</b> <span class="dim">${geo}${u.side === 'ally' ? '我' : '敌'}${engage}${hp}${morale}${fatigue}${conds}${status}</span></div>`;
   };
   return `<div class="gen-head" data-action="snapshot-toggle">${header}<span class="gen-caret">${state.snapOpen ? '▾' : '▸'}</span></div>
-    ${state.snapOpen ? `${(b.isOver() ? b.combatants : b.visibleCombatants('ally')).filter((c) => c.status !== 'dead').map(row).join('') || '<span class="sub">无存活单位</span>'}` : ''}`;
+    ${state.snapOpen ? `${knownBattleUnits(b).filter((c) => c.status !== 'dead').map(row).join('') || '<span class="sub">无存活单位</span>'}` : ''}`;
 }
 
 /** 距离/翼说明（常在提示，解释各类别的实际作用）。 */
@@ -1913,7 +1912,7 @@ function renderSmall(): string {
     })
     .join(' ');
   const units = b.combatants.map((u, i) => unitHtml(u, i, true)).join('');
-  const alive = b.visibleCombatants('ally').filter((c) => c.status !== 'dead' && c.status !== 'fled');
+  const alive = knownBattleUnits(b).filter((c) => c.status !== 'dead' && c.status !== 'fled');
   const allyCount = alive.filter((c) => c.side === 'ally').length;
   const enemyCount = alive.filter((c) => c.side === 'enemy').length;
   const envTag = b.fieldTags.length ? `｜🌐 ${esc(fieldLabel(b.fieldTags))}` : '';
@@ -2268,7 +2267,7 @@ function buildContextInject(): string {
   }
   const b = currentBattle();
   const alive = b
-    ? (b.isOver() ? b.combatants : b.visibleCombatants('ally')).filter((c) => c.status !== 'dead' && c.status !== 'fled')
+    ? knownBattleUnits(b).filter((c) => c.status !== 'dead' && c.status !== 'fled')
     : state.lastBattleUnitIds
         .map((id) => state.storage.find((r) => r.id === id))
         .filter((r): r is UnitRecord => !!r && r.status !== 'dead' && r.status !== 'fled')
@@ -3129,10 +3128,15 @@ function xpText(value: number, direction?: 'down' | 'up'): string { return appro
 function playerPreparationScope(): string {
   return JSON.stringify([adapter.identity(), adapter.namespace(), state.mode, state.roster, state.field, state.lighting, state.mapLayout, state.objectiveMode, state.siegeAttacker, state.protagonistId]);
 }
+function preparationSetup(mode = effectiveMode()): EncounterSetup {
+  return { mode, field: state.field || 'plains', lighting: state.lighting,
+    mapLayout: mode === 'mass' ? 'standard' : state.mapLayout,
+    objectiveMode: mode === 'mass' ? 'annihilation' : state.objectiveMode, siegeAttacker: state.siegeAttacker };
+}
 function playerPreparationInputs() {
   const ids = narrativeIds({ ...controller.snapshot(), storage: state.storage });
   return { scope: playerPreparationScope(), roster: state.roster, protagonistId: state.protagonistId,
-    setup: { mode: effectiveMode(), field: state.field || 'plains', lighting: state.lighting, mapLayout: state.mapLayout, objectiveMode: state.objectiveMode, siegeAttacker: state.siegeAttacker },
+    setup: preparationSetup(),
     unitBindings: Object.fromEntries(state.roster.map(u => [ids.publicId(u.id), u.id])),
     sources: narrativeMapSources(recentContextMessages().slice(-llmSettingsView().settings.windowSize).map(m => ({ ...m, text: m.text.slice(-6000) }))).sources };
 }
@@ -3152,7 +3156,7 @@ async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void>
   const v2=state.roster.every(u=>u.rulesVersion==='v2'), settings=llmSettingsView().settings;
   const seed = randomSeed();
   let preparedField: ReturnType<typeof generatedLayeredField> | undefined;
-  const setup={mode:requestedMode,field:state.field||'plains',lighting:state.lighting,mapLayout:state.mapLayout,objectiveMode:state.objectiveMode,siegeAttacker:state.siegeAttacker};
+  const setup = preparationSetup(requestedMode);
   if(settings.enabled && v2 && !context) {
     const namespace=adapter.namespace(), identity=adapter.identity(), revision=state.factRevision,
       generation=controller.inventoryContext(), settingsKey=JSON.stringify(settings), rosterKey=JSON.stringify(state.roster), setupKey=JSON.stringify([state.mode,state.field,state.lighting,state.mapLayout,state.objectiveMode,state.siegeAttacker,state.protagonistId]);
@@ -3173,14 +3177,14 @@ async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void>
     render('battle');
     context=await pending;
     if (!valid()) throw Error('准备信息已变化，尚未开始战斗');
-    state.mode=context.mode;state.field=context.field;state.lighting=context.lighting;state.mapLayout=context.mapLayout;
-    state.objectiveMode=context.objectiveMode;state.siegeAttacker=context.siegeAttacker;
+    state.mode=context.mode;state.field=context.field;state.lighting=context.lighting;
+    if (context.mode === 'small') { state.mapLayout=context.mapLayout;state.objectiveMode=context.objectiveMode;state.siegeAttacker=context.siegeAttacker; }
   }
   let mode=context?.mode??requestedMode;
   if(!context) {
     const manual=encounterRequest({roster:state.roster,setup,
       settings:{...normalizeContextSettings(),battleMode:requestedMode,enemy:'manual',scene:'manual'},messages:[],windowSize:0,roles:[],phase:'preparation'}).base;
-    mode=manual.mode;state.mapLayout=manual.mapLayout;
+    mode=manual.mode;
   }
   if(mode==='mass')await startMassBattle(context);else await startSmallBattle(context, preparedField, seed);
   playerPreparation.clear();
@@ -4451,7 +4455,7 @@ function prepareMcpEncounter(args: Record<string, unknown>): McpPrepared {
   }
   const roster = deployedRoster(records, entries.map(e => e.unitId));
   if (roster.some(u => u.rulesVersion === 'v2' && u.damageModel !== 'wounds-v2')) throw Error('参战档案需要先在界面完成规则迁移预览');
-  const setup = { ...playerPreparationInputs().setup, ...rawSetup } as EncounterSetup;
+  const setup = { ...preparationSetup(rawSetup?.mode as EncounterSetup['mode'] | undefined), ...rawSetup } as EncounterSetup;
   const protagonistId = args.protagonistId === undefined ? state.protagonistId : String(args.protagonistId);
   if (protagonistId && !records.some(r => r.id === protagonistId && r.side === 'ally')) throw Error('protagonistId 须为已建档我方单位 ID');
   const requestedCommander = args.commanderId ?? state.commanderId;

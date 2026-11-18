@@ -153,7 +153,7 @@ export function commanderTools(prompts: CommandPrompts, mode: 'small' | 'mass' |
     commander_plan: { plan: { type: 'string', maxLength: 600 }, addNotes: { type: 'array', maxItems: 12, items: { type: 'string', maxLength: 300 } },
       removeNotes: { type: 'array', items: { type: 'integer', minimum: 0 } } },
     ...(mode === 'small' ? { commander_act: { choice: { type: 'string' }, then: { type: 'array', maxItems: 7, items: step } } }
-      : mode === 'intents' ? { commander_intents: { intents: { type: 'array', maxItems: 64, items: { type: 'object', additionalProperties: false, required: ['unit', 'mode'], properties: { unit: { type: 'string' }, mode: { type: 'string', enum: ['attack', 'advance', 'hold', 'withdraw', 'support', 'open', 'close', 'use'] }, cell: { type: 'integer', minimum: 0 }, target: { type: 'string' }, skill: { type: 'string' } } } } } }
+      : mode === 'intents' ? { commander_intents: { intents: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['unit', 'mode'], properties: { unit: { type: 'string' }, mode: { type: 'string', enum: ['attack', 'advance', 'hold', 'withdraw', 'support', 'open', 'close', 'use'] }, cell: { type: 'integer', minimum: 0 }, target: { type: 'string' }, skill: { type: 'string' } } } } } }
       : { commander_orders: { orders: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['unitId', 'choice'],
         properties: { unitId: { type: 'string' }, choice: { type: 'string' } } } } } }),
   };
