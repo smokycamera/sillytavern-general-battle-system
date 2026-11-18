@@ -5,7 +5,7 @@ import { narrativeTraitLevel, traitLevelToken, traitRegistry, inferArchetype, ty
 /** V2正文：全文提取、格式容错、逐项诊断；真实身份和数值由事务层最终核对。 */
 import { parseAbilitySpec, parseEffectAttributes, parseSuggestionTags, type Suggestion } from './tags.js';
 import { resolveWeaponClass } from '../../engine/src/data/weapons.js';
-import { MAX_PROTOCOL_CHARS, MAX_PROTOCOL_EVENTS, MAX_SCENE_UNITS, MAX_SPAWN_COUNT, GROUPING_HINT } from './narrative-limits.js';
+import { MAX_PROTOCOL_CHARS, MAX_PROTOCOL_EVENTS, MAX_SPAWN_COUNT, GROUPING_HINT } from './narrative-limits.js';
 import { scanProtocolTags, normalizedAttributes, serializeEvent, ProtocolSyntaxError, type ProtocolTag, type ProtocolAttribute } from './protocol-syntax.js';
 import { parseUnitSet, itemKey, UNIT_SET_ATTRIBUTES } from './unit-set.js';
 import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-tolerance.js';
@@ -250,9 +250,7 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
       errors.push(message); issues.set(eventTags.get(event)!, message);
     }
   }
-  const spawned = events.reduce((n, event) => n + (event.kind === 'spawn' ? event.count : 0), 0);
   if (events.length > MAX_PROTOCOL_EVENTS) errors.push('合并重复内容后共有' + events.length + '项事件，最多' + MAX_PROTOCOL_EVENTS + '项；请调整草稿，尚未入账');
-  if (spawned > MAX_SCENE_UNITS) errors.push('本批新建单位超过' + MAX_SCENE_UNITS + '，请调整草稿；' + GROUPING_HINT);
   // 批量限制指向触发限制的事件；不把首条错误复制到全部合法事件。
   if (scanned.tags.length > scanLimit) batchDiagnostics.push(eventDiagnostic(scanned.tags[scanLimit]!, errors[0]!));
   if (scanned.tags.reduce((n, tag) => n + tag.raw.length, 0) > MAX_PROTOCOL_CHARS && scanned.tags.length) {
@@ -260,10 +258,6 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
     batchDiagnostics.push(eventDiagnostic(tag, '事件内容超过' + MAX_PROTOCOL_CHARS + '字符，请精简草稿'));
   }
   if (events.length > MAX_PROTOCOL_EVENTS) batchDiagnostics.push(eventDiagnostic(eventTags.get(events[MAX_PROTOCOL_EVENTS]!)!, '事件超过' + MAX_PROTOCOL_EVENTS + '项，请精简草稿'));
-  if (spawned > MAX_SCENE_UNITS) {
-    let count = 0; const event = events.find(event => event.kind === 'spawn' && (count += event.count) > MAX_SCENE_UNITS)!;
-    batchDiagnostics.push(eventDiagnostic(eventTags.get(event)!, '本批新建单位超过' + MAX_SCENE_UNITS + '；' + GROUPING_HINT));
-  }
   // 略过的道具排在提示最前；整条回复只剩写不出的道具时作为待补全，不让它悄悄消失。
   if (skipped.length && !events.length && !errors.length) errors.push(skipped[0]!);
   warnings.unshift(...skipped);

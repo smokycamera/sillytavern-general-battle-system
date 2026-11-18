@@ -2,8 +2,7 @@ import { displayNumber } from '../../engine/src/display-number.js';
 import { SmallBattle, type MassBattle, type BattleLogEntry, type Combatant, woundedLabel } from '../../engine/src/index.js';
 import { observedLog } from '../../engine/src/observation.js';
 import { smallBattleResult } from '../../engine/src/battle-result.js';
-import { compactEventGroups, fieldFacts, reportPlaceText, reportStrengthLabel, reportShieldLabel, HEIGHT_LEGEND } from '../../engine/src/inject/format.js';
-import { reportsHeights } from '../../engine/src/small/height-map.js';
+import { compactEventGroups, fieldFacts, reportPlaceText, reportStrengthLabel, reportShieldLabel } from '../../engine/src/inject/format.js';
 import { formationNode } from '../../engine/src/mass/formation.js';
 import type { BattlefieldSpec } from '../../engine/src/small/spatial.js';
 import { NARRATIVE_TASK } from '../../engine/src/inject/narrative-task.js';
@@ -63,7 +62,7 @@ export function archivedNarrativeEvents(b: Battle, deliveries: BattleDeliveries)
 }
 export function knownBattleState(b: Battle): string {
   const field = b instanceof SmallBattle ? b.battlefield : undefined;
-  return ['【最新状态】' + (reportsHeights(field) ? '（' + HEIGHT_LEGEND + '）' : ''), ...(b instanceof SmallBattle && b.isOver() ? [smallBattleResult(b)!] : []), ...(b.isOver() ? b.combatants : b.visibleCombatants('ally')).map(u=>epilogueUnit(b,u,field)), ...fieldFacts(b)].join('\n');
+  return ['【最新状态】', ...(b instanceof SmallBattle && b.isOver() ? [smallBattleResult(b)!] : []), ...(b.isOver() ? b.combatants : b.visibleCombatants('ally')).map(u=>epilogueUnit(b,u,field)), ...fieldFacts(b)].join('\n');
 }
 const RANK_NAMES = { front: '前列', rear: '后列', reserve: '预备列' } as const;
 /** 小战写格子、地形与高度，会战写阵位；撤离的单位和没有位置的旧记录不写。 */

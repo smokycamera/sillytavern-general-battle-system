@@ -56,12 +56,14 @@ it('treats existing members before returning wounded soldiers and deduplicates a
 
 it('recovers two companies in one batch, including a count-only archive', () => {
   const save = woundedCompany(), legacy = woundedCompany(false, 'older-company').storage![0]!;
-  save.storage!.push(legacy);
+  const untouched = woundedCompany(true, 'untreated').storage![0]!;
+  save.storage!.push(legacy,untouched);
   const perMember = legacy.snapshot!.formation!.memberHp;
   const next = submitRecovery(save, '<recover id="stored-company" life="all"/>' + `<recover id="older-company" life="${perMember * 2 + 1}"/>`);
   expect(next.storage![0]).toMatchObject({ hp: 75, base: { hpMax: 100 }, recoverableWounded: 0, morale: 25,
     snapshot: { formation: { health: [{ hp: 20, count: 75 }] } } });
   expect(next.storage![1]).toMatchObject({ hp: 62, recoverableWounded: 13 });
+  expect(next.storage![2]).toMatchObject({hp:60,recoverableWounded:15, snapshot:{formation:{health:untouched.snapshot!.formation!.health}}});
 });
 
 it('reports an invalid budget and refuses inconsistent or unavailable recovery atomically', () => {

@@ -82,7 +82,7 @@ describe('战报的位置与高度', () => {
     f.landmarks = [{ kind: 'hill', label: '北坡', cells: [29, 30], scale: 'minor' }, { kind: 'position', label: '旧井', cells: [33], scale: 'minor' }];
     const b = battleOn(f);
     const text = smallStateSummary(b);
-    expect(text).toContain('环境：山地/夜间｜高度按层计，约一层楼，0为地面');
+    expect(text).toContain('环境：山地/夜间');
     expect(text).toContain('地标：北坡 B5、C5（山地·高度1–2）；旧井 F5（高度0）');
     expect(text).toContain('a(A5·高度0·');
     expect(roundDigest(b, undefined, undefined, { wholeBattle: true }) + b.log.map(e => e.text).join('\n')).toContain('布阵：a A5(高度0)，b G5(高度0)');

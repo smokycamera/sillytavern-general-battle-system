@@ -27,21 +27,21 @@ describe('32-card tactics and 64-card scene preparation', () => {
   it.each([2,16,17,31,32,33,63,64])('%s cards choose mode by actual deployed cards, not headcount or presence of heroes', count => {
     for (const scale of ['hero','company'] as const) {
       const units=army(Math.floor(count/2),Math.ceil(count/2),scale), before=structuredClone(units);
-      expect(recommendBattleMode(units).mode).toBe(count<=32?'small':'mass');
+      expect(recommendBattleMode(units).mode).toBe('small');
       expect(battleCapacityIssue(units)).toBeUndefined(); expect(units).toEqual(before);
     }
   });
-  it('rejects card 65, does not count dead/retired archived units as active, and does not allow 33-card grids', () => {
+  it('allows 65 cards on the grid and retains the mass battle limit', () => {
     const units=army(32,33,'company'); expect(battleCapacityIssue(units)).toMatch(/65.*64/);
-    expect(()=>generatedLayeredField('too-many',7,13,[],{roster:units})).toThrow(/32/);
+    expect(Object.keys(generatedLayeredField('many-cards',7,13,[],{roster:units}).initialDeployment!)).toHaveLength(65);
     units.slice(32).forEach(u=>{u.hp=0;u.status='dead';});
     expect(recommendBattleMode(units).mode).toBe('small'); expect(battleCapacityIssue(units)).toBeUndefined();
     expect([MAX_SMALL_UNITS,MAX_BATTLE_UNITS]).toEqual([32,64]);
   });
-  it('parses all 64 distinct spawns or deploys in one transaction; 65 new cards still fail', () => {
+  it('parses 65 new cards and a full deployment transaction', () => {
     const spawn = (i:number)=>`<spawn name="单位${i}" side="${i<32?'ally':'enemy'}" scale="hero" level="3" weapon="剑L3"/>`;
     expect(parseProtocol('<tb>'+Array.from({length:64},(_,i)=>spawn(i)).join('')+'</tb>').errors).toEqual([]);
-    expect(parseProtocol('<tb>'+Array.from({length:65},(_,i)=>spawn(i)).join('')+'</tb>').errors.join('')).toMatch(/64/);
+    expect(parseProtocol('<tb>'+Array.from({length:65},(_,i)=>spawn(i)).join('')+'</tb>').errors).toEqual([]);
     const deployed=parseProtocol('<tb><field env="siege"/>'+Array.from({length:64},(_,i)=>`<unit_update id="u${i}" hp="50"/><deploy id="u${i}"/>`).join('')+'</tb>');
     expect(deployed.errors).toEqual([]); expect(deployed.events).toHaveLength(129);
   });
@@ -92,11 +92,10 @@ describe('32-card tactics and 64-card scene preparation', () => {
     store.set(LLM_SETTINGS_KEY,JSON.stringify({enabled:true,token:'keep'}));
     expect(readLlmSettings()).toMatchObject({selectBattleScale:false,designMap:true,selectVip:true,token:'keep'});
   });
-  it('scene selection cannot turn 33 cards back into a grid, even for an indoor siege', () => {
+  it('scene selection supports a 33-card indoor siege', () => {
     const input={roster:army(16,17),setup:{...setup,mapLayout:'indoor' as const,objectiveMode:'siege' as const},settings:normalizeContextSettings(),messages:[],windowSize:0,roles:[],phase:'preparation' as const};
     const base=encounterRequest(input).base;
-    expect(base).toMatchObject({mode:'mass',mapLayout:'standard',objectiveMode:'annihilation'});
-    expect(base.detail).toContain('32');
+    expect(base.mode).toBe('small');
   });
 });
 

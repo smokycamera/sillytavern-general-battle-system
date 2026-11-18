@@ -134,7 +134,7 @@ export class McpSandbox {
       { name: '试战剑士', side: 'ally', weaponClass: 'sword' }, { name: mass ? '试战步兵队' : '试战射手', side: 'ally', scale: mass ? 'company' : 'hero', weaponClass: 'rifle' },
       { name: '对手剑士', side: 'enemy', weaponClass: 'sword' }, { name: mass ? '对手步兵队' : '对手射手', side: 'enemy', scale: mass ? 'company' : 'hero', weaponClass: 'rifle' },
     ];
-    if (!Array.isArray(participants) || participants.length < 2 || participants.length > 64) throw Error('participants 须为2—64个测试单位');
+    if (!Array.isArray(participants) || participants.length < 2) throw Error('participants 须包含至少两个测试单位');
     const roster = participants.map((p: { name?: string; side?: string; scale?: string; level?: number; weaponClass?: string; personnel?: number }, index) => {
       if (!p || !['ally','enemy'].includes(p.side ?? '') || !['hero','mook','company'].includes(p.scale ?? 'hero')
         || !Number.isInteger(p.level ?? 3) || (p.level ?? 3) < 1 || (p.level ?? 3) > 10 || !WEAPON_CLASSES[p.weaponClass ?? 'sword']) throw Error(`participants[${index}] 的 side、scale、level 或 weaponClass 无效`);
@@ -143,7 +143,7 @@ export class McpSandbox {
         level: p.level ?? 3, rulesVersion: 'v2', damageModel: 'wounds-v2', numericModel: 'graded-v1', loadModel: 'capacity-v2', weaponClass: p.weaponClass ?? 'sword', ...(p.personnel !== undefined ? { hpMax: p.personnel } : {}), traits: [] }, { seed: seed + ':' + index, registry: this.registry }).unit;
       unit.id = 'sandbox-unit-' + (index + 1); return unit;
     });
-    const setup = { mode: roster.length > 32 ? 'mass' : 'small', field: 'plains', lighting: 'day', mapLayout: 'standard', objectiveMode: 'annihilation', siegeAttacker: 'ally', ...(args.setup as object ?? {}) } as EncounterSetup;
+    const setup = { mode: 'small', field: 'plains', lighting: 'day', mapLayout: 'standard', objectiveMode: 'annihilation', siegeAttacker: 'ally', ...(args.setup as object ?? {}) } as EncounterSetup;
     const choices: Record<string, readonly string[]> = { mode: ['small','mass'], field: ['plains','urban','siege','forest','mountain'], lighting: ['day','night'], mapLayout: ['standard','indoor'], objectiveMode: ['auto','annihilation','siege','control','escort','intercept'], siegeAttacker: ['ally','enemy'] };
     for (const [key, value] of Object.entries(setup)) if (!choices[key]?.includes(value)) throw Error('setup.' + key + ' 无效');
     const commanderId = roster.find(u => u.side === 'ally')?.id;

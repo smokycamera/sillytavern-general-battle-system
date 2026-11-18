@@ -77,7 +77,7 @@ describe('按实际规模准备新战场', () => {
       expect(guard.status).toBe('ready');
     }
   });
-  it('地图按32张操作卡分界，较大编制仍可小战，超过32张人物也可独立参加新会战', () => {
+  it('小战默认适用于各种编制和单位数量', () => {
     const small = [unit('a', 'ally'), unit('b', 'enemy')], before = JSON.stringify(small);
     expect(recommendBattleMode(small).mode).toBe('small');
     const large = [unit('a', 'ally', { hpMax: 10000 }), unit('b', 'enemy', { hpMax: 10000 })];
@@ -89,8 +89,8 @@ describe('按实际规模准备新战场', () => {
     expect(recommendBattleMode(many.slice(0, 16)).mode).toBe('small');
     expect(recommendBattleMode(many.slice(0, 17)).mode).toBe('small');
     expect(recommendBattleMode(many.slice(0, 32)).mode).toBe('small');
-    expect(recommendBattleMode(many).mode).toBe('mass');
-    expect(recommendBattleMode(many.map((u) => ({ ...u, scale: 'hero' as const }))).mode).toBe('mass');
+    expect(recommendBattleMode(many).mode).toBe('small');
+    expect(recommendBattleMode(many.map((u) => ({ ...u, scale: 'hero' as const }))).mode).toBe('small');
     expect(JSON.stringify(small)).toBe(before);
   });
   it('本场种子固定地形，新场有变体；各边和目标相通，小编队存档仍保持人员语义', () => {

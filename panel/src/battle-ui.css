@@ -96,3 +96,5 @@ button[data-processing="true"] { outline: 2px solid var(--accent, #cdbb86); opac
 .ride-entry { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:4px; }
 .ride-entry label, .ride-entry span { flex:1 1 9rem; min-width:0; overflow-wrap:anywhere; }
 .ride-entry select { display:block; width:100%; min-width:0; max-width:100%; }
+
+.team-transport-group { display:grid; gap:5px; align-content:start; min-width:0; padding:6px; border:1px solid var(--line); border-left:3px solid var(--gold); border-radius:7px; }
