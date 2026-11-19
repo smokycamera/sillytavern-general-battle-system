@@ -1,9 +1,10 @@
+import { availableCopies } from './equipment-batches.js';
 import { displayNumber } from './display-number.js';
 import { equipmentBurden } from './equipment-load.js';
 import { armsWeaponReason, shieldUnavailableReason } from './arms.js';
 import { progression } from './progression.js';
 import { attackHostile, combatHostile, combatSide, controlActionReason, controlCondition } from './battle-control.js';
-import { abilityUsed } from './ability-state.js';
+import { abilityUsed, abilityUseLimit } from './ability-state.js';
 import { diceMean } from './dice.js';
 import { abilityCost } from './resources.js';
 import { isRangedWeapon } from './loadout.js';
@@ -308,6 +309,8 @@ export function abilityUsabilityReason(actor: Combatant, ability: Ability): stri
     if (ability.damageBasis && baseMechanism(skillWeapon(actor,ability)) !== 'natural' && actor.conditions.some((c) => c.dur > 0 && standardConditionMap().get(c.id)?.preventAttack)) return '缴械状态不能使用武器技法';
     if (ability.delivery === 'magic' && actor.conditions.some((c) => c.dur > 0 && standardConditionMap().get(c.id)?.preventMagic)) return '沉默状态不能施放魔法技能';
     if (ability.itemSourceId && !actor.carriedItems?.some((i) => i.id === ability.itemSourceId)) return '携行物品来源已失效';
+    if (ability.equipmentSourceId && !availableCopies(actor,ability.equipmentSourceId)) return '当前没有可用的装备';
+    if (ability.damageBasis==='shield' && actor.shield && !availableCopies(actor,actor.shield.id)) return '当前没有可用的盾';
     if (ability.equipmentSourceId && !equippedSourceIds(actor).includes(ability.equipmentSourceId)) return '提供这项能力的配件或道具已卸下';
     if (!ability.itemSourceId && !ability.equipmentSourceId && !actor.preparedAbilityIds?.includes(ability.id)) return '已学但尚未准备';
     if (ability.requires === 'shield' && shieldUnavailableReason(actor)) return shieldUnavailableReason(actor);
@@ -315,7 +318,7 @@ export function abilityUsabilityReason(actor: Combatant, ability: Ability): stri
   }
   const state = actor.abilityState.find((item) => item.abilityId === (ability.cooldownGroup ?? ability.id));
   if (state && state.cdLeft > 0) return '冷却中（剩 ' + state.cdLeft + ' 回合）';
-  if (ability.usesPerBattle !== undefined && abilityUsed(actor, ability) >= ability.usesPerBattle) {
+  if (ability.usesPerBattle !== undefined && abilityUsed(actor, ability) >= abilityUseLimit(actor,ability)) {
     return '本战次数已用尽';
   }
   const cost = abilityCost(actor, ability);

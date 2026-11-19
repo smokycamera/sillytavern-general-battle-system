@@ -1,3 +1,5 @@
+import { settleBatches } from '../../engine/src/equipment-batches.js';
+import { reuniteTransportGroups } from '../../engine/src/small/transport-groups.js';
 import { platformRoster } from './platform-records.js';
 import type { Ride } from '../../engine/src/platforms.js';
 import { validateLoadModel } from '../../engine/src/load-model.js';
@@ -20,6 +22,7 @@ import { compactSaveHistory, operationFingerprint } from './save-history.js';
 
 export interface InventoryItem {
   id: string; name: string; qty: number; lootType: string; note?: string; assignedTo?: string;
+  batch?: boolean;
   mechanics?: ItemMechanics;
   equippedTo?: { unitId: string; slot: EquipmentSlot };
   sourceItemId?: string;
@@ -48,7 +51,7 @@ export type InventoryAction =
   | { kind: 'discard-many'; items: { itemId: string; qty: number }[] }
   | { kind: 'assign'; itemId: string; unitId?: string }
   | { kind: 'transfer'; itemId: string; unitId?: string; unitIds?: string[]; qty: number }
-  | { kind: 'equip'; itemId: string; unitId: string; slot: EquipmentSlot }
+  | { kind: 'equip'; itemId: string; unitId: string; slot: EquipmentSlot; qty?: number }
   /** 佩戴与充能道具不限件数，卸下时用 itemId 指明哪一件。 */
   | { kind: 'unequip'; unitId: string; slot: EquipmentSlot; itemId?: string }
   | { kind: 'use'; itemId: string; unitId: string }
@@ -101,7 +104,7 @@ export function validateInventoryItem(value: unknown): asserts value is Inventor
   if (m.kind === 'item') {
     validateItemValue(m.value);
     const form = (m.value as { recipe: { form: string } }).recipe.form;
-    if (form === 'single' ? value.equippedTo !== undefined : Number(value.qty) > 1) throw new Error(form === 'single' ? '一次性道具不能装备' : '佩戴、充能道具必须逐件建档');
+    if (form === 'single' ? value.equippedTo !== undefined : Number(value.qty) > 1 && !value.batch) throw new Error(form === 'single' ? '一次性道具不能装备' : '佩戴、充能道具必须逐件建档');
     if (value.equippedTo !== undefined && (!object(value.equippedTo) || value.equippedTo.slot !== 'gear')) throw new Error('道具只能装在佩戴位');
   } else {
     const recipe = object(m.value) ? m.value.recipe : undefined;
@@ -114,7 +117,7 @@ export function validateInventoryItem(value: unknown): asserts value is Inventor
     if(object(recipe)){ validateInstanceVariance(recipe.variance); validateNumericModel(recipe.numericModel); validateLoadModel(recipe.loadModel); }
     if(object(recipe))validateEnhancements(recipe.bonuses as Enhancements | undefined, m.kind as 'weapon'|'armor'|'shield');
     const gear = m.value;
-    if (!object(gear) || gear.id !== value.id || Number(value.qty) > 1) throw new Error('装备唯一编号/数量冲突');
+    if (!object(gear) || gear.id !== value.id || Number(value.qty) > 1 && !value.batch) throw new Error('装备唯一编号/数量冲突');
     if (m.kind === 'weapon') {
       if (typeof gear.baseDice !== 'string') throw new Error('武器缺少伤害规格'); parseDice(gear.baseDice);
       if (gear.apDice !== undefined) { if (typeof gear.apDice !== 'string') throw new Error('武器破甲骰损坏'); parseDice(gear.apDice); }
@@ -128,7 +131,7 @@ export function validateInventoryItem(value: unknown): asserts value is Inventor
     if (gear.load !== undefined && (!Number.isFinite(gear.load) || Number(gear.load) < 0)) throw new Error('装备负重损坏');
   }
   if (value.equippedTo !== undefined && (!object(value.equippedTo) || typeof value.equippedTo.unitId !== 'string'
-    || !slots.includes(value.equippedTo.slot as EquipmentSlot) || value.qty !== 1)) throw new Error('装备槽位损坏');
+    || !slots.includes(value.equippedTo.slot as EquipmentSlot) || Number(value.qty) < 1 || !value.batch && value.qty !== 1)) throw new Error('装备槽位损坏');
 }
 function fingerprint(value: unknown): string {
   if (value === undefined) return 'undefined';
@@ -138,14 +141,14 @@ function fingerprint(value: unknown): string {
     .map((key) => JSON.stringify(key) + ':' + fingerprint((value as Record<string, unknown>)[key])).join(',') + '}';
 }
 const stackable = (spec: ItemSpecification) => spec.kind === 'item' && spec.form === 'single';
-export const isInventoryStack = (item: InventoryItem): boolean => !item.mechanics || item.mechanics.kind === 'item' && item.mechanics.value.recipe.form === 'single';
+export const isInventoryStack = (item: InventoryItem): boolean => !!item.batch || !item.mechanics || item.mechanics.kind === 'item' && item.mechanics.value.recipe.form === 'single';
 
 /** 正文仍可用原叠编号扣除分给各人的份额；只追踪该叠的拆分后代，不按同名合并。 */
 export function narrativeTakeParts(inventory: readonly InventoryItem[], itemId: string, qty: number): { itemId: string; qty: number }[] {
   const source = inventory.find(item => item.id === itemId);
   if (!source || !Number.isSafeInteger(qty) || qty < 1) throw Error('物品不存在或移除数量无效');
   const byId = new Map(inventory.map(item => [item.id, item]));
-  const signature = (item: InventoryItem) => fingerprint([item.name, item.lootType, item.mechanics]);
+  const signature = (item: InventoryItem) => fingerprint([item.name, item.lootType, item.mechanics && {...item.mechanics,value:{...item.mechanics.value,id:undefined}}]);
   const sameStack = (item: InventoryItem): boolean => {
     if (!isInventoryStack(source) || !isInventoryStack(item) || signature(source) !== signature(item)) return false;
     const visited = new Set<string>();
@@ -170,9 +173,15 @@ export function narrativeTakeParts(inventory: readonly InventoryItem[], itemId: 
 }
 export function createInventoryItem(id: string, name: string, spec: ItemSpecification, seed: string, qty = 1): InventoryItem {
   if (!id || !name.trim()) throw new Error('物品缺少身份或名称');
-  if (!Number.isSafeInteger(qty) || qty < 1 || !stackable(spec) && qty !== 1) throw new Error('装备与佩戴、充能道具逐件建档；一次性道具数量须为正整数');
-  return { id, name: name.trim(), qty, revision: 1, lootType: spec.kind === 'shield' ? 'armor' : spec.kind,
+  if (!Number.isSafeInteger(qty) || qty < 1) throw new Error('装备或道具的数量须为正整数');
+  return { id, name: name.trim(), qty, ...(!stackable(spec) ? {batch:true} : {}), revision: 1, lootType: spec.kind === 'shield' ? 'armor' : spec.kind,
     mechanics: compileItem(spec, { id, name: name.trim(), seed, damageModel:'wounds-v2', numericModel:'graded-v1', loadModel:'capacity-v2' }) };
+}
+export function splitInventoryBatch(item: InventoryItem, id: string, qty: number): InventoryItem {
+  const part = {...clone(item), id, qty, sourceItemId:item.id};
+  if (part.mechanics && part.mechanics.kind !== 'item') part.mechanics.value.id = id;
+  delete part.history;
+  return part;
 }
 function gearAt(unit: Combatant, slot: EquipmentSlot): unknown {
   switch (slot) {
@@ -200,11 +209,12 @@ export function prepareInventoryState(save: InventorySave, adoptExisting = true)
     validateInventoryItem(item);
     if (!item.id || ids.has(item.id) || !Number.isSafeInteger(item.qty) || item.qty < 0) throw new Error('库存身份或数量损坏，需要先核对原档');
     ids.add(item.id);
-    if (item.mechanics && item.mechanics.kind !== 'item' && (item.qty > 1 || item.mechanics.value.id !== item.id)) throw new Error('装备唯一编号/数量冲突');
+    if (item.mechanics && item.mechanics.kind !== 'item' && (item.qty > 1 && !item.batch || item.mechanics.value.id !== item.id)) throw new Error('装备唯一编号/数量冲突');
   }
   for (const record of next.storage) {
     if (!adoptExisting || record.equipmentManaged || record.snapshot?.rulesVersion !== 'v2') continue;
     for (const slot of uniqueSlots) {
+      if (next.inventory.some(i => i.equippedTo?.unitId === record.id && i.equippedTo.slot === slot)) continue;
       const mechanics = gearAt(record.snapshot, slot) as ItemMechanics | undefined;
       if (!mechanics || mechanics.kind === 'item') continue;
       const gear = mechanics.value;
@@ -223,27 +233,40 @@ export function prepareInventoryState(save: InventorySave, adoptExisting = true)
   for (const item of next.inventory) {
     if (!item.equippedTo) continue;
     const { unitId, slot } = item.equippedTo;
-    const key = JSON.stringify([unitId, slot === 'gear' ? 'gear:' + item.id : slot]);
+    const key = JSON.stringify([unitId, slot === 'gear' || item.batch ? slot + ':' + item.id : slot]);
     if (!next.storage.some((r) => r.id === unitId && r.equipmentManaged) || occupied.has(key) || !slots.includes(slot)
-      || !item.mechanics || !fitsEquipmentSlot(item.mechanics, slot) || item.assignedTo !== unitId || item.qty !== 1) throw new Error('装备槽位或持有者关系损坏');
+      || !item.mechanics || !fitsEquipmentSlot(item.mechanics, slot) || item.assignedTo !== unitId || item.qty < 1 || !item.batch && item.qty !== 1) throw new Error('装备槽位或持有者关系损坏');
     occupied.add(key);
   }
   for (const record of next.storage) if (record.equipmentManaged) projectEquipment(record, next.inventory);
   return next;
 }
 
-function projectEquipment(record: UnitRecord, inventory: InventoryItem[]): void {
+function reserveLoad(inventory: InventoryItem[],unitId: string): number {
+  return inventory.reduce((n,item)=>n + (item.batch && item.assignedTo===unitId && !item.equippedTo && item.mechanics && item.mechanics.kind!=='item' ? (item.mechanics.value.load ?? 0)*item.qty : 0),0);
+}
+export function projectEquipment(record: UnitRecord, inventory: InventoryItem[]): void {
   const unit = record.snapshot;
   if (!unit) throw new Error('装备显示记录缺少单位精确存档记录');
+  delete unit.equipmentBatches;
+  const carried = reserveLoad(inventory,record.id);
+  if (carried) unit.reserveEquipmentLoad = carried;
+  else delete unit.reserveEquipmentLoad;
   delete unit.weapon; delete unit.sidearm; delete unit.armor; delete unit.shield; delete unit.accessories; delete unit.gear;
   for (const item of inventory.filter((i) => i.equippedTo?.unitId === record.id)) {
     const mechanics = item.mechanics!;
+    if (item.batch) (unit.equipmentBatches ??= []).push({id:item.id, qty:item.qty, slot:item.equippedTo!.slot, mechanics:clone(mechanics)});
     if (mechanics.kind === 'weapon') {
-      if (item.equippedTo!.slot === 'primary') unit.weapon = clone(mechanics.value);
-      else unit.sidearm = clone(mechanics.value);
-    } else if (mechanics.kind === 'armor') unit.armor = clone(mechanics.value);
-    else if (mechanics.kind === 'shield') unit.shield = clone(mechanics.value);
+      if (item.equippedTo!.slot === 'primary') unit.weapon ??= clone(mechanics.value);
+      else unit.sidearm ??= clone(mechanics.value);
+    } else if (mechanics.kind === 'armor') unit.armor ??= clone(mechanics.value);
+    else if (mechanics.kind === 'shield') unit.shield ??= clone(mechanics.value);
     else (unit.gear ??= []).push(gearItem(item.id, item.name, mechanics.value));
+  }
+  if (unit.equipmentBatches) unit.equipmentPersonnel = unit.scale === 'hero' ? 1 : record.hp + (unit.recoverableWounded ?? 0);
+  if (!unit.sidearm) {
+    const alternate = unit.equipmentBatches?.find(b => b.mechanics.kind === 'weapon' && b.id !== unit.weapon?.id);
+    if (alternate?.mechanics.kind === 'weapon') unit.sidearm = clone(alternate.mechanics.value);
   }
   syncGearAbilities(unit);
   // 档案标量是当前事实；换装不能用旧快照生命覆盖正文或面板刚更新的生命。
@@ -275,9 +298,16 @@ export function assertInventoryPanelWrite(previous: InventorySave, next: Invento
   const previousItems = migrateLegacyInventory(previous.inventory) ?? [], nextItems = migrateLegacyInventory(next.inventory) ?? [];
   const outcome = next.battle && next.committedOutcomeIds?.includes(next.battle.kind + ':' + String(next.battle.snap.seed));
   const broken = outcome ? (next.battle!.snap.combatants as Combatant[]).filter(u => isArmsV2(u.armsModel) && u.shieldDurability?.remaining === 0 && u.shield).map(u => u.shield!.id) : [];
+  const settled = new Map<string,number>(), fallen = new Set<string>();
+  if (outcome) for (const u of reuniteTransportGroups(clone(next.battle!.snap.combatants as Combatant[]))) if (u.equipmentBatches) {
+    for (const [id,qty] of settleBatches(u)) settled.set(id,qty);
+    if (u.status==='dead' && !u.recoverableWounded) fallen.add(u.id);
+  }
   for (const item of previousItems.filter((i) => i.mechanics)) {
     const incoming = nextItems.find((i) => i.id === item.id);
-    if (fingerprint(incoming) !== fingerprint(item) && !(incoming === undefined && broken.includes(item.id))) throw new Error('装备与物品数量/归属须通过库存事务修改');
+    if (!incoming && (settled.get(item.id) === 0 || item.assignedTo && fallen.has(item.assignedTo))) continue;
+    const expected = settled.has(item.id) ? {...item,qty:settled.get(item.id)} : item;
+    if (fingerprint(incoming) !== fingerprint(expected) && !(incoming === undefined && broken.includes(item.id))) throw new Error('装备与物品数量/归属须通过库存事务修改');
   }
   if (nextItems.some((i) => i.mechanics && !previousItems.some((old) => old.id === i.id && old.mechanics))) throw new Error('新有效果的物品须先预览并通过库存事务入库');
   for (const old of previous.storage ?? []) if (old.equipmentManaged && !next.storage?.some((r) => r.id === old.id && r.equipmentManaged)) throw new Error('不能移除装备档案的库存绑定');
@@ -290,6 +320,7 @@ export function assertInventoryPanelWrite(previous: InventorySave, next: Invento
     const expected = projected.storage!.find((r) => r.id === record.id)!.snapshot!;
     // 旧档配件栏在投影后会改成已佩戴道具；比较时同样按投影后的结果看。
     if (record.snapshot.accessories && !expected.accessories) continue;
+    if (fingerprint(record.snapshot.equipmentBatches ?? [])!==fingerprint(expected.equipmentBatches ?? [])) throw Error('单位配发件数与库存不一致');
     for (const slot of slots) if (fingerprint(gearAt(record.snapshot, slot)) !== fingerprint(gearAt(expected, slot))) throw new Error('单位装备显示记录与库存不一致，请通过换装事务修改');
   }
 }
@@ -340,7 +371,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
     for (const itemId of ids) byId.get(itemId)!.qty = 0;
   } else if (action.kind === 'unequip') {
     const record = recordById(next, action.unitId);
-    const item = inventory.find((i) => i.equippedTo?.unitId === record.id && i.equippedTo.slot === action.slot && (action.slot !== 'gear' || i.id === action.itemId));
+    const item = inventory.find((i) => i.equippedTo?.unitId === record.id && i.equippedTo.slot === action.slot && (!action.itemId || i.id === action.itemId));
     if (!item) throw new Error(action.slot === 'gear' ? '这件道具没有装备在该单位身上' : '这个装备槽已空');
     delete item.equippedTo;
     projectEquipment(record, inventory);
@@ -354,7 +385,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
     projectEquipment(record, inventory);
     rewriteRecord(next, record, id);
   } else {
-    const item = inventory.find((i) => i.id === action.itemId);
+    let item = inventory.find((i) => i.id === action.itemId);
     if (!item) throw new Error('物品不存在');
     if (item.qty <= 0 && action.kind !== 'add') throw new Error('物品数量不足');
     if (action.kind === 'add') {
@@ -362,22 +393,19 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       if (!item.mechanics || item.mechanics.kind === 'item' && item.mechanics.value.recipe.form === 'single') item.qty += action.qty;
       else {
         if (item.mechanics.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural') throw new Error('天生武器不能增加实物数量');
-        // 唯一实物仍逐件建档：复制冻结属性和归属，新增件不占用原装备位。
-        const existingIds = new Set(inventory.map(existing => existing.id));
-        for (let index = 0; index < action.qty; index++) {
-          const itemId = `added:${id}:${index}`;
-          if (existingIds.has(itemId)) throw new Error('新增物品身份已存在');
-          const added = { ...clone(item), id: itemId, qty: 1, revision: 1, sourceItemId: item.id };
-          delete added.equippedTo;
-          delete added.history;
-          if (added.mechanics && added.mechanics.kind !== 'item') added.mechanics.value.id = itemId;
-          inventory.push(added);
-        }
+        const added = splitInventoryBatch(item,'added:'+id,action.qty);
+        added.batch = true;
+        delete added.equippedTo;
+        inventory.push(added);
       }
     } else if (action.kind === 'discard') {
-      if (item.equippedTo) throw new Error('先卸下已装备物品，再从库存移除');
+      if (item.equippedTo && !(item.batch && action.qty < item.qty)) throw new Error('先卸下已装备物品，再从库存移除');
       if (!Number.isSafeInteger(action.qty) || action.qty < 1 || action.qty > item.qty) throw new Error('移除数量超出库存');
       item.qty -= action.qty;
+      if (item.equippedTo) {
+        const record = recordById(next,item.equippedTo.unitId);
+        projectEquipment(record,inventory); rewriteRecord(next,record,id);
+      }
     } else if (action.kind === 'define') {
       if (item.mechanics) throw new Error('物品已有物品属性，请使用改造入口');
       // 一次性道具整叠一起设定；装备与佩戴、充能道具逐件设定。
@@ -433,11 +461,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       const owner = item.assignedTo;
       if (item.mechanics?.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural' && targets.some(unitId => owner !== unitId)) throw new Error('天生武器属于单位身体，不能转移');
       if (targets.some(unitId => owner !== unitId)) {
-        if (item.equippedTo) {
-          const record = recordById(next, item.equippedTo.unitId);
-          delete item.equippedTo;
-          projectEquipment(record, inventory); rewriteRecord(next, record, id);
-        }
+        const donor = item.equippedTo ? recordById(next,item.equippedTo.unitId) : undefined;
         for (const [index, unitId] of targets.entries()) {
           if (unitId === owner) continue;
           let target = item;
@@ -445,11 +469,13 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
             const itemId = `transferred:${id}:${index}`;
             if (inventory.some(existing => existing.id === itemId)) throw new Error('转移物品身份已存在');
             item.qty -= action.qty;
-            target = { ...clone(item), id: itemId, qty: action.qty, sourceItemId: item.id };
+            target = splitInventoryBatch(item,itemId,action.qty);
             inventory.push(target);
           }
+          delete target.equippedTo;
           target.assignedTo = unitId;
         }
+        if (donor) { projectEquipment(donor,inventory); rewriteRecord(next,donor,id); }
       }
     } else if (action.kind === 'assign') {
       if (item.mechanics?.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural' && item.assignedTo && item.assignedTo !== action.unitId) throw Error('天生武器属于单位身体，不能交给其他人或放进公共库存');
@@ -464,7 +490,14 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
         if (!record.equipmentManaged || !record.snapshot) throw new Error('请先预览并更新单位规则，再使用配装');
         if (!item.mechanics || !fitsEquipmentSlot(item.mechanics, action.slot)) throw new Error(item.mechanics?.kind === 'item' && item.mechanics.value.recipe.form === 'single' ? '一次性道具不用装备，交给单位后在战斗中使用' : '缺少可装备规格或槽位不匹配');
         if (item.equippedTo) throw new Error('物品已装备，请先卸下');
-        if (action.slot !== 'gear') for (const old of inventory) if (old.equippedTo?.unitId === record.id && old.equippedTo.slot === action.slot) delete old.equippedTo;
+        const qty = action.qty ?? item.qty;
+        if (!Number.isSafeInteger(qty) || qty < 1 || qty > item.qty) throw Error('配发件数超出库存');
+        if (qty < item.qty) {
+          item.qty -= qty;
+          item = splitInventoryBatch(item,'issued:'+id,qty);
+          inventory.push(item);
+        }
+        if (action.slot !== 'gear' && !(item.batch && record.scale === 'company')) for (const old of inventory) if (old.equippedTo?.unitId === record.id && old.equippedTo.slot === action.slot) delete old.equippedTo;
         item.assignedTo = record.id; item.equippedTo = { unitId: record.id, slot: action.slot };
         projectEquipment(record, inventory);
         const reason = equipmentReason(record.snapshot);
@@ -490,6 +523,15 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
           ? unitRecordFromCombatant(target, r, { kind: 'update', sourceId: id }) : updateUnitRecord(r, { hp: target.hp }, traitRegistry(), id) : r);
         item.qty--;
       }
+    }
+  }
+  if ('itemId' in action) {
+    const touched = new Set([save.inventory?.find(i=>i.id===action.itemId)?.assignedTo,
+      inventory.find(i=>i.id===action.itemId)?.assignedTo,...(action.kind==='transfer'?action.unitIds ?? [action.unitId]:[])]);
+    for (const unitId of touched) {
+      const record = next.storage?.find(r=>r.id===unitId);
+      if (!record?.equipmentManaged || !record.snapshot || (record.snapshot.reserveEquipmentLoad ?? 0)===reserveLoad(inventory,record.id)) continue;
+      projectEquipment(record,inventory); rewriteRecord(next,record,id);
     }
   }
   // Keep a fixed-size receipt, not a second copy of the complete edit request.

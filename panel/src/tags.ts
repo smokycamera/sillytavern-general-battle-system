@@ -113,6 +113,7 @@ export type Suggestion =
       weaponLevel?: number;
       /** 副武器（可选）：weapon2="短剑:剑L3"——仅当角色设定确实远近双持时声明 */
       weapon2?: string;
+      equipmentIssues?: Partial<Record<'primary'|'sidearm'|'armor'|'shield',import('./equipment-batches.js').EquipmentIssue[]>>;
       /** weapon2 解析出的显示名 */
       weapon2Name?: string;
       /** weapon2 解析出的武器分类 */

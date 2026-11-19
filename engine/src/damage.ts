@@ -1,3 +1,5 @@
+import { refreshBarrier } from './barrier.js';
+import { availableCopies, crewEquipment, loseIssuedEquipment, protectionGroups } from './equipment-batches.js';
 import { CasualtyRolls } from './small/casualty-rolls.js';
 import { artilleryDirect, artillerySplash, artilleryRetention, BOUNDED_BLAST_MODEL, sprayerSplashAt } from './artillery-model.js';
 import { displayNumber } from './display-number.js';
@@ -127,6 +129,7 @@ export interface AttackResolution {
 }
 
 export interface AttackOpts {
+  equipmentResolved?: boolean;
   macroEnvironment?: boolean; chargeDistance?: number; moved?: boolean; chargeStraight?: boolean; opportunity?: boolean;
   /** R16 油箱爆炸：自动命中、不暴击、不附加命中状态。 */
   autoHit?: boolean;
@@ -256,6 +259,16 @@ function criticalInfo(opts: Omit<AttackOpts,'rng'>, weapon?: Weapon): { minimum:
     forced: !!applies && actual === 'dagger' && opts.defender.conditions.some(c=>c.dur>0&&['stunned','restrained','blinded','disarmed','confused','charmed'].includes(c.id)) };
 }
 export function previewAttack(opts: Omit<AttackOpts, 'rng'>): import('./actions.js').ActionPreview & { hitChance: number; expectedDamage: number; conditionValue?: number } {
+  const groups = !opts.equipmentResolved && protectionGroups(opts.defender);
+  if (groups && needsProtectionView(opts.defender,groups)) {
+    const views = groups.map(g=>({share:g.size/opts.defender.hp,preview:previewAttack({...opts,equipmentResolved:true,
+      defender:projectProtection(opts.defender,g)})}));
+    const result = {...views[0]!.preview};
+    for (const key of ['hitChance','anyHitChance','expectedDamage','damageOnHit'] as const) {
+      if (result[key] !== undefined) result[key]=views.reduce((n,v)=>n+v.share*(v.preview[key]??0),0);
+    }
+    return result;
+  }
   // Repeated AI branches ask for the same complete preview, not just the same
   // sampled losses. Reuse diagnostics too, only inside a synchronous read-only
   // decision. Exact unit/options content (including positions/resources) is kept.
@@ -644,8 +657,9 @@ function outcomeScale(opts: Omit<AttackOpts, 'rng'>, resolved?: ResolvedWeapon):
     const weaponAttack=!opts.abilityDamage||opts.abilityDamage.weaponBased;
     const fallbackWidth=engagementWidth(a,d,ranged,undefined,opts.fieldTags)*Math.max(1,personnel(a)/COHORT_REFERENCE);
     const available=a.body==='vehicle'?personnel(a):Math.min(personnel(a),opts.participants??fallbackWidth);
-    const count=a.scale==='hero'?1:Math.min(available,weaponAttack?targetWidthLimit(d,ranged,opts.rules.targetWidthModel??null):Infinity);
-    const crew=a.scale!=='hero'&&(a.body??'human')==='human'&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&!opts.abilityDamage?.delivery?.startsWith('magic')?weaponCrew(weapon,opts.rules.armsModel):1;
+    const batch=weaponAttack ? a.equipmentBatches?.find(b=>b.id===weapon?.id) : undefined;
+    const count=Math.min(a.scale==='hero'?1:Math.min(available,weaponAttack?targetWidthLimit(d,ranged,opts.rules.targetWidthModel??null):Infinity),batch ? availableCopies(a,batch.id) : Infinity);
+    const crew=!(batch && crewEquipment(a,batch))&&a.scale!=='hero'&&(a.body??'human')==='human'&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&!opts.abilityDamage?.delivery?.startsWith('magic')?weaponCrew(weapon,opts.rules.armsModel):1;
     // 疏散的近战代价是编队只展开一半人数；V21 起个体不再按半数出手（个体没有阵形可散，旧战斗保持原结算）。
     const loose=Math.max(0,count/crew)*(!ranged&&looseFormation(a)&&!(a.scale==='hero'&&isArmsV3(opts.rules.armsModel))?0.5:1);
     // V12: a formation throws one demolition charge per three participants instead of one per member.
@@ -912,6 +926,27 @@ function attackBasis(opts: AttackOpts): AttackBasis {
   if (key !== undefined) opts.previewMemo!.bases.set(key, basis);
   return rememberLast(basis);
 }
+function needsProtectionView(unit: Combatant,groups: ReturnType<typeof protectionGroups>): boolean {
+  if (groups.length !== 1) return groups.length>0;
+  const group = groups[0]!;
+  return group.armor?.id!==unit.armor?.id || group.shield?.id!==unit.shield?.id || group.weapon?.id!==unit.weapon?.id || group.gear?.length!==unit.gear?.length;
+}
+function projectProtection(unit: Combatant,group: ReturnType<typeof protectionGroups>[number]): Combatant {
+  const view = {...unit,weapon:group.weapon,armor:group.armor,shield:group.shield,gear:group.gear};
+  if (group.shield?.id!==unit.shield?.id) {
+    const batch=unit.equipmentBatches?.find(b=>b.id===group.shield?.id);
+    view.shieldDurability=batch?.shieldDurability; view.energyShield=batch?.energyShield;
+  }
+  // The selected members already wear every item in this projection.
+  if (view.equipmentBatches?.some(b=>b.slot==='gear'))
+    view.equipmentBatches=view.equipmentBatches.filter(b=>b.slot!=='gear');
+  const grants = unit.barrier?.grants;
+  if (grants?.some(g=>g.battleLong && !view.gear?.some(item=>item.id===g.sourceId))) {
+    view.barrier = {...unit.barrier!,grants:grants.filter(g=>!g.battleLong || view.gear?.some(item=>item.id===g.sourceId))};
+    refreshBarrier(view);
+  }
+  return view;
+}
 export function resolveAttack(opts: AttackOpts): AttackResolution {
   // Standalone attacks have no battle snapshot. Share one stream across their packets.
   if (opts.rules.casualtyModel && !opts.casualtyRolls && opts.defender.scale !== 'hero' && opts.defender.body !== 'vehicle') {
@@ -936,6 +971,31 @@ export function resolveAttack(opts: AttackOpts): AttackResolution {
         onHitConditions:parts.find(r=>r.onHitConditions?.length)?.onHitConditions};
       if(!opts.previewMemo)result.text=formatResolution(result,opts.defender);return result;
     }
+  }
+  const groups = !opts.equipmentResolved && protectionGroups(opts.defender);
+  if (groups && needsProtectionView(opts.defender,groups)) {
+    const unit=opts.defender;
+    const stacking = unit.barrier?.stacking;
+    let draw=groups.length>1?opts.rng.next()*unit.hp:0;
+    const group=groups.find(g=>(draw-=g.size)<0) ?? groups[groups.length-1]!;
+    const view=projectProtection(unit,group);
+    const hidden=unit.barrier?.grants?.filter(g=>g.battleLong && !group.gear?.some(item=>item.id===g.sourceId)) ?? [];
+    const priorWounded=unit.recoverableWounded ?? 0;
+    const priorHp=unit.hp;
+    const result=resolveAttackPacket({...opts,defender:view,previewMemo:undefined,equipmentResolved:true},false);
+    loseIssuedEquipment(unit,Math.max(0,priorHp+priorWounded-view.hp-(view.recoverableWounded ?? 0)),group.start);
+    unit.hp=view.hp; unit.status=view.status; unit.recoverableWounded=view.recoverableWounded;
+    unit.formation=view.formation; unit.barrier=view.barrier; unit.morale=view.morale;
+    if (group.shield?.id===unit.shield?.id) {
+      unit.energyShield=view.energyShield; unit.shieldDurability=view.shieldDurability;
+    } else {
+      const shield=unit.equipmentBatches?.find(b=>b.id===group.shield?.id);
+      if (shield) { shield.energyShield=view.energyShield; shield.shieldDurability=view.shieldDurability; }
+    }
+    unit.woundedPercentRemainder=view.woundedPercentRemainder;
+    unit.moraleState=view.moraleState; unit.revivalState=view.revivalState;
+    if (hidden.length) { (unit.barrier ??= {remaining:0,duration:1,stacking}).grants=[...unit.barrier?.grants ?? [],...hidden]; refreshBarrier(unit); }
+    return result;
   }
   return resolveAttackPacket(opts, false);
 }

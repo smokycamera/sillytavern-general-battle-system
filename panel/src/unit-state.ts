@@ -1,3 +1,5 @@
+import { projectEquipment } from './inventory-state.js';
+import { settleBatches } from '../../engine/src/equipment-batches.js';
 import { reuniteTransportGroups } from '../../engine/src/small/transport-groups.js';
 import { validatePlatform } from '../../engine/src/platforms.js';
 import { V23_OVERFLOW_D20, prepareSkillModel } from '../../engine/src/index.js';
@@ -881,6 +883,11 @@ export function commitBattleOutcome(opts: {
   const broken = combatants.filter(u => isArmsV2(u.armsModel) && u.shield && u.shieldDurability?.remaining === 0);
   const brokenIds = broken.map(u => u.shield!.id), brokenShieldNotes = broken.map(u => u.name + '的' + (u.shield!.name ?? '盾牌') + '碎了，已移出装备');
   for (const unit of broken) delete unit.shield;
+  const quantities = new Map<string,number>(), fallen = new Set<string>();
+  for (const unit of combatants) if (unit.equipmentBatches) {
+    if (unit.status === 'dead' && !unit.recoverableWounded) fallen.add(unit.id);
+    for (const [id,qty] of settleBatches(unit)) quantities.set(id,qty);
+  }
   for (const unit of combatants) expireTraitSources(unit, 'battles');
   const committed = commitBattleState({
     battleId: opts.battleId,
@@ -888,7 +895,20 @@ export function commitBattleOutcome(opts: {
     roster: opts.roster,
     combatants,
   });
-  return { ...committed, ...xp, inventory: opts.inventory?.filter(i => !brokenIds.includes(i.id)).map(i => clone(i)), brokenShieldNotes };
+  const inventory = opts.inventory?.flatMap(item => {
+    const qty = quantities.get(item.id) ?? item.qty;
+    if (brokenIds.includes(item.id) || quantities.has(item.id) && !qty || item.assignedTo && fallen.has(item.assignedTo)) return [];
+    return [{...clone(item),qty}];
+  });
+  if (inventory) {
+    const changed = new Set(combatants.filter(u=>u.equipmentBatches).map(u=>u.id));
+    for (const record of committed.records) if (changed.has(record.id) && record.equipmentManaged && record.snapshot) {
+      projectEquipment(record,inventory);
+      const index = committed.roster.findIndex(u=>u.id===record.id);
+      if (index>=0) committed.roster[index] = clone(record.snapshot);
+    }
+  }
+  return { ...committed,...xp,inventory,brokenShieldNotes };
 }
 
 export type UnitUpdate = {

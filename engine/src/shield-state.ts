@@ -1,3 +1,4 @@
+import { availableCopies } from './equipment-batches.js';
 import type {BodyKind,Combatant} from './types.js';
 import type {MemberDamagePlan} from './recovery.js';
 import {diceAvg,rebuildDice,type ShieldClass} from './data/weapons.js';
@@ -5,7 +6,7 @@ import {curveAt} from './data/curves.js';
 import {UNIFIED_WOUNDS,powerIndex} from './balance.js';
 import {isArmsV2,isArmsV3} from './arms-model.js';
 
-export type ShieldBearer = Pick<Combatant,'shield'> & Partial<Pick<Combatant,'weapon'|'sidearm'|'armsModel'|'shieldDurability'|'scale'|'hp'|'body'>>;
+export type ShieldBearer = Pick<Combatant,'shield'> & Partial<Pick<Combatant,'weapon'|'sidearm'|'armsModel'|'shieldDurability'|'scale'|'hp'|'body'|'equipmentBatches'|'equipmentPersonnel'|'recoverableWounded'>>;
 export function shieldClass(unit: Pick<Combatant,'shield'>): ShieldClass { return (unit.shield?.recipe?.mechanism ?? 'shield') as ShieldClass; }
 /** 同L标准武器的投影单段原始伤害均值（无训练、无浮动）。 */
 function standardMean(power: number, dmgMult: number, attacks: number): number {
@@ -20,10 +21,14 @@ export function shieldPlatformScale(unit: Pick<Combatant,'shield'> & Partial<Pic
 }
 /** R20 中盾耐久 = n × 同级标准剑单段均值，小盾、大盾按 1 : 2 : 3；W22 旋钮 n。V21 再乘平台倍率。 */
 export const SHIELD_DURABILITY_FACTOR = 4;
+function shieldBearers(unit: ShieldBearer): number {
+  if (!unit.scale || unit.scale==='hero') return 1;
+  return Math.min(unit.hp!,availableCopies({...unit,scale:unit.scale,hp:unit.hp!},unit.shield?.id));
+}
 export function shieldDurabilityMax(unit: ShieldBearer): number {
   if (!unit.shield || shieldClass(unit) === 'energy-shield') return 0;
   const n = { buckler: .5, shield: 1, 'tower-shield': 1.5, 'energy-shield': 0 }[shieldClass(unit)];
-  return SHIELD_DURABILITY_FACTOR * n * standardSwordMean(unit.shield.recipe?.power ?? 3) * (unit.scale && unit.scale !== 'hero' ? unit.hp! : 1) * (isArmsV3(unit.armsModel) ? shieldPlatformScale(unit) : 1);
+  return SHIELD_DURABILITY_FACTOR * n * standardSwordMean(unit.shield.recipe?.power ?? 3) * shieldBearers(unit) * (isArmsV3(unit.armsModel) ? shieldPlatformScale(unit) : 1);
 }
 export function clampShieldDurability(unit: ShieldBearer): void {
   if (unit.shieldDurability) unit.shieldDurability.remaining = Math.min(unit.shieldDurability.remaining, shieldDurabilityMax(unit));
@@ -35,7 +40,7 @@ export const ENERGY_SHIELD_SHARE = .25;
 export const ENERGY_HEAVY_ABSORB = .25;
 /** V21 每份每次激活回充同级单体创伤预算的三成，不随平台放大：舰载小口径也能慢慢打穿舰盾。 */
 export const ENERGY_RECHARGE_SHARE = .3;
-export type EnergyBearer = Pick<Combatant,'shield'|'scale'|'hp'> & Partial<Pick<Combatant,'armsModel'|'energyShield'|'body'>>;
+export type EnergyBearer = Pick<Combatant,'shield'|'scale'|'hp'> & Partial<Pick<Combatant,'armsModel'|'energyShield'|'body'|'equipmentBatches'|'equipmentPersonnel'|'recoverableWounded'>>;
 export function energyShieldActive(unit: EnergyBearer): boolean { return isArmsV2(unit.armsModel) && !!unit.shield && shieldClass(unit) === 'energy-shield'; }
 export function energyShieldShare(power: number): number { return Math.round(ENERGY_SHIELD_SHARE * 2 * Number(standardMean(power, 1.2, 2).toFixed(1))); }
 /** V21 每份容量 = 同级单体创伤预算（与同级屏障、治疗相同）× 平台倍率。 */
@@ -44,7 +49,7 @@ export function energyShieldRecharge(power: number): number { return Math.round(
 /** R15 过载阈值 T = 0.8 × 同L标准剑单段均值。V21 再乘平台倍率。 */
 export function energyOverloadThreshold(power: number): number { return .8 * standardSwordMean(power); }
 export const energyPower = (unit: Pick<Combatant,'shield'>) => unit.shield!.recipe?.power ?? 3;
-const energyShares = (unit: EnergyBearer) => unit.scale === 'hero' ? 1 : unit.hp;
+const energyShares = (unit: EnergyBearer) => shieldBearers(unit);
 /** 一份的容量：V21 按同级预算与平台，旧规则按 R15。 */
 export function energyShareOf(unit: EnergyBearer): number {
   return isArmsV3(unit.armsModel) ? energyShieldPool(energyPower(unit), shieldPlatformScale(unit)) : energyShieldShare(energyPower(unit));

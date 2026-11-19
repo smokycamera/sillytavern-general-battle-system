@@ -156,6 +156,7 @@ export interface Ability {
   itemScaling?: 'member' | 'object';
   /** 编队本次齐用实际消耗的件数；只存在于单次使用的派生行动，不写入存档。 */
   itemDoses?: number;
+  equipmentDoses?: number;
   definitionId?: string;
   sourceId?: string;
   cooldownGroup?: string;
@@ -303,7 +304,19 @@ export interface BarrierState extends BarrierGrant {
   grants?: BarrierGrant[];
 }
 
+export interface EquipmentBatch {
+  id: string;
+  qty: number;
+  slot: import('./items.js').EquipmentSlot;
+  mechanics: import('./items.js').ItemMechanics;
+  reloading?: { turns: number; count: number }[];
+  shieldDurability?: { remaining: number };
+  energyShield?: { remaining: number; overloaded: number };
+}
 export interface Combatant {
+  equipmentBatches?: EquipmentBatch[];
+  reserveEquipmentLoad?: number;
+  equipmentPersonnel?: number;
   /** Battle-local receipt; even entry without a barrier spends this battle's grant. */
   wornBarrierUsed?: true;
   regenerationModel?: import('./regeneration-model.js').RegenerationModel;

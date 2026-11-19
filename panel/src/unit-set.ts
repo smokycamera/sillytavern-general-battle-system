@@ -1,3 +1,4 @@
+import { assignIssue, parseIssue } from './equipment-batches.js';
 import { parsePlatform, validatePlatform } from '../../engine/src/platforms.js';
 import { singleLifeLimit } from '../../engine/src/health-limits.js';
 /** 正文战外绝对赋值。所有修改先在副本校验，装备实物与档案一起提交。 */
@@ -204,7 +205,7 @@ function wantedGear(input: unknown): WantedGear | undefined {
 export const itemKey = (name: string) => name.replace(/\s+/g, '').toLowerCase();
 const bonusKey = (bonuses?: Enhancements) => JSON.stringify(Object.entries(bonuses ?? {}).filter(([, value]) => value).sort(([a], [b]) => a.localeCompare(b)));
 /** 只比较正文写出的部分；相同时直接换上这件，不重铸、不丢附魔等写不出的属性。 */
-function sameGear(mechanics: ItemMechanics | undefined, spec: ItemSpecification | undefined): boolean {
+export function sameGear(mechanics: ItemMechanics | undefined, spec: ItemSpecification | undefined): boolean {
   if (!mechanics || !spec || mechanics.kind === 'item' || spec.kind === 'item' || mechanics.kind !== spec.kind) return false;
   const recipe = mechanics.value.recipe;
   const mechanism = spec.kind === 'weapon' ? spec.mechanism : spec.kind === 'armor' ? 'armor:' + spec.tier : spec.mechanism ?? 'shield';
@@ -217,6 +218,7 @@ function sameGear(mechanics: ItemMechanics | undefined, spec: ItemSpecification 
 export function unitSetReferencesGear(field: string, input: unknown, item: InventoryItem, realId: (id: string) => string, reforgedNames?: ReadonlyMap<string, string>): boolean {
   const kind = ['weapon', 'weapon2', 'sidearm'].includes(field) ? 'weapon' : field;
   if (item.mechanics?.kind !== kind || !['weapon', 'armor', 'shield'].includes(kind)) return false;
+  if (typeof input === 'string' && input.includes('×')) return false;
   const wanted = wantedGear(input);
   if (!wanted || !wanted.spec && !wanted.referenceOnly || wanted.spec && wanted.spec.kind !== kind) return false;
   return wanted.name ? item.id === realId(wanted.name) || itemKey(item.name) === itemKey(wanted.name)
@@ -466,6 +468,15 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
     const equipped = next.inventory!.find(i => i.equippedTo?.unitId===id && i.equippedTo.slot===slot);
     const input = Object.hasOwn(data,key) ? data[key] : equipped?.id;
     // 内部锁定使用完整实物id（可能含冒号），先识别引用，不能把id当作“名称:规格”拆开。
+    const entries = parseIssue(input,slot,{...data,body:unit.body});
+    if (entries) {
+      assignIssue(next.inventory!,id,unit.side,slot,entries,sourceId);
+      continue;
+    }
+    if (Object.hasOwn(data,key)) {
+      const others = next.inventory!.filter(i => i !== equipped && i.equippedTo?.unitId === id && i.equippedTo.slot === slot);
+      for (const item of others) delete item.equippedTo;
+    }
     const referenced = typeof input === 'string' ? next.inventory!.find(item => item.id === input) : undefined;
     const wanted: WantedGear | undefined = referenced ? { name: String(input), referenceOnly: true, values: false } : wantedGear(input);
     if (wanted?.name) wanted.itemId = ids.realId(wanted.name);

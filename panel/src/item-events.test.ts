@@ -51,7 +51,7 @@ it('一次性道具整叠改造保留编号、数量、归属和来源，补数�
   expect(() => prepareInventoryTransaction(next, { kind: 'reforge', id: 'bad-form', expectedRevision: next.factRevision!, itemId: 'potion', spec: { kind: 'item', form: 'charged', power: 5, active: 'generic:buff:heal' } })).toThrow(/形态|互相改造/);
 });
 
-it('补充佩戴、充能和武器时逐件保存冻结属性，保持原装备位且不重掷武器数值', () => {
+it('补充佩戴、充能和武器时按批保存冻结属性，保持原装备位且不重掷武器数值', () => {
   let save: InventorySave = initial();
   for (const form of ['worn', 'charged'] as const) {
     save.inventory!.push({ ...createInventoryItem(form, form, form === 'worn' ? { kind: 'item', form, power: 3, bonuses: { defense: 2 } } : { kind: 'item', form, power: 3, active: 'generic:buff:heal' }, form), assignedTo: 'owner', equippedTo: { unitId: 'owner', slot: 'gear' } });
@@ -62,8 +62,8 @@ it('补充佩戴、充能和武器时逐件保存冻结属性，保持原装备�
     const old = structuredClone(save.inventory!.find(item => item.id === itemId)!);
     save = prepareInventoryTransaction(save, { kind: 'add', id: `copy-${itemId}`, expectedRevision: save.factRevision!, itemId, qty: 2 });
     const copies = save.inventory!.filter(item => item.sourceItemId === itemId);
-    expect(copies).toHaveLength(2);
-    expect(copies.every(item => item.qty === 1 && item.assignedTo === 'owner' && !item.equippedTo)).toBe(true);
+    expect(copies).toHaveLength(1);
+    expect(copies.every(item => item.qty === 2 && item.assignedTo === 'owner' && !item.equippedTo)).toBe(true);
     for (const copy of copies) expect(copy.mechanics?.kind === 'weapon' ? { ...copy.mechanics, value: { ...copy.mechanics.value, id: old.id } } : copy.mechanics).toEqual(old.mechanics);
     expect(save.inventory!.find(item => item.id === itemId)).toEqual(old);
   }

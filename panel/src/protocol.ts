@@ -1,3 +1,4 @@
+import { parseIssue, equipmentFields } from './equipment-batches.js';
 import { parsePlatform, validatePlatform } from '../../engine/src/platforms.js';
 import { WEAPON_CLASSES } from '../../engine/src/data/weapons.js';
 import { parseEnhancementSuffix, enhancementLabel, type Enhancements, type BonusKind } from '../../engine/src/enhancements.js';
@@ -456,6 +457,19 @@ function naturalArmorSpec(armor: string, body?: string): { armor: string; writte
 }
 
 function validatedEvent(kind: string, attrs: Record<string, string>, warnings: string[]): Suggestion {
+  if (kind === 'spawn') {
+    const issues: NonNullable<Extract<Suggestion,{kind:'spawn'}>['equipmentIssues']> = {};
+    const first = {...attrs};
+    for (const field of ['weapon','weapon2','armor','shield'] as const) {
+      const entries = parseIssue(attrs[field],equipmentFields[field],attrs);
+      if (entries) { issues[equipmentFields[field]] = entries; first[field] = entries[0]!.text; }
+    }
+    if (Object.keys(issues).length) {
+      const event = validatedEvent(kind,first,warnings);
+      if (event.kind !== 'spawn') throw Error('配装单位无法建档');
+      return {...event, equipmentIssues:issues, raw:serializeEvent(kind,attrs)};
+    }
+  }
   if (kind === 'effect') {
     if (!attrs.id?.trim()) throw Error('effect需要已有单位id');
     const effect = parseEffectAttributes(attrs);

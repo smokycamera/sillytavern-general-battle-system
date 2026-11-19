@@ -1,3 +1,4 @@
+import { assignIssue } from './equipment-batches.js';
 import { prepareTraitLevelModel } from '../../engine/src/trait-level-model.js';
 import { prepareCombatModel } from '../../engine/src/combat-model.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
@@ -362,6 +363,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   assertNarrativeCapacity(proposal.events);
   const replacesRoster = hasNarrativeDeployment(proposal.events);
   let next = structuredClone(save);
+  next.inventory ??= [];
   // 只清候选副本的出场选择，档案/装备/战果保持；校验或保存失败仍保留旧事实。
   if (replacesRoster) next.rosterIds = [];
   // 先占用正文写给新单位的空闲编号，本批其他新实例不会抢到它。
@@ -390,7 +392,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     for (const [partIndex, part] of parts.entries()) {
       const item = next.inventory!.find(item => item.id === part.itemId)!;
       const operation = proposal.id + ':' + index + (partIndex ? ':part:' + partIndex : '');
-      if (item.equippedTo) next = prepareInventoryTransaction(next, { kind: 'unequip', id: 'take-unequip:' + operation, expectedRevision: next.factRevision ?? 0, ...item.equippedTo, itemId: item.id });
+      if (item.equippedTo && !(item.batch && part.qty < item.qty)) next = prepareInventoryTransaction(next, { kind: 'unequip', id: 'take-unequip:' + operation, expectedRevision: next.factRevision ?? 0, ...item.equippedTo, itemId: item.id });
       next = prepareInventoryTransaction(next, { kind: 'discard', id: 'take:' + operation, expectedRevision: next.factRevision ?? 0, ...part });
     }
   };
@@ -417,18 +419,12 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind !== 'add' || event.item === undefined) continue;
     const id = `loot-${proposal.id}-${index}`;
-    if (event.to) for (let i = 0; i < (event.spec && !(event.spec.kind === 'item' && event.spec.form === 'single') ? event.qty : 1); i++) {
-      directGives.set(event.spec && !(event.spec.kind === 'item' && event.spec.form === 'single') && event.qty !== 1 ? `${id}-${i}` : id, event.to);
-    }
-    if (!event.spec) { next.inventory = [...(next.inventory ?? []), { id, name: event.item, qty: event.qty, lootType: event.lootType, note: event.note }]; given.add(id); handed.add(id); }
-    else if (event.spec.kind === 'item' && event.spec.form === 'single') { next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(id, event.item, event.spec, id, event.qty), note: event.note }]; handed.add(id); }
-    else {
-      for (let i = 0; i < event.qty; i++) {
-        const itemId = event.qty === 1 ? id : `${id}-${i}`;
-        next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(itemId, event.item, event.spec, itemId), note: event.note }];
-        given.add(itemId); handed.add(itemId);
-      }
-    }
+    if (event.to) directGives.set(id,event.to);
+    const item = event.spec ? createInventoryItem(id,event.item,event.spec,id,event.qty)
+      : {id,name:event.item,qty:event.qty,lootType:event.lootType};
+    next.inventory!.push({...item,note:event.note});
+    if (!event.spec || event.spec.kind !== 'item' || event.spec.form !== 'single') given.add(id);
+    handed.add(id);
   }
   next = applyUnitChanges(next, proposal.events.filter((event) => !isNew(event)), new Map(), proposal.id, registry, unitSetContext);
   const reforged = new Set<string>(), learned = new Set<string>();
@@ -461,6 +457,13 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
           if (!event.duration) throw Error('spawn effects缺少期限');
           grantStoryEffects(unit, event.effects, event.duration, `${proposal.id}:${index}:${i}`);
         }
+        if (event.equipmentIssues) {
+          for (const slot of ['primary','sidearm','armor','shield'] as const) {
+            const entries = event.equipmentIssues[slot];
+            if (entries) assignIssue(next.inventory!,id,unit.side,slot,entries,proposal.id+':'+index,false);
+          }
+          spawnedGear = true;
+        }
         records.push(unitRecordFromCombatant(unit, undefined, { sourceId: proposal.id }));
         if (unit.hp > 0 && !event.archiveOnly) roster.push(materializeUnitRecord(records.at(-1)!, registry));
         // 随身道具每张卡各一套，归这张卡；佩戴、充能道具装上（编队一件即整卡配发），一次性道具开战时随身携带。
@@ -468,12 +471,8 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
           const itemId = `spawn-item-${proposal.id}-${index}-${i}-${n}`;
           if (!entry.spec) { next.inventory = [...(next.inventory ?? []), { id: itemId, name: entry.name, qty: entry.qty, lootType: 'misc', assignedTo: id }]; continue; }
           if (entry.spec.form === 'single') { next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(itemId, entry.name, entry.spec, itemId, entry.qty), assignedTo: id }]; continue; }
-          const pieces = unit.scale === 'hero' ? entry.qty : 1;
-          if (pieces < entry.qty && i === 0) notices.push(`${event.name}是编队，佩戴、充能道具一件就是整张单位卡的配发，「${entry.name}」按每卡1件建档`);
-          for (let piece = 0; piece < pieces; piece++) {
-            const pieceId = pieces === 1 ? itemId : `${itemId}-${piece}`;
-            next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(pieceId, entry.name, entry.spec, pieceId), assignedTo: id, equippedTo: { unitId: id, slot: 'gear' } }];
-          }
+          next.inventory!.push({...createInventoryItem(itemId,entry.name,entry.spec,proposal.id+':'+index+':'+n,entry.qty),
+            batch:true, assignedTo:id, equippedTo:{unitId:id,slot:'gear'}});
           spawnedGear = true;
         }
       }

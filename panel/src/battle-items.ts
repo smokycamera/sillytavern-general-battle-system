@@ -53,7 +53,9 @@ export function prepareBattleItemWrite(previous: InventorySave, next: InventoryS
       || JSON.stringify(item.mechanics) !== JSON.stringify(entry.item.mechanics)) throw new Error('战内物品与库存来源不一致');
     const available = before?.left ?? entry.item.quantity, spent = available - entry.left;
     if (item.qty !== available || spent < 0 || spent > item.qty) throw new Error('物品数量不能恢复或超额消耗');
-    output.inventory!.find((i) => i.id === id)!.qty -= spent;
+    const remaining = output.inventory!.find(i=>i.id===id);
+    if (remaining) remaining.qty -= spent;
+    else if (!next.committedOutcomeIds?.includes(next.battle!.kind+':'+String(next.battle!.snap.seed))) throw Error('进行中战斗不能移除携行物品');
   }
   return output;
 }

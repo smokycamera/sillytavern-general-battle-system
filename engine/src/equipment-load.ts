@@ -1,9 +1,10 @@
+import { batchCount } from './equipment-batches.js';
 import { gradedNumbers } from './numeric-model.js';
 import { revisedLoad, REVISED_HUMAN_CAPACITY, VEHICLE_CAPACITY } from './load-model.js';
 import { isArmsV2 } from './arms-model.js';
 import { weaponCrew } from './weapon-crew.js';
 import type { Combatant, Weapon } from './types.js';
-export type EquippedLoad = Pick<Combatant, 'weapon' | 'sidearm' | 'armor' | 'shield' | 'accessories'> & Partial<Pick<Combatant, 'rulesVersion' | 'traits' | 'traitSources' | 'gear' | 'body' | 'scale' | 'armsModel' | 'loadModel'>>;
+export type EquippedLoad = Pick<Combatant, 'weapon' | 'sidearm' | 'armor' | 'shield' | 'accessories'> & Partial<Pick<Combatant, 'reserveEquipmentLoad' | 'equipmentBatches' | 'equipmentPersonnel' | 'hp' | 'recoverableWounded' | 'rulesVersion' | 'traits' | 'traitSources' | 'gear' | 'body' | 'scale' | 'armsModel' | 'loadModel'>>;
 /** 天生护甲（炼体、兽皮、鳞片、甲壳）：护甲就是身体，只看本身特质与仍有效的来源，装备授予不算。 */
 export function hasNaturalArmor(unit: Partial<Pick<Combatant, 'rulesVersion' | 'traits' | 'traitSources'>>): boolean {
   return unit.rulesVersion === 'v2' && (!!unit.traits?.includes('natural-armor') || !!unit.traitSources?.some((s) => !s.revoked && s.kind !== 'equipment'
@@ -14,20 +15,33 @@ export function weaponLoadCrew(unit: EquippedLoad, weapon?: Weapon): number {
 }
 /** Body armor is individual; V29 human formations share crew-served primary/secondary weapon loads. */
 export function equipmentLoad(unit: EquippedLoad): number {
+  if ((unit.equipmentBatches?.length || unit.reserveEquipmentLoad) && unit.hp !== undefined && unit.scale) {
+    const issued = new Set(unit.equipmentBatches?.map(b=>b.id));
+    const people = unit.scale === 'hero' ? 1 : unit.hp;
+    const legacy = [unit.weapon,unit.sidearm,hasNaturalArmor(unit)?undefined:unit.armor,unit.shield];
+    let total = legacy.reduce((n,item)=>n+(item && !issued.has(item.id) ? people*(item.load??0) : 0),0);
+    for (const batch of unit.equipmentBatches ?? []) {
+      const item = batch.mechanics;
+      if (item.kind === 'item' || item.kind === 'armor' && hasNaturalArmor(unit)) continue;
+      total += (item.value.load ?? 0)*batchCount({...unit,scale:unit.scale,hp:unit.hp},batch,true);
+    }
+    return total + (unit.reserveEquipmentLoad ?? 0);
+  }
   return (unit.weapon?.load ?? 0) / weaponLoadCrew(unit, unit.weapon) + (unit.sidearm?.load ?? 0) / weaponLoadCrew(unit, unit.sidearm) + (hasNaturalArmor(unit) ? 0 : unit.armor?.load ?? 0) + (unit.shield?.load ?? 0)
     + Object.values(unit.accessories ?? {}).reduce((sum, item) => sum + (item?.load ?? 0), 0) + (unit.gear ?? []).reduce((sum, item) => sum + item.load, 0);
 }
 /** 实时从实际配装推导，卸装/改变身体后不残留状态，也不改写基础属性。 */
 export function humanEncumbered(unit: EquippedLoad & Pick<Combatant, 'body' | 'rulesVersion'>): boolean {
-  return unit.rulesVersion === 'v2' && (unit.body ?? 'human') === 'human' && equipmentLoad(unit) >= 12;
+  return unit.rulesVersion === 'v2' && (unit.body ?? 'human') === 'human' && equipmentLoad(unit) >= 12 * ((unit.equipmentBatches?.length || unit.reserveEquipmentLoad) && unit.scale !== 'hero' ? Math.max(1,unit.hp ?? 1) : 1);
 }
 export type BurdenUnit = EquippedLoad & Pick<Combatant,'body'|'rulesVersion'> & Partial<Pick<Combatant,'level'|'armsModel'|'numericModel'|'loadModel'>>;
 export const HUMAN_CAPACITY = [5,8,9,12,14,18,24,32,44,60] as const;
-export function equipmentCapacity(unit: Pick<Combatant,'body'|'level'> & Partial<Pick<Combatant,'numericModel'|'loadModel'>>): number {
-  if (revisedLoad(unit)) return unit.body === 'vehicle' ? VEHICLE_CAPACITY[unit.level - 1]!
-    : REVISED_HUMAN_CAPACITY[unit.level - 1]! * (unit.body === 'giant' ? 2 : unit.body === 'large' ? 1.5 : 1);
-  if (gradedNumbers(unit) && unit.body !== 'vehicle') return HUMAN_CAPACITY[unit.level - 1]! * (unit.body === 'giant' ? 2 : unit.body === 'large' ? 1.4 : 1);
-  return unit.body === 'vehicle' ? 24 : {human:10,large:14,giant:20,vehicle:24}[unit.body ?? 'human'] + Math.floor(.8*unit.level);
+export function equipmentCapacity(unit: Pick<Combatant,'body'|'level'> & Partial<Pick<Combatant,'numericModel'|'loadModel'|'hp'|'scale'|'equipmentBatches'|'reserveEquipmentLoad'>>): number {
+  const carriers = (unit.equipmentBatches?.length || unit.reserveEquipmentLoad) && unit.scale !== 'hero' ? Math.max(1,unit.hp ?? 1) : 1;
+  if (revisedLoad(unit)) return carriers * (unit.body === 'vehicle' ? VEHICLE_CAPACITY[unit.level - 1]!
+    : REVISED_HUMAN_CAPACITY[unit.level - 1]! * (unit.body === 'giant' ? 2 : unit.body === 'large' ? 1.5 : 1));
+  if (gradedNumbers(unit) && unit.body !== 'vehicle') return carriers * HUMAN_CAPACITY[unit.level - 1]! * (unit.body === 'giant' ? 2 : unit.body === 'large' ? 1.4 : 1);
+  return carriers * (unit.body === 'vehicle' ? 24 : {human:10,large:14,giant:20,vehicle:24}[unit.body ?? 'human'] + Math.floor(.8*unit.level));
 }
 export function equipmentBurden(unit: BurdenUnit): number {
   if (!isArmsV2(unit.armsModel) && !revisedLoad(unit)) return Number(humanEncumbered(unit));

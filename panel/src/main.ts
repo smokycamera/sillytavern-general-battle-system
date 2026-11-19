@@ -1,3 +1,4 @@
+import { optionWeaponMode, type WeaponMode } from '../../engine/src/equipment-batches.js';
 import { unitModifierSummary } from './numeric-description.js';
 import { equipmentCapacity } from '../../engine/src/equipment-load.js';
 import { displayNumber } from '../../engine/src/display-number.js';
@@ -6,7 +7,7 @@ import { diceAvg } from '../../engine/src/data/weapons.js';
 import { classMigrationCandidates } from './arms-v2.js';
 import { classMismatchHint } from '../../engine/src/data/weapons.js';
 import { prepareTraitLevelModel } from '../../engine/src/trait-level-model.js';
-import { abilityUsed } from '../../engine/src/ability-state.js';
+import { abilityUsed, abilityUseLimit } from '../../engine/src/ability-state.js';
 import { McpPanelBridge } from './mcp-bridge.js';
 import { MCP_ENABLED } from './mcp-flag.js';
 import { McpGameApi, executeSmallGameAction, type GameAction } from './mcp-game.js';
@@ -1933,6 +1934,7 @@ function renderSmall(): string {
            <button class="primary" data-action="small-attack" ${selectedWeaponTarget?.enabled ? '' : 'disabled'} title="${esc(selectedWeaponTarget?.reason ?? '使用主武器攻击所选目标')}">主武器·${esc(act?.weapon?.name ?? '攻击')}</button>
            ${act?.sidearm ? `<button data-action="small-sidearm" ${selectedSidearmTarget?.enabled ? '' : 'disabled'} title="${esc(selectedSidearmTarget?.reason ?? '明确切换副武器攻击所选目标')}">副武器·${esc(act.sidearm.name)}</button>` : ''}
            <button data-action="small-charge" ${chargeOption?.enabled ? '' : 'disabled'} title="${esc(chargeOption?.reason ?? '消耗移动与主行动：贴至目标并造成攻击伤害')}">冲锋</button>
+          ${actionOptions.filter(o=>o.kind==='weapon' && o.id.startsWith('batch:')).map(o=>`<button data-action="small-batch-attack" data-id="${esc(o.id)}" ${o.targets?.some(t=>t.targetId===selectedTargetId && t.enabled)?'':'disabled'}>${esc(o.label)}</button>`).join(' ')}
           ${abilityBtns}
           ${rideControls(b,act)}
         </div>
@@ -2056,7 +2058,7 @@ function renderAbilityDialog(): string {
   const moralePreview = effectPreview?.moraleAfter === undefined ? '' : `<div class="morale-preview">预计有效士气 ${displayNumber(effectPreview.moraleBefore)} → ${displayNumber(effectPreview.moraleAfter)}${effectPreview.rallyChance !== undefined ? '，基础重整成功率' + Math.round(effectPreview.rallyChance * 100) + '%，仍需合法空位' : '，惊退风险' + Math.round((effectPreview.breakChance ?? 0) * 100) + '%'}</div>`;
   const recoveryPreview = healingPreview === undefined ? '' : `<div class="recovery-preview">预计恢复${recoveryTarget?.scale === 'hero' ? '生命' : '可救伤兵'} ${displayNumber(healingPreview)}${recoveryTarget?.scale !== 'hero' ? '，不会补回其余缺员' : ''}</div>`;
   const confirmation = massV2 ? '编入本轮主任务' : '确认释放';
-  const uses = ability.itemSourceId ? '次数受携行余量限制' : ability.usesPerBattle === undefined ? '不限次数' : `剩余 ${Math.max(0, ability.usesPerBattle - abilityUsed(actor,ability))}/${ability.usesPerBattle}`;
+  const uses = ability.itemSourceId ? '次数受携行余量限制' : ability.usesPerBattle === undefined ? '不限次数' : `剩余 ${Math.max(0, abilityUseLimit(actor,ability) - abilityUsed(actor,ability))}/${abilityUseLimit(actor,ability)}`;
   const rangeSpec = smallOption?.range ?? ability.range;
   const range = rangeSpec
     ? rangeSpec.metric === 'global' ? '全战场' : rangeSpec.metric === 'self' ? '自身' : `${rangeSpec.min}~${rangeSpec.max} ${massV2 ? '阵距' : '格'}`
@@ -2135,7 +2137,7 @@ function renderMass(): string {
       const skillBtns = `<span>${skillSources.flatMap((source) => battleAbilities(source).map((a) => {
             const st = source.abilityState.find((s) => s.abilityId === (a.cooldownGroup ?? a.id));
             const cd = st?.cdLeft ?? 0;
-            const usedOut = a.usesPerBattle !== undefined && abilityUsed(source,a) >= a.usesPerBattle;
+            const usedOut = a.usesPerBattle !== undefined && abilityUsed(source,a) >= abilityUseLimit(source,a);
             const reason = v2 ? abilityUsabilityReason(source, a) ?? (existing ? '所属编队已有主任务，请先撤回' : undefined) : cd > 0 || usedOut ? '冷却或次数耗尽' : undefined;
             return `<button data-action="mass-ability" data-unit="${esc(source.id)}" data-id="${esc(a.id)}" ${reason ? 'disabled' : ''} title="${esc(reason ?? a.desc ?? '')}">${source.id !== u.id ? esc(source.name) + ' · ' : ''}${esc(a.name)}${cd > 0 ? `⏱${cd}` : ''}</button>`;
           })).join('')}</span>`;
@@ -3370,7 +3372,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     const mode = el.dataset.mode!; const target = el.dataset.target!;
     if (mode === 'flight:takeoff' || mode === 'flight:land') { b.changeFlight(actorId,mode === 'flight:takeoff'); tacticalView.mode='move'; }
     else if (mode === 'retreat') { b.retreat(actorId); tacticalView.mode='move'; }
-    else if (mode === 'weapon' || mode === 'weapon:sidearm') b.attack(actorId, target, { weaponMode: mode === 'weapon' ? 'primary' : 'sidearm' });
+    else if (mode === 'weapon' || mode === 'weapon:sidearm' || mode.startsWith('batch:')) b.attack(actorId, target, { weaponMode: optionWeaponMode(mode) });
     else if (mode === 'charge') b.attack(actorId, target, { charge: true });
     else {
       const abilityId = mode.startsWith('ability:') ? mode.slice(8) : mode;
@@ -3381,7 +3383,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   },
   'grid-watch': () => { state.small!.setOverwatch(state.small!.active!.id); },
   'grid-haste': () => { const b = state.small!, id = b.active!.id; b.selectHaste(id, !b.hasteSelected.has(id)); },
-  'grid-reload': (el) => { state.small!.reloadWeapon(state.small!.active!.id, el.dataset.sidearm === 'true'); },
+  'grid-reload': (el) => { state.small!.reloadWeapon(state.small!.active!.id, el.dataset.weaponMode as WeaponMode); },
   'trait-formation-choice': (el) => {
     const battle = currentBattle(); if (!battle || !el.dataset.unit || !['loose','closed'].includes(el.dataset.choice ?? '')) return;
     const result = battle.chooseLooseFormation(el.dataset.unit, el.dataset.choice as 'loose' | 'closed');
@@ -3771,6 +3773,11 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     const id = b.active.id;
     b.attack(id, val('small-target'), { charge: true });
     (await afterSmallAction());
+  },
+  'small-batch-attack': async el => {
+    const battle = state.small!;
+    battle.attack(battle.active!.id,val('small-target'),{weaponMode:optionWeaponMode(el.dataset.id!)});
+    await afterSmallAction();
   },
   'small-ability': (el) => {
     const b = state.small!;

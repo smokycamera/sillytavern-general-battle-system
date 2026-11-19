@@ -1,3 +1,4 @@
+import { batchWeapons, weaponModeFor, optionWeaponMode, type WeaponMode } from '../../engine/src/equipment-batches.js';
 import { SmallBattle, MassBattle, type Combatant, type Order, type Side } from '../../engine/src/index.js';
 import { controlPolicy } from '../../engine/src/battle-control.js';
 import { FORMATION_NODES, FORMATION_EDGES, formationNode } from '../../engine/src/mass/formation.js';
@@ -145,7 +146,7 @@ export function updateCommandMemory(b: Battle, memory: CommandMemory, side: Side
 
 export function commanderTools(prompts: CommandPrompts, mode: 'small' | 'mass' | 'intents' = 'small'): CommandTool[] {
   const step = { type: 'object', additionalProperties: false, required: ['type'], properties: { type: { type: 'string' }, targetId: { type: 'string' },
-    cell: { type: 'integer', minimum: 0 }, weaponMode: { type: 'string', enum: ['primary', 'sidearm'] }, abilityId: { type: 'string' } } };
+    cell: { type: 'integer', minimum: 0 }, weaponMode: { type: 'string' }, abilityId: { type: 'string' } } };
   const schemas: Partial<Record<CommanderToolName, Record<string, unknown>>> = {
     diplomacy: { mode: { type: 'string', enum: ['surrender', 'withdraw', 'accept', 'reject'] }, target: { type: 'string' }, id: { type: 'integer', minimum: 1 }, text: { type: 'string', maxLength: 1000 } },
     commander_map: { cells: { type: 'array', items: { type: 'integer', minimum: 0 } } },
@@ -222,7 +223,7 @@ export function smallCommandChoices(b: SmallBattle, actorId: string): CommandCho
     }
     for (const option of b.getActionOptions(actorId)) {
       if (!option.enabled || option.kind === 'move' && b.battlefield || option.kind === 'ability' && !battleAbilities(actor).some(a => a.id === option.id)) continue;
-      const action: GameAction = option.kind === 'weapon' ? { type: 'attack', weaponMode: option.id === 'weapon:sidearm' ? 'sidearm' : 'primary' }
+      const action: GameAction = option.kind === 'weapon' ? { type: 'attack', weaponMode: optionWeaponMode(option.id) }
         : option.kind === 'ability' ? { type: 'ability', abilityId: option.id }
         : option.kind === 'move' ? { type: 'move', direction: option.id as 'advance' | 'withdraw' }
         : { type: option.kind === 'end-turn' ? 'end_turn' : option.kind };
@@ -238,15 +239,15 @@ export function smallCommandChoices(b: SmallBattle, actorId: string): CommandCho
       for (let cell = 0; cell < seen.length; cell++) if (seen[cell]) {
         if (!b.gateReason(actorId, cell)) add('开关门', { type: 'gate', cell });
         if (!b.climbReason(actorId, cell)) add('攀登', { type: 'climb', cell });
-        for (const mode of ['primary', 'sidearm', ...battleAbilities(actor).map(a => a.id)]) {
+        for (const mode of [...batchWeapons(actor).map(w=>weaponModeFor(actor,w)), ...battleAbilities(actor).map(a => 'ability:'+a.id)]) {
           if (!b.structurePreview(actorId, cell, mode).reason) add('破坏结构', { type: 'structure', cell,
-            ...(mode === 'primary' || mode === 'sidearm' ? { weaponMode: mode } : { abilityId: mode }) });
+            ...(!mode.startsWith('ability:') ? { weaponMode: mode as WeaponMode } : { abilityId: mode }) });
         }
       }
       if (!b.overwatchReason(actorId)) add('警戒', { type: 'overwatch' });
       for (const target of b.visibleCombatants(actor.side)) if (!b.suppressReason(actorId, target.id)) add('压制', { type: 'suppress', targetId: target.id });
     }
-    for (const weaponMode of ['primary', 'sidearm'] as const) if (!b.reloadReason(actorId, weaponMode === 'sidearm')) add('主动装填', { type: 'reload', weaponMode });
+    for (const weaponMode of batchWeapons(actor).map(w=>weaponModeFor(actor,w))) if (!b.reloadReason(actorId,weaponMode)) add('主动装填', { type: 'reload', weaponMode });
     if (!b.flightReason(actorId, !actor.airborne)) add(actor.airborne ? '降落' : '升空', { type: actor.airborne ? 'land' : 'takeoff' });
     if (b.hasteAvailable(actorId) && !b.hasteSelected.has(actorId)) add('使用加速动作', { type: 'haste', enabled: true });
     return choices;
@@ -269,7 +270,7 @@ function executeSmall(b: SmallBattle, actorId: string, a: GameAction): void {
     case 'ability': { const result = b.useAbility(actorId, a.abilityId!, a.targetId); if (!result.ok) throw Error(result.reason); break; }
     case 'brace': b.brace(actorId); break;
     case 'overwatch': b.setOverwatch(actorId); break;
-    case 'reload': b.reloadWeapon(actorId, a.weaponMode === 'sidearm'); break;
+    case 'reload': b.reloadWeapon(actorId,a.weaponMode as WeaponMode | undefined); break;
     case 'suppress': b.suppress(actorId, target); break;
     case 'retreat': b.retreat(actorId); if (!b.battlefield) b.endTurn(); break;
     case 'takeoff': b.changeFlight(actorId, true); break;
@@ -287,7 +288,7 @@ function commandSteps(value: unknown): CommandStep[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > 7 || value.some(step => !step || typeof step !== 'object' || typeof step.type !== 'string')) throw Error('then格式无效');
   return value.map(({ type, targetId, cell, weaponMode, abilityId, count }) => ({ type, ...(Number.isSafeInteger(count) ? {count} : {}), ...(typeof targetId === 'string' ? { targetId } : {}),
-    ...(Number.isSafeInteger(cell) ? { cell } : {}), ...(weaponMode === 'primary' || weaponMode === 'sidearm' ? { weaponMode } : {}), ...(typeof abilityId === 'string' ? { abilityId } : {}) }));
+    ...(Number.isSafeInteger(cell) ? { cell } : {}), ...(weaponMode === 'primary' || weaponMode === 'sidearm' || typeof weaponMode === 'string' && weaponMode.startsWith('batch:') ? { weaponMode:weaponMode as WeaponMode } : {}), ...(typeof abilityId === 'string' ? { abilityId } : {}) }));
 }
 /** A step must identify one target or cell; only the weapon of an otherwise identical attack may stay implicit (primary first). */
 function stepChoice(choices: CommandChoice[], step: CommandStep): CommandChoice | undefined {
