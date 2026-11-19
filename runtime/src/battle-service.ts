@@ -277,6 +277,7 @@ export class BattleService {
       const changed = factsOf(prepared) !== factsOf(before);
       prepared = { ...before, ...prepared, promptSettings: before.promptSettings, proposals: before.proposals ?? [], storySync: before.storySync ?? false,
         committedNarrativeSources: before.committedNarrativeSources, deletedNarrativeReceipts: before.deletedNarrativeReceipts,
+        unitMigrationWarnings: before.unitMigrationWarnings, unitMigrationBackup: before.unitMigrationBackup,
         inventoryOperations: before.inventoryOperations, classMigration: before.classMigration, inventoryMigrationBackup: before.inventoryMigrationBackup, migrationBackups: before.migrationBackups,
         factRevision: (before.factRevision ?? 0) + Number(changed) };
       return prepared;

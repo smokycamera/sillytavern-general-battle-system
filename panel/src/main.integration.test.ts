@@ -125,6 +125,10 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   expect(button('migration-accept')).not.toBeNull();
   button('migration-accept').click();await idle();
   expect(f.service.snapshot().storage![0]!.snapshot!.damageModel).toBe('wounds-v2');
+  nav('units');
+  expect(f.service.snapshot().unitMigrationWarnings).not.toHaveLength(0);
+  expect(document.querySelector('[data-role="migration-review"]')).toBeNull();
+  expect(document.body.textContent).not.toContain('单位数据未能完整迁移');
   // Exhaust the layout step's own budget, preserving the decision and falling back within this same start.
   const preparationStart=request.mock.calls.length;
   breakLayout=LAYOUT_TRIES;

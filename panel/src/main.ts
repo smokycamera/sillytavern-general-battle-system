@@ -312,8 +312,6 @@ interface AppState {
   /** 已提交 XP 的稳定 battle id；比单个布尔值可靠，可阻止恢复/重复点击造成双倍入账。 */
   committedOutcomeIds: string[];
   /** 旧存档逐条迁移的可见告警与未改写原始备份。 */
-  unitMigrationWarnings: string[];
-  unitMigrationBackup: unknown[];
 }
 
 const state: AppState = {
@@ -360,8 +358,6 @@ const state: AppState = {
   injectEnabled: false,
   abilityDialog: null,
   committedOutcomeIds: [],
-  unitMigrationWarnings: [],
-  unitMigrationBackup: [],
   form: newUnitDraft(),
 };
 
@@ -487,8 +483,6 @@ async function persist(options: { battleUnchanged?: boolean } = {}): Promise<boo
       storage: state.storage, orderDraft: state.orderDraft, collapsed: state.collapsed,
       snapOpen: state.snapOpen,
       committedOutcomeIds: state.committedOutcomeIds,
-      unitMigrationWarnings: state.unitMigrationWarnings,
-      unitMigrationBackup: state.unitMigrationBackup,
       battle: battlePersist(),
     }, state.factRevision, { memoryOnly }));
   if (identity!==adapter.identity() || namespace!==adapter.namespace() || context!==sessionContext()) {battleSaveFailed=true;restore();return false;}
@@ -576,8 +570,6 @@ interface SavedPanel {
   storage?: RosterUnit[]; orderDraft?: OrderDrafts;
   collapsed?: Record<string, boolean>; snapOpen?: boolean;
   committedOutcomeIds?: string[];
-  unitMigrationWarnings?: string[];
-  unitMigrationBackup?: unknown[];
   battle?: { kind: 'small' | 'mass'; snap: Record<string, unknown> } | null;
 }
 
@@ -679,14 +671,6 @@ function restore(): void {
   });
   state.storage = migrated.records;
   state.roster = migrated.roster;
-  state.unitMigrationWarnings = [...new Set([
-    ...(Array.isArray(saved.unitMigrationWarnings) ? saved.unitMigrationWarnings : []),
-    ...migrated.warnings,
-  ])].slice(-50);
-  state.unitMigrationBackup = [
-    ...(Array.isArray(saved.unitMigrationBackup) ? saved.unitMigrationBackup : []),
-    ...migrated.backup,
-  ].slice(-50);
   state.orderDraft = saved.orderDraft && typeof saved.orderDraft === 'object' ? saved.orderDraft : {};
   state.collapsed = saved.collapsed && typeof saved.collapsed === 'object' ? saved.collapsed : {};
   state.snapOpen = saved.snapOpen ?? true;
@@ -1674,9 +1658,6 @@ function renderManage(): string {
   const tierNames = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
   const catKeys = Object.keys(CATEGORY_LABELS) as Category[];
   const storedRecords = state.storage.filter((r) => !r.transient && visibleUnitRecord(r));
-  const migrationWarning = state.unitMigrationWarnings.length
-    ? `<div class="sub" style="color:var(--danger);margin:6px 0">⚠ 有 ${state.unitMigrationWarnings.length} 条单位数据未能完整迁移；原始条目已保留在迁移备份中。${state.unitMigrationWarnings.slice(0, 3).map((w) => `<div>${esc(w)}</div>`).join('')}</div>`
-    : '';
 
   // ---------- 储存器条目编辑器（RosterUnit 全字段可改） ----------
   const storageRow = (r: RosterUnit): string => {
@@ -1778,7 +1759,6 @@ function renderManage(): string {
   return `<section>
     <div class="row" style="justify-content:space-between"><h2 style="margin:0">全部单位档案 <small class="sub">选择参战单位，或查看与编辑历史档案</small></h2>
     <button data-action="manage-toggle">${state.manageOpen ? '收起' : '展开'}</button></div>
-    ${migrationWarning}
     ${state.manageOpen ? `<div>
       <div style="margin-top:6px"><b style="color:var(--dim)">当前参战（${state.roster.filter(visibleUnitRecord).length}）</b></div>
       <details><summary>调整当前参战名单</summary>${rosterBlock}</details>

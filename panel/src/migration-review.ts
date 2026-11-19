@@ -125,16 +125,21 @@ export function reviewMigration(raw: NarrativeSave, unifiedBalance = false): Mig
   candidate.inventory = items.filter((item, index) => {
     try {
       validateInventoryItem(item);
-      if (idCounts.get(item.id)! > 1) throw new Error('重复实物id，不能选一条覆盖');
+      if (idCounts.get(item.id)! > 1) throw new Error('多条物品记录使用了同一编号');
       if (item.assignedTo && !units.records.some((r) => r.id === item.assignedTo)) throw new Error('持有者档案缺失');
       if (item.equippedTo) {
         const { unitId, slot } = item.equippedTo;
         if (item.assignedTo !== unitId || !units.records.some((r) => r.id === unitId && r.equipmentManaged)
           || !item.mechanics || !fitsEquipmentSlot(item.mechanics,slot)) throw new Error('装备关系与持有者/槽位不一致');
-        if (slotCounts.get(occupiedEquipmentSlot(item)!)! > 1) throw new Error('同一槽位有多件实物，不能猜测保留');
+        if (slotCounts.get(occupiedEquipmentSlot(item)!)! > 1) throw new Error('多件旧装备占用了同一个装备位');
       }
       return true;
-    } catch (error) { changes.push(`库存[${index}]已隔离：${String(error)}`); badItems.push(item); return false; }
+    } catch (error) {
+      const label = typeof item?.name === 'string' && item.name.trim() ? `「${item.name}」` : `第 ${index + 1} 项物品`;
+      changes.push(`${label}未载入：${error instanceof Error ? error.message : String(error)}`);
+      badItems.push(item);
+      return false;
+    }
   });
   if (raw.inventory !== undefined && !Array.isArray(raw.inventory)) { changes.push('库存容器已隔离：不是数组'); badItems.push(raw.inventory); }
   if ((converted || recovered) && !badItems.length) {

@@ -328,6 +328,7 @@ export class NarrativeController {
     next = { ...next, promptSettings: this.state.promptSettings, proposals: this.state.proposals ?? [], storySync: this.state.storySync ?? false,
       committedNarrativeSources: this.state.committedNarrativeSources, deletedNarrativeReceipts: this.state.deletedNarrativeReceipts,
       inventoryOperations: this.state.inventoryOperations, classMigration: this.state.classMigration,
+      unitMigrationWarnings: this.state.unitMigrationWarnings, unitMigrationBackup: this.state.unitMigrationBackup,
       ...(this.state.inventoryMigrationBackup ? { inventoryMigrationBackup: this.state.inventoryMigrationBackup } : {}),
       ...(this.state.migrationBackups ? { migrationBackups: this.state.migrationBackups } : {}),
       factRevision: (this.state.factRevision ?? 0) + (changed ? 1 : 0) };
