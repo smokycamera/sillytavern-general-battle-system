@@ -53,7 +53,7 @@ export type InventoryAction =
   | { kind: 'transfer'; itemId: string; unitId?: string; unitIds?: string[]; qty: number }
   | { kind: 'equip'; itemId: string; unitId: string; slot: EquipmentSlot; qty?: number }
   /** 佩戴与充能道具不限件数，卸下时用 itemId 指明哪一件。 */
-  | { kind: 'unequip'; unitId: string; slot: EquipmentSlot; itemId?: string }
+  | { kind: 'unequip'; unitId: string; slot: EquipmentSlot; itemId?: string; qty?: number }
   | { kind: 'use'; itemId: string; unitId: string }
   /** 收缴：阵亡、撤离或解散的敌方单位身上剩余的道具转入公共库存。 */
   | { kind: 'collect'; unitId: string };
@@ -143,14 +143,14 @@ function fingerprint(value: unknown): string {
 const stackable = (spec: ItemSpecification) => spec.kind === 'item' && spec.form === 'single';
 export const isInventoryStack = (item: InventoryItem): boolean => !!item.batch || !item.mechanics || item.mechanics.kind === 'item' && item.mechanics.value.recipe.form === 'single';
 
+const batchSignature = (item: InventoryItem) => fingerprint([item.name, item.lootType, item.mechanics && {...item.mechanics,value:{...item.mechanics.value,id:undefined}}]);
 /** 正文仍可用原叠编号扣除分给各人的份额；只追踪该叠的拆分后代，不按同名合并。 */
 export function narrativeTakeParts(inventory: readonly InventoryItem[], itemId: string, qty: number): { itemId: string; qty: number }[] {
   const source = inventory.find(item => item.id === itemId);
   if (!source || !Number.isSafeInteger(qty) || qty < 1) throw Error('物品不存在或移除数量无效');
   const byId = new Map(inventory.map(item => [item.id, item]));
-  const signature = (item: InventoryItem) => fingerprint([item.name, item.lootType, item.mechanics && {...item.mechanics,value:{...item.mechanics.value,id:undefined}}]);
   const sameStack = (item: InventoryItem): boolean => {
-    if (!isInventoryStack(source) || !isInventoryStack(item) || signature(source) !== signature(item)) return false;
+    if (!isInventoryStack(source) || !isInventoryStack(item) || batchSignature(source) !== batchSignature(item)) return false;
     const visited = new Set<string>();
     let current: InventoryItem | undefined = item;
     while (current && !visited.has(current.id)) {
@@ -182,6 +182,52 @@ export function splitInventoryBatch(item: InventoryItem, id: string, qty: number
   if (part.mechanics && part.mechanics.kind !== 'item') part.mechanics.value.id = id;
   delete part.history;
   return part;
+}
+/** Move copies into an existing holding of the same rolled lot, retaining its public ID. */
+export function moveCopies(inventory: InventoryItem[], source: InventoryItem, qty: number, owner: string | undefined,
+  slot: EquipmentSlot | undefined, splitId: string, adding = false): InventoryItem {
+  const equipped = slot && owner ? {unitId:owner, slot} : undefined;
+  const samePlace = (item: InventoryItem) => item.assignedTo === owner && item.equippedTo?.slot === slot;
+  if (adding && samePlace(source)) {
+    if (!Number.isSafeInteger(source.qty + qty)) throw Error('物品数量超出安全整数范围');
+    source.qty += qty;
+    return source;
+  }
+  const byId = new Map(inventory.map(item => [item.id,item]));
+  const root = (item: InventoryItem) => {
+    const seen = new Set<string>();
+    while (item.sourceItemId && !seen.has(item.id)) {
+      seen.add(item.id);
+      const parent = byId.get(item.sourceItemId);
+      if (!parent) return item.sourceItemId;
+      item = parent;
+    }
+    return item.id;
+  };
+  const family = root(source);
+  let signature: string | undefined;
+  const matching = inventory.filter(item => item !== source && item.name === source.name && item.note === source.note && root(item) === family
+    && batchSignature(item) === (signature ??= batchSignature(source)));
+  let destination = matching.find(item => item.qty > 0 && samePlace(item));
+  if (!destination && !adding && qty === source.qty) destination = source;
+  if (!destination) {
+    destination = matching.find(item => item.qty === 0);
+    if (!destination) {
+      if (byId.has(splitId)) throw Error('分配物品的编号已存在');
+      destination = splitInventoryBatch(source,splitId,0);
+      inventory.push(destination);
+    }
+  }
+  if (adding || destination !== source) {
+    if (!Number.isSafeInteger(destination.qty + qty)) throw Error('物品数量超出安全整数范围');
+    destination.qty += qty;
+    if (!adding) source.qty -= qty;
+  }
+  if (!source.qty) delete source.equippedTo;
+  destination.assignedTo = owner;
+  destination.equippedTo = equipped;
+  if (source.batch || destination.mechanics && !isInventoryStack(destination) && destination.qty > 1) destination.batch = true;
+  return destination;
 }
 function gearAt(unit: Combatant, slot: EquipmentSlot): unknown {
   switch (slot) {
@@ -373,7 +419,9 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
     const record = recordById(next, action.unitId);
     const item = inventory.find((i) => i.equippedTo?.unitId === record.id && i.equippedTo.slot === action.slot && (!action.itemId || i.id === action.itemId));
     if (!item) throw new Error(action.slot === 'gear' ? '这件道具没有装备在该单位身上' : '这个装备槽已空');
-    delete item.equippedTo;
+    const qty = action.qty ?? item.qty;
+    if (!Number.isSafeInteger(qty) || qty < 1 || qty > item.qty) throw Error('卸下件数超出装备数量');
+    moveCopies(inventory,item,qty,item.assignedTo,undefined,'returned:'+id);
     projectEquipment(record, inventory);
     rewriteRecord(next, record, id);
   } else if (action.kind === 'collect') {
@@ -393,10 +441,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       if (!item.mechanics || item.mechanics.kind === 'item' && item.mechanics.value.recipe.form === 'single') item.qty += action.qty;
       else {
         if (item.mechanics.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural') throw new Error('天生武器不能增加实物数量');
-        const added = splitInventoryBatch(item,'added:'+id,action.qty);
-        added.batch = true;
-        delete added.equippedTo;
-        inventory.push(added);
+        moveCopies(inventory,item,action.qty,item.assignedTo,undefined,'added:'+id,true).batch = true;
       }
     } else if (action.kind === 'discard') {
       if (item.equippedTo && !item.batch) throw new Error('先卸下已装备物品，再从库存移除');
@@ -465,16 +510,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
         const donor = item.equippedTo ? recordById(next,item.equippedTo.unitId) : undefined;
         for (const [index, unitId] of targets.entries()) {
           if (unitId === owner) continue;
-          let target = item;
-          if (action.qty < item.qty) {
-            const itemId = `transferred:${id}:${index}`;
-            if (inventory.some(existing => existing.id === itemId)) throw new Error('转移物品身份已存在');
-            item.qty -= action.qty;
-            target = splitInventoryBatch(item,itemId,action.qty);
-            inventory.push(target);
-          }
-          delete target.equippedTo;
-          target.assignedTo = unitId;
+          moveCopies(inventory,item,action.qty,unitId,undefined,'transferred:'+id+':'+index);
         }
         if (donor) { projectEquipment(donor,inventory); rewriteRecord(next,donor,id); }
       }
@@ -482,7 +518,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       if (item.mechanics?.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural' && item.assignedTo && item.assignedTo !== action.unitId) throw Error('天生武器属于单位身体，不能交给其他人或放进公共库存');
       if (item.equippedTo) throw new Error('请先卸下已装备的物品，再转移归属');
       if (action.unitId) recordById(next, action.unitId);
-      item.assignedTo = action.unitId;
+      moveCopies(inventory,item,item.qty,action.unitId,undefined,'assigned:'+id);
     } else {
       const record = recordById(next, action.unitId);
       if (record.retired || record.status === 'dead') throw new Error('阵亡或解散目标不能装备/使用物品');
@@ -493,20 +529,17 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
         if (item.equippedTo) throw new Error('物品已装备，请先卸下');
         const qty = action.qty ?? item.qty;
         if (!Number.isSafeInteger(qty) || qty < 1 || qty > item.qty) throw Error('配发件数超出库存');
-        if (qty < item.qty) {
-          item.qty -= qty;
-          item = splitInventoryBatch(item,'issued:'+id,qty);
-          inventory.push(item);
-        }
+        const original = item;
+        item = moveCopies(inventory,item,qty,record.id,action.slot,'issued:'+id);
         if (item.mechanics?.kind === 'weapon') {
           item.batch = true;
-          // Issue after the existing weapons even when the new item entered the warehouse first.
-          inventory.splice(inventory.indexOf(item),1);
-          inventory.push(item);
+          if (item === original || !save.inventory?.some(row => row.id === item!.id && row.equippedTo)) {
+            inventory.splice(inventory.indexOf(item),1);
+            inventory.push(item);
+          }
         } else if (action.slot !== 'gear' && !(item.batch && record.scale === 'company')) {
-          for (const old of inventory) if (old.equippedTo?.unitId === record.id && old.equippedTo.slot === action.slot) delete old.equippedTo;
+          for (const old of inventory) if (old !== item && old.equippedTo?.unitId === record.id && old.equippedTo.slot === action.slot) delete old.equippedTo;
         }
-        item.assignedTo = record.id; item.equippedTo = { unitId: record.id, slot: action.slot };
         projectEquipment(record, inventory);
         const reason = equipmentReason(record.snapshot);
         if (reason) throw new Error(reason);
@@ -535,7 +568,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
   }
   if ('itemId' in action) {
     const touched = new Set([save.inventory?.find(i=>i.id===action.itemId)?.assignedTo,
-      inventory.find(i=>i.id===action.itemId)?.assignedTo,...(action.kind==='transfer'?action.unitIds ?? [action.unitId]:[])]);
+      inventory.find(i=>i.id===action.itemId)?.assignedTo,...(action.kind==='transfer' ? action.unitIds ?? [action.unitId] : action.kind==='assign' ? [action.unitId] : [])]);
     for (const unitId of touched) {
       const record = next.storage?.find(r=>r.id===unitId);
       if (!record?.equipmentManaged || !record.snapshot || (record.snapshot.reserveEquipmentLoad ?? 0)===reserveLoad(inventory,record.id)) continue;

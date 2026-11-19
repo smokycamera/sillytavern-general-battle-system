@@ -1,4 +1,4 @@
-import { optionWeaponMode, type WeaponMode } from '../../engine/src/equipment-batches.js';
+import { isVolleyMode, optionWeaponMode, type WeaponMode } from '../../engine/src/equipment-batches.js';
 import { unitModifierSummary } from './numeric-description.js';
 import { equipmentCapacity } from '../../engine/src/equipment-load.js';
 import { displayNumber } from '../../engine/src/display-number.js';
@@ -1927,7 +1927,7 @@ function renderSmall(): string {
            ${weapons.map(option=>{
              const target=option.targets?.find(t=>t.targetId===selectedTargetId);
              const action=option.id==='weapon'?'small-attack':option.id==='weapon:sidearm'?'small-sidearm':'small-batch-attack';
-             return `<button data-action="${action}" data-id="${esc(option.id)}" ${target?.enabled?'':'disabled'} title="${esc(target?.reason ?? '')}">${esc(option.label)}</button>`;
+             return `<button data-action="${action}" data-id="${esc(option.id)}" ${target?.enabled?'':'disabled'} title="${esc(target?.reason ?? target?.preview?.effects?.join('、') ?? '')}">${esc(option.label)}</button>`;
            }).join(' ')}
            <button data-action="small-charge" ${chargeOption?.enabled ? '' : 'disabled'} title="${esc(chargeOption?.reason ?? '消耗移动与主行动：贴至目标并造成攻击伤害')}">冲锋</button>
           ${abilityBtns}
@@ -3367,7 +3367,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     const mode = el.dataset.mode!; const target = el.dataset.target!;
     if (mode === 'flight:takeoff' || mode === 'flight:land') { b.changeFlight(actorId,mode === 'flight:takeoff'); tacticalView.mode='move'; }
     else if (mode === 'retreat') { b.retreat(actorId); tacticalView.mode='move'; }
-    else if (mode === 'weapon' || mode === 'weapon:sidearm' || mode.startsWith('batch:')) b.attack(actorId, target, { weaponMode: optionWeaponMode(mode) });
+    else if (mode === 'weapon' || mode === 'weapon:sidearm' || mode.startsWith('batch:') || isVolleyMode(mode)) b.attack(actorId, target, { weaponMode: optionWeaponMode(mode) });
     else if (mode === 'charge') b.attack(actorId, target, { charge: true });
     else {
       const abilityId = mode.startsWith('ability:') ? mode.slice(8) : mode;

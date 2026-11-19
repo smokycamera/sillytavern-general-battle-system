@@ -1,4 +1,4 @@
-import { availableCopies, batchWeapons, weaponModeFor, optionWeaponMode, type WeaponMode } from '../../engine/src/equipment-batches.js';
+import { isVolleyMode, availableCopies, batchWeapons, weaponModeFor, optionWeaponMode, type WeaponMode } from '../../engine/src/equipment-batches.js';
 import { SmallBattle, MassBattle, type Combatant, type Order, type Side } from '../../engine/src/index.js';
 import { controlPolicy } from '../../engine/src/battle-control.js';
 import { FORMATION_NODES, FORMATION_EDGES, formationNode } from '../../engine/src/mass/formation.js';
@@ -235,7 +235,10 @@ export function smallCommandChoices(b: SmallBattle, actorId: string): CommandCho
         : option.kind === 'move' ? { type: 'move', direction: option.id as 'advance' | 'withdraw' }
         : { type: option.kind === 'end-turn' ? 'end_turn' : option.kind };
       if (option.targets) {
-        for (const target of option.targets) if (target.enabled && allowedTarget(target.targetId)) add(option.label, { ...action, targetId: target.targetId });
+        for (const target of option.targets) if (target.enabled && allowedTarget(target.targetId)) {
+          const parts = isVolleyMode(option.id) ? target.preview?.effects : undefined;
+          add(parts?.length ? option.label+'（'+parts.join('、')+'）' : option.label,{...action,targetId:target.targetId});
+        }
       } else add(option.label, action);
     }
     if (b.battlefield) {
@@ -297,7 +300,7 @@ function commandSteps(value: unknown): CommandStep[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > 7 || value.some(step => !step || typeof step !== 'object' || typeof step.type !== 'string')) throw Error('then格式无效');
   return value.map(({ type, targetId, cell, weaponMode, abilityId, count }) => ({ type, ...(Number.isSafeInteger(count) ? {count} : {}), ...(typeof targetId === 'string' ? { targetId } : {}),
-    ...(Number.isSafeInteger(cell) ? { cell } : {}), ...(weaponMode === 'primary' || weaponMode === 'sidearm' || typeof weaponMode === 'string' && weaponMode.startsWith('batch:') ? { weaponMode:weaponMode as WeaponMode } : {}), ...(typeof abilityId === 'string' ? { abilityId } : {}) }));
+    ...(Number.isSafeInteger(cell) ? { cell } : {}), ...(weaponMode === 'primary' || weaponMode === 'sidearm' || typeof weaponMode === 'string' && (isVolleyMode(weaponMode) || weaponMode.startsWith('batch:')) ? { weaponMode:weaponMode as WeaponMode } : {}), ...(typeof abilityId === 'string' ? { abilityId } : {}) }));
 }
 /** A step must identify one target or cell; only the weapon of an otherwise identical attack may stay implicit (primary first). */
 function stepChoice(choices: CommandChoice[], step: CommandStep): CommandChoice | undefined {

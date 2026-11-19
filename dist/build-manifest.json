@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "3.0.26",
-  "builtAt": "2026-11-19T11:45:27.818Z",
-  "sourceFingerprint": "4d8dc20754e7e778127c8c4b86fefe4e1c5680350101ebe625885a7fdd65b87e",
+  "builtAt": "2026-11-19T16:50:51.104Z",
+  "sourceFingerprint": "1b978cdc7a1363a3222f772579a2a36702c96dfdc2a7849d1dd2e8ad10ab9834",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -31,14 +31,14 @@
       "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     },
     {
-      "path": "dist/assets/panel-BEzwy0ie.js",
-      "bytes": 1497625,
-      "sha256": "8e691e849be0f95e1191259dd0a03a21e808147fa532a15fd55f7cdd13f74caf"
-    },
-    {
       "path": "dist/assets/panel-C5tHyvd9.css",
       "bytes": 35749,
       "sha256": "df97b80503eea3be98a759440d0e3bbbaef9aa260796588b6482fe42e40ae6fc"
+    },
+    {
+      "path": "dist/assets/panel-Du6tWFqn.js",
+      "bytes": 1504265,
+      "sha256": "fb23196a39c7c18637007958e0201b37add60581036197704156c3d72b9421d9"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -56,9 +56,9 @@
       "sha256": "20df3d3dc1cb9257c08d74bf7fe590d2eddc4499684ec018cf7861afbf776cf9"
     },
     {
-      "path": "dist/assets/worldbooks-CGTaSm_4.js",
-      "bytes": 1348851,
-      "sha256": "14006ca9f7bd5c86672894dfa13cc09d009349f906994a1720bffc38255b9056"
+      "path": "dist/assets/worldbooks-D0w9Q-SM.js",
+      "bytes": 1355024,
+      "sha256": "7fade80215b842a9290706fc357b55fa1694cfc73101f31a796689c3680c9886"
     },
     {
       "path": "docs/README.md",
@@ -588,7 +588,7 @@
     {
       "path": "dist/index.js",
       "bytes": 99477,
-      "sha256": "1682cdd59c2f4c4ee44039ee4ec6c9067b68f050946b37d60add2328a12c295f"
+      "sha256": "258fb439b392dca9f7150aa7f3f5466600949b56a5881e6243c37829f1a7a6f8"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -647,13 +647,13 @@
     },
     {
       "path": "mcp/tools.mjs",
-      "bytes": 12819,
-      "sha256": "729813e35141ac879fb64a9acaaacdc7eb703a3d4860449329fa21020711270f"
+      "bytes": 12843,
+      "sha256": "30bc7b3d936d76cb5ed0be2013d01b7f32c314470a6457e926985290a66315aa"
     },
     {
       "path": "dist/panel/index.html",
       "bytes": 48598,
-      "sha256": "74965282278eeba486fbe692e5ac9638d6dbda9457a4e87607947e12b2f07472"
+      "sha256": "e5c559dc31618577cdfaeedb5a1842189778d684c272f7d64a8b2646d6f8e67f"
     },
     {
       "path": "scripts/jev-cors-relay.mjs",

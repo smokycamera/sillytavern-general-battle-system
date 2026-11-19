@@ -1,4 +1,4 @@
-import { createInventoryItem, splitInventoryBatch, type InventoryItem } from './inventory-state.js';
+import { createInventoryItem, moveCopies, type InventoryItem } from './inventory-state.js';
 import { sameGear } from './unit-set.js';
 import type { EquipmentSlot, ItemSpecification } from '../../engine/src/items.js';
 import { parseItemSpecification, splitItemSpecification } from './item-spec.js';
@@ -41,13 +41,8 @@ export function assignIssue(inventory: InventoryItem[], unitId: string, side: st
       if (!needed) break;
       if (item.equippedTo || item.qty <= 0 || item.name !== entry.name || !sameGear(item.mechanics,entry.spec)) continue;
       const moved = Math.min(needed,item.qty);
-      let equipped = item;
-      if (moved < item.qty) {
-        item.qty -= moved;
-        equipped = splitInventoryBatch(item,source+':'+slot+':'+index+':'+item.id,moved);
-        inventory.push(equipped);
-      }
-      issuedOrder.push(equipped);
+      const equipped = moveCopies(inventory,item,moved,unitId,slot,source+':'+slot+':'+index+':'+item.id);
+      if (!issuedOrder.includes(equipped)) issuedOrder.push(equipped);
       issued = equipped;
       equipped.batch = true; equipped.assignedTo = unitId;
       equipped.equippedTo = {unitId,slot}; needed -= moved;

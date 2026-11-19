@@ -148,6 +148,7 @@ export interface AttackOpts {
   defenderTerrain?: string;
   defenderEngaged?: boolean;
   distance?: number;
+  operatorLimit?: number;
   participants?: number;
   attacker: Combatant;
   defender: Combatant;
@@ -261,20 +262,17 @@ function criticalInfo(opts: Omit<AttackOpts,'rng'>, weapon?: Weapon): { minimum:
     forced: !!applies && actual === 'dagger' && opts.defender.conditions.some(c=>c.dur>0&&['stunned','restrained','blinded','disarmed','confused','charmed'].includes(c.id)) };
 }
 export function previewAttack(opts: Omit<AttackOpts, 'rng'>): import('./actions.js').ActionPreview & { hitChance: number; expectedDamage: number; conditionValue?: number } {
-  const groups = !opts.equipmentResolved && protectionGroups(opts.defender);
-  if (groups && needsProtectionView(opts.defender,groups)) {
-    const views = groups.map(g=>({share:g.size/opts.defender.hp,preview:previewAttack({...opts,equipmentResolved:true,
-      defender:projectProtection(opts.defender,g)})}));
+  const scope = previewScope?.readonlyUnits ? previewScope : undefined;
+  const projected = !opts.equipmentResolved && previewDefenders(opts.defender,scope);
+  if (projected && projected.length) {
+    const views = projected.map(({share,defender}) => ({share,preview:previewAttack({...opts,equipmentResolved:true,defender})}));
     const result = {...views[0]!.preview};
     for (const key of ['hitChance','anyHitChance','expectedDamage','damageOnHit'] as const) {
       if (result[key] !== undefined) result[key]=views.reduce((n,v)=>n+v.share*(v.preview[key]??0),0);
     }
     return result;
   }
-  // Repeated AI branches ask for the same complete preview, not just the same
-  // sampled losses. Reuse diagnostics too, only inside a synchronous read-only
-  // decision. Exact unit/options content (including positions/resources) is kept.
-  const scope = previewScope?.readonlyUnits ? previewScope : undefined;
+  // Reuse diagnostics within one read-only decision, including positions and resources.
   const key = scope && fullPreviewKey(scope, opts);
   let preview = key ? scope!.outcomes.get(key) : undefined;
   if (preview) preview = cloneData(preview);
@@ -472,13 +470,14 @@ export function sampledPreviewComputations(): number { return sampledPreviewRuns
 // values are the same either way, only their reuse differs.
 interface ScopeTable { id: string; text: string }
 interface PreviewScope { samples: Map<string, SampledMemberPreview>; chars: number; tables: WeakMap<object, ScopeTable>; ids: Map<string, string>; epoch: number;
-  parts: Map<string, string>; partChars: number; readonlyUnits: boolean; immutableParts: WeakMap<object, string>;
+  parts: Map<string, string>; partChars: number; readonlyUnits: boolean; immutableParts: WeakMap<object, string>; unitKeys: WeakMap<object, string>;
+  defenders: WeakMap<Combatant, {share:number; defender:Combatant}[]>;
   outcomes: Map<string, ReturnType<typeof previewAttackOutcome>>; outcomeChars: number }
 const SCOPE_CACHE_ENTRIES = 4096, SCOPE_CACHE_CHARS = 8 * 1024 * 1024;
 let previewScope: PreviewScope | undefined, previewScopes = 0;
 /** 开始一次只读估值（AI 选择行动）；结束前不得修改状态表或特质表内容。 */
 export function beginPreviewScope(readonlyUnits = false): void { previewScope = { samples: new Map(), chars: 0, tables: new WeakMap(), ids: new Map(), epoch: ++previewScopes, parts: new Map(), partChars: 0,
-  readonlyUnits, immutableParts: new WeakMap(), outcomes: new Map(), outcomeChars: 0 }; }
+  readonlyUnits, immutableParts: new WeakMap(), unitKeys: new WeakMap(), defenders: new WeakMap(), outcomes: new Map(), outcomeChars: 0 }; }
 export function endPreviewScope(): void { previewScope = undefined; }
 /** 当前估值范围的编号；范围外为 undefined。供其他估值模块在同一范围内复用只读派生表。 */
 export function previewScopeEpoch(): number | undefined { return previewScope?.epoch; }
@@ -492,7 +491,27 @@ function scopeTable(scope: PreviewScope, table: Map<string, unknown>): ScopeTabl
   }
   return entry;
 }
-function sampledPreviewState(opts: Omit<AttackOpts, 'rng'>) {
+/** Beyond the last applicable range threshold, another cell changes neither the hit roll
+ * nor the damage roll. Geometry and terrain modifiers have already been passed to damage.
+ * Keep the original distance for mutable shields, ammunition choice and trait prerequisites. */
+function sampleDistance(opts: Omit<AttackOpts,'rng'>, ctx: ReturnType<typeof attackContext>): number | undefined {
+  const distance = opts.distance;
+  if (distance === undefined) return;
+  if (!isArmsV2(opts.rules.armsModel)) {
+    const urban = itemsV15(opts.attacker) && activeTraitIds(opts.attacker).includes('urban-fighter');
+    return distance <= 1 ? 1 : urban ? Math.min(3,distance) : Math.min(2,distance);
+  }
+  if (!Number.isInteger(distance) || distance < 2 || opts.defender.shield || isCannonWeapon(ctx.weapon)
+    || activeTraitIds(opts.attacker).length || activeTraitIds(opts.defender).length) return distance;
+  const mechanism = ctx.weapon?.recipe?.mechanism;
+  // Firearms lose accuracy after four grid cells, shotguns have a separate third-cell band.
+  let limit = mechanism === 'firearm' ? 5 : mechanism === 'shotgun' ? 4 : 2;
+  for (const mods of [ctx.atkMods, ctx.defMods]) for (const mod of mods) {
+    if (mod.cond?.maxDistance !== undefined) limit = Math.max(limit, Math.floor(mod.cond.maxDistance) + 1);
+  }
+  return Math.min(distance, limit);
+}
+function sampledPreviewState(opts: Omit<AttackOpts, 'rng'>, ctx: ReturnType<typeof attackContext>) {
   // Damage receives terrain, distance, participants and external modifiers explicitly.
   // Coordinates only affect directional brace (whether the pose is still held and whether
   // the opponent stands in its front arc) and V13 works (whether the unit still stands on its
@@ -500,8 +519,7 @@ function sampledPreviewState(opts: Omit<AttackOpts, 'rng'>) {
   // cancels loose formation) and an on-works flag instead of absolute cells and anchors.
   // HP, barrier power/duration, equipment, traits, fatigue, rules and mutable registry
   // *contents* remain in the key (not just object IDs).
-  // The resolution chain reads fatigue only as its penalty step and distance only as
-  // <=1 / >1 / >=2. SP, cooldowns, effort, engagement lists, zones and the attacker's own
+  // Fatigue contributes its penalty step. SP, cooldowns, effort, engagement lists, zones and the attacker's own
   // barrier never enter hit or loss, so AI what-if copies differing only there share samples.
   const ranged = opts.ranged ?? isRangedCapable(opts.attacker);
   const unit = (u: Combatant, opponent: Combatant, attacker: boolean) => ({ ...u, pos: undefined, formationPosition: undefined,
@@ -509,10 +527,8 @@ function sampledPreviewState(opts: Omit<AttackOpts, 'rng'>) {
     tacticalPose: u.tacticalPose ? defensivePostureMods(u, { defender: opponent, ranged, charge: opts.charge }, opts.conditionDefs, opts.traitRegistry) : undefined,
     fatigue: fatiguePenalty(u), resources: undefined, abilityState: undefined, tacticalEffort: undefined, engagedWith: undefined, battleZones: undefined,
     ...(attacker ? { barrier: undefined } : {}) });
-  // V15 巷战专精的“2格内射击”还区分 2 格与更远，只有带巷战专精的攻击方保留到 3 格。
-  const closeShots = itemsV15(opts.attacker) && activeTraitIds(opts.attacker).includes('urban-fighter');
-  const distance = isArmsV2(opts.rules.armsModel) ? opts.distance : opts.distance === undefined ? undefined : opts.distance <= 1 ? 1 : closeShots ? Math.min(3, opts.distance) : opts.distance >= 2 ? 2 : opts.distance;
-  return { ...opts, distance, ...(isArmsV2(opts.rules.armsModel) && (opts.weaponOverride ?? opts.attacker.weapon)?.recipe?.mechanism === 'sprayer' ? { sprayOnGrid: gridAttack(opts.attacker) } : {}),
+  const distance = sampleDistance(opts,ctx);
+  return { ...opts, distance, ...(isArmsV2(opts.rules.armsModel) ? { gridAttack:gridAttack(opts.attacker) } : {}),
     attacker: unit(opts.attacker, opts.defender, true), defender: unit(opts.defender, opts.attacker, false),
     conditionDefs: undefined, traitRegistry: undefined };
 }
@@ -536,26 +552,30 @@ function scopePart(scope: PreviewScope, value: unknown, immutable = false): stri
  * General preview scopes keep recomputing keys so in-place edits remain visible. */
 function scopeUnit(scope: PreviewScope, unit: object): string {
   if (!scope.readonlyUnits) return scopePart(scope, unit);
+  const cached = scope.unitKeys.get(unit);
+  if (cached) return cached;
   const parts: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(unit)) parts[key] = value && typeof value === 'object' ? [scopePart(scope, value, true)] : value;
-  return scopePart(scope, parts);
+  const key = scopePart(scope,parts);
+  if (key.startsWith('p')) scope.unitKeys.set(unit,key);
+  return key;
 }
 function fullPreviewKey(scope: PreviewScope, opts: Omit<AttackOpts, 'rng'>): string | undefined {
   const { attacker, defender, conditionDefs, traitRegistry, ...attack } = opts;
   const defs = scopeTable(scope, conditionDefs), registry = traitRegistry && scopeTable(scope, traitRegistry);
-  const key = [scopeUnit(scope, attacker), scopeUnit(scope, defender), scopePart(scope, attack), defs.id, registry?.id ?? ''].join('\n');
+  const key = [scopeUnit(scope, attacker), scopeUnit(scope, defender), scopeUnit(scope, attack), defs.id, registry?.id ?? ''].join('\n');
   return key.length <= 16384 ? key : undefined;
 }
 /** The state and trait tables follow the JSON object; JSON text has no raw newline, so the parts cannot run together. */
-function sampledPreviewKeys(opts: Omit<AttackOpts, 'rng'>, scope: PreviewScope | undefined): { key: string; shared: () => string } {
-  const state = sampledPreviewState(opts);
+function sampledPreviewKeys(opts: Omit<AttackOpts, 'rng'>, ctx: ReturnType<typeof attackContext>, scope: PreviewScope | undefined): { key: string; shared: () => string } {
+  const state = sampledPreviewState(opts,ctx);
   if (!scope) {
     const key = JSON.stringify(state) + '\n' + JSON.stringify([...opts.conditionDefs]) + '\n' + (opts.traitRegistry ? JSON.stringify([...opts.traitRegistry]) : '');
     return { key, shared: () => key };
   }
   const defs = scopeTable(scope, opts.conditionDefs), registry = opts.traitRegistry && scopeTable(scope, opts.traitRegistry);
   const { attacker, defender, ...attack } = state;
-  const base = [scopeUnit(scope, attacker), scopeUnit(scope, defender), scopePart(scope, attack)].join('\n');
+  const base = [scopeUnit(scope, attacker), scopeUnit(scope, defender), scopeUnit(scope, attack)].join('\n');
   return { key: base + '\n' + defs.id + '\n' + (registry?.id ?? ''), shared: () => JSON.stringify(state) + '\n' + defs.text + '\n' + (registry?.text ?? '') };
 }
 function rememberScopedPreview(scope: PreviewScope, key: string, value: SampledMemberPreview): void {
@@ -609,7 +629,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   // 连续攻击共用剩余屏障。固定种子的小样本估计只操作副本，不消耗实战随机数。
   if (count > 1 && (hasMemberHealth(opts.defender) || opts.defender.barrier || opts.defender.energyShield || upper>memberHealth(opts.defender)) || !maxBase || !maxAp) {
     const sampleCount = opts.riskEstimate ? 24 : SAMPLED_PREVIEW_COUNT;
-    const scope = previewScope, { key, shared } = sampledPreviewKeys(opts, scope);
+    const scope = previewScope, { key, shared } = sampledPreviewKeys(opts, ctx, scope);
     let stats = (scope?.samples ?? sampledMemberPreviewCache).get(key);
     const sharedKey = scope && !stats ? shared() : key;
     if (scope && !stats && (stats = sampledMemberPreviewCache.get(sharedKey))) rememberScopedPreview(scope, key, stats);
@@ -684,7 +704,7 @@ function outcomeScale(opts: Omit<AttackOpts, 'rng'>, resolved?: ResolvedWeapon):
     const fallbackWidth=engagementWidth(a,d,ranged,undefined,opts.fieldTags)*Math.max(1,personnel(a)/COHORT_REFERENCE);
     const available=a.body==='vehicle'?personnel(a):Math.min(personnel(a),opts.participants??fallbackWidth);
     const batch=weaponAttack ? a.equipmentBatches?.find(b=>b.id===weapon?.id) : undefined;
-    const count=Math.min(a.scale==='hero'?1:Math.min(available,weaponAttack?targetWidthLimit(d,ranged,opts.rules.targetWidthModel??null):Infinity),batch ? availableCopies(a,batch.id) : Infinity);
+    const count=Math.min(opts.operatorLimit ?? Infinity,a.scale==='hero'?1:Math.min(available,weaponAttack?targetWidthLimit(d,ranged,opts.rules.targetWidthModel??null):Infinity),batch ? availableCopies(a,batch.id) : Infinity);
     const crew=!(batch && crewEquipment(a,batch))&&a.scale!=='hero'&&(a.body??'human')==='human'&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&!opts.abilityDamage?.delivery?.startsWith('magic')?weaponCrew(weapon,opts.rules.armsModel):1;
     // 疏散的近战代价是编队只展开一半人数；V21 起个体不再按半数出手（个体没有阵形可散，旧战斗保持原结算）。
     const loose=Math.max(0,count/crew)*(!ranged&&looseFormation(a)&&!(a.scale==='hero'&&isArmsV3(opts.rules.armsModel))?0.5:1);
@@ -951,6 +971,17 @@ function attackBasis(opts: AttackOpts): AttackBasis {
     dmgMult: resolveStack(context.atkMods, 'dmg', context.ctxAtk, stack).multTotal, wardMult: ward.multTotal };
   if (key !== undefined) opts.previewMemo!.bases.set(key, basis);
   return rememberLast(basis);
+}
+function previewDefenders(unit: Combatant, scope?: PreviewScope) {
+  let views = scope?.defenders.get(unit);
+  if (!views) {
+    const groups = protectionGroups(unit);
+    views = needsProtectionView(unit,groups) ? groups.map(group => ({
+      share:group.size / unit.hp, defender:projectProtection(unit,group),
+    })) : [];
+    scope?.defenders.set(unit,views);
+  }
+  return views;
 }
 function needsProtectionView(unit: Combatant,groups: ReturnType<typeof protectionGroups>): boolean {
   if (groups.length !== 1) return groups.length>0;

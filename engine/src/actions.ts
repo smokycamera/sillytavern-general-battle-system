@@ -38,7 +38,7 @@ export type ActionKind = 'move' | 'weapon' | 'charge' | 'ability' | 'brace' | 'r
 
 export type ActionIntent =
   | { kind: 'move'; actorId: string; direction: 'advance' | 'withdraw' }
-  | { kind: 'weapon'; actorId: string; targetId: string; weaponMode: 'primary' | 'sidearm' }
+  | { kind: 'weapon'; actorId: string; targetId: string; weaponMode: import('./equipment-batches.js').WeaponMode }
   | { kind: 'charge'; actorId: string; targetId: string }
   | { kind: 'ability'; actorId: string; abilityId: string; targetId?: string }
   | { kind: 'retreat'; actorId: string }

@@ -1,3 +1,4 @@
+import { smallCommandChoices } from './llm-command.js';
 import {expect,it} from 'vitest';
 import {captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type NarrativeSave} from './narrative-state.js';
 import {prepareInventoryTransaction} from './inventory-state.js';
@@ -112,4 +113,38 @@ it('defaults each omitted quantity to one on deployment and refit', () => {
   save = apply(save, '<unit_set id="'+id+'" weapon="舰首炮:直射火炮L8+4伤害,近防炮:机炮L6"/>', 2);
   expect(save.inventory!.filter(i=>i.equippedTo?.slot==='primary').map(i=>[i.name,i.qty])).toEqual([['舰首炮',1],['近防炮',1]]);
   expect(parseProtocol('<spawn name="旗舰" side="ally" scale="hero" weapon="舰首炮:直射火炮L8×0"/>').errors.join()).toContain('舰首炮');
+});
+
+it('reuses holdings when repeatedly issuing, returning and replenishing one lot', () => {
+  let save = apply({},'<spawn name="守军" side="ally" scale="company" hpMax="40"/>\n<add item="长矛" spec="长兵器L2" qty="40"/>',1);
+  const unitId = save.storage![0]!.id, source = save.inventory!.find(i=>i.name==='长矛')!.id;
+  const transact = (action: import('./inventory-state.js').InventoryAction) => {
+    save = prepareInventoryTransaction(save,{...action,id:'op'+save.factRevision,expectedRevision:save.factRevision!});
+  };
+  transact({kind:'assign',itemId:source,unitId});
+  const equip = (qty:number) => transact({kind:'equip',unitId,slot:'primary',itemId:source,qty});
+  equip(7);
+  const issued = save.inventory!.find(i=>i.name==='长矛' && i.equippedTo)!.id;
+  const unload = (qty:number) => transact({kind:'unequip',unitId,slot:'primary',itemId:issued,qty});
+  equip(8); unload(3); unload(12); equip(6);
+  transact({kind:'add',itemId:issued,qty:4});
+  transact({kind:'discard',itemId:source,qty:4});
+  expect(save.inventory!.filter(i=>i.name==='长矛').map(i=>[i.id,i.qty])).toEqual([[source,34],[issued,6]]);
+  expect(batchWeapons(save.storage![0]!.snapshot!).map(w=>w.id)).toEqual([issued]);
+});
+
+it('offers the same coordinated shot to the LLM and the player and spends one action', () => {
+  const save = apply({},'<spawn name="守军" side="ally" scale="company" hpMax="20" weapon="东营火枪:火枪L2×20,西营火枪:火枪L2×20"/>\n<spawn name="守卫" side="enemy" scale="company" hpMax="80"/>',1);
+  const actors = save.storage!.map(r=>structuredClone(r.snapshot!)), [actor,target] = actors;
+  const field = standardField(9,15); field.tiles.fill('open');
+  const battle = new SmallBattle({combatants:actors,battlefield:field,rules:V43_OVERFLOW_D20,seed:'mixed-volley'});
+  battle.start(); actor!.pos=30; target!.pos=33; battle.turnOrder=actors.map(u=>u.id); battle.turnIndex=0;
+  const menu=battle.getActionOptions(actor!.id).find(o=>o.id==='volley:ranged');
+  expect(menu?.targets?.[0]?.preview?.effects).toHaveLength(2);
+  expect(smallCommandChoices(battle,actor!.id).some(c=>c.action?.weaponMode==='volley:ranged' && c.action.targetId===target!.id)).toBe(true);
+  battle.attack(actor!.id,target!.id,{weaponMode:'volley:ranged'});
+  const fired=actor!.equipmentBatches!.map(b=>b.reloading?.[0]?.count ?? 0);
+  expect(fired.filter(Boolean)).toHaveLength(2);
+  expect(fired.reduce((sum,n)=>sum+n,0)).toBeLessThanOrEqual(actor!.hp);
+  expect(battle.getTurnEconomy(actor!.id).actionAvailable).toBe(false);
 });

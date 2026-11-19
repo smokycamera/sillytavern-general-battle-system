@@ -233,9 +233,19 @@ function mergePatch(target: Record<string, unknown>, source: Record<string, unkn
     } else target[key] = structuredClone(value);
   }
 }
-/** 合并同一档案的字段修改，再按更新后的编队和伤势计算治疗。 */
+/** 先结算已有伤员，再写入本批指定的最终人数与状态。 */
 function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: Map<string, Record<string, unknown>>, proposalId: string, registry: Registry, context: UnitSetContext): NarrativeSave {
   let next = save, records = next.storage ?? [];
+  const recoveries = new Map<string, number | 'all'>();
+  for (const event of events) if (event.kind === 'recover') {
+    const previous = recoveries.get(event.id);
+    if (previous !== undefined && previous !== event.life) throw Error('同一单位的治疗量冲突，请每个单位只写一条 recover');
+    recoveries.set(event.id, event.life);
+  }
+  if (recoveries.size) records = records.map((record) => {
+    const life = recoveries.get(record.id);
+    return life === undefined ? record : treatUnitRecord(record, registry, life, proposalId);
+  });
   // 只交道具（items）的 unit_set 不改档案字段，道具在入账最后交出。
   for (const event of events) if (event.kind === 'unit-set' && Object.keys(event.data).length) {
     const patch = combined.get(event.id) ?? {}; mergePatch(patch, event.data); combined.set(event.id, patch);
@@ -283,16 +293,6 @@ function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: M
     }
     if (Object.keys(patch).length) next = applyUnitSet(next, id, patch, proposalId, context);
   }
-  const recoveries = new Map<string, number | 'all'>();
-  for (const event of events) if (event.kind === 'recover') {
-    const previous = recoveries.get(event.id);
-    if (previous !== undefined && previous !== event.life) throw Error('同一单位的治疗量冲突，请每个单位只写一条 recover');
-    recoveries.set(event.id, event.life);
-  }
-  if (recoveries.size) next.storage = next.storage!.map((record) => {
-    const life = recoveries.get(record.id);
-    return life === undefined ? record : treatUnitRecord(record, registry, life, proposalId);
-  });
   return next;
 }
 /** 学习技能与剧情效果来源；来源编号带事件序号，同一回复重复学习需合并。 */
@@ -392,7 +392,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     for (const [partIndex, part] of parts.entries()) {
       const item = next.inventory!.find(item => item.id === part.itemId)!;
       const operation = proposal.id + ':' + index + (partIndex ? ':part:' + partIndex : '');
-      if (item.equippedTo && !(item.batch && part.qty < item.qty)) next = prepareInventoryTransaction(next, { kind: 'unequip', id: 'take-unequip:' + operation, expectedRevision: next.factRevision ?? 0, ...item.equippedTo, itemId: item.id });
+      if (item.equippedTo && !item.batch) next = prepareInventoryTransaction(next, { kind: 'unequip', id: 'take-unequip:' + operation, expectedRevision: next.factRevision ?? 0, ...item.equippedTo, itemId: item.id });
       next = prepareInventoryTransaction(next, { kind: 'discard', id: 'take:' + operation, expectedRevision: next.factRevision ?? 0, ...part });
     }
   };
@@ -505,16 +505,28 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (!Number.isSafeInteger(total) || !item || total > item.qty) throw new Error('同一实物的转移总数量超出库存');
     transferTotals.set(event.id, total);
   }
-  // 显式转移在新单位建档后执行，保留实物与冻结属性，不额外发放。
+  // Deferred loadouts refer to the original lot. A transfer can join an existing holding at its destination.
+  const transferred = new Set<string>();
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind !== 'give') continue;
+    const track = event.to?.some(unitId => deferredEquipment.has(unitId));
+    const before = track ? new Map(next.inventory!.map(item => [item.id,item])) : undefined;
     next = prepareInventoryTransaction(next, { kind: 'transfer', id: `give:${proposal.id}:${index}`, expectedRevision: next.factRevision ?? 0, itemId: event.id, unitIds: event.to, qty: event.qty });
+    transferred.add(event.id);
+    if (!before) continue;
+    for (const item of next.inventory!) {
+      const patch = item.assignedTo && deferredEquipment.get(item.assignedTo);
+      if (!patch || !item.qty) continue;
+      const old = before.get(item.id);
+      if (old && old.assignedTo === item.assignedTo && old.qty >= item.qty) continue;
+      transferred.add(item.id);
+      for (const field of UNIT_EQUIPMENT_FIELDS) if (patch[field] === event.id) patch[field] = item.id;
+    }
   }
   // 同批分配整叠后再扣取，标签前后顺序一致；允许从任一持有者的拆分份额扣除。
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind === 'take' && givenStacks.has(event.id)) take(event, index);
   }
-  const transferred = new Set(proposal.events.flatMap(event => event.kind === 'give' ? [event.id] : []));
   for (const [unitId, patch] of deferredEquipment) {
     next = applyUnitSet(next, unitId, patch, proposal.id, { given, notices, transferred });
   }

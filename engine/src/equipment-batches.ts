@@ -106,16 +106,36 @@ export function mergeBatchEquipment(unit: Combatant,other: Combatant): void {
   }
   unit.equipmentPersonnel = members(unit)+members(other)+(unit.recoverableWounded ?? 0)+(other.recoverableWounded ?? 0);
 }
-export type WeaponMode = 'primary'|'sidearm'|`batch:${string}`;
+export type VolleyMode = 'volley:ranged' | 'volley:melee';
+export type WeaponMode = 'primary' | 'sidearm' | `batch:${string}` | VolleyMode;
+export function isVolleyMode(mode?: string): mode is VolleyMode {
+  return mode === 'volley:ranged' || mode === 'volley:melee';
+}
+/** Largest remainder apportions the shared frontage without rounding up extra operators. */
+export function allocateVolley<T extends { copies: number }>(weapons: readonly T[], frontage: number) {
+  if (weapons.length < 2) return [];
+  const total = weapons.reduce((sum,w) => sum + w.copies,0);
+  const budget = Math.min(Math.floor(frontage),total);
+  if (budget < 2) return [];
+  const shares = weapons.map(weapon => {
+    const exact = budget * weapon.copies / total;
+    return {weapon, count:Math.floor(exact), remainder:exact % 1};
+  });
+  const left = budget - shares.reduce((sum,w) => sum + w.count,0);
+  if (left) for (const row of [...shares].sort((a,b) => b.remainder-a.remainder).slice(0,left)) row.count++;
+  const active = shares.filter(row => row.count > 0);
+  return active.length >= 2 ? active : [];
+}
 export function weaponModeFor(unit: Combatant,weapon?: Weapon): WeaponMode {
   return !weapon || weapon.id === unit.weapon?.id ? 'primary' : weapon.id === unit.sidearm?.id ? 'sidearm' : ('batch:'+weapon.id) as WeaponMode;
 }
 export function optionWeaponMode(id: string): WeaponMode {
-  return id.startsWith('batch:') ? id as WeaponMode : id === 'weapon:sidearm' ? 'sidearm' : 'primary';
+  return isVolleyMode(id) || id.startsWith('batch:') ? id as WeaponMode : id === 'weapon:sidearm' ? 'sidearm' : 'primary';
 }
 export function weaponForMode(unit: Combatant,mode: WeaponMode): Weapon | undefined {
   if (mode === 'primary') return unit.weapon;
   if (mode === 'sidearm') return unit.sidearm;
+  if (isVolleyMode(mode)) return undefined;
   const batch = unit.equipmentBatches?.find(b=>b.id===mode.slice(6));
   return batch?.mechanics.kind === 'weapon' ? batch.mechanics.value : undefined;
 }

@@ -84,3 +84,13 @@ it('reports an invalid budget and refuses inconsistent or unavailable recovery a
   expect(() => submitRecovery(retired, tag)).toThrow('解散');
   expect(save).toEqual(before);
 });
+
+it('applies the final headcount after treating casualties in either tag order', () => {
+  const recover = '<recover id="stored-company" life="all"/>';
+  const set = '<unit_set id="stored-company" hp="70"/>';
+  for (const tags of [recover + set, set + recover]) {
+    expect(submitRecovery(woundedCompany(),tags).storage![0]).toMatchObject({
+      hp:70, recoverableWounded:0, snapshot:{hp:70,formation:{members:70}},
+    });
+  }
+});

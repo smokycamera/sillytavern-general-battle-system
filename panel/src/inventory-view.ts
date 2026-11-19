@@ -145,14 +145,13 @@ function previewHtml(preview: InventoryPreview): string {
   const itemChanges = beforeItem && afterItem ? [beforeItem.qty !== afterItem.qty ? `数量 ${beforeItem.qty} → ${afterItem.qty}` : '', beforeItem.assignedTo !== afterItem.assignedTo ? '归属：' + (owner ?? '未分配') : ''].filter(Boolean).join(' · ') : '';
   // 收缴：列出从该单位转入公共库存的物品。
   const collected = intent.kind === 'collect' ? (preview.before.inventory ?? []).filter((item) => item.assignedTo === intent.unitId && !preview.after.inventory?.find((i) => i.id === item.id)?.assignedTo) : [];
-  const added = intent.kind === 'add' ? (preview.after.inventory ?? []).filter(item => !preview.before.inventory?.some(old => old.id === item.id)) : [];
   return `<div class="inventory-preview" data-role="inventory-preview"><h3>${labels[intent.kind]} · 确认前预览</h3>
     ${collected.length ? `<div class="inventory-delete-list" data-role="collect-list"><p>转入公共库存：</p>${collected.map((item) => `<div>${esc(item.name)} ×${item.qty}</div>`).join('')}</div>` : ''}
     ${selected ? `<b>${esc(selected.name)}</b><p>${esc(itemDescription(selected))}</p>` : ''}
     ${(intent.kind === 'reforge' || intent.kind === 'upgrade-budget') && beforeItem ? `<details data-detail-id="item-before-edit"><summary>查看修改前属性</summary><p>${esc(itemDescription(beforeItem))}</p></details>` : ''}
     ${itemChanges ? `<div>${esc(itemChanges)}</div>` : ''}
-    ${added.length ? `<p>新增 ${added.length} 件同规格实物，归属不变，可分别装备或改造。</p>` : ''}
-    ${intent.kind === 'unequip' ? '<p>实物返回持有者库存，可以继续转移或装备。</p>' : ''}${units}
+    ${intent.kind === 'add' && beforeItem?.equippedTo ? `<p>库存增加 ${intent.qty} 件。</p>` : ''}
+    ${intent.kind === 'unequip' ? `<p>卸下 ${intent.qty ?? beforeItem?.qty ?? 1} 件，放回单位库存。</p>` : ''}${units}
     <div class="row"><button class="primary" data-action="inventory-confirm">确认${labels[intent.kind]}</button><button data-action="inventory-cancel">取消预览</button></div></div>`;
 }
 
@@ -293,7 +292,7 @@ export class InventoryPanel {
         if (action === 'inventory-assign') intent = { kind: 'assign', itemId: item.id, unitId: this.selectedUnit || undefined };
         else if (action === 'inventory-unassign') intent = { kind: 'assign', itemId: item.id };
         else if (action === 'inventory-equip') intent = { kind: 'equip', itemId: item.id, unitId: this.selectedUnit ?? '', slot: element.dataset.slot as EquipmentSlot, qty:Number(element.closest('.inventory-card')?.querySelector<HTMLInputElement>('[data-issue-qty]')?.value ?? item.qty) };
-        else if (action === 'inventory-unequip') intent = { kind: 'unequip', unitId: item.equippedTo!.unitId, slot: item.equippedTo!.slot, itemId:item.id };
+        else if (action === 'inventory-unequip') intent = { kind: 'unequip', unitId: item.equippedTo!.unitId, slot: item.equippedTo!.slot, itemId:item.id, qty:Number(element.closest('.inventory-card')?.querySelector<HTMLInputElement>('[data-issue-qty]')?.value ?? item.qty) };
         else if (action === 'inventory-use') intent = { kind: 'use', itemId: item.id, unitId: this.selectedUnit ?? '' };
         else if (action === 'inventory-upgrade-budget') intent = { kind: 'upgrade-budget', itemId: item.id };
         else if (action === 'inventory-delete') intent = { kind: 'discard', itemId: item.id, qty: item.qty };
@@ -368,7 +367,7 @@ export class InventoryPanel {
         ${shadowed.length ? `<p class="sub" data-role="gear-overshadowed">未生效：${esc(shadowed.join('、'))}（已被覆盖）</p>` : ''}
         ${stats.length && m?.kind === 'item' && m.value.passive?.traits.length ? '<p>' + esc(itemPassiveSummary({ traits: m.value.passive.traits }, undefined, false)) + '</p>' : ''}
         ${stats.length ? `<dl class="item-stats">${stats.map(([key, value, next]) => `<div><dt>${key}</dt><dd>${esc(value)}${next ? '<br><small class="sub">' + esc(next) + '</small>' : ''}</dd></div>`).join('')}</dl>${m?.kind === 'item' && historicalWornItem(m.value) ? '<p class="sub">旧版数值，可预览更新。</p>' : ''}<details class="item-rules" data-detail-id="rules-${esc(item.id)}"><summary>查看完整属性</summary>${m?.kind === 'item' ? '<p>配方：' + esc(itemSpecText(m.value.recipe)) + '</p>' : ''}<p>${esc(itemDescription(item))}</p>${m?.kind === 'item' && !m.value.passive?.actualEffects && m.value.passive?.bonuses?.speed ? '<p>旧版速度只加先攻；更新后增加移动。</p>' : ''}</details>` : `<p>${esc(itemDescription(item))}</p>`}
-        ${item.batch && !equipped && item.qty>1 && recommended ? `<label>配发件数 <input data-issue-qty type="number" min="1" max="${item.qty}" value="${item.qty}"></label>` : ''}
+        ${item.batch && item.qty>1 && (equipped || recommended) ? `<label>${equipped ? '卸下件数' : '配发件数'} <input data-issue-qty type="number" min="1" max="${item.qty}" value="${item.qty}"></label>` : ''}
         <div class="item-actions" ${this.bulkDelete ? 'hidden' : ''}>${equipped ? `<button class="primary" data-action="inventory-unequip" ${itemData} ${disabled}>卸下</button>` : recommended ? `<button class="primary" data-action="inventory-equip" ${itemData} data-slot="${recommended.slot}" ${locked || !actor || recommended.reason ? 'disabled' : ''}>${recommended.slot === 'gear' ? '佩戴' : '装备'+slotNames[recommended.slot]}</button>${recommended.reason ? '<span class="grid-reason">' + esc(recommended.reason) + '</span>' : ''}` : ''}
         ${single ? `<button class="primary" data-action="inventory-use" ${itemData} title="${battleOnly ? '请在战场的行动列表中使用' : ''}" ${locked || !actor || battleOnly ? 'disabled' : ''}>${battleOnly ? '战斗中使用' : '使用1件'}</button>` : ''}
         ${m?.kind === 'item' && (historicalRecoveryItem(m.value) || historicalWornItem(m.value)) ? `<button data-action="inventory-upgrade-budget" ${itemData} ${disabled}>${m.value.recipe.form === 'worn' ? '更新佩戴数值' : '升级治疗／屏障数值'}</button>` : ''}
