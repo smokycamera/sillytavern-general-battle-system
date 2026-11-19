@@ -2,7 +2,8 @@ import { narrativeEvents } from './battle-reports.js';
 import { smallCommandChoices } from './llm-command.js';
 import {expect,it} from 'vitest';
 import {captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type NarrativeSave} from './narrative-state.js';
-import {prepareInventoryTransaction} from './inventory-state.js';
+import {prepareInventoryState,prepareInventoryTransaction, type InventoryAction} from './inventory-state.js';
+import {reviewMigration} from './migration-review.js';
 import {availableCopies, batchWeapons, startBatchReload} from '../../engine/src/equipment-batches.js';
 import {detachMembers,combinePersonnel} from '../../engine/src/small/transport-groups.js';
 import {parseProtocol} from './protocol.js';
@@ -134,6 +135,43 @@ it('reuses holdings when repeatedly issuing, returning and replenishing one lot'
   transact({kind:'discard',itemId:source,qty:4});
   expect(save.inventory!.filter(i=>i.name==='长矛').map(i=>[i.id,i.qty])).toEqual([[source,16],[issued,30]]);
   expect(batchWeapons(save.storage![0]!.snapshot!).map(w=>w.id)).toEqual([issued]);
+});
+
+it('returns a partial public issue to its original holding and keeps discarded IDs empty after reload', () => {
+  let save = apply({},'<spawn name="守军" side="ally" scale="company" hpMax="40"/>\n<add item="长矛" spec="长兵器L2" qty="30"/>',1);
+  const unitId = save.storage![0]!.id, lot = save.inventory!.find(i=>i.name==='长矛')!.id;
+  const act = (action: InventoryAction) => {
+    save = prepareInventoryTransaction(save,{...action,id:'roundtrip'+save.factRevision,expectedRevision:save.factRevision!});
+  };
+  const equip = (qty:number) => act({kind:'equip',unitId,slot:'primary',itemId:lot,qty});
+  equip(10);
+  const issued = save.inventory!.find(i=>i.name==='长矛' && i.equippedTo)!.id;
+  const unload = (qty:number) => act({kind:'unequip',unitId,slot:'primary',itemId:issued,qty});
+  unload(4);
+  expect(save.inventory!.find(i=>i.id===lot)?.qty).toBe(24);
+  unload(6);
+  expect(save.inventory!.filter(i=>i.name==='长矛' && i.qty>0).map(i=>[i.id,i.qty])).toEqual([[lot,30]]);
+  equip(10);
+  act({kind:'discard',itemId:issued,qty:10});
+  equip(5);
+  save = prepareInventoryState(JSON.parse(JSON.stringify(save)));
+  expect(save.inventory!.find(i=>i.id===issued)?.qty).toBe(0);
+  expect(save.inventory!.filter(i=>i.name==='长矛' && i.qty>0).map(i=>i.qty)).toEqual([15,5]);
+});
+
+it('reopens mixed slots, and previews only an untouched backup of falsely isolated holdings', () => {
+  const save = apply({},'<spawn name="守军" side="ally" scale="company" hpMax="20" weapon="长矛:长兵器L2×10,火枪:火枪L2×10" armor="铁甲:重甲L2×5,皮甲:轻甲L2×10"/>',1);
+  expect(reviewMigration(save)).toBeUndefined();
+  const rows = save.inventory!;
+  const accepted = prepareInventoryState({...save,inventory:[],inventoryMigrationBackup:rows,migrationBackups:[{source:save}],
+    factRevision:save.factRevision!+1,unitMigrationWarnings:rows.map((_,i)=>`库存[${i}]已隔离：Error: 同一槽位有多件实物，不能猜测保留`)}, false);
+  const review = reviewMigration(accepted)!;
+  expect(review.quarantined).toBe(0);
+  expect(review.candidate.inventory).toEqual(rows);
+  expect(review.candidate.storage![0]!.snapshot!.equipmentBatches).toHaveLength(4);
+  expect(accepted.inventory).toEqual([]);
+  expect(reviewMigration({...accepted,factRevision:accepted.factRevision!+1})).toBeUndefined();
+  expect(reviewMigration({...accepted,inventory:[{...rows[0]!,qty:0,equippedTo:undefined}]})).toBeUndefined();
 });
 
 it.each([

@@ -26,6 +26,10 @@ export interface InventoryItem {
   mechanics?: ItemMechanics;
   equippedTo?: { unitId: string; slot: EquipmentSlot };
   sourceItemId?: string;
+  /** Empty holding created by merging, available for the next split of this lot. */
+  emptiedByMerge?: true;
+  /** Public holding from which this equipped stack was issued. */
+  publicIssueId?: string | null;
   revision?: number;
   /** @deprecated 旧档兼容字段，后续存档移除。 */
   history?: { revision: number; name: string; mechanics: ItemMechanics; sourceId: string }[];
@@ -185,7 +189,7 @@ export function splitInventoryBatch(item: InventoryItem, id: string, qty: number
 }
 /** Move copies into an existing holding of the same rolled lot, retaining its public ID. */
 export function moveCopies(inventory: InventoryItem[], source: InventoryItem, qty: number, owner: string | undefined,
-  slot: EquipmentSlot | undefined, splitId: string): InventoryItem {
+  slot: EquipmentSlot | undefined, splitId: string, returning = false): InventoryItem {
   const equipped = slot && owner ? {unitId:owner, slot} : undefined;
   const samePlace = (item: InventoryItem) => item.assignedTo === owner && item.equippedTo?.slot === slot;
   const byId = new Map(inventory.map(item => [item.id,item]));
@@ -204,21 +208,36 @@ export function moveCopies(inventory: InventoryItem[], source: InventoryItem, qt
   const matching = inventory.filter(item => item !== source && item.name === source.name && item.note === source.note && root(item) === family
     && batchSignature(item) === (signature ??= batchSignature(source)));
   let destination = matching.find(item => item.qty > 0 && samePlace(item));
+  // A direct issue from the public store can go back into its original holding.
+  const publicIssueId = source.publicIssueId === undefined && source.id.startsWith('issued:') ? source.sourceItemId : source.publicIssueId;
+  if (!destination && returning && publicIssueId) {
+    destination = matching.find(item => item.id === publicIssueId && (item.qty > 0 || item.emptiedByMerge) && !item.assignedTo && !item.equippedTo);
+    if (destination || source.id === publicIssueId) {
+      owner = undefined;
+      destination ??= matching.find(item => item.qty > 0 && samePlace(item));
+    }
+  }
   if (!destination && qty === source.qty) destination = source;
   if (!destination) {
-    destination = matching.find(item => item.qty === 0);
+    destination = matching.find(item => item.qty === 0 && item.emptiedByMerge);
     if (!destination) {
       if (byId.has(splitId)) throw Error('分配物品的编号已存在');
       destination = splitInventoryBatch(source,splitId,0);
       inventory.push(destination);
     }
   }
+  // Only a direct issue can change the return destination. A transfer gives the unit ownership.
+  const issuedFrom = equipped ? (source.assignedTo ? source.publicIssueId : source.id) : undefined;
+  const existingIssue = destination === source || !destination.qty || destination.publicIssueId === issuedFrom;
   if (destination !== source) {
     if (!Number.isSafeInteger(destination.qty + qty)) throw Error('物品数量超出安全整数范围');
     destination.qty += qty;
     source.qty -= qty;
   }
-  if (!source.qty) delete source.equippedTo;
+  if (!source.qty) { delete source.equippedTo; source.emptiedByMerge = true; }
+  delete destination.emptiedByMerge;
+  if (issuedFrom && existingIssue) destination.publicIssueId = issuedFrom;
+  else if (destination.id.startsWith('issued:') || destination.publicIssueId !== undefined) destination.publicIssueId = null;
   destination.assignedTo = owner;
   destination.equippedTo = equipped;
   if (source.batch || destination.mechanics && !isInventoryStack(destination) && destination.qty > 1) destination.batch = true;
@@ -238,6 +257,11 @@ export function fitsEquipmentSlot(mechanics: ItemMechanics, slot: EquipmentSlot)
   return (slot === 'primary' || slot === 'sidearm') ? mechanics.kind === 'weapon' : mechanics.kind === slot;
 }
 
+export function occupiedEquipmentSlot(item: InventoryItem): string | undefined {
+  if (!item.equippedTo) return;
+  const {unitId,slot} = item.equippedTo;
+  return JSON.stringify([unitId,slot,slot === 'gear' || item.batch ? item.id : null]);
+}
 /** 首次接入只登记已有V2精确实例，绝不按名称生成或重掷旧装备。 */
 export function prepareInventoryState(save: InventorySave, adoptExisting = true): InventorySave {
   if (save.classMigration !== undefined && save.classMigration !== 'arms-v2') throw Error('武器类别更新标记损坏');
@@ -260,6 +284,7 @@ export function prepareInventoryState(save: InventorySave, adoptExisting = true)
       if (!mechanics || mechanics.kind === 'item') continue;
       const gear = mechanics.value;
       let item = next.inventory.find((entry) => entry.id === gear.id);
+      if (item?.qty === 0) continue;
       if (item && (fingerprint(item.mechanics) !== fingerprint(mechanics) || item.equippedTo && (item.equippedTo.unitId !== record.id || item.equippedTo.slot !== slot))) throw new Error('已有装备记录重复或内容冲突，不能猜测合并');
       if (!item) {
         item = { id: gear.id, name: 'name' in gear && gear.name ? gear.name : '盾牌', qty: 1,
@@ -274,7 +299,7 @@ export function prepareInventoryState(save: InventorySave, adoptExisting = true)
   for (const item of next.inventory) {
     if (!item.equippedTo) continue;
     const { unitId, slot } = item.equippedTo;
-    const key = JSON.stringify([unitId, slot === 'gear' || item.batch ? slot + ':' + item.id : slot]);
+    const key = occupiedEquipmentSlot(item)!;
     if (!next.storage.some((r) => r.id === unitId && r.equipmentManaged) || occupied.has(key) || !slots.includes(slot)
       || !item.mechanics || !fitsEquipmentSlot(item.mechanics, slot) || item.assignedTo !== unitId || item.qty < 1 || !item.batch && item.qty !== 1) throw new Error('装备槽位或持有者关系损坏');
     occupied.add(key);
@@ -416,7 +441,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
     if (!item) throw new Error(action.slot === 'gear' ? '这件道具没有装备在该单位身上' : '这个装备槽已空');
     const qty = action.qty ?? item.qty;
     if (!Number.isSafeInteger(qty) || qty < 1 || qty > item.qty) throw Error('卸下件数超出装备数量');
-    moveCopies(inventory,item,qty,item.assignedTo,undefined,'returned:'+id);
+    moveCopies(inventory,item,qty,item.assignedTo,undefined,'returned:'+id,true);
     projectEquipment(record, inventory);
     rewriteRecord(next, record, id);
   } else if (action.kind === 'collect') {
@@ -435,6 +460,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
       if (!Number.isSafeInteger(action.qty) || action.qty < 1 || !Number.isSafeInteger(item.qty + action.qty)) throw new Error('增加数量须为正整数，且总数不能超出安全整数范围');
       if (item.mechanics?.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural') throw new Error('天生武器不能增加实物数量');
       if (!isInventoryStack(item)) item.batch = true;
+      delete item.emptiedByMerge;
       item.qty += action.qty;
       if (item.equippedTo) {
         const record = recordById(next,item.equippedTo.unitId);

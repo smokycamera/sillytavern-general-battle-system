@@ -150,7 +150,7 @@ function previewHtml(preview: InventoryPreview): string {
     ${selected ? `<b>${esc(selected.name)}</b><p>${esc(itemDescription(selected))}</p>` : ''}
     ${(intent.kind === 'reforge' || intent.kind === 'upgrade-budget') && beforeItem ? `<details data-detail-id="item-before-edit"><summary>查看修改前属性</summary><p>${esc(itemDescription(beforeItem))}</p></details>` : ''}
     ${itemChanges ? `<div>${esc(itemChanges)}</div>` : ''}
-    ${intent.kind === 'unequip' ? `<p>卸下 ${intent.qty ?? beforeItem?.qty ?? 1} 件，放回单位库存。</p>` : ''}${units}
+    ${intent.kind === 'unequip' ? `<p>卸下 ${intent.qty ?? beforeItem?.qty ?? 1} 件。</p>` : ''}${units}
     <div class="row"><button class="primary" data-action="inventory-confirm">确认${labels[intent.kind]}</button><button data-action="inventory-cancel">取消预览</button></div></div>`;
 }
 
