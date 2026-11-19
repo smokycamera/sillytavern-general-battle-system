@@ -16,6 +16,7 @@ export function weaponLoadCrew(unit: EquippedLoad, weapon?: Weapon): number {
 /** Body armor is individual; V29 human formations share crew-served primary/secondary weapon loads. */
 export function equipmentLoad(unit: EquippedLoad): number {
   if ((unit.equipmentBatches?.length || unit.reserveEquipmentLoad) && unit.hp !== undefined && unit.scale) {
+    const bearer = unit as EquippedLoad & Pick<Combatant,'hp'|'scale'>;
     const issued = new Set(unit.equipmentBatches?.map(b=>b.id));
     const people = unit.scale === 'hero' ? 1 : unit.hp;
     const legacy = [unit.weapon,unit.sidearm,hasNaturalArmor(unit)?undefined:unit.armor,unit.shield];
@@ -23,7 +24,7 @@ export function equipmentLoad(unit: EquippedLoad): number {
     for (const batch of unit.equipmentBatches ?? []) {
       const item = batch.mechanics;
       if (item.kind === 'item' || item.kind === 'armor' && hasNaturalArmor(unit)) continue;
-      total += (item.value.load ?? 0)*batchCount({...unit,scale:unit.scale,hp:unit.hp},batch,true);
+      total += (item.value.load ?? 0)*batchCount(bearer,batch,true);
     }
     return total + (unit.reserveEquipmentLoad ?? 0);
   }

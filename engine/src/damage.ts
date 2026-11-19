@@ -47,7 +47,7 @@ import { isArmsV2, MOUNTED_SPRINT_DAMAGE, HOOK_ACCURACY, shieldUsable, shieldCla
 
 import type { Combatant, RulePack, Weapon } from './types.js';
 import type { ConditionDef } from './types.js';
-import { SeededRng, type Rng } from './rng.js';
+import { hashSeed, SeededRng, type Rng } from './rng.js';
 import { rollDice, rollDicePortion, rollDicePortionTotal, type DiceRollDetail } from './dice.js';
 import { collectMods, resolveStack, describeStack, hasFlag, type Modifier, type StackResult } from './bonus.js';
 import { averageDice, estimateHitChance, d20HitWeight } from './actions.js';
@@ -153,6 +153,8 @@ export interface AttackOpts {
   defender: Combatant;
   rng: Rng;
   casualtyRolls?: CasualtyRolls;
+  /** Lower-cost estimate for comparing hypothetical incoming fire at many destinations. */
+  riskEstimate?: boolean;
   rules: RulePack;
   conditionDefs: Map<string, ConditionDef>;
   traitRegistry?: Map<string, import('./types.js').Trait>;
@@ -432,6 +434,28 @@ const memberPreviewCache=new Map<string,{mean:number;second:number;positive:numb
 
 interface SampledMemberPreview { sum: number; squares: number; positive: number; casualties: number; maximum: number; hits: number }
 const SAMPLED_PREVIEW_COUNT = 96;
+// Fixed preview seeds couple alternative actions. Cache their initial states only;
+// each simulation owns its four cursors and restarts them for every packet.
+type PreviewSeedStates = [number,number,number,number];
+const packetSeedStates: PreviewSeedStates[] = [];
+class PreviewStreams {
+  readonly hit = new SeededRng('hit');
+  readonly dice = new SeededRng('dice');
+  readonly targets = new SeededRng('targets');
+  readonly rounding = new SeededRng('round');
+  reset(sample: number, attack: number, packet: number) {
+    const index = (attack * 8 + packet) * SAMPLED_PREVIEW_COUNT + sample;
+    let states = packetSeedStates[index];
+    if (!states) {
+      const seed = `barrier-preview:${sample}:${attack}:${packet}`;
+      states = [hashSeed(seed+':hit'),hashSeed(seed+':dice'),hashSeed(seed+':targets'),hashSeed(seed+':round')];
+      if (index < 8192) packetSeedStates[index] = states;
+    }
+    this.hit.setState(states[0]); this.dice.setState(states[1]);
+    this.targets.setState(states[2]); this.rounding.setState(states[3]);
+  }
+}
+
 // Cache values, not live units/resolutions. Both entry count and key memory are bounded.
 const sampledMemberPreviewCache = new Map<string, SampledMemberPreview>();
 const SAMPLE_CACHE_ENTRIES = 128, SAMPLE_CACHE_CHARS = 2 * 1024 * 1024;
@@ -584,6 +608,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   const upper=maxBase&&maxAp ? Math.ceil((Math.max(...maxBase.keys())+Math.max(...maxAp.keys()))*rawMultiplier*Math.ceil(weight))*count : Infinity;
   // 连续攻击共用剩余屏障。固定种子的小样本估计只操作副本，不消耗实战随机数。
   if (count > 1 && (hasMemberHealth(opts.defender) || opts.defender.barrier || opts.defender.energyShield || upper>memberHealth(opts.defender)) || !maxBase || !maxAp) {
+    const sampleCount = opts.riskEstimate ? 24 : SAMPLED_PREVIEW_COUNT;
     const scope = previewScope, { key, shared } = sampledPreviewKeys(opts, scope);
     let stats = (scope?.samples ?? sampledMemberPreviewCache).get(key);
     const sharedKey = scope && !stats ? shared() : key;
@@ -597,8 +622,9 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
       const sampleOpts: AttackOpts = { ...opts, attacker, defender: opts.defender, rng: new SeededRng('barrier-preview:0'), previewMemo };
       const packets = opts.packetShare !== undefined ? 1 : cohortSamples(sampleOpts);
       if (packets > 1) sampleOpts.packetShare = 1 / packets;
+      const streams = opts.rules.attackPreviewModel === 'exact-sequence-v1' ? new PreviewStreams() : undefined;
       let reusable: Combatant | undefined;
-      for (let i = 0; i < SAMPLED_PREVIEW_COUNT; i++) {
+      for (let i = 0; i < sampleCount; i++) {
         const defender = damageCopy(opts.defender, reusable);
         reusable = defender;
         const rng = new SeededRng('barrier-preview:' + i), before = memberHealth(defender), members = defender.hp;
@@ -606,8 +632,8 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
         let hitAny = false;
         for (let n = 0; n < (opts.abilityDamage ? 1 : ctx.weapon?.attacks ?? 1) && defender.hp > 0; n++) {
           for (let packet = 0; packet < Math.max(1, packets) && defender.hp > 0; packet++) {
-            if (opts.rules.attackPreviewModel === 'exact-sequence-v1') sampleOpts.rng = new SeededRng(`barrier-preview:${i}:${n}:${packet}`);
-            hitAny = resolveAttackPacket(sampleOpts, true) || hitAny;
+            streams?.reset(i,n,packet);
+            hitAny = resolveAttackPacket(sampleOpts, true, streams) || hitAny;
           }
         }
         stats.hits += Number(hitAny);
@@ -618,10 +644,10 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
       rememberSampledPreview(sharedKey, stats);
       if (scope) rememberScopedPreview(scope, key, stats);
     }
-    const mean = stats.sum / SAMPLED_PREVIEW_COUNT;
+    const mean = stats.sum / sampleCount;
     return {...diagnostics,damageModel:'member-health' as const,...(opts.rules.overmatch?{weaponOverflow:hasMemberHealth(opts.defender)&&attackOverflow(opts,protection,resolved)}:{}),hitChance:hit,...(isArmsV2(opts.rules.armsModel)?{critChance:critical}:{}),anyHitChance:1-(1-hit)**count,expectedDamage:mean,damageOnHit:stats.hits?stats.sum/stats.hits:0,
-      expectedCasualties:hasMemberHealth(opts.defender)?stats.casualties/SAMPLED_PREVIEW_COUNT:undefined,damageChance:stats.positive/SAMPLED_PREVIEW_COUNT,penetrationFactor:factor,exact:false,
-      variance:Math.max(0,stats.squares/SAMPLED_PREVIEW_COUNT-mean*mean),minDamage:0,maxDamage:stats.maximum};
+      expectedCasualties:hasMemberHealth(opts.defender)?stats.casualties/sampleCount:undefined,damageChance:stats.positive/sampleCount,penetrationFactor:factor,exact:false,
+      variance:Math.max(0,stats.squares/sampleCount-mean*mean),minDamage:0,maxDamage:stats.maximum};
   }
   // 预览不改动单位：溢出判定与穿透在全部骰面组合中保持不变。
   const penetration=opts.rules.overmatch?protection??penetrationContext(opts,resolved):undefined,overflow=attackOverflow(opts,penetration,resolved);
@@ -1000,18 +1026,17 @@ export function resolveAttack(opts: AttackOpts): AttackResolution {
   return resolveAttackPacket(opts, false);
 }
 
-function resolveAttackPacket(opts: AttackOpts, sampleOnly: true): boolean;
+function resolveAttackPacket(opts: AttackOpts, sampleOnly: true, streams?: PreviewStreams): boolean;
 function resolveAttackPacket(opts: AttackOpts, sampleOnly: false): AttackResolution;
 /** 实战和抽样共用命中、伤损与随机数顺序；抽样在报告构建前直接提交伤损。 */
-function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean): AttackResolution | boolean {
+function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean, streams?: PreviewStreams): AttackResolution | boolean {
   const { attacker, defender, rng, rules } = opts;
   // V40 comparisons couple each random purpose across loadouts. A skipped fractional
   // hit/rounding draw can no longer shift all damage dice or the following packet.
-  const separated = sampleOnly && rules.attackPreviewModel === 'exact-sequence-v1';
-  const hitRng = separated ? new SeededRng(rng.seed + ':hit') : rng;
-  const diceRng = separated ? new SeededRng(rng.seed + ':dice') : rng;
-  const targetsRng = separated ? new SeededRng(rng.seed + ':targets') : rng;
-  const roundingRng = separated ? new SeededRng(rng.seed + ':round') : rng;
+  const hitRng = streams?.hit ?? rng;
+  const diceRng = streams?.dice ?? rng;
+  const targetsRng = streams?.targets ?? rng;
+  const roundingRng = streams?.rounding ?? rng;
   const shieldBefore = barrierAmount(defender);
   const basis = attackBasis(opts), { ranged, weapon, netAtk, targetDef } = basis.context;
   // 守方在本段末尾才受损：此前的穿透、展开与成员伤损方案共用同一结算武器。

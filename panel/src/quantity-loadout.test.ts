@@ -103,3 +103,13 @@ it('appends a third weapon on a hero and replaces the complete legacy loadout on
   expect(batchWeapons(updated.storage![0]!.snapshot!).map(w=>w.name)).toEqual(['长弓','标枪']);
   expect(updated.inventory!.find(i=>i.name==='长剑')?.equippedTo).toBeUndefined();
 });
+
+it('defaults each omitted quantity to one on deployment and refit', () => {
+  let save = apply({}, '<spawn name="旗舰" side="ally" scale="company" hpMax="10" weapon="舰首炮:直射火炮L8+4伤害,等离子炮:能量武器L7×24" armor="舰甲:重甲L7" items="烟幕:烟幕L3"/>', 1);
+  const counts = () => Object.fromEntries(save.inventory!.map(item => [item.name, item.qty]));
+  expect(counts()).toMatchObject({ 舰首炮:1, 等离子炮:24, 舰甲:1, 烟幕:1 });
+  const id = save.storage![0]!.id;
+  save = apply(save, '<unit_set id="'+id+'" weapon="舰首炮:直射火炮L8+4伤害,近防炮:机炮L6"/>', 2);
+  expect(save.inventory!.filter(i=>i.equippedTo?.slot==='primary').map(i=>[i.name,i.qty])).toEqual([['舰首炮',1],['近防炮',1]]);
+  expect(parseProtocol('<spawn name="旗舰" side="ally" scale="hero" weapon="舰首炮:直射火炮L8×0"/>').errors.join()).toContain('舰首炮');
+});

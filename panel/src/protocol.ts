@@ -456,8 +456,8 @@ function naturalArmorSpec(armor: string, body?: string): { armor: string; writte
   return { armor: name + (tier ?? '') + spec.slice(match[0].length), written: match[0], tier };
 }
 
-function validatedEvent(kind: string, attrs: Record<string, string>, warnings: string[]): Suggestion {
-  if (kind === 'spawn') {
+function validatedEvent(kind: string, attrs: Record<string, string>, warnings: string[], readEquipment = true): Suggestion {
+  if (kind === 'spawn' && readEquipment) {
     const issues: NonNullable<Extract<Suggestion,{kind:'spawn'}>['equipmentIssues']> = {};
     const first = {...attrs};
     for (const field of ['weapon','weapon2','armor','shield'] as const) {
@@ -465,7 +465,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
       if (entries) { issues[equipmentFields[field]] = entries; first[field] = entries[0]!.text; }
     }
     if (Object.keys(issues).length) {
-      const event = validatedEvent(kind,first,warnings);
+      const event = validatedEvent(kind,first,warnings,false);
       if (event.kind !== 'spawn') throw Error('配装单位无法建档');
       return {...event, equipmentIssues:issues, raw:serializeEvent(kind,attrs)};
     }

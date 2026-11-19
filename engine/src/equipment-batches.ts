@@ -25,6 +25,7 @@ export function batchCount(unit: Bearer,batch: EquipmentBatch,retained = false):
   const survivors = people + (unit.scale === 'hero' ? 0 : unit.recoverableWounded ?? 0);
   const rank = Math.max(1,unit.equipmentPersonnel ?? people,survivors);
   if (crewEquipment(unit,batch)) return retained ? (survivors || unit.scale === 'hero' ? batch.qty : 0) : Math.min(people,batch.qty);
+  if ((retained ? survivors : people) === rank) return batch.qty;
   return issuedTo(batch.qty,rankOffset(unit,batch,rank),Math.min(rank,retained ? survivors : people),rank);
 }
 export function readyCopies(unit: Bearer,batch: EquipmentBatch): number {

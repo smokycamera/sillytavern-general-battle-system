@@ -6,18 +6,23 @@ import { parseItemSpecification, splitItemSpecification } from './item-spec.js';
 export interface EquipmentIssue { name: string; text: string; qty: number; spec: ItemSpecification }
 export const equipmentFields = { weapon: 'primary', weapon2: 'sidearm', sidearm: 'sidearm', armor: 'armor', shield: 'shield' } as const;
 export function parseIssue(text: unknown, slot: EquipmentSlot, attrs: Record<string, unknown> = {}): EquipmentIssue[] | undefined {
-  if (typeof text !== 'string' || !text.includes('×')) return;
+  if (typeof text !== 'string') return;
+  const parts = text.split(/[,，、;；]/);
+  // Plain inventory references, boolean shield flags and old forms are handled by their original readers.
+  if (parts.length === 1 && !text.includes('×') && !/[lL]\d/.test(text)) return;
   const kind = slot === 'primary' || slot === 'sidearm' ? 'weapon' : slot;
-  return text.split(/[,，、;；]/).map(part => {
-    const match = part.trim().match(/^(.+?)\s*×\s*([1-9]\d*)$/);
-    if (!match || !Number.isSafeInteger(Number(match[2]))) throw Error('每项配装填写名称、规格和正整数件数');
+  return parts.map(part => {
+    const [description, count, ...extra] = part.trim().split('×');
+    const item = description!.trim(), qty = count === undefined ? 1 : Number(count.trim());
+    if (!item || extra.length || count !== undefined && !/^[1-9]\d*$/.test(count.trim()) || !Number.isSafeInteger(qty))
+      throw Error('「' + part.trim() + '」的装备件数须为正整数');
     const config: Record<string,string> = {};
     for (const field of ['body','quality',...(kind === 'weapon' ? ['enchant','stabilized'] : kind === 'armor' ? ['protection'] : [])]) {
       if (attrs[field] !== undefined) config[field] = String(attrs[field]);
     }
-    const spec = parseItemSpecification(match[1]!,config);
+    const spec = parseItemSpecification(item,config);
     if (spec.kind !== kind) throw Error('配装规格与装备栏不符');
-    return { name:splitItemSpecification(match[1]!).name ?? match[1]!, text:match[1]!, qty:Number(match[2]), spec };
+    return { name:splitItemSpecification(item).name ?? item, text:item, qty, spec };
   });
 }
 
