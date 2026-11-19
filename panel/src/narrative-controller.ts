@@ -13,7 +13,7 @@ import { prepareReportDeletion, prepareReportRestore, prepareReportRestart, stam
 import type { SaveReceipt, TavernAdapter } from './tavern.js';
 import { prepareBattleItemWrite } from './battle-items.js';
 import { assertTraitSourcePanelWrite, prepareBlessingRevocation } from './trait-state.js';
-import { moraleLabel, woundedLabel, isAirborne, positionedUnit, observedUnits, concealmentLabel, worksLabel, formationNode, type ObservationContext, traitSourceActive, traitRegistry, standardConditionMap, STANDARD_CONDITIONS, postureLabel, ITEM_FORM_NAMES, itemSpecText, traitLevelToken, activeTraitIds, gradedTraitEnabled, traitLevel, traitLadderSummary, traitLevelSources, traitPrerequisiteReason, type Combatant } from '../../engine/src/index.js';
+import { moraleLabel, woundedLabel, isAirborne, positionedUnit, observedUnits, concealmentLabel, worksLabel, formationNode, type ObservationContext, traitSourceActive, traitRegistry, standardConditionMap, STANDARD_CONDITIONS, postureLabel, ITEM_FORM_NAMES, itemSpecText, traitLevelToken, activeTraitIds, gradedTraitEnabled, traitLevel, traitLadderSummary, traitLevelSources, traitPrerequisiteReason, RULES_BY_ID, type Combatant } from '../../engine/src/index.js';
 import { reviewMigration, type MigrationReview } from './migration-review.js';
 import { assertInventoryPanelWrite, calibrateSavedWeaponRanges, deleteUnitArchive, prepareInventoryState, prepareInventoryTransaction, type InventoryAction, type InventoryIntent, type InventorySave } from './inventory-state.js';
 import { cellLabel, type BattlefieldSpec } from '../../engine/src/small/spatial.js';
@@ -52,6 +52,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
   const lines = blocks.facts;
   const battleId = save.battle ? `${save.battle.kind}:${String(save.battle.snap.seed)}` : undefined;
   const battleOpen = !!battleId && !(save.committedOutcomeIds ?? []).includes(battleId);
+  const individualCasualties = battleOpen && RULES_BY_ID[String(save.battle?.snap.rulesId)]?.casualtyModel === 'individual-v1';
   const combatants = battleOpen && Array.isArray(save.battle?.snap.combatants) ? save.battle!.snap.combatants as Combatant[] : [];
   const field = save.battle?.snap.battlefield as BattlefieldSpec | undefined;
   const limited = battleOpen && combatants.some((u) => u.rulesVersion === 'v2');
@@ -98,7 +99,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
       ...(s.traitIds.length ? { traits: s.traitIds.map((id) => (traitRegistry().get(id)?.name ?? id) + (s.traitLevels?.[id] ? 'L' + s.traitLevels[id] : '')) } : {}),
       ...(s.conditionIds?.length ? { effects: s.conditionIds.map((id) => standardConditionMap().get(id)?.name ?? id) } : {}),
       duration: s.duration.kind, remaining: s.remaining }));
-    const traitEffects = detailed && unit ? activeTraitIds(unit).filter(id => gradedTraitEnabled(unit, id)).map(id => ({ trait: id, level: traitLevel(unit, id), effect: traitLadderSummary(id, traitLevel(unit, id), undefined, unit.flightModel), sources: traitLevelSources(unit, id), inactive: traitPrerequisiteReason(unit, id) })) : [];
+    const traitEffects = detailed && unit ? activeTraitIds(unit).filter(id => gradedTraitEnabled(unit, id)).map(id => ({ trait: id, level: traitLevel(unit, id), effect: traitLadderSummary(id, traitLevel(unit, id), id === 'medic' ? unit.traitLevelModel : undefined, unit.flightModel, individualCasualties && unit.body !== 'vehicle'), sources: traitLevelSources(unit, id), inactive: traitPrerequisiteReason(unit, id) })) : [];
     const line = promptJson({ ...(detailed && traitEffects.length ? { traitEffects } : {}), id: record.id, name: record.name, side: record.side,
       ...(detailed ? { training: record.level, bonuses: unit?.bonuses } : { level: String(record.level) + enhancementLabel(unit?.bonuses) }),
       ...(!battleOpen ? { ...(detailed ? { level:record.level,base:{...record.base,...(moraleLocked?{moraleMax:undefined}:{})},status:record.status,retired:record.retired,resources:unit?.resources,traits:unit?.traits.map((id) => traitLevelToken(id, unit.traitLevels?.[id])),preparedAbilityIds:unit?.preparedAbilityIds } : {}),speedTier:unit?.speedTier,

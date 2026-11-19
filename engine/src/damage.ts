@@ -1,3 +1,4 @@
+import { CasualtyRolls } from './small/casualty-rolls.js';
 import { artilleryDirect, artillerySplash, artilleryRetention, BOUNDED_BLAST_MODEL, sprayerSplashAt } from './artillery-model.js';
 import { displayNumber } from './display-number.js';
 import { flightDefense } from './aerial.js';
@@ -148,6 +149,7 @@ export interface AttackOpts {
   attacker: Combatant;
   defender: Combatant;
   rng: Rng;
+  casualtyRolls?: CasualtyRolls;
   rules: RulePack;
   conditionDefs: Map<string, ConditionDef>;
   traitRegistry?: Map<string, import('./types.js').Trait>;
@@ -811,11 +813,11 @@ export function recordAppliedDamage(result: AttackResolution, loss: number): voi
 }
 
 /** 会战延后提交仍执行原始命中方案，按此刻各成员的剩余生命裁剪。 */
-export function applyResolutionDamage(target:Combatant,result:AttackResolution):number {
+export function applyResolutionDamage(target:Combatant,result:AttackResolution,rolls?:CasualtyRolls):number {
   const shieldBefore = barrierAmount(target);
   if(result.damageModel!=='member-health'){
     const stood=target.moraleState?.indomitable;
-    result.hpBefore=target.hp;const loss=applyHealthLoss(target,result.unshieldedDamage ?? result.finalDamage);result.hpAfter=target.hp;if(shieldBefore)result.barrierAbsorbed=shieldBefore-barrierAmount(target);else delete result.barrierAbsorbed;
+    result.hpBefore=target.hp;const loss=applyHealthLoss(target,result.unshieldedDamage ?? result.finalDamage,target.rulesVersion === 'v2',undefined,false,rolls);result.hpAfter=target.hp;if(shieldBefore)result.barrierAbsorbed=shieldBefore-barrierAmount(target);else delete result.barrierAbsorbed;
     if(!stood&&target.moraleState?.indomitable&&result.text)result.text+=INDOMITABLE_NOTE(target);
     return loss;
   }
@@ -826,7 +828,7 @@ export function applyResolutionDamage(target:Combatant,result:AttackResolution):
   for(const [i,plan] of (result.damagePlans??[]).entries()){
     const packetIndex=result.damagePlanPackets?.[i]??0;
     if(result.damageChannels&&packetIndex!==channelPacket){channelPacket=packetIndex;channelMembers=target.hp;}
-    const loss=applyDamagePlan(target,result.damageChannels ? sameChannelTargets(plan,channelMembers,target) : plan);direct+=loss.direct;splash+=loss.splash;overflow+=loss.overflow;energy+=loss.energyAbsorbed??0;spent+=loss.energySpent??loss.energyAbsorbed??0;converted||=loss.energySpent!==undefined;overloaded+=loss.energyOverloaded??0;
+    const loss=applyDamagePlan(target,result.damageChannels ? sameChannelTargets(plan,channelMembers,target) : plan,rolls);direct+=loss.direct;splash+=loss.splash;overflow+=loss.overflow;energy+=loss.energyAbsorbed??0;spent+=loss.energySpent??loss.energyAbsorbed??0;converted||=loss.energySpent!==undefined;overloaded+=loss.energyOverloaded??0;
     if (result.damageChannels?.[i]) result.damageChannels[i]!.damage = loss.direct + loss.splash;
     const packet = result.packetRolls?.[result.damagePlanPackets?.[i] ?? i]; if(packet) { if(result.damagePlanPackets) packet.damage += loss.direct+loss.splash; else packet.damage=loss.direct+loss.splash; }
   }
@@ -911,6 +913,10 @@ function attackBasis(opts: AttackOpts): AttackBasis {
   return rememberLast(basis);
 }
 export function resolveAttack(opts: AttackOpts): AttackResolution {
+  // Standalone attacks have no battle snapshot. Share one stream across their packets.
+  if (opts.rules.casualtyModel && !opts.casualtyRolls && opts.defender.scale !== 'hero' && opts.defender.body !== 'vehicle') {
+    opts = { ...opts, casualtyRolls: new CasualtyRolls(String(opts.rng.next())) };
+  }
   const samples=opts.packetShare!==undefined?1:opts.previewMemo?opts.previewMemo.samples??=cohortSamples(opts):cohortSamples(opts);
   if(samples>1){
     const health=()=>opts.rules.combatModel===MEMBER_HEALTH_MODEL?memberHealth(opts.defender):opts.defender.hp;
@@ -1101,9 +1107,9 @@ function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean): AttackResol
   if(modern){
     res.damagePlans=additional.length ? channelPlans(opts,final,targets,primaryWeight,additional,resolved,penetration!,basis.ward) : [memberPlan(opts,final,targets,resolved,penetration,basis.ward)];
     if (additional.length) res.damageChannels = [{channel:penetration!.channel,damage:0,penetration:penetration!.penetration},...additional.map(part => ({channel:part.channel,damage:0,penetration:part.penetration.penetration}))];
-    applyResolutionDamage(defender,res);
+    applyResolutionDamage(defender,res,opts.casualtyRolls);
   }
-  else {const actualLoss = applyHealthLoss(defender, final, v2);if (rules.combatModel===COHORT_MODEL || shieldBefore) res.finalDamage = actualLoss;res.hpAfter = defender.hp;if(shieldBefore){res.unshieldedDamage=final;res.barrierAbsorbed=shieldBefore-barrierAmount(defender);}}
+  else {const actualLoss = applyHealthLoss(defender, final, v2, undefined, false, opts.casualtyRolls);if (rules.combatModel===COHORT_MODEL || shieldBefore) res.finalDamage = actualLoss;res.hpAfter = defender.hp;if(shieldBefore){res.unshieldedDamage=final;res.barrierAbsorbed=shieldBefore-barrierAmount(defender);}}
   if (v2 && !opts.previewMemo && !opts.autoHit && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) { const conditions = weaponConditions(attacker, defender, weapon, res.finalDamage, opts.traitRegistry); if (conditions.length) res.onHitConditions = conditions; }
   if (isArmsV2(rules.armsModel) && !opts.autoHit && penetration && (!opts.abilityDamage || opts.abilityDamage.weaponBased) && weapon?.recipe?.mechanism === 'sprayer') res.spray = weapon.recipe.power;
 

@@ -1,7 +1,7 @@
 import type { Combatant, Trait } from '../../engine/src/types.js';
 import { displayNumber as n } from '../../engine/src/display-number.js';
 import { progression, stackingRevision } from '../../engine/src/progression.js';
-import { traitParameter, type TraitParameter } from '../../engine/src/trait-parameters.js';
+import { medicRescueBonus, traitParameter, type TraitParameter } from '../../engine/src/trait-parameters.js';
 import {
   commandRangeAtLevel, roughGroundCost, climbFactor, forestDefense, forestAttack, highGroundDefense, highGroundAttack, terrainStalk,
   nightAttack, nightMovePenalty, nightDefense, nightSight, plainsInitiative, plainsMobility, plainsAttack,
@@ -68,7 +68,7 @@ export function playerTraitLevelDescription(id: string, level: number, model?: u
     }
     case 'lifesteal': return `造成生命伤害后，恢复${pct('lifestealRatio')}%伤害量的生命或伤兵` + (revised ? `，每轮最多恢复${pct('lifestealRoundCap')}%生命` : '');
     case 'regen': return `每轮基础恢复${n((modern ? p('regenAmount') : 3 * p('woundRatio')) * (recoveryModel ? 1.5 : 1))}生命或伤兵`;
-    case 'medic': return `治疗量×${value('medicHealing')}，编队伤亡中${value('medicRescue')}%可救治`;
+    case 'medic': return `治疗量×${value('medicHealing')}，本队减员可救率 +${medicRescueBonus(L, model)} 个百分点`;
     case 'poison-strike': return `动能攻击造成伤害后附毒3轮，毒伤×${value(modern ? 'poisonMultiplier' : 'woundRatio')}，中毒者攻击−1`;
     case 'fatigue-trained': return `疲劳获得×${value('fatigueMultiplier')}`;
     case 'shield-wall': return `持盾固守时，正面远程伤害减免${pct('shieldReduction')}%`;

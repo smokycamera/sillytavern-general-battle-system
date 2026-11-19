@@ -1,3 +1,4 @@
+import type { CasualtyRolls } from './small/casualty-rolls.js';
 import { CHANNEL_BUFF_CONDITIONS } from './channel-buffs.js';
 import { clearEffectSources } from './effect-sources.js';
 import { displayNumber } from './display-number.js';
@@ -180,12 +181,12 @@ export function pushPreview(context: ObservationContext, actor: Combatant, targe
   const fallDamage=drop>1?Math.max(1,Math.round(memberHealth(target)*Math.min(.3,.1*drop))):undefined;
   return { cell, label: terrainCellLabel(field, cell, landing)+(fallDamage?` · 坠落伤害${displayNumber(fallDamage)}生命`:''),...(fallDamage?{fallDamage}:{}),...(groundLanding?{groundLanding:true}:{}) };
 }
-export function applyPush(context: ObservationContext, actor: Combatant, target: Combatant, effect: PushEffect): PushPreview {
+export function applyPush(context: ObservationContext, actor: Combatant, target: Combatant, effect: PushEffect, rolls?: CasualtyRolls): PushPreview {
   const result = pushPreview(context, actor, target, effect);
   if (result.reason) return result;
   if (result.cell !== undefined) target.pos = result.cell;
   if(result.groundLanding)delete target.elevation;
-  if(result.fallDamage)applyCombatDamage(target,result.fallDamage,hasMemberHealth(target)?target.hp:1);
+  if(result.fallDamage)applyCombatDamage(target,result.fallDamage,hasMemberHealth(target)?target.hp:1,undefined,rolls);
   if (result.nodeId) target.formationPosition = result.nodeId;
   delete target.tacticalPose; revealUnit(context, target); return result;
 }

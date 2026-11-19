@@ -78,6 +78,7 @@ import { resolveAttack, previewAttack, penetrationContext, isRangedCapable, armo
 import { sharedParticipants } from '../exposure.js';
 import { diceAvg, rebuildDice } from '../data/weapons.js';
 import { ConditionRegistry } from '../conditions.js';
+import { CasualtyRolls } from './casualty-rolls.js';
 import { V42_LITE_D20, counterMod, rulesById } from '../rules.js';
 import { getTrait, hasFlag, fieldModsFor, collectMods, resolveStack } from '../bonus.js';
 import { situationalTraitMods } from '../situational-traits.js';
@@ -219,6 +220,7 @@ export class SmallBattle {
   readonly conditions: ConditionRegistry;
   readonly traitRegistry: Map<string, Trait>;
   readonly seed: string;
+  private readonly casualtyRolls?: CasualtyRolls;
   /** 召唤落地回调（模板 id + 阵营 → 新单位；null=无模板） */
   readonly summonUnit?: (templateId: string, side: Side, seed?: string) => Combatant | null;
   round = 0;
@@ -302,6 +304,7 @@ export class SmallBattle {
     for (const unit of this.combatants) { prepareResourceModel(unit, this.rules); prepareArmsModel(unit, this.rules); prepareTraitModel(unit, this.rules); validateTraitModel(unit.traitModel); validateEntrenchment(unit.entrenchedAt); validateTacticalEffort(unit.tacticalEffort, unit.resourceModel); validateItemModel(unit.itemModel); prepareItemModel(unit, this.rules); validateTraitLevelModel(unit.traitLevelModel); prepareTraitLevelModel(unit, this.rules); prepareRevivalBattle(unit); }
     if (this.combatants.some((u) => u.airborne) && (!this.battlefield || this.rules.resolutionVersion !== 'v2')) throw new Error('空中状态需要二维战场');
     this.seed = opts.seed ?? (this.rules.initiativeModel && opts.rng && opts.rng.seed !== 'crypto' ? opts.rng.seed : randomSeed());
+    if (this.rules.casualtyModel) this.casualtyRolls = new CasualtyRolls(this.seed);
     this.rng = opts.rng ?? (opts.seed || this.rules.resolutionVersion === 'v2' || this.rules.initiativeModel ? new SeededRng(this.seed) : liveRng());
     this.conditions = new ConditionRegistry(opts.extraConditions ?? []);
     for (const unit of this.combatants) if (unit.airborne && !unit.ride && flightMaintenanceReason(unit, this.conditions)) throw new Error('空中存档记录缺少可维持的飞行能力');
@@ -329,7 +332,7 @@ export class SmallBattle {
     // 偷袭看出手前是否仍在潜伏，出手即暴露。
     const ambush = this.rules.resolutionVersion === 'v2' && concealedUnit(this.observationContext(), this.byId(opts.attacker.id));
     if (this.rules.resolutionVersion === 'v2' && !(isArmsV2(this.rules.armsModel) && ambush && (opts.weaponOverride ?? opts.attacker.weapon)?.recipe?.mechanism === 'crossbow')) revealUnit(this.observationContext(), this.byId(opts.attacker.id));
-    const result = resolveAttack(this.environmentContext({ ...opts, ambush } as AttackOpts)), field = this.battlefield;
+    const result = resolveAttack(this.environmentContext({ ...opts, ambush, casualtyRolls: this.casualtyRolls } as AttackOpts)), field = this.battlefield;
     const weapon = opts.weaponOverride ?? opts.attacker.weapon;
     if (opts.defender.platform?.kind === 'transport' && result.hpAfter < result.hpBefore &&
         (result.ammunition === 'he' || (result.splashDamage ?? 0) > 0 || ((!opts.abilityDamage || opts.abilityDamage.weaponBased) && ['rocket','demolition'].includes(weapon?.recipe?.mechanism ?? '')))) this.explosiveLoss.add(opts.defender);
@@ -357,7 +360,7 @@ export class SmallBattle {
     const victims = holder.scale === 'hero' ? this.exposedUnits.filter(u => u.hp > 0 && ['ready', 'dying', 'routing'].includes(u.status) && sameLayer(u, holder) && this.dist(u, holder) <= 1) : [holder];
     const texts = [holder.name + '的燃料罐被击穿爆炸'];
     for (const victim of victims) {
-      const blast = resolveAttack(this.environmentContext({ attacker: holder, defender: victim, weaponOverride: tank, ranged: true, autoHit: true, ...(holder.scale === 'hero' ? {} : { participants: 3 }),
+      const blast = resolveAttack(this.environmentContext({ casualtyRolls: this.casualtyRolls, attacker: holder, defender: victim, weaponOverride: tank, ranged: true, autoHit: true, ...(holder.scale === 'hero' ? {} : { participants: 3 }),
         rng: this.rng, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry }));
       texts.push(blast.text); this.checkDeath(victim, cause,true);
     }
@@ -594,7 +597,7 @@ export class SmallBattle {
     const perMember = hasMemberHealth(passenger) ? passenger.formation!.memberHp : passenger.scale === 'hero' ? passenger.base.hpMax : 1;
     const damage = fall && !hasMemberHealth(passenger) ? fallDamage(passenger)
       : affected * Math.max(1,Math.ceil(perMember / (fall ? 10 : 2)));
-    const loss = applyCombatDamage(passenger,damage,affected);
+    const loss = applyCombatDamage(passenger,damage,affected,undefined,this.casualtyRolls);
     const casualties = count - unitCount(passenger);
     this.recordEvent({round:this.round,kind:'condition',transport:true,participants:[passenger.id,carrier.id],text:(fall ? passenger.name+'从'+carrier.name+'摔落，'+count+'人' : carrier.name+'爆毁，'+passenger.name+'受波及'+affected+'人')+'，损失'+loss+'生命，减员'+casualties+'人',
       damage:{sourceId:source?.id,targetId:passenger.id,amount:loss,cause,...((hasMemberHealth(passenger) || passenger.scale === 'hero') && {unit:'life' as const}),members:casualties}});
@@ -706,7 +709,7 @@ export class SmallBattle {
       const alreadyDefeated = unit.status === 'dead' || unit.status === 'dying' || unit.hp <= 0;
       unit.airborne = false; delete unit.tacticalPose;
       if (alreadyDefeated) { if (cell !== undefined) unit.pos = cell; revealUnit(this.observationContext(), unit); continue; }
-      const hp = memberHealth(unit), members = unit.hp; applyCombatDamage(unit,damage*(hasMemberHealth(unit)?unit.formation!.memberHp:1),unit.hp);
+      const hp = memberHealth(unit), members = unit.hp; applyCombatDamage(unit,damage*(hasMemberHealth(unit)?unit.formation!.memberHp:1),unit.hp,undefined,this.casualtyRolls);
       const lostHealth = hp - memberHealth(unit), lostMembers = members - unit.hp;
       if (cell !== undefined) unit.pos = cell;
       if (lostHealth > 0) this.checkDeath(unit, this.combatants.find((u) => u.id === this.flightCauses.get(unit.id)));
@@ -1222,7 +1225,7 @@ export class SmallBattle {
       if (candidates.length) unit.pos = candidates[0];
       else { unit.status = 'fled'; this.recordEvent({ round: this.round, kind: 'move', participants: [unit.id], text: unit.name + ' 失去立足点，无法就近落地，退出本次战斗' }); continue; }
       const drop=field.spatialRulesVersion===2?Math.max(1,originalHeight-unitHeight(field,unit)):1;
-      const loss = applyCombatDamage(unit, Math.max(1, Math.round(memberHealth(unit) * (wasHigh ? Math.min(.4,.15*drop) : .1))), hasMemberHealth(unit) ? unit.hp : 1);
+      const loss = applyCombatDamage(unit, Math.max(1, Math.round(memberHealth(unit) * (wasHigh ? Math.min(.4,.15*drop) : .1))), hasMemberHealth(unit) ? unit.hp : 1, undefined, this.casualtyRolls);
       this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], text: `${unit.name} ${wasHigh ? '随结构塌落' : '落水撤向近岸'}至${cellLabel(field, unit.pos!)}，损失${displayNumber(loss)}生命` });
       this.checkDeath(unit, source);
     }
@@ -2202,7 +2205,7 @@ export class SmallBattle {
           if (this.rules.resolutionVersion !== 'v2' || !chosenTarget) break;
           for (const target of effectTargets(ability.shape === 'burst')) {
             if (eff.onHit && !resolutions.some((r) => r.defenderId === target.id && r.hit)) continue;
-            const result = applyPush(this.observationContext(), actor, target, eff);
+            const result = applyPush(this.observationContext(), actor, target, eff, this.casualtyRolls);
             if(result.fallDamage){this.checkDeath(target,actor);this.checkInjury(target,result.fallDamage);}
             logBits.push(target.name + '：' + (result.reason ?? (eff.direction === 'towards' ? '拉至' : '推至') + result.label));
           }
@@ -3607,7 +3610,7 @@ export class SmallBattle {
       if (def?.dot) {
         const r = rollDice(def.dot.dice, this.rng);
         let damage = this.rules.combatModel ? roundDamage(conditionDamage(u,r.total,c),this.rng) : this.rules.resolutionVersion === 'v2' && c.id === 'poisoned' ? poisonDamage(u, r.total * (c.magnitude ?? 1)) : Math.max(0, Math.round(r.total * (c.magnitude ?? 1)));
-        const members=u.hp,lost=hasMemberHealth(u)?applyCombatDamage(u,damage,c.affectedMembers??10):applyHealthLoss(u, damage, this.rules.resolutionVersion === 'v2'); if(this.rules.combatModel)damage=lost;
+        const members=u.hp,lost=hasMemberHealth(u)?applyCombatDamage(u,damage,c.affectedMembers??10,undefined,this.casualtyRolls):applyHealthLoss(u, damage, this.rules.resolutionVersion === 'v2',undefined,false,this.casualtyRolls); if(this.rules.combatModel)damage=lost;
         breakCharmOnDamage(this.combatants, u, this.combatants.find(source=>source.id===c.sourceId), lost);
         this.recordEvent({
           round: this.round,
@@ -3679,7 +3682,7 @@ export class SmallBattle {
       this.platforms.syncLayers();
     }
     const expired: BattleZone[] = [];
-    for (const result of settleZones(this.observationContext(),this.round,boundary,this.rng, zone => expired.push(zone))) {
+    for (const result of settleZones(this.observationContext(),this.round,boundary,this.rng, zone => expired.push(zone), this.casualtyRolls)) {
       breakCharmOnDamage(this.combatants, result.target, result.source, result.damage);
       if(result.control&&result.source)this.flightCauses.set(result.target.id,result.source.id);
       this.recordEvent({round:this.round,kind:'condition',participants:[result.target.id,...(result.source?[result.source.id]:[])],text:result.text});
@@ -3859,6 +3862,7 @@ export class SmallBattle {
       ...(this.activationPair.length && { activationPair: this.activationPair, platformActor: this.platformActor }),
       rulesId: this.rules.id,
       seed: this.seed,
+      ...(this.casualtyRolls && { casualtyCursors: this.casualtyRolls.snapshot() }),
       rngState: this.rng instanceof SeededRng ? this.rng.getState() : undefined,
       round: this.round,
       turnOrder: this.turnOrder,
@@ -3910,6 +3914,7 @@ export class SmallBattle {
       summonUnit: opts.summonUnit,
       field: { tags: snap.fieldTags ?? snap.battlefield?.environment ?? [] },
     });
+    b.casualtyRolls?.restore(snap.casualtyCursors);
     b.allyTactic = normalizeTactic(snap.allyTactic);
     b.allyAiControl = new Map(Array.isArray(snap.allyAiControl)
       ? snap.allyAiControl.filter((e: unknown): e is [string, boolean] => Array.isArray(e) && typeof e[0] === 'string' && typeof e[1] === 'boolean') : []);
