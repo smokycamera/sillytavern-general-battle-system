@@ -127,10 +127,12 @@ it('reuses holdings when repeatedly issuing, returning and replenishing one lot'
   equip(7);
   const issued = save.inventory!.find(i=>i.name==='长矛' && i.equippedTo)!.id;
   const unload = (qty:number) => transact({kind:'unequip',unitId,slot:'primary',itemId:issued,qty});
-  equip(8); unload(3); unload(12); equip(6);
-  transact({kind:'add',itemId:issued,qty:4});
+  equip(8); unload(3); unload(12); equip(20);
+  transact({kind:'add',itemId:issued,qty:10});
+  expect(save.inventory!.filter(i=>i.name==='长矛').map(i=>[i.id,i.qty])).toEqual([[source,20],[issued,30]]);
+  expect(save.storage![0]!.snapshot!.equipmentBatches).toContainEqual(expect.objectContaining({id:issued,qty:30}));
   transact({kind:'discard',itemId:source,qty:4});
-  expect(save.inventory!.filter(i=>i.name==='长矛').map(i=>[i.id,i.qty])).toEqual([[source,34],[issued,6]]);
+  expect(save.inventory!.filter(i=>i.name==='长矛').map(i=>[i.id,i.qty])).toEqual([[source,16],[issued,30]]);
   expect(batchWeapons(save.storage![0]!.snapshot!).map(w=>w.id)).toEqual([issued]);
 });
 

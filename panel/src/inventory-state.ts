@@ -185,14 +185,9 @@ export function splitInventoryBatch(item: InventoryItem, id: string, qty: number
 }
 /** Move copies into an existing holding of the same rolled lot, retaining its public ID. */
 export function moveCopies(inventory: InventoryItem[], source: InventoryItem, qty: number, owner: string | undefined,
-  slot: EquipmentSlot | undefined, splitId: string, adding = false): InventoryItem {
+  slot: EquipmentSlot | undefined, splitId: string): InventoryItem {
   const equipped = slot && owner ? {unitId:owner, slot} : undefined;
   const samePlace = (item: InventoryItem) => item.assignedTo === owner && item.equippedTo?.slot === slot;
-  if (adding && samePlace(source)) {
-    if (!Number.isSafeInteger(source.qty + qty)) throw Error('物品数量超出安全整数范围');
-    source.qty += qty;
-    return source;
-  }
   const byId = new Map(inventory.map(item => [item.id,item]));
   const root = (item: InventoryItem) => {
     const seen = new Set<string>();
@@ -209,7 +204,7 @@ export function moveCopies(inventory: InventoryItem[], source: InventoryItem, qt
   const matching = inventory.filter(item => item !== source && item.name === source.name && item.note === source.note && root(item) === family
     && batchSignature(item) === (signature ??= batchSignature(source)));
   let destination = matching.find(item => item.qty > 0 && samePlace(item));
-  if (!destination && !adding && qty === source.qty) destination = source;
+  if (!destination && qty === source.qty) destination = source;
   if (!destination) {
     destination = matching.find(item => item.qty === 0);
     if (!destination) {
@@ -218,10 +213,10 @@ export function moveCopies(inventory: InventoryItem[], source: InventoryItem, qt
       inventory.push(destination);
     }
   }
-  if (adding || destination !== source) {
+  if (destination !== source) {
     if (!Number.isSafeInteger(destination.qty + qty)) throw Error('物品数量超出安全整数范围');
     destination.qty += qty;
-    if (!adding) source.qty -= qty;
+    source.qty -= qty;
   }
   if (!source.qty) delete source.equippedTo;
   destination.assignedTo = owner;
@@ -438,10 +433,13 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
     if (item.qty <= 0 && action.kind !== 'add') throw new Error('物品数量不足');
     if (action.kind === 'add') {
       if (!Number.isSafeInteger(action.qty) || action.qty < 1 || !Number.isSafeInteger(item.qty + action.qty)) throw new Error('增加数量须为正整数，且总数不能超出安全整数范围');
-      if (!item.mechanics || item.mechanics.kind === 'item' && item.mechanics.value.recipe.form === 'single') item.qty += action.qty;
-      else {
-        if (item.mechanics.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural') throw new Error('天生武器不能增加实物数量');
-        moveCopies(inventory,item,action.qty,item.assignedTo,undefined,'added:'+id,true).batch = true;
+      if (item.mechanics?.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural') throw new Error('天生武器不能增加实物数量');
+      if (!isInventoryStack(item)) item.batch = true;
+      item.qty += action.qty;
+      if (item.equippedTo) {
+        const record = recordById(next,item.equippedTo.unitId);
+        projectEquipment(record,inventory);
+        rewriteRecord(next,record,id);
       }
     } else if (action.kind === 'discard') {
       if (item.equippedTo && !item.batch) throw new Error('先卸下已装备物品，再从库存移除');

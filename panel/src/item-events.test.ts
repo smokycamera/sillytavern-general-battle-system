@@ -61,11 +61,10 @@ it('补充佩戴、充能和武器时按批保存冻结属性，保持原装备�
   for (const itemId of ['worn', 'charged', weapon.id]) {
     const old = structuredClone(save.inventory!.find(item => item.id === itemId)!);
     save = prepareInventoryTransaction(save, { kind: 'add', id: `copy-${itemId}`, expectedRevision: save.factRevision!, itemId, qty: 2 });
-    const copies = save.inventory!.filter(item => item.sourceItemId === itemId);
-    expect(copies).toHaveLength(1);
-    expect(copies.every(item => item.qty === 2 && item.assignedTo === 'owner' && !item.equippedTo)).toBe(true);
-    for (const copy of copies) expect(copy.mechanics?.kind === 'weapon' ? { ...copy.mechanics, value: { ...copy.mechanics.value, id: old.id } } : copy.mechanics).toEqual(old.mechanics);
-    expect(save.inventory!.find(item => item.id === itemId)).toEqual(old);
+    expect(save.inventory!.filter(item => item.sourceItemId === itemId)).toHaveLength(0);
+    expect(save.inventory!.find(item => item.id === itemId)).toEqual({ ...old, batch:true, qty:old.qty+2 });
+    expect(save.storage!.find(unit => unit.id === 'owner')!.snapshot!.equipmentBatches)
+      .toContainEqual(expect.objectContaining({ id:itemId, qty:old.qty+2, slot:old.equippedTo!.slot }));
   }
   expect(prepareInventoryState(JSON.parse(JSON.stringify(save))).inventory).toEqual(save.inventory);
 });
