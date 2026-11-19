@@ -19,9 +19,13 @@ it('makes healed dying heroes deployable and recovers only reversible cohort los
   }
   expect(record.status).toBe('dying');
   expect(() => recoverUnitRecord({ ...record, status: 'dead' }, reg)).toThrow('阵亡');
-  const troop = generateUnit({ name: 'troop', side: 'ally', scale: 'company', level: 3, rulesVersion: 'v2', traits: [] }, { seed: 'recover-troop' }).unit;
-  troop.hp = 60; troop.base.hpMax = 100; troop.recoverableWounded = 15;
-  expect(recoverUnitRecord(unitRecordFromCombatant(troop), reg)).toMatchObject({ hp: 75, recoverableWounded: 0 });
+  for (const rulesVersion of [undefined, 'v2'] as const) {
+    const troop = generateUnit({ name: 'troop', side: 'ally', scale: 'company', level: 3, rulesVersion, traits: [] }, { seed: 'recover-troop' }).unit;
+    troop.hp = 21; troop.base.hpMax = 30; troop.recoverableWounded = 5;
+    const restored = recoverUnitRecord(unitRecordFromCombatant(troop), reg);
+    expect(restored).toMatchObject({ hp: 26, base: { hpMax: 30 }, recoverableWounded: 0 });
+    expect(recoverUnitRecord(restored, reg).hp).toBe(26);
+  }
 });
 
 function woundedCompany(memberLife = true, id = 'stored-company'): NarrativeSave {
