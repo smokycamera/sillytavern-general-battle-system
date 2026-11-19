@@ -1,7 +1,7 @@
 import { applyRecovery, recoveryCapacity } from '../../engine/src/recovery.js';
 import { memberDurability } from '../../engine/src/combat-model.js';
 import { hasMemberHealth } from '../../engine/src/member-health.js';
-import type { Trait } from '../../engine/src/types.js';
+import type { Combatant, Trait } from '../../engine/src/types.js';
 import { materializeUnitRecord, unitRecordFromCombatant, type UnitRecord } from './unit-state.js';
 
 function materializeRecoverable(record: UnitRecord, registry: Map<string, Trait>) {
@@ -9,11 +9,24 @@ function materializeRecoverable(record: UnitRecord, registry: Map<string, Trait>
   return materializeUnitRecord(record, registry);
 }
 
+function recoverArchivedLife(unit: Combatant, life: number | 'all'): number {
+  const capacity = recoveryCapacity(unit);
+  if (unit.scale === 'hero' || hasMemberHealth(unit)) {
+    return applyRecovery(unit, life === 'all' ? capacity : Math.min(life, capacity));
+  }
+  const wounded = unit.recoverableWounded ?? 0;
+  const limit = Math.min(capacity, wounded);
+  const personnel = life === 'all' ? limit : Math.min(limit, Math.floor(life / memberDurability(unit)));
+  const restored = applyRecovery(unit, personnel);
+  if (restored > 0) unit.recoverableWounded = wounded - restored;
+  return restored;
+}
+
 /** Explicit out-of-battle treatment. Cohorts recover wounded personnel, not permanent casualties. */
 export function recoverUnitRecord(record: UnitRecord, registry: Map<string, Trait>): UnitRecord {
   const unit = materializeRecoverable(record, registry);
   if (unit.status === 'routing' || unit.status === 'fled') unit.status = 'ready';
-  applyRecovery(unit, recoveryCapacity(unit));
+  recoverArchivedLife(unit, 'all');
   if (unit.hp > 0 && unit.status === 'dying') unit.status = 'ready';
   if (unit.base.moraleMax !== undefined) unit.morale = unit.base.moraleMax;
   return unitRecordFromCombatant(unit, record, { kind: 'update' });
@@ -25,14 +38,7 @@ export function treatUnitRecord(record: UnitRecord, registry: Map<string, Trait>
   const unit = materializeRecoverable(record, registry);
   const withdrawn = unit.status === 'fled' ? unit.status : undefined;
   if (withdrawn) unit.status = 'ready';
-  const countOnly = unit.scale !== 'hero' && !hasMemberHealth(unit);
-  const wounded = unit.recoverableWounded ?? 0;
-  const capacity = recoveryCapacity(unit);
-  const limit = countOnly ? Math.min(capacity, wounded) : capacity;
-  const budget = life === 'all' ? limit : countOnly ? Math.floor(life / memberDurability(unit)) : life;
-  const healed = applyRecovery(unit, Math.min(limit, budget));
-  if (!healed) return record;
+  if (!recoverArchivedLife(unit, life)) return record;
   if (withdrawn) unit.status = withdrawn;
-  if (countOnly) unit.recoverableWounded = wounded - healed;
   return unitRecordFromCombatant(unit, record, { kind: 'update', sourceId });
 }
