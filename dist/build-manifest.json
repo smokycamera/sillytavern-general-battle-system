@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "3.0.26",
-  "builtAt": "2026-11-19T10:41:09.773Z",
-  "sourceFingerprint": "385cf436888c26d65d447fc101fd0f0b8d9959d6032483b589a796251b26855a",
+  "builtAt": "2026-11-19T11:26:39.211Z",
+  "sourceFingerprint": "b62d414dca47dc9086f947e40ff5d2c0f7f044466f5eeacf7d27295af3c3f622",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -36,9 +36,9 @@
       "sha256": "df97b80503eea3be98a759440d0e3bbbaef9aa260796588b6482fe42e40ae6fc"
     },
     {
-      "path": "dist/assets/panel-CuZKsHsL.js",
-      "bytes": 1498450,
-      "sha256": "624fcfcb4febd3a5c67330603450a9ae180ba0f673d2129f50d3ab1382da5500"
+      "path": "dist/assets/panel-E80Vnbey.js",
+      "bytes": 1497577,
+      "sha256": "c1197ff164e5b7725d92d313768cd705c3a4c5dd834bac714813a2db2bec6bb7"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -47,8 +47,8 @@
     },
     {
       "path": "assets/worldbook/!通用战斗系统约束.json",
-      "bytes": 28313,
-      "sha256": "d05802b3264dec2571721ea1ddec300fab79960b0f70fa9645122cfbfa0463da"
+      "bytes": 28441,
+      "sha256": "d7ab906e7b5bc7efaa9d9dd1173cb30ecc8b1be59cd20840731d9c78b5a86479"
     },
     {
       "path": "assets/worldbook/lorebook system explain.md",
@@ -56,9 +56,9 @@
       "sha256": "20df3d3dc1cb9257c08d74bf7fe590d2eddc4499684ec018cf7861afbf776cf9"
     },
     {
-      "path": "dist/assets/worldbooks-1aQW5ggz.js",
-      "bytes": 1347904,
-      "sha256": "349c24ab51f749284b5f27ccce8f78c6dc56b1eee01e56f20facb2b30ce31c69"
+      "path": "dist/assets/worldbooks-A6Lg2FPI.js",
+      "bytes": 1348245,
+      "sha256": "deec235c7207fb47ebc29358041b7273f2591394dffda75d02a0aff90a4e048d"
     },
     {
       "path": "docs/README.md",
@@ -577,8 +577,8 @@
     },
     {
       "path": "docs/worldbook-xml-markdown.md",
-      "bytes": 23378,
-      "sha256": "92c6f1f081271535c1e8a67aa406be15987244a0d8f682d5e12a3b5272226fee"
+      "bytes": 23510,
+      "sha256": "29aa9fa1c2001d6fb04a28fc3be50ef4972ed83a92f2bf9daa0d7415ca737808"
     },
     {
       "path": "docs/worn-anchoring-20261020.md",
@@ -588,7 +588,7 @@
     {
       "path": "dist/index.js",
       "bytes": 99477,
-      "sha256": "bf9cdc72d44e2cc42b42a939edf41d12e58e7101c6226ce6b6561911ee839b60"
+      "sha256": "97e56889668873ab088adb8a5316a4a38b0de7cef49aeb806b4a2522f63074ad"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -653,7 +653,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 48598,
-      "sha256": "89a23a550e81578fddf0833079df0a2659388f7346cd8b1ff85a99ac83674a96"
+      "sha256": "f0b8308d605360990f0a1833aad391f8a73cd1f41c04c2efd5d6c76a37e9cd2c"
     },
     {
       "path": "scripts/jev-cors-relay.mjs",

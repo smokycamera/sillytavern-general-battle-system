@@ -1883,26 +1883,19 @@ function renderSmall(): string {
   const foes = b.visibleCombatants('ally').filter((c) => c.side !== act?.side && c.status !== 'dead' && c.status !== 'fled');
   const actionOptions = act ? b.getActionOptions(act.id) : [];
   const optionById = (id: string) => actionOptions.find((option) => option.id === id);
-  const weaponOption = optionById('weapon');
-  const sidearmOption = optionById('weapon:sidearm');
+  const weapons = actionOptions.filter(o => o.kind === 'weapon');
   const chargeOption = optionById('charge');
   const advanceOption = optionById('advance');
   const withdrawOption = optionById('withdraw');
   const retreatOption = optionById('retreat');
   const economy = act ? b.getTurnEconomy(act.id) : null;
   const selectedTargetId = foes.some((f) => f.id === state.smallTarget) ? state.smallTarget : foes[0]?.id ?? '';
-  const selectedWeaponTarget = weaponOption?.targets?.find((candidate) => candidate.targetId === selectedTargetId);
-  const selectedSidearmTarget = sidearmOption?.targets?.find((candidate) => candidate.targetId === selectedTargetId);
   const targetOpts = foes.map((f) => {
-    const primary = weaponOption?.targets?.find((candidate) => candidate.targetId === f.id);
-    const sidearm = sidearmOption?.targets?.find((candidate) => candidate.targetId === f.id);
-    const preview = primary?.preview;
-    const estimate = preview ? `｜至少命中一次${hitChanceText(preview)}·命中后伤害${hitDamageText(preview)}` : '';
-    const availability = primary?.enabled
-      ? estimate
-      : sidearm?.enabled
-        ? `｜主武器不可：${primary?.reason ?? '不可用'}；副武器可用`
-        : `｜不可攻击：${primary?.reason ?? sidearm?.reason ?? '没有合法武器'}`;
+    const shots = weapons.map(option=>option.targets?.find(t=>t.targetId===f.id));
+    const usable = shots.find(t=>t?.enabled);
+    const preview = usable?.preview;
+    const availability = usable ? preview ? `｜至少命中一次${hitChanceText(preview)}·命中后伤害${hitDamageText(preview)}` : ''
+      : '｜不可攻击：'+(shots.find(t=>t?.reason)?.reason ?? '没有合法武器');
     return `<option value="${esc(f.id)}" ${selectedTargetId === f.id ? 'selected' : ''}>${esc([unitLabel(f), b.platforms.role(f), `（等级${f.level}·生命${displayNumber(f.hp)}/${displayNumber(f.base.hpMax)}）`].filter(Boolean).join(' '))}（距${b.dist(act!, f)}${esc(availability)}）</option>`;
   }).join('');
   const abilityBtns = (act ? battleAbilities(act) : [])
@@ -1931,10 +1924,12 @@ function renderSmall(): string {
            <span>行动：<b style="color:var(--gold)">${esc(act ? unitLabel(act) : '-')}${proto ? '（主控）' : ''}</b></span>
            <span class="tag">移动 ${economy?.moveAvailable ? '可用' : '已用'}｜主行动 ${economy?.actionAvailable ? '可用' : '已用'}</span>
            <select data-role="small-target">${targetOpts || '<option value="">（无目标）</option>'}</select>
-           <button class="primary" data-action="small-attack" ${selectedWeaponTarget?.enabled ? '' : 'disabled'} title="${esc(selectedWeaponTarget?.reason ?? '使用主武器攻击所选目标')}">主武器·${esc(act?.weapon?.name ?? '攻击')}</button>
-           ${act?.sidearm ? `<button data-action="small-sidearm" ${selectedSidearmTarget?.enabled ? '' : 'disabled'} title="${esc(selectedSidearmTarget?.reason ?? '明确切换副武器攻击所选目标')}">副武器·${esc(act.sidearm.name)}</button>` : ''}
+           ${weapons.map(option=>{
+             const target=option.targets?.find(t=>t.targetId===selectedTargetId);
+             const action=option.id==='weapon'?'small-attack':option.id==='weapon:sidearm'?'small-sidearm':'small-batch-attack';
+             return `<button data-action="${action}" data-id="${esc(option.id)}" ${target?.enabled?'':'disabled'} title="${esc(target?.reason ?? '')}">${esc(option.label)}</button>`;
+           }).join(' ')}
            <button data-action="small-charge" ${chargeOption?.enabled ? '' : 'disabled'} title="${esc(chargeOption?.reason ?? '消耗移动与主行动：贴至目标并造成攻击伤害')}">冲锋</button>
-          ${actionOptions.filter(o=>o.kind==='weapon' && o.id.startsWith('batch:')).map(o=>`<button data-action="small-batch-attack" data-id="${esc(o.id)}" ${o.targets?.some(t=>t.targetId===selectedTargetId && t.enabled)?'':'disabled'}>${esc(o.label)}</button>`).join(' ')}
           ${abilityBtns}
           ${rideControls(b,act)}
         </div>
@@ -2803,7 +2798,7 @@ async function executePanelAction(act: string, task: () => void | Promise<void>)
       }
       tacticalView.selectedId = state.small.active?.id; tacticalView.targetId = undefined; tacticalView.cell = undefined;
     }
-    if (!state.small?.battlefield && ['small-start', 'mass-start', 'small-attack', 'small-sidearm', 'small-charge', 'small-move', 'small-retreat', 'small-auto-act', 'small-endturn', 'ability-confirm'].includes(act)) {
+    if (!state.small?.battlefield && ['small-start', 'mass-start', 'small-attack', 'small-sidearm', 'small-batch-attack', 'small-charge', 'small-move', 'small-retreat', 'small-auto-act', 'small-endturn', 'ability-confirm'].includes(act)) {
       if (!(await persist())) return;
       (await runAuto());
     }

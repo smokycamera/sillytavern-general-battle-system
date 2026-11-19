@@ -465,6 +465,10 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   for (const [key,slot] of Object.entries(slotKeys) as [keyof typeof slotKeys,EquipmentSlot][]) {
     const configure = key === 'armor' ? data.protection !== undefined : weaponTargets.includes(key) && (data.enchant !== undefined || data.stabilized !== undefined);
     if (!Object.hasOwn(data,key) && !configure) continue;
+    // A canonical weapon list covers the former secondary slot as well. Old two-field edits keep their original targets.
+    if (key === 'weapon' && Object.hasOwn(data,'weapon') && !Object.hasOwn(data,'sidearm')) {
+      for (const item of next.inventory!) if (item.equippedTo?.unitId === id && item.equippedTo.slot === 'sidearm') delete item.equippedTo;
+    }
     const equipped = next.inventory!.find(i => i.equippedTo?.unitId===id && i.equippedTo.slot===slot);
     const input = Object.hasOwn(data,key) ? data[key] : equipped?.id;
     // 内部锁定使用完整实物id（可能含冒号），先识别引用，不能把id当作“名称:规格”拆开。
@@ -525,9 +529,6 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
 
   if(!Array.isArray(unit.abilityState))throw Error('abilityState须为数组');
   for(const s of unit.abilityState) { if(typeof s.abilityId!=='string'||!s.abilityId)throw Error('冷却状态缺少技能身份'); number(s.cdLeft,'cdLeft',0,Number.MAX_SAFE_INTEGER,true); number(s.used,'used',0,Number.MAX_SAFE_INTEGER,true); }
-  if (['weapon','sidearm','armor','shield','body','scale'].some(key=>Object.hasOwn(data,key))) {
-    const reason=equipmentReason(unit); if(reason)throw Error(reason);
-  }
   // 校验精确值在写入前执行，避免归档函数的旧档容错替调用者截断或修复。
   combatantFromUnknown(unit);
   const record=unitRecordFromCombatant(unit,previous,{kind:'update',sourceId});
@@ -539,6 +540,10 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   next.storage=next.storage!.map(r=>r.id===id?record:r);
   for (const key of ['protagonistId','commanderId'] as const) if (next[key] === id && unit.side !== 'ally') delete next[key];
   const result=prepareInventoryState(next) as NarrativeSave;
-  materializeUnitRecord(result.storage!.find(r=>r.id===id)!,registry);
+  const applied = materializeUnitRecord(result.storage!.find(r=>r.id===id)!,registry);
+  if (['weapon','sidearm','armor','shield','body','scale'].some(key=>Object.hasOwn(data,key))) {
+    const reason = equipmentReason(applied);
+    if (reason) throw Error(reason);
+  }
   return result;
 }

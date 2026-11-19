@@ -522,7 +522,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     if (attrs.hp !== undefined && Number(attrs.hp) > Number(attrs.hpMax)) throw new Error('新单位当前值不能超过上限');
     if (attrs.weapon?.match(/[,，、;；]/)) {
       const weapons = attrs.weapon.split(/[,，、;；]/).map((v) => v.trim());
-      if (weapons.length !== 2 || weapons.some((v) => !v) || attrs.weapon2) throw new Error('weapon最多列两件武器；或分别使用weapon主武器与weapon2副武器');
+      if (weapons.length !== 2 || weapons.some((v) => !v) || attrs.weapon2) throw new Error('多种武器请在 weapon 中分别填写名称:规格×件数，以逗号分隔');
       attrs.weapon = weapons[0]!; attrs.weapon2 = weapons[1]!;
     }
     // 旧规格解析器会钳制等级或按自由文本回退；新正文先拒绝显式非法P，避免生成另一件装备。
@@ -536,7 +536,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
       if (!attrs[key]) continue;
       const spec = parseEnhancementSuffix(attrs[key]!.split(/[:：·｜|/／]/).at(-1)!, 'weapon').text.replace(/[lL]\s*\d+$/, '').trim();
       const mechanism = resolveWeaponClass(spec);
-      if (!mechanism || !WEAPON_CLASSES[mechanism]) throw new Error(`${attrs.name}的${key}“${attrs[key]}”缺少支持的效果；请写“自定义名:剑L7”或“激光枪:能量武器L3”，副武器用weapon2`);
+      if (!mechanism || !WEAPON_CLASSES[mechanism]) throw new Error(`${attrs.name}的${key}“${attrs[key]}”缺少支持的效果；请写“自定义名:剑L7×1”或“激光枪:能量武器L3×1”`);
     }
     for (const key of ['weapon', 'weapon2', 'shield']) if (attrs[key] && /[lL]\s*\d/.test(attrs[key]!)) parseItemSpecification(attrs[key]!, {}, warnings);
     if (attrs.armor && /[lL]\s*\d/.test(attrs.armor.split(/[:：·｜|/／]/).at(-1)!)) parseItemSpecification(attrs.armor, { type: 'armor' });

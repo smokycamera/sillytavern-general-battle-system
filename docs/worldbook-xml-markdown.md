@@ -24,11 +24,11 @@
 ## 战场外变更
 
 - 已有单位、实物和效果来源沿用事实清单的 id。已有单位参战写 deploy；新单位写 spawn，开战时无需另写 deploy。
-- hero 的 hp/hpMax 为生命/最大生命；company 为现员/编制上限，载具编队按车辆计。count 为 1—20 张单位卡，会战上限 64 张。独立行动单位分别建档，混装编队可共用一张卡，重要人物可保留个体。
+- hero 的 hp/hpMax 为生命/最大生命；company 为现员/编制上限，载具编队按车辆计。一次生成多张同名同配置单位卡时，可在 spawn 中填 count="卡数"（1—20）。独立行动单位分别建档，混装编队可共用一张卡，重要人物可保留个体。
 - unit_set 填真实 id 和需要变动的字段。仅扩编写 hpMax，同时补员写 hpMax、hp。休整恢复 hp 时同步写恢复后的 morale，以 moraleMax 为限。复活同时写 state="ready" 和正数 hp。
 - clear 填效果名，多项以逗号分隔，如 clear="中毒,流血"，全清写 clear="all"。战外治疗用 <recover id="u1" life="all"/> 恢复已登记的可恢复伤势，部分治疗可写 life="120"。
-- unit_set 的 weapon、weapon2、armor、shield 各自覆盖所填整栏；items 追加道具，收回用 take。skills 替换自有技能列表；新增或修改个别技能用 learn，保留其余技能。
-- unit_set 可写 name、side、scale、level、xpProgress、hp、hpMax、morale、state（ready/dying/dead/routing/fled）、clear、body、mount、platform、seats、aboard、speed、weapon、weapon2、armor、shield、skills、traits、items、retired、note、reason。
+- unit_set 的 weapon、armor、shield 各自覆盖所填整栏；items 追加道具，收回用 take。skills 替换自有技能列表；新增或修改个别技能用 learn，保留其余技能。
+- unit_set 可写 name、side、scale、level、xpProgress、hp、hpMax、morale、state（ready/dying/dead/routing/fled）、clear、body、mount、platform、seats、aboard、speed、weapon、armor、shield、skills、traits、items、retired、note、reason。
 - 同一单位的 unit_set、learn 各合并一条，同一实物的 reforge 合并一条。更新后可同批 deploy。
 
 ## 环境
@@ -51,10 +51,10 @@
 </example>
 <example situation="两支再生赤翼骑兵连，各有80名骑兵、80匹战马，人员与战马的编制上限各为100">
 <tb>
-<spawn name="再生赤翼骑兵一连" side="ally" scale="company" level="5" hp="80" hpMax="100" body="human" mount="赤翼一连战马群" speed="4" weapon="骑枪:长兵器L3×80" weapon2="军刀:剑L3×80" armor="板甲:重甲L3×80" shield="骑兵盾:中盾L3×80" skills="冲锋:物理单体L4+近战+突进L4,鼓舞:buffL3+士气L3" traits="再生L5" items="治疗药水:buffL3+治疗L3×2"/>
+<spawn name="再生赤翼骑兵一连" side="ally" scale="company" level="5" hp="80" hpMax="100" body="human" mount="赤翼一连战马群" speed="4" weapon="骑枪:长兵器L3×80,军刀:剑L3×80" armor="板甲:重甲L3×80" shield="骑兵盾:中盾L3×80" skills="冲锋:物理单体L4+近战+突进L4,鼓舞:buffL3+士气L3" traits="再生L5" items="治疗药水:buffL3+治疗L3×2"/>
 <spawn name="赤翼一连战马群" side="ally" scale="company" level="3" hp="80" hpMax="100" body="human" platform="坐骑L3" seats="1"/>
 <spawn name="赤翼二连战马群" side="ally" scale="company" level="3" hp="80" hpMax="100" body="human" platform="坐骑L3" seats="1"/>
-<spawn name="再生赤翼骑兵二连" side="ally" scale="company" level="5" hp="80" hpMax="100" body="human" mount="赤翼二连战马群" speed="4" weapon="骑枪:长兵器L3×80" weapon2="军刀:剑L3×80" armor="板甲:重甲L3×80" shield="骑兵盾:中盾L3×80" skills="冲锋:物理单体L4+近战+突进L4,鼓舞:buffL3+士气L3" traits="再生L5" items="治疗药水:buffL3+治疗L3×2"/>
+<spawn name="再生赤翼骑兵二连" side="ally" scale="company" level="5" hp="80" hpMax="100" body="human" mount="赤翼二连战马群" speed="4" weapon="骑枪:长兵器L3×80,军刀:剑L3×80" armor="板甲:重甲L3×80" shield="骑兵盾:中盾L3×80" skills="冲锋:物理单体L4+近战+突进L4,鼓舞:buffL3+士气L3" traits="再生L5" items="治疗药水:buffL3+治疗L3×2"/>
 </tb>
 </example>
 <example situation="已有骑兵连 u1 改配四十套板甲、四十套皮甲，并绑定战马群 u2">
@@ -77,7 +77,7 @@
 ## 新建单位
 
 - spawn 填 name、side（ally/enemy/neutral）和 scale（hero/company）。neutral 为第三方，与我方、敌方均敌对。company 另填 hpMax；写 hp 时同时填 hpMax。level 为训练等级 1—10，可带修正。speed 为固有速度 1—5（迟缓、缓行、标准、快速、疾速）。
-- weapon、weapon2 写主副武器，armor 写盔甲，shield 写盾，items 写随身道具。每项写“名称:规格×件数”，多项以逗号分隔。件数是全队总数，写在等级、效果与修正之后。
+- weapon 写武器（可为多种武器，主副武器或混装均可写在此栏），armor 写盔甲，shield 写盾，items 写随身道具。每项写“名称:规格×件数”，多项以逗号分隔。件数为编队持有该装备的实际总数（单体有多件武器时，各类武器件数按实际持有数填写），写在等级、效果与修正之后。
 - 坐骑和载具单独建档。platform 写“类别L等级±修正”，类别选坐骑、开放载具（乘员外露）、封闭载具（乘员在内）。普通马匹用 body="human"，大型、巨型生物坐骑用 body="large"、body="giant"，车辆用 body="vehicle"。独立作战载具可省略 platform 和 seats。非装甲炮兵按人形单位建档。
 - seats 为每匹坐骑或每辆车的载员数，车组成员不占座。编队总座位数为现存数量 hp × seats；单匹或单辆用 hero 时总座位数为 seats。
 - 乘员的 spawn 或 unit_set 中，绑定写 mount="坐骑或载具编号"，共用行动回合；普通搭乘写 aboard="坐骑或载具编号"。解绑写 mount="false"，离开写 aboard="false"。已有平台填事实清单中的 id，同批新建填该批次中唯一的单位全名。
@@ -118,13 +118,13 @@
 | take | id（实物） | qty：扣减数量；note：原因。 |
 | reforge | id（实物）、spec | name：新名称。支持装备及各类道具。 |
 
-add、give、take 可写 note。add（新物品）/reforge 可用 body、quality、stabilized、protection、enchant 等该种类支持的配置。
+add、give、take 可写 note。add（新物品）/reforge 可用 body、stabilized、protection、enchant 等该种类支持的配置。
 
 <examples>
 <example situation="八人骑兵队与八匹战马">
 <tb>
 <spawn name="青原战马群" side="ally" scale="company" hpMax="8" body="human" level="2" platform="坐骑L2+2速度" seats="1" weapon="马蹄:天生武器L2×8" armor="马铠:轻甲L2×8"/>
-<spawn name="青原骑兵队" side="ally" scale="company" hpMax="8" level="3" mount="青原战马群" weapon="骑枪:长兵器L3×8" weapon2="佩剑:剑L2×8" armor="骑兵甲:中甲L2×8"/>
+<spawn name="青原骑兵队" side="ally" scale="company" hpMax="8" level="3" mount="青原战马群" weapon="骑枪:长兵器L3×8,佩剑:剑L2×8" armor="骑兵甲:中甲L2×8"/>
 </tb>
 </example>
 <example situation="一辆 APC 与一个八人机械化步兵班">

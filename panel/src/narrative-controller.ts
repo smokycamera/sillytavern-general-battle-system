@@ -1,3 +1,4 @@
+import { batchWeapons } from '../../engine/src/equipment-batches.js';
 import { migrateOutOfBattleLoads } from './load-migration.js';
 import { prepareClassMigration } from './arms-v2.js';
 import { instanceQuality } from '../../engine/src/instance-variance.js';
@@ -126,7 +127,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
       body: unit?.rulesVersion === 'v2' && unit.body !== 'human' ? unit.body : undefined, platform: unit?.platform && platformText(unit.platform), seats: unit?.platform ? unit.seats ?? 1 : undefined,
       mount: unit?.ride?.mode === 'mount' ? publicId(unit.ride.platformId) : unit?.mount || undefined,
       aboard: unit?.ride?.mode === 'aboard' ? publicId(unit.ride.platformId) : undefined,
-      weapon: equipmentFact(unit?.weapon), sidearm: equipmentFact(unit?.sidearm), armor: equipmentFact(unit?.armor), shield: equipmentFact(unit?.shield), ...(effects?.length ? { effects } : {}) }, publicId);
+      weapon: unit && batchWeapons(unit).map(w=>equipmentFact(w)).join('、') || undefined, armor: equipmentFact(unit?.armor), shield: equipmentFact(unit?.shield), ...(effects?.length ? { effects } : {}) }, publicId);
     blocks.units.push(line);
     if (!detailed && unit?.rulesVersion === 'v2') {
       for (const source of unit.traitSources ?? []) if (source.conditions !== undefined && traitSourceActive(unit, source)) {
@@ -154,7 +155,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     const m = item.mechanics;
     if (!detailed) {
       const quantity = item.qty > 1 ? '×' + item.qty : '';
-      const key = m?.kind === 'weapon' ? item.equippedTo?.slot === 'sidearm' ? 'weapon2' : 'weapon' : m?.kind === 'armor' ? 'armor' : m?.kind === 'shield' ? 'shield' : 'items';
+      const key = m?.kind === 'weapon' ? 'weapon' : m?.kind === 'armor' ? 'armor' : m?.kind === 'shield' ? 'shield' : 'items';
       const quality = m && m.kind !== 'item' ? instanceQuality(m.value.recipe?.variance) : undefined;
       const enchant = m && m.kind !== 'item' ? m.value.recipe?.enchantment : undefined;
       const note = [item.note, quality && quality !== '普通' ? quality : undefined, enchant ? enchant === 'thermal' ? '热能转化' : '奥术转化' : undefined].filter(Boolean).join('；') || undefined;

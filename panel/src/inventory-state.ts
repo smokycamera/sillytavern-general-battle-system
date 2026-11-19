@@ -399,11 +399,12 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
         inventory.push(added);
       }
     } else if (action.kind === 'discard') {
-      if (item.equippedTo && !(item.batch && action.qty < item.qty)) throw new Error('先卸下已装备物品，再从库存移除');
+      if (item.equippedTo && !item.batch) throw new Error('先卸下已装备物品，再从库存移除');
       if (!Number.isSafeInteger(action.qty) || action.qty < 1 || action.qty > item.qty) throw new Error('移除数量超出库存');
       item.qty -= action.qty;
       if (item.equippedTo) {
         const record = recordById(next,item.equippedTo.unitId);
+        if (!item.qty) delete item.equippedTo;
         projectEquipment(record,inventory); rewriteRecord(next,record,id);
       }
     } else if (action.kind === 'define') {
@@ -497,7 +498,14 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
           item = splitInventoryBatch(item,'issued:'+id,qty);
           inventory.push(item);
         }
-        if (action.slot !== 'gear' && !(item.batch && record.scale === 'company')) for (const old of inventory) if (old.equippedTo?.unitId === record.id && old.equippedTo.slot === action.slot) delete old.equippedTo;
+        if (item.mechanics?.kind === 'weapon') {
+          item.batch = true;
+          // Issue after the existing weapons even when the new item entered the warehouse first.
+          inventory.splice(inventory.indexOf(item),1);
+          inventory.push(item);
+        } else if (action.slot !== 'gear' && !(item.batch && record.scale === 'company')) {
+          for (const old of inventory) if (old.equippedTo?.unitId === record.id && old.equippedTo.slot === action.slot) delete old.equippedTo;
+        }
         item.assignedTo = record.id; item.equippedTo = { unitId: record.id, slot: action.slot };
         projectEquipment(record, inventory);
         const reason = equipmentReason(record.snapshot);

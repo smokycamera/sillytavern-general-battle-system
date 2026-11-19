@@ -1,6 +1,7 @@
 import {expect,it} from 'vitest';
 import {captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type NarrativeSave} from './narrative-state.js';
-import {availableCopies, startBatchReload} from '../../engine/src/equipment-batches.js';
+import {prepareInventoryTransaction} from './inventory-state.js';
+import {availableCopies, batchWeapons, startBatchReload} from '../../engine/src/equipment-batches.js';
 import {detachMembers,combinePersonnel} from '../../engine/src/small/transport-groups.js';
 import {parseProtocol} from './protocol.js';
 import {readFileSync} from 'node:fs';
@@ -90,4 +91,15 @@ it('fires a third weapon batch, restores its reload state, and settles only irre
   expect(armor.qty).toBe(26);
   expect(settled.records.find(r=>r.id===damaged.id)?.hp).toBe(21);
   expect(settled.roster[0]!.equipmentBatches!.find(b=>b.id===armor.id)?.qty).toBe(26);
+});
+
+it('appends a third weapon on a hero and replaces the complete legacy loadout on unit_set',()=>{
+  const save=apply({},'<spawn name="护卫" scale="hero" side="ally" weapon="长剑:剑L3" weapon2="长弓:弓L3"/>\n<add item="标枪" spec="投掷冷兵器L3" qty="6"/>',1);
+  const unitId=save.storage![0]!.id, itemId=save.inventory!.find(i=>i.name==='标枪')!.id;
+  const equipped=prepareInventoryTransaction(save,{kind:'equip',slot:'primary',unitId,itemId,qty:3,id:'append',expectedRevision:save.factRevision!});
+  const unit=equipped.storage![0]!.snapshot!;
+  expect(batchWeapons(unit).map(w=>w.name)).toEqual(['长剑','长弓','标枪']);
+  const updated=apply(equipped,'<unit_set id="'+unitId+'" weapon="长弓:弓L3×1,标枪:投掷冷兵器L3×3"/>',2);
+  expect(batchWeapons(updated.storage![0]!.snapshot!).map(w=>w.name)).toEqual(['长弓','标枪']);
+  expect(updated.inventory!.find(i=>i.name==='长剑')?.equippedTo).toBeUndefined();
 });

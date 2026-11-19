@@ -55,7 +55,7 @@ export function loseIssuedEquipment(unit: Combatant,dead: number,start: number):
   }
   unit.equipmentPersonnel=survivors-dead;
 }
-export function batchWeapons(unit: Combatant): Weapon[] {
+export function batchWeapons(unit: Pick<Combatant,'weapon'|'sidearm'|'equipmentBatches'>): Weapon[] {
   const weapons = new Map<string,Weapon>();
   for (const weapon of [unit.weapon,unit.sidearm]) if (weapon) weapons.set(weapon.id,weapon);
   for (const b of unit.equipmentBatches ?? []) if (b.mechanics.kind === 'weapon' && !weapons.has(b.id)) weapons.set(b.id,b.mechanics.value);

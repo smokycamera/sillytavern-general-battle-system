@@ -44,7 +44,7 @@ function mount(canView = (_record: NonNullable<InventorySave['storage']>[number]
 
 beforeEach(() => { document.body.innerHTML = ''; Element.prototype.scrollIntoView = vi.fn(); });
 
-it('已装备卡片和顶部配装按主武器、副武器、护甲、盾牌、佩戴排序，不受库存写入顺序影响', () => {
+it('旧主副武器统一显示为武器，排在护甲、盾牌、佩戴之前，不受库存写入顺序影响', () => {
   const f = mount(), inventory = f.save().inventory!;
   const primary = inventory.find(item => item.equippedTo?.unitId === 'a' && item.equippedTo.slot === 'primary')!;
   const armor = inventory.find(item => item.equippedTo?.unitId === 'a' && item.equippedTo.slot === 'armor')!;
@@ -57,7 +57,7 @@ it('已装备卡片和顶部配装按主武器、副武器、护甲、盾牌、�
   f.save().inventory = [worn, shield, armor, sidearm, ...inventory.filter(item => item.id !== armor.id)];
   f.render();
   expect(f.ids().slice(0, 5)).toEqual([primary.id, sidearm.id, armor.id, shield.id, worn.id]);
-  expect([...document.querySelectorAll('.loadout-slots small')].map(el => el.textContent)).toEqual(['主武器', '副武器', '护甲', '盾牌', '佩戴']);
+  expect([...document.querySelectorAll('.loadout-slots small')].map(el => el.textContent)).toEqual(['武器', '武器', '护甲', '盾牌', '佩戴']);
 });
 
 it('一次性道具可预览改造和增加数量，确认前不写入，取消不改变库存', async () => {
@@ -82,6 +82,13 @@ it('一次性道具可预览改造和增加数量，确认前不写入，取消�
   document.querySelector<HTMLInputElement>('[data-role="inventory-qty"]')!.value = '3';
   await f.action('preview-draft'); await f.action('confirm');
   expect(f.save().inventory!.find(item => item.id === 'a-bag')).toMatchObject({ qty: 5, assignedTo: 'a', mechanics: item.mechanics });
+  await f.action('discard','a-bag');
+  const qty=document.querySelector<HTMLInputElement>('[data-role="inventory-qty"]')!;
+  qty.value='4';
+  await f.action('preview-draft');
+  expect(document.querySelector('.inventory-preview')!.textContent).toContain('数量 5 → 1');
+  await f.action('confirm');
+  expect(f.save().inventory!.find(item=>item.id==='a-bag')!.qty).toBe(1);
 });
 
 it('佩戴卡片展示短实效和升级收益；旧物更新先预览，提交后保留实物与历史', async () => {
