@@ -59,7 +59,7 @@ import { updateRegion, BattleCamera, selectTextareaRange } from './view-dom.js';
 import { installMapGestures, fitMap, mapScale } from './map-gestures.js';
 import { executeMassPlan, executeAndSaveAsync as executeAndSave } from './battle-execution.js';
 import { TACTICAL_PREFERENCES, normalizeTactic } from '../../engine/src/tactical-preference.js';
-import { battleIdOf, knownBattleUnits, publicBattleEvents, withBattleReportQueries, battleEpilogue, archivedNarrativeEvents, archivedDigest, makeNarrativeBatch, beginNarrativeDelivery, finishNarrativeDelivery, completedBattleRounds, type BattleReport, type BattleDeliveries, type NarrativeBatch } from './battle-reports.js';
+import { battleIdOf, knownBattleUnits, publicBattleEvents, withBattleReportQueries, battleEpilogue, archivedNarrativeEvents, archivedDigest, reportForDelivery, makeNarrativeBatch, beginNarrativeDelivery, finishNarrativeDelivery, completedBattleRounds, type BattleReport, type BattleDeliveries, type NarrativeBatch } from './battle-reports.js';
 import { lastBattleAction, traceLocations } from './battle-presentation.js';
 import { promptScopeControls } from './prompt-settings.js';
 import { narrativeProjectionDetails } from './narrative-controller.js';
@@ -70,7 +70,7 @@ import { formationWeaponRange } from '../../engine/src/melee.js';
 import { movementLabel } from '../../engine/src/tactics.js';
 const resourceLabel = (key: string) => key === 'SP' ? '精力' : key === 'reserve' ? '预备兵力' : key.startsWith('item:') ? '道具' : key;
 import { spCapacity, abilityCost, spRecovery, prepareResourceModel, skillExertion, resourceRound } from '../../engine/src/resources.js';
-import { PROMPT_SECTIONS, applySettlementPrompt, promptSelected, selectPromptEntries, renderPromptSettings, type PromptSectionId } from './prompt-settings.js';
+import { PROMPT_SECTIONS, promptSelected, selectPromptEntries, renderPromptSettings, type PromptSectionId } from './prompt-settings.js';
 import { needsNarrativeDeploymentRestore } from './narrative-state.js';
 import { AutoBattleLoop, battleProgress, yieldBattleFrame } from './auto-battle.js';
 import { BattleWorker } from './battle-worker.js';
@@ -2289,7 +2289,7 @@ function buildContextInject(): string {
 async function sendToAi(text: string, label: string, reportId?: string, batch?: NarrativeBatch): Promise<void> {
   const historical=state.reports.find(r=>r.id===(reportId??batch?.battleId));
   if(historical?.supersededBy)text='【已被重战替代的历史战报：仅供对照，不代表当前战果】\n'+text;
-  text = applySettlementPrompt(text, controller.snapshot(['promptSettings']).promptSettings);
+  text = reportForDelivery(text, controller.snapshot(['promptSettings']).promptSettings);
   if (!text) { toast(`暂无可发送的${label}`); return; }
   if (['新增战况', '战斗终章', '结算卡（整场）', '回合纪要（整场）', '状态摘要'].includes(label)) {
     text = text.trimEnd() + '\n\n本次回复应根据战报对战斗过程进行详细描写，禁止输出<tb>内容';

@@ -1181,7 +1181,7 @@ export class SmallBattle {
     }
     if (actor.status !== 'ready') return;
     actor.elevation = arrival.elevation; actor.pos = cell; if (['traits-levels-v2', 'traits-items-v1', 'traits-items-v2'].includes(this.rules.traitLevelModel ?? '')) actor.movedDuringActivation = true; this.movedThisTurn.add(actorId); delete actor.tacticalPose;
-    this.recordEvent({ round: this.round, kind: 'move', participants: [actorId], text: `${actor.name} ${isElevated(actor) ? '登上城防平台' : '下至地面'} ${cellLabel(field, cell)}${reportsHeights(field) ? '(高度' + unitHeight(field, actor) + ')' : ''}，消耗主行动与${climbCost}移动` });
+    this.recordEvent({ round: this.round, kind: 'move', participants: [actorId], text: `${actor.name} ${isElevated(actor) ? '登上城防平台' : '下至地面'} ${cellLabel(field, cell)}${reportsHeights(field) ? '(高度' + unitHeight(field, actor) + ')' : ''}` });
     this.settleAreaEffects(); revealContacts(this.observationContext());
     for (const foe of [...this.combatants].sort((a, b) => a.id.localeCompare(b.id))) {
       if (actor.status !== 'ready') break;
