@@ -22,7 +22,7 @@ import { activeTraitIds, effectiveTraitLevel } from './trait-sources.js';
 import { itemsV15 } from './item-model.js';
 import { isGradedTrait } from './data/traits.js';
 import { gradedTraitEnabled, traitLevelsV16 } from './trait-level-model.js';
-import { TERRAIN_GRADED_TRAITS, traitParameter as parameterValue, type TraitParameter } from './trait-parameters.js';
+import { TERRAIN_GRADED_TRAITS, smallRescuePercent, traitParameter as parameterValue, type TraitParameter } from './trait-parameters.js';
 
 export const STANDARD_TRAIT_LEVEL = 5;
 
@@ -102,7 +102,7 @@ export const TRAIT_LADDER: Readonly<Record<string, readonly string[]>> = {
 };
 const signed = (value: number) => (value >= 0 ? '+' : '−') + Math.abs(value);
 /** 某一级累计生效的效果，按实际数值合并成一句（面板、道具说明与说明文件共用）。 */
-export function traitLadderSummary(id: string, level: number, model?: unknown, flightModel?: Combatant['flightModel']): string {
+export function traitLadderSummary(id: string, level: number, model?: unknown, flightModel?: Combatant['flightModel'], individualCasualties = false): string {
   const modern = progression({traitLevelModel:model}), revised = stackingRevision({traitLevelModel:model});
   const traitParameter = (p: TraitParameter, L: number) => parameterValue(p, L, model);
   const L = Math.max(1, Math.min(10, Math.round(level))), parts: string[] = [];
@@ -138,7 +138,7 @@ export function traitLadderSummary(id: string, level: number, model?: unknown, f
     else if (id === 'stubborn') parts.push(`自身士气韧性${traitParameter('resilience', L)}，编队只计一次，个体参与心理对抗`);
     else if (id === 'commander') parts.push(`小战3格/会战1阵位内友军士气支援${traitParameter('command', L)}，需要视线、可见且来源可行动，多位统率取强`);
     else if (id === 'regen') parts.push(`每合法周期基础再生${modern ? traitParameter('regenAmount', L) : 3 * traitParameter('woundRatio', L)}，再按自身level计算治疗跨代；不足1的余量保存，满血/失去全部来源清零，失能暂停，加速不增加周期，不乘施放医护`);
-    else if (id === 'medic') parts.push(`施放治疗×${traitParameter('medicHealing', L)}，自身编队新伤亡可救${traitParameter('medicRescue', L)}%；不重算过去永久伤亡，不抬高治疗规格`);
+    else if (id === 'medic') parts.push(`施放治疗×${traitParameter('medicHealing', L)}，自身编队新伤亡可救${individualCasualties ? smallRescuePercent(L, model) : traitParameter('medicRescue', L)}%；不重算过去永久伤亡，不抬高治疗规格`);
     else if (id === 'poison-strike') parts.push(`合法动能攻击造成真实损伤后施加普通毒，基础毒伤×${traitParameter(modern ? 'poisonMultiplier' : 'woundRatio', L)}，冻结效力与波及人数，结算3次；存续时不叠层、不续期、不替换，攻击降低1`);
     else if (id === 'fear') parts.push(`小战3格/会战1阵位恐惧压力${traitParameter('fearPressure', L)}；残余压力扣附近统率与自身韧性，攻击至多降低2${L >= 8 ? `；有效士气≤50时额外惊退DC${12 + 2 * (L - 8)}，按本体来源本战只应对一次` : '，没有额外恐怖惊退'}`);
     else if (id === 'fortification') parts.push(`在据守位置防御+${traitParameter('worksDefense', L)}、远程伤害减免${pct('worksReduction')}%；离开失效，工兵仅削减此来源`);

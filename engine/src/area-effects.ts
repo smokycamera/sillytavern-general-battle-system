@@ -1,3 +1,4 @@
+import type { CasualtyRolls } from './small/casualty-rolls.js';
 import { displayNumber } from './display-number.js';
 import { traitRegistry } from './data/traits.js';
 import { progression, PROGRESSION_MODEL, STACKING_MODEL, ItemProgressionModel } from './progression.js';
@@ -127,7 +128,7 @@ export function smokeBlocks(context: ObservationContext, from: Combatant, to: Co
 }
 export interface ZoneOutcome { target: Combatant; source?: Combatant; damage: number; text: string; control?: boolean }
 /** 同一区域每个单位每轮至多触发一次；离开再进入或读档不会重复触发。 */
-export function settleZones(context: ObservationContext, round: number, boundary=false, rng?: Rng, onExpire?: (zone: BattleZone) => void): ZoneOutcome[] {
+export function settleZones(context: ObservationContext, round: number, boundary=false, rng?: Rng, onExpire?: (zone: BattleZone) => void, rolls?: CasualtyRolls): ZoneOutcome[] {
   const results:ZoneOutcome[]=[];
   for(const owner of context.units) {
     for(const zone of owner.battleZones??[]) {
@@ -155,7 +156,7 @@ export function settleZones(context: ObservationContext, round: number, boundary
           const wardContext = { damageChannel: zone.kind === 'poison' ? undefined : zone.kind === 'fire' ? 'thermal' as const : 'kinetic' as const, attacker: target, defender: owner, area: true, engaged: target.engagedWith.length > 0 };
           const ward = progression(target) ? resolveStack(collectMods(target, wardContext, standardConditionMap(), [], context.traitRegistry ?? traitRegistry()), 'ward', wardContext).multTotal : 1;
           damage=applyCombatDamage(target,Math.round(amount*factor*count*overmatch*ward),count,overmatch>1?{
-            power:zone.power,channel:zone.kind==='fire'?'thermal':'kinetic',penetration:zonePenetration(zone),area:true,canBlock:true,multiplier:overmatch,...(context.rules?.overmatchCurve?{curve:context.rules.overmatchCurve}:{})}:undefined);
+            power:zone.power,channel:zone.kind==='fire'?'thermal':'kinetic',penetration:zonePenetration(zone),area:true,canBlock:true,multiplier:overmatch,...(context.rules?.overmatchCurve?{curve:context.rules.overmatchCurve}:{})}:undefined,rolls);
           results.push({target,source:owner,damage,text:target.name+'受到'+ZONE_NAMES[zone.kind]+'影响，损失'+displayNumber(damage)+'点生命'});
         }
         const random=rng??new SeededRng(`${zone.id}:${zone.createdRound}:${round}:${target.id}`);
@@ -179,7 +180,7 @@ export function settleZones(context: ObservationContext, round: number, boundary
           } else if(effect.op==='dispel') {
             const chosen=dispelCandidates(target,effect);applyDispel(target,chosen);control=chosen.length>0;text=target.name+(chosen.length?' 解除'+chosen.map(c=>c.name).join('、'):' 没有可解除的效果');
           } else if(effect.op==='push') {
-            const moved=applyPush(context,owner,target,effect);text=target.name+'：'+(moved.reason??(effect.direction==='towards'?'拉至':'推至')+moved.label);
+            const moved=applyPush(context,owner,target,effect,rolls);text=target.name+'：'+(moved.reason??(effect.direction==='towards'?'拉至':'推至')+moved.label);
           } else if(effect.op==='trait') {
             text=applySkillTrait(owner,target,{id:zone.id,name:ZONE_NAMES[zone.kind],power:zone.power,target:'zone',effects:[]},effect,zone.id+':'+round);
           }
