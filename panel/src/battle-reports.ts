@@ -9,6 +9,7 @@ import { NARRATIVE_TASK } from '../../engine/src/inject/narrative-task.js';
 import type { DeliveryReceipt } from './tavern.js';
 import {memberNoun} from '../../engine/src/member-health.js';
 import { itemUseReport } from './item-use-report.js';
+import { applySettlementPrompt, type PromptSettings } from './prompt-settings.js';
 import { isCommunicationLog } from '../../engine/src/diplomacy.js';
 
 export type Battle = SmallBattle | MassBattle;
@@ -27,7 +28,14 @@ export function withCommunications(text: string, events: Pick<NarrativeEvent, 'r
   const task = text.endsWith(NARRATIVE_TASK) ? NARRATIVE_TASK : '';
   return [task ? text.slice(0, -task.length).trimEnd() : text, '【消息与交涉】', ...missing.map(event => `第${event.round}回合｜${event.text}`), task].filter(Boolean).join('\n');
 }
-export const archivedDigest = (report: BattleReport): string => withCommunications(report.digest || report.card, report.narrativeEvents ?? []);
+// Saved reports can contain the movement cost written by earlier versions.
+function omitArchivedClimbCost(text: string): string {
+  return text.replace(/((?:登上城防平台|下至地面) [A-Z]+\d+(?:\(高度-?\d+\))?)，消耗主行动与\d+移动/g, '$1');
+}
+export function reportForDelivery(text: string, settings?: PromptSettings): string {
+  return applySettlementPrompt(omitArchivedClimbCost(text), settings);
+}
+export const archivedDigest = (report: BattleReport): string => omitArchivedClimbCost(withCommunications(report.digest || report.card, report.narrativeEvents ?? []));
 export interface NarrativeBatch { battleId: string; key: string; kind: 'delta' | 'epilogue'; from: number; to: number; text: string }
 export interface BattleDelivery { cursor: number; receipts: Record<string, DeliveryReceipt & { from: number; to: number; kind: NarrativeBatch['kind'] }> }
 export type BattleDeliveries = Record<string, BattleDelivery>;

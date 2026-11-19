@@ -1,6 +1,6 @@
-import { battleIdOf, makeNarrativeBatch, reportRoundCount, archivedDigest, type Battle, type BattleReport, type BattleDeliveries } from './battle-reports.js';
+import { battleIdOf, makeNarrativeBatch, reportForDelivery, reportRoundCount, archivedDigest, type Battle, type BattleReport, type BattleDeliveries } from './battle-reports.js';
 import { escapeHtml as esc } from './battle-presentation.js';
-import { applySettlementPrompt, type PromptSettings } from './prompt-settings.js';
+import type { PromptSettings } from './prompt-settings.js';
 import type { DeliveryReceipt } from './tavern.js';
 const deliveryWords = {sent:'已发送',inserted:'已放入聊天，等待手动发送',copied:'已复制，需手动发送',failed:'发送失败',unknown:'结果未知',sending:'发送中，待核对'};
 export function renderReportWorkspace(b: Battle | null, reports: BattleReport[], selectedId: string | undefined, deliveries: BattleDeliveries, renderLog: (b: Battle) => string,
@@ -12,7 +12,7 @@ export function renderReportWorkspace(b: Battle | null, reports: BattleReport[],
   const over=!b||b.isOver();let delta='',epilogue='';
   try{delta=makeNarrativeBatch(b??undefined,report,deliveries,'delta').text;}catch{/*旧战报或无新事件*/}
   try{epilogue=makeNarrativeBatch(b??undefined,report,deliveries,'epilogue',controls.start).text;}catch{/*战斗未结束*/}
-  delta=applySettlementPrompt(delta,controls.promptSettings);epilogue=applySettlementPrompt(epilogue,controls.promptSettings);
+  delta=reportForDelivery(delta,controls.promptSettings);epilogue=reportForDelivery(epilogue,controls.promptSettings);
   const blocked=Object.values(dispatch?.receipts??{}).some(r=>r.kind==='delta'&&['sending','inserted','unknown'].includes(r.status));
   const finished=dispatch?.receipts.epilogue?.status==='sent';
   const title=(r:BattleReport,i:number)=>`第${i+1}场${r.id.startsWith('mass:')?'会战':'交战'}${reportRoundCount(r)?' · '+reportRoundCount(r)+'回合':''}`;
