@@ -160,8 +160,13 @@ try {
   const paused=await state();await page.waitForTimeout(800);check('收起面板后全自动暂停',JSON.stringify((await state()).battle)===JSON.stringify(paused.battle));
   await page.evaluate(()=>__tavernBattleNative.open());
   await page.screenshot({path:path.join(artifacts,'desktop.png')});
-  await frame.locator('[data-action="battle-finish"][data-reason="ceasefire"]').click();await idle(frame);
-  check('小战结算与战报归档只入账一次',(await state()).reports?.length===1&&(await state()).committedOutcomeIds?.length===1);
+  const battleId = 'small:' + paused.battle.snap.seed;
+  if (!paused.committedOutcomeIds?.includes(battleId)) {
+    await frame.locator('[data-action="battle-finish"][data-reason="ceasefire"]').click(); await idle(frame);
+  }
+  const settled = await state();
+  check('小战结算与战报归档只入账一次',settled.reports?.length===1 && settled.reports[0].id===battleId &&
+    settled.committedOutcomeIds?.length===1 && settled.committedOutcomeIds[0]===battleId);
   await frame.locator('[data-action="out-epilogue"]').first().click();await idle(frame);
   check('战报只插入用户消息，不自动生成，并保留草稿附件',await page.evaluate(()=>__generations===0&&context.chat.at(-1).is_user===true&&document.getElementById('send_textarea').value.includes('玩家草稿')&&document.getElementById('pending-file').value==='fixture-attachment.txt'&&Object.values(__tavernBattleNative.service.snapshot().reportDeliveries)[0].receipts.epilogue.status==='inserted'));
   await frame.locator('[data-action="workspace-tab"][data-tab="reports"]').first().click();await idle(frame);
