@@ -1,3 +1,4 @@
+import { narrativeEvents } from './battle-reports.js';
 import { smallCommandChoices } from './llm-command.js';
 import {expect,it} from 'vitest';
 import {captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type NarrativeSave} from './narrative-state.js';
@@ -133,18 +134,30 @@ it('reuses holdings when repeatedly issuing, returning and replenishing one lot'
   expect(batchWeapons(save.storage![0]!.snapshot!).map(w=>w.id)).toEqual([issued]);
 });
 
-it('offers the same coordinated shot to the LLM and the player and spends one action', () => {
-  const save = apply({},'<spawn name="守军" side="ally" scale="company" hpMax="20" weapon="东营火枪:火枪L2×20,西营火枪:火枪L2×20"/>\n<spawn name="守卫" side="enemy" scale="company" hpMax="80"/>',1);
+it.each([
+  ['volley:ranged','协同射击',['东营火枪','西营火枪']],
+  ['volley:melee','协同近战',['长剑','短矛']],
+  ['volley:all','总协同攻击',['东营火枪','西营火枪','长剑','短矛']],
+] as const)('offers %s to both commanders and reports the weapons that acted', (mode,label,weapons) => {
+  const save = apply({},'<spawn name="守军" side="ally" scale="company" hpMax="20" weapon="东营火枪:火枪L2×20,西营火枪:火枪L2×20,长剑:剑L2×20,短矛:长兵器L2×20"/>\n<spawn name="守卫" side="enemy" scale="company" hpMax="200"/>',1);
   const actors = save.storage!.map(r=>structuredClone(r.snapshot!)), [actor,target] = actors;
   const field = standardField(9,15); field.tiles.fill('open');
   const battle = new SmallBattle({combatants:actors,battlefield:field,rules:V43_OVERFLOW_D20,seed:'mixed-volley'});
-  battle.start(); actor!.pos=30; target!.pos=33; battle.turnOrder=actors.map(u=>u.id); battle.turnIndex=0;
-  const menu=battle.getActionOptions(actor!.id).find(o=>o.id==='volley:ranged');
-  expect(menu?.targets?.[0]?.preview?.effects).toHaveLength(2);
-  expect(smallCommandChoices(battle,actor!.id).some(c=>c.action?.weaponMode==='volley:ranged' && c.action.targetId===target!.id)).toBe(true);
-  battle.attack(actor!.id,target!.id,{weaponMode:'volley:ranged'});
+  battle.start(); actor!.pos=30; target!.pos=31; battle.turnOrder=actors.map(u=>u.id); battle.turnIndex=0;
+  const menu=battle.getActionOptions(actor!.id).find(o=>o.id===mode);
+  expect(menu?.targets?.[0]?.preview?.effects).toHaveLength(weapons.length);
+  expect(smallCommandChoices(battle,actor!.id).some(c=>c.action?.weaponMode===mode && c.action.targetId===target!.id)).toBe(true);
+  const from=battle.log.length;
+  const result=battle.attack(actor!.id,target!.id,{weaponMode:mode});
+  const digest=narrativeEvents(battle,from).map(e=>e.text).join(' ');
+  expect(digest).toContain(label);
+  for (const name of weapons) {
+    expect(digest).toContain(name);
+    expect(battle.log.slice(from).some(e=>e.volley?.weapon===name && e.text.includes(name))).toBe(true);
+  }
+  expect(result.participants).toBeLessThanOrEqual(actor!.hp);
   const fired=actor!.equipmentBatches!.map(b=>b.reloading?.[0]?.count ?? 0);
-  expect(fired.filter(Boolean)).toHaveLength(2);
+  expect(fired.filter(Boolean)).toHaveLength(mode==='volley:melee' ? 0 : 2);
   expect(fired.reduce((sum,n)=>sum+n,0)).toBeLessThanOrEqual(actor!.hp);
   expect(battle.getTurnEconomy(actor!.id).actionAvailable).toBe(false);
 });

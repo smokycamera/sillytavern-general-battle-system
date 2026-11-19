@@ -106,25 +106,62 @@ export function mergeBatchEquipment(unit: Combatant,other: Combatant): void {
   }
   unit.equipmentPersonnel = members(unit)+members(other)+(unit.recoverableWounded ?? 0)+(other.recoverableWounded ?? 0);
 }
-export type VolleyMode = 'volley:ranged' | 'volley:melee';
+export const volleyLabels = {
+  'volley:melee':'协同近战', 'volley:ranged':'协同射击', 'volley:all':'总协同攻击',
+} as const;
+export type VolleyMode = keyof typeof volleyLabels;
+export const volleyModes: readonly VolleyMode[] = ['volley:melee','volley:ranged','volley:all'];
 export type WeaponMode = 'primary' | 'sidearm' | `batch:${string}` | VolleyMode;
 export function isVolleyMode(mode?: string): mode is VolleyMode {
-  return mode === 'volley:ranged' || mode === 'volley:melee';
+  return mode !== undefined && Object.hasOwn(volleyLabels,mode);
 }
 /** Largest remainder apportions the shared frontage without rounding up extra operators. */
-export function allocateVolley<T extends { copies: number }>(weapons: readonly T[], frontage: number) {
-  if (weapons.length < 2) return [];
+function apportion<T extends { copies: number }>(weapons: readonly T[], frontage: number) {
   const total = weapons.reduce((sum,w) => sum + w.copies,0);
   const budget = Math.min(Math.floor(frontage),total);
-  if (budget < 2) return [];
+  if (budget < 1) return [];
   const shares = weapons.map(weapon => {
     const exact = budget * weapon.copies / total;
     return {weapon, count:Math.floor(exact), remainder:exact % 1};
   });
   const left = budget - shares.reduce((sum,w) => sum + w.count,0);
   if (left) for (const row of [...shares].sort((a,b) => b.remainder-a.remainder).slice(0,left)) row.count++;
-  const active = shares.filter(row => row.count > 0);
-  return active.length >= 2 ? active : [];
+  return shares.filter(row => row.count > 0);
+}
+
+/** Use one formation frontage, with a separate reach and capacity limit for each delivery. */
+export function allocateVolley<T extends {copies:number; ranged:boolean; frontage:number}>(weapons: readonly T[], mode: VolleyMode) {
+  if (weapons.length < 2) return [];
+  const lane = (ranged: boolean) => {
+    const rows = weapons.filter(w => w.ranged === ranged && w.copies > 0);
+    const frontage = Math.floor(rows[0]?.frontage ?? 0);
+    const capacity = Math.min(frontage,rows.reduce((sum,w) => sum + w.copies,0));
+    return {rows,frontage,capacity};
+  };
+  const single = (rows: readonly T[], capacity: number) => {
+    const active = apportion(rows,capacity);
+    return active.length >= 2 ? active : [];
+  };
+  if (mode !== 'volley:all') {
+    const {rows,capacity} = lane(mode === 'volley:ranged');
+    return single(rows,capacity);
+  }
+  const lanes = [lane(true),lane(false)].filter(group => group.capacity > 0);
+  if (lanes.length < 2) return lanes[0] ? single(lanes[0].rows,lanes[0].capacity) : [];
+  const budget = Math.max(...lanes.map(group => group.frontage));
+  if (budget < 2) return [];
+  // Reserve a place for each weapon type when both the shared budget and its frontage permit.
+  const minima = lanes.map(group => Math.min(group.capacity,group.rows.length));
+  if (minima[0]! + minima[1]! > budget) minima.fill(1);
+  const free = lanes.map((group,i) => ({group,copies:group.capacity-minima[i]!}));
+  const extra = apportion(free,budget-minima[0]!-minima[1]!);
+  return lanes.flatMap((group,i) => {
+    const places = minima[i]! + (extra.find(s => s.weapon.group === group)?.count ?? 0);
+    if (places < group.rows.length) return apportion(group.rows,places);
+    const rest = apportion(group.rows.map(weapon => ({weapon,copies:weapon.copies-1})),places-group.rows.length);
+    const counts = new Map(rest.map(row => [row.weapon.weapon,row.count]));
+    return group.rows.map(weapon => ({weapon,count:1+(counts.get(weapon) ?? 0)}));
+  });
 }
 export function weaponModeFor(unit: Combatant,weapon?: Weapon): WeaponMode {
   return !weapon || weapon.id === unit.weapon?.id ? 'primary' : weapon.id === unit.sidearm?.id ? 'sidearm' : ('batch:'+weapon.id) as WeaponMode;

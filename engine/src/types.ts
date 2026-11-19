@@ -631,6 +631,7 @@ export type LogKind =
   | 'battle-end';
 
 export interface BattleLogEntry {
+  volley?: { action:number; mode:import('./equipment-batches.js').VolleyMode; weapon:string };
   transport?: boolean;
   /** Actual execution feedback; temporary budget limits do not invalidate a route. */
   intentFailure?: { unitId: string; cell?: number; temporary: boolean };

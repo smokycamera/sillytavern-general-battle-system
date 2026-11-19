@@ -1,4 +1,4 @@
-import { allocateVolley, isVolleyMode, optionWeaponMode, availableCopies, readyCopies, batchWeapons, weaponModeFor, weaponForMode, startBatchReload, advanceBatchReload, type WeaponMode } from '../equipment-batches.js';
+import { volleyModes, volleyLabels, allocateVolley, isVolleyMode, optionWeaponMode, availableCopies, readyCopies, batchWeapons, weaponModeFor, weaponForMode, startBatchReload, advanceBatchReload, type WeaponMode } from '../equipment-batches.js';
 import { displayNumber } from '../display-number.js';
 import { grantEntryWornBarrier, resetWornBarrier } from '../worn-barrier.js';
 import { prepareRevivalBattle, tryRevive } from '../revival.js';
@@ -1468,24 +1468,34 @@ export class SmallBattle {
 
   private volleyOptions(actor: Combatant, weaponFoes: Combatant[], options: ActionOption[], previews: boolean): ActionOption[] {
     const groups: ActionOption[] = [];
-    for (const ranged of [false,true]) {
-      const singles = options.filter(o => o.kind === 'weapon').map(option => {
-        const weapon = weaponForMode(actor,optionWeaponMode(option.id));
-        return {option, weapon, copies:availableCopies(actor,weapon?.id)};
-      }).filter(row => row.weapon && isRangedWeapon(row.weapon) === ranged && Number.isFinite(row.copies) && row.copies > 0);
-      if (singles.length < 2) continue;
-      const targets = weaponFoes.flatMap((target,index) => {
-        const legal = singles.filter(row => row.option.targets?.[index]?.enabled);
-        if (legal.length < 2) return [];
-        const frontage = this.volleyFrontage(actor,target,ranged);
-        const shares = allocateVolley(legal,frontage);
-        if (!shares.length) return [];
-        const effects = shares.map(({weapon,count}) => weapon.weapon!.name + ' ×' + count);
-        const expectedDamage = shares.reduce((sum,{weapon,count}) => sum + (weapon.option.targets![index]!.preview?.expectedDamage ?? 0)
-          * count / Math.min(weapon.copies,frontage),0);
-        return [{targetId:target.id,enabled:true,distance:this.dist(actor,target),preview:{effects,...(previews ? {expectedDamage:Math.min(memberHealth(target),expectedDamage)} : {})}}];
+    const singles = options.filter(o => o.kind === 'weapon').flatMap(option => {
+      const weapon = weaponForMode(actor,optionWeaponMode(option.id));
+      const copies = availableCopies(actor,weapon?.id);
+      return weapon && Number.isFinite(copies) && copies > 0 ? [{option,weapon,copies,ranged:isRangedWeapon(weapon)}] : [];
+    });
+    const byMode = new Map<keyof typeof volleyLabels,NonNullable<ActionOption['targets']>>();
+    for (const [index,target] of weaponFoes.entries()) {
+      const ready = singles.filter(row => row.option.targets?.[index]?.enabled);
+      if (ready.length < 2) continue;
+      const widths = new Map<boolean,number>();
+      const rows = ready.map(row => {
+        if (!widths.has(row.ranged)) widths.set(row.ranged,this.volleyFrontage(actor,target,row.ranged));
+        return {...row,frontage:widths.get(row.ranged)!};
       });
-      if (targets.length) groups.push({id:ranged ? 'volley:ranged' : 'volley:melee',kind:'weapon',label:ranged ? '协同射击' : '协同近战',enabled:true,targets});
+      for (const mode of volleyModes) {
+        const shares = allocateVolley(rows,mode);
+        if (!shares.length) continue;
+        const effects = shares.map(({weapon,count}) => weapon.weapon.name + ' ×' + count);
+        const expectedDamage = previews ? shares.reduce((sum,{weapon,count}) => sum + (weapon.option.targets![index]!.preview?.expectedDamage ?? 0)
+          * count / Math.min(weapon.copies,weapon.frontage),0) : undefined;
+        const targets = byMode.get(mode) ?? [];
+        targets.push({targetId:target.id,enabled:true,distance:this.dist(actor,target),preview:{effects,...(expectedDamage === undefined ? {} : {expectedDamage:Math.min(memberHealth(target),expectedDamage)})}});
+        byMode.set(mode,targets);
+      }
+    }
+    for (const mode of volleyModes) {
+      const targets = byMode.get(mode);
+      if (targets) groups.push({id:mode,kind:'weapon',label:volleyLabels[mode],enabled:true,targets});
     }
     return groups;
   }
@@ -1717,14 +1727,19 @@ export class SmallBattle {
     const hasteScale = hasteAction ? hasteAttackScale(attacker) : 1;
     const d = this.dist(attacker, target);
     if(opts.charge && !this.battlefield && isArmsV2(this.rules.armsModel))opts={...opts,chargeDistance:d,chargeStraight:true};
-    const volley = isVolleyMode(opts.weaponMode);
-    const ranged = opts.weaponMode === 'volley:ranged';
+    const volley = isVolleyMode(opts.weaponMode) ? opts.weaponMode : undefined;
+    const frontages = new Map<boolean,number>();
     const groups = volley && !opts.charge && this.canVolley(attacker) ? allocateVolley(batchWeapons(attacker)
-      .filter(w => isRangedWeapon(w) === ranged)
-      .map(w => {
-        const mode = weaponModeFor(attacker,w);
-        return { mode, context:this.weaponContext(attacker,target,{...opts,weaponMode:mode}), copies:availableCopies(attacker,w.id) };
-      }).filter(w => !w.context.reason && Number.isFinite(w.copies) && w.copies > 0),this.volleyFrontage(attacker,target,ranged)) : [];
+      .flatMap(w => {
+        const ranged = isRangedWeapon(w), mode = weaponModeFor(attacker,w);
+        if (volley !== 'volley:all' && ranged !== (volley === 'volley:ranged')) return [];
+        const copies = availableCopies(attacker,w.id);
+        if (!Number.isFinite(copies) || copies <= 0) return [];
+        const context = this.weaponContext(attacker,target,{...opts,weaponMode:mode});
+        if (context.reason) return [];
+        if (!frontages.has(ranged)) frontages.set(ranged,this.volleyFrontage(attacker,target,ranged));
+        return [{mode,ranged,context,copies,frontage:frontages.get(ranged)!}];
+      }),volley) : [];
     if (volley && !groups.length) throw Error('没有可协同攻击此目标的武器');
     const context = groups[0]?.weapon.context ?? this.weaponContext(attacker, target, opts);
     if (context.reason) throw new Error(context.reason);
@@ -1742,27 +1757,31 @@ export class SmallBattle {
           dmgMult: 1, wardMult: 1, finalDamage: 0, hpBefore: target.hp, hpAfter: target.hp, defenderStatus: target.status, text: '冲锋途中被反应中断，未发生攻击' };
       }
     }
-    if (context.landing && isAirborne(attacker)) this.changeFlight(attacker.id, false, true);
+    if (!volley && context.landing && isAirborne(attacker)) this.changeFlight(attacker.id, false, true);
     let result: AttackResolution;
     if (volley) {
-      const results: AttackResolution[] = [];
-      const finishing = target.status === 'dying';
+      const results: AttackResolution[] = [], used = new Set<string>();
+      const finishing = target.status === 'dying', action = this.log.length;
       for (const group of groups) {
         if (results.length && (attacker.status !== 'ready' || ['dead','fled'].includes(target.status) || !finishing && target.status === 'dying')) break;
         const shotOpts = {...opts,weaponMode:group.weapon.mode};
         const live = results.length ? this.weaponContext(attacker,target,shotOpts) : group.weapon.context;
         if (live.reason) continue;
-        results.push(this.fireWeapon(attacker,target,live,shotOpts,hasteScale,group.count));
+        if (live.landing && isAirborne(attacker)) this.changeFlight(attacker.id,false,true);
+        const weapon = live.weapon!.name;
+        results.push(this.fireWeapon(attacker,target,live,shotOpts,hasteScale,group.count,{action,mode:volley,weapon}));
+        used.add(weapon);
       }
-      result = this.sumShots(attacker,target,results);
-      result.participants = results.reduce((sum,shot) => sum + (shot.participants ?? 0),0);
+      const summary = this.sumShots(attacker,target,results);
+      result = {...summary,text:`［${volleyLabels[volley]}·${[...used].join('、')}］${summary.text}`,
+        participants:results.reduce((sum,shot) => sum + (shot.participants ?? 0),0)};
     } else result = this.fireWeapon(attacker,target,context,opts,hasteScale);
     if (!opts.bypassTurn) this.spendAction(attackerId,hasteAction);
     return result;
   }
 
   private fireWeapon(attacker: Combatant, target: Combatant, context: WeaponContext, opts: SmallAttackOpts,
-    hasteScale: number, operatorLimit?: number): AttackResolution {
+    hasteScale: number, operatorLimit?: number, volley?: BattleLogEntry['volley']): AttackResolution {
     const attackerId = attacker.id;
     const activeWeapon = context.weapon;
     const rangedAttack = context.ranged;
@@ -1805,9 +1824,9 @@ export class SmallBattle {
           this.applyOnHitTraits(attacker, victim, res);
         }
         const counted = attacker.scale==='company' && attacker.equipmentBatches?.some(b=>b.id===activeWeapon?.id);
-        const wpnShort = activeWeapon ? tbWeaponShortName(activeWeapon)+(counted && res.participants ? ' ×'+Math.ceil(res.participants) : '') : '';
+        const wpnShort = activeWeapon ? (volley ? volleyLabels[volley.mode]+'·'+volley.weapon : tbWeaponShortName(activeWeapon))+(counted && res.participants ? ' ×'+Math.ceil(res.participants) : '') : '';
         const prefix = wpnShort ? (times > 1 ? `［${wpnShort}·${i + 1}/${times}］` : `［${wpnShort}］`) : (times > 1 ? `［${i + 1}/${times}］` : '');
-        this.recordEvent({ round: this.round, kind: 'attack', text: prefix + res.text, resolution: res });
+        this.recordEvent({ round: this.round, kind: 'attack', text: prefix + res.text, resolution: res, ...(volley ? {volley} : {}) });
         this.checkDeath(victim, attacker);
         this.checkInjury(victim, res.finalDamage); this.resolveFlightStates();
       }
@@ -3015,19 +3034,17 @@ export class SmallBattle {
           const volleyDamage = Math.min(memberHealth(target), preview.expectedDamage) + sprayDamage;
           plans.push({ score: baseScore + this.platformTargetBonus(target,preview.expectedDamage,loads) + volleyDamage + (preview.conditionValue ?? 0) + 4 * killProbability([preview],memberHealth(target)), offensive: volleyDamage + (preview.conditionValue ?? 0) > 0, path, targetId: target.id, weaponMode, kind: 'weapon', preview });
           const copies = weaponCopies.get(context.weapon?.id ?? '');
-          if (mixed && copies && Number.isFinite(copies)) coordinated.push({ranged:context.ranged,copies,frontage:mods.participants,
+          if (mixed && copies && Number.isFinite(copies)) coordinated.push({ranged:context.ranged,copies,frontage:this.volleyFrontage(actor,target,context.ranged,mods.participants),
             damage:preview.expectedDamage,extra:sprayDamage+(preview.conditionValue ?? 0),variance:preview.variance ?? 0});
         }
         if (coordinated.length < 2) continue;
-        for (const ranged of [true,false]) {
-          const rows = coordinated.filter(row => row.ranged === ranged);
-          if (rows.length < 2) continue;
-          const frontage = this.volleyFrontage(actor,target,ranged,rows[0]!.frontage);
-          const shares = allocateVolley(rows,frontage);
+        for (const weaponMode of volleyModes) {
+          if (weaponMode === 'volley:all' && coordinated.every(row => row.ranged === coordinated[0]!.ranged)) continue;
+          const shares = allocateVolley(coordinated,weaponMode);
           if (!shares.length) continue;
           let expectedDamage = 0, extra = 0, variance = 0;
           for (const {weapon,count} of shares) {
-            const weight = count / Math.min(frontage,weapon.copies);
+            const weight = count / Math.min(weapon.frontage,weapon.copies);
             expectedDamage += weight * weapon.damage;
             extra += weight * weapon.extra;
             variance += weight * weight * weapon.variance;
@@ -3036,7 +3053,7 @@ export class SmallBattle {
           const value = Math.min(memberHealth(target),expectedDamage) + extra;
           plans.push({score:baseScore + this.platformTargetBonus(target,expectedDamage,loads) + value
             + 4 * killProbability([preview],memberHealth(target)),offensive:value > 0,path,targetId:target.id,
-            kind:'weapon',weaponMode:ranged ? 'volley:ranged' : 'volley:melee',preview});
+            kind:'weapon',weaponMode,preview});
         }
       }
       for (const listedAbility of actor.abilities) {
@@ -3198,7 +3215,7 @@ export class SmallBattle {
       && plan.path.cells.at(-1) === objective.cell && (!isAirborne(unit) || plan.kind === 'land');
     const choice = (plan: typeof plans[number]) => ({
       key: JSON.stringify(field.layerVersion ? [plan.kind, plan.path.cells, plan.targetId, plan.abilityId, plan.weaponMode, plan.cell, plan.structureMode] : [plan.kind, plan.path.cells, plan.targetId, plan.abilityId, plan.weaponMode]), score: plan.score,
-      attack: !!plan.offensive, breach: plan.kind === 'structure', ranged: plan.kind === 'structure' ? plan.structureMode?.startsWith('ability:') ? unit.abilities.find(a => a.id === plan.structureMode!.slice(8))?.delivery !== 'melee' : isRangedWeapon(weaponForMode(unit,plan.structureMode as WeaponMode)) : plan.kind === 'weapon' ? plan.weaponMode === 'volley:ranged' || isRangedWeapon(weaponForMode(unit,plan.weaponMode as WeaponMode)) : plan.kind === 'ability' && !movementOnlySkill(unit.abilities.find(a => a.id === plan.abilityId) ?? { effects: [] }) && (unit.abilities.find(a => a.id === plan.abilityId)?.range?.max ?? 0) > 1,
+      attack: !!plan.offensive, breach: plan.kind === 'structure', ranged: plan.kind === 'structure' ? plan.structureMode?.startsWith('ability:') ? unit.abilities.find(a => a.id === plan.structureMode!.slice(8))?.delivery !== 'melee' : isRangedWeapon(weaponForMode(unit,plan.structureMode as WeaponMode)) : plan.kind === 'weapon' ? plan.weaponMode === 'volley:ranged' || plan.weaponMode === 'volley:all' || isRangedWeapon(weaponForMode(unit,plan.weaponMode as WeaponMode)) : plan.kind === 'ability' && !movementOnlySkill(unit.abilities.find(a => a.id === plan.abilityId) ?? { effects: [] }) && (unit.abilities.find(a => a.id === plan.abilityId)?.range?.max ?? 0) > 1,
       move: plan.path.cost > 0 || plan.kind === 'ability' && hasSkillMovement(unit.abilities.find(a => a.id === plan.abilityId) ?? { effects: [] }), defend: plan.kind === 'brace' || plan.kind === 'hold' || plan.kind === 'overwatch' || plan.kind === 'ability' && !!unit.abilities.find(a => a.id === plan.abilityId)?.effects.some(e => e.op === 'barrier' || e.op === 'heal' || e.op === 'dispel' && e.polarity === 'negative' || e.op === 'condition' && ['blessed','encouraged'].includes(e.conditionId)),
     });
     const turnKey = `${this.seed}:${this.round}:${unitId}`;
