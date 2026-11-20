@@ -101,6 +101,7 @@ describe('commander observation and tools', () => {
     let expectedSide: 'enemy' | 'neutral' = 'enemy';
     const request = vi.fn(async (_url: unknown, init?: RequestInit) => {
       const payload = JSON.parse(String(init?.body)), data = initial(init);
+      expect(JSON.stringify([payload.messages[0], payload.tools])).not.toMatch(/会战|commander_orders/);
       expect(data.plan).toBe(expectedSide === 'enemy' ? enemy.memory.plan : third.memory.plan);
       expect(JSON.stringify(payload)).not.toContain(expectedSide === 'enemy' ? 'only-third-plan' : 'only-enemy-plan');
       expect(JSON.stringify(payload)).not.toContain('only-ally-plan');

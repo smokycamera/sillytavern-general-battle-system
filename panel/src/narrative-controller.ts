@@ -26,7 +26,6 @@ import {
   type GenerationBinding, type NarrativeSave, type NarrativeProposal,
 } from './narrative-state.js';
 
-import { RUNTIME_REMINDER } from './narrative-prompt.js';
 import { parseProtocol, protocolExcerpt } from './protocol.js';
 import { mapNarrativeReferences, mentionsNarrativeId, narrativeIds } from './narrative-ids.js';
 import { storyFields, storyEquipmentSpec, storySkillSpec, storyItemSpec, storyEffectSpec } from './story-spec.js';
