@@ -5,7 +5,7 @@ import { S } from './terrain-geometry.js';
 import { analyzeTerrain } from './terrain-scene.js';
 import { buildPainted } from './terrain-painted.js';
 
-const TILE_CODE: Record<Terrain, string> = { open: 'o', cover: 'c', wall: 'w', rough: 'r', forest: 'f', hill: 'h', street: 's', shallow_water: 'a', deep_water: 'd', swamp: 'm', cliff: 'k' };
+const TILE_CODE: Record<Terrain, string> = { open: 'o', cover: 'c', wall: 'w', rough: 'r', forest: 'f', hill: 'h', street: 's', shallow_water: 'a', deep_water: 'd', swamp: 'm', cliff: 'k', vacuum: 'v' };
 export function signature(text: string): string { return hash(text) + text.length.toString(36); }
 function hash(text: string): string {
   let h = 0x811c9dc5;

@@ -91,3 +91,20 @@ describe('两栖与航行', () => {
     expect(roster.every(u => canOccupy(crowded, prepareGridDeployment(crowded, roster), { ...u, pos: crowded.initialDeployment![u.id]!.pos }, crowded.initialDeployment![u.id]!.pos))).toBe(true);
   });
 });
+
+it('caps a castaway at one step across save/load and forbids returning from shore', () => {
+  const f = field(), a = unit('castaway','ally',[]), enemy = unit('observer','enemy',[]);
+  f.exposureRules = 1; a.pos = 45; enemy.pos = 3;
+  const battle = new SmallBattle({combatants:[a,enemy],battlefield:f,rules:V32_OVERFLOW_D20,seed:'wreck'});
+  battle.start(); battle.turnOrder = [a.id,enemy.id]; battle.turnIndex = 0;
+  const live = battle.battlefield!; live.tiles[45] = 'deep_water'; live.tiles[44] = 'deep_water';
+  expect(battle.movementLeft(a.id)).toBe(1);
+  battle.moveTo(a.id,44);
+  expect(SmallBattle.fromSnapshot(JSON.parse(JSON.stringify(battle.toSnapshot()))).movementLeft(a.id)).toBe(0);
+  const before = a.hp;
+  battle.endTurn(); battle.endTurn();
+  expect(a.hp).toBe(before - Math.ceil(a.base.hpMax / 10));
+  battle.moveTo(a.id,43);
+  expect(battle.movementLeft(a.id)).toBe(0);
+  expect(canOccupy(live,[],a,44)).toBe(false);
+});

@@ -302,6 +302,7 @@ export function encounterRequest(input: EncounterContextInput): {
         siege: "城墙、堡垒或攻城环境",
         forest: "树林/丛林",
         mountain: "山地、山谷或高地",
+        sea: "海洋", cosmos: "太空",
       },
     });
     request.fields.push({
@@ -422,5 +423,5 @@ export function encounterSummary(context: JevEncounterContext): string {
     .filter((d) => Math.abs((context.enemy.style[d.id] ?? 50) - 50) >= 20)
     .map((d) => (context.enemy.style[d.id]! > 50 ? d.high : d.low))
     .slice(0, 4);
-  return `敌方：${ABILITY_LABELS[context.enemy.ability]}${traits.length ? " · " + traits.join(" / ") : " · 均衡"}；${context.mode === "small" ? "小战" : "会战"} · ${{ plains: "野战", urban: "巷战", siege: "攻城", forest: "森林", mountain: "山地" }[context.field] ?? context.field} / ${context.lighting === "night" ? "夜间" : "日间"} · ${{ auto: "默认目标", control: "夺点", annihilation: "歼灭", siege: "攻城夺点", escort: "我方护送", intercept: "拦截敌方" }[context.objectiveMode]}`;
+  return `敌方：${ABILITY_LABELS[context.enemy.ability]}${traits.length ? " · " + traits.join(" / ") : " · 均衡"}；${context.mode === "small" ? "小战" : "会战"} · ${{ plains: "野战", urban: "巷战", siege: "攻城", forest: "森林", mountain: "山地", sea: "海洋", cosmos: "太空" }[context.field] ?? context.field} / ${context.lighting === "night" ? "夜间" : "日间"} · ${{ auto: "默认目标", control: "夺点", annihilation: "歼灭", siege: "攻城夺点", escort: "我方护送", intercept: "拦截敌方" }[context.objectiveMode]}`;
 }

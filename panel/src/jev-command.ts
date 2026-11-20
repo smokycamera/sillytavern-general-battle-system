@@ -451,7 +451,7 @@ export class JevCommandController {
               mode: candidate instanceof SmallBattle ? "small" : "mass",
               field:
                 tags.find((t) =>
-                  ["plains", "urban", "siege", "forest", "mountain"].includes(
+                  ["plains", "urban", "siege", "forest", "mountain", "sea", "cosmos"].includes(
                     t,
                   ),
                 ) ?? "plains",

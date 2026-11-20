@@ -33,7 +33,7 @@
 
 ## 环境
 
-战外确认环境变化时用 field。env 选 plains/urban/siege/forest/mountain（平原/城镇/攻城/森林/山地），light 可选 day/night。
+战外确认环境变化时用 field。env 选 plains/urban/siege/forest/mountain/sea/cosmos（平原/城镇/攻城/森林/山地/海洋/太空），light 可选 day/night。
 
 <examples>
 <example situation="夜间森林遭遇：已有u1参战，新建80名守军">

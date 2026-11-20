@@ -26,7 +26,17 @@ export function buildPainted(t: TerrainScene): string {
 
   // ── 地表：底色 + 大块深浅斑驳 + 笔触颗粒；草丛、小花、碎石只点在开阔地上。
   p.add(`<rect class="pt-ground ${ground}" width="${W}" height="${H}"/>`);
-  if (t.style === 'interior') p.add(`<rect width="${W}" height="${H}" filter="${f('wear')}" class="pt-floor-wear"/><rect width="${W}" height="${H}" fill="${f('tiles')}"/>`);
+  if (t.field.environment?.includes('cosmos') && t.style !== 'interior') {
+    p.add(`<rect class="pt-space" width="${W}" height="${H}"/>`);
+    let stars = '';
+    for (let q = 0; q < g.n; q++) {
+      if (t.tiles[q] !== 'vacuum') continue;
+      const [x,y] = t.at(q);
+      for (let i = 0; i < 3; i++) stars += circle(x + 5 + noise(q,610+i)*90,y + 5 + noise(q,615+i)*90, .7 + noise(q,620+i)*1.3);
+    }
+    p.path('pt-star',stars);
+    p.path('pt-deck',crisp(q => t.tiles[q] === 'open'));
+  } else if (t.style === 'interior') p.add(`<rect width="${W}" height="${H}" filter="${f('wear')}" class="pt-floor-wear"/><rect width="${W}" height="${H}" fill="${f('tiles')}"/>`);
   else {
     p.add(`<rect width="${W}" height="${H}" filter="${f('mottle-dark')}"/><rect width="${W}" height="${H}" filter="${f('mottle-light')}" class="pt-mottle-light"/>`);
     p.add(`<rect width="${W}" height="${H}" filter="${f('brush')}" class="pt-brush"/>`);

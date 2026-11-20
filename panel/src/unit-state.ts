@@ -475,7 +475,7 @@ export function unitRecordFromCombatant(
 ): UnitRecord {
   c = stripCarriedItems(c);
   if (c.ride) c.ride = {platformId:c.ride.platformId,mode:c.ride.mode};
-  delete c.transportReadyRound; delete c.transportOrigin;
+  delete c.escapeStepRound; delete c.transportReadyRound; delete c.transportOrigin;
   if (c.barrier?.grants) { c.barrier.grants = c.barrier.grants.filter(g => g.effectSourceId); refreshBarrier(c); }
   else delete c.barrier;
   delete c.wornBarrierUsed; delete c.weaponHeat; delete c.shieldDurability; delete c.energyShield; delete c.sprayerFuel; delete c.tankRupturedRound; delete c.chargeInterrupted; delete c.chargeDistance; delete c.denialTriggered; delete c.battleZones; delete c.regenerationRemainder; delete c.lifestealState; delete c.controlActivation; delete c.movementRemainder; delete c.marchRemainder; delete c.movedDuringActivation; delete c.looseChoiceLocked;

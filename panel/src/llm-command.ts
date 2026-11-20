@@ -21,7 +21,7 @@ import { commandDiplomacy, commandDiplomacyDecision, commandLetters } from './ll
 export interface CommanderBrief { name: string; persona: string; known: string[]; mission: string }
 export type CommanderToolName = 'commander_map' | 'commander_unit' | 'commander_plan' | 'commander_act' | 'commander_orders' | 'commander_intents' | 'diplomacy';
 export interface CommandPrompts { preparation: string; command: string; intents: string; tools: Record<CommanderToolName, string> }
-export interface KnownCommandCell { cell: number; terrain: string; height?: number; structure?: unknown; overlays?: unknown; connections?: unknown; cover?: unknown; round: number }
+export interface KnownCommandCell { cell: number; terrain: string; terrainName?: string; height?: number; structure?: unknown; overlays?: unknown; connections?: unknown; cover?: unknown; round: number }
 export interface RoundIntents { round: number; carryRound?: number; logIndex?: number; replanned: boolean; basis: { visible: string[]; friends: string[] }; units: Record<string, import('../../engine/src/index.js').UnitIntent> }
 export interface CommandMemory { intents?: RoundIntents; letterId?: number; diplomacyRound?: number; diplomacyRevision?: number; plan: string; notes: string[]; terrain: KnownCommandCell[]; contacts?: (ReturnType<typeof unitSummary> & { round: number })[] }
 export const emptyCommandMemory = (): CommandMemory => ({ plan: '', notes: [], terrain: [] });
@@ -76,7 +76,7 @@ function choiceMessage(choices: CommandChoice[], side: Side) {
   return { choices: choices.filter(c => !moves.includes(c)).map(c => choiceView(c, side)),
     ...(moves.length ? { moves: moves.map(c => [c.id, c.action!.cell, c.cost, ...(c.risks?.length ? [c.risks] : [])]), moveColumns: MOVE_COLUMNS } : {}) };
 }
-const TERRAIN_CHARS: Record<Terrain, string> = { open: '.', cover: 'c', wall: '#', rough: ':', forest: 'F', hill: 'h', street: '=', shallow_water: '~', deep_water: 'W', swamp: '%', cliff: '^' };
+const TERRAIN_CHARS: Record<Terrain, string> = { open: '.', cover: 'c', wall: '#', rough: ':', forest: 'F', hill: 'h', street: '=', shallow_water: '~', deep_water: 'W', swamp: '%', cliff: '^', vacuum:'V' };
 const STRUCTURE_CHARS: Record<FieldStructure['kind'], string> = { cover: 'C', fortification: 'B', wall: 'X', gate: 'G', building: 'H', tower: 'T', bridge: 'b' };
 /** One character per explored cell (structures replace terrain); only non-default details are listed. */
 export function compactCommandMap(width: number, height: number, known: KnownCommandCell[]) {
@@ -86,7 +86,7 @@ export function compactCommandMap(width: number, height: number, known: KnownCom
     const s = cell.structure as Partial<FieldStructure> | undefined, terrain = cell.terrain as Terrain;
     const char = s?.kind ? STRUCTURE_CHARS[s.kind] : TERRAIN_CHARS[terrain] ?? '*';
     rows[Math.floor(cell.cell / width)]![cell.cell % width] = char;
-    legend[char] = s?.kind ? STRUCTURE_NAMES[s.kind] : TERRAIN_NAMES[terrain] ?? terrain;
+    legend[char] = s?.kind ? STRUCTURE_NAMES[s.kind] : cell.terrainName ?? TERRAIN_NAMES[terrain] ?? terrain;
     const overlays = cell.overlays as unknown[] | undefined, connections = cell.connections as unknown[] | undefined;
     const feature = { ...(cell.height ? { height: cell.height } : {}), ...(s?.kind === 'gate' ? { gate: s.gateState ?? 'closed', owner: s.owner } : {}),
       ...(s?.top ? { platform: s.platformHeight ?? s.deckHeight ?? true } : {}), ...(s?.access?.length ? { access: s.access } : {}),
@@ -119,7 +119,7 @@ export function commandObservation(b: Battle, actorId?: string, side: Side = 'en
       ...(objective.kind === 'control' ? { cells: objective.cells, holdRounds: objective.rounds, attackingSide: objective.attackingSide && perspective(objective.attackingSide, side) } : {}),
       ...(objective.kind === 'escape' && visible.some(u => u.id === objective.unitId) ? { unitId: objective.unitId } : {}) },
     map: field && { width: field.width, height: field.height,
-      cells: field.tiles.flatMap((terrain, cell) => cells[cell] ? [{ cell, terrain, terrainName: TERRAIN_NAMES[terrain], height: groundHeightAt(field, cell), obstructionHeight: obstructionHeight(field, cell),
+      cells: field.tiles.flatMap((terrain, cell) => cells[cell] ? [{ cell, terrain, terrainName: terrain === 'cliff' && field.environment?.includes('cosmos') ? '小行星' : TERRAIN_NAMES[terrain], height: groundHeightAt(field, cell), obstructionHeight: obstructionHeight(field, cell),
         cover: { terrain: ['cover', 'forest'].includes(terrain) ? terrain : undefined,
           structure: ['cover', 'fortification'].includes(field.structures?.[cell]?.kind ?? '') ? field.structures![cell]!.kind : undefined,
           rubble: field.overlays?.[cell]?.includes('rubble') === true },

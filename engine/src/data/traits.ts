@@ -344,6 +344,10 @@ export const TRAITS: Trait[] = [
     v2SourceReady: true, effects: [{ kind: 'flag', flag: 'water-crossing' }],
   },
   {
+    id: 'space-adapted', name: 'space-adapted', desc: '能在真空中生存、移动和作战',
+    v2SourceReady: true, effects: [{ kind: 'flag', flag: 'space-adapted' }],
+  },
+  {
     id: 'sailing', name: '航行', desc: '只能在深水、浅水移动；部署位置不在水中时，自动移至最近的可用水格',
     v2SourceReady: true, effects: [{ kind: 'flag', flag: 'sailing' }],
   },

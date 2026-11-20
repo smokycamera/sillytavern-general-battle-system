@@ -428,6 +428,8 @@ export interface Combatant {
   bornRound?: number;
   transportOrigin?: string;
   transportReadyRound?: number;
+  /** A survivor who took an emergency step cannot move again this round. */
+  escapeStepRound?: number;
   suppression?: number;
   rulesVersion?: 'v2';
   body?: BodyKind;

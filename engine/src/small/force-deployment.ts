@@ -78,6 +78,7 @@ export function forceLegality(field: BattlefieldSpec, side: Side, post?: Post, a
     return p => afloat.some(u => !groundBlocked(field, p, u));
   }
   const city = field.city, inCity = cityCells(field), open = (p: number) => !groundBlocked(field, p)
+    || field.environment?.includes('sea') === true && field.tiles[p] === 'deep_water'
     || !!field.generation?.waterCoverage && actors.some(u => !groundBlocked(field, p, u));
   const outside = () => { const front = explicitApproach ? () => true : inFront(field); return (p: number) => open(p) && !inCity.has(p) && front(p); };
   if (city?.defender) {

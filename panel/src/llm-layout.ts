@@ -73,6 +73,7 @@ const MAX_PLACES = 8;
 export interface LayoutUnit { id: string; name: string; side: Combatant['side']; kind: string; note?: string }
 export interface LayoutContext {
   scene: BattlefieldScene;
+  environment?: string;
   size?: LayoutSize;
   /** The side attacking the walls; only meaningful in a siege. */
   attacker: 'ally' | 'enemy';
@@ -107,6 +108,8 @@ function exitSide(ctx: LayoutContext): 'ally' | 'enemy' | undefined { return ctx
 
 function sceneLine(ctx: LayoutContext): string {
   const a = sideName(ctx.attacker), d = sideName(defenderOf(ctx));
+  if (ctx.scene === 'field' && ctx.environment === 'cosmos') return '太空';
+  if (ctx.scene === 'field' && ctx.environment === 'sea') return '海洋';
   return ctx.scene === 'city_siege' ? `城墙攻防，攻方=${a}（在城外），守方=${d}（守城）`
     : ctx.scene === 'building_siege' ? `围攻院落或据点，攻方=${a}（在外），守方=${d}（在院内）`
     : ctx.scene === 'city_streets' ? '城内巷战，各方都在街巷里'
@@ -152,6 +155,7 @@ export function layoutTask(ctx: LayoutContext, retry?: LayoutRetry): string {
   const kinds = placeKinds(ctx.scene).map(k => `${k}${PLACE_NAMES[k]}`).join('|');
   const lines = [
     '【第2步：布置战场】根据正文，在4×4分区上布置本场战斗。程序会据此生成地形、建筑与道路，并把单位放进对应区域。',
+    ctx.scene === 'field' && (ctx.environment === 'sea' || ctx.environment === 'cosmos') ? '海洋以深水为底，按正文用 land 指定岛岸所在分区；太空以真空为底，用 land 指定可部署的平台或舱区，用 asteroids 指定遮挡视线的小行星所在分区。两项均填写4×4分区编号数组。为缺少环境能力的参战单位预留安全部署位置。' : '',
     `本场：${sceneLine(ctx)}。任务：${objectiveLine(ctx)}。地图从${ctx.map[0]}列×${ctx.map[1]}行起步，程序按区域、建筑和单位容量扩展，按下列分区编号定位。`,
     '参战单位（短ID · 名称 · 阵营 · 类型 · 备注）：',
     ...ctx.units.map(u => [u.id, u.name, sideName(u.side), u.kind, u.note].filter(Boolean).join(' · ')),
@@ -275,6 +279,13 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
     if (!anchors.length || anchors.length > 16 || anchors.some(a => !a || !gridPosition(a))) throw new BattlefieldPlanError('区域须写1—16个4×4分区编号');
     return [...new Set(anchors)] as GridAnchor[];
   };
+  if (ctx.environment === 'sea' || ctx.environment === 'cosmos') {
+    for (const key of ['land','asteroids'] as const) if (raw[key] !== undefined && (key === 'land' || ctx.environment === 'cosmos')) {
+      const value = raw[key];
+      if (!Array.isArray(value) || value.some(v => typeof v !== 'string' || !gridPosition(v.toUpperCase()))) throw new BattlefieldPlanError(key+'须为4×4分区编号数组');
+      plan[key] = [...new Set(value.map(v => v.toUpperCase() as GridAnchor))];
+    }
+  }
   const citySectors = cityRaw ? numberedSectors(cityRaw.at) : undefined;
   if (citySectors && (allowsCity(scene) || scene === 'city_streets' || scene === 'building_siege')) plan.citySectors = citySectors;
   let cityAt = citySectors?.[0] ?? (cityRaw ? sectorOf(cityRaw.at) : undefined);

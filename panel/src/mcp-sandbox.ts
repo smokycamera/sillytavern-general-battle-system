@@ -146,7 +146,7 @@ export class McpSandbox {
       unit.id = 'sandbox-unit-' + (index + 1); return unit;
     });
     const setup = { mode: 'small', field: 'plains', lighting: 'day', mapLayout: 'standard', objectiveMode: 'annihilation', siegeAttacker: 'ally', ...(args.setup as object ?? {}) } as EncounterSetup;
-    const choices: Record<string, readonly string[]> = { mode: ['small','mass'], field: ['plains','urban','siege','forest','mountain'], lighting: ['day','night'], mapLayout: ['standard','indoor'], objectiveMode: ['auto','annihilation','siege','control','escort','intercept'], siegeAttacker: ['ally','enemy'] };
+    const choices: Record<string, readonly string[]> = { mode: ['small','mass'], field: ['plains','urban','siege','forest','mountain','sea','cosmos'], lighting: ['day','night'], mapLayout: ['standard','indoor'], objectiveMode: ['auto','annihilation','siege','control','escort','intercept'], siegeAttacker: ['ally','enemy'] };
     for (const [key, value] of Object.entries(setup)) if (!choices[key]?.includes(value)) throw Error('setup.' + key + ' 无效');
     const commanderId = roster.find(u => u.side === 'ally')?.id;
     const protagonistId = typeof args.protagonistId === 'string' ? args.protagonistId : undefined;

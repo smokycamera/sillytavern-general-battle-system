@@ -49,6 +49,8 @@ export interface BattlefieldPlan {
   waterCoverage?: 'all';
   waterDepth?: 'mixed';
   waterSectors?: GridAnchor[];
+  land?: GridAnchor[];
+  asteroids?: GridAnchor[];
   waterShallowSectors?: GridAnchor[];
   bridgePlan?: BridgePlan[];
   /** Array length is the exact number of gates; each state is independent. Overrides legacy gates/gateState. */
@@ -88,7 +90,8 @@ export function normalizeBattlefieldPlan(value: unknown): { plan?: BattlefieldPl
     if (typeof input[key] === 'string' && (choices as readonly string[]).includes(input[key] as string)) (plan as Record<string, unknown>)[key] = input[key];
     else notes.push(`地图${key}无效，采用本地默认`);
   }
-  for (const key of ['citySectors', 'waterSectors', 'waterShallowSectors'] as const) if (input[key] !== undefined) {
+  for (const key of ['citySectors', 'waterSectors', 'waterShallowSectors', 'land', 'asteroids'] as const) if (input[key] !== undefined) {
+    if ((key === 'asteroids' || key === 'land') && Array.isArray(input[key]) && input[key].length === 0) { plan[key] = []; continue; }
     if (!Array.isArray(input[key]) || !input[key].length || input[key].length > 16 || input[key].some(a => !(GRID_ANCHORS as readonly unknown[]).includes(a)))
       throw new BattlefieldPlanError(`${key}须为1—16个4×4分区编号`);
     plan[key] = [...new Set(input[key] as GridAnchor[])];

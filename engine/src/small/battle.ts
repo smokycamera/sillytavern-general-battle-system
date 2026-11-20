@@ -25,7 +25,7 @@ import { bonusMultiplier } from '../enhancements.js';
 import { regionalOrder, intentOrder, type UnitIntent } from './team-tactics.js';
 import { findIntentRoute, intentPlace, intentRouteFailure } from './intent-path.js';
 import { restoreOutdoorWallPlatforms } from './outdoor-wall-platforms.js';
-import { groundBlocked, isElevated, intactStructure, canClimbFrom, meleeHeightReason, meleeContact, structureDefense, structureDurability, damageStructure, weaponBreachBudget, structureTraitMultiplier, STRUCTURE_NAMES } from './layers.js';
+import { terrainExposure, groundBlocked, isElevated, intactStructure, canClimbFrom, meleeHeightReason, meleeContact, structureDefense, structureDurability, damageStructure, weaponBreachBudget, structureTraitMultiplier, STRUCTURE_NAMES } from './layers.js';
 import { tacticalSkillCost, tacticalRestValue } from '../skill-economy.js';
 import { isEnduranceModel, fatiguePenalty, abilityCost, prepareResourceModel, recoverSp, skillExertion, resourceRound } from '../resources.js';
 import { actionPotential } from '../skill-tactics.js';
@@ -304,6 +304,7 @@ export class SmallBattle {
     }
     for (const unit of this.combatants) {
       validateConcealment(unit.tacticalRevealed); validateFlightState(unit.airborne); validateWounded(unit); validateArmsState(unit); validateBarrier(unit.barrier); validateAreas(unit); validateGear(unit); validateMount(unit); validateMoraleState(unit.moraleState);
+      if (unit.escapeStepRound !== undefined && (!Number.isSafeInteger(unit.escapeStepRound) || unit.escapeStepRound < 1)) throw Error('脱险回合记录不合法');
       if (unit.elevation !== undefined && (unit.elevation !== 1 || !this.battlefield?.layerVersion || unit.airborne || unit.pos !== undefined && !intactStructure(this.battlefield, unit.pos)?.top)) throw Error('平台站位数据不合法');
       if (unit.formationPosition !== undefined) throw new Error('实际会战阵位不能放入小战存档记录');
       if (unit.vanguardOrigin !== undefined) throw new Error('会战先锋来源不能放入小战存档记录');
@@ -515,7 +516,9 @@ export class SmallBattle {
   transportMovementAvailable(actorId: string, passenger = this.byId(actorId)): boolean {
     if (passenger.status !== 'ready' || passenger.conditions.some(c => c.dur > 0 && (this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventMove))) return false;
     if (!this.battlefield) return !this.movedThisTurn.has(actorId);
+    if (passenger.escapeStepRound === this.round) return false;
     const foot = passenger.ride ? { ...passenger, ride: undefined, mount: false } : passenger;
+    if (!passenger.ride && terrainExposure(this.battlefield,foot.pos,foot)) return this.movementLeft(actorId) >= 1;
     const movement = movementPoints(foot, this.fieldTags);
     return movement > 0 && movement + (foot.movementRemainder ?? 0) + (this.hasteMovement.get(actorId) ?? 0) - (this.movementSpent.get(actorId) ?? 0) >= 1;
   }
@@ -816,7 +819,9 @@ export class SmallBattle {
   movementLeft(actorId: string, includeHaste = true): number {
     const unit = this.byId(actorId), mover = this.platforms.mover(unit);
     const blocked = (u: Combatant) => u.conditions.some(c => c.dur > 0 && (this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventMove));
+    if (unit.escapeStepRound === this.round || mover.escapeStepRound === this.round) return 0;
     if (blocked(unit) || mover !== unit && (mover.status !== 'ready' || blocked(mover) || !this.platforms.canDrive(unit,mover))) return 0;
+    if (this.battlefield && terrainExposure(this.battlefield, mover.pos, mover)) return this.movedThisTurn.has(actorId) ? 0 : 1;
     return Math.max(0, this.movementBudget(unit.id) + (this.hasteMovement.get(actorId) ?? 0) + (includeHaste && this.hasteSelected.has(actorId) && this.hasteAvailable(actorId) ? this.movementBudget(actorId) : 0) - (this.movementSpent.get(actorId) ?? 0));
   }
   reachableCells(actorId: string): GridPath[] {
@@ -941,6 +946,8 @@ export class SmallBattle {
     let budget = path.cost;
     for (const next of path.cells.slice(1)) {
       if (actor.status !== 'ready' || actor.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventMove)) break;
+      if (mover.escapeStepRound === this.round) break;
+      const escaping = terrainExposure(field, mover.pos, mover);
       const stepCost = movementStepCost(field, next, mover, this.fieldTags, actor.pos);
       if (!movementNeighbors(field, actor.pos!, mover).includes(next) || stepCost > (opts.spend ? this.movementLeft(actorId) : budget)) break;
       if (!canOccupy(field, this.combatants, mover, next)) break;
@@ -948,6 +955,7 @@ export class SmallBattle {
       const previous = actor.pos!, heights = reportsHeights(field) && !isAirborne(actor);
       const fromHeight = heights ? surfaceHeightAt(field, previous, actor) : undefined;
       delete actor.tacticalPose;
+      if (escaping) actor.escapeStepRound = mover.escapeStepRound = this.round;
       actor.pos = next;
       if (opts.spend) this.movementSpent.set(actorId, (this.movementSpent.get(actorId) ?? 0) + stepCost); else budget -= stepCost;
       if (['traits-levels-v2', 'traits-items-v1', 'traits-items-v2'].includes(this.rules.traitLevelModel ?? '')) actor.movedDuringActivation = true; this.movedThisTurn.add(actorId);
@@ -1230,6 +1238,9 @@ export class SmallBattle {
   private resolveGroundStates(source?: Combatant): void {
     const field = this.battlefield; if (!field?.layerVersion) return;
     for (const unit of this.combatants.filter(u => !u.ride && !isAirborne(u))) {
+      if (isElevated(unit) && !intactStructure(field,unit.pos!)?.top && terrainExposure(field,unit.pos,{...unit,elevation:undefined})) {
+        delete unit.elevation;
+      }
       if (!groundBlocked(field, unit.pos!, unit)) continue;
       // 伤亡与已撤离单位不再结算落地伤害，但不能继续引用已经塌毁的平台。
       if (unit.hp <= 0 || !['ready', 'routing'].includes(unit.status)) { delete unit.elevation; continue; }
@@ -2058,12 +2069,16 @@ export class SmallBattle {
   private skillPaths(actor: Combatant, reach: number): GridPath[] {
     if (!this.platforms.canMoveIndependently(actor)) return [];
     const field = this.battlefield!, known = this.visibleCombatants(actor.side);
+    if (actor.escapeStepRound === this.round) return [];
+    if (terrainExposure(field,actor.pos,actor)) reach = Math.min(reach,this.movementLeft(actor.id));
     return reachableGridPaths(field, actor.pos!, reach, (n) => canOccupy(field, known, actor, n), (n, from) => movementStepCost(field, n, actor, this.fieldTags, from), actor);
   }
   /** 闪现落点：reach 格内、施术者视线可及、按自身空地层可落脚的位置；不跨平台层。 */
   private skillBlinkCells(actor: Combatant, reach: number): number[] {
     if (!this.platforms.canMoveIndependently(actor)) return [];
     const field = this.battlefield!, known = this.visibleCombatants(actor.side);
+    if (actor.escapeStepRound === this.round) return [];
+    if (terrainExposure(field,actor.pos,actor)) reach = Math.min(reach,this.movementLeft(actor.id));
     return field.tiles.flatMap((_tile, cell) => cell !== actor.pos && gridDistance(field, actor.pos!, cell) <= reach && canOccupy(field, known, actor, cell)
       && unitLineOfSight(field, actor, { ...actor, pos: cell }) ? [cell] : []);
   }
@@ -2180,6 +2195,7 @@ export class SmallBattle {
     if (!canOccupy(field, this.combatants, actor, cell)) return '闪现落点已被占据，未能位移';
     const heights = reportsHeights(field) && !isAirborne(actor);
     const fromHeight = heights ? surfaceHeightAt(field, from, actor) : undefined;
+    if (terrainExposure(field,from,actor)) actor.escapeStepRound = this.round;
     delete actor.tacticalPose; actor.pos = cell; if (['traits-levels-v2', 'traits-items-v1', 'traits-items-v2'].includes(this.rules.traitLevelModel ?? '')) actor.movedDuringActivation = true; this.movedThisTurn.add(actor.id);
     const toHeight = heights ? surfaceHeightAt(field, cell, actor) : undefined;
     this.recordEvent({ round: this.round, kind: 'move', participants: [actor.id], move: { from, to: cell, ...(heights ? { fromHeight, toHeight } : {}), skill: phase },
@@ -2485,6 +2501,22 @@ export class SmallBattle {
    */
   endTurn(): void { this.finishTurn(); }
 
+  private settleExposure(): void {
+    const field = this.battlefield;
+    if (!field?.exposureRules) return;
+    // Freeze exposure before resolving casualties: passengers ejected by this tick get until next round.
+    const exposed = this.combatants.map(unit => ({unit, hazard:terrainExposure(field,unit.pos,unit)}))
+      .filter(({unit,hazard}) => hazard && unit.hp > 0 && (unit.status === 'ready' || unit.status === 'routing'));
+    for (const {unit,hazard} of exposed) {
+      const members = hasMemberHealth(unit) ? unit.hp : 1;
+      const life = hasMemberHealth(unit) ? unit.formation!.memberHp : unit.base.hpMax;
+      const lost = applyCombatDamage(unit, Math.max(1,Math.ceil(life / 10)) * members, members, undefined, this.casualtyRolls);
+      this.recordEvent({round:this.round, kind:'condition', participants:[unit.id], damage:{targetId:unit.id,amount:lost,cause:hazard!,
+        ...(hasMemberHealth(unit) ? {unit:'life' as const,members:members-unit.hp} : {})}, text:unit.name+' '+hazard+'，损失'+displayNumber(lost)+'生命'});
+      this.checkDeath(unit);
+    }
+  }
+
   private finishTurn(afterSettlement?: () => void): void {
     if (!this.started) throw new Error('战斗尚未开始');
     if (this.rules.resourceModel && this.isOver()) return;
@@ -2500,6 +2532,7 @@ export class SmallBattle {
     this.turnIndex += 1;
     this.advanceToNextActor();
     while (this.turnIndex >= this.turnOrder.length && !this.isOver()) {
+      this.settleExposure();
       this.settleAreaEffects(true); this.checkGridObjective(true);
       for (const unit of this.combatants) for (const text of expireRoundEffects(unit)) this.recordEvent({ round: this.round, kind: 'condition', participants: [unit.id], text });
       this.resolveFlightStates();
@@ -2668,6 +2701,19 @@ export class SmallBattle {
     this.intentActive = !!this.battlefield && (!!referenced || !!intentOrder(this.battlefield, this.byId(unitId), intent, intent ? this.intentKnown(this.byId(unitId)) : []));
     try {
       let dispersionUnit = this.byId(unitId);
+      const field = this.battlefield;
+      if (field && this.isTurnOf(unitId) && !controlPolicy(dispersionUnit) && terrainExposure(field,dispersionUnit.pos,dispersionUnit)) {
+        const lift = this.platforms.options(dispersionUnit).find(o => o.kind === 'board' && o.maxCount === unitCount(dispersionUnit));
+        if (lift) { this.platforms.act(dispersionUnit,'board',lift.id); this.endTurn(); return; }
+        const known = this.visibleCombatants(dispersionUnit.side), allowed = (p:number) => canOccupy(field,known,dispersionUnit,p);
+        const safe = field.tiles.flatMap((_,p) => !terrainExposure(field,p,dispersionUnit) && allowed(p) ? [p] : []);
+        const costs = gridCostsToGoals(field,safe,allowed,(p,from) => movementStepCost(field,p,dispersionUnit,this.fieldTags,from),dispersionUnit);
+        const best = this.reachableCells(unitId).map(path => path.cells.at(-1)!)
+          .filter(p => (costs.get(p) ?? Infinity) < (costs.get(dispersionUnit.pos!) ?? Infinity))
+          .sort((a,b) => costs.get(a)! - costs.get(b)! || a-b)[0];
+        if (best !== undefined) this.moveTo(unitId,best);
+        if (!this.isTurnOf(unitId) || this.isOver()) return;
+      }
       if (this.hasPlatforms && this.isTurnOf(unitId) && !intent && !controlPolicy(dispersionUnit)) {
         const choices = this.platforms.options(dispersionUnit);
         const alternate = choices.find(a => a.kind === 'select');
@@ -3816,10 +3862,13 @@ export class SmallBattle {
     const goals = retreatCells(field, unit.side);
     const remaining = gridCostsToGoals(field, goals, allowed, cost, unit);
     const distance = (cell: number) => remaining.get(cell) ?? deploymentDepth(field, unit.side, cell) * 2;
-    const path = reachableGridPaths(field, start, this.movementBudget(unit.id), allowed, cost, unit)
+    if (unit.escapeStepRound === this.round) return;
+    const escaping = terrainExposure(field,start,unit);
+    const path = reachableGridPaths(field, start, escaping ? 1 : this.movementBudget(unit.id), allowed, cost, unit)
       .filter(p => distance(p.cells.at(-1)!) < distance(start))
       .sort((a, b) => distance(a.cells.at(-1)!) - distance(b.cells.at(-1)!) || a.cost - b.cost)[0];
     if (!path) return;
+    if (escaping) unit.escapeStepRound = this.round;
     unit.pos = path.cells.at(-1)!; if (['traits-levels-v2', 'traits-items-v1', 'traits-items-v2'].includes(this.rules.traitLevelModel ?? '')) unit.movedDuringActivation = true; this.movedThisTurn.add(unit.id);
     this.recordEvent({ round: this.round, kind: 'morale', participants: [unit.id], text: `${unit.name} 溃退：${cellLabel(field, start)}→${cellLabel(field, unit.pos)}` });
   }

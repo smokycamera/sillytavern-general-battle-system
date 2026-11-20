@@ -57,7 +57,7 @@ export function vipCandidates(roster: Combatant[], side: 'ally' | 'enemy'): Comb
 /** 只准备下一场任务；对象和规则随战场快照冻结。 */
 export function prepareBattleObjective(field: BattlefieldSpec, roster: Combatant[], mode: BattleObjectiveMode, _protagonistId?: string, attackingSide: 'ally' | 'enemy' = 'ally', selectedVipId?: string): BattlefieldSpec {
   const binding=field.scene?.objectiveRegion,region=binding?field.scene?.regions.find(r=>r.id===binding.id):undefined;
-  const targetCells=region?.access.filter(p=>!groundBlocked(field,p))??[];
+  const targetCells=region?.access.filter(p=>!groundBlocked(field,p) || field.environment?.includes('sea') && roster.some(u => !u.ride && !groundBlocked(field,p,u)))??[];
   if(binding&&!targetCells.length)throw new Error('正文任务地点没有合法目标格');
   if (!['escort', 'intercept'].includes(mode)) {
     const siegeScene = field.generation?.scene ? ['city_siege','building_siege'].includes(field.generation.scene) : field.environment?.includes('siege');
@@ -122,8 +122,18 @@ function neutralControlCell(field: BattlefieldSpec, roster: Combatant[], region?
   const walker = { ...active[0]!, body: 'human' as const, traits: [], traitSources: [], airborne: false, elevation: undefined, mount: false };
   const costs = (side: Combatant['side']) => gridCostsToGoals(routes,deployed.filter(u=>u.side===side).flatMap(u=>objectiveGroundStarts(routes, { ...u, airborne: false })),p=>!groundBlocked(routes,p,walker),
     (p,from)=>movementStepCost(routes,from,walker,field.environment,p));
-  const maps = sides.map(costs), center=Math.floor(field.height/2)*field.width+Math.floor(field.width/2);
-  const candidates=(region ?? [...maps[0]!.keys()]).filter(p=>maps.every(map=>map.has(p))&&!groundBlocked(field,p,walker));
+  const special = field.environment?.some(tag => tag === 'sea' || tag === 'cosmos');
+  const maps = sides.map(side => {
+    if (!special) return costs(side);
+    const result = new Map<number,number>();
+    for (const u of deployed.filter(u => !u.ride && u.side === side)) {
+      const reachable = gridCostsToGoals(routes,objectiveGroundStarts(routes,u),p => !groundBlocked(routes,p,u),
+        (p,from) => movementStepCost(routes,from,u,field.environment,p),u);
+      for (const [p,cost] of reachable) result.set(p,Math.min(result.get(p) ?? Infinity,cost));
+    }
+    return result;
+  }), center=Math.floor(field.height/2)*field.width+Math.floor(field.width/2);
+  const candidates=(region ?? [...maps[0]!.keys()]).filter(p=>maps.every(map=>map.has(p))&&(special || !groundBlocked(field,p,walker)));
   if (!candidates.length) throw Error(`中立据点没有${sides.length === 3 ? '各方' : '双方'}步兵均可接近的位置`);
   if (region) {
     const x = region.reduce((s, p) => s + p % field.width, 0) / region.length, y = region.reduce((s, p) => s + Math.floor(p / field.width), 0) / region.length;
@@ -150,7 +160,7 @@ function escapeDestination(field: BattlefieldSpec, side: 'ally' | 'enemy', roste
     (p, from) => movementStepCost(routes, from, walker, field.environment, p));
   const wanted = oppositeEscapeEdge(field, side), x = wanted % field.width, y = Math.floor(wanted / field.width);
   const boundary = field.tiles.flatMap((_, p) => p % field.width === 0 || p % field.width === field.width - 1 || p < field.width || p >= field.tiles.length - field.width ? [p] : []);
-  const candidates = (region ?? boundary).filter(p => !groundBlocked(field, p) && costs.has(p));
+  const candidates = (region ?? boundary).filter(p => !groundBlocked(field, p, walker) && costs.has(p));
   if (!candidates.length) throw Error('护送撤离点没有护送对象可到达的合法位置');
   const sameEdge = (p: number) => x === 0 ? p % field.width === 0 : x === field.width - 1 ? p % field.width === x
     : Math.floor(p / field.width) === y;
