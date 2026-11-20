@@ -168,8 +168,10 @@ export const V41_OVERFLOW_D20: RulePack = { ...V40_OVERFLOW_D20, id: 'v41-overfl
 export const V41_OVERFLOW_TW: RulePack = { ...V40_OVERFLOW_TW, id: 'v41-overflow-tw', name: 'V41 增伤合并、暴击与佩戴屏障会战', damageStackModel: 'additive-positive-v1', criticalDamageScale: .75, wornBarrierModel: 'entry-once-v1' };
 export const V42_OVERFLOW_D20: RulePack = { ...V41_OVERFLOW_D20, id: 'v42-overflow-d20', name: 'V42 小战先攻平手抽签', initiativeModel: 'seeded-ties-v1' };
 export const V43_OVERFLOW_D20: RulePack = { ...V42_OVERFLOW_D20, id: 'v43-overflow-d20', name: 'V43 小战伤兵', casualtyModel: 'individual-v1' };
+export const V44_OVERFLOW_D20: RulePack = { ...V43_OVERFLOW_D20, id: 'v44-overflow-d20', name: 'V44 编队失能与伤兵', rescueAtZero: true };
 export const V42_LITE_D20: RulePack = { ...LITE_D20, id: 'v42-lite-d20', name: '轻量d20（先攻平手抽签）', initiativeModel: 'seeded-ties-v1' };
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V44_OVERFLOW_D20.id]: V44_OVERFLOW_D20,
   [V43_OVERFLOW_D20.id]: V43_OVERFLOW_D20,
   [V42_OVERFLOW_D20.id]: V42_OVERFLOW_D20, [V42_LITE_D20.id]: V42_LITE_D20,
   [V41_OVERFLOW_D20.id]: V41_OVERFLOW_D20, [V41_OVERFLOW_TW.id]: V41_OVERFLOW_TW,

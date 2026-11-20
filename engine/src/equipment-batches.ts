@@ -1,8 +1,11 @@
 import { hasVehicleSize, isVehicleBody, vehicleChannels } from './vehicle-size.js';
 import type { Combatant, EquipmentBatch, Weapon } from './types.js';
 
-type Bearer = Pick<Combatant,'equipmentBatches'|'equipmentPersonnel'|'scale'|'hp'|'body'|'recoverableWounded'>;
+type Bearer = Pick<Combatant,'equipmentBatches'|'equipmentPersonnel'|'scale'|'hp'|'body'|'recoverableWounded'|'unequippedWounded'>;
 const members = (unit: Bearer) => unit.scale === 'hero' ? Number(unit.hp > 0) : unit.hp;
+function equippedSurvivors(unit: Bearer): number {
+  return members(unit) + (unit.scale === 'hero' ? 0 : Math.max(0,(unit.recoverableWounded ?? 0) - (unit.unequippedWounded ?? 0)));
+}
 export function crewEquipment(unit: Bearer, batch: EquipmentBatch): boolean {
   return !isVehicleBody(unit.body) && batch.mechanics.kind === 'weapon' && ['autocannon','cannon','indirect-cannon'].includes(batch.mechanics.value.recipe?.mechanism ?? '');
 }
@@ -12,18 +15,28 @@ export function issuedTo(qty: number, start: number, members: number, rank: numb
   const end = start + qty % rank;
   return Math.floor(qty / rank) * members + Math.max(0,Math.min(members,end)-start) + Math.min(members,Math.max(0,end-rank));
 }
+// Slot selection and the player's chosen weapon order are independent from issue priority.
+function compareKit(a: EquipmentBatch, b: EquipmentBatch): number {
+  if (a.mechanics.kind === 'item' || b.mechanics.kind === 'item') return 0;
+  const av = a.mechanics.value, bv = b.mechanics.value;
+  const level = (bv.recipe?.power ?? ('level' in bv ? bv.level : 0) ?? 0) - (av.recipe?.power ?? ('level' in av ? av.level : 0) ?? 0);
+  return level || (bv.recipe?.quality ?? 3) - (av.recipe?.quality ?? 3)
+    || (b.mechanics.kind === 'armor' && a.mechanics.kind === 'armor' ? b.mechanics.value.tier - a.mechanics.value.tier : 0);
+}
 function rankOffset(unit: Bearer,batch: EquipmentBatch,rank: number): number {
   if (batch.slot === 'gear') return 0;
-  let offset = 0;
+  let offset = 0, earlier = true;
   for (const other of unit.equipmentBatches ?? []) {
-    if (other.id === batch.id) break;
-    if (other.slot === batch.slot && !crewEquipment(unit,other)) offset = (offset + other.qty) % rank;
+    if (other.id === batch.id) { earlier = false; continue; }
+    if (other.slot !== batch.slot || crewEquipment(unit,other)) continue;
+    const priority = compareKit(other,batch);
+    if (priority < 0 || priority === 0 && earlier) offset = (offset + other.qty) % rank;
   }
   return offset;
 }
 export function batchCount(unit: Bearer,batch: EquipmentBatch,retained = false): number {
   const people = members(unit);
-  const survivors = people + (unit.scale === 'hero' ? 0 : unit.recoverableWounded ?? 0);
+  const survivors = equippedSurvivors(unit);
   const rank = Math.max(1,unit.equipmentPersonnel ?? people,survivors);
   if (crewEquipment(unit,batch)) return retained ? (survivors || unit.scale === 'hero' ? batch.qty : 0) : Math.min(people,batch.qty);
   if ((retained ? survivors : people) === rank) return batch.qty;
@@ -47,7 +60,7 @@ export function availableCopies(unit: Bearer & Pick<Combatant,'weapon'|'sidearm'
 /** Remove personal kit only for deaths that cannot be recovered. */
 export function loseIssuedEquipment(unit: Combatant,dead: number,start: number): void {
   if (!dead || unit.scale==='hero' || !unit.equipmentBatches?.length) return;
-  const survivors = unit.hp+(unit.recoverableWounded ?? 0);
+  const survivors = equippedSurvivors(unit);
   const rank = Math.max(1,survivors,unit.equipmentPersonnel ?? 0);
   const from = Math.min(start,Math.max(0,unit.hp-dead));
   const amounts = unit.equipmentBatches.map(b=>{
@@ -84,7 +97,8 @@ export function advanceBatchReload(batch: EquipmentBatch): void {
 }
 export function splitBatchEquipment(parent: Combatant,child: Combatant,count: number): void {
   if (!parent.equipmentBatches || !child.equipmentBatches) return;
-  const people = members(parent), survivors = people+(parent.recoverableWounded ?? 0);
+  const people = members(parent), survivors = equippedSurvivors(parent);
+  delete child.unequippedWounded;
   const shares = parent.equipmentBatches.map(b => ({
     retained:batchCount(parent,b,true),
     moved:crewEquipment(parent,b) ? 0 : batchCount(parent,b)-batchCount({...parent,hp:people-count},b)
@@ -111,7 +125,8 @@ export function mergeBatchEquipment(unit: Combatant,other: Combatant): void {
       if (match) match.count += r.count; else timers.push({...r});
     } }
   }
-  unit.equipmentPersonnel = members(unit)+members(other)+(unit.recoverableWounded ?? 0)+(other.recoverableWounded ?? 0);
+  unit.equipmentPersonnel = equippedSurvivors(unit) + equippedSurvivors(other);
+  unit.unequippedWounded = Math.min(unit.recoverableWounded ?? 0,unit.unequippedWounded ?? 0) + Math.min(other.recoverableWounded ?? 0,other.unequippedWounded ?? 0);
 }
 export const volleyLabels = {
   'volley:melee':'协同近战', 'volley:ranged':'协同射击', 'volley:all':'总协同攻击',
@@ -201,11 +216,16 @@ export function weaponForMode(unit: Combatant,mode: WeaponMode): Weapon | undefi
   return batch?.mechanics.kind === 'weapon' ? batch.mechanics.value : undefined;
 }
 /** Freeze the surviving loadout once when a battle is archived. */
-export function settleBatches(unit: Combatant): Map<string,number> {
+export function settleBatches(unit: Combatant, returned?: Map<string,number>): Map<string,number> {
   const totals = new Map<string,number>();
   for (const b of unit.equipmentBatches ?? []) {
-    totals.set(b.id,b.shieldDurability?.remaining===0 || unit.status === 'dead' && !(unit.recoverableWounded ?? 0) ? 0 :
-      unit.scale === 'hero' && unit.status === 'dying' ? b.qty : batchCount(unit,b,true));
+    const broken = b.shieldDurability?.remaining === 0 || b.id === unit.shield?.id && unit.shieldDurability?.remaining === 0;
+    const retained = broken || unit.status === 'dead' && !unit.recoverableWounded ? 0 :
+      unit.scale === 'hero' && unit.status === 'dying' ? b.qty : batchCount(unit,b,true);
+    const held = !returned || !unit.recoverableWounded || unit.scale === 'hero' ? retained :
+      crewEquipment(unit,b) && unit.hp > 0 ? retained : Math.min(retained,batchCount(unit,b));
+    totals.set(b.id,held);
+    if (returned && held < retained) returned.set(b.id,(returned.get(b.id) ?? 0) + retained-held);
   }
   for (const b of unit.equipmentBatches ?? []) {
     b.qty = totals.get(b.id)!;
@@ -219,7 +239,8 @@ export function settleBatches(unit: Combatant): Map<string,number> {
   }
   if (unit.equipmentBatches) {
     unit.equipmentBatches=unit.equipmentBatches.filter(b=>b.qty>0);
-    unit.equipmentPersonnel=unit.scale==='hero'?1:unit.hp+(unit.recoverableWounded??0);
+    if (returned) unit.unequippedWounded = unit.recoverableWounded ?? 0;
+    unit.equipmentPersonnel = Math.max(1,equippedSurvivors(unit));
   }
   return totals;
 }
@@ -232,6 +253,7 @@ export function protectionGroups(unit: Combatant, includeWeapons = false) {
   const batches = unit.equipmentBatches.filter(b=>b.slot==='armor' || b.slot==='shield' || b.slot==='gear');
   if (!batches.length && !includeWeapons) return [];
   if (unit.shield || includeWeapons) batches.push(...unit.equipmentBatches.filter(b=>b.slot==='primary' && !crewEquipment(unit,b)));
+  batches.sort(compareKit);
   const cuts = new Set([0,people]);
   const ranges = batches.map(b => {
     const start = rankOffset(unit,b,rank);

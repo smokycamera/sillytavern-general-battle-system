@@ -3,7 +3,7 @@ import {
   generateUnit, prepareCombatModel, prepareArmsModel, prepareSkillModel, upgradeCombatSkills,
   skillDefinitionId, skillAttack, previewAttack, resolveAttack, traitRegistry, standardConditionMap,
   SmallBattle, MassBattle, standardField, createStructure, V31_OVERFLOW_D20, V31_OVERFLOW_TW, V32_OVERFLOW_D20, V32_OVERFLOW_TW,
-  V43_OVERFLOW_D20, V41_OVERFLOW_TW,
+  V44_OVERFLOW_D20, V41_OVERFLOW_TW,
   type Combatant, type GenerateInput, type RulePack, type AttackOpts, type AttackResolution,
 } from '../src/index.js';
 import { buildEncounter } from '../../panel/src/game-encounter.js';
@@ -100,7 +100,7 @@ describe('V32 independent direct damage at 55%', () => {
       const battle = buildEncounter({ roster,
         setup: { mode, field: 'plains', lighting: 'day', mapLayout: 'standard', objectiveMode: 'annihilation', siegeAttacker: 'ally' },
         nonLethal: false, seed: 'v32-encounter', registry, preparedField: standardField(), summonUnit: () => { throw Error('No summon'); } });
-      expect(battle.rules.id).toBe(mode === 'small' ? V43_OVERFLOW_D20.id : V41_OVERFLOW_TW.id);
+      expect(battle.rules.id).toBe(mode === 'small' ? V44_OVERFLOW_D20.id : V41_OVERFLOW_TW.id);
       expect(battle.rules.barrierModel).toBe('barrier-layers-v2');
       expect(battle.rules.independentSkillDamageMultiplier).toBe(.55);
     }

@@ -22,7 +22,7 @@ const ATTRIBUTES: Record<string, readonly string[]> = {
   learn: ['id', 'skills'],
   effect: ['id', 'effects', 'clear', 'rounds', 'battles', 'permanent'],
   unit_update: ['id', 'hp', 'hpMax', 'morale', 'state', 'clear', 'reason'],
-  recover: ['id', 'life'],
+  recover: ['id', 'life', 'kill'],
   spawn: ['id', 'name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'platform', 'seats', 'aboard', 'speed', 'stabilized', 'protection', 'enchant', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits', 'items', 'effects', 'rounds', 'battles', 'permanent'],
   field: ['env', 'light', 'note'],
   take: ['id', 'qty', 'note'],
@@ -335,6 +335,7 @@ export function recoverProtocol(text: string): { text: string; diagnostics: Prot
       probe.effects = '校验:buffL1+攻击L1';
       if (!probe.rounds && !probe.battles && !probe.permanent) probe.battles = '1';
     }
+    if (tag.name === 'recover' && attrs.kill !== undefined) { delete probe.life; probe.kill = '1'; }
     if (tag.name === 'add' && attrs.item !== undefined) { delete probe.id; probe.item = '规格校验'; }
     if (tag.name === 'spawn' && attrs.scale === 'company') {
       probe.scale = 'company'; probe.hpMax = /^\d+$/.test(attrs.hpMax ?? '') && Number(attrs.hpMax) > 0 ? attrs.hpMax! : '1000000000';
@@ -485,11 +486,15 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
   }
   const integer = (key: string, min: number, max: number) => attrs[key] === undefined || (/^\d+$/.test(attrs[key]!) && Number.isSafeInteger(Number(attrs[key])) && Number(attrs[key]) >= min && Number(attrs[key]) <= max);
   if (kind === 'recover') {
-    const id = attrs.id?.trim(), life = attrs.life?.toLowerCase();
+    const id = attrs.id?.trim();
     if (!id) throw Error('recover 需要已有单位 id');
-    if (!life || life !== 'all' && !integer('life', 1, Number.MAX_SAFE_INTEGER)) throw Error('recover 的 life 须为正整数或 all');
-    const amount = life === 'all' ? life : Number(life);
-    return { kind: 'recover', id, life: amount, raw: serializeEvent(kind, { id, life: String(amount) }) };
+    if (attrs.kill !== undefined && attrs.life !== undefined) throw Error('recover 的 kill 与 life 须分开写');
+    const key = attrs.kill !== undefined ? 'kill' : 'life';
+    const value = attrs[key]?.toLowerCase();
+    if (!value || value !== 'all' && !integer(key, 1, Number.MAX_SAFE_INTEGER)) throw Error('recover 的 ' + key + ' 须为正整数或 all');
+    const amount = value === 'all' ? value : Number(value);
+    const raw = serializeEvent(kind, { id, [key]: String(amount) });
+    return key === 'kill' ? { kind: 'recover', id, kill: amount, raw } : { kind: 'recover', id, life: amount, raw };
   }
   if (!integer('count', 1, MAX_SPAWN_COUNT)) throw new Error(`count是单位卡数量，须为1–${MAX_SPAWN_COUNT}；人数写hpMax。${GROUPING_HINT}`);
   const lifeInputMax = kind === 'unit_update' || kind === 'spawn' && attrs.scale === 'hero' ? Number.MAX_SAFE_INTEGER : 1e9;
@@ -501,6 +506,12 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
   }
   if (kind === 'add' && attrs.id !== undefined && (!attrs.id.trim() || ['item', 'spec', 'to', 'type', 'body', 'quality', 'enchant', 'stabilized', 'protection'].some(key => attrs[key] !== undefined))) throw new Error('add 补数量只写实物id、qty和可选note；新增物品写item，可用to指定接收单位');
   if (kind === 'reforge' && (!attrs.id?.trim() || !attrs.spec?.trim())) throw new Error('reforge 需要真实实物id与明确spec');
+  if (kind === 'reforge' && attrs.spec?.includes('×')) {
+    const counted = attrs.spec.match(/^(.*?)\s*×\s*([1-9]\d*)$/);
+    if (!counted || !Number.isSafeInteger(Number(counted[2]))) throw Error('reforge 末尾的件数须为正整数');
+    attrs.spec = counted[1]!.trim();
+    warnings.push('reforge 保留原实物数量，配发件数以 unit_set 为准');
+  }
   if ((kind === 'reforge' || kind === 'add') && attrs.spec !== undefined) {
     // 先保留具体错误原因，避免旧标签解析器将所有规格错误折叠成“无法解析”。
     parseItemSpecification(attrs.spec, attrs, warnings);

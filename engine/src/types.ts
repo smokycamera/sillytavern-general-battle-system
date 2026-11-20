@@ -317,6 +317,8 @@ export interface Combatant {
   equipmentBatches?: EquipmentBatch[];
   reserveEquipmentLoad?: number;
   equipmentPersonnel?: number;
+  /** Wounded personnel whose kit has already been returned at settlement. */
+  unequippedWounded?: number;
   /** Battle-local receipt; even entry without a barrier spends this battle's grant. */
   wornBarrierUsed?: true;
   regenerationModel?: import('./regeneration-model.js').RegenerationModel;
@@ -721,6 +723,7 @@ export interface RulePack {
   criticalDamageScale?: number;
   wornBarrierModel?: 'entry-once-v1';
   casualtyModel?: 'individual-v1';
+  rescueAtZero?: true;
   initiativeModel?: 'seeded-ties-v1';
   /** V15 道具系统：专精十级、道具行动与编队件数、AI 保留价值、冲锋与远程看实际配装; absent keeps V14. V20 items-v2：佩戴修正按道具 L 换算。 */
   itemModel?: 'items-v1' | 'items-v2';

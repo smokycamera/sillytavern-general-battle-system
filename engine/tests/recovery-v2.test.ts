@@ -1,6 +1,6 @@
 import { CasualtyRolls } from '../src/small/casualty-rolls.js';
 import { smallRescuePercent } from '../src/trait-parameters.js';
-import { V43_OVERFLOW_D20 } from '../src/rules.js';
+import { V43_OVERFLOW_D20, V44_OVERFLOW_D20 } from '../src/rules.js';
 import { describe, expect, it } from 'vitest';
 import { generateUnit, traitRegistry, standardConditionMap, resolveAttack, SmallBattle, MassBattle, standardField, V2_D20, V2_TW, attachCarriedItems, compileItem, applyHealthLoss, applyRecovery, grantTraitSource, regenerationAmount, type Combatant } from '../src/index.js';
 const registry = traitRegistry();
@@ -136,4 +136,20 @@ it('V43 samples individual losses once across detachments, damage packets and sa
   battle.setNonLethal(true); injureNine(battle);
   expect(woundCount(parent)).toBe(before + 9);
   expect(battle.toSnapshot().casualtyCursors).toEqual(progress);
+});
+
+it('keeps previous and newly rolled wounded at zero in V44, including after settlement and reload', () => {
+  for (const rules of [V43_OVERFLOW_D20,V44_OVERFLOW_D20]) {
+    const target = unit('troops'), enemy = unit('enemy','enemy');
+    const b = new SmallBattle({rules,seed:'last-group',combatants:[target,enemy],battlefield:standardField()});
+    b.start();
+    target.hp = target.formation!.members = 64;
+    target.formation!.health = [{hp:1,count:64}]; target.recoverableWounded = 9;
+    const expected = rules.rescueAtZero ? 9 + new CasualtyRolls(b.seed).roll(target,64) : 0;
+    b.transportInjury(target,enemy,'摔落');
+    b.finalizeCasualties();
+    expect(target).toMatchObject({hp:0,status:expected ? 'dying' : 'dead',recoverableWounded:expected});
+    const restored = SmallBattle.fromSnapshot(structuredClone(b.toSnapshot()));
+    expect(restored.byId(target.id)).toMatchObject({hp:0,status:target.status,recoverableWounded:expected});
+  }
 });

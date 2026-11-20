@@ -23,7 +23,7 @@ import { platformRoster } from './platform-records.js';
 import { newUnitId, planNewUnits, resolvePlatformReferences, type NewUnitPlan } from './narrative-new-units.js';
 import { handOverItems, type HandOver } from './item-handover.js';
 import { weaponItemSpecification } from './item-spec.js';
-import { treatUnitRecord } from './post-battle-recovery.js';
+import { loseArchivedWounded, treatUnitRecord } from './post-battle-recovery.js';
 
 export interface MessageEnvelope {
   characterId: string;
@@ -236,15 +236,18 @@ function mergePatch(target: Record<string, unknown>, source: Record<string, unkn
 /** 先结算已有伤员，再写入本批指定的最终人数与状态。 */
 function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: Map<string, Record<string, unknown>>, proposalId: string, registry: Registry, context: UnitSetContext): NarrativeSave {
   let next = save, records = next.storage ?? [];
-  const recoveries = new Map<string, number | 'all'>();
+  const treatments = new Map<string, number | 'all'>(), losses = new Map<string, number | 'all'>();
   for (const event of events) if (event.kind === 'recover') {
-    const previous = recoveries.get(event.id);
-    if (previous !== undefined && previous !== event.life) throw Error('同一单位的治疗量冲突，请每个单位只写一条 recover');
-    recoveries.set(event.id, event.life);
+    const changes = event.kill !== undefined ? losses : treatments;
+    const amount = event.kill ?? event.life!;
+    const previous = changes.get(event.id);
+    if (previous !== undefined && previous !== amount) throw Error(event.kill !== undefined ? '同一单位的伤兵死亡人数冲突' : '同一单位的治疗量冲突');
+    changes.set(event.id, amount);
   }
-  if (recoveries.size) records = records.map((record) => {
-    const life = recoveries.get(record.id);
-    return life === undefined ? record : treatUnitRecord(record, registry, life, proposalId);
+  if (losses.size || treatments.size) records = records.map(record => {
+    const loss = losses.get(record.id), life = treatments.get(record.id);
+    const remaining = loss === undefined ? record : loseArchivedWounded(record, registry, loss, proposalId);
+    return life === undefined || remaining.status === 'dead' && loss !== undefined ? remaining : treatUnitRecord(remaining, registry, life, proposalId);
   });
   // 只交道具（items）的 unit_set 不改档案字段，道具在入账最后交出。
   for (const event of events) if (event.kind === 'unit-set' && Object.keys(event.data).length) {
@@ -280,7 +283,7 @@ function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: M
         if (!matches.length) continue;
         const unique = [...new Set(matches.map(item => item.id))];
         // 重铸与转移完成后再穿戴，字符串引用先锁定原实物；不能按改名后的名称另造一件。
-        deferred[key] = typeof patch[key] === 'string' && unique.length === 1 ? unique[0] : patch[key];
+        deferred[key] = typeof patch[key] === 'string' && !/[×,，、;；]/.test(patch[key] as string) && unique.length === 1 ? unique[0] : patch[key];
         delete patch[key];
       }
       if (['weapon','weapon2','sidearm'].some(key => Object.hasOwn(deferred,key))) for (const key of ['enchant','stabilized']) {

@@ -1358,8 +1358,10 @@ function renderConfig(): string {
     groups.set(key,group);
   }
   const cards = [...groups.values()].map(group => {
-    const html = group.map(u => unitHtml(u,rosterIndex.get(u.id) ?? -1,!!battle,battle ? '' : rideEditor(u.id,rideUnits))).join('');
-    return group.length > 1 ? '<section class="team-transport-group" aria-label="'+esc(group[0]!.name)+'">'+html+'</section>' : html;
+    const carrier = group[0]!, riders = group.slice(1);
+    const summary = battle && riders.length ? '<div class="sub">乘员：' + riders.map(u => esc(u.name) + ' ×' + (u.scale === 'hero' ? 1 : u.hp)).join('、') + '</div>' : '';
+    const html = unitHtml(carrier,rosterIndex.get(carrier.id) ?? -1,!!battle,battle ? summary : rideEditor(carrier.id,rideUnits));
+    return riders.length ? '<section class="team-transport-group" aria-label="'+esc(carrier.name)+'">'+html+'</section>' : html;
   }).join('');
   if (battle) return `<section class="team-workspace"><h2>参战队伍</h2><div class="units">${cards}</div></section>`;
   return `<section class="team-workspace"><div class="section-heading"><div><h2>参战队伍</h2><p class="sub">沿用当前生命、人数与装备。</p></div><div class="row"><button data-action="ai-scan" ${aiScanDialog?.busy ? 'disabled' : ''}>AI扫描</button><button data-action="gen-toggle">${state.genOpen ? '收起新建' : '添加单位'}</button></div></div>
@@ -2383,7 +2385,7 @@ function renderNarrativeProposals(): string {
 }
 
 function suggestionLabel(s: Suggestion): string {
-  return { take: '减少物品', add: '新增或补充物品', learn: '学习技能', give: '转移物品', reforge: '物品改造', effect: '效果变更', bless: '明确祝福', unbless: '撤销祝福', affect: '增减益', unaffect: '解除效果', status: '状态', xp: '经验', field: '环境', spawn: '遭遇', deploy: '选择编制', recover: '战外治疗', 'unit-update': '编制更新', 'unit-set': '完整单位修改' }[s.kind];
+  return { take: '减少物品', add: '新增或补充物品', learn: '学习技能', give: '转移物品', reforge: '物品改造', effect: '效果变更', bless: '明确祝福', unbless: '撤销祝福', affect: '增减益', unaffect: '解除效果', status: '状态', xp: '经验', field: '环境', spawn: '遭遇', deploy: '选择编制', recover: '战外伤员处置', 'unit-update': '编制更新', 'unit-set': '完整单位修改' }[s.kind];
 }
 
 function suggestionDesc(s: Suggestion, batch: Suggestion[] = []): string {
@@ -2410,7 +2412,7 @@ function suggestionDesc(s: Suggestion, batch: Suggestion[] = []): string {
     case 'xp': return `剧情经验 +${displayNumber(s.amount)} 经验${s.reason ? `（${s.reason}）` : ''}`;
     case 'field': return `战场环境设为「${FIELD_LABELS[s.env] ?? s.env}${s.light === 'night' && s.env !== 'night' ? ' / 夜间' : ''}」（开战时生效）${s.note ? `——${s.note}` : ''}`;
     case 'deploy': return `让${unitName(s.id, s.name)}参战`;
-    case 'recover': return s.life === 'all' ? `治疗${unitName(s.id)}的全部可恢复伤势` : `为${unitName(s.id)}提供${displayNumber(s.life)}点治疗`;
+    case 'recover': return s.kill !== undefined ? `将${unitName(s.id)}的${s.kill === 'all' ? '全部' : s.kill + '名'}可救伤兵记为死亡` : s.life === 'all' ? `治疗${unitName(s.id)}的全部可恢复伤势` : `为${unitName(s.id)}提供${displayNumber(s.life)}点治疗`;
     case 'unit-set': {
       // 编号不在档案里时按入账规则说明：同名档案优先，否则写全新单位字段的会新建入档。
       const name = typeof s.data.name === 'string' ? s.data.name : undefined, known = storageRecordByRef(s.id) ?? storageRecordByRef(undefined, name);

@@ -202,6 +202,7 @@ export function reuniteTransportGroups(units: Combatant[]): Combatant[] {
     } else if (child.hp > 0 && wasEmpty) { root.ride = child.ride && {...child.ride}; root.mount = child.mount; }
     combinePersonnel(root,child);
     if (child.hp > 0 && (wasEmpty || child.status === 'ready')) root.status = child.status;
+    if (root.hp === 0 && root.recoverableWounded) root.status = 'dying';
   }
   for (const unit of parents) if (unit.ride) unit.ride = {platformId:unit.ride.platformId,mode:unit.ride.mode};
   return parents;

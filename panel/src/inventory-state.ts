@@ -330,7 +330,10 @@ export function projectEquipment(record: UnitRecord, inventory: InventoryItem[])
     else if (mechanics.kind === 'shield') unit.shield ??= clone(mechanics.value);
     else (unit.gear ??= []).push(gearItem(item.id, item.name, mechanics.value));
   }
-  if (unit.equipmentBatches) unit.equipmentPersonnel = unit.scale === 'hero' ? 1 : record.hp + (unit.recoverableWounded ?? 0);
+  if (unit.equipmentBatches) {
+    unit.unequippedWounded = record.recoverableWounded ?? 0;
+    unit.equipmentPersonnel = unit.scale === 'hero' ? 1 : Math.max(1,record.hp);
+  }
   if (!unit.sidearm) {
     const alternate = unit.equipmentBatches?.find(b => b.mechanics.kind === 'weapon' && b.id !== unit.weapon?.id);
     if (alternate?.mechanics.kind === 'weapon') unit.sidearm = clone(alternate.mechanics.value);
@@ -360,23 +363,49 @@ function rewriteRecord(next: InventorySave, record: UnitRecord, sourceId: string
   next.storage = next.storage!.map((r) => r.id === record.id ? unitRecordFromCombatant({ ...record.snapshot!, hp: record.hp, recoverableWounded: record.recoverableWounded, status: record.status ?? 'ready' }, record, { sourceId }) : r);
 }
 
+/** Settle each detachment against its own surviving members before merging archive records. */
+export function settleBattleEquipment(units: Combatant[], items: InventoryItem[] | undefined, battleId: string) {
+  const held = new Map<string,number>(), returned = new Map<string,number>();
+  const broken = units.filter(u => isArmsV2(u.armsModel) && u.shield && u.shieldDurability?.remaining === 0);
+  const brokenIds = new Set(broken.map(u => u.shield!.id));
+  const brokenShieldNotes = broken.map(u => u.name + '的' + (u.shield!.name ?? '盾牌') + '碎了，已移出装备');
+  for (const u of units) for (const [id,count] of settleBatches(u,items ? returned : undefined)) {
+    held.set(id,(held.get(id) ?? 0) + count);
+  }
+  for (const u of broken) delete u.shield;
+  const combatants = reuniteTransportGroups(units);
+  if (!items) return {combatants,inventory:undefined,brokenShieldNotes};
+  const fallen = new Set(combatants.filter(u => u.equipmentBatches && u.status === 'dead' && !u.recoverableWounded).map(u => u.id));
+  const inventory = clone(items).filter(item => {
+    if (held.has(item.id)) {
+      item.qty = held.get(item.id)! + (returned.get(item.id) ?? 0);
+      return item.qty > 0;
+    }
+    return !brokenIds.has(item.id) && !(item.assignedTo && fallen.has(item.assignedTo));
+  });
+  for (const item of [...inventory]) {
+    const count = returned.get(item.id);
+    if (count) moveCopies(inventory,item,count,undefined,undefined,'returned:'+battleId+':'+item.id,true);
+  }
+  return {combatants,inventory,brokenShieldNotes};
+}
+
 /** 普通面板保存不能绕过物品事务，或把失去库存绑定的旧投影写回。旧版道具先按同一对照表转换再比较。 */
 export function assertInventoryPanelWrite(previous: InventorySave, next: InventorySave): void {
   const previousItems = migrateLegacyInventory(previous.inventory) ?? [], nextItems = migrateLegacyInventory(next.inventory) ?? [];
-  const outcome = next.battle && next.committedOutcomeIds?.includes(next.battle.kind + ':' + String(next.battle.snap.seed));
-  const broken = outcome ? (next.battle!.snap.combatants as Combatant[]).filter(u => isArmsV2(u.armsModel) && u.shieldDurability?.remaining === 0 && u.shield).map(u => u.shield!.id) : [];
-  const settled = new Map<string,number>(), fallen = new Set<string>();
-  if (outcome) for (const u of reuniteTransportGroups(clone(next.battle!.snap.combatants as Combatant[]))) if (u.equipmentBatches) {
-    for (const [id,qty] of settleBatches(u)) settled.set(id,qty);
-    if (u.status==='dead' && !u.recoverableWounded) fallen.add(u.id);
+  const battleId = next.battle && next.battle.kind + ':' + String(next.battle.snap.seed);
+  const newlyCommitted = battleId && next.committedOutcomeIds?.includes(battleId) && !previous.committedOutcomeIds?.includes(battleId);
+  let expectedItems = previousItems;
+  if (newlyCommitted) {
+    expectedItems = settleBattleEquipment(clone(next.battle!.snap.combatants as Combatant[]),previousItems,battleId).inventory!;
   }
-  for (const item of previousItems.filter((i) => i.mechanics)) {
-    const incoming = nextItems.find((i) => i.id === item.id);
-    if (!incoming && (settled.get(item.id) === 0 || item.assignedTo && fallen.has(item.assignedTo))) continue;
-    const expected = settled.has(item.id) ? {...item,qty:settled.get(item.id)} : item;
-    if (fingerprint(incoming) !== fingerprint(expected) && !(incoming === undefined && broken.includes(item.id))) throw new Error('装备与物品数量/归属须通过库存事务修改');
+  const expected = new Map(expectedItems.filter(i => i.mechanics).map(i => [i.id,i]));
+  for (const item of nextItems.filter(i => i.mechanics)) {
+    if (!expected.has(item.id)) throw Error('新有效果的物品须先预览并通过库存事务入库');
+    if (fingerprint(item) !== fingerprint(expected.get(item.id))) throw Error('装备与物品数量/归属须通过库存事务修改');
+    expected.delete(item.id);
   }
-  if (nextItems.some((i) => i.mechanics && !previousItems.some((old) => old.id === i.id && old.mechanics))) throw new Error('新有效果的物品须先预览并通过库存事务入库');
+  if (expected.size) throw Error('装备与物品数量/归属须通过库存事务修改');
   for (const old of previous.storage ?? []) if (old.equipmentManaged && !next.storage?.some((r) => r.id === old.id && r.equipmentManaged)) throw new Error('不能移除装备档案的库存绑定');
   if (!(next.storage ?? []).some((r) => r.equipmentManaged)) return;
   // This check projects archive equipment only. Battle history and reports do not

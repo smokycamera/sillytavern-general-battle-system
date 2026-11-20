@@ -1,5 +1,6 @@
 import { createInventoryItem, moveCopies, type InventoryItem } from './inventory-state.js';
 import { sameGear } from './unit-set.js';
+import type { BodyKind } from '../../engine/src/types.js';
 import type { EquipmentSlot, ItemSpecification } from '../../engine/src/items.js';
 import { parseItemSpecification, splitItemSpecification } from './item-spec.js';
 
@@ -28,7 +29,7 @@ export function parseIssue(text: unknown, slot: EquipmentSlot, attrs: Record<str
 
 /** Keep the original roll when a batch is reissued, including partial transfers. */
 export function assignIssue(inventory: InventoryItem[], unitId: string, side: string, slot: EquipmentSlot,
-  entries: EquipmentIssue[], source: string, allowStash = true): void {
+  entries: EquipmentIssue[], source: string, allowStash = true, defaultBody?: BodyKind): void {
   const previous = inventory.filter(i => i.equippedTo?.unitId === unitId && i.equippedTo.slot === slot);
   for (const item of previous) delete item.equippedTo;
   const candidates = [...previous,...inventory.filter(i => !previous.includes(i) && !i.equippedTo &&
@@ -50,7 +51,8 @@ export function assignIssue(inventory: InventoryItem[], unitId: string, side: st
     if (needed && issued) issued.qty += needed;
     else if (needed) {
       const id = source+':'+unitId+':'+slot+':'+index;
-      const item = createInventoryItem(id,entry.name,entry.spec,source+':'+entry.name+':'+JSON.stringify(entry.spec),needed);
+      const spec = defaultBody && entry.spec.kind !== 'item' ? {...entry.spec,body:entry.spec.body ?? defaultBody} : entry.spec;
+      const item = createInventoryItem(id,entry.name,spec,source+':'+entry.name+':'+JSON.stringify(entry.spec),needed);
       item.batch = true; item.assignedTo = unitId; item.equippedTo = {unitId,slot};
       inventory.push(item); issuedOrder.push(item);
     }

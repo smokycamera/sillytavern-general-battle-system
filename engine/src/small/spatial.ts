@@ -183,9 +183,24 @@ export function tileCost(field: BattlefieldSpec, cell: number, actor?: Combatant
  * at most its FULL normal allowance, never its remaining allowance. Thus a 2-MP unit
  * with only 1 MP left still cannot enter a 3-cost fortification. Prohibitions stay infinite. */
 export function movementStepCost(field: BattlefieldSpec, cell: number, actor: Combatant, tags = field.environment ?? [],from=actor.pos??cell): number {
-  const cost = tileCost(field, cell, actor)+heightStepCost(field,from,cell,actor);
+  return limitStepCost(field, actor, tags, tileCost(field, cell, actor) + heightStepCost(field,from,cell,actor));
+}
+function limitStepCost(field: BattlefieldSpec, actor: Combatant, tags: string[], cost: number): number {
   if (field.movementCostModel === 'minimum-step-v1' && Number.isFinite(cost)) return Math.min(cost, Math.max(1, movementPoints(actor, tags)));
   return !actor.numericModel && field.layerVersion && Number.isFinite(cost) ? Math.min(cost, movementPoints(actor, tags)) : cost;
+}
+
+/** Cache only during one search with fixed actor, occupancy and terrain. Uphill costs still depend on direction. */
+export function movementQuery(field: BattlefieldSpec, units: Combatant[], actor: Combatant, tags: string[]) {
+  const occupancy: boolean[] = [], terrain: number[] = [];
+  const cap = limitStepCost(field,actor,tags,Number.MAX_VALUE);
+  return {
+    allowed: (cell: number) => occupancy[cell] ??= canOccupy(field,units,actor,cell),
+    cost: (cell: number, from: number) => {
+      const total = (terrain[cell] ??= tileCost(field,cell,actor)) + heightStepCost(field,from,cell,actor);
+      return Number.isFinite(total) ? Math.min(cap,total) : total;
+    },
+  };
 }
 export function footprint(unit: Combatant): number { return unit.mount === true || unit.body && unit.body !== 'human' ? 2 : 1; }
 export function canOccupy(field: BattlefieldSpec, units: readonly Combatant[], actor: Combatant, cell: number): boolean {
