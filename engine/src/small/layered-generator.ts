@@ -270,7 +270,15 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
     }
   }
   // Water changes routes. Bridges are real structures; no trait is granted to the roster.
-  const water = plan?.water ?? (scene !== 'field' ? 'none' : pick(['none', 'none', 'none', 'ford', 'river'] as const));
+  const randomPlain = !supplied && scene === 'field' && environment.includes('plains');
+  if (randomPlain && plan?.water && plan.waterCoverage !== 'all') {
+    // Pick the river corridor separately from the base terrain and leave dry archetypes dry.
+    const horizontal = random.next() < .5;
+    plan.waterAxis = horizontal ? 'horizontal' : 'vertical';
+    plan.waterPosition = pick(horizontal ? ['B2','C3','B3','C2'] as const : ['A2','B3','C2','D3'] as const);
+    if (plan.water === 'river') plan.bridgePlan = [{anchor:plan.waterPosition,state:'intact'}];
+  }
+  const water = plan?.water ?? (randomPlain || scene !== 'field' ? 'none' : pick(['none', 'none', 'none', 'ford', 'river'] as const));
   const floodAll = plan?.waterCoverage === 'all' || !!plan?.waterSectors?.length;
   // A placed siege city takes its water from the same builder as narrative rivers: moats before the gates, a ford if unbridged.
   // Full flooding waits until named structures and raised ground have their final geometry.

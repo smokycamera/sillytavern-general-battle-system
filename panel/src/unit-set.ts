@@ -1,5 +1,5 @@
 import { BODY_LABELS, isVehicleBody } from '../../engine/src/vehicle-size.js';
-import { assignIssue, parseIssue } from './equipment-batches.js';
+import { assignIssue, parseIssue, issueShortage } from './equipment-batches.js';
 import { parsePlatform, validatePlatform } from '../../engine/src/platforms.js';
 import { singleLifeLimit } from '../../engine/src/health-limits.js';
 /** 正文战外绝对赋值。所有修改先在副本校验，装备实物与档案一起提交。 */
@@ -328,6 +328,7 @@ export function rebaseUnitStats(unit: Combatant, data: ObjectData): void {
 /** given：同一回复 add 刚入库的实物编号，换装时优先取用；notices 收集换装说明。 */
 export const UNIT_EQUIPMENT_FIELDS = ['weapon', 'weapon2', 'sidearm', 'armor', 'shield'] as const;
 export interface UnitSetContext {
+  stockTransaction?: boolean;
   given?: ReadonlySet<string>; notices?: string[]; transferred?: ReadonlySet<string>;
   reforgedNames?: ReadonlyMap<string, string>;
   reforgedEquipment?: readonly InventoryItem[];
@@ -468,10 +469,6 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   for (const [key,slot] of Object.entries(slotKeys) as [keyof typeof slotKeys,EquipmentSlot][]) {
     const configure = key === 'armor' ? data.protection !== undefined : weaponTargets.includes(key) && (data.enchant !== undefined || data.stabilized !== undefined);
     if (!Object.hasOwn(data,key) && !configure) continue;
-    // A canonical weapon list covers the former secondary slot as well. Old two-field edits keep their original targets.
-    if (key === 'weapon' && Object.hasOwn(data,'weapon') && !Object.hasOwn(data,'sidearm')) {
-      for (const item of next.inventory!) if (item.equippedTo?.unitId === id && item.equippedTo.slot === 'sidearm') delete item.equippedTo;
-    }
     const equipped = next.inventory!.find(i => i.equippedTo?.unitId===id && i.equippedTo.slot===slot);
     const input = Object.hasOwn(data,key) ? data[key] : equipped?.id;
     // 内部锁定使用完整实物id（可能含冒号），先识别引用，不能把id当作“名称:规格”拆开。
@@ -479,8 +476,19 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
     const singleHeroItem = unit.scale === 'hero' && typeof input === 'string' && !/[×,，、;；]/.test(input)
       && (equipped?.qty ?? 1) === 1;
     const entries = !referenced && !singleHeroItem && parseIssue(input,slot,data);
+    if (entries && ally && options.stockTransaction) {
+      const shortage = issueShortage(next.inventory!,id,slot,entries,key === 'weapon' && !Object.hasOwn(data,'sidearm'));
+      if (shortage) {
+        options.notices?.push(unit.name+'的配装未改：'+shortage);
+        continue;
+      }
+    }
+    // A canonical weapon list covers the former secondary slot as well. Old two-field edits keep their original targets.
+    if (key === 'weapon' && Object.hasOwn(data,'weapon') && !Object.hasOwn(data,'sidearm')) {
+      for (const item of next.inventory!) if (item.equippedTo?.unitId === id && item.equippedTo.slot === 'sidearm') delete item.equippedTo;
+    }
     if (entries) {
-      assignIssue(next.inventory!,id,unit.side,slot,entries,sourceId,true,unit.body);
+      assignIssue(next.inventory!,id,unit.side,slot,entries,sourceId,true,unit.body,!(ally && options.stockTransaction));
       continue;
     }
     if (Object.hasOwn(data,key)) {

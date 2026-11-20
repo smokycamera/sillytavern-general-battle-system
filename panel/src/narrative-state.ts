@@ -21,6 +21,7 @@ import { clearUnitEffects } from './unit-clear.js';
 import { mapNarrativeReferences, narrativeIds, prepareNarrativeIds, type NarrativeIdState } from './narrative-ids.js';
 import { platformRoster } from './platform-records.js';
 import { newUnitId, planNewUnits, resolvePlatformReferences, type NewUnitPlan } from './narrative-new-units.js';
+import { settleBatches } from '../../engine/src/equipment-batches.js';
 import { handOverItems, type HandOver } from './item-handover.js';
 import { weaponItemSpecification } from './item-spec.js';
 import { loseArchivedWounded, treatUnitRecord } from './post-battle-recovery.js';
@@ -247,6 +248,14 @@ function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: M
   if (losses.size || treatments.size) records = records.map(record => {
     const loss = losses.get(record.id), life = treatments.get(record.id);
     const remaining = loss === undefined ? record : loseArchivedWounded(record, registry, loss, proposalId);
+    if (loss !== undefined && remaining.equipmentManaged && remaining.snapshot?.equipmentBatches) {
+      const kept = settleBatches(remaining.snapshot);
+      next.inventory = next.inventory?.filter(item => {
+        if (item.equippedTo?.unitId !== record.id || !kept.has(item.id)) return true;
+        item.qty = kept.get(item.id)!;
+        return item.qty > 0;
+      });
+    }
     return life === undefined || remaining.status === 'dead' && loss !== undefined ? remaining : treatUnitRecord(remaining, registry, life, proposalId);
   });
   // 只交道具（items）的 unit_set 不改档案字段，道具在入账最后交出。
@@ -416,7 +425,8 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   }
   const reforgedNames = new Map(proposal.events.flatMap(event => event.kind === 'reforge' && event.name ? [[event.id, event.name] as const] : []));
   const reforgeIds = new Set(proposal.events.flatMap(event => event.kind === 'reforge' ? [event.id] : []));
-  const unitSetContext: UnitSetContext = { given, notices, deferredEquipment, deferEquipmentFor: incomingEquipment, reforgedNames,
+  const stockTransaction = proposal.events.some(e => e.kind === 'give' || e.kind === 'take' || e.kind === 'add');
+  const unitSetContext: UnitSetContext = { stockTransaction, given, notices, deferredEquipment, deferEquipmentFor: incomingEquipment, reforgedNames,
     reforgedEquipment: preparedSave.inventory?.filter(item => reforgeIds.has(item.id)) };
   const directGives = new Map<string, string>();
   for (const [index, event] of proposal.events.entries()) {
@@ -425,7 +435,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (event.to) directGives.set(id,event.to);
     const item = event.spec ? createInventoryItem(id,event.item,event.spec,id,event.qty)
       : {id,name:event.item,qty:event.qty,lootType:event.lootType};
-    next.inventory!.push({...item,note:event.note});
+    next.inventory!.push({...item,note:event.note,...(event.to && next.storage?.some(r => r.id === event.to) ? {assignedTo:event.to} : {})});
     if (!event.spec || event.spec.kind !== 'item' || event.spec.form !== 'single') given.add(id);
     handed.add(id);
   }
@@ -532,7 +542,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (event.kind === 'take' && givenStacks.has(event.id)) take(event, index);
   }
   for (const [unitId, patch] of deferredEquipment) {
-    next = applyUnitSet(next, unitId, patch, proposal.id, { given, notices, transferred });
+    next = applyUnitSet(next, unitId, patch, proposal.id, { stockTransaction, given, notices, transferred });
   }
   // unit_set 的 items 最后交出：此时同一回复 add 的已入库，新建单位也已建档。
   const handovers: HandOver[] = [...proposal.events.entries()].flatMap(([index, event]) => event.kind === 'unit-set' && event.items?.length ? [{ unitId: event.id, items: event.items, index }] : []);

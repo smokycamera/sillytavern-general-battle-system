@@ -27,9 +27,26 @@ export function parseIssue(text: unknown, slot: EquipmentSlot, attrs: Record<str
   });
 }
 
+/** Check the entire slot before unequipping. Repeated rows share the same physical stock. */
+export function issueShortage(inventory: InventoryItem[], unitId: string, slot: EquipmentSlot,
+  entries: EquipmentIssue[], includesSidearm: boolean): string | undefined {
+  const available = new Map(inventory.map(item => [item.id,item.qty]));
+  for (const entry of entries) {
+    const named = inventory.filter(item => item.name === entry.name);
+    let needed = entry.qty;
+    for (const item of named) {
+      if (item.assignedTo && item.assignedTo !== unitId || item.equippedTo && item.equippedTo.slot !== slot
+        && !(includesSidearm && item.equippedTo.slot === 'sidearm') || !sameGear(item.mechanics,entry.spec)) continue;
+      const left = available.get(item.id)!, used = Math.min(needed,left);
+      available.set(item.id,left-used); needed -= used;
+    }
+    if (needed) return '「'+entry.name+'」需要'+entry.qty+'件，本队与公共库存合计可用'+(entry.qty-needed)+'件';
+  }
+}
+
 /** Keep the original roll when a batch is reissued, including partial transfers. */
 export function assignIssue(inventory: InventoryItem[], unitId: string, side: string, slot: EquipmentSlot,
-  entries: EquipmentIssue[], source: string, allowStash = true, defaultBody?: BodyKind): void {
+  entries: EquipmentIssue[], source: string, allowStash = true, defaultBody?: BodyKind, allowCreation = true): void {
   const previous = inventory.filter(i => i.equippedTo?.unitId === unitId && i.equippedTo.slot === slot);
   for (const item of previous) delete item.equippedTo;
   const candidates = [...previous,...inventory.filter(i => !previous.includes(i) && !i.equippedTo &&
@@ -48,6 +65,7 @@ export function assignIssue(inventory: InventoryItem[], unitId: string, side: st
       equipped.batch = true; equipped.assignedTo = unitId;
       equipped.equippedTo = {unitId,slot}; needed -= moved;
     }
+    if (needed && !allowCreation) throw Error('「'+entry.name+'」的可配发数量不足，请核对实物');
     if (needed && issued) issued.qty += needed;
     else if (needed) {
       const id = source+':'+unitId+':'+slot+':'+index;
