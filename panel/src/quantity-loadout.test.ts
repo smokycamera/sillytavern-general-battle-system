@@ -185,7 +185,14 @@ it.each([
   const battle = new SmallBattle({combatants:actors,battlefield:field,rules:V43_OVERFLOW_D20,seed:'mixed-volley'});
   battle.start(); actor!.pos=30; target!.pos=31; battle.turnOrder=actors.map(u=>u.id); battle.turnIndex=0;
   const menu=battle.getActionOptions(actor!.id).find(o=>o.id===mode);
-  expect(menu?.targets?.[0]?.preview?.effects).toHaveLength(weapons.length);
+  const preview=menu!.targets![0]!.preview!;
+  expect(preview.anyHitChance).toBeGreaterThan(0);
+  expect(preview.damageOnHit).toBeGreaterThan(0);
+  expect(preview.expectedDamage).toBeCloseTo(preview.anyHitChance! * preview.damageOnHit!);
+  expect(preview.damageModel).toBe('member-health');
+  expect(preview.effects).toHaveLength(weapons.length);
+  const quick=battle.getActionOptions(actor!.id,{previews:false}).find(o=>o.id===mode);
+  expect(quick?.targets?.[0]?.preview?.effects).toEqual(preview.effects);
   expect(smallCommandChoices(battle,actor!.id).some(c=>c.action?.weaponMode===mode && c.action.targetId===target!.id)).toBe(true);
   const from=battle.log.length;
   const result=battle.attack(actor!.id,target!.id,{weaponMode:mode});

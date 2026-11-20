@@ -1482,14 +1482,36 @@ export class SmallBattle {
         if (!widths.has(row.ranged)) widths.set(row.ranged,this.volleyFrontage(actor,target,row.ranged));
         return {...row,frontage:widths.get(row.ranged)!};
       });
+      const estimates = new Map<string,NonNullable<ActionOption['preview']>>();
+      const attacking = actor.tacticalPose ? {...actor,tacticalPose:undefined} : actor;
       for (const mode of volleyModes) {
         const shares = allocateVolley(rows,mode);
         if (!shares.length) continue;
         const effects = shares.map(({weapon,count}) => weapon.weapon.name + ' ×' + count);
-        const expectedDamage = previews ? shares.reduce((sum,{weapon,count}) => sum + (weapon.option.targets![index]!.preview?.expectedDamage ?? 0)
-          * count / Math.min(weapon.copies,weapon.frontage),0) : undefined;
+        const preview: NonNullable<ActionOption['preview']> = {effects};
+        if (previews) {
+          let miss = 1, expected = 0;
+          for (const {weapon:row,count} of shares) {
+            const key = row.option.id + '/' + count;
+            let part = estimates.get(key);
+            if (!part && attacking === actor && count >= Math.min(row.copies,row.frontage)) {
+              part = row.option.targets![index]!.preview;
+            }
+            if (!part) {
+              const context = this.weaponContext(actor,target,{weaponMode:optionWeaponMode(row.option.id)});
+              const arrival = context.landing ? {...attacking,airborne:false} : attacking;
+              part = this.weaponTargetPreview(arrival,target,context,count);
+              estimates.set(key,part);
+            }
+            miss *= 1 - Math.min(1,part.anyHitChance ?? part.hitChance!);
+            expected += part.expectedDamage!;
+          }
+          const chance = 1 - miss;
+          const damageOnHit = chance > 0 ? Math.min(memberHealth(target),expected / chance) : 0;
+          Object.assign(preview,{anyHitChance:chance,damageOnHit,expectedDamage:chance * damageOnHit,damageModel:'member-health'});
+        }
         const targets = byMode.get(mode) ?? [];
-        targets.push({targetId:target.id,enabled:true,distance:this.dist(actor,target),preview:{effects,...(expectedDamage === undefined ? {} : {expectedDamage:Math.min(memberHealth(target),expectedDamage)})}});
+        targets.push({targetId:target.id,enabled:true,distance:this.dist(actor,target),preview});
         byMode.set(mode,targets);
       }
     }
@@ -1500,13 +1522,18 @@ export class SmallBattle {
     return groups;
   }
 
+  private weaponTargetPreview(actor: Combatant, target: Combatant, context: WeaponContext, operatorLimit?: number) {
+    return this.previewAttackWithEnvironment({ attacker:actor, defender:target, rules:this.rules,
+      conditionDefs:this.conditionDefMap(), traitRegistry:this.traitRegistry, weaponOverride:context.weapon,
+      ranged:context.ranged, actionDamageScale:this.usingHaste(actor.id) ? hasteAttackScale(actor) : 1,
+      ...this.attackModifiers(actor,target,context), operatorLimit });
+  }
+
   /** 当前公开属性下的无随机数攻击预览；实际结算仍走 resolveAttack。 */
   private weaponPreview(actor: Combatant, target: Combatant, context: WeaponContext): NonNullable<ActionOption['preview']> {
     if (this.rules.resolutionVersion === 'v2') {
       const arrival = context.landing ? { ...actor, airborne: false } : actor;
-      const preview = (defender: Combatant) => this.previewAttackWithEnvironment({ attacker: arrival, defender, rules: this.rules,
-        conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, weaponOverride: context.weapon,
-        ranged: context.ranged, actionDamageScale: this.usingHaste(actor.id) ? hasteAttackScale(actor) : 1, ...this.attackModifiers(arrival, defender, context) });
+      const preview = (defender: Combatant) => this.weaponTargetPreview(arrival,defender,context);
       // R16 喷射：列出扇形内各目标及各自的预览。
       const cone = this.sprays(context.weapon) ? this.sprayVictims(arrival, target, this.visibleCombatants(actor.side)) : [];
       return { ...preview(target), ...(context.landing ? { movementCost: 1, lands: true } : {}),
