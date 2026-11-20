@@ -54,12 +54,22 @@ export class BattleService {
   /** Why the current generation has no binding, for the reply's auto-approve note. */
   private bindingMiss?: string;
   /** 进行中的一次生成：收到的消息序号，以及生成是否已结束。两者都到齐才扫描这条回复。 */
-  private generation?: { receivedId?: number; ended: boolean };
+  private generation?: { receivedId?: number; ended: boolean; ignored?: boolean };
   private scanQueue: Promise<unknown> = Promise.resolve();
   private loading?: { session?: HostSession; promise: Promise<void> };
   private memoryPanel?: { save: NarrativeSave; session: HostSession; revision: number; generation?: string };
   readonly capabilities = { beforeGeneration: false, generationEnded: false, messageIdentity: false, injection: false };
-  constructor(readonly host: NativeHost, readonly store: NativeStore, private initialize?: () => Promise<boolean>) {}
+  private activationEpoch = 0;
+  private deferredSetup = false;
+  constructor(readonly host: NativeHost, readonly store: NativeStore, private initialize?: () => Promise<boolean>,
+    readonly enabled: () => boolean = () => true) {}
+  async activationChanged(): Promise<void> {
+    this.activationEpoch++;
+    this.binding = undefined; this.bindingMiss = undefined;
+    if (this.generation) this.generation.ignored = true;
+    if (this.enabled() && this.deferredSetup) { await this.load(); return; }
+    this.project(); this.notify();
+  }
   private livePanel(): NarrativeSave | undefined {
     const panel = this.memoryPanel, head = this.store.head();
     if (!panel || panel.revision !== (head?.revision ?? 0) || panel.generation !== head?.generation || !this.inSync()) return undefined;
@@ -86,8 +96,9 @@ export class BattleService {
   }
   /** A save is still running, as opposed to one that ended unconfirmed. */
   saving(): boolean { return this.store.saving(); }
-  canWrite(): boolean { return ['ready', 'review'].includes(this.phase) && !this.store.hasPending() && this.inSync() && !this.host.hasLegacyRuntime(); }
+  canWrite(): boolean { return this.enabled() && ['ready', 'review'].includes(this.phase) && !this.store.hasPending() && this.inSync() && !this.host.hasLegacyRuntime(); }
   writeBlockReason(): string | undefined {
+    if (!this.enabled()) return '当前聊天已关闭战阵';
     if (this.disposed) return '战阵服务已关闭，请重新打开战阵';
     if (this.host.hasLegacyRuntime()) return '脚本版战阵仍在运行，请停用脚本版战阵后重新打开';
     if (!this.host.session()) return '当前聊天尚未载入，请先打开角色聊天';
@@ -136,13 +147,16 @@ export class BattleService {
     const epoch = ++this.loadEpoch;
     this.phase = 'loading'; this.error = undefined; this.receipt = undefined; this.migration = undefined;
     if (this.generation) this.bindingMiss = '生成期间重新读取了档案';
-    this.binding = undefined; this.generation = undefined;
-    this.host.clearInjection(PROMPT_ID);
+    this.binding = undefined;
+    if (!this.generation?.ignored || this.store.session()?.scope.key !== this.host.session()?.scope.key) this.generation = undefined;
+    this.host.clearInjection(PROMPT_ID); this.capabilities.injection = false;
     const loading = this.store.load(); this.notify();
     try {
       await loading;
       if (this.disposed || epoch !== this.loadEpoch) return;
       if (!this.inSync()) throw Error('载入时聊天已切换');
+      this.deferredSetup = !this.enabled();
+      if (this.deferredSetup) { this.phase = 'ready'; this.notify(); return; }
       if (this.store.head()?.handoff && !this.store.hasPending()) { this.phase = 'handoff'; this.notify(); return; }
       if (!this.store.head() && !this.store.hasPending() && this.initialize) {
         const initialized = await this.initialize();
@@ -189,7 +203,7 @@ export class BattleService {
       if (generation && id !== undefined) {
         generation.receivedId = id;
         if (generation.ended) return this.finishGeneration(true);
-      } else { this.bindingMiss ??= '没有收到这次生成开始的事件'; void this.scan(id); this.bindingMiss = undefined; }
+      } else if (this.enabled()) { this.bindingMiss ??= '没有收到这次生成开始的事件'; void this.scan(id); this.bindingMiss = undefined; }
     });
     // 酒馆这里传的是 chat.length（消息条数），不是刚生成那条的序号，所以不读它；只认收到消息时给的序号。
     this.capabilities.generationEnded = bind('GENERATION_ENDED', () => {
@@ -198,15 +212,15 @@ export class BattleService {
       generation.ended = true;
       if (generation.receivedId !== undefined) this.finishGeneration();
     });
-    bind('GENERATION_STOPPED', () => { this.generation = undefined; this.unbound('生成被中止'); });
-    for (const event of ['MESSAGE_EDITED', 'MESSAGE_SWIPED']) bind(event, value => this.unbound('回复被编辑或切换过', messageId(value)));
-    bind('MESSAGE_DELETED', () => { this.binding = undefined; if (this.generation) this.bindingMiss = '生成期间有消息被删除'; void this.reconcileDeletedMessages(); });
+    bind('GENERATION_STOPPED', () => { const ignored = this.generation?.ignored; this.generation = undefined; if (!ignored && this.enabled()) this.unbound('生成被中止'); });
+    for (const event of ['MESSAGE_EDITED', 'MESSAGE_SWIPED']) bind(event, value => { if (this.enabled()) this.unbound('回复被编辑或切换过', messageId(value)); });
+    bind('MESSAGE_DELETED', () => { if (!this.enabled()) return; this.binding = undefined; if (this.generation) this.bindingMiss = '生成期间有消息被删除'; void this.reconcileDeletedMessages(); });
     bind('CHAT_CHANGED', () => { void this.load(); });
-    bind('MESSAGE_SENT', () => this.project());
+    bind('MESSAGE_SENT', () => { if (this.enabled()) this.project(); });
     await this.load();
   }
   private project(): void {
-    if (this.disposed || this.host.hasLegacyRuntime() || !this.inSync() || this.phase === 'loading' || this.phase === 'import' || this.phase === 'handoff' || this.phase === 'error') {
+    if (!this.enabled() || this.disposed || this.host.hasLegacyRuntime() || !this.inSync() || this.phase === 'loading' || this.phase === 'import' || this.phase === 'handoff' || this.phase === 'error') {
       this.host.clearInjection(PROMPT_ID); this.capabilities.injection = false; return;
     }
     const text = this.migration ? '【战阵】当前档案需要核对迁移预览；暂不执行正文档案事件。'
@@ -218,6 +232,7 @@ export class BattleService {
   async transact(update: (before: NarrativeSave) => NarrativeSave, options: { version?: CommandVersion; operationId?: string; allowReview?: boolean; clear?: boolean; messageTags?: MessageTag[]; memoryOnly?: boolean; durable?: boolean; replySave?: ReplySaveWindow } = {}): Promise<PersistReceipt> {
     const version = options.version ?? this.version();
     const reject = (error: string): PersistReceipt => ({ status: 'conflict', operationId: options.operationId ?? '', session: version.session, error });
+    if (!this.enabled()) return reject('当前聊天已关闭战阵');
     // Same chat, archive read and generation: a same-chat object swap since the capture is no change.
     if (this.disposed || version.load !== undefined && version.load !== this.loadEpoch || version.session.scope.key !== this.store.session()?.scope.key
       || version.session.scope.key !== this.host.session()?.scope.key || version.generation !== this.store.head()?.generation) return reject('聊天或存档代次已变化');
@@ -373,6 +388,8 @@ export class BattleService {
     }).then(async receipt => { if (receipt.status === 'confirmed' && receipt.session.scope.key === this.host.session()?.scope.key) await this.load(); return receipt; });
   }
   beginGeneration(): void {
+    if (!this.enabled()) { this.generation = { ended:false, ignored:true }; return; }
+    if (this.generation?.ignored && !this.generation.ended && this.host.isGenerating()) return;
     this.generation = { ended: false }; this.binding = undefined; this.bindingMiss = undefined;
     if (this.phase !== 'ready' || !this.inSync()) {
       this.bindingMiss = '生成开始时' + (this.phase === 'ready' ? '酒馆换了聊天数据，档案要重新读取' : NOT_READY[this.phase] ?? '档案没有就绪');
@@ -386,6 +403,7 @@ export class BattleService {
   }
   /** 这次生成的回复已收到、生成也已结束：把绑定落到这条消息上再扫描。 */
   private finishGeneration(shareHostSave = false): Promise<void> | undefined {
+    if (this.generation?.ignored || !this.enabled()) { this.generation = undefined; return; }
     const id = this.generation!.receivedId!;
     this.generation = undefined;
     if (this.binding) { this.binding.complete = true; this.binding.messageId = this.host.message(id)?.messageId; }
@@ -402,10 +420,12 @@ export class BattleService {
     if (!this.generation) this.bindingMiss = undefined;
   }
   scan(messageId?: number, options: { manual?: boolean; replySave?: ReplySaveWindow } = {}): Promise<void> {
+    if (!this.enabled()) { options.replySave?.prepared(); return Promise.resolve(); }
+    const epoch = this.activationEpoch;
     const chat = this.host.session()?.scope.key, archive = this.bindingArchive;
     let binding = structuredClone(this.binding), miss = this.bindingMiss;
     // Only another chat cancels the scan: the host may swap this chat's objects at any time.
-    const sameChat = () => chat !== undefined && this.host.session()?.scope.key === chat;
+    const sameChat = () => this.enabled() && epoch === this.activationEpoch && chat !== undefined && this.host.session()?.scope.key === chat;
     /** `changed`: the first attempt's source changed during its save; `ids` when that attempt was bound to the generation. */
     const run = async (changed?: { fingerprint: string; excerpt: string; ids?: (string | undefined)[] }): Promise<void> => {
       if (this.disposed || this.host.isGenerating() || !sameChat()) return;

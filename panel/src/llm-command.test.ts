@@ -109,6 +109,10 @@ describe('commander observation and tools', () => {
     }) as unknown as typeof fetch;
     const enemyController = new LlmCommandController(COMMAND_PROMPTS, () => {}, request, 'enemy');
     const thirdController = new LlmCommandController(COMMAND_PROMPTS, () => {}, request, 'neutral');
+    const thirdOnly = {...settings, commandFactions:{enemy:false, neutral:true}};
+    expect(enemyController.available(b, thirdOnly, enemy)).toBe(false);
+    expect(thirdController.available(b, thirdOnly, third)).toBe(true);
+    expect(await enemyController.prepare(b, [], {}, thirdOnly, () => true)).toBeUndefined();
     await expect(thirdController.small(b, enemy, settings, () => true)).rejects.toThrow('其他阵营');
     const first = await enemyController.small(b, enemy, settings, () => true); applyBattleStep(b, first!);
     expectedSide = 'neutral';

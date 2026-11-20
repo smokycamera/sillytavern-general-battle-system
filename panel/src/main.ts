@@ -37,7 +37,7 @@ import { stripThinking } from './protocol-syntax.js';
 import { controlPolicy } from '../../engine/src/battle-control.js';
 import { LlmNarrativeScanController } from './llm-narrative-scan.js';
 import { parseProtocol, recoverProtocol } from './protocol.js';
-import { readLlmSettings, saveLlmSettings, llmConnectionKey, llmSettingsView, llmSettingsBackup, resetLlmSettings, parseCommandParameters, COMMAND_THINKING_OFF_PARAMS } from './llm-settings.js';
+import { commandsFaction, readLlmSettings, saveLlmSettings, llmConnectionKey, llmSettingsView, llmSettingsBackup, resetLlmSettings, parseCommandParameters, COMMAND_THINKING_OFF_PARAMS } from './llm-settings.js';
 import { setLlmWorldbookSource } from './llm-worldbooks.js';
 import { LlmWorldbookPicker } from './llm-worldbooks-view.js';
 import { renderLlmSettings } from './llm-settings-view.js';
@@ -911,7 +911,13 @@ async function autoSmall(b: SmallBattle): Promise<void> {
     else {
       const valid = battleStepGuard(b);
       const side = b.active.side, commander = side === 'ally' ? undefined : llmCommanders[side];
-      const settings = llmSettingsView().settings, commandState = state.encounterContext?.llmCommanders?.[side];
+      const settings = llmSettingsView().settings;
+      if (side !== 'ally' && !smallActorBlocked(b) && !['charmed','confused'].includes(controlPolicy(b.active) ?? '')
+          && !stateCommanders()[side] && llmCommanders[side].canPrepare(b, settings)) {
+        await ensureBattleCommander(b, side);
+        if (!valid()) return;
+      }
+      const commandState = state.encounterContext?.llmCommanders?.[side];
       if (commander && !smallActorBlocked(b) && !['charmed', 'confused'].includes(controlPolicy(b.active) ?? '') && commander.available(b, settings, commandState)) {
         const settingsKey = JSON.stringify(settings);
         try {
@@ -1143,8 +1149,12 @@ function renderWorkspace(scope: RenderScope, tacticalQuery?: TacticalQuerySource
   if (nav.innerHTML !== navHtml) nav.innerHTML = navHtml;
   const saving = battleSaving || !!runtime.saving?.(), blocked = saving ? undefined : runtime.writeBlockReason?.();
   const saveMessage = saving ? '保存中…' : blocked ? esc(blocked) : state.saveReceipt?.status === 'failed' ? '未保存：' + esc(state.saveReceipt.error ?? '存储不可用') : state.saveReceipt?.memoryOnly ? '开局已保存' : state.saveReceipt?.status === 'local-only' ? '已保存本地 · 酒馆待确认' : state.saveReceipt ? '已保存' : '准备就绪';
-  const statusHtml = `<span data-role="save-status" class="${blocked || state.saveReceipt?.status === 'failed' ? 'save-failed' : ''}">${saveMessage}</span>${state.saveReceipt?.status === 'failed' ? '<button data-action="save-retry">重试保存</button>' : ''}${blocked && runtime.reloadArchive ? '<button data-action="archive-reload">重新读取存档</button>' : ''}<button data-action="theme-toggle" aria-label="切换深浅主题">明暗</button>`;
+  const enabled = runtime.isEnabled?.() !== false;
+  const toggle = runtime.setEnabled ? `<button data-action="plugin-toggle" aria-label="当前聊天启用战阵" aria-pressed="${enabled}">战阵：${enabled ? '开' : '关'}</button>` : '';
+  const statusHtml = `<span data-role="save-status" class="${blocked || state.saveReceipt?.status === 'failed' ? 'save-failed' : ''}">${enabled ? saveMessage : ''}</span>${enabled && state.saveReceipt?.status === 'failed' ? '<button data-action="save-retry">重试保存</button>' : ''}${enabled && blocked && runtime.reloadArchive ? '<button data-action="archive-reload">重新读取存档</button>' : ''}${toggle}<button data-action="theme-toggle" aria-label="切换深浅主题">明暗</button>`;
   const status = app.querySelector('.app-state')!; if(status.innerHTML !== statusHtml)status.innerHTML=statusHtml;
+  for (const region of app.querySelectorAll<HTMLElement>('#workspace-navigation, #workspace-notices, .workspace-main, #workspace-dialog')) region.hidden = !enabled;
+  if (!enabled) return;
   const latest = state.proposals.at(-1), failure = latest && ['rejected','stale','unresolved'].includes(latest.status) ? latest.reason : undefined;
   const notices = app.querySelector<HTMLElement>('#workspace-notices')!;
   const noticeHtml = (controller.migrationReview() ? renderMigrationReview() : '') + (pendingCount ? `<div class="workspace-notice"><span>剧情带来 ${pendingCount} 项待处理变更</span><button data-action="workspace-tab" data-tab="units">查看变更</button></div>` : '') + (failure ? `<div class="workspace-notice narrative-alert" role="alert"><span>${esc(failure.slice(0,160))}</span><button data-action="narrative-review">查看记录</button></div>` : '');
@@ -1203,7 +1213,7 @@ function renderCommanderLetters(battle: SmallBattle | MassBattle, command: Comma
 function letterRecipients(b = currentBattle()): ('enemy' | 'neutral')[] {
   const settings = llmSettingsView().settings;
   if (!b || b.isOver() || !settings.enabled || !settings.commandEnemy) return [];
-  return (['enemy', 'neutral'] as const).filter(side => !!stateCommanders()[side] && fightingSides(b).includes(side));
+  return (['enemy', 'neutral'] as const).filter(side => commandsFaction(settings, side) && !!stateCommanders()[side] && fightingSides(b).includes(side));
 }
 function renderLetterDialog(): string {
   const b = currentBattle(), draft = letterDraft;
@@ -2539,6 +2549,12 @@ async function handleAction(e: Event): Promise<void> {
     if (WORKSPACES.some(([id]) => id === tab)) { workspaceTab = tab as WorkspaceTab; showWorkspace(workspaceTab); render('none'); }
     return;
   }
+  if (act === 'plugin-toggle') {
+    stopAutomation(); narrativeScanner.cancel();
+    try { await runtime.setEnabled?.(runtime.isEnabled?.() === false); }
+    catch (error) { toast(error instanceof Error ? error.message : String(error)); }
+    render(); return;
+  }
   if (act === 'theme-toggle') { const theme = document.body.dataset.theme === 'light' ? 'dark' : 'light'; document.body.dataset.theme = theme; runtime.setTheme?.(theme); return; }
   if (act === 'loadout-skills' || act === 'loadout-skills-close') {
     if (act === 'loadout-skills') {
@@ -3050,7 +3066,12 @@ async function resolveMassRound(expectedRound: number, expectedSeed?: string): P
     if (b.rules.resolutionVersion === 'v2') {
       const snapshot = structuredClone(b.toSnapshot()), drafts = structuredClone(state.orderDraft), valid = battleStepGuard(b);
       try {
-        const settings = llmSettingsView().settings, commandState = state.encounterContext?.llmCommanders?.enemy, settingsKey = JSON.stringify(settings), llmCommander = llmCommanders.enemy;
+        const settings = llmSettingsView().settings;
+        if (!stateCommanders().enemy && llmCommanders.enemy.canPrepare(b, settings)) {
+          await ensureBattleCommander(b, 'enemy');
+          if (!valid()) return;
+        }
+        const commandState = state.encounterContext?.llmCommanders?.enemy, settingsKey = JSON.stringify(settings), llmCommander = llmCommanders.enemy;
         const command = llmCommander.available(b, settings, commandState)
           ? await llmCommander.mass(b, commandState!, settings, () => valid() && JSON.stringify(readLlmSettings()) === settingsKey) : undefined;
         if (!valid()) return;
@@ -3195,8 +3216,13 @@ async function startMassBattle(context?:LlmEncounterContext):Promise<void> {
     (await persist());
 }
 
+async function ensureBattleCommander(battle: SmallBattle | MassBattle, side: 'enemy' | 'neutral'): Promise<void> {
+  const context = await prepareLlmCommanders(battle, state.encounterContext, undefined, battle, side);
+  if (currentBattle() === battle && context) state.encounterContext = context;
+}
+
 async function prepareLlmCommanders(battle: SmallBattle | MassBattle, context?: LlmEncounterContext,
-  preparation?: { setup: EncounterSetup; roster: Combatant[] }, expectedBattle: SmallBattle | MassBattle | null = null): Promise<LlmEncounterContext | undefined> {
+  preparation?: { setup: EncounterSetup; roster: Combatant[] }, expectedBattle: SmallBattle | MassBattle | null = null, onlySide?: 'enemy' | 'neutral'): Promise<LlmEncounterContext | undefined> {
   const settings = llmSettingsView().settings;
   if (!settings.enabled || !settings.commandEnemy || battle.rules.resolutionVersion !== 'v2') return context;
   const identity = adapter.identity(), namespace = adapter.namespace(), generation = controller.inventoryContext(),
@@ -3208,7 +3234,7 @@ async function prepareLlmCommanders(battle: SmallBattle | MassBattle, context?: 
   const setup = preparation?.setup ?? playerPreparationInputs().setup, roster = preparation?.roster ?? state.roster;
   const commands: NonNullable<LlmEncounterContext['llmCommanders']> = {};
   for (const side of ['enemy', 'neutral'] as const) {
-    if (!battle.combatants.some(u => u.side === side && u.hp > 0 && u.status === 'ready')) continue;
+    if (onlySide && side !== onlySide || !commandsFaction(settings, side) || !battle.combatants.some(u => u.side === side && u.hp > 0 && u.status === 'ready')) continue;
     const command = await llmCommanders[side].prepare(battle, narrative, { objectiveMode: context?.objectiveMode ?? setup.objectiveMode,
       field: context?.field ?? setup.field, commander: context?.commanders?.[side] }, settings, valid);
     if (!valid()) throw Error('准备信息已变化，尚未开战');
@@ -3217,7 +3243,7 @@ async function prepareLlmCommanders(battle: SmallBattle | MassBattle, context?: 
   if (!Object.keys(commands).length) return context;
   const base = context ?? encounterRequest({ roster, setup: { ...setup, mode: battle instanceof SmallBattle ? 'small' : 'mass' },
     settings: { ...normalizeContextSettings(), enemy: 'manual', scene: 'manual' }, messages: [], windowSize: 0, roles: [], phase: 'preparation' }).base;
-  return { ...base, llmCommanders: commands };
+  return { ...base, llmCommanders: onlySide ? {...context?.llmCommanders, ...commands} : commands };
 }
 
 const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
@@ -4034,7 +4060,7 @@ async function afterSmallAction(endTurn = true): Promise<void> {
 document.addEventListener('click', e => {
   const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
   if (!action) return;
-  if (['workspace-tab', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'grid-overview', 'modal-stop', 'llm-stop', 'llm-command-stop', 'llm-notes', 'llm-notes-close', 'letter-open', 'letter-close', 'llm-models', 'ai-scan', 'ai-scan-confirm', 'ai-scan-cancel', 'narrative-error', 'narrative-recognized'].includes(action) || action.startsWith('worldbook-')) { void handleAction(e); return; }
+  if (['workspace-tab', 'plugin-toggle', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'grid-overview', 'modal-stop', 'llm-stop', 'llm-command-stop', 'llm-notes', 'llm-notes-close', 'letter-open', 'letter-close', 'llm-models', 'ai-scan', 'ai-scan-confirm', 'ai-scan-cancel', 'narrative-error', 'narrative-recognized'].includes(action) || action.startsWith('worldbook-')) { void handleAction(e); return; }
   if (MAP_INSPECTION.includes(action)) {
     if (uiBusy) { toast('正在保存上一项操作，请稍候…'); return; }
     try { inspectBattleMap((e.target as HTMLElement).closest<HTMLElement>('[data-action]')!); }
@@ -4331,12 +4357,16 @@ document.addEventListener('change', e => {
     } catch (error) { toast(error instanceof Error ? error.message : '世界书选择保存失败'); }
     return;
   }
-  if (e.target instanceof HTMLInputElement && ['llm-enemy-command', 'llm-map-design', 'llm-vip'].includes(e.target.dataset.role ?? '')) {
+  if (e.target instanceof HTMLInputElement && ['llm-enemy-command', 'llm-faction-enemy', 'llm-faction-neutral', 'llm-map-design', 'llm-vip'].includes(e.target.dataset.role ?? '')) {
     try {
       const settings = readLlmSettings();
       if (e.target.dataset.role === 'llm-map-design') settings.designMap = e.target.checked;
       else if (e.target.dataset.role === 'llm-vip') settings.selectVip = e.target.checked;
-      else settings.commandEnemy = e.target.checked;
+      else if (e.target.dataset.role === 'llm-enemy-command') settings.commandEnemy = e.target.checked;
+      else {
+        const side = e.target.dataset.role === 'llm-faction-enemy' ? 'enemy' : 'neutral';
+        settings.commandFactions = { ...settings.commandFactions, [side]: e.target.checked };
+      }
       saveLlmSettings(settings); stopAutomation(); llmDiagnostic = '已保存'; render('view');
     } catch (error) { toast(error instanceof Error ? error.message : '保存失败'); }
     return;

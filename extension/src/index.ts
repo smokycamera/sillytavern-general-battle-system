@@ -54,15 +54,27 @@ async function startRuntime() {
   if (disposed) { host.dispose(); unlock(); return; }
   const worldbooks = createWorldbookSource(() => host.context());
   stopWorldbookSource = () => worldbooks.dispose?.();
+  const disabledChats = new Set(extensionPreferences.read().disabledChats);
+  const enabled = () => {
+    const scope = host.session()?.scope.key;
+    return !!scope && !disabledChats.has(scope);
+  };
+  let installedForChat: boolean | undefined;
   let worldbookMode: 'native' | 'depth' = 'native';
   const applyWorldbook = (worldbook = extensionPreferences.read().worldbook) => {
     stopWorldbook();
-    const installed = installEmbeddedWorldbook(host, worldbook);
+    stopWorldbook = () => {};
+    const installed = installEmbeddedWorldbook(host, worldbook, enabled);
     stopWorldbook = installed; worldbookMode = installed.mode;
   };
   const worldbookView = () => ({ ...embeddedWorldbookSettingsView(extensionPreferences.read().worldbook), injectionMode: worldbookMode });
-  applyWorldbook();
-  stopDisplay = installBattleMessageDisplay(host, windowHost, document);
+  const syncChatHooks = () => {
+    const active = enabled();
+    if (active === installedForChat) return;
+    installedForChat = active;
+    applyWorldbook(); stopDisplay();
+    stopDisplay = active ? installBattleMessageDisplay(host, windowHost, document) : () => {};
+  };
   const store = new NativeStore(host, new IndexedDbJournal());
   const backups = new IndexedDbSourceBackups();
   const importer = new LegacyImporter(host, store, backups);
@@ -72,10 +84,18 @@ async function startRuntime() {
     preview = await importer.preview();
     if (preview.kind === 'empty') return (await importer.adopt(preview, 'import')).status === 'confirmed';
     return false;
-  });
+  }, enabled);
   const current = service;
   windowHost.__tavernBattleNative = {
     service: current,
+    async setEnabled(active) {
+      const scope = host.session()?.scope.key;
+      if (!scope) throw Error('请先打开角色聊天');
+      if (active) disabledChats.delete(scope); else disabledChats.add(scope);
+      extensionPreferences.write({disabledChats:[...disabledChats]});
+      syncChatHooks();
+      await current.activationChanged();
+    },
     worldbooks,
     messages: new NativeMessages(host, () => current.canWrite()),
     open: () => panel.open(),
@@ -153,6 +173,8 @@ async function startRuntime() {
     await reload();
   };
   stop = current.listen(state => {
+    syncChatHooks();
+    if (host.session() && !enabled()) { panel.showStatus(''); panel.showPanel(); return; }
     if (host.hasLegacyRuntime()) { panel.showStatus('检测到脚本版战阵仍在运行。停用该脚本后刷新页面，再使用原生扩展。', [{ label: '导出当前档案', run: exportCurrent }], true); return; }
     if (state.phase === 'loading') panel.showStatus('正在读取当前聊天档案…', [], true);
     else if (state.phase === 'import') {

@@ -36,7 +36,8 @@ describe('embedded worldbook', () => {
   it('uses the native global pipeline, preserving all source metadata and leaving external books untouched', async () => {
     const f = nativeFixture();
     f.context.eventTypes!.WORLDINFO_ENTRIES_LOADED = 'worldinfo';
-    const stop = installEmbeddedWorldbook(f.host);
+    let enabled = true;
+    const stop = installEmbeddedWorldbook(f.host, undefined, () => enabled);
     expect(stop.mode).toBe('native');
     expect(f.context.setExtensionPrompt).not.toHaveBeenCalled();
     const external = structuredClone(Object.values(worldbook.entries));
@@ -54,6 +55,8 @@ describe('embedded worldbook', () => {
     // Downstream regex/scanning must not mutate future generations or defaults.
     additions[0]!.content = 'host transformed';
     expect(embeddedWorldbookEntries()[0]!.content).toBe(worldbook.entries['0'].content);
+    enabled = false; await f.emit('worldinfo', payload);
+    expect(payload.globalLore).toEqual(original);
     stop(); expect(f.handlers.get('worldinfo')?.size).toBe(0);
   });
 

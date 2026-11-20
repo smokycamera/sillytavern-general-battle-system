@@ -8,7 +8,7 @@ import { canSpot } from '../../engine/src/observation.js';
 import { unitLineOfSight, TERRAIN_NAMES, type Terrain } from '../../engine/src/small/spatial.js';
 import { groundHeightAt, unitHeight } from '../../engine/src/small/height-map.js';
 import { intactStructure, obstructionHeight, STRUCTURE_NAMES, type FieldStructure } from '../../engine/src/small/layers.js';
-import { llmConnection, commandRequestOptions, type LlmSettings } from './llm-settings.js';
+import { commandsFaction, llmConnection, commandRequestOptions, type LlmSettings } from './llm-settings.js';
 import { CONTEXT_TIMEOUT_MS } from './llm-context.js';
 import { waitForJev, JEV_RETRY_DELAY_MS } from './jev-retry.js';
 import { battleAbilities } from './battle-skills.js';
@@ -361,7 +361,7 @@ export class LlmCommandController {
     return true;
   }
   available(b: Battle, settings: LlmSettings, state?: CommanderState): boolean {
-    return settings.enabled && settings.commandEnemy === true && state?.side === this.side && state.battleSeed === b.seed && b.rules.resolutionVersion === 'v2'
+    return commandsFaction(settings, this.side) && state?.side === this.side && state.battleSeed === b.seed && b.rules.resolutionVersion === 'v2'
       && b.combatants.some(u => u.side === this.side && u.hp > 0 && ['ready', 'routing'].includes(u.status) && !u.moraleState?.forcedRetreat)
       && (state.decision?.round === b.round || state.memory.diplomacyRound !== b.round || incomingDiplomacy(b, this.side).length > 0 || playerLetters(b, this.side, state.memory.letterId).length > 0)
       && this.playerReady(b, state) && this.pausedRounds.get(b) !== b.round && !this.failed.has(this.key(b, settings));
@@ -398,7 +398,12 @@ export class LlmCommandController {
       } catch (error) { if (error instanceof JevAnswerError) previousAnswer = error.previousAnswer; problem = error instanceof Error ? error.message : '指挥官简报格式无效'; throw error; }
     }, valid, signal);
   }
+  canPrepare(b: Battle, settings: LlmSettings): boolean {
+    return b.rules.resolutionVersion === 'v2' && commandsFaction(settings, this.side)
+      && !this.failed.has(this.key(b, settings)) && this.pausedRounds.get(b) !== b.round;
+  }
   async prepare(b: Battle, narrative: unknown, task: unknown, settings: LlmSettings, valid: () => boolean): Promise<CommanderState | undefined> {
+    if (!this.canPrepare(b, settings)) return;
     return this.run(b, settings, valid, '正在生成指挥官…', async signal => ({ battleSeed: b.seed, side: this.side, brief: await this.ask(this.prompts.preparation,
       { perspective: { self: 'friendly', playerFaction: perspective('ally', this.side),
         controlledUnits: b.combatants.filter(u => u.side === this.side).map(u => ({ id: u.id, name: u.name })) },

@@ -197,7 +197,7 @@ export function installEmbeddedWorldbook(host: {
   clearInjection(id: string): void;
   subscribe?(kind: string, callback: (...args: unknown[]) => void): { available: boolean; stop(): void };
   hasLegacyRuntime?(): boolean;
-}, value?: EmbeddedWorldbookSettings): WorldbookInstallation {
+}, value?: EmbeddedWorldbookSettings, enabled: () => boolean = () => true): WorldbookInstallation {
   const native = host.subscribe?.('WORLDINFO_ENTRIES_LOADED', payload => {
     if (host.hasLegacyRuntime?.() || !payload || typeof payload !== 'object') return;
     const { globalLore } = payload as { globalLore?: unknown };
@@ -206,7 +206,7 @@ export function installEmbeddedWorldbook(host: {
       for (let i = globalLore.length - 1; i >= 0; i--) {
         if ([EMBEDDED_WORLD_NAME, CUSTOM_WORLD_NAME].includes(globalLore[i]?.world)) globalLore.splice(i, 1);
       }
-      globalLore.push(...embeddedWorldbookEntries(value));
+      if (enabled()) globalLore.push(...embeddedWorldbookEntries(value));
     }
   });
   if (native?.available) return Object.assign(() => native.stop(), { mode: 'native' as const });
@@ -214,7 +214,7 @@ export function installEmbeddedWorldbook(host: {
   // Older hosts without the native hook retain depth/role and internal order.
   // Keyword entries stay native-only; the editor disables that option on old hosts.
   const installed: string[] = [];
-  for (const prompt of buildEmbeddedWorldbook(value)) {
+  for (const prompt of enabled() ? buildEmbeddedWorldbook(value) : []) {
     if (host.inject(prompt.id, prompt.content, prompt)) installed.push(prompt.id);
   }
   return Object.assign(() => { for (const id of installed) host.clearInjection(id); }, { mode: 'depth' as const });

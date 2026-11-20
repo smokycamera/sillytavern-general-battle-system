@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
+import { BattleService } from '../src/battle-service.js';
 import { nativeFixture } from './native-fixture.js';
 import { generateUnit, SmallBattle, V4_OVERFLOW_D20 } from '../../engine/src/index.js';
 import { unitRecordFromCombatant } from '../../panel/src/unit-state.js';
@@ -255,4 +256,27 @@ it('统一数值先预览，宿主确认保存后才替换档案，并保留可�
   const upgraded=f.service.snapshot();expect(upgraded.storage![0]!.base.hpMax).toBe(988);expect(upgraded.storage![0]!.hp).toBe(981);
   expect((upgraded.migrationBackups as {source:typeof before}[]).at(-1)?.source.storage).toEqual(before.storage);
   expect((await f.service.restoreMigrationBackup()).status).toBe('confirmed');expect(f.service.snapshot().storage).toEqual(before.storage);
+});
+
+it('pauses chat injection and ignores replies generated while switched off', async () => {
+  const f = nativeFixture(), disabled = new Set<string>();
+  const service = new BattleService(f.host, f.store, undefined, () => !disabled.has(f.context.chatId!));
+  cleanups.push(() => service.dispose());
+  await service.start(); await service.setStorySync(true);
+  const before = service.snapshot();
+  disabled.add('a'); await service.activationChanged();
+  expect(service.capabilities.injection).toBe(false);
+  await f.emit('GENERATION_STARTED', 'normal', {}, false);
+  f.context.chat!.push({is_user:false,mes:'<tb>\n<add item="药草"/>\n</tb>',gen_finished:'done'});
+  await service.scan(0);
+  expect(service.snapshot()).toEqual(before);
+  disabled.delete('a'); await service.activationChanged();
+  expect(service.capabilities.injection).toBe(true);
+  await f.emit('GENERATION_ENDED'); await f.emit('MESSAGE_RECEIVED',0);
+  expect(service.snapshot().proposals).toEqual(before.proposals);
+  disabled.add('a'); f.switchTo('b'); await service.load();
+  expect(service.capabilities.injection).toBe(true);
+  f.switchTo('a'); await service.load(); expect(service.capabilities.injection).toBe(false);
+  disabled.delete('a'); await service.activationChanged();
+  expect(service.snapshot()).toEqual(before);
 });

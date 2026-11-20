@@ -10,6 +10,7 @@ import { createWorldbookSource, type WorldbookSource } from '../../host/src/worl
 
 export interface NativeRuntime {
   service: BattleService;
+  setEnabled?(active: boolean): Promise<void>;
   messages: NativeMessages;
   open(): void;
   close(): void;
@@ -72,6 +73,7 @@ export function createPanelRuntime(): PanelRuntime {
   };
   return { adapter, controller, resident: true, native: true,
     worldbooks,
+    isEnabled: service.enabled, setEnabled: runtime.setEnabled,
     recentNarrative: () => {
       const count = host.context().chat?.length ?? 0;
       return Array.from({length: Math.min(count, 100)}, (_, i) => host.message(count - Math.min(count, 100) + i)).flatMap(m => m ? [{ id: m.messageId + ':' + m.swipeId, role: m.role, text: m.text, completed: m.complete }] : []);
