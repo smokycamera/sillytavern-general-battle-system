@@ -1,3 +1,4 @@
+import { isBodyKind } from '../../engine/src/vehicle-size.js';
 import { baseMechanism, SHIELD_CLASSES, classMismatchHint, type ShieldClass } from '../../engine/src/data/weapons.js';
 import { parseEnhancementSuffix, enhancementLabel, resolveBonusStat, BONUS_NAMES, type Enhancements } from '../../engine/src/enhancements.js';
 import { WEAPON_CLASSES, resolveWeaponClass, parseSkillMechanism, skillMechanismId, skillMechanismFromId, narrativeTrait, isGradedTrait, ITEM_FORM_NAMES, itemSpecText, compileItem,
@@ -49,7 +50,7 @@ function equipmentSpecification(base: string, power: number, suffix: string, att
   const bonuses = parseEnhancementSuffix('L' + power + suffix, kind).bonuses;
   const quality = attrs.quality === undefined ? undefined : Number(attrs.quality);
   if (quality !== undefined && (!/^\d+$/.test(attrs.quality!) || !Number.isInteger(quality) || quality < 1 || quality > 5)) throw new Error('品质必须为1–5');
-  if (attrs.body !== undefined && !['human', 'large', 'vehicle', 'giant'].includes(attrs.body)) throw new Error('未知物品体量');
+  if (attrs.body !== undefined && !isBodyKind(attrs.body)) throw new Error('未知物品体量');
   const common = { bonuses, power, ...(quality === undefined ? {} : { quality }), ...(attrs.body === undefined ? {} : { body: attrs.body as BodyKind }) };
   if (attrs.stabilized !== undefined && !['true', 'false'].includes(attrs.stabilized)) throw new Error('stabilized 必须是 true/false');
   if (attrs.protection !== undefined && !['balanced', 'kinetic', 'thermal', 'arcane'].includes(attrs.protection)) throw new Error('未知防护类型');

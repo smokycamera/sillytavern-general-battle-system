@@ -1,9 +1,10 @@
+import { BODY_LABELS } from '../../engine/src/vehicle-size.js';
 import { isCannonWeapon } from '../../engine/src/loadout.js';
 import { parseEnhancementSuffix, enhancementLabel, ENHANCEMENT_STATS, BONUS_NAMES, type BonusKind, type Enhancements } from '../../engine/src/enhancements.js';
 import { WEAPON_CLASSES, SHIELD_CLASSES, ITEM_FORM_NAMES, skillMechanismName, traitRegistry, type BodyKind, type ItemForm, type ItemMechanics, type ItemSpecification } from '../../engine/src/index.js';
 import {POWER_ANCHORS} from '../../engine/src/power-anchors.js';
 import { parseItemSpecification } from './item-spec.js';
-export const bodyChoices: [string, string][] = [['human', '普通人形'], ['large', '大型生物'], ['vehicle', '车辆平台'], ['giant', '巨型生物']];
+export const bodyChoices: [string, string][] = Object.entries(BODY_LABELS);
 export const armorChoices: [string, string][] = ['无甲', '轻甲', '中甲', '重甲', '超重甲'].map((name, i) => [String(i), name]);
 /** 道具：form 形态，effect 效果写法（技能机制、特质或“佩戴”），与正文 spec 同一套写法。 */
 export interface EquipmentDraft { bonuses?: Enhancements; name: string; kind: string; mechanism: string; power: string; quality: string; body: string; tier: string; enchantment: string; stabilized: boolean; profile: string; form: ItemForm; effect: string }

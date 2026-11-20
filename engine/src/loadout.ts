@@ -1,3 +1,5 @@
+import { isBodyKind, isVehicleBody } from './vehicle-size.js';
+import { availableCopies, batchWeapons } from './equipment-batches.js';
 import { phase2Traits } from './trait-level-model.js';
 import { effectiveTraitLevel } from './trait-sources.js';
 import { activeTraitIds, activeConditionIds, traitPrerequisiteReason } from './trait-sources.js';
@@ -27,20 +29,21 @@ export function weaponReloadTurns(weapon?: Weapon): number {
   return weapon?.reload ?? (['firearm','throwing'].includes(baseMechanism(weapon)??'') ? 1 : 0);
 }
 /** 近战只能来自真实近战武器，副槽不等于近战，也不能把炮管当剑。 */
-export function meleeWeapon(unit: Pick<Combatant, 'weapon' | 'sidearm'>): Weapon | undefined {
+export function meleeWeapon(unit: Pick<Combatant, 'weapon' | 'sidearm'> & Partial<Combatant>): Weapon | undefined {
+  if (unit.equipmentBatches && unit.scale && unit.hp !== undefined) return batchWeapons(unit as Combatant).find(w=>!isRangedWeapon(w) && availableCopies(unit as Combatant,w.id)>0);
   return [unit.weapon, unit.sidearm].find((weapon) => weapon && !isRangedWeapon(weapon));
 }
 /** 骑乘是显式长期配置；没有坐骑时，骑射标签不制造物理平台。 */
 export function validateMount(unit: Pick<Combatant, 'mount' | 'body' | 'speedTier'>): void {
   if (unit.speedTier !== undefined && (!Number.isSafeInteger(unit.speedTier) || unit.speedTier < 1 || unit.speedTier > 5)) throw new Error('速度档位必须为1–5整数');
-  if (unit.body !== undefined && !['human', 'large', 'vehicle', 'giant'].includes(unit.body)) throw new Error('身体配置损坏');
+  if (unit.body !== undefined && !isBodyKind(unit.body)) throw new Error('身体配置损坏');
   if (unit.mount !== undefined && typeof unit.mount !== 'boolean') throw new Error('骑乘配置需要布尔值');
 }
 export function mountedShooting(unit: Combatant, weapon?: Weapon): boolean {
   return unit.rulesVersion === 'v2' && unit.mount === true
     && activeTraitIds(unit).includes('mounted-archer') && !unit.airborne && !unit.suppression
     && !activeConditionIds(unit).some((id) => ['slowed', 'stunned', 'restrained'].includes(id))
-    && (weapon ? mobileRangedWeapon(weapon) : [unit.weapon, unit.sidearm].some(mobileRangedWeapon));
+    && (weapon ? mobileRangedWeapon(weapon) : batchWeapons(unit).some(w=>mobileRangedWeapon(w) && availableCopies(unit,w.id)>0));
 }
 /** 身法：轻中装人形或大型身体，脱离近战不受借机攻击；压制、减速、定身、眩晕与空中时不能借此脱离，仍受警戒。 */
 export function agileDisengage(unit: Combatant): boolean {
@@ -51,7 +54,7 @@ export function mobileRangedWeapon(weapon?: Weapon): boolean {
   return isRangedWeapon(weapon) && (weapon?.load ?? 99) <= 2 && !weaponReloadTurns(weapon);
 }
 export function vehicleShooting(unit: Combatant, weapon?: Weapon): boolean {
-  return unit.rulesVersion === 'v2' && unit.body === 'vehicle' && !unit.airborne && !unit.suppression
+  return unit.rulesVersion === 'v2' && isVehicleBody(unit.body) && !unit.airborne && !unit.suppression
     && (weapon ? !!weapon.recipe?.stabilized && isRangedWeapon(weapon) : [unit.weapon, unit.sidearm].some((w) => !!w?.recipe?.stabilized && isRangedWeapon(w)));
 }
 export function steadyMovingShot(unit: Combatant, weapon?: Weapon): boolean {

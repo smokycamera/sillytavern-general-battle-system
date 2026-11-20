@@ -1,3 +1,4 @@
+import { isVehicleBody } from '../vehicle-size.js';
 import { validatePlatform } from '../platforms.js';
 import { GRADED_SHIELD_LOAD, gradedLifeScale, gradedNumbers, unitMultiplier, unitStep, validateNumericModel } from '../numeric-model.js';
 import { modifiedEquipmentLoad, revisedLoad, validateLoadModel } from '../load-model.js';
@@ -66,7 +67,7 @@ export function generateMechanismUnit(raw: GenerateInput, opts: GenOptions): Gen
   const armor = compileArmor({ bonuses: raw.armorBonuses, tier: hasArmor ? raw.armorTier : 0, profile: raw.armorProfile, armorId: raw.armorId, power: raw.armorLevel }, { id: `${id}:armor`, name: raw.armorName, seed: seed + ':armor', body, quality, noVariance: opts.noVariance, varianceVersion: opts.varianceVersion, damageModel: raw.damageModel, numericModel: raw.numericModel, loadModel: raw.loadModel });
   const tier = armor.tier, armorPower = armor.level!;
   const numeric = { ...raw, genAudit: { variance } } as Combatant;
-  const shield: Combatant['shield'] = raw.shield ? { id: `${id}:shield`, load: (revisedLoad(raw) || gradedNumbers(raw) && body !== 'vehicle' ? GRADED_SHIELD_LOAD : { buckler: 1, shield: 2, 'tower-shield': 3, 'energy-shield': 1 })[raw.shieldClass ?? 'shield']! } : undefined;
+  const shield: Combatant['shield'] = raw.shield ? { id: `${id}:shield`, load: (revisedLoad(raw) || gradedNumbers(raw) && !isVehicleBody(body) ? GRADED_SHIELD_LOAD : { buckler: 1, shield: 2, 'tower-shield': 3, 'energy-shield': 1 })[raw.shieldClass ?? 'shield']! } : undefined;
   if (shield && (raw.shieldClass !== undefined || raw.shieldLevel !== undefined || raw.shieldName !== undefined || raw.shieldBonuses !== undefined)) {
     shield.name = raw.shieldName ?? '盾牌';
     shield.recipe = equipmentRecipe(raw.shieldClass ?? 'shield', raw.shieldLevel ?? 3, { id: shield.id, seed: seed + ':shield', name: shield.name, body, quality, bonuses: raw.shieldBonuses, noVariance: opts.noVariance, varianceVersion: opts.varianceVersion, damageModel: raw.damageModel, numericModel: raw.numericModel, loadModel: raw.loadModel });

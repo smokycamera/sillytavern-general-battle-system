@@ -1,3 +1,4 @@
+import { optionWeaponMode, type WeaponMode } from '../../engine/src/equipment-batches.js';
 import { SmallBattle, MassBattle, cellLabel, gridColumnIndex, FORMATION_NODES, type Combatant, type Order } from '../../engine/src/index.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import { battleAbilities } from './battle-skills.js';
@@ -11,7 +12,7 @@ export interface GameAction {
   direction?: 'advance' | 'withdraw';
   targetId?: string;
   abilityId?: string;
-  weaponMode?: 'primary' | 'sidearm';
+  weaponMode?: WeaponMode;
   enabled?: boolean;
 }
 type Battle = SmallBattle | MassBattle;
@@ -138,7 +139,7 @@ export function executeSmallGameAction(b: SmallBattle, actorId: string, a: GameA
     }
     case 'brace': b.brace(actorId); break;
     case 'overwatch': b.setOverwatch(actorId); break;
-    case 'reload': b.reloadWeapon(actorId, a.weaponMode === 'sidearm'); break;
+    case 'reload': b.reloadWeapon(actorId,a.weaponMode as WeaponMode | undefined); break;
     case 'suppress': b.suppress(actorId, target()); break;
     case 'retreat': b.retreat(actorId); if (!b.battlefield) b.endTurn(); break;
     case 'takeoff': b.changeFlight(actorId, true); break;

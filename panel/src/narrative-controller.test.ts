@@ -333,7 +333,9 @@ describe('常驻宿主生命周期与故障', () => {
     const before = controller.snapshot();
     fail(true); expect(controller.inventoryAction(equip).status).toBe('failed'); expect(controller.snapshot()).toEqual(before);
     fail(false); expect(controller.inventoryAction(equip).status).not.toBe('failed');
-    expect(controller.snapshot().storage![0]!.snapshot!.weapon!.id).toBe('blade');
+    const armed = controller.snapshot().storage![0]!.snapshot!;
+    expect(armed.weapon?.id).toBe(unit.weapon?.id);
+    expect(armed.equipmentBatches).toContainEqual(expect.objectContaining({id:'blade', qty:1, slot:'primary'}));
     const equipped = controller.snapshot();
     const use = { id: 'heal', expectedRevision: equipped.factRevision!, kind: 'use' as const, unitId: unit.id, itemId: 'dose' };
     fail(true); expect(controller.inventoryAction(use).status).toBe('failed'); expect(controller.snapshot()).toEqual(equipped);

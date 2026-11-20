@@ -87,7 +87,7 @@ describe('繁体中文正文', () => {
     ].join('\n');
     const simplified = parseProtocol(block), result = parseProtocol(traditional);
     expect(result.errors).toEqual([]);
-    const mechanics = (event: object) => JSON.stringify(event, (key, value) => ['raw', 'name', 'weaponName', 'weapon2Name', 'armorName', 'weapon', 'weapon2', 'armor'].includes(key) ? undefined : value);
+    const mechanics = (event: object) => JSON.stringify(event, (key, value) => ['raw', 'name', 'text', 'weaponName', 'weapon2Name', 'armorName', 'weapon', 'weapon2', 'armor'].includes(key) ? undefined : value);
     expect(result.events.map(mechanics)).toEqual(simplified.events.map(mechanics));
     expect(result.events[1]).toMatchObject({ name: '威靈頓公爵', weaponName: '軍官指揮刀', armorName: '英軍將官制服', skills: [{ name: '步兵方陣戰術' }] });
     expect(result.events[3]).toMatchObject({ name: '法國大砲兵連', weaponClass: 'cannon', scale: 'company', body: 'human' });

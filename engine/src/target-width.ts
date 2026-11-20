@@ -1,3 +1,4 @@
+import { baseBody } from './vehicle-size.js';
 import type { Combatant } from './types.js';
 
 /** A target's actual bodies bound weapon participants; identity as hero/company does not. */
@@ -14,6 +15,6 @@ export function targetWidthLimit(target: Combatant, ranged: boolean, model: Targ
   if (model !== TARGET_WIDTH_MODEL) return Infinity;
   const members = target.scale === 'hero' ? 1 : Math.max(0, target.formation?.members ?? target.hp);
   const body = target.mount && (target.body ?? 'human') === 'human' ? 'large' : target.body ?? 'human';
-  const width = SINGLE_TARGET_WIDTH[body][ranged ? 'ranged' : 'melee'];
+  const width = SINGLE_TARGET_WIDTH[baseBody(body)][ranged ? 'ranged' : 'melee'];
   return width * (ranged ? members : Math.sqrt(members));
 }

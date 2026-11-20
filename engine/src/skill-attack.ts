@@ -1,3 +1,6 @@
+import { abilityUseLimit, abilityUsed } from './ability-state.js';
+import { hasVehicleSize } from './vehicle-size.js';
+import { availableCopies, weaponCapacity } from './equipment-batches.js';
 import { bonusRating, bonusMultiplier } from './enhancements.js';
 import { isCohort } from './combat-model.js';
 import { skillWeapon } from './skill-runtime.js';
@@ -21,6 +24,12 @@ import { sameLayer, isAirborne } from './aerial.js';
 const itemParticipants = (ability: Ability, participants: number) => ability.itemDoses === undefined ? participants : Math.min(participants, ability.itemDoses);
 type DamageEffect = Pick<Extract<EffectOp, { op: 'damage' }>, 'baseDice' | 'apDice' | 'shape' | 'tag'>;
 /** 技法与合法基础攻击共用实际武器、通道、穿透和展开，技能P只限制其可发挥预算。 */
+export function chargedAction(context: ObservationContext,actor: Combatant,target: Combatant | undefined,ability: Ability): Ability {
+  if (!ability.equipmentSourceId || !actor.equipmentBatches?.some(b=>b.id===ability.equipmentSourceId)) return ability;
+  const damage = ability.effects.find(e=>e.op==='damage');
+  const participants = target && damage ? skillAttack(context,actor,target,ability,damage).participants ?? 1 : 1;
+  return {...ability,equipmentDoses:Math.max(0,Math.min(Math.ceil(participants),availableCopies(actor,ability.equipmentSourceId),abilityUseLimit(actor,ability)-abilityUsed(actor,ability)))};
+}
 export function skillAttack(context: ObservationContext, actor: Combatant, target: Combatant, ability: Ability, effect: DamageEffect, rules?:AttackOpts['rules']): Pick<AttackOpts, 'abilityDamage' | 'weaponOverride' | 'participants' | 'ranged'> {
   const independentScale = independentSkillDamageScale(actor, ability, rules);
   const damageScale = independentScale === 1 ? ability.damageScale : (ability.damageScale ?? 1) * independentScale;
@@ -31,7 +40,7 @@ export function skillAttack(context: ObservationContext, actor: Combatant, targe
     const cohort=context.units.filter(u=>!attached.has(u.id)&&sameLayer(actor,u)&&(context.mode==='mass'?formationNode(actor).id===formationNode(u).id:u.pos===actor.pos));
     // Independent consumables already paid for each participant. Applying the
     // held weapon's frontage again would discard part of the volley's damage.
-    return {participants:ability.itemDoses ?? sharedParticipants(actor,cohort,width,target),abilityDamage:{...channelBonuses,power:ability.power,accuracy:skillAccuracyBonus(ability),...effect,damageScale,channel:ability.channel,penetration:ability.penetration,delivery:ability.delivery,areaExposure:ability.areaExposure},ranged:ability.delivery!=='melee'};
+    return {participants:Math.min(ability.equipmentDoses ?? Infinity,availableCopies(actor,ability.equipmentSourceId),ability.itemDoses ?? sharedParticipants(actor,cohort,width,target)),abilityDamage:{...channelBonuses,power:ability.power,accuracy:skillAccuracyBonus(ability),...effect,damageScale,channel:ability.channel,penetration:ability.penetration,delivery:ability.delivery,areaExposure:ability.areaExposure},ranged:ability.delivery!=='melee'};
   }
   if (actor.rulesVersion !== 'v2' || !ability.damageBasis) return { abilityDamage: { ...channelBonuses,power:ability.power,accuracy:skillAccuracyBonus(ability),...effect, damageScale,channel: ability.channel, penetration: ability.penetration, delivery: ability.delivery, areaExposure: ability.areaExposure }, ranged: ability.delivery ? ability.delivery !== 'melee' : effect.tag === 'ranged' ? true : undefined };
   let weapon: Weapon | undefined;
@@ -54,7 +63,9 @@ export function skillAttack(context: ObservationContext, actor: Combatant, targe
   const attached = new Set(context.attached?.values() ?? []);
   const cohort = context.units.filter((u) => !attached.has(u.id) && sameLayer(actor, u) && (context.mode === 'mass' ? formationNode(actor).id === formationNode(u).id : u.pos === actor.pos));
   const budget=isCohort(actor)?equipmentBudget*Math.min(1,combatPowerBudget(ability.power??5,actor.damageModel)/combatPowerBudget(weapon.level??5,actor.damageModel)):Math.min(skillBudget,equipmentBudget),scaled=scaledPowerDice(budget);
-  return { weaponOverride: weapon, ranged: isRangedWeapon(weapon), participants: itemParticipants(ability, sharedParticipants(actor, cohort, width, target, isRangedWeapon(weapon))),
+  const frontage = hasVehicleSize(actor.body) && ability.damageBasis === 'weapon'
+    ? weaponCapacity(actor) : sharedParticipants(actor,cohort,width,target,isRangedWeapon(weapon));
+  return { weaponOverride: weapon, ranged: isRangedWeapon(weapon), participants: Math.min(ability.equipmentDoses ?? Infinity,availableCopies(actor,ability.equipmentSourceId),availableCopies(actor,weapon.id),itemParticipants(ability, frontage)),
     abilityDamage: { ...channelBonuses,accuracy:skillAccuracyBonus(ability),...effect, baseDice:actor.combatModel==='cohort-v2'?scaled.dice:cappedDice(budget),damageScale:actor.combatModel==='cohort-v2'?scaled.scale:undefined,apDice: undefined, channel, penetration: Math.max(0,(weapon.penetration ?? 1 + Math.floor((weapon.level ?? 5) / 2)) + bonusRating(ability.bonuses,'penetration',channel)), weaponBased: true } };
 }
 /** 低预算不能被最少一枚d6抬高；向下选取可表达且不超过预算的均值。 */

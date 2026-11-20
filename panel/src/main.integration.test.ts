@@ -20,7 +20,10 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   b.byId('u0').pos = 79; b.byId('u1').pos = 9;
   b.movementSpent.set('u0', 2); b.actedThisTurn.add('u0');
   await f.service.transact(() => ({schemaVersion:2, storage:units.map(u=>unitRecordFromCombatant(u)), rosterIds:units.map(u=>u.id), jevSettings:{mode:'jev'}, autoTurn:false, protagonistId:'u0', battle:{kind:'small',snap:b.toSnapshot()}}));
-  Object.assign(window, {__tavernBattleNative:{service:f.service,messages:{}}, __TAURITAVERN__:{}, SillyTavern:{getContext:()=>f.context}});
+  let pluginOn = true;
+  vi.spyOn(f.service,'enabled').mockImplementation(() => pluginOn);
+  const setEnabled = async (value:boolean) => { pluginOn=value; await f.service.activationChanged(); };
+  Object.assign(window, {__tavernBattleNative:{service:f.service,messages:{},setEnabled}, __TAURITAVERN__:{}, SillyTavern:{getContext:()=>f.context}});
   let release: (() => void) | undefined, delayed = false, breakLayout = 0;
   const request = vi.fn(async (url: unknown, init?: RequestInit) => {
     if (String(url)==='/api/settings/get') return new Response(JSON.stringify({world_names:['测试设定']}));
@@ -45,6 +48,12 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   const input=(role:string,value:string)=>{const el=document.querySelector<HTMLInputElement>(`[data-role="${role}"]`)!;expect(el).not.toBeNull();el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));};
   const select=(role:string,value:string)=>{const el=document.querySelector<HTMLSelectElement>(`[data-role="${role}"]`)!;el.value=value;el.dispatchEvent(new Event('change',{bubbles:true}));};
   const nav=(tab:string)=>document.querySelector<HTMLButtonElement>(`[data-action="workspace-tab"][data-tab="${tab}"]`)!.click();
+  expect(button('plugin-toggle').nextElementSibling).toBe(button('theme-toggle'));
+  button('plugin-toggle').click();
+  expect(document.querySelector<HTMLElement>('.workspace-main')!.hidden).toBe(true);
+  expect(button('plugin-toggle').getAttribute('aria-pressed')).toBe('false');
+  button('plugin-toggle').click();
+  expect(document.querySelector<HTMLElement>('.workspace-main')!.hidden).toBe(false);
   button('grid-endturn').click(); await idle();
   expect(request).not.toHaveBeenCalled();
   const after = SmallBattle.fromSnapshot(f.service.snapshot().battle!.snap);
@@ -61,7 +70,11 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   select('llm-model-list','model-two');select('llm-mode','llm');
   const scaleToggle=()=>document.querySelector<HTMLInputElement>('[data-role="llm-enemy-command"]')!;
   expect(scaleToggle().checked).toBe(false);expect(scaleToggle().disabled).toBe(false);
-  scaleToggle().click();expect(readLlmSettings().commandEnemy).toBe(true);scaleToggle().click();
+  scaleToggle().click();expect(readLlmSettings().commandEnemy).toBe(true);
+  const enemy = document.querySelector<HTMLInputElement>('[data-role="llm-faction-enemy"]')!;
+  expect(enemy.checked).toBe(true); enemy.click();
+  expect(readLlmSettings().commandFactions).toEqual({enemy:false,neutral:true});
+  scaleToggle().click();
   select('llm-command-thinking','off'); await idle();
   const params=()=>document.querySelector<HTMLTextAreaElement>('[data-role="llm-command-params"]')!;
   expect(params().closest('details')!.open).toBe(false);
@@ -125,6 +138,10 @@ it('uses built-in turns for old JEV saves, persists independent connections, and
   expect(button('migration-accept')).not.toBeNull();
   button('migration-accept').click();await idle();
   expect(f.service.snapshot().storage![0]!.snapshot!.damageModel).toBe('wounds-v2');
+  nav('units');
+  expect(f.service.snapshot().unitMigrationWarnings).not.toHaveLength(0);
+  expect(document.querySelector('[data-role="migration-review"]')).toBeNull();
+  expect(document.body.textContent).not.toContain('单位数据未能完整迁移');
   // Exhaust the layout step's own budget, preserving the decision and falling back within this same start.
   const preparationStart=request.mock.calls.length;
   breakLayout=LAYOUT_TRIES;

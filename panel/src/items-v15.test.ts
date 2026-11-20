@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generateUnit, traitRegistry, SmallBattle, standardField, V15_OVERFLOW_D20, activeTraitIds, traitLevel, prepareItemModel, type Combatant } from '../../engine/src/index.js';
+import { abilityUseLimit } from '../../engine/src/ability-state.js';
 import legacy from '../../engine/tests/fixtures/legacy-items-v14.json';
 import { parseItemSpecification, parseSpawnItem, splitSpawnItems, spawnItemText } from './item-spec.js';
 import { parseProtocol } from './protocol.js';
@@ -60,25 +61,25 @@ describe('道具 spec 解析与容错', () => {
 });
 
 describe('spawn 携带道具与收缴', () => {
-  it('每张卡各一套道具，入库归该卡；佩戴、充能自动装上，编队按每卡一件；坏的一项单独略过；开战随身携带', () => {
+  it('每张卡各一套道具，入库归该卡；佩戴、充能自动装上，编队保留配发件数；坏的一项单独略过；开战随身携带', () => {
     const parsed = parseProtocol('<tb><spawn name="掷弹兵连" side="enemy" scale="company" hpMax="30" level="3" weapon="步枪L4" count="2" items="手雷:物理范围投射L4×60,夜视镜:夜战专精L5×30,长剑:剑L3"/></tb>');
     expect(parsed.errors).toEqual([]);
     expect(parsed.warnings.join()).toContain('未采用道具「长剑:剑L3」');
     expect(parsed.canonical).toContain('items="手雷:物理范围投射L4×60,夜视镜:夜战专精L5×30"');
     const { save, notices } = commit(empty(), '<spawn name="掷弹兵连" side="enemy" scale="company" hpMax="30" level="3" weapon="步枪L4" count="2" items="手雷:物理范围投射L4×60,夜视镜:夜战专精L5×30"/>'
       + '<spawn name="游侠" side="ally" scale="hero" level="5" weapon="长弓:弓弩L5" items="精灵斗篷:潜伏、林地专精L6,治疗药水:buff治疗L3×2,火球魔杖:充能魔法范围热能L5×2,金币×30"/>');
-    expect(notices.join()).toContain('「夜视镜」按每卡1件建档');
+    expect(notices).toEqual([]);
     const inventory = prepareInventoryState(save).inventory!;
     const grenadiers = save.storage!.filter((r) => r.name === '掷弹兵连'), ranger = save.storage!.find((r) => r.name === '游侠')!;
     expect(grenadiers).toHaveLength(2);
     for (const card of grenadiers) {
       expect(inventory.filter((i) => i.assignedTo === card.id).map((i) => [i.name, i.qty, i.equippedTo?.slot]).filter(([name]) => ['手雷', '夜视镜'].includes(String(name))))
-        .toEqual([['手雷', 60, undefined], ['夜视镜', 1, 'gear']]);
+        .toEqual([['手雷', 60, undefined], ['夜视镜', 30, 'gear']]);
       expect(card.snapshot!.gear!.map((g) => g.name)).toEqual(['夜视镜']);
       expect(card.archetype).toBe('ranged');
     }
-    expect(ranger.snapshot!.gear!.map((g) => g.name)).toEqual(['精灵斗篷', '火球魔杖', '火球魔杖']);
-    expect(ranger.snapshot!.abilities.filter((a) => a.equipmentSourceId).map((a) => a.usesPerBattle)).toEqual([1, 1]);
+    expect(ranger.snapshot!.gear!.map((g) => g.name)).toEqual(['精灵斗篷', '火球魔杖']);
+    expect(ranger.snapshot!.abilities.filter((a) => a.equipmentSourceId).map(a => abilityUseLimit(ranger.snapshot!, a))).toEqual([2]);
     expect(inventory.find((i) => i.name === '金币')).toMatchObject({ qty: 30, assignedTo: ranger.id });
     const units = prepareBattleItems(save.storage!.map((r) => materializeUnitRecord(r, registry)), save);
     expect(units.find((u) => u.id === ranger.id)!.carriedItems!.map((c) => [c.name, c.quantity])).toEqual([['治疗药水', 2]]);
@@ -88,7 +89,7 @@ describe('spawn 携带道具与收缴', () => {
     expect(activeTraitIds(fielded)).toEqual(expect.arrayContaining(['stalk', 'forest-lore'])); expect(traitLevel(fielded, 'forest-lore')).toBe(6);
     // 事实清单沿用世界书的统一规格，仍保留道具形态与件数。
     const facts = narrativeProjection(save, '');
-    expect(facts).toContain('kind="充能道具" items="火球魔杖:充能+魔法范围L5+热能"');
+    expect(facts).toContain('kind="充能道具" items="火球魔杖:充能+魔法范围L5+热能×2"');
     expect(facts).toContain('kind="一次性道具" items="手雷:物理范围L4+投射×');
   });
   it('阵亡或撤离的敌方单位身上剩余的道具可以收缴进公共库存；活着的敌人与我方单位不能收缴', () => {

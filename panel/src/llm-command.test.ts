@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { attachCarriedItems, compileItem, createStructure, generateUnit, MassBattle, SmallBattle, standardField, V24_OVERFLOW_D20, V24_OVERFLOW_TW, sendPlayerLetter } from '../../engine/src/index.js';
+import { attachCarriedItems, compileItem, createStructure, generateUnit, MassBattle, SmallBattle, standardField, V43_OVERFLOW_D20, V24_OVERFLOW_D20, V24_OVERFLOW_TW, sendPlayerLetter } from '../../engine/src/index.js';
 import { COMMAND_PROMPTS } from './llm-command-prompts.js';
 import { commanderTool, emptyCommandMemory, commandObservation, LlmCommandController, smallCommandChoices,
-  updateCommandMemory, CommandCancelled, type CommanderState } from './llm-command.js';
+  updateCommandMemory, CommandCancelled, type CommandChoice, type CommanderState } from './llm-command.js';
 import type { LlmSettings } from './llm-settings.js';
 import { applyBattleStep, computeBattleStep } from './battle-step.js';
 import { savedCommanderState, savedLlmContext } from './llm-save-context.js';
@@ -101,6 +101,7 @@ describe('commander observation and tools', () => {
     let expectedSide: 'enemy' | 'neutral' = 'enemy';
     const request = vi.fn(async (_url: unknown, init?: RequestInit) => {
       const payload = JSON.parse(String(init?.body)), data = initial(init);
+      expect(JSON.stringify([payload.messages[0], payload.tools])).not.toMatch(/会战|commander_orders/);
       expect(data.plan).toBe(expectedSide === 'enemy' ? enemy.memory.plan : third.memory.plan);
       expect(JSON.stringify(payload)).not.toContain(expectedSide === 'enemy' ? 'only-third-plan' : 'only-enemy-plan');
       expect(JSON.stringify(payload)).not.toContain('only-ally-plan');
@@ -109,6 +110,10 @@ describe('commander observation and tools', () => {
     }) as unknown as typeof fetch;
     const enemyController = new LlmCommandController(COMMAND_PROMPTS, () => {}, request, 'enemy');
     const thirdController = new LlmCommandController(COMMAND_PROMPTS, () => {}, request, 'neutral');
+    const thirdOnly = {...settings, commandFactions:{enemy:false, neutral:true}};
+    expect(enemyController.available(b, thirdOnly, enemy)).toBe(false);
+    expect(thirdController.available(b, thirdOnly, third)).toBe(true);
+    expect(await enemyController.prepare(b, [], {}, thirdOnly, () => true)).toBeUndefined();
     await expect(thirdController.small(b, enemy, settings, () => true)).rejects.toThrow('其他阵营');
     const first = await enemyController.small(b, enemy, settings, () => true); applyBattleStep(b, first!);
     expectedSide = 'neutral';
@@ -352,4 +357,32 @@ describe('atomic LLM command execution', () => {
       conditions: b.conditions.all(), summons: false, expectedRound: b.round, drafts: {}, enemyOrders: result!.orders });
     expect(computed.snap.round).toBe(b.round + 1);
   });
+});
+
+it('executes the third listed weapon through commander_act and through a built-in hold order', async () => {
+  const raw = units().slice(0,2), actor = raw[1]!;
+  const mechanisms = ['sword','dagger','firearm'] as const;
+  actor.equipmentBatches = mechanisms.map((mechanism,i) => {
+    const id = 'issued-'+i, name = ['剑','匕首','火枪'][i]!;
+    const mechanics = compileItem({kind:'weapon',mechanism,power:5},{id,name,seed:id});
+    if (mechanics.kind !== 'weapon') throw Error('Expected a weapon');
+    return {id,qty:20,slot:'primary',mechanics};
+  });
+  actor.weapon = actor.equipmentBatches[0]!.mechanics.value as typeof actor.weapon;
+  delete actor.sidearm;
+  const field = standardField(7,13); field.tiles.fill('open'); field.layerVersion = 1; field.structures = field.tiles.map(()=>null);
+  const b = new SmallBattle({combatants:raw,battlefield:field,rules:V43_OVERFLOW_D20,seed:'third-weapon'});
+  b.start(); actor.pos=38; raw[0]!.pos=59; b.turnOrder=[actor.id,raw[0]!.id]; b.turnIndex=0;
+  const request: typeof fetch = async (_url, init) => {
+    const choices = initial(init).choices;
+    const selected = choices.find((c: CommandChoice) => c.action?.weaponMode === 'batch:issued-2' && c.action.type === 'attack')
+      ?? choices.find((c: CommandChoice) => c.action?.type === 'end_turn');
+    return call('commander_act',{choice:selected.id});
+  };
+  const cmd = new LlmCommandController(COMMAND_PROMPTS,()=>{},request);
+  const result = await cmd.small(b,state(b.seed),settings,()=>true);
+  expect(result,cmd.status).toBeDefined();
+  expect(SmallBattle.fromSnapshot(result!.snap).log.some(e=>e.kind==='attack' && e.text.includes('火枪'))).toBe(true);
+  b.autoAction(actor.id,{mode:'hold',cell:actor.pos});
+  expect(b.log.some(e=>e.kind==='attack' && e.text.includes('火枪'))).toBe(true);
 });

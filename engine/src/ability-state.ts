@@ -1,3 +1,4 @@
+import { batchCount } from './equipment-batches.js';
 import type { Ability, Combatant } from './types.js';
 
 /** Mechanism identity survives renaming/relearning; cooldown families stay separate. */
@@ -9,6 +10,10 @@ export function abilityUsed(actor: Combatant, ability: Ability): number {
   return (actor.abilityState.find(s => s.abilityId === abilityUsageKey(ability))
     ?? actor.abilityState.find(s => s.abilityId === (ability.cooldownGroup ?? ability.id)))?.used ?? 0;
 }
+export function abilityUseLimit(actor: Combatant,ability: Ability): number {
+  const batch = actor.equipmentBatches?.find(b=>b.id===ability.equipmentSourceId);
+  return (ability.usesPerBattle ?? Infinity) * (batch ? batchCount(actor,batch,true) : 1);
+}
 export function spendAbility(actor: Combatant, ability: Ability, cooldownOffset = 0): void {
   // Freeze all legacy family counts before changing one skill. Old saves did not
   // record which sibling spent the shared count, so preserve that lower bound.
@@ -16,7 +21,7 @@ export function spendAbility(actor: Combatant, ability: Ability, cooldownOffset 
     actor.abilityState.push({ abilityId: abilityUsageKey(a), cdLeft: 0, used: abilityUsed(actor, a) });
   let usage = actor.abilityState.find(s => s.abilityId === abilityUsageKey(ability));
   if (!usage) { usage = { abilityId: abilityUsageKey(ability), cdLeft: 0, used: 0 }; actor.abilityState.push(usage); }
-  usage.used++;
+  usage.used += ability.equipmentDoses ?? 1;
   const key = ability.cooldownGroup ?? ability.id;
   let cooldown = actor.abilityState.find(s => s.abilityId === key);
   if (!cooldown) { cooldown = { abilityId: key, cdLeft: 0, used: 0 }; actor.abilityState.push(cooldown); }

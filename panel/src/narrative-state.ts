@@ -1,3 +1,4 @@
+import { assignIssue } from './equipment-batches.js';
 import { prepareTraitLevelModel } from '../../engine/src/trait-level-model.js';
 import { prepareCombatModel } from '../../engine/src/combat-model.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
@@ -22,7 +23,7 @@ import { platformRoster } from './platform-records.js';
 import { newUnitId, planNewUnits, resolvePlatformReferences, type NewUnitPlan } from './narrative-new-units.js';
 import { handOverItems, type HandOver } from './item-handover.js';
 import { weaponItemSpecification } from './item-spec.js';
-import { treatUnitRecord } from './post-battle-recovery.js';
+import { loseArchivedWounded, treatUnitRecord } from './post-battle-recovery.js';
 
 export interface MessageEnvelope {
   characterId: string;
@@ -232,9 +233,22 @@ function mergePatch(target: Record<string, unknown>, source: Record<string, unkn
     } else target[key] = structuredClone(value);
   }
 }
-/** 合并同一档案的字段修改，再按更新后的编队和伤势计算治疗。 */
+/** 先结算已有伤员，再写入本批指定的最终人数与状态。 */
 function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: Map<string, Record<string, unknown>>, proposalId: string, registry: Registry, context: UnitSetContext): NarrativeSave {
   let next = save, records = next.storage ?? [];
+  const treatments = new Map<string, number | 'all'>(), losses = new Map<string, number | 'all'>();
+  for (const event of events) if (event.kind === 'recover') {
+    const changes = event.kill !== undefined ? losses : treatments;
+    const amount = event.kill ?? event.life!;
+    const previous = changes.get(event.id);
+    if (previous !== undefined && previous !== amount) throw Error(event.kill !== undefined ? '同一单位的伤兵死亡人数冲突' : '同一单位的治疗量冲突');
+    changes.set(event.id, amount);
+  }
+  if (losses.size || treatments.size) records = records.map(record => {
+    const loss = losses.get(record.id), life = treatments.get(record.id);
+    const remaining = loss === undefined ? record : loseArchivedWounded(record, registry, loss, proposalId);
+    return life === undefined || remaining.status === 'dead' && loss !== undefined ? remaining : treatUnitRecord(remaining, registry, life, proposalId);
+  });
   // 只交道具（items）的 unit_set 不改档案字段，道具在入账最后交出。
   for (const event of events) if (event.kind === 'unit-set' && Object.keys(event.data).length) {
     const patch = combined.get(event.id) ?? {}; mergePatch(patch, event.data); combined.set(event.id, patch);
@@ -269,7 +283,7 @@ function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: M
         if (!matches.length) continue;
         const unique = [...new Set(matches.map(item => item.id))];
         // 重铸与转移完成后再穿戴，字符串引用先锁定原实物；不能按改名后的名称另造一件。
-        deferred[key] = typeof patch[key] === 'string' && unique.length === 1 ? unique[0] : patch[key];
+        deferred[key] = typeof patch[key] === 'string' && !/[×,，、;；]/.test(patch[key] as string) && unique.length === 1 ? unique[0] : patch[key];
         delete patch[key];
       }
       if (['weapon','weapon2','sidearm'].some(key => Object.hasOwn(deferred,key))) for (const key of ['enchant','stabilized']) {
@@ -282,16 +296,6 @@ function applyUnitChanges(save: NarrativeSave, events: Suggestion[], combined: M
     }
     if (Object.keys(patch).length) next = applyUnitSet(next, id, patch, proposalId, context);
   }
-  const recoveries = new Map<string, number | 'all'>();
-  for (const event of events) if (event.kind === 'recover') {
-    const previous = recoveries.get(event.id);
-    if (previous !== undefined && previous !== event.life) throw Error('同一单位的治疗量冲突，请每个单位只写一条 recover');
-    recoveries.set(event.id, event.life);
-  }
-  if (recoveries.size) next.storage = next.storage!.map((record) => {
-    const life = recoveries.get(record.id);
-    return life === undefined ? record : treatUnitRecord(record, registry, life, proposalId);
-  });
   return next;
 }
 /** 学习技能与剧情效果来源；来源编号带事件序号，同一回复重复学习需合并。 */
@@ -362,6 +366,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   assertNarrativeCapacity(proposal.events);
   const replacesRoster = hasNarrativeDeployment(proposal.events);
   let next = structuredClone(save);
+  next.inventory ??= [];
   // 只清候选副本的出场选择，档案/装备/战果保持；校验或保存失败仍保留旧事实。
   if (replacesRoster) next.rosterIds = [];
   // 先占用正文写给新单位的空闲编号，本批其他新实例不会抢到它。
@@ -390,7 +395,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     for (const [partIndex, part] of parts.entries()) {
       const item = next.inventory!.find(item => item.id === part.itemId)!;
       const operation = proposal.id + ':' + index + (partIndex ? ':part:' + partIndex : '');
-      if (item.equippedTo) next = prepareInventoryTransaction(next, { kind: 'unequip', id: 'take-unequip:' + operation, expectedRevision: next.factRevision ?? 0, ...item.equippedTo, itemId: item.id });
+      if (item.equippedTo && !item.batch) next = prepareInventoryTransaction(next, { kind: 'unequip', id: 'take-unequip:' + operation, expectedRevision: next.factRevision ?? 0, ...item.equippedTo, itemId: item.id });
       next = prepareInventoryTransaction(next, { kind: 'discard', id: 'take:' + operation, expectedRevision: next.factRevision ?? 0, ...part });
     }
   };
@@ -417,18 +422,12 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind !== 'add' || event.item === undefined) continue;
     const id = `loot-${proposal.id}-${index}`;
-    if (event.to) for (let i = 0; i < (event.spec && !(event.spec.kind === 'item' && event.spec.form === 'single') ? event.qty : 1); i++) {
-      directGives.set(event.spec && !(event.spec.kind === 'item' && event.spec.form === 'single') && event.qty !== 1 ? `${id}-${i}` : id, event.to);
-    }
-    if (!event.spec) { next.inventory = [...(next.inventory ?? []), { id, name: event.item, qty: event.qty, lootType: event.lootType, note: event.note }]; given.add(id); handed.add(id); }
-    else if (event.spec.kind === 'item' && event.spec.form === 'single') { next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(id, event.item, event.spec, id, event.qty), note: event.note }]; handed.add(id); }
-    else {
-      for (let i = 0; i < event.qty; i++) {
-        const itemId = event.qty === 1 ? id : `${id}-${i}`;
-        next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(itemId, event.item, event.spec, itemId), note: event.note }];
-        given.add(itemId); handed.add(itemId);
-      }
-    }
+    if (event.to) directGives.set(id,event.to);
+    const item = event.spec ? createInventoryItem(id,event.item,event.spec,id,event.qty)
+      : {id,name:event.item,qty:event.qty,lootType:event.lootType};
+    next.inventory!.push({...item,note:event.note});
+    if (!event.spec || event.spec.kind !== 'item' || event.spec.form !== 'single') given.add(id);
+    handed.add(id);
   }
   next = applyUnitChanges(next, proposal.events.filter((event) => !isNew(event)), new Map(), proposal.id, registry, unitSetContext);
   const reforged = new Set<string>(), learned = new Set<string>();
@@ -447,7 +446,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   records = next.storage!;
   let roster: Combatant[] = (next.rosterIds ?? []).map((id) => records.find((r) => r.id === id)).filter((r): r is UnitRecord => !!r && r.hp > 0 && !r.retired).map((r) => materializeUnitRecord(r, registry));
   const newDeploys: string[] = [];
-  let spawnedGear = false;
+  const spawnedGear = new Set<string>();
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind === 'deploy') { if (isNew(event)) newDeploys.push(event.id); else roster = deployUnitRecord(records, roster, event.id, registry); }
     else if (event.kind === 'spawn') {
@@ -461,20 +460,23 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
           if (!event.duration) throw Error('spawn effects缺少期限');
           grantStoryEffects(unit, event.effects, event.duration, `${proposal.id}:${index}:${i}`);
         }
+        if (event.equipmentIssues) {
+          for (const slot of ['primary','sidearm','armor','shield'] as const) {
+            const entries = event.equipmentIssues[slot];
+            if (entries) assignIssue(next.inventory!,id,unit.side,slot,entries,proposal.id+':'+index,false);
+          }
+          spawnedGear.add(id);
+        }
         records.push(unitRecordFromCombatant(unit, undefined, { sourceId: proposal.id }));
         if (unit.hp > 0 && !event.archiveOnly) roster.push(materializeUnitRecord(records.at(-1)!, registry));
-        // 随身道具每张卡各一套，归这张卡；佩戴、充能道具装上（编队一件即整卡配发），一次性道具开战时随身携带。
+        // 随身道具每张卡各一套，归这张卡；佩戴、充能道具装上（按声明件数配发），一次性道具开战时随身携带。
         for (const [n, entry] of (event.items ?? []).entries()) {
           const itemId = `spawn-item-${proposal.id}-${index}-${i}-${n}`;
           if (!entry.spec) { next.inventory = [...(next.inventory ?? []), { id: itemId, name: entry.name, qty: entry.qty, lootType: 'misc', assignedTo: id }]; continue; }
           if (entry.spec.form === 'single') { next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(itemId, entry.name, entry.spec, itemId, entry.qty), assignedTo: id }]; continue; }
-          const pieces = unit.scale === 'hero' ? entry.qty : 1;
-          if (pieces < entry.qty && i === 0) notices.push(`${event.name}是编队，佩戴、充能道具一件就是整张单位卡的配发，「${entry.name}」按每卡1件建档`);
-          for (let piece = 0; piece < pieces; piece++) {
-            const pieceId = pieces === 1 ? itemId : `${itemId}-${piece}`;
-            next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(pieceId, entry.name, entry.spec, pieceId), assignedTo: id, equippedTo: { unitId: id, slot: 'gear' } }];
-          }
-          spawnedGear = true;
+          next.inventory!.push({...createInventoryItem(itemId,entry.name,entry.spec,proposal.id+':'+index+':'+n,entry.qty),
+            batch:true, assignedTo:id, equippedTo:{unitId:id,slot:'gear'}});
+          spawnedGear.add(id);
         }
       }
     } else if (event.kind === 'field') { next.field = event.env; next.lighting = event.light ?? (event.env === 'night' ? 'night' : 'day'); }
@@ -483,7 +485,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   next.schemaVersion = PANEL_SAVE_SCHEMA_VERSION;
   next.storage = records;
   // 新单位装上的佩戴、充能道具立即投影进档案，开战时随单位生效。
-  if (spawnedGear) { next = prepareInventoryState(next) as NarrativeSave; records = next.storage!; }
+  if (spawnedGear.size) { next = prepareInventoryState(next, spawnedGear) as NarrativeSave; records = next.storage!; }
   next.rosterIds = [...new Set(roster.map((u) => u.id))];
   if (fresh.created.size) next = applyToNewUnits(next, proposal.events, fresh, proposal.id, registry, newDeploys, unitSetContext);
   // Apply explicit recipients after this batch's new units exist. The given
@@ -506,16 +508,29 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (!Number.isSafeInteger(total) || !item || total > item.qty) throw new Error('同一实物的转移总数量超出库存');
     transferTotals.set(event.id, total);
   }
-  // 显式转移在新单位建档后执行，保留实物与冻结属性，不额外发放。
+  // Deferred loadouts refer to the original lot. A transfer can join an existing holding at its destination.
+  const transferred = new Set<string>();
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind !== 'give') continue;
+    const track = event.to?.some(unitId => deferredEquipment.has(unitId));
+    const before = track ? new Map(next.inventory!.map(item => [item.id,item])) : undefined;
     next = prepareInventoryTransaction(next, { kind: 'transfer', id: `give:${proposal.id}:${index}`, expectedRevision: next.factRevision ?? 0, itemId: event.id, unitIds: event.to, qty: event.qty });
+    transferred.add(event.id);
+    if (!before) continue;
+    for (const item of next.inventory!) {
+      const patch = item.assignedTo && deferredEquipment.get(item.assignedTo);
+      // Transfers arrive unequipped. Adopting a new card may also register its starting gear.
+      if (!patch || !item.qty || item.equippedTo) continue;
+      const old = before.get(item.id);
+      if (old && old.assignedTo === item.assignedTo && old.qty >= item.qty) continue;
+      transferred.add(item.id);
+      for (const field of UNIT_EQUIPMENT_FIELDS) if (patch[field] === event.id) patch[field] = item.id;
+    }
   }
   // 同批分配整叠后再扣取，标签前后顺序一致；允许从任一持有者的拆分份额扣除。
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind === 'take' && givenStacks.has(event.id)) take(event, index);
   }
-  const transferred = new Set(proposal.events.flatMap(event => event.kind === 'give' ? [event.id] : []));
   for (const [unitId, patch] of deferredEquipment) {
     next = applyUnitSet(next, unitId, patch, proposal.id, { given, notices, transferred });
   }

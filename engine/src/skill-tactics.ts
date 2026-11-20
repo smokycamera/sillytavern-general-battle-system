@@ -1,3 +1,4 @@
+import { batchWeapons } from './equipment-batches.js';
 import { armsWeaponReason } from './arms.js';
 import { progression } from './progression.js';
 import { macroTerrain } from './environment.js';
@@ -165,7 +166,7 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
             flanked: () => world.units.some(u => u.id !== actor.id && !combatHostile(u, actor, context.units) && u.status === 'ready' && sameLayer(u, target) && distance(world, u, target) <= 1),
           })] : [])],
       }).expectedDamage);
-      for (const rawWeapon of [actor.weapon, actor.sidearm]) {
+      for (const rawWeapon of context.mode === 'small' ? batchWeapons(actor) : [actor.weapon, actor.sidearm]) {
         if (!rawWeapon || armsWeaponReason(actor,rawWeapon) || flags(context, actor).some(d => d?.preventAttack) && baseMechanism(rawWeapon) !== 'natural') continue;
         const ranged = isRangedWeapon(rawWeapon);
         const weapon = field ? gridWeapon(rawWeapon, true, rules.armsModel) : !ranged && actor.combatModel === 'cohort-v2' ? { ...rawWeapon, range: meleeReach(rawWeapon) } : rawWeapon;

@@ -58,7 +58,7 @@ export type Suggestion =
   | { kind: 'field'; env: FieldEnv; light?: 'day' | 'night'; note?: string; raw: string }
   /** 从储存器调取一个已有单位进入上场编制。id 是储存器稳定身份。 */
   | { kind: 'deploy'; id: string; name?: string; raw: string }
-  | { kind: 'recover'; id: string; life: number | 'all'; raw: string }
+  | ({ kind: 'recover'; id: string; raw: string } & ({ life: number | 'all'; kill?: never } | { kill: number | 'all'; life?: never }))
   /** 正文补员、扩编或恢复状态后，按稳定身份更新储存器/编制/当前战场。 */
   | {
       kind: 'unit-update';
@@ -113,6 +113,7 @@ export type Suggestion =
       weaponLevel?: number;
       /** 副武器（可选）：weapon2="短剑:剑L3"——仅当角色设定确实远近双持时声明 */
       weapon2?: string;
+      equipmentIssues?: Partial<Record<'primary'|'sidearm'|'armor'|'shield',import('./equipment-batches.js').EquipmentIssue[]>>;
       /** weapon2 解析出的显示名 */
       weapon2Name?: string;
       /** weapon2 解析出的武器分类 */

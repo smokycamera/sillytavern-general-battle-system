@@ -1,3 +1,5 @@
+import { isVehicleBody } from '../../engine/src/vehicle-size.js';
+import {batchWeapons,weaponModeFor} from '../../engine/src/equipment-batches.js';
 import { displayNumber } from '../../engine/src/display-number.js';
 import { activationControlDuration, controlPolicy } from '../../engine/src/battle-control.js';
 import { SCENE_NAMES } from '../../engine/src/small/map-design.js';
@@ -9,6 +11,7 @@ import { structureAt, intactStructure, groundBlocked, isElevated } from '../../e
 import { visibleBattleZones } from '../../engine/src/area-effects.js';
 import { fieldEffectMarks, fieldWorks, worksLabelShort, zoneLabel, zoneDetail } from './field-effects-view.js';
 import { tbWeaponShortName } from '../../engine/src/weapon-name.js';
+import { unitIcon } from './unit-icons.js';
 import { unitCount } from '../../engine/src/platforms.js';
 import { strengthDescription } from '../../engine/src/combat-model.js';
 import { participationText,memberHealthPanel } from './combat-model-view.js';
@@ -30,7 +33,7 @@ import { withBattleReportQueries } from './battle-reports.js';
 
 export type MapZoom = 'fit' | 'large' | 'compact';
 export const MAP_ZOOM_LABELS: Record<MapZoom, string> = { fit: '适应', large: '放大', compact: '紧凑' };
-export interface TacticalView { selectedId?: string; targetId?: string; cell?: number; inspectedCell?: number; mode: string; zoom?: MapZoom; mapScale?: number }
+export interface TacticalView { selectionTurn?: string; selectedId?: string; targetId?: string; cell?: number; inspectedCell?: number; mode: string; zoom?: MapZoom; mapScale?: number }
 /** Adjustments made while building the map, minus the scene name the details title already shows. */
 function layoutNotes(field: BattlefieldSpec): string[] {
   const title = field.scene?.archetype ? SCENE_ARCHETYPE_NAMES[field.scene.archetype] : undefined;
@@ -74,11 +77,21 @@ export function tacticalSelection(battle: SmallBattle, view: TacticalView, query
     : query?.battle === battle && query.actor === actor ? query.options : battle.getActionOptions(actor.id) : [];
   const abilityIds = new Set(actor ? battleAbilities(actor).map(a => a.id) : []);
   const options = allOptions.filter((o) => o.kind === 'ability' ? abilityIds.has(o.id) : ['weapon', 'charge'].includes(o.kind));
-  const option = options.find((o) => o.id === view.mode) ?? options.find((o) => o.id === 'weapon');
+  const remembered = actor && battle.lastWeaponOption(actor);
+  const preferred = remembered && options.find(o => o.id === remembered && o.enabled);
+  const turn = [battle.seed,battle.round,battle.turnIndex,actor?.id].join('/');
+  if (view.selectionTurn !== turn) {
+    if (view.selectionTurn !== undefined || remembered && view.mode === 'weapon') {
+      view.mode = (preferred || options.find(o => o.kind === 'weapon' && o.enabled))?.id ?? 'weapon';
+      view.targetId = undefined;
+    }
+    view.selectionTurn = turn;
+  }
+  const option = options.find((o) => o.id === view.mode) ?? (preferred || options.find((o) => o.id === 'weapon'));
   const target = view.targetId !== undefined ? option?.targets?.find((t) => t.targetId === view.targetId)
     : option?.targets?.find((t) => t.enabled) ?? option?.targets?.[0];
   const canControl = !!actor && !['charmed','confused'].includes(controlPolicy(actor)??'') && actor.id === battle.active?.id && actor.status === 'ready' && !battle.isOver();
-  return { visible, actor, allOptions, options, option, target, canControl, query: query instanceof TacticalQueryCache ? query : actor ? { battle, actor, options: allOptions } : undefined };
+  return { visible, actor, allOptions, options, option, target, preferred, canControl, query: query instanceof TacticalQueryCache ? query : actor ? { battle, actor, options: allOptions } : undefined };
 }
 
 /** 只改短暂选择，不提交存档、动作或随机数。友方治疗目标优先于切换行动者。
@@ -109,7 +122,7 @@ export function selectTacticalElement(battle: SmallBattle, view: TacticalView, i
   const cycle = sameCell && legal.some(u => u.ride || u.platform);
   const next = cycle ? legal.findIndex(u => u.id === view.targetId) + 1 : 0;
   const unit = input.unitId ? occupants.find(u => u.id === input.unitId)
-    : (legal.length ? legal[next % legal.length] : undefined) ?? occupants.find(u => targets.some(t => t.targetId === u.id)) ?? occupants[0];
+    : (legal.length ? legal[next % legal.length] : undefined) ?? occupants.find(u => targets.some(t => t.targetId === u.id)) ?? active ?? mapPieces(occupants)[0]?.unit;
   if (view.mode === 'move' && !input.actor && (!input.unitId || unit?.status === 'dying')
     && !occupants.some(u => u.side !== (selection.actor?.side ?? 'ally') && u.hp > 0 && u.status !== 'dying')) {
     view.cell = cell; view.targetId = undefined; return selection.query;
@@ -224,7 +237,7 @@ function tileInspector(battle: SmallBattle, view: TacticalView, selection: Retur
     ${actor && selection.canControl && (!climbReason || structure?.top && structure.hp > 0) ? `<button data-action="grid-climb" data-actor="${esc(actor.id)}" data-cell="${cell}" ${climbReason ? 'disabled' : ''} title="${esc(climbReason ?? `消耗主行动和${battle.climbMovementCost(actor.id)}移动`)}">${isElevated(actor) ? '下到地面' : '登城'}</button>` : ''}</div>
     ${!battle.cellVisible('ally', cell) ? '<p class="grid-reason">此格尚未观测；路线只考虑已知占位，实际移动可能遇敌受阻。</p>' : ''}
     ${field.objective.kind !== 'annihilation' && field.objective.cell === cell ? '<div class="objective-detail"><b>任务目标</b><div class="objective-rule">' + objectiveDetails(battle) + '</div></div>' : ''}
-    ${occupants.length ? '<div class="inspector-units">' + occupants.map((u) => `<button data-action="grid-inspect-unit" data-unit="${esc(u.id)}" class="${u.side}">${esc(tacticalName(battle,u)!)} · ${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}${u.scale === 'hero' ? '生命' : u.body === 'vehicle' ? '辆' : u.platform?.kind === 'animal' ? '匹' : '人'}${isAirborne(u) ? ' · 空中' : isElevated(u) ? ' · 墙顶' : ''}${defenseLayerLabels(u).map((label) => ' · ' + esc(label)).join('')}</button>`).join('') + '</div>' : ''}
+    ${occupants.length ? '<div class="inspector-units">' + occupants.map((u) => `<button data-action="grid-inspect-unit" data-unit="${esc(u.id)}" class="${u.side}">${esc(tacticalName(battle,u)!)} · ${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}${u.scale === 'hero' ? '生命' : isVehicleBody(u.body) ? '辆' : u.platform?.kind === 'animal' ? '匹' : '人'}${isAirborne(u) ? ' · 空中' : isElevated(u) ? ' · 墙顶' : ''}${defenseLayerLabels(u).map((label) => ' · ' + esc(label)).join('')}</button>`).join('') + '</div>' : ''}
   </div>`;
 }
 
@@ -260,15 +273,34 @@ const MAP_KEY = `<details class="map-key" data-detail-id="map-key"><summary>图�
   ['zone', '占领区'], ['reach', '可到达'], ['range', '射程'], ['target', '可选目标'], ['fog', '未观测'],
 ] as const).map(([key, text]) => `<span><i class="key key-${key}"></i>${text}</span>`).join('')}<span><i class="key key-exit">︾</i>边缘箭头：撤出战斗的方向；出口：护送任务的目的地</span><span><i class="key key-token-hero"></i>人物</span><span><i class="key key-token-company"></i>编队</span><span><i class="key key-last-seen">?</i>敌军最后目击</span></div></details>`;
 
+interface MapPiece { unit: Combatant; mount?: Combatant }
+
+/** 只合并当前格内可见的骑手和专属生物坐骑。检查格子与选攻击目标仍用真实单位。 */
+function mapPieces(occupants: Combatant[]): MapPiece[] {
+  const pieces = new Map<string, MapPiece>(occupants.map(unit => [unit.id, { unit }]));
+  for (const piece of pieces.values()) {
+    const ride = piece.unit.ride;
+    if (ride?.mode !== 'mount' || ride.stranded || piece.unit.hp <= 0) continue;
+    const mount = pieces.get(ride.platformId)?.unit;
+    if (mount?.platform?.kind === 'animal' && mount.hp > 0) {
+      piece.mount = mount;
+      pieces.delete(mount.id);
+    }
+  }
+  return [...pieces.values()];
+}
+
 /** 棋子：阵营色底 + 兵种符号 + 名称 + 实际生命/人数数值。数值始终显示，颜色随剩余比例变化。 */
-function gridPiece(battle: SmallBattle, u: Combatant, isActor: boolean, ai = false): string {
+function gridPiece(battle: SmallBattle, { unit: u, mount }: MapPiece, selectedId: string | undefined, aiUnitIds: ReadonlySet<string>): string {
+  const isActor = u.id === selectedId || !!mount && mount.id === selectedId;
+  const ai = aiUnitIds.has(u.id) || !!mount && aiUnitIds.has(mount.id);
   const name = [...u.name], ratio = u.base.hpMax > 0 ? Math.max(0, Math.min(1, u.hp / u.base.hpMax)) : 0;
   const health = ratio >= .6 ? 'hp-high' : ratio >= .3 ? 'hp-mid' : 'hp-low';
   const side = u.side === 'ally' || u.side === 'enemy' ? u.side : 'neutral';
   const badges = [ai ? 'AI' : '', isAirborne(u) ? '空' : isElevated(u) ? '顶' : '', u.suppression ? '压' : '', battle.overwatch.has(u.id) ? '警' : ''].filter(Boolean);
   const status = [ai ? 'AI托管' : '', isAirborne(u) ? '空中' : isElevated(u) ? '墙顶' : '', u.suppression ? '受压' : '', battle.overwatch.has(u.id) ? '警戒' : ''].filter(Boolean).join(' ');
   return `<span class="grid-piece ${side} ${u.scale === 'hero' ? 'hero' : 'company'} ${health}${u.status !== 'ready' ? ' status-' + u.status : ''}${isActor ? ' actor' : ''}${isAirborne(u) ? ' airborne' : ''}">`
-    + `<span class="grid-token">${unitSymbol(u)}${badges.length ? '<span class="grid-badges">' + badges.map(b => '<i' + (b === '空' ? ' class="flight-badge"' : '') + '>' + b + '</i>').join('') + '</span>' : ''}</span>`
+    + `<span class="grid-token">${mount ? unitIcon('cavalry') : unitSymbol(u)}${badges.length ? '<span class="grid-badges">' + badges.map(b => '<i' + (b === '空' ? ' class="flight-badge"' : '') + '>' + b + '</i>').join('') + '</span>' : ''}</span>`
     + `<span class="grid-piece-name" title="${esc(u.name)}"><span>${esc(name.slice(0, -2).join(''))}</span><span>${esc(name.slice(-2).join(''))}</span></span>`
     + `<span class="grid-hp"><span class="grid-affiliation">${u.side === 'ally' ? '我' : u.side === 'enemy' ? '敌' : '三'}</span><b>${displayNumber(u.hp)}</b>/${displayNumber(u.base.hpMax)}${status ? '<span class="grid-status"> ' + status + '</span>' : ''}</span></span>`;
 }
@@ -353,13 +385,14 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
   const controlCells = new Set(field.objective.kind === 'control' ? field.objective.cells ?? [field.objective.cell] : []);
   const cells = field.tiles.map((terrain, cell) => {
     const occupants = occupantsAt.get(cell) ?? [];
+    const pieces = occupants.length ? mapPieces(occupants) : [];
     const distance = actor?.pos !== undefined ? gridDistance(field, actor.pos, cell) : Infinity;
     const inRange = !!actor && range && (range.metric === 'global' || range.metric === 'self' ? range.metric === 'global' || cell === actor.pos : distance >= range.min && distance <= range.max);
     const structure = structureAt(field, cell), inspected = view.inspectedCell === cell, landmark = landmarkAt(field, cell);
     const flags = [terrain, searched.has(cell) ? 'recently-searched' : '', structure?.hp ? 'structure-' + structure.kind + (structure.kind === 'gate' ? ' gate-' + structure.gateState : '') : '', ...(field.overlays?.[cell] ?? []).map(o => 'overlay-' + o), controlCells.has(cell) ? 'control-region' : '', trace?.cells.includes(cell) ? 'trace-cell' : '', !seen[cell] ? 'unobserved' : '', reachable.has(cell) ? 'reachable' : '', paths.has(cell) ? 'path' : '',
       occupants.some((u) => u.id === actor?.id) ? 'selected' : '', inspected ? 'inspected' : '',inspectedMark?.cells.includes(cell)?'landmark-focus':'',
       goalCell === cell ? 'objective' : '', inRange ? 'in-range' : '', (targets.has('cell:'+cell) || occupants.some((u) => targets.has(u.id))) ? 'legal-target' + (occupants.some((u) => targets.has(u.id) && u.side === 'ally') ? ' legal-ally' : '') : '',
-      (target?.targetId==='cell:'+cell || occupants.some((u) => u.id === target?.targetId)) && mode !== 'move' && mode !== 'guard' ? 'targeted' : '', occupants.some((u) => area.has(u.id)) ? 'area-hit' : '', occupants.length > 1 ? 'stacked' : ''].filter(Boolean).join(' ');
+      (target?.targetId==='cell:'+cell || occupants.some((u) => u.id === target?.targetId)) && mode !== 'move' && mode !== 'guard' ? 'targeted' : '', occupants.some((u) => area.has(u.id)) ? 'area-hit' : '', pieces.length > 1 ? 'stacked' : ''].filter(Boolean).join(' ');
     const zones = liveZones.filter(z => (z.side === 'ally' || seen[cell]) && Math.abs(z.x - cell % field.width) + Math.abs(z.y - Math.floor(cell / field.width)) <= z.radius);
     const works = liveWorks.filter(u => u.entrenchedAt === cell && (u.side === 'ally' || seen[cell]));
     const effectLabels = [...(works.length ? [worksLabelShort(works)] : []), ...new Set(zones.map(zoneLabel))];
@@ -367,19 +400,19 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
       + (effectLabels.length > 1 ? ' +' + (effectLabels.length - 1) : '') : effectLabels.join('·');
     const ghosts = lastSeen.get(cell) ?? [];
     const ghostText = ghosts.map((t) => '最后目击敌方' + t.name + '（' + ago(t.round) + '）').join('、');
-    const label = (goalCell === cell ? field.objective.kind === 'escape' ? '护送撤离点 ' : '夺点目标 ' : controlCells.has(cell) ? '占领区域 ' : '') + effectLabels.join('、')+' '+cellLabel(field, cell) + ' ' + (landmark ?? '') + ' ' + terrainName(field, cell) + ' '+heightDescription(field,cell)+' ' + occupants.map((u) => (u.side === 'ally' ? '我方' : u.side === 'enemy' ? '敌方' : '第三方') + u.name).join('、') + (ghostText ? ' ' + ghostText : '');
+    const label = (goalCell === cell ? field.objective.kind === 'escape' ? '护送撤离点 ' : '夺点目标 ' : controlCells.has(cell) ? '占领区域 ' : '') + effectLabels.join('、')+' '+cellLabel(field, cell) + ' ' + (landmark ?? '') + ' ' + terrainName(field, cell) + ' '+heightDescription(field,cell)+' ' + pieces.map(({unit: u}) => (u.side === 'ally' ? '我方' : u.side === 'enemy' ? '敌方' : '第三方') + u.name).join('、') + (ghostText ? ' ' + ghostText : '');
     // 地形与结构由底图表达；格内只放单位、状态与被查看格的名称。高度0为默认地表，只标注抬高的格子。
     const height = field.spatialRulesVersion === 2 ? surfaceHeightAt(field, cell) : 0;
     const terrainLabel = inspected && !occupants.length;
     const inner = fieldEffectMarks(zones, works) + (searched.has(cell) ? '<span class="grid-search-mark" aria-hidden="true"></span>' : '')
       + (height ? '<span class="grid-height" aria-hidden="true">高' + height + '</span>' : '') + (landmark ? '<span class="grid-landmark" aria-hidden="true">◇</span>' : '') + (goalCell === cell ? '<span class="grid-goal" aria-hidden="true">' + (field.objective.kind === 'escape' ? '出口' : '旗') + '</span>' : '')
-      + occupants.map((u) => gridPiece(battle, u, u.id === actor?.id, automation.aiUnitIds.has(u.id))).join('')
-      + (occupants.length > 1 ? '<span class="grid-stack-count">' + occupants.length + '队</span>' : '')
+      + pieces.map(piece => gridPiece(battle, piece, actor?.id, automation.aiUnitIds)).join('')
+      + (pieces.length > 1 ? '<span class="grid-stack-count">' + pieces.length + '队</span>' : '')
       + (ghosts.length ? `<span class="grid-last-seen${occupants.length ? ' raised' : ''}" aria-hidden="true" title="${esc(ghostText)}">?${ghosts.length > 1 ? ghosts.length : ''}<small>${esc(ago(Math.max(...ghosts.map((t) => t.round))))}</small></span>` : '')
       + (structure?.hp && !terrainLabel && (structure.hp < structure.hpMax || inspected) ? `<span class="structure-hp${occupants.length || zones.length ? ' raised' : ''}" aria-hidden="true">${displayNumber(structure.hp)}/${displayNumber(structure.hpMax)}</span>` : '')
       + (effectLabels.length ? '<span class="grid-zone' + (occupants.length ? ' occupied' : '') + '" title="' + esc(effectLabels.join('、')) + '">' + esc(effectText) + '</span>' : '')
       + (terrainLabel ? '<span class="grid-terrain">' + (structure ? structureDisplayName(field, cell) + (structure.hp ? ' L' + structure.level + ' · ' + displayNumber(structure.hp) + '/' + displayNumber(structure.hpMax) : '·残骸') : field.generation?.scene === 'interior' && terrain === 'street' ? '室内地面' : terrainNames[terrain]) + '</span>' : '');
-    const attrs = `class="grid-cell ${flags}" data-action="grid-cell" data-cell="${cell}" data-coordinate="${cellLabel(field, cell)}" data-unit-ids="${esc(JSON.stringify(occupants.map(u => u.id)))}" data-acting="${occupants.some(u => u.id === active?.id)}" data-selected="${occupants.some(u => u.id === actor?.id)}"${occupants.length > 1 ? ` style="--stack:${occupants.length}" title="${esc(occupants.map(u => u.name).join(' / '))}"` : ''} aria-label="${esc(label)}" aria-pressed="${inspected}"`;
+    const attrs = `class="grid-cell ${flags}" data-action="grid-cell" data-cell="${cell}" data-coordinate="${cellLabel(field, cell)}" data-unit-ids="${esc(JSON.stringify(occupants.map(u => u.id)))}" data-acting="${occupants.some(u => u.id === active?.id)}" data-selected="${occupants.some(u => u.id === actor?.id)}"${pieces.length > 1 ? ` style="--stack:${pieces.length}" title="${esc(pieces.map(p => p.unit.name).join(' / '))}"` : ''} aria-label="${esc(label)}" aria-pressed="${inspected}"`;
     // 内容签名：点选只改动少数格，其余格在打补丁时整格跳过。
     return `<button ${attrs} data-static="c${signature(attrs + inner)}">${inner}</button>`;
   }).join('');
@@ -392,7 +425,7 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
   const enemyEscort = mission.kind === 'escape' && battle.combatants.find((u) => u.id === mission.unitId)?.side === 'enemy';
   const goal = mission.kind === 'annihilation' ? (SCENE_NAMES[field.generation?.scene ?? 'field'] + ' · 歼灭战') : (mission.kind === 'control' ? !mission.attackingSide ? '争夺中立据点 ' : mission.attackingSide === 'enemy' ? '防守据点 ' : '攻占据点 ' : enemyEscort ? '拦截于' : '护送至') + cellLabel(field, mission.cell);
   const skill = options.find((o) => o.id === view.mode && o.kind === 'ability') ?? options.find((o) => o.kind === 'ability' && o.enabled) ?? options.find((o) => o.kind === 'ability');
-  const weapon = options.find((o) => o.id === view.mode && ['weapon', 'charge'].includes(o.kind)) ?? options.find((o) => o.kind === 'weapon' && o.enabled) ?? options.find((o) => o.id === 'weapon');
+  const weapon = options.find((o) => o.id === view.mode && ['weapon', 'charge'].includes(o.kind)) ?? (s.preferred || options.find((o) => o.kind === 'weapon' && o.enabled)) ?? options.find((o) => o.id === 'weapon');
   const actionReady = canControl && !!option?.enabled && (!option.targets?.length || !!target?.enabled);
   const executeReady = special ? canControl && !specialReason : mode === 'move' ? canControl && !!movement?.path && movement.path.cost > 0 : mode !== 'guard' && actionReady;
   const moveAction = movement?.climb ? 'grid-climb' : 'grid-move', moveLabel = movement?.climb ? isElevated(actor!) ? '下到地面' : '登城' : '移动';
@@ -424,7 +457,7 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
       <div class="sub">${actor ? movementLabel(actor, battle.fieldTags) + ' · 精力 ' + approx(actor.resources.SP ?? 0, 1, 'down') + '/' + displayNumber(spCapacity(actor)) : ''}</div><div class="grid-budgets">${canControl && actor ? '移动 ' + displayNumber(battle.movementLeft(actor.id)) + '/' + displayNumber(battle.movementBudget(actor.id)) + ' · 主行动 ' + Number(!battle.actedThisTurn.has(actor.id)) + ' · 加速动作 ' + Number(battle.hasteAvailable(actor.id)) + ' · 反应 ' + Number(!battle.reactionSpent.has(actor.id) && !actor.suppression) : '待行动 · 可查看装备与行动'}</div>
       <div class="sub mission-summary">${objectiveSummary(battle)}</div>
       ${mission.kind==='annihilation'?'<details data-detail-id="objective-rules"><summary>任务规则</summary><p>'+objectiveDetails(battle)+'</p></details>':''}
-      ${canControl && actor ? [false, true].filter(sidearm => !battle.reloadReason(actor.id, sidearm)).map(sidearm => `<button data-action="grid-reload" data-sidearm="${sidearm}">${sidearm ? '副武器' : '主武器'}装填 · 行动1</button>`).join('') : ''}
+      ${canControl && actor ? batchWeapons(actor).filter(w=>!battle.reloadReason(actor.id,weaponModeFor(actor,w))).map(w=>`<button data-action="grid-reload" data-weapon-mode="${esc(weaponModeFor(actor,w))}">${esc(w.name)}装填 · 行动1</button>`).join('') : ''}
       ${actor ? '<div class="actor-status">' + [(battle.reloadCd.get(actor.id) ?? 0) > 0 ? (tbWeaponShortName(actor.weapon) || '主武器') + '装填中' : '', actor.sidearm && (battle.reloadCd.get(weaponReloadKey(actor, actor.sidearm)) ?? 0) > 0 ? (tbWeaponShortName(actor.sidearm) || '副武器') + '装填中' : '', actor.fatigue ? '疲劳' + approx(actor.fatigue, 1, 'down') + '/' + displayNumber(fatigueLimit(actor)) : '', concealment, pressure, isAirborne(actor) ? '空中，不能占领地面目标' : '', ...defenseLayerLabels(actor), actor.tacticalPose ? postureLabel(actor, standardConditionMap()) : '', worksLabel(actor) ?? '', ...actor.conditions.filter((c) => c.dur > 0).map((c) => (battle.conditions.get(c.id)?.name ?? '持续效果') + ' ' + (activationControlDuration(c) ?? c.dur + '回合'))].filter(Boolean).map((v) => '<span' + (v === pressure ? ' class="morale-pressure"' : '') + '>' + esc(v!) + '</span>').join('') + '</div>' : ''}
       ${canControl && actor && ['traits-levels-v2','traits-items-v1','traits-items-v2'].includes(battle.rules.traitLevelModel??'') && activeTraitIds(actor).includes('loose-formation') ? looseFormationChoiceHtml(actor, !!actor.looseChoiceLocked || battle.actedThisTurn.has(actor.id) || battle.movedThisTurn.has(actor.id), '正常激活开始、行动前可选一次，保持到下次正常激活。') : ''}
       ${canControl ? rideControls(battle,actor) : ''}

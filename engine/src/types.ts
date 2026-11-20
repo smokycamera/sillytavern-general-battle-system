@@ -156,6 +156,7 @@ export interface Ability {
   itemScaling?: 'member' | 'object';
   /** 编队本次齐用实际消耗的件数；只存在于单次使用的派生行动，不写入存档。 */
   itemDoses?: number;
+  equipmentDoses?: number;
   definitionId?: string;
   sourceId?: string;
   cooldownGroup?: string;
@@ -303,7 +304,21 @@ export interface BarrierState extends BarrierGrant {
   grants?: BarrierGrant[];
 }
 
+export interface EquipmentBatch {
+  id: string;
+  qty: number;
+  slot: import('./items.js').EquipmentSlot;
+  mechanics: import('./items.js').ItemMechanics;
+  reloading?: { turns: number; count: number }[];
+  shieldDurability?: { remaining: number };
+  energyShield?: { remaining: number; overloaded: number };
+}
 export interface Combatant {
+  equipmentBatches?: EquipmentBatch[];
+  reserveEquipmentLoad?: number;
+  equipmentPersonnel?: number;
+  /** Wounded personnel whose kit has already been returned at settlement. */
+  unequippedWounded?: number;
   /** Battle-local receipt; even entry without a barrier spends this battle's grant. */
   wornBarrierUsed?: true;
   regenerationModel?: import('./regeneration-model.js').RegenerationModel;
@@ -579,7 +594,7 @@ export interface GenerateInput {
 }
 
 export type DamageChannel = 'kinetic' | 'thermal' | 'arcane';
-export type BodyKind = 'human' | 'large' | 'vehicle' | 'giant';
+export type BodyKind = 'human' | 'large' | 'vehicle' | 'giant' | import('./vehicle-size.js').VehicleSize;
 /** 规范化且冻结的 T/P/S/Q/F 中装备职责；训练 T 不在装备配方中。 */
 export interface ItemRecipe {
   loadModel?: import('./load-model.js').LoadModel;
@@ -618,6 +633,7 @@ export type LogKind =
   | 'battle-end';
 
 export interface BattleLogEntry {
+  volley?: { action:number; mode:import('./equipment-batches.js').VolleyMode; weapon:string };
   transport?: boolean;
   /** Actual execution feedback; temporary budget limits do not invalidate a route. */
   intentFailure?: { unitId: string; cell?: number; temporary: boolean };
@@ -707,6 +723,7 @@ export interface RulePack {
   criticalDamageScale?: number;
   wornBarrierModel?: 'entry-once-v1';
   casualtyModel?: 'individual-v1';
+  rescueAtZero?: true;
   initiativeModel?: 'seeded-ties-v1';
   /** V15 道具系统：专精十级、道具行动与编队件数、AI 保留价值、冲锋与远程看实际配装; absent keeps V14. V20 items-v2：佩戴修正按道具 L 换算。 */
   itemModel?: 'items-v1' | 'items-v2';

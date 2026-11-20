@@ -42,3 +42,14 @@ export function treatUnitRecord(record: UnitRecord, registry: Map<string, Trait>
   if (withdrawn) unit.status = withdrawn;
   return unitRecordFromCombatant(unit, record, { kind: 'update', sourceId });
 }
+
+export function loseArchivedWounded(record: UnitRecord, registry: Map<string, Trait>, count: number | 'all', sourceId: string): UnitRecord {
+  const unit = materializeRecoverable(record, registry);
+  const wounded = unit.recoverableWounded ?? 0;
+  if (unit.scale === 'hero' || !wounded) throw Error('该档案没有可扣减的可救伤兵');
+  const loss = count === 'all' ? wounded : count;
+  if (!Number.isSafeInteger(loss) || loss <= 0 || loss > wounded) throw Error('死亡人数须在现有可救伤兵人数以内');
+  unit.recoverableWounded = wounded - loss;
+  if (!unit.hp && !unit.recoverableWounded) unit.status = 'dead';
+  return unitRecordFromCombatant(unit, record, { kind: 'update', sourceId });
+}

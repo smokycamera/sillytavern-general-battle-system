@@ -35,7 +35,7 @@ it('从队伍载具卡装载，在配装乘员卡离开，再绑定并从载具�
     click('#inventory-panel .ride-editor [data-mode="mount"]');
     await vi.waitFor(() => expect(ride()?.mode).toBe('mount'));
     click('[data-action="workspace-tab"][data-tab="units"]');
-    expect(document.querySelectorAll('.team-transport-group [data-unit]')).toHaveLength(2);
+    expect(Array.from(document.querySelectorAll<HTMLElement>('.team-transport-group [data-unit]'), row => row.dataset.unit)).toEqual(['carrier']);
     click('.ride-editor[data-carrier="carrier"] button[data-rider="rider"]');
     await vi.waitFor(() => expect(ride()).toBeUndefined());
     expect(document.querySelector('.ride-editor[data-carrier="carrier"]')?.textContent).toContain('已用 0 / 4 席');
@@ -51,7 +51,8 @@ it('从队伍载具卡装载，在配装乘员卡离开，再绑定并从载具�
     expect(known).toContain('rider'); expect(known).not.toContain('hidden');
     await f.service.transact(current => ({...current,battle:{kind:'small',snap:battle.toSnapshot()}}));
     click('[data-action="workspace-tab"][data-tab="units"]');
-    expect(document.querySelector('.team-transport-group [data-unit="rider"]')).toBeTruthy();
+    expect(document.querySelector('.team-transport-group')?.textContent).toContain('乘员：rider ×1');
+    expect(document.querySelector('.team-transport-group [data-unit="rider"]')).toBeNull();
     expect(document.querySelector('.team-workspace [data-unit="hidden"]')).toBeNull();
   } finally { window.dispatchEvent(new Event('pagehide')); }
 });

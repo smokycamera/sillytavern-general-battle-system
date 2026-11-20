@@ -6,7 +6,7 @@ import { unitRecordFromCombatant, materializeUnitRecord } from './unit-state.js'
 import { SmallBattle, MassBattle, traitRegistry, rulesById, validateTraitSource, validateTacticalPose, validateTacticalEffort, validateConcealment, validateFlightState, validateWounded, validateMoraleState, validateVanguardOrigin, validateFormationPosition, normalizeV2Scale, ITEM_FORM_NAMES, itemSpecText, type Combatant } from '../../engine/src/index.js';
 import { combatantFromUnknown, migratePanelUnits } from './unit-state.js';
 import type { NarrativeSave } from './narrative-state.js';
-import { prepareInventoryState, validateInventoryItem, fitsEquipmentSlot, migrateLegacyInventory, type InventoryItem } from './inventory-state.js';
+import { prepareInventoryState, occupiedEquipmentSlot, validateInventoryItem, fitsEquipmentSlot, migrateLegacyInventory, type InventoryItem } from './inventory-state.js';
 import { prepareBattleItemWrite } from './battle-items.js';
 
 export interface MigrationReview { original: NarrativeSave; candidate: NarrativeSave; changes: string[]; quarantined: number }
@@ -48,6 +48,39 @@ function validateBattle(save: NarrativeSave): void {
   } else MassBattle.fromSnapshot(structuredClone(snap));
 }
 
+/** Recover only the exact rows excluded by the old single-slot check in the last accepted preview. */
+function recoverQuarantinedLoadout(save: NarrativeSave): InventoryItem[] | undefined {
+  if (!Array.isArray(save.inventory) || !Array.isArray(save.migrationBackups) || !Array.isArray(save.unitMigrationWarnings)
+    || !Array.isArray(save.inventoryMigrationBackup) || !save.inventoryMigrationBackup.length) return;
+  const before: NarrativeSave | undefined = save.migrationBackups.at(-1)?.source;
+  if (!Array.isArray(before?.inventory) || save.factRevision !== (before.factRevision ?? 0) + 1) return;
+  const quarantined = new Map<string, InventoryItem>();
+  for (const item of save.inventoryMigrationBackup) {
+    if (!item?.equippedTo || !item.id || quarantined.has(item.id)) return;
+    quarantined.set(item.id,item);
+  }
+  const current = new Map(save.inventory.map(item => [item?.id,item]));
+  if (current.size !== save.inventory.length || before.inventory.length !== current.size + quarantined.size) return;
+  const warnings = new Set(save.unitMigrationWarnings);
+  const inventory: InventoryItem[] = [];
+  for (const [index,item] of before.inventory.entries()) {
+    if (!item?.id) return;
+    const archived = quarantined.get(item.id);
+    if (archived) {
+      if (current.has(item.id) || !warnings.has(`库存[${index}]已隔离：Error: 同一槽位有多件实物，不能猜测保留`)
+        || JSON.stringify(item) !== JSON.stringify(archived)) return;
+      inventory.push(archived);
+    } else {
+      const retained = current.get(item.id);
+      if (!retained) return;
+      inventory.push(retained);
+    }
+  }
+  // Reapply the current relation and slot checks before offering the repair.
+  try { prepareInventoryState({...save,inventory},false); } catch { return; }
+  return inventory;
+}
+
 /** 纯预览：原始完整存档保留，运行中的旧规则不换版本，不重建已有装备。 */
 export function reviewMigration(raw: NarrativeSave, unifiedBalance = false): MigrationReview | undefined {
   const original = structuredClone(raw);
@@ -67,7 +100,12 @@ export function reviewMigration(raw: NarrativeSave, unifiedBalance = false): Mig
   let quarantined = units.backup.length;
   // 旧版药剂与护符逐件按对照表转换（V15）；转换不了的与其他坏项一样隔离，原件留在备份里。
   let converted = 0;
-  const items = (Array.isArray(raw.inventory) ? raw.inventory : []).map((item: InventoryItem) => {
+  const recovered = recoverQuarantinedLoadout(raw);
+  if (recovered) {
+    changes.push(`从上次迁移备份找回 ${recovered.length - raw.inventory!.length} 批混装装备，保留原编号、件数和配装`);
+    delete candidate.inventoryMigrationBackup;
+  }
+  const items = (recovered ?? (Array.isArray(raw.inventory) ? raw.inventory : [])).map((item: InventoryItem) => {
     try {
       const next = migrateLegacyInventory([item])?.[0] ?? item;
       if (next === item) return item;
@@ -77,23 +115,34 @@ export function reviewMigration(raw: NarrativeSave, unifiedBalance = false): Mig
       return next;
     } catch { return item; }
   });
+  const slotCounts = new Map<string,number>(), idCounts = new Map<string,number>();
+  for (const item of items) if (item && typeof item === 'object') {
+    idCounts.set(item.id,(idCounts.get(item.id) ?? 0)+1);
+    const key = occupiedEquipmentSlot(item);
+    if (key) slotCounts.set(key,(slotCounts.get(key) ?? 0)+1);
+  }
   const badItems: unknown[] = [];
   candidate.inventory = items.filter((item, index) => {
     try {
       validateInventoryItem(item);
-      if (items.some((other, n) => n !== index && other?.id === item.id)) throw new Error('重复实物id，不能选一条覆盖');
+      if (idCounts.get(item.id)! > 1) throw new Error('多条物品记录使用了同一编号');
       if (item.assignedTo && !units.records.some((r) => r.id === item.assignedTo)) throw new Error('持有者档案缺失');
       if (item.equippedTo) {
         const { unitId, slot } = item.equippedTo;
         if (item.assignedTo !== unitId || !units.records.some((r) => r.id === unitId && r.equipmentManaged)
           || !item.mechanics || !fitsEquipmentSlot(item.mechanics,slot)) throw new Error('装备关系与持有者/槽位不一致');
-        if (slot !== 'gear' && items.some((other, n) => n !== index && other?.equippedTo?.unitId === unitId && other.equippedTo.slot === slot)) throw new Error('同一槽位有多件实物，不能猜测保留');
+        if (slotCounts.get(occupiedEquipmentSlot(item)!)! > 1) throw new Error('多件旧装备占用了同一个装备位');
       }
       return true;
-    } catch (error) { changes.push(`库存[${index}]已隔离：${String(error)}`); badItems.push(item); return false; }
+    } catch (error) {
+      const label = typeof item?.name === 'string' && item.name.trim() ? `「${item.name}」` : `第 ${index + 1} 项物品`;
+      changes.push(`${label}未载入：${error instanceof Error ? error.message : String(error)}`);
+      badItems.push(item);
+      return false;
+    }
   });
   if (raw.inventory !== undefined && !Array.isArray(raw.inventory)) { changes.push('库存容器已隔离：不是数组'); badItems.push(raw.inventory); }
-  if (converted && !badItems.length) {
+  if ((converted || recovered) && !badItems.length) {
     // 原配件栏的投影换成已佩戴道具；单位档案的其他内容不变。
     const projected = prepareInventoryState(candidate, false);
     candidate.inventory = projected.inventory; candidate.storage = projected.storage;

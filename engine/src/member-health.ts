@@ -1,3 +1,4 @@
+import { isVehicleBody } from './vehicle-size.js';
 import { displayNumber } from './display-number.js';
 import {clampShieldDurability,clampEnergyShield} from './shield-state.js';
 import type {Combatant} from './types.js';
@@ -7,7 +8,7 @@ import { capSingleLife } from './health-limits.js';
 export interface MemberHealthGroup { hp:number; count:number }
 export const MEMBER_HEALTH_MODEL='cohort-v2' as const;
 export const hasMemberHealth=(unit:Partial<Combatant>):boolean=>unit.combatModel===MEMBER_HEALTH_MODEL&&unit.scale!=='hero';
-export const memberNoun=(unit:Pick<Combatant,'body'>)=>unit.body==='vehicle'?'辆':'人';
+export const memberNoun=(unit:Pick<Combatant,'body'>)=>isVehicleBody(unit.body)?'辆':'人';
 export function memberHealth(unit:Partial<Combatant>):number {
   return hasMemberHealth(unit)?(unit.formation?.health??[]).reduce((n,g)=>n+g.hp*g.count,0):unit.hp??0;
 }
@@ -63,37 +64,55 @@ export function setMemberMaximum(unit:Combatant,max:number):void {
   unit.formation.memberHp=max;
   if(unit.formation.health)unit.formation.health=mergeHealth(unit.formation.health.map(g=>({hp:Math.min(g.hp,max),count:g.count})));
 }
-/** 先在命中成员间分配伤害；武器可显式开启同编队余伤传递，持续伤害默认不传递。 */
-export function damageMemberGroups(unit:Combatant,amount:number,targets:number,overflow=false):{health:number;casualties:number;overflow:number} {
-  const f=unit.formation!;initializeMemberHealth(unit);
-  const count=Math.min(unit.hp,Math.max(0,Math.floor(targets))),damage=Math.max(0,Math.floor(amount));
-  if(!count||!damage)return {health:0,casualties:0,overflow:0};
-  const per=Math.floor(damage/count);let extra=damage%count,remaining=count,health=0,casualties=0;
-  const groups:MemberHealthGroup[]=[];
-  const hit=(hp:number,n:number,dose:number)=>{if(!n)return;const after=Math.max(0,hp-dose);health+=(hp-after)*n;if(after)groups.push({hp:after,count:n});else casualties+=n;};
-  for(const g of f.health!){
-    const n=Math.min(remaining,g.count),higher=Math.min(extra,n);remaining-=n;extra-=higher;
-    hit(g.hp,higher,per+1);hit(g.hp,n-higher,per);
-    if(g.count>n)groups.push({hp:g.hp,count:g.count-n});
+/** The lowest-HP members take the largest dose. Surviving HP therefore stays sorted. */
+function appendSurvivors(groups: MemberHealthGroup[], hp: number, count: number): void {
+  if (!count || hp <= 0) return;
+  const last = groups[groups.length - 1];
+  if (last?.hp === hp) last.count += count;
+  else groups.push({hp, count});
+}
+
+export function damageMemberGroups(unit: Combatant, amount: number, targets: number, overflow = false): {health:number;casualties:number;overflow:number} {
+  initializeMemberHealth(unit);
+  const formation = unit.formation!, count = Math.min(unit.hp, Math.max(0, Math.floor(targets)));
+  const damage = Math.max(0, Math.floor(amount));
+  if (!count || !damage) return {health:0, casualties:0, overflow:0};
+  const dose = Math.floor(damage / count), groups: MemberHealthGroup[] = [];
+  let extra = damage % count, remaining = count, health = 0, casualties = 0;
+  for (const group of formation.health!) {
+    const hit = Math.min(remaining, group.count), higher = Math.min(extra, hit);
+    remaining -= hit;
+    extra -= higher;
+    health += Math.min(group.hp, dose) * hit + (group.hp > dose ? higher : 0);
+    casualties += group.hp <= dose ? hit : group.hp === dose + 1 ? higher : 0;
+    appendSurvivors(groups, group.hp - dose - 1, higher);
+    appendSurvivors(groups, group.hp - dose, hit - higher);
+    appendSurvivors(groups, group.hp, group.count - hit);
   }
-  f.health=mergeHealth(groups);
-  let overflowDamage=0;
-  if(overflow&&damage>health){
-    let left=damage-health;
-    const survivors:MemberHealthGroup[]=[];
-    // 按生命组批量扣除，优先现有伤员；十亿人也不逐人创建对象或掷骰。
-    for(const g of f.health){
-      const killed=Math.min(g.count,Math.floor(left/g.hp));
-      left-=killed*g.hp;overflowDamage+=killed*g.hp;casualties+=killed;
-      let rest=g.count-killed;
-      if(rest&&left){survivors.push({hp:g.hp-left,count:1});overflowDamage+=left;left=0;rest--;}
-      if(rest)survivors.push({hp:g.hp,count:rest});
+  formation.health = groups;
+  let overflowDamage = 0;
+  if (overflow && damage > health) {
+    let left = damage - health;
+    const survivors: MemberHealthGroup[] = [];
+    for (const group of groups) {
+      const killed = Math.min(group.count, Math.floor(left / group.hp));
+      left -= killed * group.hp;
+      casualties += killed;
+      let rest = group.count - killed;
+      if (rest && left) {
+        appendSurvivors(survivors, group.hp - left, 1);
+        left = 0;
+        rest--;
+      }
+      appendSurvivors(survivors, group.hp, rest);
     }
-    f.health=mergeHealth(survivors);
+    overflowDamage = damage - health - left;
+    formation.health = survivors;
   }
-  unit.hp-=casualties;f.members=unit.hp;
-  if(casualties){clampShieldDurability(unit);clampEnergyShield(unit);}
-  return {health:health+overflowDamage,casualties,overflow:overflowDamage};
+  unit.hp -= casualties;
+  formation.members = unit.hp;
+  if (casualties) { clampShieldDurability(unit); clampEnergyShield(unit); }
+  return {health:health + overflowDamage, casualties, overflow:overflowDamage};
 }
 export function memberRecoveryCapacity(unit:Combatant):number {
   return Math.max(0,unit.hp*unit.formation!.memberHp-memberHealth(unit))+(unit.recoverableWounded??0)*unit.formation!.memberHp;

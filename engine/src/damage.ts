@@ -1,3 +1,6 @@
+import { isVehicleBody, hasVehicleSize } from './vehicle-size.js';
+import { refreshBarrier } from './barrier.js';
+import { weaponCapacity, availableCopies, crewEquipment, loseIssuedEquipment, protectionGroups } from './equipment-batches.js';
 import { CasualtyRolls } from './small/casualty-rolls.js';
 import { artilleryDirect, artillerySplash, artilleryRetention, BOUNDED_BLAST_MODEL, sprayerSplashAt } from './artillery-model.js';
 import { displayNumber } from './display-number.js';
@@ -45,7 +48,7 @@ import { isArmsV2, MOUNTED_SPRINT_DAMAGE, HOOK_ACCURACY, shieldUsable, shieldCla
 
 import type { Combatant, RulePack, Weapon } from './types.js';
 import type { ConditionDef } from './types.js';
-import { SeededRng, type Rng } from './rng.js';
+import { hashSeed, SeededRng, type Rng } from './rng.js';
 import { rollDice, rollDicePortion, rollDicePortionTotal, type DiceRollDetail } from './dice.js';
 import { collectMods, resolveStack, describeStack, hasFlag, type Modifier, type StackResult } from './bonus.js';
 import { averageDice, estimateHitChance, d20HitWeight } from './actions.js';
@@ -127,6 +130,7 @@ export interface AttackResolution {
 }
 
 export interface AttackOpts {
+  equipmentResolved?: boolean;
   macroEnvironment?: boolean; chargeDistance?: number; moved?: boolean; chargeStraight?: boolean; opportunity?: boolean;
   /** R16 油箱爆炸：自动命中、不暴击、不附加命中状态。 */
   autoHit?: boolean;
@@ -145,11 +149,14 @@ export interface AttackOpts {
   defenderTerrain?: string;
   defenderEngaged?: boolean;
   distance?: number;
+  operatorLimit?: number;
   participants?: number;
   attacker: Combatant;
   defender: Combatant;
   rng: Rng;
   casualtyRolls?: CasualtyRolls;
+  /** Lower-cost estimate for comparing hypothetical incoming fire at many destinations. */
+  riskEstimate?: boolean;
   rules: RulePack;
   conditionDefs: Map<string, ConditionDef>;
   traitRegistry?: Map<string, import('./types.js').Trait>;
@@ -256,10 +263,17 @@ function criticalInfo(opts: Omit<AttackOpts,'rng'>, weapon?: Weapon): { minimum:
     forced: !!applies && actual === 'dagger' && opts.defender.conditions.some(c=>c.dur>0&&['stunned','restrained','blinded','disarmed','confused','charmed'].includes(c.id)) };
 }
 export function previewAttack(opts: Omit<AttackOpts, 'rng'>): import('./actions.js').ActionPreview & { hitChance: number; expectedDamage: number; conditionValue?: number } {
-  // Repeated AI branches ask for the same complete preview, not just the same
-  // sampled losses. Reuse diagnostics too, only inside a synchronous read-only
-  // decision. Exact unit/options content (including positions/resources) is kept.
   const scope = previewScope?.readonlyUnits ? previewScope : undefined;
+  const projected = !opts.equipmentResolved && previewDefenders(opts.defender,scope);
+  if (projected && projected.length) {
+    const views = projected.map(({share,defender}) => ({share,preview:previewAttack({...opts,equipmentResolved:true,defender})}));
+    const result = {...views[0]!.preview};
+    for (const key of ['hitChance','anyHitChance','expectedDamage','damageOnHit'] as const) {
+      if (result[key] !== undefined) result[key]=views.reduce((n,v)=>n+v.share*(v.preview[key]??0),0);
+    }
+    return result;
+  }
+  // Reuse diagnostics within one read-only decision, including positions and resources.
   const key = scope && fullPreviewKey(scope, opts);
   let preview = key ? scope!.outcomes.get(key) : undefined;
   if (preview) preview = cloneData(preview);
@@ -419,6 +433,28 @@ const memberPreviewCache=new Map<string,{mean:number;second:number;positive:numb
 
 interface SampledMemberPreview { sum: number; squares: number; positive: number; casualties: number; maximum: number; hits: number }
 const SAMPLED_PREVIEW_COUNT = 96;
+// Fixed preview seeds couple alternative actions. Cache their initial states only;
+// each simulation owns its four cursors and restarts them for every packet.
+type PreviewSeedStates = [number,number,number,number];
+const packetSeedStates: PreviewSeedStates[] = [];
+class PreviewStreams {
+  readonly hit = new SeededRng('hit');
+  readonly dice = new SeededRng('dice');
+  readonly targets = new SeededRng('targets');
+  readonly rounding = new SeededRng('round');
+  reset(sample: number, attack: number, packet: number) {
+    const index = (attack * 8 + packet) * SAMPLED_PREVIEW_COUNT + sample;
+    let states = packetSeedStates[index];
+    if (!states) {
+      const seed = `barrier-preview:${sample}:${attack}:${packet}`;
+      states = [hashSeed(seed+':hit'),hashSeed(seed+':dice'),hashSeed(seed+':targets'),hashSeed(seed+':round')];
+      if (index < 8192) packetSeedStates[index] = states;
+    }
+    this.hit.setState(states[0]); this.dice.setState(states[1]);
+    this.targets.setState(states[2]); this.rounding.setState(states[3]);
+  }
+}
+
 // Cache values, not live units/resolutions. Both entry count and key memory are bounded.
 const sampledMemberPreviewCache = new Map<string, SampledMemberPreview>();
 const SAMPLE_CACHE_ENTRIES = 128, SAMPLE_CACHE_CHARS = 2 * 1024 * 1024;
@@ -435,13 +471,14 @@ export function sampledPreviewComputations(): number { return sampledPreviewRuns
 // values are the same either way, only their reuse differs.
 interface ScopeTable { id: string; text: string }
 interface PreviewScope { samples: Map<string, SampledMemberPreview>; chars: number; tables: WeakMap<object, ScopeTable>; ids: Map<string, string>; epoch: number;
-  parts: Map<string, string>; partChars: number; readonlyUnits: boolean; immutableParts: WeakMap<object, string>;
+  parts: Map<string, string>; partChars: number; readonlyUnits: boolean; immutableParts: WeakMap<object, string>; unitKeys: WeakMap<object, string>;
+  defenders: WeakMap<Combatant, {share:number; defender:Combatant}[]>;
   outcomes: Map<string, ReturnType<typeof previewAttackOutcome>>; outcomeChars: number }
 const SCOPE_CACHE_ENTRIES = 4096, SCOPE_CACHE_CHARS = 8 * 1024 * 1024;
 let previewScope: PreviewScope | undefined, previewScopes = 0;
 /** 开始一次只读估值（AI 选择行动）；结束前不得修改状态表或特质表内容。 */
 export function beginPreviewScope(readonlyUnits = false): void { previewScope = { samples: new Map(), chars: 0, tables: new WeakMap(), ids: new Map(), epoch: ++previewScopes, parts: new Map(), partChars: 0,
-  readonlyUnits, immutableParts: new WeakMap(), outcomes: new Map(), outcomeChars: 0 }; }
+  readonlyUnits, immutableParts: new WeakMap(), unitKeys: new WeakMap(), defenders: new WeakMap(), outcomes: new Map(), outcomeChars: 0 }; }
 export function endPreviewScope(): void { previewScope = undefined; }
 /** 当前估值范围的编号；范围外为 undefined。供其他估值模块在同一范围内复用只读派生表。 */
 export function previewScopeEpoch(): number | undefined { return previewScope?.epoch; }
@@ -455,7 +492,27 @@ function scopeTable(scope: PreviewScope, table: Map<string, unknown>): ScopeTabl
   }
   return entry;
 }
-function sampledPreviewState(opts: Omit<AttackOpts, 'rng'>) {
+/** Beyond the last applicable range threshold, another cell changes neither the hit roll
+ * nor the damage roll. Geometry and terrain modifiers have already been passed to damage.
+ * Keep the original distance for mutable shields, ammunition choice and trait prerequisites. */
+function sampleDistance(opts: Omit<AttackOpts,'rng'>, ctx: ReturnType<typeof attackContext>): number | undefined {
+  const distance = opts.distance;
+  if (distance === undefined) return;
+  if (!isArmsV2(opts.rules.armsModel)) {
+    const urban = itemsV15(opts.attacker) && activeTraitIds(opts.attacker).includes('urban-fighter');
+    return distance <= 1 ? 1 : urban ? Math.min(3,distance) : Math.min(2,distance);
+  }
+  if (!Number.isInteger(distance) || distance < 2 || opts.defender.shield || isCannonWeapon(ctx.weapon)
+    || activeTraitIds(opts.attacker).length || activeTraitIds(opts.defender).length) return distance;
+  const mechanism = ctx.weapon?.recipe?.mechanism;
+  // Firearms lose accuracy after four grid cells, shotguns have a separate third-cell band.
+  let limit = mechanism === 'firearm' ? 5 : mechanism === 'shotgun' ? 4 : 2;
+  for (const mods of [ctx.atkMods, ctx.defMods]) for (const mod of mods) {
+    if (mod.cond?.maxDistance !== undefined) limit = Math.max(limit, Math.floor(mod.cond.maxDistance) + 1);
+  }
+  return Math.min(distance, limit);
+}
+function sampledPreviewState(opts: Omit<AttackOpts, 'rng'>, ctx: ReturnType<typeof attackContext>) {
   // Damage receives terrain, distance, participants and external modifiers explicitly.
   // Coordinates only affect directional brace (whether the pose is still held and whether
   // the opponent stands in its front arc) and V13 works (whether the unit still stands on its
@@ -463,8 +520,7 @@ function sampledPreviewState(opts: Omit<AttackOpts, 'rng'>) {
   // cancels loose formation) and an on-works flag instead of absolute cells and anchors.
   // HP, barrier power/duration, equipment, traits, fatigue, rules and mutable registry
   // *contents* remain in the key (not just object IDs).
-  // The resolution chain reads fatigue only as its penalty step and distance only as
-  // <=1 / >1 / >=2. SP, cooldowns, effort, engagement lists, zones and the attacker's own
+  // Fatigue contributes its penalty step. SP, cooldowns, effort, engagement lists, zones and the attacker's own
   // barrier never enter hit or loss, so AI what-if copies differing only there share samples.
   const ranged = opts.ranged ?? isRangedCapable(opts.attacker);
   const unit = (u: Combatant, opponent: Combatant, attacker: boolean) => ({ ...u, pos: undefined, formationPosition: undefined,
@@ -472,10 +528,8 @@ function sampledPreviewState(opts: Omit<AttackOpts, 'rng'>) {
     tacticalPose: u.tacticalPose ? defensivePostureMods(u, { defender: opponent, ranged, charge: opts.charge }, opts.conditionDefs, opts.traitRegistry) : undefined,
     fatigue: fatiguePenalty(u), resources: undefined, abilityState: undefined, tacticalEffort: undefined, engagedWith: undefined, battleZones: undefined,
     ...(attacker ? { barrier: undefined } : {}) });
-  // V15 巷战专精的“2格内射击”还区分 2 格与更远，只有带巷战专精的攻击方保留到 3 格。
-  const closeShots = itemsV15(opts.attacker) && activeTraitIds(opts.attacker).includes('urban-fighter');
-  const distance = isArmsV2(opts.rules.armsModel) ? opts.distance : opts.distance === undefined ? undefined : opts.distance <= 1 ? 1 : closeShots ? Math.min(3, opts.distance) : opts.distance >= 2 ? 2 : opts.distance;
-  return { ...opts, distance, ...(isArmsV2(opts.rules.armsModel) && (opts.weaponOverride ?? opts.attacker.weapon)?.recipe?.mechanism === 'sprayer' ? { sprayOnGrid: gridAttack(opts.attacker) } : {}),
+  const distance = sampleDistance(opts,ctx);
+  return { ...opts, distance, ...(isArmsV2(opts.rules.armsModel) ? { gridAttack:gridAttack(opts.attacker) } : {}),
     attacker: unit(opts.attacker, opts.defender, true), defender: unit(opts.defender, opts.attacker, false),
     conditionDefs: undefined, traitRegistry: undefined };
 }
@@ -499,26 +553,30 @@ function scopePart(scope: PreviewScope, value: unknown, immutable = false): stri
  * General preview scopes keep recomputing keys so in-place edits remain visible. */
 function scopeUnit(scope: PreviewScope, unit: object): string {
   if (!scope.readonlyUnits) return scopePart(scope, unit);
+  const cached = scope.unitKeys.get(unit);
+  if (cached) return cached;
   const parts: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(unit)) parts[key] = value && typeof value === 'object' ? [scopePart(scope, value, true)] : value;
-  return scopePart(scope, parts);
+  const key = scopePart(scope,parts);
+  if (key.startsWith('p')) scope.unitKeys.set(unit,key);
+  return key;
 }
 function fullPreviewKey(scope: PreviewScope, opts: Omit<AttackOpts, 'rng'>): string | undefined {
   const { attacker, defender, conditionDefs, traitRegistry, ...attack } = opts;
   const defs = scopeTable(scope, conditionDefs), registry = traitRegistry && scopeTable(scope, traitRegistry);
-  const key = [scopeUnit(scope, attacker), scopeUnit(scope, defender), scopePart(scope, attack), defs.id, registry?.id ?? ''].join('\n');
+  const key = [scopeUnit(scope, attacker), scopeUnit(scope, defender), scopeUnit(scope, attack), defs.id, registry?.id ?? ''].join('\n');
   return key.length <= 16384 ? key : undefined;
 }
 /** The state and trait tables follow the JSON object; JSON text has no raw newline, so the parts cannot run together. */
-function sampledPreviewKeys(opts: Omit<AttackOpts, 'rng'>, scope: PreviewScope | undefined): { key: string; shared: () => string } {
-  const state = sampledPreviewState(opts);
+function sampledPreviewKeys(opts: Omit<AttackOpts, 'rng'>, ctx: ReturnType<typeof attackContext>, scope: PreviewScope | undefined): { key: string; shared: () => string } {
+  const state = sampledPreviewState(opts,ctx);
   if (!scope) {
     const key = JSON.stringify(state) + '\n' + JSON.stringify([...opts.conditionDefs]) + '\n' + (opts.traitRegistry ? JSON.stringify([...opts.traitRegistry]) : '');
     return { key, shared: () => key };
   }
   const defs = scopeTable(scope, opts.conditionDefs), registry = opts.traitRegistry && scopeTable(scope, opts.traitRegistry);
   const { attacker, defender, ...attack } = state;
-  const base = [scopeUnit(scope, attacker), scopeUnit(scope, defender), scopePart(scope, attack)].join('\n');
+  const base = [scopeUnit(scope, attacker), scopeUnit(scope, defender), scopeUnit(scope, attack)].join('\n');
   return { key: base + '\n' + defs.id + '\n' + (registry?.id ?? ''), shared: () => JSON.stringify(state) + '\n' + defs.text + '\n' + (registry?.text ?? '') };
 }
 function rememberScopedPreview(scope: PreviewScope, key: string, value: SampledMemberPreview): void {
@@ -571,7 +629,8 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   const upper=maxBase&&maxAp ? Math.ceil((Math.max(...maxBase.keys())+Math.max(...maxAp.keys()))*rawMultiplier*Math.ceil(weight))*count : Infinity;
   // 连续攻击共用剩余屏障。固定种子的小样本估计只操作副本，不消耗实战随机数。
   if (count > 1 && (hasMemberHealth(opts.defender) || opts.defender.barrier || opts.defender.energyShield || upper>memberHealth(opts.defender)) || !maxBase || !maxAp) {
-    const scope = previewScope, { key, shared } = sampledPreviewKeys(opts, scope);
+    const sampleCount = opts.riskEstimate ? 24 : SAMPLED_PREVIEW_COUNT;
+    const scope = previewScope, { key, shared } = sampledPreviewKeys(opts, ctx, scope);
     let stats = (scope?.samples ?? sampledMemberPreviewCache).get(key);
     const sharedKey = scope && !stats ? shared() : key;
     if (scope && !stats && (stats = sampledMemberPreviewCache.get(sharedKey))) rememberScopedPreview(scope, key, stats);
@@ -584,8 +643,9 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
       const sampleOpts: AttackOpts = { ...opts, attacker, defender: opts.defender, rng: new SeededRng('barrier-preview:0'), previewMemo };
       const packets = opts.packetShare !== undefined ? 1 : cohortSamples(sampleOpts);
       if (packets > 1) sampleOpts.packetShare = 1 / packets;
+      const streams = opts.rules.attackPreviewModel === 'exact-sequence-v1' ? new PreviewStreams() : undefined;
       let reusable: Combatant | undefined;
-      for (let i = 0; i < SAMPLED_PREVIEW_COUNT; i++) {
+      for (let i = 0; i < sampleCount; i++) {
         const defender = damageCopy(opts.defender, reusable);
         reusable = defender;
         const rng = new SeededRng('barrier-preview:' + i), before = memberHealth(defender), members = defender.hp;
@@ -593,8 +653,8 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
         let hitAny = false;
         for (let n = 0; n < (opts.abilityDamage ? 1 : ctx.weapon?.attacks ?? 1) && defender.hp > 0; n++) {
           for (let packet = 0; packet < Math.max(1, packets) && defender.hp > 0; packet++) {
-            if (opts.rules.attackPreviewModel === 'exact-sequence-v1') sampleOpts.rng = new SeededRng(`barrier-preview:${i}:${n}:${packet}`);
-            hitAny = resolveAttackPacket(sampleOpts, true) || hitAny;
+            streams?.reset(i,n,packet);
+            hitAny = resolveAttackPacket(sampleOpts, true, streams) || hitAny;
           }
         }
         stats.hits += Number(hitAny);
@@ -605,10 +665,10 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
       rememberSampledPreview(sharedKey, stats);
       if (scope) rememberScopedPreview(scope, key, stats);
     }
-    const mean = stats.sum / SAMPLED_PREVIEW_COUNT;
+    const mean = stats.sum / sampleCount;
     return {...diagnostics,damageModel:'member-health' as const,...(opts.rules.overmatch?{weaponOverflow:hasMemberHealth(opts.defender)&&attackOverflow(opts,protection,resolved)}:{}),hitChance:hit,...(isArmsV2(opts.rules.armsModel)?{critChance:critical}:{}),anyHitChance:1-(1-hit)**count,expectedDamage:mean,damageOnHit:stats.hits?stats.sum/stats.hits:0,
-      expectedCasualties:hasMemberHealth(opts.defender)?stats.casualties/SAMPLED_PREVIEW_COUNT:undefined,damageChance:stats.positive/SAMPLED_PREVIEW_COUNT,penetrationFactor:factor,exact:false,
-      variance:Math.max(0,stats.squares/SAMPLED_PREVIEW_COUNT-mean*mean),minDamage:0,maxDamage:stats.maximum};
+      expectedCasualties:hasMemberHealth(opts.defender)?stats.casualties/sampleCount:undefined,damageChance:stats.positive/sampleCount,penetrationFactor:factor,exact:false,
+      variance:Math.max(0,stats.squares/sampleCount-mean*mean),minDamage:0,maxDamage:stats.maximum};
   }
   // 预览不改动单位：溢出判定与穿透在全部骰面组合中保持不变。
   const penetration=opts.rules.overmatch?protection??penetrationContext(opts,resolved):undefined,overflow=attackOverflow(opts,penetration,resolved);
@@ -643,13 +703,18 @@ function outcomeScale(opts: Omit<AttackOpts, 'rng'>, resolved?: ResolvedWeapon):
     const a=opts.attacker,d=opts.defender,ranged=opts.ranged??isRangedCapable(a),weapon=resolved?resolved.weapon:combatWeapon(opts.weaponOverride??a.weapon,a,d,opts.rules.weaponOverflow,opts.rules.damageModel,opts.rules.overmatch,opts.rules.overmatchCurve);
     const weaponAttack=!opts.abilityDamage||opts.abilityDamage.weaponBased;
     const fallbackWidth=engagementWidth(a,d,ranged,undefined,opts.fieldTags)*Math.max(1,personnel(a)/COHORT_REFERENCE);
-    const available=a.body==='vehicle'?personnel(a):Math.min(personnel(a),opts.participants??fallbackWidth);
-    const count=a.scale==='hero'?1:Math.min(available,weaponAttack?targetWidthLimit(d,ranged,opts.rules.targetWidthModel??null):Infinity);
-    const crew=a.scale!=='hero'&&(a.body??'human')==='human'&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&!opts.abilityDamage?.delivery?.startsWith('magic')?weaponCrew(weapon,opts.rules.armsModel):1;
+    const available=isVehicleBody(a.body)?personnel(a):Math.min(personnel(a),opts.participants??fallbackWidth);
+    const batch=weaponAttack ? a.equipmentBatches?.find(b=>b.id===weapon?.id) : undefined;
+    const battery = batch?.mechanics.kind === 'weapon' && hasVehicleSize(a.body);
+    const widthLimit = weaponAttack ? targetWidthLimit(d,ranged,opts.rules.targetWidthModel??null) : Infinity;
+    const capacity = battery ? Math.min(weaponCapacity(a),widthLimit,opts.abilityDamage ? opts.participants ?? Infinity : Infinity)
+      : a.scale === 'hero' ? 1 : Math.min(available,widthLimit);
+    const count = Math.min(opts.operatorLimit ?? Infinity,capacity,batch ? availableCopies(a,batch.id) : Infinity);
+    const crew=!(batch && crewEquipment(a,batch))&&a.scale!=='hero'&&(a.body??'human')==='human'&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&!opts.abilityDamage?.delivery?.startsWith('magic')?weaponCrew(weapon,opts.rules.armsModel):1;
     // 疏散的近战代价是编队只展开一半人数；V21 起个体不再按半数出手（个体没有阵形可散，旧战斗保持原结算）。
     const loose=Math.max(0,count/crew)*(!ranged&&looseFormation(a)&&!(a.scale==='hero'&&isArmsV3(opts.rules.armsModel))?0.5:1);
     // V12: a formation throws one demolition charge per three participants instead of one per member.
-    const participants=opts.rules.armsModel&&a.scale!=='hero'&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&weapon?.tags?.includes('blast')?demolitionPackets(loose):loose;
+    const participants=opts.rules.armsModel&&!battery&&a.scale!=='hero'&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&weapon?.tags?.includes('blast')?demolitionPackets(loose):loose;
     const area=hasMemberHealth(d)&&opts.abilityDamage&&!opts.abilityDamage.weaponBased&&opts.abilityDamage.shape==='burst'?Math.min(d.hp,opts.abilityDamage.areaExposure??4):1;
     return {participants,multiplier:participants*area*(opts.packetShare??1)};
   }
@@ -912,10 +977,42 @@ function attackBasis(opts: AttackOpts): AttackBasis {
   if (key !== undefined) opts.previewMemo!.bases.set(key, basis);
   return rememberLast(basis);
 }
+function previewDefenders(unit: Combatant, scope?: PreviewScope) {
+  let views = scope?.defenders.get(unit);
+  if (!views) {
+    const groups = protectionGroups(unit);
+    views = needsProtectionView(unit,groups) ? groups.map(group => ({
+      share:unit.scale === 'hero' ? 1 : group.size / unit.hp, defender:projectProtection(unit,group),
+    })) : [];
+    scope?.defenders.set(unit,views);
+  }
+  return views;
+}
+function needsProtectionView(unit: Combatant,groups: ReturnType<typeof protectionGroups>): boolean {
+  if (groups.length !== 1) return groups.length>0;
+  const group = groups[0]!;
+  return group.armor?.id!==unit.armor?.id || group.shield?.id!==unit.shield?.id || group.weapon?.id!==unit.weapon?.id || group.gear?.length!==unit.gear?.length;
+}
+function projectProtection(unit: Combatant,group: ReturnType<typeof protectionGroups>[number]): Combatant {
+  const view = {...unit,weapon:group.weapon,armor:group.armor,shield:group.shield,gear:group.gear};
+  if (group.shield?.id!==unit.shield?.id) {
+    const batch=unit.equipmentBatches?.find(b=>b.id===group.shield?.id);
+    view.shieldDurability=batch?.shieldDurability; view.energyShield=batch?.energyShield;
+  }
+  // The selected members already wear every item in this projection.
+  if (view.equipmentBatches?.some(b=>b.slot==='gear'))
+    view.equipmentBatches=view.equipmentBatches.filter(b=>b.slot!=='gear');
+  const grants = unit.barrier?.grants;
+  if (grants?.some(g=>g.battleLong && !view.gear?.some(item=>item.id===g.sourceId))) {
+    view.barrier = {...unit.barrier!,grants:grants.filter(g=>!g.battleLong || view.gear?.some(item=>item.id===g.sourceId))};
+    refreshBarrier(view);
+  }
+  return view;
+}
 export function resolveAttack(opts: AttackOpts): AttackResolution {
   // Standalone attacks have no battle snapshot. Share one stream across their packets.
-  if (opts.rules.casualtyModel && !opts.casualtyRolls && opts.defender.scale !== 'hero' && opts.defender.body !== 'vehicle') {
-    opts = { ...opts, casualtyRolls: new CasualtyRolls(String(opts.rng.next())) };
+  if (opts.rules.casualtyModel && !opts.casualtyRolls && opts.defender.scale !== 'hero' && !isVehicleBody(opts.defender.body)) {
+    opts = { ...opts, casualtyRolls: new CasualtyRolls(String(opts.rng.next()), opts.rules.rescueAtZero) };
   }
   const samples=opts.packetShare!==undefined?1:opts.previewMemo?opts.previewMemo.samples??=cohortSamples(opts):cohortSamples(opts);
   if(samples>1){
@@ -937,21 +1034,45 @@ export function resolveAttack(opts: AttackOpts): AttackResolution {
       if(!opts.previewMemo)result.text=formatResolution(result,opts.defender);return result;
     }
   }
+  const groups = !opts.equipmentResolved && protectionGroups(opts.defender);
+  if (groups && needsProtectionView(opts.defender,groups)) {
+    const unit=opts.defender;
+    const stacking = unit.barrier?.stacking;
+    let draw=groups.length>1?opts.rng.next()*unit.hp:0;
+    const group=groups.find(g=>(draw-=g.size)<0) ?? groups[groups.length-1]!;
+    const view=projectProtection(unit,group);
+    const hidden=unit.barrier?.grants?.filter(g=>g.battleLong && !group.gear?.some(item=>item.id===g.sourceId)) ?? [];
+    const priorWounded=unit.recoverableWounded ?? 0;
+    const priorHp=unit.hp;
+    const result=resolveAttackPacket({...opts,defender:view,previewMemo:undefined,equipmentResolved:true},false);
+    loseIssuedEquipment(unit,Math.max(0,priorHp+priorWounded-view.hp-(view.recoverableWounded ?? 0)),group.start);
+    unit.hp=view.hp; unit.status=view.status; unit.recoverableWounded=view.recoverableWounded;
+    unit.formation=view.formation; unit.barrier=view.barrier; unit.morale=view.morale;
+    if (group.shield?.id===unit.shield?.id) {
+      unit.energyShield=view.energyShield; unit.shieldDurability=view.shieldDurability;
+    } else {
+      const shield=unit.equipmentBatches?.find(b=>b.id===group.shield?.id);
+      if (shield) { shield.energyShield=view.energyShield; shield.shieldDurability=view.shieldDurability; }
+    }
+    unit.woundedPercentRemainder=view.woundedPercentRemainder;
+    unit.moraleState=view.moraleState; unit.revivalState=view.revivalState;
+    if (hidden.length) { (unit.barrier ??= {remaining:0,duration:1,stacking}).grants=[...unit.barrier?.grants ?? [],...hidden]; refreshBarrier(unit); }
+    return result;
+  }
   return resolveAttackPacket(opts, false);
 }
 
-function resolveAttackPacket(opts: AttackOpts, sampleOnly: true): boolean;
+function resolveAttackPacket(opts: AttackOpts, sampleOnly: true, streams?: PreviewStreams): boolean;
 function resolveAttackPacket(opts: AttackOpts, sampleOnly: false): AttackResolution;
 /** 实战和抽样共用命中、伤损与随机数顺序；抽样在报告构建前直接提交伤损。 */
-function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean): AttackResolution | boolean {
+function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean, streams?: PreviewStreams): AttackResolution | boolean {
   const { attacker, defender, rng, rules } = opts;
   // V40 comparisons couple each random purpose across loadouts. A skipped fractional
   // hit/rounding draw can no longer shift all damage dice or the following packet.
-  const separated = sampleOnly && rules.attackPreviewModel === 'exact-sequence-v1';
-  const hitRng = separated ? new SeededRng(rng.seed + ':hit') : rng;
-  const diceRng = separated ? new SeededRng(rng.seed + ':dice') : rng;
-  const targetsRng = separated ? new SeededRng(rng.seed + ':targets') : rng;
-  const roundingRng = separated ? new SeededRng(rng.seed + ':round') : rng;
+  const hitRng = streams?.hit ?? rng;
+  const diceRng = streams?.dice ?? rng;
+  const targetsRng = streams?.targets ?? rng;
+  const roundingRng = streams?.rounding ?? rng;
   const shieldBefore = barrierAmount(defender);
   const basis = attackBasis(opts), { ranged, weapon, netAtk, targetDef } = basis.context;
   // 守方在本段末尾才受损：此前的穿透、展开与成员伤损方案共用同一结算武器。
@@ -1144,7 +1265,7 @@ export function formatResolution(r: AttackResolution, defender: Combatant): stri
   return text.replace('；未穿透','；主通道未穿透') + '（' + [...values].map(([channel,damage])=>names[channel]+displayNumber(damage)).join('、') + '）';
 }
 function formatResolutionBase(r: AttackResolution, defender: Combatant): string {
-  if(r.damageModel==='member-health')return `${r.attackerName} → ${r.defenderName}：${r.ammunition?r.ammunition==='he'?'榴弹·':'穿甲弹·':''}${r.hit?(r.crit?'暴击':'命中'):'未中'}${r.packetCount?`（${r.packetHits}/${r.packetCount}组命中）`:''}，生命损失${displayNumber(r.finalDamage)}（${displayNumber(r.hpBefore)}→${displayNumber(r.hpAfter)}）${(r.overmatchMultiplier??1)>1?'，跨代毁伤×'+Number(r.overmatchMultiplier!.toFixed(2)):''}${r.energyAbsorbed?`，能量盾吸收${shieldAmount(r.energyAbsorbed,defender)}${r.energySpent!==undefined?`（耗盾${shieldAmount(r.energySpent,defender)}）`:''}`:''}${r.energyOverloaded?defender.scale==='hero'?'，能量盾过载':`，${r.energyOverloaded}人能量盾过载`:''}${r.barrierAbsorbed?`，屏障吸收${displayNumber(r.barrierAbsorbed)}`:''}${defender.scale!=='hero'?`，减员${displayNumber((r.membersBefore??defender.hp)-(r.membersAfter??defender.hp))}${defender.body==='vehicle'?'辆':'人'}`:''}${r.overflowDamage?`，其中溢出${displayNumber(r.overflowDamage)}`:''}${r.splashDamage?`，其中爆炸${displayNumber(r.splashDamage)}`:''}${r.penetrationFactor===0?'；未穿透':''}${r.shieldBroken?'，'+(defender.shield?.name??'盾牌')+'碎了':''}`;
+  if(r.damageModel==='member-health')return `${r.attackerName} → ${r.defenderName}：${r.ammunition?r.ammunition==='he'?'榴弹·':'穿甲弹·':''}${r.hit?(r.crit?'暴击':'命中'):'未中'}${r.packetCount?`（${r.packetHits}/${r.packetCount}组命中）`:''}，生命损失${displayNumber(r.finalDamage)}（${displayNumber(r.hpBefore)}→${displayNumber(r.hpAfter)}）${(r.overmatchMultiplier??1)>1?'，跨代毁伤×'+Number(r.overmatchMultiplier!.toFixed(2)):''}${r.energyAbsorbed?`，能量盾吸收${shieldAmount(r.energyAbsorbed,defender)}${r.energySpent!==undefined?`（耗盾${shieldAmount(r.energySpent,defender)}）`:''}`:''}${r.energyOverloaded?defender.scale==='hero'?'，能量盾过载':`，${r.energyOverloaded}人能量盾过载`:''}${r.barrierAbsorbed?`，屏障吸收${displayNumber(r.barrierAbsorbed)}`:''}${defender.scale!=='hero'?`，减员${displayNumber((r.membersBefore??defender.hp)-(r.membersAfter??defender.hp))}${isVehicleBody(defender.body)?'辆':'人'}`:''}${r.overflowDamage?`，其中溢出${displayNumber(r.overflowDamage)}`:''}${r.splashDamage?`，其中爆炸${displayNumber(r.splashDamage)}`:''}${r.penetrationFactor===0?'；未穿透':''}${r.shieldBroken?'，'+(defender.shield?.name??'盾牌')+'碎了':''}`;
   if(r.packetCount)return `${r.attackerName} → ${r.defenderName}：聚合${r.packetCount}组/${r.packetHits}组命中${r.crit?'（含暴击）':''}，损失${displayNumber(r.finalDamage)}${defender.scale==='hero'?'生命':'人'}（${displayNumber(r.hpBefore)}→${displayNumber(r.hpAfter)}）${r.penetrationFactor===0?'；未穿透':''}`;
   const parts: string[] = [];
   const head = `${r.attackerName} → ${r.defenderName}`;
@@ -1169,7 +1290,7 @@ function formatResolutionBase(r: AttackResolution, defender: Combatant): string 
 }
 
 function cohortSamples(opts: Omit<AttackOpts,'rng'>, resolved?: ResolvedWeapon): number {
-  if(opts.rules.combatModel===MEMBER_HEALTH_MODEL&&opts.attacker.scale!=='hero')return Math.min(8,Math.max(1,Math.ceil(outcomeScale({...opts,packetShare:undefined},resolved).participants)));
+  if(opts.rules.combatModel===MEMBER_HEALTH_MODEL&&(opts.attacker.scale!=='hero'||hasVehicleSize(opts.attacker.body)))return Math.min(8,Math.max(1,Math.ceil(outcomeScale({...opts,packetShare:undefined},resolved).participants)));
   return opts.rules.combatModel===COHORT_MODEL&&opts.attacker.scale!=='hero'&&opts.defender.scale!=='hero'?Math.min(8,Math.max(1,Math.ceil(personnel(opts.attacker)/COHORT_REFERENCE))):1;
 }
 

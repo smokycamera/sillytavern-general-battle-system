@@ -116,10 +116,11 @@ function epilogueDamage(b: Battle): string[] {
 /** 致命规则；战中切换过时写明开局规则和每次切换的轮次，单位按倒下时的规则记录。 */
 function lethalityRule(b: Battle): string {
   const changes = b.log.filter(e => e.kind === 'rule' && e.rule);
-  if (!changes.length) return b.nonLethal ? '非致命：双方生命归零只会濒死失能，不视为死亡；编队减员为可救伤兵。' : '致命：生命归零按阵亡结算。';
+  const lethal = b.rules.rescueAtZero ? '人员编队现员归零后仍结算可救伤兵，其余单位生命归零按阵亡结算' : '生命归零按阵亡结算';
+  if (!changes.length) return b.nonLethal ? '非致命：双方生命归零只会濒死失能，不视为死亡；编队减员为可救伤兵。' : '致命：' + lethal + '。';
   const name = (nonLethal: boolean) => nonLethal ? '非致命' : '致命';
   return `开局${name(!changes[0]!.rule!.nonLethal)}，${changes.map(e => `第${e.round}轮起改为${name(e.rule!.nonLethal)}`).join('，')}。`
-    + '单位按倒下时的规则记录：致命阶段生命归零即阵亡；非致命阶段只会濒死失能，不视为死亡，编队减员为可救伤兵。';
+    + '单位按倒下时的规则记录：致命阶段' + lethal + '；非致命阶段只会濒死失能，不视为死亡，编队减员为可救伤兵。';
 }
 export function battleEpilogue(b: Battle, start?: BattleReport['start']): string {
   const visible=knownBattleUnits(b),ids=new Set(visible.map(u=>u.id));

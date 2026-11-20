@@ -1,3 +1,4 @@
+import { isVehicleBody } from '../vehicle-size.js';
 import { SeededRng } from '../rng.js';
 import { smallRescuePercent } from '../trait-parameters.js';
 import { effectiveTraitLevel } from '../trait-sources.js';
@@ -34,7 +35,11 @@ function blockTotal(cdf: number[], rng: SeededRng): number {
 
 export class CasualtyRolls {
   private readonly cursors = new Map<string, number>();
-  constructor(private readonly seed: string) {}
+  constructor(private readonly seed: string, private readonly rescueAtZero = false) {}
+
+  retainsWounded(unit: Combatant): boolean {
+    return this.rescueAtZero && unit.scale !== 'hero' && !isVehicleBody(unit.body);
+  }
 
   roll(unit: Combatant, loss: number): number {
     const percent = smallRescuePercent(effectiveTraitLevel(unit, 'medic'), unit.traitLevelModel);

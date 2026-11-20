@@ -81,3 +81,11 @@ describe('升级与正文资料', () => {
     expect(formatPromptSection({ sections: { items: { ...settings.sections.items, enabled: false } } }, 'items', '清单')).toBe('');
   });
 });
+
+it('removes the former card cap from saved reminders and the editor while retaining custom text', () => {
+  for (const clause of ['本场最多32张', '本场最多64张', '会战最多64张']) {
+    const settings = {sections:{reminder:{template:`count是卡数；${clause}。保留我的编队说明。`}}};
+    expect(formatPromptSection(settings,'reminder','')).toBe('count是卡数。保留我的编队说明。');
+    expect(renderPromptSettings(settings)).toContain('count是卡数。保留我的编队说明。');
+  }
+});
