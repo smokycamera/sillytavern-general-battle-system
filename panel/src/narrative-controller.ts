@@ -1,3 +1,4 @@
+import { isVehicleBody } from '../../engine/src/vehicle-size.js';
 import { batchWeapons } from '../../engine/src/equipment-batches.js';
 import { migrateOutOfBattleLoads } from './load-migration.js';
 import { prepareClassMigration } from './arms-v2.js';
@@ -99,13 +100,13 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
       ...(s.traitIds.length ? { traits: s.traitIds.map((id) => (traitRegistry().get(id)?.name ?? id) + (s.traitLevels?.[id] ? 'L' + s.traitLevels[id] : '')) } : {}),
       ...(s.conditionIds?.length ? { effects: s.conditionIds.map((id) => standardConditionMap().get(id)?.name ?? id) } : {}),
       duration: s.duration.kind, remaining: s.remaining }));
-    const traitEffects = detailed && unit ? activeTraitIds(unit).filter(id => gradedTraitEnabled(unit, id)).map(id => ({ trait: id, level: traitLevel(unit, id), effect: traitLadderSummary(id, traitLevel(unit, id), id === 'medic' ? unit.traitLevelModel : undefined, unit.flightModel, individualCasualties && unit.body !== 'vehicle'), sources: traitLevelSources(unit, id), inactive: traitPrerequisiteReason(unit, id) })) : [];
+    const traitEffects = detailed && unit ? activeTraitIds(unit).filter(id => gradedTraitEnabled(unit, id)).map(id => ({ trait: id, level: traitLevel(unit, id), effect: traitLadderSummary(id, traitLevel(unit, id), id === 'medic' ? unit.traitLevelModel : undefined, unit.flightModel, individualCasualties && !isVehicleBody(unit.body)), sources: traitLevelSources(unit, id), inactive: traitPrerequisiteReason(unit, id) })) : [];
     const line = promptJson({ ...(detailed && traitEffects.length ? { traitEffects } : {}), id: record.id, name: record.name, side: record.side,
       ...(detailed ? { training: record.level, bonuses: unit?.bonuses } : { level: String(record.level) + enhancementLabel(unit?.bonuses) }),
       ...(!battleOpen ? { ...(detailed ? { level:record.level,base:{...record.base,...(moraleLocked?{moraleMax:undefined}:{})},status:record.status,retired:record.retired,resources:unit?.resources,traits:unit?.traits.map((id) => traitLevelToken(id, unit.traitLevels?.[id])),preparedAbilityIds:unit?.preparedAbilityIds } : {}),speedTier:unit?.speedTier,
         conditions:detailed ? record.conditions : record.conditions?.filter(c => c.dur > 0 && !c.effectSourceId).map(c => (standardConditionMap().get(c.id)?.name ?? c.id) + c.dur + '轮') } : {}),
       ...(progress ? { xpProgress: progress.current, xpRequired: progress.next } : { xpProgress: '已满级' }),
-      semantics: record.scale === 'hero' ? '生命' : unit?.body==='vehicle'?'载具数量':'人数', hp: live?.hp ?? record.hp, hpMax: live?.base.hpMax ?? record.base.hpMax,
+      semantics: record.scale === 'hero' ? '生命' : isVehicleBody(unit?.body)?'载具数量':'人数', hp: live?.hp ?? record.hp, hpMax: live?.base.hpMax ?? record.base.hpMax,
       // Wound groups are engine bookkeeping: the chat model gets a readable summary, never raw {hp,count} records to echo or rewrite.
       ...(unit&&hasMemberHealth(unit)?{memberHpMax:unit.formation!.memberHp,totalLife:memberHealth(unit),totalLifeMax:memberHealthMax(unit),memberHealth:memberHealthSummary(unit,4)}:{}),
       morale, moraleMax, ...(moraleLocked ? { moraleLocked: true } : {}),

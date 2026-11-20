@@ -1,5 +1,6 @@
+import { isVehicleBody, hasVehicleSize } from './vehicle-size.js';
 import { refreshBarrier } from './barrier.js';
-import { availableCopies, crewEquipment, loseIssuedEquipment, protectionGroups } from './equipment-batches.js';
+import { weaponCapacity, availableCopies, crewEquipment, loseIssuedEquipment, protectionGroups } from './equipment-batches.js';
 import { CasualtyRolls } from './small/casualty-rolls.js';
 import { artilleryDirect, artillerySplash, artilleryRetention, BOUNDED_BLAST_MODEL, sprayerSplashAt } from './artillery-model.js';
 import { displayNumber } from './display-number.js';
@@ -702,14 +703,18 @@ function outcomeScale(opts: Omit<AttackOpts, 'rng'>, resolved?: ResolvedWeapon):
     const a=opts.attacker,d=opts.defender,ranged=opts.ranged??isRangedCapable(a),weapon=resolved?resolved.weapon:combatWeapon(opts.weaponOverride??a.weapon,a,d,opts.rules.weaponOverflow,opts.rules.damageModel,opts.rules.overmatch,opts.rules.overmatchCurve);
     const weaponAttack=!opts.abilityDamage||opts.abilityDamage.weaponBased;
     const fallbackWidth=engagementWidth(a,d,ranged,undefined,opts.fieldTags)*Math.max(1,personnel(a)/COHORT_REFERENCE);
-    const available=a.body==='vehicle'?personnel(a):Math.min(personnel(a),opts.participants??fallbackWidth);
+    const available=isVehicleBody(a.body)?personnel(a):Math.min(personnel(a),opts.participants??fallbackWidth);
     const batch=weaponAttack ? a.equipmentBatches?.find(b=>b.id===weapon?.id) : undefined;
-    const count=Math.min(opts.operatorLimit ?? Infinity,a.scale==='hero'?1:Math.min(available,weaponAttack?targetWidthLimit(d,ranged,opts.rules.targetWidthModel??null):Infinity),batch ? availableCopies(a,batch.id) : Infinity);
+    const battery = batch?.mechanics.kind === 'weapon' && hasVehicleSize(a.body);
+    const widthLimit = weaponAttack ? targetWidthLimit(d,ranged,opts.rules.targetWidthModel??null) : Infinity;
+    const capacity = battery ? Math.min(weaponCapacity(a),widthLimit,opts.abilityDamage ? opts.participants ?? Infinity : Infinity)
+      : a.scale === 'hero' ? 1 : Math.min(available,widthLimit);
+    const count = Math.min(opts.operatorLimit ?? Infinity,capacity,batch ? availableCopies(a,batch.id) : Infinity);
     const crew=!(batch && crewEquipment(a,batch))&&a.scale!=='hero'&&(a.body??'human')==='human'&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&!opts.abilityDamage?.delivery?.startsWith('magic')?weaponCrew(weapon,opts.rules.armsModel):1;
     // 疏散的近战代价是编队只展开一半人数；V21 起个体不再按半数出手（个体没有阵形可散，旧战斗保持原结算）。
     const loose=Math.max(0,count/crew)*(!ranged&&looseFormation(a)&&!(a.scale==='hero'&&isArmsV3(opts.rules.armsModel))?0.5:1);
     // V12: a formation throws one demolition charge per three participants instead of one per member.
-    const participants=opts.rules.armsModel&&a.scale!=='hero'&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&weapon?.tags?.includes('blast')?demolitionPackets(loose):loose;
+    const participants=opts.rules.armsModel&&!battery&&a.scale!=='hero'&&(!opts.abilityDamage||opts.abilityDamage.weaponBased)&&weapon?.tags?.includes('blast')?demolitionPackets(loose):loose;
     const area=hasMemberHealth(d)&&opts.abilityDamage&&!opts.abilityDamage.weaponBased&&opts.abilityDamage.shape==='burst'?Math.min(d.hp,opts.abilityDamage.areaExposure??4):1;
     return {participants,multiplier:participants*area*(opts.packetShare??1)};
   }
@@ -977,7 +982,7 @@ function previewDefenders(unit: Combatant, scope?: PreviewScope) {
   if (!views) {
     const groups = protectionGroups(unit);
     views = needsProtectionView(unit,groups) ? groups.map(group => ({
-      share:group.size / unit.hp, defender:projectProtection(unit,group),
+      share:unit.scale === 'hero' ? 1 : group.size / unit.hp, defender:projectProtection(unit,group),
     })) : [];
     scope?.defenders.set(unit,views);
   }
@@ -1006,7 +1011,7 @@ function projectProtection(unit: Combatant,group: ReturnType<typeof protectionGr
 }
 export function resolveAttack(opts: AttackOpts): AttackResolution {
   // Standalone attacks have no battle snapshot. Share one stream across their packets.
-  if (opts.rules.casualtyModel && !opts.casualtyRolls && opts.defender.scale !== 'hero' && opts.defender.body !== 'vehicle') {
+  if (opts.rules.casualtyModel && !opts.casualtyRolls && opts.defender.scale !== 'hero' && !isVehicleBody(opts.defender.body)) {
     opts = { ...opts, casualtyRolls: new CasualtyRolls(String(opts.rng.next())) };
   }
   const samples=opts.packetShare!==undefined?1:opts.previewMemo?opts.previewMemo.samples??=cohortSamples(opts):cohortSamples(opts);
@@ -1260,7 +1265,7 @@ export function formatResolution(r: AttackResolution, defender: Combatant): stri
   return text.replace('；未穿透','；主通道未穿透') + '（' + [...values].map(([channel,damage])=>names[channel]+displayNumber(damage)).join('、') + '）';
 }
 function formatResolutionBase(r: AttackResolution, defender: Combatant): string {
-  if(r.damageModel==='member-health')return `${r.attackerName} → ${r.defenderName}：${r.ammunition?r.ammunition==='he'?'榴弹·':'穿甲弹·':''}${r.hit?(r.crit?'暴击':'命中'):'未中'}${r.packetCount?`（${r.packetHits}/${r.packetCount}组命中）`:''}，生命损失${displayNumber(r.finalDamage)}（${displayNumber(r.hpBefore)}→${displayNumber(r.hpAfter)}）${(r.overmatchMultiplier??1)>1?'，跨代毁伤×'+Number(r.overmatchMultiplier!.toFixed(2)):''}${r.energyAbsorbed?`，能量盾吸收${shieldAmount(r.energyAbsorbed,defender)}${r.energySpent!==undefined?`（耗盾${shieldAmount(r.energySpent,defender)}）`:''}`:''}${r.energyOverloaded?defender.scale==='hero'?'，能量盾过载':`，${r.energyOverloaded}人能量盾过载`:''}${r.barrierAbsorbed?`，屏障吸收${displayNumber(r.barrierAbsorbed)}`:''}${defender.scale!=='hero'?`，减员${displayNumber((r.membersBefore??defender.hp)-(r.membersAfter??defender.hp))}${defender.body==='vehicle'?'辆':'人'}`:''}${r.overflowDamage?`，其中溢出${displayNumber(r.overflowDamage)}`:''}${r.splashDamage?`，其中爆炸${displayNumber(r.splashDamage)}`:''}${r.penetrationFactor===0?'；未穿透':''}${r.shieldBroken?'，'+(defender.shield?.name??'盾牌')+'碎了':''}`;
+  if(r.damageModel==='member-health')return `${r.attackerName} → ${r.defenderName}：${r.ammunition?r.ammunition==='he'?'榴弹·':'穿甲弹·':''}${r.hit?(r.crit?'暴击':'命中'):'未中'}${r.packetCount?`（${r.packetHits}/${r.packetCount}组命中）`:''}，生命损失${displayNumber(r.finalDamage)}（${displayNumber(r.hpBefore)}→${displayNumber(r.hpAfter)}）${(r.overmatchMultiplier??1)>1?'，跨代毁伤×'+Number(r.overmatchMultiplier!.toFixed(2)):''}${r.energyAbsorbed?`，能量盾吸收${shieldAmount(r.energyAbsorbed,defender)}${r.energySpent!==undefined?`（耗盾${shieldAmount(r.energySpent,defender)}）`:''}`:''}${r.energyOverloaded?defender.scale==='hero'?'，能量盾过载':`，${r.energyOverloaded}人能量盾过载`:''}${r.barrierAbsorbed?`，屏障吸收${displayNumber(r.barrierAbsorbed)}`:''}${defender.scale!=='hero'?`，减员${displayNumber((r.membersBefore??defender.hp)-(r.membersAfter??defender.hp))}${isVehicleBody(defender.body)?'辆':'人'}`:''}${r.overflowDamage?`，其中溢出${displayNumber(r.overflowDamage)}`:''}${r.splashDamage?`，其中爆炸${displayNumber(r.splashDamage)}`:''}${r.penetrationFactor===0?'；未穿透':''}${r.shieldBroken?'，'+(defender.shield?.name??'盾牌')+'碎了':''}`;
   if(r.packetCount)return `${r.attackerName} → ${r.defenderName}：聚合${r.packetCount}组/${r.packetHits}组命中${r.crit?'（含暴击）':''}，损失${displayNumber(r.finalDamage)}${defender.scale==='hero'?'生命':'人'}（${displayNumber(r.hpBefore)}→${displayNumber(r.hpAfter)}）${r.penetrationFactor===0?'；未穿透':''}`;
   const parts: string[] = [];
   const head = `${r.attackerName} → ${r.defenderName}`;
@@ -1285,7 +1290,7 @@ function formatResolutionBase(r: AttackResolution, defender: Combatant): string 
 }
 
 function cohortSamples(opts: Omit<AttackOpts,'rng'>, resolved?: ResolvedWeapon): number {
-  if(opts.rules.combatModel===MEMBER_HEALTH_MODEL&&opts.attacker.scale!=='hero')return Math.min(8,Math.max(1,Math.ceil(outcomeScale({...opts,packetShare:undefined},resolved).participants)));
+  if(opts.rules.combatModel===MEMBER_HEALTH_MODEL&&(opts.attacker.scale!=='hero'||hasVehicleSize(opts.attacker.body)))return Math.min(8,Math.max(1,Math.ceil(outcomeScale({...opts,packetShare:undefined},resolved).participants)));
   return opts.rules.combatModel===COHORT_MODEL&&opts.attacker.scale!=='hero'&&opts.defender.scale!=='hero'?Math.min(8,Math.max(1,Math.ceil(personnel(opts.attacker)/COHORT_REFERENCE))):1;
 }
 

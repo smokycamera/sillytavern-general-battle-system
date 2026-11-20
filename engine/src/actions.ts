@@ -1,3 +1,4 @@
+import { baseBody } from './vehicle-size.js';
 import { availableCopies } from './equipment-batches.js';
 import { displayNumber } from './display-number.js';
 import { equipmentBurden } from './equipment-load.js';
@@ -350,7 +351,7 @@ export function abilityTargetReason(input: {
   const target = ability.target === 'self' ? actor : input.target ?? (ability.target === 'ally' ? actor : undefined);
   const controlled = controlActionReason(actor, target, input.units ?? (target ? [actor, target] : [actor]), 'skill', ability.target === 'ally' || ability.target === 'self' && !ability.effects.some(e => e.op === 'zone' || e.op === 'summon'), input.controlAreaIds, input.controlRecipient); if (controlled) return controlled;
   if (target && !input.areaRecipient && controlCondition(actor, 'blinded') && (input.distance ?? 0) > 1) return '致盲只能直接选择1格/阵位内目标';
-  if (target && ability.targetBody && target.body !== ability.targetBody && !(target.rulesVersion === 'v2' && activeTraitIds(target).includes('inorganic'))) return '维修用品只能修理车辆或非生物';
+  if (target && ability.targetBody && baseBody(target.body) !== ability.targetBody && !(target.rulesVersion === 'v2' && activeTraitIds(target).includes('inorganic'))) return '维修用品只能修理车辆或非生物';
   if (!input.areaAnchor && target && ability.effects.length && ability.effects.every(e => e.op === 'barrier' && barrierSufficient(target, e.amount, e.dur, e.defensePower ?? ability.power, actor.id, ability)
     || e.op === 'resource' && !skillResourceChange(target, e))) return '目标已经有足够的屏障或精力';
   if (target && ability.weaponUse) {

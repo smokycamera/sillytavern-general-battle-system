@@ -1,3 +1,4 @@
+import { isBodyKind } from '../../engine/src/vehicle-size.js';
 import { parseIssue, equipmentFields } from './equipment-batches.js';
 import { parsePlatform, validatePlatform } from '../../engine/src/platforms.js';
 import { WEAPON_CLASSES } from '../../engine/src/data/weapons.js';
@@ -556,7 +557,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
   if (parsed.invalid.length || parsed.suggestions.length !== 1) throw new Error(`${kind} 字段或规格无法解析`);
   const event = parsed.suggestions[0]!;
   if (event.kind === 'spawn') {
-    if (attrs.body !== undefined && !['human', 'large', 'vehicle', 'giant'].includes(attrs.body)) throw new Error('未知身体/平台');
+    if (attrs.body !== undefined && !isBodyKind(attrs.body)) throw new Error('未知身体/平台');
     if (!integer('quality', 1, 5)) throw new Error('品质必须为1–5');
     if (attrs.aboard !== undefined && attrs.mount !== undefined) throw Error('mount 与 aboard 只选一种');
     if (attrs.platform !== undefined) event.platform = parsePlatform(attrs.platform);

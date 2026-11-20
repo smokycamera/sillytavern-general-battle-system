@@ -1,5 +1,6 @@
+import { baseBody } from './vehicle-size.js';
 import { availableCopies } from './equipment-batches.js';
-import type {BodyKind,Combatant} from './types.js';
+import type {Combatant} from './types.js';
 import type {MemberDamagePlan} from './recovery.js';
 import {diceAvg,rebuildDice,type ShieldClass} from './data/weapons.js';
 import {curveAt} from './data/curves.js';
@@ -15,9 +16,9 @@ function standardMean(power: number, dmgMult: number, attacks: number): number {
 }
 export function standardSwordMean(power: number): number { return standardMean(power, 1, 1); }
 /** V21 盾按装备自身的平台尺寸放大，倍率同 V6 身体生命倍率（人形1、大型2、载具6、巨兽6）。 */
-const PLATFORM_SCALE: Record<BodyKind, number> = { human: 1, large: 2, vehicle: 6, giant: 6 };
+const PLATFORM_SCALE: Record<ReturnType<typeof baseBody>, number> = { human: 1, large: 2, vehicle: 6, giant: 6 };
 export function shieldPlatformScale(unit: Pick<Combatant,'shield'> & Partial<Pick<Combatant,'body'>>): number {
-  return PLATFORM_SCALE[unit.shield?.recipe?.size ?? unit.body ?? 'human'] ?? 1;
+  return PLATFORM_SCALE[baseBody(unit.shield?.recipe?.size ?? unit.body)] ?? 1;
 }
 /** R20 中盾耐久 = n × 同级标准剑单段均值，小盾、大盾按 1 : 2 : 3；W22 旋钮 n。V21 再乘平台倍率。 */
 export const SHIELD_DURABILITY_FACTOR = 4;

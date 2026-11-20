@@ -1,3 +1,4 @@
+import { isVehicleBody } from './vehicle-size.js';
 import { revisedLoad } from './load-model.js';
 import { equipmentStep, gradedNumbers } from './numeric-model.js';
 import { loadInitiativePenalty } from './equipment-load.js';
@@ -382,7 +383,7 @@ export function conditionMods(
     if (c.controlPending) continue;
     if (unit?.rulesVersion === 'v2' && c.dur <= 0) continue;
     if (unit?.rulesVersion === 'v2' && c.id === 'fearful' && activeTraitIds(unit).some((id) => getTrait(id, registry)?.effects.some((e) => e.kind === 'immuneMorale'))) continue;
-    if (unit?.rulesVersion === 'v2' && c.id === 'poisoned' && (unit.body === 'vehicle' || activeTraitIds(unit).includes('inorganic'))) continue;
+    if (unit?.rulesVersion === 'v2' && c.id === 'poisoned' && (isVehicleBody(unit.body) || activeTraitIds(unit).includes('inorganic'))) continue;
     const def = conditionDefs.get(c.id);
     if (!def?.mods) continue;
     for (const [index, m] of def.mods.entries()) out.push({ ...m, duration: c.dur,

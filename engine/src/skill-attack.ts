@@ -1,5 +1,6 @@
 import { abilityUseLimit, abilityUsed } from './ability-state.js';
-import { availableCopies } from './equipment-batches.js';
+import { hasVehicleSize } from './vehicle-size.js';
+import { availableCopies, weaponCapacity } from './equipment-batches.js';
 import { bonusRating, bonusMultiplier } from './enhancements.js';
 import { isCohort } from './combat-model.js';
 import { skillWeapon } from './skill-runtime.js';
@@ -62,7 +63,9 @@ export function skillAttack(context: ObservationContext, actor: Combatant, targe
   const attached = new Set(context.attached?.values() ?? []);
   const cohort = context.units.filter((u) => !attached.has(u.id) && sameLayer(actor, u) && (context.mode === 'mass' ? formationNode(actor).id === formationNode(u).id : u.pos === actor.pos));
   const budget=isCohort(actor)?equipmentBudget*Math.min(1,combatPowerBudget(ability.power??5,actor.damageModel)/combatPowerBudget(weapon.level??5,actor.damageModel)):Math.min(skillBudget,equipmentBudget),scaled=scaledPowerDice(budget);
-  return { weaponOverride: weapon, ranged: isRangedWeapon(weapon), participants: Math.min(ability.equipmentDoses ?? Infinity,availableCopies(actor,ability.equipmentSourceId),availableCopies(actor,weapon.id),itemParticipants(ability, sharedParticipants(actor, cohort, width, target, isRangedWeapon(weapon)))),
+  const frontage = hasVehicleSize(actor.body) && ability.damageBasis === 'weapon'
+    ? weaponCapacity(actor) : sharedParticipants(actor,cohort,width,target,isRangedWeapon(weapon));
+  return { weaponOverride: weapon, ranged: isRangedWeapon(weapon), participants: Math.min(ability.equipmentDoses ?? Infinity,availableCopies(actor,ability.equipmentSourceId),availableCopies(actor,weapon.id),itemParticipants(ability, frontage)),
     abilityDamage: { ...channelBonuses,accuracy:skillAccuracyBonus(ability),...effect, baseDice:actor.combatModel==='cohort-v2'?scaled.dice:cappedDice(budget),damageScale:actor.combatModel==='cohort-v2'?scaled.scale:undefined,apDice: undefined, channel, penetration: Math.max(0,(weapon.penetration ?? 1 + Math.floor((weapon.level ?? 5) / 2)) + bonusRating(ability.bonuses,'penetration',channel)), weaponBased: true } };
 }
 /** 低预算不能被最少一枚d6抬高；向下选取可表达且不超过预算的均值。 */

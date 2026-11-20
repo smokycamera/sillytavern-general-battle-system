@@ -592,7 +592,7 @@ export interface GenerateInput {
 }
 
 export type DamageChannel = 'kinetic' | 'thermal' | 'arcane';
-export type BodyKind = 'human' | 'large' | 'vehicle' | 'giant';
+export type BodyKind = 'human' | 'large' | 'vehicle' | 'giant' | import('./vehicle-size.js').VehicleSize;
 /** 规范化且冻结的 T/P/S/Q/F 中装备职责；训练 T 不在装备配方中。 */
 export interface ItemRecipe {
   loadModel?: import('./load-model.js').LoadModel;

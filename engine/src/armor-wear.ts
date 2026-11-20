@@ -1,3 +1,4 @@
+import { isVehicleBody } from './vehicle-size.js';
 import { hasNaturalArmor } from './equipment-load.js';
 import { displayNumber } from './display-number.js';
 import type { Combatant, RulePack } from './types.js';
@@ -25,7 +26,7 @@ export function prepareArmorWearModel(unit: Combatant, rules: Pick<RulePack, 'ar
   else delete unit.armorWearModel;
 }
 export function armorWear(unit: WearUnit) {
-  return unit.rulesVersion === 'v2' && unit.armorWearModel && unit.body !== 'vehicle' && !hasNaturalArmor(unit)
+  return unit.rulesVersion === 'v2' && unit.armorWearModel && !isVehicleBody(unit.body) && !hasNaturalArmor(unit)
     ? (unit.armorWearModel === 'wear-v2' ? ARMOR_WEAR_V2 : ARMOR_WEAR)[unit.armor?.tier ?? 0] ?? UNRESTRICTED : UNRESTRICTED;
 }
 export function armorWearLabel(unit: WearUnit): string {

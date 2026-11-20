@@ -1,3 +1,4 @@
+import { isVehicleBody } from './vehicle-size.js';
 import type { CasualtyRolls } from './small/casualty-rolls.js';
 import { lifeRecoveryScale } from './life-recovery.js';
 import { progression, stackingRevision } from './progression.js';
@@ -56,7 +57,7 @@ export function mergeWounded(root: Combatant, child: Combatant): void {
 }
 /** 余量是尚未凑满一组的伤亡；只按累计总数取整，连续小额伤亡不会丢失或重复。 */
 function woundedFromLoss(unit: Combatant, loss: number, remainder: number, rolls?: CasualtyRolls): { recoverable: number; remainder: number } {
-  if (rolls && unit.body !== 'vehicle') {
+  if (rolls && !isVehicleBody(unit.body)) {
     return { recoverable: !unit.nonLethal && unit.hp > 0 ? rolls.roll(unit, loss) : 0, remainder };
   }
   if (phase2Traits(unit)) {
@@ -189,7 +190,7 @@ export function beginLifestealRound(unit: Combatant, round: number, entry = fals
   else if (unit.lifestealState.round !== round) Object.assign(unit.lifestealState, {round, spent:0, remainder:0});
 }
 function lifestealBudget(attacker: Combatant, target: Combatant, lifeDamage: number): number {
-  if (attacker.rulesVersion !== 'v2' || !(lifeDamage > 0) || attacker.status !== 'ready' || attacker.hp <= 0 || target.body === 'vehicle'
+  if (attacker.rulesVersion !== 'v2' || !(lifeDamage > 0) || attacker.status !== 'ready' || attacker.hp <= 0 || isVehicleBody(target.body)
     || !activeTraitIds(attacker).includes('lifesteal') || activeTraitIds(target).includes('inorganic')) return 0;
   const earned = lifeDamage * traitValue(attacker, 'lifesteal', 'lifestealRatio', .25);
   if (!stackingRevision(attacker)) return Math.min(recoveryCapacity(attacker), earned);

@@ -1,3 +1,4 @@
+import { isVehicleBody } from '../../engine/src/vehicle-size.js';
 import {batchWeapons,weaponModeFor} from '../../engine/src/equipment-batches.js';
 import { displayNumber } from '../../engine/src/display-number.js';
 import { activationControlDuration, controlPolicy } from '../../engine/src/battle-control.js';
@@ -31,7 +32,7 @@ import { withBattleReportQueries } from './battle-reports.js';
 
 export type MapZoom = 'fit' | 'large' | 'compact';
 export const MAP_ZOOM_LABELS: Record<MapZoom, string> = { fit: '适应', large: '放大', compact: '紧凑' };
-export interface TacticalView { selectedId?: string; targetId?: string; cell?: number; inspectedCell?: number; mode: string; zoom?: MapZoom; mapScale?: number }
+export interface TacticalView { selectionTurn?: string; selectedId?: string; targetId?: string; cell?: number; inspectedCell?: number; mode: string; zoom?: MapZoom; mapScale?: number }
 /** Adjustments made while building the map, minus the scene name the details title already shows. */
 function layoutNotes(field: BattlefieldSpec): string[] {
   const title = field.scene?.archetype ? SCENE_ARCHETYPE_NAMES[field.scene.archetype] : undefined;
@@ -75,11 +76,21 @@ export function tacticalSelection(battle: SmallBattle, view: TacticalView, query
     : query?.battle === battle && query.actor === actor ? query.options : battle.getActionOptions(actor.id) : [];
   const abilityIds = new Set(actor ? battleAbilities(actor).map(a => a.id) : []);
   const options = allOptions.filter((o) => o.kind === 'ability' ? abilityIds.has(o.id) : ['weapon', 'charge'].includes(o.kind));
-  const option = options.find((o) => o.id === view.mode) ?? options.find((o) => o.id === 'weapon');
+  const remembered = actor && battle.lastWeaponOption(actor);
+  const preferred = remembered && options.find(o => o.id === remembered && o.enabled);
+  const turn = [battle.seed,battle.round,battle.turnIndex,actor?.id].join('/');
+  if (view.selectionTurn !== turn) {
+    if (view.selectionTurn !== undefined || remembered && view.mode === 'weapon') {
+      view.mode = (preferred || options.find(o => o.kind === 'weapon' && o.enabled))?.id ?? 'weapon';
+      view.targetId = undefined;
+    }
+    view.selectionTurn = turn;
+  }
+  const option = options.find((o) => o.id === view.mode) ?? (preferred || options.find((o) => o.id === 'weapon'));
   const target = view.targetId !== undefined ? option?.targets?.find((t) => t.targetId === view.targetId)
     : option?.targets?.find((t) => t.enabled) ?? option?.targets?.[0];
   const canControl = !!actor && !['charmed','confused'].includes(controlPolicy(actor)??'') && actor.id === battle.active?.id && actor.status === 'ready' && !battle.isOver();
-  return { visible, actor, allOptions, options, option, target, canControl, query: query instanceof TacticalQueryCache ? query : actor ? { battle, actor, options: allOptions } : undefined };
+  return { visible, actor, allOptions, options, option, target, preferred, canControl, query: query instanceof TacticalQueryCache ? query : actor ? { battle, actor, options: allOptions } : undefined };
 }
 
 /** 只改短暂选择，不提交存档、动作或随机数。友方治疗目标优先于切换行动者。
@@ -225,7 +236,7 @@ function tileInspector(battle: SmallBattle, view: TacticalView, selection: Retur
     ${actor && selection.canControl && (!climbReason || structure?.top && structure.hp > 0) ? `<button data-action="grid-climb" data-actor="${esc(actor.id)}" data-cell="${cell}" ${climbReason ? 'disabled' : ''} title="${esc(climbReason ?? `消耗主行动和${battle.climbMovementCost(actor.id)}移动`)}">${isElevated(actor) ? '下到地面' : '登城'}</button>` : ''}</div>
     ${!battle.cellVisible('ally', cell) ? '<p class="grid-reason">此格尚未观测；路线只考虑已知占位，实际移动可能遇敌受阻。</p>' : ''}
     ${field.objective.kind !== 'annihilation' && field.objective.cell === cell ? '<div class="objective-detail"><b>任务目标</b><div class="objective-rule">' + objectiveDetails(battle) + '</div></div>' : ''}
-    ${occupants.length ? '<div class="inspector-units">' + occupants.map((u) => `<button data-action="grid-inspect-unit" data-unit="${esc(u.id)}" class="${u.side}">${esc(tacticalName(battle,u)!)} · ${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}${u.scale === 'hero' ? '生命' : u.body === 'vehicle' ? '辆' : u.platform?.kind === 'animal' ? '匹' : '人'}${isAirborne(u) ? ' · 空中' : isElevated(u) ? ' · 墙顶' : ''}${defenseLayerLabels(u).map((label) => ' · ' + esc(label)).join('')}</button>`).join('') + '</div>' : ''}
+    ${occupants.length ? '<div class="inspector-units">' + occupants.map((u) => `<button data-action="grid-inspect-unit" data-unit="${esc(u.id)}" class="${u.side}">${esc(tacticalName(battle,u)!)} · ${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}${u.scale === 'hero' ? '生命' : isVehicleBody(u.body) ? '辆' : u.platform?.kind === 'animal' ? '匹' : '人'}${isAirborne(u) ? ' · 空中' : isElevated(u) ? ' · 墙顶' : ''}${defenseLayerLabels(u).map((label) => ' · ' + esc(label)).join('')}</button>`).join('') + '</div>' : ''}
   </div>`;
 }
 
@@ -393,7 +404,7 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
   const enemyEscort = mission.kind === 'escape' && battle.combatants.find((u) => u.id === mission.unitId)?.side === 'enemy';
   const goal = mission.kind === 'annihilation' ? (SCENE_NAMES[field.generation?.scene ?? 'field'] + ' · 歼灭战') : (mission.kind === 'control' ? !mission.attackingSide ? '争夺中立据点 ' : mission.attackingSide === 'enemy' ? '防守据点 ' : '攻占据点 ' : enemyEscort ? '拦截于' : '护送至') + cellLabel(field, mission.cell);
   const skill = options.find((o) => o.id === view.mode && o.kind === 'ability') ?? options.find((o) => o.kind === 'ability' && o.enabled) ?? options.find((o) => o.kind === 'ability');
-  const weapon = options.find((o) => o.id === view.mode && ['weapon', 'charge'].includes(o.kind)) ?? options.find((o) => o.kind === 'weapon' && o.enabled) ?? options.find((o) => o.id === 'weapon');
+  const weapon = options.find((o) => o.id === view.mode && ['weapon', 'charge'].includes(o.kind)) ?? (s.preferred || options.find((o) => o.kind === 'weapon' && o.enabled)) ?? options.find((o) => o.id === 'weapon');
   const actionReady = canControl && !!option?.enabled && (!option.targets?.length || !!target?.enabled);
   const executeReady = special ? canControl && !specialReason : mode === 'move' ? canControl && !!movement?.path && movement.path.cost > 0 : mode !== 'guard' && actionReady;
   const moveAction = movement?.climb ? 'grid-climb' : 'grid-move', moveLabel = movement?.climb ? isElevated(actor!) ? '下到地面' : '登城' : '移动';

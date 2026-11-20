@@ -1,3 +1,4 @@
+import { isVehicleBody } from '../../engine/src/vehicle-size.js';
 import { normalizeBattlefieldPlan, type BattlefieldPlan, type DeploymentPlan } from '../../engine/src/small/battlefield-plan.js';
 import { MAX_SMALL_UNITS } from '../../engine/src/battle-limits.js';
 import { BattlefieldPlanError } from '../../engine/src/small/battlefield-error.js';
@@ -83,7 +84,7 @@ export interface LayoutContext {
 export function layoutUnits(roster: readonly Combatant[], publicId: (id: string) => string, notes: Record<string, string> = {}): LayoutUnit[] {
   return roster.filter(u => u.hp > 0 && u.status === 'ready').map(u => ({
     id: publicId(u.id), name: u.name.slice(0, 40), side: u.side,
-    kind: [u.scale === 'hero' ? '人物' : '部队', u.body === 'vehicle' ? '载具' : u.body && u.body !== 'human' ? '大型' : u.mount ? '骑乘' : '',
+    kind: [u.scale === 'hero' ? '人物' : '部队', isVehicleBody(u.body) ? '载具' : u.body && u.body !== 'human' ? '大型' : u.mount ? '骑乘' : '',
       hasFlightAbility(u) ? '可飞行' : '', waterOnly(u) ? '航行：只能在深水或浅水部署与移动' : '', isRangedWeapon(u.weapon) ? '远程' : '近战'].filter(Boolean).join('·'),
     ...(notes[u.id]?.trim() ? { note: notes[u.id]!.trim().slice(0, 60) } : {}) }));
 }

@@ -1,4 +1,6 @@
-import { volleyModes, volleyLabels, allocateVolley, isVolleyMode, optionWeaponMode, availableCopies, readyCopies, batchWeapons, weaponModeFor, weaponForMode, startBatchReload, advanceBatchReload, type WeaponMode } from '../equipment-batches.js';
+import { combatWeapon } from '../power-anchors.js';
+import { hasVehicleSize, isVehicleBody } from '../vehicle-size.js';
+import { volleyModes, volleyLabels, allocateVolley, weaponCapacity, isVolleyMode, optionWeaponMode, availableCopies, readyCopies, batchWeapons, weaponModeFor, weaponForMode, startBatchReload, advanceBatchReload, type WeaponMode } from '../equipment-batches.js';
 import { displayNumber } from '../display-number.js';
 import { grantEntryWornBarrier, resetWornBarrier } from '../worn-barrier.js';
 import { prepareRevivalBattle, tryRevive } from '../revival.js';
@@ -1046,7 +1048,7 @@ export class SmallBattle {
     if (!this.battlefield || !this.isTurnOf(actorId) || actor.status !== 'ready' || !this.nonSkillActionAvailable(actorId) || !context.ranged || context.reason) return context.reason ?? '压制需要合法射击与主行动';
     if (actor.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack)) return '当前状态禁止射击';
     if ((actor.resources.SP ?? 0) < 1) return '压制需要1点战术资源';
-    if (target.body === 'vehicle' && penetrationContext({ attacker: actor, defender: target,rules:this.rules }).factor === 0) return '火力对封闭车体不构成压制威胁';
+    if (isVehicleBody(target.body) && penetrationContext({ attacker: actor, defender: target,rules:this.rules }).factor === 0) return '火力对封闭车体不构成压制威胁';
     return undefined;
   }
   /** Shared pure validation used by the inspector, AI and execution. */
@@ -1457,13 +1459,41 @@ export class SmallBattle {
   }
 
   private volleyFrontage(actor: Combatant, target: Combatant, ranged: boolean, frontage?: number) {
-    return Math.min(actor.hp,targetWidthLimit(target,ranged,this.rules.targetWidthModel ?? null),
-      actor.body === 'vehicle' ? Infinity : frontage ?? this.attackFrontage(actor,target,ranged));
+    return Math.min(weaponCapacity(actor),targetWidthLimit(target,ranged,this.rules.targetWidthModel ?? null),
+      isVehicleBody(actor.body) ? Infinity : frontage ?? this.attackFrontage(actor,target,ranged));
+  }
+
+  private batteryPriority(actor: Combatant, target: Combatant, weapon: NonNullable<Combatant['weapon']>) {
+    if (!hasVehicleSize(actor.body)) return undefined;
+    const resolved = combatWeapon(weapon,actor,target,this.rules.weaponOverflow,this.rules.damageModel,this.rules.overmatch,this.rules.overmatchCurve)!;
+    const protection = penetrationContext({attacker:actor,defender:target,rules:this.rules,weaponOverride:weapon},{weapon:resolved});
+    return (diceAvg(resolved.baseDice) + (resolved.apDice ? diceAvg(resolved.apDice) : 0))
+      * (resolved.damageScale ?? 1) * (resolved.attacks ?? 1) * protection.factor * (protection.overmatchMultiplier ?? 1);
+  }
+
+  private playerWeapons = new Map<string,string>();
+
+  playerWeaponAttack(actorId: string, targetId: string, mode: WeaponMode) {
+    const actor = this.byId(actorId);
+    const weapon = weaponForMode(actor,mode);
+    const result = this.attack(actorId,targetId,{weaponMode:mode});
+    if (weapon || isVolleyMode(mode)) this.playerWeapons.set(actorId,weapon ? 'batch:'+weapon.id : mode);
+    return result;
+  }
+
+  lastWeaponOption(actor: Combatant): string | undefined {
+    const last = this.playerWeapons.get(actor.id);
+    if (!last || isVolleyMode(last)) return last;
+    const weapon = batchWeapons(actor).find(w => 'batch:'+w.id === last);
+    if (!weapon) return;
+    const mode = weaponModeFor(actor,weapon);
+    return mode === 'primary' ? 'weapon' : mode === 'sidearm' ? 'weapon:sidearm' : mode;
   }
 
   private canVolley(actor: Combatant) {
-    return this.rules.combatModel === MEMBER_HEALTH_MODEL && actor.scale === 'company'
-      && (actor.equipmentBatches?.filter(b => b.mechanics.kind === 'weapon' && b.qty > 0).length ?? 0) >= 2;
+    if (this.rules.combatModel !== MEMBER_HEALTH_MODEL) return false;
+    if (hasVehicleSize(actor.body)) return weaponCapacity(actor) > 1 && batchWeapons(actor).length >= 2;
+    return actor.scale === 'company' && (actor.equipmentBatches?.filter(b => b.mechanics.kind === 'weapon' && b.qty > 0).length ?? 0) >= 2;
   }
 
   private volleyOptions(actor: Combatant, weaponFoes: Combatant[], options: ActionOption[], previews: boolean): ActionOption[] {
@@ -1480,7 +1510,7 @@ export class SmallBattle {
       const widths = new Map<boolean,number>();
       const rows = ready.map(row => {
         if (!widths.has(row.ranged)) widths.set(row.ranged,this.volleyFrontage(actor,target,row.ranged));
-        return {...row,frontage:widths.get(row.ranged)!};
+        return {...row,frontage:widths.get(row.ranged)!,priority:this.batteryPriority(actor,target,row.weapon)};
       });
       const estimates = new Map<string,NonNullable<ActionOption['preview']>>();
       const attacking = actor.tacticalPose ? {...actor,tacticalPose:undefined} : actor;
@@ -1765,7 +1795,7 @@ export class SmallBattle {
         const context = this.weaponContext(attacker,target,{...opts,weaponMode:mode});
         if (context.reason) return [];
         if (!frontages.has(ranged)) frontages.set(ranged,this.volleyFrontage(attacker,target,ranged));
-        return [{mode,ranged,context,copies,frontage:frontages.get(ranged)!}];
+        return [{mode,ranged,context,copies,frontage:frontages.get(ranged)!,priority:this.batteryPriority(attacker,target,w)}];
       }),volley) : [];
     if (volley && !groups.length) throw Error('没有可协同攻击此目标的武器');
     const context = groups[0]?.weapon.context ?? this.weaponContext(attacker, target, opts);
@@ -1850,7 +1880,7 @@ export class SmallBattle {
         if (res.hit && (this.rules.resolutionVersion === 'v2' || res.finalDamage > 0)) {
           this.applyOnHitTraits(attacker, victim, res);
         }
-        const counted = attacker.scale==='company' && attacker.equipmentBatches?.some(b=>b.id===activeWeapon?.id);
+        const counted = (attacker.scale==='company' || hasVehicleSize(attacker.body)) && attacker.equipmentBatches?.some(b=>b.id===activeWeapon?.id);
         const wpnShort = activeWeapon ? (volley ? volleyLabels[volley.mode]+'·'+volley.weapon : tbWeaponShortName(activeWeapon))+(counted && res.participants ? ' ×'+Math.ceil(res.participants) : '') : '';
         const prefix = wpnShort ? (times > 1 ? `［${wpnShort}·${i + 1}/${times}］` : `［${wpnShort}］`) : (times > 1 ? `［${i + 1}/${times}］` : '');
         this.recordEvent({ round: this.round, kind: 'attack', text: prefix + res.text, resolution: res, ...(volley ? {volley} : {}) });
@@ -2752,6 +2782,9 @@ export class SmallBattle {
     const weapons = batchWeapons(unit), weaponModes = weapons.map(w => weaponModeFor(unit,w));
     const mixed = this.canVolley(unit);
     const weaponCopies = new Map(weapons.map(w => [w.id,availableCopies(unit,w.id)]));
+    // Body, installed weapons and target protection stay fixed while scoring candidate cells.
+    const priorities = mixed && hasVehicleSize(unit.body) ? new Map(foes.map(target =>
+      [target.id,new Map(weapons.map(weapon => [weapon.id,this.batteryPriority(unit,target,weapon)]))])) : undefined;
     const rangedReach = Math.max(0,...weapons.filter(w=>isRangedWeapon(w) && availableCopies(unit,w.id)>0).map(w=>gridWeaponRange(w,true,this.rules.armsModel)));
     const rangedRole = rangedReach > 2;
     const meleeThreats = foes.filter((foe) => foe.status === 'ready' && meleeWeapon(foe) && (meleeContact(field, unit, foe) || isAirborne(foe)));
@@ -3040,7 +3073,7 @@ export class SmallBattle {
         if (avoided > 0 || protectedDamage > 0) plans.push({ score: baseScore + avoided * 0.3 + protectedDamage, selfDefenseScore: avoided * 0.3, path, kind: 'brace' });
       }
       for (const target of foes) {
-        const coordinated: {ranged:boolean; copies:number; frontage:number; damage:number; extra:number; variance:number}[] = [];
+        const coordinated: {ranged:boolean; copies:number; frontage:number; priority?:number; damage:number; extra:number; variance:number}[] = [];
         for (const weaponMode of weaponModes) {
           const context = this.weaponContext(actor, target, { weaponMode });
           if (context.reason || context.landing && path.cost + 1 > this.movementLeft(unitId)) {
@@ -3061,7 +3094,7 @@ export class SmallBattle {
           const volleyDamage = Math.min(memberHealth(target), preview.expectedDamage) + sprayDamage;
           plans.push({ score: baseScore + this.platformTargetBonus(target,preview.expectedDamage,loads) + volleyDamage + (preview.conditionValue ?? 0) + 4 * killProbability([preview],memberHealth(target)), offensive: volleyDamage + (preview.conditionValue ?? 0) > 0, path, targetId: target.id, weaponMode, kind: 'weapon', preview });
           const copies = weaponCopies.get(context.weapon?.id ?? '');
-          if (mixed && copies && Number.isFinite(copies)) coordinated.push({ranged:context.ranged,copies,frontage:this.volleyFrontage(actor,target,context.ranged,mods.participants),
+          if (mixed && copies && Number.isFinite(copies)) coordinated.push({ranged:context.ranged,copies,priority:priorities?.get(target.id)?.get(context.weapon!.id),frontage:this.volleyFrontage(actor,target,context.ranged,mods.participants),
             damage:preview.expectedDamage,extra:sprayDamage+(preview.conditionValue ?? 0),variance:preview.variance ?? 0});
         }
         if (coordinated.length < 2) continue;
@@ -4050,6 +4083,7 @@ export class SmallBattle {
   toSnapshot(): Record<string, unknown> {
     return {
       v: 1, aiRevision: 1, allyTactic: this.allyTactic, commanderProfiles: this.commanderProfiles, nonLethal: this.nonLethal,
+      ...(this.playerWeapons.size ? {playerWeapons:[...this.playerWeapons]} : {}),
       ...(this.allyAiControl.size ? { allyAiControl: [...this.allyAiControl] } : {}),
       ...(this.sparedIds.size ? { sparedIds: [...this.sparedIds] } : {}),
       battlefield: this.battlefield,
@@ -4119,6 +4153,11 @@ export class SmallBattle {
       field: { tags: snap.fieldTags ?? snap.battlefield?.environment ?? [] },
     });
     b.casualtyRolls?.restore(snap.casualtyCursors);
+    if (Array.isArray(snap.playerWeapons)) {
+      for (const row of snap.playerWeapons) {
+        if (Array.isArray(row) && typeof row[0] === 'string' && typeof row[1] === 'string') b.playerWeapons.set(row[0],row[1]);
+      }
+    }
     b.allyTactic = normalizeTactic(snap.allyTactic);
     b.allyAiControl = new Map(Array.isArray(snap.allyAiControl)
       ? snap.allyAiControl.filter((e: unknown): e is [string, boolean] => Array.isArray(e) && typeof e[0] === 'string' && typeof e[1] === 'boolean') : []);

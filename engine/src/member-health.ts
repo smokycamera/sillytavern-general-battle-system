@@ -1,3 +1,4 @@
+import { isVehicleBody } from './vehicle-size.js';
 import { displayNumber } from './display-number.js';
 import {clampShieldDurability,clampEnergyShield} from './shield-state.js';
 import type {Combatant} from './types.js';
@@ -7,7 +8,7 @@ import { capSingleLife } from './health-limits.js';
 export interface MemberHealthGroup { hp:number; count:number }
 export const MEMBER_HEALTH_MODEL='cohort-v2' as const;
 export const hasMemberHealth=(unit:Partial<Combatant>):boolean=>unit.combatModel===MEMBER_HEALTH_MODEL&&unit.scale!=='hero';
-export const memberNoun=(unit:Pick<Combatant,'body'>)=>unit.body==='vehicle'?'辆':'人';
+export const memberNoun=(unit:Pick<Combatant,'body'>)=>isVehicleBody(unit.body)?'辆':'人';
 export function memberHealth(unit:Partial<Combatant>):number {
   return hasMemberHealth(unit)?(unit.formation?.health??[]).reduce((n,g)=>n+g.hp*g.count,0):unit.hp??0;
 }

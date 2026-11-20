@@ -1,3 +1,4 @@
+import { VEHICLE_SIZES, hasVehicleSize, isVehicleBody } from './vehicle-size.js';
 import { batchCount } from './equipment-batches.js';
 import { gradedNumbers } from './numeric-model.js';
 import { revisedLoad, REVISED_HUMAN_CAPACITY, VEHICLE_CAPACITY } from './load-model.js';
@@ -39,10 +40,13 @@ export type BurdenUnit = EquippedLoad & Pick<Combatant,'body'|'rulesVersion'> & 
 export const HUMAN_CAPACITY = [5,8,9,12,14,18,24,32,44,60] as const;
 export function equipmentCapacity(unit: Pick<Combatant,'body'|'level'> & Partial<Pick<Combatant,'numericModel'|'loadModel'|'hp'|'scale'|'equipmentBatches'|'reserveEquipmentLoad'>>): number {
   const carriers = (unit.equipmentBatches?.length || unit.reserveEquipmentLoad) && unit.scale !== 'hero' ? Math.max(1,unit.hp ?? 1) : 1;
-  if (revisedLoad(unit)) return carriers * (unit.body === 'vehicle' ? VEHICLE_CAPACITY[unit.level - 1]!
-    : REVISED_HUMAN_CAPACITY[unit.level - 1]! * (unit.body === 'giant' ? 2 : unit.body === 'large' ? 1.5 : 1));
-  if (gradedNumbers(unit) && unit.body !== 'vehicle') return carriers * HUMAN_CAPACITY[unit.level - 1]! * (unit.body === 'giant' ? 2 : unit.body === 'large' ? 1.4 : 1);
-  return carriers * (unit.body === 'vehicle' ? 24 : {human:10,large:14,giant:20,vehicle:24}[unit.body ?? 'human'] + Math.floor(.8*unit.level));
+  if (isVehicleBody(unit.body)) {
+    const sizeFactor = hasVehicleSize(unit.body) ? VEHICLE_SIZES[unit.body].capacity : 1;
+    return carriers * sizeFactor * (revisedLoad(unit) ? VEHICLE_CAPACITY[unit.level - 1]! : 24);
+  }
+  if (revisedLoad(unit)) return carriers * REVISED_HUMAN_CAPACITY[unit.level - 1]! * (unit.body === 'giant' ? 2 : unit.body === 'large' ? 1.5 : 1);
+  if (gradedNumbers(unit)) return carriers * HUMAN_CAPACITY[unit.level - 1]! * (unit.body === 'giant' ? 2 : unit.body === 'large' ? 1.4 : 1);
+  return carriers * ({human:10,large:14,giant:20}[unit.body ?? 'human'] + Math.floor(.8*unit.level));
 }
 export function equipmentBurden(unit: BurdenUnit): number {
   if (!isArmsV2(unit.armsModel) && !revisedLoad(unit)) return Number(humanEncumbered(unit));

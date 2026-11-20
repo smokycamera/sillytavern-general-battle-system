@@ -1,3 +1,4 @@
+import { isBodyKind } from '../../engine/src/vehicle-size.js';
 import { settleBatches } from '../../engine/src/equipment-batches.js';
 import { reuniteTransportGroups } from '../../engine/src/small/transport-groups.js';
 import { platformRoster } from './platform-records.js';
@@ -116,7 +117,7 @@ export function validateInventoryItem(value: unknown): asserts value is Inventor
     if (recipe !== undefined && (!object(recipe) || !['mechanism-v2.1', 'mechanism-v2.2', 'mechanism-v2.3','mechanism-v2.3+autocannon-v2'].includes(String(recipe.version))
       || !Number.isInteger(recipe.power) || Number(recipe.power) < 1 || Number(recipe.power) > 10
       || !Number.isInteger(recipe.quality) || Number(recipe.quality) < 1 || Number(recipe.quality) > 5
-      || !['human', 'large', 'vehicle', 'giant'].includes(String(recipe.size)) || typeof recipe.seed !== 'string' || !recipe.seed)) throw new Error('已保存的属性损坏或版本未知');
+      || !isBodyKind(recipe.size) || typeof recipe.seed !== 'string' || !recipe.seed)) throw new Error('已保存的属性损坏或版本未知');
     if (object(recipe) && (recipe.balanceVersion !== undefined && recipe.balanceVersion !== 'unified-v1' || recipe.noVariance !== undefined && typeof recipe.noVariance !== 'boolean')) throw Error('装备数值版本损坏');
     if(object(recipe)){ validateInstanceVariance(recipe.variance); validateNumericModel(recipe.numericModel); validateLoadModel(recipe.loadModel); }
     if(object(recipe))validateEnhancements(recipe.bonuses as Enhancements | undefined, m.kind as 'weapon'|'armor'|'shield');

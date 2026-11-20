@@ -1,3 +1,4 @@
+import { BODY_LABELS, isVehicleBody } from '../../engine/src/vehicle-size.js';
 import { isVolleyMode, optionWeaponMode, type WeaponMode } from '../../engine/src/equipment-batches.js';
 import { unitModifierSummary } from './numeric-description.js';
 import { equipmentCapacity } from '../../engine/src/equipment-load.js';
@@ -1405,7 +1406,7 @@ function unitHtml(u: Combatant, index: number, inBattle: boolean, ride = ''): st
   const expanded = state.expandedUnits.has(u.id);
   return `<div class="${cls}" data-unit="${esc(u.id)}">
     <div class="nm">${marks}${esc(u.name)}${seq ? `<span class="seq">#${seq}</span>` : ''}${encTag}${statusWord}</div>
-    <div class="st">${!inBattle && u.rulesVersion === 'v2' ? `${scaleLabel(u)} · ${u.body === 'vehicle' ? '平台等级' : '训练'}${u.level}${esc(enhancementLabel(u.bonuses))} · ${u.scale === 'hero' ? '生命' : '人数'} <b class="hp-value">${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}</b>` : `等级${u.level}${u.archetype ? '·' + archName(u.archetype, true) : ''}｜${u.scale === 'hero' ? '生命' : '人数'} <b class="hp-value">${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}</b>${morale}${fat}${engage}${pos}${isAirborne(physical) ? ' · 空中' : ''}${xpTxt}`}</div>
+    <div class="st">${!inBattle && u.rulesVersion === 'v2' ? `${scaleLabel(u)} · ${isVehicleBody(u.body) ? '平台等级' : '训练'}${u.level}${esc(enhancementLabel(u.bonuses))} · ${u.scale === 'hero' ? '生命' : '人数'} <b class="hp-value">${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}</b>` : `等级${u.level}${u.archetype ? '·' + archName(u.archetype, true) : ''}｜${u.scale === 'hero' ? '生命' : '人数'} <b class="hp-value">${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}</b>${morale}${fat}${engage}${pos}${isAirborne(physical) ? ' · 空中' : ''}${xpTxt}`}</div>
     ${hasMemberHealth(u)?`<div class="sub">${esc(strengthDescription(u))}</div>`:''}${woundedLabel(u) ? `<div class="sub">${esc(woundedLabel(u))}</div>` : ''}
     ${prog ? `<div class="xpbar" title="本级经验 ${xpText(prog.current, 'down')}/${prog.next} · 累计${xpText(u.xp ?? 0, 'down')}"><i style="width:${Math.min(100, Math.round((prog.current / prog.next) * 100))}%"></i></div>` : ''}
     ${concealment ? `<div class="sub">${esc(concealment)}</div>` : ''}
@@ -1429,9 +1430,9 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   rows.push(`<span>攻 <b>${atkPlus}</b></span>`);
   rows.push(`<span>防 <b>${displayNumber(u.base.def)}</b></span>`);
   rows.push(`<span>速 <b>${displayNumber(u.base.spd)}</b></span>`);
-  if(modern)rows.push(`<div class="sub">${u.body === 'vehicle' ? '平台加成' : '训练加成'}：命中／规避 +${trainingEdge(u.level)} · 输出 ×${approx(trainingDamage(u.level,currentBattle()?.rules??V30_OVERFLOW_D20), 2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
-  rows.push(`<span>${u.scale === 'hero' ? '生命' : u.body==='vehicle'?'载具数':'人数'} <b>${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}</b></span>`);
-  if(u.combatModel&&u.scale!=='hero')rows.push(`<span>单个${u.body==='vehicle'?'载具':'成员'}最大生命 <b>${displayNumber(memberDurability(u))}</b></span>`);
+  if(modern)rows.push(`<div class="sub">${isVehicleBody(u.body) ? '平台加成' : '训练加成'}：命中／规避 +${trainingEdge(u.level)} · 输出 ×${approx(trainingDamage(u.level,currentBattle()?.rules??V30_OVERFLOW_D20), 2)}${u.bonuses?' · 单位强化'+esc(enhancementLabel(u.bonuses)):''}</div>`);
+  rows.push(`<span>${u.scale === 'hero' ? '生命' : isVehicleBody(u.body)?'载具数':'人数'} <b>${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}</b></span>`);
+  if(u.combatModel&&u.scale!=='hero')rows.push(`<span>单个${isVehicleBody(u.body)?'载具':'成员'}最大生命 <b>${displayNumber(memberDurability(u))}</b></span>`);
   if (u.base.moraleMax !== undefined) rows.push(`<span>士气 <b>${displayNumber(u.base.moraleMax)}</b></span>`);
   if (woundedLabel(u)) rows.push(`<span>${esc(woundedLabel(u))}</span>`);
   if (u.rulesVersion === 'v2' && activeTraitIds(u).includes('regen')) rows.push(`<span>本次结算可再生 <b>${displayNumber(regenerationAmount(u, reg))}</b></span>`);
@@ -1492,13 +1493,13 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
   if (u.weapon?.recipe?.stabilized) rows.push('<div class="sub">车载行进稳定 · 移动射击免罚 · 仍须装填且可能遭近战借机</div>');
   if (u.rulesVersion === 'v2') rows.push(`<div class="sub">${esc(equipmentLoadLabel(u))}</div>`);
   if (u.numericModel && u.bonuses) rows.push('<div class="sub">本体修正：'+esc(unitModifierSummary(u))+'</div>');
-  if (u.rulesVersion === 'v2' && u.body && u.body !== 'human') rows.push(`<div class="sub">${({ large: '大型身体', giant: '巨型身体', vehicle: '车辆平台' })[u.body]}${u.armor?.protection ? '' : ' · 有效防护 ' + displayNumber(protection('kinetic')) + '/' + displayNumber(protection('thermal')) + '/' + displayNumber(protection('arcane')) + '（动能/热能/奥术）'} · 负重容量${equipmentCapacity(u)}</div>`);
+  if (u.rulesVersion === 'v2' && u.body && u.body !== 'human') rows.push(`<div class="sub">${BODY_LABELS[u.body]}${u.armor?.protection ? '' : ' · 有效防护 ' + displayNumber(protection('kinetic')) + '/' + displayNumber(protection('thermal')) + '/' + displayNumber(protection('arcane')) + '（动能/热能/奥术）'} · 负重容量${equipmentCapacity(u)}</div>`);
   if (looseFormation(u)) rows.push('<div class="sub">疏散队形 · 未接敌时范围暴露减半 · 近战展开减半、防御降低1；固守后收拢</div>');
   if (u.rulesVersion === 'v2') rows.push('<div class="sub">移动 ' + movementLabel(u, plannedFieldTags()) + ' · 基础速度' + (u.speedTier ?? BODY[u.body ?? 'human'].movement) + '档 · 精力 ' + approx(u.resources.SP ?? 0, 1, 'down') + '/' + displayNumber(spCapacity(u)) + (u.resourceModel ? ' · 自然恢复 ' + approx(spRecovery({ ...u, status: 'ready', resources: { ...u.resources, SP: 0 } })) + '/轮 · 空过休整恢复×3 · 疲劳 ' + approx(u.fatigue, 1, 'down') + '/' + displayNumber(fatigueLimit(u)) : '') + '</div>');
   if(u.combatModel&&u.scale==='hero'&&u.moraleState?.damagePenalty)rows.push('<p class="sub">累计受创压力 '+displayNumber(u.moraleState.damagePenalty)+'，影响本场士气；不溃能力免疫惊退。</p>');
   if (u.mount) rows.push('<div class="sub">骑乘 · 占格更大 · 机动提高</div>');
   for (const gear of [u.weapon, u.sidearm, u.shield]) if (gear?.recipe && gear.name) { const hint = classMismatchHint(gear.name, gear.recipe.mechanism); if (hint) rows.push('<div class="sub">' + esc(hint) + '</div>'); if (gear.recipe.variance) rows.push('<div class="sub">' + esc(gear.name + ' · ' + instanceVarianceLabel(gear.recipe.variance)) + '</div>'); }
-  if (u.weapon?.recipe) rows.push(`<details><summary>装备属性</summary><div class="sub">${u.body === 'vehicle' ? '平台等级' : '训练'}${u.level} · 装备等级${u.weapon.recipe.power}${esc(enhancementLabel(u.weapon.recipe.bonuses))} · 体型${({human:'普通人形',large:'大型生物',giant:'巨型生物',vehicle:'车辆'})[u.body??'human']} · 品质${u.weapon.recipe.quality} · ${esc(WEAPON_CLASSES[u.weapon.recipe.mechanism]?.name ?? u.weapon.recipe.mechanism)} · 穿透${displayNumber((modern?anchoredWeapon(u.weapon,u.cannonAmmo,u.damageModel)?.penetration:u.weapon.penetration)??0)} · 物品编号 ${esc(u.weapon.id)}</div></details>`);
+  if (u.weapon?.recipe) rows.push(`<details><summary>装备属性</summary><div class="sub">${isVehicleBody(u.body) ? '平台等级' : '训练'}${u.level} · 装备等级${u.weapon.recipe.power}${esc(enhancementLabel(u.weapon.recipe.bonuses))} · 体型${BODY_LABELS[u.body??'human']} · 品质${u.weapon.recipe.quality} · ${esc(WEAPON_CLASSES[u.weapon.recipe.mechanism]?.name ?? u.weapon.recipe.mechanism)} · 穿透${displayNumber((modern?anchoredWeapon(u.weapon,u.cannonAmmo,u.damageModel)?.penetration:u.weapon.penetration)??0)} · 物品编号 ${esc(u.weapon.id)}</div></details>`);
   if (u.generationWarnings?.length) rows.push(`<details><summary>生成说明</summary><div class="sub">${u.generationWarnings.map(esc).join('；')}</div></details>`);
 
   // 特质
@@ -1873,7 +1874,8 @@ function renderSmall(): string {
   const foes = b.visibleCombatants('ally').filter((c) => c.side !== act?.side && c.status !== 'dead' && c.status !== 'fled');
   const actionOptions = act ? b.getActionOptions(act.id) : [];
   const optionById = (id: string) => actionOptions.find((option) => option.id === id);
-  const weapons = actionOptions.filter(o => o.kind === 'weapon');
+  const preferred = act && b.lastWeaponOption(act);
+  const weapons = actionOptions.filter(o => o.kind === 'weapon').sort((a,b) => Number(b.id === preferred) - Number(a.id === preferred));
   const chargeOption = optionById('charge');
   const advanceOption = optionById('advance');
   const withdrawOption = optionById('withdraw');
@@ -3373,7 +3375,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     const mode = el.dataset.mode!; const target = el.dataset.target!;
     if (mode === 'flight:takeoff' || mode === 'flight:land') { b.changeFlight(actorId,mode === 'flight:takeoff'); tacticalView.mode='move'; }
     else if (mode === 'retreat') { b.retreat(actorId); tacticalView.mode='move'; }
-    else if (mode === 'weapon' || mode === 'weapon:sidearm' || mode.startsWith('batch:') || isVolleyMode(mode)) b.attack(actorId, target, { weaponMode: optionWeaponMode(mode) });
+    else if (mode === 'weapon' || mode === 'weapon:sidearm' || mode.startsWith('batch:') || isVolleyMode(mode)) b.playerWeaponAttack(actorId,target,optionWeaponMode(mode));
     else if (mode === 'charge') b.attack(actorId, target, { charge: true });
     else {
       const abilityId = mode.startsWith('ability:') ? mode.slice(8) : mode;
@@ -3758,14 +3760,14 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     const b = state.small!;
     if (!b.active) throw new Error('没有行动者');
     const id = b.active.id;
-    b.attack(id, val('small-target'), { weaponMode: 'primary' });
+    b.playerWeaponAttack(id,val('small-target'),'primary');
     (await afterSmallAction());
   },
   'small-sidearm': async () => {
     const b = state.small!;
     if (!b.active) throw new Error('没有行动者');
     const id = b.active.id;
-    b.attack(id, val('small-target'), { weaponMode: 'sidearm' });
+    b.playerWeaponAttack(id,val('small-target'),'sidearm');
     (await afterSmallAction());
   },
   'small-charge': async () => {
@@ -3777,7 +3779,7 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   },
   'small-batch-attack': async el => {
     const battle = state.small!;
-    battle.attack(battle.active!.id,val('small-target'),{weaponMode:optionWeaponMode(el.dataset.id!)});
+    battle.playerWeaponAttack(battle.active!.id,val('small-target'),optionWeaponMode(el.dataset.id!));
     await afterSmallAction();
   },
   'small-ability': (el) => {

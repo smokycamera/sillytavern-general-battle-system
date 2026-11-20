@@ -1,3 +1,4 @@
+import { isVehicleBody } from './vehicle-size.js';
 import { batchWeapons } from './equipment-batches.js';
 import { compileWornBarrier, type WornBarrier } from './worn-barrier.js';
 import { modifiedEquipmentLoad, revisedLoad } from './load-model.js';
@@ -200,7 +201,7 @@ export function compileItem(spec: ItemSpecification, identity: Pick<EquipmentCon
   switch (spec.kind) {
     case 'weapon': return { kind: 'weapon', value: compileWeapon(spec, context) };
     case 'armor': return { kind: 'armor', value: compileArmor(spec, context) };
-    case 'shield': return { kind: 'shield', value: { id: identity.id, name: identity.name ?? '盾牌', load: modifiedEquipmentLoad(revisedLoad(identity) || identity.numericModel && context.body !== 'vehicle' ? GRADED_SHIELD_LOAD[spec.mechanism ?? 'shield']! : SHIELD_CLASSES[spec.mechanism ?? 'shield'].load, spec.bonuses), recipe: equipmentRecipe(spec.mechanism ?? 'shield', spec.power, context) } };
+    case 'shield': return { kind: 'shield', value: { id: identity.id, name: identity.name ?? '盾牌', load: modifiedEquipmentLoad(revisedLoad(identity) || identity.numericModel && !isVehicleBody(context.body) ? GRADED_SHIELD_LOAD[spec.mechanism ?? 'shield']! : SHIELD_CLASSES[spec.mechanism ?? 'shield'].load, spec.bonuses), recipe: equipmentRecipe(spec.mechanism ?? 'shield', spec.power, context) } };
     default: throw new Error('不支持的物品用途');
   }
 }
@@ -305,7 +306,7 @@ export function equipmentReason(unit: Pick<Combatant, 'body' | 'scale' | 'weapon
   const body = BODY[unit.body ?? 'human'];
   if (!body) return '不支持的身体/平台';
   for (const weapon of batchWeapons(unit)) {
-    if (weapon?.recipe?.stabilized && unit.body !== 'vehicle') return '稳定车载武器需要实际车辆平台，不能由步行或骑乘单位装备';
+    if (weapon?.recipe?.stabilized && !isVehicleBody(unit.body)) return '稳定车载武器需要实际车辆平台，不能由步行或骑乘单位装备';
   }
   if (new Set((unit.gear ?? []).map((item) => item.id)).size !== (unit.gear ?? []).length) return '同一件道具不能重复装备';
   return undefined;

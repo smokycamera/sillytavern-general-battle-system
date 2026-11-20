@@ -1,3 +1,4 @@
+import { tacticalSelection, type TacticalView } from './tactical-view.js';
 import { narrativeEvents } from './battle-reports.js';
 import { smallCommandChoices } from './llm-command.js';
 import {expect,it} from 'vitest';
@@ -207,4 +208,35 @@ it.each([
   expect(fired.filter(Boolean)).toHaveLength(mode==='volley:melee' ? 0 : 2);
   expect(fired.reduce((sum,n)=>sum+n,0)).toBeLessThanOrEqual(actor!.hp);
   expect(battle.getTurnEconomy(actor!.id).actionAvailable).toBe(false);
+});
+
+it('uses the per-vehicle channel budget and remembers the player’s weapon across turns and reloads', () => {
+  const save = apply({}, '<spawn name="旗舰" side="ally" scale="hero" body="largevehicle" level="8" weapon="主炮:直射火炮L8×1,近防炮:机炮L4×90,发射器:火箭筒L3×10"/>\n<spawn name="目标" side="enemy" scale="company" hpMax="200"/>',1);
+  const id = save.storage![0]!.id;
+  const updated = apply(save,'<unit_set id="'+id+'" body="hugevehicle"/>',2);
+  const [ship,target] = updated.storage!.map(r=>structuredClone(r.snapshot!));
+  expect(ship!.body).toBe('hugevehicle');
+  const guns = batchWeapons(ship!);
+  expect(guns.map(w=>availableCopies(ship!,w.id))).toEqual([1,8,8]);
+  const pair = {...ship!, scale:'company' as const, hp:2, equipmentPersonnel:2,
+    equipmentBatches:ship!.equipmentBatches!.map(batch=>({...batch,qty:batch.qty*2}))};
+  expect(guns.map(w=>availableCopies(pair,w.id))).toEqual([2,16,16]);
+  const field = standardField(9,15); field.tiles.fill('open');
+  const b = new SmallBattle({combatants:[ship!,target!],battlefield:field,rules:V43_OVERFLOW_D20,seed:'vehicle-memory'});
+  b.start(); ship!.pos=30; target!.pos=33; b.turnOrder=[id,target!.id]; b.turnIndex=0;
+  const options = b.getActionOptions(id);
+  expect(options.find(o=>o.id==='weapon:sidearm')?.targets?.[0]?.preview?.participants).toBe(8);
+  const effects = options.find(o=>o.id==='volley:ranged')?.targets?.[0]?.preview?.effects;
+  expect(effects).toContain('主炮 ×1');
+  expect(effects?.reduce((sum,text)=>sum+Number(text.split(' ×')[1]),0)).toBe(8);
+  const mode = `batch:${guns[2]!.id}` as const;
+  b.playerWeaponAttack(id,target!.id,mode);
+  expect(b.lastWeaponOption(target!)).toBeUndefined();
+  const restored = SmallBattle.fromSnapshot(structuredClone(b.toSnapshot()));
+  restored.actedThisTurn.clear(); restored.round++;
+  const view: TacticalView = {selectedId:id,mode:'weapon'};
+  expect(tacticalSelection(restored,view).option?.id).toBe(mode);
+  restored.playerWeaponAttack(id,target!.id,'volley:ranged');
+  restored.actedThisTurn.clear(); restored.round++;
+  expect(tacticalSelection(restored,view).option?.id).toBe('volley:ranged');
 });

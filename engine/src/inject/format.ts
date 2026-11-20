@@ -1,3 +1,4 @@
+import { isVehicleBody } from '../vehicle-size.js';
 import { volleyLabels } from '../equipment-batches.js';
 import { displayNumber } from '../display-number.js';
 import { isCommunicationLog } from '../diplomacy.js';
@@ -57,7 +58,7 @@ function hpLabel(u: Combatant): string {
 /** 战报状态行的兵力：编队写剩余总人数（载具编队按辆），个体写血量。成员生命分组、装备和精力由单位提示词提供。 */
 export function reportStrengthLabel(u: Combatant): string {
   if (u.scale === 'hero') return `血量${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}`;
-  return u.body === 'vehicle' ? `剩余总数${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}辆` : `剩余总人数${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}`;
+  return isVehicleBody(u.body) ? `剩余总数${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}辆` : `剩余总人数${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}`;
 }
 
 /** 战报状态行的能量盾：剩余/容量（取整）与过载份数；倒下或撤离的单位不写。 */

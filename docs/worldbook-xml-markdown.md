@@ -78,7 +78,7 @@
 
 - spawn 填 name、side（ally/enemy/neutral）和 scale（hero/company）。neutral 为第三方，与我方、敌方均敌对。company 另填 hpMax；写 hp 时同时填 hpMax。level 为训练等级 1—10，可带修正。speed 为固有速度 1—5（迟缓、缓行、标准、快速、疾速）。
 - weapon 写武器（可为多种武器，主副武器或混装均可写在此栏），armor 写盔甲，shield 写盾，items 写随身道具。每项写“名称:规格×件数”，多项以逗号分隔。件数为编队持有该装备的实际总数（单体有多件武器时，各类武器件数按实际持有数填写），写在等级、效果与修正之后。
-- 坐骑和载具单独建档。platform 写“类别L等级±修正”，类别选坐骑、开放载具（乘员外露）、封闭载具（乘员在内）。普通马匹用 body="human"，大型、巨型生物坐骑用 body="large"、body="giant"，车辆用 body="vehicle"。独立作战载具可省略 platform 和 seats。非装甲炮兵按人形单位建档。
+- 坐骑和载具单独建档。platform 写“类别L等级±修正”，类别选坐骑、开放载具（乘员外露）、封闭载具（乘员在内）。普通马匹用 body="human"，大型、巨型生物坐骑用 body="large"、body="giant"。载具按单辆或单舰的实际体量填写 body。独立作战载具可省略 platform 和 seats。非装甲炮兵按人形单位建档。
 - seats 为每匹坐骑或每辆车的载员数，车组成员不占座。编队总座位数为现存数量 hp × seats；单匹或单辆用 hero 时总座位数为 seats。
 - 乘员的 spawn 或 unit_set 中，绑定写 mount="坐骑或载具编号"，共用行动回合；普通搭乘写 aboard="坐骑或载具编号"。解绑写 mount="false"，离开写 aboard="false"。已有平台填事实清单中的 id，同批新建填该批次中唯一的单位全名。
 - skills、traits 沿用“技能与效果”的写法，可分级特质写等级。近战、射击和盾牌技法按实际可用的相应装备发动。技能和特质本身不写件数。原文未提及时，可补充符合设定的技能与道具。
@@ -103,7 +103,8 @@
 
 ## 共用可选配置
 
-体型：body=human/large/vehicle/giant
+生物体型：body=human/large/giant。
+载具体型：smallvehicle（汽车）、mediumvehicle（坦克）、largevehicle（常规战舰）、hugevehicle（巨型星舰）、giantvehicle（死星等天体级巨构）。
 载具武器稳定器：stabilized=true/false
 护甲侧重防护：protection=balanced/kinetic/thermal/arcane（均衡/动能/热能/奥术）
 武器属性：enchant=none/thermal/arcane（均衡/热能/奥术）
@@ -129,13 +130,13 @@ add、give、take 可写 note。add（新物品）/reforge 可用 body、stabili
 </example>
 <example situation="一辆 APC 与一个八人机械化步兵班">
 <tb>
-<spawn name="渡鸦号" side="ally" scale="hero" body="vehicle" level="3" platform="封闭载具L5+4防御-1速度" seats="8" weapon="车载轻机枪:步枪L5×1" armor="车体装甲:重甲L5×1" skills="烟幕释放:烟幕L3"/>
+<spawn name="渡鸦号" side="ally" scale="hero" body="mediumvehicle" level="3" platform="封闭载具L5+4防御-1速度" seats="8" weapon="车载轻机枪:步枪L5×1" armor="车体装甲:重甲L5×1" skills="烟幕释放:烟幕L3"/>
 <spawn name="青原机械化步兵班" side="ally" scale="company" hpMax="8" level="2" aboard="渡鸦号" weapon="制式步枪:步枪L5×8" armor="防弹衣:中甲L4×8"/>
 </tb>
 </example>
 <example situation="十二辆自行火炮独立作战，另有一支炮兵队，现员两人、保有六门炮">
 <tb>
-<spawn name="自行火炮连" side="ally" scale="company" hpMax="12" body="vehicle" level="4" weapon="自行榴弹炮:曲射火炮L6×12" armor="车体装甲:重甲L4×12"/>
+<spawn name="自行火炮连" side="ally" scale="company" hpMax="12" body="mediumvehicle" level="4" weapon="自行榴弹炮:曲射火炮L6×12" armor="车体装甲:重甲L4×12"/>
 <spawn name="守备炮兵队" side="ally" scale="company" hp="2" hpMax="6" body="human" level="3" weapon="队属野战炮:直射火炮L4×6"/>
 </tb>
 </example>

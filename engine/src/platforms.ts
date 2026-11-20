@@ -1,3 +1,4 @@
+import { isVehicleBody } from './vehicle-size.js';
 import { enhancementLabel, parseEnhancementSuffix, validateEnhancements, type Enhancements } from './enhancements.js';
 import type { Combatant } from './types.js';
 
@@ -21,7 +22,7 @@ export function validatePlatform(unit: Pick<PlatformUnit, 'platform'|'seats'|'ri
   if (p !== undefined) {
     if (!p || !Object.hasOwn(platformKinds,p.kind) || !Number.isInteger(p.power) || p.power < 1 || p.power > 10) throw Error('坐骑或载具规格无效');
     validateEnhancements(p.bonuses, 'unit');
-    if ((p.kind !== 'animal') !== (unit.body === 'vehicle')) throw Error('车辆规格须使用 vehicle 身体，生物坐骑须使用生物身体');
+    if ((p.kind !== 'animal') !== (isVehicleBody(unit.body))) throw Error('车辆平台需要载具体型，生物坐骑需要生物体型');
   }
   if (unit.seats !== undefined && (!p || !Number.isSafeInteger(unit.seats) || unit.seats < 1)) throw Error('seats 需要有平台规格及正整数座位数');
   if (unit.ride?.seats !== undefined && (!Array.isArray(unit.ride.seats) || unit.ride.seats.some(r =>

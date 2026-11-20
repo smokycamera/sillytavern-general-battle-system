@@ -1,3 +1,4 @@
+import { isBodyKind, isVehicleBody } from './vehicle-size.js';
 import { availableCopies, batchWeapons } from './equipment-batches.js';
 import { phase2Traits } from './trait-level-model.js';
 import { effectiveTraitLevel } from './trait-sources.js';
@@ -35,7 +36,7 @@ export function meleeWeapon(unit: Pick<Combatant, 'weapon' | 'sidearm'> & Partia
 /** 骑乘是显式长期配置；没有坐骑时，骑射标签不制造物理平台。 */
 export function validateMount(unit: Pick<Combatant, 'mount' | 'body' | 'speedTier'>): void {
   if (unit.speedTier !== undefined && (!Number.isSafeInteger(unit.speedTier) || unit.speedTier < 1 || unit.speedTier > 5)) throw new Error('速度档位必须为1–5整数');
-  if (unit.body !== undefined && !['human', 'large', 'vehicle', 'giant'].includes(unit.body)) throw new Error('身体配置损坏');
+  if (unit.body !== undefined && !isBodyKind(unit.body)) throw new Error('身体配置损坏');
   if (unit.mount !== undefined && typeof unit.mount !== 'boolean') throw new Error('骑乘配置需要布尔值');
 }
 export function mountedShooting(unit: Combatant, weapon?: Weapon): boolean {
@@ -53,7 +54,7 @@ export function mobileRangedWeapon(weapon?: Weapon): boolean {
   return isRangedWeapon(weapon) && (weapon?.load ?? 99) <= 2 && !weaponReloadTurns(weapon);
 }
 export function vehicleShooting(unit: Combatant, weapon?: Weapon): boolean {
-  return unit.rulesVersion === 'v2' && unit.body === 'vehicle' && !unit.airborne && !unit.suppression
+  return unit.rulesVersion === 'v2' && isVehicleBody(unit.body) && !unit.airborne && !unit.suppression
     && (weapon ? !!weapon.recipe?.stabilized && isRangedWeapon(weapon) : [unit.weapon, unit.sidearm].some((w) => !!w?.recipe?.stabilized && isRangedWeapon(w)));
 }
 export function steadyMovingShot(unit: Combatant, weapon?: Weapon): boolean {

@@ -1,3 +1,4 @@
+import { BODY_LABELS, isVehicleBody } from '../../engine/src/vehicle-size.js';
 import { assignIssue, parseIssue } from './equipment-batches.js';
 import { parsePlatform, validatePlatform } from '../../engine/src/platforms.js';
 import { singleLifeLimit } from '../../engine/src/health-limits.js';
@@ -106,7 +107,7 @@ function configureGear(mechanics: ItemMechanics | undefined, unit: Combatant, da
   const context = { id: value.id, name: value.name, seed: recipe.seed, body: recipe.size, quality: recipe.quality, bonuses: recipe.bonuses,
     damageModel: unit.damageModel, numericModel: recipe.numericModel, loadModel: recipe.loadModel, variance: recipe.variance ?? false as const, noVariance: recipe.noVariance, creatingUnit: true };
   if (mechanics.kind === 'weapon') {
-    if (data.stabilized === true && (unit.body !== 'vehicle' || (mechanics.value.range ?? 1) <= 1 && mechanics.value.recipe?.mechanism !== 'sprayer')) throw Error('稳定装置需要载具的射击武器');
+    if (data.stabilized === true && (!isVehicleBody(unit.body) || (mechanics.value.range ?? 1) <= 1 && mechanics.value.recipe?.mechanism !== 'sprayer')) throw Error('稳定装置需要载具的射击武器');
     const compiled = compileItem({ kind: 'weapon', mechanism: recipe.mechanism, power: recipe.power,
       enchantment: (data.enchant ?? recipe.enchantment ?? 'none') as 'none'|'thermal'|'arcane', stabilized: (data.stabilized ?? recipe.stabilized) as boolean | undefined }, context);
     if (compiled.kind !== 'weapon') throw Error('武器配置损坏');
@@ -150,7 +151,7 @@ function gearValue(input: unknown, previous: ItemMechanics | undefined, slot: Eq
     }
     number(spec.power, '装备等级', 1, 10, true);
     if (spec.quality !== undefined) number(spec.quality, '装备品质', 1, 5, true);
-    if (spec.body !== undefined) enumeration(spec.body, ['human','large','vehicle','giant'], '装备体型');
+    if (spec.body !== undefined) enumeration(spec.body, Object.keys(BODY_LABELS), '装备体型');
     if (spec.kind === 'armor') number(spec.tier, '护甲档位', 0, 4, true);
     if (spec.kind === 'weapon' && spec.stabilized !== undefined && typeof spec.stabilized !== 'boolean') throw Error('稳定装置须为布尔值');
     if (spec.kind === 'weapon' && spec.enchantment !== undefined) enumeration(spec.enchantment, ['none','thermal','arcane'], '附魔');
@@ -383,7 +384,7 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   if(data.morale===undefined&&unit.base.moraleMax!==undefined)unit.morale=Math.min(unit.morale??unit.base.moraleMax,unit.base.moraleMax);
   if (typeof unit.name !== 'string' || !unit.name.trim()) throw Error('单位名称不能为空');
   enumeration(unit.side,['ally','enemy','neutral'],'side'); enumeration(unit.scale,['hero','company'],'scale');
-  enumeration(unit.archetype ?? 'infantry',['infantry','ranged','mobile'],'archetype'); enumeration(unit.body ?? 'human',['human','large','vehicle','giant'],'body');
+  enumeration(unit.archetype ?? 'infantry',['infantry','ranged','mobile'],'archetype'); enumeration(unit.body ?? 'human',Object.keys(BODY_LABELS),'body');
   number(unit.level,'训练等级',1,10,true); number(unit.base.hpMax,'hpMax',1,unit.scale==='hero'?singleLifeLimit(unit.damageModel):1e9,true);
   number(unit.hp,'hp',0,unit.base.hpMax,true);
   for (const key of ['atk','def','spd'] as const) number(unit.base[key],key);

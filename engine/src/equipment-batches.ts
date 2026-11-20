@@ -1,9 +1,10 @@
+import { hasVehicleSize, isVehicleBody, vehicleChannels } from './vehicle-size.js';
 import type { Combatant, EquipmentBatch, Weapon } from './types.js';
 
 type Bearer = Pick<Combatant,'equipmentBatches'|'equipmentPersonnel'|'scale'|'hp'|'body'|'recoverableWounded'>;
 const members = (unit: Bearer) => unit.scale === 'hero' ? Number(unit.hp > 0) : unit.hp;
 export function crewEquipment(unit: Bearer, batch: EquipmentBatch): boolean {
-  return unit.body !== 'vehicle' && batch.mechanics.kind === 'weapon' && ['autocannon','cannon','indirect-cannon'].includes(batch.mechanics.value.recipe?.mechanism ?? '');
+  return !isVehicleBody(unit.body) && batch.mechanics.kind === 'weapon' && ['autocannon','cannon','indirect-cannon'].includes(batch.mechanics.value.recipe?.mechanism ?? '');
 }
 /** Consecutive copies fill a rank before issuing the next copy to a member. */
 export function issuedTo(qty: number, start: number, members: number, rank: number): number {
@@ -33,9 +34,15 @@ export function readyCopies(unit: Bearer,batch: EquipmentBatch): number {
   const held = crewEquipment(unit,batch) ? batch.qty : batchCount(unit,batch);
   return Math.max(0,held-busy);
 }
-export function availableCopies(unit: Bearer,id: string | undefined): number {
+export function weaponCapacity(unit: Pick<Bearer,'scale'|'hp'|'body'>): number {
+  return members(unit) * vehicleChannels(unit.body);
+}
+export function availableCopies(unit: Bearer & Pick<Combatant,'weapon'|'sidearm'>,id: string | undefined): number {
   const batch = unit.equipmentBatches?.find(b=>b.id===id);
-  return batch ? Math.min(members(unit),readyCopies(unit,batch)) : Infinity;
+  if (batch) return Math.min(batch.mechanics.kind === 'weapon' ? weaponCapacity(unit) : members(unit),readyCopies(unit,batch));
+  // An uncounted weapon slot represents one installed weapon on each hull.
+  if (id && hasVehicleSize(unit.body) && (id === unit.weapon?.id || id === unit.sidearm?.id)) return members(unit);
+  return Infinity;
 }
 /** Remove personal kit only for deaths that cannot be recovered. */
 export function loseIssuedEquipment(unit: Combatant,dead: number,start: number): void {
@@ -130,8 +137,25 @@ function apportion<T extends { copies: number }>(weapons: readonly T[], frontage
 }
 
 /** Use one formation frontage, with a separate reach and capacity limit for each delivery. */
-export function allocateVolley<T extends {copies:number; ranged:boolean; frontage:number}>(weapons: readonly T[], mode: VolleyMode) {
+export function allocateVolley<T extends {copies:number; ranged:boolean; frontage:number; priority?:number}>(weapons: readonly T[], mode: VolleyMode) {
   if (weapons.length < 2) return [];
+  if (weapons[0]?.priority !== undefined) {
+    const rows = weapons.filter(w => mode === 'volley:all' || w.ranged === (mode === 'volley:ranged'));
+    if (rows.length < 2) return [];
+    const remaining = new Map(rows.map(w => [w.ranged, Math.floor(w.frontage)]));
+    let budget = Math.max(...remaining.values());
+    if (budget < 2) return [];
+    const shares = [];
+    for (const weapon of rows.sort((a,b) => b.priority! - a.priority!)) {
+      const lane = remaining.get(weapon.ranged)!;
+      const count = Math.min(budget,lane,weapon.copies);
+      if (count > 0) shares.push({weapon,count});
+      remaining.set(weapon.ranged,lane-count);
+      budget -= count;
+      if (!budget) break;
+    }
+    return shares;
+  }
   const lane = (ranged: boolean) => {
     const rows = weapons.filter(w => w.ranged === ranged && w.copies > 0);
     const frontage = Math.floor(rows[0]?.frontage ?? 0);
