@@ -11,6 +11,7 @@ import { structureAt, intactStructure, groundBlocked, isElevated } from '../../e
 import { visibleBattleZones } from '../../engine/src/area-effects.js';
 import { fieldEffectMarks, fieldWorks, worksLabelShort, zoneLabel, zoneDetail } from './field-effects-view.js';
 import { tbWeaponShortName } from '../../engine/src/weapon-name.js';
+import { unitIcon } from './unit-icons.js';
 import { unitCount } from '../../engine/src/platforms.js';
 import { strengthDescription } from '../../engine/src/combat-model.js';
 import { participationText,memberHealthPanel } from './combat-model-view.js';
@@ -121,7 +122,7 @@ export function selectTacticalElement(battle: SmallBattle, view: TacticalView, i
   const cycle = sameCell && legal.some(u => u.ride || u.platform);
   const next = cycle ? legal.findIndex(u => u.id === view.targetId) + 1 : 0;
   const unit = input.unitId ? occupants.find(u => u.id === input.unitId)
-    : (legal.length ? legal[next % legal.length] : undefined) ?? occupants.find(u => targets.some(t => t.targetId === u.id)) ?? occupants[0];
+    : (legal.length ? legal[next % legal.length] : undefined) ?? occupants.find(u => targets.some(t => t.targetId === u.id)) ?? active ?? mapPieces(occupants)[0]?.unit;
   if (view.mode === 'move' && !input.actor && (!input.unitId || unit?.status === 'dying')
     && !occupants.some(u => u.side !== (selection.actor?.side ?? 'ally') && u.hp > 0 && u.status !== 'dying')) {
     view.cell = cell; view.targetId = undefined; return selection.query;
@@ -272,15 +273,34 @@ const MAP_KEY = `<details class="map-key" data-detail-id="map-key"><summary>图�
   ['zone', '占领区'], ['reach', '可到达'], ['range', '射程'], ['target', '可选目标'], ['fog', '未观测'],
 ] as const).map(([key, text]) => `<span><i class="key key-${key}"></i>${text}</span>`).join('')}<span><i class="key key-exit">︾</i>边缘箭头：撤出战斗的方向；出口：护送任务的目的地</span><span><i class="key key-token-hero"></i>人物</span><span><i class="key key-token-company"></i>编队</span><span><i class="key key-last-seen">?</i>敌军最后目击</span></div></details>`;
 
+interface MapPiece { unit: Combatant; mount?: Combatant }
+
+/** 只合并当前格内可见的骑手和专属生物坐骑。检查格子与选攻击目标仍用真实单位。 */
+function mapPieces(occupants: Combatant[]): MapPiece[] {
+  const pieces = new Map<string, MapPiece>(occupants.map(unit => [unit.id, { unit }]));
+  for (const piece of pieces.values()) {
+    const ride = piece.unit.ride;
+    if (ride?.mode !== 'mount' || ride.stranded || piece.unit.hp <= 0) continue;
+    const mount = pieces.get(ride.platformId)?.unit;
+    if (mount?.platform?.kind === 'animal' && mount.hp > 0) {
+      piece.mount = mount;
+      pieces.delete(mount.id);
+    }
+  }
+  return [...pieces.values()];
+}
+
 /** 棋子：阵营色底 + 兵种符号 + 名称 + 实际生命/人数数值。数值始终显示，颜色随剩余比例变化。 */
-function gridPiece(battle: SmallBattle, u: Combatant, isActor: boolean, ai = false): string {
+function gridPiece(battle: SmallBattle, { unit: u, mount }: MapPiece, selectedId: string | undefined, aiUnitIds: ReadonlySet<string>): string {
+  const isActor = u.id === selectedId || !!mount && mount.id === selectedId;
+  const ai = aiUnitIds.has(u.id) || !!mount && aiUnitIds.has(mount.id);
   const name = [...u.name], ratio = u.base.hpMax > 0 ? Math.max(0, Math.min(1, u.hp / u.base.hpMax)) : 0;
   const health = ratio >= .6 ? 'hp-high' : ratio >= .3 ? 'hp-mid' : 'hp-low';
   const side = u.side === 'ally' || u.side === 'enemy' ? u.side : 'neutral';
   const badges = [ai ? 'AI' : '', isAirborne(u) ? '空' : isElevated(u) ? '顶' : '', u.suppression ? '压' : '', battle.overwatch.has(u.id) ? '警' : ''].filter(Boolean);
   const status = [ai ? 'AI托管' : '', isAirborne(u) ? '空中' : isElevated(u) ? '墙顶' : '', u.suppression ? '受压' : '', battle.overwatch.has(u.id) ? '警戒' : ''].filter(Boolean).join(' ');
   return `<span class="grid-piece ${side} ${u.scale === 'hero' ? 'hero' : 'company'} ${health}${u.status !== 'ready' ? ' status-' + u.status : ''}${isActor ? ' actor' : ''}${isAirborne(u) ? ' airborne' : ''}">`
-    + `<span class="grid-token">${unitSymbol(u)}${badges.length ? '<span class="grid-badges">' + badges.map(b => '<i' + (b === '空' ? ' class="flight-badge"' : '') + '>' + b + '</i>').join('') + '</span>' : ''}</span>`
+    + `<span class="grid-token">${mount ? unitIcon('cavalry') : unitSymbol(u)}${badges.length ? '<span class="grid-badges">' + badges.map(b => '<i' + (b === '空' ? ' class="flight-badge"' : '') + '>' + b + '</i>').join('') + '</span>' : ''}</span>`
     + `<span class="grid-piece-name" title="${esc(u.name)}"><span>${esc(name.slice(0, -2).join(''))}</span><span>${esc(name.slice(-2).join(''))}</span></span>`
     + `<span class="grid-hp"><span class="grid-affiliation">${u.side === 'ally' ? '我' : u.side === 'enemy' ? '敌' : '三'}</span><b>${displayNumber(u.hp)}</b>/${displayNumber(u.base.hpMax)}${status ? '<span class="grid-status"> ' + status + '</span>' : ''}</span></span>`;
 }
@@ -365,13 +385,14 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
   const controlCells = new Set(field.objective.kind === 'control' ? field.objective.cells ?? [field.objective.cell] : []);
   const cells = field.tiles.map((terrain, cell) => {
     const occupants = occupantsAt.get(cell) ?? [];
+    const pieces = occupants.length ? mapPieces(occupants) : [];
     const distance = actor?.pos !== undefined ? gridDistance(field, actor.pos, cell) : Infinity;
     const inRange = !!actor && range && (range.metric === 'global' || range.metric === 'self' ? range.metric === 'global' || cell === actor.pos : distance >= range.min && distance <= range.max);
     const structure = structureAt(field, cell), inspected = view.inspectedCell === cell, landmark = landmarkAt(field, cell);
     const flags = [terrain, searched.has(cell) ? 'recently-searched' : '', structure?.hp ? 'structure-' + structure.kind + (structure.kind === 'gate' ? ' gate-' + structure.gateState : '') : '', ...(field.overlays?.[cell] ?? []).map(o => 'overlay-' + o), controlCells.has(cell) ? 'control-region' : '', trace?.cells.includes(cell) ? 'trace-cell' : '', !seen[cell] ? 'unobserved' : '', reachable.has(cell) ? 'reachable' : '', paths.has(cell) ? 'path' : '',
       occupants.some((u) => u.id === actor?.id) ? 'selected' : '', inspected ? 'inspected' : '',inspectedMark?.cells.includes(cell)?'landmark-focus':'',
       goalCell === cell ? 'objective' : '', inRange ? 'in-range' : '', (targets.has('cell:'+cell) || occupants.some((u) => targets.has(u.id))) ? 'legal-target' + (occupants.some((u) => targets.has(u.id) && u.side === 'ally') ? ' legal-ally' : '') : '',
-      (target?.targetId==='cell:'+cell || occupants.some((u) => u.id === target?.targetId)) && mode !== 'move' && mode !== 'guard' ? 'targeted' : '', occupants.some((u) => area.has(u.id)) ? 'area-hit' : '', occupants.length > 1 ? 'stacked' : ''].filter(Boolean).join(' ');
+      (target?.targetId==='cell:'+cell || occupants.some((u) => u.id === target?.targetId)) && mode !== 'move' && mode !== 'guard' ? 'targeted' : '', occupants.some((u) => area.has(u.id)) ? 'area-hit' : '', pieces.length > 1 ? 'stacked' : ''].filter(Boolean).join(' ');
     const zones = liveZones.filter(z => (z.side === 'ally' || seen[cell]) && Math.abs(z.x - cell % field.width) + Math.abs(z.y - Math.floor(cell / field.width)) <= z.radius);
     const works = liveWorks.filter(u => u.entrenchedAt === cell && (u.side === 'ally' || seen[cell]));
     const effectLabels = [...(works.length ? [worksLabelShort(works)] : []), ...new Set(zones.map(zoneLabel))];
@@ -379,19 +400,19 @@ function renderTacticalContent(battle: SmallBattle, view: TacticalView, automati
       + (effectLabels.length > 1 ? ' +' + (effectLabels.length - 1) : '') : effectLabels.join('·');
     const ghosts = lastSeen.get(cell) ?? [];
     const ghostText = ghosts.map((t) => '最后目击敌方' + t.name + '（' + ago(t.round) + '）').join('、');
-    const label = (goalCell === cell ? field.objective.kind === 'escape' ? '护送撤离点 ' : '夺点目标 ' : controlCells.has(cell) ? '占领区域 ' : '') + effectLabels.join('、')+' '+cellLabel(field, cell) + ' ' + (landmark ?? '') + ' ' + terrainName(field, cell) + ' '+heightDescription(field,cell)+' ' + occupants.map((u) => (u.side === 'ally' ? '我方' : u.side === 'enemy' ? '敌方' : '第三方') + u.name).join('、') + (ghostText ? ' ' + ghostText : '');
+    const label = (goalCell === cell ? field.objective.kind === 'escape' ? '护送撤离点 ' : '夺点目标 ' : controlCells.has(cell) ? '占领区域 ' : '') + effectLabels.join('、')+' '+cellLabel(field, cell) + ' ' + (landmark ?? '') + ' ' + terrainName(field, cell) + ' '+heightDescription(field,cell)+' ' + pieces.map(({unit: u}) => (u.side === 'ally' ? '我方' : u.side === 'enemy' ? '敌方' : '第三方') + u.name).join('、') + (ghostText ? ' ' + ghostText : '');
     // 地形与结构由底图表达；格内只放单位、状态与被查看格的名称。高度0为默认地表，只标注抬高的格子。
     const height = field.spatialRulesVersion === 2 ? surfaceHeightAt(field, cell) : 0;
     const terrainLabel = inspected && !occupants.length;
     const inner = fieldEffectMarks(zones, works) + (searched.has(cell) ? '<span class="grid-search-mark" aria-hidden="true"></span>' : '')
       + (height ? '<span class="grid-height" aria-hidden="true">高' + height + '</span>' : '') + (landmark ? '<span class="grid-landmark" aria-hidden="true">◇</span>' : '') + (goalCell === cell ? '<span class="grid-goal" aria-hidden="true">' + (field.objective.kind === 'escape' ? '出口' : '旗') + '</span>' : '')
-      + occupants.map((u) => gridPiece(battle, u, u.id === actor?.id, automation.aiUnitIds.has(u.id))).join('')
-      + (occupants.length > 1 ? '<span class="grid-stack-count">' + occupants.length + '队</span>' : '')
+      + pieces.map(piece => gridPiece(battle, piece, actor?.id, automation.aiUnitIds)).join('')
+      + (pieces.length > 1 ? '<span class="grid-stack-count">' + pieces.length + '队</span>' : '')
       + (ghosts.length ? `<span class="grid-last-seen${occupants.length ? ' raised' : ''}" aria-hidden="true" title="${esc(ghostText)}">?${ghosts.length > 1 ? ghosts.length : ''}<small>${esc(ago(Math.max(...ghosts.map((t) => t.round))))}</small></span>` : '')
       + (structure?.hp && !terrainLabel && (structure.hp < structure.hpMax || inspected) ? `<span class="structure-hp${occupants.length || zones.length ? ' raised' : ''}" aria-hidden="true">${displayNumber(structure.hp)}/${displayNumber(structure.hpMax)}</span>` : '')
       + (effectLabels.length ? '<span class="grid-zone' + (occupants.length ? ' occupied' : '') + '" title="' + esc(effectLabels.join('、')) + '">' + esc(effectText) + '</span>' : '')
       + (terrainLabel ? '<span class="grid-terrain">' + (structure ? structureDisplayName(field, cell) + (structure.hp ? ' L' + structure.level + ' · ' + displayNumber(structure.hp) + '/' + displayNumber(structure.hpMax) : '·残骸') : field.generation?.scene === 'interior' && terrain === 'street' ? '室内地面' : terrainNames[terrain]) + '</span>' : '');
-    const attrs = `class="grid-cell ${flags}" data-action="grid-cell" data-cell="${cell}" data-coordinate="${cellLabel(field, cell)}" data-unit-ids="${esc(JSON.stringify(occupants.map(u => u.id)))}" data-acting="${occupants.some(u => u.id === active?.id)}" data-selected="${occupants.some(u => u.id === actor?.id)}"${occupants.length > 1 ? ` style="--stack:${occupants.length}" title="${esc(occupants.map(u => u.name).join(' / '))}"` : ''} aria-label="${esc(label)}" aria-pressed="${inspected}"`;
+    const attrs = `class="grid-cell ${flags}" data-action="grid-cell" data-cell="${cell}" data-coordinate="${cellLabel(field, cell)}" data-unit-ids="${esc(JSON.stringify(occupants.map(u => u.id)))}" data-acting="${occupants.some(u => u.id === active?.id)}" data-selected="${occupants.some(u => u.id === actor?.id)}"${pieces.length > 1 ? ` style="--stack:${pieces.length}" title="${esc(pieces.map(p => p.unit.name).join(' / '))}"` : ''} aria-label="${esc(label)}" aria-pressed="${inspected}"`;
     // 内容签名：点选只改动少数格，其余格在打补丁时整格跳过。
     return `<button ${attrs} data-static="c${signature(attrs + inner)}">${inner}</button>`;
   }).join('');
