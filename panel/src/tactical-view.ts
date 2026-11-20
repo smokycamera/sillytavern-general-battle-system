@@ -142,7 +142,7 @@ export function selectTacticalElement(battle: SmallBattle, view: TacticalView, i
 
 /** 实际高度的统一说明：居高防御与射程按高差计，只有高于双方站立高度的自然地形遮挡视线。 */
 const HEIGHT_RULES = '比对手每高1级，防御+1、远程武器射程+1（各至多+2）；自然地形只有高于双方站立高度才遮挡视线，城墙与建筑按实际高度遮挡；相邻高差超过1级需坡道或阶梯。';
-function terrainDescription(terrain: Terrain, actor?: Combatant,heightRules=false): string {
+function terrainDescription(terrain: Terrain, actor?: Combatant,heightRules=false, field?: BattlefieldSpec): string {
   const airborne = actor && isAirborne(actor);
   const traits = actor ? activeTraitIds(actor) : [];
   const footing = '站在其中立足不稳：攻击−1、防御−1，' + difficultEngagementDescription(actor?.damageModel) + '；两栖单位与桥上单位不受影响。';
@@ -150,9 +150,10 @@ function terrainDescription(terrain: Terrain, actor?: Combatant,heightRules=fals
     open: '没有额外地形防护。',
     street: '城区街道；巷战大师在此攻击+1、防御+2，建筑与瓦砾效果另外结算。',
     shallow_water: '可以涉水，通常花费2移动；两栖单位花费1。不能从水中发起地面冲锋。' + (heightRules ? footing : ''),
-    deep_water: '地面单位需要两栖或完好桥梁；两栖花费3移动。',
+    deep_water: field?.exposureRules ? '航行、两栖、飞行和完好的桥梁可通过深水。落水者每回合只能走一格，轮末仍在水中会损失生命。' : '地面单位需要两栖或完好桥梁；两栖花费3移动。',
+    vacuum: '具备真空活动能力的单位可正常活动，其他单位暴露时每回合只能移动一格并受到伤害。',
     swamp: '移动花费3，两栖单位花费2；不适合地面冲锋。' + (heightRules ? footing : ''),
-    cliff: '不可破坏的自然障碍，按高度遮挡低空射线。',
+    cliff: field?.environment?.includes('cosmos') ? '小行星阻挡地面和飞行单位的通行与视线。' : '不可破坏的自然障碍，按高度遮挡低空射线。',
     cover: '地面单位被一格以外的武器攻击时，防御提高2。',
     wall: '阻挡地面通行与地面直射；空中单位可越过。',
     rough: '地面移动花费2点，' + difficultEngagementDescription(actor?.damageModel) + '。',
@@ -226,7 +227,7 @@ function tileInspector(battle: SmallBattle, view: TacticalView, selection: Retur
   const gateReason = actor && structure?.kind === 'gate' ? battle.gateReason(actor.id, cell) : undefined;
   const climbReason = actor ? battle.climbReason(actor.id, cell) : undefined;
   return `<div class="map-inspector" aria-live="polite"><div class="inspector-heading"><strong>${cellLabel(field, cell)} · ${landmarkAt(field, cell) ? esc(landmarkAt(field, cell)!) + ' · ' : ''}${terrainName(field, cell)}${field.spatialRulesVersion===2?' · '+heightDescription(field,cell):''}</strong><span>${actor && traversable ? Number.isFinite(entry)?'相邻进入花费'+entry+'移动':'需经坡道或阶梯接近' : terrain === 'wall' || !traversable ? '地面不可通行' : ''}</span></div>
-    <p>${terrainDescription(terrain, actor,field.spatialRulesVersion===2)}</p>
+    <p>${terrainDescription(terrain, actor,field.spatialRulesVersion===2,field)}</p>
     ${zones.map(z => '<p class="field-effect-detail">' + esc(zoneDetail(z)) + '</p>').join('')}
     ${works.map(u => '<p class="field-effect-detail">' + esc(u.name) + '的工事 · ' + (entrenched(u) ? '据守中' : '空置，原单位回到此处可据守') + '</p>').join('')}
     ${field.spatialRulesVersion===2?'<details data-detail-id="height-rules"><summary>高度规则</summary><p>'+HEIGHT_RULES+'</p></details>':''}

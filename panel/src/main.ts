@@ -198,7 +198,7 @@ let loadoutSkills: { id: string; revision?: number; namespace?: string; selected
 // ---------- 战场环境 ----------
 
 /** 环境标签 → 显示名（AI 用 <field env="…"/> 声明，面板解析落库，开战时固化进快照） */
-const FIELD_LABELS: Record<string, string> = { plains: '野战', urban: '巷战', siege: '攻城', night: '夜战', forest: '森林', mountain: '山地' };
+const FIELD_LABELS: Record<string, string> = { plains: '野战', urban: '巷战', siege: '攻城', night: '夜战', forest: '森林', mountain: '山地', sea: '海洋', cosmos: '太空' };
 function plannedFieldTags(): string[] { return environmentTags([...(state.field ? [state.field] : []), ...(state.lighting === 'night' ? ['night'] : [])]); }
 function fieldLabel(tags: string[]): string {
   return tags.map((t) => FIELD_LABELS[t] ?? t).join('/');

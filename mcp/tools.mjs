@@ -66,7 +66,7 @@ export function createBattleMcp(broker) {
     cell: cell.optional(), direction: z.enum(['advance','withdraw']).optional(), targetId: z.string().optional(),
     abilityId: z.string().optional(), weaponMode: z.string().regex(/^(primary|sidearm|batch:.+|volley:(?:ranged|melee|all))$/).optional(), enabled: z.boolean().optional(),
   }).strict();
-  const setup = z.object({ mode: z.enum(['small','mass']).optional(), field: z.enum(['plains','urban','siege','forest','mountain']).optional(),
+  const setup = z.object({ mode: z.enum(['small','mass']).optional(), field: z.enum(['plains','urban','siege','forest','mountain','sea','cosmos']).optional(),
     lighting: z.enum(['day','night']).optional(), mapLayout: z.enum(['standard','indoor']).optional(),
     objectiveMode: z.enum(['auto','annihilation','siege','control','escort','intercept']).optional(), siegeAttacker: z.enum(['ally','enemy']).optional() }).strict();
   const preparation = {

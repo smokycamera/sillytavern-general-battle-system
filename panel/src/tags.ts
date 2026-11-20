@@ -439,7 +439,7 @@ export function parseEffectAttributes(attrs: Record<string, string>): { effects?
 // ---------- 战场环境 ----------
 
 /** 环境声明 → 面板 field 标签键 */
-export const FIELD_ENV_KEYS = ['plains', 'urban', 'siege', 'night', 'forest', 'mountain'] as const;
+export const FIELD_ENV_KEYS = ['plains', 'urban', 'siege', 'night', 'forest', 'mountain', 'sea', 'cosmos'] as const;
 export type FieldEnv = (typeof FIELD_ENV_KEYS)[number];
 const FIELD_ENV_KWS: Record<FieldEnv, string[]> = {
   plains: ['野战', '平原', '原野', '野外', '开阔'],
@@ -447,6 +447,7 @@ const FIELD_ENV_KWS: Record<FieldEnv, string[]> = {
   siege: ['攻城', '围城', '攻坚', '要塞', '城塞'],
   night: ['夜战', '夜晚', '夜间', '黑夜', '夜袭'],
   forest: ['森林', '林地', '树林'],
+  sea: ['海洋','海域','海上'], cosmos: ['太空','外层空间','星际'],
   mountain: ['山地', '山岭', '山岳'],
 };
 

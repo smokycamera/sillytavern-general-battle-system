@@ -51,3 +51,5 @@ body[data-theme="light"] .tactical-workspace {
 .terrain-layer .pt-grid{fill:none;stroke:var(--pt-grid);stroke-width:1}
 .terrain-layer .pt-landmark{fill:none;stroke:var(--pt-landmark);stroke-width:2.4;stroke-dasharray:3 6;stroke-linecap:round}
 .terrain-layer .pt-label{fill:var(--pt-label);stroke:var(--pt-label-halo)}
+
+.pt-space{fill:#101824}.pt-star{fill:#c0d2e4}.pt-deck{fill:#657785;stroke:#8fa2af;stroke-width:2}

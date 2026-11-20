@@ -6,6 +6,7 @@ import { sameLayer } from '../aerial.js';
 import { controlPolicy, combatHostile } from '../battle-control.js';
 import { availableSeats, takeSeats, detachMembers, type SeatRange } from './transport-groups.js';
 import { canOccupy, movementNeighbors, movementStepCost, neighbors } from './spatial.js';
+import { terrainExposure } from './layers.js';
 import type { SmallBattle } from './battle.js';
 
 export interface RideAction { kind: 'board'|'leave'|'select'|'merge'; id: string; label: string; maxCount?: number }
@@ -93,7 +94,7 @@ export class SmallPlatforms {
   private landing(u: Combatant, carrier: Combatant): number | undefined {
     const field = this.battle.battlefield, origin = carrier.pos;
     if (!field || origin === undefined) return origin;
-    const foot = {...u,ride:undefined,mount:false,airborne:false,elevation:undefined};
+    const foot = {...u,pos:undefined,ride:undefined,mount:false,airborne:false,elevation:undefined};
     return [origin,...neighbors(field,origin)].find(cell => canOccupy(field,this.units,foot,cell));
   }
   private release(u: Combatant, cell: number): void {
@@ -127,10 +128,16 @@ export class SmallPlatforms {
       if (first && carrier.platform.kind === 'animal') b.transportInjury(expelled,carrier,'摔落',source);
       if (first && blast && carrier.platform.kind === 'transport') b.transportInjury(expelled,carrier,'载具爆毁',source);
       if (!expelled.hp || !expelled.ride) continue;
-      const cell = this.landing(expelled,carrier);
+      const field = b.battlefield, origin = carrier.pos;
+      const swimmer = {...expelled, pos:origin, ride:undefined, mount:false, airborne:false, elevation:undefined};
+      const hazard = field && terrainExposure(field, origin, swimmer);
+      // A wreck cannot shelter survivors. Prefer a free adjacent cell of the same medium if the wreck is crowded.
+      const cell = this.landing(expelled,carrier) ?? (field && hazard && origin !== undefined
+        ? [origin,...neighbors(field,origin)].find(p => terrainExposure(field,p,swimmer) === hazard && canOccupy(field,this.units,swimmer,p)) ?? origin
+        : undefined);
       if (cell !== undefined) {
         this.release(expelled,cell);
-        b.logTransport(expelled,'被迫离开'+carrier.name+'，剩余'+unitCount(expelled),carrier);
+        b.logTransport(expelled,'被迫离开'+carrier.name+'，剩余'+unitCount(expelled)+(field && terrainExposure(field,cell,expelled) ? '，'+terrainExposure(field,cell,expelled) : ''),carrier);
       } else if (first) b.logTransport(expelled,'受困于'+carrier.name+'，周围暂无空位',carrier);
     }
   }

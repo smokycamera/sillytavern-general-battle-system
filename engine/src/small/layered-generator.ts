@@ -1,6 +1,7 @@
 import { resolveBattlefieldScene, buildSpecialScene, placePlannedGates } from './scene-layouts.js';
 import { carveInitialBreaches } from './city-breaches.js';
 import { buildRouteGraph } from './route-graph.js';
+import { paintOceanSpace, reserveSafeStarts } from './ocean-space.js';
 import { SeededRng } from '../rng.js';
 import { environmentTags } from '../environment.js';
 import type { Combatant } from '../types.js';
@@ -86,7 +87,8 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   const int = (min: number, max: number) => min + Math.floor(random.next() * (max - min + 1));
   const pick = <T>(items: readonly T[]) => items[int(0, items.length - 1)]!;
   const supplied=options.plan!==undefined;
-  if(!supplied) {
+  const openMedium = scene === 'field' && (environment.includes('sea') || environment.includes('cosmos'));
+  if(!supplied && !openMedium) {
     const archetype=selectSceneArchetype(scene,environment.includes('forest')?'forest':environment.includes('mountain')?'mountain':'plains',seed);
     plan={archetype,...(city?{cityPosition:(options.attackingSide??'ally')==='ally'?'north':'south'}:{}),
       // A gate front leaves its wall layout to the city builder's seeded choice.
@@ -114,6 +116,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
     return null;
   });
   field.overlays = {}; field.landmarks = [];
+  if (openMedium) { field.tiles.fill('open'); field.structures.fill(null); }
   // The narrative's sea/lake footprint precedes local decoration. Explicit landmarks are built afterwards.
   if(plan?.waterSectors?.length)for(const p of regionCells(field,plan.waterSectors)){
     field.tiles[p]='open';field.structures[p]=null;
@@ -278,7 +281,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
     plan.waterPosition = pick(horizontal ? ['B2','C3','B3','C2'] as const : ['A2','B3','C2','D3'] as const);
     if (plan.water === 'river') plan.bridgePlan = [{anchor:plan.waterPosition,state:'intact'}];
   }
-  const water = plan?.water ?? (randomPlain || scene !== 'field' ? 'none' : pick(['none', 'none', 'none', 'ford', 'river'] as const));
+  const water = openMedium ? 'none' : plan?.water ?? (randomPlain || scene !== 'field' ? 'none' : pick(['none', 'none', 'none', 'ford', 'river'] as const));
   const floodAll = plan?.waterCoverage === 'all' || !!plan?.waterSectors?.length;
   // A placed siege city takes its water from the same builder as narrative rivers: moats before the gates, a ford if unbridged.
   // Full flooding waits until named structures and raised ground have their final geometry.
@@ -304,9 +307,9 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
       field.structures[p] = createStructure('bridge', wallLevel); field.overlays[p] = ['road'];
     }
   }
-  if(plan?.archetype)applySceneArchetype(field,plan.archetype,seed);
+  if(!openMedium && plan?.archetype)applySceneArchetype(field,plan.archetype,seed);
   // Marshes are passable but expensive and do not blanket a primary approach.
-  if (scene === 'field' && width > 5 && random.next() < .45) {
+  if (!openMedium && scene === 'field' && width > 5 && random.next() < .45) {
     const p = at(pick([0, width - 1]), int(3, height - 4));
     if (!field.structures[p] && !['cliff', 'deep_water', 'shallow_water'].includes(field.tiles[p]!) && p !== field.objective.cell) field.tiles[p] = 'swamp';
   }
@@ -314,7 +317,7 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
   for (const u of options.roster ?? []) if (Number.isInteger(u.pos) && u.pos! >= 0 && u.pos! < field.tiles.length && !frontline.includes(u.pos!)) {
     if (field.structures[u.pos!]?.kind === 'building') field.structures[u.pos!] = null;
   }
-  const defaults: LandmarkPlan[] = scene === 'interior' ? (field.generation?.interior?.rooms ?? []).map(room => ({kind:'room' as const,anchor:'center' as const,label:room.label}))
+  const defaults: LandmarkPlan[] = openMedium ? [] : scene === 'interior' ? (field.generation?.interior?.rooms ?? []).map(room => ({kind:'room' as const,anchor:'center' as const,label:room.label}))
     : scene === 'building_siege' ? [{kind:'building',anchor:'core',label:'目标建筑'}]
     : scene === 'trenches' ? [{kind:'fortification',anchor:'front_left',label:'前沿阵地'}]
     : city ? [{kind:'square',anchor:'core'}, {kind:'building',anchor:'inside_left'}]
@@ -500,10 +503,13 @@ function generateLayeredCandidate(seed: string, width = 7, height = 13, tags: st
     initializeHeightMap(field, plan);
     buildPlannedWater(field, { ...plan, water }, seed);
   }
+  field.exposureRules = 1;
+  if (openMedium) paintOceanSpace(field,plan,seed);
   finishSceneRegions(field,plan,options.unitBindings,options.roster);
   const thirdParty = options.roster?.some(u => u.side === 'neutral' && u.hp > 0 && u.status === 'ready') === true;
   applyPlannedDeployments(field, thirdParty || plannedCity && !field.city?.defender ? withCitySides(field, plan ?? {}, thirdParty) : plan, options.roster, options.unitBindings);
-  initializeHeightMap(field,plan);
+  if (openMedium) reserveSafeStarts(field,options.roster ?? []);
+  initializeHeightMap(field,openMedium && plan ? {...plan,archetype:undefined} : plan);
   field.movementCostModel='minimum-step-v1';
   deriveRetreatEdges(field);
   if (plan && (plan.waterCoverage === 'all' || [...(plan.landmarks??[]).map(m=>m.anchor),...(plan.deployments??[]).flatMap(d=>d.at),plan.cityPosition??'',plan.waterPosition??'',...(plan.bridgePlan??[]).map(b=>b.anchor)].some(a=>!!gridPosition(a))
