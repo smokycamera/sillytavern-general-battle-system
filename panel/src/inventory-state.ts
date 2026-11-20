@@ -1,5 +1,5 @@
 import { isBodyKind } from '../../engine/src/vehicle-size.js';
-import { settleBatches } from '../../engine/src/equipment-batches.js';
+import { equippedSurvivors, settleBatches } from '../../engine/src/equipment-batches.js';
 import { reuniteTransportGroups } from '../../engine/src/small/transport-groups.js';
 import { platformRoster } from './platform-records.js';
 import type { Ride } from '../../engine/src/platforms.js';
@@ -331,8 +331,7 @@ export function projectEquipment(record: UnitRecord, inventory: InventoryItem[])
     else (unit.gear ??= []).push(gearItem(item.id, item.name, mechanics.value));
   }
   if (unit.equipmentBatches) {
-    unit.unequippedWounded = record.recoverableWounded ?? 0;
-    unit.equipmentPersonnel = unit.scale === 'hero' ? 1 : Math.max(1,record.hp);
+    unit.equipmentPersonnel = Math.max(1,equippedSurvivors({...unit,hp:record.hp,recoverableWounded:record.recoverableWounded}));
   }
   if (!unit.sidearm) {
     const alternate = unit.equipmentBatches?.find(b => b.mechanics.kind === 'weapon' && b.id !== unit.weapon?.id);
@@ -364,12 +363,12 @@ function rewriteRecord(next: InventorySave, record: UnitRecord, sourceId: string
 }
 
 /** Settle each detachment against its own surviving members before merging archive records. */
-export function settleBattleEquipment(units: Combatant[], items: InventoryItem[] | undefined, battleId: string) {
-  const held = new Map<string,number>(), returned = new Map<string,number>();
+export function settleBattleEquipment(units: Combatant[], items: InventoryItem[] | undefined) {
+  const held = new Map<string,number>();
   const broken = units.filter(u => isArmsV2(u.armsModel) && u.shield && u.shieldDurability?.remaining === 0);
   const brokenIds = new Set(broken.map(u => u.shield!.id));
   const brokenShieldNotes = broken.map(u => u.name + '的' + (u.shield!.name ?? '盾牌') + '碎了，已移出装备');
-  for (const u of units) for (const [id,count] of settleBatches(u,items ? returned : undefined)) {
+  for (const u of units) for (const [id,count] of settleBatches(u)) {
     held.set(id,(held.get(id) ?? 0) + count);
   }
   for (const u of broken) delete u.shield;
@@ -378,15 +377,11 @@ export function settleBattleEquipment(units: Combatant[], items: InventoryItem[]
   const fallen = new Set(combatants.filter(u => u.equipmentBatches && u.status === 'dead' && !u.recoverableWounded).map(u => u.id));
   const inventory = clone(items).filter(item => {
     if (held.has(item.id)) {
-      item.qty = held.get(item.id)! + (returned.get(item.id) ?? 0);
+      item.qty = held.get(item.id)!;
       return item.qty > 0;
     }
     return !brokenIds.has(item.id) && !(item.assignedTo && fallen.has(item.assignedTo));
   });
-  for (const item of [...inventory]) {
-    const count = returned.get(item.id);
-    if (count) moveCopies(inventory,item,count,undefined,undefined,'returned:'+battleId+':'+item.id,true);
-  }
   return {combatants,inventory,brokenShieldNotes};
 }
 
@@ -397,7 +392,7 @@ export function assertInventoryPanelWrite(previous: InventorySave, next: Invento
   const newlyCommitted = battleId && next.committedOutcomeIds?.includes(battleId) && !previous.committedOutcomeIds?.includes(battleId);
   let expectedItems = previousItems;
   if (newlyCommitted) {
-    expectedItems = settleBattleEquipment(clone(next.battle!.snap.combatants as Combatant[]),previousItems,battleId).inventory!;
+    expectedItems = settleBattleEquipment(clone(next.battle!.snap.combatants as Combatant[]),previousItems).inventory!;
   }
   const expected = new Map(expectedItems.filter(i => i.mechanics).map(i => [i.id,i]));
   for (const item of nextItems.filter(i => i.mechanics)) {

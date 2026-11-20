@@ -92,12 +92,12 @@ it('fires a third weapon batch, restores its reload state, and settles only irre
   const args={battleId:'small:partial',committedIds:[],records:save.storage!,roster:[damaged],combatants:[damaged],awards:[],registry:traitRegistry(),inventory:save.inventory};
   const settled=commitBattleOutcome(args);
   const armor=settled.inventory!.find(i=>i.equippedTo?.slot==='armor' && i.assignedTo===damaged.id)!;
-  expect(armor.qty).toBe(21);
-  expect(settled.inventory!.filter(i => i.name === armor.name && !i.assignedTo).reduce((n,i) => n+i.qty,0)).toBe(5);
+  expect(armor.qty).toBe(26);
+  expect(settled.inventory!.filter(i => i.name === armor.name && !i.assignedTo).reduce((n,i) => n+i.qty,0)).toBe(0);
   expect(() => assertInventoryPanelWrite(save, {...save,inventory:settled.inventory,storage:settled.records,
     committedOutcomeIds:['small:partial'],battle:{kind:'small',snap:{seed:'partial',combatants:[damaged]}}})).not.toThrow();
   expect(settled.records.find(r=>r.id===damaged.id)?.hp).toBe(21);
-  expect(settled.roster[0]!.equipmentBatches!.find(b=>b.id===armor.id)?.qty).toBe(21);
+  expect(settled.roster[0]!.equipmentBatches!.find(b=>b.id===armor.id)?.qty).toBe(26);
 });
 
 it('assigns the higher level weapon and armor to the same members regardless of declaration order', () => {
@@ -261,4 +261,15 @@ it('uses the per-vehicle channel budget and remembers the player’s weapon acro
   restored.playerWeaponAttack(id,target!.id,'volley:ranged');
   restored.actedThisTurn.clear(); restored.round++;
   expect(tacticalSelection(restored,view).option?.id).toBe('volley:ranged');
+});
+
+it('keeps a manual issue when the next inventory transaction declares more armor than exists', () => {
+  let save = apply({}, '<spawn name="老兵" side="ally" scale="company" hpMax="10"/>',1);
+  const id = save.storage![0]!.id;
+  save = apply(save,'<add item="锁甲" spec="中甲L2" qty="5" to="'+id+'"/>',2);
+  const lot = save.inventory!.find(i => i.name === '锁甲')!;
+  save = prepareInventoryTransaction(save,{kind:'equip',unitId:id,itemId:lot.id,slot:'armor',qty:5,id:'manual-mail',expectedRevision:save.factRevision!});
+  save = apply(save,'<give id="'+lot.id+'" to="'+id+'" qty="3"/>\n<unit_set id="'+id+'" armor="锁甲:中甲L2×8"/>',3);
+  expect(save.inventory!.filter(i => i.name === '锁甲').reduce((n,i) => n+i.qty,0)).toBe(5);
+  expect(save.storage![0]!.snapshot!.equipmentBatches!.find(b => b.id === lot.id)?.qty).toBe(5);
 });

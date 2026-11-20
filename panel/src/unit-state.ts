@@ -865,7 +865,7 @@ export function commitBattleOutcome(opts: {
     };
   }
   // 准备结果不得修改输入，保存失败可按同一原始战斗快照重试。
-  const { combatants,inventory,brokenShieldNotes } = settleBattleEquipment(clone(opts.combatants),opts.inventory,opts.battleId);
+  const { combatants,inventory,brokenShieldNotes } = settleBattleEquipment(clone(opts.combatants),opts.inventory);
   for (const combatant of combatants) {
     const record = opts.records.find((r) => r.id === combatant.id);
     if (record && combatant.recordRevision !== undefined && combatant.recordRevision !== (record.revision ?? 1)) {

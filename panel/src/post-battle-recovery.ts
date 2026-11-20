@@ -49,6 +49,7 @@ export function loseArchivedWounded(record: UnitRecord, registry: Map<string, Tr
   if (unit.scale === 'hero' || !wounded) throw Error('该档案没有可扣减的可救伤兵');
   const loss = count === 'all' ? wounded : count;
   if (!Number.isSafeInteger(loss) || loss <= 0 || loss > wounded) throw Error('死亡人数须在现有可救伤兵人数以内');
+  if (unit.unequippedWounded) unit.unequippedWounded = Math.max(0,unit.unequippedWounded - loss);
   unit.recoverableWounded = wounded - loss;
   if (!unit.hp && !unit.recoverableWounded) unit.status = 'dead';
   return unitRecordFromCombatant(unit, record, { kind: 'update', sourceId });

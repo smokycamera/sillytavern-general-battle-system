@@ -3,7 +3,7 @@ import type { Combatant, EquipmentBatch, Weapon } from './types.js';
 
 type Bearer = Pick<Combatant,'equipmentBatches'|'equipmentPersonnel'|'scale'|'hp'|'body'|'recoverableWounded'|'unequippedWounded'>;
 const members = (unit: Bearer) => unit.scale === 'hero' ? Number(unit.hp > 0) : unit.hp;
-function equippedSurvivors(unit: Bearer): number {
+export function equippedSurvivors(unit: Bearer): number {
   return members(unit) + (unit.scale === 'hero' ? 0 : Math.max(0,(unit.recoverableWounded ?? 0) - (unit.unequippedWounded ?? 0)));
 }
 export function crewEquipment(unit: Bearer, batch: EquipmentBatch): boolean {
@@ -216,16 +216,13 @@ export function weaponForMode(unit: Combatant,mode: WeaponMode): Weapon | undefi
   return batch?.mechanics.kind === 'weapon' ? batch.mechanics.value : undefined;
 }
 /** Freeze the surviving loadout once when a battle is archived. */
-export function settleBatches(unit: Combatant, returned?: Map<string,number>): Map<string,number> {
+export function settleBatches(unit: Combatant): Map<string,number> {
   const totals = new Map<string,number>();
   for (const b of unit.equipmentBatches ?? []) {
     const broken = b.shieldDurability?.remaining === 0 || b.id === unit.shield?.id && unit.shieldDurability?.remaining === 0;
     const retained = broken || unit.status === 'dead' && !unit.recoverableWounded ? 0 :
       unit.scale === 'hero' && unit.status === 'dying' ? b.qty : batchCount(unit,b,true);
-    const held = !returned || !unit.recoverableWounded || unit.scale === 'hero' ? retained :
-      crewEquipment(unit,b) && unit.hp > 0 ? retained : Math.min(retained,batchCount(unit,b));
-    totals.set(b.id,held);
-    if (returned && held < retained) returned.set(b.id,(returned.get(b.id) ?? 0) + retained-held);
+    totals.set(b.id,retained);
   }
   for (const b of unit.equipmentBatches ?? []) {
     b.qty = totals.get(b.id)!;
@@ -239,7 +236,6 @@ export function settleBatches(unit: Combatant, returned?: Map<string,number>): M
   }
   if (unit.equipmentBatches) {
     unit.equipmentBatches=unit.equipmentBatches.filter(b=>b.qty>0);
-    if (returned) unit.unequippedWounded = unit.recoverableWounded ?? 0;
     unit.equipmentPersonnel = Math.max(1,equippedSurvivors(unit));
   }
   return totals;
