@@ -58,7 +58,7 @@ export function mergeWounded(root: Combatant, child: Combatant): void {
 /** 余量是尚未凑满一组的伤亡；只按累计总数取整，连续小额伤亡不会丢失或重复。 */
 function woundedFromLoss(unit: Combatant, loss: number, remainder: number, rolls?: CasualtyRolls): { recoverable: number; remainder: number } {
   if (rolls && !isVehicleBody(unit.body)) {
-    return { recoverable: !unit.nonLethal && unit.hp > 0 ? rolls.roll(unit, loss) : 0, remainder };
+    return { recoverable: !unit.nonLethal && (unit.hp > 0 || rolls.retainsWounded(unit)) ? rolls.roll(unit, loss) : 0, remainder };
   }
   if (phase2Traits(unit)) {
     const level = effectiveTraitLevel(unit, 'medic'), percent = level ? traitParameter('medicRescue', level, unit.traitLevelModel) : 50;
@@ -75,7 +75,7 @@ function applyMemberDamage(unit:Combatant,amount:number,targets:number,overflow=
   if(result.health)moraleOnDamage(unit,result.health);
   if(result.casualties){
     const wounded=woundedFromLoss(unit,result.casualties,unit.formation!.woundedRemainder??0,rolls);
-    unit.recoverableWounded=unit.nonLethal?(unit.recoverableWounded??0)+result.casualties:unit.hp>0?(unit.recoverableWounded??0)+wounded.recoverable:0;
+    unit.recoverableWounded=unit.nonLethal?(unit.recoverableWounded??0)+result.casualties:unit.hp>0||rolls?.retainsWounded(unit)?(unit.recoverableWounded??0)+wounded.recoverable:0;
     unit.formation!.woundedRemainder=unit.nonLethal||unit.hp===0?0:wounded.remainder;
   }
   return result;
@@ -140,7 +140,7 @@ export function applyHealthLoss(unit: Combatant, amount: number, v2 = unit.rules
       return loss;
     }
     const wounded = woundedFromLoss(unit, loss, isCohort(unit) ? unit.formation?.woundedRemainder ?? 0 : 0, rolls);
-    unit.recoverableWounded = unit.hp > 0 ? (unit.recoverableWounded ?? 0) + wounded.recoverable : 0;
+    unit.recoverableWounded = unit.hp > 0 || rolls?.retainsWounded(unit) ? (unit.recoverableWounded ?? 0) + wounded.recoverable : 0;
     if (unit.formation) unit.formation.woundedRemainder = unit.hp > 0 ? wounded.remainder : 0;
   }
   return loss;
@@ -157,11 +157,13 @@ export function recoveryCapacity(unit: Health): number {
 export function applyRecovery(unit: Combatant, amount: number): number {
   if(hasMemberHealth(unit)){
     const restored=healMemberGroups(unit,Math.min(recoveryCapacity(unit),Math.max(0,Math.floor(amount))));
+    if (unit.unequippedWounded) unit.unequippedWounded = Math.min(unit.unequippedWounded,unit.recoverableWounded ?? 0);
     if(unit.status==='dying'&&unit.hp>0)unit.status='ready';return restored;
   }
   const restored = Math.min(recoveryCapacity(unit), Math.max(0, Math.floor(amount)));
   setStrength(unit, unit.hp + restored);
   if (unit.rulesVersion === 'v2' && unit.scale !== 'hero' && restored > 0) unit.recoverableWounded = (unit.recoverableWounded ?? 0) - restored;
+  if (unit.unequippedWounded) unit.unequippedWounded = Math.min(unit.unequippedWounded,unit.recoverableWounded ?? 0);
   if (unit.status === 'dying' && unit.hp > 0) unit.status = 'ready';
   return restored;
 }

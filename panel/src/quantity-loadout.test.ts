@@ -3,7 +3,7 @@ import { narrativeEvents } from './battle-reports.js';
 import { smallCommandChoices } from './llm-command.js';
 import {expect,it} from 'vitest';
 import {captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type NarrativeSave} from './narrative-state.js';
-import {prepareInventoryState,prepareInventoryTransaction, type InventoryAction} from './inventory-state.js';
+import {assertInventoryPanelWrite,prepareInventoryState,prepareInventoryTransaction, type InventoryAction} from './inventory-state.js';
 import {reviewMigration} from './migration-review.js';
 import {availableCopies, batchWeapons, startBatchReload} from '../../engine/src/equipment-batches.js';
 import {detachMembers,combinePersonnel} from '../../engine/src/small/transport-groups.js';
@@ -92,9 +92,31 @@ it('fires a third weapon batch, restores its reload state, and settles only irre
   const args={battleId:'small:partial',committedIds:[],records:save.storage!,roster:[damaged],combatants:[damaged],awards:[],registry:traitRegistry(),inventory:save.inventory};
   const settled=commitBattleOutcome(args);
   const armor=settled.inventory!.find(i=>i.equippedTo?.slot==='armor' && i.assignedTo===damaged.id)!;
-  expect(armor.qty).toBe(26);
+  expect(armor.qty).toBe(21);
+  expect(settled.inventory!.filter(i => i.name === armor.name && !i.assignedTo).reduce((n,i) => n+i.qty,0)).toBe(5);
+  expect(() => assertInventoryPanelWrite(save, {...save,inventory:settled.inventory,storage:settled.records,
+    committedOutcomeIds:['small:partial'],battle:{kind:'small',snap:{seed:'partial',combatants:[damaged]}}})).not.toThrow();
   expect(settled.records.find(r=>r.id===damaged.id)?.hp).toBe(21);
-  expect(settled.roster[0]!.equipmentBatches!.find(b=>b.id===armor.id)?.qty).toBe(26);
+  expect(settled.roster[0]!.equipmentBatches!.find(b=>b.id===armor.id)?.qty).toBe(21);
+});
+
+it('assigns the higher level weapon and armor to the same members regardless of declaration order', () => {
+  const save = apply({},'<spawn name="守军" side="ally" scale="company" hpMax="8" weapon="旧剑:剑L1×6,精剑:剑L6×2" armor="精甲:重甲L6×2,旧甲:轻甲L1×6"/>',1);
+  const rows = protectionGroups(save.storage![0]!.snapshot!,true);
+  expect(rows.map(g => [g.size,g.weapon?.name,g.armor?.name])).toEqual([[2,'精剑','精甲'],[6,'旧剑','旧甲']]);
+});
+
+it('reuses the named reforged lots in a counted vehicle battery', () => {
+  const save = apply({},'<spawn name="试验车" side="ally" scale="hero" body="giantvehicle" platform="封闭载具L5" seats="2"/>\n<add item="原装发射器" spec="火箭筒L2"/>\n<add item="原装炮塔" spec="能量武器L2" qty="4"/>',1);
+  const id = save.storage![0]!.id;
+  const [first,second] = ['原装发射器','原装炮塔'].map(name => save.inventory!.find(i => i.name === name)!.id);
+  const next = apply(save,`<reforge id="${first}" name="超重型导弹发射器" spec="火箭筒L7×1"/>
+<reforge id="${second}" name="重型炮塔组" spec="能量武器L7×4"/>
+<unit_set id="${id}" seats="200" weapon="超重型导弹发射器:火箭筒L7×1,重型炮塔组:能量武器L7×4,近防炮组:机炮L5×8"/>`,2);
+  const armed = next.inventory!.filter(i => i.equippedTo?.slot === 'primary');
+  expect(armed.map(i => [i.name,i.qty])).toEqual([['超重型导弹发射器',1],['重型炮塔组',4],['近防炮组',8]]);
+  expect(armed.slice(0,2).map(i => i.id)).toEqual([first,second]);
+  expect(next.storage![0]!.snapshot!.seats).toBe(200);
 });
 
 it('appends a third weapon on a hero and replaces the complete legacy loadout on unit_set',()=>{

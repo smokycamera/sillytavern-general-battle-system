@@ -1012,7 +1012,7 @@ function projectProtection(unit: Combatant,group: ReturnType<typeof protectionGr
 export function resolveAttack(opts: AttackOpts): AttackResolution {
   // Standalone attacks have no battle snapshot. Share one stream across their packets.
   if (opts.rules.casualtyModel && !opts.casualtyRolls && opts.defender.scale !== 'hero' && !isVehicleBody(opts.defender.body)) {
-    opts = { ...opts, casualtyRolls: new CasualtyRolls(String(opts.rng.next())) };
+    opts = { ...opts, casualtyRolls: new CasualtyRolls(String(opts.rng.next()), opts.rules.rescueAtZero) };
   }
   const samples=opts.packetShare!==undefined?1:opts.previewMemo?opts.previewMemo.samples??=cohortSamples(opts):cohortSamples(opts);
   if(samples>1){

@@ -26,7 +26,7 @@
 - 已有单位、实物和效果来源沿用事实清单的 id。已有单位参战写 deploy；新单位写 spawn，开战时无需另写 deploy。
 - hero 的 hp/hpMax 为生命/最大生命；company 为现员/编制上限，载具编队按车辆计。一次生成多张同名同配置单位卡时，可在 spawn 中填 count="卡数"（1—20）。独立行动单位分别建档，混装编队可共用一张卡，重要人物可保留个体。
 - unit_set 填真实 id 和需要变动的字段。仅扩编写 hpMax，同时补员写 hpMax、hp。休整恢复 hp 时同步写恢复后的 morale，以 moraleMax 为限。复活同时写 state="ready" 和正数 hp。
-- clear 填效果名，多项以逗号分隔，如 clear="中毒,流血"，全清写 clear="all"。战外治疗用 <recover id="u1" life="all"/> 恢复已登记的可恢复伤势，部分治疗可写 life="120"。
+- clear 填效果名，多项以逗号分隔，如 clear="中毒,流血"，全清写 clear="all"。战外治疗用 <recover id="u1" life="all"/> 恢复已登记的可恢复伤势，部分治疗可写 life="120"。可救伤兵死亡时，才用 <recover id="u1" kill="3"/> 将该队 3 名可救伤兵转为永久死亡。全部伤兵死亡写 kill="all"。kill 按人数计，与治疗用的 life 分开写。
 - unit_set 的 weapon、armor、shield 各自覆盖所填整栏；items 追加道具，收回用 take。skills 替换自有技能列表；新增或修改个别技能用 learn，保留其余技能。
 - unit_set 可写 name、side、scale、level、xpProgress、hp、hpMax、morale、state（ready/dying/dead/routing/fled）、clear、body、mount、platform、seats、aboard、speed、weapon、armor、shield、skills、traits、items、retired、note、reason。
 - 同一单位的 unit_set、learn 各合并一条，同一实物的 reforge 合并一条。更新后可同批 deploy。

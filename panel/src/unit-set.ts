@@ -219,7 +219,9 @@ export function sameGear(mechanics: ItemMechanics | undefined, spec: ItemSpecifi
 export function unitSetReferencesGear(field: string, input: unknown, item: InventoryItem, realId: (id: string) => string, reforgedNames?: ReadonlyMap<string, string>): boolean {
   const kind = ['weapon', 'weapon2', 'sidearm'].includes(field) ? 'weapon' : field;
   if (item.mechanics?.kind !== kind || !['weapon', 'armor', 'shield'].includes(kind)) return false;
-  if (typeof input === 'string' && /[×,，、;；]/.test(input)) return false;
+  if (typeof input === 'string' && /[×,，、;；]/.test(input)) {
+    return input.split(/[,，、;；]/).some(entry => unitSetReferencesGear(field,entry.split('×')[0]!.trim(),item,realId,reforgedNames));
+  }
   const wanted = wantedGear(input);
   if (!wanted || !wanted.spec && !wanted.referenceOnly || wanted.spec && wanted.spec.kind !== kind) return false;
   return wanted.name ? item.id === realId(wanted.name) || itemKey(item.name) === itemKey(wanted.name)
@@ -476,9 +478,9 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
     const referenced = typeof input === 'string' ? next.inventory!.find(item => item.id === input) : undefined;
     const singleHeroItem = unit.scale === 'hero' && typeof input === 'string' && !/[×,，、;；]/.test(input)
       && (equipped?.qty ?? 1) === 1;
-    const entries = !referenced && !singleHeroItem && parseIssue(input,slot,{...data,body:unit.body});
+    const entries = !referenced && !singleHeroItem && parseIssue(input,slot,data);
     if (entries) {
-      assignIssue(next.inventory!,id,unit.side,slot,entries,sourceId);
+      assignIssue(next.inventory!,id,unit.side,slot,entries,sourceId,true,unit.body);
       continue;
     }
     if (Object.hasOwn(data,key)) {
