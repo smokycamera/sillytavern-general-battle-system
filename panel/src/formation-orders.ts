@@ -55,7 +55,7 @@ function buildFormationChoices(b: MassBattle, host: Combatant, cache?: Formation
     return { key: orderKey(order), label, order, targets: entries, enabled: entries.some((t) => !t.preview.reason) };
   };
   const types: OrderType[] = ['attack', 'volley', 'charge', 'brace', 'hold', 'reload', 'rank-forward', 'rank-back', 'shift-left', 'shift-right', 'retreat'];
-  if (hasFlightAbility(host) || isAirborne(host)) types.push(isAirborne(host) ? 'land' : 'takeoff');
+  if (hasFlightAbility(host, b) || isAirborne(host)) types.push(isAirborne(host) ? 'land' : 'takeoff');
   const choices = types.map((type) => make({ unitId: host.id, type }, orderLabels[type], ['attack', 'volley', 'charge'].includes(type) ? enemies : [undefined]));
   for (const source of [host, ...visible.filter((u) => u.id === b.attached.get(host.id))]) for (const ability of battleAbilities(source)) {
     const targets = ability.target === 'zone' ? FORMATION_NODES.map(node=>zoneTarget(b.observationContext(),source,'zone:'+node.id)) : ability.target === 'self' ? [source] : ability.target === 'ally'

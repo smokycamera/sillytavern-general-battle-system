@@ -258,11 +258,11 @@ export class MassBattle {
       ...FATIGUE_TIER_DEFS,
       ...(opts.extraConditions ?? []),
     ]);
-    for (const u of this.combatants) if (u.airborne && flightMaintenanceReason(u, this.conditions)) throw new Error('空中存档记录缺少可维持的飞行能力');
+    this.fieldTags = this.rules.resolutionVersion === 'v2' ? environmentTags(opts.field?.tags) : opts.field?.tags ?? [];
+    for (const u of this.combatants) if (u.airborne && flightMaintenanceReason(u, this.conditions, this)) throw new Error('空中存档记录缺少可维持的飞行能力');
     this.traitRegistry = opts.traitRegistry ?? (this.rules.resolutionVersion === 'v2' ? defaultTraitRegistry() : new Map());
     this.zones = opts.zones;
     this.commanderId = opts.commanderId;
-    this.fieldTags = this.rules.resolutionVersion === 'v2' ? environmentTags(opts.field?.tags) : opts.field?.tags ?? [];
     this.summonUnit = opts.summonUnit;
   }
 
@@ -292,12 +292,12 @@ export class MassBattle {
     for (const unit of units) {
       const node = formationNode(unit); if (node.side !== unit.side) throw new Error('开战部署不能位于敌方阵位');
       if (this.rules.resolutionVersion === 'v2') {
-        if (unit.airborne === undefined && !flightCapabilityReason(unit, this.conditions)) unit.airborne = true;
-        if (hasFlightAbility(unit) && unit.formationPosition === undefined) unit.formationPosition = node.id;
+        if (unit.airborne === undefined && !flightCapabilityReason(unit, this.conditions, this)) unit.airborne = true;
+        if (hasFlightAbility(unit, this) && unit.formationPosition === undefined) unit.formationPosition = node.id;
       }
     }
     const attached = new Map<string, string>();
-    for (const hero of units.filter(u => this.rules.resolutionVersion === 'v2' && needsFormationHost(u)).sort((a, b) => a.id.localeCompare(b.id))) {
+    for (const hero of units.filter(u => this.rules.resolutionVersion === 'v2' && needsFormationHost(u, this)).sort((a, b) => a.id.localeCompare(b.id))) {
       const hosts = units.filter((u) => u.side === hero.side && u.scale !== 'hero' && u.status === 'ready' && !attached.has(u.id) && (!isAirborne(u) || (u.body ?? 'human') !== 'human'));
       const host = hosts.sort((a, b) => formationDistance(hero, a) - formationDistance(hero, b) || a.id.localeCompare(b.id))[0];
       if (!host) {
@@ -333,7 +333,7 @@ export class MassBattle {
   private flightOrderReason(unit: Combatant, airborne: boolean, units = this.combatants): string | undefined {
     if (isAirborne(unit) === airborne) return airborne ? '已经在空中' : '已经在地面';
     if (airborne) {
-      const reason = flightCapabilityReason(unit, this.conditions); if (reason) return reason;
+      const reason = flightCapabilityReason(unit, this.conditions, this); if (reason) return reason;
       if (this.attached.has(unit.id) && (unit.body ?? 'human') === 'human') return '该飞行编队不能承载随队者升空';
     }
     if (!formationCanOccupy(units, { ...unit, airborne }, formationNode(unit), this.attached, this.formationSlots ?? 3)) return '同层落点容量不足或有敌方占位';
@@ -370,9 +370,9 @@ export class MassBattle {
     const affected = structuredClone(target), controls = ability.effects.filter((e): e is Extract<Ability['effects'][number], { op: 'condition' }> =>
       e.op === 'condition' && !!(this.conditions.get(e.conditionId)?.skipTurn || this.conditions.get(e.conditionId)?.preventMove) && conditionChance(target, e) > 0);
     for (const effect of healingEffectGroups(ability)) if (effect.op === 'dispel') applyDispel(affected, dispelCandidates(affected, effect));
-    const dispelled = !!flightMaintenanceReason(affected, this.conditions);
+    const dispelled = !!flightMaintenanceReason(affected, this.conditions, this);
     affected.conditions.push(...controls.map((e) => ({ id: e.conditionId, dur: e.dur })));
-    if (!flightMaintenanceReason(affected, this.conditions)) return undefined;
+    if (!flightMaintenanceReason(affected, this.conditions, this)) return undefined;
     const damage = ability.effects.find((e) => e.op === 'damage');
     const known = this.visibleCombatants(actor.side, units);
     const preview = damage ? this.previewAttackWithEnvironment({ attacker: actor, defender: target, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(known, actor, target, ability, damage) }, known) : undefined;
@@ -388,7 +388,7 @@ export class MassBattle {
   private resolveFlightStates(): void {
     const fallen: Combatant[] = [];
     for (const unit of [...this.combatants].sort((a, b) => a.id.localeCompare(b.id)).filter(isAirborne)) {
-      const reason = flightMaintenanceReason(unit, this.conditions); if (!reason) continue;
+      const reason = flightMaintenanceReason(unit, this.conditions, this); if (!reason) continue;
       const outcome = this.landingOutcome(unit), source = this.combatants.find((u) => u.id === this.flightCauses.get(unit.id));
       unit.formationPosition ??= formationNode(unit).id; unit.airborne = false; delete unit.tacticalPose;
       if (outcome.landing) setFormation(unit, outcome.landing);
@@ -478,7 +478,7 @@ export class MassBattle {
   }
   private takeoffReactions(actor: Combatant, spent: Set<string>): void {
     for (const foe of this.takeoffThreats(actor).sort((a, b) => a.id.localeCompare(b.id))) {
-      if (actor.status !== 'ready' || flightCapabilityReason(actor, this.conditions)) break;
+      if (actor.status !== 'ready' || flightCapabilityReason(actor, this.conditions, this)) break;
       const weapon = meleeWeapon(foe);
       if (!controlReactionAllowed(foe, actor, this.combatants, formationDistance(foe,actor)) || !combatHostile(foe, actor, this.combatants) || foe.status !== 'ready' || this.isAttached(foe.id) || isAirborne(foe) || formationDistance(foe, actor) > 1 || !weapon || foe.suppression || spent.has(foe.id)
         || foe.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack && baseMechanism(meleeWeapon(foe)) !== 'natural')) continue;
@@ -506,7 +506,7 @@ export class MassBattle {
       const actor = this.byId(id);
       if (plan.airborne && !isAirborne(actor)) {
         exertion.set(id, formationMarchCost(actor, this.fieldTags)); this.takeoffReactions(actor, reactions);
-        if (flightCapabilityReason(actor, this.conditions)) { plans.delete(id); this.recordEvent({ round: this.round, kind: 'move', participants: [id], text: `${actor.name} 起飞被反应中断，主任务已使用` }); }
+        if (flightCapabilityReason(actor, this.conditions, this)) { plans.delete(id); this.recordEvent({ round: this.round, kind: 'move', participants: [id], text: `${actor.name} 起飞被反应中断，主任务已使用` }); }
       }
     }
     this.pruneArrivals(plans);
@@ -1145,7 +1145,7 @@ export class MassBattle {
       const gain = u.resourceModel ? tacticalRestValue(context, u) : (futureValue(rested) - futureValue(u)) * 1.5;
       if (gain > 0) candidates.push({ order: { unitId: u.id, type: 'hold' }, score: gain });
     }
-    if (hasFlightAbility(u) || isAirborne(u) || isRangedWeapon(u.weapon) || isRangedWeapon(u.sidearm)) {
+    if (hasFlightAbility(u, this) || isAirborne(u) || isRangedWeapon(u.weapon) || isRangedWeapon(u.sidearm)) {
       const pinnedRanged = isRangedWeapon(u.weapon) && foes.some(target => {
         const volley: Order = { unitId: u.id, type: 'volley', targetId: target.id };
         return this.v2OrderReason(volley, planning)?.includes('牵制');

@@ -169,8 +169,11 @@ export const V41_OVERFLOW_TW: RulePack = { ...V40_OVERFLOW_TW, id: 'v41-overflow
 export const V42_OVERFLOW_D20: RulePack = { ...V41_OVERFLOW_D20, id: 'v42-overflow-d20', name: 'V42 小战先攻平手抽签', initiativeModel: 'seeded-ties-v1' };
 export const V43_OVERFLOW_D20: RulePack = { ...V42_OVERFLOW_D20, id: 'v43-overflow-d20', name: 'V43 小战伤兵', casualtyModel: 'individual-v1' };
 export const V44_OVERFLOW_D20: RulePack = { ...V43_OVERFLOW_D20, id: 'v44-overflow-d20', name: 'V44 编队失能与伤兵', rescueAtZero: true };
+export const V45_OVERFLOW_D20: RulePack = { ...V44_OVERFLOW_D20, id: 'v45-overflow-d20', name: 'V45 太空机动', spaceManeuverFlight: true };
+export const V45_OVERFLOW_TW: RulePack = { ...V41_OVERFLOW_TW, id: 'v45-overflow-tw', name: 'V45 太空机动会战', spaceManeuverFlight: true };
 export const V42_LITE_D20: RulePack = { ...LITE_D20, id: 'v42-lite-d20', name: '轻量d20（先攻平手抽签）', initiativeModel: 'seeded-ties-v1' };
 export const RULES_BY_ID: Record<string, RulePack> = {
+  [V45_OVERFLOW_D20.id]: V45_OVERFLOW_D20, [V45_OVERFLOW_TW.id]: V45_OVERFLOW_TW,
   [V44_OVERFLOW_D20.id]: V44_OVERFLOW_D20,
   [V43_OVERFLOW_D20.id]: V43_OVERFLOW_D20,
   [V42_OVERFLOW_D20.id]: V42_OVERFLOW_D20, [V42_LITE_D20.id]: V42_LITE_D20,

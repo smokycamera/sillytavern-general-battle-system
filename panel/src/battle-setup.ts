@@ -10,24 +10,25 @@ export function battleCapacityIssue(roster: Combatant[]): string | undefined {
 }
 
 /** 为未指定阵位的编队分配实际空位；不重写明确部署，不修改长期档案。 */
-export function prepareMassRoster(roster: Combatant[]): Combatant[] {
+export function prepareMassRoster(roster: Combatant[], fieldTags: string[] = []): Combatant[] {
   const issue = battleCapacityIssue(roster); if (issue) throw new Error(issue);
+  const flightContext = { fieldTags };
   const v2 = roster.every(u => u.rulesVersion === 'v2');
   const units = structuredClone(roster), occupied = new Map<string, number>(), slots = recommendedFormationSlots(roster);
   const explicit = (u: Combatant) => !!u.formationPosition || u.tags.some((t) => t.startsWith('zone:')) && u.tags.some((t) => t.startsWith('rank:'));
   const ordered = [...units].sort((a, b) => Number(explicit(b)) - Number(explicit(a)) || a.id.localeCompare(b.id));
   for (const side of ['ally', 'enemy'] as const) {
     const group = activeBattleUnits(ordered).filter((u) => u.side === side);
-    const hosts = group.filter(u => v2 && !needsFormationHost(u) && u.scale !== 'hero' && u.hp > 0 && u.status === 'ready'
-      && ((u.body ?? 'human') !== 'human' || flightCapabilityReason(u, standardConditionMap()) !== undefined));
-    const attachedHeroes = new Set(group.filter(needsFormationHost).sort((a,b) => a.id.localeCompare(b.id)).slice(0, hosts.length).map(u => u.id));
+    const hosts = group.filter(u => v2 && !needsFormationHost(u, flightContext) && u.scale !== 'hero' && u.hp > 0 && u.status === 'ready'
+      && ((u.body ?? 'human') !== 'human' || flightCapabilityReason(u, standardConditionMap(), flightContext) !== undefined));
+    const attachedHeroes = new Set(group.filter(u => needsFormationHost(u, flightContext)).sort((a,b) => a.id.localeCompare(b.id)).slice(0, hosts.length).map(u => u.id));
     const combatants = group.filter(u => !attachedHeroes.has(u.id));
     for (const [index, unit] of combatants.entries()) {
       const zone = unit.tags.find((t) => t.startsWith('zone:'))?.slice(5);
       const rank = unit.tags.find((t) => t.startsWith('rank:'))?.slice(5);
       const preferredWing = zone ?? ['左翼', '中军', '右翼'][Math.floor(index * 3 / Math.max(1, combatants.length))]!;
       const preferredRank = rank ?? (unit.weapon?.tags?.includes('ranged') ? 'rear' : unit.archetype === 'mobile' ? 'reserve' : 'front');
-      const air = v2 && (unit.airborne ?? !flightCapabilityReason(unit, standardConditionMap()));
+      const air = v2 && (unit.airborne ?? !flightCapabilityReason(unit, standardConditionMap(), flightContext));
       const key = (id: string) => id + ':' + Number(air);
       const candidates = FORMATION_NODES.filter((n) => n.side === side
         && (!unit.formationPosition || n.id === unit.formationPosition) && (!zone || n.wing === zone) && (!rank || n.rank === rank));

@@ -256,14 +256,14 @@ describe('AI 建议标签解析', () => {
     expect(r.invalid).toHaveLength(0);
   });
 
-  it('field 标签：环境关键词映射四类；识别不出进 invalid', () => {
+  it('field 标签：环境关键词识别太空和海洋；识别不出进 invalid', () => {
     const r = parseSuggestionTags(
-      ['<field env="巷战"/>', '<field env="夜晚遭遇战"/>', '<field env="太空"/>'].join('\n'),
+      ['<field env="巷战"/>', '<field env="夜晚遭遇战"/>', '<field env="太空"/>', '<field env="海洋"/>', '<field env="未知地貌"/>'].join('\n'),
     );
     expect(r.suggestions[0]).toMatchObject({ kind: 'field', env: 'urban' });
     expect(r.suggestions[1]).toMatchObject({ kind: 'field', env: 'night' });
-    expect(r.suggestions).toHaveLength(2);
-    expect(r.invalid).toEqual(['<field env="太空"/>']);
+    expect(r.suggestions.slice(2)).toMatchObject([{ kind: 'field', env: 'cosmos' }, { kind: 'field', env: 'sea' }]);
+    expect(r.invalid).toEqual(['<field env="未知地貌"/>']);
   });
 
   it('解析已有编制调取、补员扩编与结构化战利品', () => {

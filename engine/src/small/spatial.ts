@@ -10,7 +10,7 @@ import type { Combatant, ConditionDef } from '../types.js';
 import { activeTraitIds, traitPrerequisiteReason } from '../trait-sources.js';
 import { traitLevel, roughGroundCost, ignoresGroundPenalty, terrainStalks } from '../trait-levels.js';
 import { environmentTags } from '../environment.js';
-import { isAirborne, sameLayer, flightCapabilityReason, type FlightConditions } from '../aerial.js';
+import { isAirborne, sameLayer, flightCapabilityReason, type FlightConditions, type FlightContext } from '../aerial.js';
 import { SeededRng } from '../rng.js';
 import { rangedScreen } from '../guard-screen.js';
 import {validateSceneRecord,type SceneRecord,type DeploymentZone} from './scene-compiler.js';
@@ -461,10 +461,10 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
 }
 
 /** Pure preparation shared by generator capacity checks and SmallBattle.start. */
-export function prepareGridDeployment(field: BattlefieldSpec, units: readonly Combatant[], seed = 'deployment', conditions?: FlightConditions, enableFlight = true): Combatant[] {
+export function prepareGridDeployment(field: BattlefieldSpec, units: readonly Combatant[], seed = 'deployment', conditions?: FlightConditions, enableFlight = true, flightContext: FlightContext = { fieldTags: field.environment }): Combatant[] {
   if (units.some(u => u.ride)) {
     units = planTransportDeployment(units).deployed;
-    const physical = prepareGridDeployment(field, units.filter(u => !u.ride), seed, conditions, enableFlight);
+    const physical = prepareGridDeployment(field, units.filter(u => !u.ride), seed, conditions, enableFlight, flightContext);
     const positions = new Map(physical.map(u => [u.id, u]));
     return units.map(u => {
       const carrier = positions.get(u.ride?.platformId ?? u.id);
@@ -472,10 +472,13 @@ export function prepareGridDeployment(field: BattlefieldSpec, units: readonly Co
       return u.ride ? { ...u, pos: carrier.pos, elevation: carrier.elevation, airborne: carrier.airborne } : carrier;
     });
   }
-  const prepared = units.map(u => ({ ...u, ...(enableFlight && u.rulesVersion === 'v2' && u.airborne === undefined && !flightCapabilityReason(u, conditions) ? { airborne: true } : {}) }));
+  const prepared = units.map(u => ({ ...u, ...(enableFlight && u.rulesVersion === 'v2' && u.airborne === undefined && !flightCapabilityReason(u, conditions, flightContext) ? { airborne: true } : {}) }));
   for(const u of prepared) {
     const frozen=field.initialDeployment&&Object.hasOwn(field.initialDeployment,u.id)?field.initialDeployment[u.id]:undefined;
-    if(frozen&&u.pos===undefined){if(frozen.airborne&&(!enableFlight||flightCapabilityReason(u,conditions)))throw Error('冻结部署的飞行状态与实际能力不一致');Object.assign(u,frozen);}
+    if (frozen && u.pos === undefined) {
+      if (frozen.airborne && (!enableFlight || flightCapabilityReason(u, conditions, flightContext))) throw Error('冻结部署的飞行状态与实际能力不一致');
+      Object.assign(u, frozen);
+    }
     // Same precedence as gridDeploymentCells: a unit's own zones replace its side's zones.
     const own=field.deploymentZones?.filter(z=>z.unitId===u.id)??[];
     const zones=own.length?own:field.deploymentZones?.filter(z=>!z.unitId&&z.side===u.side)??[];

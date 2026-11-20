@@ -337,7 +337,7 @@ export function skillEffectValue(context: ObservationContext, actor: Combatant, 
       if (traitLevelsV16(target) && effect.traitId === 'fortification') entrench(future, future.pos !== undefined ? 'small' : 'mass');
       const regeneration = Math.min(recoveryCapacity(target), Math.max(0, regenerationAmount(future, context.traitRegistry) - regenerationAmount(target, context.traitRegistry)));
       let futureValue = tacticalStateValue(context, future);
-      if (!isAirborne(target) && flightCapabilityReason(target, context.conditions) && !flightCapabilityReason(future, context.conditions)) {
+      if (!isAirborne(target) && flightCapabilityReason(target, context.conditions, context) && !flightCapabilityReason(future, context.conditions, context)) {
         const flying = { ...future, airborne: true };
         futureValue += Math.max(0, tacticalStateValue(context, flying) - futureValue) * 0.65;
       }

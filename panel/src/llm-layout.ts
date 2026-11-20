@@ -6,7 +6,7 @@ import { safeLandmarkLabel } from '../../engine/src/small/map-label.js';
 import { SCENE_ARCHETYPE_NAMES, type SceneArchetype, type SceneConstraint, type SceneEntity, type SceneRelation, type WorldAnchor } from '../../engine/src/small/scene-intent.js';
 import { recommendedCitySize } from '../../engine/src/small/layered-generator.js';
 import type { BattlefieldScene } from '../../engine/src/small/map-design.js';
-import { waterOnly, hasFlightAbility, isRangedWeapon, type Combatant } from '../../engine/src/index.js';
+import { activeTraitIds, waterOnly, hasFlightAbility, isRangedWeapon, type Combatant } from '../../engine/src/index.js';
 import type { BattleObjectiveMode } from './battle-setup.js';
 import { INTERIOR_USES, INTERIOR_PATTERNS, INTERIOR_USE_NAMES, INTERIOR_PATTERN_NAMES } from '../../engine/src/small/interior-plan.js';
 import { COMPOUND_PATTERNS, TRENCH_PATTERNS, COMPOUND_PATTERN_NAMES, TRENCH_PATTERN_NAMES } from '../../engine/src/small/position-plan.js';
@@ -82,11 +82,12 @@ export interface LayoutContext {
   vipName?: string;
   map: [number, number];
 }
-export function layoutUnits(roster: readonly Combatant[], publicId: (id: string) => string, notes: Record<string, string> = {}): LayoutUnit[] {
+export function layoutUnits(roster: readonly Combatant[], publicId: (id: string) => string, notes: Record<string, string> = {}, environment?: string): LayoutUnit[] {
+  const flightContext = { fieldTags: environment ? [environment] : [] };
   return roster.filter(u => u.hp > 0 && u.status === 'ready').map(u => ({
     id: publicId(u.id), name: u.name.slice(0, 40), side: u.side,
     kind: [u.scale === 'hero' ? '人物' : '部队', isVehicleBody(u.body) ? '载具' : u.body && u.body !== 'human' ? '大型' : u.mount ? '骑乘' : '',
-      hasFlightAbility(u) ? '可飞行' : '', waterOnly(u) ? '航行：只能在深水或浅水部署与移动' : '', isRangedWeapon(u.weapon) ? '远程' : '近战'].filter(Boolean).join('·'),
+      activeTraitIds(u).includes('space-adapted') ? '太空机动' : '', hasFlightAbility(u, flightContext) ? '可飞行' : '', waterOnly(u) ? '航行：只能在深水或浅水部署与移动' : '', isRangedWeapon(u.weapon) ? '远程' : '近战'].filter(Boolean).join('·'),
     ...(notes[u.id]?.trim() ? { note: notes[u.id]!.trim().slice(0, 60) } : {}) }));
 }
 /** The generator's starting size for the scene; capacity may still enlarge the map. */

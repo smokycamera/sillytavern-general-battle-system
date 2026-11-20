@@ -125,9 +125,9 @@ function messageKey(messages: NarrativeMessage[]): string {
     h = Math.imul(h ^ source.charCodeAt(i), 16777619);
   return `${source.length}:${h >>> 0}`;
 }
-function massAvailable(roster: Combatant[]): boolean {
+function massAvailable(roster: Combatant[], field: string): boolean {
   try {
-    prepareMassRoster(roster);
+    prepareMassRoster(roster, [field]);
     return true;
   } catch {
     return false;
@@ -140,8 +140,8 @@ function finishSetup(
   if (input.phase === "battle") return context; // Existing battle geometry and victory rules are immutable.
   if (input.settings.battleMode !== "auto")
     context.mode = input.settings.battleMode;
-  if (context.mode === 'mass' && !massAvailable(input.roster)) {
-    if (input.settings.battleMode === 'mass') prepareMassRoster(input.roster);
+  if (context.mode === 'mass' && !massAvailable(input.roster, context.field)) {
+    if (input.settings.battleMode === 'mass') prepareMassRoster(input.roster, [context.field]);
     context.mode = 'small';
     context.detail += '；会战部署不可用，采用小战';
   }
@@ -286,7 +286,7 @@ export function encounterRequest(input: EncounterContextInput): {
         options: {
           unknown,
           small: "独立人物、局部遭遇、护送或具体地点争夺",
-          ...(massAvailable(input.roster)
+          ...(massAvailable(input.roster, input.setup.field)
             ? { mass: "可组织成阵列的军团/大规模正面会战" }
             : {}),
         },

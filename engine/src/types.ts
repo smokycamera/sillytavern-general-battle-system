@@ -713,6 +713,7 @@ export interface RulePack {
   commandModel?: 'command-v2';
   /** V24 统率范围按有效特质等级成长；旧战斗保留固定范围。 */
   commandRangeModel?: 'graded-v1';
+  spaceManeuverFlight?: true;
   revivalModel?: 'revival-v1';
   flightModel?: 'maneuver-v1';
   enhancementModel?: 'channels-life-v1';
