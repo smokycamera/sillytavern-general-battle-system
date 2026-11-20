@@ -1,3 +1,4 @@
+import { protectionGroups } from './equipment-batches.js';
 import { progression, GEAR_G, GEAR_D } from './progression.js';
 import { bonusSteps, type Enhancements, type BonusStat } from './enhancements.js';
 import type { GearItem } from './items.js';
@@ -49,8 +50,16 @@ export function wornItemEffects(item: Pick<GearItem, 'passive'>): WornEffects {
   return capWornSource({ values, damageCap: 1, negativeDamageCap: .5, protectionCap: 2, negativeProtectionCap: 2 });
 }
 /** 各方向正负分别取极值；汇总后再执行通用+通道上限，不能拆件绕过。 */
-export function wornEffects(unit: Pick<Combatant, 'gear'> & Partial<Pick<Combatant, 'traitLevelModel'|'itemModel'>>): WornEffects['values'] {
+export function wornEffects(unit: Pick<Combatant, 'gear'> & Partial<Combatant>): WornEffects['values'] {
   if (!progression(unit)) return {};
+  if (unit.hp && unit.scale!=='hero' && unit.equipmentBatches?.some(b=>b.slot==='gear' && b.qty<unit.hp!)) {
+    const totals: WornEffects['values']={};
+    for (const group of protectionGroups(unit as Combatant)) {
+      const effects=wornEffects({...unit,gear:group.gear,equipmentBatches:undefined});
+      for (const [key,value] of Object.entries(effects) as [BonusStat,number][]) totals[key]=(totals[key] ?? 0)+value*group.size/unit.hp;
+    }
+    return totals;
+  }
   if (!unit.gear?.length) return { kineticDamage: 0, kineticProtection: 0, thermalDamage: 0, thermalProtection: 0, arcaneDamage: 0, arcaneProtection: 0 };
   const best: WornEffects['values'] = {}, worst: WornEffects['values'] = {}, uncapped: Partial<Record<BonusStat, boolean>> = {};
   let damageCap = 0, negativeDamageCap = 0, protectionCap = 0, negativeProtectionCap = 0;

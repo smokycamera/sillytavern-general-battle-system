@@ -1,3 +1,4 @@
+import { isVehicleBody } from './vehicle-size.js';
 import { equipmentBurden } from './equipment-load.js';
 import { isArmsV2 } from './arms-model.js';
 /**
@@ -30,7 +31,7 @@ export function prepareItemModel(unit: Combatant, rules: Pick<RulePack, 'itemMod
 }
 
 /** 快速及以上的载具（装甲车、摩托、悬浮车等）可以冲锋。 */
-export const fastVehicle = (unit: Pick<Combatant, 'body' | 'speedTier'>): boolean => unit.body === 'vehicle' && (unit.speedTier ?? 0) >= 4;
+export const fastVehicle = (unit: Pick<Combatant, 'body' | 'speedTier'>): boolean => isVehicleBody(unit.body) && (unit.speedTier ?? 0) >= 4;
 /** 冲锋资格：V15 看真实坐骑、快速载具或冲锋强化；旧规则沿用机动原型。 */
 export function chargeCapable(unit: Pick<Combatant, 'itemModel' | 'archetype' | 'mount' | 'body' | 'speedTier'> & Partial<Combatant>, traits: readonly string[]): boolean {
   if (isArmsV2(unit.armsModel) && equipmentBurden(unit as Combatant) === 2) return false;

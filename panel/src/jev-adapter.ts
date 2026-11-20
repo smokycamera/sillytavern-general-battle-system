@@ -1,3 +1,4 @@
+import { optionWeaponMode, type WeaponMode } from '../../engine/src/equipment-batches.js';
 import {
   SmallBattle,
   MassBattle,
@@ -297,7 +298,7 @@ export class TavernJevAdapter implements BattleAdapter {
             done(() =>
               b.attack(actor.id, target.targetId!, {
                 weaponMode:
-                  option.id === "weapon:sidearm" ? "sidearm" : "primary",
+                  optionWeaponMode(option.id),
                 charge: option.kind === "charge",
               }),
             ),

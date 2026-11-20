@@ -66,14 +66,18 @@ export function selectPromptEntries(settings: PromptSettings | undefined, kind: 
   for (const id of ids) { if (selected) excluded.delete(id); else excluded.add(id); }
   return { ...settings, [key]: [...excluded] };
 }
+function sectionTemplate(settings: PromptSettings | undefined, id: PromptSectionId): string {
+  if (id === 'settlement') return settlementTemplate(settings);
+  if (id === 'items') return itemsTemplate(settings);
+  const saved = settings?.sections?.[id]?.template;
+  if (id === 'reminder') return saved?.replace(/count是卡数；(?:会战|本场)最多(?:32|64)张。/g, 'count是卡数。') ?? RUNTIME_REMINDER;
+  return saved ?? PROMPT_SECTIONS.find(section => section.id === id)!.template;
+}
 export function formatPromptSection(settings: PromptSettings | undefined, id: PromptSectionId, content: string): string {
   if (settings?.sections?.[id]?.enabled === false || !content && id !== 'reminder') return '';
-  const template = id === 'settlement' ? settlementTemplate(settings) : id === 'items' ? itemsTemplate(settings) : settings?.sections?.[id]?.template ?? PROMPT_SECTIONS.find((s) => s.id === id)!.template;
-  return template.split('{{content}}').join(content);
+  return sectionTemplate(settings, id).split('{{content}}').join(content);
 }
 const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 export function renderPromptSettings(settings?: PromptSettings, drafts = new Map<string, string>()): string {
-  if (oldSettlementTemplate(settings?.sections?.settlement?.template)) settings = { ...settings, sections: { ...settings?.sections, settlement: { ...settings?.sections?.settlement, template: SETTLEMENT_PROMPT } } };
-  if (oldItemsTemplate(settings?.sections?.items?.template)) settings = { ...settings, sections: { ...settings?.sections, items: { ...settings?.sections?.items, template: ITEMS_TEMPLATE } } };
-  return `<section><h2>动态提示词</h2><p>开关、编辑和清单选择随当前聊天保存。{{content}}代表实时数据；保留它可继续自动更新。内置世界书在本设置页单独管理。</p>${PROMPT_SECTIONS.map((s) => `<div class="prompt-setting"><label><input type="checkbox" data-role="prompt-enabled" data-section="${s.id}" ${settings?.sections?.[s.id]?.enabled === false ? '' : 'checked'}>${s.title}</label><details data-detail-id="prompt-editor-${s.id}"><summary>编辑提示词</summary><textarea data-role="prompt-template" data-section="${s.id}" style="width:100%;min-height:8em">${esc(drafts.get(s.id) ?? settings?.sections?.[s.id]?.template ?? s.template)}</textarea><div class="row"><button data-action="prompt-save" data-section="${s.id}">保存编辑</button><button data-action="prompt-reset" data-section="${s.id}">恢复默认文本</button></div></details></div>`).join('')}</section>`;
+  return `<section><h2>动态提示词</h2><p>开关、编辑和清单选择随当前聊天保存。{{content}}代表实时数据；保留它可继续自动更新。内置世界书在本设置页单独管理。</p>${PROMPT_SECTIONS.map((s) => `<div class="prompt-setting"><label><input type="checkbox" data-role="prompt-enabled" data-section="${s.id}" ${settings?.sections?.[s.id]?.enabled === false ? '' : 'checked'}>${s.title}</label><details data-detail-id="prompt-editor-${s.id}"><summary>编辑提示词</summary><textarea data-role="prompt-template" data-section="${s.id}" style="width:100%;min-height:8em">${esc(drafts.get(s.id) ?? sectionTemplate(settings, s.id))}</textarea><div class="row"><button data-action="prompt-save" data-section="${s.id}">保存编辑</button><button data-action="prompt-reset" data-section="${s.id}">恢复默认文本</button></div></details></div>`).join('')}</section>`;
 }

@@ -1,3 +1,4 @@
+import { availableCopies } from './equipment-batches.js';
 import { displayNumber } from './display-number.js';
 import {shieldClass,shieldDurabilityMax,clampShieldDurability,energyShieldActive,energyShieldCapacity,energyShieldShare,energyShareOf,energyThresholdOf,energyShieldRecharge,energyPower,energyOverloadThreshold,clampEnergyShield,rechargeEnergyShield,type ShieldBearer} from './shield-state.js';
 export {shieldClass,shieldDurabilityMax,clampShieldDurability,standardSwordMean,SHIELD_DURABILITY_FACTOR,energyShieldActive,energyShieldCapacity,energyShieldShare,energyShieldPool,energyShieldRecharge,energyShareOf,energyThresholdOf,shieldPlatformScale,energyOverloadThreshold,energyHeavyHit,rechargeEnergyShield,ENERGY_SHIELD_SHARE,ENERGY_HEAVY_ABSORB,ENERGY_RECHARGE_SHARE,type ShieldBearer} from './shield-state.js';
@@ -37,6 +38,12 @@ export function prepareArmsModel(unit: Combatant, rules: Pick<RulePack, 'armsMod
   prepareBarrierModel(unit, rules);
   if (isArmsV2(unit.armsModel) && unit.shield && shieldClass(unit) !== 'energy-shield') { unit.shieldDurability ??= { remaining: shieldDurabilityMax(unit) }; clampShieldDurability(unit); }
   if (energyShieldActive(unit)) { unit.energyShield ??= { remaining: energyShieldCapacity(unit), overloaded: 0 }; clampEnergyShield(unit); }
+  for (const b of unit.equipmentBatches ?? []) {
+    if (!isArmsV2(unit.armsModel) || b.mechanics.kind!=='shield' || b.id===unit.shield?.id) continue;
+    const view={...unit,shield:b.mechanics.value};
+    if (energyShieldActive(view)) b.energyShield ??= {remaining:energyShieldCapacity(view),overloaded:0};
+    else b.shieldDurability ??= {remaining:shieldDurabilityMax(view)};
+  }
 }
 
 /** Protection offset of an armor type relative to 2×L. Only light armor changes in V12. */
@@ -76,6 +83,8 @@ export const ENERGY_FIRE_LIMIT = 3;
 export function beginArmsActivation(unit: Combatant): void {
   if (!isArmsV2(unit.armsModel)) return;
   rechargeEnergyShield(unit);
+  for (const b of unit.equipmentBatches ?? []) if (b.energyShield && b.mechanics.kind==='shield' && b.id!==unit.shield?.id)
+    rechargeEnergyShield({...unit,shield:b.mechanics.value,energyShield:b.energyShield});
   for (const state of Object.values(unit.weaponHeat ?? {})) {
     const cooling = state.streak >= ENERGY_FIRE_LIMIT;
     if (!state.fired || cooling) state.streak = 0;
@@ -89,6 +98,7 @@ export function noteArmsFire(unit: Combatant, weapon?: Weapon): void {
   if (!state.fired) { state.streak++; state.fired = true; }
 }
 export function armsWeaponReason(unit: Combatant, weapon?: Weapon): string | undefined {
+  if (weapon && availableCopies(unit,weapon.id) === 0) return weapon.name + '暂无可用装备';
   if (isArmsV2(unit.armsModel) && (unit.body ?? 'human') === 'human' && unit.movedDuringActivation && ['autocannon','cannon','indirect-cannon'].includes(weapon?.recipe?.mechanism ?? '')) return '需架设：本次激活已移动，不能用' + weapon!.name + '开火';
   if (isArmsV2(unit.armsModel) && weapon && unit.weaponHeat?.[weapon.id]?.cooling) return weapon.name + '过热：连续开火三次后需要冷却一次';
   if (isArmsV2(unit.armsModel) && weapon && isSprayer(weapon) && !sprayerFuel(unit, weapon)) return weapon.name + '燃料耗尽：每战只能喷射' + SPRAYER_FUEL + '次';

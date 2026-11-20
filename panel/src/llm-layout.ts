@@ -1,3 +1,4 @@
+import { isVehicleBody } from '../../engine/src/vehicle-size.js';
 import { normalizeBattlefieldPlan, type BattlefieldPlan, type DeploymentPlan } from '../../engine/src/small/battlefield-plan.js';
 import { MAX_SMALL_UNITS } from '../../engine/src/battle-limits.js';
 import { BattlefieldPlanError } from '../../engine/src/small/battlefield-error.js';
@@ -83,7 +84,7 @@ export interface LayoutContext {
 export function layoutUnits(roster: readonly Combatant[], publicId: (id: string) => string, notes: Record<string, string> = {}): LayoutUnit[] {
   return roster.filter(u => u.hp > 0 && u.status === 'ready').map(u => ({
     id: publicId(u.id), name: u.name.slice(0, 40), side: u.side,
-    kind: [u.scale === 'hero' ? '人物' : '部队', u.body === 'vehicle' ? '载具' : u.body && u.body !== 'human' ? '大型' : u.mount ? '骑乘' : '',
+    kind: [u.scale === 'hero' ? '人物' : '部队', isVehicleBody(u.body) ? '载具' : u.body && u.body !== 'human' ? '大型' : u.mount ? '骑乘' : '',
       hasFlightAbility(u) ? '可飞行' : '', waterOnly(u) ? '航行：只能在深水或浅水部署与移动' : '', isRangedWeapon(u.weapon) ? '远程' : '近战'].filter(Boolean).join('·'),
     ...(notes[u.id]?.trim() ? { note: notes[u.id]!.trim().slice(0, 60) } : {}) }));
 }
@@ -175,7 +176,7 @@ export function layoutTask(ctx: LayoutContext, retry?: LayoutRetry): string {
     `- places：最多${MAX_PLACES}个有战术意义的地点，优先写正文提到的，[{"type":类型,"name":"名称","at":方位,"height":0-3,"state":"destroyed"}]。type=${kinds}。height只给高地等写，2-3为明显高地；state=destroyed表示已毁。普通房屋、树木、杂物由程序补全，不要写。室外的重要building生成有墙、门和可走内部的建筑，单位可按place进入或驻守，任务目标可放在内部。`,
     (siege ? `- ${sides}开局位置。${sideName(ctx.attacker)}是攻方，写{"at":["B4"]}这样的1-3个${ctx.scene === 'city_siege' ? '城' : '院'}外方位。${sideName(d)}是守方，默认在${ctx.scene === 'city_siege' ? '城' : '院'}内，只需写post：wall城头为主|inside${ctx.scene === 'city_siege' ? '城内街巷' : '院内'}，不上墙|outside出${ctx.scene === 'city_siege' ? '城' : '院'}列阵（这时再写at为外面的方位）。`
       : `- ${sides}开局位置，{"at":["B4"]}，可写1-3个方位。${ctx.scene === 'city_streets' ? '各方默认在街区内。' : ''}`) + (thirdParty ? 'neutral默认从右侧进入。' : ''),
-    `- units：根据正文内容选择单位开局位置。unit可写一个短ID或多个短ID组成的数组，有正文依据时优先使用place。按方位写 {"unit":"u3","at":"D1"}；有具体地点写 {"unit":["u1","u2"],"place":"档案室","relation":"inside"}，place位置使用本次places、桥或城门的名称，relation=inside在内部|guards驻守附近|near靠近；at可作为地点无效时的备用方位；按方位部署的攻城守方可写post=wall|inside|outside。最多布置${MAX_SMALL_UNITS}个单位。`,
+    `- units：根据正文内容选择单位开局位置。unit可写一个短ID或多个短ID组成的数组，有正文依据时优先使用place。按方位写 {"unit":"u3","at":"D1"}；有具体地点写 {"unit":["u1","u2"],"place":"档案室","relation":"inside"}，place位置使用本次places、桥或城门的名称，relation=inside在内部|guards驻守附近|near靠近；at可作为地点无效时的备用方位；按方位部署的攻城守方可写post=wall|inside|outside。`,
     exitSide(ctx) ? '- objective：撤离点，写4×4分区编号（放在该方向的地图边缘）或places里的name；省略时按部署方向决定。'
       : ctx.objectiveMode === 'siege' ? `- objective：${sideName(ctx.attacker)}要夺取的地点，写places里的name；省略时为${ctx.scene === 'city_siege' ? '城中心' : '守方后方核心'}。`
       : ctx.objectiveMode === 'control' ? (thirdParty ? '- objective：各方争夺的地点，写places里的name或4×4分区编号；省略时由程序选择各方可接近的中立位置。' : '- objective：双方争夺的地点，写places里的name或4×4分区编号；省略时由程序选择双方可接近的中立位置。') : '',

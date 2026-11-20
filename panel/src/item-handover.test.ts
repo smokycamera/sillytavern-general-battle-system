@@ -164,11 +164,11 @@ describe('unit_set 的 items 把道具交给单位', () => {
     expect(carried(save, 'b')).toEqual([['治疗药水', 1, '-'], ['治疗药水', 2, '-'], ['金币', 10, '-']]);
     expect(save.inventory!.some((i) => i.id === 'stash' && i.qty > 0 && !i.assignedTo)).toBe(false);
   });
-  it('编队一件即整卡配发；敌方不动我方原有库存；同一回复 add 的同名道具效果不同时各自入库', () => {
+  it('编队按件数配发；敌方不动我方原有库存；同一回复 add 的同名道具效果不同时各自入库', () => {
     let save = setup([unit('a', '掷弹兵连', 'ally', 'company'), unit('b', '敌将', 'enemy')], [potion('stash', 3)]);
     save = transact(save, '<unit_set id="u1" items="夜视镜:夜战专精L5×30"/><unit_set id="u2" items="治疗药水:buff治疗L3"/>');
-    expect(carried(save, 'a')).toEqual([['夜视镜', 1, 'gear']]);
-    expect(notices(save)).toContain('掷弹兵连是编队，佩戴、充能道具一件就是整张单位卡的配发，「夜视镜」只交1件');
+    expect(carried(save, 'a')).toEqual([['夜视镜', 30, 'gear']]);
+    expect(save.inventory!.filter(i=>i.name==='夜视镜')).toHaveLength(1);
     expect(carried(save, 'b')).toEqual([['治疗药水', 1, '-']]);
     expect(save.inventory!.find((i) => i.id === 'stash')!.qty).toBe(3);
     save = transact(save, '<add item="怒火药剂" spec="buff攻击L3"/><unit_set id="u2" items="怒火药剂:buff伤害L3"/>');

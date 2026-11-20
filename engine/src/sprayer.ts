@@ -1,3 +1,4 @@
+import { isVehicleBody } from './vehicle-size.js';
 import type { Combatant, Weapon } from './types.js';
 import type { Rng } from './rng.js';
 import { isArmsV2, isSprayer, sprayerFuel } from './arms.js';
@@ -7,7 +8,7 @@ import type { ObservationContext } from './observation.js';
 
 /** R16 惊惧：受到实际损失的目标做士气检定，DC 10+⌊L/2⌋，与恐惧同一入口（d20+有效士气/10）；非生物、不溃、载具除外。 */
 export function sprayerFear(context: ObservationContext, target: Combatant, power: number, sourceId: string, rng: Rng): string | undefined {
-  if (target.hp <= 0 || target.body === 'vehicle' || conditionImmunity(target, 'fearful') || target.conditions.some(c => c.id === 'fearful' && c.dur > 0)) return undefined;
+  if (target.hp <= 0 || isVehicleBody(target.body) || conditionImmunity(target, 'fearful') || target.conditions.some(c => c.id === 'fearful' && c.dur > 0)) return undefined;
   const effective = moraleProfile(context, target).effective;
   const dc = 10 + Math.floor(power / 2), bonus = target.numericModel ? effective / 10 : Math.floor(effective / 10), roll = rng.d(20);
   const weight = Math.max(0, Math.min(1, 1 + roll + bonus - dc));

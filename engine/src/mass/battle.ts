@@ -1,3 +1,4 @@
+import { batchWeapons, startBatchReload, advanceBatchReload } from '../equipment-batches.js';
 import { displayNumber } from '../display-number.js';
 import { grantEntryWornBarrier, resetWornBarrier } from '../worn-barrier.js';
 import { prepareRevivalBattle, tryRevive } from '../revival.js';
@@ -9,7 +10,7 @@ import { canSpot } from '../observation.js';
 import { ACTIVATION_CONTROLS, validateBattleControlState, controlReactionAllowed, controlPolicy, beginControlActivation, finishControlActivation, reconcileBattleControls, breakCharmOnDamage } from '../battle-control.js';
 import { attackHostile, combatHostile, combatSide, controlActionReason, controlCondition } from '../battle-control.js';
 import { healingEffectGroups } from '../healing.js';
-import { spendAbility, abilityUsed } from '../ability-state.js';
+import { spendAbility, abilityUsed, abilityUseLimit } from '../ability-state.js';
 import { itemUseLog, captureItemEffects, type ItemUseLog } from '../item-use-log.js';
 import { assertBattleCapacity } from '../battle-limits.js';
 import { tacticalSkillCost, tacticalRestValue } from '../skill-economy.js';
@@ -41,7 +42,7 @@ import { skillWeapon, skillResourceChange, conjureSkillUnit, conjuredTemplate, s
 import { applySkillTrait } from '../skill-effects.js';
 import { BattleFeedback, type FeedbackUnit } from '../battle-feedback.js';
 import { restoreMassReport, type MassRoundReport, type MassPhase } from './feedback.js';
-import { skillAttack } from '../skill-attack.js';
+import { chargedAction, skillAttack } from '../skill-attack.js';
 import { prepareCondition, applySkillCondition, dispelCandidates, applyDispel, pushPreview, pushStrength, skillEffectLines, areaSkillEffectLines, skillEffectValue, summonValue, conditionChance } from '../skill-effects.js';
 import { applyWeaponConditions, poisonDamage, poisonFactor, conditionDamage, conditionDamageSources } from '../afflictions.js';
 import { isRangedWeapon, meleeWeapon, weaponReloadKey, weaponReloadTurns, validateMount, mountedShooting, mobileRangedWeapon, vehicleShooting } from '../loadout.js';
@@ -198,6 +199,8 @@ export class MassBattle {
     this.hasteOrders.set(unitId, { unitId, type: order.type, targetId: order.targetId, abilityId: order.abilityId, abilityActorId: order.abilityActorId, haste: true });
   }
   private reloadOrder(actor: Combatant): void {
+    const batch = actor.equipmentBatches?.find(b=>b.reloading?.length);
+    if (batch) { advanceBatchReload(batch); return; }
     const weapon = [actor.weapon, actor.sidearm].filter(w => w && (this.reloadCd.get(weaponReloadKey(actor, w)) ?? 0) > 0)
       .sort((a,b) => (this.reloadCd.get(weaponReloadKey(actor, b)) ?? 0) - (this.reloadCd.get(weaponReloadKey(actor, a)) ?? 0))[0];
     if (!weapon) return;
@@ -524,7 +527,7 @@ export class MassBattle {
     }
   }
   private rangedWeaponFor(actor: Combatant, target: Combatant, units = this.combatants, mobileOnly: false | 'riding' | 'vehicle' = false) {
-    const weapons = [actor.weapon, actor.sidearm].filter((weapon) =>
+    const weapons = batchWeapons(actor).filter((weapon) =>
       isRangedWeapon(weapon) && !armsWeaponReason(actor,weapon) && (!mobileOnly || (mobileOnly === 'riding' ? mobileRangedWeapon(weapon) : vehicleShooting(actor, weapon))) && !(this.reloadCd.get(weaponReloadKey(actor, weapon)) ?? 0)
       && !formationShotReason({ ...actor, weapon }, target, units.filter((u) => !this.isAttached(u.id)))
       && !rangedScreen(actor, target, weapon, units.filter(u => !this.isAttached(u.id)), { mode: 'mass' }, this.conditionMap()));
@@ -634,7 +637,7 @@ export class MassBattle {
     const aerial = aerialTargetReason(u, target, order.type === 'volley'); if (aerial) return aerial;
     if (order.type === 'volley') {
       if (this.rangedWeaponFor(u, target, units) || this.mountedShotDestination(u, target, this.visibleCombatants(u.side, units)) || this.vehicleShotDestination(u, target, this.visibleCombatants(u.side, units))) return undefined;
-      const rangedWeapons = [u.weapon, u.sidearm].filter(isRangedWeapon);
+      const rangedWeapons = batchWeapons(u).filter(isRangedWeapon);
       if (rangedWeapons.length && rangedWeapons.every(w => armsWeaponReason(u,w))) return armsWeaponReason(u,rangedWeapons[0]);
       if (rangedWeapons.length && rangedWeapons.every((w) => (this.reloadCd.get(weaponReloadKey(u, w)) ?? 0) > 0)) return '武器装填中';
       const weapon = rangedWeapons.find((w) => !armsWeaponReason(u,w) && !(this.reloadCd.get(weaponReloadKey(u, w)) ?? 0)) ?? u.weapon;
@@ -799,7 +802,7 @@ export class MassBattle {
   itemUse(actor: Combatant, ability: Ability, target?: Combatant, units = this.combatants): ReturnType<typeof itemUseAbility> {
     const healingTargets = target && ability.itemSourceId && (ability.area || ability.shape === 'burst') && ability.effects.every(e => e.op === 'heal')
       ? this.supportTargets(actor, ability, target, units) : undefined;
-    return itemUseAbility(actor, ability, target, healingTargets);
+    return itemUseAbility(actor, chargedAction(this.observationContext(units),actor,target,ability), target, healingTargets);
   }
   private supportTargets(actor: Combatant, ability: Ability, primary: Combatant, units: Combatant[]): Combatant[] {
     const valid = (u: Combatant) => !this.isAttached(u.id)
@@ -1472,7 +1475,7 @@ export class MassBattle {
           const result = this.resolveAttackWithEnvironment({ ...this.orderAttackOptions(order, phaseUnits, false, weapon), actionDamageScale: order.haste ? hasteAttackScale(actor) : 1, defender: structuredClone(target), rng: this.rng });
           results.push({ actorId: actor.id, targetId: target.id, result });
         }
-        if (weaponReloadTurns(weapon) && order.type === 'volley') this.reloadCd.set(weaponReloadKey(actor, weapon), weaponReloadTurns(weapon) + 1);
+        if (weaponReloadTurns(weapon) && order.type === 'volley' && !startBatchReload(this.byId(actor.id),weapon,results.at(-1)?.result.participants ?? 1,weaponReloadTurns(weapon)+1)) this.reloadCd.set(weaponReloadKey(actor, weapon), weaponReloadTurns(weapon) + 1);
         if (isSprayer(weapon)) spendSprayerFuel(this.byId(actor.id), weapon);
       }
       for (const { actorId, targetId, result } of results) {
@@ -1570,7 +1573,7 @@ export class MassBattle {
         if (move.node) { relocate(move.node, move.mode === 'dash' ? move.charge ? '冲锋突进' : '突进' : '闪现'); actor = { ...actor, formationPosition: move.node.id }; }
         const charge = !!move.charge;
         const skillArm = ability.weaponUse ? skillWeapon(actor, ability, formationDistance(actor, target)) : undefined;
-        if (skillArm && isRangedWeapon(skillArm) && weaponReloadTurns(skillArm)) this.reloadCd.set(weaponReloadKey(actor, skillArm), weaponReloadTurns(skillArm) + 1);
+
         for (const effect of healingEffectGroups(ability)) {
           if (effect.op === 'zone') { changes.push(()=>{
             const zone = placeZone(this.observationContext(),this.byId(actor.id),target,effect,this.round,ability.id);
@@ -1652,6 +1655,9 @@ export class MassBattle {
         if (moveEffects(ability).after) { const back = this.skillWithdrawNode(actor, support); if (back) relocate(back, '后撤'); }
         exertion.set(actor.id, skillExertion(actor, ability) + (charge ? 1 : 0));
         this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id], text: `${actor.name} 的【${ability.name}】占用所属编队${order.haste ? '加速任务' : '本轮主任务'}` });
+        if (skillArm && isRangedWeapon(skillArm) && weaponReloadTurns(skillArm) &&
+          !startBatchReload(actualActor,skillArm,Math.max(1,...[...hits.values()].map(r=>r.participants??1)),weaponReloadTurns(skillArm)+1))
+          this.reloadCd.set(weaponReloadKey(actor,skillArm),weaponReloadTurns(skillArm)+1);
         trackEffects();
       }
       changes.forEach((apply) => apply());
@@ -1782,7 +1788,7 @@ export class MassBattle {
         }
         this.lastReport = structuredClone(this.pendingReport);
       }
-      this.orders.clear(); this.hasteOrders.clear(); this.resolvedRounds.add(this.round); this.round++; for (const unit of this.combatants) beginArmsActivation(unit);
+      this.orders.clear(); this.hasteOrders.clear(); this.resolvedRounds.add(this.round); this.round++; for (const unit of this.combatants) { for (const batch of unit.equipmentBatches ?? []) advanceBatchReload(batch); beginArmsActivation(unit); }
       for (const unit of this.combatants) beginLifestealRound(unit, this.round);
       this.refreshCp();
       this.recordEvent({ round: this.round - 1, kind: 'round', text: this.lastPhases.join(' → ') });
@@ -2204,7 +2210,7 @@ export class MassBattle {
         const st = u.abilityState.find((s) => s.abilityId === a.id) ?? { abilityId: a.id, cdLeft: 0, used: 0 };
         if (!u.abilityState.some((s) => s.abilityId === a.id)) u.abilityState.push(st);
         if (st.cdLeft > 0) continue;
-        if (a.usesPerBattle !== undefined && abilityUsed(u,a) >= a.usesPerBattle) continue;
+        if (a.usesPerBattle !== undefined && abilityUsed(u,a) >= abilityUseLimit(u,a)) continue;
         if (dmg) {
           const foes = this.readyUnits(u.side === 'ally' ? 'enemy' : 'ally');
           if (!foes.length) continue;

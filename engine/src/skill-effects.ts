@@ -1,3 +1,4 @@
+import { isVehicleBody } from './vehicle-size.js';
 import type { CasualtyRolls } from './small/casualty-rolls.js';
 import { CHANNEL_BUFF_CONDITIONS } from './channel-buffs.js';
 import { clearEffectSources } from './effect-sources.js';
@@ -71,7 +72,7 @@ export function isPositiveCondition(id: string): boolean { return positive.has(i
 const negative = new Set(['taunted','charmed','blinded','confused','inaccurate', 'exposed', 'poisoned', 'bleeding', 'burning', 'silenced', 'stunned', 'restrained', 'disarmed', 'fearful', 'slowed', 'cursed', 'demoralized', 'weakened', 'vulnerable', 'wounded']);
 export function conditionImmunity(target: Combatant, id: string): string | undefined {
   if (id === 'charmed' && target.scale !== 'hero' && !isArmsV2(target.armsModel)) return '魅惑首版仅支持未随队独立个体，不支持编队';
-  if (id === 'poisoned' && !poisonFactor(target)) return target.body === 'vehicle' ? '封闭车体免疫中毒' : '非生物免疫中毒';
+  if (id === 'poisoned' && !poisonFactor(target)) return isVehicleBody(target.body) ? '封闭车体免疫中毒' : '非生物免疫中毒';
   if (id === 'fearful' && activeTraitIds(target).includes('steadfast')) return '不溃抵抗惊惧';
   if (['bleeding', 'fearful'].includes(id) && target.rulesVersion === 'v2' && activeTraitIds(target).includes('inorganic')) return '非生物免疫' + (id === 'bleeding' ? '流血' : '惊惧');
   return undefined;

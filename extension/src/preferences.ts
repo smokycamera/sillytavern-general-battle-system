@@ -2,6 +2,7 @@ import type { HostWindow } from '../../host/src/sillytavern.js';
 import { normalizeEmbeddedWorldbookSettings, type EmbeddedWorldbookSettings } from './embedded-worldbook.js';
 
 export interface DisplayPreferences {
+  disabledChats?: string[];
   theme?: 'dark' | 'light';
   entryPosition?: { left: number; top: number };
   geometry?: { left: number; top: number; width: number; height: number };
@@ -22,6 +23,7 @@ export function preferences(host: HostWindow): { read(): DisplayPreferences; wri
         context!.saveSettingsDebounced?.();
       }
       return {
+        ...(Array.isArray(value.disabledChats) ? {disabledChats:value.disabledChats.filter(key => typeof key === 'string')} : {}),
         ...(entryPosition && Number.isFinite(entryPosition.left) && Number.isFinite(entryPosition.top) ? { entryPosition: { ...entryPosition } } : {}),
         theme: value.theme === 'light' ? 'light' : 'dark',
         ...(geometry && Object.values(geometry).every(Number.isFinite) && geometry.width >= 320 && geometry.height >= 260 ? { geometry: { ...geometry } } : {}),

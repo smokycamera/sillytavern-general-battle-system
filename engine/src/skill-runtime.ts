@@ -1,3 +1,4 @@
+import { availableCopies, batchWeapons } from './equipment-batches.js';
 import { spCapacity, abilityCost } from './resources.js';
 import type { Ability, Combatant, EffectOp, Weapon } from './types.js';
 import { isRangedWeapon } from './loadout.js';
@@ -11,6 +12,11 @@ import { baseMechanism } from './data/weapons.js';
 
 export function skillWeapon(actor: Combatant, ability: Ability, distance?: number): Weapon | undefined {
   if (ability.damageBasis !== 'weapon') return undefined;
+  if (actor.equipmentBatches) {
+    const weapons = batchWeapons(actor).filter(w => availableCopies(actor,w.id)>0 &&
+      (ability.weaponUse === 'ranged' ? isRangedWeapon(w) : ability.weaponUse === 'auto' || !isRangedWeapon(w)));
+    return weapons.find(w=>distance === undefined || (w.minRange ?? 0)<=distance && distance<=(w.range ?? 1)) ?? weapons[0];
+  }
   if (!ability.weaponUse || ability.weaponUse === 'melee') return meleeWeapon(actor);
   const weapons = [actor.weapon, actor.sidearm].filter((w): w is Weapon => !!w);
   if (ability.weaponUse === 'ranged') return weapons.find(isRangedWeapon);

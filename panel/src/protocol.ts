@@ -1,3 +1,5 @@
+import { isBodyKind } from '../../engine/src/vehicle-size.js';
+import { parseIssue, equipmentFields } from './equipment-batches.js';
 import { parsePlatform, validatePlatform } from '../../engine/src/platforms.js';
 import { WEAPON_CLASSES } from '../../engine/src/data/weapons.js';
 import { parseEnhancementSuffix, enhancementLabel, type Enhancements, type BonusKind } from '../../engine/src/enhancements.js';
@@ -20,7 +22,7 @@ const ATTRIBUTES: Record<string, readonly string[]> = {
   learn: ['id', 'skills'],
   effect: ['id', 'effects', 'clear', 'rounds', 'battles', 'permanent'],
   unit_update: ['id', 'hp', 'hpMax', 'morale', 'state', 'clear', 'reason'],
-  recover: ['id', 'life'],
+  recover: ['id', 'life', 'kill'],
   spawn: ['id', 'name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'platform', 'seats', 'aboard', 'speed', 'stabilized', 'protection', 'enchant', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits', 'items', 'effects', 'rounds', 'battles', 'permanent'],
   field: ['env', 'light', 'note'],
   take: ['id', 'qty', 'note'],
@@ -333,6 +335,7 @@ export function recoverProtocol(text: string): { text: string; diagnostics: Prot
       probe.effects = '校验:buffL1+攻击L1';
       if (!probe.rounds && !probe.battles && !probe.permanent) probe.battles = '1';
     }
+    if (tag.name === 'recover' && attrs.kill !== undefined) { delete probe.life; probe.kill = '1'; }
     if (tag.name === 'add' && attrs.item !== undefined) { delete probe.id; probe.item = '规格校验'; }
     if (tag.name === 'spawn' && attrs.scale === 'company') {
       probe.scale = 'company'; probe.hpMax = /^\d+$/.test(attrs.hpMax ?? '') && Number(attrs.hpMax) > 0 ? attrs.hpMax! : '1000000000';
@@ -455,7 +458,20 @@ function naturalArmorSpec(armor: string, body?: string): { armor: string; writte
   return { armor: name + (tier ?? '') + spec.slice(match[0].length), written: match[0], tier };
 }
 
-function validatedEvent(kind: string, attrs: Record<string, string>, warnings: string[]): Suggestion {
+function validatedEvent(kind: string, attrs: Record<string, string>, warnings: string[], readEquipment = true): Suggestion {
+  if (kind === 'spawn' && readEquipment) {
+    const issues: NonNullable<Extract<Suggestion,{kind:'spawn'}>['equipmentIssues']> = {};
+    const first = {...attrs};
+    for (const field of ['weapon','weapon2','armor','shield'] as const) {
+      const entries = parseIssue(attrs[field],equipmentFields[field],attrs);
+      if (entries) { issues[equipmentFields[field]] = entries; first[field] = entries[0]!.text; }
+    }
+    if (Object.keys(issues).length) {
+      const event = validatedEvent(kind,first,warnings,false);
+      if (event.kind !== 'spawn') throw Error('配装单位无法建档');
+      return {...event, equipmentIssues:issues, raw:serializeEvent(kind,attrs)};
+    }
+  }
   if (kind === 'effect') {
     if (!attrs.id?.trim()) throw Error('effect需要已有单位id');
     const effect = parseEffectAttributes(attrs);
@@ -470,11 +486,15 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
   }
   const integer = (key: string, min: number, max: number) => attrs[key] === undefined || (/^\d+$/.test(attrs[key]!) && Number.isSafeInteger(Number(attrs[key])) && Number(attrs[key]) >= min && Number(attrs[key]) <= max);
   if (kind === 'recover') {
-    const id = attrs.id?.trim(), life = attrs.life?.toLowerCase();
+    const id = attrs.id?.trim();
     if (!id) throw Error('recover 需要已有单位 id');
-    if (!life || life !== 'all' && !integer('life', 1, Number.MAX_SAFE_INTEGER)) throw Error('recover 的 life 须为正整数或 all');
-    const amount = life === 'all' ? life : Number(life);
-    return { kind: 'recover', id, life: amount, raw: serializeEvent(kind, { id, life: String(amount) }) };
+    if (attrs.kill !== undefined && attrs.life !== undefined) throw Error('recover 的 kill 与 life 须分开写');
+    const key = attrs.kill !== undefined ? 'kill' : 'life';
+    const value = attrs[key]?.toLowerCase();
+    if (!value || value !== 'all' && !integer(key, 1, Number.MAX_SAFE_INTEGER)) throw Error('recover 的 ' + key + ' 须为正整数或 all');
+    const amount = value === 'all' ? value : Number(value);
+    const raw = serializeEvent(kind, { id, [key]: String(amount) });
+    return key === 'kill' ? { kind: 'recover', id, kill: amount, raw } : { kind: 'recover', id, life: amount, raw };
   }
   if (!integer('count', 1, MAX_SPAWN_COUNT)) throw new Error(`count是单位卡数量，须为1–${MAX_SPAWN_COUNT}；人数写hpMax。${GROUPING_HINT}`);
   const lifeInputMax = kind === 'unit_update' || kind === 'spawn' && attrs.scale === 'hero' ? Number.MAX_SAFE_INTEGER : 1e9;
@@ -486,6 +506,12 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
   }
   if (kind === 'add' && attrs.id !== undefined && (!attrs.id.trim() || ['item', 'spec', 'to', 'type', 'body', 'quality', 'enchant', 'stabilized', 'protection'].some(key => attrs[key] !== undefined))) throw new Error('add 补数量只写实物id、qty和可选note；新增物品写item，可用to指定接收单位');
   if (kind === 'reforge' && (!attrs.id?.trim() || !attrs.spec?.trim())) throw new Error('reforge 需要真实实物id与明确spec');
+  if (kind === 'reforge' && attrs.spec?.includes('×')) {
+    const counted = attrs.spec.match(/^(.*?)\s*×\s*([1-9]\d*)$/);
+    if (!counted || !Number.isSafeInteger(Number(counted[2]))) throw Error('reforge 末尾的件数须为正整数');
+    attrs.spec = counted[1]!.trim();
+    warnings.push('reforge 保留原实物数量，配发件数以 unit_set 为准');
+  }
   if ((kind === 'reforge' || kind === 'add') && attrs.spec !== undefined) {
     // 先保留具体错误原因，避免旧标签解析器将所有规格错误折叠成“无法解析”。
     parseItemSpecification(attrs.spec, attrs, warnings);
@@ -508,7 +534,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     if (attrs.hp !== undefined && Number(attrs.hp) > Number(attrs.hpMax)) throw new Error('新单位当前值不能超过上限');
     if (attrs.weapon?.match(/[,，、;；]/)) {
       const weapons = attrs.weapon.split(/[,，、;；]/).map((v) => v.trim());
-      if (weapons.length !== 2 || weapons.some((v) => !v) || attrs.weapon2) throw new Error('weapon最多列两件武器；或分别使用weapon主武器与weapon2副武器');
+      if (weapons.length !== 2 || weapons.some((v) => !v) || attrs.weapon2) throw new Error('多种武器请在 weapon 中分别填写名称:规格×件数，以逗号分隔');
       attrs.weapon = weapons[0]!; attrs.weapon2 = weapons[1]!;
     }
     // 旧规格解析器会钳制等级或按自由文本回退；新正文先拒绝显式非法P，避免生成另一件装备。
@@ -522,7 +548,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
       if (!attrs[key]) continue;
       const spec = parseEnhancementSuffix(attrs[key]!.split(/[:：·｜|/／]/).at(-1)!, 'weapon').text.replace(/[lL]\s*\d+$/, '').trim();
       const mechanism = resolveWeaponClass(spec);
-      if (!mechanism || !WEAPON_CLASSES[mechanism]) throw new Error(`${attrs.name}的${key}“${attrs[key]}”缺少支持的效果；请写“自定义名:剑L7”或“激光枪:能量武器L3”，副武器用weapon2`);
+      if (!mechanism || !WEAPON_CLASSES[mechanism]) throw new Error(`${attrs.name}的${key}“${attrs[key]}”缺少支持的效果；请写“自定义名:剑L7×1”或“激光枪:能量武器L3×1”`);
     }
     for (const key of ['weapon', 'weapon2', 'shield']) if (attrs[key] && /[lL]\s*\d/.test(attrs[key]!)) parseItemSpecification(attrs[key]!, {}, warnings);
     if (attrs.armor && /[lL]\s*\d/.test(attrs.armor.split(/[:：·｜|/／]/).at(-1)!)) parseItemSpecification(attrs.armor, { type: 'armor' });
@@ -542,7 +568,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
   if (parsed.invalid.length || parsed.suggestions.length !== 1) throw new Error(`${kind} 字段或规格无法解析`);
   const event = parsed.suggestions[0]!;
   if (event.kind === 'spawn') {
-    if (attrs.body !== undefined && !['human', 'large', 'vehicle', 'giant'].includes(attrs.body)) throw new Error('未知身体/平台');
+    if (attrs.body !== undefined && !isBodyKind(attrs.body)) throw new Error('未知身体/平台');
     if (!integer('quality', 1, 5)) throw new Error('品质必须为1–5');
     if (attrs.aboard !== undefined && attrs.mount !== undefined) throw Error('mount 与 aboard 只选一种');
     if (attrs.platform !== undefined) event.platform = parsePlatform(attrs.platform);

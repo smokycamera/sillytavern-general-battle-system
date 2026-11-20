@@ -1,3 +1,6 @@
+import { syncGearAbilities } from '../items.js';
+import { abilityUsageKey } from '../ability-state.js';
+import { splitBatchEquipment, mergeBatchEquipment } from '../equipment-batches.js';
 import { unitCount } from '../platforms.js';
 import type { Combatant } from '../types.js';
 import { clampShieldDurability, clampEnergyShield } from '../shield-state.js';
@@ -55,16 +58,39 @@ export function detachMembers(parent: Combatant, count: number, id: string): Com
     child.lifestealState.remainder = 0;
   }
   child.regenerationRemainder = 0; delete child.battleZones;
+  delete child.reserveEquipmentLoad;
+  splitBatchEquipment(parent,child,count);
   parent.hp -= count; parent.base.hpMax -= count;
   if (pf) { pf.members = parent.hp; pf.capacity -= count; }
   child.id = id; child.transportOrigin = parent.transportOrigin ?? parent.id;
   child.name = parent.name.replace(/分队\d+$/,'') + '分队' + id.slice(id.lastIndexOf(':')+1); child.hp = child.base.hpMax = count;
   if (cf) { cf.members = cf.capacity = count; cf.woundedRemainder = 0; }
   child.recoverableWounded = child.woundedPercentRemainder = 0;
-  // Personal equipment profiles represent issued kit; unique items, barriers and limited abilities remain with the original card.
-  child.abilities = []; child.abilityState = []; child.preparedAbilityIds = []; child.resources = {};
-  child.gear = []; delete child.carriedItems; delete child.accessories;
-  clampShieldDurability(parent); clampEnergyShield(parent);
+  if (child.equipmentBatches) {
+    const share=count/(parent.hp+count);
+    child.abilities=child.abilities.filter(a=>!a.itemSourceId && (a.usesPerBattle===undefined || a.equipmentSourceId));
+    child.gear=child.gear?.filter(g=>child.equipmentBatches!.some(b=>b.id===g.id && b.qty>0));
+    for (const key of Object.keys(child.resources)) {
+      if (key!=='SP') { delete child.resources[key]; continue; }
+      child.resources[key]=Math.floor(child.resources[key]!*share*100)/100;
+      parent.resources[key]!-=child.resources[key]!;
+    }
+    for (const a of child.abilities.filter(a=>a.equipmentSourceId)) {
+      const state=child.abilityState.find(row=>row.abilityId===abilityUsageKey(a));
+      const original=parent.abilityState.find(row=>row.abilityId===abilityUsageKey(a));
+      const moved=child.equipmentBatches.find(b=>b.id===a.equipmentSourceId)?.qty ?? 0;
+      const kept=parent.equipmentBatches?.find(b=>b.id===a.equipmentSourceId)?.qty ?? 0;
+      if (state && original) { state.used=Math.floor(original.used*moved/Math.max(1,moved+kept)); original.used-=state.used; }
+    }
+    child.preparedAbilityIds=child.preparedAbilityIds?.filter(id=>child.abilities.some(a=>a.id===id));
+    delete child.accessories;
+    syncGearAbilities(child);
+  } else {
+    child.abilities=[]; child.abilityState=[]; child.preparedAbilityIds=[]; child.resources={};
+    child.gear=[]; delete child.accessories;
+  }
+  delete child.carriedItems;
+
   if (parent.revivalState) {
     const retained = Math.min(parent.revivalState.members,parent.base.hpMax);
     child.revivalState = {members:parent.revivalState.members-retained,used:0};
@@ -79,6 +105,21 @@ export function detachMembers(parent: Combatant, count: number, id: string): Com
   child.conditions = child.conditions.filter(c => c.affectedMembers !== 0);
   delete child.barrier; delete child.energyShield; delete child.shield;
   delete child.shieldDurability;
+  const splitShield=child.equipmentBatches?.find(b=>b.slot==='shield' && b.qty>0);
+  if (splitShield?.mechanics.kind==='shield') {
+    child.shield=splitShield.mechanics.value;
+    const kept=parent.equipmentBatches?.find(b=>b.id===splitShield.id)?.qty ?? 0;
+    const share=splitShield.qty/(splitShield.qty+kept);
+    if (parent.shieldDurability) {
+      const moved=parent.shieldDurability.remaining*share;
+      child.shieldDurability={remaining:moved}; parent.shieldDurability.remaining-=moved;
+    }
+    if (parent.energyShield) {
+      const remaining=parent.energyShield.remaining*share,overloaded=Math.floor(parent.energyShield.overloaded*share);
+      child.energyShield={remaining,overloaded}; parent.energyShield.remaining-=remaining; parent.energyShield.overloaded-=overloaded;
+    }
+  }
+  clampShieldDurability(parent); clampEnergyShield(parent);
   child.engagedWith = [];
   delete child.ride; child.mount = false;
   return child;
@@ -118,6 +159,7 @@ export function planTransportDeployment(units: readonly Combatant[]) {
 
 /** Combine the member health ledger without healing or generating a casualty event. */
 export function combinePersonnel(root: Combatant, child: Combatant): void {
+  mergeBatchEquipment(root,child);
   root.hp += child.hp;
   root.base.hpMax += child.base.hpMax;
   if (root.formation && child.formation) {
@@ -126,6 +168,18 @@ export function combinePersonnel(root: Combatant, child: Combatant): void {
     if (root.formation.health && child.formation.health) root.formation.health = mergeHealth([...root.formation.health,...child.formation.health]);
   }
   mergeWounded(root,child);
+  if (child.equipmentBatches) {
+    if (child.resources.SP) root.resources.SP=(root.resources.SP ?? 0)+child.resources.SP;
+    for (const a of child.abilities.filter(a=>a.equipmentSourceId)) {
+      const used=child.abilityState.find(row=>row.abilityId===abilityUsageKey(a));
+      const original=root.abilityState.find(row=>row.abilityId===abilityUsageKey(a));
+      if (used && original) original.used+=used.used;
+    }
+    if (child.shieldDurability && root.shieldDurability) root.shieldDurability.remaining+=child.shieldDurability.remaining;
+    if (child.energyShield && root.energyShield) {
+      root.energyShield.remaining+=child.energyShield.remaining; root.energyShield.overloaded+=child.energyShield.overloaded;
+    }
+  }
   if (root.revivalState && child.revivalState) root.revivalState.members += child.revivalState.members;
   if (child.xpValue !== undefined) root.xpValue = (root.xpValue ?? 0) + child.xpValue;
   if (root.lifestealState && child.lifestealState) {
@@ -148,6 +202,7 @@ export function reuniteTransportGroups(units: Combatant[]): Combatant[] {
     } else if (child.hp > 0 && wasEmpty) { root.ride = child.ride && {...child.ride}; root.mount = child.mount; }
     combinePersonnel(root,child);
     if (child.hp > 0 && (wasEmpty || child.status === 'ready')) root.status = child.status;
+    if (root.hp === 0 && root.recoverableWounded) root.status = 'dying';
   }
   for (const unit of parents) if (unit.ride) unit.ride = {platformId:unit.ride.platformId,mode:unit.ride.mode};
   return parents;

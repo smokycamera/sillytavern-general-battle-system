@@ -4,7 +4,7 @@ on:
   push:
     branches: [test]
   pull_request:
-    branches: [test]
+    branches: [test, new-system-test]
   workflow_dispatch:
 
 permissions:
@@ -50,6 +50,19 @@ jobs:
         run: |
           npm run build:extension
           npm run verify:dist
+      - name: Save installable system-test preview
+        if: github.event_name == 'pull_request' && github.base_ref == 'new-system-test'
+        uses: actions/upload-artifact@v4
+        with:
+          name: general-battle-system-preview
+          path: |
+            manifest.json
+            dist/
+            LICENSE
+            LICENSE-NOTES.md
+            THIRD_PARTY_NOTICES.md
+            licenses/
+          if-no-files-found: error
       - name: Commit generated test bundle
         if: github.event_name == 'push'
         run: |

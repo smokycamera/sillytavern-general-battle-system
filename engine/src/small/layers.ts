@@ -1,3 +1,4 @@
+import { availableCopies } from '../equipment-batches.js';
 import { agileCost, phase2Value } from '../phase2-traits.js';
 import { stackingRevision } from '../progression.js';
 import { collectMods, resolveStack, type ResolveContext, type Modifier } from '../bonus.js';
@@ -182,7 +183,7 @@ export function weaponBreachBudget(actor: Combatant, weapon: Weapon | undefined,
   const enhancement = instanceMultiplier(weapon.recipe?.bonuses, 'damage', weapon.recipe?.variance, weapon.channel ?? 'kinetic');
   const engineers = activeTraitIds(actor).includes('siege-breaker') ? phase2Value(actor, 'siege-breaker', 'engineerDamage', 1.5) : 1;
   const traits = stackingRevision(actor) ? structureTraitMultiplier(actor,weapon,context) : engineers;
-  const frontage = actor.scale === 'company' ? Math.min(3, Math.max(1, Math.sqrt(Math.max(0, actor.hp) / 10))) : 1;
+  const frontage = Math.min(availableCopies(actor,weapon.id),actor.scale === 'company' ? Math.min(3, Math.max(1, Math.sqrt(Math.max(0, actor.hp) / 10))) : 1);
   // Strong arms help melee demolition, not firearm/explosive projectile energy.
   const strength = ranged ? 1 : bodyProfile(actor.body, actor.damageModel).strength;
   const summonedShare = mechanism === 'summon' ? Math.min(1, weapon.damageScale ?? 1) : 1;

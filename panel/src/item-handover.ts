@@ -45,8 +45,7 @@ export function handOverItems(save: NarrativeSave, handovers: HandOver[], contex
       const key = itemKey(entry.name), wanted = entry.spec ? effectKey(entry.spec) : undefined;
       const same = (item: InventoryItem) => itemKey(item.name) === key && (wanted === undefined || effectText(item) === wanted);
       const gear = entry.spec?.form === 'worn' || entry.spec?.form === 'charged';
-      if (gear && company && entry.qty > 1) context.notices.push(`${record.name}是编队，佩戴、充能道具一件就是整张单位卡的配发，「${entry.name}」只交1件`);
-      let need = gear && company ? 1 : entry.qty;
+      let need = entry.qty;
       /** 交出 n 件：整件或整堆直接换主人，多出的一堆拆开；佩戴、充能道具装上。 */
       const take = (item: InventoryItem): number => {
         const count = Math.min(need, item.qty);
@@ -84,10 +83,7 @@ export function handOverItems(save: NarrativeSave, handovers: HandOver[], contex
         if (!entry.spec) inventory.push({ id: freeId(id), name: entry.name, qty: need, lootType: 'misc', assignedTo: unitId });
         else if (entry.spec.form === 'single') inventory.push({ ...createInventoryItem(freeId(id), entry.name, entry.spec, id, need), assignedTo: unitId });
         else {
-          for (let piece = 0; piece < need; piece++) {
-            const pieceId = freeId(need === 1 ? id : `${id}-${piece}`);
-            inventory.push({ ...createInventoryItem(pieceId, entry.name, entry.spec, pieceId), assignedTo: unitId, equippedTo: { unitId, slot: 'gear' } });
-          }
+          inventory.push({...createInventoryItem(freeId(id),entry.name,entry.spec,id,need), batch:true, assignedTo:unitId, equippedTo:{unitId,slot:'gear'}});
         }
         need = 0;
       }

@@ -1,3 +1,4 @@
+import { isVolleyMode, availableCopies, batchWeapons, weaponModeFor, optionWeaponMode, type WeaponMode } from '../../engine/src/equipment-batches.js';
 import { SmallBattle, MassBattle, type Combatant, type Order, type Side } from '../../engine/src/index.js';
 import { controlPolicy } from '../../engine/src/battle-control.js';
 import { FORMATION_NODES, FORMATION_EDGES, formationNode } from '../../engine/src/mass/formation.js';
@@ -6,8 +7,8 @@ import { openAiJsonRequest, openAiCommandRequest, JevAnswerError, type CommandTo
 import { canSpot } from '../../engine/src/observation.js';
 import { unitLineOfSight, TERRAIN_NAMES, type Terrain } from '../../engine/src/small/spatial.js';
 import { groundHeightAt, unitHeight } from '../../engine/src/small/height-map.js';
-import { obstructionHeight, STRUCTURE_NAMES, type FieldStructure } from '../../engine/src/small/layers.js';
-import { llmConnection, commandRequestOptions, type LlmSettings } from './llm-settings.js';
+import { intactStructure, obstructionHeight, STRUCTURE_NAMES, type FieldStructure } from '../../engine/src/small/layers.js';
+import { commandsFaction, llmConnection, commandRequestOptions, type LlmSettings } from './llm-settings.js';
 import { CONTEXT_TIMEOUT_MS } from './llm-context.js';
 import { waitForJev, JEV_RETRY_DELAY_MS } from './jev-retry.js';
 import { battleAbilities } from './battle-skills.js';
@@ -51,6 +52,11 @@ function observedUnit(u: Combatant, side: Side) {
   return u.side !== side ? visible : { ...visible, hp: u.hp, hpMax: u.base.hpMax, morale: u.morale,
     fatigue: u.fatigue, suppression: u.suppression, barrier: u.barrier, tacticalPose: u.tacticalPose, traits: u.traits,
     stats: u.base, resources: u.resources, conditions: u.conditions.map(c => ({ id: c.id, dur: c.dur })), weapon: u.weapon, sidearm: u.sidearm,
+    ...(u.equipmentBatches ? { weapons: batchWeapons(u).map(w => {
+      const batch = u.equipmentBatches!.find(b => b.id === w.id);
+      return { name:w.name, mode:weaponModeFor(u,w), mechanism:w.recipe?.mechanism, range:w.range,
+        ...(batch ? { quantity:batch.qty, available:availableCopies(u,w.id) } : {}) };
+    }) } : {}),
     abilities: battleAbilities(u), abilityState: u.abilityState };
 }
 export function unitSummary(u: ReturnType<typeof observedUnit> & { x?: number; y?: number; standingHeight?: number; losFromActor?: { canSee: boolean; geometric?: boolean } }) {
@@ -145,7 +151,7 @@ export function updateCommandMemory(b: Battle, memory: CommandMemory, side: Side
 
 export function commanderTools(prompts: CommandPrompts, mode: 'small' | 'mass' | 'intents' = 'small'): CommandTool[] {
   const step = { type: 'object', additionalProperties: false, required: ['type'], properties: { type: { type: 'string' }, targetId: { type: 'string' },
-    cell: { type: 'integer', minimum: 0 }, weaponMode: { type: 'string', enum: ['primary', 'sidearm'] }, abilityId: { type: 'string' } } };
+    cell: { type: 'integer', minimum: 0 }, weaponMode: { type: 'string' }, abilityId: { type: 'string' } } };
   const schemas: Partial<Record<CommanderToolName, Record<string, unknown>>> = {
     diplomacy: { mode: { type: 'string', enum: ['surrender', 'withdraw', 'accept', 'reject'] }, target: { type: 'string' }, id: { type: 'integer', minimum: 1 }, text: { type: 'string', maxLength: 1000 } },
     commander_map: { cells: { type: 'array', items: { type: 'integer', minimum: 0 } } },
@@ -209,6 +215,8 @@ export function smallCommandChoices(b: SmallBattle, actorId: string): CommandCho
   return b.withReadOnlyQueries(() => {
     const actor = b.byId(actorId), choices: CommandChoice[] = [];
     const seen = b.visibleCells(actor.side), visible = new Set(b.visibleCombatants(actor.side).map(u => u.id));
+    const abilities = battleAbilities(actor), weaponModes = batchWeapons(actor).map(w=>weaponModeFor(actor,w));
+    const structureModes = [...weaponModes, ...abilities.map(a => 'ability:'+a.id)];
     const allowedTarget = (id: string) => visible.has(id) || id.startsWith('cell:') && seen[Number(id.slice(5))] === true;
     const add = (label: string, action: GameAction) => choices.push({ id: 'c' + choices.length, label, action });
     for (const option of b.platforms.options(actor)) {
@@ -220,14 +228,17 @@ export function smallCommandChoices(b: SmallBattle, actorId: string): CommandCho
         add(label+'（'+count+'人）',{...action,count});
       }
     }
-    for (const option of b.getActionOptions(actorId)) {
-      if (!option.enabled || option.kind === 'move' && b.battlefield || option.kind === 'ability' && !battleAbilities(actor).some(a => a.id === option.id)) continue;
-      const action: GameAction = option.kind === 'weapon' ? { type: 'attack', weaponMode: option.id === 'weapon:sidearm' ? 'sidearm' : 'primary' }
+    for (const option of b.getActionOptions(actorId,{previews:false})) {
+      if (!option.enabled || option.kind === 'move' && b.battlefield || option.kind === 'ability' && !abilities.some(a => a.id === option.id)) continue;
+      const action: GameAction = option.kind === 'weapon' ? { type: 'attack', weaponMode: optionWeaponMode(option.id) }
         : option.kind === 'ability' ? { type: 'ability', abilityId: option.id }
         : option.kind === 'move' ? { type: 'move', direction: option.id as 'advance' | 'withdraw' }
         : { type: option.kind === 'end-turn' ? 'end_turn' : option.kind };
       if (option.targets) {
-        for (const target of option.targets) if (target.enabled && allowedTarget(target.targetId)) add(option.label, { ...action, targetId: target.targetId });
+        for (const target of option.targets) if (target.enabled && allowedTarget(target.targetId)) {
+          const parts = isVolleyMode(option.id) ? target.preview?.effects : undefined;
+          add(parts?.length ? option.label+'（'+parts.join('、')+'）' : option.label,{...action,targetId:target.targetId});
+        }
       } else add(option.label, action);
     }
     if (b.battlefield) {
@@ -236,17 +247,19 @@ export function smallCommandChoices(b: SmallBattle, actorId: string): CommandCho
         Object.assign(choices.at(-1)!, { cost: path.cost, risks: b.pathPreview(actorId, path.cells.at(-1)!).risks });
       }
       for (let cell = 0; cell < seen.length; cell++) if (seen[cell]) {
-        if (!b.gateReason(actorId, cell)) add('开关门', { type: 'gate', cell });
-        if (!b.climbReason(actorId, cell)) add('攀登', { type: 'climb', cell });
-        for (const mode of ['primary', 'sidearm', ...battleAbilities(actor).map(a => a.id)]) {
+        const structure = intactStructure(b.battlefield,cell);
+        if (structure?.kind === 'gate' && !b.gateReason(actorId, cell)) add('开关门', { type: 'gate', cell });
+        if ((structure?.top || actor.elevation === 1) && !b.climbReason(actorId, cell)) add('攀登', { type: 'climb', cell });
+        if (!structure) continue;
+        for (const mode of structureModes) {
           if (!b.structurePreview(actorId, cell, mode).reason) add('破坏结构', { type: 'structure', cell,
-            ...(mode === 'primary' || mode === 'sidearm' ? { weaponMode: mode } : { abilityId: mode }) });
+            ...(!mode.startsWith('ability:') ? { weaponMode: mode as WeaponMode } : { abilityId: mode }) });
         }
       }
       if (!b.overwatchReason(actorId)) add('警戒', { type: 'overwatch' });
       for (const target of b.visibleCombatants(actor.side)) if (!b.suppressReason(actorId, target.id)) add('压制', { type: 'suppress', targetId: target.id });
     }
-    for (const weaponMode of ['primary', 'sidearm'] as const) if (!b.reloadReason(actorId, weaponMode === 'sidearm')) add('主动装填', { type: 'reload', weaponMode });
+    for (const weaponMode of weaponModes) if (!b.reloadReason(actorId,weaponMode)) add('主动装填', { type: 'reload', weaponMode });
     if (!b.flightReason(actorId, !actor.airborne)) add(actor.airborne ? '降落' : '升空', { type: actor.airborne ? 'land' : 'takeoff' });
     if (b.hasteAvailable(actorId) && !b.hasteSelected.has(actorId)) add('使用加速动作', { type: 'haste', enabled: true });
     return choices;
@@ -269,7 +282,7 @@ function executeSmall(b: SmallBattle, actorId: string, a: GameAction): void {
     case 'ability': { const result = b.useAbility(actorId, a.abilityId!, a.targetId); if (!result.ok) throw Error(result.reason); break; }
     case 'brace': b.brace(actorId); break;
     case 'overwatch': b.setOverwatch(actorId); break;
-    case 'reload': b.reloadWeapon(actorId, a.weaponMode === 'sidearm'); break;
+    case 'reload': b.reloadWeapon(actorId,a.weaponMode as WeaponMode | undefined); break;
     case 'suppress': b.suppress(actorId, target); break;
     case 'retreat': b.retreat(actorId); if (!b.battlefield) b.endTurn(); break;
     case 'takeoff': b.changeFlight(actorId, true); break;
@@ -287,7 +300,7 @@ function commandSteps(value: unknown): CommandStep[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > 7 || value.some(step => !step || typeof step !== 'object' || typeof step.type !== 'string')) throw Error('then格式无效');
   return value.map(({ type, targetId, cell, weaponMode, abilityId, count }) => ({ type, ...(Number.isSafeInteger(count) ? {count} : {}), ...(typeof targetId === 'string' ? { targetId } : {}),
-    ...(Number.isSafeInteger(cell) ? { cell } : {}), ...(weaponMode === 'primary' || weaponMode === 'sidearm' ? { weaponMode } : {}), ...(typeof abilityId === 'string' ? { abilityId } : {}) }));
+    ...(Number.isSafeInteger(cell) ? { cell } : {}), ...(weaponMode === 'primary' || weaponMode === 'sidearm' || typeof weaponMode === 'string' && (isVolleyMode(weaponMode) || weaponMode.startsWith('batch:')) ? { weaponMode:weaponMode as WeaponMode } : {}), ...(typeof abilityId === 'string' ? { abilityId } : {}) }));
 }
 /** A step must identify one target or cell; only the weapon of an otherwise identical attack may stay implicit (primary first). */
 function stepChoice(choices: CommandChoice[], step: CommandStep): CommandChoice | undefined {
@@ -348,7 +361,7 @@ export class LlmCommandController {
     return true;
   }
   available(b: Battle, settings: LlmSettings, state?: CommanderState): boolean {
-    return settings.enabled && settings.commandEnemy === true && state?.side === this.side && state.battleSeed === b.seed && b.rules.resolutionVersion === 'v2'
+    return commandsFaction(settings, this.side) && state?.side === this.side && state.battleSeed === b.seed && b.rules.resolutionVersion === 'v2'
       && b.combatants.some(u => u.side === this.side && u.hp > 0 && ['ready', 'routing'].includes(u.status) && !u.moraleState?.forcedRetreat)
       && (state.decision?.round === b.round || state.memory.diplomacyRound !== b.round || incomingDiplomacy(b, this.side).length > 0 || playerLetters(b, this.side, state.memory.letterId).length > 0)
       && this.playerReady(b, state) && this.pausedRounds.get(b) !== b.round && !this.failed.has(this.key(b, settings));
@@ -385,7 +398,12 @@ export class LlmCommandController {
       } catch (error) { if (error instanceof JevAnswerError) previousAnswer = error.previousAnswer; problem = error instanceof Error ? error.message : '指挥官简报格式无效'; throw error; }
     }, valid, signal);
   }
+  canPrepare(b: Battle, settings: LlmSettings): boolean {
+    return b.rules.resolutionVersion === 'v2' && commandsFaction(settings, this.side)
+      && !this.failed.has(this.key(b, settings)) && this.pausedRounds.get(b) !== b.round;
+  }
   async prepare(b: Battle, narrative: unknown, task: unknown, settings: LlmSettings, valid: () => boolean): Promise<CommanderState | undefined> {
+    if (!this.canPrepare(b, settings)) return;
     return this.run(b, settings, valid, '正在生成指挥官…', async signal => ({ battleSeed: b.seed, side: this.side, brief: await this.ask(this.prompts.preparation,
       { perspective: { self: 'friendly', playerFaction: perspective('ally', this.side),
         controlledUnits: b.combatants.filter(u => u.side === this.side).map(u => ({ id: u.id, name: u.name })) },

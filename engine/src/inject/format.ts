@@ -1,3 +1,5 @@
+import { isVehicleBody } from '../vehicle-size.js';
+import { volleyLabels } from '../equipment-batches.js';
 import { displayNumber } from '../display-number.js';
 import { isCommunicationLog } from '../diplomacy.js';
 import { smallBattleResult } from '../battle-result.js';
@@ -56,7 +58,7 @@ function hpLabel(u: Combatant): string {
 /** 战报状态行的兵力：编队写剩余总人数（载具编队按辆），个体写血量。成员生命分组、装备和精力由单位提示词提供。 */
 export function reportStrengthLabel(u: Combatant): string {
   if (u.scale === 'hero') return `血量${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}`;
-  return u.body === 'vehicle' ? `剩余总数${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}辆` : `剩余总人数${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}`;
+  return isVehicleBody(u.body) ? `剩余总数${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}辆` : `剩余总人数${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}`;
 }
 
 /** 战报状态行的能量盾：剩余/容量（取整）与过载份数；倒下或撤离的单位不写。 */
@@ -297,7 +299,7 @@ function digestAttackLine(e: BattleLogEntry): string | undefined {
   if (!res) return undefined; // 装填中等无 resolution 的 attack 条目不进纪要
   const prefix = e.text.endsWith(res.text)
     ? e.text.slice(0, e.text.length - res.text.length).replace(/｜$/, '')
-    : '';
+    : e.volley ? '［'+volleyLabels[e.volley.mode]+'·'+e.volley.weapon+'］' : '';
   return `${prefix ? `${prefix}｜` : ''}${res.attackerName}→${res.defenderName} ${heightTag(res)}${hitText(res)}${fellMark(res)}`;
 }
 /** 速射合并行：段数、命中数、总损失；成员生命编队另写减员。 */
@@ -311,7 +313,9 @@ function volleyLine(volley: BattleLogEntry[]): string {
   const energy = energyText(sum('energyAbsorbed'), sum('energyOverloaded'), first.defenderScale === 'hero', converted ? volley.reduce((n, v) => n + (v.resolution!.energySpent ?? v.resolution!.energyAbsorbed ?? 0), 0) : undefined);
   const barrier = sum('barrierAbsorbed'), blocked = volley.filter(v => v.resolution!.hit && v.resolution!.penetrationFactor === 0).length;
   const defense = (barrier ? `，屏障吸收${Number(barrier.toFixed(1))}` : '') + (blocked ? blocked === hits ? '，未穿透' : `，其中${blocked}段未穿透` : '') + (volley.some(v => v.resolution!.shieldBroken) ? '，盾牌碎裂' : '');
-  return `${first.attackerName}→${first.defenderName} ${heightTag(first)}${volley.length}段/${hits}中，损失${displayNumber(damage)}${life ? '生命' : ''}（${displayNumber(first.hpBefore)}→${displayNumber(last.hpAfter)}）${members}${energy}${defense}${fellMark(last)}${volley.some((v) => v.resolution!.crit) ? '·含暴击' : ''}`;
+  const action = volley[0]!.volley;
+  const weapons = action ? '［'+volleyLabels[action.mode]+'·'+[...new Set(volley.map(e => e.volley!.weapon))].join('、')+'］' : '';
+  return `${weapons}${first.attackerName}→${first.defenderName} ${heightTag(first)}${volley.length}段/${hits}中，损失${displayNumber(damage)}${life ? '生命' : ''}（${displayNumber(first.hpBefore)}→${displayNumber(last.hpAfter)}）${members}${energy}${defense}${fellMark(last)}${volley.some((v) => v.resolution!.crit) ? '·含暴击' : ''}`;
 }
 
 /** 技能自身位移受阻、技能因此没有生效的说明；位移本身由逐格移动写出。 */
@@ -383,6 +387,7 @@ export function compactEventGroups(entries: BattleLogEntry[], opts: { unresolved
       const volley = [e];
       while (!/借机|反击|反应/.test(e.text) && entries[i + 1]?.kind === 'attack' && entries[i + 1]?.resolution
         && !/借机|反击|反应/.test(entries[i + 1]!.text)
+        && entries[i + 1]!.volley?.action === e.volley?.action
         && entries[i + 1]!.resolution!.attackerId === e.resolution.attackerId
         && entries[i + 1]!.resolution!.defenderId === e.resolution.defenderId
         && entries[i + 1]!.round === e.round) volley.push(entries[++i]!);

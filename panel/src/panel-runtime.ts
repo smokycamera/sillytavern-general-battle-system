@@ -46,6 +46,8 @@ export interface PanelRuntime {
   saving?: () => boolean;
   reloadArchive?: () => Promise<void>;
   retryGeneration?: (deliveryId: string) => Promise<DeliveryReceipt>;
+  isEnabled?: () => boolean;
+  setEnabled?: (active: boolean) => Promise<void>;
   getTheme?: () => 'dark' | 'light';
   setTheme?: (theme: 'dark' | 'light') => void;
   getWorldbookSettings?: () => WorldbookEditorState;

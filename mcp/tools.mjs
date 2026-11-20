@@ -64,7 +64,7 @@ export function createBattleMcp(broker) {
     type: z.enum(['move','attack','charge','ability','brace','overwatch','reload','suppress','retreat','takeoff','land','climb','structure','gate','haste','end_turn','auto','board','leave','select-platform','merge']),
     count: z.number().int().positive().optional(),
     cell: cell.optional(), direction: z.enum(['advance','withdraw']).optional(), targetId: z.string().optional(),
-    abilityId: z.string().optional(), weaponMode: z.enum(['primary','sidearm']).optional(), enabled: z.boolean().optional(),
+    abilityId: z.string().optional(), weaponMode: z.string().regex(/^(primary|sidearm|batch:.+|volley:(?:ranged|melee|all))$/).optional(), enabled: z.boolean().optional(),
   }).strict();
   const setup = z.object({ mode: z.enum(['small','mass']).optional(), field: z.enum(['plains','urban','siege','forest','mountain']).optional(),
     lighting: z.enum(['day','night']).optional(), mapLayout: z.enum(['standard','indoor']).optional(),

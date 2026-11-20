@@ -1,3 +1,4 @@
+import { isVehicleBody } from '../../engine/src/vehicle-size.js';
 /** 兵种图标：24×24 的实心剪影，航行单位用船，其余按载具、骑乘与实际武器机制选择。
  * 只读取装备上已经记录的机制（recipe.mechanism / mechanism: 标签），不按名称猜测。 */
 import type { Combatant, Weapon } from '../../engine/src/types.js';
@@ -66,7 +67,7 @@ export function weaponMechanism(weapon?: Weapon): string | undefined {
 export function unitIconKey(u: Combatant): string {
   const traits = activeTraitIds(u);
   if (traits.includes('sailing') && !traits.includes('water-crossing')) return 'ship';
-  if (u.body === 'vehicle') return 'vehicle';
+  if (isVehicleBody(u.body)) return 'vehicle';
   if (u.mount) return 'cavalry';
   const mechanism = weaponMechanism(u.weapon);
   if (mechanism && UNIT_ICONS[mechanism]) return mechanism;
