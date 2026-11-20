@@ -180,7 +180,7 @@ export class LlmContextController {
         step('layout');
         const ids = narrativeIds({ storage: input.roster, narrativeIdState: input.narrativeIdState });
         const layout: LayoutContext = { scene, size, environment:result.field, attacker: result.siegeAttacker, objectiveMode: result.objectiveMode,
-          units: layoutUnits(input.roster, ids.publicId, input.unitNotes), ...(result.vipName ? { vipName: result.vipName } : {}), map: layoutMapSize(scene, input.roster, size) };
+          units: layoutUnits(input.roster, ids.publicId, input.unitNotes, result.field), ...(result.vipName ? { vipName: result.vipName } : {}), map: layoutMapSize(scene, input.roster, size) };
         const final = attempt >= LAYOUT_TRIES, headline = `连续${LAYOUT_TRIES}次布置未能生成地图，只采用回答中能生成的部分`;
         const tried: LaidOut = { scene }, adjusted: string[] = [];
         laidOut = tried;

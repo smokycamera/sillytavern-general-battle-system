@@ -344,7 +344,7 @@ export const TRAITS: Trait[] = [
     v2SourceReady: true, effects: [{ kind: 'flag', flag: 'water-crossing' }],
   },
   {
-    id: 'space-adapted', name: 'space-adapted', desc: '能在真空中生存、移动和作战',
+    id: 'space-adapted', name: '太空机动', desc: '能在真空中生存、移动和作战，在其他环境可按飞行L1起降。从太空战舰到宇航员都用太空机动。',
     v2SourceReady: true, effects: [{ kind: 'flag', flag: 'space-adapted' }],
   },
   {

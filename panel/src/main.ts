@@ -2133,7 +2133,7 @@ function renderMass(): string {
       return `<div class="orderline">
         <b>${u.id === state.protagonistId ? '★' : ''}${esc(unitLabel(u))}</b>
         <select data-role="order-type" data-unit="${esc(u.id)}">
-          ${['attack', 'charge', 'volley', 'hold', 'brace', 'retreat', 'rank-forward', 'rank-back', 'shift-left', 'shift-right', ...(v2 && (hasFlightAbility(u) || isAirborne(u)) ? [isAirborne(u) ? 'land' : 'takeoff'] : [])].map((t) => `<option value="${esc(t)}" ${selType === t ? 'selected' : ''}>${orderName(t)}</option>`).join('')}
+          ${['attack', 'charge', 'volley', 'hold', 'brace', 'retreat', 'rank-forward', 'rank-back', 'shift-left', 'shift-right', ...(v2 && (hasFlightAbility(u, b) || isAirborne(u)) ? [isAirborne(u) ? 'land' : 'takeoff'] : [])].map((t) => `<option value="${esc(t)}" ${selType === t ? 'selected' : ''}>${orderName(t)}</option>`).join('')}
         </select>
         <select data-role="order-target" data-unit="${esc(u.id)}"><option value="">目标…</option>${foeOpts}</select>
         <button data-action="order-issue" data-unit="${esc(u.id)}">下达</button>

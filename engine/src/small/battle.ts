@@ -318,10 +318,10 @@ export class SmallBattle {
     if (this.rules.casualtyModel) this.casualtyRolls = new CasualtyRolls(this.seed, this.rules.rescueAtZero);
     this.rng = opts.rng ?? (opts.seed || this.rules.resolutionVersion === 'v2' || this.rules.initiativeModel ? new SeededRng(this.seed) : liveRng());
     this.conditions = new ConditionRegistry(opts.extraConditions ?? []);
-    for (const unit of this.combatants) if (unit.airborne && !unit.ride && flightMaintenanceReason(unit, this.conditions)) throw new Error('空中存档记录缺少可维持的飞行能力');
-    this.traitRegistry = opts.traitRegistry ?? (this.rules.resolutionVersion === 'v2' ? defaultTraitRegistry() : new Map());
     const tags = opts.field?.tags ?? this.battlefield?.environment ?? [];
     this.fieldTags = this.rules.resolutionVersion === 'v2' ? environmentTags(tags) : tags;
+    for (const unit of this.combatants) if (unit.airborne && !unit.ride && flightMaintenanceReason(unit, this.conditions, this)) throw new Error('空中存档记录缺少可维持的飞行能力');
+    this.traitRegistry = opts.traitRegistry ?? (this.rules.resolutionVersion === 'v2' ? defaultTraitRegistry() : new Map());
     if (this.battlefield && this.rules.resolutionVersion === 'v2') this.battlefield.environment = [...this.fieldTags];
     this.summonUnit = opts.summonUnit;
   }
@@ -399,7 +399,7 @@ export class SmallBattle {
     const plan = this.hasPlatforms ? planTransportDeployment(this.combatants) : undefined;
     const deployed = plan?.deployed ?? this.combatants;
     if (this.battlefield) {
-      const prepared = prepareGridDeployment(this.battlefield, deployed, this.seed, this.conditions, this.rules.resolutionVersion === 'v2');
+      const prepared = prepareGridDeployment(this.battlefield, deployed, this.seed, this.conditions, this.rules.resolutionVersion === 'v2', this);
       deployed.forEach((c, i) => { c.pos = prepared[i]!.pos; c.elevation = prepared[i]!.elevation; if (prepared[i]!.airborne !== undefined) c.airborne = prepared[i]!.airborne; });
     }
     if (plan?.overflow.length) {
@@ -664,7 +664,7 @@ export class SmallBattle {
     if (isAirborne(actor) === airborne) return airborne ? '已经在空中' : '已经在地面';
     if (this.movementLeft(actorId) < 1) return '起落需要1点移动';
     if (airborne) {
-      const reason = flightCapabilityReason(actor, this.conditions); if (reason) return reason;
+      const reason = flightCapabilityReason(actor, this.conditions, this); if (reason) return reason;
     }
     if (!canOccupy(this.battlefield, this.visibleCombatants(actor.side), { ...actor, airborne, elevation: undefined }, actor.pos!)) return '当前格没有合法落点或同层容量已满';
     return undefined;
@@ -676,7 +676,7 @@ export class SmallBattle {
     this.movementSpent.set(actorId, (this.movementSpent.get(actorId) ?? 0) + 1); if (['traits-levels-v2', 'traits-items-v1', 'traits-items-v2'].includes(this.rules.traitLevelModel ?? '')) actor.movedDuringActivation = true; this.movedThisTurn.add(actorId); delete actor.tacticalPose;
     if (airborne) for (const foe of [...this.combatants].sort((a, b) => a.id.localeCompare(b.id))) {
       const weapon = this.rules.resolutionVersion === 'v2' ? meleeWeapon(foe) : foe.sidearm ?? (!isRangedCapable(foe) ? foe.weapon : undefined);
-      if (actor.status !== 'ready' || flightCapabilityReason(actor, this.conditions)) break;
+      if (actor.status !== 'ready' || flightCapabilityReason(actor, this.conditions, this)) break;
       if (!controlReactionAllowed(foe, actor, this.combatants, this.dist(foe,actor)) || !combatHostile(foe, actor, this.combatants) || foe.status !== 'ready' || isAirborne(foe) || this.dist(actor, foe) !== 1 || !weapon || foe.suppression || this.reactionSpent.has(foe.id)) continue;
       const context = this.weaponContext(foe, actor, { weaponMode: weaponModeFor(foe,weapon) }); if (context.reason) continue;
       this.reactionSpent.add(foe.id); this.overwatch.delete(foe.id);
@@ -685,7 +685,7 @@ export class SmallBattle {
       if (result.hit) this.applyOnHitTraits(foe, actor, result); this.checkDeath(actor, foe);
       this.recordEvent({ round: this.round, kind: 'attack', text: '起飞借机｜' + result.text, resolution: result });
     }
-    actor.airborne = airborne && !flightCapabilityReason(actor, this.conditions);
+    actor.airborne = airborne && !flightCapabilityReason(actor, this.conditions, this);
     if (actor.airborne || !airborne) delete actor.elevation;
     if (this.hasPlatforms) this.platforms.syncLayers();
     revealContacts(this.observationContext());
@@ -704,7 +704,7 @@ export class SmallBattle {
       && !!(this.conditions.get(e.conditionId)?.skipTurn || this.conditions.get(e.conditionId)?.preventMove) && conditionChance(target, e) > 0);
     const affected = structuredClone(target);
     for (const effect of healingEffectGroups(ability)) if (effect.op === 'dispel') applyDispel(affected, dispelCandidates(affected, effect));
-    const dispelled = !!flightMaintenanceReason(affected, this.conditions);
+    const dispelled = !!flightMaintenanceReason(affected, this.conditions, this);
     if (!effects.length && !dispelled) return undefined;
     const damage = ability.effects.find((e) => e.op === 'damage');
     const preview = damage ? this.previewAttackWithEnvironment({ attacker: actor, defender: target, rules: this.rules, conditionDefs: this.conditionDefMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(actor, target, ability, damage) }) : undefined;
@@ -717,7 +717,7 @@ export class SmallBattle {
     const field = this.battlefield; if (!field || this.rules.resolutionVersion !== 'v2') return;
     if (this.hasPlatforms) this.platforms.syncLayers();
     for (const unit of this.combatants.filter(u => !u.ride && isAirborne(u))) {
-      const reason = flightMaintenanceReason(unit, this.conditions); if (!reason) continue;
+      const reason = flightMaintenanceReason(unit, this.conditions, this); if (!reason) continue;
       const { landingCell: cell, fallDamage: damage } = this.landingOutcome(unit);
       const alreadyDefeated = unit.status === 'dead' || unit.status === 'dying' || unit.hp <= 0;
       unit.airborne = false; delete unit.tacticalPose;
@@ -3288,7 +3288,7 @@ export class SmallBattle {
         const extraPaths = reachableGridPaths(field, unit.pos!, this.movementLeft(unitId) + this.movementBudget(unitId), allowed, stepCost, mover);
         for (const path of extraPaths.filter(p => p.cost > this.movementLeft(unitId))) plans.push({ kind: 'haste-move', path, score: positionScore(path) - 0.25 - worksCost(path.cells.at(-1)!) });
         const flying = { ...unit, airborne: !isAirborne(unit) };
-        if ((isAirborne(unit) || !flightCapabilityReason(unit, this.conditions)) && canOccupy(field, knownUnits, flying, flying.pos!)) {
+        if ((isAirborne(unit) || !flightCapabilityReason(unit, this.conditions, this)) && canOccupy(field, knownUnits, flying, flying.pos!)) {
           const value = incomingReduction(unit, flying) * 0.5 + (isAirborne(unit) && objective.kind !== 'annihilation' && unit.pos === field.objective.cell ? 6 : 0);
           if (value > 0) plans.push({ kind: 'haste-flight', path: stay, score: positionScore(stay) + value - worksValue });
         }

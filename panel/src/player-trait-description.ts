@@ -95,7 +95,6 @@ const EFFECTS: Record<string, string> = {
   'mounted-archer': '骑乘时移动射击无命中惩罚，向后脱离免借机攻击，会战可后撤射击',
   vanguard: '开局向前部署1排或1阵位', flying: '升空飞行，越过地面障碍；落地后可近战扑击',
   mechanized: '先攻+2，机动+1，穿着护甲时防御+1', 'water-crossing': '可进入深水，降低涉水移动消耗',
-  'space-adapted': '可在真空中正常生存、移动和作战',
   sailing: '只能在深水、浅水移动，部署时自动移至最近的可用水格',
   'siege-assault': '消耗主行动及最多2移动点，攀登相邻墙顶并接战',
   veteran: '攻击+1，防御+1，士气+10', elite: '攻击+2，防御+2', fast: '先攻+3，机动+1',

@@ -59,7 +59,7 @@ export function generatedField(seed: string, width = 7, height = 13, tags: strin
     cell(center, 0), cell(center, 1), cell(center, middle), cell(center, height - 2), cell(center, height - 1)]);
   if (indoor && options.roster?.length) {
     // 航行单位等结构和水域生成后再部署，底图阶段只为陆地单位预留空间。
-    const units = options.roster.filter(u => !waterOnly(u)).map(u => ({ ...u, airborne: u.airborne ?? !flightCapabilityReason(u) }));
+    const units = options.roster.filter(u => !waterOnly(u)).map(u => ({ ...u, airborne: u.airborne ?? !flightCapabilityReason(u, undefined, { fieldTags: environment }) }));
     for (const position of deployOnGrid(field, units, seed)) reserved.add(position);
   }
   // Even vanguard / explicitly positioned units must not be buried by a wall.

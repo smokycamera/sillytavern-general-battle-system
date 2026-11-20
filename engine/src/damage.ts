@@ -832,7 +832,7 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
   const usableShield = !spray && shieldUsable({...defender,armsModel:rules.armsModel},original);
   const shieldDefender = usableShield ? defender : {...defender,shield:undefined};
   const defenderMods = [...(opts.defenderMods ?? [])];
-  const maneuverDefense = !opts.autoHit && rules.flightModel === 'maneuver-v1' ? flightDefense(attacker, defender) : 0;
+  const maneuverDefense = !opts.autoHit && rules.flightModel === 'maneuver-v1' ? flightDefense(attacker, defender, opts) : 0;
   if (maneuverDefense) defenderMods.push({ source: 'intrinsic', sourceId: 'flying:maneuver', name: '飞行机动', kind: 'def', type: 'flat', value: maneuverDefense });
   if (isArmsV2(rules.armsModel) && overloadPenalty(defender)) defenderMods.push({source:'intrinsic',name:'超载',kind:'def',type:'flat',value:-overloadPenalty(defender)});
   if (isArmsV2(rules.armsModel) && usableShield && ranged && shieldClass(defender)==='tower-shield') defenderMods.push({source:'intrinsic',name:'大盾遮蔽',kind:'def',type:'flat',value:1});

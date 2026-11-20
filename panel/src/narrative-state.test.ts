@@ -104,7 +104,7 @@ describe('正文原子事务', () => {
     armed.id = 'a'; fixture.save.storage = [unitRecordFromCombatant(armed)];
     const prepared = prepareInventoryState(fixture.save);
     const oldId = prepared.inventory!.find(item => item.equippedTo?.unitId === 'a' && item.equippedTo.slot === 'primary')!.id;
-    const source = { ...fixture.source, text: `<tb><unit_set id="a" weapon="新步枪:步枪L5"/><take id="${oldId}" qty="1"/></tb>` };
+    const source = { ...fixture.source, text: `<tb><unit_set id="a" weapon="新步枪:步枪L5"/><add item="新步枪" spec="步枪L5" qty="1"/><take id="${oldId}" qty="1"/></tb>` };
     const binding = captureGeneration(prepared, fixture.ns, 'g1'); binding.complete = true;
     const proposal = proposalFromMessage(source, binding)!;
     const next = prepareNarrativeTransaction(prepared, proposal, fixture.ns, true);

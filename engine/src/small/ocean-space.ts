@@ -42,7 +42,7 @@ export function reserveSafeStarts(field: BattlefieldSpec, roster: readonly Comba
   if (medium < 0) return;
   for (const unit of roster) {
     if (unit.ride || unit.hp <= 0 || unit.status !== 'ready' || waterOnly(unit)) continue;
-    const actor = {...unit, airborne:unit.airborne ?? !flightCapabilityReason(unit), pos:undefined};
+    const actor = { ...unit, airborne: unit.airborne ?? !flightCapabilityReason(unit, undefined, { fieldTags: field.environment }), pos: undefined };
     if (!terrainExposure(field,medium,actor)) continue;
     const candidates = gridDeploymentCells(field,actor).filter(p => !reserved.has(p));
     const origin = unit.pos ?? candidates[Math.floor(candidates.length / 2)];
