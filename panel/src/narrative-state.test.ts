@@ -209,6 +209,8 @@ describe('正文原子事务', () => {
 
   it('正文盾牌名称、规格和修正生成真实实物，存档重开和升级保留同一配方', () => {
     const { save, proposal, ns } = setup('<spawn name="持盾卫队" side="ally" scale="company" hpMax="30" level="1" shield="AEGIS塔盾:盾L5+2防御-3热能防护"/>');
+    // This seed rolls a protection offset just below zero before integer rounding.
+    proposal.id = '3ba97b80-b081-4db0-996c-f884bbbddae5';
     const next = prepareNarrativeTransaction(save, proposal, ns, true);
     const record = next.storage!.find(r => r.name === '持盾卫队')!;
     const unit = materializeUnitRecord(JSON.parse(JSON.stringify(record)), reg);

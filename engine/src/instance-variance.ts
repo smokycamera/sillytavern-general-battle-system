@@ -25,7 +25,9 @@ export function rollInstanceVariance(seed: string, stats: readonly VarianceStat[
     const rng = new SeededRng(JSON.stringify([version, seed, stat]));
     if (version === 'enhancement-bands-v1') return [stat, Math.floor(rng.next() * 5) - 2];
     const z = Math.sqrt(-2 * Math.log(1 - rng.next())) * Math.cos(2 * Math.PI * rng.next());
-    return [stat, Math.round(Math.max(-3, Math.min(3, z)) * 100)];
+    const roll = Math.round(Math.max(-3, Math.min(3, z)) * 100);
+    // JSON persists both signs of zero as 0. Store that value from the first roll.
+    return [stat, roll === 0 ? 0 : roll];
   })) };
 }
 /** Five equiprobable offsets: -0.4, -0.2, 0, +0.2, +0.4 enhancement points.
