@@ -469,7 +469,11 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     if (Object.keys(issues).length) {
       const event = validatedEvent(kind,first,warnings,false);
       if (event.kind !== 'spawn') throw Error('配装单位无法建档');
-      return {...event, equipmentIssues:issues, raw:serializeEvent(kind,attrs)};
+      // Keep normalized spawn fields and restore the full lists used to issue equipment.
+      for (const field of ['weapon','weapon2','armor','shield'] as const) {
+        if (issues[equipmentFields[field]]) first[field] = attrs[field]!;
+      }
+      return {...event, equipmentIssues:issues, raw:serializeEvent(kind,first)};
     }
   }
   if (kind === 'effect') {

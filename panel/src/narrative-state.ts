@@ -446,7 +446,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   records = next.storage!;
   let roster: Combatant[] = (next.rosterIds ?? []).map((id) => records.find((r) => r.id === id)).filter((r): r is UnitRecord => !!r && r.hp > 0 && !r.retired).map((r) => materializeUnitRecord(r, registry));
   const newDeploys: string[] = [];
-  let spawnedGear = false;
+  const spawnedGear = new Set<string>();
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind === 'deploy') { if (isNew(event)) newDeploys.push(event.id); else roster = deployUnitRecord(records, roster, event.id, registry); }
     else if (event.kind === 'spawn') {
@@ -465,18 +465,18 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
             const entries = event.equipmentIssues[slot];
             if (entries) assignIssue(next.inventory!,id,unit.side,slot,entries,proposal.id+':'+index,false);
           }
-          spawnedGear = true;
+          spawnedGear.add(id);
         }
         records.push(unitRecordFromCombatant(unit, undefined, { sourceId: proposal.id }));
         if (unit.hp > 0 && !event.archiveOnly) roster.push(materializeUnitRecord(records.at(-1)!, registry));
-        // 随身道具每张卡各一套，归这张卡；佩戴、充能道具装上（编队一件即整卡配发），一次性道具开战时随身携带。
+        // 随身道具每张卡各一套，归这张卡；佩戴、充能道具装上（按声明件数配发），一次性道具开战时随身携带。
         for (const [n, entry] of (event.items ?? []).entries()) {
           const itemId = `spawn-item-${proposal.id}-${index}-${i}-${n}`;
           if (!entry.spec) { next.inventory = [...(next.inventory ?? []), { id: itemId, name: entry.name, qty: entry.qty, lootType: 'misc', assignedTo: id }]; continue; }
           if (entry.spec.form === 'single') { next.inventory = [...(next.inventory ?? []), { ...createInventoryItem(itemId, entry.name, entry.spec, itemId, entry.qty), assignedTo: id }]; continue; }
           next.inventory!.push({...createInventoryItem(itemId,entry.name,entry.spec,proposal.id+':'+index+':'+n,entry.qty),
             batch:true, assignedTo:id, equippedTo:{unitId:id,slot:'gear'}});
-          spawnedGear = true;
+          spawnedGear.add(id);
         }
       }
     } else if (event.kind === 'field') { next.field = event.env; next.lighting = event.light ?? (event.env === 'night' ? 'night' : 'day'); }
@@ -485,7 +485,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   next.schemaVersion = PANEL_SAVE_SCHEMA_VERSION;
   next.storage = records;
   // 新单位装上的佩戴、充能道具立即投影进档案，开战时随单位生效。
-  if (spawnedGear) { next = prepareInventoryState(next) as NarrativeSave; records = next.storage!; }
+  if (spawnedGear.size) { next = prepareInventoryState(next, spawnedGear) as NarrativeSave; records = next.storage!; }
   next.rosterIds = [...new Set(roster.map((u) => u.id))];
   if (fresh.created.size) next = applyToNewUnits(next, proposal.events, fresh, proposal.id, registry, newDeploys, unitSetContext);
   // Apply explicit recipients after this batch's new units exist. The given
@@ -519,7 +519,8 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (!before) continue;
     for (const item of next.inventory!) {
       const patch = item.assignedTo && deferredEquipment.get(item.assignedTo);
-      if (!patch || !item.qty) continue;
+      // Transfers arrive unequipped. Adopting a new card may also register its starting gear.
+      if (!patch || !item.qty || item.equippedTo) continue;
       const old = before.get(item.id);
       if (old && old.assignedTo === item.assignedTo && old.qty >= item.qty) continue;
       transferred.add(item.id);

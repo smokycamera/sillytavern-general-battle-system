@@ -264,7 +264,7 @@ export function occupiedEquipmentSlot(item: InventoryItem): string | undefined {
   return JSON.stringify([unitId,slot,slot === 'gear' || item.batch ? item.id : null]);
 }
 /** 首次接入只登记已有V2精确实例，绝不按名称生成或重掷旧装备。 */
-export function prepareInventoryState(save: InventorySave, adoptExisting = true): InventorySave {
+export function prepareInventoryState(save: InventorySave, adoptExisting: boolean | ReadonlySet<string> = true): InventorySave {
   if (save.classMigration !== undefined && save.classMigration !== 'arms-v2') throw Error('武器类别更新标记损坏');
   const next = clone(prepareNarrativeIds(compactSaveHistory(save)));
   calibrateSavedWeaponRanges(next);
@@ -278,7 +278,7 @@ export function prepareInventoryState(save: InventorySave, adoptExisting = true)
     if (item.mechanics && item.mechanics.kind !== 'item' && (item.qty > 1 && !item.batch || item.mechanics.value.id !== item.id)) throw new Error('装备唯一编号/数量冲突');
   }
   for (const record of next.storage) {
-    if (!adoptExisting || record.equipmentManaged || record.snapshot?.rulesVersion !== 'v2') continue;
+    if (!adoptExisting || typeof adoptExisting !== 'boolean' && !adoptExisting.has(record.id) || record.equipmentManaged || record.snapshot?.rulesVersion !== 'v2') continue;
     for (const slot of uniqueSlots) {
       if (next.inventory.some(i => i.equippedTo?.unitId === record.id && i.equippedTo.slot === slot)) continue;
       const mechanics = gearAt(record.snapshot, slot) as ItemMechanics | undefined;

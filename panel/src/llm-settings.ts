@@ -26,7 +26,7 @@ export function commandsFaction(settings: LlmSettings, side: 'ally' | 'enemy' | 
 }
 export const LLM_SETTINGS_KEY = 'tb:llm:settings:v1';
 export const COMMAND_THINKING_OFF_PARAMS = '{"thinking":{"type":"disabled"}}';
-const defaults = (): LlmSettings => ({ enabled: false, selectBattleScale: false, commandEnemy: false, commandInterval: 'round', commandThinking: 'auto',
+const defaults = (): LlmSettings => ({ enabled: false, selectBattleScale: false, commandEnemy: false, commandFactions: {enemy:true, neutral:true}, commandInterval: 'round', commandThinking: 'auto',
   commandThinkingOffParams: COMMAND_THINKING_OFF_PARAMS,
   designMap: true, selectVip: true, worldbooks: [], worldbookMode: 'manual', windowSize: 6, url: '', token: '', model: '', models: [] });
 

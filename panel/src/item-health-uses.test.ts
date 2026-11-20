@@ -15,7 +15,7 @@ function unit(company = false) {
 describe('生命佩戴与充能次数', () => {
   it.each([false,true])('inventory equip/remove adjusts life and maxima without changing personnel (company=%s)', company => {
     const u = unit(company), beforeLife = memberHealth(u), initial = company ? u.formation!.memberHp : u.base.hpMax;
-    const item = createInventoryItem('ring','生命戒指',parseItemSpecification('佩戴L5+10生命'),'ring');
+    const item = createInventoryItem('ring','生命戒指',parseItemSpecification('佩戴L5+10生命'),'ring',company ? u.hp : 1);
     item.assignedTo = 'a'; item.equippedTo = { unitId:'a',slot:'gear' };
     const record = unitRecordFromCombatant(u); record.equipmentManaged = true;
     let state: InventorySave = { storage:[record],inventory:[item] };

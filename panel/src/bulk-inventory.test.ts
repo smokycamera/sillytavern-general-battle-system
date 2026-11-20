@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { generateUnit, traitRegistry } from '../../engine/src/index.js';
 import { unitRecordFromCombatant, materializeUnitRecord } from './unit-state.js';
 import { createInventoryItem, prepareInventoryState, prepareInventoryTransaction, type InventoryIntent } from './inventory-state.js';
+import { batchWeapons } from '../../engine/src/equipment-batches.js';
 import { compileItem } from '../../engine/src/items.js';
 import { nominalLife } from '../../engine/src/combat-model.js';
 import { buildUnit, editUnitBuild, newUnitDraft, unitDraftFromRecord } from './unit-builder.js';
@@ -47,7 +48,8 @@ describe('atomic inventory deletion',()=>{
     for(let power=4;power<=10;power++) save=prepareInventoryTransaction(save,{id:'reforge:'+power,expectedRevision:save.factRevision!,kind:'reforge',itemId:'a',spec:{kind:'weapon',mechanism:'sword',power,bonuses:{damage:2}}});
     save=prepareInventoryTransaction(save,{id:'equip',expectedRevision:save.factRevision!,kind:'equip',itemId:'a',unitId:'owner',slot:'primary'});
     const reloaded=prepareInventoryState(JSON.parse(JSON.stringify(save))),u=materializeUnitRecord(reloaded.storage![0]!,registry);
-    expect(u.weapon!.recipe!.variance).toEqual(roll);expect(u.weapon!.recipe!.seed).toBe(seed);
+    const equipped = batchWeapons(u).find(weapon => weapon.id === item.id);
+    expect(equipped?.recipe?.variance).toEqual(roll); expect(equipped?.recipe?.seed).toBe(seed);
     const legacy=fixture();legacy.inventory![0]!.mechanics=compileItem({kind:'weapon',mechanism:'sword',power:3},{id:'a',name:'剑',seed:'old',damageModel:'wounds-v2',variance:false});
     const next=prepareInventoryTransaction(legacy,{id:'legacy',expectedRevision:1,kind:'reforge',itemId:'a',spec:{kind:'weapon',mechanism:'sword',power:4}});
     const m=next.inventory![0]!.mechanics;if(m?.kind!=='weapon')throw Error();expect(m.value.recipe!.variance).toBeUndefined();

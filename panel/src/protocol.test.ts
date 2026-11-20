@@ -39,7 +39,7 @@ it('思考区示例不计入正文块，支持标签显示转义和缩进，原�
   expect(parseProtocol('<think>' + block).events).toEqual([]);
   expect(parseProtocol(block + block).canonical).toBe(parsed.canonical);
   expect(parseProtocol('<tb><deploy id="d1"/>').events[0]).toMatchObject({ kind: 'deploy', id: 'd1' });
-  expect(parseProtocol("<tb><spawn name='双刃' side='ally' scale='hero' weapon='战刃:剑L7,鞭剑:剑L6'/></tb>").events[0]).toMatchObject({ weaponClass: 'sword', weapon2Class: 'sword', weapon2Level: 6 });
+  expect(parseProtocol("<tb><spawn name='双刃' side='ally' scale='hero' weapon='战刃:剑L7,鞭剑:剑L6'/></tb>").events[0]).toMatchObject({ weaponClass: 'sword', equipmentIssues: {primary:[{name:'战刃', qty:1, spec:{mechanism:'sword', power:7}}, {name:'鞭剑', qty:1, spec:{mechanism:'sword', power:6}}]} });
   expect(parseProtocol('<tb><spawn name="卫兵" side="enemy" scale="hero" weapon="激光枪L3"/></tb>').events[0]).toMatchObject({ weaponClass: 'energy', weaponLevel: 3 });
 });
 
@@ -76,7 +76,7 @@ it('80人可建为一支编队或80张卡；单次count和单批事件数各自�
   expect(parseProtocol('<tb>' + cards(161) + '</tb>').errors.join('')).toMatch(/160/);
   expect(parseProtocol('<tb><spawn name="士兵" side="enemy" scale="hero" count="80"/></tb>').errors.join('')).toMatch(/count|卡/);
   const examples = [CORE_PROTOCOL, ...PROMPT_CARDS.map((c) => c.content)].flatMap((text) => text.match(/<tb>(?:\s*<[a-z_]+\s[^<>]*\/>\s*)+<\/tb>/g) ?? []);
-  expect(examples).toHaveLength(10);
+  expect(examples).toHaveLength(11);
   for (const text of examples) expect(parseProtocol(text).errors, text).toEqual([]);
   const effectSection = PROMPT_CARDS.map(c=>c.content).join('\n').match(/## 获得与解除效果\n([\s\S]*?)\n## 特质traits/)![1]!;
   const effectExample = effectSection.slice(effectSection.indexOf('示例：') + '示例：'.length);

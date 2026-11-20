@@ -282,11 +282,11 @@ describe('正文原子事务', () => {
     expect(() => prepareNarrativeTransaction(next, proposal, ns, true)).toThrow();
     expect(save.storage![0]!.snapshot!.weapon).toEqual(unit.weapon);
   });
-  it('正文装备按件建档，失败重试不重掷，未知物品保留叙事记录', () => {
+  it('正文装备按批次保存件数，失败重试不重掷，未知物品保留叙事记录', () => {
     const { save, proposal, ns } = setup('<add item="制式剑" type="weapon" spec="剑L4" qty="2"/><add item="急救剂" type="consumable" spec="治疗L3" qty="3"/><add item="未知遗物"/>');
     const next = prepareNarrativeTransaction(save, proposal, ns, true);
     const weapons = next.inventory!.filter((i) => i.mechanics?.kind === 'weapon');
-    expect(weapons).toHaveLength(2); expect(new Set(weapons.map((i) => i.id)).size).toBe(2);
+    expect(weapons).toMatchObject([{name:'制式剑', qty:2, batch:true}]);
     expect(next.inventory!.find((i) => i.name === '急救剂')).toMatchObject({ qty: 3, lootType: 'item', mechanics: { kind: 'item', value: { recipe: { form: 'single', active: 'generic:buff:heal', power: 3 } } } });
     expect(next.inventory!.find((i) => i.name === '未知遗物')!.mechanics).toBeUndefined();
     expect(prepareNarrativeTransaction(save, proposal, ns, true)).toEqual(next);
