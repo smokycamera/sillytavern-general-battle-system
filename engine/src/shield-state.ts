@@ -14,7 +14,8 @@ function standardMean(power: number, dmgMult: number, attacks: number): number {
   const c = curveAt(power), old = diceAvg(c.dmgBase) + (c.dmgAp ? diceAvg(c.dmgAp) : 0), segment = old * dmgMult / attacks;
   return diceAvg(rebuildDice(segment, segment < 3.5 ? 2 : 6)) * UNIFIED_WOUNDS[powerIndex(power)]! / old;
 }
-export function standardSwordMean(power: number): number { return standardMean(power, 1, 1); }
+const swordMeans = Array.from({ length: 10 }, (_, i) => standardMean(i + 1, 1, 1));
+export function standardSwordMean(power: number): number { return swordMeans[power - 1] ?? standardMean(power, 1, 1); }
 /** V21 盾按装备自身的平台尺寸放大，倍率同 V6 身体生命倍率（人形1、大型2、载具6、巨兽6）。 */
 const PLATFORM_SCALE: Record<ReturnType<typeof baseBody>, number> = { human: 1, large: 2, vehicle: 6, giant: 6 };
 export function shieldPlatformScale(unit: Pick<Combatant,'shield'> & Partial<Pick<Combatant,'body'>>): number {
@@ -24,11 +25,16 @@ export function shieldPlatformScale(unit: Pick<Combatant,'shield'> & Partial<Pic
 export const SHIELD_DURABILITY_FACTOR = 4;
 function shieldBearers(unit: ShieldBearer): number {
   if (!unit.scale || unit.scale==='hero') return 1;
-  return Math.min(unit.hp!,availableCopies({...unit,scale:unit.scale,hp:unit.hp!},unit.shield?.id));
+  // Count copies from the live headcount and kit, without copying the combatant
+  // for every penetration, coverage and wear calculation in a preview.
+  const bearer = unit as ShieldBearer & Pick<Combatant, 'scale' | 'hp'>;
+  return Math.min(bearer.hp, availableCopies(bearer, unit.shield?.id));
 }
 export function shieldDurabilityMax(unit: ShieldBearer): number {
-  if (!unit.shield || shieldClass(unit) === 'energy-shield') return 0;
-  const n = { buckler: .5, shield: 1, 'tower-shield': 1.5, 'energy-shield': 0 }[shieldClass(unit)];
+  if (!unit.shield) return 0;
+  const kind = shieldClass(unit);
+  if (kind === 'energy-shield') return 0;
+  const n = { buckler: .5, shield: 1, 'tower-shield': 1.5 }[kind];
   return SHIELD_DURABILITY_FACTOR * n * standardSwordMean(unit.shield.recipe?.power ?? 3) * shieldBearers(unit) * (isArmsV3(unit.armsModel) ? shieldPlatformScale(unit) : 1);
 }
 export function clampShieldDurability(unit: ShieldBearer): void {

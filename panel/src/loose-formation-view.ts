@@ -1,3 +1,4 @@
+import { ui } from './ui-language.js';
 import { looseFormation } from '../../engine/src/tactics.js';
 import { phase2Value } from '../../engine/src/phase2-traits.js';
 import { traitPrerequisiteReason } from '../../engine/src/trait-sources.js';
@@ -13,7 +14,7 @@ export function looseFormationChoiceHtml(actor: Combatant, disabled: boolean, ti
   // V21 起个体疏散没有近战代价，收拢只会丢掉减免，所以不给选择，只说明被动效果。
   if (!group && isArmsV3(actor.armsModel)) {
     const state = looseFormation(actor) ? '生效中' : `暂不生效（${blockedReason()}）`;
-    return `<div class="formation-choice" aria-label="散兵阵形"><small>${esc(`散兵（个体）：未被近敌贴身时受到的范围伤害−${pct}%，不影响近战；${state}。`)}</small></div>`;
+    return `<div class="formation-choice" aria-label="${ui("散兵阵形")}"><small>${esc(`散兵（个体）：未被近敌贴身时受到的范围伤害−${pct}%，不影响近战；${state}。`)}</small></div>`;
   }
   const loose = `未被近敌贴身时受到的范围伤害−${pct}%` + (group ? `、榴弹溅射波及人数−${pct}%；代价是近战只展开一半人数、近战防御−1` : '；代价是近战伤害减半');
   const closed = group ? '取消疏散的减免与代价，被贴身肉搏时更稳' : '取消范围伤害减免，近战伤害恢复';
@@ -22,6 +23,6 @@ export function looseFormationChoiceHtml(actor: Combatant, disabled: boolean, ti
   const now = choice === 'closed' ? '当前：收拢。' : blocked ? `当前：疏散，暂不生效（${blocked}）。` : '当前：疏散，生效中。';
   const button = (value: 'loose' | 'closed', label: string, effect: string) =>
     `<button data-action="trait-formation-choice" data-unit="${esc(actor.id)}" data-choice="${value}" aria-pressed="${choice === value}" title="${esc(label + '：' + effect)}"${disabled ? ' disabled' : ''}>${label}</button>`;
-  return `<div class="formation-choice" aria-label="散兵阵形">${button('loose', '疏散', loose)}${button('closed', '收拢', closed)}`
+  return `<div class="formation-choice" aria-label="${ui("散兵阵形")}">${button('loose', '疏散', loose)}${button('closed', '收拢', closed)}`
     + `<small>${esc(now + (choice === 'closed' ? '收拢：' + closed : '疏散：' + loose))}。${esc(actor.looseChoiceLocked ? '本次已选定，下次正常激活可再改。' : timing)}</small></div>`;
 }

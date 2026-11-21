@@ -97,6 +97,10 @@ async function startRuntime() {
       await current.activationChanged();
     },
     worldbooks,
+    setLanguage(language) {
+      extensionPreferences.write({ language });
+      panel.setLanguage(language);
+    },
     messages: new NativeMessages(host, () => current.canWrite()),
     open: () => panel.open(),
     close: () => panel.close(),

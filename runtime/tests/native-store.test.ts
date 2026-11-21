@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { ChatScope, HostSession, MetadataPort, NativeEnvelope } from '../../host/src/contracts.js';
 import { NativeStore } from '../src/native-store.js';
 import { MemoryJournal } from '../src/recovery-journal.js';
+import { readReportStart } from '../../panel/src/report-start-archive.js';
+import type { BattleReport } from '../../panel/src/battle-reports.js';
 
 function fixture() {
   const scopes = new Map<string, Record<string, unknown>>(); const disk = new Map<string, Record<string, unknown>>();
@@ -16,6 +18,21 @@ function fixture() {
 }
 
 describe('原生保存：独立读回与恢复记录', () => {
+  it('compresses historical openings losslessly across reloads and leaves the latest opening directly readable', async () => {
+    const f = fixture(); await f.store.load();
+    const report = (seed: string): BattleReport => ({ id: 'small:' + seed, card: '结算', summary: '摘要', digest: '战报', deliveries: {},
+      start: { version: 1, battleId: 'small:' + seed, kind: 'small', snapshot: { seed, log: Array(1000).fill('战斗进行中 · old report data') },
+        before: { storage: [], inventory: [], rosterIds: [], encounterIds: [], lastBattleUnitIds: [] } } });
+    const reports = [report('old'), report('latest')];
+    expect((await f.store.commit(0, () => ({ reports, committedOutcomeIds: reports.map(item => item.id) }))).status).toBe('confirmed');
+    await f.store.load();
+    const saved = f.store.snapshot().reports!;
+    expect(saved[0]!.start).toBeUndefined();
+    expect(saved[0]!.packedStart).toMatch(/^tb:lzw:1:/);
+    expect(readReportStart(saved[0]!)).toEqual(reports[0]!.start);
+    expect(saved[1]).toEqual(reports[1]);
+    expect(JSON.stringify(saved).length).toBeLessThan(JSON.stringify(reports).length);
+  });
   it('copies loaded data, snapshots, host metadata and callback results across every ownership boundary', async () => {
     const f = fixture(); await f.store.load();
     const candidate = { factRevision: 1, rosterIds: ['original'], custom: JSON.parse('{"__proto__":{"safe":true}}') };

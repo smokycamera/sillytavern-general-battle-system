@@ -9,6 +9,8 @@ import { legacySource, type SourceBackups, type SourceBackup } from './legacy-im
 import { envelopeFrom, matches, payloadHash, serialized } from './save-envelope.js';
 import { bindLegacySources } from './source-receipts.js';
 import type { NativeStore } from './native-store.js';
+import { expandReportStart } from '../../panel/src/report-start-archive.js';
+import { expandMigrationBackup } from '../../panel/src/migration-backup.js';
 
 type Summary = { units: number; inventory: number; reports: number; battle: boolean };
 export interface SaveChangePreview { kind: 'clear' | 'file' | 'rollback' | 'resume'; before: Summary; after: Summary; changes: string[]; sourceChat?: string }
@@ -21,6 +23,16 @@ const object = (value: unknown): value is Record<string, unknown> => !!value && 
 
 export function legacyCompatibleSave(save: NarrativeSave, host: NativeHost): NarrativeSave {
   const next = structuredClone(save); const namespace = host.namespace(); const chat = host.context().chat;
+  const expandReports = (source: NarrativeSave) => {
+    if (source.reports) source.reports = source.reports.map(expandReportStart);
+    if (source.deletedReport?.report) source.deletedReport.report = expandReportStart(source.deletedReport.report);
+  };
+  expandReports(next);
+  if (Array.isArray(next.migrationBackups)) next.migrationBackups = next.migrationBackups.map(backup => {
+    const expanded = expandMigrationBackup(backup);
+    if (expanded?.source) expandReports(expanded.source);
+    return expanded;
+  });
   if (!namespace || !chat) throw Error('当前聊天身份不完整');
   const aliases = object(next.nativeSourceAliases) ? next.nativeSourceAliases as Record<string, string> : {};
   const remap = (key: string): string | undefined => {

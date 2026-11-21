@@ -9,6 +9,7 @@ import {availableCopies, batchWeapons, startBatchReload} from '../../engine/src/
 import {detachMembers,combinePersonnel} from '../../engine/src/small/transport-groups.js';
 import {parseProtocol} from './protocol.js';
 import {readFileSync} from 'node:fs';
+import { narrativeIds } from './narrative-ids.js';
 
 function apply(save: NarrativeSave,text: string,seq: number) {
   const source = {characterId:'c',chatId:'chat',branchId:'main',messageId:String(seq),swipeId:'0',role:'assistant' as const,complete:true,generationId:'g'+seq,text:'<tb>\n'+text+'\n</tb>'};
@@ -117,6 +118,61 @@ it('reuses the named reforged lots in a counted vehicle battery', () => {
   expect(armed.map(i => [i.name,i.qty])).toEqual([['超重型导弹发射器',1],['重型炮塔组',4],['近防炮组',8]]);
   expect(armed.slice(0,2).map(i => i.id)).toEqual([first,second]);
   expect(next.storage![0]!.snapshot!.seats).toBe(200);
+});
+
+it.each([false, true])('preserves both original armor quantities and merges only equal frozen rolls (different rolls: %s)', different => {
+  const save = apply({}, '<spawn name="主力佣兵" side="ally" scale="company" hpMax="60" armor="锁甲甲:轻甲L2×30,锁甲乙:轻甲L2×30"/>', 1);
+  const unit = save.storage![0]!;
+  const armors = save.inventory!.filter(item => item.equippedTo?.slot === 'armor');
+  const [first, second] = armors.map(item => item.id);
+  armors.forEach((item, i) => {
+    if (item.mechanics?.kind !== 'armor') throw Error('missing armor fixture');
+    item.mechanics.value.recipe!.variance = { version: 'normal-v1', rolls: { protection: different && i ? 70 : 0 } };
+  });
+  const next = apply(save, `<add item="干粮" qty="1"/>
+    <reforge id="${first}" name="重型加铁锁甲衫" spec="中甲L2+1防御"/>
+    <reforge id="${second}" name="重型加铁锁甲衫" spec="中甲L2+1防御"/>
+    <unit_set id="${unit.id}" hp="60" hpMax="60" armor="重型加铁锁甲衫:中甲L2+1防御×60"/>`, 2);
+  const equipped = next.inventory!.filter(item => item.equippedTo?.slot === 'armor');
+  expect(equipped.map(item => item.qty)).toEqual(different ? [30, 30] : [60]);
+  expect(next.storage![0]!.snapshot!.equipmentBatches!.filter(batch => batch.slot === 'armor').map(batch => batch.qty))
+    .toEqual(different ? [30, 30] : [60]);
+  if (!different) {
+    const ids = narrativeIds(next);
+    expect(ids.realId(ids.publicId(second!))).toBe(first);
+    expect(() => prepareInventoryTransaction(next, { kind: 'add', itemId: second!, qty: 1, id: 'stale-holding', expectedRevision: next.factRevision! }))
+      .toThrow('物品已合并');
+    const updated = apply(next, `<take id="${ids.publicId(second!)}" qty="1"/>`, 3);
+    expect(updated.inventory!.find(item => item.id === first)?.qty).toBe(59);
+  }
+});
+
+it('does not charge carried spare gear, including when loading an old reserve weight', () => {
+  const original = apply({}, '<spawn name="护卫" side="ally" scale="company" hpMax="5" weapon="长剑:剑L3×5"/>', 1);
+  const unitId = original.storage![0]!.id;
+  const added = apply(original, `<add item="备用锁甲" spec="重甲L3" qty="20"/>`, 2);
+  const itemId = added.inventory!.find(item => item.name === '备用锁甲')!.id;
+  const carried = prepareInventoryTransaction(added, { kind: 'assign', unitId, itemId, id: 'carry', expectedRevision: added.factRevision! });
+  const before = original.storage![0]!.snapshot!, after = carried.storage![0]!.snapshot!;
+  expect(equipmentLoad(after)).toBe(equipmentLoad(before));
+  expect(equipmentLoad({ ...after, reserveEquipmentLoad: 1000 } as typeof after)).toBe(equipmentLoad(before));
+  expect(equipmentCapacity({ ...after, reserveEquipmentLoad: 1000 } as typeof after)).toBe(equipmentCapacity(before));
+  const equipped = prepareInventoryTransaction(carried, { kind: 'equip', slot: 'armor', unitId, itemId, qty: 5, id: 'equip', expectedRevision: carried.factRevision! });
+  expect(equipmentLoad(equipped.storage![0]!.snapshot!)).toBeGreaterThan(equipmentLoad(before));
+});
+
+it('keeps the issue order of other armor between otherwise identical reforged lots', () => {
+  const save = apply({}, '<spawn name="护卫" side="ally" scale="company" hpMax="12" armor="首批:中甲L2×4,不同:中甲L2×4,尾批:中甲L2×4"/>', 1);
+  const armors = save.inventory!.filter(item => item.equippedTo?.slot === 'armor');
+  const first = armors[0]!, last = armors[2]!;
+  for (const item of [first, last]) {
+    if (item.mechanics?.kind !== 'armor') throw Error('missing armor fixture');
+    item.mechanics.value.recipe!.variance = { version: 'normal-v1', rolls: { protection: 0 } };
+  }
+  const next = apply(save, `<reforge id="${first.id}" name="制式锁甲" spec="中甲L2+1防御"/>
+    <reforge id="${last.id}" name="制式锁甲" spec="中甲L2+1防御"/>`, 2);
+  expect(next.inventory!.filter(item => item.equippedTo?.slot === 'armor').map(item => [item.id, item.qty]))
+    .toEqual(armors.map(item => [item.id, 4]));
 });
 
 it('appends a third weapon on a hero and replaces the complete legacy loadout on unit_set',()=>{

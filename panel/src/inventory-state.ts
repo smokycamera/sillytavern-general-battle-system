@@ -29,6 +29,8 @@ export interface InventoryItem {
   sourceItemId?: string;
   /** Empty holding created by merging, available for the next split of this lot. */
   emptiedByMerge?: true;
+  /** An identical reforged lot absorbed this holding. Keep the old handle usable. */
+  mergedInto?: string;
   /** Public holding from which this equipped stack was issued. */
   publicIssueId?: string | null;
   revision?: number;
@@ -100,6 +102,8 @@ export function validateInventoryItem(value: unknown): asserts value is Inventor
   if (!object(value) || typeof value.id !== 'string' || !value.id || typeof value.name !== 'string' || !value.name
     || !Number.isSafeInteger(value.qty) || Number(value.qty) < 0) throw new Error('库存身份、名称或数量损坏');
   if (value.revision !== undefined && (!Number.isSafeInteger(value.revision) || Number(value.revision) < 1)) throw new Error('物品版本损坏');
+  if (value.mergedInto !== undefined && (typeof value.mergedInto !== 'string' || !value.mergedInto
+    || value.mergedInto === value.id || value.qty !== 0 || value.equippedTo !== undefined)) throw new Error('合并后的库存编号损坏');
   if (value.mechanics === undefined) {
     if (value.equippedTo !== undefined) throw new Error('叙事物品不能提供装备效果');
     return;
@@ -309,16 +313,11 @@ export function prepareInventoryState(save: InventorySave, adoptExisting: boolea
   return next;
 }
 
-function reserveLoad(inventory: InventoryItem[],unitId: string): number {
-  return inventory.reduce((n,item)=>n + (item.batch && item.assignedTo===unitId && !item.equippedTo && item.mechanics && item.mechanics.kind!=='item' ? (item.mechanics.value.load ?? 0)*item.qty : 0),0);
-}
 export function projectEquipment(record: UnitRecord, inventory: InventoryItem[]): void {
   const unit = record.snapshot;
   if (!unit) throw new Error('装备显示记录缺少单位精确存档记录');
   delete unit.equipmentBatches;
-  const carried = reserveLoad(inventory,record.id);
-  if (carried) unit.reserveEquipmentLoad = carried;
-  else delete unit.reserveEquipmentLoad;
+  delete unit.reserveEquipmentLoad;
   delete unit.weapon; delete unit.sidearm; delete unit.armor; delete unit.shield; delete unit.accessories; delete unit.gear;
   for (const item of inventory.filter((i) => i.equippedTo?.unitId === record.id)) {
     const mechanics = item.mechanics!;
@@ -360,6 +359,55 @@ function recordById(save: InventorySave, id: string): UnitRecord {
 }
 function rewriteRecord(next: InventorySave, record: UnitRecord, sourceId: string): void {
   next.storage = next.storage!.map((r) => r.id === record.id ? unitRecordFromCombatant({ ...record.snapshot!, hp: record.hp, recoverableWounded: record.recoverableWounded, status: record.status ?? 'ready' }, record, { sourceId }) : r);
+}
+
+/** Consolidate only equivalent physical equipment after the whole story batch is applied. */
+export function consolidateReforgedEquipment(save: InventorySave, reforged: ReadonlySet<string>, sourceId: string): void {
+  if (reforged.size < 2) return;
+  const inventory = save.inventory ?? [];
+  const dependedOn = new Set(inventory.flatMap(item => [item.sourceItemId, item.publicIssueId, item.mergedInto]));
+  for (const { snapshot } of save.storage ?? []) {
+    for (const source of snapshot?.traitSources ?? []) {
+      if (source.kind === 'equipment') dependedOn.add(source.equipmentId);
+    }
+    for (const ability of snapshot?.abilities ?? []) {
+      if (ability.equipmentSourceId) dependedOn.add(ability.equipmentSourceId);
+    }
+  }
+  const holdings = new Map<string, InventoryItem>();
+  const previousInSlot = new Map<string, InventoryItem>();
+  const changedUnits = new Set<string>();
+  for (const item of inventory) {
+    if (!item.qty) continue;
+    const slotKey = item.equippedTo ? fingerprint(item.equippedTo) : undefined;
+    const previous = slotKey === undefined ? undefined : previousInSlot.get(slotKey);
+    if (slotKey !== undefined) previousInSlot.set(slotKey, item);
+    const mechanics = item.mechanics;
+    if (!reforged.has(item.id) || dependedOn.has(item.id) || !mechanics || mechanics.kind === 'item' || !mechanics.value.recipe
+      || mechanics.kind === 'weapon' && mechanics.value.recipe.mechanism === 'natural') continue;
+    const value = mechanics.value;
+    const key = fingerprint([item.name, item.note, item.lootType, item.assignedTo, item.equippedTo, item.publicIssueId,
+      mechanics.kind, { ...value, id: undefined, recipe: { ...value.recipe, seed: undefined } }]);
+    const holding = holdings.get(key);
+    // Equal-priority batches are issued in inventory order. An intervening
+    // equipped lot must keep its place even if the outer lots are equivalent.
+    if (!holding || slotKey !== undefined && holding !== previous || !Number.isSafeInteger(holding.qty + item.qty)) {
+      holdings.set(key, item); continue;
+    }
+    holding.qty += item.qty;
+    holding.batch = true;
+    if (slotKey !== undefined) previousInSlot.set(slotKey, holding);
+    if (item.equippedTo) changedUnits.add(item.equippedTo.unitId);
+    item.qty = 0;
+    delete item.equippedTo;
+    delete item.emptiedByMerge;
+    item.mergedInto = holding.id;
+  }
+  for (const unitId of changedUnits) {
+    const record = recordById(save, unitId);
+    projectEquipment(record, inventory);
+    rewriteRecord(save, record, sourceId);
+  }
 }
 
 /** Settle each detachment against its own surviving members before merging archive records. */
@@ -480,6 +528,7 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
   } else {
     let item = inventory.find((i) => i.id === action.itemId);
     if (!item) throw new Error('物品不存在');
+    if (item.mergedInto) throw new Error('物品已合并，请按最新库存重新选择');
     if (item.qty <= 0 && action.kind !== 'add') throw new Error('物品数量不足');
     if (action.kind === 'add') {
       if (!Number.isSafeInteger(action.qty) || action.qty < 1 || !Number.isSafeInteger(item.qty + action.qty)) throw new Error('增加数量须为正整数，且总数不能超出安全整数范围');
@@ -613,15 +662,6 @@ export function prepareInventoryTransaction(save: InventorySave, intent: Invento
           ? unitRecordFromCombatant(target, r, { kind: 'update', sourceId: id }) : updateUnitRecord(r, { hp: target.hp }, traitRegistry(), id) : r);
         item.qty--;
       }
-    }
-  }
-  if ('itemId' in action) {
-    const touched = new Set([save.inventory?.find(i=>i.id===action.itemId)?.assignedTo,
-      inventory.find(i=>i.id===action.itemId)?.assignedTo,...(action.kind==='transfer' ? action.unitIds ?? [action.unitId] : action.kind==='assign' ? [action.unitId] : [])]);
-    for (const unitId of touched) {
-      const record = next.storage?.find(r=>r.id===unitId);
-      if (!record?.equipmentManaged || !record.snapshot || (record.snapshot.reserveEquipmentLoad ?? 0)===reserveLoad(inventory,record.id)) continue;
-      projectEquipment(record,inventory); rewriteRecord(next,record,id);
     }
   }
   // Keep a fixed-size receipt, not a second copy of the complete edit request.

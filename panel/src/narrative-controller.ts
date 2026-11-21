@@ -1,3 +1,4 @@
+import { readMigrationBackup } from './migration-backup.js';
 import { isVehicleBody } from '../../engine/src/vehicle-size.js';
 import { batchWeapons } from '../../engine/src/equipment-batches.js';
 import { migrateOutOfBattleLoads } from './load-migration.js';
@@ -283,7 +284,9 @@ export class NarrativeController {
     const battle = this.state.battle;
     if (battle && !(this.state.committedOutcomeIds ?? []).includes(`${battle.kind}:${String(battle.snap.seed)}`)) throw new Error('先结束并归档当前战斗，再恢复旧备份');
     if (this.identity !== this.adapter.identity() || this.namespace !== this.adapter.namespace()) throw new Error('聊天已切换，不能恢复旧回调');
-    const original = structuredClone(backups.at(-1).source) as NarrativeSave;
+    const backup = readMigrationBackup(backups.at(-1));
+    if (!backup) throw new Error('没有可恢复的迁移备份');
+    const original = structuredClone(backup);
     const receipt = this.adapter.save('panel', original, 'chat'); this.lastReceipt = receipt;
     if (receipt.status !== 'failed') {
       this.migration = reviewMigration(original); this.state = structuredClone(this.migration?.candidate ?? original);

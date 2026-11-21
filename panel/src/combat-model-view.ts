@@ -1,3 +1,4 @@
+import { ui } from './ui-language.js';
 import { isVehicleBody } from '../../engine/src/vehicle-size.js';
 import { displayNumber } from '../../engine/src/display-number.js';
 import { isCannonWeapon } from '../../engine/src/loadout.js';
@@ -15,12 +16,12 @@ export function participationText(preview?: ActionPreview, detailed = false): st
 export function memberHealthPanel(unit:Combatant):string {
   if(!hasMemberHealth(unit))return '';
   const groups=[...(unit.formation?.health??[])].reverse(),label=isVehicleBody(unit.body)?'载具':'成员',noun=memberNoun(unit);
-  const rows=groups.map(g=>`<span class="member-health-group"><b>${g.count}${noun}</b> ${displayNumber(g.hp)}/${displayNumber(unit.formation!.memberHp)}生命</span>`);
-  return `<div class="member-health-panel" data-member-health="${esc(unit.id)}"><b>${label}生命 · ${displayNumber(unit.hp)}/${displayNumber(unit.base.hpMax)}${noun}</b><span>总生命 ${displayNumber(memberHealth(unit))}/${displayNumber(memberHealthMax(unit))}</span><div>${rows.slice(0,8).join('')||'<span>全部失能</span>'}</div>${rows.length>8?`<details><summary>另${rows.length-8}组伤损</summary>${rows.slice(8).join('')}</details>`:''}${unit.recoverableWounded?`<small>可救回 ${unit.recoverableWounded}${noun}</small>`:''}</div>`;
+  const rows=groups.map(g=>`<span class="member-health-group"><b>${g.count}${noun}</b> ${displayNumber(g.hp)}/${displayNumber(unit.formation!.memberHp)}${ui("生命")}</span>`);
+  return `<div class="member-health-panel" data-member-health="${esc(unit.id)}"><b>${label}生命 · ${displayNumber(unit.hp)}/${displayNumber(unit.base.hpMax)}${noun}</b><span>${ui("总生命")} ${displayNumber(memberHealth(unit))}/${displayNumber(memberHealthMax(unit))}</span><div>${rows.slice(0,8).join('')||`<span>${ui("全部失能")}</span>`}</div>${rows.length>8?`<details><summary>另${rows.length-8}组伤损</summary>${rows.slice(8).join('')}</details>`:''}${unit.recoverableWounded?`<small>可救回 ${unit.recoverableWounded}${noun}</small>`:''}</div>`;
 }
 export function cannonAmmoControl(unit:Combatant|undefined,disabled=false):string {
   if(!unit||unit.artilleryModel||unit.combatModel!=='cohort-v2'||![unit.weapon,unit.sidearm].some(isCannonWeapon))return '';
   const cannons = [unit.weapon,unit.sidearm].filter(isCannonWeapon), rocket = cannons.some(w => w!.recipe?.mechanism === 'rocket'), regular = cannons.some(w => w!.recipe?.mechanism !== 'rocket');
   const label = rocket && !regular ? '火箭筒弹种' : '火炮弹种', penetration = rocket ? regular ? '+2（火箭筒+3）' : '+3' : '+2';
-  return `<label class="cannon-ammo">${esc(unit.name)} · ${label}<select data-role="cannon-ammo" data-unit="${esc(unit.id)}" ${disabled?'disabled':''}><option value="auto" ${!unit.cannonAmmo?'selected':''}>自动按目标选弹</option><option value="he" ${unit.cannonAmmo==='he'?'selected':''}>榴弹 · 直击与爆炸</option><option value="ap" ${unit.cannonAmmo==='ap'?'selected':''}>穿甲弹 · 穿透${penetration}，无爆炸</option></select></label>`;
+  return `<label class="cannon-ammo">${esc(unit.name)} · ${label}<select data-role="cannon-ammo" data-unit="${esc(unit.id)}" ${disabled?'disabled':''}><option value="auto" ${!unit.cannonAmmo?'selected':''}>${ui("自动按目标选弹")}</option><option value="he" ${unit.cannonAmmo==='he'?'selected':''}>${ui("榴弹 · 直击与爆炸")}</option><option value="ap" ${unit.cannonAmmo==='ap'?'selected':''}>${ui("穿甲弹 · 穿透")}${penetration}，无爆炸</option></select></label>`;
 }

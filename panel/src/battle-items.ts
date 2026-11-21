@@ -41,21 +41,27 @@ export function prepareBattleItemWrite(previous: InventorySave, next: InventoryS
   // 已归档快照只用于旧战报；后续战外用药/获得不能被旧快照重新结算。
   if (sameBattle && (previous.committedOutcomeIds ?? []).includes(`${next.battle.kind}:${String(next.battle.snap.seed)}`)) return next;
   const old = sameBattle ? ledger(previous) : new Map<string, { item: CarriedItem; actorId: string; left: number }>();
-  // Only inventory is changed here; the caller already owns its battle candidate.
-  const current = ledger(next), output = { ...next };
-  output.inventory = migrateLegacyInventory(structuredClone(next.inventory));
-  const previousInventory = migrateLegacyInventory(previous.inventory) ?? [];
+  // Most activations do not consume an item. Copy only the stock entries that change.
+  const current = ledger(next), inventory = migrateLegacyInventory(next.inventory);
   if (sameBattle && [...old.keys()].some((id) => !current.has(id))) throw new Error('进行中战斗不能移除物品来源记录');
+  if (!current.size) return inventory === next.inventory ? next : { ...next, inventory };
+  const previousInventory = new Map((migrateLegacyInventory(previous.inventory) ?? []).map(item => [item.id, item]));
+  const spentByItem = new Map<string, number>();
   for (const [id, entry] of current) {
-    const before = old.get(id), item = previousInventory.find((i) => i.id === id);
+    const before = old.get(id), item = previousInventory.get(id);
     if (sameBattle && !before || before && (before.actorId !== entry.actorId || JSON.stringify(before.item) !== JSON.stringify(entry.item))) throw new Error('进行中战斗不能补发或修改携行物品');
     if (!item || item.assignedTo !== entry.actorId || item.name !== entry.item.name || (item.revision ?? 1) !== entry.item.revision
       || JSON.stringify(item.mechanics) !== JSON.stringify(entry.item.mechanics)) throw new Error('战内物品与库存来源不一致');
     const available = before?.left ?? entry.item.quantity, spent = available - entry.left;
     if (item.qty !== available || spent < 0 || spent > item.qty) throw new Error('物品数量不能恢复或超额消耗');
-    const remaining = output.inventory!.find(i=>i.id===id);
-    if (remaining) remaining.qty -= spent;
-    else if (!next.committedOutcomeIds?.includes(next.battle!.kind+':'+String(next.battle!.snap.seed))) throw Error('进行中战斗不能移除携行物品');
+    spentByItem.set(id, spent);
   }
-  return output;
+  const remaining = new Set(inventory?.map(item => item.id));
+  if (!next.committedOutcomeIds?.includes(next.battle.kind + ':' + String(next.battle.snap.seed))
+    && [...spentByItem.keys()].some(id => !remaining.has(id))) throw Error('进行中战斗不能移除携行物品');
+  if ([...spentByItem.values()].some(Boolean)) return { ...next, inventory: inventory?.map(item => {
+    const spent = spentByItem.get(item.id);
+    return spent ? { ...item, qty: item.qty - spent } : item;
+  }) };
+  return inventory === next.inventory ? next : { ...next, inventory };
 }
