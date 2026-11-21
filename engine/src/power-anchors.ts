@@ -1,6 +1,7 @@
 import { equipmentMultiplier, equipmentRating, gradedNumbers } from './numeric-model.js';
 import { BOUNDED_BLAST_MODEL, rocketSplashAt, sprayerSplashAt, type ArtilleryModel } from './artillery-model.js';
 import { displayNumber } from './display-number.js';
+import { formatDisplayText } from './display-text.js';
 import { progression, stackingRevision } from './progression.js';
 import { traitParameter } from './trait-parameters.js';
 import { wornProtection } from './gear-bonuses.js';
@@ -220,10 +221,10 @@ export function overmatchMultiplier(power:number|undefined,unit:DefensiveTarget,
   // A shield only limits the covered portion; it never lends its L to the whole body.
   return ((1-coverage)*armor+coverage*through*Math.min(armor,shield))/(1-coverage+coverage*through);
 }
-export function armorEffectLabel(unit:ShieldBearer & Pick<Combatant,'armor'|'shield'|'damageModel'>):string {
+export function armorEffectLabel(unit:ShieldBearer & Pick<Combatant,'armor'|'shield'|'damageModel'>, text = formatDisplayText):string {
   return isWoundModel(unit.damageModel)
-    ? (m => m === 1 ? '' : `强度×${m}`)(Number(equipmentMultiplier(unit.armor?.recipe,'power').toFixed(2)))
-    : `装甲等效耐久×${Number(armorPowerScale(unit).toFixed(2))}`;
+    ? (m => m === 1 ? '' : text('强度×{factor}', {factor:m}))(Number(equipmentMultiplier(unit.armor?.recipe,'power').toFixed(2)))
+    : text('装甲等效耐久×{factor}', {factor:Number(armorPowerScale(unit).toFixed(2))});
 }
 /** 没有手动指定时，火炮按公开目标防护和人数选择有效毁伤较高的弹种。 */
 export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Combatant,weaponOverflow=false,model=actor.damageModel,overmatch=false,curve?:RulePack['overmatchCurve']):Weapon|undefined {
@@ -252,14 +253,27 @@ export function combatWeapon(weapon:Weapon|undefined,actor:Combatant,target:Comb
   };
   return score(ap)>score(he)?ap:he;
 }
-export function anchoredWeaponLabel(weapon:Weapon|undefined,model:Combatant['damageModel']=weapon?.powerModel==='wounds-v2'?'wounds-v2':weapon?.powerModel==='wounds-v1'?'wounds-v1':undefined,artilleryModel?:ArtilleryModel,sprayerDamageMultiplier=1,sprayerGroupDamageMultiplier=1):string {
+const weaponMechanism = (w: Weapon) => w.recipe?.mechanism ?? w.tags?.find(t => t.startsWith('mechanism:'))?.slice(10);
+
+export function weaponAverageDamage(w: Weapon, sprayerDamageMultiplier = 1): number {
+  const raw = (diceAvg(w.baseDice) + (w.apDice ? diceAvg(w.apDice) : 0)) * (w.damageScale ?? 1)
+    * (weaponMechanism(w) === 'sprayer' ? sprayerDamageMultiplier : 1);
+  return Number(raw.toFixed(1));
+}
+
+export function anchoredWeaponLabel(weapon:Weapon|undefined,model:Combatant['damageModel']=weapon?.powerModel==='wounds-v2'?'wounds-v2':weapon?.powerModel==='wounds-v1'?'wounds-v1':undefined,artilleryModel?:ArtilleryModel,sprayerDamageMultiplier=1,sprayerGroupDamageMultiplier=1,text=formatDisplayText):string {
   let w=anchoredWeapon(weapon,undefined,model);if(!w)return '—';
-  const mechanism = w.recipe?.mechanism ?? w.tags?.find(t=>t.startsWith('mechanism:'))?.slice(10);
+  const mechanism = weaponMechanism(w);
   const bounded = artilleryModel === BOUNDED_BLAST_MODEL;
   if (bounded && mechanism === 'rocket') w = {...w, splashTargets: rocketSplashAt(w.recipe?.power ?? w.level ?? 1)};
-  const raw=(diceAvg(w.baseDice)+(w.apDice?diceAvg(w.apDice):0))*(w.damageScale??1)*(mechanism==='sprayer'?sprayerDamageMultiplier:1);
+  const average = weaponAverageDamage(w, sprayerDamageMultiplier);
   const melee=meleeProfile(w);
-  const group = mechanism === 'sprayer' && sprayerGroupDamageMultiplier > 1 ? ` · 对多人编队伤害+${displayNumber((sprayerGroupDamageMultiplier-1)*100)}%` : '';
-  const area = group + (bounded && mechanism === 'sprayer' ? ` · 会战每份另及${sprayerSplashAt(w.recipe?.power ?? w.level ?? 1)}名额，范围伤害递减` : w.splashTargets ? ` · 爆炸${w.splashTargets>=1e9?'覆盖目标编队':'另及'+w.splashTargets+'名额'}` : '');
-  return `${isRangedWeapon(w) ? (w.indirect ? '曲射' : '直射') + (isCannonWeapon(w) ? '火炮' : '') + ' · ' : ''}${model==='wounds-v2'?'单段均值':'单次均值'}${Number(raw.toFixed(1))} · 穿透${displayNumber(w.penetration??0)}${(w.attacks??1)>1?` · ${w.attacks}段`:''}${area}${melee?` · ${melee.description}`:''}`;
+  const group = mechanism === 'sprayer' && sprayerGroupDamageMultiplier > 1 ? text('对多人编队伤害+{percent}%', {percent:displayNumber((sprayerGroupDamageMultiplier-1)*100)}) : '';
+  const area = bounded && mechanism === 'sprayer'
+    ? text('会战每份另及{count}名额，范围伤害递减', {count:sprayerSplashAt(w.recipe?.power ?? w.level ?? 1)})
+    : !w.splashTargets ? '' : w.splashTargets >= 1e9 ? text('爆炸覆盖目标编队') : text('爆炸另及{count}名额', {count:w.splashTargets});
+  const delivery = isRangedWeapon(w) ? text(isCannonWeapon(w) ? w.indirect ? '曲射火炮' : '直射火炮' : w.indirect ? '曲射' : '直射') : '';
+  return [delivery, text(model === 'wounds-v2' ? '单段均值{value}' : '单次均值{value}', {value:average}),
+    text('穿透{value}', {value:displayNumber(w.penetration ?? 0)}), (w.attacks ?? 1) > 1 ? text('{count}段', {count:w.attacks!}) : '',
+    group, area, melee ? text(melee.description) : ''].filter(Boolean).join(' · ');
 }

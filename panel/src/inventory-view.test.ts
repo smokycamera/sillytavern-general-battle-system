@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { generateUnit } from '../../engine/src/index.js';
 import { unitRecordFromCombatant } from './unit-state.js';
 import { createInventoryItem, prepareInventoryState, prepareInventoryTransaction, type InventorySave, type InventoryAction } from './inventory-state.js';
@@ -7,6 +7,7 @@ import { InventoryPanel } from './inventory-view.js';
 import type { PanelController } from './controller-port.js';
 import type { InventoryPreview } from './narrative-controller.js';
 import { selectPromptEntries } from './prompt-settings.js';
+import { setUiLanguage } from './ui-language.js';
 
 function fixture() {
   const storage = ['a', 'b', 'enemy'].map(id => {
@@ -43,6 +44,28 @@ function mount(canView = (_record: NonNullable<InventorySave['storage']>[number]
 }
 
 beforeEach(() => { document.body.innerHTML = ''; Element.prototype.scrollIntoView = vi.fn(); });
+afterEach(() => setUiLanguage('zh-CN'));
+
+it('opens each equipment description with its class, saved level and enhancements in both languages', () => {
+  const f = mount(), name = '北方铁匠的作品';
+  const items = [
+    createInventoryItem('spec-sword', name, {kind:'weapon', mechanism:'sword', power:5, bonuses:{damage:2, penetration:-1}}, 'spec-sword'),
+    createInventoryItem('spec-armor', name, {kind:'armor', tier:3, power:4, bonuses:{defense:1}}, 'spec-armor'),
+    createInventoryItem('spec-shield', name, {kind:'shield', mechanism:'shield', power:3, bonuses:{protection:1}}, 'spec-shield'),
+  ];
+  f.save().inventory!.push(...items);
+  const before = structuredClone(f.save());
+  const descriptions = () => items.map(item => {
+    const card = document.querySelector(`[data-inventory-id="${item.id}"]`)!;
+    expect(card.querySelector('.inventory-card-heading b')?.textContent).toBe(name);
+    return card.querySelector('p')!.textContent!.split(' · ')[0];
+  });
+  f.render();
+  expect(descriptions()).toEqual(['剑L5+2伤害-1穿透', '重甲L4+1防御', '中盾L3+1防护']);
+  setUiLanguage('en'); f.render();
+  expect(descriptions()).toEqual(['Sword L5 +2 Damage -1 Penetration', 'Heavy Armor L4 +1 Defense', 'Medium Shield L3 +1 Protection']);
+  expect(f.save()).toEqual(before);
+});
 
 it('旧主副武器统一显示为武器，排在护甲、盾牌、佩戴之前，不受库存写入顺序影响', () => {
   const f = mount(), inventory = f.save().inventory!;

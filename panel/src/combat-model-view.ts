@@ -15,9 +15,13 @@ export function participationText(preview?: ActionPreview, detailed = false): st
 }
 export function memberHealthPanel(unit:Combatant):string {
   if(!hasMemberHealth(unit))return '';
-  const groups=[...(unit.formation?.health??[])].reverse(),label=isVehicleBody(unit.body)?'载具':'成员',noun=memberNoun(unit);
-  const rows=groups.map(g=>`<span class="member-health-group"><b>${g.count}${noun}</b> ${displayNumber(g.hp)}/${displayNumber(unit.formation!.memberHp)}${ui("生命")}</span>`);
-  return `<div class="member-health-panel" data-member-health="${esc(unit.id)}"><b>${label}生命 · ${displayNumber(unit.hp)}/${displayNumber(unit.base.hpMax)}${noun}</b><span>${ui("总生命")} ${displayNumber(memberHealth(unit))}/${displayNumber(memberHealthMax(unit))}</span><div>${rows.slice(0,8).join('')||`<span>${ui("全部失能")}</span>`}</div>${rows.length>8?`<details><summary>另${rows.length-8}组伤损</summary>${rows.slice(8).join('')}</details>`:''}${unit.recoverableWounded?`<small>可救回 ${unit.recoverableWounded}${noun}</small>`:''}</div>`;
+  const groups = [...(unit.formation?.health ?? [])].reverse();
+  const label = ui(isVehicleBody(unit.body) ? '载具生命' : '成员生命');
+  const noun = ui(memberNoun(unit));
+  const count = (value: string | number) => ui('{value}{noun}', {value, noun});
+  const hp = (value: string) => ui('{value}生命', {value});
+  const rows = groups.map(g => `<span class="member-health-group"><b>${count(g.count)}</b> ${hp(displayNumber(g.hp)+'/'+displayNumber(unit.formation!.memberHp))}</span>`);
+  return `<div class="member-health-panel" data-member-health="${esc(unit.id)}"><b>${label} · ${count(displayNumber(unit.hp)+'/'+displayNumber(unit.base.hpMax))}</b><span>${ui("总生命")} ${displayNumber(memberHealth(unit))}/${displayNumber(memberHealthMax(unit))}</span><div>${rows.slice(0,8).join('')||`<span>${ui("全部失能")}</span>`}</div>${rows.length>8?`<details><summary>${ui('另{count}组伤损', {count:rows.length-8})}</summary>${rows.slice(8).join('')}</details>`:''}${unit.recoverableWounded?`<small>${ui('可救回 {amount}', {amount:count(unit.recoverableWounded)})}</small>`:''}</div>`;
 }
 export function cannonAmmoControl(unit:Combatant|undefined,disabled=false):string {
   if(!unit||unit.artilleryModel||unit.combatModel!=='cohort-v2'||![unit.weapon,unit.sidearm].some(isCannonWeapon))return '';

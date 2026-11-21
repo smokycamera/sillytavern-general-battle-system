@@ -1,6 +1,7 @@
 import { isVehicleBody } from './vehicle-size.js';
 import { hasNaturalArmor } from './equipment-load.js';
 import { displayNumber } from './display-number.js';
+import { formatDisplayText } from './display-text.js';
 import type { Combatant, RulePack } from './types.js';
 
 /** V30 opts in per unit; saved battles and physical equipment retain their original rules. */
@@ -29,7 +30,9 @@ export function armorWear(unit: WearUnit) {
   return unit.rulesVersion === 'v2' && unit.armorWearModel && !isVehicleBody(unit.body) && !hasNaturalArmor(unit)
     ? (unit.armorWearModel === 'wear-v2' ? ARMOR_WEAR_V2 : ARMOR_WEAR)[unit.armor?.tier ?? 0] ?? UNRESTRICTED : UNRESTRICTED;
 }
-export function armorWearLabel(unit: WearUnit): string {
+export function armorWearLabel(unit: WearUnit, text = formatDisplayText): string {
   const wear = armorWear(unit);
-  return wear.movement === 1 ? '' : `穿戴：移动×${displayNumber(wear.movement)}、先攻−${displayNumber(wear.initiative)}、活动疲劳×${displayNumber(wear.fatigue)}`;
+  return wear.movement === 1 ? '' : text('穿戴：移动×{move}、先攻−{initiative}、活动疲劳×{fatigue}', {
+    move: displayNumber(wear.movement), initiative: displayNumber(wear.initiative), fatigue: displayNumber(wear.fatigue),
+  });
 }

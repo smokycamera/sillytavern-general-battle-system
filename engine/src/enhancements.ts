@@ -1,4 +1,5 @@
 import type { DamageChannel, RulePack } from './types.js';
+import { formatDisplayText } from './display-text.js';
 /** 有符号同级修正；倍率、连续穿透和离散格数分别换算。 */
 export const BONUS_NAMES = {
   power: '强度', damage: '伤害', accuracy: '精度', penetration: '穿透',
@@ -71,8 +72,11 @@ export const bonusMultiplier = (value: Enhancements | undefined, stat: BonusStat
 /** 穿透/防护每点0.2档，通用与相应通道合并后最多正负2档。 */
 export const bonusRating = (value: Enhancements | undefined, stat: 'penetration'|'protection', channel?: DamageChannel) => Math.max(-10,Math.min(10,bonusPoints(value,stat)+channelPoints(value,stat,channel)))/5;
 export const bonusSteps = (value: Enhancements | undefined, stat: BonusStat, every = 3) => Math.sign(bonusPoints(value,stat))*Math.ceil(Math.abs(bonusPoints(value,stat))/every);
-export function enhancementLabel(value: Enhancements | undefined): string {
-  return Object.entries(value ?? {}).filter(([,points])=>points!==0).map(([key, points]) => `${points!>0?'+':''}${points}${key === 'power' ? '' : BONUS_NAMES[key as BonusStat]}`).join('');
+export function enhancementLabel(value: Enhancements | undefined, text = formatDisplayText): string {
+  return Object.entries(value ?? {}).filter(([,points]) => points !== 0).map(([key, points]) => {
+    const change = (points! > 0 ? '+' : '') + points;
+    return key === 'power' ? change : text('{change}{stat}', { change, stat: text(BONUS_NAMES[key as BonusStat]) });
+  }).join('');
 }
 export function validateChannelProtection(value: unknown): void {
   if (!value || typeof value!=='object' || Array.isArray(value) || Object.keys(value).some(k=>!['kinetic','thermal','arcane'].includes(k))

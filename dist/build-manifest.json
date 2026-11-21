@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "3.0.26",
-  "builtAt": "2026-11-21T14:36:59.000Z",
-  "sourceFingerprint": "70373e1eee4641d6354fa6c8984c6a012ee5283cad526ce4de744a1dc9fdddd6",
+  "builtAt": "2026-11-21T15:05:25.782Z",
+  "sourceFingerprint": "8ff8213f24dab8a9fdd8841368c551d8958d171d7428d1161869cfd77ccd5b2e",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -36,9 +36,9 @@
       "sha256": "36434d666de2480e20a1faa79c5c33aae4365e1f16af1733628b6f5d773b52fc"
     },
     {
-      "path": "dist/assets/panel-VJ95scCc.js",
-      "bytes": 1588517,
-      "sha256": "7aec57a8d83415e01f50900201aa4e131bd4a1dc7db16d150cc0d31ba49bfb0d"
+      "path": "dist/assets/panel-RVAoj32i.js",
+      "bytes": 1541477,
+      "sha256": "3573a0b624b57eb3f40679bac450ab0b4d237bed523300baa878331feb317fd0"
     },
     {
       "path": "assets/regex/tavern-battle-collapse.json",
@@ -61,9 +61,9 @@
       "sha256": "61496bb789f6b15a980c6417c74beb0d925a5b8d9a42fa334515d3d898586164"
     },
     {
-      "path": "dist/assets/worldbooks-Cmcl-Z01.js",
-      "bytes": 1408344,
-      "sha256": "9fc4349b78b312caf9c71d5d467610e4852d6364a6f93d6b63d8e2044f689d83"
+      "path": "dist/assets/worldbooks-Yd_VuZzY.js",
+      "bytes": 1472032,
+      "sha256": "5152a6bfc3fbf6d6d11c89900f0aaeeaaa9da205febc7ae8ce65b5d0ce421efe"
     },
     {
       "path": "docs/README.md",
@@ -593,7 +593,7 @@
     {
       "path": "dist/index.js",
       "bytes": 106614,
-      "sha256": "297c422cd274a6fe7523640f69f0c52254b4d1145baff560bbda7de1af1ab57c"
+      "sha256": "49a7010edb2e60a112e9f81491590997ccb36cdb70ca94040f3eee4e9130d5a8"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -658,7 +658,7 @@
     {
       "path": "dist/panel/index.html",
       "bytes": 49267,
-      "sha256": "bae4545b8ef0bde7071e624f8afc185573c245e327ebe6848535131641353073"
+      "sha256": "af2709415e80f70574f16b7ae5661038a355a4918bdf147f394a575b9b18e09d"
     },
     {
       "path": "scripts/jev-cors-relay.mjs",

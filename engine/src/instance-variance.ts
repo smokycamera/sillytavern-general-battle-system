@@ -1,4 +1,5 @@
 import { displayNumber } from './display-number.js';
+import { formatDisplayText } from './display-text.js';
 /** Frozen generation variation, separate from combat dice and deployment RNG. */
 import { SeededRng } from './rng.js';
 import { bonusMultiplier, bonusRating, BONUS_NAMES, type BonusStat, type Enhancements } from './enhancements.js';
@@ -47,16 +48,17 @@ export function instanceRating(value: Enhancements | undefined, stat: 'penetrati
   if (!variance || Math.abs(center) >= 2) return center;
   return precise(center + instanceOffset(variance, stat) / 5);
 }
-export function instanceVarianceLabel(variance?: InstanceVariance): string {
+export function instanceVarianceLabel(variance?: InstanceVariance, text = formatDisplayText): string {
   if (!variance) return '';
-  if (variance.version === 'normal-v1') return '品相：' + instanceQuality(variance) + '（' + Object.keys(variance.rolls).map(key => {
+  if (variance.version === 'normal-v1') return text('品相：{quality}（{changes}）', { quality: text(instanceQuality(variance)), changes: Object.keys(variance.rolls).map(key => {
     const stat = key as VarianceStat, offset = instanceOffset(variance, stat), value = ['penetration', 'protection'].includes(stat) ? offset / 5 : offset * 5;
-    return `${BONUS_NAMES[stat as BonusStat]}${value >= 0 ? '+' : ''}${Number(value.toFixed(2))}${['penetration', 'protection'].includes(stat) ? '' : '%'}`;
-  }).join('，') + '）';
-  return '固定浮动：' + Object.keys(variance.rolls).map(key => {
+    const change = `${value >= 0 ? '+' : ''}${Number(value.toFixed(2))}${['penetration', 'protection'].includes(stat) ? '' : '%'}`;
+    return text('{stat}{delta}', { stat: text(BONUS_NAMES[stat as BonusStat]), delta: change });
+  }).join(text('，')) });
+  return text('固定浮动：{changes}', { changes: Object.keys(variance.rolls).map(key => {
     const stat = key as VarianceStat, offset = instanceOffset(variance, stat);
-    return `${BONUS_NAMES[stat as BonusStat]}${offset > 0 ? '+' : ''}${displayNumber(offset)}档`;
-  }).join(' / ');
+    return text('{stat}{delta}档', { stat: text(BONUS_NAMES[stat as BonusStat]), delta: (offset > 0 ? '+' : '') + displayNumber(offset) });
+  }).join(' / ') });
 }
 
 export function instanceQuality(variance?: InstanceVariance): string {

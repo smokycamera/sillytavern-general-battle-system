@@ -6,7 +6,7 @@ import { WEAPON_CLASSES, resolveWeaponClass, parseSkillMechanism, skillMechanism
 import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-tolerance.js';
 import { splitSkillLevel } from './skill-notation.js';
 
-const ARMOR_TIERS = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
+export const ARMOR_TIERS = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
 const ENGLISH_ARMOR_TIERS = ['unarmored', 'light armor', 'medium armor', 'heavy armor', 'super-heavy armor'];
 export function armorSpecificationTier(name: string): number {
   const chinese = ARMOR_TIERS.indexOf(name);

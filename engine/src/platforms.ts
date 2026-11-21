@@ -1,6 +1,7 @@
 import { isVehicleBody } from './vehicle-size.js';
 import { enhancementLabel, parseEnhancementSuffix, validateEnhancements, type Enhancements } from './enhancements.js';
 import type { Combatant } from './types.js';
+import { formatDisplayText } from './display-text.js';
 
 export const platformKinds = { animal: '坐骑', open: '开放载具', transport: '封闭载具' } as const;
 export interface Platform { kind: keyof typeof platformKinds; power: number; bonuses?: Enhancements }
@@ -15,8 +16,8 @@ export function parsePlatform(text: string): Platform {
   const kind = name === '坐骑' || name === 'animal' ? 'animal' : name === '开放载具' || name === 'open' ? 'open' : 'transport';
   return { kind, power: Number(match[2]), ...(spec.bonuses ? { bonuses: spec.bonuses } : {}) };
 }
-export function platformText(platform: Platform): string {
-  return platformKinds[platform.kind] + 'L' + platform.power + enhancementLabel(platform.bonuses);
+export function platformText(platform: Platform, text = formatDisplayText): string {
+  return text('{kind}L{level}', { kind: text(platformKinds[platform.kind]), level: platform.power }) + enhancementLabel(platform.bonuses, text);
 }
 export function validatePlatform(unit: Pick<PlatformUnit, 'platform'|'seats'|'ride'|'body'>): void {
   const p = unit.platform;
