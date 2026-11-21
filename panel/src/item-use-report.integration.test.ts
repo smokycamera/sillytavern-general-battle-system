@@ -20,8 +20,13 @@ it('收兵后的终章按钮带出道具事实，并在自定义结算提示后�
   await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
   const text = send.mock.calls[0]![0];
   expect(text).toContain('【道具使用和效果】\n前锋 使用【急救剂】：共1次，消耗1件。\n效果：治疗 1 → 前锋');
-  expect(text).toContain('按前锋视角叙述。');
-  expect(text).toMatch(/终章最后补充本场道具使用及实际效果；只依据记录，未使用或效果缺失时如实说明，不补造道具、消耗或效果。$/);
+  expect(text.split('\n').slice(-5)).toEqual([
+    '按前锋视角叙述。',
+    '',
+    '本次回复应根据战报对战斗过程进行详细描写，禁止输出<tb>内容',
+    '终章最后补充本场道具使用及实际效果；只依据记录，未使用或效果缺失时如实说明，不补造道具、消耗或效果。',
+    '注意装备数量变动，减少代表装备者阵亡',
+  ]);
   await vi.waitFor(() => expect(document.body.getAttribute('aria-busy')).not.toBe('true'));
   expect(f.service.snapshot().reports![0]!.epilogue).toBe(epilogue);
   f.service.dispose();
