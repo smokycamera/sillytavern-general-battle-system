@@ -1,6 +1,6 @@
 import { RUNTIME_REMINDER } from './narrative-prompt.js';
 import { ENGLISH_SETTLEMENT_PROMPT, SETTLEMENT_PROMPT } from '../../engine/src/inject/narrative-task.js';
-import type { UiLanguage } from './ui-language.js';
+import { ui, uiLanguage, type UiLanguage } from './ui-language.js';
 // 旧版默认文本曾可能被设置页原样保存；只替换该精确值，保留真正的自定义编辑。
 const LEGACY_SETTLEMENT_PROMPT = '【叙述任务】\n依据已记录的开局单位状态与血量、结束单位状态与血量，以及谁对谁造成了伤害，叙述战斗经过和终章。以结束状态为准：阵亡明确写为阵亡，濒死仍然存活，溃退或撤离不视为死亡；编队人数不当作个体血量。缺失的开局或伤害来源不补造，不自定俘虏、战利品或隐藏信息，不照抄骰式，停在玩家下一次决定之前。主控未标指挥官时不替其调兵。';
 const PREVIOUS_SETTLEMENT_PROMPT = '根据战斗情况描写战斗过程，不得出现血量，骰子点数等词';
@@ -56,8 +56,18 @@ export function itemInPromptScope(settings: PromptSettings | undefined, carried:
   return !settings?.itemScope || settings.itemScope === 'all' || carried || settings.itemScope === 'scene' && mentioned;
 }
 export function promptScopeControls(settings: PromptSettings | undefined, details: ProjectionDetails, units: {id: string; name: string}[]): string {
-  const options = (values: [string, string][], selected: string) => values.map(([id, name]) => `<option value="${id}" ${id === selected ? 'selected' : ''}>${name}</option>`).join('');
-  return `<section class="prompt-scope"><h2>发送范围</h2><div class="row"><label>单位资料 <select data-role="prompt-scope" data-kind="unit">${options([['manual','保持手动选择'],['roster','当前参战＋固定关注'],['scene','本场相关＋固定关注']],settings?.unitScope ?? 'manual')}</select></label><label>物品清单 <select data-role="prompt-scope" data-kind="item">${options([['all','全部勾选物品'],['carried','参战队伍携行'],['scene','携行＋正文提及']],settings?.itemScope ?? 'all')}</select></label></div><p>当前发送：${details.units.length}个档案 · ${details.items.length}件物品 · ${details.chars.toLocaleString()}字符（不含世界书）</p>${settings?.unitScope === 'scene' ? '<p class="sub">本场相关：参战与最近剧情提及的单位。</p>' : ''}<details data-detail-id="prompt-pins"><summary>固定关注 · ${settings?.pinnedUnitIds?.length ?? 0}个</summary><div class="prompt-pin-list">${units.map(u=>`<label><input type="checkbox" data-role="prompt-pin" data-id="${esc(u.id)}" ${settings?.pinnedUnitIds?.includes(u.id)?'checked':''}>${esc(u.name)}</label>`).join('') || '<p>暂无档案。</p>'}</div></details><details data-detail-id="prompt-inspect"><summary>查看本次发送资料与原因</summary><p>按各项参考勾选和战内观测范围筛选；保留完整清单。字符数用于估计内容长度。</p><ul>${[...details.units,...details.items].map(e=>`<li>${esc(e.name)} · ${esc(e.reason)}</li>`).join('') || '<li>当前没有发送单位或物品资料。</li>'}</ul></details></section>`;
+  const options = (values: [string, string][], selected: string) => values.map(([id, name]) =>
+    `<option value="${id}" ${id === selected ? 'selected' : ''}>${ui(name)}</option>`).join('');
+  return `<section class="prompt-scope">
+    <h2>${ui("发送范围")}</h2><div class="row">
+    <label>${ui("单位资料")} <select data-role="prompt-scope" data-kind="unit">${options([['manual','保持手动选择'],['roster','当前参战＋固定关注'],['scene','本场相关＋固定关注']],settings?.unitScope ?? 'manual')}</select></label>
+    <label>${ui("物品清单")} <select data-role="prompt-scope" data-kind="item">${options([['all','全部勾选物品'],['carried','参战队伍携行'],['scene','携行＋正文提及']],settings?.itemScope ?? 'all')}</select></label></div>
+    <p>${ui('当前发送：{units}个档案 · {items}件物品 · {chars}字符（不含世界书）', { units: details.units.length, items: details.items.length, chars: details.chars.toLocaleString(uiLanguage()) })}</p>
+    ${settings?.unitScope === 'scene' ? `<p class="sub">${ui("本场相关：参战与最近剧情提及的单位。")}</p>` : ''}
+    <details data-detail-id="prompt-pins"><summary>${ui('固定关注 · {count}个', { count: settings?.pinnedUnitIds?.length ?? 0 })}</summary><div class="prompt-pin-list">
+    ${units.map(u=>`<label><input type="checkbox" data-role="prompt-pin" data-id="${esc(u.id)}" ${settings?.pinnedUnitIds?.includes(u.id)?'checked':''}>${esc(u.name)}</label>`).join('') || `<p>${ui("暂无档案。")}</p>`}</div></details>
+    <details data-detail-id="prompt-inspect"><summary>${ui("查看本次发送资料与原因")}</summary><p>${ui("按各项参考勾选和战内观测范围筛选；保留完整清单。字符数用于估计内容长度。")}</p>
+    <ul>${[...details.units,...details.items].map(e=>`<li>${esc(e.name)} · ${esc(ui(e.reason))}</li>`).join('') || `<li>${ui("当前没有发送单位或物品资料。")}</li>`}</ul></details></section>`;
 }
 export function promptSelected(settings: PromptSettings | undefined, kind: 'unit' | 'item', id: string): boolean {
   return !(kind === 'unit' ? settings?.excludedUnitIds : settings?.excludedItemIds)?.includes(id);
@@ -81,5 +91,5 @@ export function formatPromptSection(settings: PromptSettings | undefined, id: Pr
 }
 const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 export function renderPromptSettings(settings?: PromptSettings, drafts = new Map<string, string>(), language: UiLanguage = 'zh-CN'): string {
-  return `<section><h2>动态提示词</h2><p>开关、编辑和清单选择随当前聊天保存。{{content}}代表实时数据；保留它可继续自动更新。内置世界书在本设置页单独管理。</p>${PROMPT_SECTIONS.map((s) => `<div class="prompt-setting"><label><input type="checkbox" data-role="prompt-enabled" data-section="${s.id}" ${settings?.sections?.[s.id]?.enabled === false ? '' : 'checked'}>${s.title}</label><details data-detail-id="prompt-editor-${s.id}"><summary>编辑提示词</summary><textarea data-role="prompt-template" data-section="${s.id}" style="width:100%;min-height:8em">${esc(drafts.get(s.id) ?? sectionTemplate(settings, s.id, language))}</textarea><div class="row"><button data-action="prompt-save" data-section="${s.id}">保存编辑</button><button data-action="prompt-reset" data-section="${s.id}">恢复默认文本</button></div></details></div>`).join('')}</section>`;
+  return `<section><h2>${ui("动态提示词")}</h2><p>${ui("开关、编辑和清单选择随当前聊天保存。{{content}}代表实时数据；保留它可继续自动更新。内置世界书在本设置页单独管理。")}</p>${PROMPT_SECTIONS.map((s) => `<div class="prompt-setting"><label><input type="checkbox" data-role="prompt-enabled" data-section="${s.id}" ${settings?.sections?.[s.id]?.enabled === false ? '' : 'checked'}>${ui(s.title)}</label><details data-detail-id="prompt-editor-${s.id}"><summary>${ui("编辑提示词")}</summary><textarea data-role="prompt-template" data-section="${s.id}" style="width:100%;min-height:8em">${esc(drafts.get(s.id) ?? sectionTemplate(settings, s.id, language))}</textarea><div class="row"><button data-action="prompt-save" data-section="${s.id}">${ui("保存编辑")}</button><button data-action="prompt-reset" data-section="${s.id}">${ui("恢复默认文本")}</button></div></details></div>`).join('')}</section>`;
 }

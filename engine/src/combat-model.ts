@@ -6,6 +6,7 @@ import { prepareRegenerationModel, validateRegenerationModel } from './regenerat
 import { validateArtilleryModel } from './artillery-model.js';
 import { validateLifeRecoveryModel } from './life-recovery.js';
 import { displayNumber } from './display-number.js';
+import { formatDisplayText } from './display-text.js';
 import { resolveHealingBudget } from './healing.js';
 import { isWoundModel } from './balance.js';
 import { instanceMultiplier, validateInstanceVariance } from './instance-variance.js';
@@ -133,6 +134,14 @@ export function healingYield(source: Combatant, target: Combatant, amount: numbe
   const teams=!item&&source.scale!=='hero'?Math.min(personnel(source),Math.max(1,personnel(source)/COHORT_REFERENCE)*10):1;
   return amount*teams/(target.combatModel===MEMBER_HEALTH_MODEL?1:memberDurability(target));
 }
-export function strengthDescription(u: Combatant): string {
-  return u.scale==='hero'?`生命 ${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}`:u.combatModel===MEMBER_HEALTH_MODEL?`现员 ${personnel(u)}/${displayNumber(u.base.hpMax)}${memberNoun(u)} · 每人${displayNumber(memberDurability(u))}生命`:isCohort(u)?`现员 ${personnel(u)}/${displayNumber(u.formation?.capacity??u.base.hpMax)} · 成员耐久 ${displayNumber(memberDurability(u))}`:`人数 ${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}`;
+export function strengthDescription(u: Combatant, text = formatDisplayText): string {
+  const max = displayNumber(u.base.hpMax);
+  if (u.scale === 'hero') return text('生命 {current}/{max}', {current:displayNumber(u.hp), max});
+  if (u.combatModel === MEMBER_HEALTH_MODEL) return text('现员 {current}/{max}{noun} · 每人{hp}生命', {
+    current:personnel(u), max, noun:text(memberNoun(u)), hp:displayNumber(memberDurability(u)),
+  });
+  if (isCohort(u)) return text('现员 {current}/{max} · 成员耐久 {hp}', {
+    current:personnel(u), max:displayNumber(u.formation?.capacity ?? u.base.hpMax), hp:displayNumber(memberDurability(u)),
+  });
+  return text('人数 {current}/{max}', {current:displayNumber(u.hp), max});
 }

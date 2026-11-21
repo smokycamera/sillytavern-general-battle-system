@@ -22,9 +22,10 @@ import { formationWeaponRange } from '../../engine/src/melee.js';
 import { armorTraitId, equipmentTraitIds, autoTraitLabel } from '../../engine/src/trait-sources.js';
 import { weaponReloadTurns } from '../../engine/src/loadout.js';
 import { equipmentDraft, equipmentFields, equipmentSpecification, captureEquipment, type EquipmentDraft } from './equipment-form.js';
+import { ARMOR_TIERS } from './item-spec.js';
 import { equipmentReason, effectiveProtection, abilityUsabilityReason, traitRegistry, WEAPON_CLASSES, type BodyKind, type ItemSpecification } from '../../engine/src/index.js';
 import { materializeUnitRecord, type UnitRecord } from './unit-state.js';
-import {anchoredWeapon,anchoredWeaponLabel,anchoredProtection,armorEffectLabel,shieldProtection} from '../../engine/src/power-anchors.js';
+import {anchoredWeapon,anchoredWeaponLabel,anchoredProtection,armorEffectLabel,shieldProtection,weaponAverageDamage} from '../../engine/src/power-anchors.js';
 import { prepareInventoryState, outOfBattleUse, type InventoryAction, type InventoryItem, type InventorySave } from './inventory-state.js';
 import type { InventoryPreview } from './narrative-controller.js';
 import type { PanelController } from './controller-port.js';
@@ -43,22 +44,54 @@ function newDraft(body = 'human'): Draft {
 }
 export function itemDescription(item: InventoryItem): string {
   const mechanics = item.mechanics, variance = mechanics && mechanics.kind !== 'item' ? mechanics.value.recipe?.variance : undefined;
-  const hint = mechanics && (mechanics.kind==='weapon'||mechanics.kind==='shield') ? classMismatchHint(item.name,mechanics.value.recipe?.mechanism ?? 'shield') : '';
-  return itemDescriptionBase(item) + (mechanics && (mechanics.kind === 'armor' || mechanics.kind === 'shield') && mechanics.value.recipe?.bonuses?.morale ? ' · 士气'+signed(equipmentStep(mechanics.value.recipe,'morale')) : '') + (hint?' · '+hint:'') + (variance ? ' · ' + instanceVarianceLabel(variance) : '');
+  const hint = mechanics && (mechanics.kind==='weapon'||mechanics.kind==='shield') ? classMismatchHint(item.name,mechanics.value.recipe?.mechanism ?? 'shield', ui) : '';
+  const morale = mechanics && (mechanics.kind === 'armor' || mechanics.kind === 'shield') && mechanics.value.recipe?.bonuses?.morale
+    ? ui('士气{value}', {value:signed(equipmentStep(mechanics.value.recipe,'morale'))}) : '';
+  return [itemDescriptionBase(item), morale, hint, instanceVarianceLabel(variance, ui)].filter(Boolean).join(' · ');
 }
+
 function itemDescriptionBase(item: InventoryItem): string {
   const m = item.mechanics;
-  if (!m) return '剧情物品 · 尚未设置战斗用途';
+  if (!m) return ui('剧情物品 · 尚未设置战斗用途');
   if (m.kind === 'item') return itemValueSummary(m.value, item.name);
+  const mechanism = m.kind === 'weapon' ? m.value.recipe?.mechanism ?? m.value.tags?.find(tag => tag.startsWith('mechanism:'))?.slice(10) : undefined;
+  const kind = m.kind === 'shield' ? SHIELD_CLASSES[shieldClass({shield:m.value})].name
+    : m.kind === 'armor' ? ARMOR_TIERS[m.value.tier] ?? '护甲'
+    : (mechanism && WEAPON_CLASSES[mechanism]?.name) || '武器';
+  const power = m.value.recipe?.power ?? (m.kind === 'shield' ? 3 : m.value.level ?? 5);
+  const spec = ui('{kind}L{level}', { kind: ui(kind), level: power }) + enhancementLabel(m.value.recipe?.bonuses, ui);
+  const load = ui('负重{value}', { value: displayNumber(m.value.load ?? 0) });
   if (m.kind === 'shield') {
-    const kind = shieldClass({shield:m.value}), power = m.value.recipe?.power ?? 3, head = `${SHIELD_CLASSES[kind].name} L${power}${enhancementLabel(m.value.recipe?.bonuses)} · 负重${displayNumber(m.value.load)}`;
-    if (kind === 'energy-shield') return `${head} · 每人${displayNumber(energyShieldPool(power, shieldPlatformScale({shield:m.value})))}点护盾，每次激活回充${displayNumber(energyShieldRecharge(power))}点 · 不能盾击、持盾固守或盾墙`;
-    const extra = { buckler: '近战格挡+1，可配双手武器', shield: '可持盾固守、盾墙', 'tower-shield': m.value.recipe?.numericModel || m.value.recipe?.loadModel ? '远程命中−1，只配单手主武器' : '远程命中−1、移动−1，只配单手主武器' }[kind];
-    return `${head} · 覆盖${Math.round(SHIELD_CLASSES[kind].coverage * 100)}% · 防护${displayNumber(shieldProtection({shield:m.value},'kinetic'))}/${displayNumber(shieldProtection({shield:m.value},'thermal'))}/${displayNumber(shieldProtection({shield:m.value},'arcane'))} · ${extra}`;
+    const shield = shieldClass({shield:m.value});
+    const head = spec + ' · ' + load;
+    if (shield === 'energy-shield') return head + ' · ' + ui('每人{pool}点护盾，每次激活回充{recharge}点 · 不能盾击、持盾固守或盾墙', {
+      pool: displayNumber(energyShieldPool(power, shieldPlatformScale({shield:m.value}))), recharge: displayNumber(energyShieldRecharge(power)),
+    });
+    const extra = { buckler: '近战格挡+1，可配双手武器', shield: '可持盾固守、盾墙', 'tower-shield': m.value.recipe?.numericModel || m.value.recipe?.loadModel ? '远程命中−1，只配单手主武器' : '远程命中−1、移动−1，只配单手主武器' }[shield];
+    const protection = (['kinetic', 'thermal', 'arcane'] as const).map(channel => displayNumber(shieldProtection({shield:m.value}, channel)));
+    return [head, ui('覆盖{value}%', {value:Math.round(SHIELD_CLASSES[shield].coverage * 100)}), ui('防护{value}', {value:protection.join('/')}), ui(extra)].join(' · ');
   }
-  if (m.kind === 'armor') {const u={armor:m.value,body:m.value.recipe?.size,damageModel:'wounds-v2' as const,armsModel:ARMS_MODEL},trait=armorTraitId(m.value.tier);return `动能${displayNumber(anchoredProtection(u,'kinetic'))} / 热能${displayNumber(anchoredProtection(u,'thermal'))} / 奥术${displayNumber(anchoredProtection(u,'arcane'))}${armorEffectLabel(u) ? ' · ' + armorEffectLabel(u) : ''} · 负重${displayNumber(m.value.load ?? 0)}${m.value.recipe?.bonuses?.defense ? ' · 防御'+signed(equipmentStep(m.value.recipe,'defense')) : ''}${m.value.recipe?.numericModel && m.value.recipe?.bonuses?.speed ? ' · 移动'+signed(equipmentStep(m.value.recipe,'speed'))+'、先攻'+signed(2*equipmentStep(m.value.recipe,'speed')) : ''}${trait ? ' · 装备自动特质：' + (m.value.recipe?.numericModel || m.value.recipe?.loadModel ? autoTraitLabel(trait,m.value.recipe) : trait === 'super-heavy' ? '超重装甲（先攻−2）' : '重甲（先攻−1）') : ''}`;}
+  if (m.kind === 'armor') {
+    const unit = {armor:m.value, body:m.value.recipe?.size, damageModel:'wounds-v2' as const, armsModel:ARMS_MODEL};
+    const trait = armorTraitId(m.value.tier);
+    const protection = (['kinetic', 'thermal', 'arcane'] as const).map(channel =>
+      ui('{label}{value}', {label:ui(channelNames[channel]), value:displayNumber(anchoredProtection(unit, channel))})).join(' / ');
+    const defense = m.value.recipe?.bonuses?.defense ? ui('防御{value}', {value:signed(equipmentStep(m.value.recipe,'defense'))}) : '';
+    const speed = m.value.recipe?.numericModel && m.value.recipe.bonuses?.speed ? equipmentStep(m.value.recipe,'speed') : 0;
+    const limits = speed ? ui('移动{move}、先攻{initiative}', {move:signed(speed), initiative:signed(2*speed)}) : '';
+    const traitLabel = trait ? ui(m.value.recipe?.numericModel || m.value.recipe?.loadModel ? autoTraitLabel(trait,m.value.recipe)
+      : trait === 'super-heavy' ? '超重装甲（先攻−2）' : '重甲（先攻−1）') : '';
+    return [spec, protection, armorEffectLabel(unit, ui), load, defense, limits, traitLabel ? ui('装备自动特质：{trait}', {trait:traitLabel}) : ''].filter(Boolean).join(' · ');
+  }
   const w = m.value;
-  return `L${w.level??5}${enhancementLabel(w.recipe?.bonuses)} · ${anchoredWeaponLabel(w,'wounds-v2',BOUNDED_BLAST_MODEL,V34_OVERFLOW_D20.sprayerDamageMultiplier,V34_OVERFLOW_D20.sprayerGroupDamageMultiplier)}${w.recipe?.bonuses?.accuracy ? ' · 精度'+signed(equipmentStep(w.recipe,'accuracy')) : ''}${w.recipe?.bonuses?.defense ? ' · 防御'+signed(equipmentStep(w.recipe,'defense')) : ''} · ${channelNames[w.channel ?? 'kinetic']} · 格子射程${gridWeaponRange(w,true,ARMS_MODEL)}／会战${formationWeaponRange(w)}阵距 · ${w.hands===0?'不占双手':(w.hands??1)+'手'} · 负重${displayNumber(w.load ?? 0)}${w.reload ? ' · 装填' + w.reload : ''}${w.tags?.includes('blast') ? ' · 距离2命中−2' : ''}${w.recipe?.stabilized ? ' · 行进稳定' : ''}`;
+  return [
+    spec, anchoredWeaponLabel(w,'wounds-v2',BOUNDED_BLAST_MODEL,V34_OVERFLOW_D20.sprayerDamageMultiplier,V34_OVERFLOW_D20.sprayerGroupDamageMultiplier,ui),
+    w.recipe?.bonuses?.accuracy ? ui('精度{value}', {value:signed(equipmentStep(w.recipe,'accuracy'))}) : '',
+    w.recipe?.bonuses?.defense ? ui('防御{value}', {value:signed(equipmentStep(w.recipe,'defense'))}) : '',
+    ui(channelNames[w.channel ?? 'kinetic']), ui('格子射程{grid}／会战{formation}阵距', {grid:gridWeaponRange(w,true,ARMS_MODEL), formation:formationWeaponRange(w)}),
+    w.hands === 0 ? ui('不占双手') : ui('{count}手', {count:w.hands ?? 1}), load,
+    w.reload ? ui('装填{value}', {value:w.reload}) : '', w.tags?.includes('blast') ? ui('距离2命中−2') : '', w.recipe?.stabilized ? ui('行进稳定') : '',
+  ].filter(Boolean).join(' · ');
 }
 function issuedGroups(record: UnitRecord): string {
   const unit=record.snapshot;
@@ -67,18 +100,19 @@ function issuedGroups(record: UnitRecord): string {
   if (!groups.length) return '';
   return '<div class="loadout-slots">'+groups.map(g=>{
     const kit=[g.weapon?.name,g.armor?.name,g.shield?.name,...(g.gear ?? []).map(item=>item.name)].filter(Boolean);
-    return '<span>'+esc(kit.join(' · ') || '未配装')+' ×'+g.size+'</span>';
+    return '<span>'+esc(kit.join(' · ') || ui('未配装'))+' ×'+g.size+'</span>';
   }).join('')+'</div>';
 }
 function gearText(record: UnitRecord | undefined): string {
   const u = record?.snapshot ? { ...record.snapshot, armsModel: ARMS_MODEL, traitModel: TRAIT_MODEL } : undefined;
-  if (!u) return '无装备资料';
-  return [...batchWeapons(u).map(w => w.name+' '+anchoredWeaponLabel(w,u.damageModel,u.artilleryModel,u.sprayerDamageMultiplier,u.sprayerGroupDamageMultiplier)+(w.recipe?.stabilized ? ' / 行进稳定' : '')),
-    ...equipmentTraitIds(u).map(id => '装备自动特质：' + autoTraitLabel(id, u)),
-    `有效防护 ${displayNumber(anchoredProtection(u, 'kinetic'))}/${displayNumber(anchoredProtection(u, 'thermal'))}/${displayNumber(anchoredProtection(u, 'arcane'))}（动能/热能/奥术）${armorEffectLabel(u) ? ' · ' + armorEffectLabel(u) : ''}`,
-    u.shield ? '携盾' : '无盾',
-    u.gear?.length ? '佩戴 ' + u.gear.map((g) => g.name).join('、') : '',
-    equipmentLoadLabel(u)].filter(Boolean).join(' · ');
+  if (!u) return ui('无装备资料');
+  const protection = (['kinetic', 'thermal', 'arcane'] as const).map(channel => displayNumber(anchoredProtection(u, channel))).join('/');
+  return [...batchWeapons(u).map(w => w.name+' '+anchoredWeaponLabel(w,u.damageModel,u.artilleryModel,u.sprayerDamageMultiplier,u.sprayerGroupDamageMultiplier,ui)+(w.recipe?.stabilized ? ' / '+ui('行进稳定') : '')),
+    ...equipmentTraitIds(u).map(id => ui('装备自动特质：{trait}', {trait:ui(autoTraitLabel(id, u))})),
+    ui('有效防护 {value}（动能/热能/奥术）', {value:protection}), armorEffectLabel(u, ui),
+    ui(u.shield ? '携盾' : '无盾'),
+    u.gear?.length ? ui('佩戴') + ' ' + u.gear.map((g) => g.name).join('、') : '',
+    equipmentLoadLabel(u, ui)].filter(Boolean).join(' · ');
 }
 function gearComparison(before: UnitRecord | undefined, after: UnitRecord): string {
   const rows: string[] = [];
@@ -352,25 +386,28 @@ export class InventoryPanel {
       }
       const stats: [string, string, string?][] = [];
       if (m?.kind === 'weapon') {
-        const w = m.value;
-        stats.push(['伤害', anchoredWeaponLabel(w,'wounds-v2',undefined,V34_OVERFLOW_D20.sprayerDamageMultiplier,V34_OVERFLOW_D20.sprayerGroupDamageMultiplier).split(' · ').find(s => s.includes('均值'))?.replace(/^.*均值/, '') ?? '—'], ['穿透', displayNumber(anchoredWeapon(w,undefined,'wounds-v2')?.penetration ?? w.penetration ?? 0)], ['射程', save.mode === 'mass' ? formationWeaponRange(w) + '阵位' : gridWeaponRange(w,true,ARMS_MODEL) + '格'], ['负重', displayNumber(w.load ?? 0)]);
+        const w = m.value, projected = anchoredWeapon(w, undefined, 'wounds-v2');
+        const range = save.mode === 'mass' ? ui('{count}阵位', {count:formationWeaponRange(w)})
+          : ui('{count}格', {count:gridWeaponRange(w,true,ARMS_MODEL)});
+        stats.push(['伤害', projected ? String(weaponAverageDamage(projected, V34_OVERFLOW_D20.sprayerDamageMultiplier)) : '—'],
+          ['穿透', displayNumber(projected?.penetration ?? w.penetration ?? 0)], ['射程', range], ['负重', displayNumber(w.load ?? 0)]);
       } else if (m?.kind === 'armor') {
         const unit = { armor: m.value, body: m.value.recipe?.size, damageModel:'wounds-v2' as const, armsModel: ARMS_MODEL };
         stats.push(['动能防护', displayNumber(anchoredProtection(unit, 'kinetic'))], ['热能防护', displayNumber(anchoredProtection(unit, 'thermal'))], ['奥术防护', displayNumber(anchoredProtection(unit, 'arcane'))], ['负重', displayNumber(m.value.load ?? 0)]);
       }
-      if (m?.kind === 'item') stats.push(...itemEffectRows(m.value).map(row => [row.name, row.actual, row.next ? `升L${displayNumber(m.value.recipe.power + 1)} ${row.next}` : undefined] as [string, string, string?]));
+      if (m?.kind === 'item') stats.push(...itemEffectRows(m.value).map(row => [row.name, ui(row.actual), row.next ? ui('升L{level} {value}', {level:m.value.recipe.power + 1, value:ui(row.next)}) : undefined] as [string, string, string?]));
       const battleOnly = single && !outOfBattleUse(item);
       // 不叠加：同方向修正只取最高一件、同一特质只算一次，被盖过的效果在卡片上注明。
       const shadowed = equipped?.slot === 'gear' && actor ? overshadowedGear(actor, item.id) : [];
       return `<article class="inventory-card" data-inventory-id="${esc(item.id)}"><div class="inventory-card-heading"><div>${this.bulkDelete ? `<input type="checkbox" class="inventory-select" data-role="inventory-select" ${itemData} aria-label="选择${esc(item.name)}" ${this.selectedItems.has(item.id) ? 'checked' : ''} ${locked || equipped || this.committing ? 'disabled' : ''}>` : ''}<b>${esc(item.name)}</b><span class="sub">${esc(publicId(item.id))}</span><span class="item-quantity">×${item.qty}</span></div>${this.bulkDelete ? '' : `<label class="item-prompt"><input type="checkbox" data-role="prompt-item" data-id="${esc(item.id)}" ${promptSelected(save.promptSettings as PromptSettings | undefined, 'item', item.id) ? 'checked' : ''}><span>${ui("供剧情参考")}</span></label>`}</div>
-        <div class="item-location">${equipped ? (equipped.slot === 'gear' ? '已装备' : slotNames[equipped.slot] + ' · 已装备') : item.assignedTo ? '随身物品' : '公共库存'}${m?.kind === 'item' ? ' · ' + ITEM_FORM_NAMES[m.value.recipe.form] + '道具 · 等级' + displayNumber(m.value.recipe.power) : m ? ' · 等级' + displayNumber((m.value.recipe?.power ?? 1)) : ''}</div>
+        <div class="item-location">${equipped ? (equipped.slot === 'gear' ? ui('已装备') : ui(slotNames[equipped.slot]) + ' · ' + ui('已装备')) : ui(item.assignedTo ? '随身物品' : '公共库存')}${m?.kind === 'item' ? ' · ' + ui(ITEM_FORM_NAMES[m.value.recipe.form] + '道具') : ''}${m ? ' · ' + ui('等级{value}', {value:displayNumber(m.value.recipe?.power ?? 1)}) : ''}</div>
         ${shadowed.length ? `<p class="sub" data-role="gear-overshadowed">${ui("未生效：")}${esc(shadowed.join('、'))}${ui("（已被覆盖）")}</p>` : ''}
         ${stats.length && m?.kind === 'item' && m.value.passive?.traits.length ? '<p>' + esc(itemPassiveSummary({ traits: m.value.passive.traits }, undefined, false)) + '</p>' : ''}
-        ${stats.length ? `<dl class="item-stats">${stats.map(([key, value, next]) => `<div><dt>${key}</dt><dd>${esc(value)}${next ? '<br><small class="sub">' + esc(next) + '</small>' : ''}</dd></div>`).join('')}</dl>${m?.kind === 'item' && historicalWornItem(m.value) ? `<p class="sub">${ui("旧版数值，可预览更新。")}</p>` : ''}<details class="item-rules" data-detail-id="rules-${esc(item.id)}"><summary>${ui("查看完整属性")}</summary>${m?.kind === 'item' ? '<p>配方：' + esc(itemSpecText(m.value.recipe)) + '</p>' : ''}<p>${esc(itemDescription(item))}</p>${m?.kind === 'item' && !m.value.passive?.actualEffects && m.value.passive?.bonuses?.speed ? `<p>${ui("旧版速度只加先攻；更新后增加移动。")}</p>` : ''}</details>` : `<p>${esc(itemDescription(item))}</p>`}
-        ${item.batch && item.qty>1 && (equipped || recommended) ? `<label>${equipped ? '卸下件数' : '配发件数'} <input data-issue-qty type="number" min="1" max="${item.qty}" value="${item.qty}"></label>` : ''}
-        <div class="item-actions" ${this.bulkDelete ? 'hidden' : ''}>${equipped ? `<button class="primary" data-action="inventory-unequip" ${itemData} ${disabled}>${ui("卸下")}</button>` : recommended ? `<button class="primary" data-action="inventory-equip" ${itemData} data-slot="${recommended.slot}" ${locked || !actor || recommended.reason ? 'disabled' : ''}>${recommended.slot === 'gear' ? '佩戴' : '装备'+slotNames[recommended.slot]}</button>${recommended.reason ? '<span class="grid-reason">' + esc(recommended.reason) + '</span>' : ''}` : ''}
-        ${single ? `<button class="primary" data-action="inventory-use" ${itemData} title="${battleOnly ? '请在战场的行动列表中使用' : ''}" ${locked || !actor || battleOnly ? 'disabled' : ''}>${battleOnly ? '战斗中使用' : '使用1件'}</button>` : ''}
-        ${m?.kind === 'item' && (historicalRecoveryItem(m.value) || historicalWornItem(m.value)) ? `<button data-action="inventory-upgrade-budget" ${itemData} ${disabled}>${m.value.recipe.form === 'worn' ? '更新佩戴数值' : '升级治疗／屏障数值'}</button>` : ''}
+        ${stats.length ? `<dl class="item-stats">${stats.map(([key, value, next]) => `<div><dt>${esc(ui(key))}</dt><dd>${esc(value)}${next ? '<br><small class="sub">' + esc(next) + '</small>' : ''}</dd></div>`).join('')}</dl>${m?.kind === 'item' && historicalWornItem(m.value) ? `<p class="sub">${ui("旧版数值，可预览更新。")}</p>` : ''}<details class="item-rules" data-detail-id="rules-${esc(item.id)}"><summary>${ui("查看完整属性")}</summary>${m?.kind === 'item' ? '<p>' + ui('配方：') + esc(itemSpecText(m.value.recipe)) + '</p>' : ''}<p>${esc(itemDescription(item))}</p>${m?.kind === 'item' && !m.value.passive?.actualEffects && m.value.passive?.bonuses?.speed ? `<p>${ui("旧版速度只加先攻；更新后增加移动。")}</p>` : ''}</details>` : `<p>${esc(itemDescription(item))}</p>`}
+        ${item.batch && item.qty>1 && (equipped || recommended) ? `<label>${ui(equipped ? '卸下件数' : '配发件数')} <input data-issue-qty type="number" min="1" max="${item.qty}" value="${item.qty}"></label>` : ''}
+        <div class="item-actions" ${this.bulkDelete ? 'hidden' : ''}>${equipped ? `<button class="primary" data-action="inventory-unequip" ${itemData} ${disabled}>${ui("卸下")}</button>` : recommended ? `<button class="primary" data-action="inventory-equip" ${itemData} data-slot="${recommended.slot}" ${locked || !actor || recommended.reason ? 'disabled' : ''}>${recommended.slot === 'gear' ? ui('佩戴') : ui('装备{kind}', {kind:ui(slotNames[recommended.slot])})}</button>${recommended.reason ? '<span class="grid-reason">' + esc(ui(recommended.reason)) + '</span>' : ''}` : ''}
+        ${single ? `<button class="primary" data-action="inventory-use" ${itemData} title="${battleOnly ? ui('请在战场的行动列表中使用') : ''}" ${locked || !actor || battleOnly ? 'disabled' : ''}>${ui(battleOnly ? '战斗中使用' : '使用1件')}</button>` : ''}
+        ${m?.kind === 'item' && (historicalRecoveryItem(m.value) || historicalWornItem(m.value)) ? `<button data-action="inventory-upgrade-budget" ${itemData} ${disabled}>${ui(m.value.recipe.form === 'worn' ? '更新佩戴数值' : '升级治疗／屏障数值')}</button>` : ''}
         ${!equipped && !item.assignedTo && actor ? `<button data-action="inventory-assign" ${itemData} ${disabled}>${ui("交给")}${esc(current!.name)}</button>` : ''}</div>
         ${!this.bulkDelete && details.length ? `<details class="inventory-more" data-detail-id="more-${esc(item.id)}"><summary>${ui("其他操作")}</summary><div class="row">${details.join('')}</div></details>` : ''}
         ${item.note ? `<details data-detail-id="note-${esc(item.id)}"><summary>${ui("备注")}</summary><p>${esc(item.note)}</p></details>` : ''}</article>`;

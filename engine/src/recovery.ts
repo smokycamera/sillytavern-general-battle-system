@@ -1,4 +1,5 @@
 import { isVehicleBody } from './vehicle-size.js';
+import { formatDisplayText } from './display-text.js';
 import type { CasualtyRolls } from './small/casualty-rolls.js';
 import { lifeRecoveryScale } from './life-recovery.js';
 import { progression, stackingRevision } from './progression.js';
@@ -248,6 +249,7 @@ export function woundedAfterUpdate(unit: Health, hp: number, hpMax: number): num
 }
 
 /** brief 只给伤兵数：战报摘要随附的单位提示词已说明治疗不补回永久缺员。 */
-export function woundedLabel(unit: Health, brief = false): string {
-  return (unit.recoverableWounded ?? 0) > 0 ? `可救伤兵${unit.recoverableWounded}${brief ? '' : '，治疗不会补回其余缺员'}` : '';
+export function woundedLabel(unit: Health, brief = false, text = formatDisplayText): string {
+  const count = unit.recoverableWounded ?? 0;
+  return count > 0 ? text(brief ? '可救伤兵{count}' : '可救伤兵{count}，治疗不会补回其余缺员', { count }) : '';
 }

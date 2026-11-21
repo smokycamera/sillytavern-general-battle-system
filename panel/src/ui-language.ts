@@ -1,4 +1,5 @@
 import englishMessages from './ui-messages.en.json';
+import { formatDisplayText, type DisplayText } from '../../engine/src/display-text.js';
 
 export type UiLanguage = 'zh-CN' | 'en';
 
@@ -15,8 +16,7 @@ export function setUiLanguage(value: UiLanguage): void {
 }
 
 /** Translate interface copy only. Interpolation values keep their original text. */
-export function ui(source: string, values?: Record<string, string | number>): string {
+export const ui: DisplayText = (source, values) => {
   const message = language === 'en' && Object.hasOwn(english, source) ? english[source]! : source;
-  if (!values) return message;
-  return message.replace(/\{(\w+)\}/g, (token, key: string) => Object.hasOwn(values, key) ? String(values[key]) : token);
-}
+  return formatDisplayText(message, values);
+};

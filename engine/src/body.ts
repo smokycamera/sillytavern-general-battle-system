@@ -4,6 +4,7 @@ import { armorWearLabel } from './armor-wear.js';
 import { gradedNumbers } from './numeric-model.js';
 import { loadMovementScale, loadInitiativePenalty, weaponLoadCrew } from './equipment-load.js';
 import { displayNumber } from './display-number.js';
+import { formatDisplayText } from './display-text.js';
 export { hasNaturalArmor, equipmentLoad, humanEncumbered, equipmentCapacity, equipmentBurden, overloadPenalty } from './equipment-load.js';
 import { hasNaturalArmor, equipmentLoad, equipmentCapacity, equipmentBurden, overloadPenalty, type BurdenUnit } from './equipment-load.js';
 import { isArmsV2 } from './arms-model.js';
@@ -16,14 +17,22 @@ export { BODY, bodyProfile } from './data/bodies.js';
 export function armorBurdenTier(unit: Pick<Combatant, 'armor'> & Partial<Pick<Combatant, 'rulesVersion' | 'traits' | 'traitSources'>>): number {
   return hasNaturalArmor(unit) ? 0 : unit.armor?.tier ?? 0;
 }
-export function equipmentLoadLabel(unit: BurdenUnit): string {
+export function equipmentLoadLabel(unit: BurdenUnit, text = formatDisplayText): string {
   const load = equipmentLoad(unit), capacity = isArmsV2(unit.armsModel) || revisedLoad(unit) ? equipmentCapacity({...unit,level:unit.level!}) : BODY[unit.body ?? 'human'].capacity, burden = equipmentBurden(unit);
-  const wearLabel = armorWearLabel(unit);
   const vehicle = isVehicleBody(unit.body) && revisedLoad(unit);
+  const loadLabel = text('{label} {load}/{capacity}（{percent}%）', {label:text(vehicle && unit.scale === 'hero' ? '单车负重' : '负重'),
+    load:displayNumber(load), capacity:displayNumber(capacity), percent:Math.round(load/capacity*100)});
+  const overload = burden === 2 ? text('、命中和闪避−{penalty}，不能冲锋和突进', {penalty:displayNumber(overloadPenalty(unit))}) : '';
   const nextCapacity = vehicle && unit.level !== undefined && unit.level < 10
-    ? ' · L'+(unit.level+1)+' 承载 '+displayNumber(equipmentCapacity({...unit,level:unit.level+1})) : '';
-  if (gradedNumbers(unit) || revisedLoad(unit)) return (vehicle && unit.scale === 'hero' ? '单车负重 ' : '负重 ')+displayNumber(load)+'/'+displayNumber(capacity)+'（'+Math.round(load/capacity*100)+'%）' + (burden ? ' · 移动×'+displayNumber(loadMovementScale(unit))+'、先攻−'+displayNumber(loadInitiativePenalty(unit))+(burden === 2 ? '、命中和闪避−'+displayNumber(overloadPenalty(unit))+'，不能冲锋和突进' : '') : ' · 无负担') + (wearLabel ? ' · '+wearLabel : '') + ([unit.weapon,unit.sidearm].some(weapon => weaponLoadCrew(unit,weapon) > 1) ? ' · 班组武器负载按操作人数分摊' : '') + nextCapacity;
-  return '负重 '+displayNumber(load)+'/'+displayNumber(capacity)+'（'+Math.round(load/capacity*100)+'%）' + (burden === 2 ? ' · 超载：移动−2、先攻−4、命中和闪避−'+displayNumber(overloadPenalty(unit))+'，不能冲锋和突进' : burden === 1 ? ' · 重载：移动−1、先攻−2' : '');
+    ? text('L{level} 承载 {capacity}', {level:unit.level+1, capacity:displayNumber(equipmentCapacity({...unit,level:unit.level+1}))}) : '';
+  if (gradedNumbers(unit) || revisedLoad(unit)) {
+    const penalties = burden ? text('移动×{move}、先攻−{initiative}', {
+      move:displayNumber(loadMovementScale(unit)), initiative:displayNumber(loadInitiativePenalty(unit)),
+    }) + overload : text('无负担');
+    const crew = [unit.weapon,unit.sidearm].some(weapon => weaponLoadCrew(unit,weapon) > 1) ? text('班组武器负载按操作人数分摊') : '';
+    return [loadLabel, penalties, armorWearLabel(unit, text), crew, nextCapacity].filter(Boolean).join(' · ');
+  }
+  return loadLabel + (burden === 2 ? ' · '+text('超载：移动−2、先攻−4')+overload : burden === 1 ? ' · '+text('重载：移动−1、先攻−2') : '');
 }
 export function bodyProtection(unit: Combatant, channel: DamageChannel): number {
   return unit.rulesVersion === 'v2' ? BODY[unit.body ?? 'human'].protection[channel] : 0;

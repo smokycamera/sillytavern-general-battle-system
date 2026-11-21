@@ -36,8 +36,15 @@ it('从队伍载具卡装载，在配装乘员卡离开，再绑定并从载具�
     await vi.waitFor(() => expect(ride()?.mode).toBe('mount'));
     click('[data-action="workspace-tab"][data-tab="units"]');
     expect(Array.from(document.querySelectorAll<HTMLElement>('.team-transport-group [data-unit]'), row => row.dataset.unit)).toEqual(['carrier']);
+    const savedRide = ride();
+    click('[data-action="language-toggle"]');
+    const editor = document.querySelector('.ride-editor[data-carrier="carrier"]')!;
+    expect(editor.textContent).toContain('Enclosed Vehicle L4 · Seats used: 1 / 4');
+    expect(editor.textContent).toContain('rider · Bound');
+    expect(ride()).toEqual(savedRide);
     click('.ride-editor[data-carrier="carrier"] button[data-rider="rider"]');
     await vi.waitFor(() => expect(ride()).toBeUndefined());
+    click('[data-action="language-toggle"]');
     expect(document.querySelector('.ride-editor[data-carrier="carrier"]')?.textContent).toContain('已用 0 / 4 席');
 
     const [rider, carrier, opponent, hidden] = ['rider','carrier','opponent','hidden'].map(id => make(id).snapshot!);

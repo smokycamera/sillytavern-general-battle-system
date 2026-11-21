@@ -90,6 +90,10 @@ try {
   await frame.locator('.workspace-nav [data-tab="settings"]').click();
   check('英文版副 API 设置移除旧说明并显示英文阵营选项', await settingsTextRemoved() &&
     /Command Enemies.*Command Third-Party Forces/s.test(await llmSettingsCopy()));
+  check('英文设置显示发送范围与提示词编辑标签',
+    await frame.locator('.prompt-scope h2').innerText() === 'Story Reference Scope' &&
+    (await frame.locator('.prompt-scope p').first().innerText()).startsWith('Selected for context:') &&
+    await frame.locator('[data-detail-id="prompt-editor-units"] summary').innerText() === 'Edit Prompt');
   check('英文设置显示四个世界书条目并注入英文正文',
     (await frame.locator('.worldbook-settings [data-worldbook-entry] strong').allTextContents()).join('|') ===
       'Battle Interaction and Reports|Equipment and Ability Power Reference|Units and Equipment|Skills and Effects' &&

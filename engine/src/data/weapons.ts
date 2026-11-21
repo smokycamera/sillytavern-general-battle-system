@@ -1,4 +1,5 @@
 import { diceMean } from '../dice.js';
+import { formatDisplayText } from '../display-text.js';
 /**
  * 武器生成器：与单位生成机制同构——武器原型参数 × 等级曲线 → 公式计算骰子表达式，全程审计。
  *
@@ -288,8 +289,10 @@ export function buildWeaponDice(opts: BuildWeaponOpts): BuiltWeaponDice {
   };
 }
 
-export function classMismatchHint(name: string, mechanism: string): string {
+export function classMismatchHint(name: string, mechanism: string, text = formatDisplayText): string {
   const hint = nameClassHint(name);
   const label = (id: string) => WEAPON_CLASSES[id]?.name ?? SHIELD_CLASSES[id as ShieldClass].name;
-  return hint && hint !== mechanism ? '名称像' + label(hint) + '，当前按' + label(mechanism) + '结算，可在面板修改' : '';
+  return hint && hint !== mechanism ? text('名称像{suggested}，当前按{current}结算，可在面板修改', {
+    suggested: text(label(hint)), current: text(label(mechanism)),
+  }) : '';
 }
