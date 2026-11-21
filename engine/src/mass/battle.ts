@@ -240,7 +240,11 @@ export class MassBattle {
     this.roundLimit = opts.roundLimit ?? 40;
     this.combatants = opts.combatants;
     this.xpMinimum = initialXpStrength(this.combatants);
-    this.xpInitialStrength = initialXpStrength(this.combatants);
+    this.xpInitialStrength = new Map(this.xpMinimum);
+    for (const unit of this.combatants) if (unit.transportOrigin) {
+      const original = this.xpInitialStrength.get(unit.transportOrigin) ?? 0;
+      this.xpInitialStrength.set(unit.transportOrigin, original + (this.xpMinimum.get(unit.id) ?? 0));
+    }
     for (const unit of this.combatants) unit.nonLethal = this.nonLethal;
     for (const unit of this.combatants) { calibrateAutocannon(unit.weapon); calibrateAutocannon(unit.sidearm); calibrateWeaponHands(unit.weapon); calibrateWeaponHands(unit.sidearm); }
     for (const unit of this.combatants) { validateConcealment(unit.tacticalRevealed); validateVanguardOrigin(unit.vanguardOrigin, unit.side); }
@@ -1809,7 +1813,7 @@ export class MassBattle {
     return this.combatants.filter((c) => c.side === side && c.status === 'ready');
   }
 
-  start(): void {
+  start(deploymentEvents: readonly BattleLogEntry[] = []): void {
     for (const unit of this.combatants) delete unit.regenerationRemainder;
     if (this.started) return;
     for (const unit of this.combatants) { prepareRevivalBattle(unit, true); resetWornBarrier(unit); }
@@ -1818,6 +1822,7 @@ export class MassBattle {
     this.started = true;
     if (isArmsV2(this.rules.armsModel)) for (const u of this.combatants) if (u.shield && !shieldUsable(u) && u.shieldDurability?.remaining !== 0) this.recordEvent({round:1,kind:'condition',participants:[u.id],text:u.name+'的'+(u.shield.name??'盾牌')+'挂在背上'});
     this.round = 1;
+    for (const event of deploymentEvents) this.recordEvent(event);
     for (const unit of this.combatants) { const text = grantEntryWornBarrier(unit, this.rules); if (text) this.recordEvent({round:1,kind:'condition',participants:[unit.id],text}); }
     for (const unit of this.combatants) beginLifestealRound(unit, this.round, true);
     for (const unit of this.combatants) {
@@ -2478,7 +2483,7 @@ export class MassBattle {
     if(this.rules.resolutionVersion==='v2') {
       const earned=casualtyXp(t,this.xpMinimum);
       if(t.side==='enemy')this.xpGained+=earned;
-      const owner=u?.summonerId??u?.id;
+      const owner=u?.summonerId??u?.transportOrigin??u?.id;
       if(owner&&earned&&u?.side!==t.side&&u?.side!=='neutral')this.xpByUnit.set(owner,(this.xpByUnit.get(owner)??0)+earned);
     }
     const revival = tryRevive(t);

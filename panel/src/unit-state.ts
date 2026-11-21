@@ -805,6 +805,12 @@ export function commitBattleState(opts: {
       .filter((c) => !lost.has(c.id))
       .map((c) => [c.id, c] as const),
   );
+  const fixedDeployment = opts.battleId?.startsWith('mass:');
+  // A mass battle uses rides only to deploy. The long-term assignment comes from the archive.
+  const restoreDeploymentRide = (unit: Combatant, original?: Combatant): Combatant => {
+    if (!fixedDeployment || !original?.ride) return unit;
+    return { ...unit, ride: original.ride, mount: original.mount };
+  };
 
   function clearLostCarrier(unit: Combatant | undefined) {
     if (unit?.ride && lost.has(unit.ride.platformId)) { delete unit.ride; unit.mount = false; }
@@ -812,7 +818,7 @@ export function commitBattleState(opts: {
   const records = opts.records.map((previous) => {
     const combatant = opts.combatants.find((c) => c.id === previous.id);
     if (!combatant) { const next = clone(previous); clearLostCarrier(next.snapshot); return next; }
-    const next = unitRecordFromCombatant(combatant, previous, {
+    const next = unitRecordFromCombatant(restoreDeploymentRide(combatant, previous.snapshot), previous, {
       transient: false, kind: 'battle', sourceId: opts.battleId,
     });
     clearLostCarrier(next.snapshot);
@@ -827,7 +833,7 @@ export function commitBattleState(opts: {
     .filter((u) => !u.transportOrigin && !lost.has(u.id))
     .map((u) => {
       const current = live.get(u.id);
-      const next = current ? clone(current) : clone(u);
+      const next = clone(current ? restoreDeploymentRide(current, u) : u);
       clearLostCarrier(next);
       if (next.ride) next.ride = {platformId:next.ride.platformId,mode:next.ride.mode};
       next.recordRevision = records.find((r) => r.id === next.id)?.revision;

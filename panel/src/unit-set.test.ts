@@ -1,18 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { generateUnit, traitRegistry, xpProgress, SmallBattle, standardField, V42_OVERFLOW_D20, V5_D20, activeConditionIds, activeTraitIds, traitLevel, traitSourceActive, grantTraitSource } from '../../engine/src/index.js';
+import { generateUnit, traitRegistry, xpProgress, SmallBattle, MassBattle, standardField, V42_OVERFLOW_D20, V5_D20, activeConditionIds, activeTraitIds, traitLevel, traitSourceActive, grantTraitSource } from '../../engine/src/index.js';
 import { applyCombatDamage } from '../../engine/src/recovery.js';
 import { memberHealth } from '../../engine/src/member-health.js';
 import { reuniteTransportGroups } from '../../engine/src/small/transport-groups.js';
 import { anchoredWeapon, anchoredProtection, armorPowerScale } from '../../engine/src/power-anchors.js';
 import { rideControls } from './tactical-view.js';
 import { casualtyXp } from '../../engine/src/casualty-xp.js';
+import { formationNode } from '../../engine/src/mass/formation.js';
 import { battleEpilogue } from './battle-reports.js';
-import { commitBattleState, materializeUnitRecord, unitRecordFromCombatant } from './unit-state.js';
+import { commitBattleOutcome, commitBattleState, materializeUnitRecord, unitRecordFromCombatant } from './unit-state.js';
 import { captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type NarrativeSave, type MessageEnvelope } from './narrative-state.js';
 import { prepareInventoryState } from './inventory-state.js';
 import { serializeEvent } from './protocol-syntax.js';
 import { parseProtocol } from './protocol.js';
 import { applyBattleStep } from './battle-step.js';
+import { buildEncounter } from './game-encounter.js';
 
 const reg=traitRegistry();
 function setup(scale:'hero'|'company'='hero'):NarrativeSave {
@@ -30,6 +32,79 @@ function transactText(save:NarrativeSave,text:string,mid='set') {
   return {next:()=>prepareNarrativeTransaction(save,proposal,ns),proposal,ns};
 }
 function restored(save:NarrativeSave) { return materializeUnitRecord(prepareInventoryState(JSON.parse(JSON.stringify(save))).storage![0]!,reg); }
+
+describe('简易会战的固定骑乘与运输部署', () => {
+  function encounter(entries: string) {
+    const save = transactText(setup(), '<tb>'+entries+'<spawn name="敌军" side="enemy" scale="company" hpMax="10"/></tb>').next();
+    const roster = save.rosterIds!.map(id => materializeUnitRecord(save.storage!.find(r => r.id === id)!, reg));
+    const source = structuredClone(roster);
+    const battle = buildEncounter({ roster, setup: { mode:'mass', field:'plains', lighting:'day', mapLayout:'standard',
+      objectiveMode:'annihilation', siegeAttacker:'ally' }, nonLethal:false, seed:'mass-platform', registry:reg, summonUnit:() => null }) as MassBattle;
+    expect(roster).toEqual(source);
+    return { battle, roster, save };
+  }
+
+  it('按实际马匹部署、保留武器件数，并将分队的战损写回原档', () => {
+    const { battle, roster, save } = encounter(
+      '<spawn name="战马队" side="ally" scale="company" hpMax="4" platform="坐骑L2" seats="1"/>' +
+      '<spawn name="骑兵队" side="ally" scale="company" hpMax="6" mount="战马队" weapon="骑枪:长兵器L3×6" armor="皮甲:轻甲L3×6"/>');
+    const original = roster.find(unit => unit.name === '骑兵队')!;
+    const horse = roster.find(unit => unit.name === '战马队')!;
+    expect(battle.combatants.some(unit => unit.id === horse.id)).toBe(false);
+    expect(battle.log.filter(entry => entry.transport && entry.observedBy?.includes('ally'))).toHaveLength(2);
+
+    const reloaded = MassBattle.fromSnapshot(JSON.parse(JSON.stringify(battle.toSnapshot())), {traitRegistry:reg});
+    const cavalry = reloaded.byId(original.id), foot = reloaded.combatants.find(unit => unit.transportOrigin === original.id)!;
+    expect([cavalry.hp, cavalry.mount, foot.hp, foot.mount]).toEqual([4, true, 2, false]);
+    expect(reloaded.xpInitialStrength.get(original.id)).toBe(6);
+    expect(reloaded.xpMinimum.get(original.id)).toBe(4);
+    expect(reloaded.xpMinimum.get(foot.id)).toBe(2);
+    expect(cavalry.equipmentBatches?.map(batch => batch.qty)).toEqual([4, 4]);
+    expect(foot.equipmentBatches?.map(batch => batch.qty)).toEqual([2, 2]);
+    expect(memberHealth(cavalry) + memberHealth(foot)).toBe(memberHealth(original));
+    expect(reloaded.issue({unitId:cavalry.id,type:'hold'}).ok).toBe(true);
+    expect(reloaded.issue({unitId:foot.id,type:'hold'}).ok).toBe(true);
+    applyCombatDamage(foot, memberHealth(foot), foot.hp);
+    foot.status = 'dead';
+    const result = commitBattleOutcome({ battleId:'mass:'+reloaded.seed, committedIds:[], records:save.storage!, roster,
+      inventory:save.inventory, combatants:reloaded.combatants, awards:[], registry:reg });
+    expect(result.records.find(record => record.id === original.id)).toMatchObject({hp:4, snapshot:{ride:original.ride}});
+    expect(result.records.find(record => record.id === horse.id)).toEqual(save.storage!.find(record => record.id === horse.id));
+    expect(result.inventory!.filter(item => item.equippedTo?.unitId === original.id).map(item => item.qty)).toEqual([4, 4]);
+    expect(result.roster.map(unit => unit.id)).toEqual(roster.map(unit => unit.id));
+  });
+
+  it('按车辆总座位部署，乘车组优先与载具同阵位，开战后双方使用普通会战指令', () => {
+    const { battle, roster } = encounter(
+      '<spawn name="运输车队" side="ally" scale="company" body="mediumvehicle" hpMax="2" platform="封闭载具L5" seats="2"/>' +
+      '<spawn name="步兵队" side="ally" scale="company" hpMax="6" aboard="运输车队" weapon="步枪:步枪L4×6"/>');
+    const original = roster.find(unit => unit.name === '步兵队')!;
+    const carrier = battle.combatants.find(unit => unit.name === '运输车队')!;
+    const passengers = battle.byId(original.id), foot = battle.combatants.find(unit => unit.transportOrigin === original.id)!;
+    expect([passengers.hp, foot.hp, carrier.hp]).toEqual([4, 2, 2]);
+    expect(formationNode(passengers).id).toBe(formationNode(carrier).id);
+    expect(passengers.ride).toBeUndefined();
+    expect(passengers.mount).toBe(false);
+    for (const unit of battle.combatants) expect(battle.issue({unitId:unit.id,type:'hold'}).ok).toBe(true);
+    battle.resolveRound();
+    expect(battle.round).toBe(2);
+    expect(battle.combatants).toHaveLength(4);
+    const settled = commitBattleState({battleId:'mass:'+battle.seed, records:roster.map(unit => unitRecordFromCombatant(unit)), roster, combatants:battle.combatants});
+    expect(settled.records.find(record => record.id === original.id)).toMatchObject({hp:6, snapshot:{ride:original.ride}});
+    expect(settled.records).toHaveLength(roster.length);
+  });
+
+  it('绑定实物坐骑的个体也能直接接受会战指令', () => {
+    const {battle} = encounter(
+      '<spawn name="战马" side="ally" scale="hero" platform="坐骑L2"/>' +
+      '<spawn name="骑士" side="ally" scale="hero" mount="战马" weapon="剑L3"/>' +
+      '<spawn name="步兵" side="ally" scale="company" hpMax="8"/>');
+    const rider = battle.combatants.find(unit => unit.name === '骑士')!;
+    expect(rider.mount).toBe(true);
+    expect(battle.isAttached(rider.id)).toBe(false);
+    expect(battle.issue({unitId:rider.id,type:'hold'}).ok).toBe(true);
+  });
+});
 
 it('明确写入武器护甲盾的负载均留下手工标记，包括恰好等于默认值', () => {
   const next = transact(setup(), { weapon: { values: { load: 1 } }, armor: { values: { load: 1 } }, shield: { spec: '盾L3', values: { load: 1.5 } } }).next();

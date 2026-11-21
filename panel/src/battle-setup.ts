@@ -1,5 +1,8 @@
-import { DEFAULT_SMALL_ROUND_LIMIT, defaultBattleObjective, type SmallBattle, needsFormationHost, recommendedFormationSlots, flightCapabilityReason, standardConditionMap, FORMATION_NODES, type BattlefieldSpec, type Combatant } from '../../engine/src/index.js';
+import { DEFAULT_SMALL_ROUND_LIMIT, defaultBattleObjective, type SmallBattle, needsFormationHost, recommendedFormationSlots, flightCapabilityReason, standardConditionMap, FORMATION_NODES, type BattlefieldSpec, type BattleLogEntry, type Combatant } from '../../engine/src/index.js';
 import { activeBattleUnits } from '../../engine/src/battle-limits.js';
+import { unitCount, validateRides } from '../../engine/src/platforms.js';
+import { planTransportDeployment } from '../../engine/src/small/transport-groups.js';
+import { formationNodeDistance, setFormation, type FormationNode } from '../../engine/src/mass/formation.js';
 import { MAX_SCENE_UNITS, GROUPING_HINT } from './narrative-limits.js';
 import {groundBlocked} from '../../engine/src/small/layers.js';
 import { gridCostsToGoals, gridDistance, movementStepCost, prepareGridDeployment, neighbors } from '../../engine/src/small/spatial.js';
@@ -11,12 +14,64 @@ export function battleCapacityIssue(roster: Combatant[]): string | undefined {
 
 /** 为未指定阵位的编队分配实际空位；不重写明确部署，不修改长期档案。 */
 export function prepareMassRoster(roster: Combatant[], fieldTags: string[] = []): Combatant[] {
+  return prepareMassDeployment(roster, fieldTags).combatants;
+}
+
+function projectMassTransport(roster: Combatant[]) {
+  const arrivals = new Map<string, string>();
+  const mounted = new Map<string, string>();
+  const events: BattleLogEntry[] = [];
+  if (!roster.some(unit => unit.ride)) return { units: roster, arrivals, mounted, events };
+
+  const byId = new Map(roster.map(unit => [unit.id, unit]));
+  validateRides(roster, true);
+  // Only ready units take seats. An inactive carrier has no seats to lend for this deployment.
+  for (const unit of roster) if (unit.ride && (unit.status !== 'ready' || byId.get(unit.ride.platformId)?.status !== 'ready')) {
+    delete unit.ride;
+    unit.mount = false;
+  }
+  const { deployed, overflow } = planTransportDeployment(roster);
+  for (const { foot, carrierId } of overflow) {
+    const carrier = byId.get(carrierId)!;
+    events.push({ round: 1, kind: 'move', transport: true, participants: [foot.id, carrierId],
+      text: `${carrier.name} 座位不足，${foot.name} 的 ${unitCount(foot)} 人步行部署` });
+  }
+  for (const unit of deployed) {
+    if (!unit.ride) continue;
+    const carrier = byId.get(unit.ride.platformId)!;
+    if (carrier.platform?.kind === 'animal' && unit.ride.mode === 'mount') {
+      // The rider is the only fighting card for the mounted group. The assigned horse record stays in the roster for other battles.
+      unit.mount = true;
+      mounted.set(carrier.id, unit.id);
+      events.push({ round: 1, kind: 'move', transport: true, participants: [unit.id],
+        text: `${unit.name} 骑乘 ${carrier.name} 部署，${unitCount(unit)} 人` });
+    } else {
+      arrivals.set(unit.id, carrier.id);
+      delete unit.ride;
+      unit.mount = false;
+      events.push({ round: 1, kind: 'move', transport: true, participants: [unit.id, carrier.id],
+        text: `${unit.name} 随 ${carrier.name} 部署，${unitCount(unit)} 人` });
+    }
+  }
+  // If there are additional passengers sharing an animal platform, use the riding group's arrival position.
+  for (const [unitId, carrierId] of arrivals) arrivals.set(unitId, mounted.get(carrierId) ?? carrierId);
+  for (const event of events) event.participants = event.participants!.filter(id => !mounted.has(id));
+  return { units: deployed.filter(unit => !mounted.has(unit.id)), arrivals, mounted, events };
+}
+
+export function prepareMassDeployment(roster: Combatant[], fieldTags: string[] = []) {
   const issue = battleCapacityIssue(roster); if (issue) throw new Error(issue);
   const flightContext = { fieldTags };
   const v2 = roster.every(u => u.rulesVersion === 'v2');
-  const units = structuredClone(roster), occupied = new Map<string, number>(), slots = recommendedFormationSlots(roster);
+  const { units, arrivals, mounted, events } = projectMassTransport(structuredClone(roster));
+  if (units.length > roster.length) {
+    const deployedIssue = battleCapacityIssue(units); if (deployedIssue) throw new Error(deployedIssue);
+  }
+  const occupied = new Map<string, number>(), slots = recommendedFormationSlots(units);
+  const carriers = new Set(arrivals.values()), positions = new Map<string, FormationNode>();
   const explicit = (u: Combatant) => !!u.formationPosition || u.tags.some((t) => t.startsWith('zone:')) && u.tags.some((t) => t.startsWith('rank:'));
-  const ordered = [...units].sort((a, b) => Number(explicit(b)) - Number(explicit(a)) || a.id.localeCompare(b.id));
+  const ordered = [...units].sort((a, b) => Number(explicit(b)) - Number(explicit(a))
+    || Number(carriers.has(b.id)) - Number(carriers.has(a.id)) || a.id.localeCompare(b.id));
   for (const side of ['ally', 'enemy'] as const) {
     const group = activeBattleUnits(ordered).filter((u) => u.side === side);
     const hosts = group.filter(u => v2 && !needsFormationHost(u, flightContext) && u.scale !== 'hero' && u.hp > 0 && u.status === 'ready'
@@ -26,23 +81,32 @@ export function prepareMassRoster(roster: Combatant[], fieldTags: string[] = [])
     for (const [index, unit] of combatants.entries()) {
       const zone = unit.tags.find((t) => t.startsWith('zone:'))?.slice(5);
       const rank = unit.tags.find((t) => t.startsWith('rank:'))?.slice(5);
-      const preferredWing = zone ?? ['左翼', '中军', '右翼'][Math.floor(index * 3 / Math.max(1, combatants.length))]!;
-      const preferredRank = rank ?? (unit.weapon?.tags?.includes('ranged') ? 'rear' : unit.archetype === 'mobile' ? 'reserve' : 'front');
+      const arrival = positions.get(arrivals.get(unit.id) ?? '');
+      const preferredWing = zone ?? arrival?.wing ?? ['左翼', '中军', '右翼'][Math.floor(index * 3 / Math.max(1, combatants.length))]!;
+      const preferredRank = rank ?? arrival?.rank ?? (unit.weapon?.tags?.includes('ranged') ? 'rear' : unit.archetype === 'mobile' ? 'reserve' : 'front');
       const air = v2 && (unit.airborne ?? !flightCapabilityReason(unit, standardConditionMap(), flightContext));
       const key = (id: string) => id + ':' + Number(air);
       const candidates = FORMATION_NODES.filter((n) => n.side === side
         && (!unit.formationPosition || n.id === unit.formationPosition) && (!zone || n.wing === zone) && (!rank || n.rank === rank));
       const node = candidates.filter((n) => (occupied.get(key(n.id)) ?? 0) < slots)
-        .sort((a, b) => Number(b.rank === preferredRank) - Number(a.rank === preferredRank)
+        .sort((a, b) => (arrival ? formationNodeDistance(a, arrival) - formationNodeDistance(b, arrival) : 0)
+          || Number(b.rank === preferredRank) - Number(a.rank === preferredRank)
           || Number(b.wing === preferredWing) - Number(a.wing === preferredWing)
           || (occupied.get(key(a.id)) ?? 0) - (occupied.get(key(b.id)) ?? 0) || a.y - b.y || a.x - b.x)[0];
       if (!node) throw new Error(`${side === 'ally' ? '我方' : '敌方'}阵位容量不足；请调整明确部署或减少本场名单，档案未改变`);
       occupied.set(key(node.id), (occupied.get(key(node.id)) ?? 0) + 1);
+      positions.set(unit.id, node);
       unit.tags = [...unit.tags.filter((t) => !t.startsWith('zone:') && !t.startsWith('rank:')), 'zone:' + node.wing, 'rank:' + node.rank];
       if (unit.formationPosition) unit.formationPosition = node.id;
     }
+    // A transported individual may still use the normal hero attachment rule. Start its search at the carrier's node.
+    for (const unit of group.filter(u => attachedHeroes.has(u.id) && !u.formationPosition &&
+      !u.tags.some(tag => tag.startsWith('zone:') || tag.startsWith('rank:')))) {
+      const arrival = positions.get(arrivals.get(unit.id) ?? '');
+      if (arrival) setFormation(unit, arrival);
+    }
   }
-  return units;
+  return { combatants: units, slots, mounted, events };
 }
 
 export type BattleObjectiveMode = 'auto' | 'annihilation' | 'siege' | 'control' | 'escort' | 'intercept';
