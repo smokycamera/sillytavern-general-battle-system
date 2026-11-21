@@ -1,3 +1,4 @@
+import { ui } from './ui-language.js';
 import { displayNumber } from '../../engine/src/display-number.js';
 import { FORMATION_NODES, approxDelta, type MassBattle, type UnitChange } from '../../engine/src/index.js';
 import { orderLabels } from './formation-orders.js';
@@ -32,9 +33,9 @@ export function renderFormationFeedback(b: MassBattle): string {
   return `<aside class="mass-round-feedback"><div class="feedback-heading"><b>第${report.round}轮已执行</b><span>${esc(totals(report.total.changes))}</span></div>
     ${front.length ? '<p class="front-change">' + front.map(esc).join('；') + '</p>' : ''}
     ${blocked.length ? '<p class="grid-reason">' + blocked.length + '个我方任务受阻：' + blocked.slice(0, 2).map((r) => esc(names.get(r.order.unitId) ?? b.combatants.find((u) => u.id === r.order.unitId)?.name ?? '编队') + '（' + esc(r.reason ?? '前序阶段改变局势') + '）').join('；') + '</p>' : ''}
-    <details data-detail-id="mass-phase-feedback"><summary>阶段变化与任务结果</summary>
+    <details data-detail-id="mass-phase-feedback"><summary>${ui("阶段变化与任务结果")}</summary>
       <div class="mass-phase-feedback">${report.phases.map((phase) => '<details><summary><b>' + phase.phase + '</b> · ' + esc(totals(phase.changes)) + '</summary><ul>' + phase.changes.filter((c) => changeText(c)).map((c) => '<li><b>' + esc(c.name) + '</b> ' + esc(changeText(c)) + '</li>').join('') + '</ul></details>').join('')}</div>
       <ul class="mass-order-receipts">${report.orders.map((r) => '<li><b>' + esc(names.get(r.order.unitId) ?? b.combatants.find((u) => u.id === r.order.unitId)?.name ?? '编队') + '</b> · ' + orderLabels[r.order.type] + ' · ' + r.phase + ' · ' + ({ locked: '已锁定', executed: '已执行', blocked: '受阻' })[r.status] + (r.reason ? '：' + esc(r.reason) : '') + '</li>').join('')}</ul>
-      <p class="sub">记录实际可观察到的变化；未发现敌军的行动与战损不作推测。</p>
+      <p class="sub">${ui("记录实际可观察到的变化；未发现敌军的行动与战损不作推测。")}</p>
     </details></aside>`;
 }

@@ -1,3 +1,4 @@
+import { ui } from './ui-language.js';
 import type { WorldbookEntry, WorldbookSource } from '../../host/src/worldbooks.js';
 import { escapeHtml as esc } from './battle-presentation.js';
 import type { LlmSettings } from './llm-settings.js';
@@ -45,21 +46,21 @@ export class LlmWorldbookPicker {
     const book = selection.find(book => book.name === this.current), entries = this.books.get(this.current);
     const disabled = !settings.enabled || this.busy;
     const bound = settings.worldbookMode === 'character';
-    const mode = `<label class="llm-setting-field">读取模式 <select data-role="llm-worldbook-mode" ${disabled ? 'disabled' : ''}>
-      <option value="manual" ${!bound ? 'selected' : ''}>手动选择</option><option value="character" ${bound ? 'selected' : ''}>绑定当前角色卡（共用激活条目）</option></select></label>`;
-    if (bound) return `<details class="llm-worldbooks" data-detail-id="llm-worldbooks"><summary>发送给副 API 的世界书（绑定当前角色卡）</summary>
-      ${mode}<p class="sub">跟随当前角色卡和聊天，共用主 API 本轮实际激活的世界书条目。蓝灯常驻、绿灯触发及预算均沿用酒馆设置。</p>
-      <p class="sub">刷新页面或切换聊天后，先让角色卡生成一次正文。切回手动选择会恢复原来的勾选。</p></details>`;
+    const mode = `<label class="llm-setting-field">${ui("读取模式")} <select data-role="llm-worldbook-mode" ${disabled ? 'disabled' : ''}>
+      <option value="manual" ${!bound ? 'selected' : ''}>${ui("手动选择")}</option><option value="character" ${bound ? 'selected' : ''}>${ui("绑定当前角色卡（共用激活条目）")}</option></select></label>`;
+    if (bound) return `<details class="llm-worldbooks" data-detail-id="llm-worldbooks"><summary>${ui("发送给副 API 的世界书（绑定当前角色卡）")}</summary>
+      ${mode}<p class="sub">${ui("跟随当前角色卡和聊天，共用主 API 本轮实际激活的世界书条目。蓝灯常驻、绿灯触发及预算均沿用酒馆设置。")}</p>
+      <p class="sub">${ui("刷新页面或切换聊天后，先让角色卡生成一次正文。切回手动选择会恢复原来的勾选。")}</p></details>`;
     return `<details class="llm-worldbooks" data-detail-id="llm-worldbooks"><summary>发送给副 API 的世界书（已选${selection.length}本）</summary>
       ${mode}
-      <p class="sub">可整本发送或勾选条目，用于开战、地图、人设、指挥和正文扫描。勾选内容每次发送，不受关键词触发限制。</p>
+      <p class="sub">${ui("可整本发送或勾选条目，用于开战、地图、人设、指挥和正文扫描。勾选内容每次发送，不受关键词触发限制。")}</p>
       <button data-action="llm-worldbooks-refresh" ${disabled ? 'disabled' : ''}>${this.busy ? '读取中…' : '读取／刷新世界书'}</button>
-      ${names.length ? `<label class="llm-setting-field">世界书 <select data-role="llm-worldbook" ${disabled ? 'disabled' : ''}><option value="">选择世界书</option>${names.map(name => {
+      ${names.length ? `<label class="llm-setting-field">${ui("世界书")} <select data-role="llm-worldbook" ${disabled ? 'disabled' : ''}><option value="">${ui("选择世界书")}</option>${names.map(name => {
         const saved = selection.find(book => book.name === name);
         return `<option value="${esc(name)}" ${name === this.current ? 'selected' : ''}>${esc(name)}${saved ? saved.entries === 'all' ? '（整本）' : `（已选${saved.entries.length}条）` : ''}</option>`;
       }).join('')}</select></label>` : ''}
-      ${this.current ? `<label><input type="checkbox" data-role="llm-worldbook-all" ${book?.entries === 'all' ? 'checked' : ''} ${disabled ? 'disabled' : ''}>整本发送</label>
-      ${entries ? `<div class="llm-worldbook-entries">${entries.map(entry => `<label title="${esc(entry.content.slice(0, 160))}"><input type="checkbox" data-role="llm-worldbook-entry" data-id="${esc(entry.id)}" ${book?.entries === 'all' || book?.entries.includes(entry.id) ? 'checked' : ''} ${disabled ? 'disabled' : ''}><span>${esc(entry.title)} <small>（${entry.content.length}字）</small></span></label>`).join('') || '<p class="sub">此书暂无条目。</p>'}</div>` : '<p class="sub">请选择或刷新世界书以读取条目。</p>'}` : '<p class="sub">尚未读取世界书。</p>'}
+      ${this.current ? `<label><input type="checkbox" data-role="llm-worldbook-all" ${book?.entries === 'all' ? 'checked' : ''} ${disabled ? 'disabled' : ''}>${ui("整本发送")}</label>
+      ${entries ? `<div class="llm-worldbook-entries">${entries.map(entry => `<label title="${esc(entry.content.slice(0, 160))}"><input type="checkbox" data-role="llm-worldbook-entry" data-id="${esc(entry.id)}" ${book?.entries === 'all' || book?.entries.includes(entry.id) ? 'checked' : ''} ${disabled ? 'disabled' : ''}><span>${esc(entry.title)} <small>（${entry.content.length}字）</small></span></label>`).join('') || `<p class="sub">${ui("此书暂无条目。")}</p>`}</div>` : `<p class="sub">${ui("请选择或刷新世界书以读取条目。")}</p>`}` : `<p class="sub">${ui("尚未读取世界书。")}</p>`}
       ${this.error ? `<p role="alert">${esc(this.error)}</p>` : ''}</details>`;
   }
 }

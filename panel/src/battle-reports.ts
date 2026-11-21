@@ -1,3 +1,4 @@
+import { readReportStart } from './report-start-archive.js';
 import { displayNumber } from '../../engine/src/display-number.js';
 import { SmallBattle, type MassBattle, type BattleLogEntry, type Combatant, woundedLabel } from '../../engine/src/index.js';
 import { observedLog } from '../../engine/src/observation.js';
@@ -18,6 +19,7 @@ export interface BattleReport {
   id: string; card: string; digest: string; summary: string; deliveries: Record<string, DeliveryReceipt>;
   roundCount?: number; epilogue?: string; narrativeEvents?: NarrativeEvent[]; eventCount?: number;
   start?: import('./report-history.js').BattleStart;
+  packedStart?: string;
   afterArchiveStamp?: string;
   supersededBy?: string;
 }
@@ -150,7 +152,7 @@ export function makeNarrativeBatch(b: Battle | undefined, report: BattleReport |
   const id=b ? battleIdOf(b) : report?.id; if(!id)throw Error('没有可发送的战况');
   if(kind==='epilogue') {
     if(b && !b.isOver())throw Error('战斗结束后可发送终章');
-    return {battleId:id,kind,key:'epilogue',from:0,to:b?.log.length??report?.eventCount??0,text:b?battleEpilogue(b,start??report?.start):withCommunications(report?.epilogue??report?.summary??'',report?.narrativeEvents??[])};
+    return {battleId:id,kind,key:'epilogue',from:0,to:b?.log.length??report?.eventCount??0,text:b?battleEpilogue(b,start??(report && readReportStart(report))):withCommunications(report?.epilogue??report?.summary??'',report?.narrativeEvents??[])};
   }
   const from=deliveries[id]?.cursor??0,to=b?.log.length??report?.eventCount??0;
   if(!b && !report?.narrativeEvents)throw Error('这份战报缺少事件游标，可发送完整战报或状态摘要');

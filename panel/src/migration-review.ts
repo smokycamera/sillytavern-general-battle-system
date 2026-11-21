@@ -1,3 +1,4 @@
+import { readMigrationBackup } from './migration-backup.js';
 import { displayNumber } from '../../engine/src/display-number.js';
 import { prepareCombatModel } from '../../engine/src/combat-model.js';
 import { V6_D20 } from '../../engine/src/rules.js';
@@ -52,7 +53,7 @@ function validateBattle(save: NarrativeSave): void {
 function recoverQuarantinedLoadout(save: NarrativeSave): InventoryItem[] | undefined {
   if (!Array.isArray(save.inventory) || !Array.isArray(save.migrationBackups) || !Array.isArray(save.unitMigrationWarnings)
     || !Array.isArray(save.inventoryMigrationBackup) || !save.inventoryMigrationBackup.length) return;
-  const before: NarrativeSave | undefined = save.migrationBackups.at(-1)?.source;
+  const before: NarrativeSave | undefined = readMigrationBackup(save.migrationBackups.at(-1));
   if (!Array.isArray(before?.inventory) || save.factRevision !== (before.factRevision ?? 0) + 1) return;
   const quarantined = new Map<string, InventoryItem>();
   for (const item of save.inventoryMigrationBackup) {

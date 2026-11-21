@@ -1,9 +1,10 @@
+import { ui } from './ui-language.js';
 export const WORKSPACES = [
   ['battle', '战场'], ['units', '队伍'], ['inventory', '配装'], ['reports', '战报'], ['settings', '设置'],
 ] as const;
 export type WorkspaceTab = typeof WORKSPACES[number][0];
 export function workspaceNavigation(selected: WorkspaceTab, pending = 0): string {
-  return `<nav class="workspace-nav" aria-label="主要工作区">${WORKSPACES.map(([id, label]) => `<button data-action="workspace-tab" data-tab="${id}" aria-current="${selected === id ? 'page' : 'false'}">${label}${id === 'units' && pending ? `<span class="workspace-count">${pending}</span>` : ''}</button>`).join('')}</nav>`;
+  return `<nav class="workspace-nav" aria-label="${ui("主要工作区")}">${WORKSPACES.map(([id, label]) => `<button data-action="workspace-tab" data-tab="${id}" aria-current="${selected === id ? 'page' : 'false'}">${ui(label)}${id === 'units' && pending ? `<span class="workspace-count">${pending}</span>` : ''}</button>`).join('')}</nav>`;
 }
 export function workspacePage(tab: WorkspaceTab, selected: WorkspaceTab, content: string): string {
   return `<div class="workspace-page" data-workspace="${tab}" ${selected === tab ? '' : 'hidden'}>${content}</div>`;

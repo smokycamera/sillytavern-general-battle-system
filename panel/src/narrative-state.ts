@@ -13,7 +13,7 @@ import { deployUnitRecord, materializeUnitRecord, unitRecordFromCombatant, updat
 import { parseProtocol, protocolExcerpt } from './protocol.js';
 import type { Suggestion } from './tags.js';
 import { migrateSavedSuggestion } from './saved-suggestion.js';
-import { createInventoryItem, isInventoryStack, narrativeTakeParts, prepareInventoryState, prepareInventoryTransaction, type InventoryItem } from './inventory-state.js';
+import { consolidateReforgedEquipment, createInventoryItem, isInventoryStack, narrativeTakeParts, prepareInventoryState, prepareInventoryTransaction, type InventoryItem } from './inventory-state.js';
 import { assertNarrativeCapacity, hasNarrativeDeployment } from './narrative-limits.js';
 import { applyUnitSet, UNIT_EQUIPMENT_FIELDS, unitSetReferencesGear, type UnitSetContext } from './unit-set.js';
 import { grantStoryEffects } from './story-effects.js';
@@ -67,6 +67,7 @@ export interface NarrativeSave {
   classMigration?: 'arms-v2';
   reports?: import('./battle-reports.js').BattleReport[];
   activeBattleStart?: import('./report-history.js').BattleStart;
+  migrationBackups?: import('./migration-backup.js').MigrationBackup[];
   deletedReport?: import('./report-history.js').DeletedReport;
   deletedReportIds?: string[];
   promptSettings?: PromptSettings;
@@ -548,6 +549,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   const handovers: HandOver[] = [...proposal.events.entries()].flatMap(([index, event]) => event.kind === 'unit-set' && event.items?.length ? [{ unitId: event.id, items: event.items, index }] : []);
   for (const [unitId, items] of fresh.items) handovers.push({ unitId, items, index: proposal.events.length + handovers.length });
   next = handOverItems(next, handovers, { proposalId: proposal.id, given: handed, notices });
+  consolidateReforgedEquipment(next, reforged, proposal.id);
   next.rosterIds = platformRoster(next.storage ?? [], next.rosterIds ?? []);
   next.factRevision = (save.factRevision ?? 0) + 1;
   next.proposals = [...(save.proposals ?? []).filter((p) => p.id !== proposal.id), { ...structuredClone(proposal), status: 'committed', reason: undefined,

@@ -14,6 +14,12 @@ A native turn-based battle extension for SillyTavern / TauriTavern, with small b
 
 The current installation entry is root manifest.json plus dist/. Old ZIPs, panel/dist and historical resident scripts are not the current distribution. package.json supplies the product version; each saved battle retains its own rules version.
 
+## Interface language
+
+Open the floating Tavern Battle panel and click **English** next to the Battle on/off button. Click **简体中文** in the same spot to switch back. The choice is saved in the extension settings and applies across chats.
+
+English covers the main battle, party, loadout, and report controls. Existing report text, story text, and the built-in lorebook remain in their original language. The skill and item editors show examples of the effect codes accepted by the current parser.
+
 ## This release
 
 3.0.26 combines positive damage bonuses across sources, reduces critical damage budgets, and adds worn items that grant a barrier at battle entry. New battles use V41, including the earlier skill progression and preview fixes; existing battles retain their saved rules. See the [mechanics review](docs/offense-barrier-v41-review-20261028.md) and [current release](docs/current-release.md).

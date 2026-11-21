@@ -4,6 +4,7 @@ import { nativeFixture } from './native-fixture.js';
 import { MemorySourceBackups } from '../src/legacy-import.js';
 import { SaveManagement } from '../src/save-management.js';
 import { decodeSave } from '../../panel/src/storage-codec.js';
+import type { BattleReport } from '../../panel/src/battle-reports.js';
 
 async function setup() {
   const f = nativeFixture(); await f.store.load();
@@ -45,6 +46,25 @@ it('兼容回退携带最新原生进度并同步旧镜像；原生停止写入�
   panel.field = 'urban'; f.context.chatMetadata = structuredClone(f.disk.get('a')!); await f.store.load();
   const resume = await f.manager.previewResume(); await f.manager.apply(resume);
   expect(f.store.snapshot().field).toBe('urban'); expect(f.store.envelope()?.handoff).toBeUndefined();
+});
+it('restores packed report openings and migration data in an old-script handoff', async () => {
+  const f = await setup();
+  const report = (seed: string): BattleReport => ({ id: `small:${seed}`, card: '', summary: '', digest: '', deliveries: {},
+    start: { version: 1, battleId: `small:${seed}`, kind: 'small', snapshot: { seed, log: Array(2000).fill('保留历史开局快照内容') },
+      before: { storage: [], inventory: [], rosterIds: [], encounterIds: [], lastBattleUnitIds: [] } } });
+  const reports = [report('old'), report('latest')];
+  await f.store.commit(f.store.head()!.revision, before => ({ ...before, reports, committedOutcomeIds: reports.map(item => item.id) }));
+  const archived = f.store.snapshot();
+  expect(archived.reports?.[0]?.packedStart).toBeDefined();
+  const source = { reports: archived.reports, field: 'forest' as const };
+  await f.store.commit(f.store.head()!.revision, before => ({ ...before, migrationBackups: [{ source: { ...source, note: '原始档案'.repeat(8000) } }] }));
+  expect(f.store.snapshot().migrationBackups?.[0]?.packedSource).toBeDefined();
+  const legacy = f.manager.exportLegacy();
+  expect(legacy.reports).toEqual(reports);
+  expect(legacy.migrationBackups?.[0]?.source?.reports).toEqual(reports);
+  expect(legacy.migrationBackups?.[0]?.source?.field).toBe('forest');
+  expect((await f.manager.apply(await f.manager.previewRollback())).status).toBe('confirmed');
+  expect(JSON.parse(decodeSave(f.local.get(legacyMirrorKey(f.host.session()!.scope))!)).reports).toEqual(reports);
 });
 it('无法确认镜像归属时拒绝自动回退；回退保存失败保留同一候选可恢复', async () => {
   const f = await setup(); f.local.set(legacyMirrorKey(f.host.session()!.scope), JSON.stringify({ storage: ['other-chat'] }));

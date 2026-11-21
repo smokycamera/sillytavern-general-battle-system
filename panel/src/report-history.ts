@@ -1,3 +1,4 @@
+import { readReportStart } from './report-start-archive.js';
 import { SmallBattle } from '../../engine/src/small/battle.js';
 import { MassBattle } from '../../engine/src/mass/battle.js';
 import { materializeUnitRecord, type UnitRecord } from './unit-state.js';
@@ -49,13 +50,13 @@ export function captureBattleStart(battle: SmallBattle | MassBattle, before: Bat
 /** 消耗品差额已写入后再记录守卫，保证比较的是实际落库的完整战果。 */
 export function stampNewBattleReports(previous: NarrativeSave, next: NarrativeSave): void {
   for(const report of next.reports??[]) {
-    if(!report.start || !(next.committedOutcomeIds??[]).includes(report.id))continue;
+    if(!(report.start || report.packedStart) || !(next.committedOutcomeIds??[]).includes(report.id))continue;
     if(!(previous.reports??[]).some(r=>r.id===report.id) || !(previous.committedOutcomeIds??[]).includes(report.id)) report.afterArchiveStamp=archiveStamp(next);
   }
 }
 
 export function reportRestartReason(save: NarrativeSave, report: BattleReport): string | undefined {
-  if(!report.start || report.start.version!==1)return '这份战报缺少开局记录，无法恢复原局重战';
+  if(!report.packedStart && report.start?.version!==1)return '这份战报缺少开局记录，无法恢复原局重战';
   if(report.supersededBy)return '这份战果已被重战替代，请选择最近一次战报';
   if((save.committedOutcomeIds??[]).at(-1)!==report.id)return '仅可重打最近一场已结算战斗';
   if(save.battle && `${save.battle.kind}:${String(save.battle.snap.seed)}`!==report.id)return '请先结束并收兵当前战斗';
@@ -85,7 +86,7 @@ export function prepareReportRestart(save: NarrativeSave, id: string, expectedRe
   if(expectedRevision!==(save.factRevision??0))throw Error('重战预览已过期，请按最新状态重新打开');
   const report=save.reports?.find(r=>r.id===id);if(!report)throw Error('战报不存在');
   const reason=reportRestartReason(save,report);if(reason)throw Error(reason);
-  const start=structuredClone(report.start!);
+  const start=structuredClone(readReportStart(report)!);
   if(start.battleId!==id || `${start.kind}:${String(start.snapshot.seed)}`!==id || start.snapshot.round!==1 || start.snapshot.started!==true
     || !Array.isArray(start.before?.storage) || !Array.isArray(start.before?.inventory) || !Array.isArray(start.before?.rosterIds))throw Error('开局存档记录不完整，无法重战');
   const newId=start.kind+':'+seed;

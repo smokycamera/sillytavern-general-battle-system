@@ -315,6 +315,7 @@ export interface EquipmentBatch {
 }
 export interface Combatant {
   equipmentBatches?: EquipmentBatch[];
+  /** Compatibility with archives that stored carried equipment weight. */
   reserveEquipmentLoad?: number;
   equipmentPersonnel?: number;
   /** Wounded personnel whose kit has already been returned at settlement. */

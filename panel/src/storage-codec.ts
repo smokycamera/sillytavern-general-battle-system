@@ -1,6 +1,8 @@
 /** 同步、无损本地镜像编码。保留所有战报、开局快照、回滚档案及聊天隔离。 */
 const PREFIX = 'tb:lzw:1:';
 const LIMIT = 55000;
+const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
+const encoder = new TextEncoder();
 export function encodeSave(json: string): string {
   if (json.length < 2048) return json;
   const bytes = new TextEncoder().encode(json), dictionary = new Map<string, number>();
@@ -19,7 +21,7 @@ export function encodeSave(json: string): string {
   const compressed = chunks.join('');
   return compressed.length < json.length ? compressed : json;
 }
-export function decodeSave(stored: string): string {
+export function decodeSave(stored: string, maxBytes = Infinity): string {
   if (!stored.startsWith(PREFIX)) return stored;
   const dictionary: string[] = Array.from({ length: 256 }, (_, i) => String.fromCharCode(i));
   let word = '', next = 256;
@@ -29,6 +31,7 @@ export function decodeSave(stored: string): string {
     const code = stored.charCodeAt(i) - 32;
     const entry = dictionary[code] ?? (code === next && word ? word + word[0] : undefined);
     if (entry === undefined) throw Error('本地压缩存档损坏');
+    if (length + entry.length > maxBytes) throw Error('压缩存档展开后超出大小限制');
     for (let j = 0; j < entry.length; j++) {
       if (used === buffer.length) { chunks.push(buffer); buffer = new Uint8Array(65536); used = 0; }
       buffer[used++] = entry.charCodeAt(j); length++;
@@ -40,6 +43,19 @@ export function decodeSave(stored: string): string {
   const bytes = new Uint8Array(length); let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
   return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+}
+/** Consider the UTF-8 JSON size on disk, including escaping the compressed string. */
+export function packArchiveJson(value: object): string | undefined {
+  const json = JSON.stringify(value);
+  if (json.length < 16_384) return;
+  const bytes = encoder.encode(json).length;
+  if (bytes > MAX_ARCHIVE_BYTES) return;
+  const packed = encodeSave(json);
+  return packed !== json && encoder.encode(JSON.stringify(packed)).length < bytes ? packed : undefined;
+}
+export function readArchiveJson(stored: unknown): unknown {
+  if (typeof stored !== 'string' || !stored.startsWith(PREFIX)) throw Error('压缩存档格式损坏');
+  return JSON.parse(decodeSave(stored, MAX_ARCHIVE_BYTES));
 }
 /** 只压缩本插件已有镜像；不删除聊天或其他应用数据，每个键仍原子替换。 */
 export function compactLocalMirrors(storage: Storage, currentKey: string): void {

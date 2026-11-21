@@ -121,8 +121,8 @@ it('战斗界面控件：「除主控」自动停在主控，全自动包含主�
   await load(chain, true);
   let release!: () => void;
   const blocked = new Promise<void>(resolve => { release = resolve; });
-  const publish = f.service.persistPanel.bind(f.service), diskWrite = vi.spyOn(f.journal, 'put');
-  const write = vi.spyOn(f.service, 'persistPanel').mockImplementationOnce(async (...args) => { await blocked; return publish(...args); });
+  const publish = f.service.persistBattleTurn.bind(f.service), diskWrite = vi.spyOn(f.journal, 'put');
+  const write = vi.spyOn(f.service, 'persistBattleTurn').mockImplementationOnce(async (...args) => { await blocked; return publish(...args); });
   document.querySelector<HTMLButtonElement>('[data-action="grid-endturn"]')!.click();
   await vi.waitFor(() => expect(write).toHaveBeenCalled());
   expect(document.body.getAttribute('aria-busy')).toBe('true');

@@ -5,7 +5,7 @@ import type { PersistReceipt, HostSession, MessageTag } from '../../host/src/con
 import { sameSession } from '../../host/src/contracts.js';
 import { NativeHost } from '../../host/src/sillytavern.js';
 import { errorText, NativeStore, type DiscardResult } from './native-store.js';
-import { assertInventoryPanelWrite, deleteUnitArchive, prepareInventoryTransaction, type InventoryAction, type InventoryIntent } from '../../panel/src/inventory-state.js';
+import { assertInventoryPanelWrite, deleteUnitArchive, prepareInventoryTransaction, type InventoryAction, type InventoryIntent, type InventoryItem } from '../../panel/src/inventory-state.js';
 import { assertTraitSourcePanelWrite, prepareBlessingRevocation } from '../../panel/src/trait-state.js';
 import { prepareBattleItemWrite } from '../../panel/src/battle-items.js';
 import { prepareReportDeletion, prepareReportRestore, prepareReportRestart, stampNewBattleReports } from '../../panel/src/report-history.js';
@@ -19,6 +19,8 @@ import { invalidateMissingSources, sameSource, sourceCommitted } from './source-
 import { prepareNarrativeIds } from '../../panel/src/narrative-ids.js';
 import { narrativeAutoApproval, prepareAiScanProposal } from '../../panel/src/narrative-state.js';
 import type { ReplySaveWindow } from '../../host/src/reply-save.js';
+import type { BattleTurnSave } from '../../panel/src/panel-runtime.js';
+import { readMigrationBackup } from '../../panel/src/migration-backup.js';
 
 const PROMPT_ID = 'tavern-battle-native:context';
 /** Shown on a reply that waits for confirmation although auto-approve is on, with the cause when known. */
@@ -283,6 +285,35 @@ export class BattleService {
     return receipt;
   }
   async discardPending(): Promise<DiscardResult> { const result = await this.store.discardPending(); await this.load(); return result; }
+  /** Active turns may change the fight, orders, command state and validated item counts only. */
+  async persistBattleTurn(turn: BattleTurnSave, expectedRevision: number): Promise<{ receipt: PersistReceipt; revision: number; inventory?: InventoryItem[] }> {
+    const version = this.version();
+    const result: PersistReceipt = { status: 'conflict', session: version.session, operationId: '' };
+    if (this.migration || !this.canWrite()) return { receipt: { ...result, error: this.writeBlockReason() ?? '当前档案尚未就绪' }, revision: expectedRevision };
+    // A durable write may have captured its candidate but not yet installed its
+    // recovery record. Do not acknowledge a turn it would overwrite on confirm.
+    if (this.disposed || this.store.saving()) return { receipt: { ...result, error: this.writeBlockReason() ?? '正在保存上一项改动，请稍候' }, revision: expectedRevision };
+    const before = this.livePanel() ?? this.store.snapshot();
+    const battleId = `${turn.battle.kind}:${String(turn.battle.snap.seed)}`;
+    if (expectedRevision !== (before.factRevision ?? 0) || before.battle?.kind !== turn.battle.kind
+      || before.battle.snap.seed !== turn.battle.snap.seed || before.committedOutcomeIds?.includes(battleId)) {
+      return { receipt: { ...result, error: '战斗或档案已变化，请重新读取' }, revision: expectedRevision };
+    }
+    try {
+      const { battle, encounterContext, orderDraft, orderMemory } = structuredClone(turn);
+      const candidate = prepareBattleItemWrite(before, { ...before, battle, encounterContext, orderDraft, orderMemory });
+      const changed = candidate.inventory !== before.inventory || JSON.stringify(battle) !== JSON.stringify(before.battle);
+      candidate.factRevision = expectedRevision + Number(changed);
+      const save = prepareNarrativeIds(candidate);
+      this.memoryPanel = { save, session: version.session, revision: version.revision, generation: version.generation };
+      const receipt: PersistReceipt = { ...result, status: 'confirmed', operationId: randomId(), memoryOnly: true };
+      this.receipt = receipt;
+      this.notify();
+      return { receipt, revision: candidate.factRevision, inventory: candidate.inventory !== before.inventory ? structuredClone(candidate.inventory) : undefined };
+    } catch (error) {
+      return { receipt: { ...result, status: 'failed', error: errorText(error) }, revision: expectedRevision };
+    }
+  }
   persistPanel(next: NarrativeSave, expectedRevision: number, options: { memoryOnly?: boolean } = {}): Promise<PersistReceipt> {
     const candidate = structuredClone(next);
     return this.transact(before => {
@@ -381,10 +412,12 @@ export class BattleService {
   }
   restoreMigrationBackup(): Promise<PersistReceipt> {
     return this.transact(before => {
-      const backups = before.migrationBackups as { source: NarrativeSave }[] | undefined;
+      const backups = before.migrationBackups;
       if (!Array.isArray(backups) || !backups.length) throw Error('没有可恢复的迁移备份');
       if (before.battle && !before.committedOutcomeIds?.includes(`${before.battle.kind}:${String(before.battle.snap.seed)}`)) throw Error('先结束并归档当前战斗');
-      return structuredClone(backups.at(-1)!.source);
+      const source = readMigrationBackup(backups.at(-1));
+      if (!source) throw Error('没有可恢复的迁移备份');
+      return structuredClone(source);
     }).then(async receipt => { if (receipt.status === 'confirmed' && receipt.session.scope.key === this.host.session()?.scope.key) await this.load(); return receipt; });
   }
   beginGeneration(): void {

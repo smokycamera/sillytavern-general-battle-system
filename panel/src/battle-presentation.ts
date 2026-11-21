@@ -1,10 +1,30 @@
+import { ui, uiLanguage } from './ui-language.js';
 import { displayNumber } from '../../engine/src/display-number.js';
-import { SmallBattle, gridColumnIndex, FORMATION_NODES, isCommandV2, commandLabel, DEFAULT_COMMAND, COMMAND_STYLE_LABELS, COMMAND_STYLE_DESCRIPTIONS, type Combatant, type BattleLogEntry } from '../../engine/src/index.js';
+import { SmallBattle, cellLabel, gridColumnIndex, FORMATION_NODES, isCommandV2, commandLabel, DEFAULT_COMMAND, COMMAND_STYLE_LABELS, COMMAND_STYLE_DESCRIPTIONS, type Combatant, type BattleLogEntry } from '../../engine/src/index.js';
 import { publicBattleEvents, battleIdOf, type Battle } from './battle-reports.js';
 import { unitIcon, unitIconKey } from './unit-icons.js';
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
+/** Format the already-visible event. Historical free text stays readable as written. */
+export function battleLogText(entry: BattleLogEntry, battle: Battle): string {
+  if (uiLanguage() !== 'en' || entry.communication) return entry.text;
+  if (entry.resolution) return actionCaption(entry);
+  if (entry.move && entry.kind === 'move' && battle instanceof SmallBattle && battle.battlefield) {
+    const field = battle.battlefield;
+    const actor = battle.combatants.find(unit => unit.id === entry.participants?.[0]);
+    const route = ui('移动 {from} → {to}', { from: cellLabel(field, entry.move.from), to: cellLabel(field, entry.move.to) });
+    return actor ? actor.name + ' · ' + route : route;
+  }
+  if (entry.kind === 'round' && /^—— 第 \d+ 回合 ——$/.test(entry.text)) return ui('第{round}轮', { round: entry.round });
+  return entry.text;
+}
 export function actionCaption(entry: BattleLogEntry): string {
   const r=entry.resolution;
+  if (r && uiLanguage() === 'en') {
+    const result = !r.hit ? ui('未命中') : r.finalDamage > 0
+      ? ui(r.damageModel === 'member-health' ? '损失{amount}生命' : '损失{amount}', { amount: displayNumber(r.finalDamage) })
+      : ui(r.penetrationFactor === 0 ? '命中·未穿透' : '命中·无生命损失');
+    return [r.attackerName + ' → ' + r.defenderName, result, r.crit && ui('暴击')].filter(Boolean).join(' · ');
+  }
   if(r)return `${r.attackerName} → ${r.defenderName} · ${!r.hit?'未命中':r.finalDamage>0?`损失${displayNumber(r.finalDamage)}${r.damageModel==='member-health'?'生命':''}${r.crit?' · 暴击':''}`:r.penetrationFactor===0?'命中·未穿透':'命中·无生命损失'}`;
   return entry.text.split('\n').filter(l=>!/^伤害 |d20\[/.test(l)).join('；');
 }
@@ -37,7 +57,7 @@ export function renderBattleHighlights(b: Battle): string {
   const significant=events.filter(({entry:e})=>['death','routing','battle-end'].includes(e.kind)||e.resolution?.crit||/恢复|治疗|救援|占领|护送|重整成功/.test(e.text));
   const picks=significant.slice(-3).reverse();
   if(!last&&!picks.length)return '';
-  return `<aside class="battle-highlights" aria-label="行动与关键变化">${last?`<div class="latest-action" data-trace-key="${escapeHtml(battleIdOf(b)+':'+last.index)}"><span><b>上一行动</b> ${escapeHtml(actionCaption(last.entry))}</span><button data-action="battle-replay">重看</button></div>`:''}${picks.length?`<details data-detail-id="battle-highlights"><summary>关键变化 · ${picks.length}项</summary>${picks.map(({entry:e,index})=>`<button class="highlight-event" data-action="battle-highlight" data-event="${index}">第${e.round}轮 · ${escapeHtml(actionCaption(e))}</button>`).join('')}</details>`:''}</aside>`;
+  return `<aside class="battle-highlights" aria-label="${ui("行动与关键变化")}">${last?`<div class="latest-action" data-trace-key="${escapeHtml(battleIdOf(b)+':'+last.index)}"><span><b>${ui("上一行动")}</b> ${escapeHtml(last.entry.resolution ? actionCaption(last.entry) : battleLogText(last.entry, b))}</span><button data-action="battle-replay">${ui("重看")}</button></div>`:''}${picks.length?`<details data-detail-id="battle-highlights"><summary>${ui('关键变化 · {count}项', { count: picks.length })}</summary>${picks.map(({entry:e,index})=>`<button class="highlight-event" data-action="battle-highlight" data-event="${index}">${ui('第{round}轮', { round: e.round })} · ${escapeHtml(battleLogText(e, b))}</button>`).join('')}</details>`:''}</aside>`;
 }
 export function traceLocations(b: Battle, eventIndex?: number): {key:string;cells:number[];from?:number;to?:number;label:string;attack:boolean} | undefined {
   const selected=eventIndex===undefined?lastBattleAction(b):publicBattleEvents(b).find(e=>e.index===eventIndex);if(!selected)return;

@@ -237,7 +237,8 @@ function resolveWeapon(opts: Pick<AttackOpts, 'attacker' | 'defender' | 'weaponO
   if (original?.recipe?.mechanism === 'sprayer' && !gridAttack(opts.attacker) && !opts.autoHit) return { weapon: { ...weapon, splashTargets: opts.rules?.artilleryModel === BOUNDED_BLAST_MODEL ? sprayerSplashAt(original.recipe.power) : 1e9 } };
   return { weapon };
 }
-export function penetrationContext(opts: Pick<AttackOpts, 'attacker' | 'defender' | 'weaponOverride' | 'abilityDamage' | 'ranged'> & Partial<Pick<AttackOpts,'rules'|'conditionDefs'|'charge'|'chargeStraight'|'chargeDistance'>>, resolved: ResolvedWeapon = resolveWeapon(opts), override?: { channel: import('./types.js').DamageChannel; penetrationDelta: number }) {
+interface ArmorPenetrationBasis { resistance: number; armorFactor: number; armorScale: number; protectionPower?: number }
+export function penetrationContext(opts: Pick<AttackOpts, 'attacker' | 'defender' | 'weaponOverride' | 'abilityDamage' | 'ranged'> & Partial<Pick<AttackOpts,'rules'|'conditionDefs'|'charge'|'chargeStraight'|'chargeDistance'|'previewMemo'>>, resolved: ResolvedWeapon = resolveWeapon(opts), override?: { channel: import('./types.js').DamageChannel; penetrationDelta: number }) {
   const modern=opts.rules?.combatModel===MEMBER_HEALTH_MODEL;
   const weapon=resolved.weapon;
   const channel = override?.channel ?? opts.abilityDamage?.channel ?? weapon?.channel ?? 'kinetic';
@@ -246,20 +247,36 @@ export function penetrationContext(opts: Pick<AttackOpts, 'attacker' | 'defender
   const sprint = isArmsV2(opts.rules?.armsModel) && (!opts.abilityDamage || opts.abilityDamage.weaponBased) && weapon?.recipe?.mechanism === 'spear' && (opts.attacker.mount || opts.attacker.body === 'large') && opts.charge && !opts.attacker.chargeInterrupted && opts.chargeStraight && (opts.chargeDistance ?? opts.attacker.chargeDistance ?? 0) >= 2;
   const penetration = base + (sprint ? 2 : 0) + (opts.abilityDamage && !opts.abilityDamage.weaponBased ? 0 : traitPenetrationBonus(opts.attacker, weapon, opts.ranged ?? !!weapon?.tags?.includes('ranged'), base));
   // The battle rules, not a possibly stale unit field, decide the armor projection.
-  const target={...opts.defender,damageModel:opts.rules?.damageModel,armsModel:opts.rules?opts.rules.armsModel:opts.defender.armsModel};
-  const blockingShield = shieldUsable(target,weapon);
-  if (!blockingShield) delete target.shield;
-  const resistance = modern?anchoredProtection(target,channel):effectiveProtection(target, channel);
+  const defender = opts.defender, damageModel = opts.rules?.damageModel, armsModel = opts.rules ? opts.rules.armsModel : defender.armsModel;
+  const modeled = defender.damageModel === damageModel && defender.armsModel === armsModel ? defender : { ...defender, damageModel, armsModel };
+  const blockingShield = shieldUsable(modeled,weapon);
+  const target = blockingShield || !modeled.shield ? modeled : { ...modeled, shield: undefined };
   const wounds=isWoundModel(opts.rules?.damageModel);
-  const armorFactor=wounds?armorTransmission(target,channel,penetration):penetrationFactor(penetration,resistance);
+  const memo = opts.previewMemo;
+  const armorKey = memo && !memo.variableProtection ? channel + ':' + penetration + ':' + blockingShield + ':' + defender.status : undefined;
+  let armor = armorKey === undefined ? undefined : memo!.armor?.get(armorKey);
+  if (!armor) {
+    const resistance = modern ? anchoredProtection(target,channel) : effectiveProtection(target,channel);
+    armor = {
+      resistance,
+      armorFactor: wounds ? armorTransmission(target,channel,penetration,modern ? resistance : undefined) : penetrationFactor(penetration,resistance),
+      armorScale: modern ? armorPowerScale(target) : 1,
+      protectionPower: modern && opts.rules?.overmatch ? defensePower(target,channel,false,resistance) : undefined,
+    };
+    // Unevenly issued gear can change resistance as headcount drops. Uniform kit
+    // keeps its resistance while HP and shield wear change the coverage below.
+    if (armorKey !== undefined) (memo!.armor ??= new Map()).set(armorKey, armor);
+  }
+  const { resistance, armorFactor, armorScale, protectionPower } = armor;
   const spray=isArmsV2(opts.rules?.armsModel)&&(!opts.abilityDamage||!!opts.abilityDamage.weaponBased)&&weapon?.recipe?.mechanism==='sprayer';
   const area=spray||(opts.abilityDamage ? opts.abilityDamage.shape==='burst'||!!opts.abilityDamage.weaponBased&&(!!weapon?.tags?.includes('blast')||!!weapon?.splashTargets && weapon.recipe?.mechanism !== 'shotgun') : !!weapon?.tags?.includes('blast')||!!weapon?.splashTargets && weapon.recipe?.mechanism !== 'shotgun');
   // R1/R8/R20：挂背、碎盾或被巨型冷兵器无视的盾不挡，屏障换算与磨损也按不挡计。
   const canBlock=!(isArmsV2(opts.rules?.armsModel)&&opts.defender.shield&&!blockingShield)&&!opts.defender.conditions.some(c=>c.dur>0&&(opts.conditionDefs?.get(c.id)?.skipTurn||opts.conditionDefs?.get(c.id)?.preventAttack));
   const shieldFactor=wounds?shieldTransmission(target,channel,penetration,area,canBlock):1;
   const power=opts.abilityDamage&&!opts.abilityDamage.weaponBased?opts.abilityDamage.power:weapon?.recipe?.power??weapon?.level;
-  return { channel, penetration, resistance, factor:armorFactor*shieldFactor,armorScale:modern?armorPowerScale(target):1,...(wounds?{armorFactor,shieldFactor}:{}),
-    ...(modern&&opts.rules?.overmatch?{attackPower:power,protectionPower:defensePower(target,channel),overmatchMultiplier:overmatchMultiplier(power,target,channel,penetration,area,canBlock,false,opts.rules.overmatchCurve),area,canBlock,...(opts.rules.overmatchCurve?{curve:opts.rules.overmatchCurve}:{})}:{}) };
+  return { channel, penetration, resistance, factor:armorFactor*shieldFactor,armorScale,...(wounds?{armorFactor,shieldFactor}:{}),
+    ...(modern&&opts.rules?.overmatch?{attackPower:power,protectionPower,overmatchMultiplier:overmatchMultiplier(power,target,channel,penetration,area,canBlock,false,opts.rules.overmatchCurve,
+      gradeOvermatch(power,protectionPower!,penetration,resistance,opts.rules.overmatchCurve)),area,canBlock,...(opts.rules.overmatchCurve?{curve:opts.rules.overmatchCurve}:{})}:{}) };
 }
 
 /** 与执行共用属性栈与穿透。期望值不读取实战 RNG；骰子取整/暴击导致实际结果有波动。 */
@@ -656,7 +673,10 @@ function previewMemberAttack(opts: Omit<AttackOpts, 'rng'>, initialBasis: Attack
     if (!stats) {
       stats = { sum: 0, squares: 0, positive: 0, casualties: 0, maximum: 0, hits: 0 }; sampledPreviewRuns++;
       // 结算只改守方；攻方副本由全部抽样共用，守方每次从原状态重新复制。
-      const attacker = cloneData(opts.attacker), previewMemo: PreviewMemo = { bases: new Map(), initialBasis };
+      const attacker = cloneData(opts.attacker), previewMemo: PreviewMemo = {
+        bases: new Map(), initialBasis,
+        variableProtection: opts.defender.scale !== 'hero' && !!opts.defender.equipmentBatches?.some(batch => batch.slot === 'gear' && batch.qty < opts.defender.hp),
+      };
       cacheDamageSampleTraits(attacker);
       // Every seed uses the same attack inputs and packet share. Replace only the
       // private defender and RNG instead of spreading all options for each attack.
@@ -775,7 +795,8 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
   const armsAttack = isArmsV2(rules.armsModel) && (!opts.abilityDamage || opts.abilityDamage.weaponBased), actual = original?.recipe?.mechanism;
   if (armsAttack && actual === 'great-weapon' && defender.shield && shieldClass(defender) !== 'energy-shield') extraMods.push({source:'intrinsic',name:'破盾',kind:'atk',type:'flat',value:0});
   if (armsAttack && actual === 'axe' && shieldUsable({...defender,armsModel:rules.armsModel},original)) extraMods.push({source:'intrinsic',name:'斧劈盾',kind:'atk',type:'flat',value:0});
-  if (isArmsV2(rules.armsModel) && overloadPenalty(attacker)) extraMods.push({source:'intrinsic',name:'超载',kind:'atk',type:'flat',value:-overloadPenalty(attacker)});
+  const attackerBurden = isArmsV2(rules.armsModel) ? overloadPenalty(attacker) : 0;
+  if (attackerBurden) extraMods.push({source:'intrinsic',name:'超载',kind:'atk',type:'flat',value:-attackerBurden});
   if (criticalInfo(opts,weapon).forced) extraMods.push({source:'intrinsic',name:'破绽一击',kind:'atk',type:'flat',value:0});
   if (armsAttack && !ranged && actual === 'heavy-polearm' && (defender.mount || ['large','giant'].includes(defender.body ?? 'human'))) extraMods.push({source:'intrinsic',name:'钩拽',kind:'atk',type:'flat',value:HOOK_ACCURACY});
   if (armsAttack && !ranged && actual === 'spear' && (attacker.mount || attacker.body === 'large') && charge && opts.chargeStraight && (opts.chargeDistance ?? attacker.chargeDistance ?? 0) >= 2) extraMods.push({source:'intrinsic',name:'骑乘冲刺',kind:'dmg',type:'mult',value:MOUNTED_SPRINT_DAMAGE});
@@ -855,7 +876,8 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
   const defenderMods = [...(opts.defenderMods ?? [])];
   const maneuverDefense = !opts.autoHit && rules.flightModel === 'maneuver-v1' ? flightDefense(attacker, defender, opts) : 0;
   if (maneuverDefense) defenderMods.push({ source: 'intrinsic', sourceId: 'flying:maneuver', name: '飞行机动', kind: 'def', type: 'flat', value: maneuverDefense });
-  if (isArmsV2(rules.armsModel) && overloadPenalty(defender)) defenderMods.push({source:'intrinsic',name:'超载',kind:'def',type:'flat',value:-overloadPenalty(defender)});
+  const defenderBurden = isArmsV2(rules.armsModel) ? overloadPenalty(defender) : 0;
+  if (defenderBurden) defenderMods.push({source:'intrinsic',name:'超载',kind:'def',type:'flat',value:-defenderBurden});
   if (isArmsV2(rules.armsModel) && usableShield && ranged && shieldClass(defender)==='tower-shield') defenderMods.push({source:'intrinsic',name:'大盾遮蔽',kind:'def',type:'flat',value:1});
   if (isArmsV2(rules.armsModel) && usableShield && !ranged && shieldClass(defender)==='buckler' && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) defenderMods.push({source:'intrinsic',name:'小盾格挡',kind:'def',type:'flat',value:1});
   if (rules.combatModel === MEMBER_HEALTH_MODEL && defender.status === 'ready'
@@ -929,7 +951,9 @@ export function applyResolutionDamage(target:Combatant,result:AttackResolution,r
 
 /** 一段攻击中不含随机数的部分。 */
 interface AttackBasis { ward: StackResult; context: ReturnType<typeof attackContext>; resolved: ResolvedWeapon; dmgMult: number; wardMult: number; atkDetail: string; additional?: AdditionalDamagePart[]; penetration?: ReturnType<typeof penetrationContext>; sizes?: Map<string, { scale: ReturnType<typeof outcomeScale>; sourceScale: number }>; critical?: ReturnType<typeof criticalInfo>; hitRules?: RulePack; hitWeights?: number[] }
-interface PreviewMemo { initialBasis?: AttackBasis; bases: Map<string, AttackBasis>; samples?: number; penetration?: ReturnType<typeof penetrationContext>; loose?: boolean; cannon?: boolean; modernArms?: boolean; layeredLegacy?: boolean;
+type AttackModifiersBasis = Pick<AttackBasis, 'context' | 'ward' | 'resolved' | 'dmgMult' | 'wardMult' | 'atkDetail'>;
+interface ShieldWearFactors { source: number; training: number; unit: number; worn: number; merged: number }
+interface PreviewMemo { initialBasis?: AttackBasis; bases: Map<string, AttackBasis>; modifiers?: Map<string, AttackModifiersBasis>; armor?: Map<string, ArmorPenetrationBasis>; variableProtection: boolean; shieldWear?: Map<Weapon | undefined, ShieldWearFactors>; samples?: number; penetration?: ReturnType<typeof penetrationContext>; loose?: boolean; cannon?: boolean; modernArms?: boolean; layeredLegacy?: boolean;
   lastBasis?: { hp: number; status: Combatant['status']; shield: number | undefined; barrier: number | undefined; value: AttackBasis } }
 /** 抽样副本：伤损只改写生命基数、状态、成员分组、屏障、盾耐久、能量盾与士气记录；其余数据与原单位共享且只读。 */
 function damageCopy(unit: Combatant, reusable?: Combatant): Combatant {
@@ -995,6 +1019,11 @@ function attackBasis(opts: AttackOpts): AttackBasis {
     ? (memo.loose ??= activeTraitIds(d).includes('loose-formation')) ? String(looseFormation(d)) : ''
     : JSON.stringify([d.hp, d.status, d.morale, d.moraleState, d.barrier, d.formation, d.recoverableWounded, d.conditions, d.base]);
   const known = key === undefined ? undefined : memo!.bases.get(key);
+  // Remaining physical-shield durability changes penetration and wear, but the
+  // hit and stance modifiers only distinguish a usable shield from a broken one.
+  // Keep the exact durability key for all damage-dependent memo fields.
+  const modifierKey = memo && modernArms && fixedWeapon && !layeredLegacy && d.shieldDurability
+    ? headcount + ':' + d.status + ':' + (d.shieldDurability.remaining === 0) + ':' + d.barrier?.remaining : undefined;
   const rememberLast = (value: AttackBasis) => {
     if (memo && modernArms && fixedWeapon && !layeredLegacy) memo.lastBasis = { hp: headcount, status: d.status, shield: d.shieldDurability?.remaining, barrier: d.barrier?.remaining, value };
     return value;
@@ -1004,12 +1033,20 @@ function attackBasis(opts: AttackOpts): AttackBasis {
     const first = memo.initialBasis;
     memo.initialBasis = undefined;
     memo.bases.set(key, first);
+    if (modifierKey !== undefined) (memo.modifiers ??= new Map()).set(modifierKey, {
+      context: first.context, ward: first.ward, resolved: first.resolved, dmgMult: first.dmgMult, wardMult: first.wardMult, atkDetail: first.atkDetail,
+    });
     return rememberLast(first);
   }
-  const context = attackContext(opts), stack = { sameNameKeepsHighest: opts.rules.sameNameKeepsHighest, maxFlat: opts.rules.maxFlat };
-  const ward = resolveStack(context.defMods, 'ward', context.ctxDef, stack);
-  const basis: AttackBasis = { ward, context, resolved: { weapon: context.weapon }, atkDetail: context.attackDetail,
-    dmgMult: resolveStack(context.atkMods, 'dmg', context.ctxAtk, stack).multTotal, wardMult: ward.multTotal };
+  let modifiers = modifierKey === undefined ? undefined : memo!.modifiers?.get(modifierKey);
+  if (!modifiers) {
+    const context = attackContext(opts), stack = { sameNameKeepsHighest: opts.rules.sameNameKeepsHighest, maxFlat: opts.rules.maxFlat };
+    const ward = resolveStack(context.defMods, 'ward', context.ctxDef, stack);
+    modifiers = { ward, context, resolved: { weapon: context.weapon }, atkDetail: context.attackDetail,
+      dmgMult: resolveStack(context.atkMods, 'dmg', context.ctxAtk, stack).multTotal, wardMult: ward.multTotal };
+    if (modifierKey !== undefined) (memo!.modifiers ??= new Map()).set(modifierKey, modifiers);
+  }
+  const basis: AttackBasis = { ...modifiers };
   if (key !== undefined) opts.previewMemo!.bases.set(key, basis);
   return rememberLast(basis);
 }
@@ -1232,8 +1269,26 @@ function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean, streams?: Pr
   if (v2) final = roundDamage(v2DamageAmount(baseRaw, apRolledTotal, penetration!.factor, dmgMult * wardMult * (modern?targets*sourceScale:scale.multiplier))
     + (baseRaw + apRolledTotal) * targets * additional.reduce((sum, part) => sum + part.scale, 0), roundingRng);
   if (final < 1) final = v2 ? 0 : 1;
-  const wear = defender.shield && isArmsV2(rules.armsModel) && !penetration?.area && penetration?.canBlock !== false && (!opts.abilityDamage || opts.abilityDamage.weaponBased)
-    ? shieldCoverage(defenderWithArmsModel(opts),weapon) * (baseRaw + apRolledTotal) * (opts.abilityDamage?.damageScale ?? weapon?.damageScale ?? 1) * trainingDamage(attacker.level,rules) * unitMultiplier(attacker,'damage',weapon?.channel,combatBonuses(attacker)) * (rules.damageStackModel ? wornDamageMultiplier(attacker,penetration?.channel??'kinetic') : 1) * damageMergeRatio(opts,weapon,penetration?.channel??'kinetic') * dmgMult * targets * (weapon?.recipe?.mechanism === 'axe' ? 2 : 1) : 0;
+  let wear = 0;
+  if (defender.shield && isArmsV2(rules.armsModel) && !penetration?.area && penetration?.canBlock !== false && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) {
+    const memo = opts.previewMemo;
+    let factors = memo?.shieldWear?.get(weapon);
+    if (!factors) {
+      const channel = penetration?.channel ?? 'kinetic';
+      factors = {
+        source: opts.abilityDamage?.damageScale ?? weapon?.damageScale ?? 1,
+        training: trainingDamage(attacker.level,rules),
+        unit: unitMultiplier(attacker,'damage',weapon?.channel,combatBonuses(attacker)),
+        worn: rules.damageStackModel ? wornDamageMultiplier(attacker,channel) : 1,
+        merged: damageMergeRatio(opts,weapon,channel),
+      };
+      if (memo) (memo.shieldWear ??= new Map()).set(weapon, factors);
+    }
+    // The attacker-side factors stay fixed across preview packets. Coverage and
+    // attack modifiers still use the defender's current state and the latest roll.
+    wear = shieldCoverage(defenderWithArmsModel(opts),weapon) * (baseRaw + apRolledTotal) * factors.source * factors.training
+      * factors.unit * factors.worn * factors.merged * dmgMult * targets * (weapon?.recipe?.mechanism === 'axe' ? 2 : 1);
+  }
   if (res && wear) res.shieldWear = wear;
   if (!res) {
     if (modern) {

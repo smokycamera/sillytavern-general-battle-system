@@ -13,10 +13,10 @@ let jevDelay = 0; let jevRequests = 0;
 const fixture = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><textarea id="send_textarea">未发送的玩家草稿 | /send {{macro}}</textarea><input id="pending-file" value="fixture-attachment.txt"><main id="chat"></main><script>
 window.handlers = new Map(); window.__failure=false; window.__delay=0; window.__generations=0; window.__prompts={};window.__metadataSaves=0;window.__fullSaves=0;
 window.persistFixture=async full=>{const snapshot={id:context.chatId,metadata:structuredClone(context.chatMetadata),...(full?{chat:structuredClone(context.chat)}:{})};if(window.__delay)await new Promise(r=>setTimeout(r,window.__delay));if(!window.__failure){const response=await fetch(full?'/fixture/save':'/fixture/metadata',{method:'POST',body:JSON.stringify(snapshot)});if(!response.ok)throw Error('Fixture save failed: '+response.status)}};
-window.context={ characterId:'0', characters:[{avatar:'fixture.png',name:'Fixture'}],chatId:'a',name1:'Tester',chat:[],chatMetadata:{},extensionSettings:{},
+window.context={ characterId:'0', characters:[{avatar:'fixture.png',name:'Fixture'}],chatId:'a',name1:'Tester',chat:[],chatMetadata:{},extensionSettings:{tavernBattle:{language:localStorage.getItem('fixture-tb-language')}},
 eventTypes:Object.fromEntries(['GENERATION_STARTED','GENERATION_AFTER_COMMANDS','GENERATION_ENDED','GENERATION_STOPPED','MESSAGE_RECEIVED','MESSAGE_EDITED','MESSAGE_SWIPED','MESSAGE_DELETED','MESSAGE_SENT','USER_MESSAGE_RENDERED','CHAT_CHANGED'].map(x=>[x,x])),
 eventSource:{on(k,cb){const a=handlers.get(k)||new Set();a.add(cb);handlers.set(k,a)},removeListener(k,cb){handlers.get(k)?.delete(cb)},async emit(k,...args){for(const cb of handlers.get(k)||[])await cb(...args)}},
-getRequestHeaders:()=>({'Content-Type':'application/json'}),saveSettingsDebounced(){},
+getRequestHeaders:()=>({'Content-Type':'application/json'}),saveSettingsDebounced(){localStorage.setItem('fixture-tb-language',this.extensionSettings.tavernBattle.language??'zh-CN')},
 async saveMetadata(){window.__metadataSaves++;await persistFixture(${metadataMode === 'legacy-full'})},
 async saveChat(){window.__fullSaves++;await persistFixture(true)},
 setExtensionPrompt(id,value){__prompts[id]=value},addOneMessage(message){const p=document.createElement('p');p.textContent=message.mes;document.getElementById('chat').append(p)},async generate(type,options){window.__generations++;window.__generationType=type;if(type==='normal'){document.getElementById('send_textarea').value='';document.getElementById('pending-file').value=''}await context.eventSource.emit('GENERATION_STARTED',type,options,false);await context.eventSource.emit('GENERATION_AFTER_COMMANDS',type,options,false);context.chat.push({is_user:false,mes:'合成宿主的完整叙述回复',swipe_id:0,gen_finished:'complete'});await context.saveChat();await context.eventSource.emit('MESSAGE_RECEIVED',context.chat.length-1);await context.eventSource.emit('GENERATION_ENDED',context.chat.length)}};
@@ -67,6 +67,48 @@ try {
   await page.locator('#tavern-battle-native-entry').click();
   const frame=page.frameLocator('#tavern-battle-native-panel iframe');await frame.locator('#app h1').waitFor();
   check('独立静态面板已加载',await frame.locator('[data-action="workspace-tab"]').count()>0);
+  const languageButton = frame.locator('[data-action="language-toggle"]');
+  check('语言入口在战阵开关左边', await languageButton.evaluate(button =>
+    button.textContent === 'English' && button.nextElementSibling?.dataset.action === 'plugin-toggle'));
+  await frame.locator('[data-action="plugin-toggle"]').click();
+  await frame.locator('[data-action="plugin-toggle"][aria-pressed="false"]').waitFor();
+  await languageButton.click();
+  check('关闭战阵时仍可切换英文', await languageButton.evaluate(button =>
+    button.textContent === '简体中文' && document.documentElement.lang === 'en'));
+  await frame.locator('[data-action="plugin-toggle"]').click();
+  await frame.locator('[data-action="plugin-toggle"][aria-pressed="true"]').waitFor();
+  await page.reload(); await ready(); await entry.click();
+  check('刷新后保持英文并翻译外层浮窗和导航',
+    await languageButton.innerText() === '简体中文' &&
+    await page.getByRole('button', { name: 'Saves', exact: true }).count() === 1 &&
+    await frame.locator('[data-action="workspace-tab"][data-tab="battle"]').innerText() === 'Battle');
+  await page.setViewportSize({ width: 320, height: 680 });
+  const outerPanel = page.locator('#tavern-battle-native-panel');
+  await outerPanel.evaluate(panel => {
+    for (const [edge, value] of Object.entries({ top: 48, right: 10, bottom: 15, left: 10 })) {
+      panel.style.setProperty(`--tb-safe-${edge}`, `${value}px`);
+    }
+  });
+  const buttons = await frame.locator('.app-controls button').evaluateAll(elements => elements.map(el => {
+    const box = el.getBoundingClientRect();
+    return { top: box.top, left: box.left, right: box.right, width: el.ownerDocument.documentElement.clientWidth };
+  }));
+  check('320px宽度下三个按钮都在同一行并处于模拟安全区',
+    (await outerPanel.locator('header').boundingBox()).y >= 48 &&
+    buttons.length === 3 && buttons.every(box => box.top === buttons[0].top && box.left >= 0 && box.right <= box.width));
+  await page.setViewportSize({ width: 844, height: 390 });
+  await outerPanel.evaluate(panel => {
+    panel.style.setProperty('--tb-safe-top', '0px');
+    panel.style.setProperty('--tb-safe-left', '44px');
+    panel.style.setProperty('--tb-safe-right', '44px');
+  });
+  const landscape = await outerPanel.boundingBox();
+  check('横屏浮窗避开模拟的两侧开孔', landscape.x >= 44 && landscape.x + landscape.width <= 844 - 44);
+  await outerPanel.evaluate(panel => {
+    for (const edge of ['top', 'right', 'bottom', 'left']) panel.style.removeProperty(`--tb-safe-${edge}`);
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await languageButton.click();
   // Reproduce an existing rc.1 journal: envelope saved, message source tag not saved.
   const partial = await page.evaluate(async()=>{
     context.chat.push({is_user:false,mes:'<tb><spawn name="原生卫兵" side="ally" scale="hero" weapon="卫兵剑:剑L3"/><spawn name="原生敌军" side="enemy" scale="hero" weapon="卫兵剑:剑L3"/></tb>',swipe_id:0,gen_finished:'complete'});
@@ -130,6 +172,11 @@ try {
   await page.evaluate(()=>{for(let i=0;i<100;i++){__tavernBattleNative.close();__tavernBattleNative.open()}});
   check('100次开关保持单个面板和固定监听数',await page.evaluate(n=>document.querySelectorAll('#tavern-battle-native-panel iframe').length===1&&[...handlers.values()].reduce((a,s)=>a+s.size,0)===n,listeners));
   check('关闭重开保留表单草稿',await frame.locator('[data-role="gen-name"]').inputValue()==='保留的未提交表单');
+  await languageButton.click();
+  check('切语言保留未提交的单位表单',
+    await frame.locator('[data-role="gen-name"]').inputValue() === '保留的未提交表单' &&
+    await frame.locator('[data-action="gen-add"]').innerText() === 'Preview Unit');
+  await languageButton.click();
   await frame.locator('[data-action="workspace-tab"][data-tab="battle"]').first().click();await idle(frame);
   const savesBefore = await page.evaluate(()=>__metadataSaves+__fullSaves);
   await page.evaluate(()=>{__delay=600});
@@ -142,6 +189,14 @@ try {
   await frame.locator('[data-action="workspace-tab"][data-tab="battle"]').first().click();
   await frame.locator('[data-action="small-start"]').first().click();await page.waitForFunction(()=>!!window.__tavernBattleNative.service.snapshot().battle);await idle(frame);
   check('原生面板可以开始并保存小战',(await state()).battle.kind==='small');
+  const battleBeforeLanguage = (await state()).battle;
+  const writesBeforeLanguage = await page.evaluate(() => __metadataSaves + __fullSaves);
+  await languageButton.click();
+  check('战斗中切换英文只更新视图',
+    await frame.locator('[data-action="grid-endturn"]').innerText() === 'End Turn' &&
+    await page.evaluate(count => __metadataSaves + __fullSaves === count, writesBeforeLanguage) &&
+    JSON.stringify((await state()).battle) === JSON.stringify(battleBeforeLanguage));
+  await languageButton.click();
   check('战场已移除 JEV 切换入口',await frame.locator('[data-role="jev-mode"]').count()===0);
   await frame.locator('[data-action="workspace-tab"][data-tab="settings"]').first().click();
   // isDisabled() follows the wrapping label to its enabled select in Playwright.
@@ -167,6 +222,13 @@ try {
   const settled = await state();
   check('小战结算与战报归档只入账一次',settled.reports?.length===1 && settled.reports[0].id===battleId &&
     settled.committedOutcomeIds?.length===1 && settled.committedOutcomeIds[0]===battleId);
+  await languageButton.click();
+  await frame.locator('.workspace-nav [data-tab="reports"]').click();
+  check('英文战报可以查看结算结果并发送完整记录',
+    await frame.locator('.report-workspace h2').innerText() === 'Battle Report' &&
+    await frame.locator('.report-workspace [data-action="out-digest"]').innerText() === 'Send Full Report');
+  await languageButton.click();
+  await frame.locator('.workspace-nav [data-tab="battle"]').click();
   await frame.locator('[data-action="out-epilogue"]').first().click();await idle(frame);
   check('战报只插入用户消息，不自动生成，并保留草稿附件',await page.evaluate(()=>__generations===0&&context.chat.at(-1).is_user===true&&document.getElementById('send_textarea').value.includes('玩家草稿')&&document.getElementById('pending-file').value==='fixture-attachment.txt'&&Object.values(__tavernBattleNative.service.snapshot().reportDeliveries)[0].receipts.epilogue.status==='inserted'));
   await frame.locator('[data-action="workspace-tab"][data-tab="reports"]').first().click();await idle(frame);

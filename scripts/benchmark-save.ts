@@ -9,6 +9,7 @@ import { prepareMessageTag } from '../host/src/message-identity.js';
 import { NativeStore } from '../runtime/src/native-store.js';
 import { MemoryJournal } from '../runtime/src/recovery-journal.js';
 import { generateUnit, SmallBattle, standardField, traitRegistry, V39_OVERFLOW_D20 } from '../engine/src/index.js';
+import { expandReportStart } from '../panel/src/report-start-archive.js';
 
 const registry = traitRegistry();
 const units = Array.from({ length: 32 }, (_, i) => {
@@ -22,7 +23,11 @@ battle.start();
 const snapshot = battle.toSnapshot();
 // Match persisted JSON: snapshots/reports are independent objects after disk read.
 const payload = JSON.parse(JSON.stringify({ factRevision: 1, battle: { kind: 'small', snap: snapshot },
-  reports: Array.from({ length: 30 }, (_, i) => ({ id: `r${i}`, start: { snapshot }, text: '战报。'.repeat(100) })) }));
+  reports: Array.from({ length: 30 }, (_, i) => {
+    const id = `small:archived-${i}`;
+    return { id, start: { version: 1, kind: 'small', battleId: id, snapshot: { ...snapshot, seed: id.slice(6) },
+      before: { storage: [], inventory: [], rosterIds: [], encounterIds: [], lastBattleUnitIds: [] } }, text: '战报。'.repeat(100) };
+  }) }));
 const median = (values: number[]) => values.sort((a,b) => a-b)[Math.floor(values.length/2)]!;
 async function timed(run: () => unknown) { const times = []; for (let i=0;i<5;i++) { const start=performance.now(); await run(); times.push(performance.now()-start); } return median(times); }
 const jsonMs = await timed(() => serialized(payload));
@@ -51,7 +56,11 @@ for (const floors of [100, 1000, 5000]) {
     } }, { highWaterMark: 0 })));
     if ((header as { chat_metadata?: { tavernBattle?: { revision?: number } } }).chat_metadata?.tavernBattle?.revision !== store.head()!.revision) throw Error('header mismatch');
   });
-  rows.push({ floors, loadMs, commitMs, tagsMs, headerMs, readBytes, chatBytes: bytes.length, saveCalls, hash: createHash('sha256').update(serialized(store.snapshot())).digest('hex') });
+  const logicalSave = store.snapshot();
+  logicalSave.reports = logicalSave.reports?.map(expandReportStart);
+  rows.push({ floors, loadMs, commitMs, tagsMs, headerMs, readBytes, chatBytes: bytes.length, saveCalls,
+    archiveBytes: Buffer.byteLength(JSON.stringify(store.envelope()!.payload)),
+    hash: createHash('sha256').update(serialized(logicalSave)).digest('hex') });
 }
 const result = { node: process.version, payloadBytes: Buffer.byteLength(JSON.stringify(payload)), jsonMs, rows,
   note: 'CPU and copy costs with metadata API simulated in memory; excludes real host disk, network, UI, and full-chat writes.' };
