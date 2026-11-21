@@ -1,6 +1,12 @@
 import worldbook from '../../assets/worldbook/!通用战斗系统约束.json';
 import { version } from '../../package.json';
 import type { CustomWorldbookEntry, WorldbookEditorState, WorldbookEditorUpdate } from '../../panel/src/panel-runtime.js';
+import type { UiLanguage } from '../../panel/src/ui-language.js';
+
+function worldbookContent(entry: SourceEntry, language: UiLanguage): string {
+  return language === 'en' ? entry.content.replace('从飞船到太空行走都用太空机动。',
+    'Use the space-adapted trait for vacuum-capable units, from spacecraft to spacewalkers.') : entry.content;
+}
 
 interface SourceEntry {
   [key: string]: unknown;
@@ -50,7 +56,7 @@ export type WorldbookInstallation = (() => void) & { mode: 'native' | 'depth' };
  * Separate extension prompts cannot preserve ordering with other depth entries,
  * WI regex processing, or the host's token-budget behavior.
  */
-export function embeddedWorldbookEntries(value?: EmbeddedWorldbookSettings) {
+export function embeddedWorldbookEntries(value?: EmbeddedWorldbookSettings, language: UiLanguage = 'zh-CN') {
   const settings = normalizeEmbeddedWorldbookSettings(value);
   if (!settings.enabled) return [];
   const builtIn = sourceEntries.map(([id, entry]) => ({
@@ -60,7 +66,7 @@ export function embeddedWorldbookEntries(value?: EmbeddedWorldbookSettings) {
     key: [],
     keysecondary: [],
     selective: false,
-    content: Object.prototype.hasOwnProperty.call(settings.entries, id) ? settings.entries[id]! : entry.content,
+    content: settings.entries[id] ?? worldbookContent(entry, language),
   }));
   const custom = settings.customEntries.filter(entry => entry.enabled && entry.content.trim()).map(entry => ({
     ...structuredClone(sourceEntries[0]![1]),
@@ -124,15 +130,15 @@ export function normalizeEmbeddedWorldbookSettings(value?: EmbeddedWorldbookSett
   return { enabled: value?.enabled !== false, builtinRevision, entries, customEntries, nextCustomId };
 }
 
-export function embeddedWorldbookSettingsView(value?: EmbeddedWorldbookSettings): WorldbookEditorState {
+export function embeddedWorldbookSettingsView(value?: EmbeddedWorldbookSettings, language: UiLanguage = 'zh-CN'): WorldbookEditorState {
   const settings = normalizeEmbeddedWorldbookSettings(value);
   return {
     enabled: settings.enabled,
     items: [...sourceEntries.map(([id, entry]) => ({
       id,
       title: entry.comment || `条目 ${id}`,
-      content: Object.prototype.hasOwnProperty.call(settings.entries, id) ? settings.entries[id]! : entry.content,
-      defaultContent: entry.content,
+      content: settings.entries[id] ?? worldbookContent(entry, language),
+      defaultContent: worldbookContent(entry, language),
       depth: entry.depth,
       role: entry.role,
       order: entry.order,
@@ -169,12 +175,12 @@ export function updateEmbeddedWorldbookSettings(value: EmbeddedWorldbookSettings
   return settings;
 }
 
-export function buildEmbeddedWorldbook(value?: EmbeddedWorldbookSettings): EmbeddedPrompt[] {
+export function buildEmbeddedWorldbook(value?: EmbeddedWorldbookSettings, language: UiLanguage = 'zh-CN'): EmbeddedPrompt[] {
   const settings = normalizeEmbeddedWorldbookSettings(value);
   if (!settings.enabled) return [];
 
   const groups = new Map<string, { depth: number; role: number; contents: string[] }>();
-  for (const entry of embeddedWorldbookEntries(settings).filter(entry => entry.constant).sort((a, b) => a.order - b.order)) {
+  for (const entry of embeddedWorldbookEntries(settings, language).filter(entry => entry.constant).sort((a, b) => a.order - b.order)) {
     if (entry.position !== AT_DEPTH) throw Error('内置世界书包含非深度注入条目，无法保证位置等价');
     const key = `${entry.depth}:${entry.role}`;
     const group = groups.get(key) ?? { depth: entry.depth, role: entry.role, contents: [] };
@@ -197,7 +203,7 @@ export function installEmbeddedWorldbook(host: {
   clearInjection(id: string): void;
   subscribe?(kind: string, callback: (...args: unknown[]) => void): { available: boolean; stop(): void };
   hasLegacyRuntime?(): boolean;
-}, value?: EmbeddedWorldbookSettings, enabled: () => boolean = () => true): WorldbookInstallation {
+}, value?: EmbeddedWorldbookSettings, enabled: () => boolean = () => true, language: UiLanguage = 'zh-CN'): WorldbookInstallation {
   const native = host.subscribe?.('WORLDINFO_ENTRIES_LOADED', payload => {
     if (host.hasLegacyRuntime?.() || !payload || typeof payload !== 'object') return;
     const { globalLore } = payload as { globalLore?: unknown };
@@ -206,7 +212,7 @@ export function installEmbeddedWorldbook(host: {
       for (let i = globalLore.length - 1; i >= 0; i--) {
         if ([EMBEDDED_WORLD_NAME, CUSTOM_WORLD_NAME].includes(globalLore[i]?.world)) globalLore.splice(i, 1);
       }
-      if (enabled()) globalLore.push(...embeddedWorldbookEntries(value));
+      if (enabled()) globalLore.push(...embeddedWorldbookEntries(value, language));
     }
   });
   if (native?.available) return Object.assign(() => native.stop(), { mode: 'native' as const });
@@ -214,7 +220,7 @@ export function installEmbeddedWorldbook(host: {
   // Older hosts without the native hook retain depth/role and internal order.
   // Keyword entries stay native-only; the editor disables that option on old hosts.
   const installed: string[] = [];
-  for (const prompt of enabled() ? buildEmbeddedWorldbook(value) : []) {
+  for (const prompt of enabled() ? buildEmbeddedWorldbook(value, language) : []) {
     if (host.inject(prompt.id, prompt.content, prompt)) installed.push(prompt.id);
   }
   return Object.assign(() => { for (const id of installed) host.clearInjection(id); }, { mode: 'depth' as const });

@@ -1,5 +1,6 @@
 import { RUNTIME_REMINDER } from './narrative-prompt.js';
-import { SETTLEMENT_PROMPT } from '../../engine/src/inject/narrative-task.js';
+import { ENGLISH_SETTLEMENT_PROMPT, SETTLEMENT_PROMPT } from '../../engine/src/inject/narrative-task.js';
+import type { UiLanguage } from './ui-language.js';
 // 旧版默认文本曾可能被设置页原样保存；只替换该精确值，保留真正的自定义编辑。
 const LEGACY_SETTLEMENT_PROMPT = '【叙述任务】\n依据已记录的开局单位状态与血量、结束单位状态与血量，以及谁对谁造成了伤害，叙述战斗经过和终章。以结束状态为准：阵亡明确写为阵亡，濒死仍然存活，溃退或撤离不视为死亡；编队人数不当作个体血量。缺失的开局或伤害来源不补造，不自定俘虏、战利品或隐藏信息，不照抄骰式，停在玩家下一次决定之前。主控未标指挥官时不替其调兵。';
 const PREVIOUS_SETTLEMENT_PROMPT = '根据战斗情况描写战斗过程，不得出现血量，骰子点数等词';
@@ -19,19 +20,20 @@ export const PROMPT_SECTIONS = [
   { id: 'reminder', title: '本次输出约束', template: RUNTIME_REMINDER },
 ] as const;
 export type PromptSectionId = typeof PROMPT_SECTIONS[number]['id'];
-function settlementTemplate(settings?: PromptSettings): string {
+function settlementTemplate(settings?: PromptSettings, language: UiLanguage = 'zh-CN'): string {
   const saved = settings?.sections?.settlement?.template;
-  return saved === undefined || oldSettlementTemplate(saved) ? SETTLEMENT_PROMPT : saved;
+  return saved === undefined || oldSettlementTemplate(saved) || saved === SETTLEMENT_PROMPT || saved === ENGLISH_SETTLEMENT_PROMPT
+    ? language === 'en' ? ENGLISH_SETTLEMENT_PROMPT : SETTLEMENT_PROMPT : saved;
 }
 function itemsTemplate(settings?: PromptSettings): string {
   const saved = settings?.sections?.items?.template;
   return saved === undefined || oldItemsTemplate(saved) ? ITEMS_TEMPLATE : saved;
 }
-export function applySettlementPrompt(text: string, settings?: PromptSettings): string {
+export function applySettlementPrompt(text: string, settings?: PromptSettings, language: UiLanguage = 'zh-CN'): string {
   const at = text.indexOf('【叙述任务】');
   if (at < 0) return text;
   const setting = settings?.sections?.settlement;
-  const tail = setting?.enabled === false ? '' : settlementTemplate(settings).split('{{content}}').join(text.slice(at));
+  const tail = setting?.enabled === false ? '' : settlementTemplate(settings, language).split('{{content}}').join(text.slice(at));
   return text.slice(0, at).trimEnd() + (tail ? '\n' + tail : '');
 }
 export interface PromptSettings {
@@ -66,8 +68,8 @@ export function selectPromptEntries(settings: PromptSettings | undefined, kind: 
   for (const id of ids) { if (selected) excluded.delete(id); else excluded.add(id); }
   return { ...settings, [key]: [...excluded] };
 }
-function sectionTemplate(settings: PromptSettings | undefined, id: PromptSectionId): string {
-  if (id === 'settlement') return settlementTemplate(settings);
+function sectionTemplate(settings: PromptSettings | undefined, id: PromptSectionId, language: UiLanguage = 'zh-CN'): string {
+  if (id === 'settlement') return settlementTemplate(settings, language);
   if (id === 'items') return itemsTemplate(settings);
   const saved = settings?.sections?.[id]?.template;
   if (id === 'reminder') return saved?.replace(/count是卡数；(?:会战|本场)最多(?:32|64)张。/g, 'count是卡数。') ?? RUNTIME_REMINDER;
@@ -78,6 +80,6 @@ export function formatPromptSection(settings: PromptSettings | undefined, id: Pr
   return sectionTemplate(settings, id).split('{{content}}').join(content);
 }
 const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-export function renderPromptSettings(settings?: PromptSettings, drafts = new Map<string, string>()): string {
-  return `<section><h2>动态提示词</h2><p>开关、编辑和清单选择随当前聊天保存。{{content}}代表实时数据；保留它可继续自动更新。内置世界书在本设置页单独管理。</p>${PROMPT_SECTIONS.map((s) => `<div class="prompt-setting"><label><input type="checkbox" data-role="prompt-enabled" data-section="${s.id}" ${settings?.sections?.[s.id]?.enabled === false ? '' : 'checked'}>${s.title}</label><details data-detail-id="prompt-editor-${s.id}"><summary>编辑提示词</summary><textarea data-role="prompt-template" data-section="${s.id}" style="width:100%;min-height:8em">${esc(drafts.get(s.id) ?? sectionTemplate(settings, s.id))}</textarea><div class="row"><button data-action="prompt-save" data-section="${s.id}">保存编辑</button><button data-action="prompt-reset" data-section="${s.id}">恢复默认文本</button></div></details></div>`).join('')}</section>`;
+export function renderPromptSettings(settings?: PromptSettings, drafts = new Map<string, string>(), language: UiLanguage = 'zh-CN'): string {
+  return `<section><h2>动态提示词</h2><p>开关、编辑和清单选择随当前聊天保存。{{content}}代表实时数据；保留它可继续自动更新。内置世界书在本设置页单独管理。</p>${PROMPT_SECTIONS.map((s) => `<div class="prompt-setting"><label><input type="checkbox" data-role="prompt-enabled" data-section="${s.id}" ${settings?.sections?.[s.id]?.enabled === false ? '' : 'checked'}>${s.title}</label><details data-detail-id="prompt-editor-${s.id}"><summary>编辑提示词</summary><textarea data-role="prompt-template" data-section="${s.id}" style="width:100%;min-height:8em">${esc(drafts.get(s.id) ?? sectionTemplate(settings, s.id, language))}</textarea><div class="row"><button data-action="prompt-save" data-section="${s.id}">保存编辑</button><button data-action="prompt-reset" data-section="${s.id}">恢复默认文本</button></div></details></div>`).join('')}</section>`;
 }

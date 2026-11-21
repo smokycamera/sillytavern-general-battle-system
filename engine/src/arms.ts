@@ -163,16 +163,16 @@ export function shieldUsable(unit: ShieldBearer, incoming?: Weapon): boolean {
 export function shieldGuardUsable(unit: ShieldBearer): boolean {
   return shieldUsable(unit) && (!isArmsV2(unit.armsModel) || ['shield','tower-shield'].includes(shieldClass(unit)));
 }
-export function shieldCoverage(unit: ShieldBearer, incoming?: Weapon): number {
+export function shieldCoverage(unit: ShieldBearer, incoming?: Weapon, maximum?: number): number {
   if (!shieldUsable(unit,incoming)) return 0;
   const kind = isArmsV2(unit.armsModel) ? SHIELD_CLASSES[shieldClass(unit)] : SHIELD_CLASSES.shield;
   const coverage = Math.min(kind.limit,kind.coverage * equipmentMultiplier(unit.shield!.recipe,'power'));
-  return coverage * (isArmsV2(unit.armsModel) && unit.scale && unit.scale !== 'hero' && unit.shieldDurability ? Math.min(1,unit.shieldDurability.remaining / shieldDurabilityMax(unit)) : 1);
+  return coverage * (isArmsV2(unit.armsModel) && unit.scale && unit.scale !== 'hero' && unit.shieldDurability ? Math.min(1,unit.shieldDurability.remaining / (maximum ?? shieldDurabilityMax(unit))) : 1);
 }
-export function applyShieldWear(unit: Combatant, wear: number): boolean {
+export function applyShieldWear(unit: Combatant, wear: number, maximum?: number): boolean {
   if (!isArmsV2(unit.armsModel) || !unit.shieldDurability) return false;
   const before = unit.shieldDurability.remaining;
-  unit.shieldDurability.remaining = Math.max(0,Math.min(shieldDurabilityMax(unit),before - wear));
+  unit.shieldDurability.remaining = Math.max(0,Math.min(maximum ?? shieldDurabilityMax(unit),before - wear));
   return before > 0 && unit.shieldDurability.remaining === 0;
 }
 export function shieldUnavailableReason(unit: ShieldBearer): string | undefined {

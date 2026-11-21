@@ -450,18 +450,25 @@ export function roundDigest(
   b: SmallBattle | MassBattle,
   era?: string,
   _registry?: Map<string, import('../types.js').Trait>,
-  opts: { wholeBattle?: boolean; lastRounds?: number; protagonistId?: string } = {},
+  opts: { wholeBattle?: boolean; lastRounds?: number; protagonistId?: string; formatEvents?: (entries: readonly BattleLogEntry[], text: string) => string } = {},
 ): string {
-  const rounds = [...new Set((b.isOver() ? b.log : b.visibleLog('ally')).filter((e) => !e.intentFailure && (DIGEST_KINDS.has(e.kind) || isCommunicationLog(e))).map((e) => e.round))].sort(
-    (x, y) => x - y,
-  );
+  const byRound = new Map<number, BattleLogEntry[]>();
+  for (const entry of b.isOver() ? b.log : b.visibleLog('ally')) {
+    if (entry.intentFailure || !DIGEST_KINDS.has(entry.kind) && !isCommunicationLog(entry)) continue;
+    const entries = byRound.get(entry.round);
+    if (entries) entries.push(entry);
+    else byRound.set(entry.round, [entry]);
+  }
+  const rounds = [...byRound.keys()].sort((x, y) => x - y);
   const takeRounds = opts.lastRounds ? rounds.slice(-opts.lastRounds) : rounds;
   const lines: string[] = [];
   for (const r of takeRounds) {
-    const entries = (b.isOver() ? b.log : b.visibleLog('ally')).filter((e) => !e.intentFailure && e.round === r && (DIGEST_KINDS.has(e.kind) || isCommunicationLog(e)));
-    if (!entries.length) continue;
+    const entries = byRound.get(r)!;
     lines.push(`【第${r}回合】`);
-    lines.push(...compactEvents(entries).map((line) => '▸ ' + line));
+    for (const group of compactEventGroups(entries)) {
+      const line = opts.formatEvents ? opts.formatEvents(entries.slice(group.first, group.last + 1), group.text) : group.text;
+      lines.push('▸ ' + line);
+    }
   }
   if (!lines.length) return '';
   const mass = isMass(b);

@@ -32,7 +32,7 @@ import { meleeWeapon, isCannonWeapon } from './loadout.js';
 import { cloneData } from './clone.js';
 import { exactSequenceMoments } from './sequence-preview.js';
 import { fatiguePenalty } from './resources.js';
-import { energyHeavyHit, energyShieldActive, energyPower } from './shield-state.js';
+import { energyHeavyHit, energyShieldActive, energyPower, shieldDurabilityMax } from './shield-state.js';
 import { isArmsV3 } from './arms-model.js';
 import { diceAvg } from './data/weapons.js';
 import { isArmsV2, MOUNTED_SPRINT_DAMAGE, HOOK_ACCURACY, shieldUsable, shieldClass, shieldCoverage, applyShieldWear, weaponCrew, demolitionPackets, humanSizedIndividual, loneHeavyOperator, LONE_AUTOCANNON_SHARE, ARTILLERY_SMALL_TARGET } from './arms.js';
@@ -56,7 +56,7 @@ import { damageMoments, diceDistribution, v2DamageAmount, roundDamage } from './
 import { engagementWidth } from './exposure.js';
 import { activeTraitIds, traitPenetrationBonus } from './trait-sources.js';
 import { combatBonuses } from './gear-bonuses.js';
-import { additionalChannelBudgets, splitChannelDamage } from './additional-channels.js';
+import { additionalChannelBudgets, splitChannelDamage, type AdditionalChannelBudget } from './additional-channels.js';
 import { itemsV15 } from './item-model.js';
 import { COHORT_MODEL, COHORT_REFERENCE, personnel, memberDurability } from './combat-model.js';
 
@@ -272,11 +272,12 @@ export function penetrationContext(opts: Pick<AttackOpts, 'attacker' | 'defender
   const area=spray||(opts.abilityDamage ? opts.abilityDamage.shape==='burst'||!!opts.abilityDamage.weaponBased&&(!!weapon?.tags?.includes('blast')||!!weapon?.splashTargets && weapon.recipe?.mechanism !== 'shotgun') : !!weapon?.tags?.includes('blast')||!!weapon?.splashTargets && weapon.recipe?.mechanism !== 'shotgun');
   // R1/R8/R20：挂背、碎盾或被巨型冷兵器无视的盾不挡，屏障换算与磨损也按不挡计。
   const canBlock=!(isArmsV2(opts.rules?.armsModel)&&opts.defender.shield&&!blockingShield)&&!opts.defender.conditions.some(c=>c.dur>0&&(opts.conditionDefs?.get(c.id)?.skipTurn||opts.conditionDefs?.get(c.id)?.preventAttack));
-  const shieldFactor=wounds?shieldTransmission(target,channel,penetration,area,canBlock):1;
+  const maximum = (wounds || modern && opts.rules?.overmatch) && canBlock && !area && target.status === 'ready' ? previewShieldMaximum(memo, target) : undefined;
+  const shieldFactor=wounds?shieldTransmission(target,channel,penetration,area,canBlock,maximum):1;
   const power=opts.abilityDamage&&!opts.abilityDamage.weaponBased?opts.abilityDamage.power:weapon?.recipe?.power??weapon?.level;
   return { channel, penetration, resistance, factor:armorFactor*shieldFactor,armorScale,...(wounds?{armorFactor,shieldFactor}:{}),
     ...(modern&&opts.rules?.overmatch?{attackPower:power,protectionPower,overmatchMultiplier:overmatchMultiplier(power,target,channel,penetration,area,canBlock,false,opts.rules.overmatchCurve,
-      gradeOvermatch(power,protectionPower!,penetration,resistance,opts.rules.overmatchCurve)),area,canBlock,...(opts.rules.overmatchCurve?{curve:opts.rules.overmatchCurve}:{})}:{}) };
+      gradeOvermatch(power,protectionPower!,penetration,resistance,opts.rules.overmatchCurve),maximum),area,canBlock,...(opts.rules.overmatchCurve?{curve:opts.rules.overmatchCurve}:{})}:{}) };
 }
 
 /** 与执行共用属性栈与穿透。期望值不读取实战 RNG；骰子取整/暴击导致实际结果有波动。 */
@@ -425,7 +426,12 @@ function previewMemberPlan(unit:Combatant,plan:MemberDamagePlan):{damage:number;
 }
 interface AdditionalDamagePart { channel: import('./types.js').DamageChannel; scale: number; penetration: ReturnType<typeof penetrationContext>; ward: StackResult }
 function additionalDamageParts(opts: Omit<AttackOpts, 'rng'>, ctx: ReturnType<typeof attackContext>, resolved: ResolvedWeapon): AdditionalDamagePart[] {
-  const budgets = additionalChannelBudgets(opts, ctx.weapon);
+  const memo = opts.previewMemo;
+  let budgets = memo?.channelBudgets?.get(ctx.weapon);
+  if (!budgets) {
+    budgets = additionalChannelBudgets(opts, ctx.weapon);
+    if (memo) (memo.channelBudgets ??= new Map()).set(ctx.weapon, budgets);
+  }
   if (!budgets.length) return [];
   const stack = { sameNameKeepsHighest: opts.rules.sameNameKeepsHighest, maxFlat: opts.rules.maxFlat };
   return budgets.map(budget => {
@@ -952,9 +958,37 @@ export function applyResolutionDamage(target:Combatant,result:AttackResolution,r
 /** 一段攻击中不含随机数的部分。 */
 interface AttackBasis { ward: StackResult; context: ReturnType<typeof attackContext>; resolved: ResolvedWeapon; dmgMult: number; wardMult: number; atkDetail: string; additional?: AdditionalDamagePart[]; penetration?: ReturnType<typeof penetrationContext>; sizes?: Map<string, { scale: ReturnType<typeof outcomeScale>; sourceScale: number }>; critical?: ReturnType<typeof criticalInfo>; hitRules?: RulePack; hitWeights?: number[] }
 type AttackModifiersBasis = Pick<AttackBasis, 'context' | 'ward' | 'resolved' | 'dmgMult' | 'wardMult' | 'atkDetail'>;
-interface ShieldWearFactors { source: number; training: number; unit: number; worn: number; merged: number }
-interface PreviewMemo { initialBasis?: AttackBasis; bases: Map<string, AttackBasis>; modifiers?: Map<string, AttackModifiersBasis>; armor?: Map<string, ArmorPenetrationBasis>; variableProtection: boolean; shieldWear?: Map<Weapon | undefined, ShieldWearFactors>; samples?: number; penetration?: ReturnType<typeof penetrationContext>; loose?: boolean; cannon?: boolean; modernArms?: boolean; layeredLegacy?: boolean;
+interface AttackSourceFactors { source: number; wearSource: number; training: number; unit: number; wearUnit: number; worn: number; merged: number }
+interface PreviewMemo { initialBasis?: AttackBasis; bases: Map<string, AttackBasis>; modifiers?: Map<string, AttackModifiersBasis>; armor?: Map<string, ArmorPenetrationBasis>; variableProtection: boolean; sources?: Map<Weapon | undefined, AttackSourceFactors>; samples?: number; penetration?: ReturnType<typeof penetrationContext>; loose?: boolean; cannon?: boolean; modernArms?: boolean; layeredLegacy?: boolean;
+  channelBudgets?: Map<Weapon | undefined, AdditionalChannelBudget[]>;
+  shieldMaximum?: { hp: number; wounded: number | undefined; unequipped: number | undefined; arms: Combatant['armsModel']; value: number };
   lastBasis?: { hp: number; status: Combatant['status']; shield: number | undefined; barrier: number | undefined; value: AttackBasis } }
+/** Issued batches stay fixed in a preview. Casualties can change how many shields are in use. */
+function previewShieldMaximum(memo: PreviewMemo | undefined, unit: Combatant): number | undefined {
+  if (!memo || !unit.shield || !unit.shieldDurability || unit.scale === 'hero') return undefined;
+  const cached = memo.shieldMaximum;
+  if (cached?.hp === unit.hp && cached.wounded === unit.recoverableWounded
+    && cached.unequipped === unit.unequippedWounded && cached.arms === unit.armsModel) return cached.value;
+  const value = shieldDurabilityMax(unit);
+  memo.shieldMaximum = { hp: unit.hp, wounded: unit.recoverableWounded, unequipped: unit.unequippedWounded, arms: unit.armsModel, value };
+  return value;
+}
+function attackSourceFactors(opts: AttackOpts, weapon: Weapon | undefined, channel: import('./types.js').DamageChannel): AttackSourceFactors {
+  const memo = opts.previewMemo, cached = memo?.sources?.get(weapon);
+  if (cached) return cached;
+  const attacker = opts.attacker, bonuses = combatBonuses(attacker);
+  const unit = unitMultiplier(attacker,'damage',channel,bonuses);
+  const factors = {
+    source: opts.abilityDamage ? opts.abilityDamage.damageScale ?? 1 : weapon?.damageScale ?? 1,
+    wearSource: opts.abilityDamage?.damageScale ?? weapon?.damageScale ?? 1,
+    training: trainingDamage(attacker.level,opts.rules), unit,
+    wearUnit: weapon?.channel === channel ? unit : unitMultiplier(attacker,'damage',weapon?.channel,bonuses),
+    worn: wornDamageMultiplier(attacker,channel), merged: damageMergeRatio(opts,weapon,channel),
+  };
+  // The attacker, ability and its primary channel stay fixed for each sampled weapon.
+  if (memo) (memo.sources ??= new Map()).set(weapon, factors);
+  return factors;
+}
 /** 抽样副本：伤损只改写生命基数、状态、成员分组、屏障、盾耐久、能量盾与士气记录；其余数据与原单位共享且只读。 */
 function damageCopy(unit: Combatant, reusable?: Combatant): Combatant {
   // Across seeds keep the large immutable skill/equipment branches and reset every
@@ -1258,8 +1292,14 @@ function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean, streams?: Pr
 
   // 展开规模与伤害系数另按分段份额与现员复用（范围技能暴露人数随现员变化）。
   const modern=rules.combatModel===MEMBER_HEALTH_MODEL, sizeKey=opts.previewMemo&&modern?opts.packetShare+'|'+defender.hp:undefined;
-  const size=(sizeKey===undefined?undefined:basis.sizes?.get(sizeKey))??{scale:outcomeScale(opts, resolved),sourceScale:modern?memberAreaBudget(opts)*(opts.abilityDamage?opts.abilityDamage.damageScale??1:weapon?.damageScale??1)/(penetration?.armorScale??1)*trainingDamage(attacker.level,rules)*unitMultiplier(attacker,'damage',penetration?.channel??'kinetic',combatBonuses(attacker))*wornDamageMultiplier(attacker,penetration?.channel??'kinetic')*damageMergeRatio(opts,weapon,penetration?.channel??'kinetic')*(penetration?.overmatchMultiplier??1):1};
-  if (sizeKey!==undefined) (basis.sizes??=new Map()).set(sizeKey,size);
+  let size = sizeKey === undefined ? undefined : basis.sizes?.get(sizeKey);
+  let factors: AttackSourceFactors | undefined;
+  if (!size) {
+    if (modern) factors = attackSourceFactors(opts,weapon,penetration?.channel ?? 'kinetic');
+    size = { scale: outcomeScale(opts,resolved), sourceScale: factors ? memberAreaBudget(opts) * factors.source / (penetration?.armorScale ?? 1)
+      * factors.training * factors.unit * factors.worn * factors.merged * (penetration?.overmatchMultiplier ?? 1) : 1 };
+    if (sizeKey !== undefined) (basis.sizes ??= new Map()).set(sizeKey,size);
+  }
   const { scale, sourceScale } = size;
   const targets=modern?roundDamage(scale.multiplier,targetsRng):0;
   const extra = modern ? basis.additional ??= additionalDamageParts(opts, basis.context, resolved) : [];
@@ -1271,23 +1311,12 @@ function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean, streams?: Pr
   if (final < 1) final = v2 ? 0 : 1;
   let wear = 0;
   if (defender.shield && isArmsV2(rules.armsModel) && !penetration?.area && penetration?.canBlock !== false && (!opts.abilityDamage || opts.abilityDamage.weaponBased)) {
-    const memo = opts.previewMemo;
-    let factors = memo?.shieldWear?.get(weapon);
-    if (!factors) {
-      const channel = penetration?.channel ?? 'kinetic';
-      factors = {
-        source: opts.abilityDamage?.damageScale ?? weapon?.damageScale ?? 1,
-        training: trainingDamage(attacker.level,rules),
-        unit: unitMultiplier(attacker,'damage',weapon?.channel,combatBonuses(attacker)),
-        worn: rules.damageStackModel ? wornDamageMultiplier(attacker,channel) : 1,
-        merged: damageMergeRatio(opts,weapon,channel),
-      };
-      if (memo) (memo.shieldWear ??= new Map()).set(weapon, factors);
-    }
+    factors ??= attackSourceFactors(opts,weapon,penetration?.channel ?? 'kinetic');
     // The attacker-side factors stay fixed across preview packets. Coverage and
     // attack modifiers still use the defender's current state and the latest roll.
-    wear = shieldCoverage(defenderWithArmsModel(opts),weapon) * (baseRaw + apRolledTotal) * factors.source * factors.training
-      * factors.unit * factors.worn * factors.merged * dmgMult * targets * (weapon?.recipe?.mechanism === 'axe' ? 2 : 1);
+    const target = defenderWithArmsModel(opts);
+    wear = shieldCoverage(target,weapon,previewShieldMaximum(opts.previewMemo,target)) * (baseRaw + apRolledTotal) * factors.wearSource * factors.training
+      * factors.wearUnit * (rules.damageStackModel ? factors.worn : 1) * factors.merged * dmgMult * targets * (weapon?.recipe?.mechanism === 'axe' ? 2 : 1);
   }
   if (res && wear) res.shieldWear = wear;
   if (!res) {
@@ -1296,7 +1325,7 @@ function resolveAttackPacket(opts: AttackOpts, sampleOnly: boolean, streams?: Pr
       else applyDamagePlan(defender, memberPlan(opts, final, targets, resolved, penetration, basis.ward));
     }
     else applyHealthLoss(defender, final, v2);
-    if (wear) applyShieldWear(defender,wear);
+    if (wear) applyShieldWear(defender,wear,previewShieldMaximum(opts.previewMemo,defender));
     return true;
   }
   if (v2) res.participants = scale.participants;

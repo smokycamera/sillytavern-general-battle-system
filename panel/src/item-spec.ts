@@ -7,6 +7,12 @@ import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-toleranc
 import { splitSkillLevel } from './skill-notation.js';
 
 const ARMOR_TIERS = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
+const ENGLISH_ARMOR_TIERS = ['unarmored', 'light armor', 'medium armor', 'heavy armor', 'super-heavy armor'];
+export function armorSpecificationTier(name: string): number {
+  const chinese = ARMOR_TIERS.indexOf(name);
+  if (chinese >= 0) return chinese;
+  return ENGLISH_ARMOR_TIERS.indexOf(name.toLowerCase().replace(/armour$/, 'armor'));
+}
 export function itemSpecificationLabel(spec: ItemSpecification): string {
   if (spec.kind === 'item') return ITEM_FORM_NAMES[spec.form] + '·' + itemSpecText({ version: 'items-v1', form: spec.form, power: spec.power, seed: '', active: spec.active, traits: spec.traits, bonuses: spec.bonuses, barrierPower: spec.barrierPower });
   const name = spec.kind === 'weapon' ? WEAPON_CLASSES[spec.mechanism]?.name ?? spec.mechanism : spec.kind === 'armor' ? ARMOR_TIERS[spec.tier] : SHIELD_CLASSES[spec.mechanism ?? 'shield'].name;
@@ -44,7 +50,7 @@ function nameHint(base: string): string {
 }
 function equipmentSpecification(base: string, power: number, suffix: string, attrs: SpecAttributes): ItemSpecification | undefined {
   const weaponId = resolveWeaponClass(base), weapon = weaponId ? WEAPON_CLASSES[weaponId] : undefined;
-  const tier = ARMOR_TIERS.indexOf(base), shield = weaponId !== undefined && Object.hasOwn(SHIELD_CLASSES, weaponId);
+  const tier = armorSpecificationTier(base), shield = weaponId !== undefined && Object.hasOwn(SHIELD_CLASSES, weaponId);
   if (!weapon && tier < 0 && !shield) return undefined;
   const kind = weapon ? 'weapon' : tier >= 0 ? 'armor' : 'shield';
   const bonuses = parseEnhancementSuffix('L' + power + suffix, kind).bonuses;

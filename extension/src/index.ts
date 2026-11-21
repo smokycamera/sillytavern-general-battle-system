@@ -64,10 +64,13 @@ async function startRuntime() {
   const applyWorldbook = (worldbook = extensionPreferences.read().worldbook) => {
     stopWorldbook();
     stopWorldbook = () => {};
-    const installed = installEmbeddedWorldbook(host, worldbook, enabled);
+    const installed = installEmbeddedWorldbook(host, worldbook, enabled, extensionPreferences.read().language);
     stopWorldbook = installed; worldbookMode = installed.mode;
   };
-  const worldbookView = () => ({ ...embeddedWorldbookSettingsView(extensionPreferences.read().worldbook), injectionMode: worldbookMode });
+  const worldbookView = () => {
+    const { worldbook, language } = extensionPreferences.read();
+    return { ...embeddedWorldbookSettingsView(worldbook, language), injectionMode: worldbookMode };
+  };
   const syncChatHooks = () => {
     const active = enabled();
     if (active === installedForChat) return;
@@ -100,6 +103,7 @@ async function startRuntime() {
     setLanguage(language) {
       extensionPreferences.write({ language });
       panel.setLanguage(language);
+      applyWorldbook();
     },
     messages: new NativeMessages(host, () => current.canWrite()),
     open: () => panel.open(),

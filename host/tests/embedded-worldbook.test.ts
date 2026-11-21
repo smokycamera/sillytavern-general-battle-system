@@ -5,6 +5,13 @@ import worldbook from '../../assets/worldbook/!通用战斗系统约束.json';
 import { nativeFixture } from '../../runtime/tests/native-fixture.js';
 
 describe('embedded worldbook', () => {
+  it('uses the English vacuum trait guidance without replacing a user-edited entry', () => {
+    const chinese = embeddedWorldbookSettingsView().items.find(item => item.content.includes('从飞船到太空行走'))!;
+    const english = embeddedWorldbookSettingsView(undefined, 'en').items.find(item => item.id === chinese.id)!;
+    expect(english.content).toBe(chinese.content.replace('从飞船到太空行走都用太空机动。', 'Use the space-adapted trait for vacuum-capable units, from spacecraft to spacewalkers.'));
+    const edited = updateEmbeddedWorldbookSettings(undefined, { entry: { id: chinese.id, content: 'My own rules' } });
+    expect(buildEmbeddedWorldbook(edited, 'en').some(prompt => prompt.content.includes('My own rules'))).toBe(true);
+  });
   it('keeps at-depth placement and original same-depth order while remaining always-on', () => {
     const prompts = buildEmbeddedWorldbook();
     expect(prompts).toHaveLength(2);

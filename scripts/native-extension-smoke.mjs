@@ -227,11 +227,19 @@ try {
   check('英文战报可以查看结算结果并发送完整记录',
     await frame.locator('.report-workspace h2').innerText() === 'Battle Report' &&
     await frame.locator('.report-workspace [data-action="out-digest"]').innerText() === 'Send Full Report');
-  await languageButton.click();
-  await frame.locator('.workspace-nav [data-tab="battle"]').click();
-  await frame.locator('[data-action="out-epilogue"]').first().click();await idle(frame);
+  await frame.locator('.workspace-nav [data-tab="settings"]').click();
+  check('英文指挥设置能识别敌方与第三方选项', await frame.locator('label:has([data-role="llm-faction-enemy"])').innerText() === 'Command Enemies' &&
+    await frame.locator('label:has([data-role="llm-faction-neutral"])').innerText() === 'Command Third-Party Forces');
+  check('英文设置显示实际用于发送的默认提示', (await frame.locator('[data-role="prompt-template"][data-section="settlement"]').inputValue()).startsWith('Describe the battle using the recorded events.'));
+  await frame.locator('.workspace-nav [data-tab="reports"]').click();
+  await frame.locator('.report-workspace [data-action="out-epilogue"]').click();await idle(frame);
+  check('发送英文终章使用英文提示和装备数量说明', await page.evaluate(() => {
+    const message = context.chat.at(-1).mes;
+    return message.includes('【Battle System · Epilogue】') && message.includes('Use the report to describe the battle in detail. Do not output a <tb> block.') &&
+      message.endsWith('Pay attention to changes in equipment quantities. A decrease means the unit members using that equipment were killed.');
+  }));
   check('战报只插入用户消息，不自动生成，并保留草稿附件',await page.evaluate(()=>__generations===0&&context.chat.at(-1).is_user===true&&document.getElementById('send_textarea').value.includes('玩家草稿')&&document.getElementById('pending-file').value==='fixture-attachment.txt'&&Object.values(__tavernBattleNative.service.snapshot().reportDeliveries)[0].receipts.epilogue.status==='inserted'));
-  await frame.locator('[data-action="workspace-tab"][data-tab="reports"]').first().click();await idle(frame);
+  await languageButton.click();
   await frame.locator('[data-action="delivery-generate"]').first().click();await idle(frame);
   check('用户手动点击发送后只生成一次',await page.evaluate(()=>__generationType==='regenerate'&&__generations===1&&Object.values(__tavernBattleNative.service.snapshot().reportDeliveries)[0].receipts.epilogue.status==='sent'));
   const before=await state();

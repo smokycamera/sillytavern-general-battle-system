@@ -34,7 +34,7 @@ import { normalizeNarrativeSkill } from './spec-tolerance.js';
  */
 
 import { WEAPON_CLASSES, resolveWeaponClass, ABILITY_BLUEPRINTS, DEFAULT_BLUEPRINTS, categoryLabel, type Category, narrativeTraitLevel, standardConditionMap, validateTraitSource, type TraitDuration, type BodyKind, type ItemSpecification } from '../../engine/src/index.js';
-import { parseItemSpecification, splitItemSpecification, parseSpawnItem, splitSpawnItems, type SpawnItem } from './item-spec.js';
+import { armorSpecificationTier, parseItemSpecification, splitItemSpecification, parseSpawnItem, splitSpawnItems, type SpawnItem } from './item-spec.js';
 
 /** consumable、accessory 只在旧候选里出现；新道具一律 item。 */
 export type LootType = 'weapon' | 'armor' | 'item' | 'consumable' | 'accessory' | 'material' | 'quest' | 'misc';
@@ -277,7 +277,7 @@ const ARMOR_TIER_ALIASES: { tier: 0 | 1 | 2 | 3 | 4; kws: string[] }[] = [
 function armorTierByName(name: string): 0 | 1 | 2 | 3 | 4 | undefined {
   const n = name.trim();
   if (!n) return undefined;
-  const exact = ARMOR_TIER_NAMES.indexOf(n as (typeof ARMOR_TIER_NAMES)[number]);
+  const exact = armorSpecificationTier(n);
   if (exact >= 0) return exact as 0 | 1 | 2 | 3 | 4;
   for (const { tier, kws } of ARMOR_TIER_ALIASES) if (kws.some((k) => n.includes(k))) return tier;
   return undefined;
