@@ -2811,11 +2811,15 @@ export class SmallBattle {
       if (unit.status !== 'ready') { if (!this.isOver()) this.endTurn(); return; }
     }
     // Read-only evaluation: observations and preview samples are reused until an action is chosen.
-    this.observationMemo = new Map(); this.gridPathsMemo = new WeakMap(); beginPreviewScope(true);
+    const boundedForecasts = !!field.layerVersion && this.rules.attackPreviewModel === 'exact-sequence-v1';
+    this.observationMemo = new Map(); this.gridPathsMemo = new WeakMap(); beginPreviewScope(true, boundedForecasts);
     const plans: { score: number; path: GridPath; offensive?: boolean; selfDefenseScore?: number; targetId?: string; abilityId?: string; weaponMode?: SmallAttackOpts['weaponMode']; cell?: number; structureMode?: string; kind: 'structure' | 'gate' | 'climb' | 'weapon' | 'charge' | 'ability' | 'brace' | 'overwatch' | 'hold' | 'land' | 'reload' | 'haste-move' | 'haste-flight';
       /** V19：技能位移后的落点、对主目标的伤害预览、控制效果的生效概率与生效后的目标。 */
       landing?: number; preview?: { expectedDamage: number; variance?: number }; control?: CommandControl }[] = [];
     const knownUnits = this.visibleCombatants(unit.side), loads = this.visibleLoads(knownUnits);
+    // Price ongoing effects against the observed board once. Range, hit chance and
+    // displacement still use the caster's proposed position for each candidate.
+    const forecastWorld = boundedForecasts ? { ...this.observationContext(), units: knownUnits } : undefined;
     // V19 §1、§2：按当前作战阵营取指挥档案；来袭估值系数乘在来袭、反应与工事估值上（常规为 1）。
     const commandV2 = isCommandV2(this.rules), profile = commandV2 ? commandProfile(this.commanderProfiles, unit, this.combatants) : this.commanderProfiles[unit.side];
     const quality = commandV2 ? commandQuality(profile!.ability) : undefined, threat = quality?.incoming ?? 1;
@@ -3224,10 +3228,13 @@ export class SmallBattle {
             }
             if (effect.op === 'heal') for (const affected of this.abilityDamageTargets(caster, target, ability, ability.shape === 'burst')) benefit += Math.min(recoveryCapacity(affected), healingYield(actor, affected, effect.amount ?? diceAvg(effect.dice!), !!ability.itemSourceId, effect.power));
             if (effect.op === 'summon') benefit += summonValue(casterContext, caster, ability, effect);
-            if (effect.op === 'zone' || effect.op === 'barrier' || effect.op === 'push' || effect.op === 'dispel' || effect.op === 'trait') for (const affected of this.abilityDamageTargets(caster, target, ability, ability.shape === 'burst')) benefit += skillEffectValue(casterContext, caster, affected, { ...ability, effects: [effect] }, controlChance(affected, false));
+            if (effect.op === 'zone' || effect.op === 'barrier' || effect.op === 'push' || effect.op === 'dispel' || effect.op === 'trait') {
+              const world = effect.op === 'barrier' || effect.op === 'trait' ? forecastWorld ?? casterContext : casterContext;
+              for (const affected of this.abilityDamageTargets(caster, target, ability, ability.shape === 'burst')) benefit += skillEffectValue(world, caster, affected, { ...ability, effects: [effect] }, controlChance(affected, false));
+            }
             if (effect.op === 'morale') for (const affected of this.abilityDamageTargets(caster, target, ability, ability.shape === 'burst')) benefit += moraleChangePreview({ ...this.observationContext(), units: this.visibleCombatants(actor.side) }, affected, effect.amount, this.rules.morale.breakAt, this.traitRegistry, ability.effects.flatMap((e) => e.op === 'condition' ? [{ id: e.conditionId, dur: e.dur }] : [])).value * (affected.side === actor.side ? 1 : -1);
           }
-          for (const affected of this.abilityDamageTargets(caster, target, ability, ability.shape === 'burst')) benefit += skillEffectValue(casterContext, caster, affected, { ...ability, effects: ability.effects.filter(e => e.op === 'condition') }, controlChance(affected, false), controlChance(affected, true)) * Math.max(0, 1 - (controlPreviews.get(affected.id)?.expectedDamage ?? 0) / Math.max(1, memberHealth(affected)));
+          for (const affected of this.abilityDamageTargets(caster, target, ability, ability.shape === 'burst')) benefit += skillEffectValue(forecastWorld ?? casterContext, caster, affected, { ...ability, effects: ability.effects.filter(e => e.op === 'condition') }, controlChance(affected, false), controlChance(affected, true)) * Math.max(0, 1 - (controlPreviews.get(affected.id)?.expectedDamage ?? 0) / Math.max(1, memberHealth(affected)));
           const landing = this.abilityFlightPreview(caster, target, ability);
           if (landing) benefit += Math.min(target.hp, landing.fallDamage) * (landing.fallChance ?? 1);
           for (const affected of ability.recipe || ability.itemSourceId || ability.equipmentSourceId ? this.abilityDamageTargets(caster, target, ability, ability.shape === 'burst') : [caster]) benefit += skillEffectValue(casterContext, caster, affected, { ...ability, effects: ability.effects.filter(e => e.op === 'resource') });
