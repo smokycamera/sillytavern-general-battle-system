@@ -12,7 +12,7 @@ import { traitParameter } from './trait-parameters.js';
 import { damageMergeRatio, criticalBudgetScale } from './damage-policy.js';
 import { wornEffects, wornDamageMultiplier } from './gear-bonuses.js';
 import { phase2Traits } from './trait-level-model.js';
-import { effectiveTraitLevel } from './trait-sources.js';
+import { cacheDamageSampleTraits, effectiveTraitLevel } from './trait-sources.js';
 import { phase2Value } from './phase2-traits.js';
 import { isWoundModel } from './balance.js';
 import { equipmentStep, unitMultiplier, unitStep } from './numeric-model.js';
@@ -157,6 +157,8 @@ export interface AttackOpts {
   casualtyRolls?: CasualtyRolls;
   /** Lower-cost estimate for comparing hypothetical incoming fire at many destinations. */
   riskEstimate?: boolean;
+  /** Future action used to price a skill in the grid AI, separate from the direct attack preview. */
+  forecastEstimate?: boolean;
   rules: RulePack;
   conditionDefs: Map<string, ConditionDef>;
   traitRegistry?: Map<string, import('./types.js').Trait>;
@@ -224,7 +226,11 @@ function gridAttack(attacker: Combatant): boolean { return attacker.pos !== unde
 export interface ResolvedWeapon { weapon: Weapon | undefined }
 function resolveWeapon(opts: Pick<AttackOpts, 'attacker' | 'defender' | 'weaponOverride'> & Partial<Pick<AttackOpts,'rules'|'autoHit'>>): ResolvedWeapon {
   const original=opts.weaponOverride ?? opts.attacker.weapon;
-  const weapon = opts.rules?.combatModel===MEMBER_HEALTH_MODEL?combatWeapon(original,{...opts.attacker,artilleryModel:opts.rules.artilleryModel},opts.defender,opts.rules?.weaponOverflow,opts.rules?.damageModel,opts.rules?.overmatch,opts.rules?.overmatchCurve):original;
+  const rules = opts.rules;
+  const weapon = rules?.combatModel === MEMBER_HEALTH_MODEL
+    ? combatWeapon(original, opts.attacker.artilleryModel === rules.artilleryModel ? opts.attacker : { ...opts.attacker, artilleryModel: rules.artilleryModel },
+      opts.defender, rules.weaponOverflow, rules.damageModel, rules.overmatch, rules.overmatchCurve)
+    : original;
   if (!isArmsV2(opts.rules?.armsModel) || !weapon || opts.defender.scale === 'hero') return { weapon };
   // R12 霰弹散射；R16 会战喷射同“爆炸覆盖目标编队”。
   if (original?.recipe?.mechanism === 'shotgun') return { weapon: { ...weapon, splashTargets: 2, splashFactor: .5 } };
@@ -308,7 +314,12 @@ function previewAttackOutcome(opts: Omit<AttackOpts, 'rng'>): import('./actions.
   const dr = factor === undefined ? Math.min(0.9, armorDR(opts.defender, opts.rules, opts.traitRegistry) + qualityGapDR(opts.attacker, opts.defender, ctx.weapon)) : 1 - factor;
   const total = averageDice(source?.baseDice) * (1 - dr) + averageDice(source?.apDice) * (factor ?? 1);
   const scale = outcomeScale(opts,resolved);
-  if(opts.rules.combatModel===MEMBER_HEALTH_MODEL)return previewMemberAttack(opts,ctx,source,dmg.multTotal*ward.multTotal/(protection?.armorScale??1)*(protection?.overmatchMultiplier??1),factor??1,diagnostics,resolved,protection);
+  if (opts.rules.combatModel === MEMBER_HEALTH_MODEL) {
+    const basis = { context: ctx, resolved, ward, wardMult: ward.multTotal, dmgMult: dmg.multTotal,
+      atkDetail: ctx.attackDetail, penetration: protection, critical: critInfo };
+    const modifier = dmg.multTotal * ward.multTotal / (protection?.armorScale ?? 1) * (protection?.overmatchMultiplier ?? 1);
+    return previewMemberAttack(opts, basis, source, modifier, factor ?? 1, diagnostics);
+  }
   if (factor !== undefined) {
     let hit = hitChance, critical = 0;
     if (opts.rules.hitMode === 'd20') {
@@ -471,14 +482,15 @@ export function sampledPreviewComputations(): number { return sampledPreviewRuns
 // values are the same either way, only their reuse differs.
 interface ScopeTable { id: string; text: string }
 interface PreviewScope { samples: Map<string, SampledMemberPreview>; chars: number; tables: WeakMap<object, ScopeTable>; ids: Map<string, string>; epoch: number;
-  parts: Map<string, string>; partChars: number; readonlyUnits: boolean; immutableParts: WeakMap<object, string>; unitKeys: WeakMap<object, string>;
+  parts: Map<string, string>; partChars: number; readonlyUnits: boolean; boundedForecasts: boolean; immutableParts: WeakMap<object, string>; unitKeys: WeakMap<object, string>;
   defenders: WeakMap<Combatant, {share:number; defender:Combatant}[]>;
   outcomes: Map<string, ReturnType<typeof previewAttackOutcome>>; outcomeChars: number }
 const SCOPE_CACHE_ENTRIES = 4096, SCOPE_CACHE_CHARS = 8 * 1024 * 1024;
 let previewScope: PreviewScope | undefined, previewScopes = 0;
 /** 开始一次只读估值（AI 选择行动）；结束前不得修改状态表或特质表内容。 */
-export function beginPreviewScope(readonlyUnits = false): void { previewScope = { samples: new Map(), chars: 0, tables: new WeakMap(), ids: new Map(), epoch: ++previewScopes, parts: new Map(), partChars: 0,
-  readonlyUnits, immutableParts: new WeakMap(), unitKeys: new WeakMap(), defenders: new WeakMap(), outcomes: new Map(), outcomeChars: 0 }; }
+export function beginPreviewScope(readonlyUnits = false, boundedForecasts = false): void { previewScope = { samples: new Map(), chars: 0, tables: new WeakMap(), ids: new Map(), epoch: ++previewScopes, parts: new Map(), partChars: 0,
+  readonlyUnits, boundedForecasts, immutableParts: new WeakMap(), unitKeys: new WeakMap(), defenders: new WeakMap(), outcomes: new Map(), outcomeChars: 0 }; }
+export function boundedSkillForecasts(): boolean { return previewScope?.boundedForecasts === true; }
 export function endPreviewScope(): void { previewScope = undefined; }
 /** 当前估值范围的编号；范围外为 undefined。供其他估值模块在同一范围内复用只读派生表。 */
 export function previewScopeEpoch(): number | undefined { return previewScope?.epoch; }
@@ -494,7 +506,7 @@ function scopeTable(scope: PreviewScope, table: Map<string, unknown>): ScopeTabl
 }
 /** Beyond the last applicable range threshold, another cell changes neither the hit roll
  * nor the damage roll. Geometry and terrain modifiers have already been passed to damage.
- * Keep the original distance for mutable shields, ammunition choice and trait prerequisites. */
+ * Keep the original distance for shields, variable ammunition and legacy trait rules. */
 function sampleDistance(opts: Omit<AttackOpts,'rng'>, ctx: ReturnType<typeof attackContext>): number | undefined {
   const distance = opts.distance;
   if (distance === undefined) return;
@@ -502,11 +514,16 @@ function sampleDistance(opts: Omit<AttackOpts,'rng'>, ctx: ReturnType<typeof att
     const urban = itemsV15(opts.attacker) && activeTraitIds(opts.attacker).includes('urban-fighter');
     return distance <= 1 ? 1 : urban ? Math.min(3,distance) : Math.min(2,distance);
   }
-  if (!Number.isInteger(distance) || distance < 2 || opts.defender.shield || isCannonWeapon(ctx.weapon)
-    || activeTraitIds(opts.attacker).length || activeTraitIds(opts.defender).length) return distance;
+  const attackerTraits = activeTraitIds(opts.attacker), defenderTraits = activeTraitIds(opts.defender);
+  if (!Number.isInteger(distance) || distance < 2 || opts.defender.shield
+    || (isCannonWeapon(ctx.weapon) && !opts.rules.artilleryModel)
+    || (attackerTraits.length && !progression(opts.attacker)) || (defenderTraits.length && !progression(opts.defender))) return distance;
   const mechanism = ctx.weapon?.recipe?.mechanism;
   // Firearms lose accuracy after four grid cells, shotguns have a separate third-cell band.
   let limit = mechanism === 'firearm' ? 5 : mechanism === 'shotgun' ? 4 : 2;
+  // Urban combat has a separate third-cell band. Graded progression uses a
+  // fixed sharpshooter bonus; older half-range mechanics keep their full distance.
+  if (attackerTraits.includes('urban-fighter') || defenderTraits.includes('urban-fighter')) limit = Math.max(3, limit);
   for (const mods of [ctx.atkMods, ctx.defMods]) for (const mod of mods) {
     if (mod.cond?.maxDistance !== undefined) limit = Math.max(limit, Math.floor(mod.cond.maxDistance) + 1);
   }
@@ -526,6 +543,7 @@ function sampledPreviewState(opts: Omit<AttackOpts, 'rng'>, ctx: ReturnType<type
   const unit = (u: Combatant, opponent: Combatant, attacker: boolean) => ({ ...u, pos: undefined, formationPosition: undefined,
     entrenchedAt: u.entrenchedAt === undefined ? undefined : entrenched(u),
     tacticalPose: u.tacticalPose ? defensivePostureMods(u, { defender: opponent, ranged, charge: opts.charge }, opts.conditionDefs, opts.traitRegistry) : undefined,
+    conditions: u.conditions.map(c => ({ ...c, dur: Math.sign(c.dur) })),
     fatigue: fatiguePenalty(u), resources: undefined, abilityState: undefined, tacticalEffort: undefined, engagedWith: undefined, battleZones: undefined,
     ...(attacker ? { barrier: undefined } : {}) });
   const distance = sampleDistance(opts,ctx);
@@ -599,8 +617,9 @@ function rememberSampledPreview(key: string, value: SampledMemberPreview): void 
 }
 
 /** 有界骰分布×成员伤损组；不触碰实战对象或随机源。多组攻击的目标耗尽仅作上限裁剪。 */
-function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof attackContext>,source:AttackOpts['abilityDamage']|Weapon|undefined,modifier:number,factor:number,diagnostics:Record<string,unknown>,resolved?:ResolvedWeapon,protection?:ReturnType<typeof penetrationContext>) {
-  const critInfo=criticalInfo(opts,ctx.weapon);
+function previewMemberAttack(opts: Omit<AttackOpts, 'rng'>, initialBasis: AttackBasis & { critical: ReturnType<typeof criticalInfo> },
+  source: AttackOpts['abilityDamage'] | Weapon | undefined, modifier: number, factor: number, diagnostics: Record<string, unknown>) {
+  const { context: ctx, resolved, penetration: protection, critical: critInfo } = initialBasis;
   let hit=estimateHitChance(opts.rules,ctx.netAtk,ctx.targetDef),critical=0;
   if(opts.rules.hitMode==='d20'){
     hit=0;for(let n=1;n<=20;n++){const p=opts.advantage==='adv'?(2*n-1)/400:opts.advantage==='dis'?(41-2*n)/400:1/20;hit+=p*d20HitWeight({...opts.rules,critMin:critInfo.minimum},n,ctx.netAtk,ctx.targetDef);if(n>=critInfo.minimum)critical+=p;}
@@ -608,7 +627,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   if(critInfo.forced)critical=hit;
   const samples=cohortSamples(opts,resolved),weight=outcomeScale({...opts,packetShare:1/samples},resolved).multiplier,count=(opts.abilityDamage?1:ctx.weapon?.attacks??1)*samples;
   const primaryMultiplier=memberAreaBudget(opts)*modifier*factor*(source?.damageScale??1)*trainingDamage(opts.attacker.level,opts.rules)*unitMultiplier(opts.attacker,'damage',opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic',combatBonuses(opts.attacker))*wornDamageMultiplier(opts.attacker,opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic')*damageMergeRatio(opts,ctx.weapon,opts.abilityDamage?.channel??ctx.weapon?.channel??'kinetic');
-  const additional = additionalDamageParts(opts, ctx, resolved ?? { weapon: ctx.weapon });
+  const additional = additionalDamageParts(opts, ctx, resolved);
   if (additional.length) diagnostics.additionalChannels = additional.map(part => ({ channel: part.channel, penetration: part.penetration.penetration, resistance: part.penetration.resistance, penetrationFactor: part.penetration.factor }));
   const rawMultiplier = primaryMultiplier + additional.reduce((sum, part) => sum + part.scale, 0);
   // V40 only: no stateful absorption, casualties or changing ammunition within this independent sequence.
@@ -629,7 +648,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
   const upper=maxBase&&maxAp ? Math.ceil((Math.max(...maxBase.keys())+Math.max(...maxAp.keys()))*rawMultiplier*Math.ceil(weight))*count : Infinity;
   // 连续攻击共用剩余屏障。固定种子的小样本估计只操作副本，不消耗实战随机数。
   if (count > 1 && (hasMemberHealth(opts.defender) || opts.defender.barrier || opts.defender.energyShield || upper>memberHealth(opts.defender)) || !maxBase || !maxAp) {
-    const sampleCount = opts.riskEstimate ? 24 : SAMPLED_PREVIEW_COUNT;
+    const sampleCount = opts.riskEstimate ? 24 : opts.forecastEstimate ? 32 : SAMPLED_PREVIEW_COUNT;
     const scope = previewScope, { key, shared } = sampledPreviewKeys(opts, ctx, scope);
     let stats = (scope?.samples ?? sampledMemberPreviewCache).get(key);
     const sharedKey = scope && !stats ? shared() : key;
@@ -637,7 +656,8 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
     if (!stats) {
       stats = { sum: 0, squares: 0, positive: 0, casualties: 0, maximum: 0, hits: 0 }; sampledPreviewRuns++;
       // 结算只改守方；攻方副本由全部抽样共用，守方每次从原状态重新复制。
-      const attacker = cloneData(opts.attacker), previewMemo: PreviewMemo = { bases: new Map() };
+      const attacker = cloneData(opts.attacker), previewMemo: PreviewMemo = { bases: new Map(), initialBasis };
+      cacheDamageSampleTraits(attacker);
       // Every seed uses the same attack inputs and packet share. Replace only the
       // private defender and RNG instead of spreading all options for each attack.
       const sampleOpts: AttackOpts = { ...opts, attacker, defender: opts.defender, rng: new SeededRng('barrier-preview:0'), previewMemo };
@@ -647,6 +667,7 @@ function previewMemberAttack(opts:Omit<AttackOpts,'rng'>,ctx:ReturnType<typeof a
       let reusable: Combatant | undefined;
       for (let i = 0; i < sampleCount; i++) {
         const defender = damageCopy(opts.defender, reusable);
+        if (!reusable) cacheDamageSampleTraits(defender);
         reusable = defender;
         const rng = new SeededRng('barrier-preview:' + i), before = memberHealth(defender), members = defender.hp;
         sampleOpts.defender = defender; sampleOpts.rng = rng;
@@ -829,8 +850,8 @@ function attackContext(opts: Omit<AttackOpts, 'rng'>) {
   // R16 喷射：按范围攻击处理，不计掩护、工事远程减伤、盾牌覆盖和盾墙。
   const spray = armsAttack && actual === 'sprayer';
   const ctxDef = { damageChannel: opts.abilityDamage?.channel ?? weapon?.channel ?? 'kinetic' as const, looseViaTargets: hasMemberHealth(defender) && !!weapon?.splashTargets && (!opts.abilityDamage || !!opts.abilityDamage.weaponBased), spray, area: spray || opts.abilityDamage?.shape === 'burst' || ((!opts.abilityDamage || opts.abilityDamage.weaponBased) && (!!weapon?.tags?.includes('blast') || progression(defender) && !!weapon?.splashTargets)), attacker: defender, defender: attacker, charge, ranged, weapon: defender.weapon, fieldTags: opts.fieldTags, localTerrain: opts.localTerrain,heightRules:opts.heightRules,heightAdvantage:opts.heightAdvantage, terrain: opts.defenderTerrain, opponentTerrain: opts.attackerTerrain, distance: opts.distance, engaged: opts.defenderEngaged };
-  const usableShield = !spray && shieldUsable({...defender,armsModel:rules.armsModel},original);
-  const shieldDefender = usableShield ? defender : {...defender,shield:undefined};
+  const usableShield = !!defender.shield && !spray && shieldUsable(defenderWithArmsModel(opts),original);
+  const shieldDefender = usableShield || !defender.shield ? defender : {...defender,shield:undefined};
   const defenderMods = [...(opts.defenderMods ?? [])];
   const maneuverDefense = !opts.autoHit && rules.flightModel === 'maneuver-v1' ? flightDefense(attacker, defender, opts) : 0;
   if (maneuverDefense) defenderMods.push({ source: 'intrinsic', sourceId: 'flying:maneuver', name: '飞行机动', kind: 'def', type: 'flat', value: maneuverDefense });
@@ -908,7 +929,7 @@ export function applyResolutionDamage(target:Combatant,result:AttackResolution,r
 
 /** 一段攻击中不含随机数的部分。 */
 interface AttackBasis { ward: StackResult; context: ReturnType<typeof attackContext>; resolved: ResolvedWeapon; dmgMult: number; wardMult: number; atkDetail: string; additional?: AdditionalDamagePart[]; penetration?: ReturnType<typeof penetrationContext>; sizes?: Map<string, { scale: ReturnType<typeof outcomeScale>; sourceScale: number }>; critical?: ReturnType<typeof criticalInfo>; hitRules?: RulePack; hitWeights?: number[] }
-interface PreviewMemo { bases: Map<string, AttackBasis>; samples?: number; penetration?: ReturnType<typeof penetrationContext>; loose?: boolean; cannon?: boolean; modernArms?: boolean; layeredLegacy?: boolean;
+interface PreviewMemo { initialBasis?: AttackBasis; bases: Map<string, AttackBasis>; samples?: number; penetration?: ReturnType<typeof penetrationContext>; loose?: boolean; cannon?: boolean; modernArms?: boolean; layeredLegacy?: boolean;
   lastBasis?: { hp: number; status: Combatant['status']; shield: number | undefined; barrier: number | undefined; value: AttackBasis } }
 /** 抽样副本：伤损只改写生命基数、状态、成员分组、屏障、盾耐久、能量盾与士气记录；其余数据与原单位共享且只读。 */
 function damageCopy(unit: Combatant, reusable?: Combatant): Combatant {
@@ -939,8 +960,11 @@ function basisPenetration(opts: AttackOpts, basis: AttackBasis): ReturnType<type
   // Without a shield/barrier, ordinary-weapon penetration cannot change as members
   // take wounds. Equipment, trait sources and conditions are fixed for these 96
   // samples; cannon selection and mutable shield coverage keep per-basis results.
-  const stable = opts.previewMemo && (opts.attacker.cannonAmmo || !isCannonWeapon(opts.weaponOverride ?? opts.attacker.weapon))
-    && (!isArmsV2(opts.rules.armsModel) || !isCannonWeapon(opts.weaponOverride ?? opts.attacker.weapon) && !opts.defender.shield && !opts.defender.barrier);
+  const cannon = isCannonWeapon(opts.weaponOverride ?? opts.attacker.weapon);
+  const fixedWeapon = !cannon || !!opts.rules.artilleryModel;
+  const stable = opts.previewMemo && (isArmsV2(opts.rules.armsModel)
+    ? fixedWeapon && !opts.defender.shield && !opts.defender.barrier
+    : fixedWeapon || opts.attacker.cannonAmmo);
   return basis.penetration ??= stable ? opts.previewMemo!.penetration ??= penetrationContext(opts, basis.resolved) : penetrationContext(opts, basis.resolved);
 }
 function attackBasis(opts: AttackOpts): AttackBasis {
@@ -956,20 +980,32 @@ function attackBasis(opts: AttackOpts): AttackBasis {
   const last = memo?.lastBasis;
   // Most packets wound the same surviving member. Compare the exact existing key
   // fields before allocating another string and looking up the same basis.
-  if (modernArms && !cannon && !layeredLegacy && last && last.hp === d.hp && last.status === d.status
+  // Unified artillery uses a fixed projectile throughout the sequence (including splash).
+  // Older auto-ammunition rules still compare the exact distribution of remaining wounds.
+  const fixedWeapon = !cannon || !!opts.rules.artilleryModel;
+  // A living individual still occupies exactly one operator slot at any HP.
+  // Variable ammunition can inspect raw health and uses the full key below.
+  const headcount = d.scale === 'hero' ? Number(d.hp > 0) : d.hp;
+  if (modernArms && fixedWeapon && !layeredLegacy && last && last.hp === headcount && last.status === d.status
     && last.shield === d.shieldDurability?.remaining && last.barrier === d.barrier?.remaining) return last.value;
   // 新层按固定顺序耗用，同总余额对应同分布；旧保护组的防护可能在层间切换，必须保留完整分布。
-  const key = !memo ? undefined : modernArms ? !cannon && !layeredLegacy
-    ? d.hp + ':' + d.status + ':' + d.shieldDurability?.remaining + ':' + d.barrier?.remaining
+  const key = !memo ? undefined : modernArms ? fixedWeapon && !layeredLegacy
+    ? headcount + ':' + d.status + ':' + d.shieldDurability?.remaining + ':' + d.barrier?.remaining
     : JSON.stringify([d.hp,d.status,d.shieldDurability,d.conditions,d.barrier,d.formation]) : opts.attacker.cannonAmmo || !cannon
     ? (memo.loose ??= activeTraitIds(d).includes('loose-formation')) ? String(looseFormation(d)) : ''
     : JSON.stringify([d.hp, d.status, d.morale, d.moraleState, d.barrier, d.formation, d.recoverableWounded, d.conditions, d.base]);
   const known = key === undefined ? undefined : memo!.bases.get(key);
   const rememberLast = (value: AttackBasis) => {
-    if (memo && modernArms && !cannon && !layeredLegacy) memo.lastBasis = { hp: d.hp, status: d.status, shield: d.shieldDurability?.remaining, barrier: d.barrier?.remaining, value };
+    if (memo && modernArms && fixedWeapon && !layeredLegacy) memo.lastBasis = { hp: headcount, status: d.status, shield: d.shieldDurability?.remaining, barrier: d.barrier?.remaining, value };
     return value;
   };
   if (known) return rememberLast(known);
+  if (memo?.initialBasis && key !== undefined) {
+    const first = memo.initialBasis;
+    memo.initialBasis = undefined;
+    memo.bases.set(key, first);
+    return rememberLast(first);
+  }
   const context = attackContext(opts), stack = { sameNameKeepsHighest: opts.rules.sameNameKeepsHighest, maxFlat: opts.rules.maxFlat };
   const ward = resolveStack(context.defMods, 'ward', context.ctxDef, stack);
   const basis: AttackBasis = { ward, context, resolved: { weapon: context.weapon }, atkDetail: context.attackDetail,

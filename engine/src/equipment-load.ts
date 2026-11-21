@@ -42,27 +42,27 @@ export function humanEncumbered(unit: EquippedLoad & Pick<Combatant, 'body' | 'r
 }
 export type BurdenUnit = EquippedLoad & Pick<Combatant,'body'|'rulesVersion'> & Partial<Pick<Combatant,'level'|'armsModel'|'numericModel'|'loadModel'>>;
 export const HUMAN_CAPACITY = [5,8,9,12,14,18,24,32,44,60] as const;
-export function equipmentCapacity(unit: Pick<Combatant,'body'|'level'> & Partial<Pick<Combatant,'numericModel'|'loadModel'|'hp'|'scale'|'equipmentBatches'|'reserveEquipmentLoad'|'recoverableWounded'>>): number {
-  const carriers = loadCarriers(unit);
+export function equipmentCapacity(unit: Pick<Combatant,'body'> & Partial<Pick<Combatant,'level'|'numericModel'|'loadModel'|'hp'|'scale'|'equipmentBatches'|'reserveEquipmentLoad'|'recoverableWounded'>>): number {
+  const carriers = loadCarriers(unit), level = unit.level ?? 1;
   if (isVehicleBody(unit.body)) {
     const sizeFactor = hasVehicleSize(unit.body) ? VEHICLE_SIZES[unit.body].capacity : 1;
-    return carriers * sizeFactor * (revisedLoad(unit) ? VEHICLE_CAPACITY[unit.level - 1]! : 24);
+    return carriers * sizeFactor * (revisedLoad(unit) ? VEHICLE_CAPACITY[level - 1]! : 24);
   }
-  if (revisedLoad(unit)) return carriers * REVISED_HUMAN_CAPACITY[unit.level - 1]! * (unit.body === 'giant' ? 2 : unit.body === 'large' ? 1.5 : 1);
-  if (gradedNumbers(unit)) return carriers * HUMAN_CAPACITY[unit.level - 1]! * (unit.body === 'giant' ? 2 : unit.body === 'large' ? 1.4 : 1);
-  return carriers * ({human:10,large:14,giant:20}[unit.body ?? 'human'] + Math.floor(.8*unit.level));
+  if (revisedLoad(unit)) return carriers * REVISED_HUMAN_CAPACITY[level - 1]! * (unit.body === 'giant' ? 2 : unit.body === 'large' ? 1.5 : 1);
+  if (gradedNumbers(unit)) return carriers * HUMAN_CAPACITY[level - 1]! * (unit.body === 'giant' ? 2 : unit.body === 'large' ? 1.4 : 1);
+  return carriers * ({human:10,large:14,giant:20}[unit.body ?? 'human'] + Math.floor(.8*level));
 }
 export function equipmentBurden(unit: BurdenUnit): number {
   if (!isArmsV2(unit.armsModel) && !revisedLoad(unit)) return Number(humanEncumbered(unit));
-  const capacity = equipmentCapacity({...unit,level:unit.level!}), load = equipmentLoad(unit);
+  const capacity = equipmentCapacity(unit), load = equipmentLoad(unit);
   return load>capacity ? 2 : load>capacity*.8 ? 1 : 0;
 }
 export function overloadPenalty(unit: BurdenUnit): number {
   if (gradedNumbers(unit) || revisedLoad(unit)) return 10 * Math.max(0, loadRatio(unit) - 1);
-  return equipmentBurden(unit) === 2 ? Math.min(5,Math.ceil((equipmentLoad(unit)-equipmentCapacity({...unit,level:unit.level!}))/equipmentCapacity({...unit,level:unit.level!})*10)) : 0;
+  return equipmentBurden(unit) === 2 ? Math.min(5,Math.ceil((equipmentLoad(unit)-equipmentCapacity(unit))/equipmentCapacity(unit)*10)) : 0;
 }
 
-export function loadRatio(unit: BurdenUnit): number { return equipmentLoad(unit) / equipmentCapacity({...unit,level:unit.level!}); }
+export function loadRatio(unit: BurdenUnit): number { return equipmentLoad(unit) / equipmentCapacity(unit); }
 export function loadMovementScale(unit: BurdenUnit): number {
   const ratio = loadRatio(unit);
   return ratio <= .8 ? 1 : ratio <= 1 ? 1 - 1.5 * (ratio - .8) : .7 / ratio ** 2;

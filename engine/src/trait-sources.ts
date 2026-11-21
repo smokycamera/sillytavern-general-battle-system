@@ -131,9 +131,19 @@ export function equipmentTraitIds(unit: Pick<Combatant, 'rulesVersion' | 'armor'
   const id = unit.rulesVersion === 'v2' ? armorTraitId(armorBurdenTier(unit)) : undefined;
   return [...(id ? [id] : []), ...(unit.scale !== undefined && autoLooseFormation(unit as Combatant) ? ['loose-formation'] : [])];
 }
+// Damage samples mutate HP and shields, but never change which items or trait
+// sources are equipped on their private copies. Live units do not enter this cache.
+const sampleTraits = new WeakMap<Combatant, { ids?: string[]; levels: Map<string, number> }>();
+export function cacheDamageSampleTraits(unit: Combatant): void {
+  sampleTraits.set(unit, { levels: new Map() });
+}
 export function activeTraitIds(unit: Combatant): string[] {
+  const cache = sampleTraits.get(unit);
+  if (cache?.ids) return cache.ids;
   const ids = [...unit.traits, ...physicalTraitIds(unit), ...equipmentTraitIds(unit), ...Object.values(unit.accessories ?? {}).flatMap(item => item?.traitId ? [item.traitId] : []), ...(unit.gear ?? []).flatMap(item => item.passive?.traits.map(grant => grant.id) ?? []), ...(unit.rulesVersion === 'v2' ? unit.traitSources?.filter((s) => traitSourceActive(unit, s)).flatMap((s) => s.traitIds) ?? [] : [])];
-  return [...new Set(traitLevelsV16(unit) ? ids.map(id => canonicalTraitId(id, phase2Traits(unit))) : ids)];
+  const active = [...new Set(traitLevelsV16(unit) ? ids.map(id => canonicalTraitId(id, phase2Traits(unit))) : ids)];
+  if (cache) cache.ids = active;
+  return active;
 }
 export interface TraitLevelSource { id: string; name: string; level: number; remaining?: number }
 /** 来源先投影别名再取强；查询不改写身份、期限或本体。 */
@@ -155,7 +165,12 @@ export function traitLevelSources(unit: Combatant, id: string, horizon = 0): Tra
 export function effectiveTraitLevel(unit: Combatant, id: string, traits?: readonly string[], horizon = 0): number {
   const canonical = traitLevelsV16(unit) ? canonicalTraitId(id, phase2Traits(unit)) : id;
   if (traits && !traits.includes(canonical)) return 0;
-  return Math.max(0, ...traitLevelSources(unit, canonical, horizon).map((s) => s.level));
+  const cache = horizon === 0 ? sampleTraits.get(unit) : undefined;
+  const known = cache?.levels.get(canonical);
+  if (known !== undefined) return known;
+  const level = Math.max(0, ...traitLevelSources(unit, canonical, horizon).map((s) => s.level));
+  cache?.levels.set(canonical, level);
+  return level;
 }
 export function activeConditionIds(unit: Combatant): string[] {
   return [...new Set([...unit.conditions.filter((c) => c.dur > 0).map((c) => c.id),

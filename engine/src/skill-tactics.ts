@@ -9,7 +9,7 @@ import { V6_D20, V6_TW } from './rules.js';
 import type { Combatant, ConditionDef, Weapon } from './types.js';
 import type { ObservationContext } from './observation.js';
 import { positionedUnit, canSpot, concealedUnit } from './observation.js';
-import { previewAttack, previewScopeEpoch } from './damage.js';
+import { boundedSkillForecasts, previewAttack, previewScopeEpoch } from './damage.js';
 import { standardConditionMap } from './conditions.js';
 import { V4_D20, V4_TW, V5_D20, V5_TW } from './rules.js';
 import { abilityTargetReason, abilityUsabilityReason, averageDice, weaponTargetReason } from './actions.js';
@@ -156,6 +156,7 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
           : !ranged && !!field && !!meleeLineBlocker(field,actor,target,world.units);
       };
       const evaluate = (opts: Partial<Parameters<typeof previewAttack>[0]>) => Math.min(memberHealth(target), previewAttack({
+        ...(boundedSkillForecasts() ? { forecastEstimate: true } : {}),
         attacker: actor, defender: target, rules, conditionDefs: defs, traitRegistry: context.traitRegistry,
         macroEnvironment: context.mode === 'mass', fieldTags: context.fieldTags, distance: dist,
         attackerTerrain: progression(actor) && context.mode === 'mass' && !actor.airborne ? macroTerrain(context.fieldTags) : standingTerrain(field, actor), defenderTerrain: progression(target) && context.mode === 'mass' && !target.airborne ? macroTerrain(context.fieldTags) : standingTerrain(field, target), ...(progression(actor) && field ? { localTerrain: true, attackerHeight: unitHeight(field, actor), defenderHeight: unitHeight(field, target) } : {}), heightRules: field?.spatialRulesVersion === 2, heightAdvantage: heightDefense(field, target, actor),
@@ -175,6 +176,10 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
         const attached = new Set(context.attached?.values() ?? []);
         const cohort = world.units.filter(u => !attached.has(u.id) && sameLayer(actor, u) && (context.mode === 'mass' ? formationNode(actor).id === formationNode(u).id : u.pos === actor.pos));
         best = Math.max(best, evaluate({ weaponOverride: weapon, ranged, participants: sharedParticipants(actor, cohort, width, target, ranged) }));
+      }
+      if (onlyTarget && best >= memberHealth(onlyTarget)) {
+        values.set(onlyTarget, best);
+        return best;
       }
       for (const rawAbility of weaponOnly || controlPolicy(actor)==='confused' ? [] : actor.abilities) {
         if (!rawAbility.effects.some(e => e.op === 'damage')) continue;
@@ -203,8 +208,28 @@ export function actionPotential(context: ObservationContext, source: Combatant, 
   values.set(onlyTarget, best); return best;
 }
 
+// Separate hypothetical branches may ask for the same defender many times.
+// All attacks here price one activation; no condition durations are ticked.
+function immediateStateKey(unit: Combatant): string {
+  return JSON.stringify({ ...unit, conditions: unit.conditions.map(c => ({ ...c, dur: Math.sign(c.dur) })) });
+}
+const incomingValues = new WeakMap<ObservationContext, { epoch: number; values: Map<string, number> }>();
 export function incomingPotential(context: ObservationContext, target: Combatant): number {
-  return Math.min(memberHealth(target), context.units.filter(u => combatHostile(u, target, context.units) && alive(u)).reduce((n, u) => n + actionPotential(context, u, target), 0));
+  const epoch = previewScopeEpoch();
+  let cache = incomingValues.get(context);
+  if (epoch !== undefined && cache?.epoch !== epoch) incomingValues.set(context, cache = { epoch, values: new Map() });
+  const key = epoch === undefined ? undefined : immediateStateKey(target);
+  const known = key === undefined ? undefined : cache?.values.get(key);
+  if (known !== undefined) return known;
+  const health = memberHealth(target);
+  let damage = 0;
+  for (const attacker of context.units) {
+    if (!alive(attacker) || !combatHostile(attacker, target, context.units)) continue;
+    damage += actionPotential(context, attacker, target);
+    if (damage >= health) { damage = health; break; }
+  }
+  if (cache && key !== undefined && cache.values.size < 128 && key.length <= 16384) cache.values.set(key, damage);
+  return damage;
 }
 /** 仅比较一个状态变化的边际价值；复合控制不会把同一行动重复扣除。 */
 export function tacticalStateValue(context: ObservationContext, target: Combatant): number {
@@ -214,7 +239,10 @@ export function tacticalStateValue(context: ObservationContext, target: Combatan
   if (cache?.epoch !== epoch) stateValues.set(context, cache = { epoch, values: new Map() });
   // Skill branches often clone the same unchanged target (before buff / duration
   // horizons). Equal complete states have equal values within this read-only world.
-  const key = JSON.stringify(target), found = cache.values.get(key);
+  // This value prices the current activation. Durations are advanced by the
+  // caller between horizons; only active versus expired matters within one.
+  const key = immediateStateKey(target);
+  const found = cache.values.get(key);
   if (found !== undefined) return found;
   const value = evaluateTacticalState(context, target);
   if (cache.values.size < 128 && key.length <= 16384) cache.values.set(key, value);

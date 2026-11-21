@@ -1038,10 +1038,13 @@ function startFullAuto(): void {
     if (!fullAuto.running || battleSaveFailed || currentBattle() !== battle || workerEpoch !== battleWorkerEpoch) return false;
     if (battle.isOver()) {
       fullAuto.stop();
-      if (battle instanceof SmallBattle) (await runAuto()); else (await onBattleEnded());
+      // settleXp already awaits the final durable write. Manual settlement still
+      // needs to save the completed battlefield here.
+      const saved = await onBattleEnded();
+      if (!saved && !battleSaveFailed && currentBattle() === battle) await persist();
+      return false;
     }
     if (battleSaveFailed || currentBattle() !== battle || !(await persist())) return false;
-    if (battle.isOver()) render('battle');
     if (!battle.isOver() && progress === battleProgress(battle)) throw Error('自动行动没有推进回合，已暂停，可手动处理');
     return !battle.isOver();
     } finally {
@@ -1056,9 +1059,9 @@ function startFullAuto(): void {
 }
 
 /** 战斗结束统一收口：经验自动入账（可选）+ 存活单位落库。输出由玩家点按钮以 user 楼层发送 */
-async function onBattleEnded(): Promise<void> {
+async function onBattleEnded(): Promise<boolean> {
   const b = currentBattle();
-  if (!b || !b.isOver()) return;
+  if (!b || !b.isOver()) return false;
   if (b instanceof SmallBattle) {
     if (!b.log.some(entry => entry.kind === 'battle-end')) {
       const winner = b.winner();
@@ -1068,11 +1071,13 @@ async function onBattleEnded(): Promise<void> {
   }
   if (state.autoSettleXp && !state.xpSettled && state.saveReceipt?.status !== 'failed') {
     try {
-      (await settleXp());
+      await settleXp();
+      return true;
     } catch (error) {
       toast(`战果未提交：${error instanceof Error ? error.message : String(error)}`);
     }
   }
+  return false;
 }
 
 /** 军团：仅实际指挥者无法下令时自动军令。 */

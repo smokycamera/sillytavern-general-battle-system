@@ -23,11 +23,12 @@ export class AutoBattleLoop {
     const tick = () => {
       this.timer = undefined;
       if (!this.enabled) return;
+      const started = performance.now();
       const finish = (keepGoing: boolean) => {
         if (epoch !== this.epoch) return;
         if (!keepGoing) this.stop();
         changed();
-        if (this.enabled && epoch === this.epoch) this.timer = setTimeout(tick, 250);
+        if (this.enabled && epoch === this.epoch) this.timer = setTimeout(tick, Math.max(0, 250 - (performance.now() - started)));
       };
       const reject = (error: unknown) => { if (epoch !== this.epoch) return; this.stop(); failed(error); changed(); };
       try { const result = step(); if (typeof result === 'boolean') finish(result); else void result.then(finish, reject); }
