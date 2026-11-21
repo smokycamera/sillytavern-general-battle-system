@@ -9,9 +9,10 @@ export type PlatformUnit = Pick<Combatant, 'id' | 'name' | 'side' | 'body' | 'sc
 
 export function parsePlatform(text: string): Platform {
   const spec = parseEnhancementSuffix(text, 'unit');
-  const match = /^(坐骑|开放载具|封闭载具|运输载具)L(10|[1-9])$/i.exec(spec.text);
+  const match = /^(坐骑|开放载具|封闭载具|运输载具|animal|open|transport)L(10|[1-9])$/i.exec(spec.text);
   if (!match) throw Error('platform 须为坐骑、开放载具或封闭载具及 L1–L10 规格');
-  const kind = match[1] === '坐骑' ? 'animal' : match[1] === '开放载具' ? 'open' : 'transport';
+  const name = match[1]!.toLowerCase();
+  const kind = name === '坐骑' || name === 'animal' ? 'animal' : name === '开放载具' || name === 'open' ? 'open' : 'transport';
   return { kind, power: Number(match[2]), ...(spec.bonuses ? { bonuses: spec.bonuses } : {}) };
 }
 export function platformText(platform: Platform): string {

@@ -13,6 +13,7 @@ describe('mixed worn trait levels', () => {
   it.each([
     ['潜伏L3+林地专精L5+2防御', { stalk: 3, 'forest-lore': 5 }],
     ['潜伏L5+林地专精L3+2防御', { stalk: 5, 'forest-lore': 3 }],
+    ['stalkL3+forest-loreL5+2defense', { stalk: 3, 'forest-lore': 5 }],
   ] as const)('anchors numeric bonuses to the highest grade in %s', (text, levels) => {
     const spec = specification('精灵斗篷:' + text);
     expect(spec.form).toBe('worn'); expect(spec.power).toBe(5);
@@ -47,6 +48,11 @@ describe('mixed worn trait levels', () => {
     expect(() => specification('潜伏L3+林地专精L11+2防御')).toThrow();
     expect(() => specification('潜伏L3+林地专精L5+防御L2')).toThrow();
   });
+
+  it('keeps a worn barrier distinct from an active barrier effect in English', () => {
+    expect(specification('Barrier Amulet:WornL4+barrierL3')).toEqual(specification('屏障护符:佩戴L4+屏障L3'));
+    expect(specification('Barrier Potion:buffL4+barrierL3')).toMatchObject({ form: 'single', active: 'generic:buff:barrier@3' });
+  });
 });
 
 describe('active item category and effect grades', () => {
@@ -54,6 +60,7 @@ describe('active item category and effect grades', () => {
     ['治疗药水:buffL3+治疗L3', 'single', 3, 'heal', 3],
     ['春风药剂:buff范围L7+治疗L2-2治疗', 'single', 7, 'heal', 2],
     ['寒潮魔杖:充能+魔法范围L6+热能+减速L3+2次数', 'charged', 6, 'slow', 3],
+    ['Cold Wand:charged+magic-areaL6+thermal+slowL3+2uses', 'charged', 6, 'slow', 3],
   ] as const)('preserves separate grades through compile and protocol round-trip: %s', (text, form, power, effect, grade) => {
     const spec=specification(text);
     expect(spec).toMatchObject({form,power});

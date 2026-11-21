@@ -38,7 +38,7 @@ export function renderWorldbookSettings(view: WorldbookEditorState, texts: Map<s
       const field = (name: string) => `id="wb-${esc(item.id)}-${name}" data-role="worldbook-field" data-field="${name}" data-entry="${esc(item.id)}"`;
       return `<div class="prompt-setting" data-worldbook-entry="${esc(item.id)}">
         <label>${custom ? `<input type="checkbox" id="wb-${esc(item.id)}-enabled" data-role="worldbook-entry-enabled" data-entry="${esc(item.id)}" ${custom.enabled ? 'checked' : ''}> ` : ''}<strong>${esc(item.title)}</strong></label>
-        <span class="sub">${custom ? (custom.constant ? '🔵' : '🟢') + ' · ' : ''}深度 ${item.depth} · ${['system', 'user', 'assistant'][item.role] ?? 'system'} · 顺序 ${item.order}</span>
+        <span class="sub">${custom ? (custom.constant ? '🔵' : '🟢') + ' · ' : ''}${ui("深度")} ${item.depth} · ${['system', 'user', 'assistant'][item.role] ?? 'system'} · ${ui("顺序")} ${item.order}</span>
         <details data-detail-id="worldbook-editor-${esc(item.id)}"><summary>${ui("编辑条目")}</summary>
         ${draft ? `<label class="worldbook-name">${ui("名称")}<input ${field('title')} value="${esc(draft.title)}"></label>
           <div class="worldbook-fields">
@@ -48,7 +48,7 @@ export function renderWorldbookSettings(view: WorldbookEditorState, texts: Map<s
             <label>${ui("顺序")}<input ${field('order')} type="number" min="0" max="99999" step="1" value="${esc(draft.order)}"></label>
           </div>
           <label class="worldbook-keys" ${draft.constant ? 'hidden' : ''}>${ui("关键词（每行一个）")}<textarea ${field('keys')} rows="3">${esc(draft.keys)}</textarea></label>` : ''}
-        <textarea id="wb-${esc(item.id)}-content" aria-label="${esc(item.title)}正文" data-role="worldbook-template" data-entry="${esc(item.id)}" style="width:100%;min-height:12em">${esc(texts.get(item.id) ?? item.content)}</textarea>
+        <textarea id="wb-${esc(item.id)}-content" aria-label="${esc(ui("{title}正文", { title: item.title }))}" data-role="worldbook-template" data-entry="${esc(item.id)}" style="width:100%;min-height:12em">${esc(texts.get(item.id) ?? item.content)}</textarea>
         <div class="row"><button data-action="worldbook-save" data-entry="${esc(item.id)}">${ui("保存")}</button>
           ${custom ? deleting === item.id
             ? `<button data-action="worldbook-delete-confirm" data-entry="${esc(item.id)}">${ui("确认删除")}</button><button data-action="worldbook-delete-cancel">${ui("取消")}</button>`

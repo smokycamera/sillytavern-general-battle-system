@@ -2,15 +2,65 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildEmbeddedWorldbook, CUSTOM_WORLD_NAME, embeddedWorldbookEntries, embeddedWorldbookSettingsView, installEmbeddedWorldbook, normalizeEmbeddedWorldbookSettings, updateEmbeddedWorldbookSettings } from '../../extension/src/embedded-worldbook.js';
 import { preferences } from '../../extension/src/preferences.js';
 import worldbook from '../../assets/worldbook/!通用战斗系统约束.json';
+import englishWorldbook from '../../assets/worldbook/tavern-battle.en.json';
+import { parseProtocol } from '../../panel/src/protocol.js';
 import { nativeFixture } from '../../runtime/tests/native-fixture.js';
 
 describe('embedded worldbook', () => {
-  it('uses the English vacuum trait guidance without replacing a user-edited entry', () => {
-    const chinese = embeddedWorldbookSettingsView().items.find(item => item.content.includes('从飞船到太空行走'))!;
-    const english = embeddedWorldbookSettingsView(undefined, 'en').items.find(item => item.id === chinese.id)!;
-    expect(english.content).toBe(chinese.content.replace('从飞船到太空行走都用太空机动。', 'Use the space-adapted trait for vacuum-capable units, from spacecraft to spacewalkers.'));
-    const edited = updateEmbeddedWorldbookSettings(undefined, { entry: { id: chinese.id, content: 'My own rules' } });
+  it('localizes all built-in entries on both host paths and preserves overrides when switching languages', async () => {
+    const source = embeddedWorldbookEntries();
+    const english = embeddedWorldbookSettingsView(undefined, 'en').items;
+    expect(english.map(item => item.id).sort()).toEqual(Object.keys(englishWorldbook).sort());
+    const installed = source.map((entry, index) => {
+      const rule = english[index]!;
+      expect(rule).toMatchObject(englishWorldbook[rule.id as keyof typeof englishWorldbook]);
+      expect(rule.defaultContent).toBe(rule.content);
+      return { ...entry, comment: rule.title, content: rule.content };
+    });
+    const f = nativeFixture(); f.context.eventTypes!.WORLDINFO_ENTRIES_LOADED = 'worldinfo';
+    const stop = installEmbeddedWorldbook(f.host, undefined, () => true, 'en');
+    const payload = { globalLore: [] };
+    await f.emit('worldinfo', payload);
+    expect(payload.globalLore).toEqual(installed);
+    stop();
+    const fallback = buildEmbeddedWorldbook(undefined, 'en').map(prompt => prompt.content).join('\n');
+    for (const entry of english) expect(fallback).toContain(entry.content);
+    expect(fallback).toContain('Use the space-adapted trait for vacuum-capable units, from spacecraft to spacewalkers.');
+    expect(embeddedWorldbookSettingsView().items.find(item => item.id === '5')?.content).toBe(worldbook.entries['5'].content);
+    let edited = updateEmbeddedWorldbookSettings(undefined, { entry: { id: '5', content: 'My own rules' }, create: true });
+    edited = updateEmbeddedWorldbookSettings(edited, { custom: { id: 'custom-1', patch: { title: '自定义', content: '原文' } } });
     expect(buildEmbeddedWorldbook(edited, 'en').some(prompt => prompt.content.includes('My own rules'))).toBe(true);
+    expect(embeddedWorldbookSettingsView(edited, 'en').items.at(-1)).toMatchObject({ title: '自定义', content: '原文' });
+    expect(embeddedWorldbookSettingsView(edited).items.find(item => item.id === '5')?.content).toBe('My own rules');
+  });
+
+  it('accepts all event examples shown in the English worldbook', () => {
+    const content = Object.values(englishWorldbook).map(entry => entry.content).join('\n');
+    const examples = [...content.matchAll(/^<tb>\n[\s\S]*?^<\/tb>$/gm)].map(match => match[0]);
+    const effects = /## Applying and clearing effects\n([\s\S]*?)\n## Traits/.exec(englishWorldbook['5'].content)![1]!;
+    examples.push('<tb>\n' + effects.split('\n').filter(line => /^<(?:spawn|effect) /.test(line)).join('\n') + '\n</tb>');
+    expect(examples).toHaveLength(12);
+    for (const example of examples) {
+      const result = parseProtocol(example);
+      expect(result.errors, example).toEqual([]);
+      expect(result.events, example).toHaveLength([...example.matchAll(/^<\w+ .+\/>$/gm)].length);
+      expect(result.warnings.join('\n'), example).not.toMatch(/未采用|未支持|未使用|保留原|忽略/);
+    }
+  });
+
+  it('inherits the host locale until the player saves a plugin language', () => {
+    const context = { extensionSettings: {} as Record<string, unknown>, saveSettingsDebounced: vi.fn() };
+    const document = { documentElement: { lang: 'en-US' } };
+    const prefs = preferences({ document, SillyTavern: { getContext: () => context } } as never);
+    expect(prefs.read().language).toBe('en');
+    expect(context.saveSettingsDebounced).not.toHaveBeenCalled();
+    document.documentElement.lang = 'zh-TW';
+    expect(prefs.read().language).toBe('zh-CN');
+    prefs.write({ language: 'en' });
+    expect(prefs.read().language).toBe('en');
+    prefs.write({ language: 'zh-CN' });
+    document.documentElement.lang = 'en-GB';
+    expect(prefs.read().language).toBe('zh-CN');
   });
   it('keeps at-depth placement and original same-depth order while remaining always-on', () => {
     const prompts = buildEmbeddedWorldbook();

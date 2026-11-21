@@ -1,12 +1,8 @@
 import worldbook from '../../assets/worldbook/!通用战斗系统约束.json';
+import englishWorldbook from '../../assets/worldbook/tavern-battle.en.json';
 import { version } from '../../package.json';
 import type { CustomWorldbookEntry, WorldbookEditorState, WorldbookEditorUpdate } from '../../panel/src/panel-runtime.js';
 import type { UiLanguage } from '../../panel/src/ui-language.js';
-
-function worldbookContent(entry: SourceEntry, language: UiLanguage): string {
-  return language === 'en' ? entry.content.replace('从飞船到太空行走都用太空机动。',
-    'Use the space-adapted trait for vacuum-capable units, from spacecraft to spacewalkers.') : entry.content;
-}
 
 interface SourceEntry {
   [key: string]: unknown;
@@ -41,6 +37,15 @@ const IN_CHAT = 1;
 const sourceEntries = Object.entries(worldbook.entries as Record<string, SourceEntry>)
   .filter(([, entry]) => !entry.disable)
   .sort(([, a], [, b]) => a.order - b.order);
+const translations: Readonly<Partial<Record<string, { title: string; content: string }>>> = englishWorldbook;
+function worldbookDefault(id: string, entry: SourceEntry, language: UiLanguage) {
+  if (language === 'en') {
+    const translation = translations[id];
+    if (translation) return translation;
+  }
+  return { title: entry.comment || `条目 ${id}`, content: entry.content };
+}
+
 // Test-channel updates can change the defaults without changing the release version.
 let defaultHash = 2166136261;
 for (const char of JSON.stringify(sourceEntries.map(([id, entry]) => [id, entry.content]))) {
@@ -59,15 +64,19 @@ export type WorldbookInstallation = (() => void) & { mode: 'native' | 'depth' };
 export function embeddedWorldbookEntries(value?: EmbeddedWorldbookSettings, language: UiLanguage = 'zh-CN') {
   const settings = normalizeEmbeddedWorldbookSettings(value);
   if (!settings.enabled) return [];
-  const builtIn = sourceEntries.map(([id, entry]) => ({
-    ...structuredClone(entry),
-    world: EMBEDDED_WORLD_NAME,
-    constant: true,
-    key: [],
-    keysecondary: [],
-    selective: false,
-    content: settings.entries[id] ?? worldbookContent(entry, language),
-  }));
+  const builtIn = sourceEntries.map(([id, entry]) => {
+    const defaults = worldbookDefault(id, entry, language);
+    return {
+      ...structuredClone(entry),
+      world: EMBEDDED_WORLD_NAME,
+      constant: true,
+      key: [],
+      keysecondary: [],
+      selective: false,
+      comment: defaults.title,
+      content: settings.entries[id] ?? defaults.content,
+    };
+  });
   const custom = settings.customEntries.filter(entry => entry.enabled && entry.content.trim()).map(entry => ({
     ...structuredClone(sourceEntries[0]![1]),
     world: CUSTOM_WORLD_NAME,
@@ -134,15 +143,10 @@ export function embeddedWorldbookSettingsView(value?: EmbeddedWorldbookSettings,
   const settings = normalizeEmbeddedWorldbookSettings(value);
   return {
     enabled: settings.enabled,
-    items: [...sourceEntries.map(([id, entry]) => ({
-      id,
-      title: entry.comment || `条目 ${id}`,
-      content: settings.entries[id] ?? worldbookContent(entry, language),
-      defaultContent: worldbookContent(entry, language),
-      depth: entry.depth,
-      role: entry.role,
-      order: entry.order,
-    })), ...settings.customEntries.map(entry => ({ ...entry, defaultContent: '', custom: entry }))],
+    items: [...sourceEntries.map(([id, entry]) => {
+      const { title, content: defaultContent } = worldbookDefault(id, entry, language);
+      return { id, title, content: settings.entries[id] ?? defaultContent, defaultContent, depth: entry.depth, role: entry.role, order: entry.order };
+    }), ...settings.customEntries.map(entry => ({ ...entry, defaultContent: '', custom: entry }))],
   };
 }
 

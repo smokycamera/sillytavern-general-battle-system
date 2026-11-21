@@ -21,7 +21,7 @@ export function renderLlmSettings(c: LlmSettings, status = '', worldbooks = ''):
     ${worldbooks}
     <div class="row"><label>${ui("读取最近层数")} <input data-role="llm-window" type="number" min="1" max="100" value="${c.windowSize}"></label><label>API URL <input data-role="llm-url" type="url" value="${esc(c.url)}" placeholder="https://your-api.example/v1"></label><label>API Key <input data-role="llm-token" type="password" autocomplete="off" value="${esc(c.token)}"></label></div>
     <div class="row"><button data-action="llm-models">${ui("拉取模型")}</button><label>${ui("选择模型")} <select data-role="llm-model-list"><option value="">${ui("请选择模型")}</option>${models.map(id => `<option value="${esc(id)}" ${c.model === id ? 'selected' : ''}>${esc(id)}</option>`).join('')}</select></label><label>${ui("模型 ID（也可手填）")}<input data-role="llm-model" value="${esc(c.model)}"></label></div>
-    <p class="sub">${ui("OpenAI 兼容接口，填写后自动保存，所有聊天共用。")}</p><p role="status">${esc(status)}</p>
+    <p role="status">${esc(status)}</p>
     <details><summary>${ui("配置恢复")}</summary><button data-action="llm-settings-backup">${ui("备份原配置（含Key）")}</button><button data-action="llm-settings-reset">${ui("重置选项并保留连接")}</button><button data-action="llm-settings-clear">${ui("清空副API配置和Key")}</button></details>
   </section>`;
 }
