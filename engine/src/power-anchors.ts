@@ -158,9 +158,9 @@ export function shieldProtection(unit:ShieldBearer & Pick<Combatant,'shield'>,ch
   const recipe=unit.shield!.recipe;
   return Math.max(0,2*(recipe?.power??3)+1-({kinetic:0,thermal:1,arcane:2}[channel])+equipmentRating(recipe,'protection',channel));
 }
-export function shieldTransmission(unit:ShieldBearer & Pick<Combatant,'shield'|'status'>,channel:DamageChannel,penetration:number,area=false,canBlock=true):number {
+export function shieldTransmission(unit:ShieldBearer & Pick<Combatant,'shield'|'status'>,channel:DamageChannel,penetration:number,area=false,canBlock=true,maximum?:number):number {
   if(!shieldUsable(unit)||unit.status!=='ready'||area||!canBlock)return 1;
-  const coverage=shieldCoverage(unit);
+  const coverage=shieldCoverage(unit,undefined,maximum);
   return 1-coverage*(1-penetrationThrough(penetration,shieldProtection(unit,channel)));
 }
 
@@ -211,9 +211,9 @@ export function defensePower(unit:DefensiveTarget,channel:DamageChannel,includeB
   return Math.max(unit.level,unarmoredPower,protectionPower(unit,channel,resistance),guardian,...wards,typeof includeBarrier === 'number' ? includeBarrier : includeBarrier?barrierDefensePower(unit):0);
 }
 export function overmatchMultiplier(power:number|undefined,unit:DefensiveTarget,channel:DamageChannel,penetration:number,area=false,canBlock=true,includeBarrier:boolean|number=false,curve?:RulePack['overmatchCurve'],
-  armor=gradeOvermatch(power,defensePower(unit,channel,includeBarrier),penetration,anchoredProtection(unit,channel),curve)):number {
+  armor=gradeOvermatch(power,defensePower(unit,channel,includeBarrier),penetration,anchoredProtection(unit,channel),curve),maximum?:number):number {
   if(!shieldUsable(unit)||unit.status!=='ready'||area||!canBlock||armor===1)return armor;
-  const coverage=shieldCoverage(unit);
+  const coverage=shieldCoverage(unit,undefined,maximum);
   const resistance=shieldProtection(unit,channel),through=penetrationThrough(penetration,resistance);
   const shieldPower=Math.max(0,(resistance-1+({kinetic:0,thermal:1,arcane:2}[channel]))/2);
   const shield=gradeOvermatch(power,shieldPower,penetration,resistance,curve);

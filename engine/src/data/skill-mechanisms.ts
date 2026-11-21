@@ -171,16 +171,17 @@ export function parseSkillMechanismParts(text: string): SkillMechanismParts | un
     return power;
   };
   const categoryPower = readPower(), modifierPowers: Record<string, number> = {};
-  const areaWord = source.match(/^(?:群体范围|范围|群体(?!召唤))/)?.[0];
+  const areaWord = source.match(/^(?:群体范围|范围|群体(?!召唤)|(?:area|aoe)(?=\s|\+|$))/i)?.[0];
   const area = category.endsWith('area') || !!areaWord; if (areaWord) source = source.slice(areaWord.length);
   const preferred = allowedSkillModifiers(category);
   // 停用特质与身体/装备特质只保留旧技能 id 的结算，新写法识别后剔除；改名特质的旧称照样识别。
   const found: SkillModifier[] = [], choices = [...preferred, ...SKILL_MODIFIERS.filter(m => !preferred.includes(m))]
-    .flatMap((m) => [m.name, ...(SKILL_MODIFIER_ALIASES[m.id] ?? []), ...(m.trait ? [m.name.slice(2), ...(TRAIT_FORMER_NAMES[m.trait] ?? [])] : [])].map((name) => ({ modifier: m, name }))).sort((a, b) => b.name.length - a.name.length);
+    .flatMap((m) => [m.name, m.id, ...(m.trait ? [m.trait, m.name.slice(2), ...(TRAIT_FORMER_NAMES[m.trait] ?? [])] : []), ...(SKILL_MODIFIER_ALIASES[m.id] ?? [])].map((name) => ({ modifier: m, name, key: name.toLowerCase() }))).sort((a, b) => b.name.length - a.name.length);
   let charge = false;
   while (source) {
     source = source.replace(/^[+\s]+/, ''); if (!source) break;
-    const choice = choices.find((m) => source.startsWith(m.name)); if (!choice) return undefined;
+    const lower = source.toLowerCase();
+    const choice = choices.find((m) => lower.startsWith(m.key)); if (!choice) return undefined;
     found.push(choice.modifier); source = source.slice(choice.name.length).trimStart();
     const power = readPower();
     if (power !== undefined && acceptsModifierPower(choice.modifier)) modifierPowers[choice.modifier.id] = power;

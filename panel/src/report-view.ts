@@ -1,5 +1,5 @@
-import { ui } from './ui-language.js';
-import { battleIdOf, makeNarrativeBatch, reportForDelivery, reportRoundCount, archivedDigest, type Battle, type BattleReport, type BattleDeliveries } from './battle-reports.js';
+import { ui, uiLanguage } from './ui-language.js';
+import { battleIdOf, makeNarrativeBatch, reportForDelivery, reportNarrationInstructions, reportRoundCount, archivedDigest, type Battle, type BattleReport, type BattleDeliveries } from './battle-reports.js';
 import { escapeHtml as esc } from './battle-presentation.js';
 import type { PromptSettings } from './prompt-settings.js';
 import type { DeliveryReceipt } from './tavern.js';
@@ -10,10 +10,11 @@ export function renderReportWorkspace(b: Battle | null, reports: BattleReport[],
   const undo=controls.canUndo?`<div class="row"><span>${ui("最近删除的战报可以恢复。")}</span><button data-action="report-restore">${ui("撤销删除")}</button></div>`:'';
   if(!b&&!report)return undo?`<section class="report-workspace"><h2>${ui("战报")}</h2><p>${ui("没有归档战报。")}</p>${undo}</section>`:'';
   const id=b?battleIdOf(b):report!.id, dispatch=deliveries[id];
-  const over=!b||b.isOver();let delta='',epilogue='';
-  try{delta=makeNarrativeBatch(b??undefined,report,deliveries,'delta').text;}catch{/*旧战报或无新事件*/}
-  try{epilogue=makeNarrativeBatch(b??undefined,report,deliveries,'epilogue',controls.start).text;}catch{/*战斗未结束*/}
-  delta=reportForDelivery(delta,controls.promptSettings);epilogue=reportForDelivery(epilogue,controls.promptSettings);
+  const over=!b||b.isOver(), language = uiLanguage();let delta='',epilogue='';
+  try{delta=makeNarrativeBatch(b??undefined,report,deliveries,'delta',undefined,language).text;}catch{/*旧战报或无新事件*/}
+  try{epilogue=makeNarrativeBatch(b??undefined,report,deliveries,'epilogue',controls.start,language).text;}catch{/*战斗未结束*/}
+  if (delta) delta = reportForDelivery(delta, controls.promptSettings, language) + '\n\n' + reportNarrationInstructions(language, false);
+  if (epilogue) epilogue = reportForDelivery(epilogue, controls.promptSettings, language) + '\n\n' + reportNarrationInstructions(language, true);
   const blocked=Object.values(dispatch?.receipts??{}).some(r=>r.kind==='delta'&&['sending','inserted','unknown'].includes(r.status));
   const finished=dispatch?.receipts.epilogue?.status==='sent';
   const title = (r: BattleReport, i: number) => {

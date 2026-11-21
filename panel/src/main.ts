@@ -62,7 +62,8 @@ import { updateRegion, BattleCamera, selectTextareaRange } from './view-dom.js';
 import { installMapGestures, fitMap, mapScale } from './map-gestures.js';
 import { executeMassPlan, executeAndSaveAsync as executeAndSave } from './battle-execution.js';
 import { TACTICAL_PREFERENCES, normalizeTactic } from '../../engine/src/tactical-preference.js';
-import { battleIdOf, knownBattleUnits, publicBattleEvents, withBattleReportQueries, battleEpilogue, archivedNarrativeEvents, archivedDigest, reportForDelivery, makeNarrativeBatch, beginNarrativeDelivery, finishNarrativeDelivery, completedBattleRounds, type BattleReport, type BattleDeliveries, type NarrativeBatch } from './battle-reports.js';
+import { battleIdOf, knownBattleUnits, publicBattleEvents, withBattleReportQueries, battleEpilogue, archivedNarrativeEvents, archivedDigest, reportForDelivery, reportNarrationInstructions, makeNarrativeBatch, beginNarrativeDelivery, finishNarrativeDelivery, completedBattleRounds, type BattleReport, type BattleDeliveries, type NarrativeBatch } from './battle-reports.js';
+import { englishReportAttack } from './report-language.js';
 import { battleLogText, lastBattleAction, traceLocations } from './battle-presentation.js';
 import { promptScopeControls } from './prompt-settings.js';
 import { narrativeProjectionDetails } from './narrative-controller.js';
@@ -1362,7 +1363,7 @@ function renderEmbeddedWorldbookSettings(): string {
 }
 function renderWorkspaceSettings(): string {
   const saved = viewSave(), view = llmSettingsView();
-  return `${mcpBridge?.render() ?? ''}${renderLlmSettings(view.settings, view.error ?? llmDiagnostic, llmWorldbookPicker.render(view.settings))}${renderEmbeddedWorldbookSettings()}${promptScopeControls(saved.promptSettings, narrativeProjectionDetails(saved, adapter.recentPromptText?.() ?? ''), (saved.storage ?? []).filter(visibleUnitRecord))}${renderPromptSettings(saved.promptSettings, promptDrafts)}<section><h2>${ui("显示与操作")}</h2><button data-action="theme-toggle">${ui("切换深浅主题")}</button></section>
+  return `${mcpBridge?.render() ?? ''}${renderLlmSettings(view.settings, view.error ?? llmDiagnostic, llmWorldbookPicker.render(view.settings))}${renderEmbeddedWorldbookSettings()}${promptScopeControls(saved.promptSettings, narrativeProjectionDetails(saved, adapter.recentPromptText?.() ?? ''), (saved.storage ?? []).filter(visibleUnitRecord))}${renderPromptSettings(saved.promptSettings, promptDrafts, uiLanguage())}<section><h2>${ui("显示与操作")}</h2><button data-action="theme-toggle">${ui("切换深浅主题")}</button></section>
     <section><h2>${ui("保存与恢复")}</h2><p>${state.saveReceipt?.status === 'local-only' ? '目前仅确认本地副本，酒馆尚未确认保存。' : '单位档案和战报随当前聊天保存。保存失败时会在顶部显示。'}</p><button data-action="save-retry">${ui("重试保存")}</button>${controller.migrationReview() ? '' : renderMigrationReview()}</section>
     <details class="workspace-diagnostics"><summary>${ui("运行信息")}</summary><p>${ui("战斗结果由本设备计算。伤害、命中和状态的详细过程可在战报中查看。")}</p><p>${controller.capabilities.injection ? '已支持在续写剧情时参考当前战斗进度。' : '当前酒馆暂不支持自动提供剧情参考。'}</p></details>`;
 }
@@ -1568,7 +1569,7 @@ function unitDetailHtml(u: Combatant, fieldTags: string[]): string {
     const names = active.map((id) => shown(id) + (inactive(id) ? '（未生效）' : '')).join('、');
     rows.push(`<div class="eq"><b>${ui("特质")}</b> ${esc(names)}</div>`);
     // 已完成分级的特质按各自规则门控显示累计效果。
-    const effect = (id: string, trait: Trait) => gradedTraitEnabled(u, id) ? playerTraitLevelDescription(id, traitLevel(u, id, active), u.traitLevelModel, u.commandRangeModel, u.recoveryModel, u.flightModel) + (id === 'ap-weapon' ? `；当前主武器实际穿透+${displayNumber(penetrationBonus())}` : '') : playerTraitDescription(trait);
+    const effect = (id: string, trait: Trait) => gradedTraitEnabled(u, id) ? playerTraitLevelDescription(id, traitLevel(u, id, active), u.traitLevelModel, u.commandRangeModel, u.recoveryModel, u.flightModel) + (id === 'ap-weapon' ? `；当前主武器实际穿透+${displayNumber(penetrationBonus())}` : '') : ui(playerTraitDescription(trait));
     rows.push(`<details><summary>${ui("特质效果")}</summary>${active.map((id) => { const trait = reg.get(id), reason = inactive(id); return `<div>${esc(shown(id))}：${reason ? `<b>${ui("未生效：")}${esc(reason)}</b>。` : ''}${esc(trait ? effect(id, trait) : '未知定义')}</div>`; }).join('')}</details>`);
   }
   const currentSources = u.traitSources?.filter(source => traitSourceActive(u, source)) ?? [];
@@ -2326,14 +2327,14 @@ function buildContextInject(): string {
 
 /** 战报先作为 user 消息插入；原生模式只有用户另行点击发送才生成回复。 */
 async function sendToAi(text: string, label: string, reportId?: string, batch?: NarrativeBatch): Promise<void> {
+  const language = uiLanguage();
   const historical=state.reports.find(r=>r.id===(reportId??batch?.battleId));
   if(historical?.supersededBy)text='【已被重战替代的历史战报：仅供对照，不代表当前战果】\n'+text;
-  text = reportForDelivery(text, controller.snapshot(['promptSettings']).promptSettings);
+  text = reportForDelivery(text, controller.snapshot(['promptSettings']).promptSettings, language);
   if (!text) { toast(`暂无可发送的${label}`); return; }
   if (['新增战况', '战斗终章', '结算卡（整场）', '回合纪要（整场）', '状态摘要'].includes(label)) {
-    text = text.trimEnd() + '\n\n本次回复应根据战报对战斗过程进行详细描写，禁止输出<tb>内容';
+    text = text.trimEnd() + '\n\n' + reportNarrationInstructions(language, label === '战斗终章');
   }
-  if (label === '战斗终章') text += '\n终章最后补充本场道具使用及实际效果；只依据记录，未使用或效果缺失时如实说明，不补造道具、消耗或效果。';
   const identity = adapter.identity();
   const namespace = adapter.namespace();
   const report = !batch && reportId ? state.reports.find((r) => r.id === reportId) : undefined;
@@ -2611,10 +2612,10 @@ async function handleAction(e: Event): Promise<void> {
   if (act === 'language-toggle') {
     const language = uiLanguage() === 'en' ? 'zh-CN' : 'en';
     setUiLanguage(language);
+    runtime.setLanguage?.(language);
     for (const [id] of WORKSPACES) dirtyWorkspaces.add(id);
     render('view');
     document.querySelector<HTMLElement>('[data-action="language-toggle"]')?.focus({ preventScroll: true });
-    runtime.setLanguage?.(language);
     return;
   }
   if (act === 'theme-toggle') { const theme = document.body.dataset.theme === 'light' ? 'dark' : 'light'; document.body.dataset.theme = theme; runtime.setTheme?.(theme); return; }
@@ -3198,7 +3199,7 @@ function playerPreparationInputs() {
   return { scope: playerPreparationScope(), roster: state.roster, protagonistId: state.protagonistId,
     setup: preparationSetup(),
     unitBindings: Object.fromEntries(state.roster.map(u => [ids.publicId(u.id), u.id])),
-    sources: narrativeMapSources(recentContextMessages().slice(-llmSettingsView().settings.windowSize).map(m => ({ ...m, text: m.text.slice(-6000) }))).sources };
+    sources: narrativeMapSources(recentContextMessages().slice(-llmSettingsView().settings.windowSize)).sources };
 }
 function applyPlayerPreparation(input: Record<string, unknown>): void {
   if (currentBattle()) throw Error('请先结束并收兵；准备配置只用于下一场');
@@ -3252,7 +3253,7 @@ async function startContextualBattle(requestedMode:'small'|'mass'):Promise<void>
 
 async function startSmallBattle(context?:LlmEncounterContext, preparedField?: ReturnType<typeof generatedLayeredField>, seed = randomSeed()):Promise<void> {
     const before=captureBattleArchive({...controller.snapshot(),storage:state.storage,inventory:state.inventory,rosterIds:state.roster.map(u=>u.id),protagonistId:state.protagonistId,commanderId:state.commanderId,encounterIds:[...state.encounterIds],lastBattleUnitIds:state.lastBattleUnitIds});
-    const small = buildEncounter({ roster: state.roster, setup: { ...playerPreparationInputs().setup, mode: 'small' }, context, seed,
+    const small = buildEncounter({ roster: state.roster, setup: preparationSetup('small'), context, seed,
       protagonistId: state.protagonistId, commanderId: state.commanderId, nonLethal: state.nonLethal, registry: reg, summonUnit, preparedField }) as SmallBattle;
     context = await prepareLlmCommanders(small, context);
     state.activeBattleStart=captureBattleStart(small,before,context);state.selectedReportId=undefined;
@@ -3267,7 +3268,7 @@ async function startSmallBattle(context?:LlmEncounterContext, preparedField?: Re
 
 async function startMassBattle(context?:LlmEncounterContext):Promise<void> {
     const before=captureBattleArchive({...controller.snapshot(),storage:state.storage,inventory:state.inventory,rosterIds:state.roster.map(u=>u.id),protagonistId:state.protagonistId,commanderId:state.commanderId,encounterIds:[...state.encounterIds],lastBattleUnitIds:state.lastBattleUnitIds});
-    const mass = buildEncounter({ roster: state.roster, setup: { ...playerPreparationInputs().setup, mode: 'mass' }, context, seed: randomSeed(),
+    const mass = buildEncounter({ roster: state.roster, setup: preparationSetup('mass'), context, seed: randomSeed(),
       protagonistId: state.protagonistId, commanderId: state.commanderId, nonLethal: state.nonLethal, registry: reg, summonUnit }) as MassBattle;
     context = await prepareLlmCommanders(mass, context);
     state.activeBattleStart=captureBattleStart(mass,before,context);state.selectedReportId=undefined;
@@ -3292,8 +3293,8 @@ async function prepareLlmCommanders(battle: SmallBattle | MassBattle, context?: 
   const valid = () => currentBattle() === expectedBattle && identity === adapter.identity() && namespace === adapter.namespace()
     && generation === controller.inventoryContext() && fingerprint === preparationFingerprint()
     && JSON.stringify(readLlmSettings()) === settingsKey && messagesKey === JSON.stringify(recentContextMessages()) && (!runtime.canWrite || runtime.canWrite());
-  const narrative = recentContextMessages().slice(-settings.windowSize).map(m => ({ role: m.role, text: stripThinking(m.text).slice(-6000) }));
-  const setup = preparation?.setup ?? playerPreparationInputs().setup, roster = preparation?.roster ?? state.roster;
+  const narrative = recentContextMessages().slice(-settings.windowSize).map(m => ({ role: m.role, text: stripThinking(m.text) }));
+  const setup = preparation?.setup ?? preparationSetup(), roster = preparation?.roster ?? state.roster;
   const commands: NonNullable<LlmEncounterContext['llmCommanders']> = {};
   for (const side of ['enemy', 'neutral'] as const) {
     if (onlySide && side !== onlySide || !commandsFaction(settings, side) || !battle.combatants.some(u => u.side === side && u.hp > 0 && u.status === 'ready')) continue;
@@ -3348,8 +3349,8 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
     saveLlmSettings(settings); stopAutomation(); llmDiagnostic = '已恢复 DeepSeek 默认关闭思考参数'; render('view');
   },
   'llm-settings-clear': () => { resetLlmSettings(false); stopAutomation(); llmDiagnostic = '已清空副API配置和Key，使用手动配置'; render('view'); },
-  'out-delta': async () => { const batch = makeNarrativeBatch(currentBattle() ?? undefined, reportForOutput(), state.reportDeliveries, 'delta'); void (await sendToAi(batch.text, '新增战况', undefined, batch)); },
-  'out-epilogue': async () => { const batch = makeNarrativeBatch(currentBattle() ?? undefined, reportForOutput(), state.reportDeliveries, 'epilogue',state.activeBattleStart); void (await sendToAi(batch.text, '战斗终章', undefined, batch)); },
+  'out-delta': async () => { const batch = makeNarrativeBatch(currentBattle() ?? undefined, reportForOutput(), state.reportDeliveries, 'delta', undefined, uiLanguage()); void (await sendToAi(batch.text, '新增战况', undefined, batch)); },
+  'out-epilogue': async () => { const batch = makeNarrativeBatch(currentBattle() ?? undefined, reportForOutput(), state.reportDeliveries, 'epilogue',state.activeBattleStart,uiLanguage()); void (await sendToAi(batch.text, '战斗终章', undefined, batch)); },
   'delivery-review': (el) => { finishNarrativeDelivery(state.reportDeliveries, {battleId:el.dataset.battle!,key:el.dataset.key!}, {status:el.dataset.result === 'sent' ? 'sent' : 'failed',detail:'玩家核对聊天后确认'}); },
   'trait-source-revoke': async (el) => {
     const receipt = (await controller.revokeBlessing(el.dataset.unit!, el.dataset.source!, Number(el.dataset.revision), el.dataset.context!));
@@ -4073,15 +4074,17 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   'out-digest': async () => {
     const b = currentBattle();
     const archived = reportForOutput();
-    if (archived) { void (await sendToAi(archivedDigest(archived), '回合纪要（整场）', archived.id)); return; }
+    const english = uiLanguage() === 'en';
+    if (archived && (!b || !english)) { void (await sendToAi(archivedDigest(archived), '回合纪要（整场）', archived.id)); return; }
     if (!b) throw new Error('没有可输出的战斗');
     // 回合纪要（中等详细）：每回合命中/未中/状态变化/溃退重整——比结算卡省 token
     const text = roundDigest(b, state.era, reg, {
       wholeBattle: true,
       protagonistId: state.protagonistId,
+      formatEvents: english ? englishReportAttack : undefined,
     });
     if (!text) throw new Error('还没有可纪要的交战事件（先打一回合）');
-    void (await sendToAi(text, '回合纪要（整场）'));
+    void (await sendToAi(text, '回合纪要（整场）', archived?.id));
   },
   'out-inject': async () => {
     const archived = reportForOutput();

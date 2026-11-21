@@ -3,6 +3,19 @@ import { parseProtocol, protocolExcerpt } from './protocol.js';
 import { TRAITS, generateUnit } from '../../engine/src/index.js';
 import { CORE_PROTOCOL, PROMPT_CARDS } from './narrative-prompt.js';
 
+it('accepts English mechanics and mixed-language specs without changing item or unit names', () => {
+  const result = parseProtocol(`<tb>
+    <spawn name="Pilot" side="ally" scale="hero" traits="Space Mobility,飞行L2" armor="Flight Suit:Light Armour L2" shield="Screen:Energy Shield L3" skills="First Aid:Buff L3+Heal L4"/>
+    <reforge id="a1" name="Field Armor" spec="Medium Armor L4+2defense"/>
+  </tb>`);
+  expect(result.errors).toEqual([]);
+  expect(result.events).toMatchObject([
+    { kind: 'spawn', name: 'Pilot', traits: ['space-adapted', 'flyingL2'], armorTier: 1, shieldName: 'Screen', shieldClass: 'energy-shield',
+      skills: [{ name: 'First Aid', level: 3, blueprintId: 'generic:buff:heal@4' }] },
+    { kind: 'reforge', name: 'Field Armor', spec: { kind: 'armor', tier: 2, power: 4, bonuses: { defense: 2 } } },
+  ]);
+});
+
 it('spawn neutral retains third-party ownership through parsing and generation', () => {
   const parsed = parseProtocol('<tb><spawn name="第三军" side="neutral" scale="hero"/></tb>');
   expect(parsed.errors).toEqual([]);

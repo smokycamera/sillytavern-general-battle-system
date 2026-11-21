@@ -105,6 +105,12 @@ function selected() {
   );
 }
 describe("contextual battle preparation", () => {
+  it('sends each selected completed message in full even when it exceeds 6000 characters', () => {
+    const input = fixture(), full = 'Opening location. ' + 'x'.repeat(8000) + ' Latest location.';
+    input.messages = [...input.messages, { id: 'long', role: 'assistant', completed: true, text: full }];
+    input.windowSize = 1;
+    expect(encounterRequest(input).request?.messages).toEqual([{ id: 'long', role: 'assistant', completed: true, text: full }]);
+  });
   it("resolves commander and scene together, constraining objectives to a supported battle type", () => {
     const c = selected();
     const input = fixture(),

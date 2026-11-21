@@ -1,5 +1,4 @@
 import { narrativeIds, type NarrativeIdState } from './narrative-ids.js';
-import { selectSpatialNarrative } from './narrative-map-source.js';
 import {
   deployOnGrid,
   standardField,
@@ -173,7 +172,7 @@ export function encounterRequest(input: EncounterContextInput): {
     input.messages,
     input.windowSize,
     input.roles,
-  ).map((m) => ({ ...m, text: input.phase==='preparation'?selectSpatialNarrative(m.text):m.text.slice(-6000) }));
+  );
   const key = messageKey(messages);
   const messageKeys = messages.map((m) => messageKey([m]));
   const base: JevEncounterContext = input.previous

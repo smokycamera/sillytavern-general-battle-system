@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {generateUnit,traitRegistry,SmallBattle,MassBattle,V3_D20,V3_TW,V6_D20,V6_TW,standardField,applyRecovery,applyHealthLoss,sendPlayerLetter,applyDiplomacy,isCommunicationLog,type Combatant} from '../../engine/src/index.js';
 import {captureBattleStart,captureBattleArchive} from './report-history.js';
 import {unitRecordFromCombatant,materializeUnitRecord,commitBattleState,updateUnitRecord} from './unit-state.js';
-import {battleEpilogue,makeNarrativeBatch,battleIdOf,publicBattleEvents,withBattleReportQueries,archivedDigest,narrativeEvents,type BattleReport} from './battle-reports.js';
+import {battleEpilogue,makeNarrativeBatch,battleIdOf,publicBattleEvents,withBattleReportQueries,archivedDigest,narrativeEvents,reportForDelivery,reportNarrationInstructions,type BattleReport} from './battle-reports.js';
 import {skillDefinitionId} from '../../engine/src/skill-catalog.js';
 import {compactEvents,reportPlaceText,roundDigest} from '../../engine/src/inject/format.js';
 const registry=traitRegistry(),rng={seed:'fixed',next:()=>0,d:(sides:number)=>sides};
@@ -19,6 +19,15 @@ function hit(b:SmallBattle|MassBattle,actor:string,target:string) {
  else {expect(b.issue({unitId:actor,type:'attack',targetId:target}).ok).toBe(true);b.issue({unitId:target,type:'hold'});b.resolveRound();}
 }
 describe('终章事实与致命开关',()=>{
+ it('formats sent report headings, coordinated weapon names and the selected prompt language',()=>{
+  const report = '【战阵·回合纪要·共3回合】\n【第3回合】\n▸ ［总协同攻击·剑、矛］A→D\n▸ ［协同近战·短剑］A→D\n▸ ［协同射击·轻弩］A→D\n谈话：计划协同近战\n【叙述任务】\n原文';
+  const english = reportForDelivery(report, undefined, 'en');
+  expect(english).toContain('【Round-by-Round Report · 3 rounds】\n【Round 3】\n▸ ［剑、矛］A→D\n▸ ［短剑］A→D\n▸ ［轻弩］A→D\n谈话：计划协同近战');
+  expect(english).toContain('Describe the battle using the recorded events.');
+  expect(reportForDelivery(report,{sections:{settlement:{template:'Player template'}}},'en')).toMatch(/Player template$/);
+  expect(reportNarrationInstructions('zh-CN', false)).toMatch(/注意装备数量变动，减少代表装备者阵亡$/);
+  expect(reportNarrationInstructions('en', true)).toMatch(/A decrease means the unit members using that equipment were killed\.$/);
+ });
  it.each(['small','mass'] as const)('%s逐轮、增量、终章与旧归档保留我方原话和投降撤军提议及答复',mode=>{
   const b=battle(mode,false,[unit('A'),unit('D')]);
   sendPlayerLetter(b,['enemy'],'缴枪不杀！！！\n持续3轮，剩余4件。');

@@ -126,8 +126,9 @@ export const WEAPON_CLASS_ALIASES: Record<string, string[]> = {
 };
 export function resolveWeaponClass(name: string): string | undefined {
   const value = name.trim().toLowerCase();
-  return Object.values(WEAPON_CLASSES).find((c) => c.id === value || c.name === value)?.id
-    ?? Object.entries(SHIELD_CLASSES).find(([id, c]) => id === value || c.name === value)?.[0]
+  const idValue = value.replace(/\s+/g, '-');
+  return Object.values(WEAPON_CLASSES).find((c) => c.id === idValue || c.name === value)?.id
+    ?? Object.entries(SHIELD_CLASSES).find(([id, c]) => id === idValue || c.name === value)?.[0]
     ?? Object.entries(WEAPON_CLASS_ALIASES).find(([, names]) => names.includes(value))?.[0];
 }
 

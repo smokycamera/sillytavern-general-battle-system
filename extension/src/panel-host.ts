@@ -1,6 +1,17 @@
 import manifest from '../manifest.json';
 import type { UiLanguage } from '../../panel/src/ui-language.js';
 import type { DisplayPreferences } from './preferences.js';
+
+const englishStatus: Readonly<Record<string, string>> = {
+  '无法确认当前是哪个角色聊天，暂时不能读取战阵存档': 'Tavern Battle could not identify the current character chat. Open a character chat and reload the save.',
+  '存档暂时读不出来': 'The battle save could not be loaded.',
+  '重新读取存档': 'Reload Save',
+  '导出原始数据': 'Export Raw Data',
+  '正在读取当前聊天档案…': 'Loading the current chat save…',
+  '正在连接酒馆…': 'Connecting to SillyTavern…',
+  '重新初始化': 'Restart Extension',
+};
+
 export class PanelHost {
   private frame?: HTMLIFrameElement;
   private root: HTMLElement;
@@ -101,15 +112,18 @@ export class PanelHost {
     this.status.replaceChildren(); this.content.hidden = hidePanel;
     if (hidePanel) this.ready = false;
     if (hidePanel) this.pause();
-    if (text) { const paragraph = document.createElement('p'); paragraph.textContent = text; this.status.append(paragraph); }
+    if (text) { const paragraph = document.createElement('p'); paragraph.textContent = this.statusText(text); this.status.append(paragraph); }
     if (actions.length) {
       const row = document.createElement('div'); row.className = 'tb-actions';
       for (const action of actions) {
-        const button = document.createElement('button'); button.textContent = action.label;
+        const button = document.createElement('button'); button.textContent = this.statusText(action.label);
         button.addEventListener('click', async () => { button.disabled = true; try { await action.run(); } catch (error) { this.showStatus(error instanceof Error ? error.message : String(error), actions, hidePanel); } finally { button.disabled = false; } }); row.append(button);
       }
       this.status.append(row);
     }
+  }
+  private statusText(text: string): string {
+    return this.root.lang === 'en' && Object.hasOwn(englishStatus, text) ? englishStatus[text]! : text;
   }
   private applyEntryPosition(): void {
     const viewport = this.viewport;
